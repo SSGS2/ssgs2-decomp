@@ -4,10 +4,10 @@
 #define CLASSES_RESOURCETABLEENTRY_H
 
 struct ResourceTableEntry {
-    void* name; // 0x0
-    int count; // 0x4
+    void* name;  // 0x0
+    int count;   // 0x4
     void* items; // 0x8
-    int unk_C; // 0xC
+    int unk_C;   // 0xC
 };
 
 #define OFF(f, o) typedef char ResourceTableEntry_off_##f[((int)&((ResourceTableEntry*)0)->f == (o)) ? 1 : -1]

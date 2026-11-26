@@ -8,10 +8,10 @@
 class NoticeQueue {
 public:
     char pad_000[0x10];
-    void* textTemplates; // 0x10: NoticeQueue_ShowItemNotice: Text_ExpandTaggedText receiver
-    void* display; // 0x14: NoticeQueue_UpdateAndDraw: text display updated and drawn
-    unsigned int active; // 0x18: NoticeQueue_ResetAndActivate sets 1; NoticeQueue_UpdateAndDraw tests and clears
-    void* entries; // 0x1C: NoticeQueue_Clear: entries with stride 0x18
+    void* textTemplates;     // 0x10: NoticeQueue_ShowItemNotice: Text_ExpandTaggedText receiver
+    void* display;           // 0x14: NoticeQueue_UpdateAndDraw: text display updated and drawn
+    unsigned int active;     // 0x18: NoticeQueue_ResetAndActivate sets 1; NoticeQueue_UpdateAndDraw tests and clears
+    void* entries;           // 0x1C: NoticeQueue_Clear: entries with stride 0x18
     unsigned int entryCount; // 0x20: NoticeQueue_Clear: determines end of entries
 };
 

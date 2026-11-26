@@ -1,14 +1,29 @@
+// Actor animation commands and attachments: dispatch of named animation events, attached effects
+// and effect boxes, the sound manager's volume tweens, and the path hash table lookup.
+// The XML comment node cleanup and the command-token parsers are in this file too.
+
 #include <decomp/static_init.h>
 #include "classes/SoundManagerState.h"
 #include "classes/FloatTween.h"
 #include "classes/TiXmlNodeLayout.h"
 #include "classes/CFxSequence.h"
 #include "classes/WPuppet.h"
+#include "classes/CCreature.h"
+#include "classes/CDisposable.h"
+#include "classes/CHashPath.h"
+#include "classes/CFxBox.h"
+#include "classes/CFxSpray.h"
+#include "classes/CFx.h"
+#include "classes/CFile.h"
+extern "C" void* Destroy__Q23gtl5CFileFi(void*, int);
 
 // This unit bundles several unrelated actor/audio helpers: sound-manager volume tweens, attached-effect
 // slot setup, bone-transform lookups for animation commands, the animation-command token parser
 // (Parse_AsteriskToken and friends) and the hash-path lookup shutdown.
-struct SoundManagerTweens { FloatTween soundVolume; FloatTween musicVolume; };
+struct SoundManagerTweens {
+    FloatTween soundVolume;
+    FloatTween musicVolume;
+};
 // Position plus primary/secondary transform pointers of an effect attachment (also the tail of
 // SprayAttachmentFields below, which prefixes it with 8 reserved bytes and the owning attachment).
 struct EffectAttachmentSlots {
@@ -35,40 +50,65 @@ struct NamedBonePair {
     BoneTransformView* bone;
     BoneSecondaryTransformView* secondary;
 };
-struct AttachmentNameFilter { char reserved[0x18]; const char* name; };
-struct ConditionTokenTable { char reserved[0x70]; char* tokens[1]; };
-struct AnimationTimeRange { float first; float last; };
-struct AnimationCommandKey { int frame; int reserved; void* commands; };
-struct ActorInstanceSelection { char reserved[0xA]; unsigned char index; };
-struct ActorInstanceTable { char reserved[4]; ActorInstanceSelection* selected; };
-struct CtypeByteTable { char reserved[0x10]; unsigned char* lowercase; };
-struct CLocaleFields { char reserved[0x38]; CtypeByteTable* ctype; };
+struct AttachmentNameFilter {
+    char reserved[0x18];
+    const char* name;
+};
+struct ConditionTokenTable {
+    char reserved[0x70];
+    char* tokens[1];
+};
+struct AnimationTimeRange {
+    float first;
+    float last;
+};
+struct AnimationCommandKey {
+    int frame;
+    int reserved;
+    void* commands;
+};
+struct ActorInstanceSelection {
+    char reserved[0xA];
+    unsigned char index;
+};
+struct ActorInstanceTable {
+    char reserved[4];
+    ActorInstanceSelection* selected;
+};
+struct CtypeByteTable {
+    char reserved[0x10];
+    unsigned char* lowercase;
+};
+struct CLocaleFields {
+    char reserved[0x38];
+    CtypeByteTable* ctype;
+};
 // Command order comes from s_animationEventHandlerNames (804B6180); these indices
 // are a protocol shared with that table, not C++ vtable byte offsets.
 // The dispatcher borrows the parser/context and passes a mutable char** cursor.
 // Concrete parser subclasses implement the effects; token names alone do not
 // establish argument syntax or ownership for shot/tail/swing/fly/give.
 enum AnimationCommandIndex {
-    kAnimationCommandSound = 0, // *snd(
-    kAnimationCommandShot = 1, // *shot
-    kAnimationCommandTail = 2, // *tail
-    kAnimationCommandShowClub = 3, // *showclub
-    kAnimationCommandHideClub = 4, // *hideclub
-    kAnimationCommandSwing = 5, // *swing
-    kAnimationCommandLockClub = 6, // *lockclub
-    kAnimationCommandEffect = 7, // *fx(
-    kAnimationCommandPtex = 8, // *ptex( (expansion of this abbreviation unresolved)
-    kAnimationCommandShowBone = 9, // *showbone(
-    kAnimationCommandHideBone = 10, // *hidebone(
-    kAnimationCommandPlayIf = 11, // *playif(
-    kAnimationCommandOpacity = 12, // *opa(
-    kAnimationCommandFace = 13, // *face(
-    kAnimationCommandFly = 14, // *fly
-    kAnimationCommandHide = 15, // *hide
-    kAnimationCommandShow = 16, // *show
-    kAnimationCommandLookUp = 17, // *lookup
+    kAnimationCommandSound = 0,       // *snd(
+    kAnimationCommandShot = 1,        // *shot
+    kAnimationCommandTail = 2,        // *tail
+    kAnimationCommandShowClub = 3,    // *showclub
+    kAnimationCommandHideClub = 4,    // *hideclub
+    kAnimationCommandSwing = 5,       // *swing
+    kAnimationCommandLockClub = 6,    // *lockclub
+    kAnimationCommandEffect = 7,      // *fx(
+    kAnimationCommandPtex = 8,        // *ptex( (expansion of this abbreviation unresolved)
+    kAnimationCommandShowBone = 9,    // *showbone(
+    kAnimationCommandHideBone = 10,   // *hidebone(
+    kAnimationCommandPlayIf = 11,     // *playif(
+    kAnimationCommandOpacity = 12,    // *opa(
+    kAnimationCommandFace = 13,       // *face(
+    kAnimationCommandFly = 14,        // *fly
+    kAnimationCommandHide = 15,       // *hide
+    kAnimationCommandShow = 16,       // *show
+    kAnimationCommandLookUp = 17,     // *lookup
     kAnimationCommandDontLookUp = 18, // *dontlookup
-    kAnimationCommandGive = 19, // *give
+    kAnimationCommandGive = 19,       // *give
 };
 // Header entries occupy words 0..1. Handler slots are absolute word indices:
 // command 0..19 -> words 4..23; unmatched command -> word 24.
@@ -112,24 +152,19 @@ struct EH5Cleanup {
     // Arm exception cleanup for a borrowed object and its matching destructor.
     EH5Cleanup(void* p, void (*d)(void*, int)) : object(p), destroy(d), active(true) {}
     // Disarm cleanup before the explicit normal-path destruction.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Destroy only when normal-path cleanup has not already taken responsibility.
-    ~EH5Cleanup() { if (active) destroy(object, -1); }
+    ~EH5Cleanup() {
+        if (active)
+            destroy(object, -1);
+    }
 };
 
-// Translation unit 0x802A5CC4-0x802A6E98 (19 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 class SgsDisposable {
 public:
     virtual void destroy(int);
-};
-
-struct HashFieldsReal { void* data; unsigned short count; char pad[2]; void* begin; void* end; };
-struct CHashPath : HashFieldsReal {
-    virtual void destroy(int);
-    // Initialize an empty path table; file storage is owned by the global buffer.
-    CHashPath() {
-    data = 0; count = 0; begin = 0; end = 0; }
 };
 
 struct SgsBlk {
@@ -161,7 +196,6 @@ double ceil(double);
 double floor(double);
 unsigned int strlen(const char*);
 
-void* CFx_CreateAttachedEffect(void*, void*, void*, int, int, int);
 int CString_Compare(const char*, const char*);
 void __dl__FPv(void*);
 void __dla__FPv(void*);
@@ -176,18 +210,9 @@ void strncpy(void*, void*, int);
 char* strchr(const char*, int);
 char* strrchr(const char*, int);
 int String_CompareCString(const char*, const char*);
-void* CFxSpray_CreateFromScript(void*, const char*, int, int);
-void* CFxBox_RegisterSpray(void*, void*);
 void* CFxSequence_Create(void*, const char*, int, int, int);
-void CFxBox_RegisterSequence(void*, void*);
 void* memcpy(void*, const void*, unsigned int);
 char* strcpy(char*, const char*);
-void gtl_CFile_Ctor(void*);
-int gtl_CFile_Open(void*, const char*, unsigned int);
-unsigned int gtl_CFile_GetFileSize(void*);
-void gtl_CFile_Read(void*, void*, unsigned int);
-void gtl_CFile_Close(void*);
-void gtl_CFile_dtor(void*, int);
 void* appMallocUni__FUl(unsigned int);
 
 int WPuppet_FindKeyRange(void*, int, int, int*, int*);
@@ -197,30 +222,81 @@ int WPuppet_FindKeyRange(void*, int, int, int*, int*);
 void AnimationEvent_DispatchNamedHandler(void* self, void* commandName, void* commandCursor, void* handlerContext) {
     int handlerIndex;
     for (handlerIndex = 0; handlerIndex < kAnimationHandlerCount; handlerIndex++) {
-        if (CString_Compare((const char*)commandName, ((char**)s_animationEventHandlerNames)[handlerIndex]) == 0) break;
+        if (CString_Compare((const char*)commandName, ((char**)s_animationEventHandlerNames)[handlerIndex]) == 0)
+            break;
     }
     switch (handlerIndex) {
-    case kAnimationCommandSound: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerSound](self, commandCursor, handlerContext); break;
-    case kAnimationCommandShot: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerShot](self, commandCursor, handlerContext); break;
-    case kAnimationCommandTail: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerTail](self, commandCursor, handlerContext); break;
-    case kAnimationCommandShowClub: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerShowClub](self, commandCursor, handlerContext); break;
-    case kAnimationCommandHideClub: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerHideClub](self, commandCursor, handlerContext); break;
-    case kAnimationCommandSwing: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerSwing](self, commandCursor, handlerContext); break;
-    case kAnimationCommandLockClub: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerLockClub](self, commandCursor, handlerContext); break;
-    case kAnimationCommandEffect: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerEffect](self, commandCursor, handlerContext); break;
-    case kAnimationCommandPtex: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerPtex](self, commandCursor, handlerContext); break;
-    case kAnimationCommandShowBone: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerShowBone](self, commandCursor, handlerContext); break;
-    case kAnimationCommandHideBone: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerHideBone](self, commandCursor, handlerContext); break;
-    case kAnimationCommandPlayIf: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerPlayIf](self, commandCursor, handlerContext); break;
-    case kAnimationCommandOpacity: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerOpacity](self, commandCursor, handlerContext); break;
-    case kAnimationCommandFace: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerFace](self, commandCursor, handlerContext); break;
-    case kAnimationCommandFly: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerFly](self, commandCursor, handlerContext); break;
-    case kAnimationCommandHide: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerHide](self, commandCursor, handlerContext); break;
-    case kAnimationCommandShow: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerShow](self, commandCursor, handlerContext); break;
-    case kAnimationCommandLookUp: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerLookUp](self, commandCursor, handlerContext); break;
-    case kAnimationCommandDontLookUp: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerDontLookUp](self, commandCursor, handlerContext); break;
-    case kAnimationCommandGive: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerGive](self, commandCursor, handlerContext); break;
-    default: ((void (**)(void*, void*, void*))*(void**)self)[kAnimationHandlerUnknown](self, commandCursor, handlerContext); break;
+    case kAnimationCommandSound:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerSound](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandShot:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerShot](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandTail:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerTail](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandShowClub:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerShowClub](self, commandCursor,
+                                                                                     handlerContext);
+        break;
+    case kAnimationCommandHideClub:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerHideClub](self, commandCursor,
+                                                                                     handlerContext);
+        break;
+    case kAnimationCommandSwing:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerSwing](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandLockClub:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerLockClub](self, commandCursor,
+                                                                                     handlerContext);
+        break;
+    case kAnimationCommandEffect:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerEffect](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandPtex:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerPtex](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandShowBone:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerShowBone](self, commandCursor,
+                                                                                     handlerContext);
+        break;
+    case kAnimationCommandHideBone:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerHideBone](self, commandCursor,
+                                                                                     handlerContext);
+        break;
+    case kAnimationCommandPlayIf:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerPlayIf](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandOpacity:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerOpacity](self, commandCursor,
+                                                                                    handlerContext);
+        break;
+    case kAnimationCommandFace:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerFace](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandFly:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerFly](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandHide:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerHide](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandShow:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerShow](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandLookUp:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerLookUp](self, commandCursor, handlerContext);
+        break;
+    case kAnimationCommandDontLookUp:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerDontLookUp](self, commandCursor,
+                                                                                       handlerContext);
+        break;
+    case kAnimationCommandGive:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerGive](self, commandCursor, handlerContext);
+        break;
+    default:
+        ((void (**)(void*, void*, void*)) * (void**)self)[kAnimationHandlerUnknown](self, commandCursor,
+                                                                                    handlerContext);
+        break;
     }
 }
 #pragma pop
@@ -233,49 +309,57 @@ int ResolvedItemSelection_ContainsPart(void*, void*);
 char* String_ParseDecimalInt(char*);
 void StdString_ReserveCapacity(void*, unsigned int);
 void StdString_ReplaceRange(void*, int, int, char*, char*, char*);
-int CString_CompareIgnoringCase(const char*, const char*); // Compare strings without case using the active locale table.
+int CString_CompareIgnoringCase(const char*,
+                                const char*); // Compare strings without case using the active locale table.
 int CString_Compare(const char*, const char*);
 void* WPuppet_FindOrCacheBone(void*, const char*);
 void* WPuppet_FindNamedBoneEntry(void*, const char*);
 void* FxAttachment_Init(void*);
 
 // Default event hook; performs no work.
-void CDisposable_vfunc_27() {}
+void CDisposable::vfunc_27() {}
 
 // Default creature capability hook; returns true.
-int CCreature_vfunc_26() { return 1; }
+int CCreature::vfunc_26() {
+    return 1;
+}
 
 // Initialize the first animation/parser two-pi cache.
-void ActorHelpers_InitializeTauCacheA() { s_actorHelpersTauA = kFloat_6_2831855; }
+void ActorHelpers_InitializeTauCacheA() {
+    s_actorHelpersTauA = kFloat_6_2831855;
+}
 
 // Initialize the second animation/parser two-pi cache.
-void ActorHelpers_InitializeTauCacheB() { s_actorHelpersTauB = kFloat_6_2831855; }
+void ActorHelpers_InitializeTauCacheB() {
+    s_actorHelpersTauB = kFloat_6_2831855;
+}
 
 // Initialize the third animation/parser two-pi cache.
-void ActorHelpers_InitializeTauCacheC() { s_actorHelpersTauC = kFloat_6_2831855; }
+void ActorHelpers_InitializeTauCacheC() {
+    s_actorHelpersTauC = kFloat_6_2831855;
+}
 
 // Create a globally managed attached effect from the actor's two supplied attachment arguments.
 void* Actor_CreateAttachedEffect(void* /*unused*/, void* a, void* b) {
-    return CFx_CreateAttachedEffect(g_fx, a, b, 1, 0, 0);
+    return ((CFx*)g_fx)->CreateAttachedEffect((Vec2_8010*)(a), (const char*)(b), 1, 0, 0);
 }
 
-// Free the hash-path wrapper when called as a deleting destructor.
-void* CHashPath_dtor(void* p, int n) {
-    if (p != 0 && n > 0) {
-        __dl__FPv(p);
-    }
-    return p;
-}
+// Nothing is owned here: the path strings stay in the file buffer, which the
+// loader and shutdown release separately.
+CHashPath::~CHashPath() {}
 
-struct Z8B { char pad[16]; };
-class Z8 : public Z8B { public: 
-virtual void v08(int);
+struct Z8B {
+    char pad[16];
+};
+class Z8 : public Z8B {
+public:
+    virtual void v08(int);
 };
 // Destroy the path lookup object and release its loaded file buffer.
 void HashPath_Shutdown() {
     if (g_hashPath != 0) {
         if (g_hashPath != 0) {
-((Z8*)g_hashPath)->v08(1);
+            ((Z8*)g_hashPath)->v08(1);
         }
         g_hashPath = 0;
     }
@@ -316,7 +400,8 @@ int Parse_NonemptyQuotedTokenUnder64Bytes(void* /*unused*/, void** out, const ch
     do {
         if (len != 0) {
             unsigned int len2 = strlen(s);
-            if (len2 < kAttachmentNameBytes) break;
+            if (len2 < kAttachmentNameBytes)
+                break;
         }
         return 0;
     } while (0);
@@ -326,24 +411,30 @@ int Parse_NonemptyQuotedTokenUnder64Bytes(void* /*unused*/, void** out, const ch
 // Create a spray or sequence by extension, copy its attachment data, and register it with the effect box.
 void FxBox_CreateAndAttachEffectByExtension(void* /*unused*/, void* data, const char* name, void* ctx) {
     char* dot = strrchr(name, '.');
-    if (dot == 0) return;
-    if (strlen(dot) < 4) return;
+    if (dot == 0)
+        return;
+    if (strlen(dot) < 4)
+        return;
     if (String_CompareCString(dot + 1, kSprayScriptExtension) == 0) {
-        void* p = CFxSpray_CreateFromScript(ctx, name, 0, 0);
-        if (p == 0) return;
+        void* p = CFxSpray::CreateFromScript((CFxBox*)(ctx), (const char*)(name), 0, 0);
+        if (p == 0)
+            return;
         ((SprayAttachmentFields*)p)->attachment = data;
         ((SprayAttachmentFields*)p)->positionX = ((EffectAttachmentSlots*)data)->positionX;
         ((SprayAttachmentFields*)p)->positionY = ((EffectAttachmentSlots*)data)->positionY;
-        memcpy(((SprayAttachmentFields*)p)->transforms, ((EffectAttachmentSlots*)data)->transforms, sizeof(((EffectAttachmentSlots*)data)->transforms));
-        memcpy(((SprayAttachmentFields*)p)->secondaryTransforms, ((EffectAttachmentSlots*)data)->secondaryTransforms, sizeof(((EffectAttachmentSlots*)data)->secondaryTransforms));
-        CFxBox_RegisterSpray(ctx, p);
+        memcpy(((SprayAttachmentFields*)p)->transforms, ((EffectAttachmentSlots*)data)->transforms,
+               sizeof(((EffectAttachmentSlots*)data)->transforms));
+        memcpy(((SprayAttachmentFields*)p)->secondaryTransforms, ((EffectAttachmentSlots*)data)->secondaryTransforms,
+               sizeof(((EffectAttachmentSlots*)data)->secondaryTransforms));
+        ((CFxBox*)ctx)->RegisterSpray(((CFxSpray*)(p)));
     } else {
         void* p = CFxSequence_Create(ctx, name, 1, 0, 0);
-        if (p == 0) return;
+        if (p == 0)
+            return;
         *(void**)&((CFxSequence*)p)->attachment = data;
         ((CFxSequence*)p)->attachmentPositionX = ((EffectAttachmentSlots*)data)->positionX;
         ((CFxSequence*)p)->attachmentPositionY = ((EffectAttachmentSlots*)data)->positionY;
-        CFxBox_RegisterSequence(ctx, p);
+        ((CFxBox*)ctx)->RegisterSequence(((CFxSequence*)(p)));
     }
 }
 
@@ -363,7 +454,8 @@ int ParseConditionedQuotedToken(void* /*unused*/, char** path, char* output, cha
     char scratch[kAttachmentNameBytes];
     *path = (char*)String_ParseQuotedToken(*path, scratch);
     int len = strlen(scratch);
-    if (len == 0 || len >= kAttachmentNameBytes) return 0;
+    if (len == 0 || len >= kAttachmentNameBytes)
+        return 0;
     int hasConditions = 0;
     int found = 0;
     while (scratch[0] == '&') {
@@ -377,16 +469,20 @@ int ParseConditionedQuotedToken(void* /*unused*/, char** path, char* output, cha
                 void* selectedActor = *(void**)(instanceTable + 4);
                 unsigned char actorIndex = ((ActorInstanceSelection*)selectedActor)->index;
                 void* actorTokenEntry = (char*)*(void**)table + (actorIndex << 2);
-                if (token == ((ConditionTokenTable*)actorTokenEntry)->tokens[0]) found = 1;
+                if (token == ((ConditionTokenTable*)actorTokenEntry)->tokens[0])
+                    found = 1;
             }
         }
         *path = (char*)String_ParseQuotedToken(*path, scratch);
         len = strlen(scratch);
-        if (len == 0 || len >= kAttachmentNameBytes) break;
+        if (len == 0 || len >= kAttachmentNameBytes)
+            break;
     }
-    if (hasConditions && !found) return 0;
+    if (hasConditions && !found)
+        return 0;
     strcpy(output, scratch);
-    if (strlen(output) == 0 || strlen(output) >= kAttachmentNameBytes) return 0;
+    if (strlen(output) == 0 || strlen(output) >= kAttachmentNameBytes)
+        return 0;
     return 1;
 }
 #pragma pop
@@ -422,11 +518,9 @@ void* TiXmlComment_dtor(void* self, int n) {
     return self;
 }
 
-
 #pragma push
 #pragma use_lmw_stmw on
 #pragma opt_lifetimes off
-// Original CHashPath_FindPath: search padded strings and preserve the shared result.
 // Search the aligned strings in one hash bucket for a case-insensitive path suffix.
 inline void FindHashedPath(void*& result, char*& item, unsigned int& count, unsigned int& i, const char* path) {
     while ((unsigned short)i < (unsigned short)count) {
@@ -439,7 +533,10 @@ inline void FindHashedPath(void*& result, char*& item, unsigned int& count, unsi
         } else {
             ok = 1;
         }
-        if (ok != 0) { result = item; return; }
+        if (ok != 0) {
+            result = item;
+            return;
+        }
         item += (strlen(item) + 4) & ~3u;
         ++i;
     }
@@ -448,20 +545,27 @@ inline void FindHashedPath(void*& result, char*& item, unsigned int& count, unsi
 // Lowercase and hash the basename, then search the selected bucket for the requested path suffix.
 // Return a borrowed pointer into g_hashPathFileBuffer, or null; loading/shutdown
 // invalidates it. path is a NUL-terminated path; basename selects the hash bucket.
-void* CHashPath_FindPath(const char* path) {
-    struct Table { char* strings; unsigned short count; char pad[2]; unsigned short* hashes; unsigned int* offsets; };
+void* CHashPath::FindPath(const char* path) {
     unsigned int i;
-    register Table* table = (Table*)g_hashPath;
-    if (table == 0) return 0;
+    register CHashPath* table = (CHashPath*)g_hashPath;
+    if (table == 0)
+        return 0;
     register void* result;
     register char* part;
-    // Original CHashPath_FindPath: share the empty-result return.
+    // Every failure shares the same null return.
     do {
-        if (table->strings == 0 || table->count == 0 || table->hashes == 0 || table->offsets == 0) { result = 0; break; }
+        if (table->strings == 0 || table->count == 0 || table->hashes == 0 || table->offsets == 0) {
+            result = 0;
+            break;
+        }
         // Phase 1: isolate the basename and create a lowercase temporary string.
         char* slash = strrchr(path, '/');
         part = slash != 0 ? slash + 1 : (char*)path;
-        struct Str { unsigned int flag; unsigned int size; unsigned int capacity; } __attribute__((aligned(8))) parsed;
+        struct Str {
+            unsigned int flag;
+            unsigned int size;
+            unsigned int capacity;
+        } __attribute__((aligned(8))) parsed;
         parsed.flag = 0;
         parsed.size = 0;
         parsed.capacity = 0;
@@ -472,8 +576,13 @@ void* CHashPath_FindPath(const char* path) {
         unsigned int heap = parsed.flag >> 31;
         unsigned int nbytes;
         char* begin;
-        if (heap == 0) { begin = ((char*)&parsed) + 1; nbytes = ((unsigned char*)&parsed)[0] & 0x7f; }
-        else { begin = (char*)parsed.capacity; nbytes = parsed.size; }
+        if (heap == 0) {
+            begin = ((char*)&parsed) + 1;
+            nbytes = ((unsigned char*)&parsed)[0] & 0x7f;
+        } else {
+            begin = (char*)parsed.capacity;
+            nbytes = parsed.size;
+        }
         int sso = heap == 0;
         char* end = begin + nbytes;
         char* src;
@@ -482,10 +591,13 @@ void* CHashPath_FindPath(const char* path) {
         for (; src != end;) {
             int oor = 0;
             int c = (signed char)*src;
-            if (c < 0 || c >= 0x100) oor = 1;
+            if (c < 0 || c >= 0x100)
+                oor = 1;
             int v;
-            if (oor) v = c;
-            else v = ((CLocaleFields*)s_cLocaleData)->ctype->lowercase[c];
+            if (oor)
+                v = c;
+            else
+                v = ((CLocaleFields*)s_cLocaleData)->ctype->lowercase[c];
             *out = v;
             ++src;
             ++out;
@@ -505,7 +617,8 @@ void* CHashPath_FindPath(const char* path) {
                 hash ^= high;
             }
         }
-        if (hashHeap) __dl__FPv((void*)parsed.capacity);
+        if (hashHeap)
+            __dl__FPv((void*)parsed.capacity);
         // Phase 3: resolve the bucket's 16-bit count/offset view and search aligned strings.
         unsigned int rem = hash % table->count;
         unsigned int idx = table->hashes[rem & 0xFFFF];
@@ -536,7 +649,8 @@ int Parse_AsteriskToken(void* /*unused*/, char* output, void** cursor) {
             signed char c = (signed char)*next;
             current = current + 1;
             count = count + 1;
-            if (c == ' ') break;
+            if (c == ' ')
+                break;
             if (c == '(') {
                 count = count + 1;
                 break;
@@ -555,12 +669,29 @@ int Parse_AsteriskToken(void* /*unused*/, char* output, void** cursor) {
 
 class RefParser {
 public:
-    virtual void v08(); virtual void v0c(); virtual void v10(); virtual void v14();
-    virtual void v18(); virtual void v1c(); virtual void v20(); virtual void v24();
-    virtual void v28(); virtual void v2c(); virtual void v30(); virtual void v34();
-    virtual void v38(); virtual void v3c(); virtual void v40(); virtual void v44();
-    virtual void v48(); virtual void v4c(); virtual void v50(); virtual void v54();
-    virtual void v58(); virtual void v5c(); virtual void v60();
+    virtual void v08();
+    virtual void v0c();
+    virtual void v10();
+    virtual void v14();
+    virtual void v18();
+    virtual void v1c();
+    virtual void v20();
+    virtual void v24();
+    virtual void v28();
+    virtual void v2c();
+    virtual void v30();
+    virtual void v34();
+    virtual void v38();
+    virtual void v3c();
+    virtual void v40();
+    virtual void v44();
+    virtual void v48();
+    virtual void v4c();
+    virtual void v50();
+    virtual void v54();
+    virtual void v58();
+    virtual void v5c();
+    virtual void v60();
     virtual int check(void**, void*, char*);
     virtual void prepare(void*);
     virtual void finish(void*, char*);
@@ -568,27 +699,32 @@ public:
 #pragma push
 #pragma use_lmw_stmw on
 // Resolve up to four attachment bones, using optional name conditions and fallback model lookups.
-void FxAttachment_ParseBoneReferences(void* self, void** path, void* arg, void* entries, void* results, void* mode, void* lookup) {
+void FxAttachment_ParseBoneReferences(void* self, void** path, void* arg, void* entries, void* results, void* mode,
+                                      void* lookup) {
     char name[kAttachmentNameBytes];
     name[0] = 0;
     *path = String_ParseQuotedToken(*path, name);
     unsigned int len = strlen(name);
-    if (len == 0 || strlen(name) >= kAttachmentNameBytes) return;
+    if (len == 0 || strlen(name) >= kAttachmentNameBytes)
+        return;
 
     // Phase 1: optional @name filter, then resolve the conditioned attachment suffix.
     char suffix[kAttachmentNameBytes];
     suffix[0] = 0;
     if (name[0] == '@') {
-        if (results == 0 || CString_Compare(name + 1, ((AttachmentNameFilter*)results)->name) != 0) return;
+        if (results == 0 || CString_Compare(name + 1, ((AttachmentNameFilter*)results)->name) != 0)
+            return;
         *path = String_ParseQuotedToken(*path, suffix);
         len = strlen(suffix);
-        if (len == 0 || strlen(suffix) >= kAttachmentNameBytes) return;
+        if (len == 0 || strlen(suffix) >= kAttachmentNameBytes)
+            return;
     } else {
         strcpy(suffix, name);
     }
 
     char query[kAttachmentNameBytes];
-    if (!((RefParser*)self)->check(path, arg, query)) return;
+    if (!((RefParser*)self)->check(path, arg, query))
+        return;
     char context[0x28];
     FxAttachment_Init(context);
     void* slots = context;
@@ -598,20 +734,23 @@ void FxAttachment_ParseBoneReferences(void* self, void** path, void* arg, void* 
         if (mode == 0 || count != 0) {
             *path = String_ParseQuotedToken(*path, query);
             len = strlen(query);
-            if (len == 0 || strlen(query) >= kAttachmentNameBytes) break;
+            if (len == 0 || strlen(query) >= kAttachmentNameBytes)
+                break;
         }
         int found = 0;
         void* item = WPuppet_FindOrCacheBone(entries, query);
         if (item != 0) {
             ((EffectAttachmentSlots*)slots)->transforms[0] = ((BoneTransformView*)item)->worldTransform;
             found = 1;
-            if (count == 0) ((RefParser*)self)->prepare(item);
+            if (count == 0)
+                ((RefParser*)self)->prepare(item);
         } else {
             item = WPuppet_FindNamedBoneEntry(entries, query);
             if (item != 0) {
                 found = 1;
                 void* first = *(void**)item;
-                if (first != 0) ((EffectAttachmentSlots*)slots)->transforms[0] = ((BoneTransformView*)first)->worldTransform;
+                if (first != 0)
+                    ((EffectAttachmentSlots*)slots)->transforms[0] = ((BoneTransformView*)first)->worldTransform;
                 ((EffectAttachmentSlots*)slots)->secondaryTransforms[0] = ((NamedBonePair*)item)->secondary->transform;
             }
         }
@@ -626,7 +765,8 @@ void FxAttachment_ParseBoneReferences(void* self, void** path, void* arg, void* 
                 index = ((ActorInstanceSelection*)p2)->index;
                 list = *(void**)((char*)lookup + index * 4 + 4);
                 void* v = WPuppet_FindOrCacheBone(list, query);
-                if (v != 0) ((EffectAttachmentSlots*)slots)->transforms[0] = ((BoneTransformView*)v)->worldTransform;
+                if (v != 0)
+                    ((EffectAttachmentSlots*)slots)->transforms[0] = ((BoneTransformView*)v)->worldTransform;
                 else {
                     p = InstanceTable_Get();
                     p2 = (void*)((ActorInstanceTable*)p)->selected;
@@ -635,8 +775,11 @@ void FxAttachment_ParseBoneReferences(void* self, void** path, void* arg, void* 
                     v = WPuppet_FindNamedBoneEntry(list, query);
                     if (v != 0) {
                         void* first = *(void**)v;
-                        if (first != 0) ((EffectAttachmentSlots*)slots)->transforms[0] = ((BoneTransformView*)first)->worldTransform;
-                        ((EffectAttachmentSlots*)slots)->secondaryTransforms[0] = ((NamedBonePair*)v)->secondary->transform;
+                        if (first != 0)
+                            ((EffectAttachmentSlots*)slots)->transforms[0] =
+                                ((BoneTransformView*)first)->worldTransform;
+                        ((EffectAttachmentSlots*)slots)->secondaryTransforms[0] =
+                            ((NamedBonePair*)v)->secondary->transform;
                     }
                 }
             }
@@ -645,7 +788,8 @@ void FxAttachment_ParseBoneReferences(void* self, void** path, void* arg, void* 
         slots = (char*)slots + 4;
     } while ((unsigned int)count < kAttachmentBoneLimit);
     // Phase 3: hand the temporary slot views to the virtual attachment creator.
-    if (count > 0) ((RefParser*)self)->finish(context, suffix);
+    if (count > 0)
+        ((RefParser*)self)->finish(context, suffix);
 }
 #pragma pop
 
@@ -654,7 +798,7 @@ void Load_HashPathTable(void* self) {
     // Phase 1: discard the old wrapper before releasing its backing strings.
     if (g_hashPath != 0) {
         if (g_hashPath != 0) {
-            ((CHashPath*)g_hashPath)->destroy(1);
+            ((Z8*)g_hashPath)->v08(1);
         }
         g_hashPath = 0;
     }
@@ -664,18 +808,28 @@ void Load_HashPathTable(void* self) {
     }
     // Phase 2: read the aligned file allocation, then install views into that allocation.
     char local[0x20];
-    gtl_CFile_Ctor(local);
-    EH5Cleanup eh5Cleanup22(local, (void (*)(void*, int))gtl_CFile_dtor);
-    if (!gtl_CFile_Open(local, (const char*)self, kFileOpenRead)) {
-        { eh5Cleanup22.release(); gtl_CFile_dtor(local, -1); }
+    ((gtl::CFile*)local)->Init();
+    EH5Cleanup eh5Cleanup22(local, (void (*)(void*, int))Destroy__Q23gtl5CFileFi);
+    if (!((gtl::CFile*)local)->Open((const char*)self, kFileOpenRead)) {
+        {
+            eh5Cleanup22.release();
+            ((gtl::CFile*)local)->Destroy(-1);
+        }
         return;
     }
-    unsigned int size = gtl_CFile_GetFileSize(local);
+    unsigned int size = ((gtl::CFile*)local)->GetFileSize();
     size = (size + kFileBufferAlignment - 1) & ~(unsigned int)(kFileBufferAlignment - 1);
     g_hashPathFileBuffer = appMallocUni__FUl(size);
-    gtl_CFile_Read(local, g_hashPathFileBuffer, size);
-    gtl_CFile_Close(local);
-    struct Entry { void* data; unsigned short count; char pad[2]; void* begin; void* end; void* vtable; };
+    ((gtl::CFile*)local)->Read(g_hashPathFileBuffer, size);
+    ((gtl::CFile*)local)->Close();
+    struct Entry {
+        void* data;
+        unsigned short count;
+        char pad[2];
+        void* begin;
+        void* end;
+        void* vtable;
+    };
     Entry* e = (Entry*)new CHashPath;
     void* data = g_hashPathFileBuffer;
     g_hashPath = e;
@@ -685,7 +839,10 @@ void Load_HashPathTable(void* self) {
     char* begin = (char*)data + 2;
     e->begin = begin;
     e->end = begin + cnt * 2;
-    { eh5Cleanup22.release(); gtl_CFile_dtor(local, -1); }
+    {
+        eh5Cleanup22.release();
+        ((gtl::CFile*)local)->Destroy(-1);
+    }
 }
 
 #pragma push
@@ -696,7 +853,8 @@ void Load_HashPathTable(void* self) {
 // Normal ranges exclude the first bound frame and apply epsilon before ceil/floor;
 // singleFrame instead processes only the rounded start frame. Handler context is borrowed.
 // Commands mutate a local cursor; the parser's +0x0C hook finishes each key record.
-void AnimationEventParser_ProcessFrameRange(void* self, void* manager, float startTime, float endTime, void* bounds, void* handlerContext, void* singleFrame) {
+void AnimationEventParser_ProcessFrameRange(void* self, void* manager, float startTime, float endTime, void* bounds,
+                                            void* handlerContext, void* singleFrame) {
     void* parser = self;
     void* puppet = manager;
     void* context = handlerContext;
@@ -707,8 +865,10 @@ void AnimationEventParser_ProcessFrameRange(void* self, void* manager, float sta
     int frameIndex, frameBegin, frameEnd, first, last, i, offset;
     void* commandCursor;
     endFrame = endTime;
-    if (bounds == 0) return;
-    if ((!(startTime <= ((AnimationTimeRange*)bounds)->last) || startTime == endFrame) && isSingleFrame == 0) return;
+    if (bounds == 0)
+        return;
+    if ((!(startTime <= ((AnimationTimeRange*)bounds)->last) || startTime == endFrame) && isSingleFrame == 0)
+        return;
     // Phase 1: clamp time to the animation bounds and calculate the inclusive key range.
     firstFrame = kAnimationEventFrameScale * ((AnimationTimeRange*)bounds)->first;
     lastFrame = kAnimationEventFrameScale * ((AnimationTimeRange*)bounds)->last;
@@ -719,19 +879,25 @@ void AnimationEventParser_ProcessFrameRange(void* self, void* manager, float sta
     frameBegin = frameIndex;
     if (isSingleFrame == 0) {
         frameEnd = (int)(float)floor((double)(endFrame - kFloat_0_00001_AnimationEventFrame));
-        if ((float)frameBegin == firstFrame) frameBegin++;
-        if ((float)frameEnd > lastFrame) frameEnd = (int)lastFrame;
+        if ((float)frameBegin == firstFrame)
+            frameBegin++;
+        if ((float)frameEnd > lastFrame)
+            frameEnd = (int)lastFrame;
         frameIndex = frameEnd;
     }
-    if (frameBegin > frameIndex) return;
-    if (puppet == 0) return;
-    if (!WPuppet_FindKeyRange(puppet, frameBegin, frameIndex, &first, &last)) return;
+    if (frameBegin > frameIndex)
+        return;
+    if (puppet == 0)
+        return;
+    if (!WPuppet_FindKeyRange(puppet, frameBegin, frameIndex, &first, &last))
+        return;
     // Phase 2: parse each key's command stream and dispatch through the name/slot map.
     for (i = first, offset = first * 12; i <= last; ++i, offset += 12) {
         commandCursor = *(void**)((char*)((WPuppet*)puppet)->keyRecords + offset + kAnimationKeyCommandsOffset);
         if (commandCursor != 0) {
             while (commandCursor != 0) {
-                if (!Parse_AsteriskToken(parser, (char*)commandBuffer, &commandCursor)) break;
+                if (!Parse_AsteriskToken(parser, (char*)commandBuffer, &commandCursor))
+                    break;
                 AnimationEvent_DispatchNamedHandler(parser, commandBuffer, &commandCursor, context);
             }
             (*(void (**)(void*, void*))((char*)*(void**)parser + 0xc))(parser, &commandCursor);

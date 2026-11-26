@@ -1,5 +1,3 @@
-// Translation unit 0x803D6468-0x803D7914 (18 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 // Image/font resource adapters and chunk serialization. Mod lookup: TGA/DDS
 // format mapping -> GetDescription; glyph search -> FindGlyphRecord and global
 // CompareGlyphCode mode; resource packing/alignment -> RebuildChunks.
@@ -15,9 +13,9 @@
 #pragma use_lmw_stmw on
 
 typedef struct TgaDescOut {
-    s32 format; // Native engine format ID; -1 = unsupported (status still 1).
-    s32 widthPixels; // Width pixels.
-    s32 heightPixels; // Height pixels.
+    s32 format;        // Native engine format ID; -1 = unsupported (status still 1).
+    s32 widthPixels;   // Width pixels.
+    s32 heightPixels;  // Height pixels.
     s32 mipLevelCount; // Mip level count (TGA always 1).
 } TgaDescOut;
 
@@ -28,24 +26,24 @@ typedef struct TgaDescPalette {
 
 #pragma pack(push, 1)
 typedef struct TgaHeader {
-    unsigned char unk0[5]; // +0 ID length, +1 color-map type, +2 image type,
-                          // +3..4 color-map origin (unused).
+    unsigned char unk0[5];            // +0 ID length, +1 color-map type, +2 image type,
+                                      // +3..4 color-map origin (unused).
     unsigned short colorMapLengthRaw; // +5 color-map length; consumed without reversal here.
-    unsigned char colorMapEntryBits; // +7 color-map entry bits (24/32 supported).
-    unsigned char unk8[4]; // +8/+A image origin (unused).
-    unsigned short widthLE; // +C width, little endian; explicitly reversed on Wii.
-    unsigned short heightLE; // +E height, little endian; explicitly reversed on Wii.
-    unsigned char pixelBits; // +10 pixel depth; +11 descriptor omitted from this view.
+    unsigned char colorMapEntryBits;  // +7 color-map entry bits (24/32 supported).
+    unsigned char unk8[4];            // +8/+A image origin (unused).
+    unsigned short widthLE;           // +C width, little endian; explicitly reversed on Wii.
+    unsigned short heightLE;          // +E height, little endian; explicitly reversed on Wii.
+    unsigned char pixelBits;          // +10 pixel depth; +11 descriptor omitted from this view.
 } TgaHeader;
 #pragma pack(pop)
 
 typedef struct GlyphRecord {
-    u16 atlasU; // +0 atlas U in texels (BitmapFont_FormatTextVertices: u0).
-    u16 atlasV; // +2 atlas V in texels (v0).
-    u16 texturePageIndex; // +4 texture page index; bitmap renderer requires <20.
+    u16 atlasU;            // +0 atlas U in texels (BitmapFont_FormatTextVertices: u0).
+    u16 atlasV;            // +2 atlas V in texels (v0).
+    u16 texturePageIndex;  // +4 texture page index; bitmap renderer requires <20.
     s16 horizontalBearing; // +6 horizontal bearing, font units; added before quad/pen advance.
-    s16 width; // +8 glyph width: atlas texels and unscaled quad width.
-    s16 extraAdvance; // +A extra horizontal advance, font units; NOT total pen advance.
+    s16 width;             // +8 glyph width: atlas texels and unscaled quad width.
+    s16 extraAdvance;      // +A extra horizontal advance, font units; NOT total pen advance.
 } GlyphRecord;
 // Native 12-byte record, shared with Glyph in gtl_bitmap_font_draw.cpp. That consumer uses
 // header.lineHeight for height, not a seventh per-glyph metric. Its pen equation:
@@ -76,9 +74,9 @@ typedef struct GlyphFont {
 
 typedef struct ResourceChunk {
     u32 payloadAddressOrKey; // Input: borrowed payload address. Output: logical key (input offset).
-    u32 elementCount; // +4 COUNT of elements, copied unchanged to directory +4.
-    u32 elementStrideBytes; // +8 BYTES per element; payload bytes = +4 * +8.
-    u32 offset; // Input: sort/logical key. Output: aligned byte offset in new buffer.
+    u32 elementCount;        // +4 COUNT of elements, copied unchanged to directory +4.
+    u32 elementStrideBytes;  // +8 BYTES per element; payload bytes = +4 * +8.
+    u32 offset;              // Input: sort/logical key. Output: aligned byte offset in new buffer.
 } ResourceChunk;
 
 typedef struct ResourceChunkBuffer {
@@ -127,13 +125,17 @@ struct FontDataView {
     u8* glyphsEnd;
 };
 
-struct D6894RefCountedBase { s32 refCount; };
-
-struct D6894RefCounted : D6894RefCountedBase { 
-virtual ~D6894RefCounted();
+struct CRefCountedBase {
+    s32 refCount;
 };
 
-struct D6894Holder { D6894RefCounted* obj; };
+struct D6894RefCounted : CRefCountedBase {
+    virtual ~D6894RefCounted();
+};
+
+struct D6894Holder {
+    D6894RefCounted* obj;
+};
 
 typedef struct DdsPixelFormatEntry {
     unsigned char pixelFormat[0x20];
@@ -172,24 +174,24 @@ extern "C" {
 extern char s_lengthErrorInfo[];
 void* Object_GetField8(void* obj);
 void* Object_GetFieldC(void* obj);
-void gtl_IG3DXBuffer_Create(s32 size, void* owner, s32 flags);
+extern "C" void Create__Q23gtl11IG3DXBufferFPvPPv(s32 size, void* owner, s32 flags);
 ResourceChunk* gtl_ResourceFile_GetChunkByIndex(void* file, void* chunks, s32 index);
 
-void Memory_CopyAndReverseStridedBlocks(void* destination, void* source, unsigned int packedLayout, unsigned int rowStride, unsigned int rowCount);
+void Memory_CopyAndReverseStridedBlocks(void* destination, void* source, unsigned int packedLayout,
+                                        unsigned int rowStride, unsigned int rowCount);
 // The callee reads the engine format as its eighth argument (r10), which the original six-argument call leaves
 // live.
 void gtl_Image_TiledToLinear(s32 arg0, s32 arg1, s32 arg2, s32 arg3, s32 arg4, s32 arg5);
-void gtl_Image_ConvertMortonLayout(s32 arg0, s32 arg1, s32 arg2, s32 arg3, s32 arg4, s32 arg5, s32 arg6, s32 arg7, s32 arg8);
+void gtl_Image_ConvertMortonLayout(s32 arg0, s32 arg1, s32 arg2, s32 arg3, s32 arg4, s32 arg5, s32 arg6, s32 arg7,
+                                   s32 arg8);
 s32 gtl_ImageFormat_GetBytesPerElement(s32 arg0);
 s32 gtl_FontData_CompareGlyphCode(const void* a, const void* b);
 void* bsearch(const void* key, const void* base, size_t nmemb, size_t size, s32 (*compar)(const void*, const void*));
 
 s32 gtl_Image_GetMipChainSize(s32 arg0, s32 arg1, s32 arg2, s32 arg3, s32 arg4);
 
-
 s32 gtl_FontData_FindGlyphRecord(const GlyphFont* arg0, s32 arg1, GlyphRecord* arg2);
 extern s32 s_glyphComparatorMode;
-
 
 #pragma opt_propagation off
 #pragma opt_common_subs off
@@ -215,17 +217,22 @@ struct Flag {
 struct ChunkIter {
     ResourceChunk* volatile p;
     // Observe the stored iterator each time; compaction depends on read order.
-    ResourceChunk* cur() { return p; }
+    ResourceChunk* cur() {
+        return p;
+    }
     // Advance one 16-byte descriptor with a visible iterator write.
-    void step() { p = p + 1; }
+    void step() {
+        p = p + 1;
+    }
 };
 
 extern void* (*s_genericResourceAllocatorFunctions)(u32 size);
 
-
 extern DdsPixelFormatTable s_ddsPixelFormatTable;
 
-void gtl_Image_CopyFromPlatformLayout(s32 sourcePixels, s32 widthPixels, s32 heightPixels, s32 sourceWord3, s32 destinationPixels, s32 destinationWord5, s32 destinationWord6, s32 engineFormat, s32 sourceLayout);
+void gtl_Image_CopyFromPlatformLayout(s32 sourcePixels, s32 widthPixels, s32 heightPixels, s32 sourceWord3,
+                                      s32 destinationPixels, s32 destinationWord5, s32 destinationWord6,
+                                      s32 engineFormat, s32 sourceLayout);
 s32 gtl_ImageTGA_GetImageData(void** arg0, const TgaHeader* arg1);
 s32 gtl_ImageTGA_GetPaletteData(void** arg0, TgaHeader* arg1);
 s32 gtl_ImageTGA_GetDescription(TgaDescOut* arg0, TgaDescPalette* arg1, const TgaHeader* arg2);
@@ -263,13 +270,16 @@ void gtl_ResourceChunks_SortByOffset(ResourceChunk** lo, ResourceChunk** hi, s32
 // code does not establish the format seen by that callee; word6/engineFormat
 // are not forwarded on this path. Preserve that ABI discrepancy for a behavior
 // audit. Tile output cannot safely be inferred from this wrapper alone.
-void gtl_Image_CopyFromPlatformLayout(s32 sourcePixels, s32 widthPixels, s32 heightPixels, s32 sourceWord3, s32 destinationPixels, s32 destinationWord5, s32 destinationWord6, s32 engineFormat, s32 sourceLayout) {
+void gtl_Image_CopyFromPlatformLayout(s32 sourcePixels, s32 widthPixels, s32 heightPixels, s32 sourceWord3,
+                                      s32 destinationPixels, s32 destinationWord5, s32 destinationWord6,
+                                      s32 engineFormat, s32 sourceLayout) {
     u32 bitsPerPixel;
     u32 pixelCount;
 
     switch (sourceLayout) {
     case 7:
-        gtl_Image_TiledToLinear(sourcePixels, destinationWord5, sourceWord3, destinationPixels, widthPixels, heightPixels);
+        gtl_Image_TiledToLinear(sourcePixels, destinationWord5, sourceWord3, destinationPixels, widthPixels,
+                                heightPixels);
         return;
     case 5:
         switch (engineFormat) {
@@ -301,11 +311,12 @@ void gtl_Image_CopyFromPlatformLayout(s32 sourcePixels, s32 widthPixels, s32 hei
             break;
         }
         pixelCount = heightPixels * widthPixels;
-        memcpy((void*) destinationPixels, (const void*) sourcePixels, (u32) (pixelCount * bitsPerPixel) >> 3);
+        memcpy((void*)destinationPixels, (const void*)sourcePixels, (u32)(pixelCount * bitsPerPixel) >> 3);
         return;
     case 3:
         sourceLayout = 0;
-        gtl_Image_ConvertMortonLayout(sourcePixels, destinationWord5, sourceWord3, destinationPixels, widthPixels, heightPixels, destinationWord6, engineFormat, sourceLayout);
+        gtl_Image_ConvertMortonLayout(sourcePixels, destinationWord5, sourceWord3, destinationPixels, widthPixels,
+                                      heightPixels, destinationWord6, engineFormat, sourceLayout);
         return;
     }
 }
@@ -328,35 +339,36 @@ static inline s32 TgaPaletteFormat(const TgaHeader* header) {
 // Return borrowed pixel start after 18-byte header, ID bytes and palette bytes.
 // Header/out required; no RLE decoding or size validation; status always 1.
 // Palette length is used as stored (no endian reversal), unlike dimensions.
-s32 gtl_ImageTGA_GetImageData(void** arg0, const TgaHeader* arg1) {
-    s32 fmt = TgaPaletteFormat(arg1);
+s32 gtl_ImageTGA_GetImageData(void** imageDataOut, const TgaHeader* header) {
+    s32 fmt = TgaPaletteFormat(header);
     s32 size;
     if (fmt == -1) {
         size = 0;
     } else {
-        size = gtl_Image_GetMipChainSize(arg1->colorMapLengthRaw, 1, 1, fmt, 0);
+        size = gtl_Image_GetMipChainSize(header->colorMapLengthRaw, 1, 1, fmt, 0);
     }
-    char* base = (char*)arg1 + arg1->unk0[0];
-    *arg0 = base + size + 0x12;
+    char* base = (char*)header + header->unk0[0];
+    *imageDataOut = base + size + 0x12;
     return 1;
 }
 #pragma pop
 
 // Return borrowed palette start for color-map type1; otherwise explicitly null.
 // Header/out required, no validation/allocation; always returns 1.
-s32 gtl_ImageTGA_GetPaletteData(void** arg0, TgaHeader* arg1) {
-    if (arg1->unk0[1] != 1) {
-        *arg0 = 0;
+s32 gtl_ImageTGA_GetPaletteData(void** paletteDataOut, TgaHeader* header) {
+    if (header->unk0[1] != 1) {
+        *paletteDataOut = 0;
         return 1;
     }
-    *arg0 = (unsigned char*) arg1 + arg1->unk0[0] + 0x12;
+    *paletteDataOut = (unsigned char*)header + header->unk0[0] + 0x12;
     return 1;
 }
 
 // Describe pixels (8/16/24/32 bits) and optional palette (24/32 bits). Required
 // arg0/header; arg1 nullable. Unsupported depths write format -1 and still
 // return 1. Width/height alone are reversed from file order; palette count is not.
-s32 gtl_ImageTGA_GetDescription(TgaDescOut* imageDescription, TgaDescPalette* paletteDescription, const TgaHeader* header) {
+s32 gtl_ImageTGA_GetDescription(TgaDescOut* imageDescription, TgaDescPalette* paletteDescription,
+                                const TgaHeader* header) {
     s32 pixelFormat;
     s32 paletteEntryCount;
     u32 paletteFormat;
@@ -391,8 +403,8 @@ s32 gtl_ImageTGA_GetDescription(TgaDescOut* imageDescription, TgaDescPalette* pa
     dimensions.height = height;
     Memory_CopyAndReverseStridedBlocks(&dimensions.width, &dimensions.width, 0x20001, 2, 1);
     Memory_CopyAndReverseStridedBlocks(&dimensions.height, &dimensions.height, 0x20001, 2, 1);
-    imageDescription->widthPixels = (s32) dimensions.width;
-    imageDescription->heightPixels = (s32) dimensions.height;
+    imageDescription->widthPixels = (s32)dimensions.width;
+    imageDescription->heightPixels = (s32)dimensions.height;
     if (paletteDescription != 0) {
         u32 pbits = header->colorMapEntryBits;
         switch (pbits) {
@@ -429,11 +441,11 @@ FontDataView* gtl_FontData_InitView(FontDataView* self, FontDataObject* obj) {
     self->glyphs = 0;
     self->glyphsEnd = 0;
     obj->refCount++;
-    hdr = (FontDataHeader*) Object_GetField8(self->obj);
+    hdr = (FontDataHeader*)Object_GetField8(self->obj);
     self->hdr = hdr;
     s_glyphComparatorMode = hdr->comparatorModeFlagsA | hdr->comparatorModeFlagsB;
     glyphHeader = self->hdr;
-    glyphs = (u8*) glyphHeader + 0x28;
+    glyphs = (u8*)glyphHeader + 0x28;
     self->glyphs = glyphs;
     self->glyphsEnd = glyphs + (glyphHeader->recordCount << 5);
     return self;
@@ -443,9 +455,9 @@ FontDataView* gtl_FontData_InitView(FontDataView* self, FontDataObject* obj) {
 // zero, clear global font mode; positive flags delete holder storage as well.
 D6894Holder* FontDataView_dtor(D6894Holder* self, s32 flags) {
     if (self != 0) {
-        D6894RefCounted* d = self->obj;
-        if (--d->refCount == 0) {
-            delete d;
+        D6894RefCounted* refCounted = self->obj;
+        if (--refCounted->refCount == 0) {
+            delete refCounted;
         }
         s_glyphComparatorMode = 0;
         if (flags > 0) {
@@ -457,7 +469,7 @@ D6894Holder* FontDataView_dtor(D6894Holder* self, s32 flags) {
 
 // Copy the native 40-byte header verbatim; font/header/out required, no retain.
 void gtl_FontData_CopyHeader(const GlyphFont* font, FontHeaderData* out) {
-    const FontHeaderData* h = (const FontHeaderData*) font->header;
+    const FontHeaderData* h = (const FontHeaderData*)font->header;
     out->tag[0] = h->tag[0];
     out->tag[1] = h->tag[1];
     out->tag[2] = h->tag[2];
@@ -490,7 +502,7 @@ s32 gtl_FontData_GetRecord(const FontDataView* self, s32 index, FontDataRecord* 
     if (self->hdr->recordCount <= index) {
         return 0;
     }
-    rec = (const FontDataRecord*) self->glyphs + index;
+    rec = (const FontDataRecord*)self->glyphs + index;
     *out = *rec;
     return 1;
 }
@@ -502,47 +514,47 @@ s32 gtl_FontData_GetRecord(const FontDataView* self, s32 index, FontDataRecord* 
 // holder destruction resets it to 0. Unknown mode compares everything equal,
 // so searching with no active compatible view can return an arbitrary entry.
 // One global mode is shared by all fonts: serialize view init/destroy/search.
-s32 gtl_FontData_CompareGlyphCode(const void* a, const void* b) {
+s32 gtl_FontData_CompareGlyphCode(const void* left, const void* right) {
     switch (s_glyphComparatorMode) {
     case 0x11: {
-        u16 kb;
-        u16 ka;
-        ka = *(const u16*) a;
-        kb = *(const u16*) b;
-        if (ka < kb) {
+        u16 rightCode;
+        u16 leftCode;
+        leftCode = *(const u16*)left;
+        rightCode = *(const u16*)right;
+        if (leftCode < rightCode) {
             return -1;
         }
-        return ka > kb;
+        return leftCode > rightCode;
     }
     case 0x21: {
-        u16 kb;
-        u16 ka;
-        ka = *(const u16*) a;
-        kb = *(const u16*) b;
-        if (ka < kb) {
+        u16 rightCode;
+        u16 leftCode;
+        leftCode = *(const u16*)left;
+        rightCode = *(const u16*)right;
+        if (leftCode < rightCode) {
             return -1;
         }
-        return ka > kb;
+        return leftCode > rightCode;
     }
     case 0x12: {
-        u16 kb;
-        u16 ka;
-        ka = *(const u16*) a;
-        kb = *(const u16*) b;
-        if (ka < kb) {
+        u16 rightCode;
+        u16 leftCode;
+        leftCode = *(const u16*)left;
+        rightCode = *(const u16*)right;
+        if (leftCode < rightCode) {
             return -1;
         }
-        return ka > kb;
+        return leftCode > rightCode;
     }
     case 0x22: {
-        u16 kb;
-        u16 ka;
-        ka = *(const u16*) a;
-        kb = *(const u16*) b;
-        if (ka < kb) {
+        u16 rightCode;
+        u16 leftCode;
+        leftCode = *(const u16*)left;
+        rightCode = *(const u16*)right;
+        if (leftCode < rightCode) {
             return -1;
         }
-        return ka > kb;
+        return leftCode > rightCode;
     }
     default:
         return 0;
@@ -582,7 +594,7 @@ s32 gtl_FontData_FindGlyphRecord(const GlyphFont* font, s32 code, GlyphRecord* o
     switch (hdr->lookupMode) {
     case 0:
         maximumCode = hdr->directMapMaxCode;
-        if ((u32) maximumCode < code) {
+        if ((u32)maximumCode < code) {
             return 0;
         }
         codeOrEntryTable = font->codeTable;
@@ -590,11 +602,11 @@ s32 gtl_FontData_FindGlyphRecord(const GlyphFont* font, s32 code, GlyphRecord* o
         if (glyphIndex == 0) {
             return 0;
         }
-        metricArray = (const u8*) codeOrEntryTable + maximumCode * 2;
+        metricArray = (const u8*)codeOrEntryTable + maximumCode * 2;
         glyphByteOffset = glyphIndex * 12;
         metricArray = metricArray + 2;
-        outGlyph->atlasU = *(u16*) (metricArray + glyphByteOffset);
-        metrics = (const GlyphRecord*) (metricArray + glyphByteOffset);
+        outGlyph->atlasU = *(u16*)(metricArray + glyphByteOffset);
+        metrics = (const GlyphRecord*)(metricArray + glyphByteOffset);
         outGlyph->atlasV = metrics->atlasV;
         outGlyph->texturePageIndex = metrics->texturePageIndex;
         outGlyph->horizontalBearing = metrics->horizontalBearing;
@@ -604,8 +616,8 @@ s32 gtl_FontData_FindGlyphRecord(const GlyphFont* font, s32 code, GlyphRecord* o
     case 1: {
         GlyphEntry key = {0};
         key.code = code;
-        src = (u8*) outGlyph;
-        dst = (u8*) &key.rec;
+        src = (u8*)outGlyph;
+        dst = (u8*)&key.rec;
         f0 = src[0];
         f1 = src[1];
         dst[0] = f0;
@@ -630,7 +642,8 @@ s32 gtl_FontData_FindGlyphRecord(const GlyphFont* font, s32 code, GlyphRecord* o
         dst[10] = b0;
         b0 = src[11];
         dst[11] = b0;
-        matchingEntry = (GlyphEntry*) bsearch(&key, font->codeTable, hdr->sortedEntryCount, sizeof(GlyphEntry), gtl_FontData_CompareGlyphCode);
+        matchingEntry = (GlyphEntry*)bsearch(&key, font->codeTable, hdr->sortedEntryCount, sizeof(GlyphEntry),
+                                             gtl_FontData_CompareGlyphCode);
         if (matchingEntry != 0) {
             outGlyph->atlasU = matchingEntry->rec.atlasU;
             outGlyph->atlasV = matchingEntry->rec.atlasV;
@@ -657,14 +670,14 @@ s32 gtl_ImageDDS_IsValid(const u32* data) {
 // size!=0x7C nulls the local header then dereferences it: not a graceful failure.
 // Match 32-byte pixel-format tuple against s_ddsPixelFormatTable's 10 entries, else -1;
 // flag0x20000 enables stored mipCount, else1. No byte swapping, always status1.
-s32 gtl_ImageDDS_GetDescription(TgaDescOut* arg0, TgaDescPalette* arg1, unsigned char* arg2) {
+s32 gtl_ImageDDS_GetDescription(TgaDescOut* imageDescription, TgaDescPalette* arg1, unsigned char* data) {
     DdsHeader* hdr;
     DdsPixelFormatTable table;
     u32 i;
     DdsPixelFormatEntry* entry;
     s32 fmt;
 
-    hdr = (DdsHeader*) (arg2 + 4);
+    hdr = (DdsHeader*)(data + 4);
     if (hdr->size != 0x7C) {
         hdr = 0;
     }
@@ -679,13 +692,13 @@ s32 gtl_ImageDDS_GetDescription(TgaDescOut* arg0, TgaDescPalette* arg1, unsigned
     }
     fmt = -1;
 found:
-    arg0->format = fmt;
-    arg0->widthPixels = hdr->width;
-    arg0->heightPixels = hdr->height;
+    imageDescription->format = fmt;
+    imageDescription->widthPixels = hdr->width;
+    imageDescription->heightPixels = hdr->height;
     if (hdr->flags & 0x20000) {
-        arg0->mipLevelCount = hdr->mipCount;
+        imageDescription->mipLevelCount = hdr->mipCount;
     } else {
-        arg0->mipLevelCount = 1;
+        imageDescription->mipLevelCount = 1;
     }
     return 1;
 }
@@ -694,11 +707,11 @@ found:
 // address0x7C and still returns1; caller must validate before dereferencing.
 s32 gtl_ImageDDS_GetImageData(void** out, const u8* data) {
     const u32* header;
-    header = (const u32*) (data + 4);
+    header = (const u32*)(data + 4);
     if (*header != 0x7C) {
         header = 0;
     }
-    *out = (void*) ((const u8*) header + 0x7C);
+    *out = (void*)((const u8*)header + 0x7C);
     return 1;
 }
 
@@ -709,7 +722,7 @@ void* gtl_GenericResource_Allocate(u32 size) {
 
 // Release callback-allocated storage with matching live allocator table; no null guard.
 void gtl_GenericResource_Free(void* p) {
-    GenericResourceAllocTable* t = (GenericResourceAllocTable*) &s_genericResourceAllocatorFunctions;
+    GenericResourceAllocTable* t = (GenericResourceAllocTable*)&s_genericResourceAllocatorFunctions;
     t->free(p, t);
 }
 
@@ -782,14 +795,14 @@ void gtl_ResourceFile_RebuildChunks(void** outBuffer, void* sourceChunks, s32 ch
         goto copyAndSortDescriptors;
     }
     allocationTag.v = 0;
-    if ((u32) chunkCount <= 0x0FFFFFFFU) {
+    if ((u32)chunkCount <= 0x0FFFFFFFU) {
         goto allocateDescriptors;
     }
     {
         std::length_error err(s_lengthErrorInfo, s_lengthErrorInfo + 0x14);
     }
 allocateDescriptors:
-    descriptors.base = (ResourceChunk*) operator new(chunkCount * 16);
+    descriptors.base = (ResourceChunk*)operator new(chunkCount * 16);
     descriptors.capacity = chunkCount;
     chunkIndex = chunkCount;
     initializationCursor = descriptors.base + descriptors.count;
@@ -818,14 +831,14 @@ testInitializationRemaining:
         goto initializeNextDescriptor;
     }
 copyAndSortDescriptors:
-    memcpy(descriptors.base, sourceChunks, (u32) (chunkCount << 4));
+    memcpy(descriptors.base, sourceChunks, (u32)(chunkCount << 4));
     descriptorEnd = descriptors.base + descriptors.count;
     sortBeginSnapshot = descriptors.base;
     sortTag.v = sortTagScratch.v;
     sortEndSnapshot = descriptorEnd;
     sortHi = descriptorEnd;
     sortLo = descriptors.base;
-    gtl_ResourceChunks_SortByOffset(&sortLo, &sortHi, (s32) &sortTag);
+    gtl_ResourceChunks_SortByOffset(&sortLo, &sortHi, (s32)&sortTag);
 
     scanTag.v = 0;
     descriptorEndSnapshot = descriptors.base + descriptors.count;
@@ -861,7 +874,8 @@ beginCompaction:
 compactNextDescriptor:
     {
         s32 invalid = 0;
-        if (remainingDescriptor->elementStrideBytes == 0 || remainingDescriptor->elementCount == 0 || remainingDescriptor->payloadAddressOrKey == 0) {
+        if (remainingDescriptor->elementStrideBytes == 0 || remainingDescriptor->elementCount == 0 ||
+            remainingDescriptor->payloadAddressOrKey == 0) {
             invalid = 1;
         }
         if (invalid == 0) {
@@ -898,7 +912,7 @@ sizeOutputBuffer:
     }
     chunkIndex = 0;
     sourceDescriptor = descriptors.base;
-    while ((u32) chunkIndex < (u32) descriptors.count) {
+    while ((u32)chunkIndex < (u32)descriptors.count) {
         outputByteCount += sourceDescriptor->elementCount * sourceDescriptor->elementStrideBytes;
         alignmentRemainder = outputByteCount % 16;
         if (alignmentRemainder != 0) {
@@ -907,11 +921,11 @@ sizeOutputBuffer:
         sourceDescriptor++;
         chunkIndex++;
     }
-    gtl_IG3DXBuffer_Create(outputByteCount, outBuffer, 0);
+    Create__Q23gtl11IG3DXBufferFPvPPv(outputByteCount, outBuffer, 0);
 
-    outputHeader = (s32*) Object_GetField8(*outBuffer);
+    outputHeader = (s32*)Object_GetField8(*outBuffer);
     outputHeader[0] = 0x20;
-    outputHeader[3] = (s32) Object_GetFieldC(*outBuffer);
+    outputHeader[3] = (s32)Object_GetFieldC(*outBuffer);
     outputHeader[4] = headerMetadata[0];
     outputHeader[1] = 0x66667267;
     outputHeader[2] = headerMetadata[1];
@@ -921,8 +935,8 @@ sizeOutputBuffer:
     chunkIndex = 0;
     sourceDescriptor = descriptors.base;
     // Pass A: metadata only; payload bytes are copied after every offset is known.
-    while ((u32) chunkIndex < (u32) descriptors.count) {
-        outputChunk = gtl_ResourceFile_GetChunkByIndex(outputHeader, (void*) outputHeader[3], chunkIndex);
+    while ((u32)chunkIndex < (u32)descriptors.count) {
+        outputChunk = gtl_ResourceFile_GetChunkByIndex(outputHeader, (void*)outputHeader[3], chunkIndex);
         outputChunk->elementCount = sourceDescriptor->elementCount;
         outputChunk->elementStrideBytes = sourceDescriptor->elementStrideBytes;
         outputChunk->payloadAddressOrKey = sourceDescriptor->offset;
@@ -934,8 +948,11 @@ sizeOutputBuffer:
             }
             outputChunk->offset = outputByteCount;
         } else {
-            previousOutputChunk = gtl_ResourceFile_GetChunkByIndex(outputHeader, (void*) outputHeader[3], chunkIndex - 1);
-            outputByteCount = outputChunk->offset = previousOutputChunk->offset + (sourceDescriptor - 1)->elementCount * (sourceDescriptor - 1)->elementStrideBytes;
+            previousOutputChunk =
+                gtl_ResourceFile_GetChunkByIndex(outputHeader, (void*)outputHeader[3], chunkIndex - 1);
+            outputByteCount = outputChunk->offset =
+                previousOutputChunk->offset +
+                (sourceDescriptor - 1)->elementCount * (sourceDescriptor - 1)->elementStrideBytes;
             alignmentRemainder = outputByteCount % 16;
             if (alignmentRemainder != 0) {
                 outputByteCount += 16 - alignmentRemainder;
@@ -949,27 +966,26 @@ sizeOutputBuffer:
     chunkIndex = 0;
     sourceDescriptor = descriptors.base;
     // Pass B: output owns copies; the borrowed input buffers are never released.
-    while ((u32) chunkIndex < (u32) descriptors.count) {
-        outputChunk = gtl_ResourceFile_GetChunkByIndex(outputHeader, (void*) outputHeader[3], chunkIndex);
+    while ((u32)chunkIndex < (u32)descriptors.count) {
+        outputChunk = gtl_ResourceFile_GetChunkByIndex(outputHeader, (void*)outputHeader[3], chunkIndex);
         outputByteCount = outputChunk->offset;
-        payloadDestination = (u8*) Object_GetField8(*outBuffer) + outputByteCount;
+        payloadDestination = (u8*)Object_GetField8(*outBuffer) + outputByteCount;
         if (sourceDescriptor->payloadAddressOrKey != 0) {
-            memcpy(payloadDestination, (void*) sourceDescriptor->payloadAddressOrKey, sourceDescriptor->elementCount * sourceDescriptor->elementStrideBytes);
+            memcpy(payloadDestination, (void*)sourceDescriptor->payloadAddressOrKey,
+                   sourceDescriptor->elementCount * sourceDescriptor->elementStrideBytes);
         } else {
             outputChunk->offset = 0;
         }
         sourceDescriptor++;
         chunkIndex++;
     }
-
 }
 
 // Sort a valid half-open descriptor range by ascending unsigned offset, in place.
 // Small ranges select minima; large ones partition/recurse. Equal keys are not
 // stable. Updates global pivot sequence s_sortPivotSequence. ctx is opaque scaffolding
 // forwarded to helpers, not an owner. No allocation or payload modification.
-void gtl_ResourceChunks_SortByOffset(ResourceChunk** pBegin, ResourceChunk** pEnd, s32 ctx)
-{
+void gtl_ResourceChunks_SortByOffset(ResourceChunk** pBegin, ResourceChunk** pEnd, s32 ctx) {
     ResourceChunk* last;
     for (;;) {
         int n = *pEnd - *pBegin;
@@ -1058,7 +1074,8 @@ void gtl_ResourceChunks_SortByOffset(ResourceChunk** pBegin, ResourceChunk** pEn
             ResourceChunk* lp = *(ResourceChunk* volatile*)pEnd - 1;
             *p = *last;
             p++;
-            *last = tmp;            if (!((*pBegin)->offset < lp->offset)) {
+            *last = tmp;
+            if (!((*pBegin)->offset < lp->offset)) {
                 ResourceChunk* e = *pEnd;
                 while (p != e && (*pBegin)->offset >= p->offset) {
                     p++;

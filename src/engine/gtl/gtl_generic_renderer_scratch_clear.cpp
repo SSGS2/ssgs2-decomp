@@ -13,9 +13,15 @@
 // establish their contents; do not label them vertex/index buffers.
 struct RendererScratchCounts {
     char prefix[0x194];
-    unsigned int firstData; int firstUsed; unsigned int firstCapacity;
-    unsigned int secondData; int secondUsed; unsigned int secondCapacity;
-    unsigned int thirdData; int thirdUsed; unsigned int thirdCapacity;
+    unsigned int firstData;
+    int firstUsed;
+    unsigned int firstCapacity;
+    unsigned int secondData;
+    int secondUsed;
+    unsigned int secondCapacity;
+    unsigned int thirdData;
+    int thirdUsed;
+    unsigned int thirdCapacity;
 };
 typedef char ScratchFirstOffset[((int)&((RendererScratchCounts*)0)->firstUsed == 0x198) ? 1 : -1];
 typedef char ScratchSecondOffset[((int)&((RendererScratchCounts*)0)->secondUsed == 0x1A4) ? 1 : -1];
@@ -38,9 +44,15 @@ extern void* g_genericRendererContext;
 // Use raw signed/unsigned lvalues at these checked field offsets: accessing the
 // same typed member twice lets CW combine the loads and changes original code.
 void gtl_GenericRenderer_ClearScratchCounts(void) {
-    *(int*)((char*)g_genericRendererContext + kFirstScratchUsed) = *(int*)((char*)g_genericRendererContext + kFirstScratchUsed) - *(unsigned int*)((char*)g_genericRendererContext + kFirstScratchUsed);
-    *(int*)((char*)g_genericRendererContext + kSecondScratchUsed) = *(int*)((char*)g_genericRendererContext + kSecondScratchUsed) - *(unsigned int*)((char*)g_genericRendererContext + kSecondScratchUsed);
-    *(int*)((char*)g_genericRendererContext + kThirdScratchUsed) = *(int*)((char*)g_genericRendererContext + kThirdScratchUsed) - *(unsigned int*)((char*)g_genericRendererContext + kThirdScratchUsed);
+    *(int*)((char*)g_genericRendererContext + kFirstScratchUsed) =
+        *(int*)((char*)g_genericRendererContext + kFirstScratchUsed) -
+        *(unsigned int*)((char*)g_genericRendererContext + kFirstScratchUsed);
+    *(int*)((char*)g_genericRendererContext + kSecondScratchUsed) =
+        *(int*)((char*)g_genericRendererContext + kSecondScratchUsed) -
+        *(unsigned int*)((char*)g_genericRendererContext + kSecondScratchUsed);
+    *(int*)((char*)g_genericRendererContext + kThirdScratchUsed) =
+        *(int*)((char*)g_genericRendererContext + kThirdScratchUsed) -
+        *(unsigned int*)((char*)g_genericRendererContext + kThirdScratchUsed);
 }
 
 } // extern "C"

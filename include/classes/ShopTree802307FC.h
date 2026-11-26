@@ -6,7 +6,7 @@
 class ComShotPositionTreeView {
 public:
     unsigned int count; // 0x0
-    void* root; // 0x4
+    void* root;         // 0x4
     char pad_008[0x4];
     void* firstNode; // 0xC
 };

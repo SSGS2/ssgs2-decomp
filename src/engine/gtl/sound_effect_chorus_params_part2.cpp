@@ -1,31 +1,30 @@
-// Translation unit 0x803FB2D4-0x803FB370 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Chorus sound effect getter: CSoundEffectChorus::GetParameter reads the delay, depth or
+// rate, or all three, back from the effect.
 
 #include "sdk_protos.h"
-
-namespace gtl {
-struct CSoundEffectChorus {
-    char wrapperStorage[0x14]; // Sound-effect wrapper before the embedded chorus.
-    char chorus[1]; // Legacy field name: embedded FxChorus begins here, not its float controls.
-};
-}
+#include "classes/SoundEffectFields803FB370.h"
 
 extern "C" {
 void* memcpy(void*, const void*, size_t);
 float* gtl_nw4r_FxChorus_GetParams(void*);
 
 enum ChorusParameterQuery {
-    kChorusDelayMilliseconds, kChorusDepthRatio, kChorusRateHertz, kChorusAllParameters,
+    kChorusDelayMilliseconds,
+    kChorusDepthRatio,
+    kChorusRateHertz,
+    kChorusAllParameters,
     kChorusParameterCount = 3
 };
+
+} // extern "C"
 
 // Read a chorus parameter, or copy all three into the caller's pointed-to buffer.
 // 0/1/2 require float* output; 3 requires void** output pointing to >=12 writable
 // bytes in delay-ms/depth-ratio/rate-Hz order. All pointers are borrowed and unchecked.
 // Reads raw requested values, not SDK-clamped settings. Unknown selectors leave
 // output untouched. The third ABI argument is ignored; every selector returns 1.
-int CSoundEffectChorus_GetParameter(gtl::CSoundEffectChorus* self, int parameter, int unused, void* output) {
-    float* values = gtl_nw4r_FxChorus_GetParams(self->chorus);
+int gtl::CSoundEffectChorus::GetParameter(int parameter, int unused, void* output) {
+    float* values = gtl_nw4r_FxChorus_GetParams(effect);
     switch (parameter) {
     case kChorusDelayMilliseconds:
         *(float*)output = values[kChorusDelayMilliseconds];
@@ -42,5 +41,3 @@ int CSoundEffectChorus_GetParameter(gtl::CSoundEffectChorus* self, int parameter
     }
     return 1;
 }
-
-} // extern "C"

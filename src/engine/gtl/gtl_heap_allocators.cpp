@@ -11,31 +11,52 @@ struct HeapCreateParameters {
     void* mainNoticeArgument0;
     void* mainNoticeArgument1;
     int localNoticeKind;
-    unsigned int localSize;      // bytes requested from second provider
+    unsigned int localSize; // bytes requested from second provider
     void* localNoticeArgument0;
     void* localNoticeArgument1;
 };
 struct HeapObjectTailView {
-    char objectPrefix[0x24]; void* initialState; void* flags; char mutex[0x18];
+    char objectPrefix[0x24];
+    void* initialState;
+    void* flags;
+    char mutex[0x18];
 };
-struct NoticeObjectView { int references; void* vtable; };
-struct MutexGuardView { void* mutex; int locked; };
+struct NoticeObjectView {
+    int references;
+    void* vtable;
+};
+struct MutexGuardView {
+    void* mutex;
+    int locked;
+};
 typedef char HeapCreateParameters_size[(sizeof(HeapCreateParameters) == 0x30) ? 1 : -1];
 typedef char HeapObjectTail_mutex_offset[((int)&((HeapObjectTailView*)0)->mutex == 0x2C) ? 1 : -1];
-enum NoticeKind { MainMemoryNotice = 0, LocalMemoryNotice = 1, NoMemoryNotice = 2 };
-enum AllocatorKind { ListAllocator = 0, FixedVectorAllocator = 1 };
-enum { kSkipAllocatorLock = 1, kShiftJisSubtableCount = 9,
-       kShiftJisAutoLength = -1, kShiftJisScanLimit = 1024,
-       kAllocatorObjectBytes = 0x2C, kHeapObjectBytes = 0x44 };
+enum NoticeKind {
+    MainMemoryNotice = 0,
+    LocalMemoryNotice = 1,
+    NoMemoryNotice = 2
+};
+enum AllocatorKind {
+    ListAllocator = 0,
+    FixedVectorAllocator = 1
+};
+enum {
+    kSkipAllocatorLock = 1,
+    kShiftJisSubtableCount = 9,
+    kShiftJisAutoLength = -1,
+    kShiftJisScanLimit = 1024,
+    kAllocatorObjectBytes = 0x2C,
+    kHeapObjectBytes = 0x44
+};
 
 #include "classes/GtlNoticeOwner.h"
-#include "classes/GtlListAllocator.h"
+#include "classes/gtl_CListAllocator.h"
 #include "classes/GtlHeapObject.h"
-#include "classes/GtlFixedVectorAllocator.h"
+#include "classes/gtl_CFixedVectorAllocator.h"
 #include "classes/GtlAllocatorNode.h"
 #include "classes/GtlAllocationRange.h"
-// Translation unit 0x80421FE8-0x80422F10 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/gtl_CNoticeObjectOfMainMemory.h"
+#include "classes/gtl_CNoticeObjectOfLocalMemory.h"
 
 #include "sdk_protos.h"
 
@@ -61,8 +82,6 @@ int MEMAllocFromExpHeapEx(void*, int, int);
 void GtlDefaultAllocator_FreeLocked(void*);
 void __dl__FPv(void*);
 int gtl_HeapObject_InitializeAllocators(void*, void*);
-void* CListAllocator_Ctor(void*, void*);
-void* gtl_CFixedVectorAllocator_Ctor(void*, void*);
 void* CMemoryNoticeFactory_Dtor(void*, int);
 int CMemoryNoticeFactory_Create(void*, int*, void**);
 
@@ -73,40 +92,44 @@ struct RcBase {
     virtual void run(void*, void*);
 };
 
+} // extern "C"
+
 // Run both memory-release notices and drop reference-counted allocator ownership.
-void* gtl_IHeapObject_dtor(void* self, int deleting) {
-    if (self) {
-        ((GtlHeapObject*)self)->vtable = (void*)__vt__Q23gtl11IHeapObject;
+void* gtl::IHeapObject::Destroy(int deleting) {
+    if (this) {
+        vtbl = (void*)__vt__Q23gtl11IHeapObject;
         {
-            RcBase* p = (*(RcBase**)&((GtlHeapObject*)self)->mainNotice);
+            RcBase* p = (RcBase*)mainNotice;
             if (p) {
-                p->run(((GtlHeapObject*)self)->mainMemory, ((GtlHeapObject*)self)->mainArgument);
-                p = (*(RcBase**)&((GtlHeapObject*)self)->mainNotice);
+                p->run(mainMemory, mainArgument);
+                p = (RcBase*)mainNotice;
                 if (--p->rc == 0 && p)
                     p->rel(1);
             }
         }
         {
-            RcBase* p = (*(RcBase**)&((GtlHeapObject*)self)->localNotice);
+            RcBase* p = (RcBase*)localNotice;
             if (p) {
-                p->run(((GtlHeapObject*)self)->localMemory, ((GtlHeapObject*)self)->localArgument);
-                p = (*(RcBase**)&((GtlHeapObject*)self)->localNotice);
+                p->run(localMemory, localArgument);
+                p = (RcBase*)localNotice;
                 if (--p->rc == 0 && p)
                     p->rel(1);
             }
         }
         {
-            RcBase* p = (*(RcBase**)&((GtlHeapObject*)self)->allocator);
+            RcBase* p = (RcBase*)allocator;
             if (p) {
                 if (--p->rc == 0 && p)
                     p->rel(1);
             }
         }
         if (deleting > 0)
-            GtlDefaultAllocator_FreeLocked(self);
+            GtlDefaultAllocator_FreeLocked(this);
     }
-    return self;
+    return this;
 }
+
+extern "C" {
 
 struct SubTable {
     unsigned int table;
@@ -124,19 +147,44 @@ struct SubTableList {
 // useTable == 0 only counts bytes and never touches result. Otherwise result
 // must have space for every decoded code (including NUL in auto-length mode).
 // A double-byte lead requires an accessible following byte even at the limit.
-int Text_ConvertShiftJisUsingCodeTable(void*, void*, unsigned char* text, int byteLimit, unsigned short* result, int useTable) {
+int Text_ConvertShiftJisUsingCodeTable(void*, void*, unsigned char* text, int byteLimit, unsigned short* result,
+                                       int useTable) {
     int inputByteCount = byteLimit;
     if (inputByteCount == kShiftJisAutoLength) {
         unsigned char* inputCursor = text;
         for (int i = 0; i < kShiftJisScanLimit; i += 8, inputCursor += 8) {
-            if (inputCursor[0] == 0) { inputByteCount = i + 1; break; }
-            if (inputCursor[1] == 0) { inputByteCount = i + 2; break; }
-            if (inputCursor[2] == 0) { inputByteCount = i + 3; break; }
-            if (inputCursor[3] == 0) { inputByteCount = i + 4; break; }
-            if (inputCursor[4] == 0) { inputByteCount = i + 5; break; }
-            if (inputCursor[5] == 0) { inputByteCount = i + 6; break; }
-            if (inputCursor[6] == 0) { inputByteCount = i + 7; break; }
-            if (inputCursor[7] == 0) { inputByteCount = i + 8; break; }
+            if (inputCursor[0] == 0) {
+                inputByteCount = i + 1;
+                break;
+            }
+            if (inputCursor[1] == 0) {
+                inputByteCount = i + 2;
+                break;
+            }
+            if (inputCursor[2] == 0) {
+                inputByteCount = i + 3;
+                break;
+            }
+            if (inputCursor[3] == 0) {
+                inputByteCount = i + 4;
+                break;
+            }
+            if (inputCursor[4] == 0) {
+                inputByteCount = i + 5;
+                break;
+            }
+            if (inputCursor[5] == 0) {
+                inputByteCount = i + 6;
+                break;
+            }
+            if (inputCursor[6] == 0) {
+                inputByteCount = i + 7;
+                break;
+            }
+            if (inputCursor[7] == 0) {
+                inputByteCount = i + 8;
+                break;
+            }
         }
     }
     // Phase 1: counting mode consumes one or two input bytes per character.
@@ -151,9 +199,14 @@ int Text_ConvertShiftJisUsingCodeTable(void*, void*, unsigned char* text, int by
                 isDoubleByte = 0;
             else
                 isDoubleByte = 1;
-            if (isDoubleByte) { bytes += 2; ++bytesConsumed; ++inputCursor; }
-            else ++bytes;
-            ++bytesConsumed; ++inputCursor;
+            if (isDoubleByte) {
+                bytes += 2;
+                ++bytesConsumed;
+                ++inputCursor;
+            } else
+                ++bytes;
+            ++bytesConsumed;
+            ++inputCursor;
         }
         return bytes;
     }
@@ -183,34 +236,40 @@ int Text_ConvertShiftJisUsingCodeTable(void*, void*, unsigned char* text, int by
         SubTable* subtable = codeTables.entries;
         for (; i < kShiftJisSubtableCount; ++subtable, ++i) {
             if (subtable->lo <= characterCode && characterCode <= subtable->hi) {
-                characterCode = ((unsigned short*)codeTables.entries[i].table)[characterCode - codeTables.entries[i].lo];
+                characterCode =
+                    ((unsigned short*)codeTables.entries[i].table)[characterCode - codeTables.entries[i].lo];
                 break;
             }
         }
         *result++ = characterCode;
-        ++outputCharCount; ++inputIndex;
+        ++outputCharCount;
+        ++inputIndex;
     }
     return outputCharCount;
 }
 
+} // extern "C"
+
 // Return the fixed-vector capacity through the pointer-sized allocator ABI.
-void* gtl_CFixedVectorAllocator_GetCapacityBytes(void* self) { return (*(void**)&((GtlFixedVectorAllocator*)self)->capacity); }
+void* gtl::CFixedVectorAllocator::GetCapacityBytes() {
+    return (*(void**)&this->capacity);
+}
 
 // Return the list allocator value stored at byte 0x24.
-void* gtl_CListAllocator_vfunc_4(void* self) { return ((GtlListAllocator*)self)->arenaSize; }
+void* gtl::CListAllocator::GetArenaSize() {
+    return (void*)this->arenaSize;
+}
 
 // Free a non-null block from the MEM1 expandable heap.
-int gtl_CNoticeObjectOfMainMemory_FreeBlock(void* self, void* arg) {
+int gtl::CNoticeObjectOfMainMemory::FreeBlock(void* arg) {
     if (!arg)
         return 0;
-    // Original 0x80422A70-0x80422A8C: r4 (arg) is left untouched into bl MEMFreeToExpHeap, so arg is the block freed;
-    // ours dropped it, freeing whatever r4 held.
     MEMFreeToExpHeap(g_mem1ExpHeap, arg);
     return 1;
 }
 
 // Free a non-null block from the MEM2 expandable heap.
-int gtl_CNoticeObjectOfLocalMemory_FreeMem2(void* self, void* arg) {
+int gtl::CNoticeObjectOfLocalMemory::FreeMem2(void* arg) {
     if (!arg)
         return 0;
     // Original 0x80422B04-0x80422B20: r4 (arg) is left untouched into bl MEMFreeToExpHeap, so arg is the block freed;
@@ -218,6 +277,8 @@ int gtl_CNoticeObjectOfLocalMemory_FreeMem2(void* self, void* arg) {
     MEMFreeToExpHeap(g_mem2ExpHeap, arg);
     return 1;
 }
+
+extern "C" {
 
 // Volatile cursor copies are compiler spills; p borrows the shared accumulator,
 // s is the element-to-byte shift, and z is a zero comparison seed. No ownership.
@@ -227,13 +288,15 @@ struct CmpCursor {
     unsigned int z;
 };
 
-// Find the largest free byte span: secondList is the free-list head at +0x20.
+} // extern "C"
+
+// Find the largest free byte span: freeHead is the free-list head at +0x20.
 // Each node stores elementCount; shifting converts it to bytes.
-int gtl_CFixedVectorAllocator_GetLargestFreeByteSpan(void* self) {
-    unsigned int shift = ((GtlFixedVectorAllocator*)self)->elementShift;
+int gtl::CFixedVectorAllocator::GetLargestFreeByteSpan() {
+    unsigned int shift = this->blockShift;
     volatile unsigned int largestByteSpan;
     volatile unsigned int* p = &largestByteSpan;
-    unsigned char* node = (*(unsigned char**)&((GtlFixedVectorAllocator*)self)->secondList);
+    unsigned char* node = (*(unsigned char**)&this->freeHead);
     volatile unsigned int candidateByteSpan;
     volatile CmpCursor comparisonCursorSpill;
     volatile CmpCursor maximumCursorSpill;
@@ -254,6 +317,8 @@ int gtl_CFixedVectorAllocator_GetLargestFreeByteSpan(void* self) {
     return largestByteSpan;
 }
 
+extern "C" {
+
 struct VBase {
     int rc;
     virtual int s0() = 0;
@@ -264,11 +329,15 @@ struct VBase {
     virtual int s5() = 0;
 };
 
-// Return allocated bytes = capacity - free bytes (virtual s5 sums secondList).
-int gtl_CFixedVectorAllocator_GetAllocatedByteCount(void* self) {
-    VBase* o = (VBase*)self;
-    return ((GtlFixedVectorAllocator*)self)->capacity - o->s5();
+} // extern "C"
+
+// Return allocated bytes = capacity - free bytes (virtual s5 sums the free list).
+int gtl::CFixedVectorAllocator::GetAllocatedByteCount() {
+    VBase* o = (VBase*)this;
+    return this->capacity - o->s5();
 }
+
+extern "C" {
 
 // Round an integer up to the next multiple, retaining values already aligned.
 // Caller supplies m != 0; intended for nonnegative sizes and positive multiples.
@@ -332,25 +401,39 @@ void Mtx44_TransposeToMtx34(void* dst, void* src) {
 
 struct SubObjA {
     // Allocate the fixed-size list-allocator object through the default heap.
-    static void* operator new(size_t size) { return GtlDefaultAllocator_AllocateLocked((void*)kAllocatorObjectBytes); }
+    static void* operator new(size_t size) {
+        return GtlDefaultAllocator_AllocateLocked((void*)kAllocatorObjectBytes);
+    }
     // Return allocator-object storage to the default heap under its mutex.
-    static void operator delete(void* p) { GtlDefaultAllocator_FreeLocked(p); }
+    static void operator delete(void* p) {
+        GtlDefaultAllocator_FreeLocked(p);
+    }
     // Construct a list allocator from the seven-word buffer/configuration record.
-    SubObjA(void** args) { CListAllocator_Ctor(this, args); }
+    SubObjA(void** args) {
+        ((gtl::CListAllocator*)this)->Ctor(args);
+    }
 };
 
 struct SubObjB {
     // Allocate the fixed-size vector-allocator object through the default heap.
-    static void* operator new(size_t size) { return GtlDefaultAllocator_AllocateLocked((void*)kAllocatorObjectBytes); }
+    static void* operator new(size_t size) {
+        return GtlDefaultAllocator_AllocateLocked((void*)kAllocatorObjectBytes);
+    }
     // Return allocator-object storage to the default heap under its mutex.
-    static void operator delete(void* p) { GtlDefaultAllocator_FreeLocked(p); }
+    static void operator delete(void* p) {
+        GtlDefaultAllocator_FreeLocked(p);
+    }
     // Construct a fixed-vector allocator from the seven-word configuration record.
-    SubObjB(void** args) { gtl_CFixedVectorAllocator_Ctor(this, args); }
+    SubObjB(void** args) {
+        ((gtl::CFixedVectorAllocator*)this)->Ctor(args);
+    }
 };
 
 extern "C" {
 
-struct Arr3 { void* v[3]; };
+struct Arr3 {
+    void* v[3];
+};
 
 struct ChildBase {
     int rc;
@@ -364,7 +447,7 @@ struct ChildBase {
 // state is left installed for destruction; this function does not unwind it.
 int gtl_HeapObject_InitializeAllocators(void* selfv, void* srcv) {
     // Phase 1: publish sizes/flags and create both memory-notice providers.
-    GtlHeapObject* self = (GtlHeapObject*)selfv;
+    gtl::IHeapObject* self = (gtl::IHeapObject*)selfv;
     HeapCreateParameters* src = (HeapCreateParameters*)srcv;
     void* mainSize = (void*)src->mainSize;
     void* lockingFlags = (void*)src->flags;
@@ -380,23 +463,30 @@ int gtl_HeapObject_InitializeAllocators(void* selfv, void* srcv) {
 
     if (!noticeFactory) {
         if (!s_memoryNoticeFactoryInitialized) {
-            __register_global_object(&s_memoryNoticeFactory, (void*)CMemoryNoticeFactory_Dtor, s_memoryNoticeFactoryDtorRegistration);
+            __register_global_object(&s_memoryNoticeFactory, (void*)CMemoryNoticeFactory_Dtor,
+                                     s_memoryNoticeFactoryDtorRegistration);
             s_memoryNoticeFactoryInitialized = 1;
         }
         g_memoryNoticeFactory = (unsigned int)&s_memoryNoticeFactory;
     }
     void* manager = (void*)g_memoryNoticeFactory;
-    if (!CMemoryNoticeFactory_Create(manager, (int*)&src->mainNoticeKind, (void**)&self->mainNotice)) return 0;
-    if (!CMemoryNoticeFactory_Create(manager, (int*)&src->localNoticeKind, (void**)&self->localNotice)) return 0;
+    if (!CMemoryNoticeFactory_Create(manager, (int*)&src->mainNoticeKind, (void**)&self->mainNotice))
+        return 0;
+    if (!CMemoryNoticeFactory_Create(manager, (int*)&src->localNoticeKind, (void**)&self->localNotice))
+        return 0;
 
     // Phase 2: ask each present provider for its buffer. NoMemoryNotice skips allocation.
     ChildBase* child = (ChildBase*)self->mainNotice;
     if (child) {
-        if (!child->op(&self->mainMemory, (void*)src->mainSize, (void*)src->elementShift, src->mainNoticeArgument0, src->mainNoticeArgument1)) return 0;
+        if (!child->op(&self->mainMemory, (void*)src->mainSize, (void*)src->elementShift, src->mainNoticeArgument0,
+                       src->mainNoticeArgument1))
+            return 0;
     }
     child = (ChildBase*)self->localNotice;
     if (child) {
-        if (!child->op(&self->localMemory, (void*)src->localSize, (void*)src->elementShift, src->localNoticeArgument0, src->localNoticeArgument1)) return 0;
+        if (!child->op(&self->localMemory, (void*)src->localSize, (void*)src->elementShift, src->localNoticeArgument0,
+                       src->localNoticeArgument1))
+            return 0;
     }
 
     // Phase 3: flatten the two buffer/size pairs into the allocator constructor ABI.
@@ -428,34 +518,45 @@ int gtl_HeapObject_InitializeAllocators(void* selfv, void* srcv) {
         }
         ok = self->allocator != 0;
     }
-    if (!ok) return 0;
+    if (!ok)
+        return 0;
     // The allocator is now installed; only a successful path initializes this mutex.
     OSInitMutex((OSMutex*)&((HeapObjectTailView*)self)->mutex);
     return 1;
 }
 
 #pragma auto_inline off
-struct W2B { char pad[4]; };
-class W2 : public W2B { public: 
-virtual void v08(); virtual void v0C(); virtual void v10(); virtual void v14(void*);
+struct W2B {
+    char pad[4];
+};
+class W2 : public W2B {
+public:
+    virtual void v08();
+    virtual void v0C();
+    virtual void v10();
+    virtual void v14(void*);
 };
 // Free a block through the default allocator while holding its mutex.
 void GtlDefaultAllocator_FreeLocked(void* self) {
     if (g_defaultListAllocator) {
         OSLockMutex((OSMutex*)s_mainMemoryAllocatorState);
         void* obj = (void*)g_defaultListAllocator;
-((W2*)obj)->v14(self);
+        ((W2*)obj)->v14(self);
         OSUnlockMutex((OSMutex*)s_mainMemoryAllocatorState);
     }
 }
 #pragma auto_inline on
 
+} // extern "C"
+
 // Optionally delete a fixed-vector allocator through the default allocator.
-void* gtl_CFixedVectorAllocator_dtor(void* p, int deletingFlag) {
-    if (p && deletingFlag > 0)
-        GtlDefaultAllocator_FreeLocked(p);
-    return p;
+void* gtl::CFixedVectorAllocator::Destroy(int deletingFlag) {
+    if (this && deletingFlag > 0)
+        GtlDefaultAllocator_FreeLocked(this);
+    return this;
 }
+
+extern "C" {
 
 // Optionally delete the memory-notice factory through the default allocator.
 void* CMemoryNoticeFactory_Dtor(void* p, int deletingFlag) {
@@ -464,26 +565,32 @@ void* CMemoryNoticeFactory_Dtor(void* p, int deletingFlag) {
     return p;
 }
 
+} // extern "C"
+
 // Optionally delete a MEM1 memory notice through the default allocator.
-void* gtl_CNoticeObjectOfMainMemory_dtor(void* p, int deletingFlag) {
-    if (p && deletingFlag > 0)
-        GtlDefaultAllocator_FreeLocked(p);
-    return p;
+void* gtl::CNoticeObjectOfMainMemory::Destroy(int deletingFlag) {
+    if (this && deletingFlag > 0)
+        GtlDefaultAllocator_FreeLocked(this);
+    return this;
 }
+
+extern "C" {
 
 struct AccCursor {
     volatile unsigned int* p;
     unsigned int s;
 };
 
-// Sum free bytes: each secondList node contributes elementCount << elementShift.
-// Allocation/free in gtl_memory_allocators_and_heaps.cpp establish firstList as allocated spans and
-// secondList as free spans. Duplicate volatile cursor records borrow acc.
-unsigned int gtl_CFixedVectorAllocator_GetFreeByteCount(void* self) {
+} // extern "C"
+
+// Sum free bytes: each freeHead node contributes elementCount << blockShift.
+// Allocation/free in gtl_memory_allocators_and_heaps.cpp establish allocatedHead as allocated spans and
+// freeHead as free spans. Duplicate volatile cursor records borrow acc.
+unsigned int gtl::CFixedVectorAllocator::GetFreeByteCount() {
     volatile unsigned int freeByteTotal;
-    unsigned int shift = ((GtlFixedVectorAllocator*)self)->elementShift;
+    unsigned int shift = this->blockShift;
     volatile unsigned int* p = &freeByteTotal;
-    void* node = ((GtlFixedVectorAllocator*)self)->secondList;
+    void* node = (void*)this->freeHead;
     volatile AccCursor iterationCursorSpill;
     volatile AccCursor sumCursorSpill;
     sumCursorSpill.p = p;
@@ -499,7 +606,7 @@ unsigned int gtl_CFixedVectorAllocator_GetFreeByteCount(void* self) {
 }
 
 // Allocate a MEM1 block with alignment specified as a power-of-two shift.
-int gtl_CNoticeObjectOfMainMemory_AllocMem1Block(void* self, void* blockOut, int byteCount, int alignmentShift) {
+int gtl::CNoticeObjectOfMainMemory::AllocMem1Block(void* blockOut, int byteCount, int alignmentShift) {
     if (!blockOut)
         return 0;
     int allocatedBlock = MEMAllocFromExpHeapEx(g_mem1ExpHeap, byteCount, 1 << alignmentShift);
@@ -508,20 +615,22 @@ int gtl_CNoticeObjectOfMainMemory_AllocMem1Block(void* self, void* blockOut, int
 }
 
 // Optionally delete a MEM2 memory notice through the default allocator.
-void* gtl_CNoticeObjectOfLocalMemory_dtor(void* p, int deletingFlag) {
-    if (p && deletingFlag > 0)
-        GtlDefaultAllocator_FreeLocked(p);
-    return p;
+void* gtl::CNoticeObjectOfLocalMemory::Destroy(int deletingFlag) {
+    if (this && deletingFlag > 0)
+        GtlDefaultAllocator_FreeLocked(this);
+    return this;
 }
 
 // Allocate a MEM2 block with alignment specified as a power-of-two shift.
-int gtl_CNoticeObjectOfLocalMemory_AllocMem2Block(void* self, void* blockOut, int byteCount, int alignmentShift) {
+int gtl::CNoticeObjectOfLocalMemory::AllocMem2Block(void* blockOut, int byteCount, int alignmentShift) {
     if (!blockOut)
         return 0;
     int allocatedBlock = MEMAllocFromExpHeapEx(g_mem2ExpHeap, byteCount, 1 << alignmentShift);
     *(int*)blockOut = allocatedBlock;
     return allocatedBlock != 0;
 }
+
+extern "C" {
 
 // Unlock the mutex only when its guard owns the lock, then optionally delete the guard.
 void* MutexGuard_dtor(void* self, int flag) {
@@ -540,7 +649,9 @@ struct NoticeOwnerMutexGuard {
     void* mutex;
     int locked;
     // Unlock on scope exit only if this guard acquired the borrowed mutex.
-    ~NoticeOwnerMutexGuard() { MutexGuard_dtor(this, 0); }
+    ~NoticeOwnerMutexGuard() {
+        MutexGuard_dtor(this, 0);
+    }
 };
 
 struct VSlot3 {
@@ -549,36 +660,35 @@ struct VSlot3 {
     virtual int call3(void*, int);
 };
 
-// Allocate byteCountWord bytes; return the allocator address word or zero.
-// byteCountWord is a numeric size, not borrowed storage. The caller owns the block.
+// Allocate byteCount bytes; return the allocator address word or zero.
 // (owner flags | lockOptions) bit 0 skips locking; other option bits are ignored.
 // call3 is allocation(size, zero), as at W3::v0C; lockOptions is not forwarded.
-int GtlNoticeOwner_AllocateWithOptionalLock(void* self, void* byteCountWord, int lockOptions) {
-    if (!((GtlNoticeOwner*)self)->object)
+int GtlNoticeOwner::AllocateWithOptionalLock(unsigned int byteCount, int lockOptions) {
+    if (!object)
         return 0;
-    int flags = ((GtlNoticeOwner*)self)->flags;
+    int ownerFlags = this->flags;
     NoticeOwnerMutexGuard guard;
-    guard.mutex = ((GtlNoticeOwner*)self)->mutex; // GtlNoticeOwner_AllocateWithOptionalLock: +0x2C
-    guard.locked = !((flags | lockOptions) & kSkipAllocatorLock);
+    guard.mutex = mutex;
+    guard.locked = !((ownerFlags | lockOptions) & kSkipAllocatorLock);
     if (guard.locked)
         OSLockMutex((OSMutex*)guard.mutex);
-    VSlot3* object = (*(VSlot3**)&((GtlNoticeOwner*)self)->object);
-    int result = object->call3(byteCountWord, 0);
+    VSlot3* owned = (VSlot3*)object;
+    int result = owned->call3((void*)byteCount, 0);
     return result;
 }
 
 // Invoke the owned release callback with optional mutex protection.
-int GtlNoticeOwner_InvokeFreeLocked(void* self, void* arg, int condition) {
-    if (!((GtlNoticeOwner*)self)->object)
+int GtlNoticeOwner::InvokeFreeLocked(void* arg, int condition) {
+    if (!object)
         return 0;
-    int flags = ((GtlNoticeOwner*)self)->flags;
-    NoticeOwnerMutexGuard guard = { ((GtlNoticeOwner*)self)->mutex, (int)!((flags | condition) & kSkipAllocatorLock) }; // GtlNoticeOwner_InvokeFreeLocked: +0x2C
+    int ownerFlags = flags;
+    NoticeOwnerMutexGuard guard = {mutex, (int)!((ownerFlags | condition) & kSkipAllocatorLock)};
     if (guard.locked)
         OSLockMutex((OSMutex*)guard.mutex);
     typedef int (*Callback)(void*, void*);
-    void* object = ((GtlNoticeOwner*)self)->object;
-    Callback fn = (Callback)((*(void***)&((NoticeObjectView*)object)->vtable))[5];
-    int result = fn(object, arg);
+    void* owned = object;
+    Callback fn = (Callback)((*(void***)&((NoticeObjectView*)owned)->vtable))[5];
+    int result = fn(owned, arg);
     return result;
 }
 
@@ -619,18 +729,20 @@ int CMemoryNoticeFactory_Create(void* self, int* mode, void** out) {
     return 1;
 }
 
+} // extern "C"
+
 // Count nodes in the selected allocator list, rejecting invalid list selectors.
-int gtl_CFixedVectorAllocator_CountListNodes(void* self, int mode) {
+int gtl::CFixedVectorAllocator::CountListNodes(int mode) {
     void* node;
     switch (mode) {
-        case 0:
-            node = ((GtlFixedVectorAllocator*)self)->firstList;
-            break;
-        case 1:
-            node = ((GtlFixedVectorAllocator*)self)->secondList;
-            break;
-        default:
-            return 0;
+    case 0:
+        node = this->allocatedHead;
+        break;
+    case 1:
+        node = (void*)this->freeHead;
+        break;
+    default:
+        return 0;
     }
     volatile int count = 0;
     volatile int* p = &count;
@@ -641,10 +753,16 @@ int gtl_CFixedVectorAllocator_CountListNodes(void* self, int mode) {
     return *p;
 }
 
+extern "C" {
+
 #pragma auto_inline off
-struct W3B { char pad[4]; };
-class W3 : public W3B { public: 
-virtual void v08(); virtual void* v0C(void*,int);
+struct W3B {
+    char pad[4];
+};
+class W3 : public W3B {
+public:
+    virtual void v08();
+    virtual void* v0C(void*, int);
 };
 // Allocate from the default allocator under its mutex, returning null if it is unavailable.
 void* GtlDefaultAllocator_AllocateLocked(void* arg) {
@@ -660,59 +778,62 @@ void* GtlDefaultAllocator_AllocateLocked(void* arg) {
 }
 #pragma auto_inline on
 
+} // extern "C"
+
 // Iterate allocator ranges, returning each base-relative offset and byte size.
 // rangeOut's first word is the iteration token: zero starts, nonzero resumes the
-// allocator's shared cursor. Selector zero uses firstList; every other value uses
-// secondList. Returns 1 for a range, 0 at end/invalid output; do not interleave scans.
-int gtl_CFixedVectorAllocator_GetNextRange(void* self, void* rangeOut, int listSelector) {
+// allocator's shared cursor. Selector zero uses allocatedHead; every other value uses
+// freeHead. Returns 1 for a range, 0 at end/invalid output; do not interleave scans.
+int gtl::CFixedVectorAllocator::GetNextRange(void* rangeOut, int listSelector) {
     if (!rangeOut)
         return 0;
     void* node;
     if (listSelector == 0)
-        node = ((GtlFixedVectorAllocator*)self)->firstList;
+        node = this->allocatedHead;
     else
-        node = ((GtlFixedVectorAllocator*)self)->secondList;
+        node = (void*)this->freeHead;
     if (!node)
         return 0;
     do {
         if (*(int*)rangeOut == 0)
             break;
-        node = ((GtlFixedVectorAllocator*)self)->cursor;
+        node = this->cursor;
         if (!node)
             return 0;
     } while (0);
     *(int*)rangeOut = *(int*)node;
-    int baseAddress = *(int*)(((GtlFixedVectorAllocator*)self)->base);
+    int baseAddress = *(int*)(this->base);
     ((GtlAllocationRange*)rangeOut)->offsetFromBase = *(int*)node - baseAddress;
-    ((GtlAllocationRange*)rangeOut)->byteSize = (*(int*)&((GtlAllocatorNode*)node)->elementCount) << (*(int*)&((GtlFixedVectorAllocator*)self)->elementShift);
-    ((GtlFixedVectorAllocator*)self)->cursor = ((GtlAllocatorNode*)node)->next;
+    ((GtlAllocationRange*)rangeOut)->byteSize = (*(int*)&((GtlAllocatorNode*)node)->elementCount)
+                                                << (*(int*)&this->blockShift);
+    this->cursor = ((GtlAllocatorNode*)node)->next;
     return 1;
 }
+
+extern "C" {} // extern "C"
 
 // Allocate and initialize a heap object, preserving the original initializer-result handling.
 // out must be writable. Returns 0 only on allocation failure; initializer failure
 // is ignored, so return 1 does not guarantee a fully initialized allocator.
-int gtl_IHeapObject_Create(void* self, void* out) {
-    void* allocated = GtlDefaultAllocator_AllocateLocked((void*)kHeapObjectBytes);
+int gtl::IHeapObject::Create(void* descriptor, void* out) {
+    gtl::IHeapObject* allocated = (gtl::IHeapObject*)GtlDefaultAllocator_AllocateLocked((void*)kHeapObjectBytes);
     if (allocated) {
-        ((GtlHeapObject*)allocated)->references = 1;
-        ((GtlHeapObject*)allocated)->vtable = (void*)__vt__Q23gtl11IHeapObject;
-        (*(int*)&((GtlHeapObject*)allocated)->allocator) = 0;
-        (*(int*)&((GtlHeapObject*)allocated)->mainNotice) = 0;
-        (*(int*)&((GtlHeapObject*)allocated)->localNotice) = 0;
-        (*(int*)&((GtlHeapObject*)allocated)->mainMemory) = 0;
-        (*(int*)&((GtlHeapObject*)allocated)->mainArgument) = 0;
-        (*(int*)&((GtlHeapObject*)allocated)->localMemory) = 0;
-        (*(int*)&((GtlHeapObject*)allocated)->localArgument) = 0;
-        ((GtlHeapObject*)allocated)->unk_24 = 0; // Reserved heap-object state, initialized independently of flags.
-        ((GtlHeapObject*)allocated)->flags = 0;
+        allocated->references = 1;
+        allocated->vtbl = (void*)__vt__Q23gtl11IHeapObject;
+        *(int*)&allocated->allocator = 0;
+        *(int*)&allocated->mainNotice = 0;
+        *(int*)&allocated->localNotice = 0;
+        *(int*)&allocated->mainMemory = 0;
+        *(int*)&allocated->mainArgument = 0;
+        *(int*)&allocated->localMemory = 0;
+        *(int*)&allocated->localArgument = 0;
+        allocated->unk_24 = 0; // Reserved heap-object state, initialized independently of flags.
+        allocated->flags = 0;
     }
     *(void**)out = allocated;
     if (!allocated) {
         return 0;
     }
-    gtl_HeapObject_InitializeAllocators(allocated, self);
+    gtl_HeapObject_InitializeAllocators(allocated, descriptor);
     return 1;
 }
-
-} // extern "C"

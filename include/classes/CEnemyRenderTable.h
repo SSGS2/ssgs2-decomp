@@ -5,8 +5,8 @@
 
 class CEnemyRenderTable {
 public:
-    char recordStorage[0x290]; // 0x0: four 0xA4-byte records; CCharacterPreviewTable_GetRecordByIndex
-    int count; // 0x290: CCharacterPreviewTable_SetAnimationName and update/destructor bound record iteration
+    char recordStorage[0x290]; // 0x0: four 0xA4-byte records; CCharacterPreviewTable::GetRecordByIndex
+    int count; // 0x290: CCharacterPreviewTable::SetAnimationName and update/destructor bound record iteration
 };
 
 #define OFF(f, o) typedef char CEnemyRenderTable_off_##f[((int)&((CEnemyRenderTable*)0)->f == (o)) ? 1 : -1]

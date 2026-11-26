@@ -5,7 +5,7 @@
 
 struct TokenInputState {
     void* vtable;
-    int cursor; // 0x04: cTokenV_SetInputBuffer (0x800D1E78) resets; cToken_ReadUntilDelimiter advances Buffer::used
+    int cursor;     // 0x04: cTokenV_SetInputBuffer (0x800D1E78) resets; cToken_ReadUntilDelimiter advances Buffer::used
     int inputCount; // 0x08: same setter rejects count < 1, then stores count
     char pad_0C[8];
     void* inputBuffer; // 0x14: setter stores value; cTokenV/cTokenS_vfunc_1 return it

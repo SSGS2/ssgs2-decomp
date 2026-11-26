@@ -1,12 +1,19 @@
+// Party mode helpers: the party main and party task objects, the character-count menu they
+// create, the course-slot table, and readers for PHF files (signature check and directory lookup).
+// The slot table holds five fixed course slots plus an extra-slot range.
+
 #include <decomp/static_init.h>
 #include <decomp/cw_string_guard.h>
 #include "classes/CSharedDoc.h"
 #include "classes/CEnemyRenderTable.h"
 #include "game/vector.h"
-// Translation unit 0x8008B524-0x8008C090 (23 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
+#include "classes/CPartyMain.h"
+#include "classes/CVSMain.h"
+#include "classes/CPartyTask.h"
+#include "classes/CTask.h"
+#include "classes/CCharaNum.h"
 // File header and directory entry views retain PHF's original byte layout.
 struct PhfHeader {
     char signature[8];
@@ -18,17 +25,14 @@ struct PhfEntry {
     unsigned int dataOffset;
     unsigned int dataSize;
 };
-struct CourseSlotEntry { unsigned char data[0x50]; };
+struct CourseSlotEntry {
+    unsigned char data[0x50];
+};
 struct CourseSlotTable {
     unsigned short selectedIndex;
     unsigned short padding02;
     void* storage;
     CourseSlotEntry* entries;
-};
-struct PartyMainState {
-    char padding00[0x1C];
-    int phase;
-    void* characterCountMenu;
 };
 struct PartyMainMessage {
     unsigned int sender;
@@ -36,49 +40,53 @@ struct PartyMainMessage {
     int partyMode;
 };
 enum PartyConstants {
-    kPartyGameMode = 7, kStartPartyMessage = 4,
-    kCourseSlotCount = 5, kExtraCourseSlotBase = 3,
+    kPartyGameMode = 7,
+    kStartPartyMessage = 4,
+    kCourseSlotCount = 5,
+    kExtraCourseSlotBase = 3,
     kDefaultActorSkipMask = 0x3F
 };
 // Layout of the shared render context (s_renderContext): an array of 4 player records of
 // kRenderPlayerRecordSize bytes, then an int-vector member, then an array of 4 party item records.
 enum RenderContextLayout {
     kRenderPlayerRecordSize = 0x828,
-    kRenderPlayerRecordsEnd = 0x20A0,   // also the offset of the int-vector member
+    kRenderPlayerRecordsEnd = 0x20A0, // also the offset of the int-vector member
     kRenderItemRecordsOffset = 0x20D0,
-    kRenderItemRecordSize = 0xA4, kRenderItemRecordCount = 4,
-    kCharaNumMenuSize = 0x3C            // sizeof(CCharaNum)
+    kRenderItemRecordSize = 0xA4,
+    kRenderItemRecordCount = 4,
+    kCharaNumMenuSize = 0x3C // sizeof(CCharaNum)
 };
 // Offsets into partyItemSelectStrings of the std:: exception messages and their type names used by
 // WString_ReplaceRange's throw blocks.
 enum PartyStringOffset {
-    kStringRangeError = 0x106, kStringRangeErrorType = 0x121,
-    kPartyMainClassName = 1, kPartyMainActorName = 12,
-    kStringLengthError = 0x158, kStringLengthErrorType = 0x173
+    kStringRangeError = 0x106,
+    kStringRangeErrorType = 0x121,
+    kPartyMainClassName = 1,
+    kPartyMainActorName = 12,
+    kStringLengthError = 0x158,
+    kStringLengthErrorType = 0x173
 };
 
 extern "C" {
 
 extern void* g_sharedDoc;
 extern signed char s_renderContextInitialized;
-extern void CVSMain_HandleMsg(void*, void*);
 extern void SaveData_InitPlayerRecord(void*);
 extern void __construct_array(void*, void*, void*, int, int);
 extern void RenderContext_ResetPlayerRecords(void*);
 extern void __register_global_object(void*, void*, void*);
 extern void* __nw__FUl(unsigned int);
-extern void CCharaNum_Ctor(void*);
 extern void strcpy(char*, const char*);
 extern void* memmove(void*, const void*, unsigned int);
 extern unsigned short kWideStringInPlaceTerminator;
-
 
 extern void PartyItemRecord_InitDefaults(void*);
 extern void PlayerRenderRecord_dtor(void*);
 extern void __dt__13RenderContextFv(void*);
 extern void CharacterPreviewTable_dtor(void*);
 extern char s_renderContext[];
-extern char s_renderContextDtorRegistration_8008B524[]; // Destructor registration storage for the shared render context.
+extern char
+    s_renderContextDtorRegistration_8008B524[]; // Destructor registration storage for the shared render context.
 
 extern void* s_partyTaskTypeDescriptor;
 extern void* s_partyMainTypeDescriptor;
@@ -95,7 +103,8 @@ extern void wmemcpy(void*, const void*, unsigned int);
 extern void wmemmove(void*, const void*, unsigned int);
 extern void strcpy(char*, const char*);
 struct WStr;
-extern WStr* WString_ReplaceRange(WStr*, unsigned int, unsigned int, const unsigned short*, const unsigned short*, const char*);
+extern WStr* WString_ReplaceRange(WStr*, unsigned int, unsigned int, const unsigned short*, const unsigned short*,
+                                  const char*);
 extern void __throw(const char*, void*, void (*)(void*));
 extern void __dt__Q23std12out_of_rangeFv(void*);
 extern void __dt__Q23std12length_errorFv(void*);
@@ -105,11 +114,10 @@ extern char __vt__Q23std12out_of_range[];
 extern char __vt__Q23std12length_error[];
 extern const char partyItemSelectStrings[];
 extern unsigned short kWideStringReallocatedTerminator;
-extern void CTask_Ctor(void*);
 extern char __vt__10CPartyTask[];
 extern int g_defaultActorSkipMask;
 extern int g_actorSkipMask;
-extern void CVSMain_dtor(void*, int);
+extern void __dt__7CVSMainFv(void*, int);
 extern void __dl__FPv(void*);
 extern void __destroy_new_array();
 extern unsigned int strlen(const char*);
@@ -117,15 +125,19 @@ extern void String_ReserveCapacity(void*, unsigned int);
 extern void String_ReplaceRange(void*, int, int, const char*, const char*, const char*);
 extern void appFreeUni__FPv(void*);
 extern void* TaskActorTable_CreateNamedActor(void*, const char*, const char*, int, void*);
-extern void CTask_dtor(void*, int);
-extern void CTask_SetMainActor(void*, void*);
-void* CPartyMain_dtor(void*, int);
-void* CPartyTask_dtor(void*, int);
+extern void __dt__5CTaskFv(void*, int);
+// The destructors take a delete flag, which the interface thunks pass through.
+void* __dt__10CPartyMainFv(void*, int);
+void* __dt__10CPartyTaskFv(void*, int);
 
-struct LocalString { unsigned int a, b, c; };
+struct LocalString {
+    unsigned int a, b, c;
+};
 extern const char partyMainActorStrings[];
 
-struct ManagerObject { char data[0x828]; };
+struct ManagerObject {
+    char data[0x828];
+};
 
 struct WStr {
     unsigned int flags;
@@ -142,7 +154,10 @@ struct ErrBlock {
 struct ErrText {
     char* text;
     char* allocator;
-    ~ErrText() { if (text) delete[] text; }
+    ~ErrText() {
+        if (text)
+            delete[] text;
+    }
 };
 
 struct ErrInner {
@@ -170,8 +185,9 @@ struct ErrInner {
 // String layout: bit 31 of flags = heap storage. Short strings keep the length in byte 0 (7 bits) and 5 chars at +2.
 // The two throw blocks build the exception object (message copy plus shared-pointer control block) exactly as
 // MSL's inlined constructors do; they only exist to match the compiler and can be skipped when reading.
-WStr* WString_ReplaceRange(WStr* self, unsigned int position, unsigned int eraseCount, const unsigned short* first, const unsigned short* last, const char* allocator) {
-    unsigned int usesHeap = self->flags >> 31;   // bit 31 set: characters live in a heap buffer
+WStr* WString_ReplaceRange(WStr* self, unsigned int position, unsigned int eraseCount, const unsigned short* first,
+                           const unsigned short* last, const char* allocator) {
+    unsigned int usesHeap = self->flags >> 31; // bit 31 set: characters live in a heap buffer
     unsigned int capacity;
     unsigned int size;
     unsigned short* data;
@@ -207,7 +223,8 @@ WStr* WString_ReplaceRange(WStr* self, unsigned int position, unsigned int erase
     }
     unsigned int remainingCount = size - position;
     const unsigned int* clampedEraseCount = &eraseCount;
-    if (remainingCount < *clampedEraseCount) clampedEraseCount = &remainingCount;
+    if (remainingCount < *clampedEraseCount)
+        clampedEraseCount = &remainingCount;
     unsigned int removedCount = *clampedEraseCount;
     int insertCount = last - first;
     if (static_cast<unsigned int>(insertCount) > 0x7FFFFFFEu || size - removedCount > 0x7FFFFFFEu - insertCount) {
@@ -238,16 +255,21 @@ WStr* WString_ReplaceRange(WStr* self, unsigned int position, unsigned int erase
         // Grow: allocate a new buffer and rebuild head + inserted text + tail in it.
         capacity = (capacity + 7) & ~7u;
         unsigned int need = newLength + 1;
-        while (capacity < need) capacity = (capacity * 2 + 7) & ~7u;
+        while (capacity < need)
+            capacity = (capacity * 2 + 7) & ~7u;
         unsigned int cap = capacity;
         unsigned short* out = static_cast<unsigned short*>(appMallocDummy__FUl(cap * 2));
-        if (position) wmemcpy(out, data, position);
+        if (position)
+            wmemcpy(out, data, position);
         unsigned short* mid = out + position;
         memmove(mid, first, (last - first) * 2);
-        if (tailCount) wmemcpy(mid + insertCount, data + position + removedCount, tailCount);
+        if (tailCount)
+            wmemcpy(mid + insertCount, data + position + removedCount, tailCount);
         out[newLength] = kWideStringReallocatedTerminator;
-        if (usesHeap) appFreeUni__FPv(data);
-        else self->flags |= 0x80000000;
+        if (usesHeap)
+            appFreeUni__FPv(data);
+        else
+            self->flags |= 0x80000000;
         self->flags = (self->flags & 0x80000000) | cap;
         self->data = out;
         self->size = newLength;
@@ -261,144 +283,160 @@ WStr* WString_ReplaceRange(WStr* self, unsigned int position, unsigned int erase
             volatile char uninit;
             char overlapAllocatorTag = uninit;
             try {
-                WString_ReplaceRange(&overlapCopy, 0, (overlapCopy.flags >> 31) ? 0 : (overlapCopy.flags & 0x7F), first, last, &overlapAllocatorTag);
+                WString_ReplaceRange(&overlapCopy, 0, (overlapCopy.flags >> 31) ? 0 : (overlapCopy.flags & 0x7F), first,
+                                     last, &overlapAllocatorTag);
             } catch (...) {
-                if (overlapCopy.flags >> 31) appFreeUni__FPv(overlapCopy.data);
+                if (overlapCopy.flags >> 31)
+                    appFreeUni__FPv(overlapCopy.data);
                 throw;
             }
-            if (overlapCopy.flags >> 31) first = overlapCopy.data;
-            else first = reinterpret_cast<unsigned short*>(reinterpret_cast<char*>(&overlapCopy) + 2);
+            if (overlapCopy.flags >> 31)
+                first = overlapCopy.data;
+            else
+                first = reinterpret_cast<unsigned short*>(reinterpret_cast<char*>(&overlapCopy) + 2);
         }
-        if (tailCount) wmemmove(data + position + insertCount, data + position + removedCount, tailCount);
+        if (tailCount)
+            wmemmove(data + position + insertCount, data + position + removedCount, tailCount);
         wmemmove(data + position, first, insertCount);
         data[newLength] = kWideStringInPlaceTerminator;
-        if (!usesHeap) *reinterpret_cast<unsigned char*>(self) = (*reinterpret_cast<unsigned char*>(self) & 0x80) | (newLength & 0x7F);
-        else self->size = newLength;
-        if (overlapCopy.flags >> 31) appFreeUni__FPv(overlapCopy.data);
+        if (!usesHeap)
+            *reinterpret_cast<unsigned char*>(self) =
+                (*reinterpret_cast<unsigned char*>(self) & 0x80) | (newLength & 0x7F);
+        else
+            self->size = newLength;
+        if (overlapCopy.flags >> 31)
+            appFreeUni__FPv(overlapCopy.data);
     }
     return self;
 }
 
-// Forward party lifecycle messages or initialize the render context and character-count menu.
-void CPartyMain_HandleMsg(void* self, void* message) {
-    int type = static_cast<PartyMainMessage*>(message)->type;
-    static_cast<CSharedDoc*>(g_sharedDoc)->gameMode = kPartyGameMode;
-    // Messages 0/1 discard the current menu; 2/3 forward directly; 4 starts party setup.
-    if (type < 0 || type > 4) return;
-    if (type != 2 && type != 3) {
-        // Delete the previous character-count menu through its virtual destructor (vtable slot at +8).
-        void* previousMenu = static_cast<PartyMainState*>(self)->characterCountMenu;
-        if (previousMenu != 0) {
-            typedef void (*Dtor)(void*, int);
-            Dtor dtor = *reinterpret_cast<Dtor*>(static_cast<char*>(*reinterpret_cast<void**>(previousMenu)) + 8);
-            dtor(previousMenu, 1);
-            static_cast<PartyMainState*>(self)->characterCountMenu = 0;
-        }
-    }
-    if (type != kStartPartyMessage) {
-        CVSMain_HandleMsg(self, message);
-        return;
-    }
-    {
-        // Start party setup: lazily construct the global render context once (Sing_805DC648 holds the pointer
-        // to it), reset its player records, then create the character-count menu.
-        if (((int&)Sing_805DC648()) == 0) {
-            if (s_renderContextInitialized == 0) {
-                // One-time construction of s_renderContext: 4 player records, an int vector, 4 item records.
-                char* base = s_renderContext;
-                char* end = base + kRenderPlayerRecordsEnd;
-                for (char* p = base; p < end; p += kRenderPlayerRecordSize) SaveData_InitPlayerRecord(p);
-                ((IntVectorArray*)(end))->__ct();
-                char* member = base + kRenderItemRecordsOffset;
-                __construct_array(member, reinterpret_cast<void*>(PartyItemRecord_InitDefaults), reinterpret_cast<void*>(PlayerRenderRecord_dtor), kRenderItemRecordSize, kRenderItemRecordCount);
-                reinterpret_cast<CEnemyRenderTable*>(member)->count = 0;
-                try {
-                    RenderContext_ResetPlayerRecords(base);
-                } catch (...) {
-                    ((void (*)(void*, int))CharacterPreviewTable_dtor)(base + kRenderItemRecordsOffset, -1);
-                    ((IntVectorArray*)(base + kRenderPlayerRecordsEnd))->~IntVectorArray();
-                    throw;
-                }
-                __register_global_object(base, reinterpret_cast<void*>(__dt__13RenderContextFv), s_renderContextDtorRegistration_8008B524);
-                s_renderContextInitialized = 1;
-            }
-            ((int&)Sing_805DC648()) = reinterpret_cast<int>(s_renderContext);
-        }
-        RenderContext_ResetPlayerRecords(reinterpret_cast<void*>(((int&)Sing_805DC648())));
-        int partyMode = static_cast<PartyMainMessage*>(message)->partyMode;
-        static_cast<CSharedDoc*>(g_sharedDoc)->partyGameMode = partyMode;
-        void* characterCountMenu = __nw__FUl(kCharaNumMenuSize);
-        if (characterCountMenu != 0) {
-            try {
-                CCharaNum_Ctor(characterCountMenu);
-            } catch (...) {
-                __dl__FPv(characterCountMenu);
-                throw;
-            }
-        }
-        static_cast<PartyMainState*>(self)->characterCountMenu = characterCountMenu;
-        static_cast<PartyMainState*>(self)->phase = 1;   // phase 1: choosing the number of characters
-        static_cast<CSharedDoc*>(g_sharedDoc)->golfRuleType = 0;
-        strcpy(static_cast<CSharedDoc*>(g_sharedDoc)->pad_8C1,
-               static_cast<char*>(static_cast<CSharedDoc*>(g_sharedDoc)->strokePlayName));
+// Delete the previous character-count menu through its virtual destructor (vtable slot at +8).
+static inline void DeleteSelectionScreen(CPartyMain* self) {
+    void* previousMenu = self->selectionScreen;
+    if (previousMenu != 0) {
+        typedef void (*Dtor)(void*, int);
+        Dtor dtor = *reinterpret_cast<Dtor*>(static_cast<char*>(*reinterpret_cast<void**>(previousMenu)) + 8);
+        dtor(previousMenu, 1);
+        self->selectionScreen = 0;
     }
 }
 
+// Forward party lifecycle messages or initialize the render context and character-count menu.
+void CPartyMain::HandleMsg(void* message) {
+    static_cast<CSharedDoc*>(g_sharedDoc)->gameMode = kPartyGameMode;
+    int type = static_cast<PartyMainMessage*>(message)->type;
+    // Messages 0/1 discard the current menu; 2/3 forward directly; 4 starts party setup.
+    if (type < 0 || type > 4)
+        return;
+    if (type != kStartPartyMessage) {
+        if (type != 2 && type != 3)
+            DeleteSelectionScreen(this);
+        ((CVSMain*)this)->HandleMsg((const CVSMainMessage*)message);
+        return;
+    }
+    DeleteSelectionScreen(this);
+    // Start party setup: lazily construct the global render context once (Sing_805DC648 holds the pointer
+    // to it), reset its player records, then create the character-count menu.
+    if (((int&)Sing_805DC648()) == 0) {
+        if (s_renderContextInitialized == 0) {
+            // One-time construction of s_renderContext: 4 player records, an int vector, 4 item records.
+            char* base = s_renderContext;
+            char* end = base + kRenderPlayerRecordsEnd;
+            for (char* p = base; p < end; p += kRenderPlayerRecordSize)
+                SaveData_InitPlayerRecord(p);
+            ((IntVectorArray*)(end))->__ct();
+            char* member = base + kRenderItemRecordsOffset;
+            __construct_array(member, reinterpret_cast<void*>(PartyItemRecord_InitDefaults),
+                              reinterpret_cast<void*>(PlayerRenderRecord_dtor), kRenderItemRecordSize,
+                              kRenderItemRecordCount);
+            reinterpret_cast<CEnemyRenderTable*>(member)->count = 0;
+            RenderContext_ResetPlayerRecords(base);
+            __register_global_object(s_renderContext, reinterpret_cast<void*>(__dt__13RenderContextFv),
+                                     s_renderContextDtorRegistration_8008B524);
+            s_renderContextInitialized = 1;
+        }
+        ((int&)Sing_805DC648()) = reinterpret_cast<int>(s_renderContext);
+    }
+    RenderContext_ResetPlayerRecords(reinterpret_cast<void*>(((int&)Sing_805DC648())));
+    int partyMode = static_cast<PartyMainMessage*>(message)->partyMode;
+    static_cast<CSharedDoc*>(g_sharedDoc)->partyGameMode = partyMode;
+    void* characterCountMenu = __nw__FUl(kCharaNumMenuSize);
+    if (characterCountMenu != 0)
+        ((CCharaNum*)characterCountMenu)->__ct();
+    selectionScreen = characterCountMenu;
+    state = 1; // 1: choosing the number of characters
+    static_cast<CSharedDoc*>(g_sharedDoc)->golfRuleType = 0;
+    strcpy(static_cast<CSharedDoc*>(g_sharedDoc)->playNameBuffer,
+           static_cast<char*>(static_cast<CSharedDoc*>(g_sharedDoc)->strokePlayName));
+}
+
 // Create the party task's next actor request and install the returned actor.
-void CPartyTask_CreateActors(void* self) {
+void CPartyTask::CreateActors() {
+    const char* strings = partyMainActorStrings;
     LocalString str = {0, 0, 0};
-    unsigned int len = strlen(partyMainActorStrings);
+    unsigned int len = strlen(strings);
     String_ReserveCapacity(&str, len);
-    // The allocator tag is ignored; borrow an initialized byte within the string object.
-    char ch = *reinterpret_cast<const char*>(&str);
-    String_ReplaceRange(&str, 0, 0, partyMainActorStrings, partyMainActorStrings + len, &ch);
-    void* result = TaskActorTable_CreateNamedActor(self, partyMainActorStrings + kPartyMainClassName, partyMainActorStrings + kPartyMainActorName, 0, &str);
-    CTask_SetMainActor(self, result);
-    if ((str.a & 0x80000000) != 0) appFreeUni__FPv(reinterpret_cast<void*>(str.c));
+    // The allocator tag is ignored; an uninitialised byte is passed, read through a volatile local.
+    volatile unsigned int uninit;
+    char ch = *reinterpret_cast<volatile char*>(&uninit);
+    String_ReplaceRange(&str, 0, 0, strings, strings + len, &ch);
+    void* result =
+        TaskActorTable_CreateNamedActor(this, strings + kPartyMainClassName, strings + kPartyMainActorName, 0, &str);
+    ((CTask*)this)->SetMainActor(result);
+    if ((str.a & 0x80000000) != 0)
+        appFreeUni__FPv(reinterpret_cast<void*>(str.c));
 }
 
 // Check that a non-null file begins with the expected PHF signature.
 static inline int PhfHeaderHasSignature(void* self) {
-    if (self == 0) return 0;
+    if (self == 0)
+        return 0;
     return !strcmp(self, kPhfSignature);
 }
 
 // Return the entry count only for a valid PHF header.
 static inline int PhfHeaderEntryCount(void* self) {
-    if (PhfHeaderHasSignature(self)) return reinterpret_cast<PhfHeader*>(self)->entryCount;
+    if (PhfHeaderHasSignature(self))
+        return reinterpret_cast<PhfHeader*>(self)->entryCount;
     return 0;
 }
 
 // Bounds-check a PHF directory index and return its fixed-size entry.
 static inline void* PhfCheckedEntryAt(void* self, int index) {
-    if (!PhfHeaderHasSignature(self)) return 0;
-    if (index < 0 || index >= PhfHeaderEntryCount(self)) return 0;
+    if (!PhfHeaderHasSignature(self))
+        return 0;
+    if (index < 0 || index >= PhfHeaderEntryCount(self))
+        return 0;
     return reinterpret_cast<PhfEntry*>(static_cast<char*>(self) + sizeof(PhfHeader)) + index;
 }
 
 // Return a PHF directory entry, or null for an invalid file or index.
 void* PhfFile_GetEntry(void* self, int index) {
     void* result = PhfCheckedEntryAt(self, index);
-    if (result == 0) return 0;
+    if (result == 0)
+        return 0;
     return result;
 }
 
 // Check the PHF signature before resolving directory data.
 static inline int PhfDataHasSignature(void* self) {
-    if (self == 0) return 0;
+    if (self == 0)
+        return 0;
     return !strcmp(self, kPhfSignature);
 }
 
 // Return a valid PHF header's directory count for data lookup.
 static inline int PhfDataEntryCount(void* self) {
-    if (PhfDataHasSignature(self)) return reinterpret_cast<PhfHeader*>(self)->entryCount;
+    if (PhfDataHasSignature(self))
+        return reinterpret_cast<PhfHeader*>(self)->entryCount;
     return 0;
 }
 
 // Return a nonnegative directory entry within the validated entry count.
 static inline void* PhfDataEntryAt(void* self, int index) {
     if (index >= 0) {
-        if (index >= PhfDataEntryCount(self)) return 0;
+        if (index >= PhfDataEntryCount(self))
+            return 0;
         return reinterpret_cast<PhfEntry*>(static_cast<char*>(self) + sizeof(PhfHeader)) + index;
     }
     return 0;
@@ -406,32 +444,34 @@ static inline void* PhfDataEntryAt(void* self, int index) {
 
 // Resolve entry data from the file's data base plus the entry's relative offset.
 void* PhfFile_GetEntryData(void* self, int index) {
-    if (!PhfDataHasSignature(self)) return 0;
+    if (!PhfDataHasSignature(self))
+        return 0;
     void* result = PhfDataEntryAt(self, index);
-    if (result == 0) return 0;
+    if (result == 0)
+        return 0;
     unsigned int off = reinterpret_cast<PhfHeader*>(self)->dataOffset;
     unsigned int rel = reinterpret_cast<PhfEntry*>(result)->dataOffset;
     return static_cast<char*>(self) + off + rel;
 }
 
 // Return the party-main runtime type descriptor.
-void* CPartyMain_GetRTTI() {
+void* CPartyMain::GetRTTI() {
     return &s_partyMainTypeDescriptor;
 }
 
-// Adjust the secondary interface pointer before destroying party main.
-void* CPartyMain_dtor_Thunk18(void* self, int deleteFlag) {
-    return CPartyMain_dtor(static_cast<char*>(self) - 0x18, deleteFlag);
+// Adjust the task-main interface pointer before destroying party main.
+void* CPartyMain::DestroyTaskMainInterface(int deleteFlag) {
+    return __dt__10CPartyMainFv(reinterpret_cast<char*>(this) - 0x18, deleteFlag);
 }
 
 // Return the party-task runtime type descriptor.
-void* CPartyTask_GetRTTI() {
+void* CPartyTask::GetRTTI() {
     return &s_partyTaskTypeDescriptor;
 }
 
-// Adjust the task interface pointer before calling its destructor.
-void* CPartyTask_vfunc_1_Thunk8(void* self, int deleteFlag) {
-    return CPartyTask_dtor(static_cast<char*>(self) - 8, deleteFlag);
+// Adjust the tertiary interface pointer before calling the destructor.
+void* CPartyTask::DestroyTertiaryInterface(int deleteFlag) {
+    return __dt__10CPartyTaskFv(reinterpret_cast<char*>(this) - 8, deleteFlag);
 }
 
 // Compare the file contents with the PHF signature (not a path suffix).
@@ -445,21 +485,18 @@ int BpObject_HasPhfSignature(void* self) {
 // Return a valid PHF file's entry-count word through the original pointer-sized return type.
 void* PhfFile_GetEntryCountWord(void* self) {
     int valid;
-    if (self == 0) valid = 0;
-    else valid = !strcmp(self, kPhfSignature);
-    if (valid) return reinterpret_cast<void*>(reinterpret_cast<PhfHeader*>(self)->entryCount);
+    if (self == 0)
+        valid = 0;
+    else
+        valid = !strcmp(self, kPhfSignature);
+    if (valid)
+        return reinterpret_cast<void*>(reinterpret_cast<PhfHeader*>(self)->entryCount);
     return 0;
 }
 
-// Destroy the task base and optionally free its allocation.
-void* CPartyTask_dtor(void* self, int deleteFlag) {
-    if (self != 0) {
-        CTask_dtor(self, 0);
-        if (deleteFlag > 0) {
-            __dl__FPv(self);
-        }
-    }
-    return self;
+// Destroy the task base; the compiler adds the delete handling for this destructor.
+CPartyTask::~CPartyTask() {
+    __dt__5CTaskFv(this, 0);
 }
 
 // Initialize an empty course-slot table with no selected slot or storage.
@@ -472,15 +509,9 @@ void CourseSlotTable_InitEmpty(void* self) {
     // The original branches over unreachable array-cleanup code after these initializers.
 }
 
-// Destroy the versus-main base and optionally free party main.
-void* CPartyMain_dtor(void* self, int deleteFlag) {
-    if (self != 0) {
-        CVSMain_dtor(self, 0);
-        if (deleteFlag > 0) {
-            __dl__FPv(self);
-        }
-    }
-    return self;
+// Destroy the versus-main base; the compiler adds the delete handling for this destructor.
+CPartyMain::~CPartyMain() {
+    __dt__7CVSMainFv(this, 0);
 }
 
 // Initialize the first cached full-turn angle in this unit.
@@ -539,14 +570,13 @@ void* CourseSlotTable_GetExtraEntry(void* self, unsigned char index) {
 }
 
 // Initialize the party task's three interfaces and default actor skip masks.
-void* CPartyTask_Ctor(void* self) {
-    CTask_Ctor(self);
-    *reinterpret_cast<void**>(self) = __vt__10CPartyTask;
-    *reinterpret_cast<void**>(static_cast<char*>(self) + 4) = __vt__10CPartyTask + 0x10;
-    *reinterpret_cast<void**>(static_cast<char*>(self) + 8) = __vt__10CPartyTask + 0x1C;
+CPartyTask::CPartyTask() {
+    ((CTask*)this)->Init();
+    vtbl = __vt__10CPartyTask;
+    secondaryVtbl = __vt__10CPartyTask + 0x10;
+    tertiaryVtbl = __vt__10CPartyTask + 0x1C;
     g_defaultActorSkipMask = kDefaultActorSkipMask;
     g_actorSkipMask = 0;
-    return self;
 }
 
 } // extern "C"
@@ -559,4 +589,3 @@ STATIC_INIT_ENTRY(".CRT$XCU80462040", _ctors_u8008B524_1, InitPartyTaskFullTurnA
 STATIC_INIT_ENTRY(".CRT$XCU80462040", _ctors_u8008B524_2, InitPhfHelpersFullTurnAngle);
 STATIC_INIT_ENTRY(".CRT$XCU80462040", _ctors_u8008B524_3, InitCourseSlotTableFullTurnAngle);
 #pragma pop
-

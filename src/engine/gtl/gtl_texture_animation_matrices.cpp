@@ -4,8 +4,6 @@
 // type-specific key layouts choose interpolation. gtl_Transform_BuildTextureMatrix
 // (gtl_transform_frustum_stopwatch_input.cpp) interprets the resulting 0x30-byte scale/rotation/translation/mode
 // record. Shared samplers gtl_animation_node_evaluate.cpp/gtl_animation_model_matrices.cpp use the same tables and scratch.
-// Translation unit 0x803E3AB8-0x803E4220 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "types.h"
 #include "sdk_protos.h"
@@ -90,7 +88,8 @@ extern const f32 kAnimationWrapInterval;
 // output arrays must cover all selected records/indices and must not alias.
 // Global search keys and interpolation scalars are overwritten: serialize with
 // every other gtl animation evaluator. Not reentrant or safe for parallel use.
-s32 gtl_Animation_EvaluateTextureTransformMatrices(void* unused, u8* matrices, GtlResourceFile* resource, f64 authoredTime) {
+s32 gtl_Animation_EvaluateTextureTransformMatrices(void* unused, u8* matrices, GtlResourceFile* resource,
+                                                   f64 authoredTime) {
     u8* animationTables = s_animationSamplingTables;
     f32 t;
     GtlChunk* pt;
@@ -195,7 +194,7 @@ s32 gtl_Animation_EvaluateTextureTransformMatrices(void* unused, u8* matrices, G
                     dst = (u8*)&w.w[0];
                     size = 0x10;
                     break;
-// The original jump table jumptable_804DA4C0 (index = target - 0x85) sends 0x89 (not 0x86) to the rotation record.
+                    // The original jump table jumptable_804DA4C0 (index = target - 0x85) sends 0x89 (not 0x86) to the rotation record.
                 case 0x86:
                     dst = (u8*)&w.w[4];
                     size = 0x10;
@@ -292,8 +291,8 @@ s32 gtl_Animation_EvaluateTextureTransformMatrices(void* unused, u8* matrices, G
                 s_animationSegmentEndTime = hi;
                 ((GtlTexInterpFn*)(animationTables + 0x50))[comp](dst, a, b, wt, lo, hi);
             }
-// The original (0x803E4158..0x803E41B8) keeps the record's own mode word (+0x2C, saved before the key loop) and
-// copies only words 0..10 back. Target 0x8D copies 16 bytes into w[8..11], whose last word is the key time.
+            // The original (0x803E4158..0x803E41B8) keeps the record's own mode word (+0x2C, saved before the key loop) and
+            // copies only words 0..10 back. Target 0x8D copies 16 bytes into w[8..11], whose last word is the key time.
             m = w;
         }
         gtl_Transform_BuildTextureMatrix(out, &m);

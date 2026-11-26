@@ -5,7 +5,7 @@
 
 struct PendingVoiceEntry {
     char soundName[0xC]; // 0x0: passed to String_ReplaceRange when compacting entries
-    float delaySeconds; // 0xC: OnProcess subtracts dt and plays the name when negative
+    float delaySeconds;  // 0xC: OnProcess subtracts dt and plays the name when negative
 };
 
 #define OFF(f, o) typedef char PendingVoice802E6030_off_##f[((int)&((PendingVoiceEntry*)0)->f == (o)) ? 1 : -1]

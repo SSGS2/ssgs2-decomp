@@ -1,4 +1,10 @@
-enum IffSchemaTextOffsets { kVectorLengthErrorText = 0x2E5 };
+// Golf item inventory tables (CItemManager): finding items by ID and table index for each kind
+// (characters, parts, clubs, balls, caddies, hair styles, courses), and reading the club and part
+// tables from their IFF records.
+
+enum IffSchemaTextOffsets {
+    kVectorLengthErrorText = 0x2E5
+};
 enum IffTableStorageLimits {
     kClubMaximumEntries = 0x01D41D41,
     kClubSmallGrowthLimit = 0x9C09C0,
@@ -12,13 +18,13 @@ enum IffTableStorageLimits {
 // Item ids are 32-bit values carried in void* by the original C ABI; never dereference a key.
 #include "classes/CItemManager.h"
 #include "iff/IffStruct.h"
-// Translation unit 0x801898A8-0x8018AD5C (23 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 #include "game/exception.h"
 
-inline void* operator new(size_t, void* p) throw() { return p; }
+inline void* operator new(size_t, void* p) throw() {
+    return p;
+}
 inline void operator delete(void*, void*) throw() {}
 
 extern "C" {
@@ -53,7 +59,9 @@ void* ItemInventory_GetCharacterIdAt(CItemManager* table, int index) {
     if (index != 0) {
         int blocksOfEight = (unsigned int)index >> 3;
         if (blocksOfEight != 0) {
-            do { entry += 8; } while (--blocksOfEight);
+            do {
+                entry += 8;
+            } while (--blocksOfEight);
         }
         index &= 7;
         if (index != 0) {
@@ -93,7 +101,9 @@ void* ItemInventory_GetPartIdAt(CItemManager* table, int index) {
     if (index != 0) {
         int blocksOfEight = (unsigned int)index >> 3;
         if (blocksOfEight != 0) {
-            do { entry += 8; } while (--blocksOfEight);
+            do {
+                entry += 8;
+            } while (--blocksOfEight);
         }
         index &= 7;
         if (index != 0) {
@@ -145,7 +155,8 @@ int ItemInventory_FindClubSetIndex(CItemManager* table, void* typeId) {
     }
 
     ClubSetTableEntry* entry = table->clubSets.data;
-    unsigned int entryCount = table->clubSets.size; ClubSetTableEntry* end = (((entry + entryCount)));
+    unsigned int entryCount = table->clubSets.size;
+    ClubSetTableEntry* end = (((entry + entryCount)));
     while (entry != end) {
         if ((unsigned int)typeId == entry->key) {
             return entryIndex;
@@ -266,14 +277,16 @@ void* ItemInventory_GetCaddieItemIdAt(CItemManager* table, int index) {
 }
 
 // Return the table index of this item id, or -1 for a null or missing id.
-int ItemInventory_FindHairStyleIndex(CItemManager* table, void* typeId) { int entryIndex = 0;  
+int ItemInventory_FindHairStyleIndex(CItemManager* table, void* typeId) {
+    int entryIndex = 0;
 
     if (typeId == 0) {
         return -1;
     }
 
     unsigned int entryCount = table->hairStyles.size;
-    HairStyleTableEntry* entry = table->hairStyles.data; HairStyleTableEntry* end = ((entryCount + entry));
+    HairStyleTableEntry* entry = table->hairStyles.data;
+    HairStyleTableEntry* end = ((entryCount + entry));
     while (entry != end) {
         if ((unsigned int)typeId == entry->key) {
             return entryIndex;
@@ -375,9 +388,14 @@ void* ItemInventory_GetCourseIdAt(CItemManager* table, int index) {
 }
 
 struct ClubRecordStorage {
-    union { IFF_STRUCT::sClub value; unsigned int words[sizeof(IFF_STRUCT::sClub) / 4]; };
+    union {
+        IFF_STRUCT::sClub value;
+        unsigned int words[sizeof(IFF_STRUCT::sClub) / 4];
+    };
     ClubRecordStorage() {}
-    ClubRecordStorage(const ClubRecordStorage& value) { *this = value; }
+    ClubRecordStorage(const ClubRecordStorage& value) {
+        *this = value;
+    }
 };
 
 struct ClubLoadEntry {
@@ -399,9 +417,14 @@ void appFreeUni__FPv();
 void* memcpy(void*, const void*, unsigned int);
 
 struct PartRecordStorage {
-    union { IFF_STRUCT::sPart value; unsigned int words[sizeof(IFF_STRUCT::sPart) / 4]; };
+    union {
+        IFF_STRUCT::sPart value;
+        unsigned int words[sizeof(IFF_STRUCT::sPart) / 4];
+    };
     PartRecordStorage() {}
-    PartRecordStorage(const PartRecordStorage& value) { *this = value; }
+    PartRecordStorage(const PartRecordStorage& value) {
+        *this = value;
+    }
 };
 struct PartLoadEntry {
     void* key;
@@ -435,19 +458,26 @@ struct ErrorControl1A0 {
 struct ErrorBuffer1A0 {
     char* data;
     unsigned char* allocator;
-    ~ErrorBuffer1A0() { if (data) __dla__FPv(data); }
+    ~ErrorBuffer1A0() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 
 struct EmptyAllocator8C;
 
-namespace std { struct logic_error : exception {
-    void SetTable(void* table) { *(void**)this = table; }
+namespace std {
+struct logic_error : exception {
+    void SetTable(void* table) {
+        *(void**)this = table;
+    }
     char* text;
     ErrorControl1A0* control;
     logic_error() {}
     logic_error(const char*, const EmptyAllocator8C&);
     ~logic_error();
-}; }
+};
+}
 
 struct EmptyAllocator8C;
 
@@ -455,30 +485,30 @@ struct EmptyAllocator8C;
 namespace std {
 struct length_error : logic_error {
     length_error(const char* message, const EmptyAllocator8C&);
-inline length_error(const char* message) {
-    unsigned char allocator = 0;
-    const char* textValue = message;
-    SetTable(__vt__Q23std11logic_error);
-    unsigned int length = strlen(textValue) + 1;
-    char* allocation = (char*)__nwa__FUl(length * 2 - length);
-    text = allocation;
-    {
-        ErrorBuffer1A0 buffer;
-        buffer.data = allocation;
-        buffer.allocator = &allocator;
-        ErrorControl1A0* fresh = (ErrorControl1A0*)__nw__FUl(0x10);
-        if (fresh) {
-            fresh->strong = 1;
-            fresh->weak = 1;
-            fresh->vtable = s_sharedCharDeleterVtable;
-            fresh->text = allocation;
+    inline length_error(const char* message) {
+        unsigned char allocator = 0;
+        const char* textValue = message;
+        SetTable(__vt__Q23std11logic_error);
+        unsigned int length = strlen(textValue) + 1;
+        char* allocation = (char*)__nwa__FUl(length * 2 - length);
+        text = allocation;
+        {
+            ErrorBuffer1A0 buffer;
+            buffer.data = allocation;
+            buffer.allocator = &allocator;
+            ErrorControl1A0* fresh = (ErrorControl1A0*)__nw__FUl(0x10);
+            if (fresh) {
+                fresh->strong = 1;
+                fresh->weak = 1;
+                fresh->vtable = s_sharedCharDeleterVtable;
+                fresh->text = allocation;
+            }
+            control = fresh;
+            buffer.data = 0;
         }
-        control = fresh;
-        buffer.data = 0;
+        strcpy(text, textValue);
+        SetTable(__vt__Q23std12length_error);
     }
-    strcpy(text, textValue);
-    SetTable(__vt__Q23std12length_error);
-}
     ~length_error();
 };
 }
@@ -539,18 +569,18 @@ inline void subtractSize8C(unsigned int* size, unsigned int amount) {
 
 // Transfer the exception message buffer into shared ownership, freeing it if allocation throws.
 inline void makeErrorControl8C(ErrorControl1A0*& control, char* allocation, unsigned char* allocator) {
-        ErrorBuffer1A0 buffer;
-        buffer.data = allocation;
-        buffer.allocator = allocator;
-        ErrorControl1A0* fresh = (ErrorControl1A0*)__nw__FUl(0x10);
-        if (fresh) {
-            fresh->strong = 1;
-            fresh->weak = 1;
-            fresh->vtable = s_sharedCharDeleterVtable;
-            fresh->text = allocation;
-        }
-        control = fresh;
-        buffer.data = 0;
+    ErrorBuffer1A0 buffer;
+    buffer.data = allocation;
+    buffer.allocator = allocator;
+    ErrorControl1A0* fresh = (ErrorControl1A0*)__nw__FUl(0x10);
+    if (fresh) {
+        fresh->strong = 1;
+        fresh->weak = 1;
+        fresh->vtable = s_sharedCharDeleterVtable;
+        fresh->text = allocation;
+    }
+    control = fresh;
+    buffer.data = 0;
 }
 
 inline std::logic_error::logic_error(const char* message, const EmptyAllocator8C&) {
@@ -604,21 +634,24 @@ inline unsigned int growth8C(const unsigned int* current, unsigned int needed, b
     if (initializeAllocator) {
         EmptyAllocator8C allocator = {};
     }
-    if (needed > kClubMaximumEntries - capacity) lengthError8C();
+    if (needed > kClubMaximumEntries - capacity)
+        lengthError8C();
     if (capacity < kClubSmallGrowthLimit) {
         unsigned int grown = ((capacity + 1) * 4 - (capacity + 1)) / 5;
         result = capacity + maxGrowth8C(grown, needed);
     } else if (capacity < kClubMediumGrowthLimit) {
         unsigned int grown = (capacity + 1) / 2;
         result = capacity + maxGrowth8C(grown, needed);
-    } else result = kClubMaximumEntries;
+    } else
+        result = kClubMaximumEntries;
     return result;
 }
 
 // Allocate storage for the checked number of in-memory club entries.
 inline void reserveAllocation8C(Allocation8C* allocation, unsigned int capacity) {
     EmptyAllocator8C reserveAllocator = {};
-    if (capacity > kClubMaximumEntries) lengthError8C();
+    if (capacity > kClubMaximumEntries)
+        lengthError8C();
     allocation->first = (ClubLoadEntry*)appMallocDummy__FUl(capacity * sizeof(ClubLoadEntry));
     allocation->capacity = capacity;
 }
@@ -699,15 +732,18 @@ void ItemInventory_ReadClubTable(ClubTableLoader* self, unsigned char* tableByte
     int recordIndex;
     int destinationIndex;
     unsigned char* recordBytes;
-    struct { unsigned short count; unsigned char pad[6]; } header;
+    struct {
+        unsigned short count;
+        unsigned char pad[6];
+    } header;
     memcpy(&header, tableBytes, kIffFileHeaderBytes);
     recordBytes = tableBytes + kIffFileHeaderBytes;
     resizeVector8C(self, header.count);
     destinationIndex = 0;
-    for (recordIndex=0; recordIndex<header.count; ++recordIndex) {
+    for (recordIndex = 0; recordIndex < header.count; ++recordIndex) {
         ClubRecordStorage packetValue;
-        memcpy(&packetValue,recordBytes,0x88);
-        recordBytes+=0x88;
+        memcpy(&packetValue, recordBytes, 0x88);
+        recordBytes += 0x88;
         destinationIndex = assignRecord8C(self, destinationIndex, packetValue, packetValue);
     }
 }
@@ -745,21 +781,24 @@ inline unsigned int growth1A0(const unsigned int* current, unsigned int needed, 
     if (initializeAllocator) {
         EmptyAllocator8C allocator = {};
     }
-    if (needed > kPartMaximumEntries - capacity) lengthError1A0();
+    if (needed > kPartMaximumEntries - capacity)
+        lengthError1A0();
     if (capacity < kPartSmallGrowthLimit) {
         unsigned int grown = ((capacity + 1) * 4 - (capacity + 1)) / 5;
         result = capacity + maxGrowth1A0(grown, needed);
     } else if (capacity < kPartMediumGrowthLimit) {
         unsigned int grown = (capacity + 1) / 2;
         result = capacity + maxGrowth1A0(grown, needed);
-    } else result = kPartMaximumEntries;
+    } else
+        result = kPartMaximumEntries;
     return result;
 }
 
 // Allocate storage for the checked number of in-memory part entries.
 inline void reserveAllocation1A0(Allocation1A0* allocation, unsigned int capacity) {
     EmptyAllocator8C reserveAllocator = {};
-    if (capacity > kPartMaximumEntries) lengthError1A0();
+    if (capacity > kPartMaximumEntries)
+        lengthError1A0();
     allocation->first = (PartLoadEntry*)appMallocDummy__FUl(capacity * sizeof(PartLoadEntry));
     allocation->capacity = capacity;
 }
@@ -786,7 +825,10 @@ void ItemInventory_ReadPartTable(PartTableLoader* self, unsigned char* tableByte
     int recordIndex;
     int destinationIndex;
     unsigned char* recordBytes;
-    struct { unsigned short count; unsigned char pad[6]; } header;
+    struct {
+        unsigned short count;
+        unsigned char pad[6];
+    } header;
     memcpy(&header, tableBytes, kIffFileHeaderBytes);
     unsigned int count = header.count;
     recordBytes = tableBytes + kIffFileHeaderBytes;
@@ -835,10 +877,10 @@ void ItemInventory_ReadPartTable(PartTableLoader* self, unsigned char* tableByte
         }
     } while (0);
     destinationIndex = 0;
-    for (recordIndex=0; recordIndex<header.count; ++recordIndex) {
+    for (recordIndex = 0; recordIndex < header.count; ++recordIndex) {
         PartRecordStorage packetValue;
-        memcpy(&packetValue,recordBytes,sizeof(IFF_STRUCT::sPart));
-        recordBytes+=sizeof(IFF_STRUCT::sPart);
+        memcpy(&packetValue, recordBytes, sizeof(IFF_STRUCT::sPart));
+        recordBytes += sizeof(IFF_STRUCT::sPart);
         destinationIndex = assignRecord1A0(self, destinationIndex, packetValue, packetValue);
     }
 }

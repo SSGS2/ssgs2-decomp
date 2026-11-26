@@ -8,6 +8,11 @@ public:
     void* vtbl; // 0x0: N14 installs __vt__7COption
     char pad_004[0xC];
     float hudBaselineY; // 0x10: N14 stores kDefaultHudBaselineY
+
+    ~COption();
+
+    // Clears the option singleton and destroys its base object; frees the instance when shouldDelete > 0.
+    void* Destroy(int shouldDelete);
 };
 #define OFF(f, o) typedef char COption_off_##f[((int)&((COption*)0)->f == (o)) ? 1 : -1]
 OFF(vtbl, 0x0);

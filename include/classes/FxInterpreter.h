@@ -9,13 +9,13 @@ struct FxInterpreterLinks {
 struct FxInterpreterEntry {
     FxInterpreterLinks links;
     char pad_008[4];
-    int kind; // FxInterpreter_dtor: 2 calls CFx_RemoveSpray; 1 calls CFx_RemoveSequence.
+    int kind;    // FxInterpreter_dtor: 2 calls CFx::RemoveSpray; 1 calls CFx::RemoveSequence.
     void* value; // Passed to the selected release function.
 };
 struct FxInterpreter {
     void* vtbl;
-    unsigned int entryCount; // FxInterpreter_dtor tests and decrements after freeing each entry.
-    FxInterpreterLinks sentinel; // FxInterpreter_GetInstance makes both links point here.
+    unsigned int entryCount;        // FxInterpreter_dtor tests and decrements after freeing each entry.
+    FxInterpreterLinks sentinel;    // FxInterpreter_GetInstance makes both links point here.
     unsigned int nextAttachmentKey; // FxInterpreter_GetInstance initializes to zero.
 };
 

@@ -1,16 +1,15 @@
+// Pointer rings and the sample deque: cursor arithmetic and copies, ring allocation and
+// initialization, capacity queries, and the show counter functions.
+
 #include "classes/GtlShowCounter.h"
-// Borrow the counter view; no lifetime or reference-count operation is performed.
-#define AsGtlShowCounter(p) ((GtlShowCounter*)(p))
 #include "classes/PointerRing803F.h"
+#include "classes/GtlSampleDeque.h"
 // Borrow the five-word ring header without constructing it. Keep these two cast
 // macros: inline accessors change scheduling in AppendCursorRange under MWCC.
 #define AsPointerRing803F(p) ((PointerRing803F*)(p))
 #include "classes/RingCursor803F.h"
 // Borrow the four-word cursor view without changing its position.
 #define AsRingCursor803F(p) ((RingCursor803F*)(p))
-
-// Translation unit 0x803F28F8-0x803F364C (26 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 // Two layouts coexist here; they are not interchangeable:
 //   PointerRing803F: data, firstIndex, size, capacity, allocator token (5 words).
@@ -63,7 +62,10 @@ extern char __vt__Q23std11logic_error[];
 extern char __vt__Q23std12length_error[];
 void __dt__Q23std12length_errorFv(void*);
 
-struct ErrObj { void* vtable; char* what; };
+struct ErrObj {
+    void* vtable;
+    char* what;
+};
 
 // Allocate one extra ring slot; reject limits that would overflow four-byte storage.
 // self must not own an allocation that needs releasing: this overwrites dataAddress.
@@ -71,18 +73,26 @@ struct ErrObj { void* vtable; char* what; };
 // Allocation belongs to the ring and is released by PointerRing_dtor.
 void PointerRing_AllocateCapacity(void* self, unsigned int value, unsigned int limit);
 
-enum ShowCounterState { kCounting = 0, kPaused = 1, kResetOnStart = 2 };
-enum RingStorageConstants {
-    kPointerSlotBytes = 4, kElementsPerSamplePage = 256,
-    kSampleDequeReservedElements = 512, kSampleDequePageCountOffset = 0x10
+enum ShowCounterState {
+    kCounting = 0,
+    kPaused = 1,
+    kResetOnStart = 2
 };
-enum ShowCounterVirtualSlots { kCounterArmResetSlot = 3, kCounterUpdateSlot = 5 };
+enum RingStorageConstants {
+    kPointerSlotBytes = 4,
+    kElementsPerSamplePage = 256,
+    kSampleDequeReservedElements = 512,
+    kSampleDequePageCountOffset = 0x10
+};
+enum ShowCounterVirtualSlots {
+    kCounterArmResetSlot = 3,
+    kCounterUpdateSlot = 5
+};
 
 // Prepend a cursor range, copying its wrapped segments in destination order.
 // [rangeBegin, rangeEnd) belongs to one source ring. Destination is already
 // reserved and linear: enough slots must precede firstIndex without wrapping.
 // Copies words only; pointee ownership/refcounts do not change. Cursors are borrowed.
-void PointerRing803F_PrependRange(void* self, void* rangeBegin, void* rangeEnd);
 
 // Original 0x803F2E58: slwi r3,r4,2; b gtl_Alloc (tail call, so the allocation is returned;
 // gtl_media_sample_pool.cpp callers use it as the new block).
@@ -93,20 +103,13 @@ void* SampleDeque_AllocatePointerSlots(void* unused, unsigned int slotCount);
 // Requires a valid dereferenceable slot; the returned pointee is borrowed.
 void* RingCursor_Dereference(void* p);
 
-// Copy the current count to the caller's output.
-int gtl_IShowCounter_GetCount(void* p, int* out);
-
-// Copy the previous count to the caller's output.
-int gtl_IShowCounter_GetPreviousCount(void* p, int* out);
-
-// Initialize an empty ring with its allocator token.
-void PointerRing803F_Init(void* p, int allocatorToken);
-
 // Return element capacity of the sample deque's pages, excluding the sentinel row.
 // This uses the six-word deque view, not PointerRing803F's allocator at the same offset.
 unsigned int SampleDeque_GetUsableElementCapacity(void* p);
 
-struct FourWords { unsigned int a, b, c, d; };
+struct FourWords {
+    unsigned int a, b, c, d;
+};
 
 // Copy the complete four-word cursor, including its wrap boundaries.
 void RingCursor_CopyFourWords(void* dst, const void* src);
@@ -114,20 +117,7 @@ void RingCursor_CopyFourWords(void* dst, const void* src);
 // Advance one pointer slot and wrap at the end of the ring.
 void RingCursor_Increment(void* p);
 
-// Cache unsigned element limit 0xFFFFFE00, reserving two 256-element pages.
-// The signed return ABI carries -512; callers such as gtl_media_sample_pool.cpp use it unsigned.
-int GtlSampleDeque_GetMaxSize(void);
-
-// Pause counting; report whether this changes state.
-int gtl_IShowCounter_Pause(void* p);
-
-// Arm a reset for the next start; report whether this changes state.
-int gtl_IShowCounter_ArmResetOnStart(void* p);
-
 extern char __vt__Q23gtl12IShowCounter[];
-
-// Construct a zeroed counter that clears its history when first started.
-void gtl_IShowCounter_Ctor(void* p);
 
 // Copy one word if an output address was supplied; retain the original volatile store.
 void Memory_CopyWordIfDestinationNonNull(void* unused, int* out, void* src);
@@ -135,14 +125,15 @@ void Memory_CopyWordIfDestinationNonNull(void* unused, int* out, void* src);
 // Invoke virtual slots 5 then 3 and return 1 regardless of either hook's result.
 // Slot 3 arms reset in the base counter. Slot 5's signature is unresolved in
 // this one-argument dispatch; preserve it rather than inventing update parameters.
-struct CounterDispatchPrefix { unsigned int references; };
+struct CounterDispatchPrefix {
+    unsigned int references;
+};
 struct CounterDispatch : CounterDispatchPrefix {
     virtual void destroy(int);
     virtual void armReset();
     virtual void pause();
     virtual void update();
 };
-int gtl_IShowCounter_ResetAndStartCounting(void* p);
 
 void gtl_Free(void*);
 extern unsigned int s_gtlWordContainerMaxSize;
@@ -153,8 +144,18 @@ void __dl__FPv(void*);
 // zero/negative only destroys storage. Returns p, possibly dangling; accepts null.
 void* PointerRing_dtor(void* p, int do_delete);
 
-struct RingCursorSourceView { int* first; int* start; int* preservedBoundary; int* storageEnd; };
-struct RingCursorDestinationView { int* first; int* start; int* preservedBoundary; int* storageEnd; };
+struct RingCursorSourceView {
+    int* first;
+    int* start;
+    int* preservedBoundary;
+    int* storageEnd;
+};
+struct RingCursorDestinationView {
+    int* first;
+    int* start;
+    int* preservedBoundary;
+    int* storageEnd;
+};
 // Four-word cursor views: current, begin, preserved boundary, exclusive limit.
 // preservedBoundary is copied without interpretation here; it does not participate in wrapping.
 
@@ -162,9 +163,6 @@ struct RingCursorDestinationView { int* first; int* start; int* preservedBoundar
 // Valid nonempty storage is required; index must need at most one wrap. dst may
 // alias src because all four source words are captured before any destination write.
 void RingCursor_AddOffset(RingCursorDestinationView* dst, RingCursorSourceView* src, int index);
-
-// Start counting, clearing both counters only when a reset was armed.
-int gtl_IShowCounter_StartCounting(void* p);
 
 // Subtract an element offset, wrapping once, and preserve the cursor boundaries.
 // Same nonempty/one-wrap preconditions as AddOffset; dst may alias src.
@@ -177,7 +175,11 @@ void RingCursor_SubtractOffset(void* dst, void* src, int elementOffset);
 // Copies stored words without changing pointee ownership or either source cursor.
 void PointerRing_AppendCursorRange(void* dst, void* rangeBegin, void* rangeEnd);
 
-struct RingVec { unsigned int* data; unsigned int size; unsigned int cap; };
+struct RingVec {
+    unsigned int* data;
+    unsigned int size;
+    unsigned int cap;
+};
 void gtl_Free(void*);
 
 struct DequeStorage {
@@ -259,12 +261,24 @@ void PointerRing_AllocateCapacity(void* self, unsigned int value, unsigned int l
     if (limit > s_gtlWordDequeMaxSize) {
         // Build a length_error with a shared string. The guard owns the string
         // until its control block has been installed, then relinquishes cleanup.
-        struct Error { void* vtable; char* what; void* control; } error;
-        struct Control { void* vtable; int strong; int weak; char* data; };
+        struct Error {
+            void* vtable;
+            char* what;
+            void* control;
+        } error;
+        struct Control {
+            void* vtable;
+            int strong;
+            int weak;
+            char* data;
+        };
         struct Guard {
             char* data;
-            ~Guard() { if (data) __dla__FPv(data); }
-        } guard = { 0 };
+            ~Guard() {
+                if (data)
+                    __dla__FPv(data);
+            }
+        } guard = {0};
         extern char s_sharedCharDeleterVtable[];
         error.vtable = __vt__Q23std11logic_error;
         unsigned int n = strlen(audioDequeErrorStrings.circularDequeLengthError) + 1;
@@ -293,17 +307,19 @@ void* PointerRing_GetAllocatorValue(void* p) {
     return (void*)AsPointerRing803F(p)->allocator;
 }
 
-void PointerRing803F_PrependRange(void* self, void* rangeBegin, void* rangeEnd) {
+} // extern "C"
+
+void PointerRing803F::PrependRange(void* rangeBegin, void* rangeEnd) {
     unsigned int beginAddress = AsRingCursor803F(rangeBegin)->currentAddress;
     unsigned int endAddress = AsRingCursor803F(rangeEnd)->currentAddress;
-    unsigned int* insertionEnd = (unsigned int*)AsPointerRing803F(self)->dataAddress + (unsigned int)AsPointerRing803F(self)->firstIndex;
+    unsigned int* insertionEnd = (unsigned int*)dataAddress + (unsigned int)firstIndex;
     if (beginAddress <= endAddress) {
         // Contiguous source: place it immediately before the destination's origin.
         int count = (int)(endAddress - beginAddress) / kPointerSlotBytes;
         memmove(insertionEnd - count, (void*)beginAddress, count * kPointerSlotBytes);
         int moved = (int)(endAddress - beginAddress) / kPointerSlotBytes;
-        AsPointerRing803F(self)->size += moved;
-        AsPointerRing803F(self)->firstIndex -= moved;
+        size += moved;
+        firstIndex -= moved;
     } else {
         // Wrapped source: place its head nearest insertionEnd, then its tail
         // before that head. Logical source order is still tail followed by head.
@@ -314,18 +330,21 @@ void PointerRing803F_PrependRange(void* self, void* rangeBegin, void* rangeEnd) 
         unsigned int wrappedEnd = AsRingCursor803F(rangeBegin)->limitAddress;
         int tailCount = (int)(wrappedEnd - beginAddress) / kPointerSlotBytes;
         memmove(headDestination - tailCount, (void*)beginAddress, tailCount * kPointerSlotBytes);
-        AsPointerRing803F(self)->firstIndex -= headCount + tailCount;
-        AsPointerRing803F(self)->size += headCount + tailCount;
+        firstIndex -= headCount + tailCount;
+        size += headCount + tailCount;
     }
 }
 
-void PointerRing803F_Init(void* p, int allocatorToken) {
-    AsPointerRing803F(p)->allocator = allocatorToken;
-    AsPointerRing803F(p)->dataAddress = 0;
-    AsPointerRing803F(p)->firstIndex = 0;
-    AsPointerRing803F(p)->size = 0;
-    AsPointerRing803F(p)->capacity = 0;
+// Initialize an empty ring with its allocator token.
+void PointerRing803F::Init(int allocatorToken) {
+    allocator = allocatorToken;
+    dataAddress = 0;
+    firstIndex = 0;
+    size = 0;
+    capacity = 0;
 }
+
+extern "C" {
 
 void PointerRing_AppendCursorRange(void* dst, void* rangeBegin, void* rangeEnd) {
     unsigned int endAddress = AsRingCursor803F(rangeEnd)->currentAddress;
@@ -339,7 +358,9 @@ void PointerRing_AppendCursorRange(void* dst, void* rangeBegin, void* rangeEnd) 
         unsigned int bytes = endAddress - beginAddress;
         memmove((void*)writeAddress, (void*)beginAddress, bytes & ~(unsigned int)(kPointerSlotBytes - 1));
         unsigned int count = bytes / kPointerSlotBytes;
-        unsigned int copiedSlots = (AsRingCursor803F(rangeEnd)->currentAddress - AsRingCursor803F(rangeBegin)->currentAddress) / kPointerSlotBytes;
+        unsigned int copiedSlots =
+            (AsRingCursor803F(rangeEnd)->currentAddress - AsRingCursor803F(rangeBegin)->currentAddress) /
+            kPointerSlotBytes;
         AsPointerRing803F(dst)->size += copiedSlots;
     } else {
         // Copy tail then head into consecutive destination slots; update size
@@ -350,7 +371,8 @@ void PointerRing_AppendCursorRange(void* dst, void* rangeBegin, void* rangeEnd) 
         memmove((void*)writeAddress, (void*)beginAddress, tailBytes & ~(unsigned int)(kPointerSlotBytes - 1));
         unsigned int wrappedBegin = AsRingCursor803F(rangeEnd)->beginAddress;
         unsigned int headBytes = endAddress - wrappedBegin;
-        memmove((void*)(writeAddress + tailSlots * kPointerSlotBytes), (void*)wrappedBegin, headBytes & ~(unsigned int)(kPointerSlotBytes - 1));
+        memmove((void*)(writeAddress + tailSlots * kPointerSlotBytes), (void*)wrappedBegin,
+                headBytes & ~(unsigned int)(kPointerSlotBytes - 1));
         unsigned int headSlots = headBytes / kPointerSlotBytes;
         AsPointerRing803F(dst)->size += tailSlots + headSlots;
     }
@@ -368,13 +390,17 @@ void* GtlWordStorage_ReadFirstWord(void* p) {
     return (void*)*(unsigned int*)p;
 }
 
-int GtlSampleDeque_GetMaxSize(void) {
+} // extern "C"
+
+int GtlSampleDeque::GetMaxSize(void* unused) {
     if (!s_gtlSampleDequeMaxSizeInitialized) {
         s_gtlSampleDequeMaxSize = -kSampleDequeReservedElements;
         s_gtlSampleDequeMaxSizeInitialized = 1;
     }
     return s_gtlSampleDequeMaxSize;
 }
+
+extern "C" {
 
 void* SampleDeque_AllocatePointerSlots(void* unused, unsigned int slotCount) {
     return gtl_Alloc(slotCount * kPointerSlotBytes);
@@ -392,8 +418,13 @@ void* SampleDeque_InitializeEmptyStorage(void* self) {
     // Zero all matching scratch, then read the four range words. Their original
     // higher-level aggregate layout is unresolved. With these zero writes the
     // range is empty; volatile reads keep the following generic path in .text.
-    enum ScratchWords { kScratchWordCount = 68, kRangeBeginWord = 16,
-        kRangeEndWord = 17, kRangePositionWord = 18, kRangeLimitWord = 19 };
+    enum ScratchWords {
+        kScratchWordCount = 68,
+        kRangeBeginWord = 16,
+        kRangeEndWord = 17,
+        kRangePositionWord = 18,
+        kRangeLimitWord = 19
+    };
     volatile unsigned int scratchWords[kScratchWordCount];
     for (int i = 0; i < kScratchWordCount; ++i)
         scratchWords[i] = 0;
@@ -436,7 +467,8 @@ unsigned int SampleDeque_GetUsableElementCapacity(void* p) {
     // See GtlSampleDeque::rowCount in classes/GtlSampleDeque.h. Use an offset
     // view here so no new type declarations renumber the earlier local EH type.
     unsigned int pageCount = *(unsigned int*)((char*)p + kSampleDequePageCountOffset);
-    if (pageCount == 0) return 0;
+    if (pageCount == 0)
+        return 0;
     return (pageCount - 1) * kElementsPerSamplePage;
 }
 
@@ -463,56 +495,58 @@ void* PointerRing_dtor(void* p, int do_delete) {
     return p;
 }
 
-void gtl_IShowCounter_Ctor(void* p) {
-    AsGtlShowCounter(p)->unk_0 = 1;
-    AsGtlShowCounter(p)->vtbl = (void*)__vt__Q23gtl12IShowCounter;
-    AsGtlShowCounter(p)->state = kResetOnStart;
-    AsGtlShowCounter(p)->count = 0;
-    AsGtlShowCounter(p)->previousCount = 0;
+} // extern "C"
+
+// Counter member definitions. The counter is borrowed from its owner.
+void gtl::IShowCounter::Init() {
+    unk_0 = 1;
+    vtbl = (void*)__vt__Q23gtl12IShowCounter;
+    state = kResetOnStart;
+    count = 0;
+    previousCount = 0;
 }
 
-int gtl_IShowCounter_GetCount(void* p, int* out) {
-    *out = AsGtlShowCounter(p)->count;
+int gtl::IShowCounter::GetCount(int* out) {
+    *out = count;
     return 1;
 }
 
-int gtl_IShowCounter_GetPreviousCount(void* p, int* out) {
-    *out = AsGtlShowCounter(p)->previousCount;
+int gtl::IShowCounter::GetPreviousCount(int* out) {
+    *out = previousCount;
     return 1;
 }
 
-int gtl_IShowCounter_StartCounting(void* p) {
-    int previousState = AsGtlShowCounter(p)->state;
+int gtl::IShowCounter::StartCounting() {
+    int previousState = state;
     if (previousState == kCounting) {
         return 0;
     }
     if (previousState == kResetOnStart) {
-        AsGtlShowCounter(p)->count = 0;
-        AsGtlShowCounter(p)->previousCount = 0;
+        count = 0;
+        previousCount = 0;
     }
-    AsGtlShowCounter(p)->state = kCounting;
+    state = kCounting;
     return 1;
 }
 
-int gtl_IShowCounter_Pause(void* p) {
-    if (AsGtlShowCounter(p)->state == kPaused) {
+int gtl::IShowCounter::Pause() {
+    if (state == kPaused) {
         return 0;
     }
-    AsGtlShowCounter(p)->state = kPaused;
+    state = kPaused;
     return 1;
 }
 
-int gtl_IShowCounter_ArmResetOnStart(void* p) {
-    if (AsGtlShowCounter(p)->state == kResetOnStart) {
+int gtl::IShowCounter::ArmResetOnStart() {
+    if (state == kResetOnStart) {
         return 0;
     }
-    AsGtlShowCounter(p)->state = kResetOnStart;
+    state = kResetOnStart;
     return 1;
 }
 
-int gtl_IShowCounter_ResetAndStartCounting(void* p) {
-    ((CounterDispatch*)p)->update();
-    ((CounterDispatch*)p)->armReset();
+int gtl::IShowCounter::ResetAndStartCounting() {
+    ((CounterDispatch*)this)->update();
+    ((CounterDispatch*)this)->armReset();
     return 1;
 }
-} // extern "C"

@@ -1,15 +1,35 @@
+// Story message window: the panel and text renderers that draw story messages, the choice of
+// transition scripts, and the tags that expand character and context names into message text.
+// The panel draws an opacity-tinted sprite, then reveals both message renderers.
+
 #include <decomp/static_init.h>
 #include "classes/WFixedFont.h"
+#include "classes/CMsgDraw.h"
 #define STORY_MEMBER_OFFSET(type, member) ((int)&((type*)0)->member)
-enum { kNoStoryResource = -1, kStoryPrimaryMessageTable = 0, kStorySecondaryMessageTable = 1,
-       kStoryOpaque = 255, kStoryQuadFormat = 0x11f005, kStoryTriangleStrip = 0x98,
-       kStoryVertexStride = 0x18, kStoryRenderEntryStride = 0x28 };
-enum StoryStringEdit { kReplaceScript, kAppendScript };
-enum { kInlineScriptLengthMask = 0x7F, kStoryQuadVertexCount = 4 };
+enum {
+    kNoStoryResource = -1,
+    kStoryPrimaryMessageTable = 0,
+    kStorySecondaryMessageTable = 1,
+    kStoryOpaque = 255,
+    kStoryQuadFormat = 0x11f005,
+    kStoryTriangleStrip = 0x98,
+    kStoryVertexStride = 0x18,
+    kStoryRenderEntryStride = 0x28
+};
+enum StoryStringEdit {
+    kReplaceScript,
+    kAppendScript
+};
+enum {
+    kInlineScriptLengthMask = 0x7F,
+    kStoryQuadVertexCount = 4
+};
 // The shared header represents opacity as a pointer-shaped word. It is an
 // integer alpha in [0,255], not a float or owned pointer. FloatBits globals below
 // are copied as words into {x,y} float pairs; no numeric int->float conversion.
-struct StoryFloatPairBits { int xBits, yBits; };
+struct StoryFloatPairBits {
+    int xBits, yBits;
+};
 struct StoryQuadVertex {
     float x, y, z;
     unsigned char red, green, blue, alpha;
@@ -17,7 +37,9 @@ struct StoryQuadVertex {
 };
 // Four screen-space vertices, each xyz/RGBA8/uv (24 bytes). Template z/color/uv
 // survive the copy; drawing edits pixel x/y and the integer opacity byte only.
-struct Quad24 { StoryQuadVertex vertices[kStoryQuadVertexCount]; };
+struct Quad24 {
+    StoryQuadVertex vertices[kStoryQuadVertexCount];
+};
 typedef char StoryQuadVertexSize[(sizeof(StoryQuadVertex) == kStoryVertexStride) ? 1 : -1];
 struct StoryStrings {
     char messageTable[12];
@@ -36,11 +58,9 @@ struct StoryStrings {
     char noScrollSuffix[11];
     char messageRevealSound[19];
 };
-#define StoryStringsView (*( StoryStrings*)storyMessageStrings)
+#define StoryStringsView (*(StoryStrings*)storyMessageStrings)
 #include "classes/CMessageOwnerLayout.h"
 #define AsMessageOwner(p) ((CMessageOwnerLayout*)(p))
-// Translation unit 0x800A0DD0-0x800A2158 (10 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 extern "C" {
@@ -56,7 +76,8 @@ extern char s_bpCtrlDtorRegistration_StoryMessage[];
 extern char s_messageDrawPairList[];
 extern char s_partyItemVectorDtorRegistration[];
 extern char storyMessageStrings[];
-extern int kFloat_1_1_MessageGlyphScale, kFloat_1_1_StoryGlyphScale, kStoryMessageOriginXFloatBits, kStoryMessagePositionYBits;
+extern int kFloat_1_1_MessageGlyphScale, kFloat_1_1_StoryGlyphScale, kStoryMessageOriginXFloatBits,
+    kStoryMessagePositionYBits;
 void* __nw__FUl(unsigned int);
 
 int Text_ExpandTaggedText(void*, void*, void*, int);
@@ -65,12 +86,7 @@ void PairVector_InitReserved(void*);
 void __register_global_object(void*, void*, void*);
 void* PointerPairList_RemoveByKey(void*, void*);
 void* PointerIntVector_AppendPair(void*, void*, int);
-void* CMsgDraw_Ctor(void*, void*);
-void CMsgDraw_SetDefaultRevealSound(void*, const char*);
 void appFreeUni__FPv(void*);
-void CMsgDraw_SetColor(void*, int);
-void CMsgDraw_ClearFormattingAndRevealAll(void*);
-void CMsgDraw_SetGlyphScale(void*, void*);
 void Text_SetPosition(void*, void*);
 void Text_SetContent(void*, void*);
 
@@ -82,23 +98,25 @@ typedef CMessageOwnerLayout Owner;
 // Unregister and destroy the secondary message renderer, then clear its owner pointer.
 void TourMessageOwner_DestroyMessageDraw(Owner* self) {
     void* child = self->secondaryMessageDraw;
-    if (!child) return;
+    if (!child)
+        return;
     {
         if (child) {
-        if (!Sing_805DC650()) {
-            if (!s_pointerPairListInitialized) {
-                PairVector_InitReserved(s_messageDrawPairList);
-                __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor, s_partyItemVectorDtorRegistration);
-                s_pointerPairListInitialized = 1;
+            if (!Sing_805DC650()) {
+                if (!s_pointerPairListInitialized) {
+                    PairVector_InitReserved(s_messageDrawPairList);
+                    __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor,
+                                             s_partyItemVectorDtorRegistration);
+                    s_pointerPairListInitialized = 1;
+                }
+                Sing_805DC650() = s_messageDrawPairList;
             }
-            Sing_805DC650() = s_messageDrawPairList;
-        }
-        PointerPairList_RemoveByKey(Sing_805DC650(), child);
-        if (child) {
+            PointerPairList_RemoveByKey(Sing_805DC650(), child);
             if (child) {
-                ((Obj*)child)->destroy(1);
+                if (child) {
+                    ((Obj*)child)->destroy(1);
+                }
             }
-        }
         }
     }
     self->secondaryMessageDraw = 0;
@@ -108,34 +126,39 @@ void TourMessageOwner_DestroyMessageDraw(Owner* self) {
 struct ChildObj {
     char pad[0x4BC];
     // Construct an owned renderer using the owner's borrowed message resource.
-    ChildObj(Owner* self) { CMsgDraw_Ctor(this, AsWFixedFont(self->textFactory)->messageResource); }
+    ChildObj(Owner* self) {
+        ((CMsgDraw*)this)->__ct(AsWFixedFont(self->textFactory)->messageResource);
+    }
 };
 
+} // extern "C"
+
 // Lazily construct and register a secondary renderer with the story reveal sound.
-void* CTourMessage_GetOrCreateMessageDraw(Owner* self) {
-    if (!self->secondaryMessageDraw) {
-        ChildObj* child = new ChildObj(self);
+void* CMessageOwnerLayout::GetOrCreateMessageDraw() {
+    if (!secondaryMessageDraw) {
+        ChildObj* child = new ChildObj(this);
         if (!Sing_805DC650()) {
             if (!s_pointerPairListInitialized) {
                 PairVector_InitReserved(s_messageDrawPairList);
-                __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor, s_partyItemVectorDtorRegistration);
+                __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor,
+                                         s_partyItemVectorDtorRegistration);
                 s_pointerPairListInitialized = 1;
             }
             Sing_805DC650() = s_messageDrawPairList;
         }
         PointerIntVector_AppendPair(Sing_805DC650(), child, 1);
-        self->secondaryMessageDraw = child;
-        CMsgDraw_SetDefaultRevealSound(child, (storyMessageStrings + STORY_MEMBER_OFFSET(StoryStrings, messageRevealSound)));
+        secondaryMessageDraw = child;
+        ((CMsgDraw*)child)
+            ->SetDefaultRevealSound(storyMessageStrings + STORY_MEMBER_OFFSET(StoryStrings, messageRevealSound));
     }
-    return self->secondaryMessageDraw;
+    return secondaryMessageDraw;
 }
-
-} // extern "C"
 
 // Use the shared MSL wide-string ABI, whose inline text starts at +2.
 // This alias exposes an owned expansion result, not a full std::string API.
 #include "game/wstring.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CBpCtrl.h"
 typedef WString StoryExpandedWideText;
 
 extern "C" {
@@ -145,68 +168,72 @@ void EventMessage_RebuildMessageDraw(Owner* self) {
     Obj* child = (Obj*)self->messageDraw;
     if (child) {
         if (child) {
-        if (!Sing_805DC650()) {
-            if (!s_pointerPairListInitialized) {
-                PairVector_InitReserved(s_messageDrawPairList);
-                __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor, s_partyItemVectorDtorRegistration);
-                s_pointerPairListInitialized = 1;
+            if (!Sing_805DC650()) {
+                if (!s_pointerPairListInitialized) {
+                    PairVector_InitReserved(s_messageDrawPairList);
+                    __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor,
+                                             s_partyItemVectorDtorRegistration);
+                    s_pointerPairListInitialized = 1;
+                }
+                Sing_805DC650() = s_messageDrawPairList;
             }
-            Sing_805DC650() = s_messageDrawPairList;
-        }
-        PointerPairList_RemoveByKey(Sing_805DC650(), child);
-        if (child) {
+            PointerPairList_RemoveByKey(Sing_805DC650(), child);
             if (child) {
-                child->destroy(1);
+                if (child) {
+                    child->destroy(1);
+                }
             }
-        }
         }
         self->messageDraw = 0;
     }
-    if (self->resourceTable < 0 || self->resourceIndex < 0) return;
-    if ((*(int*)&self->panelOpacity) == 0) return;
+    if (self->resourceTable < 0 || self->resourceIndex < 0)
+        return;
+    if ((*(int*)&self->panelOpacity) == 0)
+        return;
     // Phase 1: expand the selected message tag into an owned wide-string result.
     StoryExpandedWideText result;
-        int messageTable = self->resourceTable;
-        switch (messageTable) {
-        case kStoryPrimaryMessageTable: {
-            int messageIndex = self->resourceIndex;
-            void* resource = characterNameMessageTagTable[(unsigned char)messageIndex];
-            if (!Text_ExpandTaggedText(self->textContext, &result, resource, 1)) {
-                return;
-            }
-            break;
-        }
-        case kStorySecondaryMessageTable: {
-            int messageIndex = self->resourceIndex;
-            void* resource = storySecondaryMessageTagTable[(unsigned char)messageIndex];
-            if (!Text_ExpandTaggedText(self->textContext, &result, resource, 1)) {
-                return;
-            }
-            break;
-        }
-        default: {
+    int messageTable = self->resourceTable;
+    switch (messageTable) {
+    case kStoryPrimaryMessageTable: {
+        int messageIndex = self->resourceIndex;
+        void* resource = characterNameMessageTagTable[(unsigned char)messageIndex];
+        if (!Text_ExpandTaggedText(self->textContext, &result, resource, 1)) {
             return;
         }
+        break;
+    }
+    case kStorySecondaryMessageTable: {
+        int messageIndex = self->resourceIndex;
+        void* resource = storySecondaryMessageTagTable[(unsigned char)messageIndex];
+        if (!Text_ExpandTaggedText(self->textContext, &result, resource, 1)) {
+            return;
         }
-        // Phase 2: register the new renderer before applying the expanded text.
-        ChildObj* obj = new ChildObj(self);
-        if (!Sing_805DC650()) {
-            if (!s_pointerPairListInitialized) {
-                PairVector_InitReserved(s_messageDrawPairList);
-                __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor, s_partyItemVectorDtorRegistration);
-                s_pointerPairListInitialized = 1;
-            }
-            Sing_805DC650() = s_messageDrawPairList;
+        break;
+    }
+    default: {
+        return;
+    }
+    }
+    // Phase 2: register the new renderer before applying the expanded text.
+    ChildObj* obj = new ChildObj(self);
+    if (!Sing_805DC650()) {
+        if (!s_pointerPairListInitialized) {
+            PairVector_InitReserved(s_messageDrawPairList);
+            __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor,
+                                     s_partyItemVectorDtorRegistration);
+            s_pointerPairListInitialized = 1;
         }
-        PointerIntVector_AppendPair(Sing_805DC650(), obj, 1);
-        self->messageDraw = obj;
-        CMsgDraw_SetColor(obj, kStoryOpaque);
-        CMsgDraw_ClearFormattingAndRevealAll(self->messageDraw);
-        StoryFloatPairBits glyphScale = {(int)kFloat_1_1_MessageGlyphScale, (int)kFloat_1_1_StoryGlyphScale};
-        CMsgDraw_SetGlyphScale(self->messageDraw, &glyphScale);
-        StoryFloatPairBits messagePosition = {(int)kStoryMessageOriginXFloatBits, (int)kStoryMessagePositionYBits};
-        Text_SetPosition(self->messageDraw, &messagePosition);
-        Text_SetContent(self->messageDraw, result.flags >> 31 == 0 ? (void*)((char*)&result+2) : (void*)result.data);
+        Sing_805DC650() = s_messageDrawPairList;
+    }
+    PointerIntVector_AppendPair(Sing_805DC650(), obj, 1);
+    self->messageDraw = obj;
+    ((CMsgDraw*)obj)->SetColor(kStoryOpaque);
+    ((CMsgDraw*)(self->messageDraw))->ClearFormattingAndRevealAll();
+    StoryFloatPairBits glyphScale = {(int)kFloat_1_1_MessageGlyphScale, (int)kFloat_1_1_StoryGlyphScale};
+    ((CMsgDraw*)(self->messageDraw))->SetGlyphScale((float*)&glyphScale);
+    StoryFloatPairBits messagePosition = {(int)kStoryMessageOriginXFloatBits, (int)kStoryMessagePositionYBits};
+    Text_SetPosition(self->messageDraw, &messagePosition);
+    Text_SetContent(self->messageDraw, result.flags >> 31 == 0 ? (void*)((char*)&result + 2) : (void*)result.data);
 }
 void String_ReplaceRange(void*, int, int, char*, char*, char*);
 unsigned int strlen(const char*);
@@ -220,34 +247,40 @@ unsigned int strlen(const char*);
 // scriptLength and scriptName are scratch outputs, not retained state. Separate
 // length scopes and the shared name temporary preserve register lifetimes.
 // Keep the two storage-selection forms distinct under opt_propagation off.
-static inline void editScriptNameWithStorageMode(int& scriptLength, char*& scriptName,
-        unsigned int* text, int poolOffset, StoryStringEdit edit, int inlineStorage) {
+static inline void editScriptNameWithStorageMode(int& scriptLength, char*& scriptName, unsigned int* text,
+                                                 int poolOffset, StoryStringEdit edit, int inlineStorage) {
     scriptName = storyMessageStrings + poolOffset;
     scriptLength = inlineStorage ? (*(unsigned char*)text & kInlineScriptLengthMask) : text[1];
     // The allocator tag is an ABI byte copied by the original call sequence.
     // Its value has no script-selection meaning; retain the volatile read.
-    union Alloc { char byte; int align; };
+    union Alloc {
+        char byte;
+        int align;
+    };
     Alloc temp;
     volatile Alloc original;
     temp.byte = original.byte;
     unsigned int len = strlen(scriptName);
-    String_ReplaceRange((char*)text, edit == kAppendScript ? scriptLength : 0,
-        edit == kAppendScript ? 0 : scriptLength, scriptName, len + scriptName, &temp.byte);
+    String_ReplaceRange((char*)text, edit == kAppendScript ? scriptLength : 0, edit == kAppendScript ? 0 : scriptLength,
+                        scriptName, len + scriptName, &temp.byte);
 }
 // Choose storage mode from the current tag and edit a narrow script name.
-static inline void editScriptName(int& scriptLength, char*& scriptName,
-        unsigned int* text, int poolOffset, StoryStringEdit edit) {
+static inline void editScriptName(int& scriptLength, char*& scriptName, unsigned int* text, int poolOffset,
+                                  StoryStringEdit edit) {
     scriptName = storyMessageStrings + poolOffset;
     scriptLength = (text[0] >> 31) == 0 ? (*(unsigned char*)text & kInlineScriptLengthMask) : text[1];
     // The allocator tag is an ABI byte copied by the original call sequence.
     // Its value has no script-selection meaning; retain the volatile read.
-    union Alloc { char byte; int align; };
+    union Alloc {
+        char byte;
+        int align;
+    };
     Alloc temp;
     volatile Alloc original;
     temp.byte = original.byte;
     unsigned int len = strlen(scriptName);
-    String_ReplaceRange((char*)text, edit == kAppendScript ? scriptLength : 0,
-        edit == kAppendScript ? 0 : scriptLength, scriptName, len + scriptName, &temp.byte);
+    String_ReplaceRange((char*)text, edit == kAppendScript ? scriptLength : 0, edit == kAppendScript ? 0 : scriptLength,
+                        scriptName, len + scriptName, &temp.byte);
 }
 // Choose window/character IN, OUT and no-scroll script names from the current panel and character selection.
 void StoryMessage_SelectTransitionScripts(void* self, int characterSelection) {
@@ -257,11 +290,13 @@ void StoryMessage_SelectTransitionScripts(void* self, int characterSelection) {
     {
         int scriptLength;
         editScriptName(scriptLength, scriptName, owner->defaultNoScrollScript,
-            STORY_MEMBER_OFFSET(StoryStrings, defaultScript), kReplaceScript);
+                       STORY_MEMBER_OFFSET(StoryStrings, defaultScript), kReplaceScript);
     }
     if (!(owner->characterOutNoScrollScript[0] >> 31)) {
         ((char*)owner->characterOutNoScrollScript)[1] = 0;
-        struct ShortHead { CW_BITS2( unsigned char flag:1, unsigned char length:7) };
+        struct ShortHead {
+            CW_BITS2(unsigned char flag : 1, unsigned char length : 7)
+        };
         ((ShortHead*)owner->characterOutNoScrollScript)->length = 0;
     } else {
         *(*(char**)&owner->characterOutNoScrollScript[2]) = 0;
@@ -269,13 +304,13 @@ void StoryMessage_SelectTransitionScripts(void* self, int characterSelection) {
     }
     {
         int scriptLength;
-        editScriptName(scriptLength, scriptName, owner->outNoScrollScript,
-            STORY_MEMBER_OFFSET(StoryStrings, outScript), kReplaceScript);
+        editScriptName(scriptLength, scriptName, owner->outNoScrollScript, STORY_MEMBER_OFFSET(StoryStrings, outScript),
+                       kReplaceScript);
     }
     {
         int scriptLength;
         editScriptName(scriptLength, scriptName, owner->defaultWindowScript,
-            STORY_MEMBER_OFFSET(StoryStrings, defaultScript), kReplaceScript);
+                       STORY_MEMBER_OFFSET(StoryStrings, defaultScript), kReplaceScript);
     }
     unsigned int scriptFlags = owner->transitionNoScrollScript[0];
     int usesInlineScript = (unsigned int)__cntlzw(scriptFlags >> 31) >> 5;
@@ -290,118 +325,118 @@ void StoryMessage_SelectTransitionScripts(void* self, int characterSelection) {
     // no                    either          character       in
     // Window-only selection also appends windowOnlySuffix to default/out names;
     // a new character installs characterWindowOutNoScroll as its separate out name.
-    if ((usesInlineScript ? ((*(unsigned char*)&owner->transitionNoScrollScript) & kInlineScriptLengthMask) : owner->transitionNoScrollScript[1])) {
+    if ((usesInlineScript ? ((*(unsigned char*)&owner->transitionNoScrollScript) & kInlineScriptLengthMask)
+                          : owner->transitionNoScrollScript[1])) {
         if (characterSelection == kNoStoryResource) {
             {
                 int scriptLength;
                 editScriptName(scriptLength, scriptName, owner->outNoScrollScript,
-                    STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
+                               STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
             }
             {
                 int scriptLength;
                 editScriptName(scriptLength, scriptName, owner->defaultWindowScript,
-                    STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
+                               STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
             }
             if (owner->currentCharacterId == kNoStoryResource) {
                 {
                     int scriptLength;
                     editScriptName(scriptLength, scriptName, owner->defaultNoScrollScript,
-                        STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
+                                   STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
                 }
                 {
                     int scriptLength;
                     editScriptName(scriptLength, scriptName, owner->transitionNoScrollScript,
-                        STORY_MEMBER_OFFSET(StoryStrings, defaultWindowOnly), kReplaceScript);
+                                   STORY_MEMBER_OFFSET(StoryStrings, defaultWindowOnly), kReplaceScript);
                 }
             } else {
                 int scriptLength;
                 editScriptName(scriptLength, scriptName, owner->transitionNoScrollScript,
-                    STORY_MEMBER_OFFSET(StoryStrings, characterWindowOut), kReplaceScript);
+                               STORY_MEMBER_OFFSET(StoryStrings, characterWindowOut), kReplaceScript);
             }
         } else {
             {
                 int scriptLength;
                 editScriptName(scriptLength, scriptName, owner->characterOutNoScrollScript,
-                    STORY_MEMBER_OFFSET(StoryStrings, characterWindowOutNoScroll), kReplaceScript);
+                               STORY_MEMBER_OFFSET(StoryStrings, characterWindowOutNoScroll), kReplaceScript);
             }
             if (owner->currentCharacterId == kNoStoryResource) {
                 int scriptLength;
                 editScriptName(scriptLength, scriptName, owner->transitionNoScrollScript,
-                    STORY_MEMBER_OFFSET(StoryStrings, characterWindowIn), kReplaceScript);
-            }
-            else {
+                               STORY_MEMBER_OFFSET(StoryStrings, characterWindowIn), kReplaceScript);
+            } else {
                 int scriptLength;
                 editScriptName(scriptLength, scriptName, owner->transitionNoScrollScript,
-                    STORY_MEMBER_OFFSET(StoryStrings, defaultScript), kReplaceScript);
+                               STORY_MEMBER_OFFSET(StoryStrings, defaultScript), kReplaceScript);
             }
         }
     } else {
         {
             int scriptLength;
             editScriptNameWithStorageMode(scriptLength, scriptName, owner->transitionNoScrollScript,
-                STORY_MEMBER_OFFSET(StoryStrings, inScript), kReplaceScript, usesInlineScript);
+                                          STORY_MEMBER_OFFSET(StoryStrings, inScript), kReplaceScript,
+                                          usesInlineScript);
         }
         if (characterSelection == kNoStoryResource) {
             {
                 int scriptLength;
                 editScriptName(scriptLength, scriptName, owner->defaultNoScrollScript,
-                    STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
+                               STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
             }
             {
                 int scriptLength;
                 editScriptName(scriptLength, scriptName, owner->outNoScrollScript,
-                    STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
+                               STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
             }
             {
                 int scriptLength;
                 editScriptName(scriptLength, scriptName, owner->defaultWindowScript,
-                    STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
+                               STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
             }
             {
                 int scriptLength;
                 editScriptName(scriptLength, scriptName, owner->transitionNoScrollScript,
-                    STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
+                               STORY_MEMBER_OFFSET(StoryStrings, windowOnlySuffix), kAppendScript);
             }
         } else {
             int scriptLength;
             editScriptName(scriptLength, scriptName, owner->characterOutNoScrollScript,
-                STORY_MEMBER_OFFSET(StoryStrings, characterWindowOutNoScroll), kReplaceScript);
+                           STORY_MEMBER_OFFSET(StoryStrings, characterWindowOutNoScroll), kReplaceScript);
         }
     }
     // Phase 3: only these three selected paths receive the common no-scroll suffix.
     {
         int scriptLength;
         editScriptName(scriptLength, scriptName, owner->defaultNoScrollScript,
-            STORY_MEMBER_OFFSET(StoryStrings, noScrollSuffix), kAppendScript);
+                       STORY_MEMBER_OFFSET(StoryStrings, noScrollSuffix), kAppendScript);
     }
     {
         int scriptLength;
         editScriptName(scriptLength, scriptName, owner->outNoScrollScript,
-            STORY_MEMBER_OFFSET(StoryStrings, noScrollSuffix), kAppendScript);
+                       STORY_MEMBER_OFFSET(StoryStrings, noScrollSuffix), kAppendScript);
     }
     {
         int scriptLength;
         editScriptName(scriptLength, scriptName, owner->transitionNoScrollScript,
-            STORY_MEMBER_OFFSET(StoryStrings, noScrollSuffix), kAppendScript);
+                       STORY_MEMBER_OFFSET(StoryStrings, noScrollSuffix), kAppendScript);
     }
 }
 #pragma pop
 void EventMessage_ResetChildAndText(Owner*);
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor();
 void* IdMap_Lookup(void*, void*);
 void* BpObject_SetEnabled(void*, int);
 // Clear a tagged script string while retaining its allocated capacity.
 static inline void clearScriptString(unsigned int* text) {
-        unsigned int flags = text[0];
-        if ((flags >> 31) == 0) {
-            ((unsigned char*)text)[1] = 0;
-            signed char low = *(signed char*)text;
-            *(signed char*)text = low & ~0x7F;
-        } else {
-            **(unsigned char**)&text[2] = 0;
-            *(int*)&text[1] = 0;
-        }
+    unsigned int flags = text[0];
+    if ((flags >> 31) == 0) {
+        ((unsigned char*)text)[1] = 0;
+        signed char low = *(signed char*)text;
+        *(signed char*)text = low & ~0x7F;
+    } else {
+        **(unsigned char**)&text[2] = 0;
+        *(int*)&text[1] = 0;
+    }
 }
 
 // Disable the panel script, destroy its child text, reset resource selections, and clear script names.
@@ -410,7 +445,7 @@ void StoryMessage_DisableAndResetPanel(Owner* self) {
     if (self->scriptId != -1) {
         if (!Sing_805DC5F0()) {
             if (!s_bpCtrlInitialized) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlDtorRegistration_StoryMessage);
                 s_bpCtrlInitialized = 1;
             }
@@ -424,20 +459,21 @@ void StoryMessage_DisableAndResetPanel(Owner* self) {
     void* child = self->secondaryMessageDraw;
     if (child) {
         if (child) {
-        if (!Sing_805DC650()) {
-            if (!s_pointerPairListInitialized) {
-                PairVector_InitReserved(s_messageDrawPairList);
-                __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor, s_partyItemVectorDtorRegistration);
-                s_pointerPairListInitialized = 1;
+            if (!Sing_805DC650()) {
+                if (!s_pointerPairListInitialized) {
+                    PairVector_InitReserved(s_messageDrawPairList);
+                    __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor,
+                                             s_partyItemVectorDtorRegistration);
+                    s_pointerPairListInitialized = 1;
+                }
+                Sing_805DC650() = s_messageDrawPairList;
             }
-            Sing_805DC650() = s_messageDrawPairList;
-        }
-        PointerPairList_RemoveByKey(Sing_805DC650(), child);
-        if (child) {
+            PointerPairList_RemoveByKey(Sing_805DC650(), child);
             if (child) {
-                ((Obj*)child)->destroy(1);
+                if (child) {
+                    ((Obj*)child)->destroy(1);
+                }
             }
-        }
         }
         self->secondaryMessageDraw = 0;
     }
@@ -454,27 +490,27 @@ void StoryMessage_DisableAndResetPanel(Owner* self) {
     clearScriptString(self->characterOutNoScrollScript);
     clearScriptString(self->defaultWindowScript);
     clearScriptString(self->defaultNoScrollScript);
-
 }
 // Destroy child text, reset resource selections, and clear all five script-name strings.
 void EventMessage_ResetChildAndText(Owner* self) {
     void* child = self->secondaryMessageDraw;
     if (child) {
         if (child) {
-        if (!Sing_805DC650()) {
-            if (!s_pointerPairListInitialized) {
-                PairVector_InitReserved(s_messageDrawPairList);
-                __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor, s_partyItemVectorDtorRegistration);
-                s_pointerPairListInitialized = 1;
+            if (!Sing_805DC650()) {
+                if (!s_pointerPairListInitialized) {
+                    PairVector_InitReserved(s_messageDrawPairList);
+                    __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor,
+                                             s_partyItemVectorDtorRegistration);
+                    s_pointerPairListInitialized = 1;
+                }
+                Sing_805DC650() = s_messageDrawPairList;
             }
-            Sing_805DC650() = s_messageDrawPairList;
-        }
-        PointerPairList_RemoveByKey(Sing_805DC650(), child);
-        if (child) {
+            PointerPairList_RemoveByKey(Sing_805DC650(), child);
             if (child) {
-                ((Obj*)child)->destroy(1);
+                if (child) {
+                    ((Obj*)child)->destroy(1);
+                }
             }
-        }
         }
         self->secondaryMessageDraw = 0;
     }
@@ -491,7 +527,6 @@ void EventMessage_ResetChildAndText(Owner* self) {
     clearScriptString(self->characterOutNoScrollScript);
     clearScriptString(self->defaultWindowScript);
     clearScriptString(self->defaultNoScrollScript);
-
 }
 
 // Expand a message tag through owner context slot zero without the extra expansion mode.
@@ -518,23 +553,26 @@ void Sprite_GetPosition2D(void*, float*);
 void Engine_SetFlexibleVertexFormat(int);
 void* GX_GetPrimitiveCount(int, int);
 void DrawPrimitiveUP(int, void*, void*, int);
-void CMsgDraw_UpdateReveal(void*);
 void Text_DrawGlyphs(void*);
 extern Quad24 kStoryPanelQuadTemplate;
 
-struct RenderObj { 
-virtual void v0(); virtual void v1(); virtual void v2(); virtual void run();
+struct RenderObj {
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void run();
 };
 
 // Run and draw the panel script, draw its opacity-tinted sprite quad, then reveal both message renderers.
 void StoryConte_DrawPanelAndMessages(Owner* self) {
-    if (!self->drawObject) return;
+    if (!self->drawObject)
+        return;
     UIRender_SetDefaultState();
     void* callbackObject;
     if (self->scriptId != -1) {
         if (!Sing_805DC5F0()) {
             if (!s_bpCtrlInitialized) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlDtorRegistration_StoryMessage);
                 s_bpCtrlInitialized = 1;
             }
@@ -549,7 +587,7 @@ void StoryConte_DrawPanelAndMessages(Owner* self) {
     if (self->scriptId != -1) {
         if (!Sing_805DC5F0()) {
             if (!s_bpCtrlInitialized) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlDtorRegistration_StoryMessage);
                 s_bpCtrlInitialized = 1;
             }
@@ -577,13 +615,17 @@ void StoryConte_DrawPanelAndMessages(Owner* self) {
                 float x = pos[0];
                 float w = size[0];
                 float h = size[1];
-                vertices[0].x = x; vertices[0].y = y;
+                vertices[0].x = x;
+                vertices[0].y = y;
                 vertices[0].alpha = (*(int*)&self->panelOpacity);
-                vertices[1].x = x + w; vertices[1].y = y;
+                vertices[1].x = x + w;
+                vertices[1].y = y;
                 vertices[1].alpha = (*(int*)&self->panelOpacity);
-                vertices[2].x = x; vertices[2].y = y + h;
+                vertices[2].x = x;
+                vertices[2].y = y + h;
                 vertices[2].alpha = (*(int*)&self->panelOpacity);
-                vertices[3].x = x + w; vertices[3].y = y + h;
+                vertices[3].x = x + w;
+                vertices[3].y = y + h;
                 vertices[3].alpha = (*(int*)&self->panelOpacity);
                 Engine_SetFlexibleVertexFormat(kStoryQuadFormat);
                 void* primitiveCount = GX_GetPrimitiveCount(kStoryQuadVertexCount, kStoryTriangleStrip);
@@ -591,11 +633,11 @@ void StoryConte_DrawPanelAndMessages(Owner* self) {
             }
         }
         if (self->messageDraw) {
-            CMsgDraw_UpdateReveal(self->messageDraw);
+            ((CMsgDraw*)(self->messageDraw))->UpdateReveal();
             Text_DrawGlyphs(self->messageDraw);
         }
         if (self->secondaryMessageDraw) {
-            CMsgDraw_UpdateReveal(self->secondaryMessageDraw);
+            ((CMsgDraw*)(self->secondaryMessageDraw))->UpdateReveal();
             Text_DrawGlyphs(self->secondaryMessageDraw);
         }
     }

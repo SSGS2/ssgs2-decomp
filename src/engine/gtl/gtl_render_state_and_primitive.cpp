@@ -1,30 +1,39 @@
+// Render state and primitives: saving and restoring the graphics state, the video config
+// from the TV format, vertex and index buffer writes, and the primitive, buffer and record
+// deque objects.
+
 #include "classes/RenderStateSnapshot.h"
 #define AsRenderStateSnapshot(p) ((RenderStateSnapshot*)(p))
 #include "classes/GtlBuffer.h"
-#define AsGtlBuffer(p) ((GtlBuffer*)(p))
 #include "classes/GtlPrimitive.h"
-#define AsGtlPrimitive(p) ((GtlPrimitive*)(p))
+#define AsGtlPrimitive(p) ((gtl::IG3DXPrimitive*)(p))
 #include "classes/GtlVideoConfigView.h"
+#include "classes/GtlRecordDeque.h"
 #define AsVideoConfig804326B0(p) ((GtlVideoConfigView*)(p))
-// Translation unit 0x804323D8-0x80433528 (25 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #pragma use_lmw_stmw on
 
 extern "C" {
 
 enum {
-    kTextureStageCount = 8, kRenderStateCount = 42, kTransformCount = 44,
-    kTextureStateCount = 25, kSamplerStateCount = 9, kFormatPatternCount = 39,
-    kSavedSamplerQueryCount = 25, kSnapshotClearBytes = 0x1488,
-    kBasisVertexFloatCount = 14
-    , kGxWriteGatherPipe = 0xCC008000
+    kTextureStageCount = 8,
+    kRenderStateCount = 42,
+    kTransformCount = 44,
+    kTextureStateCount = 25,
+    kSamplerStateCount = 9,
+    kFormatPatternCount = 39,
+    kSavedSamplerQueryCount = 25,
+    kSnapshotClearBytes = 0x1488,
+    kBasisVertexFloatCount = 14,
+    kGxWriteGatherPipe = 0xCC008000
 };
-
 
 // The state APIs pass scalar bits in pointer-sized arguments on the Wii ABI.
 // Distinguish those bits from retained resources without changing byte staging.
-union SnapshotStateWord { unsigned int scalar; void* resource; };
+union SnapshotStateWord {
+    unsigned int scalar;
+    void* resource;
+};
 
 // Offsets come from the shared snapshot layout; byte staging preserves API order.
 enum SnapshotArrayLayout {
@@ -35,8 +44,10 @@ enum SnapshotArrayLayout {
     kSnapshotTransformsOffset = (int)&((RenderStateSnapshot*)0)->transforms,
     kSnapshotLightsOffset = (int)&((RenderStateSnapshot*)0)->lights,
     kSnapshotLightEnabledOffset = (int)&((RenderStateSnapshot*)0)->lightEnabled,
-    kSnapshotTextureRowBytes = 25 * 4, kSnapshotSamplerRowBytes = 9 * 4,
-    kSnapshotTransformBytes = 0x40, kSnapshotLightBytes = 0x68
+    kSnapshotTextureRowBytes = 25 * 4,
+    kSnapshotSamplerRowBytes = 9 * 4,
+    kSnapshotTransformBytes = 0x40,
+    kSnapshotLightBytes = 0x68
 };
 
 #include "sdk_protos.h"
@@ -64,7 +75,8 @@ void Engine_GetLightEnabled(unsigned int, void*);
 void Engine_GetMaterial(void*);
 extern unsigned char s_renderStateSnapshotInitialized;
 extern unsigned int s_renderStateSnapshot[];
-extern unsigned int g_useIndexedVertexInput, g_drawPrimitiveType, g_drawUsesBoundVertexBuffer, g_drawUsesIndexDisplayList, g_boundBufferDrawArgument;
+extern unsigned int g_useIndexedVertexInput, g_drawPrimitiveType, g_drawUsesBoundVertexBuffer,
+    g_drawUsesIndexDisplayList, g_boundBufferDrawArgument;
 extern unsigned int s_vertexFormatDescriptor[8];
 
 #pragma dont_inline on
@@ -91,7 +103,9 @@ void Engine_SaveRenderState(void) {
         Engine_GetTextureStageResource(i, (char*)s_renderStateSnapshot + i * 4);
         Engine_AcquireTexturePalette(i, (char*)s_renderStateSnapshot + i * 4 + kSnapshotStageResourcesOffset);
         for (unsigned int j = 0; j < kTextureStateCount; ++j) {
-            Engine_GetTextureStageState(i, j, (char*)s_renderStateSnapshot + i * kSnapshotTextureRowBytes + j * 4 + kSnapshotTextureStageStatesOffset);
+            Engine_GetTextureStageState(i, j,
+                                        (char*)s_renderStateSnapshot + i * kSnapshotTextureRowBytes + j * 4 +
+                                            kSnapshotTextureStageStatesOffset);
         }
         // The original save queries 25 fields at a NINE-word row stride.
         // Queries 9..24 overlap later sampler rows; the last stage also reaches
@@ -99,7 +113,9 @@ void Engine_SaveRenderState(void) {
         // populated again below. Restore uses only the nine fields of each row.
         // The reason for the extra queries is unresolved; preserve their calls.
         for (unsigned int j = 0; j < kSavedSamplerQueryCount; ++j) {
-            Engine_GetRenderStateRowField(i, j, (char*)s_renderStateSnapshot + i * kSnapshotSamplerRowBytes + j * 4 + kSnapshotSamplerStatesOffset);
+            Engine_GetRenderStateRowField(i, j,
+                                          (char*)s_renderStateSnapshot + i * kSnapshotSamplerRowBytes + j * 4 +
+                                              kSnapshotSamplerStatesOffset);
         }
     }
     if (AsRenderStateSnapshot(s_renderStateSnapshot)->vertexStream) {
@@ -107,16 +123,33 @@ void Engine_SaveRenderState(void) {
         AsRenderStateSnapshot(s_renderStateSnapshot)->vertexStream = 0;
     }
     unsigned int temp;
-    Engine_GetVertexStream(0, (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->vertexStream, &temp, (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->vertexStride);
-    Engine_GetIndexBuffer((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->indexBuffer, (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->indexOffset);
+    Engine_GetVertexStream(0, (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->vertexStream, &temp,
+                           (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->vertexStride);
+    Engine_GetIndexBuffer((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->indexBuffer,
+                          (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->indexOffset);
     Render_GetVertexFormat((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->vertexFormat);
-    if ((*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->renderTarget)) { GraphicsResource_Release(AsRenderStateSnapshot(s_renderStateSnapshot)->renderTarget); (*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->renderTarget) = 0; }
-    if ((*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->depthStencilSurface)) { GraphicsResource_Release(AsRenderStateSnapshot(s_renderStateSnapshot)->depthStencilSurface); (*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->depthStencilSurface) = 0; }
+    if ((*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->renderTarget)) {
+        GraphicsResource_Release(AsRenderStateSnapshot(s_renderStateSnapshot)->renderTarget);
+        (*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->renderTarget) = 0;
+    }
+    if ((*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->depthStencilSurface)) {
+        GraphicsResource_Release(AsRenderStateSnapshot(s_renderStateSnapshot)->depthStencilSurface);
+        (*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->depthStencilSurface) = 0;
+    }
     Engine_AcquireCurrentRenderTarget(0, (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->renderTarget);
     Engine_AcquireCurrentRenderSurface((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->depthStencilSurface);
-    if ((*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->vertexDeclaration)) { GraphicsResource_Release(AsRenderStateSnapshot(s_renderStateSnapshot)->vertexDeclaration); (*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->vertexDeclaration) = 0; }
-    if ((*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->type6Resource)) { GraphicsResource_Release(AsRenderStateSnapshot(s_renderStateSnapshot)->type6Resource); (*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->type6Resource) = 0; }
-    if ((*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->type7Resource)) { GraphicsResource_Release(AsRenderStateSnapshot(s_renderStateSnapshot)->type7Resource); (*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->type7Resource) = 0; }
+    if ((*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->vertexDeclaration)) {
+        GraphicsResource_Release(AsRenderStateSnapshot(s_renderStateSnapshot)->vertexDeclaration);
+        (*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->vertexDeclaration) = 0;
+    }
+    if ((*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->type6Resource)) {
+        GraphicsResource_Release(AsRenderStateSnapshot(s_renderStateSnapshot)->type6Resource);
+        (*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->type6Resource) = 0;
+    }
+    if ((*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->type7Resource)) {
+        GraphicsResource_Release(AsRenderStateSnapshot(s_renderStateSnapshot)->type7Resource);
+        (*(unsigned int*)&AsRenderStateSnapshot(s_renderStateSnapshot)->type7Resource) = 0;
+    }
     Render_GetVertexDeclaration((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->vertexDeclaration);
     Engine_AcquireType6Resource((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->type6Resource);
     Engine_AcquireType7Resource((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->type7Resource);
@@ -124,7 +157,8 @@ void Engine_SaveRenderState(void) {
         Engine_GetSystemOption(i, (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->systemOptions + i * 4);
     Engine_GetViewport((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->viewport);
     for (int i = 0; i < kTransformCount; ++i)
-        Engine_GetTransform(i, (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->transforms + i * kSnapshotTransformBytes);
+        Engine_GetTransform(i, (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->transforms +
+                                   i * kSnapshotTransformBytes);
     for (unsigned int i = 0; i < kTextureStageCount; ++i) {
         Engine_GetLight(i, (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->lights + i * kSnapshotLightBytes);
         Engine_GetLightEnabled(i, (char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->lightEnabled + i * 4);
@@ -135,7 +169,8 @@ void Engine_SaveRenderState(void) {
     AsRenderStateSnapshot(s_renderStateSnapshot)->drawUsesBoundVertexBuffer = g_drawUsesBoundVertexBuffer;
     AsRenderStateSnapshot(s_renderStateSnapshot)->drawUsesIndexDisplayList = g_drawUsesIndexDisplayList;
     AsRenderStateSnapshot(s_renderStateSnapshot)->boundBufferDrawArgument = g_boundBufferDrawArgument;
-    RenderState_CopyEightWords((unsigned int*)((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->formatDescriptor), s_vertexFormatDescriptor);
+    RenderState_CopyEightWords((unsigned int*)((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->formatDescriptor),
+                               s_vertexFormatDescriptor);
 }
 #pragma global_optimizer reset
 #pragma dont_inline reset
@@ -159,14 +194,29 @@ extern void SetTransform(unsigned int, void*);
 extern void Engine_SetLight(unsigned int, void*);
 extern void Engine_SetLightEnabled(unsigned int, void*);
 extern void Engine_SetMaterial(void*);
-extern unsigned int s_renderStateSnapshot[0x14A0/4];
-extern unsigned int g_useIndexedVertexInput, g_drawPrimitiveType, g_drawUsesBoundVertexBuffer, g_drawUsesIndexDisplayList, g_boundBufferDrawArgument;
+extern unsigned int s_renderStateSnapshot[0x14A0 / 4];
+extern unsigned int g_useIndexedVertexInput, g_drawPrimitiveType, g_drawUsesBoundVertexBuffer,
+    g_drawUsesIndexDisplayList, g_boundBufferDrawArgument;
 extern unsigned int s_vertexFormatDescriptor[8];
 
 extern const float kFloat_60_VideoConfig, kFloat_50_VideoConfig; // PAL refresh rate: 50 Hz.
-enum VideoTvFormat { kTvNtsc = 0, kTvPal = 1, kTvMpal = 2, kTvEuRgb60 = 5 };
-enum VideoOutputMode { kOutputNtsc = 2, kOutputPal = 3, kOutputEuRgb60 = 4, kOutputMpal = 5 };
-enum VideoDimensions { kVideoWidth = 640, kVideoHeight60Hz = 480, kVideoHeightPal = 576 };
+enum VideoTvFormat {
+    kTvNtsc = 0,
+    kTvPal = 1,
+    kTvMpal = 2,
+    kTvEuRgb60 = 5
+};
+enum VideoOutputMode {
+    kOutputNtsc = 2,
+    kOutputPal = 3,
+    kOutputEuRgb60 = 4,
+    kOutputMpal = 5
+};
+enum VideoDimensions {
+    kVideoWidth = 640,
+    kVideoHeight60Hz = 480,
+    kVideoHeightPal = 576
+};
 #pragma optimization_level 0
 // Choose framebuffer dimensions and refresh rate from the console TV standard and progressive setting.
 void VideoConfig_InitFromTvFormat(void* p) {
@@ -208,18 +258,31 @@ void Engine_RestoreRenderState(void) {
     // Phase 1: restore scalar state values and texture references by stage.
     // These APIs encode scalar values in void*; they do not dereference them.
     for (unsigned int i = 0; i < kRenderStateCount; ++i)
-        Engine_SetCachedRenderState(i, (void*)((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * 4 + kSnapshotRenderStatesOffset))->scalar);
+        Engine_SetCachedRenderState(
+            i,
+            (void*)((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * 4 + kSnapshotRenderStatesOffset))->scalar);
     for (unsigned int i = 0; i < kTextureStageCount; ++i) {
         Engine_SetTextureStageResource(i, ((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * 4))->resource);
-        Engine_SetTexturePalette(i, ((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * 4 + kSnapshotStageResourcesOffset))->resource);
+        Engine_SetTexturePalette(
+            i, ((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * 4 + kSnapshotStageResourcesOffset))->resource);
         for (unsigned int j = 0; j < kTextureStateCount; ++j)
-            Engine_SetTextureStageState(i, j, (void*)((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * kSnapshotTextureRowBytes + j * 4 + kSnapshotTextureStageStatesOffset))->scalar);
+            Engine_SetTextureStageState(
+                i, j,
+                (void*)((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * kSnapshotTextureRowBytes + j * 4 +
+                                             kSnapshotTextureStageStatesOffset))
+                    ->scalar);
         for (unsigned int j = 0; j < kSamplerStateCount; ++j)
-            Engine_SetTextureStageParameter(i, j, (void*)((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * kSnapshotSamplerRowBytes + j * 4 + kSnapshotSamplerStatesOffset))->scalar);
+            Engine_SetTextureStageParameter(
+                i, j,
+                (void*)((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * kSnapshotSamplerRowBytes + j * 4 +
+                                             kSnapshotSamplerStatesOffset))
+                    ->scalar);
     }
     // Phase 2: rebind streams, targets, declarations and other retained resources.
-    Engine_SetVertexStream(0, AsRenderStateSnapshot(s_renderStateSnapshot)->vertexStream, 0, AsRenderStateSnapshot(s_renderStateSnapshot)->vertexStride);
-    Engine_SetIndexBuffer(AsRenderStateSnapshot(s_renderStateSnapshot)->indexBuffer, (int)AsRenderStateSnapshot(s_renderStateSnapshot)->indexOffset);
+    Engine_SetVertexStream(0, AsRenderStateSnapshot(s_renderStateSnapshot)->vertexStream, 0,
+                           AsRenderStateSnapshot(s_renderStateSnapshot)->vertexStride);
+    Engine_SetIndexBuffer(AsRenderStateSnapshot(s_renderStateSnapshot)->indexBuffer,
+                          (int)AsRenderStateSnapshot(s_renderStateSnapshot)->indexOffset);
     Engine_SetFlexibleVertexFormat(0);
     Engine_SetFlexibleVertexFormat(AsRenderStateSnapshot(s_renderStateSnapshot)->vertexFormat);
     Engine_SetRenderTarget(0, AsRenderStateSnapshot(s_renderStateSnapshot)->renderTarget);
@@ -233,7 +296,9 @@ void Engine_RestoreRenderState(void) {
         SetTransform(i, (char*)s_renderStateSnapshot + i * kSnapshotTransformBytes + kSnapshotTransformsOffset);
     for (unsigned int i = 0; i < kTextureStageCount; ++i) {
         Engine_SetLight(i, (char*)s_renderStateSnapshot + i * kSnapshotLightBytes + kSnapshotLightsOffset);
-        Engine_SetLightEnabled(i, (void*)((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * 4 + kSnapshotLightEnabledOffset))->scalar);
+        Engine_SetLightEnabled(
+            i,
+            (void*)((SnapshotStateWord*)((char*)s_renderStateSnapshot + i * 4 + kSnapshotLightEnabledOffset))->scalar);
     }
     Engine_SetMaterial((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->material);
     g_useIndexedVertexInput = AsRenderStateSnapshot(s_renderStateSnapshot)->useIndexedVertexInput;
@@ -241,7 +306,8 @@ void Engine_RestoreRenderState(void) {
     g_drawUsesBoundVertexBuffer = AsRenderStateSnapshot(s_renderStateSnapshot)->drawUsesBoundVertexBuffer;
     g_drawUsesIndexDisplayList = AsRenderStateSnapshot(s_renderStateSnapshot)->drawUsesIndexDisplayList;
     g_boundBufferDrawArgument = AsRenderStateSnapshot(s_renderStateSnapshot)->boundBufferDrawArgument;
-    RenderState_CopyEightWords(s_vertexFormatDescriptor, (unsigned int*)((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->formatDescriptor));
+    RenderState_CopyEightWords(s_vertexFormatDescriptor,
+                               (unsigned int*)((char*)&AsRenderStateSnapshot(s_renderStateSnapshot)->formatDescriptor));
 }
 
 extern char s_fixedVertexFormatDescriptors[0x5A0];
@@ -274,7 +340,8 @@ extern void* __alloca(unsigned int);
 // All vectors/UVs pass through unchanged: caller supplies the required spaces.
 // Each vertex writes 12 vector components and two UV components to the FIFO.
 void Render_WriteVerticesPositionNormalBasisTex1(float* input, volatile unsigned int count) {
-    if (0) __alloca(0);
+    if (0)
+        __alloca(0);
     float* p = input;
     for (unsigned int i = 0; i < count; p += kBasisVertexFloatCount, ++i) {
         Render_WriteFifo3f(p[0], p[1], p[2]);
@@ -291,7 +358,8 @@ void Render_WriteVerticesPositionNormalBasisTex1(float* input, volatile unsigned
 #pragma optimize_for_size on
 // Find the fixed-format key and copy its eight-word vertex input descriptor; leave destination unchanged on a miss.
 void VertexInput_FindAndCopyFormatDescriptor(void* descriptorOut, volatile unsigned int formatFlags) {
-    if (0) __alloca(0);
+    if (0)
+        __alloca(0);
     unsigned int i = 0;
     for (; i < kFormatPatternCount; ++i) {
         unsigned char* entry = (unsigned char*)&s_fixedVertexFormatDescriptors + i * kSnapshotSamplerRowBytes;
@@ -316,23 +384,25 @@ void RenderState_CopyEightWords(unsigned int* dst, unsigned int* src) {
     dst[7] = src[7];
 }
 
+} // extern "C"
+
 #pragma optimization_level 0
 #pragma opt_propagation off
 #pragma opt_common_subs off
 // Forward index-buffer data outputs in the buffer API's pointer/size order.
-void gtl_IG3DXPrimitive_GetIndexData(void* p, void* a, void* b) {
-    void* q = p;
-    IndexBuffer_GetOffsetPtr(AsGtlPrimitive(q)->indexBuffer, 0, 0, b, a);
+void gtl::IG3DXPrimitive::GetIndexData(void* a, void* b) {
+    IndexBuffer_GetOffsetPtr(indexBuffer, 0, 0, b, a);
 }
 #pragma opt_common_subs reset
 #pragma opt_propagation reset
 
 // Forward vertex-buffer data outputs in the buffer API's pointer/size order.
-void gtl_IG3DXPrimitive_GetVertexData(void* p, void* a, void* b) {
-    void* q = p;
-    Resource_GetOffsetPtr(AsGtlPrimitive(q)->vertexBuffer, 0, 0, b, a);
+void gtl::IG3DXPrimitive::GetVertexData(void* a, void* b) {
+    Resource_GetOffsetPtr(vertexBuffer, 0, 0, b, a);
 }
 #pragma optimization_level reset
+
+extern "C" {
 
 #pragma optimization_level 0
 #pragma use_lmw_stmw on
@@ -359,7 +429,6 @@ extern unsigned int gtl_Graphics_AllocateWithCallback(void*);
 extern void gtl_Graphics_FreeWithCallback(void*);
 extern char __vt__Q23gtl11IG3DXBuffer[256];
 extern char s_fixedVertexFormatDescriptors[0x5A0];
-void GtlRecordDeque_DestroyStorage(void*, short);
 
 extern char __vt__Q23gtl14IG3DXPrimitive[];
 extern char s_gtlReferenceCountedBaseVtable[];
@@ -421,50 +490,37 @@ void VertexInput_CopyDescriptorForDeclaration(void* descriptorOut, volatile unsi
 
 #pragma dont_inline reset
 
-struct PrimitiveConstructorView {
-    unsigned int referenceCount;
-    void* vtable;
-    unsigned int vertexBuffer;
-    unsigned int indexBuffer;
-    int primitiveCount;
-    int vertexCount;
-    unsigned int creationFlags;
-    unsigned int vertexDeclaration;
-    void* primitiveType;
-};
+} // extern "C"
 
 #pragma optimization_level 0
 #pragma optimize_for_size on
 // Initialize the primitive's base vtable and its single owned reference.
-inline void InitPrimitiveBase(PrimitiveConstructorView* o) {
-    o->vtable = s_gtlReferenceCountedBaseVtable;
+inline void InitPrimitiveBase(gtl::IG3DXPrimitive* o) {
     o->referenceCount = 1;
-}
-// Store a resource-address word through the constructor's packed pointer ABI.
-inline void InitPrimitivePointer(unsigned int* p, unsigned int value) {
-    *p = value;
+    o->vtable = s_gtlReferenceCountedBaseVtable;
 }
 #pragma optimize_for_size off
 // Create a declaration copy and allocate vertex/index buffers for the requested primitive.
-void* gtl_IG3DXPrimitive_Ctor(PrimitiveConstructorView* primitive, int primitiveCount, int vertexCount, volatile unsigned int creationFlags, void* declaration, void* primitiveType) {
-    PrimitiveConstructorView* base = primitive;
-    InitPrimitiveBase(primitive);
-    primitive->vtable = (void*)__vt__Q23gtl14IG3DXPrimitive;
-    InitPrimitivePointer(&primitive->vertexBuffer, 0);
-    InitPrimitivePointer(&primitive->indexBuffer, 0);
-    primitive->primitiveCount = primitiveCount;
-    primitive->vertexCount = vertexCount;
-    primitive->creationFlags = creationFlags;
-    primitive->vertexDeclaration = 0;
-    primitive->primitiveType = primitiveType;
-    VertexDeclaration_CreateCopy(declaration, &primitive->vertexDeclaration);
+gtl::IG3DXPrimitive* gtl::IG3DXPrimitive::Init(int primitiveCount, int vertexCount, unsigned int creationFlags,
+                                               void* declaration, void* primitiveType) {
+    gtl::IG3DXPrimitive* base = this;
+    InitPrimitiveBase(base);
+    vtable = (void*)__vt__Q23gtl14IG3DXPrimitive;
+    vertexBuffer = 0;
+    indexBuffer = 0;
+    this->primitiveCount = primitiveCount;
+    this->vertexCount = vertexCount;
+    this->creationFlags = creationFlags;
+    vertexDeclaration = 0;
+    this->primitiveType = primitiveType;
+    VertexDeclaration_CreateCopy(declaration, &vertexDeclaration);
     unsigned int formatFlags;
     VertexDeclaration_TryConvertToFormatFlags(declaration, &formatFlags);
     int vertexStride = (int)(unsigned int)FlexibleVertexFormat_GetStride((void*)formatFlags);
-    VertexBuffer_Create(vertexCount * vertexStride, 0, formatFlags, 0, (void*)&primitive->vertexBuffer, 0);
+    VertexBuffer_Create(vertexCount * vertexStride, 0, formatFlags, 0, (void*)&vertexBuffer, 0);
     int indexCount = Primitive_GetIndexCount((void*)primitiveCount, primitiveType);
-    IndexBuffer_Create(indexCount << 1, 0, 3, 0, (void*)&primitive->indexBuffer, 0, 0);
-    return primitive;
+    IndexBuffer_Create(indexCount << 1, 0, 3, 0, (void*)&indexBuffer, 0, 0);
+    return this;
 }
 #pragma optimize_for_size reset
 #pragma optimization_level reset
@@ -472,16 +528,16 @@ void* gtl_IG3DXPrimitive_Ctor(PrimitiveConstructorView* primitive, int primitive
 #pragma optimization_level 0
 #pragma use_lmw_stmw on
 #pragma optimize_for_size on
-// Create a reference-counted graphics buffer using the configured allocation callback.
-void* gtl_IG3DXBuffer_Ctor(void* p, void* data) {
-    void* base = p;
-    (*(unsigned int*)&AsGtlBuffer(p)->vtable) = (unsigned int)s_gtlReferenceCountedBaseVtable;
-    AsGtlBuffer(p)->referenceCount = 1;
-    (*(unsigned int*)&AsGtlBuffer(p)->vtable) = (unsigned int)__vt__Q23gtl11IG3DXBuffer;
-    AsGtlBuffer(p)->buffer = 0;
-    (*(unsigned int*)&AsGtlBuffer(p)->sourceData) = (unsigned int)data;
-    AsGtlBuffer(p)->buffer = gtl_Graphics_AllocateWithCallback(data);
-    return p;
+// Start a reference-counted graphics buffer and allocate its buffer from the configured callback.
+void* gtl::IG3DXBuffer::Init(void* data) {
+    void* base = this;
+    (*(unsigned int*)&vtable) = (unsigned int)s_gtlReferenceCountedBaseVtable;
+    referenceCount = 1;
+    (*(unsigned int*)&vtable) = (unsigned int)__vt__Q23gtl11IG3DXBuffer;
+    buffer = 0;
+    (*(unsigned int*)&sourceData) = (unsigned int)data;
+    buffer = gtl_Graphics_AllocateWithCallback(data);
+    return this;
 }
 #pragma optimization_level reset
 #pragma use_lmw_stmw reset
@@ -489,18 +545,18 @@ void* gtl_IG3DXBuffer_Ctor(void* p, void* data) {
 
 #pragma optimization_level 0
 // Free the owned buffer, then optionally free the wrapper.
-void* gtl_IG3DXBuffer_dtor(void* p, volatile short freeFlag) {
-    if (p != 0) {
-        AsGtlBuffer(p)->vtable = (void*)&__vt__Q23gtl11IG3DXBuffer;
-        if (AsGtlBuffer(p)->buffer != 0) {
-            gtl_Graphics_FreeWithCallback((*(void**)&AsGtlBuffer(p)->buffer));
-            AsGtlBuffer(p)->buffer = 0;
+void* gtl::IG3DXBuffer::Destroy(volatile short freeFlag) {
+    if (this != 0) {
+        vtable = (void*)&__vt__Q23gtl11IG3DXBuffer;
+        if (buffer != 0) {
+            gtl_Graphics_FreeWithCallback((*(void**)&buffer));
+            buffer = 0;
         }
         if (freeFlag > 0) {
-            gtl_Graphics_FreeWithCallback(p);
+            gtl_Graphics_FreeWithCallback(this);
         }
     }
-    return p;
+    return this;
 }
 #pragma optimization_level reset
 
@@ -508,53 +564,59 @@ void* gtl_IG3DXBuffer_dtor(void* p, volatile short freeFlag) {
 #pragma opt_lifetimes off
 #pragma opt_common_subs off
 // Release vertex, index and declaration resources, then optionally free the primitive.
-void* gtl_IG3DXPrimitive_dtor(void* p, volatile short freeFlag) {
-    if (p != 0) {
-        AsGtlPrimitive(p)->vtable = (void*)__vt__Q23gtl14IG3DXPrimitive;
-        if ((*(unsigned int*)&AsGtlPrimitive(p)->vertexBuffer) != 0) {
-            GraphicsResource_Release(AsGtlPrimitive(p)->vertexBuffer);
-            (*(unsigned int*)&AsGtlPrimitive(p)->vertexBuffer) = 0;
+void* gtl::IG3DXPrimitive::Destroy(volatile short freeFlag) {
+    if (this != 0) {
+        vtable = (void*)__vt__Q23gtl14IG3DXPrimitive;
+        if (vertexBuffer != 0) {
+            GraphicsResource_Release(vertexBuffer);
+            vertexBuffer = 0;
         }
-        if ((*(unsigned int*)&AsGtlPrimitive(p)->indexBuffer) != 0) {
-            GraphicsResource_Release(AsGtlPrimitive(p)->indexBuffer);
-            (*(unsigned int*)&AsGtlPrimitive(p)->indexBuffer) = 0;
+        if (indexBuffer != 0) {
+            GraphicsResource_Release(indexBuffer);
+            indexBuffer = 0;
         }
-        if (AsGtlPrimitive(p)->vertexDeclaration != 0) {
-            GraphicsResource_Release((*(void**)&AsGtlPrimitive(p)->vertexDeclaration));
-            AsGtlPrimitive(p)->vertexDeclaration = 0;
+        if (vertexDeclaration != 0) {
+            GraphicsResource_Release(vertexDeclaration);
+            vertexDeclaration = 0;
         }
         if (freeFlag > 0)
-            gtl_Graphics_FreeWithCallback(p);
+            gtl_Graphics_FreeWithCallback(this);
     }
-    return p;
+    return this;
 }
 #pragma opt_common_subs reset
 #pragma opt_lifetimes reset
 #pragma optimization_level reset
 
+extern "C" {
+
 extern void* __alloca(unsigned int);
+} // extern "C"
+
 #pragma optimization_level 0
 #pragma optimize_for_size on
 // Bind the primitive declaration and vertex stream, then issue indexed or unindexed drawing.
-int gtl_IG3DXPrimitive_Draw(void* primitive) {
+// The second argument is passed by callers but not used.
+int gtl::IG3DXPrimitive::Draw(int unused) {
     __alloca(0);
     unsigned int bufferDescription[4];
-    void* vertexBuffer = AsGtlPrimitive(primitive)->vertexBuffer;
+    void* vertexBuffer = this->vertexBuffer;
     VertexBuffer_GetDescription(vertexBuffer, bufferDescription);
-    Engine_SetVertexDeclaration((*(void**)&AsGtlPrimitive(primitive)->vertexDeclaration));
+    Engine_SetVertexDeclaration(vertexDeclaration);
     void* vertexStride = FlexibleVertexFormat_GetStride((void*)bufferDescription[3]);
     Engine_SetVertexStreamZeroOffset(0, vertexBuffer, vertexStride);
-    if (AsGtlPrimitive(primitive)->indexBuffer == 0) {
-        DrawPrimitiveFromBoundBuffers(AsGtlPrimitive(primitive)->primitiveType, 0, AsGtlPrimitive(primitive)->primitiveCount);
+    if (indexBuffer == 0) {
+        DrawPrimitiveFromBoundBuffers(primitiveType, 0, (void*)primitiveCount);
     } else {
-        Engine_SetIndexBuffer(AsGtlPrimitive(primitive)->indexBuffer, 0);
-        Engine_DrawIndexedPrimitive(AsGtlPrimitive(primitive)->primitiveType, 0, 0,
-                    AsGtlPrimitive(primitive)->vertexCount, 0, AsGtlPrimitive(primitive)->primitiveCount);
+        Engine_SetIndexBuffer(indexBuffer, 0);
+        Engine_DrawIndexedPrimitive(primitiveType, 0, 0, (void*)vertexCount, 0, (void*)primitiveCount);
     }
     return 1;
 }
 #pragma optimization_level reset
 #pragma optimize_for_size reset
+
+extern "C" {
 
 // Return the primitive's vertex-buffer handle as an ABI word.
 unsigned int Object_GetField8(void* p) {
@@ -566,21 +628,23 @@ unsigned int Object_GetFieldC(void* p) {
     return (*(unsigned int*)&AsGtlPrimitive(p)->indexBuffer);
 }
 
+} // extern "C"
+
 #pragma optimization_level 0
 // Flush pending index-buffer writes.
-void gtl_IG3DXPrimitive_FlushIndexBuffer(void* p) {
-    p = (char*)p + 0;
-    IndexBuffer_Flush(AsGtlPrimitive(p)->indexBuffer);
+void gtl::IG3DXPrimitive::FlushIndexBuffer() {
+    IndexBuffer_Flush(indexBuffer);
 }
 #pragma optimization_level reset
 
 #pragma optimization_level 0
 // Flush pending vertex-buffer writes.
-void gtl_IG3DXPrimitive_FlushVertexBuffer(void* p) {
-    void* q = p;
-    GraphicsBuffer_Flush(AsGtlPrimitive(q)->vertexBuffer);
+void gtl::IG3DXPrimitive::FlushVertexBuffer() {
+    GraphicsBuffer_Flush(vertexBuffer);
 }
 #pragma optimization_level reset
+
+extern "C" {
 
 // Copy six words, preserving the original load/store ordering for overlapping storage.
 void WordBlock_CopySixWords(unsigned int* dst, unsigned int* src) {
@@ -605,15 +669,17 @@ void WordBlock_CopySixWords(unsigned int* dst, unsigned int* src) {
 }
 
 int VIGetDTVStatus(void);
-void* GtlRecordDeque_Dtor(void* p, short a);
 void __dl__FPv(void* p);
 
 // Map the console digital-output status to the engine's video-output code.
 int Video_GetDtvOutputCode(void) {
     switch (VIGetDTVStatus()) {
-    case 1: return 1;
-    case 0: return 6;
-    default: return 0;
+    case 1:
+        return 1;
+    case 0:
+        return 6;
+    default:
+        return 0;
     }
 }
 
@@ -622,11 +688,15 @@ int Video_GetDtvOutputCode(void) {
 #pragma opt_propagation off
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
-struct DequeStorageWords { unsigned int data, size, capacity; };
+struct DequeStorageWords {
+    unsigned int data, size, capacity;
+};
+
+} // extern "C"
 
 // Initialize the deque storage pointer, element count and capacity to zero.
-void GtlRecordDeque_InitEmpty(void* volatile p) {
-    void* a = p;
+void GtlRecordDeque::InitEmpty() {
+    void* a = this;
     void* b = a;
     void* d;
     void* e;
@@ -646,24 +716,13 @@ void GtlRecordDeque_InitEmpty(void* volatile p) {
 #pragma optimize_for_size reset
 #pragma optimization_level reset
 
+extern "C" {
+
 // Destroy the deque wrapper and optionally release its allocation.
 void* dtor_80432D20(void* p, short freeFlag) {
     volatile short flag = freeFlag;
     if (p != 0) {
-        GtlRecordDeque_Dtor(p, 0);
-        if (flag > 0)
-            __dl__FPv(p);
-    }
-    return p;
-}
-
-// Destroy deque storage and optionally release its allocation.
-void* GtlRecordDeque_Dtor(void* p, short freeFlag) {
-    volatile short flag = freeFlag;
-    if (p != 0) {
-        if (p != 0) {
-            GtlRecordDeque_DestroyStorage(p, 0);
-        }
+        ((GtlRecordDeque*)p)->Dtor(0);
         if (flag > 0)
             __dl__FPv(p);
     }
@@ -671,3 +730,16 @@ void* GtlRecordDeque_Dtor(void* p, short freeFlag) {
 }
 
 } // extern "C"
+
+// Destroy deque storage and optionally release its allocation.
+void* GtlRecordDeque::Dtor(short freeFlag) {
+    volatile short flag = freeFlag;
+    if (this != 0) {
+        if (this != 0) {
+            DestroyStorage(0);
+        }
+        if (flag > 0)
+            __dl__FPv(this);
+    }
+    return this;
+}

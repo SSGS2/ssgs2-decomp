@@ -7,7 +7,8 @@ struct FxReverbHiFlags {
     char pad_000[0xC];
     unsigned char initializationAttempted; // 0xC
     char pad_00D[0xB];
-    unsigned char parameters[1]; // 0x18: gtl_nw4r_FxReverbHi_GetParams (0x8040A850); address-only view, record size unknown
+    unsigned char
+        parameters[1]; // 0x18: gtl_nw4r_FxReverbHi_GetParams (0x8040A850); address-only view, record size unknown
 };
 
 #define OFF(f, o) typedef char FxReverbHiFlags_off_##f[((int)&((FxReverbHiFlags*)0)->f == (o)) ? 1 : -1]

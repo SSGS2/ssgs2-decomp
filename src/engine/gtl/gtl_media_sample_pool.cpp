@@ -1,8 +1,12 @@
+// Media sample pool: a fixed set of media samples recycled through a deque of pages.
+// The pool hands samples out, takes them back after use and reclaims drained pages.
+// The file also has the media init, filter-manager and update entry points.
+
+#include "classes/GtlMediaSample.h"
 #include "classes/GtlSamplePool.h"
 #define AsGtlSamplePool(p) ((GtlSamplePool*)(p))
 #include "classes/GtlSampleDeque.h"
 #define AsGtlSampleDeque(p) ((GtlSampleDeque*)(p))
-
 
 // Normal destruction remains explicit. This owner handles exceptional exits.
 struct EH5Cleanup {
@@ -12,21 +16,35 @@ struct EH5Cleanup {
     // Arm destruction of a partially built container on an exceptional exit.
     EH5Cleanup(void* p, void (*d)(void*, int)) : object(p), destroy(d), active(true) {}
     // Hand cleanup back to the explicit normal-path destructor.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Destroy only while the enclosing operation still owns unwind cleanup.
-    ~EH5Cleanup() { if (active) destroy(object, -1); }
+    ~EH5Cleanup() {
+        if (active)
+            destroy(object, -1);
+    }
 };
 
-// Translation unit 0x803EFA74-0x803F11C8 (22 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 // The page pointer table uses void pointers during destruction.
-struct SamplePageStorageView { unsigned int position, count; void** rows;
-    unsigned int head; int rowCount; unsigned int capacity; };
+struct SamplePageStorageView {
+    unsigned int position, count;
+    void** rows;
+    unsigned int head;
+    int rowCount;
+    unsigned int capacity;
+};
 
-enum SamplePageConstants { kPageSlotBits = 8, kSlotsPerPage = 256, kPageSlotMask = 255,
-    kInitialPagePosition = 128, kPageRecycleThreshold = 512,
-    kAvailableDequeOffset = 0xC, kQueuedDequeOffset = 0x24, kReturnedDequeOffset = 0x3C };
+enum SamplePageConstants {
+    kPageSlotBits = 8,
+    kSlotsPerPage = 256,
+    kPageSlotMask = 255,
+    kInitialPagePosition = 128,
+    kPageRecycleThreshold = 512,
+    kAvailableDequeOffset = 0xC,
+    kQueuedDequeOffset = 0x24,
+    kReturnedDequeOffset = 0x3C
+};
 
 // Pool membership protocol (one pool reference follows each sample):
 // available --CommitSample--> queued --DequeueSample--> returned
@@ -37,7 +55,9 @@ enum SamplePageConstants { kPageSlotBits = 8, kSlotsPerPage = 256, kPageSlotMask
 // empty origin. Transfer routines instead append the same pointer before
 // consuming it; Dequeue consumes first after acquiring the caller reference.
 // Four-word iterator scratch is opaque: external iterator routines initialize it.
-struct SamplePageRingIterator { unsigned int opaqueWords[4]; };
+struct SamplePageRingIterator {
+    unsigned int opaqueWords[4];
+};
 typedef char SamplePageRingIterator_size[(sizeof(SamplePageRingIterator) == 0x10) ? 1 : -1];
 typedef char SampleDequeScratch_size[(sizeof(SamplePageStorageView) == 0x18) ? 1 : -1];
 
@@ -57,21 +77,17 @@ void gtl_Free(void* p);
 void* gtl_MediaRegistry_UpdateAll(unsigned int);
 int gtl_MediaRegistry_GetInstance(void* p);
 void* gtl_Alloc(unsigned int size);
-void gtl_CMediaSample_Ctor(void* a, int b, int c, int d);
 void SampleDeque_EnsureBackBlocks(void* p, int requestedElementCount);
 void* SampleDeque_dtor(void* p, int flag);
 void __dl__FPv(void* p);
 void GtlIntStorage_SetValue(void* p, int value);
 int gtl_FilterManagerFactory_Create(void* p, unsigned int* out, int flag);
 void gtl_MediaRegistry_Add(unsigned int p, unsigned int key);
-int gtl_CMediaSample_GetData(void* p, void* out);
-int gtl_CMediaSample_SetBuffer(void* p, int a, int b);
+void* GtlSampleDeque_GetBackPageSlot(void* p);
 void* PageRing_GetFrontSlot(void* p);
 void* PageRing_PopFront(void* p);
-void* GtlSampleDeque_GetBackPageSlot(void* p);
 void GtlWordDeque_ForwardPushBack(void* p, void* value);
 unsigned int GtlWordStorage_ReadFirstWord(void* p);
-unsigned int GtlSampleDeque_GetMaxSize(void* p);
 unsigned int SampleDeque_GetUsableElementCapacity(void* p);
 void* PointerRing_GetUsableCapacity(void* p);
 void* PointerRing_GetSize(void* p);
@@ -82,8 +98,8 @@ int PointerRing_IsEmpty(void* p);
 void* PageRing_GetEndIterator(void* dst, void* src);
 void* RingBufferIterator_Subtract(void* dst, void* src, int flag);
 void* PageRing_GetBeginIterator(void* dst, void* src);
-void PointerRing_InsertRangeWithIteratorCopies(void* p, void* a, void* b, void* c, int flag);
 void GtlSampleDeque_SwapPageRingState(void* a, void* b);
+void PointerRing_InsertRangeWithIteratorCopies(void* p, void* a, void* b, void* c, int flag);
 void PointerRing_ClearSize(void* p);
 void RingBuffer_ThrowLengthError(const char*);
 const unsigned int* UnsignedWord_SelectMaxPointer(const unsigned int*, const unsigned int*);
@@ -121,8 +137,9 @@ void* Container_GetWord0CAddress(void* p);
 // Expose the deque page-pointer ring for storage-management operations.
 void* SampleDeque_GetPageRingStorage(void* p);
 
-struct PoolSampleReference { unsigned int refs; 
-virtual void dispose(int);
+struct PoolSampleReference {
+    unsigned int refs;
+    virtual void dispose(int);
 };
 #pragma push
 #pragma always_inline on
@@ -137,7 +154,11 @@ inline void ReleasePoolQueueReference(PoolSampleReference* entry) {
 }
 #pragma pop
 
-struct PoolQueueDrainView { unsigned int pos, count; unsigned int** rows; unsigned int head, rowCount, capacity; };
+struct PoolQueueDrainView {
+    unsigned int pos, count;
+    unsigned int** rows;
+    unsigned int head, rowCount, capacity;
+};
 #pragma push
 #pragma always_inline on
 // Consume one released front sample, reclaim old pages, and reset the empty origin.
@@ -147,11 +168,13 @@ inline void ConsumeDrainedPoolFront(PoolQueueDrainView* q) {
     while (q->pos >= kPageRecycleThreshold) {
         gtl_Free(q->rows[q->head]);
         ++q->head;
-        if (q->head == q->capacity) q->head = 0;
+        if (q->head == q->capacity)
+            q->head = 0;
         --q->rowCount;
         q->pos -= kSlotsPerPage;
     }
-    if (q->count == 0) q->pos = kInitialPagePosition;
+    if (q->count == 0)
+        q->pos = kInitialPagePosition;
 }
 #pragma pop
 
@@ -193,7 +216,9 @@ int SamplePool_RecycleReturnedSample(void* self);
 int SamplePool_CommitSample(void* self, void* bufferArgument);
 
 int gtl_Media_Init(const unsigned int* p) {
-    struct Config { unsigned int a, b, c; };
+    struct Config {
+        unsigned int a, b, c;
+    };
     *(Config*)g_gtlRuntimeConfig = *(const Config*)p;
     g_gtlMediaRegistry = (unsigned int)(unsigned long)gtl_MediaRegistry_GetInstance((void*)p);
     return 1;
@@ -219,7 +244,9 @@ void* gtl_Media_Update() {
     return 0;
 }
 
-void MediaRegistry_ResetGlobalPointer() { g_gtlMediaRegistry = 0; }
+void MediaRegistry_ResetGlobalPointer() {
+    g_gtlMediaRegistry = 0;
+}
 
 void* SamplePool_Ctor(void* self, void* dimensions, void* sampleContext) {
     // dimensions borrows two words (buffer bytes per sample, number of samples).
@@ -232,9 +259,11 @@ void* SamplePool_Ctor(void* self, void* dimensions, void* sampleContext) {
     AsGtlSamplePool(self)->sampleCount = sampleCount;
     for (int i = 0x0C; i <= 0x50; i += 4)
         *(unsigned int*)((char*)self + i) = 0;
-        EH5Cleanup eh5Cleanup28(((char*)&AsGtlSamplePool(self)->available), (void (*)(void*, int))SampleDeque_DestroyWrapper);
-        EH5Cleanup eh5Cleanup27(((char*)&AsGtlSamplePool(self)->queued), (void (*)(void*, int))SampleDeque_DestroyWrapper);
-        EH5Cleanup eh5Cleanup26(((char*)&AsGtlSamplePool(self)->returned), (void (*)(void*, int))SampleDeque_DestroyWrapper);
+    EH5Cleanup eh5Cleanup28(((char*)&AsGtlSamplePool(self)->available),
+                            (void (*)(void*, int))SampleDeque_DestroyWrapper);
+    EH5Cleanup eh5Cleanup27(((char*)&AsGtlSamplePool(self)->queued), (void (*)(void*, int))SampleDeque_DestroyWrapper);
+    EH5Cleanup eh5Cleanup26(((char*)&AsGtlSamplePool(self)->returned),
+                            (void (*)(void*, int))SampleDeque_DestroyWrapper);
     // Phase 2: allocate backing bytes and publish each wrapper in available.
     char* base = (char*)gtl_Alloc(sampleSize * sampleCount);
     AsGtlSamplePool(self)->storage = base;
@@ -244,7 +273,7 @@ void* SamplePool_Ctor(void* self, void* dimensions, void* sampleContext) {
             char* sampleBuffer = base + sampleSize * sampleIndex;
             void* sample = gtl_Alloc(0x14);
             if (sample != 0) {
-                gtl_CMediaSample_Ctor(sample, (int)sampleBuffer, (int)sampleSize, (int)sampleContext);
+                ((gtl::CMediaSample*)sample)->Init((int)sampleBuffer, (int)sampleSize, (int)sampleContext);
             }
             unsigned int availablePages = AsGtlSamplePool(self)->available.rowCount;
             unsigned int backCapacity = (availablePages == 0) ? 0 : ((availablePages - 1) << kPageSlotBits);
@@ -263,13 +292,17 @@ void* SamplePool_Ctor(void* self, void* dimensions, void* sampleContext) {
             unsigned int availableCountAfterGrowth = AsGtlSamplePool(self)->available.count;
             unsigned int headPage = AsGtlSamplePool(self)->available.head;
             unsigned int headPageAddress = pageTableAddress + (headPage << 2);
-            int backPageIndex = (int)(((availableCountAfterGrowth + availablePosition) >> kPageSlotBits)) + (int)headPage;
-            if (backPageIndex < 0) backPageIndex += (int)pageCapacity;
-            else if (backPageIndex >= (int)pageCapacity) backPageIndex -= (int)pageCapacity;
+            int backPageIndex =
+                (int)(((availableCountAfterGrowth + availablePosition) >> kPageSlotBits)) + (int)headPage;
+            if (backPageIndex < 0)
+                backPageIndex += (int)pageCapacity;
+            else if (backPageIndex >= (int)pageCapacity)
+                backPageIndex -= (int)pageCapacity;
             unsigned int pageCountAfterGrowth = AsGtlSamplePool(self)->available.rowCount;
             unsigned int* pageSlotAddress = (unsigned int*)(pageTableAddress + (backPageIndex << 2));
             unsigned int* backPage = 0;
-            if (pageCountAfterGrowth != 0) backPage = *(unsigned int**)pageSlotAddress;
+            if (pageCountAfterGrowth != 0)
+                backPage = *(unsigned int**)pageSlotAddress;
             unsigned int slotByteOffset = (((availableCountAfterGrowth + availablePosition) & kPageSlotMask) << 2);
             unsigned int* sampleSlot = (unsigned int*)((char*)backPage + slotByteOffset);
             if (sampleSlot != 0) {
@@ -282,7 +315,10 @@ void* SamplePool_Ctor(void* self, void* dimensions, void* sampleContext) {
         } while (sampleIndex < sampleCount);
     }
     // Phase 3: completed pool assumes normal-path ownership of all three deques.
-    eh5Cleanup26.release(); eh5Cleanup27.release(); eh5Cleanup28.release(); return self;
+    eh5Cleanup26.release();
+    eh5Cleanup27.release();
+    eh5Cleanup28.release();
+    return self;
 }
 
 void dtor_803EFD58(void* p) {
@@ -390,9 +426,16 @@ void* SamplePool_Dtor(void* p, int freeFlag) {
             gtl_Free(*(void**)self);
             *(void**)self = 0;
         }
-        if (self + kReturnedDequeOffset != 0 && self + kReturnedDequeOffset != 0 && self + kReturnedDequeOffset != 0 && self + kReturnedDequeOffset != 0 && self + kReturnedDequeOffset != 0 && self + kReturnedDequeOffset != 0) SampleDeque_dtor(self + kReturnedDequeOffset, 0);
-        if (self + kQueuedDequeOffset != 0 && self + kQueuedDequeOffset != 0 && self + kQueuedDequeOffset != 0 && self + kQueuedDequeOffset != 0 && self + kQueuedDequeOffset != 0 && self + kQueuedDequeOffset != 0) SampleDeque_dtor(self + kQueuedDequeOffset, 0);
-        if (self + kAvailableDequeOffset != 0 && self + kAvailableDequeOffset != 0 && self + kAvailableDequeOffset != 0 && self + kAvailableDequeOffset != 0 && self + kAvailableDequeOffset != 0 && self + kAvailableDequeOffset != 0) SampleDeque_dtor(self + kAvailableDequeOffset, 0);
+        if (self + kReturnedDequeOffset != 0 && self + kReturnedDequeOffset != 0 && self + kReturnedDequeOffset != 0 &&
+            self + kReturnedDequeOffset != 0 && self + kReturnedDequeOffset != 0 && self + kReturnedDequeOffset != 0)
+            SampleDeque_dtor(self + kReturnedDequeOffset, 0);
+        if (self + kQueuedDequeOffset != 0 && self + kQueuedDequeOffset != 0 && self + kQueuedDequeOffset != 0 &&
+            self + kQueuedDequeOffset != 0 && self + kQueuedDequeOffset != 0 && self + kQueuedDequeOffset != 0)
+            SampleDeque_dtor(self + kQueuedDequeOffset, 0);
+        if (self + kAvailableDequeOffset != 0 && self + kAvailableDequeOffset != 0 &&
+            self + kAvailableDequeOffset != 0 && self + kAvailableDequeOffset != 0 &&
+            self + kAvailableDequeOffset != 0 && self + kAvailableDequeOffset != 0)
+            SampleDeque_dtor(self + kAvailableDequeOffset, 0);
         if (freeFlag > 0 && self != 0)
             gtl_Free(p);
     }
@@ -408,7 +451,8 @@ int SamplePool_DequeueSample(void* self, unsigned int* out) {
     // return 1 gives the caller one additional reference to release. The queue's
     // existing reference moves queued -> returned and remains owned by the pool.
     // Phase 1: locate the oldest pointer by page/slot and acquire the caller's ref.
-    if (AsGtlSamplePool(self)->queued.count == 0) return 0;
+    if (AsGtlSamplePool(self)->queued.count == 0)
+        return 0;
     unsigned int queuedPosition = AsGtlSamplePool(self)->queued.position;
     unsigned int queuedHeadPage = AsGtlSamplePool(self)->queued.head;
     unsigned int pageOffset = queuedPosition >> kPageSlotBits;
@@ -436,7 +480,8 @@ int SamplePool_DequeueSample(void* self, unsigned int* out) {
         unsigned int nextHeadPage = AsGtlSamplePool(self)->queued.head;
         nextHeadPage += 1;
         unsigned int pageCapacityAfterFree = AsGtlSamplePool(self)->queued.capacity;
-        if (nextHeadPage == pageCapacityAfterFree) nextHeadPage = 0;
+        if (nextHeadPage == pageCapacityAfterFree)
+            nextHeadPage = 0;
         AsGtlSamplePool(self)->queued.head = nextHeadPage;
         unsigned int queuedPageCount = AsGtlSamplePool(self)->queued.rowCount;
         unsigned int positionAfterFree = AsGtlSamplePool(self)->queued.position;
@@ -465,13 +510,17 @@ int SamplePool_DequeueSample(void* self, unsigned int* out) {
     unsigned int** returnedPageTable = AsGtlSamplePool(self)->returned.rows;
     unsigned int returnedCountAfterGrowth = AsGtlSamplePool(self)->returned.count;
     unsigned int returnedHeadPage = AsGtlSamplePool(self)->returned.head;
-    int returnedBackPageIndex = (int)(((returnedCountAfterGrowth + returnedPosition) >> kPageSlotBits)) + (int)returnedHeadPage;
-    if (returnedBackPageIndex < 0) returnedBackPageIndex += (int)returnedPageCapacity;
-    else if (returnedBackPageIndex >= (int)returnedPageCapacity) returnedBackPageIndex -= (int)returnedPageCapacity;
+    int returnedBackPageIndex =
+        (int)(((returnedCountAfterGrowth + returnedPosition) >> kPageSlotBits)) + (int)returnedHeadPage;
+    if (returnedBackPageIndex < 0)
+        returnedBackPageIndex += (int)returnedPageCapacity;
+    else if (returnedBackPageIndex >= (int)returnedPageCapacity)
+        returnedBackPageIndex -= (int)returnedPageCapacity;
     unsigned int returnedPagesAfterGrowth = AsGtlSamplePool(self)->returned.rowCount;
     unsigned int* returnedPageSlotAddress = (unsigned int*)(returnedPageTable + returnedBackPageIndex);
     unsigned int* returnedBackPage = 0;
-    if (returnedPagesAfterGrowth != 0) returnedBackPage = *(unsigned int**)returnedPageSlotAddress;
+    if (returnedPagesAfterGrowth != 0)
+        returnedBackPage = *(unsigned int**)returnedPageSlotAddress;
     unsigned int returnedSlotByteOffset = (((returnedCountAfterGrowth + returnedPosition) & kPageSlotMask) << 2);
     unsigned int* returnedSampleSlot = (unsigned int*)((char*)returnedBackPage + returnedSlotByteOffset);
     if (returnedSampleSlot != 0) {
@@ -482,9 +531,13 @@ int SamplePool_DequeueSample(void* self, unsigned int* out) {
     return 1;
 }
 
-void* SampleDeque_GetPageRing(void* p) { return &AsGtlSampleDeque(p)->rows; }
+void* SampleDeque_GetPageRing(void* p) {
+    return &AsGtlSampleDeque(p)->rows;
+}
 
-void* Container_GetWord0CAddress(void* p) { return &AsGtlSampleDeque(p)->head; }
+void* Container_GetWord0CAddress(void* p) {
+    return &AsGtlSampleDeque(p)->head;
+}
 
 int SamplePool_RecycleReturnedSample(void* self) {
     // Requires a nonempty returned queue. The sample's pool reference moves to
@@ -503,8 +556,8 @@ int SamplePool_RecycleReturnedSample(void* self) {
     unsigned int sample = frontPage[returnedPosition & kPageSlotMask];
     unsigned int sampleToRecycle = sample;
     sampleData = 0;
-    gtl_CMediaSample_GetData((void*)sample, &sampleData);
-    gtl_CMediaSample_SetBuffer((void*)sample, (int)sampleData, (*(int*)&AsGtlSamplePool(self)->sampleSize));
+    ((gtl::CMediaSample*)sample)->GetData((int*)&sampleData);
+    ((gtl::CMediaSample*)sample)->SetBuffer((int)sampleData, (*(int*)&AsGtlSamplePool(self)->sampleSize));
     unsigned int availablePageCount = AsGtlSamplePool(self)->available.rowCount;
     unsigned int availableBackCapacity = (availablePageCount == 0) ? 0 : ((availablePageCount - 1) << kPageSlotBits);
     unsigned int availablePosition = AsGtlSamplePool(self)->available.position;
@@ -518,16 +571,20 @@ int SamplePool_RecycleReturnedSample(void* self) {
     unsigned int availableHeadPage = AsGtlSamplePool(self)->available.head;
     // the original reloads +0x10 and +0x0C after the grow call (lwz r5, 0x10(r30) / lwz r3, 0xc(r30) at
     // 0x803F05F4 / 0x803F05FC); the grow can move the start, so the values cached before it are stale
-    unsigned int availableBackPositionAfterGrowth = AsGtlSamplePool(self)->available.count + AsGtlSamplePool(self)->available.position;
+    unsigned int availableBackPositionAfterGrowth =
+        AsGtlSamplePool(self)->available.count + AsGtlSamplePool(self)->available.position;
     unsigned int pageCapacity = availablePageCapacity;
     unsigned int headPage = availableHeadPage;
     int backPageIndex = (int)(availableBackPositionAfterGrowth >> kPageSlotBits) + (int)headPage;
-    if (backPageIndex < 0) backPageIndex += (int)pageCapacity;
-    else if (backPageIndex >= (int)pageCapacity) backPageIndex -= (int)pageCapacity;
+    if (backPageIndex < 0)
+        backPageIndex += (int)pageCapacity;
+    else if (backPageIndex >= (int)pageCapacity)
+        backPageIndex -= (int)pageCapacity;
     unsigned int availablePagesAfterGrowth = AsGtlSamplePool(self)->available.rowCount;
     unsigned int* backPageSlotAddress = (unsigned int*)(availablePageTable + backPageIndex);
     unsigned int* backPage = 0;
-    if (availablePagesAfterGrowth != 0) backPage = *(unsigned int**)backPageSlotAddress;
+    if (availablePagesAfterGrowth != 0)
+        backPage = *(unsigned int**)backPageSlotAddress;
     unsigned int backSlotByteOffset = ((availableBackPositionAfterGrowth & kPageSlotMask) << 2);
     unsigned int* sampleSlot = (unsigned int*)((char*)backPage + backSlotByteOffset);
     if (sampleSlot != 0) {
@@ -551,7 +608,8 @@ int SamplePool_RecycleReturnedSample(void* self) {
         unsigned int nextHeadPage = AsGtlSamplePool(self)->returned.head;
         nextHeadPage += 1;
         unsigned int capacityAfterFree = AsGtlSamplePool(self)->returned.capacity;
-        if (nextHeadPage == capacityAfterFree) nextHeadPage = 0;
+        if (nextHeadPage == capacityAfterFree)
+            nextHeadPage = 0;
         AsGtlSamplePool(self)->returned.head = nextHeadPage;
         unsigned int returnedPagesAfterFree = AsGtlSamplePool(self)->returned.rowCount;
         returnedPagesAfterFree -= 1;
@@ -572,12 +630,12 @@ int SamplePool_RecycleReturnedSample(void* self) {
 int SamplePool_GetDimensions(void* p, void* out) {
     if (out == 0)
         return 0;
-    unsigned int b;
-    unsigned int a;
-    a = AsGtlSamplePool(p)->sampleSize;
-    b = AsGtlSamplePool(p)->sampleCount;
-    *(unsigned int*)out = a;
-    *((unsigned int*)out + 1) = b;
+    unsigned int sampleCount;
+    unsigned int sampleSize;
+    sampleSize = AsGtlSamplePool(p)->sampleSize;
+    sampleCount = AsGtlSamplePool(p)->sampleCount;
+    *(unsigned int*)out = sampleSize;
+    *((unsigned int*)out + 1) = sampleCount;
     return 1;
 }
 #pragma pop
@@ -588,14 +646,17 @@ void SamplePool_RecycleAllSamples(void* p) {
     unsigned char* self = (unsigned char*)p;
     while (AsGtlSamplePool(self)->queued.count != 0) {
         unsigned int value = AsGtlSamplePool(self)->queued.position;
-        unsigned int index = (AsGtlSamplePool(self)->queued.head + (value >> kPageSlotBits)) % AsGtlSamplePool(self)->queued.capacity;
+        unsigned int index =
+            (AsGtlSamplePool(self)->queued.head + (value >> kPageSlotBits)) % AsGtlSamplePool(self)->queued.capacity;
         unsigned int* rows = (*(unsigned int**)&AsGtlSamplePool(self)->queued.rows);
         unsigned int* item = (unsigned int*)rows[index];
         unsigned int entry = item[value & kPageSlotMask];
         unsigned int limit = AsGtlSamplePool(self)->available.rowCount;
         unsigned int total = AsGtlSamplePool(self)->available.position + AsGtlSamplePool(self)->available.count;
-        if (limit != 0) limit = (limit - 1) << kPageSlotBits;
-        if (limit == total) SampleDeque_EnsureBackBlocks(self + kAvailableDequeOffset, 1);
+        if (limit != 0)
+            limit = (limit - 1) << kPageSlotBits;
+        if (limit == total)
+            SampleDeque_EnsureBackBlocks(self + kAvailableDequeOffset, 1);
         // the original adds the two fields again after the grow call (it may have moved the start)
         total = AsGtlSamplePool(self)->available.count + AsGtlSamplePool(self)->available.position;
         unsigned int* first = (*(unsigned int**)&AsGtlSamplePool(self)->available.rows);
@@ -604,35 +665,44 @@ void SamplePool_RecycleAllSamples(void* p) {
         unsigned int count = end - first;
         unsigned int pos = start - first;
         int wrapped = (int)(total >> kPageSlotBits) + (int)pos;
-        if (wrapped < 0) wrapped += (int)count;
-        else if (wrapped >= (int)count) wrapped -= (int)count;
+        if (wrapped < 0)
+            wrapped += (int)count;
+        else if (wrapped >= (int)count)
+            wrapped -= (int)count;
         unsigned int* slot = first + wrapped;
         unsigned int* base = AsGtlSamplePool(self)->available.rowCount ? (unsigned int*)*slot : 0;
         unsigned int* dst = (unsigned int*)((unsigned char*)base + ((total & kPageSlotMask) << 2));
-        if (dst) *dst = entry;
+        if (dst)
+            *dst = entry;
         ++AsGtlSamplePool(self)->available.count;
         --AsGtlSamplePool(self)->queued.count;
         ++AsGtlSamplePool(self)->queued.position;
         while (AsGtlSamplePool(self)->queued.position >= kPageRecycleThreshold) {
-            gtl_Free((void*)*(unsigned int*)((*(unsigned int**)&AsGtlSamplePool(self)->queued.rows) + AsGtlSamplePool(self)->queued.head));
+            gtl_Free((void*)*(unsigned int*)((*(unsigned int**)&AsGtlSamplePool(self)->queued.rows) +
+                                             AsGtlSamplePool(self)->queued.head));
             unsigned int i = AsGtlSamplePool(self)->queued.head + 1;
-            if (i == AsGtlSamplePool(self)->queued.capacity) i = 0;
+            if (i == AsGtlSamplePool(self)->queued.capacity)
+                i = 0;
             AsGtlSamplePool(self)->queued.head = i;
             --AsGtlSamplePool(self)->queued.rowCount;
             AsGtlSamplePool(self)->queued.position -= kSlotsPerPage;
         }
-        if (AsGtlSamplePool(self)->queued.count == 0) AsGtlSamplePool(self)->queued.position = kInitialPagePosition;
+        if (AsGtlSamplePool(self)->queued.count == 0)
+            AsGtlSamplePool(self)->queued.position = kInitialPagePosition;
     }
     while (AsGtlSamplePool(self)->returned.count != 0) {
         unsigned int value = AsGtlSamplePool(self)->returned.position;
-        unsigned int index = (AsGtlSamplePool(self)->returned.head + (value >> kPageSlotBits)) % AsGtlSamplePool(self)->returned.capacity;
+        unsigned int index = (AsGtlSamplePool(self)->returned.head + (value >> kPageSlotBits)) %
+                             AsGtlSamplePool(self)->returned.capacity;
         unsigned int* rows = (*(unsigned int**)&AsGtlSamplePool(self)->returned.rows);
         unsigned int* item = (unsigned int*)rows[index];
         unsigned int entry = item[value & kPageSlotMask];
         unsigned int limit = AsGtlSamplePool(self)->available.rowCount;
         unsigned int total = AsGtlSamplePool(self)->available.position + AsGtlSamplePool(self)->available.count;
-        if (limit != 0) limit = (limit - 1) << kPageSlotBits;
-        if (limit == total) SampleDeque_EnsureBackBlocks(self + kAvailableDequeOffset, 1);
+        if (limit != 0)
+            limit = (limit - 1) << kPageSlotBits;
+        if (limit == total)
+            SampleDeque_EnsureBackBlocks(self + kAvailableDequeOffset, 1);
         // the original adds the two fields again after the grow call (it may have moved the start)
         total = AsGtlSamplePool(self)->available.count + AsGtlSamplePool(self)->available.position;
         unsigned int* first = (*(unsigned int**)&AsGtlSamplePool(self)->available.rows);
@@ -641,24 +711,30 @@ void SamplePool_RecycleAllSamples(void* p) {
         unsigned int count = end - first;
         unsigned int pos = start - first;
         int wrapped = (int)(total >> kPageSlotBits) + (int)pos;
-        if (wrapped < 0) wrapped += (int)count;
-        else if (wrapped >= (int)count) wrapped -= (int)count;
+        if (wrapped < 0)
+            wrapped += (int)count;
+        else if (wrapped >= (int)count)
+            wrapped -= (int)count;
         unsigned int* slot = first + wrapped;
         unsigned int* base = AsGtlSamplePool(self)->available.rowCount ? (unsigned int*)*slot : 0;
         unsigned int* dst = (unsigned int*)((unsigned char*)base + ((total & kPageSlotMask) << 2));
-        if (dst) *dst = entry;
+        if (dst)
+            *dst = entry;
         ++AsGtlSamplePool(self)->available.count;
         --AsGtlSamplePool(self)->returned.count;
         ++AsGtlSamplePool(self)->returned.position;
         while (AsGtlSamplePool(self)->returned.position >= kPageRecycleThreshold) {
-            gtl_Free((void*)*(unsigned int*)((*(unsigned int**)&AsGtlSamplePool(self)->returned.rows) + AsGtlSamplePool(self)->returned.head));
+            gtl_Free((void*)*(unsigned int*)((*(unsigned int**)&AsGtlSamplePool(self)->returned.rows) +
+                                             AsGtlSamplePool(self)->returned.head));
             unsigned int i = AsGtlSamplePool(self)->returned.head + 1;
-            if (i == AsGtlSamplePool(self)->returned.capacity) i = 0;
+            if (i == AsGtlSamplePool(self)->returned.capacity)
+                i = 0;
             AsGtlSamplePool(self)->returned.head = i;
             --AsGtlSamplePool(self)->returned.rowCount;
             AsGtlSamplePool(self)->returned.position -= kSlotsPerPage;
         }
-        if (AsGtlSamplePool(self)->returned.count == 0) AsGtlSamplePool(self)->returned.position = kInitialPagePosition;
+        if (AsGtlSamplePool(self)->returned.count == 0)
+            AsGtlSamplePool(self)->returned.position = kInitialPagePosition;
     }
 }
 
@@ -666,7 +742,8 @@ int SamplePool_PeekAvailableSample(void* p, void* out) {
     if (out == 0 || AsGtlSamplePool(p)->available.count == 0)
         return 0;
     unsigned int value = AsGtlSamplePool(p)->available.position;
-    unsigned int index = (AsGtlSamplePool(p)->available.head + (value >> kPageSlotBits)) % AsGtlSamplePool(p)->available.capacity;
+    unsigned int index =
+        (AsGtlSamplePool(p)->available.head + (value >> kPageSlotBits)) % AsGtlSamplePool(p)->available.capacity;
     unsigned int* row = (*(unsigned int**)&AsGtlSamplePool(p)->available.rows);
     unsigned int* item = (unsigned int*)row[index];
     unsigned int result = item[(value & kPageSlotMask)];
@@ -695,8 +772,8 @@ int SamplePool_CommitSample(void* self, void* bufferArgument) {
     unsigned int sample = frontPage[availablePosition & kPageSlotMask];
     unsigned int sampleToQueue = sample;
     unsigned int sampleData = 0;
-    gtl_CMediaSample_GetData((void*)sample, &sampleData);
-    gtl_CMediaSample_SetBuffer((void*)sample, (int)sampleData, (int)bufferArgument);
+    ((gtl::CMediaSample*)sample)->GetData((int*)&sampleData);
+    ((gtl::CMediaSample*)sample)->SetBuffer((int)sampleData, (int)bufferArgument);
     unsigned int queuedPageCount = AsGtlSamplePool(self)->queued.rowCount;
     unsigned int queuedBackCapacity = (queuedPageCount == 0) ? 0 : ((queuedPageCount - 1) << kPageSlotBits);
     unsigned int queuedPosition = AsGtlSamplePool(self)->queued.position;
@@ -714,12 +791,15 @@ int SamplePool_CommitSample(void* self, void* bufferArgument) {
     unsigned int pageCapacity = queuedPageCapacity;
     unsigned int headPage = queuedHeadPage;
     int backPageIndex = (int)(queuedBackPositionAfterGrowth >> kPageSlotBits) + (int)headPage;
-    if (backPageIndex < 0) backPageIndex += (int)pageCapacity;
-    else if (backPageIndex >= (int)pageCapacity) backPageIndex -= (int)pageCapacity;
+    if (backPageIndex < 0)
+        backPageIndex += (int)pageCapacity;
+    else if (backPageIndex >= (int)pageCapacity)
+        backPageIndex -= (int)pageCapacity;
     unsigned int queuedPagesAfterGrowth = AsGtlSamplePool(self)->queued.rowCount;
     unsigned int* backPageSlotAddress = (unsigned int*)(queuedPageTable + backPageIndex);
     unsigned int* backPage = 0;
-    if (queuedPagesAfterGrowth != 0) backPage = *(unsigned int**)backPageSlotAddress;
+    if (queuedPagesAfterGrowth != 0)
+        backPage = *(unsigned int**)backPageSlotAddress;
     unsigned int backSlotByteOffset = ((queuedBackPositionAfterGrowth & kPageSlotMask) << 2);
     unsigned int* sampleSlot = (unsigned int*)((char*)backPage + backSlotByteOffset);
     if (sampleSlot != 0) {
@@ -743,7 +823,8 @@ int SamplePool_CommitSample(void* self, void* bufferArgument) {
         unsigned int nextHeadPage = AsGtlSamplePool(self)->available.head;
         nextHeadPage += 1;
         unsigned int capacityAfterFree = AsGtlSamplePool(self)->available.capacity;
-        if (nextHeadPage == capacityAfterFree) nextHeadPage = 0;
+        if (nextHeadPage == capacityAfterFree)
+            nextHeadPage = 0;
         AsGtlSamplePool(self)->available.head = nextHeadPage;
         unsigned int availablePagesAfterFree = AsGtlSamplePool(self)->available.rowCount;
         availablePagesAfterFree -= 1;
@@ -785,7 +866,9 @@ void* SampleDeque_dtor(void* p, int freeFlag) {
                     cur = base;
             }
         }
-        if ((char*)&((SamplePageStorageView*)p)->rows != 0 && (char*)&((SamplePageStorageView*)p)->rows != 0 && (char*)&((SamplePageStorageView*)p)->rows != 0 && (char*)&((SamplePageStorageView*)p)->rows != 0 && (char*)&((SamplePageStorageView*)p)->rows != 0 && (char*)&((SamplePageStorageView*)p)->rows != 0) {
+        if ((char*)&((SamplePageStorageView*)p)->rows != 0 && (char*)&((SamplePageStorageView*)p)->rows != 0 &&
+            (char*)&((SamplePageStorageView*)p)->rows != 0 && (char*)&((SamplePageStorageView*)p)->rows != 0 &&
+            (char*)&((SamplePageStorageView*)p)->rows != 0 && (char*)&((SamplePageStorageView*)p)->rows != 0) {
             if (((SamplePageStorageView*)p)->rows != 0) {
                 volatile int* value = (volatile int*)&((SamplePageStorageView*)p)->rowCount;
                 *value = *value - *value;
@@ -798,7 +881,9 @@ void* SampleDeque_dtor(void* p, int freeFlag) {
     return p;
 }
 
-void* SampleDeque_GetPageRingStorage(void* p) { return &AsGtlSampleDeque(p)->rows; }
+void* SampleDeque_GetPageRingStorage(void* p) {
+    return &AsGtlSampleDeque(p)->rows;
+}
 
 void SampleDeque_EnsureBackBlocks(void* p, int requestedElementCount) {
     // Phase 1: round to pages and move reusable front pages to the back.
@@ -820,7 +905,7 @@ void SampleDeque_EnsureBackBlocks(void* p, int requestedElementCount) {
         // Phase 2: reject length overflow, then append into the existing pointer ring
         // if it has enough usable entries. No sample reference counts change.
         unsigned int need = count << kPageSlotBits;
-        unsigned int capacity = GtlSampleDeque_GetMaxSize(p);
+        unsigned int capacity = GtlSampleDeque::GetMaxSize(p);
         if (need > capacity || SampleDeque_GetUsableElementCapacity(p) > capacity - need)
             RingBuffer_ThrowLengthError("deque:: length error");
         unsigned int size = (unsigned int)PointerRing_GetUsableCapacity(queue);
@@ -860,13 +945,17 @@ void SampleDeque_EnsureBackBlocks(void* p, int requestedElementCount) {
                 RingBufferIterator_Subtract(&sourceEndWithoutSentinel, &insertionIterator, 1);
                 PageRing_GetBeginIterator(&sourceBegin, queue);
                 PageRing_GetBeginIterator(&insertionIterator, grown);
-                PointerRing_InsertRangeWithIteratorCopies(grown, &insertionIterator, &sourceBegin, &sourceEndWithoutSentinel, 0);
+                PointerRing_InsertRangeWithIteratorCopies(grown, &insertionIterator, &sourceBegin,
+                                                          &sourceEndWithoutSentinel, 0);
             }
             GtlSampleDeque_SwapPageRingState(queue, grown);
             // Commit: queue now owns all pages. grown holds the old pointer table;
             // clearing its size prevents freeing page pointers transferred to queue.
             PointerRing_ClearSize(grown);
-            { eh5Cleanup29.release(); SampleDeque_dtor((&replacement), -1); }
+            {
+                eh5Cleanup29.release();
+                SampleDeque_dtor((&replacement), -1);
+            }
         }
     }
 }

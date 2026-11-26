@@ -1,43 +1,87 @@
+// Tour main task: the tour mode's main task, which runs the menus, the ending movie and the save overlay.
+// Completing a course node commits its save and rewards. Also the wind HUD (CBallWind2d) and the edge
+// codes that link the tour map's grid nodes.
+
 #include <decomp/static_init.h>
 extern "C" char s_tourProgressStateStorage[];
 #include "classes/CSharedDoc.h"
 
-// Translation unit 0x8030C0E8-0x8030D804 (20 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CTourMain.h"
+#include "classes/MenuGroup802FB4D0.h"
 #include "classes/CBallWind2d.h"
+#include "classes/CFlashMemoryMenuSave.h"
+#include "classes/CTask.h"
 
 // Borrow the wind HUD view; no storage is created or transferred.
-static inline CBallWind2d* AsCBallWind2d(void* p) { return (CBallWind2d*)p; }
+static inline CBallWind2d* AsCBallWind2d(void* p) {
+    return (CBallWind2d*)p;
+}
 
 // Borrow the tour task using its checked shared layout.
-static inline CTourMain* AsCTourMain(void* p) { return (CTourMain*)p; }
-
+static inline CTourMain* AsCTourMain(void* p) {
+    return (CTourMain*)p;
+}
 
 // State values are shared by OnProcess and OnDisplay; pendingState commits on the next update.
 enum TourPhase {
-    kTourIdle = 0, kTourInitialize = 1, kTourChooseMenu = 2,
-    kTourCreateAreaSelection = 3, kTourSelectArea = 4,
-    kTourCreateItemMenu = 5, kTourItemMenu = 6,
-    kTourLoadEndingMovie = 7, kTourWaitForEndingMovie = 8,
-    kTourPlayEndingMovie = 9, kTourCloseEndingMovie = 10,
-    kTourStartSave = 11, kTourSave = 12, kTourFinished = 13
+    kTourIdle = 0,
+    kTourInitialize = 1,
+    kTourChooseMenu = 2,
+    kTourCreateAreaSelection = 3,
+    kTourSelectArea = 4,
+    kTourCreateItemMenu = 5,
+    kTourItemMenu = 6,
+    kTourLoadEndingMovie = 7,
+    kTourWaitForEndingMovie = 8,
+    kTourPlayEndingMovie = 9,
+    kTourCloseEndingMovie = 10,
+    kTourStartSave = 11,
+    kTourSave = 12,
+    kTourFinished = 13
 };
-enum TourMenuResult128 { kTourMenuBack = -1, kTourMenuStartGame = 1, kTourMenuRebuild = 2, kTourMenuPending = 3 };
-enum TourMovieConstants128 { kTourMovieBufferBytes = 0x100000, kTourMovieLoadMode = 4,
-    kTourMovieExitActionA = 0x11, kTourMovieExitActionB = 0x12, kTourMovieClosePlaybackState = 2,
-    kTourMovieFadeDuration = 8, kTourTaskRequestKind = 8 };
-enum TourExit { kTourNoExit = 0, kTourReturnToMenu = 1, kTourStartGame = 2 };
-enum { kTourMapColumns = 5, kTourMapRows = 7, kHorizontalEdgeCodeBase = 100, kTourModeSaveBytes = 0x33C };
+enum TourMenuResult128 {
+    kTourMenuBack = -1,
+    kTourMenuStartGame = 1,
+    kTourMenuRebuild = 2,
+    kTourMenuPending = 3
+};
+enum TourMovieConstants128 {
+    kTourMovieBufferBytes = 0x100000,
+    kTourMovieLoadMode = 4,
+    kTourMovieExitActionA = 0x11,
+    kTourMovieExitActionB = 0x12,
+    kTourMovieClosePlaybackState = 2,
+    kTourMovieFadeDuration = 8,
+    kTourTaskRequestKind = 8
+};
+enum TourExit {
+    kTourNoExit = 0,
+    kTourReturnToMenu = 1,
+    kTourStartGame = 2
+};
+enum {
+    kTourMapColumns = 5,
+    kTourMapRows = 7,
+    kHorizontalEdgeCodeBase = 100,
+    kTourModeSaveBytes = 0x33C
+};
 enum TourNodeBits {
-    kNodeRewardCounted = 0x10, kEdgeDown = 0x20, kEdgeUp = 0x40,
-    kEdgeRight = 0x80, kEdgeLeft = 0x100, kNodeRewardsApplied = 0x200,
-    kNodePending = 0x400, kNodeCompleted = 0x8000
+    kNodeRewardCounted = 0x10,
+    kEdgeDown = 0x20,
+    kEdgeUp = 0x40,
+    kEdgeRight = 0x80,
+    kEdgeLeft = 0x100,
+    kNodeRewardsApplied = 0x200,
+    kNodePending = 0x400,
+    kNodeCompleted = 0x8000
 };
-enum { kFirstWindElement = 6, kLastWindElement = 21, kWindFeedbackElement = 2 };
+enum {
+    kFirstWindElement = 6,
+    kLastWindElement = 21,
+    kWindFeedbackElement = 2
+};
 // Wind HUD IDs used here: 6..21 are the selectable wind elements (all disabled
 // on initialization); element 2 has feedback reset to state 0. Constructor
 // visibility flags cover 0, 22..29 and a separately drawn element 3. Their
@@ -46,8 +90,12 @@ enum { kFirstWindElement = 6, kLastWindElement = 21, kWindFeedbackElement = 2 };
 // 12=save menu; other phases emit no draw calls from this task.
 // Selection results: area >0=selected, <0=save/exit, 0=pending;
 // map/item -1=back, 1=start game through save, 2=recreate menu, 3=no transition.
-enum { kTourCoursesPerAreaReward = 2, kTourOtherRewardsPerArea = 7,
-    kTourAreaUnlocked = 0x80, kTourAllAreasCleared = 0x20 };
+enum {
+    kTourCoursesPerAreaReward = 2,
+    kTourOtherRewardsPerArea = 7,
+    kTourAreaUnlocked = 0x80,
+    kTourAllAreasCleared = 0x20
+};
 struct TourAreaSave {
     unsigned char flags;
     char padding01;
@@ -70,12 +118,12 @@ struct TourModeSave {
 // TourProgressContext borrows the task's player-record copy until task destruction.
 // Packed string pool; empty title transition name is a separate one-byte entry.
 struct TourReturnStrings {
-    char soundBank[8]; // SE_tour
+    char soundBank[8];    // SE_tour
     char endingMovie[10]; // staffroll
-    char titleTask[11]; // CTitleTask
+    char titleTask[11];   // CTitleTask
     char emptyTransition[1];
-    char titleMain[11]; // TitleMain2
-    char golfTask[10]; // CGolfTask
+    char titleMain[11];   // TitleMain2
+    char golfTask[10];    // CGolfTask
     char golfDocument[9]; // CGolfDoc
 };
 enum {
@@ -86,8 +134,14 @@ enum {
     kGolfTaskNameOffset = (int)&((TourReturnStrings*)0)->golfTask,
     kGolfDocumentNameOffset = (int)&((TourReturnStrings*)0)->golfDocument
 };
-struct TourPlayerRecordView { char prefix[0x4EC]; TourModeSave modes; };
-struct TourPlayerRewardView { char prefix[0xD0]; int pendingReward; };
+struct TourPlayerRecordView {
+    char prefix[0x4EC];
+    TourModeSave modes;
+};
+struct TourPlayerRewardView {
+    char prefix[0xD0];
+    int pendingReward;
+};
 struct TourProgressContext {
     void* playerRecord;
     unsigned char edgeRewardState;
@@ -142,7 +196,6 @@ void SoundManager_ReleaseSoundBank(void*, void*);
 void TourMap_DestroyScreenAndPreviewTree(void*, int);
 void TourAreaSelect_Destroy(void*, int);
 void TourMenuGroup_DrawActiveEntries(void*);
-void CTourMain_DrawItemMenu(void*);
 void MovieController_Ctor(void*);
 extern char MovieController_Dtor[];
 void MoviePlayer_DrawCurrentSamples(void*);
@@ -185,19 +238,18 @@ inline void EnsureTourMovieController(void* registration) {
 #pragma pop
 
 // Construct the tour task with its player-record copy and begin at initialization.
-void* CTourMain_Ctor(void* self) {
-    __ct__18NativeBase80201D18Fv(self);
-    AsCTourMain(self)->vtbl = __vt__9CTourMain;
-    (*(char**)&AsCTourMain(self)->secondaryVtable) = __vt__9CTourMain + 0x3C;
-    SaveData_InitPlayerRecord(AsCTourMain(self)->playerRecordCopy);
-    AsCTourMain(self)->state = kTourInitialize;
-    AsCTourMain(self)->pendingState = kTourIdle;
-    AsCTourMain(self)->exitDestination = kTourNoExit;
-    AsCTourMain(self)->messageLatch = 0;
-    (*(int*)&AsCTourMain(self)->tourSelect) = 0;
-    (*(int*)&AsCTourMain(self)->tourConfirm) = 0;
-    (*(int*)&AsCTourMain(self)->saveMenu) = 0;
-    return self;
+CTourMain::CTourMain() {
+    __ct__18NativeBase80201D18Fv(this);
+    vtbl = __vt__9CTourMain;
+    (*(char**)&secondaryVtable) = __vt__9CTourMain + 0x3C;
+    SaveData_InitPlayerRecord(playerRecordCopy);
+    state = kTourInitialize;
+    pendingState = kTourIdle;
+    exitDestination = kTourNoExit;
+    messageLatch = 0;
+    (*(int*)&tourSelect) = 0;
+    (*(int*)&tourConfirm) = 0;
+    (*(int*)&saveMenu) = 0;
 }
 
 // Initialize the item-request singleton if needed and clear its pending entries.
@@ -207,32 +259,31 @@ void ItemRequestState_ClearGlobalEntries() {
 }
 
 // Initialize the wind HUD layout, selection, counters, and invalid resource index.
-void* CBallWind2d_Ctor(void* self) {
-    Layout_Init(self, 5);
+CBallWind2d::CBallWind2d() {
+    Layout_Init(this, 5);
     float f0 = kFloat_0_BallWindHud;
     int zero = 0;
     int initialSelectableElement = kFirstWindElement;
     int one = 1;
     int neg = -1;
-    (*(char**)&AsCBallWind2d(self)->interfaceVtable) = __vt__11CBallWind2d;
-    AsCBallWind2d(self)->selectedElementIndex = initialSelectableElement;
-    AsCBallWind2d(self)->selectionActive = zero;
-    AsCBallWind2d(self)->selectionState = zero;
-    AsCBallWind2d(self)->ballControlsVisible = zero;
-    AsCBallWind2d(self)->element0Visible = zero;
-    AsCBallWind2d(self)->elements26And27Visible = zero;
-    AsCBallWind2d(self)->element22Visible = zero;
-    AsCBallWind2d(self)->element25Visible = zero;
-    AsCBallWind2d(self)->elements25And26Bright = zero;
-    AsCBallWind2d(self)->element28Visible = zero;
-    AsCBallWind2d(self)->element29Visible = zero;
-    AsCBallWind2d(self)->element23Visible = zero;
-    AsCBallWind2d(self)->element24Visible = zero;
-    AsCBallWind2d(self)->element3DrawnSeparately = one;
-    AsCBallWind2d(self)->unk_98 = f0;
-    AsCBallWind2d(self)->unk_9C = neg;
-    AsCBallWind2d(self)->initialized = zero;
-    return self;
+    (*(char**)&interfaceVtable) = __vt__11CBallWind2d;
+    selectedElementIndex = initialSelectableElement;
+    selectionActive = zero;
+    selectionState = zero;
+    ballControlsVisible = zero;
+    element0Visible = zero;
+    elements26And27Visible = zero;
+    element22Visible = zero;
+    element25Visible = zero;
+    elements25And26Bright = zero;
+    element28Visible = zero;
+    element29Visible = zero;
+    element23Visible = zero;
+    element24Visible = zero;
+    element3DrawnSeparately = one;
+    indicatorCenterX = f0;
+    indicatorColor = neg;
+    layoutReady = zero;
 }
 
 // Initialize the tour task unit's full-turn constant.
@@ -241,29 +292,30 @@ void TourTask_InitFullTurn() {
 }
 
 // This tour task has no work during the pre-load hook.
-void CTourMain_OnPreLoadInit() {}
+void CTourMain::OnPreLoadInit() {}
 
 // This tour task has no work during the load hook.
-void CTourMain_OnLoad() {}
+void CTourMain::OnLoad() {}
 
 // This tour task has no work during the init hook.
-void CTourMain_OnInit() {}
+void CTourMain::OnInit() {}
 
 // Resource cleanup is handled by the destructor rather than this lifecycle hook.
-void CTourMain_OnDestroy() {}
+void CTourMain::OnDestroy() {}
 
 extern char s_tourMainTypeInfo;
 
 // Return the tour task's runtime type descriptor.
-void* CTourMain_GetRTTI() {
+void* CTourMain::GetRTTI() {
     return &s_tourMainTypeInfo;
 }
 
-void* CTourMain_dtor(void*, int);
+void* __dt__9CTourMainFv(void*, int);
 
-// Adjust from the secondary interface at +0x18 to the complete tour task before destruction.
-void CTourMain_DtorThunk18(char* self, int arg) {
-    CTourMain_dtor(self - 0x18, arg);
+// The secondary interface's destructor entry: its this pointer is 0x18 bytes
+// past the object's start, so step back before destroying.
+void CTourMain::DtorThunk18(int deleting) {
+    __dt__9CTourMainFv((char*)this - 0x18, deleting);
 }
 
 // Initialize the wind HUD unit's full-turn constant.
@@ -273,39 +325,36 @@ void BallWindHud_InitFullTurn() {
 
 // Record message value 0/1 as the task's message latch; ignore other values.
 // state is a borrowed message packet; the value is word 1, not word 0.
-void CTourMain_HandleMsg(void* self, int* state) {
+void CTourMain::HandleMsg(int* state) {
     int v = state[1];
     if (v != 1) {
-        if (v >= 1) return;
-        if (v < 0) return;
-        AsCTourMain(self)->messageLatch = 0;
+        if (v >= 1)
+            return;
+        if (v < 0)
+            return;
+        messageLatch = 0;
         return;
     }
-    AsCTourMain(self)->messageLatch = 1;
+    messageLatch = 1;
 }
 
 void Layout_Destroy(void*, int);
 void __dl__FPv(void*);
 
 // Destroy the wind layout and optionally release its object storage.
-void* CBallWind2d_dtor(void* ptr, int deletingFlag) {
-    if (ptr != 0) {
-        Layout_Destroy(ptr, 0);
-        if (deletingFlag > 0)
-            __dl__FPv(ptr);
-    }
-    return ptr;
+CBallWind2d::~CBallWind2d() {
+    Layout_Destroy(this, 0);
 }
 
 void Layout_SetElementEnabled(void*, int, int);
 void Layout_SetElementFeedbackState(void*, int, int);
 
 // Hide selectable layout elements (artwork identity unresolved), clear feedback, and mark the HUD initialized.
-int CBallWind2d_InitLayout(void* self) {
+int CBallWind2d::InitLayout() {
     for (int i = kFirstWindElement; i <= kLastWindElement; ++i)
-        Layout_SetElementEnabled(self, i, 0);
-    Layout_SetElementFeedbackState(self, kWindFeedbackElement, 0);
-    AsCBallWind2d(self)->initialized = 1;
+        Layout_SetElementEnabled(this, i, 0);
+    Layout_SetElementFeedbackState(this, kWindFeedbackElement, 0);
+    layoutReady = 1;
     return 1;
 }
 
@@ -313,35 +362,30 @@ void Layout_LoadExtended(void*, void*, const char*);
 extern char golfBallWindLayoutStrings[];
 
 // Load the wind HUD's named layout resource.
-int CBallWind2d_LoadLayout(void* arg0, void* arg1) {
+int CBallWind2d::LoadLayout(void* arg0, void* arg1) {
     Layout_LoadExtended(arg0, arg1, golfBallWindLayoutStrings);
     return 1;
 }
 
 // Destroy both tour menus, release the sound bank, and optionally delete the tour task.
-void* CTourMain_dtor(void* self, int flag) {
-    if (self != 0) {
-        void* p = AsCTourMain(self)->tourConfirm;
-        AsCTourMain(self)->vtbl = __vt__9CTourMain;
-        (*(char**)&AsCTourMain(self)->secondaryVtable) = __vt__9CTourMain + 0x3C;
-        if (p != 0) {
-            TourMap_DestroyScreenAndPreviewTree(p, 1);
-            AsCTourMain(self)->tourConfirm = 0;
-        }
-        void* q = AsCTourMain(self)->tourSelect;
-        if (q != 0) {
-            TourAreaSelect_Destroy(q, 1);
-            AsCTourMain(self)->tourSelect = 0;
-        }
-        ((TourProgressContext*)s_tourProgressStateStorage)->playerRecord = 0;
-        SoundManager_ReleaseSoundBank(g_soundManager, tourReturnTaskStrings);
-        if (self != 0) {
-            __dt__18NativeBase80201D18Fv(self, 0);
-        }
-        if (flag > 0)
-            __dl__FPv(self);
+CTourMain::~CTourMain() {
+    void* p = tourConfirm;
+    vtbl = __vt__9CTourMain;
+    (*(char**)&secondaryVtable) = __vt__9CTourMain + 0x3C;
+    if (p != 0) {
+        TourMap_DestroyScreenAndPreviewTree(p, 1);
+        tourConfirm = 0;
     }
-    return self;
+    void* q = tourSelect;
+    if (q != 0) {
+        TourAreaSelect_Destroy(q, 1);
+        tourSelect = 0;
+    }
+    ((TourProgressContext*)s_tourProgressStateStorage)->playerRecord = 0;
+    SoundManager_ReleaseSoundBank(g_soundManager, tourReturnTaskStrings);
+    if (this != 0) {
+        __dt__18NativeBase80201D18Fv(this, 0);
+    }
 }
 
 #pragma push
@@ -368,7 +412,8 @@ static inline void DecodeTourEdgeCode128(int edgeCode, int& edgeAxis, int& edgeN
 
 // Set reciprocal direction flags on the two grid nodes encoded by edgeCode.
 void TourMap_MarkConnectingEdge(void* self, int edgeCode) {
-    if (self == 0) return;
+    if (self == 0)
+        return;
     int edgeAxis;
     int edgeNode;
     int axisMultiple;
@@ -376,7 +421,8 @@ void TourMap_MarkConnectingEdge(void* self, int edgeCode) {
     signed char areaOrderIndex;
     signed char areaIndex;
     areaOrderIndex = ((TourModeSave*)self)->currentArea;
-    if (areaOrderIndex < 0) return;
+    if (areaOrderIndex < 0)
+        return;
     areaOrderCursor = (char*)self + areaOrderIndex;
     areaIndex = (signed char)areaOrderCursor[TOUR_OFFSET(TourModeSave, areaOrder)];
     // edgeAxis = edgeCode / 100, edgeNode = edgeCode % 100 (signed,
@@ -392,7 +438,8 @@ void TourMap_MarkConnectingEdge(void* self, int edgeCode) {
         nodeQuotient = nodeQuotient + negativeCorrection;
         nodeQuotient = nodeQuotient * kTourMapColumns;
         int column = edgeNode - nodeQuotient;
-        if (column >= kTourMapColumns - 1) return;
+        if (column >= kTourMapColumns - 1)
+            return;
         char* nodeFlags = (char*)self + areaIndex * sizeof(TourAreaSave) + TOUR_OFFSET(TourAreaSave, nodes);
         unsigned int firstNodeByteOffset = (unsigned int)edgeNode << 1;
         unsigned int secondNodeByteOffset = ((unsigned int)edgeNode + 1) << 1;
@@ -410,7 +457,8 @@ void TourMap_MarkConnectingEdge(void* self, int edgeCode) {
         nodeQuotient = nodeQuotient >> 1;
         int negativeCorrection = (nodeQuotient < 0) ? 1 : 0;
         nodeQuotient = nodeQuotient + negativeCorrection;
-        if (nodeQuotient >= kTourMapRows - 1) return;
+        if (nodeQuotient >= kTourMapRows - 1)
+            return;
         char* nodeFlags = (char*)self + areaIndex * sizeof(TourAreaSave) + TOUR_OFFSET(TourAreaSave, nodes);
         unsigned int firstNodeByteOffset = (unsigned int)edgeNode << 1;
         unsigned int secondNodeByteOffset = ((unsigned int)edgeNode + kTourMapColumns) << 1;
@@ -426,11 +474,11 @@ void TourMap_MarkConnectingEdge(void* self, int edgeCode) {
 
 #pragma pop
 // Draw the menu, ending movie, or save overlay selected by the current tour phase.
-void CTourMain_OnDisplay(void* self) {
-    unsigned int v = (*(unsigned int*)&AsCTourMain(self)->state);
+void CTourMain::OnDisplay() {
+    unsigned int v = (*(unsigned int*)&state);
     switch (v) {
     case kTourSelectArea: {
-        void* p = AsCTourMain(self)->tourSelect;
+        void* p = tourSelect;
         if (p != 0) {
             TourMenuGroup_DrawActiveEntries(p);
             EnsureTourItemRequests(s_itemRequestStateDtorRegistration_tourMain);
@@ -439,9 +487,9 @@ void CTourMain_OnDisplay(void* self) {
         break;
     }
     case kTourItemMenu: {
-        void* p = AsCTourMain(self)->tourConfirm;
+        void* p = tourConfirm;
         if (p != 0) {
-            CTourMain_DrawItemMenu(p);
+            ((CTourMain*)p)->DrawItemMenu();
             EnsureTourItemRequests(s_itemRequestStateDtorRegistration_tourMain);
             TourItemRequest_DispatchDisplay((void*)((int&)Sing_805DC958()));
         }
@@ -450,13 +498,13 @@ void CTourMain_OnDisplay(void* self) {
     case kTourPlayEndingMovie:
     case kTourCloseEndingMovie: {
         {
-        EnsureTourMovieController(s_tourTaskMovieDtorRegistration);
-        MoviePlayer_DrawCurrentSamples((void*)((int&)Sing_805DC950()));
+            EnsureTourMovieController(s_tourTaskMovieDtorRegistration);
+            MoviePlayer_DrawCurrentSamples((void*)((int&)Sing_805DC950()));
         }
         break;
     }
     case kTourSave: {
-        void* p = AsCTourMain(self)->saveMenu;
+        void* p = saveMenu;
         if (p != 0)
             MPBase1_DrawIfInitialized(p);
         break;
@@ -473,8 +521,12 @@ void CTourMain_OnDisplay(void* self) {
 // local save snapshot, then publishes it once; reward singleton calls have side effects.
 void TourMap_CommitNodeCompletionAndRewards() {
     // Phase 1: snapshot the saved tour modes before applying any rewards.
-    struct TourCourseRewards128 { unsigned short perProgressionSlot[8][kTourCoursesPerAreaReward]; } courseRewardTable;
-    struct TourOtherRewards128 { unsigned short perProgressionSlot[8][kTourOtherRewardsPerArea]; } otherRewardTable;
+    struct TourCourseRewards128 {
+        unsigned short perProgressionSlot[8][kTourCoursesPerAreaReward];
+    } courseRewardTable;
+    struct TourOtherRewards128 {
+        unsigned short perProgressionSlot[8][kTourOtherRewardsPerArea];
+    } otherRewardTable;
     typedef TourAreaSave Record;
     TourModeSave data;
     char* nodeCursor;
@@ -483,15 +535,17 @@ void TourMap_CommitNodeCompletionAndRewards() {
     int areaByteOffset;
     int nodeIndex;
     // Copy all 0x33C tour bytes before applying edge, area and node changes.
-    if (((volatile unsigned int&)Sing_805DC5E0()) == 0) {
+    if (((volatile unsigned int&)GetSaveDataSlot()) == 0) {
         if (s_saveDataInitialized == 0) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((volatile unsigned int&)Sing_805DC5E0()) = (unsigned int)s_saveData;
+        ((volatile unsigned int&)GetSaveDataSlot()) = (unsigned int)s_saveData;
     }
-    void* p0 = SaveData_GetCurrentRecord((void*)((volatile unsigned int&)Sing_805DC5E0()));
-    struct TourModeHalfwordSnapshot128 { unsigned short words[kTourModeSaveBytes / sizeof(unsigned short)]; };
+    void* p0 = SaveData_GetCurrentRecord((void*)((volatile unsigned int&)GetSaveDataSlot()));
+    struct TourModeHalfwordSnapshot128 {
+        unsigned short words[kTourModeSaveBytes / sizeof(unsigned short)];
+    };
     *(TourModeHalfwordSnapshot128*)&data = *(TourModeHalfwordSnapshot128*)&((TourPlayerRecordView*)p0)->modes;
     // Phase 2: resolve progression to the physical area/node, then apply edge progress.
     signed char progressionIndex = data.currentArea;
@@ -536,9 +590,11 @@ void TourMap_CommitNodeCompletionAndRewards() {
         otherRewardTable = *(TourOtherRewards128*)s_tourAreaOtherRewardIndices;
 
         int otherRewardIndex = 0;
-        char* otherRewardCursor = (char*)&otherRewardTable + (unsigned char)data.currentArea * (kTourOtherRewardsPerArea * sizeof(unsigned short));
+        char* otherRewardCursor = (char*)&otherRewardTable +
+                                  (unsigned char)data.currentArea * (kTourOtherRewardsPerArea * sizeof(unsigned short));
         for (; otherRewardIndex < kTourOtherRewardsPerArea; otherRewardIndex++, otherRewardCursor += 2) {
-            if (*(short*)otherRewardCursor == -1) continue;
+            if (*(short*)otherRewardCursor == -1)
+                continue;
             EnsureTourItemRequests(s_itemRequestStateDtorRegistration_tourMain);
             void* mgr3 = (void*)((int&)Sing_805DC958());
             unsigned int low = (unsigned char)*(short*)otherRewardCursor;
@@ -552,40 +608,41 @@ void TourMap_CommitNodeCompletionAndRewards() {
             data.currentArea = -1;
         }
     }
-        // Numeric rewards are counted once per node, independently of area completion.
-        int nodeByteOffset = nodeIndex << 1;
-        nodeCursor = (char*)((unsigned short*)((char*)&data + areaByteOffset) + nodeIndex);
-        unsigned short nodeFlags = *(unsigned short*)(nodeCursor + 4);
-        if (((nodeFlags >> 4) & 1) == 0) {
-            void* gm = (void*)g_sharedDoc;
-                void* q = GolfPlayer_GetEntryByIndex((*(void**)&((CSharedDoc*)gm)->golfDoc), 0);
-                int numericPlayerReward = SharedStringState_GetWordValue();
-                ((TourPlayerRewardView*)q)->pendingReward += numericPlayerReward;
-                int numericTourReward = SharedStringState_GetShortValue();
-                data.rewardCount += numericTourReward;
-            *(unsigned short*)(nodeCursor + 4) = (unsigned short)(*(unsigned short*)(nodeCursor + 4) | kNodeRewardCounted);
+    // Numeric rewards are counted once per node, independently of area completion.
+    int nodeByteOffset = nodeIndex << 1;
+    nodeCursor = (char*)((unsigned short*)((char*)&data + areaByteOffset) + nodeIndex);
+    unsigned short nodeFlags = *(unsigned short*)(nodeCursor + 4);
+    if (((nodeFlags >> 4) & 1) == 0) {
+        void* gm = (void*)g_sharedDoc;
+        void* q = GolfPlayer_GetEntryByIndex((*(void**)&((CSharedDoc*)gm)->golfDoc), 0);
+        int numericPlayerReward = SharedStringState_GetWordValue();
+        ((TourPlayerRewardView*)q)->pendingReward += numericPlayerReward;
+        int numericTourReward = SharedStringState_GetShortValue();
+        data.rewardCount += numericTourReward;
+        *(unsigned short*)(nodeCursor + 4) = (unsigned short)(*(unsigned short*)(nodeCursor + 4) | kNodeRewardCounted);
+    }
+
+    // Mark completion before applying queued inventory/text rewards and publishing.
+    char* completedNodeCursor = (char*)&data + areaByteOffset + nodeByteOffset;
+    *(unsigned short*)(completedNodeCursor + 4) =
+        (unsigned short)((*(unsigned short*)(completedNodeCursor + 4) | kNodeCompleted) & ~kNodePending);
+    EnsureTourItemRequests(s_itemRequestStateDtorRegistration_tourMain);
+    ItemRequestState_ApplyPendingRewards((void*)((int&)Sing_805DC958()));
+
+    EnsureTourItemRequests(s_itemRequestStateDtorRegistration_tourMain);
+    ItemRequestState_MarkTextNotifications((void*)((int&)Sing_805DC958()));
+
+    *(unsigned short*)(nodeCursor + 4) = (unsigned short)(*(unsigned short*)(nodeCursor + 4) | kNodeRewardsApplied);
+
+    if (((volatile unsigned int&)GetSaveDataSlot()) == 0) {
+        if (s_saveDataInitialized == 0) {
+            SaveData_Ctor(s_saveData);
+            s_saveDataInitialized = 1;
         }
-
-        // Mark completion before applying queued inventory/text rewards and publishing.
-        char* completedNodeCursor = (char*)&data + areaByteOffset + nodeByteOffset;
-        *(unsigned short*)(completedNodeCursor + 4) = (unsigned short)((*(unsigned short*)(completedNodeCursor + 4) | kNodeCompleted) & ~kNodePending);
-        EnsureTourItemRequests(s_itemRequestStateDtorRegistration_tourMain);
-        ItemRequestState_ApplyPendingRewards((void*)((int&)Sing_805DC958()));
-
-        EnsureTourItemRequests(s_itemRequestStateDtorRegistration_tourMain);
-        ItemRequestState_MarkTextNotifications((void*)((int&)Sing_805DC958()));
-
-        *(unsigned short*)(nodeCursor + 4) = (unsigned short)(*(unsigned short*)(nodeCursor + 4) | kNodeRewardsApplied);
-
-        if (((volatile unsigned int&)Sing_805DC5E0()) == 0) {
-            if (s_saveDataInitialized == 0) {
-                SaveData_Ctor(s_saveData);
-                s_saveDataInitialized = 1;
-            }
-            ((volatile unsigned int&)Sing_805DC5E0()) = (unsigned int)s_saveData;
-        }
-        // Phase 4: publish the completed local tour-mode snapshot once.
-        SaveData_SetModeRecords((void*)((volatile unsigned int&)Sing_805DC5E0()), &data);
+        ((volatile unsigned int&)GetSaveDataSlot()) = (unsigned int)s_saveData;
+    }
+    // Phase 4: publish the completed local tour-mode snapshot once.
+    SaveData_SetModeRecords((void*)((volatile unsigned int&)GetSaveDataSlot()), &data);
 }
 
 #pragma pop
@@ -599,9 +656,7 @@ void* memset(void*, int, unsigned);
 
 void* __nw__FUl(unsigned long);
 void TourAreaSelect_Ctor(void*, void*);
-int CTourMain_ProcessAreaSelection(void*, float);
 void ModeRecordUiContext_Initialize(void*, void*);
-int CTourMain_ProcessItemMenu(void*, float);
 void SoundManager_RequestBgmStop(void*, int);
 void MovieController_Ctor(void*);
 void MovieController_LoadNamedMovie(void*, void*, int, int);
@@ -616,9 +671,7 @@ void FadeState_StartFadeOut(void*, int);
 void FadeState_RequestFramebufferCapture(void*);
 void FadeState_StartFadeIn(void*, int);
 void VIEnableDimming(int);
-void* CFlashMemoryMenuSave_Create();
 int MPBase1_Process(void*, float);
-void CTask_RequestTransitionWithFade(void*, void*, void*, int);
 void TaskCommandQueue_AppendNamedRequest(void*, int, void*, int, int, int, int, int);
 void SaveData_Ctor(void*);
 void* SaveData_GetCurrentRecord(void*);
@@ -643,19 +696,24 @@ extern char tourReturnTaskStrings[];
 extern char s_fadeOverlay[];
 extern char s_tourTaskRegistrationAndProgressStorage[];
 extern char s_itemRequestStateDtorRegistration_tourMain[];
-
 }
 class TourSelect {
     char data[0x38];
+
 public:
     // Construct an area menu borrowing the task's shared progress context.
-    TourSelect(void* state) { TourAreaSelect_Ctor(this, state); }
+    TourSelect(void* state) {
+        TourAreaSelect_Ctor(this, state);
+    }
 };
 class TourConfirm {
     char data[0x9C];
+
 public:
     // Construct the map/item menu borrowing the same progress context.
-    TourConfirm(void* state) { ModeRecordUiContext_Initialize(this, state); }
+    TourConfirm(void* state) {
+        ModeRecordUiContext_Initialize(this, state);
+    }
 };
 class TourTransition {
 public:
@@ -672,9 +730,9 @@ extern "C" {
 // deltaSeconds is forwarded unchanged to active menus. pendingState=0 means
 // no deferred transition; nonzero states commit at the next update's entry.
 // Movie-load and save-start cases instead assign state and fall through in this call.
-void CTourMain_OnProcess(void* self, float deltaSeconds) {
+void CTourMain::OnProcess(float deltaSeconds) {
     float frameDelta = deltaSeconds;
-    void* tourTask = self;
+    void* tourTask = this;
     char* registrationStorage = s_tourTaskRegistrationAndProgressStorage;
     void* contextOrCompletion = 0;
 
@@ -696,14 +754,14 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
             memset(contextOrCompletion, 0, 0x38);
             ((TourProgressContext*)contextOrCompletion)->initialized = 1;
         }
-        if (((volatile unsigned int&)Sing_805DC5E0()) == 0) {
+        if (((volatile unsigned int&)GetSaveDataSlot()) == 0) {
             if (s_saveDataInitialized == 0) {
                 SaveData_Ctor(s_saveData);
                 s_saveDataInitialized = 1;
             }
-            ((volatile unsigned int&)Sing_805DC5E0()) = (unsigned int)s_saveData;
+            ((volatile unsigned int&)GetSaveDataSlot()) = (unsigned int)s_saveData;
         }
-        void* savedPlayerRecord = SaveData_GetCurrentRecord((void*)((volatile unsigned int&)Sing_805DC5E0()));
+        void* savedPlayerRecord = SaveData_GetCurrentRecord((void*)((volatile unsigned int&)GetSaveDataSlot()));
         // Copy-only 0x828-byte player-record schema: groups encode transfer
         // widths, not independent save objects. +4EC begins TourModeSave.
         struct PlayerRecordTransfer {
@@ -718,7 +776,10 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
             unsigned int words4D8[5];
             unsigned short tourHalfwords4EC[414];
         };
-        struct TourData { char pad[0x34]; PlayerRecordTransfer playerRecord; };
+        struct TourData {
+            char pad[0x34];
+            PlayerRecordTransfer playerRecord;
+        };
         ((TourData*)tourTask)->playerRecord = *(PlayerRecordTransfer*)savedPlayerRecord;
         *(void**)((registrationStorage + 0x30)) = (void*)((char*)tourTask + TOUR_OFFSET(CTourMain, playerRecordCopy));
         SoundManager_AcquireSoundBank(g_soundManager, tourReturnTaskStrings);
@@ -734,8 +795,10 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
         } else {
             void* areaMenuOrPlayer = *(void**)((registrationStorage + 0x30));
             signed char currentArea = ((TourPlayerRecordView*)areaMenuOrPlayer)->modes.currentArea;
-            if (currentArea < 0) AsCTourMain(tourTask)->pendingState = kTourCreateAreaSelection;
-            else AsCTourMain(tourTask)->pendingState = kTourCreateItemMenu;
+            if (currentArea < 0)
+                AsCTourMain(tourTask)->pendingState = kTourCreateAreaSelection;
+            else
+                AsCTourMain(tourTask)->pendingState = kTourCreateItemMenu;
         }
         break;
     }
@@ -753,7 +816,7 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
         ItemRequestState_UpdateCompletion((void*)((int&)Sing_805DC958()));
         float menuDelta = frameDelta;
         void* activeMenu = AsCTourMain(tourTask)->tourSelect;
-        int menuResult = (int)(long)CTourMain_ProcessAreaSelection(activeMenu, menuDelta);
+        int menuResult = ((MenuGroup802FB4D0*)activeMenu)->ProcessAreaSelection(menuDelta);
         if (menuResult > 0) {
             void* areaMenuOrPlayer = AsCTourMain(tourTask)->tourSelect;
             void* playerRecord = *(void**)((registrationStorage + 0x30));
@@ -782,17 +845,23 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
         // The map menu can rebuild itself, start a saved game, or return to areas.
         EnsureTourItemRequests((registrationStorage + 0xc));
         ItemRequestState_UpdateCompletion((void*)((int&)Sing_805DC958()));
-        int menuResult = CTourMain_ProcessItemMenu(AsCTourMain(tourTask)->tourConfirm, frameDelta);
+        int menuResult = ((CTourMain*)(AsCTourMain(tourTask)->tourConfirm))->ProcessItemMenu(frameDelta);
         switch (menuResult) {
         case kTourMenuRebuild: {
             void* activeMenu = AsCTourMain(tourTask)->tourConfirm;
-            if (activeMenu != 0) { TourMap_DestroyScreenAndPreviewTree(activeMenu, 1); AsCTourMain(tourTask)->tourConfirm = 0; }
+            if (activeMenu != 0) {
+                TourMap_DestroyScreenAndPreviewTree(activeMenu, 1);
+                AsCTourMain(tourTask)->tourConfirm = 0;
+            }
             AsCTourMain(tourTask)->pendingState = kTourCreateItemMenu;
             break;
         }
         case kTourMenuStartGame: {
             void* activeMenu = AsCTourMain(tourTask)->tourConfirm;
-            if (activeMenu != 0) { TourMap_DestroyScreenAndPreviewTree(activeMenu, 1); AsCTourMain(tourTask)->tourConfirm = 0; }
+            if (activeMenu != 0) {
+                TourMap_DestroyScreenAndPreviewTree(activeMenu, 1);
+                AsCTourMain(tourTask)->tourConfirm = 0;
+            }
             AsCTourMain(tourTask)->exitDestination = kTourStartGame;
             AsCTourMain(tourTask)->pendingState = kTourStartSave;
             SoundManager_RequestBgmStop(g_soundManager, 1);
@@ -800,17 +869,23 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
         }
         case kTourMenuBack: {
             void* activeMenu = AsCTourMain(tourTask)->tourConfirm;
-            if (activeMenu != 0) { TourMap_DestroyScreenAndPreviewTree(activeMenu, 1); AsCTourMain(tourTask)->tourConfirm = 0; }
+            if (activeMenu != 0) {
+                TourMap_DestroyScreenAndPreviewTree(activeMenu, 1);
+                AsCTourMain(tourTask)->tourConfirm = 0;
+            }
             AsCTourMain(tourTask)->pendingState = kTourCreateAreaSelection;
             break;
         }
-        case kTourMenuPending: break;
+        case kTourMenuPending:
+            break;
         }
         break;
     }
     case kTourLoadEndingMovie: {
         EnsureTourMovieController(((void*)(registrationStorage + 0x24)));
-        MovieController_LoadNamedMovie((void*)((int&)Sing_805DC950()), (void*)(tourReturnTaskStrings + kEndingMovieNameOffset), kTourMovieBufferBytes, kTourMovieLoadMode);
+        MovieController_LoadNamedMovie((void*)((int&)Sing_805DC950()),
+                                       (void*)(tourReturnTaskStrings + kEndingMovieNameOffset), kTourMovieBufferBytes,
+                                       kTourMovieLoadMode);
         if (((int&)Sing_805DC608()) == 0) {
             if (s_fadeOverlayInitialized == 0) {
                 FadeOverlay_Init(s_fadeOverlay);
@@ -849,27 +924,28 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
     case kTourPlayEndingMovie: {
         EnsureTourMovieController(((void*)(registrationStorage + 0x24)));
         MovieController_InvokeNoOpHook((void*)((int&)Sing_805DC950()));
-        if (((int&)Sing_805DC5C8()) == 0) {
+        if (((int&)GetInputManagerSlot()) == 0) {
             if (s_inputManagerInitialized == 0) {
                 InputManager_Init(s_gameInputManager);
                 __register_global_object(s_gameInputManager, InputManager_Dtor, (void*)registrationStorage);
                 s_inputManagerInitialized = 1;
             }
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+            ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
         }
         // Either input action (0x11/0x12) or playback state 2 closes the ending movie.
-        if (Input_IsActionPressed((void*)((int&)Sing_805DC5C8()), kTourMovieExitActionA, -1) == 0) {
-            if (((int&)Sing_805DC5C8()) == 0) {
+        if (Input_IsActionPressed((void*)((int&)GetInputManagerSlot()), kTourMovieExitActionA, -1) == 0) {
+            if (((int&)GetInputManagerSlot()) == 0) {
                 if (s_inputManagerInitialized == 0) {
                     InputManager_Init(s_gameInputManager);
                     __register_global_object(s_gameInputManager, InputManager_Dtor, (void*)(registrationStorage + 0));
                     s_inputManagerInitialized = 1;
                 }
-                ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+                ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
             }
-            if (Input_IsActionPressed((void*)((int&)Sing_805DC5C8()), kTourMovieExitActionB, -1) == 0) {
+            if (Input_IsActionPressed((void*)((int&)GetInputManagerSlot()), kTourMovieExitActionB, -1) == 0) {
                 EnsureTourMovieController(((void*)(registrationStorage + 0x24)));
-                if (Movie_GetPlaybackState((void*)((int&)Sing_805DC950())) != kTourMovieClosePlaybackState) break;
+                if (Movie_GetPlaybackState((void*)((int&)Sing_805DC950())) != kTourMovieClosePlaybackState)
+                    break;
             }
         }
         {
@@ -898,8 +974,8 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
     case kTourCloseEndingMovie: {
         // Release movie audio, restore dimming, then resume the appropriate menu.
         {
-        EnsureTourMovieController(((void*)(registrationStorage + 0x24)));
-        MovieController_ReleaseAudioAndResetLatches((void*)((int&)Sing_805DC950()));
+            EnsureTourMovieController(((void*)(registrationStorage + 0x24)));
+            MovieController_ReleaseAudioAndResetLatches((void*)((int&)Sing_805DC950()));
         }
         if (Sing_805DC960() == 0) {
             if (s_videoDimmingStateInitialized == 0) {
@@ -917,21 +993,24 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
         }
         void* playerRecord = *(void**)((registrationStorage + 0x30));
         signed char currentArea = ((TourPlayerRecordView*)playerRecord)->modes.currentArea;
-        if (currentArea < 0) AsCTourMain(tourTask)->pendingState = kTourCreateAreaSelection;
-        else AsCTourMain(tourTask)->pendingState = kTourCreateItemMenu;
+        if (currentArea < 0)
+            AsCTourMain(tourTask)->pendingState = kTourCreateAreaSelection;
+        else
+            AsCTourMain(tourTask)->pendingState = kTourCreateItemMenu;
         break;
     }
     case kTourStartSave: {
-        if (((volatile unsigned int&)Sing_805DC5E0()) == 0) {
+        if (((volatile unsigned int&)GetSaveDataSlot()) == 0) {
             if (s_saveDataInitialized == 0) {
                 SaveData_Ctor(s_saveData);
                 s_saveDataInitialized = 1;
             }
-            ((volatile unsigned int&)Sing_805DC5E0()) = (unsigned int)s_saveData;
+            ((volatile unsigned int&)GetSaveDataSlot()) = (unsigned int)s_saveData;
         }
-        SaveData_SetCurrentRecord((void*)((volatile unsigned int&)Sing_805DC5E0()), (void*)((char*)tourTask + TOUR_OFFSET(CTourMain, playerRecordCopy)));
+        SaveData_SetCurrentRecord((void*)((volatile unsigned int&)GetSaveDataSlot()),
+                                  (void*)((char*)tourTask + TOUR_OFFSET(CTourMain, playerRecordCopy)));
         if ((*(int*)&AsCTourMain(tourTask)->saveMenu) == 0) {
-            void* saveMenu = CFlashMemoryMenuSave_Create();
+            void* saveMenu = CFlashMemoryMenuSave::Create();
             AsCTourMain(tourTask)->saveMenu = saveMenu;
             SoundManager_RequestBgmStop(g_soundManager, 1);
         }
@@ -967,13 +1046,17 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
                 int titleTransitionFlags = 0;
                 void* titleTaskName = returnTaskNames + kTitleTaskNameOffset;
                 void* emptyTransitionName = returnTaskNames + kEmptyTransitionNameOffset;
-                CTask_RequestTransitionWithFade(titleTaskManager, titleTaskName, emptyTransitionName, titleTransitionFlags);
+                ((CTask*)titleTaskManager)
+                    ->RequestTransitionWithFade((const char*)titleTaskName, (const char*)emptyTransitionName,
+                                                titleTransitionFlags);
                 void* titleCommandManager = g_taskManager;
                 void* titleMainName = returnTaskNames + kTitleMainNameOffset;
                 int titleRequestSlot = 0;
                 int titleRequestKind = kTourTaskRequestKind;
                 int titleRequestArg0 = 0, titleRequestArg1 = 0, titleRequestArg2 = 0, titleRequestArg3 = 0;
-                TaskCommandQueue_AppendNamedRequest(titleCommandManager, titleRequestSlot, titleMainName, titleRequestKind, titleRequestArg0, titleRequestArg1, titleRequestArg2, titleRequestArg3);
+                TaskCommandQueue_AppendNamedRequest(titleCommandManager, titleRequestSlot, titleMainName,
+                                                    titleRequestKind, titleRequestArg0, titleRequestArg1,
+                                                    titleRequestArg2, titleRequestArg3);
                 break;
             }
             case kTourStartGame: {
@@ -982,7 +1065,9 @@ void CTourMain_OnProcess(void* self, float deltaSeconds) {
                 int gameTransitionFlags = 0;
                 void* golfTaskName = gameTaskNames + kGolfTaskNameOffset;
                 void* golfDocumentName = gameTaskNames + kGolfDocumentNameOffset;
-                CTask_RequestTransitionWithFade(gameTaskManager, golfTaskName, golfDocumentName, gameTransitionFlags);
+                ((CTask*)gameTaskManager)
+                    ->RequestTransitionWithFade((const char*)golfTaskName, (const char*)golfDocumentName,
+                                                gameTransitionFlags);
                 break;
             }
             }

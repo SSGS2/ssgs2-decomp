@@ -1,5 +1,5 @@
-// Translation unit 0x80404470-0x804044DC (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// The stream callback of CSoundStreamSource: its buffer record, and the destructor that
+// releases the buffer data the callback owns and then the callback itself if asked.
 
 namespace gtl {
 struct CSoundStreamSource {
@@ -17,14 +17,16 @@ struct CSoundStreamSource {
 extern "C" {
 
 void gtl_Audio_Free(void*);
-enum { kOwnsBufferFlagShift = 31 };
+enum {
+    kOwnsBufferFlagShift = 31
+};
 
 // Release owned stream-buffer data, then optionally release the callback itself.
 // Null is accepted; deleting > 0 releases self via the same audio allocator.
 // Return the incoming address, which may be freed. No fields are reset, so this
 // cleanup is not repeatable on an object whose owned data has already been freed.
-gtl::CSoundStreamSource::StrmCallback* gtl_CSoundStreamSource_StrmCallback_dtor(
-    gtl::CSoundStreamSource::StrmCallback* self, int deleting) {
+gtl::CSoundStreamSource::StrmCallback*
+gtl_CSoundStreamSource_StrmCallback_dtor(gtl::CSoundStreamSource::StrmCallback* self, int deleting) {
     if (self) {
         if (&self->buffer) {
             if (self->buffer.flags >> kOwnsBufferFlagShift) {

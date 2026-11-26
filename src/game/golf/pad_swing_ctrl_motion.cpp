@@ -1,53 +1,20 @@
+// Wii Remote swing playback and the swing gauge.
+//
+// CPadSwingCtrlMotion smooths the swing position toward a target, picks the swing animation for the club and
+// the swing power, and times when the animation is done. CPadSwingCtrl owns one of those plus an acceleration
+// controller; here it runs the current swing phase each frame and publishes the power and impact cursor values.
+//
+// Animation times are in frames at 30 frames per second. The damped move advances once per call, not per second.
+#include <decomp/local_class.h>
 #include <decomp/static_init.h>
-// Wii Remote swing playback / gauge publication, not the course ball integrator.
-// Mod lookup (constants in u80226C9C_data.cpp unless another owner is named):
-// - CPadSwingCtrl_vfunc_5 fast-forwards motion with skipPlayback=1: at most
-//   kMaxSettleSteps (150) callbacks at kFloat_OneThirtieth_PadSwingSettleStep
-//   (0.03333333507180214 seconds each). This is a synchronous bounded playback
-//   loop, not 150 rendered frames or 150 golf-ball collision steps.
-// - vfunc_8/IsSwingAnimationComplete multiply elapsed seconds by
-//   kFloat_30_PadSwingMotion (30 animation frames/second); completion also adds
-//   kMotionCompletionFrameOffset (15 frames) and the selected range/timing offset.
-// - DampedMoveTowardTarget advances once per CALL; 10/5 response/damping calls,
-//   velocity limit 2, max change 0.5, duration scale 1 or 1.2. Do not change only
-//   the seconds-to-frames scalar when changing update cadence.
-// - SelectSwingMotion/GetThresholdIndex: ten s_swingMotionThresholds; names in
-//   swingMotionNames, 30 fixed 36-byte entries. Selected-ID timing rows are
-//   is the CHARACTER type-ID's low 26-bit index, with no indirection through a
-//   display-order list. GetCharacterTimingFrames below contains the full row/
-//   column contract; ItemInventory_FindCharacterData in golf_player_actor.cpp uses that
-//   same selected ID. Character names/localization are not table indices.
-// - vfunc_2 gauge mapping: 149 + 360*power; impact lower bound 114, power upper
-//   bound 509. These are cursor coordinates, not screen resolution or world units.
-// All self/animationTarget pointers are required and borrowed during playback.
-// CPadSwingCtrl_Ctor owns two controllers; dtor releases them. No callback target
-// ownership transfers. Preserve phase result codes, update order, float operations,
-// repeated singleton/phase queries, manual-animation toggles, and early returns.
-// Safe tuning ranges beyond table domains are not established. For golf physics
-// use the separate shot/trajectory/collision units.
-// Shared headers: CPadSwingCtrl::accelerationController at +0 owns the
-// acceleration controller; its interface vptr is +0x58. The integer at
-// CPadSwingCtrlMotion::motionPhase (+0) stores phase 0..4, with interface vptr +0x44.
-// Constructor, destructor and vfunc_1/AdvanceMotionPhase establish those meanings.
-#include "classes/CSharedDoc.h"
-#define AsCSharedDoc(p) ((CSharedDoc*)(p))
-#include "classes/CGolfDoc.h"
-// CPadSwingCtrlMotion_GetCharacterTimingFrames (0x80227870): manager +0xB90 is the golf
-// document; its +0x3C1 byte selects the player passed to CGolfDoc_GetItemSelection.
-// Translation unit 0x80226C9C-0x802283AC (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "sdk_protos.h"
+#include "classes/CSharedDoc.h"
+#include "classes/CGolfDoc.h"
 #include "classes/CPadSwingCtrl.h"
 #include "classes/CPadSwingCtrlMotion.h"
+#include "classes/CPadSwingAccele.h"
 
-// Borrow the motion-controller storage view without transferring ownership.
-static inline CPadSwingCtrlMotion* AsCPadSwingCtrlMotion(void* p) { return (CPadSwingCtrlMotion*)p; }
-
-// Borrow the swing-controller storage view without transferring ownership.
-static inline CPadSwingCtrl* AsCPadSwingCtrl(void* p) { return (CPadSwingCtrl*)p; }
-
-// Indices are verified against the 36-byte entries in swingMotionNames.
+// Indices into swingMotionNames, which holds 36-byte animation names.
 enum SwingMotionIndex {
     kMotionWoodPrepare = 0,
     kMotionWoodPowerPrepare = 1,
@@ -80,247 +47,474 @@ enum SwingMotionIndex {
     kMotionPutterMedium = 28,
     kMotionPutterLarge = 29,
 };
-enum ClubAnimationCategory { kWood = 0, kIron = 1, kWedge = 2, kPutter = 3 };
-// Motion-state cycle verified in event_fx_sound_and_pad_swing_accele.cpp::CPadSwingCtrlMotion_AdvanceMotionPhase.
-// These phase values select callbacks; they are distinct from shot result codes.
-enum SwingMotionPhase { kSwingIdle = 0, kSwingReturning = 1, kSwingForward = 2,
-                        kSwingSettling = 3, kSwingComplete = 4 };
-// Commit results verified in pad_swing_ctrl_and_com_think.cpp::CPadSwingCtrl_UpdateSettlingPhase. Other callback
-// results are forwarded unchanged (including 5=cancel and 7=finishing).
-enum SwingCommitResult { kSwingPrimaryCommitted = 4, kSwingAlternateCommitted = 6 };
-enum { kMotionNameStride = 0x24, kMotionThresholdCount = 10, kMaxSettleSteps = 150 };
-// This removes the six high type-kind bits; the result is the selected type ID's
-// low 26-bit index, NOT the item-kind/category (which would be typeId >> 26).
-enum { kSelectionTypeIndexMask = 0x03FFFFFF };
-// Code 6 is both the default classification output and the forced-swing value.
-// Its gameplay label is unresolved; do not equate it with motion phase 6.
-enum { kDefaultSwingKindCode = 6 };
-struct SwingShotInfo { char reserved[0xA]; unsigned char clubCategory; };
-struct SwingInstanceState {
-    void* vtable;
-    SwingShotInfo* shot;
-    char reserved[0x3C];
-    int powerShotMode;
+enum ClubAnimationCategory {
+    kWood = 0,
+    kIron = 1,
+    kWedge = 2,
+    kPutter = 3
 };
-typedef char SwingInstancePowerOffset[((int)&((SwingInstanceState*)0)->powerShotMode == 0x44) ? 1 : -1];
-typedef char SwingClubCategoryOffset[((int)&((SwingShotInfo*)0)->clubCategory == 0xA) ? 1 : -1];
-// Read the selected shot/context through its local ABI view.
-static inline SwingInstanceState* SwingInstance(void* p) { return (SwingInstanceState*)p; }
 
+// Values of CPadSwingCtrlMotion::motionPhase, which selects the phase callback.
+enum SwingMotionPhase {
+    kSwingIdle = 0,
+    kSwingReturning = 1,
+    kSwingForward = 2,
+    kSwingSettling = 3,
+    kSwingComplete = 4
+};
+
+// Phase callback results that commit the shot. Other results are passed through unchanged.
+enum SwingCommitResult {
+    kSwingPrimaryCommitted = 4,
+    kSwingAlternateCommitted = 6
+};
+
+enum {
+    kMotionNameStride = 0x24,
+    kMotionThresholdCount = 10,
+    kMaxSettleSteps = 150,
+    kSelectionTypeIndexMask = 0x03FFFFFF, // the character type ID without its six kind bits
+    kDefaultSwingKindCode = 6,            // the swing kind before classification, and the forced-swing kind
+    kSwingStateUnset = 6
+};
+
+// Float constants. Their values are still linked from the original data section, so they are referenced by
+// symbol and given readable names below.
 extern "C" {
 extern const float kFloat_6_2831855;
 extern float s_padSwingAngleCache;
 extern const float kFloat_0_PadSwing;
 extern const float kFloat_neg1_PadSwing;
-extern const float kFloat_OneThirtieth_PadSwingSettleStep; // Fixed settle-step duration: 1/30 second.
+extern const float kFloat_OneThirtieth_PadSwingSettleStep;
 extern const float kFloat_0_805E0078;
 extern const float kFloat_30_PadSwingMotion;
-extern const float kMotionCompletionFrameOffset; // Additional animation-completion delay, read as a float word (15).
+extern const float kMotionCompletionFrameOffset;
 extern const float kFloat_1_PadSwingMotion;
-extern const float kFloat_1_2_PadSwingDurationScale; // Duration scaling factor: 1.2.
-extern const float kFloat_10_PadSwingResponseFrames; // Target response time before duration scaling: 10 frames.
-extern const float kFloat_5_PadSwingDampingFrames; // Damping period before duration scaling: 5 frames.
-extern const float kFloat_2_PadSwingVelocityLimit; // Maximum smoothed velocity before duration scaling: 2.
+extern const float kFloat_1_2_PadSwingDurationScale;
+extern const float kFloat_10_PadSwingResponseFrames;
+extern const float kFloat_5_PadSwingDampingFrames;
+extern const float kFloat_2_PadSwingVelocityLimit;
 extern const float kFloat_0_5_PadSwing_805E008C;
-extern const float kFloat_0_03_PadSwingVelocityDeadband; // Positive velocity damping deadband: 0.03.
-extern const float kFloat_neg0_03_PadSwingVelocityDeadband; // Negative velocity damping deadband: -0.03.
-extern const float kFloat_0_05_PadSwingPositionDeadband; // Positive position-error deadband: 0.05.
-extern const float kFloat_neg0_05_PadSwingPositionDeadband; // Negative position-error deadband: -0.05.
-extern const float kFloat_0_06_PadSwingBrakeVelocity; // Velocity threshold for braking at the target: 0.06.
+extern const float kFloat_0_03_PadSwingVelocityDeadband;
+extern const float kFloat_neg0_03_PadSwingVelocityDeadband;
+extern const float kFloat_0_05_PadSwingPositionDeadband;
+extern const float kFloat_neg0_05_PadSwingPositionDeadband;
+extern const float kFloat_0_06_PadSwingBrakeVelocity;
 extern const float kFloat_0_2_PadSwingMotion;
 extern const float kFloat_neg0_2_PadSwing;
-extern const float kFloat_149_PadSwing; // Gauge power origin in cursor units.
-extern const float kFloat_360_PadSwing; // Gauge span: power=1 maps 149+360=509.
+extern const float kFloat_149_PadSwing;
+extern const float kFloat_360_PadSwing;
 extern const float kFloat_30_PadSwing_805E00D8;
-extern const float kFloat_114_PadSwing; // Minimum impact cursor coordinate.
-extern const float kFloat_509_PadSwing; // Maximum published power cursor coordinate.
+extern const float kFloat_114_PadSwing;
+extern const float kFloat_509_PadSwing;
 extern const float kFloat_0_3_PadSwing;
 extern float s_swingMotionThresholds[];
 extern char swingMotionNames[];
 extern CSharedDoc* g_sharedDoc;
 extern int s_characterSwingTimingFrames[][kMotionThresholdCount];
+extern char __vt__13CPadSwingCtrl[];
+
 void* InstanceTable_Get();
-void* CGolfDoc_GetItemSelection(void*, unsigned char);
-void CPadSwingAccele_Ctor(void*);
-void CPadSwingCtrlMotion_Ctor(void*);
 int EventTiming_IsDurationScalingEnabled();
-struct MotionAnimationTarget {
-    virtual void m0(int); virtual void m1(); virtual void m2(); virtual void m3();
-    virtual void m4(); virtual void m5(); virtual void m6(); virtual void m7();
-    virtual void m8(); virtual void m9(); virtual void m10(); virtual void m11();
-    virtual void m12(); virtual void m13(); virtual void m14(); virtual void m15();
-    virtual void m16(); virtual void m17(); virtual void m18(); virtual void m19();
-    virtual void m20(); virtual void m21(); virtual void m22(); virtual void m23();
-    virtual void m24(); virtual void m25(); virtual void m26(); virtual void m27();
-    virtual void m28(); virtual void m29(); virtual void m30(); virtual void m31();
-    virtual void m32(); virtual void m33(); virtual void m34(); virtual void m35();
-    virtual void m36(); virtual void m37(); virtual void m38(); virtual void m39();
-    virtual void m40(); virtual void setManualAnimation(int); virtual void m42();
-    virtual void m43(); virtual void setAnimationPosition(const char*, float); virtual void m45();
-};
+void __dl__FPv(void*);
+}
 
-// ABI slot map (dummy mN declarations reserve slots; they are not general APIs):
-// 0 deleting destructor(deleteFlag), 1 phase query, 4 reset(animationTarget),
-// 8 settle/play(animationTarget, powerFraction, deltaSeconds, skipPlayback),
-// 18 phase-reset hook; 20/21 choose motion/threshold. Target/context pointers borrow.
-struct SwingMotionInterface {
-    char pad[0x44];
-    virtual int m0(int);
-    virtual int m1();
-    virtual int m2();
-    virtual int m3();
-    virtual void m4(void*);
-    virtual int m5();
-    virtual void m6(void*);
-    virtual int m7();
-    virtual int m8(void*, float, float, int);
-    virtual int m9();
-    virtual int m10();
-    virtual int m11();
-    virtual int m12();
-    virtual int m13();
-    virtual int m14();
-    virtual int m15();
-    virtual int m16();
-    virtual int m17();
-    virtual int m18();
-    virtual int m19();
-    virtual int selectSwingMotion();
-    virtual int thresholdIndex();
-    virtual int m22();
-    virtual int m23();
-};
+#define kZero kFloat_0_805E0078
+#define kOne kFloat_1_PadSwingMotion
+#define kHalf kFloat_0_5_PadSwing_805E008C
+#define kTwoPi kFloat_6_2831855
+#define kFramesPerSecond kFloat_30_PadSwingMotion // animation frames per second
+#define kSettleStepSeconds kFloat_OneThirtieth_PadSwingSettleStep
+#define kDurationScale kFloat_1_2_PadSwingDurationScale // 1.2 when duration scaling is enabled
+#define kResponseFrames kFloat_10_PadSwingResponseFrames
+#define kDampingFrames kFloat_5_PadSwingDampingFrames
+#define kVelocityLimit kFloat_2_PadSwingVelocityLimit
+#define kVelocityDeadband kFloat_0_03_PadSwingVelocityDeadband
+#define kNegativeVelocityDeadband kFloat_neg0_03_PadSwingVelocityDeadband
+#define kPositionDeadband kFloat_0_05_PadSwingPositionDeadband
+#define kNegativePositionDeadband kFloat_neg0_05_PadSwingPositionDeadband
+#define kBrakeVelocity kFloat_0_06_PadSwingBrakeVelocity
+#define kSettleTolerance kFloat_0_2_PadSwingMotion
+#define kNegativeSettleTolerance kFloat_neg0_2_PadSwing
+#define kGaugeOrigin kFloat_149_PadSwing // gauge cursor at zero power
+#define kGaugeSpan kFloat_360_PadSwing   // cursor units from zero to full power
+#define kCursorUnitsPerRadian kFloat_30_PadSwing_805E00D8
+#define kMinimumImpactCursor kFloat_114_PadSwing
+#define kMaximumPowerCursor kFloat_509_PadSwing
+#define kPowerThreshold kFloat_0_3_PadSwing
 
-// Owned acceleration controller: slot 0 destroys, 1 resets. Other signatures are
-// per-call ABI views; do not use an unverified mN slot through this placeholder.
-struct AccelerationOwnerInterface {
-    char pad[0x3924];
-    virtual void m0(int); virtual void m1(); virtual void m2(); virtual void m3();
-    virtual void m4(float, int);
-    virtual void m5(); virtual void m6(); virtual void m7(); virtual void m8();
-    virtual void m9(); virtual void m10(); virtual void m11(); virtual void m12();
-    virtual void m13(); virtual void m14(); virtual void m15(); virtual float m16();
-};
-
+// The player's animation interface, as called here. Slots with no name are unused.
+#define UNUSED_SLOT(n) virtual void Slot##n() DECOMP_LOCAL_VIRTUAL
 struct SwingAnimationTarget {
-    virtual void m0(); virtual void m1(); virtual void m2(); virtual void m3();
-    virtual void m4(); virtual void m5(); virtual void m6(); virtual void m7();
-    virtual void m8(); virtual void m9(); virtual void m10(); virtual void m11();
-    virtual void m12(); virtual void m13(); virtual void m14(); virtual void m15();
-    virtual void m16(); virtual void m17(); virtual void m18(); virtual void m19();
-    virtual void m20(); virtual void m21(); virtual void m22(); virtual void m23();
-    virtual void m24(); virtual void m25(); virtual void m26(); virtual void m27();
-    virtual void m28(); virtual void m29(); virtual void m30(); virtual void m31();
-    virtual void m32(); virtual void m33(); virtual void m34(); virtual void m35();
-    virtual void m36(); virtual void m37(); virtual void m38(); virtual void m39();
-    virtual void m40();
-    virtual void setManualAnimation(int);
-    virtual void m42(); virtual void m43(); virtual void setAnimationPosition(); virtual void m45();
-    virtual void queryAnimationPosition(float*, const char*);
-    virtual void playAnimation(const char*, int, float);
-    virtual int isAnimationPlaying(const char*);
+    UNUSED_SLOT(0);
+    UNUSED_SLOT(1);
+    UNUSED_SLOT(2);
+    UNUSED_SLOT(3);
+    UNUSED_SLOT(4);
+    UNUSED_SLOT(5);
+    UNUSED_SLOT(6);
+    UNUSED_SLOT(7);
+    UNUSED_SLOT(8);
+    UNUSED_SLOT(9);
+    UNUSED_SLOT(10);
+    UNUSED_SLOT(11);
+    UNUSED_SLOT(12);
+    UNUSED_SLOT(13);
+    UNUSED_SLOT(14);
+    UNUSED_SLOT(15);
+    UNUSED_SLOT(16);
+    UNUSED_SLOT(17);
+    UNUSED_SLOT(18);
+    UNUSED_SLOT(19);
+    UNUSED_SLOT(20);
+    UNUSED_SLOT(21);
+    UNUSED_SLOT(22);
+    UNUSED_SLOT(23);
+    UNUSED_SLOT(24);
+    UNUSED_SLOT(25);
+    UNUSED_SLOT(26);
+    UNUSED_SLOT(27);
+    UNUSED_SLOT(28);
+    UNUSED_SLOT(29);
+    UNUSED_SLOT(30);
+    UNUSED_SLOT(31);
+    UNUSED_SLOT(32);
+    UNUSED_SLOT(33);
+    UNUSED_SLOT(34);
+    UNUSED_SLOT(35);
+    UNUSED_SLOT(36);
+    UNUSED_SLOT(37);
+    UNUSED_SLOT(38);
+    UNUSED_SLOT(39);
+    UNUSED_SLOT(40);
+    virtual void SetManualAnimation(int manual) DECOMP_LOCAL_VIRTUAL;                      // slot 41
+    virtual void AttachChannel(void* channel) DECOMP_LOCAL_VIRTUAL;                        // slot 42
+    virtual void AttachChannelAlternate(void* channel) DECOMP_LOCAL_VIRTUAL;               // slot 43
+    virtual void SetAnimationPosition(const char* name, float frame) DECOMP_LOCAL_VIRTUAL; // slot 44
+    UNUSED_SLOT(45);
+    virtual int QueryAnimationEnd(float* frame, const char* name) DECOMP_LOCAL_VIRTUAL;            // slot 46
+    virtual void PlayAnimation(const char* name, int mode, float startFrame) DECOMP_LOCAL_VIRTUAL; // slot 47
+    virtual int IsAnimationPlaying(const char* name) DECOMP_LOCAL_VIRTUAL;                         // slot 48
 };
-// Test whether the selected normal swing is the large wood animation.
-int CPadSwingCtrlMotion_vfunc_14(SwingMotionInterface* self) { return self->selectSwingMotion() == kMotionWoodLarge; }
 
-// Map the selected normal swing animation to its small/medium/large size class.
-int CPadSwingCtrlMotion_GetSwingSizeClass(SwingMotionInterface* self) {
-    int motionIndex = self->selectSwingMotion();
-    switch (motionIndex) {
-    case kMotionWoodLarge: case kMotionIronLarge: case kMotionWedgeLarge: return 2;
-    case kMotionWoodMedium: case kMotionIronMedium: case kMotionWedgeMedium: return 1;
-    case kMotionWoodSmall: case kMotionIronSmall: return 0;
-    default: return 0;
+// The current shot's data and swing options. Belongs to the instance table's class once that has a header.
+struct SwingShotInfo {
+    char pad_00[0xA];
+    unsigned char clubCategory; // 0xA
+};
+struct SwingInstanceState {
+    void* vtbl;          // 0x0
+    SwingShotInfo* shot; // 0x4
+    char pad_08[0x3C];
+    int powerShotMode; // 0x44: 0 normal, 1 single power shot, 2 double power shot
+};
+typedef char SwingInstancePowerOffset[((int)&((SwingInstanceState*)0)->powerShotMode == 0x44) ? 1 : -1];
+typedef char SwingClubCategoryOffset[((int)&((SwingShotInfo*)0)->clubCategory == 0xA) ? 1 : -1];
+
+// The motion controller's virtual functions, called through the vtable pointer at +0x44. Each slot is
+// declared with the arguments the callers pass.
+struct MotionSlots {
+    char pad_00[0x44];
+    virtual void Destroy(int deleteFlag) DECOMP_LOCAL_VIRTUAL; // slot 0
+    virtual int GetMotionPhase() DECOMP_LOCAL_VIRTUAL;         // slot 1
+    UNUSED_SLOT(2);
+    UNUSED_SLOT(3);
+    virtual void ResetMotionToIdle(SwingAnimationTarget* target) DECOMP_LOCAL_VIRTUAL; // slot 4
+    UNUSED_SLOT(5);
+    virtual float DampedMoveTowardTarget(SwingAnimationTarget* target, float targetFraction, int dampWhenMoving,
+                                         int brakeAtTarget, int skipAnimationUpdate) DECOMP_LOCAL_VIRTUAL; // slot 6
+    UNUSED_SLOT(7);
+    virtual int UpdateSwingPlayback(SwingAnimationTarget* target, float swingValue, float deltaSeconds,
+                                    int skipPlayback) DECOMP_LOCAL_VIRTUAL; // slot 8
+    UNUSED_SLOT(9);
+    UNUSED_SLOT(10);
+    UNUSED_SLOT(11);
+    UNUSED_SLOT(12);
+    UNUSED_SLOT(13);
+    virtual int IsLargeWoodSwing(SwingAnimationTarget* target, float power) DECOMP_LOCAL_VIRTUAL; // slot 14
+    UNUSED_SLOT(15);
+    UNUSED_SLOT(16);
+    virtual int GetCharacterTimingFrames() DECOMP_LOCAL_VIRTUAL;     // slot 17
+    virtual int vfunc_18() DECOMP_LOCAL_VIRTUAL;                     // slot 18
+    virtual float GetSelectedMotionThreshold() DECOMP_LOCAL_VIRTUAL; // slot 19
+    virtual int SelectSwingMotion() DECOMP_LOCAL_VIRTUAL;            // slot 20
+    virtual int GetThresholdIndex() DECOMP_LOCAL_VIRTUAL;            // slot 21
+    virtual int GetTakebackMotionID() DECOMP_LOCAL_VIRTUAL;          // slot 22
+};
+
+// The acceleration controller's virtual functions, called through the vtable pointer at +0x3924.
+struct AccelerationSlots {
+    char pad_00[0x3924];
+    virtual void Destroy(int deleteFlag) DECOMP_LOCAL_VIRTUAL;              // slot 0
+    virtual void Reset() DECOMP_LOCAL_VIRTUAL;                              // slot 1
+    virtual void Update(float seconds, int nonPutter) DECOMP_LOCAL_VIRTUAL; // slot 2
+    UNUSED_SLOT(3);
+    virtual void ResetHook() DECOMP_LOCAL_VIRTUAL; // slot 4
+    UNUSED_SLOT(5);
+    UNUSED_SLOT(6);
+    UNUSED_SLOT(7);
+    UNUSED_SLOT(8);
+    UNUSED_SLOT(9);
+    UNUSED_SLOT(10);
+    UNUSED_SLOT(11);
+    UNUSED_SLOT(12);
+    UNUSED_SLOT(13);
+    virtual float GetDirectionAngleRadians() DECOMP_LOCAL_VIRTUAL; // slot 14: handedness-adjusted swing direction
+};
+
+// The swing controller's own virtual functions, called through the vtable pointer at +0x58. The phase
+// callbacks take the player's animation interface and the animation state read from the player.
+struct SwingPhaseSlots {
+    char pad_00[0x58];
+    UNUSED_SLOT(0);
+    UNUSED_SLOT(1);
+    UNUSED_SLOT(2);
+    UNUSED_SLOT(3);
+    UNUSED_SLOT(4);
+    UNUSED_SLOT(5);
+    UNUSED_SLOT(6);
+    UNUSED_SLOT(7);
+    UNUSED_SLOT(8);
+    UNUSED_SLOT(9);
+    UNUSED_SLOT(10);
+    UNUSED_SLOT(11);
+    UNUSED_SLOT(12);
+    UNUSED_SLOT(13);
+    UNUSED_SLOT(14);
+    UNUSED_SLOT(15);
+    UNUSED_SLOT(16);
+    UNUSED_SLOT(17);
+    UNUSED_SLOT(18);
+    UNUSED_SLOT(19);
+    UNUSED_SLOT(20);
+    virtual int UpdateIdle(SwingAnimationTarget* target, int animationState) DECOMP_LOCAL_VIRTUAL; // slot 21
+    virtual int UpdateReturning(SwingGauge* out, SwingAnimationTarget* target,
+                                int animationState) DECOMP_LOCAL_VIRTUAL; // slot 22
+    virtual int UpdateForward(float delta, SwingAnimationTarget* target,
+                              int animationState) DECOMP_LOCAL_VIRTUAL; // slot 23
+    virtual int UpdateSettling(float delta, SwingAnimationTarget* target,
+                               int animationState) DECOMP_LOCAL_VIRTUAL; // slot 24
+    virtual int UpdateFinish(float delta, SwingAnimationTarget* target,
+                             int animationState) DECOMP_LOCAL_VIRTUAL; // slot 25
+    UNUSED_SLOT(26);
+    UNUSED_SLOT(27);
+    virtual void GetSelectedPowerAndKind(float* powerFraction, int* kind) DECOMP_LOCAL_VIRTUAL; // slot 28
+};
+
+// The gauge block the caller owns, filled in by UpdateSwingPhaseAndGauge. Values are cursor coordinates on the
+// shot gauge, not world positions. Fields a path does not assign keep the caller's values.
+struct SwingGauge {
+    float powerCursor;      // 0x00
+    float impactCursor;     // 0x04
+    float continuousCursor; // 0x08
+    float roundedCursor;    // 0x0C
+    int pad_10;
+    unsigned char powerClamped; // 0x14
+    char pad_15[3];
+    int phaseDirection; // 0x18: 0 idle, -1 forward or settling, +1 otherwise
+    float impactOrigin; // 0x1C: read, never written here
+    int pad_20;
+    int pad_24;
+    int swingKind;         // 0x28
+    float fullPowerCursor; // 0x2C
+};
+
+static inline SwingInstanceState* CurrentSwing() {
+    return (SwingInstanceState*)InstanceTable_Get();
+}
+static inline MotionSlots* Slots(CPadSwingCtrlMotion* motion) {
+    return (MotionSlots*)motion;
+}
+static inline MotionSlots* MotionOf(CPadSwingCtrl* ctrl) {
+    return (MotionSlots*)ctrl->motionController;
+}
+static inline AccelerationSlots* AccelerationOf(CPadSwingCtrl* ctrl) {
+    return (AccelerationSlots*)ctrl->accelerationController;
+}
+static inline SwingPhaseSlots* PhaseSlots(CPadSwingCtrl* ctrl) {
+    return (SwingPhaseSlots*)ctrl;
+}
+
+// The completion check calls two motion slots with the target and swing value as arguments; the
+// implementations do not read them.
+struct SwingCompletionSlots {
+    char pad_00[0x44];
+    UNUSED_SLOT(0);
+    UNUSED_SLOT(1);
+    UNUSED_SLOT(2);
+    UNUSED_SLOT(3);
+    UNUSED_SLOT(4);
+    UNUSED_SLOT(5);
+    UNUSED_SLOT(6);
+    UNUSED_SLOT(7);
+    UNUSED_SLOT(8);
+    UNUSED_SLOT(9);
+    UNUSED_SLOT(10);
+    UNUSED_SLOT(11);
+    UNUSED_SLOT(12);
+    UNUSED_SLOT(13);
+    UNUSED_SLOT(14);
+    UNUSED_SLOT(15);
+    UNUSED_SLOT(16);
+    virtual unsigned int GetCharacterTimingFrames(SwingAnimationTarget* target,
+                                                  float value) DECOMP_LOCAL_VIRTUAL; // slot 17
+    UNUSED_SLOT(18);
+    UNUSED_SLOT(19);
+    virtual int SelectSwingMotion(SwingAnimationTarget* target, float value) DECOMP_LOCAL_VIRTUAL; // slot 20
+};
+
+// Smooth the target swing fraction with bounded acceleration, damping and optional braking.
+//
+// The position runs 0..motionLimit; targetFraction and the return value are fractions of the limit. The
+// velocity is in position units per call. Per call, in order:
+//   1. acceleration = (target - position) / responseFrames, clamped to +-maxVelocityChange;
+//   2. damping: velocity *= (dampingFrames - 1) / dampingFrames, always, or (with dampWhenMoving) only while
+//      the velocity or the distance to the target exceeds its deadband;
+//   3. velocity += acceleration, clamped to +-velocityLimit; position += velocity, clamped to 0..limit
+//      (overshooting a bound zeroes the velocity);
+//   4. brakeAtTarget: once the position reaches the target with the velocity above a small threshold, the
+//      velocity is halved;
+//   5. unless skipAnimationUpdate, write the position into the takeback animation.
+// The four time constants are divided or multiplied by 1.2 when duration scaling is enabled.
+float CPadSwingCtrlMotion::DampedMoveTowardTarget(SwingAnimationTarget* target, float targetFraction,
+                                                  int dampWhenMoving, int brakeAtTarget, int skipAnimationUpdate) {
+    float positionLimit, targetPosition, durationScale, responseFrames, difference, dampingFrames, velocityChange,
+        maxVelocityChange, velocityLimit;
+    float zero, velocity;
+    target->SetManualAnimation(1);
+    positionLimit = motionLimit;
+    targetPosition = targetFraction * positionLimit;
+    durationScale = EventTiming_IsDurationScalingEnabled() ? kDurationScale : kOne;
+    responseFrames = kResponseFrames / durationScale;
+    velocityLimit = kVelocityLimit * durationScale;
+    maxVelocityChange = kHalf * durationScale;
+    dampingFrames = kDampingFrames / durationScale;
+    velocityChange = (targetPosition - motionPosition) / responseFrames;
+    if (velocityChange >= kZero && velocityChange > maxVelocityChange) {
+        velocityChange = maxVelocityChange;
+    } else if (velocityChange < kZero && velocityChange < -maxVelocityChange) {
+        velocityChange = -maxVelocityChange;
     }
-}
-
-// Return the threshold for a validated animation-threshold index.
-// self required; invalid indices fall back to entry zero, not a clamped endpoint.
-float CPadSwingCtrlMotion_GetSelectedMotionThreshold(SwingMotionInterface* self) {
-	int thresholdIndex = self->thresholdIndex();
-    if (thresholdIndex < 0) thresholdIndex = 0;
-    else if (thresholdIndex >= kMotionThresholdCount) thresholdIndex = 0;
-    return s_swingMotionThresholds[thresholdIndex];
-}
-
-// Report that the motion controller supports this optional swing capability.
-int CPadSwingCtrlMotion_vfunc_13() { return 1; }
-// Report support for this optional swing capability (always enabled here).
-int CPadSwingCtrlMotion_vfunc_16() { return 1; }
-// Report support for this optional swing capability (always enabled here).
-int CPadSwingCtrlMotion_vfunc_18() { return 1; }
-
-struct PrepareAnimationTarget {
-    virtual void m0(); virtual void m1(); virtual void m2(); virtual void m3();
-    virtual void m4(); virtual void m5(); virtual void m6(); virtual void m7();
-    virtual void m8(); virtual void m9(); virtual void m10(); virtual void m11();
-    virtual void m12(); virtual void m13(); virtual void m14(); virtual void m15();
-    virtual void m16(); virtual void m17(); virtual void m18(); virtual void m19();
-    virtual void m20(); virtual void m21(); virtual void m22(); virtual void m23();
-    virtual void m24(); virtual void m25(); virtual void m26(); virtual void m27();
-    virtual void m28(); virtual void m29(); virtual void m30(); virtual void m31();
-    virtual void m32(); virtual void m33(); virtual void m34(); virtual void m35();
-    virtual void m36(); virtual void m37(); virtual void m38(); virtual void m39();
-    virtual void m40(); virtual void setManualAnimation(int); virtual void m42();
-    virtual void m43(); virtual void setAnimationPosition(const char*, float);
-};
-
-// Set the club/power-shot preparation animation to its first frame in manual mode.
-// First ABI argument unused; object required. Returns 1 unconditionally; unsupported
-// categories keep the default wood-prepare index rather than reporting failure.
-int CPadSwingCtrlMotion_SetManualPrepareAnimation(void*, void* object) {
-    int index = kMotionWoodPrepare;
-    void* state = InstanceTable_Get();
-    if (SwingInstance(state)->powerShotMode != 0) {
-        state = InstanceTable_Get();
-        unsigned char type = SwingInstance(state)->shot->clubCategory;
-        switch (type) {
-        case kWood:
-            state = InstanceTable_Get();
-            if (SwingInstance(state)->powerShotMode == 2) index = kMotionWoodDoublePowerPrepare;
-            else index = kMotionWoodPowerPrepare;
-            break;
-        case kIron:
-            index = kMotionIronPowerPrepare;
-            break;
-        case kWedge:
-            index = kMotionWedgePowerPrepare;
-            break;
+    if (dampWhenMoving) {
+        float normalized = motionPosition / positionLimit - targetFraction;
+        if (motionVelocity > kVelocityDeadband || motionVelocity < kNegativeVelocityDeadband ||
+            normalized > kPositionDeadband || normalized < kNegativePositionDeadband) {
+            float damping = (dampingFrames - kOne) / dampingFrames;
+            motionVelocity *= damping;
         }
     } else {
-        state = InstanceTable_Get();
-        unsigned char type = SwingInstance(state)->shot->clubCategory;
-        switch (type) {
-        case kWood:
-            index = kMotionWoodPrepare;
-            break;
-        case kIron:
-            index = kMotionIronPrepare;
-            break;
-        case kWedge:
-            index = kMotionWedgePrepare;
-            break;
-        }
+        float damping = (dampingFrames - kOne) / dampingFrames;
+        motionVelocity *= damping;
     }
-    PrepareAnimationTarget* o = (PrepareAnimationTarget*)object;
-    o->setManualAnimation(1);
-    o->setAnimationPosition((const char*)swingMotionNames + index * kMotionNameStride, kFloat_0_805E0078);
-    return 1;
+    velocity = motionVelocity;
+    zero = kZero;
+    velocity += velocityChange;
+    motionVelocity = velocity;
+    if (velocity >= zero && velocity > velocityLimit) {
+        motionVelocity = velocityLimit;
+    } else if (motionVelocity < kZero && motionVelocity < -velocityLimit) {
+        motionVelocity = -velocityLimit;
+    }
+    float position = motionPosition + motionVelocity;
+    motionPosition = position;
+    if (position > positionLimit) {
+        float zero = kZero;
+        motionPosition = positionLimit;
+        motionVelocity = zero;
+    } else if (position < kZero) {
+        float zero = kZero;
+        motionPosition = zero;
+        motionVelocity = zero;
+    }
+    if (brakeAtTarget && motionPosition >= targetPosition && motionVelocity > kBrakeVelocity) {
+        motionVelocity *= kHalf;
+    }
+    if (!skipAnimationUpdate) {
+        int index = Slots(this)->GetTakebackMotionID() * kMotionNameStride;
+        float value = motionPosition;
+        target->SetAnimationPosition(swingMotionNames + index, value);
+    }
+    return motionPosition / positionLimit;
 }
 
-// Wait for the power-shot animation to start; force playback after the timeout.
-// self/object required; delta seconds. Strict >1-second timeout, no >= replacement.
-// Returns 1 even while waiting; animationStarted is the state, not the return value.
-int CPadSwingCtrlMotion_StartPowerShotAnimation(void* self, void* object, float delta) {
+// Drive the smoothed position toward the current threshold and return it as a fraction of the limit.
+float CPadSwingCtrlMotion::UpdateMotionToThreshold(SwingAnimationTarget* target) {
+    float scale = motionLimit;
+    float thresholdPosition = Slots(this)->GetSelectedMotionThreshold();
+    float normalized = thresholdPosition / scale;
+    Slots(this)->DampedMoveTowardTarget(target, normalized, 1, 1, 0);
+    return motionPosition / scale;
+}
+
+// Settle the smoothed position, start the swing animation, then wait for it to finish.
+//
+// Returns 0 while settling or waiting and 1 once the selected frame count has elapsed (frames are seconds times
+// 30). swingValue is passed to the motion selection. skipPlayback leaves the animation unstarted but still
+// advances the state.
+int CPadSwingCtrlMotion::UpdateSwingPlayback(SwingAnimationTarget* target, float swingValue, float deltaSeconds,
+                                             int skipPlayback) {
+    int result = 0;
+    float scale = motionLimit;
+    if (motionSettled == 0) {
+        // Settle: approach the threshold position.
+        float targetPosition = Slots(this)->GetSelectedMotionThreshold();
+        Slots(this)->DampedMoveTowardTarget(target, targetPosition / scale, 0, 0, skipPlayback);
+        if (kFramesPerSecond * settlingElapsed >= kOne) {
+            if (motionPosition - targetPosition < kSettleTolerance &&
+                motionPosition - targetPosition > kNegativeSettleTolerance) {
+                if (motionVelocity < kSettleTolerance && motionVelocity > kNegativeSettleTolerance) {
+                    motionSettled = 1;
+                    motionPosition = kZero;
+                    motionVelocity = kZero;
+                } else if (motionVelocity < kZero) {
+                    motionPosition = kZero;
+                    motionSettled = 1;
+                    motionVelocity = kZero;
+                }
+            }
+        }
+        settlingElapsed += deltaSeconds;
+    } else if (animationStarted == 0) {
+        // Start the animation once after settling; later calls only advance time.
+        if (skipPlayback == 0) {
+            target->SetManualAnimation(0);
+            int index = ((SwingCompletionSlots*)this)->SelectSwingMotion(target, swingValue);
+            target->PlayAnimation(swingMotionNames + index * kMotionNameStride, 2, kZero);
+        }
+        animationStarted = 1;
+    } else {
+        // Wait for the selected frame count.
+        animationElapsed += deltaSeconds;
+        int completionFrames = Slots(this)->GetCharacterTimingFrames();
+        float frameThreshold = (float)completionFrames;
+        if (kFramesPerSecond * animationElapsed >= frameThreshold) {
+            result = 1;
+        }
+    }
+    return result;
+}
+
+// Report that the swing animation has played through its end frame plus its delay.
+//
+// The end frame comes from the selected animation's range; the delay is 30 frames for power shots, otherwise
+// the character's timing frames subtracted from zero. completionElapsed advances on every call.
+int CPadSwingCtrlMotion::IsSwingAnimationComplete(SwingAnimationTarget* target, float value, float delta) {
+    int result = 0;
     int index = kMotionWoodPrepare;
-    if (AsCPadSwingCtrlMotion(self)->animationStarted == 0) {
-        void* state = InstanceTable_Get();
-        unsigned char type = SwingInstance(state)->shot->clubCategory;
+    float offset = kZero;
+    float position = kZero;
+    SwingInstanceState* state = CurrentSwing();
+    if (state->powerShotMode != 0) {
+        state = CurrentSwing();
+        unsigned char type = state->shot->clubCategory;
         switch (type) {
         case kWood:
-            state = InstanceTable_Get();
-            if (SwingInstance(state)->powerShotMode == 2) index = kMotionWoodDoublePower;
-            else index = kMotionWoodPower;
+            state = CurrentSwing();
+            if (state->powerShotMode == 2) {
+                index = kMotionWoodDoublePower;
+            } else {
+                index = kMotionWoodPower;
+            }
             break;
         case kIron:
             index = kMotionIronPower;
@@ -329,46 +523,78 @@ int CPadSwingCtrlMotion_StartPowerShotAnimation(void* self, void* object, float 
             index = kMotionWedgePower;
             break;
         }
-        ((SwingAnimationTarget*)object)->setManualAnimation(0);
+        offset = kFramesPerSecond;
+    } else {
+        index = ((SwingCompletionSlots*)this)->SelectSwingMotion(target, value);
+        int count = ((SwingCompletionSlots*)this)->GetCharacterTimingFrames(target, value);
+        offset = offset - (float)count;
+    }
+    const char* entry = swingMotionNames + index * kMotionNameStride;
+    target->QueryAnimationEnd(&position, entry);
+    position += offset;
+    completionElapsed += delta;
+    if (kFramesPerSecond * completionElapsed >= kMotionCompletionFrameOffset + position) {
+        result = 1;
+    }
+    return result;
+}
+
+// Wait for the power-shot animation to start, forcing it to play after one second.
+//
+// Returns 1 even while waiting; animationStarted holds the state.
+int CPadSwingCtrlMotion::StartPowerShotAnimation(SwingAnimationTarget* target, float delta) {
+    int index = kMotionWoodPrepare;
+    if (animationStarted == 0) {
+        SwingInstanceState* state = CurrentSwing();
+        unsigned char type = state->shot->clubCategory;
+        switch (type) {
+        case kWood:
+            state = CurrentSwing();
+            if (state->powerShotMode == 2) {
+                index = kMotionWoodDoublePower;
+            } else {
+                index = kMotionWoodPower;
+            }
+            break;
+        case kIron:
+            index = kMotionIronPower;
+            break;
+        case kWedge:
+            index = kMotionWedgePower;
+            break;
+        }
+        target->SetManualAnimation(0);
         const char* entry = swingMotionNames + index * kMotionNameStride;
-        if (((SwingAnimationTarget*)object)->isAnimationPlaying(entry))
-            AsCPadSwingCtrlMotion(self)->animationStarted = 1;
-        if (AsCPadSwingCtrlMotion(self)->animationStarted == 0) {
-            AsCPadSwingCtrlMotion(self)->animationStartWaitElapsed += delta;
-            if (AsCPadSwingCtrlMotion(self)->animationStartWaitElapsed > kFloat_1_PadSwingMotion) {
-                ((SwingAnimationTarget*)object)->playAnimation(entry, 2, kFloat_0_805E0078);
-                AsCPadSwingCtrlMotion(self)->animationStarted = 1;
+        if (target->IsAnimationPlaying(entry)) {
+            animationStarted = 1;
+        }
+        if (animationStarted == 0) {
+            animationStartWaitElapsed += delta;
+            if (animationStartWaitElapsed > kOne) {
+                target->PlayAnimation(entry, 2, kZero);
+                animationStarted = 1;
             }
         }
     }
     return 1;
 }
 
-// Play the club preparation animation using the normal or power-shot playback mode.
-// First ABI argument unused; object required. Modes 0/3 are passed through to the
-// animation target (their full semantics belong to that API). Always returns 1.
-// Complete selection policy (SwingInstance and its shot must be live):
-// powerShotMode  wood(0)                  iron(1)             wedge(2)
-// 0              WoodPrepare              IronPrepare         WedgePrepare
-// 2              WoodDoublePowerPrepare   IronPowerPrepare    WedgePowerPrepare
-// any other !=0  WoodPowerPrepare         IronPowerPrepare    WedgePowerPrepare
-// Putter(3) and unknown club bytes fall back to WoodPrepare IN BOTH branches;
-// they do not select PutterPrepare here. Established power modes are 0=normal,
-// 1=single, 2=double (CGolfPlayer_SetPowerMode path in golf_player_actor.cpp); all other ints
-// follow the nonzero fallback. Every path clears manual animation, starts at
-// 0.0, and chooses target playback mode 0 for normal / 3 for nonzero power.
-// Repeated singleton reads are retained; do not cache/reorder them in a mod.
-int CPadSwingCtrlMotion_PlayPrepareAnimation(void*, void* object) {
+// The preparation animation for the current club and power mode. Putters and unknown clubs keep the wood
+// preparation in both modes.
+static inline int PrepareAnimationIndex() {
     int index = kMotionWoodPrepare;
-    void* state = InstanceTable_Get();
-    if (SwingInstance(state)->powerShotMode != 0) {
-        state = InstanceTable_Get();
-        unsigned char type = SwingInstance(state)->shot->clubCategory;
+    SwingInstanceState* state = CurrentSwing();
+    if (state->powerShotMode != 0) {
+        state = CurrentSwing();
+        unsigned char type = state->shot->clubCategory;
         switch (type) {
         case kWood:
-            state = InstanceTable_Get();
-            if (SwingInstance(state)->powerShotMode == 2) index = kMotionWoodDoublePowerPrepare;
-            else index = kMotionWoodPowerPrepare;
+            state = CurrentSwing();
+            if (state->powerShotMode == 2) {
+                index = kMotionWoodDoublePowerPrepare;
+            } else {
+                index = kMotionWoodPowerPrepare;
+            }
             break;
         case kIron:
             index = kMotionIronPowerPrepare;
@@ -378,8 +604,8 @@ int CPadSwingCtrlMotion_PlayPrepareAnimation(void*, void* object) {
             break;
         }
     } else {
-        state = InstanceTable_Get();
-        unsigned char type = SwingInstance(state)->shot->clubCategory;
+        state = CurrentSwing();
+        unsigned char type = state->shot->clubCategory;
         switch (type) {
         case kWood:
             index = kMotionWoodPrepare;
@@ -392,608 +618,456 @@ int CPadSwingCtrlMotion_PlayPrepareAnimation(void*, void* object) {
             break;
         }
     }
-    ((SwingAnimationTarget*)object)->setManualAnimation(0);
-    state = InstanceTable_Get();
-    if (SwingInstance(state)->powerShotMode != 0) {
-        ((SwingAnimationTarget*)object)->playAnimation(swingMotionNames + index * kMotionNameStride, 3, kFloat_0_805E0078);
+    return index;
+}
+
+// Play the club's preparation animation, in power-shot mode when one is active.
+//
+// Selection by club (wood, iron, wedge) and power mode (0 normal, 2 double, otherwise single):
+//   normal: wood, iron and wedge prepare;
+//   double: wood double-power prepare; single: wood power prepare;
+//   power shots: iron and wedge power prepare.
+// Putters and unknown clubs fall back to the wood preparation in both modes. Always returns 1.
+int CPadSwingCtrlMotion::PlayPrepareAnimation(SwingAnimationTarget* target) {
+    int index = PrepareAnimationIndex();
+    target->SetManualAnimation(0);
+    if (CurrentSwing()->powerShotMode != 0) {
+        target->PlayAnimation(swingMotionNames + index * kMotionNameStride, 3, kZero);
     } else {
-        ((SwingAnimationTarget*)object)->playAnimation(swingMotionNames + index * kMotionNameStride, 0, kFloat_0_805E0078);
+        target->PlayAnimation(swingMotionNames + index * kMotionNameStride, 0, kZero);
     }
     return 1;
 }
 
-// Completion callbacks on the motion receiver. Vtable evidence:
-// phase1_class_tables::__vt__19CPadSwingCtrlMotion slots 17 and 20.
-// slot17 GetCharacterTimingFrames -> int animation frames to subtract from end;
-// slot20 SelectSwingMotion -> SwingMotionIndex from powerFraction. The retained
-// target/power args on slot17 are unused by the concrete timing implementation.
-// Both calls borrow the target. Neither owns it, advances time, or plays a clip.
-struct SwingPlaybackCompletionCallbacks {
-    char pad[0x44];
-    virtual void d0(); virtual void d1(); virtual void d2(); virtual void d3();
-    virtual void d4(); virtual void d5(); virtual void d6(); virtual void d7();
-    virtual void d8(); virtual void d9(); virtual void d10(); virtual void d11();
-    virtual void d12(); virtual void d13(); virtual void d14(); virtual void d15();
-    virtual void d16();
-    virtual unsigned int characterTimingFrames(void*, float);
-    virtual void d18(); virtual void d19();
-    virtual int selectSwingMotion(void*, float);
-};
-
-struct AnimationEndQuery {
-    virtual void m0(); virtual void m1(); virtual void m2(); virtual void m3();
-    virtual void m4(); virtual void m5(); virtual void m6(); virtual void m7();
-    virtual void m8(); virtual void m9(); virtual void m10(); virtual void m11();
-    virtual void m12(); virtual void m13(); virtual void m14(); virtual void m15();
-    virtual void m16(); virtual void m17(); virtual void m18(); virtual void m19();
-    virtual void m20(); virtual void m21(); virtual void m22(); virtual void m23();
-    virtual void m24(); virtual void m25(); virtual void m26(); virtual void m27();
-    virtual void m28(); virtual void m29(); virtual void m30(); virtual void m31();
-    virtual void m32(); virtual void m33(); virtual void m34(); virtual void m35();
-    virtual void m36(); virtual void m37(); virtual void m38(); virtual void m39();
-    virtual void m40(); virtual void setManualAnimation(); virtual void m42(); virtual void m43();
-    virtual void setAnimationPosition(); virtual void m45();
-    virtual int queryAnimationEnd(float*, const char*);
-};
-
-// Report completion after the selected animation end plus its normal/power-shot delay.
-// self/object required; delta seconds, value forwarded to motion callbacks.
-// The range query writes a frame position; its status is ignored and the local
-// defaults to zero. completionElapsed advances even if the query does not write.
-int CPadSwingCtrlMotion_IsSwingAnimationComplete(void* self, void* object, float value, float delta) {
-    int result = 0;
-    int index = kMotionWoodPrepare;
-    float offset = kFloat_0_805E0078;
-    float position = kFloat_0_805E0078;
-    void* state = InstanceTable_Get();
-    if (SwingInstance(state)->powerShotMode != 0) {
-        state = InstanceTable_Get();
-        unsigned char type = SwingInstance(state)->shot->clubCategory;
-        switch (type) {
-        case kWood:
-            state = InstanceTable_Get();
-            if (SwingInstance(state)->powerShotMode == 2) index = kMotionWoodDoublePower;
-            else index = kMotionWoodPower;
-            break;
-        case kIron:
-            index = kMotionIronPower;
-            break;
-        case kWedge:
-            index = kMotionWedgePower;
-            break;
-        }
-        offset = kFloat_30_PadSwingMotion;
-    } else {
-        index = ((SwingPlaybackCompletionCallbacks*)self)->selectSwingMotion(object, value);
-        int count = ((SwingPlaybackCompletionCallbacks*)self)->characterTimingFrames(object, value);
-        offset = offset - (float)count;
-    }
-    const char* entry = swingMotionNames + index * kMotionNameStride;
-    ((AnimationEndQuery*)object)->queryAnimationEnd(&position, entry);
-    position += offset;
-    AsCPadSwingCtrlMotion(self)->completionElapsed += delta;
-    if (kFloat_30_PadSwingMotion * AsCPadSwingCtrlMotion(self)->completionElapsed >= kMotionCompletionFrameOffset + position) result = 1;
-    return result;
+// Put the club's preparation animation on its first frame in manual mode. Selects the animation the same way
+// as PlayPrepareAnimation. Always returns 1.
+int CPadSwingCtrlMotion::SetManualPrepareAnimation(SwingAnimationTarget* target) {
+    int index = PrepareAnimationIndex();
+    target->SetManualAnimation(1);
+    target->SetAnimationPosition((const char*)swingMotionNames + index * kMotionNameStride, kZero);
+    return 1;
 }
 
-// Select swing size from club category, normalized power and motion thresholds.
-// powerFraction convention is [0,1], no clamp; self->motionLimit uses animation
-// coordinates. Strict > comparisons assign equality to the smaller animation.
-// Unsupported club categories leave the default large-wood motion selection.
-int CPadSwingCtrlMotion_SelectSwingMotion(void* self, float powerFraction) {
-    int result = kMotionWoodLarge;
-    float positionLimit = AsCPadSwingCtrlMotion(self)->motionLimit;
-    void* state = InstanceTable_Get();
-    unsigned char clubCategory = SwingInstance(state)->shot->clubCategory;
-    switch (clubCategory) {
-    case kWood:
-        if (powerFraction * positionLimit > s_swingMotionThresholds[1]) result = kMotionWoodLarge;
-        else if (powerFraction * positionLimit > s_swingMotionThresholds[0]) result = kMotionWoodMedium;
-        else result = kMotionWoodSmall;
-        break;
-    case kIron:
-        if (powerFraction * positionLimit > s_swingMotionThresholds[4]) result = kMotionIronLarge;
-        else if (powerFraction * positionLimit > s_swingMotionThresholds[3]) result = kMotionIronMedium;
-        else result = kMotionIronSmall;
-        break;
-    case kWedge: result = powerFraction * positionLimit > s_swingMotionThresholds[6] ? kMotionWedgeLarge : kMotionWedgeMedium; break;
-    case kPutter: result = powerFraction * positionLimit > s_swingMotionThresholds[8] ? kMotionPutterLarge : kMotionPutterMedium; break;
-    }
-    return result;
+// Report support for an optional swing capability; always enabled here.
+int CPadSwingCtrlMotion::vfunc_13() {
+    return 1;
 }
 
-// Read the selected character type-ID-index timing row in animation frames.
-// The shared ABI name says category, but low 26 bits are an INDEX, not kind bits.
-// Required selection record starts with uint32 typeId; its index must be [0,8).
-// thresholdIndex is validated/falls back to zero; the selected-ID row is unchecked.
-// 10 signed 32-bit frame counts per row; row stride=40 bytes, whole table=320.
-// Columns: wood small/medium/large, iron small/medium/large, wedge medium/large,
-// putter medium/large, exactly GetThresholdIndex's 0..9 mapping.
-// Selected type-ID low index -> baseline row (animation frames, 30 frames/sec):
-// 0: 5,7,8,7,8,11,8,11,7,10       1: 6,8,9,7,7,8,6,9,6,9
-// 2: 7,12,9,8,7,8,7,10,14,10     3: 8,8,14,7,10,15,7,10,16,9
-// 4: 5,7,14,6,6,13,4,9,5,8       5: 6,8,14,7,7,11,6,11,3,6
-// 6: 6,6,12,6,7,11,6,9,6,10      7: 6,9,13,7,7,11,7,7,13,8
-// No character-name lookup is required to edit an equipped character: inspect
-// that selection's typeId & 0x03ffffff, then edit its row. Adding index 8+ requires
-// extending the table AND all character-selection consumers; no row clamp exists.
-// IsSwingAnimationComplete subtracts this count only in its normal-power branch:
-// increasing a cell moves completion earlier; changing this is not motion speed.
-int CPadSwingCtrlMotion_GetCharacterTimingFrames(SwingMotionInterface* a) {
-    int thresholdIndex = a->thresholdIndex();
+// Test whether the selected normal swing is the large wood animation.
+int CPadSwingCtrlMotion::IsLargeWoodSwing() {
+    return Slots(this)->SelectSwingMotion() == kMotionWoodLarge;
+}
+
+// Map the selected normal swing animation to its size class: 0 small, 1 medium, 2 large.
+int CPadSwingCtrlMotion::GetSwingSizeClass() {
+    int motionIndex = Slots(this)->SelectSwingMotion();
+    switch (motionIndex) {
+    case kMotionWoodLarge:
+    case kMotionIronLarge:
+    case kMotionWedgeLarge:
+        return 2;
+    case kMotionWoodMedium:
+    case kMotionIronMedium:
+    case kMotionWedgeMedium:
+        return 1;
+    case kMotionWoodSmall:
+    case kMotionIronSmall:
+        return 0;
+    default:
+        return 0;
+    }
+}
+
+// Report support for an optional swing capability; always enabled here.
+int CPadSwingCtrlMotion::vfunc_16() {
+    return 1;
+}
+
+// Look up the equipped character's timing frames for the selected swing size.
+//
+// s_characterSwingTimingFrames has one row per character type index (the type ID's low 26 bits, not its kind
+// bits) and one column per threshold index: wood small/medium/large, iron small/medium/large, wedge
+// medium/large, putter medium/large. IsSwingAnimationComplete subtracts the result from the completion frame,
+// so a larger value ends the swing sooner. The row index is not range checked.
+int CPadSwingCtrlMotion::GetCharacterTimingFrames() {
+    int thresholdIndex = Slots(this)->GetThresholdIndex();
     int clampedIndex = thresholdIndex;
-    if (thresholdIndex < 0) clampedIndex = 0;
-    else if (thresholdIndex >= kMotionThresholdCount) clampedIndex = 0;
+    if (thresholdIndex < 0) {
+        clampedIndex = 0;
+    } else if (thresholdIndex >= kMotionThresholdCount) {
+        clampedIndex = 0;
+    }
     thresholdIndex = clampedIndex;
-    void* golfDoc = (void*)AsCSharedDoc(g_sharedDoc)->golfDoc;
-    unsigned char playerIndex = ((CGolfDoc*)golfDoc)->currentPlayer;
-    void* characterSelection = CGolfDoc_GetItemSelection(golfDoc, playerIndex);
+    CGolfDoc* golfDoc = (CGolfDoc*)g_sharedDoc->golfDoc;
+    unsigned char playerIndex = golfDoc->currentPlayer;
+    void* characterSelection = ((CGolfDoc*)golfDoc)->GetItemSelection(playerIndex);
     unsigned int characterIndex = *(unsigned int*)characterSelection & kSelectionTypeIndexMask;
     return s_characterSwingTimingFrames[characterIndex][thresholdIndex];
 }
 
-struct VPadSwing {
-    char pad[0x44];
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3();
-    virtual void v4(); virtual void v5();
-    virtual void v8(void*, int, int, int, float);
-    virtual void v9(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15();
-    virtual void v16(); virtual void v17(); virtual void v18();
-    virtual int v19();
-    virtual void v20();
-    virtual float v21();
-    virtual int v22(void*, float);
-};
+// Report support for an optional swing capability; always enabled here.
+int CPadSwingCtrlMotion::vfunc_18() {
+    return 1;
+}
 
-// Settle the smoothed motion, start its swing animation, then wait for completion.
-// deltaSeconds feeds the elapsed timers; comparisons multiply by 30 to obtain
-// animation frames. swingValue is forwarded to the motion-selection callback;
-// skipPlayback suppresses starting the animation, but still advances the state.
-// Returns 0 while settling/waiting and 1 when the frame threshold has elapsed.
-int CPadSwingCtrlMotion_vfunc_8(void* self, void* object, float swingValue, float deltaSeconds, int skipPlayback) {
-    int result = 0;
-    float scale = AsCPadSwingCtrlMotion(self)->motionLimit;
-    if (AsCPadSwingCtrlMotion(self)->motionSettled == 0) {
-        // Phase 1: approach the threshold position (motion units, not seconds).
-        float targetPosition = ((VPadSwing*)self)->v21();
-        ((VPadSwing*)self)->v8(object, 0, 0, skipPlayback, targetPosition / scale);
-        if (kFloat_30_PadSwingMotion * AsCPadSwingCtrlMotion(self)->settlingElapsed >= kFloat_1_PadSwingMotion) {
-            if (AsCPadSwingCtrlMotion(self)->motionPosition - targetPosition < kFloat_0_2_PadSwingMotion &&
-                AsCPadSwingCtrlMotion(self)->motionPosition - targetPosition > kFloat_neg0_2_PadSwing) {
-                if (AsCPadSwingCtrlMotion(self)->motionVelocity < kFloat_0_2_PadSwingMotion &&
-                    AsCPadSwingCtrlMotion(self)->motionVelocity > kFloat_neg0_2_PadSwing) {
-                    AsCPadSwingCtrlMotion(self)->motionSettled = 1;
-                    AsCPadSwingCtrlMotion(self)->motionPosition = kFloat_0_805E0078;
-                    AsCPadSwingCtrlMotion(self)->motionVelocity = kFloat_0_805E0078;
-                } else if (AsCPadSwingCtrlMotion(self)->motionVelocity < kFloat_0_805E0078) {
-                    AsCPadSwingCtrlMotion(self)->motionPosition = kFloat_0_805E0078;
-                    AsCPadSwingCtrlMotion(self)->motionSettled = 1;
-                    AsCPadSwingCtrlMotion(self)->motionVelocity = kFloat_0_805E0078;
-                }
-            }
+// Return the position threshold for the selected swing size. An index out of range falls back to entry zero.
+float CPadSwingCtrlMotion::GetSelectedMotionThreshold() {
+    int thresholdIndex = Slots(this)->GetThresholdIndex();
+    if (thresholdIndex < 0) {
+        thresholdIndex = 0;
+    } else if (thresholdIndex >= kMotionThresholdCount) {
+        thresholdIndex = 0;
+    }
+    return s_swingMotionThresholds[thresholdIndex];
+}
+
+// Pick the swing animation from the club and the swing power. powerFraction is 0..1 and is scaled by the
+// motion limit before comparing against the club's thresholds (ties go to the smaller swing). Clubs that are
+// not handled keep the large wood swing.
+int CPadSwingCtrlMotion::SelectSwingMotion(float powerFraction) {
+    int result = kMotionWoodLarge;
+    float positionLimit = motionLimit;
+    SwingInstanceState* state = CurrentSwing();
+    unsigned char clubCategory = state->shot->clubCategory;
+    switch (clubCategory) {
+    case kWood:
+        if (powerFraction * positionLimit > s_swingMotionThresholds[1]) {
+            result = kMotionWoodLarge;
+        } else if (powerFraction * positionLimit > s_swingMotionThresholds[0]) {
+            result = kMotionWoodMedium;
+        } else {
+            result = kMotionWoodSmall;
         }
-        AsCPadSwingCtrlMotion(self)->settlingElapsed += deltaSeconds;
-    } else if (AsCPadSwingCtrlMotion(self)->animationStarted == 0) {
-        // Phase 2: start once after settling; subsequent calls only advance time.
-        if (skipPlayback == 0) {
-            ((SwingAnimationTarget*)object)->setManualAnimation(0);
-            int index = ((VPadSwing*)self)->v22(object, swingValue);
-            ((SwingAnimationTarget*)object)->playAnimation(swingMotionNames + index * kMotionNameStride, 2, kFloat_0_805E0078);
+        break;
+    case kIron:
+        if (powerFraction * positionLimit > s_swingMotionThresholds[4]) {
+            result = kMotionIronLarge;
+        } else if (powerFraction * positionLimit > s_swingMotionThresholds[3]) {
+            result = kMotionIronMedium;
+        } else {
+            result = kMotionIronSmall;
         }
-        AsCPadSwingCtrlMotion(self)->animationStarted = 1;
-    } else {
-        // Phase 3: wait for the selected frame threshold at 30 animation frames/s.
-        AsCPadSwingCtrlMotion(self)->animationElapsed += deltaSeconds;
-        int completionFrames = ((VPadSwing*)self)->v19();
-        float frameThreshold = (float)completionFrames;
-        if (kFloat_30_PadSwingMotion * AsCPadSwingCtrlMotion(self)->animationElapsed >= frameThreshold)
-            result = 1;
+        break;
+    case kWedge:
+        result = powerFraction * positionLimit > s_swingMotionThresholds[6] ? kMotionWedgeLarge : kMotionWedgeMedium;
+        break;
+    case kPutter:
+        result = powerFraction * positionLimit > s_swingMotionThresholds[8] ? kMotionPutterLarge : kMotionPutterMedium;
+        break;
     }
     return result;
 }
 
-struct MotionState {
-    unsigned int phase; // +0: motion-state code, not the interface vptr at +0x44.
-    float position, limit, velocity;
-};
-
-// Smooth the target swing fraction with bounded acceleration, damping and optional braking.
-// Units: position and limit share the motion's animation units (position runs 0..limit, limit =
-// full backswing/follow range); velocity is position units per CALL (one call = one frame step,
-// not scaled by elapsed time); targetFraction and the return value are 0..1 fractions of limit.
-// Per call, in order:
-//   1. acceleration a = (target - position) / responseFrames, clamped to +-maxVelocityChange;
-//   2. damping: velocity *= (dampingFrames - 1) / dampingFrames, applied always, or (when
-//      dampWhenMoving) only while |velocity| or |position/limit - targetFraction| exceeds its deadband;
-//   3. velocity += a, then clamped to +-velocityLimit; position += velocity, clamped to 0..limit
-//      (only overshooting a bound zeroes velocity; exact arrival retains it before step 4);
-//   4. brakeAtTarget: once position >= target and velocity is above a small threshold, velocity is
-//      halved (the same 0.5 constant as the acceleration clamp's base factor);
-//   5. unless skipAnimationUpdate, write the position into the selected swing animation.
-// The four time constants are divided/multiplied by durationScale (1.2 when duration scaling is
-// enabled, else 1): a larger scale SHORTENS response/damping call counts, increases
-// velocity/acceleration limits, and decreases the damping retention multiplier.
-// self/object required, limit > 0; targetFraction convention [0,1], no validation.
-// skipAnimationUpdate suppresses position submission but still enables manual mode
-// and changes position/velocity. Return is the bounded position divided by limit.
-// Example (scale 1): target fraction 1.0 and position 0 give a = min(limit / 10, 0.5).
-// This call damps velocity when required, adds a, then clamps velocity to [-2,2] before moving.
-float CPadSwingCtrlMotion_DampedMoveTowardTarget(MotionState* self, MotionAnimationTarget* object, float targetFraction, int dampWhenMoving, int brakeAtTarget, int skipAnimationUpdate) {
-    float positionLimit, targetPosition, durationScale, responseFrames, difference, dampingFrames, velocityChange, maxVelocityChange, velocityLimit;
-    float zero, velocity;
-    object->setManualAnimation(1);
-    positionLimit = self->limit;
-    targetPosition = targetFraction * positionLimit;
-    durationScale = EventTiming_IsDurationScalingEnabled() ? kFloat_1_2_PadSwingDurationScale : kFloat_1_PadSwingMotion;
-    responseFrames = kFloat_10_PadSwingResponseFrames / durationScale;
-    velocityLimit = kFloat_2_PadSwingVelocityLimit * durationScale;
-    maxVelocityChange = kFloat_0_5_PadSwing_805E008C * durationScale;
-    dampingFrames = kFloat_5_PadSwingDampingFrames / durationScale;
-    velocityChange = (targetPosition - self->position) / responseFrames;
-    if (velocityChange >= kFloat_0_805E0078 && velocityChange > maxVelocityChange) velocityChange = maxVelocityChange;
-    else if (velocityChange < kFloat_0_805E0078 && velocityChange < -maxVelocityChange) velocityChange = -maxVelocityChange;
-    if (dampWhenMoving) {
-        float normalized = self->position / positionLimit - targetFraction;
-        if (self->velocity > kFloat_0_03_PadSwingVelocityDeadband ||
-            self->velocity < kFloat_neg0_03_PadSwingVelocityDeadband ||
-            normalized > kFloat_0_05_PadSwingPositionDeadband ||
-            normalized < kFloat_neg0_05_PadSwingPositionDeadband) {
-            float damping = (dampingFrames - kFloat_1_PadSwingMotion) / dampingFrames;
-            self->velocity *= damping;
-        }
-    } else {
-        float damping = (dampingFrames - kFloat_1_PadSwingMotion) / dampingFrames;
-        self->velocity *= damping;
-    }
-    velocity = self->velocity;
-    zero = kFloat_0_805E0078;
-    velocity += velocityChange;
-    self->velocity = velocity;
-    if (velocity >= zero && velocity > velocityLimit)
-        self->velocity = velocityLimit;
-    else if (self->velocity < kFloat_0_805E0078 && self->velocity < -velocityLimit)
-        self->velocity = -velocityLimit;
-    float position = self->position + self->velocity;
-    self->position = position;
-    if (position > positionLimit) {
-        float zero = kFloat_0_805E0078;
-        self->position = positionLimit;
-        self->velocity = zero;
-    } else if (position < kFloat_0_805E0078) {
-        float zero = kFloat_0_805E0078;
-        self->position = zero;
-        self->velocity = zero;
-    }
-    if (brakeAtTarget && self->position >= targetPosition && self->velocity > kFloat_0_06_PadSwingBrakeVelocity)
-        self->velocity *= kFloat_0_5_PadSwing_805E008C;
-    if (!skipAnimationUpdate) {
-        int index = ((SwingMotionInterface*)self)->m22() * kMotionNameStride;
-        float value = self->position;
-        object->setAnimationPosition(swingMotionNames + index, value);
-    }
-    return self->position / positionLimit;
-}
-
-struct V26F34 {
-    char pad[0x44];
-    virtual void d0(); virtual void d1(); virtual void d2(); virtual void d3();
-    virtual void d4(); virtual void d5();
-    virtual void d6(void*, int, int, int, float);
-    virtual void d7(); virtual void d8(); virtual void d9();
-    virtual void d10(); virtual void d11(); virtual void d12(); virtual void d13();
-    virtual void d14(); virtual void d15(); virtual void d16(); virtual void d17();
-    virtual void d18();
-    virtual float d19();
-};
-
-// Drive the smoothed motion toward the current threshold and return its normalized position.
-float CPadSwingCtrlMotion_UpdateMotionToThreshold(void* self, void* animationTarget) {
-    float scale = AsCPadSwingCtrlMotion(self)->motionLimit;
-    float thresholdPosition = ((V26F34*)self)->d19();
-    float normalized = thresholdPosition / scale;
-    ((V26F34*)self)->d6(animationTarget, 1, 1, 0, normalized);
-    return AsCPadSwingCtrlMotion(self)->motionPosition / scale;
-}
-
-// Published gauge coordinates, not world positions or angles. powerCursor and
-// roundedCursor start at floor(149+360*power). A committed non-putter shot changes
-// continuous/rounded to impact/ceil(impact), saves the full power coordinate, and
-// may reduce/clamp powerCursor. Fields not assigned in a path retain caller state.
-struct OutData {
-    float powerCursor;
-    float impactCursor;
-    float continuousCursor;
-    float roundedCursor;
-    int pad10;
-    unsigned char powerClamped;
-    char pad15[3];
-    int phaseDirection;
-    float impactOrigin;
-    int pad20;
-    int pad24;
-    int swingKind;
-    float fullPowerCursor;
-};
-
-// Same acceleration object as AccelerationOwnerInterface; invoked slots are
-// update(seconds, nonPutterFlag) and slot 14 = CPadSwingAccele_vfunc_14, verified
-// in phase1_class_tables.cpp. It returns the handedness-adjusted direction angle
-// produced by atan in event_fx_sound_and_pad_swing_accele.cpp::CPadSwingAccele_AnalyzeCapturedSamples (radians).
-struct AccelerationUpdateInterface {
-    char pad[0x3924];
-    virtual void m0(); virtual void m1();
-    virtual void update(float, int);
-    virtual void m3(); virtual void m4(); virtual void m5();
-    virtual void m6(); virtual void m7(); virtual void m8();
-    virtual void m9(); virtual void m10(); virtual void m11();
-    virtual void m12(); virtual void m13();
-    virtual float directionAngleRadians();
-};
-
-struct SwingPhaseInterface {
-    char pad[0x58];
-// Slots 21..25: idle, returning (vfunc_22), forward, settling and finish in pad_swing_ctrl_and_com_think.cpp. actor is the borrowed
-// Player animation interface; state is a VALUE from Player message 0x15. Only the returning callback also receives
-// the caller's gauge block. Slot 28 writes the selected power fraction and classification code.
-    virtual void m0(); virtual void m1(); virtual void m2();
-    virtual void m3(); virtual void m4(); virtual void m5();
-    virtual void m6(); virtual void m7(); virtual void m8();
-    virtual void m9(); virtual void m10(); virtual void m11();
-    virtual void m12(); virtual void m13(); virtual void m14();
-    virtual void m15(); virtual void m16(); virtual void m17();
-    virtual void m18(); virtual void m19(); virtual void m20();
-    // Slots 21..25: idle, returning (vfunc_22), forward, settling, finish in
-    // pad_swing_ctrl_and_com_think.cpp. actor is the borrowed Player animation interface; state is a
-    // VALUE from Player message 0x15, not a second pointer/context. Only the
-    // returning callback also receives the caller's gauge block.
-    virtual int updateIdle(SwingAnimationTarget*, int);
-    virtual int updateReturning(OutData*, SwingAnimationTarget*, int);
-    virtual int updateForward(float, SwingAnimationTarget*, int);
-    virtual int updateSettling(float, SwingAnimationTarget*, int);
-    virtual int updateFinish(float, SwingAnimationTarget*, int);
-    virtual void m26(); virtual void m27();
-    // Slot 28 writes the selected power fraction and classification code.
-    virtual void amount(float*, int*);
-};
-
-// Advance the current swing phase and publish power/impact cursor values for the shot.
-// Phase dispatch (motionController->m1() value -> callback; result is the callback's return):
-//   idle -> updateIdle(actor,state), returning -> updateReturning(out,actor,state),
-//   forward -> updateForward(delta,..), settling -> updateSettling(delta,..),
-//   complete -> updateFinish(delta,..) and return immediately (nothing below runs).
-// Output fields (OutData) written after dispatch:
-//   always (non-complete): phaseDirection (idle 0, forward/settling -1, other +1), continuousCursor
-//     and roundedCursor/powerCursor from swingPower (floored 149 + 360 * swingPower);
-//   only when result is a committed code and the club is not a putter: fullPowerCursor, swingKind,
-//     impactCursor (>= minimum 114), continuousCursor/roundedCursor re-set to the impact cursor
-//     (rounded up), powerCursor clamped to 509 with powerClamped = 1 at/above the maximum.
-// Retained inputs: impactOrigin is read, not modified. Early completion skips the gauge refresh and
-// the swingStartRequested / powerThresholdReached update.
-// Caller contract: CGolfRule_ProcessMotionSwingInput (golf_rule_round_flow_and_shot_sim.cpp) looks up the
-// current task's "Player" actor, synchronously queries message 0x15 into an int,
-// and passes that actor/state here. animationTarget must supply the Player
-// animation slots described by SwingAnimationTarget (41 manual toggle, 44 seek,
-// 46 query, 47 play, 48 playing). It stays live through this call AND subsequent
-// playback updates; no pointer is retained by these phase methods. Animation
-// resources/range names must remain installed throughout the swing. out is the
-// caller-owned gauge block beginning at CGolfDoc::shotPowerGaugeX, size 0x30;
-// returning phase may pass it to acceleration preparation. No alias with actor
-// or controller storage. delta is seconds. animationState is passed unchanged;
-// callbacks test ==3 to suppress cancel input and normal manual-motion updates,
-// using the power-shot playback path instead. Other int values take the normal
-// branch here; obtain it from Player, do not substitute a pointer or a phase ID.
-// CGolfPlayer_HandleMsg case kPlayerGetAnimationMode (golf_player_actor.cpp) reads the
-// current player's 0xB4-stride animation record at +0x60. Value 3 is
-// kAnimationEnteringPowerReady there; this callback does not set that state.
-// Return the phase callback's result unchanged. Complete-phase
-// dispatch returns early and does not refresh gauge fields or consume start flags.
-int CPadSwingCtrl_UpdateSwingPhaseAndGauge(void* self, OutData* out, float delta, SwingAnimationTarget* animationTarget, int animationState) {
+// Translate the selected swing animation into one of the ten threshold table entries.
+int CPadSwingCtrlMotion::GetThresholdIndex() {
     int result = 0;
-    // Phase 1: acceleration is updated even if the phase callback returns early.
+    switch (Slots(this)->SelectSwingMotion()) {
+    case kMotionWoodSmall:
+        result = 0;
+        break;
+    case kMotionWoodMedium:
+        result = 1;
+        break;
+    case kMotionWoodLarge:
+        result = 2;
+        break;
+    case kMotionIronSmall:
+        result = 3;
+        break;
+    case kMotionIronMedium:
+        result = 4;
+        break;
+    case kMotionIronLarge:
+        result = 5;
+        break;
+    case kMotionWedgeMedium:
+        result = 6;
+        break;
+    case kMotionWedgeLarge:
+        result = 7;
+        break;
+    case kMotionPutterMedium:
+        result = 8;
+        break;
+    case kMotionPutterLarge:
+        result = 9;
+        break;
+    default:
+        break;
+    }
+    return result;
+}
+
+// The club's takeback animation.
+int CPadSwingCtrlMotion::GetTakebackMotionID() {
+    int result = kMotionWoodPrepare;
+    unsigned char club = CurrentSwing()->shot->clubCategory;
+    switch (club) {
+    case kWood:
+        result = kMotionWoodTakeback;
+        break;
+    case kIron:
+        result = kMotionIronTakeback;
+        break;
+    case kWedge:
+        result = kMotionWedgeTakeback;
+        break;
+    case kPutter:
+        result = kMotionPutterTakeback;
+        break;
+    }
+    return result;
+}
+
+// The club's burning takeback animation.
+int CPadSwingCtrlMotion::GetTakebackBurnMotion() {
+    int result = kMotionWoodPrepare;
+    unsigned char club = CurrentSwing()->shot->clubCategory;
+    switch (club) {
+    case kWood:
+        result = kMotionWoodTakebackBurn;
+        break;
+    case kIron:
+        result = kMotionIronTakebackBurn;
+        break;
+    case kWedge:
+        result = kMotionWedgeTakebackBurn;
+        break;
+    case kPutter:
+        result = kMotionPutterTakebackBurn;
+        break;
+    }
+    return result;
+}
+
+// Pass the first owned motion channel to the target's first channel hook.
+void CPadSwingCtrlMotion::AttachFirstChannel(SwingAnimationTarget* target) {
+    target->AttachChannel(&firstOwnedMotionChannel);
+}
+
+// Pass the first owned motion channel to the target's second channel hook.
+void CPadSwingCtrlMotion::AttachFirstChannelAlternate(SwingAnimationTarget* target) {
+    target->AttachChannelAlternate(&firstOwnedMotionChannel);
+}
+
+// Initialize this unit's cached full-circle angle.
+extern "C" void PadSwing_InitializeAngleCache() {
+    s_padSwingAngleCache = kTwoPi;
+}
+
+// The acceleration controller and the motion controller are allocated at their full sizes and constructed in
+// place by the other units' constructors.
+struct AccelerationAllocation {
+    char data[0x3928];
+    AccelerationAllocation() {
+        ((CPadSwingAccele*)this)->Init();
+    }
+};
+struct MotionAllocation {
+    char data[0x48];
+    MotionAllocation() {
+        ((CPadSwingCtrlMotion*)this)->Init();
+    }
+};
+
+// Allocate the acceleration and motion controllers and clear the swing and ramp state.
+CPadSwingCtrl::CPadSwingCtrl() {
+    interfaceVtable = __vt__13CPadSwingCtrl;
+    AccelerationAllocation* acceleration = new AccelerationAllocation;
+    accelerationController = acceleration;
+    MotionAllocation* motion = new MotionAllocation;
+    float neg = kFloat_neg1_PadSwing;
+    float zero = kFloat_0_PadSwing;
+    int zeroInt = 0;
+    int negone = -1;
+    motionController = motion;
+    swingPower = zero;
+    smoothedMotionFraction = zero;
+    primarySwingButtonArmed = zeroInt;
+    alternateSwingButtonArmed = zeroInt;
+    largeWoodSwingSelected = zeroInt;
+    swingSizeClass = zeroInt;
+    swingStartRequested = zeroInt;
+    finishElapsed = neg;
+    rampTarget = zero;
+    rampFrames = negone;
+    rampFrame = zeroInt;
+    primarySwingRequested = zeroInt;
+    alternateSwingRequested = zeroInt;
+    powerThresholdReached = zeroInt;
+    rampRunning = zeroInt;
+    // These two words are also cleared when the minimum impact width is enforced.
+    unk_50 = zeroInt;
+    unk_54 = zeroInt;
+}
+
+// Destroy the owned acceleration and motion controllers.
+CPadSwingCtrl::~CPadSwingCtrl() {
+    AccelerationSlots* acceleration = AccelerationOf(this);
+    interfaceVtable = &__vt__13CPadSwingCtrl;
+    if (acceleration != 0) {
+        acceleration->Destroy(1);
+    }
+    MotionSlots* motion = MotionOf(this);
+    if (motion != 0) {
+        motion->Destroy(1);
+    }
+}
+
+// Reset the acceleration controller and clear the pending swing and ramp requests.
+int CPadSwingCtrl::ResetSwingRequestsAndRampState() {
+    AccelerationOf(this)->Reset();
+    float zero = kFloat_0_PadSwing;
+    int zeroInt = 0;
+    int unsetState = kSwingStateUnset;
+    int negone = -1;
+    powerThresholdReached = zeroInt;
+    swingStartRequested = zeroInt;
+    rampTarget = zero;
+    rampFrames = negone;
+    rampFrame = zeroInt;
+    rampRunning = zeroInt;
+    primarySwingRequested = zeroInt;
+    alternateSwingRequested = zeroInt;
+    forcedSwingActive = zeroInt;
+    // The two readiness codes close both gates when set to 6; they are not motion phases.
+    readinessRangeCode = unsetState;
+    readinessInhibitCode = unsetState;
+    return 1;
+}
+
+// Advance the current swing phase and publish the power and impact cursor values.
+//
+// The acceleration controller is updated first, then the phase callback for the motion's current phase runs and
+// its result is returned unchanged. Completion returns at once, before the gauge is touched. For the other
+// phases the gauge gets:
+//   always: phaseDirection (0 idle, -1 forward or settling, +1 otherwise) and the power cursor,
+//     floor(149 + 360 * swingPower), in continuousCursor, roundedCursor and powerCursor;
+//   when the result is a committed code and the club is not a putter: fullPowerCursor, swingKind and
+//     impactCursor (at least 114), then continuousCursor and roundedCursor become the impact cursor (rounded
+//     up) and powerCursor is capped at 509, with powerClamped set when it reaches the cap.
+// A forced swing keeps the full power and uses impactOrigin as the impact cursor. animationState comes from
+// the player; the callbacks treat 3 as the power-ready state.
+int CPadSwingCtrl::UpdateSwingPhaseAndGauge(SwingGauge* out, float delta, SwingAnimationTarget* target,
+                                            int animationState) {
+    int result = 0;
     int useNonPutterAcceleration = 1;
-    void* controller = InstanceTable_Get();
-    if (SwingInstance(controller)->shot->clubCategory == kPutter)
+    if (CurrentSwing()->shot->clubCategory == kPutter) {
         useNonPutterAcceleration = 0;
-    ((AccelerationUpdateInterface*)*(void**)self)->update(delta, useNonPutterAcceleration);
-    int mode = ((SwingMotionInterface*)AsCPadSwingCtrl(self)->motionController)->m1();
+    }
+    AccelerationOf(this)->Update(delta, useNonPutterAcceleration);
+    int mode = MotionOf(this)->GetMotionPhase();
     switch (mode) {
     case kSwingIdle:
-        result = ((SwingPhaseInterface*)self)->updateIdle(animationTarget, animationState);
+        result = PhaseSlots(this)->UpdateIdle(target, animationState);
         break;
     case kSwingReturning:
-        result = ((SwingPhaseInterface*)self)->updateReturning(out, animationTarget, animationState);
+        result = PhaseSlots(this)->UpdateReturning(out, target, animationState);
         break;
     case kSwingForward:
-        result = ((SwingPhaseInterface*)self)->updateForward(delta, animationTarget, animationState);
+        result = PhaseSlots(this)->UpdateForward(delta, target, animationState);
         break;
     case kSwingSettling:
-        result = ((SwingPhaseInterface*)self)->updateSettling(delta, animationTarget, animationState);
+        result = PhaseSlots(this)->UpdateSettling(delta, target, animationState);
         break;
     case kSwingComplete:
-        return ((SwingPhaseInterface*)self)->updateFinish(delta, animationTarget, animationState);
+        return PhaseSlots(this)->UpdateFinish(delta, target, animationState);
     default:
         break;
     }
 
-    // Phase 2: publish a gauge snapshot for all non-complete callback results.
-    // Phase can change during its callback. Query again for gauge direction:
-    // idle=0, forward/settling=-1, other active phases=+1.
-    int status = ((SwingMotionInterface*)AsCPadSwingCtrl(self)->motionController)->m1();
-    if (status == kSwingIdle)
+    // The phase can change inside its callback, so query it again for the gauge direction.
+    int status = MotionOf(this)->GetMotionPhase();
+    if (status == kSwingIdle) {
         out->phaseDirection = 0;
-    else {
-        status = ((SwingMotionInterface*)AsCPadSwingCtrl(self)->motionController)->m1();
-        if (status == kSwingForward || ((SwingMotionInterface*)AsCPadSwingCtrl(self)->motionController)->m1() == kSwingSettling)
+    } else {
+        status = MotionOf(this)->GetMotionPhase();
+        if (status == kSwingForward || MotionOf(this)->GetMotionPhase() == kSwingSettling) {
             out->phaseDirection = -1;
-        else
+        } else {
             out->phaseDirection = 1;
+        }
     }
-    out->continuousCursor = kFloat_149_PadSwing + kFloat_360_PadSwing * AsCPadSwingCtrl(self)->swingPower;
+    out->continuousCursor = kGaugeOrigin + kGaugeSpan * swingPower;
     float flooredPowerCursor = floor(out->continuousCursor);
     out->roundedCursor = flooredPowerCursor;
     out->powerCursor = flooredPowerCursor;
-    // Phase 3: only committed NON-PUTTER shots publish impact/classification.
-    // Other paths leave impactCursor/fullPowerCursor/swingKind/powerClamped alone.
-    // Derive the selected power and impact coordinates. Forced swings
-    // preserve full power and use impactOrigin directly, bypassing motion phase.
+    // Only committed non-putter shots publish the impact cursor and swing kind.
     if (result == kSwingPrimaryCommitted || result == kSwingAlternateCommitted) {
-        controller = InstanceTable_Get();
-        if (SwingInstance(controller)->shot->clubCategory != kPutter) {
-            if (AsCPadSwingCtrl(self)->forcedSwingActive == 0) {
+        if (CurrentSwing()->shot->clubCategory != kPutter) {
+            if (forcedSwingActive == 0) {
                 int shotKind = kDefaultSwingKindCode;
                 float selectedPowerFraction = kFloat_0_PadSwing;
-                ((SwingPhaseInterface*)self)->amount(&selectedPowerFraction, &shotKind);
+                PhaseSlots(this)->GetSelectedPowerAndKind(&selectedPowerFraction, &shotKind);
                 out->fullPowerCursor = out->powerCursor;
-                float powerSpan = kFloat_360_PadSwing * AsCPadSwingCtrl(self)->swingPower;
-                out->powerCursor = floor(kFloat_149_PadSwing + selectedPowerFraction * powerSpan);
+                float powerSpan = kGaugeSpan * swingPower;
+                out->powerCursor = floor(kGaugeOrigin + selectedPowerFraction * powerSpan);
                 out->swingKind = shotKind;
-                void* player = *(void**)self;
-                float swingDirectionRadians = ((AccelerationUpdateInterface*)player)->directionAngleRadians();
-                // Convert the captured direction angle at 30 cursor units/radian;
-                // this separate 30.0 word is NOT the animation frames/second scalar.
-                float t = kFloat_30_PadSwing_805E00D8 * swingDirectionRadians + out->impactOrigin;
+                float swingDirectionRadians = AccelerationOf(this)->GetDirectionAngleRadians();
+                // 30 cursor units per radian of swing direction.
+                float t = kCursorUnitsPerRadian * swingDirectionRadians + out->impactOrigin;
                 out->impactCursor = t;
-                if (out->impactCursor < kFloat_114_PadSwing) out->impactCursor = kFloat_114_PadSwing;
+                if (out->impactCursor < kMinimumImpactCursor) {
+                    out->impactCursor = kMinimumImpactCursor;
+                }
             } else {
                 out->fullPowerCursor = out->powerCursor;
                 out->swingKind = kDefaultSwingKindCode;
                 out->impactCursor = out->impactOrigin;
             }
-            // Impact rounds UP; power above rounded DOWN. Keep those policies distinct.
+            // The impact cursor rounds up; the power cursor above rounded down.
             float impactCursor = out->impactCursor;
             out->continuousCursor = impactCursor;
             float roundedImpactCursor = ceil(impactCursor);
             out->roundedCursor = roundedImpactCursor;
-            if (out->powerCursor >= kFloat_509_PadSwing) {
-                out->powerCursor = kFloat_509_PadSwing;
+            if (out->powerCursor >= kMaximumPowerCursor) {
+                out->powerCursor = kMaximumPowerCursor;
                 out->powerClamped = 1;
-            } else out->powerClamped = 0;
+            } else {
+                out->powerClamped = 0;
+            }
         }
     }
-    // Phase 4: consume the start request, then latch threshold-reached once true.
-    AsCPadSwingCtrl(self)->swingStartRequested = 0;
-    if (AsCPadSwingCtrl(self)->swingPower >= kFloat_0_3_PadSwing ||
-        SwingInstance(InstanceTable_Get())->shot->clubCategory == kPutter)
-        AsCPadSwingCtrl(self)->powerThresholdReached = 1;
-    return result;
-}
-
-// Select the club-specific takeback setup animation.
-int CPadSwingCtrlMotion_GetTakebackMotionID() {
-    int result = kMotionWoodPrepare;
-    unsigned char x = SwingInstance(InstanceTable_Get())->shot->clubCategory;
-    switch (x) {
-    case kWood: result = kMotionWoodTakeback; break;
-    case kIron: result = kMotionIronTakeback; break;
-    case kWedge: result = kMotionWedgeTakeback; break;
-    case kPutter: result = kMotionPutterTakeback; break;
+    // Consume the start request, and latch the power threshold once it is reached.
+    swingStartRequested = 0;
+    if (swingPower >= kPowerThreshold || CurrentSwing()->shot->clubCategory == kPutter) {
+        powerThresholdReached = 1;
     }
     return result;
 }
 
-// Translate the chosen swing animation into one of ten threshold-table entries.
-int CPadSwingCtrlMotion_GetThresholdIndex(SwingMotionInterface* self) {
-    int result = 0;
-    switch (self->selectSwingMotion()) {
-        case kMotionWoodSmall: result = 0; break;
-        case kMotionWoodMedium: result = 1; break;
-        case kMotionWoodLarge: result = 2; break;
-        case kMotionIronSmall: result = 3; break;
-        case kMotionIronMedium: result = 4; break;
-        case kMotionIronLarge: result = 5; break;
-        case kMotionWedgeMedium: result = 6; break;
-        case kMotionWedgeLarge: result = 7; break;
-        case kMotionPutterMedium: result = 8; break;
-        case kMotionPutterLarge: result = 9; break;
-        default: break;
-        }
-    return result;
+// Ask the motion controller for the capability reported by its slot 18 (always supported).
+int CPadSwingCtrl::vfunc_3() {
+    MotionSlots* motion = MotionOf(this);
+    motion->vfunc_18();
+    return 1;
 }
 
-// Select the club-specific burning takeback setup animation.
-int CPadSwingCtrlMotion_GetTakebackBurnMotion() {
-    int result = kMotionWoodPrepare;
-    unsigned char x = SwingInstance(InstanceTable_Get())->shot->clubCategory;
-    switch (x) {
-    case kWood: result = kMotionWoodTakebackBurn; break;
-    case kIron: result = kMotionIronTakebackBurn; break;
-    case kWedge: result = kMotionWedgeTakebackBurn; break;
-    case kPutter: result = kMotionPutterTakebackBurn; break;
-    }
-    return result;
-}
-
-// Report that this swing-controller lifecycle hook succeeded.
-int CPadSwingCtrl_vfunc_6() { return 1; }
-
-extern char __vt__13CPadSwingCtrl[];
-extern void __dl__FPv(void*);
-// Destroy the owned acceleration and motion controllers, then optionally free this wrapper.
-// Null accepted; flag > 0 deletes self, so the return then dangles. Targets
-// previously passed for animation are borrowed and are not destroyed here.
-void* CPadSwingCtrl_dtor(void* self, int flag) {
-    if (self != 0) {
-        AccelerationOwnerInterface* x = (AccelerationOwnerInterface*)*(void**)self;
-        AsCPadSwingCtrl(self)->interfaceVtable = &__vt__13CPadSwingCtrl;
-        if (x != 0) {
-            x->m0(1);
-        }
-        SwingMotionInterface* y = (SwingMotionInterface*)AsCPadSwingCtrl(self)->motionController;
-        if (y != 0) {
-            y->m0(1);
-        }
-        if (flag > 0) __dl__FPv(self);
-    }
-    return self;
-}
-
-// Per-call view of the same motion vtable: slot 8 has the source argument order
-// (target, skipPlayback, powerFraction, deltaSeconds). SwingMotionInterface lists
-// the integer after the floats. Both supply r4=target, r5=skipPlayback,
-// f1=powerFraction, f2=deltaSeconds in the original ABI; preserve that mapping.
-// Slot 14 queries the large-wood selection; slot 4 resets using the borrowed target.
-struct V28224 {
-    char pad[0x44];
-    virtual void m0(); virtual void m1(); virtual void m2(); virtual void m3();
-    virtual void m4(void*);
-    virtual void m5(); virtual void m6(); virtual void m7();
-    virtual int m8(void*, int, float, float);
-    virtual void m9(); virtual void m10(); virtual void m11();
-    virtual void m12(); virtual void m13();
-    virtual int m14(void*, float);
-};
-
-// Advance a swing animation and reset its motion object when playback completes.
-// self/animationTarget required; value is elapsed seconds forwarded as f2.
-// Returns 1 only for callback result exactly 1, otherwise 0. The large-wood
-// predicate is refreshed every call, before the completion reset.
-int CPadSwingCtrl_vfunc_4(void* self, void* animationTarget, float value) {
+// Advance the motion's playback and reset it once it completes.
+//
+// Returns 1 only when the playback result is exactly 1. The large-wood flag is refreshed on every call, before
+// the reset.
+int CPadSwingCtrl::UpdateMotionPlayback(SwingAnimationTarget* target, float delta) {
     int done = 0;
-    int result = ((*(V28224**)&AsCPadSwingCtrl(self)->motionController))->m8(
-        animationTarget, 0, AsCPadSwingCtrl(self)->swingPower, value);
-    // Cache the large-wood animation predicate; the shared field name is provisional.
-    AsCPadSwingCtrl(self)->largeWoodSwingSelected = ((*(V28224**)&AsCPadSwingCtrl(self)->motionController))->m14(
-        animationTarget, AsCPadSwingCtrl(self)->swingPower);
+    int result = MotionOf(this)->UpdateSwingPlayback(target, swingPower, delta, 0);
+    largeWoodSwingSelected = MotionOf(this)->IsLargeWoodSwing(target, swingPower);
     if (result == 1) {
         done = 1;
-        ((*(V28224**)&AsCPadSwingCtrl(self)->motionController))->m4(animationTarget);
+        MotionOf(this)->ResetMotionToIdle(target);
     }
     return done;
 }
 
-// Run up to 150 fixed-time motion steps, stopping when the motion object finishes.
-// self/animationTarget required. Returns the ZERO-BASED successful callback index
-// (0 means the first call finished), or 150 if exhausted. Any nonzero callback
-// result ends the loop, unlike vfunc_4's exact-1 test. Reset runs only on completion.
-// Changing the bound changes the work budget; changing the step changes elapsed
-// animation time per attempt. Neither is a render-rate control or ball timestep.
-int CPadSwingCtrl_vfunc_5(void* self, void* animationTarget) {
+// Play the motion at fixed steps of 1/30 second, at most 150 of them, until it finishes.
+//
+// Returns the index of the step that finished it (0 for the first), or 150 if it never did. Any nonzero result
+// ends the loop, and the motion is reset only on completion.
+int CPadSwingCtrl::FastForwardMotion(SwingAnimationTarget* target) {
     int i = 0;
     do {
-        SwingMotionInterface* x = (SwingMotionInterface*)AsCPadSwingCtrl(self)->motionController;
-        if (x->m8(animationTarget, AsCPadSwingCtrl(self)->swingPower, kFloat_OneThirtieth_PadSwingSettleStep, 1)) {
-            ((SwingMotionInterface*)AsCPadSwingCtrl(self)->motionController)->m4(animationTarget);
+        MotionSlots* motion = MotionOf(this);
+        if (motion->UpdateSwingPlayback(target, swingPower, kSettleStepSeconds, 1)) {
+            MotionOf(this)->ResetMotionToIdle(target);
             break;
         }
         ++i;
@@ -1001,161 +1075,19 @@ int CPadSwingCtrl_vfunc_5(void* self, void* animationTarget) {
     return i;
 }
 
-// Initialize this unit's cached full-circle angle.
-void PadSwing_InitializeAngleCache() { s_padSwingAngleCache = kFloat_6_2831855; }
-
-// Construct the owned acceleration controller in its full 0x3928-byte allocation.
-struct Alloc3928 { char data[0x3928];
-    // Construct the owned Wii Remote acceleration controller in its full ABI size.
-    Alloc3928() { CPadSwingAccele_Ctor(this); }
-};
-// Construct the owned motion controller in its full 0x48-byte allocation.
-struct Alloc48 { char data[0x48];
-    // Construct the owned swing motion controller in its full ABI size.
-    Alloc48() { CPadSwingCtrlMotion_Ctor(this); }
-};
-// Allocate the acceleration and motion controllers and reset swing/ramp state.
-// self points to caller-provided CPadSwingCtrl storage; returns self. No explicit
-// allocation failure handling in this constructor. Destroy with CPadSwingCtrl_dtor.
-void* CPadSwingCtrl_Ctor(void* self) {
-    AsCPadSwingCtrl(self)->interfaceVtable = __vt__13CPadSwingCtrl;
-    Alloc3928* first = new Alloc3928;
-    *(Alloc3928**)self = first;
-    Alloc48* second = new Alloc48;
-    float neg = kFloat_neg1_PadSwing;
-    float zero = kFloat_0_PadSwing;
-    int zeroInt = 0;
-    int negone = -1;
-    (*(Alloc48**)&AsCPadSwingCtrl(self)->motionController) = second;
-    AsCPadSwingCtrl(self)->swingPower = zero;
-    AsCPadSwingCtrl(self)->smoothedMotionFraction = zero;
-    AsCPadSwingCtrl(self)->primarySwingButtonArmed = zeroInt;
-    AsCPadSwingCtrl(self)->alternateSwingButtonArmed = zeroInt;
-    AsCPadSwingCtrl(self)->largeWoodSwingSelected = zeroInt;
-    AsCPadSwingCtrl(self)->swingSizeClass = zeroInt;
-    AsCPadSwingCtrl(self)->swingStartRequested = zeroInt;
-    AsCPadSwingCtrl(self)->finishElapsed = neg;
-    AsCPadSwingCtrl(self)->rampTarget = zero;
-    AsCPadSwingCtrl(self)->rampFrames = negone;
-    AsCPadSwingCtrl(self)->rampFrame = zeroInt;
-    AsCPadSwingCtrl(self)->primarySwingRequested = zeroInt;
-    AsCPadSwingCtrl(self)->alternateSwingRequested = zeroInt;
-    AsCPadSwingCtrl(self)->powerThresholdReached = zeroInt;
-    AsCPadSwingCtrl(self)->rampRunning = zeroInt;
-    // These two adjustment words are also cleared when enforcing the minimum impact width.
-    AsCPadSwingCtrl(self)->unk_50 = zeroInt;
-    AsCPadSwingCtrl(self)->unk_54 = zeroInt;
-    return self;
-}
-
-// Reset the owned acceleration controller and clear pending swing/ramp requests.
-int CPadSwingCtrl_ResetSwingRequestsAndRampState(void* self) {
-    ((AccelerationOwnerInterface*)*(void**)self)->m1();
-    float zero = kFloat_0_PadSwing;
-    int zeroInt = 0;
-    enum { kSwingStateUnset = 6 };
-    int unsetState = kSwingStateUnset;
-    int negone = -1;
-    AsCPadSwingCtrl(self)->powerThresholdReached = zeroInt;
-    AsCPadSwingCtrl(self)->swingStartRequested = zeroInt;
-    AsCPadSwingCtrl(self)->rampTarget = zero;
-    AsCPadSwingCtrl(self)->rampFrames = negone;
-    AsCPadSwingCtrl(self)->rampFrame = zeroInt;
-    AsCPadSwingCtrl(self)->rampRunning = zeroInt;
-    AsCPadSwingCtrl(self)->primarySwingRequested = zeroInt;
-    AsCPadSwingCtrl(self)->alternateSwingRequested = zeroInt;
-    AsCPadSwingCtrl(self)->forcedSwingActive = zeroInt;
-    // Independent readiness gates consumed by vfunc_20 (pad_swing_ctrl_and_com_think.cpp):
-    // +4C is an inhibit code: exactly 6 returns not-ready before testing +48.
-    // +48 is a range code: for nonnegative codes, 0..3 admits readiness and
-    // >=4 rejects it (the bit expression also admits negative values).
-    // Resetting BOTH to 6 independently closes both gates. They are not motion
-    // phases or swingKind. No other named source writer is established; their
-    // gameplay labels/admitted external writer domain remain unknown. A new
-    // caller should use reset/playback APIs rather than write guessed states.
-    AsCPadSwingCtrl(self)->readinessRangeCode = unsetState;
-    AsCPadSwingCtrl(self)->readinessInhibitCode = unsetState;
+// Report that this lifecycle hook succeeded.
+int CPadSwingCtrl::vfunc_6() {
     return 1;
 }
 
-struct V227C44 {
-virtual void m0();
-virtual void m1();
-virtual void m2();
-virtual void m3();
-virtual void m4();
-virtual void m5();
-virtual void m6();
-virtual void m7();
-virtual void m8();
-virtual void m9();
-virtual void m10();
-virtual void m11();
-virtual void m12();
-virtual void m13();
-virtual void m14();
-virtual void m15();
-virtual void m16();
-virtual void m17();
-virtual void m18();
-virtual void m19();
-virtual void m20();
-virtual void m21();
-virtual void m22();
-virtual void m23();
-virtual void m24();
-virtual void m25();
-virtual void m26();
-virtual void m27();
-virtual void m28();
-virtual void m29();
-virtual void m30();
-virtual void m31();
-virtual void m32();
-virtual void m33();
-virtual void m34();
-virtual void m35();
-virtual void m36();
-virtual void m37();
-virtual void m38();
-virtual void m39();
-virtual void m40();
-virtual void setManualAnimation();
-virtual void m42(void*);
-virtual void m43(void*);
-};
-// Pass the first owned motion channel to the target's first channel hook.
-void CPadSwingCtrlMotion_vfunc_24(void* self, void* animationTarget) {
-    reinterpret_cast<V227C44*>(animationTarget)->m42(((char*)&AsCPadSwingCtrlMotion(self)->firstOwnedMotionChannel));
-}
-// Pass the first owned motion channel to the target's second channel hook.
-void CPadSwingCtrlMotion_vfunc_25(void* self, void* animationTarget) {
-    reinterpret_cast<V227C44*>(animationTarget)->m43(((char*)&AsCPadSwingCtrlMotion(self)->firstOwnedMotionChannel));
-}
-
-// Invoke the motion controller's phase-reset hook.
-int CPadSwingCtrl_vfunc_3(void* self) {
-    SwingMotionInterface* x = (SwingMotionInterface*)AsCPadSwingCtrl(self)->motionController;
-    x->m18();
+// Call the acceleration controller's slot 4 hook.
+int CPadSwingCtrl::vfunc_7() {
+    AccelerationSlots* acceleration = AccelerationOf(this);
+    acceleration->ResetHook();
     return 1;
 }
 
-struct V3924 {
-    char pad[0x3924];
-    virtual void m0(); virtual void m1(); virtual void m2();
-    virtual void m3(); virtual void m4(); virtual void m5();
-    virtual void m6(); virtual void m7();
-};
-// Invoke the acceleration controller's reset hook.
-int CPadSwingCtrl_vfunc_7(void* self) {
-    V3924* x = (V3924*)*(void**)self;
-    x->m4();
-    return 1;
-}
-
-} // extern "C"
-
-/* Static initialisers run from the .ctors table, as in the original. */
+// Static initialisers run from the .ctors table, as in the original.
 #pragma push
 #pragma force_active on
 STATIC_INIT_ENTRY(".CRT$XCU80462228", _ctors_u80226C9C_0, PadSwing_InitializeAngleCache);

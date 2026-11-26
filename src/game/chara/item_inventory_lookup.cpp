@@ -1,3 +1,6 @@
+// Item inventory lookups (CItemManager): finding an item record by its type ID in each IFF table,
+// default body-part IDs for a character, prices, and the course count.
+
 #include "classes/CItemManager.h"
 
 // Lookup contract: returned records are borrowed from CItemManager's arrays.
@@ -8,10 +11,18 @@
 // Destructor deleteFlag > 0 frees the wrapper as well as its owned allocation.
 // IFF type ids encode the table in their upper six bits; part ids also encode character and body slot.
 enum ItemIdFields {
-    kBuiltInCourseCount = 3, kAuxPartNoStatBonus = 99, kStatCount = 5,
-    kCaddieItemOwnerShift = 21, kCaddieItemOwnerMask = 0x1F, kCaddieTypeIdBase = 0x1C000000,
-    kItemKindShift = 26, kPartCharacterShift = 18, kPartTypeIdBase = 0x08000000,
-    kDefaultPartFlag = 0x400, kPartSlotStride = 0x2000, kOutfitSlotCount = 24,
+    kBuiltInCourseCount = 3,
+    kAuxPartNoStatBonus = 99,
+    kStatCount = 5,
+    kCaddieItemOwnerShift = 21,
+    kCaddieItemOwnerMask = 0x1F,
+    kCaddieTypeIdBase = 0x1C000000,
+    kItemKindShift = 26,
+    kPartCharacterShift = 18,
+    kPartTypeIdBase = 0x08000000,
+    kDefaultPartFlag = 0x400,
+    kPartSlotStride = 0x2000,
+    kOutfitSlotCount = 24,
     kItemCharacter = 1,
     kItemPart = 2,
     kItemClub = 3,
@@ -25,9 +36,6 @@ enum ItemIdFields {
     kItemHairStyle = 15,
     kItemAuxPart = 28
 };
-
-// Translation unit 0x8018ED64-0x80190474 (24 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -79,7 +87,8 @@ void* ItemInventory_FindCharacterData(CItemManager* list, void* typeId) {
         // The inventory mutex occupies the storage at +4.
         // 0x8018ED64: preserve the canonical end assignment on exhaustion.
         while (entry != end || (entry = end, false)) {
-            if ((unsigned int)typeId == entry->key) break;
+            if ((unsigned int)typeId == entry->key)
+                break;
             entry++;
         }
         if (entry != end)
@@ -89,7 +98,8 @@ void* ItemInventory_FindCharacterData(CItemManager* list, void* typeId) {
         CharacterTableEntry* entry = (CharacterTableEntry*)list->characters.data;
         CharacterTableEntry* end = entry + list->characters.size;
         while (entry != end || (entry = end, false)) {
-            if ((unsigned int)typeId == entry->key) break;
+            if ((unsigned int)typeId == entry->key)
+                break;
             entry++;
         }
         if (entry != end)
@@ -340,7 +350,8 @@ void* ItemInventory_FindCourseData(CItemManager* list, void* typeId) {
         CourseTableEntry* entry = list->courses.data;
         CourseTableEntry* end = entry + list->courses.size;
         while (entry != end || (entry = end, false)) {
-            if ((unsigned int)typeId == entry->key) break;
+            if ((unsigned int)typeId == entry->key)
+                break;
             ++entry;
         }
         if (entry != end)
@@ -350,7 +361,8 @@ void* ItemInventory_FindCourseData(CItemManager* list, void* typeId) {
         CourseTableEntry* entry = list->courses.data;
         CourseTableEntry* end = entry + list->courses.size;
         while (entry != end || (entry = end, false)) {
-            if ((unsigned int)typeId == entry->key) break;
+            if ((unsigned int)typeId == entry->key)
+                break;
             ++entry;
         }
         if (entry != end)
@@ -474,7 +486,8 @@ int ItemInventory_FindDescriptionMessageKeyText(CItemManager* list, void* typeId
     DescTableEntry* entry = (DescTableEntry*)list->descriptions.data;
     DescTableEntry* end = entry + list->descriptions.size;
     while (entry != end || (entry = end, false)) {
-        if ((unsigned int)typeId == entry->key) break;
+        if ((unsigned int)typeId == entry->key)
+            break;
         entry++;
     }
     if (entry == end)
@@ -485,30 +498,45 @@ int ItemInventory_FindDescriptionMessageKeyText(CItemManager* list, void* typeId
 // Dispatch by item kind; a missing hairstyle deliberately falls through to the auxiliary-part table.
 void* ItemInventory_FindDataWithHairStyleFallback(void* self, unsigned int type) {
     switch (type >> kItemKindShift) {
-        case kItemCharacter: return ItemInventory_FindCharacterData((CItemManager*)self, (void*)type);
-        case kItemPart: return ItemInventory_FindPartData((CItemManager*)self, (void*)type);
-        case kItemClub: return ItemInventory_FindClubData((CItemManager*)self, (void*)type);
-        case kItemClubSet: return ItemInventory_FindClubSetData((CItemManager*)self, (void*)type);
-        case kItemBall: return ItemInventory_FindBallData((CItemManager*)self, (void*)type);
-        case kItemConsumable: return ItemInventory_FindItemData((CItemManager*)self, (void*)type);
-        case kItemCaddie: return ItemInventory_FindCaddieData((CItemManager*)self, (void*)type);
-        case kItemCaddieItem: return ItemInventory_FindCaddieItemData((CItemManager*)self, (void*)type);
-        case kItemSet: return ItemInventory_FindSetItemData((CItemManager*)self, (void*)type);
-        case kItemCourse: return ItemInventory_FindCourseData((CItemManager*)self, (void*)type);
-        case kItemHairStyle: {
-            void* result = ItemInventory_FindHairStyleData((CItemManager*)self, type);
-            if (result) return result;
-        }
-        case kItemAuxPart: return ItemInventory_FindAuxPartData((CItemManager*)self, type);
-        default: return 0;
+    case kItemCharacter:
+        return ItemInventory_FindCharacterData((CItemManager*)self, (void*)type);
+    case kItemPart:
+        return ItemInventory_FindPartData((CItemManager*)self, (void*)type);
+    case kItemClub:
+        return ItemInventory_FindClubData((CItemManager*)self, (void*)type);
+    case kItemClubSet:
+        return ItemInventory_FindClubSetData((CItemManager*)self, (void*)type);
+    case kItemBall:
+        return ItemInventory_FindBallData((CItemManager*)self, (void*)type);
+    case kItemConsumable:
+        return ItemInventory_FindItemData((CItemManager*)self, (void*)type);
+    case kItemCaddie:
+        return ItemInventory_FindCaddieData((CItemManager*)self, (void*)type);
+    case kItemCaddieItem:
+        return ItemInventory_FindCaddieItemData((CItemManager*)self, (void*)type);
+    case kItemSet:
+        return ItemInventory_FindSetItemData((CItemManager*)self, (void*)type);
+    case kItemCourse:
+        return ItemInventory_FindCourseData((CItemManager*)self, (void*)type);
+    case kItemHairStyle: {
+        void* result = ItemInventory_FindHairStyleData((CItemManager*)self, type);
+        if (result)
+            return result;
+    }
+    case kItemAuxPart:
+        return ItemInventory_FindAuxPartData((CItemManager*)self, type);
+    default:
+        return 0;
     }
 }
 
 #pragma use_lmw_stmw on
 // Return the first matching entry in [entry, end), or end; no locking here.
-static inline CharacterTableEntry* FindDefaultCharacterEntry(CharacterTableEntry* entry, CharacterTableEntry* end, unsigned int typeId) {
+static inline CharacterTableEntry* FindDefaultCharacterEntry(CharacterTableEntry* entry, CharacterTableEntry* end,
+                                                             unsigned int typeId) {
     for (; entry != end; ++entry) {
-        if (typeId == (unsigned int)entry->key) return entry;
+        if (typeId == (unsigned int)entry->key)
+            return entry;
     }
     return end;
 }
@@ -524,13 +552,15 @@ int ItemInventory_GetDefaultPartIds(CItemManager* list, unsigned int typeId, uns
             CharacterTableEntry* entry = (CharacterTableEntry*)list->characters.data;
             CharacterTableEntry* end = entry + list->characters.size;
             entry = FindDefaultCharacterEntry(entry, end, typeId);
-            if (entry != end) found = &entry->record;
+            if (entry != end)
+                found = &entry->record;
             ItemInventory_UnlockMutex(list->inventoryMutexStorage);
         } else {
             CharacterTableEntry* entry = (CharacterTableEntry*)list->characters.data;
             CharacterTableEntry* end = entry + list->characters.size;
             entry = FindDefaultCharacterEntry(entry, end, typeId);
-            if (entry != end) found = &entry->record;
+            if (entry != end)
+                found = &entry->record;
         }
         if (found != 0) {
             int count = found->defaultPartCount;
@@ -547,21 +577,26 @@ int ItemInventory_GetDefaultPartIds(CItemManager* list, unsigned int typeId, uns
                     PartTableEntry* entry = (PartTableEntry*)list->parts.data;
                     PartTableEntry* end = entry + list->parts.size;
                     entry = FindPartEntryByOpaqueId(entry, end, (void*)value);
-                    if (entry != end) second = &entry->record;
+                    if (entry != end)
+                        second = &entry->record;
                     ItemInventory_UnlockMutex(list->inventoryMutexStorage);
                 } else {
                     PartTableEntry* entry = (PartTableEntry*)list->parts.data;
                     PartTableEntry* end = entry + list->parts.size;
                     entry = FindPartEntryByOpaqueId(entry, end, (void*)value);
-                    if (entry != end) second = &entry->record;
+                    if (entry != end)
+                        second = &entry->record;
                 }
-                if (second != 0) *dest = value;
-                else *dest = 0;
+                if (second != 0)
+                    *dest = value;
+                else
+                    *dest = 0;
                 bits += kPartSlotStride;
                 ++dest;
             }
             // Clear the unused tail only after all default body slots are written.
-            for (; i < kOutfitSlotCount; ++i) out[i] = 0;
+            for (; i < kOutfitSlotCount; ++i)
+                out[i] = 0;
             return 1;
         }
     }
@@ -580,19 +615,32 @@ int ItemInventory_GetPricePang(void* self, unsigned int type) {
 // Dispatch the type id to its IFF table and return the matching record, or null.
 void* ItemInventory_FindDataById(void* self, unsigned int type) {
     switch (type >> kItemKindShift) {
-        case kItemCharacter: return ItemInventory_FindCharacterData((CItemManager*)self, (void*)type);
-        case kItemPart: return ItemInventory_FindPartData((CItemManager*)self, (void*)type);
-        case kItemClub: return ItemInventory_FindClubData((CItemManager*)self, (void*)type);
-        case kItemClubSet: return ItemInventory_FindClubSetData((CItemManager*)self, (void*)type);
-        case kItemBall: return ItemInventory_FindBallData((CItemManager*)self, (void*)type);
-        case kItemConsumable: return ItemInventory_FindItemData((CItemManager*)self, (void*)type);
-        case kItemCaddie: return ItemInventory_FindCaddieData((CItemManager*)self, (void*)type);
-        case kItemCaddieItem: return ItemInventory_FindCaddieItemData((CItemManager*)self, (void*)type);
-        case kItemSet: return ItemInventory_FindSetItemData((CItemManager*)self, (void*)type);
-        case kItemCourse: return ItemInventory_FindCourseData((CItemManager*)self, (void*)type);
-        case kItemHairStyle: return ItemInventory_FindHairStyleData((CItemManager*)self, type);
-        case kItemAuxPart: return ItemInventory_FindAuxPartData((CItemManager*)self, type);
-        default: return 0;
+    case kItemCharacter:
+        return ItemInventory_FindCharacterData((CItemManager*)self, (void*)type);
+    case kItemPart:
+        return ItemInventory_FindPartData((CItemManager*)self, (void*)type);
+    case kItemClub:
+        return ItemInventory_FindClubData((CItemManager*)self, (void*)type);
+    case kItemClubSet:
+        return ItemInventory_FindClubSetData((CItemManager*)self, (void*)type);
+    case kItemBall:
+        return ItemInventory_FindBallData((CItemManager*)self, (void*)type);
+    case kItemConsumable:
+        return ItemInventory_FindItemData((CItemManager*)self, (void*)type);
+    case kItemCaddie:
+        return ItemInventory_FindCaddieData((CItemManager*)self, (void*)type);
+    case kItemCaddieItem:
+        return ItemInventory_FindCaddieItemData((CItemManager*)self, (void*)type);
+    case kItemSet:
+        return ItemInventory_FindSetItemData((CItemManager*)self, (void*)type);
+    case kItemCourse:
+        return ItemInventory_FindCourseData((CItemManager*)self, (void*)type);
+    case kItemHairStyle:
+        return ItemInventory_FindHairStyleData((CItemManager*)self, type);
+    case kItemAuxPart:
+        return ItemInventory_FindAuxPartData((CItemManager*)self, type);
+    default:
+        return 0;
     }
 }
 
@@ -608,7 +656,8 @@ int ItemInventory_GetArchiveCourseCount(CItemManager* inventory) {
 }
 
 // Return the first matching entry in [entry, end), or end; no locking here.
-static inline CharacterTableEntry* FindCharacterEntryById(CharacterTableEntry* entry, CharacterTableEntry* end, unsigned int typeId) {
+static inline CharacterTableEntry* FindCharacterEntryById(CharacterTableEntry* entry, CharacterTableEntry* end,
+                                                          unsigned int typeId) {
     for (; entry != end; ++entry) {
         if (typeId == entry->key)
             return entry;
@@ -626,7 +675,8 @@ static inline PartTableEntry* FindPartEntryById(PartTableEntry* entry, PartTable
 }
 
 // Return the first matching entry in [entry, end), or end; no locking here.
-static inline AuxPartTableEntry* FindAuxPartEntryById(AuxPartTableEntry* entry, AuxPartTableEntry* end, unsigned int typeId) {
+static inline AuxPartTableEntry* FindAuxPartEntryById(AuxPartTableEntry* entry, AuxPartTableEntry* end,
+                                                      unsigned int typeId) {
     for (; entry != end; ++entry) {
         if (typeId == entry->key)
             return entry;
@@ -635,7 +685,8 @@ static inline AuxPartTableEntry* FindAuxPartEntryById(AuxPartTableEntry* entry, 
 }
 
 // Return the first matching entry in [entry, end), or end; no locking here.
-static inline CaddieTableEntry* FindCaddieEntryById(CaddieTableEntry* entry, CaddieTableEntry* end, unsigned int typeId) {
+static inline CaddieTableEntry* FindCaddieEntryById(CaddieTableEntry* entry, CaddieTableEntry* end,
+                                                    unsigned int typeId) {
     for (; entry != end; ++entry) {
         if (typeId == entry->key)
             return entry;
@@ -650,8 +701,9 @@ static inline CaddieTableEntry* FindCaddieEntryById(CaddieTableEntry* entry, Cad
 // Auxiliary value 99 contributes nothing; caddie eligibility compares its level to playerRank.
 // Sum base, outfit, ring, training and rank-eligible caddie bonuses for one stat; byte truncation is intentional.
 unsigned char ItemInventory_SumAttributeContributions(CItemManager* self, int statIndex, unsigned int typeId,
-                          unsigned int* outfitPartIds, unsigned int* auxPartIds,
-short* trainingBonuses, unsigned int caddieOrItemId, unsigned int playerRank) {
+                                                      unsigned int* outfitPartIds, unsigned int* auxPartIds,
+                                                      short* trainingBonuses, unsigned int caddieOrItemId,
+                                                      unsigned int playerRank) {
     IFF_STRUCT::sPart* partRecord;
     IFF_STRUCT::sAuxPart* auxPartRecord;
     unsigned int equippedTypeId;
@@ -756,14 +808,16 @@ short* trainingBonuses, unsigned int caddieOrItemId, unsigned int playerRank) {
             ItemInventory_LockMutex(self->inventoryMutexStorage);
             CaddieTableEntry* entry = self->caddies.data;
             CaddieTableEntry* end = entry + self->caddies.size;
-            entry = FindCaddieEntryById(entry, end, ((caddieOrItemId >> kCaddieItemOwnerShift) & kCaddieItemOwnerMask) | kCaddieTypeIdBase);
+            entry = FindCaddieEntryById(
+                entry, end, ((caddieOrItemId >> kCaddieItemOwnerShift) & kCaddieItemOwnerMask) | kCaddieTypeIdBase);
             if (entry != end)
                 caddieRecord = (IFF_STRUCT::sCaddie*)((char*)&entry->record);
             ItemInventory_UnlockMutex(self->inventoryMutexStorage);
         } else {
             CaddieTableEntry* entry = self->caddies.data;
             CaddieTableEntry* end = entry + self->caddies.size;
-            entry = FindCaddieEntryById(entry, end, ((caddieOrItemId >> kCaddieItemOwnerShift) & kCaddieItemOwnerMask) | kCaddieTypeIdBase);
+            entry = FindCaddieEntryById(
+                entry, end, ((caddieOrItemId >> kCaddieItemOwnerShift) & kCaddieItemOwnerMask) | kCaddieTypeIdBase);
             if (entry != end)
                 caddieRecord = (IFF_STRUCT::sCaddie*)((char*)&entry->record);
         }

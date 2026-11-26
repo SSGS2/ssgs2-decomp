@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CDARTSDIALOG_H
 #define CLASSES_CDARTSDIALOG_H
 
@@ -7,27 +5,34 @@
 
 class CDartsDialog {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    void* targetValue;                        // 0x4: 1 use in CDartsDialog_Ctor
-    void* clearType;                        // 0x8: 1 use in CDartsDialog_Ctor
-    void* layout;                        // 0xc: 5 uses in CDartsDialog_dtor, CDartsDialog_Ctor
-    int bpEntryId;                         // 0x10: 5 uses in CDartsDialog_dtor, CDartsDialog_Ctor
-    int bpObject;                         // 0x14: 2 uses in CDartsDialog_Ctor
-    void* textTable;                       // 0x18: 5 uses in CDartsDialog_dtor, CDartsDialog_Ctor
-    void* textFactory;                       // 0x1c: 4 uses in CDartsDialog_Ctor
-    void* messageResource;                       // 0x20: 3 uses in CDartsDialog_dtor, CDartsDialog_Ctor
+    void* vtbl;            // 0x0: original vtable pointer
+    void* targetValue;     // 0x4
+    void* clearType;       // 0x8
+    void* layout;          // 0xc
+    int bpEntryId;         // 0x10
+    int bpObject;          // 0x14
+    void* textTable;       // 0x18
+    void* textFactory;     // 0x1c
+    void* messageResource; // 0x20
     union {
-        void* textDraw0;                // 0x24: existing first-slot name retained
-        void* textDraws[4];             // 0x24: CDartsDialog_SetTaggedTextAtLayoutElement rejects index >= 4 and updates this message slot
+        void* textDraw0; // 0x24: existing first-slot name retained
+        void* textDraws
+            [4]; // 0x24: CDartsDialog_SetTaggedTextAtLayoutElement rejects index >= 4 and updates this message slot
     };
-    int state;                         // 0x34: 2 uses in CDartsDialog_Ctor
-    int fadeState;                         // 0x38: 1 use in CDartsDialog_Ctor
-    float fadeTime;                       // 0x3c: 1 use in CDartsDialog_Ctor
+    int state;      // 0x34
+    int fadeState;  // 0x38
+    float fadeTime; // 0x3c
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x4, 0x10, 0x20, 0x24
+    void Draw();
+    int Update(float delta);
+    int UpdateFadeSequence(float delta);
+    void SetTaggedTextAtLayoutElement(int textSlot, const char* messageKey, const char* alignmentTag,
+                                      int layoutElement);
+
+    CDartsDialog(void* targetValue, void* clearType);
+    void* Destroy(int deleting);
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CDARTSDIALOG_OFF(f, o) typedef char CDartsDialog_off_##f[((int)&((CDartsDialog*)0)->f == (o)) ? 1 : -1]
 CDARTSDIALOG_OFF(targetValue, 0x4);
 CDARTSDIALOG_OFF(clearType, 0x8);
@@ -44,4 +49,4 @@ CDARTSDIALOG_OFF(fadeState, 0x38);
 CDARTSDIALOG_OFF(fadeTime, 0x3c);
 #undef CDARTSDIALOG_OFF
 
-#endif  // CLASSES_CDARTSDIALOG_H
+#endif // CLASSES_CDARTSDIALOG_H

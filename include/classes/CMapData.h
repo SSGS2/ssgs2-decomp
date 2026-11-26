@@ -1,4 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
 // The original vtable (__vt__8CMapData) and typeinfo stay data symbols.
 #ifndef CLASSES_CMAPDATA_H
 #define CLASSES_CMAPDATA_H
@@ -6,7 +5,17 @@
 // RTTI base class: CEcbCtl<STYPE_CMAPDATA> (not declared here)
 class CMapData {
 public:
-    void* vtbl;  // offset 0: original vtable pointer (__vt__8CMapData); other members: add as found
+    // Map rows: each getter returns zero when the row is absent.
+    short GetItemIndexAt(int index) const;
+    short GetDirection0StyleAt(int index) const;
+    short GetDirection1StyleAt(int index) const;
+    short GetDirection2StyleAt(int index) const;
+    short GetDirection3StyleAt(int index) const;
+    unsigned char GetItemFlag13At(int index) const;
+    unsigned char GetItemFlag14At(int index) const;
+
+    int nodeTable; // 0x00: the row table, read by the getters above
+    void* vtbl;    // 0x04: original vtable pointer (__vt__8CMapData)
 
     // vtable slots (current symbol; implement as a method with its real signature):
     // slot 0: CMapData_vfunc_0 (medium)  void vfunc_0();
@@ -162,6 +171,11 @@ public:
     int vfunc_73();
     int vfunc_74();
     int vfunc_75();
+
+    static void* vfunc_0(void* ptr, int shouldDelete);
 };
 
-#endif  // CLASSES_CMAPDATA_H
+typedef char CMapData_offset_vtbl[((int)&((CMapData*)0)->vtbl == 0x04) ? 1 : -1];
+typedef char CMapData_size[(sizeof(CMapData) == 0x08) ? 1 : -1];
+
+#endif // CLASSES_CMAPDATA_H

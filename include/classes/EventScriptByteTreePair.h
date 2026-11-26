@@ -10,11 +10,12 @@ public:
     unsigned int value; // 0x4
 };
 
-#define OFF(f, o) typedef char ScriptByteTreePair80092804_off_##f[((int)&((EventScriptByteTreePair*)0)->f == (o)) ? 1 : -1]
+#define OFF(f, o) \
+    typedef char ScriptByteTreePair80092804_off_##f[((int)&((EventScriptByteTreePair*)0)->f == (o)) ? 1 : -1]
 OFF(key, 0x0);
 OFF(value, 0x4);
 #undef OFF
 
-#define AsScriptByteTreePair80092804(p) ((EventScriptByteTreePair*)(p))
+#define AsEventScriptByteTreePair(p) ((EventScriptByteTreePair*)(p))
 
 #endif

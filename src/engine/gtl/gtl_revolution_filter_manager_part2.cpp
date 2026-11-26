@@ -1,31 +1,21 @@
-// Translation unit 0x803F96CC-0x803F97FC (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Revolution filter manager, part 2: the freeing helper for a manager allocation, the parameter
+// block size query, and the filter descriptor builder.
 
+#include "classes/gtl_CRevolutionFilterManager.h"
 
 extern "C" {
 
-enum FilterParameterLayout { kFilterParameterWords = 24, kFilterParameterBytes = 0x60 };
+enum FilterParameterLayout {
+    kFilterParameterWords = 24,
+    kFilterParameterBytes = 0x60
+};
 enum ProviderFormatWords {
-    kProviderSampleBufferBytes = 2, kProviderWorkspaceCount = 3,
-    kProviderShowCounterParameter = 4, kProviderInitialReadBytes = 10,
+    kProviderSampleBufferBytes = 2,
+    kProviderWorkspaceCount = 3,
+    kProviderShowCounterParameter = 4,
+    kProviderInitialReadBytes = 10,
     kProviderPacketHeaderWords = 12
 };
-// Word numbers below identify the provider's opaque 0x60-byte input schema.
-// This maps a provider block to the pipeline's GtlMediaFormat, rather than
-// implementing a DSP coefficient formula. See classes/GtlMediaFormat.h and
-// gtl_CFilterManager_CopyFormat in gtl_media_pipeline_filters.cpp for the same output byte map.
-// Provider word -> output meaning (legacy parameterWord fields retained):
-// 4 -> show-counter format parameter (units unresolved), 10 -> initial read
-// offset (bytes), 2 -> sample buffer size (bytes), 3 -> transform workspace
-// count, 12 -> split-packet header word count. Words 6/17/18 remain opaque.
-// No frequency/gain interpretation is established for any of these words.
-// To add support for a parameter, update both the cached-word projection and its
-// output field; changing the cache alone does not change the output descriptor.
-// Words 4/17/18 need special care: word 4 is a float BIT COPY (not numeric
-// conversion), while words 17/18 intentionally discard their high 16 bits.
-// Output +0 is cleared on every application; the format discriminator's code
-// meaning is unresolved. This is not a pointer or a reset of the whole manager.
-// Do not turn this into a whole-output clear: +4..+0x87 retain caller state.
 
 void gtl_Free(void*);
 
@@ -36,42 +26,25 @@ void dtor_803F96CC(void* self) {
     }
 }
 
+} // extern "C"
+
 // Report the 24-word input parameter block size in bytes.
-// size must be non-null; returns 1 and does not inspect self.
-int CRevolutionFilterManager_GetParameterBlockSize(void* self, int* size) {
+// size must be non-null; returns 1 and does not inspect this.
+int gtl::CRevolutionFilterManager::GetParameterBlockSize(int* size) {
     *size = kFilterParameterBytes;
     return 1;
 }
 
-struct RevolutionFilterManagerData {
-    char baseState[0x90];
-    unsigned int cachedParameters[kFilterParameterWords];
-};
-
-struct RevolutionFilterOutput {
-    unsigned int baseState;
-    char reservedState[0x84];
-    float showCounterFormatParameter;
-    unsigned int initialReadOffset;
-    unsigned int sampleBufferSize;
-    unsigned int parameterWord6;
-    unsigned short parameterWord17;
-    unsigned short parameterWord18;
-    unsigned int transformWorkspaceCount;
-    unsigned int splitPacketHeaderWordCount;
-};
-// Output byte map: +0 is reset, +4..+0x87 are left untouched;
-// +0x88 float bits from word 4, +0x8C word 10, +0x90 word 2, +0x94 word 6,
-// +0x98/+0x9A low 16 bits of words 17/18, +0x9C word 3, +0xA0 word 12.
-
-// Cache all 24 input words and copy the supported parameters into the output descriptor.
-// All pointers are borrowed and required; input covers 0x60 bytes, output 0xA4.
-// Returns 1 unconditionally. Only the listed output fields are written.
-int gtl_CRevolutionFilterManager_BuildDescriptor(RevolutionFilterManagerData* self, unsigned int* input, RevolutionFilterOutput* output) {
-    unsigned int* cached = self->cachedParameters;
+// The 24 words are the THP file header read from the disc (big-endian). They are cached in the
+// manager, then projected into the output descriptor: word 4 is copied as float bits, words 17 and 18
+// keep their low 16 bits, and the other output fields are plain copies. Output +0 is cleared
+// and the rest of the output is left as it was.
+// Input covers 0x60 bytes and output 0xA4. Returns 1 unconditionally.
+int gtl::CRevolutionFilterManager::BuildDescriptor(unsigned int* input, RevolutionFilterOutput* output) {
+    unsigned int* cached = cachedParameters;
     unsigned int firstWord, secondWord;
-    // Phase 1: cache the input. Preserve paired load/store order, including
-    // pairs loaded in reverse; this sequence also fixes behavior for aliasing input.
+    // Cache the input. Pairs are loaded and stored in the original order, including
+    // pairs loaded in reverse; this also fixes behavior for aliasing input.
     firstWord = input[1];
     secondWord = input[0];
     cached[0] = secondWord;
@@ -129,8 +102,7 @@ int gtl_CRevolutionFilterManager_BuildDescriptor(RevolutionFilterManagerData* se
     cached[22] = firstWord;
     cached[23] = secondWord;
 
-// The 24 words are the THP file header read from the disc (big-endian).
-    // Phase 2: project the cached schema into the descriptor, preserving other bytes.
+    // Project the cached words into the descriptor.
     output->baseState = 0;
     output->showCounterFormatParameter = *(float*)&cached[kProviderShowCounterParameter];
     output->initialReadOffset = cached[kProviderInitialReadBytes];
@@ -142,5 +114,3 @@ int gtl_CRevolutionFilterManager_BuildDescriptor(RevolutionFilterManagerData* se
     output->splitPacketHeaderWordCount = cached[kProviderPacketHeaderWords];
     return 1;
 }
-
-} // extern "C"

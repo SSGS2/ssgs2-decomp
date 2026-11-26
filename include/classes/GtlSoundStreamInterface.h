@@ -1,21 +1,53 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_GTLSOUNDSTREAMINTERFACE_H
 #define CLASSES_GTLSOUNDSTREAMINTERFACE_H
 
 #include "game/types.h"
+#include "classes/SoundStreamPlayer804022BC.h"
 
-class GtlSoundStreamInterface {
+struct SourceBase804022BC;
+
+namespace gtl {
+
+// A streamed sound. The state it points to is the player block, which owns the native
+// playback object and every parameter of the stream.
+class ISoundStream {
 public:
-    char pad_000[0x4];                  // 0x0: uninterpreted prefix
-    void* vtbl;                         // 0x4: gtl_ISoundStream_dtor (0x80403438)
-    void* state;                        // 0x8: gtl_ISoundStream_UpdateParameters (0x804035E0), gtl_ISoundStream_UpdateModulation (0x804038C8), gtl_ISoundStream_dtor (0x80403438)
+    // Playback control. Play starts or restarts the stream; Stop fades or stops it.
+    int Play(unsigned int flags);
+    int Stop(int mode);
+    int Pause();
+    int Resume();
+    int GetStatusFlags(unsigned int* result);
+    int SetSource(const SourceBase804022BC* source);
+    void* GetPlaybackHeader();
+
+    // Setters for the stored parameters. Volume and pitch are ignored unless the source allows them.
+    int SetVolume(float value);
+    int SetPitch(float value);
+    int SetPan(float value);
+    void* SetEnvelope(void* settings);
+    int SetLoopRange(int loopStart, int loopEnd);
+    int SetConeAngles(int unused, float inner, float outer);
+    int SetConeGains(int unused, float inner, float outer);
+    int SetMinDistance(int unused, float value);
+    int SetMaxDistance(int unused, float value);
+    int SetDistanceCurve(int curve, int unused);
+    int SetDistanceParameterA(int unused, float value);
+    int SetDistanceParameterB(int unused, float value);
+
+    // Per-frame updates: parameters are applied with interrupts disabled.
+    void UpdateParameters();
+    void UpdateModulation(void* elapsedTicks);
+
+    // Construction and destruction on storage the caller owns.
+    ISoundStream* Init(void* source);
+    void* Destroy(int flags);
+
+    int refs;                   // 0x0
+    void* vtbl;                 // 0x4
+    CSoundStreamPlayer* player; // 0x8
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define GTLSOUNDSTREAMINTERFACE_OFF(f, o) typedef char GtlSoundStreamInterface_off_##f[((int)&((GtlSoundStreamInterface*)0)->f == (o)) ? 1 : -1]
-GTLSOUNDSTREAMINTERFACE_OFF(vtbl, 0x4);
-GTLSOUNDSTREAMINTERFACE_OFF(state, 0x8);
-#undef GTLSOUNDSTREAMINTERFACE_OFF
+} // namespace gtl
 
-#endif  // CLASSES_GTLSOUNDSTREAMINTERFACE_H
+#endif // CLASSES_GTLSOUNDSTREAMINTERFACE_H

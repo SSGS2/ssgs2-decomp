@@ -1,5 +1,3 @@
-// Translation unit 0x803DBBEC-0x803DBC90 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 // Environment light resource export. Mod lookup: CopyLights copies raw light
 // records; gtl_environment_light_count.cpp queries the matching count; gtl_generic_resource_loading.cpp converts each
 // exported record to a fixed-function light description. This API copies data,
@@ -40,11 +38,14 @@ struct EnvironmentLightRecord {
     float intensity;                         // +0x68
     unsigned int reserved6C;                 // +0x6C: not read by the conversion
     float range;                             // +0x70
-    float innerCone, coneWidth;               // +0x74,+0x78
-    float target[3];                          // +0x7C
+    float innerCone, coneWidth;              // +0x74,+0x78
+    float target[3];                         // +0x7C
 };
 typedef char EnvironmentLightRecord_size[(sizeof(EnvironmentLightRecord) == 0x88) ? 1 : -1];
-enum EnvironmentLightChunks { kLightCountTag = 0x67696C, kLightDataTag = 0x646C };
+enum EnvironmentLightChunks {
+    kLightCountTag = 0x67696C,
+    kLightDataTag = 0x646C
+};
 
 #pragma use_lmw_stmw on
 // Query 'lig' count metadata, just as GetLightCount does in gtl_environment_light_count.cpp.
@@ -70,7 +71,8 @@ int gtl_IGenericEnvironmentResource_CopyLights(const GenericEnvironmentResource*
     unsigned int i;
     count = EnvironmentLightCount(self);
     for (i = 0; i < count; i++) {
-        element = gtl_ResourceFile_GetChunkElement(Object_GetField8(self->resourceBuffer), Object_GetFieldC(self->resourceBuffer), kLightDataTag, i);
+        element = gtl_ResourceFile_GetChunkElement(Object_GetField8(self->resourceBuffer),
+                                                   Object_GetFieldC(self->resourceBuffer), kLightDataTag, i);
         memcpy(dest, element, sizeof(EnvironmentLightRecord));
         dest = (char*)dest + sizeof(EnvironmentLightRecord);
     }

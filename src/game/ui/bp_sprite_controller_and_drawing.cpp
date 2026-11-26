@@ -1,39 +1,81 @@
+// Bp sprite controller: creating and reusing sprites in controller slots, registering their
+// borrowed storage, and computing sprite bounds and rotated corners.
+// Also the packed color multiply used for sprite tints.
+
 #include <decomp/static_init.h>
 #include <decomp/offset_of.h>
+#include "classes/CBpCtrl.h"
 // Sprite channels use signed fixed-point scale (1.0 = kBpScaleOne); packed colour unity is 128.
 enum BpSpriteConstants {
-    kBpInvalidSlotSourceLine = 0x84, kBpUnregisteredSlotSourceLine = 0x89,
-    kBpModeFlag1 = 1, kBpModeFlag2 = 2,
-    kBpScaleOne = 1024, kBpColorOne = 128, kBpSlotCount = 40,
-    kBpChannelsPerSprite = 18, kBpChannelBytes = 0x18, kBpSpriteBytes = 0x1C8,
-    kBpFormatMask = 0xF000, kBpTileFlipMask = 0xF0000, kBpBlendMask = 0xF0,
-    kBpFlipHorizontal = 0x1000, kBpFlipVertical = 0x2000,
-    kBpAlternateColumnX = 0x10000, kBpAlternateColumnY = 0x20000,
-    kBpAlternateRowX = 0x40000, kBpAlternateRowY = 0x80000
+    kBpInvalidSlotSourceLine = 0x84,
+    kBpUnregisteredSlotSourceLine = 0x89,
+    kBpModeFlag1 = 1,
+    kBpModeFlag2 = 2,
+    kBpScaleOne = 1024,
+    kBpColorOne = 128,
+    kBpSlotCount = 40,
+    kBpChannelsPerSprite = 18,
+    kBpChannelBytes = 0x18,
+    kBpSpriteBytes = 0x1C8,
+    kBpFormatMask = 0xF000,
+    kBpTileFlipMask = 0xF0000,
+    kBpBlendMask = 0xF0,
+    kBpFlipHorizontal = 0x1000,
+    kBpFlipVertical = 0x2000,
+    kBpAlternateColumnX = 0x10000,
+    kBpAlternateColumnY = 0x20000,
+    kBpAlternateRowX = 0x40000,
+    kBpAlternateRowY = 0x80000
 };
 enum BpSpriteChannelIndex {
-    kImageChannel = 0, kSourceXChannel = 1, kSourceYChannel = 2,
-    kWidthChannel = 3, kHeightChannel = 4, kClipChannel = 5,
-    kPositionXChannel = 6, kPositionYChannel = 7,
-    kScaleXChannel = 8, kScaleYChannel = 9, kOpacityChannel = 10,
-    kAuxiliaryChannel = 11, kColumnsChannel = 12, kRowsChannel = 13,
-    kPivotXChannel = 14, kPivotYChannel = 15, kRotationChannel = 16, kTintChannel = 17
+    kImageChannel = 0,
+    kSourceXChannel = 1,
+    kSourceYChannel = 2,
+    kWidthChannel = 3,
+    kHeightChannel = 4,
+    kClipChannel = 5,
+    kPositionXChannel = 6,
+    kPositionYChannel = 7,
+    kScaleXChannel = 8,
+    kScaleYChannel = 9,
+    kOpacityChannel = 10,
+    kAuxiliaryChannel = 11,
+    kColumnsChannel = 12,
+    kRowsChannel = 13,
+    kPivotXChannel = 14,
+    kPivotYChannel = 15,
+    kRotationChannel = 16,
+    kTintChannel = 17
 };
 struct BpSpriteChannel {
-    int baseValue; int value; short mode; short padding;
-    int animationState; int propertyAddress; int animationData;
+    int baseValue;
+    int value;
+    short mode;
+    short padding;
+    int animationState;
+    int propertyAddress;
+    int animationData;
 };
 struct BpSpriteState {
-    short id; short flags; int key; int userData;
-    int drawRectCallback; int drawQuadCallback; void* next;
+    short id;
+    short flags;
+    int key;
+    int userData;
+    int drawRectCallback;
+    int drawQuadCallback;
+    void* next;
     BpSpriteChannel channels[kBpChannelsPerSprite];
 };
 // Controller slots are 0x34 bytes, distinct from their 0x1C8-byte sprite pool.
 // RegisterWork borrows one backing range: sprites first, then 0x10-byte work
 // records. Reset invalidates keys/list links but never frees either pool.
-struct BpAuxiliaryWorkView { int word0, word1, key, word3; };
+struct BpAuxiliaryWorkView {
+    int word0, word1, key, word3;
+};
 struct BpSlotResetView {
-    int slotId; void* backingRange; BpSpriteState* sprites;
+    int slotId;
+    void* backingRange;
+    BpSpriteState* sprites;
     BpAuxiliaryWorkView* auxiliaryWork;
     int spriteCount, auxiliaryCount, word18;
     int positionX, positionY, opacity, scaleX, scaleY;
@@ -48,20 +90,17 @@ typedef char BpSpriteState_imageOffset[((int)DECOMP_OFFSETOF(BpSpriteState, chan
 #include "classes/BpSpriteDrawView.h"
 #define AsBpDrawObject800BC91C(p) ((BpSpriteDrawView*)(p))
 
-// Translation unit 0x800BC91C-0x800BDF64 (14 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 extern "C" {
 
 extern int Bp_GetDefaultRectDrawCallback();
-extern int BpSprite_ComputeUnrotatedRect(int *, void *, void *);
+extern int BpSprite_ComputeUnrotatedRect(int*, void*, void*);
 extern unsigned int Color_ModulatePackedChannels(int, int);
 
 #pragma push
 #pragma use_lmw_stmw on
 // Draw a fixed-point tile grid, optionally inheriting scale, colour, and opacity from another sprite.
-void BpSprite_DrawTilesUnrotated(void *self, void *other, int columns, int rows, int x, int y,
-                 int widthScale, int heightScale, int opacityScale);
+void BpSprite_DrawTilesUnrotated(void* self, void* other, int columns, int rows, int x, int y, int widthScale,
+                                 int heightScale, int opacityScale);
 #pragma pop
 
 extern const float kFloat_6_2831855;
@@ -72,15 +111,15 @@ extern const float kFloat_0_BpColorMultiply;
 extern const char kBpControllerSourceFilename[];
 extern const char bpSlotRegistrationDiagnosticStrings[];
 
-extern int BpCtrl_InvokeGlobalHook(int, const char *, int, const char *);
+extern int BpCtrl_InvokeGlobalHook(int, const char*, int, const char*);
 extern int BpObject_ClearWorkBuffers(int);
 extern unsigned int Color_ModulatePackedChannels(int, int);
 extern const char bpControllerCallbackDiagnosticStrings[];
 extern unsigned int s_bpCachedRenderCallbackValue;
-extern void *memset(void *, int, unsigned int);
-extern void BpSprite_DrawTilesRotated(void *, void *, int, int, int, int, int, int, int);
-extern void BpSprite_DrawTilesUnrotated(void *, void *, int, int, int, int, int, int, int);
-extern int Math_RotateIntegerPoints2D(void *, int, int, int, int);
+extern void* memset(void*, int, unsigned int);
+extern void BpSprite_DrawTilesRotated(void*, void*, int, int, int, int, int, int, int);
+extern void BpSprite_DrawTilesUnrotated(void*, void*, int, int, int, int, int, int, int);
+extern int Math_RotateIntegerPoints2D(void*, int, int, int, int);
 
 struct B2dCtl;
 extern unsigned int s_bpObjectEntries[];
@@ -89,36 +128,32 @@ extern int g_bpDefaultRectDrawCallback;
 extern int g_bpDrawObjectCallback;
 extern int g_bpTileDrawCallback;
 
-// Clear all 40 controller slots, restore unused IDs and colour unity, and reset draw callbacks.
-int CBpCtrl_InitializeObjectEntries();
-
 // Compute tiled pixel bounds from sprite size, inherited scale, position, and pivot.
 // out is four writable pixel integers [left,top,width,height]. parentSprite is
 // optional/borrowed; only its position/scale are inherited. Scale and pivot use
 // 1024 as unity; negative tile counts contribute their absolute magnitude.
 // Multiply/divide stages intentionally truncate separately; combining them
 // changes both fixed-point rounding and overflow behavior.
-int BpSprite_ComputeUnrotatedRect(int *out, void *sprite, void *parentSprite);
+int BpSprite_ComputeUnrotatedRect(int* out, void* sprite, void* parentSprite);
 
 // Multiply four packed colour channels with 128 as unity, clamping each result to a byte.
 unsigned int Color_ModulatePackedChannels(int a, int b);
 // Reset a valid slot's work records, draw objects, transforms, and cached render callback.
 int BpObject_ClearWorkBuffers(int index);
 
-extern int BpCtrl_FindOrAllocObject(void *, int, int *);
+extern int BpCtrl_FindOrAllocObject(void*, int, int*);
 extern int bpChannelDefaultOverrides[];
-extern void BpSprite_ComputeRotatedQuad(int *, void *, void *);
+extern void BpSprite_ComputeRotatedQuad(int*, void*, void*);
 extern int BpCtrl_GetTexturedQuadCallback(void);
 
 #pragma push
 #pragma use_lmw_stmw on
 // Subdivide the transformed quadrilateral into tiles, applying alternate-row/column flips.
-void BpSprite_DrawTilesRotated(void *self, void *other, int columnCount, int rowCount,
-                 int startX, int startY, int widthScale, int heightScale,
-                 int opacityScale);
+void BpSprite_DrawTilesRotated(void* self, void* other, int columnCount, int rowCount, int startX, int startY,
+                               int widthScale, int heightScale, int opacityScale);
 #pragma pop
 
- #pragma push
+#pragma push
 #pragma use_lmw_stmw on
 // Allocate a sprite, reset its animation channels, initialize its image rectangle, and link it into the slot.
 // All creation paths return the pooled sprite's short ID, or -1 for invalid
@@ -129,7 +164,8 @@ void BpSprite_DrawTilesRotated(void *self, void *other, int columnCount, int row
 // animation state/property/data=0, then apply (channelIndex,mode) overrides
 // until an override key<=0. The first two paths reset 18 channels as nine
 // pairs, stepping 0x30; the others spell out one 0x18-byte channel per step.
-int BpCtrl_CreateDrawObject(int index, int objectKey, int image, int sourceX, int sourceY, int sourceWidth, int sourceHeight, int auxiliaryValue, int userData);
+int BpCtrl_CreateDrawObject(int index, int objectKey, int image, int sourceX, int sourceY, int sourceWidth,
+                            int sourceHeight, int auxiliaryValue, int userData);
 #pragma pop
 
 // Initialize a sprite with both special mode bits and reset all animation channels.
@@ -143,18 +179,20 @@ int BpCtrl_CreateDrawObjectFlag3(int index, int objectKey, int userData);
 // Initialize a data-driven sprite, set its dimensions, and append newly allocated objects to the slot.
 // base is borrowed; its first word becomes sourceX under flag bit 1. Width and
 // height are pixel dimensions; auxiliaryValue retains the undecoded channel-11 role.
-int BpCtrl_CreateDrawObjectFromData(int index, int objectKey, int *base, int sourceWidth, int sourceHeight, int auxiliaryValue);
+int BpCtrl_CreateDrawObjectFromData(int index, int objectKey, int* base, int sourceWidth, int sourceHeight,
+                                    int auxiliaryValue);
 
 // Initialize a mode-2 sprite with dimensions and caller data, then link new objects into the slot.
 // sourceWidth/sourceHeight are pixels; auxiliaryValue populates channel 11 and
 // userData is the opaque +8 word. Flag bit 2 is preserved without guessing its renderer meaning.
-int BpCtrl_CreateDrawObjectFlag2(int index, int objectKey, int sourceWidth, int sourceHeight, int auxiliaryValue, int userData);
+int BpCtrl_CreateDrawObjectFlag2(int index, int objectKey, int sourceWidth, int sourceHeight, int auxiliaryValue,
+                                 int userData);
 #pragma pop
 
 // Expand pixel bounds into four corners and rotate them around the sprite pivot.
 // out holds [TL.x,TL.y,BL.x,BL.y,BR.x,BR.y,TR.x,TR.y]; pivot fractions use
 // 1024 as unity. rotation uses the integer angle units of Math_RotateIntegerPoints2D.
-void BpSprite_ComputeRotatedQuad(int *out, void *sprite, void *parentSprite);
+void BpSprite_ComputeRotatedQuad(int* out, void* sprite, void* parentSprite);
 
 // Initialize this sprite unit's full-turn angle constant.
 void BpSprite_InitFullTurnConstant();
@@ -164,11 +202,11 @@ void BpSprite_InitFullTurnConstant();
 // auxiliaryCountWord is also an integer count despite the legacy pointer type:
 // callers in bp_object_sprite_resources.cpp pass animationWorkCount, and ClearWorkBuffers uses it as
 // the auxiliary loop bound. This call neither allocates nor takes heap ownership.
-int BpSlot_RegisterWork(int index, int start, int count, const char *auxiliaryCountWord);
+int BpSlot_RegisterWork(int index, int start, int count, const char* auxiliaryCountWord);
 
 // Dispatch tiled drawing using combined rotation; offsets are pixels, scales use 1024/128 unity.
-int BpSprite_DrawTiles(void *self, void *other, int startX, int startY, int widthScale,
-                int heightScale, int opacityScale, int unused);
+int BpSprite_DrawTiles(void* self, void* other, int startX, int startY, int widthScale, int heightScale,
+                       int opacityScale, int unused);
 
 } // extern "C"
 
@@ -178,42 +216,47 @@ int BpSprite_DrawTiles(void *self, void *other, int startX, int startY, int widt
 STATIC_INIT_ENTRY(".CRT$XCU80462088", _ctors_u800BC91C_0, BpSprite_InitFullTurnConstant);
 #pragma pop
 
-
 // Function definitions follow the original address order.
-
 
 #pragma push
 #pragma dont_inline on
 #pragma use_lmw_stmw on
 extern "C" {
 // Create or reuse an image sprite, reset its channels and link a new allocation.
-int BpCtrl_CreateDrawObject(int index, int objectKey, int image, int sourceX, int sourceY, int sourceWidth, int sourceHeight, int auxiliaryValue, int userData) {
+int BpCtrl_CreateDrawObject(int index, int objectKey, int image, int sourceX, int sourceY, int sourceWidth,
+                            int sourceHeight, int auxiliaryValue, int userData) {
     unsigned int z = 0;
-    unsigned char * record;
+    unsigned char* record;
     if (index < 0 || index >= kBpSlotCount) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpInvalidSlotSourceLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpInvalidSlotSourceLine,
+                                bpControllerCallbackDiagnosticStrings);
         record = 0;
     } else {
-        record = (unsigned char *)s_bpObjectEntries + index * sizeof(BpSlotResetView);
-        if (*(int *)record == -1) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpUnregisteredSlotSourceLine, bpControllerCallbackDiagnosticStrings);
+        record = (unsigned char*)s_bpObjectEntries + index * sizeof(BpSlotResetView);
+        if (*(int*)record == -1) {
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpUnregisteredSlotSourceLine,
+                                    bpControllerCallbackDiagnosticStrings);
             record = 0;
         }
     }
-    if (!record) return -1;
+    if (!record)
+        return -1;
     int alreadyExists;
-    unsigned char *obj = (unsigned char *)BpCtrl_FindOrAllocObject(record, objectKey, &alreadyExists);
+    unsigned char* obj = (unsigned char*)BpCtrl_FindOrAllocObject(record, objectKey, &alreadyExists);
     // 0x800BC91C: Initialize the allocated object before the shared result check.
     do {
-        if (obj == 0) { obj = 0; break; }
+        if (obj == 0) {
+            obj = 0;
+            break;
+        }
         unsigned int z = 0;
         BP_STATE(obj)->flags = z;
         BP_STATE(obj)->key = objectKey;
         (*(int*)&BP_STATE(obj)->next) = z;
         BP_STATE(obj)->userData = userData;
         // Phase 1: reset both channels of each pair before assigning properties.
-        int *entry;
-        unsigned char *p = obj;
+        int* entry;
+        unsigned char* p = obj;
         for (int i = 0, ch = 0; i < kBpChannelsPerSprite / 2; ++i, p += 2 * kBpChannelBytes) {
             BP_STATE(p)->channels[0].animationState = z;
             BP_STATE(p)->channels[0].animationData = z;
@@ -222,7 +265,7 @@ int BpCtrl_CreateDrawObject(int index, int objectKey, int image, int sourceX, in
             BP_STATE(p)->channels[0].value = z;
             BP_STATE(p)->channels[0].mode = z;
             int j;
-            int *entry = bpChannelDefaultOverrides;
+            int* entry = bpChannelDefaultOverrides;
             for (j = 0; entry[0] > 0; entry += 2, ++j)
                 if (ch == entry[0]) {
                     BP_STATE(p)->channels[0].mode = bpChannelDefaultOverrides[(2 * j) + 1];
@@ -246,7 +289,8 @@ int BpCtrl_CreateDrawObject(int index, int objectKey, int image, int sourceX, in
         }
     } while (0);
 
-    if (!obj) return -1;
+    if (!obj)
+        return -1;
     // Phase 2: install current/base property pairs (source rectangle is pixels).
     AsBpDrawObject800BC91C(obj)->image = image;
     BP_STATE(obj)->channels[kImageChannel].baseValue = image;
@@ -263,22 +307,27 @@ int BpCtrl_CreateDrawObject(int index, int objectKey, int image, int sourceX, in
     BP_STATE(obj)->channels[kAuxiliaryChannel].baseValue = auxiliaryValue;
     AsBpDrawObject800BC91C(obj)->scaleX = kBpScaleOne;
     BP_STATE(obj)->channels[kScaleXChannel].baseValue = kBpScaleOne;
-    AsBpDrawObject800BC91C(obj)->scaleY = kBpScaleOne; BP_STATE(obj)->channels[kScaleYChannel].baseValue = kBpScaleOne;
+    AsBpDrawObject800BC91C(obj)->scaleY = kBpScaleOne;
+    BP_STATE(obj)->channels[kScaleYChannel].baseValue = kBpScaleOne;
     AsBpDrawObject800BC91C(obj)->pivotX = 0;
     BP_STATE(obj)->channels[kPivotXChannel].baseValue = 0;
-    AsBpDrawObject800BC91C(obj)->pivotY = 0; BP_STATE(obj)->channels[kPivotYChannel].baseValue = 0;
-    BP_STATE(obj)->channels[kClipChannel].value = -1; BP_STATE(obj)->channels[kClipChannel].baseValue = -1;
+    AsBpDrawObject800BC91C(obj)->pivotY = 0;
+    BP_STATE(obj)->channels[kPivotYChannel].baseValue = 0;
+    BP_STATE(obj)->channels[kClipChannel].value = -1;
+    BP_STATE(obj)->channels[kClipChannel].baseValue = -1;
     // Phase 3: append only new objects; reused objects already have a list entry.
     if (!alreadyExists) {
-        void **head = (void **)(record + 0x30);
-        if (!*head) *head = obj;
+        void** head = (void**)(record + 0x30);
+        if (!*head)
+            *head = obj;
         else {
-            void **node = (void **)*head;
-            while (node[5]) node = (void **)node[5];
+            void** node = (void**)*head;
+            while (node[5])
+                node = (void**)node[5];
             node[5] = obj;
         }
     }
-    return *(short *)obj;
+    return *(short*)obj;
 }
 }
 #pragma pop
@@ -288,24 +337,32 @@ int BpCtrl_CreateDrawObject(int index, int objectKey, int image, int sourceX, in
 #pragma use_lmw_stmw on
 extern "C" {
 // Create or reuse a data-driven sprite with pixel dimensions and default animation channels.
-int BpCtrl_CreateDrawObjectFromData(int index, int objectKey, int *base, int sourceWidth, int sourceHeight, int auxiliaryValue) { unsigned char *record;
+int BpCtrl_CreateDrawObjectFromData(int index, int objectKey, int* base, int sourceWidth, int sourceHeight,
+                                    int auxiliaryValue) {
+    unsigned char* record;
     int alreadyExists;
 
     if (0 > index || kBpSlotCount <= index) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpInvalidSlotSourceLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpInvalidSlotSourceLine,
+                                bpControllerCallbackDiagnosticStrings);
         record = 0;
     } else {
-        record = (unsigned char *)s_bpObjectEntries + index * sizeof(BpSlotResetView);
-        if (*(int *)record == -1) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpUnregisteredSlotSourceLine, bpControllerCallbackDiagnosticStrings);
+        record = (unsigned char*)s_bpObjectEntries + index * sizeof(BpSlotResetView);
+        if (*(int*)record == -1) {
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpUnregisteredSlotSourceLine,
+                                    bpControllerCallbackDiagnosticStrings);
             record = 0;
         }
     }
-    if (record == 0) return -1;
-    int *obj = (int *)BpCtrl_FindOrAllocObject(record, objectKey, &alreadyExists);
+    if (record == 0)
+        return -1;
+    int* obj = (int*)BpCtrl_FindOrAllocObject(record, objectKey, &alreadyExists);
     // 0x800BCB8C: Initialize the allocated object before the shared result check.
     do {
-        if (obj == 0) { obj = 0; break; }
+        if (obj == 0) {
+            obj = 0;
+            break;
+        }
         unsigned int z = 0;
         BP_STATE(obj)->flags = z;
         BP_STATE(obj)->key = objectKey;
@@ -314,39 +371,58 @@ int BpCtrl_CreateDrawObjectFromData(int index, int objectKey, int *base, int sou
         // 18 slots of 0x18 bytes (the original compiler unrolled this loop by two, which is
         // why it looks like 9 steps of 0x30): slot i takes its value from the table entry whose key is i.
         int i;
-        char *p = (char *)obj;
+        char* p = (char*)obj;
         for (i = 0; i < kBpChannelsPerSprite; p += kBpChannelBytes, ++i) {
-            BP_STATE(p)->channels[0].animationState = 0; BP_STATE(p)->channels[0].animationData = 0;
-            BP_STATE(p)->channels[0].propertyAddress = 0; BP_STATE(p)->channels[0].baseValue = 0;
-            BP_STATE(p)->channels[0].value = 0; BP_STATE(p)->channels[0].mode = 0;
+            BP_STATE(p)->channels[0].animationState = 0;
+            BP_STATE(p)->channels[0].animationData = 0;
+            BP_STATE(p)->channels[0].propertyAddress = 0;
+            BP_STATE(p)->channels[0].baseValue = 0;
+            BP_STATE(p)->channels[0].value = 0;
+            BP_STATE(p)->channels[0].mode = 0;
             int j;
-            int *entry = bpChannelDefaultOverrides;
+            int* entry = bpChannelDefaultOverrides;
             for (j = 0; entry[0] > 0; entry += 2, ++j)
-                if (i == entry[0]) { BP_STATE(p)->channels[0].mode = bpChannelDefaultOverrides[2 * j + 1]; break; }
+                if (i == entry[0]) {
+                    BP_STATE(p)->channels[0].mode = bpChannelDefaultOverrides[2 * j + 1];
+                    break;
+                }
         }
     } while (0);
 
-    if (obj == 0) return -1;
+    if (obj == 0)
+        return -1;
     int data = *base;
     BP_STATE(obj)->flags |= kBpModeFlag1;
     AsBpDrawObject800BC91C(obj)->sourceX = data;
     BP_STATE(obj)->channels[kSourceXChannel].baseValue = data;
-    AsBpDrawObject800BC91C(obj)->sourceWidth = sourceWidth; BP_STATE(obj)->channels[kWidthChannel].baseValue = sourceWidth;
-    AsBpDrawObject800BC91C(obj)->sourceHeight = sourceHeight; BP_STATE(obj)->channels[kHeightChannel].baseValue = sourceHeight;
-    BP_STATE(obj)->channels[kAuxiliaryChannel].value = auxiliaryValue; BP_STATE(obj)->channels[kAuxiliaryChannel].baseValue = auxiliaryValue;
-    AsBpDrawObject800BC91C(obj)->scaleX = kBpScaleOne; BP_STATE(obj)->channels[kScaleXChannel].baseValue = kBpScaleOne;
+    AsBpDrawObject800BC91C(obj)->sourceWidth = sourceWidth;
+    BP_STATE(obj)->channels[kWidthChannel].baseValue = sourceWidth;
+    AsBpDrawObject800BC91C(obj)->sourceHeight = sourceHeight;
+    BP_STATE(obj)->channels[kHeightChannel].baseValue = sourceHeight;
+    BP_STATE(obj)->channels[kAuxiliaryChannel].value = auxiliaryValue;
+    BP_STATE(obj)->channels[kAuxiliaryChannel].baseValue = auxiliaryValue;
+    AsBpDrawObject800BC91C(obj)->scaleX = kBpScaleOne;
+    BP_STATE(obj)->channels[kScaleXChannel].baseValue = kBpScaleOne;
     AsBpDrawObject800BC91C(obj)->scaleY = kBpScaleOne;
     BP_STATE(obj)->channels[kScaleYChannel].baseValue = kBpScaleOne;
-    AsBpDrawObject800BC91C(obj)->pivotX = 0; BP_STATE(obj)->channels[kPivotXChannel].baseValue = 0;
-    AsBpDrawObject800BC91C(obj)->pivotY = 0; BP_STATE(obj)->channels[kPivotYChannel].baseValue = 0;
+    AsBpDrawObject800BC91C(obj)->pivotX = 0;
+    BP_STATE(obj)->channels[kPivotXChannel].baseValue = 0;
+    AsBpDrawObject800BC91C(obj)->pivotY = 0;
+    BP_STATE(obj)->channels[kPivotYChannel].baseValue = 0;
     BP_STATE(obj)->channels[kClipChannel].value = -1;
     BP_STATE(obj)->channels[kClipChannel].baseValue = -1;
     if (!alreadyExists) {
-        void **head = (void **)(record + 0x30);
-        if (!*head) *head = obj;
-        else { void **node = (void **)*head; while (node[5]) node = (void **)node[5]; node[5] = obj; }
+        void** head = (void**)(record + 0x30);
+        if (!*head)
+            *head = obj;
+        else {
+            void** node = (void**)*head;
+            while (node[5])
+                node = (void**)node[5];
+            node[5] = obj;
+        }
     }
-    return *(short *)obj;
+    return *(short*)obj;
 }
 }
 #pragma pop
@@ -356,66 +432,88 @@ int BpCtrl_CreateDrawObjectFromData(int index, int objectKey, int *base, int sou
 #pragma use_lmw_stmw on
 extern "C" {
 // Create or reuse a mode-2 sprite and apply its caller data and dimensions.
-int BpCtrl_CreateDrawObjectFlag2(int index, int objectKey, int sourceWidth, int sourceHeight, int auxiliaryValue, int userData) {
-    unsigned char *record;
-    void *obj;
+int BpCtrl_CreateDrawObjectFlag2(int index, int objectKey, int sourceWidth, int sourceHeight, int auxiliaryValue,
+                                 int userData) {
+    unsigned char* record;
+    void* obj;
     int alreadyExists;
 
     if (0 > index || kBpSlotCount <= index) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpInvalidSlotSourceLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpInvalidSlotSourceLine,
+                                bpControllerCallbackDiagnosticStrings);
         record = 0;
     } else {
-        record = (unsigned char *)s_bpObjectEntries + index * sizeof(BpSlotResetView);
-        if (*(int *)record == -1) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpUnregisteredSlotSourceLine, bpControllerCallbackDiagnosticStrings);
+        record = (unsigned char*)s_bpObjectEntries + index * sizeof(BpSlotResetView);
+        if (*(int*)record == -1) {
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpUnregisteredSlotSourceLine,
+                                    bpControllerCallbackDiagnosticStrings);
             record = 0;
         }
     }
-    if (record == 0) return -1;
+    if (record == 0)
+        return -1;
 
-    obj = (void *)BpCtrl_FindOrAllocObject(record, objectKey, &alreadyExists);
+    obj = (void*)BpCtrl_FindOrAllocObject(record, objectKey, &alreadyExists);
     // 0x800BCDF0: Initialize the allocated object before the shared result check.
     do {
-        if (0 == obj) { obj = 0; break; }
+        if (0 == obj) {
+            obj = 0;
+            break;
+        }
         BP_STATE(obj)->flags = 0;
         BP_STATE(obj)->key = objectKey;
         (*(int*)&BP_STATE(obj)->next) = 0;
         BP_STATE(obj)->userData = userData;
         int i;
-        char *p = (char *)obj;
+        char* p = (char*)obj;
         for (i = 0; i < kBpChannelsPerSprite; p += kBpChannelBytes, ++i) {
             BP_STATE(p)->channels[0].animationState = 0;
             BP_STATE(p)->channels[0].animationData = 0;
-            BP_STATE(p)->channels[0].propertyAddress = 0; BP_STATE(p)->channels[0].baseValue = 0;
+            BP_STATE(p)->channels[0].propertyAddress = 0;
+            BP_STATE(p)->channels[0].baseValue = 0;
             BP_STATE(p)->channels[0].value = 0;
             BP_STATE(p)->channels[0].mode = 0;
             int j;
-            int *entry = bpChannelDefaultOverrides;
+            int* entry = bpChannelDefaultOverrides;
             for (j = 0; entry[0] > 0; entry += 2, ++j)
-                if (i == entry[0]) { BP_STATE(p)->channels[0].mode = bpChannelDefaultOverrides[2 * j + 1]; break; }
+                if (i == entry[0]) {
+                    BP_STATE(p)->channels[0].mode = bpChannelDefaultOverrides[2 * j + 1];
+                    break;
+                }
         }
     } while (0);
 
-    if (!obj) return -1;
+    if (!obj)
+        return -1;
     BP_STATE(obj)->flags |= kBpModeFlag2;
-    AsBpDrawObject800BC91C(obj)->sourceWidth = sourceWidth; BP_STATE(obj)->channels[kWidthChannel].baseValue = sourceWidth;
-    AsBpDrawObject800BC91C(obj)->sourceHeight = sourceHeight; BP_STATE(obj)->channels[kHeightChannel].baseValue = sourceHeight;
+    AsBpDrawObject800BC91C(obj)->sourceWidth = sourceWidth;
+    BP_STATE(obj)->channels[kWidthChannel].baseValue = sourceWidth;
+    AsBpDrawObject800BC91C(obj)->sourceHeight = sourceHeight;
+    BP_STATE(obj)->channels[kHeightChannel].baseValue = sourceHeight;
     BP_STATE(obj)->channels[kAuxiliaryChannel].value = auxiliaryValue;
     BP_STATE(obj)->channels[kAuxiliaryChannel].baseValue = auxiliaryValue;
     AsBpDrawObject800BC91C(obj)->scaleX = kBpScaleOne;
     BP_STATE(obj)->channels[kScaleXChannel].baseValue = kBpScaleOne;
     AsBpDrawObject800BC91C(obj)->scaleY = kBpScaleOne;
     BP_STATE(obj)->channels[kScaleYChannel].baseValue = kBpScaleOne;
-    AsBpDrawObject800BC91C(obj)->pivotX = 0; BP_STATE(obj)->channels[kPivotXChannel].baseValue = 0;
+    AsBpDrawObject800BC91C(obj)->pivotX = 0;
+    BP_STATE(obj)->channels[kPivotXChannel].baseValue = 0;
     AsBpDrawObject800BC91C(obj)->pivotY = 0;
     BP_STATE(obj)->channels[kPivotYChannel].baseValue = 0;
-    BP_STATE(obj)->channels[kClipChannel].value = -1; BP_STATE(obj)->channels[kClipChannel].baseValue = -1;
+    BP_STATE(obj)->channels[kClipChannel].value = -1;
+    BP_STATE(obj)->channels[kClipChannel].baseValue = -1;
     if (alreadyExists == 0) {
-        void **tail = (void **)(record + 0x30);
-        if (!*tail) *tail = obj;
-        else { void **p = (void **)*tail; while (p[5]) p = (void **)p[5]; p[5] = obj; }
+        void** tail = (void**)(record + 0x30);
+        if (!*tail)
+            *tail = obj;
+        else {
+            void** p = (void**)*tail;
+            while (p[5])
+                p = (void**)p[5];
+            p[5] = obj;
+        }
     }
-    return *(short *)obj;
+    return *(short*)obj;
 }
 }
 #pragma pop
@@ -426,70 +524,87 @@ int BpCtrl_CreateDrawObjectFlag2(int index, int objectKey, int sourceWidth, int 
 extern "C" {
 // Create or reuse a sprite with both special mode flags and zero dimensions.
 int BpCtrl_CreateDrawObjectFlag3(int index, int objectKey, int userData) {
-    unsigned char * record;
+    unsigned char* record;
     if (0 > index || kBpSlotCount <= index) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpInvalidSlotSourceLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpInvalidSlotSourceLine,
+                                bpControllerCallbackDiagnosticStrings);
         record = 0;
     } else {
-        record = (unsigned char *)s_bpObjectEntries + index * sizeof(BpSlotResetView);
-        if (*(int *)record == -1) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpUnregisteredSlotSourceLine, bpControllerCallbackDiagnosticStrings);
+        record = (unsigned char*)s_bpObjectEntries + index * sizeof(BpSlotResetView);
+        if (*(int*)record == -1) {
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpUnregisteredSlotSourceLine,
+                                    bpControllerCallbackDiagnosticStrings);
             record = 0;
         }
     }
-    if (!record) return -1;
+    if (!record)
+        return -1;
 
-    int alreadyExists; unsigned char *obj = (unsigned char *)BpCtrl_FindOrAllocObject(record, objectKey, &alreadyExists);
+    int alreadyExists;
+    unsigned char* obj = (unsigned char*)BpCtrl_FindOrAllocObject(record, objectKey, &alreadyExists);
     if (obj != 0) {
         BP_STATE(obj)->flags = 0;
-    BP_STATE(obj)->key = objectKey;
+        BP_STATE(obj)->key = objectKey;
         (*(int*)&BP_STATE(obj)->next) = 0;
-    unsigned char *p = obj;
-    BP_STATE(obj)->userData = userData;
-    for (int i = 0; i < kBpChannelsPerSprite / 2; ++i, p += 2 * kBpChannelBytes) {
+        unsigned char* p = obj;
+        BP_STATE(obj)->userData = userData;
+        for (int i = 0; i < kBpChannelsPerSprite / 2; ++i, p += 2 * kBpChannelBytes) {
 
             BP_STATE(p)->channels[0].animationState = 0;
             BP_STATE(p)->channels[0].animationData = 0;
-        BP_STATE(p)->channels[0].propertyAddress = 0;
+            BP_STATE(p)->channels[0].propertyAddress = 0;
             BP_STATE(p)->channels[0].baseValue = 0;
-        BP_STATE(p)->channels[0].value = 0;
-        BP_STATE(p)->channels[0].mode = 0;
-        for (int j = 0; bpChannelDefaultOverrides[j * 2] > 0; ++j)
-            if (2 * i == bpChannelDefaultOverrides[2 * j]) {
-                BP_STATE(p)->channels[0].mode = bpChannelDefaultOverrides[((j * 2) + 1)];
-                break;
-            }
-        BP_STATE(p)->channels[1].animationState = 0;
-        BP_STATE(p)->channels[1].animationData = 0;
-        BP_STATE(p)->channels[1].propertyAddress = 0;
-        BP_STATE(p)->channels[1].baseValue = 0;
+            BP_STATE(p)->channels[0].value = 0;
+            BP_STATE(p)->channels[0].mode = 0;
+            for (int j = 0; bpChannelDefaultOverrides[j * 2] > 0; ++j)
+                if (2 * i == bpChannelDefaultOverrides[2 * j]) {
+                    BP_STATE(p)->channels[0].mode = bpChannelDefaultOverrides[((j * 2) + 1)];
+                    break;
+                }
+            BP_STATE(p)->channels[1].animationState = 0;
+            BP_STATE(p)->channels[1].animationData = 0;
+            BP_STATE(p)->channels[1].propertyAddress = 0;
+            BP_STATE(p)->channels[1].baseValue = 0;
             BP_STATE(p)->channels[1].value = 0;
-        BP_STATE(p)->channels[1].mode = 0;
-        for (int j = 0; bpChannelDefaultOverrides[j * 2] > 0; ++j)
-            if (2 * i + 1 == bpChannelDefaultOverrides[2 * j]) { BP_STATE(p)->channels[1].mode = bpChannelDefaultOverrides[2 * j + 1]; break; }
+            BP_STATE(p)->channels[1].mode = 0;
+            for (int j = 0; bpChannelDefaultOverrides[j * 2] > 0; ++j)
+                if (2 * i + 1 == bpChannelDefaultOverrides[2 * j]) {
+                    BP_STATE(p)->channels[1].mode = bpChannelDefaultOverrides[2 * j + 1];
+                    break;
+                }
+        }
     }
-    }
-    if (obj == 0) return -1;
-    *(short *)((obj + 2)) |= 3;
-    AsBpDrawObject800BC91C(obj)->sourceWidth = 0; BP_STATE(obj)->channels[kWidthChannel].baseValue = 0;
-    AsBpDrawObject800BC91C(obj)->sourceHeight = 0; BP_STATE(obj)->channels[kHeightChannel].baseValue = 0;
-    BP_STATE(obj)->channels[kAuxiliaryChannel].value = 100; BP_STATE(obj)->channels[kAuxiliaryChannel].baseValue = 100;
-    AsBpDrawObject800BC91C(obj)->scaleX = kBpScaleOne; BP_STATE(obj)->channels[kScaleXChannel].baseValue = kBpScaleOne;
+    if (obj == 0)
+        return -1;
+    *(short*)((obj + 2)) |= 3;
+    AsBpDrawObject800BC91C(obj)->sourceWidth = 0;
+    BP_STATE(obj)->channels[kWidthChannel].baseValue = 0;
+    AsBpDrawObject800BC91C(obj)->sourceHeight = 0;
+    BP_STATE(obj)->channels[kHeightChannel].baseValue = 0;
+    BP_STATE(obj)->channels[kAuxiliaryChannel].value = 100;
+    BP_STATE(obj)->channels[kAuxiliaryChannel].baseValue = 100;
+    AsBpDrawObject800BC91C(obj)->scaleX = kBpScaleOne;
+    BP_STATE(obj)->channels[kScaleXChannel].baseValue = kBpScaleOne;
     AsBpDrawObject800BC91C(obj)->scaleY = kBpScaleOne;
     BP_STATE(obj)->channels[kScaleYChannel].baseValue = kBpScaleOne;
-    AsBpDrawObject800BC91C(obj)->pivotX = 0; BP_STATE(obj)->channels[kPivotXChannel].baseValue = 0;
-    AsBpDrawObject800BC91C(obj)->pivotY = 0; BP_STATE(obj)->channels[kPivotYChannel].baseValue = 0;
-    BP_STATE(obj)->channels[kClipChannel].value = BP_STATE(obj)->key; BP_STATE(obj)->channels[kClipChannel].baseValue = BP_STATE(obj)->key;
+    AsBpDrawObject800BC91C(obj)->pivotX = 0;
+    BP_STATE(obj)->channels[kPivotXChannel].baseValue = 0;
+    AsBpDrawObject800BC91C(obj)->pivotY = 0;
+    BP_STATE(obj)->channels[kPivotYChannel].baseValue = 0;
+    BP_STATE(obj)->channels[kClipChannel].value = BP_STATE(obj)->key;
+    BP_STATE(obj)->channels[kClipChannel].baseValue = BP_STATE(obj)->key;
     if (!alreadyExists) {
-        void **head = (void **)(record + 0x30);
-        if (!*head) *head = obj;
+        void** head = (void**)(record + 0x30);
+        if (!*head)
+            *head = obj;
         else {
-            void **node = (void **)*head;
-            while (node[5]) node = (void **)node[5];
+            void** node = (void**)*head;
+            while (node[5])
+                node = (void**)node[5];
             node[5] = obj;
         }
     }
-    return *(short *)obj;
+    return *(short*)obj;
 }
 }
 #pragma pop
@@ -500,25 +615,28 @@ int BpCtrl_CreateDrawObjectFlag3(int index, int objectKey, int userData) {
 extern "C" {
 // Reset one registered slot without freeing its borrowed sprite or auxiliary pools.
 int BpObject_ClearWorkBuffers(int index) {
-    unsigned char * record;
+    unsigned char* record;
     if (index < 0 || index >= kBpSlotCount) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpInvalidSlotSourceLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpInvalidSlotSourceLine,
+                                bpControllerCallbackDiagnosticStrings);
         record = 0;
     } else {
-        record = (unsigned char *)s_bpObjectEntries + index * sizeof(BpSlotResetView);
-        if (*(int *)record == -1) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpUnregisteredSlotSourceLine, bpControllerCallbackDiagnosticStrings);
+        record = (unsigned char*)s_bpObjectEntries + index * sizeof(BpSlotResetView);
+        if (*(int*)record == -1) {
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kBpUnregisteredSlotSourceLine,
+                                    bpControllerCallbackDiagnosticStrings);
             record = 0;
         }
     }
-    if (record == 0) return -1;
+    if (record == 0)
+        return -1;
     // Phase 1: invalidate auxiliary work records; the pool remains allocated.
     if (((BpSlotResetView*)record)->auxiliaryWork != 0) {
-        int * entry;
+        int* entry;
         int off;
         int i;
         for (i = 0, off = 0; i < ((BpSlotResetView*)record)->auxiliaryCount; ++i, off += 0x10) {
-            entry = (int *)((char*)((BpSlotResetView*)record)->auxiliaryWork + off);
+            entry = (int*)((char*)((BpSlotResetView*)record)->auxiliaryWork + off);
             entry[2] = -1;
             entry[3] = 0;
             entry[1] = 0;
@@ -551,12 +669,12 @@ int BpObject_ClearWorkBuffers(int index) {
 #pragma use_lmw_stmw reset
 extern "C" {
 // Register borrowed sprite and auxiliary storage, then reset the slot.
-int BpSlot_RegisterWork(int index, int start, int count, const char *auxiliaryCountWord) {
+int BpSlot_RegisterWork(int index, int start, int count, const char* auxiliaryCountWord) {
     if (index < 0 || index >= kBpSlotCount) {
         BpCtrl_InvokeGlobalHook(-1, kBpControllerSourceFilename, 0x9F6, bpSlotRegistrationDiagnosticStrings);
         return -1;
     }
-    unsigned int *work = (unsigned int *)((char *)s_bpObjectEntries + index * sizeof(BpSlotResetView));
+    unsigned int* work = (unsigned int*)((char*)s_bpObjectEntries + index * sizeof(BpSlotResetView));
     work[0] = index;
     work[1] = start;
     work[12] = 0;
@@ -574,12 +692,11 @@ int BpSlot_RegisterWork(int index, int start, int count, const char *auxiliaryCo
 #pragma push
 #pragma dont_inline on
 #pragma use_lmw_stmw reset
-extern "C" {
 // Reset all controller slots and global sprite draw callbacks.
-int CBpCtrl_InitializeObjectEntries() {
+int CBpCtrl::InitializeObjectEntries() {
     g_valueAnimationUpdateMode = 1;
     memset(s_bpObjectEntries, 0, 0x820);
-    unsigned int *p = s_bpObjectEntries;
+    unsigned int* p = s_bpObjectEntries;
     for (int i = 0; i < 5; ++i) {
         p[0] = 0xFFFFFFFF;
         p[9] = 0x80;
@@ -604,7 +721,6 @@ int CBpCtrl_InitializeObjectEntries() {
     g_bpTileDrawCallback = 0;
     return 0;
 }
-}
 #pragma pop
 
 #pragma push
@@ -623,7 +739,7 @@ void BpSprite_InitFullTurnConstant() {
 #pragma use_lmw_stmw reset
 extern "C" {
 // Compute pixel bounds with separately truncated sprite/parent scales and a full-grid pivot.
-int BpSprite_ComputeUnrotatedRect(int *out, void *sprite, void *parentSprite) {
+int BpSprite_ComputeUnrotatedRect(int* out, void* sprite, void* parentSprite) {
     int parentPositionX, parentPositionY;
     int scaledTileWidth, scaledTileHeight, tileColumns, tileRows;
     int parentScaleX, parentScaleY;
@@ -673,19 +789,23 @@ int BpSprite_ComputeUnrotatedRect(int *out, void *sprite, void *parentSprite) {
 #pragma use_lmw_stmw reset
 extern "C" {
 // Expand pixel bounds into four corners and rotate around the sprite pivot.
-void BpSprite_ComputeRotatedQuad(int *out, void *sprite, void *parentSprite) {
+void BpSprite_ComputeRotatedQuad(int* out, void* sprite, void* parentSprite) {
     int count = AsBpDrawObject800BC91C(sprite)->rotation;
-    if (parentSprite) count += AsBpDrawObject800BC91C(parentSprite)->rotation;
+    if (parentSprite)
+        count += AsBpDrawObject800BC91C(parentSprite)->rotation;
     int r[4];
     BpSprite_ComputeUnrotatedRect(r, sprite, parentSprite);
-    out[0] = r[0]; out[1] = r[1]; out[2] = r[0];
+    out[0] = r[0];
+    out[1] = r[1];
+    out[2] = r[0];
     out[3] = r[1] + r[3];
     out[4] = r[0] + r[2];
     out[5] = r[1] + r[3];
     out[6] = r[0] + r[2];
     out[7] = r[1];
     if (count)
-        Math_RotateIntegerPoints2D(out, 4, r[0] + ((r[2] * AsBpDrawObject800BC91C(sprite)->pivotX) / kBpScaleOne), r[1] + ((r[3] * AsBpDrawObject800BC91C(sprite)->pivotY) / kBpScaleOne), count);
+        Math_RotateIntegerPoints2D(out, 4, r[0] + ((r[2] * AsBpDrawObject800BC91C(sprite)->pivotX) / kBpScaleOne),
+                                   r[1] + ((r[3] * AsBpDrawObject800BC91C(sprite)->pivotY) / kBpScaleOne), count);
 }
 }
 #pragma pop
@@ -695,19 +815,21 @@ void BpSprite_ComputeRotatedQuad(int *out, void *sprite, void *parentSprite) {
 #pragma use_lmw_stmw reset
 extern "C" {
 // Multiply packed color channels with 128 as unity and clamp to bytes.
-unsigned int Color_ModulatePackedChannels(int a, int b) {
+unsigned int Color_ModulatePackedChannels(int colorA, int colorB) {
     float value;
     int bits;
     unsigned int result = 0;
     int i;
     for (i = 0; i < 4; ++i) {
         int shift = (3 - i) * 8;
-        int ca = (unsigned char)(a >> shift);
-        int cb = (unsigned char)(b >> shift);
+        int ca = (unsigned char)(colorA >> shift);
+        int cb = (unsigned char)(colorB >> shift);
         value = (float)ca * (float)cb;
         value *= kFloat_0_0078125_BpColorMultiply;
-        if (value >= kBpColorChannelMaximum) value = kBpColorChannelMaximum;
-        else if (value <= kFloat_0_BpColorMultiply) value = kFloat_0_BpColorMultiply;
+        if (value >= kBpColorChannelMaximum)
+            value = kBpColorChannelMaximum;
+        else if (value <= kFloat_0_BpColorMultiply)
+            value = kFloat_0_BpColorMultiply;
         bits = (int)value;
         result <<= 8;
         result |= (unsigned char)bits;
@@ -722,44 +844,44 @@ unsigned int Color_ModulatePackedChannels(int a, int b) {
 #pragma use_lmw_stmw on
 extern "C" {
 // Draw unrotated tiles in pixel space with inherited fixed-point scale and color.
-void BpSprite_DrawTilesUnrotated(void *self, void *other, int columns, int rows, int x, int y,
-                 int widthScale, int heightScale, int opacityScale) {
-    int flipA, flipB, flipC, flipD;
+void BpSprite_DrawTilesUnrotated(void* self, void* other, int columns, int rows, int x, int y, int widthScale,
+                                 int heightScale, int opacityScale) {
+    int alternateRowX, alternateRowY, alternateColumnX, alternateColumnY;
     int drawOpacity, rowParity, col, stepX, baseX, baseY;
-    int drawCallback, format, width2, height2, sx;
+    int drawCallback, format, drawScaleX, drawScaleY, drawTint;
     int flags;
-    int sy;
-    unsigned char *s = (unsigned char *)self;
-    format = *(int *)(AsBpDrawObject800BC91C(s)->formatProperty + 4) & kBpFormatMask;
-    flags = *(int *)(AsBpDrawObject800BC91C(s)->tileFlipProperty + 4) & kBpTileFlipMask;
+    int combinedOpacity;
+    unsigned char* s = (unsigned char*)self;
+    format = *(int*)(AsBpDrawObject800BC91C(s)->formatProperty + 4) & kBpFormatMask;
+    flags = *(int*)(AsBpDrawObject800BC91C(s)->tileFlipProperty + 4) & kBpTileFlipMask;
     drawCallback = AsBpDrawObject800BC91C(s)->drawRectCallback;
-    width2 = AsBpDrawObject800BC91C(s)->scaleX;
-    height2 = AsBpDrawObject800BC91C(s)->scaleY;
-    sy = AsBpDrawObject800BC91C(s)->opacity;
-    sx = AsBpDrawObject800BC91C(s)->tintColor;
+    drawScaleX = AsBpDrawObject800BC91C(s)->scaleX;
+    drawScaleY = AsBpDrawObject800BC91C(s)->scaleY;
+    combinedOpacity = AsBpDrawObject800BC91C(s)->opacity;
+    drawTint = AsBpDrawObject800BC91C(s)->tintColor;
     drawCallback = drawCallback ? drawCallback : Bp_GetDefaultRectDrawCallback();
     int bounds[4];
     BpSprite_ComputeUnrotatedRect(bounds, self, other);
-    int w = (AsBpDrawObject800BC91C(s)->sourceWidth * AsBpDrawObject800BC91C(s)->scaleX) / kBpScaleOne;
-    stepX = (w * widthScale) / kBpScaleOne;
-    int h = (AsBpDrawObject800BC91C(s)->sourceHeight * AsBpDrawObject800BC91C(s)->scaleY) / kBpScaleOne;
-    int stepY = (h * heightScale) / kBpScaleOne;
+    int scaledWidth = (AsBpDrawObject800BC91C(s)->sourceWidth * AsBpDrawObject800BC91C(s)->scaleX) / kBpScaleOne;
+    stepX = (scaledWidth * widthScale) / kBpScaleOne;
+    int scaledHeight = (AsBpDrawObject800BC91C(s)->sourceHeight * AsBpDrawObject800BC91C(s)->scaleY) / kBpScaleOne;
+    int stepY = (scaledHeight * heightScale) / kBpScaleOne;
     if (other) {
-        unsigned char *o = (unsigned char *)other;
-        width2 = (width2 * AsBpDrawObject800BC91C(o)->scaleX) / kBpScaleOne;
-        height2 = (height2 * AsBpDrawObject800BC91C(o)->scaleY) / kBpScaleOne;
-        sy = (sy * AsBpDrawObject800BC91C(o)->opacity) / kBpColorOne;
-        sx = Color_ModulatePackedChannels(sx, AsBpDrawObject800BC91C(o)->tintColor);
+        unsigned char* o = (unsigned char*)other;
+        drawScaleX = (drawScaleX * AsBpDrawObject800BC91C(o)->scaleX) / kBpScaleOne;
+        drawScaleY = (drawScaleY * AsBpDrawObject800BC91C(o)->scaleY) / kBpScaleOne;
+        combinedOpacity = (combinedOpacity * AsBpDrawObject800BC91C(o)->opacity) / kBpColorOne;
+        drawTint = Color_ModulatePackedChannels(drawTint, AsBpDrawObject800BC91C(o)->tintColor);
         stepX = (stepX * AsBpDrawObject800BC91C(o)->scaleX) / kBpScaleOne;
         stepY = (stepY * AsBpDrawObject800BC91C(o)->scaleY) / kBpScaleOne;
     }
-    int tileProduct = sy * opacityScale;
+    int tileProduct = combinedOpacity * opacityScale;
     baseX = bounds[0] + x;
     baseY = bounds[1] + y;
-    flipA = flags & kBpAlternateRowX;
-    flipB = flags & kBpAlternateRowY;
-    flipC = flags & kBpAlternateColumnX;
-    flipD = flags & kBpAlternateColumnY;
+    alternateRowX = flags & kBpAlternateRowX;
+    alternateRowY = flags & kBpAlternateRowY;
+    alternateColumnX = flags & kBpAlternateColumnX;
+    alternateColumnY = flags & kBpAlternateColumnY;
     drawOpacity = tileProduct / kBpColorOne;
     typedef void (*Draw)(int, int, int, int, int, int, int, int, int, int, int, int);
     for (int row = 0; row < rows; ++row) {
@@ -768,17 +890,23 @@ void BpSprite_DrawTilesUnrotated(void *self, void *other, int columns, int rows,
         for (col = 0; col < columns; ++col) {
             int f = format;
             if (rowParity == 1) {
-                if (flipA) f ^= kBpFlipHorizontal;
-                if (flipB) f ^= kBpFlipVertical;
+                if (alternateRowX)
+                    f ^= kBpFlipHorizontal;
+                if (alternateRowY)
+                    f ^= kBpFlipVertical;
             }
             int colParity = ((col & 1) ^ (col < 0)) - (col < 0);
             if (colParity == 1) {
-                if (flipC) f ^= kBpFlipHorizontal;
-                if (flipD) f ^= kBpFlipVertical;
+                if (alternateColumnX)
+                    f ^= kBpFlipHorizontal;
+                if (alternateColumnY)
+                    f ^= kBpFlipVertical;
             }
-            ((Draw)drawCallback)(AsBpDrawObject800BC91C(s)->image, AsBpDrawObject800BC91C(s)->sourceX, AsBpDrawObject800BC91C(s)->sourceY,
-                 AsBpDrawObject800BC91C(s)->sourceWidth, AsBpDrawObject800BC91C(s)->sourceHeight, baseX, baseY, width2, height2,
-                 drawOpacity, sx, f | (*(int *)(AsBpDrawObject800BC91C(s)->blendProperty + 4) & 0xF0));
+            ((Draw)drawCallback)(AsBpDrawObject800BC91C(s)->image, AsBpDrawObject800BC91C(s)->sourceX,
+                                 AsBpDrawObject800BC91C(s)->sourceY, AsBpDrawObject800BC91C(s)->sourceWidth,
+                                 AsBpDrawObject800BC91C(s)->sourceHeight, baseX, baseY, drawScaleX, drawScaleY,
+                                 drawOpacity, drawTint,
+                                 f | (*(int*)(AsBpDrawObject800BC91C(s)->blendProperty + 4) & 0xF0));
             baseX += stepX;
         }
         baseX = startX;
@@ -793,24 +921,23 @@ void BpSprite_DrawTilesUnrotated(void *self, void *other, int columns, int rows,
 #pragma use_lmw_stmw on
 extern "C" {
 // Subdivide a rotated quadrilateral and apply row/column flip policies.
-void BpSprite_DrawTilesRotated(void *self, void *other, int columnCount, int rowCount,
-                 int startX, int startY, int widthScale, int heightScale,
-                 int opacityScale) {
-    typedef void (*Draw)(int, int *, int *, int, int, int);
-    int flipA;
+void BpSprite_DrawTilesRotated(void* self, void* other, int columnCount, int rowCount, int startX, int startY,
+                               int widthScale, int heightScale, int opacityScale) {
+    typedef void (*Draw)(int, int*, int*, int, int, int);
+    int alternateRowX;
     int dRY, dRX, LYr;
     int row, col, format, tintColor;
-    unsigned char *s = (unsigned char *)self;
+    unsigned char* s = (unsigned char*)self;
     int rowNext;
-    int flipB, flipC, flipD, scaledColor, rowParity;
+    int alternateRowY, alternateColumnX, alternateColumnY, drawOpacity, rowParity;
     Draw drawFn;
-    int otherScale, flags;
+    int combinedOpacity, flags;
     int LXr, LXr1, dXr1, LYr1, dYr1;
     int dX0, dX1, dY0, dY1;
-    format = (*(int *)(AsBpDrawObject800BC91C(s)->formatProperty + 4)) & kBpFormatMask;
-    flags = (*(int *)(AsBpDrawObject800BC91C(s)->tileFlipProperty + 4)) & kBpTileFlipMask;
-    drawFn = *(Draw *)&AsBpDrawObject800BC91C(s)->drawQuadCallback;
-    otherScale = AsBpDrawObject800BC91C(s)->opacity;
+    format = (*(int*)(AsBpDrawObject800BC91C(s)->formatProperty + 4)) & kBpFormatMask;
+    flags = (*(int*)(AsBpDrawObject800BC91C(s)->tileFlipProperty + 4)) & kBpTileFlipMask;
+    drawFn = *(Draw*)&AsBpDrawObject800BC91C(s)->drawQuadCallback;
+    combinedOpacity = AsBpDrawObject800BC91C(s)->opacity;
     tintColor = AsBpDrawObject800BC91C(s)->tintColor;
     drawFn = drawFn ? drawFn : (Draw)BpCtrl_GetTexturedQuadCallback();
     int bounds[8];
@@ -824,29 +951,29 @@ void BpSprite_DrawTilesRotated(void *self, void *other, int columnCount, int row
     bounds[6] = startX + (widthScale * bounds[6]) / kBpScaleOne;
     bounds[7] = startY + (heightScale * bounds[7]) / kBpScaleOne;
     if (other) {
-        otherScale = (otherScale * AsBpDrawObject800BC91C(other)->opacity) / kBpColorOne;
+        combinedOpacity = (combinedOpacity * AsBpDrawObject800BC91C(other)->opacity) / kBpColorOne;
         tintColor = Color_ModulatePackedChannels(tintColor, AsBpDrawObject800BC91C(other)->tintColor);
     }
-    int colorProduct = otherScale * opacityScale;
-    flipA = flags & kBpAlternateRowX;
-    flipB = flags & kBpAlternateRowY;
-    flipC = flags & kBpAlternateColumnX;
-    flipD = flags & kBpAlternateColumnY;
-    int w = AsBpDrawObject800BC91C(s)->sourceWidth;
-    int x0 = AsBpDrawObject800BC91C(s)->sourceX;
-    int h = AsBpDrawObject800BC91C(s)->sourceHeight;
+    int colorProduct = combinedOpacity * opacityScale;
+    alternateRowX = flags & kBpAlternateRowX;
+    alternateRowY = flags & kBpAlternateRowY;
+    alternateColumnX = flags & kBpAlternateColumnX;
+    alternateColumnY = flags & kBpAlternateColumnY;
+    int sourceWidth = AsBpDrawObject800BC91C(s)->sourceWidth;
+    int sourceX = AsBpDrawObject800BC91C(s)->sourceX;
+    int sourceHeight = AsBpDrawObject800BC91C(s)->sourceHeight;
     int dst[8];
-    dst[0] = x0;
-    int right = x0 + w;
-    int y0 = AsBpDrawObject800BC91C(s)->sourceY;
-    scaledColor = colorProduct / kBpColorOne;
-    dst[1] = y0;
-    dst[2] = x0;
-    dst[3] = y0 + h;
+    dst[0] = sourceX;
+    int right = sourceX + sourceWidth;
+    int sourceY = AsBpDrawObject800BC91C(s)->sourceY;
+    drawOpacity = colorProduct / kBpColorOne;
+    dst[1] = sourceY;
+    dst[2] = sourceX;
+    dst[3] = sourceY + sourceHeight;
     dst[4] = right;
-    dst[5] = y0 + h;
+    dst[5] = sourceY + sourceHeight;
     dst[6] = right;
-    dst[7] = y0;
+    dst[7] = sourceY;
     for (row = 0; row < rowCount; ++row) {
         rowParity = ((row & 1) ^ (row < 0)) - (row < 0);
         rowNext = row + 1;
@@ -876,16 +1003,20 @@ void BpSprite_DrawTilesRotated(void *self, void *other, int columnCount, int row
             src[6] = LXr + (dRX * (col + 1)) / columnCount;
             int f = format;
             if (rowParity == 1) {
-                if (flipA) f ^= kBpFlipHorizontal;
-                if (flipB) f ^= kBpFlipVertical;
+                if (alternateRowX)
+                    f ^= kBpFlipHorizontal;
+                if (alternateRowY)
+                    f ^= kBpFlipVertical;
             }
             int colParity = ((col & 1) ^ (col < 0)) - (col < 0);
             if (colParity == 1) {
-                if (flipC) f ^= kBpFlipHorizontal;
-                if (flipD) f ^= kBpFlipVertical;
+                if (alternateColumnX)
+                    f ^= kBpFlipHorizontal;
+                if (alternateColumnY)
+                    f ^= kBpFlipVertical;
             }
-            f |= (*(int *)(AsBpDrawObject800BC91C(s)->blendProperty + 4)) & 0xF0;
-            drawFn(AsBpDrawObject800BC91C(s)->image, src, dst, scaledColor, tintColor, f);
+            f |= (*(int*)(AsBpDrawObject800BC91C(s)->blendProperty + 4)) & 0xF0;
+            drawFn(AsBpDrawObject800BC91C(s)->image, src, dst, drawOpacity, tintColor, f);
         }
     }
 }
@@ -897,8 +1028,8 @@ void BpSprite_DrawTilesRotated(void *self, void *other, int columnCount, int row
 #pragma use_lmw_stmw reset
 extern "C" {
 // Dispatch tile drawing with the combined sprite and parent rotation.
-int BpSprite_DrawTiles(void *self, void *other, int startX, int startY, int widthScale,
-                int heightScale, int opacityScale, int unused) {
+int BpSprite_DrawTiles(void* self, void* other, int startX, int startY, int widthScale, int heightScale,
+                       int opacityScale, int unused) {
     int rotation;
     int x;
     int y;
@@ -914,11 +1045,9 @@ int BpSprite_DrawTiles(void *self, void *other, int startX, int startY, int widt
     x = (sx ^ x) - sx;
     y = (sy ^ y) - sy;
     if (rotation != 0)
-        BpSprite_DrawTilesRotated(self, other, x, y,
-                    startX, startY, widthScale, heightScale, opacityScale);
+        BpSprite_DrawTilesRotated(self, other, x, y, startX, startY, widthScale, heightScale, opacityScale);
     else
-        BpSprite_DrawTilesUnrotated(self, other, x, y,
-                    startX, startY, widthScale, heightScale, opacityScale);
+        BpSprite_DrawTilesUnrotated(self, other, x, y, startX, startY, widthScale, heightScale, opacityScale);
     return 0;
 }
 }

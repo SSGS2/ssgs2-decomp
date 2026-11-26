@@ -1,3 +1,8 @@
+// The unplayable-ball drop sequence: the controller's state machine that picks a
+// drop point, shows the drop camera and then places the ball. The unit also holds
+// the float tween and flash-debug helpers it shares, the shared model-preview
+// render parameters, and the exhibition camera-preset getters.
+#include "classes/GtlIGenericEnvironmentResource.h"
 #include <decomp/static_init.h>
 #include "classes/ExhibitionModelPositionRecord.h"
 #include "classes/FloatTween.h"
@@ -7,17 +12,36 @@
 #include "game/golfball.h"
 #include "game/wvector.h"
 #include "classes/CComUnplayable.h"
+#include "classes/CExhibition.h"
+#include "classes/CFlashMemoryDebug.h"
+#include "classes/CQuadTree.h"
+#include "classes/CSharedFileHandle.h"
+#include "classes/CSharedFilePtr.h"
+#include "classes/CRival.h"
 
-#define AsCComUnplayable(p) ((CComUnplayable*)(p))
-// Translation unit 0x8029B6B0-0x8029BFC0 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
-enum DropSequenceState { kChooseDropPosition = 0, kWaitForDropCamera = 1, kDropSequenceIdle = 2 };
-enum TweenMode { kKeepTweenMode = -1, kTweenLinear = 0, kTweenSineOut = 1, kTweenCosineIn = 2 };
-enum { kDropCameraHoldMs = 3000, kShowDropCameraRequest = 0x2E, kPlaceBallRequest = 0x11,
-       kGenericLightRecordBytes = 0x88,
-       kUnplayableTipIndex = 6, kModelRenderParameterBytes = 0x68, kDefaultModelRenderMode = 3 };
-struct DropActorNames { char screen[7], golfRule[9]; };
+enum DropSequenceState {
+    kChooseDropPosition = 0,
+    kWaitForDropCamera = 1,
+    kDropSequenceIdle = 2
+};
+enum TweenMode {
+    kKeepTweenMode = -1,
+    kTweenLinear = 0,
+    kTweenSineOut = 1,
+    kTweenCosineIn = 2
+};
+enum {
+    kDropCameraHoldMs = 3000,
+    kShowDropCameraRequest = 0x2E,
+    kPlaceBallRequest = 0x11,
+    kGenericLightRecordBytes = 0x88,
+    kUnplayableTipIndex = 6,
+    kModelRenderParameterBytes = 0x68,
+    kDefaultModelRenderMode = 3
+};
+struct DropActorNames {
+    char screen[7], golfRule[9];
+};
 extern "C" {
 
 extern float kFloat_6_2831855;
@@ -43,7 +67,7 @@ extern CSharedDoc* g_sharedDoc;
 extern char s_flashMemoryDebugInitialized;
 extern char s_sharedModelRenderParamsInitialized;
 extern char s_flashMemoryDebugDtorRegistration[];
-extern char s_flashMemoryDebug[];
+extern CFlashMemoryDebug s_flashMemoryDebug;
 extern char s_sharedModelRenderParamsDtorRegistration[];
 extern char s_sharedModelRenderParams[];
 extern void* Table_GetEntry(void*, int);
@@ -53,15 +77,11 @@ extern void GolfTips_ShowIndexedMessage(int, int, int, float, float);
 extern void Memory_Clear(void*, int);
 extern void __register_global_object(void*, void*, void*);
 extern void* ModelRenderParams_DeletingDtor(void*, int);
-extern void* CFlashMemoryDebug_dtor(void*, int);
+extern void* __dt__17CFlashMemoryDebugFv(void*, int);
 extern float Math_SinApprox(float);
 extern float Math_CosApprox(float);
 extern void* SharedFile_Create(const char*, int);
 extern void* CSharedFilePtr_GetLoadedBuffer(void*);
-extern void* CSharedFilePtr_GetSize(void*);
-extern void gtl_IGenericEnvironmentResource_CreateFromMemory(void*, void*, void**);
-extern void CSharedFileHandle_Destroy(void*, int);
-extern void gtl_IGenericEnvironmentResource_GetLightCount(void*, int*);
 extern void* __nwa__FUl(int);
 extern void gtl_IGenericEnvironmentResource_CopyLights(void*, void*, int);
 extern void gtl_GenericLight_GetDescription(void*, void*);
@@ -69,11 +89,9 @@ extern void __dla__FPv(void*);
 extern void ComUnplayable_FindDropCandidate(void*, void*);
 extern void __as__7WVectorFRC7WVector(void*, void*);
 extern void* CQuadTree_GetInstance(void);
-extern void CQuadTree_AdjustPointToRegionAndGroundClearance(void*, void*, void*);
 extern void* Object_GetChild(void*);
 extern void* TaskActorTable_FindByName(void*, void*);
 extern unsigned int OS_GetTimeMilliseconds(void);
-extern void CRival_ResetShotThinkingState(void*);
 
 // Initialize this linked unit's cached full-turn angle.
 void InitializeTwoPi_8029B6B0(void) {
@@ -91,8 +109,8 @@ void InitializeTwoPi_8029B8FC(void) {
 }
 
 // Mark the unplayable-ball drop controller idle.
-void CComUnplayable_ResetToIdle(int* x) {
-    ((CComUnplayable*)x)->state = kDropSequenceIdle;
+void CComUnplayable::ResetToIdle() {
+    state = kDropSequenceIdle;
 }
 
 // Initialize this linked unit's cached full-turn angle.
@@ -106,15 +124,16 @@ void InitializeTwoPi_8029BBF8(void) {
 }
 
 // Attach the rival and drop-position thinker; begin with no pending drop.
-void CComUnplayable_Ctor(void* self, int rival, int dropThinker) {
-    AsCComUnplayable(self)->state = kDropSequenceIdle;
-    *(void**)self = (void*)__vt__14CComUnplayable;
-    AsCComUnplayable(self)->shotPositionThinker = dropThinker;
-    AsCComUnplayable(self)->rival = rival;
+CComUnplayable::CComUnplayable(int rival, int dropThinker) {
+    state = kDropSequenceIdle;
+    *(void**)this = (void*)__vt__14CComUnplayable;
+    shotPositionThinker = dropThinker;
+    this->rival = rival;
 }
 
 // Report whether an unplayable-ball drop sequence is active.
-int CComUnplayable_IsDropSequenceActive(int* x) {
+int CComUnplayable::IsDropSequenceActive() {
+    int* x = (int*)this;
     return ((CComUnplayable*)x)->state != kDropSequenceIdle;
 }
 
@@ -124,9 +143,12 @@ void InitializeTwoPi_8029BDF4(void) {
 }
 
 // Begin an idle drop sequence and display the unplayable-ball tip.
-int CComUnplayable_BeginDropSequence(int* __restrict p) {
-    if (((CComUnplayable*)p)->state != kDropSequenceIdle) return 0;
-    ((CComUnplayable*)p)->state = kChooseDropPosition;
+// Static member taking the controller as a restrict-qualified pointer: that is what
+// lets the original move the constant loads past the state store.
+int CComUnplayable::BeginDropSequence(CComUnplayable* __restrict self) {
+    if (self->state != kDropSequenceIdle)
+        return 0;
+    self->state = kChooseDropPosition;
     GolfTips_ShowIndexedMessage(kUnplayableTipIndex, 0, 0, kFloat_1_5_UnplayableTip, kFloat_0_5_UnplayableTip);
     return 1;
 }
@@ -136,26 +158,28 @@ void* ModelRenderParams_GetShared(void) {
     if (!*(signed char*)&s_sharedModelRenderParamsInitialized) {
         Memory_Clear(s_sharedModelRenderParams, kModelRenderParameterBytes);
         *(int*)s_sharedModelRenderParams = kDefaultModelRenderMode;
-        __register_global_object(s_sharedModelRenderParams, (void*)ModelRenderParams_DeletingDtor, s_sharedModelRenderParamsDtorRegistration);
+        __register_global_object(s_sharedModelRenderParams, (void*)ModelRenderParams_DeletingDtor,
+                                 s_sharedModelRenderParamsDtorRegistration);
         s_sharedModelRenderParamsInitialized = 1;
     }
     return s_sharedModelRenderParams;
 }
 
 // Lazily initialize the flash-memory debug singleton and register its destructor.
-void* CFlashMemoryDebug_GetInstance(void) {
+CFlashMemoryDebug* CFlashMemoryDebug::GetInstance() {
     if (!*(signed char*)&s_flashMemoryDebugInitialized) {
-        *(void**)s_flashMemoryDebug = __vt__17CFlashMemoryDebug;
-        unsigned char* p = (unsigned char*)s_flashMemoryDebug;
-        for (int i = 4; i <= 9; ++i) p[i] = 0;
-        p[10] = 1;
-        *(int*)(p + 12) = 0;
-        *(int*)(p + 16) = 0;
-        *(int*)(p + 20) = 0;
-        __register_global_object(s_flashMemoryDebug, (void*)CFlashMemoryDebug_dtor, s_flashMemoryDebugDtorRegistration);
+        s_flashMemoryDebug.vtbl = __vt__17CFlashMemoryDebug;
+        for (int i = 0; i < (int)sizeof(s_flashMemoryDebug.pad_004); ++i)
+            s_flashMemoryDebug.pad_004[i] = 0;
+        s_flashMemoryDebug.synchronous = 1;
+        s_flashMemoryDebug.pad_00C = 0;
+        s_flashMemoryDebug.pad_010 = 0;
+        s_flashMemoryDebug.pad_014 = 0;
+        __register_global_object(&s_flashMemoryDebug, (void*)__dt__17CFlashMemoryDebugFv,
+                                 s_flashMemoryDebugDtorRegistration);
         s_flashMemoryDebugInitialized = 1;
     }
-    return s_flashMemoryDebug;
+    return &s_flashMemoryDebug;
 }
 
 // Initialize an inactive tween at the supplied value.
@@ -175,7 +199,8 @@ void FloatTween_Init(void* tween, float initialValue) {
 // helper does not impose milliseconds or seconds. Return 0 if already inactive,
 // 1 for any active update, including the update that finishes the tween.
 int FloatTween_Update(FloatTween* tween, float deltaTime) {
-    if (tween->active == 0) return 0;
+    if (tween->active == 0)
+        return 0;
     tween->elapsed += deltaTime;
     if (tween->elapsed >= tween->duration) {
         tween->active = 0;
@@ -185,21 +210,32 @@ int FloatTween_Update(FloatTween* tween, float deltaTime) {
     float progress = tween->elapsed / tween->duration;
     float blend = kFloatTweenZero;
     switch (tween->mode) {
-        case kTweenLinear: blend = progress; break;
-        case kTweenSineOut: blend = Math_SinApprox(progress * kFloat_1_5707964_tweenDartsAudio); break;
-        case kTweenCosineIn: blend = kFloatTweenUnitBlend - Math_CosApprox(progress * kFloat_1_5707964_tweenDartsAudio); break;
+    case kTweenLinear:
+        blend = progress;
+        break;
+    case kTweenSineOut:
+        blend = Math_SinApprox(progress * kFloat_1_5707964_tweenDartsAudio);
+        break;
+    case kTweenCosineIn:
+        blend = kFloatTweenUnitBlend - Math_CosApprox(progress * kFloat_1_5707964_tweenDartsAudio);
+        break;
     }
     tween->value = blend * (tween->target - tween->initial) + tween->initial;
     return 1;
 }
 
-struct ModelRenderParameterWords { int words[kModelRenderParameterBytes / sizeof(int)]; };
+struct ModelRenderParameterWords {
+    int words[kModelRenderParameterBytes / sizeof(int)];
+};
 // Copy the complete 0x68-byte model rendering parameter block.
 void ModelRenderParams_Copy(void* dst, void* src) {
     *(ModelRenderParameterWords*)dst = *(ModelRenderParameterWords*)src;
 }
 
-struct SmallVec { int refs; void* vtable; };
+struct SmallVec {
+    int refs;
+    void* vtable;
+};
 struct VTable {
     virtual void slot0(void);
     virtual void slot1(void);
@@ -221,19 +257,22 @@ struct VTable {
 int CharacterEnvironment_CopyFirstLightDescription(void* lightDescription) {
     // Acquire the borrowed file buffer, construct the environment, then drop the file handle.
     void* sharedFile = SharedFile_Create(s_characterEnvironmentFilename, 1);
-    if (sharedFile == 0) return 0;
+    if (sharedFile == 0)
+        return 0;
     void* fileBuffer = CSharedFilePtr_GetLoadedBuffer(sharedFile);
     void* environment = 0;
-    void* fileSize = CSharedFilePtr_GetSize(sharedFile);
-    gtl_IGenericEnvironmentResource_CreateFromMemory(fileBuffer, fileSize, &environment);
-    if (sharedFile) CSharedFileHandle_Destroy(sharedFile, 1);
+    void* fileSize = (void*)CSharedFilePtr::GetSize(sharedFile);
+    gtl::IGenericEnvironmentResource::CreateFromMemory(fileBuffer, (int)fileSize, &environment);
+    if (sharedFile)
+        CSharedFileHandle::Destroy(sharedFile, 1);
     int lightCount;
-    gtl_IGenericEnvironmentResource_GetLightCount(environment, &lightCount);
+    ((gtl::IGenericEnvironmentResource*)environment)->GetLightCount(&lightCount);
     // Materialize all records to satisfy CopyLights; publish only the first description.
     void* lights = __nwa__FUl(lightCount * kGenericLightRecordBytes);
     gtl_IGenericEnvironmentResource_CopyLights(environment, lights, lightCount);
     gtl_GenericLight_GetDescription(lightDescription, lights);
-    if (lights) __dla__FPv(lights);
+    if (lights)
+        __dla__FPv(lights);
     // Release temporary records and the environment's final reference if exhausted.
     if (environment != 0) {
         int remainingReferences = *(int*)environment - 1;
@@ -249,67 +288,77 @@ int CharacterEnvironment_CopyFirstLightDescription(void* lightDescription) {
 // Synchronous actor-message payload (borrowed for apply): +0 kind is zero here;
 // +4 value is the request opcode; +8 arg is null for camera display, or points
 // to the controller-owned WVector drop position for ball placement. +C..+1C
-// are zero in both requests; their meanings remain unresolved.
-struct Request { int kind; int value; void* arg; int fields[5]; };
+// are zero in both requests.
+struct Request {
+    int kind;
+    int value;
+    void* arg;
+    int fields[5];
+};
 
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
 #pragma opt_propagation off
 // Choose a legal drop point, show it for three seconds, then place the ball and resume rival thinking.
-int CComUnplayable_UpdateDropSequence(void* self) {
-    int* state = &AsCComUnplayable(self)->state;
+int CComUnplayable::UpdateDropSequence() {
+    int* state = &this->state;
     switch (*state) {
-        case kChooseDropPosition: {
-            // Select a world-space candidate, adjust the camera position to ground clearance,
-            // then tell the screen actor to display it. The original drop position is retained.
-            ComUnplayable_FindDropCandidate((*(void**)&AsCComUnplayable(self)->shotPositionThinker), AsCComUnplayable(self)->dropPosition);
-            *(WVector*)(AsCameraTransform800D(s_cameraTransform)->position) = *(WVector*)(AsCComUnplayable(self)->dropPosition);
-            void* quadTreeOrTaskActors = CQuadTree_GetInstance();
-            char adjustedCameraPosition[16];
-            CQuadTree_AdjustPointToRegionAndGroundClearance(adjustedCameraPosition, quadTreeOrTaskActors, AsCameraTransform800D(s_cameraTransform)->position);
-            *(WVector*)(AsCameraTransform800D(s_cameraTransform)->position) = *(WVector*)adjustedCameraPosition;
-            quadTreeOrTaskActors = g_taskManager ? Object_GetChild(g_taskManager) : 0;
+    case kChooseDropPosition: {
+        // Select a world-space candidate, adjust the camera position to ground clearance,
+        // then tell the screen actor to display it. The position stays in dropPosition
+        // for the placement request below.
+        ComUnplayable_FindDropCandidate((*(void**)&shotPositionThinker), dropPosition);
+        *(WVector*)(AsCameraTransform800D(s_cameraTransform)->position) = *(WVector*)(dropPosition);
+        void* quadTreeOrTaskActors = CQuadTree_GetInstance();
+        char adjustedCameraPosition[16];
+        CQuadTree::AdjustPointToRegionAndGroundClearance(adjustedCameraPosition, quadTreeOrTaskActors,
+                                                         AsCameraTransform800D(s_cameraTransform)->position);
+        *(WVector*)(AsCameraTransform800D(s_cameraTransform)->position) = *(WVector*)adjustedCameraPosition;
+        quadTreeOrTaskActors = g_taskManager ? Object_GetChild(g_taskManager) : 0;
+        Request request;
+        request.kind = 0;
+        request.value = kShowDropCameraRequest;
+        request.arg = 0;
+        request.fields[0] = 0;
+        request.fields[1] = 0;
+        request.fields[2] = 0;
+        request.fields[3] = 0;
+        request.fields[4] = 0;
+        void* mgr = TaskActorTable_FindByName(quadTreeOrTaskActors, s_unplayableDropActorNames);
+        if (mgr)
+            ((VTable*)mgr)->apply(&request);
+        startTimeMs = OS_GetTimeMilliseconds();
+        *state = kWaitForDropCamera;
+        break;
+    }
+    case kWaitForDropCamera: {
+        unsigned int now = OS_GetTimeMilliseconds();
+        if (now - startTimeMs >= kDropCameraHoldMs) {
+            // Unsigned subtraction preserves the millisecond timer's wraparound policy.
+            // Clear the document request before sending the position to the rule actor.
+            CSharedDoc* sharedDocument = (CSharedDoc*)g_sharedDoc;
+            ((CGolfDoc*)sharedDocument->golfDoc)->dropRequest = 0;
+            void* actorTable = g_taskManager ? Object_GetChild(g_taskManager) : 0;
             Request request;
             request.kind = 0;
-            request.value = kShowDropCameraRequest;
-            request.arg = 0;
+            request.value = kPlaceBallRequest;
+            request.arg = dropPosition;
             request.fields[0] = 0;
             request.fields[1] = 0;
             request.fields[2] = 0;
             request.fields[3] = 0;
             request.fields[4] = 0;
-            void* mgr = TaskActorTable_FindByName(quadTreeOrTaskActors, s_unplayableDropActorNames);
-            if (mgr) ((VTable*)mgr)->apply(&request);
-            AsCComUnplayable(self)->startTimeMs = OS_GetTimeMilliseconds();
-            *state = kWaitForDropCamera;
-            break;
+            void* manager = TaskActorTable_FindByName(actorTable, s_unplayableDropActorNames +
+                                                                      (int)&((DropActorNames*)0)->golfRule);
+            if (manager)
+                ((VTable*)manager)->apply(&request);
+            ((CRival*)((*(void**)&rival)))->ResetShotThinkingState();
+            *state = kDropSequenceIdle;
         }
-        case kWaitForDropCamera: {
-            unsigned int now = OS_GetTimeMilliseconds();
-            if (now - AsCComUnplayable(self)->startTimeMs >= kDropCameraHoldMs) {
-                // Unsigned subtraction preserves the millisecond timer's wraparound policy.
-                // Clear the document request before sending the position to the rule actor.
-                CSharedDoc* sharedDocument = (CSharedDoc*)g_sharedDoc;
-                ((CGolfDoc*)sharedDocument->golfDoc)->dropRequest = 0;
-                void* actorTable = g_taskManager ? Object_GetChild(g_taskManager) : 0;
-                Request request;
-                request.kind = 0;
-                request.value = kPlaceBallRequest;
-                request.arg = AsCComUnplayable(self)->dropPosition;
-                request.fields[0] = 0;
-                request.fields[1] = 0;
-                request.fields[2] = 0;
-                request.fields[3] = 0;
-                request.fields[4] = 0;
-                void* manager = TaskActorTable_FindByName(actorTable, s_unplayableDropActorNames + (int)&((DropActorNames*)0)->golfRule);
-                if (manager) ((VTable*)manager)->apply(&request);
-                CRival_ResetShotThinkingState((*(void**)&AsCComUnplayable(self)->rival));
-                *state = kDropSequenceIdle;
-            }
-            break;
-        }
-        case kDropSequenceIdle:
-            return 0;
+        break;
+    }
+    case kDropSequenceIdle:
+        return 0;
     }
     return 1;
 }
@@ -317,14 +366,12 @@ int CComUnplayable_UpdateDropSequence(void* self) {
 #pragma opt_lifetimes reset
 #pragma opt_common_subs reset
 
-// Model-position queries borrow the table and return stored floats unchanged.
-// Distances, viewport limits and X rotation are in the record author's units;
-// these getters do not establish pixels vs normalized viewport or degrees vs radians.
-// Limit1/Limit2 are separate stored endpoints, not sorted/clamped here. Missing
-// records return zero, which cannot distinguish absence from a stored zero.
+// Model-position preset queries. Each looks up a record by index and returns one
+// stored value, or zero when the record is absent. Limit1 and Limit2 are the two
+// stored endpoints; they are not sorted or clamped here.
 // Look up a model-position record and return its camera distance, or zero when absent.
-float CExhibition_model_pos_GetCameraDistance(void* __restrict p, int id) {
-    void* q = Table_GetEntry(*(void**)p, id);
+float CExhibition::model_pos_GetCameraDistance(void* __restrict p, int index) {
+    void* q = Table_GetEntry(*(void**)p, index);
     if (q != 0) {
         return ((ExhibitionModelPositionRecord*)q)->cameraDistance;
     }
@@ -332,8 +379,8 @@ float CExhibition_model_pos_GetCameraDistance(void* __restrict p, int id) {
 }
 
 // Return the model-position record's first camera distance limit, or zero when absent.
-float CExhibition_model_pos_GetCameraDistanceLimit1(void* __restrict p, int id) {
-    void* q = Table_GetEntry(*(void**)p, id);
+float CExhibition::model_pos_GetCameraDistanceLimit1(void* __restrict p, int index) {
+    void* q = Table_GetEntry(*(void**)p, index);
     if (q != 0) {
         return ((ExhibitionModelPositionRecord*)q)->cameraDistanceLimit1;
     }
@@ -341,8 +388,8 @@ float CExhibition_model_pos_GetCameraDistanceLimit1(void* __restrict p, int id) 
 }
 
 // Return the model-position record's second camera distance limit, or zero when absent.
-float CExhibition_model_pos_GetCameraDistanceLimit2(void* __restrict p, int id) {
-    void* q = Table_GetEntry(*(void**)p, id);
+float CExhibition::model_pos_GetCameraDistanceLimit2(void* __restrict p, int index) {
+    void* q = Table_GetEntry(*(void**)p, index);
     if (q != 0) {
         return ((ExhibitionModelPositionRecord*)q)->cameraDistanceLimit2;
     }
@@ -350,9 +397,9 @@ float CExhibition_model_pos_GetCameraDistanceLimit2(void* __restrict p, int id) 
 }
 
 // Return the model-position record's viewport center, or zero when absent.
-float CExhibition_model_pos_GetViewportCenterX(void* __restrict p, int id) {
+float CExhibition::model_pos_GetViewportCenterX(void* __restrict p, int index) {
     void* value = *(void**)p;
-    void* q = Table_GetEntry(value, id);
+    void* q = Table_GetEntry(value, index);
     if (q != 0) {
         return ((ExhibitionModelPositionRecord*)q)->viewportCenterX;
     }
@@ -360,9 +407,9 @@ float CExhibition_model_pos_GetViewportCenterX(void* __restrict p, int id) {
 }
 
 // Return the model-position record's viewport bottom, or zero when absent.
-float CExhibition_model_pos_GetViewportBottom(void* __restrict p, int id) {
+float CExhibition::model_pos_GetViewportBottom(void* __restrict p, int index) {
     void* arg = *(void* volatile*)p;
-    void* q = Table_GetEntry(arg, id);
+    void* q = Table_GetEntry(arg, index);
     if (q != 0) {
         return ((ExhibitionModelPositionRecord*)q)->viewportBottom;
     }
@@ -390,29 +437,20 @@ float ExhibitionModelPosition_GetViewportBottomLimit2(void* __restrict p, int id
 }
 
 // Return the model-position record's X rotation, or zero when absent.
-float CExhibition_model_pos_GetRotationX(void* __restrict p, int id) {
-    void* q = Table_GetEntry(*(void**)p, id);
+float CExhibition::model_pos_GetRotationX(void* __restrict p, int index) {
+    void* q = Table_GetEntry(*(void**)p, index);
     if (q != 0) {
         return ((ExhibitionModelPositionRecord*)q)->rotationX;
     }
     return kFloat_0_0_Exhibition;
 }
 
-// Optionally free the flash-memory debug singleton's storage.
-void* CFlashMemoryDebug_dtor(void* p, int deletingFlag) {
-    if (p != 0 && deletingFlag > 0) {
-        __dl__FPv(p);
-    }
-    return p;
-}
+// The registered deleting destructor frees the singleton's storage; the class
+// itself owns nothing.
+CFlashMemoryDebug::~CFlashMemoryDebug() {}
 
-// Optionally free the drop controller's storage.
-void* CComUnplayable_dtor(void* p, int deletingFlag) {
-    if (p != 0 && deletingFlag > 0) {
-        __dl__FPv(p);
-    }
-    return p;
-}
+// The drop controller owns nothing; the deleting destructor only frees the object.
+CComUnplayable::~CComUnplayable() {}
 
 // Optionally free model rendering parameter storage.
 void* ModelRenderParams_DeletingDtor(void* p, int deletingFlag) {
@@ -426,8 +464,12 @@ void* ModelRenderParams_DeletingDtor(void* p, int deletingFlag) {
 int GolfBall_IsGroundTypeOutsideZeroToTwo(void) {
     unsigned char x = ((CGolfBall*)GolfBall__Fv())->m_groundType;
     switch (x) {
-        case 0: case 1: case 2: return 0;
-        default: return 1;
+    case 0:
+    case 1:
+    case 2:
+        return 0;
+    default:
+        return 1;
     }
 }
 
@@ -435,7 +477,8 @@ int GolfBall_IsGroundTypeOutsideZeroToTwo(void) {
 // mode -1 keeps the previous curve; other unsupported modes blend as zero until
 // completion. Negative durations also snap. duration uses Update's deltaTime unit.
 void FloatTween_Start(FloatTween* tween, int mode, float target, float duration) {
-    if (mode != kKeepTweenMode) tween->mode = mode;
+    if (mode != kKeepTweenMode)
+        tween->mode = mode;
     float zero = kFloatTweenZero;
     float initial = tween->value;
     tween->target = target;

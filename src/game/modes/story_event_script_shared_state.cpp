@@ -1,17 +1,21 @@
+// Story event scripts: the shared string and value state that script commands read and write,
+// the enemy and player-slot setup they call, checks on saved equipment, and text-command cursors.
+// Integer comparison helpers used by the scripts are here too.
+
 #include <decomp/static_init.h>
 #include <decomp/offset_of.h>
 #include "classes/MWStringStorage.h"
 #include "classes/SavePlayerRecord.h"
 #include "classes/CEnemyRenderTable.h"
 #include "classes/CSharedDoc.h"
+#include "classes/CStoryConte.h"
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
 #include "game/vector.h"
 extern "C" void __construct_array(void*, void*, void*, unsigned int, unsigned int);
-// Translation unit 0x80090284-0x80091824 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
+#include "classes/CPangyaEnemyData.h"
 extern "C" {
 
 extern float kFloat_6_2831855;
@@ -38,25 +42,36 @@ extern SharedStringStateStorage s_sharedStringState;
 
 enum StoryConstants {
     kSecondaryStringsOffset = (int)DECOMP_OFFSETOF(SharedStringStateStorage, secondaryStrings[0]),
-    kPlayerSlots = 4, kPlayerRecordBytes = 0x828,
+    kPlayerSlots = 4,
+    kPlayerRecordBytes = 0x828,
     kSlotIndexVectorsOffset = kPlayerSlots * kPlayerRecordBytes,
     kEnemyRenderTableOffset = kSlotIndexVectorsOffset + kPlayerSlots * 12,
-    kEnemyRenderRecordBytes = 0xA4, kInitialStringCapacity = 32,
-    kInlineLengthMask = 0x7F, kCostumePartCount = 24, kUnsetPartId = 0xFFFF,
-    kScriptCommandBytes = 4, kScriptBlockFlags = 0xFFFE,
+    kEnemyRenderRecordBytes = 0xA4,
+    kInitialStringCapacity = 32,
+    kInlineLengthMask = 0x7F,
+    kCostumePartCount = 24,
+    kUnsetPartId = 0xFFFF,
+    kScriptCommandBytes = 4,
+    kScriptBlockFlags = 0xFFFE,
     kStoryTaskBaseOffset = 0x18,
-    kCompareEqual = 0, kCompareNotEqual = 1, kCompareLess = 2,
-    kCompareGreater = 3, kCompareLessEqual = 4, kCompareGreaterEqual = 5
+    kCompareEqual = 0,
+    kCompareNotEqual = 1,
+    kCompareLess = 2,
+    kCompareGreater = 3,
+    kCompareLessEqual = 4,
+    kCompareGreaterEqual = 5
 };
 struct CharacterEquipmentRecord {
     unsigned short character;
     short costumeParts[kCostumePartCount];
     char remaining[0xE];
 };
-struct PlayerHoleScores { char prefix[0x28]; unsigned char scores[18]; };
+struct PlayerHoleScores {
+    char prefix[0x28];
+    unsigned char scores[18];
+};
 
-
-void* CStoryConte_dtor(void*, int);
+void* __dt__11CStoryConteFv(void*, int);
 void String_ReserveCapacity(void*, int);
 void String_ReplaceRange(void*, int, int, const char*, const char*, char*);
 void* SharedStringState_dtor(void*, int);
@@ -76,14 +91,12 @@ extern char s_enemyDataDtorRegistration_80090284[0x10];
 extern char s_sharedStringStateDtorRegistration[256];
 void SaveData_InitPlayerRecord(void*);
 
-
 void PartyItemRecord_InitDefaults(void*);
 void PlayerRenderRecord_dtor(void*);
 void __dt__13RenderContextFv(void*);
 void CharacterPreviewTable_dtor(void*);
 void RenderContext_ResetPlayerRecords(void*);
-void CPangyaEnemyData_Init(void*);
-void CPangyaEnemyData_dtor(void*);
+void __dt__16CPangyaEnemyDataFv(void*);
 void EnemyData_BuildCharacterSlot(void*, void*, const char*, int);
 void SharedDoc_ApplyEnemyRenderRecordToPlayerSlot(int, void*);
 void SaveData_Ctor(void*);
@@ -168,17 +181,22 @@ void SharedStringState_SetFirstStrings(int, const char* primaryText, const char*
     char t0;
     char buf1 = t0;
     unsigned int heapBacked = s_sharedStringState.primaryStrings[0].flags >> 31;
-    unsigned int length = heapBacked ? s_sharedStringState.primaryStrings[0].length : *(unsigned char*)&s_sharedStringState & kInlineLengthMask;
+    unsigned int length = heapBacked ? s_sharedStringState.primaryStrings[0].length
+                                     : *(unsigned char*)&s_sharedStringState & kInlineLengthMask;
     String_ReplaceRange(&s_sharedStringState, 0, length, primaryText, primaryText + strlen(primaryText), &buf1);
     char t1;
     char buf2 = t1;
     // Preserve the independent base-address expressions used by the original string ABI.
     heapBacked = *(unsigned int*)((char*)&s_sharedStringState + kSecondaryStringsOffset) >> 31;
-    length = heapBacked ? *(unsigned int*)((char*)&s_sharedStringState + kSecondaryStringsOffset + 4) : *(unsigned char*)((char*)&s_sharedStringState + kSecondaryStringsOffset) & kInlineLengthMask;
-    String_ReplaceRange((char*)&s_sharedStringState + kSecondaryStringsOffset, 0, length, secondaryText, secondaryText + strlen(secondaryText), &buf2);
+    length = heapBacked ? *(unsigned int*)((char*)&s_sharedStringState + kSecondaryStringsOffset + 4)
+                        : *(unsigned char*)((char*)&s_sharedStringState + kSecondaryStringsOffset) & kInlineLengthMask;
+    String_ReplaceRange((char*)&s_sharedStringState + kSecondaryStringsOffset, 0, length, secondaryText,
+                        secondaryText + strlen(secondaryText), &buf2);
 }
 
-struct NameAllocator { char c; };
+struct NameAllocator {
+    char c;
+};
 // Return the empty allocator token expected by the string replacement ABI.
 inline NameAllocator CurrentNameAllocator() {
     NameAllocator t0;
@@ -201,7 +219,8 @@ void SaveData_GetSelectedTourConteScriptName(void* destination) {
             } while (p < end);
             ((IntVectorArray*)(end))->__ct();
             char* obj = base + kEnemyRenderTableOffset;
-            __construct_array(obj, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor, kEnemyRenderRecordBytes, 4);
+            __construct_array(obj, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor,
+                              kEnemyRenderRecordBytes, 4);
             ((CEnemyRenderTable*)obj)->count = 0;
             try {
                 RenderContext_ResetPlayerRecords(base);
@@ -210,24 +229,27 @@ void SaveData_GetSelectedTourConteScriptName(void* destination) {
                 ((IntVectorArray*)(base + kSlotIndexVectorsOffset))->~IntVectorArray();
                 throw;
             }
-            __register_global_object((void*)s_renderContext, (void*)__dt__13RenderContextFv, (void*)&s_renderContextDtorRegistration_80090284);
+            __register_global_object((void*)s_renderContext, (void*)__dt__13RenderContextFv,
+                                     (void*)&s_renderContextDtorRegistration_80090284);
             s_renderContextInitialized = 1;
         }
         ((int&)Sing_805DC648()) = (int)s_renderContext;
     }
     // Render-context publication is complete; resolve the saved script and copy it.
     TourConteScriptTable scriptTable = s_tourConteMessageScriptNames;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (s_saveDataInitialized == 0) {
             SaveData_Ctor(&s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)&s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)&s_saveData;
     }
-    TourConteSelectionTail progression = *(TourConteSelectionTail*)((char*)SaveData_GetCurrentRecord((void*)((int&)Sing_805DC5E0())) + 0x4EC);
+    TourConteSelectionTail progression =
+        *(TourConteSelectionTail*)((char*)SaveData_GetCurrentRecord((void*)((int&)GetSaveDataSlot())) + 0x4EC);
     const char* scriptName = scriptTable.scriptNames[(signed char)progression.conteOrder[progression.currentConte]];
     unsigned int heapBacked = *(unsigned int*)destination >> 31;
-    int length = !heapBacked ? *(unsigned char*)destination & kInlineLengthMask : AsMWStringStorage(destination)->length;
+    int length =
+        !heapBacked ? *(unsigned char*)destination & kInlineLengthMask : AsMWStringStorage(destination)->length;
     NameAllocator buf = CurrentNameAllocator();
     String_ReplaceRange(destination, 0, length, scriptName, scriptName + strlen(scriptName), &buf.c);
 }
@@ -252,7 +274,8 @@ void SharedDoc_LoadEnemyPlayerSlotByName(int index, const char* name) {
             } while (p < end);
             ((IntVectorArray*)(end))->__ct();
             char* obj = base + kEnemyRenderTableOffset;
-            __construct_array(obj, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor, kEnemyRenderRecordBytes, 4);
+            __construct_array(obj, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor,
+                              kEnemyRenderRecordBytes, 4);
             ((CEnemyRenderTable*)obj)->count = 0;
             try {
                 RenderContext_ResetPlayerRecords(base);
@@ -261,7 +284,8 @@ void SharedDoc_LoadEnemyPlayerSlotByName(int index, const char* name) {
                 ((IntVectorArray*)(base + kSlotIndexVectorsOffset))->~IntVectorArray();
                 throw;
             }
-            __register_global_object((void*)s_renderContext, (void*)__dt__13RenderContextFv, (void*)&s_renderContextDtorRegistration_80090284);
+            __register_global_object((void*)s_renderContext, (void*)__dt__13RenderContextFv,
+                                     (void*)&s_renderContextDtorRegistration_80090284);
             s_renderContextInitialized = 1;
         }
         ((int&)Sing_805DC648()) = (int)s_renderContext;
@@ -269,8 +293,9 @@ void SharedDoc_LoadEnemyPlayerSlotByName(int index, const char* name) {
     char* obj = (char*)((int&)Sing_805DC648()) + kEnemyRenderTableOffset;
     if (((int&)Sing_805DC678()) == 0) {
         if (s_pangyaEnemyDataInitialized == 0) {
-            CPangyaEnemyData_Init(s_pangyaEnemyData);
-            __register_global_object(s_pangyaEnemyData, (void*)CPangyaEnemyData_dtor, (void*)s_enemyDataDtorRegistration_80090284);
+            ((CPangyaEnemyData*)s_pangyaEnemyData)->Init();
+            __register_global_object(s_pangyaEnemyData, (void*)__dt__16CPangyaEnemyDataFv,
+                                     (void*)s_enemyDataDtorRegistration_80090284);
             s_pangyaEnemyDataInitialized = 1;
         }
         ((int&)Sing_805DC678()) = (int)s_pangyaEnemyData;
@@ -289,17 +314,19 @@ void SharedDoc_LoadEnemyPlayerSlotByName(int index, const char* name) {
 int EventScript_IsCostumePartEquipped(int id) {
     CharacterEquipmentRecord state;
     int index = (signed char)EventScript_GetCharacterIndex();
-    if (!((int&)Sing_805DC5E0())) {
+    if (!((int&)GetSaveDataSlot())) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(&s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)&s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)&s_saveData;
     }
-    if (!SaveData_CopyCharacterEquipmentRecordAt((void*)((int&)Sing_805DC5E0()), &state, index)) return 0;
+    if (!SaveData_CopyCharacterEquipmentRecordAt((void*)((int&)GetSaveDataSlot()), &state, index))
+        return 0;
     for (unsigned char i = 0; i < kCostumePartCount; ++i) {
         short value = state.costumeParts[i];
-        if (value != kUnsetPartId && id == value) return 1;
+        if (value != kUnsetPartId && id == value)
+            return 1;
     }
     return 0;
 }
@@ -307,15 +334,16 @@ int EventScript_IsCostumePartEquipped(int id) {
 // Compare the active save record's club-set index with the requested index.
 int EventScript_IsClubSetEquipped(int index) {
     StateCopy state;
-    if (!((int&)Sing_805DC5E0())) {
+    if (!((int&)GetSaveDataSlot())) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(&s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)&s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)&s_saveData;
     }
-    state = *(StateCopy*)SaveData_GetCurrentRecord((void*)((int&)Sing_805DC5E0()));
-    if ((signed char)state.bytes2C[1] != (signed char)index) return 0;
+    state = *(StateCopy*)SaveData_GetCurrentRecord((void*)((int&)GetSaveDataSlot()));
+    if ((signed char)state.bytes2C[1] != (signed char)index)
+        return 0;
     return 1;
 }
 
@@ -329,7 +357,10 @@ void SharedStringState_ReserveFirstStrings() {
 // the expanded traversal frees descendants before the node itself. owner is forwarded.
 // Free both children and each byte-map node in postorder; preserve the expanded traversal shape.
 // Child links are borrowed during traversal; only the postorder free owns destruction.
-struct ByteMapNode { void* left; void* right; };
+struct ByteMapNode {
+    void* left;
+    void* right;
+};
 void ScriptByteMap_FreeSubtree(void* owner, void** node) {
     void* tree = owner;
     void** root = node;
@@ -344,17 +375,21 @@ void ScriptByteMap_FreeSubtree(void* owner, void** node) {
             void* branch = ((ByteMapNode*)left)->left;
             if (branch != 0) {
                 void* child = ((ByteMapNode*)branch)->left;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 child = ((ByteMapNode*)branch)->right;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 appFreeUni__FPv(branch);
             }
             branch = ((ByteMapNode*)left)->right;
             if (branch != 0) {
                 void* child = ((ByteMapNode*)branch)->left;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 child = ((ByteMapNode*)branch)->right;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 appFreeUni__FPv(branch);
             }
             appFreeUni__FPv(left);
@@ -364,17 +399,21 @@ void ScriptByteMap_FreeSubtree(void* owner, void** node) {
             void* rightChild = ((ByteMapNode*)branch)->left;
             if (rightChild != 0) {
                 void* child = ((ByteMapNode*)rightChild)->left;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 child = ((ByteMapNode*)rightChild)->right;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 appFreeUni__FPv(rightChild);
             }
             rightChild = ((ByteMapNode*)branch)->right;
             if (rightChild != 0) {
                 void* child = ((ByteMapNode*)rightChild)->left;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 child = ((ByteMapNode*)rightChild)->right;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 appFreeUni__FPv(rightChild);
             }
             appFreeUni__FPv(branch);
@@ -389,17 +428,21 @@ void ScriptByteMap_FreeSubtree(void* owner, void** node) {
             void* leftChild = ((ByteMapNode*)rightRoot)->left;
             if (leftChild != 0) {
                 void* child = ((ByteMapNode*)leftChild)->left;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 child = ((ByteMapNode*)leftChild)->right;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 appFreeUni__FPv(leftChild);
             }
             leftChild = ((ByteMapNode*)rightRoot)->right;
             if (leftChild != 0) {
                 void* child = ((ByteMapNode*)leftChild)->left;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 child = ((ByteMapNode*)leftChild)->right;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 appFreeUni__FPv(leftChild);
             }
             appFreeUni__FPv(rightRoot);
@@ -409,17 +452,21 @@ void ScriptByteMap_FreeSubtree(void* owner, void** node) {
             void* rightChildLeaf = ((ByteMapNode*)rightRoot)->left;
             if (rightChildLeaf != 0) {
                 void* child = ((ByteMapNode*)rightChildLeaf)->left;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 child = ((ByteMapNode*)rightChildLeaf)->right;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 appFreeUni__FPv(rightChildLeaf);
             }
             rightChildLeaf = ((ByteMapNode*)rightRoot)->right;
             if (rightChildLeaf != 0) {
                 void* child = ((ByteMapNode*)rightChildLeaf)->left;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 child = ((ByteMapNode*)rightChildLeaf)->right;
-                if (child != 0) ScriptByteMap_FreeSubtree(tree, (void**)child);
+                if (child != 0)
+                    ScriptByteMap_FreeSubtree(tree, (void**)child);
                 appFreeUni__FPv(rightChildLeaf);
             }
             appFreeUni__FPv(rightRoot);
@@ -464,36 +511,51 @@ void* SharedStringState_GetFirstString(int pairIndex) {
         if (pairIndex == 0) {
             unsigned int inlineStorage = (unsigned int)__cntlzw(s_sharedStringState.primaryStrings[0].flags >> 31) >> 5;
             unsigned int length;
-            if (inlineStorage) length = *(unsigned char*)&s_sharedStringState & kInlineLengthMask;
-            else length = s_sharedStringState.primaryStrings[0].length;
-            if (length == 0) return 0;
-            if (!inlineStorage) return *(void**)&s_sharedStringState.primaryStrings[0].data;
+            if (inlineStorage)
+                length = *(unsigned char*)&s_sharedStringState & kInlineLengthMask;
+            else
+                length = s_sharedStringState.primaryStrings[0].length;
+            if (length == 0)
+                return 0;
+            if (!inlineStorage)
+                return *(void**)&s_sharedStringState.primaryStrings[0].data;
             return (char*)&s_sharedStringState + 1;
         }
         return 0;
     }
     unsigned int inlineStorage = (unsigned int)__cntlzw(s_sharedStringState.secondaryStrings[0].flags >> 31) >> 5;
     unsigned int length;
-    if (inlineStorage) length = *(unsigned char*)&s_sharedStringState.secondaryStrings[0].flags & kInlineLengthMask;
-    else length = s_sharedStringState.secondaryStrings[0].length;
-    if (length == 0) return 0;
-    if (!inlineStorage) return *(void**)&s_sharedStringState.secondaryStrings[0].data;
+    if (inlineStorage)
+        length = *(unsigned char*)&s_sharedStringState.secondaryStrings[0].flags & kInlineLengthMask;
+    else
+        length = s_sharedStringState.secondaryStrings[0].length;
+    if (length == 0)
+        return 0;
+    if (!inlineStorage)
+        return *(void**)&s_sharedStringState.secondaryStrings[0].data;
     return (char*)&s_sharedStringState.secondaryStrings[0] + 1;
 }
 
 // Replace the second string in each primary/secondary pair.
 void SharedStringState_SetSecondStrings(void*, const char* primaryText, const char* secondaryText) {
-    struct Al { char c; };
+    struct Al {
+        char c;
+    };
     unsigned int heapBacked = s_sharedStringState.primaryStrings[1].flags >> 31;
-    unsigned int length = !heapBacked ? *(unsigned char*)&s_sharedStringState.primaryStrings[1].flags & kInlineLengthMask : s_sharedStringState.primaryStrings[1].length;
+    unsigned int length = !heapBacked
+                              ? *(unsigned char*)&s_sharedStringState.primaryStrings[1].flags & kInlineLengthMask
+                              : s_sharedStringState.primaryStrings[1].length;
     Al t0;
     Al buf1 = t0;
-    String_ReplaceRange(&s_sharedStringState.primaryStrings[1].flags, 0, length, primaryText, primaryText + strlen(primaryText), &buf1.c);
+    String_ReplaceRange(&s_sharedStringState.primaryStrings[1].flags, 0, length, primaryText,
+                        primaryText + strlen(primaryText), &buf1.c);
     heapBacked = s_sharedStringState.secondaryStrings[1].flags >> 31;
-    length = !heapBacked ? *(unsigned char*)&s_sharedStringState.secondaryStrings[1].flags & kInlineLengthMask : s_sharedStringState.secondaryStrings[1].length;
+    length = !heapBacked ? *(unsigned char*)&s_sharedStringState.secondaryStrings[1].flags & kInlineLengthMask
+                         : s_sharedStringState.secondaryStrings[1].length;
     Al t1;
     Al buf2 = t1;
-    String_ReplaceRange(&s_sharedStringState.secondaryStrings[1].flags, 0, length, secondaryText, secondaryText + strlen(secondaryText), &buf2.c);
+    String_ReplaceRange(&s_sharedStringState.secondaryStrings[1].flags, 0, length, secondaryText,
+                        secondaryText + strlen(secondaryText), &buf2.c);
 }
 
 // Return the second string of pair 0 or 1, or null for an empty string or invalid pair.
@@ -502,45 +564,58 @@ void* SharedStringState_GetSecondString(int pairIndex) {
         if (pairIndex == 0) {
             unsigned int inlineStorage = (unsigned int)__cntlzw(s_sharedStringState.primaryStrings[1].flags >> 31) >> 5;
             unsigned int length;
-            if (inlineStorage) length = *(unsigned char*)&s_sharedStringState.primaryStrings[1].flags & kInlineLengthMask;
-            else length = s_sharedStringState.primaryStrings[1].length;
-            if (length == 0) return 0;
-            if (!inlineStorage) return *(void**)&s_sharedStringState.primaryStrings[1].data;
+            if (inlineStorage)
+                length = *(unsigned char*)&s_sharedStringState.primaryStrings[1].flags & kInlineLengthMask;
+            else
+                length = s_sharedStringState.primaryStrings[1].length;
+            if (length == 0)
+                return 0;
+            if (!inlineStorage)
+                return *(void**)&s_sharedStringState.primaryStrings[1].data;
             return (char*)&s_sharedStringState.primaryStrings[1] + 1;
         }
         return 0;
     }
     unsigned int inlineStorage = (unsigned int)__cntlzw(s_sharedStringState.secondaryStrings[1].flags >> 31) >> 5;
     unsigned int length;
-    if (inlineStorage) length = *(unsigned char*)&s_sharedStringState.secondaryStrings[1].flags & kInlineLengthMask;
-    else length = s_sharedStringState.secondaryStrings[1].length;
-    if (length == 0) return 0;
-    if (!inlineStorage) return *(void**)&s_sharedStringState.secondaryStrings[1].data;
+    if (inlineStorage)
+        length = *(unsigned char*)&s_sharedStringState.secondaryStrings[1].flags & kInlineLengthMask;
+    else
+        length = s_sharedStringState.secondaryStrings[1].length;
+    if (length == 0)
+        return 0;
+    if (!inlineStorage)
+        return *(void**)&s_sharedStringState.secondaryStrings[1].data;
     return (char*)&s_sharedStringState.secondaryStrings[1] + 1;
 }
 
 // Evaluate the requested integer comparison; the strict-order cases preserve overflow-safe bit arithmetic.
-int Int32_CompareByMode(int a, int mode, int b) {
+int Int32_CompareByMode(int lhs, int mode, int rhs) {
     switch (mode) {
-    case kCompareEqual: return a == b;
-    case kCompareNotEqual: return a != b;
+    case kCompareEqual:
+        return lhs == rhs;
+    case kCompareNotEqual:
+        return lhs != rhs;
     case kCompareLess: {
-        int x = b ^ a;
+        int x = rhs ^ lhs;
         int half = x >> 1;
-        x &= b;
+        x &= rhs;
         x = half - x;
         return x < 0;
     }
     case kCompareGreater: {
-        int x = a ^ b;
+        int x = lhs ^ rhs;
         int half = x >> 1;
-        x &= a;
+        x &= lhs;
         x = half - x;
         return x < 0;
     }
-    case kCompareLessEqual: return b >= a;
-    case kCompareGreaterEqual: return a >= b;
-    default: return 0;
+    case kCompareLessEqual:
+        return rhs >= lhs;
+    case kCompareGreaterEqual:
+        return lhs >= rhs;
+    default:
+        return 0;
     }
 }
 
@@ -548,11 +623,20 @@ int Int32_CompareByMode(int a, int mode, int b) {
 void* SharedStringState_dtor(void* self, int shouldDelete) {
     if (self != 0) {
         MWStringStorage* strings = (MWStringStorage*)self;
-        if (&strings[3]) if (strings[3].flags >> 31) appFreeUni__FPv(strings[3].data);
-        if (&strings[2]) if (strings[2].flags >> 31) appFreeUni__FPv(strings[2].data);
-        if (&strings[1]) if (strings[1].flags >> 31) appFreeUni__FPv(strings[1].data);
-        if (self) if (strings[0].flags >> 31) appFreeUni__FPv(strings[0].data);
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (&strings[3])
+            if (strings[3].flags >> 31)
+                appFreeUni__FPv(strings[3].data);
+        if (&strings[2])
+            if (strings[2].flags >> 31)
+                appFreeUni__FPv(strings[2].data);
+        if (&strings[1])
+            if (strings[1].flags >> 31)
+                appFreeUni__FPv(strings[1].data);
+        if (self)
+            if (strings[0].flags >> 31)
+                appFreeUni__FPv(strings[0].data);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -571,16 +655,13 @@ int EventScript_Player0UnbeatenWinsAtLeastOneThird() {
         playerZeroStrokes = ((PlayerHoleScores*)base)->scores[(unsigned char)i];
         base = GolfPlayer_GetEntryByIndex((void*)AsCSharedDoc(g_sharedDoc)->golfDoc, 1);
         unsigned char playerOneStrokes = ((PlayerHoleScores*)base)->scores[(unsigned char)i];
-        if (playerOneStrokes < playerZeroStrokes) return 0;
-        if (playerOneStrokes > playerZeroStrokes) holesPlayerZeroLeads = (unsigned char)(holesPlayerZeroLeads + 1);
+        if (playerOneStrokes < playerZeroStrokes)
+            return 0;
+        if (playerOneStrokes > playerZeroStrokes)
+            holesPlayerZeroLeads = (unsigned char)(holesPlayerZeroLeads + 1);
         ++i;
     }
     return (int)(holesPlayerZeroLeads * 3) >= count;
-}
-
-// Adjust the secondary task-base pointer back to its owning story object before destruction.
-void* CStoryConte_dtor_Thunk18(void* self, int shouldDelete) {
-    return CStoryConte_dtor((char*)self - kStoryTaskBaseOffset, shouldDelete);
 }
 
 // Initialize this story-helper unit's cached two-pi constant.
@@ -640,7 +721,8 @@ void SharedStringState_InitializeGlobals() {
     s_sharedStringState.secondaryStrings[1].flags = 0;
     s_sharedStringState.secondaryStrings[1].length = 0;
     s_sharedStringState.secondaryStrings[1].data = 0;
-    __register_global_object(&s_sharedStringState, (void*)SharedStringState_dtor, (void*)&s_sharedStringStateDtorRegistration);
+    __register_global_object(&s_sharedStringState, (void*)SharedStringState_dtor,
+                             (void*)&s_sharedStringStateDtorRegistration);
 }
 
 // Store the event-script character selection.
@@ -669,6 +751,11 @@ unsigned short SharedStringState_GetShortValue() {
 }
 
 } // extern "C"
+
+// Adjust the secondary task interface pointer before forwarding the destructor callback.
+void* CStoryConte::Destroy(int shouldDelete) {
+    return __dt__11CStoryConteFv((char*)this - kStoryTaskBaseOffset, shouldDelete);
+}
 
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push

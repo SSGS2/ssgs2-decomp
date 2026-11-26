@@ -1,7 +1,9 @@
+// Trail ribbon that follows the mouse cursor: samples the screen pointer into a ring of points,
+// advances the ribbon's edge geometry each frame, and rebuilds its interpolated vertices.
+
 #include "game/types.h"
+#include "game/gtl_input.h"
 #include "classes/CMouseCursor.h"
-// Translation unit 0x8025FDB8-0x80260838 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -23,8 +25,6 @@ extern const unsigned int s_trailRibbonEdgeOffsetTemplate[];
 extern void* g_mouseCursor;
 
 int gtl_InputEx_GetScreenPointer(void*);
-int gtl_CInputExDeviceBase_GetDeviceResult(int, int*);
-int gtl_CScreenPointer_GetSample(int, int, void*);
 void gtl_Vec2_Subtract(float*, float*, float*);
 float Vec2_Length(float*);
 void gtl_Vec2_Copy(float*, float*);
@@ -33,8 +33,12 @@ void Mtx44_SetRotationZ(float*, float);
 void Mtx44_TransformVec4(float*, float*, float*);
 void TrailRibbon_UpdateSegmentEdges(TrailRibbon*, int, int);
 
-struct V2_8026 { float x, y; };
-struct V4_8026 { float x, y, z, w; };
+struct V2_8026 {
+    float x, y;
+};
+struct V4_8026 {
+    float x, y, z, w;
+};
 
 // Parallel rings: pointPositions holds screen-space x/y, segmentAngles holds radians,
 // and each vertex pointer owns three V4 records (edge 0, center, edge 2).
@@ -45,25 +49,53 @@ struct V4_8026 { float x, y, z, w; };
 // controllerIndex carries integer 0..3 in the pointer-shaped Wii ABI word;
 // it is never dereferenced or owned. The constructor allocates all rings and vertex blocks.
 struct TrailRibbon {
-    void* controllerIndex; int newestPointIndex; int activePointCount; float pointLifetime; float pendingPosition[2];
-    V2_8026* pointPositions; V4_8026** segmentVertices; V4_8026** interpolatedVertices; float* segmentAngles; int reservedState;
+    void* controllerIndex;
+    int newestPointIndex;
+    int activePointCount;
+    float pointLifetime;
+    float pendingPosition[2];
+    V2_8026* pointPositions;
+    V4_8026** segmentVertices;
+    V4_8026** interpolatedVertices;
+    float* segmentAngles;
+    int reservedState;
     signed char edgeRed, edgeGreen, edgeBlue, edgeOpacity, centerRed, centerGreen, centerBlue, centerOpacity;
-    float halfWidth, lifetimeDecay; int fadeCenterOpacity, useSeparateEdgeOpacity, taperWidth, pointCapacity, sampledThisFrame, positionPending, sampleStride;
+    float halfWidth, lifetimeDecay;
+    int fadeCenterOpacity, useSeparateEdgeOpacity, taperWidth, pointCapacity, sampledThisFrame, positionPending,
+        sampleStride;
 };
 
-enum RibbonStorageSizes { kPointPositionBytes = 8, kRingPointerBytes = 4,
-                          kThreeVertexBytes = 0x30, kSegmentAngleBytes = 4 };
+enum RibbonStorageSizes {
+    kPointPositionBytes = 8,
+    kRingPointerBytes = 4,
+    kThreeVertexBytes = 0x30,
+    kSegmentAngleBytes = 4
+};
 // Byte defaults retain the original signed representation, including alpha values.
-enum RibbonDefaultColor { kDefaultEdgeRed = 0, kDefaultEdgeGreen = -128,
-                          kDefaultEdgeBlue = 0x20, kDefaultEdgeOpacity = 0x50,
-                          kDefaultCenterRed = -56, kDefaultCenterGreen = -1,
-                          kDefaultCenterBlue = -11, kDefaultCenterOpacity = -36 };
+enum RibbonDefaultColor {
+    kDefaultEdgeRed = 0,
+    kDefaultEdgeGreen = -128,
+    kDefaultEdgeBlue = 0x20,
+    kDefaultEdgeOpacity = 0x50,
+    kDefaultCenterRed = -56,
+    kDefaultCenterGreen = -1,
+    kDefaultCenterBlue = -11,
+    kDefaultCenterOpacity = -36
+};
 
 typedef Vec3f V3_8026;
-struct Mat8_8026 { unsigned int w[8]; };
-struct Mat8f_8026 { float f[8]; };
-struct V4u_8026 { unsigned int x, y, z, w; };
-struct Mat16f_8026 { float f[16]; };
+struct Mat8_8026 {
+    unsigned int w[8];
+};
+struct Mat8f_8026 {
+    float f[8];
+};
+struct V4u_8026 {
+    unsigned int x, y, z, w;
+};
+struct Mat16f_8026 {
+    float f[16];
+};
 struct Locals_8026 {
     V2_8026 direction;
     float m[8];
@@ -81,7 +113,7 @@ void TrailRibbon_UpdateSegmentEdges(TrailRibbon* self, int toIndex, int fromInde
     // Measure heading with swapped atan2 arguments: angle is relative to the Y axis.
     Locals_8026 L;
     gtl_Vec2_Subtract((float*)&L.direction, (float*)&self->pointPositions[toIndex],
-                (float*)&self->pointPositions[fromIndex]);
+                      (float*)&self->pointPositions[fromIndex]);
     float dy = L.direction.y;
     float dx = L.direction.x;
     float heading = atan2(dx, dy);
@@ -252,7 +284,9 @@ void TrailRibbon_SetPointerPosition(TrailRibbon* self, float* input) {
     self->positionPending = one;
 }
 
-struct Vec2 { float x, y; };
+struct Vec2 {
+    float x, y;
+};
 struct QueryResult {
     char reservedBeforePosition[0xC];
     float x, y;
@@ -269,8 +303,12 @@ void TrailRibbon_SampleScreenPointer(TrailRibbon* self) {
     self->sampledThisFrame = 0;
     int screenPointer = gtl_InputEx_GetScreenPointer(self->controllerIndex);
     if (screenPointer != 0 && self->positionPending != 0) {
-        struct { int sampleCount, pad; Vec2 fromLoop, deltaLoop, from, delta, desired; QueryResult result; } L;
-        if (gtl_CInputExDeviceBase_GetDeviceResult(screenPointer, &L.sampleCount) != 0) {
+        struct {
+            int sampleCount, pad;
+            Vec2 fromLoop, deltaLoop, from, delta, desired;
+            QueryResult result;
+        } L;
+        if (((gtl::CInputExDeviceBase*)screenPointer)->GetDeviceResult(&L.sampleCount) != 0) {
             int minimumFrame = 1;
             // Scripted cursor movement uses the caller's pending screen position.
             if (((CMouseCursor*)g_mouseCursor)->moveToActive != 0) { // cursor +0x108
@@ -310,7 +348,9 @@ void TrailRibbon_SampleScreenPointer(TrailRibbon* self) {
                 halfScreenHeight = kTrailPointerHalfScreenHeight;
                 for (int i = 0; i < L.sampleCount; ++i) {
                     if (i % self->sampleStride == 0) {
-                        if (gtl_CScreenPointer_GetSample(screenPointer, L.sampleCount - i - 1, &L.result) != 0 && L.result.frame >= minimumFrame) {
+                        if (((gtl::CScreenPointer*)screenPointer)
+                                    ->GetSample(L.sampleCount - i - 1, (gtl::ScreenPointerSample*)&L.result) != 0 &&
+                            L.result.frame >= minimumFrame) {
                             minimumFrame = L.result.frame;
                             L.desired.x = halfScreenWidth * L.result.x + halfScreenWidth;
                             L.desired.y = halfScreenHeight * L.result.y + halfScreenHeight;
@@ -384,7 +424,8 @@ void TrailRibbon_RebuildInterpolatedVertices(TrailRibbon* self) {
         RibbonVertexTriplet* dst = ((RibbonVertexTriplet**)self->interpolatedVertices)[index];
         float centerOutputValue;
         if (self->fadeCenterOpacity != 0)
-            centerOutputValue = (float)self->centerOpacity - ((float)self->centerOpacity * (float)i) / (float)self->activePointCount;
+            centerOutputValue =
+                (float)self->centerOpacity - ((float)self->centerOpacity * (float)i) / (float)self->activePointCount;
         else
             centerOutputValue = (float)self->centerOpacity;
         if (self->taperWidth != 0) {
@@ -394,14 +435,20 @@ void TrailRibbon_RebuildInterpolatedVertices(TrailRibbon* self) {
             dst->edge2X = blend * (src->edge2X - src->centerX) + src->centerX;
             dst->edge2Y = blend * (src->edge2Y - src->centerY) + src->centerY;
         } else {
-            dst->edge0X = src->edge0X; dst->edge0Y = src->edge0Y;
-            dst->edge2X = src->edge2X; dst->edge2Y = src->edge2Y;
+            dst->edge0X = src->edge0X;
+            dst->edge0Y = src->edge0Y;
+            dst->edge2X = src->edge2X;
+            dst->edge2Y = src->edge2Y;
         }
         // Center stays fixed; write opacity to each V4's z lane and one to w.
-        dst->centerX = src->centerX; dst->centerY = src->centerY;
-        dst->edge0Opacity = edgeOutputValue; dst->centerOpacity = centerOutputValue;
-        dst->edge2OpacityAndW[0] = edgeOutputValue; dst->edge2OpacityAndW[1] = one;
-        dst->centerW = one; dst->edge0W = one;
+        dst->centerX = src->centerX;
+        dst->centerY = src->centerY;
+        dst->edge0Opacity = edgeOutputValue;
+        dst->centerOpacity = centerOutputValue;
+        dst->edge2OpacityAndW[0] = edgeOutputValue;
+        dst->edge2OpacityAndW[1] = one;
+        dst->centerW = one;
+        dst->edge0W = one;
         ++i;
     }
 }

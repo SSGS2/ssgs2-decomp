@@ -1,6 +1,6 @@
 // Shared vector/matrix library, widescreen camera projection and viewport mapping;
 // also contains input-device enumeration/allocation and two platform wrappers.
-// Mod lookup (scalar definitions: u80438310_data.cpp):
+// Mod lookup (scalar definitions: the data section):
 // - MtxPerspectiveFovRH/LH take VERTICAL fovy in radians and width/height aspect
 //   from their caller. Horizontal scale = cot(fovy/2)/aspect; larger aspect widens
 //   horizontal coverage at fixed vertical FOV. No global 4/3 or framebuffer size
@@ -32,12 +32,11 @@
 // volatile access order, optimization pragmas and the legacy inverse anomaly.
 // No frame rate, model-load, texture-format, or presentation-resolution policy.
 #pragma push
-// Translation unit 0x80438310-0x8043B91C (vector/matrix/projection math, 76 functions; shared .sdata2 constants show it is one original file).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 #include "fp_fused.h"
 #include "classes/GtlInputDevice.h"
+#include "classes/WView.h"
 
 // Paired-single operations act on adjacent floats; matrix indices are row * 4 + column.
 typedef __vec2x32float__ PVec2;
@@ -71,14 +70,18 @@ struct InputProviderVtable {
     void* reservedBeforeKindQuery[2];
     unsigned int (*getDeviceKind)(void*);
 };
-struct InputProvider { InputProviderVtable* vtable; };
+struct InputProvider {
+    InputProviderVtable* vtable;
+};
 
 enum FloatRepresentationMasks {
     kFloatExponentMask = 0x7F800000U,
     kFloatSignMask = 0x80000000U
 };
 // Neutral name: mode 1 changes only one coefficient, not full depth remapping.
-enum ProjectionDepthConvention { kLegacyProjectionDepthMode1 = 1 };
+enum ProjectionDepthConvention {
+    kLegacyProjectionDepthMode1 = 1
+};
 static const float kViewportDepthMaximum = 16777215.0f; // 2^24-1 depth-code endpoint.
 
 // Descriptor namespaces (word 1):
@@ -101,12 +104,6 @@ extern "C" {
 static int truncate_angle_turns(float value);
 
 extern void* (**g_inputAllocator)(unsigned int);
-void gtl_IInputDevice_Ctor(void*, const void*);
-
-// Validate the descriptor, allocate a generic input device, and construct it with the configured allocator.
-// destination receives owned storage on success (1); allocation failure stores null (0).
-// Invalid arguments return 0 without writing destination. See DriverEntry's ABI caveat.
-int gtl_IInputDevice_Create(const DriverEntry* entry, void** destination);
 
 extern float kFloat_0_MatrixMath;
 extern float kFloat_0_5_MatrixMath;
@@ -122,16 +119,16 @@ extern float kSinSeriesCoefficient7;
 extern float kFloat_0_008333333_805E25F4;
 extern float kFloat_neg0_16666667_Trig;
 extern float kFloat_2_Math;
-extern float kFloat_neg1_MatrixMath; // -1.0f
-extern float kFloat_5_CatmullRom; // 5.0f, Catmull-Rom coefficient
-extern float kFloat_neg3_CatmullRom; // -3.0f, Catmull-Rom coefficient
-extern float kFloat_4_CatmullRom; // 4.0f, Catmull-Rom coefficient
-extern float kFloat_0_MatrixAccumulation; // 0.0f
+extern float kFloat_neg1_MatrixMath;                      // -1.0f
+extern float kFloat_5_CatmullRom;                         // 5.0f, Catmull-Rom coefficient
+extern float kFloat_neg3_CatmullRom;                      // -3.0f, Catmull-Rom coefficient
+extern float kFloat_4_CatmullRom;                         // 4.0f, Catmull-Rom coefficient
+extern float kFloat_0_MatrixAccumulation;                 // 0.0f
 extern double kDouble_SignedIntConversionBias_MatrixMath; // 4503601774854144.0, signed-int conversion bias
-extern float kSqrtZeroLowerBound; // -1e-6f, small-value lower bound
-extern float kSqrtZeroUpperBound; // 1e-6f, small-value upper bound
-extern float kQuaternionTraceThreshold; // 0.01f, quaternion trace threshold
-extern float kFloat_0_25_Quaternion; // 0.25f
+extern float kSqrtZeroLowerBound;                         // -1e-6f, small-value lower bound
+extern float kSqrtZeroUpperBound;                         // 1e-6f, small-value upper bound
+extern float kQuaternionTraceThreshold;                   // 0.01f, quaternion trace threshold
+extern float kFloat_0_25_Quaternion;                      // 0.25f
 void Mtx44_TransformVec4(float* out, const float* weights, const float* matrix);
 extern unsigned int kMatrixDefaultUpVector[3]; // default up-vector bits
 float Vec4_Length(void* v);
@@ -145,7 +142,8 @@ void Mtx44_InvertLegacyCofactors(void* dst, float* det_out, const void* src);
 void* PSMTX44Concat(void* dst, const void* a, const void* b);
 
 // Interpolate two components between startPoint and endPoint using the surrounding control points.
-void* Vec2_CatmullRom(void* destination, const void* previousPoint, const void* startPoint, const void* endPoint, const void* nextPoint, float interpolation);
+void* Vec2_CatmullRom(void* destination, const void* previousPoint, const void* startPoint, const void* endPoint,
+                      const void* nextPoint, float interpolation);
 
 #pragma push
 #pragma optimization_level 2
@@ -156,14 +154,15 @@ void* Vec2_CatmullRom(void* destination, const void* previousPoint, const void* 
 // row is actually a pointer into this packed stream: row[0..7] is matrix A,
 // row[8..15] is matrix B. mp += 16 advances two matrices, not sixteen floats.
 // The odd tail advances eight pairs. count == 0 writes a zero matrix.
-void Mtx44_WeightedSum(register void* out, register const void* data, register const void* weights, register unsigned int count);
+void Mtx44_WeightedSum(register void* out, register const void* data, register const void* weights,
+                       register unsigned int count);
 #pragma pop
 
 // Build the viewport transform, including the original 24-bit depth conversion and translation formula.
-void WView_BuildViewportTransform(void* destination, void* viewport);
 
 // Replace orientation from a forward vector while preserving row lengths and translation; mode zero reuses source up.
-float* Matrix_AlignForwardPreservingScaleAndTranslation(float* destination, float* sourceMatrix, float* forwardDirection, int useDefaultUp);
+float* Matrix_AlignForwardPreservingScaleAndTranslation(float* destination, float* sourceMatrix,
+                                                        float* forwardDirection, int useDefaultUp);
 
 // Rotation builder map, row-major storage and row-vector application v' = v*M:
 // X = [1 0 0 0; 0 c s 0; 0 -s c 0; 0 0 0 1]
@@ -217,7 +216,9 @@ void Mtx44_InvertLegacyCofactors(void* destination, float* determinantOut, const
 // or failure status. A unit rotation quaternion is the intended orientation
 // input; merely supplying four finite components does not prove nonsingularity.
 // Source callers in gtl_transform_frustum_stopwatch_input.cpp pass null scalingRotation, avoiding this inverse.
-void* Mtx44_BuildTransformation(void* destination, const void* scalingCenter, const void* scalingRotation, const void* scale, const void* rotationCenter, const void* rotation, const void* translation);
+void* Mtx44_BuildTransformation(void* destination, const void* scalingCenter, const void* scalingRotation,
+                                const void* scale, const void* rotationCenter, const void* rotation,
+                                const void* translation);
 
 // Build the view basis from eye/target/up, transpose it, then transform the negated eye into translation.
 void* MTXLookAt(void* destination, const void* eyePosition, const void* targetPosition, const void* upDirection);
@@ -260,7 +261,6 @@ float gtl_Plane_EvaluatePoint(const float* a, const float* b);
 #pragma dont_inline on
 #pragma fp_contract off
 
-
 // Explicit intrinsic keeps the fused single rounding even with fp_contract off.
 float fmaf(float a, float b, float c) {
     return __fmadds(a, b, c);
@@ -268,8 +268,10 @@ float fmaf(float a, float b, float c) {
 
 // Truncate turns with signed-int saturation; unordered input follows the original minimum-int path.
 static int truncate_angle_turns(float value) {
-    if (value >= 2147483648.0f) return 2147483647;
-    if (!(value >= -2147483648.0f)) return (-2147483647 - 1);
+    if (value >= 2147483648.0f)
+        return 2147483647;
+    if (!(value >= -2147483648.0f))
+        return (-2147483647 - 1);
     return (int)value;
 }
 
@@ -368,7 +370,10 @@ static inline float matrix_madd(float a, float b, float c) {
 // Work on the representation so NaN payloads and negative zero stay intact.
 // Keep the bits in a separate local: updating the union member spills it again.
 static inline unsigned int matrix_store_bits(float value) {
-    union { float value; unsigned int bits; } word;
+    union {
+        float value;
+        unsigned int bits;
+    } word;
     word.value = value;
     unsigned int bits = word.bits;
     if ((bits & kFloatExponentMask) == 0)
@@ -382,8 +387,7 @@ static inline void matrix_store(volatile float* dst, float value) {
 }
 
 // The two partial dot products round independently before the final sum.
-static inline float perspective_component(float x, float y, float z,
-                                          const float* m, int col) {
+static inline float perspective_component(float x, float y, float z, const float* m, int col) {
     float xm = x * m[col];
     float ym = y * m[4 + col];
     float xz = matrix_madd(z, m[8 + col], xm);
@@ -409,8 +413,7 @@ void PSMTX44Transpose(void* dst, const void* input);
 #pragma fp_contract on
 #pragma scheduling off
 // Compute one row/column dot product with the original fused accumulation order.
-static inline float concat_element(float a0, float a1, float a2, float a3,
-                                   float b0, float b1, float b2, float b3) {
+static inline float concat_element(float a0, float a1, float a2, float a3, float b0, float b1, float b2, float b3) {
     float p = b0 * a0;
     p = matrix_madd(b1, a1, p);
     p = matrix_madd(b2, a2, p);
@@ -495,7 +498,10 @@ void MtxOrthoOffCenter(void* dst, float left, float right, float bottom, float t
 // Unlike MtxOrthoOffCenter, the depth scale uses 1/(far-near), while translation uses near-far.
 void Mtx44_SetOrthoOffCenterLH(void* dst, float left, float right, float bottom, float top, float nearz, float farz);
 
-struct MathViewport { unsigned int x, y, width, height; float nearz, farz; };
+struct MathViewport {
+    unsigned int x, y, width, height;
+    float nearz, farz;
+};
 extern double kDouble_UnsignedIntConversionBias_Viewport; // 4503599627370496.0, unsigned-int conversion bias
 
 // Convert unsigned viewport coordinates with the original double-bias rounding sequence.
@@ -545,27 +551,34 @@ void* Vec4_Normalize(void* dst, const void* input);
 #pragma pop
 
 // Definitions follow the original text-address order.
-extern "C" {
+extern "C" {} // extern "C"
 
 #pragma push
 // Validate the factory descriptor and return a caller-owned input device (1), or
 // 0 on failure; invalid args preserve output, allocation failure writes null.
-// Release with gtl_IInputDevice_dtor(device,1) (gtl_texture_projection_input_device.cpp), the deleting
+// Release with IInputDevice::Destroy(1) (gtl_texture_projection_input_device.cpp), the deleting
 // destructor at the device vtable's first callable slot. Do not use global delete:
 // storage came from g_inputAllocator[0] and the destructor returns it through
 // __dl__Q23gtl25IInputResourceMemOperatorFPv -> g_inputAllocator[1]. Keep that
 // allocator pair alive/unchanged until every device has been destroyed.
-int gtl_IInputDevice_Create(const DriverEntry* entry, void** destination) {
-    if (!destination) return 0;
-    if (!entry) return 0;
-    if ((int)entry->descriptorWord1 < 0 || (int)entry->descriptorWord1 >= kFactoryDeviceTypeCount) return 0;
-    void* object = g_inputAllocator[0](sizeof(GtlInputDevice));
-    if (object) gtl_IInputDevice_Ctor(object, entry);
+int gtl::IInputDevice::Create(const DriverEntry* entry, void** destination) {
+    if (!destination)
+        return 0;
+    if (!entry)
+        return 0;
+    if ((int)entry->descriptorWord1 < 0 || (int)entry->descriptorWord1 >= kFactoryDeviceTypeCount)
+        return 0;
+    void* object = g_inputAllocator[0](sizeof(gtl::IInputDevice));
+    if (object)
+        ((gtl::IInputDevice*)object)->Init((const unsigned int*)entry);
     *destination = object;
-    if (!object) return 0;
+    if (!object)
+        return 0;
     return 1;
 }
 #pragma pop
+
+extern "C" {
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -612,7 +625,8 @@ int InputDriver_EnumerateDevices(int deviceFilter, void (*callback)(void*, int),
                     continue;
                 }
                 // A single switch scope lets break skip pad arbitration while continue skips the provider.
-                switch (0) { default:
+                switch (0) {
+                default:
                     // These three pad providers compete for one entry per channel.
                     if (providerId == kProviderGameCube) {
                     } else if (providerId == kProviderWiiNunchuk) {
@@ -694,14 +708,18 @@ int InputDriver_EnumerateDevices(int deviceFilter, void (*callback)(void*, int),
 #pragma dont_inline on
 #pragma fp_contract off
 // Satisfy input-module initialization without allocating or probing hardware.
-int InputDriver_InitStub(void) { return 1; }
+int InputDriver_InitStub(void) {
+    return 1;
+}
 #pragma pop
 
 #pragma push
 #pragma dont_inline on
 #pragma fp_contract off
 // Allocate size bytes through the required configured input allocator.
-void* __nw__Q23gtl25IInputResourceMemOperatorFUl(unsigned int size) { return g_inputAllocator[0](size); }
+void* __nw__Q23gtl25IInputResourceMemOperatorFUl(unsigned int size) {
+    return g_inputAllocator[0](size);
+}
 #pragma pop
 
 #pragma push
@@ -716,9 +734,9 @@ void __dl__Q23gtl25IInputResourceMemOperatorFPv(void* memory) {
 #pragma push
 // Copy a required readable uint32 depth mode; null returns 0 without changing
 // globals, otherwise publishes owned scalar storage and returns 1. No enum check.
-int Projection_SetDepthConvention(void* depthConvention)
-{
-    if (!depthConvention) return 0;
+int Projection_SetDepthConvention(void* depthConvention) {
+    if (!depthConvention)
+        return 0;
 
     unsigned int val = *(unsigned int*)depthConvention;
     s_projectionDepthConventionStorage = val;
@@ -772,9 +790,12 @@ float Math_SinApprox(float angle) {
     int integral = truncate_angle_turns(turns);
     float whole = (float)(((double)integral + 4503601774854144.0) - kDouble_SignedIntConversionBias_MatrixMath);
     float x = -fmaf(kTwoPi_AngleWrap, whole, -angle);
-    if (x < kFloat_0_MatrixMath) x = x + kTwoPi_AngleWrap;
-    if (x > kFloat_4_712389) x = x - kTwoPi_AngleWrap;
-    else if (x > kHalfPi_MatrixMath) x = kFloat_3_1415927_MatrixMath - x;
+    if (x < kFloat_0_MatrixMath)
+        x = x + kTwoPi_AngleWrap;
+    if (x > kFloat_4_712389)
+        x = x - kTwoPi_AngleWrap;
+    else if (x > kHalfPi_MatrixMath)
+        x = kFloat_3_1415927_MatrixMath - x;
     float x2 = x * x;
     float x3 = x2 * x;
     float x5 = x3 * x2;
@@ -799,9 +820,12 @@ float Math_CosApprox(float angle) {
     int integral = truncate_angle_turns(turns);
     float whole = (float)(((double)integral + 4503601774854144.0) - kDouble_SignedIntConversionBias_MatrixMath);
     float x = -fmaf(kTwoPi_AngleWrap, whole, -shifted);
-    if (x < kFloat_0_MatrixMath) x = x + kTwoPi_AngleWrap;
-    if (x > kFloat_4_712389) x = x - kTwoPi_AngleWrap;
-    else if (x > kHalfPi_MatrixMath) x = kFloat_3_1415927_MatrixMath - x;
+    if (x < kFloat_0_MatrixMath)
+        x = x + kTwoPi_AngleWrap;
+    if (x > kFloat_4_712389)
+        x = x - kTwoPi_AngleWrap;
+    else if (x > kHalfPi_MatrixMath)
+        x = kFloat_3_1415927_MatrixMath - x;
     float x2 = x * x;
     float x3 = x2 * x;
     float x5 = x3 * x2;
@@ -848,9 +872,12 @@ float Vec2_LengthSquared(const void* input) {
 #pragma fp_contract off
 // Add two XY vectors; exact in-place destination may equal either input.
 void gtl_Vec2_Add(void* dst, const void* first, const void* second) {
-    const float* a = (const float*)first; const float* b = (const float*)second;
+    const float* a = (const float*)first;
+    const float* b = (const float*)second;
     float x = a[0] + b[0], y = a[1] + b[1];
-    float* out = (float*)dst; out[0] = x; out[1] = y;
+    float* out = (float*)dst;
+    out[0] = x;
+    out[1] = y;
 }
 #pragma pop
 
@@ -859,9 +886,12 @@ void gtl_Vec2_Add(void* dst, const void* first, const void* second) {
 #pragma fp_contract off
 // Subtract second XY from first XY; exact in-place destination is supported.
 void gtl_Vec2_Subtract(void* dst, const void* first, const void* second) {
-    const float* a = (const float*)first; const float* b = (const float*)second;
+    const float* a = (const float*)first;
+    const float* b = (const float*)second;
     float x = a[0] - b[0], y = a[1] - b[1];
-    float* out = (float*)dst; out[0] = x; out[1] = y;
+    float* out = (float*)dst;
+    out[0] = x;
+    out[1] = y;
 }
 #pragma pop
 
@@ -872,7 +902,9 @@ void gtl_Vec2_Subtract(void* dst, const void* first, const void* second) {
 void Vec2_Scale(void* dst, const void* input, float scale) {
     const float* v = (const float*)input;
     float x = v[0] * scale, y = v[1] * scale;
-    float* out = (float*)dst; out[0] = x; out[1] = y;
+    float* out = (float*)dst;
+    out[0] = x;
+    out[1] = y;
 }
 #pragma pop
 
@@ -882,17 +914,24 @@ void Vec2_Scale(void* dst, const void* input, float scale) {
 // Interpolate XY from endpoint/tangent data; read all control points before output.
 void* Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1, float t) {
     float matrix[16], weights[4], result[4];
-    hermite_weights(weights, t); PSMTX44Identity(matrix);
-    Memory_Copy(matrix, p0, 8); Memory_Copy(matrix + 4, endPoint, 8);
-    Memory_Copy(matrix + 8, startTangent, 8); Memory_Copy(matrix + 12, t1, 8);
+    hermite_weights(weights, t);
+    PSMTX44Identity(matrix);
+    Memory_Copy(matrix, p0, 8);
+    Memory_Copy(matrix + 4, endPoint, 8);
+    Memory_Copy(matrix + 8, startTangent, 8);
+    Memory_Copy(matrix + 12, t1, 8);
     Mtx44_TransformVec4(result, weights, matrix);
-    float* out = (float*)dst; out[0] = result[0]; out[1] = result[1]; return dst;
+    float* out = (float*)dst;
+    out[0] = result[0];
+    out[1] = result[1];
+    return dst;
 }
 #pragma pop
 
 #pragma push
 // Interpolate XY between start/end using previous/next points; no t clamp.
-void* Vec2_CatmullRom(void* destination, const void* previousPoint, const void* startPoint, const void* endPoint, const void* nextPoint, float interpolation) {
+void* Vec2_CatmullRom(void* destination, const void* previousPoint, const void* startPoint, const void* endPoint,
+                      const void* nextPoint, float interpolation) {
     struct {
         float result[4];
         float weights[4];
@@ -965,24 +1004,55 @@ float Vec3_Length(const void* input) {
 #pragma dont_inline on
 #pragma fp_contract off
 // Return XYZ squared length with fused X/Z partial sum before adding Y squared.
+// clang-format off
+#ifdef __MWERKS__
+asm float Vec3_LengthSquared(const void* input) {
+    nofralloc
+    psq_l f2, 0(r3), 0, 0
+    ps_mul f2, f2, f2
+    lfs f3, 8(r3)
+    ps_madd f4, f3, f3, f2
+    ps_sum0 f1, f4, f2, f2
+    blr
+}
+#else
+// clang-format on
 float Vec3_LengthSquared(const void* input) {
     const float* v = (const float*)input;
     float x2 = v[0] * v[0], y2 = v[1] * v[1];
     float xz = fmaf(v[2], v[2], x2);
     return xz + y2;
 }
+#endif
 #pragma pop
 
 #pragma push
 #pragma dont_inline on
 #pragma fp_contract off
 // Dot two XYZ vectors; preserve the fused X/Y sum then separate Z addition.
+// clang-format off
+#ifdef __MWERKS__
+asm float Vec3_Dot(const void* first, const void* second) {
+    nofralloc
+    psq_l f2, 4(r3), 0, 0
+    psq_l f3, 4(r4), 0, 0
+    ps_mul f2, f2, f3
+    psq_l f5, 0(r3), 0, 0
+    psq_l f4, 0(r4), 0, 0
+    ps_madd f3, f5, f4, f2
+    ps_sum0 f1, f3, f2, f2
+    blr
+}
+#else
+// clang-format on
 float Vec3_Dot(const void* first, const void* second) {
-    const float* a = (const float*)first; const float* b = (const float*)second;
+    const float* a = (const float*)first;
+    const float* b = (const float*)second;
     float yy = a[1] * b[1], zz = a[2] * b[2];
     float xy = fmaf(a[0], b[0], yy);
     return xy + zz;
 }
+#endif
 #pragma pop
 
 #pragma push
@@ -990,15 +1060,42 @@ float Vec3_Dot(const void* first, const void* second) {
 #pragma fp_contract off
 // Cross first with second, allowing destination == either input; preserve negated
 // fused Y/Z results, including their zero signs.
+// clang-format off
+#ifdef __MWERKS__
+asm void Vec3_Cross(void* dst, const void* first, const void* second) {
+    nofralloc
+    psq_l f1, 0(r5), 0, 0
+    lfs f2, 8(r4)
+    psq_l f0, 0(r4), 0, 0
+    ps_merge10 f6, f1, f1
+    ps_mul f4, f1, f2
+    lfs f3, 8(r5)
+    ps_muls0 f7, f1, f0
+    ps_msub f5, f0, f3, f4
+    ps_msub f8, f0, f6, f7
+    ps_merge11 f9, f5, f5
+    ps_merge01 f10, f5, f8
+    psq_st f9, 0(r3), 1, 0
+    ps_neg f10, f10
+    psq_st f10, 4(r3), 0, 0
+    blr
+}
+#else
+// clang-format on
 void Vec3_Cross(void* dst, const void* first, const void* second) {
-    const float* a = (const float*)first; const float* b = (const float*)second;
+    const float* a = (const float*)first;
+    const float* b = (const float*)second;
     float bx = b[0], by = b[1], az = a[2], ax = a[0], ay = a[1], bz = b[2];
     float bxaz = bx * az, byaz = by * az, byax = by * ax;
     float yneg = fmaf(ax, bz, -bxaz);
     float x = fmaf(ay, bz, -byaz);
     float zneg = fmaf(ay, bx, -byax);
-    float* out = (float*)dst; out[0] = x; out[1] = -yneg; out[2] = -zneg;
+    float* out = (float*)dst;
+    out[0] = x;
+    out[1] = -yneg;
+    out[2] = -zneg;
 }
+#endif
 #pragma pop
 
 #pragma push
@@ -1006,9 +1103,13 @@ void Vec3_Cross(void* dst, const void* first, const void* second) {
 #pragma fp_contract off
 // Add XYZ vectors after reading all components; exact in-place output is supported.
 void Vec3_Add(void* dst, const void* first, const void* second) {
-    const float* a = (const float*)first; const float* b = (const float*)second;
+    const float* a = (const float*)first;
+    const float* b = (const float*)second;
     float x = a[0] + b[0], y = a[1] + b[1], z = a[2] + b[2];
-    float* out = (float*)dst; out[0] = x; out[1] = y; out[2] = z;
+    float* out = (float*)dst;
+    out[0] = x;
+    out[1] = y;
+    out[2] = z;
 }
 #pragma pop
 
@@ -1017,9 +1118,13 @@ void Vec3_Add(void* dst, const void* first, const void* second) {
 #pragma fp_contract off
 // Subtract second XYZ from first, supporting exact in-place output.
 void Vec3_Subtract(void* dst, const void* first, const void* second) {
-    const float* a = (const float*)first; const float* b = (const float*)second;
+    const float* a = (const float*)first;
+    const float* b = (const float*)second;
     float x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2];
-    float* out = (float*)dst; out[0] = x; out[1] = y; out[2] = z;
+    float* out = (float*)dst;
+    out[0] = x;
+    out[1] = y;
+    out[2] = z;
 }
 #pragma pop
 
@@ -1030,7 +1135,10 @@ void Vec3_Subtract(void* dst, const void* first, const void* second) {
 void Vec3_Scale(void* dst, const void* input, float scale) {
     const float* v = (const float*)input;
     float x = v[0] * scale, y = v[1] * scale, z = v[2] * scale;
-    float* out = (float*)dst; out[0] = x; out[1] = y; out[2] = z;
+    float* out = (float*)dst;
+    out[0] = x;
+    out[1] = y;
+    out[2] = z;
 }
 #pragma pop
 
@@ -1038,14 +1146,39 @@ void Vec3_Scale(void* dst, const void* input, float scale) {
 #pragma dont_inline on
 #pragma fp_contract off
 // Interpolate XYZ without clamping t or fusing multiply/add; inputs may equal dst.
+// clang-format off
+#ifdef __MWERKS__
+asm void Vec3_Lerp(void* dst, const void* first, const void* second, float t) {
+    nofralloc
+    psq_l f2, 0(r4), 0, 0
+    psq_l f3, 0(r5), 0, 0
+    psq_l f7, 8(r4), 1, 0
+    psq_l f8, 8(r5), 1, 0
+    ps_sub f4, f3, f2
+    ps_sub f9, f8, f7
+    ps_muls0 f5, f4, f1
+    ps_muls0 f10, f9, f1
+    ps_add f6, f2, f5
+    ps_add f11, f7, f10
+    psq_st f6, 0(r3), 0, 0
+    psq_st f11, 8(r3), 1, 0
+    blr
+}
+#else
+// clang-format on
 void Vec3_Lerp(void* dst, const void* first, const void* second, float t) {
-    const float* a = (const float*)first; const float* b = (const float*)second;
+    const float* a = (const float*)first;
+    const float* b = (const float*)second;
     float ax = a[0], ay = a[1], az = a[2];
     float dx = b[0] - ax, dy = b[1] - ay, dz = b[2] - az;
     float tx = dx * t, ty = dy * t, tz = dz * t;
     float x = ax + tx, y = ay + ty, z = az + tz;
-    float* out = (float*)dst; out[0] = x; out[1] = y; out[2] = z;
+    float* out = (float*)dst;
+    out[0] = x;
+    out[1] = y;
+    out[2] = z;
 }
+#endif
 #pragma pop
 
 #pragma push
@@ -1072,7 +1205,9 @@ void* Vec3_Normalize(void* dst, const void* input) {
     float refined = correction * half_estimate;
     float rx = x * refined, ry = y * refined, rz = z * refined;
     volatile float* out = (volatile float*)dst;
-    out[0] = rx; out[1] = ry; out[2] = rz;
+    out[0] = rx;
+    out[1] = ry;
+    out[2] = rz;
     return dst;
 }
 #pragma pop
@@ -1083,11 +1218,18 @@ void* Vec3_Normalize(void* dst, const void* input) {
 // Interpolate XYZ with endpoint/tangent basis; all controls read before output.
 void* Vec3_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1, float t) {
     float matrix[16], weights[4], result[4];
-    hermite_weights(weights, t); PSMTX44Identity(matrix);
-    Memory_Copy(matrix, p0, 12); Memory_Copy(matrix + 4, endPoint, 12);
-    Memory_Copy(matrix + 8, startTangent, 12); Memory_Copy(matrix + 12, t1, 12);
+    hermite_weights(weights, t);
+    PSMTX44Identity(matrix);
+    Memory_Copy(matrix, p0, 12);
+    Memory_Copy(matrix + 4, endPoint, 12);
+    Memory_Copy(matrix + 8, startTangent, 12);
+    Memory_Copy(matrix + 12, t1, 12);
     Mtx44_TransformVec4(result, weights, matrix);
-    float* out = (float*)dst; out[0] = result[0]; out[1] = result[1]; out[2] = result[2]; return dst;
+    float* out = (float*)dst;
+    out[0] = result[0];
+    out[1] = result[1];
+    out[2] = result[2];
+    return dst;
 }
 #pragma pop
 
@@ -1099,7 +1241,10 @@ void Mtx44_TransformPointToVec4(void* dst, const void* input, const void* matrix
     float result[4];
     transform_four(result, (const float*)input, (const float*)matrix, 1.0f);
     float* out = (float*)dst;
-    out[0] = result[0]; out[1] = result[1]; out[2] = result[2]; out[3] = result[3];
+    out[0] = result[0];
+    out[1] = result[1];
+    out[2] = result[2];
+    out[3] = result[3];
 }
 #pragma pop
 
@@ -1110,6 +1255,52 @@ void Mtx44_TransformPointToVec4(void* dst, const void* input, const void* matrix
 // Transform XYZ with W=1, divide by resulting W, store XYZ in Z/X/Y order.
 // Source/destination may coincide; W=0 has no failure guard. Preserve scalar
 // reciprocal rounding and paired-store-compatible subnormal flushing.
+// clang-format off
+#ifdef __MWERKS__
+asm void Mtx44_TransformPointPerspective(void* dst, const void* input, const void* matrix) {
+    nofralloc
+    psq_l f0, 0(r5), 0, 0
+    psq_l f1, 16(r5), 0, 0
+    psq_l f10, 8(r5), 0, 0
+    psq_l f11, 24(r5), 0, 0
+    ps_merge00 f2, f0, f1
+    ps_merge11 f4, f0, f1
+    psq_l f0, 32(r5), 0, 0
+    psq_l f1, 48(r5), 0, 0
+    ps_merge00 f6, f10, f11
+    ps_merge11 f8, f10, f11
+    ps_merge00 f3, f0, f1
+    ps_merge11 f5, f0, f1
+    psq_l f10, 40(r5), 0, 0
+    psq_l f11, 56(r5), 0, 0
+    psq_l f0, 0(r4), 0, 0
+    ps_merge00 f7, f10, f11
+    psq_l f1, 8(r4), 1, 0
+    ps_merge11 f9, f10, f11
+    ps_mul f10, f0, f6
+    ps_mul f6, f0, f2
+    ps_madd f11, f1, f7, f10
+    ps_mul f10, f0, f8
+    ps_madd f7, f1, f3, f6
+    ps_sum0 f12, f11, f11, f11
+    ps_madd f11, f1, f9, f10
+    ps_mul f6, f0, f4
+    ps_sum0 f8, f7, f7, f7
+    ps_sum1 f13, f11, f12, f11
+    ps_madd f7, f1, f5, f6
+    ps_merge11 f10, f1, f1
+    ps_sum0 f11, f13, f13, f13
+    ps_sum1 f9, f7, f8, f7
+    ps_merge11 f11, f11, f11
+    ps_div f11, f10, f11
+    ps_mul f13, f13, f11
+    ps_mul f9, f9, f11
+    psq_st f13, 8(r3), 1, 0
+    psq_st f9, 0(r3), 0, 0
+    blr
+}
+#else
+// clang-format on
 void Mtx44_TransformPointPerspective(void* dst, const void* input, const void* matrix) {
     const float* v = (const float*)input;
     const float* m = (const float*)matrix;
@@ -1121,8 +1312,11 @@ void Mtx44_TransformPointPerspective(void* dst, const void* input, const void* m
     float inverse = 1.0f / rw;
     float z = rz * inverse, x = rx * inverse, y = ry * inverse;
     volatile float* out = (volatile float*)dst;
-    matrix_store(out + 2, z); matrix_store(out, x); matrix_store(out + 1, y);
+    matrix_store(out + 2, z);
+    matrix_store(out, x);
+    matrix_store(out + 1, y);
 }
+#endif
 #pragma pop
 
 #pragma push
@@ -1132,7 +1326,10 @@ void Mtx44_TransformPointPerspective(void* dst, const void* input, const void* m
 void Mtx44_TransformDirection(void* dst, const void* input, const void* matrix) {
     float result[4];
     transform_four(result, (const float*)input, (const float*)matrix, kFloat_0_MatrixMath);
-    float* out = (float*)dst; out[0] = result[0]; out[1] = result[1]; out[2] = result[2];
+    float* out = (float*)dst;
+    out[0] = result[0];
+    out[1] = result[1];
+    out[2] = result[2];
 }
 #pragma pop
 
@@ -1151,9 +1348,11 @@ void* Vec3_ProjectToViewport(void* dst, void* input, void* viewport, void* proje
     float nearz = vp->nearz, farz = vp->farz;
     Mtx44_SetOrthoOffCenterLH(viewport_matrix, x, width, height, y, nearz, farz);
     Mtx44_InvertLegacyCofactors(viewport_matrix, 0, viewport_matrix);
-    PSMTX44Concat(combined, world, view); PSMTX44Concat(combined, combined, projection);
+    PSMTX44Concat(combined, world, view);
+    PSMTX44Concat(combined, combined, projection);
     PSMTX44Concat(combined, combined, viewport_matrix);
-    Mtx44_TransformPointPerspective(dst, input, combined); return dst;
+    Mtx44_TransformPointPerspective(dst, input, combined);
+    return dst;
 }
 #pragma pop
 
@@ -1171,10 +1370,12 @@ void* Vec3_UnprojectFromViewport(void* dst, void* input, void* viewport, void* p
     float nearz = vp->nearz, farz = vp->farz;
     Mtx44_SetOrthoOffCenterLH(viewport_matrix, x, width, height, y, nearz, farz);
     Mtx44_InvertLegacyCofactors(viewport_matrix, 0, viewport_matrix);
-    PSMTX44Concat(combined, world, view); PSMTX44Concat(combined, combined, projection);
+    PSMTX44Concat(combined, world, view);
+    PSMTX44Concat(combined, combined, projection);
     PSMTX44Concat(combined, combined, viewport_matrix);
     Mtx44_InvertLegacyCofactors(combined, 0, combined);
-    Mtx44_TransformPointPerspective(dst, input, combined); return dst;
+    Mtx44_TransformPointPerspective(dst, input, combined);
+    return dst;
 }
 #pragma pop
 
@@ -1183,7 +1384,10 @@ void* Vec3_UnprojectFromViewport(void* dst, void* input, void* viewport, void* p
 #pragma fp_contract off
 // Fill XYZ with value; dst requires three writable floats.
 void Vec3_SetAll(void* dst, float value) {
-    float* out = (float*)dst; out[0] = value; out[1] = value; out[2] = value;
+    float* out = (float*)dst;
+    out[0] = value;
+    out[1] = value;
+    out[2] = value;
 }
 #pragma pop
 
@@ -1209,41 +1413,100 @@ float Vec4_Length(void* input) {
 #pragma dont_inline on
 #pragma fp_contract off
 // Return XYZW squared length with paired grouping (X^2+W^2)+(Z^2+Y^2).
+// clang-format off
+#ifdef __MWERKS__
+asm float Vec4_LengthSquared(const void* input) {
+    nofralloc
+    psq_l f2, 0(r3), 0, 0
+    psq_l f3, 8(r3), 0, 0
+    ps_mul f2, f2, f2
+    ps_mul f3, f3, f3
+    ps_sum0 f4, f2, f2, f3
+    ps_sum1 f5, f3, f3, f2
+    ps_sum0 f1, f4, f4, f5
+    blr
+}
+#else
+// clang-format on
 float Vec4_LengthSquared(const void* input) {
     const float* v = (const float*)input;
     float x2 = v[0] * v[0], y2 = v[1] * v[1], z2 = v[2] * v[2], w2 = v[3] * v[3];
     float xw = x2 + w2, zy = z2 + y2;
     return xw + zy;
 }
+#endif
 #pragma pop
 
 #pragma push
 #pragma dont_inline on
 #pragma fp_contract off
 // Scale XYZW including homogeneous W; exact in-place destination is supported.
+// clang-format off
+#ifdef __MWERKS__
+asm void Vec4_Scale(void* dst, const void* input, float scale) {
+    nofralloc
+    psq_l f2, 0(r4), 0, 0
+    psq_l f3, 8(r4), 0, 0
+    ps_muls0 f4, f2, f1
+    ps_muls0 f5, f3, f1
+    psq_st f4, 0(r3), 0, 0
+    psq_st f5, 8(r3), 0, 0
+    blr
+}
+#else
+// clang-format on
 void Vec4_Scale(void* dst, const void* input, float scale) {
     const float* v = (const float*)input;
     float x = v[0] * scale, y = v[1] * scale, z = v[2] * scale, w = v[3] * scale;
-    float* out = (float*)dst; out[0] = x; out[1] = y; out[2] = z; out[3] = w;
+    float* out = (float*)dst;
+    out[0] = x;
+    out[1] = y;
+    out[2] = z;
+    out[3] = w;
 }
+#endif
 #pragma pop
 
 #pragma push
 #pragma dont_inline on
 #pragma fp_contract off
 // Interpolate four components with separate multiply/add rounding and unclamped t.
+// clang-format off
+#ifdef __MWERKS__
+asm void Vec4_Lerp(void* dst, const void* first, const void* second, float t) {
+    nofralloc
+    psq_l f2, 0(r4), 0, 0
+    psq_l f3, 0(r5), 0, 0
+    psq_l f7, 8(r4), 0, 0
+    psq_l f8, 8(r5), 0, 0
+    ps_sub f4, f3, f2
+    ps_sub f9, f8, f7
+    ps_muls0 f5, f4, f1
+    ps_muls0 f10, f9, f1
+    ps_add f6, f2, f5
+    ps_add f11, f7, f10
+    psq_st f6, 0(r3), 0, 0
+    psq_st f11, 8(r3), 0, 0
+    blr
+}
+#else
+// clang-format on
 void Vec4_Lerp(void* dst, const void* first, const void* second, float t) {
-    const float* a = (const float*)first; const float* b = (const float*)second;
+    const float* a = (const float*)first;
+    const float* b = (const float*)second;
     float av[4], result[4];
     int i;
-    for (i = 0; i < 4; ++i) av[i] = a[i];
+    for (i = 0; i < 4; ++i)
+        av[i] = a[i];
     for (i = 0; i < 4; ++i) {
         float delta = b[i] - av[i];
         float scaled = delta * t;
         result[i] = av[i] + scaled;
     }
-    for (i = 0; i < 4; ++i) ((float*)dst)[i] = result[i];
+    for (i = 0; i < 4; ++i)
+        ((float*)dst)[i] = result[i];
 }
+#endif
 #pragma pop
 
 #pragma push
@@ -1269,7 +1532,10 @@ void* Vec4_Normalize(void* dst, const void* input) {
     float refined = correction * half_estimate;
     float rx = x * refined, ry = y * refined, rz = z * refined, rw = w * refined;
     volatile float* out = (volatile float*)dst;
-    out[0] = rx; out[1] = ry; out[2] = rz; out[3] = rw;
+    out[0] = rx;
+    out[1] = ry;
+    out[2] = rz;
+    out[3] = rw;
     return dst;
 }
 #pragma pop
@@ -1282,7 +1548,10 @@ void Mtx44_TransformVec4(float* out, const float* v, const float* matrix) {
     float result[4];
     float w = v[3];
     transform_four(result, v, matrix, w);
-    out[0] = result[0]; out[1] = result[1]; out[2] = result[2]; out[3] = result[3];
+    out[0] = result[0];
+    out[1] = result[1];
+    out[2] = result[2];
+    out[3] = result[3];
 }
 #pragma pop
 
@@ -1290,12 +1559,47 @@ void Mtx44_TransformVec4(float* out, const float* v, const float* matrix) {
 #pragma dont_inline on
 #pragma fp_contract off
 // Write all sixteen floats of an identity matrix in the original store sequence.
-void PSMTX44Identity(void* dst) {
-    volatile float* m = (volatile float*)dst; float z = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath;
-    m[1] = z; m[2] = z; m[0] = one; m[3] = z; m[4] = z;
-    m[5] = one; m[6] = z; m[7] = z; m[8] = z; m[9] = z;
-    m[10] = one; m[11] = z; m[12] = z; m[13] = z; m[14] = z; m[15] = one;
+// clang-format off
+#ifdef __MWERKS__
+asm void PSMTX44Identity(void* dst) {
+    nofralloc
+    lfs f1, kFloat_0_MatrixMath
+    lfs f0, kFloat_1_MatrixMath
+    psq_st f1, 4(r3), 0, 0
+    stfs f0, 0(r3)
+    psq_st f1, 12(r3), 0, 0
+    stfs f0, 20(r3)
+    psq_st f1, 24(r3), 0, 0
+    psq_st f1, 32(r3), 0, 0
+    stfs f0, 40(r3)
+    psq_st f1, 44(r3), 0, 0
+    psq_st f1, 52(r3), 0, 0
+    stfs f0, 60(r3)
+    blr
 }
+#else
+// clang-format on
+void PSMTX44Identity(void* dst) {
+    volatile float* m = (volatile float*)dst;
+    float z = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath;
+    m[1] = z;
+    m[2] = z;
+    m[0] = one;
+    m[3] = z;
+    m[4] = z;
+    m[5] = one;
+    m[6] = z;
+    m[7] = z;
+    m[8] = z;
+    m[9] = z;
+    m[10] = one;
+    m[11] = z;
+    m[12] = z;
+    m[13] = z;
+    m[14] = z;
+    m[15] = one;
+}
+#endif
 #pragma pop
 
 #pragma push
@@ -1304,21 +1608,31 @@ void PSMTX44Identity(void* dst) {
 // Transpose a 4x4 matrix with staged pair loads/stores; exact in-place is supported,
 // but arbitrary partial overlap is not a buffered-transpose contract.
 void PSMTX44Transpose(void* dst, const void* input) {
-    volatile float* d = (volatile float*)dst; const volatile float* s = (const volatile float*)input;
+    volatile float* d = (volatile float*)dst;
+    const volatile float* s = (const volatile float*)input;
     float a0 = s[0], a1 = s[1], b0 = s[4], b1 = s[5];
     float a2 = s[2], a3 = s[3];
-    d[0] = a0; d[1] = b0;
+    d[0] = a0;
+    d[1] = b0;
     float b2 = s[6], b3 = s[7];
-    d[4] = a1; d[5] = b1;
+    d[4] = a1;
+    d[5] = b1;
     float c0 = s[8], c1 = s[9];
-    d[8] = a2; d[9] = b2;
+    d[8] = a2;
+    d[9] = b2;
     float e0 = s[12], e1 = s[13];
-    d[12] = a3; d[13] = b3;
+    d[12] = a3;
+    d[13] = b3;
     float c2 = s[10], c3 = s[11];
-    d[2] = c0; d[3] = e0;
+    d[2] = c0;
+    d[3] = e0;
     float e2 = s[14], e3 = s[15];
-    d[6] = c1; d[7] = e1;
-    d[10] = c2; d[11] = e2; d[14] = c3; d[15] = e3;
+    d[6] = c1;
+    d[7] = e1;
+    d[10] = c2;
+    d[11] = e2;
+    d[14] = c3;
+    d[15] = e3;
 }
 #pragma pop
 
@@ -1328,6 +1642,78 @@ void PSMTX44Transpose(void* dst, const void* input) {
 #pragma scheduling off
 // Multiply first*second in row-vector order, returning dst; dst may equal either
 // input exactly. Paired-store bit handling and staged reads preserve game rounding.
+// clang-format off
+#ifdef __MWERKS__
+asm void* PSMTX44Concat(void* dst, const void* first, const void* second) {
+    nofralloc
+    psq_l f0, 0(r4), 0, 0
+    psq_l f2, 0(r5), 0, 0
+    ps_muls0 f6, f2, f0
+    psq_l f3, 16(r5), 0, 0
+    psq_l f4, 32(r5), 0, 0
+    ps_madds1 f6, f3, f0, f6
+    psq_l f1, 8(r4), 0, 0
+    psq_l f5, 48(r5), 0, 0
+    ps_madds0 f6, f4, f1, f6
+    psq_l f0, 16(r4), 0, 0
+    ps_madds1 f6, f5, f1, f6
+    psq_l f1, 24(r4), 0, 0
+    ps_muls0 f8, f2, f0
+    ps_madds1 f8, f3, f0, f8
+    psq_l f0, 32(r4), 0, 0
+    ps_madds0 f8, f4, f1, f8
+    ps_madds1 f8, f5, f1, f8
+    psq_l f1, 40(r4), 0, 0
+    ps_muls0 f10, f2, f0
+    ps_madds1 f10, f3, f0, f10
+    psq_l f0, 48(r4), 0, 0
+    ps_madds0 f10, f4, f1, f10
+    ps_madds1 f10, f5, f1, f10
+    psq_l f1, 56(r4), 0, 0
+    ps_muls0 f12, f2, f0
+    psq_l f2, 8(r5), 0, 0
+    ps_madds1 f12, f3, f0, f12
+    psq_l f0, 0(r4), 0, 0
+    ps_madds0 f12, f4, f1, f12
+    psq_l f3, 24(r5), 0, 0
+    ps_madds1 f12, f5, f1, f12
+    psq_l f1, 8(r4), 0, 0
+    ps_muls0 f7, f2, f0
+    psq_l f4, 40(r5), 0, 0
+    ps_madds1 f7, f3, f0, f7
+    psq_l f5, 56(r5), 0, 0
+    ps_madds0 f7, f4, f1, f7
+    psq_l f0, 16(r4), 0, 0
+    ps_madds1 f7, f5, f1, f7
+    psq_l f1, 24(r4), 0, 0
+    ps_muls0 f9, f2, f0
+    psq_st f6, 0(r3), 0, 0
+    ps_madds1 f9, f3, f0, f9
+    psq_l f0, 32(r4), 0, 0
+    ps_madds0 f9, f4, f1, f9
+    psq_st f8, 16(r3), 0, 0
+    ps_madds1 f9, f5, f1, f9
+    psq_l f1, 40(r4), 0, 0
+    ps_muls0 f11, f2, f0
+    psq_st f10, 32(r3), 0, 0
+    ps_madds1 f11, f3, f0, f11
+    psq_l f0, 48(r4), 0, 0
+    ps_madds0 f11, f4, f1, f11
+    psq_st f12, 48(r3), 0, 0
+    ps_madds1 f11, f5, f1, f11
+    psq_l f1, 56(r4), 0, 0
+    ps_muls0 f13, f2, f0
+    psq_st f7, 8(r3), 0, 0
+    ps_madds1 f13, f3, f0, f13
+    psq_st f9, 24(r3), 0, 0
+    ps_madds0 f13, f4, f1, f13
+    psq_st f11, 40(r3), 0, 0
+    ps_madds1 f13, f5, f1, f13
+    psq_st f13, 56(r3), 0, 0
+    blr
+}
+#else
+// clang-format on
 void* PSMTX44Concat(void* dst, const void* first, const void* second) {
     volatile unsigned int* d = (volatile unsigned int*)dst;
     const volatile float* a = (const volatile float*)first;
@@ -1338,13 +1724,22 @@ void* PSMTX44Concat(void* dst, const void* first, const void* second) {
     float a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
     unsigned int l00 = matrix_store_bits(concat_element(a0, a1, a2, a3, b00, b10, b20, b30));
     unsigned int l01 = matrix_store_bits(concat_element(a0, a1, a2, a3, b01, b11, b21, b31));
-    a0 = a[4]; a1 = a[5]; a2 = a[6]; a3 = a[7];
+    a0 = a[4];
+    a1 = a[5];
+    a2 = a[6];
+    a3 = a[7];
     unsigned int l10 = matrix_store_bits(concat_element(a0, a1, a2, a3, b00, b10, b20, b30));
     unsigned int l11 = matrix_store_bits(concat_element(a0, a1, a2, a3, b01, b11, b21, b31));
-    a0 = a[8]; a1 = a[9]; a2 = a[10]; a3 = a[11];
+    a0 = a[8];
+    a1 = a[9];
+    a2 = a[10];
+    a3 = a[11];
     unsigned int l20 = matrix_store_bits(concat_element(a0, a1, a2, a3, b00, b10, b20, b30));
     unsigned int l21 = matrix_store_bits(concat_element(a0, a1, a2, a3, b01, b11, b21, b31));
-    a0 = a[12]; a1 = a[13]; a2 = a[14]; a3 = a[15];
+    a0 = a[12];
+    a1 = a[13];
+    a2 = a[14];
+    a3 = a[15];
     unsigned int l30 = matrix_store_bits(concat_element(a0, a1, a2, a3, b00, b10, b20, b30));
     float l31_value = concat_element(a0, a1, a2, a3, b01, b11, b21, b31);
 
@@ -1352,36 +1747,52 @@ void* PSMTX44Concat(void* dst, const void* first, const void* second) {
     float b22 = b[10], b23 = b[11], b32 = b[14], b33 = b[15];
     // b is now dead, leaving an integer register for the eighth left result.
     unsigned int l31 = matrix_store_bits(l31_value);
-    a0 = a[0]; a1 = a[1]; a2 = a[2]; a3 = a[3];
+    a0 = a[0];
+    a1 = a[1];
+    a2 = a[2];
+    a3 = a[3];
     float r00_value = concat_element(a0, a1, a2, a3, b02, b12, b22, b32);
     float r01_value = concat_element(a0, a1, a2, a3, b03, b13, b23, b33);
     float a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
-    d[0] = l00; d[1] = l01;
+    d[0] = l00;
+    d[1] = l01;
     // Convert after releasing l00/l01, keeping this leaf in volatile registers.
     unsigned int r00 = matrix_store_bits(r00_value);
     unsigned int r01 = matrix_store_bits(r01_value);
     float r10_value = concat_element(a10, a11, a12, a13, b02, b12, b22, b32);
     float r11_value = concat_element(a10, a11, a12, a13, b03, b13, b23, b33);
     // These reads must precede d[4..5], but need not overlap the row-1 arithmetic.
-    a0 = a[8]; a1 = a[9];
-    d[4] = l10; d[5] = l11;
+    a0 = a[8];
+    a1 = a[9];
+    d[4] = l10;
+    d[5] = l11;
     unsigned int r10 = matrix_store_bits(r10_value);
     unsigned int r11 = matrix_store_bits(r11_value);
-    a2 = a[10]; a3 = a[11];
-    d[8] = l20; d[9] = l21;
+    a2 = a[10];
+    a3 = a[11];
+    d[8] = l20;
+    d[9] = l21;
     unsigned int r20 = matrix_store_bits(concat_element(a0, a1, a2, a3, b02, b12, b22, b32));
     unsigned int r21 = matrix_store_bits(concat_element(a0, a1, a2, a3, b03, b13, b23, b33));
-    a10 = a[12]; a11 = a[13];
-    d[12] = l30; d[13] = l31;
-    a12 = a[14]; a13 = a[15];
-    d[2] = r00; d[3] = r01;
+    a10 = a[12];
+    a11 = a[13];
+    d[12] = l30;
+    d[13] = l31;
+    a12 = a[14];
+    a13 = a[15];
+    d[2] = r00;
+    d[3] = r01;
     unsigned int r30 = matrix_store_bits(concat_element(a10, a11, a12, a13, b02, b12, b22, b32));
     unsigned int r31 = matrix_store_bits(concat_element(a10, a11, a12, a13, b03, b13, b23, b33));
-    d[6] = r10; d[7] = r11;
-    d[10] = r20; d[11] = r21;
-    d[14] = r30; d[15] = r31;
+    d[6] = r10;
+    d[7] = r11;
+    d[10] = r20;
+    d[11] = r21;
+    d[14] = r30;
+    d[15] = r31;
     return dst;
 }
+#endif
 #pragma pop
 
 #pragma push
@@ -1414,30 +1825,20 @@ void Mtx44_InvertLegacyCofactors(void* destination, float* determinantOut, const
     float p35 = src[3] * m11;
     float p36 = src[3] * m12;
 
-    float det = src[12] * (src[9] * p36)
-        + (src[14] * (src[8] * p35)
-            + (src[13] * (src[10] * p34)
-                + (src[13] * (src[8] * p27)
-                    + (src[12] * (m23 * p25)
-                        + (src[15] * (src[9] * p24)
-                            + (src[12] * (src[10] * p17)
-                                + (src[15] * (src[8] * p16)
-                                    + (src[14] * (m23 * p14)
-                                        + (src[14] * (src[9] * p07)
-                                            + (src[15] * (src[10] * p05)
-                                                + src[13] * (m23 * p06)))))))))))
-        - src[14] * (m23 * p05)
-        - src[15] * (src[9] * p06)
-        - src[13] * (src[10] * p07)
-        - src[15] * (src[10] * p14)
-        - src[12] * (m23 * p16)
-        - src[14] * (src[8] * p17)
-        - src[13] * (m23 * p24)
-        - src[15] * (src[8] * p25)
-        - src[12] * (src[9] * p27)
-        - src[14] * (src[9] * p34)
-        - src[12] * (src[10] * p35)
-        - src[13] * (src[8] * p36);
+    float det = src[12] * (src[9] * p36) +
+                (src[14] * (src[8] * p35) +
+                 (src[13] * (src[10] * p34) +
+                  (src[13] * (src[8] * p27) +
+                   (src[12] * (m23 * p25) +
+                    (src[15] * (src[9] * p24) +
+                     (src[12] * (src[10] * p17) +
+                      (src[15] * (src[8] * p16) +
+                       (src[14] * (m23 * p14) +
+                        (src[14] * (src[9] * p07) + (src[15] * (src[10] * p05) + src[13] * (m23 * p06))))))))))) -
+                src[14] * (m23 * p05) - src[15] * (src[9] * p06) - src[13] * (src[10] * p07) -
+                src[15] * (src[10] * p14) - src[12] * (m23 * p16) - src[14] * (src[8] * p17) - src[13] * (m23 * p24) -
+                src[15] * (src[8] * p25) - src[12] * (src[9] * p27) - src[14] * (src[9] * p34) -
+                src[12] * (src[10] * p35) - src[13] * (src[8] * p36);
 
     if (kFloat_0_MatrixMath == det) {
         return;
@@ -1451,108 +1852,78 @@ void Mtx44_InvertLegacyCofactors(void* destination, float* determinantOut, const
     // the later reciprocal scales all entries by 1/det. Keep the literal terms:
     // out[10] contains a repeated matrix.v[13] in the existing formula, so this
     // code must not be replaced by a textbook inverse during cleanup.
-    struct Matrix44 { float v[16]; } matrix = *(const Matrix44*)sourceMatrix;
+    struct Matrix44 {
+        float v[16];
+    } matrix = *(const Matrix44*)sourceMatrix;
     // Adjugate row 0: C00, C10, C20, C30.
-    out[0] = matrix.v[14] * (matrix.v[7] * matrix.v[9])
-        + (matrix.v[15] * (matrix.v[5] * matrix.v[10])
-            + matrix.v[13] * (matrix.v[6] * matrix.v[11]))
-        - matrix.v[14] * (matrix.v[5] * matrix.v[11])
-        - matrix.v[15] * (matrix.v[6] * matrix.v[9])
-        - matrix.v[13] * (matrix.v[7] * matrix.v[10]);
-    out[1] = matrix.v[13] * (matrix.v[3] * matrix.v[10])
-        + (matrix.v[14] * (matrix.v[1] * matrix.v[11])
-            + matrix.v[15] * (matrix.v[2] * matrix.v[9]))
-        - matrix.v[15] * (matrix.v[1] * matrix.v[10])
-        - matrix.v[13] * (matrix.v[2] * matrix.v[11])
-        - matrix.v[14] * (matrix.v[3] * matrix.v[9]);
-    out[2] = matrix.v[14] * (matrix.v[3] * matrix.v[5])
-        + (matrix.v[15] * (matrix.v[1] * matrix.v[6])
-            + matrix.v[13] * (matrix.v[2] * matrix.v[7]))
-        - matrix.v[14] * (matrix.v[1] * matrix.v[7])
-        - matrix.v[15] * (matrix.v[2] * matrix.v[5])
-        - matrix.v[13] * (matrix.v[3] * matrix.v[6]);
-    out[3] = matrix.v[9] * (matrix.v[3] * matrix.v[6])
-        + (matrix.v[10] * (matrix.v[1] * matrix.v[7])
-            + matrix.v[11] * (matrix.v[2] * matrix.v[5]))
-        - matrix.v[11] * (matrix.v[1] * matrix.v[6])
-        - matrix.v[9] * (matrix.v[2] * matrix.v[7])
-        - matrix.v[10] * (matrix.v[3] * matrix.v[5]);
+    out[0] = matrix.v[14] * (matrix.v[7] * matrix.v[9]) +
+             (matrix.v[15] * (matrix.v[5] * matrix.v[10]) + matrix.v[13] * (matrix.v[6] * matrix.v[11])) -
+             matrix.v[14] * (matrix.v[5] * matrix.v[11]) - matrix.v[15] * (matrix.v[6] * matrix.v[9]) -
+             matrix.v[13] * (matrix.v[7] * matrix.v[10]);
+    out[1] = matrix.v[13] * (matrix.v[3] * matrix.v[10]) +
+             (matrix.v[14] * (matrix.v[1] * matrix.v[11]) + matrix.v[15] * (matrix.v[2] * matrix.v[9])) -
+             matrix.v[15] * (matrix.v[1] * matrix.v[10]) - matrix.v[13] * (matrix.v[2] * matrix.v[11]) -
+             matrix.v[14] * (matrix.v[3] * matrix.v[9]);
+    out[2] = matrix.v[14] * (matrix.v[3] * matrix.v[5]) +
+             (matrix.v[15] * (matrix.v[1] * matrix.v[6]) + matrix.v[13] * (matrix.v[2] * matrix.v[7])) -
+             matrix.v[14] * (matrix.v[1] * matrix.v[7]) - matrix.v[15] * (matrix.v[2] * matrix.v[5]) -
+             matrix.v[13] * (matrix.v[3] * matrix.v[6]);
+    out[3] = matrix.v[9] * (matrix.v[3] * matrix.v[6]) +
+             (matrix.v[10] * (matrix.v[1] * matrix.v[7]) + matrix.v[11] * (matrix.v[2] * matrix.v[5])) -
+             matrix.v[11] * (matrix.v[1] * matrix.v[6]) - matrix.v[9] * (matrix.v[2] * matrix.v[7]) -
+             matrix.v[10] * (matrix.v[3] * matrix.v[5]);
     // Adjugate row 1: C01, C11, C21, C31.
-    out[4] = matrix.v[12] * (matrix.v[7] * matrix.v[10])
-        + (matrix.v[14] * (matrix.v[4] * matrix.v[11])
-            + matrix.v[15] * (matrix.v[6] * matrix.v[8]))
-        - matrix.v[15] * (matrix.v[4] * matrix.v[10])
-        - matrix.v[12] * (matrix.v[6] * matrix.v[11])
-        - matrix.v[14] * (matrix.v[7] * matrix.v[8]);
-    out[5] = matrix.v[14] * (matrix.v[3] * matrix.v[8])
-        + (matrix.v[15] * (matrix.v[0] * matrix.v[10])
-            + matrix.v[12] * (matrix.v[2] * matrix.v[11]))
-        - matrix.v[14] * (matrix.v[0] * matrix.v[11])
-        - matrix.v[15] * (matrix.v[2] * matrix.v[8])
-        - matrix.v[12] * (matrix.v[3] * matrix.v[10]);
-    out[6] = matrix.v[12] * (matrix.v[3] * matrix.v[6])
-        + (matrix.v[14] * (matrix.v[0] * matrix.v[7])
-            + matrix.v[15] * (matrix.v[2] * matrix.v[4]))
-        - matrix.v[15] * (matrix.v[0] * matrix.v[6])
-        - matrix.v[12] * (matrix.v[2] * matrix.v[7])
-        - matrix.v[14] * (matrix.v[3] * matrix.v[4]);
-    out[7] = matrix.v[10] * (matrix.v[3] * matrix.v[4])
-        + (matrix.v[11] * (matrix.v[0] * matrix.v[6])
-            + matrix.v[8] * (matrix.v[2] * matrix.v[7]))
-        - matrix.v[10] * (matrix.v[0] * matrix.v[7])
-        - matrix.v[11] * (matrix.v[2] * matrix.v[4])
-        - matrix.v[8] * (matrix.v[3] * matrix.v[6]);
+    out[4] = matrix.v[12] * (matrix.v[7] * matrix.v[10]) +
+             (matrix.v[14] * (matrix.v[4] * matrix.v[11]) + matrix.v[15] * (matrix.v[6] * matrix.v[8])) -
+             matrix.v[15] * (matrix.v[4] * matrix.v[10]) - matrix.v[12] * (matrix.v[6] * matrix.v[11]) -
+             matrix.v[14] * (matrix.v[7] * matrix.v[8]);
+    out[5] = matrix.v[14] * (matrix.v[3] * matrix.v[8]) +
+             (matrix.v[15] * (matrix.v[0] * matrix.v[10]) + matrix.v[12] * (matrix.v[2] * matrix.v[11])) -
+             matrix.v[14] * (matrix.v[0] * matrix.v[11]) - matrix.v[15] * (matrix.v[2] * matrix.v[8]) -
+             matrix.v[12] * (matrix.v[3] * matrix.v[10]);
+    out[6] = matrix.v[12] * (matrix.v[3] * matrix.v[6]) +
+             (matrix.v[14] * (matrix.v[0] * matrix.v[7]) + matrix.v[15] * (matrix.v[2] * matrix.v[4])) -
+             matrix.v[15] * (matrix.v[0] * matrix.v[6]) - matrix.v[12] * (matrix.v[2] * matrix.v[7]) -
+             matrix.v[14] * (matrix.v[3] * matrix.v[4]);
+    out[7] = matrix.v[10] * (matrix.v[3] * matrix.v[4]) +
+             (matrix.v[11] * (matrix.v[0] * matrix.v[6]) + matrix.v[8] * (matrix.v[2] * matrix.v[7])) -
+             matrix.v[10] * (matrix.v[0] * matrix.v[7]) - matrix.v[11] * (matrix.v[2] * matrix.v[4]) -
+             matrix.v[8] * (matrix.v[3] * matrix.v[6]);
     // Adjugate row 2: C02, C12, C22, C32.
-    out[8] = matrix.v[13] * (matrix.v[7] * matrix.v[8])
-        + (matrix.v[15] * (matrix.v[4] * matrix.v[9])
-            + matrix.v[12] * (matrix.v[5] * matrix.v[11]))
-        - matrix.v[13] * (matrix.v[4] * matrix.v[11])
-        - matrix.v[15] * (matrix.v[5] * matrix.v[8])
-        - matrix.v[12] * (matrix.v[7] * matrix.v[9]);
-    out[9] = matrix.v[12] * (matrix.v[3] * matrix.v[9])
-        + (matrix.v[13] * (matrix.v[0] * matrix.v[11])
-            + matrix.v[15] * (matrix.v[1] * matrix.v[8]))
-        - matrix.v[15] * (matrix.v[0] * matrix.v[9])
-        - matrix.v[12] * (matrix.v[1] * matrix.v[11])
-        - matrix.v[13] * (matrix.v[3] * matrix.v[8]);
+    out[8] = matrix.v[13] * (matrix.v[7] * matrix.v[8]) +
+             (matrix.v[15] * (matrix.v[4] * matrix.v[9]) + matrix.v[12] * (matrix.v[5] * matrix.v[11])) -
+             matrix.v[13] * (matrix.v[4] * matrix.v[11]) - matrix.v[15] * (matrix.v[5] * matrix.v[8]) -
+             matrix.v[12] * (matrix.v[7] * matrix.v[9]);
+    out[9] = matrix.v[12] * (matrix.v[3] * matrix.v[9]) +
+             (matrix.v[13] * (matrix.v[0] * matrix.v[11]) + matrix.v[15] * (matrix.v[1] * matrix.v[8])) -
+             matrix.v[15] * (matrix.v[0] * matrix.v[9]) - matrix.v[12] * (matrix.v[1] * matrix.v[11]) -
+             matrix.v[13] * (matrix.v[3] * matrix.v[8]);
     // C22 anomaly: the third positive product below uses v[13], not v[12].
-    out[10] = matrix.v[13] * (matrix.v[3] * matrix.v[4])
-        + (matrix.v[15] * (matrix.v[0] * matrix.v[5])
-            + matrix.v[13] * (matrix.v[1] * matrix.v[7]))
-        - matrix.v[13] * (matrix.v[0] * matrix.v[7])
-        - matrix.v[15] * (matrix.v[1] * matrix.v[4])
-        - matrix.v[12] * (matrix.v[3] * matrix.v[5]);
-    out[11] = matrix.v[8] * (matrix.v[3] * matrix.v[5])
-        + (matrix.v[9] * (matrix.v[0] * matrix.v[7])
-            + matrix.v[11] * (matrix.v[1] * matrix.v[4]))
-        - matrix.v[11] * (matrix.v[0] * matrix.v[5])
-        - matrix.v[8] * (matrix.v[1] * matrix.v[7])
-        - matrix.v[9] * (matrix.v[3] * matrix.v[4]);
+    out[10] = matrix.v[13] * (matrix.v[3] * matrix.v[4]) +
+              (matrix.v[15] * (matrix.v[0] * matrix.v[5]) + matrix.v[13] * (matrix.v[1] * matrix.v[7])) -
+              matrix.v[13] * (matrix.v[0] * matrix.v[7]) - matrix.v[15] * (matrix.v[1] * matrix.v[4]) -
+              matrix.v[12] * (matrix.v[3] * matrix.v[5]);
+    out[11] = matrix.v[8] * (matrix.v[3] * matrix.v[5]) +
+              (matrix.v[9] * (matrix.v[0] * matrix.v[7]) + matrix.v[11] * (matrix.v[1] * matrix.v[4])) -
+              matrix.v[11] * (matrix.v[0] * matrix.v[5]) - matrix.v[8] * (matrix.v[1] * matrix.v[7]) -
+              matrix.v[9] * (matrix.v[3] * matrix.v[4]);
     // Adjugate row 3: C03, C13, C23, C33.
-    out[12] = matrix.v[12] * (matrix.v[6] * matrix.v[9])
-        + (matrix.v[13] * (matrix.v[4] * matrix.v[10])
-            + matrix.v[14] * (matrix.v[5] * matrix.v[8]))
-        - matrix.v[14] * (matrix.v[4] * matrix.v[9])
-        - matrix.v[12] * (matrix.v[5] * matrix.v[10])
-        - matrix.v[13] * (matrix.v[6] * matrix.v[8]);
-    out[13] = matrix.v[13] * (matrix.v[2] * matrix.v[8])
-        + (matrix.v[14] * (matrix.v[0] * matrix.v[9])
-            + matrix.v[12] * (matrix.v[1] * matrix.v[10]))
-        - matrix.v[13] * (matrix.v[0] * matrix.v[10])
-        - matrix.v[14] * (matrix.v[1] * matrix.v[8])
-        - matrix.v[12] * (matrix.v[2] * matrix.v[9]);
-    out[14] = matrix.v[12] * (matrix.v[2] * matrix.v[5])
-        + (matrix.v[13] * (matrix.v[0] * matrix.v[6])
-            + matrix.v[14] * (matrix.v[1] * matrix.v[4]))
-        - matrix.v[14] * (matrix.v[0] * matrix.v[5])
-        - matrix.v[12] * (matrix.v[1] * matrix.v[6])
-        - matrix.v[13] * (matrix.v[2] * matrix.v[4]);
-    out[15] = matrix.v[9] * (matrix.v[2] * matrix.v[4])
-        + (matrix.v[10] * (matrix.v[0] * matrix.v[5])
-            + matrix.v[8] * (matrix.v[1] * matrix.v[6]))
-        - matrix.v[9] * (matrix.v[0] * matrix.v[6])
-        - matrix.v[10] * (matrix.v[1] * matrix.v[4])
-        - matrix.v[8] * (matrix.v[2] * matrix.v[5]);
+    out[12] = matrix.v[12] * (matrix.v[6] * matrix.v[9]) +
+              (matrix.v[13] * (matrix.v[4] * matrix.v[10]) + matrix.v[14] * (matrix.v[5] * matrix.v[8])) -
+              matrix.v[14] * (matrix.v[4] * matrix.v[9]) - matrix.v[12] * (matrix.v[5] * matrix.v[10]) -
+              matrix.v[13] * (matrix.v[6] * matrix.v[8]);
+    out[13] = matrix.v[13] * (matrix.v[2] * matrix.v[8]) +
+              (matrix.v[14] * (matrix.v[0] * matrix.v[9]) + matrix.v[12] * (matrix.v[1] * matrix.v[10])) -
+              matrix.v[13] * (matrix.v[0] * matrix.v[10]) - matrix.v[14] * (matrix.v[1] * matrix.v[8]) -
+              matrix.v[12] * (matrix.v[2] * matrix.v[9]);
+    out[14] = matrix.v[12] * (matrix.v[2] * matrix.v[5]) +
+              (matrix.v[13] * (matrix.v[0] * matrix.v[6]) + matrix.v[14] * (matrix.v[1] * matrix.v[4])) -
+              matrix.v[14] * (matrix.v[0] * matrix.v[5]) - matrix.v[12] * (matrix.v[1] * matrix.v[6]) -
+              matrix.v[13] * (matrix.v[2] * matrix.v[4]);
+    out[15] = matrix.v[9] * (matrix.v[2] * matrix.v[4]) +
+              (matrix.v[10] * (matrix.v[0] * matrix.v[5]) + matrix.v[8] * (matrix.v[1] * matrix.v[6])) -
+              matrix.v[9] * (matrix.v[0] * matrix.v[6]) - matrix.v[10] * (matrix.v[1] * matrix.v[4]) -
+              matrix.v[8] * (matrix.v[2] * matrix.v[5]);
     // Final phase: broadcast 1/det to paired lanes and scale the adjugate in place.
     float f6 = kFloat_1_MatrixMath / det;
     PVec2 scale = f6;
@@ -1596,25 +1967,96 @@ void Mtx44_InvertLegacyCofactors(void* destination, float* determinantOut, const
 #pragma dont_inline on
 #pragma fp_contract off
 // Write an axis scale matrix (dimensionless XYZ multipliers), clearing translation.
-void Mtx44_SetScale(void* dst, float x, float y, float z) {
-    volatile float* m = (volatile float*)dst; float zero = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath;
-    m[0] = x; m[1] = zero; m[2] = zero; m[3] = zero; m[4] = zero;
-    m[5] = y; m[6] = zero; m[7] = zero; m[8] = zero; m[9] = zero;
-    m[10] = z; m[11] = zero; m[12] = zero; m[13] = zero; m[14] = zero; m[15] = one;
+// clang-format off
+#ifdef __MWERKS__
+asm void Mtx44_SetScale(void* dst, float x, float y, float z) {
+    nofralloc
+    lfs f0, kFloat_0_MatrixMath
+    lfs f4, kFloat_1_MatrixMath
+    stfs f1, 0(r3)
+    psq_st f0, 4(r3), 0, 0
+    psq_st f0, 12(r3), 0, 0
+    stfs f2, 20(r3)
+    psq_st f0, 24(r3), 0, 0
+    psq_st f0, 32(r3), 0, 0
+    stfs f3, 40(r3)
+    psq_st f0, 44(r3), 0, 0
+    psq_st f0, 52(r3), 0, 0
+    stfs f4, 60(r3)
+    blr
 }
+#else
+// clang-format on
+void Mtx44_SetScale(void* dst, float x, float y, float z) {
+    volatile float* m = (volatile float*)dst;
+    float zero = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath;
+    m[0] = x;
+    m[1] = zero;
+    m[2] = zero;
+    m[3] = zero;
+    m[4] = zero;
+    m[5] = y;
+    m[6] = zero;
+    m[7] = zero;
+    m[8] = zero;
+    m[9] = zero;
+    m[10] = z;
+    m[11] = zero;
+    m[12] = zero;
+    m[13] = zero;
+    m[14] = zero;
+    m[15] = one;
+}
+#endif
 #pragma pop
 
 #pragma push
 #pragma dont_inline on
 #pragma fp_contract off
 // Write row-vector identity plus XYZ translation in the caller's distance units.
-void Mtx44_SetTranslation(void* dst, float x, float y, float z) {
-    volatile float* m = (volatile float*)dst; float zero = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath;
-    m[12] = x; m[13] = y; m[14] = z;
-    m[0] = one; m[1] = zero; m[2] = zero; m[3] = zero;
-    m[4] = zero; m[5] = one; m[6] = zero; m[7] = zero;
-    m[8] = zero; m[9] = zero; m[10] = one; m[11] = zero; m[15] = one;
+// clang-format off
+#ifdef __MWERKS__
+asm void Mtx44_SetTranslation(void* dst, float x, float y, float z) {
+    nofralloc
+    lfs f0, kFloat_0_MatrixMath
+    lfs f4, kFloat_1_MatrixMath
+    stfs f1, 48(r3)
+    ps_merge00 f5, f4, f0
+    ps_merge00 f1, f0, f4
+    stfs f2, 52(r3)
+    stfs f3, 56(r3)
+    psq_st f5, 0(r3), 0, 0
+    psq_st f0, 8(r3), 0, 0
+    psq_st f1, 16(r3), 0, 0
+    psq_st f0, 24(r3), 0, 0
+    psq_st f0, 32(r3), 0, 0
+    psq_st f5, 40(r3), 0, 0
+    stfs f4, 60(r3)
+    blr
 }
+#else
+// clang-format on
+void Mtx44_SetTranslation(void* dst, float x, float y, float z) {
+    volatile float* m = (volatile float*)dst;
+    float zero = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath;
+    m[12] = x;
+    m[13] = y;
+    m[14] = z;
+    m[0] = one;
+    m[1] = zero;
+    m[2] = zero;
+    m[3] = zero;
+    m[4] = zero;
+    m[5] = one;
+    m[6] = zero;
+    m[7] = zero;
+    m[8] = zero;
+    m[9] = zero;
+    m[10] = one;
+    m[11] = zero;
+    m[15] = one;
+}
+#endif
 #pragma pop
 
 #pragma push
@@ -1637,7 +2079,9 @@ void Mtx44_SetRotationX(float* out, float angleRadians) {
     register float a5 = a3 * a2;
     register float a7 = a5 * a2;
     register float a9 = a7 * a2;
-    register float s = kFloat_0_0000027557319_rotationPolynomial * a9 + (kSinSeriesCoefficient7 * a7 + (kFloat_0_008333333_805E25F4 * a5 + (kFloat_neg0_16666667_Trig * a3 + a)));
+    register float s =
+        kFloat_0_0000027557319_rotationPolynomial * a9 +
+        (kSinSeriesCoefficient7 * a7 + (kFloat_0_008333333_805E25F4 * a5 + (kFloat_neg0_16666667_Trig * a3 + a)));
     register float b = t - kTwoPi_AngleWrap * (float)(int)(kInvTwoPi_AngleWrap * t);
     if (b < kFloat_0_MatrixMath) {
         b += kTwoPi_AngleWrap;
@@ -1700,7 +2144,9 @@ void Mtx44_SetRotationY(float* out, float angleRadians) {
     register float a5 = a3 * a2;
     register float a7 = a5 * a2;
     register float a9 = a7 * a2;
-    register float s = kFloat_0_0000027557319_rotationPolynomial * a9 + (kSinSeriesCoefficient7 * a7 + (kFloat_0_008333333_805E25F4 * a5 + (kFloat_neg0_16666667_Trig * a3 + a)));
+    register float s =
+        kFloat_0_0000027557319_rotationPolynomial * a9 +
+        (kSinSeriesCoefficient7 * a7 + (kFloat_0_008333333_805E25F4 * a5 + (kFloat_neg0_16666667_Trig * a3 + a)));
 
     register float b = t - kTwoPi_AngleWrap * (float)(int)(kInvTwoPi_AngleWrap * t);
     if (b < kFloat_0_MatrixMath) {
@@ -1766,7 +2212,9 @@ void Mtx44_SetRotationZ(float* out, float angleRadians) {
     register float a5 = a3 * a2;
     register float a7 = a5 * a2;
     register float a9 = a7 * a2;
-    register float s = kFloat_0_0000027557319_rotationPolynomial * a9 + (kSinSeriesCoefficient7 * a7 + (kFloat_0_008333333_805E25F4 * a5 + (kFloat_neg0_16666667_Trig * a3 + a)));
+    register float s =
+        kFloat_0_0000027557319_rotationPolynomial * a9 +
+        (kSinSeriesCoefficient7 * a7 + (kFloat_0_008333333_805E25F4 * a5 + (kFloat_neg0_16666667_Trig * a3 + a)));
 
     register float b = t - kTwoPi_AngleWrap * (float)(int)(kInvTwoPi_AngleWrap * t);
     if (b < kFloat_0_MatrixMath) {
@@ -1786,7 +2234,8 @@ void Mtx44_SetRotationZ(float* out, float angleRadians) {
     float b5 = b3 * b2;
     float b7 = b5 * b2;
     float b9 = b7 * b2;
-    float c = kFloat_0_0000027557319_rotationPolynomial * b9 + (kSinSeriesCoefficient7 * b7 + (kFloat_0_008333333_805E25F4 * b5 + (kFloat_neg0_16666667_Trig * b3 + b)));
+    float c = kFloat_0_0000027557319_rotationPolynomial * b9 +
+              (kSinSeriesCoefficient7 * b7 + (kFloat_0_008333333_805E25F4 * b5 + (kFloat_neg0_16666667_Trig * b3 + b)));
     out[2] = zero;
     out[3] = zero;
     out[6] = zero;
@@ -1829,7 +2278,8 @@ void* Mtx44_SetRotationAxisAngle(void* destination, const void* axis, float angl
     a5 = a3 * a2;
     a7 = a5 * a2;
     a9 = a7 * a2;
-    float s = kFloat_0_0000027557319_rotationPolynomial * a9 + (kSinSeriesCoefficient7 * a7 + (kFloat_0_008333333_805E25F4 * a5 + (kFloat_neg0_16666667_Trig * a3 + a)));
+    float s = kFloat_0_0000027557319_rotationPolynomial * a9 +
+              (kSinSeriesCoefficient7 * a7 + (kFloat_0_008333333_805E25F4 * a5 + (kFloat_neg0_16666667_Trig * a3 + a)));
 
     b = kHalfPi_MatrixMath + b;
     b = b - kTwoPi_AngleWrap * (float)truncate_angle_turns(kInvTwoPi_AngleWrap * b);
@@ -1885,6 +2335,75 @@ void* Mtx44_SetRotationAxisAngle(void* destination, const void* axis, float angl
 #pragma dont_inline on
 #pragma fp_contract off
 // Build a rotation from XYZW quaternion without normalizing it; no input validation.
+// clang-format off
+#ifdef __MWERKS__
+asm void Mtx44_FromQuaternion(void* dst, const void* input) {
+    nofralloc
+    stwu r1, -64(r1)
+    stfd f31, 48(r1)
+    psq_st f31, 56(r1), 0, 0
+    stfd f30, 32(r1)
+    psq_st f30, 40(r1), 0, 0
+    stfd f29, 16(r1)
+    psq_st f29, 24(r1), 0, 0
+    lfs f12, 0(r4)
+    lfs f13, 4(r4)
+    lfs f0, 12(r4)
+    fmuls f30, f12, f12
+    lfs f31, 8(r4)
+    fmuls f29, f13, f13
+    fmuls f1, f0, f13
+    lfs f6, kFloat_0_MatrixMath
+    fmuls f2, f0, f31
+    fmuls f3, f31, f31
+    lfs f10, kFloat_1_MatrixMath
+    fmuls f0, f0, f12
+    fmadds f8, f12, f13, f2
+    lfs f11, kFloat_2_Math
+    fmsubs f5, f12, f13, f2
+    fadds f9, f29, f3
+    stfs f6, 12(r3)
+    fadds f4, f30, f3
+    fmsubs f7, f12, f31, f1
+    stfs f6, 28(r3)
+    fmadds f2, f12, f31, f1
+    fmadds f3, f13, f31, f0
+    stfs f6, 44(r3)
+    fmsubs f1, f13, f31, f0
+    fadds f0, f30, f29
+    stfs f6, 48(r3)
+    fnmsubs f9, f11, f9, f10
+    fmuls f8, f11, f8
+    stfs f6, 52(r3)
+    fmuls f7, f11, f7
+    fmuls f5, f11, f5
+    stfs f9, 0(r3)
+    fnmsubs f4, f11, f4, f10
+    fmuls f3, f11, f3
+    stfs f8, 4(r3)
+    fmuls f2, f11, f2
+    fmuls f1, f11, f1
+    stfs f7, 8(r3)
+    fnmsubs f0, f11, f0, f10
+    stfs f5, 16(r3)
+    stfs f4, 20(r3)
+    stfs f3, 24(r3)
+    stfs f2, 32(r3)
+    stfs f1, 36(r3)
+    stfs f0, 40(r3)
+    stfs f6, 56(r3)
+    stfs f10, 60(r3)
+    psq_l f31, 56(r1), 0, 0
+    lfd f31, 48(r1)
+    psq_l f30, 40(r1), 0, 0
+    lfd f30, 32(r1)
+    psq_l f29, 24(r1), 0, 0
+    lfd f29, 16(r1)
+    addi r1, r1, 64
+    blr
+}
+#else
+// clang-format on
 void Mtx44_FromQuaternion(void* dst, const void* input) {
     const float* q = (const float*)input;
     float x = q[0], y = q[1], w = q[3], z = q[2];
@@ -1895,13 +2414,24 @@ void Mtx44_FromQuaternion(void* dst, const void* input) {
     float yzplus = fmaf(y, z, wx), yzminus = fmaf(y, z, -wx), xysum = xx + yy;
     float zero = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath, two = kFloat_2_Math;
     volatile float* m = (volatile float*)dst;
-    m[3] = zero; m[7] = zero; m[11] = zero; m[12] = zero; m[13] = zero;
+    m[3] = zero;
+    m[7] = zero;
+    m[11] = zero;
+    m[12] = zero;
+    m[13] = zero;
     m[0] = -fmaf(two, yzsum, -one);
-    m[1] = two * xyplus; m[2] = two * xzminus; m[4] = two * xyminus;
-    m[5] = -fmaf(two, xzsum, -one); m[6] = two * yzplus;
-    m[8] = two * xzplus; m[9] = two * yzminus;
-    m[10] = -fmaf(two, xysum, -one); m[14] = zero; m[15] = one;
+    m[1] = two * xyplus;
+    m[2] = two * xzminus;
+    m[4] = two * xyminus;
+    m[5] = -fmaf(two, xzsum, -one);
+    m[6] = two * yzplus;
+    m[8] = two * xzplus;
+    m[9] = two * yzminus;
+    m[10] = -fmaf(two, xysum, -one);
+    m[14] = zero;
+    m[15] = one;
 }
+#endif
 #pragma pop
 
 #pragma push
@@ -1910,8 +2440,11 @@ void Mtx44_FromQuaternion(void* dst, const void* input) {
 // Compose Z*X*Y rotations from yaw(Y), pitch(X), and Z angle, all in radians.
 void* Mtx44_SetEulerRotationZXY(void* dst, float yawRadians, float pitchRadians, float z) {
     float rotationX[16], rotationY[16], mz[16];
-    Mtx44_SetRotationX(rotationX, pitchRadians); Mtx44_SetRotationY(rotationY, yawRadians); Mtx44_SetRotationZ(mz, z);
-    Mtx44_Concat3(dst, mz, rotationX, rotationY); return dst;
+    Mtx44_SetRotationX(rotationX, pitchRadians);
+    Mtx44_SetRotationY(rotationY, yawRadians);
+    Mtx44_SetRotationZ(mz, z);
+    Mtx44_Concat3(dst, mz, rotationX, rotationY);
+    return dst;
 }
 #pragma pop
 
@@ -1922,7 +2455,9 @@ void* Mtx44_SetEulerRotationZXY(void* dst, float yawRadians, float pitchRadians,
 // its generated matrix must be nonsingular; an inverse failure leaves uninitialized
 // local scratch that is still concatenated, with no error return or rollback.
 // Destination must not overlap inputs: identity is written first.
-void* Mtx44_BuildTransformation(void* destination, const void* scalingCenter, const void* scalingRotation, const void* scale, const void* rotationCenter, const void* rotation, const void* translation) {
+void* Mtx44_BuildTransformation(void* destination, const void* scalingCenter, const void* scalingRotation,
+                                const void* scale, const void* rotationCenter, const void* rotation,
+                                const void* translation) {
     float* out = (float*)destination;
     float scalingCenterMatrix[16];
     float inverseScalingCenter[16];
@@ -2136,14 +2671,29 @@ void MtxPerspectiveFovRH(void* dst, float fovy, float aspect, float nearz, float
     float depth = nearz - farz, product = nearz * farz;
     float cotangent = one / tangent;
     volatile float* m = (volatile float*)dst;
-    m[11] = kFloat_neg1_MatrixMath; m[1] = zero; m[2] = zero; m[3] = zero; m[4] = zero;
+    m[11] = kFloat_neg1_MatrixMath;
+    m[1] = zero;
+    m[2] = zero;
+    m[3] = zero;
+    m[4] = zero;
     float xscale = cotangent / aspect;
-    m[6] = zero; m[5] = cotangent; m[7] = zero; m[8] = zero; m[9] = zero;
+    m[6] = zero;
+    m[5] = cotangent;
+    m[7] = zero;
+    m[8] = zero;
+    m[9] = zero;
     float zscale = farz / depth;
-    m[0] = xscale; m[12] = zero; m[13] = zero; m[15] = zero;
+    m[0] = xscale;
+    m[12] = zero;
+    m[13] = zero;
+    m[15] = zero;
     float ztranslation = product / depth;
-    m[10] = zscale; m[14] = ztranslation;
-    if (*g_projectionDepthConvention == kLegacyProjectionDepthMode1) { float sum = nearz + farz; m[10] = sum / depth; }
+    m[10] = zscale;
+    m[14] = ztranslation;
+    if (*g_projectionDepthConvention == kLegacyProjectionDepthMode1) {
+        float sum = nearz + farz;
+        m[10] = sum / depth;
+    }
 }
 #pragma pop
 
@@ -2157,18 +2707,32 @@ void MtxPerspectiveFovLH(void* dst, float fovy, float aspect, float nearz, float
     float tangent = (float)tan((double)halfangle);
     float zero = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath;
     float negative_near = -nearz, depth = farz - nearz;
-    volatile float* m = (volatile float*)dst; m[1] = zero;
+    volatile float* m = (volatile float*)dst;
+    m[1] = zero;
     float cotangent = one / tangent;
-    m[11] = one; m[2] = zero; m[3] = zero; m[4] = zero; m[6] = zero;
+    m[11] = one;
+    m[2] = zero;
+    m[3] = zero;
+    m[4] = zero;
+    m[6] = zero;
     float product = negative_near * farz;
     m[5] = cotangent;
     float xscale = cotangent / aspect;
-    m[7] = zero; m[8] = zero; m[9] = zero; m[12] = zero; m[13] = zero;
+    m[7] = zero;
+    m[8] = zero;
+    m[9] = zero;
+    m[12] = zero;
+    m[13] = zero;
     float zscale = farz / depth;
-    m[0] = xscale; m[15] = zero;
+    m[0] = xscale;
+    m[15] = zero;
     float ztranslation = product / depth;
-    m[10] = zscale; m[14] = ztranslation;
-    if (*g_projectionDepthConvention == kLegacyProjectionDepthMode1) { float sum = nearz + farz; m[10] = sum / depth; }
+    m[10] = zscale;
+    m[14] = ztranslation;
+    if (*g_projectionDepthConvention == kLegacyProjectionDepthMode1) {
+        float sum = nearz + farz;
+        m[10] = sum / depth;
+    }
 }
 #pragma pop
 
@@ -2179,14 +2743,31 @@ void MtxPerspectiveFovLH(void* dst, float fovy, float aspect, float nearz, float
 // initialized depth convention required. Extents and clips use the caller's units.
 void Mtx44_SetOrthoCentered(void* dst, float width, float height, float nearz, float farz) {
     float two = kFloat_2_Math, depth = nearz - farz, zero = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath;
-    float sx = two / width; volatile float* m = (volatile float*)dst;
-    m[1] = zero; m[15] = one; m[2] = zero; m[3] = zero;
+    float sx = two / width;
+    volatile float* m = (volatile float*)dst;
+    m[1] = zero;
+    m[15] = one;
+    m[2] = zero;
+    m[3] = zero;
     float sy = two / height;
-    m[0] = sx; m[4] = zero; m[6] = zero; m[7] = zero; m[8] = zero;
+    m[0] = sx;
+    m[4] = zero;
+    m[6] = zero;
+    m[7] = zero;
+    m[8] = zero;
     float sz = one / depth;
-    m[9] = zero; m[11] = zero; m[5] = sy; m[12] = zero; m[13] = zero;
-    float tz = nearz / depth; m[10] = sz; m[14] = tz;
-    if (*g_projectionDepthConvention == kLegacyProjectionDepthMode1) { float sum = nearz + farz; m[14] = sum / depth; }
+    m[9] = zero;
+    m[11] = zero;
+    m[5] = sy;
+    m[12] = zero;
+    m[13] = zero;
+    float tz = nearz / depth;
+    m[10] = sz;
+    m[14] = tz;
+    if (*g_projectionDepthConvention == kLegacyProjectionDepthMode1) {
+        float sum = nearz + farz;
+        m[14] = sum / depth;
+    }
 }
 #pragma pop
 
@@ -2198,17 +2779,34 @@ void Mtx44_SetOrthoCentered(void* dst, float width, float height, float nearz, f
 void MtxOrthoOffCenter(void* dst, float left, float right, float bottom, float top, float nearz, float farz) {
     float depth = nearz - farz, zero = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath;
     float width = right - left, two = kFloat_2_Math, height = top - bottom;
-    float sx = two / width; volatile float* m = (volatile float*)dst;
-    m[15] = one; m[1] = zero; m[2] = zero; m[3] = zero; m[4] = zero;
+    float sx = two / width;
+    volatile float* m = (volatile float*)dst;
+    m[15] = one;
+    m[1] = zero;
+    m[2] = zero;
+    m[3] = zero;
+    m[4] = zero;
     float sy = two / height;
-    m[0] = sx; m[6] = zero; m[7] = zero; m[8] = zero; m[9] = zero;
-    float sz = one / depth; m[5] = sy; m[11] = zero;
-    float tz = nearz / depth; m[10] = sz;
-    float xsum = left + right; m[14] = tz;
+    m[0] = sx;
+    m[6] = zero;
+    m[7] = zero;
+    m[8] = zero;
+    m[9] = zero;
+    float sz = one / depth;
+    m[5] = sy;
+    m[11] = zero;
+    float tz = nearz / depth;
+    m[10] = sz;
+    float xsum = left + right;
+    m[14] = tz;
     float xden = left - right, ysum = top + bottom, yden = bottom - top;
     float tx = xsum / xden, ty = ysum / yden;
-    m[12] = tx; m[13] = ty;
-    if (*g_projectionDepthConvention == kLegacyProjectionDepthMode1) { float sum = nearz + farz; m[14] = sum / depth; }
+    m[12] = tx;
+    m[13] = ty;
+    if (*g_projectionDepthConvention == kLegacyProjectionDepthMode1) {
+        float sum = nearz + farz;
+        m[14] = sum / depth;
+    }
 }
 #pragma pop
 
@@ -2220,17 +2818,35 @@ void MtxOrthoOffCenter(void* dst, float left, float right, float bottom, float t
 void Mtx44_SetOrthoOffCenterLH(void* dst, float left, float right, float bottom, float top, float nearz, float farz) {
     float depth = nearz - farz, zero = kFloat_0_MatrixMath, one = kFloat_1_MatrixMath;
     float reverse_depth = farz - nearz, width = right - left, two = kFloat_2_Math;
-    float sz = one / reverse_depth; volatile float* m = (volatile float*)dst;
-    m[15] = one; m[1] = zero; m[2] = zero; m[3] = zero; m[4] = zero;
-    float tz = nearz / depth; m[10] = sz;
-    m[6] = zero; m[7] = zero; m[8] = zero; m[9] = zero;
-    float height = top - bottom; m[14] = tz;
-    float xsum = left + right, xden = left - right; m[11] = zero;
-    float sx = two / width, sy = two / height; m[0] = sx;
-    float tx = xsum / xden; m[5] = sy;
-    float ysum = top + bottom; m[12] = tx;
-    float yden = bottom - top; m[13] = ysum / yden;
-    if (*g_projectionDepthConvention == kLegacyProjectionDepthMode1) { float sum = nearz + farz; m[14] = sum / depth; }
+    float sz = one / reverse_depth;
+    volatile float* m = (volatile float*)dst;
+    m[15] = one;
+    m[1] = zero;
+    m[2] = zero;
+    m[3] = zero;
+    m[4] = zero;
+    float tz = nearz / depth;
+    m[10] = sz;
+    m[6] = zero;
+    m[7] = zero;
+    m[8] = zero;
+    m[9] = zero;
+    float height = top - bottom;
+    m[14] = tz;
+    float xsum = left + right, xden = left - right;
+    m[11] = zero;
+    float sx = two / width, sy = two / height;
+    m[0] = sx;
+    float tx = xsum / xden;
+    m[5] = sy;
+    float ysum = top + bottom;
+    m[12] = tx;
+    float yden = bottom - top;
+    m[13] = ysum / yden;
+    if (*g_projectionDepthConvention == kLegacyProjectionDepthMode1) {
+        float sum = nearz + farz;
+        m[14] = sum / depth;
+    }
 }
 #pragma pop
 
@@ -2315,7 +2931,9 @@ float gtl_Plane_EvaluatePoint(const float* a, const float* b) {
 #pragma dont_inline on
 #pragma fp_contract off
 // Forward XYZW transformation to the shared implementation without argument swaps.
-void Mtx44_TransformVec4Forward(float* dst, const float* v, const float* m) { Mtx44_TransformVec4(dst, v, m); }
+void Mtx44_TransformVec4Forward(float* dst, const float* v, const float* m) {
+    Mtx44_TransformVec4(dst, v, m);
+}
 #pragma pop
 
 #pragma push
@@ -2334,7 +2952,8 @@ void Mtx44_TransformVec4Forward(float* dst, const float* v, const float* m) { Mt
 // The billboard callers in gtl_animation_model_matrices.cpp/gtl_animation_node_evaluation.cpp use that in-place form. Keep the
 // fourth-lane reads even though they do not contribute to the final matrix.
 // Success returns destination; exact in-place sourceMatrix is supported.
-float* Matrix_AlignForwardPreservingScaleAndTranslation(float* destination, float* sourceMatrix, float* forwardDirection, int useDefaultUp) {
+float* Matrix_AlignForwardPreservingScaleAndTranslation(float* destination, float* sourceMatrix,
+                                                        float* forwardDirection, int useDefaultUp) {
     float rightScale = Vec4_Length(sourceMatrix);
     float upScale = Vec4_Length(sourceMatrix + 4);
     float forwardScale = Vec4_Length(sourceMatrix + 8);
@@ -2388,8 +3007,11 @@ float* Matrix_AlignForwardPreservingScaleAndTranslation(float* destination, floa
 #pragma fp_contract off
 // Copy XY after reading both components, supporting exact in-place operation.
 void gtl_Vec2_Copy(void* dst, const void* input) {
-    const float* s = (const float*)input; float x = s[0], y = s[1];
-    float* d = (float*)dst; d[0] = x; d[1] = y;
+    const float* s = (const float*)input;
+    float x = s[0], y = s[1];
+    float* d = (float*)dst;
+    d[0] = x;
+    d[1] = y;
 }
 #pragma pop
 
@@ -2409,15 +3031,18 @@ int Vec2_Equals(const float* a, const float* b) {
 #pragma fp_contract off
 // Copy XYZ as floats without a coordinate conversion; exact in-place allowed.
 void Vector_CopyComponents(void* dst, const void* input) {
-    const float* s = (const float*)input; float x = s[0], y = s[1], z = s[2];
-    float* d = (float*)dst; d[0] = x; d[1] = y; d[2] = z;
+    const float* s = (const float*)input;
+    float x = s[0], y = s[1], z = s[2];
+    float* d = (float*)dst;
+    d[0] = x;
+    d[1] = y;
+    d[2] = z;
 }
 #pragma pop
 
 #pragma push
 // Multiply XYZ componentwise after all reads, permitting exact in-place output.
-void Vec3_MultiplyComponents(float* out, const float* a, const float* b)
-{
+void Vec3_MultiplyComponents(float* out, const float* a, const float* b) {
     float a0 = a[0];
     float b0 = b[0];
     float a1 = a[1];
@@ -2440,8 +3065,13 @@ void Vec3_MultiplyComponents(float* out, const float* a, const float* b)
 #pragma fp_contract off
 // Copy XYZW after reading all four components; exact in-place allowed.
 void Vec4_Copy(void* dst, const void* input) {
-    const float* s = (const float*)input; float x = s[0], y = s[1], z = s[2], w = s[3];
-    float* d = (float*)dst; d[0] = x; d[1] = y; d[2] = z; d[3] = w;
+    const float* s = (const float*)input;
+    float x = s[0], y = s[1], z = s[2], w = s[3];
+    float* d = (float*)dst;
+    d[0] = x;
+    d[1] = y;
+    d[2] = z;
+    d[3] = w;
 }
 #pragma pop
 
@@ -2450,20 +3080,50 @@ void Vec4_Copy(void* dst, const void* input) {
 #pragma fp_contract off
 // Copy 16 matrix floats pairwise with volatile order; in-place allowed, partial
 // overlaps retain this sequence rather than memmove semantics.
+// clang-format off
+#ifdef __MWERKS__
+asm void Mtx44_Copy(void* dst, const void* input) {
+    nofralloc
+    psq_l f1, 0(r4), 0, 0
+    psq_st f1, 0(r3), 0, 0
+    psq_l f1, 8(r4), 0, 0
+    psq_st f1, 8(r3), 0, 0
+    psq_l f1, 16(r4), 0, 0
+    psq_st f1, 16(r3), 0, 0
+    psq_l f1, 24(r4), 0, 0
+    psq_st f1, 24(r3), 0, 0
+    psq_l f1, 32(r4), 0, 0
+    psq_st f1, 32(r3), 0, 0
+    psq_l f1, 40(r4), 0, 0
+    psq_st f1, 40(r3), 0, 0
+    psq_l f1, 48(r4), 0, 0
+    psq_st f1, 48(r3), 0, 0
+    psq_l f1, 56(r4), 0, 0
+    psq_st f1, 56(r3), 0, 0
+    blr
+}
+#else
+// clang-format on
 void Mtx44_Copy(void* dst, const void* input) {
-    volatile float* d = (volatile float*)dst; const volatile float* s = (const volatile float*)input;
+    volatile float* d = (volatile float*)dst;
+    const volatile float* s = (const volatile float*)input;
     for (int i = 0; i < 16; i += 2) {
-        float x = s[i], y = s[i + 1]; d[i] = x; d[i + 1] = y;
+        float x = s[i], y = s[i + 1];
+        d[i] = x;
+        d[i + 1] = y;
     }
 }
+#endif
 #pragma pop
 
 #pragma push
+} // extern "C"
+
 // Build the legacy WView matrix from a required 24-byte MathViewport. Destination
 // requires 16 floats, disjoint from viewport. X/Y origins are multiplied by half
 // extents at indices 3/7/15; do not replace them with conventional additive origin
 // offsets. Depth uses (near-far)/(2^24-1), with near/(2^24-1) translation.
-void WView_BuildViewportTransform(void* destination, void* viewport) {
+void WView::BuildViewportTransform(void* destination, void* viewport) {
     unsigned int* in = (unsigned int*)viewport;
     float* out = (float*)destination;
     const unsigned int height = in[3], x = in[0], width = in[2], y = in[1];
@@ -2491,6 +3151,7 @@ void WView_BuildViewportTransform(void* destination, void* viewport) {
     out[14] = znear / kViewportDepthMaximum;
     out[15] = 1.0f + (((float)width / 2.0f) * (float)x + ((float)height / 2.0f) * (float)y);
 }
+extern "C" {
 #pragma pop
 
 #pragma push
@@ -2498,7 +3159,9 @@ void WView_BuildViewportTransform(void* destination, void* viewport) {
 #pragma fp_contract off
 // Compose (a*b)*c into dst; c must survive the first write (disjoint from dst).
 void* Mtx44_Concat3(void* dst, const void* a, const void* b, const void* c) {
-    PSMTX44Concat(dst, a, b); PSMTX44Concat(dst, dst, c); return dst;
+    PSMTX44Concat(dst, a, b);
+    PSMTX44Concat(dst, dst, c);
+    return dst;
 }
 #pragma pop
 
@@ -2532,7 +3195,8 @@ float* Matrix_AlignForwardPreservingScaleAndTranslationWrapper(float* dst, float
 // [14,15] (m32,m33). row[0..7] are one matrix; row[8..15] the next. w0
 // broadcasts one scalar to both lanes. Each lane adds matrices in input order;
 // a/b/c/d/e are only scheduled loads, never a transpose or cross-lane operation.
-void Mtx44_WeightedSum(register void* out, register const void* data, register const void* weights, register unsigned int count) {
+void Mtx44_WeightedSum(register void* out, register const void* data, register const void* weights,
+                       register unsigned int count) {
     register PVec2* mp = (PVec2*)data;
     register float* wp = (float*)weights;
     register unsigned int n = count;
@@ -2587,7 +3251,8 @@ void Mtx44_WeightedSum(register void* out, register const void* data, register c
                     sum7 = sum7 + e * w0;
                 }
                 n &= 1U;
-                if (n == 0U) break;
+                if (n == 0U)
+                    break;
             }
             do {
                 w0 = *wp++;
@@ -2614,8 +3279,14 @@ void Mtx44_WeightedSum(register void* out, register const void* data, register c
     } while (0);
     register PVec2* dst = (PVec2*)out;
     // Commit all eight lane pairs after reading the inputs; out may alias an input matrix.
-    dst[0] = sum0; dst[1] = sum1; dst[2] = sum2; dst[3] = sum3;
-    dst[4] = sum4; dst[5] = sum5; dst[6] = sum6; dst[7] = sum7;
+    dst[0] = sum0;
+    dst[1] = sum1;
+    dst[2] = sum2;
+    dst[3] = sum3;
+    dst[4] = sum4;
+    dst[5] = sum5;
+    dst[6] = sum6;
+    dst[7] = sum7;
     return;
 }
 #pragma pop
@@ -2624,14 +3295,17 @@ void Mtx44_WeightedSum(register void* out, register const void* data, register c
 #pragma dont_inline on
 #pragma fp_contract off
 // Borrow the module's static version string; caller must not free it.
-void* RevoEX_GetVersionString(void) { return g_revoExVersionString; }
+void* RevoEX_GetVersionString(void) {
+    return g_revoExVersionString;
+}
 #pragma pop
 
 #pragma push
 #pragma dont_inline on
 #pragma fp_contract off
 // Forward a required caller-owned six-byte MAC output buffer to NCD; no local status.
-void Network_GetWirelessMacAddress(void* input) { NCDiGetWirelessMacAddress(input); }
+void Network_GetWirelessMacAddress(void* input) {
+    NCDiGetWirelessMacAddress(input);
+}
 #pragma pop
-
 }

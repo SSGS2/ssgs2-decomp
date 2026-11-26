@@ -1,14 +1,22 @@
+// Effect-sequence script parser and timeline.
+//
+// Parses script lines into the sequence's command list, executes commands that
+// create sprays, add spawn or rotation tracks, attach to the parent, play a
+// sound, jump to a label or stop, randomizes command times, and advances the
+// timeline from the per-frame update.
 #include "classes/CFxSequence.h"
 #include "classes/CFxSpray.h"
 #include "game/types.h"
 #include "game/wvector.h"
-// Translation unit 0x8010DCF0-0x8010F380 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
+#include "classes/CFxBox.h"
+#include "classes/CFxRegistryTree.h"
 
 // Construct into caller-owned storage; allocation and release remain the caller's job.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 extern "C" {
 
 // Circular owned list: next points toward older parsed lines, prev is execution order.
@@ -26,7 +34,10 @@ struct Node {
     unsigned char commandText[0x104];
 };
 
-struct CommandListHead { Node* next; Node* prev; };
+struct CommandListHead {
+    Node* next;
+    Node* prev;
+};
 
 // Mirrors only timeline state; the sentinel owns two links, without a command payload.
 struct State {
@@ -46,7 +57,9 @@ struct State {
 extern float kFloat_0_SoundEmitter;
 extern float kFloat_0_5_FxSequence;
 // Twelve-byte engine string: heap length/data overlap inline characters.
-struct SequenceNameStringRep { unsigned int flag, heapLength, heapDataAddress; };
+struct SequenceNameStringRep {
+    unsigned int flag, heapLength, heapDataAddress;
+};
 void* StringTree_FindInsertionPosition(void*, SequenceNameStringRep*, void**, unsigned char*, unsigned char*);
 void* NamedObjectMap_InsertNode(void*, void*, unsigned char, unsigned char, void*);
 void String_ReserveCapacity(SequenceNameStringRep*, unsigned int);
@@ -55,12 +68,7 @@ extern unsigned int s_fxSequenceNameDefaultValue;
 unsigned long Runtime_ConvertDoubleToUnsigned(double);
 void* appMallocDummy__FUl(unsigned int);
 void appFreeUni__FPv(void*);
-// Execute a script command: create a spray, append a track, attach it, play sound, jump or stop.
-int CFxSequence_ExecuteScriptCommand(void*, signed char*, unsigned char*);
 
-
-
-struct BigString { unsigned char data[0x12c]; };
 // Packed source strings; array extents include terminators and original padding.
 struct FxSequenceParserStrings {
     unsigned char defaultSequence[11];
@@ -107,35 +115,58 @@ enum {
     kCommentPrefix = ';',
     // Unsigned arithmetic is retained for the original wrapped sentinel tests.
     kCommandSentinelBias = 0x10000,
-    kLabelCommandTime = -1, kImmediateCommandTime = -2,
+    kLabelCommandTime = -1,
+    kImmediateCommandTime = -2,
     kLabelBiasedTime = 0xFFFF,
     kImmediateBiasedTime = 0xFFFE,
     kSpawnAtInterval = 0,
     kSpawnAtAge = 1,
     kSpawnOnDeath = 2,
     kSpawnOnGround = 3,
-    kParentAxisX = 1, kParentAxisY = 2, kParentAxisZ = 4
+    kParentAxisX = 1,
+    kParentAxisY = 2,
+    kParentAxisZ = 4
 };
-struct SequenceAttachmentView {
-    char pad_00[8]; Vec3f wind;
-    char pad_14[0x4C-0x14]; float cameraMatrix[12];
-};
+// CFxSpray fields this unit writes: attachment offsets, then world position and velocity.
 struct SprayAttachmentView {
-    char pad_00[0xC]; float attachmentX, attachmentY;
-    char pad_14[0xB8-0x14]; WVector position;
-    char pad_C4[12]; WVector velocity;
+    char pad_00[0xC];
+    float attachmentX, attachmentY;
+    char pad_14[0xB8 - 0x14];
+    WVector position;
+    char pad_C4[12];
+    WVector velocity;
 };
-struct CameraTransformView { Vec3f axes[3]; Vec3f position; };
-struct EffectBoxTimeScale { void* vtable; float timeScale; };
-struct RegistryNode { char links[12]; void* key; void* value; };
-struct NameTreeNode { char links[12]; SequenceNameStringRep key; unsigned int value; };
+// Camera transform: three axes followed by the camera position.
+struct CameraTransformView {
+    Vec3f axes[3];
+    Vec3f position;
+};
+// The effect box's scalar time scale.
+struct EffectBoxTimeScale {
+    void* vtable;
+    float timeScale;
+};
+// Registry tree node with its mapped value.
+struct RegistryNode {
+    char links[12];
+    void* key;
+    void* value;
+};
+struct NameTreeNode {
+    char links[12];
+    SequenceNameStringRep key;
+    unsigned int value;
+};
 
 // Return the name/value pair stored after a cache iterator node's three tree links.
 void* FxSequenceCache_GetIteratorValue(void* p) {
     return &((NameTreeNode*)*(void**)p)->key;
 }
 
-struct TableRoot { unsigned char pad[0x38]; void* table; };
+struct TableRoot {
+    unsigned char pad[0x38];
+    void* table;
+};
 extern TableRoot s_cLocaleData;
 void cTokenV_Init(void*);
 void cTokenV_SetInputBuffer(void*, const char*, unsigned int);
@@ -147,9 +178,21 @@ void cTokenS_dtor(void*, short);
 void cToken_dtor(void*, short);
 unsigned int String_ParseDecimalInt(const char*);
 
-struct Link8 { Link8* next; Link8* prev; };
-struct Entry114 { unsigned int sourceLine; unsigned int earliestFrame; unsigned int latestFrame; int value; char commandText[kCommandTextCapacity]; };
-struct Entry120 { Link8 link; Entry114 val; };
+struct Link8 {
+    Link8* next;
+    Link8* prev;
+};
+struct Entry114 {
+    unsigned int sourceLine;
+    unsigned int earliestFrame;
+    unsigned int latestFrame;
+    int value;
+    char commandText[kCommandTextCapacity];
+};
+struct Entry120 {
+    Link8 link;
+    Entry114 val;
+};
 struct AllocDEC8 {
     unsigned char allocator;
     Entry120* result;
@@ -158,30 +201,45 @@ struct AllocDEC8 {
     Link8* head;
     Entry120* cleanup;
     // Allocate an unlinked command node, owned by cleanup until insertion commits.
-    AllocDEC8(Link8* h): allocator(0) {
+    AllocDEC8(Link8* h) : allocator(0) {
         result = (Entry120*)appMallocDummy__FUl(0x11C);
         allocated = result;
         head = h;
         cleanup = allocated;
     }
     // Free an uncommitted node on scope exit.
-    ~AllocDEC8() { if (cleanup) appFreeUni__FPv(cleanup); }
+    ~AllocDEC8() {
+        if (cleanup)
+            appFreeUni__FPv(cleanup);
+    }
 };
 // Release the stack range tokenizer without deleting its enclosing storage.
-struct TokenS { unsigned char data[0x18]; ~TokenS() { cTokenS_dtor(this, (short)-1); } };
+struct TokenS {
+    unsigned char data[0x18];
+    ~TokenS() {
+        cTokenS_dtor(this, (short)-1);
+    }
+};
 // Release the stack line tokenizer without deleting its enclosing storage.
 // The token object is 0x18 bytes: cTokenV_Init writes its owned buffer at +0x10 and its input buffer at +0x14;
 // cToken_dtor frees +0x10.
-struct TokenV { unsigned char data[0x10]; ~TokenV() { cToken_dtor(this, (short)0); } };
+struct TokenV {
+    unsigned char data[0x10];
+    ~TokenV() {
+        cToken_dtor(this, (short)0);
+    }
+};
 
 #pragma opt_common_subs off
 #pragma opt_propagation off
 #pragma opt_lifetimes off
 #pragma use_lmw_stmw on
 // Parse label, immediate or time-range commands and prepend them to the sequence's command list.
-void CFxSequence_ParseEntryLine(void* self, const char* input, unsigned int sourceLine) {
-    if ((signed char)*input == 0) return;
-    if ((signed char)*input == kCommentPrefix) return;
+void CFxSequence::ParseEntryLine(const char* input, unsigned int sourceLine) {
+    if ((signed char)*input == 0)
+        return;
+    if ((signed char)*input == kCommentPrefix)
+        return;
     {
         __alloca(0);
         char firstTimeOrLabel[kCommandTextCapacity];
@@ -214,8 +272,10 @@ void CFxSequence_ParseEntryLine(void* self, const char* input, unsigned int sour
         unsigned char firstByte = firstTimeOrLabel[0];
         int isNonAscii = 1;
         node.val.sourceLine = sourceLine;
-        if ((signed char)firstByte >= 0 && (signed char)firstByte < 0x100) isNonAscii = 0;
-        int startsLabel = isNonAscii ? 0 : (((unsigned short*)*(void**)((char*)s_cLocaleData.table + 8))[(signed char)firstByte] & 1);
+        if ((signed char)firstByte >= 0 && (signed char)firstByte < 0x100)
+            isNonAscii = 0;
+        int startsLabel =
+            isNonAscii ? 0 : (((unsigned short*)*(void**)((char*)s_cLocaleData.table + 8))[(signed char)firstByte] & 1);
         if (startsLabel) {
             node.val.value = kLabelCommandTime;
             strcpy(node.val.commandText, firstTimeOrLabel);
@@ -231,20 +291,21 @@ void CFxSequence_ParseEntryLine(void* self, const char* input, unsigned int sour
         {
             // Phase 3: copy into a guarded node before splicing it at the front.
             // Walking prev from the tail later restores file order.
-            Link8* head = (Link8*)((char*)&((CFxSequence*)self)->firstCommandNode - sizeof(void*));
+            Link8* head = (Link8*)((char*)&firstCommandNode - sizeof(void*));
             AllocDEC8 guard(head);
             Entry120* allocatedNode = guard.allocated;
-            new(&allocatedNode->val) Entry114(node.val);
+            new (&allocatedNode->val) Entry114(node.val);
             guard.cleanup = 0;
             Link8* n = &allocatedNode->link;
             head->next->prev = n;
             n->next = head->next;
             head->next = n;
             n->prev = head;
-            ++(*(int*)&((CFxSequence*)self)->commandCount);
+            ++(*(int*)&commandCount);
         }
-        Link8** cur = (Link8**)&((CFxSequence*)self)->nextCommand; // +0x1CC
-        if (*cur == (Link8*)((char*)&((CFxSequence*)self)->firstCommandNode - sizeof(void*))) *cur = ((Link8*)((char*)&((CFxSequence*)self)->firstCommandNode - sizeof(void*)))->prev;
+        Link8** cur = (Link8**)&nextCommand; // +0x1CC
+        if (*cur == (Link8*)((char*)&firstCommandNode - sizeof(void*)))
+            *cur = ((Link8*)((char*)&firstCommandNode - sizeof(void*)))->prev;
     }
 }
 #pragma opt_common_subs reset
@@ -259,18 +320,11 @@ double atof(void*);
 void Matrix_TransformDirection(void*, float*, const char*);
 void __as__7WVectorFRC7WVector(void*, void*);
 int CString_Compare(const char*, const char*);
-void* CFxSpray_CreateFromScript(void*, void*, int, unsigned char);
-void CFxSpray_SetWindVector(void*, void*);
-int CFxRegistryTree_FindInsertionPosition(void*, void*, void*, unsigned char*, unsigned char*);
-void* FxBoxTree_InsertNode(void*, int, unsigned char, unsigned char, void*);
-void CFxBox_RegisterSpray(void*, void*);
-float CFxSpray_ParseScaledFloat(void*, const char*);
+void* FxBoxTree_InsertNode(void*, void*, unsigned char, unsigned char, void*);
 void* appMallocDummy__FUl(unsigned int);
 void Sound_PlayByName(void*, const char*, void*, int, int, int, float, float, float);
 int String_CompareCString(const char*, const char*);
 void __mi__FRC7WVectorRC7WVector(void*, void*, void*);
-// Choose times in [earliestFrame, latestFrame) and sort timed commands within label/immediate boundaries.
-void CFxSequence_RandomizeAndSortCommandTimes(State*);
 extern void* g_soundManager;
 extern unsigned int s_fxRegistryDefaultMappedWord;
 extern float kFloat_200_FxSequence, kFloat_2_FxSequence, kFloat_neg2_FxSequence;
@@ -286,96 +340,137 @@ typedef Vec3f Vec190;
 // Preserve the payload storage types and constructor copy order.
 struct SequenceAxisRateTrack {
     Vec190 axis; // rotation axis; never normalized by this parser.
-    int startTime; float startAngularRate; int endTime; float endAngularRate; // start time/rate, end time/rate.
+    int startTime;
+    float startAngularRate;
+    int endTime;
+    float endAngularRate; // start time/rate, end time/rate.
     // Leave fields for the command parser to populate.
     SequenceAxisRateTrack() {}
     // Copy a single-vector track payload before linking its node.
-    SequenceAxisRateTrack(const SequenceAxisRateTrack& t):axis(t.axis),startTime(t.startTime),startAngularRate(t.startAngularRate),endTime(t.endTime),endAngularRate(t.endAngularRate) {}
+    SequenceAxisRateTrack(const SequenceAxisRateTrack& t)
+        : axis(t.axis), startTime(t.startTime), startAngularRate(t.startAngularRate), endTime(t.endTime),
+          endAngularRate(t.endAngularRate) {}
 };
 struct SequencePivotOrbitTrack {
-    Vec190 pivot,axis; // pivot in emitter-position coordinates, then rotation axis.
-    int startTime; float startAngularRate; int endTime; float endAngularRate; // start time/rate, end time/rate.
+    Vec190 pivot, axis; // pivot in emitter-position coordinates, then rotation axis.
+    int startTime;
+    float startAngularRate;
+    int endTime;
+    float endAngularRate; // start time/rate, end time/rate.
     // Leave fields for the command parser to populate.
     SequencePivotOrbitTrack() {}
     // Copy a two-vector track payload before linking its node.
-    SequencePivotOrbitTrack(const SequencePivotOrbitTrack& t):pivot(t.pivot),axis(t.axis),startTime(t.startTime),startAngularRate(t.startAngularRate),endTime(t.endTime),endAngularRate(t.endAngularRate) {}
+    SequencePivotOrbitTrack(const SequencePivotOrbitTrack& t)
+        : pivot(t.pivot), axis(t.axis), startTime(t.startTime), startAngularRate(t.startAngularRate),
+          endTime(t.endTime), endAngularRate(t.endAngularRate) {}
 };
-struct Action190 { int type; char childSpray[kCommandTextCapacity]; bool attached; char pad[3]; float value; int count; };
-struct Link190 { Link190* next; Link190* prev; };
-struct Guard190 {
+// addSpawn payload: child spray name, attachment flag, mode and its parameters.
+struct SpawnAction {
+    int type;
+    char childSpray[kCommandTextCapacity];
+    bool attached;
+    char pad[3];
+    float value;
+    int count;
+};
+// Links shared by a spray's track lists.
+struct TrackLink {
+    TrackLink* next;
+    TrackLink* prev;
+};
+struct AllocationGuard {
     void* p;
     // Own an allocation until the caller clears p after successful construction.
-    Guard190(void* value):p(value) {}
+    AllocationGuard(void* value) : p(value) {}
     // Free a node whose construction/insertion did not commit.
-    ~Guard190() { if(p) appFreeUni__FPv(p); }
+    ~AllocationGuard() {
+        if (p)
+            appFreeUni__FPv(p);
+    }
 };
-struct Source190 {
+// Tokenizer that splits one script command line in place.
+struct CommandTokenizer {
     unsigned char data[0x18];
     // Initialize the script-command tokenizer in this stack storage.
-    Source190() { cTokenV_Init((BigString*)this); }
+    CommandTokenizer() {
+        cTokenV_Init(this);
+    }
     // Release tokenizer state without freeing the stack object.
-    ~Source190() { cToken_dtor(this,0); }
+    ~CommandTokenizer() {
+        cToken_dtor(this, 0);
+    }
 };
-struct Source190Storage { unsigned char pad[0xd8]; Source190 source; };
+// Frame storage for the command tokenizer.
+struct CommandTokenizerStorage {
+    unsigned char pad[0xd8];
+    CommandTokenizer source;
+};
 // Kept as a scoped macro: an inline template changes the caller's register lifetimes.
 // Copy before linking, so the guard frees the allocation if construction fails.
-#define APPEND_SPRAY_TRACK(Track, value, listOffset) { \
-    char* owner=(char*)(*(void**)&((CFxSequence*)self)->currentSpray); \
-    Link190* head=(Link190*)(owner+listOffset); \
-    Link190* node=(Link190*)appMallocDummy__FUl(sizeof(Track)+8); \
-    Guard190 guard(node); \
-    Track* data=(Track*)(node+1); \
-    new(data) Track(value); \
-    guard.p=0; \
-    head->next->prev=node; \
-    node->next=head->next; \
-    head->next=node; \
-    node->prev=head; \
-    ++*(unsigned int*)(owner+listOffset-4); \
-}
+#define APPEND_SPRAY_TRACK(Track, value, listOffset)                          \
+    {                                                                         \
+        char* owner = (char*)currentSpray;                                    \
+        TrackLink* head = (TrackLink*)(owner + listOffset);                   \
+        TrackLink* node = (TrackLink*)appMallocDummy__FUl(sizeof(Track) + 8); \
+        AllocationGuard guard(node);                                          \
+        Track* data = (Track*)(node + 1);                                     \
+        new (data) Track(value);                                              \
+        guard.p = 0;                                                          \
+        head->next->prev = node;                                              \
+        node->next = head->next;                                              \
+        head->next = node;                                                    \
+        node->prev = head;                                                    \
+        ++*(unsigned int*)(owner + listOffset - 4);                           \
+    }
 
 enum SequenceTrackArgument {
-    kAxisTrackStartTimeArgument = 3, kAxisTrackStartRateArgument = 4,
-    kAxisTrackEndTimeArgument = 5, kAxisTrackEndRateArgument = 6,
-    kOrbitTrackStartTimeArgument = 6, kOrbitTrackStartRateArgument = 7,
-    kOrbitTrackEndTimeArgument = 8, kOrbitTrackEndRateArgument = 9
+    kAxisTrackStartTimeArgument = 3,
+    kAxisTrackStartRateArgument = 4,
+    kAxisTrackEndTimeArgument = 5,
+    kAxisTrackEndRateArgument = 6,
+    kOrbitTrackStartTimeArgument = 6,
+    kOrbitTrackStartRateArgument = 7,
+    kOrbitTrackEndTimeArgument = 8,
+    kOrbitTrackEndRateArgument = 9
 };
 
 #pragma push
 #pragma opt_common_subs off
 // Decode axis and inclusive start/end time/rate pairs into caller-owned track storage.
-static inline void DecodeSequenceAxisRateTrack(void* self, char args[][kCommandTextCapacity], SequenceAxisRateTrack& track) {
-    sscanf(args[0],(char*)fxSequenceParserStrings.floatFormat,&track.axis.x);
-    sscanf(args[1],(char*)fxSequenceParserStrings.floatFormat,&track.axis.y);
-    sscanf(args[2],(char*)fxSequenceParserStrings.floatFormat,&track.axis.z);
-    track.startTime=(int)CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[kAxisTrackStartTimeArgument]);
-    track.startAngularRate=CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[kAxisTrackStartRateArgument]);
-    track.endTime=(int)CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[kAxisTrackEndTimeArgument]);
-    track.endAngularRate=CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[kAxisTrackEndRateArgument]);
+static inline void DecodeSequenceAxisRateTrack(CFxSequence* self, char args[][kCommandTextCapacity],
+                                               SequenceAxisRateTrack& track) {
+    sscanf(args[0], (char*)fxSequenceParserStrings.floatFormat, &track.axis.x);
+    sscanf(args[1], (char*)fxSequenceParserStrings.floatFormat, &track.axis.y);
+    sscanf(args[2], (char*)fxSequenceParserStrings.floatFormat, &track.axis.z);
+    track.startTime = (int)((CFxSpray*)self->sequenceOwner)->ParseScaledFloat(args[kAxisTrackStartTimeArgument]);
+    track.startAngularRate = ((CFxSpray*)self->sequenceOwner)->ParseScaledFloat(args[kAxisTrackStartRateArgument]);
+    track.endTime = (int)((CFxSpray*)self->sequenceOwner)->ParseScaledFloat(args[kAxisTrackEndTimeArgument]);
+    track.endAngularRate = ((CFxSpray*)self->sequenceOwner)->ParseScaledFloat(args[kAxisTrackEndRateArgument]);
 }
 #pragma pop
 
 #pragma push
 #pragma opt_common_subs off
 // Decode pivot/axis and inclusive start/end time/rate pairs into caller-owned orbit storage.
-static inline void DecodeSequencePivotOrbitTrack(void* self, char args[][kCommandTextCapacity], SequencePivotOrbitTrack& track) {
-    sscanf(args[0],(char*)fxSequenceParserStrings.floatFormat,&track.pivot.x);
-    sscanf(args[1],(char*)fxSequenceParserStrings.floatFormat,&track.pivot.y);
-    sscanf(args[2],(char*)fxSequenceParserStrings.floatFormat,&track.pivot.z);
-    sscanf(args[3],(char*)fxSequenceParserStrings.floatFormat,&track.axis.x);
-    sscanf(args[4],(char*)fxSequenceParserStrings.floatFormat,&track.axis.y);
-    sscanf(args[5],(char*)fxSequenceParserStrings.floatFormat,&track.axis.z);
-    track.startTime=(int)CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[kOrbitTrackStartTimeArgument]);
-    track.startAngularRate=CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[kOrbitTrackStartRateArgument]);
-    track.endTime=(int)CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[kOrbitTrackEndTimeArgument]);
-    track.endAngularRate=CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[kOrbitTrackEndRateArgument]);
+static inline void DecodeSequencePivotOrbitTrack(CFxSequence* self, char args[][kCommandTextCapacity],
+                                                 SequencePivotOrbitTrack& track) {
+    sscanf(args[0], (char*)fxSequenceParserStrings.floatFormat, &track.pivot.x);
+    sscanf(args[1], (char*)fxSequenceParserStrings.floatFormat, &track.pivot.y);
+    sscanf(args[2], (char*)fxSequenceParserStrings.floatFormat, &track.pivot.z);
+    sscanf(args[3], (char*)fxSequenceParserStrings.floatFormat, &track.axis.x);
+    sscanf(args[4], (char*)fxSequenceParserStrings.floatFormat, &track.axis.y);
+    sscanf(args[5], (char*)fxSequenceParserStrings.floatFormat, &track.axis.z);
+    track.startTime = (int)((CFxSpray*)self->sequenceOwner)->ParseScaledFloat(args[kOrbitTrackStartTimeArgument]);
+    track.startAngularRate = ((CFxSpray*)self->sequenceOwner)->ParseScaledFloat(args[kOrbitTrackStartRateArgument]);
+    track.endTime = (int)((CFxSpray*)self->sequenceOwner)->ParseScaledFloat(args[kOrbitTrackEndTimeArgument]);
+    track.endAngularRate = ((CFxSpray*)self->sequenceOwner)->ParseScaledFloat(args[kOrbitTrackEndRateArgument]);
 }
 #pragma pop
 
-// Script command schema (key = arg0, arg1, ...; up to kCommandArgumentCount args, each trimmed). Keys are
+// Script command schema (key = first value, second value, ...; up to kCommandArgumentCount values, each trimmed). Keys are
 // compared against fxSequenceParserStrings; the args below are positional, 0-based. Units are those of the
-// script text; values read with CFxSpray_ParseScaledFloat are scaled by the owning effect box.
-//   spray       args[0..]  = spray definition passed to CFxSpray_CreateFromScript; args[1..3] = position xyz,
+// script text; values read with CFxSpray::ParseScaledFloat are scaled by the owning effect box.
+//   spray       args[0..]  = spray definition passed to CFxSpray::CreateFromScript; args[1..3] = position xyz,
 //                            args[4..6] = velocity xyz, args[7] = "strong bond" flag text (particlesFollowEmitter),
 //                            args[8] = "camera side" flag text (position/velocity rotated by camera basis).
 //   addSpawn    args[0] child spray name; args[1] attached flag text; args[2] mode: interval (args[3] value,
@@ -393,183 +488,205 @@ static inline void DecodeSequencePivotOrbitTrack(void* self, char args[][kComman
 // spray load. Track commands without a current spray do nothing.
 #pragma opt_common_subs off
 // Execute a script command: create a spray, append a track, attach it, play sound, jump or stop.
-int CFxSequence_ExecuteScriptCommand(void* self, signed char* input, unsigned char* result) {
+int CFxSequence::ExecuteScriptCommand(signed char* input, unsigned char* result) {
     // Borrow input; result is required and cleared before parsing. Return 1 to
     // advance, 0 to retry/stop this update. result=1 marks spray-load failure or
     // an unknown command; a jump near the current time may return 0 with result=0.
+    // The original keeps a frame pointer for the tokenizer's stack buffers.
     __alloca(0);
-    signed char first=*input;
-    *result=0;
-    if (first == 0 || first == kCommentPrefix) return 1;
-    Source190Storage storage;
-    Source190& source=storage.source;
-    BigString& src=*(BigString*)&source;
+    signed char first = *input;
+    *result = 0;
+    if (first == 0 || first == kCommentPrefix)
+        return 1;
+    CommandTokenizerStorage storage;
+    CommandTokenizer& source = storage.source;
     char key[kCommandTextCapacity];
     char args[kCommandArgumentCount][kCommandTextCapacity];
     char scratch[kCommandTextCapacity];
     // Phase 1: tokenize the key and up to sixteen arguments into caller-frame buffers.
-    cTokenV_SetInputBuffer(&src, (char*)input, strlen((char*)input));
-    cToken_ReadUntilDelimiter(&src, key, fxSequenceParserStrings.assignment, 1);
+    cTokenV_SetInputBuffer(&source, (char*)input, strlen((char*)input));
+    cToken_ReadUntilDelimiter(&source, key, fxSequenceParserStrings.assignment, 1);
     String_TrimCharacterSet(key, fxSequenceParserStrings.whitespace);
-    for (int i=0;i<kCommandArgumentCount;i++) {
-        cToken_ReadUntilDelimiter(&src, args[i], fxSequenceParserStrings.argumentSeparator, 1);
+    for (int i = 0; i < kCommandArgumentCount; i++) {
+        cToken_ReadUntilDelimiter(&source, args[i], fxSequenceParserStrings.argumentSeparator, 1);
         String_TrimCharacterSet(args[i], fxSequenceParserStrings.argumentTrim);
     }
     // Phase 2: dispatch one command; each add* copies its stack payload before linking.
     // Dispatch map: spray creates/registers the current emitter; add* copies a
     // track onto that emitter; attachedToParent sets axis bits; sound/jump/stop
     // act on the sequence. add* without a current spray succeeds without work.
-    int ok=1;
-    if (!*key) { return 1; }
+    int ok = 1;
+    if (!*key) {
+        return 1;
+    }
     if (!CString_Compare(key, (char*)fxSequenceParserStrings.spray)) {
-        // 0x8010E190: disabled playback skips spray creation.
-        if ((*(unsigned char*)&((CFxSequence*)self)->playbackEnabled)) {
-            void* obj=CFxSpray_CreateFromScript(((CFxSequence*)self)->sequenceOwner, args, 0, (*(unsigned char*)&((CFxSequence*)self)->bypassResourceCache));
-            if (!obj) { *result=1; return 0; }
-            (*(bool*)&((CFxSpray*)obj)->particlesFollowEmitter)=CString_Compare(args[7], (char*)fxSequenceParserStrings.strongBond)==0;
-            (*(void**)&((CFxSpray*)obj)->parentSequence)=self;
-            ((SprayAttachmentView*)obj)->attachmentX=((CFxSequence*)self)->attachmentPositionX;
-            ((SprayAttachmentView*)obj)->attachmentY=((CFxSequence*)self)->attachmentPositionY;
-            ((CFxSpray*)obj)->unk_4=(*(unsigned char*)&((CFxSequence*)self)->unk_4);
-            CFxSpray_SetWindVector(obj,&((SequenceAttachmentView*)self)->wind);
+        // Disabled playback skips spray creation.
+        if ((*(unsigned char*)&playbackEnabled)) {
+            void* obj = CFxSpray::CreateFromScript((CFxBox*)(sequenceOwner), (const char*)(args), 0,
+                                                   (*(unsigned char*)&bypassResourceCache));
+            if (!obj) {
+                *result = 1;
+                return 0;
+            }
+            (*(bool*)&((CFxSpray*)obj)->particlesFollowEmitter) =
+                CString_Compare(args[7], (char*)fxSequenceParserStrings.strongBond) == 0;
+            (*(void**)&((CFxSpray*)obj)->parentSequence) = this;
+            ((SprayAttachmentView*)obj)->attachmentX = attachmentPositionX;
+            ((SprayAttachmentView*)obj)->attachmentY = attachmentPositionY;
+            ((CFxSpray*)obj)->clearOnPartialClear = (*(unsigned char*)&clearOnPartialClear);
+            ((CFxSpray*)obj)->SetWindVector(&wind);
             // cameraSide rotates position and velocity by the stored camera basis.
             // Otherwise position is copied directly, but velocity is still rotated.
             // Matrix_TransformDirection omits translation in both branches.
-            if (!CString_Compare(args[8],(char*)fxSequenceParserStrings.cameraSide)) {
-                Matrix_CopyAffine((char*)((SequenceAttachmentView*)self)->cameraMatrix,(char*)s_cameraTransform);
-                float z=(float)atof(args[3]);
-                float y=(float)atof(args[2]);
-                float x=(float)atof(args[1]);
-                Vec190 v={x,y,z}, out;
-                void* dest=&((SprayAttachmentView*)obj)->position;
-                Matrix_TransformDirection(&out,&v.x,(char*)((SequenceAttachmentView*)self)->cameraMatrix);
+            if (!CString_Compare(args[8], (char*)fxSequenceParserStrings.cameraSide)) {
+                Matrix_CopyAffine((char*)cameraMatrix, (char*)s_cameraTransform);
+                float z = (float)atof(args[3]);
+                float y = (float)atof(args[2]);
+                float x = (float)atof(args[1]);
+                Vec190 v = {x, y, z}, out;
+                void* dest = &((SprayAttachmentView*)obj)->position;
+                Matrix_TransformDirection(&out, &v.x, (char*)cameraMatrix);
                 *(WVector*)dest = *(WVector*)&out;
-                float z2=(float)atof(args[6]);
-                float y2=(float)atof(args[5]);
-                float x2=(float)atof(args[4]);
-                Vec190 w={x2,y2,z2}, out2;
-                void* dest2=&((SprayAttachmentView*)obj)->velocity;
-                Matrix_TransformDirection(&out2,&w.x,(char*)((SequenceAttachmentView*)self)->cameraMatrix);
+                float z2 = (float)atof(args[6]);
+                float y2 = (float)atof(args[5]);
+                float x2 = (float)atof(args[4]);
+                Vec190 w = {x2, y2, z2}, out2;
+                void* dest2 = &((SprayAttachmentView*)obj)->velocity;
+                Matrix_TransformDirection(&out2, &w.x, (char*)cameraMatrix);
                 *(WVector*)dest2 = *(WVector*)&out2;
             } else {
-                float z=(float)atof(args[3]);
-                float y=(float)atof(args[2]);
-                float x=(float)atof(args[1]);
-                Vec190 v={x,y,z};
+                float z = (float)atof(args[3]);
+                float y = (float)atof(args[2]);
+                float x = (float)atof(args[1]);
+                Vec190 v = {x, y, z};
                 *(WVector*)(&((SprayAttachmentView*)obj)->position) = *(WVector*)&v;
-                float z2=(float)atof(args[6]);
-                float y2=(float)atof(args[5]);
-                float x2=(float)atof(args[4]);
-                Vec190 w={x2,y2,z2}, out;
-                void* dest=&((SprayAttachmentView*)obj)->velocity;
-                Matrix_TransformDirection(&out,&w.x,(char*)((SequenceAttachmentView*)self)->cameraMatrix);
+                float z2 = (float)atof(args[6]);
+                float y2 = (float)atof(args[5]);
+                float x2 = (float)atof(args[4]);
+                Vec190 w = {x2, y2, z2}, out;
+                void* dest = &((SprayAttachmentView*)obj)->velocity;
+                Matrix_TransformDirection(&out, &w.x, (char*)cameraMatrix);
                 *(WVector*)dest = *(WVector*)&out;
             }
-            ((CFxSpray*)obj)->drawEnabled=(*(unsigned char*)&((CFxSequence*)self)->playbackEnabled);
+            ((CFxSpray*)obj)->drawEnabled = (*(unsigned char*)&playbackEnabled);
             // Register after attachment/wind setup; the effect box receives the spray.
             void* found;
-            unsigned char a,b;
-            int position=CFxRegistryTree_FindInsertionPosition(&((CFxSequence*)self)->sprayCount,&obj,&found,&a,&b);
-            void** slot=&((RegistryNode*)found)->key;
+            unsigned char a, b;
+            void* position = ((CFxRegistryTree*)(&sprayCount))
+                                 ->FindInsertionPosition((unsigned int*)&obj, (FxRegistryNode**)&found, &a, &b);
+            void** slot = &((RegistryNode*)found)->key;
             if (!found || (unsigned int)*slot < (unsigned int)obj) {
-                void* pair[2]={obj,(void*)s_fxRegistryDefaultMappedWord};
-                void* n=FxBoxTree_InsertNode(&((CFxSequence*)self)->sprayCount,position,a,b,pair);
-                slot=&((RegistryNode*)n)->key;
+                void* pair[2] = {obj, (void*)s_fxRegistryDefaultMappedWord};
+                void* n = FxBoxTree_InsertNode(&sprayCount, position, a, b, pair);
+                slot = &((RegistryNode*)n)->key;
             }
-            slot[1]=obj;
-            CFxBox_RegisterSpray(((CFxSequence*)self)->sequenceOwner,obj);
-            (*(void**)&((CFxSequence*)self)->currentSpray)=obj;
+            slot[1] = obj;
+            ((CFxBox*)sequenceOwner)->RegisterSpray(((CFxSpray*)(obj)));
+            currentSpray = (unsigned int)obj;
         }
-    } else if (!CString_Compare(key,(char*)fxSequenceParserStrings.addSpawn)) {
-        if ((*(void**)&((CFxSequence*)self)->currentSpray)) {
-            Action190 action;
-            strcpy(action.childSpray,args[0]);
-            action.attached=CString_Compare(args[1],(char*)fxSequenceParserStrings.attached)==0;
-            if (!CString_Compare(args[2],(char*)fxSequenceParserStrings.interval)) {
-                action.type=kSpawnAtInterval;
-                action.value=CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[3]);
-                action.count=(int)CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[4]);
-            } else if (!CString_Compare(args[2],(char*)fxSequenceParserStrings.age)) {
-                action.type=kSpawnAtAge;
-                action.value=CFxSpray_ParseScaledFloat(((CFxSequence*)self)->sequenceOwner,args[3]);
-            } else if (!CString_Compare(args[2],(char*)fxSequenceParserStrings.onDeath)) action.type=kSpawnOnDeath;
-            else if (!CString_Compare(args[2],(char*)fxSequenceParserStrings.onGround)) action.type=kSpawnOnGround;
+    } else if (!CString_Compare(key, (char*)fxSequenceParserStrings.addSpawn)) {
+        if (currentSpray) {
+            SpawnAction action;
+            strcpy(action.childSpray, args[0]);
+            action.attached = CString_Compare(args[1], (char*)fxSequenceParserStrings.attached) == 0;
+            if (!CString_Compare(args[2], (char*)fxSequenceParserStrings.interval)) {
+                action.type = kSpawnAtInterval;
+                action.value = ((CFxSpray*)sequenceOwner)->ParseScaledFloat(args[3]);
+                action.count = (int)((CFxSpray*)sequenceOwner)->ParseScaledFloat(args[4]);
+            } else if (!CString_Compare(args[2], (char*)fxSequenceParserStrings.age)) {
+                action.type = kSpawnAtAge;
+                action.value = ((CFxSpray*)sequenceOwner)->ParseScaledFloat(args[3]);
+            } else if (!CString_Compare(args[2], (char*)fxSequenceParserStrings.onDeath))
+                action.type = kSpawnOnDeath;
+            else if (!CString_Compare(args[2], (char*)fxSequenceParserStrings.onGround))
+                action.type = kSpawnOnGround;
             // The spray owns the copied list node; action is only a stack payload.
-            APPEND_SPRAY_TRACK(Action190, action, kSprayActionListOffset);
+            APPEND_SPRAY_TRACK(SpawnAction, action, kSprayActionListOffset);
         }
-    // Orbit/rotation tracks share the start-time/rate, end-time/rate policy described above.
-    } else if (!CString_Compare(key,(char*)fxSequenceParserStrings.addRevolution)) {
-        if ((*(void**)&((CFxSequence*)self)->currentSpray)) {
+        // Orbit/rotation tracks share the start-time/rate, end-time/rate policy described above.
+    } else if (!CString_Compare(key, (char*)fxSequenceParserStrings.addRevolution)) {
+        if (currentSpray) {
             SequencePivotOrbitTrack track;
-            DecodeSequencePivotOrbitTrack(self, args, track);
-            APPEND_SPRAY_TRACK(SequencePivotOrbitTrack, track, FX_OFFSET(CFxSpray, emitterOrbitTrackCount) + sizeof(unsigned int));
+            DecodeSequencePivotOrbitTrack(this, args, track);
+            APPEND_SPRAY_TRACK(SequencePivotOrbitTrack, track,
+                               FX_OFFSET(CFxSpray, emitterOrbitTrackCount) + sizeof(unsigned int));
         }
-    } else if (!CString_Compare(key,(char*)fxSequenceParserStrings.addRotation)) {
-        if ((*(void**)&((CFxSequence*)self)->currentSpray)) {
+    } else if (!CString_Compare(key, (char*)fxSequenceParserStrings.addRotation)) {
+        if (currentSpray) {
             SequenceAxisRateTrack track;
-            DecodeSequenceAxisRateTrack(self, args, track);
-            APPEND_SPRAY_TRACK(SequenceAxisRateTrack, track, FX_OFFSET(CFxSpray, particleOrbitTrackCount) + sizeof(unsigned int));
+            DecodeSequenceAxisRateTrack(this, args, track);
+            APPEND_SPRAY_TRACK(SequenceAxisRateTrack, track,
+                               FX_OFFSET(CFxSpray, particleOrbitTrackCount) + sizeof(unsigned int));
         }
-    } else if (!CString_Compare(key,(char*)fxSequenceParserStrings.addNormalRotation)) {
-        if ((*(void**)&((CFxSequence*)self)->currentSpray)) {
+    } else if (!CString_Compare(key, (char*)fxSequenceParserStrings.addNormalRotation)) {
+        if (currentSpray) {
             SequenceAxisRateTrack track;
-            DecodeSequenceAxisRateTrack(self, args, track);
-            APPEND_SPRAY_TRACK(SequenceAxisRateTrack, track, FX_OFFSET(CFxSpray, velocityRotationTrackCount) + sizeof(unsigned int));
+            DecodeSequenceAxisRateTrack(this, args, track);
+            APPEND_SPRAY_TRACK(SequenceAxisRateTrack, track,
+                               FX_OFFSET(CFxSpray, velocityRotationTrackCount) + sizeof(unsigned int));
         }
-    } else if (!CString_Compare(key,(char*)fxSequenceParserStrings.addParentRevolution)) {
-        if ((*(void**)&((CFxSequence*)self)->currentSpray)) {
+    } else if (!CString_Compare(key, (char*)fxSequenceParserStrings.addParentRevolution)) {
+        if (currentSpray) {
             SequencePivotOrbitTrack track;
-            DecodeSequencePivotOrbitTrack(self, args, track);
+            DecodeSequencePivotOrbitTrack(this, args, track);
             APPEND_SPRAY_TRACK(SequencePivotOrbitTrack, track, kSprayParentOrbitListOffset);
         }
-    } else if (!String_CompareCString(key,(char*)fxSequenceParserStrings.attachedToParent)) {
-        if ((*(void**)&((CFxSequence*)self)->currentSpray)) {
-            ((CFxSpray*)(*(void**)&((CFxSequence*)self)->currentSpray))->attachedToParent=0;
-            if (!String_CompareCString(args[0],(char*)fxSequenceParserStrings.on)) ((CFxSpray*)(*(void**)&((CFxSequence*)self)->currentSpray))->attachedToParent=1;
-            int xEnabled=0,yEnabled=0,zEnabled=0;
-            sscanf(args[1],(char*)fxSequenceParserStrings.integerFormat,&xEnabled);
-            sscanf(args[2],(char*)fxSequenceParserStrings.integerFormat,&yEnabled);
-            sscanf(args[3],(char*)fxSequenceParserStrings.integerFormat,&zEnabled);
-            (*(int*)&((CFxSpray*)(*(void**)&((CFxSequence*)self)->currentSpray))->parentRotationAxisMask)=0;
-            if(xEnabled) (*(int*)&((CFxSpray*)(*(void**)&((CFxSequence*)self)->currentSpray))->parentRotationAxisMask)|=kParentAxisX;
-            if(yEnabled) (*(int*)&((CFxSpray*)(*(void**)&((CFxSequence*)self)->currentSpray))->parentRotationAxisMask)|=kParentAxisY;
-            if(zEnabled) (*(int*)&((CFxSpray*)(*(void**)&((CFxSequence*)self)->currentSpray))->parentRotationAxisMask)|=kParentAxisZ;
+    } else if (!String_CompareCString(key, (char*)fxSequenceParserStrings.attachedToParent)) {
+        if (currentSpray) {
+            ((CFxSpray*)currentSpray)->attachedToParent = 0;
+            if (!String_CompareCString(args[0], (char*)fxSequenceParserStrings.on))
+                ((CFxSpray*)currentSpray)->attachedToParent = 1;
+            int xEnabled = 0, yEnabled = 0, zEnabled = 0;
+            sscanf(args[1], (char*)fxSequenceParserStrings.integerFormat, &xEnabled);
+            sscanf(args[2], (char*)fxSequenceParserStrings.integerFormat, &yEnabled);
+            sscanf(args[3], (char*)fxSequenceParserStrings.integerFormat, &zEnabled);
+            (*(int*)&((CFxSpray*)currentSpray)->parentRotationAxisMask) = 0;
+            if (xEnabled)
+                (*(int*)&((CFxSpray*)currentSpray)->parentRotationAxisMask) |= kParentAxisX;
+            if (yEnabled)
+                (*(int*)&((CFxSpray*)currentSpray)->parentRotationAxisMask) |= kParentAxisY;
+            if (zEnabled)
+                (*(int*)&((CFxSpray*)currentSpray)->parentRotationAxisMask) |= kParentAxisZ;
         }
-    } else if (!CString_Compare(key,(char*)fxSequenceParserStrings.sound)) {
+    } else if (!CString_Compare(key, (char*)fxSequenceParserStrings.sound)) {
         // Sound coordinates are camera-relative; negative range selects non-positional playback.
-        float value=kFloat_neg1_FxBox;
-        strcpy(scratch,args[0]);
-        char* cut=strstr(scratch,(char*)fxSequenceParserStrings.waveExtension);
-        if(cut) *cut=0;
-        sscanf(args[1],(char*)fxSequenceParserStrings.floatFormat,&value);
-        if(value<kFloat_0_SoundEmitter) Sound_PlayByName(g_soundManager,scratch,0,0,0,0,kFloat_0_5_FxSequence,kFloat_200_FxSequence,kFloat_1_SoundEmitter);
+        float value = kFloat_neg1_FxBox;
+        strcpy(scratch, args[0]);
+        char* cut = strstr(scratch, (char*)fxSequenceParserStrings.waveExtension);
+        if (cut)
+            *cut = 0;
+        sscanf(args[1], (char*)fxSequenceParserStrings.floatFormat, &value);
+        if (value < kFloat_0_SoundEmitter)
+            Sound_PlayByName(g_soundManager, scratch, 0, 0, 0, 0, kFloat_0_5_FxSequence, kFloat_200_FxSequence,
+                             kFloat_1_SoundEmitter);
         else {
             Vec190 v;
-            __mi__FRC7WVectorRC7WVector(&v,&((CFxSequence*)self)->worldPosition,&((CameraTransformView*)s_cameraTransform)->position);
-            Sound_PlayByName(g_soundManager,scratch,&v,5,0,0,kFloat_0_SoundEmitter,value,kFloat_1_SoundEmitter);
+            __mi__FRC7WVectorRC7WVector(&v, &worldPosition, &((CameraTransformView*)s_cameraTransform)->position);
+            Sound_PlayByName(g_soundManager, scratch, &v, 5, 0, 0, kFloat_0_SoundEmitter, value, kFloat_1_SoundEmitter);
         }
-    } else if (!CString_Compare(key,(char*)fxSequenceParserStrings.jumpToLabel)) {
+    } else if (!CString_Compare(key, (char*)fxSequenceParserStrings.jumpToLabel)) {
         // Jump searches command text in execution order; near-time jumps request a retry.
-        Node* end=(Node*)((char*)&((CFxSequence*)self)->firstCommandNode - sizeof(void*));
-        for(Node* n=(*(Node**)&((CFxSequence*)self)->firstCommandNode);n!=end;n=n->prev) {
-            if(!CString_Compare((char*)n->commandText,args[0])) {
-                CFxSequence_RandomizeAndSortCommandTimes((State*)self);
-                Node* next=n->prev;
-                (*(Node**)&((CFxSequence*)self)->nextCommand)=next;
-                float time=(float)next->earliestFrame;
-                float delta=((CFxSequence*)self)->elapsedTime-time;
-                float scale=((EffectBoxTimeScale*)((CFxSequence*)self)->sequenceOwner)->timeScale;
-                if(delta<kFloat_2_FxSequence*scale && delta>kFloat_neg2_FxSequence*scale) {
+        Node* end = (Node*)((char*)&firstCommandNode - sizeof(void*));
+        for (Node* n = (Node*)firstCommandNode; n != end; n = n->prev) {
+            if (!CString_Compare((char*)n->commandText, args[0])) {
+                RandomizeAndSortCommandTimes();
+                Node* next = n->prev;
+                nextCommand = next;
+                float time = (float)next->earliestFrame;
+                float delta = elapsedTime - time;
+                float scale = ((EffectBoxTimeScale*)sequenceOwner)->timeScale;
+                if (delta < kFloat_2_FxSequence * scale && delta > kFloat_neg2_FxSequence * scale) {
                     return 0;
                 }
-                ((CFxSequence*)self)->elapsedTime=time;
+                elapsedTime = time;
                 break;
             }
         }
-    } else if (!CString_Compare(key,(char*)fxSequenceParserStrings.stop)) {
-        ((CFxSequence*)self)->nextCommand=(char*)&((CFxSequence*)self)->firstCommandNode - sizeof(void*);
+    } else if (!CString_Compare(key, (char*)fxSequenceParserStrings.stop)) {
+        nextCommand = (char*)&firstCommandNode - sizeof(void*);
     } else {
-        *result=1; return 0;
+        *result = 1;
+        return 0;
     }
     return ok;
 }
@@ -579,35 +696,46 @@ int CFxSequence_ExecuteScriptCommand(void* self, signed char* input, unsigned ch
 // CodeWarrior string ABI: the high flag bit selects heap length/data instead of inline bytes.
 inline unsigned int lengthDCF(const SequenceNameStringRep* s) {
     unsigned int result;
-    if ((s->flag >> 31) == 0) result = *(const unsigned char*)s & 0x7f;
-    else result = s->heapLength;
+    if ((s->flag >> 31) == 0)
+        result = *(const unsigned char*)s & 0x7f;
+    else
+        result = s->heapLength;
     return result;
 }
 // Return the smaller length by reference for the original string-copy expression.
 inline const unsigned int& minDCF(const unsigned int& a, const unsigned int& b) {
     return a < b ? a : b;
 }
-struct EmptyDCF { unsigned char byte; };
+struct EmptyDCF {
+    unsigned char byte;
+};
 // Copy the reconstructed small/heap string representation into the destination.
 inline void copyDCF(SequenceNameStringRep* dest, const SequenceNameStringRep& arg) {
-        if (!(arg.flag >> 31)) {
-            unsigned int f = arg.flag, b = arg.heapLength, e = arg.heapDataAddress;
-            dest->flag = f; dest->heapLength = b; dest->heapDataAddress = e;
-        }
-        else {
-            dest->flag = 0; dest->heapLength = 0; dest->heapDataAddress = 0;
-            String_ReserveCapacity(dest, arg.heapLength);
-            EmptyDCF allocator;
-            EmptyDCF copy = allocator;
-            String_ReplaceRange(dest, 0, 0, arg.heapDataAddress, arg.heapDataAddress + arg.heapLength, (unsigned char*)&copy);
-        }
+    if (!(arg.flag >> 31)) {
+        unsigned int f = arg.flag, b = arg.heapLength, e = arg.heapDataAddress;
+        dest->flag = f;
+        dest->heapLength = b;
+        dest->heapDataAddress = e;
+    } else {
+        dest->flag = 0;
+        dest->heapLength = 0;
+        dest->heapDataAddress = 0;
+        String_ReserveCapacity(dest, arg.heapLength);
+        EmptyDCF allocator;
+        EmptyDCF copy = allocator;
+        String_ReplaceRange(dest, 0, 0, arg.heapDataAddress, arg.heapDataAddress + arg.heapLength,
+                            (unsigned char*)&copy);
+    }
 }
 struct StringDCF : SequenceNameStringRep {
     // Copy the tree's string key, including any owned heap text.
-    StringDCF(const SequenceNameStringRep& arg) { copyDCF(this,arg); }
+    StringDCF(const SequenceNameStringRep& arg) {
+        copyDCF(this, arg);
+    }
     // Release only heap-form key storage.
     ~StringDCF() {
-        if (flag >> 31) appFreeUni__FPv((void*)heapDataAddress);
+        if (flag >> 31)
+            appFreeUni__FPv((void*)heapDataAddress);
     }
 };
 struct PairDCF {
@@ -629,22 +757,36 @@ void* FxSequenceNameTree_GetOrInsertValue(void* self, SequenceNameStringRep* arg
             // Compare borrowed bytes over the common prefix, then compare lengths.
             unsigned int requestedLength;
             unsigned int requestedBytes;
-            if ((arg->flag >> 31) == 0) { requestedLength = *(unsigned char*)arg & 0x7f; requestedBytes = (unsigned int)((char*)arg + 1); }
-            else { requestedBytes = arg->heapDataAddress; requestedLength = arg->heapLength; }
+            if ((arg->flag >> 31) == 0) {
+                requestedLength = *(unsigned char*)arg & 0x7f;
+                requestedBytes = (unsigned int)((char*)arg + 1);
+            } else {
+                requestedBytes = arg->heapDataAddress;
+                requestedLength = arg->heapLength;
+            }
             unsigned int candidateLengthFirstRead;
             unsigned int requestedLengthCopy = requestedLength;
             candidateLengthFirstRead = lengthDCF(found);
             unsigned int candidateLengthSecondRead, candidateBytes;
-            if (!(found->flag >> 31)) { candidateBytes = (unsigned int)found + 1; candidateLengthSecondRead = *(unsigned char*)found & 0x7f; }
-            else { candidateBytes = found->heapDataAddress; candidateLengthSecondRead = found->heapLength; }
+            if (!(found->flag >> 31)) {
+                candidateBytes = (unsigned int)found + 1;
+                candidateLengthSecondRead = *(unsigned char*)found & 0x7f;
+            } else {
+                candidateBytes = found->heapDataAddress;
+                candidateLengthSecondRead = found->heapLength;
+            }
             unsigned int candidateLengthCopy = candidateLengthSecondRead;
-            unsigned int candidateLength = minDCF(candidateLengthFirstRead,candidateLengthCopy);
-            int prefixComparison = memcmp((void*)candidateBytes, (void*)requestedBytes, minDCF(requestedLengthCopy,candidateLength));
+            unsigned int candidateLength = minDCF(candidateLengthFirstRead, candidateLengthCopy);
+            int prefixComparison =
+                memcmp((void*)candidateBytes, (void*)requestedBytes, minDCF(requestedLengthCopy, candidateLength));
             int keyComparison;
             if (prefixComparison == 0) {
-                if (candidateLength < requestedLength) keyComparison = -1;
-                else if (requestedLength == candidateLength) keyComparison = 0;
-                else keyComparison = 1;
+                if (candidateLength < requestedLength)
+                    keyComparison = -1;
+                else if (requestedLength == candidateLength)
+                    keyComparison = 0;
+                else
+                    keyComparison = 1;
             } else {
                 keyComparison = prefixComparison;
             }
@@ -663,12 +805,18 @@ void* FxSequenceNameTree_GetOrInsertValue(void* self, SequenceNameStringRep* arg
 #pragma opt_common_subs reset
 #pragma use_lmw_stmw reset
 
-struct PayloadF028 {
-    struct Storage { unsigned int words[0x45]; } data;
+// A command's source line, times, value and inline text, copied as one block.
+struct CommandPayload {
+    struct Storage {
+        unsigned int words[0x45];
+    } data;
     // Copy a command payload while preserving the original exception scope.
-    PayloadF028(const PayloadF028& other) try : data(other.data) {} catch (...) { throw; }
+    CommandPayload(const CommandPayload& other) try : data(other.data) {
+    } catch (...) {
+        throw;
+    }
 };
-struct AllocF028 {
+struct CommandNodeGuard {
     unsigned char allocator;
     Node* result;
     Node* allocated;
@@ -676,17 +824,20 @@ struct AllocF028 {
     Node* head;
     Node* cleanup;
     // Allocate and guard the replacement node used during timeline sorting.
-    AllocF028(Node* h): allocator(0) {
+    CommandNodeGuard(Node* h) : allocator(0) {
         allocated = (Node*)appMallocDummy__FUl(0x11c);
         result = allocated;
         head = h;
         cleanup = allocated;
     }
     // Free a replacement node if its insertion did not commit.
-    ~AllocF028() { if(cleanup) appFreeUni__FPv(cleanup); }
+    ~CommandNodeGuard() {
+        if (cleanup)
+            appFreeUni__FPv(cleanup);
+    }
 };
 // Unlink and free one command node; its inline payload has no separate allocation.
-inline void eraseF028(Node* node) {
+inline void UnlinkAndFreeCommand(Node* node) {
     node->next->prev = node->prev;
     node->prev->next = node->next;
     appFreeUni__FPv(node);
@@ -695,7 +846,8 @@ inline void eraseF028(Node* node) {
 #pragma opt_common_subs on
 #pragma use_lmw_stmw on
 // Choose times in [earliestFrame, latestFrame) and sort timed commands within label/immediate boundaries.
-void CFxSequence_RandomizeAndSortCommandTimes(State* s) {
+void CFxSequence::RandomizeAndSortCommandTimes() {
+    State* s = (State*)this;
     // Each insertion copies a payload, links the replacement, then erases the old
     // node. Count is unchanged after that pair; labels/immediate nodes are barriers.
     // Unequal endpoints require latestFrame > earliestFrame for a meaningful range.
@@ -718,25 +870,27 @@ void CFxSequence_RandomizeAndSortCommandTimes(State* s) {
             while (scan != head) {
                 other = other->next;
                 unsigned int ov = other->value;
-                if ((ov + kCommandSentinelBias) == kLabelBiasedTime || (ov + kCommandSentinelBias) == kImmediateBiasedTime) break;
+                if ((ov + kCommandSentinelBias) == kLabelBiasedTime ||
+                    (ov + kCommandSentinelBias) == kImmediateBiasedTime)
+                    break;
                 scan = scan->next;
             }
             while (scan != cur) {
                 if (scan->value > cur->value) {
                     {
-                    AllocF028 guard((Node*)&s->sentinel);
-                    Node* node = guard.allocated;
-                    PayloadF028* data = (PayloadF028*)((char*)node + 8);
-                    new(data) PayloadF028(*(PayloadF028*)((char*)cur + 8));
-                    guard.cleanup = 0;
-                    scan->next->prev = node;
-                    node->next = scan->next;
-                    scan->next = node;
-                    node->prev = scan;
-                    ++s->count;
+                        CommandNodeGuard guard((Node*)&s->sentinel);
+                        Node* node = guard.allocated;
+                        CommandPayload* data = (CommandPayload*)((char*)node + 8);
+                        new (data) CommandPayload(*(CommandPayload*)((char*)cur + 8));
+                        guard.cleanup = 0;
+                        scan->next->prev = node;
+                        node->next = scan->next;
+                        scan->next = node;
+                        node->prev = scan;
+                        ++s->count;
                     }
                     scan = cur->prev;
-                    eraseF028(cur);
+                    UnlinkAndFreeCommand(cur);
                     --s->count;
                     cur = scan->next;
                     break;
@@ -752,7 +906,8 @@ void CFxSequence_RandomizeAndSortCommandTimes(State* s) {
 
 #pragma cpp_exceptions reset
 // Wait for playback/resume, execute due commands, retry blocked commands, and retain failed-command details.
-int CFxSequence_UpdateTimeline(State* s, float dt, unsigned char* flag) {
+int CFxSequence::UpdateTimeline(float dt, unsigned char* flag) {
+    State* s = (State*)this;
     // dt, elapsed and the resume timer share caller-supplied timeline units;
     // scheduled integer times are compared to elapsed rounded via +0.5.
     // Return 0 when nextCommand reaches the sentinel, 1 while waiting/retrying.
@@ -765,9 +920,12 @@ int CFxSequence_UpdateTimeline(State* s, float dt, unsigned char* flag) {
         if (tm > zero) {
             float t = tm - dt;
             s->timer = t;
-            if (t < zero) s->playbackEnabled = 1;
-            else return 1;
-        } else return 1;
+            if (t < zero)
+                s->playbackEnabled = 1;
+            else
+                return 1;
+        } else
+            return 1;
     }
     // Phase 2: skip labels and execute every currently due/immediate command.
     float half = kFloat_0_5_FxSequence;
@@ -784,15 +942,18 @@ int CFxSequence_UpdateTimeline(State* s, float dt, unsigned char* flag) {
             continue;
         }
         // 0x8010F1DC: commands whose time has arrived are processed before advancing.
-        if (!((value + kCommandSentinelBias) != kImmediateBiasedTime && value > Runtime_ConvertDoubleToUnsigned(half + s->elapsed))) {
+        if (!((value + kCommandSentinelBias) != kImmediateBiasedTime &&
+              value > Runtime_ConvertDoubleToUnsigned(half + s->elapsed))) {
             (*(Node**)&((CFxSequence*)s)->nextCommand) = n->prev;
-            if ((signed char)n->commandText[0] == 0) continue;
-            if (!CFxSequence_ExecuteScriptCommand(s, (signed char*)n->commandText, flag)) {
+            if ((signed char)n->commandText[0] == 0)
+                continue;
+            if (!ExecuteScriptCommand((signed char*)n->commandText, flag)) {
                 // Phase 3a: back up from the command-selected cursor for retry.
                 Node* cur = (*(Node**)&((CFxSequence*)s)->nextCommand);
                 (*(Node**)&((CFxSequence*)s)->nextCommand) = cur->next;
             } else {
-                if (*flag == 0) continue;
+                if (*flag == 0)
+                    continue;
                 // Phase 3b: retain failed-command metadata and its 0x104-byte text.
                 int i = 0x82;
                 unsigned char* src = n->commandText - 1;
@@ -816,7 +977,6 @@ int CFxSequence_UpdateTimeline(State* s, float dt, unsigned char* flag) {
         return 1;
     }
 }
-
 
 #undef APPEND_SPRAY_TRACK
 } // extern "C"

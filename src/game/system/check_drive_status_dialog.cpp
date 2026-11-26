@@ -1,44 +1,77 @@
+// Disc drive status monitor and its error dialogs: runs the error display thread, shows the
+// no-disc, wrong-disc and retry messages, fades the dialog in and out, and owns the message tree.
+
 #include <decomp/local_class.h>
 #include "classes/Context8028A588.h"
 #include "classes/IDiskErrorDialog.h"
 #define AsIDiskErrorDialog(p) ((IDiskErrorDialog*)(p))
-// Translation unit 0x802813D0-0x80283608 (20 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "classes/CCheckDriveStatus.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CDiskErrorDialog_PAL.h"
 
 #define AsCCheckDriveStatus(p) ((CCheckDriveStatus*)(p))
 // Wide strings store short text inline at byte 2, or flags/length/heap pointer.
 union DriveWideString {
-    struct { unsigned flags; unsigned length; void* data; } heap;
-    struct { int flags; int length; int data; } signedWords;
-    struct { unsigned char size; unsigned char reserved; unsigned short text[5]; } small;
+    struct {
+        unsigned flags;
+        unsigned length;
+        void* data;
+    } heap;
+    struct {
+        int flags;
+        int length;
+        int data;
+    } signedWords;
+    struct {
+        unsigned char size;
+        unsigned char reserved;
+        unsigned short text[5];
+    } small;
 };
 struct DriveStatusNode {
-    void* left; void* right; void* parent;
+    void* left;
+    void* right;
+    void* parent;
     int driveStatus;
     DriveWideString message;
 };
-struct DriveStatusPair { int driveStatus; DriveWideString message; };
+struct DriveStatusPair {
+    int driveStatus;
+    DriveWideString message;
+};
 struct DriveErrorTextPool {
-    char noDisc[0x3A]; char wrongDisc[0x40]; char retry[0x36];
+    char noDisc[0x3A];
+    char wrongDisc[0x40];
+    char retry[0x36];
 };
 typedef char DriveWideString_size[(sizeof(DriveWideString) == 12) ? 1 : -1];
 typedef char DriveStatusNode_size[(sizeof(DriveStatusNode) == 0x1C) ? 1 : -1];
 typedef char DriveErrorTextPool_size[(sizeof(DriveErrorTextPool) == 0xB0) ? 1 : -1];
 enum DriveStatus {
-    DriveFatalError = -1, DriveBusy = 1, DriveNoDisc = 4,
-    DriveWrongDisc = 6, DriveRetry = 11
+    DriveFatalError = -1,
+    DriveBusy = 1,
+    DriveNoDisc = 4,
+    DriveWrongDisc = 6,
+    DriveRetry = 11
 };
-enum { kDrivePollMilliseconds = 33, kDriveDialogDelayMilliseconds = 1000,
-       kDriveThreadStackBytes = 0xA000, kDriveThreadPriority = 5 };
-enum DriveDialogMode { kNoDiscDialog = 0, kWrongDiscDialog = 1, kRetryDialog = 2, kUnclassifiedDialog = -1 };
+enum {
+    kDrivePollMilliseconds = 33,
+    kDriveDialogDelayMilliseconds = 1000,
+    kDriveThreadStackBytes = 0xA000,
+    kDriveThreadPriority = 5
+};
+enum DriveDialogMode {
+    kNoDiscDialog = 0,
+    kWrongDiscDialog = 1,
+    kRetryDialog = 2,
+    kUnclassifiedDialog = -1
+};
 
 enum DriveLayoutOffset {
     kStatusTreeRootOffset = (int)&((CCheckDriveStatus*)0)->statusTextMapRoot,
-    kDriveThreadOffset = (int)&((CCheckDriveStatus*)0)->pad_038,
+    kDriveThreadOffset = (int)&((CCheckDriveStatus*)0)->displayThread,
     kNodeKeyOffset = (int)&((DriveStatusNode*)0)->driveStatus,
     kNodeMessageOffset = (int)&((DriveStatusNode*)0)->message,
     kPairMessageOffset = (int)&((DriveStatusPair*)0)->message,
@@ -58,12 +91,18 @@ extern "C" void appFreeUni__FPv(void*);
 extern "C" void RenderNameTree_FreeSubtree(void*, void*);
 extern "C" void __dl__FPv(void*);
 extern "C" char __vt__16IDiskErrorDialog[];
-struct VTable804B { char pad[0x20]; void (*f20)(void*); char pad2[4]; void (*f28)(void*); };
-struct U80281D54Byte { CW_BITS2( unsigned char high:1, unsigned char low:7) };
-struct U80281D54Task { 
-virtual void destroy(int);
+struct VTable804B {
+    char pad[0x20];
+    void (*f20)(void*);
+    char pad2[4];
+    void (*f28)(void*);
 };
-extern "C" void* CCheckDriveStatus_Ctor(void*);
+struct InlineTextSizeByte {
+    CW_BITS2(unsigned char high : 1, unsigned char low : 7)
+};
+struct DialogDestroyTask {
+    virtual void destroy(int);
+};
 extern "C" void* CCheckDriveStatus_dtor(char*, int);
 extern "C" void __register_global_object(void*, void*, void*);
 extern "C" char s_checkDriveStatus[];
@@ -117,7 +156,6 @@ extern "C" void SoundManager_PausePlayback(void*);
 extern "C" void SoundManager_SetStreamVolume(void*, float, float);
 extern "C" void MovieController_AcquirePlaybackReference(void*);
 extern "C" void* Language_GetIndex();
-extern "C" void CDiskErrorDialog_PAL_Ctor(void*, void*);
 extern "C" int InputManager_Init(void*);
 extern "C" void InputManager_Dtor(void*);
 extern "C" void InputManager_StopAllRumble(void*);
@@ -128,7 +166,9 @@ extern "C" void* __nw__FUl(unsigned);
 struct AllocatedTask {
     char bytes[0x38];
     // Construct the owned dialog with the language selector passed by the caller.
-    AllocatedTask(void* arg) { CDiskErrorDialog_PAL_Ctor(this, arg); }
+    AllocatedTask(void* arg) {
+        ((CDiskErrorDialog_PAL*)this)->Init(arg);
+    }
 };
 struct UpdateTask {
     virtual void destroy(int);
@@ -137,16 +177,18 @@ struct UpdateTask {
     virtual void slot5();
     virtual void setMode(int);
 };
-struct Triple828 { int a, b, c; };
-// Capture the old three words in temp; clear p's flags/length and install temp->c.
+struct DriveWordTriple {
+    int a, b, c;
+};
+// Capture the old three words in temp; clear target's flags/length and install temp->c.
 // This is a reset/transfer operation, not a general swap: temp->a/b are ignored.
 // The sole caller supplies three zero words, then frees any captured heap buffer.
-inline void swap828(DriveWideString* p, Triple828* temp) {
-    if (p != (DriveWideString*)temp) {
-        Triple828 saved = *(Triple828*)p;
-        p->signedWords.flags = 0;
-        p->signedWords.length = 0;
-        p->signedWords.data = temp->c;
+inline void swap828(DriveWideString* target, DriveWordTriple* temp) {
+    if (target != (DriveWideString*)temp) {
+        DriveWordTriple saved = *(DriveWordTriple*)target;
+        target->signedWords.flags = 0;
+        target->signedWords.length = 0;
+        target->signedWords.data = temp->c;
         *temp = saved;
     }
 }
@@ -168,8 +210,9 @@ inline void swap828(DriveWideString* p, Triple828* temp) {
 // services and resumes it. The next poll performs close cleanup after a close request.
 // Return 1 while a dialog is serviced/opened; 0 for HOME-menu suppression, delay,
 // no mapped error, or completed cleanup. DriveBusy alone does not request closure.
-int CCheckDriveStatus_UpdateErrorDialog(void* selfv) { char localSecond[8];
-    Triple828 temp;
+int CCheckDriveStatus::UpdateErrorDialog(void* selfv) {
+    char localSecond[8];
+    DriveWordTriple temp;
     char* text = driveErrorDialogDtorRegistrations;
     void* obj;
     // Phase 1: HOME owns the screen while active; do not advance error handling.
@@ -181,7 +224,8 @@ int CCheckDriveStatus_UpdateErrorDialog(void* selfv) { char localSecond[8];
         }
         Sing_805DC820() = s_homeButtonResourceState;
     }
-    if (HomeButtonMenu_IsActive(Sing_805DC820())) return 0;
+    if (HomeButtonMenu_IsActive(Sing_805DC820()))
+        return 0;
 
     char* self = (char*)selfv;
     int driveStatus = DVDGetDriveStatus();
@@ -196,20 +240,28 @@ int CCheckDriveStatus_UpdateErrorDialog(void* selfv) { char localSecond[8];
         if (AsCCheckDriveStatus(self)->dialogCloseRequested) {
             obj = AsCCheckDriveStatus(self)->diskErrorDialog;
             if (obj) {
-                if (obj) ((UpdateTask*)obj)->destroy(1);
+                if (obj)
+                    ((UpdateTask*)obj)->destroy(1);
                 AsCCheckDriveStatus(self)->diskErrorDialog = 0;
             }
             if (!(*(unsigned*)(self + kStatusTextOffset) >> 31)) {
                 *(short*)(self + kStatusInlineTextOffset) = 0;
-                { int _t = *(unsigned char*)(self + kStatusTextOffset); _t = _t & ~0x7F; *(self + kStatusTextOffset) = (char)_t; }
+                {
+                    int _t = *(unsigned char*)(self + kStatusTextOffset);
+                    _t = _t & ~0x7F;
+                    *(self + kStatusTextOffset) = (char)_t;
+                }
             } else {
                 *(short*)AsCCheckDriveStatus(self)->statusTextData = 0;
                 AsCCheckDriveStatus(self)->statusTextLength = 0;
             }
             {
-                temp.a = 0; temp.b = 0; temp.c = 0;
+                temp.a = 0;
+                temp.b = 0;
+                temp.c = 0;
                 swap828((DriveWideString*)(self + kStatusTextOffset), &temp);
-                if ((unsigned)temp.a >> 31) appFreeUni__FPv((void*)temp.c);
+                if ((unsigned)temp.a >> 31)
+                    appFreeUni__FPv((void*)temp.c);
             }
             if (g_soundManager) {
                 SoundManager_ResumePrimaryStreams(g_soundManager);
@@ -233,7 +285,8 @@ int CCheckDriveStatus_UpdateErrorDialog(void* selfv) { char localSecond[8];
                 }
                 Sing_805DC820() = s_homeButtonResourceState;
             }
-            HomeMenu_OverrideBlockedState(Sing_805DC820(), AsCCheckDriveStatus(self)->savedHomeMenuBlocked); // saved HOME-menu blocked state
+            HomeMenu_OverrideBlockedState(
+                Sing_805DC820(), AsCCheckDriveStatus(self)->savedHomeMenuBlocked); // saved HOME-menu blocked state
             if (!Sing_805DC948()) {
                 if (!s_systemResetStateInitialized) {
                     SystemResetState_Ctor(s_systemResetStorage);
@@ -243,7 +296,8 @@ int CCheckDriveStatus_UpdateErrorDialog(void* selfv) { char localSecond[8];
                 Sing_805DC948() = s_systemResetStorage;
             }
             FileIo_SetSystemButtonCallbacksEnabled(Sing_805DC948(), 1);
-            if ((*(void**)&AsCCheckDriveStatus(self)->suspendedThread)) OSResumeThread((*(void**)&AsCCheckDriveStatus(self)->suspendedThread));
+            if ((*(void**)&AsCCheckDriveStatus(self)->suspendedThread))
+                OSResumeThread((*(void**)&AsCCheckDriveStatus(self)->suspendedThread));
             return 0;
         }
 
@@ -253,48 +307,65 @@ int CCheckDriveStatus_UpdateErrorDialog(void* selfv) { char localSecond[8];
         void* matchedNode = self + kStatusTreeRootOffset;
         while (searchNode) {
             int key = ((DriveStatusNode*)searchNode)->driveStatus;
-            if (key >= driveStatus) { matchedNode = searchNode; searchNode = ((DriveStatusNode*)searchNode)->left; }
-            else searchNode = ((DriveStatusNode*)searchNode)->right;
+            if (key >= driveStatus) {
+                matchedNode = searchNode;
+                searchNode = ((DriveStatusNode*)searchNode)->left;
+            } else
+                searchNode = ((DriveStatusNode*)searchNode)->right;
         }
-        if (matchedNode == self + kStatusTreeRootOffset || driveStatus < ((DriveStatusNode*)matchedNode)->driveStatus) matchedNode = self + kStatusTreeRootOffset;
+        if (matchedNode == self + kStatusTreeRootOffset || driveStatus < ((DriveStatusNode*)matchedNode)->driveStatus)
+            matchedNode = self + kStatusTreeRootOffset;
         int found;
-        if (matchedNode == self + kStatusTreeRootOffset) found = 0;
+        if (matchedNode == self + kStatusTreeRootOffset)
+            found = 0;
         else {
-        if ((int)self + 0x14) {
-            unsigned textFlags = *(unsigned*)(self + kStatusTextOffset);
-            if (!(textFlags >> 31) && !(((DriveStatusNode*)matchedNode)->message.heap.flags >> 31)) {
-                int a = ((DriveStatusNode*)matchedNode)->message.signedWords.flags;
-                int b = ((DriveStatusNode*)matchedNode)->message.signedWords.length;
-                *(int*)(self + kStatusTextOffset) = a;
-                AsCCheckDriveStatus(self)->statusTextLength = b;
-                (*(int*)&AsCCheckDriveStatus(self)->statusTextData) = ((DriveStatusNode*)matchedNode)->message.signedWords.data;
-            } else {
-                unsigned count;
-                unsigned sourceLength;
-                void* src;
-                if (textFlags >> 31) count = (*(unsigned*)&AsCCheckDriveStatus(self)->statusTextLength);
-                else count = *(unsigned char*)(self + kStatusTextOffset) & 0x7F;
-                if (!(((DriveStatusNode*)matchedNode)->message.heap.flags >> 31)) {
-                    src = ((DriveStatusNode*)matchedNode)->message.small.text;
-                    sourceLength = ((DriveStatusNode*)matchedNode)->message.small.size & 0x7F;
+            if ((int)self + 0x14) {
+                unsigned textFlags = *(unsigned*)(self + kStatusTextOffset);
+                if (!(textFlags >> 31) && !(((DriveStatusNode*)matchedNode)->message.heap.flags >> 31)) {
+                    int messageFlags = ((DriveStatusNode*)matchedNode)->message.signedWords.flags;
+                    int messageLength = ((DriveStatusNode*)matchedNode)->message.signedWords.length;
+                    *(int*)(self + kStatusTextOffset) = messageFlags;
+                    AsCCheckDriveStatus(self)->statusTextLength = messageLength;
+                    (*(int*)&AsCCheckDriveStatus(self)->statusTextData) =
+                        ((DriveStatusNode*)matchedNode)->message.signedWords.data;
                 } else {
-                    src = ((DriveStatusNode*)matchedNode)->message.heap.data;
-                    sourceLength = ((DriveStatusNode*)matchedNode)->message.heap.length;
+                    unsigned count;
+                    unsigned sourceLength;
+                    void* src;
+                    if (textFlags >> 31)
+                        count = (*(unsigned*)&AsCCheckDriveStatus(self)->statusTextLength);
+                    else
+                        count = *(unsigned char*)(self + kStatusTextOffset) & 0x7F;
+                    if (!(((DriveStatusNode*)matchedNode)->message.heap.flags >> 31)) {
+                        src = ((DriveStatusNode*)matchedNode)->message.small.text;
+                        sourceLength = ((DriveStatusNode*)matchedNode)->message.small.size & 0x7F;
+                    } else {
+                        src = ((DriveStatusNode*)matchedNode)->message.heap.data;
+                        sourceLength = ((DriveStatusNode*)matchedNode)->message.heap.length;
+                    }
+                    localSecond[4] = localSecond[0];
+                    WString_ReplaceRange(self + kStatusTextOffset, 0, count, src, (char*)src + sourceLength * 2,
+                                         localSecond + 4);
                 }
-                localSecond[4] = localSecond[0];
-                WString_ReplaceRange(self + kStatusTextOffset, 0, count, src, (char*)src + sourceLength * 2, localSecond + 4);
             }
-        }
-        found = 1;
+            found = 1;
         }
         if (found) {
             int mode;
             switch (driveStatus) {
-            case DriveNoDisc: mode = kNoDiscDialog; break;
-            case DriveWrongDisc: mode = kWrongDiscDialog; break;
-            case DriveRetry: mode = kRetryDialog; break;
-            default: mode = kUnclassifiedDialog; break;
-        }
+            case DriveNoDisc:
+                mode = kNoDiscDialog;
+                break;
+            case DriveWrongDisc:
+                mode = kWrongDiscDialog;
+                break;
+            case DriveRetry:
+                mode = kRetryDialog;
+                break;
+            default:
+                mode = kUnclassifiedDialog;
+                break;
+            }
             obj = AsCCheckDriveStatus(self)->diskErrorDialog;
             ((UpdateTask*)obj)->setMode(mode);
         } else if (driveStatus != DriveBusy) {
@@ -306,121 +377,143 @@ int CCheckDriveStatus_UpdateErrorDialog(void* selfv) { char localSecond[8];
     // Phase 3: without a dialog, only mapped errors accumulate the opening delay.
     // Each poll adds 33 ms (not measured elapsed time); skipDialogDelay bypasses it.
     if (AsCCheckDriveStatus(self)->errorDialogsEnabled) {
-    void* searchNode = (*(void**)&AsCCheckDriveStatus(self)->statusTextMapRoot);
-    void* matchedNode = self + kStatusTreeRootOffset;
-    while (searchNode) {
-        int key = ((DriveStatusNode*)searchNode)->driveStatus;
-        if (key >= driveStatus) { matchedNode = searchNode; searchNode = ((DriveStatusNode*)searchNode)->left; }
-        else searchNode = ((DriveStatusNode*)searchNode)->right;
-    }
-    if (matchedNode == self + kStatusTreeRootOffset || driveStatus < ((DriveStatusNode*)matchedNode)->driveStatus) matchedNode = self + kStatusTreeRootOffset;
-    int found;
-    if (matchedNode == self + kStatusTreeRootOffset) found = 0;
-    else {
-    if ((int)self + 0x14) {
-        unsigned textFlags = *(unsigned*)(self + kStatusTextOffset);
-        if (!(textFlags >> 31) && !(((DriveStatusNode*)matchedNode)->message.heap.flags >> 31)) {
+        void* searchNode = (*(void**)&AsCCheckDriveStatus(self)->statusTextMapRoot);
+        void* matchedNode = self + kStatusTreeRootOffset;
+        while (searchNode) {
+            int key = ((DriveStatusNode*)searchNode)->driveStatus;
+            if (key >= driveStatus) {
+                matchedNode = searchNode;
+                searchNode = ((DriveStatusNode*)searchNode)->left;
+            } else
+                searchNode = ((DriveStatusNode*)searchNode)->right;
+        }
+        if (matchedNode == self + kStatusTreeRootOffset || driveStatus < ((DriveStatusNode*)matchedNode)->driveStatus)
+            matchedNode = self + kStatusTreeRootOffset;
+        int found;
+        if (matchedNode == self + kStatusTreeRootOffset)
+            found = 0;
+        else {
+            if ((int)self + 0x14) {
+                unsigned textFlags = *(unsigned*)(self + kStatusTextOffset);
+                if (!(textFlags >> 31) && !(((DriveStatusNode*)matchedNode)->message.heap.flags >> 31)) {
 
-            int b = ((DriveStatusNode*)matchedNode)->message.signedWords.length;
-            int a = ((DriveStatusNode*)matchedNode)->message.signedWords.flags; *(int*)(self + kStatusTextOffset) = a;
-            AsCCheckDriveStatus(self)->statusTextLength = b;
-            (*(int*)&AsCCheckDriveStatus(self)->statusTextData) = ((DriveStatusNode*)matchedNode)->message.signedWords.data;
-        } else {
-            unsigned count;
-            unsigned sourceLength;
-            void* src;
-            if (textFlags >> 31) count = (*(unsigned*)&AsCCheckDriveStatus(self)->statusTextLength);
-            else count = *(unsigned char*)(self + kStatusTextOffset) & 0x7F;
-            if (!(((DriveStatusNode*)matchedNode)->message.heap.flags >> 31)) {
-                src = ((DriveStatusNode*)matchedNode)->message.small.text;
-                sourceLength = ((DriveStatusNode*)matchedNode)->message.small.size & 0x7F;
-            } else {
-                src = ((DriveStatusNode*)matchedNode)->message.heap.data;
-                sourceLength = ((DriveStatusNode*)matchedNode)->message.heap.length;
-            }
-            localFirst[4] = localFirst[0];
-            WString_ReplaceRange(self + kStatusTextOffset, 0, count, src, (char*)src + sourceLength * 2, localFirst + 4);
-        }
-    }
-    found = 1;
-    }
-    if (found) {
-        if (!AsCCheckDriveStatus(self)->skipDialogDelay) {
-            unsigned x = (*(unsigned*)&AsCCheckDriveStatus(self)->dialogDelayMilliseconds) + kDrivePollMilliseconds;
-            (*(unsigned*)&AsCCheckDriveStatus(self)->dialogDelayMilliseconds) = x;
-            if (x < kDriveDialogDelayMilliseconds) return 0;
-        }
-        // Phase 4: consume the delay and take over presentation before suspending
-        // the saved game thread. Status-to-dialog modes: no disc=0, wrong=1, retry=2.
-        AsCCheckDriveStatus(self)->dialogDelayMilliseconds = 0;
-        if (g_soundManager) {
-            SoundManager_PausePrimaryStreams(g_soundManager);
-            SoundManager_PausePlayback(g_soundManager);
-            SoundManager_SetStreamVolume(g_soundManager, kFloat_0_DiskErrorTween, kFloat_0_DiskErrorTween);
-        }
-        if (!Sing_805DC950()) {
-            if (s_movieControllerInitialized == 0) {
-                MovieController_Ctor(s_movieController);
-                __register_global_object(s_movieController, (void*)MovieController_Dtor, text + 0x0C);
-                s_movieControllerInitialized = 1;
-            }
-            Sing_805DC950() = s_movieController;
-        }
-        MovieController_AcquirePlaybackReference(Sing_805DC950());
-        AsCCheckDriveStatus(self)->diskErrorDialog = new AllocatedTask(Language_GetIndex());
-        int mode;
-        switch (driveStatus) {
-            case DriveNoDisc: mode = kNoDiscDialog; break;
-            case DriveWrongDisc: mode = kWrongDiscDialog; break;
-            case DriveRetry: mode = kRetryDialog; break;
-            default: mode = kUnclassifiedDialog; break;
-        }
-
-        obj = AsCCheckDriveStatus(self)->diskErrorDialog; ((UpdateTask*)obj)->setMode(mode);
-        AsCCheckDriveStatus(self)->dialogCloseRequested = 0;
-        if (!Sing_805DC820()) {
-            if (!s_homeMenuInitialized) {
-                HomeButtonMenu_InitializeState(s_homeButtonResourceState);
-                __register_global_object(s_homeButtonResourceState, (void*)HomeButtonResources_dtor, text + 0x18);
-                s_homeMenuInitialized = 1;
-            }
-            Sing_805DC820() = s_homeButtonResourceState;
-        }
-        char* manager = (char*)Sing_805DC820();
-        AsCCheckDriveStatus(self)->savedHomeMenuBlocked = (unsigned char)((Context8028A588*)manager)->homeMenuBlocked;
-        if (!manager) {
-            if (!s_homeMenuInitialized) {
-                HomeButtonMenu_InitializeState(s_homeButtonResourceState);
-                __register_global_object(s_homeButtonResourceState, (void*)HomeButtonResources_dtor, text + 0x18);
-                s_homeMenuInitialized = 1;
-            }
-            Sing_805DC820() = s_homeButtonResourceState;
-        }
-        HomeMenu_OverrideBlockedState(Sing_805DC820(), 1);
-        if (driveStatus == DriveFatalError) {
-            if (!Sing_805DC948()) {
-                if (!s_systemResetStateInitialized) {
-                    SystemResetState_Ctor(s_systemResetStorage);
-                    __register_global_object(s_systemResetStorage, (void*)SystemResetState_Dtor, text + 0x24);
-                    s_systemResetStateInitialized = 1;
+                    int messageLength = ((DriveStatusNode*)matchedNode)->message.signedWords.length;
+                    int messageFlags = ((DriveStatusNode*)matchedNode)->message.signedWords.flags;
+                    *(int*)(self + kStatusTextOffset) = messageFlags;
+                    AsCCheckDriveStatus(self)->statusTextLength = messageLength;
+                    (*(int*)&AsCCheckDriveStatus(self)->statusTextData) =
+                        ((DriveStatusNode*)matchedNode)->message.signedWords.data;
+                } else {
+                    unsigned count;
+                    unsigned sourceLength;
+                    void* src;
+                    if (textFlags >> 31)
+                        count = (*(unsigned*)&AsCCheckDriveStatus(self)->statusTextLength);
+                    else
+                        count = *(unsigned char*)(self + kStatusTextOffset) & 0x7F;
+                    if (!(((DriveStatusNode*)matchedNode)->message.heap.flags >> 31)) {
+                        src = ((DriveStatusNode*)matchedNode)->message.small.text;
+                        sourceLength = ((DriveStatusNode*)matchedNode)->message.small.size & 0x7F;
+                    } else {
+                        src = ((DriveStatusNode*)matchedNode)->message.heap.data;
+                        sourceLength = ((DriveStatusNode*)matchedNode)->message.heap.length;
+                    }
+                    localFirst[4] = localFirst[0];
+                    WString_ReplaceRange(self + kStatusTextOffset, 0, count, src, (char*)src + sourceLength * 2,
+                                         localFirst + 4);
                 }
-                Sing_805DC948() = s_systemResetStorage;
             }
-            FileIo_SetSystemButtonCallbacksEnabled(Sing_805DC948(), 0);
+            found = 1;
         }
-        if (!Sing_805DC5C8()) {
-            if (!s_inputManagerInitialized) {
-                InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, text + 0x30);
-                s_inputManagerInitialized = 1;
+        if (found) {
+            if (!AsCCheckDriveStatus(self)->skipDialogDelay) {
+                unsigned x = (*(unsigned*)&AsCCheckDriveStatus(self)->dialogDelayMilliseconds) + kDrivePollMilliseconds;
+                (*(unsigned*)&AsCCheckDriveStatus(self)->dialogDelayMilliseconds) = x;
+                if (x < kDriveDialogDelayMilliseconds)
+                    return 0;
             }
-            Sing_805DC5C8() = s_gameInputManager;
+            // Phase 4: consume the delay and take over presentation before suspending
+            // the saved game thread. Status-to-dialog modes: no disc=0, wrong=1, retry=2.
+            AsCCheckDriveStatus(self)->dialogDelayMilliseconds = 0;
+            if (g_soundManager) {
+                SoundManager_PausePrimaryStreams(g_soundManager);
+                SoundManager_PausePlayback(g_soundManager);
+                SoundManager_SetStreamVolume(g_soundManager, kFloat_0_DiskErrorTween, kFloat_0_DiskErrorTween);
+            }
+            if (!Sing_805DC950()) {
+                if (s_movieControllerInitialized == 0) {
+                    MovieController_Ctor(s_movieController);
+                    __register_global_object(s_movieController, (void*)MovieController_Dtor, text + 0x0C);
+                    s_movieControllerInitialized = 1;
+                }
+                Sing_805DC950() = s_movieController;
+            }
+            MovieController_AcquirePlaybackReference(Sing_805DC950());
+            AsCCheckDriveStatus(self)->diskErrorDialog = new AllocatedTask(Language_GetIndex());
+            int mode;
+            switch (driveStatus) {
+            case DriveNoDisc:
+                mode = kNoDiscDialog;
+                break;
+            case DriveWrongDisc:
+                mode = kWrongDiscDialog;
+                break;
+            case DriveRetry:
+                mode = kRetryDialog;
+                break;
+            default:
+                mode = kUnclassifiedDialog;
+                break;
+            }
+
+            obj = AsCCheckDriveStatus(self)->diskErrorDialog;
+            ((UpdateTask*)obj)->setMode(mode);
+            AsCCheckDriveStatus(self)->dialogCloseRequested = 0;
+            if (!Sing_805DC820()) {
+                if (!s_homeMenuInitialized) {
+                    HomeButtonMenu_InitializeState(s_homeButtonResourceState);
+                    __register_global_object(s_homeButtonResourceState, (void*)HomeButtonResources_dtor, text + 0x18);
+                    s_homeMenuInitialized = 1;
+                }
+                Sing_805DC820() = s_homeButtonResourceState;
+            }
+            char* manager = (char*)Sing_805DC820();
+            AsCCheckDriveStatus(self)->savedHomeMenuBlocked =
+                (unsigned char)((Context8028A588*)manager)->homeMenuBlocked;
+            if (!manager) {
+                if (!s_homeMenuInitialized) {
+                    HomeButtonMenu_InitializeState(s_homeButtonResourceState);
+                    __register_global_object(s_homeButtonResourceState, (void*)HomeButtonResources_dtor, text + 0x18);
+                    s_homeMenuInitialized = 1;
+                }
+                Sing_805DC820() = s_homeButtonResourceState;
+            }
+            HomeMenu_OverrideBlockedState(Sing_805DC820(), 1);
+            if (driveStatus == DriveFatalError) {
+                if (!Sing_805DC948()) {
+                    if (!s_systemResetStateInitialized) {
+                        SystemResetState_Ctor(s_systemResetStorage);
+                        __register_global_object(s_systemResetStorage, (void*)SystemResetState_Dtor, text + 0x24);
+                        s_systemResetStateInitialized = 1;
+                    }
+                    Sing_805DC948() = s_systemResetStorage;
+                }
+                FileIo_SetSystemButtonCallbacksEnabled(Sing_805DC948(), 0);
+            }
+            if (!GetInputManagerSlot()) {
+                if (!s_inputManagerInitialized) {
+                    InputManager_Init(s_gameInputManager);
+                    __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, text + 0x30);
+                    s_inputManagerInitialized = 1;
+                }
+                GetInputManagerSlot() = s_gameInputManager;
+            }
+            InputManager_StopAllRumble(GetInputManagerSlot());
+            gtl_InputEx_Update();
+            if ((*(void**)&AsCCheckDriveStatus(self)->suspendedThread))
+                OSSuspendThread((*(void**)&AsCCheckDriveStatus(self)->suspendedThread));
+            return 1;
         }
-        InputManager_StopAllRumble(Sing_805DC5C8());
-        gtl_InputEx_Update();
-        if ((*(void**)&AsCCheckDriveStatus(self)->suspendedThread)) OSSuspendThread((*(void**)&AsCCheckDriveStatus(self)->suspendedThread));
-        return 1;
-    }
     }
     AsCCheckDriveStatus(self)->dialogDelayMilliseconds = 0;
     return 0;
@@ -465,7 +558,8 @@ int IDiskErrorDialog_InitFade(void* p) {
 }
 
 // Find the insertion parent and predecessor for a drive-status key in the message tree.
-void* DriveStatusTextMap_FindInsertionPosition(void* map, void* statusKey, int* predecessor, char* insertLeft, char* beforeFirst) {
+void* DriveStatusTextMap_FindInsertionPosition(void* map, void* statusKey, int* predecessor, char* insertLeft,
+                                               char* beforeFirst) {
     int zero = 0;
     int one = 1;
     *predecessor = zero;
@@ -536,73 +630,79 @@ void* IDiskErrorDialog_dtor(void* self, int flag) {
 // Thread shutdown and dialog completion clear the same latch; do not infer a hardware status from it.
 // This setter performs no wakeup and does not change threadActive. In particular,
 // setting this byte is not a substitute for StartThread or dialogCloseRequested.
-void CCheckDriveStatus_SetLatch() {
+void CCheckDriveStatus::SetLatch() {
     if (!Sing_805DCB20()) {
         if (!s_checkDriveStatusInitialized) {
-            CCheckDriveStatus_Ctor(s_checkDriveStatus);
-            __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor, driveErrorDialogDtorRegistrations);
+            ((CCheckDriveStatus*)s_checkDriveStatus)->__ct();
+            __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor,
+                                     driveErrorDialogDtorRegistrations);
             s_checkDriveStatusInitialized = 1;
         }
         Sing_805DCB20() = (void*)s_checkDriveStatus;
     }
-    AsCCheckDriveStatus(Sing_805DCB20())->unk_24 = 1;
-}
-
-// Acquire the singleton without changing the original volatile-load ordering.
-inline void* GetDriveStatusInstance() {
-    int missing = *(void* volatile*)&Sing_805DCB20() == 0;
-    if (missing) {
-        if (!s_checkDriveStatusInitialized) {
-            CCheckDriveStatus_Ctor(s_checkDriveStatus);
-            __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor, driveErrorDialogDtorRegistrations);
-            s_checkDriveStatusInitialized = 1;
-        }
-        Sing_805DCB20() = (void*)s_checkDriveStatus;
-    }
-    return Sing_805DCB20();
+    AsCCheckDriveStatus(Sing_805DCB20())->latched = 1;
 }
 
 // Acquire the drive-status singleton and enable or suppress error dialogs.
-void CCheckDriveStatus_SetErrorDialogsEnabled(int p) {
-    AsCCheckDriveStatus(GetDriveStatusInstance())->errorDialogsEnabled = p;
+void CCheckDriveStatus::SetErrorDialogsEnabled(int enabled) {
+    if (!Sing_805DCB20()) {
+        if (!s_checkDriveStatusInitialized) {
+            ((CCheckDriveStatus*)s_checkDriveStatus)->__ct();
+            __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor,
+                                     driveErrorDialogDtorRegistrations);
+            s_checkDriveStatusInitialized = 1;
+        }
+        Sing_805DCB20() = (void*)s_checkDriveStatus;
+    }
+    AsCCheckDriveStatus(Sing_805DCB20())->errorDialogsEnabled = enabled;
 }
 
 // Acquire the drive-status singleton and control whether error dialogs wait before opening.
-void CCheckDriveStatus_SetSkipDialogDelay(int p) {
-    AsCCheckDriveStatus(GetDriveStatusInstance())->skipDialogDelay = p;
+void CCheckDriveStatus::SetSkipDialogDelay(int skip) {
+    if (!Sing_805DCB20()) {
+        if (!s_checkDriveStatusInitialized) {
+            ((CCheckDriveStatus*)s_checkDriveStatus)->__ct();
+            __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor,
+                                     driveErrorDialogDtorRegistrations);
+            s_checkDriveStatusInitialized = 1;
+        }
+        Sing_805DCB20() = (void*)s_checkDriveStatus;
+    }
+    AsCCheckDriveStatus(Sing_805DCB20())->skipDialogDelay = skip;
 }
 
 // Cancel the error-display thread, free its stack, and clear the active dialog and message.
-void CCheckDriveStatus_StopThread() {
+void CCheckDriveStatus::StopThread() {
     if (!Sing_805DCB20()) {
         if (!s_checkDriveStatusInitialized) {
-            CCheckDriveStatus_Ctor(s_checkDriveStatus);
-            __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor, driveErrorDialogDtorRegistrations);
+            ((CCheckDriveStatus*)s_checkDriveStatus)->__ct();
+            __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor,
+                                     driveErrorDialogDtorRegistrations);
             s_checkDriveStatusInitialized = 1;
         }
         Sing_805DCB20() = (void*)s_checkDriveStatus;
     }
     char* p = (char*)Sing_805DCB20();
     if (AsCCheckDriveStatus(p)->threadActive) {
-    OSCancelThread(p + kDriveThreadOffset);
+        OSCancelThread(p + kDriveThreadOffset);
         if (g_driveErrorThreadStack) {
             __dla__FPv(g_driveErrorThreadStack);
             g_driveErrorThreadStack = 0;
         }
         AsCCheckDriveStatus(p)->suspendedThread = 0;
         AsCCheckDriveStatus(p)->threadActive = 0;
-        AsCCheckDriveStatus(p)->unk_24 = 0;
-        void* q = AsCCheckDriveStatus(p)->diskErrorDialog;
-        if (q) {
-            if (q) {
-                ((U80281D54Task*)q)->destroy(1);
+        AsCCheckDriveStatus(p)->latched = 0;
+        void* dialog = AsCCheckDriveStatus(p)->diskErrorDialog;
+        if (dialog) {
+            if (dialog) {
+                ((DialogDestroyTask*)dialog)->destroy(1);
             }
             AsCCheckDriveStatus(p)->diskErrorDialog = 0;
         }
         unsigned v = AsCCheckDriveStatus(p)->statusTextFlags;
         if (!(v >> 31)) {
             DriveStatusText(p)->small.text[0] = 0;
-            ((U80281D54Byte*)(DriveStatusText(p)))->low = 0;
+            ((InlineTextSizeByte*)(DriveStatusText(p)))->low = 0;
         } else {
             void* r = AsCCheckDriveStatus(p)->statusTextData;
             *(short*)r = 0;
@@ -620,28 +720,29 @@ void CCheckDriveStatus_StopThread() {
 // Success resumes the display thread and sets threadActive; the caller is suspended
 // later by UpdateErrorDialog, only after a dialog opens. Creation failure leaves
 // the allocation in the global with threadActive clear; there is no rollback here.
-void CCheckDriveStatus_StartThread() {
+void CCheckDriveStatus::StartThread() {
     if (!Sing_805DCB20()) {
         if (!s_checkDriveStatusInitialized) {
-            CCheckDriveStatus_Ctor(s_checkDriveStatus);
-            __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor, driveErrorDialogDtorRegistrations);
+            ((CCheckDriveStatus*)s_checkDriveStatus)->__ct();
+            __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor,
+                                     driveErrorDialogDtorRegistrations);
             s_checkDriveStatusInitialized = 1;
         }
         Sing_805DCB20() = (void*)s_checkDriveStatus;
     }
     char* p = (char*)Sing_805DCB20();
     if (!AsCCheckDriveStatus(p)->threadActive) {
-        void* q = AsCCheckDriveStatus(p)->diskErrorDialog;
-        if (q) {
-            if (q) {
-                ((U80281D54Task*)q)->destroy(1);
+        void* dialog = AsCCheckDriveStatus(p)->diskErrorDialog;
+        if (dialog) {
+            if (dialog) {
+                ((DialogDestroyTask*)dialog)->destroy(1);
             }
             AsCCheckDriveStatus(p)->diskErrorDialog = 0;
         }
         unsigned v = AsCCheckDriveStatus(p)->statusTextFlags;
         if (!(v >> 31)) {
             DriveStatusText(p)->small.text[0] = 0;
-            ((U80281D54Byte*)(DriveStatusText(p)))->low = 0;
+            ((InlineTextSizeByte*)(DriveStatusText(p)))->low = 0;
         } else {
             void* r = AsCCheckDriveStatus(p)->statusTextData;
             *(short*)r = 0;
@@ -650,7 +751,9 @@ void CCheckDriveStatus_StartThread() {
         AsCCheckDriveStatus(p)->suspendedThread = (int)OSGetCurrentThread();
         g_driveErrorThreadStack = __nwa__FUl(kDriveThreadStackBytes);
         Memory_Clear(g_driveErrorThreadStack, kDriveThreadStackBytes);
-        unsigned res = OSCreateThread(p + kDriveThreadOffset, (void*)DriveError_RunDisplayLoop, p, (char*)g_driveErrorThreadStack + kDriveThreadStackBytes, kDriveThreadStackBytes, kDriveThreadPriority, 0);
+        unsigned res = OSCreateThread(p + kDriveThreadOffset, (void*)DriveError_RunDisplayLoop, p,
+                                      (char*)g_driveErrorThreadStack + kDriveThreadStackBytes, kDriveThreadStackBytes,
+                                      kDriveThreadPriority, 0);
         if (((-res | res) >> 31) != 0) {
             if (((-res | res) >> 31) != 0) {
                 OSResumeThread(p + kDriveThreadOffset);
@@ -660,7 +763,7 @@ void CCheckDriveStatus_StartThread() {
     }
 }
 
-struct U802813D0Temp {
+struct DriveInsertionTemp {
     unsigned int textFlags;
     int sourceTextLength;
     int textData;
@@ -671,12 +774,25 @@ struct U802813D0Temp {
     int resultData;
 };
 void* WString_ReserveCapacity();
-union U813Marker { char c; int align; };
-struct U813Locals { char a,b; char pad[2]; U813Marker copyDst; volatile U813Marker copySrc; U813Marker dst; volatile U813Marker src; };
-struct U813Int { int v; };
+union U813Marker {
+    char c;
+    int align;
+};
+struct DriveInsertionScratch {
+    char a, b;
+    char pad[2];
+    U813Marker copyDst;
+    volatile U813Marker copySrc;
+    U813Marker dst;
+    volatile U813Marker src;
+};
+struct U813Int {
+    int v;
+};
 // Return the inline or heap-backed UTF-16 character count.
 inline unsigned DriveWideStringLength(void* p) {
-    if (!(*(unsigned*)p >> 31)) return *(unsigned char*)p & 0x7f;
+    if (!(*(unsigned*)p >> 31))
+        return *(unsigned char*)p & 0x7f;
     return ((DriveWideString*)p)->heap.length;
 }
 // Copy an insertion temporary's heap string using the original scratch ABI.
@@ -684,12 +800,15 @@ inline unsigned DriveWideStringLength(void* p) {
 // keep the call before reading source length/data and consuming the allocator tag.
 #pragma push
 #pragma always_inline on
-inline void CopyHeapDriveInsertionText(U802813D0Temp& t, U813Locals& bits) {
-    if (t.textFlags >> 31) {
-        t.resultFlags = 0; t.resultLength = 0; t.resultData = 0;
+inline void CopyHeapDriveInsertionText(DriveInsertionTemp& insertion, DriveInsertionScratch& bits) {
+    if (insertion.textFlags >> 31) {
+        insertion.resultFlags = 0;
+        insertion.resultLength = 0;
+        insertion.resultData = 0;
         void* out = WString_ReserveCapacity();
         bits.copyDst.c = bits.copySrc.c;
-        int n = t.sourceTextLength; void* data = (void*)t.textData;
+        int n = insertion.sourceTextLength;
+        void* data = (void*)insertion.textData;
         WString_ReplaceRange(out, 0, 0, data, (char*)data + n * 2, &bits.copyDst);
     }
 }
@@ -697,21 +816,26 @@ inline void CopyHeapDriveInsertionText(U802813D0Temp& t, U813Locals& bits) {
 
 void* dtor_80281874(char*, int);
 // Initialize drive-status monitoring and install no-disc, wrong-disc, and retry message entries.
-void* CCheckDriveStatus_Ctor(void* selfv) { U802813D0Temp noDiscInsertion; U802813D0Temp wrongDiscInsertion;
+CCheckDriveStatus::CCheckDriveStatus() {
+    DriveInsertionTemp noDiscInsertion;
+    DriveInsertionTemp wrongDiscInsertion;
     // Phase 1: initialize an empty message tree and inactive thread/dialog state.
-    char* self = (char*)selfv; U802813D0Temp retryInsertion;
+    char* self = (char*)this;
+    DriveInsertionTemp retryInsertion;
     int lookups[3];
 
     AsCCheckDriveStatus(self)->vtable = (void*)__vt__17CCheckDriveStatus;
-    unsigned int zero = 0; AsCCheckDriveStatus(self)->statusTextMapCount = zero;
+    unsigned int zero = 0;
+    AsCCheckDriveStatus(self)->statusTextMapCount = zero;
     AsCCheckDriveStatus(self)->statusTextMapRoot = zero;
     AsCCheckDriveStatus(self)->statusTextMapSentinel = (void*)(self + kStatusTreeRootOffset);
 
-    (*(int*)&AsCCheckDriveStatus(self)->diskErrorDialog) = zero; (*(int*)&AsCCheckDriveStatus(self)->statusTextFlags) = zero;
+    (*(int*)&AsCCheckDriveStatus(self)->diskErrorDialog) = zero;
+    (*(int*)&AsCCheckDriveStatus(self)->statusTextFlags) = zero;
     AsCCheckDriveStatus(self)->statusTextLength = zero;
     (*(int*)&AsCCheckDriveStatus(self)->statusTextData) = zero;
     AsCCheckDriveStatus(self)->threadActive = zero;
-    AsCCheckDriveStatus(self)->unk_24 = zero;
+    AsCCheckDriveStatus(self)->latched = zero;
     AsCCheckDriveStatus(self)->errorDialogsEnabled = 1;
     AsCCheckDriveStatus(self)->skipDialogDelay = zero;
     AsCCheckDriveStatus(self)->dialogCloseRequested = zero;
@@ -723,8 +847,9 @@ void* CCheckDriveStatus_Ctor(void* selfv) { U802813D0Temp noDiscInsertion; U8028
         // Phase 2a: insert/copy the no-disc text. Tree nodes own their wide strings;
         // the packed global strings and insertion-position temporaries are borrowed.
         {
-            U813Locals bits;
-            void* iter0 = DriveStatusTextMap_FindInsertionPosition(selfv, &s_driveStatusMapFallbackId, &lookups[2], &bits.a, &bits.b);
+            DriveInsertionScratch bits;
+            void* iter0 = DriveStatusTextMap_FindInsertionPosition(this, &s_driveStatusMapFallbackId, &lookups[2],
+                                                                   &bits.a, &bits.b);
             int noDiscPredecessor = lookups[2];
             unsigned int cnt;
             char* node;
@@ -733,17 +858,26 @@ void* CCheckDriveStatus_Ctor(void* selfv) { U802813D0Temp noDiscInsertion; U8028
                 if (noDiscPredecessor) {
 
                     node = (char*)&((DriveStatusNode*)noDiscPredecessor)->driveStatus;
-                    if (*(int*)node >= (s_driveStatusMapFallbackId)) break;
+                    if (*(int*)node >= (s_driveStatusMapFallbackId))
+                        break;
                 }
                 {
 
-                    noDiscInsertion.textFlags = 0; noDiscInsertion.sourceTextLength = 0; noDiscInsertion.textData = 0;
+                    noDiscInsertion.textFlags = 0;
+                    noDiscInsertion.sourceTextLength = 0;
+                    noDiscInsertion.textData = 0;
                     noDiscInsertion.resultId = (s_driveStatusMapFallbackId);
-                    noDiscInsertion.resultFlags = 0; noDiscInsertion.resultLength = 0; noDiscInsertion.resultData = 0;
+                    noDiscInsertion.resultFlags = 0;
+                    noDiscInsertion.resultLength = 0;
+                    noDiscInsertion.resultData = 0;
                     CopyHeapDriveInsertionText(noDiscInsertion, bits);
-                    node = (char*)&((DriveStatusNode*)RenderNameTree_InsertNode(selfv, iter0, bits.a, bits.b, (void*)&noDiscInsertion.resultId))->driveStatus;
-                    if (noDiscInsertion.resultFlags >> 31) appFreeUni__FPv((void*)noDiscInsertion.resultData);
-                    if (noDiscInsertion.textFlags >> 31) appFreeUni__FPv((void*)noDiscInsertion.textData);
+                    node = (char*)&((DriveStatusNode*)RenderNameTree_InsertNode(this, iter0, bits.a, bits.b,
+                                                                                (void*)&noDiscInsertion.resultId))
+                               ->driveStatus;
+                    if (noDiscInsertion.resultFlags >> 31)
+                        appFreeUni__FPv((void*)noDiscInsertion.resultData);
+                    if (noDiscInsertion.textFlags >> 31)
+                        appFreeUni__FPv((void*)noDiscInsertion.textData);
                 }
             } while (0);
             char* noDiscMessage = (char*)&((DriveStatusPair*)node)->message;
@@ -755,9 +889,11 @@ void* CCheckDriveStatus_Ctor(void* selfv) { U802813D0Temp noDiscInsertion; U8028
         }
 
         // Phase 2b: insert/copy the wrong-disc text under status key 6.
-        { U813Locals bits;
+        {
+            DriveInsertionScratch bits;
 
-            void* iter1 = DriveStatusTextMap_FindInsertionPosition(selfv, &s_driveStatusTextKey6, &lookups[1], &bits.a, &bits.b);
+            void* iter1 =
+                DriveStatusTextMap_FindInsertionPosition(this, &s_driveStatusTextKey6, &lookups[1], &bits.a, &bits.b);
 
             int wrongDiscPredecessor = lookups[1];
             char* node2;
@@ -765,22 +901,32 @@ void* CCheckDriveStatus_Ctor(void* selfv) { U802813D0Temp noDiscInsertion; U8028
                 if (wrongDiscPredecessor) {
 
                     node2 = (char*)&((DriveStatusNode*)wrongDiscPredecessor)->driveStatus;
-                    if (*(int*)node2 >= (s_driveStatusTextKey6)) break;
+                    if (*(int*)node2 >= (s_driveStatusTextKey6))
+                        break;
                 }
                 {
 
-                    wrongDiscInsertion.textFlags = 0; wrongDiscInsertion.sourceTextLength = 0; wrongDiscInsertion.textData = 0;
+                    wrongDiscInsertion.textFlags = 0;
+                    wrongDiscInsertion.sourceTextLength = 0;
+                    wrongDiscInsertion.textData = 0;
                     wrongDiscInsertion.resultId = (s_driveStatusTextKey6);
-                    wrongDiscInsertion.resultFlags = 0; wrongDiscInsertion.resultLength = 0; wrongDiscInsertion.resultData = 0;
+                    wrongDiscInsertion.resultFlags = 0;
+                    wrongDiscInsertion.resultLength = 0;
+                    wrongDiscInsertion.resultData = 0;
                     CopyHeapDriveInsertionText(wrongDiscInsertion, bits);
-                    node2 = (char*)&((DriveStatusNode*)RenderNameTree_InsertNode(selfv, iter1, bits.a, bits.b, (void*)&wrongDiscInsertion.resultId))->driveStatus;
-                    if (wrongDiscInsertion.resultFlags >> 31) appFreeUni__FPv((void*)wrongDiscInsertion.resultData);
-                    if (wrongDiscInsertion.textFlags >> 31) appFreeUni__FPv((void*)wrongDiscInsertion.textData);
+                    node2 = (char*)&((DriveStatusNode*)RenderNameTree_InsertNode(this, iter1, bits.a, bits.b,
+                                                                                 (void*)&wrongDiscInsertion.resultId))
+                                ->driveStatus;
+                    if (wrongDiscInsertion.resultFlags >> 31)
+                        appFreeUni__FPv((void*)wrongDiscInsertion.resultData);
+                    if (wrongDiscInsertion.textFlags >> 31)
+                        appFreeUni__FPv((void*)wrongDiscInsertion.textData);
                 }
             } while (0);
             char* wrongDiscMessage = (char*)&((DriveStatusPair*)node2)->message;
             unsigned int cnt2;
-            void* base2 = (void*)((DriveErrorTextPool*)driveErrorMessageStrings)->wrongDisc; cnt2 = DriveWideStringLength(wrongDiscMessage);
+            void* base2 = (void*)((DriveErrorTextPool*)driveErrorMessageStrings)->wrongDisc;
+            cnt2 = DriveWideStringLength(wrongDiscMessage);
             bits.dst.c = bits.src.c;
             int wrongDiscLength = wcslen(base2);
             WString_ReplaceRange(wrongDiscMessage, 0, cnt2, base2, (char*)base2 + (wrongDiscLength * 2), &bits.dst);
@@ -788,8 +934,9 @@ void* CCheckDriveStatus_Ctor(void* selfv) { U802813D0Temp noDiscInsertion; U8028
 
         // Phase 2c: insert/copy the retry text under status key 11.
         {
-            U813Locals bits;
-            void* iter2 = DriveStatusTextMap_FindInsertionPosition(selfv, &s_driveStatusTextKey11, &lookups[0], &bits.a, &bits.b);
+            DriveInsertionScratch bits;
+            void* iter2 =
+                DriveStatusTextMap_FindInsertionPosition(this, &s_driveStatusTextKey11, &lookups[0], &bits.a, &bits.b);
             char* node3;
 
             int retryPredecessor = lookups[0];
@@ -797,22 +944,32 @@ void* CCheckDriveStatus_Ctor(void* selfv) { U802813D0Temp noDiscInsertion; U8028
                 if (retryPredecessor) {
 
                     node3 = (char*)&((DriveStatusNode*)retryPredecessor)->driveStatus;
-                    if (*(int*)node3 >= (s_driveStatusTextKey11)) break;
+                    if (*(int*)node3 >= (s_driveStatusTextKey11))
+                        break;
                 }
                 {
 
-                    retryInsertion.textFlags = 0; retryInsertion.sourceTextLength = 0; retryInsertion.textData = 0;
+                    retryInsertion.textFlags = 0;
+                    retryInsertion.sourceTextLength = 0;
+                    retryInsertion.textData = 0;
                     retryInsertion.resultId = (s_driveStatusTextKey11);
-                    retryInsertion.resultFlags = 0; retryInsertion.resultLength = 0; retryInsertion.resultData = 0;
+                    retryInsertion.resultFlags = 0;
+                    retryInsertion.resultLength = 0;
+                    retryInsertion.resultData = 0;
                     CopyHeapDriveInsertionText(retryInsertion, bits);
-                    node3 = (char*)&((DriveStatusNode*)RenderNameTree_InsertNode(selfv, iter2, bits.a, bits.b, (void*)&retryInsertion.resultId))->driveStatus;
-                    if (retryInsertion.resultFlags >> 31) appFreeUni__FPv((void*)retryInsertion.resultData);
-                    if (retryInsertion.textFlags >> 31) appFreeUni__FPv((void*)retryInsertion.textData);
+                    node3 = (char*)&((DriveStatusNode*)RenderNameTree_InsertNode(this, iter2, bits.a, bits.b,
+                                                                                 (void*)&retryInsertion.resultId))
+                                ->driveStatus;
+                    if (retryInsertion.resultFlags >> 31)
+                        appFreeUni__FPv((void*)retryInsertion.resultData);
+                    if (retryInsertion.textFlags >> 31)
+                        appFreeUni__FPv((void*)retryInsertion.textData);
                 }
             } while (0);
             char* retryMessage = (char*)&((DriveStatusPair*)node3)->message;
             void* base3 = (void*)((DriveErrorTextPool*)driveErrorMessageStrings)->retry;
-            unsigned int cnt3; cnt3 = DriveWideStringLength(retryMessage);
+            unsigned int cnt3;
+            cnt3 = DriveWideStringLength(retryMessage);
             bits.dst.c = bits.src.c;
             unsigned int retryLength = wcslen(base3);
             WString_ReplaceRange(retryMessage, 0, cnt3, base3, (char*)base3 + 2 * retryLength, &bits.dst);
@@ -823,7 +980,7 @@ void* CCheckDriveStatus_Ctor(void* selfv) { U802813D0Temp noDiscInsertion; U8028
         void* q = AsCCheckDriveStatus(self)->diskErrorDialog;
         if (q) {
             if (q) {
-                ((U80281D54Task*)q)->destroy(1);
+                ((DialogDestroyTask*)q)->destroy(1);
             }
             AsCCheckDriveStatus(self)->diskErrorDialog = 0;
         }
@@ -831,7 +988,8 @@ void* CCheckDriveStatus_Ctor(void* selfv) { U802813D0Temp noDiscInsertion; U8028
         if (!((AsCCheckDriveStatus(self)->statusTextFlags) >> 31)) {
 
             DriveStatusText(self)->small.text[0] = 0;
-            int flags = (*(unsigned char*)&AsCCheckDriveStatus(self)->statusTextFlags); flags &= ~0x7F;
+            int flags = (*(unsigned char*)&AsCCheckDriveStatus(self)->statusTextFlags);
+            flags &= ~0x7F;
             (*(unsigned char*)&AsCCheckDriveStatus(self)->statusTextFlags) = (unsigned char)flags;
         } else {
             void* r = AsCCheckDriveStatus(self)->statusTextData;
@@ -844,9 +1002,7 @@ void* CCheckDriveStatus_Ctor(void* selfv) { U802813D0Temp noDiscInsertion; U8028
         dtor_80281874(self, -1);
         throw;
     }
-    return selfv;
 }
-
 
 // Destroy one status/message pair and release its tree node.
 #pragma push
@@ -864,48 +1020,56 @@ inline void FreeDriveStatusNode(void* node) {
 // The external destructor handles deeper descendants; the top levels are expanded here.
 inline void DestroyDriveStatusLeaf(char* owner, void* node) {
     void* left = ((DriveStatusNode*)node)->left;
-    if (left) RenderNameTree_FreeSubtree(owner, left);
+    if (left)
+        RenderNameTree_FreeSubtree(owner, left);
     void* right = ((DriveStatusNode*)node)->right;
-    if (right) RenderNameTree_FreeSubtree(owner, right);
+    if (right)
+        RenderNameTree_FreeSubtree(owner, right);
     FreeDriveStatusNode(node);
 }
 #pragma pop
 
-#define U802_CLEAN_BRANCH(p) \
-    do { \
-        void* child0 = ((DriveStatusNode*)p)->left; \
-        if (child0) DestroyDriveStatusLeaf(selfv, child0); \
+#define U802_CLEAN_BRANCH(p)                         \
+    do {                                             \
+        void* child0 = ((DriveStatusNode*)p)->left;  \
+        if (child0)                                  \
+            DestroyDriveStatusLeaf(selfv, child0);   \
         void* child1 = ((DriveStatusNode*)p)->right; \
-        if (child1) DestroyDriveStatusLeaf(selfv, child1); \
-        FreeDriveStatusNode(p); \
+        if (child1)                                  \
+            DestroyDriveStatusLeaf(selfv, child1);   \
+        FreeDriveStatusNode(p);                      \
     } while (0)
-#define U802_CLEAN_TREE(reset) \
-    do { \
-        register void* r31 = (*(void**)&AsCCheckDriveStatus(selfv)->statusTextMapRoot); \
-        if (r31) { \
-            register void* r30 = ((DriveStatusNode*)r31)->left; \
-            if (r30) { \
-                void* r27 = ((DriveStatusNode*)r30)->left; \
-                if (r27) U802_CLEAN_BRANCH(r27); \
-                void* r26 = ((DriveStatusNode*)r30)->right; \
-                if (r26) U802_CLEAN_BRANCH(r26); \
-                FreeDriveStatusNode(r30); \
-            } \
-            register void* r30b = ((DriveStatusNode*)r31)->right; \
-            if (r30b) { \
-                void* r26 = ((DriveStatusNode*)r30b)->left; \
-                if (r26) U802_CLEAN_BRANCH(r26); \
-                void* r26b = ((DriveStatusNode*)r30b)->right; \
-                if (r26b) U802_CLEAN_BRANCH(r26b); \
-                FreeDriveStatusNode(r30b); \
-            } \
-            FreeDriveStatusNode(r31); \
-            if (reset) { \
-                AsCCheckDriveStatus(selfv)->statusTextMapCount = 0; \
-                AsCCheckDriveStatus(selfv)->statusTextMapRoot = 0; \
+#define U802_CLEAN_TREE(reset)                                                                     \
+    do {                                                                                           \
+        register void* r31 = (*(void**)&AsCCheckDriveStatus(selfv)->statusTextMapRoot);            \
+        if (r31) {                                                                                 \
+            register void* r30 = ((DriveStatusNode*)r31)->left;                                    \
+            if (r30) {                                                                             \
+                void* r27 = ((DriveStatusNode*)r30)->left;                                         \
+                if (r27)                                                                           \
+                    U802_CLEAN_BRANCH(r27);                                                        \
+                void* r26 = ((DriveStatusNode*)r30)->right;                                        \
+                if (r26)                                                                           \
+                    U802_CLEAN_BRANCH(r26);                                                        \
+                FreeDriveStatusNode(r30);                                                          \
+            }                                                                                      \
+            register void* r30b = ((DriveStatusNode*)r31)->right;                                  \
+            if (r30b) {                                                                            \
+                void* r26 = ((DriveStatusNode*)r30b)->left;                                        \
+                if (r26)                                                                           \
+                    U802_CLEAN_BRANCH(r26);                                                        \
+                void* r26b = ((DriveStatusNode*)r30b)->right;                                      \
+                if (r26b)                                                                          \
+                    U802_CLEAN_BRANCH(r26b);                                                       \
+                FreeDriveStatusNode(r30b);                                                         \
+            }                                                                                      \
+            FreeDriveStatusNode(r31);                                                              \
+            if (reset) {                                                                           \
+                AsCCheckDriveStatus(selfv)->statusTextMapCount = 0;                                \
+                AsCCheckDriveStatus(selfv)->statusTextMapRoot = 0;                                 \
                 AsCCheckDriveStatus(selfv)->statusTextMapSentinel = selfv + kStatusTreeRootOffset; \
-            } \
-        } \
+            }                                                                                      \
+        }                                                                                          \
     } while (0)
 
 #pragma use_lmw_stmw on
@@ -923,35 +1087,35 @@ void* CCheckDriveStatus_dtor(char* selfv, int flag) {
                 __dla__FPv(g_driveErrorThreadStack);
                 g_driveErrorThreadStack = 0;
             }
-            void* q = AsCCheckDriveStatus(selfv)->diskErrorDialog;
+            void* dialog = AsCCheckDriveStatus(selfv)->diskErrorDialog;
             AsCCheckDriveStatus(selfv)->suspendedThread = 0;
             AsCCheckDriveStatus(selfv)->threadActive = 0;
-            AsCCheckDriveStatus(selfv)->unk_24 = 0;
-            if (q) {
-                if (q) {
-                    ((U80281D54Task*)q)->destroy(1);
+            AsCCheckDriveStatus(selfv)->latched = 0;
+            if (dialog) {
+                if (dialog) {
+                    ((DialogDestroyTask*)dialog)->destroy(1);
                 }
                 AsCCheckDriveStatus(selfv)->diskErrorDialog = 0;
             }
             if (!(AsCCheckDriveStatus(selfv)->statusTextFlags >> 31)) {
                 DriveStatusText(selfv)->small.text[0] = 0;
-                ((U80281D54Byte*)(DriveStatusText(selfv)))->low = 0;
+                ((InlineTextSizeByte*)(DriveStatusText(selfv)))->low = 0;
             } else {
                 void* p = AsCCheckDriveStatus(selfv)->statusTextData;
                 *(short*)p = 0;
                 AsCCheckDriveStatus(selfv)->statusTextLength = 0;
             }
         }
-        void* q = AsCCheckDriveStatus(selfv)->diskErrorDialog;
-        if (q) {
-            if (q) {
-                ((U80281D54Task*)q)->destroy(1);
+        void* dialog = AsCCheckDriveStatus(selfv)->diskErrorDialog;
+        if (dialog) {
+            if (dialog) {
+                ((DialogDestroyTask*)dialog)->destroy(1);
             }
             AsCCheckDriveStatus(selfv)->diskErrorDialog = 0;
         }
         if (!(AsCCheckDriveStatus(selfv)->statusTextFlags >> 31)) {
             DriveStatusText(selfv)->small.text[0] = 0;
-            ((U80281D54Byte*)(DriveStatusText(selfv)))->low = 0;
+            ((InlineTextSizeByte*)(DriveStatusText(selfv)))->low = 0;
         } else {
             void* p = AsCCheckDriveStatus(selfv)->statusTextData;
             *(short*)p = 0;

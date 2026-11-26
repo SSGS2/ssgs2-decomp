@@ -1,3 +1,6 @@
+// Property access for groups of sprites in the BP editor (CBpEditSprite): reading and writing position,
+// scale, opacity, tint and enabled state, plus the resource index loader and its tree cleanup helpers.
+
 #include <decomp/static_init.h>
 #include <decomp/ct_member.h>
 #include "MSL/throw.h"
@@ -9,17 +12,12 @@ extern const char vectorLengthErrorStrings_800C2F30[];
 }
 }
 
-// Translation unit 0x800C2F30-0x800C4568 (23 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "sdk_protos.h"
 #include "classes/CBpObject.h"
 #include "classes/MWStringStorage.h"
 #define AsCBpObject(p) ((CBpObject*)(p))
 #include "classes/CBpEditSprite.h"
-
-#define AsCBpEditSprite(p) ((CBpEditSprite*)(p))
-
+#include "classes/CBpSpriteCtrl.h"
 
 extern "C" {
 
@@ -38,7 +36,8 @@ enum UIGroupConstants {
     kMaxPointerCount = 0x3FFFFFFF,
     kThreeFifthsGrowthLimit = 0x15555555,
     kHalfGrowthLimit = 0x2AAAAAAA,
-    kLengthErrorTypeOffset = 0x14, kScriptPathPending = 2
+    kLengthErrorTypeOffset = 0x14,
+    kScriptPathPending = 2
 };
 // Group contract: items/count is a borrowed selection of sprite-property objects.
 // Setters visit all selected items and return 1 even for an empty selection.
@@ -54,7 +53,8 @@ enum UIGroupConstants {
 // Neutral words in CBpObject, not the unrelated CBpLoad filename/mutex layout.
 // Only their reset values are established here; none is named after a filename.
 struct BpObjectInitWords {
-    char prefix[0x0C]; int unresolved0C;
+    char prefix[0x0C];
+    int unresolved0C;
     char gap10[0x18];
     int unresolved28, unresolved2C, unresolved30, unresolved34, unresolved38, unresolved3C;
 };
@@ -62,8 +62,16 @@ typedef char BpInit0C_offset[((int)&((BpObjectInitWords*)0)->unresolved0C == 0x0
 typedef char BpInit28_offset[((int)&((BpObjectInitWords*)0)->unresolved28 == 0x28) ? 1 : -1];
 typedef char BpInit3C_offset[((int)&((BpObjectInitWords*)0)->unresolved3C == 0x3C) ? 1 : -1];
 
-struct BpTransformTreeStorage { char prefix[0x44]; int count; void* root; void* first; };
-struct BpLoaderMutexView { char prefix[0x18]; char mutex[0x18]; };
+struct BpTransformTreeStorage {
+    char prefix[0x44];
+    int count;
+    void* root;
+    void* first;
+};
+struct BpLoaderMutexView {
+    char prefix[0x18];
+    char mutex[0x18];
+};
 enum BpObjectMemberOffset {
     kObjectTree = (int)&((CBpObject*)0)->objectCount,
     kObjectRoot = (int)&((CBpObject*)0)->objectRoot,
@@ -143,9 +151,12 @@ struct UIScaleGroup {
 };
 
 struct UIWritableScaleItem {
-    char padding00[0xDC]; int scaleX;
-    char paddingE0[2]; short scaleXFlags;
-    char paddingE4[0x10]; int scaleY;
+    char padding00[0xDC];
+    int scaleX;
+    char paddingE0[2];
+    short scaleXFlags;
+    char paddingE4[0x10];
+    int scaleY;
     char paddingF8[2];
     short scaleYFlags;
 };
@@ -167,18 +178,31 @@ struct UIPositionReadGroup {
     char padding08[8];
     struct UIParentGroupHandle* nested;
 };
-struct UIParentGroupHandle { char padding00[4]; void* parentGroup; };
+struct UIParentGroupHandle {
+    char padding00[4];
+    void* parentGroup;
+};
 
-struct UIGroupBuffer { char padding00[4]; void* data; unsigned int count; };
+struct UIGroupBuffer {
+    char padding00[4];
+    void* data;
+    unsigned int count;
+};
 extern void appFreeUni__FPv(void*);
 extern void __dl__FPv(void*);
 
-struct UIGroupVector { char padding00[4]; void** begin; unsigned int size; unsigned int capacity; };
+struct UIGroupVector {
+    char padding00[4];
+    void** begin;
+    unsigned int size;
+    unsigned int capacity;
+};
 extern void* appMallocDummy__FUl(unsigned int);
 extern void* memcpy(void*, const void*, unsigned int);
 extern void* memset(void*, int, unsigned int);
 
-extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[], vectorLengthErrorStrings_800C2F30[];
+extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[],
+    vectorLengthErrorStrings_800C2F30[];
 extern char* strcpy(char*, const char*);
 extern void* __nwa__FUl(unsigned int);
 extern void* __nw__FUl(unsigned int);
@@ -187,43 +211,60 @@ extern void __dt__Q23std12length_errorFv();
 extern void __throw(const char*, void*, void*) __attribute__((noreturn));
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 struct GrowthRef {
-    void* table; int refs, owners; char* text;
+    void* table;
+    int refs, owners;
+    char* text;
     // Attach the exception message allocation to a shared-text control block.
-    GrowthRef(char* s) { refs = 1; owners = 1; table = s_sharedCharDeleterVtable; text = s; }
+    GrowthRef(char* s) {
+        refs = 1;
+        owners = 1;
+        table = s_sharedCharDeleterVtable;
+        text = s;
+    }
 };
 struct GrowthGuard {
-    char* text; char* flag;
+    char* text;
+    char* flag;
     // Free exception text if shared-control-block construction fails.
-    ~GrowthGuard() { if (text) __dla__FPv(text); }
+    ~GrowthGuard() {
+        if (text)
+            __dla__FPv(text);
+    }
 };
 struct GrowthBase {
     void* table;
     // Install the logic_error base vtable before message construction.
-    GrowthBase() { table = __vt__Q23std11logic_error; }
+    GrowthBase() {
+        table = __vt__Q23std11logic_error;
+    }
     // Run the exception base cleanup without freeing this enclosing object.
-    ~GrowthBase() { __dt__Q23std9exceptionFv(this, 0); }
+    ~GrowthBase() {
+        __dt__Q23std9exceptionFv(this, 0);
+    }
 };
 } // extern C
 namespace std {
-struct length_error : GrowthBase { char* text; void* shared;
+struct length_error : GrowthBase {
+    char* text;
+    void* shared;
     ~length_error();
     // Allocate/copy the shared length-error message with unwind cleanup.
     length_error() {
-    const char* message = vectorLengthErrorStrings_800C2F30;
-    int flag;
-    *(char*)&flag = 0;
-    unsigned int n = strlen(message) + 1;
-    text = (char*)__nwa__FUl(n * 2 - n);
-    char* allocated = text;
-    {
-        GrowthGuard guard;
-        guard.text = allocated;
-        guard.flag = (char*)&flag;
-        shared = new GrowthRef(allocated);
-        guard.text = 0;
-    }
-    strcpy(text, message);
-    table = __vt__Q23std12length_error;
+        const char* message = vectorLengthErrorStrings_800C2F30;
+        int flag;
+        *(char*)&flag = 0;
+        unsigned int n = strlen(message) + 1;
+        text = (char*)__nwa__FUl(n * 2 - n);
+        char* allocated = text;
+        {
+            GrowthGuard guard;
+            guard.text = allocated;
+            guard.flag = (char*)&flag;
+            shared = new GrowthRef(allocated);
+            guard.text = 0;
+        }
+        strcpy(text, message);
+        table = __vt__Q23std12length_error;
     }
     DECOMP_CT_MEMBER(length_error)
 };
@@ -232,13 +273,23 @@ extern "C" {
 // Build and throw length_error with cleanup for the exception's shared text buffer.
 static inline void GrowthThrow() {
     {
-        std::__throw_exception<std::length_error>( exception_runtime::vectorLengthErrorStrings_800C2F30 + kLengthErrorTypeOffset, (void*)exception_runtime::__dt__Q23std12length_errorFv);
+        std::__throw_exception<std::length_error>(exception_runtime::vectorLengthErrorStrings_800C2F30 +
+                                                      kLengthErrorTypeOffset,
+                                                  (void*)exception_runtime::__dt__Q23std12length_errorFv);
     }
 }
 struct GrowthBuffer {
-    void** data; unsigned int size, capacity; unsigned int* owner; unsigned int offset;
+    void** data;
+    unsigned int size, capacity;
+    unsigned int* owner;
+    unsigned int offset;
     // Free whichever pointer allocation this swap/insert guard currently owns.
-    ~GrowthBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~GrowthBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 // Choose a growth bound by reference; neither argument may outlive this expression.
 static inline const unsigned int& GrowthMax(const unsigned int& a, const unsigned int& b) {
@@ -256,62 +307,80 @@ int UIGroupVector_Append(UIGroupVector* self, void* value) {
         self->size = ++size;
         self->begin[size - 1] = value;
     } else {
-    if ((unsigned int)kMaxPointerCount - self->capacity < 1) GrowthThrow();
-    unsigned int needed = ((volatile UIGroupVector*)self)->size;
-    unsigned int previous = ((volatile UIGroupVector*)self)->capacity;
-    unsigned int three, half;
-    unsigned int extra = needed + 1 - previous;
-    GrowthBuffer buffer;
-    buffer.data = 0; buffer.size = 0; buffer.capacity = 0;
-    buffer.owner = &self->capacity; buffer.offset = 0;
-    unsigned int capacity = self->capacity;
-    if (extra > (unsigned int)kMaxPointerCount - capacity) GrowthThrow();
-    if (capacity < (unsigned int)kThreeFifthsGrowthLimit) {
-        three = (capacity + 1) * 3 / 5;
-        capacity += GrowthMax(three, extra);
-    } else if (capacity < (unsigned int)kHalfGrowthLimit) {
-        half = (capacity + 1) / 2;
-        capacity += GrowthMax(half, extra);
-    }
-    else capacity = (unsigned int)kMaxPointerCount;
-    if (capacity > (unsigned int)kMaxPointerCount) GrowthThrow();
-    // Phase 1: allocate and stage the new element before moving old pointer words.
-    buffer.data = (void**)appMallocDummy__FUl(capacity * 4);
-    buffer.offset = self->size;
-    (buffer.data + buffer.offset)[buffer.size] = value;
-    buffer.capacity = capacity;
-    ++buffer.size;
-    void** first = self->begin;
-    void** last = self->begin + self->size;
-    int count = ((char*)last - (char*)first) / 4;
-    unsigned int bytes;
-    buffer.offset -= count;
-    bytes = count * 4;
-    // Phase 2: move pointer words and zero old storage; no pointee is destroyed.
-    memcpy(buffer.data + buffer.offset, first, bytes);
-    memset(first, 0, bytes);
-    buffer.size += count;
-    self->size = 0;
-    // Phase 3: transfer new storage to the vector; the guard now frees the old array.
-    void** old = self->begin;
-    void** fresh = buffer.data;
-    self->begin = fresh;
-    buffer.data = old;
-    unsigned int oldCapacity = self->capacity;
-    self->capacity = buffer.capacity;
-    buffer.capacity = oldCapacity;
-    self->size = buffer.size;
-    buffer.size = 0;
+        if ((unsigned int)kMaxPointerCount - self->capacity < 1)
+            GrowthThrow();
+        unsigned int needed = ((volatile UIGroupVector*)self)->size;
+        unsigned int previous = ((volatile UIGroupVector*)self)->capacity;
+        unsigned int three, half;
+        unsigned int extra = needed + 1 - previous;
+        GrowthBuffer buffer;
+        buffer.data = 0;
+        buffer.size = 0;
+        buffer.capacity = 0;
+        buffer.owner = &self->capacity;
+        buffer.offset = 0;
+        unsigned int capacity = self->capacity;
+        if (extra > (unsigned int)kMaxPointerCount - capacity)
+            GrowthThrow();
+        if (capacity < (unsigned int)kThreeFifthsGrowthLimit) {
+            three = (capacity + 1) * 3 / 5;
+            capacity += GrowthMax(three, extra);
+        } else if (capacity < (unsigned int)kHalfGrowthLimit) {
+            half = (capacity + 1) / 2;
+            capacity += GrowthMax(half, extra);
+        } else
+            capacity = (unsigned int)kMaxPointerCount;
+        if (capacity > (unsigned int)kMaxPointerCount)
+            GrowthThrow();
+        // Phase 1: allocate and stage the new element before moving old pointer words.
+        buffer.data = (void**)appMallocDummy__FUl(capacity * 4);
+        buffer.offset = self->size;
+        (buffer.data + buffer.offset)[buffer.size] = value;
+        buffer.capacity = capacity;
+        ++buffer.size;
+        void** first = self->begin;
+        void** last = self->begin + self->size;
+        int count = ((char*)last - (char*)first) / 4;
+        unsigned int bytes;
+        buffer.offset -= count;
+        bytes = count * 4;
+        // Phase 2: move pointer words and zero old storage; no pointee is destroyed.
+        memcpy(buffer.data + buffer.offset, first, bytes);
+        memset(first, 0, bytes);
+        buffer.size += count;
+        self->size = 0;
+        // Phase 3: transfer new storage to the vector; the guard now frees the old array.
+        void** old = self->begin;
+        void** fresh = buffer.data;
+        self->begin = fresh;
+        buffer.data = old;
+        unsigned int oldCapacity = self->capacity;
+        self->capacity = buffer.capacity;
+        buffer.capacity = oldCapacity;
+        self->size = buffer.size;
+        buffer.size = 0;
     }
     return 1;
 }
 #pragma opt_lifetimes reset
-struct BpIndexRecord { int id; int count; };
-struct BpIndexTable { char padding00[3]; signed char done; int first; int second; int count; };
-union BpEndianWord { unsigned int w; unsigned char b[4]; };
+struct BpIndexRecord {
+    int id;
+    int count;
+};
+struct BpIndexTable {
+    char padding00[3];
+    signed char done;
+    int first;
+    int second;
+    int count;
+};
+union BpEndianWord {
+    unsigned int w;
+    unsigned char b[4];
+};
 
 // Reverse the four bytes of one index-table word without interpreting its sign.
-static inline int fn_800C391C_Swap(int value) {
+static inline int ByteSwapWord(int value) {
     BpEndianWord dst, src;
     src.w = value;
     dst.w = value;
@@ -329,25 +398,27 @@ int BpResource_ByteSwapIndexTable(BpIndexTable* root) {
     // Each record is id/count followed by count words, with a minimum 12-byte
     // footprint even for count == 0. No file-size/offset validation is performed.
     // done == 1 prevents a second swap; null returns 0, all nonnull paths return 1.
-    if (!root) return 0;
-    if (root->done) return 1;
-// The index table is little-endian on disc.
+    if (!root)
+        return 0;
+    if (root->done)
+        return 1;
+    // The index table is little-endian on disc.
     int count;
     int second;
     int first;
     first = root->first;
     second = root->second;
     count = root->count;
-    root->first = fn_800C391C_Swap(first);
-    root->second = fn_800C391C_Swap(second);
-    root->count = fn_800C391C_Swap(count);
+    root->first = ByteSwapWord(first);
+    root->second = ByteSwapWord(second);
+    root->count = ByteSwapWord(count);
     BpIndexRecord* node = (BpIndexRecord*)(root->first + (int)root);
     for (int i = 0; i < root->count; i++) {
-        node->id = fn_800C391C_Swap(node->id);
-        node->count = fn_800C391C_Swap(node->count);
+        node->id = ByteSwapWord(node->id);
+        node->count = ByteSwapWord(node->count);
         int* p = (int*)node;
         for (int j = 0; j < node->count; j++) {
-            p[2] = fn_800C391C_Swap(p[2]);
+            p[2] = ByteSwapWord(p[2]);
             p++;
         }
         node = (BpIndexRecord*)((char*)node + 12 + (node->count < 1 ? 0 : node->count - 1) * 4);
@@ -356,21 +427,28 @@ int BpResource_ByteSwapIndexTable(BpIndexTable* root) {
     return 1;
 }
 
-struct UITrivialTreeLinks { void* first; void* second; };
+struct UITrivialTreeLinks {
+    void* first;
+    void* second;
+};
 extern void RBTree_FreeTrivialSubtree(void*, void*);
 extern void MapTree_FreeSubtree(void*, void*);
 
 // Free a node after delegating both subtrees; payloads are trivial, with no pointee deletion.
 static void fn_800C3FE0_FreeNode(void* owner, UITrivialTreeLinks* node) {
-    if (!node) return;
-    if (node->first) RBTree_FreeTrivialSubtree(owner, node->first);
-    if (node->second) RBTree_FreeTrivialSubtree(owner, node->second);
+    if (!node)
+        return;
+    if (node->first)
+        RBTree_FreeTrivialSubtree(owner, node->first);
+    if (node->second)
+        RBTree_FreeTrivialSubtree(owner, node->second);
     appFreeUni__FPv(node);
 }
 
 // Expand one more postorder level before freeing this trivial-payload node.
-static void fn_800C3FE0_FreePair(void* owner, UITrivialTreeLinks* node) {
-    if (!node) return;
+static void FreeNodeAndChildren(void* owner, UITrivialTreeLinks* node) {
+    if (!node)
+        return;
     fn_800C3FE0_FreeNode(owner, (UITrivialTreeLinks*)node->first);
     fn_800C3FE0_FreeNode(owner, (UITrivialTreeLinks*)node->second);
     appFreeUni__FPv(node);
@@ -378,9 +456,10 @@ static void fn_800C3FE0_FreePair(void* owner, UITrivialTreeLinks* node) {
 
 // Expand two postorder levels before freeing this trivial-payload node.
 static void fn_800C3FE0_FreeTree(void* owner, UITrivialTreeLinks* node) {
-    if (!node) return;
-    fn_800C3FE0_FreePair(owner, (UITrivialTreeLinks*)node->first);
-    fn_800C3FE0_FreePair(owner, (UITrivialTreeLinks*)node->second);
+    if (!node)
+        return;
+    FreeNodeAndChildren(owner, (UITrivialTreeLinks*)node->first);
+    FreeNodeAndChildren(owner, (UITrivialTreeLinks*)node->second);
     appFreeUni__FPv(node);
 }
 
@@ -392,65 +471,75 @@ void* dtor_800C3FE0(UITrivialTreeLinks* self, int destroy) {
     // Phase 1: expanded postorder frees every node. Phase 2 at the end optionally
     // frees the header; it must not be used as an initialized empty tree afterward.
     if (self) {
-    // CodeWarrior emits each repeated receiver branch; keep all five gates.
-    if (self) if (self) if (self) if (self) if (self) {
-        UITrivialTreeLinks* root = (UITrivialTreeLinks*)self->second;
-        if (root) {
-            UITrivialTreeLinks* branch = (UITrivialTreeLinks*)root->first;
-            if (branch) {
-                UITrivialTreeLinks* node = (UITrivialTreeLinks*)branch->first;
-                if (node) {
-                    UITrivialTreeLinks* leaf = (UITrivialTreeLinks*)node->first;
-                    fn_800C3FE0_FreeNode(self, leaf);
-                    leaf = (UITrivialTreeLinks*)node->second;
-                    fn_800C3FE0_FreeNode(self, leaf);
-                    appFreeUni__FPv(node);
-                }
-                UITrivialTreeLinks* node2 = (UITrivialTreeLinks*)branch->second;
-                if (node2) {
-                    UITrivialTreeLinks* leaf = (UITrivialTreeLinks*)node2->first;
-                    fn_800C3FE0_FreeNode(self, leaf);
-                    leaf = (UITrivialTreeLinks*)node2->second;
-                    fn_800C3FE0_FreeNode(self, leaf);
-                    appFreeUni__FPv(node2);
-                }
-                appFreeUni__FPv(branch);
-            }
-            UITrivialTreeLinks* other = (UITrivialTreeLinks*)root->second;
-            if (other) {
-                UITrivialTreeLinks* node = (UITrivialTreeLinks*)other->first;
-                if (node) {
-                    UITrivialTreeLinks* leaf = (UITrivialTreeLinks*)node->first;
-                    fn_800C3FE0_FreeNode(self, leaf);
-                    leaf = (UITrivialTreeLinks*)node->second;
-                    fn_800C3FE0_FreeNode(self, leaf);
-                    appFreeUni__FPv(node);
-                }
-                node = (UITrivialTreeLinks*)other->second;
-                if (node) {
-                    UITrivialTreeLinks* leaf = (UITrivialTreeLinks*)node->first;
-                    fn_800C3FE0_FreeNode(self, leaf);
-                    leaf = (UITrivialTreeLinks*)node->second;
-                    fn_800C3FE0_FreeNode(self, leaf);
-                    appFreeUni__FPv(node);
-                }
-                appFreeUni__FPv(other);
-            }
-            appFreeUni__FPv(root);
-        }
-    }
-        if (destroy > 0) __dl__FPv(self);
+        // CodeWarrior emits each repeated receiver branch; keep all five gates.
+        if (self)
+            if (self)
+                if (self)
+                    if (self)
+                        if (self) {
+                            UITrivialTreeLinks* root = (UITrivialTreeLinks*)self->second;
+                            if (root) {
+                                UITrivialTreeLinks* branch = (UITrivialTreeLinks*)root->first;
+                                if (branch) {
+                                    UITrivialTreeLinks* node = (UITrivialTreeLinks*)branch->first;
+                                    if (node) {
+                                        UITrivialTreeLinks* leaf = (UITrivialTreeLinks*)node->first;
+                                        fn_800C3FE0_FreeNode(self, leaf);
+                                        leaf = (UITrivialTreeLinks*)node->second;
+                                        fn_800C3FE0_FreeNode(self, leaf);
+                                        appFreeUni__FPv(node);
+                                    }
+                                    UITrivialTreeLinks* node2 = (UITrivialTreeLinks*)branch->second;
+                                    if (node2) {
+                                        UITrivialTreeLinks* leaf = (UITrivialTreeLinks*)node2->first;
+                                        fn_800C3FE0_FreeNode(self, leaf);
+                                        leaf = (UITrivialTreeLinks*)node2->second;
+                                        fn_800C3FE0_FreeNode(self, leaf);
+                                        appFreeUni__FPv(node2);
+                                    }
+                                    appFreeUni__FPv(branch);
+                                }
+                                UITrivialTreeLinks* other = (UITrivialTreeLinks*)root->second;
+                                if (other) {
+                                    UITrivialTreeLinks* node = (UITrivialTreeLinks*)other->first;
+                                    if (node) {
+                                        UITrivialTreeLinks* leaf = (UITrivialTreeLinks*)node->first;
+                                        fn_800C3FE0_FreeNode(self, leaf);
+                                        leaf = (UITrivialTreeLinks*)node->second;
+                                        fn_800C3FE0_FreeNode(self, leaf);
+                                        appFreeUni__FPv(node);
+                                    }
+                                    node = (UITrivialTreeLinks*)other->second;
+                                    if (node) {
+                                        UITrivialTreeLinks* leaf = (UITrivialTreeLinks*)node->first;
+                                        fn_800C3FE0_FreeNode(self, leaf);
+                                        leaf = (UITrivialTreeLinks*)node->second;
+                                        fn_800C3FE0_FreeNode(self, leaf);
+                                        appFreeUni__FPv(node);
+                                    }
+                                    appFreeUni__FPv(other);
+                                }
+                                appFreeUni__FPv(root);
+                            }
+                        }
+        if (destroy > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 #pragma opt_lifetimes reset
 
-struct UIMapTreeLinks { void* first; void* second; };
+struct UIMapTreeLinks {
+    void* first;
+    void* second;
+};
 // Release deeper map descendants before this leaf; payloads require no destructor.
 static inline void ReleaseUIMapLeaf(void* owner, UIMapTreeLinks* leaf) {
     if (leaf) {
-        if (leaf->first) MapTree_FreeSubtree(owner, leaf->first);
-        if (leaf->second) MapTree_FreeSubtree(owner, leaf->second);
+        if (leaf->first)
+            MapTree_FreeSubtree(owner, leaf->first);
+        if (leaf->second)
+            MapTree_FreeSubtree(owner, leaf->second);
         appFreeUni__FPv(leaf);
     }
 }
@@ -460,65 +549,69 @@ void* dtor_800C42A4(void* self, int destroy) {
     // Phase 1: free child subtrees before parents. No payload destructor appears
     // in this specialization. Phase 2 optionally frees self when destroy > 0.
     if (self) {
-    // CodeWarrior emits each repeated receiver branch; keep all five gates.
-    if (self) if (self) if (self) if (self) if (self) {
-        UIMapTreeLinks* root = *(UIMapTreeLinks**)((char*)self + 4);
-        if (root) {
-            UIMapTreeLinks* branch = (UIMapTreeLinks*)root->first;
-            if (branch) {
-                UIMapTreeLinks* node = (UIMapTreeLinks*)branch->first;
-                if (node) {
-                    UIMapTreeLinks* leaf = (UIMapTreeLinks*)node->first;
-                    ReleaseUIMapLeaf(self, leaf);
-                    leaf = (UIMapTreeLinks*)node->second;
-                    ReleaseUIMapLeaf(self, leaf);
-                    appFreeUni__FPv(node);
-                }
-                UIMapTreeLinks* node2 = (UIMapTreeLinks*)branch->second;
-                if (node2) {
-                    UIMapTreeLinks* leaf = (UIMapTreeLinks*)node2->first;
-                    ReleaseUIMapLeaf(self, leaf);
-                    leaf = (UIMapTreeLinks*)node2->second;
-                    ReleaseUIMapLeaf(self, leaf);
-                    appFreeUni__FPv(node2);
-                }
-                appFreeUni__FPv(branch);
-            }
-            UIMapTreeLinks* other = (UIMapTreeLinks*)root->second;
-            if (other) {
-                UIMapTreeLinks* node = (UIMapTreeLinks*)other->first;
-                if (node) {
-                    UIMapTreeLinks* leaf = (UIMapTreeLinks*)node->first;
-                    ReleaseUIMapLeaf(self, leaf);
-                    leaf = (UIMapTreeLinks*)node->second;
-                    ReleaseUIMapLeaf(self, leaf);
-                    appFreeUni__FPv(node);
-                }
-                node = (UIMapTreeLinks*)other->second;
-                if (node) {
-                    UIMapTreeLinks* leaf = (UIMapTreeLinks*)node->first;
-                    ReleaseUIMapLeaf(self, leaf);
-                    leaf = (UIMapTreeLinks*)node->second;
-                    ReleaseUIMapLeaf(self, leaf);
-                    appFreeUni__FPv(node);
-                }
-                appFreeUni__FPv(other);
-            }
-            appFreeUni__FPv(root);
-        }
-    }
-        if (destroy > 0) __dl__FPv(self);
+        // CodeWarrior emits each repeated receiver branch; keep all five gates.
+        if (self)
+            if (self)
+                if (self)
+                    if (self)
+                        if (self) {
+                            UIMapTreeLinks* root = *(UIMapTreeLinks**)((char*)self + 4);
+                            if (root) {
+                                UIMapTreeLinks* branch = (UIMapTreeLinks*)root->first;
+                                if (branch) {
+                                    UIMapTreeLinks* node = (UIMapTreeLinks*)branch->first;
+                                    if (node) {
+                                        UIMapTreeLinks* leaf = (UIMapTreeLinks*)node->first;
+                                        ReleaseUIMapLeaf(self, leaf);
+                                        leaf = (UIMapTreeLinks*)node->second;
+                                        ReleaseUIMapLeaf(self, leaf);
+                                        appFreeUni__FPv(node);
+                                    }
+                                    UIMapTreeLinks* node2 = (UIMapTreeLinks*)branch->second;
+                                    if (node2) {
+                                        UIMapTreeLinks* leaf = (UIMapTreeLinks*)node2->first;
+                                        ReleaseUIMapLeaf(self, leaf);
+                                        leaf = (UIMapTreeLinks*)node2->second;
+                                        ReleaseUIMapLeaf(self, leaf);
+                                        appFreeUni__FPv(node2);
+                                    }
+                                    appFreeUni__FPv(branch);
+                                }
+                                UIMapTreeLinks* other = (UIMapTreeLinks*)root->second;
+                                if (other) {
+                                    UIMapTreeLinks* node = (UIMapTreeLinks*)other->first;
+                                    if (node) {
+                                        UIMapTreeLinks* leaf = (UIMapTreeLinks*)node->first;
+                                        ReleaseUIMapLeaf(self, leaf);
+                                        leaf = (UIMapTreeLinks*)node->second;
+                                        ReleaseUIMapLeaf(self, leaf);
+                                        appFreeUni__FPv(node);
+                                    }
+                                    node = (UIMapTreeLinks*)other->second;
+                                    if (node) {
+                                        UIMapTreeLinks* leaf = (UIMapTreeLinks*)node->first;
+                                        ReleaseUIMapLeaf(self, leaf);
+                                        leaf = (UIMapTreeLinks*)node->second;
+                                        ReleaseUIMapLeaf(self, leaf);
+                                        appFreeUni__FPv(node);
+                                    }
+                                    appFreeUni__FPv(other);
+                                }
+                                appFreeUni__FPv(root);
+                            }
+                        }
+        if (destroy > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 #pragma opt_lifetimes reset
 
 // Set the integer source-image origin on every item in the group.
-int UIGroup_SetSourcePosition(UISourcePositionGroup* arg, float* position) {
-    UISourcePositionItem** item = arg->items;
+int UIGroup_SetSourcePosition(UISourcePositionGroup* group, float* position) {
+    UISourcePositionItem** item = group->items;
     // Original 0x800C3124: visit each item, testing the end before the body.
-    while (item != arg->items + arg->count)
-    {
+    while (item != group->items + group->count) {
         int sourceY;
         int sourceX;
         UISourcePositionItem* entry;
@@ -533,21 +626,20 @@ int UIGroup_SetSourcePosition(UISourcePositionGroup* arg, float* position) {
 }
 
 // Read the first item's scale, converting 1/1024 units to floating point.
-int UIGroup_GetScale(UIScaleGroup* arg, float* out) {
-    UIScaleItem* data = *arg->items;
+int UIGroup_GetScale(UIScaleGroup* group, float* out) {
+    UIScaleItem* data = *group->items;
     out[0] = (float)data->scaleX * kFloat_0_0009765625_LayoutMetrics;
     out[1] = (float)data->scaleY * kFloat_0_0009765625_LayoutMetrics;
     return 1;
 }
 
 // Set both scale channels in 1/1024 units and mark their properties dirty.
-int UIGroup_SetScale(UIWritableScaleGroup* arg, float* value) {
+int UIGroup_SetScale(UIWritableScaleGroup* group, float* value) {
     float scale = kFloat_1024_UIGroup;
-    UIWritableScaleItem** item = arg->items;
+    UIWritableScaleItem** item = group->items;
 
     // Original 0x800C31DC: the array end is reloaded for each iteration.
-    while (item != arg->items + arg->count)
-    {
+    while (item != group->items + group->count) {
         UIWritableScaleItem* entry = *item++;
 
         float x = scale * (value[0]);
@@ -567,13 +659,14 @@ int UIGroup_SetScale(UIWritableScaleGroup* arg, float* value) {
 }
 
 // Read the first item's position and add its parent-group item's position when present.
-int UIGroup_GetPosition(UIPositionReadGroup* arg, float* position) {
+int UIGroup_GetPosition(UIPositionReadGroup* group, float* position) {
     // Adds just the parent object's position; no scale/rotation or recursive
     // ancestor transform is applied, so this is not a general world transform.
-    UIPositionReadItem* first = *arg->items;
+    UIPositionReadItem* first = *group->items;
     position[0] = (float)first->positionX;
     position[1] = (float)first->positionY;
-    UIPositionReadItem* parentItem = (UIPositionReadItem*)B2dSprite_GetParentGroupObject(arg->nested->parentGroup, first);
+    UIPositionReadItem* parentItem =
+        (UIPositionReadItem*)B2dSprite_GetParentGroupObject(group->nested->parentGroup, first);
     if (parentItem) {
         position[0] += (float)parentItem->positionX;
         position[1] += (float)parentItem->positionY;
@@ -583,42 +676,37 @@ int UIGroup_GetPosition(UIPositionReadGroup* arg, float* position) {
 
 #pragma opt_common_subs off
 // Release the selected-item pointer vector and optionally delete the edit-sprite object.
-void* CBpEditSprite_dtor(void* object, int destroy) {
-    if (object) {
-        if ((char*)object + 4) {
-        if ((char*)object + 4) {
-        if ((char*)object + 4) {
-        if ((char*)object + 4) {
-        if ((char*)object + 4) {
-            void* data = ((void**)object)[1];
-            if (data) {
-                int oldCount = (*(int*)&AsCBpEditSprite(object)->selectedItemCount);
-                unsigned int removedCount = AsCBpEditSprite(object)->selectedItemCount;
-                AsCBpEditSprite(object)->selectedItemCount = oldCount - removedCount;
-                appFreeUni__FPv(data);
+CBpEditSprite::~CBpEditSprite() {
+    if ((char*)this + 4) {
+        if ((char*)this + 4) {
+            if ((char*)this + 4) {
+                if ((char*)this + 4) {
+                    if ((char*)this + 4) {
+                        void* data = ((void**)this)[1];
+                        if (data) {
+                            int oldCount = (*(int*)&selectedItemCount);
+                            unsigned int removedCount = selectedItemCount;
+                            selectedItemCount = oldCount - removedCount;
+                            appFreeUni__FPv(data);
+                        }
+                    }
+                }
             }
         }
-        }
-        }
-        }
-        }
-        if (destroy > 0)
-            __dl__FPv(object);
     }
-    return object;
 }
 #pragma opt_common_subs reset
 
 // Set both integer position channels and mark their properties dirty.
-int UIGroup_SetPosition(UIPositionGroup* arg, const float* value) {
-    UIPositionItem** item = arg->items;
+int UIGroup_SetPosition(UIPositionGroup* group, const float* value) {
+    UIPositionItem** item = group->items;
     // Original 0x800C2FDC.
-    while (item != arg->items + arg->count)
-    { float x = value[0];
+    while (item != group->items + group->count) {
+        float x = value[0];
         UIPositionItem* entry = *item++;
 
         short xFlags = entry->positionXFlags;
-         float y = value[1];
+        float y = value[1];
 
         xFlags = (short)((xFlags | kPropertyDirty));
         entry->positionXFlags = xFlags;
@@ -654,27 +742,27 @@ struct UIOpacityReadItem {
 extern void* B2dSprite_GetParentGroupObject(void*, void*);
 
 // Read the first item's source-image origin.
-int UIGroup_GetSourcePosition(UIGroupSourceHandle* arg, float* out) {
-    UIGroupSourceMetrics* data = arg->items->first;
+int UIGroup_GetSourcePosition(UIGroupSourceHandle* group, float* out) {
+    UIGroupSourceMetrics* data = group->items->first;
     out[0] = (float)data->sourceX;
     out[1] = (float)data->sourceY;
     return 1;
 }
 
 // Multiply local and parent opacity in seven-bit fixed point when a parent exists.
-int UIGroup_GetCombinedOpacity(UIOpacityGroup* arg) {
+int UIGroup_GetCombinedOpacity(UIOpacityGroup* group) {
     // parent/local values are multiplied before >>7; this does not clamp the result.
-    int opacity = ((UIOpacityReadItem*)*arg->items)->opacity;
-    void* obj = arg->parent->parentGroup;
-    UIOpacityReadItem* result = (UIOpacityReadItem*)B2dSprite_GetParentGroupObject(obj, *arg->items);
+    int opacity = ((UIOpacityReadItem*)*group->items)->opacity;
+    void* obj = group->parent->parentGroup;
+    UIOpacityReadItem* result = (UIOpacityReadItem*)B2dSprite_GetParentGroupObject(obj, *group->items);
     if (result != 0)
         opacity = (opacity * result->opacity) >> kOpacityFractionBits;
     return opacity;
 }
 
 // Read the first item's source-image width and height.
-int UIGroup_GetSourceSize(UIGroupSourceHandle* arg, float* out) {
-    UIGroupSourceMetrics* data = arg->items->first;
+int UIGroup_GetSourceSize(UIGroupSourceHandle* group, float* out) {
+    UIGroupSourceMetrics* data = group->items->first;
     out[0] = (float)data->sourceWidth;
     out[1] = (float)data->sourceHeight;
     return 1;
@@ -716,12 +804,13 @@ struct UIOpacityItems {
 };
 
 // Return the first item's tint-color property.
-void* UIGroup_GetTintColor(UITintReadGroup* arg) {
-    return ((UITintReadItem*)arg->items->first)->tint;
+void* UIGroup_GetTintColor(UITintReadGroup* group) {
+    return ((UITintReadItem*)group->items->first)->tint;
 }
 
 // Initialize an empty selected-item vector and remember its owning sprite group.
-void CBpEditSprite_ctor(UIEditSpriteStorage* arg, void* value) {
+CBpEditSprite::CBpEditSprite(void* value) {
+    UIEditSpriteStorage* arg = (UIEditSpriteStorage*)this;
     char* address = __vt__13CBpEditSprite;
     arg->items = 0;
     arg->vtable = address;
@@ -732,11 +821,10 @@ void CBpEditSprite_ctor(UIEditSpriteStorage* arg, void* value) {
 
 // Set every selected item's opacity and mark the property dirty.
 // opacityWord is immediate 7-bit-fixed-point opacity (128 == full), never dereferenced.
-int UIGroup_SetOpacity(UIOpacityItems* arg, void* opacityWord) {
-    UIOpacityItem** item = arg->items;
+int UIGroup_SetOpacity(UIOpacityItems* group, void* opacityWord) {
+    UIOpacityItem** item = group->items;
     // Original 0x800C32C4.
-    while (item != arg->items + arg->count)
-    {
+    while (item != group->items + group->count) {
         UIOpacityItem* entry = *item++;
         entry->opacityFlags = (short)(entry->opacityFlags | kPropertyDirty);
         entry->opacity = opacityWord;
@@ -756,11 +844,10 @@ struct UIEnabledGroup {
 };
 
 // Clear or set the disabled bit on every selected item.
-int UIGroup_SetEnabled(UIEnabledGroup* arg, int value) {
-    UIEnabledItem** item = arg->items;
+int UIGroup_SetEnabled(UIEnabledGroup* group, int value) {
+    UIEnabledItem** item = group->items;
     // Original 0x800C2F44.
-    while (item != arg->items + arg->count)
-    {
+    while (item != group->items + group->count) {
         UIEnabledItem* entry = *item;
         if (value != 0)
             entry->flags = (short)(entry->flags & ~kItemDisabled);
@@ -772,17 +859,16 @@ int UIGroup_SetEnabled(UIEnabledGroup* arg, int value) {
 }
 
 // Return true only when no selected item carries the disabled bit.
-int UIGroup_IsEnabled(UIEnabledGroup* arg) {
-    UIEnabledItem*entry;
-    UIEnabledItem**item;
+int UIGroup_IsEnabled(UIEnabledGroup* group) {
+    UIEnabledItem* entry;
+    UIEnabledItem** item;
     unsigned int flags;
-    UIEnabledItem**end;
-    end = arg->items + arg->count;
-    item = arg->items;
+    UIEnabledItem** end;
+    end = group->items + group->count;
+    item = group->items;
     flags = 0;
     // Original 0x800C2FA4: accumulate the disabled flags up to the saved end.
-    while (item != end)
-    {
+    while (item != end) {
         entry = *item++;
         flags |= entry->flags & kItemDisabled;
     }
@@ -804,11 +890,10 @@ struct UITintGroup {
 
 // Set every selected item's tint and mark the property dirty.
 // tintWord is copied verbatim as a packed property; its channel order is unresolved here.
-int UIGroup_SetTintColor(UITintGroup* arg, void* tintWord) {
-    UITintItem** item = arg->items;
+int UIGroup_SetTintColor(UITintGroup* group, void* tintWord) {
+    UITintItem** item = group->items;
     // Original 0x800C33B0.
-    while (item != arg->items + arg->count)
-    {
+    while (item != group->items + group->count) {
         UITintItem* entry = *item++;
         entry->flags = (short)(entry->flags | kPropertyDirty);
         entry->tint = tintWord;
@@ -822,8 +907,8 @@ struct UIGroupCountView {
 };
 
 // Return the number of selected sprite items.
-unsigned int UIGroup_GetItemCount(UIGroupCountView* arg) {
-    return arg->count;
+unsigned int UIGroup_GetItemCount(UIGroupCountView* group) {
+    return group->count;
 }
 
 // Initialize this UI-group unit's cached two-pi constant.
@@ -836,30 +921,45 @@ void BpResource_InitializeTwoPi() {
     s_initializedTwoPi_800C3910 = kFloat_6_2831855;
 }
 
-struct BpObjectTreeLinks { void* left; void* right; };
+struct BpObjectTreeLinks {
+    void* left;
+    void* right;
+};
 // Release the two deeper object-tree subtrees before freeing their parent node.
 static inline void ReleaseBpObjectLeaf(void* owner, BpObjectTreeLinks* leaf) {
     if (leaf) {
-        if (leaf->left) RBTree_FreeTrivialSubtree(owner, leaf->left);
-        if (leaf->right) RBTree_FreeTrivialSubtree(owner, leaf->right);
+        if (leaf->left)
+            RBTree_FreeTrivialSubtree(owner, leaf->left);
+        if (leaf->right)
+            RBTree_FreeTrivialSubtree(owner, leaf->right);
         appFreeUni__FPv(leaf);
     }
 }
 struct TableLock {
-    int active; int index;
+    int active;
+    int index;
     ~TableLock();
 };
 typedef TableLock fn_800C3AFC_Lock;
-struct BpTransformWords { unsigned int a, b, c; };
-struct BpTransformPair { int key; BpTransformWords value; };
-struct BpTransformNode { char padding00[0xc]; BpTransformPair pair; };
+struct BpTransformWords {
+    unsigned int a, b, c;
+};
+struct BpTransformPair {
+    int key;
+    BpTransformWords value;
+};
+struct BpTransformNode {
+    char padding00[0xc];
+    BpTransformPair pair;
+};
 extern void TableLock_ctor(fn_800C3AFC_Lock*, int, int);
 extern void* __nw__FUl(unsigned int);
-extern void __ct__13CBpSpriteCtrlFv(void*);
-struct fn_800C3AFC_Sprite {
+struct CBpSpriteCtrlStorage {
     char data[0x28];
     // Construct the owned sprite-pool controller in the wrapper's existing storage.
-    fn_800C3AFC_Sprite() { __ct__13CBpSpriteCtrlFv(this); }
+    CBpSpriteCtrlStorage() {
+        ((CBpSpriteCtrl*)this)->__ct();
+    }
 };
 extern void* BpIntObjectTree_FindInsertionPosition(void*, const void*, void**, unsigned char*, unsigned char*);
 extern void* BpStateCallbackTree_InsertNode(void*, void*, unsigned char, unsigned char, void*);
@@ -875,21 +975,33 @@ extern void __dt__9TableLockFv(fn_800C3AFC_Lock*, int);
 #pragma opt_lifetimes off
 #pragma opt_propagation off
 // Initialize the BP object, empty its registries, create the loader and sprite controller, and seed transforms.
-void* CBpObject_Ctor(void* self) {
+CBpObject::CBpObject() {
     // Empty tree iterators point at their embedded root fields. The neutral
     // initialization view covers CBpObject words whose meanings are unresolved;
     // the owned CBpLoad is allocated separately in phase 2.
-    char* p = (char*)self;
+    char* p = (char*)this;
     *(void**)p = __vt__9CBpObject;
     (*(int*)&AsCBpObject(p)->script) = -1;
-    ((BpObjectInitWords*)p)->unresolved0C = 0; (*(int*)&AsCBpObject(p)->scriptBuffer) = 0; AsCBpObject(p)->scriptState = kScriptPathPending;
+    ((BpObjectInitWords*)p)->unresolved0C = 0;
+    (*(int*)&AsCBpObject(p)->scriptBuffer) = 0;
+    AsCBpObject(p)->scriptState = kScriptPathPending;
     // Object registry: count, root and sentinel iterator.
-    AsCBpObject(p)->objectCount = 0; AsCBpObject(p)->objectRoot = 0; AsCBpObject(p)->firstObject = p + kObjectRoot;
-    ((BpObjectInitWords*)p)->unresolved28 = 0; ((BpObjectInitWords*)p)->unresolved2C = 0; ((BpObjectInitWords*)p)->unresolved30 = 1;
-    ((BpObjectInitWords*)p)->unresolved34 = 0; ((BpObjectInitWords*)p)->unresolved38 = 0; ((BpObjectInitWords*)p)->unresolved3C = 0;
+    AsCBpObject(p)->objectCount = 0;
+    AsCBpObject(p)->objectRoot = 0;
+    AsCBpObject(p)->firstObject = p + kObjectRoot;
+    ((BpObjectInitWords*)p)->unresolved28 = 0;
+    ((BpObjectInitWords*)p)->unresolved2C = 0;
+    ((BpObjectInitWords*)p)->unresolved30 = 1;
+    ((BpObjectInitWords*)p)->unresolved34 = 0;
+    ((BpObjectInitWords*)p)->unresolved38 = 0;
+    ((BpObjectInitWords*)p)->unresolved3C = 0;
     // Transform and auxiliary registries: empty trees with sentinel iterators.
-    ((BpTransformTreeStorage*)p)->count = 0; ((BpTransformTreeStorage*)p)->root = 0; ((BpTransformTreeStorage*)p)->first = p + kTransformRoot;
-    AsCBpObject(p)->namedGroupCount = 0; AsCBpObject(p)->namedGroupRoot = 0; AsCBpObject(p)->firstNamedGroup = p + kNamedGroupRoot;
+    ((BpTransformTreeStorage*)p)->count = 0;
+    ((BpTransformTreeStorage*)p)->root = 0;
+    ((BpTransformTreeStorage*)p)->first = p + kTransformRoot;
+    AsCBpObject(p)->namedGroupCount = 0;
+    AsCBpObject(p)->namedGroupRoot = 0;
+    AsCBpObject(p)->firstNamedGroup = p + kNamedGroupRoot;
     AsMWStringStorage(AsCBpObject(p)->scriptPathStorage)->flags = 0;
     AsMWStringStorage(AsCBpObject(p)->scriptPathStorage)->length = 0;
     AsMWStringStorage(AsCBpObject(p)->scriptPathStorage)->data = 0;
@@ -939,7 +1051,9 @@ void* CBpObject_Ctor(void* self) {
             appFreeUni__FPv(branchC);
         }
         appFreeUni__FPv(root);
-        AsCBpObject(p)->objectCount = 0; *(void**)(p + kObjectRoot) = 0; AsCBpObject(p)->firstObject = p + kObjectRoot;
+        AsCBpObject(p)->objectCount = 0;
+        *(void**)(p + kObjectRoot) = 0;
+        AsCBpObject(p)->firstObject = p + kObjectRoot;
     }
     {
         // Phase 2: allocate the owned loader and sprite-pool controller.
@@ -948,12 +1062,15 @@ void* CBpObject_Ctor(void* self) {
         obj = (void*)__nw__FUl(0x30);
         if (obj) {
             ((void**)obj)[0] = (void*)__vt__7CBpLoad;
-            ((int*)obj)[1] = 0; ((int*)obj)[2] = 0; ((int*)obj)[3] = 0;
-            ((int*)obj)[4] = 0; ((int*)obj)[5] = 0;
+            ((int*)obj)[1] = 0;
+            ((int*)obj)[2] = 0;
+            ((int*)obj)[3] = 0;
+            ((int*)obj)[4] = 0;
+            ((int*)obj)[5] = 0;
             OSInitMutex((OSMutex*)((BpLoaderMutexView*)obj)->mutex);
         }
         AsCBpObject(p)->loader = obj;
-        sprite = new fn_800C3AFC_Sprite;
+        sprite = new CBpSpriteCtrlStorage;
         AsCBpObject(p)->objectArray = sprite;
     }
     // Phase 3: find-or-insert two transform keys and assign their three raw words.
@@ -964,7 +1081,8 @@ void* CBpObject_Ctor(void* self) {
     BpTransformPair* pair;
     BpTransformNode* found;
     unsigned char flagB, flagA;
-    void* pos = BpIntObjectTree_FindInsertionPosition(p + kTransformTree, &s_bpResourceSetCallbackState, (void**)&found, &flagA, &flagB);
+    void* pos = BpIntObjectTree_FindInsertionPosition(p + kTransformTree, &s_bpResourceSetCallbackState, (void**)&found,
+                                                      &flagA, &flagB);
     if (found == 0 || found->pair.key < (int)s_bpResourceSetCallbackState) {
         BpTransformPair value;
         BpTransformWords* vec = &zeroInitializationWords;
@@ -988,7 +1106,8 @@ void* CBpObject_Ctor(void* self) {
     BpTransformPair* pair2;
     BpTransformNode* found2;
     unsigned char flag2B, flag2A;
-    void* pos2 = BpIntObjectTree_FindInsertionPosition(p + kTransformTree, &s_bpRunningCallbackState, (void**)&found2, &flag2A, &flag2B);
+    void* pos2 = BpIntObjectTree_FindInsertionPosition(p + kTransformTree, &s_bpRunningCallbackState, (void**)&found2,
+                                                       &flag2A, &flag2B);
     if (found2 == 0 || found2->pair.key < (int)s_bpRunningCallbackState) {
         BpTransformPair value2;
         BpTransformWords* vec2 = &zeroInitializationWords;
@@ -996,7 +1115,8 @@ void* CBpObject_Ctor(void* self) {
         key2 = (int)s_bpRunningCallbackState;
         value2.key = key2;
         value2.value = *vec2;
-        pair2 = &((BpTransformNode*)BpStateCallbackTree_InsertNode(p + kTransformTree, pos2, flag2A, flag2B, &value2))->pair;
+        pair2 = &((BpTransformNode*)BpStateCallbackTree_InsertNode(p + kTransformTree, pos2, flag2A, flag2B, &value2))
+                     ->pair;
     } else {
         pair2 = &found2->pair;
     }
@@ -1006,8 +1126,8 @@ void* CBpObject_Ctor(void* self) {
     pair2->value.a = first3;
     pair2->value.b = second3;
     pair2->value.c = vec3->c;
-    AsCBpObject(p)->callbackPosition[0] = kZeroCallbackPosition; AsCBpObject(p)->callbackPosition[1] = kZeroCallbackPosition;
-    return self;
+    AsCBpObject(p)->callbackPosition[0] = kZeroCallbackPosition;
+    AsCBpObject(p)->callbackPosition[1] = kZeroCallbackPosition;
 }
 
 } // extern "C"

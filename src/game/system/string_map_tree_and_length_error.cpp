@@ -1,3 +1,7 @@
+// Tree teardown for the resource and string-value maps: destroys every node and the heap strings
+// they own, plus the exception type names used by length_error.
+// Also a placement new overload that reuses a node's existing payload storage.
+
 #include <decomp/ct_member.h>
 typedef unsigned long new_size_t;
 // Packed byte view of the existing string pool; storage and encoding stay in the original symbol.
@@ -16,8 +20,6 @@ extern const char cameraWorkStrings[];
 }
 
 #include "game/exception.h"
-// Translation unit 0x800E5FFC-0x800E7340 (4 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -35,40 +37,43 @@ extern "C" {
 struct ResourceMapNode {
     ResourceMapNode* leftChild;
     ResourceMapNode* rightChild;
-    ResourceMapNode* parent; // 0x08: parent link; cleanup never reads it
-    unsigned int flags; // 0x0C: outer key storage; name retained pending shared rename
-    void* valueWord10; // 0x10: nested count WORD; address is passed as inner-tree context
+    ResourceMapNode* parent;   // 0x08: parent link; cleanup never reads it
+    unsigned int flags;        // 0x0C: outer key storage; name retained pending shared rename
+    void* valueWord10;         // 0x10: nested count WORD; address is passed as inner-tree context
     void* payloadOrNestedRoot; // 0x14: owned inner string-tree root
 };
 
 // Inner specialization: no nested-map header lives in these six words.
 // Use this view after crossing an OUTER node's +0x14 root pointer.
 struct StringValueNode {
-    StringValueNode* leftChild; // +0: owned child
-    StringValueNode* rightChild; // +4: owned child
-    StringValueNode* parent; // +8: borrowed tree linkage
-    unsigned int stringStorageFlags; // +0x0C: high bit selects heap representation
+    StringValueNode* leftChild;             // +0: owned child
+    StringValueNode* rightChild;            // +4: owned child
+    StringValueNode* parent;                // +8: borrowed tree linkage
+    unsigned int stringStorageFlags;        // +0x0C: high bit selects heap representation
     unsigned int stringLengthOrInlineBytes; // +0x10: length only in heap representation
-    void* heapCharacters; // +0x14: owned only when the heap bit is set
+    void* heapCharacters;                   // +0x14: owned only when the heap bit is set
 };
 typedef char StringValueNodeSizeCheck[sizeof(StringValueNode) == 0x18 ? 1 : -1];
 
 void MapTree_FreeNodesRecursive(void*, ResourceMapNode*);
 
 struct ByteKeyTreeNode {
-    ByteKeyTreeNode* leftChild; // 0x00
+    ByteKeyTreeNode* leftChild;  // 0x00
     ByteKeyTreeNode* rightChild; // 0x04
-    ByteKeyTreeNode* parent; // 0x08
-    union { char bytes[16]; unsigned int alignment; } payload; // 0x0C: key plus 12-byte tree value
+    ByteKeyTreeNode* parent;     // 0x08
+    union {
+        char bytes[16];
+        unsigned int alignment;
+    } payload; // 0x0C: key plus 12-byte tree value
 };
 
-typedef char ByteKeyTreeNodeSizeCheck[sizeof(ByteKeyTreeNode)==0x1C ? 1 : -1];
+typedef char ByteKeyTreeNodeSizeCheck[sizeof(ByteKeyTreeNode) == 0x1C ? 1 : -1];
 
 struct TreeHeader {
     int size;
-    int rootWord; // 0x04: root-node word; &rootWord is the embedded end sentinel
+    int rootWord;                  // 0x04: root-node word; &rootWord is the embedded end sentinel
     ByteKeyTreeNode* headerLink08; // 0x08: unused here; no end-sentinel role established
-    ByteKeyTreeNode* cachedNode; // 0x0C: caller-selected node, or &rootWord when cleared
+    ByteKeyTreeNode* cachedNode;   // 0x0C: caller-selected node, or &rootWord when cleared
 };
 
 extern ByteKeyTreeNode* appMallocDummy__FUl(unsigned int);
@@ -94,23 +99,28 @@ extern char s_sharedCharDeleterVtable[];
 // MWCC scheduling. Keep them when editing the owned-heap test that follows.
 static inline void DestroyStringValueNode(StringValueNode* node) {
     if ((char*)&node->stringStorageFlags && (char*)&node->stringStorageFlags) {
-        if (node->stringStorageFlags >> 31) appFreeUni__FPv(node->heapCharacters);
+        if (node->stringStorageFlags >> 31)
+            appFreeUni__FPv(node->heapCharacters);
     }
     appFreeUni__FPv(node);
 }
 
 // Finish an outer leaf of the visible unroll, releasing its nested payload before storage.
 static inline void DestroyResourceMapLeaf(void* owner, ResourceMapNode* node) {
-    if (node->leftChild) MapTree_FreeNodesRecursive(owner, node->leftChild);
-    if (node->rightChild) MapTree_FreeNodesRecursive(owner, node->rightChild);
+    if (node->leftChild)
+        MapTree_FreeNodesRecursive(owner, node->leftChild);
+    if (node->rightChild)
+        MapTree_FreeNodesRecursive(owner, node->rightChild);
     CameraResourceMap_DestroyNodePayload(owner, (char*)&node->flags);
     appFreeUni__FPv(node);
 }
 
 // Finish an inner leaf of the visible unroll, releasing its tagged string before storage.
 static inline void DestroyStringValueLeaf(void* owner, StringValueNode* node) {
-    if (node->leftChild) StringValueTree_DestroySubtree(owner, node->leftChild);
-    if (node->rightChild) StringValueTree_DestroySubtree(owner, node->rightChild);
+    if (node->leftChild)
+        StringValueTree_DestroySubtree(owner, node->leftChild);
+    if (node->rightChild)
+        StringValueTree_DestroySubtree(owner, node->rightChild);
     DestroyStringValueNode(node);
 }
 
@@ -209,8 +219,8 @@ void MapTree_FreeNodes(TreeHeader* tree) {
         }
         // Value phase: this outer node owns one nested string tree.
         if ((char*)&subtreeRoot->flags && (char*)&subtreeRoot->valueWord10 && (char*)&subtreeRoot->valueWord10 &&
-            (char*)&subtreeRoot->valueWord10 && (char*)&subtreeRoot->valueWord10 &&
-            (char*)&subtreeRoot->valueWord10 && (char*)&subtreeRoot->valueWord10) {
+            (char*)&subtreeRoot->valueWord10 && (char*)&subtreeRoot->valueWord10 && (char*)&subtreeRoot->valueWord10 &&
+            (char*)&subtreeRoot->valueWord10) {
             // Value phase: switch overlays from outer key/tree header to
             // INNER tagged-string nodes; high-bit tests below free strings.
             StringValueNode* valueRoot = (StringValueNode*)subtreeRoot->payloadOrNestedRoot;
@@ -301,12 +311,17 @@ struct StringGuard {
     char* data;
     char* allocator;
     // Free exception text unless shared ownership was established.
-    ~StringGuard() { if (data) __dla__FPv(data); }
+    ~StringGuard() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 // std::logic_error layout: vtable, then shared message storage (the vtable is swapped by derived types).
 struct LogicErrorBase : std::exception {
     // Install the current exception subtype's original vtable.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
 
     char* data;
     void* holder;
@@ -319,9 +334,13 @@ struct LogicErrorBase : std::exception {
         data = (char*)__nwa__FUl(length * 2 - length);
         char* copy = data;
         {
-            StringGuard guard = { copy, &allocator };
+            StringGuard guard = {copy, &allocator};
             // The two integer words belong to shared-reference control, not a tree.
-            struct Holder { void* vtable; int count, controlWord08; char* data; };
+            struct Holder {
+                void* vtable;
+                int count, controlWord08;
+                char* data;
+            };
             Holder* h = (Holder*)__nw__FUl(16);
             if (h) {
                 h->count = 1;
@@ -339,7 +358,9 @@ struct LogicErrorBase : std::exception {
 namespace std {
 struct length_error : LogicErrorBase {
     // Construct the error message and install the length_error subtype vtable.
-    length_error(const char* message) : LogicErrorBase(message) { SetTable(__vt__Q23std12length_error); }
+    length_error(const char* message) : LogicErrorBase(message) {
+        SetTable(__vt__Q23std12length_error);
+    }
     ~length_error();
     DECOMP_CT_MEMBER(length_error)
 };
@@ -352,9 +373,13 @@ struct NodeGuard_u800E5FFC {
     void* allocator;
     ByteKeyTreeNode* node;
     // Allocate and own one unlinked 0x1c-byte map node during value construction.
-    NodeGuard_u800E5FFC(void* count) : state(0), begin(appMallocDummy__FUl(0x1c)), lastNode(begin), allocator(count), node(begin) {}
+    NodeGuard_u800E5FFC(void* count)
+        : state(0), begin(appMallocDummy__FUl(0x1c)), lastNode(begin), allocator(count), node(begin) {}
     // Free only an uncommitted node; the tree takes over after node is cleared.
-    ~NodeGuard_u800E5FFC() { if (node) appFreeUni__FPv(node); }
+    ~NodeGuard_u800E5FFC() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 struct ValueBase {
     int count, root;
@@ -362,9 +387,15 @@ struct ValueBase {
     // The nested header also uses the address of its root slot as the end sentinel.
     ValueBase() : count(0), root(0), cachedNode(&root) {}
     // Destroy the owned nested tree without deleting this embedded header.
-    ~ValueBase() { dtor_8005E4D8(this, 0); }
+    ~ValueBase() {
+        dtor_8005E4D8(this, 0);
+    }
 };
-struct ByteKeyTreePairSource { unsigned char key; char alignment[3]; ValueBase value; };
+struct ByteKeyTreePairSource {
+    unsigned char key;
+    char alignment[3];
+    ValueBase value;
+};
 struct ByteKeyTreePair {
     unsigned char key;
     ValueBase value;
@@ -373,7 +404,10 @@ struct ByteKeyTreePair {
         CameraStringValueTree_Copy((char*)&value, (char*)&((const ByteKeyTreePairSource*)source)->value);
     }
 };
-struct WordKeyTreePairSource { unsigned int key; ValueBase value; };
+struct WordKeyTreePairSource {
+    unsigned int key;
+    ValueBase value;
+};
 struct WordKeyTreePair {
     unsigned int key;
     ValueBase value;
@@ -391,11 +425,15 @@ struct TreeLink {
 };
 } // extern "C"
 // Borrow the node's existing payload storage for placement construction.
-inline void* operator new(new_size_t, void* p) { return p; }
+inline void* operator new(new_size_t, void* p) {
+    return p;
+}
 extern "C" {
 
 // Allocate and link a byte-key entry, copy its nested value tree, then rebalance the map.
-ByteKeyTreeNode* CameraByteKeyTree_InsertValueAtLink(TreeHeader* tree, ByteKeyTreeNode** parentLink, int insertAsLeftChild, int updateCachedNode, const char* sourcePair) {
+ByteKeyTreeNode* CameraByteKeyTree_InsertValueAtLink(TreeHeader* tree, ByteKeyTreeNode** parentLink,
+                                                     int insertAsLeftChild, int updateCachedNode,
+                                                     const char* sourcePair) {
     // parentLink is a pointer to the parent's TWO child slots: [0]=left, [1]=right.
     // At the root it addresses the root-slot end sentinel (&tree->rootWord). It is also stored
     // as entry.parent. Source is borrowed {u8 key,pad[3],nested header}; copy is
@@ -404,17 +442,23 @@ ByteKeyTreeNode* CameraByteKeyTree_InsertValueAtLink(TreeHeader* tree, ByteKeyTr
     // Phase 1: count-overflow check and guarded allocation/value construction.
     if ((unsigned int)tree->size == 0xffffffffu) {
         {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct(((const CameraMapErrorStrings*)cameraWorkStrings)->treeInsertLengthError);
-            exception_runtime::__throw(((const CameraMapErrorStrings*)exception_runtime::cameraWorkStrings)->lengthErrorTypeName, error,
+            exception_runtime::__throw(
+                ((const CameraMapErrorStrings*)exception_runtime::cameraWorkStrings)->lengthErrorTypeName, error,
                 (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
     }
     NodeGuard_u800E5FFC guard(&tree->rootWord);
     try {
         new (&guard.node->payload) ByteKeyTreePair(sourcePair);
-    } catch (...) { __throw(0, 0, 0); }
+    } catch (...) {
+        __throw(0, 0, 0);
+    }
     ByteKeyTreeNode* entry = guard.node;
     // Phase 2: transfer allocation to tree, initialize links, splice and count;
     // phase 3: rebalance through the root-word ABI and optionally update cachedNode.
@@ -438,23 +482,31 @@ void MapTree_FreeNodesRecursive(void*, ResourceMapNode*);
 #pragma push
 #pragma use_lmw_stmw on
 // Allocate and link a word-key entry, copy its nested value tree, then rebalance the map.
-ByteKeyTreeNode* CameraWordKeyTree_InsertValueAtLink(TreeHeader* tree, ByteKeyTreeNode** parentLink, int insertAsLeftChild, int updateCachedNode, const unsigned int* sourcePair) {
+ByteKeyTreeNode* CameraWordKeyTree_InsertValueAtLink(TreeHeader* tree, ByteKeyTreeNode** parentLink,
+                                                     int insertAsLeftChild, int updateCachedNode,
+                                                     const unsigned int* sourcePair) {
     // Same child-slot/sentinel/ownership contract as byte-key insertion above;
     // source key is a full 32-bit word followed by a nested-tree header.
     // Phase 1: validate count, allocate, deep-copy value under NodeGuard.
     if ((unsigned int)tree->size == 0xffffffffu) {
         {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct(((const CameraMapErrorStrings*)cameraWorkStrings)->treeInsertLengthError);
-            exception_runtime::__throw(((const CameraMapErrorStrings*)exception_runtime::cameraWorkStrings)->lengthErrorTypeName, error,
+            exception_runtime::__throw(
+                ((const CameraMapErrorStrings*)exception_runtime::cameraWorkStrings)->lengthErrorTypeName, error,
                 (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
     }
     NodeGuard_u800E5FFC guard(&tree->rootWord);
     try {
         new (&guard.node->payload) WordKeyTreePair(sourcePair);
-    } catch (...) { __throw(0, 0, 0); }
+    } catch (...) {
+        __throw(0, 0, 0);
+    }
     ByteKeyTreeNode* entry = guard.node;
     entry->rightChild = 0;
     guard.node = 0;
@@ -551,9 +603,8 @@ void MapTree_FreeNodesRecursive(void* owner, ResourceMapNode* tree) {
         CameraResourceMap_DestroyNodePayload(owner, (char*)&rightBranch->flags);
         appFreeUni__FPv(rightBranch);
     }
-    if ((char*)&tree->flags && (char*)&tree->valueWord10 && (char*)&tree->valueWord10
-    && (char*)&tree->valueWord10 && (char*)&tree->valueWord10 && (char*)&tree->valueWord10
-    && (char*)&tree->valueWord10) {
+    if ((char*)&tree->flags && (char*)&tree->valueWord10 && (char*)&tree->valueWord10 && (char*)&tree->valueWord10 &&
+        (char*)&tree->valueWord10 && (char*)&tree->valueWord10 && (char*)&tree->valueWord10) {
         // Value phase: this pointer now enters the INNER string-node overlay.
         StringValueNode* subtreeRoot = (StringValueNode*)tree->payloadOrNestedRoot;
         if (subtreeRoot) {

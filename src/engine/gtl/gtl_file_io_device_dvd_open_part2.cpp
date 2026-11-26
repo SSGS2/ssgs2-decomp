@@ -1,6 +1,7 @@
-// Translation unit 0x8041364C-0x80413768 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// DVD device: OpenWithSynchronousCallback, which opens a DVD file by path and, on success, calls an
+// optional callback before returning the file handle. Failures return the error sentinel.
 
+#include "classes/GtlFileIoDeviceDVD.h"
 #include "sdk_protos.h"
 
 struct DVDFile {
@@ -16,8 +17,12 @@ struct DVDFile {
     int completionArg2;
 };
 
-enum { kFileSuccess = 0, kFileNotFound = 2, kInvalidEntryNumber = -1,
-       kDevicePathCapacity = 0x100 };
+enum {
+    kFileSuccess = 0,
+    kFileNotFound = 2,
+    kInvalidEntryNumber = -1,
+    kDevicePathCapacity = 0x100
+};
 typedef char DVDFile_size_check[sizeof(DVDFile) == 0x5C ? 1 : -1];
 
 extern "C" {
@@ -27,15 +32,18 @@ DVDFile* FileIO_Alloc(int);
 void FileIO_Free(DVDFile*);
 void File_SetLastError(int);
 
+} // extern "C"
+
 // Open the DVD path after its device prefix, then invoke completion synchronously.
 // path is borrowed, NUL-terminated, includes '/', and must fit in 256 bytes with NUL.
-// self and unused3..7 are ignored; no access/open-mode validation is done here.
+// unused3..7 are ignored; no access/open-mode validation is done here.
 // Returns an owned handle to be closed/freed by the caller, or (DVDFile*)-1 on error.
 // The optional callback runs only on success, before return, with (0,0,file,context).
 // Allocation is assumed to succeed: DVDFastOpen is still called if allocation is null.
-DVDFile* gtl_CFileIoDeviceDVD_OpenWithSynchronousCallback(void* self, const char* path,
-                                      int unused3, int unused4, int unused5, int unused6, int unused7,
-                                      void (*callback)(int, int, DVDFile*, void*), void* context) {
+DVDFile* gtl::CFileIoDeviceDVD::OpenWithSynchronousCallback(const char* path, int unused3, int unused4, int unused5,
+                                                            int unused6, int unused7,
+                                                            void (*callback)(int, int, DVDFile*, void*),
+                                                            void* context) {
     // Resolve the slash-prefixed device path to a DVD directory entry before allocating.
     char pathCopy[kDevicePathCapacity];
     strcpy(pathCopy, path);
@@ -61,7 +69,8 @@ DVDFile* gtl_CFileIoDeviceDVD_OpenWithSynchronousCallback(void* self, const char
     }
     // On open failure release the wrapper; both lookup/open failures report not found.
     if (DVDFastOpen(entryNumber, file) == 0) {
-        if (file != 0) FileIO_Free(file);
+        if (file != 0)
+            FileIO_Free(file);
         File_SetLastError(kFileNotFound);
         return (DVDFile*)-1;
     }
@@ -71,5 +80,4 @@ DVDFile* gtl_CFileIoDeviceDVD_OpenWithSynchronousCallback(void* self, const char
     if (callback != 0)
         callback(0, 0, file, context);
     return file;
-}
 }

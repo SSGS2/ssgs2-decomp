@@ -12,11 +12,11 @@
 // Default model descriptor: s_defaultModelDescriptor; constants
 // kMaterialFactorChannelCount/94/98 are shared 3.0f/1.0f/0.0f, not private settings. 2098 is
 // also zero time in the model/material-animation wrappers gtl_generic_modeling_resource_eval.cpp/gtl_material_animation_eval.cpp.
-// Translation unit 0x803D7FE8-0x803D8678 (14 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/GtlIGenericModelingResource.h"
+#include "classes/GtlIGenericEnvironmentResource.h"
 
 struct IGenericResourceFileBase {
     char pad[4];
@@ -26,7 +26,6 @@ class IGenericResourceFileV : public IGenericResourceFileBase {
 public:
     virtual void Release(int flags);
 };
-
 
 extern "C" void* s_genericResourceAllocatorFunctions[2];
 extern "C" int Object_GetField8(void* o);
@@ -44,11 +43,15 @@ struct RefBase {
 class IGenericResourceFile : public RefBase {
 public:
     // Retain the required backing buffer; final wrapper teardown drops this ref.
-    IGenericResourceFile(char* b) {
-        buf = b;
-        ((int*)b)[0] = ((int*)b)[0] + 1;
+    IGenericResourceFile(char* buffer) {
+        buf = buffer;
+        ((int*)buffer)[0] = ((int*)buffer)[0] + 1;
     }
     virtual ~IGenericResourceFile();
+    // Release the retained buffer, restore the base vtable and optionally free the wrapper.
+    void* Destroy(int flags);
+    // Number of elements stored under a chunk tag in the retained buffer.
+    int GetChunkElementCount(int chunkTag);
     char* buf;
 };
 
@@ -56,10 +59,12 @@ class IGenericAnimationResource : public IGenericResourceFile {
 public:
     // Install the retained animation backing file; its data accessor is invoked
     // for the original constructor side effect even though its value is unused.
-    IGenericAnimationResource(char* b) : IGenericResourceFile(b) {
-        Object_GetField8(b);
+    IGenericAnimationResource(char* buffer) : IGenericResourceFile(buffer) {
+        Object_GetField8(buffer);
     }
     virtual ~IGenericAnimationResource();
+    // Copy an animation file and construct its wrapper; the new reference is returned through out.
+    static int CreateFromMemory(void* data, int size, void** out);
     // Use the allocator installed by GenericResource_Initialize, paired below.
     static void* operator new(size_t n) {
         return ((void* (*)(unsigned long))s_genericResourceAllocatorFunctions[0])(n);
@@ -100,16 +105,14 @@ void gtl_PixelCopy_Copy16Bytes(void* dst, const void* src);
 void Vec4_Scale(void* dst, void* src, float s);
 void Vec3_Subtract(void* dst, const void* a, const void* b);
 void Vec3_Normalize(void* dst, void* src);
-void gtl_IG3DXBuffer_Create(int size, void** out, int flags);
-void gtl_IGenericModelingResource_Ctor(void* self, void* res, void* def);
+extern "C" void Create__Q23gtl11IG3DXBufferFPvPPv(int size, void** out, int flags);
 
 typedef struct {
-    CW_BITS5(
-        unsigned int a : 25,
-        unsigned int bypassSpecularAlphaFactor : 1, // numeric mask 0x40: bypass factor adjustment
-        unsigned int c : 4,
-        unsigned int useFactorDirectly : 1, // numeric mask 0x02: use factor directly; clear = 1-factor
-        unsigned int useScalarFactor : 1) // numeric mask 0x01: scalar +5C; clear = mean of +50/54/58
+    CW_BITS5(unsigned int a : 25,
+             unsigned int bypassSpecularAlphaFactor : 1, // numeric mask 0x40: bypass factor adjustment
+             unsigned int c : 4,
+             unsigned int useFactorDirectly : 1, // numeric mask 0x02: use factor directly; clear = 1-factor
+             unsigned int useScalarFactor : 1)   // numeric mask 0x01: scalar +5C; clear = mean of +50/54/58
 } MatFlagBits;
 
 // Native 32-bit Wii records. Prefix bytes are copied verbatim to the engine
@@ -123,24 +126,23 @@ struct MaterialDescriptionSource {
     MaterialEngineDescription description;
     char reserved44[0x0C];
     float factorChannels[3]; // +50..58: dimensionless factor; sum [0], then [1], then [2]
-    float scalarFactor;     // +5C: alternate dimensionless factor
-    MatFlagBits flags;      // +60: bypass/source/complement policy above
+    float scalarFactor;      // +5C: alternate dimensionless factor
+    MatFlagBits flags;       // +60: bypass/source/complement policy above
 };
 struct LightDescriptionSource {
-    int type;               // +00: 1 point / 2 spot / 3 directional (GX consumer)
-    float diffuse[4];       // +04: RGBA, all four components scaled by intensity
+    int type;         // +00: 1 point / 2 spot / 3 directional (GX consumer)
+    float diffuse[4]; // +04: RGBA, all four components scaled by intensity
     char reserved14[0x20];
-    float position[3];      // +34: world XYZ, same distance units as target/range
+    float position[3]; // +34: world XYZ, same distance units as target/range
     char reserved40[0x28];
-    float intensity;        // +68: dimensionless multiplier, no clamping
+    float intensity; // +68: dimensionless multiplier, no clamping
     char reserved6C[4];
-    float range;            // +70: distance units of authored position
-    float coneStart;        // +74: radians, passed unchanged to description +60
-    float coneWidth;        // +78: radians, added to start for end angle at +64
-    float target[3];        // +7C: world target; spot direction = normalize(target-position)
+    float range;     // +70: distance units of authored position
+    float coneStart; // +74: radians, passed unchanged to description +60
+    float coneWidth; // +78: radians, added to start for end angle at +64
+    float target[3]; // +7C: world target; spot direction = normalize(target-position)
 };
-typedef char MaterialDescriptionSource_flags_offset[
-    (int)&((MaterialDescriptionSource*)0)->flags == 0x60 ? 1 : -1];
+typedef char MaterialDescriptionSource_flags_offset[(int)&((MaterialDescriptionSource*)0)->flags == 0x60 ? 1 : -1];
 typedef char LightDescriptionSource_size[sizeof(LightDescriptionSource) == 0x88 ? 1 : -1];
 
 #pragma push
@@ -189,6 +191,7 @@ void gtl_GenericResource_FreeWrapper(void* self) {
     void** vt = s_genericResourceAllocatorFunctions;
     ((void (*)(void*))vt[1])(self);
 }
+}
 
 // Shared CreateFromMemory contract (all three factories): required data spans
 // size>=0 readable bytes; required out receives a NEW wrapper reference or null.
@@ -201,14 +204,14 @@ void gtl_GenericResource_FreeWrapper(void* self) {
 // virtual Release(1). No synchronization; install callbacks before these calls.
 // Model-specific: def may be null for s_defaultModelDescriptor defaults; nonnull descriptor
 // is borrowed during construction (0x54-byte wrapper, constructor gtl_generic_model_resource.cpp).
-int gtl_IGenericModelingResource_CreateFromMemory(void* data, int size, void** out, void* def) {
+int gtl::IGenericModelingResource::CreateFromMemory(void* data, int size, void** out, void* def) {
     char* copiedBuffer;
     char* retainedBuffer;
     char* resource;
     char* localBufferReference;
     int remainingBufferRefs;
 
-    gtl_IG3DXBuffer_Create(size, (void**)&copiedBuffer, 0);
+    Create__Q23gtl11IG3DXBufferFPvPPv(size, (void**)&copiedBuffer, 0);
     Memory_Copy((void*)Object_GetField8(copiedBuffer), data, size);
     if (def == 0) {
         def = s_defaultModelDescriptor;
@@ -219,7 +222,7 @@ int gtl_IGenericModelingResource_CreateFromMemory(void* data, int size, void** o
     }
     resource = (char*)((void* (*)(int))s_genericResourceAllocatorFunctions[0])(0x54);
     if (resource != 0) {
-        gtl_IGenericModelingResource_Ctor(resource, retainedBuffer, def);
+        ((gtl::IGenericModelingResource*)resource)->Init(retainedBuffer, (const ModelParams*)def);
     }
     *out = resource;
     localBufferReference = copiedBuffer;
@@ -231,43 +234,16 @@ int gtl_IGenericModelingResource_CreateFromMemory(void* data, int size, void** o
     return 1;
 }
 
-// Copy an environment file into a 0x0C-byte wrapper; shared factory contract above.
-int gtl_IGenericEnvironmentResource_CreateFromMemory(char* data, int size, char** out) {
-    char* copiedBuffer;
-    char* retainedBuffer;
-    char* resource;
-    char* localBufferReference;
-    int remainingBufferRefs;
-
-    gtl_IG3DXBuffer_Create(size, (void**)&copiedBuffer, 0);
-    Memory_Copy((void*)Object_GetField8(copiedBuffer), data, size);
-    retainedBuffer = copiedBuffer;
-    resource = (char*)((void* (*)(int))s_genericResourceAllocatorFunctions[0])(0xc);
-    if (resource != 0) {
-        *(int*)resource = 1;
-        *(void**)(resource + 4) = __vt__Q23gtl20IGenericResourceFile;
-        *(char**)(resource + 8) = retainedBuffer;
-        ((int*)retainedBuffer)[0] = ((int*)retainedBuffer)[0] + 1;
-        *(void**)(resource + 4) = __vt__Q23gtl27IGenericEnvironmentResource;
-    }
-    *out = resource;
-    localBufferReference = copiedBuffer;
-    remainingBufferRefs = *(int*)localBufferReference - 1;
-    *(int*)localBufferReference = remainingBufferRefs;
-    if (remainingBufferRefs == 0 && localBufferReference != 0) {
-        ((IGenericResourceFileV*)localBufferReference)->Release(1);
-    }
-    return 1;
-}
+extern "C" {} // extern "C"
 
 // Copy an animation file and construct its wrapper; shared factory contract above.
-int gtl_IGenericAnimationResource_CreateFromMemory(void* data, int size, void** out) {
+int gtl::IGenericAnimationResource::CreateFromMemory(void* data, int size, void** out) {
     char* copiedBuffer;
     char* resource;
     char* localBufferReference;
     int remainingBufferRefs;
 
-    gtl_IG3DXBuffer_Create(size, (void**)&copiedBuffer, 0);
+    Create__Q23gtl11IG3DXBufferFPvPPv(size, (void**)&copiedBuffer, 0);
     Memory_Copy((void*)Object_GetField8(copiedBuffer), data, size);
     resource = (char*)CreateAnimationResource(copiedBuffer);
     *out = resource;
@@ -279,6 +255,8 @@ int gtl_IGenericAnimationResource_CreateFromMemory(void* data, int size, void** 
     }
     return 1;
 }
+
+extern "C" {
 
 // Required output self: >=0x44 writable bytes; mat: >=0x64 readable bytes,
 // nonoverlapping. Copy the engine prefix, then multiply SPECULAR ALPHA (+2C)
@@ -297,8 +275,10 @@ int gtl_GenericMaterial_GetDescription(char* self, char* mat) {
         if (((MaterialDescriptionSource*)mat)->flags.useScalarFactor) {
             factor = ((MaterialDescriptionSource*)mat)->scalarFactor;
         } else {
-            factor = (((MaterialDescriptionSource*)mat)->factorChannels[0] + ((MaterialDescriptionSource*)mat)->factorChannels[1] + ((MaterialDescriptionSource*)mat)->factorChannels[2]) / kMaterialFactorChannelCount;
-
+            factor = (((MaterialDescriptionSource*)mat)->factorChannels[0] +
+                      ((MaterialDescriptionSource*)mat)->factorChannels[1] +
+                      ((MaterialDescriptionSource*)mat)->factorChannels[2]) /
+                     kMaterialFactorChannelCount;
         }
         if (((MaterialDescriptionSource*)mat)->flags.useFactorDirectly == 0) {
             factor = kFloat_1_GtlResource - factor;
@@ -340,7 +320,8 @@ int gtl_GenericLight_GetDescription(char* self, const char* light) {
     *(float*)(self + 0x5c) = zeroThenConeStart;
     *(float*)(self + 0x58) = linearAttenuation;
     if (*(int*)self == 2) {
-        Vec3_Subtract(self + 0x40, ((const LightDescriptionSource*)light)->target, ((const LightDescriptionSource*)light)->position);
+        Vec3_Subtract(self + 0x40, ((const LightDescriptionSource*)light)->target,
+                      ((const LightDescriptionSource*)light)->position);
         Vec3_Normalize(self + 0x40, self + 0x40);
         zeroThenConeStart = ((const LightDescriptionSource*)light)->coneStart;
         *(float*)(self + 0x60) = zeroThenConeStart;
@@ -351,50 +332,55 @@ int gtl_GenericLight_GetDescription(char* self, const char* light) {
 
 // Copy four packed color bytes from required fog record +C to required output.
 // Returns 1; no interpretation, retention or color-space conversion.
-int gtl_GenericFog_GetColor(void* a, char* b) {
-    gtl_PixelCopy_Copy4Bytes_1(a, b + 0xc);
+int gtl_GenericFog_GetColor(void* dst, char* src) {
+    gtl_PixelCopy_Copy4Bytes_1(dst, src + 0xc);
     return 1;
 }
 
 // Copy required ambient record's first four color bytes to output; return 1.
-int gtl_GenericAmbient_GetColor(void* a, void* b) {
-    gtl_PixelCopy_Copy4Bytes_1(a, b);
+int gtl_GenericAmbient_GetColor(void* dst, void* src) {
+    gtl_PixelCopy_Copy4Bytes_1(dst, src);
     return 1;
+}
 }
 
 // Required self/out: publish the same model pointer and add one wrapper ref.
 // Caller must release it through the model interface; returns 1, makes no copy.
-int gtl_IGenericModelingResource_AddRef(int* self, int** out) {
-    *out = (int*)self;
-    *self = *self + 1;
+int gtl::IGenericModelingResource::AddRef(void** out) {
+    *out = this;
+    refCount = refCount + 1;
     return 1;
 }
 
-// Release the retained +8 buffer, clear it, restore base vtable and optionally
+extern "C" {} // extern "C"
+
+// Release the retained buffer, clear it, restore base vtable and optionally
 // free the wrapper (flags>0) using the installed callback. Null self is allowed;
 // returned address may already be freed. Buffer virtual Release(1) runs at zero.
-void* gtl_IGenericResourceFile_dtor(char* self, int flags) {
-    if (self == 0) {
+void* gtl::IGenericResourceFile::Destroy(int flags) {
+    if (this == 0) {
         goto end;
     }
     {
-        char* p = *(char**)(self + 8);
-        *(void**)(self + 4) = __vt__Q23gtl20IGenericResourceFile;
+        char* p = buf;
+        *(void**)((char*)this + 4) = __vt__Q23gtl20IGenericResourceFile;
         if (p != 0) {
             *(int*)p = *(int*)p - 1;
             if (*(int*)p == 0 && p != 0) {
                 ((IGenericResourceFileV*)p)->Release(1);
             }
-            *(void**)(self + 8) = 0;
+            buf = 0;
         }
     }
     if (flags > 0) {
         void** vt = s_genericResourceAllocatorFunctions;
-        ((void (*)(void*))vt[1])(self);
+        ((void (*)(void*))vt[1])(this);
     }
 end:
-    return self;
+    return this;
 }
+
+extern "C" {
 
 #pragma push
 #pragma opt_propagation off
@@ -423,13 +409,42 @@ int gtl_GenericResource_Initialize(const int* self) {
 }
 #pragma pop
 
+} // extern "C"
+
 // Query a chunk TAG (not an element index)
 // from the required wrapper's retained buffer. Return count from resource API;
-// self+8 and its file/chunk directory must be valid. No allocation or retention.
-int gtl_IGenericResourceFile_GetChunkElementCount(char* self, int chunkTag) {
-    int a = Object_GetFieldC(*(void**)(self + 8));
-    int b = Object_GetField8(*(void**)(self + 8));
+// the retained buffer and its file/chunk directory must be valid. No allocation or retention.
+int gtl::IGenericResourceFile::GetChunkElementCount(int chunkTag) {
+    int a = Object_GetFieldC(buf);
+    int b = Object_GetField8(buf);
     return gtl_ResourceFile_GetChunkElementCount(b, a, chunkTag);
 }
 
-} // extern "C"
+// Copy an environment file into a 0x0C-byte wrapper; shared factory contract above.
+int gtl::IGenericEnvironmentResource::CreateFromMemory(void* data, int size, void** out) {
+    char* copiedBuffer;
+    char* retainedBuffer;
+    char* resource;
+    char* localBufferReference;
+    int remainingBufferRefs;
+
+    Create__Q23gtl11IG3DXBufferFPvPPv(size, (void**)&copiedBuffer, 0);
+    Memory_Copy((void*)Object_GetField8(copiedBuffer), data, size);
+    retainedBuffer = copiedBuffer;
+    resource = (char*)((void* (*)(int))s_genericResourceAllocatorFunctions[0])(0xc);
+    if (resource != 0) {
+        *(int*)resource = 1;
+        *(void**)(resource + 4) = __vt__Q23gtl20IGenericResourceFile;
+        *(char**)(resource + 8) = retainedBuffer;
+        ((int*)retainedBuffer)[0] = ((int*)retainedBuffer)[0] + 1;
+        *(void**)(resource + 4) = __vt__Q23gtl27IGenericEnvironmentResource;
+    }
+    *out = resource;
+    localBufferReference = copiedBuffer;
+    remainingBufferRefs = *(int*)localBufferReference - 1;
+    *(int*)localBufferReference = remainingBufferRefs;
+    if (remainingBufferRefs == 0 && localBufferReference != 0) {
+        ((IGenericResourceFileV*)localBufferReference)->Release(1);
+    }
+    return 1;
+}

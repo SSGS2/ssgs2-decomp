@@ -10,32 +10,32 @@ struct WFixedFont {
     char pad_014[0x1C];
     unsigned int unk_30; // 0x30
     unsigned int unk_34; // 0x34
-    float glyphScale; // 0x38
+    float glyphScale;    // 0x38
     char pad_03C[0x4];
-    unsigned int redChannelMask; // 0x40
+    unsigned int redChannelMask;   // 0x40
     unsigned int greenChannelMask; // 0x44
-    unsigned int blueChannelMask; // 0x48
+    unsigned int blueChannelMask;  // 0x48
     char pad_04C[0x18];
     unsigned char unk_64; // 0x64
     char pad_065[0x3];
-    void* activeHead; // 0x68
-    void* activeIterator; // 0x6C
-    void* allocationHead; // 0x70
-    void* recycledHead; // 0x74
-    unsigned int unk_78; // 0x78
+    void* activeHead;      // 0x68
+    void* activeIterator;  // 0x6C
+    void* allocationHead;  // 0x70
+    void* recycledHead;    // 0x74
+    unsigned int unk_78;   // 0x78
     unsigned int slotMask; // 0x7C
-    int slotCount; // 0x80
-    void* slots; // 0x84
-    char mutex[0x18]; // 0x88
-    unsigned char unk_A0; // 0xA0
-    unsigned char unk_A1; // 0xA1
+    int slotCount;         // 0x80
+    void* slots;           // 0x84
+    char mutex[0x18];      // 0x88
+    unsigned char unk_A0;  // 0xA0
+    unsigned char unk_A1;  // 0xA1
     char pad_0A2[0x2];
-    void* resource; // 0xA4
+    void* resource;                  // 0xA4
     unsigned char borrowedResources; // 0xA8
     char pad_0A9[0x3];
     void* messageResource; // 0xAC
-    void* messageDraw; // 0xB0
-    void* messageBuffer; // 0xB4
+    void* messageDraw;     // 0xB0
+    void* messageBuffer;   // 0xB4
 };
 
 #define OFF(f, o) typedef char WFixedFont_off_##f[((int)&((WFixedFont*)0)->f == (o)) ? 1 : -1]

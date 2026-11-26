@@ -1,14 +1,23 @@
+// Petal and silica particle effects: the drifting petals and silica dust, and the pet body
+// objects that each emitter owns.
+// Particles move with wind and gravity, wrap around the camera bounds, and are drawn with an
+// optional full-screen dim overlay.
+
 #include <decomp/static_init.h>
 #include <decomp/local_class.h>
 #include <decomp/offset_of.h>
 #include "MSL/vector.h"
 // Containers whose deleting destructors this unit keeps out of line under plain names. The element
 // types are placeholders: the destructor depends only on whether elements are scalars or records.
-struct MSLRecord { unsigned int words[1]; };
+struct MSLRecord {
+    unsigned int words[1];
+};
 typedef std::vector<MSLRecord, app::app_allocator<MSLRecord> > MSLRecordVector;
 #include "classes/WView.h"
 // Borrow the current view layout; this performs no construction or ownership transfer.
-static inline WView* AsWView(void* view) { return (WView*)view; }
+static inline WView* AsWView(void* view) {
+    return (WView*)view;
+}
 #define AsParticleEntry801B7D5C(p) ((PetalSilicaParticle*)(p))
 #define AsParticleEmitterState801B7D5C(p) ((PetalSilicaEmitterView*)(p))
 #include "classes/PetalSilicaEmitterView.h"
@@ -19,12 +28,11 @@ static inline WView* AsWView(void* view) { return (WView*)view; }
 #include "classes/WPuppet.h"
 #include "classes/CSharedDoc.h"
 #include "classes/CameraTransform800D.h"
+#include "classes/CWind.h"
+#include "classes/CRain.h"
 
 // Borrow the pet-body view; an inline replacement changes generated code with these pragmas.
 #define AsCPetBody(p) ((CPetBody*)(p))
-
-// Translation unit 0x801B7D5C-0x801B9214 (18 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -51,8 +59,6 @@ void Vec3_Zero(void*);
 void __ml__FfRC7WVector(void*, void*, float);
 void __as__7WVectorFRC7WVector(void*, void*);
 void Sprite_DrawColoredRect(void*, void*, int, unsigned int, float);
-void CPetBody_SetPosition(void*, void*);
-void CPetBody_SetupLighting(void*);
 void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
 void __dla__FPv(void*);
@@ -77,8 +83,8 @@ void __mi__FRC7WVectorRC7WVector(void*, void*, void*);
 void __ml__FRC7WVectorf(void*, void*, float);
 void __as__7WVectorFRC7WVector(void*, void*);
 void __pl__FRC7WVectorRC7WVector(void*, void*, void*);
-void CWind_GetWindVectorAtPoint(void*, void*, void*, float);
-void* CWind_GetInstance();
+extern "C" void GetWindVectorAtPoint__5CWindFRC7WVectorf(void* result, const void* self, const void* point,
+                                                         float maxBaseMagnitude);
 float Math_SinApprox(float);
 float Math_CosApprox(float);
 double ceil(double);
@@ -89,22 +95,23 @@ void* __nwa__FUl(unsigned int);
 float Random_RangeFloat(int, float, float);
 void __pl__FRC7WVectorRC7WVector(void*, void*, void*);
 void* __nw__FUl(unsigned int);
-void* CPetBody_Ctor(void*, const char*, int);
 
 void PetalEntry_ConstructionHook();
 void SilicaEntry_ConstructionHook();
-void* CPetBody_GetPuppet(void*);
-void CPetBody_PlayAnimationByName(void*, float, void*, int, int);
+extern "C" void PlayAnimationByName__8CPetBodyFfPvii(void*, void*, int, int, float);
 extern char s_cameraTransform[];
 extern const char petFlowerPowderFilenameFormats[];
 
 enum {
-    kPetDrawVtableWord = 28, // RTTI/null headers + 26: CPetBody_Draw.
+    kPetDrawVtableWord = 28,      // RTTI/null headers + 26: CPetBody_Draw.
     kPetInitialMovementState = 2, // Protocol value only; full state meaning is unresolved.
-    kPetInitialLightingMode = 2, // SetupLighting selects its mode-2 branch.
-    kPetInstanceWordDCInitialValue = 8, kPetInitialWord12C = 0xFFFFFF,
-    kParticleArrayCookieBytes = 0x10, kParticleAxisCount = 3,
-    kParticleEntryBytes = sizeof(PetalSilicaParticle), kParticleDimOverlay = 0x4c3c3c3c,
+    kPetInitialLightingMode = 2,  // SetupLighting selects its mode-2 branch.
+    kPetInstanceWordDCInitialValue = 8,
+    kPetInitialWord12C = 0xFFFFFF,
+    kParticleArrayCookieBytes = 0x10,
+    kParticleAxisCount = 3,
+    kParticleEntryBytes = sizeof(PetalSilicaParticle),
+    kParticleDimOverlay = 0x4c3c3c3c,
     kEmitterBoundsMinOffset = (int)DECOMP_OFFSETOF(PetalSilicaEmitterView, boundsMin),
     kEmitterBoundsMaxOffset = (int)DECOMP_OFFSETOF(PetalSilicaEmitterView, boundsMax),
     kCameraPositionOffset = (int)DECOMP_OFFSETOF(CameraTransform800D, position),
@@ -115,10 +122,13 @@ enum {
 // position is a world-space base, oscillation is an additive world-space displacement,
 // and renderPosition = position + oscillation. Angles azimuth/phase are in radians.
 // Update delta uses the caller's time step; no seconds-to-milliseconds conversion occurs here.
-struct ParticleAnimationRange { char reserved[0x18]; void* name; };
+struct ParticleAnimationRange {
+    char reserved[0x18];
+    void* name;
+};
 struct PetBodyStringPool {
     char petToken[5], stringFormat[3], shadowToken[8], integerFormat[3];
-    char emptyString[1];  // The padding byte at +0x13 is used as an empty name.
+    char emptyString[1]; // The padding byte at +0x13 is used as an empty name.
     char headBone[5];
 };
 struct Entry801B {
@@ -134,8 +144,12 @@ struct Owner801B {
 };
 
 typedef Vec3f Vec3_801B;
-struct Vec3i_801B { int x, y, z; };
-struct Vec4_801B { float x, y, z, w; };
+struct Vec3i_801B {
+    int x, y, z;
+};
+struct Vec4_801B {
+    float x, y, z, w;
+};
 struct Moving801B {
     void* vtable;
     float value;
@@ -150,13 +164,33 @@ struct Deleting801B {
 };
 
 struct PetalSlot801B {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3();
-    virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7();
-    virtual void v8(); virtual void v9(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15();
-    virtual void v16(); virtual void v17(); virtual void v18(); virtual void v19();
-    virtual void v20(); virtual void v21(); virtual void v22(); virtual void v23();
-    virtual void v24(); virtual void v25(); virtual void v26();
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
+    virtual void v26();
     virtual void update(float);
 };
 
@@ -170,15 +204,25 @@ void* ntSilicaParticle_Ctor(void* ptr, void* arg) {
     Vec3_Zero(self + kEmitterBoundsMinOffset);
     Vec3_Zero(self + kEmitterBoundsMaxOffset);
     AsParticleEmitterState801B7D5C(self)->particles = 0;
-    struct Pair { float x,y,z; } dst1, src1, dst2, src2;
-    src1.x=kFloat_1_PetEffects; src1.y=kFloat_0_7_PetEffects; src1.z=kFloat_1_PetEffects;
+    struct Pair {
+        float x, y, z;
+    } dst1, src1, dst2, src2;
+    src1.x = kFloat_1_PetEffects;
+    src1.y = kFloat_0_7_PetEffects;
+    src1.z = kFloat_1_PetEffects;
     __ml__FfRC7WVector(&dst1, &src1, kFloat_Neg112_PetParticleExtent);
     *(WVector*)AsParticleEmitterState801B7D5C(self)->boundsMin = *(WVector*)&dst1;
-    src2.x=kFloat_1_PetEffects; src2.y=kFloat_0_3_PetEffects; src2.z=kFloat_1_PetEffects;
+    src2.x = kFloat_1_PetEffects;
+    src2.y = kFloat_0_3_PetEffects;
+    src2.z = kFloat_1_PetEffects;
     __ml__FfRC7WVector(&dst2, &src2, kFloat_112_PetParticleExtent);
     *(WVector*)AsParticleEmitterState801B7D5C(self)->boundsMax = *(WVector*)&dst2;
-    struct Vtbl6_801B { 
-    virtual void a0() DECOMP_LOCAL_VIRTUAL;virtual void a1() DECOMP_LOCAL_VIRTUAL;virtual void a2() DECOMP_LOCAL_VIRTUAL;virtual void a3() DECOMP_LOCAL_VIRTUAL; virtual void a6(void*, float) DECOMP_LOCAL_VIRTUAL;
+    struct Vtbl6_801B {
+        virtual void a0() DECOMP_LOCAL_VIRTUAL;
+        virtual void a1() DECOMP_LOCAL_VIRTUAL;
+        virtual void a2() DECOMP_LOCAL_VIRTUAL;
+        virtual void a3() DECOMP_LOCAL_VIRTUAL;
+        virtual void a6(void*, float) DECOMP_LOCAL_VIRTUAL;
     };
     ((Vtbl6_801B*)ptr)->a6(arg, kFloat_1_PetEffects);
     return ptr;
@@ -187,15 +231,16 @@ void* ntSilicaParticle_Ctor(void* ptr, void* arg) {
 // Draw visible petal objects and the optional full-screen dim overlay.
 void ntPetal_DrawPetals(void* ptr) {
     Owner801B* self = (Owner801B*)ptr;
-    Vec4_801B v;
+    Vec4_801B overlayRect;
     volatile float _pad[3];
     volatile float scale = kFloat_0_5_ParticleDisplayScale * AsParticleEmitterState801B7D5C(ptr)->displayScale;
     int offset = 0;
     int index = 0;
     while (index < self->count) {
         if (AsParticleEntry801B7D5C((char*)self->entries + offset)->visible) {
-            CPetBody_SetPosition(AsParticleEntry801B7D5C((char*)self->entries + offset)->object, (char*)self->entries + offset);
-            CPetBody_SetupLighting(AsParticleEntry801B7D5C((char*)self->entries + offset)->object);
+            ((CPetBody*)(AsParticleEntry801B7D5C((char*)self->entries + offset)->object))
+                ->SetPosition((char*)self->entries + offset);
+            ((CPetBody*)(AsParticleEntry801B7D5C((char*)self->entries + offset)->object))->SetupLighting();
             void* o = AsParticleEntry801B7D5C((char*)self->entries + offset)->object;
             ((void (**)(void*, int, int))(*(void**)o))[kPetDrawVtableWord](o, 1, 1);
         }
@@ -204,34 +249,58 @@ void ntPetal_DrawPetals(void* ptr) {
     }
     if (*(unsigned char*)&((CSharedDoc*)g_sharedDoc)->pad_9C6[0]) {
         void* p = (void*)g_view;
-        float f0 = AsWView(p)->viewportHeight;
-        float f2 = AsWView(p)->viewportWidth;
-        v.x = kFloat_0_PetParticles; v.y = kFloat_0_PetParticles; v.z = f2; v.w = f0;
-        Sprite_DrawColoredRect(p, &v, 0, kParticleDimOverlay, kFloat_0_PetParticles); // original f1 = kFloat_0_PetParticles (0x801B8494 / 0x801B8CF0)
+        float viewportHeight = AsWView(p)->viewportHeight;
+        float viewportWidth = AsWView(p)->viewportWidth;
+        overlayRect.x = kFloat_0_PetParticles;
+        overlayRect.y = kFloat_0_PetParticles;
+        overlayRect.z = viewportWidth;
+        overlayRect.w = viewportHeight;
+        Sprite_DrawColoredRect(p, &overlayRect, 0, kParticleDimOverlay,
+                               kFloat_0_PetParticles); // original f1 = kFloat_0_PetParticles (0x801B8494 / 0x801B8CF0)
     }
 }
 
 // Draw visible silica objects and the optional full-screen dim overlay.
 void ntSilicaParticle_DrawParticlesAndOverlay(void* ptr) {
     Owner801B* self = (Owner801B*)ptr;
-    Vec4_801B v;
+    Vec4_801B overlayRect;
     volatile float _pad[3];
     volatile float scale = kFloat_0_5_ParticleDisplayScale * AsParticleEmitterState801B7D5C(ptr)->displayScale;
     int offset = 0;
     int index = 0;
     while (index < self->count) {
         if (AsParticleEntry801B7D5C((char*)self->entries + offset)->visible) {
-            CPetBody_SetPosition(AsParticleEntry801B7D5C((char*)self->entries + offset)->object, (char*)self->entries + offset);
-            CPetBody_SetupLighting(AsParticleEntry801B7D5C((char*)self->entries + offset)->object);
+            ((CPetBody*)(AsParticleEntry801B7D5C((char*)self->entries + offset)->object))
+                ->SetPosition((char*)self->entries + offset);
+            ((CPetBody*)(AsParticleEntry801B7D5C((char*)self->entries + offset)->object))->SetupLighting();
             // ABI slots 0..25 precede CPetBody_Draw. This call draws; it does not tick time.
             struct PetDrawSlots801B {
-                virtual void a0() DECOMP_LOCAL_VIRTUAL; virtual void a1() DECOMP_LOCAL_VIRTUAL; virtual void a2() DECOMP_LOCAL_VIRTUAL; virtual void a3() DECOMP_LOCAL_VIRTUAL;
-                virtual void a4() DECOMP_LOCAL_VIRTUAL; virtual void a5() DECOMP_LOCAL_VIRTUAL; virtual void a6() DECOMP_LOCAL_VIRTUAL; virtual void a7() DECOMP_LOCAL_VIRTUAL;
-                virtual void a8() DECOMP_LOCAL_VIRTUAL; virtual void a9() DECOMP_LOCAL_VIRTUAL; virtual void a10() DECOMP_LOCAL_VIRTUAL; virtual void a11() DECOMP_LOCAL_VIRTUAL;
-                virtual void a12() DECOMP_LOCAL_VIRTUAL; virtual void a13() DECOMP_LOCAL_VIRTUAL; virtual void a14() DECOMP_LOCAL_VIRTUAL; virtual void a15() DECOMP_LOCAL_VIRTUAL;
-                virtual void a16() DECOMP_LOCAL_VIRTUAL; virtual void a17() DECOMP_LOCAL_VIRTUAL; virtual void a18() DECOMP_LOCAL_VIRTUAL; virtual void a19() DECOMP_LOCAL_VIRTUAL;
-                virtual void a20() DECOMP_LOCAL_VIRTUAL; virtual void a21() DECOMP_LOCAL_VIRTUAL; virtual void a22() DECOMP_LOCAL_VIRTUAL; virtual void a23() DECOMP_LOCAL_VIRTUAL;
-                virtual void a24() DECOMP_LOCAL_VIRTUAL; virtual void a25() DECOMP_LOCAL_VIRTUAL;
+                virtual void a0() DECOMP_LOCAL_VIRTUAL;
+                virtual void a1() DECOMP_LOCAL_VIRTUAL;
+                virtual void a2() DECOMP_LOCAL_VIRTUAL;
+                virtual void a3() DECOMP_LOCAL_VIRTUAL;
+                virtual void a4() DECOMP_LOCAL_VIRTUAL;
+                virtual void a5() DECOMP_LOCAL_VIRTUAL;
+                virtual void a6() DECOMP_LOCAL_VIRTUAL;
+                virtual void a7() DECOMP_LOCAL_VIRTUAL;
+                virtual void a8() DECOMP_LOCAL_VIRTUAL;
+                virtual void a9() DECOMP_LOCAL_VIRTUAL;
+                virtual void a10() DECOMP_LOCAL_VIRTUAL;
+                virtual void a11() DECOMP_LOCAL_VIRTUAL;
+                virtual void a12() DECOMP_LOCAL_VIRTUAL;
+                virtual void a13() DECOMP_LOCAL_VIRTUAL;
+                virtual void a14() DECOMP_LOCAL_VIRTUAL;
+                virtual void a15() DECOMP_LOCAL_VIRTUAL;
+                virtual void a16() DECOMP_LOCAL_VIRTUAL;
+                virtual void a17() DECOMP_LOCAL_VIRTUAL;
+                virtual void a18() DECOMP_LOCAL_VIRTUAL;
+                virtual void a19() DECOMP_LOCAL_VIRTUAL;
+                virtual void a20() DECOMP_LOCAL_VIRTUAL;
+                virtual void a21() DECOMP_LOCAL_VIRTUAL;
+                virtual void a22() DECOMP_LOCAL_VIRTUAL;
+                virtual void a23() DECOMP_LOCAL_VIRTUAL;
+                virtual void a24() DECOMP_LOCAL_VIRTUAL;
+                virtual void a25() DECOMP_LOCAL_VIRTUAL;
                 virtual void update(int, int) DECOMP_LOCAL_VIRTUAL;
                 // Likely signature: draw(useViewDraw, drawEnabled).
             };
@@ -242,10 +311,14 @@ void ntSilicaParticle_DrawParticlesAndOverlay(void* ptr) {
     }
     if (*(unsigned char*)&((CSharedDoc*)g_sharedDoc)->pad_9C6[0]) {
         void* p = (void*)g_view;
-        float f0 = AsWView(p)->viewportHeight;
-        float f2 = AsWView(p)->viewportWidth;
-        v.x = kFloat_0_PetParticles; v.y = kFloat_0_PetParticles; v.z = f2; v.w = f0;
-        Sprite_DrawColoredRect(p, &v, 0, kParticleDimOverlay, kFloat_0_PetParticles); // original f1 = kFloat_0_PetParticles (0x801B8494 / 0x801B8CF0)
+        float viewportHeight = AsWView(p)->viewportHeight;
+        float viewportWidth = AsWView(p)->viewportWidth;
+        overlayRect.x = kFloat_0_PetParticles;
+        overlayRect.y = kFloat_0_PetParticles;
+        overlayRect.z = viewportWidth;
+        overlayRect.w = viewportHeight;
+        Sprite_DrawColoredRect(p, &overlayRect, 0, kParticleDimOverlay,
+                               kFloat_0_PetParticles); // original f1 = kFloat_0_PetParticles (0x801B8494 / 0x801B8CF0)
     }
 }
 
@@ -256,19 +329,25 @@ void* ntPetal_dtor(void* ptr, int flag) {
     if (ptr != 0) {
         char* self = (char*)ptr;
         *(void**)self = &__vt__7ntPetal;
-        int r30 = 0;
-        int r29 = 0;
+        int particleIndex = 0;
+        int entryByteOffset = 0;
         void* zero = 0;
-        while (r30 < AsParticleEmitterState801B7D5C(self)->particleCount) {
-            if (AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + r29)->object != 0) {
-                if (AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + r29)->object != 0) {
-                    void* o = AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + r29)->object;
+        while (particleIndex < AsParticleEmitterState801B7D5C(self)->particleCount) {
+            if (AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + entryByteOffset)
+                    ->object != 0) {
+                if (AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) +
+                                            entryByteOffset)
+                        ->object != 0) {
+                    void* o = AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) +
+                                                      entryByteOffset)
+                                  ->object;
                     ((Deleting801B*)o)->release(1);
                 }
-                AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + r29)->object = zero;
+                AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + entryByteOffset)
+                    ->object = zero;
             }
-            r29 += kParticleEntryBytes;
-            ++r30;
+            entryByteOffset += kParticleEntryBytes;
+            ++particleIndex;
         }
         if (AsParticleEmitterState801B7D5C(self)->particles != 0) {
             if (AsParticleEmitterState801B7D5C(self)->particles != 0) {
@@ -287,19 +366,25 @@ void* ntSilicaParticle_dtor(void* ptr, int flag) {
     if (ptr != 0) {
         char* self = (char*)ptr;
         *(void**)self = &__vt__16ntSilicaParticle;
-        int r30 = 0;
-        int r29 = 0;
+        int particleIndex = 0;
+        int entryByteOffset = 0;
         void* zero = 0;
-        while (r30 < AsParticleEmitterState801B7D5C(self)->particleCount) {
-            if (AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + r29)->object != 0) {
-                if (AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + r29)->object != 0) {
-                    void* o = AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + r29)->object;
+        while (particleIndex < AsParticleEmitterState801B7D5C(self)->particleCount) {
+            if (AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + entryByteOffset)
+                    ->object != 0) {
+                if (AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) +
+                                            entryByteOffset)
+                        ->object != 0) {
+                    void* o = AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) +
+                                                      entryByteOffset)
+                                  ->object;
                     ((Deleting801B*)o)->release(1);
                 }
-                AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + r29)->object = zero;
+                AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + entryByteOffset)
+                    ->object = zero;
             }
-            r29 += kParticleEntryBytes;
-            ++r30;
+            entryByteOffset += kParticleEntryBytes;
+            ++particleIndex;
         }
         if (AsParticleEmitterState801B7D5C(self)->particles != 0) {
             if (AsParticleEmitterState801B7D5C(self)->particles != 0) {
@@ -317,9 +402,14 @@ void* ntSilicaParticle_dtor(void* ptr, int flag) {
 struct WInstanceLock {
     void* lock;
     // Acquire one recursive mutex level for the instance-list operation.
-    WInstanceLock(void* l) { lock = l; OSLockMutex((OSMutex*)l); }
+    WInstanceLock(void* l) {
+        lock = l;
+        OSLockMutex((OSMutex*)l);
+    }
     // Release the guard's mutex level on normal exit or unwinding.
-    ~WInstanceLock() { OSUnlockMutex((OSMutex*)lock); }
+    ~WInstanceLock() {
+        OSUnlockMutex((OSMutex*)lock);
+    }
 };
 
 struct LNode801B {
@@ -352,7 +442,8 @@ LOwner801B* dtor_801B8F98(LOwner801B* self, int flag) {
                     n->prev->next = n->next;
                     n->next->prev = n->prev;
                     nx = n->prev;
-                    if (nx == n) nx = 0;
+                    if (nx == n)
+                        nx = 0;
                     OSUnlockMutex((OSMutex*)lk);
                     self->head = nx;
                     appFreeUni__FPv(n);
@@ -363,7 +454,8 @@ LOwner801B* dtor_801B8F98(LOwner801B* self, int flag) {
                 self->buf = 0;
             }
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -376,7 +468,7 @@ LOwner801B* dtor_801B8F98(LOwner801B* self, int flag) {
 
 #pragma push
 #pragma opt_loop_invariants off // Preserve the original pre-loop loads.
-#pragma opt_rotateloops off // Keep the condition at the bottom, matching the original.
+#pragma opt_rotateloops off     // Keep the condition at the bottom, matching the original.
 // Recreate petal entries with randomized positions, phases, models and animation offsets.
 // count must be nonnegative and displayScale sets the model display multiplier. Existing arrays are released
 // directly here; this is an initialization path, not an object-preserving resize operation.
@@ -395,7 +487,8 @@ void ntPetal_RecreateParticleEntries(PetalSilicaEmitterView* self, int count, fl
     void* block = __nwa__FUl(allocationCount * kParticleEntryBytes + kParticleArrayCookieBytes);
     if (block != 0) {
         arrayConstructed = 1;
-        block = __construct_new_array(block, (void*)PetalEntry_ConstructionHook, 0, kParticleEntryBytes, allocationCount);
+        block =
+            __construct_new_array(block, (void*)PetalEntry_ConstructionHook, 0, kParticleEntryBytes, allocationCount);
     }
     self->particles = (PetalSilicaParticle*)block;
     arrayConstructed = 0;
@@ -408,15 +501,17 @@ void ntPetal_RecreateParticleEntries(PetalSilicaEmitterView* self, int count, fl
     while (index < self->particleCount) {
         float azimuth = Random_RangeFloat(-1, kFloat_0_PetParticles, kFloat_6_2831855_ParticleAngle);
         float phaseLimitRadians = kFloat_3_1415927_PetEffects;
-        ((PetalSilicaParticle*)((char*)self->particles + entryByteOffset) )->azimuth = azimuth;
-        ((PetalSilicaParticle*)((char*)self->particles + entryByteOffset) )->phase = Random_RangeFloat(-1, kFloat_0_PetParticles, phaseLimitRadians);
+        ((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->azimuth = azimuth;
+        ((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->phase =
+            Random_RangeFloat(-1, kFloat_0_PetParticles, phaseLimitRadians);
         {
             const float* cameraTransform = (const float*)s_cameraTransform;
             int axisByteOffset = 0;
             int axisIndex = 0;
             for (; axisIndex < kParticleAxisCount; axisByteOffset += 4, ++axisIndex) {
                 float random = Random_RangeFloat(-1, kFloat_neg1_PetEffects, kFloat_1_PetEffects);
-                AsParticleEntry801B7D5C((char*)self->particles + (axisByteOffset + entryByteOffset))->position[0] = scale * random + cameraTransform[9 + axisIndex];
+                AsParticleEntry801B7D5C((char*)self->particles + (axisByteOffset + entryByteOffset))->position[0] =
+                    scale * random + cameraTransform[9 + axisIndex];
             }
         }
         Vec3_801B matrix;
@@ -433,7 +528,7 @@ void ntPetal_RecreateParticleEntries(PetalSilicaEmitterView* self, int count, fl
         if (object != 0) {
             {
                 try {
-                    CPetBody_Ctor(object, (char*)formatted, 0);
+                    ((CPetBody*)object)->__ct((char*)formatted, 0);
                 } catch (...) {
                     __dl__FPv(object);
                     throw;
@@ -441,52 +536,86 @@ void ntPetal_RecreateParticleEntries(PetalSilicaEmitterView* self, int count, fl
             }
         }
         ((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object = object;
-        void* resource = CPetBody_GetPuppet(((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object);
+        void* resource =
+            ((CPetBody*)(((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object))->GetPuppet();
         firstAnimationRange = ((WPuppet*)resource)->animationRanges;
         if (firstAnimationRange != 0) {
             firstAnimationRange = *(void**)firstAnimationRange;
             firstAnimationRange = *(void**)firstAnimationRange;
         }
         if (firstAnimationRange != 0)
-            ((void (*)(void*, void*, int, int, float))CPetBody_PlayAnimationByName)(((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object, ((ParticleAnimationRange*)firstAnimationRange)->name, 0, 0, kFloat_0_PetParticles);
-        float initialAnimationDelta = Random_RangeFloat(-1, kFloat_0_PetParticles, kFloat_2_PetParticleInitialUpdateLimit);
-        ((void (**)(void*, float))(*(void**)((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object))[29](((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object, initialAnimationDelta);
-        AsCPetBody(((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object)->defaultRenderParametersEnabled = (unsigned char)one;
+            ((void (*)(void*, void*, int, int, float))PlayAnimationByName__8CPetBodyFfPvii)(
+                ((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object,
+                ((ParticleAnimationRange*)firstAnimationRange)->name, 0, 0, kFloat_0_PetParticles);
+        float initialAnimationDelta =
+            Random_RangeFloat(-1, kFloat_0_PetParticles, kFloat_2_PetParticleInitialUpdateLimit);
+        ((void (**)(void*, float))(
+            *(void**)((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object))[29](
+            ((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object, initialAnimationDelta);
+        AsCPetBody(((PetalSilicaParticle*)((char*)self->particles + entryByteOffset))->object)
+            ->defaultRenderParametersEnabled = (unsigned char)one;
         ++index;
         entryByteOffset += kParticleEntryBytes;
     }
-
 }
 
 #pragma pop
-struct Object8684 {
+struct CPetBodyStorage {
     char data[0x1b4];
     // Construct one particle's owned pet body from its model command.
-    Object8684(const char* name, int mode) { CPetBody_Ctor(this, name, mode); }
+    CPetBodyStorage(const char* name, int mode) {
+        ((CPetBody*)this)->__ct(name, mode);
+    }
 };
 struct Array8684 {
     char data[0x38];
     // Invoke the empty entry construction hook used by the array runtime.
-    Array8684() { SilicaEntry_ConstructionHook(); }
+    Array8684() {
+        SilicaEntry_ConstructionHook();
+    }
     // Allocate cookie-backed particle array storage through the game allocator.
-    static void* operator new[](size_t size) { return __nwa__FUl(size); }
+    static void* operator new[](size_t size) {
+        return __nwa__FUl(size);
+    }
 };
 struct Virtual8684 {
-    virtual void a0(); virtual void a1(); virtual void a2(); virtual void a3();
-    virtual void a4(); virtual void a5(); virtual void a6(); virtual void a7();
-    virtual void a8(); virtual void a9(); virtual void a10(); virtual void a11();
-    virtual void a12(); virtual void a13(); virtual void a14(); virtual void a15();
-    virtual void a16(); virtual void a17(); virtual void a18(); virtual void a19();
-    virtual void a20(); virtual void a21(); virtual void a22(); virtual void a23();
-    virtual void a24(); virtual void a25(); virtual void a26(); virtual void update(float);
+    virtual void a0();
+    virtual void a1();
+    virtual void a2();
+    virtual void a3();
+    virtual void a4();
+    virtual void a5();
+    virtual void a6();
+    virtual void a7();
+    virtual void a8();
+    virtual void a9();
+    virtual void a10();
+    virtual void a11();
+    virtual void a12();
+    virtual void a13();
+    virtual void a14();
+    virtual void a15();
+    virtual void a16();
+    virtual void a17();
+    virtual void a18();
+    virtual void a19();
+    virtual void a20();
+    virtual void a21();
+    virtual void a22();
+    virtual void a23();
+    virtual void a24();
+    virtual void a25();
+    virtual void a26();
+    virtual void update(float);
 };
 
 #pragma push
 #pragma opt_loop_invariants off // Preserve the original pre-loop loads.
-#pragma opt_rotateloops off // Keep the condition at the bottom, matching the original.
+#pragma opt_rotateloops off     // Keep the condition at the bottom, matching the original.
 // Recreate silica entries with randomized positions, phases, models and animation offsets.
 // Same count/display-scale and initialization-only contract as the petal path above.
-void ntSilicaParticle_InitializeParticles(void* ptr, int count, float displayScale) { PetalSilicaEmitterView* self = (PetalSilicaEmitterView*)ptr;
+void ntSilicaParticle_InitializeParticles(void* ptr, int count, float displayScale) {
+    PetalSilicaEmitterView* self = (PetalSilicaEmitterView*)ptr;
     int entryByteOffset;
 
     self->particleCount = count;
@@ -513,7 +642,8 @@ void ntSilicaParticle_InitializeParticles(void* ptr, int count, float displaySca
 
         const float* cameraTransform = (const float*)s_cameraTransform;
 
-        AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->phase = (Random_RangeFloat(-1, kFloat_0_PetParticles, pi));
+        AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->phase =
+            (Random_RangeFloat(-1, kFloat_0_PetParticles, pi));
 
         int axisIndex = 0;
         axisByteOffset = 0;
@@ -526,10 +656,14 @@ void ntSilicaParticle_InitializeParticles(void* ptr, int count, float displaySca
             float scale = kFloat_112_PetParticleExtent;
             float positionScale = scale;
             float unitOffset = random;
-            AsParticleEntry801B7D5C((char*)entriesForCoordinate + coordinateByteOffset)->position[0] = positionScale * unitOffset + cameraTransform[9 + axisIndex];
+            AsParticleEntry801B7D5C((char*)entriesForCoordinate + coordinateByteOffset)->position[0] =
+                positionScale * unitOffset + cameraTransform[9 + axisIndex];
         }
         // Publish base + sway, choose model 1 or 2, then start its first animation range.
-        struct { Vec3_801B matrix; char formatted[0x100]; } locals;
+        struct {
+            Vec3_801B matrix;
+            char formatted[0x100];
+        } locals;
 
         char* entry = (char*)self->particles + entryByteOffset;
         __pl__FRC7WVectorRC7WVector(&locals.matrix, entry + 0x0c, entry + 0x1c);
@@ -545,24 +679,30 @@ void ntSilicaParticle_InitializeParticles(void* ptr, int count, float displaySca
         modelIndexMinusOne = modelIndexMinusOne - randomSign;
 
         sprintf(locals.formatted, format, (1 + modelIndexMinusOne));
-        void* object = new Object8684(locals.formatted, 0);
+        void* object = new CPetBodyStorage(locals.formatted, 0);
 
         void* initialRange = 0;
         AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->object = object;
 
-        void* resource = CPetBody_GetPuppet(AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->object);
+        void* resource =
+            ((CPetBody*)(AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->object))->GetPuppet();
         void* list = ((WPuppet*)resource)->animationRanges;
         if (list) {
             initialRange = **(void***)list;
         }
         if (initialRange)
-            ((void (*)(void*, void*, int, int, float))CPetBody_PlayAnimationByName)(AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->object, ((ParticleAnimationRange*)initialRange)->name, 0, 0, kFloat_0_PetParticles);
+            ((void (*)(void*, void*, int, int, float))PlayAnimationByName__8CPetBodyFfPvii)(
+                AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->object,
+                ((ParticleAnimationRange*)initialRange)->name, 0, 0, kFloat_0_PetParticles);
 
-        float initialAnimationDelta = Random_RangeFloat(-1, kFloat_0_PetParticles, kFloat_2_PetParticleInitialUpdateLimit);
+        float initialAnimationDelta =
+            Random_RangeFloat(-1, kFloat_0_PetParticles, kFloat_2_PetParticleInitialUpdateLimit);
 
-        ((Virtual8684*)AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->object)->update(initialAnimationDelta);
+        ((Virtual8684*)AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->object)
+            ->update(initialAnimationDelta);
 
-        AsCPetBody(AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->object)->defaultRenderParametersEnabled = 1;
+        AsCPetBody(AsParticleEntry801B7D5C((char*)self->particles + entryByteOffset)->object)
+            ->defaultRenderParametersEnabled = 1;
         entryByteOffset += kParticleEntryBytes;
 
         index = (index + 1);
@@ -578,7 +718,9 @@ inline char* ParticleEntryBytes(void* emitter, int byteOffset) {
 inline float& ParticlePositionComponent(void* emitter, int entryByteOffset, int axisByteOffset) {
     // Select position[X/Y/Z] with the existing byte cursor; indexing by axis/4
     // changes the emitted address arithmetic. The layout supplies position's +0C.
-    return AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(emitter)->particles) + (axisByteOffset + entryByteOffset))->position[0];
+    return AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(emitter)->particles) +
+                                   (axisByteOffset + entryByteOffset))
+        ->position[0];
 }
 
 #pragma opt_common_subs off
@@ -596,26 +738,29 @@ void ntPetal_UpdateParticles(unsigned char* self, float delta) {
     *(WVector*)&bounds.a += *(WVector*)(cameraTransform + kCameraPositionOffset);
     *(WVector*)&bounds.b += *(WVector*)(cameraTransform + kCameraPositionOffset);
     Vec3_801B boxExtents;
-    __mi__FRC7WVectorRC7WVector(&boxExtents, AsParticleEmitterState801B7D5C(self)->boundsMax, AsParticleEmitterState801B7D5C(self)->boundsMin);
-    float c2 = kFloat_34_295296_ParticleEmitter;
-    float c1 = kFloat_1_5707964_PetEffects;
+    __mi__FRC7WVectorRC7WVector(&boxExtents, AsParticleEmitterState801B7D5C(self)->boundsMax,
+                                AsParticleEmitterState801B7D5C(self)->boundsMin);
+    float gravityAcceleration = kFloat_34_295296_ParticleEmitter;
+    float phaseRate = kFloat_1_5707964_PetEffects;
     int offset = 0;
     int index = 0;
     float z = kFloat_0_PetParticles;
     while (index < AsParticleEmitterState801B7D5C(self)->particleCount) {
-        Vec3_801B p;
-        CWind_GetWindVectorAtPoint(&p, CWind_GetInstance(), ParticleEntryBytes(self, offset) + 0x0c, kFloat_99999_ParticleWind);
+        Vec3_801B windVector;
+        GetWindVectorAtPoint__5CWindFRC7WVectorf(&windVector, CWind::GetInstance(),
+                                                 ParticleEntryBytes(self, offset) + 0x0c, kFloat_99999_ParticleWind);
         Vec3_801B q;
-        __ml__FRC7WVectorf(&q, &p, delta);
+        __ml__FRC7WVectorf(&q, &windVector, delta);
         *(WVector*)AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->position += *(WVector*)&q;
-        AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->position[1] -= c2 * AsParticleEmitterState801B7D5C(self)->gravityScale * delta;
-        AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->phase += c1 * delta;
+        AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->position[1] -=
+            gravityAcceleration * AsParticleEmitterState801B7D5C(self)->gravityScale * delta;
+        AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->phase += phaseRate * delta;
         float sy = Math_SinApprox(AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->azimuth);
         float sx = Math_CosApprox(AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->azimuth);
-        Vec3_801B v = {sx, z, sy};
+        Vec3_801B azimuthDirection = {sx, z, sy};
         float swayFactor = Math_SinApprox(AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->phase);
         Vec3_801B m;
-        __ml__FfRC7WVector(&m, &v, kFloat_4_ParticleOscillation);
+        __ml__FfRC7WVector(&m, &azimuthDirection, kFloat_4_ParticleOscillation);
         Vec3_801B n;
         __ml__FRC7WVectorf(&n, &m, swayFactor);
         *(WVector*)AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->oscillation = *(WVector*)&n;
@@ -641,7 +786,8 @@ void ntPetal_UpdateParticles(unsigned char* self, float delta) {
         Vec3_801B tmp2;
         __mi__FRC7WVectorRC7WVector(&tmp2, ParticleEntryBytes(self, offset), cameraTransform + kCameraPositionOffset);
         float result = (*(WVector*)&tmp2 * *(WVector*)(cameraTransform + kCameraForwardOffset));
-        AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + offset)->visible = result > z;
+        AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + offset)->visible =
+            result > z;
         ((PetalSlot801B*)AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->object)->update(delta);
         offset += kParticleEntryBytes;
         ++index;
@@ -656,49 +802,51 @@ void ntPetal_UpdateParticles(unsigned char* self, float delta) {
 void ntSilicaParticle_UpdateParticles(unsigned char* self, float delta_arg) {
     // Translate bounds to world space; integrate wind/downward drift and sinusoidal sway.
     unsigned char* cameraTransform = (unsigned char*)s_cameraTransform;
-    Vec3i_801B a3;
-    Vec3i_801B a;
-    *(struct Arr3*)&a = *(struct Arr3*)AsParticleEmitterState801B7D5C(self)->boundsMin;
-    *(struct Arr3*)&a3 = *(struct Arr3*)AsParticleEmitterState801B7D5C(self)->boundsMax;
-    __apl__7WVectorFRC7WVector(&a, cameraTransform + kCameraPositionOffset);
-    __apl__7WVectorFRC7WVector(&a3, cameraTransform + kCameraPositionOffset);
-    float b[3];
-    __mi__FRC7WVectorRC7WVector(b, AsParticleEmitterState801B7D5C(self)->boundsMax, AsParticleEmitterState801B7D5C(self)->boundsMin);
-    float c1;
-    float c2 = kFloat_34_295296_ParticleEmitter;
+    Vec3i_801B worldBoundsMax;
+    Vec3i_801B worldBoundsMin;
+    *(struct Arr3*)&worldBoundsMin = *(struct Arr3*)AsParticleEmitterState801B7D5C(self)->boundsMin;
+    *(struct Arr3*)&worldBoundsMax = *(struct Arr3*)AsParticleEmitterState801B7D5C(self)->boundsMax;
+    __apl__7WVectorFRC7WVector(&worldBoundsMin, cameraTransform + kCameraPositionOffset);
+    __apl__7WVectorFRC7WVector(&worldBoundsMax, cameraTransform + kCameraPositionOffset);
+    float boxExtents[3];
+    __mi__FRC7WVectorRC7WVector(boxExtents, AsParticleEmitterState801B7D5C(self)->boundsMax,
+                                AsParticleEmitterState801B7D5C(self)->boundsMin);
+    float phaseRate;
+    float gravityAcceleration = kFloat_34_295296_ParticleEmitter;
     float delta = delta_arg;
     float sy;
     int offset;
     int index = 0;
-    c1 = kFloat_1_5707964_PetEffects;
+    phaseRate = kFloat_1_5707964_PetEffects;
     offset = 0;
     float z = kFloat_0_PetParticles;
     while (index < AsParticleEmitterState801B7D5C(self)->particleCount) {
-        void* wind = CWind_GetInstance();
+        CWind* wind = CWind::GetInstance();
         Vec3_801B q;
-        Vec3_801B p;
+        Vec3_801B windVector;
         Vec3_801B n;
         Vec3_801B m;
-        Vec3_801B v;
-        CWind_GetWindVectorAtPoint(&p, wind, ParticleEntryBytes(self, offset) + 0x0c, kFloat_99999_ParticleWind);
-        __ml__FRC7WVectorf(&q, &p, delta);
+        Vec3_801B azimuthDirection;
+        GetWindVectorAtPoint__5CWindFRC7WVectorf(&windVector, wind, ParticleEntryBytes(self, offset) + 0x0c,
+                                                 kFloat_99999_ParticleWind);
+        __ml__FRC7WVectorf(&q, &windVector, delta);
         __apl__7WVectorFRC7WVector(ParticleEntryBytes(self, offset) + 0x0c, &q);
-        float gravity = c2 * AsParticleEmitterState801B7D5C(self)->gravityScale;
+        float gravity = gravityAcceleration * AsParticleEmitterState801B7D5C(self)->gravityScale;
         AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->position[1] -= gravity * delta;
-        AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->phase += c1 * delta;
+        AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->phase += phaseRate * delta;
         sy = Math_SinApprox(AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->azimuth);
         float sx = Math_CosApprox(AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->azimuth);
-        v.x = sx;
-        v.y = z;
-        v.z = sy;
+        azimuthDirection.x = sx;
+        azimuthDirection.y = z;
+        azimuthDirection.z = sy;
         float swayFactor = Math_SinApprox(AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->phase);
-        __ml__FfRC7WVector(&m, &v, kFloat_4_ParticleOscillation);
+        __ml__FfRC7WVector(&m, &azimuthDirection, kFloat_4_ParticleOscillation);
         __ml__FRC7WVectorf(&n, &m, swayFactor);
         __as__7WVectorFRC7WVector(ParticleEntryBytes(self, offset) + 0x1c, &n);
         // Wrap the base position by complete positive extents, then publish base + sway.
         int k;
-        float* pa = (float*)&a;
-        float* pb = b;
+        float* pa = (float*)&worldBoundsMin;
+        float* pb = boxExtents;
         int i = 0;
         k = 0;
         for (; i < 3; ++i, k += 4, ++pa, ++pb) {
@@ -718,7 +866,8 @@ void ntSilicaParticle_UpdateParticles(unsigned char* self, float delta_arg) {
         __mi__FRC7WVectorRC7WVector(&tmp2, ParticleEntryBytes(self, offset), cameraTransform + kCameraPositionOffset);
         // Positive dot(renderPosition - cameraPosition, cameraForward) means in front.
         float result = __ml__FRC7WVectorRC7WVector(&tmp2, cameraTransform + kCameraForwardOffset);
-        AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + offset)->visible = result > z;
+        AsParticleEntry801B7D5C((*(char**)&AsParticleEmitterState801B7D5C(self)->particles) + offset)->visible =
+            result > z;
         ((PetalSlot801B*)AsParticleEntry801B7D5C(ParticleEntryBytes(self, offset))->object)->update(delta);
         offset += kParticleEntryBytes;
         ++index;
@@ -735,9 +884,11 @@ void SilicaEntry_ConstructionHook() {}
 // Unused silica particle virtual hook.
 void ntSilicaParticle_vfunc_3() {}
 // Unused rain configuration virtual hook in this unit.
-void CRain_vfunc_4() {}
+void CRain::vfunc_4() {}
 // Initialize this particle helper's two-pi cache.
-void PetParticles_InitAngleCache() { s_petParticleTwoPiCache = kFloat_6_2831855; }
+void PetParticles_InitAngleCache() {
+    s_petParticleTwoPiCache = kFloat_6_2831855;
+}
 
 // Release the owned buffer, clear its count and optionally delete the wrapper.
 void* dtor_801B9070(MSLRecordVector* self, int flag) {
@@ -752,7 +903,7 @@ void* dtor_801B9070(MSLRecordVector* self, int flag) {
 #pragma use_lmw_stmw on
 // Reset pet playback, movement, matrices, lighting and look-at state without loading a model.
 // Initialization-only: this clears resource pointers without releasing their former objects.
-void CPetBody_InitDefaults(void* ptr) {
+void CPetBody::InitDefaults(void* ptr) {
     unsigned char* self = (unsigned char*)ptr;
     int two = kPetInitialMovementState;
     int zero = 0;
@@ -774,8 +925,12 @@ void CPetBody_InitDefaults(void* ptr) {
     AsCPetBody(self)->queuedAnimationName[0] = (unsigned char)zero;
     unsigned int r30;
     switch (w >> 31) {
-        case 0: r30 = (*(unsigned char*)&AsCPetBody(self)->nameStringFlags) & 0x7f; break;
-        default: r30 = (*(unsigned int*)&AsCPetBody(self)->nameStringLength); break;
+    case 0:
+        r30 = (*(unsigned char*)&AsCPetBody(self)->nameStringFlags) & 0x7f;
+        break;
+    default:
+        r30 = (*(unsigned int*)&AsCPetBody(self)->nameStringLength);
+        break;
     }
     buf[0] = buf[4];
     String_ReplaceRange(&AsCPetBody(self)->nameStringFlags, 0, r30, name, name + strlen(name), buf);
@@ -799,21 +954,21 @@ void CPetBody_InitDefaults(void* ptr) {
 // Initialize pet storage, parse model/shadow tokens, and prepare the optional puppet.
 // arg is a borrowed token string used only during construction; mode is forwarded to the
 // resource loader. The new pet retains the returned puppet and owns its instance containers.
-void* CPetBody_Ctor(void* ptr, const char* modelCommand, int mode) {
+CPetBody::CPetBody(const char* modelCommand, int mode) {
     // Phase 1: initialize the owned instance table under its mutex, then empty attachments.
-    char* self = (char*)ptr;
+    char* self = (char*)this;
     int zero = 0;
     (*(int*)&AsCPetBody(self)->flags) = zero;
     *(void**)self = __vt__8CPetBody;
-    AsCPetBody(self)->instanceHashBuckets = zero;
+    AsCPetBody(self)->instanceHashBuckets = 0;
     OSInitMutex((OSMutex*)(self + 0xEC));
     char* lock = self + 0xEC;
     OSLockMutex((OSMutex*)lock);
-    AsCPetBody(self)->instanceHead = zero;
-    AsCPetBody(self)->instanceFreeNodeHead = zero;
-    AsCPetBody(self)->instanceNodeAllocationHead = zero;
+    AsCPetBody(self)->instanceHead = 0;
+    AsCPetBody(self)->instanceFreeNodeHead = 0;
+    AsCPetBody(self)->instanceNodeAllocationHead = 0;
     AsCPetBody(self)->unk_DC = kPetInstanceWordDCInitialValue; // Instance state word; exact policy unresolved.
-    AsCPetBody(self)->instanceIterator = zero;
+    AsCPetBody(self)->instanceIterator = 0;
     AsCPetBody(self)->instanceHashBucketCount = zero;
     if (AsCPetBody(self)->instanceHashBucketCount > 0) {
         (*(void**)&AsCPetBody(self)->instanceHashBuckets) = (void*)appMallocUni__FUl(0);
@@ -826,7 +981,7 @@ void* CPetBody_Ctor(void* ptr, const char* modelCommand, int mode) {
             bucketByteOffset += 4;
         }
     } else {
-        AsCPetBody(self)->instanceHashBuckets = zero;
+        AsCPetBody(self)->instanceHashBuckets = 0;
     }
     OSUnlockMutex((OSMutex*)lock);
     float zeroLightingDirection = kFloat_0_petBody;
@@ -849,13 +1004,14 @@ void* CPetBody_Ctor(void* ptr, const char* modelCommand, int mode) {
     AsCPetBody(self)->attachmentTail = attachmentSentinel;
     AsCPetBody(self)->unk_1A8 = zero;
     // Phase 2: initialize playback defaults, then parse the optional model token.
-    CPetBody_InitDefaults(self);
+    CPetBody::InitDefaults(self);
     int parsedShadowMode;
     // ScanTokens receives the address of a borrowed string-pointer word.
     int commandStringWord = (int)modelCommand;
     parsedShadowMode = zero;
     char path[0x100];
-    if (String_ScanTokensAfterSubstring((const char*)&commandStringWord, petBodyStrings, ((const PetBodyStringPool*)petBodyStrings)->stringFormat, path) != 0) {
+    if (String_ScanTokensAfterSubstring((const char*)&commandStringWord, petBodyStrings,
+                                        ((const PetBodyStringPool*)petBodyStrings)->stringFormat, path) != 0) {
         void* loadedPuppet = ResourceManager_LoadByExtension(g_resourceManager, path, 0, 1, mode);
         float unitScale = kFloat_1_petBody;
         AsCPetBody(self)->puppet = loadedPuppet;
@@ -887,10 +1043,11 @@ void* CPetBody_Ctor(void* ptr, const char* modelCommand, int mode) {
         }
     }
     // Phase 3: independently parse the optional integer shadow mode.
-    if (String_ScanTokensAfterSubstring((const char*)&commandStringWord, ((const PetBodyStringPool*)petBodyStrings)->shadowToken, ((const PetBodyStringPool*)petBodyStrings)->integerFormat, (const char*)&parsedShadowMode) != 0) {
+    if (String_ScanTokensAfterSubstring(
+            (const char*)&commandStringWord, ((const PetBodyStringPool*)petBodyStrings)->shadowToken,
+            ((const PetBodyStringPool*)petBodyStrings)->integerFormat, (const char*)&parsedShadowMode) != 0) {
         AsCPetBody(self)->shadowMode = parsedShadowMode;
     }
-    return ptr;
 }
 
 } // extern "C"

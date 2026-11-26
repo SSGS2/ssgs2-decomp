@@ -1,25 +1,51 @@
+// Retry menu (CRetryMenu): the screen offered after a round to play again, with its layout, the
+// choices available in the current mode, and its completion countdown.
+
 #include <decomp/static_init.h>
+#include "classes/CRetryMenu.h"
 #include "classes/RetryMenuFields802618B8.h"
-// Translation unit 0x802618B8-0x80261D30 (8 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 // Layout indices are arranged in button, idle, and selected-image groups.
 enum RetryMenuElement {
-    kRetryPrimaryButton = 0, kRetrySecondButton = 1, kRetryThirdButton = 2, kRetryFourthButton = 3,
-    kRetryIdleSecondAlternate = 4, kRetryIdleSecondDefault = 5, kRetryIdlePrimary = 6,
-    kRetryIdleThird = 7, kRetryIdleFourth = 8,
-    kRetrySelectedPrimaryButton = 9, kRetrySelectedSecondButton = 10,
-    kRetrySelectedThirdButton = 11, kRetrySelectedFourthButton = 12,
-    kRetrySelectedSecondAlternate = 13, kRetrySelectedSecondDefault = 14,
-    kRetrySelectedPrimary = 15, kRetrySelectedThird = 16, kRetrySelectedFourth = 17,
-    kRetrySelectedBegin = kRetrySelectedPrimaryButton, kRetryElementCount = 18
+    kRetryPrimaryButton = 0,
+    kRetrySecondButton = 1,
+    kRetryThirdButton = 2,
+    kRetryFourthButton = 3,
+    kRetryIdleSecondAlternate = 4,
+    kRetryIdleSecondDefault = 5,
+    kRetryIdlePrimary = 6,
+    kRetryIdleThird = 7,
+    kRetryIdleFourth = 8,
+    kRetrySelectedPrimaryButton = 9,
+    kRetrySelectedSecondButton = 10,
+    kRetrySelectedThirdButton = 11,
+    kRetrySelectedFourthButton = 12,
+    kRetrySelectedSecondAlternate = 13,
+    kRetrySelectedSecondDefault = 14,
+    kRetrySelectedPrimary = 15,
+    kRetrySelectedThird = 16,
+    kRetrySelectedFourth = 17,
+    kRetrySelectedBegin = kRetrySelectedPrimaryButton,
+    kRetryElementCount = 18
 };
 // Result codes are consumed by the caller; names identify their originating menu choice.
-enum RetryMenuResult { kRetryNoChoice = 0, kRetrySecondAlternateChoice = 1,
-    kRetrySecondDefaultChoice = 2, kRetryThirdChoice = 3, kRetryPrimaryChoice = 4, kRetryFourthChoice = 5 };
+enum RetryMenuResult {
+    kRetryNoChoice = 0,
+    kRetrySecondAlternateChoice = 1,
+    kRetrySecondDefaultChoice = 2,
+    kRetryThirdChoice = 3,
+    kRetryPrimaryChoice = 4,
+    kRetryFourthChoice = 5
+};
 // Layout_Init stores its second argument at controller +0x48; a rendering-layer role is unproven.
-enum { kRetrySelectionDelayUpdates = 9, kRetryLayoutInitValue = 5, kRetryConfirmSoundOffset = 0xD };
-enum { kRetryDefaultMode = 0 };
+enum {
+    kRetrySelectionDelayUpdates = 9,
+    kRetryLayoutInitValue = 5,
+    kRetryConfirmSoundOffset = 0xD
+};
+enum {
+    kRetryDefaultMode = 0
+};
 
 // Control       button/selected button   idle/selected image    result
 // primary                0 / 9                  6 / 15             4
@@ -28,9 +54,9 @@ enum { kRetryDefaultMode = 0 };
 // third                  2 / 11                 7 / 16             3
 // fourth                 3 / 12                 8 / 17             5
 // Mode 0 hides the third choice. All other modes use the alternate second image.
-// CGolfRule_ProcessPostRoundMenus passes 0 for the single-player result path,
+// CGolfRule::ProcessPostRoundMenus passes 0 for the single-player result path,
 // 1 for fight/party paths. Exact on-screen labels are not established here.
-// CGolfRule_ApplyPostRoundChoice consumes result: 4 restarts the round; 2 enters
+// CGolfRule::ApplyPostRoundChoice consumes result: 4 restarts the round; 2 enters
 // the single-player save/return flow; 1 enters fight/party with request arg 0;
 // 3 enters fight/party with arg 1 (or training in mode 5); 5 exits the mode.
 // state (+0x20) stores this result, not an animation phase; counter counts update calls.
@@ -43,10 +69,11 @@ struct ActivatedUnwindCleanup {
     volatile unsigned int* words;
     bool active;
     // Borrow the raw [data, count, capacity] vector header for exception cleanup.
-    explicit ActivatedUnwindCleanup(volatile void* vector)
-        : words((volatile unsigned int*)vector), active(true) {}
+    explicit ActivatedUnwindCleanup(volatile void* vector) : words((volatile unsigned int*)vector), active(true) {}
     // Suppress guard cleanup when the normal path frees the same allocation.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Release only vector storage; button IDs are values, not owned button objects.
     ~ActivatedUnwindCleanup() {
         if (active && words[0]) {
@@ -55,7 +82,6 @@ struct ActivatedUnwindCleanup {
         }
     }
 };
-
 
 extern const float kFloat_6_2831855;
 extern float s_twoPi_RetryMenuFirst;
@@ -86,7 +112,9 @@ void __dl__FPv(void*);
 struct AllocatedLayout {
     char data[0x5C];
     // Initialize a layout that becomes owned by the retry menu.
-    AllocatedLayout(int initValue) { Layout_Init(this, initValue); }
+    AllocatedLayout(int initValue) {
+        Layout_Init(this, initValue);
+    }
 };
 
 // Initialize the first retry-menu angle constant to one full turn.
@@ -101,42 +129,28 @@ void RetryMenu_InitializeSecondAngleConstant(void) {
 
 } // C linkage
 
-// Retain this ABI spelling: constructor unwind cleanup references
-// __dt__16CWarningLogoBaseFv. Here it represents the common MPBase1 menu base.
-struct CWarningLogoBase {
-    char data[0x18];
-    // Initialize the common menu-process base used by the retry menu.
-    CWarningLogoBase() { MPBase1_Ctor(this); }
-    ~CWarningLogoBase();
-};
-struct CRetryMenu : CWarningLogoBase {
-    char rest[0x10];
-    CRetryMenu(int);
-};
 // Create the owned 18-element layout and remember the caller's mode; loading is polled later.
 CRetryMenu::CRetryMenu(int menuMode) {
     void* self = this;
     *(void**)self = __vt__10CRetryMenu;
-    ((RetryMenuFields802618B8*)self)->layout = 0;
-    ((RetryMenuFields802618B8*)self)->mode = menuMode;
-    ((RetryMenuFields802618B8*)self)->selectedResult = kRetryNoChoice;
+    ((RetryMenuView*)self)->layout = 0;
+    ((RetryMenuView*)self)->mode = menuMode;
+    ((RetryMenuView*)self)->selectedResult = kRetryNoChoice;
     AllocatedLayout* layout = new AllocatedLayout(kRetryLayoutInitValue);
-    ((RetryMenuFields802618B8*)self)->layout = layout;
+    ((RetryMenuView*)self)->layout = layout;
     Layout_InitStandard(layout, 0, retryMenuLayoutElements, kRetryElementCount, retryMenuStrings);
 }
 
-extern "C" {
-
 // Release the layout and restore hit testing after closing the retry menu.
 // shouldDelete > 0 also deletes self; the returned self address may then be dangling.
-void* CRetryMenu_dtor(void* self, int shouldDelete) {
+void* CRetryMenu::Destroy(int shouldDelete) {
+    void* self = this;
     if (self != 0) {
         *(void**)self = __vt__10CRetryMenu;
         Layout_SetHitTestingEnabled(1);
-        void* layout = ((RetryMenuFields802618B8*)self)->layout;
         if (layout != 0) {
             Layout_Destroy(layout, 1);
-            ((RetryMenuFields802618B8*)self)->layout = 0;
+            layout = 0;
         }
         if (shouldDelete > 0)
             __dl__FPv(self);
@@ -145,110 +159,104 @@ void* CRetryMenu_dtor(void* self, int shouldDelete) {
 }
 
 // Advance the layout loading and animation work.
-int CRetryMenu_UpdateLayout(void* self) {
-    return Layout_Update(((RetryMenuFields802618B8*)self)->layout);
+int CRetryMenu::UpdateLayout() {
+    return Layout_Update(layout);
 }
 
 // Report whether the retry-menu layout has finished loading.
-int CRetryMenu_PollLoadComplete(void* self) {
-    return Layout_PollLoadComplete(((RetryMenuFields802618B8*)self)->layout);
+int CRetryMenu::PollLoadComplete() {
+    return Layout_PollLoadComplete(layout);
 }
 
-// All methods use the shared retry-menu field view.
-
 // Hide unavailable choices for this mode and reset the completion countdown.
-void CRetryMenu_ResetSelectionState(void* self_) {
-    RetryMenuFields802618B8* self = (RetryMenuFields802618B8*)self_;
+void CRetryMenu::ResetSelectionState() {
     // Hide the unused mode-specific images before clearing all selection overlays.
-    if (self->mode == kRetryDefaultMode) {
-        Layout_SetElementPlayerFlagsAndState(self->layout, kRetryThirdButton, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, kRetryIdleSecondAlternate, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, kRetryIdleThird, 0);
+    if (mode == kRetryDefaultMode) {
+        Layout_SetElementPlayerFlagsAndState(layout, kRetryThirdButton, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, kRetryIdleSecondAlternate, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, kRetryIdleThird, 0);
     } else {
-        Layout_SetElementPlayerFlagsAndState(self->layout, kRetryIdleSecondDefault, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, kRetryIdleSecondDefault, 0);
     }
     unsigned int elementIndex = kRetrySelectedBegin;
     do {
-        Layout_SetElementEnabled(self->layout, elementIndex, 0);
+        Layout_SetElementEnabled(layout, elementIndex, 0);
         ++elementIndex;
     } while (elementIndex < kRetryElementCount);
-    self->selectionDelayUpdates = 0;
+    selectionDelayUpdates = 0;
 }
-
-
 
 // Apply the activated choice, play confirmation audio, and finish after nine update calls.
 // Returns 1 only when a previously started countdown reaches zero, otherwise 0.
 // Invalid activated IDs still trigger the sound/countdown, retaining the previous result.
-int CRetryMenu_UpdateSelection(void* self_) {
-    RetryMenuFields802618B8* self = (RetryMenuFields802618B8*)self_;
+int CRetryMenu::UpdateSelection() {
     // Finish the selection animation before polling another activation on this call.
-    if (self->selectionDelayUpdates > 0) {
+    if (selectionDelayUpdates > 0) {
         Layout_SetHitTestingEnabled(0);
-        --self->selectionDelayUpdates;
-        if (self->selectionDelayUpdates == 0)
+        --selectionDelayUpdates;
+        if (selectionDelayUpdates == 0)
             return 1;
     }
-    Layout_Update(self->layout);
+    Layout_Update(layout);
     // Raw vector header [data, count, capacity], filled by the layout and freed here.
     void* activatedButtons[3] = {0, 0, 0};
     ActivatedUnwindCleanup activatedCleanup(&activatedButtons);
-    if (Layout_CollectActivated(self->layout, activatedButtons, 0)) {
+    if (Layout_CollectActivated(layout, activatedButtons, 0)) {
         // Only the first activated ID is consumed; swap its idle and selected artwork.
         int choiceIndex = **(int**)activatedButtons;
         switch (choiceIndex) {
         case kRetryPrimaryButton:
-            self->selectedResult = kRetryPrimaryChoice;
-            Layout_SetElementPlayerFlagsAndState(self->layout, kRetryPrimaryButton, 0);
-            Layout_SetElementEnabled(self->layout, kRetrySelectedPrimaryButton, 1);
-            Layout_SetElementEnabled(self->layout, kRetryIdlePrimary, 0);
-            Layout_SetElementEnabled(self->layout, kRetrySelectedPrimary, 1);
+            selectedResult = kRetryPrimaryChoice;
+            Layout_SetElementPlayerFlagsAndState(layout, kRetryPrimaryButton, 0);
+            Layout_SetElementEnabled(layout, kRetrySelectedPrimaryButton, 1);
+            Layout_SetElementEnabled(layout, kRetryIdlePrimary, 0);
+            Layout_SetElementEnabled(layout, kRetrySelectedPrimary, 1);
             break;
         case kRetrySecondButton:
-            if (self->mode == kRetryDefaultMode) {
-                self->selectedResult = kRetrySecondDefaultChoice;
-                Layout_SetElementPlayerFlagsAndState(self->layout, kRetrySecondButton, 0);
-                Layout_SetElementEnabled(self->layout, kRetrySelectedSecondButton, 1);
-                Layout_SetElementEnabled(self->layout, kRetryIdleSecondDefault, 0);
-                Layout_SetElementEnabled(self->layout, kRetrySelectedSecondDefault, 1);
+            if (mode == kRetryDefaultMode) {
+                selectedResult = kRetrySecondDefaultChoice;
+                Layout_SetElementPlayerFlagsAndState(layout, kRetrySecondButton, 0);
+                Layout_SetElementEnabled(layout, kRetrySelectedSecondButton, 1);
+                Layout_SetElementEnabled(layout, kRetryIdleSecondDefault, 0);
+                Layout_SetElementEnabled(layout, kRetrySelectedSecondDefault, 1);
             } else {
-                self->selectedResult = kRetrySecondAlternateChoice;
-                Layout_SetElementPlayerFlagsAndState(self->layout, kRetrySecondButton, 0);
-                Layout_SetElementEnabled(self->layout, kRetrySelectedSecondButton, 1);
-                Layout_SetElementEnabled(self->layout, kRetryIdleSecondAlternate, 0);
-                Layout_SetElementEnabled(self->layout, kRetrySelectedSecondAlternate, 1);
+                selectedResult = kRetrySecondAlternateChoice;
+                Layout_SetElementPlayerFlagsAndState(layout, kRetrySecondButton, 0);
+                Layout_SetElementEnabled(layout, kRetrySelectedSecondButton, 1);
+                Layout_SetElementEnabled(layout, kRetryIdleSecondAlternate, 0);
+                Layout_SetElementEnabled(layout, kRetrySelectedSecondAlternate, 1);
             }
             break;
         case kRetryThirdButton:
-            self->selectedResult = kRetryThirdChoice;
-            Layout_SetElementPlayerFlagsAndState(self->layout, kRetryThirdButton, 0);
-            Layout_SetElementEnabled(self->layout, kRetrySelectedThirdButton, 1);
-            Layout_SetElementEnabled(self->layout, kRetryIdleThird, 0);
-            Layout_SetElementEnabled(self->layout, kRetrySelectedThird, 1);
+            selectedResult = kRetryThirdChoice;
+            Layout_SetElementPlayerFlagsAndState(layout, kRetryThirdButton, 0);
+            Layout_SetElementEnabled(layout, kRetrySelectedThirdButton, 1);
+            Layout_SetElementEnabled(layout, kRetryIdleThird, 0);
+            Layout_SetElementEnabled(layout, kRetrySelectedThird, 1);
             break;
         case kRetryFourthButton:
-            self->selectedResult = kRetryFourthChoice;
-            Layout_SetElementPlayerFlagsAndState(self->layout, kRetryFourthButton, 0);
-            Layout_SetElementEnabled(self->layout, kRetrySelectedFourthButton, 1);
-            Layout_SetElementEnabled(self->layout, kRetryIdleFourth, 0);
-            Layout_SetElementEnabled(self->layout, kRetrySelectedFourth, 1);
+            selectedResult = kRetryFourthChoice;
+            Layout_SetElementPlayerFlagsAndState(layout, kRetryFourthButton, 0);
+            Layout_SetElementEnabled(layout, kRetrySelectedFourthButton, 1);
+            Layout_SetElementEnabled(layout, kRetryIdleFourth, 0);
+            Layout_SetElementEnabled(layout, kRetrySelectedFourth, 1);
             break;
         default:
             break;
         }
         // Start the fixed delay even for an unrecognized ID, matching existing behavior.
-        self->selectionDelayUpdates = kRetrySelectionDelayUpdates;
-        Sound_PlayByName(g_soundManager, retryMenuStrings + kRetryConfirmSoundOffset, 0, 0, 0, 0, kFloat_0_5_RetryMenu, kFloat_200_RetryMenu, kFloat_1_RetryMenu);
+        selectionDelayUpdates = kRetrySelectionDelayUpdates;
+        Sound_PlayByName(g_soundManager, retryMenuStrings + kRetryConfirmSoundOffset, 0, 0, 0, 0, kFloat_0_5_RetryMenu,
+                         kFloat_200_RetryMenu, kFloat_1_RetryMenu);
     }
     // Normal cleanup disarms the unwind guard before freeing the vector allocation.
     if (activatedButtons[0] != 0) {
         activatedButtons[1] = 0;
-        activatedCleanup.release(); appFreeUni__FPv(activatedButtons[0]);
+        activatedCleanup.release();
+        appFreeUni__FPv(activatedButtons[0]);
     }
     return 0;
 }
-
-} // extern "C"
 
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push

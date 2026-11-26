@@ -1,8 +1,20 @@
+// Asynchronous exhibition previews: loading, readiness, the loading indicator and camera input.
+// Also the pet-format external-file and mesh chunk readers, message drawing objects,
+// and the byte-vector helpers that the loaders use.
+
 #include <decomp/static_init.h>
 #include <decomp/local_class.h>
 #include <decomp/ct_member.h>
-enum PreviewInputAction { kPreviewRotateLeft = 2, kPreviewRotateRight = 3, kPreviewZoomOut = 0, kPreviewZoomIn = 1, kPreviewPointerDrag = 5 };
-enum { kLoadingIndicatorGroup = 1000 };
+enum PreviewInputAction {
+    kPreviewRotateLeft = 2,
+    kPreviewRotateRight = 3,
+    kPreviewZoomOut = 0,
+    kPreviewZoomIn = 1,
+    kPreviewPointerDrag = 5
+};
+enum {
+    kLoadingIndicatorGroup = 1000
+};
 
 namespace exception_runtime {
 extern "C" {
@@ -14,8 +26,6 @@ extern const char messageDrawFontAndErrorStrings[];
 
 #include "game/singletons.h"
 #include "game/types.h"
-// Translation unit 0x80268730-0x80269E68 (29 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 #include "game/exception.h"
@@ -24,10 +34,9 @@ extern const char messageDrawFontAndErrorStrings[];
 #include "classes/CPangyaMsgResourceObject.h"
 #include "classes/CPetFormatMesh.h"
 #include "classes/CPetFormatExternalFile.h"
-
-#define AsCPetFormatExternalFile(p) ((CPetFormatExternalFile*)(p))
-
-#define AsCPetFormatMesh(p) ((CPetFormatMesh*)(p))
+#include "classes/CExhibition.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CMsgDraw.h"
 
 #define AsCPangyaMsgDrawObject(p) ((CPangyaMsgDrawObject*)(p))
 
@@ -41,10 +50,11 @@ struct StringUnwindCleanup_u80268730 {
     const unsigned int* words;
     bool active;
     // Borrow a temporary string representation and arm its exceptional cleanup.
-    explicit StringUnwindCleanup_u80268730(const void* string)
-        : words((const unsigned int*)string), active(true) {}
+    explicit StringUnwindCleanup_u80268730(const void* string) : words((const unsigned int*)string), active(true) {}
     // Disarm before normal explicit disposal; never free twice.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Free only heap-backed storage while unwinding an armed temporary.
     ~StringUnwindCleanup_u80268730() {
         if (active && (words[0] & 0x80000000u)) {
@@ -52,7 +62,6 @@ struct StringUnwindCleanup_u80268730 {
         }
     }
 };
-
 
 extern float kFloat_6_2831855;
 extern float s_petMeshTau;
@@ -73,8 +82,8 @@ void PetFormat_InitAngleConstant() {
 }
 
 // Return the external-file chunk payload starting eight bytes after its header.
-void* CPetFormatExternalFile_GetPayload(void* self) {
-    return (char*)AsCPetFormatExternalFile(self)->chunkData + 8;
+void* CPetFormatExternalFile::GetPayload() {
+    return (char*)chunkData + 8;
 }
 
 // Initialize this message-resource unit's angle-conversion constant.
@@ -88,33 +97,25 @@ void AsyncExhibition_InitAngleConstant() {
 }
 
 // Bind the mesh chunk storage and install the mesh-format interface.
-void* CPetFormatMesh_Ctor(void* self, int value) {
-    AsCPetFormatMesh(self)->chunkData = value;
-    AsCPetFormatMesh(self)->vtbl = (void*)__vt__14CPetFormatMesh;
-    return self;
+CPetFormatMesh::CPetFormatMesh(int value) {
+    chunkData = value;
+    vtbl = (void*)__vt__14CPetFormatMesh;
 }
 
 // Bind external-file chunk storage and install its format interface.
-void CPetFormatExternalFile_Ctor(void* self, int value) {
-    AsCPetFormatExternalFile(self)->chunkData = value;
-    AsCPetFormatExternalFile(self)->vtbl = (void*)__vt__22CPetFormatExternalFile;
+CPetFormatExternalFile::CPetFormatExternalFile(int value) {
+    chunkData = value;
+    vtbl = (void*)__vt__22CPetFormatExternalFile;
 }
 
-struct Target { char pad[0x114]; float loadingIndicatorX; float loadingIndicatorY; };
-struct Vec2f { float x; float y; };
-// Set the loading indicator position without altering exhibition placement.
-void CAsyncExhibition_SetLoadingIndicatorPosition(Target* self, Vec2f* src) {
-    float t0;
-    float t1;
-    t1 = src->x;
-    t0 = src->y;
-    self->loadingIndicatorX = t1;
-    self->loadingIndicatorY = t0;
+void CAsyncExhibition::SetLoadingIndicatorPosition(const float* position) {
+    loadingIndicatorX = position[0];
+    loadingIndicatorY = position[1];
 }
 
 // Resolve the external-file chunk's relative data offset from its header.
-void* CPetFormatExternalFile_GetChunkData(void* self) {
-    int* addr = &AsCPetFormatExternalFile(self)->chunkData;
+void* CPetFormatExternalFile::GetChunkData() {
+    int* addr = &chunkData;
     void* p = *(void**)addr;
     if ((char*)p + 8 != 0) {
         return (char*)p + *(int*)((char*)p + 8);
@@ -124,8 +125,8 @@ void* CPetFormatExternalFile_GetChunkData(void* self) {
 
 // Read the first mesh data word when the literal chunk-base-plus-eight guard passes;
 // the guard does not test whether the chunk pointer or its stored offset is null.
-void* CPetFormatMesh_GetFirstDataWord(void* self) {
-    int* addr = &AsCPetFormatMesh(self)->chunkData;
+void* CPetFormatMesh::GetFirstDataWord() {
+    int* addr = &chunkData;
     void* p = *(void**)addr;
     void* q;
     if ((char*)p + 8 != 0) {
@@ -140,8 +141,8 @@ void* CPetFormatMesh_GetFirstDataWord(void* self) {
 }
 
 // Resolve the mesh chunk's second relative offset against the chunk base.
-void* CPetFormatMesh_GetSecondaryData(void* self) {
-    int* addr = &AsCPetFormatMesh(self)->chunkData;
+void* CPetFormatMesh::GetSecondaryData() {
+    int* addr = &chunkData;
     void* p = *(void**)addr;
     void* q;
     if ((char*)p + 8 != 0) {
@@ -156,9 +157,10 @@ void* CPetFormatMesh_GetSecondaryData(void* self) {
 }
 
 // Copy validated item changes into the preview descriptor when an exhibition exists.
-void* CAsyncExhibition_CopyValidatedItemChanges(void* self, void* other, unsigned int key) {
-    if ((*(int*)&AsCAsyncExhibition(self)->exhibition) != 0) {
-        return ItemSelection_CopyValidatedChanges(AsCAsyncExhibition(self)->displayDescriptor, other, key); // original +0x24
+void* CAsyncExhibition::CopyValidatedItemChanges(void* other, unsigned int key) {
+    if ((*(int*)&exhibition) != 0) {
+        return ItemSelection_CopyValidatedChanges(displayDescriptor, other,
+                                                  key); // original +0x24
     }
     return 0;
 }
@@ -167,22 +169,15 @@ extern void __dl__FPv(void*);
 extern void appFreeUni__FPv(void*);
 
 // Release the pet-format wrapper when called as a deleting destructor.
-void* CPetFormatMesh_dtor(void* self, int shouldDelete) {
-    if (self != 0) {
-        if (shouldDelete > 0) __dl__FPv(self);
-    }
-    return self;
-}
+CPetFormatMesh::~CPetFormatMesh() {}
 
 // Release the external-file wrapper when called as a deleting destructor.
-void* CPetFormatExternalFile_dtor(void* self, int shouldDelete) {
-    if (self != 0) {
-        if (shouldDelete > 0) __dl__FPv(self);
-    }
-    return self;
-}
+CPetFormatExternalFile::~CPetFormatExternalFile() {}
 
-struct Blk73 { void* begin; void* end; };
+struct Blk73 {
+    void* begin;
+    void* end;
+};
 // Clear and release the first byte-buffer storage before optional deletion.
 void* dtor_80268730(void* self, int shouldDelete) {
     if (self != 0) {
@@ -194,21 +189,18 @@ void* dtor_80268730(void* self, int shouldDelete) {
                 appFreeUni__FPv(c->begin);
             }
         }
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
-extern void* CExhibition_IsReady(void*);
-extern void __ct__7CBpCtrlFv(void*);
 extern void CBpCtrl_dtor(void*, int);
 extern void* IdMap_Lookup(void*, int);
 extern void BpObject_SetEnabled(void*, int);
 extern signed char s_bpCtrlInitialized;
 extern char s_bpCtrl[];
 extern char s_asyncExhibitionBpCtrlDtorRegistration[];
-extern void CExhibition_SetVisible(void*, int);
-extern void CExhibition_UpdateLoadState(void*, float, int);
 extern int BpObject_PollLoad(void*);
 extern void* UIGroup_GetOrCreateById(void*, int);
 extern void UIGroup_SetPosition(void*, void*);
@@ -233,13 +225,15 @@ struct UpdateTarget {
 inline int ExhibitionObjectsReady(UpdateTarget* self, void*& exhibition, void*& preloader, int& ready) {
     do {
         exhibition = self->object;
-        if (exhibition != 0 && CExhibition_IsReady(exhibition) == 0) {
+        if (exhibition != 0 && (void*)((CExhibition*)exhibition)->IsReady() == 0) {
             ready = 0;
             break;
         }
         preloader = AsCAsyncExhibition(self)->preloadObject;
-        struct VBase { 
-        virtual int m0() DECOMP_LOCAL_VIRTUAL; virtual int m1() DECOMP_LOCAL_VIRTUAL; virtual int m2() DECOMP_LOCAL_VIRTUAL;
+        struct VBase {
+            virtual int m0() DECOMP_LOCAL_VIRTUAL;
+            virtual int m1() DECOMP_LOCAL_VIRTUAL;
+            virtual int m2() DECOMP_LOCAL_VIRTUAL;
         };
         if (preloader != 0 && ((VBase*)preloader)->m2() == 0) {
             ready = 0;
@@ -253,7 +247,7 @@ inline int ExhibitionObjectsReady(UpdateTarget* self, void*& exhibition, void*& 
 static inline void EnsureAsyncPreviewBpController() {
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_asyncExhibitionBpCtrlDtorRegistration);
             s_bpCtrlInitialized = 1;
         }
@@ -264,7 +258,8 @@ static inline void EnsureAsyncPreviewBpController() {
 // Poll exhibition/preloader readiness and show or hide the animated loading indicator.
 // Return 0 only when no exhibition exists, otherwise 1 even while loading.
 // delta is forwarded unchanged in the caller's update-time unit.
-int CAsyncExhibition_UpdateLoadingStateAndIndicator(UpdateTarget* self, float delta) {
+int CAsyncExhibition::UpdateLoadingStateAndIndicator(float delta) {
+    UpdateTarget* self = (UpdateTarget*)this;
     // Phase 1: a ready/absent preloader makes the exhibition visible and clears
     // the indicator latch, BEFORE UpdateLoadState advances the exhibition.
     // The exhibition, optional preloader, and indicator have independent readiness.
@@ -273,14 +268,16 @@ int CAsyncExhibition_UpdateLoadingStateAndIndicator(UpdateTarget* self, float de
         return 0;
     }
     void* preloader = AsCAsyncExhibition(self)->preloadObject;
-    struct VBase { 
-    virtual int m0() DECOMP_LOCAL_VIRTUAL; virtual int m1() DECOMP_LOCAL_VIRTUAL; virtual int m2() DECOMP_LOCAL_VIRTUAL;
+    struct VBase {
+        virtual int m0() DECOMP_LOCAL_VIRTUAL;
+        virtual int m1() DECOMP_LOCAL_VIRTUAL;
+        virtual int m2() DECOMP_LOCAL_VIRTUAL;
     };
     if (preloader == 0 || ((VBase*)preloader)->m2() != 0) {
-        CExhibition_SetVisible(exhibition, 1);
+        ((CExhibition*)exhibition)->SetVisible(1);
         self->initialized = 0;
     }
-    CExhibition_UpdateLoadState(exhibition, delta, 1);
+    ((CExhibition*)exhibition)->UpdateLoadState(delta, 1);
     EnsureAsyncPreviewBpController();
     void* indicator = IdMap_Lookup(Sing_805DC5F0(), self->index);
     // Phase 2: only a loaded BP exhibition may show the indicator. Check exhibition
@@ -294,7 +291,8 @@ int CAsyncExhibition_UpdateLoadingStateAndIndicator(UpdateTarget* self, float de
         if (self->initialized == 0) {
             EnsureAsyncPreviewBpController();
             indicator = IdMap_Lookup(Sing_805DC5F0(), self->index);
-            UIGroup_SetPosition(UIGroup_GetOrCreateById(indicator, kLoadingIndicatorGroup), ((char*)&AsCAsyncExhibition(self)->loadingIndicatorX));
+            UIGroup_SetPosition(UIGroup_GetOrCreateById(indicator, kLoadingIndicatorGroup),
+                                ((char*)&AsCAsyncExhibition(self)->loadingIndicatorX));
             EnsureAsyncPreviewBpController();
             indicator = IdMap_Lookup(Sing_805DC5F0(), self->index);
             BpObject_StartScriptByName(indicator, asyncExhibitionLoadingScriptName, 1);
@@ -326,26 +324,29 @@ void* dtor_802687A4(void* self, int shouldDelete) {
                 appFreeUni__FPv(c->begin);
             }
         }
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
 // Report ready only after both the exhibition and optional preloader are ready.
-int CAsyncExhibition_PollReady(void* self) {
-    int r0 = (*(int*)&AsCAsyncExhibition(self)->exhibition);
-    if (r0 != 0) {
-        int r = (int)CExhibition_IsReady((void*)r0);
-        if (r == 0) {
+int CAsyncExhibition::PollReady() {
+    int exhibitionObject = (*(int*)&exhibition);
+    if (exhibitionObject != 0) {
+        int exhibitionReady = (int)(void*)((CExhibition*)exhibitionObject)->IsReady();
+        if (exhibitionReady == 0) {
             return 0;
         }
     }
-    void* q = AsCAsyncExhibition(self)->preloadObject;
-    if (q != 0) {
-        struct VBase { 
-        virtual int m0() DECOMP_LOCAL_VIRTUAL; virtual int m1() DECOMP_LOCAL_VIRTUAL; virtual int m2() DECOMP_LOCAL_VIRTUAL;
+    void* preloader = preloadObject;
+    if (preloader != 0) {
+        struct VBase {
+            virtual int m0() DECOMP_LOCAL_VIRTUAL;
+            virtual int m1() DECOMP_LOCAL_VIRTUAL;
+            virtual int m2() DECOMP_LOCAL_VIRTUAL;
         };
-        if (((VBase*)q)->m2() == 0) {
+        if (((VBase*)preloader)->m2() == 0) {
             return 0;
         }
     }
@@ -353,89 +354,88 @@ int CAsyncExhibition_PollReady(void* self) {
 }
 
 // Enable or disable the loading script when its entry ID is valid.
-void CAsyncExhibition_SetScriptEnabled(void* self, int value) {
-    if (AsCAsyncExhibition(self)->bpEntryId != -1) {
+void CAsyncExhibition::SetScriptEnabled(int value) {
+    if (bpEntryId != -1) {
         if (Sing_805DC5F0() == 0) {
             if (s_bpCtrlInitialized == 0) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_asyncExhibitionBpCtrlDtorRegistration);
                 s_bpCtrlInitialized = 1;
             }
             Sing_805DC5F0() = s_bpCtrl;
         }
-        void* p = IdMap_Lookup(Sing_805DC5F0(), AsCAsyncExhibition(self)->bpEntryId);
+        void* p = IdMap_Lookup(Sing_805DC5F0(), bpEntryId);
         BpObject_SetEnabled(p, value);
     }
 }
 
 extern void* __nw__FUl(unsigned int);
-extern int CPangyaMsgResourceObject_CreateMessageDraw(void*, void*);
 extern void ResourceManager_ReleaseCachedObject(void*, void*);
 extern void* g_resourceManager;
 extern char __vt__20CPangyaMsgDrawObject[];
 extern char __vt__24CPangyaMsgResourceObject[];
 
 // Release the message renderer, cached font and heap-backed string before optional deletion.
-void* CPangyaMsgDrawObject_dtor(void* self, int shouldDelete) {
-    if (self != 0) {
-        void* p = AsCPangyaMsgDrawObject(self)->messageDraw;
-        AsCPangyaMsgDrawObject(self)->drawVtable = (void*)__vt__20CPangyaMsgDrawObject;
+CPangyaMsgDrawObject::~CPangyaMsgDrawObject() {
+    void* p = messageDraw;
+    drawVtable = (void*)__vt__20CPangyaMsgDrawObject;
+    if (p != 0) {
         if (p != 0) {
-            if (p != 0) {
-                struct VBase { 
+            struct VBase {
                 virtual void m0(int) DECOMP_LOCAL_VIRTUAL;
-                };
-                ((VBase*)p)->m0(1);
-            }
-            AsCPangyaMsgDrawObject(self)->messageDraw = 0;
+            };
+            ((VBase*)p)->m0(1);
         }
-        void* g = g_resourceManager;
-        if (g != 0) {
-            void* r4 = AsCPangyaMsgDrawObject(self)->textFactory;
-            if (r4 != 0) {
-                ResourceManager_ReleaseCachedObject(g, r4);
-                AsCPangyaMsgDrawObject(self)->textFactory = 0;
-            }
-        }
-        {
-            struct RC { char pad[0x10]; int count; };
-            RC* rc = (RC*)self;
-            if (&rc->count != 0) {
-                if (((unsigned int)rc->count >> 31) != 0) {
-                    appFreeUni__FPv(AsCPangyaMsgDrawObject(self)->stringData);
-                }
-            }
-        }
-        if (shouldDelete > 0) __dl__FPv(self);
+        messageDraw = 0;
     }
-    return self;
+    void* resourceManager = g_resourceManager;
+    if (resourceManager != 0) {
+        void* cachedObject = textFactory;
+        if (cachedObject != 0) {
+            ResourceManager_ReleaseCachedObject(resourceManager, cachedObject);
+            textFactory = 0;
+        }
+    }
+    {
+        struct RC {
+            char pad[0x10];
+            int count;
+        };
+        RC* rc = (RC*)this;
+        if (&rc->count != 0) {
+            if (((unsigned int)rc->count >> 31) != 0) {
+                appFreeUni__FPv(stringData);
+            }
+        }
+    }
 }
 
 // Allocate message-resource storage and return it only after renderer creation succeeds.
-int CPangyaMsgResourceObject_Create(void* self, void** out) {
+int CPangyaMsgResourceObject::Create(void** out) {
     if (out == 0) {
         return 0;
     }
     void* p = __nw__FUl(0x24);
     if (p != 0) {
-        AsCPangyaMsgResourceObject(p)->referenceCount = 1; // original +0x0
+        AsCPangyaMsgResourceObject(p)->referenceCount = 1;                             // original +0x0
         AsCPangyaMsgResourceObject(p)->vtbl = (void*)__vt__24CPangyaMsgResourceObject; // original +0x4
-        AsCPangyaMsgResourceObject(p)->resourceBytes = 0; // original +0x8
-        AsCPangyaMsgResourceObject(p)->resourceByteCount = 0; // original +0xC
-        AsCPangyaMsgResourceObject(p)->resourceByteCapacity = 0; // original +0x10
-        AsCPangyaMsgResourceObject(p)->secondaryBytes = 0; // original +0x14
-        AsCPangyaMsgResourceObject(p)->secondaryByteCount = 0; // original +0x18
-        AsCPangyaMsgResourceObject(p)->secondaryByteCapacity = 0; // original +0x1C
-        AsCPangyaMsgResourceObject(p)->messageDraw = 0; // original +0x20
+        AsCPangyaMsgResourceObject(p)->resourceBytes = 0;                              // original +0x8
+        AsCPangyaMsgResourceObject(p)->resourceByteCount = 0;                          // original +0xC
+        AsCPangyaMsgResourceObject(p)->resourceByteCapacity = 0;                       // original +0x10
+        AsCPangyaMsgResourceObject(p)->secondaryBytes = 0;                             // original +0x14
+        AsCPangyaMsgResourceObject(p)->secondaryByteCount = 0;                         // original +0x18
+        AsCPangyaMsgResourceObject(p)->secondaryByteCapacity = 0;                      // original +0x1C
+        AsCPangyaMsgResourceObject(p)->messageDraw = 0;                                // original +0x20
     }
-    if (CPangyaMsgResourceObject_CreateMessageDraw(p, self) != 0) {
+    if (((CPangyaMsgResourceObject*)p)->CreateMessageDraw(this) != 0) {
         *out = p;
         return 1;
     }
     if (p != 0) {
         if (p != 0) {
-            struct VB4 { char pad[4]; 
-            virtual void m0(int) DECOMP_LOCAL_VIRTUAL;
+            struct VB4 {
+                char pad[4];
+                virtual void m0(int) DECOMP_LOCAL_VIRTUAL;
             };
             ((VB4*)p)->m0(1);
         }
@@ -464,80 +464,74 @@ struct C48Target {
 #pragma opt_propagation off
 // Release the secondary owned byte vector through its expanded destructor layers.
 static inline void ReleaseMessageSecondaryBytes(C48Target* self) {
+    if (&self->secondaryBytes != 0) {
         if (&self->secondaryBytes != 0) {
             if (&self->secondaryBytes != 0) {
                 if (&self->secondaryBytes != 0) {
                     if (&self->secondaryBytes != 0) {
-                        if (&self->secondaryBytes != 0) {
-                            void* q = self->secondaryBytes;
-                            if (q != 0) {
-                                int e = self->secondaryByteCount;
-                                int f = self->secondaryByteCount;
-                                self->secondaryByteCount = e - f;
-                                appFreeUni__FPv(q);
-                            }
+                        void* q = self->secondaryBytes;
+                        if (q != 0) {
+                            int e = self->secondaryByteCount;
+                            int f = self->secondaryByteCount;
+                            self->secondaryByteCount = e - f;
+                            appFreeUni__FPv(q);
                         }
                     }
                 }
             }
         }
+    }
 }
 
 // Release the primary owned byte vector after the renderer and secondary bytes are gone.
 static inline void ReleaseMessagePrimaryBytes(C48Target* self) {
+    if (&self->resourceBytes != 0) {
         if (&self->resourceBytes != 0) {
             if (&self->resourceBytes != 0) {
                 if (&self->resourceBytes != 0) {
                     if (&self->resourceBytes != 0) {
-                        if (&self->resourceBytes != 0) {
-                            void* q = self->resourceBytes;
-                            if (q != 0) {
-                                int g = self->resourceByteCount;
-                                int h = self->resourceByteCount;
-                                self->resourceByteCount = g - h;
-                                appFreeUni__FPv(q);
-                            }
+                        void* q = self->resourceBytes;
+                        if (q != 0) {
+                            int g = self->resourceByteCount;
+                            int h = self->resourceByteCount;
+                            self->resourceByteCount = g - h;
+                            appFreeUni__FPv(q);
                         }
                     }
                 }
             }
         }
+    }
 }
 
 // Destroy the renderer and free both resource buffers before optional deletion.
-void* CPangyaMsgResourceObject_dtor(C48Target* self, int shouldDelete) {
-    if (self != 0) {
-        void* p = self->messageDraw;
-        self->vtbl = (void*)__vt__24CPangyaMsgResourceObject;
+CPangyaMsgResourceObject::~CPangyaMsgResourceObject() {
+    C48Target* self = (C48Target*)this;
+    void* p = self->messageDraw;
+    self->vtbl = (void*)__vt__24CPangyaMsgResourceObject;
+    if (p != 0) {
         if (p != 0) {
-            if (p != 0) {
-                ((VC48*)p)->m0(1);
-            }
-            self->messageDraw = 0;
+            ((VC48*)p)->m0(1);
         }
-        int a = self->resourceByteCount;
-        int b = self->resourceByteCount;
-        int c = self->secondaryByteCount;
-        int d = self->secondaryByteCount;
-        self->resourceByteCount = a - b;
-        self->secondaryByteCount = c - d;
-        // Release the secondary allocation before the primary allocation. Repeated
-        // address guards are the expanded member-destructor layers; the byte pointers own storage.
-        ReleaseMessageSecondaryBytes(self);
-        ReleaseMessagePrimaryBytes(self);
-        if (shouldDelete > 0) __dl__FPv(self);
+        self->messageDraw = 0;
     }
-    return self;
+    int a = self->resourceByteCount;
+    int b = self->resourceByteCount;
+    int c = self->secondaryByteCount;
+    int d = self->secondaryByteCount;
+    self->resourceByteCount = a - b;
+    self->secondaryByteCount = c - d;
+    // Release the secondary allocation before the primary allocation. Repeated
+    // address guards are the expanded member-destructor layers; the byte pointers own storage.
+    ReleaseMessageSecondaryBytes(self);
+    ReleaseMessagePrimaryBytes(self);
 }
 #pragma opt_propagation reset
 
-extern void* CExhibition_DrawScene(void*);
-extern void* CExhibition_IsReady(void*);
 extern void BpObject_Draw(void*);
 extern void* ResourceManager_GetOrLoadDefaultFixedFont(void*, char*);
 extern void* WFixedFont_CreateMsgEcbResource(void*, void*, void*, int);
 extern void NString_AssignCString(void*, void*);
-extern void* CMsgDraw_Ctor(void*, void*);
 extern void* Resource_OpenResolvedPath(void*, void*, int, int, int, int);
 extern void Resource_Release(void*);
 extern void* appMallocDummy__FUl(unsigned int);
@@ -584,7 +578,11 @@ extern void* __dt__Q23std12length_errorFv(void*, short);
 extern void __throw(const char*, void*, void*);
 static void e68_throw(const char* t, void* o, void* d) __attribute__((noreturn));
 // Forward a nonreturning exception throw through the SDK declaration used by this unit.
-static void e68_throw(const char* t, void* o, void* d) { __throw(t, o, d); for (;;) {} }
+static void e68_throw(const char* t, void* o, void* d) {
+    __throw(t, o, d);
+    for (;;) {
+    }
+}
 
 struct E68Rep {
     void* vt;
@@ -593,8 +591,7 @@ struct E68Rep {
     void* buf;
 };
 
-struct E68Exception : std::exception {
-};
+struct E68Exception : std::exception {};
 
 struct E68ErrBase : E68Exception {
     void* buf;
@@ -605,7 +602,9 @@ struct E68ErrBase : E68Exception {
 namespace std {
 struct length_error : E68ErrBase {
     // Copy the error message into shared storage and install the derived table.
-    length_error(const char* msg) : E68ErrBase(msg) { *(void**)this = __vt__Q23std12length_error; }
+    length_error(const char* msg) : E68ErrBase(msg) {
+        *(void**)this = __vt__Q23std12length_error;
+    }
     ~length_error();
     DECOMP_CT_MEMBER(length_error)
 };
@@ -614,7 +613,10 @@ struct E68Tmp {
     void* buf;
     unsigned char* volatile flag;
     // Release message bytes until ownership reaches the shared control block.
-    ~E68Tmp() { if (buf != 0) __dla__FPv(buf); }
+    ~E68Tmp() {
+        if (buf != 0)
+            __dla__FPv(buf);
+    }
 };
 
 struct E68Grow : E68Vec {
@@ -640,18 +642,18 @@ inline E68ErrBase::E68ErrBase(const char* msg) {
     *(void**)this = __vt__Q23std11logic_error;
     flag[0] = 0;
     unsigned int n = (unsigned int)strlen(msg) + 1;
-    char* buf = (char*)__nwa__FUl(n * 2 - n);
-    this->buf = buf;
+    char* buffer = (char*)__nwa__FUl(n * 2 - n);
+    this->buf = buffer;
     {
         E68Tmp tmp;
-        tmp.buf = buf;
+        tmp.buf = buffer;
         tmp.flag = flag;
         E68Rep* rep = (E68Rep*)__nw__FUl(0x10);
         if (rep != 0) {
             rep->a = 1;
             rep->b = 1;
             rep->vt = s_sharedCharDeleterVtable;
-            rep->buf = buf;
+            rep->buf = buffer;
         }
         this->rep = rep;
         tmp.buf = 0;
@@ -667,14 +669,15 @@ static inline void e68_len_error() {
         std::length_error* error = (std::length_error*)storage;
         error->__ct(msg);
         exception_runtime::__throw(exception_runtime::messageDrawFontAndErrorStrings + 0x26, error,
-            (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                   (void*)exception_runtime::__dt__Q23std12length_errorFv);
     }
 }
 
 // Recommend byte-vector capacity with overflow checks and the original piecewise growth policy.
 static inline unsigned int e68_capacity(unsigned int& capacity, unsigned int need) {
     unsigned int cap = capacity;
-    if (need > 0xFFFFFFFFu - cap) e68_len_error();
+    if (need > 0xFFFFFFFFu - cap)
+        e68_len_error();
     if (cap < 0x55555555u) {
         unsigned int candidate = (cap + 1) * 3 / 5;
         return cap + e68_max(candidate, need);
@@ -701,12 +704,15 @@ typedef E68Vt ResourceReadInterface;
 // be replaced before that call; this is not a transactional read.
 int Resource_ReadFileIntoByteVector(void*, void* input, void* vecp) {
     // Phase 1: open a guarded resource and obtain the required byte length.
-    if (input == 0) return 0;
+    if (input == 0)
+        return 0;
     void* resource = Resource_OpenResolvedPath(g_resourceManager, input, -1, 0, 0, 0);
     OpenResourceGuard guard(resource);
-    if (resource == 0) return 0;
+    if (resource == 0)
+        return 0;
     unsigned int fileByteCount = *(unsigned int*)((char*)resource + 4);
-    if (fileByteCount == 0) return 0;
+    if (fileByteCount == 0)
+        return 0;
     OwnedResourceBytes* bytes = (OwnedResourceBytes*)vecp;
     // Phase 2: resize in-place if capacity suffices; otherwise allocate, copy
     // existing bytes and zero the tail before swapping ownership into bytes.
@@ -783,27 +789,31 @@ int Resource_ReadFileIntoByteVector(void*, void* input, void* vecp) {
 #pragma pop
 
 // Draw the exhibition and overlay its loading script while either object is unready.
-int CAsyncExhibition_Draw(void* self) {
-    void* owner = self;
-    int exhibition = (*(int*)&AsCAsyncExhibition(self)->exhibition);
+int CAsyncExhibition::Draw() {
+    void* owner = this;
+    int exhibition = (*(int*)&this->exhibition);
     if (exhibition == 0) {
         return 0;
     }
-    CExhibition_DrawScene((void*)exhibition);
+    ((CExhibition*)exhibition)->DrawScene();
     int ready;
     {
-        // Original CAsyncExhibition_Draw: keep the two readiness checks ordered.
+        // Original CAsyncExhibition::Draw: keep the two readiness checks ordered.
         do {
-            void* p = AsCAsyncExhibition(self)->exhibition;
-            if (p != 0 && CExhibition_IsReady(p) == 0) {
+            void* p = this->exhibition;
+            if (p != 0 && (void*)((CExhibition*)p)->IsReady() == 0) {
                 ready = 0;
                 break;
             }
             {
-                void* q = AsCAsyncExhibition(self)->preloadObject;
+                void* q = preloadObject;
                 if (q != 0) {
                     struct VBase {
-                        virtual int m0() DECOMP_LOCAL_VIRTUAL; virtual int m1() DECOMP_LOCAL_VIRTUAL; virtual int m2() DECOMP_LOCAL_VIRTUAL; virtual int m3() DECOMP_LOCAL_VIRTUAL; virtual int m4() DECOMP_LOCAL_VIRTUAL;
+                        virtual int m0() DECOMP_LOCAL_VIRTUAL;
+                        virtual int m1() DECOMP_LOCAL_VIRTUAL;
+                        virtual int m2() DECOMP_LOCAL_VIRTUAL;
+                        virtual int m3() DECOMP_LOCAL_VIRTUAL;
+                        virtual int m4() DECOMP_LOCAL_VIRTUAL;
                     };
                     if (((VBase*)q)->m2() == 0) {
                         ready = 0;
@@ -817,13 +827,13 @@ int CAsyncExhibition_Draw(void* self) {
     if (ready == 0) {
         if (Sing_805DC5F0() == 0) {
             if (s_bpCtrlInitialized == 0) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_asyncExhibitionBpCtrlDtorRegistration);
                 s_bpCtrlInitialized = 1;
             }
             Sing_805DC5F0() = s_bpCtrl;
         }
-        void* receiver740_BpObject_Draw = (void*)IdMap_Lookup(Sing_805DC5F0(), AsCAsyncExhibition(self)->bpEntryId);
+        void* receiver740_BpObject_Draw = (void*)IdMap_Lookup(Sing_805DC5F0(), bpEntryId);
         BpObject_Draw(receiver740_BpObject_Draw);
     }
     return 1;
@@ -838,7 +848,7 @@ struct D50Obj {
 
 #pragma opt_common_subs off
 // Load the default font and optional message resource, then create the message renderer.
-int CPangyaMsgResourceObject_CreateMessageDraw(void* self, void* arg) {
+int CPangyaMsgResourceObject::CreateMessageDraw(void* resourcePath) {
     // Phase 1: borrow the cached default font; no renderer can be created without it.
     void* obj;
     obj = ResourceManager_GetOrLoadDefaultFixedFont(g_resourceManager, messageDrawFontAndErrorStrings);
@@ -847,21 +857,31 @@ int CPangyaMsgResourceObject_CreateMessageDraw(void* self, void* arg) {
     }
     // Phase 2: optional path is copied temporarily; resourceBytes retain the
     // loaded data consumed by the renderer. Null path requests font-only creation.
-    if (arg != 0) {
-        struct { unsigned int a; unsigned int b; void* c; } s;
-        s.a = 0; s.b = 0; s.c = 0;
+    if (resourcePath != 0) {
+        struct {
+            unsigned int a;
+            unsigned int b;
+            void* c;
+        } s;
+        s.a = 0;
+        s.b = 0;
+        s.c = 0;
         StringUnwindCleanup_u80268730 stringCleanup0(&s);
-        NString_AssignCString(&s, arg);
-        Resource_ReadFileIntoByteVector(self, (((s.a >> 31) & 1) == 0) ? (void*)((char*)&s + 1) : s.c, &AsCPangyaMsgResourceObject(self)->resourceBytes); // original +0x8
-        WFixedFont_CreateMsgEcbResource(obj, &AsCPangyaMsgResourceObject(self)->messageDraw, AsCPangyaMsgResourceObject(self)->resourceBytes, 0); // original +0x20/+0x8
+        NString_AssignCString(&s, resourcePath);
+        Resource_ReadFileIntoByteVector(this, (((s.a >> 31) & 1) == 0) ? (void*)((char*)&s + 1) : s.c,
+                                        &resourceBytes);                      // original +0x8
+        WFixedFont_CreateMsgEcbResource(obj, &messageDraw, resourceBytes, 0); // original +0x20/+0x8
         if (((s.a >> 31) & 1) != 0) {
-            { stringCleanup0.release(); appFreeUni__FPv(s.c); }
+            {
+                stringCleanup0.release();
+                appFreeUni__FPv(s.c);
+            }
         }
     } else {
-        WFixedFont_CreateMsgEcbResource(obj, &AsCPangyaMsgResourceObject(self)->messageDraw, 0, 0); // original +0x20
+        WFixedFont_CreateMsgEcbResource(obj, &messageDraw, 0, 0); // original +0x20
     }
     // Phase 3: report creation, releasing the cached font reference on success.
-    if (AsCPangyaMsgResourceObject(self)->messageDraw == 0) { // original +0x20
+    if (messageDraw == 0) { // original +0x20
         return 0;
     }
     if (g_resourceManager != 0 && obj != 0) {
@@ -874,20 +894,24 @@ int CPangyaMsgResourceObject_CreateMessageDraw(void* self, void* arg) {
 struct Tmp4bc_8026897C {
     char pad[0x4bc];
     // Initialize allocated message-renderer storage from the font provider.
-    Tmp4bc_8026897C(void* a) { CMsgDraw_Ctor(this, a); }
+    Tmp4bc_8026897C(void* a) {
+        ((CMsgDraw*)this)->__ct(a);
+    }
 };
-struct DrawRefBase_89 { int refs; };
-struct DrawVirtual_89 : DrawRefBase_89 { 
-virtual void destroy(int);
+struct DrawRefBase_89 {
+    int refs;
+};
+struct DrawVirtual_89 : DrawRefBase_89 {
+    virtual void destroy(int);
 };
 
 #pragma opt_common_subs off
 // Allocate a shared draw object and create its renderer from the default fixed font.
-int CPangyaMsgDrawObject_Create(void* self) {
+int CPangyaMsgDrawObject::Create() {
     void* drawObject;
     void* messageDraw;
-    void* owner = self;
-    if (self == 0) {
+    void* owner = this;
+    if (this == 0) {
         return 0;
     }
     drawObject = __nw__FUl(0x1c);
@@ -905,12 +929,13 @@ int CPangyaMsgDrawObject_Create(void* self) {
     if (addr == 0) {
         created = 0;
     } else {
-        void* g = ResourceManager_GetOrLoadDefaultFixedFont(g_resourceManager, (char*)addr);
-        AsCPangyaMsgDrawObject(drawObject)->textFactory /* 0x8 */ = g;
-        if (g == 0) {
+        void* defaultFixedFont = ResourceManager_GetOrLoadDefaultFixedFont(g_resourceManager, (char*)addr);
+        AsCPangyaMsgDrawObject(drawObject)->textFactory /* 0x8 */ = defaultFixedFont;
+        if (defaultFixedFont == 0) {
             created = 0;
         } else {
-            messageDraw = new Tmp4bc_8026897C(*(void**)((char*)AsCPangyaMsgDrawObject(drawObject)->textFactory /* 0x8 */ + 0xac));
+            messageDraw =
+                new Tmp4bc_8026897C(*(void**)((char*)AsCPangyaMsgDrawObject(drawObject)->textFactory /* 0x8 */ + 0xac));
             created = (messageDraw != 0) ? 1 : 0;
             AsCPangyaMsgDrawObject(drawObject)->messageDraw /* 0xC */ = messageDraw;
         }
@@ -929,14 +954,8 @@ int CPangyaMsgDrawObject_Create(void* self) {
 }
 
 #pragma opt_common_subs reset
-extern void CExhibition_ClearModelPreloader(void*);
 extern void* ResolvedItemSelection_Destroy(void*, int);
-extern void CBpCtrl_DeleteEntryById(void*, int);
 extern char __vt__16CAsyncExhibition[];
-extern void* CExhibition_GetRotation(void*);
-extern void CExhibition_SetRotation(void*, void*);
-extern float CExhibition_GetCameraDistance(void*);
-extern void CExhibition_SetCameraDistance(void*, float);
 extern int Input_IsActionButtonDown(void*, int, int);
 extern void InputManager_Init(void*);
 extern void InputManager_Dtor(void*, int);
@@ -950,16 +969,16 @@ extern float kFloat_0_017453292_PetMesh;
 extern double kDouble_0_1_ExhibitionCamera;
 extern int InputManager_GetPointerPosition(void*, void*, int);
 extern int InputManager_GetCursorDepth(void*, void*, int);
-extern void CExhibition_OffsetViewport(void*, int, int);
 extern float s_previewVerticalDragScale;
-int CAsyncExhibition_HandleCameraInput(void*);
 
-typedef Vec3f Vec3Target;
-struct Vec3b { float x, y, z; };
-struct InputTarget { char pad[0x100]; float x, y, z; unsigned char initialized; };
-// InputTarget aliases previousPointerX/Y, dragStartDepth and pointerDragActive.
-// x/y are pointer pixel coordinates; z captures cursor depth at drag start but
-// is not used by the motion equation here. initialized means an anchor exists.
+// A pair of screen coordinates, as the input manager reports the pointer.
+struct Vec2f {
+    float x;
+    float y;
+};
+struct Vec3b {
+    float x, y, z;
+};
 
 // While dragging, rotate the exhibition horizontally and offset its viewport vertically.
 // Return 0 if receiver/input/pointer/depth is unavailable; 1 when handled,
@@ -967,30 +986,30 @@ struct InputTarget { char pad[0x100]; float x, y, z; unsigned char initialized; 
 // Horizontal delta: yaw += yawScale * deltaPixelsX * (pi/180), in radians.
 // Vertical delta: viewport shift = trunc(verticalScale * deltaPixelsY), in
 // viewport integer units. Depth-only movement does not trigger either update.
-int CAsyncExhibition_UpdatePointerRotation(InputTarget* self) {
+int CAsyncExhibition::UpdatePointerRotation() {
     // Phase 1: service button controls before checking drag state.
-    int result = CAsyncExhibition_HandleCameraInput(self);
+    int result = HandleCameraInput();
     if (result != 0) {
         return 1;
     }
-    void* object = AsCAsyncExhibition(self)->exhibition;
+    void* object = exhibition;
     if (object == 0) {
         return 0;
     }
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, InputManager_Dtor, s_inputManagerDtorRegistration_80268730);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    void* input = Sing_805DC5C8();
+    void* input = GetInputManagerSlot();
     if (input == 0) {
         return 0;
     }
     if (Input_IsActionButtonDown(input, kPreviewPointerDrag, -1) == 0) {
-        self->initialized = 0;
+        pointerDragActive = 0;
         return 1;
     }
     Vec2f current;
@@ -1002,116 +1021,118 @@ int CAsyncExhibition_UpdatePointerRotation(InputTarget* self) {
         return 0;
     }
     // Phase 2: first drag frame records an anchor without moving the exhibition.
-    if (self->initialized == 0) {
-        self->x = current.x;
-        self->y = current.y;
-        self->z = target;
-        self->initialized = 1;
+    if (pointerDragActive == 0) {
+        previousPointerX = current.x;
+        previousPointerY = current.y;
+        dragStartDepth = target;
+        pointerDragActive = 1;
         return 1;
     }
     // Phase 3: apply incremental deltas, then advance the pixel anchor (not depth).
-    if (current.x != self->x || current.y != self->y) {
-        Vec3Target* pos = (Vec3Target*)CExhibition_GetRotation(object);
-        Vec3Target adjusted = *pos;
-        adjusted.y = s_previewYawInputScale * (current.x - self->x) * kFloat_0_017453292_PetMesh + adjusted.y;
-        CExhibition_SetRotation(object, &adjusted);
-        CExhibition_OffsetViewport(object, 0, (int)(s_previewVerticalDragScale * (current.y - self->y)));
-        self->x = current.x;
-        self->y = current.y;
+    if (current.x != previousPointerX || current.y != previousPointerY) {
+        Vec3f* pos = (Vec3f*)((CExhibition*)object)->GetRotation();
+        Vec3f adjusted = *pos;
+        adjusted.y = s_previewYawInputScale * (current.x - previousPointerX) * kFloat_0_017453292_PetMesh + adjusted.y;
+        ((CExhibition*)object)->SetRotation((const float*)&adjusted);
+        ((CExhibition*)object)->OffsetViewport(0, (int)(s_previewVerticalDragScale * (current.y - previousPointerY)));
+        previousPointerX = current.x;
+        previousPointerY = current.y;
     }
     return 1;
 }
 
 // Release owned preload objects, script entry, exhibition and display descriptor.
-void* CAsyncExhibition_dtor(void* self, int shouldDelete) {
-    if (self != 0) {
-        // Phase 1: detach and destroy only internally owned preloaders.
-        unsigned char flag = AsCAsyncExhibition(self)->preloaderExternallyOwned;
-        *(void**)self = (void*)__vt__16CAsyncExhibition;
-        if (flag == 0) {
-            void* p110 = AsCAsyncExhibition(self)->exhibition;
-            if (p110 != 0) {
-                CExhibition_ClearModelPreloader(p110);
-            }
-            void* p1c = AsCAsyncExhibition(self)->preloadObject;
+CAsyncExhibition::~CAsyncExhibition() {
+    // Phase 1: detach and destroy only internally owned preloaders.
+    unsigned char flag = preloaderExternallyOwned;
+    *(void**)this = (void*)__vt__16CAsyncExhibition;
+    if (flag == 0) {
+        void* p110 = exhibition;
+        if (p110 != 0) {
+            ((CExhibition*)p110)->ClearModelPreloader();
+        }
+        void* p1c = preloadObject;
+        if (p1c != 0) {
             if (p1c != 0) {
-                if (p1c != 0) {
-                    struct VBase { 
-                    virtual void m0(int) DECOMP_LOCAL_VIRTUAL; virtual void m1(int) DECOMP_LOCAL_VIRTUAL; virtual void m2(int) DECOMP_LOCAL_VIRTUAL;
-                    };
-                    ((VBase*)p1c)->m0(1);
-                }
-                AsCAsyncExhibition(self)->preloadObject = 0;
-            }
-        }
-        // Phase 2: unregister the loading BP entry before destroying its 3D exhibition.
-        int f11c = AsCAsyncExhibition(self)->bpEntryId;
-        if (f11c != -1) {
-            if (Sing_805DC5F0() == 0) {
-                if (s_bpCtrlInitialized == 0) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_asyncExhibitionBpCtrlDtorRegistration);
-                    s_bpCtrlInitialized = 1;
-                }
-                Sing_805DC5F0() = s_bpCtrl;
-            }
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCAsyncExhibition(self)->bpEntryId);
-            AsCAsyncExhibition(self)->bpEntryId = -1;
-        }
-        void* p110b = AsCAsyncExhibition(self)->exhibition;
-        if (p110b != 0) {
-            if (p110b != 0) {
-                struct VBase { 
-                virtual void m0(int) DECOMP_LOCAL_VIRTUAL; virtual void m1(int) DECOMP_LOCAL_VIRTUAL; virtual void m2(int) DECOMP_LOCAL_VIRTUAL;
+                struct VBase {
+                    virtual void m0(int) DECOMP_LOCAL_VIRTUAL;
+                    virtual void m1(int) DECOMP_LOCAL_VIRTUAL;
+                    virtual void m2(int) DECOMP_LOCAL_VIRTUAL;
                 };
-                ((VBase*)p110b)->m0(1);
+                ((VBase*)p1c)->m0(1);
             }
-            AsCAsyncExhibition(self)->exhibition = 0;
+            preloadObject = 0;
         }
-        // Phase 3: destroy resolved selection storage, then optionally the receiver.
-        ResolvedItemSelection_Destroy(AsCAsyncExhibition(self)->displayDescriptor, -1);
-        if (shouldDelete > 0) __dl__FPv(self);
     }
-    return self;
+    // Phase 2: unregister the loading BP entry before destroying its 3D exhibition.
+    int f11c = bpEntryId;
+    if (f11c != -1) {
+        if (Sing_805DC5F0() == 0) {
+            if (s_bpCtrlInitialized == 0) {
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_asyncExhibitionBpCtrlDtorRegistration);
+                s_bpCtrlInitialized = 1;
+            }
+            Sing_805DC5F0() = s_bpCtrl;
+        }
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(bpEntryId);
+        bpEntryId = -1;
+    }
+    void* p110b = exhibition;
+    if (p110b != 0) {
+        if (p110b != 0) {
+            struct VBase {
+                virtual void m0(int) DECOMP_LOCAL_VIRTUAL;
+                virtual void m1(int) DECOMP_LOCAL_VIRTUAL;
+                virtual void m2(int) DECOMP_LOCAL_VIRTUAL;
+            };
+            ((VBase*)p110b)->m0(1);
+        }
+        exhibition = 0;
+    }
+    // Phase 3: destroy resolved selection storage, then optionally the receiver.
+    ResolvedItemSelection_Destroy(displayDescriptor, -1);
 }
 
 // Consume directional camera actions, rotating the preview or changing camera distance.
 // At most one action/frame: left, right, zoom out, zoom in (in that priority).
 // Yaw increments use degrees converted to radians; zoom changes distance by
 // 0.1 engine distance units per call, with no delta-time scaling or clamp here.
-int CAsyncExhibition_HandleCameraInput(void* self) {
-    void* exhibition = AsCAsyncExhibition(self)->exhibition;
+int CAsyncExhibition::HandleCameraInput() {
+    void* exhibition = this->exhibition;
     if (exhibition == 0) {
         return 0;
     }
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, InputManager_Dtor, s_inputManagerDtorRegistration_80268730);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    void* input = Sing_805DC5C8();
+    void* input = GetInputManagerSlot();
     if (input == 0) {
         return 0;
     }
     if (Input_IsActionButtonDown(input, kPreviewRotateLeft, -1) != 0) {
-        Vec3b* rotation = (Vec3b*)CExhibition_GetRotation(exhibition);
+        Vec3b* rotation = (Vec3b*)((CExhibition*)exhibition)->GetRotation();
         Vec3b adjustedRotation = *rotation;
-        adjustedRotation.y = adjustedRotation.y - kFloat_0_017453292_PetMesh * (kFloat_5_PetMesh * s_previewYawInputScale);
-        CExhibition_SetRotation(exhibition, &adjustedRotation);
+        adjustedRotation.y =
+            adjustedRotation.y - kFloat_0_017453292_PetMesh * (kFloat_5_PetMesh * s_previewYawInputScale);
+        ((CExhibition*)exhibition)->SetRotation((const float*)&adjustedRotation);
     } else if (Input_IsActionButtonDown(input, kPreviewRotateRight, -1) != 0) {
-        Vec3b* rotation = (Vec3b*)CExhibition_GetRotation(exhibition);
+        Vec3b* rotation = (Vec3b*)((CExhibition*)exhibition)->GetRotation();
         Vec3b adjustedRotation = *rotation;
-        adjustedRotation.y = adjustedRotation.y + kFloat_0_017453292_PetMesh * (kFloat_5_PetMesh * s_previewYawInputScale);
-        CExhibition_SetRotation(exhibition, &adjustedRotation);
+        adjustedRotation.y =
+            adjustedRotation.y + kFloat_0_017453292_PetMesh * (kFloat_5_PetMesh * s_previewYawInputScale);
+        ((CExhibition*)exhibition)->SetRotation((const float*)&adjustedRotation);
     } else if (Input_IsActionButtonDown(input, kPreviewZoomOut, -1) != 0) {
-        float cameraDistance = CExhibition_GetCameraDistance(exhibition);
-        CExhibition_SetCameraDistance(exhibition, (float)((double)cameraDistance + kDouble_0_1_ExhibitionCamera));
+        float cameraDistance = ((CExhibition*)exhibition)->GetCameraDistance();
+        ((CExhibition*)exhibition)->SetCameraDistance((float)((double)cameraDistance + kDouble_0_1_ExhibitionCamera));
     } else if (Input_IsActionButtonDown(input, kPreviewZoomIn, -1) != 0) {
-        float cameraDistance = CExhibition_GetCameraDistance(exhibition);
-        CExhibition_SetCameraDistance(exhibition, (float)((double)cameraDistance - kDouble_0_1_ExhibitionCamera));
+        float cameraDistance = ((CExhibition*)exhibition)->GetCameraDistance();
+        ((CExhibition*)exhibition)->SetCameraDistance((float)((double)cameraDistance - kDouble_0_1_ExhibitionCamera));
     } else {
         return 0;
     }

@@ -3,20 +3,32 @@
 #include "classes/CFxBox.h"
 #include "classes/CSharedDoc.h"
 // Borrow the spray view of the particle allocation without pointer adjustment.
-inline CFxSpray* AsCFxSpray(void* object) { return (CFxSpray*)object; }
+inline CFxSpray* AsCFxSpray(void* object) {
+    return (CFxSpray*)object;
+}
 #include "classes/CFxParticle.h"
 // Borrow the common particle fields used for animation-key list ownership.
-inline CFxParticle* AsCFxParticle(void* object) { return (CFxParticle*)object; }
-// Translation unit 0x801177B4-0x80119230 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+inline CFxParticle* AsCFxParticle(void* object) {
+    return (CFxParticle*)object;
+}
 
 #include "sdk_protos.h"
+#include "classes/CHashPath.h"
 #pragma cpp_exceptions on
 
 extern "C" {
 
 // Tokenizer ABI: pos/end delimit input; buffer receives each parsed token.
-struct ConfigText { int vtable; int pos; int end; int inputState; char* buffer; int bufferCapacity; ConfigText(); ~ConfigText(); };
+struct ConfigText {
+    int vtable;
+    int pos;
+    int end;
+    int inputState;
+    char* buffer;
+    int bufferCapacity;
+    ConfigText();
+    ~ConfigText();
+};
 void cTokenV_Init(ConfigText*);
 void cTokenV_SetInputBuffer(ConfigText*, const char*, int);
 int cToken_ReadUntilDelimiter(ConfigText*, char*, const char*, int);
@@ -34,9 +46,6 @@ struct ConfigVector {
 void __as__7WVectorFRC7WVector(void*, const ConfigVector&);
 void* appMallocDummy__FUl(unsigned int);
 void appFreeUni__FPv(void*);
-float CFxSpray_ParseScaledFloat(void*, const char*);
-void* CFxBox_GetOrLoadAnimatedSprite(void*, const char*, int, int);
-const char* CHashPath_FindPathForwarder(void*, const char*);
 void ResourceManager_ReleaseId(void*, void*);
 void* ResourceManager_LoadBitmap(void*, const char*, int, int, int);
 extern CSharedDoc* g_sharedDoc;
@@ -126,8 +135,10 @@ struct ConfigPayload0 {
 };
 // addVelocity: S startMs, F speedPercent, S endMs, F speedPercent.
 struct ConfigPayload1 {
-    int startMilliseconds; float startSpeedPercent;
-    int endMilliseconds; float endSpeedPercent;
+    int startMilliseconds;
+    float startSpeedPercent;
+    int endMilliseconds;
+    float endSpeedPercent;
 };
 // addRotation: F startAgePercent, S angularSpeedPercent, F endAgePercent, S percent.
 // S accepts suffixes even though the evaluator uses these values as percentages.
@@ -174,9 +185,12 @@ struct ConfigPayload5 {
 // F endAmplitude xyz, S sampleIntervalMs. Centers blend using per-axis
 // amplitude weights; amplitudes scale random offsets (roughly -0.5..0.5).
 struct ConfigPayload6 {
-    float centerX, centerY, centerZ; int startMilliseconds;
-    float startAmplitudeX, startAmplitudeY, startAmplitudeZ; int endMilliseconds;
-    float endAmplitudeX, endAmplitudeY, endAmplitudeZ; int sampleIntervalMilliseconds;
+    float centerX, centerY, centerZ;
+    int startMilliseconds;
+    float startAmplitudeX, startAmplitudeY, startAmplitudeZ;
+    int endMilliseconds;
+    float endAmplitudeX, endAmplitudeY, endAmplitudeZ;
+    int sampleIntervalMilliseconds;
     float lastSampleMilliseconds;
     // Leave fields for the twelve directive arguments and runtime zero.
     ConfigPayload6() {}
@@ -199,7 +213,9 @@ struct ConfigPayload6 {
 };
 // addFlash: S startMs, S peakMs, S endMs (absolute times, not phase durations).
 // Opacity rises to 255 then falls to zero; multiple keys add with saturation.
-struct ConfigPayload7 { int startMilliseconds, peakMilliseconds, endMilliseconds; };
+struct ConfigPayload7 {
+    int startMilliseconds, peakMilliseconds, endMilliseconds;
+};
 // addBubble: F amplitude0, F hertz0, F amplitude1, F hertz1, F amplitude2, F hertz2.
 // Oscillation is integrated into a separate offset in the velocity-aligned basis:
 // velocity, cross(velocity,side), side=cross(world Y,velocity), normalized.
@@ -214,10 +230,12 @@ struct ConfigPayload8 {
 struct ConfigPayload9 {
     union {
         unsigned int words[66];
-        struct { char resourceName[260]; float parameter; } sound;
+        struct {
+            char resourceName[260];
+            float parameter;
+        } sound;
     };
 };
-
 
 // Directive names for local use; retain original type identities for unwind symbols.
 typedef ConfigPayload0 GenerationKey;
@@ -232,18 +250,29 @@ typedef ConfigPayload8 BubbleKey;
 typedef ConfigPayload9 SoundKey;
 
 // Initialize an owned tokenizer buffer.
-inline ConfigText::ConfigText() { cTokenV_Init(this); }
+inline ConfigText::ConfigText() {
+    cTokenV_Init(this);
+}
 // Release tokenizer storage without deleting the stack object.
-inline ConfigText::~ConfigText() { cToken_dtor(this, 0); }
+inline ConfigText::~ConfigText() {
+    cToken_dtor(this, 0);
+}
 
 } // extern "C"
 
 // Use caller-provided node storage for payload construction.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
-struct ConfigAllocatorState { unsigned char state; };
+struct ConfigAllocatorState {
+    unsigned char state;
+};
 // Each key list is circular: the sentinel and all nodes start with the same two links.
-struct ConfigNodeLinks { ConfigNodeLinks* previous; ConfigNodeLinks* next; };
+struct ConfigNodeLinks {
+    ConfigNodeLinks* previous;
+    ConfigNodeLinks* next;
+};
 
 // Publish a fully constructed node at the list tail and increase its logical count.
 // Caller disarms the allocation guard first; the circular list then owns the node.
@@ -255,13 +284,16 @@ inline void LinkConfigNode(void* sentinel, void* node, int& count) {
     ++count;
 }
 
-template<class T> struct ConfigNodeGuard {
+template <class T> struct ConfigNodeGuard {
     void* list;
     void* node;
     // Own the unlinked node until the append operation commits it.
     ConfigNodeGuard(void* l, void* n) : list(l), node(n) {}
     // Free an uncommitted node if payload construction throws.
-    ~ConfigNodeGuard() { if (node) appFreeUni__FPv(node); }
+    ~ConfigNodeGuard() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 
 // Physical payload copying is isolated from script decoding below. Word copies
@@ -283,7 +315,11 @@ inline void CopyConfigPayload(void* storage, const ConfigPayload0& value) {
         dst[3] = second;
         second = ((const unsigned int*)&value)[5];
         dst[4] = first;
-        try { dst[5] = second; } catch (...) { throw; }
+        try {
+            dst[5] = second;
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -300,7 +336,11 @@ inline void CopyConfigPayload(void* storage, const ConfigPayload1& value) {
         dst[1] = second;
         second = ((const unsigned int*)&value)[3];
         dst[2] = first;
-        try { dst[3] = second; } catch (...) { throw; }
+        try {
+            dst[3] = second;
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -317,7 +357,11 @@ inline void CopyConfigPayload(void* storage, const ConfigPayload2& value) {
         dst[1] = second;
         second = ((const unsigned int*)&value)[3];
         dst[2] = first;
-        try { dst[3] = second; } catch (...) { throw; }
+        try {
+            dst[3] = second;
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -331,7 +375,11 @@ inline void CopyConfigPayload(void* storage, const ConfigPayload3& value) {
         ((float*)dst)[3] = ((const float*)&value)[3];
         ((float*)dst)[4] = ((const float*)&value)[4];
         float last = ((const float*)&value)[5];
-        try { ((float*)dst)[5] = last; } catch (...) { throw; }
+        try {
+            ((float*)dst)[5] = last;
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -348,7 +396,11 @@ inline void CopyConfigPayload(void* storage, const ColorKey& value) {
         dst[1] = second;
         second = ((const unsigned int*)&value)[3];
         dst[2] = first;
-        try { dst[3] = second; } catch (...) { throw; }
+        try {
+            dst[3] = second;
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -359,13 +411,15 @@ inline void CopyConfigPayload(void* storage, const ConfigPayload4& value) {
         unsigned int first = ((const unsigned int*)&value)[0];
         unsigned int second = ((const unsigned int*)&value)[1];
         try {
-        dst[0] = first;
-        dst[1] = second;
-        unsigned int third = ((const unsigned int*)&value)[2];
-        unsigned int fourth = ((const unsigned int*)&value)[3];
-        dst[2] = third;
-        dst[3] = fourth;
-        } catch (...) { throw; }
+            dst[0] = first;
+            dst[1] = second;
+            unsigned int third = ((const unsigned int*)&value)[2];
+            unsigned int fourth = ((const unsigned int*)&value)[3];
+            dst[2] = third;
+            dst[3] = fourth;
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -376,14 +430,16 @@ inline void CopyConfigPayload(void* storage, const ConfigPayload5& value) {
         unsigned int first = ((const unsigned int*)&value)[0];
         unsigned int second = ((const unsigned int*)&value)[1];
         try {
-        dst[0] = first;
-        dst[1] = second;
-        unsigned int third = ((const unsigned int*)&value)[2];
-        unsigned int fourth = ((const unsigned int*)&value)[3];
-        dst[2] = third;
-        dst[3] = fourth;
-        dst[4] = ((const unsigned int*)&value)[4];
-        } catch (...) { throw; }
+            dst[0] = first;
+            dst[1] = second;
+            unsigned int third = ((const unsigned int*)&value)[2];
+            unsigned int fourth = ((const unsigned int*)&value)[3];
+            dst[2] = third;
+            dst[3] = fourth;
+            dst[4] = ((const unsigned int*)&value)[4];
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -404,7 +460,11 @@ inline void CopyConfigPayload(void* storage, const ConfigPayload6& value) {
         ((unsigned int*)dst)[10] = ((const unsigned int*)&value)[10];
         ((unsigned int*)dst)[11] = ((const unsigned int*)&value)[11];
         float last = ((const float*)&value)[12];
-        try { ((float*)dst)[12] = last; } catch (...) { throw; }
+        try {
+            ((float*)dst)[12] = last;
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -419,7 +479,11 @@ inline void CopyConfigPayload(void* storage, const ConfigPayload7& value) {
         dst[0] = first;
         first = ((const unsigned int*)&value)[2];
         dst[1] = second;
-        try { dst[2] = first; } catch (...) { throw; }
+        try {
+            dst[2] = first;
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -440,7 +504,11 @@ inline void CopyConfigPayload(void* storage, const ConfigPayload8& value) {
         dst[3] = second;
         second = ((const unsigned int*)&value)[5];
         dst[4] = first;
-        try { dst[5] = second; } catch (...) { throw; }
+        try {
+            dst[5] = second;
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -448,13 +516,17 @@ inline void CopyConfigPayload(void* storage, const ConfigPayload8& value) {
 inline void CopyConfigPayload(void* storage, const ConfigPayload9& value) {
     ConfigPayload9* dst = (ConfigPayload9*)(storage);
     if (dst) {
-        try { *dst = value; } catch (...) { throw; }
+        try {
+            *dst = value;
+        } catch (...) {
+            throw;
+        }
     }
 }
 
 // Allocate, construct under a guard, then transfer ownership to the circular list.
 // Copy overloads above describe representation; Decode* below describes semantics.
-template<class T>
+template <class T>
 // Append one key while preserving unlinked-node cleanup if its copy throws.
 inline void MakeConfigNode(void* sentinel, const T& value, int& count) {
     volatile ConfigAllocatorState allocatorState;
@@ -486,20 +558,26 @@ struct SprayScriptVectorFields {
 };
 typedef char SprayScriptVectorFields_size[(sizeof(SprayScriptVectorFields) == 0x298) ? 1 : -1];
 enum SprayScriptConstants {
-    kScriptValueCount = 16, kScriptTokenBytes = 0x104,
-    kCircularEmissionScriptValue = 2, kScriptOpaqueAlpha = 255,
-    kExternalAxisX = 1, kExternalAxisY = 2, kExternalAxisZ = 4,
-    kBlendNormal = 0, kBlendAdd = 0x800000,
-    kBlendMultiply = 0x1000000, kBlendInverseMultiply = 0x1800000
+    kScriptValueCount = 16,
+    kScriptTokenBytes = 0x104,
+    kCircularEmissionScriptValue = 2,
+    kScriptOpaqueAlpha = 255,
+    kExternalAxisX = 1,
+    kExternalAxisY = 2,
+    kExternalAxisZ = 4,
+    kBlendNormal = 0,
+    kBlendAdd = 0x800000,
+    kBlendMultiply = 0x1000000,
+    kBlendInverseMultiply = 0x1800000
 };
 
 // Decode generation arguments in script order; storage/units are documented on the payload.
 // values is borrowed; fill the caller's key only, without allocating or linking a node.
 inline void DecodeGenerationKey(CFxSpray* self, char values[][kScriptTokenBytes], GenerationKey& generationKey) {
-    generationKey.startMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[0]);
-    generationKey.endMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[1]);
+    generationKey.startMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[0]);
+    generationKey.endMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[1]);
     generationKey.totalParticles = String_ParseDecimalInt(values[2]);
-    generationKey.spreadRadians = CFxSpray_ParseScaledFloat(self->effectOwner, values[3]);
+    generationKey.spreadRadians = ((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[3]);
     generationKey.emittedParticles = 0;
     generationKey.lastEmissionMilliseconds = kFloat_0_FxSpray;
 }
@@ -507,9 +585,9 @@ inline void DecodeGenerationKey(CFxSpray* self, char values[][kScriptTokenBytes]
 // Decode velocity arguments in script order; storage/units are documented on the payload.
 // values is borrowed; fill the caller's key only, without allocating or linking a node.
 inline void DecodeVelocityKey(CFxSpray* self, char values[][kScriptTokenBytes], VelocityKey& velocityKey) {
-    velocityKey.startMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[0]);
+    velocityKey.startMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[0]);
     velocityKey.startSpeedPercent = (float)atof(values[1]);
-    velocityKey.endMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[2]);
+    velocityKey.endMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[2]);
     velocityKey.endSpeedPercent = (float)atof(values[3]);
 }
 
@@ -517,9 +595,9 @@ inline void DecodeVelocityKey(CFxSpray* self, char values[][kScriptTokenBytes], 
 // values is borrowed; fill the caller's key only, without allocating or linking a node.
 inline void DecodeRotationKey(CFxSpray* self, char values[][kScriptTokenBytes], RotationKey& rotationKey) {
     rotationKey.startLifetimePercent = (float)atof(values[0]);
-    rotationKey.startAngularSpeedPercent = CFxSpray_ParseScaledFloat(self->effectOwner, values[1]);
+    rotationKey.startAngularSpeedPercent = ((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[1]);
     rotationKey.endLifetimePercent = (float)atof(values[2]);
-    rotationKey.endAngularSpeedPercent = CFxSpray_ParseScaledFloat(self->effectOwner, values[3]);
+    rotationKey.endAngularSpeedPercent = ((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[3]);
 }
 
 // Decode gravitypoint arguments in script order; storage/units are documented on the payload.
@@ -549,7 +627,7 @@ inline void DecodeFrameKey(CFxSpray* self, char values[][kScriptTokenBytes], Fra
     sscanf(values[1], fxSprayScriptStrings.floatFormat, &frameKey.endLifetimePercentBits);
     sscanf(values[2], fxSprayScriptStrings.integerFormat, &frameKey.firstFrame);
     sscanf(values[3], fxSprayScriptStrings.integerFormat, &frameKey.lastFrame);
-    frameKey.intervalMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[4]);
+    frameKey.intervalMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[4]);
 }
 
 // Decode quake arguments in script order; storage/units are documented on the payload.
@@ -558,24 +636,24 @@ inline void DecodeQuakeKey(CFxSpray* self, char values[][kScriptTokenBytes], Qua
     quakeKey.centerX = (float)atof(values[0]);
     quakeKey.centerY = (float)atof(values[1]);
     quakeKey.centerZ = (float)atof(values[2]);
-    quakeKey.startMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[3]);
+    quakeKey.startMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[3]);
     quakeKey.startAmplitudeX = (float)atof(values[4]);
     quakeKey.startAmplitudeY = (float)atof(values[5]);
     quakeKey.startAmplitudeZ = (float)atof(values[6]);
-    quakeKey.endMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[7]);
+    quakeKey.endMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[7]);
     quakeKey.endAmplitudeX = (float)atof(values[8]);
     quakeKey.endAmplitudeY = (float)atof(values[9]);
     quakeKey.endAmplitudeZ = (float)atof(values[10]);
-    quakeKey.sampleIntervalMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[11]);
+    quakeKey.sampleIntervalMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[11]);
     quakeKey.lastSampleMilliseconds = kFloat_0_FxSpray;
 }
 
 // Decode flash arguments in script order; storage/units are documented on the payload.
 // values is borrowed; fill the caller's key only, without allocating or linking a node.
 inline void DecodeFlashKey(CFxSpray* self, char values[][kScriptTokenBytes], FlashKey& flashKey) {
-    flashKey.startMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[0]);
-    flashKey.peakMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[1]);
-    flashKey.endMilliseconds = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[2]);
+    flashKey.startMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[0]);
+    flashKey.peakMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[1]);
+    flashKey.endMilliseconds = (int)((CFxSpray*)(self->effectOwner))->ParseScaledFloat(values[2]);
 }
 
 // Decode bubble arguments in script order; storage/units are documented on the payload.
@@ -595,7 +673,8 @@ inline void DecodeSoundKey(CFxSpray* self, char values[][kScriptTokenBytes], Sou
     soundKey.sound.parameter = kFloat_neg_1_805DE648;
     strcpy(soundKey.sound.resourceName, values[0]);
     char* suffix = strstr(((char*)soundKey.words), fxSprayScriptStrings.waveSuffix);
-    if (suffix) *suffix = 0;
+    if (suffix)
+        *suffix = 0;
     sscanf(values[1], fxSprayScriptStrings.floatFormat, &soundKey.sound.parameter);
 }
 
@@ -629,13 +708,14 @@ inline void DecodeSoundKey(CFxSpray* self, char values[][kScriptTokenBytes], Sou
 // initialFrame:D min,max; distanceLimit:F min,max (nonnegative, max >= min).
 // sound:path,optional %f parameter (defaults to -1; '.wav' suffix is removed).
 // Remaining add* argument-to-storage maps are beside ConfigPayload0..8 above.
-int CFxSpray_ParseScriptLine(CFxSpray* self, const char* input) {
+int CFxSpray::ParseScriptLine(const char* input) {
     char values[kScriptValueCount][kScriptTokenBytes];
     void* sentinel;
     volatile char frame_pad[0x3e0];
     (void)frame_pad;
     int first = (signed char)*input;
-    if (first == 0 || first == ';') return 1;
+    if (first == 0 || first == ';')
+        return 1;
 
     ConfigText source;
     // Phase 1: tokenize and trim into local buffers before mutating the effect.
@@ -655,78 +735,102 @@ int CFxSpray_ParseScriptLine(CFxSpray* self, const char* input) {
         char* token;
         cTokenV_SetInputBuffer(&value, values[0], strlen(values[0]));
         const char* separators = fxSprayScriptStrings.wordSeparators;
-        if (!FxSprayScriptBuffer_EnsureTerminatorCapacity(&value)) token = 0;
+        if (!FxSprayScriptBuffer_EnsureTerminatorCapacity(&value))
+            token = 0;
         else {
             token = value.buffer;
             *token = 0;
             while (value.pos < value.end) {
                 cToken_ReadUntilDelimiter(&value, token, separators, 2);
-                if (*token) break;
+                if (*token)
+                    break;
             }
         }
         if (!CString_Compare(token, fxSprayScriptStrings.petSource)) {
             char* name;
             const char* separators = fxSprayScriptStrings.wordSeparators;
-            if (!FxSprayScriptBuffer_EnsureTerminatorCapacity(&value)) name = 0;
+            if (!FxSprayScriptBuffer_EnsureTerminatorCapacity(&value))
+                name = 0;
             else {
                 name = value.buffer;
                 *name = 0;
                 while (value.pos < value.end) {
                     cToken_ReadUntilDelimiter(&value, name, separators, 2);
-                    if (*name) break;
+                    if (*name)
+                        break;
                 }
             }
-            void* manager = (void*)((CFxBox*)self->effectOwner)->resourceManager;
-            if (!manager) return 0;
-            if (!CString_Compare(CHashPath_FindPathForwarder(manager, name), name)) return 0;
-            strcpy((char*)&AsCFxSpray(self)->petResourceName, values[0]);
-            *(bool*)&AsCFxSpray(self)->petLightingEnabled = !CString_Compare(values[1], fxSprayScriptStrings.petLighting);
+            void* manager = (void*)((CFxBox*)effectOwner)->resourceManager;
+            if (!manager)
+                return 0;
+            if (!CString_Compare((const char*)((CHashPath*)manager)->FindPathForwarder(name), name))
+                return 0;
+            strcpy((char*)&petResourceName, values[0]);
+            *(bool*)&petLightingEnabled = !CString_Compare(values[1], fxSprayScriptStrings.petLighting);
         } else {
 
-            void* result = CFxBox_GetOrLoadAnimatedSprite(self->effectOwner, values[0], (String_ParseDecimalInt(values[1])), (String_ParseDecimalInt(values[2])));
-            *(void**)&AsCFxSpray(self)->spriteResource = result;
-            if (0 == result) { return 0; }
-            AsCFxSpray(self)->billboardEnabled = !strlen(values[3]) || !CString_Compare(values[3], fxSprayScriptStrings.billboard);
+            void* result = ((CFxBox*)(effectOwner))
+                               ->GetOrLoadAnimatedSprite(values[0], (String_ParseDecimalInt(values[1])),
+                                                         (String_ParseDecimalInt(values[2])));
+            *(void**)&spriteResource = result;
+            if (0 == result) {
+                return 0;
+            }
+            billboardEnabled = !strlen(values[3]) || !CString_Compare(values[3], fxSprayScriptStrings.billboard);
         }
 
     } else if (!CString_Compare(key, fxSprayScriptStrings.tail)) {
-        *(int*)&AsCFxSpray(self)->trailSegmentCount = String_ParseDecimalInt(values[0]);
-        AsCFxSpray(self)->trailSampleInterval = CFxSpray_ParseScaledFloat(self->effectOwner, values[1]);
-        AsCFxSpray(self)->trailEndAlpha = String_ParseDecimalInt(values[2]);
-        AsCFxSpray(self)->trailEndRed = String_ParseDecimalInt(values[3]);
-        AsCFxSpray(self)->trailEndGreen = String_ParseDecimalInt(values[4]);
-        AsCFxSpray(self)->trailEndBlue = String_ParseDecimalInt(values[5]);
+        *(int*)&trailSegmentCount = String_ParseDecimalInt(values[0]);
+        trailSampleInterval = ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[1]);
+        trailEndAlpha = String_ParseDecimalInt(values[2]);
+        trailEndRed = String_ParseDecimalInt(values[3]);
+        trailEndGreen = String_ParseDecimalInt(values[4]);
+        trailEndBlue = String_ParseDecimalInt(values[5]);
         if (strlen(values[6])) {
-            void* manager = (void*)((CFxBox*)self->effectOwner)->resourceManager;
-            if (!manager) { return 0; }
-            void** resource = (void**)((char*)&AsCFxSpray(self)->resourceId);
-            if (*resource) { ResourceManager_ReleaseId(manager, *resource); *resource = 0; }
-            *resource = ResourceManager_LoadBitmap((void*)((CFxBox*)self->effectOwner)->resourceManager, values[6], 0, 0, 0);
-            if (!*resource) { return 0; }
-            AsCFxSpray(self)->trailWidthScale = (float)atof(values[7]);
-            *(bool*)&AsCFxSpray(self)->trailMonolithEnabled = !CString_Compare(values[8], fxSprayScriptStrings.monolith);
-            *(bool*)&AsCFxSpray(self)->trailCameraSideEnabled = !CString_Compare(values[9], fxSprayScriptStrings.cameraSide);
+            void* manager = (void*)((CFxBox*)effectOwner)->resourceManager;
+            if (!manager) {
+                return 0;
+            }
+            void** resource = (void**)((char*)&resourceId);
+            if (*resource) {
+                ResourceManager_ReleaseId(manager, *resource);
+                *resource = 0;
+            }
+            *resource = ResourceManager_LoadBitmap((void*)((CFxBox*)effectOwner)->resourceManager, values[6], 0, 0, 0);
+            if (!*resource) {
+                return 0;
+            }
+            trailWidthScale = (float)atof(values[7]);
+            *(bool*)&trailMonolithEnabled = !CString_Compare(values[8], fxSprayScriptStrings.monolith);
+            *(bool*)&trailCameraSideEnabled = !CString_Compare(values[9], fxSprayScriptStrings.cameraSide);
         }
-    // Emission geometry and generation: position components are effect-space values.
+        // Emission geometry and generation: position components are effect-space values.
     } else if (!CString_Compare(key, fxSprayScriptStrings.sphericalEmission)) {
         int n = String_ParseDecimalInt(values[0]);
-        AsCFxSpray(self)->sphericalEmission = 0 != n;
-        if (n == kCircularEmissionScriptValue) AsCFxSpray(self)->circularEmission = 1;
+        sphericalEmission = 0 != n;
+        if (n == kCircularEmissionScriptValue)
+            circularEmission = 1;
     } else if (!CString_Compare(key, fxSprayScriptStrings.emissionPosition)) {
-        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)self)->minEmissionPosition, ConfigVector((float)atof(values[0]), (float)atof(values[1]), (float)atof(values[2])));
-        if (!AsCFxSpray(self)->sphericalEmission) {
-        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)self)->maxEmissionPosition, ConfigVector((float)atof(values[3]), (float)atof(values[4]), (float)atof(values[5])));
+        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)this)->minEmissionPosition,
+                                  ConfigVector((float)atof(values[0]), (float)atof(values[1]), (float)atof(values[2])));
+        if (!sphericalEmission) {
+            __as__7WVectorFRC7WVector(
+                ((SprayScriptVectorFields*)this)->maxEmissionPosition,
+                ConfigVector((float)atof(values[3]), (float)atof(values[4]), (float)atof(values[5])));
         } else {
-        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)self)->maxEmissionPosition, ConfigVector((float)atof(values[3]), (float)atof(values[4]), CFxSpray_ParseScaledFloat(self->effectOwner, values[5])));
+            __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)this)->maxEmissionPosition,
+                                      ConfigVector((float)atof(values[3]), (float)atof(values[4]),
+                                                   ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[5])));
         }
     } else if (!CString_Compare(key, fxSprayScriptStrings.regenerateAtSamePosition)) {
-        AsCFxSpray(self)->regenerateAtSamePosition = String_ParseDecimalInt(values[0]) != 0;
+        regenerateAtSamePosition = String_ParseDecimalInt(values[0]) != 0;
     } else if (!CString_Compare(key, fxSprayScriptStrings.cameraOffset)) {
-        AsCFxSpray(self)->cameraOffset = (float)atof(values[0]);
-    } else if (!CString_Compare(key, fxSprayScriptStrings.addGeneration)) { GenerationKey generationKey;
-        DecodeGenerationKey(self, values, generationKey);
-        sentinel = (char*)&AsCFxParticle(self)->generationKeyTail;
-        MakeConfigNode(sentinel, generationKey, (*(int*)&AsCFxParticle(self)->generationKeyCount));
+        cameraOffset = (float)atof(values[0]);
+    } else if (!CString_Compare(key, fxSprayScriptStrings.addGeneration)) {
+        GenerationKey generationKey;
+        DecodeGenerationKey(this, values, generationKey);
+        sentinel = (char*)&AsCFxParticle(this)->generationKeyTail;
+        MakeConfigNode(sentinel, generationKey, (*(int*)&AsCFxParticle(this)->generationKeyCount));
     } else if (!CString_Compare(key, fxSprayScriptStrings.lifetime)) {
         // Zero minimum lifetime selects the volume path: the first time-zero fade
         // key must have opaque endpoint alpha. Nonzero lifetime selects the other
@@ -734,115 +838,154 @@ int CFxSpray_ParseScriptLine(CFxSpray* self, const char* input) {
         // reason for this distinction is outside this parser; order matters:
         // this visits the FIRST existing zero-time key, while addFade below fixes
         // each newly appended zero-time key. maxLifetime does not choose the path.
-        *(int*)&AsCFxSpray(self)->minLifetime = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[0]);
-        *(int*)&AsCFxSpray(self)->maxLifetime = (int)CFxSpray_ParseScaledFloat(self->effectOwner, values[1]);
-        if (!*(int*)&AsCFxSpray(self)->minLifetime) {
-            char* end = (char*)&AsCFxParticle(self)->fadeKeyTail;
+        *(int*)&minLifetime = (int)((CFxSpray*)(effectOwner))->ParseScaledFloat(values[0]);
+        *(int*)&maxLifetime = (int)((CFxSpray*)(effectOwner))->ParseScaledFloat(values[1]);
+        if (!*(int*)&minLifetime) {
+            char* end = (char*)&AsCFxParticle(this)->fadeKeyTail;
             char* node = *(char**)(end + 4);
             while (end != node) {
-                if (*(float*)(8 + node) == 0.0f) { ((unsigned char*)node)[0x14] = kScriptOpaqueAlpha; ((unsigned char*)node)[0xc] = kScriptOpaqueAlpha; break; }
+                if (*(float*)(8 + node) == 0.0f) {
+                    ((unsigned char*)node)[0x14] = kScriptOpaqueAlpha;
+                    ((unsigned char*)node)[0xc] = kScriptOpaqueAlpha;
+                    break;
+                }
                 node = *(char**)(node + 4);
             }
         } else {
-            AsCFxSpray(self)->volumeCoreScaleY = 1.0f;
-            AsCFxSpray(self)->volumeCoreScaleX = 1.0f;
-            AsCFxSpray(self)->opacityMultiplier = 1.0f;
+            volumeCoreScaleY = 1.0f;
+            volumeCoreScaleX = 1.0f;
+            opacityMultiplier = 1.0f;
         }
     } else if (!CString_Compare(key, fxSprayScriptStrings.volumeOpacity)) {
         float v = (float)atof(values[0]);
-        AsCFxSpray(self)->opacityMultiplier = kFloat_0_FxSpray > v ? kFloat_0_FxSpray : kFloat_1_FxSpray < v ? kFloat_1_FxSpray : v;
-        if (*(int*)&AsCFxSpray(self)->minLifetime) AsCFxSpray(self)->opacityMultiplier = 1.0f;
+        opacityMultiplier = kFloat_0_FxSpray > v ? kFloat_0_FxSpray : kFloat_1_FxSpray < v ? kFloat_1_FxSpray : v;
+        if (*(int*)&minLifetime)
+            opacityMultiplier = 1.0f;
     } else if (!CString_Compare(key, fxSprayScriptStrings.volumeCore)) {
-        if (*(int*)&AsCFxSpray(self)->minLifetime) {
-            AsCFxSpray(self)->volumeCoreScaleY = 1.0f;
-            AsCFxSpray(self)->volumeCoreScaleX = 1.0f;
+        if (*(int*)&minLifetime) {
+            volumeCoreScaleY = 1.0f;
+            volumeCoreScaleX = 1.0f;
         } else {
-            float a = (float)atof(values[0]);
-            AsCFxSpray(self)->volumeCoreScaleX = kFloat_0_FxSpray > a ? kFloat_0_FxSpray : kFloat_1_FxSpray < a ? kFloat_1_FxSpray : a;
-            float b = (float)atof(values[1]);
-            AsCFxSpray(self)->volumeCoreScaleY = kFloat_0_FxSpray > b ? kFloat_0_FxSpray : kFloat_1_FxSpray < b ? kFloat_1_FxSpray : b;
+            float coreScaleX = (float)atof(values[0]);
+            volumeCoreScaleX = kFloat_0_FxSpray > coreScaleX   ? kFloat_0_FxSpray
+                               : kFloat_1_FxSpray < coreScaleX ? kFloat_1_FxSpray
+                                                               : coreScaleX;
+            float coreScaleY = (float)atof(values[1]);
+            volumeCoreScaleY = kFloat_0_FxSpray > coreScaleY   ? kFloat_0_FxSpray
+                               : kFloat_1_FxSpray < coreScaleY ? kFloat_1_FxSpray
+                                                               : coreScaleY;
         }
-    // Motion keys: decode completely before publishing to their owning lists.
+        // Motion keys: decode completely before publishing to their owning lists.
     } else if (!CString_Compare(key, fxSprayScriptStrings.initialVelocity)) {
-        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)self)->minVelocity, ConfigVector((float)atof(values[0]), (float)atof(values[1]), (float)atof(values[2])));
-        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)self)->maxVelocity, ConfigVector((float)atof(values[3]), (float)atof(values[4]), (float)atof(values[5])));
+        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)this)->minVelocity,
+                                  ConfigVector((float)atof(values[0]), (float)atof(values[1]), (float)atof(values[2])));
+        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)this)->maxVelocity,
+                                  ConfigVector((float)atof(values[3]), (float)atof(values[4]), (float)atof(values[5])));
     } else if (!CString_Compare(key, fxSprayScriptStrings.addVelocity)) {
         VelocityKey velocityKey;
-        DecodeVelocityKey(self, values, velocityKey);
-        sentinel = (char*)&AsCFxParticle(self)->velocityKeyTail;
-        MakeConfigNode(sentinel, velocityKey, (*(int*)&AsCFxParticle(self)->velocityKeyCount));
+        DecodeVelocityKey(this, values, velocityKey);
+        sentinel = (char*)&AsCFxParticle(this)->velocityKeyTail;
+        MakeConfigNode(sentinel, velocityKey, (*(int*)&AsCFxParticle(this)->velocityKeyCount));
     } else if (!CString_Compare(key, fxSprayScriptStrings.windScale)) {
-        AsCFxSpray(self)->minWindScale = (float)atof(values[0]);
-        AsCFxSpray(self)->maxWindScale = (float)atof(values[1]);
+        minWindScale = (float)atof(values[0]);
+        maxWindScale = (float)atof(values[1]);
     } else if (!CString_Compare(key, fxSprayScriptStrings.externalWind)) {
-        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)self)->externalWind, ConfigVector((float)atof(values[0]), (float)atof(values[1]), (float)atof(values[2])));
+        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)this)->externalWind,
+                                  ConfigVector((float)atof(values[0]), (float)atof(values[1]), (float)atof(values[2])));
     } else if (!CString_Compare(key, fxSprayScriptStrings.externalOrientation)) {
-        unsigned int a = 0; int b = 0; int c = 0;
+        unsigned int a = 0;
+        int b = 0;
+        int zEnabled = 0;
         sscanf(values[0], fxSprayScriptStrings.integerFormat, &a);
         sscanf(values[1], fxSprayScriptStrings.integerFormat, &b);
-        sscanf(values[2], fxSprayScriptStrings.integerFormat, &c);
-        int* flags = (int*)((char*)&AsCFxSpray(self)->externalOrientationAxisMask);
+        sscanf(values[2], fxSprayScriptStrings.integerFormat, &zEnabled);
+        int* flags = (int*)((char*)&externalOrientationAxisMask);
         *flags = 0;
-        if (a) *flags |= kExternalAxisX;
-        if (b) *flags |= kExternalAxisY;
-        if (c) *flags |= kExternalAxisZ;
+        if (a)
+            *flags |= kExternalAxisX;
+        if (b)
+            *flags |= kExternalAxisY;
+        if (zEnabled)
+            *flags |= kExternalAxisZ;
     } else if (!CString_Compare(key, fxSprayScriptStrings.initialAngle)) {
-        ((SprayScriptVectorFields*)self)->minInitialAngle[0] = CFxSpray_ParseScaledFloat(self->effectOwner, values[0]);
-        ((SprayScriptVectorFields*)self)->minInitialAngle[1] = CFxSpray_ParseScaledFloat(self->effectOwner, values[1]);
-        ((SprayScriptVectorFields*)self)->minInitialAngle[2] = CFxSpray_ParseScaledFloat(self->effectOwner, values[2]);
-        ((SprayScriptVectorFields*)self)->maxInitialAngle[0] = CFxSpray_ParseScaledFloat(self->effectOwner, values[3]);
-        ((SprayScriptVectorFields*)self)->maxInitialAngle[1] = CFxSpray_ParseScaledFloat(self->effectOwner, values[4]);
-        ((SprayScriptVectorFields*)self)->maxInitialAngle[2] = CFxSpray_ParseScaledFloat(self->effectOwner, values[5]);
+        ((SprayScriptVectorFields*)this)->minInitialAngle[0] = ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[0]);
+        ((SprayScriptVectorFields*)this)->minInitialAngle[1] = ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[1]);
+        ((SprayScriptVectorFields*)this)->minInitialAngle[2] = ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[2]);
+        ((SprayScriptVectorFields*)this)->maxInitialAngle[0] = ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[3]);
+        ((SprayScriptVectorFields*)this)->maxInitialAngle[1] = ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[4]);
+        ((SprayScriptVectorFields*)this)->maxInitialAngle[2] = ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[5]);
     } else if (!CString_Compare(key, fxSprayScriptStrings.initialRotation)) {
-        ((SprayScriptVectorFields*)self)->minInitialRotation[0] = CFxSpray_ParseScaledFloat(self->effectOwner, values[0]);
-        ((SprayScriptVectorFields*)self)->minInitialRotation[1] = CFxSpray_ParseScaledFloat(self->effectOwner, values[1]);
-        ((SprayScriptVectorFields*)self)->minInitialRotation[2] = CFxSpray_ParseScaledFloat(self->effectOwner, values[2]);
-        ((SprayScriptVectorFields*)self)->maxInitialRotation[0] = CFxSpray_ParseScaledFloat(self->effectOwner, values[3]);
-        ((SprayScriptVectorFields*)self)->maxInitialRotation[1] = CFxSpray_ParseScaledFloat(self->effectOwner, values[4]);
-        ((SprayScriptVectorFields*)self)->maxInitialRotation[2] = CFxSpray_ParseScaledFloat(self->effectOwner, values[5]);
+        ((SprayScriptVectorFields*)this)->minInitialRotation[0] =
+            ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[0]);
+        ((SprayScriptVectorFields*)this)->minInitialRotation[1] =
+            ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[1]);
+        ((SprayScriptVectorFields*)this)->minInitialRotation[2] =
+            ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[2]);
+        ((SprayScriptVectorFields*)this)->maxInitialRotation[0] =
+            ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[3]);
+        ((SprayScriptVectorFields*)this)->maxInitialRotation[1] =
+            ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[4]);
+        ((SprayScriptVectorFields*)this)->maxInitialRotation[2] =
+            ((CFxSpray*)(effectOwner))->ParseScaledFloat(values[5]);
     } else if (!CString_Compare(key, fxSprayScriptStrings.addRotation)) {
         RotationKey rotationKey;
-        DecodeRotationKey(self, values, rotationKey);
-        sentinel = (char*)&AsCFxParticle(self)->rotationKeyTail;
-        MakeConfigNode(sentinel, rotationKey, (*(int*)&AsCFxParticle(self)->rotationKeyCount));
+        DecodeRotationKey(this, values, rotationKey);
+        sentinel = (char*)&AsCFxParticle(this)->rotationKeyTail;
+        MakeConfigNode(sentinel, rotationKey, (*(int*)&AsCFxParticle(this)->rotationKeyCount));
     } else if (!CString_Compare(key, fxSprayScriptStrings.friction)) {
-        AsCFxSpray(self)->friction = (float)atof(values[0]);
+        friction = (float)atof(values[0]);
     } else if (!CString_Compare(key, fxSprayScriptStrings.groundFriction)) {
-        AsCFxSpray(self)->groundFriction = (float)atof(values[0]);
+        groundFriction = (float)atof(values[0]);
     } else if (!CString_Compare(key, fxSprayScriptStrings.gravity)) {
-        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)self)->gravity, ConfigVector((float)atof(values[0]), (float)atof(values[1]), (float)atof(values[2])));
+        __as__7WVectorFRC7WVector(((SprayScriptVectorFields*)this)->gravity,
+                                  ConfigVector((float)atof(values[0]), (float)atof(values[1]), (float)atof(values[2])));
     } else if (!CString_Compare(key, fxSprayScriptStrings.addGravityPoint)) {
         GravityPointKey gravityPointKey;
-        DecodeGravityPointKey(self, values, gravityPointKey);
-        sentinel = (char*)&AsCFxParticle(self)->gravityPointKeyTail;
-        MakeConfigNode(sentinel, gravityPointKey, (*(int*)&AsCFxParticle(self)->gravityPointKeyCount));
+        DecodeGravityPointKey(this, values, gravityPointKey);
+        sentinel = (char*)&AsCFxParticle(this)->gravityPointKeyTail;
+        MakeConfigNode(sentinel, gravityPointKey, (*(int*)&AsCFxParticle(this)->gravityPointKeyCount));
     } else if (!CString_Compare(key, fxSprayScriptStrings.groundCollision)) {
-        AsCFxSpray(self)->groundHeightOffset = (float)atof(values[0]);
-        AsCFxSpray(self)->groundRestitution = (float)atof(values[1]);
-        AsCFxSpray(self)->groundCollisionRadius = (float)atof(values[2]);
-    // Appearance: blend writes are sequential; invalid trail mode leaves sprite mode changed.
+        groundHeightOffset = (float)atof(values[0]);
+        groundRestitution = (float)atof(values[1]);
+        groundCollisionRadius = (float)atof(values[2]);
+        // Appearance: blend writes are sequential; invalid trail mode leaves sprite mode changed.
     } else if (!CString_Compare(key, fxSprayScriptStrings.blend)) {
-        int* firstMode = (int*)((char*)&AsCFxSpray(self)->spriteBlendMode);
-        if (!CString_Compare(values[0], fxSprayScriptStrings.normalBlend)) *firstMode = kBlendNormal;
-        else if (!CString_Compare(values[0], fxSprayScriptStrings.addBlend)) *firstMode = kBlendAdd;
-        else if (!CString_Compare(values[0], fxSprayScriptStrings.multiplyBlend)) *firstMode = kBlendMultiply;
-        else if (!CString_Compare(values[0], fxSprayScriptStrings.inverseMultiplyBlend)) *firstMode = kBlendInverseMultiply;
-        else { return 0; }
-        int* secondMode = (int*)((char*)&AsCFxSpray(self)->trailBlendMode);
-        if (!CString_Compare(values[1], fxSprayScriptStrings.normalBlend)) *secondMode = kBlendNormal;
-        else if (!CString_Compare(values[1], fxSprayScriptStrings.addBlend)) *secondMode = kBlendAdd;
-        else if (!CString_Compare(values[1], fxSprayScriptStrings.multiplyBlend)) *secondMode = kBlendMultiply;
-        else if (!CString_Compare(values[1], fxSprayScriptStrings.inverseMultiplyBlend)) *secondMode = kBlendInverseMultiply;
-        else { return 0; }
+        int* firstMode = (int*)((char*)&spriteBlendMode);
+        if (!CString_Compare(values[0], fxSprayScriptStrings.normalBlend))
+            *firstMode = kBlendNormal;
+        else if (!CString_Compare(values[0], fxSprayScriptStrings.addBlend))
+            *firstMode = kBlendAdd;
+        else if (!CString_Compare(values[0], fxSprayScriptStrings.multiplyBlend))
+            *firstMode = kBlendMultiply;
+        else if (!CString_Compare(values[0], fxSprayScriptStrings.inverseMultiplyBlend))
+            *firstMode = kBlendInverseMultiply;
+        else {
+            return 0;
+        }
+        int* secondMode = (int*)((char*)&trailBlendMode);
+        if (!CString_Compare(values[1], fxSprayScriptStrings.normalBlend))
+            *secondMode = kBlendNormal;
+        else if (!CString_Compare(values[1], fxSprayScriptStrings.addBlend))
+            *secondMode = kBlendAdd;
+        else if (!CString_Compare(values[1], fxSprayScriptStrings.multiplyBlend))
+            *secondMode = kBlendMultiply;
+        else if (!CString_Compare(values[1], fxSprayScriptStrings.inverseMultiplyBlend))
+            *secondMode = kBlendInverseMultiply;
+        else {
+            return 0;
+        }
     } else if (!CString_Compare(key, fxSprayScriptStrings.lighting)) {
         if (*(unsigned char*)&g_sharedDoc->pad_9C6[0] /* shared effect-lighting switch */) {
-            *(int*)&AsCFxSpray(self)->colorModulationEnabled = 3;
+            *(int*)&colorModulationEnabled = 3;
             int n = String_ParseDecimalInt(values[0]);
-            if (n > 255) n = 100;
-            else if (0 > n) n = 0;
+            if (n > 255)
+                n = 100;
+            else if (0 > n)
+                n = 0;
             int c = (255 * n) / 100;
-            *(int*)&AsCFxSpray(self)->lightingColor = c | (c << 16) | (c << 8);
-        } else *(int*)&AsCFxSpray(self)->lightingColor = 0xffffff;
+            *(int*)&lightingColor = c | (c << 16) | (c << 8);
+        } else
+            *(int*)&lightingColor = 0xffffff;
     } else if (!CString_Compare(key, fxSprayScriptStrings.addFade)) {
         // Lifetime percentages, not emitter milliseconds. For zero minimum lifetime
         // and a zero start percent, both alpha endpoints are forced to 255.
@@ -857,57 +1000,59 @@ int CFxSpray_ParseScriptLine(CFxSpray* self, const char* input) {
         data.endRed = String_ParseDecimalInt(values[7]);
         data.endGreen = String_ParseDecimalInt(values[8]);
         data.endBlue = String_ParseDecimalInt(values[9]);
-        if (!*(int*)&AsCFxSpray(self)->minLifetime) { if (kFloat_0_FxSpray == data.startLifetimePercent) {
-            data.endAlpha = kScriptOpaqueAlpha;
-            data.startAlpha = kScriptOpaqueAlpha;
-        } }
-        sentinel = (char*)&AsCFxParticle(self)->fadeKeyTail;
-        MakeConfigNode(sentinel, data, (*(int*)&AsCFxParticle(self)->fadeKeyCount));
+        if (!*(int*)&minLifetime) {
+            if (kFloat_0_FxSpray == data.startLifetimePercent) {
+                data.endAlpha = kScriptOpaqueAlpha;
+                data.startAlpha = kScriptOpaqueAlpha;
+            }
+        }
+        sentinel = (char*)&AsCFxParticle(this)->fadeKeyTail;
+        MakeConfigNode(sentinel, data, (*(int*)&AsCFxParticle(this)->fadeKeyCount));
     } else if (!CString_Compare(key, fxSprayScriptStrings.initialSize)) {
-        sscanf(values[0], fxSprayScriptStrings.floatFormat, (char*)&AsCFxSpray(self)->minInitialSize);
-        sscanf(values[1], fxSprayScriptStrings.floatFormat, (char*)&AsCFxSpray(self)->maxInitialSize);
-        sscanf(values[2], fxSprayScriptStrings.floatFormat, (char*)&AsCFxSpray(self)->spriteAspectRatio);
+        sscanf(values[0], fxSprayScriptStrings.floatFormat, (char*)&minInitialSize);
+        sscanf(values[1], fxSprayScriptStrings.floatFormat, (char*)&maxInitialSize);
+        sscanf(values[2], fxSprayScriptStrings.floatFormat, (char*)&spriteAspectRatio);
     } else if (!CString_Compare(key, fxSprayScriptStrings.addSize)) {
         SizeKey sizeKey;
-        DecodeSizeKey(self, values, sizeKey);
-        sentinel = (char*)&AsCFxParticle(self)->sizeKeyTail;
-        MakeConfigNode(sentinel, sizeKey, (*(int*)&AsCFxParticle(self)->sizeKeyCount));
+        DecodeSizeKey(this, values, sizeKey);
+        sentinel = (char*)&AsCFxParticle(this)->sizeKeyTail;
+        MakeConfigNode(sentinel, sizeKey, (*(int*)&AsCFxParticle(this)->sizeKeyCount));
     } else if (!CString_Compare(key, fxSprayScriptStrings.initialFrame)) {
-        sscanf(values[0], fxSprayScriptStrings.integerFormat, (char*)&AsCFxSpray(self)->minInitialFrame);
-        sscanf(values[1], fxSprayScriptStrings.integerFormat, (char*)&AsCFxSpray(self)->maxInitialFrame);
+        sscanf(values[0], fxSprayScriptStrings.integerFormat, (char*)&minInitialFrame);
+        sscanf(values[1], fxSprayScriptStrings.integerFormat, (char*)&maxInitialFrame);
     } else if (!CString_Compare(key, fxSprayScriptStrings.addFrame)) {
         FrameKey frameKey;
-        DecodeFrameKey(self, values, frameKey);
-        sentinel = (char*)&AsCFxParticle(self)->frameKeyTail;
-        MakeConfigNode(sentinel, frameKey, (*(int*)&AsCFxParticle(self)->frameKeyCount));
-    // Auxiliary keys: quake/flash/bubble/sound each append one independent node.
+        DecodeFrameKey(this, values, frameKey);
+        sentinel = (char*)&AsCFxParticle(this)->frameKeyTail;
+        MakeConfigNode(sentinel, frameKey, (*(int*)&AsCFxParticle(this)->frameKeyCount));
+        // Auxiliary keys: quake/flash/bubble/sound each append one independent node.
     } else if (!CString_Compare(key, fxSprayScriptStrings.addQuake)) {
         QuakeKey quakeKey;
-        DecodeQuakeKey(self, values, quakeKey);
-        void* sentinel = (char*)&AsCFxParticle(self)->quakeKeyTail;
-        MakeConfigNode(sentinel, quakeKey, (*(int*)&AsCFxParticle(self)->quakeKeyCount));
+        DecodeQuakeKey(this, values, quakeKey);
+        void* sentinel = (char*)&AsCFxParticle(this)->quakeKeyTail;
+        MakeConfigNode(sentinel, quakeKey, (*(int*)&AsCFxParticle(this)->quakeKeyCount));
     } else if (!CString_Compare(key, fxSprayScriptStrings.addFlash)) {
         FlashKey flashKey;
-        DecodeFlashKey(self, values, flashKey);
-        sentinel = (char*)&AsCFxParticle(self)->flashKeyTail;
-        MakeConfigNode(sentinel, flashKey, (*(int*)&AsCFxParticle(self)->flashKeyCount));
+        DecodeFlashKey(this, values, flashKey);
+        sentinel = (char*)&AsCFxParticle(this)->flashKeyTail;
+        MakeConfigNode(sentinel, flashKey, (*(int*)&AsCFxParticle(this)->flashKeyCount));
     } else if (!CString_Compare(key, fxSprayScriptStrings.distanceLimit)) {
         float a = (float)atof(values[0]);
-        AsCFxSpray(self)->minDrawDistance = 0.0f < a ? a : 0.0f;
+        minDrawDistance = 0.0f < a ? a : 0.0f;
         float b = (float)atof(values[1]);
-        AsCFxSpray(self)->maxDrawDistance = 0.0f < b ? b : 0.0f;
-        if (AsCFxSpray(self)->minDrawDistance > AsCFxSpray(self)->maxDrawDistance)
-            AsCFxSpray(self)->maxDrawDistance = AsCFxSpray(self)->minDrawDistance;
+        maxDrawDistance = 0.0f < b ? b : 0.0f;
+        if (minDrawDistance > maxDrawDistance)
+            maxDrawDistance = minDrawDistance;
     } else if (!CString_Compare(key, fxSprayScriptStrings.addBubble)) {
         BubbleKey bubbleKey;
-        DecodeBubbleKey(self, values, bubbleKey);
-        sentinel = (char*)&AsCFxParticle(self)->bubbleKeyTail;
-        MakeConfigNode(sentinel, bubbleKey, (*(int*)&AsCFxParticle(self)->bubbleKeyCount));
+        DecodeBubbleKey(this, values, bubbleKey);
+        sentinel = (char*)&AsCFxParticle(this)->bubbleKeyTail;
+        MakeConfigNode(sentinel, bubbleKey, (*(int*)&AsCFxParticle(this)->bubbleKeyCount));
     } else if (!CString_Compare(key, fxSprayScriptStrings.sound)) {
         SoundKey soundKey;
-        DecodeSoundKey(self, values, soundKey);
-        sentinel = (char*)&AsCFxParticle(self)->soundKeyTail;
-        MakeConfigNode(sentinel, soundKey, (*(int*)&AsCFxParticle(self)->soundKeyCount));
+        DecodeSoundKey(this, values, soundKey);
+        sentinel = (char*)&AsCFxParticle(this)->soundKeyTail;
+        MakeConfigNode(sentinel, soundKey, (*(int*)&AsCFxParticle(this)->soundKeyCount));
     } else {
 
         return 0;

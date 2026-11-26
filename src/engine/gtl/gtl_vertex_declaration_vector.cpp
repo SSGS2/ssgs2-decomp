@@ -1,3 +1,6 @@
+// Vertex declaration vector: a growable array of vertex declaration elements with its resize,
+// capacity growth and length-error checks, plus the exception helpers it uses.
+
 #include <decomp/ct_member.h>
 // Model vertex-declaration pointer-slot storage, not vertex payload conversion.
 // API/mod map: Resize changes logical slot count; GetSourceSlot/GetDestinationSlot
@@ -7,13 +10,13 @@
 // allocator callbacks, but this unit neither retains nor destroys the pointees.
 // Keep allocator/deallocator paired; a resize may invalidate EVERY borrowed slot
 // address. Changing count alone does not construct or destroy declarations.
-// Translation unit 0x803DB238-0x803DB750 (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
 // Placement construction borrows caller-provided exception storage.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 extern "C" {
 
@@ -45,15 +48,24 @@ struct GtlVertexBuffer {
     // Guard fresh slot storage until exchange; owner is a borrowed capacity word.
     GtlVertexBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // After exchange release old storage; before exchange release new storage.
-    ~GtlVertexBuffer() { if (data) { size = 0; s_genericResourceAllocatorFunctions.deallocate(data); } }
+    ~GtlVertexBuffer() {
+        if (data) {
+            size = 0;
+            s_genericResourceAllocatorFunctions.deallocate(data);
+        }
+    }
 };
 
 struct GtlVertexErrorBase {
     void* table;
     // Install the standard logic-error base before copying the message.
-    GtlVertexErrorBase() { table = __vt__Q23std11logic_error; }
+    GtlVertexErrorBase() {
+        table = __vt__Q23std11logic_error;
+    }
     // Tear down only the exception base, not the enclosing stack storage.
-    ~GtlVertexErrorBase() { __dt__Q23std9exceptionFv(this, 0); }
+    ~GtlVertexErrorBase() {
+        __dt__Q23std9exceptionFv(this, 0);
+    }
 };
 
 struct GtlVertexAllocation {
@@ -62,7 +74,10 @@ struct GtlVertexAllocation {
     // Guard diagnostic characters while their shared-control allocation can throw.
     GtlVertexAllocation(char* p, char* a) : pointer(p), allocator(a) {}
     // Release characters unless ownership was committed to the control block.
-    ~GtlVertexAllocation() { if (pointer) __dla__FPv(pointer); }
+    ~GtlVertexAllocation() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 
 struct GtlVertexControl {
@@ -71,10 +86,18 @@ struct GtlVertexControl {
     unsigned weak;
     char* pointer;
     // Own diagnostic characters with one strong/weak control reference.
-    GtlVertexControl(char* p) { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; pointer = p; }
+    GtlVertexControl(char* p) {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+        pointer = p;
+    }
 };
 
-struct GtlFlag { char value; char pad[3]; };
+struct GtlFlag {
+    char value;
+    char pad[3];
+};
 
 struct GtlLengthError : GtlVertexErrorBase {
     char* text;
@@ -97,12 +120,21 @@ struct GtlLengthError : GtlVertexErrorBase {
 };
 
 // Borrow the larger growth amount through the end of the immediate expression.
-static inline const unsigned& GtlVertexMax(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+static inline const unsigned& GtlVertexMax(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 
 // Exchange one vector ownership/count word without touching its pointees.
-template <class T> static inline void GtlVertexSwap(T& a, T& b) { T t = a; a = b; b = t; }
+template <class T> static inline void GtlVertexSwap(T& a, T& b) {
+    T t = a;
+    a = b;
+    b = t;
+}
 
-union GtlLengthStorage { int alignment; unsigned char bytes[sizeof(GtlLengthError)]; };
+union GtlLengthStorage {
+    int alignment;
+    unsigned char bytes[sizeof(GtlLengthError)];
+};
 
 // Construct length_error in aligned storage and transfer it to runtime unwinding.
 static inline void GtlVertexThrowLengthAt(GtlLengthStorage& storage, GtlFlag& flag, const char* message) {
@@ -124,7 +156,8 @@ static inline void GtlVertexThrowLength1(GtlLengthStorage& storage, GtlFlag& fla
 
 // Reject capacity addition beyond the four-byte allocation count limit.
 static inline void GtlVertexCheckLength(unsigned need, unsigned cap, GtlLengthStorage& storage, GtlFlag& flag) {
-    if (need > 0x3FFFFFFFu - cap) GtlVertexThrowLength(storage, flag);
+    if (need > 0x3FFFFFFFu - cap)
+        GtlVertexThrowLength(storage, flag);
 }
 
 // Repeat validation at the allocation phase with its own exception storage.
@@ -135,7 +168,8 @@ static inline void GtlVertexCheckLength2(unsigned need, unsigned cap, GtlLengthS
 // Allocate cap slots using the installed allocator; it must succeed or throw.
 // A null allocator result is not checked before zero-fill/copy by the caller.
 static inline void** GtlVertexAllocate(unsigned cap, GtlLengthStorage& storage, GtlFlag& flag) {
-    if (cap > 0x3FFFFFFFu) GtlVertexThrowLength(storage, flag);
+    if (cap > 0x3FFFFFFFu)
+        GtlVertexThrowLength(storage, flag);
     return (void**)s_genericResourceAllocatorFunctions.allocate(cap * 4);
 }
 
@@ -167,7 +201,8 @@ void gtl_VertexDeclarationVector_Resize(GtlVertexDeclVector* self, unsigned n) {
             unsigned need0 = v->size + add - self->capacity;
             unsigned cap0 = v->capacity;
             unsigned dead = cap0;
-            if (need0 > 0x3FFFFFFFu - cap0) GtlVertexThrowLength1(storage1, flag1);
+            if (need0 > 0x3FFFFFFFu - cap0)
+                GtlVertexThrowLength1(storage1, flag1);
             if (cap0 < 0x15555555u) {
                 unsigned grow = (cap0 + 1) * 3 / 5;
                 dead += GtlVertexMax(grow, need0);

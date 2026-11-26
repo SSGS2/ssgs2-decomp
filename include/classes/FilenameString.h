@@ -7,14 +7,22 @@
 
 class FilenameString {
 public:
-    MWStringStorage input; // 0x0: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
-    MWStringStorage drive; // 0xC: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
-    MWStringStorage directory; // 0x18: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
-    MWStringStorage stem; // 0x24: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
-    MWStringStorage extension; // 0x30: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
-    MWStringStorage driveDirectory; // 0x3C: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
-    MWStringStorage unk_48; // 0x48: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
-    MWStringStorage fileName; // 0x54: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
+    MWStringStorage
+        input; // 0x0: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
+    MWStringStorage
+        drive; // 0xC: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
+    MWStringStorage
+        directory; // 0x18: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
+    MWStringStorage
+        stem; // 0x24: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
+    MWStringStorage
+        extension; // 0x30: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
+    MWStringStorage
+        driveDirectory; // 0x3C: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
+    MWStringStorage
+        unk_48; // 0x48: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
+    MWStringStorage
+        fileName; // 0x54: FilenameString_SplitAndGetStem splits input with FileIO_SplitPath and builds derived path strings
     void* vtable; // 0x60: FilenameString_Ctor stores __vt__14filenamestring
 };
 

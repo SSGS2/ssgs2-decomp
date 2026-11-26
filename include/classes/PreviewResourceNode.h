@@ -6,8 +6,8 @@
 class PreviewResourceNode {
 public:
     void* previous; // 0x0: ScreenBallPreview_RebuildPlayerResources, ScreenBallPreview_dtor doubly linked resource list
-    void* next; // 0x4: ScreenBallPreview_RebuildPlayerResources, ScreenBallPreview_dtor doubly linked resource list
-    void* value; // 0x8: ScreenBallPreview_RebuildPlayerResources, ScreenBallPreview_dtor doubly linked resource list
+    void* next;     // 0x4: ScreenBallPreview_RebuildPlayerResources, ScreenBallPreview_dtor doubly linked resource list
+    void* value;    // 0x8: ScreenBallPreview_RebuildPlayerResources, ScreenBallPreview_dtor doubly linked resource list
 };
 
 #define OFF(f, o) typedef char PreviewResourceNode_off_##f[((int)&((PreviewResourceNode*)0)->f == (o)) ? 1 : -1]

@@ -1,5 +1,3 @@
-// Translation unit 0x803DE6BC-0x803E02C0 (19 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 // Generic model rendering, frustum culling, billboard direction and animation
 // interpolation. Mod lookup: Model_DrawWithFrustumCulling chooses active model
 // items; Culling_SetEnabled selects whole-model (1) or per-item (2) bounds;
@@ -47,7 +45,8 @@ extern void Mtx44_TransformVec4Forward(float* dst, const float* v, const float* 
 extern void gtl_Frustum_BuildPerspectivePlanes(void* state, float a, float b, float c, float d);
 extern float Vec3_Dot(float* a, float* b);
 extern void Vec3_Cross(float* out, float* a, float* b);
-extern void* Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1, float t);
+extern void* Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1,
+                          float t);
 extern void Mtx44_SetRotationY(float* m, float angle);
 extern void Mtx44_SetRotationAxisAngle(float* m, float* axis, float angle);
 extern void PSMTX44Concat(float* a, float* b, float* out);
@@ -58,7 +57,8 @@ extern void* Object_GetField8(unsigned int);
 extern void Engine_GetRenderState(int, void*);
 extern void Engine_SetCachedRenderState(int, int);
 extern void __dl__FPv(void*);
-extern void gtl_GenericResource_Free(void*);extern float gtl_Bounds_ProjectBoxRadius(float* matrix, float* plane, void* extents);
+extern void gtl_GenericResource_Free(void*);
+extern float gtl_Bounds_ProjectBoxRadius(float* matrix, float* plane, void* extents);
 extern float gtl_Plane_EvaluatePoint(float* plane, float* point);
 extern void* g_genericRendererContext;
 extern char s_rendererDefaults[];
@@ -142,13 +142,13 @@ typedef struct DrawParams {
 // These are borrowed pointers/opaque renderer settings, not ownership handles.
 
 typedef struct DrawItem {
-    unsigned short meshRangeCount;   // mesh range count
-    unsigned short firstMeshRangeIndex;   // first mesh range (index into the mesh-range table)
+    unsigned short meshRangeCount;      // mesh range count
+    unsigned short firstMeshRangeIndex; // first mesh range (index into the mesh-range table)
     char unk4[0x8];
     unsigned short reservedC;
     char unkE[0x4];
     unsigned short boundsIndex;
-    unsigned short renderStateOverrideSet;  // render-state override set (FFFF = defaults)
+    unsigned short renderStateOverrideSet; // render-state override set (FFFF = defaults)
     char reserved16[0x4];
     unsigned char itemFlags;
     char reserved1B[0x15];
@@ -170,23 +170,23 @@ typedef struct MeshRange {
 // Primitive (0x20 bytes): one draw call of a model item.
 typedef struct PrimitiveEntry {
     char reserved0[4];
-    unsigned short material;           // 4: index into the material table
+    unsigned short material; // 4: index into the material table
     char reserved6[2];
-    unsigned short indexedDrawArgument;               // 8: indexed draw argument
+    unsigned short indexedDrawArgument; // 8: indexed draw argument
     char reservedA[2];
-    unsigned short primitiveType;               // C: GX primitive type (first draw argument)
-    unsigned short vertexCount;               // E: primitive/vertex count (last draw argument)
-    unsigned short indexBuffer;        // 10: index into the index-buffer table; FFFF = not indexed
-    unsigned short vertexBuffer;       // 12: index into the vertex-buffer table
+    unsigned short primitiveType; // C: GX primitive type (first draw argument)
+    unsigned short vertexCount;   // E: primitive/vertex count (last draw argument)
+    unsigned short indexBuffer;   // 10: index into the index-buffer table; FFFF = not indexed
+    unsigned short vertexBuffer;  // 12: index into the vertex-buffer table
     char reserved14[4];
-    unsigned short vertexDeclaration;  // 18: index into the vertex-declaration table
+    unsigned short vertexDeclaration; // 18: index into the vertex-declaration table
     char reserved1A[6];
 } PrimitiveEntry;
 
 // Material table entry (0x1C bytes); only the override-set index is read here.
 typedef struct MaterialEntry {
     char reserved0[0x18];
-    unsigned int overrideSet;          // 18: render-state override set, 0xFFFFFFFF = the item's set
+    unsigned int overrideSet; // 18: render-state override set, 0xFFFFFFFF = the item's set
 } MaterialEntry;
 
 // Render-state override set (0x20 bytes): value for each guarded render-state slot.
@@ -248,7 +248,9 @@ struct RenderStateSaver {
     unsigned int unk4;
     unsigned int data[8];
     // Restore state 9 after the queued renderer's temporary changes.
-    ~RenderStateSaver() { Engine_SetCachedRenderState(9, saved); }
+    ~RenderStateSaver() {
+        Engine_SetCachedRenderState(9, saved);
+    }
 };
 
 typedef struct FrustumState {
@@ -261,10 +263,18 @@ typedef struct FrustumState {
 // +C0 transposed view, +100 inverse view, +140 view matrix, +180 culling mode.
 // Plane equation dot(normal,point)+d; boundary distance <= -boxRadius is culled.
 
-struct Words84 { unsigned int w[84]; };
-struct Words16 { unsigned int w[16]; };
-struct Words8 { unsigned int w[8]; };
-struct Words32 { unsigned int w[32]; };
+struct Words84 {
+    unsigned int w[84];
+};
+struct Words16 {
+    unsigned int w[16];
+};
+struct Words8 {
+    unsigned int w[8];
+};
+struct Words32 {
+    unsigned int w[32];
+};
 struct DrawDefaults {
     char prefix[0x290];
     Words84 state;
@@ -305,21 +315,22 @@ static inline int IsBoundsInside(float* m, DrawBounds* b) {
 }
 
 // Missing matrix or bounds opts out of culling; it is not an empty/invisible box.
-static inline int IsBoundsCulled(float* m, DrawBounds* b) {
-    if (m == 0) {
+static inline int IsBoundsCulled(float* matrix, DrawBounds* bounds) {
+    if (matrix == 0) {
         return 0;
     }
-    if (b == 0) {
+    if (bounds == 0) {
         return 0;
     }
-    return !IsBoundsInside(m, b);
+    return !IsBoundsInside(matrix, bounds);
 }
 
 float gtl_Curve_FindBezierParameter(float x0, float x1, float x2, float x3, float t);
 
-void gtl_Billboard_RotateDirection(float* arg0, const float* arg1, const BillboardLimits* arg2);
+void gtl_Billboard_RotateDirection(float* outDirection, const float* inDirection, const BillboardLimits* limits);
 
-void gtl_Model_DrawWithFrustumCulling(const DrawTarget* arg0, float* arg1, const DrawParams* arg2, const DrawModel* arg3);
+void gtl_Model_DrawWithFrustumCulling(const DrawTarget* target, float* matrix, const DrawParams* params,
+                                      const DrawModel* arg3);
 
 void* RenderStateSlot12Guard_dtor(void* self, int flags);
 
@@ -355,8 +366,7 @@ void gtl_Culling_SetProjectionMatrix(const float* p);
 // value when the guard leaves scope (the compiler's inline destructor; the
 // out-of-line copies are the RenderStateSlotNGuard_dtor functions below).
 // `disabled` != 0 leaves the slot untouched and skips the restore.
-template <int Slot>
-struct RenderStateGuard {
+template <int Slot> struct RenderStateGuard {
     unsigned int saved;
     unsigned int applied;
     unsigned int disabled;
@@ -379,14 +389,13 @@ struct RenderStateGuard {
     }
 };
 
-
 // Per-draw packet (drawState2 of Model_DrawWithFrustumCulling; the vertex-blend
 // routine's GRContext): the words this routine writes.
 struct QueuedPacket {
     char unk0[0x24];
-    unsigned int itemIndex;       // 24
-    PrimitiveEntry* primitive;    // 28: the primitive being drawn
-    int vertexBlendMode;          // 2C: gtl_GenericRenderer_GetVertexBlendMode of its declaration
+    unsigned int itemIndex;    // 24
+    PrimitiveEntry* primitive; // 28: the primitive being drawn
+    int vertexBlendMode;       // 2C: gtl_GenericRenderer_GetVertexBlendMode of its declaration
 };
 
 #pragma push
@@ -398,7 +407,8 @@ struct QueuedPacket {
 // the item's override set, then (per primitive) from its material's set; each is held
 // by a RenderStateGuard so the previous values return after the draw. flags != 0
 // leaves slot 5 alone.
-void gtl_GenericRenderer_DrawQueuedPrimitives(unsigned int index, const DrawTarget* target, DrawFrame* frame, void** state, QueuedPacket* packet, void** render, unsigned int flags) {
+void gtl_GenericRenderer_DrawQueuedPrimitives(unsigned int index, const DrawTarget* target, DrawFrame* frame,
+                                              void** state, QueuedPacket* packet, void** render, unsigned int flags) {
     const RenderOverrides* itemSet;
     DrawItem* item = frame->ptr158 + index;
     unsigned short blendSelf = 0xFFFF;
@@ -423,7 +433,8 @@ void gtl_GenericRenderer_DrawQueuedPrimitives(unsigned int index, const DrawTarg
             unsigned int descriptor[4];
             packet->primitive = prim;
             VertexBuffer_GetDescription(((void**)render[2])[prim->vertexBuffer], descriptor);
-            packet->vertexBlendMode = gtl_GenericRenderer_GetVertexBlendMode(((void**)render[6])[prim->vertexDeclaration]);
+            packet->vertexBlendMode =
+                gtl_GenericRenderer_GetVertexBlendMode(((void**)render[6])[prim->vertexDeclaration]);
             gtl_GenericRenderer_ApplyVertexBlendTransforms(blendSelf, packet);
             render[0] = prim;
             gtl_GenericRenderer_BindVertexStreams(render);
@@ -448,7 +459,8 @@ void gtl_GenericRenderer_DrawQueuedPrimitives(unsigned int index, const DrawTarg
                 DrawPrimitiveFromBoundBuffers(prim->primitiveType, 0, (void*)prim->vertexCount);
             } else {
                 Engine_SetIndexBuffer(target->indexBufferTable[prim->indexBuffer], 0);
-                Engine_DrawIndexedPrimitive((void*)prim->primitiveType, 0, 0, (void*)prim->indexedDrawArgument, 0, prim->vertexCount);
+                Engine_DrawIndexedPrimitive((void*)prim->primitiveType, 0, 0, (void*)prim->indexedDrawArgument, 0,
+                                            prim->vertexCount);
             }
         }
     }
@@ -608,7 +620,8 @@ void* RenderStateSlot9Guard_dtor(void* self, int flags) {
 // but not restored here. The lower renderer owns any further state transitions.
 // Missing model bytes produce zero items; a culled model returns before state9
 // acquisition. No model/resource references are released by this draw wrapper.
-void gtl_Model_DrawWithFrustumCulling(const DrawTarget* arg0, float* arg1, const DrawParams* arg2, const DrawModel* arg3) {
+void gtl_Model_DrawWithFrustumCulling(const DrawTarget* target, float* matrix, const DrawParams* params,
+                                      const DrawModel* arg3) {
     DrawFrame frame;
     void* drawState[84];
     unsigned int drawState2[32];
@@ -725,37 +738,37 @@ void gtl_Model_DrawWithFrustumCulling(const DrawTarget* arg0, float* arg1, const
     }
 
     // Phase 2: overrides replace payload pointers without copying or retaining.
-    if (arg2 != 0) {
-        if (arg2->materialData != 0) {
-            frame.ptr16C = arg2->materialData;
+    if (params != 0) {
+        if (params->materialData != 0) {
+            frame.ptr16C = params->materialData;
         }
-        if (arg2->textureData != 0) {
-            frame.ptr174 = arg2->textureData;
+        if (params->textureData != 0) {
+            frame.ptr174 = params->textureData;
         }
-        if (arg2->transforms != 0) {
-            frame.ptr178 = arg2->transforms;
+        if (params->transforms != 0) {
+            frame.ptr178 = params->transforms;
         }
     }
 
     // Phase 3: mode 1 rejects the whole model, mode 2 defers to each item.
-    if (((FrustumState*)g_genericRendererContext)->mode180 == 1 && IsBoundsCulled(arg1, frame.ptr184)) {
+    if (((FrustumState*)g_genericRendererContext)->mode180 == 1 && IsBoundsCulled(matrix, frame.ptr184)) {
         return;
     }
 
     // Phase 4: copy opaque defaults, then fill only the documented packet words.
-// The default render state is reached as s_rendererDefaults + 0x290, which lies inside s_defaultTextureStageStateTemplate
-// (0x80498EF0..0x804993F0).
+    // The default render state is reached as s_rendererDefaults + 0x290, which lies inside s_defaultTextureStageStateTemplate
+    // (0x80498EF0..0x804993F0).
     const DrawDefaults* defaults = (const DrawDefaults*)tbl;
     *(Words84*)drawState = defaults->state;
-// Word 7 of the default table is {u16 index = 0xFFFF, u16 unk1E = 0}, the GenericRenderer cached draw-entry index
-// (0 means the first draw entry already applied).
+    // Word 7 of the default table is {u16 index = 0xFFFF, u16 unk1E = 0}, the GenericRenderer cached draw-entry index
+    // (0 means the first draw entry already applied).
     drawState[0] = (void*)frame.ptr168;
     drawState[1] = (void*)frame.ptr16C;
     drawState[2] = (void*)frame.ptr174;
-    drawState[3] = (arg0->firstOverrideEnableFlags != 0) ? (void*)arg0->firstOverrideData : 0;
-    drawState[4] = (arg0->secondOverrideEnable != 0) ? (void*)arg0->secondOverrideData : 0;
-    drawState[5] = (arg2 != 0 && arg2->optionalStateWord != 0) ? (void*)arg2->optionalStateWord : 0;
-    unsigned int endFlags = arg0->firstOverrideEnableFlags;
+    drawState[3] = (target->firstOverrideEnableFlags != 0) ? (void*)target->firstOverrideData : 0;
+    drawState[4] = (target->secondOverrideEnable != 0) ? (void*)target->secondOverrideData : 0;
+    drawState[5] = (params != 0 && params->optionalStateWord != 0) ? (void*)params->optionalStateWord : 0;
+    unsigned int endFlags = target->firstOverrideEnableFlags;
     *(Words16*)&drawState[17] = *(const Words16*)kIdentityMatrix4x4;
     *(Words16*)&drawState[33] = *(const Words16*)kIdentityMatrix4x4;
     *(Words16*)&drawState[49] = *(const Words16*)kIdentityMatrix4x4;
@@ -770,7 +783,7 @@ void gtl_Model_DrawWithFrustumCulling(const DrawTarget* arg0, float* arg1, const
     drawState2[0] = (unsigned int)frame.ptr158;
     drawState2[1] = (unsigned int)frame.ptr17C;
     drawState2[2] = (unsigned int)frame.ptr178;
-    drawState2[3] = (unsigned int)arg1;
+    drawState2[3] = (unsigned int)matrix;
     drawState2[4] = (unsigned int)frame.ptr170;
     drawState2[5] = (unsigned int)frame.ptr19C;
     drawState2[6] = (unsigned int)frame.ptr198;
@@ -779,11 +792,12 @@ void gtl_Model_DrawWithFrustumCulling(const DrawTarget* arg0, float* arg1, const
 
     RenderStateSaver obj;
     *(Words8*)obj.data = defaults->render;
-    obj.data[2] = (arg2 != 0 && arg2->renderOverride != 0) ? arg2->renderOverride : arg0->fallbackVertexBufferTable;
-    obj.data[3] = (arg2 != 0) ? arg2->forwardedRenderWord0 : 0;
-    obj.data[4] = (arg0->optionalOverrideEnable != 0) ? arg0->optionalOverrideData : 0;
-    obj.data[5] = (arg2 != 0) ? arg2->forwardedRenderWord1 : 0;
-    obj.data[6] = arg0->vertexDeclarationTable;
+    obj.data[2] =
+        (params != 0 && params->renderOverride != 0) ? params->renderOverride : target->fallbackVertexBufferTable;
+    obj.data[3] = (params != 0) ? params->forwardedRenderWord0 : 0;
+    obj.data[4] = (target->optionalOverrideEnable != 0) ? target->optionalOverrideData : 0;
+    obj.data[5] = (params != 0) ? params->forwardedRenderWord1 : 0;
+    obj.data[6] = target->vertexDeclarationTable;
     obj.data[7] = (unsigned int)frame.ptr16C;
 
     Engine_GetRenderState(9, &obj);
@@ -794,19 +808,20 @@ void gtl_Model_DrawWithFrustumCulling(const DrawTarget* arg0, float* arg1, const
         if (!ItemActive(item)) {
             continue;
         }
-        flag2 = (arg2 != 0 && arg2->itemEnableWords != 0) ? arg2->itemEnableWords[j] : (item->itemFlags & 1);
+        flag2 = (params != 0 && params->itemEnableWords != 0) ? params->itemEnableWords[j] : (item->itemFlags & 1);
         if (flag2 == 0) {
             continue;
         }
         if (frame.ptr188 != 0 && item->boundsIndex != 0xFFFF) {
             bounds = frame.ptr188 + item->boundsIndex;
-            if (((FrustumState*)g_genericRendererContext)->mode180 == 2 && IsBoundsCulled(arg1, bounds)) {
+            if (((FrustumState*)g_genericRendererContext)->mode180 == 2 && IsBoundsCulled(matrix, bounds)) {
                 continue;
             }
         }
         drawState2[9] = j;
         drawState2[14] = 0;
-        gtl_GenericRenderer_DrawQueuedPrimitives(j, arg0, &frame, drawState, (QueuedPacket*)drawState2, (void**)obj.data, 0);
+        gtl_GenericRenderer_DrawQueuedPrimitives(j, target, &frame, drawState, (QueuedPacket*)drawState2,
+                                                 (void**)obj.data, 0);
     }
 }
 #pragma pop
@@ -829,7 +844,9 @@ void gtl_Model_DrawWithFrustumCulling(const DrawTarget* arg0, float* arg1, const
 // retained. SetViewMatrix also refreshes them, so either setter uses the latest
 // other input. World/view distances share caller units; no yard conversion.
 void gtl_Culling_SetProjectionMatrix(const float* p) {
-    struct PerspectivePlanes { float fov, aspect, nearZ, farZ; };
+    struct PerspectivePlanes {
+        float fov, aspect, nearZ, farZ;
+    };
     volatile PerspectivePlanes planes;
     float aspect;
     float fov;
@@ -849,9 +866,9 @@ void gtl_Culling_SetProjectionMatrix(const float* p) {
         float one;
         one = kPerspectiveFovTangentNumerator;
         tmp = p[14];
-        float a = depth - one;
-        float b = one + depth;
-        ratio = a / b;
+        float ratioNumerator = depth - one;
+        float ratioDenominator = one + depth;
+        ratio = ratioNumerator / ratioDenominator;
         float v = tmp - tmp * ratio;
         planes.nearZ = v / ratio;
     } else {
@@ -859,24 +876,25 @@ void gtl_Culling_SetProjectionMatrix(const float* p) {
         float one;
         one = kPerspectiveFovTangentNumerator;
         tmp = p[14];
-        float a = one + depth;
-        float b = depth - one;
-        ratio = a / b;
+        float ratioNumerator = one + depth;
+        float ratioDenominator = depth - one;
+        ratio = ratioNumerator / ratioDenominator;
         float v = tmp - tmp * ratio;
         planes.nearZ = v / ratio;
     }
     float vv = planes.nearZ;
-    gtl_Frustum_BuildPerspectivePlanes(g_genericRendererContext, planes.fov, planes.aspect, vv, (planes.farZ = vv * ratio));
-    unsigned int r31 = 0;
-    unsigned int r30off = 0;
-    for (; r31 < 6; ) {
-        Mtx44_TransformVec4Forward((float*)((char*)g_genericRendererContext + r30off + 0x60),
-                                   (float*)((char*)g_genericRendererContext + r30off),
+    gtl_Frustum_BuildPerspectivePlanes(g_genericRendererContext, planes.fov, planes.aspect, vv,
+                                       (planes.farZ = vv * ratio));
+    unsigned int planeIndex = 0;
+    unsigned int planeOffset = 0;
+    for (; planeIndex < 6;) {
+        Mtx44_TransformVec4Forward((float*)((char*)g_genericRendererContext + planeOffset + 0x60),
+                                   (float*)((char*)g_genericRendererContext + planeOffset),
                                    (float*)((char*)g_genericRendererContext + 0xc0));
-        Vec3_Normalize((float*)((char*)g_genericRendererContext + r30off + 0x60),
-                       (float*)((char*)g_genericRendererContext + r30off + 0x60));
-        r31 = r31 + 1;
-        r30off = r30off + 0x10;
+        Vec3_Normalize((float*)((char*)g_genericRendererContext + planeOffset + 0x60),
+                       (float*)((char*)g_genericRendererContext + planeOffset + 0x60));
+        planeIndex = planeIndex + 1;
+        planeOffset = planeOffset + 0x10;
     }
 }
 
@@ -886,20 +904,20 @@ void gtl_Culling_SetProjectionMatrix(const float* p) {
 void gtl_Culling_SetViewMatrix(const void* viewMatrix) {
     Mtx44_Copy((char*)g_genericRendererContext + 0x140, viewMatrix);
     unsigned int r31counter = 0;
-    char* r30 = (char*)g_genericRendererContext + 0x140;
-    Mtx44_InvertLegacyCofactors((char*)g_genericRendererContext + 0x100, 0, r30);
-    PSMTX44Transpose((char*)g_genericRendererContext + 0xc0, r30);
+    char* storedViewMatrix = (char*)g_genericRendererContext + 0x140;
+    Mtx44_InvertLegacyCofactors((char*)g_genericRendererContext + 0x100, 0, storedViewMatrix);
+    PSMTX44Transpose((char*)g_genericRendererContext + 0xc0, storedViewMatrix);
     r31counter = 0;
-    unsigned int r31 = 0;
-    unsigned int r30off = 0;
-    for (; r31 < 6; ) {
-        Mtx44_TransformVec4Forward((float*)((char*)g_genericRendererContext + r30off + 0x60),
-                                  (float*)((char*)g_genericRendererContext + r30off),
-                                  (float*)((char*)g_genericRendererContext + 0xc0));
-        Vec3_Normalize((float*)((char*)g_genericRendererContext + r30off + 0x60),
-                       (float*)((char*)g_genericRendererContext + r30off + 0x60));
-        r31 = r31 + 1;
-        r30off = r30off + 0x10;
+    unsigned int planeIndex = 0;
+    unsigned int planeOffset = 0;
+    for (; planeIndex < 6;) {
+        Mtx44_TransformVec4Forward((float*)((char*)g_genericRendererContext + planeOffset + 0x60),
+                                   (float*)((char*)g_genericRendererContext + planeOffset),
+                                   (float*)((char*)g_genericRendererContext + 0xc0));
+        Vec3_Normalize((float*)((char*)g_genericRendererContext + planeOffset + 0x60),
+                       (float*)((char*)g_genericRendererContext + planeOffset + 0x60));
+        planeIndex = planeIndex + 1;
+        planeOffset = planeOffset + 0x10;
     }
 }
 
@@ -986,7 +1004,7 @@ static inline float BillboardPitchAngle(float cosine) {
 // +10/+14 pitch bounds. Input XZ length must be nonzero for normalization.
 // Disabled or already-in-range copies input; otherwise rebuilds a unit direction
 // from rotations about Y and a cross-product axis. No allocation or status result.
-void gtl_Billboard_RotateDirection(float* arg0, const float* arg1, const BillboardLimits* arg2) {
+void gtl_Billboard_RotateDirection(float* outDirection, const float* inDirection, const BillboardLimits* limits) {
     float tmp[3];
     float axis[3];
     float mtxA[16];
@@ -997,21 +1015,23 @@ void gtl_Billboard_RotateDirection(float* arg0, const float* arg1, const Billboa
     float angleX;
     int flag;
 
-    if (arg2->limitsEnabled == 0) {
+    if (limits->limitsEnabled == 0) {
         float z;
         float y;
         float x;
-        x = arg1[0];
-        y = arg1[1];
-        z = arg1[2];
-        arg0[0] = x;
-        arg0[1] = y;
-        arg0[2] = z;
+        x = inDirection[0];
+        y = inDirection[1];
+        z = inDirection[2];
+        outDirection[0] = x;
+        outDirection[1] = y;
+        outDirection[2] = z;
         return;
     }
 
-    struct Raw3 { unsigned int v[3]; };
-    *(Raw3*)tmp = *(const Raw3*)arg1;
+    struct Raw3 {
+        unsigned int v[3];
+    };
+    *(Raw3*)tmp = *(const Raw3*)inDirection;
     tmp[1] = kFloat_0_GtlModel;
     Vec3_Normalize(tmp, tmp);
 
@@ -1023,34 +1043,34 @@ void gtl_Billboard_RotateDirection(float* arg0, const float* arg1, const Billboa
     }
     angleY = (float)acos((double)f);
 
-    f = Vec3_Dot(tmp, (float*)arg1);
+    f = Vec3_Dot(tmp, (float*)inDirection);
     angleX = BillboardPitchAngle(f);
 
     flag = 0;
-    if (arg1[0] >= kFloat_0_GtlModel) {
-        if (arg2->maxYawRadians < angleY) {
-            angleY = arg2->maxYawRadians;
+    if (inDirection[0] >= kFloat_0_GtlModel) {
+        if (limits->maxYawRadians < angleY) {
+            angleY = limits->maxYawRadians;
             flag = 1;
         }
     } else {
-        if (-angleY < arg2->minYawRadians) {
-            angleY = arg2->minYawRadians;
+        if (-angleY < limits->minYawRadians) {
+            angleY = limits->minYawRadians;
             flag = 1;
         } else {
             angleY *= kFloat_neg1_GtlModel;
         }
     }
 
-    if (arg1[1] >= kFloat_0_GtlModel) {
-        if (-angleX < arg2->minPitchRadians) {
-            angleX = arg2->minPitchRadians;
+    if (inDirection[1] >= kFloat_0_GtlModel) {
+        if (-angleX < limits->minPitchRadians) {
+            angleX = limits->minPitchRadians;
             flag = 1;
         } else {
             angleX *= kFloat_neg1_GtlModel;
         }
     } else {
-        if (arg2->maxPitchRadians < angleX) {
-            angleX = arg2->maxPitchRadians;
+        if (limits->maxPitchRadians < angleX) {
+            angleX = limits->maxPitchRadians;
             flag = 1;
         }
     }
@@ -1059,12 +1079,12 @@ void gtl_Billboard_RotateDirection(float* arg0, const float* arg1, const Billboa
         float z;
         float y;
         float x;
-        x = arg1[0];
-        y = arg1[1];
-        z = arg1[2];
-        arg0[0] = x;
-        arg0[1] = y;
-        arg0[2] = z;
+        x = inDirection[0];
+        y = inDirection[1];
+        z = inDirection[2];
+        outDirection[0] = x;
+        outDirection[1] = y;
+        outDirection[2] = z;
         return;
     }
 
@@ -1075,9 +1095,9 @@ void gtl_Billboard_RotateDirection(float* arg0, const float* arg1, const Billboa
     Vec3_Cross(axis, kUnitYAxis, tmp);
     Mtx44_SetRotationAxisAngle(mtxB, axis, angleX);
     PSMTX44Concat(mtxC, mtxA, mtxB);
-    arg0[0] = mtxC[8];
-    arg0[1] = mtxC[9];
-    arg0[2] = mtxC[10];
+    outDirection[0] = mtxC[8];
+    outDirection[1] = mtxC[9];
+    outDirection[2] = mtxC[10];
 }
 
 #pragma push
@@ -1133,7 +1153,8 @@ float gtl_Curve_FindBezierParameter(float x0, float x1, float x2, float x3, floa
         if ((float)__fabs((double)span) > tol) {
             break;
         }
-        if ((float)__fabs((double)(((x2 - x1) / span) - kBezierLinearThirdReference)) > kCurveRelativeSpacingTolerance) {
+        if ((float)__fabs((double)(((x2 - x1) / span) - kBezierLinearThirdReference)) >
+            kCurveRelativeSpacingTolerance) {
             break;
         }
 

@@ -1,3 +1,8 @@
+// The shared file registry (CSharedFileRegistry): one table of open shared files, handed out by path or
+// from a buffer, and released when the caller is done with them.
+//
+// Also the vector storage helpers used by its target and destructor-entry lists.
+
 #include <decomp/static_init.h>
 #include <decomp/ct_member.h>
 namespace exception_runtime {
@@ -8,11 +13,11 @@ extern const char vectorLengthErrorStrings_LocalVector[];
 }
 }
 
-// Translation unit 0x8028BC74-0x8028CB84 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "sdk_protos.h"
 #include "classes/CSharedFileRegistry.h"
+#include "classes/CSharedFile.h"
+#include "classes/CSharedFileAsync.h"
+#include "classes/CSharedFileSync.h"
 // Borrow a typed view of the registry; this cast neither checks nor changes ownership.
 // Keep this as a macro: adding an inline declaration renumbers local relocation targets.
 #define AsCSharedFileRegistry(p) ((CSharedFileRegistry*)(p))
@@ -22,18 +27,26 @@ extern const char vectorLengthErrorStrings_LocalVector[];
 // capacity +0x18). Counts/capacities are entries, not bytes. Pointer erasure
 // releases/deletes the file; store destruction calls each object's virtual dtor.
 // Capacity fields complement the shared header's two array views.
-struct RegistryCapacityView { char prefix[0xC]; unsigned int pointerCapacity; char records[8]; unsigned int recordCapacity; };
+struct RegistryCapacityView {
+    char prefix[0xC];
+    unsigned int pointerCapacity;
+    char records[8];
+    unsigned int recordCapacity;
+};
 
 // Lock domain 6 protects both arrays; each starts with capacity for 1024 entries.
 enum SharedFileLimits {
-    kRegistryLock = 6, kInitialRegistryCapacity = 1024,
-    kFilePointerBytes = 4, kFileStoreBytes = 20,
+    kRegistryLock = 6,
+    kInitialRegistryCapacity = 1024,
+    kFilePointerBytes = 4,
+    kFileStoreBytes = 20,
     kMaxFilePointerCount = 0x3FFFFFFF,
-    kThreeFifthsGrowthLimit = 0x15555555, kHalfGrowthLimit = 0x2AAAAAAA
+    kThreeFifthsGrowthLimit = 0x15555555,
+    kHalfGrowthLimit = 0x2AAAAAAA
 };
 
 extern "C" {
- 
+
 extern float kFloat_6_2831855;
 extern float s_twoPi_8028BC74;
 extern char s_sharedFileRegistryInstance[];
@@ -46,19 +59,27 @@ extern void* appMallocDummy__FUl(unsigned int);
 extern void __dl__FPv(void*);
 extern void* memcpy(void*, const void*, unsigned int);
 extern void* memset(void*, int, unsigned int);
-extern void CSharedFileStore_CopyCtor(void*, void*);
-extern void CSharedFileRegistry_dtor(void*);
+extern void __ct__16CSharedFileStoreFRC16CSharedFileStore(void*, void*);
+extern void __dt__19CSharedFileRegistryFv(void*, int);
 extern void dtor_80046918(void*, int);
 extern void SharedBufferVector_dtor(void*, int);
 extern void dtor_8028BBF4(void*, int);
 
 // POD reservation bookkeeping; keep its declaration to stabilize generated local symbol names.
-struct ReservationScratch { void* resource; void* data; int constructedCount; short allocatorFlag; float reservedFloat; short reservedShort; };
-extern int CSharedFile_ReleaseRefIsZero(void*);
+struct ReservationScratch {
+    void* resource;
+    void* data;
+    int constructedCount;
+    short allocatorFlag;
+    float reservedFloat;
+    short reservedShort;
+};
 extern void TableLock_ctor(void*, int, int);
 extern void __dt__9TableLockFv(void*, int);
 
-struct TableLock { char bytes[8]; };
+struct TableLock {
+    char bytes[8];
+};
 
 extern char vectorLengthErrorStrings_LocalVector[];
 extern char __vt__Q23std11logic_error[];
@@ -71,39 +92,64 @@ extern void* __nwa__FUl(unsigned);
 // Exception-string construction uses an array guard until the shared control
 // block takes ownership. These ABI helpers preserve the original unwind paths.
 struct LVAlloc {
-    char* pointer; char* allocator;
+    char* pointer;
+    char* allocator;
     // Guard a newly allocated message until ownership is explicitly released.
     LVAlloc(char* p, char* a) : pointer(p), allocator(a) {}
     // Free the message if construction did not transfer it to a control block.
-    ~LVAlloc() { if (pointer) __dla__FPv(pointer); }
+    ~LVAlloc() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct LVControlBase {
-    void* table; unsigned strong, weak;
+    void* table;
+    unsigned strong, weak;
     // Start a shared-message control block with one strong and one weak reference.
-    LVControlBase() { strong = 1; weak = 1; table = (void*)s_sharedCharDeleterVtable; }
+    LVControlBase() {
+        strong = 1;
+        weak = 1;
+        table = (void*)s_sharedCharDeleterVtable;
+    }
 };
 struct LVControl : LVControlBase {
     char* pointer;
     // Adopt the message pointer into the initialized shared control block.
-    LVControl(char* p) { pointer = p; }
+    LVControl(char* p) {
+        pointer = p;
+    }
 };
 struct LVErrBase {
     void* table;
     // Install the logic_error base vtable before derived construction.
-    LVErrBase() { table = (void*)__vt__Q23std11logic_error; }
+    LVErrBase() {
+        table = (void*)__vt__Q23std11logic_error;
+    }
     // Destroy the exception base without freeing the enclosing stack storage.
-    ~LVErrBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~LVErrBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
-namespace std { struct length_error : LVErrBase {
-    char* text; void* control;
+namespace std {
+struct length_error : LVErrBase {
+    char* text;
+    void* control;
     // Copy the secondary error message into a shared, owned character array.
     length_error() {
         const char* message = vectorLengthErrorStrings_LocalVector + 0x14;
-        struct Allocator { char value; char pad[3]; } allocator;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned n = strlen(message) + 1;
         text = (char*)__nwa__FUl(2 * n - n);
-        { char* p = text; LVAlloc allocation(p, &allocator.value); control = new LVControl(p); allocation.pointer = 0; }
+        {
+            char* p = text;
+            LVAlloc allocation(p, &allocator.value);
+            control = new LVControl(p);
+            allocation.pointer = 0;
+        }
         strcpy(text, message);
         table = (void*)__vt__Q23std12length_error;
     }
@@ -111,11 +157,19 @@ namespace std { struct length_error : LVErrBase {
     // Copy the primary vector-length message; the tag selects this ABI constructor.
     length_error(int) {
         const char* message = vectorLengthErrorStrings_LocalVector;
-        struct Allocator { char value; char pad[3]; } allocator;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned n = strlen(message) + 1;
         text = (char*)__nwa__FUl(2 * n - n);
-        { char* p = text; LVAlloc allocation(p, &allocator.value); control = new LVControl(p); allocation.pointer = 0; }
+        {
+            char* p = text;
+            LVAlloc allocation(p, &allocator.value);
+            control = new LVControl(p);
+            allocation.pointer = 0;
+        }
         strcpy(text, message);
         table = (void*)__vt__Q23std12length_error;
     }
@@ -123,28 +177,43 @@ namespace std { struct length_error : LVErrBase {
 };
 }
 // Construct and throw the vector length exception using the original runtime ABI.
-inline void LVThrow() { {
-    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-    std::length_error* error = (std::length_error*)storage.bytes;
-    error->__ct(0);
-    exception_runtime::__throw(exception_runtime::vectorLengthErrorStrings_LocalVector + 0x14, error,
-        (void*)exception_runtime::__dt__Q23std12length_errorFv);
-} }
+inline void LVThrow() {
+    {
+        union {
+            double alignment;
+            unsigned char bytes[sizeof(std::length_error)];
+        } storage;
+        std::length_error* error = (std::length_error*)storage.bytes;
+        error->__ct(0);
+        exception_runtime::__throw(exception_runtime::vectorLengthErrorStrings_LocalVector + 0x14, error,
+                                   (void*)exception_runtime::__dt__Q23std12length_errorFv);
+    }
+}
 
 // Temporary pointer-array allocation: [offset, offset+size) is populated. It owns
 // storage only, not file references. After swap, data owns the OLD allocation.
 struct LVBuffer {
-    void* data; unsigned size; unsigned capacity; unsigned* owner; unsigned offset;
+    void* data;
+    unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    unsigned offset;
     // Start an empty reservation associated with the destination capacity word.
     LVBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free whichever allocation remains after publication or unwinding.
-    ~LVBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~LVBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 
 // Return a reference to the larger unsigned value; arguments must outlive its use.
 static inline const unsigned& LVMax(const unsigned& a, const unsigned& b) {
     const unsigned* p = &a;
-    if (a < b) p = &b;
+    if (a < b)
+        p = &b;
     return *p;
 }
 
@@ -175,7 +244,8 @@ void* DtorEntryVector_dtor(void* self, int shouldDelete) {
             }
             appFreeUni__FPv(*(void**)self);
         }
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -189,8 +259,10 @@ int SharedFileRegistry_ReleaseFile(void* self, void* file) {
     struct Unlock {
         TableLock* lock;
         // Release the already acquired lock on return or exception unwinding.
-        ~Unlock() { __dt__9TableLockFv(lock, -1); }
-    } unlock = { &lock };
+        ~Unlock() {
+            __dt__9TableLockFv(lock, -1);
+        }
+    } unlock = {&lock};
     unsigned int count = (*(unsigned int*)&AsCSharedFileRegistry(self)->filePointerCount);
     void** base = (*(void***)&AsCSharedFileRegistry(self)->filePointers);
     void** end = base + count;
@@ -202,7 +274,7 @@ int SharedFileRegistry_ReleaseFile(void* self, void* file) {
     if (end == cur) {
         return 0;
     }
-    if (CSharedFile_ReleaseRefIsZero(*cur) != 0) {
+    if (((CSharedFile*)(*cur))->ReleaseRefIsZero() != 0) {
         if (*cur != 0) {
             delete (DtorEntry*)*cur;
             *cur = 0;
@@ -228,14 +300,14 @@ int SharedFileRegistry_ReleaseFile(void* self, void* file) {
 // is guarded by a byte, not the table lock, so first use requires external serialization.
 void* CSharedFileRegistry_GetInstance() {
     if (!s_sharedFileRegistryInitialized) {
-        char* g = s_sharedFileRegistryInstance;
-        *(void**)g = (void*)__vt__19CSharedFileRegistry;
-        (*(int*)&AsCSharedFileRegistry(g)->filePointers) = 0;
-        (*(int*)&AsCSharedFileRegistry(g)->filePointerCount) = 0;
-        ((RegistryCapacityView*)g)->pointerCapacity = 0;
-        (*(int*)&AsCSharedFileRegistry(g)->fileRecords) = 0;
-        (*(int*)&AsCSharedFileRegistry(g)->fileRecordCount) = 0;
-        ((RegistryCapacityView*)g)->recordCapacity = 0;
+        char* registry = s_sharedFileRegistryInstance;
+        *(void**)registry = (void*)__vt__19CSharedFileRegistry;
+        (*(int*)&AsCSharedFileRegistry(registry)->filePointers) = 0;
+        (*(int*)&AsCSharedFileRegistry(registry)->filePointerCount) = 0;
+        ((RegistryCapacityView*)registry)->pointerCapacity = 0;
+        (*(int*)&AsCSharedFileRegistry(registry)->fileRecords) = 0;
+        (*(int*)&AsCSharedFileRegistry(registry)->fileRecordCount) = 0;
+        ((RegistryCapacityView*)registry)->recordCapacity = 0;
 
         // Reserve the array of shared-file pointers.
         ReservationScratch localA;
@@ -248,43 +320,48 @@ void* CSharedFileRegistry_GetInstance() {
 
         void* newA = appMallocDummy__FUl(kInitialRegistryCapacity * kFilePointerBytes);
         localA.resource = newA;
-        void* oldBaseA = AsCSharedFileRegistry(g)->filePointers;
-        unsigned int oldCountA = (*(unsigned int*)&AsCSharedFileRegistry(g)->filePointerCount);
-        memcpy(newA, oldBaseA, oldCountA*4);
-        memset(oldBaseA, 0, oldCountA*4);
-        (*(unsigned int*)&AsCSharedFileRegistry(g)->filePointerCount) = 0;
-        ((RegistryCapacityView*)g)->pointerCapacity = kInitialRegistryCapacity;
+        void* oldBaseA = AsCSharedFileRegistry(registry)->filePointers;
+        unsigned int oldCountA = (*(unsigned int*)&AsCSharedFileRegistry(registry)->filePointerCount);
+        memcpy(newA, oldBaseA, oldCountA * 4);
+        memset(oldBaseA, 0, oldCountA * 4);
+        (*(unsigned int*)&AsCSharedFileRegistry(registry)->filePointerCount) = 0;
+        ((RegistryCapacityView*)registry)->pointerCapacity = kInitialRegistryCapacity;
         *(unsigned int*)(&localA.constructedCount) = 0;
-        AsCSharedFileRegistry(g)->filePointers = newA;
+        AsCSharedFileRegistry(registry)->filePointers = newA;
         // Retain the old allocation in the reservation bookkeeping.
         localA.resource = oldBaseA;
-        (*(unsigned int*)&AsCSharedFileRegistry(g)->filePointerCount) = 0;
+        (*(unsigned int*)&AsCSharedFileRegistry(registry)->filePointerCount) = 0;
         if (oldBaseA != 0) {
-            (*(unsigned int*)&AsCSharedFileRegistry(g)->filePointerCount) = 0; // r0=0
+            (*(unsigned int*)&AsCSharedFileRegistry(registry)->filePointerCount) = 0; // r0=0
             appFreeUni__FPv(oldBaseA);
         }
 
         // Reserve and copy-construct the array of 20-byte file-store records.
-        if (((RegistryCapacityView*)g)->recordCapacity < kInitialRegistryCapacity) {
+        if (((RegistryCapacityView*)registry)->recordCapacity < kInitialRegistryCapacity) {
             ReservationScratch localB;
-            localB.resource = 0; localB.data = 0; localB.constructedCount=0; localB.allocatorFlag=0; localB.reservedFloat=0; localB.reservedShort=0;
+            localB.resource = 0;
+            localB.data = 0;
+            localB.constructedCount = 0;
+            localB.allocatorFlag = 0;
+            localB.reservedFloat = 0;
+            localB.reservedShort = 0;
             void* newB = appMallocDummy__FUl(kInitialRegistryCapacity * kFileStoreBytes);
             localB.resource = newB;
-            unsigned int oldCountB = (*(unsigned int*)&AsCSharedFileRegistry(g)->fileRecordCount);
+            unsigned int oldCountB = (*(unsigned int*)&AsCSharedFileRegistry(registry)->fileRecordCount);
             void* pNew = newB;
-            void* pOld = AsCSharedFileRegistry(g)->fileRecords;
+            void* pOld = AsCSharedFileRegistry(registry)->fileRecords;
             void* endOld = (DtorEntry*)pOld + oldCountB;
             unsigned int constructed = 0;
             // Copy-construct the file-store entries into the replacement allocation.
             while ((char*)pOld < (char*)endOld) {
                 if (pNew != 0) {
-                    CSharedFileStore_CopyCtor(pNew, pOld);
+                    __ct__16CSharedFileStoreFRC16CSharedFileStore(pNew, pOld);
                 }
                 pOld = (DtorEntry*)pOld + 1;
                 pNew = (DtorEntry*)pNew + 1;
                 constructed++;
             }
-            unsigned int oldBaseB2 = (*(unsigned int*)&AsCSharedFileRegistry(g)->fileRecords);
+            unsigned int oldBaseB2 = (*(unsigned int*)&AsCSharedFileRegistry(registry)->fileRecords);
             if (oldBaseB2 != 0) {
                 void* endPtr = (DtorEntry*)oldBaseB2 + oldCountB;
                 int cnt = oldCountB;
@@ -298,38 +375,43 @@ void* CSharedFileRegistry_GetInstance() {
                 appFreeUni__FPv((void*)oldBaseB2);
             }
             // Publish the replacement store array.
-            ((RegistryCapacityView*)g)->recordCapacity = kInitialRegistryCapacity;
-            AsCSharedFileRegistry(g)->fileRecords = newB;
-            (*(unsigned int*)&AsCSharedFileRegistry(g)->fileRecordCount) = constructed;
+            ((RegistryCapacityView*)registry)->recordCapacity = kInitialRegistryCapacity;
+            AsCSharedFileRegistry(registry)->fileRecords = newB;
+            (*(unsigned int*)&AsCSharedFileRegistry(registry)->fileRecordCount) = constructed;
             // Retain the old allocation in the reservation bookkeeping.
             localB.resource = (void*)oldBaseB2;
         }
 
         // Both allocations are published; register process-exit destruction before marking ready.
-        __register_global_object(g, (void*)CSharedFileRegistry_dtor, (void*)s_sharedFileRegistryDtorRegistration);
+        __register_global_object(registry, (void*)__dt__19CSharedFileRegistryFv,
+                                 (void*)s_sharedFileRegistryDtorRegistration);
         s_sharedFileRegistryInitialized = 1;
     }
     return (void*)s_sharedFileRegistryInstance;
 }
 
-extern int CSharedFile_GetPath(void*);
 extern int CString_Compare(void*, void*);
-extern void* CSharedFileSync_Create(void*);
-extern void* CSharedFileAsync_Create(void*);
-extern void CSharedFile_AddRef(void*);
 extern void __dla__FPv(void*);
 extern void* __nwa__FUl(unsigned);
 
 struct TargetLock {
     char bytes[8];
     // Acquire the shared registry's table-lock domain for the entire operation.
-    TargetLock() { TableLock_ctor(this, kRegistryLock, 1); }
+    TargetLock() {
+        TableLock_ctor(this, kRegistryLock, 1);
+    }
     // Release the lock on normal return or exception unwinding.
-    ~TargetLock() { __dt__9TableLockFv(this, -1); }
+    ~TargetLock() {
+        __dt__9TableLockFv(this, -1);
+    }
 };
 extern void* __nw__FUl(unsigned int);
 extern void __dt__Q23std12length_errorFv(void*, int);
-struct TargetExc { void* vt; char* text; void* control; };
+struct TargetExc {
+    void* vt;
+    char* text;
+    void* control;
+};
 // Build the primary vector-length message and throw it via the runtime exception ABI.
 inline void TargetThrow() {
     TargetExc e;
@@ -357,7 +439,11 @@ inline void TargetThrow() {
     __throw(vectorLengthErrorStrings_LocalVector + 0x14, mp, (void*)__dt__Q23std12length_errorFv);
 }
 
-struct TargetVector { void* table; void** data; unsigned size, capacity; };
+struct TargetVector {
+    void* table;
+    void** data;
+    unsigned size, capacity;
+};
 // Append one uninitialized pointer slot; caller must ensure size < capacity.
 inline void*& TargetAppendSlot(TargetVector* self) {
     unsigned newSize = self->size + 1;
@@ -383,19 +469,24 @@ void* SharedFileCache_GetOrCreate(TargetVector* self, void* path, int synchronou
     cur = self->data;
     while (self->data + self->size != cur || (found = 0, false)) {
         if (*cur != 0) {
-            void* key = (void*)(unsigned long)CSharedFile_GetPath(*cur);
-            if (key != 0 && CString_Compare(key, path) == 0) { found = *cur; break; }
+            void* key = (void*)(unsigned long)(int)((CSharedFile*)(*cur))->GetPath();
+            if (key != 0 && CString_Compare(key, path) == 0) {
+                found = *cur;
+                break;
+            }
         }
         ++cur;
     }
     if (found != 0) {
-        CSharedFile_AddRef(found);
+        ((CSharedFile*)found)->AddRef();
         return found;
     }
 
     // Only a cache miss reaches a factory; existing files ignore the requested mode.
-    if (synchronous != 0) newObj = CSharedFileSync_Create(path);
-    else newObj = CSharedFileAsync_Create(path);
+    if (synchronous != 0)
+        newObj = CSharedFileSync::Create(path);
+    else
+        newObj = CSharedFileAsync::Create(path);
     if (newObj == 0) {
         return 0;
     }
@@ -406,14 +497,16 @@ void* SharedFileCache_GetOrCreate(TargetVector* self, void* path, int synchronou
     } else {
         // Reserve enough pointer slots, preserving the original piecewise growth policy.
         unsigned cap = self->capacity;
-        if (kMaxFilePointerCount - cap < 1) TargetThrow();
+        if (kMaxFilePointerCount - cap < 1)
+            TargetThrow();
 
         LVBuffer buffer(&self->capacity);
         unsigned growThree;
         unsigned growHalf;
         unsigned needed = (self->size + 1) - self->capacity;
         unsigned oldCap = self->capacity;
-        if (needed > kMaxFilePointerCount - oldCap) TargetThrow();
+        if (needed > kMaxFilePointerCount - oldCap)
+            TargetThrow();
         unsigned newCap;
         if (oldCap < kThreeFifthsGrowthLimit) {
             growThree = (3 * (oldCap + 1)) / 5;
@@ -424,7 +517,8 @@ void* SharedFileCache_GetOrCreate(TargetVector* self, void* path, int synchronou
         } else {
             newCap = kMaxFilePointerCount;
         }
-        if (newCap > kMaxFilePointerCount) TargetThrow();
+        if (newCap > kMaxFilePointerCount)
+            TargetThrow();
 
         // Place the new file at the end, then move the old pointers before it.
         void* newBase = appMallocDummy__FUl(newCap * kFilePointerBytes);
@@ -453,12 +547,10 @@ void* SharedFileCache_GetOrCreate(TargetVector* self, void* path, int synchronou
         buffer.size = 0;
     }
 
-    CSharedFile_AddRef(newObj);
+    ((CSharedFile*)newObj)->AddRef();
     return newObj;
 }
 #pragma pop
-
-extern void* CSharedFileSync_CreateFromBuffer(void*, void*, int);
 
 // Return the larger value by reference for immediate capacity arithmetic.
 static inline const unsigned& maxu(const unsigned& a, const unsigned& b) {
@@ -480,16 +572,20 @@ void* SharedFileCache_GetOrCreateFromBuffer(void* self, void* path, void* bytes,
         // Attach scope cleanup to an already acquired lock.
         Unlock(TableLock* p) : lock(p) {}
         // Release the lock on normal return or exception unwinding.
-        ~Unlock() { __dt__9TableLockFv(lock, -1); }
+        ~Unlock() {
+            __dt__9TableLockFv(lock, -1);
+        }
     } unlock(&lock);
 
     // Search by path first: a hit retains the existing file without consulting the buffer.
     void** cur = (*(void***)&AsCSharedFileRegistry(self)->filePointers);
     void* found = 0;
-    while ((*(void***)&AsCSharedFileRegistry(self)->filePointers) + (*(unsigned int*)&AsCSharedFileRegistry(self)->filePointerCount) != cur) {
+    while ((*(void***)&AsCSharedFileRegistry(self)->filePointers) +
+               (*(unsigned int*)&AsCSharedFileRegistry(self)->filePointerCount) !=
+           cur) {
         void* obj = *cur;
         if (obj != 0) {
-            int key = CSharedFile_GetPath(obj);
+            int key = (int)((CSharedFile*)obj)->GetPath();
             if (key != 0 && CString_Compare((void*)key, path) == 0) {
                 found = *cur;
                 break;
@@ -498,7 +594,7 @@ void* SharedFileCache_GetOrCreateFromBuffer(void* self, void* path, void* bytes,
         cur++;
     }
     if (found != 0) {
-        CSharedFile_AddRef(found);
+        ((CSharedFile*)found)->AddRef();
         return found;
     }
 
@@ -507,7 +603,7 @@ void* SharedFileCache_GetOrCreateFromBuffer(void* self, void* path, void* bytes,
     }
 
     // Factory owns its own copied buffer; the caller's memory remains borrowed.
-    void* newObj = CSharedFileSync_CreateFromBuffer(path, bytes, byteCount);
+    void* newObj = ((CSharedFileSync*)path)->CreateFromBuffer(bytes, byteCount);
     if (newObj == 0) {
         return 0;
     }
@@ -518,7 +614,7 @@ void* SharedFileCache_GetOrCreateFromBuffer(void* self, void* path, void* bytes,
         unsigned newSize = curSize + 1;
         (*(unsigned int*)&AsCSharedFileRegistry(self)->filePointerCount) = newSize;
         b[newSize - 1] = newObj;
-        CSharedFile_AddRef(newObj);
+        ((CSharedFile*)newObj)->AddRef();
         return newObj;
     }
 
@@ -555,9 +651,10 @@ void* SharedFileCache_GetOrCreateFromBuffer(void* self, void* path, void* bytes,
     ((RegistryCapacityView*)self)->pointerCapacity = newCap;
     AsCSharedFileRegistry(self)->filePointers = newBase;
     (*(unsigned int*)&AsCSharedFileRegistry(self)->filePointerCount) = curSize + 1;
-    if (oldBasePtr != 0) appFreeUni__FPv(oldBasePtr);
+    if (oldBasePtr != 0)
+        appFreeUni__FPv(oldBasePtr);
 
-    CSharedFile_AddRef(newObj);
+    ((CSharedFile*)newObj)->AddRef();
     return newObj;
 }
 #pragma pop
@@ -569,4 +666,3 @@ void* SharedFileCache_GetOrCreateFromBuffer(void* self, void* path, void* bytes,
 #pragma force_active on
 STATIC_INIT_ENTRY(".CRT$XCU80462420", _ctors_u8028BC74_0, SharedFileCache_InitTwoPiCache);
 #pragma pop
-

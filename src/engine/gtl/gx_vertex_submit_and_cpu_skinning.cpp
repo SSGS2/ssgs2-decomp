@@ -1,9 +1,10 @@
-// Translation unit 0x80430240-0x804311B4 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 // GX's write-gather FIFO consumes each volatile write in source order.
 static const unsigned int kGxFifoAddress = 0xCC008000;
-enum { kSkinWeightCount = 2, kUnusedBoneIndex = 0x20, kMatrixByteShift = 6 };
+enum {
+    kSkinWeightCount = 2,
+    kUnusedBoneIndex = 0x20,
+    kMatrixByteShift = 6
+};
 
 // Counts measure records, not bytes. Inputs/palettes are borrowed; CPU outputs
 // are caller-owned and must fit every record. Submit routines emit attributes
@@ -16,15 +17,22 @@ enum { kSkinWeightCount = 2, kUnusedBoneIndex = 0x20, kMatrixByteShift = 6 };
 
 // Interleaved CPU skinning formats; the two byte bone indices select palette rows.
 struct WeightedPositionColor {
-    float position[3]; unsigned int packedColor;
-    float firstWeight; unsigned char boneIndices[2]; char pad_16[2];
+    float position[3];
+    unsigned int packedColor;
+    float firstWeight;
+    unsigned char boneIndices[2];
+    char pad_16[2];
 };
 struct WeightedPositionNormal {
-    float position[3]; float firstWeight;
-    float normal[3]; unsigned char boneIndices[2]; char pad_1E[2];
+    float position[3];
+    float firstWeight;
+    float normal[3];
+    unsigned char boneIndices[2];
+    char pad_1E[2];
 };
 struct WeightedPositionNormalTex {
-    WeightedPositionNormal skin; float u, v;
+    WeightedPositionNormal skin;
+    float u, v;
 };
 typedef char WeightedPositionColor_size[(sizeof(WeightedPositionColor) == 0x18) ? 1 : -1];
 typedef char WeightedPositionNormal_size[(sizeof(WeightedPositionNormal) == 0x20) ? 1 : -1];
@@ -42,11 +50,13 @@ extern "C" {
 
 void Render_WriteFifo3f(float x, float y, float z);
 void Render_WriteTexCoord2f(float x, float y);
-void Render_WriteNormal3f(float a, float b, float c);
-float* Mtx44_BlendIndexed2(float* out, unsigned int arg, const void* a, const void* b);
-void Skin_TransformPositionAndNormalProjective(float* out, float* out2, const void* a, const void* b, const float* c);
+void Render_WriteNormal3f(float x, float y, float z);
+float* Mtx44_BlendIndexed2(float* out, unsigned int matrixPaletteAddress, const void* weightValues,
+                           const void* boneIndices);
+void Skin_TransformPositionAndNormalProjective(float* skinnedPosition, float* skinnedNormal, const void* vertex,
+                                               const void* normal, const float* matrix);
 void Mtx34_TransformPointAndDirection(void* out, void* out2, const void* a, const void* b, const float* c);
-void Mtx44_TransformPointPerspective(float* out, const void* a, const float* b);
+void Mtx44_TransformPointPerspective(float* out, const void* sourceVertex, const float* matrix);
 
 typedef __vec2x32float__ Vec2;
 
@@ -61,7 +71,8 @@ typedef __vec2x32float__ Vec2;
 // Only weightValues[0] is read. Two indices yield w0*M0 + (1-w0)*M1; an early
 // terminator leaves the partial sum (zero if first). Weights are not clamped or
 // normalized on the one-influence path. Paired arithmetic order is intentional.
-float* Mtx44_BlendIndexed2(float* out, unsigned int matrixPaletteAddress, const void* weightValues, const void* boneIndices) {
+float* Mtx44_BlendIndexed2(float* out, unsigned int matrixPaletteAddress, const void* weightValues,
+                           const void* boneIndices) {
     struct BlendScratch {
         unsigned int matrixPalette;
         float currentWeight;
@@ -87,9 +98,12 @@ float* Mtx44_BlendIndexed2(float* out, unsigned int matrixPaletteAddress, const 
     // Accumulate the eight paired matrix lanes before publishing any output.
     while (influenceIndex < kSkinWeightCount) {
         register unsigned int boneIndex = indices[influenceIndex];
-        if (boneIndex == kUnusedBoneIndex) break;
-        if (influenceIndex == 1) frame.currentWeight = 1.0f - frame.accumulatedWeight;
-        else frame.currentWeight = weights[influenceIndex];
+        if (boneIndex == kUnusedBoneIndex)
+            break;
+        if (influenceIndex == 1)
+            frame.currentWeight = 1.0f - frame.accumulatedWeight;
+        else
+            frame.currentWeight = weights[influenceIndex];
         register Vec2* palettePairs = (Vec2*)((char*)frame.matrixPalette + (boneIndex << kMatrixByteShift));
         ++influenceIndex;
         float scalarWeight = frame.currentWeight;
@@ -112,8 +126,14 @@ float* Mtx44_BlendIndexed2(float* out, unsigned int matrixPaletteAddress, const 
         sum7 = sum7 + v1 * pairedWeight;
         frame.accumulatedWeight = total;
     }
-    outputPairs[0] = sum0; outputPairs[1] = sum1; outputPairs[2] = sum2; outputPairs[3] = sum3;
-    outputPairs[4] = sum4; outputPairs[5] = sum5; outputPairs[6] = sum6; outputPairs[7] = sum7;
+    outputPairs[0] = sum0;
+    outputPairs[1] = sum1;
+    outputPairs[2] = sum2;
+    outputPairs[3] = sum3;
+    outputPairs[4] = sum4;
+    outputPairs[5] = sum5;
+    outputPairs[6] = sum6;
+    outputPairs[7] = sum7;
     return out;
 }
 #pragma pop
@@ -125,15 +145,20 @@ float* Mtx44_BlendIndexed2(float* out, unsigned int matrixPaletteAddress, const 
 #pragma use_lmw_stmw on
 // Skin interleaved position/color vertices into a packed output buffer.
 // Input stride 24 bytes, output stride 16: projected xyz plus unchanged color.
-void Skin_Transform2WeightPositionColor(float* out, const void* records, unsigned int vertexCount, unsigned int matrixPalette) {
+void Skin_Transform2WeightPositionColor(float* out, const void* records, unsigned int vertexCount,
+                                        unsigned int matrixPalette) {
     register unsigned int vertexIndex = 0;
     register unsigned char* dst = (unsigned char*)out;
     register const unsigned char* sourceBytes = (const unsigned char*)records;
     while (vertexIndex < vertexCount) {
         float blendedMatrix[16];
-        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, sourceBytes + kColorWeightOffset, sourceBytes + kColorBoneIndicesOffset);
+        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, sourceBytes + kColorWeightOffset,
+                            sourceBytes + kColorBoneIndicesOffset);
         Mtx44_TransformPointPerspective((float*)dst, sourceBytes, blendedMatrix);
-        dst[12] = sourceBytes[12]; dst[13] = sourceBytes[13]; dst[14] = sourceBytes[14]; dst[15] = sourceBytes[15];
+        dst[12] = sourceBytes[12];
+        dst[13] = sourceBytes[13];
+        dst[14] = sourceBytes[14];
+        dst[15] = sourceBytes[15];
         dst += 0x10;
         sourceBytes += sizeof(WeightedPositionColor);
         ++vertexIndex;
@@ -152,8 +177,10 @@ void Skin_Submit2WeightPositionNormalTex1(const void* data, unsigned int vertexC
     register const unsigned char* vertex = (const unsigned char*)data;
     while (vertexIndex < vertexCount) {
         float blendedMatrix[16], skinnedPosition[3], skinnedNormal[3];
-        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, vertex + kNormalWeightOffset, vertex + kNormalBoneIndicesOffset);
-        Skin_TransformPositionAndNormalProjective(skinnedPosition, skinnedNormal, vertex, vertex + kNormalOffset, blendedMatrix);
+        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, vertex + kNormalWeightOffset,
+                            vertex + kNormalBoneIndicesOffset);
+        Skin_TransformPositionAndNormalProjective(skinnedPosition, skinnedNormal, vertex, vertex + kNormalOffset,
+                                                  blendedMatrix);
         Render_WriteFifo3f(skinnedPosition[0], skinnedPosition[1], skinnedPosition[2]);
         Render_WriteFifo3f(skinnedNormal[0], skinnedNormal[1], skinnedNormal[2]);
         Render_WriteTexCoord2f(*(float*)(vertex + kSkinUOffset), *(float*)(vertex + kSkinVOffset));
@@ -175,7 +202,8 @@ struct PositionNormalColorTexVertex {
 #pragma peephole on
 #pragma optimize_for_size on
 // Submit position, normal, packed color, and one UV set for each vertex.
-void Render_WriteVerticesPositionNormalColorTex1(PositionNormalColorTexVertex* data, volatile unsigned int vertexCount) {
+void Render_WriteVerticesPositionNormalColorTex1(PositionNormalColorTexVertex* data,
+                                                 volatile unsigned int vertexCount) {
     register unsigned int vertexIndex = 0;
     register PositionNormalColorTexVertex* vertex = data;
     while (vertexIndex < vertexCount) {
@@ -202,7 +230,8 @@ struct PositionColorThreeTexVertex {
 #pragma optimize_for_size on
 #pragma use_lmw_stmw on
 // Submit position, packed color, and three UV sets for each vertex.
-void Render_WriteVerticesWithThreeTexCoords(volatile PositionColorThreeTexVertex* data, volatile unsigned int vertexCount) {
+void Render_WriteVerticesWithThreeTexCoords(volatile PositionColorThreeTexVertex* data,
+                                            volatile unsigned int vertexCount) {
     register volatile PositionColorThreeTexVertex* vertex = data;
     register unsigned int vertexIndex = 0;
     while (vertexIndex < vertexCount) {
@@ -229,7 +258,8 @@ void Skin_Submit2WeightPositionColor(const void* data, volatile unsigned int ver
     while (vertexIndex < vertexCount) {
         float blendedMatrix[16];
         float skinnedPosition[3];
-        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, (const void*)(vertex + kColorWeightOffset), (const void*)(vertex + kColorBoneIndicesOffset));
+        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, (const void*)(vertex + kColorWeightOffset),
+                            (const void*)(vertex + kColorBoneIndicesOffset));
         Mtx44_TransformPointPerspective(skinnedPosition, (const void*)vertex, blendedMatrix);
         Render_WriteFifo3f(skinnedPosition[0], skinnedPosition[1], skinnedPosition[2]);
         register unsigned int t = *(const volatile unsigned int*)(vertex + kPackedColorOffset);
@@ -252,13 +282,14 @@ struct PositionColorFourTexVertex {
     float u0, v0, u1, v1, u2, v2, u3, v3;
 };
 
- #pragma push
+#pragma push
 #pragma optimization_level 0
 #pragma peephole on
 #pragma optimize_for_size on
 #pragma use_lmw_stmw on
 // Submit position, packed color, and four UV sets for each vertex.
-void Render_WriteVerticesWithFourTexCoords(volatile PositionColorFourTexVertex* data, volatile unsigned int vertexCount) {
+void Render_WriteVerticesWithFourTexCoords(volatile PositionColorFourTexVertex* data,
+                                           volatile unsigned int vertexCount) {
     register volatile PositionColorFourTexVertex* vertex = data;
     register unsigned int vertexIndex = 0;
     while (vertexIndex < vertexCount) {
@@ -288,8 +319,10 @@ void Skin_Submit2WeightPositionNormal(const void* data, volatile unsigned int ve
         float blendedMatrix[16];
         float skinnedPosition[3];
         float skinnedNormal[3];
-        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, (const void*)(vertex + kNormalWeightOffset), (const void*)(vertex + kNormalBoneIndicesOffset));
-        Skin_TransformPositionAndNormalProjective(skinnedPosition, skinnedNormal, (const void*)vertex, (const void*)(vertex + kNormalOffset), blendedMatrix);
+        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, (const void*)(vertex + kNormalWeightOffset),
+                            (const void*)(vertex + kNormalBoneIndicesOffset));
+        Skin_TransformPositionAndNormalProjective(skinnedPosition, skinnedNormal, (const void*)vertex,
+                                                  (const void*)(vertex + kNormalOffset), blendedMatrix);
         Render_WriteFifo3f(skinnedPosition[0], skinnedPosition[1], skinnedPosition[2]);
         Render_WriteNormal3f(skinnedNormal[0], skinnedNormal[1], skinnedNormal[2]);
         vertex += sizeof(WeightedPositionNormal);
@@ -372,7 +405,8 @@ void Render_WriteVerticesPositionNormalTex1(PositionNormalTexVertex* data, volat
 #pragma peephole on
 #pragma optimize_for_size on
 // Submit each position/normal pair and its packed color.
-void Render_WriteVerticesPositionNormalColor(volatile PositionNormalColorVertex* data, volatile unsigned int vertexCount) {
+void Render_WriteVerticesPositionNormalColor(volatile PositionNormalColorVertex* data,
+                                             volatile unsigned int vertexCount) {
     register unsigned int vertexIndex = 0;
     register volatile PositionNormalColorVertex* vertex = data;
     while (vertexIndex < vertexCount) {
@@ -402,14 +436,16 @@ struct PositionColorTwoTexVertex {
 // direction helper, unlike the projective submit paths; no normalization occurs
 // in this loop. unused is an unused ABI slot; matrixPalette selects the palette.
 void Skin_Transform2WeightPositionNormal(float* out, volatile unsigned char* data, unsigned int count,
-                 unsigned int unused, volatile unsigned int matrixPalette) {
+                                         unsigned int unused, volatile unsigned int matrixPalette) {
     register unsigned int vertexIndex = 0;
     register float* outputRecord = out;
     register const unsigned char* inputRecord = (const unsigned char*)data;
     while (vertexIndex < count) {
         float blendedMatrix[16];
-        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, (const void*)(inputRecord + kNormalWeightOffset), (const void*)(inputRecord + kNormalBoneIndicesOffset));
-        Mtx34_TransformPointAndDirection(outputRecord, outputRecord + 3, (const void*)inputRecord, (const void*)(inputRecord + kNormalOffset), blendedMatrix);
+        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, (const void*)(inputRecord + kNormalWeightOffset),
+                            (const void*)(inputRecord + kNormalBoneIndicesOffset));
+        Mtx34_TransformPointAndDirection(outputRecord, outputRecord + 3, (const void*)inputRecord,
+                                         (const void*)(inputRecord + kNormalOffset), blendedMatrix);
         inputRecord += sizeof(WeightedPositionNormal);
         outputRecord += 6;
         vertexIndex++;
@@ -417,13 +453,14 @@ void Skin_Transform2WeightPositionNormal(float* out, volatile unsigned char* dat
 }
 #pragma pop
 
- #pragma push
+#pragma push
 #pragma optimization_level 0
 #pragma peephole on
 #pragma optimize_for_size on
 #pragma use_lmw_stmw on
 // Submit position, packed color, and two UV sets for each vertex.
-void Render_WriteVerticesPositionAttributeTwoTexCoords(volatile PositionColorTwoTexVertex* data, volatile unsigned int vertexCount) {
+void Render_WriteVerticesPositionAttributeTwoTexCoords(volatile PositionColorTwoTexVertex* data,
+                                                       volatile unsigned int vertexCount) {
     register volatile PositionColorTwoTexVertex* vertex = data;
     register unsigned int vertexIndex = 0;
     while (vertexIndex < vertexCount) {

@@ -2,8 +2,6 @@
 // Mod lookup: edit key value/handle arrays below for curve shape; time spacing
 // comes from the track evaluator in gtl_animation_node_evaluate.cpp/gtl_animation_model_matrices.cpp. Those callers set the
 // shared time globals before dispatching here. No allocation or gameplay knobs.
-// Translation unit 0x803E0BCC-0x803E0EE8 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -23,16 +21,17 @@ struct Vec2 {
     float y;
 };
 
-extern float kFloat_1_GtlModel; // unit weight (1)
+extern float kFloat_1_GtlModel;              // unit weight (1)
 extern float kCurveRelativeSpacingTolerance; // 0.01f: relative curvature tolerance, shared by interpolators
-extern float kCurveMinimumSpacingTolerance; // 0.0001f: minimum absolute curvature tolerance, same pool
-extern float kBezierCubicCoefficient; // cubic Bernstein coefficient (3)
-extern float s_animationSegmentStartTime; // selected segment's start time
-extern float s_animationSampleTime; // requested absolute track time
-extern float s_animationSegmentEndTime; // selected segment's end time
+extern float kCurveMinimumSpacingTolerance;  // 0.0001f: minimum absolute curvature tolerance, same pool
+extern float kBezierCubicCoefficient;        // cubic Bernstein coefficient (3)
+extern float s_animationSegmentStartTime;    // selected segment's start time
+extern float s_animationSampleTime;          // requested absolute track time
+extern float s_animationSegmentEndTime;      // selected segment's end time
 
 extern float gtl_Curve_FindBezierParameter(float x0, float x1, float x2, float x3, float t);
-extern void* Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1, float t);
+extern void* Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1,
+                          float t);
 
 // Write four float32 values to required out[4]; return status 1 on every path.
 // a/b are borrowed complete keys; t is normalized segment time (normally 0..1),
@@ -104,7 +103,8 @@ int gtl_Animation_InterpolateBezierVec4(float* out, BezierKey* a, BezierKey* b, 
             float endPoint = *endValue;
             float outgoingValue = *startValueHandle;
             float startPoint = *startValue;
-            float s = gtl_Curve_FindBezierParameter(s_animationSegmentStartTime, x1, x2, s_animationSegmentEndTime, s_animationSampleTime);
+            float s = gtl_Curve_FindBezierParameter(s_animationSegmentStartTime, x1, x2, s_animationSegmentEndTime,
+                                                    s_animationSampleTime);
             float u = one - s;
             float s2 = s * s;
             float u2 = u * u;

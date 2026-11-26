@@ -1,3 +1,8 @@
+// The resource manager: its caches of models, fonts and bitmaps, texture reference counts and release,
+// and loading of bitmaps (from files and archives) and puppet models.
+//
+// Also the hash tables and string-keyed entry vectors the caches use, and their destructors.
+
 #include "classes/BitmapLayout.h"
 #include "classes/CGsrResource.h"
 #define AsBitmapLayout(p) ((BitmapLayout*)(p))
@@ -15,13 +20,17 @@
 #define GAME_NSTRING_RANGE_CONSTRUCTOR
 #include "game/string.h"
 // Compare iterator/pointer positions without extending either operand's lifetime.
-template <class T> inline bool same_pos(const T& a, const T& b) { return a == b; }
-
-// Translation unit 0x8006028C-0x80065B4C (43 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+template <class T> inline bool same_pos(const T& lhs, const T& rhs) {
+    return lhs == rhs;
+}
 
 #include "sdk_protos.h"
 #include "MSL/vector.h"
+#include "classes/CString.h"
+#include "classes/CHashPath.h"
+#include "classes/CFileAsync.h"
+#include "classes/WOverlay.h"
+#include "classes/W3dSpr.h"
 
 extern "C" {
 
@@ -31,27 +40,54 @@ struct ManagedResourceHeader {
     unsigned referenceCount;
     void* resourceManager;
 };
-struct CacheEntryStorage { void* entries; unsigned count; };
-struct RecordListLinks { void* previous; void* next; };
-struct RecordListState { int count; RecordListLinks sentinel; };
-struct AsyncFileResource { char reserved[0xC]; void* vtable; };
+struct CacheEntryStorage {
+    void* entries;
+    unsigned count;
+};
+struct RecordListLinks {
+    void* previous;
+    void* next;
+};
+struct RecordListState {
+    int count;
+    RecordListLinks sentinel;
+};
+struct AsyncFileResource {
+    char reserved[0xC];
+    void* vtable;
+};
 enum ResourceLoadFormat {
-    kFormatPet = 0xFFF, kFormatMpet = 0x101B, kFormatApet = 0x166,
-    kFormatBpet = 0x82, kFormatGmr = 0x2001
+    kFormatPet = 0xFFF,
+    kFormatMpet = 0x101B,
+    kFormatApet = 0x166,
+    kFormatBpet = 0x82,
+    kFormatGmr = 0x2001
 };
 enum ResourceLoadState {
-    kWaitingForOpen = 1, kAllocateReadBuffer = 2, kWaitingForRead = 3,
-    kReadComplete = 4, kCachedModelReady = 5, kModelReturned = 6
+    kWaitingForOpen = 1,
+    kAllocateReadBuffer = 2,
+    kWaitingForRead = 3,
+    kReadComplete = 4,
+    kCachedModelReady = 5,
+    kModelReturned = 6
 };
 enum {
-    kOpaque = 0xFF, kImmortalReferenceCount = 0xFFFFFFFF,
-    kMaxCacheEntries = 0xFFFFFFF, kFirstGrowthThreshold = 0x5555555,
-    kSecondGrowthThreshold = 0xAAAAAAA, kDvdReadAlignment = 32,
-    kTextureSkipInitializeMask = 0x10003000, kTexture24Bit = 0x80000000,
-    kTextureExtraHalfStorage = 0x40000000, kTextureNameBang = 0x20000000,
-    kTextureNameBrace = 0x800, kTextureNameBraceClearMask = 0xBFFFFFFF,
-    kResourcePathCapacity = 0x400, kBitmapBasenameCapacity = 0x40,
-    kArchiveEntryKeyCapacity = 0x104, kAsciiUpperToLower = 'a' - 'A'
+    kOpaque = 0xFF,
+    kImmortalReferenceCount = 0xFFFFFFFF,
+    kMaxCacheEntries = 0xFFFFFFF,
+    kFirstGrowthThreshold = 0x5555555,
+    kSecondGrowthThreshold = 0xAAAAAAA,
+    kDvdReadAlignment = 32,
+    kTextureSkipInitializeMask = 0x10003000,
+    kTexture24Bit = 0x80000000,
+    kTextureExtraHalfStorage = 0x40000000,
+    kTextureNameBang = 0x20000000,
+    kTextureNameBrace = 0x800,
+    kTextureNameBraceClearMask = 0xBFFFFFFF,
+    kResourcePathCapacity = 0x400,
+    kBitmapBasenameCapacity = 0x40,
+    kArchiveEntryKeyCapacity = 0x104,
+    kAsciiUpperToLower = 'a' - 'A'
 };
 
 // Resource/cache contracts:
@@ -73,23 +109,33 @@ enum {
 //   Allocation helpers/guard type names are retained where cleanup relocations
 //   depend on them. Volatile tags and duplicate cleanup layers preserve codegen.
 
-
 // Both embedded hashes use the same block/free-list/bucket/mutex layout.
 struct ResourceHashStorage {
-    void* first; void* iterator; void* blocks; void* free;
-    int blockNodeCount; unsigned mask; int bucketCount; void* buckets;
+    void* first;
+    void* iterator;
+    void* blocks;
+    void* free;
+    int blockNodeCount;
+    unsigned mask;
+    int bucketCount;
+    void* buckets;
     char mutex[0x18];
 };
-struct BitmapDimensions { int format; int width; int height; };
-typedef char ManagedResourceHeader_reference_offset[(IFF_OFFSET(ManagedResourceHeader, referenceCount) == 0xC) ? 1 : -1];
-typedef char ManagedResourceHeader_manager_offset[(IFF_OFFSET(ManagedResourceHeader, resourceManager) == 0x10) ? 1 : -1];
+struct BitmapDimensions {
+    int format;
+    int width;
+    int height;
+};
+typedef char
+    ManagedResourceHeader_reference_offset[(IFF_OFFSET(ManagedResourceHeader, referenceCount) == 0xC) ? 1 : -1];
+typedef char
+    ManagedResourceHeader_manager_offset[(IFF_OFFSET(ManagedResourceHeader, resourceManager) == 0x10) ? 1 : -1];
 typedef char ResourceHashStorage_size[(sizeof(ResourceHashStorage) == 0x38) ? 1 : -1];
 enum {
     kModelCacheOffset = IFF_OFFSET(ResourceManager, modelCacheVtable),
     kObjectCacheOffset = IFF_OFFSET(ResourceManager, objectCacheVtable)
 };
 
-int CHashPath_FindPath(void*);
 void __dla__FPv(void*);
 void appFreeUni__FPv(void*);
 void* __dl__FPv(void*);
@@ -98,51 +144,98 @@ void* __dl__FPv(void*);
 struct WInstanceLock {
     void* lock;
     // Acquire the embedded recursive OS mutex for this scope.
-    WInstanceLock(void* l) : lock(l) { OSLockMutex((OSMutex*)l); }
+    WInstanceLock(void* l) : lock(l) {
+        OSLockMutex((OSMutex*)l);
+    }
     // Release the mutex on normal return or exception unwinding.
-    ~WInstanceLock() { OSUnlockMutex((OSMutex*)lock); }
+    ~WInstanceLock() {
+        OSUnlockMutex((OSMutex*)lock);
+    }
 };
 
-struct ResourceDestructorInterface { 
-virtual void destroy(int);
+struct ResourceDestructorInterface {
+    virtual void destroy(int);
 };
 struct ResourceReleaseInterface {
-    virtual void slot0(); virtual void slot1(); virtual void slot2(); virtual void slot3();
-    virtual void slot4(); virtual void slot5(); virtual void slot6(); virtual void slot7();
-    virtual void slot8(); virtual void slot9(); virtual void release(void*);
+    virtual void slot0();
+    virtual void slot1();
+    virtual void slot2();
+    virtual void slot3();
+    virtual void slot4();
+    virtual void slot5();
+    virtual void slot6();
+    virtual void slot7();
+    virtual void slot8();
+    virtual void slot9();
+    virtual void release(void*);
 };
 struct SizedResourceReleaseInterface {
-    virtual void slot0(); virtual void slot1(); virtual void slot2(); virtual void slot3();
-    virtual void slot4(); virtual void slot5(); virtual void slot6(); virtual void slot7();
-    virtual void slot8(); virtual void slot9(); virtual void release(void*, int);
+    virtual void slot0();
+    virtual void slot1();
+    virtual void slot2();
+    virtual void slot3();
+    virtual void slot4();
+    virtual void slot5();
+    virtual void slot6();
+    virtual void slot7();
+    virtual void slot8();
+    virtual void slot9();
+    virtual void release(void*, int);
 };
 struct ResourceCleanupString {
-    unsigned flags, length; void* data;
+    unsigned flags, length;
+    void* data;
     // Release an owned heap key; inline bytes need no separate allocation cleanup.
-    ~ResourceCleanupString() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~ResourceCleanupString() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
 };
-struct ResourceCleanupEntry { ResourceCleanupString key; ResourceDestructorInterface* value; };
-struct TextureCleanupRecord { char pad[0x10]; int refs; void* resource; int bytes; };
+struct ResourceCleanupEntry {
+    ResourceCleanupString key;
+    ResourceDestructorInterface* value;
+};
+struct TextureCleanupRecord {
+    char pad[0x10];
+    int refs;
+    void* resource;
+    int bytes;
+};
 struct TextureCleanupNode {
-    TextureCleanupNode* prev; TextureCleanupNode* next;
-    ResourceCleanupString key; TextureCleanupRecord* value;
+    TextureCleanupNode* prev;
+    TextureCleanupNode* next;
+    ResourceCleanupString key;
+    TextureCleanupRecord* value;
 };
 struct ResourceHashLink {
-    void* value; char pad[8]; ResourceHashLink* prev; ResourceHashLink* next;
+    void* value;
+    char pad[8];
+    ResourceHashLink* prev;
+    ResourceHashLink* next;
 };
 // Invoke deleting destruction on a nonnull manager-owned cached value.
-inline void DestroyCachedResource(ResourceDestructorInterface* p) { if (p) p->destroy(1); }
+inline void DestroyCachedResource(ResourceDestructorInterface* p) {
+    if (p)
+        p->destroy(1);
+}
 // Destroy object values, then their keys; retain the vector allocation.
 inline void ClearCachedResources(ResourceCleanupEntry*& data, int& size) {
     ResourceCleanupEntry* it = data;
     int count;
     ResourceCleanupEntry* end;
     while ((end = data + (count = size)) != it) {
-        if (it->value) { DestroyCachedResource(it->value); it->value = 0; }
+        if (it->value) {
+            DestroyCachedResource(it->value);
+            it->value = 0;
+        }
         ++it;
     }
     size -= count;
-    while (count != 0) { --end; end->~ResourceCleanupEntry(); --count; }
+    while (count != 0) {
+        --end;
+        end->~ResourceCleanupEntry();
+        --count;
+    }
 }
 // Advance the circular active-hash iterator while holding its mutex.
 inline void* NextRegisteredHashValue(char* p) {
@@ -152,7 +245,8 @@ inline void* NextRegisteredHashValue(char* p) {
     if (it) {
         ResourceHashLink* next = it->next;
         void* result = it->value;
-        if (next == (*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes)) next = 0;
+        if (next == (*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes))
+            next = 0;
         (*(ResourceHashLink**)&AsResourceManager(p)->hashIterator) = next;
         OSUnlockMutex((OSMutex*)lock);
         return result;
@@ -167,11 +261,18 @@ inline void ClearCachedModels(ResourceCleanupEntry*& data, int& size) {
     ResourceCleanupEntry* end;
     ResourceCleanupEntry* it = data;
     while ((end = data + (count = size)) != it) {
-        if (it->value) { DestroyCachedResource(it->value); it->value = 0; }
+        if (it->value) {
+            DestroyCachedResource(it->value);
+            it->value = 0;
+        }
         ++it;
     }
     size -= count;
-    while (count != 0) { --end; end->~ResourceCleanupEntry(); --count; }
+    while (count != 0) {
+        --end;
+        end->~ResourceCleanupEntry();
+        --count;
+    }
 }
 // Detach one circular hash node under its mutex and return a surviving node.
 inline ResourceHashLink* UnlinkHashNode(void* lock, ResourceHashLink* it) {
@@ -179,7 +280,8 @@ inline ResourceHashLink* UnlinkHashNode(void* lock, ResourceHashLink* it) {
     it->next->prev = it->prev;
     it->prev->next = it->next;
     ResourceHashLink* next = it->next;
-    if (next == it) next = 0;
+    if (next == it)
+        next = 0;
     OSUnlockMutex((OSMutex*)lock);
     return next;
 }
@@ -187,11 +289,15 @@ inline ResourceHashLink* UnlinkHashNode(void* lock, ResourceHashLink* it) {
 inline ResourceHashLink* LinkHashNode(ResourceHashLink* head, ResourceHashLink* it, void* lock) {
     OSLockMutex((OSMutex*)lock);
     if (!head) {
-        it->prev = it; it->next = it;
+        it->prev = it;
+        it->next = it;
         OSUnlockMutex((OSMutex*)lock);
         return it;
     }
-    it->next = head; it->prev = head->prev; head->prev = it; it->prev->next = it;
+    it->next = head;
+    it->prev = head->prev;
+    head->prev = it;
+    it->prev->next = it;
     OSUnlockMutex((OSMutex*)lock);
     return head;
 }
@@ -208,7 +314,8 @@ inline void DestroyResourceHashStorage(char* p) {
                 it->next->prev = it->prev;
                 it->prev->next = it->next;
                 next = it->next;
-                if (next == it) next = 0;
+                if (next == it)
+                    next = 0;
                 OSUnlockMutex((OSMutex*)lock);
                 *(ResourceHashLink**)&((ResourceHashStorage*)p)->blocks = next;
                 appFreeUni__FPv(it);
@@ -226,14 +333,20 @@ inline void DestroyCacheEntries(ResourceCleanupEntry*& data, int& size) {
     if (&data) {
         if (&data) {
             if (&data) {
-                if (&data) { if (data) {
-                    ResourceCleanupEntry* end;
-                    int count = size;
-                    end = data+count;
-                    size -= count;
-                    while (count != 0) { --end; end->~ResourceCleanupEntry(); --count; }
-                    appFreeUni__FPv(data);
-                } }
+                if (&data) {
+                    if (data) {
+                        ResourceCleanupEntry* end;
+                        int count = size;
+                        end = data + count;
+                        size -= count;
+                        while (count != 0) {
+                            --end;
+                            end->~ResourceCleanupEntry();
+                            --count;
+                        }
+                        appFreeUni__FPv(data);
+                    }
+                }
             }
         }
     }
@@ -241,46 +354,58 @@ inline void DestroyCacheEntries(ResourceCleanupEntry*& data, int& size) {
 // Destroy an entry-vector subobject through its storage and count fields.
 inline void DestroyCacheVector(char* p) {
     // Byte addresses retain the original inlined destructor's base-register lifetime.
-    if (p) { if (p) DestroyCacheEntries(*(ResourceCleanupEntry**)(p + IFF_OFFSET(ResourceEntryVector, entries)), *(int*)(p + IFF_OFFSET(ResourceEntryVector, count))); }
+    if (p) {
+        if (p)
+            DestroyCacheEntries(*(ResourceCleanupEntry**)(p + IFF_OFFSET(ResourceEntryVector, entries)),
+                                *(int*)(p + IFF_OFFSET(ResourceEntryVector, count)));
+    }
 }
 // Unlink the circular record range, then destroy and free its keyed nodes.
 inline void DestroyTextureRecordList(char* p) {
-    if (p) { if (p) { if (p) { if (p) {
-        TextureCleanupNode* it = (TextureCleanupNode*)((RecordListState*)p)->sentinel.next;
-        TextureCleanupNode* end = (TextureCleanupNode*)(p + IFF_OFFSET(RecordListState, sentinel));
-        if (it != end) {
-            TextureCleanupNode* last = end->prev;
-            it->prev->next = last->next;
-            last->next->prev = it->prev;
-            while (it != end) {
-                ResourceCleanupString* key = &it->key;
-                if (key) key->~ResourceCleanupString();
-                TextureCleanupNode* old = it;
-                it = it->next;
-                appFreeUni__FPv(old);
-                --((RecordListState*)p)->count;
+    if (p) {
+        if (p) {
+            if (p) {
+                if (p) {
+                    TextureCleanupNode* it = (TextureCleanupNode*)((RecordListState*)p)->sentinel.next;
+                    TextureCleanupNode* end = (TextureCleanupNode*)(p + IFF_OFFSET(RecordListState, sentinel));
+                    if (it != end) {
+                        TextureCleanupNode* last = end->prev;
+                        it->prev->next = last->next;
+                        last->next->prev = it->prev;
+                        while (it != end) {
+                            ResourceCleanupString* key = &it->key;
+                            if (key)
+                                key->~ResourceCleanupString();
+                            TextureCleanupNode* old = it;
+                            it = it->next;
+                            appFreeUni__FPv(old);
+                            --((RecordListState*)p)->count;
+                        }
+                    }
+                }
             }
         }
-    } } } }
+    }
 }
 // Find the cleanup record whose resource handle matches the requested id.
 inline TextureCleanupRecord* FindTextureCleanupRecord(char* p, int id, TextureCleanupNode* const& end) {
     TextureCleanupNode* search = (*(TextureCleanupNode**)&AsResourceManager(p)->firstRecord);
     while (search != end) {
         TextureCleanupRecord* obj = search->value;
-        if (id == (int)obj->resource) return obj;
+        if (id == (int)obj->resource)
+            return obj;
         search = search->next;
     }
     return 0;
 }
 // Release a texture reference, including owner storage and its list node when exhausted.
 inline void ReleaseTextureCleanupRecord(char* p, void* id, TextureCleanupNode* const& end) {
-    TextureCleanupRecord* obj = FindTextureCleanupRecord(p,(int)id,end);
+    TextureCleanupRecord* obj = FindTextureCleanupRecord(p, (int)id, end);
     if (obj) {
         if (--obj->refs <= 0) {
             int bytes = obj->bytes;
             (*(int*)&AsResourceManager(p)->resourceBytes) -= bytes;
-            (*(SizedResourceReleaseInterface**)p)->release(id,bytes);
+            (*(SizedResourceReleaseInterface**)p)->release(id, bytes);
             TextureCleanupNode* cur = (*(TextureCleanupNode**)&AsResourceManager(p)->firstRecord);
             TextureCleanupNode* finish = (TextureCleanupNode*)(p + IFF_OFFSET(ResourceManager, recordSentinel));
             while (cur != finish) {
@@ -304,14 +429,17 @@ void* ResourceManager_dtor(void* self, int destroy) {
         char* p = (char*)self;
         // Pending resource owned by the manager; release it through the manager's interface.
         void* resource = AsResourceManager(p)->ownedResource;
-        if (resource) (*(ResourceReleaseInterface**)p)->release(resource);
+        if (resource)
+            (*(ResourceReleaseInterface**)p)->release(resource);
         // Destroy cached values before their keys and storage disappear.
-        ClearCachedResources((*(ResourceCleanupEntry**)&AsResourceManager(p)->cachedObjects),(*(int*)&AsResourceManager(p)->cachedObjectCount));
-        ClearCachedModels((*(ResourceCleanupEntry**)&AsResourceManager(p)->cachedModels),(*(int*)&AsResourceManager(p)->cachedModelCount));
+        ClearCachedResources((*(ResourceCleanupEntry**)&AsResourceManager(p)->cachedObjects),
+                             (*(int*)&AsResourceManager(p)->cachedObjectCount));
+        ClearCachedModels((*(ResourceCleanupEntry**)&AsResourceManager(p)->cachedModels),
+                          (*(int*)&AsResourceManager(p)->cachedModelCount));
         TextureCleanupNode* it = (*(TextureCleanupNode**)&AsResourceManager(p)->firstRecord);
         TextureCleanupNode* end = (TextureCleanupNode*)(p + IFF_OFFSET(ResourceManager, recordSentinel));
         while (it != end) {
-            ReleaseTextureCleanupRecord(p,it->value->resource,end);
+            ReleaseTextureCleanupRecord(p, it->value->resource, end);
             it = it->next;
         }
         // Delete active hash values while retaining the nodes for free-list recycling.
@@ -323,33 +451,41 @@ void* ResourceManager_dtor(void* self, int destroy) {
         }
         if (value) {
             while (!same_pos(value, (void*)0)) {
-                if (value) __dl__FPv(value);
+                if (value)
+                    __dl__FPv(value);
                 value = NextRegisteredHashValue(p);
             }
         }
         {
             // Splice active nodes into the free ring, then clear bucket heads.
             WInstanceLock g(p + IFF_OFFSET(ResourceManager, hashMutex));
-            if ((*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes) && (*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes)) {
-                ((*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes))->prev->next = ((*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes))->next;
-                ((*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes))->next->prev = ((*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes))->prev;
-                ((*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes))->next = (*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes);
-                ((*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes))->prev = (*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes);
+            if ((*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes) &&
+                (*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes)) {
+                ((*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes))->prev->next =
+                    ((*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes))->next;
+                ((*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes))->next->prev =
+                    ((*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes))->prev;
+                ((*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes))->next =
+                    (*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes);
+                ((*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes))->prev =
+                    (*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes);
                 (*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes) = 0;
             } else if ((*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes)) {
                 ResourceHashLink* next;
                 void* lock = p + IFF_OFFSET(ResourceManager, hashMutex);
                 ResourceHashLink* node;
                 while ((node = (*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes)) != 0) {
-                    next = UnlinkHashNode(lock,node);
-                    (*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes) = LinkHashNode((*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes),(*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes),lock);
+                    next = UnlinkHashNode(lock, node);
+                    (*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes) =
+                        LinkHashNode((*(ResourceHashLink**)&AsResourceManager(p)->freeHashNodes),
+                                     (*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes), lock);
                     (*(ResourceHashLink**)&AsResourceManager(p)->activeHashNodes) = next;
                 }
             }
-            int i=0;
-            int offset=0;
-            while (i<AsResourceManager(p)->hashBucketCount) {
-                *(void**)((char*)AsResourceManager(p)->hashBuckets+offset) = 0;
+            int i = 0;
+            int offset = 0;
+            while (i < AsResourceManager(p)->hashBucketCount) {
+                *(void**)((char*)AsResourceManager(p)->hashBuckets + offset) = 0;
                 ++i;
                 offset += 4;
             }
@@ -360,7 +496,8 @@ void* ResourceManager_dtor(void* self, int destroy) {
         DestroyCacheVector(p + kObjectCacheOffset);
         DestroyCacheVector(p + kModelCacheOffset);
         DestroyTextureRecordList(p + IFF_OFFSET(ResourceManager, recordCount));
-        if (destroy > 0) __dl__FPv(self);
+        if (destroy > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -371,8 +508,8 @@ struct ResourceDeleteInterface {
 
 #pragma dont_inline on
 // Resolve a path through the shared hash-path lookup.
-void* CHashPath_FindPathForwarder(void*, void* value) {
-    return (void*)CHashPath_FindPath(value);
+void* CHashPath::FindPathForwarder(const char* path) {
+    return FindPath(path);
 }
 #pragma dont_inline off
 
@@ -384,8 +521,8 @@ void ResourceManager_DeleteResource(void*, void* object) {
 }
 
 // Report whether a path is registered in the shared path table.
-int CHashPath_Exists(void*, void* value) {
-    return CHashPath_FindPath(value) != 0;
+int CHashPath::Exists(const char* path) {
+    return FindPath(path) != 0;
 }
 
 struct TextureLookupNode {
@@ -509,7 +646,8 @@ struct Vtable3 {
 
 // Return 1 after decrementing a nonzero external count, 0 if already unreferenced.
 static inline int DropCachedObjectReference(CachedObjectReference* object) {
-    if (object->refs == 0) return 0;
+    if (object->refs == 0)
+        return 0;
     object->refs--;
     return 1;
 }
@@ -521,7 +659,8 @@ void ResourceManager_ReleaseCachedObject(void* self, void* arg) {
     CachedObjectEntry* end = begin + count;
     CachedObjectEntry* entry = begin;
     while (end != entry) {
-        if (entry->object == arg) break;
+        if (entry->object == arg)
+            break;
         entry = (CachedObjectEntry*)((char*)entry + sizeof(CachedObjectEntry));
     }
     if (end != entry) {
@@ -539,9 +678,9 @@ void ResourceManager_ReleaseCachedObject(void* self, void* arg) {
                 memmove(entry, (char*)entry + sizeof(CachedObjectEntry), (remaining - 1) << 4);
                 (AsResourceManager(self)->cachedObjectCount)--;
                 if (arg != 0) {
-                  if (arg != 0) {
-                    ((Vtable3*)arg)->dispose(1);
-                  }
+                    if (arg != 0) {
+                        ((Vtable3*)arg)->dispose(1);
+                    }
                 }
             }
         }
@@ -550,7 +689,8 @@ void ResourceManager_ReleaseCachedObject(void* self, void* arg) {
 
 // Apply the model cache's decrement-or-erase decision (zero is tested before decrement).
 static inline int DropCachedModelReference(CachedObjectReference* object) {
-    if (object->refs == 0) return 0;
+    if (object->refs == 0)
+        return 0;
     object->refs--;
     return 1;
 }
@@ -563,7 +703,8 @@ void ResourceManager_ReleaseObject(void* self, void* arg) {
         CachedObjectEntry* end = begin + count;
         CachedObjectEntry* entry = begin;
         while (end != entry) {
-            if (entry->object == arg) break;
+            if (entry->object == arg)
+                break;
             entry = (CachedObjectEntry*)((char*)entry + sizeof(CachedObjectEntry));
         }
         if (end != entry) {
@@ -581,9 +722,9 @@ void ResourceManager_ReleaseObject(void* self, void* arg) {
                     memmove(entry, (char*)entry + sizeof(CachedObjectEntry), (remaining - 1) << 4);
                     (AsResourceManager(self)->cachedModelCount)--;
                     if (arg != 0) {
-                      if (arg != 0) {
-                        ((Vtable3*)arg)->dispose(1);
-                      }
+                        if (arg != 0) {
+                            ((Vtable3*)arg)->dispose(1);
+                        }
                     }
                 }
             }
@@ -641,33 +782,31 @@ void appFreeUni__FPv(void*);
 void* WView_ctor(void*);
 extern char sharedResourceLoaderStrings[];
 struct ResourceLoaderStringPool {
-    char files_of_the_same_name_txt_0[27]; // +0x0
-    char viewToken[4]; // +0x1B
-    char petExtension[5]; // +0x1F
-    char mpetExtension[6]; // +0x24
-    char apetExtension[6]; // +0x2A
-    char bpetExtension[6]; // +0x30
-    char gmrExtension[5]; // +0x36
-    char vectorLengthError[20]; // +0x3B
-    char lengthErrorType[55]; // +0x4F
-    char defaultFont[9]; // +0x86
-    char bresExtension[6]; // +0x8F
-    char gsrExtension[5]; // +0x95
-    char unknownName[8]; // +0x9A
-    char basic_string_reserve_length_error_A2[35]; // +0xA2
-    char basic_string_out_of_range_C5[27]; // +0xC5
+    char files_of_the_same_name_txt_0[27];                     // +0x0
+    char viewToken[4];                                         // +0x1B
+    char petExtension[5];                                      // +0x1F
+    char mpetExtension[6];                                     // +0x24
+    char apetExtension[6];                                     // +0x2A
+    char bpetExtension[6];                                     // +0x30
+    char gmrExtension[5];                                      // +0x36
+    char vectorLengthError[20];                                // +0x3B
+    char lengthErrorType[55];                                  // +0x4F
+    char defaultFont[9];                                       // +0x86
+    char bresExtension[6];                                     // +0x8F
+    char gsrExtension[5];                                      // +0x95
+    char unknownName[8];                                       // +0x9A
+    char basic_string_reserve_length_error_A2[35];             // +0xA2
+    char basic_string_out_of_range_C5[27];                     // +0xC5
     char std_exception_std_logic_error_std_out_of_rang_E0[55]; // +0xE0
-    char basic_string_length_error_117[27]; // +0x117
-    char padding_132[2]; // +0x132
+    char basic_string_length_error_117[27];                    // +0x117
+    char padding_132[2];                                       // +0x132
 };
 
-char* CString_FindLastCharForwarder(char*, int);
-char* CString_FindCharForwarder(char*, int);
 char* CString_Compare(char*, const char*);
 int ResourceCache_RetainOrAppend(void*, const char*, void*);
 void* ResourceEntryVector_FindByName(void*, const char*);
 void Renderable_SetResourceManager(void*, void*);
-void CFileAsync_ctorWithPath(void*, void*, int);
+extern "C" void __ct__10CFileAsyncFPCci(void*, void*, int);
 void WPuppet_SetOpacityRecursive(void*, int);
 void WPuppet_RefreshMatrixBuffers(void*);
 void* Pointer_GetFirstPointer(void*);
@@ -677,7 +816,9 @@ void Path_CopyWithForwardSlashes(void*, char*, const char*);
 struct PuppetObjectStorage {
     char unk[0x23c];
     // Construct a puppet inside its ABI-sized allocation.
-    PuppetObjectStorage() { WPuppet_ctor(this); }
+    PuppetObjectStorage() {
+        WPuppet_ctor(this);
+    }
 };
 
 struct ModelResourceInterface {
@@ -698,26 +839,41 @@ struct ModelResourceInterface {
 // arguments passed to loader/clone slots. instance is an optional input to the
 // existing allocation policy, not a guaranteed destination: the condition below
 // may replace it. Loading failure deletes the selected instance. Paths stay borrowed.
-void* ResourceManager_LoadByExtension(char* self, const char* filename, void* loadOptions, void* cloneOptions, void* instance) {
+void* ResourceManager_LoadByExtension(char* self, const char* filename, void* loadOptions, void* cloneOptions,
+                                      void* instance) {
     // Normalize separators, discard the first path component, and select file format.
     char path[kResourcePathCapacity];
     Path_CopyWithForwardSlashes(self, path, filename);
-    char* pathAfterFirstSlash = CString_FindCharForwarder(path, '/');
-    if (pathAfterFirstSlash != 0) pathAfterFirstSlash = CString_FindCharForwarder(path, '/') + 1;
-    else pathAfterFirstSlash = path;
+    char* pathAfterFirstSlash = CString::FindCharForwarder(path, '/');
+    if (pathAfterFirstSlash != 0)
+        pathAfterFirstSlash = CString::FindCharForwarder(path, '/') + 1;
+    else
+        pathAfterFirstSlash = path;
 
     char cacheKey[kResourcePathCapacity];
     strcpy(cacheKey, pathAfterFirstSlash);
-    char* extension = CString_FindLastCharForwarder(cacheKey, '.');
-    if (extension == 0) return 0;
+    char* extension = CString::FindLastCharForwarder(cacheKey, '.');
+    if (extension == 0)
+        return 0;
 
     int format;
-    if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, petExtension)) == 0) format = kFormatPet;
-    else if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, mpetExtension)) == 0) format = kFormatMpet;
-    else if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, apetExtension)) == 0) format = kFormatApet;
-    else if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, bpetExtension)) == 0) format = kFormatBpet;
-    else if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, gmrExtension)) == 0) format = kFormatGmr;
-    else return 0;
+    if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, petExtension)) ==
+        0)
+        format = kFormatPet;
+    else if (CString_Compare(extension,
+                             sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, mpetExtension)) == 0)
+        format = kFormatMpet;
+    else if (CString_Compare(extension,
+                             sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, apetExtension)) == 0)
+        format = kFormatApet;
+    else if (CString_Compare(extension,
+                             sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, bpetExtension)) == 0)
+        format = kFormatBpet;
+    else if (CString_Compare(extension,
+                             sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, gmrExtension)) == 0)
+        format = kFormatGmr;
+    else
+        return 0;
 
     // Cached APET reuses its instance; the other formats clone before registration.
     void* cachedModel = ResourceEntryVector_FindByName(self + kModelCacheOffset, cacheKey);
@@ -730,7 +886,8 @@ void* ResourceManager_LoadByExtension(char* self, const char* filename, void* lo
         Renderable_SetResourceManager(instance, self);
         WPuppet_SetOpacityRecursive(instance, kOpaque);
         ResourceCache_RetainOrAppend(self + kModelCacheOffset, cacheKey, instance);
-        if (format == kFormatPet) WPuppet_RefreshMatrixBuffers(instance);
+        if (format == kFormatPet)
+            WPuppet_RefreshMatrixBuffers(instance);
         return instance;
     }
 
@@ -747,7 +904,8 @@ void* ResourceManager_LoadByExtension(char* self, const char* filename, void* lo
     if (((ModelResourceInterface*)instance)->slot2(path, loadOptions, format) == 0) {
         WPuppet_SetOpacityRecursive(instance, kOpaque);
         ResourceCache_RetainOrAppend(self + kModelCacheOffset, cacheKey, instance);
-        if (format == kFormatPet) WPuppet_RefreshMatrixBuffers(instance);
+        if (format == kFormatPet)
+            WPuppet_RefreshMatrixBuffers(instance);
         return instance;
     }
     if (instance != 0) {
@@ -759,7 +917,9 @@ void* ResourceManager_LoadByExtension(char* self, const char* filename, void* lo
 struct AsyncModelFileStorage {
     char unk[0x10];
     // Start an asynchronous file object from the borrowed resolved path.
-    AsyncModelFileStorage(void* value) { CFileAsync_ctorWithPath(this, value, 0); }
+    AsyncModelFileStorage(void* value) {
+        __ct__10CFileAsyncFPCci(this, value, 0);
+    }
 };
 
 struct CachedModelCloneInterface {
@@ -791,16 +951,28 @@ int ResourceManager_RequestModelLoad(char* self, const char* filename) {
     }
     strcpy(path, src);
 
-    char* extension = CString_FindLastCharForwarder(path, '.');
-    if (extension == 0) return 0;
+    char* extension = CString::FindLastCharForwarder(path, '.');
+    if (extension == 0)
+        return 0;
 
     int* format = &AsResourceManager(self)->loadFormat;
-    if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, petExtension)) == 0) *format = kFormatPet;
-    else if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, mpetExtension)) == 0) *format = kFormatMpet;
-    else if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, apetExtension)) == 0) *format = kFormatApet;
-    else if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, bpetExtension)) == 0) *format = kFormatBpet;
-    else if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, gmrExtension)) == 0) *format = kFormatGmr;
-    else return 0;
+    if (CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, petExtension)) ==
+        0)
+        *format = kFormatPet;
+    else if (CString_Compare(extension,
+                             sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, mpetExtension)) == 0)
+        *format = kFormatMpet;
+    else if (CString_Compare(extension,
+                             sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, apetExtension)) == 0)
+        *format = kFormatApet;
+    else if (CString_Compare(extension,
+                             sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, bpetExtension)) == 0)
+        *format = kFormatBpet;
+    else if (CString_Compare(extension,
+                             sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, gmrExtension)) == 0)
+        *format = kFormatGmr;
+    else
+        return 0;
 
     strncpy(AsResourceManager(self)->loadPath, path, sizeof(AsResourceManager(self)->loadPath));
     // Cache hits publish state 5; misses publish an async file and state 1.
@@ -818,9 +990,10 @@ int ResourceManager_RequestModelLoad(char* self, const char* filename) {
         Renderable_SetResourceManager(result, self);
         WPuppet_SetOpacityRecursive(AsResourceManager(self)->loadedModel, kOpaque);
         ResourceCache_RetainOrAppend(self + kModelCacheOffset, path, AsResourceManager(self)->loadedModel);
-        if (*format == kFormatPet) WPuppet_RefreshMatrixBuffers(AsResourceManager(self)->loadedModel);
+        if (*format == kFormatPet)
+            WPuppet_RefreshMatrixBuffers(AsResourceManager(self)->loadedModel);
     } else {
-        AsyncModelFileStorage* async = new AsyncModelFileStorage(CHashPath_FindPathForwarder(self, (void*)filename));
+        AsyncModelFileStorage* async = new AsyncModelFileStorage(((CHashPath*)self)->FindPathForwarder(filename));
         AsResourceManager(self)->asyncRead = async;
         AsResourceManager(self)->loadState = kWaitingForOpen;
     }
@@ -830,13 +1003,17 @@ int ResourceManager_RequestModelLoad(char* self, const char* filename) {
 struct TitleFontObjectStorage {
     char unk[0xe4];
     // Construct a title font inside its ABI-sized allocation.
-    TitleFontObjectStorage() { WTitleFont_Ctor(this); }
+    TitleFontObjectStorage() {
+        WTitleFont_Ctor(this);
+    }
 };
 
 struct ViewObjectStorage {
     char unk[0x1ab8];
     // Construct a view inside its ABI-sized allocation.
-    ViewObjectStorage() { WView_ctor(this); }
+    ViewObjectStorage() {
+        WView_ctor(this);
+    }
 };
 
 // Allocate a title font and associate it with its resource manager.
@@ -909,15 +1086,14 @@ void* ResourceManager_CreateWView(void* self, void* arg) {
     return p;
 }
 
-void W3dSpr_ctor(void*);
-int W3dSpr_LoadSprite(void*, void*, void*);
-void __ct__8WOverlayFv(void*);
 int WOverlay_Load(void*, void*, void*);
 
 struct BitmapSpriteStorage {
     char unk[0x12c];
     // Construct a bitmap sprite before attaching its resource manager.
-    BitmapSpriteStorage() { W3dSpr_ctor(this); }
+    BitmapSpriteStorage() {
+        ((W3dSpr*)this)->Init();
+    }
 };
 
 // Keep the ABI type name of this emitted weak virtual stub.
@@ -930,7 +1106,9 @@ typedef Fn80061CACVtable BitmapSpriteDeleteInterface;
 struct OverlayObjectStorage {
     char unk[0x30];
     // Construct an overlay before optional texture loading.
-    OverlayObjectStorage() { __ct__8WOverlayFv(this); }
+    OverlayObjectStorage() {
+        ((WOverlay*)this)->__ct();
+    }
 };
 
 // Keep the ABI type name of this emitted weak virtual stub.
@@ -944,7 +1122,7 @@ typedef Fn800604A4Vtable OverlayDeleteInterface;
 void* W3dSpr_Create(void* self, void* arg1, void* arg2) {
     BitmapSpriteStorage* p = new BitmapSpriteStorage();
     ((ManagedResourceHeader*)p)->resourceManager = self;
-    if (W3dSpr_LoadSprite(p, arg1, arg2) == 0) {
+    if (((W3dSpr*)p)->LoadSprite(arg1, arg2) == 0) {
         return p;
     }
     if (p != 0) {
@@ -985,12 +1163,13 @@ void ResourceManager_ClearCachedModels(void* self) {
     char* p;
     void* obj;
     int n;
-    char* cur;  
-    
+    char* cur;
 
     cur = (*(char**)&AsResourceManager(self)->cachedModels);
 
-    while (end = (*(char**)&AsResourceManager(self)->cachedModels) + ((count = AsResourceManager(self)->cachedModelCount) << 4), !(end == cur)) {
+    while (end = (*(char**)&AsResourceManager(self)->cachedModels) +
+                 ((count = AsResourceManager(self)->cachedModelCount) << 4),
+           !(end == cur)) {
         obj = *(void**)(cur + 0xc);
         if (obj != 0) {
             if (obj != 0) {
@@ -1022,8 +1201,15 @@ extern "C++" {
 namespace std {
 // The cache entry vectors hold 16-byte entries whose key string is destroyed with the entry.
 template <> struct __vec_destroys_elements<ResourceCleanupEntry> {
-    enum { value = 1 };
-    static void destroy(ResourceCleanupEntry* e) { if (e != 0) if (e != 0) if (e->key.flags >> 31) appFreeUni__FPv(e->key.data); }
+    enum {
+        value = 1
+    };
+    static void destroy(ResourceCleanupEntry* e) {
+        if (e != 0)
+            if (e != 0)
+                if (e->key.flags >> 31)
+                    appFreeUni__FPv(e->key.data);
+    }
 };
 }
 typedef std::vector<ResourceCleanupEntry, app::app_allocator<ResourceCleanupEntry> > CacheEntryVector;
@@ -1044,7 +1230,9 @@ int W3dAniSpr_LoadSpritesInOneTexture(void*, void*, void*, float, float);
 struct AnimatedSpriteStorage {
     char unk[0x19c];
     // Construct an animated sprite inside its ABI-sized allocation.
-    AnimatedSpriteStorage() { W3dAniSpr_Ctor(this); }
+    AnimatedSpriteStorage() {
+        W3dAniSpr_Ctor(this);
+    }
 };
 
 struct AnimatedSpriteDeleteInterface {
@@ -1160,25 +1348,25 @@ void* StringVector_dtor(CacheVectorOwner* self, int flag) {
                     if (&self->vec != 0) {
                         if (&self->vec != 0) {
                             if (self->vec.data != 0) {
-                            char* item;
-                            unsigned count = self->vec.count;
-                            unsigned zero = (unsigned)count - count;
-                            unsigned shift = count << 4;
-                            item = (char*)self->vec.data + shift;
-                            self->vec.count = zero;
-                            while (count != 0) {
-                                item -= 0x10;
-                                if (item != 0) {
+                                char* item;
+                                unsigned count = self->vec.count;
+                                unsigned zero = (unsigned)count - count;
+                                unsigned shift = count << 4;
+                                item = (char*)self->vec.data + shift;
+                                self->vec.count = zero;
+                                while (count != 0) {
+                                    item -= 0x10;
                                     if (item != 0) {
-                                        if (*(unsigned*)item >> 31) {
-                                            appFreeUni__FPv((*(void**)&AsMWStringStorage(item)->data));
+                                        if (item != 0) {
+                                            if (*(unsigned*)item >> 31) {
+                                                appFreeUni__FPv((*(void**)&AsMWStringStorage(item)->data));
+                                            }
                                         }
                                     }
+                                    count--;
                                 }
-                                count--;
+                                appFreeUni__FPv(self->vec.data);
                             }
-                            appFreeUni__FPv(self->vec.data);
-                        }
                         }
                     }
                 }
@@ -1190,7 +1378,6 @@ void* StringVector_dtor(CacheVectorOwner* self, int flag) {
     }
     return self;
 }
-
 
 // Destroy a wrapped string-entry vector, retaining the original destructor layers.
 void* CacheVectorOwner_dtor(CacheVectorOwner* self, int flag) {
@@ -1201,25 +1388,25 @@ void* CacheVectorOwner_dtor(CacheVectorOwner* self, int flag) {
                     if (&self->vec != 0) {
                         if (&self->vec != 0) {
                             if (self->vec.data != 0) {
-                            char* item;
-                            unsigned count = self->vec.count;
-                            unsigned zero = (unsigned)count - count;
-                            unsigned shift = count << 4;
-                            item = (char*)self->vec.data + shift;
-                            self->vec.count = zero;
-                            while (count != 0) {
-                                item -= 0x10;
-                                if (item != 0) {
+                                char* item;
+                                unsigned count = self->vec.count;
+                                unsigned zero = (unsigned)count - count;
+                                unsigned shift = count << 4;
+                                item = (char*)self->vec.data + shift;
+                                self->vec.count = zero;
+                                while (count != 0) {
+                                    item -= 0x10;
                                     if (item != 0) {
-                                        if (*(unsigned*)item >> 31) {
-                                            appFreeUni__FPv((*(void**)&AsMWStringStorage(item)->data));
+                                        if (item != 0) {
+                                            if (*(unsigned*)item >> 31) {
+                                                appFreeUni__FPv((*(void**)&AsMWStringStorage(item)->data));
+                                            }
                                         }
                                     }
+                                    count--;
                                 }
-                                count--;
+                                appFreeUni__FPv(self->vec.data);
                             }
-                            appFreeUni__FPv(self->vec.data);
-                        }
                         }
                     }
                 }
@@ -1231,7 +1418,6 @@ void* CacheVectorOwner_dtor(CacheVectorOwner* self, int flag) {
     }
     return self;
 }
-
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -1252,18 +1438,19 @@ void* dtor_8006599C(char* self, int flag) {
                     block->next->prev = block->prev;
                     block->prev->next = block->next;
                     nextBlock = block->next;
-                    if (nextBlock == block) nextBlock = 0;
+                    if (nextBlock == block)
+                        nextBlock = 0;
                     OSUnlockMutex((OSMutex*)hashMutex);
                     ((ResourceHashStorage*)self)->blocks = nextBlock;
                     appFreeUni__FPv(block);
                 }
             }
-        // Phase 2: release the bucket-pointer array under the same outer lock.
-        void* bucketStorage = ((ResourceHashStorage*)self)->buckets;
-        if (bucketStorage != 0) {
-            appFreeUni__FPv(bucketStorage);
-            ((ResourceHashStorage*)self)->buckets = 0;
-        }
+            // Phase 2: release the bucket-pointer array under the same outer lock.
+            void* bucketStorage = ((ResourceHashStorage*)self)->buckets;
+            if (bucketStorage != 0) {
+                appFreeUni__FPv(bucketStorage);
+                ((ResourceHashStorage*)self)->buckets = 0;
+            }
         }
         if (flag > 0) {
             __dl__FPv(self);
@@ -1288,18 +1475,19 @@ void* ResourceHashStorage_dtor(char* self, int flag) {
                     block->next->prev = block->prev;
                     block->prev->next = block->next;
                     nextBlock = block->next;
-                    if (nextBlock == block) nextBlock = 0;
+                    if (nextBlock == block)
+                        nextBlock = 0;
                     OSUnlockMutex((OSMutex*)hashMutex);
                     ((ResourceHashStorage*)self)->blocks = nextBlock;
                     appFreeUni__FPv(block);
                 }
             }
-        // Phase 2: release the bucket-pointer array under the same outer lock.
-        void* bucketStorage = ((ResourceHashStorage*)self)->buckets;
-        if (bucketStorage != 0) {
-            appFreeUni__FPv(bucketStorage);
-            ((ResourceHashStorage*)self)->buckets = 0;
-        }
+            // Phase 2: release the bucket-pointer array under the same outer lock.
+            void* bucketStorage = ((ResourceHashStorage*)self)->buckets;
+            if (bucketStorage != 0) {
+                appFreeUni__FPv(bucketStorage);
+                ((ResourceHashStorage*)self)->buckets = 0;
+            }
         }
         if (flag > 0) {
             __dl__FPv(self);
@@ -1307,7 +1495,6 @@ void* ResourceHashStorage_dtor(char* self, int flag) {
     }
     return self;
 }
-
 
 #pragma pop
 
@@ -1379,16 +1566,22 @@ struct FixedFontDeleteInterface {
 struct FixedFontObjectStorage {
     char unk[0xb8];
     // Construct a fixed font before loading its message resources.
-    FixedFontObjectStorage() { WFixedFont_Ctor(this); }
+    FixedFontObjectStorage() {
+        WFixedFont_Ctor(this);
+    }
 };
 
 // Keep this ABI type name: exception cleanup relocations reference its destructor.
 struct Fn80061BA8Local {
     char unk[0x10];
     // Initialize empty temporary storage for the default-font key.
-    Fn80061BA8Local() { Storage_ClearThreeWords(this); }
+    Fn80061BA8Local() {
+        Storage_ClearThreeWords(this);
+    }
     // Release the temporary key through the canonical string destructor.
-    ~Fn80061BA8Local() { ((NString*)(this))->~NString(); }
+    ~Fn80061BA8Local() {
+        ((NString*)(this))->~NString();
+    }
 };
 typedef Fn80061BA8Local DefaultFontNameStorage;
 
@@ -1418,10 +1611,8 @@ void* ResourceManager_GetOrLoadDefaultFixedFont(void* self) {
 int MSLString_LowercaseInPlace(const char*);
 void* memcpy(void*, const void*, unsigned long);
 void* memset(void*, int, unsigned long);
-int CHashPath_FindPath(void*);
 void* ResourceManager_GetOrLoadBitmapByPath(void*, const char*, void*, int, int);
 void* ResourceManager_LoadBitmapFromArchive(void*, const char*, const char*);
-void CGsrResource_ctor(void*, const char*);
 void Bitmap_ctor(void*, void*);
 
 struct TextureRegistrationNode {
@@ -1446,40 +1637,59 @@ void* __nwa__FUl(unsigned);
 void* appMallocUni__FUl(void*);
 }
 // Placement construction uses storage owned by the surrounding guard/container.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 extern "C" {
-union BitmapKeyAllocatorByte { char c; unsigned align; };
+union BitmapKeyAllocatorByte {
+    char c;
+    unsigned align;
+};
 // Keep this ABI type name: exception cleanup relocations reference its destructor.
 struct RegisterString62520 {
     unsigned words[3];
     // Deep-copy a C string into the tagged bitmap registration key.
     RegisterString62520(const char* s) {
-        words[0] = 0; words[1] = 0; words[2] = 0;
+        words[0] = 0;
+        words[1] = 0;
+        words[2] = 0;
         unsigned n = strlen(s);
         String_ReserveCapacity(this, n);
-        volatile BitmapKeyAllocatorByte a; BitmapKeyAllocatorByte b; b.c = a.c;
-        String_ReplaceRange(this, 0, 0, (void*)s, (void*)(s+n), &b);
+        volatile BitmapKeyAllocatorByte a;
+        BitmapKeyAllocatorByte b;
+        b.c = a.c;
+        String_ReplaceRange(this, 0, 0, (void*)s, (void*)(s + n), &b);
     }
     // Copy inline key words or allocate a separate heap key.
     RegisterString62520(const RegisterString62520& s) {
         unsigned first = s.words[0];
         if (!(first >> 31)) {
             unsigned second = s.words[1];
-            words[0] = first; words[1] = second; words[2] = s.words[2];
+            words[0] = first;
+            words[1] = second;
+            words[2] = s.words[2];
         } else {
-            words[0] = 0; words[1] = 0; words[2] = 0;
+            words[0] = 0;
+            words[1] = 0;
+            words[2] = 0;
             String_ReserveCapacity(this, s.words[1]);
-            volatile BitmapKeyAllocatorByte a; BitmapKeyAllocatorByte b; b.c = a.c;
-            String_ReplaceRange(this, 0, 0, (void*)s.words[2], (void*)(s.words[2]+s.words[1]), &b);
+            volatile BitmapKeyAllocatorByte a;
+            BitmapKeyAllocatorByte b;
+            b.c = a.c;
+            String_ReplaceRange(this, 0, 0, (void*)s.words[2], (void*)(s.words[2] + s.words[1]), &b);
         }
     }
     // Release only a heap-backed key's owned character buffer.
-    ~RegisterString62520() { if (words[0] >> 31) appFreeUni__FPv((void*)words[2]); }
+    ~RegisterString62520() {
+        if (words[0] >> 31)
+            appFreeUni__FPv((void*)words[2]);
+    }
 };
 typedef RegisterString62520 BitmapRegistrationKey;
 // Keep this ABI type name: exception cleanup relocations reference its destructor.
 struct RegisterPair62520 {
-    BitmapRegistrationKey key; void* value;
+    BitmapRegistrationKey key;
+    void* value;
     // Copy the key and store a non-owning pointer to its separate texture record.
     RegisterPair62520(const BitmapRegistrationKey& k, void* v) : key(k), value(v) {}
 };
@@ -1487,30 +1697,46 @@ typedef RegisterPair62520 BitmapRegistrationEntry;
 #pragma does_not_return __throw
 // Keep this ABI type name: exception cleanup relocations reference its destructor.
 struct RegisterGuard62520 {
-    void* list; char* node;
+    void* list;
+    char* node;
     // Own an unlinked record node until its payload is constructed successfully.
     RegisterGuard62520(void* l, char* n) : list(l), node(n) {}
     // Free an uncommitted node; the linked list takes responsibility after commit.
-    ~RegisterGuard62520() { if (node) appFreeUni__FPv(node); }
+    ~RegisterGuard62520() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 typedef RegisterGuard62520 BitmapNodeAllocationGuard;
 struct BitmapHashNode {
-    char* value; char* key; unsigned char owned; char pad[3];
-    BitmapHashNode* prev; BitmapHashNode* next; BitmapHashNode* chain;
+    char* value;
+    char* key;
+    unsigned char owned;
+    char pad[3];
+    BitmapHashNode* prev;
+    BitmapHashNode* next;
+    BitmapHashNode* chain;
 };
 struct BitmapFactoryInterface {
-    virtual void slot0(); virtual void slot1(); virtual void slot2(); virtual void slot3();
-    virtual void slot4(); virtual void slot5(); virtual void slot6(); virtual void slot7();
-    virtual void* create(void*,int);
-    virtual void initialize(void*,void*,int);
+    virtual void slot0();
+    virtual void slot1();
+    virtual void slot2();
+    virtual void slot3();
+    virtual void slot4();
+    virtual void slot5();
+    virtual void slot6();
+    virtual void slot7();
+    virtual void* create(void*, int);
+    virtual void initialize(void*, void*, int);
 };
 // Hash the first/last key bytes and length into the configured bucket mask.
 inline unsigned HashBitmapBasename(char* self, const char* key) {
     void* lock = self + IFF_OFFSET(ResourceManager, hashMutex);
     OSLockMutex((OSMutex*)lock);
     unsigned n = strlen(key);
-    unsigned last = (n-1) & (unsigned)((-(int)n & ~(int)n) >> 31);
-    unsigned hash = (((unsigned char)key[0] & 0x2a) | ((unsigned char)key[last] & 0x15) | (n << 6)) & AsResourceManager(self)->hashMask;
+    unsigned last = (n - 1) & (unsigned)((-(int)n & ~(int)n) >> 31);
+    unsigned hash = (((unsigned char)key[0] & 0x2a) | ((unsigned char)key[last] & 0x15) | (n << 6)) &
+                    AsResourceManager(self)->hashMask;
     OSUnlockMutex((OSMutex*)lock);
     return hash;
 }
@@ -1518,19 +1744,29 @@ inline unsigned HashBitmapBasename(char* self, const char* key) {
 inline BitmapHashNode* LinkBitmapHashNode(char* self, BitmapHashNode* head, BitmapHashNode* n) {
     void* lock = self + IFF_OFFSET(ResourceManager, hashMutex);
     OSLockMutex((OSMutex*)lock);
-    if (!head) { n->prev = n; n->next = n; OSUnlockMutex((OSMutex*)lock); return n; }
-    n->next = head; n->prev = head->prev; head->prev = n; n->prev->next = n;
+    if (!head) {
+        n->prev = n;
+        n->next = n;
+        OSUnlockMutex((OSMutex*)lock);
+        return n;
+    }
+    n->next = head;
+    n->prev = head->prev;
+    head->prev = n;
+    n->prev->next = n;
     OSUnlockMutex((OSMutex*)lock);
     return head;
 }
 // Search the selected hash bucket for an exact bitmap basename.
 inline char* FindBitmapHashValue(char* self, char* key) {
     WInstanceLock g(self + IFF_OFFSET(ResourceManager, hashMutex));
-    if (!key || !AsResourceManager(self)->hashBuckets) return 0;
-    unsigned h = HashBitmapBasename(self,key);
+    if (!key || !AsResourceManager(self)->hashBuckets)
+        return 0;
+    unsigned h = HashBitmapBasename(self, key);
     BitmapHashNode* it = ((*(BitmapHashNode***)&AsResourceManager(self)->hashBuckets))[h];
     while (it) {
-        if (!strcmp(it->key,key)) return it->value;
+        if (!strcmp(it->key, key))
+            return it->value;
         it = it->chain;
     }
     return 0;
@@ -1539,14 +1775,18 @@ inline char* FindBitmapHashValue(char* self, char* key) {
 inline void AppendTextureRecord(char* self, const BitmapRegistrationEntry& pair) {
     char* sentinel = (char*)self + IFF_OFFSET(ResourceManager, recordSentinel);
     char* node = (char*)appMallocDummy__FUl(0x18);
-    BitmapNodeAllocationGuard guard(sentinel,node);
-    BitmapRegistrationEntry* value = (BitmapRegistrationEntry*)(node+8);
+    BitmapNodeAllocationGuard guard(sentinel, node);
+    BitmapRegistrationEntry* value = (BitmapRegistrationEntry*)(node + 8);
     if (value) {
-        try { new (value) BitmapRegistrationEntry(pair); }
-        catch (...) { __throw(0,0,0); }
+        try {
+            new (value) BitmapRegistrationEntry(pair);
+        } catch (...) {
+            __throw(0, 0, 0);
+        }
     }
-    node = guard.node; guard.node = 0;
-    *(char**)(*(char**)sentinel+4) = node;
+    node = guard.node;
+    guard.node = 0;
+    *(char**)(*(char**)sentinel + 4) = node;
     *(char**)node = *(char**)sentinel;
     *(char**)sentinel = node;
     (*(char**)&((TextureCleanupNode*)node)->next) = sentinel;
@@ -1557,13 +1797,15 @@ inline void AppendTextureRecord(char* self, const BitmapRegistrationEntry& pair)
 // be null (registered under the fallback name). A hit retains the existing record;
 // a miss calls the manager's factory, stores the record, and returns its handle.
 // async is unused here. The descriptor's pixels/resource must provide dimensions.
-void* ResourceManager_GetOrLoadBitmapByPath(void* selfArg, const char* path, void* bitmapDescriptor, int flags, int async) {
+void* ResourceManager_GetOrLoadBitmapByPath(void* selfArg, const char* path, void* bitmapDescriptor, int flags,
+                                            int async) {
     char* self = (char*)selfArg;
     if (path) {
         char normalized[0x40];
-        const char* base = strchr(path, '/') ? strrchr(path, '/')+1 : path;
+        const char* base = strchr(path, '/') ? strrchr(path, '/') + 1 : path;
         int n = 0;
-        char* dst = normalized; unsigned char ch;
+        char* dst = normalized;
+        unsigned char ch;
         while ((signed char)(ch = base[n]) != 0) {
             *dst++ = ch + (((signed char)ch >= 'A' && (signed char)ch <= 'Z') ? kAsciiUpperToLower : 0);
             ++n;
@@ -1577,83 +1819,112 @@ void* ResourceManager_GetOrLoadBitmapByPath(void* selfArg, const char* path, voi
             unsigned count = savedCount;
             unsigned first = (*(unsigned*)&((TextureCleanupNode*)node)->key.flags);
             unsigned len;
-            if (first >> 31) len = (*(unsigned*)&((TextureCleanupNode*)node)->key.length);
-            else len = (*(unsigned char*)&((TextureCleanupNode*)node)->key.flags) & 0x7f;
+            if (first >> 31)
+                len = (*(unsigned*)&((TextureCleanupNode*)node)->key.length);
+            else
+                len = (*(unsigned char*)&((TextureCleanupNode*)node)->key.flags) & 0x7f;
             unsigned savedLen = len;
             const char* data;
             unsigned dataLen;
-            if (!((*(unsigned*)&((TextureCleanupNode*)node)->key.flags) >> 31)) { data = node+9; dataLen = (*(unsigned char*)&((TextureCleanupNode*)node)->key.flags) & 0x7f; }
-            else { data = (*(char**)&((TextureCleanupNode*)node)->key.data); dataLen = (*(unsigned*)&((TextureCleanupNode*)node)->key.length); }
+            if (!((*(unsigned*)&((TextureCleanupNode*)node)->key.flags) >> 31)) {
+                data = node + 9;
+                dataLen = (*(unsigned char*)&((TextureCleanupNode*)node)->key.flags) & 0x7f;
+            } else {
+                data = (*(char**)&((TextureCleanupNode*)node)->key.data);
+                dataLen = (*(unsigned*)&((TextureCleanupNode*)node)->key.length);
+            }
             unsigned savedDataLen = dataLen;
             unsigned* p = &savedDataLen;
-            if (len < dataLen) p = &savedLen;
+            if (len < dataLen)
+                p = &savedLen;
             unsigned selected = *p;
             p = &selected;
             p = (count >= selected) ? p : &savedCount;
             int comparison = memcmp(data, normalized, *p);
             if (!comparison) {
-                if (selected < count) comparison = -1;
-                else if (count != selected) comparison = 1;
+                if (selected < count)
+                    comparison = -1;
+                else if (count != selected)
+                    comparison = 1;
             }
-            if (!comparison) { found = (*(char**)&((TextureCleanupNode*)node)->value); break; }
+            if (!comparison) {
+                found = (*(char**)&((TextureCleanupNode*)node)->value);
+                break;
+            }
             node = (*(char**)&((TextureCleanupNode*)node)->next);
         }
-        if (found) { ++AsResourceTextureRecord(found)->referenceCount; return AsResourceTextureRecord(found)->resource; }
+        if (found) {
+            ++AsResourceTextureRecord(found)->referenceCount;
+            return AsResourceTextureRecord(found)->resource;
+        }
     }
     // Cache miss: create/optionally initialize the handle and read descriptor dimensions.
     BitmapFactoryInterface* owner = *(BitmapFactoryInterface**)self;
-    void* resource = owner->create(bitmapDescriptor,flags);
+    void* resource = owner->create(bitmapDescriptor, flags);
     if (!(flags & kTextureSkipInitializeMask)) {
         owner = *(BitmapFactoryInterface**)self;
-        owner->initialize(resource,bitmapDescriptor,flags);
+        owner->initialize(resource, bitmapDescriptor, flags);
     }
-    int rect[4] = {0,0,0,0};
+    int rect[4] = {0, 0, 0, 0};
     char* desc = (char*)bitmapDescriptor;
     char* sub = (char*)AsBitmapLayout(desc)->pixels;
     rect[2] = sub ? ((BitmapDimensions*)sub)->width : ((CGsrResource*)AsBitmapLayout(desc)->resource)->textureInfo[0];
     sub = (char*)AsBitmapLayout(desc)->pixels;
     rect[3] = sub ? ((BitmapDimensions*)sub)->height : ((CGsrResource*)AsBitmapLayout(desc)->resource)->textureInfo[1];
-    if (strchr(path ? path : sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, unknownName), '/')) path = strrchr(path ? path : sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, unknownName), '/')+1;
-    else path = path ? path : sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, unknownName);
+    if (strchr(path ? path : sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, unknownName), '/'))
+        path = strrchr(path ? path : sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, unknownName),
+                       '/') +
+               1;
+    else
+        path = path ? path : sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, unknownName);
     char normalized[0x40];
-    int n = 0; char* dst = normalized; unsigned char ch;
+    int n = 0;
+    char* dst = normalized;
+    unsigned char ch;
     while ((signed char)(ch = path[n]) != 0) {
         *dst++ = ch + (((signed char)ch >= 'A' && (signed char)ch <= 'Z') ? kAsciiUpperToLower : 0);
         ++n;
     }
     normalized[n] = 0;
     // Store rectangle, reference count and trailing basename, then link a keyed node.
-    char* record = (char*)__nwa__FUl(strlen(normalized)+0x20);
+    char* record = (char*)__nwa__FUl(strlen(normalized) + 0x20);
     AsResourceTextureRecord(record)->referenceCount = 1;
     AsResourceTextureRecord(record)->resource = resource;
-    AsResourceTextureRecord(record)->left = rect[0]; AsResourceTextureRecord(record)->top = rect[1];
-    AsResourceTextureRecord(record)->right = rect[2]; AsResourceTextureRecord(record)->bottom = rect[3];
+    AsResourceTextureRecord(record)->left = rect[0];
+    AsResourceTextureRecord(record)->top = rect[1];
+    AsResourceTextureRecord(record)->right = rect[2];
+    AsResourceTextureRecord(record)->bottom = rect[3];
     AsResourceTextureRecord(record)->resourceBytes = 0;
     strcpy(record + sizeof(ResourceTextureRecord), normalized);
-    AppendTextureRecord(self, BitmapRegistrationEntry(BitmapRegistrationKey(record + sizeof(ResourceTextureRecord)),record));
+    AppendTextureRecord(self,
+                        BitmapRegistrationEntry(BitmapRegistrationKey(record + sizeof(ResourceTextureRecord)), record));
     // Bookkeeping estimates bytes as width*height*bytesPerPixel (+half if flagged).
     int bits = (flags & kTexture24Bit) ? 24 : 16;
-    AsResourceTextureRecord(record)->resourceBytes = (bits >> 3) * ((rect[2]-rect[0]) * (rect[3]-rect[1]));
-    if (flags & kTextureExtraHalfStorage) AsResourceTextureRecord(record)->resourceBytes += AsResourceTextureRecord(record)->resourceBytes >> 1;
+    AsResourceTextureRecord(record)->resourceBytes = (bits >> 3) * ((rect[2] - rect[0]) * (rect[3] - rect[1]));
+    if (flags & kTextureExtraHalfStorage)
+        AsResourceTextureRecord(record)->resourceBytes += AsResourceTextureRecord(record)->resourceBytes >> 1;
     AsResourceManager(self)->resourceBytes += AsResourceTextureRecord(record)->resourceBytes;
     // A null handle also registers its name in the separate hash. Allocation
     // blocks contain a ring header followed by free nodes; buckets chain active nodes.
     if (!AsResourceTextureRecord(record)->resource) {
-        char* found = FindBitmapHashValue(self,record + sizeof(ResourceTextureRecord));
+        char* found = FindBitmapHashValue(self, record + sizeof(ResourceTextureRecord));
         if (!found) {
-            unsigned len = strlen(record + sizeof(ResourceTextureRecord))+1;
-            char* key = (char*)__nwa__FUl((len << 1)-len);
+            unsigned len = strlen(record + sizeof(ResourceTextureRecord)) + 1;
+            char* key = (char*)__nwa__FUl((len << 1) - len);
             strcpy(key, record + sizeof(ResourceTextureRecord));
             WInstanceLock outer(self + IFF_OFFSET(ResourceManager, hashMutex));
             BitmapHashNode* node;
             {
                 WInstanceLock inner(self + IFF_OFFSET(ResourceManager, hashMutex));
                 if (!AsResourceManager(self)->freeHashNodes) {
-                    BitmapHashNode* block = (BitmapHashNode*)appMallocUni__FUl((void*)(AsResourceManager(self)->hashBlockNodeCount*0x18));
-                    (*(BitmapHashNode**)&AsResourceManager(self)->hashBlocks) = LinkBitmapHashNode(self,(*(BitmapHashNode**)&AsResourceManager(self)->hashBlocks),block);
+                    BitmapHashNode* block =
+                        (BitmapHashNode*)appMallocUni__FUl((void*)(AsResourceManager(self)->hashBlockNodeCount * 0x18));
+                    (*(BitmapHashNode**)&AsResourceManager(self)->hashBlocks) =
+                        LinkBitmapHashNode(self, (*(BitmapHashNode**)&AsResourceManager(self)->hashBlocks), block);
                     ++block;
-                    for (int i=1; i<AsResourceManager(self)->hashBlockNodeCount; ++i, ++block) {
-                        (*(BitmapHashNode**)&AsResourceManager(self)->freeHashNodes) = LinkBitmapHashNode(self,(*(BitmapHashNode**)&AsResourceManager(self)->freeHashNodes),block);
+                    for (int i = 1; i < AsResourceManager(self)->hashBlockNodeCount; ++i, ++block) {
+                        (*(BitmapHashNode**)&AsResourceManager(self)->freeHashNodes) = LinkBitmapHashNode(
+                            self, (*(BitmapHashNode**)&AsResourceManager(self)->freeHashNodes), block);
                     }
                 }
                 node = (*(BitmapHashNode**)&AsResourceManager(self)->freeHashNodes);
@@ -1663,36 +1934,47 @@ void* ResourceManager_GetOrLoadBitmapByPath(void* selfArg, const char* path, voi
                     node->next->prev = node->prev;
                     node->prev->next = node->next;
                     next = node->next;
-                    if (next == node) next = 0;
+                    if (next == node)
+                        next = 0;
                 }
                 (*(BitmapHashNode**)&AsResourceManager(self)->freeHashNodes) = next;
             }
-            node->value = key; node->owned = 0; node->key = key;
+            node->value = key;
+            node->owned = 0;
+            node->key = key;
             if (key) {
-                unsigned h = HashBitmapBasename(self,key);
+                unsigned h = HashBitmapBasename(self, key);
                 WInstanceLock g(self + IFF_OFFSET(ResourceManager, hashMutex));
                 node->chain = ((*(BitmapHashNode***)&AsResourceManager(self)->hashBuckets))[h];
                 ((*(BitmapHashNode***)&AsResourceManager(self)->hashBuckets))[h] = node;
             }
-            (*(BitmapHashNode**)&AsResourceManager(self)->activeHashNodes) = LinkBitmapHashNode(self,(*(BitmapHashNode**)&AsResourceManager(self)->activeHashNodes),node);
+            (*(BitmapHashNode**)&AsResourceManager(self)->activeHashNodes) =
+                LinkBitmapHashNode(self, (*(BitmapHashNode**)&AsResourceManager(self)->activeHashNodes), node);
         }
     }
     return AsResourceTextureRecord(record)->resource;
 }
 
-struct BitmapResourceStorage { char data[0x3c]; };
-struct BitmapObjectStorage { char data[0x18]; };
+struct BitmapResourceStorage {
+    char data[0x3c];
+};
+struct BitmapObjectStorage {
+    char data[0x18];
+};
 
 // Decode a texture-list node's tagged-key byte length.
 inline unsigned TextureNodeKeyLength(const char* node) {
-    if (!((*(unsigned*)&((TextureCleanupNode*)node)->key.flags) >> 31)) return (*(unsigned char*)&((TextureCleanupNode*)node)->key.flags) & 0x7f;
+    if (!((*(unsigned*)&((TextureCleanupNode*)node)->key.flags) >> 31))
+        return (*(unsigned char*)&((TextureCleanupNode*)node)->key.flags) & 0x7f;
     return (*(unsigned*)&((TextureCleanupNode*)node)->key.length);
 }
 
 // Return the three-way ordering of two unsigned key lengths.
 inline int CompareTextureKeyLengths(unsigned a, unsigned b) {
-    if (a < b) return -1;
-    if (a == b) return 0;
+    if (a < b)
+        return -1;
+    if (a == b)
+        return 0;
     return 1;
 }
 
@@ -1715,7 +1997,8 @@ void* ResourceManager_LoadBitmap(void* self, const char* filename, int flags, in
     // Phase 1: replace the extension and derive the case-folded basename cache key.
     strcpy(resourcePath, filename);
     char* extensionToReplace = strrchr(resourcePath, '.');
-    if (extensionToReplace == 0) return 0;
+    if (extensionToReplace == 0)
+        return 0;
 
     if (strcmp(extensionToReplace, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, bresExtension))) {
         strcpy(extensionToReplace, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, gsrExtension));
@@ -1723,8 +2006,10 @@ void* ResourceManager_LoadBitmap(void* self, const char* filename, int flags, in
 
     char* firstSlash = strchr(resourcePath, '/');
     char* basename;
-    if (firstSlash != 0) basename = strrchr(resourcePath, '/') + 1;
-    else basename = resourcePath;
+    if (firstSlash != 0)
+        basename = strrchr(resourcePath, '/') + 1;
+    else
+        basename = resourcePath;
 
     int basenameByteIndex = 0;
     while (basename[basenameByteIndex] != 0) {
@@ -1746,24 +2031,40 @@ void* ResourceManager_LoadBitmap(void* self, const char* filename, int flags, in
         savedLen = len;
         const char* data;
         unsigned dataLen;
-        if (!((*(unsigned*)&((TextureCleanupNode*)cacheNode)->key.flags) >> 31)) { data = cacheNode + 9; dataLen = (*(unsigned char*)&((TextureCleanupNode*)cacheNode)->key.flags) & 0x7f; }
-        else { data = (*(char**)&((TextureCleanupNode*)cacheNode)->key.data); dataLen = (*(unsigned*)&((TextureCleanupNode*)cacheNode)->key.length); }
+        if (!((*(unsigned*)&((TextureCleanupNode*)cacheNode)->key.flags) >> 31)) {
+            data = cacheNode + 9;
+            dataLen = (*(unsigned char*)&((TextureCleanupNode*)cacheNode)->key.flags) & 0x7f;
+        } else {
+            data = (*(char**)&((TextureCleanupNode*)cacheNode)->key.data);
+            dataLen = (*(unsigned*)&((TextureCleanupNode*)cacheNode)->key.length);
+        }
         unsigned savedDataLen = dataLen;
         unsigned* p = &savedDataLen;
-        if (len < dataLen) p = &savedLen;
+        if (len < dataLen)
+            p = &savedLen;
         unsigned selected = *p;
         p = &selected;
-        if (count < selected) p = &savedCount;
+        if (count < selected)
+            p = &savedCount;
         int comparison = memcmp(data, normalizedBasename, *p);
         if (!comparison) {
-            if (selected < count) comparison = -1;
-            else if (selected == count) comparison = 0;
-            else comparison = 1;
+            if (selected < count)
+                comparison = -1;
+            else if (selected == count)
+                comparison = 0;
+            else
+                comparison = 1;
         }
-        if (!comparison) { cachedRecord = (*(char**)&((TextureCleanupNode*)cacheNode)->value); break; }
+        if (!comparison) {
+            cachedRecord = (*(char**)&((TextureCleanupNode*)cacheNode)->value);
+            break;
+        }
         cacheNode = (*(char**)&((TextureCleanupNode*)cacheNode)->next);
     }
-    if (cachedRecord) { ++AsResourceTextureRecord(cachedRecord)->referenceCount; return AsResourceTextureRecord(cachedRecord)->resource; }
+    if (cachedRecord) {
+        ++AsResourceTextureRecord(cachedRecord)->referenceCount;
+        return AsResourceTextureRecord(cachedRecord)->resource;
+    }
 
     // Phase 3: after a miss, construct an archive entry or a direct GSR resource.
     void* temporaryBitmap = 0;
@@ -1773,21 +2074,26 @@ void* ResourceManager_LoadBitmap(void* self, const char* filename, int flags, in
         char query[kArchiveEntryKeyCapacity] = {0};
         memcpy(query, resourcePath, (unsigned)(archiveSeparator - resourcePath));
         temporaryBitmap = ResourceManager_LoadBitmapFromArchive(self, archiveSeparator + 1, query);
-    } else if (extension != 0 && CString_Compare(extension, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, gsrExtension)) == 0) {
-        if (CHashPath_FindPath(resourcePath) == 0) temporaryBitmap = 0;
-        else if (CHashPath_FindPath(resourcePath) == 0) temporaryBitmap = 0;
+    } else if (extension != 0 &&
+               CString_Compare(extension,
+                               sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, gsrExtension)) == 0) {
+        if (CHashPath::FindPath(resourcePath) == 0)
+            temporaryBitmap = 0;
+        else if (CHashPath::FindPath(resourcePath) == 0)
+            temporaryBitmap = 0;
         else {
             void* gsrResource = new BitmapResourceStorage();
             if (gsrResource != 0) {
                 try {
-                    CGsrResource_ctor(gsrResource, resourcePath);
+                    ((CGsrResource*)gsrResource)->__ct(resourcePath);
                 } catch (...) {
                     __dl__FPv(gsrResource);
                     throw;
                 }
             }
             void* bitmapWrapper = new BitmapObjectStorage();
-            if (bitmapWrapper != 0) Bitmap_ctor(bitmapWrapper, gsrResource);
+            if (bitmapWrapper != 0)
+                Bitmap_ctor(bitmapWrapper, gsrResource);
             temporaryBitmap = bitmapWrapper;
         }
     }
@@ -1800,8 +2106,10 @@ void* ResourceManager_LoadBitmap(void* self, const char* filename, int flags, in
     if (temporaryBitmap != 0) {
         WaitForTemporaryBitmap(temporaryBitmap);
         int parsedFlags = flags;
-        if (strchr(resourcePath, '{') != 0) parsedFlags = (parsedFlags | kTextureNameBrace) & kTextureNameBraceClearMask;
-        if (strchr(resourcePath, '!') != 0) parsedFlags |= kTextureNameBang;
+        if (strchr(resourcePath, '{') != 0)
+            parsedFlags = (parsedFlags | kTextureNameBrace) & kTextureNameBraceClearMask;
+        if (strchr(resourcePath, '!') != 0)
+            parsedFlags |= kTextureNameBang;
         registered = ResourceManager_GetOrLoadBitmapByPath(self, resourcePath, temporaryBitmap, parsedFlags, 0);
         if (temporaryBitmap != 0) {
             void** dtor = (*(void***)&AsBitmapLayout(temporaryBitmap)->vtable);
@@ -1818,12 +2126,14 @@ struct CachedResourceKey {
     char repr[12];
     // Borrow character storage from this key's inline/heap representation.
     const char* data() const {
-        if (*(unsigned*)repr >> 31) return (*(const char**)&AsMWStringStorage(repr)->data);
+        if (*(unsigned*)repr >> 31)
+            return (*(const char**)&AsMWStringStorage(repr)->data);
         return repr + 1;
     }
     // Decode the tagged key length without scanning its characters.
     unsigned int length() const {
-        if (*(unsigned*)repr >> 31) return AsMWStringStorage(repr)->length;
+        if (*(unsigned*)repr >> 31)
+            return AsMWStringStorage(repr)->length;
         return *(unsigned char*)repr & 0x7f;
     }
 };
@@ -1839,7 +2149,8 @@ void* appMallocDummy__FUl(unsigned);
 
 // Return a reference to the shorter comparison span (ties choose b).
 inline const unsigned& MinimumKeyLength(const unsigned& a, const unsigned& b) {
-    if (a < b) return a;
+    if (a < b)
+        return a;
     return b;
 }
 
@@ -1850,14 +2161,18 @@ inline unsigned CachedKeyLength(const char* repr) {
 
 // Return a reference to the shorter search span (ties choose a).
 inline const unsigned& MinimumSearchLength(const unsigned& a, const unsigned& b) {
-    if (b < a) return b;
+    if (b < a)
+        return b;
     return a;
 }
 // Resolve an equal-prefix comparison using unsigned byte lengths.
 inline int CompareSearchLengths(unsigned a, unsigned b, int result) {
-    if (a < b) result = -1;
-    else if (a == b) result = 0;
-    else if (a > b) result = 1;
+    if (a < b)
+        result = -1;
+    else if (a == b)
+        result = 0;
+    else if (a > b)
+        result = 1;
     return result;
 }
 
@@ -1865,8 +2180,9 @@ inline int CompareSearchLengths(unsigned a, unsigned b, int result) {
 void* ResourceEntryVector_FindByName(void* self, const char* key) {
     NamedResourceEntry* entry = (*(NamedResourceEntry**)&AsResourceEntryVector(self)->entries);
     // Original 0x800646A8: search up to the vector's current end.
-    while (!same_pos((*(NamedResourceEntry**)&AsResourceEntryVector(self)->entries) + (*(unsigned int*)&AsResourceEntryVector(self)->count), entry))
-    {
+    while (!same_pos((*(NamedResourceEntry**)&AsResourceEntryVector(self)->entries) +
+                         (*(unsigned int*)&AsResourceEntryVector(self)->count),
+                     entry)) {
         unsigned savedEntryLength;
         unsigned savedKeyLength;
         unsigned savedDataLength;
@@ -1891,8 +2207,10 @@ void* ResourceEntryVector_FindByName(void* self, const char* key) {
         savedDataLength = dataLength;
         selectedStringLength = MinimumSearchLength(savedDataLength, savedEntryLength);
         int comparison = memcmp(data, key, MinimumSearchLength(selectedStringLength, savedKeyLength));
-        if (comparison == 0) comparison = CompareSearchLengths(selectedStringLength, keyLength, comparison);
-        if (comparison == 0) return entry->value;
+        if (comparison == 0)
+            comparison = CompareSearchLengths(selectedStringLength, keyLength, comparison);
+        if (comparison == 0)
+            return entry->value;
         entry++;
     }
     return 0;
@@ -1906,26 +2224,30 @@ extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12length_error[];
 
 // Inlined std::length_error construction + throw (one stack object per site).
-#define LENGTH_ERROR_SITE() do { \
-    void* exc[3]; \
-    exc[0] = __vt__Q23std11logic_error; \
-    unsigned elen = strlen(sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError)) + 1; \
-    char* ebuf = (char*)__nwa__FUl(elen); \
-    exc[1] = ebuf; \
-    unsigned* rep = (unsigned*)__nw__FUl(0x10); \
-    if (rep) { rep[1] = 1; rep[2] = 1; rep[0] = (unsigned)s_sharedCharDeleterVtable; rep[3] = (unsigned)ebuf; } \
-    exc[2] = rep; \
-    strcpy(ebuf, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError)); \
-    exc[0] = __vt__Q23std12length_error; \
-    __throw(sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, lengthErrorType), exc, (void*)__dt__Q23std12length_errorFv); \
-} while (0)
+#define LENGTH_ERROR_SITE()                                                                                    \
+    do {                                                                                                       \
+        void* exc[3];                                                                                          \
+        exc[0] = __vt__Q23std11logic_error;                                                                    \
+        unsigned elen =                                                                                        \
+            strlen(sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError)) + 1; \
+        char* ebuf = (char*)__nwa__FUl(elen);                                                                  \
+        exc[1] = ebuf;                                                                                         \
+        unsigned* rep = (unsigned*)__nw__FUl(0x10);                                                            \
+        if (rep) {                                                                                             \
+            rep[1] = 1;                                                                                        \
+            rep[2] = 1;                                                                                        \
+            rep[0] = (unsigned)s_sharedCharDeleterVtable;                                                      \
+            rep[3] = (unsigned)ebuf;                                                                           \
+        }                                                                                                      \
+        exc[2] = rep;                                                                                          \
+        strcpy(ebuf, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError));   \
+        exc[0] = __vt__Q23std12length_error;                                                                   \
+        __throw(sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, lengthErrorType), exc,      \
+                (void*)__dt__Q23std12length_errorFv);                                                          \
+    } while (0)
 
 // Async-file entry points used by the model-load state machine below.
-void* CFileAsync_PollRead(void*, void*, int, int);
-unsigned int CFileAsync_GetSize(void*);
 void* __nwa__FUl(unsigned int);
-int CFileAsync_StartRead(void*, void*, unsigned int);
-void CFileAsync_Close(void*);
 
 // Advance asynchronous model I/O through open, aligned read, and read completion.
 // Return 1 only in states 4/5. Zero means pending, an I/O failure, or an unsupported
@@ -1937,13 +2259,15 @@ int ResourceManager_PollResourceRead(void* self) {
     int state = AsResourceManager(self)->loadState;
     switch (state) {
     case kWaitingForOpen: {
-        if (CFileAsync_PollRead(AsResourceManager(self)->asyncRead, &ready, 0, 0) == 0) return 0;
-        if (ready == 0) break;
+        if (((CFileAsync*)(AsResourceManager(self)->asyncRead))->PollRead((int*)&ready, 0, 0) == 0)
+            return 0;
+        if (ready == 0)
+            break;
         AsResourceManager(self)->loadState = kAllocateReadBuffer;
     }
     // Intentional fallthrough lets ready I/O advance multiple states in one poll.
     case kAllocateReadBuffer: {
-        AsResourceManager(self)->resourceDataBytes = CFileAsync_GetSize(AsResourceManager(self)->asyncRead);
+        AsResourceManager(self)->resourceDataBytes = ((CFileAsync*)(AsResourceManager(self)->asyncRead))->GetSize();
         void* old = AsResourceManager(self)->resourceData;
         if (old != 0) {
             __dla__FPv(old);
@@ -1958,20 +2282,25 @@ int ResourceManager_PollResourceRead(void* self) {
         AsResourceManager(self)->resourceData = allocated;
         int rounded2 = (*(int*)&AsResourceManager(self)->resourceDataBytes);
         remainder = (rounded2 % kDvdReadAlignment);
-        if (remainder != 0) rounded2 += kDvdReadAlignment - remainder;
+        if (remainder != 0)
+            rounded2 += kDvdReadAlignment - remainder;
         Memory_Clear(allocated, rounded2);
         int rounded3 = (*(int*)&AsResourceManager(self)->resourceDataBytes);
-        void* arg0 = AsResourceManager(self)->asyncRead;
-        void* arg1 = AsResourceManager(self)->resourceData;
+        void* asyncRead = AsResourceManager(self)->asyncRead;
+        void* resourceData = AsResourceManager(self)->resourceData;
         remainder = (rounded3 % kDvdReadAlignment);
-        if (remainder != 0) rounded3 += kDvdReadAlignment - remainder;
-        if (CFileAsync_StartRead(arg0, arg1, rounded3) == 0) return 0;
+        if (remainder != 0)
+            rounded3 += kDvdReadAlignment - remainder;
+        if (((CFileAsync*)asyncRead)->StartRead(resourceData, rounded3) == 0)
+            return 0;
         AsResourceManager(self)->loadState = kWaitingForRead;
     }
     case kWaitingForRead: {
-        if (CFileAsync_PollRead(AsResourceManager(self)->asyncRead, &ready, 0, 0) == 0) return 0;
-        if (ready == 0) break;
-        CFileAsync_Close(AsResourceManager(self)->asyncRead);
+        if (((CFileAsync*)(AsResourceManager(self)->asyncRead))->PollRead((int*)&ready, 0, 0) == 0)
+            return 0;
+        if (ready == 0)
+            break;
+        ((CFileAsync*)(AsResourceManager(self)->asyncRead))->Close();
         void* resource = AsResourceManager(self)->asyncRead;
         if (resource != 0) {
             if (resource != 0) {
@@ -1997,12 +2326,14 @@ struct NamedTextureRecordNode {
     void* value;
 };
 
-
 // Resolve equal basename prefixes by unsigned byte length.
 inline int CompareBasenameLengths(unsigned a, unsigned b, int result) {
-    if (a < b) result = -1;
-    else if (a == b) result = 0;
-    else if (a > b) result = 1;
+    if (a < b)
+        result = -1;
+    else if (a == b)
+        result = 0;
+    else if (a > b)
+        result = 1;
     return result;
 }
 // Test only ASCII A..Z, independent of locale.
@@ -2029,11 +2360,13 @@ inline int CopyLowercaseBasename(int length, const char* path, char* normalized)
 // Only '/' separates components here. The final component must fit 64 bytes.
 void* ResourceManager_FindByNormalizedBasename(void* self, const char* path) {
     char* slash = strchr(path, '/');
-    if (slash != 0) path = strrchr(path, '/') + 1;
+    if (slash != 0)
+        path = strrchr(path, '/') + 1;
     char buffer[0x40];
     int length = CopyLowercaseBasename(0, path, buffer);
     buffer[length] = 0;
-    NamedTextureRecordNode* sentinel = (NamedTextureRecordNode*)((char*)self + IFF_OFFSET(ResourceManager, recordSentinel));
+    NamedTextureRecordNode* sentinel =
+        (NamedTextureRecordNode*)((char*)self + IFF_OFFSET(ResourceManager, recordSentinel));
     NamedTextureRecordNode* entry = (*(NamedTextureRecordNode**)&AsResourceManager(self)->firstRecord);
     void* result = 0;
     while (entry != sentinel) {
@@ -2079,8 +2412,6 @@ void String_ReserveCapacity(void*, int);
 void String_ReplaceRange(void*, int, int, void*, void*, void*);
 void ResourcePath_NormalizeImageExtension(void*);
 void* SharedFile_CreateFromDvdPath(void*, void*, int, void*, int);
-int CHashPath_FindPath(void*);
-
 }
 
 // Stack-local narrow-string view; the canonical string ABI remains external.
@@ -2094,7 +2425,9 @@ public:
     LocalNString_u8006028C() : flags(0), length(0), data(0) {}
 #if defined(GAME_NSTRING_TEXT_CONSTRUCTOR)
     // Forward construction to the canonical string implementation.
-    LocalNString_u8006028C(const char* text) { MWString_ConstructCString(this, text); }
+    LocalNString_u8006028C(const char* text) {
+        MWString_ConstructCString(this, text);
+    }
 #endif
 #if defined(GAME_NSTRING_RANGE_CONSTRUCTOR)
     // Deep-copy a borrowed C string into inline or owned heap storage.
@@ -2113,7 +2446,10 @@ public:
     }
 #endif
     // Release only the owned heap representation.
-    ~LocalNString_u8006028C() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~LocalNString_u8006028C() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
     // Decode byte length from the inline tag or heap length word.
     unsigned int size() const {
         return (flags >> 31) == 0 ? (*(const unsigned char*)this & 0x7f) : length;
@@ -2129,13 +2465,14 @@ extern "C" {
 // First/fifth ABI arguments are unused. openArgument2/4 pass through to the file
 // factory. Zero openFlags also normalizes the suffix. Null means unresolved path
 // or factory failure; successful handles follow SharedFile's release contract.
-void* Resource_OpenResolvedPath(void* unusedOwner, const char* path, void* openArgument2, void* openArgument4, void* unusedArgument, int openFlags) {
+void* Resource_OpenResolvedPath(void* unusedOwner, const char* path, void* openArgument2, void* openArgument4,
+                                void* unusedArgument, int openFlags) {
     LocalNString_u8006028C local(path);
     if (openFlags == 0) {
         ResourcePath_NormalizeImageExtension(&local);
     }
     void* normalizedPath = (void*)local.c_str();
-    int pathExists = CHashPath_FindPath(normalizedPath);
+    void* pathExists = CHashPath::FindPath((const char*)normalizedPath);
     if (pathExists == 0) {
         return 0;
     }
@@ -2151,7 +2488,7 @@ void Archive_GetEntryInfo(void*, int, void*);
 void Archive_ReadEntry(void*, int, void*, void*, int);
 void Archive_Close(void*);
 int String_CompareCString(void*, const char*);
-void CGsrResource_Ctor(void*, void*, void*);
+extern "C" void __ct__12CGsrResourceFPCvUi(void*, void*, void*);
 void Bitmap_ctor(void*, void*);
 
 union ArchiveStringAllocatorByte {
@@ -2164,21 +2501,31 @@ union ArchiveStringAllocatorByte {
 struct ArchiveString62E3C {
     unsigned words[3];
     // Initialize an empty archive-path string.
-    ArchiveString62E3C() { words[0] = 0; words[1] = 0; words[2] = 0; }
+    ArchiveString62E3C() {
+        words[0] = 0;
+        words[1] = 0;
+        words[2] = 0;
+    }
     // Deep-copy the path while preserving the original allocator-tag lifetimes.
-    ArchiveString62E3C(const char* filename,
-                     const ArchiveStringAllocatorByte& allocator = ArchiveStringAllocatorByte(),
-                     const ArchiveStringAllocatorByte& term = ArchiveStringAllocatorByte()) {
-        words[0] = 0; words[1] = 0; words[2] = 0;
+    ArchiveString62E3C(const char* filename, const ArchiveStringAllocatorByte& allocator = ArchiveStringAllocatorByte(),
+                       const ArchiveStringAllocatorByte& term = ArchiveStringAllocatorByte()) {
+        words[0] = 0;
+        words[1] = 0;
+        words[2] = 0;
         int len = strlen(filename);
         String_ReserveCapacity(this, len);
         term.c = allocator.c;
         String_ReplaceRange(this, 0, 0, (void*)filename, (void*)(filename + len), (void*)&term);
     }
     // Release the archive path's owned heap representation.
-    ~ArchiveString62E3C() { if (words[0] >> 31) appFreeUni__FPv((void*)words[2]); }
+    ~ArchiveString62E3C() {
+        if (words[0] >> 31)
+            appFreeUni__FPv((void*)words[2]);
+    }
     // Borrow inline or heap character storage.
-    void* text() { return (words[0] >> 31) == 0 ? (char*)this + 1 : (void*)words[2]; }
+    void* text() {
+        return (words[0] >> 31) == 0 ? (char*)this + 1 : (void*)words[2];
+    }
 };
 typedef ArchiveString62E3C ArchivePathString;
 struct ArchiveFileInterface {
@@ -2194,10 +2541,16 @@ struct ArchiveGuard62E3C {
     ArchiveGuard62E3C(ArchiveFileInterface*& file) : pointer(&file) {}
     // Release the shared-file handle once and clear the tracked variable.
     void reset() {
-        if (*pointer) { Resource_Release(*pointer); *pointer = 0; }
+        if (*pointer) {
+            Resource_Release(*pointer);
+            *pointer = 0;
+        }
     }
     // Release a still-open file on normal exit or exception unwinding.
-    ~ArchiveGuard62E3C() { if (*pointer) reset(); }
+    ~ArchiveGuard62E3C() {
+        if (*pointer)
+            reset();
+    }
 };
 typedef ArchiveGuard62E3C ArchiveFileGuard;
 struct BitmapArchiveEntryInfo {
@@ -2218,22 +2571,26 @@ inline void AssignArchiveEntryName(ArchivePathString& name, BitmapArchiveEntryIn
 struct ArchiveBitmapResourceStorage {
     char bytes[0x3c];
     // Construct a GSR resource from entry bytes before the temporary bytes are freed.
-    ArchiveBitmapResourceStorage(void* data, void* size) { CGsrResource_Ctor(this, data, size); }
+    ArchiveBitmapResourceStorage(void* data, void* size) {
+        __ct__12CGsrResourceFPCvUi(this, data, size);
+    }
 };
 struct ArchiveBitmapStorage {
     char bytes[0x18];
     // Construct the bitmap wrapper around the newly created GSR resource.
-    ArchiveBitmapStorage(void* resource) { Bitmap_ctor(this, resource); }
+    ArchiveBitmapStorage(void* resource) {
+        Bitmap_ctor(this, resource);
+    }
 };
 
 // Normalize and resolve an archive path before opening its shared-file handle.
 inline ArchiveFileInterface* OpenBitmapArchiveFile(const char* filename) {
-        ArchivePathString path(filename);
-        ResourcePath_NormalizeImageExtension(&path);
-        if (CHashPath_FindPath(path.text()) == 0) {
-            return 0;
-        }
-        return (ArchiveFileInterface*)SharedFile_CreateFromDvdPath(path.text(), (void*)-1, 0, 0, 0);
+    ArchivePathString path(filename);
+    ResourcePath_NormalizeImageExtension(&path);
+    if (CHashPath::FindPath((const char*)path.text()) == 0) {
+        return 0;
+    }
+    return (ArchiveFileInterface*)SharedFile_CreateFromDvdPath(path.text(), (void*)-1, 0, 0, 0);
 }
 // Read a named bitmap archive entry and release all temporary buffers and handles.
 // filename/key are borrowed; key comparison is exact. Return a new bitmap wrapper
@@ -2243,7 +2600,8 @@ void* ResourceManager_LoadBitmapFromArchive(void* self, const char* filename, co
     // Read the whole archive, then release the file before opening the memory archive.
     ArchiveFileInterface* file = OpenBitmapArchiveFile(filename);
     ArchiveFileGuard guard(file);
-    if (!file) return 0;
+    if (!file)
+        return 0;
     void* size = file->size;
     void* archiveData = appMallocUni__FUl(size);
     file->read(archiveData, size);
@@ -2253,7 +2611,8 @@ void* ResourceManager_LoadBitmapFromArchive(void* self, const char* filename, co
     }
     void* archive = Archive_Open(archiveData, size, 3);
     if (archive == 0) {
-        if (archiveData) appFreeUni__FPv(archiveData);
+        if (archiveData)
+            appFreeUni__FPv(archiveData);
         return 0;
     }
     BitmapArchiveEntryInfo entry;
@@ -2267,20 +2626,24 @@ void* ResourceManager_LoadBitmapFromArchive(void* self, const char* filename, co
             Archive_ReadEntry(archive, index, data, entry.size, 3);
             char* ext = strrchr(entry.name, '.');
             void* result = 0;
-            if (String_CompareCString(ext, sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, gsrExtension)) == 0) {
+            if (String_CompareCString(ext, sharedResourceLoaderStrings +
+                                               IFF_OFFSET(ResourceLoaderStringPool, gsrExtension)) == 0) {
                 ArchivePathString name;
                 AssignArchiveEntryName(name, entry);
                 ArchiveBitmapResourceStorage* resource = new ArchiveBitmapResourceStorage(data, entry.size);
                 result = new ArchiveBitmapStorage(resource);
             }
-            if (data) appFreeUni__FPv(data);
+            if (data)
+                appFreeUni__FPv(data);
             Archive_Close(archive);
-            if (archiveData) appFreeUni__FPv(archiveData);
+            if (archiveData)
+                appFreeUni__FPv(archiveData);
             return result;
         }
     }
     Archive_Close(archive);
-    if (archiveData) appFreeUni__FPv(archiveData);
+    if (archiveData)
+        appFreeUni__FPv(archiveData);
     return 0;
 }
 
@@ -2293,7 +2656,9 @@ void __throw(const char*, void*, void*) __attribute__((noreturn));
 struct LoadedPuppetStorage {
     char bytes[0x23c];
     // Construct a puppet within the allocation sized for its original ABI.
-    LoadedPuppetStorage() { WPuppet_ctor(this); }
+    LoadedPuppetStorage() {
+        WPuppet_ctor(this);
+    }
 };
 struct CacheEntryIterator {
     NamedResourceEntry* pointer;
@@ -2302,32 +2667,44 @@ struct CacheEntryIterator {
     // Copy the borrowed position without copying an entry.
     CacheEntryIterator(const CacheEntryIterator& p) : pointer(p.pointer) {}
     // Compare positions only, including the one-past-end position.
-    bool operator!=(const CacheEntryIterator& other) const { return other.pointer != pointer; }
+    bool operator!=(const CacheEntryIterator& other) const {
+        return other.pointer != pointer;
+    }
 };
 // Choose the shorter comparison length by reference (ties retain a).
 inline const unsigned& MinimumCacheKeyLength(const unsigned& a, const unsigned& b) {
-    if (b < a) return b;
+    if (b < a)
+        return b;
     return a;
 }
 // Order unsigned lengths after equal character prefixes.
 inline int CompareCacheKeyLengths(unsigned a, unsigned b) {
-    if (a < b) return -1;
-    if (a == b) return 0;
+    if (a < b)
+        return -1;
+    if (a == b)
+        return 0;
     return 1;
 }
 struct LoadedPuppetDeleteInterface {
     virtual void destroy(short);
 };
-union CacheAllocatorByte { char value; unsigned align; };
+union CacheAllocatorByte {
+    char value;
+    unsigned align;
+};
 // Keep this ABI type name: exception cleanup relocations reference its destructor.
 struct Load63788String {
     unsigned w[3];
     // Deep-copy a borrowed C-string key.
     Load63788String(const char* s) {
-        w[0] = 0; w[1] = 0; w[2] = 0;
+        w[0] = 0;
+        w[1] = 0;
+        w[2] = 0;
         unsigned len = strlen(s);
         String_ReserveCapacity(this, len);
-        volatile CacheAllocatorByte a; CacheAllocatorByte t; t.value = a.value;
+        volatile CacheAllocatorByte a;
+        CacheAllocatorByte t;
+        t.value = a.value;
         String_ReplaceRange(this, 0, 0, (void*)s, (void*)(s + len), &t);
     }
     // Copy inline bytes or allocate an independent heap key.
@@ -2335,16 +2712,25 @@ struct Load63788String {
         unsigned first = s.w[0];
         if (!(first >> 31)) {
             unsigned second = s.w[1];
-            w[0] = first; w[1] = second; w[2] = s.w[2];
+            w[0] = first;
+            w[1] = second;
+            w[2] = s.w[2];
         } else {
-            w[0] = 0; w[1] = 0; w[2] = 0;
+            w[0] = 0;
+            w[1] = 0;
+            w[2] = 0;
             String_ReserveCapacity(this, s.w[1]);
-            volatile CacheAllocatorByte a; CacheAllocatorByte t; t.value = a.value;
+            volatile CacheAllocatorByte a;
+            CacheAllocatorByte t;
+            t.value = a.value;
             String_ReplaceRange(this, 0, 0, (void*)s.w[2], (void*)(s.w[2] + s.w[1]), &t);
         }
     }
     // Release only a heap-backed key's owned characters.
-    ~Load63788String() { if (w[0] >> 31) appFreeUni__FPv((void*)w[2]); }
+    ~Load63788String() {
+        if (w[0] >> 31)
+            appFreeUni__FPv((void*)w[2]);
+    }
 };
 typedef Load63788String CacheInsertionKey;
 // Keep this ABI type name: exception cleanup relocations reference its destructor.
@@ -2359,12 +2745,17 @@ struct Load63788Guard {
     void* pointer;
     CacheAllocatorByte* allocator;
     // Free exception text if shared-control adoption did not complete.
-    ~Load63788Guard() { if (pointer) __dla__FPv(pointer); }
+    ~Load63788Guard() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 typedef Load63788Guard CacheArrayAllocationGuard;
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 struct CacheLogicErrorStorage {
-    void* vt; char* text; void* rep;
+    void* vt;
+    char* text;
+    void* rep;
     // Deep-copy exception text and adopt it through a shared control block.
     CacheLogicErrorStorage(const char* s) {
         vt = __vt__Q23std11logic_error;
@@ -2376,25 +2767,37 @@ struct CacheLogicErrorStorage {
         {
             CacheArrayAllocationGuard guard = {buffer, &a};
             unsigned* r = (unsigned*)__nw__FUl(16);
-            if (r) { r[1] = 1; r[2] = 1; r[0] = (unsigned)s_sharedCharDeleterVtable; r[3] = (unsigned)buffer; }
+            if (r) {
+                r[1] = 1;
+                r[2] = 1;
+                r[0] = (unsigned)s_sharedCharDeleterVtable;
+                r[3] = (unsigned)buffer;
+            }
             rep = r;
             guard.pointer = 0;
         }
         strcpy(text, s);
     }
     // Preserve the original exception-base destruction entry point.
-    ~CacheLogicErrorStorage() { __dt__Q23std9exceptionFv(this, -1); }
+    ~CacheLogicErrorStorage() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 struct CacheLengthErrorStorage : CacheLogicErrorStorage {
     // Set the derived runtime type after constructing the exception message.
-    CacheLengthErrorStorage(const char* s) : CacheLogicErrorStorage(s) { vt = __vt__Q23std12length_error; }
+    CacheLengthErrorStorage(const char* s) : CacheLogicErrorStorage(s) {
+        vt = __vt__Q23std12length_error;
+    }
 };
 // Construct/throw in the caller's exception scope; helper extraction can alter extab.
-#define LOAD63788_LENGTH_ERROR() do { \
-    unsigned storage[3]; \
-    CacheLengthErrorStorage* format = new (storage) CacheLengthErrorStorage(sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError)); \
-    __throw(sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, lengthErrorType), format, (void*)__dt__Q23std12length_errorFv); \
-} while (0)
+#define LOAD63788_LENGTH_ERROR()                                                                             \
+    do {                                                                                                     \
+        unsigned storage[3];                                                                                 \
+        CacheLengthErrorStorage* format = new (storage) CacheLengthErrorStorage(                             \
+            sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError));          \
+        __throw(sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, lengthErrorType), format, \
+                (void*)__dt__Q23std12length_errorFv);                                                        \
+    } while (0)
 // Keep this ABI type name: exception cleanup relocations reference its destructor.
 struct Load63788Vector {
     NamedResourceEntry* data;
@@ -2411,7 +2814,8 @@ struct Load63788Vector {
             size -= n;
             while (n != 0) {
                 --p;
-                if (p && p && (*(unsigned*)p >> 31)) appFreeUni__FPv((*(void**)&AsMWStringStorage(p)->data));
+                if (p && p && (*(unsigned*)p >> 31))
+                    appFreeUni__FPv((*(void**)&AsMWStringStorage(p)->data));
                 --n;
             }
             appFreeUni__FPv(data);
@@ -2433,14 +2837,20 @@ public:
     void* rep;
     // Deep-copy text and transfer it to a shared ownership control block.
     logic_error(const char* s) {
-        CacheAllocatorByte a; a.value = 0;
+        CacheAllocatorByte a;
+        a.value = 0;
         unsigned n = strlen(s) + 1;
         char* buffer = (char*)__nwa__FUl((n << 1) - n);
         text = buffer;
         {
             CacheArrayAllocationGuard guard = {buffer, &a};
             unsigned* r = (unsigned*)__nw__FUl(16);
-            if (r) { r[1] = 1; r[2] = 1; r[0] = (unsigned)s_sharedCharDeleterVtable; r[3] = (unsigned)buffer; }
+            if (r) {
+                r[1] = 1;
+                r[2] = 1;
+                r[0] = (unsigned)s_sharedCharDeleterVtable;
+                r[3] = (unsigned)buffer;
+            }
             rep = r;
             guard.pointer = 0;
         }
@@ -2463,13 +2873,16 @@ struct FixedFontFactoryInterface {
 };
 // Return three-way unsigned length ordering for equal font-key prefixes.
 inline int CompareFontKeyLengths(unsigned a, unsigned b) {
-    if (a < b) return -1;
-    else if (a != b) return 1;
+    if (a < b)
+        return -1;
+    else if (a != b)
+        return 1;
     return 0;
 }
 // Choose the larger growth increment by reference (ties retain a).
 inline const unsigned& MaximumCacheGrowth(const unsigned& a, const unsigned& b) {
-    if (a < b) return b;
+    if (a < b)
+        return b;
     return a;
 }
 struct ResourceEntryIterator {
@@ -2479,7 +2892,9 @@ struct ResourceEntryIterator {
     // Copy an entry position without copying its key or value.
     ResourceEntryIterator(const ResourceEntryIterator& other) : pointer(other.pointer) {}
     // Test whether two borrowed entry positions differ.
-    bool operator!=(const ResourceEntryIterator& other) const { return other.pointer != pointer; }
+    bool operator!=(const ResourceEntryIterator& other) const {
+        return other.pointer != pointer;
+    }
 };
 // Decode a resource entry's tagged key length in bytes.
 inline unsigned ResourceEntryKeyLength(const NamedResourceEntry* entry) {
@@ -2516,11 +2931,13 @@ struct Vector61204 {
         if (data) {
             unsigned n = size;
             NamedResourceEntry* p = data + n;
-            volatile CacheAllocatorByte allocator; allocator.value = 0;
+            volatile CacheAllocatorByte allocator;
+            allocator.value = 0;
             size -= n;
             while (n != 0) {
                 --p;
-                if (p && p && (*(unsigned*)p >> 31)) appFreeUni__FPv((*(void**)&AsMWStringStorage(p)->data));
+                if (p && p && (*(unsigned*)p >> 31))
+                    appFreeUni__FPv((*(void**)&AsMWStringStorage(p)->data));
                 --n;
             }
             appFreeUni__FPv(data);
@@ -2529,19 +2946,21 @@ struct Vector61204 {
 };
 typedef Vector61204 FontCacheTransferBuffer;
 // A separate macro-local allocator is needed at each throw site; inline helpers alter .text/extab.
-#define LENGTH_ERROR61204() do { \
-    volatile CacheAllocatorByte errorAllocator; errorAllocator.value = 0; \
-    const char* messageValue = sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError); \
-    throw std::length_error(messageValue); \
-} while (0)
+#define LENGTH_ERROR61204()                                                                        \
+    do {                                                                                           \
+        volatile CacheAllocatorByte errorAllocator;                                                \
+        errorAllocator.value = 0;                                                                  \
+        const char* messageValue =                                                                 \
+            sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError); \
+        throw std::length_error(messageValue);                                                     \
+    } while (0)
 struct FixedFontCacheView {
     char reserved0[0x2c];
     NamedResourceEntry* entries;
     unsigned count, capacity;
 };
 // Borrow a font key span; inline descriptor bytes must never be read as a heap pointer.
-static inline void BorrowCachedFontNameSpan(const NamedResourceEntry* entry,
-    const char*& text, unsigned& dataLength) {
+static inline void BorrowCachedFontNameSpan(const NamedResourceEntry* entry, const char*& text, unsigned& dataLength) {
     if (!(*(unsigned*)entry->key.repr >> 31)) {
         text = entry->key.repr + 1;
         dataLength = *(unsigned char*)entry->key.repr & 0x7f;
@@ -2566,7 +2985,8 @@ void* FixedFontCache_GetOrCreate(void* selfArg, void* nameArg) {
         FontCacheSnapshotIterator first(self->entries);
         FontCacheSnapshotIterator position(first);
         // Original 0x80061204: assign the absent factory only at exhaustion.
-        for (; position != FontCacheSnapshotIterator(self->entries + self->count) || (factory = 0, false); ++position.pointer) {
+        for (; position != FontCacheSnapshotIterator(self->entries + self->count) || (factory = 0, false);
+             ++position.pointer) {
             NamedResourceEntry* entry = position.pointer;
             unsigned selected;
             unsigned savedDataLength;
@@ -2575,8 +2995,10 @@ void* FixedFontCache_GetOrCreate(void* selfArg, void* nameArg) {
             unsigned keyLength = strlen(key);
             savedKeyLength = keyLength;
             unsigned entryLength;
-            if (*(unsigned*)entry->key.repr >> 31) entryLength = AsMWStringStorage(entry->key.repr)->length;
-            else entryLength = *(unsigned char*)entry->key.repr & 0x7f;
+            if (*(unsigned*)entry->key.repr >> 31)
+                entryLength = AsMWStringStorage(entry->key.repr)->length;
+            else
+                entryLength = *(unsigned char*)entry->key.repr & 0x7f;
             savedEntryLength = entryLength;
             const char* text;
             unsigned dataLength;
@@ -2585,13 +3007,18 @@ void* FixedFontCache_GetOrCreate(void* selfArg, void* nameArg) {
             selected = MinimumCacheKeyLength(savedDataLength, savedEntryLength);
             int comparison = memcmp(text, key, MinimumCacheKeyLength(selected, savedKeyLength));
             if (comparison == 0) {
-                if (selected < keyLength) comparison = -1;
+                if (selected < keyLength)
+                    comparison = -1;
                 else {
                     comparison = 0;
-                    if (selected > keyLength) comparison = 1;
+                    if (selected > keyLength)
+                        comparison = 1;
                 }
             }
-            if (comparison == 0) { factory = entry->value; break; }
+            if (comparison == 0) {
+                factory = entry->value;
+                break;
+            }
         }
     }
     if (factory) {
@@ -2610,8 +3037,10 @@ void* FixedFontCache_GetOrCreate(void* selfArg, void* nameArg) {
                 unsigned keyLength = strlen(key);
                 savedKeyLength = keyLength;
                 unsigned entryLength;
-                if (*(unsigned*)entry->key.repr >> 31) entryLength = AsMWStringStorage(entry->key.repr)->length;
-                else entryLength = *(unsigned char*)entry->key.repr & 0x7f;
+                if (*(unsigned*)entry->key.repr >> 31)
+                    entryLength = AsMWStringStorage(entry->key.repr)->length;
+                else
+                    entryLength = *(unsigned char*)entry->key.repr & 0x7f;
                 savedEntryLength = entryLength;
                 const char* text;
                 unsigned dataLength;
@@ -2620,15 +3049,18 @@ void* FixedFontCache_GetOrCreate(void* selfArg, void* nameArg) {
                 selected = MinimumCacheKeyLength(savedDataLength, savedEntryLength);
                 int comparison = memcmp(text, key, MinimumCacheKeyLength(selected, savedKeyLength));
                 if (comparison == 0) {
-                    if (selected < keyLength) comparison = -1;
+                    if (selected < keyLength)
+                        comparison = -1;
                     else {
                         comparison = 0;
-                        if (selected > keyLength) comparison = 1;
+                        if (selected > keyLength)
+                            comparison = 1;
                     }
                 }
                 if (comparison == 0 && entry->value == value) {
                     unsigned refs = ((ManagedResourceHeader*)value)->referenceCount;
-                    if (refs != kImmortalReferenceCount) ((ManagedResourceHeader*)value)->referenceCount = refs + 1;
+                    if (refs != kImmortalReferenceCount)
+                        ((ManagedResourceHeader*)value)->referenceCount = refs + 1;
                     // Skip insertion while retaining the original exception-cleanup boundaries.
                     goto fontInstanceReady;
                 }
@@ -2639,7 +3071,8 @@ void* FixedFontCache_GetOrCreate(void* selfArg, void* nameArg) {
                 // a guarded allocation and construct its new tail there first.
                 LocalNString_u8006028C str(key);
                 CacheInsertionEntry pair(*(const CacheInsertionKey*)&str, value);
-                volatile CacheAllocatorByte pushAllocator; pushAllocator.value = 0;
+                volatile CacheAllocatorByte pushAllocator;
+                pushAllocator.value = 0;
                 unsigned size = self->count;
                 unsigned capacity = self->capacity;
                 if (size < capacity) {
@@ -2647,63 +3080,94 @@ void* FixedFontCache_GetOrCreate(void* selfArg, void* nameArg) {
                     if (dst) {
                         try {
                             if (!(pair.w[0] >> 31)) {
-                                unsigned first = pair.w[0]; unsigned second = pair.w[1];
-                                dst[0] = first; dst[1] = second; dst[2] = pair.w[2];
+                                unsigned first = pair.w[0];
+                                unsigned second = pair.w[1];
+                                dst[0] = first;
+                                dst[1] = second;
+                                dst[2] = pair.w[2];
                             } else {
-                                dst[0] = 0; dst[1] = 0; dst[2] = 0;
+                                dst[0] = 0;
+                                dst[1] = 0;
+                                dst[2] = 0;
                                 String_ReserveCapacity(dst, pair.w[1]);
-                                volatile CacheAllocatorByte a; CacheAllocatorByte t; t.value = a.value;
+                                volatile CacheAllocatorByte a;
+                                CacheAllocatorByte t;
+                                t.value = a.value;
                                 String_ReplaceRange(dst, 0, 0, (void*)pair.w[2], (char*)pair.w[2] + pair.w[1], &t);
                             }
                             dst[3] = (unsigned)pair.value;
-                        } catch (...) { for (;;) throw; }
+                        } catch (...) {
+                            for (;;)
+                                throw;
+                        }
                     }
                     ++self->count;
                 } else {
-                    volatile CacheAllocatorByte insertAllocator; insertAllocator.value = 0;
-                    volatile CacheAllocatorByte vectorAllocator; vectorAllocator.value = 0;
-                    if (kMaxCacheEntries - capacity < 1) LENGTH_ERROR61204();
+                    volatile CacheAllocatorByte insertAllocator;
+                    insertAllocator.value = 0;
+                    volatile CacheAllocatorByte vectorAllocator;
+                    vectorAllocator.value = 0;
+                    if (kMaxCacheEntries - capacity < 1)
+                        LENGTH_ERROR61204();
                     unsigned need = self->count + 1 - self->capacity;
                     FontCacheTransferBuffer buffer(&self->capacity);
                     capacity = self->capacity;
                     unsigned newCapacity;
-                    if (need > kMaxCacheEntries - capacity) LENGTH_ERROR61204();
+                    if (need > kMaxCacheEntries - capacity)
+                        LENGTH_ERROR61204();
                     if (capacity < kFirstGrowthThreshold) {
                         unsigned add = (capacity + 1) * 3 / 5;
                         newCapacity = capacity + MaximumCacheGrowth(add, need);
                     } else if (capacity < kSecondGrowthThreshold) {
                         unsigned add = (capacity + 1) / 2;
                         newCapacity = capacity + MaximumCacheGrowth(add, need);
-                    } else newCapacity = kMaxCacheEntries;
-                    volatile CacheAllocatorByte reserveAllocator; reserveAllocator.value = 0;
-                    if (newCapacity > kMaxCacheEntries) LENGTH_ERROR61204();
+                    } else
+                        newCapacity = kMaxCacheEntries;
+                    volatile CacheAllocatorByte reserveAllocator;
+                    reserveAllocator.value = 0;
+                    if (newCapacity > kMaxCacheEntries)
+                        LENGTH_ERROR61204();
                     buffer.data = (NamedResourceEntry*)appMallocDummy__FUl(newCapacity * 16);
                     buffer.capacity = newCapacity;
                     buffer.offset = self->count;
                     unsigned* dst = (unsigned*)(buffer.data + buffer.offset + buffer.size);
-                    volatile CacheAllocatorByte constructAllocator; constructAllocator.value = 0;
+                    volatile CacheAllocatorByte constructAllocator;
+                    constructAllocator.value = 0;
                     unsigned remaining = 1;
                     while (remaining != 0) {
                         if (dst) {
                             try {
                                 if (!(pair.w[0] >> 31)) {
-                                    unsigned first = pair.w[0]; unsigned second = pair.w[1];
-                                    dst[0] = first; dst[1] = second; dst[2] = pair.w[2];
+                                    unsigned first = pair.w[0];
+                                    unsigned second = pair.w[1];
+                                    dst[0] = first;
+                                    dst[1] = second;
+                                    dst[2] = pair.w[2];
                                 } else {
-                                    dst[0] = 0; dst[1] = 0; dst[2] = 0;
+                                    dst[0] = 0;
+                                    dst[1] = 0;
+                                    dst[2] = 0;
                                     String_ReserveCapacity(dst, pair.w[1]);
-                                    volatile CacheAllocatorByte a; CacheAllocatorByte t; t.value = a.value;
+                                    volatile CacheAllocatorByte a;
+                                    CacheAllocatorByte t;
+                                    t.value = a.value;
                                     String_ReplaceRange(dst, 0, 0, (void*)pair.w[2], (char*)pair.w[2] + pair.w[1], &t);
                                 }
                                 dst[3] = (unsigned)pair.value;
-                            } catch (...) { for (;;) throw; }
+                            } catch (...) {
+                                for (;;)
+                                    throw;
+                            }
                         }
-                        --remaining; dst += 4; ++buffer.size;
+                        --remaining;
+                        dst += 4;
+                        ++buffer.size;
                     }
                     // Move old key representations as words and zero the source:
                     // this transfers heap ownership rather than copying characters.
                     NamedResourceEntry* begin = self->entries;
-                    volatile CacheAllocatorByte moveAllocator; moveAllocator.value = 0;
+                    volatile CacheAllocatorByte moveAllocator;
+                    moveAllocator.value = 0;
                     int n = ((int)(begin + self->count) - (int)begin) / 16;
                     buffer.offset -= n;
                     unsigned bytes = n * 16;
@@ -2719,7 +3183,8 @@ void* FixedFontCache_GetOrCreate(void* selfArg, void* nameArg) {
                     unsigned oldCap = self->capacity;
                     unsigned newCap = buffer.capacity;
                     buffer.data = begin;
-                    volatile CacheAllocatorByte destroyAllocator; destroyAllocator.value = 0;
+                    volatile CacheAllocatorByte destroyAllocator;
+                    destroyAllocator.value = 0;
                     // Publish the allocation swap. The guard now frees old storage.
                     self->capacity = newCap;
                     buffer.capacity = oldCap;
@@ -2728,7 +3193,8 @@ void* FixedFontCache_GetOrCreate(void* selfArg, void* nameArg) {
                     buffer.size = oldSize;
                     while (end > firstMoved) {
                         --end;
-                        if (end && end && (*(unsigned*)end >> 31)) appFreeUni__FPv((*(void**)&AsMWStringStorage(end)->data));
+                        if (end && end && (*(unsigned*)end >> 31))
+                            appFreeUni__FPv((*(void**)&AsMWStringStorage(end)->data));
                     }
                     buffer.size = 0;
                 }
@@ -2741,11 +3207,14 @@ void* FixedFontCache_GetOrCreate(void* selfArg, void* nameArg) {
 }
 #pragma opt_lifetimes reset
 // Keep the allocator and temporary exception within each caller's original cleanup scope.
-#define LENGTH_ERROR63788() do { \
-    volatile CacheAllocatorByte errorAllocator; errorAllocator.value = 0; \
-    const char* messageValue = sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError); \
-    throw std::length_error(messageValue); \
-} while (0)
+#define LENGTH_ERROR63788()                                                                        \
+    do {                                                                                           \
+        volatile CacheAllocatorByte errorAllocator;                                                \
+        errorAllocator.value = 0;                                                                  \
+        const char* messageValue =                                                                 \
+            sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError); \
+        throw std::length_error(messageValue);                                                     \
+    } while (0)
 // Construct/cache a puppet after async reading, freeing read data on success or failure.
 // Return the model address encoded as int once (state 4/5 -> 6), else zero.
 // This does not poll I/O. Call PollResourceRead first. Loader result zero is
@@ -2757,26 +3226,30 @@ int ResourceManager_PollPuppetResourceLoad(ResourceManager* self) {
         self->loadState = kModelReturned;
         return (int)self->loadedModel;
     }
-    if (self->resourceData == 0 || state != kReadComplete) return 0;
+    if (self->resourceData == 0 || state != kReadComplete)
+        return 0;
     // Decode the completed read into a new manager-associated puppet.
     void* obj = new LoadedPuppetStorage;
     self->loadedModel = obj;
     ((ManagedResourceHeader*)obj)->resourceManager = self;
-    int result = WPuppet_LoadNamedResourceFromChunks(self->loadedModel, self->loadPath,
-        self->resourceData, (void*)self->resourceDataBytes,
-        0, self->loadFormat);
+    int result = WPuppet_LoadNamedResourceFromChunks(self->loadedModel, self->loadPath, self->resourceData,
+                                                     (void*)self->resourceDataBytes, 0, self->loadFormat);
     // Original 0x80063788: successful loading owns the resource cleanup path.
-    if (result == 0)
-    {
+    if (result == 0) {
         // Release source bytes and normalize opacity before exact-pair cache lookup.
         void* data = self->resourceData;
-        if (data) { __dla__FPv(data); self->resourceData = 0; }
+        if (data) {
+            __dla__FPv(data);
+            self->resourceData = 0;
+        }
         WPuppet_SetOpacityRecursive(self->loadedModel, kOpaque);
         ResourceEntryIterator first(((NamedResourceEntry*)self->cachedModels));
         ResourceEntryIterator position(first);
         value = self->loadedModel;
         NamedResourceEntry* end;
-        for (; end = ((NamedResourceEntry*)self->cachedModels) + self->cachedModelCount, !same_pos(end, position.pointer); ++position.pointer) {
+        for (;
+             end = ((NamedResourceEntry*)self->cachedModels) + self->cachedModelCount, !same_pos(end, position.pointer);
+             ++position.pointer) {
             NamedResourceEntry* entry = position.pointer;
             unsigned selected;
             unsigned savedDataLength;
@@ -2787,7 +3260,8 @@ int ResourceManager_PollPuppetResourceLoad(ResourceManager* self) {
             unsigned entryLength;
             if (*(unsigned*)entry->key.repr >> 31)
                 entryLength = AsMWStringStorage(entry->key.repr)->length;
-            else entryLength = *(unsigned char*)entry->key.repr & 0x7f;
+            else
+                entryLength = *(unsigned char*)entry->key.repr & 0x7f;
             savedEntryLength = entryLength;
             const char* text;
             unsigned dataLength;
@@ -2796,15 +3270,18 @@ int ResourceManager_PollPuppetResourceLoad(ResourceManager* self) {
             selected = MinimumCacheKeyLength(savedDataLength, savedEntryLength);
             int comparison = memcmp(text, self->loadPath, MinimumCacheKeyLength(selected, savedKeyLength));
             if (comparison == 0) {
-                if (selected < keyLength) comparison = -1;
+                if (selected < keyLength)
+                    comparison = -1;
                 else {
                     comparison = 0;
-                    if (selected > keyLength) comparison = 1;
+                    if (selected > keyLength)
+                        comparison = 1;
                 }
             }
             if (comparison == 0 && entry->value == value) {
                 unsigned refs = ((ManagedResourceHeader*)value)->referenceCount;
-                if (refs != kImmortalReferenceCount) ((ManagedResourceHeader*)value)->referenceCount = refs + 1;
+                if (refs != kImmortalReferenceCount)
+                    ((ManagedResourceHeader*)value)->referenceCount = refs + 1;
                 // Join PET matrix refresh and completion without entering the insertion cleanup scope.
                 goto modelInstanceReady;
             }
@@ -2814,7 +3291,8 @@ int ResourceManager_PollPuppetResourceLoad(ResourceManager* self) {
             // a guarded tail, transfer the old prefix, then commit the swap.
             CacheInsertionKey str(self->loadPath);
             CacheInsertionEntry pair(str, value);
-            volatile CacheAllocatorByte pushAllocator; pushAllocator.value = 0;
+            volatile CacheAllocatorByte pushAllocator;
+            pushAllocator.value = 0;
             unsigned size = self->cachedModelCount;
             unsigned capacity = self->cachedModelCapacity;
             if (size < capacity) {
@@ -2822,69 +3300,100 @@ int ResourceManager_PollPuppetResourceLoad(ResourceManager* self) {
                 if (dst) {
                     try {
                         if (!(pair.w[0] >> 31)) {
-                            unsigned first = pair.w[0]; unsigned second = pair.w[1];
-                            dst[0] = first; dst[1] = second; dst[2] = pair.w[2];
+                            unsigned first = pair.w[0];
+                            unsigned second = pair.w[1];
+                            dst[0] = first;
+                            dst[1] = second;
+                            dst[2] = pair.w[2];
                         } else {
-                            dst[0] = 0; dst[1] = 0; dst[2] = 0;
+                            dst[0] = 0;
+                            dst[1] = 0;
+                            dst[2] = 0;
                             String_ReserveCapacity(dst, pair.w[1]);
-                            volatile CacheAllocatorByte a; CacheAllocatorByte t; t.value = a.value;
+                            volatile CacheAllocatorByte a;
+                            CacheAllocatorByte t;
+                            t.value = a.value;
                             String_ReplaceRange(dst, 0, 0, (void*)pair.w[2], (char*)pair.w[2] + pair.w[1], &t);
                         }
                         dst[3] = (unsigned)pair.value;
                     } catch (...) {
                         // Rethrowing never returns; keep the catch cleanup unreachable.
-                        for (;;) throw;
+                        for (;;)
+                            throw;
                     }
                 }
                 ++self->cachedModelCount;
             } else {
-                volatile CacheAllocatorByte insertAllocator; insertAllocator.value = 0;
-                volatile CacheAllocatorByte vectorAllocator; vectorAllocator.value = 0;
-                if (kMaxCacheEntries - capacity < 1) LENGTH_ERROR63788();
+                volatile CacheAllocatorByte insertAllocator;
+                insertAllocator.value = 0;
+                volatile CacheAllocatorByte vectorAllocator;
+                vectorAllocator.value = 0;
+                if (kMaxCacheEntries - capacity < 1)
+                    LENGTH_ERROR63788();
                 unsigned need = self->cachedModelCount + 1 - self->cachedModelCapacity;
                 CacheTransferBuffer buffer(&self->cachedModelCapacity);
                 capacity = self->cachedModelCapacity;
                 unsigned newCapacity;
-                if (need > kMaxCacheEntries - capacity) LENGTH_ERROR63788();
+                if (need > kMaxCacheEntries - capacity)
+                    LENGTH_ERROR63788();
                 if (capacity < kFirstGrowthThreshold) {
                     unsigned add = (capacity + 1) * 3 / 5;
-                    unsigned* p = &add; if (add < need) p = &need;
+                    unsigned* p = &add;
+                    if (add < need)
+                        p = &need;
                     newCapacity = capacity + *p;
                 } else if (capacity < kSecondGrowthThreshold) {
                     unsigned add = (capacity + 1) / 2;
-                    unsigned* p = &add; if (add < need) p = &need;
+                    unsigned* p = &add;
+                    if (add < need)
+                        p = &need;
                     newCapacity = capacity + *p;
-                } else newCapacity = kMaxCacheEntries;
-                volatile CacheAllocatorByte reserveAllocator; reserveAllocator.value = 0;
-                if (newCapacity > kMaxCacheEntries) LENGTH_ERROR63788();
+                } else
+                    newCapacity = kMaxCacheEntries;
+                volatile CacheAllocatorByte reserveAllocator;
+                reserveAllocator.value = 0;
+                if (newCapacity > kMaxCacheEntries)
+                    LENGTH_ERROR63788();
                 buffer.data = (NamedResourceEntry*)appMallocDummy__FUl(newCapacity * 16);
                 buffer.capacity = newCapacity;
                 buffer.offset = self->cachedModelCount;
                 unsigned* dst = (unsigned*)(buffer.data + buffer.offset + buffer.size);
-                volatile CacheAllocatorByte constructAllocator; constructAllocator.value = 0;
+                volatile CacheAllocatorByte constructAllocator;
+                constructAllocator.value = 0;
                 unsigned remaining = 1;
                 while (remaining != 0) {
                     if (dst) {
                         try {
                             if (!(pair.w[0] >> 31)) {
-                                unsigned first = pair.w[0]; unsigned second = pair.w[1];
-                                dst[0] = first; dst[1] = second; dst[2] = pair.w[2];
+                                unsigned first = pair.w[0];
+                                unsigned second = pair.w[1];
+                                dst[0] = first;
+                                dst[1] = second;
+                                dst[2] = pair.w[2];
                             } else {
-                                dst[0] = 0; dst[1] = 0; dst[2] = 0;
+                                dst[0] = 0;
+                                dst[1] = 0;
+                                dst[2] = 0;
                                 String_ReserveCapacity(dst, pair.w[1]);
-                                volatile CacheAllocatorByte a; CacheAllocatorByte t; t.value = a.value;
+                                volatile CacheAllocatorByte a;
+                                CacheAllocatorByte t;
+                                t.value = a.value;
                                 String_ReplaceRange(dst, 0, 0, (void*)pair.w[2], (char*)pair.w[2] + pair.w[1], &t);
                             }
                             dst[3] = (unsigned)pair.value;
                         } catch (...) {
-                            for (;;) throw;
+                            for (;;)
+                                throw;
                         }
                     }
-                    --remaining; dst += 4; ++buffer.size;
+                    --remaining;
+                    dst += 4;
+                    ++buffer.size;
                 }
                 // Move tagged-key words and clear their former owners.
                 NamedResourceEntry* begin = ((NamedResourceEntry*)self->cachedModels);
-                volatile CacheAllocatorByte moveAllocator; moveAllocator.value = 0;
+                volatile CacheAllocatorByte moveAllocator;
+                moveAllocator.value = 0;
                 int n = ((int)(begin + self->cachedModelCount) - (int)begin) / 16;
                 buffer.offset -= n;
                 unsigned byteCount = n * 16;
@@ -2900,7 +3409,8 @@ int ResourceManager_PollPuppetResourceLoad(ResourceManager* self) {
                 unsigned oldCap = self->cachedModelCapacity;
                 unsigned newCap = buffer.capacity;
                 buffer.data = begin;
-                volatile CacheAllocatorByte destroyAllocator; destroyAllocator.value = 0;
+                volatile CacheAllocatorByte destroyAllocator;
+                destroyAllocator.value = 0;
                 // Commit; old keys are now empty and the guard frees their block.
                 self->cachedModelCapacity = newCap;
                 buffer.capacity = oldCap;
@@ -2909,37 +3419,49 @@ int ResourceManager_PollPuppetResourceLoad(ResourceManager* self) {
                 buffer.size = oldSize;
                 while (end > first) {
                     --end;
-                    if (end && end && (*(unsigned*)end >> 31)) appFreeUni__FPv((*(void**)&AsMWStringStorage(end)->data));
+                    if (end && end && (*(unsigned*)end >> 31))
+                        appFreeUni__FPv((*(void**)&AsMWStringStorage(end)->data));
                 }
                 buffer.size = 0;
             }
         }
     modelInstanceReady:
-        if (self->loadFormat == kFormatPet) WPuppet_RefreshMatrixBuffers(self->loadedModel);
+        if (self->loadFormat == kFormatPet)
+            WPuppet_RefreshMatrixBuffers(self->loadedModel);
         self->loadState = kModelReturned;
         return (int)self->loadedModel;
     }
     // Decode failed: release the new puppet and input bytes without publishing it.
     void* old = self->loadedModel;
     if (old) {
-        if (old) ((LoadedPuppetDeleteInterface*)old)->destroy(1);
+        if (old)
+            ((LoadedPuppetDeleteInterface*)old)->destroy(1);
         self->loadedModel = 0;
     }
     void* data = self->resourceData;
-    if (data) { __dla__FPv(data); self->resourceData = 0; }
+    if (data) {
+        __dla__FPv(data);
+        self->resourceData = 0;
+    }
     return 0;
 }
-
 
 #undef LENGTH_ERROR63788
 struct FontInsertionIterator {
     NamedResourceEntry* pointer;
     // Borrow a position and preserve the original volatile snapshot lifetime.
-    FontInsertionIterator(NamedResourceEntry* p) : pointer(p) { NamedResourceEntry* volatile snapshot = p; }
+    FontInsertionIterator(NamedResourceEntry* p) : pointer(p) {
+        NamedResourceEntry* volatile snapshot = p;
+    }
     // Copy the position with the same snapshot side effect.
-    FontInsertionIterator(const FontInsertionIterator& p) : pointer(p.pointer) { NamedResourceEntry* volatile snapshot = p.pointer; }
+    FontInsertionIterator(const FontInsertionIterator& p) : pointer(p.pointer) {
+        NamedResourceEntry* volatile snapshot = p.pointer;
+    }
     // Compare positions after snapshotting the other position.
-    bool equals(const FontInsertionIterator& other) const { NamedResourceEntry* volatile snapshot = other.pointer; return other.pointer == pointer; }
+    bool equals(const FontInsertionIterator& other) const {
+        NamedResourceEntry* volatile snapshot = other.pointer;
+        return other.pointer == pointer;
+    }
 };
 // Decode a font entry's tagged key length in bytes.
 inline unsigned FontEntryKeyLength(const NamedResourceEntry* entry) {
@@ -2948,12 +3470,19 @@ inline unsigned FontEntryKeyLength(const NamedResourceEntry* entry) {
     return AsMWStringStorage(entry->key.repr)->length;
 }
 // Keep the allocator and temporary exception within each caller's original cleanup scope.
-#define LENGTH_ERROR650BC() do { \
-    volatile CacheAllocatorByte errorAllocator; errorAllocator.value = 0; \
-    const char* messageValue = sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError); \
-    throw std::length_error(messageValue); \
-} while (0)
-struct FixedFontEntryVector { void* vt; NamedResourceEntry* data; unsigned size, capacity; };
+#define LENGTH_ERROR650BC()                                                                        \
+    do {                                                                                           \
+        volatile CacheAllocatorByte errorAllocator;                                                \
+        errorAllocator.value = 0;                                                                  \
+        const char* messageValue =                                                                 \
+            sharedResourceLoaderStrings + IFF_OFFSET(ResourceLoaderStringPool, vectorLengthError); \
+        throw std::length_error(messageValue);                                                     \
+    } while (0)
+struct FixedFontEntryVector {
+    void* vt;
+    NamedResourceEntry* data;
+    unsigned size, capacity;
+};
 #pragma opt_lifetimes off
 // Retain an identical key/value pair or append a new cached font entry.
 // Return 0 for an exact-pair hit (retained unless count=0xFFFFFFFF), 1 for append.
@@ -2979,8 +3508,10 @@ int FixedFontCache_RetainOrAppend(void* selfArg, void* keyArg, void* valueArg) {
         unsigned keyLength = strlen(key);
         savedKeyLength = keyLength;
         unsigned entryLength;
-        if (!(*(unsigned*)entry->key.repr >> 31)) entryLength = *(unsigned char*)entry->key.repr & 0x7f;
-        else entryLength = AsMWStringStorage(entry->key.repr)->length;
+        if (!(*(unsigned*)entry->key.repr >> 31))
+            entryLength = *(unsigned char*)entry->key.repr & 0x7f;
+        else
+            entryLength = AsMWStringStorage(entry->key.repr)->length;
         savedEntryLength = entryLength;
         const char* text;
         unsigned dataLength;
@@ -2989,15 +3520,18 @@ int FixedFontCache_RetainOrAppend(void* selfArg, void* keyArg, void* valueArg) {
         selected = MinimumCacheKeyLength(savedDataLength, savedEntryLength);
         int comparison = memcmp(text, key, MinimumCacheKeyLength(selected, savedKeyLength));
         if (comparison == 0) {
-            if (selected < keyLength) comparison = -1;
+            if (selected < keyLength)
+                comparison = -1;
             else {
                 comparison = 0;
-                if (selected > keyLength) comparison = 1;
+                if (selected > keyLength)
+                    comparison = 1;
             }
         }
         if (comparison == 0 && entry->value == value) {
             unsigned refs = ((ManagedResourceHeader*)value)->referenceCount;
-            if (refs != kImmortalReferenceCount) ((ManagedResourceHeader*)value)->referenceCount = refs + 1;
+            if (refs != kImmortalReferenceCount)
+                ((ManagedResourceHeader*)value)->referenceCount = refs + 1;
             return 0;
         }
     }
@@ -3006,7 +3540,8 @@ int FixedFontCache_RetainOrAppend(void* selfArg, void* keyArg, void* valueArg) {
     // Phase 3: append into spare capacity, or construct a guarded new tail.
     LocalNString_u8006028C str(key);
     CacheInsertionEntry pair(*(const CacheInsertionKey*)&str, value);
-    volatile CacheAllocatorByte pushAllocator; pushAllocator.value = 0;
+    volatile CacheAllocatorByte pushAllocator;
+    pushAllocator.value = 0;
     unsigned size = self->size;
     unsigned capacity = self->capacity;
     if (size < capacity) {
@@ -3014,58 +3549,88 @@ int FixedFontCache_RetainOrAppend(void* selfArg, void* keyArg, void* valueArg) {
         if (destination) {
             try {
                 if (!(pair.w[0] >> 31)) {
-                    unsigned first = pair.w[0]; unsigned second = pair.w[1];
-                    AsMWStringStorage(destination)->flags = first; AsMWStringStorage(destination)->length = second; AsMWStringStorage(destination)->data = (char*)pair.w[2];
+                    unsigned first = pair.w[0];
+                    unsigned second = pair.w[1];
+                    AsMWStringStorage(destination)->flags = first;
+                    AsMWStringStorage(destination)->length = second;
+                    AsMWStringStorage(destination)->data = (char*)pair.w[2];
                 } else {
-                    AsMWStringStorage(destination)->flags = 0; AsMWStringStorage(destination)->length = 0; AsMWStringStorage(destination)->data = 0;
+                    AsMWStringStorage(destination)->flags = 0;
+                    AsMWStringStorage(destination)->length = 0;
+                    AsMWStringStorage(destination)->data = 0;
                     String_ReserveCapacity(destination, pair.w[1]);
-                    volatile CacheAllocatorByte a; CacheAllocatorByte t; t.value = a.value;
+                    volatile CacheAllocatorByte a;
+                    CacheAllocatorByte t;
+                    t.value = a.value;
                     String_ReplaceRange(destination, 0, 0, (void*)pair.w[2], (char*)pair.w[2] + pair.w[1], &t);
                 }
                 destination->value = pair.value;
-            } catch (...) { for (;;) throw; }
+            } catch (...) {
+                for (;;)
+                    throw;
+            }
         }
         ++self->size;
     } else {
-        volatile CacheAllocatorByte insertAllocator; insertAllocator.value = 0;
-        volatile CacheAllocatorByte vectorAllocator; vectorAllocator.value = 0;
-        if (kMaxCacheEntries - capacity < 1) LENGTH_ERROR650BC();
+        volatile CacheAllocatorByte insertAllocator;
+        insertAllocator.value = 0;
+        volatile CacheAllocatorByte vectorAllocator;
+        vectorAllocator.value = 0;
+        if (kMaxCacheEntries - capacity < 1)
+            LENGTH_ERROR650BC();
         unsigned newCapacity;
         unsigned need = self->size + 1 - self->capacity;
         FontCacheTransferBuffer buffer(&self->capacity);
         capacity = self->capacity;
-        if (need > kMaxCacheEntries - capacity) LENGTH_ERROR650BC();
+        if (need > kMaxCacheEntries - capacity)
+            LENGTH_ERROR650BC();
         if (capacity < kFirstGrowthThreshold) {
             unsigned add = (capacity + 1) * 3 / 5;
             newCapacity = capacity + MaximumCacheGrowth(add, need);
         } else if (capacity < kSecondGrowthThreshold) {
             unsigned add = (capacity + 1) / 2;
             newCapacity = capacity + MaximumCacheGrowth(add, need);
-        } else newCapacity = kMaxCacheEntries;
-        volatile CacheAllocatorByte reserveAllocator; reserveAllocator.value = 0;
-        if (newCapacity > kMaxCacheEntries) LENGTH_ERROR650BC();
+        } else
+            newCapacity = kMaxCacheEntries;
+        volatile CacheAllocatorByte reserveAllocator;
+        reserveAllocator.value = 0;
+        if (newCapacity > kMaxCacheEntries)
+            LENGTH_ERROR650BC();
         buffer.data = (NamedResourceEntry*)appMallocDummy__FUl(newCapacity * 16);
         buffer.capacity = newCapacity;
         buffer.offset = self->size;
         NamedResourceEntry* destination = (buffer.data + buffer.offset + buffer.size);
-        volatile CacheAllocatorByte constructAllocator; constructAllocator.value = 0;
+        volatile CacheAllocatorByte constructAllocator;
+        constructAllocator.value = 0;
         unsigned remaining = 1;
         while (remaining != 0) {
             if (destination) {
                 try {
                     if (!(pair.w[0] >> 31)) {
-                        unsigned first = pair.w[0]; unsigned second = pair.w[1];
-                        AsMWStringStorage(destination)->flags = first; AsMWStringStorage(destination)->length = second; AsMWStringStorage(destination)->data = (char*)pair.w[2];
+                        unsigned first = pair.w[0];
+                        unsigned second = pair.w[1];
+                        AsMWStringStorage(destination)->flags = first;
+                        AsMWStringStorage(destination)->length = second;
+                        AsMWStringStorage(destination)->data = (char*)pair.w[2];
                     } else {
-                        AsMWStringStorage(destination)->flags = 0; AsMWStringStorage(destination)->length = 0; AsMWStringStorage(destination)->data = 0;
+                        AsMWStringStorage(destination)->flags = 0;
+                        AsMWStringStorage(destination)->length = 0;
+                        AsMWStringStorage(destination)->data = 0;
                         String_ReserveCapacity(destination, pair.w[1]);
-                        volatile CacheAllocatorByte a; CacheAllocatorByte t; t.value = a.value;
+                        volatile CacheAllocatorByte a;
+                        CacheAllocatorByte t;
+                        t.value = a.value;
                         String_ReplaceRange(destination, 0, 0, (void*)pair.w[2], (char*)pair.w[2] + pair.w[1], &t);
                     }
                     destination->value = pair.value;
-                } catch (...) { for (;;) throw; }
+                } catch (...) {
+                    for (;;)
+                        throw;
+                }
             }
-            --remaining; ++destination; ++buffer.size;
+            --remaining;
+            ++destination;
+            ++buffer.size;
         }
         unsigned bytes;
         NamedResourceEntry* begin;
@@ -3074,7 +3639,8 @@ int FixedFontCache_RetainOrAppend(void* selfArg, void* keyArg, void* valueArg) {
         NamedResourceEntry* firstMoved;
         // Phase 4: transfer old key ownership, then publish the new vector.
         begin = self->data;
-        volatile CacheAllocatorByte moveAllocator; moveAllocator.value = 0;
+        volatile CacheAllocatorByte moveAllocator;
+        moveAllocator.value = 0;
         n = ((int)(begin + self->size) - (int)begin) / 16;
         buffer.offset -= n;
         bytes = n * 16;
@@ -3090,7 +3656,8 @@ int FixedFontCache_RetainOrAppend(void* selfArg, void* keyArg, void* valueArg) {
         unsigned oldCap = self->capacity;
         unsigned newCap = buffer.capacity;
         buffer.data = oldBegin;
-        volatile CacheAllocatorByte destroyAllocator; destroyAllocator.value = 0;
+        volatile CacheAllocatorByte destroyAllocator;
+        destroyAllocator.value = 0;
         self->capacity = newCap;
         buffer.capacity = oldCap;
         self->data = storage;
@@ -3098,7 +3665,8 @@ int FixedFontCache_RetainOrAppend(void* selfArg, void* keyArg, void* valueArg) {
         buffer.size = oldSize;
         while (end > firstMoved) {
             --end;
-            if (end && end && (*(unsigned*)end >> 31)) appFreeUni__FPv((*(void**)&AsMWStringStorage(end)->data));
+            if (end && end && (*(unsigned*)end >> 31))
+                appFreeUni__FPv((*(void**)&AsMWStringStorage(end)->data));
         }
         buffer.size = 0;
     }
@@ -3113,7 +3681,9 @@ int FixedFontCache_RetainOrAppend(void* selfArg, void* keyArg, void* valueArg) {
 int ResourceCache_RetainOrAppend(void* self, const char* key, void* value) {
     ResourceEntryIterator first((*(NamedResourceEntry**)&AsResourceEntryVector(self)->entries));
     ResourceEntryIterator position(first);
-    for (; position != ResourceEntryIterator((*(NamedResourceEntry**)&AsResourceEntryVector(self)->entries) + AsResourceEntryVector(self)->count); ++position.pointer) {
+    for (; position != ResourceEntryIterator((*(NamedResourceEntry**)&AsResourceEntryVector(self)->entries) +
+                                             AsResourceEntryVector(self)->count);
+         ++position.pointer) {
         NamedResourceEntry* entry = position.pointer;
         unsigned keyLength = strlen(key);
         unsigned savedKeyLength = keyLength;
@@ -3126,19 +3696,23 @@ int ResourceCache_RetainOrAppend(void* self, const char* key, void* value) {
         unsigned selected = MinimumCacheKeyLength(savedDataLength, savedEntryLength);
         int comparison = memcmp(text, key, MinimumCacheKeyLength(selected, savedKeyLength));
         if (comparison == 0) {
-            if (selected < keyLength) comparison = -1;
-            else if (selected != keyLength) comparison = 1;
+            if (selected < keyLength)
+                comparison = -1;
+            else if (selected != keyLength)
+                comparison = 1;
         }
         if (comparison == 0 && entry->value == value) {
             unsigned refs = ((ManagedResourceHeader*)value)->referenceCount;
-            if (refs != kImmortalReferenceCount) ((ManagedResourceHeader*)value)->referenceCount = refs + 1;
+            if (refs != kImmortalReferenceCount)
+                ((ManagedResourceHeader*)value)->referenceCount = refs + 1;
             return 0;
         }
     }
     // Append directly if capacity permits; otherwise reserve a guarded new tail.
     CacheInsertionKey str(key);
     CacheInsertionEntry pair(str, value);
-    volatile CacheAllocatorByte pushAllocator; pushAllocator.value = 0;
+    volatile CacheAllocatorByte pushAllocator;
+    pushAllocator.value = 0;
     unsigned size = AsResourceEntryVector(self)->count;
     unsigned capacity = AsResourceEntryVector(self)->capacity;
     if (size < capacity) {
@@ -3146,64 +3720,97 @@ int ResourceCache_RetainOrAppend(void* self, const char* key, void* value) {
         if (destination) {
             try {
                 if (!(pair.w[0] >> 31)) {
-                    unsigned first = pair.w[0]; unsigned second = pair.w[1];
-                    AsMWStringStorage(destination)->flags = first; AsMWStringStorage(destination)->length = second; AsMWStringStorage(destination)->data = (char*)pair.w[2];
+                    unsigned first = pair.w[0];
+                    unsigned second = pair.w[1];
+                    AsMWStringStorage(destination)->flags = first;
+                    AsMWStringStorage(destination)->length = second;
+                    AsMWStringStorage(destination)->data = (char*)pair.w[2];
                 } else {
-                    AsMWStringStorage(destination)->flags = 0; AsMWStringStorage(destination)->length = 0; AsMWStringStorage(destination)->data = 0;
+                    AsMWStringStorage(destination)->flags = 0;
+                    AsMWStringStorage(destination)->length = 0;
+                    AsMWStringStorage(destination)->data = 0;
                     String_ReserveCapacity(destination, pair.w[1]);
-                    volatile CacheAllocatorByte a; CacheAllocatorByte t; t.value = a.value;
+                    volatile CacheAllocatorByte a;
+                    CacheAllocatorByte t;
+                    t.value = a.value;
                     String_ReplaceRange(destination, 0, 0, (void*)pair.w[2], (char*)pair.w[2] + pair.w[1], &t);
                 }
                 destination->value = pair.value;
-            } catch (...) { __throw(0, 0, 0); }
+            } catch (...) {
+                __throw(0, 0, 0);
+            }
         }
         ++AsResourceEntryVector(self)->count;
     } else {
-        volatile CacheAllocatorByte insertAllocator; insertAllocator.value = 0;
-        volatile CacheAllocatorByte vectorAllocator; vectorAllocator.value = 0;
-        if (kMaxCacheEntries - capacity < 1) LENGTH_ERROR61204();
+        volatile CacheAllocatorByte insertAllocator;
+        insertAllocator.value = 0;
+        volatile CacheAllocatorByte vectorAllocator;
+        vectorAllocator.value = 0;
+        if (kMaxCacheEntries - capacity < 1)
+            LENGTH_ERROR61204();
         unsigned need = AsResourceEntryVector(self)->count + 1 - AsResourceEntryVector(self)->capacity;
         CacheTransferBuffer buffer(&AsResourceEntryVector(self)->capacity);
         capacity = AsResourceEntryVector(self)->capacity;
         unsigned newCapacity;
-        if (need > kMaxCacheEntries - capacity) LENGTH_ERROR61204();
+        if (need > kMaxCacheEntries - capacity)
+            LENGTH_ERROR61204();
         if (capacity < kFirstGrowthThreshold) {
             unsigned add = (capacity + 1) * 3 / 5;
-            unsigned* p = &add; if (add < need) p = &need;
+            unsigned* p = &add;
+            if (add < need)
+                p = &need;
             newCapacity = capacity + *p;
         } else if (capacity < kSecondGrowthThreshold) {
             unsigned add = (capacity + 1) / 2;
-            unsigned* p = &add; if (add < need) p = &need;
+            unsigned* p = &add;
+            if (add < need)
+                p = &need;
             newCapacity = capacity + *p;
-        } else newCapacity = kMaxCacheEntries;
-        volatile CacheAllocatorByte reserveAllocator; reserveAllocator.value = 0;
-        if (newCapacity > kMaxCacheEntries) LENGTH_ERROR61204();
+        } else
+            newCapacity = kMaxCacheEntries;
+        volatile CacheAllocatorByte reserveAllocator;
+        reserveAllocator.value = 0;
+        if (newCapacity > kMaxCacheEntries)
+            LENGTH_ERROR61204();
         buffer.data = (NamedResourceEntry*)appMallocDummy__FUl(newCapacity * 16);
         buffer.capacity = newCapacity;
         buffer.offset = AsResourceEntryVector(self)->count;
         NamedResourceEntry* destination = (buffer.data + buffer.offset + buffer.size);
-        volatile CacheAllocatorByte constructAllocator; constructAllocator.value = 0;
+        volatile CacheAllocatorByte constructAllocator;
+        constructAllocator.value = 0;
         unsigned remaining = 1;
         while (remaining != 0) {
             if (destination) {
                 try {
                     if (!(pair.w[0] >> 31)) {
-                        unsigned first = pair.w[0]; unsigned second = pair.w[1];
-                        AsMWStringStorage(destination)->flags = first; AsMWStringStorage(destination)->length = second; AsMWStringStorage(destination)->data = (char*)pair.w[2];
+                        unsigned first = pair.w[0];
+                        unsigned second = pair.w[1];
+                        AsMWStringStorage(destination)->flags = first;
+                        AsMWStringStorage(destination)->length = second;
+                        AsMWStringStorage(destination)->data = (char*)pair.w[2];
                     } else {
-                        AsMWStringStorage(destination)->flags = 0; AsMWStringStorage(destination)->length = 0; AsMWStringStorage(destination)->data = 0;
+                        AsMWStringStorage(destination)->flags = 0;
+                        AsMWStringStorage(destination)->length = 0;
+                        AsMWStringStorage(destination)->data = 0;
                         String_ReserveCapacity(destination, pair.w[1]);
-                        volatile CacheAllocatorByte a; CacheAllocatorByte t; t.value = a.value;
+                        volatile CacheAllocatorByte a;
+                        CacheAllocatorByte t;
+                        t.value = a.value;
                         String_ReplaceRange(destination, 0, 0, (void*)pair.w[2], (char*)pair.w[2] + pair.w[1], &t);
                     }
                     destination->value = pair.value;
-                } catch (...) { __throw(0, 0, 0); }
+                } catch (...) {
+                    __throw(0, 0, 0);
+                }
             }
-            --remaining; ++destination; ++buffer.size;
+            --remaining;
+            ++destination;
+            ++buffer.size;
         }
         // Transfer the old prefix as key/value words, clearing old key ownership.
         NamedResourceEntry* begin = (*(NamedResourceEntry**)&AsResourceEntryVector(self)->entries);
-        volatile CacheAllocatorByte moveAllocator; moveAllocator.value = 0;
+        volatile CacheAllocatorByte moveAllocator;
+        moveAllocator.value = 0;
         int n = ((int)(begin + AsResourceEntryVector(self)->count) - (int)begin) / 16;
         buffer.offset -= n;
         memcpy(buffer.data + buffer.offset, begin, n * 16);
@@ -3218,7 +3825,8 @@ int ResourceCache_RetainOrAppend(void* self, const char* key, void* value) {
         unsigned oldCap = AsResourceEntryVector(self)->capacity;
         unsigned newCap = buffer.capacity;
         buffer.data = begin;
-        volatile CacheAllocatorByte destroyAllocator; destroyAllocator.value = 0;
+        volatile CacheAllocatorByte destroyAllocator;
+        destroyAllocator.value = 0;
         // Commit the new vector; the guard releases only the emptied old allocation.
         AsResourceEntryVector(self)->capacity = newCap;
         buffer.capacity = oldCap;
@@ -3227,7 +3835,8 @@ int ResourceCache_RetainOrAppend(void* self, const char* key, void* value) {
         buffer.size = oldSize;
         while (end > firstMoved) {
             --end;
-            if (end && end && (*(unsigned*)end >> 31)) appFreeUni__FPv((*(void**)&AsMWStringStorage(end)->data));
+            if (end && end && (*(unsigned*)end >> 31))
+                appFreeUni__FPv((*(void**)&AsMWStringStorage(end)->data));
         }
         buffer.size = 0;
     }
@@ -3236,4 +3845,3 @@ int ResourceCache_RetainOrAppend(void* self, const char* key, void* value) {
 
 #pragma pop
 } // extern "C"
-

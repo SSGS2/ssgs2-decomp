@@ -1,15 +1,19 @@
+// The shared base for the title and top menus (CTopMenuBase): item hover states and hover messages,
+// the options request, and loading of the menu's resources. Also the menu message helper and a
+// zlib inflate window flush helper.
+
 #include <decomp/static_init.h>
 #include <decomp/local_class.h>
 #include "classes/MenuMessage802CE2BC.h"
 #include "classes/InflateWindow802CE62C.h"
 #include "classes/InflateOutput802CE62C.h"
-// Translation unit 0x802CD608-0x802CE7B8 (27 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CTopMenuBase.h"
 #include "classes/CMsgDraw.h"
+#include "classes/CPackTextureResource.h"
+#include "classes/CBpCtrl.h"
 
 #define AsCTopMenuBase(p) ((CTopMenuBase*)(p))
 
@@ -24,10 +28,10 @@ enum TopMenuConstants {
     kZlibOk = 0
 };
 struct TopMenuStringPool {
-    char musicFile[9]; // menu.wav
+    char musicFile[9];            // menu.wav
     char emptySelectionError[30]; // vector::at index out of range
-    char outOfRangeType[55]; // Metrowerks exception type chain
-    char exitScript[4]; // out
+    char outOfRangeType[55];      // Metrowerks exception type chain
+    char exitScript[4];           // out
 };
 struct ChatMessageFactoryView {
     char managerStorage[0x10];
@@ -39,7 +43,8 @@ inline void* __register_global_object(void* object, void (*destructor)(), void* 
 extern "C" {
 extern "C" char __vt__12CTopMenuBase[];
 extern "C" signed char s_inputManagerInitialized;
-extern "C" char s_gameInputManager[64];extern "C" void InputManager_Init(void*);
+extern "C" char s_gameInputManager[64];
+extern "C" void InputManager_Init(void*);
 extern "C" void InputManager_Dtor();
 extern "C" int Input_IsActionPressed(void*, int, int);
 extern "C" void* __nw__FUl(unsigned int);
@@ -77,22 +82,14 @@ int MenuMessage_SetColorMultiplier(void* self, int* packedColor) {
 }
 
 extern "C" void Text_SetPosition(void*, float*);
-extern "C" void CMsgDraw_UpdateReveal(void*);
 extern "C" void Text_DrawGlyphs(void*);
-extern "C" bool CMsgDraw_SetLayoutSize(void*, float*);
-extern "C" int CMsgDraw_ResetTextState(void*);
 extern "C" bool Layout_HitTestPlayer(void*, int);
 extern "C" int Layout_PollLoadComplete(void*);
-extern "C" int CPackTextureResource_IsLoadFinished(void*);
-extern "C" void CPackTextureResource_PollLoad(void*);
-extern "C" void __ct__7CBpCtrlFv(void*);
 extern "C" void CBpCtrl_dtor();
-extern "C" int CBpCtrl_PollAllEntriesLoaded(void*);
 extern "C" char s_bpCtrl[];
 extern "C" char s_bpCtrlDtorRegistration_ClubSelect[];
 extern "C" signed char s_bpCtrlInitialized;
 extern "C" void Layout_SetElementPlayerFlagsAndState(void*, int, int);
-extern "C" int CMsgDraw_ClearFormattingAndRevealAll(void*);
 extern "C" void* Text_ExpandTaggedText(void*, int*, int, int);
 extern "C" void* Text_SetContent(void*, void*);
 extern "C" void WString_ReplaceRange(int*, int, int, int, int, unsigned char*);
@@ -104,7 +101,6 @@ extern "C" char s_messageDrawPairList[];
 extern "C" signed char s_pointerPairListInitialized;
 extern "C" char s_messageDrawPairListDtorRegistration_TopMenu[];
 extern "C" void Layout_Destroy(void*, int);
-extern "C" void CBpCtrl_DeleteEntryById(void*, int);
 extern "C" void* UIGroup_GetOrCreateById(void*, int);
 extern "C" int Layout_CollectActivated(void*, void*, int);
 extern "C" void* __nwa__FUl(unsigned int);
@@ -113,10 +109,8 @@ extern "C" void __dl__FPv(void*);
 extern "C" char topMenuAudioStrings[256];
 extern "C" void Allocation_Dtor(void*);
 extern "C" int ResourceTable_FindEntryByName(void*, void*, void*);
-extern "C" void CPackTextureResource_Init(void*, void*, void*, int);
 extern "C" void Layout_Init(void*, int);
 extern "C" void Layout_LoadExtended(void*, int, void*);
-extern "C" void CBpCtrl_CreateEntry(void*, void*, int*, int);
 extern "C" void* IdMap_Lookup(void*, int);
 extern "C" void SoundManager_RequestBgmChange(void*, void*, int, int);
 extern "C" void* g_soundManager;
@@ -132,124 +126,137 @@ extern "C" void __dt__Q23std12out_of_rangeFv(void*);
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
 // Create owned layout/BP/texture/message resources and request the menu music.
-void* CTopMenuBase_Ctor(void* self, void* layoutName, void* unused, void* bpResourceName, void* textureName, int itemCount, void* elementIdTable) {
+CTopMenuBase::CTopMenuBase(void* layoutName, void* unused, void* bpResourceName, void* textureName, int itemCount,
+                           void* elementIdTable) {
     struct Message {
         char data[12];
-        Message() { MenuMessage_Ctor(this); }
+        Message() {
+            MenuMessage_Ctor(this);
+        }
     };
     struct Texture {
         char data[0x20];
-        Texture(void* name, void* data, int value) { CPackTextureResource_Init(this, name, data, value); }
+        Texture(void* name, void* data, int value) {
+            ((CPackTextureResource*)this)->Init((const char*)name, (void**)data, (unsigned int)value);
+        }
     };
     struct Layout {
         char data[0x5c];
-        Layout(int kind) { Layout_Init(this, kind); }
+        Layout(int kind) {
+            Layout_Init(this, kind);
+        }
     };
     void* archiveName = textureName;
     void* vtable = &__vt__12CTopMenuBase;
-    AsCTopMenuBase(self)->vtbl = vtable;
-    (*(int*)&AsCTopMenuBase(self)->layout) = 0;
-    AsCTopMenuBase(self)->bpObject = 0;
-    AsCTopMenuBase(self)->menuItemCount = itemCount;
-    (*(int*)&AsCTopMenuBase(self)->message) = 0;
-    AsCTopMenuBase(self)->optionDialog = 0;
-    AsCTopMenuBase(self)->elementIds = (int)elementIdTable;
-    AsCTopMenuBase(self)->borrowsResources = 0;
-    (*(int*)&AsCTopMenuBase(self)->textureResource) = 0;
-    AsCTopMenuBase(self)->resultReady = 0;
-    AsCTopMenuBase(self)->result = -1;
-    AsCTopMenuBase(self)->bpEntryId = -1;
-    AsCTopMenuBase(self)->backRequested = 0;
-    AsCTopMenuBase(self)->scriptRunning = 0;
+    vtbl = vtable;
+    (*(int*)&layout) = 0;
+    bpObject = 0;
+    menuItemCount = itemCount;
+    (*(int*)&message) = 0;
+    optionDialog = 0;
+    elementIds = (int)elementIdTable;
+    borrowsResources = 0;
+    (*(int*)&textureResource) = 0;
+    resultReady = 0;
+    result = -1;
+    bpEntryId = -1;
+    backRequested = 0;
+    scriptRunning = 0;
     void* p = new Message;
-    AsCTopMenuBase(self)->message = p;
-    AsCTopMenuBase(self)->optionDialogRequested = 0;
+    message = p;
+    optionDialogRequested = 0;
     if (archiveName) {
         void* archiveData = 0;
         if (!Sing_805DC620()) {
             if (!s_resourceTableInitialized) {
                 s_resourceTableStorage = 0;
-                __register_global_object(&s_resourceTableStorage, (void (*)())Allocation_Dtor, &s_resourceTableDtorRegistration_TopMenu);
+                __register_global_object(&s_resourceTableStorage, (void (*)())Allocation_Dtor,
+                                         &s_resourceTableDtorRegistration_TopMenu);
                 s_resourceTableInitialized = 1;
             }
             Sing_805DC620() = &s_resourceTableStorage;
         }
         int textureCount = ResourceTable_FindEntryByName(Sing_805DC620(), archiveName, &archiveData);
         p = new Texture(archiveName, archiveData, textureCount);
-        AsCTopMenuBase(self)->textureResource = p;
+        textureResource = p;
     }
     p = new Layout(5);
-    AsCTopMenuBase(self)->layout = p;
+    layout = p;
     Layout_LoadExtended(p, 0, layoutName);
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(&s_bpCtrl);
+            ((CBpCtrl*)&s_bpCtrl)->__ct();
             __register_global_object(&s_bpCtrl, CBpCtrl_dtor, &s_bpCtrlDtorRegistration_ClubSelect);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = &s_bpCtrl;
     }
-    CBpCtrl_CreateEntry(Sing_805DC5F0(), bpResourceName, (int*)((char*)&AsCTopMenuBase(self)->bpEntryId), 0);
+    ((CBpCtrl*)Sing_805DC5F0())->CreateEntry(bpResourceName, (int*)((char*)&bpEntryId), 0);
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(&s_bpCtrl);
+            ((CBpCtrl*)&s_bpCtrl)->__ct();
             __register_global_object(&s_bpCtrl, CBpCtrl_dtor, &s_bpCtrlDtorRegistration_ClubSelect);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = &s_bpCtrl;
     }
-    AsCTopMenuBase(self)->bpObject = IdMap_Lookup(Sing_805DC5F0(), AsCTopMenuBase(self)->bpEntryId);
+    bpObject = IdMap_Lookup(Sing_805DC5F0(), bpEntryId);
     SoundManager_RequestBgmChange(g_soundManager, ((TopMenuStringPool*)topMenuAudioStrings)->musicFile, 0, 1);
-    return self;
 }
 #pragma opt_lifetimes reset
 #pragma opt_common_subs reset
 #pragma use_lmw_stmw reset
 
 // Attach borrowed layout/BP resources and create this menu's own message helper.
-int CTopMenuBase_InitMembers(void* self, int layoutAddress, void* bpObject, int itemCount, int elementIdTable, int unused0, int unused1) {
-    (*(int*)&AsCTopMenuBase(self)->layout) = layoutAddress;
-    AsCTopMenuBase(self)->vtbl = &__vt__12CTopMenuBase;
-    AsCTopMenuBase(self)->bpObject = bpObject;
-    AsCTopMenuBase(self)->menuItemCount = itemCount;
-    (*(int*)&AsCTopMenuBase(self)->message) = 0;
-    AsCTopMenuBase(self)->optionDialog = 0;
-    AsCTopMenuBase(self)->elementIds = elementIdTable;
-    AsCTopMenuBase(self)->borrowsResources = 1;
-    (*(int*)&AsCTopMenuBase(self)->textureResource) = 0;
-    AsCTopMenuBase(self)->resultReady = 0;
-    AsCTopMenuBase(self)->result = -1;
-    AsCTopMenuBase(self)->bpEntryId = -1;
-    AsCTopMenuBase(self)->backRequested = 0;
-    AsCTopMenuBase(self)->scriptRunning = 0;
-    struct Obj12 { char data[12]; Obj12() { MenuMessage_Ctor(this); } };
+CTopMenuBase* CTopMenuBase::InitMembers(int layoutAddress, int bpObjectAddress, int itemCount, void* elementIdTable) {
+    layout = (void*)layoutAddress;
+    vtbl = &__vt__12CTopMenuBase;
+    bpObject = (void*)bpObjectAddress;
+    menuItemCount = itemCount;
+    message = 0;
+    optionDialog = 0;
+    elementIds = (int)elementIdTable;
+    borrowsResources = 1;
+    textureResource = 0;
+    resultReady = 0;
+    result = -1;
+    bpEntryId = -1;
+    backRequested = 0;
+    scriptRunning = 0;
+    struct Obj12 {
+        char data[12];
+        Obj12() {
+            MenuMessage_Ctor(this);
+        }
+    };
     Obj12* p = new Obj12();
-    AsCTopMenuBase(self)->message = p;
-    AsCTopMenuBase(self)->optionDialogRequested = 0;
-    return (int)self;
+    message = p;
+    optionDialogRequested = 0;
+    return this;
 }
 
 #pragma use_lmw_stmw on
 // Select the first hovered item's message, using the final table entry as the fallback.
-int CTopMenuBase_UpdateHoverMessage(void* self, int* indices) {
-    MenuMessage_ResetTextState(AsCTopMenuBase(self)->message);
+int CTopMenuBase::UpdateHoverMessage(int* indices) {
+    MenuMessage_ResetTextState(message);
     int elementIndex;
     int found;
     int i;
     found = 0;
     i = 0;
     elementIndex = 1;
-    while (i < AsCTopMenuBase(self)->menuItemCount) {
-        bool hit = Layout_HitTestPlayer(AsCTopMenuBase(self)->layout, elementIndex) != 0;
+    while (i < menuItemCount) {
+        bool hit = Layout_HitTestPlayer(layout, elementIndex) != 0;
         if (hit) {
-            MenuMessage_SetText(AsCTopMenuBase(self)->message, indices[i]);
+            MenuMessage_SetText(message, indices[i]);
             found = 1;
             break;
         }
         elementIndex += kMenuItemElementStride;
         ++i;
     }
-    if (!found) MenuMessage_SetText(AsCTopMenuBase(self)->message, indices[AsCTopMenuBase(self)->menuItemCount]);
+    if (!found)
+        MenuMessage_SetText(message, indices[menuItemCount]);
     return 1;
 }
 #pragma use_lmw_stmw reset
@@ -257,17 +264,18 @@ int CTopMenuBase_UpdateHoverMessage(void* self, int* indices) {
 #pragma opt_lifetimes off
 #pragma opt_common_subs off
 // Request the options dialog when its input action is pressed.
-int CTopMenuBase_RequestOptionsDialog(void* self) {
-    if (Sing_805DC5C8() == 0) {
+int CTopMenuBase::RequestOptionsDialog() {
+    if (GetInputManagerSlot() == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, InputManager_Dtor, (void*)s_inputManagerDtorRegistration_TopMenu);
+            __register_global_object(&s_gameInputManager, InputManager_Dtor,
+                                     (void*)s_inputManagerDtorRegistration_TopMenu);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
-    if (Input_IsActionPressed(Sing_805DC5C8(), kActionOpenOptions, kAllInputPlayers)) {
-        AsCTopMenuBase(self)->optionDialogRequested = 1;
+    if (Input_IsActionPressed(GetInputManagerSlot(), kActionOpenOptions, kAllInputPlayers)) {
+        optionDialogRequested = 1;
         return 1;
     }
     return 0;
@@ -282,7 +290,7 @@ int MenuMessage_SetPosition(void* self, float* pos) {
 
 // Advance the message's character reveal.
 int MenuMessage_UpdateReveal(void* self) {
-    CMsgDraw_UpdateReveal(AsMenuMessage802CE2BC(self)->text);
+    ((CMsgDraw*)(AsMenuMessage802CE2BC(self)->text))->UpdateReveal();
     return 1;
 }
 
@@ -294,34 +302,34 @@ int MenuMessage_DrawText(void* self) {
 
 // Set the rendered message's layout bounds.
 int MenuMessage_SetLayoutSize(void* self, float* size) {
-    CMsgDraw_SetLayoutSize(AsMenuMessage802CE2BC(self)->text, size);
+    ((CMsgDraw*)(AsMenuMessage802CE2BC(self)->text))->SetLayoutSize((float*)size);
     return 1;
 }
 
 // Return whether the requested layout player/element is hovered.
-int CTopMenuBase_HitTestPlayer(void* self, int index) {
-    int r = Layout_HitTestPlayer(AsCTopMenuBase(self)->layout, index);
+int CTopMenuBase::HitTestPlayer(int index) {
+    int r = Layout_HitTestPlayer(layout, index);
     return r != 0;
 }
 
 // Switch each item's idle/hover pair within its four-element layout group.
-int CTopMenuBase_UpdateHoverElementPairs(void* self) {
+int CTopMenuBase::UpdateHoverElementPairs() {
     int offset;
     int next;
     int i;
     offset = 0;
     i = 0;
-    while (i < AsCTopMenuBase(self)->menuItemCount) {
+    while (i < menuItemCount) {
         next = offset + 1;
-        bool hit0 = Layout_HitTestPlayer(AsCTopMenuBase(self)->layout, offset) != 0;
+        bool hit0 = Layout_HitTestPlayer(layout, offset) != 0;
         if (hit0) {
-            Layout_SetElementPlayerFlagsAndState(AsCTopMenuBase(self)->layout, offset, 0);
-            Layout_SetElementPlayerFlagsAndState(AsCTopMenuBase(self)->layout, next, 1);
+            Layout_SetElementPlayerFlagsAndState(layout, offset, 0);
+            Layout_SetElementPlayerFlagsAndState(layout, next, 1);
         } else {
-            bool hit1 = Layout_HitTestPlayer(AsCTopMenuBase(self)->layout, next) != 0;
+            bool hit1 = Layout_HitTestPlayer(layout, next) != 0;
             if (!hit1) {
-                Layout_SetElementPlayerFlagsAndState(AsCTopMenuBase(self)->layout, offset, 1);
-                Layout_SetElementPlayerFlagsAndState(AsCTopMenuBase(self)->layout, next, 0);
+                Layout_SetElementPlayerFlagsAndState(layout, offset, 1);
+                Layout_SetElementPlayerFlagsAndState(layout, next, 0);
             }
         }
         offset += kMenuItemElementStride;
@@ -336,53 +344,64 @@ int MenuMessage_ResetTextState(void* self) {
     if (p == 0) {
         return 0;
     }
-    CMsgDraw_ResetTextState(p);
+    ((CMsgDraw*)p)->ResetTextState();
     return 1;
 }
 
-struct WideStringAllocatorByte { unsigned char c; };
+struct WideStringAllocatorByte {
+    unsigned char c;
+};
 // Wide-string storage and cleanup; retain the type name used by exception relocations.
 struct Str802CE4C8 {
     int w[3];
-    Str802CE4C8() { w[0] = 0; w[1] = 0; w[2] = 0; }
+    Str802CE4C8() {
+        w[0] = 0;
+        w[1] = 0;
+        w[2] = 0;
+    }
     ~Str802CE4C8() {
         WideStringAllocatorByte alloc;
         WideStringAllocatorByte copy = alloc;
         WString_ReplaceRange(w, 0, -1, 0, 0, (unsigned char*)&copy);
-        if ((unsigned)w[0] >> 31) appFreeUni__FPv((void*)w[2]);
+        if ((unsigned)w[0] >> 31)
+            appFreeUni__FPv((void*)w[2]);
     }
 };
 
 // Clear text/reveal formatting, expand the selected message entry, and assign its wide text.
 int MenuMessage_SetText(void* self, int messageIndex) {
-    if (!AsMenuMessage802CE2BC(self)->text || !AsMenuMessage802CE2BC(self)->taggedText) return 0;
+    if (!AsMenuMessage802CE2BC(self)->text || !AsMenuMessage802CE2BC(self)->taggedText)
+        return 0;
     Str802CE4C8 expandedText;
-    CMsgDraw_ResetTextState(AsMenuMessage802CE2BC(self)->text);
-    CMsgDraw_ClearFormattingAndRevealAll(AsMenuMessage802CE2BC(self)->text);
+    ((CMsgDraw*)(AsMenuMessage802CE2BC(self)->text))->ResetTextState();
+    ((CMsgDraw*)(AsMenuMessage802CE2BC(self)->text))->ClearFormattingAndRevealAll();
     Text_ExpandTaggedText(AsMenuMessage802CE2BC(self)->taggedText, expandedText.w, messageIndex, 0);
-    Text_SetContent(AsMenuMessage802CE2BC(self)->text,
-                !((unsigned)expandedText.w[0] >> 31) ? (void*)((char*)expandedText.w + 2) : (void*)expandedText.w[2]);
+    Text_SetContent(AsMenuMessage802CE2BC(self)->text, !((unsigned)expandedText.w[0] >> 31)
+                                                           ? (void*)((char*)expandedText.w + 2)
+                                                           : (void*)expandedText.w[2]);
     return 1;
 }
 
 // Wait for the optional texture archive, layout, and all shared BP resources.
-int CTopMenuBase_PollLoad(void* self) {
-    void* p = AsCTopMenuBase(self)->textureResource;
+int CTopMenuBase::PollLoad() {
+    void* p = textureResource;
     // An empty pending archive path marks completion, including a failed texture import.
-    if (p && !CPackTextureResource_IsLoadFinished(p)) {
-        CPackTextureResource_PollLoad(AsCTopMenuBase(self)->textureResource);
+    if (p && !((CPackTextureResource*)p)->IsLoadFinished()) {
+        ((CPackTextureResource*)textureResource)->PollLoad();
         return 0;
     }
-    if (!Layout_PollLoadComplete(AsCTopMenuBase(self)->layout)) return 0;
+    if (!Layout_PollLoadComplete(layout))
+        return 0;
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(&s_bpCtrl);
+            ((CBpCtrl*)&s_bpCtrl)->__ct();
             __register_global_object(&s_bpCtrl, CBpCtrl_dtor, &s_bpCtrlDtorRegistration_ClubSelect);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = &s_bpCtrl;
     }
-    if (!CBpCtrl_PollAllEntriesLoaded(Sing_805DC5F0())) return 0;
+    if (!((CBpCtrl*)Sing_805DC5F0())->PollAllEntriesLoaded())
+        return 0;
     return 1;
 }
 
@@ -398,9 +417,9 @@ extern "C" void WFixedFont_CreateAndRegisterMsgDraw(void*, void*, int);
 extern "C" ChatMessageFactoryView* g_chatMsg;
 
 // Disable the BP group identified by the menu's element-id table.
-int CTopMenuBase_HideItemGroup(void* self, int index) {
-    int* arr = (*(int**)&AsCTopMenuBase(self)->elementIds);
-    void* base = AsCTopMenuBase(self)->bpObject;
+int CTopMenuBase::HideItemGroup(int index) {
+    int* arr = (*(int**)&elementIds);
+    void* base = bpObject;
     int key = arr[index];
     void* r = UIGroup_GetOrCreateById(base, key);
     UIGroup_SetEnabled(r, 0);
@@ -408,24 +427,25 @@ int CTopMenuBase_HideItemGroup(void* self, int index) {
 }
 
 // Copy a BP group's position into the corresponding layout element.
-int CTopMenuBase_SyncItemPosition(void* self, int index) {
-    int key = ((*(int**)&AsCTopMenuBase(self)->elementIds))[index];
-    void* element = UIGroup_GetOrCreateById(AsCTopMenuBase(self)->bpObject, key);
+int CTopMenuBase::SyncItemPosition(int index) {
+    int key = ((*(int**)&elementIds))[index];
+    void* element = UIGroup_GetOrCreateById(bpObject, key);
     int pos[2] = {0, 0};
     UIGroup_GetPosition(element, pos);
-    Layout_SetElementPosition(AsCTopMenuBase(self)->layout, index, pos);
+    Layout_SetElementPosition(layout, index, pos);
     return 1;
 }
 
 // Clear the hover element state for every four-element menu item.
-int CTopMenuBase_ResetItemPlayerStates(void* self) {
-    if (AsCTopMenuBase(self)->layout == 0) return 0;
+int CTopMenuBase::ResetItemPlayerStates() {
+    if (layout == 0)
+        return 0;
     int offset;
     int i;
     i = 0;
     offset = 1;
-    while (i < AsCTopMenuBase(self)->menuItemCount) {
-        Layout_SetElementPlayerFlagsAndState(AsCTopMenuBase(self)->layout, offset, 0);
+    while (i < menuItemCount) {
+        Layout_SetElementPlayerFlagsAndState(layout, offset, 0);
         offset += kMenuItemElementStride;
         ++i;
     }
@@ -442,8 +462,10 @@ void* MenuMessage_Ctor(void* self) {
     (*(int*)&AsMenuMessage802CE2BC(self)->textFactory) = z;
     (*(int*)&AsMenuMessage802CE2BC(self)->text) = z;
     AsMenuMessage802CE2BC(self)->textFactory = g_chatMsg->textFactory;
-    ((void (*)(void*, void*, int, int))WFixedFont_CreateMsgEcbResource)(AsMenuMessage802CE2BC(self)->textFactory, self, 0, 0);
-    WFixedFont_CreateAndRegisterMsgDraw(AsMenuMessage802CE2BC(self)->textFactory, (char*)&AsMenuMessage802CE2BC(self)->text, 1);
+    ((void (*)(void*, void*, int, int))WFixedFont_CreateMsgEcbResource)(AsMenuMessage802CE2BC(self)->textFactory, self,
+                                                                        0, 0);
+    WFixedFont_CreateAndRegisterMsgDraw(AsMenuMessage802CE2BC(self)->textFactory,
+                                        (char*)&AsMenuMessage802CE2BC(self)->text, 1);
     pos[0] = z;
     pos[1] = z;
     ((void (*)(void*, int*))Text_SetPosition)(AsMenuMessage802CE2BC(self)->text, pos);
@@ -457,7 +479,8 @@ void* MenuMessage_Dtor(void* self, int destroy) {
         if (!Sing_805DC650()) {
             if (!s_pointerPairListInitialized) {
                 PairVector_InitReserved(s_messageDrawPairList);
-                __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor, s_messageDrawPairListDtorRegistration_TopMenu);
+                __register_global_object(s_messageDrawPairList, MessageDrawPairList_Dtor,
+                                         s_messageDrawPairListDtorRegistration_TopMenu);
                 s_pointerPairListInitialized = 1;
             }
             Sing_805DC650() = s_messageDrawPairList;
@@ -466,8 +489,8 @@ void* MenuMessage_Dtor(void* self, int destroy) {
         void* p = AsMenuMessage802CE2BC(self)->text;
         if (p) {
             if (p) {
-                struct D { 
-                virtual void d(int) DECOMP_LOCAL_VIRTUAL;
+                struct D {
+                    virtual void d(int) DECOMP_LOCAL_VIRTUAL;
                 };
                 ((D*)p)->d(1);
             }
@@ -476,14 +499,15 @@ void* MenuMessage_Dtor(void* self, int destroy) {
         p = AsMenuMessage802CE2BC(self)->taggedText;
         if (p) {
             if (p) {
-                struct D { 
-                virtual void d(int) DECOMP_LOCAL_VIRTUAL;
+                struct D {
+                    virtual void d(int) DECOMP_LOCAL_VIRTUAL;
                 };
                 ((D*)p)->d(1);
             }
             AsMenuMessage802CE2BC(self)->taggedText = 0;
         }
-        if (destroy > 0) __dl__FPv(self);
+        if (destroy > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -503,20 +527,20 @@ void* __dt__7MPBase2Fv(void* self, int destroy) {
             if (AsCTopMenuBase(self)->bpEntryId != -1) {
                 if (!Sing_805DC5F0()) {
                     if (!s_bpCtrlInitialized) {
-                        __ct__7CBpCtrlFv(&s_bpCtrl);
+                        ((CBpCtrl*)&s_bpCtrl)->__ct();
                         __register_global_object(&s_bpCtrl, CBpCtrl_dtor, &s_bpCtrlDtorRegistration_ClubSelect);
                         s_bpCtrlInitialized = 1;
                     }
                     Sing_805DC5F0() = &s_bpCtrl;
                 }
-                CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCTopMenuBase(self)->bpEntryId);
+                ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(AsCTopMenuBase(self)->bpEntryId);
                 AsCTopMenuBase(self)->bpEntryId = -1;
             }
             p = AsCTopMenuBase(self)->textureResource;
             if (p) {
                 if (p) {
-                    struct D { 
-                    virtual void d(int) DECOMP_LOCAL_VIRTUAL;
+                    struct D {
+                        virtual void d(int) DECOMP_LOCAL_VIRTUAL;
                     };
                     ((D*)p)->d(1);
                 }
@@ -533,7 +557,8 @@ void* __dt__7MPBase2Fv(void* self, int destroy) {
             __dl__FPv(p);
             (*(void**)&AsCTopMenuBase(self)->optionDialog) = 0;
         }
-        if (destroy > 0) __dl__FPv(self);
+        if (destroy > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -542,13 +567,17 @@ void* __dt__7MPBase2Fv(void* self, int destroy) {
 #pragma opt_common_subs off
 #pragma opt_strength_reduction off
 // Return the first activated element; throw out_of_range if collection succeeds with an empty vector.
-int CTopMenuBase_GetFirstActivatedElement(void* self) {
+int CTopMenuBase::GetFirstActivatedElement() {
     // Activated-element vector; cleanup retains the original exception-handler symbol.
     struct Items802CDB58 {
         void* p;
         int n;
         void* q;
-        Items802CDB58() { p = 0; n = 0; q = 0; }
+        Items802CDB58() {
+            p = 0;
+            n = 0;
+            q = 0;
+        }
         ~Items802CDB58() {
             if (p) {
                 int t = *(volatile int*)&n;
@@ -562,25 +591,33 @@ int CTopMenuBase_GetFirstActivatedElement(void* self) {
         int one;
         int two;
         char* msg;
-        SharedErrorMessage(char* m) { one = 1; two = 1; vt = &s_sharedCharDeleterVtable; msg = m; }
+        SharedErrorMessage(char* m) {
+            one = 1;
+            two = 1;
+            vt = &s_sharedCharDeleterVtable;
+            msg = m;
+        }
     };
     Items802CDB58 items;
-    if (!Layout_CollectActivated(AsCTopMenuBase(self)->layout, &items, 0)) {
+    if (!Layout_CollectActivated(layout, &items, 0)) {
         return -1;
     }
     if (items.n == 0) {
         // Stack-local out_of_range object; type spelling is part of exception cleanup relocations.
-    struct Error802CDB58 {
+        struct Error802CDB58 {
             void* vtable;
             char* message;
             SharedErrorMessage* volatile repObj;
             ~Error802CDB58() {}
         };
         // Own the allocated error message until its shared representation accepts it.
-    struct Pair802CDB58 {
+        struct Pair802CDB58 {
             char* p;
             char* q;
-            ~Pair802CDB58() { if (p) __dla__FPv(p); }
+            ~Pair802CDB58() {
+                if (p)
+                    __dla__FPv(p);
+            }
         };
         char* text = ((TopMenuStringPool*)topMenuAudioStrings)->emptySelectionError;
         Error802CDB58 error;
@@ -589,14 +626,14 @@ int CTopMenuBase_GetFirstActivatedElement(void* self) {
         error.vtable = &__vt__Q23std11logic_error;
         flag = 0;
         {
-        Pair802CDB58 pair;
-        unsigned int len = strlen(text) + 1;
-        char* copy = (char*)__nwa__FUl(len * 2 - len);
-        error.message = copy;
-        pair.p = copy;
-        pair.q = &flag;
-        error.repObj = new SharedErrorMessage(copy);
-        pair.p = 0;
+            Pair802CDB58 pair;
+            unsigned int len = strlen(text) + 1;
+            char* copy = (char*)__nwa__FUl(len * 2 - len);
+            error.message = copy;
+            pair.p = copy;
+            pair.q = &flag;
+            error.repObj = new SharedErrorMessage(copy);
+            pair.p = 0;
         }
         strcpy(error.message, text);
         error.vtable = &__vt__Q23std12out_of_range;
@@ -608,21 +645,21 @@ int CTopMenuBase_GetFirstActivatedElement(void* self) {
 #pragma opt_strength_reduction reset
 
 // Destroy and clear the optional owned texture archive.
-void CTopMenuBase_ReleaseTextureResource(void* self) {
-    if (AsCTopMenuBase(self)->textureResource != 0) {
-        if (AsCTopMenuBase(self)->textureResource != 0) {
-            struct CE { 
-            virtual void c(int) DECOMP_LOCAL_VIRTUAL;
+void CTopMenuBase::ReleaseTextureResource() {
+    if (textureResource != 0) {
+        if (textureResource != 0) {
+            struct CE {
+                virtual void c(int) DECOMP_LOCAL_VIRTUAL;
             };
-            CE* p = (CE*)AsCTopMenuBase(self)->textureResource;
+            CE* p = (CE*)textureResource;
             p->c(1);
         }
-        AsCTopMenuBase(self)->textureResource = 0;
+        textureResource = 0;
     }
 }
 
 // Enable the preceding layout element, disable the current one, and set pressed feedback.
-int CTopMenuBase_EnablePreviousElement(void* menu, int index) {
+int CTopMenuBase::EnablePreviousElement(void* menu, int index) {
     int idx = index;
     void* self = menu;
     Layout_SetElementEnabled(AsCTopMenuBase(self)->layout, idx - 1, 1);
@@ -641,19 +678,24 @@ int Zlib_InflateFlushWindow(void* window, void* output, int status) {
     register unsigned char* readCursor;
     unsigned size;
     unsigned char* writeCursor;
-    readCursor = AsInflateWindow802CE62C(window)->readCursor;
-    writeCursor = AsInflateWindow802CE62C(window)->writeCursor;
+    readCursor = AsInflateWindow(window)->readCursor;
+    writeCursor = AsInflateWindow(window)->writeCursor;
     destination = AsInflateOutput802CE62C(output)->nextOutput;
-    size = (readCursor <= writeCursor ? writeCursor : AsInflateWindow802CE62C(window)->windowEnd) - readCursor;
+    size = (readCursor <= writeCursor ? writeCursor : AsInflateWindow(window)->windowEnd) - readCursor;
     unsigned availableOutput = AsInflateOutput802CE62C(output)->availableOutput;
-    if (size > availableOutput) size = availableOutput;
-    if (size != 0) { if (status == kZlibBufferError) status = kZlibOk; }
+    if (size > availableOutput)
+        size = availableOutput;
+    if (size != 0) {
+        if (status == kZlibBufferError)
+            status = kZlibOk;
+    }
     AsInflateOutput802CE62C(output)->availableOutput -= size;
     AsInflateOutput802CE62C(output)->totalOutput += size;
-    if (AsInflateWindow802CE62C(window)->checksumCallback) {
+    if (AsInflateWindow(window)->checksumCallback) {
         typedef void* (*ChecksumCallback)(void*, unsigned char*, unsigned);
-        void* checksum = ((ChecksumCallback)AsInflateWindow802CE62C(window)->checksumCallback)(AsInflateWindow802CE62C(window)->checksum, readCursor, size);
-        AsInflateWindow802CE62C(window)->checksum = checksum;
+        void* checksum = ((ChecksumCallback)AsInflateWindow(window)->checksumCallback)(
+            AsInflateWindow(window)->checksum, readCursor, size);
+        AsInflateWindow(window)->checksum = checksum;
         AsInflateOutput802CE62C(output)->checksum = checksum;
     }
     if (size != 0) {
@@ -661,20 +703,26 @@ int Zlib_InflateFlushWindow(void* window, void* output, int status) {
         destination += size;
         readCursor += size;
     }
-    if (readCursor == AsInflateWindow802CE62C(window)->windowEnd) {
-        unsigned writeAddress = (*(unsigned*)&AsInflateWindow802CE62C(window)->writeCursor);
-        readCursor = AsInflateWindow802CE62C(window)->windowBegin;
-        if (writeAddress == (*(unsigned*)&AsInflateWindow802CE62C(window)->windowEnd)) AsInflateWindow802CE62C(window)->writeCursor = readCursor;
-        size = AsInflateWindow802CE62C(window)->writeCursor - readCursor;
+    if (readCursor == AsInflateWindow(window)->windowEnd) {
+        unsigned writeAddress = (*(unsigned*)&AsInflateWindow(window)->writeCursor);
+        readCursor = AsInflateWindow(window)->windowBegin;
+        if (writeAddress == (*(unsigned*)&AsInflateWindow(window)->windowEnd))
+            AsInflateWindow(window)->writeCursor = readCursor;
+        size = AsInflateWindow(window)->writeCursor - readCursor;
         unsigned remainingOutput = AsInflateOutput802CE62C(output)->availableOutput;
-        if (size > remainingOutput) size = remainingOutput;
-        if (size != 0) { if (status == kZlibBufferError) status = kZlibOk; }
+        if (size > remainingOutput)
+            size = remainingOutput;
+        if (size != 0) {
+            if (status == kZlibBufferError)
+                status = kZlibOk;
+        }
         AsInflateOutput802CE62C(output)->availableOutput -= size;
         AsInflateOutput802CE62C(output)->totalOutput += size;
-        if (AsInflateWindow802CE62C(window)->checksumCallback) {
+        if (AsInflateWindow(window)->checksumCallback) {
             typedef void* (*ChecksumCallback)(void*, unsigned char*, unsigned);
-            void* checksum = ((ChecksumCallback)AsInflateWindow802CE62C(window)->checksumCallback)(AsInflateWindow802CE62C(window)->checksum, readCursor, size);
-            AsInflateWindow802CE62C(window)->checksum = checksum;
+            void* checksum = ((ChecksumCallback)AsInflateWindow(window)->checksumCallback)(
+                AsInflateWindow(window)->checksum, readCursor, size);
+            AsInflateWindow(window)->checksum = checksum;
             AsInflateOutput802CE62C(output)->checksum = checksum;
         }
         if (size != 0) {
@@ -684,7 +732,7 @@ int Zlib_InflateFlushWindow(void* window, void* output, int status) {
         }
     }
     AsInflateOutput802CE62C(output)->nextOutput = destination;
-    AsInflateWindow802CE62C(window)->readCursor = readCursor;
+    AsInflateWindow(window)->readCursor = readCursor;
     return status;
 }
 #pragma opt_lifetimes reset
@@ -693,7 +741,7 @@ int Zlib_InflateFlushWindow(void* window, void* output, int status) {
 #pragma use_lmw_stmw reset
 
 // Wait for fading, process options/cancel, then dispatch menu selection input.
-int CTopMenuBase_ProcessInput(void* self) {
+int CTopMenuBase::ProcessInput() {
     if (Sing_805DC608() == 0) {
         if (!s_fadeOverlayInitialized) {
             FadeOverlay_Init(&s_fadeOverlay);
@@ -710,28 +758,29 @@ int CTopMenuBase_ProcessInput(void* self) {
         virtual int handleOptions() DECOMP_LOCAL_VIRTUAL;
         virtual int handleSelection() DECOMP_LOCAL_VIRTUAL;
     };
-    if (((TopMenuInputCalls*)self)->handleOptions() != 0) return 1;
-    if (Sing_805DC5C8() == 0) {
+    if (((TopMenuInputCalls*)this)->handleOptions() != 0)
+        return 1;
+    if (GetInputManagerSlot() == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
             __register_global_object(&s_gameInputManager, InputManager_Dtor, &s_inputManagerDtorRegistration_TopMenu);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
     bool handled;
-    if (Input_IsActionPressed(Sing_805DC5C8(), kActionCancel, kAllInputPlayers)) {
-        BpObject_StartScriptByName(AsCTopMenuBase(self)->bpObject, (void*)((TopMenuStringPool*)topMenuAudioStrings)->exitScript, 1);
-        AsCTopMenuBase(self)->backRequested = 1;
+    if (Input_IsActionPressed(GetInputManagerSlot(), kActionCancel, kAllInputPlayers)) {
+        BpObject_StartScriptByName(bpObject, (void*)((TopMenuStringPool*)topMenuAudioStrings)->exitScript, 1);
+        backRequested = 1;
         int itemIndex = 0;
         int idleElement = 0;
         int hoverElement = 0;
         // Base +0x18 aliases derived menus' scriptRunning at +0x30; wait for the exit script.
-        AsCTopMenuBase(self)->scriptRunning = 1;
-        while (itemIndex < AsCTopMenuBase(self)->menuItemCount) {
+        scriptRunning = 1;
+        while (itemIndex < menuItemCount) {
             hoverElement = idleElement + 1;
-            Layout_SetElementPlayerFlagsAndState(AsCTopMenuBase(self)->layout, idleElement, 1);
-            Layout_SetElementPlayerFlagsAndState(AsCTopMenuBase(self)->layout, hoverElement, 0);
+            Layout_SetElementPlayerFlagsAndState(layout, idleElement, 1);
+            Layout_SetElementPlayerFlagsAndState(layout, hoverElement, 0);
             idleElement += kMenuItemElementStride;
             ++itemIndex;
         }
@@ -739,8 +788,9 @@ int CTopMenuBase_ProcessInput(void* self) {
     } else {
         handled = false;
     }
-    if (handled) return 1;
-    return ((TopMenuInputCalls*)self)->handleSelection();
+    if (handled)
+        return 1;
+    return ((TopMenuInputCalls*)this)->handleSelection();
 }
 #pragma opt_propagation reset
 } // extern "C"
@@ -751,4 +801,3 @@ int CTopMenuBase_ProcessInput(void* self) {
 STATIC_INIT_ENTRY(".CRT$XCU804624F4", _ctors_u802CD608_0, MenuMessage_InitTauConstant);
 STATIC_INIT_ENTRY(".CRT$XCU804624F4", _ctors_u802CD608_1, InflateWindow_InitTauConstant);
 #pragma pop
-

@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CSTARDUST2_H
 #define CLASSES_CSTARDUST2_H
 
@@ -7,32 +5,44 @@
 
 class CStarDust2 {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x14];                 // 0x4
-    unsigned char active;               // 0x18: 6 uses in CStarDust2_UpdateGlowAndParticles, ParticleEffect_SetActive, CStarDust2_DrawGlowAndParticles...
-    char pad_019[0x3];                  // 0x19
-    void* sprite;                       // 0x1c: 20 uses in CStarDust2_DrawGlowAndParticles, CStarDust2_dtor, CStarDust2_BeginEffect...
-    char pad_020[0x4];                  // 0x20
-    float emissionElapsed;                       // 0x24: 5 uses in CStarDust2_UpdateGlowAndParticles, CStarDust2_BeginEffect
-    float emissionInterval;                       // 0x28: 3 uses in CStarDust2_UpdateGlowAndParticles, CStarDust2_Ctor
-    char pad_02C[0x4];                  // 0x2c
-    void* vertex0;                       // 0x30: 1 use in CStarDust2_Ctor
-    void* vertex1;                       // 0x34: 1 use in CStarDust2_Ctor
-    void* vertex2;                       // 0x38: 1 use in CStarDust2_Ctor
-    void* vertex3;                       // 0x3c: 1 use in CStarDust2_Ctor
-    void* vertexListTerminator;                       // 0x40: 1 use in CStarDust2_Ctor
-    char pad_044[0xe0];                 // 0x44
-    void* particles;                      // 0x124: 7 uses in CStarDust2_dtor, CStarDust2_DrawGlowAndParticles, CStarDust2_EmitOrbitingParticles...
-    int particleCount;                        // 0x128: 6 uses in CStarDust2_DrawGlowAndParticles, CStarDust2_EmitOrbitingParticles, CStarDust2_UpdateGlowAndParticles...
-    int nextParticleIndex;                        // 0x12c: 3 uses in CStarDust2_EmitOrbitingParticles, CStarDust2_BeginEffect
-    float spriteFrame;                      // 0x130: 4 uses in CStarDust2_UpdateGlowAndParticles, CStarDust2_DrawGlowAndParticles, CStarDust2_BeginEffect
-    float opacity;                      // 0x134: 10 uses in CStarDust2_UpdateGlowAndParticles, CStarDust2_DrawGlowAndParticles, CStarDust2_BeginEffect
+    // Set up the effect in storage the caller owns and allocate its orbit records; returns this.
+    void* Init();
+    // Draw the glow sprite and the live orbit particles.
+    void DrawGlowAndParticles();
+    // Emit four orbiting dust particles into the circular particle buffer.
+    void EmitOrbitingParticles();
+    // Fade the glow with the ball's descent, emit dust, and update the orbit particles.
+    void UpdateGlowAndParticles(float delta);
+    // Recreate the second dust sprite grid and reset its emission cursor and live flags.
+    void BeginEffect();
+    // Release owned particles, sprites, and buffers; a delete flag above zero also frees the object.
+    void* Destroy(int flags);
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x44, 0x7c, 0xb4, 0xec
+    void* vtbl;                 // 0x0: original vtable pointer
+    char pad_004[0x10];         // 0x4
+    void* bitmapResource;       // 0x14
+    unsigned char active;       // 0x18
+    char pad_019[0x3];          // 0x19
+    void* sprite;               // 0x1c
+    void* auxiliarySprite;      // 0x20
+    float emissionElapsed;      // 0x24
+    float emissionInterval;     // 0x28
+    char pad_02C[0x4];          // 0x2c
+    void* vertex0;              // 0x30
+    void* vertex1;              // 0x34
+    void* vertex2;              // 0x38
+    void* vertex3;              // 0x3c
+    void* vertexListTerminator; // 0x40
+    char pad_044[0xe0];         // 0x44
+    void* particles;            // 0x124
+    int particleCount;          // 0x128
+    int nextParticleIndex;      // 0x12c
+    float spriteFrame;          // 0x130
+    float opacity;              // 0x134
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CSTARDUST2_OFF(f, o) typedef char CStarDust2_off_##f[((int)&((CStarDust2*)0)->f == (o)) ? 1 : -1]
+CSTARDUST2_OFF(bitmapResource, 0x14);
 CSTARDUST2_OFF(active, 0x18);
 CSTARDUST2_OFF(sprite, 0x1c);
 CSTARDUST2_OFF(emissionElapsed, 0x24);
@@ -49,4 +59,4 @@ CSTARDUST2_OFF(spriteFrame, 0x130);
 CSTARDUST2_OFF(opacity, 0x134);
 #undef CSTARDUST2_OFF
 
-#endif  // CLASSES_CSTARDUST2_H
+#endif // CLASSES_CSTARDUST2_H

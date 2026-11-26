@@ -6,8 +6,8 @@
 struct MWStreamState {
     char pad_000[0x28];
     unsigned int precision; // 0x28
-    unsigned int width; // 0x2C
-    unsigned short flags; // 0x30
+    unsigned int width;     // 0x2C
+    unsigned short flags;   // 0x30
 };
 
 #define OFF(f, o) typedef char MWStreamState_off_##f[((int)&((MWStreamState*)0)->f == (o)) ? 1 : -1]

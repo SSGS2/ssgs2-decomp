@@ -40,13 +40,11 @@
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 // Clamp to a range
-#define CLAMP(low, high, x)                                                    \
-    ((x) > (high) ? (high) : ((x) < (low) ? (low) : (x)))
+#define CLAMP(low, high, x) ((x) > (high) ? (high) : ((x) < (low) ? (low) : (x)))
 
 // Round up value
 #define ROUND_UP(x, align) (((x) + (align) - 1) & (-(align)))
-#define ROUND_UP_PTR(x, align)                                                 \
-    ((void*)((((u32)(x)) + (align) - 1) & (~((align) - 1))))
+#define ROUND_UP_PTR(x, align) ((void*)((((u32)(x)) + (align) - 1) & (~((align) - 1))))
 
 // Round down value
 #define ROUND_DOWN(x, align) ((x) & (-(align)))

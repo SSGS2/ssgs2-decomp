@@ -1,29 +1,33 @@
-// Translation unit 0x80267C20-0x80268730 (8 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Pad motion history (PadAccState): keeps recent motion samples for each player's pad and
+// detects party-item gestures from them.
+// Also the shared input manager that the motion code uses, and the cleanup for its buffers.
 
+#include "classes/PadAccState.h"
+#include "game/gtl_input.h"
 #include "game/singletons.h"
 // Each buffer owns one allocation; size counts records, not bytes. Member-address
 // guards below come from container destructors. ReleaseSampleStorage delegates
 // to V80267: its MSL/vector.h cleanup subtracts the count to clear size before
 // releasing the allocation; this is not a reference-count decrement.
-struct SampleBuffer {
-    void* data;
-    int size;
-};
-
 struct SampleBufferStorage {
     SampleBuffer samples;
 };
 
-struct SampleBufferOwner {
-    int pad[3];
-    SampleBuffer samples;
-};
-
 #include "MSL/vector.h"
-struct E80267 { unsigned int w[1]; };
+struct E80267 {
+    unsigned int w[1];
+};
 typedef std::vector<E80267, app::app_allocator<E80267> > V80267;
-enum { kSampleHistoryCapacity = 120, kImpulseWindowSamples = 30, kGestureImpulse = 0, kGestureHorizontalReversal = 1, kGestureVerticalReversal = 2, kDirectionNegative = 1, kDirectionPositive = 2, kDirectionBoth = 3 };
+enum {
+    kSampleHistoryCapacity = 120,
+    kImpulseWindowSamples = 30,
+    kGestureImpulse = 0,
+    kGestureHorizontalReversal = 1,
+    kGestureVerticalReversal = 2,
+    kDirectionNegative = 1,
+    kDirectionPositive = 2,
+    kDirectionBoth = 3
+};
 
 extern "C" {
 
@@ -45,7 +49,8 @@ void PartyItem_ResetIds(int* p) {
 SampleBufferStorage* SampleBufferStorage_dtor(SampleBufferStorage* self, int flag) {
     if (self) {
         ReleaseSampleStorage(&self->samples);
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -54,12 +59,15 @@ SampleBufferStorage* SampleBufferStorage_dtor(SampleBufferStorage* self, int fla
 SampleBufferOwner* SampleBufferOwner_dtor(SampleBufferOwner* self, int flag) {
     if (self) {
         ReleaseSampleStorage(&self->samples);
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
-struct InputManagerStorage { char x[0x100]; };
+struct InputManagerStorage {
+    char x[0x100];
+};
 extern InputManagerStorage s_gameInputManager;
 extern char s_inputManagerInitialized;
 extern char s_inputManagerDtorRegistration_MotionHistory[]; // Input-manager global destructor registration storage.
@@ -67,41 +75,30 @@ void InputManager_Init(void*);
 void InputManager_Dtor(void*);
 void InputManager_SetSelectedPlayer(InputManagerStorage*, int);
 int InputManager_GetSelectedPad(InputManagerStorage*);
-void gtl_CScreenPointer_SetSamplingParameter(int, int, void*);
 void* __register_global_object(void*, void*, void*);
 extern int __vt__9CAccState[];
 
 // Lazily construct the shared input manager and register its shutdown cleanup.
 static inline InputManagerStorage* GetInputManager() {
-    if (!((InputManagerStorage *&)Sing_805DC5C8())) {
+    if (!((InputManagerStorage*&)GetInputManagerSlot())) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_MotionHistory);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_MotionHistory);
             s_inputManagerInitialized = 1;
         }
-        ((InputManagerStorage *&)Sing_805DC5C8()) = &s_gameInputManager;
+        ((InputManagerStorage*&)GetInputManagerSlot()) = &s_gameInputManager;
     }
-    return ((InputManagerStorage *&)Sing_805DC5C8());
+    return ((InputManagerStorage*&)GetInputManagerSlot());
 }
-
-struct AccState {
-    int* vtable;
-    SampleBufferOwner primaryHistory;
-    char gap[4];
-    SampleBufferOwner secondaryHistory;
-
-    char gap2[0xc];
-    int playerIndex;
-    int savedSamplingParameters;
-    int savedSamplingParameter2;
-    int samplingOverridden;
-};
 
 // Destroy a second sample-buffer wrapper with the original nested cleanup guards.
 SampleBufferOwner* PadMotionHistoryStorage_Dtor(SampleBufferOwner* self, int flag) {
     if (self) {
-        if (&self->samples) ReleaseSampleStorage(&self->samples);
-        if (flag > 0) __dl__FPv(self);
+        if (&self->samples)
+            ReleaseSampleStorage(&self->samples);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -122,35 +119,39 @@ Holder::~Holder() {
     InputManager_SetSelectedPlayer(m, previousPlayer);
 }
 
-extern "C" {
-
 // Restore overridden pointer sampling and release both motion histories.
-AccState* CAccState_dtor(AccState* self, int flag) {
-    if (self) {
-        self->vtable = __vt__9CAccState;
-        if (self->samplingOverridden) {
-            InputManagerStorage* m = GetInputManager();
-            InputManager_SetSelectedPlayer(m, self->playerIndex);
-            if (int r = InputManager_GetSelectedPad(m)) gtl_CScreenPointer_SetSamplingParameter(r, 0, &self->savedSamplingParameters);
-            self->samplingOverridden = 0;
-        }
-        if (&self->secondaryHistory) if (&self->secondaryHistory.samples)
-            ReleaseSampleStorage(&self->secondaryHistory.samples);
-        if (&self->primaryHistory)
-            ReleaseSampleStorage(&self->primaryHistory.samples);
-        if (flag > 0) __dl__FPv(self);
+PadAccState::~PadAccState() {
+    vtable = __vt__9CAccState;
+    if (samplingOverridden) {
+        InputManagerStorage* m = GetInputManager();
+        InputManager_SetSelectedPlayer(m, playerIndex);
+        if (int r = InputManager_GetSelectedPad(m))
+            ((gtl::CScreenPointer*)r)
+                ->SetSamplingParameter(0, (gtl::ScreenPointerSamplingParameter*)&savedSamplingParameters);
+        samplingOverridden = 0;
     }
-    return self;
+    if (&secondaryHistory)
+        if (&secondaryHistory.samples)
+            ReleaseSampleStorage(&secondaryHistory.samples);
+    if (&primaryHistory)
+        ReleaseSampleStorage(&primaryHistory.samples);
 }
 
+extern "C" {
+
 int InputManager_GetSelectedPlayer(InputManagerStorage*);
-void gtl_CScreenPointer_GetSamplingParameter(int, int, void*);
-void gtl_CInputExDeviceBase_GetDeviceResult(int, int*);
-void gtl_CScreenPointer_GetSample(int, int, void*);
 
 // Raw 36-byte input record; acceleration occupies the first three float words.
-struct PadMotionSample { int accelerationBits[3]; int deviceWords[4]; float deviceFloat; int deviceWord; };
-struct MotionAxes { float x; float y; };
+struct PadMotionSample {
+    int accelerationBits[3];
+    int deviceWords[4];
+    float deviceFloat;
+    int deviceWord;
+};
+struct MotionAxes {
+    float x;
+    float y;
+};
 extern const float kFloat_0_UiAnimation;
 extern const float kMotionHistorySamplingParameter_0_1; // 0.1: second parameter of the gesture sampling override.
 extern const float kMotionImpulseMagnitudeThreshold;
@@ -160,7 +161,7 @@ extern const float kFloat_neg50_SwingInput;
 extern const float kMotionHorizontalNegativeThreshold; // -0.2: negative horizontal direction threshold.
 extern const float kFloat_0_2_SwingSamples;
 extern const float kMotionVerticalReversalThreshold; // -0.5: latest-sample vertical reversal threshold.
-extern const int kMotionHorizontalReversalLookback; // 2: maximum horizontal reversal lookback.
+extern const int kMotionHorizontalReversalLookback;  // 2: maximum horizontal reversal lookback.
 
 float Vec3_Length(PadMotionSample*);
 
@@ -187,7 +188,8 @@ struct PadSampleHistory {
 // the gesture mode's history-length guard must exclude empty-history reads.
 static inline PadMotionSample* SampleAt(PadSampleHistory* self, unsigned int i) {
     unsigned int k = i % kSampleHistoryCapacity;
-    if (k > *(volatile unsigned int*)&self->lastValidIndex) return 0;
+    if (k > *(volatile unsigned int*)&self->lastValidIndex)
+        return 0;
     return &self->samples[k];
 }
 
@@ -207,22 +209,29 @@ int PartyItemMotion_DetectGesture(PadSampleHistory* self, int mode) {
         // Original 0x8026812C: the three modes retain their existing body order.
         switch (mode) {
         case kGestureImpulse:
-            if (sampleLookbackLimit < 1) break;
-            if (Vec3_Length(SampleAt(self, self->writeIndex)) > kMotionImpulseMagnitudeThreshold) break;
+            if (sampleLookbackLimit < 1)
+                break;
+            if (Vec3_Length(SampleAt(self, self->writeIndex)) > kMotionImpulseMagnitudeThreshold)
+                break;
             self->horizontalImpulse = kFloat_0_UiAnimation;
             self->totalMagnitude = kFloat_0_UiAnimation;
-            if (sampleLookbackLimit > kImpulseWindowSamples) sampleLookbackLimit = kImpulseWindowSamples;
+            if (sampleLookbackLimit > kImpulseWindowSamples)
+                sampleLookbackLimit = kImpulseWindowSamples;
             for (int sampleOffset = 0; sampleOffset < sampleLookbackLimit; sampleOffset++) {
                 PadMotionSample* sample = SampleAt(self, self->writeIndex - sampleOffset);
                 float magnitude = Vec3_Length(sample);
-                if (magnitude <= kMotionImpulseMagnitudeThreshold) continue;
+                if (magnitude <= kMotionImpulseMagnitudeThreshold)
+                    continue;
                 detected = 1;
                 self->totalMagnitude += magnitude;
                 self->horizontalImpulse += ((MotionAxes*)sample)->x;
             }
-            if (self->totalMagnitude > kMotionAccumulatedMagnitudeMaximum) self->totalMagnitude = kMotionAccumulatedMagnitudeMaximum;
-            if (self->horizontalImpulse > kFloat_50_U80267C20) self->horizontalImpulse = kFloat_50_U80267C20;
-            if (self->horizontalImpulse < kFloat_neg50_SwingInput) self->horizontalImpulse = kFloat_neg50_SwingInput;
+            if (self->totalMagnitude > kMotionAccumulatedMagnitudeMaximum)
+                self->totalMagnitude = kMotionAccumulatedMagnitudeMaximum;
+            if (self->horizontalImpulse > kFloat_50_U80267C20)
+                self->horizontalImpulse = kFloat_50_U80267C20;
+            if (self->horizontalImpulse < kFloat_neg50_SwingInput)
+                self->horizontalImpulse = kFloat_neg50_SwingInput;
             break;
         case kGestureHorizontalReversal: {
             int windowSamples = *(sampleLookbackLimit > 2 ? &kMotionHorizontalReversalLookback : &sampleLookbackLimit);
@@ -230,17 +239,25 @@ int PartyItemMotion_DetectGesture(PadSampleHistory* self, int mode) {
             for (int sampleOffset = 0; sampleOffset < windowSamples; sampleOffset++) {
                 PadMotionSample* sample = SampleAt(self, self->writeIndex - sampleOffset);
                 int directionBits = 0;
-                if (((MotionAxes*)sample)->x <= kMotionHorizontalNegativeThreshold) directionBits = kDirectionNegative;
-                if (((MotionAxes*)sample)->x >= kFloat_0_2_SwingSamples) directionBits = kDirectionPositive;
-                if (!directionBits) continue;
-                if (!directionsSeen) firstDirectionalSample = *sample;
+                if (((MotionAxes*)sample)->x <= kMotionHorizontalNegativeThreshold)
+                    directionBits = kDirectionNegative;
+                if (((MotionAxes*)sample)->x >= kFloat_0_2_SwingSamples)
+                    directionBits = kDirectionPositive;
+                if (!directionBits)
+                    continue;
+                if (!directionsSeen)
+                    firstDirectionalSample = *sample;
                 directionsSeen |= directionBits;
-                if (directionsSeen != kDirectionBoth) continue;
+                if (directionsSeen != kDirectionBoth)
+                    continue;
                 self->writeIndex = -1;
                 self->lastValidIndex = -1;
-                if (self->writeIndex < 0) self->writeIndex = 0;
-                else self->writeIndex = (self->writeIndex + 1) % kSampleHistoryCapacity;
-                if (self->writeIndex > self->lastValidIndex) self->lastValidIndex = self->writeIndex;
+                if (self->writeIndex < 0)
+                    self->writeIndex = 0;
+                else
+                    self->writeIndex = (self->writeIndex + 1) % kSampleHistoryCapacity;
+                if (self->writeIndex > self->lastValidIndex)
+                    self->lastValidIndex = self->writeIndex;
                 self->samples[self->writeIndex] = firstDirectionalSample;
                 detected = 1;
                 break;
@@ -248,8 +265,10 @@ int PartyItemMotion_DetectGesture(PadSampleHistory* self, int mode) {
             break;
         }
         case kGestureVerticalReversal: {
-            if (sampleLookbackLimit <= 1) break;
-            if (((MotionAxes*)SampleAt(self, self->writeIndex))->y >= kMotionVerticalReversalThreshold) break;
+            if (sampleLookbackLimit <= 1)
+                break;
+            if (((MotionAxes*)SampleAt(self, self->writeIndex))->y >= kMotionVerticalReversalThreshold)
+                break;
             int positiveRun = 0;
             for (int sampleOffset = 1; sampleOffset < sampleLookbackLimit; sampleOffset++) {
                 PadMotionSample* sample = SampleAt(self, *(volatile unsigned int*)&self->writeIndex - sampleOffset);
@@ -278,29 +297,35 @@ int PartyItemMotion_DetectGesture(PadSampleHistory* self, int mode) {
 // Requires allocated storage for 120 records. With a pad but zero reported
 // samples, the existing code still copies the uninitialized local record; no
 // validity guarantee is added here. Gesture users must arrange valid input.
-// First use retains the pad's two sampling parameters until CAccState_dtor.
+// First use retains the pad's two sampling parameters until the PadAccState destructor.
 int PadSampleHistory_RecordFrame(PadSampleHistory* self) {
     Holder restorePlayer(InputManager_GetSelectedPlayer(GetInputManager()));
     InputManagerStorage* manager = GetInputManager();
     InputManager_SetSelectedPlayer(manager, self->playerIndex);
     int pad = InputManager_GetSelectedPad(manager);
-    if (!pad) return 1;
+    if (!pad)
+        return 1;
     if (!self->samplingOverridden) {
-        gtl_CScreenPointer_GetSamplingParameter(pad, 0, &self->savedSamplingParameters);
+        ((gtl::CScreenPointer*)pad)
+            ->GetSamplingParameter(0, (gtl::ScreenPointerSamplingParameter*)&self->savedSamplingParameters);
         float parameters[2];
         parameters[0] = kFloat_0_UiAnimation;
         parameters[1] = kMotionHistorySamplingParameter_0_1;
-        gtl_CScreenPointer_SetSamplingParameter(pad, 0, parameters);
+        ((gtl::CScreenPointer*)pad)->SetSamplingParameter(0, (gtl::ScreenPointerSamplingParameter*)parameters);
         self->samplingOverridden = 1;
     }
     int sampleCount = 0;
-    gtl_CInputExDeviceBase_GetDeviceResult(pad, &sampleCount);
+    ((gtl::CInputExDeviceBase*)pad)->GetDeviceResult(&sampleCount);
     PadMotionSample sample;
-// With no new sample the original copies its stale stack record, i.e. the previous call's sample.
-    if (sampleCount > 0) gtl_CScreenPointer_GetSample(pad, 0, &sample);
-    if (self->writeIndex < 0) self->writeIndex = 0;
-    else self->writeIndex = (self->writeIndex + 1) % kSampleHistoryCapacity;
-    if (self->writeIndex > self->lastValidIndex) self->lastValidIndex = self->writeIndex;
+    // With no new sample the original copies its stale stack record, i.e. the previous call's sample.
+    if (sampleCount > 0)
+        ((gtl::CScreenPointer*)pad)->GetSample(0, (gtl::ScreenPointerSample*)&sample);
+    if (self->writeIndex < 0)
+        self->writeIndex = 0;
+    else
+        self->writeIndex = (self->writeIndex + 1) % kSampleHistoryCapacity;
+    if (self->writeIndex > self->lastValidIndex)
+        self->lastValidIndex = self->writeIndex;
     PadMotionSample* destination = &self->samples[self->writeIndex];
     *destination = sample;
     return 1;

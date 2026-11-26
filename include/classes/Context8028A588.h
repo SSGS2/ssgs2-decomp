@@ -11,7 +11,7 @@ public:
     void* padSamples; // 0x40: HomeButtonMenu_ProcessState
     char pad_044[0x8];
     unsigned int padExtensionMode; // 0x4C: HomeButtonMenu_ProcessState
-    void* nextPadSamples; // 0x50: HomeButtonMenu_ProcessState
+    void* nextPadSamples;          // 0x50: HomeButtonMenu_ProcessState
     char pad_054[0x8];
     unsigned int nextPadExtensionMode; // 0x5C: HomeButtonMenu_ProcessState
     char pad_060[0x20];
@@ -19,20 +19,20 @@ public:
     char pad_084[0x30];
     int state; // 0xB4: HomeButtonMenu_ProcessState
     char pad_0B8[0x1];
-    char homeMenuBlocked; // 0xB9: HomeButtonMenu_ProcessState
+    char homeMenuBlocked;      // 0xB9: HomeButtonMenu_ProcessState
     char savedHomeMenuBlocked; // 0xBA: HomeMenu_SetBlockedState
     char pad_0BB[0x9];
-    int scriptEntryId; // 0xC4: HomeButtonMenu_ProcessState
+    int scriptEntryId;       // 0xC4: HomeButtonMenu_ProcessState
     float savedStreamVolume; // 0xC8: HomeButtonMenu_ProcessState
     float savedBufferVolume; // 0xCC: HomeButtonMenu_ProcessState
     char pad_0D0[0x4];
     char screenAdjustmentEnabled; // 0xD4: HomeButtonMenu_ProcessState
     char pad_0D5[0x3];
-    int soundStopDelayFrames; // 0xD8: HomeButtonMenu_ProcessState
+    int soundStopDelayFrames;        // 0xD8: HomeButtonMenu_ProcessState
     unsigned char scriptExitStarted; // 0xDC: HomeButtonMenu_UpdateScript
-    char blockedMessageSuppressed; // 0xDD: HomeButtonMenu_ProcessState
+    char blockedMessageSuppressed;   // 0xDD: HomeButtonMenu_ProcessState
     char pad_0DE[0x2];
-    int padProbeStatus; // 0xE0: HomeButtonMenu_ProcessState
+    int padProbeStatus;     // 0xE0: HomeButtonMenu_ProcessState
     int nextPadProbeStatus; // 0xE4: HomeButtonMenu_ProcessState
     char pad_0E8[0x38];
     int inputWord120; // 0x120: HomeButtonMenu_ProcessState

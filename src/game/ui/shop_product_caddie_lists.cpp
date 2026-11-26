@@ -1,10 +1,15 @@
+// Shop product lists for caddies, caddie items and club sets.
+//
+// Each list loads its records from an IFF table, keeps an owned copy of each accepted record,
+// and copies a record out by index.
+
 #include <decomp/local_class.h>
 #include <decomp/ct_member.h>
 // Shop caddie/caddie-item product lists: filter inventory IFF tables into owned
 // copies, expose counts/common headers/full records, then release their storage.
 // API/mod lookup:
-// - Which products appear? CShopProductCaddie_LoadFromInventory /
-//   CShopProductCaddieItem_LoadFromInventory filter inventory rows; virtual accepts
+// - Which products appear? CShopProductCaddie::LoadFromInventory /
+//   CShopProductCaddieItem::LoadFromInventory filter inventory rows; virtual accepts
 //   slot 6 receives each borrowed row and the caller's filterContext unchanged.
 // - Record fields: iff/IffStruct.h (sCaddie, sCadItem, sClubSet, IffItemCommon);
 //   CItemManager.h supplies caddies/caddieItems tables; CSharedDoc.h the inventory.
@@ -17,6 +22,11 @@
 #include "classes/CSharedDoc.h"
 #include "classes/CItemManager.h"
 #include "iff/IffStruct.h"
+#include "classes/CShopProduct.h"
+#include "classes/CShopProductCaddieItem.h"
+#include "classes/CShopProductClubSet.h"
+#include "classes/CShopProductCaddie.h"
+#include "classes/CShopProductInterface.h"
 
 namespace exception_runtime {
 extern "C" {
@@ -27,9 +37,9 @@ extern const char comThinkVectorErrorStrings[];
 }
 
 // Compare iterator positions without changing their pointer representation.
-template <class T> inline bool SameProductIterator(const T& a, const T& b) { return a == b; }
-// Translation unit 0x80234124-0x802356DC (16 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+template <class T> inline bool SameProductIterator(const T& a, const T& b) {
+    return a == b;
+}
 
 extern "C" {
 
@@ -42,7 +52,6 @@ extern char comThinkVectorErrorStrings[];
 extern void Memory_Copy(void*, const void*, unsigned int);
 extern void __dl__FPv(void*);
 extern void appFreeUni__FPv(void*);
-extern void CShopProductInterface_dtor(void*, int);
 extern CSharedDoc* g_sharedDoc;
 extern void* __nw__FUl(unsigned int);
 extern void* appMallocDummy__FUl(unsigned int);
@@ -56,10 +65,17 @@ extern unsigned int strlen(const char*);
 extern char* strcpy(char*, const char*);
 
 // Pointer-vector allocation limits (32-bit byte size / 4-byte pointer).
-enum ProductVectorLimits { kProductMaxEntries = 0x3FFFFFFF,
-    kProductFastGrowthLimit = 0x15555555, kProductHalfGrowthLimit = 0x2AAAAAAA };
-enum ProductStorageConstants { kProductPointerBytes = sizeof(void*), kLengthErrorTagOffset = 0x14,
-    kCommonNameOffset = IFF_OFFSET(IffItemCommon, name), kCommonIconOffset = IFF_OFFSET(IffItemCommon, icon) };
+enum ProductVectorLimits {
+    kProductMaxEntries = 0x3FFFFFFF,
+    kProductFastGrowthLimit = 0x15555555,
+    kProductHalfGrowthLimit = 0x2AAAAAAA
+};
+enum ProductStorageConstants {
+    kProductPointerBytes = sizeof(void*),
+    kLengthErrorTagOffset = 0x14,
+    kCommonNameOffset = IFF_OFFSET(IffItemCommon, name),
+    kCommonIconOffset = IFF_OFFSET(IffItemCommon, icon)
+};
 // Product-list contract: self owns a {data, size, capacity} pointer vector at +8
 // and each separately allocated IFF record it contains. Counts are records.
 // Constructor context and filterContext are borrowed; VecObj.context is at +4.
@@ -101,7 +117,9 @@ struct Record88 {
     short trailingFlags;
     unsigned short trailingValue;
     // Copy the complete caddie-item record from borrowed source storage.
-    Record88(const void* src) { *this = *static_cast<const Record88*>(src); }
+    Record88(const void* src) {
+        *this = *static_cast<const Record88*>(src);
+    }
 };
 
 struct VecObj {
@@ -112,30 +130,39 @@ struct VecObj {
     unsigned int capacity;
 };
 
-
 // Word-copy view of IFF_STRUCT::sCaddie; the six shorts are five stat bonuses and record padding.
 struct Record90 {
     unsigned int commonWords[sizeof(IffItemCommon) / sizeof(unsigned int)];
     char model[40];
     unsigned short statsAndPadding[6];
     // Copy the complete caddie record from borrowed source storage.
-    Record90(const void* src) { *this = *static_cast<const Record90*>(src); }
+    Record90(const void* src) {
+        *this = *static_cast<const Record90*>(src);
+    }
 };
 
 // Aliases keep constructor/exception symbols unchanged while giving loaders product roles.
 typedef Record88 CaddieItemProductRecordView;
 typedef Record90 CaddieProductRecordView;
 
-struct PtrVector { void** begin; void** end; void** capacity; };
+struct PtrVector {
+    void** begin;
+    void** end;
+    void** capacity;
+};
 
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 
 struct F18ErrorBase {
     void* table;
     // Initialize the runtime logic-error vtable.
-    F18ErrorBase() { table = __vt__Q23std11logic_error; }
+    F18ErrorBase() {
+        table = __vt__Q23std11logic_error;
+    }
     // Destroy the exception base through its runtime destructor.
-    ~F18ErrorBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~F18ErrorBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 struct F18Allocation {
     char* pointer;
@@ -143,13 +170,20 @@ struct F18Allocation {
     // Guard error-text array ownership until the shared control block takes it.
     F18Allocation(char* p, char* a) : pointer(p), allocator(a) {}
     // Guard error-text array ownership until the shared control block takes it.
-    ~F18Allocation() { if (pointer) __dla__FPv(pointer); }
+    ~F18Allocation() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct F18ControlBase {
     void* table;
     unsigned int strong, weak;
     // Initialize the shared text deleter and strong/weak counts to one.
-    F18ControlBase() { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; }
+    F18ControlBase() {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+    }
 };
 struct F18Control : F18ControlBase {
     char* pointer;
@@ -163,7 +197,10 @@ struct length_error : F18ErrorBase {
     // Allocate the standard vector-length message and shared deleter.
     length_error() {
         const char* message = comThinkVectorErrorStrings;
-        struct Allocator { char value; char pad[3]; } allocator;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned int n = strlen(message) + 1;
         text = static_cast<char*>(__nwa__FUl(2 * n - n));
@@ -194,7 +231,12 @@ struct F18VecBuffer {
     // Initialize an empty growth guard borrowing the destination capacity counter.
     F18VecBuffer(unsigned int* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free the pending or swapped-out allocation still owned by this guard.
-    ~F18VecBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~F18VecBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 
 struct F18Vec {
@@ -206,7 +248,7 @@ struct F18Vec {
 };
 
 struct F18Interface {
-// Slot 1 is DeleteAll (nonzero = success).
+    // Slot 1 is DeleteAll (nonzero = success).
     virtual void slot0();
     virtual int clearOwnedRows(); // Slot 1: DeleteAll; nonzero means success.
     virtual void slot2();
@@ -227,23 +269,26 @@ static inline int ClearCaddieProductRows(void* products) {
     return static_cast<CaddieProductListInterface*>(products)->clearOwnedRows();
 }
 
+} // extern "C"
+
 #pragma push
 #pragma use_lmw_stmw on
 // filterContext passes unchanged to virtual slot 6; nonzero accepts a borrowed input row.
 // Filter the caddie-item IFF table into owned record copies; preserve partial-load failure behavior.
-int CShopProductCaddieItem_LoadFromInventory(void* self, void* filterContext) {
+int CShopProductCaddieItem::LoadFromInventory(void* filterContext) {
     // Phase 0: discard owned rows through DeleteAll, retaining pointer capacity.
-    if (ClearCaddieProductRows(self) == 0)
+    if (ClearCaddieProductRows(this) == 0)
         return 0;
-    CaddieProductListInterface* products = static_cast<CaddieProductListInterface*>(self);
+    CaddieProductListInterface* products = reinterpret_cast<CaddieProductListInterface*>(this);
     CSharedDoc* shared = g_sharedDoc;
     IffTableEntry<IFF_STRUCT::sCadItem>* entry = ((CItemManager*)shared->itemInventory)->caddieItems.data;
     while (entry != ((CItemManager*)shared->itemInventory)->caddieItems.data +
                         ((CItemManager*)shared->itemInventory)->caddieItems.size) {
         void* sourceRecord = &entry->record;
         // Phase 1: filter borrowed inventory rows; only accepted rows are copied.
-        if (static_cast<CaddieProductListInterface*>(self)->accepts(sourceRecord, filterContext) != 0) {
-            CaddieItemProductRecordView* ownedRow = static_cast<CaddieItemProductRecordView*>(__nw__FUl(sizeof(CaddieItemProductRecordView)));
+        if (reinterpret_cast<CaddieProductListInterface*>(this)->accepts(sourceRecord, filterContext) != 0) {
+            CaddieItemProductRecordView* ownedRow =
+                static_cast<CaddieItemProductRecordView*>(__nw__FUl(sizeof(CaddieItemProductRecordView)));
             if (ownedRow == 0)
                 return 0;
             *ownedRow = *reinterpret_cast<const CaddieItemProductRecordView*>(sourceRecord);
@@ -259,22 +304,28 @@ int CShopProductCaddieItem_LoadFromInventory(void* self, void* filterContext) {
             } else {
                 // Phase 2b: validate pointer-count limits before allocating a replacement.
                 if (kProductMaxEntries - products->capacity < 1) {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(std::length_error)];
+                    } storage;
                     std::length_error* error = (std::length_error*)storage.bytes;
                     error->__ct();
-                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset, error,
-                        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset,
+                                               error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
                 unsigned int additionalSlots = 1 + products->size - products->capacity;
                 // Guard the new pointer array until copied entries are committed.
                 F18VecBuffer replacement(&products->capacity);
                 unsigned int newCapacity = products->capacity;
                 if (additionalSlots > kProductMaxEntries - newCapacity) {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(std::length_error)];
+                    } storage;
                     std::length_error* error = (std::length_error*)storage.bytes;
                     error->__ct();
-                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset, error,
-                        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset,
+                                               error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
                 // Grow by max(3*(capacity+1)/5,needed), then by half at large
                 // capacities, then saturate at the representable pointer limit.
@@ -286,11 +337,14 @@ int CShopProductCaddieItem_LoadFromInventory(void* self, void* filterContext) {
                     newCapacity = kProductMaxEntries;
                 }
                 if (newCapacity > kProductMaxEntries) {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(std::length_error)];
+                    } storage;
                     std::length_error* error = (std::length_error*)storage.bytes;
                     error->__ct();
-                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset, error,
-                        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset,
+                                               error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
                 void** newPointers = static_cast<void**>(appMallocDummy__FUl(newCapacity * kProductPointerBytes));
                 unsigned int oldRowCount = products->size;
@@ -299,7 +353,9 @@ int CShopProductCaddieItem_LoadFromInventory(void* self, void* filterContext) {
                 (newPointers + oldRowCount)[replacement.size++] = ownedRow;
                 void** oldPointers = products->data;
                 replacement.capacity = newCapacity;
-                int pointersToMove = (reinterpret_cast<char*>(oldPointers + products->size) - reinterpret_cast<char*>(oldPointers)) / kProductPointerBytes;
+                int pointersToMove =
+                    (reinterpret_cast<char*>(oldPointers + products->size) - reinterpret_cast<char*>(oldPointers)) /
+                    kProductPointerBytes;
                 int insertionStart = oldRowCount - pointersToMove;
                 replacement.offset = insertionStart;
                 unsigned int pointerBytes = pointersToMove * kProductPointerBytes;
@@ -328,25 +384,30 @@ int CShopProductCaddieItem_LoadFromInventory(void* self, void* filterContext) {
     }
     return 1;
 }
+
+extern "C" {
 #pragma pop
 
 #pragma push
 #pragma use_lmw_stmw on
+} // extern "C"
 // filterContext passes unchanged to virtual slot 6; nonzero accepts a borrowed input row.
 // Filter the caddie IFF table into owned record copies; reload the table end after each product.
-int CShopProductCaddie_LoadFromInventory(void* self, void* filterContext) {
+int CShopProductCaddie::LoadFromInventory(void* filterContext) {
     // Phase 0: discard owned rows through DeleteAll, retaining pointer capacity.
-    if (static_cast<CaddieProductListInterface*>(self)->clearOwnedRows() == 0)
+    if (reinterpret_cast<CaddieProductListInterface*>(this)->clearOwnedRows() == 0)
         return 0;
-    CaddieProductListInterface* products = static_cast<CaddieProductListInterface*>(self);
+    CaddieProductListInterface* products = reinterpret_cast<CaddieProductListInterface*>(this);
     CSharedDoc* shared = g_sharedDoc;
     IffTableEntry<IFF_STRUCT::sCaddie>* entry = ((CItemManager*)shared->itemInventory)->caddies.data;
     while (((CItemManager*)shared->itemInventory)->caddies.data +
-                        ((CItemManager*)shared->itemInventory)->caddies.size != entry) {
+               ((CItemManager*)shared->itemInventory)->caddies.size !=
+           entry) {
         void* sourceRecord = &entry->record;
         // Phase 1: filter borrowed inventory rows; only accepted rows are copied.
-        if (static_cast<CaddieProductListInterface*>(self)->accepts(sourceRecord, filterContext) != 0) {
-            CaddieProductRecordView* ownedRow = static_cast<CaddieProductRecordView*>(__nw__FUl(sizeof(CaddieProductRecordView)));
+        if (reinterpret_cast<CaddieProductListInterface*>(this)->accepts(sourceRecord, filterContext) != 0) {
+            CaddieProductRecordView* ownedRow =
+                static_cast<CaddieProductRecordView*>(__nw__FUl(sizeof(CaddieProductRecordView)));
             if (ownedRow == 0)
                 return 0;
             *ownedRow = *reinterpret_cast<const CaddieProductRecordView*>(sourceRecord);
@@ -360,22 +421,28 @@ int CShopProductCaddie_LoadFromInventory(void* self, void* filterContext) {
             } else {
                 // Phase 2b: validate pointer-count limits before allocating a replacement.
                 if (kProductMaxEntries - products->capacity < 1) {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(std::length_error)];
+                    } storage;
                     std::length_error* error = (std::length_error*)storage.bytes;
                     error->__ct();
-                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset, error,
-                        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset,
+                                               error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
                 unsigned int additionalSlots = 1 + products->size - products->capacity;
                 // Guard the new pointer array until copied entries are committed.
                 F18VecBuffer replacement(&products->capacity);
                 unsigned int newCapacity = products->capacity;
                 if (additionalSlots > kProductMaxEntries - newCapacity) {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(std::length_error)];
+                    } storage;
                     std::length_error* error = (std::length_error*)storage.bytes;
                     error->__ct();
-                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset, error,
-                        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset,
+                                               error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
                 // Same 3/5, 1/2, saturation growth policy as the caddie-item path.
                 if (newCapacity < kProductFastGrowthLimit) {
@@ -386,11 +453,14 @@ int CShopProductCaddie_LoadFromInventory(void* self, void* filterContext) {
                     newCapacity = kProductMaxEntries;
                 }
                 if (newCapacity > kProductMaxEntries) {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(std::length_error)];
+                    } storage;
                     std::length_error* error = (std::length_error*)storage.bytes;
                     error->__ct();
-                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset, error,
-                        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    exception_runtime::__throw(exception_runtime::comThinkVectorErrorStrings + kLengthErrorTagOffset,
+                                               error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
                 void** newPointers = static_cast<void**>(appMallocDummy__FUl(newCapacity * kProductPointerBytes));
                 unsigned int oldRowCount = products->size;
@@ -399,7 +469,9 @@ int CShopProductCaddie_LoadFromInventory(void* self, void* filterContext) {
                 (newPointers + oldRowCount)[replacement.size++] = ownedRow;
                 void** oldPointers = products->data;
                 replacement.capacity = newCapacity;
-                int pointersToMove = (reinterpret_cast<char*>(oldPointers + products->size) - reinterpret_cast<char*>(oldPointers)) / kProductPointerBytes;
+                int pointersToMove =
+                    (reinterpret_cast<char*>(oldPointers + products->size) - reinterpret_cast<char*>(oldPointers)) /
+                    kProductPointerBytes;
                 int insertionStart = oldRowCount - pointersToMove;
                 replacement.offset = insertionStart;
                 unsigned int pointerBytes = pointersToMove * kProductPointerBytes;
@@ -426,27 +498,29 @@ int CShopProductCaddie_LoadFromInventory(void* self, void* filterContext) {
     }
     return 1;
 }
+
+extern "C" {
 #pragma pop
 
-int CShopProductCaddie_CopyCommonRecord(void* arg0, void* arg1, unsigned int index);
+} // extern "C"
 
 // Delete owned club-set rows and clear size while retaining pointer-array capacity.
-int CShopProductClubSet_DeleteAll(void* arg0) {
-    void* object = arg0;
-    void** item = ((VecObj*)object)->begin;
+int CShopProductClubSet::DeleteAll() {
+    void** item = begin;
     unsigned int count = 0;
     // Original product DeleteAll: reload the count before each end check.
-    while ((count = ((VecObj*)object)->size),
-           !SameProductIterator(((VecObj*)object)->begin + count, item)) {
-            if (*item != 0) {
-                __dl__FPv(*item);
-                *item = 0;
-            }
-            ++item;
+    while ((count = size), !SameProductIterator(begin + count, item)) {
+        if (*item != 0) {
+            __dl__FPv(*item);
+            *item = 0;
+        }
+        ++item;
     }
-    ((VecObj*)object)->size -= count;
+    size -= count;
     return 1;
 }
+
+extern "C" {
 
 #pragma opt_propagation off
 #pragma opt_common_subs off
@@ -459,15 +533,16 @@ void* __dt__10CShopBaseCFv(void* object, int deleting) {
         ClearCaddieProductRows(object);
         // Phase 2: release the +8 embedded vector's pointer array. Repeated
         // address guards are the original member-destructor expansion, not five vectors.
-        if (static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 &&
-            ((VecObj*)object)->begin != 0) {
+        if (static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 &&
+            static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 &&
+            static_cast<char*>(object) + 8 != 0 && ((VecObj*)object)->begin != 0) {
             unsigned int* cp = &((VecObj*)object)->size;
             unsigned int count = *cp;
             *cp -= count;
             appFreeUni__FPv(((VecObj*)object)->begin);
         }
         // Phase 3: release the interface base, then optionally the wrapper itself.
-        CShopProductInterface_dtor(object, 0);
+        ((CShopProductInterface*)object)->Destroy(0);
         if (deleting > 0)
             __dl__FPv(object);
     }
@@ -481,14 +556,15 @@ void* __dt__10CShopBaseDFv(void* object, int deleting) {
         *reinterpret_cast<void**>(object) = vtable;
         // Same row -> pointer array -> base/wrapper ownership order as BaseC.
         static_cast<CaddieProductListInterface*>(object)->clearOwnedRows();
-        if (static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 &&
-            ((VecObj*)object)->begin != 0) {
+        if (static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 &&
+            static_cast<char*>(object) + 8 != 0 && static_cast<char*>(object) + 8 != 0 &&
+            static_cast<char*>(object) + 8 != 0 && ((VecObj*)object)->begin != 0) {
             unsigned int* cp = &((VecObj*)object)->size;
             unsigned int count = *cp;
             *cp -= count;
             appFreeUni__FPv(((VecObj*)object)->begin);
         }
-        CShopProductInterface_dtor(object, 0);
+        ((CShopProductInterface*)object)->Destroy(0);
         if (deleting > 0)
             __dl__FPv(object);
     }
@@ -497,73 +573,87 @@ void* __dt__10CShopBaseDFv(void* object, int deleting) {
 
 #pragma opt_common_subs reset
 #pragma opt_propagation reset
+} // extern "C"
+
 // Copy one caddie-item IFF record to the caller after checking destination, index and stored pointer.
-int CShopProductCaddieItem_CopyRecord(void* self, void* destination, unsigned int productIndex) {
+int CShopProductCaddieItem::CopyRecord(void* destination, unsigned int productIndex) {
     if (destination == 0)
         return 0;
-    unsigned int count = ((VecObj*)self)->size;
+    unsigned int count = size;
     if (count <= productIndex)
         return 0;
-    void* source = reinterpret_cast<void**>(((VecObj*)self)->begin)[productIndex];
+    void* source = reinterpret_cast<void**>(begin)[productIndex];
     if (source == 0)
         return 0;
     Memory_Copy(destination, source, sizeof(IFF_STRUCT::sCadItem));
     return 1;
 }
 
+extern "C" {} // extern "C"
+
 // Copy one club-set IFF record to the caller after checking destination, index and stored pointer.
-int CShopProductClubSet_CopyRecord(void* self, void* destination, unsigned int productIndex) {
+int CShopProductClubSet::CopyRecord(void* destination, unsigned int productIndex) {
     if (destination == 0)
         return 0;
-    unsigned int count = ((VecObj*)self)->size;
+    unsigned int count = size;
     if (count <= productIndex)
         return 0;
-    void* source = reinterpret_cast<void**>(((VecObj*)self)->begin)[productIndex];
+    void* source = reinterpret_cast<void**>(begin)[productIndex];
     if (source == 0)
         return 0;
     Memory_Copy(destination, source, sizeof(IFF_STRUCT::sClubSet));
     return 1;
 }
 
+extern "C" {} // extern "C"
+
 #pragma use_lmw_stmw on
 // Delete all owned record copies and clear the size while retaining the vector allocation.
-int CShopProductCaddieItem_DeleteAll(void* self) {
-    void* object = self;
-    void** item = ((VecObj*)object)->begin;
+int CShopProductCaddieItem::DeleteAll() {
+    void** item = begin;
     unsigned int count = 0;
     // Original product DeleteAll: reload the count before each end check.
-    while ((count = ((VecObj*)object)->size),
-           !SameProductIterator(((VecObj*)object)->begin + count, item)) {
-            if (*item != 0) {
-                __dl__FPv(*item);
-                *item = 0;
-            }
-            ++item;
+    while ((count = size), !SameProductIterator(begin + count, item)) {
+        if (*item != 0) {
+            __dl__FPv(*item);
+            *item = 0;
+        }
+        ++item;
     }
-    ((VecObj*)object)->size -= count;
+    size -= count;
     return 1;
 }
 #pragma use_lmw_stmw off
 
+extern "C" {
+
 // This product-interface hook is unsupported and returns zero.
-int CShopProduct_DefaultUnsupportedHookA() {
+int CShopProduct::DefaultUnsupportedHookA() {
     return 0;
 }
+
+} // extern "C"
 
 // Return the number of caddie-item products currently stored.
-int CShopProductCaddieItem_GetCount(void* self) {
-    return (int)((VecObj*)self)->size;
+int CShopProductCaddieItem::GetCount() {
+    return (int)size;
 }
 
+extern "C" {
+
 // This product-interface hook is unsupported and returns zero.
-int CShopProduct_DefaultUnsupportedHookB() {
+int CShopProduct::DefaultUnsupportedHookB() {
     return 0;
 }
 
+} // extern "C"
+
 // Return the product count through the existing pointer-sized ABI.
-void* CShopProductClubSet_GetCount(void* self) {
-    return (void*)((VecObj*)self)->size;
+void* CShopProductClubSet::GetCount() {
+    return (void*)size;
 }
+
+extern "C" {
 
 // Initialize an empty product pointer vector and store its caller-supplied context.
 void __ct__10CShopBaseCFPv(void* self, void* context) {
@@ -589,12 +679,14 @@ struct ShopDataInterface {
     virtual int get(void*);
 };
 
+} // extern "C"
+
 #pragma opt_propagation off
 // Fetch a selected product and copy its common IFF header; an inline pair-copy helper changes instruction scheduling.
 // Requires sizeof(IffItemCommon) writable bytes. get() writes only into local
 // scratch; destination remains untouched on its failure. Returns 1 after copying
 // the complete common header, including bytes not semantically decoded here.
-int CShopProductCaddie_CopyCommonRecord(void* self, void* destination, unsigned int index) {
+int CShopProductCaddie::CopyCommonRecord(void* destination, unsigned int index) {
     // Phase 1: validate output and fetch the full row into borrowed local scratch.
     struct IndexedShopDataInterface {
         virtual void slot0() DECOMP_LOCAL_VIRTUAL;
@@ -603,72 +695,360 @@ int CShopProductCaddie_CopyCommonRecord(void* self, void* destination, unsigned 
     };
     if (destination == 0)
         return 0;
-    union { unsigned char bytes[0x2B8]; IffItemCommon common; } recordBuffer;
+    union {
+        unsigned char bytes[0x2B8];
+        IffItemCommon common;
+    } recordBuffer;
     unsigned char* data = recordBuffer.bytes;
     // Fetch the full row into scratch; copy only the common header after success.
-    if (static_cast<IndexedShopDataInterface*>(self)->get(data, index) == 0)
+    if (reinterpret_cast<IndexedShopDataInterface*>(this)->get(data, index) == 0)
         return 0;
     // Phase 2: copy the common header as a record, preserving its complete name/icon
     // arrays (including unused bytes), identifiers, price, flags and trailing metadata.
     // Byte pairs intentionally load both source bytes before storing either one;
     // memcpy/assignment or an inline pair-copy helper changes the current object.
     // Name[40]:
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 0]; second = data[kCommonNameOffset + 1]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 0] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 1] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 2]; second = data[kCommonNameOffset + 3]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 2] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 3] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 4]; second = data[kCommonNameOffset + 5]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 4] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 5] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 6]; second = data[kCommonNameOffset + 7]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 6] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 7] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 8]; second = data[kCommonNameOffset + 9]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 8] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 9] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 10]; second = data[kCommonNameOffset + 11]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 10] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 11] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 12]; second = data[kCommonNameOffset + 13]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 12] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 13] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 14]; second = data[kCommonNameOffset + 15]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 14] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 15] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 16]; second = data[kCommonNameOffset + 17]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 16] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 17] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 18]; second = data[kCommonNameOffset + 19]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 18] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 19] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 20]; second = data[kCommonNameOffset + 21]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 20] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 21] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 22]; second = data[kCommonNameOffset + 23]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 22] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 23] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 24]; second = data[kCommonNameOffset + 25]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 24] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 25] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 26]; second = data[kCommonNameOffset + 27]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 26] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 27] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 28]; second = data[kCommonNameOffset + 29]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 28] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 29] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 30]; second = data[kCommonNameOffset + 31]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 30] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 31] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 32]; second = data[kCommonNameOffset + 33]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 32] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 33] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 34]; second = data[kCommonNameOffset + 35]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 34] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 35] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 36]; second = data[kCommonNameOffset + 37]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 36] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 37] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 38]; second = data[kCommonNameOffset + 39]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 38] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 39] = second; }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 0];
+        second = data[kCommonNameOffset + 1];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 0] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 1] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 2];
+        second = data[kCommonNameOffset + 3];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 2] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 3] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 4];
+        second = data[kCommonNameOffset + 5];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 4] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 5] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 6];
+        second = data[kCommonNameOffset + 7];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 6] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 7] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 8];
+        second = data[kCommonNameOffset + 9];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 8] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 9] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 10];
+        second = data[kCommonNameOffset + 11];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 10] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 11] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 12];
+        second = data[kCommonNameOffset + 13];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 12] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 13] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 14];
+        second = data[kCommonNameOffset + 15];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 14] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 15] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 16];
+        second = data[kCommonNameOffset + 17];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 16] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 17] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 18];
+        second = data[kCommonNameOffset + 19];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 18] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 19] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 20];
+        second = data[kCommonNameOffset + 21];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 20] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 21] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 22];
+        second = data[kCommonNameOffset + 23];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 22] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 23] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 24];
+        second = data[kCommonNameOffset + 25];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 24] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 25] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 26];
+        second = data[kCommonNameOffset + 27];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 26] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 27] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 28];
+        second = data[kCommonNameOffset + 29];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 28] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 29] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 30];
+        second = data[kCommonNameOffset + 31];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 30] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 31] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 32];
+        second = data[kCommonNameOffset + 33];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 32] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 33] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 34];
+        second = data[kCommonNameOffset + 35];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 34] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 35] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 36];
+        second = data[kCommonNameOffset + 37];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 36] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 37] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 38];
+        second = data[kCommonNameOffset + 39];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 38] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 39] = second;
+    }
     // Copy the complete 40-byte icon field; pairs retain the original byte schedule.
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 0]; second = data[kCommonIconOffset + 1]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 0] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 1] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 2]; second = data[kCommonIconOffset + 3]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 2] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 3] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 4]; second = data[kCommonIconOffset + 5]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 4] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 5] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 6]; second = data[kCommonIconOffset + 7]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 6] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 7] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 8]; second = data[kCommonIconOffset + 9]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 8] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 9] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 10]; second = data[kCommonIconOffset + 11]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 10] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 11] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 12]; second = data[kCommonIconOffset + 13]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 12] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 13] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 14]; second = data[kCommonIconOffset + 15]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 14] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 15] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 16]; second = data[kCommonIconOffset + 17]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 16] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 17] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 18]; second = data[kCommonIconOffset + 19]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 18] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 19] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 20]; second = data[kCommonIconOffset + 21]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 20] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 21] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 22]; second = data[kCommonIconOffset + 23]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 22] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 23] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 24]; second = data[kCommonIconOffset + 25]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 24] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 25] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 26]; second = data[kCommonIconOffset + 27]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 26] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 27] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 28]; second = data[kCommonIconOffset + 29]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 28] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 29] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 30]; second = data[kCommonIconOffset + 31]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 30] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 31] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 32]; second = data[kCommonIconOffset + 33]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 32] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 33] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 34]; second = data[kCommonIconOffset + 35]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 34] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 35] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 36]; second = data[kCommonIconOffset + 37]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 36] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 37] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 38]; second = data[kCommonIconOffset + 39]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 38] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 39] = second; }
-    (*( unsigned int*)&((IffItemCommon*)destination)->typeId) = (*( unsigned int*)&recordBuffer.common.typeId);
-    (*( unsigned int*)&((IffItemCommon*)destination)->price) = (*( unsigned int*)&recordBuffer.common.price);
-    (*( unsigned char*)&((IffItemCommon*)destination)->levelFlags) = recordBuffer.common.levelFlags;
-    (*( unsigned char*)&((IffItemCommon*)destination)->shopFlags) = recordBuffer.common.shopFlags;
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 0];
+        second = data[kCommonIconOffset + 1];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 0] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 1] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 2];
+        second = data[kCommonIconOffset + 3];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 2] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 3] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 4];
+        second = data[kCommonIconOffset + 5];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 4] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 5] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 6];
+        second = data[kCommonIconOffset + 7];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 6] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 7] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 8];
+        second = data[kCommonIconOffset + 9];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 8] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 9] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 10];
+        second = data[kCommonIconOffset + 11];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 10] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 11] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 12];
+        second = data[kCommonIconOffset + 13];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 12] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 13] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 14];
+        second = data[kCommonIconOffset + 15];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 14] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 15] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 16];
+        second = data[kCommonIconOffset + 17];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 16] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 17] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 18];
+        second = data[kCommonIconOffset + 19];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 18] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 19] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 20];
+        second = data[kCommonIconOffset + 21];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 20] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 21] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 22];
+        second = data[kCommonIconOffset + 23];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 22] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 23] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 24];
+        second = data[kCommonIconOffset + 25];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 24] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 25] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 26];
+        second = data[kCommonIconOffset + 27];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 26] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 27] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 28];
+        second = data[kCommonIconOffset + 29];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 28] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 29] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 30];
+        second = data[kCommonIconOffset + 31];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 30] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 31] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 32];
+        second = data[kCommonIconOffset + 33];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 32] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 33] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 34];
+        second = data[kCommonIconOffset + 35];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 34] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 35] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 36];
+        second = data[kCommonIconOffset + 37];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 36] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 37] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 38];
+        second = data[kCommonIconOffset + 39];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 38] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 39] = second;
+    }
+    (*(unsigned int*)&((IffItemCommon*)destination)->typeId) = (*(unsigned int*)&recordBuffer.common.typeId);
+    (*(unsigned int*)&((IffItemCommon*)destination)->price) = (*(unsigned int*)&recordBuffer.common.price);
+    (*(unsigned char*)&((IffItemCommon*)destination)->levelFlags) = recordBuffer.common.levelFlags;
+    (*(unsigned char*)&((IffItemCommon*)destination)->shopFlags) = recordBuffer.common.shopFlags;
     // Preserve the trailing common-item metadata word; its individual bits are not decoded here.
-    (*( unsigned short*)&((IffItemCommon*)destination)->commonFlagWord) = (*( unsigned short*)&recordBuffer.common.commonFlagWord);
+    (*(unsigned short*)&((IffItemCommon*)destination)->commonFlagWord) =
+        (*(unsigned short*)&recordBuffer.common.commonFlagWord);
     return 1;
 }
+
+extern "C" {
 #pragma opt_propagation reset
 
 #pragma opt_propagation off
 #pragma opt_common_subs off
+} // extern "C"
+
 // Fetch a selected caddie item and copy its common IFF header; explicit pairs preserve this hook's scheduling.
 // Same scratch-first, destination-unchanged-on-failure contract as the caddie hook.
-int CShopProductCaddieItem_CopyCommonRecord(void* self, void* destination, unsigned int index) {
+int CShopProductCaddieItem::CopyCommonRecord(void* destination, unsigned int index) {
     struct IndexedShopDataInterface {
         virtual void slot0() DECOMP_LOCAL_VIRTUAL;
         virtual void slot1() DECOMP_LOCAL_VIRTUAL;
@@ -676,61 +1056,347 @@ int CShopProductCaddieItem_CopyCommonRecord(void* self, void* destination, unsig
     };
     if (destination == 0)
         return 0;
-    union { unsigned char bytes[0x2B8]; IffItemCommon common; } recordBuffer;
+    union {
+        unsigned char bytes[0x2B8];
+        IffItemCommon common;
+    } recordBuffer;
     unsigned char* data = recordBuffer.bytes;
     // Fetch the full row into scratch; copy only the common header after success.
-    if (static_cast<IndexedShopDataInterface*>(self)->get(data, index) == 0)
+    if (reinterpret_cast<IndexedShopDataInterface*>(this)->get(data, index) == 0)
         return 0;
     // Copy the complete 40-byte name field, including unused trailing bytes.
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 0]; second = data[kCommonNameOffset + 1]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 0] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 1] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 2]; second = data[kCommonNameOffset + 3]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 2] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 3] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 4]; second = data[kCommonNameOffset + 5]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 4] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 5] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 6]; second = data[kCommonNameOffset + 7]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 6] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 7] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 8]; second = data[kCommonNameOffset + 9]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 8] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 9] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 10]; second = data[kCommonNameOffset + 11]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 10] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 11] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 12]; second = data[kCommonNameOffset + 13]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 12] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 13] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 14]; second = data[kCommonNameOffset + 15]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 14] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 15] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 16]; second = data[kCommonNameOffset + 17]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 16] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 17] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 18]; second = data[kCommonNameOffset + 19]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 18] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 19] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 20]; second = data[kCommonNameOffset + 21]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 20] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 21] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 22]; second = data[kCommonNameOffset + 23]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 22] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 23] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 24]; second = data[kCommonNameOffset + 25]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 24] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 25] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 26]; second = data[kCommonNameOffset + 27]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 26] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 27] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 28]; second = data[kCommonNameOffset + 29]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 28] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 29] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 30]; second = data[kCommonNameOffset + 31]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 30] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 31] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 32]; second = data[kCommonNameOffset + 33]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 32] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 33] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 34]; second = data[kCommonNameOffset + 35]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 34] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 35] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 36]; second = data[kCommonNameOffset + 37]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 36] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 37] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonNameOffset + 38]; second = data[kCommonNameOffset + 39]; static_cast<unsigned char*>(destination)[kCommonNameOffset + 38] = first; static_cast<unsigned char*>(destination)[kCommonNameOffset + 39] = second; }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 0];
+        second = data[kCommonNameOffset + 1];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 0] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 1] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 2];
+        second = data[kCommonNameOffset + 3];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 2] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 3] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 4];
+        second = data[kCommonNameOffset + 5];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 4] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 5] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 6];
+        second = data[kCommonNameOffset + 7];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 6] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 7] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 8];
+        second = data[kCommonNameOffset + 9];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 8] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 9] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 10];
+        second = data[kCommonNameOffset + 11];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 10] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 11] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 12];
+        second = data[kCommonNameOffset + 13];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 12] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 13] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 14];
+        second = data[kCommonNameOffset + 15];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 14] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 15] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 16];
+        second = data[kCommonNameOffset + 17];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 16] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 17] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 18];
+        second = data[kCommonNameOffset + 19];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 18] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 19] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 20];
+        second = data[kCommonNameOffset + 21];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 20] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 21] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 22];
+        second = data[kCommonNameOffset + 23];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 22] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 23] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 24];
+        second = data[kCommonNameOffset + 25];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 24] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 25] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 26];
+        second = data[kCommonNameOffset + 27];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 26] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 27] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 28];
+        second = data[kCommonNameOffset + 29];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 28] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 29] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 30];
+        second = data[kCommonNameOffset + 31];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 30] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 31] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 32];
+        second = data[kCommonNameOffset + 33];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 32] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 33] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 34];
+        second = data[kCommonNameOffset + 35];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 34] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 35] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 36];
+        second = data[kCommonNameOffset + 37];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 36] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 37] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonNameOffset + 38];
+        second = data[kCommonNameOffset + 39];
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 38] = first;
+        static_cast<unsigned char*>(destination)[kCommonNameOffset + 39] = second;
+    }
     // Copy the complete 40-byte icon field; pairs retain the original byte schedule.
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 0]; second = data[kCommonIconOffset + 1]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 0] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 1] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 2]; second = data[kCommonIconOffset + 3]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 2] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 3] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 4]; second = data[kCommonIconOffset + 5]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 4] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 5] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 6]; second = data[kCommonIconOffset + 7]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 6] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 7] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 8]; second = data[kCommonIconOffset + 9]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 8] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 9] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 10]; second = data[kCommonIconOffset + 11]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 10] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 11] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 12]; second = data[kCommonIconOffset + 13]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 12] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 13] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 14]; second = data[kCommonIconOffset + 15]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 14] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 15] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 16]; second = data[kCommonIconOffset + 17]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 16] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 17] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 18]; second = data[kCommonIconOffset + 19]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 18] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 19] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 20]; second = data[kCommonIconOffset + 21]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 20] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 21] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 22]; second = data[kCommonIconOffset + 23]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 22] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 23] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 24]; second = data[kCommonIconOffset + 25]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 24] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 25] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 26]; second = data[kCommonIconOffset + 27]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 26] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 27] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 28]; second = data[kCommonIconOffset + 29]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 28] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 29] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 30]; second = data[kCommonIconOffset + 31]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 30] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 31] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 32]; second = data[kCommonIconOffset + 33]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 32] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 33] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 34]; second = data[kCommonIconOffset + 35]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 34] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 35] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 36]; second = data[kCommonIconOffset + 37]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 36] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 37] = second; }
-    { unsigned char second; unsigned char first; first = data[kCommonIconOffset + 38]; second = data[kCommonIconOffset + 39]; static_cast<unsigned char*>(destination)[kCommonIconOffset + 38] = first; static_cast<unsigned char*>(destination)[kCommonIconOffset + 39] = second; }
-    (*( unsigned int*)&((IffItemCommon*)destination)->typeId) = (*( unsigned int*)&recordBuffer.common.typeId);
-    (*( unsigned int*)&((IffItemCommon*)destination)->price) = (*( unsigned int*)&recordBuffer.common.price);
-    (*( unsigned char*)&((IffItemCommon*)destination)->levelFlags) = recordBuffer.common.levelFlags;
-    (*( unsigned char*)&((IffItemCommon*)destination)->shopFlags) = recordBuffer.common.shopFlags;
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 0];
+        second = data[kCommonIconOffset + 1];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 0] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 1] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 2];
+        second = data[kCommonIconOffset + 3];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 2] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 3] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 4];
+        second = data[kCommonIconOffset + 5];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 4] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 5] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 6];
+        second = data[kCommonIconOffset + 7];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 6] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 7] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 8];
+        second = data[kCommonIconOffset + 9];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 8] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 9] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 10];
+        second = data[kCommonIconOffset + 11];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 10] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 11] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 12];
+        second = data[kCommonIconOffset + 13];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 12] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 13] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 14];
+        second = data[kCommonIconOffset + 15];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 14] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 15] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 16];
+        second = data[kCommonIconOffset + 17];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 16] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 17] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 18];
+        second = data[kCommonIconOffset + 19];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 18] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 19] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 20];
+        second = data[kCommonIconOffset + 21];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 20] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 21] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 22];
+        second = data[kCommonIconOffset + 23];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 22] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 23] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 24];
+        second = data[kCommonIconOffset + 25];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 24] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 25] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 26];
+        second = data[kCommonIconOffset + 27];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 26] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 27] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 28];
+        second = data[kCommonIconOffset + 29];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 28] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 29] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 30];
+        second = data[kCommonIconOffset + 31];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 30] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 31] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 32];
+        second = data[kCommonIconOffset + 33];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 32] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 33] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 34];
+        second = data[kCommonIconOffset + 35];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 34] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 35] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 36];
+        second = data[kCommonIconOffset + 37];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 36] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 37] = second;
+    }
+    {
+        unsigned char second;
+        unsigned char first;
+        first = data[kCommonIconOffset + 38];
+        second = data[kCommonIconOffset + 39];
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 38] = first;
+        static_cast<unsigned char*>(destination)[kCommonIconOffset + 39] = second;
+    }
+    (*(unsigned int*)&((IffItemCommon*)destination)->typeId) = (*(unsigned int*)&recordBuffer.common.typeId);
+    (*(unsigned int*)&((IffItemCommon*)destination)->price) = (*(unsigned int*)&recordBuffer.common.price);
+    (*(unsigned char*)&((IffItemCommon*)destination)->levelFlags) = recordBuffer.common.levelFlags;
+    (*(unsigned char*)&((IffItemCommon*)destination)->shopFlags) = recordBuffer.common.shopFlags;
     // Preserve the trailing common-item metadata word; its individual bits are not decoded here.
-    (*( unsigned short*)&((IffItemCommon*)destination)->commonFlagWord) = (*( unsigned short*)&recordBuffer.common.commonFlagWord);
+    (*(unsigned short*)&((IffItemCommon*)destination)->commonFlagWord) =
+        (*(unsigned short*)&recordBuffer.common.commonFlagWord);
     return 1;
 }
+
+extern "C" {
 #pragma opt_propagation reset
 #pragma opt_common_subs reset
 } // extern "C"

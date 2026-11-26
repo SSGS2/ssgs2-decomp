@@ -5,17 +5,25 @@
 // GetFileSize below owns submission and immediate-rejection cleanup. Callback
 // layout is classes/FmemOperationCallback.h. No gameplay tuning constants here.
 
+#include "classes/GtlFileIoDeviceFMEM.h"
 #include "classes/FmemOperationCallback.h"
 #include "types.h"
 
 // Global single-operation record: +0 callback, +4 owned length buffer, +8 byte count.
 // DispatchNandCallback passes the buffer to the callback, which releases it.
-struct FmemLengthOperation { void* callback; void* resultBuffer; int resultBytes; };
-typedef char FmemLengthOperationSizeCheck[sizeof(FmemLengthOperation)==12 ? 1 : -1];
-static const int kFmemResultBufferOffset=(int)&((FmemLengthOperation*)0)->resultBuffer;
+struct FmemLengthOperation {
+    void* callback;
+    void* resultBuffer;
+    int resultBytes;
+};
+typedef char FmemLengthOperationSizeCheck[sizeof(FmemLengthOperation) == 12 ? 1 : -1];
+static const int kFmemResultBufferOffset = (int)&((FmemLengthOperation*)0)->resultBuffer;
 // Destruction is virtual slot one in the operation callback interface.
-struct FileLengthCallbackInterface { 
-virtual void reserved0(); virtual void destroy(); virtual void reserved2(); virtual void reserved3();
+struct FileLengthCallbackInterface {
+    virtual void reserved0();
+    virtual void destroy();
+    virtual void reserved2();
+    virtual void reserved3();
 };
 static const unsigned int kInvalidFileHandle = 0xFFFFFFFFU;
 static const int kFileLengthQueryFailed = -1;
@@ -36,7 +44,6 @@ void FileIO_Free(void* p);
 int NANDGetLength(int a, void* b);
 int NANDGetLengthAsync(int a, void* b, void* c, void* d);
 void NANDSetUserData(void* a, void* b);
-void gtl_CFileIoDeviceFMEM_DispatchNandCallback(void* self, void* arg);
 
 extern char __vt__Q23gtl20CCallBackGetFileSize[];
 extern char s_fmemAsyncOperation[];
@@ -98,44 +105,55 @@ static inline void TranslateNandLengthError(int nandResult, int& lastError) {
     // Ordered comparisons retain the binary layout; labels below are the mapping table.
     if (nandResult != kNandMaxBlocks) {
         if (nandResult < kNandMaxBlocks) {
-            if (nandResult == kNandAuthentication) goto errorAuthentication;
+            if (nandResult == kNandAuthentication)
+                goto errorAuthentication;
             if (nandResult < kNandAuthentication) {
-                if (nandResult == kNandUnknown) goto errorUnknown;
+                if (nandResult == kNandUnknown)
+                    goto errorUnknown;
                 // Original 0x80419C8C: both bounds share the default result.
                 if (nandResult < kNandUnknown) {
-                    if (nandResult != kNandFatal) goto errorDefault;
+                    if (nandResult != kNandFatal)
+                        goto errorDefault;
                     goto errorFatal;
                 }
                 goto errorDefault;
             } else {
-                if (nandResult == kNandNoEntry) goto errorNoEntry;
+                if (nandResult == kNandNoEntry)
+                    goto errorNoEntry;
                 if (nandResult < kNandNoEntry) {
-                    if (nandResult < kNandNotEmpty) goto errorOpenFds;
+                    if (nandResult < kNandNotEmpty)
+                        goto errorOpenFds;
                     goto errorNotEmpty;
                 } else {
-                    if (nandResult < kNandMaxFds) goto errorMaxFiles;
+                    if (nandResult < kNandMaxFds)
+                        goto errorMaxFiles;
                     goto errorMaxFds;
                 }
             }
         } else {
-            if (nandResult == kNandBusy) goto errorBusy;
+            if (nandResult == kNandBusy)
+                goto errorBusy;
             if (nandResult < kNandBusy) {
-                if (nandResult == kNandExists) goto errorExists;
+                if (nandResult == kNandExists)
+                    goto errorExists;
                 if (nandResult < kNandExists) {
-                    if (nandResult < kNandReserved7) goto errorInvalid;
+                    if (nandResult < kNandReserved7)
+                        goto errorInvalid;
                     goto errorDefault;
                 } else {
-                    if (nandResult < kNandCorrupt) goto errorEccCritical;
+                    if (nandResult < kNandCorrupt)
+                        goto errorEccCritical;
                     goto errorCorrupt;
                 }
             } else {
                 if (nandResult != 0) {
-                    if (nandResult >= 0) goto errorDefault;
-                    if (nandResult < kNandAccess) goto errorAllocation;
+                    if (nandResult >= 0)
+                        goto errorDefault;
+                    if (nandResult < kNandAccess)
+                        goto errorAllocation;
                     goto errorAccess;
                 }
             }
-
         }
         lastError = kFileSuccess;
         goto translated;
@@ -189,13 +207,14 @@ errorFatal:
     goto translated;
 errorDefault:
     lastError = kFileUnknown;
-translated:
-    ;
+translated:;
 }
 #pragma pop
 
+} // extern "C"
+
 // Return a synchronous byte length, or submit an asynchronous length query.
-// fileHandle is a borrowed FmemFileState/NAND file-info address; self is unused.
+// fileHandle is a borrowed FmemFileState/NAND file-info address.
 // completionAddress == 0: return length or -1; optional outSyncWord becomes zero
 // only on success. Otherwise return 0 for accepted submission, -1 for rejection,
 // and leave outSyncWord untouched. Last-error describes the immediate NAND result.
@@ -206,7 +225,7 @@ translated:
 // on entry and prevent overlapping async operations until completion;
 // completion frees the allocated length buffer and callback wrapper. Allocation
 // failure is unchecked here, as in the existing implementation.
-int gtl_CFileIoDeviceFMEM_GetFileSize(void* self, unsigned int fileHandle, int* outSyncWord, int completionAddress) {
+int gtl::CFileIoDeviceFMEM::GetFileSize(unsigned int fileHandle, int* outSyncWord, int completionAddress) {
     if (fileHandle == kInvalidFileHandle) {
         File_SetLastError(kFileInvalidHandle);
         return kFileLengthQueryFailed;
@@ -244,7 +263,9 @@ int gtl_CFileIoDeviceFMEM_GetFileSize(void* self, unsigned int fileHandle, int* 
         *(int*)LengthOperationAt(operation).resultBuffer = 0;
         // Async phase 2: publish the shared record, then submit the NAND operation.
         NANDSetUserData(s_nandAsyncCommandBlock, (void*)operation);
-        int nandResult = NANDGetLengthAsync(fileHandle, LengthOperationAt(s_fmemAsyncOperation).resultBuffer, (void*)gtl_CFileIoDeviceFMEM_DispatchNandCallback, s_nandAsyncCommandBlock);
+        int nandResult =
+            NANDGetLengthAsync(fileHandle, LengthOperationAt(s_fmemAsyncOperation).resultBuffer,
+                               (void*)gtl::CFileIoDeviceFMEM::DispatchNandCallback, s_nandAsyncCommandBlock);
         int operationResult = nandResult;
         int lastError;
         TranslateNandLengthError(nandResult, lastError);
@@ -264,4 +285,5 @@ int gtl_CFileIoDeviceFMEM_GetFileSize(void* self, unsigned int fileHandle, int* 
         return 0;
     }
 }
-} // extern "C"
+
+extern "C" {} // extern "C"

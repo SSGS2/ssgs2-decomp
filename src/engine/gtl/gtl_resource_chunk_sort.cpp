@@ -2,8 +2,6 @@
 // file offset (+0xC). The other three words travel with the key unchanged.
 // Mod lookup: small-range cutoff is 20 records below; pivot sampling uses
 // s_resourceChunkPivotSampleCycle and SortThreeByOffset (gtl_resource_chunk_sort3.cpp). No gameplay tuning knobs.
-// Translation unit 0x803D7914-0x803D7E18 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -37,8 +35,7 @@ void gtl_ResourceChunks_SortThreeByOffset(ResChunk** a, ResChunk** b, ResChunk**
 // No error return or range validation. Normal sampling-cycle state is required.
 // Phase map: <=20 selection sort; otherwise sample/partition, then either skip
 // the equal-minimum run or recurse on the smaller partition and loop on larger.
-void gtl_ResourceChunks_SortByOffsetRecursive(ResChunk** pBegin, ResChunk** pEnd, void* ctx)
-{
+void gtl_ResourceChunks_SortByOffsetRecursive(ResChunk** pBegin, ResChunk** pEnd, void* ctx) {
     ResChunk* last;
     for (;;) {
         int n = *pEnd - *pBegin;

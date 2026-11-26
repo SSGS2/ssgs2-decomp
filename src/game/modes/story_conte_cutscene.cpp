@@ -1,15 +1,15 @@
 // Story cutscene (CStoryConte): event/model loading, shared messages and sound
 // bank lifetime, scene playback, skip fade, and upper-right skip-caption drawing.
 // Modding lookup (frame rate / UI counters / models / widescreen):
-// - CStoryConte_OnProcess, kStorySkipFade: skipFadeUpdateCount counts PROCESS CALLS,
+// - CStoryConte::OnProcess, kStorySkipFade: skipFadeUpdateCount counts PROCESS CALLS,
 //   not video retraces or milliseconds. kSkipFadeScaledUpdates=15 and
 //   kSkipFadeDefaultUpdates=18 select duration-scaling policy (25/30 main-frame
 //   updates/s respectively, main_frame_letter_and_mouse_cursor.cpp); they are not 50/60-Hz constants.
 //   Alpha is truncated float(counter*255)/selectedLimit. Keep completion and
 //   divisor thresholds paired, counter preincrement and later cleanup return.
-// - CStoryConte_OnDisplay: kFloat_640_StoryConte is the reference UI width;
+// - CStoryConte::OnDisplay: kFloat_640_StoryConte is the reference UI width;
 //   right margin=20, top=48, width=128, height=32 come from named bit-pattern
-//   constants in u8008C090_data.cpp. Widescreen edits need this UI reference and
+//   constants in the data section. Widescreen edits need this UI reference and
 //   input/layout consumers coordinated, not just a physical framebuffer width.
 //   Format 0x11F005/24-byte stride belongs to the four-vertex caption template.
 // - OnPreLoadInit/OnLoad/ProcessPlayerEventScripts resolve player event names,
@@ -40,12 +40,12 @@
 typedef std::vector<void*, app::app_allocator<void*> > MSLPointerVector;
 // String-pool view; byte lengths include terminators and original padding.
 struct StoryStringPool {
-    char headBone[11]; // +0x0
-    char emptyPathPrefix[1]; // +0xB
-    char objectExtension[5]; // +0xC
+    char headBone[11];        // +0x0
+    char emptyPathPrefix[1];  // +0xB
+    char objectExtension[5];  // +0xC
     char scriptOwnerName[11]; // +0x11
     char skipCaptionFile[19]; // +0x1C
-    char soundBank[9]; // +0x2F
+    char soundBank[9];        // +0x2F
 };
 #define StoryStrings (*((StoryStringPool*)storyConteStrings))
 
@@ -56,53 +56,92 @@ struct StoryStringPool {
 #include "game/string.h"
 #include "game/eventconte.h"
 
-// Translation unit 0x8008C090-0x80090284 (34 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include "classes/CEventHandle.h"
+#include "classes/CEventHandleTreeIterator.h"
+#include "classes/CEventEffect.h"
 #include "classes/CStoryConte.h"
 #include "classes/CEventConteProc.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CBpPlayer.h"
+#include "classes/CB2dPlayerHandle.h"
+#include "classes/CNowReloading.h"
+#include "classes/CEffectFade.h"
+#include "classes/CBpTex.h"
 
 #define AsCEventConteProc(p) ((CEventConteProc*)(p))
+
+// One call site passes a second pointer that CEventEffect::Init ignores; keep it
+// by calling the initializer through its symbol.
+extern "C" void* Init__12CEventEffectFv(CEventEffect* self, void* ignored);
 
 #define AsCStoryConte(p) ((CStoryConte*)(p))
 
 #define AsCEventHandle(p) ((CEventHandle*)(p))
 enum StoryState {
-    kStoryIdle = 0, kStoryLoading = 1, kStoryWaitForSkipCaption = 2,
-    kStoryPlaying = 3, kStoryCleanup = 4, kStorySkipFade = 5, kStoryFinished = 6
+    kStoryIdle = 0,
+    kStoryLoading = 1,
+    kStoryWaitForSkipCaption = 2,
+    kStoryPlaying = 3,
+    kStoryCleanup = 4,
+    kStorySkipFade = 5,
+    kStoryFinished = 6
 };
 enum StoryMessage {
-    kStoryEnter = 0, kStoryLeave = 1, kStoryStart = 2,
-    kStoryQueryComplete = 3, kStoryQueryEventNames = 4
+    kStoryEnter = 0,
+    kStoryLeave = 1,
+    kStoryStart = 2,
+    kStoryQueryComplete = 3,
+    kStoryQueryEventNames = 4
 };
 // These thresholds select duration-scaling policy, not video refresh rate:
 // the main-frame clock also selects 25 versus 30 updates/s with the same query.
 // Both baselines are 0.6 s at those update rates; increasing a threshold slows
 // the skip fade. A later frame rate mod must scale BOTH thresholds and keep the
 // alpha divisor equal to the selected completion threshold (two query calls).
-enum { kStoryPlayerCount = 2, kStoryModelSlotCount = 5,
-       kSkipFadeScaledUpdates = 15, kSkipFadeDefaultUpdates = 18,
-       kSkipActionPrimary = 0x11, kSkipActionSecondary = 0x12,
-       kStoryOpaqueAlpha = 255,
-       kStoryCaptionVertexFormat = 0x11F005, kStoryCaptionStrip = 0x98,
-       kStoryCaptionVertexCount = 4, kStoryCaptionVertexBytes = 0x18,
-       kStoryScriptHandleBytes = 0x4A8, kStoryFileLoaderBytes = 0x30,
-       kStoryModelSlotBytes = 0x50, kStoryModelArrayCookieBytes = 0x10,
-       kStoryModelArrayBytes = kStoryModelSlotCount * kStoryModelSlotBytes + kStoryModelArrayCookieBytes };
+enum {
+    kStoryPlayerCount = 2,
+    kStoryModelSlotCount = 5,
+    kSkipFadeScaledUpdates = 15,
+    kSkipFadeDefaultUpdates = 18,
+    kSkipActionPrimary = 0x11,
+    kSkipActionSecondary = 0x12,
+    kStoryOpaqueAlpha = 255,
+    kStoryCaptionVertexFormat = 0x11F005,
+    kStoryCaptionStrip = 0x98,
+    kStoryCaptionVertexCount = 4,
+    kStoryCaptionVertexBytes = 0x18,
+    kStoryScriptHandleBytes = 0x4A8,
+    kStoryFileLoaderBytes = 0x30,
+    kStoryModelSlotBytes = 0x50,
+    kStoryModelArrayCookieBytes = 0x10,
+    kStoryModelArrayBytes = kStoryModelSlotCount * kStoryModelSlotBytes + kStoryModelArrayCookieBytes
+};
 
-struct ScriptObjectVtable20 { char reserved00[0x20]; void* vtable; };
-struct ScriptObjectVtable30 { char reserved00[0x30]; void* vtable; };
-struct BoneControllerView { char reserved00[0x68]; void* controller; };
-enum StoryVirtualTableConstants { kTaskMainVtableOffset = 0x3C };
+struct ScriptObjectVtable20 {
+    char reserved00[0x20];
+    void* vtable;
+};
+struct ScriptObjectVtable30 {
+    char reserved00[0x30];
+    void* vtable;
+};
+struct BoneControllerView {
+    char reserved00[0x68];
+    void* controller;
+};
+enum StoryVirtualTableConstants {
+    kTaskMainVtableOffset = 0x3C
+};
 
 extern "C" {
 void* __dl__FPv(void*);
 
 struct StoryPathString {
-    union { unsigned int flags; unsigned char shortData[4]; };
+    union {
+        unsigned int flags;
+        unsigned char shortData[4];
+    };
     unsigned int longLength;
 };
 struct StoryLoadView {
@@ -117,20 +156,12 @@ struct StoryLoadView {
 };
 extern char* SharedStringState_GetFirstString(int);
 extern void String_ReplaceRange(StoryPathString*, int, int, char*, char*, void*);
-extern int CEventLoad_Poll(void*);
-extern void CBpPlayer_Ctor(void*);
-extern void CBpPlayer_Dtor();
+extern void __ct__9CBpPlayerFv(void*);
+extern void __dt__9CBpPlayerFv();
 extern void __register_global_object(void*, void (*)(), void*);
 extern int EventText_PollMessageResources(void*);
-extern int CBpPlayer_PollResourceLoad(void*);
-extern void CBpPlayer_ReleaseResources(void*);
-extern void CBpPlayer_StartLoad(void*, void*, int, int);
-extern void CBpPlayer_LoadMessageResources(void*);
-extern void CEventLoad_ctor(void*, void*, int, int);
-extern void* CBpTex_Init(void*);
 extern void* __nw__FUl(unsigned int);
 extern int GameHook_ReservedFalse(); // Optional external-file loading hook; the shipped implementation returns false.
-extern void CStoryConte_ProcessPlayerEventScripts(StoryLoadView*, int);
 extern int StoryConte_AreRequiredFilesAvailable();
 extern int g_eventFaceDataFilename;
 extern signed char s_bpPlayerInitialized;
@@ -147,14 +178,14 @@ extern void ScriptSharedFiles_ResetRequiredFilesAndHandlers(void*);
 extern void ScriptState_RunSharedFileCommandsUntilComplete(void*, int);
 extern void ScriptByteMap_FreeSubtree(void*, void*);
 extern void appFreeUni__FPv(void*);
-extern void CEventEffect_Ctor(void*, ...);
 extern unsigned char storyConteStrings[];
 
-struct AsyncLoadInterface { unsigned char pad[0x24]; 
-virtual void Destroy(int);
+struct AsyncLoadInterface {
+    unsigned char pad[0x24];
+    virtual void Destroy(int);
 };
-struct ResourceInterface { 
-virtual void Destroy(int);
+struct ResourceInterface {
+    virtual void Destroy(int);
 };
 // Return the length from inline or heap-backed narrow-string storage.
 static inline unsigned int StoryPathLength(StoryPathString* str) {
@@ -167,7 +198,8 @@ static inline unsigned int StoryPathLength(StoryPathString* str) {
 // sets idle. Otherwise face loader is required; loader/player/file readiness may
 // block indefinitely. Shared file hook can return early before setup. Path string
 // is task-owned, resource buffers remain loader-owned; no completion result.
-void CStoryConte_OnLoad(StoryLoadView* self) {
+void CStoryConte::OnLoad() {
+    StoryLoadView* self = (StoryLoadView*)this;
     // Phase 1: prefer the first player path, then the second; append the object extension.
     char temps[0x30];
     char* text = SharedStringState_GetFirstString(0);
@@ -186,7 +218,8 @@ void CStoryConte_OnLoad(StoryLoadView* self) {
         unsigned int size3 = StoryPathLength(&self->string);
         temps[44] = temps[40];
         String_ReplaceRange(&self->string, size3, 0, extension, strlen(extension) + extension, &temps[44]);
-        data = !(self->string.flags >> 31) ? (char*)&AsCStoryConte(self)->inlineEventPath : (*(char**)&AsCStoryConte(self)->eventPathData);
+        data = !(self->string.flags >> 31) ? (char*)&AsCStoryConte(self)->inlineEventPath
+                                           : (*(char**)&AsCStoryConte(self)->eventPathData);
     }
     if (data == 0) {
         char* secondText = SharedStringState_GetFirstString(1);
@@ -204,7 +237,8 @@ void CStoryConte_OnLoad(StoryLoadView* self) {
             unsigned int size3 = StoryPathLength(&self->string);
             temps[20] = temps[16];
             String_ReplaceRange(&self->string, size3, 0, extension, strlen(extension) + extension, &temps[20]);
-            data = !(self->string.flags >> 31) ? (char*)&AsCStoryConte(self)->inlineEventPath : (*(char**)&AsCStoryConte(self)->eventPathData);
+            data = !(self->string.flags >> 31) ? (char*)&AsCStoryConte(self)->inlineEventPath
+                                               : (*(char**)&AsCStoryConte(self)->eventPathData);
         }
     }
     // Phase 2: no path tears down loaders/caption; a path polls resources and runs setup.
@@ -219,27 +253,27 @@ void CStoryConte_OnLoad(StoryLoadView* self) {
         if (self->faceDataLoader != 0) {
             typedef void (*Destroy)(void*, int);
             if (self->faceDataLoader != 0) {
-            ((AsyncLoadInterface*)self->faceDataLoader)->Destroy(1);
+                ((AsyncLoadInterface*)self->faceDataLoader)->Destroy(1);
             }
             self->faceDataLoader = 0;
         }
         if (self->skipCaption != 0) {
             typedef void (*Destroy)(void*, int);
             if (self->skipCaption != 0) {
-            ((ResourceInterface*)self->skipCaption)->Destroy(1);
+                ((ResourceInterface*)self->skipCaption)->Destroy(1);
             }
             self->skipCaption = 0;
         }
         AsCStoryConte(self)->state = 0;
     } else {
         if (self->eventLoader != 0) {
-            CEventLoad_Poll(self->eventLoader);
+            ((CEventLoad*)(self->eventLoader))->Poll();
         }
-        CEventLoad_Poll(self->faceDataLoader);
+        ((CEventLoad*)(self->faceDataLoader))->Poll();
         if (((volatile int&)Sing_805DC670()) == 0) {
             if (s_bpPlayerInitialized == 0) {
-                CBpPlayer_Ctor(s_bpPlayer);
-                __register_global_object(s_bpPlayer, CBpPlayer_Dtor, s_partyBpPlayerDtorRegistration);
+                ((CBpPlayer*)s_bpPlayer)->__ct();
+                __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, s_partyBpPlayerDtorRegistration);
                 s_bpPlayerInitialized = 1;
             }
             ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
@@ -248,17 +282,20 @@ void CStoryConte_OnLoad(StoryLoadView* self) {
         for (;;) {
             if (((volatile int&)Sing_805DC670()) == 0) {
                 if (s_bpPlayerInitialized == 0) {
-                    CBpPlayer_Ctor(s_bpPlayer);
-                    __register_global_object(s_bpPlayer, CBpPlayer_Dtor, s_partyBpPlayerDtorRegistration);
+                    ((CBpPlayer*)s_bpPlayer)->__ct();
+                    __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, s_partyBpPlayerDtorRegistration);
                     s_bpPlayerInitialized = 1;
                 }
                 ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
             }
-            if (CBpPlayer_PollResourceLoad((void*)((volatile int&)Sing_805DC670())) != 0) break;
+            if (((CBpPlayer*)(((volatile int&)Sing_805DC670())))->PollResourceLoad() != 0)
+                break;
         }
-        if (GameHook_ReservedFalse() != 0) return;
-        CStoryConte_ProcessPlayerEventScripts(self, 1);
-        while (StoryConte_AreRequiredFilesAvailable() == 0) {}
+        if (GameHook_ReservedFalse() != 0)
+            return;
+        ProcessPlayerEventScripts(self, 1);
+        while (StoryConte_AreRequiredFilesAvailable() == 0) {
+        }
     }
 }
 
@@ -270,39 +307,47 @@ struct StoryScriptStorage {
 // Release both child subtrees, then free this tree node.
 static inline void cleanLeaf(void* list, void* n) {
     void* child = *(void**)n;
-    if (child != 0) ScriptByteMap_FreeSubtree(list, child);
-    child = AsScriptByteTreeNode80092804(n)->right;
-    if (child != 0) ScriptByteMap_FreeSubtree(list, child);
+    if (child != 0)
+        ScriptByteMap_FreeSubtree(list, child);
+    child = AsEventScriptByteTreeNode(n)->right;
+    if (child != 0)
+        ScriptByteMap_FreeSubtree(list, child);
     appFreeUni__FPv(n);
 }
 // Free two levels of nodes before delegating deeper branches to the shared tree cleanup.
 static inline void cleanLevel1(void* list, void* n) {
     void* child = *(void**)n;
-    if (child != 0) cleanLeaf(list, child);
-    child = AsScriptByteTreeNode80092804(n)->right;
-    if (child != 0) cleanLeaf(list, child);
+    if (child != 0)
+        cleanLeaf(list, child);
+    child = AsEventScriptByteTreeNode(n)->right;
+    if (child != 0)
+        cleanLeaf(list, child);
     appFreeUni__FPv(n);
 }
 // Free three levels of nodes before delegating deeper branches to the shared tree cleanup.
 static inline void cleanLevel2(void* list, void* n) {
     void* child = *(void**)n;
-    if (child != 0) cleanLevel1(list, child);
-    child = AsScriptByteTreeNode80092804(n)->right;
-    if (child != 0) cleanLevel1(list, child);
+    if (child != 0)
+        cleanLevel1(list, child);
+    child = AsEventScriptByteTreeNode(n)->right;
+    if (child != 0)
+        cleanLevel1(list, child);
     appFreeUni__FPv(n);
 }
 // Destroy a subtree in postorder using the original unrolled cleanup depth.
 static inline void cleanTree(void* list, void* n) {
     void* child = *(void**)n;
-    if (child != 0) cleanLevel2(list, child);
-    child = AsScriptByteTreeNode80092804(n)->right;
-    if (child != 0) cleanLevel2(list, child);
+    if (child != 0)
+        cleanLevel2(list, child);
+    child = AsEventScriptByteTreeNode(n)->right;
+    if (child != 0)
+        cleanLevel2(list, child);
     appFreeUni__FPv(n);
 }
 
 // The five owned handlers and five pointer lists retain separate storage/lifetimes.
-// Field view of the 0x4A8-byte CEventHandle (the object CEventHandle_dtor tears down), used for script-handle
-// set-up in CStoryConte_ProcessPlayerEventScripts and by the destructor helpers below.
+// Field view of the 0x4A8-byte CEventHandle (the object ~CEventHandle tears down), used for script-handle
+// set-up in ProcessPlayerEventScripts and by the destructor helpers below.
 // These are disjoint regions of ONE handle, not a CStoryConte base subobject:
 // +000..007 flags/condition counters; +008..407 256 script-variable words;
 // +408..413 owning tagged string; +414 borrowed script base; +418 cursor;
@@ -331,48 +376,48 @@ static inline void cleanTree(void* list, void* n) {
 // synchronous command keeps its pending event until completion. Keyed model
 // moves can instead publish into +470, separate from the model queue.
 // EventScript_RunAndSweep/SweepPendingCallbacks poll these collections;
-// CEventHandle_dtor deletes pending handlers, then queued wrappers, map payloads,
+// ~CEventHandle deletes pending handlers, then queued wrappers, map payloads,
 // then releases vector/tree storage (and the embedded effect map/name). Script
 // buffers and manager are borrowed throughout; face objects are separately
 // retained/released by the resource-map path, not freed with variable words.
 struct StoryScriptInitView {
     unsigned char pad000[0x408];
-    StoryPathString name;            // 0x408
-    unsigned int ownerNameData;          // 0x410
-    void* sourceBuffer;                 // 0x414
-    void* commandCursor;                 // 0x418
-    unsigned int commandCount;          // 0x41c
-    unsigned int ownedHandler0;          // 0x420
-    unsigned int ownedHandler1;          // 0x424
-    unsigned int ownedHandler2;          // 0x428
-    unsigned int ownedHandler3;          // 0x42c
-    unsigned int ownedHandler4;          // 0x430
-    unsigned int objectList0Data;          // 0x434
-    unsigned int objectList0Count;          // 0x438
-    unsigned int objectList0Capacity;          // 0x43c
-    unsigned int objectList1Data;          // 0x440
-    unsigned int objectList1Count;          // 0x444
-    unsigned int objectList1Capacity;          // 0x448
-    unsigned int objectList2Data;          // 0x44c
-    unsigned int objectList2Count;          // 0x450
-    unsigned int objectList2Capacity;          // 0x454
-    unsigned int objectList3Data;          // 0x458
-    unsigned int objectList3Count;          // 0x45c
-    unsigned int objectList3Capacity;          // 0x460
-    unsigned int objectList4Data;          // 0x464
-    unsigned int objectList4Count;          // 0x468
-    unsigned int objectList4Capacity;          // 0x46c
-    unsigned int objectTreeCount;          // 0x470
-    void* objectTreeRoot;                 // 0x474
-    void** objectTreeEnd;                // 0x478
-    unsigned char pad47c[0x10]; // 0x47c
-    unsigned int pendingResource;          // 0x48c
-    unsigned int resourceTreeCount;          // 0x490
-    void* resourceTreeRoot;                 // 0x494
-    void** resourceTreeEnd;                // 0x498
-    unsigned int faceScriptTableBase;          // 0x49c
-    unsigned int manager;          // 0x4a0
-    void** vtable;              // 0x4a4
+    StoryPathString name;             // 0x408
+    unsigned int ownerNameData;       // 0x410
+    void* sourceBuffer;               // 0x414
+    void* commandCursor;              // 0x418
+    unsigned int commandCount;        // 0x41c
+    unsigned int ownedHandler0;       // 0x420
+    unsigned int ownedHandler1;       // 0x424
+    unsigned int ownedHandler2;       // 0x428
+    unsigned int ownedHandler3;       // 0x42c
+    unsigned int ownedHandler4;       // 0x430
+    unsigned int objectList0Data;     // 0x434
+    unsigned int objectList0Count;    // 0x438
+    unsigned int objectList0Capacity; // 0x43c
+    unsigned int objectList1Data;     // 0x440
+    unsigned int objectList1Count;    // 0x444
+    unsigned int objectList1Capacity; // 0x448
+    unsigned int objectList2Data;     // 0x44c
+    unsigned int objectList2Count;    // 0x450
+    unsigned int objectList2Capacity; // 0x454
+    unsigned int objectList3Data;     // 0x458
+    unsigned int objectList3Count;    // 0x45c
+    unsigned int objectList3Capacity; // 0x460
+    unsigned int objectList4Data;     // 0x464
+    unsigned int objectList4Count;    // 0x468
+    unsigned int objectList4Capacity; // 0x46c
+    unsigned int objectTreeCount;     // 0x470
+    void* objectTreeRoot;             // 0x474
+    void** objectTreeEnd;             // 0x478
+    unsigned char pad47c[0x10];       // 0x47c
+    unsigned int pendingResource;     // 0x48c
+    unsigned int resourceTreeCount;   // 0x490
+    void* resourceTreeRoot;           // 0x494
+    void** resourceTreeEnd;           // 0x498
+    unsigned int faceScriptTableBase; // 0x49c
+    unsigned int manager;             // 0x4a0
+    void** vtable;                    // 0x4a4
 };
 
 #pragma push
@@ -391,7 +436,8 @@ struct StoryScriptInitView {
 // player table entries and valid little-endian offsets; no file-length validation.
 // Allocation failure is not recovered here. Preserve player order and per-player
 // string/constructor resets; they can affect shared requirement registration.
-void CStoryConte_ProcessPlayerEventScripts(StoryLoadView* self, int loadMode) {
+// The task is passed explicitly; declaring this non-static changes the argument registers.
+void CStoryConte::ProcessPlayerEventScripts(StoryLoadView* self, int loadMode) {
     char temps[0x24];
     unsigned int i;
     char* text;
@@ -401,7 +447,8 @@ void CStoryConte_ProcessPlayerEventScripts(StoryLoadView* self, int loadMode) {
 
     // Phase 1: reset shared-file requirements, then resolve each player path independently.
     ScriptSharedFiles_ResetRequiredFilesAndHandlers(self);
-    if (self->eventLoader == 0) return;
+    if (self->eventLoader == 0)
+        return;
     sepBase = (char*)storyConteStrings;
     for (i = 0; 1 >= i; i++) {
         text = SharedStringState_GetFirstString((unsigned char)i);
@@ -421,7 +468,8 @@ void CStoryConte_ProcessPlayerEventScripts(StoryLoadView* self, int loadMode) {
             size = !(self->string.flags >> 31) ? self->string.shortData[0] & 0x7f : self->string.longLength;
             temps[0x1c] = temps[0x18];
             String_ReplaceRange(&self->string, (int)size, 0, sep, sep + strlen(sep), &temps[0x1c]);
-            data = !(self->string.flags >> 31) ? (char*)&self->string.shortData[1] : (*(char**)&AsCEventHandle(self)->eventPathData);
+            data = !(self->string.flags >> 31) ? (char*)&self->string.shortData[1]
+                                               : (*(char**)&AsCEventHandle(self)->eventPathData);
         }
         if (data != 0) {
             unsigned int packed;
@@ -473,7 +521,7 @@ void CStoryConte_ProcessPlayerEventScripts(StoryLoadView* self, int loadMode) {
                     temps[0x22] = b1;
                 }
                 selected = table + *(unsigned int*)(temps + 0x20);
-                ((void (*)(void*))CEventEffect_Ctor)(sub);
+                ((CEventEffect*)sub)->Init();
                 obj->resourceTreeCount = 0;
                 obj->resourceTreeRoot = 0;
                 obj->resourceTreeEnd = &obj->resourceTreeRoot;
@@ -493,11 +541,56 @@ void CStoryConte_ProcessPlayerEventScripts(StoryLoadView* self, int loadMode) {
                 obj->ownedHandler2 = 0;
                 obj->ownedHandler3 = 0;
                 obj->ownedHandler4 = 0;
-                { volatile int* _p=(volatile int*)&obj->objectList0Count; int _o=*_p; union{int a;unsigned int u;} _b; _b.a=_o; *_p=_o-_b.u; }
-                { volatile int* _p=(volatile int*)&obj->objectList1Count; int _o=*_p; union{int a;unsigned int u;} _b; _b.a=_o; *_p=_o-_b.u; }
-                { volatile int* _p=(volatile int*)&obj->objectList2Count; int _o=*_p; union{int a;unsigned int u;} _b; _b.a=_o; *_p=_o-_b.u; }
-                { volatile int* _p=(volatile int*)&obj->objectList3Count; int _o=*_p; union{int a;unsigned int u;} _b; _b.a=_o; *_p=_o-_b.u; }
-                { volatile int* _p=(volatile int*)&obj->objectList4Count; int _o=*_p; union{int a;unsigned int u;} _b; _b.a=_o; *_p=_o-_b.u; }
+                {
+                    volatile int* _p = (volatile int*)&obj->objectList0Count;
+                    int _o = *_p;
+                    union {
+                        int a;
+                        unsigned int u;
+                    } _b;
+                    _b.a = _o;
+                    *_p = _o - _b.u;
+                }
+                {
+                    volatile int* _p = (volatile int*)&obj->objectList1Count;
+                    int _o = *_p;
+                    union {
+                        int a;
+                        unsigned int u;
+                    } _b;
+                    _b.a = _o;
+                    *_p = _o - _b.u;
+                }
+                {
+                    volatile int* _p = (volatile int*)&obj->objectList2Count;
+                    int _o = *_p;
+                    union {
+                        int a;
+                        unsigned int u;
+                    } _b;
+                    _b.a = _o;
+                    *_p = _o - _b.u;
+                }
+                {
+                    volatile int* _p = (volatile int*)&obj->objectList3Count;
+                    int _o = *_p;
+                    union {
+                        int a;
+                        unsigned int u;
+                    } _b;
+                    _b.a = _o;
+                    *_p = _o - _b.u;
+                }
+                {
+                    volatile int* _p = (volatile int*)&obj->objectList4Count;
+                    int _o = *_p;
+                    union {
+                        int a;
+                        unsigned int u;
+                    } _b;
+                    _b.a = _o;
+                    *_p = _o - _b.u;
+                }
                 if (obj->objectTreeRoot != 0) {
                     cleanTree((char*)&obj->objectTreeCount, obj->objectTreeRoot);
                     obj->objectTreeCount = 0;
@@ -532,7 +625,8 @@ void CStoryConte_ProcessPlayerEventScripts(StoryLoadView* self, int loadMode) {
 // Required task; replaces owned loaders after path resolution, then queues shared
 // messages/caption. Constructor exceptions free their raw allocation and rethrow;
 // previous resources already released stay released (no transactional rollback).
-void CStoryConte_OnPreLoadInit(StoryLoadView* self) {
+void CStoryConte::OnPreLoadInit() {
+    StoryLoadView* self = (StoryLoadView*)this;
     // Phase 1: resolve the event path before replacing any asynchronous loaders.
     char temps[0x34];
     char* text = SharedStringState_GetFirstString(0);
@@ -552,7 +646,8 @@ void CStoryConte_OnPreLoadInit(StoryLoadView* self) {
         size = !(self->string.flags >> 31) ? self->string.shortData[0] & 0x7f : self->string.longLength;
         temps[44] = temps[40];
         String_ReplaceRange(&self->string, size, 0, start, start + strlen(start), &temps[44]);
-        data = self->string.flags >> 31 ? (*(char**)&AsCStoryConte(self)->eventPathData) : (char*)&AsCStoryConte(self)->inlineEventPath;
+        data = self->string.flags >> 31 ? (*(char**)&AsCStoryConte(self)->eventPathData)
+                                        : (char*)&AsCStoryConte(self)->inlineEventPath;
     }
     if (data == 0) {
         char* text2 = SharedStringState_GetFirstString(1);
@@ -571,7 +666,8 @@ void CStoryConte_OnPreLoadInit(StoryLoadView* self) {
             size = !(self->string.flags >> 31) ? self->string.shortData[0] & 0x7f : self->string.longLength;
             temps[20] = temps[16];
             String_ReplaceRange(&self->string, size, 0, start, start + strlen(start), &temps[20]);
-            data = self->string.flags >> 31 ? (*(char**)&AsCStoryConte(self)->eventPathData) : (char*)&AsCStoryConte(self)->inlineEventPath;
+            data = self->string.flags >> 31 ? (*(char**)&AsCStoryConte(self)->eventPathData)
+                                            : (char*)&AsCStoryConte(self)->inlineEventPath;
         }
     }
     typedef void (*Destroy)(void*, int);
@@ -607,7 +703,7 @@ void CStoryConte_OnPreLoadInit(StoryLoadView* self) {
             object = __nw__FUl(kStoryFileLoaderBytes);
             if (object != 0) {
                 try {
-                    CEventLoad_ctor(object, data, 1, 0);
+                    ((CEventLoad*)object)->__ct(data, (void*)1, 0);
                 } catch (...) {
                     __dl__FPv(object);
                     throw;
@@ -618,7 +714,7 @@ void CStoryConte_OnPreLoadInit(StoryLoadView* self) {
         object = __nw__FUl(kStoryFileLoaderBytes);
         if (object != 0) {
             try {
-                CEventLoad_ctor(object, (void*)g_eventFaceDataFilename, 1, 0);
+                ((CEventLoad*)object)->__ct((const char*)g_eventFaceDataFilename, (void*)1, 0);
             } catch (...) {
                 __dl__FPv(object);
                 throw;
@@ -628,19 +724,19 @@ void CStoryConte_OnPreLoadInit(StoryLoadView* self) {
         void* target = (void*)((volatile int&)Sing_805DC670());
         if (target == 0) {
             if (s_bpPlayerInitialized == 0) {
-                CBpPlayer_Ctor(s_bpPlayer);
-                __register_global_object(s_bpPlayer, CBpPlayer_Dtor, s_partyBpPlayerDtorRegistration);
+                ((CBpPlayer*)s_bpPlayer)->__ct();
+                __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, s_partyBpPlayerDtorRegistration);
                 s_bpPlayerInitialized = 1;
             }
             target = s_bpPlayer;
             ((volatile int&)Sing_805DC670()) = (int)target;
         }
-        CBpPlayer_ReleaseResources(target);
+        ((CBpPlayer*)target)->ReleaseResources();
         target = (void*)((volatile int&)Sing_805DC670());
         if (target == 0) {
             if (s_bpPlayerInitialized == 0) {
-                CBpPlayer_Ctor(s_bpPlayer);
-                __register_global_object(s_bpPlayer, CBpPlayer_Dtor, s_partyBpPlayerDtorRegistration);
+                ((CBpPlayer*)s_bpPlayer)->__ct();
+                __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, s_partyBpPlayerDtorRegistration);
                 s_bpPlayerInitialized = 1;
             }
             target = s_bpPlayer;
@@ -648,19 +744,21 @@ void CStoryConte_OnPreLoadInit(StoryLoadView* self) {
         }
         // The name is the string at +0x3C: original 0x8008D4F0 `lwz r0,0x3c(r31)` tests its long-form bit and
         // picks +0x44 (long data) or +0x3D (inline data). It tested the +0x24 string's flag instead.
-        void* name = ((*(unsigned int*)&AsCStoryConte(self)->playerResourceNameFlags) >> 31) ? AsCStoryConte(self)->playerResourceNameData : (char*)&AsCStoryConte(self)->inlinePlayerResourceName;
-        CBpPlayer_StartLoad(target, name, 1, 0);
+        void* name = ((*(unsigned int*)&AsCStoryConte(self)->playerResourceNameFlags) >> 31)
+                         ? AsCStoryConte(self)->playerResourceNameData
+                         : (char*)&AsCStoryConte(self)->inlinePlayerResourceName;
+        ((CBpPlayer*)target)->StartLoad((const char*)name, 1, 0);
         target = (void*)((volatile int&)Sing_805DC670());
         if (target == 0) {
             if (s_bpPlayerInitialized == 0) {
-                CBpPlayer_Ctor(s_bpPlayer);
-                __register_global_object(s_bpPlayer, CBpPlayer_Dtor, s_partyBpPlayerDtorRegistration);
+                ((CBpPlayer*)s_bpPlayer)->__ct();
+                __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, s_partyBpPlayerDtorRegistration);
                 s_bpPlayerInitialized = 1;
             }
             target = s_bpPlayer;
             ((volatile int&)Sing_805DC670()) = (int)target;
         }
-        CBpPlayer_LoadMessageResources(target);
+        ((CBpPlayer*)target)->LoadMessageResources();
         void* item = self->skipCaption;
         if (item != 0) {
             if (item != 0) {
@@ -670,7 +768,8 @@ void CStoryConte_OnPreLoadInit(StoryLoadView* self) {
             self->skipCaption = 0;
         }
         item = __nw__FUl(0x28);
-        if (item != 0) CBpTex_Init(item);
+        if (item != 0)
+            ((CBpTex*)item)->__ct();
         self->skipCaption = item;
         typedef void (*SetName)(void*, void*);
         SetName setName = *(SetName*)(*(unsigned int*)item + 0xc);
@@ -679,12 +778,11 @@ void CStoryConte_OnPreLoadInit(StoryLoadView* self) {
 }
 
 // The story task has no additional initialization at this lifecycle stage.
-void CStoryConte_OnInit() {}
+void CStoryConte::OnInit() {}
 
 extern int StoryMovieConfig_PollDisplaySettled(void*);
 extern int StoryMovieConfig_SetDisplayModeIfChanged(void*, int);
 extern void StoryMovieConfig_ApplyDisplayMode(void*);
-extern int CBpPlayer_PollResourceLoad(void*);
 extern void EventMessage_ResetChildAndText(void*);
 extern void StoryMessage_DisableAndResetPanel(void*);
 extern int EventScript_RunAndSweep(void*);
@@ -692,15 +790,11 @@ extern int EventTiming_IsDurationScalingEnabled();
 extern int Input_IsActionPressed(void*, int, int);
 extern void InputManager_Init(void*);
 extern void InputManager_Dtor();
-extern void CEffectFade_Ctor(void*);
-extern int CEffectFade_GetAlpha(void*);
+extern void __ct__11CEffectFadeFv(void*);
 extern void FadeQuad_SetRgb(void*, int);
-extern void CEffectFade_SetAlpha(void*, int);
 extern void EventScript_RunBlocking(void*);
-extern void CNowReloading_Init(void*);
-extern void CNowReloading_dtor();
+extern void __dt__13CNowReloadingFv();
 extern int LoadingIndicator_IsAbsentOrState3(void*);
-extern void CB2dPlayerHandle_RequestPendingScript(void*);
 extern void WPuppet_EraseLayerControllerEntry(void*, int);
 extern void* WPuppet_FindOrCacheBone(void*, void*);
 extern void WPuppet_EraseBoneControllerEntry(void*, void*);
@@ -713,13 +807,16 @@ extern signed char s_inputManagerInitialized;
 extern signed char s_bpPlayerInitialized;
 
 extern unsigned char s_gameInputManager[];
-extern void CEffectFade_dtor();
-extern void CNowReloading_dtor();
+extern void __dt__11CEffectFadeFv();
+extern void __dt__13CNowReloadingFv();
 // Clear one script-vector count with the original volatile load/store and unsigned subtraction.
 inline void ClearStoryVectorCount(unsigned char* script, int offset) {
     volatile int* p = (volatile int*)(script + offset);
     int old = *p;
-    union { int a; unsigned int u; } bits;
+    union {
+        int a;
+        unsigned int u;
+    } bits;
     bits.a = old;
     *p = old - bits.u;
 }
@@ -727,46 +824,50 @@ inline void ClearStoryVectorCount(unsigned char* script, int offset) {
 inline void EnsurePlaybackPlayer(unsigned char* registrationTags) {
     if (!((volatile int&)Sing_805DC670())) {
         if (!s_bpPlayerInitialized) {
-            CBpPlayer_Ctor(s_bpPlayer);
-            __register_global_object(s_bpPlayer, CBpPlayer_Dtor, (registrationTags + 0x18));
+            ((CBpPlayer*)s_bpPlayer)->__ct();
+            __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, (registrationTags + 0x18));
             s_bpPlayerInitialized = 1;
-        } ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
+        }
+        ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
     }
 }
 // Initialize/register the shared service once, then publish its singleton pointer.
 inline void EnsureStoryFade(unsigned char* registrationTags) {
     if (!((volatile int&)Sing_805DC660())) {
         if (!s_effectFadeInitialized) {
-            CEffectFade_Ctor(s_effectFade);
-            __register_global_object(s_effectFade, CEffectFade_dtor, registrationTags);
+            ((CEffectFade*)s_effectFade)->__ct();
+            __register_global_object(s_effectFade, __dt__11CEffectFadeFv, registrationTags);
             s_effectFadeInitialized = 1;
-        } ((volatile int&)Sing_805DC660()) = (int)s_effectFade;
+        }
+        ((volatile int&)Sing_805DC660()) = (int)s_effectFade;
     }
 }
 // Initialize/register the shared service once, then publish its singleton pointer.
 inline void EnsureStoryInput(unsigned char* registrationTags) {
-    if (!((volatile int&)Sing_805DC5C8())) {
+    if (!((volatile int&)GetInputManagerSlot())) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, InputManager_Dtor, registrationTags + 0xc);
             s_inputManagerInitialized = 1;
-        } ((volatile int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+        }
+        ((volatile int&)GetInputManagerSlot()) = (int)s_gameInputManager;
     }
 }
 // Initialize/register the shared service once, then publish its singleton pointer.
 inline void EnsurePlaybackModelSlots(unsigned char* registrationTags) {
-    if (!((volatile int&)Sing_805DC668())) {
+    if (!((volatile int&)GetConteModelSlotsSlot())) {
         if (!s_courseSlotTableInitialized) {
-            *(unsigned short*)s_conteModelSlots=0xffff;
-            *(int*)(s_conteModelSlots+8)=0;
-            *(int*)(s_conteModelSlots+4)=0;
+            *(unsigned short*)s_conteModelSlots = 0xffff;
+            *(int*)(s_conteModelSlots + 8) = 0;
+            *(int*)(s_conteModelSlots + 4) = 0;
             do {
                 break;
-                __destroy_new_array((void*)0x10000,s_conteModelSlots);
+                __destroy_new_array((void*)0x10000, s_conteModelSlots);
             } while (0);
-            *(int*)(s_conteModelSlots+8)=0;
-            s_courseSlotTableInitialized=1;
-        } ((volatile int&)Sing_805DC668())=(int)s_conteModelSlots;
+            *(int*)(s_conteModelSlots + 8) = 0;
+            s_courseSlotTableInitialized = 1;
+        }
+        ((volatile int&)GetConteModelSlotsSlot()) = (int)s_conteModelSlots;
     }
 }
 // Playback checkpoints (all successful gates may fall through in one tick):
@@ -792,263 +893,323 @@ inline void EnsurePlaybackModelSlots(unsigned char* registrationTags) {
 // at 256. Raising a limit above 255 can prevent completion; no range check exists.
 // Preserve both duration-policy queries, integer multiply -> float divide -> int
 // truncation, low-byte alpha forwarding, and the explicit returns between phases.
-void CStoryConte_OnProcess(void* self) {
+void CStoryConte::OnProcess() {
     unsigned char* tags = s_storyConteDtorRegistrations;
-    if (AsCEventHandle(self)->storyState != kStoryIdle && StoryMovieConfig_PollDisplaySettled(&AsCStoryConte(self)->displayConfiguration) != 0)
-    switch (AsCEventHandle(self)->storyState) {
+    if (AsCEventHandle(this)->storyState != kStoryIdle &&
+        StoryMovieConfig_PollDisplaySettled(&displayConfiguration) != 0)
+        switch (AsCEventHandle(this)->storyState) {
         case kStoryLoading: {
             // Gate A: both file buffers and both BP resource queues must be ready.
             // Every pending poll returns with the same state; ready falls through.
-            if (!CEventLoad_Poll(AsCEventHandle(self)->eventLoad)) return;
-            if (!CEventLoad_Poll(AsCEventHandle(self)->eventDataLoad)) return;
+            if (!((CEventLoad*)(AsCEventHandle(this)->eventLoad))->Poll())
+                return;
+            if (!((CEventLoad*)(AsCEventHandle(this)->eventDataLoad))->Poll())
+                return;
             EnsurePlaybackPlayer(tags);
-            if (!EventText_PollMessageResources((void*)((volatile int&)Sing_805DC670()))) return;
+            if (!EventText_PollMessageResources((void*)((volatile int&)Sing_805DC670())))
+                return;
             EnsurePlaybackPlayer(tags);
-            if (!CBpPlayer_PollResourceLoad((void*)((volatile int&)Sing_805DC670()))) return;
-            AsCEventHandle(self)->storyState = kStoryWaitForSkipCaption;
+            if (!((CBpPlayer*)(((volatile int&)Sing_805DC670())))->PollResourceLoad())
+                return;
+            AsCEventHandle(this)->storyState = kStoryWaitForSkipCaption;
         }
         case kStoryWaitForSkipCaption: {
             // Gate B: caption readiness permits replacement of the owned handle.
             // No script pointer may outlive eventLoad/eventDataLoad's buffers.
-            void* captionResource = AsCEventHandle(self)->storySkipCaptionResource;
+            void* captionResource = AsCEventHandle(this)->storySkipCaptionResource;
             typedef int (*Check)(void*);
             Check check = ((Check*)*(void**)captionResource)[6];
-            if (!check(captionResource)) return;
+            if (!check(captionResource))
+                return;
             EnsurePlaybackPlayer(tags);
             EventMessage_ResetChildAndText((void*)((volatile int&)Sing_805DC670()));
             EnsurePlaybackModelSlots(tags);
-            void* previousHandle = AsCEventHandle(self)->eventHandle;
+            void* previousHandle = AsCEventHandle(this)->eventHandle;
             if (previousHandle) {
-                typedef void(*D)(void*,int);
-                D destroy=((D*)AsCEventHandle(previousHandle)->eventVtable)[2];
-                destroy(previousHandle,1);
-                AsCEventHandle(self)->eventHandle=0;
+                typedef void (*D)(void*, int);
+                D destroy = ((D*)AsCEventHandle(previousHandle)->eventVtable)[2];
+                destroy(previousHandle, 1);
+                AsCEventHandle(this)->eventHandle = 0;
             }
             void* scriptHandle = __nw__FUl(kStoryScriptHandleBytes);
-            AsCEventHandle(self)->eventHandle=scriptHandle;
+            AsCEventHandle(this)->eventHandle = scriptHandle;
             if (scriptHandle) {
                 // Constructor phase A: initialize strings, five pointer-vector headers,
                 // tree sentinels and the embedded effect parser. Keep store order:
                 // these are expanded constructors, not one interchangeable zero-fill.
-                unsigned char* scriptBytes=(unsigned char*)scriptHandle;
-                void* eventBuffer=AsCEventLoad(AsCEventHandle(self)->eventLoad)->buffer;
-                unsigned int tableByteOffset=((AsCEventHandle(self)->storyIndex&0xff)<<2);
+                unsigned char* scriptBytes = (unsigned char*)scriptHandle;
+                void* eventBuffer = AsCEventLoad(AsCEventHandle(this)->eventLoad)->buffer;
+                unsigned int tableByteOffset = ((AsCEventHandle(this)->storyIndex & 0xff) << 2);
                 union {
                     unsigned int w;
                     unsigned char c[4];
-                }
-                littleEndianOffset;
+                } littleEndianOffset;
                 char temps[8];
-                char* ownerName=StoryStrings.scriptOwnerName;
-                unsigned int packed=*(unsigned int*)((char*)eventBuffer+tableByteOffset);
-                AsCEventHandle(scriptBytes)->eventVtable=__vt__12CEventHandle;
-                ((StoryScriptInitView*)scriptBytes)->name.flags=0;
-                ((StoryScriptInitView*)scriptBytes)->name.longLength=0;
-                ((StoryScriptInitView*)scriptBytes)->ownerNameData=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList0Data=0;
-                *(volatile int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectList0Count))=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList0Capacity=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList1Data=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList1Count=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList1Capacity=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList2Data=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList2Count=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList2Capacity=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList3Data=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList3Count=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList3Capacity=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList4Data=0;
-                ((StoryScriptInitView*)scriptBytes)->objectList4Count=0;
+                char* ownerName = StoryStrings.scriptOwnerName;
+                unsigned int packed = *(unsigned int*)((char*)eventBuffer + tableByteOffset);
+                AsCEventHandle(scriptBytes)->eventVtable = __vt__12CEventHandle;
+                ((StoryScriptInitView*)scriptBytes)->name.flags = 0;
+                ((StoryScriptInitView*)scriptBytes)->name.longLength = 0;
+                ((StoryScriptInitView*)scriptBytes)->ownerNameData = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList0Data = 0;
+                *(volatile int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectList0Count)) = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList0Capacity = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList1Data = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList1Count = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList1Capacity = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList2Data = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList2Count = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList2Capacity = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList3Data = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList3Count = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList3Capacity = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList4Data = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectList4Count = 0;
                 // Constructor phase B: the event buffer stores a little-endian byte
                 // offset. Reverse its bytes before adding it to the borrowed buffer.
-                littleEndianOffset.w=packed;
-                unsigned char b0=littleEndianOffset.c[0], b3=littleEndianOffset.c[3], b1=littleEndianOffset.c[1], b2=littleEndianOffset.c[2];
-                littleEndianOffset.c[0]=b3;
-                littleEndianOffset.c[3]=b0;
-                littleEndianOffset.c[1]=b2;
-                littleEndianOffset.c[2]=b1;
-                unsigned int scriptOffset=littleEndianOffset.w;
-                ((StoryScriptInitView*)scriptBytes)->objectList4Capacity=0;
-                ((StoryScriptInitView*)scriptBytes)->objectTreeCount=0;
-                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeRoot))=0;
-                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeEnd))=(unsigned int)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeRoot));
-                CEventEffect_Ctor(scriptBytes + FIELD_OFFSET(StoryScriptInitView, pad47c),(char*)eventBuffer+scriptOffset);
-                ((StoryScriptInitView*)scriptBytes)->resourceTreeCount=0;
-                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeRoot))=0;
-                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeEnd))=(unsigned int)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeRoot));
-                unsigned int oldStringLength=(((StoryScriptInitView*)scriptBytes)->name.flags>>31)?((StoryScriptInitView*)scriptBytes)->name.longLength:(*(unsigned char*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, name))&0x7f);
-                temps[4]=temps[0];
-                String_ReplaceRange((StoryPathString*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, name)),0,(int)oldStringLength,ownerName,ownerName+strlen(ownerName),&temps[4]);
+                littleEndianOffset.w = packed;
+                unsigned char b0 = littleEndianOffset.c[0], b3 = littleEndianOffset.c[3], b1 = littleEndianOffset.c[1],
+                              b2 = littleEndianOffset.c[2];
+                littleEndianOffset.c[0] = b3;
+                littleEndianOffset.c[3] = b0;
+                littleEndianOffset.c[1] = b2;
+                littleEndianOffset.c[2] = b1;
+                unsigned int scriptOffset = littleEndianOffset.w;
+                ((StoryScriptInitView*)scriptBytes)->objectList4Capacity = 0;
+                ((StoryScriptInitView*)scriptBytes)->objectTreeCount = 0;
+                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeRoot)) = 0;
+                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeEnd)) =
+                    (unsigned int)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeRoot));
+                Init__12CEventEffectFv((CEventEffect*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, pad47c)),
+                                       (char*)eventBuffer + scriptOffset);
+                ((StoryScriptInitView*)scriptBytes)->resourceTreeCount = 0;
+                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeRoot)) = 0;
+                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeEnd)) =
+                    (unsigned int)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeRoot));
+                unsigned int oldStringLength =
+                    (((StoryScriptInitView*)scriptBytes)->name.flags >> 31)
+                        ? ((StoryScriptInitView*)scriptBytes)->name.longLength
+                        : (*(unsigned char*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, name)) & 0x7f);
+                temps[4] = temps[0];
+                String_ReplaceRange((StoryPathString*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, name)), 0,
+                                    (int)oldStringLength, ownerName, ownerName + strlen(ownerName), &temps[4]);
                 // Constructor phase C: bind source/cursor, clear command scratch and
                 // owned handlers, then clear lists/trees to their empty invariants.
-                *(void**)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, sourceBuffer))=eventBuffer;
-                *(void**)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, commandCursor))=(char*)eventBuffer+scriptOffset;
-                memset(scriptBytes,0,8);
-                memset(scriptBytes+8,0,0x400);
-                ((StoryScriptInitView*)scriptBytes)->commandCount=0;
-                (*(unsigned int*)&AsCEventHandle(scriptBytes)->ownedCommandHandler0)=0;
-                (*(unsigned int*)&AsCEventHandle(scriptBytes)->pendingModelEvent)=0;
-                (*(unsigned int*)&AsCEventHandle(scriptBytes)->pendingEffectEvent)=0;
-                (*(unsigned int*)&AsCEventHandle(scriptBytes)->pendingMessageRequest)=0;
-                (*(unsigned int*)&AsCEventHandle(scriptBytes)->pendingSoundEvent)=0;
+                *(void**)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, sourceBuffer)) = eventBuffer;
+                *(void**)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, commandCursor)) =
+                    (char*)eventBuffer + scriptOffset;
+                memset(scriptBytes, 0, 8);
+                memset(scriptBytes + 8, 0, 0x400);
+                ((StoryScriptInitView*)scriptBytes)->commandCount = 0;
+                (*(unsigned int*)&AsCEventHandle(scriptBytes)->ownedCommandHandler0) = 0;
+                (*(unsigned int*)&AsCEventHandle(scriptBytes)->pendingModelEvent) = 0;
+                (*(unsigned int*)&AsCEventHandle(scriptBytes)->pendingEffectEvent) = 0;
+                (*(unsigned int*)&AsCEventHandle(scriptBytes)->pendingMessageRequest) = 0;
+                (*(unsigned int*)&AsCEventHandle(scriptBytes)->pendingSoundEvent) = 0;
                 ClearStoryVectorCount(scriptBytes, FIELD_OFFSET(StoryScriptInitView, objectList0Count));
                 ClearStoryVectorCount(scriptBytes, FIELD_OFFSET(StoryScriptInitView, objectList1Count));
                 ClearStoryVectorCount(scriptBytes, FIELD_OFFSET(StoryScriptInitView, objectList2Count));
                 ClearStoryVectorCount(scriptBytes, FIELD_OFFSET(StoryScriptInitView, objectList3Count));
                 ClearStoryVectorCount(scriptBytes, FIELD_OFFSET(StoryScriptInitView, objectList4Count));
-                (*(unsigned int*)&AsCEventHandle(scriptBytes)->pendingResource)=0;
-                void* root=*(void**)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeRoot));
-                if(root) cleanTree(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeCount),root);
-                ((StoryScriptInitView*)scriptBytes)->objectTreeCount=0;
-                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeRoot))=0;
-                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeEnd))=(unsigned int)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeRoot));
-                root=*(void**)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeRoot));
-                if(root) cleanTree(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeCount),root);
-                ((StoryScriptInitView*)scriptBytes)->resourceTreeCount=0;
-                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeRoot))=0;
-                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeEnd))=(unsigned int)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeRoot));
-                ((StoryScriptInitView*)scriptBytes)->faceScriptTableBase=0;
-                ((StoryScriptInitView*)scriptBytes)->manager=0;
+                (*(unsigned int*)&AsCEventHandle(scriptBytes)->pendingResource) = 0;
+                void* root = *(void**)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeRoot));
+                if (root)
+                    cleanTree(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeCount), root);
+                ((StoryScriptInitView*)scriptBytes)->objectTreeCount = 0;
+                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeRoot)) = 0;
+                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeEnd)) =
+                    (unsigned int)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, objectTreeRoot));
+                root = *(void**)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeRoot));
+                if (root)
+                    cleanTree(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeCount), root);
+                ((StoryScriptInitView*)scriptBytes)->resourceTreeCount = 0;
+                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeRoot)) = 0;
+                *(unsigned int*)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeEnd)) =
+                    (unsigned int)(scriptBytes + FIELD_OFFSET(StoryScriptInitView, resourceTreeRoot));
+                ((StoryScriptInitView*)scriptBytes)->faceScriptTableBase = 0;
+                ((StoryScriptInitView*)scriptBytes)->manager = 0;
             }
             // Publication complete: bind the face-data script, run its setup,
             // enter playback, then notify the shared loading indicator.
-            AsCEventHandle(self)->eventHandle=scriptHandle;
-            (*(void**)&((StoryScriptInitView*)scriptHandle)->faceScriptTableBase)=AsCEventLoad(AsCEventHandle(self)->eventDataLoad)->buffer;
-            EventScript_RunBlocking((*(void**)&((StoryScriptInitView*)AsCEventHandle(self)->eventHandle)->faceScriptTableBase));
-            AsCEventHandle(self)->storyState=kStoryPlaying;
+            AsCEventHandle(this)->eventHandle = scriptHandle;
+            (*(void**)&((StoryScriptInitView*)scriptHandle)->faceScriptTableBase) =
+                AsCEventLoad(AsCEventHandle(this)->eventDataLoad)->buffer;
+            EventScript_RunBlocking(
+                (*(void**)&((StoryScriptInitView*)AsCEventHandle(this)->eventHandle)->faceScriptTableBase));
+            AsCEventHandle(this)->storyState = kStoryPlaying;
             if (!((volatile int&)Sing_805DC610())) {
                 if (!s_nowReloadingInitialized) {
-                    CNowReloading_Init((void*)&s_nowReloading);
-                    __register_global_object((void*)&s_nowReloading, CNowReloading_dtor, (tags + 0x24));
+                    ((CNowReloading*)(&s_nowReloading))->Init();
+                    __register_global_object((void*)&s_nowReloading, __dt__13CNowReloadingFv, (tags + 0x24));
                     s_nowReloadingInitialized = 1;
-                } ((volatile int&)Sing_805DC610()) = (int)(void*)&s_nowReloading;
+                }
+                ((volatile int&)Sing_805DC610()) = (int)(void*)&s_nowReloading;
             }
             void* mgr = (void*)((volatile int&)Sing_805DC610());
-            if (mgr && LoadingIndicator_IsAbsentOrState3(mgr)) CB2dPlayerHandle_RequestPendingScript(mgr);
+            if (mgr && LoadingIndicator_IsAbsentOrState3(mgr))
+                CB2dPlayerHandle::RequestPendingScript(mgr);
         }
         case kStoryPlaying: {
             // Skip request. Original: neither action 0x11 nor 0x12 pressed -> li r0,0 (0x8008E5FC); one pressed ->
-            // r0 = !CEffectFade_GetAlpha() (cntlzw/srwi at 0x8008E65C). At 0x8008E668 `beq` sends r0 == 0 to the
+            // r0 = !CEffectFade::GetAlpha() (cntlzw/srwi at 0x8008E65C). At 0x8008E668 `beq` sends r0 == 0 to the
             // EventScript_RunAndSweep load check (0x8008E730); r0 != 0 falls into the fade-out / state 5 path. The test was
             // inverted (`!ready`), which faded out and skipped the scene when no button was pressed.
             int skip;
             do {
                 EnsureStoryInput(tags);
-                if (!Input_IsActionPressed((void*)((volatile int&)Sing_805DC5C8()), kSkipActionPrimary, -1)) {
+                if (!Input_IsActionPressed((void*)((volatile int&)GetInputManagerSlot()), kSkipActionPrimary, -1)) {
                     EnsureStoryInput(tags);
-                    if (!Input_IsActionPressed((void*)((volatile int&)Sing_805DC5C8()), kSkipActionSecondary, -1)) {
+                    if (!Input_IsActionPressed((void*)((volatile int&)GetInputManagerSlot()), kSkipActionSecondary,
+                                               -1)) {
                         skip = 0;
                         break;
                     }
                 }
                 EnsureStoryFade(tags);
-                skip = !(unsigned char)CEffectFade_GetAlpha((void*)((volatile int&)Sing_805DC660()));
-            }
-            while (0);
+                skip = !(unsigned char)((CEffectFade*)(((volatile int&)Sing_805DC660())))->GetAlpha();
+            } while (0);
             if (skip) {
-                AsCEventHandle(self)->skipFadeUpdateCount=0;
+                AsCEventHandle(this)->skipFadeUpdateCount = 0;
                 EnsureStoryFade(tags);
-                FadeQuad_SetRgb((void*)((volatile int&)Sing_805DC660()),0);
+                FadeQuad_SetRgb((void*)((volatile int&)Sing_805DC660()), 0);
                 EnsureStoryFade(tags);
-                CEffectFade_SetAlpha((void*)((volatile int&)Sing_805DC660()),0);
-                AsCEventHandle(self)->storyState=kStorySkipFade;
+                ((CEffectFade*)(((volatile int&)Sing_805DC660())))->SetAlpha(0);
+                AsCEventHandle(this)->storyState = kStorySkipFade;
                 return;
             }
-            if (!EventScript_RunAndSweep(AsCEventHandle(self)->eventHandle)) return;
-            AsCEventHandle(self)->storyState=kStoryCleanup;
+            if (!EventScript_RunAndSweep(AsCEventHandle(this)->eventHandle))
+                return;
+            AsCEventHandle(this)->storyState = kStoryCleanup;
         }
         case kStoryCleanup: {
             // Release the handle before detaching model controllers and hiding messages;
             // models in the shared slot table outlive their borrowed script references.
-            void* object=AsCEventHandle(self)->eventHandle;
-            if(object) {
-                typedef void(*D)(void*,int);
-                D destroy=((D*)AsCEventHandle(object)->eventVtable)[2];
-                destroy(object,1);
-                AsCEventHandle(self)->eventHandle=0;
+            void* object = AsCEventHandle(this)->eventHandle;
+            if (object) {
+                typedef void (*D)(void*, int);
+                D destroy = ((D*)AsCEventHandle(object)->eventVtable)[2];
+                destroy(object, 1);
+                AsCEventHandle(this)->eventHandle = 0;
             }
             EnsurePlaybackModelSlots(tags);
-            void* mgr=(void*)((volatile int&)Sing_805DC668());
-            for(unsigned int i=0;i<kStoryModelSlotCount;i++) {
-                void* array=*(void**)((char*)mgr+8);
-                void* slot=(array&&(unsigned char)i<kStoryModelSlotCount)?(char*)array+(unsigned char)i*kStoryModelSlotBytes:0;
-                void* asset=slot?*(void**)((char*)slot+4):0;
-                if(asset) {
-                    WPuppet_EraseLayerControllerEntry(asset,0);
-                    WPuppet_EraseLayerControllerEntry(asset,1);
-                    void* found=WPuppet_FindOrCacheBone(asset,storyConteStrings);
-                    if(found)WPuppet_EraseBoneControllerEntry(asset,((BoneControllerView*)found)->controller);
+            void* mgr = (void*)((volatile int&)GetConteModelSlotsSlot());
+            for (unsigned int i = 0; i < kStoryModelSlotCount; i++) {
+                void* array = *(void**)((char*)mgr + 8);
+                void* slot = (array && (unsigned char)i < kStoryModelSlotCount)
+                                 ? (char*)array + (unsigned char)i * kStoryModelSlotBytes
+                                 : 0;
+                void* asset = slot ? *(void**)((char*)slot + 4) : 0;
+                if (asset) {
+                    WPuppet_EraseLayerControllerEntry(asset, 0);
+                    WPuppet_EraseLayerControllerEntry(asset, 1);
+                    void* found = WPuppet_FindOrCacheBone(asset, storyConteStrings);
+                    if (found)
+                        WPuppet_EraseBoneControllerEntry(asset, ((BoneControllerView*)found)->controller);
                 }
             }
             EnsurePlaybackPlayer(tags);
             StoryMessage_DisableAndResetPanel((void*)((volatile int&)Sing_805DC670()));
-            if(StoryMovieConfig_SetDisplayModeIfChanged((void*)((int)self+0x4c),2))StoryMovieConfig_ApplyDisplayMode((void*)((int)self+0x4c));
-            AsCEventHandle(self)->storyState=kStoryFinished;
+            if (StoryMovieConfig_SetDisplayModeIfChanged((void*)((int)this + 0x4c), 2))
+                StoryMovieConfig_ApplyDisplayMode((void*)((int)this + 0x4c));
+            AsCEventHandle(this)->storyState = kStoryFinished;
             return;
         }
         case kStorySkipFade: {
-            unsigned int limit = EventTiming_IsDurationScalingEnabled() ? kSkipFadeScaledUpdates : kSkipFadeDefaultUpdates;
-            if (AsCEventHandle(self)->skipFadeUpdateCount >= limit) {
-                AsCEventHandle(self)->storyState = kStoryCleanup;
+            unsigned int limit =
+                EventTiming_IsDurationScalingEnabled() ? kSkipFadeScaledUpdates : kSkipFadeDefaultUpdates;
+            if (AsCEventHandle(this)->skipFadeUpdateCount >= limit) {
+                AsCEventHandle(this)->storyState = kStoryCleanup;
                 return;
             }
-            AsCEventHandle(self)->skipFadeUpdateCount = AsCEventHandle(self)->skipFadeUpdateCount + 1;
-            unsigned int limit2 = EventTiming_IsDurationScalingEnabled() ? kSkipFadeScaledUpdates : kSkipFadeDefaultUpdates;
-            int progress = (int)((float)(AsCEventHandle(self)->skipFadeUpdateCount * kStoryOpaqueAlpha) / (float)limit2);
+            AsCEventHandle(this)->skipFadeUpdateCount = AsCEventHandle(this)->skipFadeUpdateCount + 1;
+            unsigned int limit2 =
+                EventTiming_IsDurationScalingEnabled() ? kSkipFadeScaledUpdates : kSkipFadeDefaultUpdates;
+            int progress =
+                (int)((float)(AsCEventHandle(this)->skipFadeUpdateCount * kStoryOpaqueAlpha) / (float)limit2);
             EnsureStoryFade(tags);
-            CEffectFade_SetAlpha((void*)((volatile int&)Sing_805DC660()), progress & 0xff);
+            ((CEffectFade*)(((volatile int&)Sing_805DC660())))->SetAlpha(progress & 0xff);
             return;
         }
-        case kStoryFinished: AsCEventHandle(self)->storyState=kStoryIdle;
-    }
+        case kStoryFinished:
+            AsCEventHandle(this)->storyState = kStoryIdle;
+        }
 }
 
 // Clear the owned pointer-vector count while preserving the original volatile read and write.
-void ScriptPointerVector_ClearCount(volatile int* value) { int old = value[1]; union { int a; unsigned int b; } bits; bits.a = old; value[1] = old - bits.b; }
+void ScriptPointerVector_ClearCount(volatile int* value) {
+    int old = value[1];
+    union {
+        int a;
+        unsigned int b;
+    } bits;
+    bits.a = old;
+    value[1] = old - bits.b;
+}
 
 // Return the end of an array of four-byte object pointers.
-void* ScriptPointerVector_End(void** value) { return (int*)value[0] + (int)value[1]; }
+void* ScriptPointerVector_End(void** value) {
+    return (int*)value[0] + (int)value[1];
+}
 
 extern unsigned char s_storyConteTypeInfo;
 // Return the runtime type descriptor used to identify this story task.
-void* CStoryConte_GetRTTI() { return &s_storyConteTypeInfo; }
+void* CStoryConte::GetRTTI() {
+    return &s_storyConteTypeInfo;
+}
 
 // Return the beginning of an owned pointer array.
-void* ScriptPointerVector_Begin(void** value) { return *value; }
+void* ScriptPointerVector_Begin(void** value) {
+    return *value;
+}
 
 // Copy the first (leftmost) object-tree node to a borrowed iterator output.
-void ScriptObjectTree_GetBeginIterator(void** destination, void* source) { *destination = ((void**)source)[2]; }
+void ScriptObjectTree_GetBeginIterator(void** destination, void* source) {
+    *destination = ((void**)source)[2];
+}
 
 // Form the object-tree END sentinel from its embedded root link; no allocation.
-void ScriptObjectTree_GetEndIterator(void** destination, void* source) { *destination = (char*)source + 4; }
+void ScriptObjectTree_GetEndIterator(void** destination, void* source) {
+    *destination = (char*)source + 4;
+}
 
 // Copy the first (leftmost) resource-tree node to a borrowed iterator output.
-void ScriptResourceTree_GetBeginIterator(void** destination, void* source) { *destination = ((void**)source)[2]; }
+void ScriptResourceTree_GetBeginIterator(void** destination, void* source) {
+    *destination = ((void**)source)[2];
+}
 
 // Return the key/value payload following a tree node header.
-void* CEventHandleTreeIterator_GetValue(void** value) { return (char*)*value + 12; }
+void* CEventHandleTreeIterator::GetValue() {
+    return &node->key;
+}
 
 // Test whether two iterator node pointers differ.
-int ScriptTreeIterator_NotEqual(unsigned int* left, unsigned int* right) { return *left != *right; }
+int ScriptTreeIterator_NotEqual(unsigned int* left, unsigned int* right) {
+    return *left != *right;
+}
 
 // Form the resource-tree END sentinel from its embedded root link; no allocation.
-void ScriptResourceTree_GetEndIterator(void** destination, void* source) { *destination = (char*)source + 4; }
+void ScriptResourceTree_GetEndIterator(void** destination, void* source) {
+    *destination = (char*)source + 4;
+}
 void* __dl__FPv(void*);
 
 // Save the current iterator and advance in sorted order; bit zero tags parent color.
-void CEventHandleTreeIterator_PostIncrement(void** destination, void** value, void* tail) {
-    *destination = *value;
-    void* node = ((void**)*value)[1];
+void CEventHandleTreeIterator::PostIncrement(CEventHandleTreeIterator* destination, CEventHandleTreeIterator* iterator,
+                                             void* unused) {
+    destination->node = iterator->node;
+    EventHandleTreeNode* node = iterator->node->right;
     if (node != 0) {
-        while (((void**)node)[0] != 0) node = ((void**)node)[0];
-        *value = node;
+        while (node->left != 0)
+            node = node->left;
+        iterator->node = node;
         return;
     }
     for (;;) {
-        node = *value;
-        void* parent = (void*)((unsigned int)((void**)node)[2] & ~1u);
-        *value = parent;
-        if (node == ((void**)parent)[0]) return;
+        node = iterator->node;
+        EventHandleTreeNode* parent = (EventHandleTreeNode*)(node->parentAndColor & ~1u);
+        iterator->node = parent;
+        if (node == parent->left)
+            return;
     }
 }
 
@@ -1091,17 +1252,24 @@ CEventConte::~CEventConte() {}
 // +47C is embedded effect-parser state; +408 is the owned tagged owner name.
 // Cleanup tags below are partial views of these same objects, not extra owners.
 // shouldDelete > 0 frees the enclosing allocation; -1 tears down a member only.
-struct EventTreeLinksView { EventTreeLinksView* left; EventTreeLinksView* right; };
+struct EventTreeLinksView {
+    EventTreeLinksView* left;
+    EventTreeLinksView* right;
+};
 // Free a destructor fringe node, leaving enclosing-header reset to the caller.
 inline void FreeEventTreeFringe(void* owner, EventTreeLinksView* leaf) {
     if (leaf != 0) {
-        if (leaf->left != 0) ScriptByteMap_FreeSubtree(owner, leaf->left);
-        if (leaf->right != 0) ScriptByteMap_FreeSubtree(owner, leaf->right);
+        if (leaf->left != 0)
+            ScriptByteMap_FreeSubtree(owner, leaf->left);
+        if (leaf->right != 0)
+            ScriptByteMap_FreeSubtree(owner, leaf->right);
         appFreeUni__FPv(leaf);
     }
 }
-struct EventHandleCleanupView { unsigned char pad00[0x420]; };
-struct EventPointerRangeView { void* begin; int count; };
+struct EventPointerRangeView {
+    void* begin;
+    int count;
+};
 struct EventResourceNodeView {
     EventResourceNodeView* left;
     EventResourceNodeView* right;
@@ -1109,169 +1277,165 @@ struct EventResourceNodeView {
     unsigned int pad0C;
     void* item;
 };
-struct EventResourcePayloadView { unsigned int pad00[1]; void* item; };
+struct EventResourcePayloadView {
+    unsigned int pad00[1];
+    void* item;
+};
 struct EventResourceTreeView {
     void* first;
     EventResourceNodeView* root;
     EventResourceNodeView** tail;
 };
 extern unsigned int __vt__12CEventHandle[];
-extern void CEventEffect_dtor(void*, int);
 
 struct EventObjectNodeView;
-void CEventHandle_DestroyTreeRangeObjects(void*, EventObjectNodeView**, EventObjectNodeView**);
 struct EventObjectTreeLinksView;
 void Tree_Clear(EventObjectTreeLinksView**);
 struct EventResourceTreeHeaderView;
-void CEventHandle_ClearTree(EventResourceTreeHeaderView*);
 void* ScriptResourceTree_FreeNodes(void*, int);
 void* ScriptObjectTree_FreeNodes(void*, int);
 void* ScriptPointerVector_Dtor(void*, int);
 #pragma dont_inline on
 // Release owned command handlers, pointer arrays, object/resource trees and the script name.
-void* CEventHandle_dtor(EventHandleCleanupView* self, int shouldDelete) {
+// The duplicate null tests on each handler are the nested destructor layers; collapsing them
+// changes register allocation.
+CEventHandle::~CEventHandle() {
     // Phase 1: destroy owned handlers/list payloads before freeing container storage.
-    if (self != 0) {
-        void* child = AsCEventHandle(self)->ownedCommandHandler0;
-        AsCEventHandle(self)->eventVtable = __vt__12CEventHandle;
+    void* child = ownedCommandHandler0;
+    eventVtable = __vt__12CEventHandle;
+    if (child != 0) {
         if (child != 0) {
-            if (child != 0) {
-                typedef void (*Destroy)(void*, int);
-                Destroy destroy = ((Destroy*)*(void**)child)[2];
-                destroy(child, 1);
-            }
-            AsCEventHandle(self)->ownedCommandHandler0 = 0;
+            typedef void (*Destroy)(void*, int);
+            Destroy destroy = ((Destroy*)*(void**)child)[2];
+            destroy(child, 1);
         }
-        child = AsCEventHandle(self)->pendingModelEvent;
+        ownedCommandHandler0 = 0;
+    }
+    child = pendingModelEvent;
+    if (child != 0) {
         if (child != 0) {
-            if (child != 0) {
-                typedef void (*Destroy)(void*, int);
-                Destroy destroy = ((Destroy*)*(void**)child)[2];
-                destroy(child, 1);
-            }
-            AsCEventHandle(self)->pendingModelEvent = 0;
+            typedef void (*Destroy)(void*, int);
+            Destroy destroy = ((Destroy*)*(void**)child)[2];
+            destroy(child, 1);
         }
-        child = AsCEventHandle(self)->pendingEffectEvent;
+        pendingModelEvent = 0;
+    }
+    child = pendingEffectEvent;
+    if (child != 0) {
         if (child != 0) {
-            if (child != 0) {
-                typedef void (*Destroy)(void*, int);
-                Destroy destroy = ((Destroy*)*(void**)child)[2];
-                destroy(child, 1);
-            }
-            AsCEventHandle(self)->pendingEffectEvent = 0;
+            typedef void (*Destroy)(void*, int);
+            Destroy destroy = ((Destroy*)*(void**)child)[2];
+            destroy(child, 1);
         }
-        child = AsCEventHandle(self)->pendingMessageRequest;
+        pendingEffectEvent = 0;
+    }
+    child = pendingMessageRequest;
+    if (child != 0) {
         if (child != 0) {
-            if (child != 0) {
-                typedef void (*Destroy)(void*, int);
-                Destroy destroy = ((Destroy*)*(void**)child)[2];
-                destroy(child, 1);
-            }
-            AsCEventHandle(self)->pendingMessageRequest = 0;
+            typedef void (*Destroy)(void*, int);
+            Destroy destroy = ((Destroy*)*(void**)child)[2];
+            destroy(child, 1);
         }
-        child = AsCEventHandle(self)->pendingSoundEvent;
+        pendingMessageRequest = 0;
+    }
+    child = pendingSoundEvent;
+    if (child != 0) {
         if (child != 0) {
-            if (child != 0) {
-                typedef void (*Destroy)(void*, int);
-                Destroy destroy = ((Destroy*)*(void**)child)[2];
-                destroy(child, 1);
-            }
-            AsCEventHandle(self)->pendingSoundEvent = 0;
+            typedef void (*Destroy)(void*, int);
+            Destroy destroy = ((Destroy*)*(void**)child)[2];
+            destroy(child, 1);
         }
-        void* list0End;
-        void* list0Cursor;
-        list0End = ScriptPointerVector_End((void**)((char*)&((StoryScriptInitView*)self)->objectList0Data));
-        list0Cursor = ScriptPointerVector_Begin((void**)((char*)&((StoryScriptInitView*)self)->objectList0Data));
-        ScriptPointerRange_DestroyObjects(self, &list0Cursor, &list0End);
-        void* list1End;
-        void* list1Cursor;
-        list1End = ScriptPointerVector_End((void**)((char*)&((StoryScriptInitView*)self)->objectList1Data));
-        list1Cursor = ScriptPointerVector_Begin((void**)((char*)&((StoryScriptInitView*)self)->objectList1Data));
-        ScriptPointerRange_DestroyObjects(self, &list1Cursor, &list1End);
-        void* list2End;
-        void* list2Cursor;
-        list2End = ScriptPointerVector_End((void**)((char*)&((StoryScriptInitView*)self)->objectList2Data));
-        list2Cursor = ScriptPointerVector_Begin((void**)((char*)&((StoryScriptInitView*)self)->objectList2Data));
-        ScriptPointerRange_DestroyObjects(self, &list2Cursor, &list2End);
-        void* list3End;
-        void* list3Cursor;
-        list3End = ScriptPointerVector_End((void**)((char*)&((StoryScriptInitView*)self)->objectList3Data));
-        list3Cursor = ScriptPointerVector_Begin((void**)((char*)&((StoryScriptInitView*)self)->objectList3Data));
-        ScriptPointerRange_DestroyObjects(self, &list3Cursor, &list3End);
-        void* list4End;
-        void* list4Cursor;
-        list4End = ScriptPointerVector_End((void**)((char*)&((StoryScriptInitView*)self)->objectList4Data));
-        list4Cursor = ScriptPointerVector_Begin((void**)((char*)&((StoryScriptInitView*)self)->objectList4Data));
-        ScriptPointerRange_DestroyObjects(self, &list4Cursor, &list4End);
-        ScriptPointerVector_ClearCount((volatile int*)((char*)&((StoryScriptInitView*)self)->objectList0Data));
-        ScriptPointerVector_ClearCount((volatile int*)((char*)&((StoryScriptInitView*)self)->objectList1Data));
-        ScriptPointerVector_ClearCount((volatile int*)((char*)&((StoryScriptInitView*)self)->objectList2Data));
-        ScriptPointerVector_ClearCount((volatile int*)((char*)&((StoryScriptInitView*)self)->objectList3Data));
-        ScriptPointerVector_ClearCount((volatile int*)((char*)&((StoryScriptInitView*)self)->objectList4Data));
-        // Phase 2: object payloads first, then their tree nodes. The two iterator
-        // helpers yield the root-link sentinel and first element respectively.
-        void* objectTreeSentinel;
-        void* objectTreeCursor;
-        ScriptObjectTree_GetEndIterator(&objectTreeSentinel, (char*)&((StoryScriptInitView*)self)->objectTreeCount);
-        ScriptObjectTree_GetBeginIterator(&objectTreeCursor, (char*)&((StoryScriptInitView*)self)->objectTreeCount);
-        CEventHandle_DestroyTreeRangeObjects(self, (EventObjectNodeView**)&objectTreeCursor, (EventObjectNodeView**)&objectTreeSentinel);
-        Tree_Clear((EventObjectTreeLinksView**)((char*)&((StoryScriptInitView*)self)->objectTreeCount));
-        child = AsCEventHandle(self)->pendingResource;
+        pendingSoundEvent = 0;
+    }
+    void* list0End;
+    void* list0Cursor;
+    list0End = ScriptPointerVector_End((void**)&objectLists[0]);
+    list0Cursor = ScriptPointerVector_Begin((void**)&objectLists[0]);
+    ScriptPointerRange_DestroyObjects(this, &list0Cursor, &list0End);
+    void* list1End;
+    void* list1Cursor;
+    list1End = ScriptPointerVector_End((void**)&objectLists[1]);
+    list1Cursor = ScriptPointerVector_Begin((void**)&objectLists[1]);
+    ScriptPointerRange_DestroyObjects(this, &list1Cursor, &list1End);
+    void* list2End;
+    void* list2Cursor;
+    list2End = ScriptPointerVector_End((void**)&objectLists[2]);
+    list2Cursor = ScriptPointerVector_Begin((void**)&objectLists[2]);
+    ScriptPointerRange_DestroyObjects(this, &list2Cursor, &list2End);
+    void* list3End;
+    void* list3Cursor;
+    list3End = ScriptPointerVector_End((void**)&objectLists[3]);
+    list3Cursor = ScriptPointerVector_Begin((void**)&objectLists[3]);
+    ScriptPointerRange_DestroyObjects(this, &list3Cursor, &list3End);
+    void* list4End;
+    void* list4Cursor;
+    list4End = ScriptPointerVector_End((void**)&objectLists[4]);
+    list4Cursor = ScriptPointerVector_Begin((void**)&objectLists[4]);
+    ScriptPointerRange_DestroyObjects(this, &list4Cursor, &list4End);
+    ScriptPointerVector_ClearCount((volatile int*)&objectLists[0]);
+    ScriptPointerVector_ClearCount((volatile int*)&objectLists[1]);
+    ScriptPointerVector_ClearCount((volatile int*)&objectLists[2]);
+    ScriptPointerVector_ClearCount((volatile int*)&objectLists[3]);
+    ScriptPointerVector_ClearCount((volatile int*)&objectLists[4]);
+    // Phase 2: object payloads first, then their tree nodes. The two iterator
+    // helpers yield the root-link sentinel and first element respectively.
+    void* objectTreeSentinel;
+    void* objectTreeCursor;
+    ScriptObjectTree_GetEndIterator(&objectTreeSentinel, (char*)&objectTree.count);
+    ScriptObjectTree_GetBeginIterator(&objectTreeCursor, (char*)&objectTree.count);
+    DestroyTreeRangeObjects((EventObjectNodeView**)&objectTreeCursor, (EventObjectNodeView**)&objectTreeSentinel);
+    Tree_Clear((EventObjectTreeLinksView**)&objectTree.count);
+    child = pendingResource;
+    if (child != 0) {
         if (child != 0) {
+            typedef void (*Destroy)(void*, int);
+            Destroy destroy = ((Destroy*)((ScriptObjectVtable30*)child)->vtable)[2];
+            destroy(child, 1);
+        }
+        pendingResource = 0;
+    }
+    // Phase 3: pending resource, then resource-tree payloads (vtable +30).
+    // The empty-tree sentinel must be tested before dereferencing a payload.
+    EventResourceNodeView* cursor;
+    ScriptResourceTree_GetBeginIterator((void**)&cursor, (char*)&resourceTree.count);
+    void* zero = 0;
+    EventResourceNodeView* next;
+    EventResourceNodeView* limit;
+    // The condition computes the sentinel, so the original compiles this as a
+    // rotated while loop that tests before the first pass; a do-while would
+    // dereference the header node as an item.
+    while ((ScriptResourceTree_GetEndIterator((void**)&limit, (char*)&resourceTree.count),
+            ScriptTreeIterator_NotEqual((unsigned int*)&cursor, (unsigned int*)&limit))) {
+        EventResourcePayloadView* node = (EventResourcePayloadView*)((CEventHandleTreeIterator*)&cursor)->GetValue();
+        if (node->item != 0) {
+            node = (EventResourcePayloadView*)((CEventHandleTreeIterator*)&cursor)->GetValue();
+            child = node->item;
             if (child != 0) {
                 typedef void (*Destroy)(void*, int);
                 Destroy destroy = ((Destroy*)((ScriptObjectVtable30*)child)->vtable)[2];
                 destroy(child, 1);
             }
-            AsCEventHandle(self)->pendingResource = 0;
+            node = (EventResourcePayloadView*)((CEventHandleTreeIterator*)&cursor)->GetValue();
+            node->item = zero;
         }
-        // Phase 3: pending resource, then resource-tree payloads (vtable +30).
-        // The empty-tree sentinel must be tested before dereferencing a payload.
-        EventResourceNodeView* cursor;
-        ScriptResourceTree_GetBeginIterator((void**)&cursor, (char*)&((StoryScriptInitView*)self)->resourceTreeCount);
-        void* zero = 0;
-        // Original 0x8008FE80 `b 0x8008FEDC` tests cursor != end (ScriptResourceTree_GetEndIterator/ScriptTreeIterator_NotEqual) before the first
-        // pass, so an empty map at +0x490 runs no iteration. As a do-while, an empty map dereferenced the
-        // header node (+0x494) as an item: node->item is +0x4A4 (the vtable just stored), which it then
-        // called through as an object and overwrote with 0.
-        for (;;) {
-            {
-                EventResourceNodeView* limit;
-                ScriptResourceTree_GetEndIterator((void**)&limit, (char*)&((StoryScriptInitView*)self)->resourceTreeCount);
-                if (!ScriptTreeIterator_NotEqual((unsigned int*)&cursor, (unsigned int*)&limit)) break;
-            }
-            EventResourcePayloadView* node = (EventResourcePayloadView*)CEventHandleTreeIterator_GetValue((void**)&cursor);
-            if (node->item != 0) {
-                node = (EventResourcePayloadView*)CEventHandleTreeIterator_GetValue((void**)&cursor);
-                child = node->item;
-                if (child != 0) {
-                    typedef void (*Destroy)(void*, int);
-                    Destroy destroy = ((Destroy*)((ScriptObjectVtable30*)child)->vtable)[2];
-                    destroy(child, 1);
-                }
-                node = (EventResourcePayloadView*)CEventHandleTreeIterator_GetValue((void**)&cursor);
-                node->item = zero;
-            }
-            EventResourceNodeView* next;
-            CEventHandleTreeIterator_PostIncrement((void**)&next, (void**)&cursor, 0);
-        }
-        CEventHandle_ClearTree((EventResourceTreeHeaderView*)((char*)&((StoryScriptInitView*)self)->resourceTreeCount));
-        // Phase 4: payloads are gone; release trees, effect state, pointer buffers and owner name.
-        ScriptResourceTree_FreeNodes((char*)&((StoryScriptInitView*)self)->resourceTreeCount, -1);
-        CEventEffect_dtor((char*)&((StoryScriptInitView*)self)->pad47c, -1);
-        ScriptObjectTree_FreeNodes((char*)&((StoryScriptInitView*)self)->objectTreeCount, -1);
-        ScriptPointerVector_Dtor((char*)&((StoryScriptInitView*)self)->objectList4Data, -1);
-        ScriptPointerVector_Dtor((char*)&((StoryScriptInitView*)self)->objectList3Data, -1);
-        ScriptPointerVector_Dtor((char*)&((StoryScriptInitView*)self)->objectList2Data, -1);
-        ScriptPointerVector_Dtor((char*)&((StoryScriptInitView*)self)->objectList1Data, -1);
-        ScriptPointerVector_Dtor((char*)&((StoryScriptInitView*)self)->objectList0Data, -1);
-        ((NString*)((char*)&((StoryScriptInitView*)self)->name))->~NString();
+        CEventHandleTreeIterator::PostIncrement((CEventHandleTreeIterator*)&next, (CEventHandleTreeIterator*)&cursor,
+                                                0);
     }
-    if (shouldDelete > 0) __dl__FPv(self);
-    return self;
+    // ClearTree is declared on the handle but operates on this embedded tree header.
+    ((CEventHandle*)&resourceTree)->ClearTree();
+    // Phase 4: payloads are gone; release trees, effect state, pointer buffers and owner name.
+    ScriptResourceTree_FreeNodes((char*)&resourceTree.count, -1);
+    ((CEventEffect*)pad_47C)->Destroy(-1);
+    ScriptObjectTree_FreeNodes((char*)&objectTree.count, -1);
+    ScriptPointerVector_Dtor((char*)&objectLists[4], -1);
+    ScriptPointerVector_Dtor((char*)&objectLists[3], -1);
+    ScriptPointerVector_Dtor((char*)&objectLists[2], -1);
+    ScriptPointerVector_Dtor((char*)&objectLists[1], -1);
+    ScriptPointerVector_Dtor((char*)&objectLists[0], -1);
+    ((NString*)((char*)&nameFlags))->~NString();
 }
 
-// Both destructors below own nodes only; payloads were released by CEventHandle_dtor.
+// Both destructors below own nodes only; payloads were released by ~CEventHandle.
 // self+4 is the root. left/right are child links. Walk children before freeing
 // their parent, unroll four levels, then delegate deeper branches to FreeSubtree.
 // Repeated null guards come from nested destructors. Collapsing them changes
@@ -1379,7 +1543,8 @@ void* ScriptObjectTree_FreeNodes(void* self, int shouldDelete) {
                 }
             }
         }
-        if (0 < shouldDelete) __dl__FPv(self);
+        if (0 < shouldDelete)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -1460,7 +1625,8 @@ void* ScriptResourceTree_FreeNodes(void* self, int shouldDelete) {
                 }
             }
         }
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -1485,7 +1651,8 @@ struct StoryTaskStringInitView {
     StoryOwnedStringView second;
 };
 // Initialize task interfaces, resource paths and the idle story state.
-void* CStoryConte_ctor(StoryTaskStringInitView* self) {
+CStoryConte::CStoryConte() {
+    StoryTaskStringInitView* self = (StoryTaskStringInitView*)this;
     __ct__18NativeBase80201D18Fv(self);
     int zero = 0;
     self->first.flags = zero;
@@ -1520,7 +1687,6 @@ void* CStoryConte_ctor(StoryTaskStringInitView* self) {
     SaveData_GetSelectedTourConteScriptName(&self->second);
     AsCStoryConte(self)->skipFadeUpdateCount = 0;
     (*(unsigned int*)&AsCStoryConte(self)->state) = 0;
-    return self;
 }
 
 void* __dl__FPv(void*);
@@ -1537,7 +1703,9 @@ struct StoryTaskTeardownVtable {
     virtual void v24();
     virtual void v28();
 };
-struct StoryInlineStringTagView { CW_BITS2( unsigned char flag : 1, unsigned char len : 7) };
+struct StoryInlineStringTagView {
+    CW_BITS2(unsigned char flag : 1, unsigned char len : 7)
+};
 // CStoryConte's two owning strings: first = event path +24, second = player
 // resource name +3C. OnDestroy releases loaders/script/caption; this destructor
 // calls task vslot +20, then frees heap-backed strings and the native task base.
@@ -1549,24 +1717,24 @@ struct StoryTaskStringCleanupView {
     StoryOwnedStringView second;
 };
 // Destroy task interfaces and owned strings; resource shutdown belongs to OnDestroy.
-void* CStoryConte_dtor(StoryTaskStringCleanupView* self, int shouldDelete) {
-    if (self != 0) {
-        self->vtable = (void**)&__vt__11CStoryConte;
-        AsCStoryConte(self)->taskMainVtable = (char*)&__vt__11CStoryConte + kTaskMainVtableOffset;
-        ((StoryTaskTeardownVtable*)self)->v20();
-        if ((self->second.flags >> 31) == 0) {
-            ((StoryInlineStringTagView*)((char*)&AsCStoryConte(self)->playerResourceNameFlags))->len = 0;
-            AsCStoryConte(self)->inlinePlayerResourceName = 0;
-        } else {
-            *self->second.resource = 0;
-            self->second.length = 0;
-        }
-        if (&self->second != 0 && (self->second.flags >> 31) != 0) appFreeUni__FPv(self->second.resource);
-        if (&self->first != 0 && (self->first.flags >> 31) != 0) appFreeUni__FPv(self->first.resource);
-        if (self != 0) __dt__18NativeBase80201D18Fv(self, 0);
-        if (shouldDelete > 0) __dl__FPv(self);
+CStoryConte::~CStoryConte() {
+    StoryTaskStringCleanupView* self = (StoryTaskStringCleanupView*)this;
+    self->vtable = (void**)&__vt__11CStoryConte;
+    AsCStoryConte(self)->taskMainVtable = (char*)&__vt__11CStoryConte + kTaskMainVtableOffset;
+    ((StoryTaskTeardownVtable*)self)->v20();
+    if ((self->second.flags >> 31) == 0) {
+        ((StoryInlineStringTagView*)((char*)&AsCStoryConte(self)->playerResourceNameFlags))->len = 0;
+        AsCStoryConte(self)->inlinePlayerResourceName = 0;
+    } else {
+        *self->second.resource = 0;
+        self->second.length = 0;
     }
-    return self;
+    if (&self->second != 0 && (self->second.flags >> 31) != 0)
+        appFreeUni__FPv(self->second.resource);
+    if (&self->first != 0 && (self->first.flags >> 31) != 0)
+        appFreeUni__FPv(self->first.resource);
+    if (self != 0)
+        __dt__18NativeBase80201D18Fv(self, 0);
 }
 
 struct ConteOwnedStringView {
@@ -1582,34 +1750,33 @@ struct ConteProcessorCleanupView {
     void* vtable;
 };
 // Release the processor object and both heap-backed string buffers.
-void* CEventConteProc_dtor(ConteProcessorCleanupView* self, int shouldDelete) {
-    if (self != 0) {
-        self->vtable = &__vt__15CEventConteProc;
-        if ((self->eventName.flags >> 31) == 0) {
-            AsCEventConteProc(self)->inlineEventName = 0;
-            AsCEventConteProc(self)->eventNameTag &= ~0x7f;
-        } else {
-            *self->eventName.resource = 0;
-            self->eventName.length = 0;
-        }
-        if ((self->eventKind.flags >> 31) == 0) {
-            AsCEventConteProc(self)->inlineEventKind = 0;
-            AsCEventConteProc(self)->eventKindTag &= ~0x7f;
-        } else {
-            *self->eventKind.resource = 0;
-            self->eventKind.length = 0;
-        }
-        if (self->ownedObject != 0) {
-          if (self->ownedObject != 0) {
-            ((ResourceInterface*)self->ownedObject)->Destroy(1);
-          }
-          self->ownedObject = 0;
-        }
-        if (&self->eventKind != 0 && (self->eventKind.flags >> 31) != 0) appFreeUni__FPv(self->eventKind.resource);
-        if (&self->eventName != 0 && (self->eventName.flags >> 31) != 0) appFreeUni__FPv(self->eventName.resource);
-        if (shouldDelete > 0) __dl__FPv(self);
+CEventConteProc::~CEventConteProc() {
+    ConteProcessorCleanupView* self = (ConteProcessorCleanupView*)this;
+    self->vtable = &__vt__15CEventConteProc;
+    if ((self->eventName.flags >> 31) == 0) {
+        AsCEventConteProc(self)->inlineEventName = 0;
+        AsCEventConteProc(self)->eventNameTag &= ~0x7f;
+    } else {
+        *self->eventName.resource = 0;
+        self->eventName.length = 0;
     }
-    return self;
+    if ((self->eventKind.flags >> 31) == 0) {
+        AsCEventConteProc(self)->inlineEventKind = 0;
+        AsCEventConteProc(self)->eventKindTag &= ~0x7f;
+    } else {
+        *self->eventKind.resource = 0;
+        self->eventKind.length = 0;
+    }
+    if (self->ownedObject != 0) {
+        if (self->ownedObject != 0) {
+            ((ResourceInterface*)self->ownedObject)->Destroy(1);
+        }
+        self->ownedObject = 0;
+    }
+    if (&self->eventKind != 0 && (self->eventKind.flags >> 31) != 0)
+        appFreeUni__FPv(self->eventKind.resource);
+    if (&self->eventName != 0 && (self->eventName.flags >> 31) != 0)
+        appFreeUni__FPv(self->eventName.resource);
 }
 
 void Vec3_Zero(void*);
@@ -1664,9 +1831,10 @@ struct EventObjectNodeView {
     void* item;
 };
 // Destroy tree payload objects across an iterator range without freeing the tree nodes.
-void CEventHandle_DestroyTreeRangeObjects(void*, EventObjectNodeView** cursor, EventObjectNodeView** limit) {
+void CEventHandle::DestroyTreeRangeObjects(EventObjectNodeView** cursor, EventObjectNodeView** limit) {
     int zero = 0;
-    if (*cursor == *limit) return;
+    if (*cursor == *limit)
+        return;
     do {
         void* item = (*cursor)->item;
         if (item != 0) {
@@ -1679,7 +1847,8 @@ void CEventHandle_DestroyTreeRangeObjects(void*, EventObjectNodeView** cursor, E
         }
         if (((EventObjectNodeView*)*cursor)->child4 != 0) {
             EventObjectNodeView* node = ((EventObjectNodeView*)*cursor)->child4;
-            while (node->child0 != 0) node = node->child0;
+            while (node->child0 != 0)
+                node = node->child0;
             *cursor = node;
         } else {
             for (;;) {
@@ -1722,41 +1891,42 @@ struct StoryNamedEntryArray {
 // exact match with the current compiler; the phases below explain their scope.
 void* StoryNamedEntryArray_Destroy(StoryNamedEntryArray* self, int shouldDelete) {
     if (self != 0) {
-      if (self != 0) {
-       if (self != 0) {
         if (self != 0) {
-        if (self->entries != 0) {
-        StoryNamedEntryStorage* entry = self->entries + self->count;
-        int count = self->count;
-        // Phase 1: unpublish the constructed range; local count still owns the walk.
-        self->count = count;
-        self->count -= count;
-        while (count != 0) {
-            --entry;
-            if (entry != 0) {
-                entry->active = 0;
-                entry->entryState = 0;
-                // Phase 2: empty inline or heap name without changing its heap flag.
-                if ((entry->flags >> 31) == 0) {
-                    ((signed char*)entry)[9] = 0;
-                    ((signed char*)&entry->flags)[0] &= ~0x7f;
-                } else {
-                    *(unsigned char*)entry->nameData = 0;
-                    entry->nameLength = 0;
+            if (self != 0) {
+                if (self != 0) {
+                    if (self->entries != 0) {
+                        StoryNamedEntryStorage* entry = self->entries + self->count;
+                        int count = self->count;
+                        // Phase 1: unpublish the constructed range; local count still owns the walk.
+                        self->count = count;
+                        self->count -= count;
+                        while (count != 0) {
+                            --entry;
+                            if (entry != 0) {
+                                entry->active = 0;
+                                entry->entryState = 0;
+                                // Phase 2: empty inline or heap name without changing its heap flag.
+                                if ((entry->flags >> 31) == 0) {
+                                    ((signed char*)entry)[9] = 0;
+                                    ((signed char*)&entry->flags)[0] &= ~0x7f;
+                                } else {
+                                    *(unsigned char*)entry->nameData = 0;
+                                    entry->nameLength = 0;
+                                }
+                                // Phase 3: release the heap name, never the inline bytes.
+                                if (&entry->flags != 0 && (entry->flags >> 31) != 0)
+                                    appFreeUni__FPv(entry->nameData);
+                            }
+                            --count;
+                        }
+                        // Phase 4: release entry storage, then optionally the containing wrapper.
+                        appFreeUni__FPv(self->entries);
+                    }
                 }
-                // Phase 3: release the heap name, never the inline bytes.
-                if (&entry->flags != 0 && (entry->flags >> 31) != 0)
-                    appFreeUni__FPv(entry->nameData);
             }
-            --count;
         }
-        // Phase 4: release entry storage, then optionally the containing wrapper.
-        appFreeUni__FPv(self->entries);
-        }
-        }
-       }
-      }
-      if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -1804,32 +1974,33 @@ void* StoryModelSlot_Destroy(StoryModelSlotStorage* self, int shouldDelete) {
                             int offset = count * 0x14;
                             self->entryCount = count - count;
                             StoryModelEntryStorage* entry = (StoryModelEntryStorage*)((char*)base + offset);
-            while (count != 0) {
-                --entry;
-                if (entry != 0) {
-                    entry->active = 0;
-                    entry->entryState = 0;
-                    if ((entry->flags >> 31) == 0) {
-                        ((signed char*)entry)[9] = 0;
-                        signed char flags = ((signed char*)&entry->flags)[0];
-                        flags &= ~0x7f;
-                        ((signed char*)&entry->flags)[0] = flags;
-                    } else {
-                        *(unsigned char*)entry->nameData = 0;
-                        entry->nameLength = 0;
-                    }
-                    if (&entry->flags != 0 && (entry->flags >> 31) != 0)
-                        appFreeUni__FPv(entry->nameData);
-                }
-                --count;
-            }
-            appFreeUni__FPv((*(void**)&((StoryModelSlotStorage*)self)->entries));
+                            while (count != 0) {
+                                --entry;
+                                if (entry != 0) {
+                                    entry->active = 0;
+                                    entry->entryState = 0;
+                                    if ((entry->flags >> 31) == 0) {
+                                        ((signed char*)entry)[9] = 0;
+                                        signed char flags = ((signed char*)&entry->flags)[0];
+                                        flags &= ~0x7f;
+                                        ((signed char*)&entry->flags)[0] = flags;
+                                    } else {
+                                        *(unsigned char*)entry->nameData = 0;
+                                        entry->nameLength = 0;
+                                    }
+                                    if (&entry->flags != 0 && (entry->flags >> 31) != 0)
+                                        appFreeUni__FPv(entry->nameData);
+                                }
+                                --count;
+                            }
+                            appFreeUni__FPv((*(void**)&((StoryModelSlotStorage*)self)->entries));
                         }
                     }
                 }
             }
         }
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -1839,16 +2010,20 @@ struct StoryShutdownPathStorage {
     unsigned int length;
     unsigned char* resource;
 };
-struct DA14Base24 { unsigned char pad24[0x24]; };
-struct DA14Poly24 : DA14Base24 { 
-virtual void Destroy(int);
+struct DA14Base24 {
+    unsigned char pad24[0x24];
 };
-struct DA14Base4A4 { unsigned char pad4A4[0x4A4]; };
-struct DA14Poly4A4 : DA14Base4A4 { 
-virtual void Destroy(int);
+struct DA14Poly24 : DA14Base24 {
+    virtual void Destroy(int);
 };
-struct DA14Poly0 { 
-virtual void Destroy(int);
+struct DA14Base4A4 {
+    unsigned char pad4A4[0x4A4];
+};
+struct DA14Poly4A4 : DA14Base4A4 {
+    virtual void Destroy(int);
+};
+struct DA14Poly0 {
+    virtual void Destroy(int);
 };
 // Shutdown view owns the three child handles and caption; destroy them before
 // releasing shared BP resources. +0x20 is CStoryConte::eventIndex, not playback
@@ -1877,10 +2052,9 @@ extern unsigned char s_conteModelSlots[];
 extern unsigned char s_partyBpPlayerDtorRegistration[];
 extern unsigned char s_storyConteDtorRegistrations[];
 extern unsigned char s_effectFade[];
-extern void CBpPlayer_Ctor(void*);
-extern void CBpPlayer_Dtor();
+extern void __ct__9CBpPlayerFv(void*);
+extern void __dt__9CBpPlayerFv();
 extern void __register_global_object(void*, void (*)(), void*);
-extern void CBpPlayer_ReleaseResources(void*);
 extern void ScriptSharedFiles_RemoveRequiredFilesAndRelease();
 // Node-only postorder cleanup for CEventHandle::objectTree (+470).
 // The header owns nodes; payload destruction has already cleared each item.
@@ -1889,33 +2063,41 @@ extern void ScriptSharedFiles_RemoveRequiredFilesAndRelease();
 // retain macro-local lifetimes for the required byte identity. Each node input
 // is evaluated once; owner is borrowed, and no payload destructor runs here.
 // Release one fringe node after delegating both child subtrees; null is a no-op.
-#define FREE_OBJECT_TREE_FRINGE(owner, p) do { \
-    EventObjectTreeLinksView* leaf = (p); \
-    if (leaf != 0) { \
-        if (leaf->first != 0) ScriptByteMap_FreeSubtree(owner, leaf->first); \
-        if (leaf->second != 0) ScriptByteMap_FreeSubtree(owner, leaf->second); \
-        appFreeUni__FPv(leaf); \
-    } \
-} while (0)
+#define FREE_OBJECT_TREE_FRINGE(owner, p)                       \
+    do {                                                        \
+        EventObjectTreeLinksView* leaf = (p);                   \
+        if (leaf != 0) {                                        \
+            if (leaf->first != 0)                               \
+                ScriptByteMap_FreeSubtree(owner, leaf->first);  \
+            if (leaf->second != 0)                              \
+                ScriptByteMap_FreeSubtree(owner, leaf->second); \
+            appFreeUni__FPv(leaf);                              \
+        }                                                       \
+    } while (0)
 // Release two levels in child-first order, without destroying payloads again.
-#define FREE_OBJECT_TREE_BRANCH(owner, p) do { \
-    EventObjectTreeLinksView* branch = (p); \
-    if (branch != 0) { \
-        FREE_OBJECT_TREE_FRINGE(owner, branch->first); \
-        FREE_OBJECT_TREE_FRINGE(owner, branch->second); \
-        appFreeUni__FPv(branch); \
-    } \
-} while (0)
+#define FREE_OBJECT_TREE_BRANCH(owner, p)                   \
+    do {                                                    \
+        EventObjectTreeLinksView* branch = (p);             \
+        if (branch != 0) {                                  \
+            FREE_OBJECT_TREE_FRINGE(owner, branch->first);  \
+            FREE_OBJECT_TREE_FRINGE(owner, branch->second); \
+            appFreeUni__FPv(branch);                        \
+        }                                                   \
+    } while (0)
 // Release three levels with the same postorder; deeper children use shared cleanup.
-#define FREE_OBJECT_TREE_SUBTREE(owner, p) do { \
-    EventObjectTreeLinksView* subtree = (p); \
-    if (subtree != 0) { \
-        FREE_OBJECT_TREE_BRANCH(owner, subtree->first); \
-        FREE_OBJECT_TREE_BRANCH(owner, subtree->second); \
-        appFreeUni__FPv(subtree); \
-    } \
-} while (0)
-struct EventObjectTreeLinksView { EventObjectTreeLinksView* first; EventObjectTreeLinksView* second; };
+#define FREE_OBJECT_TREE_SUBTREE(owner, p)                   \
+    do {                                                     \
+        EventObjectTreeLinksView* subtree = (p);             \
+        if (subtree != 0) {                                  \
+            FREE_OBJECT_TREE_BRANCH(owner, subtree->first);  \
+            FREE_OBJECT_TREE_BRANCH(owner, subtree->second); \
+            appFreeUni__FPv(subtree);                        \
+        }                                                    \
+    } while (0)
+struct EventObjectTreeLinksView {
+    EventObjectTreeLinksView* first;
+    EventObjectTreeLinksView* second;
+};
 extern void ScriptByteMap_FreeSubtree(void*, void*);
 // Free the entire object tree and restore its empty sentinel links.
 void Tree_Clear(EventObjectTreeLinksView** self) {
@@ -1930,25 +2112,37 @@ void Tree_Clear(EventObjectTreeLinksView** self) {
         owner[2] = (EventObjectTreeLinksView*)&owner[1];
     }
 }
-struct EventResourceTreeLinksView { EventResourceTreeLinksView* first; EventResourceTreeLinksView* second; };
-struct EventResourceTreeHeaderView { void* first; EventResourceTreeLinksView* root; EventResourceTreeLinksView** tail; };
+struct EventResourceTreeLinksView {
+    EventResourceTreeLinksView* first;
+    EventResourceTreeLinksView* second;
+};
+struct EventResourceTreeHeaderView {
+    void* first;
+    EventResourceTreeLinksView* root;
+    EventResourceTreeLinksView** tail;
+};
 extern void ScriptByteMap_FreeSubtree(void*, void*);
 // Free the entire resource tree and restore its empty sentinel links.
-void CEventHandle_ClearTree(EventResourceTreeHeaderView* self) {
+void CEventHandle::ClearTree() {
+    EventResourceTreeHeaderView* self = (EventResourceTreeHeaderView*)this;
     EventResourceTreeLinksView* root = self->root;
     if (root != 0) {
         EventResourceTreeLinksView* branch = root->first;
         if (branch != 0) {
             EventResourceTreeLinksView* leaf = branch->first;
             if (leaf != 0) {
-                if (leaf->first != 0) ScriptByteMap_FreeSubtree(self, leaf->first);
-                if (leaf->second != 0) ScriptByteMap_FreeSubtree(self, leaf->second);
+                if (leaf->first != 0)
+                    ScriptByteMap_FreeSubtree(self, leaf->first);
+                if (leaf->second != 0)
+                    ScriptByteMap_FreeSubtree(self, leaf->second);
                 appFreeUni__FPv(leaf);
             }
             leaf = branch->second;
             if (leaf != 0) {
-                if (leaf->first != 0) ScriptByteMap_FreeSubtree(self, leaf->first);
-                if (leaf->second != 0) ScriptByteMap_FreeSubtree(self, leaf->second);
+                if (leaf->first != 0)
+                    ScriptByteMap_FreeSubtree(self, leaf->first);
+                if (leaf->second != 0)
+                    ScriptByteMap_FreeSubtree(self, leaf->second);
                 appFreeUni__FPv(leaf);
             }
             appFreeUni__FPv(branch);
@@ -1959,14 +2153,18 @@ void CEventHandle_ClearTree(EventResourceTreeHeaderView* self) {
             if (subbranch != 0) {
                 EventResourceTreeLinksView* leaf = subbranch->first;
                 if (leaf != 0) {
-                    if (leaf->first != 0) ScriptByteMap_FreeSubtree(self, leaf->first);
-                    if (leaf->second != 0) ScriptByteMap_FreeSubtree(self, leaf->second);
+                    if (leaf->first != 0)
+                        ScriptByteMap_FreeSubtree(self, leaf->first);
+                    if (leaf->second != 0)
+                        ScriptByteMap_FreeSubtree(self, leaf->second);
                     appFreeUni__FPv(leaf);
                 }
                 leaf = subbranch->second;
                 if (leaf != 0) {
-                    if (leaf->first != 0) ScriptByteMap_FreeSubtree(self, leaf->first);
-                    if (leaf->second != 0) ScriptByteMap_FreeSubtree(self, leaf->second);
+                    if (leaf->first != 0)
+                        ScriptByteMap_FreeSubtree(self, leaf->first);
+                    if (leaf->second != 0)
+                        ScriptByteMap_FreeSubtree(self, leaf->second);
                     appFreeUni__FPv(leaf);
                 }
                 appFreeUni__FPv(subbranch);
@@ -1975,14 +2173,18 @@ void CEventHandle_ClearTree(EventResourceTreeHeaderView* self) {
             if (subbranch != 0) {
                 EventResourceTreeLinksView* leaf = subbranch->first;
                 if (leaf != 0) {
-                    if (leaf->first != 0) ScriptByteMap_FreeSubtree(self, leaf->first);
-                    if (leaf->second != 0) ScriptByteMap_FreeSubtree(self, leaf->second);
+                    if (leaf->first != 0)
+                        ScriptByteMap_FreeSubtree(self, leaf->first);
+                    if (leaf->second != 0)
+                        ScriptByteMap_FreeSubtree(self, leaf->second);
                     appFreeUni__FPv(leaf);
                 }
                 leaf = subbranch->second;
                 if (leaf != 0) {
-                    if (leaf->first != 0) ScriptByteMap_FreeSubtree(self, leaf->first);
-                    if (leaf->second != 0) ScriptByteMap_FreeSubtree(self, leaf->second);
+                    if (leaf->first != 0)
+                        ScriptByteMap_FreeSubtree(self, leaf->first);
+                    if (leaf->second != 0)
+                        ScriptByteMap_FreeSubtree(self, leaf->second);
                     appFreeUni__FPv(leaf);
                 }
                 appFreeUni__FPv(subbranch);
@@ -2006,7 +2208,8 @@ void CEventHandle_ClearTree(EventResourceTreeHeaderView* self) {
 // playback state=idle last. Existing order releases event loader before handle;
 // cleanup must not start executing scripts again. Preserve this order and the
 // repeated null guards/virtual receiver adjustments; no error/status result.
-void CStoryConte_OnDestroy(StoryTaskShutdownView* self) {
+void CStoryConte::OnDestroy() {
+    StoryTaskShutdownView* self = (StoryTaskShutdownView*)this;
     self->eventIndex = 3;
     if ((self->ref.flags >> 31) == 0) {
         AsCStoryConte(self)->inlineEventPath = 0;
@@ -2045,15 +2248,16 @@ void CStoryConte_OnDestroy(StoryTaskShutdownView* self) {
     }
     if (((volatile int&)Sing_805DC670()) == 0) {
         if (s_bpPlayerInitialized == 0) {
-            CBpPlayer_Ctor(s_bpPlayer);
-            __register_global_object(s_bpPlayer, CBpPlayer_Dtor, s_partyBpPlayerDtorRegistration);
+            ((CBpPlayer*)s_bpPlayer)->__ct();
+            __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, s_partyBpPlayerDtorRegistration);
             s_bpPlayerInitialized = 1;
         }
         ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
     }
-    CBpPlayer_ReleaseResources((void*)((volatile int&)Sing_805DC670()));
+    ((CBpPlayer*)(((volatile int&)Sing_805DC670())))->ReleaseResources();
     AsCStoryConte(self)->state = 0;
-    if (GameHook_ReservedFalse() == 0) ScriptSharedFiles_RemoveRequiredFilesAndRelease();
+    if (GameHook_ReservedFalse() == 0)
+        ScriptSharedFiles_RemoveRequiredFilesAndRelease();
 }
 #pragma pop
 
@@ -2082,14 +2286,15 @@ struct StoryCaptionDrawData {
 // Caption slot +0x14 prepares binding. Vertex xy uses reference layout pixels,
 // x right/y down; UV/tint stay from the template. No allocations, output status,
 // viewport or scissor writes. Preserve volatile template word-copy ordering.
-void CStoryConte_OnDisplay(StoryTaskDisplayView* self) {
+void CStoryConte::OnDisplay() {
+    StoryTaskDisplayView* self = (StoryTaskDisplayView*)this;
     // Draw in 640-wide UI coordinates: left=640-width(128)-margin(20), top=48,
     // bottom=top+height(32). UV/color data comes from the quad template.
     if (kStoryPlaying == self->state || kStorySkipFade == self->state) {
         if (((volatile int&)Sing_805DC670()) == 0) {
             if (s_bpPlayerInitialized == 0) {
-                CBpPlayer_Ctor(s_bpPlayer);
-                __register_global_object(s_bpPlayer, CBpPlayer_Dtor, s_partyBpPlayerDtorRegistration);
+                ((CBpPlayer*)s_bpPlayer)->__ct();
+                __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, s_partyBpPlayerDtorRegistration);
                 s_bpPlayerInitialized = 1;
             }
             ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
@@ -2136,9 +2341,8 @@ extern signed char s_courseSlotTableInitialized;
 extern volatile int g_soundManager;
 extern volatile int s_nowReloading;
 extern void* __nwa__FUl(unsigned int);
-extern void CEffectFade_Ctor(void*);
-extern void CEffectFade_dtor();
-extern void CEffectFade_SetAlpha(void*, int);
+extern void __ct__11CEffectFadeFv(void*);
+extern void __dt__11CEffectFadeFv();
 extern void SoundManager_RequestBgmStop(void*, int);
 extern void SoundManager_StopAndClearChannels(void*);
 extern void SoundManager_AcquireSoundBank(void*, void*);
@@ -2147,8 +2351,7 @@ extern void __destroy_new_array(void*, void*);
 extern void* __construct_new_array(void*, void*, void*, unsigned int, int);
 extern int StoryMovieConfig_SetDisplayModeIfChanged(void*, int);
 extern void StoryMovieConfig_ApplyDisplayMode(void*);
-extern void CNowReloading_Init(void*);
-extern void CNowReloading_dtor();
+extern void __dt__13CNowReloadingFv();
 extern int LoadingIndicator_IsAbsentOrState3(void*);
 extern void LoadingIndicator_CreatePlayer(void*);
 
@@ -2170,13 +2373,20 @@ extern void LoadingIndicator_CreatePlayer(void*);
 //              optional secondaryPayload points to int and is cleared to zero (not filled with a name).
 // Payload word meanings depend on type; neither word owns the pointee.
 // The names describe their order, not a common payload structure.
-struct StoryCommandMessage { int pad0; int type; void* primaryPayload; void* secondaryPayload; };
-
-struct EB68V24 { unsigned char pad[0x24]; 
-virtual void Destroy(int);
+struct StoryCommandMessage {
+    int pad0;
+    int type;
+    void* primaryPayload;
+    void* secondaryPayload;
 };
-struct EB68V0 { 
-virtual void Destroy(int); virtual void SetName(void*);
+
+struct EB68V24 {
+    unsigned char pad[0x24];
+    virtual void Destroy(int);
+};
+struct EB68V0 {
+    virtual void Destroy(int);
+    virtual void SetName(void*);
 };
 
 void __dla__FPv(void*);
@@ -2211,287 +2421,295 @@ void* __dl__FPv(void*);
 // publication, before state=1. These ordering limits must remain visible to mods.
 // Normal task OnDestroy releases published loaders/caption; shared slots/bank
 // are paired by ENTER/LEAVE, rather than by a rollback inside START.
-void CStoryConte_HandleMsg(StoryLoadView* self, StoryCommandMessage* arg) {
+void CStoryConte::HandleMsg(StoryCommandMessage* arg) {
+    StoryLoadView* self = (StoryLoadView*)this;
     unsigned char* tags = s_storyConteDtorRegistrations;
     switch (arg->type) {
-        case kStoryEnter: {
-            // ENTER A: stop prior audio and acquire the story sound bank.
-            do {
-                if (!((volatile int&)Sing_805DC660())) {
-                    if (!s_effectFadeInitialized) {
-                        CEffectFade_Ctor(s_effectFade);
-                        __register_global_object(s_effectFade, CEffectFade_dtor, tags);
-                        s_effectFadeInitialized = 1;
-                    } ((volatile int&)Sing_805DC660()) = (int)s_effectFade;
+    case kStoryEnter: {
+        // ENTER A: stop prior audio and acquire the story sound bank.
+        do {
+            if (!((volatile int&)Sing_805DC660())) {
+                if (!s_effectFadeInitialized) {
+                    ((CEffectFade*)s_effectFade)->__ct();
+                    __register_global_object(s_effectFade, __dt__11CEffectFadeFv, tags);
+                    s_effectFadeInitialized = 1;
                 }
+                ((volatile int&)Sing_805DC660()) = (int)s_effectFade;
             }
-            while (0);
-            CEffectFade_SetAlpha((void*)((volatile int&)Sing_805DC660()), 0xff);
-            SoundManager_RequestBgmStop((void*)g_soundManager, 0);
-            SoundManager_StopAndClearChannels((void*)g_soundManager);
-            SoundManager_AcquireSoundBank((void*)g_soundManager, StoryStrings.soundBank);
-            do {
-                if (!((volatile int&)Sing_805DC668())) {
-                    if (!s_courseSlotTableInitialized) {
-                        *(int*)(s_conteModelSlots+8)=0;
-                        do {
-                            unsigned char* slotTable = (s_conteModelSlots);
-                            *(unsigned short*)slotTable = 0xffff;
-                            *(int*)(slotTable + 4) = 0;
-                            void* oldSlotArray = *(void**)(slotTable + 8);
-                            if (oldSlotArray != 0) {
-                                __destroy_new_array(oldSlotArray, (void*)StoryModelSlot_Destroy);
-                                *(int*)(slotTable + 8) = 0;
-                            }
+        } while (0);
+        ((CEffectFade*)(((volatile int&)Sing_805DC660())))->SetAlpha(0xff);
+        SoundManager_RequestBgmStop((void*)g_soundManager, 0);
+        SoundManager_StopAndClearChannels((void*)g_soundManager);
+        SoundManager_AcquireSoundBank((void*)g_soundManager, StoryStrings.soundBank);
+        do {
+            if (!((volatile int&)GetConteModelSlotsSlot())) {
+                if (!s_courseSlotTableInitialized) {
+                    *(int*)(s_conteModelSlots + 8) = 0;
+                    do {
+                        unsigned char* slotTable = (s_conteModelSlots);
+                        *(unsigned short*)slotTable = 0xffff;
+                        *(int*)(slotTable + 4) = 0;
+                        void* oldSlotArray = *(void**)(slotTable + 8);
+                        if (oldSlotArray != 0) {
+                            __destroy_new_array(oldSlotArray, (void*)StoryModelSlot_Destroy);
+                            *(int*)(slotTable + 8) = 0;
                         }
-                        while (0);
-                        s_courseSlotTableInitialized=1;
-                    } ((volatile int&)Sing_805DC668())=(int)s_conteModelSlots;
+                    } while (0);
+                    s_courseSlotTableInitialized = 1;
                 }
+                ((volatile int&)GetConteModelSlotsSlot()) = (int)s_conteModelSlots;
             }
-            while (0);
-            // ENTER/LEAVE B: reset shared slots; this table owns its array and slot payloads.
-            unsigned char* modelSlotTable = (unsigned char*)((volatile int&)Sing_805DC668());
-            do {
-                unsigned char* slotTable = (modelSlotTable);
-                *(unsigned short*)slotTable = 0xffff;
-                *(int*)(slotTable + 4) = 0;
-                void* oldSlotArray = *(void**)(slotTable + 8);
-                if (oldSlotArray != 0) {
-                    __destroy_new_array(oldSlotArray, (void*)StoryModelSlot_Destroy);
-                    *(int*)(slotTable + 8) = 0;
+        } while (0);
+        // ENTER/LEAVE B: reset shared slots; this table owns its array and slot payloads.
+        unsigned char* modelSlotTable = (unsigned char*)((volatile int&)GetConteModelSlotsSlot());
+        do {
+            unsigned char* slotTable = (modelSlotTable);
+            *(unsigned short*)slotTable = 0xffff;
+            *(int*)(slotTable + 4) = 0;
+            void* oldSlotArray = *(void**)(slotTable + 8);
+            if (oldSlotArray != 0) {
+                __destroy_new_array(oldSlotArray, (void*)StoryModelSlot_Destroy);
+                *(int*)(slotTable + 8) = 0;
+            }
+        } while (0);
+        // ENTER replaces the shared model-slot array after stopping audio
+        // and acquiring the story bank. Array storage includes the runtime
+        // cookie: 0x1A0 bytes = 5 * 0x50-byte slots + 0x10-byte header.
+        // Construct failure frees the raw allocation; publication is last.
+        void* slotArrayStorage = __nwa__FUl(kStoryModelArrayBytes);
+        if (slotArrayStorage) {
+            try {
+                slotArrayStorage = __construct_new_array(slotArrayStorage, StoryModelSlot_Init, StoryModelSlot_Destroy,
+                                                         kStoryModelSlotBytes, kStoryModelSlotCount);
+            } catch (...) {
+                __dla__FPv(slotArrayStorage);
+                throw;
+            }
+        }
+        *(void**)((char*)modelSlotTable + 8) = slotArrayStorage;
+        break;
+    }
+    case kStoryLeave: {
+        // LEAVE destroys all shared model slots before releasing the bank.
+        do {
+            if (!((volatile int&)GetConteModelSlotsSlot())) {
+                if (!s_courseSlotTableInitialized) {
+                    *(int*)(s_conteModelSlots + 8) = 0;
+                    do {
+                        unsigned char* slotTable = (s_conteModelSlots);
+                        *(unsigned short*)slotTable = 0xffff;
+                        *(int*)(slotTable + 4) = 0;
+                        void* oldSlotArray = *(void**)(slotTable + 8);
+                        if (oldSlotArray != 0) {
+                            __destroy_new_array(oldSlotArray, (void*)StoryModelSlot_Destroy);
+                            *(int*)(slotTable + 8) = 0;
+                        }
+                    } while (0);
+                    s_courseSlotTableInitialized = 1;
                 }
+                ((volatile int&)GetConteModelSlotsSlot()) = (int)s_conteModelSlots;
             }
-            while (0);
-            // ENTER replaces the shared model-slot array after stopping audio
-            // and acquiring the story bank. Array storage includes the runtime
-            // cookie: 0x1A0 bytes = 5 * 0x50-byte slots + 0x10-byte header.
-            // Construct failure frees the raw allocation; publication is last.
-            void* slotArrayStorage = __nwa__FUl(kStoryModelArrayBytes);
-            if (slotArrayStorage) {
+        } while (0);
+        // ENTER/LEAVE B: reset shared slots; this table owns its array and slot payloads.
+        unsigned char* modelSlotTable = (unsigned char*)((volatile int&)GetConteModelSlotsSlot());
+        do {
+            unsigned char* slotTable = (modelSlotTable);
+            *(unsigned short*)slotTable = 0xffff;
+            *(int*)(slotTable + 4) = 0;
+            void* oldSlotArray = *(void**)(slotTable + 8);
+            if (oldSlotArray != 0) {
+                __destroy_new_array(oldSlotArray, (void*)StoryModelSlot_Destroy);
+                *(int*)(slotTable + 8) = 0;
+            }
+        } while (0);
+        SoundManager_RequestBgmStop((void*)g_soundManager, 0);
+        SoundManager_StopAndClearChannels((void*)g_soundManager);
+        SoundManager_ReleaseSoundBank((void*)g_soundManager, StoryStrings.soundBank);
+        do {
+            if (!((volatile int&)Sing_805DC660())) {
+                if (!s_effectFadeInitialized) {
+                    ((CEffectFade*)s_effectFade)->__ct();
+                    __register_global_object(s_effectFade, __dt__11CEffectFadeFv, tags);
+                    s_effectFadeInitialized = 1;
+                }
+                ((volatile int&)Sing_805DC660()) = (int)s_effectFade;
+            }
+        } while (0);
+        ((CEffectFade*)(((volatile int&)Sing_805DC660())))->SetAlpha(0);
+        break;
+    }
+    case kStoryStart: {
+        // START A: settle display mode, record scene index, and show the loading indicator.
+        if (StoryMovieConfig_SetDisplayModeIfChanged((char*)self + FIELD_OFFSET(CStoryConte, displayConfiguration),
+                                                     4) != 0)
+            StoryMovieConfig_ApplyDisplayMode(&AsCStoryConte(self)->displayConfiguration);
+        int indicatorSingletonWord = ((volatile int&)Sing_805DC610());
+        void* eventIndexWord = arg->primaryPayload;
+        AsCStoryConte(self)->state = 2;
+        (*(void**)&AsCStoryConte(self)->eventIndex) = eventIndexWord;
+        if (!indicatorSingletonWord) {
+            if (!s_nowReloadingInitialized) {
+                ((CNowReloading*)(&s_nowReloading))->Init();
+                __register_global_object((void*)&s_nowReloading, __dt__13CNowReloadingFv, (tags + 0x24));
+                s_nowReloadingInitialized = 1;
+            }
+            ((volatile int&)Sing_805DC610()) = (int)(void*)&s_nowReloading;
+        }
+        void* loadingIndicator = (void*)((volatile int&)Sing_805DC610());
+        if (loadingIndicator != 0) {
+            if (LoadingIndicator_IsAbsentOrState3(loadingIndicator) != 0)
+                LoadingIndicator_CreatePlayer(loadingIndicator);
+        }
+        // START B: a nonzero mode word requests new async loaders; otherwise use OnLoad.
+        if (arg->secondaryPayload != 0) {
+            char* text = SharedStringState_GetFirstString((*(int*)&AsCStoryConte(self)->eventIndex));
+            char* eventPath;
+            if (0 == text) {
+                eventPath = 0;
+            } else {
+                unsigned char temps[0x18];
+                char* start = StoryStrings.emptyPathPrefix;
+                int size;
+                size = (self->string.flags >> 31) == 0 ? (unsigned int)(self->string.shortData[0] & 0x7f)
+                                                       : self->string.longLength;
+                temps[4] = temps[0];
+                String_ReplaceRange(&self->string, 0, size, start, start + strlen(start), &temps[4]);
+                size = (self->string.flags >> 31) == 0 ? (unsigned int)(self->string.shortData[0] & 0x7f)
+                                                       : self->string.longLength;
+                temps[12] = temps[8];
+                String_ReplaceRange(&self->string, size, 0, text, text + strlen(text), &temps[12]);
+                start = StoryStrings.objectExtension;
+                size = (self->string.flags >> 31) == 0 ? (unsigned int)(self->string.shortData[0] & 0x7f)
+                                                       : self->string.longLength;
+                temps[20] = temps[16];
+                String_ReplaceRange(&self->string, size, 0, start, start + strlen(start), &temps[20]);
+                eventPath = (self->string.flags >> 31) == 0 ? (char*)&AsCStoryConte(self)->inlineEventPath
+                                                            : (*(char**)&AsCStoryConte(self)->eventPathData);
+            }
+            // START C: replace owned loaders only after resolving the event path.
+            if (self->eventLoader != 0) {
+                typedef void (*Destroy)(void*, int);
+                void* ownedResource = self->eventLoader;
+                if (ownedResource != 0) {
+                    ((EB68V24*)ownedResource)->Destroy(1);
+                }
+                self->eventLoader = 0;
+            }
+            void* eventLoader = __nw__FUl(kStoryFileLoaderBytes);
+            if (eventLoader != 0) {
                 try {
-                    slotArrayStorage = __construct_new_array(slotArrayStorage, StoryModelSlot_Init, StoryModelSlot_Destroy, kStoryModelSlotBytes, kStoryModelSlotCount);
+                    ((CEventLoad*)eventLoader)->__ct(eventPath, 0, (void*)1);
                 } catch (...) {
-                    __dla__FPv(slotArrayStorage);
+                    __dl__FPv(eventLoader);
                     throw;
                 }
             }
-            *(void**)((char*)modelSlotTable + 8) = slotArrayStorage;
-            break;
+            self->eventLoader = eventLoader;
+            if (self->faceDataLoader != 0) {
+                typedef void (*Destroy)(void*, int);
+                void* ownedResource = self->faceDataLoader;
+                if (ownedResource != 0) {
+                    ((EB68V24*)ownedResource)->Destroy(1);
+                }
+                self->faceDataLoader = 0;
+            }
+            void* faceDataLoader = __nw__FUl(kStoryFileLoaderBytes);
+            if (faceDataLoader) {
+                try {
+                    ((CEventLoad*)faceDataLoader)->__ct((const char*)g_eventFaceDataFilename, 0, (void*)1);
+                } catch (...) {
+                    __dl__FPv(faceDataLoader);
+                    throw;
+                }
+            }
+            do {
+                if (!((volatile int&)Sing_805DC670())) {
+                    if (!s_bpPlayerInitialized) {
+                        ((CBpPlayer*)s_bpPlayer)->__ct();
+                        __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, (tags + 0x18));
+                        s_bpPlayerInitialized = 1;
+                    }
+                    ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
+                }
+            } while (0);
+            self->faceDataLoader = faceDataLoader;
+            ((CBpPlayer*)(((volatile int&)Sing_805DC670())))->ReleaseResources();
+            do {
+                if (!((volatile int&)Sing_805DC670())) {
+                    if (!s_bpPlayerInitialized) {
+                        ((CBpPlayer*)s_bpPlayer)->__ct();
+                        __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, (tags + 0x18));
+                        s_bpPlayerInitialized = 1;
+                    }
+                    ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
+                }
+            } while (0);
+            void* tgt = (void*)((volatile int&)Sing_805DC670());
+            void* name = ((*(unsigned int*)&AsCStoryConte(self)->playerResourceNameFlags) >> 31) == 0
+                             ? (void*)((char*)&AsCStoryConte(self)->inlinePlayerResourceName)
+                             : AsCStoryConte(self)->playerResourceNameData;
+            ((CBpPlayer*)tgt)->StartLoad((const char*)name, 0, (void*)1);
+            do {
+                if (!((volatile int&)Sing_805DC670())) {
+                    if (!s_bpPlayerInitialized) {
+                        ((CBpPlayer*)s_bpPlayer)->__ct();
+                        __register_global_object(s_bpPlayer, __dt__9CBpPlayerFv, (tags + 0x18));
+                        s_bpPlayerInitialized = 1;
+                    }
+                    ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
+                }
+            } while (0);
+            ((CBpPlayer*)((volatile int&)Sing_805DC670()))->LoadMessageResources();
+            if (self->skipCaption != 0) {
+                typedef void (*Destroy)(void*, int);
+                void* ownedResource = self->skipCaption;
+                if (0 != ownedResource) {
+                    ((EB68V0*)ownedResource)->Destroy(1);
+                }
+                self->skipCaption = 0;
+            }
+            void* ownedResource = __nw__FUl(0x28);
+            if (ownedResource != 0) {
+                try {
+                    ((CBpTex*)ownedResource)->__ct();
+                } catch (...) {
+                    __dl__FPv(ownedResource);
+                    throw;
+                }
+            }
+            self->skipCaption = ownedResource;
+            ((EB68V0*)ownedResource)->SetName(StoryStrings.skipCaptionFile);
+            AsCStoryConte(self)->state = 1;
         }
-        case kStoryLeave: {
-            // LEAVE destroys all shared model slots before releasing the bank.
-            do {
-                if (!((volatile int&)Sing_805DC668())) {
-                    if (!s_courseSlotTableInitialized) {
-                        *(int*)(s_conteModelSlots+8)=0;
-                        do {
-                            unsigned char* slotTable = (s_conteModelSlots);
-                            *(unsigned short*)slotTable = 0xffff;
-                            *(int*)(slotTable + 4) = 0;
-                            void* oldSlotArray = *(void**)(slotTable + 8);
-                            if (oldSlotArray != 0) {
-                                __destroy_new_array(oldSlotArray, (void*)StoryModelSlot_Destroy);
-                                *(int*)(slotTable + 8) = 0;
-                            }
-                        }
-                        while (0);
-                        s_courseSlotTableInitialized=1;
-                    } ((volatile int&)Sing_805DC668())=(int)s_conteModelSlots;
-                }
-            }
-            while (0);
-            // ENTER/LEAVE B: reset shared slots; this table owns its array and slot payloads.
-            unsigned char* modelSlotTable = (unsigned char*)((volatile int&)Sing_805DC668());
-            do {
-                unsigned char* slotTable = (modelSlotTable);
-                *(unsigned short*)slotTable = 0xffff;
-                *(int*)(slotTable + 4) = 0;
-                void* oldSlotArray = *(void**)(slotTable + 8);
-                if (oldSlotArray != 0) {
-                    __destroy_new_array(oldSlotArray, (void*)StoryModelSlot_Destroy);
-                    *(int*)(slotTable + 8) = 0;
-                }
-            }
-            while (0);
-            SoundManager_RequestBgmStop((void*)g_soundManager, 0);
-            SoundManager_StopAndClearChannels((void*)g_soundManager);
-            SoundManager_ReleaseSoundBank((void*)g_soundManager, StoryStrings.soundBank);
+        break;
+    }
+    case kStoryQueryComplete: {
+        // QUERY: output words are borrowed writable storage; no loader ownership changes.
+        unsigned int isIdle = (AsCStoryConte(self)->state == 0) ? 1 : 0;
+        *(int*)arg->primaryPayload = isIdle;
+        if (isIdle) {
             do {
                 if (!((volatile int&)Sing_805DC660())) {
                     if (!s_effectFadeInitialized) {
-                        CEffectFade_Ctor(s_effectFade);
-                        __register_global_object(s_effectFade, CEffectFade_dtor, tags);
+                        ((CEffectFade*)s_effectFade)->__ct();
+                        __register_global_object(s_effectFade, __dt__11CEffectFadeFv, tags);
                         s_effectFadeInitialized = 1;
-                    } ((volatile int&)Sing_805DC660()) = (int)s_effectFade;
+                    }
+                    ((volatile int&)Sing_805DC660()) = (int)s_effectFade;
                 }
-            }
-            while (0);
-            CEffectFade_SetAlpha((void*)((volatile int&)Sing_805DC660()), 0);
-            break;
+            } while (0);
+            ((CEffectFade*)(((volatile int&)Sing_805DC660())))->SetAlpha(0xff);
         }
-        case kStoryStart: {
-            // START A: settle display mode, record scene index, and show the loading indicator.
-            if (StoryMovieConfig_SetDisplayModeIfChanged((char*)self + FIELD_OFFSET(CStoryConte, displayConfiguration), 4) != 0) StoryMovieConfig_ApplyDisplayMode(&AsCStoryConte(self)->displayConfiguration);
-            int indicatorSingletonWord = ((volatile int&)Sing_805DC610());
-            void* eventIndexWord = arg->primaryPayload;
-            AsCStoryConte(self)->state = 2;
-            (*(void**)&AsCStoryConte(self)->eventIndex) = eventIndexWord;
-            if (!indicatorSingletonWord) {
-                if (!s_nowReloadingInitialized) {
-                    CNowReloading_Init((void*)&s_nowReloading);
-                    __register_global_object((void*)&s_nowReloading, CNowReloading_dtor, (tags + 0x24));
-                    s_nowReloadingInitialized = 1;
-                } ((volatile int&)Sing_805DC610()) = (int)(void*)&s_nowReloading;
-            }
-            void* loadingIndicator = (void*)((volatile int&)Sing_805DC610());
-            if (loadingIndicator != 0) {
-                if (LoadingIndicator_IsAbsentOrState3(loadingIndicator) != 0) LoadingIndicator_CreatePlayer(loadingIndicator);
-            }
-            // START B: a nonzero mode word requests new async loaders; otherwise use OnLoad.
-            if (arg->secondaryPayload != 0) {
-                char* text = SharedStringState_GetFirstString((*(int*)&AsCStoryConte(self)->eventIndex));
-                char* eventPath;
-                if (0 == text) {
-                    eventPath = 0;
-                } else {
-                    unsigned char temps[0x18];
-                    char* start = StoryStrings.emptyPathPrefix;
-                    int size;
-                    size = (self->string.flags >> 31) == 0 ? (unsigned int)(self->string.shortData[0] & 0x7f) : self->string.longLength;
-                    temps[4] = temps[0];
-                    String_ReplaceRange(&self->string, 0, size, start, start + strlen(start), &temps[4]);
-                    size = (self->string.flags >> 31) == 0 ? (unsigned int)(self->string.shortData[0] & 0x7f) : self->string.longLength;
-                    temps[12] = temps[8];
-                    String_ReplaceRange(&self->string, size, 0, text, text + strlen(text), &temps[12]);
-                    start = StoryStrings.objectExtension;
-                    size = (self->string.flags >> 31) == 0 ? (unsigned int)(self->string.shortData[0] & 0x7f) : self->string.longLength;
-                    temps[20] = temps[16];
-                    String_ReplaceRange(&self->string, size, 0, start, start + strlen(start), &temps[20]);
-                    eventPath = (self->string.flags >> 31) == 0 ? (char*)&AsCStoryConte(self)->inlineEventPath : (*(char**)&AsCStoryConte(self)->eventPathData);
-                }
-                // START C: replace owned loaders only after resolving the event path.
-                if (self->eventLoader != 0) {
-                    typedef void (*Destroy)(void*, int);
-                    void* ownedResource = self->eventLoader;
-                    if (ownedResource != 0) {
-                        ((EB68V24*)ownedResource)->Destroy(1);
-                    }
-                    self->eventLoader = 0;
-                }
-                void* eventLoader = __nw__FUl(kStoryFileLoaderBytes);
-                if (eventLoader != 0) {
-                    try {
-                        CEventLoad_ctor(eventLoader, eventPath, 0, 1);
-                    }
-                    catch (...) {
-                        __dl__FPv(eventLoader);
-                        throw;
-                    }
-                }
-                self->eventLoader = eventLoader;
-                if (self->faceDataLoader != 0) {
-                    typedef void (*Destroy)(void*, int);
-                    void* ownedResource = self->faceDataLoader;
-                    if (ownedResource != 0) {
-                        ((EB68V24*)ownedResource)->Destroy(1);
-                    }
-                    self->faceDataLoader = 0;
-                }
-                void* faceDataLoader = __nw__FUl(kStoryFileLoaderBytes);
-                if (faceDataLoader) {
-                    try {
-                        CEventLoad_ctor(faceDataLoader, (void*)g_eventFaceDataFilename, 0, 1);
-                    }
-                    catch (...) {
-                        __dl__FPv(faceDataLoader);
-                        throw;
-                    }
-                }
-                do {
-                    if (!((volatile int&)Sing_805DC670())) {
-                        if (!s_bpPlayerInitialized) {
-                            CBpPlayer_Ctor(s_bpPlayer);
-                            __register_global_object(s_bpPlayer, CBpPlayer_Dtor, (tags + 0x18));
-                            s_bpPlayerInitialized = 1;
-                        } ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
-                    }
-                }
-                while (0);
-                self->faceDataLoader = faceDataLoader;
-                CBpPlayer_ReleaseResources((void*)((volatile int&)Sing_805DC670()));
-                do {
-                    if (!((volatile int&)Sing_805DC670())) {
-                        if (!s_bpPlayerInitialized) {
-                            CBpPlayer_Ctor(s_bpPlayer);
-                            __register_global_object(s_bpPlayer, CBpPlayer_Dtor, (tags + 0x18));
-                            s_bpPlayerInitialized = 1;
-                        } ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
-                    }
-                }
-                while (0);
-                void* tgt = (void*)((volatile int&)Sing_805DC670());
-                void* name = ((*(unsigned int*)&AsCStoryConte(self)->playerResourceNameFlags) >> 31) == 0 ? (void*)((char*)&AsCStoryConte(self)->inlinePlayerResourceName) : AsCStoryConte(self)->playerResourceNameData;
-                CBpPlayer_StartLoad(tgt, name, 0, 1);
-                do {
-                    if (!((volatile int&)Sing_805DC670())) {
-                        if (!s_bpPlayerInitialized) {
-                            CBpPlayer_Ctor(s_bpPlayer);
-                            __register_global_object(s_bpPlayer, CBpPlayer_Dtor, (tags + 0x18));
-                            s_bpPlayerInitialized = 1;
-                        } ((volatile int&)Sing_805DC670()) = (int)s_bpPlayer;
-                    }
-                }
-                while (0);
-                CBpPlayer_LoadMessageResources((void*)((volatile int&)Sing_805DC670()));
-                if (self->skipCaption != 0) {
-                    typedef void (*Destroy)(void*, int);
-                    void* ownedResource = self->skipCaption;
-                    if (0 != ownedResource) {
-                        ((EB68V0*)ownedResource)->Destroy(1);
-                    }
-                    self->skipCaption = 0;
-                }
-                void* ownedResource = __nw__FUl(0x28);
-                if (ownedResource != 0) {
-                    try {
-                        CBpTex_Init(ownedResource);
-                    }
-                    catch (...) {
-                        __dl__FPv(ownedResource);
-                        throw;
-                    }
-                }
-                self->skipCaption = ownedResource;
-                ((EB68V0*)ownedResource)->SetName(StoryStrings.skipCaptionFile);
-                AsCStoryConte(self)->state = 1;
-            } break;
-        }
-        case kStoryQueryComplete: {
-            // QUERY: output words are borrowed writable storage; no loader ownership changes.
-            unsigned int isIdle = (AsCStoryConte(self)->state == 0) ? 1 : 0;
-            *(int*)arg->primaryPayload = isIdle;
-            if (isIdle) {
-                do {
-                    if (!((volatile int&)Sing_805DC660())) {
-                        if (!s_effectFadeInitialized) {
-                            CEffectFade_Ctor(s_effectFade);
-                            __register_global_object(s_effectFade, CEffectFade_dtor, tags);
-                            s_effectFadeInitialized = 1;
-                        } ((volatile int&)Sing_805DC660()) = (int)s_effectFade;
-                    }
-                }
-                while (0);
-                CEffectFade_SetAlpha((void*)((volatile int&)Sing_805DC660()), 0xff);
-            } break;
-        }
-        case kStoryQueryEventNames: {
-            unsigned int v = (int)SharedStringState_GetFirstString(0);
-            int* secondaryPayload = (int*)arg->secondaryPayload;
-            *(int*)arg->primaryPayload = (((v != 0)) ? 1 : 0);
-            if (0 != secondaryPayload) *secondaryPayload = 0;
-            break;
-        }
+        break;
+    }
+    case kStoryQueryEventNames: {
+        unsigned int v = (int)SharedStringState_GetFirstString(0);
+        int* secondaryPayload = (int*)arg->secondaryPayload;
+        *(int*)arg->primaryPayload = (((v != 0)) ? 1 : 0);
+        if (0 != secondaryPayload)
+            *secondaryPayload = 0;
+        break;
+    }
     }
 }
 

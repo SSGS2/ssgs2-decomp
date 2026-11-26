@@ -5,7 +5,7 @@
 
 class GtlAudioCallbackNode {
 public:
-    void* next; // 0x0
+    void* next;     // 0x0
     void* previous; // 0x4
     void* callback; // 0x8
 };

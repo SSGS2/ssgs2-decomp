@@ -1,3 +1,8 @@
+// Player head icons and the auxiliary menu: CHeadIcon places each player's icon at its position
+// in the view, and CAuxMenuUI loads the menu overlays.
+//
+// Also holds the club model overlay that CScreen draws as an animated preview.
+
 #include <decomp/static_init.h>
 #include <decomp/record_sizes.h>
 typedef unsigned long new_size_t;
@@ -7,8 +12,8 @@ extern unsigned char s_impactTimingQuadTemplate[];
 #include "game/types.h"
 #include "classes/CScreen.h"
 #include "iff/IffStruct.h"
-#include "classes/CAuxMenuUILayout.h"
-#define AsCAuxMenuUILayout(p) ((CAuxMenuUILayout*)(p))
+#include "classes/CAuxMenuUI.h"
+#define AsCAuxMenuUILayout(p) ((CAuxMenuUI*)(p))
 #include "classes/HeadIconTreeNode.h"
 #define AsHeadIconTreeNode(p) ((HeadIconTreeNode*)(p))
 #include "classes/WView.h"
@@ -20,25 +25,37 @@ extern unsigned char s_impactTimingQuadTemplate[];
 #include "game/types.h"
 #include "game/wvector.h"
 #include "classes/CHeadIcon.h"
+#include "classes/CBpTex.h"
 
 #define AsCHeadIcon(p) ((CHeadIcon*)(p))
-// Translation unit 0x80183098-0x80184750 (11 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
-enum { kHeadIconPlayerCount = 4, kNoHeadIcon = 0xFFFF,
-       kHeadIconInventorySlots = 13, kHeadIconTextureCount = 9,
-       kHeadIconPlayerStride = 0x30, kHeadIconTextureStride = 0x28, kOverlayResourceFlags = 0x80000000,
-       kClubOverlayLight = 7, kEngineLightCount = 8 };
+enum {
+    kHeadIconPlayerCount = 4,
+    kNoHeadIcon = 0xFFFF,
+    kHeadIconInventorySlots = 13,
+    kHeadIconTextureCount = 9,
+    kHeadIconPlayerStride = 0x30,
+    kHeadIconTextureStride = 0x28,
+    kOverlayResourceFlags = 0x80000000,
+    kClubOverlayLight = 7,
+    kEngineLightCount = 8
+};
 struct AuxOverlayStringPool {
     char otherScreenStrings[0x3F8];
     char optionBase[0x11];
     char optionBlack[0x12];
     char optionWhite[0x12];
 };
-struct HeadIconStringPool { char defaultOverlay[0x19]; char itemOverlayFormat[0xE]; };
-struct HeadIconKeyValue { unsigned int key; void* overlay; };
+struct HeadIconStringPool {
+    char defaultOverlay[0x19];
+    char itemOverlayFormat[0xE];
+};
+struct HeadIconKeyValue {
+    unsigned int key;
+    void* overlay;
+};
 // Field-derived byte offsets retain the original CSE and register allocation.
 static const int kHeadIconMapOffset = (int)&((CHeadIcon*)0)->overlayNodeCount;
 static const int kHeadIconRootOffset = (int)&((CHeadIcon*)0)->overlayTreeRoot;
@@ -46,14 +63,23 @@ static const int kHeadIconLeftOffset = (int)&((HeadIconTreeNode*)0)->left;
 static const int kHeadIconRightOffset = (int)&((HeadIconTreeNode*)0)->right;
 static const int kHeadIconKeyOffset = (int)&((HeadIconTreeNode*)0)->key;
 static const int kHeadIconFormatOffset = (int)&((HeadIconStringPool*)0)->itemOverlayFormat;
-struct HeadIconMapStorage { int count; void* root; void* firstNode; };
+struct HeadIconMapStorage {
+    int count;
+    void* root;
+    void* firstNode;
+};
 struct HeadIconPlayerPointView {
     char prefix[0x1C];
     float screenX, screenY, screenZ;
     char reserved28[0xC];
     Vec3f cameraRelativePosition;
 };
-struct ClubOverlayAnimationView { char prefix[0x1E8]; float revealAngle; char reserved1EC[4]; float wobbleAngle; };
+struct ClubOverlayAnimationView {
+    char prefix[0x1E8];
+    float revealAngle;
+    char reserved1EC[4];
+    float wobbleAngle;
+};
 struct ClubOverlayRenderState {
     char reserved00[0x20];
     float viewMatrix[16];
@@ -61,11 +87,20 @@ struct ClubOverlayRenderState {
 };
 static const int kClubViewMatrixOffset = (int)&((ClubOverlayRenderState*)0)->viewMatrix;
 static const int kClubProjectionMatrixOffset = (int)&((ClubOverlayRenderState*)0)->projectionMatrix;
-struct ClubOverlaySelection { char reserved00[0xA]; unsigned char modelVariant; };
-struct ClubOverlayInstances { void* reserved00; ClubOverlaySelection* selection; };
+struct ClubOverlaySelection {
+    char reserved00[0xA];
+    unsigned char modelVariant;
+};
+struct ClubOverlayInstances {
+    void* reserved00;
+    ClubOverlaySelection* selection;
+};
 struct SharedClubSelectionsView {
     char prefix[0x1CC];
-    struct Slot { void* clubItem; char remainingPlayerData[0x1D0]; } players[4];
+    struct Slot {
+        void* clubItem;
+        char remainingPlayerData[0x1D0];
+    } players[4];
 };
 
 void Object_DeleteVirtual(void* ignored, void* object);
@@ -84,13 +119,12 @@ void* ItemInventory_FindItemData(void* base, void* arg);
 void* String_FormatTemporary(void* fmt, ...);
 void* HeadIconMap_FindInsertionPosition(void* a, void* b, void* c, void* d, void* e);
 void* HudFontConfigMap_InsertAndRebalance(void* a, void* b, unsigned char c, unsigned char d, void* e);
-void CBpTex_Init(void* object);
 void* __construct_new_array(void* block, void* ctor, void* dtor, unsigned int size, unsigned int n);
 void __destroy_new_array(void* object, void* dtor);
 void* BaseObject_dtor(void* object, int shouldDelete);
 void __dl__FPv(void* object);
-void* CScreen_dtor(void* self, int shouldDelete);
-void CBpTex_dtor(void* object, int flag);
+void* __dt__7CScreenFv(void* self, int shouldDelete);
+extern "C" void __dt__6CBpTexFv(void* object, int flag);
 
 extern char __vt__9CHeadIcon[];
 extern char __vt__10CAuxMenuUI[];
@@ -140,24 +174,37 @@ void Engine_SetLight(int index, void* value);
 
 extern WView* g_view;
 extern CSharedDoc* g_sharedDoc;
-struct RenderData80183098;
-extern RenderData80183098 s_clubOverlayRenderDefaults; // club-preview viewport/render/texture defaults
+struct ClubOverlayRenderDefaults;
+extern ClubOverlayRenderDefaults s_clubOverlayRenderDefaults; // club-preview viewport/render/texture defaults
 extern char s_cameraTransform[];
 extern double kDouble_3_ViewportScale;
 extern float kFloat_0_AuxMenu, kFloat_1_AuxMenu, kFloat_6_2831855_Screen, kFloat_0_3_AuxMenu, kFloat_255_Screen;
-extern float kFloat_1_2_ScreenOverlay, kFloat_640_ClubModelOverlay, kScreenOverlayReferenceHeight, kFloat_0_75_ScreenOverlay, kFloat_1_3333334_ScreenOverlay;
-extern float kFloat_1_0471976_ClubModelOverlay, kFloat_2_25_ClubModelOverlay, kFloat_neg1_37_ScreenOverlay, kFloat_neg2_4_ClubModelOverlay, kFloat_neg3_3_ClubModelOverlay;
+extern float kFloat_1_2_ScreenOverlay, kFloat_640_ClubModelOverlay, kScreenOverlayReferenceHeight,
+    kFloat_0_75_ScreenOverlay, kFloat_1_3333334_ScreenOverlay;
+extern float kFloat_1_0471976_ClubModelOverlay, kFloat_2_25_ClubModelOverlay, kFloat_neg1_37_ScreenOverlay,
+    kFloat_neg2_4_ClubModelOverlay, kFloat_neg3_3_ClubModelOverlay;
 extern float kFloat_neg4_2_ClubModelOverlay, kFloat_0_08726646_ScreenOverlay, kFloat_2000_ScreenOverlay;
 
+struct Mtx {
+    Vec3f a, b, c, d;
+};
+struct MtxBlob {
+    float m[12];
+};
+struct Block72 {
+    int w[18];
+};
+struct Block48 {
+    int w[12];
+};
+struct Block40 {
+    int w[10];
+};
+struct Block24 {
+    int w[6];
+};
 
-struct Mtx { Vec3f a, b, c, d; };
-struct MtxBlob { float m[12]; };
-struct Block72 { int w[18]; };
-struct Block48 { int w[12]; };
-struct Block40 { int w[10]; };
-struct Block24 { int w[6]; };
-
-struct RenderData80183098 {
+struct ClubOverlayRenderDefaults {
     char pad0[0x98];
     Block24 pre;
     Block72 a;
@@ -173,7 +220,7 @@ struct ClubModelCacheView {
 static const int kClubMatrixOffset = (int)&((ClubModelCacheView*)0)->viewMatrices;
 static const int kClubMatrixStride = sizeof(Mtx);
 
-struct Frame80183098 {
+struct ClubOverlayFrame {
     float lookAtTarget[3];
     float lookFrom[3];
     int savedLightEnabled[8];
@@ -206,14 +253,16 @@ struct DrawObj {
     virtual void v7();
     virtual void draw(void* camera, int a, int b, int c, float d, int e, int f, int g);
 };
+}
 
 // Draw the current player club in an animated lit preview, restoring viewport, lights, and camera afterward.
-void CScreen_DrawClubModelOverlay(char* self) {
-    Frame80183098 frame;
-    RenderData80183098* data = &s_clubOverlayRenderDefaults;
+void CScreen::DrawClubModelOverlay() {
+    ClubOverlayFrame frame;
+    ClubOverlayRenderDefaults* data = &s_clubOverlayRenderDefaults;
     char* shared = (char*)g_sharedDoc;
     unsigned char index = AsCGolfDoc((*(void**)&AsCSharedDoc(shared)->golfDoc))->currentPlayer;
-    void* clubCache = ClubModel_FindCachedForItem(InstanceTable_Get(), ((SharedClubSelectionsView*)shared)->players[index].clubItem);
+    void* clubCache =
+        ClubModel_FindCachedForItem(InstanceTable_Get(), ((SharedClubSelectionsView*)shared)->players[index].clubItem);
 
     // Phase 1: resolve the selected club variant and capture camera restoration arguments.
     // Capture restoration arguments before installing the preview camera. Near
@@ -238,17 +287,18 @@ void CScreen_DrawClubModelOverlay(char* self) {
 
     float restoreFovArgument;
     {
-        float d;
-        float h;
-        float w;
-        w = AsWView(g_view)->viewportWidth;
-        h = AsWView(g_view)->viewportHeight;
-        d = AsWView(g_view)->fieldOfView;
+        float fieldOfView;
+        float viewportHeight;
+        float viewportWidth;
+        viewportWidth = AsWView(g_view)->viewportWidth;
+        viewportHeight = AsWView(g_view)->viewportHeight;
+        fieldOfView = AsWView(g_view)->fieldOfView;
         // Compute the aspect-adjusted restoration argument from the old FOV.
         // Camera_SetFov stores its argument directly (wview_camera_projection.cpp); it does not undo
         // this division, so the final FOV can differ from the originally read value.
-        restoreFovArgument = d / (kFloat_0_75_ScreenOverlay * (w / h));
-        Camera_SetFov(g_view, kFloat_1_3333334_ScreenOverlay * (kFloat_1_0471976_ClubModelOverlay * (h / w)));
+        restoreFovArgument = fieldOfView / (kFloat_0_75_ScreenOverlay * (viewportWidth / viewportHeight));
+        Camera_SetFov(g_view, kFloat_1_3333334_ScreenOverlay *
+                                  (kFloat_1_0471976_ClubModelOverlay * (viewportHeight / viewportWidth)));
 
         WView_SetViewMatrix(g_view, &frame.cachedViewMatrix);
         Camera_BuildFrustumPlanes(g_view);
@@ -287,9 +337,11 @@ void CScreen_DrawClubModelOverlay(char* self) {
 
             // Phase 3: animate the model in preview space; opacity is revealAngle / full turn.
             // Compose the club's animated rotation and translation in preview space.
-            Matrix_SetAxisRotation(&frame.modelRotation, kFloat_0_08726646_ScreenOverlay * Math_SinApprox(((ClubOverlayAnimationView*)self)->wobbleAngle) +
-                            (-((ClubOverlayAnimationView*)self)->revealAngle + baseRotation),
-                        0);
+            Matrix_SetAxisRotation(&frame.modelRotation,
+                                   kFloat_0_08726646_ScreenOverlay *
+                                           Math_SinApprox(((ClubOverlayAnimationView*)this)->wobbleAngle) +
+                                       (-((ClubOverlayAnimationView*)this)->revealAngle + baseRotation),
+                                   0);
             Matrix_SetIdentityAffine(&frame.modelTranslation);
             frame.modelTranslation.d.x = modelOffset;
             Matrix_ConcatAffine(&frame.modelTransform, &frame.modelRotation, &frame.modelTranslation);
@@ -298,7 +350,7 @@ void CScreen_DrawClubModelOverlay(char* self) {
             {
                 float lo;
                 float hi = kFloat_255_Screen;
-                float value = hi * ((ClubOverlayAnimationView*)self)->revealAngle / kFloat_6_2831855_Screen;
+                float value = hi * ((ClubOverlayAnimationView*)this)->revealAngle / kFloat_6_2831855_Screen;
                 lo = kFloat_0_AuxMenu;
                 lo = value < lo ? lo : (value > hi ? hi : value);
                 WPuppet_SetOpacityRecursive(clubModel, (unsigned char)lo);
@@ -338,7 +390,7 @@ void CScreen_DrawClubModelOverlay(char* self) {
                     Engine_SetLightEnabled(i, 0);
                     saved += 4;
                 }
-                Engine_SetLight(kClubOverlayLight, &((CScreen*)self)->lightType);
+                Engine_SetLight(kClubOverlayLight, &lightType);
                 Engine_SetLightEnabled(kClubOverlayLight, 1);
 
                 {
@@ -368,6 +420,8 @@ void CScreen_DrawClubModelOverlay(char* self) {
     }
 }
 
+extern "C" {
+
 // KILL1..KILL4 / DESTROY_LEAF / ERASE_* below are one idea: "free every node of the overlay map tree, children
 // first". They are macros (not functions) because an inline-function rewrite changed the generated code
 // (register allocation in CHeadIcon_ctor / CHeadIcon_dtor). KILLn frees n expanded levels below a node.
@@ -381,60 +435,54 @@ void CScreen_DrawClubModelOverlay(char* self) {
 // Release the two remaining child subtrees; this helper leaves their parent allocated.
 static inline void ClearHeadIconChildSubtrees(void* self, void* node) {
     void* child = (*(void**)((char*)node + kHeadIconLeftOffset));
-    if (child != 0) OverlayMapTree_FreeSubtree(((char*)self + kHeadIconMapOffset), child);
+    if (child != 0)
+        OverlayMapTree_FreeSubtree(((char*)self + kHeadIconMapOffset), child);
     child = (*(void**)((char*)node + kHeadIconRightOffset));
-    if (child != 0) OverlayMapTree_FreeSubtree(((char*)self + kHeadIconMapOffset), child);
+    if (child != 0)
+        OverlayMapTree_FreeSubtree(((char*)self + kHeadIconMapOffset), child);
 }
 
-#define KILL1(n)                                                     \
-    do {                                                             \
-        void* _n1 = (n);                                             \
-        if (_n1 != 0) {                                              \
-            ClearHeadIconChildSubtrees(self, _n1);                                           \
-            appFreeUni__FPv(_n1);                                        \
-        }                                                            \
+#define KILL1(n)                                   \
+    do {                                           \
+        void* _n1 = (n);                           \
+        if (_n1 != 0) {                            \
+            ClearHeadIconChildSubtrees(self, _n1); \
+            appFreeUni__FPv(_n1);                  \
+        }                                          \
     } while (0)
 
-#define KILL2(n)                                                     \
-    do {                                                             \
-        void* _n2 = (n);                                             \
-        if (_n2 != 0) {                                              \
-            KILL1((*(void**)((char*)_n2 + kHeadIconLeftOffset)));                      \
-            KILL1((*(void**)((char*)_n2 + kHeadIconRightOffset)));                      \
-            appFreeUni__FPv(_n2);                                        \
-        }                                                            \
+#define KILL2(n)                                                   \
+    do {                                                           \
+        void* _n2 = (n);                                           \
+        if (_n2 != 0) {                                            \
+            KILL1((*(void**)((char*)_n2 + kHeadIconLeftOffset)));  \
+            KILL1((*(void**)((char*)_n2 + kHeadIconRightOffset))); \
+            appFreeUni__FPv(_n2);                                  \
+        }                                                          \
     } while (0)
 
-#define KILL3(n)                                                     \
-    do {                                                             \
-        void* _n3 = (n);                                             \
-        if (_n3 != 0) {                                              \
-            KILL2((*(void**)((char*)_n3 + kHeadIconLeftOffset)));                      \
-            KILL2((*(void**)((char*)_n3 + kHeadIconRightOffset)));                      \
-            appFreeUni__FPv(_n3);                                        \
-        }                                                            \
+#define KILL3(n)                                                   \
+    do {                                                           \
+        void* _n3 = (n);                                           \
+        if (_n3 != 0) {                                            \
+            KILL2((*(void**)((char*)_n3 + kHeadIconLeftOffset)));  \
+            KILL2((*(void**)((char*)_n3 + kHeadIconRightOffset))); \
+            appFreeUni__FPv(_n3);                                  \
+        }                                                          \
     } while (0)
 
-#define KILL4(n)                                                     \
-    do {                                                             \
-        void* _n4 = (n);                                             \
-        if (_n4 != 0) {                                              \
-            KILL3((*(void**)((char*)_n4 + kHeadIconLeftOffset)));                      \
-            KILL3((*(void**)((char*)_n4 + kHeadIconRightOffset)));                      \
-            appFreeUni__FPv(_n4);                                        \
-        }                                                            \
+#define KILL4(n)                                                   \
+    do {                                                           \
+        void* _n4 = (n);                                           \
+        if (_n4 != 0) {                                            \
+            KILL3((*(void**)((char*)_n4 + kHeadIconLeftOffset)));  \
+            KILL3((*(void**)((char*)_n4 + kHeadIconRightOffset))); \
+            appFreeUni__FPv(_n4);                                  \
+        }                                                          \
     } while (0)
 
-struct Nine { int w[9]; };
-
-struct CBpTex {
-    char pad[0x28];
-    // Allocate the texture array including the compiler's array header.
-    static void* operator new[](new_size_t size) { return __nwa__FUl(size); }
-    // Initialize one animated texture element.
-    CBpTex() { CBpTex_Init(this); }
-    // Destroy one texture without freeing the enclosing array.
-    ~CBpTex() { CBpTex_dtor(this, -1); }
+struct Nine {
+    int w[9];
 };
 
 struct TreeNode {
@@ -449,13 +497,7 @@ struct ArrElem {
     virtual void v0();
     virtual void v1(int value);
 };
-
 }
-struct AuxMenuBase { char bytes[4]; ~AuxMenuBase(); };
-struct CAuxMenuUI : AuxMenuBase {
-    char rest[0x20];
-    CAuxMenuUI();
-};
 // Load the base, black, and white auxiliary menu overlay resources.
 CAuxMenuUI::CAuxMenuUI() {
     void* self = this;
@@ -463,11 +505,14 @@ CAuxMenuUI::CAuxMenuUI() {
     int zero = 0;
     AsCAuxMenuUILayout(self)->vtbl = (void*)__vt__10CAuxMenuUI;
     AsCAuxMenuUILayout(self)->firstOverlay = 0;
-    void* r3 = WOverlay_Create((void*)g_resourceManager, ((AuxOverlayStringPool*)strBase)->optionBase, kOverlayResourceFlags);
+    void* r3 =
+        WOverlay_Create((void*)g_resourceManager, ((AuxOverlayStringPool*)strBase)->optionBase, kOverlayResourceFlags);
     AsCAuxMenuUILayout(self)->firstOverlay = r3;
-    void* r3b = WOverlay_Create((void*)g_resourceManager, ((AuxOverlayStringPool*)strBase)->optionBlack, kOverlayResourceFlags);
+    void* r3b =
+        WOverlay_Create((void*)g_resourceManager, ((AuxOverlayStringPool*)strBase)->optionBlack, kOverlayResourceFlags);
     AsCAuxMenuUILayout(self)->secondOverlay = r3b;
-    void* r3c = WOverlay_Create((void*)g_resourceManager, ((AuxOverlayStringPool*)strBase)->optionWhite, kOverlayResourceFlags);
+    void* r3c =
+        WOverlay_Create((void*)g_resourceManager, ((AuxOverlayStringPool*)strBase)->optionWhite, kOverlayResourceFlags);
     float f0 = kFloat_0_AuxMenu;
     AsCAuxMenuUILayout(self)->thirdOverlay = r3c;
     AsCAuxMenuUILayout(self)->unk_20 = 2;
@@ -477,28 +522,26 @@ CAuxMenuUI::CAuxMenuUI() {
 extern "C" {
 
 // Delete the three auxiliary menu overlays and optionally free the menu object.
-void* CAuxMenuUI_dtor(void* self, int shouldDelete) {
-    if (self == 0) {
-        // still return? assembly returns self even if null
-    }
-    if (self != 0) {
-        AsCAuxMenuUILayout(self)->vtbl = (void*)__vt__10CAuxMenuUI;
+// Named Destroy rather than a real destructor: it takes the delete flag and returns the object.
+void* CAuxMenuUI::Destroy(int shouldDelete) {
+    if (this != 0) {
+        this->vtbl = (void*)__vt__10CAuxMenuUI;
         void* allocator = (void*)g_resourceManager;
         if (allocator != 0) {
-            void* o = AsCAuxMenuUILayout(self)->firstOverlay;
+            void* o = this->firstOverlay;
             if (o != 0) {
                 Object_DeleteVirtual(allocator, o);
-                AsCAuxMenuUILayout(self)->firstOverlay = 0;
+                this->firstOverlay = 0;
             }
         }
         // second overlay
         {
             void* allocator2 = (void*)g_resourceManager;
             if (allocator2 != 0) {
-                void* o = AsCAuxMenuUILayout(self)->secondOverlay;
+                void* o = this->secondOverlay;
                 if (o != 0) {
                     Object_DeleteVirtual(allocator2, o);
-                    AsCAuxMenuUILayout(self)->secondOverlay = 0;
+                    this->secondOverlay = 0;
                 }
             }
         }
@@ -506,18 +549,18 @@ void* CAuxMenuUI_dtor(void* self, int shouldDelete) {
         {
             void* allocator3 = (void*)g_resourceManager;
             if (allocator3 != 0) {
-                void* o = AsCAuxMenuUILayout(self)->thirdOverlay;
+                void* o = this->thirdOverlay;
                 if (o != 0) {
                     Object_DeleteVirtual(allocator3, o);
-                    AsCAuxMenuUILayout(self)->thirdOverlay = 0;
+                    this->thirdOverlay = 0;
                 }
             }
         }
         if (shouldDelete > 0) {
-            __dl__FPv(self);
+            __dl__FPv(this);
         }
     }
-    return self;
+    return this;
 }
 
 // Initialize the head-icon unit copy of two pi at static startup.
@@ -527,13 +570,15 @@ void CHeadIcon_InitStaticConstants(void) {
 
 // Adjust a secondary-base pointer back to CScreen before destruction.
 void* CScreen_DtorThunk18(void* self, int shouldDelete) {
-    return CScreen_dtor((char*)self - 0x18, shouldDelete);
+    return __dt__7CScreenFv((char*)self - 0x18, shouldDelete);
+}
 }
 
 #pragma use_lmw_stmw on
 // Initialize four player icons, load inventory-specific overlays, and construct nine animated textures.
-void* CHeadIcon_ctor(void* selfIn) {
-    char* self = (char*)selfIn;
+// Named Init rather than a constructor: the object is set up here after its base is built.
+void* CHeadIcon::Init() {
+    char* self = (char*)this;
     // Phase 1: publish the singleton and establish an empty tree plus four inactive player slots.
     BaseObject_ctor(self);
     *(void**)self = &s_headIconBaseVtable;
@@ -589,18 +634,24 @@ void* CHeadIcon_ctor(void* selfIn) {
         found = (IFF_STRUCT::sItem*)ItemInventory_FindItemData(base, ItemInventory_GetItemIdAt(base, (unsigned char)i));
         IFF_STRUCT::sItem* item = found;
         if (item != 0) {
-            void* itemOverlay = WOverlay_Create(g_resourceManager, String_FormatTemporary(headIconResourceStrings + kHeadIconFormatOffset, item->common.icon), 0);
+            void* itemOverlay = WOverlay_Create(
+                g_resourceManager,
+                String_FormatTemporary(headIconResourceStrings + kHeadIconFormatOffset, item->common.icon), 0);
             if (itemOverlay != 0) {
                 int predecessorAddress;
                 unsigned char noPredecessor;
                 unsigned char insertLeft;
-                void* ret = HeadIconMap_FindInsertionPosition(self + kHeadIconMapOffset, &item->common.typeId, &predecessorAddress, &insertLeft, &noPredecessor);
+                void* ret = HeadIconMap_FindInsertionPosition(self + kHeadIconMapOffset, &item->common.typeId,
+                                                              &predecessorAddress, &insertLeft, &noPredecessor);
                 void* slot;
-                if (predecessorAddress == 0 || *(unsigned int*)((char*)predecessorAddress + kHeadIconKeyOffset) < item->common.typeId) {
+                if (predecessorAddress == 0 ||
+                    *(unsigned int*)((char*)predecessorAddress + kHeadIconKeyOffset) < item->common.typeId) {
                     int tmp[2];
                     tmp[0] = (int)item->common.typeId;
                     tmp[1] = (int)g_headIconMapDefaultValue;
-                    slot = (char*)HudFontConfigMap_InsertAndRebalance(self + kHeadIconMapOffset, ret, insertLeft, noPredecessor, &tmp) + kHeadIconKeyOffset;
+                    slot = (char*)HudFontConfigMap_InsertAndRebalance(self + kHeadIconMapOffset, ret, insertLeft,
+                                                                      noPredecessor, &tmp) +
+                           kHeadIconKeyOffset;
                 } else {
                     slot = (char*)predecessorAddress + kHeadIconKeyOffset;
                 }
@@ -622,45 +673,51 @@ void* CHeadIcon_ctor(void* selfIn) {
     return self;
 }
 
-#define DESTROY_LEAF(n)                                              \
-    do {                                                             \
-        void* _v = (*(void**)((char*)n + kHeadIconLeftOffset));                      \
-        if (_v != 0) OverlayMapTree_FreeSubtree(((char*)self + kHeadIconMapOffset), _v);            \
-        _v = (*(void**)((char*)n + kHeadIconRightOffset));                            \
-        if (_v != 0) OverlayMapTree_FreeSubtree(((char*)self + kHeadIconMapOffset), _v);            \
-        appFreeUni__FPv(n);                                              \
+extern "C" {
+
+#define DESTROY_LEAF(n)                                                         \
+    do {                                                                        \
+        void* _v = (*(void**)((char*)n + kHeadIconLeftOffset));                 \
+        if (_v != 0)                                                            \
+            OverlayMapTree_FreeSubtree(((char*)self + kHeadIconMapOffset), _v); \
+        _v = (*(void**)((char*)n + kHeadIconRightOffset));                      \
+        if (_v != 0)                                                            \
+            OverlayMapTree_FreeSubtree(((char*)self + kHeadIconMapOffset), _v); \
+        appFreeUni__FPv(n);                                                     \
     } while (0)
 
 #define ERASE_LEVEL2(x)                                              \
     do {                                                             \
         void* _x = (x);                                              \
         if (_x != 0) {                                               \
-            void* _y = (*(void**)((char*)_x + kHeadIconLeftOffset));                   \
-            if (_y != 0) DESTROY_LEAF(_y);                           \
-            _y = (*(void**)((char*)_x + kHeadIconRightOffset));                         \
-            if (_y != 0) DESTROY_LEAF(_y);                           \
-            appFreeUni__FPv(_x);                                         \
+            void* _y = (*(void**)((char*)_x + kHeadIconLeftOffset)); \
+            if (_y != 0)                                             \
+                DESTROY_LEAF(_y);                                    \
+            _y = (*(void**)((char*)_x + kHeadIconRightOffset));      \
+            if (_y != 0)                                             \
+                DESTROY_LEAF(_y);                                    \
+            appFreeUni__FPv(_x);                                     \
         }                                                            \
     } while (0)
 
-#define ERASE_TREE(root)                                             \
-    do {                                                             \
-        void* _root = (root);                                        \
-        {                                                            \
-            void* _l = (*(void**)((char*)_root + kHeadIconLeftOffset));                \
-            if (_l != 0) {                                           \
-                ERASE_LEVEL2((*(void**)((char*)_l + kHeadIconLeftOffset)));            \
-                ERASE_LEVEL2((*(void**)((char*)_l + kHeadIconRightOffset)));            \
-                appFreeUni__FPv(_l);                                     \
-            }                                                        \
-            _l = (*(void**)((char*)_root + kHeadIconRightOffset));                      \
-            if (_l != 0) {                                           \
-                ERASE_LEVEL2((*(void**)((char*)_l + kHeadIconLeftOffset)));            \
-                ERASE_LEVEL2((*(void**)((char*)_l + kHeadIconRightOffset)));            \
-                appFreeUni__FPv(_l);                                     \
-            }                                                        \
-            appFreeUni__FPv(_root);                                      \
-        }                                                            \
+#define ERASE_TREE(root)                                                     \
+    do {                                                                     \
+        void* _root = (root);                                                \
+        {                                                                    \
+            void* _l = (*(void**)((char*)_root + kHeadIconLeftOffset));      \
+            if (_l != 0) {                                                   \
+                ERASE_LEVEL2((*(void**)((char*)_l + kHeadIconLeftOffset)));  \
+                ERASE_LEVEL2((*(void**)((char*)_l + kHeadIconRightOffset))); \
+                appFreeUni__FPv(_l);                                         \
+            }                                                                \
+            _l = (*(void**)((char*)_root + kHeadIconRightOffset));           \
+            if (_l != 0) {                                                   \
+                ERASE_LEVEL2((*(void**)((char*)_l + kHeadIconLeftOffset)));  \
+                ERASE_LEVEL2((*(void**)((char*)_l + kHeadIconRightOffset))); \
+                appFreeUni__FPv(_l);                                         \
+            }                                                                \
+            appFreeUni__FPv(_root);                                          \
+        }                                                                    \
     } while (0)
 
 // Clear the global head-icon instance, destroy its base, and optionally free it.
@@ -683,7 +740,8 @@ void* HeadIcon_dtor(void* self, int deleting) {
 // the greatest key <= query, or null. outNoPredecessor is 1 until a right branch
 // establishes a predecessor; it is not a duplicate-key flag. The caller checks
 // equality before insertion. All outputs are borrowed node addresses/byte flags.
-void* HeadIconMap_FindInsertionPosition(void* tree, void* keyPtr, void* outPredecessor, void* outInsertLeft, void* outNoPredecessor) {
+void* HeadIconMap_FindInsertionPosition(void* tree, void* keyPtr, void* outPredecessor, void* outInsertLeft,
+                                        void* outNoPredecessor) {
     unsigned char one;
     int zero;
     void* parent;
@@ -717,22 +775,23 @@ void* HeadIconMap_FindInsertionPosition(void* tree, void* keyPtr, void* outPrede
 #pragma opt_lifetimes reset
 #pragma opt_lifetimes off
 // Release player/map overlays, erase the map, destroy textures, and clear the singleton.
-void* CHeadIcon_dtor(char* self, int deleting) {
-    void* head;
+// Named Destroy rather than a real destructor: it takes the delete flag and returns the object (a real
+// destructor scored lower).
+void* CHeadIcon::Destroy(int deleting) {
+    char* self = (char*)this;
     unsigned int i;
-    void* node;
     void* end;
     void* root;
     if (self != 0) {
-        AsCHeadIcon(self)->vtbl = &__vt__9CHeadIcon;
-        if (g_resourceManager != 0 && AsCHeadIcon(self)->overlay != 0) {
-            Object_DeleteVirtual(g_resourceManager, AsCHeadIcon(self)->overlay);
-            AsCHeadIcon(self)->overlay = 0;
+        this->vtbl = &__vt__9CHeadIcon;
+        if (g_resourceManager != 0 && this->overlay != 0) {
+            Object_DeleteVirtual(g_resourceManager, this->overlay);
+            this->overlay = 0;
         }
 
         {
             i = 0;
-            head = self;
+            void* head = self;
             do {
                 if (g_resourceManager != 0 && (*(void**)&AsCHeadIcon(head)->player0OverlayObject) != 0) {
                     Object_DeleteVirtual(g_resourceManager, (*(void**)&AsCHeadIcon(head)->player0OverlayObject));
@@ -742,7 +801,7 @@ void* CHeadIcon_dtor(char* self, int deleting) {
                 head = (char*)head + kHeadIconPlayerStride;
             } while (i < 4);
 
-            node = AsCHeadIcon(self)->firstOverlayNode;
+            void* node = this->firstOverlayNode;
             end = self + kHeadIconRootOffset;
             while (node != end) {
                 if (g_resourceManager != 0 && AsHeadIconTreeNode(node)->overlay != 0) {
@@ -758,9 +817,7 @@ void* CHeadIcon_dtor(char* self, int deleting) {
                         node = next;
                     } else {
                         void* parent;
-                        while (node !=
-                               *(void**)(parent = (void*)(AsHeadIconTreeNode(node)->parentAndColor &
-                                                         ~1u))) {
+                        while (node != *(void**)(parent = (void*)(AsHeadIconTreeNode(node)->parentAndColor & ~1u))) {
                             node = parent;
                         }
                         node = parent;
@@ -770,27 +827,27 @@ void* CHeadIcon_dtor(char* self, int deleting) {
         }
 
         {
-            root = AsCHeadIcon(self)->overlayTreeRoot;
+            root = this->overlayTreeRoot;
             if (root != 0) {
                 ERASE_TREE(root);
-                (*(void**)&AsCHeadIcon(self)->overlayNodeCount) = 0;
-                AsCHeadIcon(self)->overlayTreeRoot = 0;
-                AsCHeadIcon(self)->firstOverlayNode = self + kHeadIconRootOffset;
+                (*(void**)&this->overlayNodeCount) = 0;
+                this->overlayTreeRoot = 0;
+                this->firstOverlayNode = self + kHeadIconRootOffset;
             }
         }
 
-        if (AsCHeadIcon(self)->textures != 0) {
-            __destroy_new_array(AsCHeadIcon(self)->textures, (void*)CBpTex_dtor);
-            AsCHeadIcon(self)->textures = 0;
+        if (this->textures != 0) {
+            __destroy_new_array(this->textures, (void*)__dt__6CBpTexFv);
+            this->textures = 0;
         }
 
         // (The six identical `!= 0` tests are always true: the member address is never null; they are
         // duplicates of inlined member-destructor guards.)
-        // The container at this+0xF8 is already empty here (its root was just cleared), so these
+        // The container at self+0xF8 is already empty here (its root was just cleared), so these
         // null checks of the member destructor guard skip the erase below.
         if (self + kHeadIconMapOffset != 0 && self + kHeadIconMapOffset != 0 && self + kHeadIconMapOffset != 0 &&
             self + kHeadIconMapOffset != 0 && self + kHeadIconMapOffset != 0 && self + kHeadIconMapOffset != 0) {
-            void* root = AsCHeadIcon(self)->overlayTreeRoot;
+            void* root = this->overlayTreeRoot;
             if (root != 0) {
                 ERASE_TREE(root);
             }
@@ -810,14 +867,15 @@ void* CHeadIcon_dtor(char* self, int deleting) {
 #pragma use_lmw_stmw off
 
 // Release each active player icon object, capped at the four supported player slots.
-void CHeadIcon_ReleasePlayerObjects(void* self) {
+void CHeadIcon::ReleasePlayerObjects() {
     int n = 4;
     void* allocator = (void*)g_sharedDoc;
     allocator = (*(void**)&AsCSharedDoc(allocator)->golfDoc);
     int b = AsCGolfDoc(allocator)->playerCount;
-    if (b <= 4) n = b;
+    if (b <= 4)
+        n = b;
     int count = n;
-    void* cur = self;
+    void* cur = this;
     int i = 0;
     void* obj;
     while (i < count) {
@@ -836,18 +894,18 @@ void CHeadIcon_ReleasePlayerObjects(void* self) {
 
 #pragma opt_common_subs off
 // Store a player point in viewport coordinates and relative to the camera position.
-void CHeadIcon_ProjectPlayerPoint(void* self, int idx, void* pt) {
-    
-    float a[12]; // projected point: [0..2] = screen x, y, z (rest unused here)
+void CHeadIcon::ProjectPlayerPoint(int idx, void* pt) {
+
+    float projectedPoint[12]; // projected point: [0..2] = screen x, y, z (rest unused here)
     char* base;
     if (idx >= 0 && (unsigned int)idx < 4) {
-        WView_ProjectWorldPoint(g_view, a, pt);
-        base = (char*)self + idx * kHeadIconPlayerStride;
-        WVector b = *(WVector*)pt - *(WVector*)&AsWView(g_view)->viewMatrix[9];
-        (*(WVector*)&((HeadIconPlayerPointView*)base)->cameraRelativePosition) = b;
-        ((HeadIconPlayerPointView*)base)->screenX = a[0];
-        ((HeadIconPlayerPointView*)base)->screenY = a[1];
-        ((HeadIconPlayerPointView*)base)->screenZ = a[2];
+        WView_ProjectWorldPoint(g_view, projectedPoint, pt);
+        base = (char*)this + idx * kHeadIconPlayerStride;
+        WVector cameraRelativePoint = *(WVector*)pt - *(WVector*)&AsWView(g_view)->viewMatrix[9];
+        (*(WVector*)&((HeadIconPlayerPointView*)base)->cameraRelativePosition) = cameraRelativePoint;
+        ((HeadIconPlayerPointView*)base)->screenX = projectedPoint[0];
+        ((HeadIconPlayerPointView*)base)->screenY = projectedPoint[1];
+        ((HeadIconPlayerPointView*)base)->screenZ = projectedPoint[2];
     }
     return;
 }

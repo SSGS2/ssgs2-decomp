@@ -1,3 +1,6 @@
+// Course surface sidecar loading: the surface model groups owned by CourseData801C and their
+// cleanup, and CourseData_LoadSurfaceBinary, which reads the surface binary records.
+
 typedef unsigned long new_size_t;
 // Course surface sidecar (.sbin) loading and barycentric projection.
 // Mod lookup: triangle weights -> Triangle_ComputeBarycentricCoordinates;
@@ -13,8 +16,6 @@ typedef unsigned long new_size_t;
 #include "game/types.h"
 #include "classes/WPuppet.h"
 #include "iff/IffStruct.h"
-// Translation unit 0x801C482C-0x801C54BC (7 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 // Editing guide: Triangle_ComputeBarycentricCoordinates is a complete geometric
 // routine. LoadSurfaceBinary/ReadSurfaceGroups preserve an incomplete parser:
 // the latter has no generated-node constructor call and cannot safely consume
@@ -23,24 +24,40 @@ typedef unsigned long new_size_t;
 
 extern "C" {
 
-enum { kCourseVariantMask = 0xF, kGeneratedNodeIndexMask = 0x7FF, kSeekRelative = 1 };
-enum SurfaceBinarySizes { kSerializedWordBytes = 4, kSerializedPairBytes = 8,
-    kSerializedTripleBytes = 12, kArrayCookieBytes = 16,
-    kSurfaceSidecarPathBytes = 0x40 };
-enum SurfaceVariantPolicy { kSkipBothVariantBlocks = 0, kReadFirstVariantBlock = 1, kReadSecondVariantBlock = 2 };
+enum {
+    kCourseVariantMask = 0xF,
+    kGeneratedNodeIndexMask = 0x7FF,
+    kSeekRelative = 1
+};
+enum SurfaceBinarySizes {
+    kSerializedWordBytes = 4,
+    kSerializedPairBytes = 8,
+    kSerializedTripleBytes = 12,
+    kArrayCookieBytes = 16,
+    kSurfaceSidecarPathBytes = 0x40
+};
+enum SurfaceVariantPolicy {
+    kSkipBothVariantBlocks = 0,
+    kReadFirstVariantBlock = 1,
+    kReadSecondVariantBlock = 2
+};
 struct SurfaceModelRecord {
     char pad_000[0x10];
     WPuppet* puppet;
     char pad_014[0xC8];
 };
 typedef char SurfaceModelRecord_size[(sizeof(SurfaceModelRecord) == 0xDC) ? 1 : -1];
-struct OwnedArray { int count; void* data; };
+struct OwnedArray {
+    int count;
+    void* data;
+};
 struct CourseModelResourceStrings {
     char precedingEntries[0x244];
     char surfaceBinaryExtension[6]; // ".sbin"
 };
-enum { kSurfaceBinaryExtensionOffset = (int)&((CourseModelResourceStrings*)0)->surfaceBinaryExtension };
-
+enum {
+    kSurfaceBinaryExtensionOffset = (int)&((CourseModelResourceStrings*)0)->surfaceBinaryExtension
+};
 
 // Initialize an empty owned record array.
 void CourseSurfaceGroup_InitEmpty(void* self) {
@@ -77,17 +94,30 @@ void CourseData_SetSurfaceHierarchyContext(void* self, void* hierarchyContext) {
 // no zero-determinant check/clamp is performed. Output A weight is 1-B-C; weights
 // can lie outside [0,1] when point projects outside the triangle. No ownership transfer.
 void Triangle_ComputeBarycentricCoordinates(float* weightB, float* weightC, const float* point, const float* vertexA,
-                 const float* vertexB, const float* vertexC) {
+                                            const float* vertexB, const float* vertexC) {
     // The projected array is {pointU, pointV, edgeBU, edgeBV, edgeCU, edgeCV}.
-    struct ProjectedTriangle { float pointU, pointV, edgeBU, edgeBV, edgeCU, edgeCV; };
-    struct { float projectedPointU; float projectedPointV; float edgeAC[3]; float edgeAB[3]; float normal[3]; float normalCopy[3]; ProjectedTriangle projected; } scratch;
+    struct ProjectedTriangle {
+        float pointU, pointV, edgeBU, edgeBV, edgeCU, edgeCV;
+    };
+    struct {
+        float projectedPointU;
+        float projectedPointV;
+        float edgeAC[3];
+        float edgeAB[3];
+        float normal[3];
+        float normalCopy[3];
+        ProjectedTriangle projected;
+    } scratch;
     __mi__FRC7WVectorRC7WVector(scratch.edgeAC, vertexC, vertexA);
     __mi__FRC7WVectorRC7WVector(scratch.edgeAB, vertexB, vertexA);
     Vector_CrossProduct(scratch.normal, scratch.edgeAB, scratch.edgeAC);
     __as__7WVectorFRC7WVector(scratch.normalCopy, scratch.normal);
-    float absNormalX = scratch.normalCopy[0]; absNormalX = (absNormalX > kFloat_0_PetBody) ? absNormalX : -absNormalX;
-    float absNormalY = scratch.normalCopy[1]; absNormalY = (absNormalY > kFloat_0_PetBody) ? absNormalY : -absNormalY;
-    float absNormalZ = scratch.normalCopy[2]; absNormalZ = (absNormalZ > kFloat_0_PetBody) ? absNormalZ : -absNormalZ;
+    float absNormalX = scratch.normalCopy[0];
+    absNormalX = (absNormalX > kFloat_0_PetBody) ? absNormalX : -absNormalX;
+    float absNormalY = scratch.normalCopy[1];
+    absNormalY = (absNormalY > kFloat_0_PetBody) ? absNormalY : -absNormalY;
+    float absNormalZ = scratch.normalCopy[2];
+    absNormalZ = (absNormalZ > kFloat_0_PetBody) ? absNormalZ : -absNormalZ;
     if (absNormalX >= absNormalY && absNormalX >= absNormalZ) {
         // Drop X and solve in the Z/Y plane.
         float originU = vertexA[2];
@@ -99,13 +129,18 @@ void Triangle_ComputeBarycentricCoordinates(float* weightB, float* weightC, cons
 
         edgeBV = edgeBV - originV;
 
-        float edgeCV = vertexC[1]; edgeCU = edgeCU - originU;
+        float edgeCV = vertexC[1];
+        edgeCU = edgeCU - originU;
         edgeCV -= originV;
-        float pointU = point[2]; scratch.projectedPointU = pointU;
-        float pointV = point[1]; scratch.projectedPointV = pointV;
-        float pointDeltaU = pointU - originU; scratch.projected.pointU = pointDeltaU;
+        float pointU = point[2];
+        scratch.projectedPointU = pointU;
+        float pointV = point[1];
+        scratch.projectedPointV = pointV;
+        float pointDeltaU = pointU - originU;
+        scratch.projected.pointU = pointDeltaU;
         scratch.projected.pointV = (pointV - originV);
-        float edgeBU = (vertexB[2]) - originU; scratch.projected.edgeBU = edgeBU;
+        float edgeBU = (vertexB[2]) - originU;
+        scratch.projected.edgeBU = edgeBU;
         scratch.projected.edgeBV = edgeBV;
         scratch.projected.edgeCU = edgeCU;
         scratch.projected.edgeCV = edgeCV;
@@ -123,12 +158,14 @@ void Triangle_ComputeBarycentricCoordinates(float* weightB, float* weightC, cons
         float edgeCV = vertexC[2];
         float pointV = point[2];
 
-        scratch.projectedPointU = pointU; edgeBV = edgeBV - originV;
+        scratch.projectedPointU = pointU;
+        edgeBV = edgeBV - originV;
         edgeCU = edgeCU - originU;
         edgeCV -= originV;
         scratch.projectedPointV = pointV;
         scratch.projected.pointU = pointDeltaU;
-        float pointDeltaV = pointV - originV; scratch.projected.pointV = pointDeltaV;
+        float pointDeltaV = pointV - originV;
+        scratch.projected.pointV = pointDeltaV;
         scratch.projected.edgeBU = ((vertexB[0]) - originU);
         scratch.projected.edgeBV = edgeBV;
         scratch.projected.edgeCU = edgeCU;
@@ -142,24 +179,31 @@ void Triangle_ComputeBarycentricCoordinates(float* weightB, float* weightC, cons
         float edgeBU = (vertexB[0]) - originU;
         float pointV = point[1];
 
-        float originV = vertexA[1]; float pointDeltaU = pointU - originU;
+        float originV = vertexA[1];
+        float pointDeltaU = pointU - originU;
 
         edgeBV = edgeBV - originV;
         float edgeCU = vertexC[0];
-        scratch.projectedPointU = pointU; float edgeCV = vertexC[1];
-        scratch.projectedPointV = pointV; edgeCU = edgeCU - originU;
+        scratch.projectedPointU = pointU;
+        float edgeCV = vertexC[1];
+        scratch.projectedPointV = pointV;
+        edgeCU = edgeCU - originU;
         edgeCV -= originV;
         scratch.projected.pointU = pointDeltaU;
-        float pointDeltaV = pointV - originV; scratch.projected.pointV = pointDeltaV;
+        float pointDeltaV = pointV - originV;
+        scratch.projected.pointV = pointDeltaV;
         scratch.projected.edgeBU = edgeBU;
         scratch.projected.edgeBV = edgeBV;
         scratch.projected.edgeCU = edgeCU;
         scratch.projected.edgeCV = edgeCV;
     }
     // solve the 2x2 system
-    float weightBNumerator = scratch.projected.edgeCV * scratch.projected.pointU - scratch.projected.edgeCU * scratch.projected.pointV;
-    float determinant = scratch.projected.edgeBU * scratch.projected.edgeCV - scratch.projected.edgeCU * scratch.projected.edgeBV;
-    float weightCNumerator = scratch.projected.edgeBU * scratch.projected.pointV - scratch.projected.pointU * scratch.projected.edgeBV;
+    float weightBNumerator =
+        scratch.projected.edgeCV * scratch.projected.pointU - scratch.projected.edgeCU * scratch.projected.pointV;
+    float determinant =
+        scratch.projected.edgeBU * scratch.projected.edgeCV - scratch.projected.edgeCU * scratch.projected.edgeBV;
+    float weightCNumerator =
+        scratch.projected.edgeBU * scratch.projected.pointV - scratch.projected.pointU * scratch.projected.edgeBV;
     *weightB = weightBNumerator / determinant;
     *weightC = weightCNumerator / determinant;
 }
@@ -223,7 +267,12 @@ struct ChainNode {
 // at +8/+12. Variant 1 reads the first optional block, variant 2 the second.
 // Surface category names are unresolved. count/data own COMMON groups;
 // count2/data2 own the SELECTED optional groups; neither array is a triangle mapping.
-struct SurfaceGroupArrays { int commonGroupCount; void* commonGroups; int selectedGroupCount; void* selectedGroups; };
+struct SurfaceGroupArrays {
+    int commonGroupCount;
+    void* commonGroups;
+    int selectedGroupCount;
+    void* selectedGroups;
+};
 // This is exactly LocalArray[2] at the loader's call boundary:
 //   SurfaceGroupArrays offset   LocalArray index   role
 //   +00/+04        result[0]          common groups (always considered)
@@ -268,9 +317,7 @@ extern void __destroy_new_array(void*, void* (*)(void*, int));
 extern char courseModelResourceStrings[];
 extern int CourseData_ReadSurfaceTriangleMappings(void*, void*, int, void*, void*, void*);
 struct RawTriple;
-extern void CourseData_ReadSurfaceGroups(CourseDataView*, SurfaceGroupArrays*, Stream*,
-    ChainNode**, RawTriple*, void*);
-
+extern void CourseData_ReadSurfaceGroups(CourseDataView*, SurfaceGroupArrays*, Stream*, ChainNode**, RawTriple*, void*);
 
 struct InputFile {
     virtual void unknown0();
@@ -284,7 +331,10 @@ struct FileScope {
     // Release the opened file on every return; this does not clean raw temporary arrays.
     ~FileScope() {
         if (*ptr) {
-            if (*ptr) { Resource_Release(*ptr); *ptr = 0; }
+            if (*ptr) {
+                Resource_Release(*ptr);
+                *ptr = 0;
+            }
         }
     }
 };
@@ -309,33 +359,50 @@ struct RawTriple {
     // Retain the nontrivial array-destruction ABI/cookie without per-record cleanup.
     ~RawTriple() {}
     // Allocate array storage including the compiler's cookie.
-    static void* operator new[](new_size_t n) { return __nwa__FUl(n); }
+    static void* operator new[](new_size_t n) {
+        return __nwa__FUl(n);
+    }
     // Release the original array allocation, not its post-cookie element pointer.
-    static void operator delete[](void* p) { __dla__FPv(p); }
+    static void operator delete[](void* p) {
+        __dla__FPv(p);
+    }
 };
 typedef char SerializedTriple_size[(sizeof(RawTriple) == kSerializedTripleBytes) ? 1 : -1];
 // One surface-group descriptor {a, b}: b is an owned raw-data array freed by the destructor. (The tag name
 // is part of the mangled symbol and cannot be changed without altering the object file.)
 struct Elem_u801C482C {
-    int a;   // opaque word initialized to zero; no per-record schema established
+    int a;              // opaque word initialized to zero; no per-record schema established
     void* ownedRawData; // owned raw-record array
     // Initialize an empty group descriptor and its owned raw-data pointer.
-    Elem_u801C482C() { a = 0; ownedRawData = 0; }
+    Elem_u801C482C() {
+        a = 0;
+        ownedRawData = 0;
+    }
     // Free the group's raw data, without interpreting record contents.
-    ~Elem_u801C482C() { if (ownedRawData) { __dla__FPv(ownedRawData); ownedRawData = 0; } }
+    ~Elem_u801C482C() {
+        if (ownedRawData) {
+            __dla__FPv(ownedRawData);
+            ownedRawData = 0;
+        }
+    }
     // Allocate group-array storage with its compiler-managed cookie.
-    static void* operator new[](new_size_t n) { return __nwa__FUl(n); }
+    static void* operator new[](new_size_t n) {
+        return __nwa__FUl(n);
+    }
     // Release group-array allocation storage after element destruction.
-    static void operator delete[](void* p) { __dla__FPv(p); }
+    static void operator delete[](void* p) {
+        __dla__FPv(p);
+    }
 };
 
 // Call the preserved six-register ABI of the partial group reader with borrowed lookup tables.
 // All six ABI arguments are now explicit. The partial reader still consumes only the
 // first three; making the borrowed tables visible does not recover their payload schema.
-static inline void CallPartialSurfaceGroupReader(CourseDataView* owner, LocalArray* result,
-    InputFile* file, ChainNode** borrowedNodes, RawTriple* borrowedTriples, void* borrowedPairs) {
-    CourseData_ReadSurfaceGroups(owner, (SurfaceGroupArrays*)result, (Stream*)file,
-        borrowedNodes, borrowedTriples, borrowedPairs);
+static inline void CallPartialSurfaceGroupReader(CourseDataView* owner, LocalArray* result, InputFile* file,
+                                                 ChainNode** borrowedNodes, RawTriple* borrowedTriples,
+                                                 void* borrowedPairs) {
+    CourseData_ReadSurfaceGroups(owner, (SurfaceGroupArrays*)result, (Stream*)file, borrowedNodes, borrowedTriples,
+                                 borrowedPairs);
 }
 // Preserve the missing constructor's observable placeholder, including nulling the append cursor.
 // This is NOT node creation: after one append, another append would dereference null.
@@ -396,52 +463,68 @@ int CourseData_LoadSurfaceBinary(CourseDataView* self) {
     // Phase 1: replace model extension with .sbin within the fixed 64-byte path buffer.
     char path[kSurfaceSidecarPathBytes] = {0};
     void* end = strrchr(self->modelPath, '.');
-    if (!end) return 0;
+    if (!end)
+        return 0;
     int length = (int)strlen(courseModelResourceStrings + kSurfaceBinaryExtensionOffset);
     char* start = self->modelPath;
     int distance = (char*)end - start;
     int remaining = (kSurfaceSidecarPathBytes - 1) - length;
-    if (distance >= remaining) return 0;
+    if (distance >= remaining)
+        return 0;
 
-    strncpy(path, start, distance); /* 0x801C4B8C-0x801C4BAC: r4 = self+0x20, r5 = end - start (ours passed no source or count) */
+    strncpy(path, start,
+            distance); /* 0x801C4B8C-0x801C4BAC: r4 = self+0x20, r5 = end - start (ours passed no source or count) */
     strcat(path, courseModelResourceStrings + kSurfaceBinaryExtensionOffset);
     InputFile* file = (InputFile*)Resource_OpenResolvedPath(self->resourceManager, path, -1, 0, 0, 0);
     FileScope scope(&file);
     int tripleCount, pairCount, serializedNodeId, serializedNodeTag;
-    if (!file) return 0;
+    if (!file)
+        return 0;
 
     // Phase 2: index existing sibling bones and verify serialized fingerprints in order.
-    ChainNode* head = (ChainNode*)((SurfaceModelRecord*)AsCourseData801C(self)->fallbackSurface)->puppet->boneRoot; // CourseData_LoadSurfaceBinary: puppet +0x164
+    ChainNode* head = (ChainNode*)((SurfaceModelRecord*)AsCourseData801C(self)->fallbackSurface)
+                          ->puppet->boneRoot; // CourseData_LoadSurfaceBinary: puppet +0x164
     ChainNode* first = head->firstChild;
     ChainNode* node = first;
     int count = 0;
-    for (ChainNode* nextNode = node; nextNode; nextNode = nextNode->next) ++count;
+    for (ChainNode* nextNode = node; nextNode; nextNode = nextNode->next)
+        ++count;
     ChainNode** nodes = (ChainNode**)__nwa__FUl(count * sizeof(ChainNode*));
     int index = 0;
-    for (node = first; node;) { nodes[index] = node; node = node->next; ++index; }
+    for (node = first; node;) {
+        nodes[index] = node;
+        node = node->next;
+        ++index;
+    }
 
     file->read(&index, kSerializedWordBytes);
-    if (index != count) return 0; // FileScope closes; raw nodes is not guarded.
+    if (index != count)
+        return 0; // FileScope closes; raw nodes is not guarded.
     for (index = 0; index < count; ++index) {
         file->read(&serializedNodeId, kSerializedWordBytes);
         file->read(&serializedNodeTag, kSerializedWordBytes);
-        if (serializedNodeId != nodes[index]->id || serializedNodeTag != nodes[index]->comparisonTag) return 0; // nodes leaks, same as count mismatch.
+        if (serializedNodeId != nodes[index]->id || serializedNodeTag != nodes[index]->comparisonTag)
+            return 0; // nodes leaks, same as count mismatch.
     }
     // Phase 3: read opaque lookup records. Their counts are trusted, not validated as sizes.
-    pairCount = 0; tripleCount = 0;
+    pairCount = 0;
+    tripleCount = 0;
     file->read(&tripleCount, kSerializedWordBytes);
     file->read(&pairCount, kSerializedWordBytes);
     RawTriple* triples;
     if (tripleCount > 0) {
         triples = new RawTriple[tripleCount];
         file->read(triples, tripleCount * kSerializedTripleBytes);
-    } else triples = 0;
+    } else
+        triples = 0;
     void* pairs;
     if (pairCount > 0) {
         pairs = __nwa__FUl(pairCount * kSerializedPairBytes);
         file->read(pairs, pairCount * kSerializedPairBytes);
-    } else pairs = 0;
-    if (tripleCount == 0 && pairCount == 0) return 0; // Existing early failure still owns raw nodes.
+    } else
+        pairs = 0;
+    if (tripleCount == 0 && pairCount == 0)
+        return 0; // Existing early failure still owns raw nodes.
     // Phase 4: parse common/variant groups, then mappings, using borrowed temporary tables.
     // PPC r3..r8 carry owner, result, file, nodes, triples, pairs in that order.
     // Only r3..r5 are consumed by the partial reader. The remaining borrowed tables
@@ -451,14 +534,22 @@ int CourseData_LoadSurfaceBinary(CourseDataView* self) {
     CallPartialSurfaceGroupReader(self, result, file, nodes, triples, pairs);
     CourseData_ReadSurfaceTriangleMappings(self, file, count, nodes, triples, &result);
     // Phase 5: explicit successful-path cleanup; RawTriple's array cookie is 16 bytes.
-    if (triples) { if (triples) __dla__FPv((char*)triples - kArrayCookieBytes); }
-    if (pairs) __dla__FPv(pairs);
+    if (triples) {
+        if (triples)
+            __dla__FPv((char*)triples - kArrayCookieBytes);
+    }
+    if (pairs)
+        __dla__FPv(pairs);
     __dla__FPv(nodes);
     int maximum = 0;
     for (; first; first = first->next) {
-        if (maximum < first->id) maximum = first->id;
+        if (maximum < first->id)
+            maximum = first->id;
     }
-    if (file) { Resource_Release(file); file = 0; }
+    if (file) {
+        Resource_Release(file);
+        file = 0;
+    }
     return 1;
 }
 #pragma use_lmw_stmw reset
@@ -494,10 +585,12 @@ int CourseData_LoadSurfaceBinary(CourseDataView* self) {
 // allocation/initialization, table arguments, and actual serialized group format;
 // assigning a new ChainNode here without those contracts would invent behavior.
 void CourseData_ReadSurfaceGroups(CourseDataView* self, SurfaceGroupArrays* arrays, Stream* stream,
-    ChainNode** /*borrowedNodes*/, RawTriple* /*borrowedTriples*/, void* /*borrowedPairs*/) {
+                                  ChainNode** /*borrowedNodes*/, RawTriple* /*borrowedTriples*/,
+                                  void* /*borrowedPairs*/) {
     ChainNode* link = (ChainNode*)self->holder->puppet->boneRoot; // CourseData_ReadSurfaceGroups: puppet +0x164
     link = link->firstChild;
-    while (link != 0 && link->next != 0) link = link->next;
+    while (link != 0 && link->next != 0)
+        link = link->next;
 
     // Phase 1: common block length/count; generated ChainNode construction remains unresolved.
     int blockLength;
@@ -511,9 +604,10 @@ void CourseData_ReadSurfaceGroups(CourseDataView* self, SurfaceGroupArrays* arra
         }
         if (arrays->commonGroupCount > 0) {
             for (int i = 0; i < arrays->commonGroupCount; ++i) {
-                // Existing decompilation leaves generated-node construction unresolved here.
+                // Appends an unconstructed node here: no group payload is read for it.
                 AppendUnconstructedSurfaceNode(link);
-                if (i == 0) head = link;
+                if (i == 0)
+                    head = link;
             }
         }
     }
@@ -530,13 +624,16 @@ void CourseData_ReadSurfaceGroups(CourseDataView* self, SurfaceGroupArrays* arra
         break;
     case kReadFirstVariantBlock:
         stream->read(&blockLength, 4);
-        if (blockLength > 0) stream->read(&arrays->selectedGroupCount, kSerializedWordBytes); // CourseData_ReadSurfaceGroups: second array count +8
+        if (blockLength > 0)
+            stream->read(&arrays->selectedGroupCount,
+                         kSerializedWordBytes); // CourseData_ReadSurfaceGroups: second array count +8
         break;
     case kReadSecondVariantBlock:
         stream->read(&blockLength, 4);
         stream->skip(blockLength, kSeekRelative);
         stream->read(&blockLength, 4);
-        if (blockLength > 0) stream->read(&arrays->selectedGroupCount, 4);
+        if (blockLength > 0)
+            stream->read(&arrays->selectedGroupCount, 4);
         break;
     }
     // Phase 3: variant group's node-construction placeholder; see contract above.
@@ -557,10 +654,12 @@ void CourseData_ReadSurfaceGroups(CourseDataView* self, SurfaceGroupArrays* arra
     // Phase 4: publish generated-node chain and its low-11-bit indices (not pointers).
     self->listHead = head;
     self->listCount = 0;
-    for (ChainNode* p = head; p; p = p->next) ++self->listCount;
+    for (ChainNode* p = head; p; p = p->next)
+        ++self->listCount;
     self->listData = __nwa__FUl(self->listCount * kSerializedWordBytes);
     int index = 0;
-    for (ChainNode* p = self->listHead; p; p = p->next) ((unsigned int*)self->listData)[index++] = p->packedIndex & kGeneratedNodeIndexMask;
+    for (ChainNode* p = self->listHead; p; p = p->next)
+        ((unsigned int*)self->listData)[index++] = p->packedIndex & kGeneratedNodeIndexMask;
 }
 #pragma use_lmw_stmw reset
 

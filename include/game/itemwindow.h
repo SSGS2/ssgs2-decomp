@@ -2,53 +2,52 @@
 #define GAME_CLASS2_ITEMWINDOW_H
 
 class CItemWindow;
-extern "C" void* CItemWindow_Ctor(void*);
-extern "C" int CItemWindow_IsClosed();
 extern "C" int s_itemWindowState;
 
 // Field names below are inferred from how the game code uses each member.
+struct Message;
 class CItemWindow {
 public:
-    void* vtable;                       // 00: __vt__11CItemWindow
+    void* vtable; // 00: __vt__11CItemWindow
     char pad_04[4];
-    int displayPriority;                // 08: actor priority = 4
+    int displayPriority; // 08: actor priority = 4
     char pad_0C[0x0C];
-    char pad_18[4];                     // map bookkeeping, precise role unproven
-    void* overlayRoot;                  // 1C: tree root, destroyed recursively
-    void* overlayFirst;                 // 20: first node / &overlayRoot sentinel
-    void* overlay;                      // 24: WOverlay_Create result
-    float bounds[4];                    // 28: item window rectangle
-    float overlayBounds[4];             // 38: WOverlay rectangle
-    float panelOffsetX;                 // 48: added to bounds[0]
+    char pad_18[4];         // map bookkeeping, precise role unproven
+    void* overlayRoot;      // 1C: tree root, destroyed recursively
+    void* overlayFirst;     // 20: first node / &overlayRoot sentinel
+    void* overlay;          // 24: WOverlay_Create result
+    float bounds[4];        // 28: item window rectangle
+    float overlayBounds[4]; // 38: WOverlay rectangle
+    float panelOffsetX;     // 48: added to bounds[0]
     char pad_4C[8];
-    float pointerX;                     // 54: copied from pointer service
-    float pointerY;                     // 58
-    unsigned char alternateIconFrame;       // 5C: low byte of alternate-icon frame; equality 8 resets to zero
+    float pointerX;                   // 54: copied from pointer service
+    float pointerY;                   // 58
+    unsigned char alternateIconFrame; // 5C: low byte of alternate-icon frame; equality 8 resets to zero
     char pad_5D[3];
-    int activatedSlot;                  // 60: Layout_CollectActivated index
-    int selectedSlot;                   // 64: pending item slot, -1 when cleared
+    int activatedSlot; // 60: Layout_CollectActivated index
+    int selectedSlot;  // 64: pending item slot, -1 when cleared
     char pad_68[4];
-    unsigned int usedItemCode;          // 6C: code saved when item removed
+    unsigned int usedItemCode; // 6C: code saved when item removed
     char pad_70[8];
-    float animationTime;                // 78: incremented by dt
-    float animationX;                   // 7C: used as drawing coordinate
-    float animationY;                   // 80
-    float animationVelocityX;           // 84: added to animationX
-    float animationVelocityY;           // 88: acceleration, then added to Y
-    unsigned char animationActive;      // 8C: gates animation processing/drawing
-    unsigned char useAlternateItem;     // 8D: chooses replacement code 0x0E
-    unsigned char active;               // 8E: messages 6/7, gates input processing
-    unsigned char selectionEnabled;     // 8F: messages 1/2, gates slot selection
-    void* itemTextures;                 // 90: 11 CBpTex objects, 0x28 stride
-    void* itemLayout;                   // 94: Layout_Init/LoadExtended result
-    int controllerId;                   // 98: CBpCtrl entry ID, -1 invalid
-    int itemCount;                      // 9C: copied from player's byte 0x9C
-    int panelOpen;                      // A0: guards open/close scripts
-    int drawRequested;                  // A4: message 4 sets, OnDisplay clears
-    int layoutInitialized;              // A8: one-time element flag setup
-    float slotOrigins[8][2];            // AC: element position minus element size
+    float animationTime;            // 78: incremented by dt
+    float animationX;               // 7C: used as drawing coordinate
+    float animationY;               // 80
+    float animationVelocityX;       // 84: added to animationX
+    float animationVelocityY;       // 88: acceleration, then added to Y
+    unsigned char animationActive;  // 8C: gates animation processing/drawing
+    unsigned char useAlternateItem; // 8D: chooses replacement code 0x0E
+    unsigned char active;           // 8E: messages 6/7, gates input processing
+    unsigned char selectionEnabled; // 8F: messages 1/2, gates slot selection
+    void* itemTextures;             // 90: 11 CBpTex objects, 0x28 stride
+    void* itemLayout;               // 94: Layout_Init/LoadExtended result
+    int controllerId;               // 98: CBpCtrl entry ID, -1 invalid
+    int itemCount;                  // 9C: copied from player's byte 0x9C
+    int panelOpen;                  // A0: guards open/close scripts
+    int drawRequested;              // A4: message 4 sets, OnDisplay clears
+    int layoutInitialized;          // A8: one-time element flag setup
+    float slotOrigins[8][2];        // AC: element position minus element size
 
-    CItemWindow() { CItemWindow_Ctor(this); }
+    CItemWindow();
     // Shared reset sequence in OnInit and HandleMsg(11); unknown words stay padding.
     void ResetSelection(float zero, float full) {
         panelOffsetX = zero;
@@ -64,7 +63,22 @@ public:
         animationActive = 0;
         selectionEnabled = 1;
     }
-    static int IsClosed() { return CItemWindow_IsClosed(); }
+    static int IsClosed();
+
+    void UseItemForOwner(void* owner, void* itemIdArgument, void* randomValue);
+    static void* GetRTTI();
+
+    ~CItemWindow();
+
+    void OnDestroy();
+    void OnLoad();
+    void OnInit();
+    void OnProcess(float dt);
+    void OnDisplay();
+    void UpdatePanelVisibility();
+    void HandleItemSelection();
+    int UseItem(unsigned char playerIndex, void* itemIdArgument, int slotOrConsumeSelection, void* randomValue);
+    void HandleMsg(Message* msg);
 };
 
 typedef char CItemWindow_size_check[sizeof(CItemWindow) == 0xEC ? 1 : -1];

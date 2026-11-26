@@ -1,5 +1,9 @@
-// Translation unit 0x803F95E8-0x803F9670 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Revolution filter manager: owns the five filter slots of the pipeline and releases them.
+//
+// ReleaseAllFilters drops one reference for each occupied slot and destroys a filter when its
+// last reference is removed. Afterwards every slot is empty.
+
+#include "classes/gtl_CRevolutionFilterManager.h"
 
 struct Filter {
     int references;
@@ -7,29 +11,22 @@ struct Filter {
     virtual ~Filter();
 };
 
-struct FilterManager {
-    char managerBaseStorage[0x50]; // Base state is not accessed by this release operation.
-    Filter* filters[5];
+enum {
+    kManagedFilterCount = 5
 };
-
-extern "C" {
-
-enum { kManagedFilterCount = 5 };
 
 // Release each occupied filter slot, destroying filters whose last reference is removed.
 // Each of the five slots owns one reference; repeated pointers require one count per slot.
-// The manager remains borrowed and all slots are cleared, making a second call a no-op.
+// The slots are all cleared, making a second call a no-op.
 // Precondition: every occupied slot has a positive reference count; no underflow check occurs.
-void CRevolutionFilterManager_ReleaseAllFilters(FilterManager* manager) {
+void gtl::CRevolutionFilterManager::ReleaseAllFilters() {
     for (int slot = 0; slot < kManagedFilterCount; ++slot) {
-        Filter* filter = manager->filters[slot];
+        Filter* filter = (Filter*)filters[slot];
         if (filter) {
             if (--filter->references == 0) {
                 delete filter;
             }
-            manager->filters[slot] = 0;
+            filters[slot] = 0;
         }
     }
 }
-
-} // extern "C"

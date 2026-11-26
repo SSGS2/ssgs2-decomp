@@ -1,3 +1,7 @@
+// Course creatures: flocks of ducks and sparrows, the mole, dolphin, crab, gull and butterfly,
+// Santa, fighter and UFO flights, penguins, the dragon and the black sparrow.
+// Their spawn near the ball, flight paths and grid roaming are set here.
+
 #include <decomp/local_class.h>
 #include <decomp/offset_of.h>
 // Course creatures: flock placement, authored flight paths, grid roaming and
@@ -5,26 +9,27 @@
 // animation event consumers and waypoint builders also live in creature_path_movement_and_draw.cpp.
 // Modding index (world units, seconds for animation/movement dt, radians for turns):
 // - Mole/dolphin/crab/gull/butterfly: their *_Ctor below sets speed/cellSize;
-//   *_vfunc_31 movement consumes those fields. Do not edit CCreature's layout.
+//   the movement update consumes those fields. Do not edit CCreature's layout.
 // - Sparrow/duck flocks: CSparrow_Ctor/CDuck_Ctor(count), their instance matrix
 //   builders and Draw methods; count controls allocations, not just draw count.
 // - Santa/fighter flight: CSanta_Ctor/CFighter_Ctor set initial speeds 120/320,
-//   turnRate 2*pi/3 rad/s, bankRate pi/2 rad/s; *_vfunc_31 recalculates leg speeds.
+//   turnRate 2*pi/3 rad/s, bankRate pi/2 rad/s; the flight movement update recalculates leg speeds.
 //   Santa SetFlightLegSpeeds' 120 is the authored-leg traversal rate; fighter's
 //   resolved XZ distance becomes speed, so changing initial 320 affects first leg.
-// - UFO/penguin flight: CUfo_Ctor/ntPenguin_Ctor and *_vfunc_31; kFloat_120_Creature
+// - UFO/penguin flight: CUfo_Ctor/ntPenguin_Ctor and the flight movement updates; kFloat_120_Creature
 //   sets target-distance scaling; heading/bank thresholds share the scalar pool.
 // - Sailor/penguin ducks: ntPenguin_Sailor_Ctor / ntPenguin_Duck_Ctor and follower
 //   methods; movementEnabled differs from animationActive and flock instance count.
-// - Black sparrow: ntNpc_BlackSparrow_Ctor speed 5.5, cellSize 48; vfunc_31 consumes
-//   grid counts/steps/history, vfunc_27 switches rest/move at animation wraps
+// - Black sparrow: ntNpc_BlackSparrow_Ctor speed 5.5, cellSize 48; UpdateGridTargetAndMove consumes
+//   grid counts/steps/history, UpdateAnimationAndMovement switches rest/move at animation wraps
 //   (rand()%101 <20 rests, else moves). Grid data is initialized upstream, below.
 // - Dragon/ship: ntNpc_Dragon_Ctor / ntNpc_PolaShip_Ctor(value) store spawnDelay;
 //   spline updates compare animation time to that delay, then advance pathDistance.
-// Shared values are defined in u8019B4B0_data.cpp, also consumed by npc_pola_ship_and_penguin.cpp,
+// Shared values are defined in the data section, also consumed by npc_pola_ship_and_penguin.cpp,
 // npc_pola_penguin.cpp/npc_creatures_and_spline.cpp; isolate a new species setting in a future mod instead of
 // changing a shared 0.1/2/5/48 pool value globally. Safe tuning ranges unestablished.
 #include "classes/CCreature.h"
+#include "classes/CUfo.h"
 // Species -> suffix view (only the listed storage is interchangeable):
 // CDuck: DuckInstanceStorage; CSparrow: SparrowInstanceStorage.
 // ntPenguin_Duck: PenguinDuckStorage (counts/list precede matrices/scales).
@@ -54,87 +59,151 @@ struct CreatureGridPathView {
 };
 typedef char CreatureGridPath_count_offset[((int)DECOMP_OFFSETOF(CreatureGridPathView, pointCount) == 0xD4) ? 1 : -1];
 // Field-derived offsets retain byte-address staging where inline accessors alter code generation.
-enum GridPathAccessOffsets { kRecentCellsOffset = (int)DECOMP_OFFSETOF(CreatureGridPathView, recentCells),
+enum GridPathAccessOffsets {
+    kRecentCellsOffset = (int)DECOMP_OFFSETOF(CreatureGridPathView, recentCells),
     kRecentCellCountOffset = (int)DECOMP_OFFSETOF(CreatureGridPathView, recentCellCount),
-    kWaypointCapacityOffset = (int)DECOMP_OFFSETOF(CreatureGridPathView, pointCapacity) };
-enum GridMovementPolicy { kGridAxisCount = 3, kNeighborStepChoices = 3,
-    kNeighborAttemptLimit = 5, kHistoryShiftBatchWords = 8,
-    kWaypointBytes = 12, kMaxWaypointCount = 0x15555555,
-    kWaypointThreeFifthsGrowthLimit = 0x071C71C7, kWaypointHalfGrowthLimit = 0x0E38E38E };
+    kWaypointCapacityOffset = (int)DECOMP_OFFSETOF(CreatureGridPathView, pointCapacity)
+};
+enum GridMovementPolicy {
+    kGridAxisCount = 3,
+    kNeighborStepChoices = 3,
+    kNeighborAttemptLimit = 5,
+    kHistoryShiftBatchWords = 8,
+    kWaypointBytes = 12,
+    kMaxWaypointCount = 0x15555555,
+    kWaypointThreeFifthsGrowthLimit = 0x071C71C7,
+    kWaypointHalfGrowthLimit = 0x0E38E38E
+};
 
 struct DuckInstanceStorage {
-    char common[0x11C]; int instanceCount; void* matrices;
-    int puppetCount; void* listPrevious; void* listNext;
+    char common[0x11C];
+    int instanceCount;
+    void* matrices;
+    int puppetCount;
+    void* listPrevious;
+    void* listNext;
 };
 #define AsDuckInstances(p) ((DuckInstanceStorage*)(p))
 struct SparrowInstanceStorage {
-    char common[0x11C]; int maxInstanceCount, instanceCount; void* matrices;
+    char common[0x11C];
+    int maxInstanceCount, instanceCount;
+    void* matrices;
 };
 #define AsSparrowInstances(p) ((SparrowInstanceStorage*)(p))
-struct FlightWaypointStorage { char common[0x11C]; float verticalSpeed; int bankPhase; };
-struct FlightTargetCursorView { char common[0xCC]; unsigned char targetCursor; };
-struct CreatureEffectMetadataView { char common[0x18]; char attachmentPayload[1]; };
-struct SailorMovementView { char common[0x120]; unsigned char movementEnabled; };
-struct SharedCharControlView { void* vtable; void* strongCountBits; void* weakCountBits; void* data; };
-enum { kCreatureSecondaryVtableOffset = 12 };
+struct FlightWaypointStorage {
+    char common[0x11C];
+    float verticalSpeed;
+    int bankPhase;
+};
+struct FlightTargetCursorView {
+    char common[0xCC];
+    unsigned char targetCursor;
+};
+struct CreatureEffectMetadataView {
+    char common[0x18];
+    char attachmentPayload[1];
+};
+struct SailorMovementView {
+    char common[0x120];
+    unsigned char movementEnabled;
+};
+struct SharedCharControlView {
+    void* vtable;
+    void* strongCountBits;
+    void* weakCountBits;
+    void* data;
+};
+enum {
+    kCreatureSecondaryVtableOffset = 12
+};
 
 struct PenguinDuckStorage {
-    char common[0x11C]; int instanceCount; int puppetCount;
-    void* listNext; void* listPrevious;
-    void* instanceMatrices; void* instanceScales;
+    char common[0x11C];
+    int instanceCount;
+    int puppetCount;
+    void* listNext;
+    void* listPrevious;
+    void* instanceMatrices;
+    void* instanceScales;
 };
 #define AsPenguinDuck(p) ((PenguinDuckStorage*)(p))
 struct SplineNpcStorage {
-    char common[0x120]; int delayActiveBits;
+    char common[0x120];
+    int delayActiveBits;
     float spawnDelay, pathDistance;
-    void* splinePoints; void* splineDistances;
-    unsigned int splineCoefficients; unsigned int splineLengthBits; unsigned int splinePointCount;
+    void* splinePoints;
+    void* splineDistances;
+    unsigned int splineCoefficients;
+    unsigned int splineLengthBits;
+    unsigned int splinePointCount;
 };
 #define AsSplineNpc(p) ((SplineNpcStorage*)(p))
 struct ShipStorage {
-    char common[0x120]; int delayActiveBits; float spawnDelay, pathDistance;
-    void* byteBuffer; void* byteCountBits; unsigned int byteCapacity;
-    unsigned char bufferControlByte; char padding139[3];
+    char common[0x120];
+    int delayActiveBits;
+    float spawnDelay, pathDistance;
+    void* byteBuffer;
+    void* byteCountBits;
+    unsigned int byteCapacity;
+    unsigned char bufferControlByte;
+    char padding139[3];
     unsigned int splinePoints, splineDistances, splineCoefficients;
-    float splineLength; unsigned int splinePointCount;
+    float splineLength;
+    unsigned int splinePointCount;
 };
 #define AsShip(p) ((ShipStorage*)(p))
 struct CreatureAnimationRange {
-    float startTime, endTime; char padding008[0x10]; const char* name;
+    float startTime, endTime;
+    char padding008[0x10];
+    const char* name;
 };
-struct CreatureAffineWords { unsigned int right[3], up[3], forward[3], position[3]; };
-struct CreaturePlayerGateView { char padding000[0xAE]; unsigned char creatureSpawnEligibility; };
-enum { kCreatureOneShotAnimation = 1, kCreatureOpaque = 255,
-       kBankReturnToLevel = 0, kBankIntoTurn = 1, kBankLevel = 2,
-       kYawAxis = 1, kPitchAxis = 0, kRollAxis = 2 };
+struct CreatureAffineWords {
+    unsigned int right[3], up[3], forward[3], position[3];
+};
+struct CreaturePlayerGateView {
+    char padding000[0xAE];
+    unsigned char creatureSpawnEligibility;
+};
+enum {
+    kCreatureOneShotAnimation = 1,
+    kCreatureOpaque = 255,
+    kBankReturnToLevel = 0,
+    kBankIntoTurn = 1,
+    kBankLevel = 2,
+    kYawAxis = 1,
+    kPitchAxis = 0,
+    kRollAxis = 2
+};
 // Preserve address-staging lifetimes in the follower loops using field-derived offsets.
-enum { kCreatureTransformOffset = (int)DECOMP_OFFSETOF(CCreature, transform[0]),
-       kCreatureTargetOffset = (int)DECOMP_OFFSETOF(CCreature, targetPosition[0]),
-       kCreatureSpawnOffset = (int)DECOMP_OFFSETOF(CCreature, movementBoundsOrigin),
-       kCreatureBoundsMaxOffset = (int)DECOMP_OFFSETOF(CCreature, movementBoundsMax),
-       kCreaturePositionOffset = (int)DECOMP_OFFSETOF(CCreature, transform[9]),
-       kCreatureUpOffset = (int)DECOMP_OFFSETOF(CCreature, transform[3]),
-       kCreatureForwardOffset = (int)DECOMP_OFFSETOF(CCreature, transform[6]) };
+enum {
+    kCreatureTransformOffset = (int)DECOMP_OFFSETOF(CCreature, transform[0]),
+    kCreatureTargetOffset = (int)DECOMP_OFFSETOF(CCreature, targetPosition[0]),
+    kCreatureSpawnOffset = (int)DECOMP_OFFSETOF(CCreature, movementBoundsOrigin),
+    kCreatureBoundsMaxOffset = (int)DECOMP_OFFSETOF(CCreature, movementBoundsMax),
+    kCreaturePositionOffset = (int)DECOMP_OFFSETOF(CCreature, transform[9]),
+    kCreatureUpOffset = (int)DECOMP_OFFSETOF(CCreature, transform[3]),
+    kCreatureForwardOffset = (int)DECOMP_OFFSETOF(CCreature, transform[6])
+};
 // Byte layout of the existing string pool; encoded lengths include the NUL.
 struct CreatureStrings {
     char vectorLengthError[20]; // vector length error
-    char lengthErrorType[55]; // !std::exception!!std::logic_error!!std::length_error!!
+    char lengthErrorType[55];   // !std::exception!!std::logic_error!!std::length_error!!
     char padding04B[0xD3];
     char defaultAnimation[12]; // NPC_Default
     char padding12A[0x8];
-    char effectTag[4]; // *fx
-    char effectTagFormat[9]; // %s %s %s
-    char spriteExtension[4]; // spr
-    char sequenceExtension[4]; // seq
+    char effectTag[4];                  // *fx
+    char effectTagFormat[9];            // %s %s %s
+    char spriteExtension[4];            // spr
+    char sequenceExtension[4];          // seq
     char alternateDefaultAnimation[13]; // NPC_Default1
-    char santaSoundAlias[6]; // Santa
-    char santaBoostSound[11]; // santaboost
+    char santaSoundAlias[6];            // Santa
+    char santaBoostSound[11];           // santaboost
     char padding165[0x14];
-    char action0[9]; // NPC_Act0
-    char action1[9]; // NPC_Act1
+    char action0[9];           // NPC_Act0
+    char action1[9];           // NPC_Act1
     char dragonFireEffect[15]; // devil_fire.seq
-    char action02[10]; // NPC_Act02
-    char action01[10]; // NPC_Act01
+    char action02[10];         // NPC_Act02
+    char action01[10];         // NPC_Act01
 };
 enum {
     kCreatureStrings_vectorLengthError = (int)DECOMP_OFFSETOF(CreatureStrings, vectorLengthError),
@@ -166,6 +235,13 @@ enum {
 #define AsWPuppet(p) ((WPuppet*)(p))
 #include "classes/CDuck.h"
 #include "classes/CSparrow.h"
+#include "classes/CMole.h"
+#include "classes/CSanta.h"
+#include "classes/CFighter.h"
+#include "classes/CGull.h"
+#include "classes/CButterfly.h"
+#include "classes/CCrab.h"
+#include "classes/CDolphin.h"
 
 struct NativeMember80201D18 {
     void* vt;
@@ -181,21 +257,23 @@ struct NativeMember80201D18 {
 #define AsCCreature(p) ((CCreature*)(p))
 
 // Return caller storage for placement construction.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 extern "C" {
 extern void* __nwa__FUl(unsigned int);
 }
 // Allocate the requested array bytes with the game allocator.
-inline void* operator new[](size_t size) { return __nwa__FUl(size); }
+inline void* operator new[](size_t size) {
+    return __nwa__FUl(size);
+}
 
 // ---- merged from course_creatures_flocks_and_flyers.cpp ----
 namespace ns0 {
-// Translation unit 0x8019B4B0-0x8019CBFC (21 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 extern char s_cameraTransform[];
-extern void* CCreature_dtor(void*, int);
+extern void* __dt__9CCreatureFv(void*, int);
 extern void __dl__FPv(void*);
 extern void Vec3_Subtract(void*, const void*, const void*);
 extern void Vec3_Normalize(void*, const void*);
@@ -212,7 +290,6 @@ extern const float kFloat_7_Creature;
 extern const float kFloat_16_Creature;
 extern const float kFloat_0_7853982_Creature;
 
-extern void CCreature_InitRandomGridCell(void*, const void*, unsigned int);
 extern void* g_sharedDoc;
 extern void* GolfPlayer_GetEntryByIndex(void*, unsigned char);
 extern void Vec3_Zero(void*);
@@ -231,8 +308,7 @@ extern void* CQuadTree_GetInstance();
 extern void GetGroundPoint__9CQuadTreeF7WVectorbPib(void*, void*, const void*, int, int, int);
 // GetGroundPoint has the PowerPC-shaped signature (return slot, self, pointer to the point, ...); the by-value
 // calls go through a helper.
-#define GROUND_BV_CREATURE ((WVector (*)(void*, WVector, int, int, int))GetGroundPoint__9CQuadTreeF7WVectorbPib)
-extern void* CCreature_LoadPuppetResource(void*, void*, int);
+#define GROUND_BV_CREATURE ((WVector (*)(void*, WVector, int, int, int))ns0::GetGroundPoint__9CQuadTreeF7WVectorbPib)
 extern void* appMallocDummy__FUl(unsigned int);
 extern void appFreeUni__FPv(void*);
 extern void ResourceManager_ReleaseObject(void*, void*, int);
@@ -243,7 +319,6 @@ extern void WPuppet_UpdateBoneWorldMatrices(void*, float, int);
 extern void WPuppet_UpdateBoundsFromBone(void*);
 extern void Matrix_CopyScaledBasis(void*, const void*, float);
 extern void* fn_8004C2BC_ret(const void*);
-extern void CCreature_Draw(void*);
 extern void* fn_8019A674_ret(void*);
 extern void WMatrix_DefaultConstructNoOp(void*);
 extern unsigned char GetGroundType__9CQuadTreeF7WVector(void*, void*);
@@ -305,7 +380,11 @@ struct ObjLists {
     void* f12c;
 };
 
-struct ListNode { ListNode* prev; ListNode* next; void* value; };
+struct ListNode {
+    ListNode* prev;
+    ListNode* next;
+    void* value;
+};
 
 struct CtorObj {
     void* vtable;
@@ -394,8 +473,13 @@ static CtorObj* init_ctor(CtorObj* self, void* arg, char* vt) {
     return self;
 }
 
-// Initialize CMole state and owned resources.
-CtorObj* CMole_Ctor(CtorObj* self, void* arg) {
+} // extern "C"
+} // namespace ns0
+
+// Initialize CMole state and owned resources. Named Init: the caller runs it on storage it already owns.
+void* CMole::Init(void* arg) {
+    using namespace ns0;
+    CtorObj* self = (CtorObj*)this;
     self->secondaryVtable = __vt__9CCreature + 0xc;
     self->vtable = __vt__9CCreature;
     self->flags = 0;
@@ -435,17 +519,23 @@ CtorObj* CMole_Ctor(CtorObj* self, void* arg) {
     self->secondaryVtable = __vt__5CMole + 0xc;
     self->flags = self->flags | 1;
     try {
-    ((void (*)(CtorObj*, void*))((void* const*)self->vtable)[0x98 / 4])(self, arg);
-    self->ballSpawnOffsetDistance = kFloat_6_4_Creature;
-    return self;
+        ((void (*)(CtorObj*, void*))((void* const*)self->vtable)[0x98 / 4])(self, arg);
+        self->ballSpawnOffsetDistance = kFloat_6_4_Creature;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        __dt__9CCreatureFv(self, -1);
         throw;
     }
 }
 
-// Initialize CDolphin state and owned resources.
-CtorObj* CDolphin_Ctor(CtorObj* self, void* arg) {
+namespace ns0 {
+extern "C" {} // extern "C"
+} // namespace ns0
+
+// Initialize CDolphin state and owned resources. Named Init: the caller runs it on storage it already owns.
+void* CDolphin::Init(void* arg) {
+    using namespace ns0;
+    CtorObj* self = (CtorObj*)this;
     self->secondaryVtable = __vt__9CCreature + 0xc;
     self->vtable = __vt__9CCreature;
     self->flags = 0;
@@ -470,17 +560,23 @@ CtorObj* CDolphin_Ctor(CtorObj* self, void* arg) {
     self->secondaryVtable = __vt__8CDolphin + 0xc;
     self->flags = ((1 | self->flags));
     try {
-    ((void (*)(CtorObj*, void*))((void* const*)(__vt__8CDolphin))[0x98 / 4])(self, arg);
-    self->ballSpawnOffsetDistance = kFloat_0_Creature;
-    return self;
+        ((void (*)(CtorObj*, void*))((void* const*)(__vt__8CDolphin))[0x98 / 4])(self, arg);
+        self->ballSpawnOffsetDistance = kFloat_0_Creature;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        __dt__9CCreatureFv(self, -1);
         throw;
     }
 }
 
-// Initialize CCrab state and owned resources.
-CtorObj* CCrab_Ctor(CtorObj* self, void* arg) {
+namespace ns0 {
+extern "C" {} // extern "C"
+} // namespace ns0
+
+// Initialize CCrab state and owned resources. Named Init: the caller runs it on storage it already owns.
+void* CCrab::Init(void* arg) {
+    using namespace ns0;
+    CtorObj* self = (CtorObj*)this;
     self->secondaryVtable = __vt__9CCreature + 0xc;
     self->vtable = __vt__9CCreature;
     self->flags = 0;
@@ -505,33 +601,39 @@ CtorObj* CCrab_Ctor(CtorObj* self, void* arg) {
     self->secondaryVtable = __vt__5CCrab + 0xc;
     self->flags |= 1;
     try {
-    ((void (*)(CtorObj*, void*))((void* const*)(__vt__5CCrab))[0x98 / 4])(self, arg);
-    self->ballSpawnOffsetDistance = kFloat_neg3_2_Crab;
-    return self;
+        ((void (*)(CtorObj*, void*))((void* const*)(__vt__5CCrab))[0x98 / 4])(self, arg);
+        self->ballSpawnOffsetDistance = kFloat_neg3_2_Crab;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        __dt__9CCreatureFv(self, -1);
         throw;
     }
 }
 
+namespace ns0 {
+extern "C" {} // extern "C"
+} // namespace ns0
+
 // Initialize the flock leader transform and place followers at fixed intervals behind it.
-void CDuck_InitFlockFormation(UnkObj* self, const void* src, unsigned int flags) {
-    CCreature_InitRandomGridCell(self, src, flags);
-    if (self->instanceCount != 0) {
-        Matrix_CopyAffine(self->instanceMatrices, self->basisXY);
-        for (int i = 1; i < self->instanceCount; i++) {
+void CDuck::InitFlockFormation(const void* src, unsigned int flags) {
+    using namespace ns0;
+    ((CCreature*)this)->InitRandomGridCell(src, flags);
+    if (instanceCount != 0) {
+        Matrix_CopyAffine(instanceMatrices, ((CCreature*)this)->transform);
+        for (int i = 1; i < instanceCount; i++) {
             Vec3 w;
             Vec3 v;
-            Matrix_CopyAffine(&self->instanceMatrices[i], &self->instanceMatrices[i - 1]);
-            __ml__FfRC7WVector(&v, &self->instanceMatrices[i - 1].forward, kFloat_6_4_Creature);
-            __pl__FRC7WVectorRC7WVector(&w, &self->instanceMatrices[i - 1].position, &v);
-            __as__7WVectorFRC7WVector(&self->instanceMatrices[i].position, &w);
+            Matrix_CopyAffine(&((Elem*)instanceMatrices)[i], &((Elem*)instanceMatrices)[i - 1]);
+            __ml__FfRC7WVector(&v, &((Elem*)instanceMatrices)[i - 1].forward, kFloat_6_4_Creature);
+            __pl__FRC7WVectorRC7WVector(&w, &((Elem*)instanceMatrices)[i - 1].position, &v);
+            __as__7WVectorFRC7WVector(&((Elem*)instanceMatrices)[i].position, &w);
         }
     }
 }
 
 // Randomize heading and spawn the creature on the ground at its configured ball-relative offset.
-void CCreature_SpawnAtBallOffset(UnkObj* self) {
+void CCreature::SpawnAtBallOffset() {
+    using namespace ns0;
     char buf[0x30];
     Vec3 out;
     Vec3 d;
@@ -539,43 +641,55 @@ void CCreature_SpawnAtBallOffset(UnkObj* self) {
     Vec3 b;
     Vec3 a;
 
-    self->animationActive = 1;
-    self->animationFrame = kFloat_0_Creature;
-    self->opacity = kCreatureOpaque;
+    animationActive = 1;
+    animationTime = kFloat_0_Creature;
+    opacity = kCreatureOpaque;
     Matrix_SetAxisRotation(buf, Random_RangeFloat(-1, kFloat_neg3_1415927_Creature, kFloat_3_1415927_805DF2E4), 1);
-    Matrix_CopyAffine(self->basisXY, buf);
-    __ml__FRC7WVectorf(&a, self->forward, kFloat_neg1_CreatureDirection);
-    __ml__FfRC7WVector(&b, &a, self->ballSpawnOffsetDistance);
+    Matrix_CopyAffine(transform, buf);
+    __ml__FRC7WVectorf(&a, &transform[6], kFloat_neg1_CreatureDirection);
+    __ml__FfRC7WVector(&b, &a, ballSpawnOffsetDistance);
     __pl__FRC7WVectorRC7WVector(&c, GolfBall__Fv(), &b);
     d = c;
     GetGroundPoint__9CQuadTreeF7WVectorbPib(&out, CQuadTree_GetInstance(), &d, 0, 0, 1);
-    __as__7WVectorFRC7WVector(self->position, &out);
+    __as__7WVectorFRC7WVector(&transform[9], &out);
 }
 
+namespace ns0 {
+extern "C" {} // extern "C"
+} // namespace ns0
+
 // Release CGull resources and optionally delete the object.
-void* CGull_Dtor(void* self, int doDelete) {
-    if (self != 0) {
-        CCreature_dtor(self, 0);
+void* CGull::Dtor(int doDelete) {
+    using namespace ns0;
+    if (this != 0) {
+        __dt__9CCreatureFv(this, 0);
         if (doDelete > 0) {
-            __dl__FPv(self);
+            __dl__FPv(this);
         }
     }
-    return self;
+    return this;
 }
 
 // Release CButterfly resources and optionally delete the object.
-void* CButterfly_Dtor(void* self, int doDelete) {
-    if (self != 0) {
-        CCreature_dtor(self, 0);
+void* CButterfly::Dtor(int doDelete) {
+    using namespace ns0;
+    if (this != 0) {
+        __dt__9CCreatureFv(this, 0);
         if (doDelete > 0) {
-            __dl__FPv(self);
+            __dl__FPv(this);
         }
     }
-    return self;
+    return this;
 }
 
-// Initialize CGull state and owned resources.
-CtorObj* CGull_Ctor(CtorObj* self, void* arg) {
+namespace ns0 {
+extern "C" {} // extern "C"
+} // namespace ns0
+
+// Initialize CGull state and owned resources. Named Init: the caller runs it on storage it already owns.
+void* CGull::Init(void* arg) {
+    using namespace ns0;
+    CtorObj* self = (CtorObj*)this;
     self->secondaryVtable = __vt__9CCreature + 0xc;
     self->vtable = __vt__9CCreature;
     self->flags = 0;
@@ -598,20 +712,27 @@ CtorObj* CGull_Ctor(CtorObj* self, void* arg) {
     self->pathPointCapacity = 0;
     self->vtable = __vt__5CGull;
     void* savedVtable = self->vtable;
-    self->secondaryVtable = __vt__5CGull + 0xc; self->movementSpeed = kFloat_10_CreatureMotion;
+    self->secondaryVtable = __vt__5CGull + 0xc;
+    self->movementSpeed = kFloat_10_CreatureMotion;
     try {
-    ((void (*)(CtorObj*, void*))((void* const*)(savedVtable))[0x98 / 4])(self, arg);
-    self->maxBankAngle = kFloat_0_7853982_Creature;
-    self->cellSize = kFloat_48_Creature;
-    return self;
+        ((void (*)(CtorObj*, void*))((void* const*)(savedVtable))[0x98 / 4])(self, arg);
+        self->maxBankAngle = kFloat_0_7853982_Creature;
+        self->cellSize = kFloat_48_Creature;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        __dt__9CCreatureFv(self, -1);
         throw;
     }
 }
 
-// Initialize CButterfly state and owned resources.
-CtorObj* CButterfly_Ctor(CtorObj* self, void* arg) {
+namespace ns0 {
+extern "C" {} // extern "C"
+} // namespace ns0
+
+// Initialize CButterfly state and owned resources. Named Init: the caller runs it on storage it already owns.
+void* CButterfly::Init(void* arg) {
+    using namespace ns0;
+    CtorObj* self = (CtorObj*)this;
     self->secondaryVtable = __vt__9CCreature + 0xc;
     self->vtable = __vt__9CCreature;
     self->flags = 0;
@@ -636,18 +757,23 @@ CtorObj* CButterfly_Ctor(CtorObj* self, void* arg) {
     self->secondaryVtable = __vt__10CButterfly + 0xc;
     self->movementSpeed = kFloat_7_Creature;
     try {
-    ((void (*)(CtorObj*, void*))((void* const*)(self->vtable))[0x98 / 4])(self, arg);
-    self->maxBankAngle = kFloat_0_Creature;
-    self->cellSize = kFloat_16_Creature;
-    return self;
+        ((void (*)(CtorObj*, void*))((void* const*)(self->vtable))[0x98 / 4])(self, arg);
+        self->maxBankAngle = kFloat_0_Creature;
+        self->cellSize = kFloat_16_Creature;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        __dt__9CCreatureFv(self, -1);
         throw;
     }
 }
 
+namespace ns0 {
+extern "C" {} // extern "C"
+} // namespace ns0
+
 // Spawn the crab near the ball when the current player eligibility byte is nonzero.
-void CCrab_SpawnNearBall(C6Obj* self) {
+void CCrab::SpawnNearBall() {
+    using namespace ns0;
     void* mgr = *(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc; // original +0xB90
     void* item = GolfPlayer_GetEntryByIndex(mgr, AsCGolfDoc(mgr)->currentPlayer);
     if (((CreaturePlayerGateView*)item)->creatureSpawnEligibility >= 1) {
@@ -657,61 +783,91 @@ void CCrab_SpawnNearBall(C6Obj* self) {
         Vec3 t2;
         Vec3 t3;
         Vec3 out;
-        self->animationActive = 1;
-        self->animationFrame = kFloat_0_Creature;
-        self->opacity = kCreatureOpaque;
+        ((CCreature*)this)->animationActive = 1;
+        ((CCreature*)this)->animationTime = kFloat_0_Creature;
+        ((CCreature*)this)->opacity = kCreatureOpaque;
         Matrix_SetAxisRotation(buf, Random_RangeFloat(-1, kFloat_neg3_1415927_Creature, kFloat_3_1415927_805DF2E4), 1);
-        Matrix_CopyAffine(self->basisXY, buf);
-        __ml__FRC7WVectorf(&t0, self->forward, kFloat_neg1_CreatureDirection);
-        __ml__FfRC7WVector(&t1, &t0, self->ballSpawnOffsetDistance);
+        Matrix_CopyAffine(((CCreature*)this)->transform, buf);
+        __ml__FRC7WVectorf(&t0, &((CCreature*)this)->transform[6], kFloat_neg1_CreatureDirection);
+        __ml__FfRC7WVector(&t1, &t0, ((CCreature*)this)->ballSpawnOffsetDistance);
         __pl__FRC7WVectorRC7WVector(&t2, GolfBall__Fv(), &t1);
         t3 = t2;
         GetGroundPoint__9CQuadTreeF7WVectorbPib(&out, CQuadTree_GetInstance(), &t3, 0, 0, 1);
-        __as__7WVectorFRC7WVector(self->position, &out);
+        __as__7WVectorFRC7WVector(&((CCreature*)this)->transform[9], &out);
     }
 }
 
 // Spawn the dolphin after the ball has landed in lie category 1.
-void CDolphin_TrySpawnNearBall(UnkObj* self) {
+void CDolphin::TrySpawnNearBall() {
+    using namespace ns0;
     void* shared = GolfBall__Fv();
     if (((CGolfBall*)shared)->m_recoveryRequired && ((CGolfBall*)GolfBall__Fv())->m_lie == 1) {
         char buf[0x30];
         Vec3 a, b, c, d, out;
-        self->animationActive = 1;
-        self->animationFrame = kFloat_0_Creature;
-        self->opacity = kCreatureOpaque;
+        ((CCreature*)this)->animationActive = 1;
+        ((CCreature*)this)->animationTime = kFloat_0_Creature;
+        ((CCreature*)this)->opacity = kCreatureOpaque;
         Matrix_SetAxisRotation(buf, Random_RangeFloat(-1, kFloat_neg3_1415927_Creature, kFloat_3_1415927_805DF2E4), 1);
-        Matrix_CopyAffine(self->basisXY, buf);
-        __ml__FRC7WVectorf(&a, self->forward, kFloat_neg1_CreatureDirection);
-        __ml__FfRC7WVector(&b, &a, self->ballSpawnOffsetDistance);
+        Matrix_CopyAffine(((CCreature*)this)->transform, buf);
+        __ml__FRC7WVectorf(&a, &((CCreature*)this)->transform[6], kFloat_neg1_CreatureDirection);
+        __ml__FfRC7WVector(&b, &a, ((CCreature*)this)->ballSpawnOffsetDistance);
         __pl__FRC7WVectorRC7WVector(&c, GolfBall__Fv(), &b);
         d = c;
         GetGroundPoint__9CQuadTreeF7WVectorbPib(&out, CQuadTree_GetInstance(), &d, 0, 0, 1);
-        __as__7WVectorFRC7WVector(self->position, &out);
+        __as__7WVectorFRC7WVector(&((CCreature*)this)->transform[9], &out);
     }
 }
 
-struct LNode { LNode* prev; LNode* next; void* value; };
+namespace ns0 {
+extern "C" {
+
+struct LNode {
+    LNode* prev;
+    LNode* next;
+    void* value;
+};
 struct LGuard {
-    char flag; LNode* allocation; LNode* copy; LNode* unused; LNode* head; LNode* n;
+    char flag;
+    LNode* allocation;
+    LNode* copy;
+    LNode* unused;
+    LNode* head;
+    LNode* n;
     // Initialize a guard with no node allocation to release.
-    LGuard(): flag(0), n(0) {}
+    LGuard() : flag(0), n(0) {}
     // Free the node allocation if it has not been transferred.
-    ~LGuard() { if (n) appFreeUni__FPv(n); }
+    ~LGuard() {
+        if (n)
+            appFreeUni__FPv(n);
+    }
 };
 
+} // extern "C"
+} // namespace ns0
+
 // Load one puppet per duck instance into the owned list and select the first puppet.
-void CDuck_LoadPuppetInstances(ObjLists* self, void* arg) {
-    for (int i = 0; i < self->instanceCount; ++i) {
-        LNode* head = (LNode*)&self->f128;
+void CDuck::LoadPuppetInstances(void* arg) {
+    using namespace ns0;
+    for (int i = 0; i < instanceCount; ++i) {
+        LNode* head = (LNode*)&listPrevious;
         void* value;
-        if (i == 0) value = CCreature_LoadPuppetResource(self, arg, 1);
-        else value = CCreature_LoadPuppetResource(self, arg, 0);
+        if (i == 0)
+            value = ((CCreature*)this)->LoadPuppetResource((int)arg, 1);
+        else
+            value = ((CCreature*)this)->LoadPuppetResource((int)arg, 0);
         LGuard guard;
         LNode* node = (LNode*)appMallocDummy__FUl(0xc);
-        guard.allocation = node; guard.copy = node; guard.head = head; guard.n = node;
+        guard.allocation = node;
+        guard.copy = node;
+        guard.head = head;
+        guard.n = node;
         if (&node->value) {
-            try { node->value = value; } catch (...) { appFreeUni__FPv(node); throw; }
+            try {
+                node->value = value;
+            } catch (...) {
+                appFreeUni__FPv(node);
+                throw;
+            }
         }
         LNode* n = guard.n;
         guard.n = 0;
@@ -719,15 +875,16 @@ void CDuck_LoadPuppetInstances(ObjLists* self, void* arg) {
         head->prev->next = n;
         head->prev = n;
         n->next = head;
-        ++AsDuckInstances(self)->puppetCount;
+        ++linkCount;
     }
-    (*(void **)&AsCCreature(self)->puppet) = ((LNode*)self->f12c)->value;
+    puppet = ((LNode*)listNext)->value;
 }
 
 // Scale active flock size by ball speed and randomize instance headings around the spawn center.
-void CSparrow_InitFlockInstances(ObjLists* self) {
-    char* p = (char*)self;
-    p[0xad] = 1;
+void CSparrow::InitFlockInstances() {
+    using namespace ns0;
+    char* p = (char*)this;
+    drawEnabled = 1;
     float initialBallSpeed = Magnitude__7WVectorCFv((char*)PreData__9CGolfBallFi(GolfBall__Fv(), 0) + 0xc);
     float currentBallSpeed = Magnitude__7WVectorCFv(&((CGolfBall*)GolfBall__Fv())->m_velocity);
     float ballSpeedRatio = currentBallSpeed / initialBallSpeed;
@@ -735,22 +892,28 @@ void CSparrow_InitFlockInstances(ObjLists* self) {
     int instanceIndex = 0;
     float radians = kFloat_0_017453292_Creature;
     transformOffset = 0;
-    AsSparrowInstances(p)->instanceCount = (int)((float)AsSparrowInstances(p)->maxInstanceCount * ballSpeedRatio);
-    while (instanceIndex < AsSparrowInstances(p)->instanceCount) {
+    instanceCount = (int)((float)maxInstanceCount * ballSpeedRatio);
+    while (instanceIndex < instanceCount) {
         char headingMatrix[0x30];
-        Matrix_SetAxisRotation(headingMatrix, radians * Random_RangeFloat(-1, kFloat_neg180_Creature, kFloat_180_Creature), 1);
-        Matrix_CopyAffine((char*)AsSparrowInstances(p)->matrices + transformOffset, headingMatrix);
+        Matrix_SetAxisRotation(headingMatrix,
+                               radians * Random_RangeFloat(-1, kFloat_neg180_Creature, kFloat_180_Creature), 1);
+        Matrix_CopyAffine((char*)instanceMatrices + transformOffset, headingMatrix);
         Vec3 spawnCenter, boundsSum;
         __pl__FRC7WVectorRC7WVector(&boundsSum, (p + kCreatureBoundsMaxOffset), (p + kCreatureSpawnOffset));
         __ml__FfRC7WVector(&spawnCenter, &boundsSum, kFloat_0_5_Creature);
-        __as__7WVectorFRC7WVector((char*)AsSparrowInstances(p)->matrices + transformOffset + 0x24, &spawnCenter);
+        __as__7WVectorFRC7WVector((char*)instanceMatrices + transformOffset + 0x24, &spawnCenter);
         transformOffset += 0x30;
         ++instanceIndex;
     }
 }
 
+namespace ns0 {
+extern "C" {} // extern "C"
+} // namespace ns0
+
 // Return whether a world position falls outside the configured camera-facing dot threshold.
-int CCreature_IsOutsideCameraFacingThreshold(void* a, void* src, float threshold) {
+int CCreature::IsOutsideCameraFacingThreshold(void* src, float threshold) {
+    using namespace ns0;
     char buf[12]; // r1+0x14? actually 12 bytes
     float rot[3]; // r1+0x8
     Vec3_Subtract(buf, src, ((CreatureAffineWords*)s_cameraTransform)->position);
@@ -759,10 +922,15 @@ int CCreature_IsOutsideCameraFacingThreshold(void* a, void* src, float threshold
     return d <= threshold;
 }
 
+namespace ns0 {
+extern "C" {
+
 struct SparrowElement {
     char data[0x30];
     // Preserve the matrix default-construction hook for one flock element.
-    SparrowElement() { WMatrix_DefaultConstructNoOp(this); }
+    SparrowElement() {
+        WMatrix_DefaultConstructNoOp(this);
+    }
 };
 
 typedef ::NativeMember80201D18 NativeMember80201D18;
@@ -777,101 +945,162 @@ struct SparrowCreatureBase : NativeMember80201D18, SparrowNative4 {
     char data[0xdc - 8];
     // Initialize the common creature base for sparrow construction.
     SparrowCreatureBase() {
-    char* p = (char*)this;
-    *(volatile int*)&AsCCreature(p)->flags = 0; // original +8
-    Vec3_Zero(AsCCreature(p)->movementBoundsOrigin); // original +0xC
-    Vec3_Zero(AsCCreature(p)->movementBoundsMax); // original +0x18
-    AsCCreature(p)->puppet = 0; // original +0x24
-    AsCCreature(p)->animationTime = kFloat_0_Creature; // original +0x58
-    AsCCreature(p)->animationRange = 0; // original +0x60
-    AsCCreature(p)->heading = kFloat_0_Creature; // original +0x84
-    AsCCreature(p)->history = 0; // original +0xA8
-    AsCCreature(p)->ballSpawnOffsetDistance = kFloat_0_Creature; // original +0xB0
-    AsCCreature(p)->opacityKeyframeCount = 0; // original +0xB4
-    AsCCreature(p)->opacityKeyframePrevious = ((char*)&AsCCreature(p)->opacityKeyframeNext); // original +0xBC
-    AsCCreature(p)->opacityKeyframeNext = ((char*)&AsCCreature(p)->opacityKeyframeNext); // original +0xB8
-    AsCCreature(p)->targetPoints = 0; // original +0xC0
-    AsCCreature(p)->targetPointCount = 0; // original +0xC4
-    AsCCreature(p)->targetPointCapacity = 0; // original +0xC8
-    AsCCreature(p)->pathPoints = 0; // original +0xD0
-    AsCCreature(p)->pathPointCount = 0; // original +0xD4
-    AsCCreature(p)->pathPointCapacity = 0; // original +0xD8
+        char* p = (char*)this;
+        *(volatile int*)&AsCCreature(p)->flags = 0;                                              // original +8
+        Vec3_Zero(AsCCreature(p)->movementBoundsOrigin);                                         // original +0xC
+        Vec3_Zero(AsCCreature(p)->movementBoundsMax);                                            // original +0x18
+        AsCCreature(p)->puppet = 0;                                                              // original +0x24
+        AsCCreature(p)->animationTime = kFloat_0_Creature;                                       // original +0x58
+        AsCCreature(p)->animationRange = 0;                                                      // original +0x60
+        AsCCreature(p)->heading = kFloat_0_Creature;                                             // original +0x84
+        AsCCreature(p)->history = 0;                                                             // original +0xA8
+        AsCCreature(p)->ballSpawnOffsetDistance = kFloat_0_Creature;                             // original +0xB0
+        AsCCreature(p)->opacityKeyframeCount = 0;                                                // original +0xB4
+        AsCCreature(p)->opacityKeyframePrevious = ((char*)&AsCCreature(p)->opacityKeyframeNext); // original +0xBC
+        AsCCreature(p)->opacityKeyframeNext = ((char*)&AsCCreature(p)->opacityKeyframeNext);     // original +0xB8
+        AsCCreature(p)->targetPoints = 0;                                                        // original +0xC0
+        AsCCreature(p)->targetPointCount = 0;                                                    // original +0xC4
+        AsCCreature(p)->targetPointCapacity = 0;                                                 // original +0xC8
+        AsCCreature(p)->pathPoints = 0;                                                          // original +0xD0
+        AsCCreature(p)->pathPointCount = 0;                                                      // original +0xD4
+        AsCCreature(p)->pathPointCapacity = 0;                                                   // original +0xD8
     }
     // Destroy the common creature base without deleting its storage.
-    ~SparrowCreatureBase() { CCreature_dtor(this, 0); }
+    ~SparrowCreatureBase() {
+        __dt__9CCreatureFv(this, 0);
+    }
 };
 struct SparrowCtor : SparrowCreatureBase {
     char tail[0x128 - 0xdc];
     // Construct the sparrow base and initialize the requested instance count.
     SparrowCtor(void* arg, int count) {
-    char* p = (char*)this;
-    AsCSparrow(p)->vtbl = __vt__8CSparrow;
-    AsCSparrow(p)->secondaryVtable = __vt__8CSparrow + 0xc; // original +4
-    AsCSparrow(p)->instanceMatrices = 0; // original +0x124
-    void* resource = ResourceManager_LoadByExtension(g_resourceManager, arg, 0, 1, 0, ((char*)&AsCCreature(p)->opacityKeyframeNext));
-    AsCSparrow(p)->model = resource; // original +0x24
-    AsCCreature(p)->bankAngle = kFloat_0_Creature; // original +0x78
-    p[0x119] = 0;
-    AsCCreature(p)->opacity = kCreatureOpaque; // original +0xAC
-    p[0xad] = 0;
-    AsSparrowInstances(p)->maxInstanceCount = count; // original +0x11C
-    void* array = new SparrowElement[count];
-    AsCSparrow(p)->instanceMatrices = array; // original +0x124
+        char* p = (char*)this;
+        AsCSparrow(p)->vtbl = __vt__8CSparrow;
+        AsCSparrow(p)->secondaryVtable = __vt__8CSparrow + 0xc; // original +4
+        AsCSparrow(p)->instanceMatrices = 0;                    // original +0x124
+        void* resource = ResourceManager_LoadByExtension(g_resourceManager, arg, 0, 1, 0,
+                                                         ((char*)&AsCCreature(p)->opacityKeyframeNext));
+        AsCSparrow(p)->model = resource;               // original +0x24
+        AsCCreature(p)->bankAngle = kFloat_0_Creature; // original +0x78
+        p[0x119] = 0;
+        AsCCreature(p)->opacity = kCreatureOpaque; // original +0xAC
+        p[0xad] = 0;
+        AsSparrowInstances(p)->maxInstanceCount = count; // original +0x11C
+        void* array = new SparrowElement[count];
+        AsCSparrow(p)->instanceMatrices = array; // original +0x124
     }
 };
+} // extern "C"
+} // namespace ns0
+
 // Initialize CSparrow state and owned resources.
-void* CSparrow_Ctor(void* self, void* arg, int count) {
-    *(void* volatile*)self = __vt__9CCreature;
-    *(void* volatile*)((char*)self + 4) = __vt__9CCreature + 0xc;
-    new (self) SparrowCtor(arg, count);
-    return self;
+void* CSparrow::Init(void* arg, int count) {
+    using namespace ns0;
+    *(void* volatile*)this = __vt__9CCreature;
+    *(void* volatile*)((char*)this + 4) = __vt__9CCreature + 0xc;
+    new (this) SparrowCtor(arg, count);
+    return this;
 }
 
-class VA0 { public: 
-virtual void v08(); virtual void v0C(); virtual void v10(); virtual void v14(); virtual void v18(); virtual void v1C(); virtual void v20(); virtual void v24(); virtual void v28(); virtual void v2C(); virtual void v30(); virtual void v34(); virtual void v38(); virtual void v3C(); virtual void v40(); virtual void v44(); virtual void v48(); virtual void v4C(); virtual void v50(); virtual void v54(); virtual void v58(); virtual void v5C(); virtual void v60(); virtual void v64(); virtual void v68(); virtual void v6C(); virtual void v70(); virtual void v74(); virtual void v78(); virtual void v7C(); virtual void v80(); virtual void v84(); virtual void v88(); virtual void v8C(); virtual void v90(); virtual void v94(); virtual void v98(); virtual void v9C(); virtual int vA0(const void*,float);
+namespace ns0 {
+extern "C" {
+
+class VA0 {
+public:
+    virtual void v08();
+    virtual void v0C();
+    virtual void v10();
+    virtual void v14();
+    virtual void v18();
+    virtual void v1C();
+    virtual void v20();
+    virtual void v24();
+    virtual void v28();
+    virtual void v2C();
+    virtual void v30();
+    virtual void v34();
+    virtual void v38();
+    virtual void v3C();
+    virtual void v40();
+    virtual void v44();
+    virtual void v48();
+    virtual void v4C();
+    virtual void v50();
+    virtual void v54();
+    virtual void v58();
+    virtual void v5C();
+    virtual void v60();
+    virtual void v64();
+    virtual void v68();
+    virtual void v6C();
+    virtual void v70();
+    virtual void v74();
+    virtual void v78();
+    virtual void v7C();
+    virtual void v80();
+    virtual void v84();
+    virtual void v88();
+    virtual void v8C();
+    virtual void v90();
+    virtual void v94();
+    virtual void v98();
+    virtual void v9C();
+    virtual int vA0(const void*, float);
 };
-class V18 { public: 
-virtual void v08(); virtual void v0C(); virtual void v10(); virtual void v14(); virtual void v18(void*,int,int,int,float,int);
+class V18 {
+public:
+    virtual void v08();
+    virtual void v0C();
+    virtual void v10();
+    virtual void v14();
+    virtual void v18(void*, int, int, int, float, int);
 };
 // Query virtual slot A0; zero permits instance drawing, with world-space position and caller margin.
 #define CreatureInstanceIsCulled(creature, worldPosition, margin) \
-    (((VA0*)(creature))->vA0((worldPosition), (margin)))
+    (((ns0::VA0*)(creature))->vA0((worldPosition), (margin)))
 
 // Draw a prepared puppet through virtual slot 18 with the instance path flags.
-#define DrawCreaturePuppet(puppet, view, scale) \
-    (((V18*)(puppet))->v18((view), 1, 1, 1, (scale), 0))
+#define DrawCreaturePuppet(puppet, view, scale) (((ns0::V18*)(puppet))->v18((view), 1, 1, 1, (scale), 0))
 
+} // extern "C"
+} // namespace ns0
 // Cull and draw each duck puppet using its corresponding follower transform.
-void CDuck_DrawInstances(ObjLists* self) {
-    ListNode* node;
-    ListNode* sentinel;
+void CDuck::DrawInstances() {
+    ns0::ListNode* node;
+    ns0::ListNode* sentinel;
     int offset;
     int index;
     float one;
     void* item;
     void** vt;
-    if (self->instanceCount == 0) {
-        CCreature_Draw(self);
+    if (this->instanceCount == 0) {
+        ((CCreature*)this)->Draw();
         return;
     }
-    node = (ListNode*)self->f12c;
-    sentinel = (ListNode*)(((char*)&AsDuckInstances(self)->listPrevious));
+    node = (ns0::ListNode*)this->listNext;
+    sentinel = (ns0::ListNode*)(((char*)&this->listPrevious));
     index = 0;
     offset = 0;
-    one = kFloat_1_Creature;
+    one = ns0::kFloat_1_Creature;
     while (node != sentinel) {
         item = node->value;
         if (item != 0) {
-            if (CreatureInstanceIsCulled(self, (char*)self->instanceMatrices + offset + 0x24, kFloat_0_8_805DF2D8) == 0) {
-                if (*(float*)((char*)self->instanceMatrices + offset) > one) *(float*)((char*)self->instanceMatrices + offset) = one;
-                if (*(float*)((char*)self->instanceMatrices + offset + 0x10) > one) *(float*)((char*)self->instanceMatrices + offset + 0x10) = one;
-                if (*(float*)((char*)self->instanceMatrices + offset + 0x20) > one) *(float*)((char*)self->instanceMatrices + offset + 0x20) = one;
+            if (CreatureInstanceIsCulled(this, (char*)this->instanceMatrices + offset + 0x24,
+                                         ns0::kFloat_0_8_805DF2D8) == 0) {
+                if (*(float*)((char*)this->instanceMatrices + offset) > one)
+                    *(float*)((char*)this->instanceMatrices + offset) = one;
+                if (*(float*)((char*)this->instanceMatrices + offset + 0x10) > one)
+                    *(float*)((char*)this->instanceMatrices + offset + 0x10) = one;
+                if (*(float*)((char*)this->instanceMatrices + offset + 0x20) > one)
+                    *(float*)((char*)this->instanceMatrices + offset + 0x20) = one;
                 char drawTransform[0x30];
-                Matrix_CopyScaledBasis(drawTransform, (char*)self->instanceMatrices + offset, index == 0 ? kFloat_1_Creature : kFloat_0_5_Creature);
-                Model_SetMatrixRecursive(item, 0, drawTransform);
-                ((void(*)(void*, void*, int, float))WPuppet_UpdateBoneWorldMatrices)(item, g_view, 0, kFloat_1_Creature);
-                WPuppet_UpdateBoundsFromBone(item);
-                DrawCreaturePuppet(item, g_view, kFloat_1_Creature);
+                ns0::Matrix_CopyScaledBasis(drawTransform, (char*)this->instanceMatrices + offset,
+                                            index == 0 ? ns0::kFloat_1_Creature : ns0::kFloat_0_5_Creature);
+                ns0::Model_SetMatrixRecursive(item, 0, drawTransform);
+                ((void (*)(void*, void*, int, float))ns0::WPuppet_UpdateBoneWorldMatrices)(item, ns0::g_view, 0,
+                                                                                           ns0::kFloat_1_Creature);
+                ns0::WPuppet_UpdateBoundsFromBone(item);
+                DrawCreaturePuppet(item, ns0::g_view, ns0::kFloat_1_Creature);
             }
         }
         node = node->next;
@@ -881,6 +1110,8 @@ void CDuck_DrawInstances(ObjLists* self) {
 }
 #undef CreatureInstanceIsCulled
 #undef DrawCreaturePuppet
+namespace ns0 {
+extern "C" {
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -898,58 +1129,67 @@ static inline void releaseBAList(char* p, void* zero) {
     }
 }
 // Release CDuck resources and optionally delete the object.
-void* CDuck_Dtor(void* self, int doDelete) {
-    if (self != 0) {
-        char* p = (char*)self;
-        *(void**)p = __vt__5CDuck;
-        AsCDuck(p)->secondaryVtable = __vt__5CDuck + 0xc;
-        void* array = AsCDuck(p)->instanceMatrices;
+} // extern "C"
+} // namespace ns0
+void* CDuck::Dtor(int doDelete) {
+    if (this != 0) {
+        char* p = (char*)this;
+        *(void**)p = ns0::__vt__5CDuck;
+        this->secondaryVtable = ns0::__vt__5CDuck + 0xc;
+        void* array = this->instanceMatrices;
         if (array != 0) {
-            if (array != 0) __dla__FPv((char*)array - 0x10);
-            AsCDuck(p)->instanceMatrices = 0;
+            if (array != 0)
+                ns0::__dla__FPv((char*)array - 0x10);
+            this->instanceMatrices = 0;
         }
-        releaseBAList(p, 0);
+        ns0::releaseBAList(p, 0);
         {
-        ListNode* sentinel = (ListNode*)(p + 0x128);
-        ListNode* first = (ListNode*)AsCDuck(p)->listNext;
-        if (first != sentinel) {
-            ListNode* tail = (ListNode*)sentinel->prev;
-            ListNode* before = (ListNode*)first->prev;
-            before->next = tail->next;
-            tail->next->prev = first->prev;
-            while (first != sentinel) {
-                ListNode* old = first;
-                first = first->next;
-                appFreeUni__FPv(old);
-                --AsCDuck(p)->linkCount;
+            ns0::ListNode* sentinel = (ns0::ListNode*)(p + 0x128);
+            ns0::ListNode* first = (ns0::ListNode*)this->listNext;
+            if (first != sentinel) {
+                ns0::ListNode* tail = (ns0::ListNode*)sentinel->prev;
+                ns0::ListNode* before = (ns0::ListNode*)first->prev;
+                before->next = tail->next;
+                tail->next->prev = first->prev;
+                while (first != sentinel) {
+                    ns0::ListNode* old = first;
+                    first = first->next;
+                    ns0::appFreeUni__FPv(old);
+                    --this->linkCount;
+                }
             }
         }
-        }
-        AsCDuck(p)->puppet = 0;
+        this->puppet = 0;
         if (p + 0x124 != 0) {
-        if (p + 0x124 != 0) {
-        if (p + 0x124 != 0) {
-        if (p + 0x124 != 0) {
-        ListNode* sentinel2 = (ListNode*)(p + 0x128);
-        ListNode* first2 = (ListNode*)AsCDuck(p)->listNext;
-        if (first2 != sentinel2) {
-            ListNode* tail2 = (ListNode*)sentinel2->prev;
-            ListNode* before2 = (ListNode*)first2->prev;
-            before2->next = tail2->next;
-            tail2->next->prev = first2->prev;
-            while (first2 != sentinel2) {
-                ListNode* old = first2;
-                first2 = first2->next;
-                appFreeUni__FPv(old);
-                --*(int*)(p + 0x124);
+            if (p + 0x124 != 0) {
+                if (p + 0x124 != 0) {
+                    if (p + 0x124 != 0) {
+                        ns0::ListNode* sentinel2 = (ns0::ListNode*)(p + 0x128);
+                        ns0::ListNode* first2 = (ns0::ListNode*)this->listNext;
+                        if (first2 != sentinel2) {
+                            ns0::ListNode* tail2 = (ns0::ListNode*)sentinel2->prev;
+                            ns0::ListNode* before2 = (ns0::ListNode*)first2->prev;
+                            before2->next = tail2->next;
+                            tail2->next->prev = first2->prev;
+                            while (first2 != sentinel2) {
+                                ns0::ListNode* old = first2;
+                                first2 = first2->next;
+                                ns0::appFreeUni__FPv(old);
+                                --*(int*)(p + 0x124);
+                            }
+                        }
+                    }
+                }
             }
         }
-        } } } }
-        CCreature_dtor(self, 0);
-        if (doDelete > 0) __dl__FPv(self);
+        ns0::__dt__9CCreatureFv(this, 0);
+        if (doDelete > 0)
+            ns0::__dl__FPv(this);
     }
-    return self;
+    return this;
 }
+namespace ns0 {
+extern "C" {
 #pragma pop
 extern void WPuppet_SetAnimationTimeFromRanges(void*, int, float, int, int);
 extern char s_sceneLighting[];
@@ -958,42 +1198,79 @@ extern const float kFloat_0_5235988_Creature;
 extern const float kFloat_32_Creature;
 
 // Draw the shared sparrow puppet once for each active instance transform.
-void CSparrow_Draw(void* self) {
-    char* p = (char*)self;
-    if (!AsCSparrow(p)->model || !AsCSparrow(p)->drawEnabled) return;
-    for (int off=0, i=0; i < AsCSparrow(p)->instanceCount; off += 0x30, ++i) {
-        WPuppet_SetAnimationTimeFromRanges(AsCSparrow(p)->model, 0, AsCSparrow(p)->animationFrame, 0, 0);
-        if (((int(*)(void*, void*, float))(*(void***)self)[0xa0/4])(self, (*(char**)&AsCSparrow(p)->instanceMatrices) + off + 0x24, kFloat_0_8_805DF2D8)) continue;
-        if (*(float*)((*(char**)&AsCSparrow(p)->instanceMatrices) + off) > kFloat_1_Creature) *(float*)((*(char**)&AsCSparrow(p)->instanceMatrices) + off) = kFloat_1_Creature;
-        if (*(float*)((*(char**)&AsCSparrow(p)->instanceMatrices) + off + 0x10) > kFloat_1_Creature) *(float*)((*(char**)&AsCSparrow(p)->instanceMatrices) + off + 0x10) = kFloat_1_Creature;
-        if (*(float*)((*(char**)&AsCSparrow(p)->instanceMatrices) + off + 0x20) > kFloat_1_Creature) *(float*)((*(char**)&AsCSparrow(p)->instanceMatrices) + off + 0x20) = kFloat_1_Creature;
-        float* v = (float*)((*(char**)&AsCSparrow(p)->instanceMatrices) + off);
-        Model_SetMatrixRecursive(AsCSparrow(p)->model, (int)AsCSparrow(p)->model, v);
-        ((void(*)(void*, void*, int, float))WPuppet_UpdateBoneWorldMatrices)(AsCSparrow(p)->model, g_view, 0, kFloat_1_Creature);
-        WPuppet_UpdateBoundsFromBone(AsCSparrow(p)->model);
-        ((void(*)(void*, const char*, int, int))(*(void***)AsCSparrow(p)->model)[0x14/4])(AsCSparrow(p)->model, s_sceneLighting, 0, 0);
-        ((void(*)(void*, void*, int, int, int, float, int))(*(void***)AsCSparrow(p)->model)[0x18/4])(AsCSparrow(p)->model, g_view, 0, 1, 1, kFloat_1_Creature, 0);
+} // extern "C"
+} // namespace ns0
+// Draw the shared sparrow puppet once for each active instance transform.
+void CSparrow::Draw() {
+    if (!model || !drawEnabled)
+        return;
+    for (int off = 0, i = 0; i < instanceCount; off += 0x30, ++i) {
+        ns0::WPuppet_SetAnimationTimeFromRanges(model, 0, animationFrame, 0, 0);
+        if (((int (*)(void*, void*, float))(*(void***)this)[0xa0 / 4])(this, (char*)instanceMatrices + off + 0x24,
+                                                                       ns0::kFloat_0_8_805DF2D8))
+            continue;
+        if (*(float*)((char*)instanceMatrices + off) > ns0::kFloat_1_Creature)
+            *(float*)((char*)instanceMatrices + off) = ns0::kFloat_1_Creature;
+        if (*(float*)((char*)instanceMatrices + off + 0x10) > ns0::kFloat_1_Creature)
+            *(float*)((char*)instanceMatrices + off + 0x10) = ns0::kFloat_1_Creature;
+        if (*(float*)((char*)instanceMatrices + off + 0x20) > ns0::kFloat_1_Creature)
+            *(float*)((char*)instanceMatrices + off + 0x20) = ns0::kFloat_1_Creature;
+        float* v = (float*)((char*)instanceMatrices + off);
+        ns0::Model_SetMatrixRecursive(model, (int)model, v);
+        ((void (*)(void*, void*, int, float))ns0::WPuppet_UpdateBoneWorldMatrices)(model, ns0::g_view, 0,
+                                                                                   ns0::kFloat_1_Creature);
+        ns0::WPuppet_UpdateBoundsFromBone(model);
+        ((void (*)(void*, const char*, int, int))(*(void***)model)[0x14 / 4])(model, ns0::s_sceneLighting, 0, 0);
+        ((void (*)(void*, void*, int, int, int, float, int))(*(void***)model)[0x18 / 4])(model, ns0::g_view, 0, 1, 1,
+                                                                                         ns0::kFloat_1_Creature, 0);
     }
 }
-
 // Initialize CDuck state and owned resources.
-void* CDuck_Ctor(void* self, void* arg, int count) {
+void* CDuck::Init(const char* arg, int count) {
+    using namespace ns0;
     // Slot padding only: no data getters are called through these declarations.
     // The only dispatch here is +0x98 initialize(arg), which loads derived creature
     // resources after base/list initialization. Other hook semantics are unresolved.
     struct VirtualObject {
-        virtual void f08() DECOMP_LOCAL_VIRTUAL; virtual void f0C() DECOMP_LOCAL_VIRTUAL; virtual void f10() DECOMP_LOCAL_VIRTUAL; virtual void f14() DECOMP_LOCAL_VIRTUAL;
-        virtual void f18() DECOMP_LOCAL_VIRTUAL; virtual void f1C() DECOMP_LOCAL_VIRTUAL; virtual void f20() DECOMP_LOCAL_VIRTUAL; virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL; virtual void f2C() DECOMP_LOCAL_VIRTUAL; virtual void f30() DECOMP_LOCAL_VIRTUAL; virtual void f34() DECOMP_LOCAL_VIRTUAL;
-        virtual void f38() DECOMP_LOCAL_VIRTUAL; virtual void f3C() DECOMP_LOCAL_VIRTUAL; virtual void unusedSlot40() DECOMP_LOCAL_VIRTUAL; virtual void f44() DECOMP_LOCAL_VIRTUAL;
-        virtual void f48() DECOMP_LOCAL_VIRTUAL; virtual void f4C() DECOMP_LOCAL_VIRTUAL; virtual void f50() DECOMP_LOCAL_VIRTUAL; virtual void f54() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot58() DECOMP_LOCAL_VIRTUAL; virtual void f5C() DECOMP_LOCAL_VIRTUAL; virtual void unusedSlot60() DECOMP_LOCAL_VIRTUAL; virtual void f64() DECOMP_LOCAL_VIRTUAL;
-        virtual void f68() DECOMP_LOCAL_VIRTUAL; virtual void f6C() DECOMP_LOCAL_VIRTUAL; virtual void unusedSlot70() DECOMP_LOCAL_VIRTUAL; virtual void unusedSlot74() DECOMP_LOCAL_VIRTUAL;
-        virtual void f78() DECOMP_LOCAL_VIRTUAL; virtual void f7C() DECOMP_LOCAL_VIRTUAL; virtual void f80() DECOMP_LOCAL_VIRTUAL; virtual void unusedSlot84() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot88() DECOMP_LOCAL_VIRTUAL; virtual void f8C() DECOMP_LOCAL_VIRTUAL; virtual void f90() DECOMP_LOCAL_VIRTUAL; virtual void f94() DECOMP_LOCAL_VIRTUAL;
+        virtual void f08() DECOMP_LOCAL_VIRTUAL;
+        virtual void f0C() DECOMP_LOCAL_VIRTUAL;
+        virtual void f10() DECOMP_LOCAL_VIRTUAL;
+        virtual void f14() DECOMP_LOCAL_VIRTUAL;
+        virtual void f18() DECOMP_LOCAL_VIRTUAL;
+        virtual void f1C() DECOMP_LOCAL_VIRTUAL;
+        virtual void f20() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL;
+        virtual void f2C() DECOMP_LOCAL_VIRTUAL;
+        virtual void f30() DECOMP_LOCAL_VIRTUAL;
+        virtual void f34() DECOMP_LOCAL_VIRTUAL;
+        virtual void f38() DECOMP_LOCAL_VIRTUAL;
+        virtual void f3C() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot40() DECOMP_LOCAL_VIRTUAL;
+        virtual void f44() DECOMP_LOCAL_VIRTUAL;
+        virtual void f48() DECOMP_LOCAL_VIRTUAL;
+        virtual void f4C() DECOMP_LOCAL_VIRTUAL;
+        virtual void f50() DECOMP_LOCAL_VIRTUAL;
+        virtual void f54() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot58() DECOMP_LOCAL_VIRTUAL;
+        virtual void f5C() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot60() DECOMP_LOCAL_VIRTUAL;
+        virtual void f64() DECOMP_LOCAL_VIRTUAL;
+        virtual void f68() DECOMP_LOCAL_VIRTUAL;
+        virtual void f6C() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot70() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot74() DECOMP_LOCAL_VIRTUAL;
+        virtual void f78() DECOMP_LOCAL_VIRTUAL;
+        virtual void f7C() DECOMP_LOCAL_VIRTUAL;
+        virtual void f80() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot84() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot88() DECOMP_LOCAL_VIRTUAL;
+        virtual void f8C() DECOMP_LOCAL_VIRTUAL;
+        virtual void f90() DECOMP_LOCAL_VIRTUAL;
+        virtual void f94() DECOMP_LOCAL_VIRTUAL;
         virtual void initialize(void*) DECOMP_LOCAL_VIRTUAL;
     };
-    char* p = (char*)self;
+    char* p = (char*)this;
     *(void* volatile*)p = __vt__9CCreature;
     *(void* volatile*)(p + 4) = __vt__9CCreature + 0xc;
     (*(volatile int*)&AsCCreature(p)->flags) = 0;
@@ -1043,9 +1320,12 @@ void* CDuck_Ctor(void* self, void* arg, int count) {
             --AsDuckInstances(p)->puppetCount;
         }
     }
-    ((VirtualObject*)self)->initialize(arg);
-    return self;
+    ((VirtualObject*)this)->initialize((void*)arg);
+    return this;
 }
+
+namespace ns0 {
+extern "C" {
 
 extern void __mi__FRC7WVectorRC7WVector(void*, const void*, const void*);
 extern float WVectorLen__FRC7WVector(const void*);
@@ -1053,35 +1333,81 @@ extern float Vector_SignedAngleXZ(void*, const void*);
 extern void Matrix_ConcatAffine(void*, const void*, const void*);
 extern void __apl__7WVectorFRC7WVector(void*, const void*);
 
-class V90 { public: 
-virtual void v08(); virtual void v0C(); virtual void v10(); virtual void v14(); virtual void v18(); virtual void v1C(); virtual void v20(); virtual void v24(); virtual void v28(); virtual void v2C(); virtual void v30(); virtual void v34(); virtual void v38(); virtual void v3C(); virtual void v40(); virtual void v44(); virtual void v48(); virtual void v4C(); virtual void v50(); virtual void v54(); virtual void v58(); virtual void v5C(); virtual void v60(); virtual void v64(); virtual void v68(); virtual void v6C(); virtual void v70(); virtual void v74(); virtual void v78(); virtual void v7C(); virtual void v80(); virtual void v84(); virtual void v88(); virtual void v8C(); virtual void v90();
+class V90 {
+public:
+    virtual void v08();
+    virtual void v0C();
+    virtual void v10();
+    virtual void v14();
+    virtual void v18();
+    virtual void v1C();
+    virtual void v20();
+    virtual void v24();
+    virtual void v28();
+    virtual void v2C();
+    virtual void v30();
+    virtual void v34();
+    virtual void v38();
+    virtual void v3C();
+    virtual void v40();
+    virtual void v44();
+    virtual void v48();
+    virtual void v4C();
+    virtual void v50();
+    virtual void v54();
+    virtual void v58();
+    virtual void v5C();
+    virtual void v60();
+    virtual void v64();
+    virtual void v68();
+    virtual void v6C();
+    virtual void v70();
+    virtual void v74();
+    virtual void v78();
+    virtual void v7C();
+    virtual void v80();
+    virtual void v84();
+    virtual void v88();
+    virtual void v8C();
+    virtual void v90();
 };
+} // extern "C"
+} // namespace ns0
+
 // Move each duck toward its predecessor with a clamped turn rate and minimum separation.
-void CDuck_UpdateFlockFormation(UnkObj* self, float deltaTime) {
+void CDuck::UpdateFlockFormation(float deltaTime) {
+    using namespace ns0;
     float maxTurn;
     Elem* follower;
     float turnAngle;
     float clampedTurn;
     float minTurn;
-    ((V90*)self)->v90();
-    if (self->instanceCount != 0) {
-        Matrix_CopyAffine(self->instanceMatrices, self->basisXY);
-        for (int transformOffset = 0x30, instanceIndex = 1; instanceIndex < self->instanceCount; transformOffset += 0x30, ++instanceIndex) {
+    ((V90*)this)->v90();
+    if (instanceCount != 0) {
+        Matrix_CopyAffine(instanceMatrices, ((UnkObj*)this)->basisXY);
+        for (int transformOffset = 0x30, instanceIndex = 1; instanceIndex < instanceCount;
+             transformOffset += 0x30, ++instanceIndex) {
             unsigned char rotatedTransform[0x30];
             unsigned char yawRotation[0x30];
-            Vec3 predecessorOffset; Vec3 predecessorDelta; Vec3 steeringOffset; Vec3 frameDisplacement; Vec3 forwardVelocity;
-            __mi__FRC7WVectorRC7WVector(&predecessorDelta, &self->instanceMatrices[instanceIndex - 1].position, &self->instanceMatrices[instanceIndex].position);
+            Vec3 predecessorOffset;
+            Vec3 predecessorDelta;
+            Vec3 steeringOffset;
+            Vec3 frameDisplacement;
+            Vec3 forwardVelocity;
+            __mi__FRC7WVectorRC7WVector(&predecessorDelta, &((Elem*)instanceMatrices)[instanceIndex - 1].position,
+                                        &((Elem*)instanceMatrices)[instanceIndex].position);
             __as__7WVectorFRC7WVector(&predecessorOffset, &predecessorDelta);
 
             if (!((WVectorLen__FRC7WVector(&predecessorOffset)) < kFloat_3_2_CourseGeometry)) {
-                float positiveTurnRate = self->turnRate;
+                float positiveTurnRate = ((UnkObj*)this)->turnRate;
                 float positiveYawRate = kFloat_0_7_Creature * positiveTurnRate;
                 float positiveYawStep = positiveYawRate * deltaTime;
                 maxTurn = positiveYawStep;
-                follower = &self->instanceMatrices[instanceIndex];
-                __mi__FRC7WVectorRC7WVector(&steeringOffset, &self->instanceMatrices[instanceIndex - 1].position, &follower->position);
+                follower = &((Elem*)instanceMatrices)[instanceIndex];
+                __mi__FRC7WVectorRC7WVector(&steeringOffset, &((Elem*)instanceMatrices)[instanceIndex - 1].position,
+                                            &follower->position);
                 turnAngle = Vector_SignedAngleXZ(&steeringOffset, &follower->forward);
-                float negativeTurnRate = self->turnRate;
+                float negativeTurnRate = ((UnkObj*)this)->turnRate;
                 float negativeYawRate = kFloat_neg0_7_Creature * negativeTurnRate;
                 minTurn = negativeYawRate * deltaTime;
                 if (turnAngle < minTurn) {
@@ -1092,61 +1418,75 @@ void CDuck_UpdateFlockFormation(UnkObj* self, float deltaTime) {
                     clampedTurn = upperClampedYawStep;
                 }
                 Matrix_SetAxisRotation(yawRotation, clampedTurn, kYawAxis);
-                Elem* instanceMatrices = self->instanceMatrices;
                 Matrix_ConcatAffine(rotatedTransform, yawRotation, (char*)instanceMatrices + transformOffset);
-                Matrix_CopyAffine((char*)self->instanceMatrices + transformOffset, rotatedTransform);
-                __ml__FfRC7WVector(&forwardVelocity, (char*)self->instanceMatrices + transformOffset + 0x18, self->movementSpeed);
+                Matrix_CopyAffine((char*)instanceMatrices + transformOffset, rotatedTransform);
+                __ml__FfRC7WVector(&forwardVelocity, (char*)instanceMatrices + transformOffset + 0x18,
+                                   ((UnkObj*)this)->movementSpeed);
                 __ml__FRC7WVectorf(&frameDisplacement, &forwardVelocity, deltaTime);
-                __apl__7WVectorFRC7WVector((char*)self->instanceMatrices + transformOffset + 0x24, &frameDisplacement);
+                __apl__7WVectorFRC7WVector((char*)instanceMatrices + transformOffset + 0x24, &frameDisplacement);
             }
         }
     }
 }
 
 // Place the mole near the ball, turn toward it on non-category-3 ground, and lower its height.
-void CMole_SpawnNearBall(C6Obj* self) { unsigned char rot[0x30];
-    void* mgr = *(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc; // original +0xB90
-    void* item = GolfPlayer_GetEntryByIndex(mgr, AsCGolfDoc(mgr)->currentPlayer);
-    if (((CreaturePlayerGateView*)item)->creatureSpawnEligibility < 1) return;
-    self->animationFrame = kFloat_0_Creature;
+void CMole::SpawnNearBall() {
+    ns0::C6Obj* self = (ns0::C6Obj*)this;
+    unsigned char rot[0x30];
+    void* mgr = *(void**)&((CSharedDoc*)ns0::g_sharedDoc)->golfDoc; // original +0xB90
+    void* item = ns0::GolfPlayer_GetEntryByIndex(mgr, AsCGolfDoc(mgr)->currentPlayer);
+    if (((CreaturePlayerGateView*)item)->creatureSpawnEligibility < 1)
+        return;
+    self->animationFrame = ns0::kFloat_0_Creature;
     self->animationActive = 1;
     self->opacity = kCreatureOpaque;
 
-    Matrix_SetAxisRotation(rot, Random_RangeFloat(-1, kFloat_neg3_1415927_Creature, kFloat_3_1415927_805DF2E4), 1);
-    Matrix_CopyAffine(self->basisXY, rot);
+    ns0::Matrix_SetAxisRotation(
+        rot, ns0::Random_RangeFloat(-1, ns0::kFloat_neg3_1415927_Creature, ns0::kFloat_3_1415927_805DF2E4), 1);
+    ns0::Matrix_CopyAffine(self->basisXY, rot);
 
-    *(WVector*)self->position = GROUND_BV_CREATURE(CQuadTree_GetInstance(),
-        *(WVector*)GolfBall__Fv() + self->ballSpawnOffsetDistance * (*(WVector*)self->forward * kFloat_neg1_CreatureDirection), 0, 0, 1);
-    Vec3 vec = *(Vec3*)self->position;
+    *(WVector*)self->position = GROUND_BV_CREATURE(
+        ns0::CQuadTree_GetInstance(),
+        *(WVector*)ns0::GolfBall__Fv() +
+            self->ballSpawnOffsetDistance * (*(WVector*)self->forward * ns0::kFloat_neg1_CreatureDirection),
+        0, 0, 1);
+    ns0::Vec3 vec = *(ns0::Vec3*)self->position;
 
-    if (3 != (GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &vec))) {
-        *(WVector*)self->forward = *(WVector*)GolfBall__Fv() - kFloat_0_5_Creature * ((*(WVector*)&AsCCreature(self)->movementBoundsMax[0]) + (*(WVector*)&AsCCreature(self)->movementBoundsOrigin[0]));
-        AsCCreature(self)->transform[7] = kFloat_0_Creature;
+    if (3 != (ns0::GetGroundType__9CQuadTreeF7WVector(ns0::CQuadTree_GetInstance(), &vec))) {
+        *(WVector*)self->forward =
+            *(WVector*)ns0::GolfBall__Fv() -
+            ns0::kFloat_0_5_Creature * ((*(WVector*)&AsCCreature(self)->movementBoundsMax[0]) +
+                                        (*(WVector*)&AsCCreature(self)->movementBoundsOrigin[0]));
+        AsCCreature(self)->transform[7] = ns0::kFloat_0_Creature;
         WVector tmp;
-        Normalize__7WVectorFv(self->forward);
-        Vector_CrossProduct(&tmp, ((char*)&AsCCreature(self)->transform[3]), self->forward);
-        __as__7WVectorFRC7WVector(self->basisXY, &tmp);
-        Normalize__7WVectorFv(self->basisXY);
-        *(WVector*)self->position = GROUND_BV_CREATURE(CQuadTree_GetInstance(),
-            *(WVector*)GolfBall__Fv() + self->ballSpawnOffsetDistance * (*(WVector*)self->forward * kFloat_neg1_CreatureDirection), 0, 0, 1);
+        ns0::Normalize__7WVectorFv(self->forward);
+        ns0::Vector_CrossProduct(&tmp, ((char*)&AsCCreature(self)->transform[3]), self->forward);
+        ns0::__as__7WVectorFRC7WVector(self->basisXY, &tmp);
+        ns0::Normalize__7WVectorFv(self->basisXY);
+        *(WVector*)self->position = GROUND_BV_CREATURE(
+            ns0::CQuadTree_GetInstance(),
+            *(WVector*)ns0::GolfBall__Fv() +
+                self->ballSpawnOffsetDistance * (*(WVector*)self->forward * ns0::kFloat_neg1_CreatureDirection),
+            0, 0, 1);
     }
-    AsCCreature(self)->transform[10] -= kFloat_0_7_Creature;
+    AsCCreature(self)->transform[10] -= ns0::kFloat_0_7_Creature;
 }
-} // extern "C"
+namespace ns0 {
+extern "C" {} // extern "C"
 
 } // namespace ns0
 
 // ---- merged from course_creatures_flocks_and_flyers.cpp ----
 namespace ns1 {
-// Translation unit 0x8019CBFC-0x8019E368 (7 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
-void CCreature_dtor(void*, int);
+void __dt__9CCreatureFv(void*, int);
 void __dl__FPv(void*);
 void Vec3_Zero(void*);
-void AnimationEventParser_ProcessFrameRange(void*, void*, float, float, void*, int, int); /* AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7): f2 is the new time (0x802A663C reads it) */
+void AnimationEventParser_ProcessFrameRange(
+    void*, void*, float, float, void*, int,
+    int); /* AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7): f2 is the new time (0x802A663C reads it) */
 int rand();
 int CString_Compare(const char*, const char*);
 void* WPuppet_FindAnimationRangeByName(void*, const char*);
@@ -1220,25 +1560,31 @@ struct Obj8019 {
     int bankPhase;
 };
 
+} // extern "C"
+} // namespace ns1
 // Release CSanta resources and optionally delete the object.
-void* CSanta_Dtor(void* p, int del) {
-    if (p) {
-        CCreature_dtor(p, 0);
+void* CSanta::Dtor(int del) {
+    if (this) {
+        ns1::__dt__9CCreatureFv(this, 0);
         if (del > 0)
-            __dl__FPv(p);
+            ns1::__dl__FPv(this);
     }
-    return p;
+    return this;
 }
-
+namespace ns1 {
+extern "C" {} // extern "C"
+} // namespace ns1
 // Release CFighter resources and optionally delete the object.
-void* CFighter_Dtor(void* p, int del) {
-    if (p) {
-        CCreature_dtor(p, 0);
+void* CFighter::Dtor(int del) {
+    if (this) {
+        ns1::__dt__9CCreatureFv(this, 0);
         if (del > 0)
-            __dl__FPv(p);
+            ns1::__dl__FPv(this);
     }
-    return p;
+    return this;
 }
+namespace ns1 {
+extern "C" {
 
 extern unsigned char __vt__9CCreature[];
 extern unsigned char __vt__6CSanta[];
@@ -1253,13 +1599,16 @@ extern void Sound_PlayByName(void*, const char*, int, int, const char*, int, flo
 extern void SoundManager_SetNamedVolumeScale(void*, const char*, float);
 extern void Sound_StopByAlias(void*, const char*);
 
+} // extern "C"
+} // namespace ns1
 // Initialize CSanta state and owned resources.
-Obj8019* CSanta_Ctor(Obj8019* self, void* arg) {
-    self->vptr[1] = (unsigned int)(__vt__9CCreature + 0x0C);
-    self->vptr[0] = (unsigned int)__vt__9CCreature;
+void* CSanta::Init(const char* arg) {
+    ns1::Obj8019* self = (ns1::Obj8019*)this;
+    self->vptr[1] = (unsigned int)(ns1::__vt__9CCreature + 0x0C);
+    self->vptr[0] = (unsigned int)ns1::__vt__9CCreature;
     self->flags = 0;
-    Vec3_Zero(self->movementBoundsOrigin);
-    Vec3_Zero(self->movementBoundsMax);
+    ns1::Vec3_Zero(self->movementBoundsOrigin);
+    ns1::Vec3_Zero(self->movementBoundsMax);
     self->puppet = 0;
     self->animationFrame = 0.0f;
     self->animationRange = 0;
@@ -1274,31 +1623,35 @@ Obj8019* CSanta_Ctor(Obj8019* self, void* arg) {
     self->pathPoints = 0;
     self->pathPointCount = 0;
     self->pathPointCapacity = 0;
-    self->vptr[0] = (unsigned int)__vt__6CSanta;
-    self->vptr[1] = (unsigned int)(__vt__6CSanta + 0x0C); __typeof__(self->vptr[0]) _p637 = self->vptr[0];
+    self->vptr[0] = (unsigned int)ns1::__vt__6CSanta;
+    self->vptr[1] = (unsigned int)(ns1::__vt__6CSanta + 0x0C);
+    __typeof__(self->vptr[0]) _p637 = self->vptr[0];
     try {
-    ((void (*)(Obj8019*, void*))((unsigned int*)_p637)[0x98 / 4])(self, arg);
-    self->targetCursor = 1;
-    self->movementSpeed = 120.0f;
-    self->maxBankAngle = 0.7853981852531433f;
-    self->turnRate = 2.094395160675049f;
-    self->verticalSpeed = 0.0f;
-    self->bankRate = 1.5707963705062866f;
-    self->bankPhase = 2;
-    return self;
+        ((void (*)(ns1::Obj8019*, void*))((unsigned int*)_p637)[0x98 / 4])(self, (void*)arg);
+        self->targetCursor = 1;
+        self->movementSpeed = 120.0f;
+        self->maxBankAngle = 0.7853981852531433f;
+        self->turnRate = 2.094395160675049f;
+        self->verticalSpeed = 0.0f;
+        self->bankRate = 1.5707963705062866f;
+        self->bankPhase = 2;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        ns1::__dt__9CCreatureFv(self, -1);
         throw;
     }
 }
-
+namespace ns1 {
+extern "C" {} // extern "C"
+} // namespace ns1
 // Initialize CFighter state and owned resources.
-Obj8019* CFighter_Ctor(Obj8019* self, void* arg) {
-    self->vptr[1] = (unsigned int)(__vt__9CCreature + 0x0C);
-    self->vptr[0] = (unsigned int)__vt__9CCreature;
+void* CFighter::Init(const char* arg) {
+    ns1::Obj8019* self = (ns1::Obj8019*)this;
+    self->vptr[1] = (unsigned int)(ns1::__vt__9CCreature + 0x0C);
+    self->vptr[0] = (unsigned int)ns1::__vt__9CCreature;
     self->flags = 0;
-    Vec3_Zero(self->movementBoundsOrigin);
-    Vec3_Zero(self->movementBoundsMax);
+    ns1::Vec3_Zero(self->movementBoundsOrigin);
+    ns1::Vec3_Zero(self->movementBoundsMax);
     self->puppet = 0;
     self->animationFrame = 0.0f;
     self->animationRange = 0;
@@ -1313,83 +1666,134 @@ Obj8019* CFighter_Ctor(Obj8019* self, void* arg) {
     self->pathPoints = 0;
     self->pathPointCount = 0;
     self->pathPointCapacity = 0;
-    self->vptr[0] = (unsigned int)__vt__8CFighter;
-    self->vptr[1] = (unsigned int)(__vt__8CFighter + 0x0C); __typeof__(self->vptr[0]) _p803 = self->vptr[0];
+    self->vptr[0] = (unsigned int)ns1::__vt__8CFighter;
+    self->vptr[1] = (unsigned int)(ns1::__vt__8CFighter + 0x0C);
+    __typeof__(self->vptr[0]) _p803 = self->vptr[0];
     try {
-    ((void (*)(Obj8019*, void*))((unsigned int*)_p803)[0x98 / 4])(self, arg);
-    self->targetCursor = 1;
-    self->movementSpeed = 320.0f;
-    self->maxBankAngle = 0.7853981852531433f;
-    self->turnRate = 2.094395160675049f;
-    self->verticalSpeed = 0.0f;
-    self->bankRate = 1.5707963705062866f;
-    self->bankPhase = 2;
-    return self;
+        ((void (*)(ns1::Obj8019*, void*))((unsigned int*)_p803)[0x98 / 4])(self, (void*)arg);
+        self->targetCursor = 1;
+        self->movementSpeed = 320.0f;
+        self->maxBankAngle = 0.7853981852531433f;
+        self->turnRate = 2.094395160675049f;
+        self->verticalSpeed = 0.0f;
+        self->bankRate = 1.5707963705062866f;
+        self->bankPhase = 2;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        ns1::__dt__9CCreatureFv(self, -1);
         throw;
     }
 }
+namespace ns1 {
+extern "C" {
 
-struct V90b_ { 
-virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7(); virtual void v8(); virtual void v9(); virtual void v10(); virtual void v11(); virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15(); virtual void v16(); virtual void v17(); virtual void v18(); virtual void v19(); virtual void v20(); virtual void v21(); virtual void v22(); virtual void v23(); virtual void v24(); virtual void v25(); virtual void v26(); virtual void v27(); virtual void v28(); virtual void v29(); virtual void v30(); virtual void v31(); virtual void v32(); virtual void v33(); virtual void v34(float);
+struct V90b_ {
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
+    virtual void v26();
+    virtual void v27();
+    virtual void v28();
+    virtual void v29();
+    virtual void v30();
+    virtual void v31();
+    virtual void v32();
+    virtual void v33();
+    virtual void v34(float);
 };
-// Advance Santa animation events, occasionally switch its default clip, then update movement.
-void CSanta_UpdateAnimationAndMovement(Obj8019* self, float dt) {
-    if (!self->puppet) return;
-    // 0x8019CD68: Use the active waypoint path.
-    do {
-        if (self->animationActive) break;
-        return;
-    } while (0);
+} // extern "C"
+} // namespace ns1
 
-    float t = self->animationFrame + dt;
-    self->animationFrame = t;
-    if (t < kFloat_0_Creature) return;
-    AnimationEventParser_ProcessFrameRange((char*)self + 4, self->puppet, t - dt, t, self->animationRange, -1, 0);
+// Advance Santa animation events, occasionally switch its default clip, then update movement.
+void CSanta::UpdateAnimationAndMovement(float dt) {
+    using namespace ns1;
+    if (!((Obj8019*)this)->puppet || !((Obj8019*)this)->animationActive)
+        return;
+
+    float t = ((Obj8019*)this)->animationFrame + dt;
+    ((Obj8019*)this)->animationFrame = t;
+    if (t < kFloat_0_Creature)
+        return;
+    AnimationEventParser_ProcessFrameRange((char*)this + 4, ((Obj8019*)this)->puppet, t - dt, t,
+                                           ((Obj8019*)this)->animationRange, -1, 0);
     // 0x8019CD68: Reuse the current animation or select its replacement before updating.
     do {
-        if (self->animationFrame > ((CreatureAnimationRange*)self->animationRange)->endTime) {
-            self->animationFrame -= ((CreatureAnimationRange*)self->animationRange)->endTime;
+        if (((Obj8019*)this)->animationFrame > ((CreatureAnimationRange*)((Obj8019*)this)->animationRange)->endTime) {
+            ((Obj8019*)this)->animationFrame -= ((CreatureAnimationRange*)((Obj8019*)this)->animationRange)->endTime;
 
-            if ((rand()) % 10 == 0 && !CString_Compare(((CreatureAnimationRange*)self->animationRange)->name, (const char*)npcResourceStrings + kCreatureStrings_defaultAnimation)) {
-                void* node = self->puppet;
+            if ((::rand()) % 10 == 0 &&
+                !CString_Compare(((CreatureAnimationRange*)((Obj8019*)this)->animationRange)->name,
+                                 (const char*)npcResourceStrings + kCreatureStrings_defaultAnimation)) {
+                void* node = ((Obj8019*)this)->puppet;
                 const char* name = (const char*)npcResourceStrings + kCreatureStrings_alternateDefaultAnimation;
                 if (node) {
-                    if (self->animationRange && !CString_Compare(((CreatureAnimationRange*)self->animationRange)->name, name)) break;
-                    void* found = WPuppet_FindAnimationRangeByName(node, name);
-                    if (found) { self->animationRange = found;
-                        float zero = kFloat_0_Creature;
-
-                        float start = *(float*)found;
-                        float end = ((CreatureAnimationRange*)found)->endTime;
-                        self->animationFrame = ((start + zero)) > end ? end : ((zero + start));
-                    } else self->animationFrame = kFloat_0_Creature;
-                }
-            } else {
-                void* node = self->puppet;
-                const char* name = (const char*)npcResourceStrings + kCreatureStrings_defaultAnimation;
-                if (node) {
-                    if (self->animationRange && !CString_Compare(((CreatureAnimationRange*)self->animationRange)->name, name)) break;
+                    if (((Obj8019*)this)->animationRange &&
+                        !CString_Compare(((CreatureAnimationRange*)((Obj8019*)this)->animationRange)->name, name))
+                        break;
                     void* found = WPuppet_FindAnimationRangeByName(node, name);
                     if (found) {
-                        self->animationRange = found;
+                        ((Obj8019*)this)->animationRange = found;
+                        float zero = kFloat_0_Creature;
+
+                        float start = *(float*)found;
+                        float end = ((CreatureAnimationRange*)found)->endTime;
+                        ((Obj8019*)this)->animationFrame = ((start + zero)) > end ? end : ((zero + start));
+                    } else
+                        ((Obj8019*)this)->animationFrame = kFloat_0_Creature;
+                }
+            } else {
+                void* node = ((Obj8019*)this)->puppet;
+                const char* name = (const char*)npcResourceStrings + kCreatureStrings_defaultAnimation;
+                if (node) {
+                    if (((Obj8019*)this)->animationRange &&
+                        !CString_Compare(((CreatureAnimationRange*)((Obj8019*)this)->animationRange)->name, name))
+                        break;
+                    void* found = WPuppet_FindAnimationRangeByName(node, name);
+                    if (found) {
+                        ((Obj8019*)this)->animationRange = found;
 
                         float zero = kFloat_0_Creature;
                         float start = *(float*)found;
                         float end = ((CreatureAnimationRange*)found)->endTime;
-                        self->animationFrame = ((start + zero)) > end ? end : (start + zero);
-                    } else self->animationFrame = kFloat_0_Creature;
+                        ((Obj8019*)this)->animationFrame = ((start + zero)) > end ? end : (start + zero);
+                    } else
+                        ((Obj8019*)this)->animationFrame = kFloat_0_Creature;
                 }
             }
         }
     } while (0);
 
-    ((V90b_*)self)->v34(dt);
+    ((V90b_*)this)->v34(dt);
 }
 
+namespace ns1 {
+extern "C" {
+
 typedef Vec3f Vec3;
-void Matrix_TransformPoint(void*, void*, void*);
+void* Matrix_TransformPoint(void*, void*, void*);
 float WVectorLen__FRC7WVector(void*);
 void dtor_80126448(void*, int);
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
@@ -1404,10 +1808,15 @@ struct Grow8019 {
     // Initialize an empty temporary waypoint buffer tied to the owner capacity.
     Grow8019(unsigned int* a) : data(0), size(0), capacity(0), allocator(a), remaining(0) {}
     // Free the temporary waypoint allocation after transfer or unwind.
-    ~Grow8019() { if (data) { size=0; appFreeUni__FPv(data); } }
+    ~Grow8019() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 struct CopyVec8019 {
-    unsigned int x,y,z;
+    unsigned int x, y, z;
     // Copy the three XYZ storage words without numeric conversion.
     CopyVec8019(const CopyVec8019& v) : x(v.x), y(v.y), z(v.z) {}
 };
@@ -1416,7 +1825,9 @@ inline const unsigned int& max8019(const unsigned int& a, const unsigned int& b)
     return a < b ? b : a;
 }
 // Return magnitude using the original positive-versus-nonpositive branch.
-inline float abs8019(float v) { return v > 0.0f ? v : -v; }
+inline float abs8019(float v) {
+    return v > 0.0f ? v : -v;
+}
 // Clamp a steering value to the supplied lower and upper bounds.
 inline float clamp8019(float v, float low, float high) {
     return v < low ? low : (v > high ? high : v);
@@ -1425,9 +1836,12 @@ struct Guard8019 {
     void* data;
     void* allocator;
     // Guard an allocated character buffer until ownership transfers.
-    Guard8019(void* p, void* a):data(p),allocator(a){}
+    Guard8019(void* p, void* a) : data(p), allocator(a) {}
     // Free the guarded character buffer unless ownership transferred.
-    ~Guard8019() { if (data) __dla__FPv(data); }
+    ~Guard8019() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 struct Error8019 {
     void* vtable;
@@ -1437,20 +1851,25 @@ struct Error8019 {
     Error8019(const char* message) {
         vtable = __vt__Q23std11logic_error;
         char alloc = 0;
-        text = (char*)__nwa__FUl(strlen(message)+1);
+        text = (char*)__nwa__FUl(strlen(message) + 1);
         {
             Guard8019 guard(text, &alloc);
             unsigned int* block = (unsigned int*)__nw__FUl(16);
             if (block) {
-                block[1]=1; block[2]=1; block[0]=(unsigned int)s_sharedCharDeleterVtable; block[3]=(unsigned int)text;
+                block[1] = 1;
+                block[2] = 1;
+                block[0] = (unsigned int)s_sharedCharDeleterVtable;
+                block[3] = (unsigned int)text;
             }
             shared = block;
-            guard.data=0;
+            guard.data = 0;
         }
         strcpy(text, message);
     }
     // Run the base exception destructor without freeing wrapper storage.
-    ~Error8019() { __dt__Q23std9exceptionFv(this, -1); }
+    ~Error8019() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 // Construct and throw the waypoint length error through the game ABI.
 inline void lengthError8019() {
@@ -1472,20 +1891,25 @@ inline unsigned int pathMaxSize8019() {
     return 0x15555555u;
 }
 struct PathPoint8019 {
-    unsigned int x,y,z;
+    unsigned int x, y, z;
     // Copy one XYZ record while preserving the exception boundary.
     PathPoint8019(const PathPoint8019& p) {
         try {
             unsigned int a, b;
-            const volatile PathPoint8019* source=&p;
-            a=source->x; b=source->y;
-            x=a; y=b; z=source->z;
-        } catch (...) { throw; }
+            const volatile PathPoint8019* source = &p;
+            a = source->x;
+            b = source->y;
+            x = a;
+            y = b;
+            z = source->z;
+        } catch (...) {
+            throw;
+        }
     }
 };
 // Copy one path point while retaining the original exception-cleanup boundary.
 inline void pathConstruct8019(const PathPoint8019& source, PathPoint8019* dest) {
-    new(dest) PathPoint8019(source);
+    new (dest) PathPoint8019(source);
 }
 } // extern "C"
 } // namespace ns1
@@ -1495,9 +1919,12 @@ struct CharArrayGuard_u8019B4B0 {
     void* data;
     void* allocator;
     // Guard the exception-message allocation until shared ownership is installed.
-    CharArrayGuard_u8019B4B0(void* p,void* a):data(p),allocator(a) {}
+    CharArrayGuard_u8019B4B0(void* p, void* a) : data(p), allocator(a) {}
     // Free an exception-message array that has not transferred.
-    ~CharArrayGuard_u8019B4B0() { if(data) ns1::__dla__FPv(data); }
+    ~CharArrayGuard_u8019B4B0() {
+        if (data)
+            ns1::__dla__FPv(data);
+    }
 };
 }
 struct exception {
@@ -1505,75 +1932,85 @@ struct exception {
     char* text;
     void* shared;
     // Preserve base-exception allocator initialization for this overload.
-    exception() { ns1::PathAllocator8019 allocator; }
+    exception() {
+        ns1::PathAllocator8019 allocator;
+    }
     // Preserve base-exception allocator initialization for this overload.
-    exception(volatile unsigned char& allocator) { allocator=0; }
+    exception(volatile unsigned char& allocator) {
+        allocator = 0;
+    }
     ~exception();
 };
 struct logic_error : exception {
     // Construct the logic-error message and shared character ownership.
     logic_error(const char* const& message) {
-        vtable=ns1::__vt__Q23std11logic_error;
+        vtable = ns1::__vt__Q23std11logic_error;
         ns1::PathAllocator8019 allocator;
-        unsigned int length=strlen(message)+1;
-        text=(char*)__nwa__FUl((length<<1)-length);
+        unsigned int length = strlen(message) + 1;
+        text = (char*)__nwa__FUl((length << 1) - length);
         {
-            char* storage=text;
-            detail::CharArrayGuard_u8019B4B0 guard(storage,&allocator);
-            unsigned int* block=(unsigned int*)ns1::__nw__FUl(16);
-            if(block) {
-                block[1]=1; block[2]=1;
-                block[0]=(unsigned int)ns1::s_sharedCharDeleterVtable;
-                block[3]=(unsigned int)storage;
+            char* storage = text;
+            detail::CharArrayGuard_u8019B4B0 guard(storage, &allocator);
+            unsigned int* block = (unsigned int*)ns1::__nw__FUl(16);
+            if (block) {
+                block[1] = 1;
+                block[2] = 1;
+                block[0] = (unsigned int)ns1::s_sharedCharDeleterVtable;
+                block[3] = (unsigned int)storage;
             }
-            shared=block;
-            guard.data=0;
+            shared = block;
+            guard.data = 0;
         }
-        strcpy(text,message);
+        strcpy(text, message);
     }
     // Build the owned message while exposing both allocator markers to cleanup.
-    logic_error(const char* const& message, volatile unsigned char& baseAllocator,
-                volatile unsigned char& allocator) : exception(baseAllocator) {
-        vtable=ns1::__vt__Q23std11logic_error;
-        allocator=0;
-        unsigned int length=strlen(message)+1;
-        text=(char*)__nwa__FUl((length<<1)-length);
+    logic_error(const char* const& message, volatile unsigned char& baseAllocator, volatile unsigned char& allocator)
+        : exception(baseAllocator) {
+        vtable = ns1::__vt__Q23std11logic_error;
+        allocator = 0;
+        unsigned int length = strlen(message) + 1;
+        text = (char*)__nwa__FUl((length << 1) - length);
         {
-            char* storage=text;
-            detail::CharArrayGuard_u8019B4B0 guard(storage,(void*)&allocator);
-            unsigned int* block=(unsigned int*)ns1::__nw__FUl(16);
-            if(block) {
-                block[1]=1; block[2]=1;
-                block[0]=(unsigned int)ns1::s_sharedCharDeleterVtable;
-                block[3]=(unsigned int)storage;
+            char* storage = text;
+            detail::CharArrayGuard_u8019B4B0 guard(storage, (void*)&allocator);
+            unsigned int* block = (unsigned int*)ns1::__nw__FUl(16);
+            if (block) {
+                block[1] = 1;
+                block[2] = 1;
+                block[0] = (unsigned int)ns1::s_sharedCharDeleterVtable;
+                block[3] = (unsigned int)storage;
             }
-            shared=block;
-            guard.data=0;
+            shared = block;
+            guard.data = 0;
         }
-        strcpy(text,message);
+        strcpy(text, message);
     }
     ~logic_error();
 };
 struct length_error : logic_error {
     // Construct the owned length-error message and select its exception type.
-    length_error(const char* const& message):logic_error(message) {
-        vtable=ns1::__vt__Q23std12length_error;
+    length_error(const char* const& message) : logic_error(message) {
+        vtable = ns1::__vt__Q23std12length_error;
     }
     // Construct the length-error subtype with explicit allocator cleanup markers.
-    length_error(const char* const& message, volatile unsigned char& baseAllocator,
-                 volatile unsigned char& allocator):logic_error(message,baseAllocator,allocator) {
-        vtable=ns1::__vt__Q23std12length_error;
+    length_error(const char* const& message, volatile unsigned char& baseAllocator, volatile unsigned char& allocator)
+        : logic_error(message, baseAllocator, allocator) {
+        vtable = ns1::__vt__Q23std12length_error;
     }
     ~length_error();
 };
 }
 namespace ns1 {
 extern "C" {
-#define PATH_LENGTH_ERROR_8019() { throw std::length_error((const char*)npcResourceStrings); }
-#define PATH_LOCAL_LENGTH_ERROR_8019() { \
-    PathAllocator8019 baseAllocator(0), textAllocator(0); \
-    throw std::length_error((const char*)npcResourceStrings,baseAllocator.value,textAllocator.value); \
-}
+#define PATH_LENGTH_ERROR_8019()                                  \
+    {                                                             \
+        throw std::length_error((const char*)npcResourceStrings); \
+    }
+#define PATH_LOCAL_LENGTH_ERROR_8019()                                                                      \
+    {                                                                                                       \
+        PathAllocator8019 baseAllocator(0), textAllocator(0);                                               \
+        throw std::length_error((const char*)npcResourceStrings, baseAllocator.value, textAllocator.value); \
+    }
 // Throw the path-vector length error at this helper boundary.
 inline void pathThrowLength8019() {
     PATH_LENGTH_ERROR_8019();
@@ -1584,38 +2021,44 @@ struct PathGrow8019 {
     unsigned int* allocator;
     unsigned int remaining;
     // Initialize a temporary path allocation tied to the owner capacity.
-    PathGrow8019(unsigned int* a) : data(0),size(0),capacity(0),allocator(a),remaining(0) {}
+    PathGrow8019(unsigned int* a) : data(0), size(0), capacity(0), allocator(a), remaining(0) {}
     // Free whichever path allocation remains owned after swap or unwind.
     ~PathGrow8019() {
         if (data) {
             PathAllocator8019 alloc;
-            size-=size;
+            size -= size;
             appFreeUni__FPv(data);
         }
     }
 };
 
-struct StopPath8019 : V90b_ { 
-virtual void v35(int);
+struct StopPath8019 : V90b_ {
+    virtual void v35(int);
 };
 // Reference parameters borrow caller locals to retain CodeWarrior register lifetimes.
 // Integrate the shared three-state flight bank policy in radians and dt time units.
-static inline void IntegrateFlightBank(Obj8019*& self, float& dt, float& turn) {
+// Santa passes its class and the fighter its file-local layout; both share the bank fields.
+template <class Flyer> static inline void IntegrateFlightBank(Flyer* self, float& dt, float& turn) {
     switch (self->bankPhase) {
     case kBankReturnToLevel: { // Ease roll back toward level at bankRate.
-        float rollAngle=self->bankAngle;
-        if ((rollAngle>0?rollAngle:-rollAngle)>self->bankRate*dt) {
+        float rollAngle = self->bankAngle;
+        if ((rollAngle > 0 ? rollAngle : -rollAngle) > self->bankRate * dt) {
             float rollRate = self->bankRate;
-            if (self->bankAngle > 0.0f) rollRate = -rollRate;
-            self->bankAngle += dt*rollRate;
+            if (self->bankAngle > 0.0f)
+                rollRate = -rollRate;
+            self->bankAngle += dt * rollRate;
+        } else {
+            self->bankPhase = kBankLevel;
+            self->bankAngle = 0;
         }
-        else { self->bankPhase=kBankLevel; self->bankAngle=0; }
         break;
     }
     case kBankIntoTurn: { // Bank away from the turn sign up to maxBankAngle.
-        float rollAngle=self->bankAngle;
-        if ((rollAngle>0?rollAngle:-rollAngle)<self->maxBankAngle) self->bankAngle += dt*(turn>0.0f ? -self->bankRate : self->bankRate);
-        else self->bankPhase=kBankReturnToLevel;
+        float rollAngle = self->bankAngle;
+        if ((rollAngle > 0 ? rollAngle : -rollAngle) < self->maxBankAngle)
+            self->bankAngle += dt * (turn > 0.0f ? -self->bankRate : self->bankRate);
+        else
+            self->bankPhase = kBankReturnToLevel;
         break;
     }
     case kBankLevel: // Hold the current level roll; no integration.
@@ -1626,24 +2069,28 @@ static inline void IntegrateFlightBank(Obj8019*& self, float& dt, float& turn) {
 
 // Add a world-space offset with yaw in [-pi,pi] and pitch in [-pi/2,pi/2].
 // This samples angles, not a uniform sphere; radius is ballSpawnOffsetDistance.
-static inline void JitterSantaTarget(Obj8019*& self, float* randomRotation, float* randomPitch, Vec3& offset, Vec3& adjusted) {
-    signed char yawAxis=1;
-    float yawAngle=Random_RangeFloat(-1, -3.14159274f, 3.14159274f);
-    ((void (*)(void*, float, signed char))Matrix_SetAxisRotation)(randomRotation,yawAngle,yawAxis);
-    signed char pitchAxis=0;
-    float pitchAngle=Random_RangeFloat(-1, -1.57079637f, 1.57079637f);
-    ((void (*)(void*, float, signed char))Matrix_SetAxisRotation)(randomPitch,pitchAngle,pitchAxis);
-    __ml__FfRC7WVector(&offset,randomPitch+6,self->ballSpawnOffsetDistance);
-    Matrix_TransformPoint(&adjusted,&offset,randomRotation);
-    __apl__7WVectorFRC7WVector(&self->targetX,&adjusted);
+static inline void JitterSantaTarget(CSanta* self, float* randomRotation, float* randomPitch, Vec3& offset,
+                                     Vec3& adjusted) {
+    signed char yawAxis = 1;
+    float yawAngle = Random_RangeFloat(-1, -3.14159274f, 3.14159274f);
+    ((void (*)(void*, float, signed char))Matrix_SetAxisRotation)(randomRotation, yawAngle, yawAxis);
+    signed char pitchAxis = 0;
+    float pitchAngle = Random_RangeFloat(-1, -1.57079637f, 1.57079637f);
+    ((void (*)(void*, float, signed char))Matrix_SetAxisRotation)(randomPitch, pitchAngle, pitchAxis);
+    __ml__FfRC7WVector(&offset, randomPitch + 6, self->ballSpawnOffsetDistance);
+    Matrix_TransformPoint(&adjusted, &offset, randomRotation);
+    __apl__7WVectorFRC7WVector(self->target, &adjusted);
 }
 
 // Derive world-units/time speeds from the resolved XZ distance and authored leg.
 // The authored horizontal length / 120 is the nominal travel time; Y follows it.
-static inline void SetFlightLegSpeeds(Obj8019*& self, float& horizontalDistance, Vec3& authoredSegment) {
+static inline void SetFlightLegSpeeds(CSanta* self, float& horizontalDistance, Vec3& authoredSegment) {
     self->movementSpeed = 120.0f * horizontalDistance / Magnitude__7WVectorCFv(&authoredSegment);
-    self->verticalSpeed = (self->movementSpeed * (self->targetY - self->positionY)) / horizontalDistance;
+    self->verticalSpeed = (self->movementSpeed * (self->target[1] - self->position[1])) / horizontalDistance;
 }
+
+} // extern "C"
+} // namespace ns1
 
 // Follow or record waypoints, bank into turns, and scale Santa boost sound by camera distance.
 // Both flight updates use the movement-rate time base passed in dt (no conversion).
@@ -1663,7 +2110,7 @@ static inline void SetFlightLegSpeeds(Obj8019*& self, float& horizontalDistance,
 // Replay pathCursor +DC is also a byte. A finite replay must have <=255 records;
 // 256+ lets the increment wrap to zero before exhaustion and repeats the prefix.
 // Recording can allocate more records, but that does not widen replay's cursor.
-// Owned target/path arrays are released by creature teardown (CCreature_dtor);
+// Owned target/path arrays are released by creature teardown (CCreature::~CCreature);
 // movement borrows them and can grow only the recorded vector. No pointer escapes.
 // Every Santa authored XZ segment AND resolved target XZ distance must be nonzero:
 // SetFlightLegSpeeds divides by both. Fighter sets speed=resolved XZ distance and
@@ -1672,34 +2119,36 @@ static inline void SetFlightLegSpeeds(Obj8019*& self, float& horizontalDistance,
 // No epsilon/skip/vertical-only-leg policy exists; author distinct XZ waypoints.
 // Negative/nonfinite dt is unsupported; RNG calls, terrain and audio are side
 // effects. Failure while growing may leave the new target/history already set.
-void CSanta_UpdateFlightMovement(Obj8019* self, float dt) {
-    Vec3 direction, segment, adjusted, offset, next, move, turnForward, step, forward, negForward, distance;
+void CSanta::UpdateFlightMovement(float dt) {
+    using namespace ns1;
+    Vec3 direction, segment, adjusted, offset, next, move, turnForward, step, velocity, negForward, distance;
     float randomPitch[12], randomRotation[12], combined[12], rotation[12];
     // Phase 1: decide arrival in XZ with max(dt,0.1) as the look-ahead interval.
     // Select a new authored target when recording or replay is exhausted.
-    __mi__FRC7WVectorRC7WVector(&direction, &self->targetX, &self->positionX);
+    __mi__FRC7WVectorRC7WVector(&direction, target, position);
     direction.y = 0.0f;
     float arrivalLookahead = dt < 0.1f ? 0.1f : dt;
-    if (Magnitude__7WVectorCFv(&direction) < self->movementSpeed * arrivalLookahead) {
+    if (Magnitude__7WVectorCFv(&direction) < movementSpeed * arrivalLookahead) {
         unsigned int recordedPointCount;
         unsigned char replayPointIndex;
-        recordedPointCount = self->pathPointCount;
-        replayPointIndex = AsCCreature(self)->pathCursor;
-        if (replayPointIndex >= recordedPointCount || AsCCreature(self)->recordPath) {
-            unsigned int count = self->targetPointCount;
-            unsigned int index = self->targetCursor;
+        recordedPointCount = pathPointCount;
+        replayPointIndex = pathCursor;
+        if (replayPointIndex >= recordedPointCount || recordPath) {
+            unsigned int count = targetPointCount;
+            unsigned int index = targetCursor;
             if (index == count - 1) {
-                ((StopPath8019*)self)->v35(0);
+                ((StopPath8019*)this)->v35(0);
                 return;
             }
-            self->targetCursor = ((unsigned char)index + 1) % count;
-            __as__7WVectorFRC7WVector(&self->targetX, (char*)self->targetPoints + self->targetCursor * 12);
-            JitterSantaTarget(self, randomRotation, randomPitch, offset, adjusted);
-            __mi__FRC7WVectorRC7WVector(&next, &self->targetX, &self->positionX);
+            targetCursor = ((unsigned char)index + 1) % count;
+            __as__7WVectorFRC7WVector(target, (char*)targetPoints + targetCursor * 12);
+            JitterSantaTarget(this, randomRotation, randomPitch, offset, adjusted);
+            __mi__FRC7WVectorRC7WVector(&next, target, position);
             __as__7WVectorFRC7WVector(&direction, &next);
             direction.y = 0.0f;
-            __mi__FRC7WVectorRC7WVector(&segment,(char*)self->targetPoints+self->targetCursor*12,(char*)self->targetPoints+(unsigned char)index*12);
-            segment.y=0.0f;
+            __mi__FRC7WVectorRC7WVector(&segment, (char*)targetPoints + targetCursor * 12,
+                                        (char*)targetPoints + (unsigned char)index * 12);
+            segment.y = 0.0f;
             float resolvedHorizontalDistance = Magnitude__7WVectorCFv(&direction);
             // Jitter changes the destination in world XYZ, not the authored path.
             // Let L be the original horizontal segment length and D the distance
@@ -1709,121 +2158,135 @@ void CSanta_UpdateFlightMovement(Obj8019* self, float dt) {
             // the arrival look-ahead still affect actual arrival time/height.
             // Raising jitter can increase speed; it does not independently slow
             // travel. Tune 120 for traversal rate, ballSpawnOffsetDistance for spread.
-            SetFlightLegSpeeds(self, resolvedHorizontalDistance, segment);
-            __ml__FfRC7WVector(&move, &self->forwardX, -1.0f);
+            SetFlightLegSpeeds(this, resolvedHorizontalDistance, segment);
+            __ml__FfRC7WVector(&move, forward, -1.0f);
             float angle = Vector_SignedAngleXZ(&direction, &move);
             angle = angle > 0.0f ? angle : -angle;
-            self->maxBankAngle = angle > 1.57079637f ? 1.57079637f : angle;
-            self->bankPhase = kBankIntoTurn;
+            maxBankAngle = angle > 1.57079637f ? 1.57079637f : angle;
+            bankPhase = kBankIntoTurn;
             // Phase 2: record the resolved target, not the source authored point.
             // Reserve -> construct tail -> reverse-copy prefix -> swap; grow owns
             // new storage until swap, then old storage for automatic cleanup.
-            if (AsCCreature(self)->recordPath) {
-              unsigned int oldSize=self->pathPointCount;
-              unsigned int oldLimit=self->pathPointCapacity;
-              PathAllocator8019 appendAllocator;
-              if (oldSize < oldLimit) {
-                PathPoint8019* dst = (PathPoint8019*)(self->pathPoints + oldSize * 12);
-                pathConstruct8019(*(PathPoint8019*)(&self->targetX), dst);
-                self->pathPointCount++;
-              } else {
-                PathAllocator8019 growAllocator;
-                if (pathMaxSize8019()-oldLimit < 1) pathThrowLength8019();
-                unsigned int neededCount=self->pathPointCount;
-                unsigned int neededLimit=self->pathPointCapacity;
-                unsigned int needed = neededCount + 1 - neededLimit;
-                PathGrow8019 grow(&self->pathPointCapacity);
-                unsigned int capacity = self->pathPointCapacity;
-                if (needed > kMaxWaypointCount-capacity) PATH_LOCAL_LENGTH_ERROR_8019();
-                unsigned int halfIncrement, smallIncrement;
-                if (capacity < kWaypointThreeFifthsGrowthLimit) {
-                    smallIncrement = ((capacity+1)*3)/5;
-                    capacity += max8019(smallIncrement, needed);
-                } else if (capacity < kWaypointHalfGrowthLimit) {
-                    halfIncrement = (capacity+1)/2;
-                    capacity += max8019(halfIncrement, needed);
-                } else capacity=kMaxWaypointCount;
-                PathAllocator8019 allocateAllocator;
-                if (capacity > kMaxWaypointCount) PATH_LOCAL_LENGTH_ERROR_8019();
-                PathPoint8019* allocated=(PathPoint8019*)appMallocDummy__FUl(capacity*12);
-                unsigned int oldCount=self->pathPointCount;
-                grow.data = allocated;
-                grow.capacity=capacity;
-                PathPoint8019* dst=allocated+oldCount+grow.size;
-                grow.remaining=oldCount;
-                PathAllocator8019 insertAllocator;
-                for (unsigned int n=1; n!=0; --n, ++dst) {
-                    new(dst) PathPoint8019(*(PathPoint8019*)(&self->targetX));
-                    ++grow.size;
+            if (recordPath) {
+                unsigned int oldSize = pathPointCount;
+                unsigned int oldLimit = pathPointCapacity;
+                PathAllocator8019 appendAllocator;
+                if (oldSize < oldLimit) {
+                    PathPoint8019* dst = (PathPoint8019*)pathPoints + oldSize;
+                    pathConstruct8019(*(PathPoint8019*)target, dst);
+                    pathPointCount++;
+                } else {
+                    PathAllocator8019 growAllocator;
+                    if (pathMaxSize8019() - oldLimit < 1)
+                        pathThrowLength8019();
+                    unsigned int neededCount = pathPointCount;
+                    unsigned int neededLimit = pathPointCapacity;
+                    unsigned int needed = neededCount + 1 - neededLimit;
+                    PathGrow8019 grow(&pathPointCapacity);
+                    unsigned int capacity = pathPointCapacity;
+                    if (needed > kMaxWaypointCount - capacity)
+                        PATH_LOCAL_LENGTH_ERROR_8019();
+                    unsigned int halfIncrement, smallIncrement;
+                    if (capacity < kWaypointThreeFifthsGrowthLimit) {
+                        smallIncrement = ((capacity + 1) * 3) / 5;
+                        capacity += max8019(smallIncrement, needed);
+                    } else if (capacity < kWaypointHalfGrowthLimit) {
+                        halfIncrement = (capacity + 1) / 2;
+                        capacity += max8019(halfIncrement, needed);
+                    } else
+                        capacity = kMaxWaypointCount;
+                    PathAllocator8019 allocateAllocator;
+                    if (capacity > kMaxWaypointCount)
+                        PATH_LOCAL_LENGTH_ERROR_8019();
+                    PathPoint8019* allocated = (PathPoint8019*)appMallocDummy__FUl(capacity * 12);
+                    unsigned int oldCount = pathPointCount;
+                    grow.data = allocated;
+                    grow.capacity = capacity;
+                    PathPoint8019* dst = allocated + oldCount + grow.size;
+                    grow.remaining = oldCount;
+                    PathAllocator8019 insertAllocator;
+                    for (unsigned int n = 1; n != 0; --n, ++dst) {
+                        new (dst) PathPoint8019(*(PathPoint8019*)target);
+                        ++grow.size;
+                    }
+                    PathAllocator8019 copyAllocator;
+                    PathPoint8019* end = (PathPoint8019*)pathPoints + pathPointCount;
+                    PathPoint8019* begin = (PathPoint8019*)pathPoints;
+                    dst = grow.data + grow.remaining;
+                    while (end > begin) {
+                        --dst;
+                        --end;
+                        new (dst) PathPoint8019(*(PathPoint8019*)end);
+                        --grow.remaining;
+                        ++grow.size;
+                    }
+                    pathPointCount = 0;
+                    PathAllocator8019 clearAllocator;
+                    PathPoint8019* old = (PathPoint8019*)pathPoints;
+                    PathPoint8019* replacement = grow.data;
+                    grow.data = old;
+                    unsigned int oldCapacity = pathPointCapacity;
+                    pathPointCapacity = grow.capacity;
+                    grow.capacity = oldCapacity;
+                    pathPoints = replacement;
+                    pathPointCount = grow.size;
+                    grow.size = 0;
                 }
-                PathAllocator8019 copyAllocator;
-                PathPoint8019* end=(PathPoint8019*)self->pathPoints+self->pathPointCount;
-                PathPoint8019* begin=(PathPoint8019*)self->pathPoints;
-                dst=grow.data+grow.remaining;
-                while (end>begin) {
-                    --dst; --end;
-                    new(dst) PathPoint8019(*(PathPoint8019*)end);
-                    --grow.remaining;
-                    ++grow.size;
-                }
-                self->pathPointCount=0;
-                PathAllocator8019 clearAllocator;
-                PathPoint8019* old=(PathPoint8019*)self->pathPoints;
-                PathPoint8019* replacement=grow.data;
-                grow.data=old;
-                unsigned int oldCapacity=self->pathPointCapacity;
-                self->pathPointCapacity=grow.capacity;
-                grow.capacity=oldCapacity;
-                self->pathPoints=(unsigned int)replacement;
-                self->pathPointCount=grow.size;
-                grow.size=0;
-              }
             }
         } else {
             if (replayPointIndex < recordedPointCount) {
                 // Replay consumes exactly one stored XYZ point and advances the byte cursor.
-                __as__7WVectorFRC7WVector(&self->targetX, (char*)self->pathPoints + replayPointIndex*12);
-                ++AsCCreature(self)->pathCursor;
-            } else self->animationActive = 0;
+                __as__7WVectorFRC7WVector(target, (char*)pathPoints + replayPointIndex * 12);
+                ++pathCursor;
+            } else
+                animationActive = 0;
         }
     }
     // Phase 3: clamp yaw to turnRate*dt, then integrate bank separately.
     // Bank states: IntoTurn -> ReturnToLevel -> Level (no additional roll).
-    __ml__FfRC7WVector(&turnForward, &self->forwardX, -1.0f);
+    __ml__FfRC7WVector(&turnForward, forward, -1.0f);
     float turn = Vector_SignedAngleXZ(&direction, &turnForward);
     if ((turn > 0.0f ? turn : -turn) > 0.0174532924f) {
-        float low=-self->turnRate * dt;
-        float high=self->turnRate * dt;
+        float low = -turnRate * dt;
+        float high = turnRate * dt;
         float clamped = clamp8019(turn, low, high);
         signed char axis = 1;
         ((void (*)(void*, float, signed char))Matrix_SetAxisRotation)(rotation, clamped, axis);
-        Matrix_ConcatAffine(combined, rotation, self->basisXY);
-        Matrix_CopyAffine(self->basisXY, combined);
+        Matrix_ConcatAffine(combined, rotation, basis);
+        Matrix_CopyAffine(basis, combined);
     }
-    IntegrateFlightBank(self, dt, turn);
-    __ml__FfRC7WVector(&negForward, &self->forwardX, -1.0f);
-    __ml__FfRC7WVector(&forward, &negForward, self->movementSpeed);
-    __ml__FRC7WVectorf(&step, &forward, dt);
-    __apl__7WVectorFRC7WVector(&self->positionX, &step);
+    IntegrateFlightBank(this, dt, turn);
+    __ml__FfRC7WVector(&negForward, forward, -1.0f);
+    __ml__FfRC7WVector(&velocity, &negForward, movementSpeed);
+    __ml__FRC7WVectorf(&step, &velocity, dt);
+    __apl__7WVectorFRC7WVector(position, &step);
     // Phase 4: integrate world position; vertical speed reaches target height
     // over the horizontal segment travel time calculated on target selection.
-    self->positionY += self->verticalSpeed*dt;
-    __mi__FRC7WVectorRC7WVector(&distance, ((CreatureAffineWords*)s_cameraTransform)->position, &self->positionX);
+    position[1] += verticalSpeed * dt;
+    __mi__FRC7WVectorRC7WVector(&distance, ((CreatureAffineWords*)s_cameraTransform)->position, position);
     // Santa-only audio: camera distance in world units; linear gain falls to zero at 640.
     float range = WVectorLen__FRC7WVector(&distance);
     if (range < 640.0f) {
-        if (!SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager, (const char*)npcResourceStrings + kCreatureStrings_santaSoundAlias))
-            ((void (*)(void*, const char*, int, int, const char*, int, float, float, float))Sound_PlayByName)(g_soundManager, (const char*)npcResourceStrings + kCreatureStrings_santaBoostSound, 0, 1, (const char*)npcResourceStrings + kCreatureStrings_santaSoundAlias, 0, 0.5f, 200.0f, 1.0f);
-        SoundManager_SetNamedVolumeScale(g_soundManager, (const char*)npcResourceStrings + kCreatureStrings_santaSoundAlias, (640.0f-range)/640.0f);
-    } else Sound_StopByAlias(g_soundManager, (const char*)npcResourceStrings + kCreatureStrings_santaSoundAlias);
+        if (!SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager, (const char*)npcResourceStrings +
+                                                                              kCreatureStrings_santaSoundAlias))
+            ((void (*)(void*, const char*, int, int, const char*, int, float, float, float))Sound_PlayByName)(
+                g_soundManager, (const char*)npcResourceStrings + kCreatureStrings_santaBoostSound, 0, 1,
+                (const char*)npcResourceStrings + kCreatureStrings_santaSoundAlias, 0, 0.5f, 200.0f, 1.0f);
+        SoundManager_SetNamedVolumeScale(g_soundManager,
+                                         (const char*)npcResourceStrings + kCreatureStrings_santaSoundAlias,
+                                         (640.0f - range) / 640.0f);
+    } else
+        Sound_StopByAlias(g_soundManager, (const char*)npcResourceStrings + kCreatureStrings_santaSoundAlias);
 }
 
 // Follow or record waypoints, interpolate height, and bank into horizontal turns.
 // Shares the flight path/recording and banking invariants described above Santa.
 // This variant stops by clearing animationActive and moves along positive forward.
 // Required count/cursor limits, owned-array lifetime and zero-XZ/NaN behavior are
-// the shared flight admission contract immediately above CSanta_UpdateFlightMovement.
-void CFighter_FlyAlongWaypointPath(Obj8019* self, float dt) {
+// the shared flight admission contract immediately above CSanta::UpdateFlightMovement.
+void CFighter::FlyAlongWaypointPath(float dt) {
+    using namespace ns1;
+    Obj8019* self = (Obj8019*)this;
     Vec3 direction, next, move, turnForward, step, forward, distance;
     float combined[12], rotation[12];
     // Phase 1: decide arrival in XZ with max(dt,0.1) as the look-ahead interval.
@@ -1850,7 +2313,8 @@ void CFighter_FlyAlongWaypointPath(Obj8019* self, float dt) {
             direction.y = 0.0f;
             float resolvedHorizontalDistance = Magnitude__7WVectorCFv(&direction);
             self->movementSpeed = resolvedHorizontalDistance;
-            self->verticalSpeed = (self->movementSpeed * (self->targetY - self->positionY)) / resolvedHorizontalDistance;
+            self->verticalSpeed =
+                (self->movementSpeed * (self->targetY - self->positionY)) / resolvedHorizontalDistance;
             __ml__FfRC7WVector(&move, &self->forwardX, -1.0f);
             float angle = Vector_SignedAngleXZ(&direction, &move);
             angle = angle > 0.0f ? angle : -angle;
@@ -1860,72 +2324,78 @@ void CFighter_FlyAlongWaypointPath(Obj8019* self, float dt) {
             // Reserve -> construct tail -> reverse-copy prefix -> swap; grow owns
             // new storage until swap, then old storage for automatic cleanup.
             if (AsCCreature(self)->recordPath) {
-              unsigned int oldSize=*(volatile unsigned int*)&self->pathPointCount;
-              unsigned int oldLimit=*(volatile unsigned int*)&self->pathPointCapacity;
-              PathAllocator8019 appendAllocator;
-              if (oldSize < oldLimit) {
-                PathPoint8019* dst = (PathPoint8019*)(self->pathPoints + oldSize * 12);
-                pathConstruct8019(*(PathPoint8019*)(&self->targetX), dst);
-                self->pathPointCount++;
-              } else {
-                PathAllocator8019 growAllocator;
-                if (pathMaxSize8019()-oldLimit < 1) pathThrowLength8019();
-                unsigned int neededCount=*(volatile unsigned int*)&self->pathPointCount;
-                unsigned int neededLimit=*(volatile unsigned int*)&self->pathPointCapacity;
-                unsigned int needed = neededCount + 1 - neededLimit;
-                PathGrow8019 grow(&self->pathPointCapacity);
-                unsigned int capacity = self->pathPointCapacity;
-                if (needed > kMaxWaypointCount-capacity) PATH_LOCAL_LENGTH_ERROR_8019();
-                unsigned int halfIncrement, smallIncrement;
-                if (capacity < kWaypointThreeFifthsGrowthLimit) {
-                    smallIncrement = ((capacity+1)*3)/5;
-                    capacity += max8019(smallIncrement, needed);
-                } else if (capacity < kWaypointHalfGrowthLimit) {
-                    halfIncrement = (capacity+1)/2;
-                    capacity += max8019(halfIncrement, needed);
-                } else capacity=kMaxWaypointCount;
-                PathAllocator8019 allocateAllocator;
-                if (capacity > kMaxWaypointCount) PATH_LOCAL_LENGTH_ERROR_8019();
-                PathPoint8019* allocated=(PathPoint8019*)appMallocDummy__FUl(capacity*12);
-                unsigned int oldCount=self->pathPointCount;
-                grow.data = allocated;
-                grow.capacity=capacity;
-                PathPoint8019* dst=allocated+oldCount+grow.size;
-                grow.remaining=oldCount;
-                PathAllocator8019 insertAllocator;
-                for (unsigned int n=1; n!=0; --n, ++dst) {
-                    new(dst) PathPoint8019(*(PathPoint8019*)(&self->targetX));
-                    ++grow.size;
+                unsigned int oldSize = *(volatile unsigned int*)&self->pathPointCount;
+                unsigned int oldLimit = *(volatile unsigned int*)&self->pathPointCapacity;
+                PathAllocator8019 appendAllocator;
+                if (oldSize < oldLimit) {
+                    PathPoint8019* dst = (PathPoint8019*)(self->pathPoints + oldSize * 12);
+                    pathConstruct8019(*(PathPoint8019*)(&self->targetX), dst);
+                    self->pathPointCount++;
+                } else {
+                    PathAllocator8019 growAllocator;
+                    if (pathMaxSize8019() - oldLimit < 1)
+                        pathThrowLength8019();
+                    unsigned int neededCount = *(volatile unsigned int*)&self->pathPointCount;
+                    unsigned int neededLimit = *(volatile unsigned int*)&self->pathPointCapacity;
+                    unsigned int needed = neededCount + 1 - neededLimit;
+                    PathGrow8019 grow(&self->pathPointCapacity);
+                    unsigned int capacity = self->pathPointCapacity;
+                    if (needed > kMaxWaypointCount - capacity)
+                        PATH_LOCAL_LENGTH_ERROR_8019();
+                    unsigned int halfIncrement, smallIncrement;
+                    if (capacity < kWaypointThreeFifthsGrowthLimit) {
+                        smallIncrement = ((capacity + 1) * 3) / 5;
+                        capacity += max8019(smallIncrement, needed);
+                    } else if (capacity < kWaypointHalfGrowthLimit) {
+                        halfIncrement = (capacity + 1) / 2;
+                        capacity += max8019(halfIncrement, needed);
+                    } else
+                        capacity = kMaxWaypointCount;
+                    PathAllocator8019 allocateAllocator;
+                    if (capacity > kMaxWaypointCount)
+                        PATH_LOCAL_LENGTH_ERROR_8019();
+                    PathPoint8019* allocated = (PathPoint8019*)appMallocDummy__FUl(capacity * 12);
+                    unsigned int oldCount = self->pathPointCount;
+                    grow.data = allocated;
+                    grow.capacity = capacity;
+                    PathPoint8019* dst = allocated + oldCount + grow.size;
+                    grow.remaining = oldCount;
+                    PathAllocator8019 insertAllocator;
+                    for (unsigned int n = 1; n != 0; --n, ++dst) {
+                        new (dst) PathPoint8019(*(PathPoint8019*)(&self->targetX));
+                        ++grow.size;
+                    }
+                    PathAllocator8019 copyAllocator;
+                    PathPoint8019* end = (PathPoint8019*)self->pathPoints + self->pathPointCount;
+                    PathPoint8019* begin = (PathPoint8019*)self->pathPoints;
+                    dst = grow.data + grow.remaining;
+                    while (end > begin) {
+                        --dst;
+                        --end;
+                        new (dst) PathPoint8019(*(PathPoint8019*)end);
+                        --grow.remaining;
+                        ++grow.size;
+                    }
+                    self->pathPointCount = 0;
+                    PathAllocator8019 clearAllocator;
+                    PathPoint8019* old = (PathPoint8019*)self->pathPoints;
+                    PathPoint8019* replacement = grow.data;
+                    grow.data = old;
+                    unsigned int oldCapacity = self->pathPointCapacity;
+                    self->pathPointCapacity = grow.capacity;
+                    grow.capacity = oldCapacity;
+                    self->pathPoints = (unsigned int)replacement;
+                    self->pathPointCount = grow.size;
+                    grow.size = 0;
                 }
-                PathAllocator8019 copyAllocator;
-                PathPoint8019* end=(PathPoint8019*)self->pathPoints+self->pathPointCount;
-                PathPoint8019* begin=(PathPoint8019*)self->pathPoints;
-                dst=grow.data+grow.remaining;
-                while (end>begin) {
-                    --dst; --end;
-                    new(dst) PathPoint8019(*(PathPoint8019*)end);
-                    --grow.remaining;
-                    ++grow.size;
-                }
-                self->pathPointCount=0;
-                PathAllocator8019 clearAllocator;
-                PathPoint8019* old=(PathPoint8019*)self->pathPoints;
-                PathPoint8019* replacement=grow.data;
-                grow.data=old;
-                unsigned int oldCapacity=self->pathPointCapacity;
-                self->pathPointCapacity=grow.capacity;
-                grow.capacity=oldCapacity;
-                self->pathPoints=(unsigned int)replacement;
-                self->pathPointCount=grow.size;
-                grow.size=0;
-              }
             }
         } else {
             if (replayPointIndex < recordedPointCount) {
                 // Replay consumes exactly one stored XYZ point and advances the byte cursor.
-                __as__7WVectorFRC7WVector(&self->targetX, (char*)self->pathPoints + replayPointIndex*12);
+                __as__7WVectorFRC7WVector(&self->targetX, (char*)self->pathPoints + replayPointIndex * 12);
                 ++AsCCreature(self)->pathCursor;
-            } else self->animationActive = 0;
+            } else
+                self->animationActive = 0;
         }
     }
     // Phase 3: clamp yaw to turnRate*dt, then integrate bank separately.
@@ -1933,8 +2403,8 @@ void CFighter_FlyAlongWaypointPath(Obj8019* self, float dt) {
     __ml__FfRC7WVector(&turnForward, &self->forwardX, -1.0f);
     float turn = Vector_SignedAngleXZ(&direction, &turnForward);
     if ((turn > 0.0f ? turn : -turn) > 0.0174532924f) {
-        float low=-self->turnRate * dt;
-        float high=self->turnRate * dt;
+        float low = -self->turnRate * dt;
+        float high = self->turnRate * dt;
         float clamped = clamp8019(turn, low, high);
         signed char axis = 1;
         ((void (*)(void*, float, signed char))Matrix_SetAxisRotation)(rotation, clamped, axis);
@@ -1947,17 +2417,11 @@ void CFighter_FlyAlongWaypointPath(Obj8019* self, float dt) {
     __apl__7WVectorFRC7WVector(&self->positionX, &step);
     // Phase 4: integrate world position; vertical speed reaches target height
     // over the horizontal segment travel time calculated on target selection.
-    self->positionY += self->verticalSpeed*dt;
+    self->positionY += self->verticalSpeed * dt;
 }
-
-} // extern "C"
-
-} // namespace ns1
 
 // ---- merged from course_creatures_flocks_and_flyers.cpp ----
 namespace ns2 {
-// Translation unit 0x8019E368-0x8019F9E4 (8 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 typedef Vec3f V3;
 
@@ -1991,7 +2455,8 @@ char* strcpy(char*, const char*);
 void* __nwa__FUl(unsigned int);
 void __throw(void*, void*, void*);
 void __dt__Q23std12length_errorFv(void*);
-extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[], npcResourceStrings[];
+extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[],
+    npcResourceStrings[];
 }
 
 struct StrRep {
@@ -2009,7 +2474,10 @@ struct StrBuf {
     // Guard the message buffer until its control block takes ownership.
     StrBuf(char* b) : buf(b), flag(0) {}
     // Free the message buffer if still guarded.
-    ~StrBuf() { if (buf) __dla__FPv(buf); }
+    ~StrBuf() {
+        if (buf)
+            __dla__FPv(buf);
+    }
 };
 
 struct LenErr {
@@ -2026,10 +2494,10 @@ struct LenErr {
 static inline void throwLengthError() {
     LenErr e;
     unsigned n = strlen(npcResourceStrings) + 1;
-    char* buf = (char*)__nwa__FUl(n * 2 - n);
-    StrBuf holder(buf);
-    e.buf = buf;
-    e.rep = new StrRep(buf);
+    char* buffer = (char*)__nwa__FUl(n * 2 - n);
+    StrBuf holder(buffer);
+    e.buf = buffer;
+    e.rep = new StrRep(buffer);
     holder.buf = 0;
     strcpy(e.buf, npcResourceStrings);
     e.vt = __vt__Q23std12length_error;
@@ -2088,11 +2556,13 @@ extern const float kFloat_2_0943952_Creature;
 extern const float kHalfPi_Creature;
 extern const float kFloat_120_Creature;
 void Vec3_Zero(void*);
-void CCreature_dtor(void*, int);
+void __dt__9CCreatureFv(void*, int);
 void __dl__FPv(void*);
 extern char __vt__9ntPenguin[];
 extern char npcResourceStrings[];
-void AnimationEventParser_ProcessFrameRange(void*, int, float, float, int, int, int); /* AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7): f2 is the new time (0x802A663C reads it) */
+void AnimationEventParser_ProcessFrameRange(
+    void*, int, float, float, int, int,
+    int); /* AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7): f2 is the new time (0x802A663C reads it) */
 void* CString_Compare(void*, void*);
 void* WPuppet_FindAnimationRangeByName(void*, void*);
 void __mi__FRC7WVectorRC7WVector(void*, void*, void*);
@@ -2101,7 +2571,7 @@ void __as__7WVectorFRC7WVector(void*, void*);
 void Matrix_SetAxisRotation(void*, float, signed char);
 float Random_RangeFloat(int, float, float);
 void __ml__FfRC7WVector(void*, void*, float);
-void Matrix_TransformPoint(void*, void*, void*);
+void* Matrix_TransformPoint(void*, void*, void*);
 void __apl__7WVectorFRC7WVector(void*, void*);
 float Vector_SignedAngleXZ(void*, void*);
 void __ml__FRC7WVectorf(void*, void*, float);
@@ -2117,178 +2587,313 @@ void __dt__Q23std12length_errorFv(void*);
 void* CQuadTree_GetInstance();
 void GetGroundPoint__9CQuadTreeF7WVectorbPib(void*, void*, void*, int, int, int);
 
+} // extern "C"
+} // namespace ns2
+
 // Initialize CUfo state and owned resources.
-Obj_8019E368* CUfo_Ctor(Obj_8019E368* self, void* arg) {
+void* CUfo::Init(const char* arg) {
+    using namespace ns2;
     struct ConstructorBody : Obj_8019E368 {
-    // Initialize this derived creature and its owned path/effect storage.
-    Obj_8019E368* initialize(void* arg) {
-    Obj_8019E368* self = this;
-    struct VirtualObject {
-        virtual void f00() DECOMP_LOCAL_VIRTUAL; virtual void f01() DECOMP_LOCAL_VIRTUAL; virtual void f02() DECOMP_LOCAL_VIRTUAL; virtual void f03() DECOMP_LOCAL_VIRTUAL;
-        virtual void f04() DECOMP_LOCAL_VIRTUAL; virtual void f05() DECOMP_LOCAL_VIRTUAL; virtual void f06() DECOMP_LOCAL_VIRTUAL; virtual void f07() DECOMP_LOCAL_VIRTUAL;
-        virtual void f08() DECOMP_LOCAL_VIRTUAL; virtual void f09() DECOMP_LOCAL_VIRTUAL; virtual void f10() DECOMP_LOCAL_VIRTUAL; virtual void f11() DECOMP_LOCAL_VIRTUAL;
-        virtual void f12() DECOMP_LOCAL_VIRTUAL; virtual void f13() DECOMP_LOCAL_VIRTUAL; virtual void f14() DECOMP_LOCAL_VIRTUAL; virtual void f15() DECOMP_LOCAL_VIRTUAL;
-        virtual void f16() DECOMP_LOCAL_VIRTUAL; virtual void f17() DECOMP_LOCAL_VIRTUAL; virtual void f18() DECOMP_LOCAL_VIRTUAL; virtual void f19() DECOMP_LOCAL_VIRTUAL;
-        virtual void f20() DECOMP_LOCAL_VIRTUAL; virtual void f21() DECOMP_LOCAL_VIRTUAL; virtual void f22() DECOMP_LOCAL_VIRTUAL; virtual void f23() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL; virtual void f25() DECOMP_LOCAL_VIRTUAL; virtual void f26() DECOMP_LOCAL_VIRTUAL; virtual void f27() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL; virtual void f29() DECOMP_LOCAL_VIRTUAL; virtual void f30() DECOMP_LOCAL_VIRTUAL; virtual void f31() DECOMP_LOCAL_VIRTUAL;
-        virtual void f32() DECOMP_LOCAL_VIRTUAL; virtual void f33() DECOMP_LOCAL_VIRTUAL; virtual void f34() DECOMP_LOCAL_VIRTUAL; virtual void f35() DECOMP_LOCAL_VIRTUAL;
-        virtual void initialize(void*) DECOMP_LOCAL_VIRTUAL;
+        // Initialize this derived creature and its owned path/effect storage.
+        Obj_8019E368* initialize(void* arg) {
+            Obj_8019E368* self = this;
+            struct VirtualObject {
+                virtual void f00() DECOMP_LOCAL_VIRTUAL;
+                virtual void f01() DECOMP_LOCAL_VIRTUAL;
+                virtual void f02() DECOMP_LOCAL_VIRTUAL;
+                virtual void f03() DECOMP_LOCAL_VIRTUAL;
+                virtual void f04() DECOMP_LOCAL_VIRTUAL;
+                virtual void f05() DECOMP_LOCAL_VIRTUAL;
+                virtual void f06() DECOMP_LOCAL_VIRTUAL;
+                virtual void f07() DECOMP_LOCAL_VIRTUAL;
+                virtual void f08() DECOMP_LOCAL_VIRTUAL;
+                virtual void f09() DECOMP_LOCAL_VIRTUAL;
+                virtual void f10() DECOMP_LOCAL_VIRTUAL;
+                virtual void f11() DECOMP_LOCAL_VIRTUAL;
+                virtual void f12() DECOMP_LOCAL_VIRTUAL;
+                virtual void f13() DECOMP_LOCAL_VIRTUAL;
+                virtual void f14() DECOMP_LOCAL_VIRTUAL;
+                virtual void f15() DECOMP_LOCAL_VIRTUAL;
+                virtual void f16() DECOMP_LOCAL_VIRTUAL;
+                virtual void f17() DECOMP_LOCAL_VIRTUAL;
+                virtual void f18() DECOMP_LOCAL_VIRTUAL;
+                virtual void f19() DECOMP_LOCAL_VIRTUAL;
+                virtual void f20() DECOMP_LOCAL_VIRTUAL;
+                virtual void f21() DECOMP_LOCAL_VIRTUAL;
+                virtual void f22() DECOMP_LOCAL_VIRTUAL;
+                virtual void f23() DECOMP_LOCAL_VIRTUAL;
+                virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL;
+                virtual void f25() DECOMP_LOCAL_VIRTUAL;
+                virtual void f26() DECOMP_LOCAL_VIRTUAL;
+                virtual void f27() DECOMP_LOCAL_VIRTUAL;
+                virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL;
+                virtual void f29() DECOMP_LOCAL_VIRTUAL;
+                virtual void f30() DECOMP_LOCAL_VIRTUAL;
+                virtual void f31() DECOMP_LOCAL_VIRTUAL;
+                virtual void f32() DECOMP_LOCAL_VIRTUAL;
+                virtual void f33() DECOMP_LOCAL_VIRTUAL;
+                virtual void f34() DECOMP_LOCAL_VIRTUAL;
+                virtual void f35() DECOMP_LOCAL_VIRTUAL;
+                virtual void initialize(void*) DECOMP_LOCAL_VIRTUAL;
+            };
+            *(void* volatile*)((char*)self) = __vt__9CCreature;
+            *(void* volatile*)((char*)self + 4) = __vt__9CCreature + 0x0C;
+            (*(volatile int*)&AsCCreature(self)->flags) = 0;
+            Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsOrigin[0]));
+            Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsMax[0]));
+            self->puppet = 0;
+            self->animationFrame = kFloat_0_Creature;
+            self->animationRange = 0;
+            self->heading = kFloat_0_Creature;
+            self->history = 0;
+            self->ballSpawnOffsetDistance = kFloat_0_Creature;
+            self->opacityKeyframeCount = 0;
+            self->opacityKeyframePrevious = ((char*)&AsCCreature(self)->opacityKeyframeNext);
+            self->opacityKeyframeNext = ((char*)&AsCCreature(self)->opacityKeyframeNext);
+            self->targetPoints = 0;
+            AsCCreature(self)->targetPointCount = 0;
+            AsCCreature(self)->targetPointCapacity = 0;
+            AsCCreature(self)->pathPoints = 0;
+            AsCCreature(self)->pathPointCount = 0;
+            AsCCreature(self)->pathPointCapacity = 0;
+            self->vtable = __vt__4CUfo;
+            self->secondaryVtable = __vt__4CUfo + 0x0C;
+            try {
+                ((VirtualObject*)self)->initialize(arg);
+                ((FlightTargetCursorView*)self)->targetCursor = 1;
+                self->movementSpeed = kFloat_2_857143_Creature;
+                self->maxBankAngle = kFloat_0_7853982_Creature;
+                self->turnRate = kFloat_2_0943952_Creature;
+                ((FlightWaypointStorage*)self)->verticalSpeed = kFloat_0_Creature;
+                self->bankRate = kHalfPi_Creature;
+                ((FlightWaypointStorage*)self)->bankPhase = 2;
+                return self;
+            } catch (...) {
+                __dt__9CCreatureFv(self, -1);
+                throw;
+            }
+        }
     };
-    *(void* volatile*)((char*)self) = __vt__9CCreature;
-    *(void* volatile*)((char*)self + 4) = __vt__9CCreature + 0x0C;
-    (*(volatile int*)&AsCCreature(self)->flags) = 0;
-    Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsOrigin[0]));
-    Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsMax[0]));
-    self->puppet = 0;
-    self->animationFrame = kFloat_0_Creature;
-    self->animationRange = 0;
-    self->heading = kFloat_0_Creature;
-    self->history = 0;
-    self->ballSpawnOffsetDistance = kFloat_0_Creature;
-    self->opacityKeyframeCount = 0;
-    self->opacityKeyframePrevious = ((char*)&AsCCreature(self)->opacityKeyframeNext);
-    self->opacityKeyframeNext = ((char*)&AsCCreature(self)->opacityKeyframeNext);
-    self->targetPoints = 0;
-    AsCCreature(self)->targetPointCount = 0;
-    AsCCreature(self)->targetPointCapacity = 0;
-    AsCCreature(self)->pathPoints = 0;
-    AsCCreature(self)->pathPointCount = 0;
-    AsCCreature(self)->pathPointCapacity = 0;
-    self->vtable = __vt__4CUfo;
-    self->secondaryVtable = __vt__4CUfo + 0x0C;
-    try {
-    ((VirtualObject*)self)->initialize(arg);
-    ((FlightTargetCursorView*)self)->targetCursor = 1;
-    self->movementSpeed = kFloat_2_857143_Creature;
-    self->maxBankAngle = kFloat_0_7853982_Creature;
-    self->turnRate = kFloat_2_0943952_Creature;
-    ((FlightWaypointStorage*)self)->verticalSpeed = kFloat_0_Creature;
-    self->bankRate = kHalfPi_Creature;
-    ((FlightWaypointStorage*)self)->bankPhase = 2;
-    return self;
-    } catch (...) {
-        CCreature_dtor(self, -1);
-        throw;
-    }
-    }
-    };
-    return ((ConstructorBody*)self)->initialize(arg);
+    return ((ConstructorBody*)this)->initialize((void*)arg);
 }
+
+namespace ns2 {
+extern "C" {
 
 // Initialize ntPenguin state and owned resources.
 Obj_8019E368* ntPenguin_Ctor(Obj_8019E368* self, void* arg) {
     struct ConstructorBody : Obj_8019E368 {
-    // Initialize this derived creature and its owned path/effect storage.
-    Obj_8019E368* initialize(void* arg) {
-    Obj_8019E368* self = this;
-    struct VirtualObject {
-        virtual void f00() DECOMP_LOCAL_VIRTUAL; virtual void f01() DECOMP_LOCAL_VIRTUAL; virtual void f02() DECOMP_LOCAL_VIRTUAL; virtual void f03() DECOMP_LOCAL_VIRTUAL;
-        virtual void f04() DECOMP_LOCAL_VIRTUAL; virtual void f05() DECOMP_LOCAL_VIRTUAL; virtual void f06() DECOMP_LOCAL_VIRTUAL; virtual void f07() DECOMP_LOCAL_VIRTUAL;
-        virtual void f08() DECOMP_LOCAL_VIRTUAL; virtual void f09() DECOMP_LOCAL_VIRTUAL; virtual void f10() DECOMP_LOCAL_VIRTUAL; virtual void f11() DECOMP_LOCAL_VIRTUAL;
-        virtual void f12() DECOMP_LOCAL_VIRTUAL; virtual void f13() DECOMP_LOCAL_VIRTUAL; virtual void f14() DECOMP_LOCAL_VIRTUAL; virtual void f15() DECOMP_LOCAL_VIRTUAL;
-        virtual void f16() DECOMP_LOCAL_VIRTUAL; virtual void f17() DECOMP_LOCAL_VIRTUAL; virtual void f18() DECOMP_LOCAL_VIRTUAL; virtual void f19() DECOMP_LOCAL_VIRTUAL;
-        virtual void f20() DECOMP_LOCAL_VIRTUAL; virtual void f21() DECOMP_LOCAL_VIRTUAL; virtual void f22() DECOMP_LOCAL_VIRTUAL; virtual void f23() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL; virtual void f25() DECOMP_LOCAL_VIRTUAL; virtual void f26() DECOMP_LOCAL_VIRTUAL; virtual void f27() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL; virtual void f29() DECOMP_LOCAL_VIRTUAL; virtual void f30() DECOMP_LOCAL_VIRTUAL; virtual void f31() DECOMP_LOCAL_VIRTUAL;
-        virtual void f32() DECOMP_LOCAL_VIRTUAL; virtual void f33() DECOMP_LOCAL_VIRTUAL; virtual void f34() DECOMP_LOCAL_VIRTUAL; virtual void f35() DECOMP_LOCAL_VIRTUAL;
-        virtual void initialize(void*) DECOMP_LOCAL_VIRTUAL;
-    };
-    *(void* volatile*)((char*)self) = __vt__9CCreature;
-    *(void* volatile*)((char*)self + 4) = __vt__9CCreature + 0x0C;
-    (*(volatile int*)&AsCCreature(self)->flags) = 0;
-    Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsOrigin[0]));
-    Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsMax[0]));
-    self->puppet = 0;
-    self->animationFrame = kFloat_0_Creature;
-    self->animationRange = 0;
-    self->heading = kFloat_0_Creature;
-    self->history = 0;
-    self->ballSpawnOffsetDistance = kFloat_0_Creature;
-    self->opacityKeyframeCount = 0;
-    self->opacityKeyframePrevious = ((char*)&AsCCreature(self)->opacityKeyframeNext);
-    self->opacityKeyframeNext = ((char*)&AsCCreature(self)->opacityKeyframeNext);
-    self->targetPoints = 0;
-    AsCCreature(self)->targetPointCount = 0;
-    AsCCreature(self)->targetPointCapacity = 0;
-    AsCCreature(self)->pathPoints = 0;
-    AsCCreature(self)->pathPointCount = 0;
-    AsCCreature(self)->pathPointCapacity = 0;
-    self->vtable = __vt__9ntPenguin;
-    self->secondaryVtable = __vt__9ntPenguin + 0x0C;
-    try {
-    ((VirtualObject*)self)->initialize(arg);
-    ((FlightTargetCursorView*)self)->targetCursor = 1;
-    self->movementSpeed = kFloat_2_857143_Creature;
-    self->maxBankAngle = kFloat_0_7853982_Creature;
-    self->turnRate = kFloat_2_0943952_Creature;
-    ((FlightWaypointStorage*)self)->verticalSpeed = kFloat_0_Creature;
-    self->bankRate = kHalfPi_Creature;
-    ((FlightWaypointStorage*)self)->bankPhase = 2;
-    return self;
-    } catch (...) {
-        CCreature_dtor(self, -1);
-        throw;
-    }
-    }
+        // Initialize this derived creature and its owned path/effect storage.
+        Obj_8019E368* initialize(void* arg) {
+            Obj_8019E368* self = this;
+            struct VirtualObject {
+                virtual void f00() DECOMP_LOCAL_VIRTUAL;
+                virtual void f01() DECOMP_LOCAL_VIRTUAL;
+                virtual void f02() DECOMP_LOCAL_VIRTUAL;
+                virtual void f03() DECOMP_LOCAL_VIRTUAL;
+                virtual void f04() DECOMP_LOCAL_VIRTUAL;
+                virtual void f05() DECOMP_LOCAL_VIRTUAL;
+                virtual void f06() DECOMP_LOCAL_VIRTUAL;
+                virtual void f07() DECOMP_LOCAL_VIRTUAL;
+                virtual void f08() DECOMP_LOCAL_VIRTUAL;
+                virtual void f09() DECOMP_LOCAL_VIRTUAL;
+                virtual void f10() DECOMP_LOCAL_VIRTUAL;
+                virtual void f11() DECOMP_LOCAL_VIRTUAL;
+                virtual void f12() DECOMP_LOCAL_VIRTUAL;
+                virtual void f13() DECOMP_LOCAL_VIRTUAL;
+                virtual void f14() DECOMP_LOCAL_VIRTUAL;
+                virtual void f15() DECOMP_LOCAL_VIRTUAL;
+                virtual void f16() DECOMP_LOCAL_VIRTUAL;
+                virtual void f17() DECOMP_LOCAL_VIRTUAL;
+                virtual void f18() DECOMP_LOCAL_VIRTUAL;
+                virtual void f19() DECOMP_LOCAL_VIRTUAL;
+                virtual void f20() DECOMP_LOCAL_VIRTUAL;
+                virtual void f21() DECOMP_LOCAL_VIRTUAL;
+                virtual void f22() DECOMP_LOCAL_VIRTUAL;
+                virtual void f23() DECOMP_LOCAL_VIRTUAL;
+                virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL;
+                virtual void f25() DECOMP_LOCAL_VIRTUAL;
+                virtual void f26() DECOMP_LOCAL_VIRTUAL;
+                virtual void f27() DECOMP_LOCAL_VIRTUAL;
+                virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL;
+                virtual void f29() DECOMP_LOCAL_VIRTUAL;
+                virtual void f30() DECOMP_LOCAL_VIRTUAL;
+                virtual void f31() DECOMP_LOCAL_VIRTUAL;
+                virtual void f32() DECOMP_LOCAL_VIRTUAL;
+                virtual void f33() DECOMP_LOCAL_VIRTUAL;
+                virtual void f34() DECOMP_LOCAL_VIRTUAL;
+                virtual void f35() DECOMP_LOCAL_VIRTUAL;
+                virtual void initialize(void*) DECOMP_LOCAL_VIRTUAL;
+            };
+            *(void* volatile*)((char*)self) = __vt__9CCreature;
+            *(void* volatile*)((char*)self + 4) = __vt__9CCreature + 0x0C;
+            (*(volatile int*)&AsCCreature(self)->flags) = 0;
+            Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsOrigin[0]));
+            Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsMax[0]));
+            self->puppet = 0;
+            self->animationFrame = kFloat_0_Creature;
+            self->animationRange = 0;
+            self->heading = kFloat_0_Creature;
+            self->history = 0;
+            self->ballSpawnOffsetDistance = kFloat_0_Creature;
+            self->opacityKeyframeCount = 0;
+            self->opacityKeyframePrevious = ((char*)&AsCCreature(self)->opacityKeyframeNext);
+            self->opacityKeyframeNext = ((char*)&AsCCreature(self)->opacityKeyframeNext);
+            self->targetPoints = 0;
+            AsCCreature(self)->targetPointCount = 0;
+            AsCCreature(self)->targetPointCapacity = 0;
+            AsCCreature(self)->pathPoints = 0;
+            AsCCreature(self)->pathPointCount = 0;
+            AsCCreature(self)->pathPointCapacity = 0;
+            self->vtable = __vt__9ntPenguin;
+            self->secondaryVtable = __vt__9ntPenguin + 0x0C;
+            try {
+                ((VirtualObject*)self)->initialize(arg);
+                ((FlightTargetCursorView*)self)->targetCursor = 1;
+                self->movementSpeed = kFloat_2_857143_Creature;
+                self->maxBankAngle = kFloat_0_7853982_Creature;
+                self->turnRate = kFloat_2_0943952_Creature;
+                ((FlightWaypointStorage*)self)->verticalSpeed = kFloat_0_Creature;
+                self->bankRate = kHalfPi_Creature;
+                ((FlightWaypointStorage*)self)->bankPhase = 2;
+                return self;
+            } catch (...) {
+                __dt__9CCreatureFv(self, -1);
+                throw;
+            }
+        }
     };
     return ((ConstructorBody*)self)->initialize(arg);
 }
 
+} // extern "C"
+} // namespace ns2
+
 // Advance UFO animation events, wrap the clip, and run its movement update.
-void CUfo_UpdateAnimationAndMovement(Obj_8019E368* self, float dt) {
-    if (self->puppet == 0) return;
-    if (AsCCreature(self)->animationActive != 0) {
-    self->animationFrame = self->animationFrame + dt;
-    if (self->animationFrame < 0.0f)
+void CUfo::UpdateAnimationAndMovement(float dt) {
+    using namespace ns2;
+    struct VirtualObject {
+        virtual void f00() DECOMP_LOCAL_VIRTUAL;
+        virtual void f01() DECOMP_LOCAL_VIRTUAL;
+        virtual void f02() DECOMP_LOCAL_VIRTUAL;
+        virtual void f03() DECOMP_LOCAL_VIRTUAL;
+        virtual void f04() DECOMP_LOCAL_VIRTUAL;
+        virtual void f05() DECOMP_LOCAL_VIRTUAL;
+        virtual void f06() DECOMP_LOCAL_VIRTUAL;
+        virtual void f07() DECOMP_LOCAL_VIRTUAL;
+        virtual void f08() DECOMP_LOCAL_VIRTUAL;
+        virtual void f09() DECOMP_LOCAL_VIRTUAL;
+        virtual void f10() DECOMP_LOCAL_VIRTUAL;
+        virtual void f11() DECOMP_LOCAL_VIRTUAL;
+        virtual void f12() DECOMP_LOCAL_VIRTUAL;
+        virtual void f13() DECOMP_LOCAL_VIRTUAL;
+        virtual void f14() DECOMP_LOCAL_VIRTUAL;
+        virtual void f15() DECOMP_LOCAL_VIRTUAL;
+        virtual void f16() DECOMP_LOCAL_VIRTUAL;
+        virtual void f17() DECOMP_LOCAL_VIRTUAL;
+        virtual void f18() DECOMP_LOCAL_VIRTUAL;
+        virtual void f19() DECOMP_LOCAL_VIRTUAL;
+        virtual void f20() DECOMP_LOCAL_VIRTUAL;
+        virtual void f21() DECOMP_LOCAL_VIRTUAL;
+        virtual void f22() DECOMP_LOCAL_VIRTUAL;
+        virtual void f23() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL;
+        virtual void f25() DECOMP_LOCAL_VIRTUAL;
+        virtual void f26() DECOMP_LOCAL_VIRTUAL;
+        virtual void f27() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL;
+        virtual void f29() DECOMP_LOCAL_VIRTUAL;
+        virtual void f30() DECOMP_LOCAL_VIRTUAL;
+        virtual void f31() DECOMP_LOCAL_VIRTUAL;
+        virtual void f32() DECOMP_LOCAL_VIRTUAL;
+        virtual void f33() DECOMP_LOCAL_VIRTUAL;
+        virtual void update(float) DECOMP_LOCAL_VIRTUAL;
+    };
+    if (((Obj_8019E368*)this)->puppet == 0 || AsCCreature(this)->animationActive == 0)
         return;
-    AnimationEventParser_ProcessFrameRange((char*)self + 4, self->puppet, self->animationFrame - dt, self->animationFrame, self->animationRange, -1, 0);
-    void* cur = (void*)self->animationRange;
-    if (self->animationFrame > ((CreatureAnimationRange*)cur)->endTime) {
-        self->animationFrame = self->animationFrame - ((CreatureAnimationRange*)cur)->endTime;
-        int p = self->puppet;
+    ((Obj_8019E368*)this)->animationFrame = ((Obj_8019E368*)this)->animationFrame + dt;
+    if (((Obj_8019E368*)this)->animationFrame < 0.0f)
+        return;
+    AnimationEventParser_ProcessFrameRange(
+        (char*)this + 4, ((Obj_8019E368*)this)->puppet, ((Obj_8019E368*)this)->animationFrame - dt,
+        ((Obj_8019E368*)this)->animationFrame, ((Obj_8019E368*)this)->animationRange, -1, 0);
+    void* cur = (void*)((Obj_8019E368*)this)->animationRange;
+    if (((Obj_8019E368*)this)->animationFrame > ((CreatureAnimationRange*)cur)->endTime) {
+        ((Obj_8019E368*)this)->animationFrame =
+            ((Obj_8019E368*)this)->animationFrame - ((CreatureAnimationRange*)cur)->endTime;
+        int p = ((Obj_8019E368*)this)->puppet;
         char* name = npcResourceStrings + kCreatureStrings_defaultAnimation;
         if (p != 0 && (cur == 0 || CString_Compare((void*)((CreatureAnimationRange*)cur)->name, name))) {
             void* found = WPuppet_FindAnimationRangeByName((void*)p, name);
             if (found != 0) {
-                self->animationRange = (int)found;
+                ((Obj_8019E368*)this)->animationRange = (int)found;
                 float zero = kFloat_0_Creature;
                 float low = *(float*)found;
                 float f = low + zero;
                 float hi = ((CreatureAnimationRange*)found)->endTime;
                 hi = (f > hi) ? hi : f;
-                self->animationFrame = hi;
+                ((Obj_8019E368*)this)->animationFrame = hi;
             } else {
-                self->animationFrame = kFloat_0_Creature;
+                ((Obj_8019E368*)this)->animationFrame = kFloat_0_Creature;
             }
         }
     }
-    ((void (**)(void*, float))self->vtable)[0x90 / 4](self, dt);
-    }
+    ((VirtualObject*)this)->update(dt);
 }
+
+namespace ns2 {
+extern "C" {
+
 // Advance penguin animation events, wrap the clip, and run its movement update.
 void ntPenguin_UpdateAnimationAndMovement(Obj_8019E368* self, float dt) {
     struct VirtualObject {
-        virtual void f00() DECOMP_LOCAL_VIRTUAL; virtual void f01() DECOMP_LOCAL_VIRTUAL; virtual void f02() DECOMP_LOCAL_VIRTUAL; virtual void f03() DECOMP_LOCAL_VIRTUAL;
-        virtual void f04() DECOMP_LOCAL_VIRTUAL; virtual void f05() DECOMP_LOCAL_VIRTUAL; virtual void f06() DECOMP_LOCAL_VIRTUAL; virtual void f07() DECOMP_LOCAL_VIRTUAL;
-        virtual void f08() DECOMP_LOCAL_VIRTUAL; virtual void f09() DECOMP_LOCAL_VIRTUAL; virtual void f10() DECOMP_LOCAL_VIRTUAL; virtual void f11() DECOMP_LOCAL_VIRTUAL;
-        virtual void f12() DECOMP_LOCAL_VIRTUAL; virtual void f13() DECOMP_LOCAL_VIRTUAL; virtual void f14() DECOMP_LOCAL_VIRTUAL; virtual void f15() DECOMP_LOCAL_VIRTUAL;
-        virtual void f16() DECOMP_LOCAL_VIRTUAL; virtual void f17() DECOMP_LOCAL_VIRTUAL; virtual void f18() DECOMP_LOCAL_VIRTUAL; virtual void f19() DECOMP_LOCAL_VIRTUAL;
-        virtual void f20() DECOMP_LOCAL_VIRTUAL; virtual void f21() DECOMP_LOCAL_VIRTUAL; virtual void f22() DECOMP_LOCAL_VIRTUAL; virtual void f23() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL; virtual void f25() DECOMP_LOCAL_VIRTUAL; virtual void f26() DECOMP_LOCAL_VIRTUAL; virtual void f27() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL; virtual void f29() DECOMP_LOCAL_VIRTUAL; virtual void f30() DECOMP_LOCAL_VIRTUAL; virtual void f31() DECOMP_LOCAL_VIRTUAL;
-        virtual void f32() DECOMP_LOCAL_VIRTUAL; virtual void f33() DECOMP_LOCAL_VIRTUAL;
+        virtual void f00() DECOMP_LOCAL_VIRTUAL;
+        virtual void f01() DECOMP_LOCAL_VIRTUAL;
+        virtual void f02() DECOMP_LOCAL_VIRTUAL;
+        virtual void f03() DECOMP_LOCAL_VIRTUAL;
+        virtual void f04() DECOMP_LOCAL_VIRTUAL;
+        virtual void f05() DECOMP_LOCAL_VIRTUAL;
+        virtual void f06() DECOMP_LOCAL_VIRTUAL;
+        virtual void f07() DECOMP_LOCAL_VIRTUAL;
+        virtual void f08() DECOMP_LOCAL_VIRTUAL;
+        virtual void f09() DECOMP_LOCAL_VIRTUAL;
+        virtual void f10() DECOMP_LOCAL_VIRTUAL;
+        virtual void f11() DECOMP_LOCAL_VIRTUAL;
+        virtual void f12() DECOMP_LOCAL_VIRTUAL;
+        virtual void f13() DECOMP_LOCAL_VIRTUAL;
+        virtual void f14() DECOMP_LOCAL_VIRTUAL;
+        virtual void f15() DECOMP_LOCAL_VIRTUAL;
+        virtual void f16() DECOMP_LOCAL_VIRTUAL;
+        virtual void f17() DECOMP_LOCAL_VIRTUAL;
+        virtual void f18() DECOMP_LOCAL_VIRTUAL;
+        virtual void f19() DECOMP_LOCAL_VIRTUAL;
+        virtual void f20() DECOMP_LOCAL_VIRTUAL;
+        virtual void f21() DECOMP_LOCAL_VIRTUAL;
+        virtual void f22() DECOMP_LOCAL_VIRTUAL;
+        virtual void f23() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL;
+        virtual void f25() DECOMP_LOCAL_VIRTUAL;
+        virtual void f26() DECOMP_LOCAL_VIRTUAL;
+        virtual void f27() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL;
+        virtual void f29() DECOMP_LOCAL_VIRTUAL;
+        virtual void f30() DECOMP_LOCAL_VIRTUAL;
+        virtual void f31() DECOMP_LOCAL_VIRTUAL;
+        virtual void f32() DECOMP_LOCAL_VIRTUAL;
+        virtual void f33() DECOMP_LOCAL_VIRTUAL;
         virtual void update(float) DECOMP_LOCAL_VIRTUAL;
     };
     int state = self->puppet;
-    if (state == 0) return;
+    if (state == 0)
+        return;
     if (AsCCreature(self)->animationActive == 0) {
         return;
     }
     self->animationFrame = self->animationFrame + dt;
     if (self->animationFrame < 0.0f)
         return;
-    AnimationEventParser_ProcessFrameRange((char*)self + 4, state, self->animationFrame - dt, self->animationFrame, self->animationRange, -1, 0);
+    AnimationEventParser_ProcessFrameRange((char*)self + 4, state, self->animationFrame - dt, self->animationFrame,
+                                           self->animationRange, -1, 0);
     void* cur = (void*)self->animationRange;
     if (self->animationFrame > ((CreatureAnimationRange*)cur)->endTime) {
         self->animationFrame = self->animationFrame - ((CreatureAnimationRange*)cur)->endTime;
@@ -2329,11 +2934,13 @@ void ntPenguin_MoveAlongPath(ns1::Obj8019* self, float dt) {
         unsigned int num = self->pathPointCount;
         unsigned char waypoint = (AsCCreature(self)->pathCursor);
         if (waypoint >= num || AsCCreature(self)->recordPath) {
-            if (self->targetCursor == (unsigned)self->targetPointCount - 1) self->targetCursor = 0;
+            if (self->targetCursor == (unsigned)self->targetPointCount - 1)
+                self->targetCursor = 0;
             unsigned int index = self->targetCursor;
             self->targetCursor = ((unsigned char)index + 1) % (unsigned)self->targetPointCount;
             __as__7WVectorFRC7WVector(&self->targetX, (char*)self->targetPoints + self->targetCursor * 12);
-            Matrix_SetAxisRotation(angle, Random_RangeFloat(-1, kFloat_neg3_1415927_Creature, kFloat_3_1415927_805DF2E4), 1);
+            Matrix_SetAxisRotation(angle,
+                                   Random_RangeFloat(-1, kFloat_neg3_1415927_Creature, kFloat_3_1415927_805DF2E4), 1);
             Matrix_SetAxisRotation(angle2, Random_RangeFloat(-1, kFloat_neg1_5707964_Creature, kHalfPi_Creature), 0);
             __ml__FfRC7WVector(&prev, angle2 + 0x18, self->ballSpawnOffsetDistance);
             Matrix_TransformPoint(&next, &prev, angle);
@@ -2342,7 +2949,7 @@ void ntPenguin_MoveAlongPath(ns1::Obj8019* self, float dt) {
             __as__7WVectorFRC7WVector(&current, &prev2);
             current.y = kFloat_0_Creature;
             __mi__FRC7WVectorRC7WVector(&target, (char*)self->targetPoints + self->targetCursor * 12,
-                        (char*)self->targetPoints + (unsigned char)index * 12);
+                                        (char*)self->targetPoints + (unsigned char)index * 12);
             target.y = kFloat_0_Creature;
             if (AsCCreature(self)->recordPath) {
                 unsigned oldSize = *(volatile unsigned int*)&self->pathPointCount;
@@ -2354,13 +2961,15 @@ void ntPenguin_MoveAlongPath(ns1::Obj8019* self, float dt) {
                     ++self->pathPointCount;
                 } else {
                     PathAllocator8019 growAllocator;
-                    if (ns1::pathMaxSize8019() - oldLimit < 1) ns1::pathThrowLength8019();
+                    if (ns1::pathMaxSize8019() - oldLimit < 1)
+                        ns1::pathThrowLength8019();
                     unsigned neededCount = self->pathPointCount;
                     unsigned neededLimit = self->pathPointCapacity;
                     PathGrow8019 tmp(&self->pathPointCapacity);
                     unsigned need = neededCount + 1 - neededLimit;
                     unsigned cap = self->pathPointCapacity;
-                    if (need > 0x15555555u - cap) PATH_LOCAL_LENGTH_ERROR_8019();
+                    if (need > 0x15555555u - cap)
+                        PATH_LOCAL_LENGTH_ERROR_8019();
                     unsigned halfIncrement, smallIncrement;
                     if (cap < 0x071C71C7u) {
                         smallIncrement = (cap + 1) * 3 / 5;
@@ -2372,7 +2981,8 @@ void ntPenguin_MoveAlongPath(ns1::Obj8019* self, float dt) {
                         cap = 0x15555555u;
                     }
                     PathAllocator8019 allocateAllocator;
-                    if (cap > 0x15555555u) PATH_LOCAL_LENGTH_ERROR_8019();
+                    if (cap > 0x15555555u)
+                        PATH_LOCAL_LENGTH_ERROR_8019();
                     PathPoint8019* allocated = (PathPoint8019*)appMallocDummy__FUl(cap * 12);
                     unsigned oldCount = self->pathPointCount;
                     tmp.data = allocated;
@@ -2381,7 +2991,7 @@ void ntPenguin_MoveAlongPath(ns1::Obj8019* self, float dt) {
                     tmp.remaining = oldCount;
                     PathAllocator8019 insertAllocator;
                     for (unsigned n = 1; n != 0; --n, ++dst) {
-                        new(dst) PathPoint8019(*(PathPoint8019*)(&self->targetX));
+                        new (dst) PathPoint8019(*(PathPoint8019*)(&self->targetX));
                         ++tmp.size;
                     }
                     PathAllocator8019 copyAllocator;
@@ -2393,7 +3003,7 @@ void ntPenguin_MoveAlongPath(ns1::Obj8019* self, float dt) {
                     while (src > oldBegin) {
                         --dst;
                         --src;
-                        new(dst) PathPoint8019(*src);
+                        new (dst) PathPoint8019(*src);
                         --tmp.remaining;
                         ++tmp.size;
                     }
@@ -2437,7 +3047,8 @@ void ntPenguin_MoveAlongPath(ns1::Obj8019* self, float dt) {
     self->positionY += self->verticalSpeed * dt;
     V3 pos = *(V3*)(&self->positionX);
     V3 res;
-    ((void (*)(void*, void*, void*, bool, int*, bool))GetGroundPoint__9CQuadTreeF7WVectorbPib)(&res, CQuadTree_GetInstance(), &pos, true, 0, false);
+    ((void (*)(void*, void*, void*, bool, int*, bool))GetGroundPoint__9CQuadTreeF7WVectorbPib)(
+        &res, CQuadTree_GetInstance(), &pos, true, 0, false);
     __as__7WVectorFRC7WVector(&self->positionX, &res);
 }
 
@@ -2452,7 +3063,8 @@ static inline void IntegrateUfoBankAngle(ns1::Obj8019*& self, float& dt, float& 
         float mag = speed > 0.0f ? speed : -speed;
         float acc = self->bankRate;
         if (mag > acc * dt) {
-            if (self->bankAngle > 0.0f) acc = -acc;
+            if (self->bankAngle > 0.0f)
+                acc = -acc;
             self->bankAngle = self->bankAngle + dt * acc;
         } else {
             self->bankPhase = kBankLevel;
@@ -2478,8 +3090,15 @@ static inline void IntegrateUfoBankAngle(ns1::Obj8019*& self, float& dt, float& 
 }
 #pragma pop
 
+} // extern "C"
+
+} // namespace ns2
+
 // Select or replay waypoints, steer/bank the UFO, then integrate its world position.
-void CUfo_FlyAlongWaypoints(ns1::Obj8019* self, float dt) {
+void CUfo::FlyAlongWaypoints(float dt) {
+    // The helpers and constants this body uses are declared in ns2.
+    using namespace ns2;
+    ns1::Obj8019* self = (ns1::Obj8019*)this;
     using ns1::PathAllocator8019;
     using ns1::PathPoint8019;
     using ns1::PathGrow8019;
@@ -2504,7 +3123,8 @@ void CUfo_FlyAlongWaypoints(ns1::Obj8019* self, float dt) {
             }
             self->targetCursor = ((unsigned char)index + 1) % count;
             __as__7WVectorFRC7WVector(&self->targetX, (char*)self->targetPoints + self->targetCursor * 12);
-            Matrix_SetAxisRotation(angle, Random_RangeFloat(-1, kFloat_neg3_1415927_Creature, kFloat_3_1415927_805DF2E4), 1);
+            Matrix_SetAxisRotation(angle,
+                                   Random_RangeFloat(-1, kFloat_neg3_1415927_Creature, kFloat_3_1415927_805DF2E4), 1);
             Matrix_SetAxisRotation(angle2, Random_RangeFloat(-1, kFloat_neg1_5707964_Creature, kHalfPi_Creature), 0);
             __ml__FfRC7WVector(&prev, angle2 + 0x18, self->ballSpawnOffsetDistance);
             Matrix_TransformPoint(&next, &prev, angle);
@@ -2513,7 +3133,7 @@ void CUfo_FlyAlongWaypoints(ns1::Obj8019* self, float dt) {
             __as__7WVectorFRC7WVector(&current, &prev2);
             current.y = kFloat_0_Creature;
             __mi__FRC7WVectorRC7WVector(&target, (char*)self->targetPoints + self->targetCursor * 12,
-                        (char*)self->targetPoints + (unsigned char)index * 12);
+                                        (char*)self->targetPoints + (unsigned char)index * 12);
             target.y = kFloat_0_Creature;
             float lenCur = Magnitude__7WVectorCFv(&current);
             self->movementSpeed = kFloat_120_Creature * lenCur / Magnitude__7WVectorCFv(&target);
@@ -2533,13 +3153,15 @@ void CUfo_FlyAlongWaypoints(ns1::Obj8019* self, float dt) {
                     ++self->pathPointCount;
                 } else {
                     PathAllocator8019 growAllocator;
-                    if (ns1::pathMaxSize8019() - oldLimit < 1) ns1::pathThrowLength8019();
+                    if (ns1::pathMaxSize8019() - oldLimit < 1)
+                        ns1::pathThrowLength8019();
                     unsigned neededCount = self->pathPointCount;
                     unsigned neededLimit = self->pathPointCapacity;
                     PathGrow8019 tmp(&self->pathPointCapacity);
                     unsigned need = neededCount + 1 - neededLimit;
                     unsigned cap = self->pathPointCapacity;
-                    if (need > 0x15555555u - cap) PATH_LOCAL_LENGTH_ERROR_8019();
+                    if (need > 0x15555555u - cap)
+                        PATH_LOCAL_LENGTH_ERROR_8019();
                     unsigned halfIncrement, smallIncrement;
                     if (cap < 0x071C71C7u) {
                         smallIncrement = (cap + 1) * 3 / 5;
@@ -2551,7 +3173,8 @@ void CUfo_FlyAlongWaypoints(ns1::Obj8019* self, float dt) {
                         cap = 0x15555555u;
                     }
                     PathAllocator8019 allocateAllocator;
-                    if (cap > 0x15555555u) PATH_LOCAL_LENGTH_ERROR_8019();
+                    if (cap > 0x15555555u)
+                        PATH_LOCAL_LENGTH_ERROR_8019();
                     PathPoint8019* allocated = (PathPoint8019*)appMallocDummy__FUl(cap * 12);
                     unsigned oldCount = self->pathPointCount;
                     tmp.data = allocated;
@@ -2560,7 +3183,7 @@ void CUfo_FlyAlongWaypoints(ns1::Obj8019* self, float dt) {
                     tmp.remaining = oldCount;
                     PathAllocator8019 insertAllocator;
                     for (unsigned n = 1; n != 0; --n, ++dst) {
-                        new(dst) PathPoint8019(*(PathPoint8019*)&self->targetX);
+                        new (dst) PathPoint8019(*(PathPoint8019*)&self->targetX);
                         ++tmp.size;
                     }
                     PathAllocator8019 copyAllocator;
@@ -2572,7 +3195,7 @@ void CUfo_FlyAlongWaypoints(ns1::Obj8019* self, float dt) {
                     while (src > oldBegin) {
                         --dst;
                         --src;
-                        new(dst) PathPoint8019(*src);
+                        new (dst) PathPoint8019(*src);
                         --tmp.remaining;
                         ++tmp.size;
                     }
@@ -2618,19 +3241,23 @@ void CUfo_FlyAlongWaypoints(ns1::Obj8019* self, float dt) {
 }
 
 // Release CUfo resources and optionally delete the object.
-void* CUfo_Dtor(void* ptr, int shouldDelete) {
-    if (ptr) {
-        CCreature_dtor(ptr, 0);
+void* CUfo::Dtor(int shouldDelete) {
+    if (this) {
+        ns1::__dt__9CCreatureFv(this, 0);
         if (shouldDelete > 0)
-            __dl__FPv(ptr);
+            ns1::__dl__FPv(this);
     }
-    return ptr;
+    return this;
 }
+
+namespace ns2 {
+
+extern "C" {
 
 // Release ntPenguin resources and optionally delete the object.
 void* ntPenguin_Dtor(void* ptr, int shouldDelete) {
     if (ptr) {
-        CCreature_dtor(ptr, 0);
+        __dt__9CCreatureFv(ptr, 0);
         if (shouldDelete > 0)
             __dl__FPv(ptr);
     }
@@ -2643,17 +3270,14 @@ void* ntPenguin_Dtor(void* ptr, int shouldDelete) {
 
 // ---- merged from course_creatures_flocks_and_flyers.cpp ----
 namespace ns3 {
-// Translation unit 0x8019F9E4-0x801A10FC (8 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" void __throw(const char*, void*, void*) __attribute__((noreturn));
 typedef Vec3f FramePosition;
 
 extern "C" {
 
-void CCreature_dtor(void*, int);
+void __dt__9CCreatureFv(void*, int);
 void __dl__FPv(void*);
-void* CCreature_LoadPuppetResource(void*, void*, int);
 void* appMallocDummy__FUl(unsigned int);
 void appFreeUni__FPv(void*);
 void Vec3_Zero(void*);
@@ -2686,7 +3310,9 @@ void* Matrix_CopyScaledBasis(void*, void*, float);
 void Model_SetMatrixRecursive(void*, void*, void*);
 void WPuppet_UpdateBoneWorldMatrices(void*, void*, int, float);
 void WPuppet_UpdateBoundsFromBone(void*);
-void AnimationEventParser_ProcessFrameRange(void*, void*, float, float, void*, int, int); /* AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7): f2 is the new time (0x802A663C reads it) */
+void AnimationEventParser_ProcessFrameRange(
+    void*, void*, float, float, void*, int,
+    int); /* AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7): f2 is the new time (0x802A663C reads it) */
 extern int g_drawSceneDebugGeometry;
 extern void* g_view;
 extern void* g_resourceManager;
@@ -2725,9 +3351,14 @@ struct LengthErrorBase {
     char* text;
     void* shared;
     // Initialize the logic-error base and allocator marker.
-    LengthErrorBase() { FrameAllocator allocator; vtable = __vt__Q23std11logic_error; }
+    LengthErrorBase() {
+        FrameAllocator allocator;
+        vtable = __vt__Q23std11logic_error;
+    }
     // Invoke the base exception cleanup without deleting wrapper storage.
-    ~LengthErrorBase() { __dt__Q23std9exceptionFv(this, 0); }
+    ~LengthErrorBase() {
+        __dt__Q23std9exceptionFv(this, 0);
+    }
 };
 struct ErrorSharedData {
     void* vtable;
@@ -2738,7 +3369,10 @@ struct ErrorAllocation {
     char* data;
     FrameAllocator* allocator;
     // Free the exception-message array if ownership has not transferred.
-    ~ErrorAllocation() { if (data) __dla__FPv(data); }
+    ~ErrorAllocation() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 
 // Placement-copy one frame record without changing its storage words.
@@ -2763,8 +3397,10 @@ struct LengthErrorData : LengthErrorBase {
             ErrorSharedData* value;
             value = (ErrorSharedData*)__nw__FUl(16);
             if (value) {
-                value->refs = 1; value->owners = 1;
-                value->vtable = s_sharedCharDeleterVtable; value->text = storage;
+                value->refs = 1;
+                value->owners = 1;
+                value->vtable = s_sharedCharDeleterVtable;
+                value->text = storage;
             }
             shared = value;
             allocation.data = 0;
@@ -2777,8 +3413,11 @@ struct LengthErrorData : LengthErrorBase {
 // Construct one recorded waypoint with the original checked-copy cleanup path.
 inline void constructFrameChecked(FramePosition* dest, const FramePosition& source) {
     if (dest) {
-        try { constructFrame(dest, source); }
-        catch (...) { throw; }
+        try {
+            constructFrame(dest, source);
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -2799,9 +3438,11 @@ struct FrameBuffer {
     }
 };
 
-#define THROW_FRAME_LENGTH() \
-    { LengthErrorData error; \
-      __throw(npcResourceStrings + kCreatureStrings_lengthErrorType, &error, (void*)__dt__Q23std12length_errorFv); }
+#define THROW_FRAME_LENGTH()                                                                                         \
+    {                                                                                                                \
+        LengthErrorData error;                                                                                       \
+        __throw(npcResourceStrings + kCreatureStrings_lengthErrorType, &error, (void*)__dt__Q23std12length_errorFv); \
+    }
 
 struct InitObject {
     void* vtable;
@@ -2842,12 +3483,14 @@ struct InitObject {
 
 struct AnimationObject {
 #define V(n) virtual void slot##n();
-    V(0) V(1) V(2) V(3) V(4) V(5) V(6) V(7) V(8) V(9)
-    V(10) V(11) V(12) V(13) V(14) V(15) V(16) V(17) V(18) V(19)
-    V(20) V(21) V(22) V(23) V(24) V(25) V(26) V(27) V(28) V(29)
-    V(30) V(31) V(32) V(33) 
-    virtual void slot34(float);
-    V(35) V(36) V(37)
+    V(0)
+    V(1)
+    V(2)
+    V(3) V(4) V(5) V(6) V(7) V(8) V(9) V(10) V(11) V(12) V(13) V(14) V(15) V(16) V(17) V(18) V(19) V(20) V(21) V(22)
+        V(23) V(24) V(25) V(26) V(27) V(28) V(29) V(30) V(31) V(32) V(33) virtual void slot34(float);
+    V(35)
+    V(36)
+    V(37)
 #undef V
     virtual int check(void*, float);
     char pad004[4];
@@ -2869,101 +3512,120 @@ struct AnimationObject {
     unsigned char derivedState;
 };
 
-struct KeyFrame { KeyFrame* next; KeyFrame* prev; float value; float time; };
+struct KeyFrame {
+    KeyFrame* next;
+    KeyFrame* prev;
+    float value;
+    float time;
+};
 
 // Advance sailor clips, choose random actions, and update opacity or movement as required.
 void ntPenguin_Sailor_UpdateAnimationAndMovement(AnimationObject* self, float delta) {
-    void* resource = (*(void **)&AsCCreature(self)->puppet);
-    if (!resource || !AsCCreature(self)->animationActive) return;
-        float time = (self->time + delta);
-        self->time = time;
-        if (time < 0.0f) {
-        } else {
-            ((void (*)(void*, void*, float, float, void*, int, int))AnimationEventParser_ProcessFrameRange)((char*)self + 4, resource, time - delta, time, (*(void **)&AsCCreature(self)->animationRange), -1, 0);
-            resource = (*(void **)&AsCCreature(self)->animationRange);
-            float end;
-            float currentTime;
-            currentTime = self->time;
-            end = ((CreatureAnimationRange*)resource)->endTime;
-            if (currentTime > end) {
-                if (self->flags & kCreatureOneShotAnimation) {
-                    AsCCreature(self)->animationActive = 0;
-                    self->time = *(float*)resource;
-                } else {
-                    self->time = currentTime - (end - *(float*)resource);
-                    int tick = rand();
-                    int mod = tick % 10;
-                    switch (mod) {
-                    case 0: {
-                        void* owner = (*(void **)&AsCCreature(self)->puppet);
-                        const char* name = npcResourceStrings + kCreatureStrings_action1;
-                        if (owner && (!(*(void **)&AsCCreature(self)->animationRange) || CString_Compare(*(void**)((char*)(*(void **)&AsCCreature(self)->animationRange) + 0x18), name))) {
-                            void* found = WPuppet_FindAnimationRangeByName(owner, name);
-                            if (found) {
-                                (*(void **)&AsCCreature(self)->animationRange) = found;
-                                float v = *(float*)found + kFloat_0_Creature;
-                                float hi = ((CreatureAnimationRange*)found)->endTime;
-                                hi = v > hi ? hi : v;
-                                self->time = hi;
-                            } else self->time = 0.0f;
-                        }
-                        ((SailorMovementView*)self)->movementEnabled = 0;
-                        break;
-                    }
-                    case 1: {
-                        void* owner = (*(void **)&AsCCreature(self)->puppet);
-                        const char* name = npcResourceStrings + kCreatureStrings_defaultAnimation;
-                        if (owner && (!(*(void **)&AsCCreature(self)->animationRange) || CString_Compare(*(void**)((char*)(*(void **)&AsCCreature(self)->animationRange) + 0x18), name))) {
-                            void* found = WPuppet_FindAnimationRangeByName(owner, name);
-                            if (found) {
-                                (*(void **)&AsCCreature(self)->animationRange) = found;
-                                float v = *(float*)found + kFloat_0_Creature;
-                                float hi = ((CreatureAnimationRange*)found)->endTime;
-                                hi = v > hi ? hi : v;
-                                self->time = hi;
-                            } else self->time = 0.0f;
-                        }
-                        ((SailorMovementView*)self)->movementEnabled = 0;
-                        break;
-                    }
-                    default: {
-                        void* owner = (*(void **)&AsCCreature(self)->puppet);
-                        const char* name = npcResourceStrings + kCreatureStrings_action0;
-                        if (owner && (!(*(void **)&AsCCreature(self)->animationRange) || CString_Compare(*(void**)((char*)(*(void **)&AsCCreature(self)->animationRange) + 0x18), name))) {
-                            void* found = WPuppet_FindAnimationRangeByName(owner, name);
-                            if (found) {
-                                (*(void **)&AsCCreature(self)->animationRange) = found;
-                                float v = *(float*)found + kFloat_0_Creature;
-                                float hi = ((CreatureAnimationRange*)found)->endTime;
-                                hi = v > hi ? hi : v;
-                                self->time = hi;
-                            } else self->time = 0.0f;
-                        }
-                        ((SailorMovementView*)self)->movementEnabled = 1;
-                    }
-                    }
-                }
-            }
+    void* resource = (*(void**)&AsCCreature(self)->puppet);
+    if (!resource || !AsCCreature(self)->animationActive)
+        return;
+    float time = (self->time + delta);
+    self->time = time;
+    if (time < 0.0f) {
+    } else {
+        ((void (*)(void*, void*, float, float, void*, int, int))AnimationEventParser_ProcessFrameRange)(
+            (char*)self + 4, resource, time - delta, time, (*(void**)&AsCCreature(self)->animationRange), -1, 0);
+        resource = (*(void**)&AsCCreature(self)->animationRange);
+        float end;
+        float currentTime;
+        currentTime = self->time;
+        end = ((CreatureAnimationRange*)resource)->endTime;
+        if (currentTime > end) {
             if (self->flags & kCreatureOneShotAnimation) {
-                KeyFrame* sentinel = (KeyFrame*)(((char*)&AsCCreature(self)->opacityKeyframeNext));
-                KeyFrame* node = (*(KeyFrame **)&AsCCreature(self)->opacityKeyframePrevious);
-                while (node != sentinel) {
-                    KeyFrame* previous = node;
-                    node = node->prev;
-                    if (node == sentinel) {
-                        AsCCreature(self)->opacity = (unsigned char)(int)previous->value;
-                        continue;
+                AsCCreature(self)->animationActive = 0;
+                self->time = *(float*)resource;
+            } else {
+                self->time = currentTime - (end - *(float*)resource);
+                int tick = rand();
+                int mod = tick % 10;
+                switch (mod) {
+                case 0: {
+                    void* owner = (*(void**)&AsCCreature(self)->puppet);
+                    const char* name = npcResourceStrings + kCreatureStrings_action1;
+                    if (owner && (!(*(void**)&AsCCreature(self)->animationRange) ||
+                                  CString_Compare(
+                                      *(void**)((char*)(*(void**)&AsCCreature(self)->animationRange) + 0x18), name))) {
+                        void* found = WPuppet_FindAnimationRangeByName(owner, name);
+                        if (found) {
+                            (*(void**)&AsCCreature(self)->animationRange) = found;
+                            float v = *(float*)found + kFloat_0_Creature;
+                            float hi = ((CreatureAnimationRange*)found)->endTime;
+                            hi = v > hi ? hi : v;
+                            self->time = hi;
+                        } else
+                            self->time = 0.0f;
                     }
-                    if (self->time > previous->time) { if (self->time < node->time) {
-                        float t = (self->time - previous->time) / (node->time - previous->time);
-                        AsCCreature(self)->opacity = (unsigned char)(int)((1.0f-t)*previous->value + t*node->value);
-                        break;
-                    } }
+                    ((SailorMovementView*)self)->movementEnabled = 0;
+                    break;
                 }
-            } else if (((SailorMovementView*)self)->movementEnabled) {
-                self->slot34(delta);
+                case 1: {
+                    void* owner = (*(void**)&AsCCreature(self)->puppet);
+                    const char* name = npcResourceStrings + kCreatureStrings_defaultAnimation;
+                    if (owner && (!(*(void**)&AsCCreature(self)->animationRange) ||
+                                  CString_Compare(
+                                      *(void**)((char*)(*(void**)&AsCCreature(self)->animationRange) + 0x18), name))) {
+                        void* found = WPuppet_FindAnimationRangeByName(owner, name);
+                        if (found) {
+                            (*(void**)&AsCCreature(self)->animationRange) = found;
+                            float v = *(float*)found + kFloat_0_Creature;
+                            float hi = ((CreatureAnimationRange*)found)->endTime;
+                            hi = v > hi ? hi : v;
+                            self->time = hi;
+                        } else
+                            self->time = 0.0f;
+                    }
+                    ((SailorMovementView*)self)->movementEnabled = 0;
+                    break;
+                }
+                default: {
+                    void* owner = (*(void**)&AsCCreature(self)->puppet);
+                    const char* name = npcResourceStrings + kCreatureStrings_action0;
+                    if (owner && (!(*(void**)&AsCCreature(self)->animationRange) ||
+                                  CString_Compare(
+                                      *(void**)((char*)(*(void**)&AsCCreature(self)->animationRange) + 0x18), name))) {
+                        void* found = WPuppet_FindAnimationRangeByName(owner, name);
+                        if (found) {
+                            (*(void**)&AsCCreature(self)->animationRange) = found;
+                            float v = *(float*)found + kFloat_0_Creature;
+                            float hi = ((CreatureAnimationRange*)found)->endTime;
+                            hi = v > hi ? hi : v;
+                            self->time = hi;
+                        } else
+                            self->time = 0.0f;
+                    }
+                    ((SailorMovementView*)self)->movementEnabled = 1;
+                }
+                }
             }
         }
+        if (self->flags & kCreatureOneShotAnimation) {
+            KeyFrame* sentinel = (KeyFrame*)(((char*)&AsCCreature(self)->opacityKeyframeNext));
+            KeyFrame* node = (*(KeyFrame**)&AsCCreature(self)->opacityKeyframePrevious);
+            while (node != sentinel) {
+                KeyFrame* previous = node;
+                node = node->prev;
+                if (node == sentinel) {
+                    AsCCreature(self)->opacity = (unsigned char)(int)previous->value;
+                    continue;
+                }
+                if (self->time > previous->time) {
+                    if (self->time < node->time) {
+                        float t = (self->time - previous->time) / (node->time - previous->time);
+                        AsCCreature(self)->opacity =
+                            (unsigned char)(int)((1.0f - t) * previous->value + t * node->value);
+                        break;
+                    }
+                }
+            }
+        } else if (((SailorMovementView*)self)->movementEnabled) {
+            self->slot34(delta);
+        }
+    }
 }
 
 struct SailorResource {
@@ -2977,7 +3639,7 @@ struct SailorResource {
 #pragma opt_common_subs off
 // Cull and draw the sailor puppet with animation, opacity and banked world transform.
 void ntPenguin_Sailor_Draw(AnimationObject* self) {
-    void* resource = (*(void **)&AsCCreature(self)->puppet);
+    void* resource = (*(void**)&AsCCreature(self)->puppet);
     if (!resource || !AsCCreature(self)->animationActive || self->time < kFloat_0_Creature)
         return;
     if (self->flags & kCreatureOneShotAnimation)
@@ -2989,15 +3651,19 @@ void ntPenguin_Sailor_Draw(AnimationObject* self) {
             WVector tmp = kFloat_5_creature * (*(WVector*)&AsCCreature(self)->transform[6]);
             WVector tmp2 = (*(WVector*)&AsCCreature(self)->transform[9]) - tmp;
             WView_DrawLine(g_view, ((char*)&AsCCreature(self)->transform[9]), -256, &tmp2, -256, 0);
-            WView_DrawLine(g_view, ((char*)&AsCCreature(self)->transform[9]), 0xFFFF0000, ((char*)&AsCCreature(self)->targetPosition[0]), 0xFFFF0000, 0);
+            WView_DrawLine(g_view, ((char*)&AsCCreature(self)->transform[9]), 0xFFFF0000,
+                           ((char*)&AsCCreature(self)->targetPosition[0]), 0xFFFF0000, 0);
         }
     }
     WPuppet_SetAnimationTimeFromRanges(self->resource, 0, self->time, 0, 0);
     if (self->check(((char*)&AsCCreature(self)->transform[9]), kFloat_0_8_805DF2D8))
         return;
-    if (self->rightScale > kFloat_1_Creature) self->rightScale = kFloat_1_Creature;
-    if (self->upScale > kFloat_1_Creature) self->upScale = kFloat_1_Creature;
-    if (self->forwardScale > kFloat_1_Creature) self->forwardScale = kFloat_1_Creature;
+    if (self->rightScale > kFloat_1_Creature)
+        self->rightScale = kFloat_1_Creature;
+    if (self->upScale > kFloat_1_Creature)
+        self->upScale = kFloat_1_Creature;
+    if (self->forwardScale > kFloat_1_Creature)
+        self->forwardScale = kFloat_1_Creature;
     float delta = self->bankAngle > kFloat_0_Creature ? self->bankAngle : -self->bankAngle;
     float rotated[12], transformed[12], result[12], plain[12];
     void* matrix;
@@ -3024,12 +3690,13 @@ InitObject* ntPenguin_Sailor_Ctor(InitObject* self, void* arg) {
     void* resource;
     struct VirtualObject {
 #define V(n) virtual void slot##n() DECOMP_LOCAL_VIRTUAL;
-    V(0) V(1) V(2) V(3) V(4) V(5) V(6) V(7) V(8) V(9)
-    V(10) V(11) V(12) V(13) V(14) V(15) V(16) V(17) V(18) V(19)
-    V(20) V(21) V(22) V(23) V(24) V(25) V(26) V(27) V(28) V(29)
-    V(30) V(31) V(32) V(33) V(34) V(35)
+        V(0)
+        V(1)
+        V(2)
+        V(3) V(4) V(5) V(6) V(7) V(8) V(9) V(10) V(11) V(12) V(13) V(14) V(15) V(16) V(17) V(18) V(19) V(20) V(21) V(22)
+            V(23) V(24) V(25) V(26) V(27) V(28) V(29) V(30) V(31) V(32) V(33) V(34) V(35)
 #undef V
-    virtual void initialize(void*) DECOMP_LOCAL_VIRTUAL;
+                virtual void initialize(void*) DECOMP_LOCAL_VIRTUAL;
     };
     *(void* volatile*)self = (void*)__vt__9CCreature;
     *(void* volatile*)((char*)self + 4) = (void*)(__vt__9CCreature + 12);
@@ -3055,30 +3722,30 @@ InitObject* ntPenguin_Sailor_Ctor(InitObject* self, void* arg) {
     self->vtableEnd = (void*)(__vt__16ntPenguin_Sailor + 12);
     self->movementSpeed = kFloat_2_805DF2B0;
     try {
-    ((VirtualObject*)self)->initialize(arg);
-    resource = self->puppet;
-    self->maxBankAngle = kFloat_0_7853982_Creature;
-    self->cellSize = kFloat_48_Creature;
-    name = npcResourceStrings + kCreatureStrings_action0;
-    if (resource) {
-        void* existing = self->animationRange;
-        if (existing == 0 || CString_Compare((void*)((CreatureAnimationRange*)existing)->name, name) != 0) {
-            void* found = WPuppet_FindAnimationRangeByName(resource, name);
-            if (found) {
-                self->animationRange = found;
-                float v0 = *(float*)found + kFloat_0_Creature;
-                float v1 = ((CreatureAnimationRange*)found)->endTime;
-                self->animationFrame = v0 > v1 ? v1 : v0;
-            } else {
-                self->animationFrame = kFloat_0_Creature;
+        ((VirtualObject*)self)->initialize(arg);
+        resource = self->puppet;
+        self->maxBankAngle = kFloat_0_7853982_Creature;
+        self->cellSize = kFloat_48_Creature;
+        name = npcResourceStrings + kCreatureStrings_action0;
+        if (resource) {
+            void* existing = self->animationRange;
+            if (existing == 0 || CString_Compare((void*)((CreatureAnimationRange*)existing)->name, name) != 0) {
+                void* found = WPuppet_FindAnimationRangeByName(resource, name);
+                if (found) {
+                    self->animationRange = found;
+                    float v0 = *(float*)found + kFloat_0_Creature;
+                    float v1 = ((CreatureAnimationRange*)found)->endTime;
+                    self->animationFrame = v0 > v1 ? v1 : v0;
+                } else {
+                    self->animationFrame = kFloat_0_Creature;
+                }
             }
         }
-    }
-    self->modelScale = Random_RangeFloat(-1, kFloat_0_7_Creature, kFloat_1_Creature);
-    self->enabled = 1;
-    return self;
+        self->modelScale = Random_RangeFloat(-1, kFloat_0_7_Creature, kFloat_1_Creature);
+        self->enabled = 1;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        __dt__9CCreatureFv(self, -1);
         throw;
     }
 }
@@ -3086,15 +3753,21 @@ InitObject* ntPenguin_Sailor_Ctor(InitObject* self, void* arg) {
 // Release ntPenguin_Sailor resources and optionally delete the object.
 void* ntPenguin_Sailor_Dtor(void* ptr, int flag) {
     if (ptr != 0) {
-        CCreature_dtor(ptr, 0);
+        __dt__9CCreatureFv(ptr, 0);
         if (flag > 0)
             __dl__FPv(ptr);
     }
     return ptr;
 }
 
-struct ItemNode { ItemNode* next; ItemNode* prev; void* value; };
-struct ItemList { ItemNode* head; };
+struct ItemNode {
+    ItemNode* next;
+    ItemNode* prev;
+    void* value;
+};
+struct ItemList {
+    ItemNode* head;
+};
 struct ObjectList {
     char pad0[0x11c];
     int size;
@@ -3104,10 +3777,15 @@ struct ObjectList {
     void* finalSource;
 };
 
-struct RenderNode { RenderNode* next; RenderNode* prev; void* data; };
+struct RenderNode {
+    RenderNode* next;
+    RenderNode* prev;
+    void* data;
+};
 
 struct UpdateObject {
-    char pad0[0x0c]; float x, y, z;
+    char pad0[0x0c];
+    float x, y, z;
     char pad18[0x34];
     float pos[3];
     char pad58[0x0c];
@@ -3141,7 +3819,8 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
     // Phase 1: within one world unit of target, choose a neighboring grid cell or replay XYZ.
     // Flattening is x + width*(z + depth*y); only five candidates are attempted,
     // so the last candidate may repeat a recent cell. Y-count 1 constrains to ground.
-    __mi__FRC7WVectorRC7WVector(positionMinusTarget, ((char*)&AsCCreature(self)->transform[9]), ((char*)&AsCCreature(self)->targetPosition[0]));
+    __mi__FRC7WVectorRC7WVector(positionMinusTarget, ((char*)&AsCCreature(self)->transform[9]),
+                                ((char*)&AsCCreature(self)->targetPosition[0]));
     float distance = WVectorLen__FRC7WVector(positionMinusTarget);
     if (distance < kFloat_1_Creature) {
         unsigned int idx = AsCCreature(self)->pathCursor;
@@ -3152,8 +3831,8 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
             do {
                 ++tries;
                 int* coordinate = neighborStep;
-                int i=0;
-                while (i<kGridAxisCount) {
+                int i = 0;
+                while (i < kGridAxisCount) {
                     *coordinate = rand() % kNeighborStepChoices - 1;
                     ++coordinate;
                     ++i;
@@ -3161,7 +3840,7 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
                 int* order = ((CreatureGridPathView*)self)->recentCells;
                 int depth = self->depth;
                 int width = self->width;
-                int maxX = width-1;
+                int maxX = width - 1;
                 int stride = width * depth;
                 int index = order[0];
                 int cy = index / stride;
@@ -3170,18 +3849,21 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
                 x = cx + neighborStep[0];
                 x = x < 0 ? 0 : x > maxX ? maxX : x;
                 y = cy + neighborStep[1];
-                int maxY = self->height-1;
+                int maxY = self->height - 1;
                 y = y < 0 ? 0 : y > maxY ? maxY : y;
-                int maxZ = depth-1;
+                int maxZ = depth - 1;
                 z = cz + neighborStep[2];
                 z = z < 0 ? 0 : z > maxZ ? maxZ : z;
                 historyCount = ((CreatureGridPathView*)self)->recentCellCount;
                 found = 0;
-                i=0;
+                i = 0;
                 int offset = 0;
                 target = width * (z + y * depth) + x;
-                while (i<historyCount) {
-                    if (target == *(int*)((char*)order+offset)) { found=1; break; }
+                while (i < historyCount) {
+                    if (target == *(int*)((char*)order + offset)) {
+                        found = 1;
+                        break;
+                    }
                     offset += 4;
                     ++i;
                 }
@@ -3191,24 +3873,29 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
             // guards the eight-store batch against signed count/loop overflow;
             // failed preflight falls through to the scalar backward loop. Volatile
             // count reloads and each store are preserved (not a circular buffer).
-            int i=historyCount-1;
+            int i = historyCount - 1;
             if (i >= 1) {
                 if (i > kHistoryShiftBatchWords) {
                     int enabled = 0, safe = 0, positive = 0;
                     int count = *(volatile int*)&((CreatureGridPathView*)self)->recentCellCount - 1;
-                    if (count >= 1 && count >= (int)0x80000001) positive = 1;
+                    if (count >= 1 && count >= (int)0x80000001)
+                        positive = 1;
                     if (positive) {
                         int count = *(volatile int*)&((CreatureGridPathView*)self)->recentCellCount;
                         int sameSign = 1;
                         int sign = (count - 1) & 0x80000000;
-                        if ((unsigned int)(sign + 0x80000000) == 0 && sign != (int)((count-2)&0x80000000)) sameSign = 0;
-                        if (sameSign) safe = 1;
+                        if ((unsigned int)(sign + 0x80000000) == 0 && sign != (int)((count - 2) & 0x80000000))
+                            sameSign = 0;
+                        if (sameSign)
+                            safe = 1;
                     }
                     if (safe) {
                         int count = *(volatile int*)&((CreatureGridPathView*)self)->recentCellCount;
                         int noOverflow = 1;
-                        if (!((count-2)&0x80000000) && ((count-1)&0x80000000)) noOverflow = 0;
-                        if (noOverflow) enabled = 1;
+                        if (!((count - 2) & 0x80000000) && ((count - 1) & 0x80000000))
+                            noOverflow = 0;
+                        if (noOverflow)
+                            enabled = 1;
                     }
                     if (enabled) {
                         int offset = i * 4;
@@ -3216,12 +3903,18 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
                             i -= kHistoryShiftBatchWords;
                             int* row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset);
                             row[0] = row[-1];
-                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset); row[-1] = row[-2];
-                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset); row[-2] = row[-3];
-                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset); row[-3] = row[-4];
-                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset); row[-4] = row[-5];
-                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset); row[-5] = row[-6];
-                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset); row[-6] = row[-7];
+                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset);
+                            row[-1] = row[-2];
+                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset);
+                            row[-2] = row[-3];
+                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset);
+                            row[-3] = row[-4];
+                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset);
+                            row[-4] = row[-5];
+                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset);
+                            row[-5] = row[-6];
+                            row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset);
+                            row[-6] = row[-7];
                             row = (int*)((char*)((CreatureGridPathView*)self)->recentCells + offset);
                             offset -= kHistoryShiftBatchWords * 4;
                             row[-7] = row[-8];
@@ -3240,8 +3933,11 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
             // Phase 3: jitter inside the chosen world-space cell and optionally record XYZ.
             float a = Random_RangeFloat(-1, kFloat_0_Creature, self->spacingX);
             self->targetPos[0] = (self->spacingX * x + self->x) + a;
-            if (self->height > 1) self->targetPos[1] = (self->spacingY * y + self->y) + Random_RangeFloat(-1,kFloat_0_Creature,self->spacingY);
-            self->targetPos[2] = (self->spacingZ * z + self->z) + Random_RangeFloat(-1,kFloat_0_Creature,self->spacingZ);
+            if (self->height > 1)
+                self->targetPos[1] =
+                    (self->spacingY * y + self->y) + Random_RangeFloat(-1, kFloat_0_Creature, self->spacingY);
+            self->targetPos[2] =
+                (self->spacingZ * z + self->z) + Random_RangeFloat(-1, kFloat_0_Creature, self->spacingZ);
             if (AsCCreature(self)->recordPath) {
                 FrameAllocator frameAllocator;
                 if (self->frames < self->capacity) {
@@ -3251,12 +3947,14 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
                 } else {
                     FrameAllocator reserveAllocator;
                     FrameAllocator limitAllocator;
-                    if (kMaxWaypointCount - self->capacity < 1) THROW_FRAME_LENGTH();
+                    if (kMaxWaypointCount - self->capacity < 1)
+                        THROW_FRAME_LENGTH();
                     unsigned int* capacityRef = &self->capacity;
                     unsigned int needed = self->frames + 1 - self->capacity;
                     FrameBuffer buffer(capacityRef);
                     capacity = self->capacity;
-                    if (needed > kMaxWaypointCount - capacity) THROW_FRAME_LENGTH();
+                    if (needed > kMaxWaypointCount - capacity)
+                        THROW_FRAME_LENGTH();
                     if (capacity < kWaypointThreeFifthsGrowthLimit) {
                         unsigned int growth = (capacity + 1) * 3 / 5;
                         const unsigned int& increment = growth < needed ? needed : growth;
@@ -3265,16 +3963,18 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
                         unsigned int growth = (capacity + 1) / 2;
                         const unsigned int& increment = growth < needed ? needed : growth;
                         capacity += increment;
-                    } else capacity = kMaxWaypointCount;
+                    } else
+                        capacity = kMaxWaypointCount;
                     FrameAllocator allocateAllocator;
-                    if (capacity > kMaxWaypointCount) THROW_FRAME_LENGTH();
+                    if (capacity > kMaxWaypointCount)
+                        THROW_FRAME_LENGTH();
                     FramePosition* allocated = (FramePosition*)appMallocDummy__FUl(capacity * 12);
                     unsigned int frames = self->frames;
                     buffer.data = allocated;
                     buffer.capacity = capacity;
                     buffer.original = frames;
                     FramePosition* row = allocated + frames + buffer.size;
-                    unsigned int count=1;
+                    unsigned int count = 1;
                     FrameAllocator constructAllocator;
                     while (count != 0) {
                         constructFrameChecked(row, *(FramePosition*)self->targetPos);
@@ -3287,7 +3987,8 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
                     FramePosition* dest = buffer.data + buffer.original;
                     FrameAllocator copyAllocator;
                     while (source > begin) {
-                        --source; --dest;
+                        --source;
+                        --dest;
                         constructFrameChecked(dest, *source);
                         --buffer.original;
                         ++buffer.size;
@@ -3309,7 +4010,7 @@ void ntPenguin_Sailor_UpdateGridTargetAndMove(UpdateObject* self, float delta) {
             }
         } else {
             unsigned int cur = (unsigned char)idx;
-            __as__7WVectorFRC7WVector(self->targetPos, (char*)(*(void **)&AsCCreature(self)->pathPoints) + cur*12);
+            __as__7WVectorFRC7WVector(self->targetPos, (char*)(*(void**)&AsCCreature(self)->pathPoints) + cur * 12);
             ++AsCCreature(self)->pathCursor;
         }
     }
@@ -3360,67 +4061,72 @@ struct RenderObject {
 
 // Release ntPenguin_Duck resources and optionally delete the object.
 void* ntPenguin_Duck_Dtor(RenderObject* self, int flag) {
-    if (!self) return self;
-        *(void**)self = (void*)__vt__14ntPenguin_Duck;
-        *((void**)self + 1) = (void*)((char*)__vt__14ntPenguin_Duck + kCreatureSecondaryVtableOffset);
-        // release array-backed fields
-        void* array = AsPenguinDuck(self)->instanceMatrices;
-        if (array) {
-            if (array)
+    if (!self)
+        return self;
+    *(void**)self = (void*)__vt__14ntPenguin_Duck;
+    *((void**)self + 1) = (void*)((char*)__vt__14ntPenguin_Duck + kCreatureSecondaryVtableOffset);
+    // release array-backed fields
+    void* array = AsPenguinDuck(self)->instanceMatrices;
+    if (array) {
+        if (array)
             __dla__FPv((char*)array - 0x10);
-            AsPenguinDuck(self)->instanceMatrices = 0;
+        AsPenguinDuck(self)->instanceMatrices = 0;
+    }
+    void* second = AsPenguinDuck(self)->instanceScales;
+    if (second) {
+        __dla__FPv(second);
+        AsPenguinDuck(self)->instanceScales = 0;
+    }
+    RenderNode* node = (*(RenderNode**)&AsPenguinDuck(self)->listPrevious);
+    RenderNode* end1 = (RenderNode*)(((char*)&AsPenguinDuck(self)->listNext));
+    while (end1 != node) {
+        void* manager = g_resourceManager;
+        if (manager && node->data) {
+            ResourceManager_ReleaseObject(manager, node->data, 0);
+            node->data = 0;
         }
-        void* second = AsPenguinDuck(self)->instanceScales;
-        if (second) {
-            __dla__FPv(second);
-            AsPenguinDuck(self)->instanceScales = 0;
+        node = node->prev;
+    }
+    RenderNode* cur = (*(RenderNode**)&AsPenguinDuck(self)->listPrevious);
+    RenderNode* end2 = (RenderNode*)(((char*)&AsPenguinDuck(self)->listNext));
+    if (end2 != cur) {
+        RenderNode* first = end2->next;
+        cur->next->prev = first->prev;
+        first->prev->next = cur->next;
+        while (end2 != cur) {
+            RenderNode* dead = cur;
+            cur = cur->prev;
+            appFreeUni__FPv(dead);
+            int cnt = AsPenguinDuck(self)->puppetCount;
+            AsPenguinDuck(self)->puppetCount = cnt - 1;
         }
-        RenderNode* node = (*(RenderNode **)&AsPenguinDuck(self)->listPrevious);
-        RenderNode* end1 = (RenderNode*)(((char*)&AsPenguinDuck(self)->listNext));
-        while (end1 != node) {
-            void* manager = g_resourceManager;
-            if (manager && node->data) { ResourceManager_ReleaseObject(manager, node->data, 0); node->data = 0; }
-            node = node->prev;
-        }
-        RenderNode* cur = (*(RenderNode **)&AsPenguinDuck(self)->listPrevious);
-        RenderNode* end2 = (RenderNode*)(((char*)&AsPenguinDuck(self)->listNext));
-        if (end2 != cur) {
-            RenderNode* first = end2->next;
-            cur->next->prev = first->prev;
-            first->prev->next = cur->next;
-            while (end2 != cur) {
-                RenderNode* dead = cur;
-                cur = cur->prev;
-                appFreeUni__FPv(dead);
-                int cnt = AsPenguinDuck(self)->puppetCount;
-                AsPenguinDuck(self)->puppetCount = cnt - 1;
-            }
-        }
-        (*(void **)&AsCCreature(self)->puppet) = 0;
+    }
+    (*(void**)&AsCCreature(self)->puppet) = 0;
+    if (((char*)&AsPenguinDuck(self)->puppetCount)) {
         if (((char*)&AsPenguinDuck(self)->puppetCount)) {
             if (((char*)&AsPenguinDuck(self)->puppetCount)) {
                 if (((char*)&AsPenguinDuck(self)->puppetCount)) {
-                    if (((char*)&AsPenguinDuck(self)->puppetCount)) {
-                        cur = (*(RenderNode **)&AsPenguinDuck(self)->listPrevious);
-                        RenderNode* end3 = (RenderNode*)(((char*)&AsPenguinDuck(self)->listNext));
-                        if (end3 != cur) {
-                            RenderNode* first = end3->next;
-                            cur->next->prev = first->prev;
-                            first->prev->next = cur->next;
-                            while (end3 != cur) {
-                                RenderNode* dead = cur;
-                                cur = cur->prev;
-                                appFreeUni__FPv(dead);
-                                int cnt = AsPenguinDuck(self)->puppetCount;
-                                AsPenguinDuck(self)->puppetCount = cnt - 1;
-                            }
+                    cur = (*(RenderNode**)&AsPenguinDuck(self)->listPrevious);
+                    RenderNode* end3 = (RenderNode*)(((char*)&AsPenguinDuck(self)->listNext));
+                    if (end3 != cur) {
+                        RenderNode* first = end3->next;
+                        cur->next->prev = first->prev;
+                        first->prev->next = cur->next;
+                        while (end3 != cur) {
+                            RenderNode* dead = cur;
+                            cur = cur->prev;
+                            appFreeUni__FPv(dead);
+                            int cnt = AsPenguinDuck(self)->puppetCount;
+                            AsPenguinDuck(self)->puppetCount = cnt - 1;
                         }
                     }
                 }
             }
         }
-        CCreature_dtor(self, 0);
-        if (flag > 0) __dl__FPv(self);
+    }
+    __dt__9CCreatureFv(self, 0);
+    if (flag > 0)
+        __dl__FPv(self);
     return self;
 }
 
@@ -3429,7 +4135,9 @@ void* ntPenguin_Duck_Dtor(RenderObject* self, int flag) {
 struct DuckElement {
     char data[0x30];
     // Preserve the matrix default-construction hook for one duck instance.
-    DuckElement() { WMatrix_DefaultConstructNoOp(this); }
+    DuckElement() {
+        WMatrix_DefaultConstructNoOp(this);
+    }
 };
 // Initialize ntPenguin_Duck state and owned resources.
 void* ntPenguin_Duck_Ctor(void* self, void* arg, int count) {
@@ -3449,8 +4157,12 @@ void* ntPenguin_Duck_Ctor(void* self, void* arg, int count) {
     AsCCreature(obj)->opacityKeyframeCount = 0;
     AsCCreature(obj)->opacityKeyframePrevious = ((char*)&AsCCreature(obj)->opacityKeyframeNext);
     AsCCreature(obj)->opacityKeyframeNext = ((char*)&AsCCreature(obj)->opacityKeyframeNext);
-    AsCCreature(obj)->targetPoints = 0; AsCCreature(obj)->targetPointCount = 0; AsCCreature(obj)->targetPointCapacity = 0;
-    AsCCreature(obj)->pathPoints = 0; AsCCreature(obj)->pathPointCount = 0; AsCCreature(obj)->pathPointCapacity = 0;
+    AsCCreature(obj)->targetPoints = 0;
+    AsCCreature(obj)->targetPointCount = 0;
+    AsCCreature(obj)->targetPointCapacity = 0;
+    AsCCreature(obj)->pathPoints = 0;
+    AsCCreature(obj)->pathPointCount = 0;
+    AsCCreature(obj)->pathPointCapacity = 0;
     AsCCreature(obj)->vtable = (void*)__vt__14ntPenguin_Duck;
     AsCCreature(obj)->secondaryVtable = (char*)__vt__14ntPenguin_Duck + kCreatureSecondaryVtableOffset;
     AsPenguinDuck(self)->puppetCount = 0;
@@ -3469,7 +4181,8 @@ void* ntPenguin_Duck_Ctor(void* self, void* arg, int count) {
         (*(float**)&AsPenguinDuck(self)->instanceScales) = table;
         table[0] = kFloat_1_Creature;
         for (int i = 1; i < AsPenguinDuck(obj)->instanceCount; ++i)
-            ((*(float**)&AsPenguinDuck(obj)->instanceScales))[i] = Random_RangeFloat(-1, kFloat_0_6_Creature, kFloat_0_8_805DF2D8);
+            ((*(float**)&AsPenguinDuck(obj)->instanceScales))[i] =
+                Random_RangeFloat(-1, kFloat_0_6_Creature, kFloat_0_8_805DF2D8);
     }
     RenderNode* sentinel = (RenderNode*)(((char*)&AsPenguinDuck(obj)->listNext));
     RenderNode* node = (*(RenderNode**)&AsPenguinDuck(obj)->listPrevious);
@@ -3486,15 +4199,42 @@ void* ntPenguin_Duck_Ctor(void* self, void* arg, int count) {
         }
     }
     struct VirtualObject {
-        virtual void f00() DECOMP_LOCAL_VIRTUAL; virtual void f01() DECOMP_LOCAL_VIRTUAL; virtual void f02() DECOMP_LOCAL_VIRTUAL; virtual void f03() DECOMP_LOCAL_VIRTUAL;
-        virtual void f04() DECOMP_LOCAL_VIRTUAL; virtual void f05() DECOMP_LOCAL_VIRTUAL; virtual void f06() DECOMP_LOCAL_VIRTUAL; virtual void f07() DECOMP_LOCAL_VIRTUAL;
-        virtual void f08() DECOMP_LOCAL_VIRTUAL; virtual void f09() DECOMP_LOCAL_VIRTUAL; virtual void f10() DECOMP_LOCAL_VIRTUAL; virtual void f11() DECOMP_LOCAL_VIRTUAL;
-        virtual void f12() DECOMP_LOCAL_VIRTUAL; virtual void f13() DECOMP_LOCAL_VIRTUAL; virtual void f14() DECOMP_LOCAL_VIRTUAL; virtual void f15() DECOMP_LOCAL_VIRTUAL;
-        virtual void f16() DECOMP_LOCAL_VIRTUAL; virtual void f17() DECOMP_LOCAL_VIRTUAL; virtual void f18() DECOMP_LOCAL_VIRTUAL; virtual void f19() DECOMP_LOCAL_VIRTUAL;
-        virtual void f20() DECOMP_LOCAL_VIRTUAL; virtual void f21() DECOMP_LOCAL_VIRTUAL; virtual void f22() DECOMP_LOCAL_VIRTUAL; virtual void f23() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL; virtual void f25() DECOMP_LOCAL_VIRTUAL; virtual void f26() DECOMP_LOCAL_VIRTUAL; virtual void f27() DECOMP_LOCAL_VIRTUAL;
-        virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL; virtual void f29() DECOMP_LOCAL_VIRTUAL; virtual void f30() DECOMP_LOCAL_VIRTUAL; virtual void f31() DECOMP_LOCAL_VIRTUAL;
-        virtual void f32() DECOMP_LOCAL_VIRTUAL; virtual void f33() DECOMP_LOCAL_VIRTUAL; virtual void f34() DECOMP_LOCAL_VIRTUAL; virtual void f35() DECOMP_LOCAL_VIRTUAL;
+        virtual void f00() DECOMP_LOCAL_VIRTUAL;
+        virtual void f01() DECOMP_LOCAL_VIRTUAL;
+        virtual void f02() DECOMP_LOCAL_VIRTUAL;
+        virtual void f03() DECOMP_LOCAL_VIRTUAL;
+        virtual void f04() DECOMP_LOCAL_VIRTUAL;
+        virtual void f05() DECOMP_LOCAL_VIRTUAL;
+        virtual void f06() DECOMP_LOCAL_VIRTUAL;
+        virtual void f07() DECOMP_LOCAL_VIRTUAL;
+        virtual void f08() DECOMP_LOCAL_VIRTUAL;
+        virtual void f09() DECOMP_LOCAL_VIRTUAL;
+        virtual void f10() DECOMP_LOCAL_VIRTUAL;
+        virtual void f11() DECOMP_LOCAL_VIRTUAL;
+        virtual void f12() DECOMP_LOCAL_VIRTUAL;
+        virtual void f13() DECOMP_LOCAL_VIRTUAL;
+        virtual void f14() DECOMP_LOCAL_VIRTUAL;
+        virtual void f15() DECOMP_LOCAL_VIRTUAL;
+        virtual void f16() DECOMP_LOCAL_VIRTUAL;
+        virtual void f17() DECOMP_LOCAL_VIRTUAL;
+        virtual void f18() DECOMP_LOCAL_VIRTUAL;
+        virtual void f19() DECOMP_LOCAL_VIRTUAL;
+        virtual void f20() DECOMP_LOCAL_VIRTUAL;
+        virtual void f21() DECOMP_LOCAL_VIRTUAL;
+        virtual void f22() DECOMP_LOCAL_VIRTUAL;
+        virtual void f23() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot24() DECOMP_LOCAL_VIRTUAL;
+        virtual void f25() DECOMP_LOCAL_VIRTUAL;
+        virtual void f26() DECOMP_LOCAL_VIRTUAL;
+        virtual void f27() DECOMP_LOCAL_VIRTUAL;
+        virtual void unusedSlot28() DECOMP_LOCAL_VIRTUAL;
+        virtual void f29() DECOMP_LOCAL_VIRTUAL;
+        virtual void f30() DECOMP_LOCAL_VIRTUAL;
+        virtual void f31() DECOMP_LOCAL_VIRTUAL;
+        virtual void f32() DECOMP_LOCAL_VIRTUAL;
+        virtual void f33() DECOMP_LOCAL_VIRTUAL;
+        virtual void f34() DECOMP_LOCAL_VIRTUAL;
+        virtual void f35() DECOMP_LOCAL_VIRTUAL;
         virtual void initialize(void*) DECOMP_LOCAL_VIRTUAL;
     };
     ((VirtualObject*)self)->initialize(arg);
@@ -3507,7 +4247,10 @@ struct ItemAllocation {
     ItemNode* volatile position;
     ItemNode* node;
     // Free the node allocation if it has not transferred.
-    ~ItemAllocation() { if (node) appFreeUni__FPv(node); }
+    ~ItemAllocation() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 // Store a loaded puppet in its newly allocated list node.
 inline void constructItem(void** data, void* const& value) {
@@ -3521,40 +4264,45 @@ void ntPenguin_Duck_LoadPuppetInstances(void* self, void* arg) {
     ItemNode* sentinel;
     int index = 0;
     if (AsPenguinDuck(self)->instanceCount > 0) {
-      sentinel = (ItemNode*)(((char*)&AsPenguinDuck(self)->listNext));
-      while (index < AsPenguinDuck(self)->instanceCount) {
-        void* value;
-        if (index == 0) value = CCreature_LoadPuppetResource(self, arg, 1);
-        else value = CCreature_LoadPuppetResource(self, arg, 0);
-        {
-        volatile unsigned char allocator = 0;
-        ItemNode* raw = (ItemNode*)appMallocDummy__FUl(12);
-        ItemAllocation allocation;
-        ItemNode* volatile memory;
-        ItemNode* volatile allocated;
-        memory = raw;
-        allocated = raw;
-        allocation.position = sentinel;
-        allocation.node = raw;
-        void** data = &raw->value;
-        if (data) {
-            try { constructItem(data, value); }
-            catch (...) { throw; }
+        sentinel = (ItemNode*)(((char*)&AsPenguinDuck(self)->listNext));
+        while (index < AsPenguinDuck(self)->instanceCount) {
+            void* value;
+            if (index == 0)
+                value = ((CCreature*)self)->LoadPuppetResource((int)arg, 1);
+            else
+                value = ((CCreature*)self)->LoadPuppetResource((int)arg, 0);
+            {
+                volatile unsigned char allocator = 0;
+                ItemNode* raw = (ItemNode*)appMallocDummy__FUl(12);
+                ItemAllocation allocation;
+                ItemNode* volatile memory;
+                ItemNode* volatile allocated;
+                memory = raw;
+                allocated = raw;
+                allocation.position = sentinel;
+                allocation.node = raw;
+                void** data = &raw->value;
+                if (data) {
+                    try {
+                        constructItem(data, value);
+                    } catch (...) {
+                        throw;
+                    }
+                }
+                ItemNode* node = allocation.node;
+                allocation.node = 0;
+                sentinel->next->prev = node;
+                node->next = sentinel->next;
+                sentinel->next = node;
+                node->prev = sentinel;
+                int cnt = AsPenguinDuck(self)->puppetCount;
+                AsPenguinDuck(self)->puppetCount = cnt + 1;
+            }
+            ++index;
         }
-        ItemNode* node = allocation.node;
-        allocation.node = 0;
-        sentinel->next->prev = node;
-        node->next = sentinel->next;
-        sentinel->next = node;
-        node->prev = sentinel;
-        int cnt = AsPenguinDuck(self)->puppetCount;
-        AsPenguinDuck(self)->puppetCount = cnt + 1;
-        }
-        ++index;
-      }
     }
-    void* p = (*(void **)&AsPenguinDuck(self)->listPrevious);
-    (*(void **)&AsCCreature(self)->puppet) = *(void**)((char*)p + 8);
+    void* p = (*(void**)&AsPenguinDuck(self)->listPrevious);
+    (*(void**)&AsCCreature(self)->puppet) = *(void**)((char*)p + 8);
 }
 #pragma opt_common_subs reset
 #pragma use_lmw_stmw reset
@@ -3567,8 +4315,6 @@ void ntPenguin_Duck_LoadPuppetInstances(void* self, void* arg) {
 
 // ---- merged from course_creatures_flocks_and_flyers.cpp ----
 namespace ns4 {
-// Translation unit 0x801A10FC-0x801A2788 (10 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 extern const float kFloat_0_Creature;
@@ -3582,26 +4328,28 @@ extern const float kFloat_1_Creature;
 extern const float kFloat_0_8_805DF2D8;
 extern const float kFloat_100_Creature;
 extern unsigned int g_view;
-extern void* CCreature_Draw(void*);
+// The draw thunk returns the result register of CCreature::Draw, which returns
+// nothing, so the member is called under its mangled name with a pointer type.
+extern void* Draw__9CCreatureFv(void*);
 extern void Spline_EvaluatePosition(void*, const void*, float);
 extern void __as__7WVectorFRC7WVector(void*, const void*);
 extern int Vec3_NearlyEqualWithTolerance(void*, const void*, float);
 extern void Matrix_BuildCameraTransform(void*, const void*, const void*);
 extern void Matrix_CopyAffine(void*, const void*);
-extern void CCreature_InitRandomGridCell(void*, const void*, unsigned int);
 extern void __ml__FfRC7WVector(void*, const void*, float);
 extern void __pl__FRC7WVectorRC7WVector(void*, const void*, const void*);
 extern void Vec3_Zero(void*);
 extern int String_CompareCString(const char*, const char*);
 extern void FxAttachment_Init(void*);
-extern void* CFx_CreateAttachedEffect(unsigned int, void*, const char*, void*, void*, void*, void*);
+extern "C" void* CreateAttachedEffect__3CFxFP9Vec2_8010PCcUcii(unsigned int, void*, const char*, void*, void*, void*,
+                                                               void*);
 extern unsigned int g_fx;
 extern const char npcResourceStrings[];
 extern const char __vt__9CCreature[];
 extern const char __vt__12ntNpc_Dragon[];
 extern void __dla__FPv(void*);
 extern void __dl__FPv(void*);
-extern void* CCreature_dtor(void*, int);
+extern void* __dt__9CCreatureFv(void*, int);
 extern int WPuppet_FindAnimationRangeByName(void*, const char*);
 extern void WPuppet_SetAnimationTimeFromRanges(void*, int, float, int, int);
 extern void Matrix_CopyScaledBasis(void*, const void*, float);
@@ -3609,7 +4357,9 @@ extern void Model_SetMatrixRecursive(void*, void*, const void*);
 extern void WPuppet_UpdateBoneWorldMatrices(void*, unsigned int, int, float);
 extern void WPuppet_UpdateBound(void*, int);
 extern void WPuppet_UpdateBoundsFromBone(void*);
-extern void AnimationEventParser_ProcessFrameRange(void*, void*, float, float, void*, int, int); /* AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7): f2 is the new time (0x802A663C reads it) */
+extern void AnimationEventParser_ProcessFrameRange(
+    void*, void*, float, float, void*, int,
+    int); /* AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7): f2 is the new time (0x802A663C reads it) */
 extern int CString_Compare(const char*, const char*);
 extern void* CQuadTree_GetInstance(void*);
 extern void GetGroundPoint__9CQuadTreeF7WVectorbPib(void*, void*, const void*, int, int, int);
@@ -3642,10 +4392,11 @@ static inline void SelectClip(char* p, int nameOff) {
     const char* name = npcResourceStrings + nameOff;
     ns0::ListNode* leaderLink = (ns0::ListNode*)AsPenguinDuck(p)->listPrevious;
     void* leaderPuppet = leaderLink->value; // Borrowed +8 payload; nonnull link required.
-    if (leaderPuppet && (!AsCCreature(p)->animationRange || CString_Compare(((CreatureAnimationRange*)AsCCreature(p)->animationRange)->name, name) != 0)) {
+    if (leaderPuppet && (!AsCCreature(p)->animationRange ||
+                         CString_Compare(((CreatureAnimationRange*)AsCCreature(p)->animationRange)->name, name) != 0)) {
         void* found = (void*)WPuppet_FindAnimationRangeByName(leaderPuppet, name);
         if (found) {
-            (*(void **)&AsCCreature(p)->animationRange) = found;
+            (*(void**)&AsCCreature(p)->animationRange) = found;
             float lo;
             float zero;
             float hi;
@@ -3683,15 +4434,18 @@ void ntPenguin_Duck_UpdateAnimationAndFollowChain(void* self_, float delta) {
     char* base;
     char* cur;
     unsigned int prev;
-    if (AsPenguinDuck(p)->puppetCount == 0) return;
+    if (AsPenguinDuck(p)->puppetCount == 0)
+        return;
     if (AsCCreature(p)->animationActive != 0) {
         float zero = kFloat_0_Creature;
         float time = AsCCreature(p)->animationTime;
         time += delta;
         AsCCreature(p)->animationTime = time;
-        if (time < zero) return;
-        AnimationEventParser_ProcessFrameRange(p + 4, (*(void **)&AsCCreature(p)->puppet), time - delta, time, (*(void **)&AsCCreature(p)->animationRange), -1, 0);
-        void* current = (*(void **)&AsCCreature(p)->animationRange);
+        if (time < zero)
+            return;
+        AnimationEventParser_ProcessFrameRange(p + 4, (*(void**)&AsCCreature(p)->puppet), time - delta, time,
+                                               (*(void**)&AsCCreature(p)->animationRange), -1, 0);
+        void* current = (*(void**)&AsCCreature(p)->animationRange);
         float end;
         float t2;
         t2 = AsCCreature(p)->animationTime;
@@ -3726,8 +4480,10 @@ void ntPenguin_Duck_UpdateAnimationAndFollowChain(void* self_, float delta) {
         void* ret = CQuadTree_GetInstance((void*)a);
         GetGroundPoint__9CQuadTreeF7WVectorbPib(out, ret, m, 1, 0, 0);
         __as__7WVectorFRC7WVector((p + kCreaturePositionOffset), out);
-        if (!AsPenguinDuck(p)->instanceCount) return;
-        if (!AsCCreature(p)->movementEnabled) return;
+        if (!AsPenguinDuck(p)->instanceCount)
+            return;
+        if (!AsCCreature(p)->movementEnabled)
+            return;
         Matrix_CopyAffine(AsPenguinDuck(p)->instanceMatrices, ((char*)&AsCCreature(p)->transform[0]));
         upperScale = kFloat_0_7_Creature;
         i = 1;
@@ -3736,14 +4492,14 @@ void ntPenguin_Duck_UpdateAnimationAndFollowChain(void* self_, float delta) {
         threshold = kFloat_4_16_Creature;
         while (i < AsPenguinDuck(p)->instanceCount) {
             prev = (unsigned int)(i - 1) * 0x30u;
-            base = (*(char **)&AsPenguinDuck(p)->instanceMatrices);
+            base = (*(char**)&AsPenguinDuck(p)->instanceMatrices);
             __mi__FRC7WVectorRC7WVector(d, base + prev + 0x24, base + off + 0x24);
             __as__7WVectorFRC7WVector(t, d);
             if (!(WVectorLen__FRC7WVector(t) < threshold)) {
                 float clamped;
                 float upper;
                 float lower;
-                base = (*(char **)&AsPenguinDuck(p)->instanceMatrices);
+                base = (*(char**)&AsPenguinDuck(p)->instanceMatrices);
                 cur = base + off;
                 upper = upperScale * AsCCreature(p)->turnRate * delta;
                 __mi__FRC7WVectorRC7WVector(rot, base + prev + 0x24, cur + 0x24);
@@ -3756,16 +4512,16 @@ void ntPenguin_Duck_UpdateAnimationAndFollowChain(void* self_, float delta) {
                     clamped = upper;
                 }
                 Matrix_SetAxisRotation(sc, clamped, 1);
-                base = (*(char **)&AsPenguinDuck(p)->instanceMatrices);
+                base = (*(char**)&AsPenguinDuck(p)->instanceMatrices);
                 Matrix_ConcatAffine(fv, sc, base + off);
-                base = (*(char **)&AsPenguinDuck(p)->instanceMatrices);
+                base = (*(char**)&AsPenguinDuck(p)->instanceMatrices);
                 Matrix_CopyAffine(base + off, fv);
-                base = (*(char **)&AsPenguinDuck(p)->instanceMatrices);
+                base = (*(char**)&AsPenguinDuck(p)->instanceMatrices);
                 __ml__FfRC7WVector(pos, base + off + 0x18, AsCCreature(p)->movementSpeed);
                 __ml__FRC7WVectorf(tmp, pos, delta);
-                base = (*(char **)&AsPenguinDuck(p)->instanceMatrices);
+                base = (*(char**)&AsPenguinDuck(p)->instanceMatrices);
                 __apl__7WVectorFRC7WVector(base + off + 0x24, tmp);
-                base = (*(char **)&AsPenguinDuck(p)->instanceMatrices);
+                base = (*(char**)&AsPenguinDuck(p)->instanceMatrices);
                 unsigned int sa = *(unsigned int*)(base + off + 0x24);
                 unsigned int sb = *(unsigned int*)(base + off + 0x28);
                 s[0] = sa;
@@ -3773,7 +4529,7 @@ void ntPenguin_Duck_UpdateAnimationAndFollowChain(void* self_, float delta) {
                 s[2] = *(unsigned int*)(base + off + 0x2c);
                 void* r = CQuadTree_GetInstance((void*)sa);
                 GetGroundPoint__9CQuadTreeF7WVectorbPib(o, r, s, 1, 0, 0);
-                __as__7WVectorFRC7WVector((*(char **)&AsPenguinDuck(p)->instanceMatrices) + off + 0x24, o);
+                __as__7WVectorFRC7WVector((*(char**)&AsPenguinDuck(p)->instanceMatrices) + off + 0x24, o);
             }
             off += 0x30;
             ++i;
@@ -3786,30 +4542,43 @@ void ntPenguin_Duck_UpdateAnimationAndFollowChain(void* self_, float delta) {
 // Cull and draw the penguin-duck list using its per-instance transforms.
 void ntPenguin_Duck_CullAndDrawInstancePuppets(void* self) {
     char* p = (char*)self;
-    if (!AsPenguinDuck(p)->puppetCount) return;
-    if (!AsCCreature(p)->animationActive) return;
-    if (AsCCreature(p)->animationTime < kFloat_0_Creature) return;
-    if (!AsPenguinDuck(p)->instanceCount) { CCreature_Draw(self); return; }
+    if (!AsPenguinDuck(p)->puppetCount)
+        return;
+    if (!AsCCreature(p)->animationActive)
+        return;
+    if (AsCCreature(p)->animationTime < kFloat_0_Creature)
+        return;
+    if (!AsPenguinDuck(p)->instanceCount) {
+        ((CCreature*)self)->Draw();
+        return;
+    }
     void* sentinel = p + 0x124;
     unsigned int offset = 0;
     int index = 0;
-    void* node = (*(void **)&AsPenguinDuck(p)->listPrevious);
+    void* node = (*(void**)&AsPenguinDuck(p)->listPrevious);
     float f31 = kFloat_1_Creature;
     while (node != sentinel) {
         void* item = *(void**)((char*)node + 8);
         if (item) {
-            if (((*(int (**)(void*, void*, float))((char*)*(void**)p + 0xa0))(self, (char*)AsPenguinDuck(p)->instanceMatrices + offset + 0x24, kFloat_0_8_805DF2D8)) == 0) { float matrix[12];
+            if (((*(int (**)(void*, void*, float))((char*)*(void**)p + 0xa0))(
+                    self, (char*)AsPenguinDuck(p)->instanceMatrices + offset + 0x24, kFloat_0_8_805DF2D8)) == 0) {
+                float matrix[12];
                 WPuppet_SetAnimationTimeFromRanges(item, 0, AsCCreature(p)->animationTime, 0, 0);
-                if (*(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset) > f31) *(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset) = f31;
-                if (*(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset + 0x10) > f31) *(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset + 0x10) = f31;
-                if (*(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset + 0x20) > f31) *(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset + 0x20) = f31;
+                if (*(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset) > f31)
+                    *(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset) = f31;
+                if (*(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset + 0x10) > f31)
+                    *(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset + 0x10) = f31;
+                if (*(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset + 0x20) > f31)
+                    *(float*)((char*)AsPenguinDuck(p)->instanceMatrices + offset + 0x20) = f31;
 
-                Matrix_CopyScaledBasis(matrix, (char*)AsPenguinDuck(p)->instanceMatrices + offset, (index == 0) ? kFloat_1_Creature : kFloat_0_8_805DF2D8);
-                Model_SetMatrixRecursive(item, *(void**)((char*)node+8), matrix);
+                Matrix_CopyScaledBasis(matrix, (char*)AsPenguinDuck(p)->instanceMatrices + offset,
+                                       (index == 0) ? kFloat_1_Creature : kFloat_0_8_805DF2D8);
+                Model_SetMatrixRecursive(item, *(void**)((char*)node + 8), matrix);
                 WPuppet_UpdateBoneWorldMatrices(item, g_view, 0, kFloat_1_Creature);
                 WPuppet_UpdateBound(item, 0);
                 WPuppet_UpdateBoundsFromBone(item);
-                (*(void (**)(void*, unsigned int, int, int, float, int, int))((char*)*(void**)item + 0x18))(item, g_view, 1, 1, kFloat_1_Creature, 1, 0);
+                (*(void (**)(void*, unsigned int, int, int, float, int, int))((char*)*(void**)item + 0x18))(
+                    item, g_view, 1, 1, kFloat_1_Creature, 1, 0);
             }
         }
         node = *(void**)((char*)node + 4);
@@ -3821,111 +4590,161 @@ void ntPenguin_Duck_CullAndDrawInstancePuppets(void* self) {
 // Wait for the spawn delay, advance spline distance, and select a new dragon clip after completion.
 void ntNpc_Dragon_UpdateAnimationAndMovement(void* self, float delta) {
     struct VirtualObject {
-        virtual void v08() DECOMP_LOCAL_VIRTUAL; virtual void v0C() DECOMP_LOCAL_VIRTUAL; virtual void v10() DECOMP_LOCAL_VIRTUAL; virtual void v14() DECOMP_LOCAL_VIRTUAL;
-        virtual void v18() DECOMP_LOCAL_VIRTUAL; virtual void v1C() DECOMP_LOCAL_VIRTUAL; virtual void v20() DECOMP_LOCAL_VIRTUAL; virtual void v24() DECOMP_LOCAL_VIRTUAL;
-        virtual void v28() DECOMP_LOCAL_VIRTUAL; virtual void v2C() DECOMP_LOCAL_VIRTUAL; virtual void v30() DECOMP_LOCAL_VIRTUAL; virtual void v34() DECOMP_LOCAL_VIRTUAL;
-        virtual void v38() DECOMP_LOCAL_VIRTUAL; virtual void v3C() DECOMP_LOCAL_VIRTUAL; virtual void v40() DECOMP_LOCAL_VIRTUAL; virtual void v44() DECOMP_LOCAL_VIRTUAL;
-        virtual void v48() DECOMP_LOCAL_VIRTUAL; virtual void v4C() DECOMP_LOCAL_VIRTUAL; virtual void v50() DECOMP_LOCAL_VIRTUAL; virtual void v54() DECOMP_LOCAL_VIRTUAL;
-        virtual void v58() DECOMP_LOCAL_VIRTUAL; virtual void v5C() DECOMP_LOCAL_VIRTUAL; virtual void v60() DECOMP_LOCAL_VIRTUAL; virtual void v64() DECOMP_LOCAL_VIRTUAL;
-        virtual void v68() DECOMP_LOCAL_VIRTUAL; virtual void v6C() DECOMP_LOCAL_VIRTUAL; virtual void v70() DECOMP_LOCAL_VIRTUAL; virtual void v74() DECOMP_LOCAL_VIRTUAL;
-        virtual void v78() DECOMP_LOCAL_VIRTUAL; virtual void v7C() DECOMP_LOCAL_VIRTUAL; virtual void v80() DECOMP_LOCAL_VIRTUAL; virtual void v84() DECOMP_LOCAL_VIRTUAL;
-        virtual void v88() DECOMP_LOCAL_VIRTUAL; virtual void v8C() DECOMP_LOCAL_VIRTUAL; virtual void v90(float) DECOMP_LOCAL_VIRTUAL;
-        virtual void v94() DECOMP_LOCAL_VIRTUAL; virtual void v98() DECOMP_LOCAL_VIRTUAL; virtual void v9C() DECOMP_LOCAL_VIRTUAL;
+        virtual void v08() DECOMP_LOCAL_VIRTUAL;
+        virtual void v0C() DECOMP_LOCAL_VIRTUAL;
+        virtual void v10() DECOMP_LOCAL_VIRTUAL;
+        virtual void v14() DECOMP_LOCAL_VIRTUAL;
+        virtual void v18() DECOMP_LOCAL_VIRTUAL;
+        virtual void v1C() DECOMP_LOCAL_VIRTUAL;
+        virtual void v20() DECOMP_LOCAL_VIRTUAL;
+        virtual void v24() DECOMP_LOCAL_VIRTUAL;
+        virtual void v28() DECOMP_LOCAL_VIRTUAL;
+        virtual void v2C() DECOMP_LOCAL_VIRTUAL;
+        virtual void v30() DECOMP_LOCAL_VIRTUAL;
+        virtual void v34() DECOMP_LOCAL_VIRTUAL;
+        virtual void v38() DECOMP_LOCAL_VIRTUAL;
+        virtual void v3C() DECOMP_LOCAL_VIRTUAL;
+        virtual void v40() DECOMP_LOCAL_VIRTUAL;
+        virtual void v44() DECOMP_LOCAL_VIRTUAL;
+        virtual void v48() DECOMP_LOCAL_VIRTUAL;
+        virtual void v4C() DECOMP_LOCAL_VIRTUAL;
+        virtual void v50() DECOMP_LOCAL_VIRTUAL;
+        virtual void v54() DECOMP_LOCAL_VIRTUAL;
+        virtual void v58() DECOMP_LOCAL_VIRTUAL;
+        virtual void v5C() DECOMP_LOCAL_VIRTUAL;
+        virtual void v60() DECOMP_LOCAL_VIRTUAL;
+        virtual void v64() DECOMP_LOCAL_VIRTUAL;
+        virtual void v68() DECOMP_LOCAL_VIRTUAL;
+        virtual void v6C() DECOMP_LOCAL_VIRTUAL;
+        virtual void v70() DECOMP_LOCAL_VIRTUAL;
+        virtual void v74() DECOMP_LOCAL_VIRTUAL;
+        virtual void v78() DECOMP_LOCAL_VIRTUAL;
+        virtual void v7C() DECOMP_LOCAL_VIRTUAL;
+        virtual void v80() DECOMP_LOCAL_VIRTUAL;
+        virtual void v84() DECOMP_LOCAL_VIRTUAL;
+        virtual void v88() DECOMP_LOCAL_VIRTUAL;
+        virtual void v8C() DECOMP_LOCAL_VIRTUAL;
+        virtual void v90(float) DECOMP_LOCAL_VIRTUAL;
+        virtual void v94() DECOMP_LOCAL_VIRTUAL;
+        virtual void v98() DECOMP_LOCAL_VIRTUAL;
+        virtual void v9C() DECOMP_LOCAL_VIRTUAL;
         virtual int vA0(void*, float) DECOMP_LOCAL_VIRTUAL;
     };
     float t;
     char* p = (char*)self;
-    if (!AsCCreature(p)->animationActive) return;
-    void* resource = (*(void **)&AsCCreature(p)->puppet);
-    if (resource == 0) { return; } else {
-    t = AsCCreature(p)->animationTime + delta;
-    AsCCreature(p)->animationTime = t;
-    if (*(unsigned char*)(((char*)&AsSplineNpc(p)->delayActiveBits))) {
-        if (t > AsSplineNpc(p)->spawnDelay) {
-        float zero = kFloat_0_Creature;
-        *(unsigned char*)(((char*)&AsSplineNpc(p)->delayActiveBits)) = 0;
-        AsCCreature(p)->animationTime = zero;
-        const char* name = npcResourceStrings + kCreatureStrings_defaultAnimation;
-        if (resource) {
-            void* current = (*(void **)&AsCCreature(p)->animationRange);
-            if (!current || CString_Compare(((CreatureAnimationRange*)current)->name, name)) {
-                void* found = (void*)WPuppet_FindAnimationRangeByName(resource, name);
+    if (!AsCCreature(p)->animationActive)
+        return;
+    void* resource = (*(void**)&AsCCreature(p)->puppet);
+    if (resource == 0) {
+        return;
+    } else {
+        t = AsCCreature(p)->animationTime + delta;
+        AsCCreature(p)->animationTime = t;
+        if (*(unsigned char*)(((char*)&AsSplineNpc(p)->delayActiveBits))) {
+            if (t > AsSplineNpc(p)->spawnDelay) {
+                float zero = kFloat_0_Creature;
+                *(unsigned char*)(((char*)&AsSplineNpc(p)->delayActiveBits)) = 0;
+                AsCCreature(p)->animationTime = zero;
+                const char* name = npcResourceStrings + kCreatureStrings_defaultAnimation;
+                if (resource) {
+                    void* current = (*(void**)&AsCCreature(p)->animationRange);
+                    if (!current || CString_Compare(((CreatureAnimationRange*)current)->name, name)) {
+                        void* found = (void*)WPuppet_FindAnimationRangeByName(resource, name);
+                        if (found) {
+                            (*(void**)&AsCCreature(p)->animationRange) = found;
+                            float zero2 = kFloat_0_Creature;
+                            float lo = *(float*)found;
+                            float hi = ((CreatureAnimationRange*)found)->endTime;
+                            float v = lo + zero2;
+                            AsCCreature(p)->animationTime = (v > hi) ? hi : v;
+                        } else {
+                            AsCCreature(p)->animationTime = kFloat_0_Creature;
+                        }
+                    }
+                }
+            } else {
+                return;
+            }
+        }
+        t = AsCCreature(p)->animationTime;
+        AnimationEventParser_ProcessFrameRange(
+            p + 4, (*(void**)&AsCCreature(p)->puppet), t - delta, t, (*(void**)&AsCCreature(p)->animationRange), -1,
+            0); /* 0x801A1CC0-0x801A1CDC: original lfs f2, 0x58(r31) before the call; ours left f2 unset */
+        AsSplineNpc(p)->pathDistance += kFloat_100_Creature * delta;
+        ((VirtualObject*)self)->v90(delta);
+        if (((VirtualObject*)self)->vA0(((char*)&AsCCreature(p)->transform[9]), kFloat_0_8_805DF2D8))
+            return;
+        void* cur = (*(void**)&AsCCreature(p)->animationRange);
+        if (!(AsCCreature(p)->animationTime > ((CreatureAnimationRange*)cur)->endTime))
+            return;
+        int n = rand();
+        int phase = n % 101;
+        char text[32] = {0};
+        if (phase < 5)
+            strcpy(text, npcResourceStrings + kCreatureStrings_action02);
+        else if (phase < 10)
+            strcpy(text, npcResourceStrings + kCreatureStrings_action01);
+        else
+            strcpy(text, npcResourceStrings + kCreatureStrings_defaultAnimation);
+        int done;
+        void* old = (*(void**)&AsCCreature(p)->puppet);
+        if (old == 0) {
+            done = 0;
+        } else {
+            void* cur2 = (*(void**)&AsCCreature(p)->animationRange);
+            if (cur2 && !CString_Compare(((CreatureAnimationRange*)cur2)->name, text)) {
+                done = 0;
+            } else {
+                void* found = (void*)WPuppet_FindAnimationRangeByName(old, text);
                 if (found) {
-                    (*(void **)&AsCCreature(p)->animationRange) = found;
-                    float zero2 = kFloat_0_Creature;
+                    (*(void**)&AsCCreature(p)->animationRange) = found;
+                    float zero = kFloat_0_Creature;
                     float lo = *(float*)found;
                     float hi = ((CreatureAnimationRange*)found)->endTime;
-                    float v = lo + zero2;
+                    float v = lo + zero;
                     AsCCreature(p)->animationTime = (v > hi) ? hi : v;
                 } else {
                     AsCCreature(p)->animationTime = kFloat_0_Creature;
                 }
+                done = 1;
             }
         }
-        } else { return; }
-    }
-    t = AsCCreature(p)->animationTime;
-    AnimationEventParser_ProcessFrameRange(p+4, (*(void **)&AsCCreature(p)->puppet), t - delta, t, (*(void **)&AsCCreature(p)->animationRange), -1, 0); /* 0x801A1CC0-0x801A1CDC: original lfs f2, 0x58(r31) before the call; ours left f2 unset */
-    AsSplineNpc(p)->pathDistance += kFloat_100_Creature * delta;
-    ((VirtualObject*)self)->v90(delta);
-    if (((VirtualObject*)self)->vA0(((char*)&AsCCreature(p)->transform[9]), kFloat_0_8_805DF2D8)) return;
-    void* cur = (*(void **)&AsCCreature(p)->animationRange);
-    if (!(AsCCreature(p)->animationTime > ((CreatureAnimationRange*)cur)->endTime)) return;
-    int n = rand();
-    int phase = n % 101;
-    char text[32] = {0};
-    if (phase < 5) strcpy(text, npcResourceStrings + kCreatureStrings_action02);
-    else if (phase < 10) strcpy(text, npcResourceStrings + kCreatureStrings_action01);
-    else strcpy(text, npcResourceStrings + kCreatureStrings_defaultAnimation);
-    int done;
-    void* old = (*(void **)&AsCCreature(p)->puppet);
-    if (old == 0) {
-        done = 0;
-    } else {
-        void* cur2 = (*(void **)&AsCCreature(p)->animationRange);
-        if (cur2 && !CString_Compare(((CreatureAnimationRange*)cur2)->name, text)) {
-            done = 0;
-        } else {
-            void* found = (void*)WPuppet_FindAnimationRangeByName(old, text);
-            if (found) {
-                (*(void **)&AsCCreature(p)->animationRange) = found;
-                float zero = kFloat_0_Creature;
-                float lo = *(float*)found;
-                float hi = ((CreatureAnimationRange*)found)->endTime;
-                float v = lo + zero;
-                AsCCreature(p)->animationTime = (v > hi) ? hi : v;
-            } else {
-                AsCCreature(p)->animationTime = kFloat_0_Creature;
-            }
-            done = 1;
+        if (!done) {
+            void* found = (void*)WPuppet_FindAnimationRangeByName((*(void**)&AsCCreature(p)->puppet), text);
+            (*(void**)&AsCCreature(p)->animationRange) = found;
+            AsCCreature(p)->animationTime = *(float*)found;
         }
-    }
-    if (!done) {
-        void* found = (void*)WPuppet_FindAnimationRangeByName((*(void **)&AsCCreature(p)->puppet), text);
-        (*(void **)&AsCCreature(p)->animationRange) = found;
-        AsCCreature(p)->animationTime = *(float*)found;
-    }
     }
 }
 
 // Initialize leader and follower transforms at fixed spacing along their forward axes.
 void ntPenguin_Duck_InitInstanceMatrices(void* self, const void* src, unsigned int flags) {
-    CCreature_InitRandomGridCell(self, src, flags);
-    if (AsPenguinDuck(self)->instanceCount != 0) { Matrix_CopyAffine(AsPenguinDuck(self)->instanceMatrices, ((char*)&AsCCreature(self)->transform[0]));
+    ((CCreature*)self)->InitRandomGridCell(src, flags);
+    if (AsPenguinDuck(self)->instanceCount != 0) {
+        Matrix_CopyAffine(AsPenguinDuck(self)->instanceMatrices, ((char*)&AsCCreature(self)->transform[0]));
         int off = 0x30;
         int i = 1;
 
         // Scalar-copy staging preserves separate index and byte-offset registers.
-        while (i < AsPenguinDuck(self)->instanceCount) { float tmp2[3];__typeof__(off) followerOffset = off;
+        while (i < AsPenguinDuck(self)->instanceCount) {
+            float tmp2[3];
+            __typeof__(off) followerOffset = off;
             __typeof__(i) instanceForCopy = i;
-            __typeof__(instanceForCopy) copyIndex = instanceForCopy; Matrix_CopyAffine((char*)AsPenguinDuck(self)->instanceMatrices + followerOffset, (char*)AsPenguinDuck(self)->instanceMatrices + (copyIndex - 1) * 0x30);
+            __typeof__(instanceForCopy) copyIndex = instanceForCopy;
+            Matrix_CopyAffine((char*)AsPenguinDuck(self)->instanceMatrices + followerOffset,
+                              (char*)AsPenguinDuck(self)->instanceMatrices + (copyIndex - 1) * 0x30);
 
-            __typeof__(i) scaleIndex = i; float tmp[3]; __ml__FfRC7WVector(tmp, (char*)AsPenguinDuck(self)->instanceMatrices + (scaleIndex - 1) * 0x30 + 0x18, kFloat_6_4_Creature);
+            __typeof__(i) scaleIndex = i;
+            float tmp[3];
+            __ml__FfRC7WVector(tmp, (char*)AsPenguinDuck(self)->instanceMatrices + (scaleIndex - 1) * 0x30 + 0x18,
+                               kFloat_6_4_Creature);
 
             __typeof__(off) instanceOffset = off;
             __typeof__(instanceOffset) savedOffset = instanceOffset;
             __typeof__(savedOffset) positionOffset = savedOffset;
-            __typeof__(i) positionIndex = i; __pl__FRC7WVectorRC7WVector(tmp2, (char*)AsPenguinDuck(self)->instanceMatrices + (positionIndex - 1) * 0x30 + 0x24, tmp);
+            __typeof__(i) positionIndex = i;
+            __pl__FRC7WVectorRC7WVector(
+                tmp2, (char*)AsPenguinDuck(self)->instanceMatrices + (positionIndex - 1) * 0x30 + 0x24, tmp);
             __typeof__(1 + i) nextInstance = 1 + i;
             __as__7WVectorFRC7WVector((char*)AsPenguinDuck(self)->instanceMatrices + positionOffset + 0x24, tmp2);
             off += 0x30;
@@ -3945,7 +4764,8 @@ void ntPenguin_Duck_InitInstanceMatrices(void* self, const void* src, unsigned i
             __typeof__(_p426) _p317 = 1 + i;
             __typeof__(i + 1) _p258 = _p317;
             __typeof__(_p129) _p949 = _p258;
-            __typeof__(_p949) _p631 = _p891; i = _p631;
+            __typeof__(_p949) _p631 = _p891;
+            i = _p631;
         }
     }
 }
@@ -3982,7 +4802,7 @@ void* ntNpc_Dragon_Ctor(void* self, void* arg, float value) {
     (*(int*)&AsSplineNpc(p)->splineCoefficients) = 0;
     (*(float*)&AsSplineNpc(p)->splineLengthBits) = kFloat_0_Creature;
     (*(int*)&AsSplineNpc(p)->splinePointCount) = 0;
-    void (**vtable)(void*, void*) = (void (**)(void*, void*))*((void**)p);
+    void (**vtable)(void*, void*) = (void (**)(void*, void*)) * ((void**)p);
     vtable[0x98 / 4](self, arg);
     *(unsigned char*)(((char*)&AsSplineNpc(p)->delayActiveBits)) = 1;
     AsSplineNpc(p)->pathDistance = kFloat_0_Creature;
@@ -3993,28 +4813,45 @@ void* ntNpc_Dragon_Ctor(void* self, void* arg, float value) {
 // Parse a bone effect tag and attach a supported sprite or sequence resource.
 void ntNpc_Dragon_AttachBoneEffect(void* self, void* arg) {
     void* inner;
-    if (arg == 0 || (inner = *(void**)((char*)*(void**)((char*)arg + 4) + 0x28)) == 0) return;
-        char* base = (char*)npcResourceStrings;
-        struct Buffers { char small1[8]; char small2[0x20]; char filename[0x20]; char handle[0x30]; } buffers;
-        sscanf(strstr((const char*)inner, base + kCreatureStrings_effectTag), base + kCreatureStrings_effectTagFormat, buffers.small1, buffers.filename, buffers.small2);
-        if (*(void**)arg == 0) return;
-        if (*(unsigned int*)((char*)*(void**)arg + 0x74) & 0x40000) return;
-        char* ext = strchr(buffers.filename, '.');
-        if (ext == 0 || strlen(ext) < 4) return;
-        if (String_CompareCString(ext + 1, base + kCreatureStrings_spriteExtension) && String_CompareCString(ext + 1, base + kCreatureStrings_sequenceExtension)) return;
-        FxAttachment_Init(buffers.handle);
-        *(void**)(buffers.handle + 8) = (char*)*(void**)arg + 0x78;
-        void* resource = *(void**)((char*)arg + 4);
-        *(void**)(buffers.handle + 0x18) = ((CreatureEffectMetadataView*)resource)->attachmentPayload;
-        unsigned char* result = (unsigned char*)CFx_CreateAttachedEffect(g_fx, buffers.handle, buffers.filename, 0, 0, 0, resource);
-        if (!String_CompareCString(buffers.filename, npcResourceStrings + kCreatureStrings_dragonFireEffect) && result[0x80]) result[0x80] = 0;
+    if (arg == 0 || (inner = *(void**)((char*)*(void**)((char*)arg + 4) + 0x28)) == 0)
+        return;
+    char* base = (char*)npcResourceStrings;
+    struct Buffers {
+        char small1[8];
+        char small2[0x20];
+        char filename[0x20];
+        char handle[0x30];
+    } buffers;
+    sscanf(strstr((const char*)inner, base + kCreatureStrings_effectTag), base + kCreatureStrings_effectTagFormat,
+           buffers.small1, buffers.filename, buffers.small2);
+    if (*(void**)arg == 0)
+        return;
+    if (*(unsigned int*)((char*)*(void**)arg + 0x74) & 0x40000)
+        return;
+    char* ext = strchr(buffers.filename, '.');
+    if (ext == 0 || strlen(ext) < 4)
+        return;
+    if (String_CompareCString(ext + 1, base + kCreatureStrings_spriteExtension) &&
+        String_CompareCString(ext + 1, base + kCreatureStrings_sequenceExtension))
+        return;
+    FxAttachment_Init(buffers.handle);
+    *(void**)(buffers.handle + 8) = (char*)*(void**)arg + 0x78;
+    void* resource = *(void**)((char*)arg + 4);
+    *(void**)(buffers.handle + 0x18) = ((CreatureEffectMetadataView*)resource)->attachmentPayload;
+    unsigned char* result = (unsigned char*)CreateAttachedEffect__3CFxFP9Vec2_8010PCcUcii(
+        g_fx, buffers.handle, buffers.filename, 0, 0, 0, resource);
+    if (!String_CompareCString(buffers.filename, npcResourceStrings + kCreatureStrings_dragonFireEffect) &&
+        result[0x80])
+        result[0x80] = 0;
 }
 
 // Draw the dragon after its initial delay while its animation is active.
 void* ntNpc_Dragon_Draw(void* self) {
-    if (AsCCreature(self)->animationActive == 0) return self;
-    if (*(unsigned char*)&AsSplineNpc(self)->delayActiveBits == 1) return self;
-    return CCreature_Draw(self);
+    if (AsCCreature(self)->animationActive == 0)
+        return self;
+    if (*(unsigned char*)&AsSplineNpc(self)->delayActiveBits == 1)
+        return self;
+    return Draw__9CCreatureFv(self);
 }
 
 } // extern "C"
@@ -4025,7 +4862,18 @@ struct TargetPoint {
     // Preserve default or copy construction of an XYZ target record.
     TargetPoint() {}
     // Preserve default or copy construction of an XYZ target record.
-    TargetPoint(const TargetPoint& p) { try { unsigned int a, b; a = p.x; b = p.y; x = a; y = b; z = p.z; } catch (...) { throw; } }
+    TargetPoint(const TargetPoint& p) {
+        try {
+            unsigned int a, b;
+            a = p.x;
+            b = p.y;
+            x = a;
+            y = b;
+            z = p.z;
+        } catch (...) {
+            throw;
+        }
+    }
 };
 struct TargetAllocator {
     volatile char state;
@@ -4037,7 +4885,8 @@ struct TargetRange {
     TargetPoint* volatile last;
     // Capture the supplied target range for vector construction.
     TargetRange(TargetPoint* a, TargetPoint* b) {
-        last = b; first = a;
+        last = b;
+        first = a;
     }
 };
 struct TargetVector {
@@ -4047,23 +4896,37 @@ struct TargetVector {
     TargetVector() : data(0), size(0), capacity(0) {}
     // Release the owning target-vector allocation.
     ~TargetVector() {
-        if (data) { clear(); appFreeUni__FPv(data); }
+        if (data) {
+            clear();
+            appFreeUni__FPv(data);
+        }
     }
     // Clear the logical target count while retaining allocated storage.
-    void clear() { TargetAllocator allocator; size -= size; }
+    void clear() {
+        TargetAllocator allocator;
+        size -= size;
+    }
 };
 struct TargetBufferGuard {
     char* data;
     bool* flag;
     // Free the target exception-message array if still guarded.
-    ~TargetBufferGuard() { if (data) __dla__FPv(data); }
+    ~TargetBufferGuard() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 struct TargetErrorRef {
     const char* table;
     int strong, weak;
     char* data;
     // Create the reference-counted target error-message control block.
-    TargetErrorRef(char* p) { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; data = p; }
+    TargetErrorRef(char* p) {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+        data = p;
+    }
 };
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 struct TargetErrorBase {
@@ -4076,7 +4939,9 @@ struct TargetErrorBase {
         table = __vt__Q23std11logic_error;
     }
     // Invoke the base exception cleanup without deleting the wrapper.
-    ~TargetErrorBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~TargetErrorBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 struct TargetLengthError : TargetErrorBase {
     // Construct a guarded target-vector length-error message.
@@ -4104,13 +4969,15 @@ static inline void TargetThrowLength() {
 // Copy authored world-space XYZ points and accumulate world-distance spline knots.
 // nextPosition/nextDistance advance within caller-owned temporary arrays; segmentDelta is borrowed work storage.
 // Cursor references retain the caller lifetimes required for the original register allocation.
-static inline void BuildDragonSplineKnots(TargetVector* authoredTargets, TargetPoint*& nextPosition, float*& nextDistance, int& pointIndex, float* segmentDelta) {
+static inline void BuildDragonSplineKnots(TargetVector* authoredTargets, TargetPoint*& nextPosition,
+                                          float*& nextDistance, int& pointIndex, float* segmentDelta) {
     while (pointIndex < authoredTargets->size) {
         int pointByteOffset = pointIndex * 12;
-        *(WVector*)nextPosition = *(WVector*)((char*)authoredTargets->data+pointByteOffset);
-        unsigned int previousPointByteOffset = (unsigned int)(pointIndex-1)*12u;
-        __mi__FRC7WVectorRC7WVector(segmentDelta,(char*)authoredTargets->data+pointByteOffset,(char*)authoredTargets->data+previousPointByteOffset);
-        *nextDistance=nextDistance[-1]+(*(WVector*)segmentDelta).Magnitude();
+        *(WVector*)nextPosition = *(WVector*)((char*)authoredTargets->data + pointByteOffset);
+        unsigned int previousPointByteOffset = (unsigned int)(pointIndex - 1) * 12u;
+        __mi__FRC7WVectorRC7WVector(segmentDelta, (char*)authoredTargets->data + pointByteOffset,
+                                    (char*)authoredTargets->data + previousPointByteOffset);
+        *nextDistance = nextDistance[-1] + (*(WVector*)segmentDelta).Magnitude();
         ++pointIndex;
         ++nextPosition;
         ++nextDistance;
@@ -4185,13 +5052,15 @@ void ntNpc_Dragon_InitSplinePath(void* self, void* input, float animationTime) {
                 unsigned int growth = (capacityBeforeGrowth + 1) / 2;
                 const volatile unsigned int& amount = growth < extra ? extra : growth;
                 replacementCapacity = capacityBeforeGrowth + amount;
-            } else replacementCapacity = 0x15555555;
+            } else
+                replacementCapacity = 0x15555555;
         } else {
             const unsigned int& amount = ownedTargets->size < assignmentCount ? ownedTargets->size : assignmentCount;
             TargetPoint* end = authoredBegin + amount;
             TargetPoint* copySource = savedAuthoredBegin;
             TargetPoint* copyDestination = ownedTargets->data;
-            for (; copySource < end; ++copySource, ++copyDestination) *(WVector*)copyDestination = *(WVector*)copySource;
+            for (; copySource < end; ++copySource, ++copyDestination)
+                *(WVector*)copyDestination = *(WVector*)copySource;
             if (assignmentCount < ownedTargets->size) {
                 TargetAllocator allocatorP;
                 ownedTargets->size -= ownedTargets->size - assignmentCount;
@@ -4245,26 +5114,29 @@ void ntNpc_Dragon_InitSplinePath(void* self, void* input, float animationTime) {
     worldUp[1] = kFloat_1_Creature;
     worldUp[2] = kFloat_0_Creature;
     (*(WVector*)&AsCCreature(creatureBytes)->transform[3]) = *(WVector*)worldUp;
-    Vector_CrossProduct(&rightAxis,(creatureBytes + kCreatureUpOffset),(creatureBytes + kCreatureForwardOffset));
+    Vector_CrossProduct(&rightAxis, (creatureBytes + kCreatureUpOffset), (creatureBytes + kCreatureForwardOffset));
     (*(WVector*)&AsCCreature(creatureBytes)->transform[0]) = rightAxis;
     (*(WVector*)&AsCCreature(creatureBytes)->transform[9]) = *(WVector*)(*(void**)input);
-    (*(WVector*)&AsCCreature(creatureBytes)->targetPosition[0]) = *(WVector*)((*(char **)&AsCCreature(creatureBytes)->targetPoints)+12);
-    unsigned int splinePointCount=*(unsigned int*)((char*)input+4);
-    AsCCreature(creatureBytes)->animationTime=animationTime;
+    (*(WVector*)&AsCCreature(creatureBytes)->targetPosition[0]) =
+        *(WVector*)((*(char**)&AsCCreature(creatureBytes)->targetPoints) + 12);
+    unsigned int splinePointCount = *(unsigned int*)((char*)input + 4);
+    AsCCreature(creatureBytes)->animationTime = animationTime;
     // Phase 4: build cumulative world-distance knots in temporary arrays.
     TargetPoint* splinePositions = new TargetPoint[splinePointCount];
-    float* cumulativeDistances=(float*)__nwa__FUl(authoredTargets->size*4);
+    float* cumulativeDistances = (float*)__nwa__FUl(authoredTargets->size * 4);
     *(WVector*)splinePositions = *(WVector*)authoredTargets->data;
-    cumulativeDistances[0]=kFloat_0_Creature;
+    cumulativeDistances[0] = kFloat_0_Creature;
     TargetPoint* nextSplinePosition = splinePositions + 1;
     float* nextSplineDistance = cumulativeDistances + 1;
     int pointIndex;
     pointIndex = 1;
     BuildDragonSplineKnots(authoredTargets, nextSplinePosition, nextSplineDistance, pointIndex, segmentDelta);
     // Phase 5: Spline_Init consumes the arrays before these temporary owners are freed.
-    Spline_Init(&AsSplineNpc(creatureBytes)->splinePoints,splinePositions,cumulativeDistances,authoredTargets->size);
-    if(splinePositions) delete[] splinePositions;
-    if(cumulativeDistances) __dla__FPv(cumulativeDistances);
+    Spline_Init(&AsSplineNpc(creatureBytes)->splinePoints, splinePositions, cumulativeDistances, authoredTargets->size);
+    if (splinePositions)
+        delete[] splinePositions;
+    if (cumulativeDistances)
+        __dla__FPv(cumulativeDistances);
 }
 
 #pragma opt_common_subs off
@@ -4273,10 +5145,13 @@ void ntNpc_Dragon_vfunc_31(void* self) {
     float tmp20[12];
     float tmp14[3];
     WVector tmp08;
-    Spline_EvaluatePosition(tmp14, ((char*)&AsSplineNpc(self)->splinePoints), AsSplineNpc(self)->pathDistance - kFloat_0_1_Creature);
+    Spline_EvaluatePosition(tmp14, ((char*)&AsSplineNpc(self)->splinePoints),
+                            AsSplineNpc(self)->pathDistance - kFloat_0_1_Creature);
     Spline_EvaluatePosition(&tmp08, ((char*)&AsSplineNpc(self)->splinePoints), AsSplineNpc(self)->pathDistance);
     (*(WVector*)&AsCCreature(self)->transform[9]) = tmp08;
-    if (Vec3_NearlyEqualWithTolerance(tmp14, (void*)(AsCCreature(self)->targetPoints + (AsCCreature(self)->targetPointCount - 1) * 0xc), kFloat_0_00001_CreaturePath)) {
+    if (Vec3_NearlyEqualWithTolerance(
+            tmp14, (void*)(AsCCreature(self)->targetPoints + (AsCCreature(self)->targetPointCount - 1) * 0xc),
+            kFloat_0_00001_CreaturePath)) {
         AsSplineNpc(self)->pathDistance = kFloat_0_Creature;
     }
     Matrix_BuildCameraTransform(tmp20, tmp14, ((char*)&AsCCreature(self)->transform[9]));
@@ -4286,7 +5161,8 @@ void ntNpc_Dragon_vfunc_31(void* self) {
 
 // Release ntNpc_Dragon resources and optionally delete the object.
 void* ntNpc_Dragon_Dtor(void* self, int doDelete) {
-    if (self == 0) return self;
+    if (self == 0)
+        return self;
     if (((char*)&AsSplineNpc(self)->splinePoints)) {
         if (AsSplineNpc(self)->splinePoints != 0) {
             if (AsSplineNpc(self)->splinePoints != 0) {
@@ -4298,14 +5174,14 @@ void* ntNpc_Dragon_Dtor(void* self, int doDelete) {
             __dla__FPv(AsSplineNpc(self)->splineDistances);
             AsSplineNpc(self)->splineDistances = 0;
         }
-        if ((*(void **)&AsSplineNpc(self)->splineCoefficients) != 0) {
-            __dla__FPv((*(void **)&AsSplineNpc(self)->splineCoefficients));
-            (*(void **)&AsSplineNpc(self)->splineCoefficients) = 0;
+        if ((*(void**)&AsSplineNpc(self)->splineCoefficients) != 0) {
+            __dla__FPv((*(void**)&AsSplineNpc(self)->splineCoefficients));
+            (*(void**)&AsSplineNpc(self)->splineCoefficients) = 0;
         }
         (*(float*)&AsSplineNpc(self)->splineLengthBits) = kFloat_0_Creature;
         (*(int*)&AsSplineNpc(self)->splinePointCount) = 0;
     }
-    CCreature_dtor(self, 0);
+    __dt__9CCreatureFv(self, 0);
     if (doDelete > 0) {
         __dl__FPv(self);
     }
@@ -4316,18 +5192,17 @@ void* ntNpc_Dragon_Dtor(void* self, int doDelete) {
 } // namespace ns4
 
 // ---- merged from course_creatures_flocks_and_flyers.cpp ----
-namespace ns5 {
-// Translation unit 0x801A2788-0x801A3B4C (7 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
-struct Vec3i { int x, y, z; };
+struct Vec3i {
+    int x, y, z;
+};
 
 extern "C" {
-extern void *CCreature_dtor(void *, int);
-extern void __dl__FPv(void *);
-extern void __dla__FPv(void *);
-extern void Vec3_Zero(void *);
-extern void appFreeUni__FPv(void *);
+extern void* __dt__9CCreatureFv(void*, int);
+extern void __dl__FPv(void*);
+extern void __dla__FPv(void*);
+extern void Vec3_Zero(void*);
+extern void appFreeUni__FPv(void*);
 extern char __vt__9CCreature[];
 extern char __vt__14ntNpc_PolaShip[];
 extern char __vt__18ntNpc_BlackSparrow[];
@@ -4336,67 +5211,68 @@ extern const float kFloat_0_Creature;
 extern const float kFloat_5_5_BlackSparrow;
 extern const float kFloat_0_7853982_Creature;
 extern float kFloat_48_Creature;
-extern void *WPuppet_FindAnimationRangeByName(void *, const char *);
-extern void *CString_Compare(void *, const char *);
+extern void* WPuppet_FindAnimationRangeByName(void*, const char*);
+extern void* CString_Compare(void*, const char*);
 // AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7); f2 is the new time
 // (read at 0x802A663C).
-extern void AnimationEventParser_ProcessFrameRange(void *, void *, float, float, void *, int, int); /* AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7): f2 is the new time (0x802A663C reads it) */
-extern void WPuppet_SetOpacityRecursive(void *, unsigned char);
-extern void WView_DrawFacingCircleVec4(void *, void *, int, int, int);
-extern void __ml__FfRC7WVector(void *, void *, float);
-extern void __mi__FRC7WVectorRC7WVector(void *, void *, void *);
-extern void WView_DrawLine(void *, void *, int, void *, int, int);
-extern void WPuppet_SetAnimationTimeFromRanges(void *, int, float, int, int);
-extern void Matrix_SetAxisRotation(void *, float, char);
-extern void Matrix_ConcatAffine(void *, void *, void *);
-extern void Model_SetMatrixRecursive(void *, void *);
-extern void WPuppet_UpdateBoneWorldMatrices(void *, void *, int, float);
-extern void WPuppet_UpdateBoundsFromBone(void *);
+extern void AnimationEventParser_ProcessFrameRange(
+    void*, void*, float, float, void*, int,
+    int); /* AnimationEventParser_ProcessFrameRange is (self, manager r4, bounds r5, f1, f2, r6, r7): f2 is the new time (0x802A663C reads it) */
+extern void WPuppet_SetOpacityRecursive(void*, unsigned char);
+extern void WView_DrawFacingCircleVec4(void*, void*, int, int, int);
+extern void __ml__FfRC7WVector(void*, void*, float);
+extern void __mi__FRC7WVectorRC7WVector(void*, void*, void*);
+extern void WView_DrawLine(void*, void*, int, void*, int, int);
+extern void WPuppet_SetAnimationTimeFromRanges(void*, int, float, int, int);
+extern void Matrix_SetAxisRotation(void*, float, char);
+extern void Matrix_ConcatAffine(void*, void*, void*);
+extern void Model_SetMatrixRecursive(void*, void*);
+extern void WPuppet_UpdateBoneWorldMatrices(void*, void*, int, float);
+extern void WPuppet_UpdateBoundsFromBone(void*);
 extern char s_sceneLighting[];
-extern void *g_view;
-extern void *g_drawSceneDebugGeometry;
+extern void* g_view;
+extern void* g_drawSceneDebugGeometry;
 extern const float kFloat_5_creature;
 extern const float kFloat_0_8_805DF2D8;
 extern const float kFloat_1_Creature;
 extern const float kFloat_0_017453292_Creature;
 extern const double kDouble_SignedIntConversionBias_Creature;
-extern float WVectorLen__FRC7WVector(void *);
-extern void __as__7WVectorFRC7WVector(void *, void *);
-extern void __apl__7WVectorFRC7WVector(void *, void *);
+extern float WVectorLen__FRC7WVector(void*);
+extern void __as__7WVectorFRC7WVector(void*, void*);
+extern void __apl__7WVectorFRC7WVector(void*, void*);
 extern float Random_RangeFloat(int, float, float);
-extern void *__nwa__FUl(unsigned int);
-extern void *appMallocDummy__FUl(unsigned int);
-extern float Vector_SignedAngleXZ(void *, void *);
-extern void __ml__FRC7WVectorf(void *, void *, float);
-extern void *Normalize__7WVectorFv(void *);
-extern void *CQuadTree_GetInstance(void);
-extern void GetGroundPoint__9CQuadTreeF7WVectorbPib(void *, void *, void *, int, int, int);
-extern void Matrix_CopyAffine(void *, void *);
+extern void* __nwa__FUl(unsigned int);
+extern void* appMallocDummy__FUl(unsigned int);
+extern float Vector_SignedAngleXZ(void*, void*);
+extern void __ml__FRC7WVectorf(void*, void*, float);
+extern void* Normalize__7WVectorFv(void*);
+extern void* CQuadTree_GetInstance(void);
+extern void GetGroundPoint__9CQuadTreeF7WVectorbPib(void*, void*, void*, int, int, int);
+extern void Matrix_CopyAffine(void*, void*);
 extern unsigned int __vt__Q23std11logic_error[];
 extern unsigned int s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12length_error[];
-extern void *__nw__FUl(unsigned int);
-extern void __dt__Q23std12length_errorFv(void *);
+extern void* __nw__FUl(unsigned int);
+extern void __dt__Q23std12length_errorFv(void*);
 
-#define THROW_LENGTH_ERROR()                                                  \
-    do {                                                                      \
-        char so[12];                                                          \
-        const char *sname = (const char *)npcResourceStrings;                       \
-        *(void **)(so + 0) = (void *)__vt__Q23std11logic_error;                            \
-        unsigned int mlen = strlen(sname) + 1;                                \
-        *(void **)(so + 4) = __nwa__FUl(mlen * 2 - mlen);                    \
-        void *rec = __nw__FUl(0x10);                                          \
-        if (rec) {                                                            \
-            ((SharedCharControlView*)rec)->strongCountBits = (void *)1;                        \
-            ((SharedCharControlView*)rec)->weakCountBits = (void *)1;                        \
-            ((SharedCharControlView*)rec)->vtable = (void *)s_sharedCharDeleterVtable;             \
-            ((SharedCharControlView*)rec)->data = *(void **)(so + 4);               \
-        }                                                                     \
-        *(void **)(so + 8) = rec;                                             \
-        strcpy((char *)*(void **)(so + 4), sname);                            \
-        *(void **)(so + 0) = (void *)__vt__Q23std12length_error;                            \
-        __throw((void *)(sname + 0x14), so,                                   \
-                (void *)__dt__Q23std12length_errorFv);                        \
+#define THROW_LENGTH_ERROR()                                                          \
+    do {                                                                              \
+        char so[12];                                                                  \
+        const char* sname = (const char*)npcResourceStrings;                          \
+        *(void**)(so + 0) = (void*)__vt__Q23std11logic_error;                         \
+        unsigned int mlen = strlen(sname) + 1;                                        \
+        *(void**)(so + 4) = __nwa__FUl(mlen * 2 - mlen);                              \
+        void* rec = __nw__FUl(0x10);                                                  \
+        if (rec) {                                                                    \
+            ((SharedCharControlView*)rec)->strongCountBits = (void*)1;                \
+            ((SharedCharControlView*)rec)->weakCountBits = (void*)1;                  \
+            ((SharedCharControlView*)rec)->vtable = (void*)s_sharedCharDeleterVtable; \
+            ((SharedCharControlView*)rec)->data = *(void**)(so + 4);                  \
+        }                                                                             \
+        *(void**)(so + 8) = rec;                                                      \
+        strcpy((char*)*(void**)(so + 4), sname);                                      \
+        *(void**)(so + 0) = (void*)__vt__Q23std12length_error;                        \
+        __throw((void*)(sname + 0x14), so, (void*)__dt__Q23std12length_errorFv);      \
     } while (0)
 
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
@@ -4408,65 +5284,82 @@ struct Alloc801A {
     Alloc801A() : state(0) {}
 };
 struct Grow801A {
-    Vec3i *data;
+    Vec3i* data;
     unsigned int size, capacity;
-    unsigned int *allocator;
+    unsigned int* allocator;
     unsigned int remaining;
     // Initialize an empty temporary grid-path vector tied to owner capacity.
-    Grow801A(unsigned int *a) : data(0), size(0), capacity(0), allocator(a), remaining(0) {}
+    Grow801A(unsigned int* a) : data(0), size(0), capacity(0), allocator(a), remaining(0) {}
     // Free the grid-path allocation retained after swap or unwind.
-    ~Grow801A() { if (data) { Alloc801A allocator; size -= size; appFreeUni__FPv(data); } }
+    ~Grow801A() {
+        if (data) {
+            Alloc801A allocator;
+            size -= size;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 struct Copy801A {
     unsigned int x, y, z;
     // Copy three XYZ storage words while retaining exception cleanup.
-    Copy801A(const Copy801A &v) {
+    Copy801A(const Copy801A& v) {
         try {
             unsigned int a, b;
-            a = v.x; b = v.y;
-            x = a; y = b; z = v.z;
+            a = v.x;
+            b = v.y;
+            x = a;
+            y = b;
+            z = v.z;
         } catch (...) {
             throw;
         }
     }
 };
 // Return the larger grid-path growth request by reference.
-inline const unsigned int &max801A(const unsigned int &a, const unsigned int &b) {
+inline const unsigned int& max801A(const unsigned int& a, const unsigned int& b) {
     return a < b ? b : a;
 }
 struct Guard801A {
-    void *data;
-    void *allocator;
+    void* data;
+    void* allocator;
     // Guard the message allocation until shared ownership transfers.
-    Guard801A(void *p, void *a) : data(p), allocator(a) {}
+    Guard801A(void* p, void* a) : data(p), allocator(a) {}
     // Free an untransferred message allocation.
-    ~Guard801A() { if (data) __dla__FPv(data); }
+    ~Guard801A() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 struct Error801A {
-    void *vtable;
-    char *text;
-    void *shared;
+    void* vtable;
+    char* text;
+    void* shared;
     // Initialize the grid-path logic-error base and allocator state.
     Error801A() {
         Alloc801A allocator;
         vtable = __vt__Q23std11logic_error;
     }
     // Run the base exception cleanup without deleting wrapper storage.
-    ~Error801A() { __dt__Q23std9exceptionFv(this, -1); }
+    ~Error801A() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 struct LengthError801A : Error801A {
     // Construct the owned grid-path length-error message.
-    LengthError801A(const char *message) : Error801A() {
-        const char *sname = message;
+    LengthError801A(const char* message) : Error801A() {
+        const char* sname = message;
         Alloc801A alloc;
         unsigned int mlen = strlen(sname) + 1;
-        char *t = (char *)__nwa__FUl(mlen * 2 - mlen);
+        char* t = (char*)__nwa__FUl(mlen * 2 - mlen);
         text = t;
         {
-            Guard801A guard(t, (void *)&alloc);
-            unsigned int *block = (unsigned int *)__nw__FUl(16);
+            Guard801A guard(t, (void*)&alloc);
+            unsigned int* block = (unsigned int*)__nw__FUl(16);
             if (block) {
-                block[1] = 1; block[2] = 1; block[0] = (unsigned int)s_sharedCharDeleterVtable; block[3] = (unsigned int)t;
+                block[1] = 1;
+                block[2] = 1;
+                block[0] = (unsigned int)s_sharedCharDeleterVtable;
+                block[3] = (unsigned int)t;
             }
             shared = block;
             guard.data = 0;
@@ -4477,9 +5370,9 @@ struct LengthError801A : Error801A {
 // Throw the grid-path length error through the game exception ABI.
 inline void lengthError801A() {
     unsigned int storage[sizeof(LengthError801A) / sizeof(unsigned int)];
-    LengthError801A *error = new (storage) LengthError801A((const char *)npcResourceStrings);
+    LengthError801A* error = new (storage) LengthError801A((const char*)npcResourceStrings);
     error->vtable = __vt__Q23std12length_error;
-    __throw(npcResourceStrings + kCreatureStrings_lengthErrorType, error, (void *)__dt__Q23std12length_errorFv);
+    __throw(npcResourceStrings + kCreatureStrings_lengthErrorType, error, (void*)__dt__Q23std12length_errorFv);
 }
 
 #pragma opt_propagation off
@@ -4491,7 +5384,7 @@ inline void lengthError801A() {
 // reject recent cells; the fifth may repeat. YCount==1 uses ground-constrained
 // forward motion, otherwise direct 3D pursuit. dt uses the movement-rate time base.
 // Black-sparrow input/tuning map (CCreature.h is the common prefix):
-// +0C/+18 bounds origin/max are world XYZ; CCreature_InitRandomGridCell
+// +0C/+18 bounds origin/max are world XYZ; CCreature::InitRandomGridCell
 // (creature_puppet_loading.cpp) derives counts with ceil(extent/cellSize), steps=extent/count;
 // placement flag 4 enables vertical cells, otherwise YCount=1. It allocates
 // history length 4 in 3D, 2 on ground, filled with the initial flattened cell.
@@ -4503,7 +5396,7 @@ inline void lengthError801A() {
 // initialize callback; changing cell size after grid construction does not rebuild
 // counts/steps. Re-run the grid builder as part of a future spacing mod.
 // +74 speed=5.5 world units/s (ctor, kFloat_5_5_BlackSparrow); +70 turnRate rad/s
-// caps ground-mode yaw. +11A movementEnabled is controlled by animation vfunc_27,
+// caps ground-mode yaw. +11A movementEnabled is controlled by UpdateAnimationAndMovement,
 // not tested here: that dispatcher decides whether to invoke this method.
 // Arrival radius is kFloat_1_Creature=1 world unit, independent of speed*dt.
 // Recent-cell array +A8 contains recentCellCount(+A4) int32 cell IDs, newest first;
@@ -4518,8 +5411,8 @@ inline void lengthError801A() {
 // frees retired array. Length error precedes publication; allocation null unchecked.
 // Target/history mutation happens BEFORE allocation, so failure is not transactional.
 // The field-derived byte addresses below retain the current alias/load schedule;
-void ntNpc_BlackSparrow_UpdateGridTargetAndMove(void *self, float dt) {
-    char *s = (char *)self;
+void ntNpc_BlackSparrow_UpdateGridTargetAndMove(void* self, float dt) {
+    char* s = (char*)self;
     unsigned int capacity;
     unsigned int needed, increment2, increment1;
     int neighborStep[3];
@@ -4536,7 +5429,7 @@ void ntNpc_BlackSparrow_UpdateGridTargetAndMove(void *self, float dt) {
             selectionAttempts = 0;
             do {
                 selectionAttempts++;
-                int *stepCursor = neighborStep;
+                int* stepCursor = neighborStep;
                 int i = 0;
                 while (i < kGridAxisCount) {
                     *stepCursor = rand() % kNeighborStepChoices - 1;
@@ -4551,20 +5444,32 @@ void ntNpc_BlackSparrow_UpdateGridTargetAndMove(void *self, float dt) {
                 int previousY = previousCell / layerCells;
                 int previousZ = (previousCell % layerCells) / gridWidth;
                 x = neighborStep[0] + previousCell % gridWidth;
-                if (x < 0) x = 0; else if (x > maxX) x = maxX;
+                if (x < 0)
+                    x = 0;
+                else if (x > maxX)
+                    x = maxX;
                 y = previousY + neighborStep[1];
                 int maxY = AsCCreature(s)->gridYCount - 1;
-                if (y < 0) y = 0; else if (y > maxY) y = maxY;
+                if (y < 0)
+                    y = 0;
+                else if (y > maxY)
+                    y = maxY;
                 z = previousZ + neighborStep[2];
                 int maxZ = gridDepth - 1;
-                if (z < 0) z = 0; else if (z > maxZ) z = maxZ;
+                if (z < 0)
+                    z = 0;
+                else if (z > maxZ)
+                    z = maxZ;
                 candidateCell = gridWidth * (z + y * gridDepth) + x;
                 historyCount = (*(int*)(s + kRecentCellCountOffset));
                 recentlyVisited = 0;
                 int historyIndex = 0;
                 int historyByteOffset = 0;
                 while (historyIndex < historyCount) {
-                    if (candidateCell == *(int *)((char *)(*(int**)(s + kRecentCellsOffset)) + historyByteOffset)) { recentlyVisited = 1; break; }
+                    if (candidateCell == *(int*)((char*)(*(int**)(s + kRecentCellsOffset)) + historyByteOffset)) {
+                        recentlyVisited = 1;
+                        break;
+                    }
                     historyIndex++;
                     historyByteOffset += 4;
                 }
@@ -4574,11 +5479,17 @@ void ntNpc_BlackSparrow_UpdateGridTargetAndMove(void *self, float dt) {
             (*(int**)(s + kRecentCellsOffset))[0] = candidateCell;
 
             // Phase 2: jitter the target inside the selected world-space grid cell.
-            AsCCreature(s)->targetPosition[0] = AsCCreature(s)->movementBoundsOrigin[0] + AsCCreature(s)->gridStepX * (float)x + Random_RangeFloat(-1, kFloat_0_Creature, AsCCreature(s)->gridStepX);
+            AsCCreature(s)->targetPosition[0] = AsCCreature(s)->movementBoundsOrigin[0] +
+                                                AsCCreature(s)->gridStepX * (float)x +
+                                                Random_RangeFloat(-1, kFloat_0_Creature, AsCCreature(s)->gridStepX);
             if (AsCCreature(s)->gridYCount > 1) {
-                AsCCreature(s)->targetPosition[1] = AsCCreature(s)->movementBoundsOrigin[1] + AsCCreature(s)->gridStepY * (float)y + Random_RangeFloat(-1, kFloat_0_Creature, AsCCreature(s)->gridStepY);
+                AsCCreature(s)->targetPosition[1] = AsCCreature(s)->movementBoundsOrigin[1] +
+                                                    AsCCreature(s)->gridStepY * (float)y +
+                                                    Random_RangeFloat(-1, kFloat_0_Creature, AsCCreature(s)->gridStepY);
             }
-            AsCCreature(s)->targetPosition[2] = AsCCreature(s)->movementBoundsOrigin[2] + AsCCreature(s)->gridStepZ * (float)z + Random_RangeFloat(-1, kFloat_0_Creature, AsCCreature(s)->gridStepZ);
+            AsCCreature(s)->targetPosition[2] = AsCCreature(s)->movementBoundsOrigin[2] +
+                                                AsCCreature(s)->gridStepZ * (float)z +
+                                                Random_RangeFloat(-1, kFloat_0_Creature, AsCCreature(s)->gridStepZ);
 
             // Phase 3: append the chosen XYZ target or replay one existing target.
             if (AsCCreature(s)->recordPath != 0) {
@@ -4586,49 +5497,55 @@ void ntNpc_BlackSparrow_UpdateGridTargetAndMove(void *self, float dt) {
                 unsigned int count = ((CreatureGridPathView*)s)->pointCount;
                 unsigned int allocated = (*(unsigned int*)(s + kWaypointCapacityOffset));
                 if (count < allocated) {
-                    Vec3i *dst = (Vec3i *)(((CreatureGridPathView*)s)->pointsAddressBits + count * 12);
+                    Vec3i* dst = (Vec3i*)(((CreatureGridPathView*)s)->pointsAddressBits + count * 12);
                     new (dst) Copy801A((*(Copy801A*)(s + kCreatureTargetOffset)));
                     ((CreatureGridPathView*)s)->pointCount++;
                 } else {
                     Alloc801A allocatorInsert;
                     Alloc801A allocatorCheck;
-                    if (kMaxWaypointCount - allocated < 1) lengthError801A();
-                    needed = ((CreatureGridPathView*)s)->pointCount + 1 - (*(unsigned int*)(s + kWaypointCapacityOffset));
+                    if (kMaxWaypointCount - allocated < 1)
+                        lengthError801A();
+                    needed =
+                        ((CreatureGridPathView*)s)->pointCount + 1 - (*(unsigned int*)(s + kWaypointCapacityOffset));
                     Grow801A grow(&(*(unsigned int*)(s + kWaypointCapacityOffset)));
                     capacity = (*(unsigned int*)(s + kWaypointCapacityOffset));
-                    if (needed > kMaxWaypointCount - capacity) lengthError801A();
+                    if (needed > kMaxWaypointCount - capacity)
+                        lengthError801A();
                     if (capacity < kWaypointThreeFifthsGrowthLimit) {
                         increment1 = ((capacity + 1) * 3) / 5;
                         capacity += max801A(increment1, needed);
                     } else if (capacity < kWaypointHalfGrowthLimit) {
                         increment2 = (capacity + 1) / 2;
                         capacity += max801A(increment2, needed);
-                    } else capacity = kMaxWaypointCount;
+                    } else
+                        capacity = kMaxWaypointCount;
                     Alloc801A allocatorAlloc;
-                    if (capacity > kMaxWaypointCount) lengthError801A();
-                    grow.data = (Vec3i *)appMallocDummy__FUl(capacity * 12);
+                    if (capacity > kMaxWaypointCount)
+                        lengthError801A();
+                    grow.data = (Vec3i*)appMallocDummy__FUl(capacity * 12);
                     unsigned int oldSize = ((CreatureGridPathView*)s)->pointCount;
                     grow.capacity = capacity;
                     grow.remaining = oldSize;
-                    Vec3i *dst = grow.data + oldSize + grow.size;
+                    Vec3i* dst = grow.data + oldSize + grow.size;
                     Alloc801A allocatorCopy;
                     for (unsigned int n = 1; n; --n, ++dst) {
-                        new (dst) Copy801A(*(Copy801A *)((s + kCreatureTargetOffset)));
+                        new (dst) Copy801A(*(Copy801A*)((s + kCreatureTargetOffset)));
                         ++grow.size;
                     }
-                    Vec3i *begin = (Vec3i *)((CreatureGridPathView*)s)->pointsAddressBits;
-                    Vec3i *end = begin + ((CreatureGridPathView*)s)->pointCount;
+                    Vec3i* begin = (Vec3i*)((CreatureGridPathView*)s)->pointsAddressBits;
+                    Vec3i* end = begin + ((CreatureGridPathView*)s)->pointCount;
                     dst = grow.data + grow.remaining;
                     Alloc801A allocatorMove;
                     while (end > begin) {
-                        --dst; --end;
-                        new (dst) Copy801A(*(Copy801A *)end);
+                        --dst;
+                        --end;
+                        new (dst) Copy801A(*(Copy801A*)end);
                         --grow.remaining;
                         ++grow.size;
                     }
                     Alloc801A allocatorClear;
                     ((CreatureGridPathView*)s)->pointCount = 0;
-                    Vec3i *old = (Vec3i *)((CreatureGridPathView*)s)->pointsAddressBits;
+                    Vec3i* old = (Vec3i*)((CreatureGridPathView*)s)->pointsAddressBits;
                     unsigned int oldCapacity = (*(unsigned int*)(s + kWaypointCapacityOffset));
                     (*(unsigned int*)(s + kWaypointCapacityOffset)) = grow.capacity;
                     grow.capacity = oldCapacity;
@@ -4639,7 +5556,9 @@ void ntNpc_BlackSparrow_UpdateGridTargetAndMove(void *self, float dt) {
                 }
             }
         } else {
-            __as__7WVectorFRC7WVector((s + kCreatureTargetOffset), (char *)(void*)((CreatureGridPathView*)s)->pointsAddressBits + AsCCreature(s)->pathCursor * 12);
+            __as__7WVectorFRC7WVector((s + kCreatureTargetOffset),
+                                      (char*)(void*)((CreatureGridPathView*)s)->pointsAddressBits +
+                                          AsCCreature(s)->pathCursor * 12);
             AsCCreature(s)->pathCursor = AsCCreature(s)->pathCursor + 1;
         }
     }
@@ -4647,7 +5566,7 @@ void ntNpc_BlackSparrow_UpdateGridTargetAndMove(void *self, float dt) {
     if (AsCCreature(s)->gridYCount > 1) {
         Vec3f displacement, velocity, directionToTarget;
         __mi__FRC7WVectorRC7WVector(&directionToTarget, (s + kCreatureTargetOffset), (s + kCreaturePositionOffset));
-        void *unitDirection = Normalize__7WVectorFv(&directionToTarget);
+        void* unitDirection = Normalize__7WVectorFv(&directionToTarget);
         __ml__FfRC7WVector(&velocity, unitDirection, AsCCreature(s)->movementSpeed);
         __ml__FRC7WVectorf(&displacement, &velocity, dt);
         __apl__7WVectorFRC7WVector((s + kCreaturePositionOffset), &displacement);
@@ -4673,7 +5592,7 @@ void ntNpc_BlackSparrow_UpdateGridTargetAndMove(void *self, float dt) {
         __apl__7WVectorFRC7WVector((s + kCreaturePositionOffset), &t2);
         Vec3f res;
         Vec3i vv = (*(Vec3i*)(s + kCreaturePositionOffset));
-        void *rr = CQuadTree_GetInstance();
+        void* rr = CQuadTree_GetInstance();
         int zero = 0;
         GetGroundPoint__9CQuadTreeF7WVectorbPib(&res, rr, &vv, 1, zero, zero);
         __as__7WVectorFRC7WVector((s + kCreaturePositionOffset), &res);
@@ -4683,56 +5602,61 @@ void ntNpc_BlackSparrow_UpdateGridTargetAndMove(void *self, float dt) {
 #pragma opt_propagation reset
 
 // Advance clips, alternate resting and moving actions, and interpolate one-shot opacity keys.
-void ntNpc_BlackSparrow_UpdateAnimationAndMovement(void *self, float dt) {
-      if ((*(void **)&AsCCreature(self)->puppet) == 0 || AsCCreature(self)->animationActive == 0) return;
-      float limit = kFloat_0_Creature;
-      float curTime = AsCCreature(self)->animationTime + dt;
+void ntNpc_BlackSparrow_UpdateAnimationAndMovement(void* self, float dt) {
+    if ((*(void**)&AsCCreature(self)->puppet) == 0 || AsCCreature(self)->animationActive == 0)
+        return;
+    float limit = kFloat_0_Creature;
+    float curTime = AsCCreature(self)->animationTime + dt;
     AsCCreature(self)->animationTime = curTime;
-      if (limit > curTime) return;
-    void *anim = (*(void **)&AsCCreature(self)->animationRange);
-    AnimationEventParser_ProcessFrameRange((char *)self + 4, (*(void **)&AsCCreature(self)->puppet), curTime - dt, curTime, anim, -1, 0);
-    anim = (*(void **)&AsCCreature(self)->animationRange);
-      float end = *((float *)((char *)anim + 4));
-      if (end < AsCCreature(self)->animationTime) {
+    if (limit > curTime)
+        return;
+    void* anim = (*(void**)&AsCCreature(self)->animationRange);
+    AnimationEventParser_ProcessFrameRange((char*)self + 4, (*(void**)&AsCCreature(self)->puppet), curTime - dt,
+                                           curTime, anim, -1, 0);
+    anim = (*(void**)&AsCCreature(self)->animationRange);
+    float end = *((float*)((char*)anim + 4));
+    if (end < AsCCreature(self)->animationTime) {
         if (((*(unsigned int*)&AsCCreature(self)->flags) & 1) != 0) {
             AsCCreature(self)->animationActive = 0;
-            AsCCreature(self)->animationTime = *(float *)anim;
+            AsCCreature(self)->animationTime = *(float*)anim;
         } else {
-            AsCCreature(self)->animationTime = AsCCreature(self)->animationTime - (end - *(float *)anim);
+            AsCCreature(self)->animationTime = AsCCreature(self)->animationTime - (end - *(float*)anim);
             int tick = rand();
             int phase = tick - ((tick / 101) * 101);
             if (20 > phase) {
-                void *parent = (*(void **)&AsCCreature(self)->puppet);
-                const char *name = npcResourceStrings + kCreatureStrings_action01;
+                void* parent = (*(void**)&AsCCreature(self)->puppet);
+                const char* name = npcResourceStrings + kCreatureStrings_action01;
                 if (parent) {
-                    void *cur = (*(void **)&AsCCreature(self)->animationRange);
-                    if (!cur || CString_Compare(*((void **)cur + 6), name) != 0) {
-                        void *next = WPuppet_FindAnimationRangeByName(parent, name);
+                    void* cur = (*(void**)&AsCCreature(self)->animationRange);
+                    if (!cur || CString_Compare(*((void**)cur + 6), name) != 0) {
+                        void* next = WPuppet_FindAnimationRangeByName(parent, name);
                         if (next != 0) {
-                            (*(void **)&AsCCreature(self)->animationRange) = next;
+                            (*(void**)&AsCCreature(self)->animationRange) = next;
                             float zero = kFloat_0_Creature;
-                            float v = *(float *)next + zero;
-                            float cap = *((float *)((char *)next + 4));
+                            float v = *(float*)next + zero;
+                            float cap = *((float*)((char*)next + 4));
                             AsCCreature(self)->animationTime = v > cap ? cap : v;
-                        } else AsCCreature(self)->animationTime = kFloat_0_Creature;
+                        } else
+                            AsCCreature(self)->animationTime = kFloat_0_Creature;
                     }
                 }
                 AsCCreature(self)->movementEnabled = 0;
             } else {
-                void *parent = (*(void **)&AsCCreature(self)->puppet);
-                const char *name = npcResourceStrings + kCreatureStrings_defaultAnimation;
+                void* parent = (*(void**)&AsCCreature(self)->puppet);
+                const char* name = npcResourceStrings + kCreatureStrings_defaultAnimation;
                 if (parent != 0) {
-                    void *cur = (*(void **)&AsCCreature(self)->animationRange);
-                    if (0 == cur || CString_Compare(*((void **)cur + 6), name) != 0) {
-                        void *next = WPuppet_FindAnimationRangeByName(parent, name);
+                    void* cur = (*(void**)&AsCCreature(self)->animationRange);
+                    if (0 == cur || CString_Compare(*((void**)cur + 6), name) != 0) {
+                        void* next = WPuppet_FindAnimationRangeByName(parent, name);
                         if (next != 0) {
-                            (*(void **)&AsCCreature(self)->animationRange) = next;
+                            (*(void**)&AsCCreature(self)->animationRange) = next;
 
                             float zero = kFloat_0_Creature;
-                            float v = *(float *)next + zero;
-                            float cap = *((float *)((char *)next + 4));
+                            float v = *(float*)next + zero;
+                            float cap = *((float*)((char*)next + 4));
                             AsCCreature(self)->animationTime = v > cap ? cap : v;
-                        } else AsCCreature(self)->animationTime = kFloat_0_Creature;
+                        } else
+                            AsCCreature(self)->animationTime = kFloat_0_Creature;
                     }
                 }
                 AsCCreature(self)->movementEnabled = 1;
@@ -4740,46 +5664,49 @@ void ntNpc_BlackSparrow_UpdateAnimationAndMovement(void *self, float dt) {
         }
     }
     if (((*(unsigned int*)&AsCCreature(self)->flags) & 1) != 0) {
-        void *node = AsCCreature(self)->opacityKeyframePrevious;
-          void *head = ((char*)&AsCCreature(self)->opacityKeyframeNext);
+        void* node = AsCCreature(self)->opacityKeyframePrevious;
+        void* head = ((char*)&AsCCreature(self)->opacityKeyframeNext);
         while (head != node) {
-            void *prev = node;
-            node = *((void **)node + 1);
+            void* prev = node;
+            node = *((void**)node + 1);
             if (head == node) {
-                AsCCreature(self)->opacity = (unsigned char)(int)(*((float *)prev + 2));
+                AsCCreature(self)->opacity = (unsigned char)(int)(*((float*)prev + 2));
                 break;
             }
             float t = AsCCreature(self)->animationTime;
-            float a = *((float *)prev + 3); float b = *((float *)node + 3);
+            float a = *((float*)prev + 3);
+            float b = *((float*)node + 3);
             if (t > a && b > t) {
                 float ratio = (t - a) / (b - a);
 
-                AsCCreature(self)->opacity = (unsigned char)(int)((1.0f - ratio) * (*((float *)prev + 2)) + ratio * (*((float *)node + 2)));
+                AsCCreature(self)->opacity =
+                    (unsigned char)(int)((1.0f - ratio) * (*((float*)prev + 2)) + ratio * (*((float*)node + 2)));
                 return;
             }
         }
     } else if (AsCCreature(self)->movementEnabled != 0) {
-        void **vtable = *(void ***)self;
-        ((void (*)(void *, float))vtable[0x90 / 4])(self, dt);
+        void** vtable = *(void***)self;
+        ((void (*)(void*, float))vtable[0x90 / 4])(self, dt);
     }
 }
 
 // Initialize ntNpc_BlackSparrow state and owned resources.
-void *ntNpc_BlackSparrow_Ctor(void *self, void *arg) {
+void* ntNpc_BlackSparrow_Ctor(void* self, void* arg) {
     const char* name;
     void* selected;
     struct VirtualObject {
 #define V(n) virtual void slot##n() DECOMP_LOCAL_VIRTUAL;
-    V(0) V(1) V(2) V(3) V(4) V(5) V(6) V(7) V(8) V(9)
-    V(10) V(11) V(12) V(13) V(14) V(15) V(16) V(17) V(18) V(19)
-    V(20) V(21) V(22) V(23) V(24) V(25) V(26) V(27) V(28) V(29)
-    V(30) V(31) V(32) V(33) V(34) V(35)
+        V(0)
+        V(1)
+        V(2)
+        V(3) V(4) V(5) V(6) V(7) V(8) V(9) V(10) V(11) V(12) V(13) V(14) V(15) V(16) V(17) V(18) V(19) V(20) V(21) V(22)
+            V(23) V(24) V(25) V(26) V(27) V(28) V(29) V(30) V(31) V(32) V(33) V(34) V(35)
 #undef V
-    virtual void initialize(void*) DECOMP_LOCAL_VIRTUAL;
+                virtual void initialize(void*) DECOMP_LOCAL_VIRTUAL;
     };
-    *(void *volatile*)self = __vt__9CCreature;
-    *((void *volatile*)self + 1) = __vt__9CCreature + 0x0C;
-    *((volatile unsigned int *)self + 2) = 0;
+    *(void* volatile*)self = __vt__9CCreature;
+    *((void* volatile*)self + 1) = __vt__9CCreature + 0x0C;
+    *((volatile unsigned int*)self + 2) = 0;
     Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsOrigin[0]));
     Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsMax[0]));
     ns3::InitObject* object = (ns3::InitObject*)self;
@@ -4802,39 +5729,39 @@ void *ntNpc_BlackSparrow_Ctor(void *self, void *arg) {
     object->vtableEnd = __vt__18ntNpc_BlackSparrow + 12;
     object->movementSpeed = kFloat_5_5_BlackSparrow;
     try {
-    ((VirtualObject*)self)->initialize(arg);
-    selected = (*(void **)&AsCCreature(self)->puppet);
-    object->maxBankAngle = kFloat_0_7853982_Creature;
-    object->cellSize = ns3::kFloat_48_Creature;
-    name = npcResourceStrings + kCreatureStrings_defaultAnimation;
-    if (selected != 0) {
-        void *current = (*(void **)&AsCCreature(self)->animationRange);
-        if (current == 0 || CString_Compare(*((void **)current + 6), name) != 0) {
-            void *result = WPuppet_FindAnimationRangeByName(selected, name);
-            if (result != 0) {
-                (*(void **)&AsCCreature(self)->animationRange) = result;
-                float f0 = kFloat_0_Creature;
-                float f1 = *(float *)result;
-                float f2 = *((float *)((char *)result + 4));
-                f0 = f1 + f0;
-                f2 = (f0 > f2) ? f2 : f0;
-                AsCCreature(self)->animationTime = f2;
-            } else {
-                AsCCreature(self)->animationTime = kFloat_0_Creature;
+        ((VirtualObject*)self)->initialize(arg);
+        selected = (*(void**)&AsCCreature(self)->puppet);
+        object->maxBankAngle = kFloat_0_7853982_Creature;
+        object->cellSize = ns3::kFloat_48_Creature;
+        name = npcResourceStrings + kCreatureStrings_defaultAnimation;
+        if (selected != 0) {
+            void* current = (*(void**)&AsCCreature(self)->animationRange);
+            if (current == 0 || CString_Compare(*((void**)current + 6), name) != 0) {
+                void* result = WPuppet_FindAnimationRangeByName(selected, name);
+                if (result != 0) {
+                    (*(void**)&AsCCreature(self)->animationRange) = result;
+                    float f0 = kFloat_0_Creature;
+                    float f1 = *(float*)result;
+                    float f2 = *((float*)((char*)result + 4));
+                    f0 = f1 + f0;
+                    f2 = (f0 > f2) ? f2 : f0;
+                    AsCCreature(self)->animationTime = f2;
+                } else {
+                    AsCCreature(self)->animationTime = kFloat_0_Creature;
+                }
             }
         }
-    }
-    AsCCreature(self)->movementEnabled = 1;
-    return self;
+        AsCCreature(self)->movementEnabled = 1;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        __dt__9CCreatureFv(self, -1);
         throw;
     }
 }
 
 #pragma opt_common_subs off
 // Draw the animated sparrow with bank angle, opacity and optional debug bounds and direction.
-void ntNpc_BlackSparrow_Draw(ns3::AnimationObject *self) {
+void ntNpc_BlackSparrow_Draw(ns3::AnimationObject* self) {
     struct Resource {
         virtual void slot0() DECOMP_LOCAL_VIRTUAL;
         virtual void slot1() DECOMP_LOCAL_VIRTUAL;
@@ -4842,11 +5769,14 @@ void ntNpc_BlackSparrow_Draw(ns3::AnimationObject *self) {
         virtual void name(const char*, int, int) DECOMP_LOCAL_VIRTUAL;
         virtual void draw(void*, int, int, int, float, int) DECOMP_LOCAL_VIRTUAL;
     };
-    if ((*(void **)&AsCCreature(self)->puppet) == 0 || AsCCreature(self)->animationActive == 0 || AsCCreature(self)->animationTime < kFloat_0_Creature) return;
+    if ((*(void**)&AsCCreature(self)->puppet) == 0 || AsCCreature(self)->animationActive == 0 ||
+        AsCCreature(self)->animationTime < kFloat_0_Creature)
+        return;
     if (((*(unsigned int*)&AsCCreature(self)->flags) & 1) != 0)
-        WPuppet_SetOpacityRecursive((*(void **)&AsCCreature(self)->puppet), AsCCreature(self)->opacity);
+        WPuppet_SetOpacityRecursive((*(void**)&AsCCreature(self)->puppet), AsCCreature(self)->opacity);
     if (g_drawSceneDebugGeometry != 0) {
-        WView_DrawFacingCircleVec4(g_view, ((char*)&AsWPuppet(AsCCreature(self)->puppet)->boundsCenter), 0xFF00FF00, 0x14, 0);
+        WView_DrawFacingCircleVec4(g_view, ((char*)&AsWPuppet(AsCCreature(self)->puppet)->boundsCenter), 0xFF00FF00,
+                                   0x14, 0);
         if (((*(unsigned int*)&AsCCreature(self)->flags) & 1) == 0) {
             float scale = 5.0f;
             unsigned char pos[12];
@@ -4854,45 +5784,53 @@ void ntNpc_BlackSparrow_Draw(ns3::AnimationObject *self) {
             __ml__FfRC7WVector(pos, ((char*)&AsCCreature(self)->transform[6]), scale);
             WVector transformed = (*(WVector*)&AsCCreature(self)->transform[9]) - *(WVector*)pos;
             WView_DrawLine(g_view, ((char*)&AsCCreature(self)->transform[9]), -256, &transformed, -256, 0);
-            WView_DrawLine(g_view, ((char*)&AsCCreature(self)->transform[9]), -65536, ((char*)&AsCCreature(self)->targetPosition[0]), -65536, 0);
+            WView_DrawLine(g_view, ((char*)&AsCCreature(self)->transform[9]), -65536,
+                           ((char*)&AsCCreature(self)->targetPosition[0]), -65536, 0);
         }
     }
-    WPuppet_SetAnimationTimeFromRanges((*(void **)&AsCCreature(self)->puppet), 0, AsCCreature(self)->animationTime, 0, 0);
-    if (self->check(((char*)&AsCCreature(self)->transform[9]), kFloat_0_8_805DF2D8) != 0) return;
-    if (self->rightScale > kFloat_1_Creature) self->rightScale = kFloat_1_Creature;
-    if (self->upScale > kFloat_1_Creature) self->upScale = kFloat_1_Creature;
-    if (self->forwardScale > kFloat_1_Creature) self->forwardScale = kFloat_1_Creature;
+    WPuppet_SetAnimationTimeFromRanges((*(void**)&AsCCreature(self)->puppet), 0, AsCCreature(self)->animationTime, 0,
+                                       0);
+    if (self->check(((char*)&AsCCreature(self)->transform[9]), kFloat_0_8_805DF2D8) != 0)
+        return;
+    if (self->rightScale > kFloat_1_Creature)
+        self->rightScale = kFloat_1_Creature;
+    if (self->upScale > kFloat_1_Creature)
+        self->upScale = kFloat_1_Creature;
+    if (self->forwardScale > kFloat_1_Creature)
+        self->forwardScale = kFloat_1_Creature;
     float angle = AsCCreature(self)->bankAngle;
     angle = (angle > kFloat_0_Creature) ? angle : -angle;
     float temp[12], combined[12];
-    void *matrix;
+    void* matrix;
     if (angle > 0.0f) {
         Matrix_SetAxisRotation(temp, AsCCreature(self)->bankAngle, 2);
         Matrix_ConcatAffine(combined, temp, ((char*)&AsCCreature(self)->transform[0]));
         matrix = combined;
-    } else matrix = ((char*)&AsCCreature(self)->transform[0]);
-    void *object = (*(void **)&AsCCreature(self)->puppet);
+    } else
+        matrix = ((char*)&AsCCreature(self)->transform[0]);
+    void* object = (*(void**)&AsCCreature(self)->puppet);
     ns3::Model_SetMatrixRecursive(object, object, matrix);
-    WPuppet_UpdateBoneWorldMatrices((*(void **)&AsCCreature(self)->puppet), g_view, 0, 1.0f);
-    WPuppet_UpdateBoundsFromBone((*(void **)&AsCCreature(self)->puppet));
+    WPuppet_UpdateBoneWorldMatrices((*(void**)&AsCCreature(self)->puppet), g_view, 0, 1.0f);
+    WPuppet_UpdateBoundsFromBone((*(void**)&AsCCreature(self)->puppet));
     ((Resource*)self->resource)->name(s_sceneLighting, 0, 0);
     ((Resource*)self->resource)->draw(g_view, 1, 1, 1, kFloat_1_Creature, 0);
 }
 #pragma opt_common_subs reset
 
 // Release ntNpc_BlackSparrow resources and optionally delete the object.
-void *ntNpc_BlackSparrow_Dtor(void *self, int doDelete) {
+void* ntNpc_BlackSparrow_Dtor(void* self, int doDelete) {
     if (self != 0) {
-        CCreature_dtor(self, 0);
-        if (doDelete > 0) __dl__FPv(self);
+        __dt__9CCreatureFv(self, 0);
+        if (doDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
 // Initialize ntNpc_PolaShip state and owned resources.
-void *ntNpc_PolaShip_Ctor(void *self, int arg, float f1) {
-    AsCCreature(self)->vtable = (void *)__vt__9CCreature;
-    AsCCreature(self)->secondaryVtable = (void *)(__vt__9CCreature + 0x0C);
+void* ntNpc_PolaShip_Ctor(void* self, int arg, float f1) {
+    AsCCreature(self)->vtable = (void*)__vt__9CCreature;
+    AsCCreature(self)->secondaryVtable = (void*)(__vt__9CCreature + 0x0C);
     (*(unsigned int*)&AsCCreature(self)->flags) = 0;
     Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsOrigin[0]));
     Vec3_Zero(((char*)&AsCCreature(self)->movementBoundsMax[0]));
@@ -4905,7 +5843,8 @@ void *ntNpc_PolaShip_Ctor(void *self, int arg, float f1) {
     (*(unsigned int*)&AsCCreature(self)->history) = 0;
     AsCCreature(self)->ballSpawnOffsetDistance = zero;
     (*(unsigned int*)&AsCCreature(self)->opacityKeyframeCount) = 0;
-    void *r6 = ((char*)&AsCCreature(self)->opacityKeyframeNext); AsCCreature(self)->opacityKeyframePrevious = r6;
+    void* r6 = ((char*)&AsCCreature(self)->opacityKeyframeNext);
+    AsCCreature(self)->opacityKeyframePrevious = r6;
     AsCCreature(self)->opacityKeyframeNext = r6;
     (*(unsigned int*)&AsCCreature(self)->targetPoints) = 0;
     (*(unsigned int*)&AsCCreature(self)->targetPointCount) = 0;
@@ -4913,8 +5852,8 @@ void *ntNpc_PolaShip_Ctor(void *self, int arg, float f1) {
     (*(unsigned int*)&AsCCreature(self)->pathPoints) = 0;
     (*(unsigned int*)&AsCCreature(self)->pathPointCount) = 0;
     (*(unsigned int*)&AsCCreature(self)->pathPointCapacity) = 0;
-    AsCCreature(self)->vtable = (void *)__vt__14ntNpc_PolaShip;
-    AsCCreature(self)->secondaryVtable = (void *)(__vt__14ntNpc_PolaShip + 0x0C);
+    AsCCreature(self)->vtable = (void*)__vt__14ntNpc_PolaShip;
+    AsCCreature(self)->secondaryVtable = (void*)(__vt__14ntNpc_PolaShip + 0x0C);
     (*(unsigned int*)&AsShip(self)->byteBuffer) = 0;
     AsShip(self)->byteCapacity = 0;
     AsShip(self)->splinePoints = 0;
@@ -4924,55 +5863,57 @@ void *ntNpc_PolaShip_Ctor(void *self, int arg, float f1) {
     AsShip(self)->splinePointCount = 0;
     (*(unsigned int*)&AsShip(self)->byteCountBits) = 0;
     AsShip(self)->bufferControlByte = 0;
-    ((void (*)(void *, int))((*(void ***)self)[0x98 / 4]))(self, arg);
+    ((void (*)(void*, int))((*(void***)self)[0x98 / 4]))(self, arg);
     AsShip(self)->pathDistance = kFloat_0_Creature;
-    *(unsigned char *)(((char*)&AsShip(self)->delayActiveBits)) = 1;
+    *(unsigned char*)(((char*)&AsShip(self)->delayActiveBits)) = 1;
     AsShip(self)->spawnDelay = f1;
     return self;
 }
 
 #pragma opt_common_subs off
 // Release ntNpc_PolaShip resources and optionally delete the object.
-void *ntNpc_PolaShip_Dtor(void *self, int doDelete) {
+void* ntNpc_PolaShip_Dtor(void* self, int doDelete) {
     if (self != 0) {
         if (((char*)&AsShip(self)->splinePoints)) {
-        void *p = (*(void **)&AsShip(self)->splinePoints);
-        if (p != 0) {
-            if (p != 0) __dla__FPv((char *)p - 0x10);
-            (*(void **)&AsShip(self)->splinePoints) = 0;
-        }
-        p = (*(void **)&AsShip(self)->splineDistances);
-        if (p != 0) {
-            __dla__FPv(p);
-            (*(void **)&AsShip(self)->splineDistances) = 0;
-        }
-        p = (*(void **)&AsShip(self)->splineCoefficients);
-        if (p != 0) {
-            __dla__FPv(p);
-            (*(void **)&AsShip(self)->splineCoefficients) = 0;
-        }
-        float zero = kFloat_0_Creature;
-        AsShip(self)->splinePointCount = 0;
-        AsShip(self)->splineLength = zero;
+            void* p = (*(void**)&AsShip(self)->splinePoints);
+            if (p != 0) {
+                if (p != 0)
+                    __dla__FPv((char*)p - 0x10);
+                (*(void**)&AsShip(self)->splinePoints) = 0;
+            }
+            p = (*(void**)&AsShip(self)->splineDistances);
+            if (p != 0) {
+                __dla__FPv(p);
+                (*(void**)&AsShip(self)->splineDistances) = 0;
+            }
+            p = (*(void**)&AsShip(self)->splineCoefficients);
+            if (p != 0) {
+                __dla__FPv(p);
+                (*(void**)&AsShip(self)->splineCoefficients) = 0;
+            }
+            float zero = kFloat_0_Creature;
+            AsShip(self)->splinePointCount = 0;
+            AsShip(self)->splineLength = zero;
         }
         if (((char*)&AsShip(self)->byteBuffer) != 0) {
-          if (((char*)&AsShip(self)->byteBuffer) != 0) {
-           if (((char*)&AsShip(self)->byteBuffer) != 0) {
             if (((char*)&AsShip(self)->byteBuffer) != 0) {
-             if (((char*)&AsShip(self)->byteBuffer) != 0) {
-              void *p = AsShip(self)->byteBuffer;
-              if (p != 0) {
-                char* end = (char*)p + (*(unsigned int*)&AsShip(self)->byteCountBits);
-                (*(unsigned int*)&AsShip(self)->byteCountBits) -= end - (char*)p;
-                appFreeUni__FPv(p);
-              }
-             }
+                if (((char*)&AsShip(self)->byteBuffer) != 0) {
+                    if (((char*)&AsShip(self)->byteBuffer) != 0) {
+                        if (((char*)&AsShip(self)->byteBuffer) != 0) {
+                            void* p = AsShip(self)->byteBuffer;
+                            if (p != 0) {
+                                char* end = (char*)p + (*(unsigned int*)&AsShip(self)->byteCountBits);
+                                (*(unsigned int*)&AsShip(self)->byteCountBits) -= end - (char*)p;
+                                appFreeUni__FPv(p);
+                            }
+                        }
+                    }
+                }
             }
-           }
-          }
         }
-        CCreature_dtor(self, 0);
-        if (doDelete > 0) __dl__FPv(self);
+        __dt__9CCreatureFv(self, 0);
+        if (doDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -4981,5 +5922,3 @@ void *ntNpc_PolaShip_Dtor(void *self, int doDelete) {
 } // extern "C"
 
 #undef THROW_LENGTH_ERROR
-} // namespace ns5
-

@@ -1,3 +1,7 @@
+// Two screens: the new account screen (CCreateNewAccount), where the player picks a character,
+// preference and starter club and saves them, and the in-game status panel (CIngameStatus2d)
+// with its icon, label and three-segment gauge.
+
 #include <decomp/static_init.h>
 #include <decomp/cw_bitfields.h>
 #include "iff/IffStruct.h"
@@ -24,34 +28,47 @@ struct LocalIntVector_u80326994 {
     }
 };
 
-// Translation unit 0x80326994-0x803280FC (23 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include "classes/CIngameStatus2d.h"
+#include "classes/CAsyncExhibition.h"
+#include "classes/CAsyncExhibitionAvatar.h"
+#include "classes/CPackTextureResource.h"
+#include "classes/CBpCtrl.h"
 
-#define AsCIngameStatus2d(p) ((CIngameStatus2d*)(p))
 extern "C" {
 
 // The two preference pairs occupy bits 7/6 of the menu byte. Bit 7 maps to
 // save preference bit 30; bit 6 chooses club-set inventory index 14 instead of 0.
 enum AccountMenuConstants {
-    kAccountElementCount = 17, kAccountSelectionOverlayOffset = 6,
-    kAccountConfirmElement = 14, kAccountMessageElement = 15,
-    kAccountAvatarElement = 16, kSelectedElementState = 2,
-    kNeutralPlayerColor = 5, kActionCancel = 6,
-    kSavePreferenceOptionBit = 0x80, kAlternateStarterClubOptionBit = 0x40,
-    kAlternateStarterClubSetIndex = 14, kStarterCharacterGrantMask = 0xC0,
+    kAccountElementCount = 17,
+    kAccountSelectionOverlayOffset = 6,
+    kAccountConfirmElement = 14,
+    kAccountMessageElement = 15,
+    kAccountAvatarElement = 16,
+    kSelectedElementState = 2,
+    kNeutralPlayerColor = 5,
+    kActionCancel = 6,
+    kSavePreferenceOptionBit = 0x80,
+    kAlternateStarterClubOptionBit = 0x40,
+    kAlternateStarterClubSetIndex = 14,
+    kStarterCharacterGrantMask = 0xC0,
     kSavedPreferenceMask = 0x40000000,
-    kCharacter0Group = 0x3F3, kCharacter1Group = 0x3F4,
-    kPowerGaugeGroup = 0x3F6, kControlGaugeGroup = 0x3F8, kSpinGaugeGroup = 0x3FA,
+    kCharacter0Group = 0x3F3,
+    kCharacter1Group = 0x3F4,
+    kPowerGaugeGroup = 0x3F6,
+    kControlGaugeGroup = 0x3F8,
+    kSpinGaugeGroup = 0x3FA,
     kCharacterNameGroup = 0x428
 };
 // Layout map: 0/1 character choices; 2/3 preference bit7; 4/5 starter club bit6.
 // Choices 0..5 have overlays at +6; 12/13 are opposite-character indicators;
 // 14 confirm, 15 message anchor, 16 avatar rect. States 0/2 mean reset/selected.
 // Gauge groups display IFF stats[0]=power, [1]=control, [3]=spin.
-enum AccountStatIndex { kAccountPowerStat = 0, kAccountControlStat = 1, kAccountSpinStat = 3 };
+enum AccountStatIndex {
+    kAccountPowerStat = 0,
+    kAccountControlStat = 1,
+    kAccountSpinStat = 3
+};
 struct AccountSelectionState {
     char beforeSelection[0x30];
     unsigned char accepted, cancelled;
@@ -77,15 +94,24 @@ typedef char NewAccountSaveFields_preference[((int)&((NewAccountSaveFields*)0)->
 // Option-byte signedness is retained per call site; the physical schema is shared.
 } // extern "C"
 template <class OptionByte> struct AccountMenuFields {
-    char prefix[0x18]; void* layout; void* primaryBpObject;
-    char betweenBpAndOptions[0x10]; unsigned char accepted, cancelled;
-    signed char selectedCharacterIndex; OptionByte optionBits;
-    void* avatar; void* menuMessage; char packedFileStorage[4];
-    union { void* textureResource; void* child; };
+    char prefix[0x18];
+    void* layout;
+    void* primaryBpObject;
+    char betweenBpAndOptions[0x10];
+    unsigned char accepted, cancelled;
+    signed char selectedCharacterIndex;
+    OptionByte optionBits;
+    void* avatar;
+    void* menuMessage;
+    char packedFileStorage[4];
+    union {
+        void* textureResource;
+        void* child;
+    };
 };
 extern "C" {
 typedef AccountMenuFields<char> Fn80326F4CData;
-typedef AccountMenuFields<unsigned char> Fn80326994Data;
+typedef AccountMenuFields<unsigned char> CCreateNewAccountView;
 
 extern const float kNewAccountPowerGaugeMaximum, kFloat_25_Stats, kFloat_30_805E1518;
 extern signed char s_fadeOverlayInitialized;
@@ -105,7 +131,6 @@ extern NewAccountMenuStringPool newAccountMenuStrings;
 typedef char NewAccountStrings_script[((int)&((NewAccountMenuStringPool*)0)->playerScript == 0x53) ? 1 : -1];
 void BpObject_StartScriptByName(void*, const char*, int);
 void UIGroup_SetEnabled(void*, int);
-int CCreateNewAccount_InitBpGroups(void*);
 void Layout_SetElementEnabled(void*, int, int);
 int Layout_SetElementValueState(void*, int, int);
 void Layout_SetElementPlayerFlag(void*, int, int, int);
@@ -114,19 +139,15 @@ void MenuMessage_SetPosition(void*, float*);
 void* UIGroup_GetOrCreateById(void*, int);
 int UIGroup_GetCombinedOpacity(void*);
 int UIGroup_GetTintColor(void*);
-void* CAsyncExhibitionAvatar_Create(float*, int, float);
 void* SaveData_AcquireInitializedInstance();
 void* ItemSelection_Init(void*);
 int SaveData_LoadValidatedItemSelection(void*, void*, signed char);
-int CAsyncExhibitionAvatar_SetEquipment(void*, void*, int);
 void SoundManager_RequestBgmChange(void*, const char*, int, int);
-void CAsyncExhibition_SetLoadingIndicatorPosition(void*, void*);
 void IFadeMenuBase_StartMenuFadeOut(void*);
 extern const char s_fadeOverlay[];
 void FadeOverlay_Init(void*);
 void ResourceState_Dtor();
 int FadeState_GetState(void*);
-int CAsyncExhibition_PollReady(void*);
 int UIGroup_SetScale(void*, float*);
 int ItemInventory_GetCharacterIdAt(void*, int);
 void* ItemInventory_FindCharacterData(void*, int);
@@ -135,18 +156,14 @@ int UIGroup_GetCombinedOpacity(void*);
 void MenuMessage_ResetTextState(void*);
 void MenuMessage_SetColorMultiplier(void*, void*);
 void MenuMessage_SetText(void*, int);
-int CCreateNewAccount_HandleConfirmCancel(void*);
-int CCreateNewAccount_UpdateCharacterSelection(void*);
 void Layout_ReadElementRect(void*, int, float*);
 void Layout_WriteElementRect(void*, int, float*);
-void* CAsyncExhibitionAvatar_Create(float*, int, float);
-void CAsyncExhibition_SetLoadingIndicatorPosition(void*, void*);
 void IFadeMenuBase_StartMenuFadeOut(void*);
 void SoundManager_RequestBgmChange(void*, const char*, int, int);
 void MenuMessage_SetPosition(void*, float*);
 
 // Select a choice and its paired overlay; confirm has no paired overlay.
-static inline void SelectAccountChoice(Fn80326994Data* self, int index) {
+static inline void SelectAccountChoice(CCreateNewAccountView* self, int index) {
     if (index < kAccountElementCount) {
         Layout_SetElementValueState(self->layout, index, kSelectedElementState);
         Layout_SetElementPlayerFlag(self->layout, index, 0, kNeutralPlayerColor);
@@ -158,7 +175,8 @@ static inline void SelectAccountChoice(Fn80326994Data* self, int index) {
 }
 
 // Initialize selection buttons, character stat gauges, name text and the equipped avatar preview.
-void CCreateNewAccount_InitializeScreen(Fn80326994Data* self) {
+void CCreateNewAccount::InitializeScreen() {
+    CCreateNewAccountView* self = (CCreateNewAccountView*)this;
     int index;
     int selected;
     int oppositeCharacterBit;
@@ -183,23 +201,25 @@ void CCreateNewAccount_InitializeScreen(Fn80326994Data* self) {
     // Phase 1: release the previous texture, start scripts and reset button layers.
     if (self->textureResource != 0) {
         // Phase 1: release the previous texture, start scripts and reset button layers.
-    if (self->textureResource != 0) {
+        if (self->textureResource != 0) {
             ((void (**)(void*, int))(*(void***)self->textureResource))[2](self->textureResource, 1);
         }
         self->textureResource = 0;
     }
     BpObject_StartScriptByName(AsCCreateNewAccount(self)->primaryBpObject, newAccountMenuStrings.playerScript, 1);
     BpObject_StartScriptByName(AsCCreateNewAccount(self)->secondaryBpObject, newAccountMenuStrings.backgroundScript, 1);
-    CCreateNewAccount_InitBpGroups(self);
+    ((CCreateNewAccount*)self)->InitBpGroups();
     Layout_SetElementEnabled(self->layout, kAccountMessageElement, 0);
 
     index = (unsigned int)((-self->selectedCharacterIndex) | self->selectedCharacterIndex) >> 31;
     SelectAccountChoice(self, index);
     index = 3;
-    if ((self->optionBits >> 7) & 1) index = 2;
+    if ((self->optionBits >> 7) & 1)
+        index = 2;
     SelectAccountChoice(self, index);
     index = 5;
-    if ((self->optionBits >> 6) & 1) index = 4;
+    if ((self->optionBits >> 6) & 1)
+        index = 4;
     SelectAccountChoice(self, index);
     for (index = 2; index <= 5; ++index) {
         Layout_ReadElementRect(self->layout, index, rect);
@@ -208,8 +228,10 @@ void CCreateNewAccount_InitializeScreen(Fn80326994Data* self) {
     Layout_GetElementPosition(self->layout, kAccountMessageElement, size);
     MenuMessage_SetPosition(AsCCreateNewAccount(self)->menuMessage, size);
     if ((unsigned int)self->selectedCharacterIndex < 2) {
-        UIGroup_SetEnabled(UIGroup_GetOrCreateById(AsCCreateNewAccount(self)->primaryBpObject, kCharacter0Group), self->selectedCharacterIndex == 0);
-        UIGroup_SetEnabled(UIGroup_GetOrCreateById(AsCCreateNewAccount(self)->primaryBpObject, kCharacter1Group), self->selectedCharacterIndex == 1);
+        UIGroup_SetEnabled(UIGroup_GetOrCreateById(AsCCreateNewAccount(self)->primaryBpObject, kCharacter0Group),
+                           self->selectedCharacterIndex == 0);
+        UIGroup_SetEnabled(UIGroup_GetOrCreateById(AsCCreateNewAccount(self)->primaryBpObject, kCharacter1Group),
+                           self->selectedCharacterIndex == 1);
     }
     selected = (unsigned int)((-self->selectedCharacterIndex) | self->selectedCharacterIndex) >> 31;
     Layout_SetElementEnabled(self->layout, 0xC, selected);
@@ -219,12 +241,15 @@ void CCreateNewAccount_InitializeScreen(Fn80326994Data* self) {
     Layout_SetElementEnabled(self->layout, 0xD, oppositeCharacterEnabled);
     // Phase 2: resolve the selected character and scale its three stat gauges.
     inventory = AsCSharedDoc(g_sharedDoc)->itemInventory;
-    characterData = ItemInventory_FindCharacterData(inventory, ItemInventory_GetCharacterIdAt(inventory, self->selectedCharacterIndex));
+    characterData = ItemInventory_FindCharacterData(
+        inventory, ItemInventory_GetCharacterIdAt(inventory, self->selectedCharacterIndex));
     // The pair holds float bit patterns loaded as integer words. Only the first
     // word is overwritten with horizontal gauge scale; the second retains Y.
     // Power is proportional; control and spin saturate at their 30-point maximum.
-    struct Pair { int powerStat, controlStat; };
-    Pair gaugeScaleWords = { s_newAccountGaugeScaleX, s_newAccountGaugeScaleY };
+    struct Pair {
+        int powerStat, controlStat;
+    };
+    Pair gaugeScaleWords = {s_newAccountGaugeScaleX, s_newAccountGaugeScaleY};
     powerGauge = UIGroup_GetOrCreateById(AsCCreateNewAccount(self)->primaryBpObject, kPowerGaugeGroup);
     unsigned int powerStat = ((IFF_STRUCT::sChar*)characterData)->stats[kAccountPowerStat];
     *(float*)&gaugeScaleWords = kFloat_25_Stats * ((float)powerStat / kNewAccountPowerGaugeMaximum);
@@ -232,15 +257,19 @@ void CCreateNewAccount_InitializeScreen(Fn80326994Data* self) {
     controlGauge = UIGroup_GetOrCreateById(AsCCreateNewAccount(self)->primaryBpObject, kControlGaugeGroup);
     unsigned int controlStat = ((IFF_STRUCT::sChar*)characterData)->stats[kAccountControlStat];
     float controlScale;
-    if ((float)controlStat >= kFloat_30_805E1518) controlScale = kFloat_25_Stats;
-    else controlScale = kFloat_25_Stats * ((float)controlStat / kFloat_30_805E1518);
+    if ((float)controlStat >= kFloat_30_805E1518)
+        controlScale = kFloat_25_Stats;
+    else
+        controlScale = kFloat_25_Stats * ((float)controlStat / kFloat_30_805E1518);
     *(float*)&gaugeScaleWords = controlScale;
     UIGroup_SetScale(controlGauge, (float*)&gaugeScaleWords);
     spinGauge = UIGroup_GetOrCreateById(AsCCreateNewAccount(self)->primaryBpObject, kSpinGaugeGroup);
     unsigned int spinStat = ((IFF_STRUCT::sChar*)characterData)->stats[kAccountSpinStat];
     float spinScale;
-    if ((float)spinStat >= kFloat_30_805E1518) spinScale = kFloat_25_Stats;
-    else spinScale = kFloat_25_Stats * ((float)spinStat / kFloat_30_805E1518);
+    if ((float)spinStat >= kFloat_30_805E1518)
+        spinScale = kFloat_25_Stats;
+    else
+        spinScale = kFloat_25_Stats * ((float)spinStat / kFloat_30_805E1518);
     *(float*)&gaugeScaleWords = spinScale;
     UIGroup_SetScale(spinGauge, (float*)&gaugeScaleWords);
     // Phase 3: refresh the selected name and its script-controlled color/opacity.
@@ -253,12 +282,13 @@ void CCreateNewAccount_InitializeScreen(Fn80326994Data* self) {
             // Tint is 0x00BBGGRR; renderer consumes 0xRRGGBBAA (PPC byte order).
             // For combinedOpacity=0..128, 0 maps to 0; otherwise 2*combinedOpacity-1 yields odd alpha 1..255.
             // This is the byte-safe input range; no clamping occurs here.
-            int alphaByte = combinedOpacity ? 2*combinedOpacity - 1 : 0;
+            int alphaByte = combinedOpacity ? 2 * combinedOpacity - 1 : 0;
             unsigned int alpha = (unsigned int)alphaByte;
             unsigned int packed = alpha | ((color << 24) | ((color << 8) & 0xff0000) | ((color >> 8) & 0xff00));
             // Expand the group\'s combined opacity into the message renderer\'s packed color.
             MenuMessage_SetColorMultiplier(self->menuMessage, &packed);
-            MenuMessage_SetText(self->menuMessage, ((int*)&s_newAccountCharacterNameMessageIds)[self->selectedCharacterIndex]);
+            MenuMessage_SetText(self->menuMessage,
+                                ((int*)&s_newAccountCharacterNameMessageIds)[self->selectedCharacterIndex]);
         }
     }
     // Phase 4: rebuild the avatar from its rect and load validated saved equipment.
@@ -274,13 +304,14 @@ void CCreateNewAccount_InitializeScreen(Fn80326994Data* self) {
             ((void (**)(void*, int))(*(void***)self->avatar))[2](self->avatar, 1);
             self->avatar = 0;
         }
-        self->avatar = (void*)CAsyncExhibitionAvatar_Create(avatarRect, 0, 10.0f);
+        self->avatar = (void*)CAsyncExhibitionAvatar::Create(avatarRect, 0, 10.0f);
         volatile int avatarCreated = self->avatar ? 1 : 0;
         if (avatarCreated != 0) {
             if (self->avatar != 0) {
                 ItemSelection_Init(equipmentSelection);
                 void* saveData = SaveData_AcquireInitializedInstance();
-                if (SaveData_LoadValidatedItemSelection(saveData, equipmentSelection, self->selectedCharacterIndex)) CAsyncExhibitionAvatar_SetEquipment(self->avatar, equipmentSelection, 0);
+                if (SaveData_LoadValidatedItemSelection(saveData, equipmentSelection, self->selectedCharacterIndex))
+                    ((CAsyncExhibitionAvatar*)(self->avatar))->SetEquipment(equipmentSelection, 0);
             }
         }
     }
@@ -288,11 +319,11 @@ void CCreateNewAccount_InitializeScreen(Fn80326994Data* self) {
     SoundManager_RequestBgmChange(g_soundManager, newAccountMenuStrings.tutorialMusic, 0, 1);
     pair[0] = kNewAccountAvatarLoadingPositionX;
     pair[1] = kNewAccountAvatarLoadingPositionY;
-    CAsyncExhibition_SetLoadingIndicatorPosition(self->avatar, pair);
+    ((CAsyncExhibition*)(self->avatar))->SetLoadingIndicatorPosition((const float*)pair);
     IFadeMenuBase_StartMenuFadeOut(self);
 }
 
-typedef Fn80326994Data Fn8032735CData; // accepted/cancelled at +0x30/+0x31.
+typedef CCreateNewAccountView Fn8032735CData; // accepted/cancelled at +0x30/+0x31.
 
 struct Fn80327E84Data {
     char prefix[0x60];
@@ -317,7 +348,6 @@ extern char s_bpCtrl[];
 extern char s_bpCtrlDtorRegistration_IngameStatus[];
 
 void Layout_LoadExtended(void*, int, const char*);
-void CPackTextureResource_PollLoad(void*);
 int Layout_Update(void*);
 void Layout_Init(void*, int);
 void Layout_Destroy(void*, int);
@@ -339,12 +369,10 @@ void UIGroup_SetEnabled(void*, int);
 void* IdMap_Lookup(void*, int);
 void BpObject_StartScriptByName(void*, const char*, int);
 void* BpObject_GetOrCreateNamedGroup(void*, int);
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor();
 void* ItemSelection_Init(void*);
 void* SaveData_AcquireInitializedInstance();
 int SaveData_LoadValidatedItemSelection(void*, void*, signed char);
-int CAsyncExhibitionAvatar_SetEquipment(void*, void*, int);
 extern signed char s_saveDataInitialized;
 extern char s_saveData[];
 extern int s_ingameStatusIconIds[];
@@ -358,14 +386,22 @@ void __register_global_object(void*, void (*)(), void*);
 int Input_IsActionPressed(void*, int, int);
 int Layout_SetElementValueState(void*, int, int);
 void Layout_SetElementPlayerFlag(void*, int, int, int);
-int CCreateNewAccount_ApplySelectionToSaveRecord(void*);
 
+typedef CCreateNewAccountView Fn80327318Data; // child aliases textureResource at +0x40.
 
-typedef Fn80326994Data Fn80327318Data; // child aliases textureResource at +0x40.
-
-struct Fn80327CA0Pre { char prefix[0x88]; };
+struct Fn80327CA0Pre {
+    char prefix[0x88];
+};
 struct Fn80327CA0Data : Fn80327CA0Pre {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7(); virtual int check();
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual int check();
 };
 
 struct Fn80327CA0VTable {
@@ -374,25 +410,26 @@ struct Fn80327CA0VTable {
 };
 
 // Load the in-game status layout resource.
-int CIngameStatus2d_LoadLayout(void* arg0, int arg1) {
+int CIngameStatus2d::LoadLayout(void* arg0, int arg1) {
     Layout_LoadExtended(arg0, arg1, s_ingameStatusLayoutFilename);
     return 1;
 }
 
 // Poll the auxiliary texture resource, then update the account layout.
-void CCreateNewAccount_UpdateWhileWaiting(Fn80327318Data* self) {
+void CCreateNewAccount::UpdateWhileWaiting() {
+    Fn80327318Data* self = (Fn80327318Data*)this;
     if (self->child != 0)
-        CPackTextureResource_PollLoad(self->child);
+        ((CPackTextureResource*)(self->child))->PollLoad();
     Layout_Update(self->layout);
 }
 
 #pragma use_lmw_stmw on
 #pragma opt_propagation off
 // Combine layout readiness with the status component\'s virtual readiness check.
-int CIngameStatus2d_UpdateLayoutAndGauge(Fn80327CA0Data* self) {
-    int result = Layout_Update(self);
+int CIngameStatus2d::UpdateLayoutAndGauge() {
+    int result = Layout_Update(this);
     result = result & 1;
-    return result & self->check();
+    return result & ((Fn80327CA0Data*)this)->check();
 }
 #pragma opt_propagation reset
 #pragma opt_lifetimes reset
@@ -404,17 +441,20 @@ unsigned char Object_GetByte30(Fn8032735CData* self) {
 }
 
 // Return whether account creation was cancelled.
-unsigned char CCreateNewAccount_vfunc_1(Fn8032735CData* self) {
+unsigned char CCreateNewAccount::IsCancelled() {
+    Fn8032735CData* self = (Fn8032735CData*)this;
     return self->cancelled;
 }
 
 // Set whether the three-segment status gauge is enabled.
-void CIngameStatus2d_vfunc_7(Fn80327E84Data* self, unsigned int value) {
+void CIngameStatus2d::SetGaugeEnabled(unsigned int value) {
+    Fn80327E84Data* self = (Fn80327E84Data*)this;
     self->gaugeEnabled = value;
 }
 
 // Set the status gauge fill value.
-void CIngameStatus2d_vfunc_5(Fn80327E8CData* self, float value) {
+void CIngameStatus2d::SetGaugeFill(float value) {
+    Fn80327E8CData* self = (Fn80327E8CData*)this;
     self->gaugeFill = value;
 }
 
@@ -424,11 +464,12 @@ struct Fn80326F4CController {
 };
 
 // Lazily initialize and borrow the shared fade-overlay instance.
-static inline void* Fn80326F4CInstance() {
+static inline void* FadeOverlayInstance() {
     if (Sing_805DC608() == 0) {
         if (!s_fadeOverlayInitialized) {
             FadeOverlay_Init((void*)s_fadeOverlay);
-            __register_global_object((void*)s_fadeOverlay, ResourceState_Dtor, (void*)s_newAccountFadeOverlayRegistration);
+            __register_global_object((void*)s_fadeOverlay, ResourceState_Dtor,
+                                     (void*)s_newAccountFadeOverlayRegistration);
             s_fadeOverlayInitialized = 1;
         }
         Sing_805DC608() = (void*)s_fadeOverlay;
@@ -437,82 +478,95 @@ static inline void* Fn80326F4CInstance() {
 }
 
 // Return true when no avatar exists or readiness polling completes.
-static inline bool Fn80326F4CSkip(void* c) {
-    if (c == 0 || CAsyncExhibition_PollReady(c) != 0) return true;
+static inline bool IsAvatarReadyOrAbsent(void* c) {
+    if (c == 0 || ((CAsyncExhibition*)c)->PollReady() != 0)
+        return true;
     return false;
 }
 
 // Handle confirm/cancel and preference changes, refreshing the selected character\'s gauges and avatar.
-int CCreateNewAccount_UpdateSelectionAndAvatar(Fn80326F4CData* self, float delta) {
+int CCreateNewAccount::UpdateSelectionAndAvatar(float delta) {
+    Fn80326F4CData* self = (Fn80326F4CData*)this;
     void* entry;
-    void* item;
+    void* characterData;
     int sel;
-    if (FadeState_GetState(Fn80326F4CInstance())) return 0;
+    if (FadeState_GetState(FadeOverlayInstance()))
+        return 0;
     if (self->accepted || self->cancelled) {
-        if (Fn80326F4CSkip(self->avatar)) return 1;
+        if (IsAvatarReadyOrAbsent(self->avatar))
+            return 1;
         ((Fn80326F4CController*)self->avatar)->update(delta);
         return 0;
     }
     Layout_Update(self->layout);
     int result = 0;
     // A selection change refreshes gauges and name; avatar updates continue below.
-    if (!CCreateNewAccount_HandleConfirmCancel(self) && CCreateNewAccount_UpdateCharacterSelection(self)) {
+    if (!((CCreateNewAccount*)self)->HandleConfirmCancel() && CCreateNewAccount::UpdateCharacterSelection(self)) {
         if ((unsigned int)self->selectedCharacterIndex < 2) {
-            void* p = UIGroup_GetOrCreateById(self->primaryBpObject, kCharacter0Group);
-            UIGroup_SetEnabled(p, self->selectedCharacterIndex == 0);
-            p = UIGroup_GetOrCreateById(self->primaryBpObject, kCharacter1Group);
-            UIGroup_SetEnabled(p, self->selectedCharacterIndex == 1);
+            void* characterGroup = UIGroup_GetOrCreateById(self->primaryBpObject, kCharacter0Group);
+            UIGroup_SetEnabled(characterGroup, self->selectedCharacterIndex == 0);
+            characterGroup = UIGroup_GetOrCreateById(self->primaryBpObject, kCharacter1Group);
+            UIGroup_SetEnabled(characterGroup, self->selectedCharacterIndex == 1);
         }
         sel = self->selectedCharacterIndex != 0;
         Layout_SetElementEnabled(self->layout, 0x0c, sel);
-        int t = sel ^ 1;
-        Layout_SetElementEnabled(self->layout, 0x0d, t != 0);
+        int oppositeCharacterBit = sel ^ 1;
+        Layout_SetElementEnabled(self->layout, 0x0d, oppositeCharacterBit != 0);
         // Refresh the selected character's three stat gauges.
         entry = AsCSharedDoc(g_sharedDoc)->itemInventory;
-        item = ItemInventory_FindCharacterData(entry, ItemInventory_GetCharacterIdAt(entry, self->selectedCharacterIndex));
+        characterData =
+            ItemInventory_FindCharacterData(entry, ItemInventory_GetCharacterIdAt(entry, self->selectedCharacterIndex));
         // The pair holds float bit patterns loaded as integer words. Only the first
         // word is overwritten with horizontal gauge scale; the second retains Y.
         // Power is proportional; control and spin saturate at their 30-point maximum.
-        struct Pair { int a, b; };
-        Pair pr = { s_newAccountGaugeScaleX, s_newAccountGaugeScaleY };
-        void* o = UIGroup_GetOrCreateById(self->primaryBpObject, kPowerGaugeGroup);
-        unsigned int a = ((IFF_STRUCT::sChar*)item)->stats[kAccountPowerStat];
-        *(float*)&pr = kFloat_25_Stats * ((float)a / kNewAccountPowerGaugeMaximum);
-        UIGroup_SetScale(o, (float*)&pr);
-        o = UIGroup_GetOrCreateById(self->primaryBpObject, kControlGaugeGroup);
-        unsigned int b = ((IFF_STRUCT::sChar*)item)->stats[kAccountControlStat];
-        float fb;
-        if ((float)b >= kFloat_30_805E1518) fb = kFloat_25_Stats;
-        else fb = kFloat_25_Stats * ((float)b / kFloat_30_805E1518);
-        *(float*)&pr = fb;
-        UIGroup_SetScale(o, (float*)&pr);
-        o = UIGroup_GetOrCreateById(self->primaryBpObject, kSpinGaugeGroup);
-        unsigned int c = ((IFF_STRUCT::sChar*)item)->stats[kAccountSpinStat];
-        float fc;
-        if ((float)c >= kFloat_30_805E1518) fc = kFloat_25_Stats;
-        else fc = kFloat_25_Stats * ((float)c / kFloat_30_805E1518);
-        *(float*)&pr = fc;
-        UIGroup_SetScale(o, (float*)&pr);
+        struct Pair {
+            int a, b;
+        };
+        Pair gaugeScaleWords = {s_newAccountGaugeScaleX, s_newAccountGaugeScaleY};
+        void* gaugeGroup = UIGroup_GetOrCreateById(self->primaryBpObject, kPowerGaugeGroup);
+        unsigned int powerStat = ((IFF_STRUCT::sChar*)characterData)->stats[kAccountPowerStat];
+        *(float*)&gaugeScaleWords = kFloat_25_Stats * ((float)powerStat / kNewAccountPowerGaugeMaximum);
+        UIGroup_SetScale(gaugeGroup, (float*)&gaugeScaleWords);
+        gaugeGroup = UIGroup_GetOrCreateById(self->primaryBpObject, kControlGaugeGroup);
+        unsigned int controlStat = ((IFF_STRUCT::sChar*)characterData)->stats[kAccountControlStat];
+        float controlScale;
+        if ((float)controlStat >= kFloat_30_805E1518)
+            controlScale = kFloat_25_Stats;
+        else
+            controlScale = kFloat_25_Stats * ((float)controlStat / kFloat_30_805E1518);
+        *(float*)&gaugeScaleWords = controlScale;
+        UIGroup_SetScale(gaugeGroup, (float*)&gaugeScaleWords);
+        gaugeGroup = UIGroup_GetOrCreateById(self->primaryBpObject, kSpinGaugeGroup);
+        unsigned int spinStat = ((IFF_STRUCT::sChar*)characterData)->stats[kAccountSpinStat];
+        float spinScale;
+        if ((float)spinStat >= kFloat_30_805E1518)
+            spinScale = kFloat_25_Stats;
+        else
+            spinScale = kFloat_25_Stats * ((float)spinStat / kFloat_30_805E1518);
+        *(float*)&gaugeScaleWords = spinScale;
+        UIGroup_SetScale(gaugeGroup, (float*)&gaugeScaleWords);
         MenuMessage_ResetTextState(self->menuMessage);
         if ((unsigned int)self->selectedCharacterIndex < 2) {
             entry = UIGroup_GetOrCreateById(self->primaryBpObject, kCharacterNameGroup);
             if (entry) {
                 int color = UIGroup_GetTintColor(entry);
-                int n = UIGroup_GetCombinedOpacity(entry);
+                int combinedOpacity = UIGroup_GetCombinedOpacity(entry);
                 // Convert 0x00BBGGRR to 0xRRGGBBAA; n=0..128 maps to
                 // alpha 0 or 2*n-1. Values outside that range are not clamped.
-                unsigned int alpha = n ? 2*n-1 : 0;
+                unsigned int alpha = combinedOpacity ? 2 * combinedOpacity - 1 : 0;
                 unsigned int packed = alpha | ((color << 24) | ((color << 8) & 0xff0000) | ((color >> 8) & 0xff00));
                 MenuMessage_SetColorMultiplier(self->menuMessage, &packed);
-                MenuMessage_SetText(self->menuMessage, ((int*)&s_newAccountCharacterNameMessageIds)[self->selectedCharacterIndex]);
+                MenuMessage_SetText(self->menuMessage,
+                                    ((int*)&s_newAccountCharacterNameMessageIds)[self->selectedCharacterIndex]);
             }
         }
     }
-    if (self->avatar) ((Fn80326F4CController*)self->avatar)->update(delta);
+    if (self->avatar)
+        ((Fn80326F4CController*)self->avatar)->update(delta);
     return result;
 }
 
-struct Fn80327B5CData {
+struct CIngameStatus2dView {
     char prefix[0x5C];
     int enabled;
     int gaugeEnabled;
@@ -524,7 +578,8 @@ struct Fn80327B5CData {
 };
 
 // Initialize the status layout, visibility flags, gauge fill and secondary interface.
-Fn80327B5CData* CIngameStatus2d_Ctor(Fn80327B5CData* self) {
+CIngameStatus2d::CIngameStatus2d() {
+    CIngameStatus2dView* self = (CIngameStatus2dView*)this;
     Layout_Init(self, 5);
     self->secondaryVtable = __vt__15CIngameStatus2d;
     self->enabled = 0;
@@ -532,25 +587,19 @@ Fn80327B5CData* CIngameStatus2d_Ctor(Fn80327B5CData* self) {
     self->gaugeFill = kIngameStatusInitialGaugeFill;
     self->iconElement = 0;
     self->labelElement = 0;
-    return self;
 }
 
 // Destroy the status layout and optionally free its allocation.
-void* CIngameStatus2d_dtor(void* self, int shouldDelete) {
-    if (self != 0) {
-        Layout_Destroy(self, 0);
-        if (shouldDelete > 0)
-            __dl__FPv(self);
-    }
-    return self;
+CIngameStatus2d::~CIngameStatus2d() {
+    Layout_Destroy(this, 0);
 }
 
 // Hide all 21 status elements, then enable the component and gauge.
-int CIngameStatus2d_ResetElementsAndEnableGauge(void* self) {
+int CIngameStatus2d::ResetElementsAndEnableGauge() {
     for (int i = 0; i <= 20; ++i)
-        Layout_SetElementEnabled(self, i, 0);
-    ((Fn80327B5CData*)self)->gaugeEnabled = 1;
-    ((Fn80327B5CData*)self)->enabled = 1;
+        Layout_SetElementEnabled(this, i, 0);
+    ((CIngameStatus2dView*)this)->gaugeEnabled = 1;
+    ((CIngameStatus2dView*)this)->enabled = 1;
     return 1;
 }
 
@@ -567,7 +616,7 @@ void IngameStatus2d_InitFullTurnConstant() {
 #pragma use_lmw_stmw on
 #pragma opt_propagation off
 // Choose the status icon from its ID table and select the label for the supplied mode.
-void CIngameStatus2d_SetIconAndLabelElements(void* self, int id, int base, int mode, int flag) {
+void CIngameStatus2d::SetIconAndLabelElements(int id, int base, int mode, int flag) {
     int a0, a1, a2, a3, a4, a5, a6, a7;
     int* p;
     int idx = 0;
@@ -581,35 +630,35 @@ void CIngameStatus2d_SetIconAndLabelElements(void* self, int id, int base, int m
     a6 = *p++;
     a7 = *p;
     if (id == a0) {
-        ((Fn80327B5CData*)self)->iconElement = idx;
+        ((CIngameStatus2dView*)this)->iconElement = idx;
     } else {
         idx = 1;
         if (id == a1) {
-            ((Fn80327B5CData*)self)->iconElement = idx;
+            ((CIngameStatus2dView*)this)->iconElement = idx;
         } else {
             idx = 2;
             if (id == a2) {
-                ((Fn80327B5CData*)self)->iconElement = idx;
+                ((CIngameStatus2dView*)this)->iconElement = idx;
             } else {
                 idx = 3;
                 if (id == a3) {
-                    ((Fn80327B5CData*)self)->iconElement = idx;
+                    ((CIngameStatus2dView*)this)->iconElement = idx;
                 } else {
                     idx = 4;
                     if (id == a4) {
-                        ((Fn80327B5CData*)self)->iconElement = idx;
+                        ((CIngameStatus2dView*)this)->iconElement = idx;
                     } else {
                         idx = 5;
                         if (id == a5) {
-                            ((Fn80327B5CData*)self)->iconElement = idx;
+                            ((CIngameStatus2dView*)this)->iconElement = idx;
                         } else {
                             idx = 6;
                             if (id == a6) {
-                                ((Fn80327B5CData*)self)->iconElement = idx;
+                                ((CIngameStatus2dView*)this)->iconElement = idx;
                             } else {
                                 idx = 7;
                                 if (id == a7) {
-                                    ((Fn80327B5CData*)self)->iconElement = idx;
+                                    ((CIngameStatus2dView*)this)->iconElement = idx;
                                 }
                             }
                         }
@@ -618,27 +667,38 @@ void CIngameStatus2d_SetIconAndLabelElements(void* self, int id, int base, int m
             }
         }
     }
-    if (mode == 0) ((Fn80327B5CData*)self)->labelElement = base + 8;
-    else if (flag != 0) ((Fn80327B5CData*)self)->labelElement = base + 13;
-    else ((Fn80327B5CData*)self)->labelElement = 12;
+    if (mode == 0)
+        ((CIngameStatus2dView*)this)->labelElement = base + 8;
+    else if (flag != 0)
+        ((CIngameStatus2dView*)this)->labelElement = base + 13;
+    else
+        ((CIngameStatus2dView*)this)->labelElement = 12;
 }
 #pragma opt_propagation reset
 #pragma opt_lifetimes reset
 #pragma use_lmw_stmw reset
 
 // Reset the other button and its overlay in the same mutually exclusive option pair.
-int CCreateNewAccount_ResetOtherButtonsInGroup(void* self, int value) {
+int CCreateNewAccount::ResetOtherButtonsInGroup(int value) {
     int first = 0, last = 0;
-    if (value >= 0 && value <= 1) { first = 0; last = 1; }
-    else if (value >= 2 && value <= 3) { first = 2; last = 3; }
-    else if (value >= 4 && value <= 5) { first = 4; last = 5; }
+    if (value >= 0 && value <= 1) {
+        first = 0;
+        last = 1;
+    } else if (value >= 2 && value <= 3) {
+        first = 2;
+        last = 3;
+    } else if (value >= 4 && value <= 5) {
+        first = 4;
+        last = 5;
+    }
     for (int i = first; i <= last; ++i) {
-        if (value == i || i >= 17) continue;
-        Layout_SetElementValueState(AsCCreateNewAccount(self)->layout, i, 0);
-        Layout_SetElementPlayerFlag(AsCCreateNewAccount(self)->layout, i, 1, 5);
+        if (value == i || i >= 17)
+            continue;
+        Layout_SetElementValueState(layout, i, 0);
+        Layout_SetElementPlayerFlag(layout, i, 1, 5);
         if (i != 14 && i + 6 < 17) {
-            Layout_SetElementValueState(AsCCreateNewAccount(self)->layout, i + 6, 0);
-            Layout_SetElementPlayerFlag(AsCCreateNewAccount(self)->layout, i + 6, 1, 5);
+            Layout_SetElementValueState(layout, i + 6, 0);
+            Layout_SetElementPlayerFlag(layout, i + 6, 1, 5);
         }
     }
     return 1;
@@ -647,22 +707,25 @@ int CCreateNewAccount_ResetOtherButtonsInGroup(void* self, int value) {
 #pragma opt_propagation off
 #pragma opt_lifetimes off
 // Publish cancellation or apply the confirmed choices; return 1 when either action is handled.
-int CCreateNewAccount_HandleConfirmCancel(void* self) {
-    if (Sing_805DC5C8() == 0) {
+int CCreateNewAccount::HandleConfirmCancel() {
+    if (GetInputManagerSlot() == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, InputManager_Dtor, s_newAccountInputManagerRegistration);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = (void*)s_gameInputManager;
+        GetInputManagerSlot() = (void*)s_gameInputManager;
     }
-    if (Input_IsActionPressed(Sing_805DC5C8(), kActionCancel, -1)) { ((AccountSelectionState*)self)->cancelled = 1; return 1; }
+    if (Input_IsActionPressed(GetInputManagerSlot(), kActionCancel, -1)) {
+        ((AccountSelectionState*)this)->cancelled = 1;
+        return 1;
+    }
     ActivatedList list = {0, 0, 0};
-    if (Layout_CollectActivated(AsCCreateNewAccount(self)->layout, list) && list.items[0] == kAccountConfirmElement) {
-        ((AccountSelectionState*)self)->accepted = 1;
-        CCreateNewAccount_ApplySelectionToSaveRecord(self);
-        Layout_SetElementValueState(AsCCreateNewAccount(self)->layout, kAccountConfirmElement, 2);
-        Layout_SetElementPlayerFlag(AsCCreateNewAccount(self)->layout, kAccountConfirmElement, 0, 5);
+    if (Layout_CollectActivated(layout, list) && list.items[0] == kAccountConfirmElement) {
+        ((AccountSelectionState*)this)->accepted = 1;
+        ApplySelectionToSaveRecord();
+        Layout_SetElementValueState(layout, kAccountConfirmElement, 2);
+        Layout_SetElementPlayerFlag(layout, kAccountConfirmElement, 0, 5);
         return 1;
     }
     return 0;
@@ -671,11 +734,11 @@ int CCreateNewAccount_HandleConfirmCancel(void* self) {
 #pragma opt_lifetimes reset
 
 // Position the current icon, label and all gauge elements.
-void CIngameStatus2d_SetIconLabelGaugePositions(void* self, int first, int second, int third) {
-    Layout_SetElementPosition(self, ((Fn80327B5CData*)self)->iconElement, (void*)first);
-    Layout_SetElementPosition(self, ((Fn80327B5CData*)self)->labelElement, (void*)second);
+void CIngameStatus2d::SetIconLabelGaugePositions(int first, int second, int third) {
+    Layout_SetElementPosition(this, ((CIngameStatus2dView*)this)->iconElement, (void*)first);
+    Layout_SetElementPosition(this, ((CIngameStatus2dView*)this)->labelElement, (void*)second);
     for (int i = 0x11; i <= 0x14; ++i)
-        Layout_SetElementPosition(self, i, (void*)third);
+        Layout_SetElementPosition(this, i, (void*)third);
 }
 
 #pragma use_lmw_stmw on
@@ -685,7 +748,7 @@ void CIngameStatus2d_SetIconLabelGaugePositions(void* self, int first, int secon
 #pragma opt_common_subs off
 #pragma opt_loop_invariants off
 // Return the first activated element in the six option buttons, or -1.
-int CCreateNewAccount_GetActivatedOptionIndex(void* self) {
+int CCreateNewAccount::GetActivatedOptionIndex() {
     ActivatedList list;
     unsigned int count;
     unsigned int invalid;
@@ -693,7 +756,7 @@ int CCreateNewAccount_GetActivatedOptionIndex(void* self) {
     list.items = 0;
     list.size = 0;
     list.capacity = 0;
-    if (Layout_CollectActivated(AsCCreateNewAccount(self)->layout, list, 0) == 0) {
+    if (Layout_CollectActivated(layout, list, 0) == 0) {
         return -1;
     }
     count = list.size;
@@ -718,29 +781,31 @@ int CCreateNewAccount_GetActivatedOptionIndex(void* self) {
 #pragma use_lmw_stmw reset
 
 // Hide account script groups and initialize the auxiliary title script.
-int CCreateNewAccount_InitBpGroups(void* self) {
+int CCreateNewAccount::InitBpGroups() {
     int* p = s_newAccountHiddenPrimaryGroupIds;
     unsigned int i = 0;
     do {
-        void* obj = UIGroup_GetOrCreateById(AsCCreateNewAccount(self)->primaryBpObject, *p);
+        void* obj = UIGroup_GetOrCreateById(primaryBpObject, *p);
         UIGroup_SetEnabled(obj, 0);
         ++i;
         ++p;
     } while (i < 15);
 
-    struct IdBlock { int v[9]; };
+    struct IdBlock {
+        int v[9];
+    };
     int ids[9];
     *(IdBlock*)ids = *(const IdBlock*)s_newAccountHiddenTitleGroupIds;
 
     if (Sing_805DC5F0() == 0) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv((void*)s_bpCtrl);
+            ((CBpCtrl*)((void*)s_bpCtrl))->__ct();
             __register_global_object((void*)s_bpCtrl, CBpCtrl_dtor, (void*)s_bpCtrlDtorRegistration_IngameStatus);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = (void*)s_bpCtrl;
     }
-    void* manager = IdMap_Lookup(Sing_805DC5F0(), AsCCreateNewAccount(self)->auxiliaryBpId);
+    void* manager = IdMap_Lookup(Sing_805DC5F0(), auxiliaryBpId);
     BpObject_StartScriptByName(manager, newAccountMenuStrings.titleScript, 1);
 
     int* q = ids;
@@ -755,53 +820,61 @@ int CCreateNewAccount_InitBpGroups(void* self) {
     return 1;
 }
 
-struct Fn8032761CData {
-    char prefix[0x18]; void* layout; void* primaryBpObject;
-    char betweenBpAndOptions[0x12]; signed char selectedCharacterIndex;
-    CW_BITS3(unsigned char flagA : 1, unsigned char flagB : 1, unsigned char rest : 6)   // CodeWarrior order: flagA = 0x80, flagB = 0x40 (the unit reads them with >>7 / >>6)
+struct CCreateNewAccountChoiceView {
+    char prefix[0x18];
+    void* layout;
+    void* primaryBpObject;
+    char betweenBpAndOptions[0x12];
+    signed char selectedCharacterIndex;
+    CW_BITS3(unsigned char flagA : 1, unsigned char flagB : 1,
+             unsigned char rest
+             : 6) // CodeWarrior order: flagA = 0x80, flagB = 0x40 (the unit reads them with >>7 / >>6)
     void* avatar;
 };
 
 // Accept character choices 0/1 and load saved equipment into an existing avatar.
-static inline int fn_8032761C_mode(Fn8032761CData* self, int value) {
-    if (value < 0 || value > 1) return 0;
+static inline int SetCharacterChoice(CCreateNewAccountChoiceView* self, int value) {
+    if (value < 0 || value > 1)
+        return 0;
     self->selectedCharacterIndex = value;
     if (self->avatar != 0) {
         char local[0x68];
         ItemSelection_Init(local);
-        void* v = SaveData_AcquireInitializedInstance();
-        if (SaveData_LoadValidatedItemSelection(v, local, self->selectedCharacterIndex) != 0) {
-            CAsyncExhibitionAvatar_SetEquipment(self->avatar, local, 0);
+        void* saveData = SaveData_AcquireInitializedInstance();
+        if (SaveData_LoadValidatedItemSelection(saveData, local, self->selectedCharacterIndex) != 0) {
+            ((CAsyncExhibitionAvatar*)(self->avatar))->SetEquipment(local, 0);
         }
     }
     return 1;
 }
 
 // Accept preference choices 2/3 and write option bit 7.
-static inline int fn_8032761C_bit80(Fn8032761CData* self, int value) {
-    if (value < 2 || value > 3) return 0;
+static inline int SetPreferenceChoice(CCreateNewAccountChoiceView* self, int value) {
+    if (value < 2 || value > 3)
+        return 0;
     self->flagA = (value == 2);
     return 1;
 }
 
 // Accept starter-club choices 4/5 and write option bit 6.
-static inline int fn_8032761C_bit40(Fn8032761CData* self, int value) {
-    if (value < 4 || value > 5) return 0;
+static inline int SetStarterClubChoice(CCreateNewAccountChoiceView* self, int value) {
+    if (value < 4 || value > 5)
+        return 0;
     self->flagB = (value == 4);
     return 1;
 }
 
 // Apply an activated option and its paired overlay; return 0 if no option was activated.
-int CCreateNewAccount_UpdateCharacterSelection(void* p) {
+int CCreateNewAccount::UpdateCharacterSelection(void* p) {
     int sel;
-    Fn8032761CData* self = (Fn8032761CData*)p;
+    CCreateNewAccountChoiceView* self = (CCreateNewAccountChoiceView*)p;
     ActivatedList list = {0, 0, 0};
     if (Layout_CollectActivated(self->layout, list, 0) == 0)
         return 0;
-    sel = CCreateNewAccount_GetActivatedOptionIndex(self);
+    sel = ((CCreateNewAccount*)self)->GetActivatedOptionIndex();
     if (sel == -1)
         return 0;
-    if (fn_8032761C_mode(self, sel) || fn_8032761C_bit80(self, sel) || fn_8032761C_bit40(self, sel)) {
+    if (SetCharacterChoice(self, sel) || SetPreferenceChoice(self, sel) || SetStarterClubChoice(self, sel)) {
         if (sel < kAccountElementCount) {
             Layout_SetElementValueState(self->layout, sel, 2);
             Layout_SetElementPlayerFlag(self->layout, sel, 0, 5);
@@ -810,25 +883,25 @@ int CCreateNewAccount_UpdateCharacterSelection(void* p) {
                 Layout_SetElementPlayerFlag(self->layout, sel + 6, 0, 5);
             }
         }
-        CCreateNewAccount_ResetOtherButtonsInGroup(self, sel);
+        ((CCreateNewAccount*)self)->ResetOtherButtonsInGroup(sel);
     }
     return 1;
 }
 
 // Copy the save record, grant both starter characters, and store character, preference and starter club choices.
-int CCreateNewAccount_ApplySelectionToSaveRecord(void* self) {
+int CCreateNewAccount::ApplySelectionToSaveRecord() {
     unsigned char local[0x830];
-    if (Sing_805DC5E0() == 0) {
+    if (GetSaveDataSlot() == 0) {
         if (s_saveDataInitialized == 0) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        Sing_805DC5E0() = s_saveData;
+        GetSaveDataSlot() = s_saveData;
     }
-    SaveRecord_CopyCtor(local, SaveData_GetCurrentRecord(Sing_805DC5E0()));
+    SaveRecord_CopyCtor(local, SaveData_GetCurrentRecord(GetSaveDataSlot()));
     {
         unsigned char character0Status = ((NewAccountSaveFields*)local)->character0Status;
-        unsigned char selectedCharacter = ((AccountSelectionState*)self)->selectedCharacterIndex;
+        unsigned char selectedCharacter = ((AccountSelectionState*)this)->selectedCharacterIndex;
         unsigned char grantedCharacter0Status = character0Status | kStarterCharacterGrantMask;
         unsigned char character1Status = ((NewAccountSaveFields*)local)->character1Status;
         AsSavePlayerRecord(local)->characterIndex = selectedCharacter;
@@ -836,69 +909,74 @@ int CCreateNewAccount_ApplySelectionToSaveRecord(void* self) {
         int preferenceFlags = ((NewAccountSaveFields*)local)->preferenceFlags;
         ((NewAccountSaveFields*)local)->character0Status = grantedCharacter0Status;
         ((NewAccountSaveFields*)local)->character1Status = grantedCharacter1Status;
-        unsigned char menuOptions = ((AccountSelectionState*)self)->optionBits;
+        unsigned char menuOptions = ((AccountSelectionState*)this)->optionBits;
         preferenceFlags = (preferenceFlags & ~kSavedPreferenceMask) | ((menuOptions << 23) & kSavedPreferenceMask);
         ((NewAccountSaveFields*)local)->preferenceFlags = preferenceFlags;
     }
     {
-        unsigned char menuOptions = ((AccountSelectionState*)self)->optionBits;
+        unsigned char menuOptions = ((AccountSelectionState*)this)->optionBits;
         unsigned char starterClubSet = 0;
-        if ((menuOptions >> 6) & 1) starterClubSet = kAlternateStarterClubSetIndex;
+        if ((menuOptions >> 6) & 1)
+            starterClubSet = kAlternateStarterClubSetIndex;
         AsSavePlayerRecord(local)->clubSetIndex = starterClubSet;
     }
-    if (Sing_805DC5E0() == 0) {
+    if (GetSaveDataSlot() == 0) {
         if (s_saveDataInitialized == 0) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        Sing_805DC5E0() = s_saveData;
+        GetSaveDataSlot() = s_saveData;
     }
-    SaveData_SetCurrentRecord(Sing_805DC5E0(), local);
+    SaveData_SetCurrentRecord(GetSaveDataSlot(), local);
     return 1;
 }
 
 // Status layout: 0..20 are reset; 17 is the reusable partial segment,
 // 18..20 are complete segments. Each segment covers 33 points in 20 pixels,
 // with a 21-pixel origin stride. Fill is truncated to whole points before scaling.
-enum StatusGaugeLayout { kStatusLastElement = 20, kPartialGaugeElement = 17,
-    kFirstFullGaugeElement = 18, kGaugeSegmentCount = 3 };
+enum StatusGaugeLayout {
+    kStatusLastElement = 20,
+    kPartialGaugeElement = 17,
+    kFirstFullGaugeElement = 18,
+    kGaugeSegmentCount = 3
+};
 static const float kGaugePointsPerSegment = 33.0f;
 static const float kGaugeSegmentWidthPixels = 20.0f;
 static const float kGaugeSegmentStridePixels = 21.0f;
 
 // Show the selected icon/label and draw up to three 33-point gauge segments.
-int CIngameStatus2d_UpdateIconLabelAndGauge(void* self) {
-    if (((Fn80327B5CData*)self)->enabled == 0)
+int CIngameStatus2d::UpdateIconLabelAndGauge() {
+    if (((CIngameStatus2dView*)this)->enabled == 0)
         return 0;
     for (int i = 0; i <= kStatusLastElement; ++i)
-        Layout_SetElementEnabled(self, i, 0);
-    Layout_SetElementEnabled(self, ((Fn80327B5CData*)self)->iconElement, 1);
-    Layout_SetElementEnabled(self, ((Fn80327B5CData*)self)->labelElement, 1);
-    if (((Fn80327B5CData*)self)->gaugeEnabled == 0)
+        Layout_SetElementEnabled(this, i, 0);
+    Layout_SetElementEnabled(this, ((CIngameStatus2dView*)this)->iconElement, 1);
+    Layout_SetElementEnabled(this, ((CIngameStatus2dView*)this)->labelElement, 1);
+    if (((CIngameStatus2dView*)this)->gaugeEnabled == 0)
         return 1;
     for (int i = 0; i < kGaugeSegmentCount; ++i) {
-        float raw = AsCIngameStatus2d(self)->gaugeFill - kGaugePointsPerSegment * (float)i;
+        float raw = gaugeFill - kGaugePointsPerSegment * (float)i;
         raw = (kGaugePointsPerSegment > raw) ? raw : kGaugePointsPerSegment;
         int value = (int)raw;
         if (value < 0)
             break;
         float converted = (float)value;
         if (converted == kGaugePointsPerSegment) {
-            Layout_SetElementEnabled(self, i + kFirstFullGaugeElement, 1);
+            Layout_SetElementEnabled(this, i + kFirstFullGaugeElement, 1);
             float temp[2];
-            Layout_GetElementPosition(self, i + kFirstFullGaugeElement, temp);
+            Layout_GetElementPosition(this, i + kFirstFullGaugeElement, temp);
             temp[0] += kGaugeSegmentStridePixels * (float)i;
-            Layout_SetElementPosition(self, i + kFirstFullGaugeElement, temp);
+            Layout_SetElementPosition(this, i + kFirstFullGaugeElement, temp);
         } else {
-            Layout_SetElementEnabled(self, kPartialGaugeElement, 1);
+            Layout_SetElementEnabled(this, kPartialGaugeElement, 1);
             float temp[2];
-            Layout_GetElementSize(self, kPartialGaugeElement, temp);
+            Layout_GetElementSize(this, kPartialGaugeElement, temp);
             temp[1] = 1.0f;
             temp[0] = (kGaugeSegmentWidthPixels * (float)value) / kGaugePointsPerSegment / temp[0];
-            Layout_SetElementScale(self, kPartialGaugeElement, temp);
-            Layout_GetElementPosition(self, kPartialGaugeElement, temp);
+            Layout_SetElementScale(this, kPartialGaugeElement, temp);
+            Layout_GetElementPosition(this, kPartialGaugeElement, temp);
             temp[0] += kGaugeSegmentStridePixels * (float)i;
-            Layout_SetElementPosition(self, kPartialGaugeElement, temp);
+            Layout_SetElementPosition(this, kPartialGaugeElement, temp);
         }
     }
     return 1;

@@ -7,7 +7,8 @@
 class PreviewResourcePair {
 public:
     IFF_STRUCT::sBall* ballRecord; // 0x0: ItemInventory_FindBallData result
-    void* resource; // 0x4: ScreenBallPreview_RebuildPlayerResources loads by extension; ScreenBallPreview_dtor releases object
+    void*
+        resource; // 0x4: ScreenBallPreview_RebuildPlayerResources loads by extension; ScreenBallPreview_dtor releases object
 };
 
 #define OFF(f, o) typedef char PreviewResourcePair_off_##f[((int)&((PreviewResourcePair*)0)->f == (o)) ? 1 : -1]

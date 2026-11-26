@@ -1,53 +1,61 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_PLAYERRECORDOWNER8030E168_H
 #define CLASSES_PLAYERRECORDOWNER8030E168_H
 
 #include "game/types.h"
 
+// The prize-game session object: the BP entry IDs, the state machine's state and
+// counters, the borrowed UI resources, and the working copy of the player record
+// that the save path commits.
 class PlayerRecordOwner8030E168 {
 public:
-    int bpEntryId0;                          // 0x0: DolfiniSession_Ctor original object access
-    int bpEntryId1;                          // 0x4: DolfiniSession_Ctor original object access
-    int bpEntryId2;                          // 0x8: DolfiniSession_Ctor original object access
-    int bpEntryId3;                          // 0xc: DolfiniSession_Ctor original object access
-    int bpEntryId4;                         // 0x10: DolfiniSession_Ctor original object access
-    int bpEntryId5;                         // 0x14: DolfiniSession_Ctor original object access
-    int bpEntryId6;                         // 0x18: DolfiniSession_Ctor original object access
-    int bpEntryId7;                         // 0x1c: DolfiniSession_Ctor original object access
-    unsigned int state;                // 0x20: CRoundDolMain_DrawStateUI original object access
-    int speedLevel;                         // 0x24: DolfiniSession_Ctor original object access
-    int peakSpeedLevel;                         // 0x28: DolfiniSession_Ctor original object access
-    int preloadAnimationIndex;                         // 0x2c: DolfiniSession_Ctor original object access
-    char pad_030[0x4];                  // 0x30
-    int spinInputArmed;                         // 0x34: DolfiniSession_Ctor original object access
-    void* roundDol3D;                   // 0x38: DolfiniSession_LoadResources original object access
-    void* numberDraw;                       // 0x3c: DolfiniSession_Ctor original object access
-    int rewardTable;                         // 0x40: DolfiniSession_Ctor original object access
-    int galleryImageTable;                         // 0x44: DolfiniSession_Ctor original object access
-    int prizeGalleryTable;                         // 0x48: DolfiniSession_Ctor original object access
-    int rewardKind;                         // 0x4c: CRoundDolMain_DrawStateUI original object access
-    void* texture0;                     // 0x50: CRoundDolMain_DrawStateUI original object access
-    void* texture1;                     // 0x54: CRoundDolMain_DrawStateUI original object access
-    char pad_058[0x4c4];                // 0x58
-    unsigned char profileAttribute0;              // 0x51c: DolfiniSession_Ctor original object access
-    unsigned char profileAttribute1;              // 0x51d: DolfiniSession_Ctor original object access
-    unsigned char profileAttribute2;              // 0x51e: DolfiniSession_Ctor original object access
-    unsigned char profileAttribute3;              // 0x51f: DolfiniSession_Ctor original object access
-    unsigned char profileAttribute4;              // 0x520: DolfiniSession_Ctor original object access
-    unsigned char profileAttribute5;              // 0x521: DolfiniSession_Ctor original object access
-    char pad_522[0x35e];                // 0x522
-    void* dialog;                      // 0x880: CRoundDolMain_DrawStateUI original object access
-    void* layout;                       // 0x884: DolfiniSession_LoadResources original object access
-    int messageResource;                        // 0x888: DolfiniSession_Ctor original object access
-    void* textFactory;                      // 0x88c: DolfiniSession_LoadResources original object access
-    int messageDraw;                        // 0x890: DolfiniSession_Ctor original object access
-    void* saveMenu;                      // 0x894: CRoundDolMain_DrawStateUI original object access
-    int resourcesLoaded;                        // 0x898: CRoundDolMain_DrawStateUI original object access
+    // Advance the prize game one frame. Returns 1 when the session can close.
+    int UpdateStateMachine();
+
+    // BP registry entries for the layered title, controls, message, result and
+    // effect objects.
+    int bpEntryId0;                  // 0x0 title
+    int bpEntryId1;                  // 0x4 arrow
+    int bpEntryId2;                  // 0x8 spin controls
+    int bpEntryId3;                  // 0xc instruction message
+    int bpEntryId4;                  // 0x10 result
+    int bpEntryId5;                  // 0x14 speed effect
+    int bpEntryId6;                  // 0x18 balloon
+    int bpEntryId7;                  // 0x1c intro flare
+    unsigned int state;              // 0x20
+    int speedLevel;                  // 0x24
+    int peakSpeedLevel;              // 0x28
+    int preloadAnimationIndex;       // 0x2c
+    char pad_030[0x4];               // 0x30
+    int spinInputArmed;              // 0x34
+    void* roundDol3D;                // 0x38
+    void* numberDraw;                // 0x3c
+    int rewardTable;                 // 0x40
+    int galleryImageTable;           // 0x44
+    int prizeGalleryTable;           // 0x48
+    int rewardKind;                  // 0x4c
+    void* texture0;                  // 0x50 prize image
+    void* texture1;                  // 0x54 gallery image
+    char savedPlayerRecord[0x11c];   // 0x58 working copy of the player record
+    short itemCounts[13];            // 0x174
+    char pad_18E[0x38e];             // 0x18e
+    unsigned char profileAttribute0; // 0x51c
+    unsigned char profileAttribute1; // 0x51d
+    unsigned char profileAttribute2; // 0x51e
+    unsigned char profileAttribute3; // 0x51f
+    unsigned char profileAttribute4; // 0x520
+    unsigned char profileAttribute5; // 0x521
+    char pad_522[0x35e];             // 0x522
+    void* dialog;                    // 0x880
+    void* layout;                    // 0x884
+    int messageResource;             // 0x888
+    void* textFactory;               // 0x88c
+    int messageDraw;                 // 0x890
+    void* saveMenu;                  // 0x894
+    int resourcesLoaded;             // 0x898
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define PLAYERRECORDOWNER8030E168_OFF(f, o) typedef char PlayerRecordOwner8030E168_off_##f[((int)&((PlayerRecordOwner8030E168*)0)->f == (o)) ? 1 : -1]
+#define PLAYERRECORDOWNER8030E168_OFF(f, o) \
+    typedef char PlayerRecordOwner8030E168_off_##f[((int)&((PlayerRecordOwner8030E168*)0)->f == (o)) ? 1 : -1]
 PLAYERRECORDOWNER8030E168_OFF(bpEntryId1, 0x4);
 PLAYERRECORDOWNER8030E168_OFF(bpEntryId2, 0x8);
 PLAYERRECORDOWNER8030E168_OFF(bpEntryId3, 0xc);
@@ -68,6 +76,8 @@ PLAYERRECORDOWNER8030E168_OFF(prizeGalleryTable, 0x48);
 PLAYERRECORDOWNER8030E168_OFF(rewardKind, 0x4c);
 PLAYERRECORDOWNER8030E168_OFF(texture0, 0x50);
 PLAYERRECORDOWNER8030E168_OFF(texture1, 0x54);
+PLAYERRECORDOWNER8030E168_OFF(savedPlayerRecord, 0x58);
+PLAYERRECORDOWNER8030E168_OFF(itemCounts, 0x174);
 PLAYERRECORDOWNER8030E168_OFF(profileAttribute0, 0x51c);
 PLAYERRECORDOWNER8030E168_OFF(profileAttribute1, 0x51d);
 PLAYERRECORDOWNER8030E168_OFF(profileAttribute2, 0x51e);
@@ -83,5 +93,6 @@ PLAYERRECORDOWNER8030E168_OFF(saveMenu, 0x894);
 PLAYERRECORDOWNER8030E168_OFF(resourcesLoaded, 0x898);
 PLAYERRECORDOWNER8030E168_OFF(bpEntryId0, 0x0);
 #undef PLAYERRECORDOWNER8030E168_OFF
+typedef char PlayerRecordOwner8030E168_size[(sizeof(PlayerRecordOwner8030E168) == 0x89c) ? 1 : -1];
 
-#endif  // CLASSES_PLAYERRECORDOWNER8030E168_H
+#endif // CLASSES_PLAYERRECORDOWNER8030E168_H

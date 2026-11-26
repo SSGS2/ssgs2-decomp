@@ -6,9 +6,9 @@
 class SpringGridSurfaceView {
 public:
     char pad_000[0x4];
-    int itemCount; // 0x4
+    int itemCount;  // 0x4
     int groupCount; // 0x8
-    void** groups; // 0xC
+    void** groups;  // 0xC
     void** vectors; // 0x10
     char pad_014[0x4];
     int updatedAt; // 0x18

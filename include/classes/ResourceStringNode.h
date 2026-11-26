@@ -5,13 +5,14 @@
 
 class ResourceStringNode {
 public:
-    void* left; // 0x0: ResourceGroups_FindNamedValue descends by string comparison
-    void* right; // 0x4: ResourceGroups_FindNamedValue descends by string comparison
+    void* left;         // 0x0: ResourceGroups_FindNamedValue descends by string comparison
+    void* right;        // 0x4: ResourceGroups_FindNamedValue descends by string comparison
     void* taggedParent; // 0x8: CameraOwnedAnimationIterator_PostIncrement masks bit 0
-    unsigned int stringFlags; // 0xC: ResourceGroups_FindNamedValue tests bit 31 for heap storage; low-address byte holds inline length
+    unsigned int
+        stringFlags; // 0xC: ResourceGroups_FindNamedValue tests bit 31 for heap storage; low-address byte holds inline length
     unsigned int heapLength; // 0x10: ResourceGroups_FindNamedValue uses when stringFlags bit 31 is set
-    const char* heapData; // 0x14: ResourceGroups_FindNamedValue compares; FREE_NODE releases for heap strings
-    void* value; // 0x18: ResourceGroups_FindNamedValue returns after successful string lookup
+    const char* heapData;    // 0x14: ResourceGroups_FindNamedValue compares; FREE_NODE releases for heap strings
+    void* value;             // 0x18: ResourceGroups_FindNamedValue returns after successful string lookup
 };
 
 #define OFF(f, o) typedef char ResourceStringNode_off_##f[((int)&((ResourceStringNode*)0)->f == (o)) ? 1 : -1]

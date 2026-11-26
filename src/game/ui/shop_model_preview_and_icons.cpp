@@ -1,20 +1,26 @@
+// Shop model previews and product icon textures for the shop.
+//
+// The CModelOperation classes (character, caddie and item variants) show the selected product
+// as a 3D model. CBuildProductChara builds the character product lists and their icon texture
+// groups from the character's texture archive.
+
 #include <decomp/static_init.h>
 #include <decomp/local_class.h>
 #include <decomp/ct_member.h>
 // Shop model previews and character/caddie icon loading (frame rate, model, texture).
-// Entry points are CModelOperationItem_UpdateRotationAndExhibition/2/3 and CBuildProductChara_Load*;
+// Entry points are CModelOperationItem::UpdateRotationAndExhibition/2/3 and CBuildProductChara::Load*;
 // provider schemas live in game/shop_product.h and classes/CBuildProductCharaFields.h.
 // Mod lookup:
-// - Automatic item yaw: kItemPreviewAutoYawStepStorage in u802D7340_data.cpp,
+// - Automatic item yaw: kItemPreviewAutoYawStepStorage in the data section,
 //   binary32 0.034906585 (~2 degrees in radians) PER UPDATE CALL, not per second.
 //   Pointer rotation is a separate branch; the update object's delta is unchanged.
 // - Preview framing/viewport: ModelOperationBase_GetDefaultViewport and
 //   ApplyCameraPreset in model_operation_exhibition_preview.cpp; no resolution/aspect constant is set here.
-// - Club set / ball model path: CModelOperationItem_OpenResource uses
+// - Club set / ball model path: CModelOperationItem::OpenResource uses
 //   itemPreviewResourcePaths (+0/+kBallPreviewResource); isClubSet chooses the path.
 // - Fashion archive: LoadProductTextures indexes resourceNames[0..7]; icon paths
 //   come from each IFF record's icon field and the suffix in fashionArchiveStrings.
-// - Caddie/accessory icons: CBuildProductCaddie_LoadIconGroups calls ShopCaddieList_BuildProducts
+// - Caddie/accessory icons: CBuildProductCaddie::LoadIconGroups calls ShopCaddieList_BuildProducts
 //   (shop_product_list_builder.cpp), despite its retained Chara ABI name. Its argument is a CADDIE index.
 //   Its two-group storage must not be used as the five-group fashion storage.
 // Preserve: asynchronous archive lifetime, record/texture parallel indices, first
@@ -29,7 +35,7 @@
 // +14 recordCounts_*: pointer to signed counts, NOT a scalar count. _pp is a legacy
 // cast view used for address arithmetic; _u32 holds the same 32-bit pointer bits.
 // +18 resourceArrays_*: owned parallel CBpTex arrays; record g/i maps to texture g/i.
-// CBuildProductCaddie_LoadIconGroups uses two groups; LoadProductTextures uses five. Their table
+// CBuildProductCaddie::LoadIconGroups uses two groups; LoadProductTextures uses five. Their table
 // allocations have different sizes, so do not interchange these loading paths.
 // Rebuild policy: all groups after group 0 are discarded every load. First group 0 is
 // discarded only when flag != 0 AND textureEntriesBuilt == 0; otherwise existing data is reused.
@@ -42,10 +48,20 @@ enum CharacterProductStorage {
     kProductCategoryCount = 8,
     kEmbeddedSaveDataOffset = 0x24
 };
-enum CharacterProductCategory { kAvatarCategory = 0, kTopCategory = 1,
-    kBottomCategory = 2, kShoesCategory = 3, kAccessoriesCategory = 4,
-    kHairCategory = 5, kRingsCategory = 6, kCostumeSetsCategory = 7 };
-enum { kFlattenedProductGroupCount = 5, kSingleProviderGroupCount = 4 };
+enum CharacterProductCategory {
+    kAvatarCategory = 0,
+    kTopCategory = 1,
+    kBottomCategory = 2,
+    kShoesCategory = 3,
+    kAccessoriesCategory = 4,
+    kHairCategory = 5,
+    kRingsCategory = 6,
+    kCostumeSetsCategory = 7
+};
+enum {
+    kFlattenedProductGroupCount = 5,
+    kSingleProviderGroupCount = 4
+};
 // Provider/category index -> flattened record group -> texture/display index:
 // 0 avatar       -> 0 -> same index
 // 1 top          -> 1 -> same index
@@ -60,15 +76,27 @@ enum { kFlattenedProductGroupCount = 5, kSingleProviderGroupCount = 4 };
 // Tables at +10/+14/+18 share group numbers, but hold records/counts/textures.
 // Byte addressing uses group*4, recordIndex*kProductRecordStride, or
 // recordIndex*kTextureEntryStride respectively; those offsets are not interchangeable.
-enum { kProductTableEntryBytes = sizeof(void*), kFirstNonAvatarGroup = 1 };
+enum {
+    kProductTableEntryBytes = sizeof(void*),
+    kFirstNonAvatarGroup = 1
+};
 
-enum CharacterPartFilters { kTopPartMask = 1, kBottomPartMask = 2, kShoePartMask = 0x10, kAccessoryPartMask = 0x2C };
+enum CharacterPartFilters {
+    kTopPartMask = 1,
+    kBottomPartMask = 2,
+    kShoePartMask = 0x10,
+    kAccessoryPartMask = 0x2C
+};
 // US character names; archive offsets still select the original internal resource names.
 enum CharacterFashionArchives {
-    kScoutFashionArchive = 0x4B, kHanaFashionArchive = 0x59,
-    kUncleBobFashionArchive = 0x67, kCeciliaFashionArchive = 0x75,
-    kMaxFashionArchive = 0x83, kKoohFashionArchive = 0x91,
-    kArinFashionArchive = 0x9F, kKazFashionArchive = 0xAD
+    kScoutFashionArchive = 0x4B,
+    kHanaFashionArchive = 0x59,
+    kUncleBobFashionArchive = 0x67,
+    kCeciliaFashionArchive = 0x75,
+    kMaxFashionArchive = 0x83,
+    kKoohFashionArchive = 0x91,
+    kArinFashionArchive = 0x9F,
+    kKazFashionArchive = 0xAD
 };
 // Eight product categories: avatar, top, bottom, shoes, accessories, hair, rings, costume sets.
 // Record group 4 concatenates accessories, hair and rings; costume sets are stored separately.
@@ -88,7 +116,8 @@ enum FashionTextOffsets {
 };
 
 #include "classes/CBuildProductCharaFields.h"
-// CBuildProductCaddie_LoadIconGroups (0x802D7340):
+#include "classes/CBuildProductChara.h"
+// CBuildProductCaddie::LoadIconGroups (0x802D7340):
 // resourceArrays at +0x18 holds pointer entries;
 // the +4 store clears its second entry, now written as resourceArrays_pp[1].
 #include "classes/CModelOperationCaddie.h"
@@ -108,19 +137,15 @@ extern const char fashionArchiveStrings[];
 }
 }
 
-// Translation unit 0x802D7340-0x802D8A98 (18 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "game/shop_product.h"
 #include "game/exception.h"
-
-
-
-#define AsCModelOperationItem(p) ((CModelOperationItem*)(p))
-
-#define AsCModelOperationCaddie(p) ((CModelOperationCaddie*)(p))
+#include "classes/CBuildProductCaddie.h"
+#include "classes/CModelOperation.h"
+#include "classes/CAsyncExhibitionPet.h"
+#include "classes/CPackTextureResource.h"
+#include "classes/CBpTex.h"
 
 extern "C" {
 
@@ -133,18 +158,15 @@ extern unsigned char __vt__21CModelOperationCaddie[];
 extern unsigned char __vt__19CModelOperationItem[];
 extern unsigned char __vt__18CBuildProductChara[];
 
-extern void CPackTextureResource_PollLoad(void*);
-extern void CModelOperation_OpenResource(void*, const char*);
 extern void ModelOperationBase_Ctor(void*);
 extern void __ct__13CBuildProductFiUc(void*, int, unsigned char);
 extern void __dt__18ModelOperationBaseFv(void*, int);
 extern void* __nwa__FUl(unsigned int);
 extern void __dl__FPv(void*);
 extern void __dla__FPv(void*);
-extern void __dt__11ProductBaseFv(void*, int);extern int ModelOperationBase_GetDefaultViewport(void*, void*);
+extern void __dt__11ProductBaseFv(void*, int);
+extern int ModelOperationBase_GetDefaultViewport(void*, void*);
 extern int ModelOperationBase_ReleaseExhibition(void*);
-extern void* CAsyncExhibitionPet_Create(void*, int, float);
-extern int CAsyncExhibitionPet_SetPetSelection(void*, void*);
 extern int ModelOperationBase_ApplyCameraPreset(void*, int);
 extern int ModelOperationBase_UpdatePointerRotation(void*);
 extern void* ItemInventory_FindSetItemData(void*, void*);
@@ -159,17 +181,12 @@ extern void ShopCaddieList_BuildProducts(void*, int);
 extern void String_ConcatCStringAndString(void*, const char*, void*);
 extern void String_ConstructConcatCStr(void*, void*, void*);
 extern void* ResourceTable_FindEntryByName(void*, void*, void*);
-extern void* CPackTextureResource_Init(void*, void*, void*, void*);
-extern // characterIndex is an inventory character index. Return 1 after building records,
-// 0 on clear/provider/character lookup failure; earlier mutations are not rolled back.
-// Icon loading is performed by the caller, after these five record groups exist.
-int CBuildProductChara_BuildProducts(void*, int);
 extern void* __ct__18CShopProductAvatarFPvUc(void*, void*, unsigned char);
 extern int CharacterProducts_CopyRecordForInventoryCharacter(void*, void*, int);
-extern void* CShopProductParts_Ctor(void*, void*, int, void*, unsigned char);
-extern void* CShopProductHair_Ctor(void*, void*, void*, unsigned char);
-extern void* CShopProductSetItem_Ctor(void*, void*, void*, unsigned char);
-extern void* CShopProductRing_Ctor(void*, void*, unsigned char);
+extern void* __ct__17CShopProductPartsFPCUiUiPvPv(void*, void*, int, void*, unsigned char);
+extern void* __ct__16CShopProductHairFPvPvPv(void*, void*, void*, unsigned char);
+extern void* __ct__19CShopProductSetItemFPvPvPv(void*, void*, void*, unsigned char);
+extern void* __ct__16CShopProductRingFPvPv(void*, void*, unsigned char);
 extern int BuildProductChara_ClearProductEntries(void*);
 extern void* appMallocDummy__FUl(unsigned int);
 extern void* __nw__FUl(unsigned int);
@@ -180,8 +197,7 @@ extern void* s_resourceTableStorage;
 extern const char fashionArchiveStrings[];
 extern const char* MSLString_LowercaseInPlace(const char*);
 extern void appFreeUni__FPv(void*);
-extern void CBpTex_Init(void*);
-extern void CBpTex_dtor(void*, int);
+extern "C" void __dt__6CBpTexFv(void*, int);
 extern void __destroy_new_array(void*, void*);
 extern void* memcpy(void*, const void*, unsigned int);
 extern void* memset(void*, int, unsigned int);
@@ -206,37 +222,48 @@ struct String73 {
         words[2] = 0;
         length = strlen(text);
         String_ReserveCapacity(this, length);
-        ((void* (*)(String73*, unsigned int, unsigned int, const char*, const char*, Allocator73))String_ReplaceRange)(this, 0, 0, text, text + length, allocator);
+        ((void* (*)(String73*, unsigned int, unsigned int, const char*, const char*, Allocator73))String_ReplaceRange)(
+            this, 0, 0, text, text + length, allocator);
     }
     // Release heap text only when the high storage-mode bit is set.
     ~String73() {
-        if (words[0] >> 31) appFreeUni__FPv((void*)words[2]);
+        if (words[0] >> 31)
+            appFreeUni__FPv((void*)words[2]);
     }
     // Borrow NUL-terminated text from inline or heap storage.
     const char* c_str() const {
         const char* text;
-        if ((words[0] >> 31) == 0) text = (const char*)this + 1;
-        else text = (const char*)words[2];
+        if ((words[0] >> 31) == 0)
+            text = (const char*)this + 1;
+        else
+            text = (const char*)words[2];
         return text;
     }
     // Replace a range through the original string/allocator calling convention.
     void replace(unsigned int pos, unsigned int size, const char* begin, const char* end) {
         Allocator73 allocator;
-        ((void* (*)(String73*, unsigned int, unsigned int, const char*, const char*, Allocator73))String_ReplaceRange)(this, pos, size, begin, end, allocator);
+        ((void* (*)(String73*, unsigned int, unsigned int, const char*, const char*, Allocator73))String_ReplaceRange)(
+            this, pos, size, begin, end, allocator);
     }
 };
 struct Item73 {
     char data[0x28];
     // Initialize one owned CBpTex icon entry.
-    Item73() { CBpTex_Init(this); }
+    Item73() {
+        ((CBpTex*)this)->__ct();
+    }
     // Destroy one CBpTex entry while the array allocator retains its storage.
-    ~Item73() { CBpTex_dtor(this, -1); }
+    ~Item73() {
+        __dt__6CBpTexFv(this, -1);
+    }
     // Allocate the original array size, including compiler-managed array metadata.
-    static void* operator new[](size_t size) { return __nwa__FUl(size); }
+    static void* operator new[](size_t size) {
+        return __nwa__FUl(size);
+    }
 };
 #pragma opt_loop_invariants off
 // Build caddie/accessory icon entries, retaining cached caddie entries when allowed.
-// Entry point: CBuildProductCaddie_LoadIconGroups.
+// Entry point: CBuildProductCaddie::LoadIconGroups.
 // caddieIndex is forwarded as the accessory provider selection, not an avatar index.
 // Bounds: 0<=caddieIndex<CItemManager::caddies.size (table at inventory +0x68),
 // NOT the character archive's 0..7 range. ItemInventory_GetCaddieIdAt in
@@ -253,34 +280,34 @@ struct Item73 {
 // 1 after texture entry setup (not GPU readiness). Partial rebuilds remain on failure.
 // New texture arrays are owned by the builder; temporary path strings are borrowed
 // only for the virtual set-path call. Replacing a group invalidates its old entries.
-int CBuildProductCaddie_LoadIconGroups(void* self, int caddieIndex) {
+int CBuildProductCaddie::LoadIconGroups(int caddieIndex) {
     // Phase 1: build the two record groups and reject a missing count-table pointer.
-    ShopCaddieList_BuildProducts(self, caddieIndex);
-    if (AsCBuildProductCharaFields(self)->recordCountsAddress_s32 == 0) {
+    ShopCaddieList_BuildProducts(this, caddieIndex);
+    if (AsCBuildProductCharaFields(this)->recordCountsAddress_s32 == 0) {
         return 0;
     }
     // Phase 2: invalidate group 1; retain group 0 unless first-load policy requires reset.
-    void* resourceGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
+    void* resourceGroups = AsCBuildProductCharaFields(this)->resourceArrays_ptr;
     if (resourceGroups != 0) {
         void* previousIcons = ((void**)resourceGroups)[1];
         if (previousIcons != 0) {
-            __destroy_new_array(previousIcons, (void*)CBpTex_dtor);
-            AsCBuildProductCharaFields(self)->resourceArrays_pp[1] = 0;
+            __destroy_new_array(previousIcons, (void*)__dt__6CBpTexFv);
+            AsCBuildProductCharaFields(this)->resourceArrays_pp[1] = 0;
         }
-        if (AsCBuildProductCharaFields(self)->flag != 0) {
-            if (AsCBuildProductCharaFields(self)->textureEntriesBuilt == 0) {
-                void* previousCaddieIcons = *AsCBuildProductCharaFields(self)->resourceArrays_pp;
+        if (AsCBuildProductCharaFields(this)->flag != 0) {
+            if (AsCBuildProductCharaFields(this)->textureEntriesBuilt == 0) {
+                void* previousCaddieIcons = *AsCBuildProductCharaFields(this)->resourceArrays_pp;
                 if (previousCaddieIcons != 0) {
-                    __destroy_new_array(previousCaddieIcons, (void*)CBpTex_dtor);
-                    *AsCBuildProductCharaFields(self)->resourceArrays_pp = 0;
+                    __destroy_new_array(previousCaddieIcons, (void*)__dt__6CBpTexFv);
+                    *AsCBuildProductCharaFields(this)->resourceArrays_pp = 0;
                 }
             }
         }
     } else {
         void* p = __nwa__FUl(0x8);
-        AsCBuildProductCharaFields(self)->resourceArrays_ptr = p;
+        AsCBuildProductCharaFields(this)->resourceArrays_ptr = p;
         ((void**)p)[0] = 0;
-        AsCBuildProductCharaFields(self)->resourceArrays_pp[1] = 0;
+        AsCBuildProductCharaFields(this)->resourceArrays_pp[1] = 0;
     }
 
     // Phase 3: allocate absent texture arrays and resolve each record's icon path.
@@ -294,33 +321,36 @@ int CBuildProductCaddie_LoadIconGroups(void* self, int caddieIndex) {
     recordGroup = 0;
     groupPointerOffset = 0;
     for (; recordGroup < 2; recordGroup++) {
-        void** textureGroups = AsCBuildProductCharaFields(self)->resourceArrays_pp;
+        void** textureGroups = AsCBuildProductCharaFields(this)->resourceArrays_pp;
         if (*(void**)((char*)textureGroups + groupPointerOffset) == 0) {
-            void** recordCounts = AsCBuildProductCharaFields(self)->recordCounts_pp;
+            void** recordCounts = AsCBuildProductCharaFields(this)->recordCounts_pp;
             int count = *(int*)((char*)recordCounts + groupPointerOffset);
             void* textureEntries = new Item73[count];
             recordIndex = 0;
-            void** installedTextureGroups = AsCBuildProductCharaFields(self)->resourceArrays_pp;
+            void** installedTextureGroups = AsCBuildProductCharaFields(this)->resourceArrays_pp;
             *(void**)((char*)installedTextureGroups + groupPointerOffset) = textureEntries;
-            void** installedRecordCounts = AsCBuildProductCharaFields(self)->recordCounts_pp;
+            void** installedRecordCounts = AsCBuildProductCharaFields(this)->recordCounts_pp;
             int groupRecordCount = *(int*)((char*)installedRecordCounts + groupPointerOffset);
             if (groupRecordCount > 0) {
                 recordByteOffset = 0;
                 textureByteOffset = 0;
-                for (; recordIndex < *(int*)(groupPointerOffset + AsCBuildProductCharaFields(self)->recordCounts_u32); recordIndex++) {
-                    unsigned int recordOrTextureBase = AsCBuildProductCharaFields(self)->recordArrays_u32;
+                for (; recordIndex < *(int*)(groupPointerOffset + AsCBuildProductCharaFields(this)->recordCounts_u32);
+                     recordIndex++) {
+                    unsigned int recordOrTextureBase = AsCBuildProductCharaFields(this)->recordArrays_u32;
                     recordOrTextureBase = *(unsigned int*)(groupPointerOffset + recordOrTextureBase);
                     iconName = ((IffItemCommon*)((char*)recordOrTextureBase + recordByteOffset))->icon;
                     {
                         String73 input((const char*)iconName, iconNameLength);
                         String73 result = ((String73 (*)(const String73&, const char*))String_ConstructConcatCStr)(
-                            ((String73 (*)(const char*, const String73&))String_ConcatCStringAndString)(caddieRecordStrings + kEmptyIconPrefix, input),
+                            ((String73 (*)(const char*, const String73&))String_ConcatCStringAndString)(
+                                caddieRecordStrings + kEmptyIconPrefix, input),
                             caddieRecordStrings + kIconResourceSuffix);
-                        unsigned int textureTableAddress = AsCBuildProductCharaFields(self)->resourceArrays_u32;
+                        unsigned int textureTableAddress = AsCBuildProductCharaFields(this)->resourceArrays_u32;
                         recordOrTextureBase = *(unsigned int*)(groupPointerOffset + textureTableAddress);
                         void* textureEntry = (char*)recordOrTextureBase + textureByteOffset;
-                        struct Vt { 
-                        virtual void a() DECOMP_LOCAL_VIRTUAL; virtual void set(const char*) DECOMP_LOCAL_VIRTUAL;
+                        struct Vt {
+                            virtual void a() DECOMP_LOCAL_VIRTUAL;
+                            virtual void set(const char*) DECOMP_LOCAL_VIRTUAL;
                         };
                         ((Vt*)textureEntry)->set(result.c_str());
                         textureByteOffset += kTextureEntryStride;
@@ -333,15 +363,15 @@ int CBuildProductCaddie_LoadIconGroups(void* self, int caddieIndex) {
         }
         groupPointerOffset += 4;
     }
-    if (AsCBuildProductCharaFields(self)->textureEntriesBuilt == 0) {
-        AsCBuildProductCharaFields(self)->textureEntriesBuilt = 1;
+    if (AsCBuildProductCharaFields(this)->textureEntriesBuilt == 0) {
+        AsCBuildProductCharaFields(this)->textureEntriesBuilt = 1;
     }
     return 1;
 }
 #pragma pop
- 
+
 // Initialize the character-product angle conversion constant at startup.
-void CBuildProductChara_InitAngleConstant() {
+void CBuildProductChara::InitAngleConstant() {
     s_characterProductAngleConstant = kFloat_6_2831855;
 }
 
@@ -357,75 +387,56 @@ void CModelOperationItem_InitAngleConstant() {
 
 // Advance the owned character texture archive; requires a previously opened archive.
 // Returns 1 after polling, not an independent texture readiness status.
-int CBuildProductChara_UpdateTextureArchiveLoad(void* self) {
-    CPackTextureResource_PollLoad(AsCBuildProductCharaFields(self)->textureArchive_ptr);
+int CBuildProductChara::UpdateTextureArchiveLoad() {
+    ((CPackTextureResource*)(textureArchive_ptr))->PollLoad();
     return 1;
 }
 
 // Select the preview resource for a club set or ball.
 // The chosen packed-pool path is borrowed by the base open operation; returns 1.
 // Preserve the isClubSet branch and path offset when replacing preview models.
-int CModelOperationItem_OpenResource(void* self) {
-    if (AsCModelOperationItem(self)->isClubSet) {
-        CModelOperation_OpenResource(self, itemPreviewResourcePaths);
+int CModelOperationItem::OpenResource() {
+    if (isClubSet) {
+        ((CModelOperation*)this)->OpenResource(itemPreviewResourcePaths);
     } else {
-        CModelOperation_OpenResource(self, itemPreviewResourcePaths + kBallPreviewResource);
+        ((CModelOperation*)this)->OpenResource(itemPreviewResourcePaths + kBallPreviewResource);
     }
     return 1;
 }
 
 // Initialize the caddie model operation with no preview and no selected inventory index.
-void* CModelOperationCaddie_Ctor(void* self) {
-    ModelOperationBase_Ctor(self);
-    AsCModelOperationCaddie(self)->vtbl = __vt__21CModelOperationCaddie;
-    (*(int*)&AsCModelOperationCaddie(self)->asyncPet) = 0;
-    AsCModelOperationCaddie(self)->inventoryIndex = -1;
-    return self;
+CModelOperationCaddie::CModelOperationCaddie() {
+    ModelOperationBase_Ctor(this);
+    vtbl = __vt__21CModelOperationCaddie;
+    (*(int*)&asyncPet) = 0;
+    inventoryIndex = -1;
 }
 
 // Initialize the item model operation and remember whether it displays club sets.
 // self is required caller-owned storage; base construction supplies preview
 // lifetime/cleanup (ModelOperationBase_Ctor, model_operation_chara_caddie.cpp). Accepted selector is
-// 0=ball, 1=club set, as CPangya2Shop_Ctor's two ItemPreviewStorage calls show.
+// 0=ball, 1=club set, as CPangya2Shop::Init's two ItemPreviewStorage calls show.
 // It is narrowed to a byte WITHOUT Boolean normalization: 256 would become 0,
 // while any nonzero retained byte selects club sets in OpenResource. Other ints
 // are outside this API's two-choice input contract, even if a branch accepts them.
-void* CModelOperationItem_Ctor(void* self, int isClubSet) {
-    ModelOperationBase_Ctor(self);
-    AsCModelOperationItem(self)->exhibitionPet = 0;
-    AsCModelOperationItem(self)->vtbl = __vt__19CModelOperationItem;
-    AsCModelOperationItem(self)->isClubSet = (unsigned char)isClubSet;
-    return self;
+CModelOperationItem::CModelOperationItem(int isClubSet) {
+    ModelOperationBase_Ctor(this);
+    exhibitionPet = 0;
+    vtbl = __vt__19CModelOperationItem;
+    this->isClubSet = (unsigned char)isClubSet;
 }
 
 // Detach the item preview, destroy the base operation and optionally free the allocation.
-void* CModelOperationItem_dtor(void* self, int flag) {
-    if (self != 0) {
-        AsCModelOperationItem(self)->exhibitionPet = 0;
-        __dt__18ModelOperationBaseFv(self, 0);
-        if (flag > 0) {
-            __dl__FPv(self);
-        }
-    }
-    return self;
+CModelOperationItem::~CModelOperationItem() {
+    exhibitionPet = 0;
+    __dt__18ModelOperationBaseFv(this, 0);
 }
 
-struct ProductBase {
-    char storage[0x2D74];
-    // Construct the owning base; see the character-builder admission contract below.
-    ProductBase(int count, unsigned char flag) { __ct__13CBuildProductFiUc(this, count, flag); }
-    ~ProductBase();
-};
-// Character builder extends the product-vector base with archive and extra-set storage.
-struct CBuildProductChara : ProductBase {
-    char rest[0x14];
-    CBuildProductChara(int, unsigned char);
-};
 // Initialize archive/provider ownership and allocate the eight borrowed archive-name slots.
 // Constructor admission/ownership contract:
 // - count is the base's parallel OUTPUT-GROUP slot count, not eight providers,
 //   a character ID, or a product count. The character builder's supported caller
-//   CPangya2Shop_Ctor (shop_products_tab_and_top_menu.cpp, kShopCharacterBuilderMode) passes 5. Keep count=5
+//   CPangya2Shop::Init (shop_products_tab_and_top_menu.cpp, kShopCharacterBuilderMode) passes 5. Keep count=5
 //   with this class's hard-coded five record/texture groups. The common base
 //   accepts a nonnegative allocation-sized count but does not validate it against
 //   this derived class. Passing 2/3 belongs to the caddie/item builders instead.
@@ -433,19 +444,20 @@ struct CBuildProductChara : ProductBase {
 //   Shop supplies characterEntryMode; this file tests zero versus nonzero for
 //   invalidated group-0 rebuilding (see the storage contract above). It does not
 //   normalize the byte or define a new gameplay enum; provider constructors
-//   __ct__18CShopProductAvatarFPvUc and CShopProduct{Parts,Hair,Ring,SetItem}_Ctor
+//   __ct__18CShopProductAvatarFPvUc and the CShopProduct{Parts,Hair,Ring,SetItem} constructors
 //   own filtering policy.
-// - ProductBase -> CBuildProduct::CBuildProduct (archive_zip_reader_and_game_hooks.cpp) allocates/zeros
+// - The base constructor CBuildProduct::CBuildProduct (archive_zip_reader_and_game_hooks.cpp) allocates/zeros
 //   count indices and constructs its OWN embedded SaveData at +24. No external
 //   save pointer is retained by this constructor. The base later owns category
 //   providers, record tables and texture arrays; __dt__11ProductBaseFv releases
-//   those. CBuildProductChara_dtor first releases this derived class's archive,
+//   those. CBuildProductChara::Destroy first releases this derived class's archive,
 //   baseProduct provider, owned 8-pointer name TABLE and extra set-record array.
 //   Name strings stored in that table are borrowed pool data, never deleted.
 // Required fresh 0x2D88-byte receiver. Allocation/constructor exceptions propagate;
 // partially constructed state is not a usable builder. No load/readiness is
 // promised on return; LoadProductTextures/BuildProducts provide those phases.
-CBuildProductChara::CBuildProductChara(int count, unsigned char flag) : ProductBase(count, flag) {
+CBuildProductChara::CBuildProductChara(int count, unsigned char flag) {
+    __ct__13CBuildProductFiUc(this, count, flag);
     void* self = this;
     AsCBuildProductCharaFields(self)->texture_s32 = 0;
     AsCBuildProductCharaFields(self)->vtbl = __vt__18CBuildProductChara;
@@ -461,20 +473,20 @@ CBuildProductChara::CBuildProductChara(int count, unsigned char flag) : ProductB
 // leaves exhibitionPet/updateObject null after releasing the previous preview.
 // The base owns destruction; updateObject aliases the stored exhibition, not a
 // second allocation. kItemPreviewCameraDistance=10 becomes cameraDistance through
-// CAsyncExhibitionPet_Create (pet_preload_async.cpp) -> virtual slot 4 ->
+// CAsyncExhibitionPet::Create -> virtual slot 4 ->
 // CAsyncExhibition_ReplaceExhibition (async_exhibition_avatar_preview.cpp). It is preview-scene camera distance, not
 // degrees, seconds or screen pixels; conversion to physical meters is unknown.
-int CModelOperationItem_CreateItemPreviewPet(void* self) {
+int CModelOperationItem::CreateItemPreviewPet() {
     char buf[16];
-    if (ModelOperationBase_GetDefaultViewport(self, buf) == 0) {
+    if (ModelOperationBase_GetDefaultViewport(this, buf) == 0) {
         return 0;
     }
-    if (ModelOperationBase_ReleaseExhibition(self) == 0) {
+    if (ModelOperationBase_ReleaseExhibition(this) == 0) {
         return 0;
     }
-    void* p = CAsyncExhibitionPet_Create(buf, 1, kItemPreviewCameraDistance);
-    (*(void**)&AsCModelOperationItem(self)->exhibitionPet) = p;
-    AsCModelOperationItem(self)->updateObject = p;
+    void* p = CAsyncExhibitionPet::Create(buf, 1, kItemPreviewCameraDistance);
+    (*(void**)&exhibitionPet) = p;
+    updateObject = p;
     return p != 0;
 }
 
@@ -482,15 +494,15 @@ int CModelOperationItem_CreateItemPreviewPet(void* self) {
 // arg is a required selection for success and is borrowed by the selection API.
 // Return 0 for null selection/preview or preset failure, otherwise forward setter
 // status. No rollback of a successfully applied camera preset on setter failure.
-int CModelOperationItem_SelectPreviewItem(void* self, void* arg) {
-    if (AsCModelOperationItem(self)->exhibitionPet == 0) {
+int CModelOperationItem::SelectPreviewItem(void* arg) {
+    if (exhibitionPet == 0) {
         return 0;
     }
     if (arg == 0) {
         return 0;
     }
-    if (ModelOperationBase_ApplyCameraPreset(self, 0) != 0) {
-        return CAsyncExhibitionPet_SetPetSelection((*(void**)&AsCModelOperationItem(self)->exhibitionPet), arg);
+    if (ModelOperationBase_ApplyCameraPreset(this, 0) != 0) {
+        return ((CAsyncExhibitionPet*)((*(void**)&exhibitionPet)))->SetPetSelection(arg);
     }
     return 0;
 }
@@ -500,7 +512,7 @@ int CModelOperationItem_SelectPreviewItem(void* self, void* arg) {
 // Returns a borrowed CBpTex entry, or null for zero/not found. Caller must have
 // built matching record/texture tables first; this does not test texture readiness.
 // Rebuilding that group invalidates the returned address.
-void* CBuildProductChara_FindResourceByTypeId(void* self, void* itemTypeId) {
+void* CBuildProductChara::FindResourceByTypeId(void* itemTypeId) {
     if (itemTypeId == 0) {
         return 0;
     }
@@ -509,17 +521,17 @@ void* CBuildProductChara_FindResourceByTypeId(void* self, void* itemTypeId) {
     register int recordByteOffset = 0;
     register int recordIndex = 0;
     for (; recordGroup < kFlattenedProductGroupCount; recordGroup++, groupPointerOffset += kProductTableEntryBytes) {
-        int* recordTableWordView = AsCBuildProductCharaFields(self)->recordCounts_s32ptr;
+        int* recordTableWordView = recordCounts_s32ptr;
         int count = *(int*)((char*)recordTableWordView + groupPointerOffset);
         recordByteOffset = 0;
         recordIndex = 0;
         for (; recordIndex < count; recordIndex++, recordByteOffset += kProductRecordStride) {
-            recordTableWordView = AsCBuildProductCharaFields(self)->recordArrays_s32ptr;
+            recordTableWordView = recordArrays_s32ptr;
             int recordGroupAddress = *(int*)((char*)recordTableWordView + groupPointerOffset);
             char* record = (char*)(recordGroupAddress + recordByteOffset);
             int recordTypeId = (int)AsShopProductRecord(record)->typeId;
             if ((unsigned int)itemTypeId == (unsigned int)recordTypeId) {
-                void** textureGroups = AsCBuildProductCharaFields(self)->resourceArrays_pp;
+                void** textureGroups = resourceArrays_pp;
                 int textureGroupOffset = recordGroup << 2;
                 int textureEntryOffset = recordIndex * kTextureEntryStride;
                 void* textureGroup = *(void**)((char*)textureGroups + textureGroupOffset);
@@ -537,7 +549,7 @@ void* CBuildProductChara_FindResourceByTypeId(void* self, void* itemTypeId) {
 // large steps can cross animation events/loops, zero still advances auto yaw.
 // Slot 1 is CAsyncExhibitionPet_UpdateAndInstallPendingPet (pet_preload_async.cpp), forwarding the delta to
 // CAsyncExhibition_UpdateLoadingStateAndIndicator (async_exhibition_and_pet_format.cpp) and then
-// CExhibition_UpdateLoadState. Loading/readiness can gate the model timeline.
+// CExhibition::UpdateLoadState. Loading/readiness can gate the model timeline.
 // CExhibition_UpdateAnimationAndEffects (exhibition_model_preview.cpp) adds it to animationTime
 // and subtracts it from animationDelay. These are seconds: MOTI range loader
 // WPuppet_LoadMotionRangesFromChunk (wpuppet_model_bone_animation.cpp) divides 30-Hz frame endpoints
@@ -547,22 +559,23 @@ void* CBuildProductChara_FindResourceByTypeId(void* self, void* itemTypeId) {
 // Auto yaw remains 0.034906585 radians/call regardless of frameDelta. A frame rate
 // mod must consider this separately from the model's animation/camera timeline.
 // Preserve {zero,yaw,zero}, rotation-before-tick ordering and the shared receiver.
-int CModelOperationItem_UpdateRotationAndExhibition(void* self, float frameDelta) {
-    if ((*(int*)&AsCModelOperationItem(self)->updateObject) == 0) {
+int CModelOperationItem::UpdateRotationAndExhibition(float frameDelta) {
+    if ((*(int*)&this->updateObject) == 0) {
         return 0;
     }
-    if (ModelOperationBase_IsInteractiveRotationEnabled(self) != 0) {
-        ModelOperationBase_UpdatePointerRotation(self);
+    if (ModelOperationBase_IsInteractiveRotationEnabled(this) != 0) {
+        ModelOperationBase_UpdatePointerRotation(this);
     } else {
         float rotationOffset[3];
         rotationOffset[0] = kFloat_0_ModelOperationItem;
         rotationOffset[1] = kItemPreviewAutoYawStepStorage;
         rotationOffset[2] = kFloat_0_ModelOperationItem;
-        ModelOperationBase_OffsetRotation(self, rotationOffset);
+        ModelOperationBase_OffsetRotation(this, rotationOffset);
     }
-    void* updateObject = AsCModelOperationItem(self)->updateObject;
-    struct Vt { 
-    virtual void a() DECOMP_LOCAL_VIRTUAL; virtual void d(float) DECOMP_LOCAL_VIRTUAL;
+    void* updateObject = this->updateObject;
+    struct Vt {
+        virtual void a() DECOMP_LOCAL_VIRTUAL;
+        virtual void d(float) DECOMP_LOCAL_VIRTUAL;
     };
     ((Vt*)updateObject)->d(frameDelta);
     return 1;
@@ -581,18 +594,20 @@ int CModelOperationItem_UpdateRotationAndExhibition(void* self, float frameDelta
 // During this synchronous search the builder's extraRecords and inventory must
 // stay stable. Every copied set ID must resolve to an inventory sSetItem, whose
 // itemCount is in 0..8 for its itemIds[8]; there is no null/length check here.
-void* CBuildProductChara_FindSetContainingItem(void* self, void* itemTypeId) {
+void* CBuildProductChara::FindSetContainingItem(void* itemTypeId) {
     int recordByteOffset = 0;
     int setIndex = 0;
-    while (setIndex < AsCBuildProductCharaFields(self)->extraRecordCount_s32) {
-        IFF_STRUCT::sSetItem* memberWindow = (IFF_STRUCT::sSetItem*)ItemInventory_FindSetItemData(AsCSharedDoc(g_sharedDoc)->itemInventory, (void*)((IffItemCommon*)((char*)AsCBuildProductCharaFields(self)->extraRecords_ptr + recordByteOffset))->typeId);
+    while (setIndex < extraRecordCount_s32) {
+        IFF_STRUCT::sSetItem* memberWindow = (IFF_STRUCT::sSetItem*)ItemInventory_FindSetItemData(
+            AsCSharedDoc(g_sharedDoc)->itemInventory,
+            (void*)((IffItemCommon*)((char*)extraRecords_ptr + recordByteOffset))->typeId);
         int itemCount = memberWindow->itemCount;
         for (int itemIndex = 0; itemIndex < itemCount; ++itemIndex) {
             // Sliding view: only itemIds[0] is read after the first iteration.
             // Advancing by one word exposes itemIds[itemIndex] at that offset;
             // the shifted address is not a second complete sSetItem record.
             if (itemTypeId == (void*)memberWindow->itemIds[0]) {
-                return (void*)((IffItemCommon*)((char*)AsCBuildProductCharaFields(self)->extraRecords_ptr + setIndex * kProductRecordStride))->typeId;
+                return (void*)((IffItemCommon*)((char*)extraRecords_ptr + setIndex * kProductRecordStride))->typeId;
             }
             memberWindow = (IFF_STRUCT::sSetItem*)((char*)memberWindow + sizeof(unsigned int));
         }
@@ -605,45 +620,45 @@ void* CBuildProductChara_FindSetContainingItem(void* self, void* itemTypeId) {
 // Release archive, product, name-array and set-record allocations before base destruction.
 // Nullable self; flag>0 deletes the wrapper after owned resources. Return is the
 // incoming address, potentially freed. Borrowed icon/record addresses expire here.
-void* CBuildProductChara_dtor(void* self, int flag) {
-    if (self != 0) {
-        void* textureArchive = AsCBuildProductCharaFields(self)->textureArchive_ptr;
-        AsCBuildProductCharaFields(self)->vtbl = __vt__18CBuildProductChara;
+void* CBuildProductChara::Destroy(int flag) {
+    if (this != 0) {
+        void* textureArchive = textureArchive_ptr;
+        vtbl = __vt__18CBuildProductChara;
         if (textureArchive != 0) {
             if (textureArchive != 0) {
-                struct Vt { 
-                virtual void c(int) DECOMP_LOCAL_VIRTUAL;
+                struct Vt {
+                    virtual void c(int) DECOMP_LOCAL_VIRTUAL;
                 };
                 ((Vt*)textureArchive)->c(1);
             }
-            AsCBuildProductCharaFields(self)->textureArchive_ptr = 0;
+            textureArchive_ptr = 0;
         }
-        void* characterProvider = AsCBuildProductCharaFields(self)->baseProduct_ptr;
+        void* characterProvider = baseProduct_ptr;
         if (characterProvider != 0) {
             if (characterProvider != 0) {
-                struct Vt { 
-                virtual void c(int) DECOMP_LOCAL_VIRTUAL;
+                struct Vt {
+                    virtual void c(int) DECOMP_LOCAL_VIRTUAL;
                 };
                 ((Vt*)characterProvider)->c(1);
             }
-            AsCBuildProductCharaFields(self)->baseProduct_ptr = 0;
+            baseProduct_ptr = 0;
         }
-        void* archiveNameTable = AsCBuildProductCharaFields(self)->resourceNames_ptr;
+        void* archiveNameTable = resourceNames_ptr;
         if (archiveNameTable != 0) {
             __dla__FPv(archiveNameTable);
-            AsCBuildProductCharaFields(self)->resourceNames_ptr = 0;
+            resourceNames_ptr = 0;
         }
-        void* setRecords = AsCBuildProductCharaFields(self)->extraRecords_ptr;
+        void* setRecords = extraRecords_ptr;
         if (setRecords != 0) {
             __dla__FPv(setRecords);
-            AsCBuildProductCharaFields(self)->extraRecords_ptr = 0;
+            extraRecords_ptr = 0;
         }
-        __dt__11ProductBaseFv(self, 0);
+        __dt__11ProductBaseFv(this, 0);
         if (flag > 0) {
-            __dl__FPv(self);
+            __dl__FPv(this);
         }
     }
-    return self;
+    return this;
 }
 
 #pragma push
@@ -665,11 +680,13 @@ struct String81 {
         words[2] = 0;
         length = strlen(text);
         String_ReserveCapacity(this, length);
-        ((void* (*)(String81*, unsigned int, unsigned int, const char*, const char*, Allocator81))String_ReplaceRange)(this, 0, 0, text, text + length, allocator);
+        ((void* (*)(String81*, unsigned int, unsigned int, const char*, const char*, Allocator81))String_ReplaceRange)(
+            this, 0, 0, text, text + length, allocator);
     }
     // Free only a heap-backed string; short strings live inside this object.
     ~String81() {
-        if (words[0] >> 31) appFreeUni__FPv((void*)words[2]);
+        if (words[0] >> 31)
+            appFreeUni__FPv((void*)words[2]);
     }
     // Borrow NUL-terminated text from inline or heap storage.
     const char* c_str() const {
@@ -683,7 +700,8 @@ struct String81 {
     }
     // Return character count, selecting the short-string or heap length representation.
     unsigned int size() const {
-        if ((words[0] >> 31) == 0) return *(unsigned char*)this & 0x7F;
+        if ((words[0] >> 31) == 0)
+            return *(unsigned char*)this & 0x7F;
         return words[1];
     }
     // Replace a range through the original string/allocator calling convention.
@@ -693,7 +711,8 @@ struct String81 {
     // Forward replacement with this specialization's allocator tag.
     void replaceImpl(unsigned int pos, unsigned int size, const char* begin, const char* end) {
         Allocator81 allocator;
-        ((void* (*)(String81*, unsigned int, unsigned int, const char*, const char*, Allocator81))String_ReplaceRange)(this, pos, size, begin, end, allocator);
+        ((void* (*)(String81*, unsigned int, unsigned int, const char*, const char*, Allocator81))String_ReplaceRange)(
+            this, pos, size, begin, end, allocator);
     }
     // Replace the whole string and expose the old length through the scratch reference.
     void assign(const char* text, unsigned int& length) {
@@ -702,7 +721,8 @@ struct String81 {
     // Assign C text through the allocator-aware string ABI.
     void assignWithAllocator(const char* text, unsigned int& length, const Allocator81& allocator) {
         length = size();
-        ((void* (*)(String81*, unsigned int, unsigned int, const char*, const char*, Allocator81))String_ReplaceRange)(this, 0, length, text, text + strlen(text), allocator);
+        ((void* (*)(String81*, unsigned int, unsigned int, const char*, const char*, Allocator81))String_ReplaceRange)(
+            this, 0, length, text, text + strlen(text), allocator);
     }
 };
 
@@ -710,18 +730,24 @@ struct Resource81 {
     char data[0x20];
     // Construct an owned archive loader from borrowed path and metadata views.
     Resource81(void* path, void* textureNames, void* textureCountWord) {
-        CPackTextureResource_Init(this, path, textureNames, textureCountWord);
+        ((CPackTextureResource*)this)->Init((const char*)path, (void**)textureNames, (unsigned int)textureCountWord);
     }
 };
 
 struct Item81 {
     char data[0x28];
     // Initialize one icon texture entry.
-    Item81() { CBpTex_Init(this); }
+    Item81() {
+        ((CBpTex*)this)->__ct();
+    }
     // Destroy an entry without deleting its enclosing new[] allocation.
-    ~Item81() { CBpTex_dtor(this, -1); }
+    ~Item81() {
+        __dt__6CBpTexFv(this, -1);
+    }
     // Allocate the original array size, including compiler-managed array metadata.
-    static void* operator new[](size_t size) { return __nwa__FUl(size); }
+    static void* operator new[](size_t size) {
+        return __nwa__FUl(size);
+    }
 };
 
 #pragma opt_loop_invariants off
@@ -731,7 +757,7 @@ struct Item81 {
 // 1 does not guarantee the archive's asynchronous loading has completed.
 // characterIndex must be 0..7 for the archive table AND accepted by the inventory
 // provider. It is indexed before provider validation. Return 1 means entries were
-// created, not that asynchronous archive I/O has completed; poll via vfunc_1.
+// created, not that asynchronous archive I/O has completed; poll via UpdateTextureArchiveLoad.
 // The combined valid range is 0<=characterIndex<min(8, inventory.characters.size);
 // characters is CItemManager's table at +0x20. GetCharacterIdAt (item_inventory_tables.cpp) returns
 // zero for an invalid inventory ordinal; the archive index is unchecked here.
@@ -744,28 +770,28 @@ struct Item81 {
 // must be less than that group's signed count (never a provider-local index).
 // Archive lifetime: self->textureArchive_ptr owns Resource81 until replacement/destruction.
 // It borrows process-lifetime archive names and ResourceTable metadata while
-// asynchronous load proceeds; keep those alive across vfunc_1 polls. Do not
+// asynchronous load proceeds; keep those alive across UpdateTextureArchiveLoad polls. Do not
 // destroy the pack loader merely because textureEntriesBuilt==1: textureEntriesBuilt means entries set up,
 // not I/O complete. All group lookup results expire on the next rebuild.
-int CBuildProductChara_LoadProductTextures(void* self, int characterIndex) {
+int CBuildProductChara::LoadProductTextures(int characterIndex) {
     // Phase 1: select the character archive; names are borrowed from the packed string pool.
     char* archiveNames = (char*)fashionArchiveStrings;
-    (AsCBuildProductCharaFields(self)->resourceNames_strings)[0] = archiveNames + kScoutFashionArchive;
-    (AsCBuildProductCharaFields(self)->resourceNames_strings)[1] = archiveNames + kHanaFashionArchive;
-    (AsCBuildProductCharaFields(self)->resourceNames_strings)[2] = archiveNames + kUncleBobFashionArchive;
-    (AsCBuildProductCharaFields(self)->resourceNames_strings)[3] = archiveNames + kCeciliaFashionArchive;
-    (AsCBuildProductCharaFields(self)->resourceNames_strings)[4] = archiveNames + kMaxFashionArchive;
-    (AsCBuildProductCharaFields(self)->resourceNames_strings)[5] = archiveNames + kKoohFashionArchive;
-    (AsCBuildProductCharaFields(self)->resourceNames_strings)[6] = archiveNames + kArinFashionArchive;
-    (AsCBuildProductCharaFields(self)->resourceNames_strings)[7] = archiveNames + kKazFashionArchive;
+    (resourceNames_strings)[0] = archiveNames + kScoutFashionArchive;
+    (resourceNames_strings)[1] = archiveNames + kHanaFashionArchive;
+    (resourceNames_strings)[2] = archiveNames + kUncleBobFashionArchive;
+    (resourceNames_strings)[3] = archiveNames + kCeciliaFashionArchive;
+    (resourceNames_strings)[4] = archiveNames + kMaxFashionArchive;
+    (resourceNames_strings)[5] = archiveNames + kKoohFashionArchive;
+    (resourceNames_strings)[6] = archiveNames + kArinFashionArchive;
+    (resourceNames_strings)[7] = archiveNames + kKazFashionArchive;
 
-    void* previousArchive = AsCBuildProductCharaFields(self)->textureArchive_ptr;
+    void* previousArchive = textureArchive_ptr;
     if (previousArchive != 0) {
-        struct Vt { 
-        virtual ~Vt() DECOMP_LOCAL_VIRTUAL;
+        struct Vt {
+            virtual ~Vt() DECOMP_LOCAL_VIRTUAL;
         };
         delete (Vt*)previousArchive;
-        AsCBuildProductCharaFields(self)->textureArchive_ptr = 0;
+        textureArchive_ptr = 0;
     }
 
     // Phase 2: locate the archive metadata and start its asynchronous load.
@@ -773,68 +799,71 @@ int CBuildProductChara_LoadProductTextures(void* self, int characterIndex) {
     if (Sing_805DC620() == 0) {
         if (!s_resourceTableInitialized) {
             s_resourceTableStorage = 0;
-            __register_global_object(&s_resourceTableStorage, (void*)Allocation_Dtor, &s_characterResourceTableDestructorRegistration);
+            __register_global_object(&s_resourceTableStorage, (void*)Allocation_Dtor,
+                                     &s_characterResourceTableDestructorRegistration);
             s_resourceTableInitialized = 1;
         }
         Sing_805DC620() = &s_resourceTableStorage;
     }
 
-    void* archiveNameTable = AsCBuildProductCharaFields(self)->resourceNames_ptr;
+    void* archiveNameTable = resourceNames_ptr;
     unsigned int characterNameOffset = (unsigned int)characterIndex << 2;
     void* archiveName = *(void**)((char*)archiveNameTable + characterNameOffset);
     void* textureCountWord = ResourceTable_FindEntryByName(Sing_805DC620(), archiveName, &textureNamesAddress);
 
-    void* textureArchive = new Resource81(*(void**)((char*)AsCBuildProductCharaFields(self)->resourceNames_ptr + characterNameOffset), (void*)textureNamesAddress, textureCountWord);
-    AsCBuildProductCharaFields(self)->textureArchive_ptr = textureArchive;
-    CPackTextureResource_PollLoad(textureArchive);
+    void* textureArchive = new Resource81(*(void**)((char*)resourceNames_ptr + characterNameOffset),
+                                          (void*)textureNamesAddress, textureCountWord);
+    textureArchive_ptr = textureArchive;
+    ((CPackTextureResource*)textureArchive)->PollLoad();
 
     // Phase 3: rebuild providers and record copies before making parallel icon arrays.
     // On success all five record groups/counts exist; their order follows the map
     // beside CharacterProductCategory. Only now can parallel textures be allocated.
-    int productsBuilt = CBuildProductChara_BuildProducts(self, characterIndex);
-    if (productsBuilt == 0) return 0;
+    int productsBuilt = BuildProducts(characterIndex);
+    if (productsBuilt == 0)
+        return 0;
 
     // Phase 4: free non-avatar icons; group 0 obeys the shared first-load cache policy.
-    if (AsCBuildProductCharaFields(self)->resourceArrays_ptr != 0) {
+    if (resourceArrays_ptr != 0) {
         int releaseGroupOffset;
         int remainingTextureGroups = 4;
         releaseGroupOffset = 0x10;
         do {
-            void* textureGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
+            void* textureGroups = resourceArrays_ptr;
             void* previousGroup = *(void**)((char*)textureGroups + releaseGroupOffset);
             if (previousGroup != 0) {
-                __destroy_new_array(previousGroup, (void*)CBpTex_dtor);
-                void* reloadedTextureGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
+                __destroy_new_array(previousGroup, (void*)__dt__6CBpTexFv);
+                void* reloadedTextureGroups = resourceArrays_ptr;
                 *(void**)((char*)reloadedTextureGroups + releaseGroupOffset) = 0;
             }
             remainingTextureGroups--;
             releaseGroupOffset -= 4;
         } while (remainingTextureGroups > 0);
 
-        if (AsCBuildProductCharaFields(self)->flag) {
-            if (!AsCBuildProductCharaFields(self)->textureEntriesBuilt) {
-                void* textureGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
+        if (flag) {
+            if (!textureEntriesBuilt) {
+                void* textureGroups = resourceArrays_ptr;
                 void* previousFirstGroup = *(void**)textureGroups;
                 if (previousFirstGroup != 0) {
-                    __destroy_new_array(previousFirstGroup, (void*)CBpTex_dtor);
-                    void* reloadedTextureGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
+                    __destroy_new_array(previousFirstGroup, (void*)__dt__6CBpTexFv);
+                    void* reloadedTextureGroups = resourceArrays_ptr;
                     *(void**)reloadedTextureGroups = 0;
                 }
             }
         }
     } else {
         void* newTextureGroups = __nwa__FUl(0x14);
-        AsCBuildProductCharaFields(self)->resourceArrays_ptr = newTextureGroups;
+        resourceArrays_ptr = newTextureGroups;
         *(void**)newTextureGroups = 0;
     }
 
-    void* textureGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
+    void* textureGroups = resourceArrays_ptr;
     ((void**)textureGroups)[1] = 0;
-    textureGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
+    textureGroups = resourceArrays_ptr;
     ((void**)textureGroups)[2] = 0;
-    textureGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
+    textureGroups = resourceArrays_ptr;
     ((void**)textureGroups)[3] = 0;
-    textureGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
+    textureGroups = resourceArrays_ptr;
     ((void**)textureGroups)[4] = 0;
 
     void* iconName;
@@ -854,52 +883,54 @@ int CBuildProductChara_LoadProductTextures(void* self, int characterIndex) {
     recordGroup = 0;
     groupPointerOffset = 0;
     for (; recordGroup < kFlattenedProductGroupCount; recordGroup++, groupPointerOffset += 4) {
-        void* textureGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
-        if (*(void**)((char*)textureGroups + groupPointerOffset) != 0) continue;
+        void* textureGroups = resourceArrays_ptr;
+        if (*(void**)((char*)textureGroups + groupPointerOffset) != 0)
+            continue;
 
-        void* recordCounts = AsCBuildProductCharaFields(self)->recordCounts_ptr;
+        void* recordCounts = recordCounts_ptr;
         int count = *(int*)((char*)recordCounts + groupPointerOffset);
         void* textureEntries = new Item81[count];
         index = 0;
-        void* installedTextureGroups = AsCBuildProductCharaFields(self)->resourceArrays_ptr;
+        void* installedTextureGroups = resourceArrays_ptr;
         *(void**)((char*)installedTextureGroups + groupPointerOffset) = textureEntries;
-        void* installedRecordCounts = AsCBuildProductCharaFields(self)->recordCounts_ptr;
-        if (*(int*)((char*)installedRecordCounts + groupPointerOffset) <= 0) continue;
+        void* installedRecordCounts = recordCounts_ptr;
+        if (*(int*)((char*)installedRecordCounts + groupPointerOffset) <= 0)
+            continue;
 
         recordByteOffset = 0;
         textureByteOffset = 0;
-        for (; index < *(int*)(groupPointerOffset + AsCBuildProductCharaFields(self)->recordCounts_u32); index++) {
-            unsigned int recordOrTextureBase = AsCBuildProductCharaFields(self)->recordArrays_u32;
+        for (; index < *(int*)(groupPointerOffset + recordCounts_u32); index++) {
+            unsigned int recordOrTextureBase = recordArrays_u32;
             recordOrTextureBase = *(unsigned int*)(groupPointerOffset + recordOrTextureBase);
             iconName = ((IffItemCommon*)((char*)recordOrTextureBase + recordByteOffset))->icon;
             {
                 String81 input((const char*)iconName, iconPathScratchWord);
 
                 String81 result = ((String81 (*)(const String81&, const char*))String_ConstructConcatCStr)(
-                    ((String81 (*)(const char*, const String81&))String_ConcatCStringAndString)(fashionArchiveStrings + kEmptyTexturePrefix, input),
+                    ((String81 (*)(const char*, const String81&))String_ConcatCStringAndString)(
+                        fashionArchiveStrings + kEmptyTexturePrefix, input),
                     fashionArchiveStrings + kTextureFileExtension);
                 iconPathScratchWord = (unsigned int)MSLString_LowercaseInPlace(result.c_str());
                 result.assign((const char*)iconPathScratchWord, resultLength);
-                unsigned int textureGroupTableAddress = AsCBuildProductCharaFields(self)->resourceArrays_u32;
+                unsigned int textureGroupTableAddress = resourceArrays_u32;
                 recordOrTextureBase = *(unsigned int*)(groupPointerOffset + textureGroupTableAddress);
                 void* textureEntry = (char*)recordOrTextureBase + textureByteOffset;
-                struct Vt { 
-                virtual void textureGroups() DECOMP_LOCAL_VIRTUAL; virtual void set(const char*) DECOMP_LOCAL_VIRTUAL;
+                struct Vt {
+                    virtual void textureGroups() DECOMP_LOCAL_VIRTUAL;
+                    virtual void set(const char*) DECOMP_LOCAL_VIRTUAL;
                 };
                 ((Vt*)textureEntry)->set(result.c_str());
 
                 textureByteOffset += kTextureEntryStride;
                 input.replace(0, -1, 0, 0);
                 result.replace(0, -1, 0, 0);
-
             }
             recordByteOffset += kProductRecordStride;
-
         }
     }
 
-    if (!AsCBuildProductCharaFields(self)->textureEntriesBuilt) {
-        AsCBuildProductCharaFields(self)->textureEntriesBuilt = 1;
+    if (!textureEntriesBuilt) {
+        textureEntriesBuilt = 1;
     }
     return 1;
 }
@@ -932,7 +963,10 @@ struct Guard77 {
     // Own the exception text until the shared reference record takes responsibility.
     Guard77(char* data, void* a) : p(data), allocator(a) {}
     // Release a message allocation that was not transferred.
-    ~Guard77() { if (p) __dla__FPv(p); }
+    ~Guard77() {
+        if (p)
+            __dla__FPv(p);
+    }
 };
 struct Allocator77 {
     unsigned char value;
@@ -940,7 +974,9 @@ struct Allocator77 {
 };
 struct ErrorBase77 : std::exception {
     // Install the exception ABI vtable without altering its storage layout.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
 
     char* text;
     Ref77* ref;
@@ -950,11 +986,11 @@ struct ErrorBase77 : std::exception {
         Allocator77 allocator;
         allocator.value = 0;
         unsigned int n = strlen(s) + 1;
-        char* allocated = (char*)__nwa__FUl(n * 2 - n);
-        text = allocated;
+        char* buffer = (char*)__nwa__FUl(n * 2 - n);
+        text = buffer;
         {
-            Guard77 guard(allocated, &allocator);
-            ref = new Ref77(allocated);
+            Guard77 guard(buffer, &allocator);
+            ref = new Ref77(buffer);
             guard.p = 0;
         }
         strcpy(text, s);
@@ -963,7 +999,9 @@ struct ErrorBase77 : std::exception {
 namespace std {
 struct length_error : ErrorBase77 {
     // Construct the owned message and specialize the exception vtable.
-    length_error(const char* const& s) : ErrorBase77(s) { SetTable(__vt__Q23std12length_error); }
+    length_error(const char* const& s) : ErrorBase77(s) {
+        SetTable(__vt__Q23std12length_error);
+    }
     ~length_error();
     DECOMP_CT_MEMBER(length_error)
 };
@@ -976,11 +1014,14 @@ inline const unsigned int& maximum77(const unsigned int& a, const unsigned int& 
 inline unsigned int recommend77(unsigned int capacity, unsigned int extra) {
     if (extra > 0x3FFFFFFF - capacity) {
         {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct(fashionArchiveStrings);
             exception_runtime::__throw(exception_runtime::fashionArchiveStrings + kVectorLengthErrorType, error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                       (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
     }
     if (capacity < 0x15555555) {
@@ -996,11 +1037,14 @@ struct CapacityLimit77 {
     // Reject a pointer-vector capacity above the allocator's element limit.
     CapacityLimit77(unsigned int capacity) {
         if (capacity > 0x3FFFFFFF) {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct(fashionArchiveStrings);
             exception_runtime::__throw(exception_runtime::fashionArchiveStrings + kVectorLengthErrorType, error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                       (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
     }
 };
@@ -1024,15 +1068,24 @@ struct Growth77 {
         capacity = allocatedCapacity;
     }
     // Free the buffer left here after exchanging ownership with the live vector.
-    ~Growth77() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~Growth77() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 struct CapacityCheck77 {
     struct Check {
         // Evaluate capacity growth solely to preserve its overflow exception.
-        Check(unsigned int capacity, unsigned int extra) { recommend77(capacity, extra); }
+        Check(unsigned int capacity, unsigned int extra) {
+            recommend77(capacity, extra);
+        }
     };
     // Validate the proposed capacity increase before changing live storage.
-    CapacityCheck77(unsigned int capacity, unsigned int extra) { Check check(capacity, extra); }
+    CapacityCheck77(unsigned int capacity, unsigned int extra) {
+        Check check(capacity, extra);
+    }
 };
 // Typed category-provider ABI. Receiver is a constructed provider owned by the
 // builder. The prefix slots are +08 destroy/delete and +0C (unused here).
@@ -1052,27 +1105,37 @@ struct ProductRecordProvider {
 struct AvatarProductProvider {
     char data[0x14];
     // Construct an avatar provider in the original 0x14-byte allocation.
-    AvatarProductProvider(void* p, unsigned char b) { __ct__18CShopProductAvatarFPvUc(this, p, b); }
+    AvatarProductProvider(void* p, unsigned char b) {
+        __ct__18CShopProductAvatarFPvUc(this, p, b);
+    }
 };
 struct PartsProductProvider {
     char data[0x134];
     // Construct a parts provider filtered by the requested part mask.
-    PartsProductProvider(void* h, int type, void* p, unsigned char b) { CShopProductParts_Ctor(this, h, type, p, b); }
+    PartsProductProvider(void* h, int type, void* p, unsigned char b) {
+        __ct__17CShopProductPartsFPCUiUiPvPv(this, h, type, p, b);
+    }
 };
 struct HairProductProvider {
     char data[0x130];
     // Construct a hair provider using the selected character record.
-    HairProductProvider(void* h, void* p, unsigned char b) { CShopProductHair_Ctor(this, h, p, b); }
+    HairProductProvider(void* h, void* p, unsigned char b) {
+        __ct__16CShopProductHairFPvPvPv(this, h, p, b);
+    }
 };
 struct RingProductProvider {
     char data[0x14];
     // Construct the ring provider from the embedded save-data view.
-    RingProductProvider(void* p, unsigned char b) { CShopProductRing_Ctor(this, p, b); }
+    RingProductProvider(void* p, unsigned char b) {
+        __ct__16CShopProductRingFPvPv(this, p, b);
+    }
 };
 struct SetProductProvider {
     char data[0x130];
     // Construct the selected character's costume-set provider.
-    SetProductProvider(void* h, void* p, unsigned char b) { CShopProductSetItem_Ctor(this, h, p, b); }
+    SetProductProvider(void* h, void* p, unsigned char b) {
+        __ct__19CShopProductSetItemFPvPvPv(this, h, p, b);
+    }
 };
 
 #pragma opt_common_subs off
@@ -1089,7 +1152,7 @@ struct SetProductProvider {
 // 1 publishes five parallel record groups plus separate costume-set records.
 // Record copies/providers are owned; inventory records used to populate them are
 // borrowed. Preserve provider-local indices when flattening accessories/hair/rings.
-int CBuildProductChara_BuildProducts(void* self, int characterIndex) {
+int CBuildProductChara::BuildProducts(int characterIndex) {
     unsigned int missingCategoryCount;
     int recordByteOffset;
     int innerOffset;
@@ -1105,27 +1168,31 @@ int CBuildProductChara_BuildProducts(void* self, int characterIndex) {
     int recordIndex;
     int lastIndex;
     // Phase 1: discard old providers and obtain the selected character record.
-    if (!BuildProductChara_ClearProductEntries(self)) return 0;
+    if (!BuildProductChara_ClearProductEntries(this))
+        return 0;
 
-    void* oldCharacterProvider = AsCBuildProductCharaFields(self)->baseProduct_ptr;
+    void* oldCharacterProvider = baseProduct_ptr;
     if (oldCharacterProvider != 0) {
-        if (oldCharacterProvider != 0) ((ProductRecordProvider*)oldCharacterProvider)->destroy(1);
-        AsCBuildProductCharaFields(self)->baseProduct_ptr = 0;
+        if (oldCharacterProvider != 0)
+            ((ProductRecordProvider*)oldCharacterProvider)->destroy(1);
+        baseProduct_ptr = 0;
     }
 
-    saveData = (char*)self + kEmbeddedSaveDataOffset;
-    void* characterProvider = new AvatarProductProvider(saveData, AsCBuildProductCharaFields(self)->flag);
-    AsCBuildProductCharaFields(self)->baseProduct_ptr = characterProvider;
-    if (characterProvider == 0) return 0;
+    saveData = (char*)this + kEmbeddedSaveDataOffset;
+    void* characterProvider = new AvatarProductProvider(saveData, flag);
+    baseProduct_ptr = characterProvider;
+    if (characterProvider == 0)
+        return 0;
 
     char characterRecordStorage[sizeof(IFF_STRUCT::sChar) + sizeof(unsigned int)];
-    if (!CharacterProducts_CopyRecordForInventoryCharacter(characterProvider, characterRecordStorage, characterIndex)) return 0;
+    if (!CharacterProducts_CopyRecordForInventoryCharacter(characterProvider, characterRecordStorage, characterIndex))
+        return 0;
 
     // Phase 2: resize the provider-pointer vector to exactly eight entries.
     // Growth ownership/publication ledger (Growth77 destructor frees ONLY its
     // buffer via appFreeUni, never providers): in-place growth zeroes new slots
     // before publishing count. Allocating growth first validates capacity, then
-    // temporary owns the new buffer; live self retains old buffer/count/capacity.
+    // temporary owns the new buffer; live this retains old buffer/count/capacity.
     // A capacity/allocation throw leaves that live vector unchanged, but phase 1
     // has ALREADY cleared providers and published baseProduct. No whole-build
     // rollback exists. appMallocDummy must yield usable storage or throw/abort.
@@ -1134,29 +1201,29 @@ int CBuildProductChara_BuildProducts(void* self, int characterIndex) {
     // The swap publishes capacity/buffer/count; Growth77 then owns/frees the OLD
     // buffer with size=0. It never frees the newly published buffer. Phase 3
     // installs each provider separately, so a later constructor throw leaves
-    // earlier providers owned in self for ClearProductEntries/destruction.
-    unsigned int oldCount = AsCBuildProductCharaFields(self)->productCount;
+    // earlier providers owned in this for ClearProductEntries/destruction.
+    unsigned int oldCount = productCount;
     if (oldCount < kProductCategoryCount) {
-        unsigned int cap = AsCBuildProductCharaFields(self)->productCapacity;
+        unsigned int cap = productCapacity;
         missingCategoryCount = kProductCategoryCount - oldCount;
         // Original 0x802D7340 unit: preserve the growth path before common setup.
         do {
             if (missingCategoryCount > cap || oldCount > cap - missingCategoryCount) {
-                CapacityCheck77 check(AsCBuildProductCharaFields(self)->productCapacity, AsCBuildProductCharaFields(self)->productCount + missingCategoryCount - cap);
+                CapacityCheck77 check(productCapacity, productCount + missingCategoryCount - cap);
             } else {
-                memset((char*)AsCBuildProductCharaFields(self)->products_ptr + oldCount * 4, 0, missingCategoryCount * 4);
-                AsCBuildProductCharaFields(self)->productCount += missingCategoryCount;
+                memset((char*)products_ptr + oldCount * 4, 0, missingCategoryCount * 4);
+                productCount += missingCategoryCount;
                 break;
             }
             {
                 int oldSize;
                 void** oldBuf;
-                unsigned int extra = AsCBuildProductCharaFields(self)->productCount + missingCategoryCount - AsCBuildProductCharaFields(self)->productCapacity;
-                Growth77 growth(extra, &AsCBuildProductCharaFields(self)->productCapacity);
-                growth.offset = AsCBuildProductCharaFields(self)->productCount;
+                unsigned int extra = productCount + missingCategoryCount - productCapacity;
+                Growth77 growth(extra, &productCapacity);
+                growth.offset = productCount;
                 memset(growth.data + growth.offset + growth.size, 0, missingCategoryCount * 4);
-                oldBuf = AsCBuildProductCharaFields(self)->products_pp;
-                void** oldEnd = oldBuf + AsCBuildProductCharaFields(self)->productCount;
+                oldBuf = products_pp;
+                void** oldEnd = oldBuf + productCount;
                 growth.size += missingCategoryCount;
                 oldSize = (int)((char*)oldEnd - (char*)oldBuf) / 4;
                 growth.offset -= oldSize;
@@ -1165,103 +1232,102 @@ int CBuildProductChara_BuildProducts(void* self, int characterIndex) {
                 memset(oldBuf, 0, oldBytes);
                 growth.size += oldSize;
                 void** newBuf = growth.data;
-                unsigned int oldCapacity = AsCBuildProductCharaFields(self)->productCapacity;
-                AsCBuildProductCharaFields(self)->productCount = 0;
-                growth.data = AsCBuildProductCharaFields(self)->products_pp;
-                AsCBuildProductCharaFields(self)->productCapacity = growth.capacity;
+                unsigned int oldCapacity = productCapacity;
+                productCount = 0;
+                growth.data = products_pp;
+                productCapacity = growth.capacity;
                 growth.capacity = oldCapacity;
-                AsCBuildProductCharaFields(self)->products_pp = newBuf;
-                AsCBuildProductCharaFields(self)->productCount = growth.size;
+                products_pp = newBuf;
+                productCount = growth.size;
                 growth.size = 0;
             }
         } while (0);
-    }
-    else if (oldCount > kProductCategoryCount) {
-        AsCBuildProductCharaFields(self)->productCount -= oldCount - kProductCategoryCount;
+    } else if (oldCount > kProductCategoryCount) {
+        productCount -= oldCount - kProductCategoryCount;
     }
 
     // Phase 3: install providers in protocol order: avatar/top/bottom/shoes/accessory/hair/ring/set.
     void* categoryProviders;
     void* newProvider;
 
-    newProvider = new AvatarProductProvider(saveData, AsCBuildProductCharaFields(self)->flag);
-    categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+    newProvider = new AvatarProductProvider(saveData, flag);
+    categoryProviders = products_ptr;
     ((void**)categoryProviders)[kAvatarCategory] = newProvider;
 
-    newProvider = new PartsProductProvider(characterRecordStorage, kTopPartMask, saveData, AsCBuildProductCharaFields(self)->flag);
-    categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+    newProvider = new PartsProductProvider(characterRecordStorage, kTopPartMask, saveData, flag);
+    categoryProviders = products_ptr;
     ((void**)categoryProviders)[kTopCategory] = newProvider;
 
-    newProvider = new PartsProductProvider(characterRecordStorage, kBottomPartMask, saveData, AsCBuildProductCharaFields(self)->flag);
-    categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+    newProvider = new PartsProductProvider(characterRecordStorage, kBottomPartMask, saveData, flag);
+    categoryProviders = products_ptr;
     ((void**)categoryProviders)[kBottomCategory] = newProvider;
 
-    newProvider = new PartsProductProvider(characterRecordStorage, kShoePartMask, saveData, AsCBuildProductCharaFields(self)->flag);
-    categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+    newProvider = new PartsProductProvider(characterRecordStorage, kShoePartMask, saveData, flag);
+    categoryProviders = products_ptr;
     ((void**)categoryProviders)[kShoesCategory] = newProvider;
 
-    newProvider = new PartsProductProvider(characterRecordStorage, kAccessoryPartMask, saveData, AsCBuildProductCharaFields(self)->flag);
-    categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+    newProvider = new PartsProductProvider(characterRecordStorage, kAccessoryPartMask, saveData, flag);
+    categoryProviders = products_ptr;
     ((void**)categoryProviders)[kAccessoriesCategory] = newProvider;
 
-    newProvider = new HairProductProvider(characterRecordStorage, saveData, AsCBuildProductCharaFields(self)->flag);
-    categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+    newProvider = new HairProductProvider(characterRecordStorage, saveData, flag);
+    categoryProviders = products_ptr;
     ((void**)categoryProviders)[kHairCategory] = newProvider;
 
-    newProvider = new RingProductProvider(saveData, AsCBuildProductCharaFields(self)->flag);
-    categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+    newProvider = new RingProductProvider(saveData, flag);
+    categoryProviders = products_ptr;
     ((void**)categoryProviders)[kRingsCategory] = newProvider;
 
-    newProvider = new SetProductProvider(characterRecordStorage, saveData, AsCBuildProductCharaFields(self)->flag);
-    categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+    newProvider = new SetProductProvider(characterRecordStorage, saveData, flag);
+    categoryProviders = products_ptr;
     ((void**)categoryProviders)[kCostumeSetsCategory] = newProvider;
 
     // Phase 4: release previous flattened records, retaining avatar records under cache policy.
-    if (AsCBuildProductCharaFields(self)->recordArrays_ptr != 0) {
+    if (recordArrays_ptr != 0) {
         remainingGroups = 4;
         groupPointerOffset = 0x10;
         do {
-            void* recordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+            void* recordGroups = recordArrays_ptr;
             void* previousGroup = *(void**)((char*)recordGroups + groupPointerOffset);
             if (previousGroup != 0) {
                 __dla__FPv(previousGroup);
-                void* reloadedRecordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+                void* reloadedRecordGroups = recordArrays_ptr;
                 *(void**)((char*)reloadedRecordGroups + groupPointerOffset) = 0;
             }
             remainingGroups--;
             groupPointerOffset -= 4;
         } while (remainingGroups > 0);
 
-        if (AsCBuildProductCharaFields(self)->flag != 0) {
-            if (AsCBuildProductCharaFields(self)->textureEntriesBuilt == 0) {
-                void* recordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+        if (flag != 0) {
+            if (textureEntriesBuilt == 0) {
+                void* recordGroups = recordArrays_ptr;
                 void* previousFirstGroup = *(void**)recordGroups;
                 if (previousFirstGroup != 0) {
                     __dla__FPv(previousFirstGroup);
-                    void* reloadedRecordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+                    void* reloadedRecordGroups = recordArrays_ptr;
                     *(void**)reloadedRecordGroups = 0;
                 }
             }
         }
     } else {
         void* newRecordGroups = __nwa__FUl(0x14);
-        AsCBuildProductCharaFields(self)->recordArrays_ptr = newRecordGroups;
+        recordArrays_ptr = newRecordGroups;
         *(void**)newRecordGroups = 0;
     }
 
-    void* previous = AsCBuildProductCharaFields(self)->extraRecords_ptr;
+    void* previous = extraRecords_ptr;
     if (previous != 0) {
         __dla__FPv(previous);
-        AsCBuildProductCharaFields(self)->extraRecords_ptr = 0;
+        extraRecords_ptr = 0;
     }
 
-    void* recordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+    void* recordGroups = recordArrays_ptr;
     ((void**)recordGroups)[1] = 0;
-    recordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+    recordGroups = recordArrays_ptr;
     ((void**)recordGroups)[2] = 0;
-    recordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+    recordGroups = recordArrays_ptr;
     ((void**)recordGroups)[3] = 0;
-    recordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+    recordGroups = recordArrays_ptr;
     ((void**)recordGroups)[4] = 0;
 
     // Phase 5: groups 0..3 copy one provider each; existing group 0 may remain cached.
@@ -1273,89 +1339,92 @@ int CBuildProductChara_BuildProducts(void* self, int characterIndex) {
     // They advance together only for the one-provider groups 0..3. Phase 6
     // switches to provider-local indices while filling combined output group 4.
     groupPointerOffsetBytes = 0;
-    for (; recordGroup < kSingleProviderGroupCount; recordGroup++, categoryPointerOffset += 4, groupPointerOffsetBytes += 4) {
-        void* destinationRecordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+    for (; recordGroup < kSingleProviderGroupCount;
+         recordGroup++, categoryPointerOffset += 4, groupPointerOffsetBytes += 4) {
+        void* destinationRecordGroups = recordArrays_ptr;
         if (*(void**)((char*)destinationRecordGroups + (unsigned int)groupPointerOffsetBytes) == 0) {
-            void* providerTable = AsCBuildProductCharaFields(self)->products_ptr;
+            void* providerTable = products_ptr;
             void* provider = *(void**)((char*)providerTable + categoryPointerOffset);
             int count = ((ProductRecordProvider*)provider)->recordCount();
 
-            void* recordCounts = AsCBuildProductCharaFields(self)->recordCounts_ptr;
+            void* recordCounts = recordCounts_ptr;
             *(int*)((char*)recordCounts + (unsigned int)groupPointerOffsetBytes) = count;
-            void* recordBuffer = __nwa__FUl(*(int*)((char*)AsCBuildProductCharaFields(self)->recordCounts_ptr + (unsigned int)groupPointerOffsetBytes) * kProductRecordStride);
-            void* installedRecordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+            void* recordBuffer = __nwa__FUl(*(int*)((char*)recordCounts_ptr + (unsigned int)groupPointerOffsetBytes) *
+                                            kProductRecordStride);
+            void* installedRecordGroups = recordArrays_ptr;
             *(void**)((char*)installedRecordGroups + (unsigned int)groupPointerOffsetBytes) = recordBuffer;
 
             groupRecordIndex = 0;
             innerOffset = 0;
-            for (; groupRecordIndex < *(int*)(groupPointerOffsetBytes + (unsigned int)AsCBuildProductCharaFields(self)->recordCounts_ptr); groupRecordIndex++) {
-                void* sourceProviders = AsCBuildProductCharaFields(self)->products_ptr;
+            for (; groupRecordIndex < *(int*)(groupPointerOffsetBytes + (unsigned int)recordCounts_ptr);
+                 groupRecordIndex++) {
+                void* sourceProviders = products_ptr;
                 void* sourceProvider = *(void**)((char*)sourceProviders + categoryPointerOffset);
-                void* base = *(void**)(groupPointerOffsetBytes + (unsigned int)AsCBuildProductCharaFields(self)->recordArrays_ptr);
+                void* base = *(void**)(groupPointerOffsetBytes + (unsigned int)recordArrays_ptr);
                 ((ProductRecordProvider*)sourceProvider)->copyRecord((char*)base + innerOffset, groupRecordIndex);
                 innerOffset += kProductRecordStride;
             }
-
         }
     }
 
-    void* providerTable = AsCBuildProductCharaFields(self)->products_ptr;
+    void* providerTable = products_ptr;
     // Phase 6: group 4 concatenates accessories, hair, rings in that order.
     void* accessoryProvider = ((void**)providerTable)[kAccessoriesCategory]; // index 4
     int accessoryCount = ((ProductRecordProvider*)accessoryProvider)->recordCount();
 
-    providerTable = AsCBuildProductCharaFields(self)->products_ptr;
+    providerTable = products_ptr;
     void* hairProvider = ((void**)providerTable)[kHairCategory]; // index 5
     int hairCount = ((ProductRecordProvider*)hairProvider)->recordCount();
 
-    providerTable = AsCBuildProductCharaFields(self)->products_ptr;
+    providerTable = products_ptr;
     void* ringProvider = ((void**)providerTable)[kRingsCategory]; // index 6
     int ringCount = ((ProductRecordProvider*)ringProvider)->recordCount();
 
     subtotal = accessoryCount + hairCount;
-    void* recordCounts = AsCBuildProductCharaFields(self)->recordCounts_ptr;
+    void* recordCounts = recordCounts_ptr;
     ((int*)recordCounts)[kAccessoryRecordGroup] = ringCount + subtotal;
-    void* accessoryRecords = __nwa__FUl(AsCBuildProductCharaFields(self)->recordCounts_s32ptr[kAccessoryRecordGroup] * kProductRecordStride);
-    void* destinationRecordGroups = AsCBuildProductCharaFields(self)->recordArrays_ptr;
+    void* accessoryRecords = __nwa__FUl(recordCounts_s32ptr[kAccessoryRecordGroup] * kProductRecordStride);
+    void* destinationRecordGroups = recordArrays_ptr;
     ((void**)destinationRecordGroups)[kAccessoryRecordGroup] = accessoryRecords;
 
     recordIndex = 0;
     recordByteOffset = 0;
-    for (; recordIndex < AsCBuildProductCharaFields(self)->recordCounts_s32ptr[kAccessoryRecordGroup]; recordIndex++) {
+    for (; recordIndex < recordCounts_s32ptr[kAccessoryRecordGroup]; recordIndex++) {
         if (recordIndex < accessoryCount) {
-            void* categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+            void* categoryProviders = products_ptr;
             void* sourceProvider = ((void**)categoryProviders)[kAccessoriesCategory];
-            void* destinationRecord = (char*)((void**)AsCBuildProductCharaFields(self)->recordArrays_ptr)[kAccessoryRecordGroup] + recordByteOffset;
+            void* destinationRecord = (char*)((void**)recordArrays_ptr)[kAccessoryRecordGroup] + recordByteOffset;
             ((ProductRecordProvider*)sourceProvider)->copyRecord(destinationRecord, recordIndex);
         } else if (recordIndex < subtotal) {
-            void* categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+            void* categoryProviders = products_ptr;
             void* sourceProvider = ((void**)categoryProviders)[kHairCategory];
-            void* destinationRecord = (char*)((void**)AsCBuildProductCharaFields(self)->recordArrays_ptr)[kAccessoryRecordGroup] + recordByteOffset;
+            void* destinationRecord = (char*)((void**)recordArrays_ptr)[kAccessoryRecordGroup] + recordByteOffset;
             ((ProductRecordProvider*)sourceProvider)->copyRecord(destinationRecord, recordIndex - accessoryCount);
         } else {
-            void* categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+            void* categoryProviders = products_ptr;
             void* sourceProvider = ((void**)categoryProviders)[kRingsCategory];
-            void* destinationRecord = (char*)((void**)AsCBuildProductCharaFields(self)->recordArrays_ptr)[kAccessoryRecordGroup] + recordByteOffset;
-            ((ProductRecordProvider*)sourceProvider)->copyRecord(destinationRecord, recordIndex - accessoryCount - hairCount);
+            void* destinationRecord = (char*)((void**)recordArrays_ptr)[kAccessoryRecordGroup] + recordByteOffset;
+            ((ProductRecordProvider*)sourceProvider)
+                ->copyRecord(destinationRecord, recordIndex - accessoryCount - hairCount);
         }
         recordByteOffset += kProductRecordStride;
     }
 
-    providerTable = AsCBuildProductCharaFields(self)->products_ptr;
+    providerTable = products_ptr;
     // Phase 7: copy costume sets separately; these do not participate in icon groups 0..4.
     void* setProvider = ((void**)providerTable)[kCostumeSetsCategory];
     int setCount = ((ProductRecordProvider*)setProvider)->recordCount();
-    AsCBuildProductCharaFields(self)->extraRecordCount_u32 = setCount;
+    extraRecordCount_u32 = setCount;
 
     void* setRecords = __nwa__FUl(setCount * kProductRecordStride);
-    AsCBuildProductCharaFields(self)->extraRecords_ptr = setRecords;
+    extraRecords_ptr = setRecords;
 
     lastIndex = 0;
     lastOffset = 0;
-    for (; lastIndex < AsCBuildProductCharaFields(self)->extraRecordCount_s32; lastIndex++) {
-        void* categoryProviders = AsCBuildProductCharaFields(self)->products_ptr;
+    for (; lastIndex < extraRecordCount_s32; lastIndex++) {
+        void* categoryProviders = products_ptr;
         void* sourceProvider = ((void**)categoryProviders)[kCostumeSetsCategory];
-        void* destinationRecord = (char*)AsCBuildProductCharaFields(self)->extraRecords_ptr + lastOffset;
+        void* destinationRecord = (char*)extraRecords_ptr + lastOffset;
         ((ProductRecordProvider*)sourceProvider)->copyRecord(destinationRecord, lastIndex);
         lastOffset += kProductRecordStride;
     }
@@ -1369,7 +1438,7 @@ int CBuildProductChara_BuildProducts(void* self, int characterIndex) {
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push
 #pragma force_active on
-STATIC_INIT_ENTRY(".CRT$XCU80462514", _ctors_u802D7340_0, CBuildProductChara_InitAngleConstant);
+STATIC_INIT_ENTRY(".CRT$XCU80462514", _ctors_u802D7340_0, CBuildProductChara::InitAngleConstant);
 STATIC_INIT_ENTRY(".CRT$XCU80462514", _ctors_u802D7340_1, CModelOperationCaddie_InitAngleConstant);
 STATIC_INIT_ENTRY(".CRT$XCU80462514", _ctors_u802D7340_2, CModelOperationItem_InitAngleConstant);
 #pragma pop

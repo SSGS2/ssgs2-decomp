@@ -1,4 +1,9 @@
+// Sound resources built from parsed resource chunks: buffer and stream resources, their sound
+// properties, and chunk parsing (version, name, DATA, BSIC, EMIT, EV_C, RO_C, GCEX).
+// gtl::CGSPSoundBufferResource and gtl::CGSPSoundStreamResource attach them to a buffer or stream.
+
 #include <decomp/ct_member.h>
+#include "classes/GtlSoundStreamInterface.h"
 #include "classes/SoundResourceParameters8043.h"
 #include "classes/SoundResource8043.h"
 #include "classes/SoundPropertyWords8043.h"
@@ -12,85 +17,55 @@ struct SoundResourceStringPool {
     char reserved0[0x14];
     char lengthErrorType[0x37]; // +0x14
 };
-
 }
 }
 
-// Translation unit 0x8043B91C-0x8043E858 (gtl::CGSPSoundProperty, CGSPSoundBufferResource, CGSPSoundStreamResource and their factories; one original file, data interleaved). The layout views preserve the resource/chunk ownership ABI.
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 #include "sdk_protos.h"
+#include "classes/GtlSoundBuffer.h"
+#include "classes/gtl_CGSPSoundStreamResource.h"
+#include "classes/gtl_CGSPSoundProperty.h"
 extern "C" {
 
-enum { kPointerVectorMaxCount = 0x3FFFFFFF, kPointerVectorGrowthThreeFifthsLimit = 0x15555555, kPointerVectorGrowthHalfLimit = 0x2AAAAAAA };
-enum SoundResourceAbiSizes {
-    kSoundPointerSlotBytes = 4, kSoundChunkDescriptorBytes = 32,
-    kSoundBaseParameterBytes = 40, kSoundAdpcmBlockBytes = 0x30
+enum {
+    kPointerVectorMaxCount = 0x3FFFFFFF,
+    kPointerVectorGrowthThreeFifthsLimit = 0x15555555,
+    kPointerVectorGrowthHalfLimit = 0x2AAAAAAA
 };
-enum SoundChunkDescriptorSlot { kChunkFormatVersion = 0, kChunkName = 1,
-    kChunkSourceData = 2, kChunkBaseParameters = 3, kChunkEmitter = 4,
-    kChunkEnvelope = 5, kChunkRolloffCurve = 6, kChunkPlatformExtension = 7 };
+enum SoundResourceAbiSizes {
+    kSoundPointerSlotBytes = 4,
+    kSoundChunkDescriptorBytes = 32,
+    kSoundBaseParameterBytes = 40,
+    kSoundAdpcmBlockBytes = 0x30
+};
+enum SoundChunkDescriptorSlot {
+    kChunkFormatVersion = 0,
+    kChunkName = 1,
+    kChunkSourceData = 2,
+    kChunkBaseParameters = 3,
+    kChunkEmitter = 4,
+    kChunkEnvelope = 5,
+    kChunkRolloffCurve = 6,
+    kChunkPlatformExtension = 7
+};
 // Layout-view map (address suffixes identify overlapping ABI views, not object kinds):
 // RetainedResource = refcounted source resource (refs, vtable, offset table); ResourceChunkTable = vector of
 // 32-byte ResourceChunkDesc plus the retained source; BufferResourceView = buffer-resource storage seen from the
 // factory (sourceSlots owns source references; propertySlots owns decoded property references).
-// Obj_8043D2AC is the +4 virtual interface used to select a source/property for a
-// destination buffer. Its get/selectProperty slots return borrowed resource-owned objects;
-// selectProperty does not allocate a new object here (see vfunc_3).
-// Struct_8043D264 is an overlapping +8 data-pointer view used by count/source
-// accessors: child at runtime-object +8 is data, but data->child at +8 is a COUNT
-// encoded in a pointer-shaped field. Do not dereference the returned count.
-// Struct_8043D270Root is the outer +8 data-pointer view for chunk-name lookup;
-// its child holds descriptor storage at +4 and descriptor count at +8.
-// Obj_*/Struct_*Root = runtime resource with data pointer at +8; Struct_8043D264
-// also views its nested source-list/count fields without a separate concrete class.
-// Data_8043CFFC = buffer resource storage: retained source owner, owned parsed
-// 32-byte descriptors, then owned source/property pointer vectors (sourceSlots/propertySlots).
 // ResourceChunkEntry/BorrowedSoundPropertyChunks = borrowed pointers into the retained resource,
-// NOT newly decoded property objects. RuntimeSoundProperty = refcounted runtime property
+// NOT newly decoded property objects. gtl::CGSPSoundProperty = refcounted runtime property
 // owning separately allocated base, spatial, curve and envelope blocks.
 // BorrowedSoundPropertyChunks is the encoded chunk-pointer bundle accepted by that constructor:
 // version, BSIC, EMIT, EV_C, RO_C remain borrowed until decoding completes.
-// RuntimeSoundProperty is the destination runtime property, not the source archive.
+// gtl::CGSPSoundProperty is the destination runtime property, not the source archive.
 // The source/property vectors retain one reference per non-null slot; resource
 // destruction releases those references before freeing the vector allocations.
 
 void gtl_Audio_Free(void*);
-void gtl_ISoundBuffer_SetSource(void*, void*);
-int gtl_CGSPSoundProperty_ApplyToBuffer(void*, void*);
-void gtl_ISoundBuffer_SetVolume(void*, float);
-void gtl_ISoundBuffer_SetPitch(void*, float);
-void gtl_ISoundBuffer_SetPan(void*, float);
-void gtl_ISoundBuffer_SetLoopRange(void*, unsigned int, unsigned int);
-void gtl_ISoundBuffer_SetConeAngles(void*, int, float, float);
-void gtl_ISoundBuffer_SetConeGains(void*, int, float, float);
-void gtl_ISoundBuffer_SetMinDistance(void*, int, float);
-void gtl_ISoundBuffer_SetMaxDistance(void*, int, float);
-void gtl_ISoundBuffer_SetDistanceParameterA(void*, int, float);
-void gtl_ISoundBuffer_SetDistanceParameterB(void*, int, float);
-void gtl_ISoundBuffer_SetDistanceCurve(void*, void*, int);
-void gtl_ISoundBuffer_DefaultSuccess(void*);
-void gtl_ISoundBuffer_SetEnvelope(void*, void*);
-void gtl_ISoundStream_SetVolume(void*, float);
-void gtl_ISoundStream_SetPitch(void*, float);
-void gtl_ISoundStream_SetPan(void*, float);
-void gtl_ISoundStream_SetEnvelope(void*, int);
-void gtl_ISoundStream_SetLoopRange(void*, unsigned int, unsigned int);
 void SoundStream_DefaultCapabilityTrue(void*);
-void gtl_ISoundStream_SetConeAngles(void*, int, float, float);
-void gtl_ISoundStream_SetConeGains(void*, int, float, float);
-void gtl_ISoundStream_SetMinDistance(void*, int, float);
-void gtl_ISoundStream_SetMaxDistance(void*, int, float);
-void gtl_ISoundStream_SetDistanceCurve(void*, void*, int);
-void gtl_ISoundStream_SetDistanceParameterA(void*, int, float);
-void gtl_ISoundStream_SetDistanceParameterB(void*, int, float);
 
-struct VTable_8043D2AC {
-    char reserved00[0x1C];
-    void* (*get)(void*);
-    void* (*selectProperty)(void*, void*);
+struct ResourceCallBase_8043D2AC {
+    char reserved00[4];
 };
-struct Obj_8043D2AC { char reserved00[4]; VTable_8043D2AC* vtable; };
-struct ResourceCallBase_8043D2AC { char reserved00[4]; };
 struct ResourceCall_8043D2AC : ResourceCallBase_8043D2AC {
     virtual void slot0();
     virtual void slot1();
@@ -101,106 +76,62 @@ struct ResourceCall_8043D2AC : ResourceCallBase_8043D2AC {
     virtual void* selectProperty(void*);
 };
 
-struct Struct_8043D264 {
-    char reserved00[8];
-    struct Struct_8043D264* child;
-    char reserved0C[8];
-    unsigned int* items;
-    unsigned int count;
+struct ResourceChunkEntry {
+    unsigned int formatVersionHeaderWord;
+    void* name;
+    char payload[0x18];
 };
-
-struct Struct_8043D270 {
-    char reserved00[4];
-    unsigned int* data;
-    unsigned int count;
-};
-
-struct Struct_8043D270Root {
-    char reserved00[8];
-    Struct_8043D270* child;
-};
-
-struct Data_8043CFFC {
-    void* owner;
-    void* chunkDescriptors;
-    unsigned int chunkCount; // chunk count at +8, not a nested pointer
-    unsigned int chunkCapacity;
-    void* sourceStorage; // retained source-storage object at +0x10
-    void* sourceSlots; // owned source-reference vector
-    unsigned int sourceCount;
-    unsigned int sourceCapacity;
-    void* propertySlots; // owned decoded-property-reference vector
-    unsigned int propertyCount;
-    void* listC;
-    unsigned int countC;
-};
-
-struct Obj_8043CFFC { char reserved00[4]; void* vtable; Data_8043CFFC* data; };
-
-struct ResourceChunkEntry { unsigned int formatVersionHeaderWord; void* name; char payload[0x18]; };
 typedef char ResourceChunkEntry_size[sizeof(ResourceChunkEntry) == 0x20 ? 1 : -1];
 extern char __vt__Q23gtl23CGSPSoundBufferResource[];
 
-struct RefVT_8043CFFC { char reserved00[8]; void (*destroy)(void*, int); };
-struct Ref_8043CFFC { unsigned int refs; RefVT_8043CFFC* vt; };
-struct RefCallBase_8043CFFC { unsigned int refs; };
+struct RefVT_8043CFFC {
+    char reserved00[8];
+    void (*destroy)(void*, int);
+};
+struct CRefCounted {
+    unsigned int refs;
+    RefVT_8043CFFC* vt;
+};
+struct RefCallBase_8043CFFC {
+    unsigned int refs;
+};
 struct RefCall_8043CFFC : RefCallBase_8043CFFC {
     virtual void destroy(int);
 };
-
-// One data block has source/property vectors at the same offsets in both factories.
-// This view separates those roles from Struct_8043D264's pointer-shaped count field.
-struct SoundResourceListsView {
-    void* retainedSourceOwner; // +0: retained source archive
-    unsigned int* chunkDescriptors; // +4: owned 32-byte descriptors
-    unsigned int chunkCount; // +8
-    unsigned int chunkCapacity;
-    void* sourceStorage;
-    unsigned int* sourceSlots;
-    unsigned int sourceCount;
-    unsigned int sourceCapacity;
-    unsigned int* propertySlots;
-    unsigned int propertyCount;
-};
-struct SoundResourceDataView { char prefix[8]; SoundResourceListsView* resourceData; };
-
-// Borrow resource-owned descriptor/source/property lists without retaining them.
-static inline SoundResourceListsView* BorrowResourceLists(void* resource) {
-    return ((SoundResourceDataView*)resource)->resourceData;
-}
 
 // Release storage allocated by the audio allocator.
 void dtor_8043D260(void* p) {
     gtl_Audio_Free(p);
 }
-
-// Return the resource chunk count through the original pointer-width ABI.
-Struct_8043D264* gtl_CGSPSoundBufferResource_vfunc_1(Struct_8043D264* self) {
-    return (Struct_8043D264*)BorrowResourceLists(self)->chunkCount;
+}
+// Return the chunk count (the name is inferred from the body).
+unsigned int gtl::CGSPSoundBufferResource::GetChunkCount() {
+    SoundResourceListsView* list = data;
+    return list->chunkCount;
 }
 
 // Return an indexed buffer source, or null when the index is out of range.
-unsigned int* gtl_CGSPSoundBufferResource_GetSourceAt(Struct_8043D264* self, unsigned int index) {
-    SoundResourceListsView* data = BorrowResourceLists(self);
-    if (index >= data->sourceCount)
+unsigned int* gtl::CGSPSoundBufferResource::GetSourceAt(unsigned int index) {
+    SoundResourceListsView* list = data;
+    if (index >= list->sourceCount)
         return 0;
-    return (unsigned int*)data->sourceSlots[index];
+    return (unsigned int*)list->sourceSlots[index];
 }
 
 // Return an indexed sound property, or null when the index is out of range.
-void* gtl_CGSPSoundBufferResource_GetPropertySlot(Struct_8043D264* self, unsigned int index) {
-    SoundResourceListsView* data = BorrowResourceLists(self);
-    if (index >= data->propertyCount)
+void* gtl::CGSPSoundBufferResource::GetPropertySlot(unsigned int index) {
+    SoundResourceListsView* list = data;
+    if (index >= list->propertyCount)
         return 0;
-    return (void*)data->propertySlots[index];
+    return (void*)list->propertySlots[index];
 }
 
 // Return the name stored in an indexed 32-byte resource chunk.
-void* gtl_CGSPSoundBufferResource_GetChunkName(Struct_8043D270Root* self, unsigned int index) {
-    Struct_8043D270* data = self->child;
+void* gtl::CGSPSoundBufferResource::GetChunkName(unsigned int index) {
+    SoundResourceListsView* list = data;
     void* item;
-    if (index < data->count)
-        item = (char*)data->data + index * kSoundChunkDescriptorBytes;
+    if (index < list->chunkCount)
+        item = (char*)list->chunkDescriptors + index * kSoundChunkDescriptorBytes;
     else
         item = 0;
     if (item != 0)
@@ -209,64 +140,58 @@ void* gtl_CGSPSoundBufferResource_GetChunkName(Struct_8043D270Root* self, unsign
 }
 
 // Attach this resource and its selected property to a sound buffer.
-int gtl_CGSPSoundBufferResource_ApplyToBuffer(Obj_8043D2AC* self, void* arg, void* dst) {
+int gtl::CGSPSoundBufferResource::ApplyToBuffer(void* arg, void* dst) {
     if (dst == 0)
         return 0;
-    void* source = ((ResourceCall_8043D2AC*)self)->get(arg); // slot 0x1C takes the index: r4 still holds arg
+    void* source = ((ResourceCall_8043D2AC*)this)->get(arg); // slot 0x1C takes the index: r4 still holds arg
     if (source != 0)
-        gtl_ISoundBuffer_SetSource(dst, source);
+        ((gtl::ISoundBuffer*)dst)->SetSource((SoundSourceReference*)source);
     // The ABI slot returns a borrowed selected property.
-    void* selectedProperty = ((ResourceCall_8043D2AC*)self)->selectProperty(arg);
+    void* selectedProperty = ((ResourceCall_8043D2AC*)this)->selectProperty(arg);
     if (selectedProperty != 0)
-        gtl_CGSPSoundProperty_ApplyToBuffer(selectedProperty, dst);
+        ((gtl::CGSPSoundProperty*)selectedProperty)->ApplyToBuffer(dst);
     return 1;
 }
 
-// Borrow the current base-parameter block; do not cache it across sound-buffer callbacks.
-static inline SoundPropertyWords8043* BorrowBaseParameterWords(void* property) {
-    return (SoundPropertyWords8043*)((SoundResourceParameters8043*)property)->baseParameters;
-}
-
 // Apply base, spatial and envelope parameters to a non-null sound buffer.
-int gtl_CGSPSoundProperty_ApplyToBuffer(void* self, void* dst) {
+int gtl::CGSPSoundProperty::ApplyToBuffer(void* dst) {
     if (dst == 0)
         return 0;
-    if (((SoundResourceParameters8043*)self)->baseParameters != 0) {
-        // 0x8043D34C: property words +0/+4/+8 feed volume/pan/pitch; keep float bit views volatile.
-        gtl_ISoundBuffer_SetVolume(dst, *(volatile float*)&BorrowBaseParameterWords(self)->volume);
-        gtl_ISoundBuffer_SetPitch(dst, *(volatile float*)&BorrowBaseParameterWords(self)->pitch);
-        gtl_ISoundBuffer_SetPan(dst, *(volatile float*)&BorrowBaseParameterWords(self)->pan);
-        gtl_ISoundBuffer_SetLoopRange(dst, BorrowBaseParameterWords(self)->loopStart, BorrowBaseParameterWords(self)->loopEnd);
+    if (baseParameters != 0) {
+        // 0x8043D34C: base-block words +0/+4/+8 feed volume/pan/pitch; keep float bit views volatile.
+        ((gtl::ISoundBuffer*)dst)->SetVolume(*(volatile float*)&baseParameters->volume);
+        ((gtl::ISoundBuffer*)dst)->SetPitch(*(volatile float*)&baseParameters->pitch);
+        ((gtl::ISoundBuffer*)dst)->SetPan(*(volatile float*)&baseParameters->pan);
+        ((gtl::ISoundBuffer*)dst)->SetLoopRange(baseParameters->loopStart, baseParameters->loopEnd);
     }
     // Preserve the baseline gate: envelope +0x14 controls spatial application too.
     // channelParameters +0x0C is consumed inside this gate without its own null check.
-    if ((*(int*)&((SoundResourceParameters8043*)self)->envelopeParameters) != 0) {
-        SoundChannelParameters8043* spatialParameters = (SoundChannelParameters8043*)((SoundResourceParameters8043*)self)->channelParameters;
-        gtl_ISoundBuffer_SetConeAngles(dst, 0, spatialParameters->coneInnerAngle, spatialParameters->coneOuterAngle);
-        gtl_ISoundBuffer_SetConeGains(dst, 0, spatialParameters->coneInnerGain, spatialParameters->coneOuterGain);
-        gtl_ISoundBuffer_SetMinDistance(dst, 0, spatialParameters->minDistance);
-        gtl_ISoundBuffer_SetMaxDistance(dst, 0, spatialParameters->maxDistance);
-        gtl_ISoundBuffer_SetDistanceParameterA(dst, 0, spatialParameters->distanceParameterA);
-        gtl_ISoundBuffer_SetDistanceParameterB(dst, 0, spatialParameters->distanceParameterB);
-        void* distanceCurve = ((SoundResourceParameters8043*)self)->distanceCurve;
+    if ((*(int*)&envelope) != 0) {
+        RuntimeSoundSpatialParameters* spatialParameters = channelParameters;
+        ((gtl::ISoundBuffer*)dst)
+            ->SetConeAngles(0, spatialParameters->coneInnerAngle, spatialParameters->coneOuterAngle);
+        ((gtl::ISoundBuffer*)dst)->SetConeGains(0, spatialParameters->coneInnerGain, spatialParameters->coneOuterGain);
+        ((gtl::ISoundBuffer*)dst)->SetMinDistance(0, spatialParameters->minDistance);
+        ((gtl::ISoundBuffer*)dst)->SetMaxDistance(0, spatialParameters->maxDistance);
+        ((gtl::ISoundBuffer*)dst)->SetDistanceParameterA(0, spatialParameters->distanceParameterA);
+        ((gtl::ISoundBuffer*)dst)->SetDistanceParameterB(0, spatialParameters->distanceParameterB);
         if (distanceCurve != 0)
-            gtl_ISoundBuffer_SetDistanceCurve(dst, distanceCurve, 0);
-        gtl_ISoundBuffer_DefaultSuccess(dst);
+            ((gtl::ISoundBuffer*)dst)->SetDistanceCurve((int)distanceCurve, 0);
+        ((gtl::ISoundBuffer*)dst)->DefaultSuccess();
     }
-    void* envelope = ((SoundResourceParameters8043*)self)->envelopeParameters;
     if (envelope != 0)
-        gtl_ISoundBuffer_SetEnvelope(dst, envelope);
+        ((gtl::ISoundBuffer*)dst)->SetEnvelope((int)envelope);
     return 1;
 }
 
 #pragma use_lmw_stmw on
 #pragma opt_propagation off
 // Release source/property references, backing storage and optionally the resource itself.
-void* gtl_CGSPSoundBufferResource_dtor(void* self, int deleting) {
-    if (self != 0) {
-        Data_8043CFFC* data = (*(Data_8043CFFC**)&((SoundResource8043*)self)->data);
-        ((Obj_8043CFFC*)self)->vtable = (void*)__vt__Q23gtl23CGSPSoundBufferResource;
-        if (data != 0 && &data->owner != 0) {
+void* gtl::CGSPSoundBufferResource::Destroy(int deleting) {
+    if (this != 0) {
+        SoundResourceListsView* data = this->data;
+        vtbl = (void*)__vt__Q23gtl23CGSPSoundBufferResource;
+        if (data != 0 && &data->retainedSourceOwner != 0) {
             unsigned int off;
             unsigned int i;
             i = 0;
@@ -274,8 +199,8 @@ void* gtl_CGSPSoundBufferResource_dtor(void* self, int deleting) {
             for (; i < data->sourceCount; i++) {
                 void* elem = *(void**)((char*)data->sourceSlots + off);
                 if (elem != 0) {
-                    unsigned int refs = ((Ref_8043CFFC*)elem)->refs - 1;
-                    ((Ref_8043CFFC*)elem)->refs = refs;
+                    unsigned int refs = ((CRefCounted*)elem)->refs - 1;
+                    ((CRefCounted*)elem)->refs = refs;
                     if (refs == 0 && elem != 0)
                         ((RefCall_8043CFFC*)elem)->destroy(1);
                     *(void**)((char*)data->sourceSlots + off) = 0;
@@ -287,8 +212,8 @@ void* gtl_CGSPSoundBufferResource_dtor(void* self, int deleting) {
             for (; i < data->propertyCount; i++) {
                 void* elem = *(void**)((char*)data->propertySlots + off);
                 if (elem != 0) {
-                    unsigned int refs = ((Ref_8043CFFC*)elem)->refs - 1;
-                    ((Ref_8043CFFC*)elem)->refs = refs;
+                    unsigned int refs = ((CRefCounted*)elem)->refs - 1;
+                    ((CRefCounted*)elem)->refs = refs;
                     if (refs == 0 && elem != 0)
                         ((RefCall_8043CFFC*)elem)->destroy(1);
                     *(void**)((char*)data->propertySlots + off) = 0;
@@ -297,34 +222,37 @@ void* gtl_CGSPSoundBufferResource_dtor(void* self, int deleting) {
             }
             void* single = data->sourceStorage;
             if (single != 0) {
-                unsigned int refs = ((Ref_8043CFFC*)single)->refs - 1;
-                ((Ref_8043CFFC*)single)->refs = refs;
+                unsigned int refs = ((CRefCounted*)single)->refs - 1;
+                ((CRefCounted*)single)->refs = refs;
                 if (refs == 0 && single != 0)
                     ((RefCall_8043CFFC*)single)->destroy(1);
                 data->sourceStorage = 0;
             }
-            if (&data->propertySlots != 0 && &data->propertySlots != 0 && &data->propertySlots != 0 && &data->propertySlots != 0 && &data->propertySlots != 0 && data->propertySlots != 0) {
+            if (&data->propertySlots != 0 && &data->propertySlots != 0 && &data->propertySlots != 0 &&
+                &data->propertySlots != 0 && &data->propertySlots != 0 && data->propertySlots != 0) {
                 unsigned int n = data->propertyCount;
                 data->propertyCount = data->propertyCount - n;
                 gtl_Audio_Free(data->propertySlots);
             }
-            if (&data->sourceSlots != 0 && &data->sourceSlots != 0 && &data->sourceSlots != 0 && &data->sourceSlots != 0 && &data->sourceSlots != 0 && data->sourceSlots != 0) {
+            if (&data->sourceSlots != 0 && &data->sourceSlots != 0 && &data->sourceSlots != 0 &&
+                &data->sourceSlots != 0 && &data->sourceSlots != 0 && data->sourceSlots != 0) {
                 unsigned int n = data->sourceCount;
                 data->sourceCount = data->sourceCount - n;
                 gtl_Audio_Free(data->sourceSlots);
             }
             if (data != 0) {
-                void* owner = data->owner;
+                void* owner = data->retainedSourceOwner;
                 if (owner != 0) {
-                    unsigned int refs = ((Ref_8043CFFC*)owner)->refs - 1;
-                    ((Ref_8043CFFC*)owner)->refs = refs;
+                    unsigned int refs = ((CRefCounted*)owner)->refs - 1;
+                    ((CRefCounted*)owner)->refs = refs;
                     if (refs == 0 && owner != 0)
                         ((RefCall_8043CFFC*)owner)->destroy(1);
-                    data->owner = 0;
+                    data->retainedSourceOwner = 0;
                 }
                 unsigned int n = data->chunkCount;
                 data->chunkCount = data->chunkCount - n;
-                if (&data->chunkDescriptors != 0 && &data->chunkDescriptors != 0 && &data->chunkDescriptors != 0 && &data->chunkDescriptors != 0 && data->chunkDescriptors != 0) {
+                if (&data->chunkDescriptors != 0 && &data->chunkDescriptors != 0 && &data->chunkDescriptors != 0 &&
+                    &data->chunkDescriptors != 0 && data->chunkDescriptors != 0) {
                     unsigned int n = data->chunkCount;
                     data->chunkCount = data->chunkCount - n;
                     gtl_Audio_Free(data->chunkDescriptors);
@@ -333,20 +261,20 @@ void* gtl_CGSPSoundBufferResource_dtor(void* self, int deleting) {
             gtl_Audio_Free(data);
         }
         if (deleting > 0)
-            gtl_Audio_Free(self);
+            gtl_Audio_Free(this);
     }
-    return self;
+    return this;
 }
 #pragma opt_propagation reset
 #pragma use_lmw_stmw reset
 
 // Copy the selected property's 40-byte base parameter block to the caller.
-int gtl_CGSPSoundBufferResource_CopyBaseParams(Obj_8043D2AC* self, void* forwardedArg, void* dst) {
+int gtl::CGSPSoundBufferResource::CopyBaseParams(void* forwardedArg, void* dst) {
     if (dst == 0)
         return 0;
-    void* selectedProperty = ((ResourceCall_8043D2AC*)self)->selectProperty(forwardedArg);
+    void* selectedProperty = ((ResourceCall_8043D2AC*)this)->selectProperty(forwardedArg);
     if (selectedProperty != 0) {
-        void* p = ((SoundResource8043*)selectedProperty)->data;
+        void* p = (void*)((SoundResourceParameters8043*)selectedProperty)->baseParameters;
         if (p != 0) {
             Memory_Copy(dst, p, kSoundBaseParameterBytes);
             return 1;
@@ -354,6 +282,8 @@ int gtl_CGSPSoundBufferResource_CopyBaseParams(Obj_8043D2AC* self, void* forward
     }
     return 0;
 }
+
+extern "C" {
 
 // Optionally release the stream resource base allocation.
 void* StreamBase_dtor(void* self, int deleting) {
@@ -393,21 +323,11 @@ struct Data_8043E118 {
     unsigned int fileNameFlags;
     char reserved14[4];
     void* heapFileName;
-    void** sourceSlots; // retained source slots (+0x1C), parallel to decoded properties
+    void** sourceSlots;       // retained source slots (+0x1C), parallel to decoded properties
     unsigned int sourceCount; // source count
     char reserved24[4];
-    void** propertySlots; // retained decoded-property slots (+0x28)
+    void** propertySlots;       // retained decoded-property slots (+0x28)
     unsigned int propertyCount; // property count
-};
-
-struct VTable_Stream_8043E118 {
-    char reserved00[0x20];
-    void* (*fn)(void*);
-};
-struct Obj_8043E118 {
-    char reserved00[4];
-    VTable_Stream_8043E118* vtable;
-    Data_8043E118* data;
 };
 
 struct RefVTable_8043E118 {
@@ -424,203 +344,121 @@ extern char __vt__Q23gtl23CGSPSoundStreamResource[];
 
 #pragma use_lmw_stmw on
 #pragma opt_propagation off
+} // extern "C"
 // Release stream source/property references, parsed chunks and their source owner.
-void* gtl_CGSPSoundStreamResource_dtor(void* self, int deleting) {
-    if (self != 0) {
-        Data_8043E118* data = ((Obj_8043E118*)self)->data;
-        ((Obj_8043E118*)self)->vtable = (VTable_Stream_8043E118*)(void*)__vt__Q23gtl23CGSPSoundStreamResource;
-        if (data != 0 && data != 0) {
+void* gtl::CGSPSoundStreamResource::Destroy(int deleting) {
+    if (this != 0) {
+        Data_8043E118* resourceData = this->data;
+        vtbl = (void*)__vt__Q23gtl23CGSPSoundStreamResource;
+        if (resourceData != 0 && resourceData != 0) {
             unsigned int off;
             unsigned int i;
             i = 0;
             off = 0;
-            for (; i < data->sourceCount; i++) {
-                void* elem = *(void**)((char*)data->sourceSlots + off);
+            for (; i < resourceData->sourceCount; i++) {
+                void* elem = *(void**)((char*)resourceData->sourceSlots + off);
                 if (elem != 0) {
                     unsigned int refs = ((Ref_8043E118*)elem)->refs - 1;
                     ((Ref_8043E118*)elem)->refs = refs;
                     if (refs == 0 && elem != 0)
                         ((RefCall_8043CFFC*)elem)->destroy(1);
-                    *(void**)((char*)data->sourceSlots + off) = 0;
+                    *(void**)((char*)resourceData->sourceSlots + off) = 0;
                 }
                 off += kSoundPointerSlotBytes;
             }
             i = 0;
             off = 0;
-            for (; i < *(volatile unsigned int*)&data->propertyCount; i++) {
-                void* elem = *(void**)((char*)data->propertySlots + off);
+            for (; i < *(volatile unsigned int*)&resourceData->propertyCount; i++) {
+                void* elem = *(void**)((char*)resourceData->propertySlots + off);
                 if (elem != 0) {
                     unsigned int refs = ((Ref_8043E118*)elem)->refs - 1;
                     ((Ref_8043E118*)elem)->refs = refs;
                     if (refs == 0 && elem != 0)
                         ((RefCall_8043CFFC*)elem)->destroy(1);
-                    *(void**)((char*)data->propertySlots + off) = 0;
+                    *(void**)((char*)resourceData->propertySlots + off) = 0;
                 }
                 off += kSoundPointerSlotBytes;
             }
-            if (&data->propertySlots != 0 && &data->propertySlots != 0 && &data->propertySlots != 0 && &data->propertySlots != 0 && &data->propertySlots != 0 && data->propertySlots != 0) {
-                unsigned int n = data->propertyCount;
-                data->propertyCount = data->propertyCount - n;
-                gtl_Audio_Free(data->propertySlots);
+            if (&resourceData->propertySlots != 0 && &resourceData->propertySlots != 0 &&
+                &resourceData->propertySlots != 0 && &resourceData->propertySlots != 0 &&
+                &resourceData->propertySlots != 0 && resourceData->propertySlots != 0) {
+                unsigned int n = resourceData->propertyCount;
+                resourceData->propertyCount = resourceData->propertyCount - n;
+                gtl_Audio_Free(resourceData->propertySlots);
             }
-            if (&data->sourceSlots != 0 && &data->sourceSlots != 0 && &data->sourceSlots != 0 && &data->sourceSlots != 0 && &data->sourceSlots != 0 && data->sourceSlots != 0) {
-                unsigned int n1 = data->sourceCount;
-                data->sourceCount = data->sourceCount - n1;
-                gtl_Audio_Free(data->sourceSlots);
+            if (&resourceData->sourceSlots != 0 && &resourceData->sourceSlots != 0 && &resourceData->sourceSlots != 0 &&
+                &resourceData->sourceSlots != 0 && &resourceData->sourceSlots != 0 && resourceData->sourceSlots != 0) {
+                unsigned int n1 = resourceData->sourceCount;
+                resourceData->sourceCount = resourceData->sourceCount - n1;
+                gtl_Audio_Free(resourceData->sourceSlots);
             }
-            if (&data->fileNameFlags != 0 && (data->fileNameFlags >> 31) != 0) {
-                gtl_Audio_Free(data->heapFileName);
+            if (&resourceData->fileNameFlags != 0 && (resourceData->fileNameFlags >> 31) != 0) {
+                gtl_Audio_Free(resourceData->heapFileName);
             }
-            if (data != 0) {
-                void* elem = data->owner;
+            if (resourceData != 0) {
+                void* elem = resourceData->owner;
                 if (elem != 0) {
                     unsigned int refs = ((Ref_8043E118*)elem)->refs - 1;
                     ((Ref_8043E118*)elem)->refs = refs;
                     if (refs == 0 && elem != 0)
                         ((RefCall_8043CFFC*)elem)->destroy(1);
-                    data->owner = 0;
+                    resourceData->owner = 0;
                 }
-                unsigned int n8 = data->chunkCount;
-                data->chunkCount = data->chunkCount - n8;
-                if (&data->chunks != 0 && &data->chunks != 0 && &data->chunks != 0 && &data->chunks != 0 && data->chunks != 0) {
-                    unsigned int n8 = data->chunkCount;
-                    data->chunkCount = data->chunkCount - n8;
-                    gtl_Audio_Free(data->chunks);
+                unsigned int n8 = resourceData->chunkCount;
+                resourceData->chunkCount = resourceData->chunkCount - n8;
+                if (&resourceData->chunks != 0 && &resourceData->chunks != 0 && &resourceData->chunks != 0 &&
+                    &resourceData->chunks != 0 && resourceData->chunks != 0) {
+                    unsigned int n8 = resourceData->chunkCount;
+                    resourceData->chunkCount = resourceData->chunkCount - n8;
+                    gtl_Audio_Free(resourceData->chunks);
                 }
             }
-            gtl_Audio_Free(data);
+            gtl_Audio_Free(resourceData);
         }
         if (deleting > 0)
-            gtl_Audio_Free(self);
+            gtl_Audio_Free(this);
     }
-    return self;
+    return this;
 }
+extern "C" {
 #pragma opt_propagation reset
 #pragma use_lmw_stmw reset
 
-struct Data_8043E448 {
-    float volume;
-    float pitch;
-    float pan;
-    char reserved0C[0x14];
-    unsigned int loopStart;
-    unsigned int loopEnd;
-};
-
-struct Sub_8043E448 {
-    char reserved00[0x30];
-    float coneInnerAngle;
-    float coneOuterAngle;
-    float coneInnerGain;
-    float coneOuterGain;
-    char reserved40[4];
-    float distanceParameterA;
-    float distanceParameterB;
-    float minDistance;
-    float maxDistance;
-};
-
-struct Struct_8043E448 {
-    char reserved00[8];
-    Data_8043E448* baseParameters;
-    Sub_8043E448* channelParameters;
-    void* distanceCurve;
-    int envelope;
-};
+} // extern "C"
 
 // Apply base, spatial and envelope parameters to a non-null sound stream.
-int gtl_CGSPSoundProperty_ApplyToStream(Struct_8043E448* self, void* dst) {
+int gtl::CGSPSoundProperty::ApplyToStream(void* dst) {
     if (dst == 0)
         return 0;
-    if (self->baseParameters != 0) {
-        gtl_ISoundStream_SetVolume(dst, self->baseParameters->volume);
-        gtl_ISoundStream_SetPitch(dst, self->baseParameters->pitch);
-        gtl_ISoundStream_SetPan(dst, self->baseParameters->pan);
-        gtl_ISoundStream_SetLoopRange(dst, self->baseParameters->loopStart, self->baseParameters->loopEnd);
+    if (baseParameters != 0) {
+        ((gtl::ISoundStream*)dst)->SetVolume(baseParameters->volume);
+        ((gtl::ISoundStream*)dst)->SetPitch(baseParameters->pitch);
+        ((gtl::ISoundStream*)dst)->SetPan(baseParameters->pan);
+        ((gtl::ISoundStream*)dst)->SetLoopRange(baseParameters->loopStart, baseParameters->loopEnd);
     }
     // As in the buffer path, the envelope word gates spatial parameters.
-    if (self->envelope != 0) {
-        Sub_8043E448* sub = self->channelParameters;
-        gtl_ISoundStream_SetConeAngles(dst, 0, sub->coneInnerAngle, sub->coneOuterAngle);
-        gtl_ISoundStream_SetConeGains(dst, 0, sub->coneInnerGain, sub->coneOuterGain);
-        gtl_ISoundStream_SetMinDistance(dst, 0, sub->minDistance);
-        gtl_ISoundStream_SetMaxDistance(dst, 0, sub->maxDistance);
-        gtl_ISoundStream_SetDistanceParameterA(dst, 0, sub->distanceParameterA);
-        gtl_ISoundStream_SetDistanceParameterB(dst, 0, sub->distanceParameterB);
-        if (self->distanceCurve != 0)
-            gtl_ISoundStream_SetDistanceCurve(dst, self->distanceCurve, 0);
+    if (envelope != 0) {
+        RuntimeSoundSpatialParameters* sub = channelParameters;
+        ((gtl::ISoundStream*)dst)->SetConeAngles(0, sub->coneInnerAngle, sub->coneOuterAngle);
+        ((gtl::ISoundStream*)dst)->SetConeGains(0, sub->coneInnerGain, sub->coneOuterGain);
+        ((gtl::ISoundStream*)dst)->SetMinDistance(0, sub->minDistance);
+        ((gtl::ISoundStream*)dst)->SetMaxDistance(0, sub->maxDistance);
+        ((gtl::ISoundStream*)dst)->SetDistanceParameterA(0, sub->distanceParameterA);
+        ((gtl::ISoundStream*)dst)->SetDistanceParameterB(0, sub->distanceParameterB);
+        if (distanceCurve != 0)
+            ((gtl::ISoundStream*)dst)->SetDistanceCurve((int)distanceCurve, 0);
         SoundStream_DefaultCapabilityTrue(dst);
     }
-    if (self->envelope != 0)
-        gtl_ISoundStream_SetEnvelope(dst, self->envelope);
+    if (envelope != 0)
+        ((gtl::ISoundStream*)dst)->SetEnvelope((void*)envelope);
     return 1;
 }
 
+extern "C" {
+
+extern char __vt__Q23gtl17CGSPSoundProperty[];
 extern char __vt__Q23gtl17CGSPSoundProperty[];
 void* gtl_Audio_Alloc(unsigned int size);
-
-// Decoded runtime base properties (40 bytes), copied from the BSIC chunk.
-struct RuntimeSoundBaseParameters {
-    float volume;
-    float pitch;
-    float pan;
-    char reserved0C[4];
-    // Four encoded option bytes are widened to words; their value domains are unresolved.
-    int options[4];
-    int loopStart;
-    int loopEnd;
-};
-
-// Decoded runtime spatial parameters; leading 0x30 bytes are outside this copy path.
-struct RuntimeSoundSpatialParameters {
-    char reserved00[0x30];
-    float coneInnerAngle;
-    float coneOuterAngle;
-    float coneInnerGain;
-    float coneOuterGain;
-    unsigned int distanceCurve;
-    float distanceParameterA;
-    float distanceParameterB;
-    float minDistance;
-    float maxDistance;
-    char reserved54[4]; // Spatial block allocation includes one unused trailing word.
-};
-
-// Runtime distance-curve header owning pointCount distance/gain pairs.
-struct RuntimeSoundDistanceCurve {
-    unsigned int curveKind;
-    unsigned int pointCount;
-    void* points;
-};
-
-// One curve key: scene-distance input and multiplicative gain output.
-struct SoundDistanceGainKey {
-    float distance;
-    float gain;
-};
-
-// Layout consumed by gtl_AudioEnvelope_Initialize; time values remain in native ticks.
-struct RuntimeSoundEnvelope {
-    int configTag;
-    int mode;
-    int delayTicks;
-    int attackTicks;
-    int holdTicks;
-    int decayTicks;
-    int releaseTicks;
-    int sustainUnits;
-    int reservedConfig0;
-    int reservedConfig1;
-};
-
-struct RuntimeSoundProperty {
-    int referenceCount;
-    void* vtable;
-    RuntimeSoundBaseParameters* baseParameters;
-    RuntimeSoundSpatialParameters* channelParameters;
-    RuntimeSoundDistanceCurve* distanceCurve;
-    RuntimeSoundEnvelope* envelope;
-};
 
 // Borrowed two-byte format-version slice (not the start of a tagged chunk).
 struct SoundChunkVersion {
@@ -684,13 +522,25 @@ struct BorrowedSoundPropertyChunks {
 
 // BSIC stores four whole option bytes, not a packed bit mask. Runtime words
 // reorder bytes [A,B,C,D] to [B,A,C,D]; no reader establishes their meanings yet.
-enum EncodedSoundOptionSlot { kBsicOption0, kBsicOption1, kBsicOption2, kBsicOption3 };
-enum RuntimeSoundOptionSlot { kRuntimeOption0, kRuntimeOption1, kRuntimeOption2, kRuntimeOption3 };
-enum { kLegacyLoopIndexMultiplier = 2 };
+enum EncodedSoundOptionSlot {
+    kBsicOption0,
+    kBsicOption1,
+    kBsicOption2,
+    kBsicOption3
+};
+enum RuntimeSoundOptionSlot {
+    kRuntimeOption0,
+    kRuntimeOption1,
+    kRuntimeOption2,
+    kRuntimeOption3
+};
+enum {
+    kLegacyLoopIndexMultiplier = 2
+};
 
 // Decode BSIC values and convert legacy loop indices into the runtime index scale.
-static inline void DecodeSoundBaseParameters(RuntimeSoundProperty* self,
-    BorrowedSoundPropertyChunks* src, EncodedSoundBaseChunk* encodedBase) {
+static inline void DecodeSoundBaseParameters(gtl::CGSPSoundProperty* self, BorrowedSoundPropertyChunks* src,
+                                             EncodedSoundBaseChunk* encodedBase) {
     if (encodedBase != 0) {
         self->baseParameters = (RuntimeSoundBaseParameters*)gtl_Audio_Alloc(sizeof(RuntimeSoundBaseParameters));
         SoundChunkVersion* formatVersion = src->formatVersion;
@@ -703,7 +553,8 @@ static inline void DecodeSoundBaseParameters(RuntimeSoundProperty* self,
         self->baseParameters->options[kRuntimeOption3] = encodedBase->encodedOptions[kBsicOption3];
         self->baseParameters->loopStart = encodedBase->loopStart;
         self->baseParameters->loopEnd = encodedBase->loopEnd;
-        if (formatVersion != 0 && ((formatVersion->majorVersion < 1U) || (formatVersion->majorVersion == 1 && formatVersion->minorVersion < 1U))) {
+        if (formatVersion != 0 && ((formatVersion->majorVersion < 1U) ||
+                                   (formatVersion->majorVersion == 1 && formatVersion->minorVersion < 1U))) {
             self->baseParameters->loopStart = self->baseParameters->loopStart * kLegacyLoopIndexMultiplier;
             self->baseParameters->loopEnd = self->baseParameters->loopEnd * kLegacyLoopIndexMultiplier;
         }
@@ -711,11 +562,12 @@ static inline void DecodeSoundBaseParameters(RuntimeSoundProperty* self,
 }
 
 // Decode EMIT and copy RO_C keys only when an emitter chunk is present.
-static inline void DecodeSoundSpatialParameters(RuntimeSoundProperty* self, BorrowedSoundPropertyChunks* src) {
+static inline void DecodeSoundSpatialParameters(gtl::CGSPSoundProperty* self, BorrowedSoundPropertyChunks* src) {
     // Phase 2: reorder spatial parameters and deep-copy optional curve keys.
     EncodedSoundEmitterChunk* encodedEmitter = src->channelParameters;
     if (encodedEmitter != 0) {
-        RuntimeSoundSpatialParameters* runtimeSpatial = (RuntimeSoundSpatialParameters*)gtl_Audio_Alloc(sizeof(RuntimeSoundSpatialParameters));
+        RuntimeSoundSpatialParameters* runtimeSpatial =
+            (RuntimeSoundSpatialParameters*)gtl_Audio_Alloc(sizeof(RuntimeSoundSpatialParameters));
         self->channelParameters = runtimeSpatial;
         EncodedSoundCurveChunk* encodedCurve = src->distanceCurve;
         float coneValues[4];
@@ -754,7 +606,7 @@ static inline void DecodeSoundSpatialParameters(RuntimeSoundProperty* self, Borr
 }
 
 // Widen EV_C configuration bytes and retain the encoded envelope tick units.
-static inline void DecodeSoundEnvelope(RuntimeSoundProperty* self, BorrowedSoundPropertyChunks* src) {
+static inline void DecodeSoundEnvelope(gtl::CGSPSoundProperty* self, BorrowedSoundPropertyChunks* src) {
     // Phase 3: widen envelope configuration bytes and keep timing in native ticks.
     EncodedSoundEnvelopeChunk* encodedEnvelope = src->envelope;
     if (encodedEnvelope != 0) {
@@ -780,35 +632,58 @@ static inline void DecodeSoundEnvelope(RuntimeSoundProperty* self, BorrowedSound
 // Example: encoded loop [100,400] becomes [200,800] for version 1.0; version
 // 1.1 keeps [100,400]. Absolute units (bytes vs samples) are not established here.
 // Splitting the body otherwise makes CodeWarrior inline this exported constructor into factories.
-void* gtl_CGSPSoundProperty_Ctor(RuntimeSoundProperty*, BorrowedSoundPropertyChunks*) __attribute__((noinline));
+} // extern "C"
+
 // Initialize reference ownership, then decode each borrowed parameter chunk in phase order.
-void* gtl_CGSPSoundProperty_Ctor(RuntimeSoundProperty* self, BorrowedSoundPropertyChunks* src) {
+void* gtl::CGSPSoundProperty::Init(BorrowedSoundPropertyChunks* src) {
     EncodedSoundBaseChunk* prop = src->baseParameters;
-    self->referenceCount = 1;
-    self->vtable = (void*)__vt__Q23gtl17CGSPSoundProperty;
-    self->baseParameters = 0;
-    self->channelParameters = 0;
-    self->distanceCurve = 0;
-    self->envelope = 0;
-    DecodeSoundBaseParameters(self, src, prop);
-    DecodeSoundSpatialParameters(self, src);
-    DecodeSoundEnvelope(self, src);
-    return self;
+    referenceCount = 1;
+    vtable = (void*)__vt__Q23gtl17CGSPSoundProperty;
+    baseParameters = 0;
+    channelParameters = 0;
+    distanceCurve = 0;
+    envelope = 0;
+    DecodeSoundBaseParameters(this, src, prop);
+    DecodeSoundSpatialParameters(this, src);
+    DecodeSoundEnvelope(this, src);
+    return this;
 }
 
-struct RetainedResourceVTable { char reserved00[8]; void (*destroy)(void*, short); };
-struct ResourceOffsetTable { char reserved00[8]; unsigned int count; char reserved0C[4]; unsigned int offs[1]; };
-struct RetainedResource { unsigned int refs; RetainedResourceVTable* vt; ResourceOffsetTable* data; };
-struct ResourceChunkTable { RetainedResource* src; unsigned char* base; unsigned int size; unsigned int cap; };
+extern "C" {
+
+struct RetainedResourceVTable {
+    char reserved00[8];
+    void (*destroy)(void*, short);
+};
+struct ResourceOffsetTable {
+    char reserved00[8];
+    unsigned int count;
+    char reserved0C[4];
+    unsigned int offs[1];
+};
+struct RetainedResource {
+    unsigned int refs;
+    RetainedResourceVTable* vt;
+    ResourceOffsetTable* data;
+};
+struct ResourceChunkTable {
+    RetainedResource* src;
+    unsigned char* base;
+    unsigned int size;
+    unsigned int cap;
+};
 struct ResourceChunkDesc {
     unsigned int w[8];
     // Use caller-provided placement storage without allocating it.
-    static void* operator new(size_t, void* p) { return p; }
+    static void* operator new(size_t, void* p) {
+        return p;
+    }
     // Leave caller-owned placement storage untouched after construction failure.
     static void operator delete(void*, void*) {}
 };
 
-extern char __vt__Q23std11logic_error[], __vt__Q23std12length_error[], soundResourceFormatStrings[], s_sharedCharDeleterVtable[];
+extern char __vt__Q23std11logic_error[], __vt__Q23std12length_error[], soundResourceFormatStrings[],
+    s_sharedCharDeleterVtable[];
 extern void* __nw__FUl(unsigned int);
 extern void __dla__FPv(void*);
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
@@ -816,36 +691,55 @@ int gtl_Audio_IndexResourceChunks(void* self, unsigned int* elem, void* names, v
 void* __nwa__FUl(unsigned int size);
 
 struct Allocation_8043C550 {
-    char* pointer; char* allocator;
+    char* pointer;
+    char* allocator;
     // Guard an exception-message allocation until its control block takes ownership.
     Allocation_8043C550(char* p, char* a) : pointer(p), allocator(a) {}
     // Delete an exception-message array unless ownership was transferred.
-    ~Allocation_8043C550() { if (pointer) __dla__FPv(pointer); }
+    ~Allocation_8043C550() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct ControlBase_8043C550 {
-    void* table; unsigned strong, weak;
+    void* table;
+    unsigned strong, weak;
     // Initialize the exception-message control block reference counts and deleter.
-    ControlBase_8043C550() { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; }
+    ControlBase_8043C550() {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+    }
 };
 struct Control_8043C550 : ControlBase_8043C550 {
     char* pointer;
     // Attach the owned message buffer to its initialized control block.
-    Control_8043C550(char* p) { pointer = p; }
+    Control_8043C550(char* p) {
+        pointer = p;
+    }
 };
 struct ErrorBase_8043C550 {
     void* table;
     // Install the logic-error base interface during exception construction.
-    ErrorBase_8043C550() { table = __vt__Q23std11logic_error; }
+    ErrorBase_8043C550() {
+        table = __vt__Q23std11logic_error;
+    }
     // Destroy the exception base without deleting this enclosing allocation.
-    ~ErrorBase_8043C550() { __dt__Q23std9exceptionFv(this, -1); }
+    ~ErrorBase_8043C550() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 namespace std {
 struct length_error : ErrorBase_8043C550 {
-    char* text; void* control;
+    char* text;
+    void* control;
     // Construct an owned length-error message with the matching shared deleter ABI.
     length_error() {
         const char* message = soundResourceFormatStrings;
-        struct Allocator { char value; char pad[3]; } allocator;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned int n = strlen(message) + 1;
         text = (char*)__nwa__FUl(2 * n - n);
@@ -924,27 +818,34 @@ extern "C" void* memset(void*, int, unsigned int);
 // Throw std::length_error with the sound-resource pool's "vector length error" type name
 // (the library's inlined capacity check; never returns).
 static inline void ThrowVectorLengthError() {
-    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+    union {
+        double alignment;
+        unsigned char bytes[sizeof(std::length_error)];
+    } storage;
     std::length_error* error = (std::length_error*)storage.bytes;
     error->__ct();
-    exception_runtime::__throw(((exception_runtime::SoundResourceStringPool*)exception_runtime::soundResourceFormatStrings)->lengthErrorType, error,
-        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+    exception_runtime::__throw(
+        ((exception_runtime::SoundResourceStringPool*)exception_runtime::soundResourceFormatStrings)->lengthErrorType,
+        error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
 }
 
 // Return the larger capacity-growth operand by reference.
-static inline const unsigned int& MaxByRef(const unsigned int& a, const unsigned int& b) { return a < b ? b : a; }
+static inline const unsigned int& MaxByRef(const unsigned int& growth, const unsigned int& excess) {
+    return growth < excess ? excess : growth;
+}
 
 struct Realloc_8043C550 {
     void** start;
-    unsigned int elementCount; // number of live elements, NOT an end pointer
-    unsigned int elementCapacity;    // allocated element capacity, NOT an end pointer
+    unsigned int elementCount;    // number of live elements, NOT an end pointer
+    unsigned int elementCapacity; // allocated element capacity, NOT an end pointer
     unsigned int* capp;
     unsigned int before;
 };
 
 // Grow or shrink a list of 4-byte pointers to requestedCount; countSlot/capacitySlot hold its size/capacity.
 // Resize pointer storage, zeroing new entries and transferring ownership on growth.
-static inline void ResizePointerList(void*** slots, unsigned int* countSlot, unsigned int* capacitySlot, unsigned int requestedCount) {
+static inline void ResizePointerList(void*** slots, unsigned int* countSlot, unsigned int* capacitySlot,
+                                     unsigned int requestedCount) {
     // Phase 1: distinguish shrink, in-place growth, and growth needing new storage.
     unsigned int currentCount = *countSlot;
     if (requestedCount > currentCount) {
@@ -954,7 +855,7 @@ static inline void ResizePointerList(void*** slots, unsigned int* countSlot, uns
             if (currentCount + addedCount - cap > kPointerVectorMaxCount - cap)
                 ThrowVectorLengthError();
             unsigned int excess = currentCount + addedCount - cap;
-            Realloc_8043C550 growth = { 0, 0, 0, capacitySlot, 0 };
+            Realloc_8043C550 growth = {0, 0, 0, capacitySlot, 0};
             if (excess > kPointerVectorMaxCount - cap)
                 ThrowVectorLengthError();
             unsigned int newcap;
@@ -974,12 +875,15 @@ static inline void ResizePointerList(void*** slots, unsigned int* countSlot, uns
             growth.elementCapacity = newcap;
             unsigned int oldCount = *countSlot;
             growth.before = oldCount;
-            memset((char*)growth.start + oldCount * kSoundPointerSlotBytes + growth.elementCount * kSoundPointerSlotBytes, 0, addedCount * kSoundPointerSlotBytes);
+            memset((char*)growth.start + oldCount * kSoundPointerSlotBytes +
+                       growth.elementCount * kSoundPointerSlotBytes,
+                   0, addedCount * kSoundPointerSlotBytes);
             void** oldBegin = *slots;
             int oldSize = (oldBegin + *countSlot) - oldBegin;
             growth.elementCount = growth.elementCount + addedCount;
             growth.before = growth.before - oldSize;
-            memcpy((char*)growth.start + growth.before * kSoundPointerSlotBytes, oldBegin, oldSize * kSoundPointerSlotBytes);
+            memcpy((char*)growth.start + growth.before * kSoundPointerSlotBytes, oldBegin,
+                   oldSize * kSoundPointerSlotBytes);
             memset(oldBegin, 0, oldSize * kSoundPointerSlotBytes);
             growth.elementCount = growth.elementCount + oldSize;
             *countSlot = 0;
@@ -1002,8 +906,8 @@ static inline void ResizePointerList(void*** slots, unsigned int* countSlot, uns
 #pragma inline_max_total_size(10000)
 struct ReallocDraft_8043C550 {
     void** start;
-    unsigned int elementCount; // number of live elements, NOT an end pointer
-    unsigned int elementCapacity;    // allocated element capacity, NOT an end pointer
+    unsigned int elementCount;    // number of live elements, NOT an end pointer
+    unsigned int elementCapacity; // allocated element capacity, NOT an end pointer
     unsigned int* capp;
     unsigned int before;
     // Free pointer-vector storage still owned by the growth temporary.
@@ -1033,7 +937,8 @@ static inline unsigned int NextCapacityDraft(unsigned int* capp, unsigned int ex
 }
 
 // Resize the buffer-source pointer vector while preserving allocator exception cleanup.
-static inline void ResizePointerListDraft(void*** slots, unsigned int* countSlot, unsigned int* capacitySlot, unsigned int requestedCount) {
+static inline void ResizePointerListDraft(void*** slots, unsigned int* countSlot, unsigned int* capacitySlot,
+                                          unsigned int requestedCount) {
     unsigned int currentCount = *countSlot;
     if (requestedCount > currentCount) {
         unsigned int addedCount = requestedCount - currentCount;
@@ -1054,20 +959,26 @@ static inline void ResizePointerListDraft(void*** slots, unsigned int* countSlot
             growth.capp = capacitySlot;
             growth.before = 0;
             unsigned int newcap = NextCapacityDraft(capacitySlot, excess);
-            if (newcap > kPointerVectorMaxCount)
-                {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                    std::length_error* error = (std::length_error*)storage.bytes;
-                    error->__ct();
-                    exception_runtime::__throw(((exception_runtime::SoundResourceStringPool*)exception_runtime::soundResourceFormatStrings)->lengthErrorType, error,
-                        (void*)exception_runtime::__dt__Q23std12length_errorFv);
-                }
+            if (newcap > kPointerVectorMaxCount) {
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(std::length_error)];
+                } storage;
+                std::length_error* error = (std::length_error*)storage.bytes;
+                error->__ct();
+                exception_runtime::__throw(
+                    ((exception_runtime::SoundResourceStringPool*)exception_runtime::soundResourceFormatStrings)
+                        ->lengthErrorType,
+                    error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
+            }
             // Phase 2: construct zero slots and move existing pointers under the unwind guard.
             growth.start = (void**)gtl_Audio_Alloc(newcap * kSoundPointerSlotBytes);
             growth.elementCapacity = newcap;
             unsigned int oldCount = *countSlot;
             growth.before = oldCount;
-            memset((char*)growth.start + oldCount * kSoundPointerSlotBytes + growth.elementCount * kSoundPointerSlotBytes, 0, addedCount * kSoundPointerSlotBytes);
+            memset((char*)growth.start + oldCount * kSoundPointerSlotBytes +
+                       growth.elementCount * kSoundPointerSlotBytes,
+                   0, addedCount * kSoundPointerSlotBytes);
             void** oldBegin = *slots;
             void** oldEnd = oldBegin + *countSlot;
             growth.elementCount += addedCount;
@@ -1097,11 +1008,17 @@ static inline void ResizePointerListDraft(void*** slots, unsigned int* countSlot
 struct ConstructDraft_8043C550 {
     char data[0x18];
     // Allocate runtime object storage through the configured audio allocator.
-    static void* operator new(size_t size) { return gtl_Audio_Alloc(size); }
+    static void* operator new(size_t size) {
+        return gtl_Audio_Alloc(size);
+    }
     // Release runtime object storage through the configured audio allocator.
-    static void operator delete(void* p) { gtl_Audio_Free(p); }
+    static void operator delete(void* p) {
+        gtl_Audio_Free(p);
+    }
     // Decode an indexed chunk into a one-reference runtime sound property.
-    ConstructDraft_8043C550(Elem_8043C550* elem) { gtl_CGSPSoundProperty_Ctor((RuntimeSoundProperty*)this, (BorrowedSoundPropertyChunks*)elem); }
+    ConstructDraft_8043C550(Elem_8043C550* elem) {
+        ((gtl::CGSPSoundProperty*)this)->Init((BorrowedSoundPropertyChunks*)elem);
+    }
 };
 
 #pragma use_lmw_stmw on
@@ -1130,7 +1047,7 @@ int gtl_Audio_BuildBufferSources(BufferResourceView* self) {
     i = 0;
     elemOffset = 0;
     slotOffset = 0;
-    for (; i < chunkCount; ) {
+    for (; i < chunkCount;) {
         if (i < self->count)
             elem = (Elem_8043C550*)((char*)self->elems + elemOffset);
         else
@@ -1190,8 +1107,8 @@ static inline void EraseTail(unsigned int* sizep, unsigned int n, const Alloc_80
 }
 struct Realloc_8043B91C {
     ResourceChunkDesc* start;
-    unsigned int elementCount; // number of live elements, NOT an end pointer
-    unsigned int elementCapacity;    // allocated element capacity, NOT an end pointer
+    unsigned int elementCount;    // number of live elements, NOT an end pointer
+    unsigned int elementCapacity; // allocated element capacity, NOT an end pointer
     unsigned int* capp;
     unsigned int before;
     // Initialize an empty parsed-chunk allocation guard.
@@ -1264,7 +1181,7 @@ int gtl_Audio_LoadResourceChunks(ResourceChunkTable* self, RetainedResource* src
                 ResourceChunkDesc* p = (ResourceChunkDesc*)self->base + self->size;
                 while (add != 0) {
                     ResourceChunkDesc zero = {};
-                    new(p) ResourceChunkDesc(zero);
+                    new (p) ResourceChunkDesc(zero);
                     --add;
                     ++p;
                     self->size = self->size + 1;
@@ -1275,21 +1192,25 @@ int gtl_Audio_LoadResourceChunks(ResourceChunkTable* self, RetainedResource* src
                 unsigned int excess = self->size + add - self->cap;
                 Realloc_8043B91C r(&self->cap);
                 unsigned int newcap = NextChunkCapacity(&self->cap, excess, Alloc_8043B91C());
-                if (newcap > 0x07FFFFFFu)
-                    {
-                        union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                        std::length_error* error = (std::length_error*)storage.bytes;
-                        error->__ct();
-                        exception_runtime::__throw(((exception_runtime::SoundResourceStringPool*)exception_runtime::soundResourceFormatStrings)->lengthErrorType, error,
-                            (void*)exception_runtime::__dt__Q23std12length_errorFv);
-                    }
+                if (newcap > 0x07FFFFFFu) {
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(std::length_error)];
+                    } storage;
+                    std::length_error* error = (std::length_error*)storage.bytes;
+                    error->__ct();
+                    exception_runtime::__throw(
+                        ((exception_runtime::SoundResourceStringPool*)exception_runtime::soundResourceFormatStrings)
+                            ->lengthErrorType,
+                        error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                }
                 r.start = (ResourceChunkDesc*)gtl_Audio_Alloc(newcap * 32);
                 r.elementCapacity = newcap;
                 r.before = self->size;
                 ResourceChunkDesc* p = r.start + self->size + r.elementCount;
                 while (add != 0) {
                     ResourceChunkDesc zero = {};
-                    new(p) ResourceChunkDesc(zero);
+                    new (p) ResourceChunkDesc(zero);
                     --add;
                     ++p;
                     ++r.elementCount;
@@ -1300,7 +1221,7 @@ int gtl_Audio_LoadResourceChunks(ResourceChunkTable* self, RetainedResource* src
                 while (srcEnd > oldbase) {
                     --dstEnd;
                     srcEnd -= 32;
-                    new(dstEnd) ResourceChunkDesc(*(ResourceChunkDesc*)srcEnd);
+                    new (dstEnd) ResourceChunkDesc(*(ResourceChunkDesc*)srcEnd);
                     --r.before;
                     ++r.elementCount;
                 }
@@ -1364,7 +1285,7 @@ struct TmpB_8043D5D4 {
     char blk[2][0x30];
 };
 
-struct Pair_8043D5D4 {
+struct StreamSourceInfoPair {
     SourceFormatInfo* a;
     TmpB_8043D5D4* b;
 };
@@ -1401,8 +1322,8 @@ static inline unsigned int NextPointerCapacity(unsigned int* capp, unsigned int 
 
 struct Realloc_8043D5D4 {
     void** start;
-    unsigned int elementCount; // number of live elements, NOT an end pointer
-    unsigned int elementCapacity;    // allocated element capacity, NOT an end pointer
+    unsigned int elementCount;    // number of live elements, NOT an end pointer
+    unsigned int elementCapacity; // allocated element capacity, NOT an end pointer
     unsigned int* capp;
     unsigned int before;
     // Free stream pointer-vector storage still owned by the growth temporary.
@@ -1415,7 +1336,8 @@ struct Realloc_8043D5D4 {
     }
 };
 // Resize stream-source storage, preserving old entries and initializing new slots.
-static inline void ResizePointerList2(void*** slots, unsigned int* countSlot, unsigned int* capacitySlot, unsigned int requestedCount) {
+static inline void ResizePointerList2(void*** slots, unsigned int* countSlot, unsigned int* capacitySlot,
+                                      unsigned int requestedCount) {
     unsigned int currentCount = *countSlot;
     if (requestedCount > currentCount) {
         unsigned int addedCount = requestedCount - currentCount;
@@ -1441,13 +1363,16 @@ static inline void ResizePointerList2(void*** slots, unsigned int* countSlot, un
             growth.elementCapacity = newcap;
             unsigned int oldCount = *countSlot;
             growth.before = oldCount;
-            memset((char*)growth.start + oldCount * kSoundPointerSlotBytes + growth.elementCount * kSoundPointerSlotBytes, 0, addedCount * kSoundPointerSlotBytes);
+            memset((char*)growth.start + oldCount * kSoundPointerSlotBytes +
+                       growth.elementCount * kSoundPointerSlotBytes,
+                   0, addedCount * kSoundPointerSlotBytes);
             void** oldBegin = *slots;
             void** oldEnd = oldBegin + *countSlot;
             growth.elementCount += addedCount;
             int oldSize = ((char*)oldEnd - (char*)oldBegin) / kSoundPointerSlotBytes;
             growth.before -= oldSize;
-            memcpy((char*)growth.start + growth.before * kSoundPointerSlotBytes, oldBegin, oldSize * kSoundPointerSlotBytes);
+            memcpy((char*)growth.start + growth.before * kSoundPointerSlotBytes, oldBegin,
+                   oldSize * kSoundPointerSlotBytes);
             memset(oldBegin, 0, oldSize * kSoundPointerSlotBytes);
             growth.elementCount += oldSize;
             unsigned int oldSizeValue = *countSlot;
@@ -1470,11 +1395,17 @@ static inline void ResizePointerList2(void*** slots, unsigned int* countSlot, un
 struct Construct_8043D5D4 {
     char data[0x18];
     // Allocate runtime object storage through the configured audio allocator.
-    static void* operator new(size_t size) { return gtl_Audio_Alloc(size); }
+    static void* operator new(size_t size) {
+        return gtl_Audio_Alloc(size);
+    }
     // Release runtime object storage through the configured audio allocator.
-    static void operator delete(void* p) { gtl_Audio_Free(p); }
+    static void operator delete(void* p) {
+        gtl_Audio_Free(p);
+    }
     // Decode an indexed stream chunk into a one-reference runtime property.
-    Construct_8043D5D4(Elem_8043D5D4* elem) { gtl_CGSPSoundProperty_Ctor((RuntimeSoundProperty*)this, (BorrowedSoundPropertyChunks*)elem); }
+    Construct_8043D5D4(Elem_8043D5D4* elem) {
+        ((gtl::CGSPSoundProperty*)this)->Init((BorrowedSoundPropertyChunks*)elem);
+    }
 };
 
 #pragma use_lmw_stmw on
@@ -1489,7 +1420,7 @@ int gtl_Audio_BuildStreamSources(Vec_8043D5D4* self) {
     // Phase 1: size both output vectors. Existing memset calls take chunkCount
     // BYTES, not chunkCount*sizeof(void*); keep this original behavior unchanged.
     SourceFormatInfo sourceFormat;
-    Pair_8043D5D4 sourceArguments;
+    StreamSourceInfoPair sourceArguments;
     unsigned int chunkCount = self->count;
     ResizePointerList2(&self->sourceSlots, &self->sourceCount, &self->sourceCapacity, chunkCount);
     // Preserved partial clear: chunkCount BYTES, not chunkCount pointer slots.
@@ -1530,7 +1461,8 @@ int gtl_Audio_BuildStreamSources(Vec_8043D5D4* self) {
                 platformParameters.w[4] = platformChunk->w[4];
                 platformParameters.w[5] = platformChunk->w[5];
                 for (unsigned int channelIndex = 0; channelIndex < 2; channelIndex++) {
-                    memcpy(platformParameters.blk[channelIndex], platformChunk->blk[channelIndex], kSoundAdpcmBlockBytes);
+                    memcpy(platformParameters.blk[channelIndex], platformChunk->blk[channelIndex],
+                           kSoundAdpcmBlockBytes);
                     DCFlushRange(platformParameters.blk[channelIndex], kSoundAdpcmBlockBytes);
                 }
                 sourceArguments.a = &sourceFormat;
@@ -1573,14 +1505,14 @@ void* dtor_8043C4DC(void* self, int deleting) {
     return self;
 }
 
+} // extern "C"
 // Return the stream chunk count through the original pointer-width ABI.
-void* gtl_CGSPSoundStreamResource_vfunc_1(Obj_8043E118* self) {
-    return (void*)self->data->chunkCount;
+void* gtl::CGSPSoundStreamResource::GetChunkCount() {
+    return (void*)data->chunkCount;
 }
 
 // Return the name stored in an indexed 32-byte stream chunk.
-void* gtl_CGSPSoundStreamResource_GetChunkName(Obj_8043E118* self, unsigned int index) {
-    Data_8043E118* data = self->data;
+void* gtl::CGSPSoundStreamResource::GetChunkName(unsigned int index) {
     void* item;
     if (index < data->chunkCount)
         item = (char*)data->chunks + index * kSoundChunkDescriptorBytes;
@@ -1591,7 +1523,9 @@ void* gtl_CGSPSoundStreamResource_GetChunkName(Obj_8043E118* self, unsigned int 
     return 0;
 }
 
-struct StreamCallBase_8043E590 { char reserved00[4]; };
+struct StreamCallBase_8043E590 {
+    char reserved00[4];
+};
 struct StreamCall_8043E590 : StreamCallBase_8043E590 {
     virtual void slot0();
     virtual void slot1();
@@ -1603,12 +1537,12 @@ struct StreamCall_8043E590 : StreamCallBase_8043E590 {
 };
 
 // Copy the selected stream property's 40-byte base block to the caller.
-int gtl_CGSPSoundStreamResource_CopyBaseParams(Obj_8043E118* self, void* index, void* dst) {
+int gtl::CGSPSoundStreamResource::CopyBaseParams(void* index, void* dst) {
     if (dst == 0)
         return 0;
-    void* selectedProperty = ((StreamCall_8043E590*)self)->get(index); // slot 0x20 takes the index: r4 still holds it
+    void* selectedProperty = ((StreamCall_8043E590*)this)->get(index); // slot 0x20 takes the index: r4 still holds it
     if (selectedProperty != 0) {
-        void* p = ((SoundResource8043*)selectedProperty)->data;
+        void* p = (void*)((SoundResourceParameters8043*)selectedProperty)->baseParameters;
         if (p != 0) {
             Memory_Copy(dst, p, kSoundBaseParameterBytes);
             return 1;
@@ -1618,27 +1552,28 @@ int gtl_CGSPSoundStreamResource_CopyBaseParams(Obj_8043E118* self, void* index, 
 }
 
 // Return an indexed stream source, or null for an invalid index.
-void* gtl_CGSPSoundStreamResource_GetSourceAt(Obj_8043E118* self, unsigned int index) {
-    Data_8043E118* data = self->data;
+void* gtl::CGSPSoundStreamResource::GetSourceAt(unsigned int index) {
     if (index >= data->sourceCount)
         return 0;
     return data->sourceSlots[index];
 }
 
 // Return an indexed stream property, or null for an invalid index.
-void* gtl_CGSPSoundStreamResource_GetProperty(Obj_8043E118* self, unsigned int index) {
-    Data_8043E118* data = self->data;
+void* gtl::CGSPSoundStreamResource::GetProperty(unsigned int index) {
     if (index >= data->propertyCount)
         return 0;
     return data->propertySlots[index];
 }
 
+extern "C" {
 extern void __dl__FPv(void*);
-void gtl_ISoundStream_SetSource(void*, void*);
 void SoundProperties_Clear(void*);
 
 #pragma opt_propagation off
-struct ResourceCountStorage { unsigned int data; unsigned int count; };
+struct ResourceCountStorage {
+    unsigned int data;
+    unsigned int count;
+};
 // Clear and free a vector backing allocation, then optionally delete its owner.
 void* ResourceCountStorage_dtor(void* self, int deleting) {
     if (self != 0) {
@@ -1659,34 +1594,45 @@ void* ResourceCountStorage_dtor(void* self, int deleting) {
 }
 
 #pragma opt_propagation reset
+} // extern "C"
 // Attach this resource and its selected property to a sound stream.
-int gtl_CGSPSoundStreamResource_ApplyToStream(Obj_8043E118* self, void* arg, void* dst) {
+int gtl::CGSPSoundStreamResource::ApplyToStream(void* arg, void* dst) {
     if (dst == 0)
         return 0;
-    void* r = ((ResourceCall_8043D2AC*)self)->get(arg); // slot 0x1C takes the index: r4 still holds arg
-    if (r != 0) {
-        gtl_ISoundStream_SetSource(dst, r);
+    void* source = ((ResourceCall_8043D2AC*)this)->get(arg); // slot 0x1C takes the index: r4 still holds arg
+    if (source != 0) {
+        ((gtl::ISoundStream*)dst)->SetSource((const SourceBase804022BC*)source);
     }
-    void* selectedProperty = ((ResourceCall_8043D2AC*)self)->selectProperty(arg);
+    void* selectedProperty = ((ResourceCall_8043D2AC*)this)->selectProperty(arg);
     if (selectedProperty != 0) {
-        gtl_CGSPSoundProperty_ApplyToStream((Struct_8043E448*)selectedProperty, dst);
+        ((gtl::CGSPSoundProperty*)selectedProperty)->ApplyToStream(dst);
     }
     return 1;
 }
 
+extern "C" {
+
 struct Buf_8043E654 {
     char data[0x2C];
     // Allocate runtime object storage through the configured audio allocator.
-    static void* operator new(size_t size) { return gtl_Audio_Alloc(size); }
+    static void* operator new(size_t size) {
+        return gtl_Audio_Alloc(size);
+    }
     // Release constructor storage through the audio-allocation cleanup adapter.
-    static void operator delete(void* p) { dtor_8043D260(p); }
+    static void operator delete(void* p) {
+        dtor_8043D260(p);
+    }
     // Clear the newly allocated buffer-resource storage words.
-    Buf_8043E654() { SoundProperties_Clear(this); }
+    Buf_8043E654() {
+        SoundProperties_Clear(this);
+    }
 };
 struct Base_8043E654 {
     unsigned int refs;
     // Destroy the sound-property reference base without deleting the enclosing object.
-    ~Base_8043E654() { dtor_8043C4DC(this, 0); }
+    ~Base_8043E654() {
+        dtor_8043C4DC(this, 0);
+    }
 };
 struct Obj_8043E654 : Base_8043E654 {
     void* vt;
@@ -1696,19 +1642,23 @@ struct Obj_8043E654 : Base_8043E654 {
         refs = 1;
         vt = (void*)__vt__Q23gtl23CGSPSoundBufferResource;
         buf = new Buf_8043E654();
-        void* r5 = *(void**)((char*)self + 4);
-        void* r4 = *(void**)self;
-        ((BufferResourceView*)buf)->sourceStorage = r5;
-        void* r3v = *(void**)r5;
-        *(unsigned int*)r5 = (unsigned int)r3v + 1;
-        if (gtl_Audio_LoadResourceChunks((ResourceChunkTable*)buf, (RetainedResource*)r4) != 0) {
+        void* sourceStorage = *(void**)((char*)self + 4);
+        void* retainedResource = *(void**)self;
+        ((BufferResourceView*)buf)->sourceStorage = sourceStorage;
+        void* r3v = *(void**)sourceStorage;
+        *(unsigned int*)sourceStorage = (unsigned int)r3v + 1;
+        if (gtl_Audio_LoadResourceChunks((ResourceChunkTable*)buf, (RetainedResource*)retainedResource) != 0) {
             gtl_Audio_BuildBufferSources((BufferResourceView*)buf);
         }
     }
     // Allocate runtime object storage through the configured audio allocator.
-    static void* operator new(size_t size) { return gtl_Audio_Alloc(size); }
+    static void* operator new(size_t size) {
+        return gtl_Audio_Alloc(size);
+    }
     // Release constructor storage through the audio-allocation cleanup adapter.
-    static void operator delete(void* p) { dtor_8043D260(p); }
+    static void operator delete(void* p) {
+        dtor_8043D260(p);
+    }
 };
 #pragma use_lmw_stmw on
 // Allocate a reference-counted buffer resource and build its sources.
@@ -1733,45 +1683,55 @@ void SoundProperties_Clear(void* self) {
     ((SoundPropertyWords8043*)self)->loopEnd = 0;
     ((SoundPropertyWords8043*)self)->unk_28 = 0;
 }
+} // extern "C"
+
 // Free the owned envelope, curve, spatial and base parameter blocks.
-void* gtl_CGSPSoundProperty_dtor(RuntimeSoundProperty* self, int deleting) {
-    if (self != 0) {
-        RuntimeSoundEnvelope* data = self->envelope;
-        self->vtable = (void*)__vt__Q23gtl17CGSPSoundProperty;
+void* gtl::CGSPSoundProperty::Destroy(int deleting) {
+    if (this != 0) {
+        RuntimeSoundEnvelope* data = envelope;
+        vtable = (void*)__vt__Q23gtl17CGSPSoundProperty;
         if (data != 0) {
             gtl_Audio_Free(data);
-            self->envelope = 0;
+            envelope = 0;
         }
-        if (self->distanceCurve != 0) {
-            if (self->distanceCurve->points != 0) {
-                gtl_Audio_Free(self->distanceCurve->points);
-                self->distanceCurve->points = 0;
+        if (distanceCurve != 0) {
+            if (distanceCurve->points != 0) {
+                gtl_Audio_Free(distanceCurve->points);
+                distanceCurve->points = 0;
             }
-            if (self->distanceCurve != 0) {
-                gtl_Audio_Free(self->distanceCurve);
-                self->distanceCurve = 0;
+            if (distanceCurve != 0) {
+                gtl_Audio_Free(distanceCurve);
+                distanceCurve = 0;
             }
         }
-        if (self->channelParameters != 0) {
-            gtl_Audio_Free(self->channelParameters);
-            self->channelParameters = 0;
+        if (channelParameters != 0) {
+            gtl_Audio_Free(channelParameters);
+            channelParameters = 0;
         }
-        if (self->baseParameters != 0) {
-            gtl_Audio_Free(self->baseParameters);
-            self->baseParameters = 0;
+        if (baseParameters != 0) {
+            gtl_Audio_Free(baseParameters);
+            baseParameters = 0;
         }
         if (deleting > 0)
-            gtl_Audio_Free(self);
+            gtl_Audio_Free(this);
     }
-    return self;
+    return this;
 }
 
+extern "C" {
+
 extern unsigned int s_soundResourceTagGSND, s_soundChunkTagHEAD, s_soundResourceDataChunkTag, s_soundBsicChunkTag;
-extern unsigned int s_audioNameChunkTag, s_audioChunkTag_EV_C, s_audioChunkTag_RO_C, s_soundResourceEmitChunkTag, s_soundResourceTagGCEX;
+extern unsigned int s_audioNameChunkTag, s_audioChunkTag_EV_C, s_audioChunkTag_RO_C, s_soundResourceEmitChunkTag,
+    s_soundResourceTagGCEX;
 
 void gtl_String_ReplaceRange(void*, unsigned int, unsigned int, const char*, const char*, const void*);
-struct StreamCreateArgs { RetainedResource* source; const char* volatile name; };
-struct Alloc_8043E700 { char value; };
+struct StreamCreateArgs {
+    RetainedResource* source;
+    const char* volatile name;
+};
+struct Alloc_8043E700 {
+    char value;
+};
 #pragma inline_depth(8)
 struct String_8043E700 {
     volatile unsigned int words[3];
@@ -1798,24 +1758,36 @@ struct StreamData_8043E700 {
     String_8043E700 str;
     unsigned int tail[6];
     // Allocate runtime object storage through the configured audio allocator.
-    static void* operator new(size_t size) { return gtl_Audio_Alloc(size); }
+    static void* operator new(size_t size) {
+        return gtl_Audio_Alloc(size);
+    }
     // Clear the newly allocated stream-resource storage words.
-    StreamData_8043E700() { SoundStreamProperties_Clear((Struct_8043D598*)this); }
+    StreamData_8043E700() {
+        SoundStreamProperties_Clear((Struct_8043D598*)this);
+    }
 };
 struct StreamBase_8043E700 {
     unsigned int refs;
     void* vt;
     // Start the runtime stream-resource base with one reference.
-    StreamBase_8043E700() { refs = 1; }
+    StreamBase_8043E700() {
+        refs = 1;
+    }
     // Destroy the stream-resource base without deleting its enclosing allocation.
-    ~StreamBase_8043E700() { StreamBase_dtor(this, 0); }
+    ~StreamBase_8043E700() {
+        StreamBase_dtor(this, 0);
+    }
 };
 struct Stream_8043E700 : StreamBase_8043E700 {
     StreamData_8043E700* data;
     // Allocate runtime object storage through the configured audio allocator.
-    static void* operator new(size_t size) { return gtl_Audio_Alloc(size); }
+    static void* operator new(size_t size) {
+        return gtl_Audio_Alloc(size);
+    }
     // Release runtime object storage through the configured audio allocator.
-    static void operator delete(void* p) { gtl_Audio_Free(p); }
+    static void operator delete(void* p) {
+        gtl_Audio_Free(p);
+    }
     // Copy the resource filename, retain/parse its source and construct stream outputs.
     Stream_8043E700(StreamCreateArgs* args) {
         vt = __vt__Q23gtl23CGSPSoundStreamResource;

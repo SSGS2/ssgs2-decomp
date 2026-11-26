@@ -4,9 +4,9 @@
 #define CLASSES_TEXTUREPALETTESTATE_H
 struct TexturePaletteState {
     unsigned int flags; // 0x0: GetDescription extracts bits 13..15
-    void* data; // 0x4: DCFlushRange argument
+    void* data;         // 0x4: DCFlushRange argument
     char pad_008[4];
-    int paletteType; // 0xC: TexturePalette_GetEntryCountForType input
+    int paletteType;   // 0xC: TexturePalette_GetEntryCountForType input
     int textureFormat; // 0x10: Texture_CalculateMipStorageSize format input
 };
 #define OFF(f, o) typedef char TexturePaletteState_off_##f[((int)&((TexturePaletteState*)0)->f == (o)) ? 1 : -1]

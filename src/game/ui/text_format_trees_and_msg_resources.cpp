@@ -1,15 +1,27 @@
+// Formatted text: the tree and string storage behind messages with sound tags and font markup,
+// plus the stream, locale and message-resource classes those messages are built on.
+
 #include <decomp/static_init.h>
 #include "classes/CSharedDoc.h"
-
-// Translation unit 0x800AE594-0x800AF820 (17 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CMsgEcbResource.h"
+#include "classes/CMsgDrawSoundTagMap.h"
 
 extern "C" {
 
 // Small-string payload and locale table views used by the formatting helper.
-struct FormatStringView { unsigned int flags; unsigned int length; void* data; };
-struct LocaleFacetTable { void** entries; unsigned int count; };
-struct IOSAdjustment { char prefix[0x3c]; int virtualBaseOffset; };
+struct FormatStringView {
+    unsigned int flags;
+    unsigned int length;
+    void* data;
+};
+struct LocaleFacetTable {
+    void** entries;
+    unsigned int count;
+};
+struct IOSAdjustment {
+    char prefix[0x3c];
+    int virtualBaseOffset;
+};
 struct IOStreamBases {
     void* outputAdjustment;
     char outputState[8];
@@ -17,7 +29,10 @@ struct IOStreamBases {
     char inputState[4];
     char sharedIos[1];
 };
-struct InputStreamBase { char inputState[0x0c]; char ios[1]; };
+struct InputStreamBase {
+    char inputState[0x0c];
+    char ios[1];
+};
 struct StringBufferMembers {
     char streamState[0x1c];
     unsigned int localeFlags;
@@ -28,7 +43,6 @@ struct StringBufferMembers {
 typedef char IOStreamBases_ios_offset[((int)&((IOStreamBases*)0)->sharedIos == 0x14) ? 1 : -1];
 typedef char StringBuffer_string_offset[((int)&((StringBufferMembers*)0)->string == 0x2c) ? 1 : -1];
 typedef char StringBuffer_locale_offset[((int)&((StringBufferMembers*)0)->localeReference == 0x20) ? 1 : -1];
-
 
 void __vt__15CMsgEcbResource();
 extern float kFloat_6_2831855;
@@ -57,106 +71,137 @@ extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12length_error[];
 struct ScriptAliasStringPool {
-    char vectorLengthError[20]; // 0
+    char vectorLengthError[20];   // 0
     char lengthErrorTypeName[55]; // 20
-    char endCommand[4]; // 75
-    char testAliasCommand[11]; // 79
-    char treeLengthError[26]; // 90
-    char outOfRange[27]; // 116
-    char outOfRangeTypeName[55]; // 143
-    char stringLengthError[27]; // 198
-    char reserveLengthError[35]; // 225
+    char endCommand[4];           // 75
+    char testAliasCommand[11];    // 79
+    char treeLengthError[26];     // 90
+    char outOfRange[27];          // 116
+    char outOfRangeTypeName[55];  // 143
+    char stringLengthError[27];   // 198
+    char reserveLengthError[35];  // 225
 };
 extern ScriptAliasStringPool scriptAliasExceptionStrings;
 void __dl__FPv(void*);
 void __dt__Q33std6detail16char_array_guardFv(void*);
 
-struct AE594Node { AE594Node* left; AE594Node* right; int parentLink; int key; };
+struct AE594Node {
+    AE594Node* left;
+    AE594Node* right;
+    int parentLink;
+    int key;
+};
 
-struct TreeHead { int count; void* root; void* firstNode; int pad; };
-struct TreeLink { TreeLink* left; TreeLink* right; TreeLink* parent; int color; int key; };
-struct Pair { void* first; void* second; };
+struct TreeHead {
+    int count;
+    void* root;
+    void* firstNode;
+    int pad;
+};
+struct TreeLink {
+    TreeLink* left;
+    TreeLink* right;
+    TreeLink* parent;
+    int color;
+    int key;
+};
+struct Pair {
+    void* first;
+    void* second;
+};
 
-struct AE830Node {
-    AE830Node* left;
-    AE830Node* right;
+struct TextFormatTreeNode {
+    TextFormatTreeNode* left;
+    TextFormatTreeNode* right;
     int parentLink;
     int key;
     unsigned int flags;
     int stringLength;
     void* owned;
 };
-struct AF0C8Object;
-void TextFormatTree_DestroyStringValue(void*, AF0C8Object*);
+struct TextFormatTreeValue;
+void TextFormatTree_DestroyStringValue(void*, TextFormatTreeValue*);
 
-void TextFormatTree_FreeStringSubtree(void*, AE830Node*);
+void TextFormatTree_FreeStringSubtree(void*, TextFormatTreeNode*);
 
 // Finish a non-null leaf of the expanded traversal; deeper descendants use the recursive entry point.
-static inline void FreeTextFormatLeaf(void* allocator, AE830Node* leaf) {
-    if (leaf->left) TextFormatTree_FreeStringSubtree(allocator, leaf->left);
-    if (leaf->right) TextFormatTree_FreeStringSubtree(allocator, leaf->right);
-    TextFormatTree_DestroyStringValue(allocator, (AF0C8Object*)((char*)&leaf->key));
+static inline void FreeTextFormatLeaf(void* allocator, TextFormatTreeNode* leaf) {
+    if (leaf->left)
+        TextFormatTree_FreeStringSubtree(allocator, leaf->left);
+    if (leaf->right)
+        TextFormatTree_FreeStringSubtree(allocator, leaf->right);
+    TextFormatTree_DestroyStringValue(allocator, (TextFormatTreeValue*)((char*)&leaf->key));
     appFreeUni__FPv(leaf);
 }
 
 // Destroy string-owning tree nodes in postorder; only heap-backed string values release memory.
 // The top traversal levels remain expanded; the shared leaf helper states their ownership rule.
-void TextFormatTree_FreeStringSubtree(void* allocator, AE830Node* root) {
+void TextFormatTree_FreeStringSubtree(void* allocator, TextFormatTreeNode* root) {
     // Postorder ownership invariant: finish left and right descendants before freeing
     // the node's heap-tagged string and the node itself. Deeper branches recurse;
     // the first levels are expanded. allocator is forwarded as the owning tree context.
-    AE830Node* firstLeft = root->left; AE830Node* node = firstLeft;
+    TextFormatTreeNode* firstLeft = root->left;
+    TextFormatTreeNode* node = firstLeft;
     if (node) {
-        AE830Node* child = node->left;
+        TextFormatTreeNode* child = node->left;
         if (0 != child) {
-            AE830Node* leftChild = child->left;
-            AE830Node* leaf = leftChild;
+            TextFormatTreeNode* leftChild = child->left;
+            TextFormatTreeNode* leaf = leftChild;
             if (leaf != 0) {
                 FreeTextFormatLeaf(allocator, leaf);
             }
-            AE830Node* rightChild = child->right; leaf = rightChild;
+            TextFormatTreeNode* rightChild = child->right;
+            leaf = rightChild;
             if (leaf) {
                 FreeTextFormatLeaf(allocator, leaf);
             }
-            if (((char*)&child->key) != 0 && ((char*)&child->flags) != 0 && (child->flags >> 31) != 0) appFreeUni__FPv(child->owned);
+            if (((char*)&child->key) != 0 && ((char*)&child->flags) != 0 && (child->flags >> 31) != 0)
+                appFreeUni__FPv(child->owned);
             appFreeUni__FPv(child);
         }
-        AE830Node* rightBranch = node->right; child = rightBranch;
+        TextFormatTreeNode* rightBranch = node->right;
+        child = rightBranch;
         if (child != 0) {
-            AE830Node* leftChild = child->left; AE830Node* leaf = leftChild;
+            TextFormatTreeNode* leftChild = child->left;
+            TextFormatTreeNode* leaf = leftChild;
             if (leaf != 0) {
                 FreeTextFormatLeaf(allocator, leaf);
             }
-            AE830Node* rightChild = child->right;
+            TextFormatTreeNode* rightChild = child->right;
             leaf = rightChild;
             if (leaf != 0) {
                 FreeTextFormatLeaf(allocator, leaf);
             }
-            if (((char*)&child->key) != 0 && ((char*)&child->flags) != 0 && (child->flags >> 31) != 0) appFreeUni__FPv(child->owned);
+            if (((char*)&child->key) != 0 && ((char*)&child->flags) != 0 && (child->flags >> 31) != 0)
+                appFreeUni__FPv(child->owned);
             appFreeUni__FPv(child);
         }
-        if (((char*)&node->key) != 0 && ((char*)&node->flags) != 0 && (node->flags >> 31) != 0) appFreeUni__FPv(node->owned);
+        if (((char*)&node->key) != 0 && ((char*)&node->flags) != 0 && (node->flags >> 31) != 0)
+            appFreeUni__FPv(node->owned);
         appFreeUni__FPv(node);
     }
-    AE830Node* firstRight = root->right; node = firstRight;
+    TextFormatTreeNode* firstRight = root->right;
+    node = firstRight;
     if (0 != node) {
-        AE830Node* leftBranch = node->left;
-        AE830Node* child = leftBranch;
+        TextFormatTreeNode* leftBranch = node->left;
+        TextFormatTreeNode* child = leftBranch;
         if (child != 0) {
-            AE830Node* leaf = child->left;
+            TextFormatTreeNode* leaf = child->left;
             if (leaf != 0) {
                 FreeTextFormatLeaf(allocator, leaf);
             }
-            AE830Node* rightChild = child->right; leaf = rightChild;
+            TextFormatTreeNode* rightChild = child->right;
+            leaf = rightChild;
             if (leaf != 0) {
                 FreeTextFormatLeaf(allocator, leaf);
             }
-            if (((char*)&child->key) != 0 && ((char*)&child->flags) != 0 && (child->flags >> 31) != 0) appFreeUni__FPv(child->owned);
+            if (((char*)&child->key) != 0 && ((char*)&child->flags) != 0 && (child->flags >> 31) != 0)
+                appFreeUni__FPv(child->owned);
             appFreeUni__FPv(child);
         }
         child = node->right;
         if (0 != child) {
-            AE830Node* leaf = child->left;
+            TextFormatTreeNode* leaf = child->left;
             if (leaf != 0) {
                 FreeTextFormatLeaf(allocator, leaf);
             }
@@ -164,13 +209,16 @@ void TextFormatTree_FreeStringSubtree(void* allocator, AE830Node* root) {
             if (leaf != 0) {
                 FreeTextFormatLeaf(allocator, leaf);
             }
-            if (((char*)&child->key) != 0 && ((char*)&child->flags) != 0 && (child->flags >> 31) != 0) appFreeUni__FPv(child->owned);
+            if (((char*)&child->key) != 0 && ((char*)&child->flags) != 0 && (child->flags >> 31) != 0)
+                appFreeUni__FPv(child->owned);
             appFreeUni__FPv(child);
         }
-        if (((char*)&node->key) != 0 && ((char*)&node->flags) != 0 && (node->flags >> 31) != 0) appFreeUni__FPv(node->owned);
+        if (((char*)&node->key) != 0 && ((char*)&node->flags) != 0 && (node->flags >> 31) != 0)
+            appFreeUni__FPv(node->owned);
         appFreeUni__FPv(node);
     }
-    if (((char*)&root->key) != 0 && ((char*)&root->flags) != 0 && (root->flags >> 31) != 0) appFreeUni__FPv(root->owned);
+    if (((char*)&root->key) != 0 && ((char*)&root->flags) != 0 && (root->flags >> 31) != 0)
+        appFreeUni__FPv(root->owned);
     appFreeUni__FPv(root);
 }
 
@@ -187,14 +235,18 @@ void RBTree_FreeTrivialSubtree(void* allocator, Pair* pair) {
         if (b) {
             c = (Pair*)b->first;
             if (c) {
-                if (c->first) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
-                if (c->second) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
+                if (c->first)
+                    RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
+                if (c->second)
+                    RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
                 appFreeUni__FPv(c);
             }
             c = (Pair*)b->second;
             if (c) {
-                if (c->first) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
-                if (c->second) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
+                if (c->first)
+                    RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
+                if (c->second)
+                    RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
                 appFreeUni__FPv(c);
             }
             appFreeUni__FPv(b);
@@ -203,14 +255,18 @@ void RBTree_FreeTrivialSubtree(void* allocator, Pair* pair) {
         if (b) {
             c = (Pair*)b->first;
             if (c) {
-                if (c->first) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
-                if (c->second) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
+                if (c->first)
+                    RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
+                if (c->second)
+                    RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
                 appFreeUni__FPv(c);
             }
             c = (Pair*)b->second;
             if (c) {
-                if (c->first) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
-                if (c->second) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
+                if (c->first)
+                    RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
+                if (c->second)
+                    RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
                 appFreeUni__FPv(c);
             }
             appFreeUni__FPv(b);
@@ -224,14 +280,18 @@ void RBTree_FreeTrivialSubtree(void* allocator, Pair* pair) {
             if (b) {
                 Pair* c = (Pair*)b->first;
                 if (c) {
-                    if (c->first) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
-                    if (c->second) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
+                    if (c->first)
+                        RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
+                    if (c->second)
+                        RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
                     appFreeUni__FPv(c);
                 }
                 c = (Pair*)b->second;
                 if (c) {
-                    if (c->first) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
-                    if (c->second) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
+                    if (c->first)
+                        RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
+                    if (c->second)
+                        RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
                     appFreeUni__FPv(c);
                 }
                 appFreeUni__FPv(b);
@@ -240,14 +300,18 @@ void RBTree_FreeTrivialSubtree(void* allocator, Pair* pair) {
             if (b) {
                 Pair* c = (Pair*)b->first;
                 if (c) {
-                    if (c->first) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
-                    if (c->second) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
+                    if (c->first)
+                        RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
+                    if (c->second)
+                        RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
                     appFreeUni__FPv(c);
                 }
                 c = (Pair*)b->second;
                 if (c) {
-                    if (c->first) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
-                    if (c->second) RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
+                    if (c->first)
+                        RBTree_FreeTrivialSubtree(allocator, (Pair*)c->first);
+                    if (c->second)
+                        RBTree_FreeTrivialSubtree(allocator, (Pair*)c->second);
                     appFreeUni__FPv(c);
                 }
                 appFreeUni__FPv(b);
@@ -258,19 +322,60 @@ void RBTree_FreeTrivialSubtree(void* allocator, Pair* pair) {
     appFreeUni__FPv(pair);
 }
 
-struct SmallNode { unsigned char b[0x14]; };
-struct LargeNode { unsigned char b[0x1c]; };
-struct LocalString { void* data; unsigned char flags[4]; };
-struct LocalIter { void* first; void* last; };
+struct SmallNode {
+    unsigned char b[0x14];
+};
+struct LargeNode {
+    unsigned char b[0x1c];
+};
+struct LocalString {
+    void* data;
+    unsigned char flags[4];
+};
+struct LocalIter {
+    void* first;
+    void* last;
+};
 
-struct AEC14Node { void* left; void* right; AEC14Node* parent; void* first; void* second; };
+struct PairTreeNode {
+    void* left;
+    void* right;
+    PairTreeNode* parent;
+    void* first;
+    void* second;
+};
 // Free an uncommitted two-pointer-tree node on exceptional exit.
-struct AEC14Guard { void* a; AEC14Node* volatile p; ~AEC14Guard() { void* q = p; if (q) appFreeUni__FPv(q); } };
-struct AEC14Msg { void* vtable; int refs; int count; char* buf; };
-struct AEC14Exc { void* vtbl; char* volatile buf; AEC14Msg* ref; int pad; };
+struct PairTreeNodeGuard {
+    void* a;
+    PairTreeNode* volatile p;
+    ~PairTreeNodeGuard() {
+        void* q = p;
+        if (q)
+            appFreeUni__FPv(q);
+    }
+};
+struct AEC14Msg {
+    void* vtable;
+    int refs;
+    int count;
+    char* buf;
+};
+struct AEC14Exc {
+    void* vtbl;
+    char* volatile buf;
+    AEC14Msg* ref;
+    int pad;
+};
 void __dla__FPv(void*);
 // Free diagnostic character storage until its shared owner takes responsibility.
-struct AEC14Str { void* buf; void* ref; ~AEC14Str() { if (buf) __dla__FPv(buf); } };
+struct AEC14Str {
+    void* buf;
+    void* ref;
+    ~AEC14Str() {
+        if (buf)
+            __dla__FPv(buf);
+    }
+};
 
 // Copy a two-pointer tree value while preserving its exception and volatile-store boundaries.
 inline void AEC14SetPair(Pair* slot, Pair* value) {
@@ -279,12 +384,18 @@ inline void AEC14SetPair(Pair* slot, Pair* value) {
     *(void* volatile*)&slot->first = first;
     try {
         slot->second = second;
-    } catch (...) { throw; }
+    } catch (...) {
+        throw;
+    }
 }
 
 // Assign the parent link through the original exception boundary.
-inline void AEC14SetParent(AEC14Node** p, Pair* w) {
-    try { *p = (AEC14Node*)w; } catch (...) { throw; }
+inline void AEC14SetParent(PairTreeNode** p, Pair* w) {
+    try {
+        *p = (PairTreeNode*)w;
+    } catch (...) {
+        throw;
+    }
 }
 
 #pragma push
@@ -293,7 +404,7 @@ inline void AEC14SetParent(AEC14Node** p, Pair* w) {
 // Allocate a BP-entry node, attach it on the chosen side, and rebalance the tree.
 void* BpEntryTree_InsertNode(TreeHead* self, Pair* where, int left, int add, Pair* value) {
     volatile unsigned char tagC __attribute__((aligned(4)));
-    AEC14Guard guard;
+    PairTreeNodeGuard guard;
     // Size check: throws std::length_error("tree::insert length error") when the map is full (library code; the
     // multi-step exception construction below is the inlined std::length_error constructor).
     if ((unsigned int)(self->count + 0x10000) == 0xffffu) {
@@ -311,7 +422,12 @@ void* BpEntryTree_InsertNode(TreeHead* self, Pair* where, int left, int add, Pai
             tmp.buf = buf;
             tmp.ref = (void*)&tagA;
             AEC14Msg* _m = (AEC14Msg*)__nw__FUl(0x10);
-            if (_m) { _m->refs = 1; _m->count = 1; _m->vtable = s_sharedCharDeleterVtable; _m->buf = buf; }
+            if (_m) {
+                _m->refs = 1;
+                _m->count = 1;
+                _m->vtable = s_sharedCharDeleterVtable;
+                _m->buf = buf;
+            }
             exc.ref = _m;
             tmp.buf = 0;
         }
@@ -320,11 +436,11 @@ void* BpEntryTree_InsertNode(TreeHead* self, Pair* where, int left, int add, Pai
         __throw((char*)(scriptAliasExceptionStrings.lengthErrorTypeName), ep, (void*)__dt__Q23std12length_errorFv);
     }
     tagC = 0;
-    AEC14Node* node = (AEC14Node*)appMallocDummy__FUl(0x14);
-    AEC14Node* volatile allocA;
-    AEC14Node* volatile allocB;
+    PairTreeNode* node = (PairTreeNode*)appMallocDummy__FUl(0x14);
+    PairTreeNode* volatile allocA;
+    PairTreeNode* volatile allocB;
     allocB = node;
-    AEC14Node* saved = node;
+    PairTreeNode* saved = node;
     allocA = node;
     guard.a = (char*)&self->root;
     guard.p = node;
@@ -335,15 +451,23 @@ void* BpEntryTree_InsertNode(TreeHead* self, Pair* where, int left, int add, Pai
     node->right = 0;
     guard.p = 0;
     node->left = 0;
-    AEC14Node** pslot = &node->parent;
+    PairTreeNode** pslot = &node->parent;
     if (pslot != 0) {
-        try { *pslot = (AEC14Node*)where; } catch (...) { throw; }
+        try {
+            *pslot = (PairTreeNode*)where;
+        } catch (...) {
+            throw;
+        }
     }
-    if (left) where->first = saved; else where->second = saved;
+    if (left)
+        where->first = saved;
+    else
+        where->second = saved;
     int old = self->count;
     self->count = old + 1;
     RBTree_RebalanceAfterInsert(saved, (int)self->root, old);
-    if (add) self->firstNode = saved;
+    if (add)
+        self->firstNode = saved;
     return saved;
 }
 #pragma pop
@@ -360,34 +484,80 @@ void* BpEntryTree_InsertNode(TreeHead* self, Pair* where, int left, int add, Pai
 // flags bit 31 selects heap ownership: length/data are meaningful only in that mode;
 // otherwise bytes at &flags+1 (including the length/data words) are INLINE characters.
 // AE5F4Guard owns only the unlinked node allocation; string-copy calls keep their existing unwind boundaries.
-struct SoundTagMapHead { int count; void* root; int treeState; void* firstNode; };
-struct SoundTagMapValue { void* glyphIndexWord; unsigned int flags; unsigned int length; char* data; };
-struct SoundTagMapNode { SoundTagMapNode* left; SoundTagMapNode* right; SoundTagMapNode* parent; void* glyphIndexWord; unsigned int flags; unsigned int length; char* data; };
+struct SoundTagMapValue {
+    void* glyphIndexWord;
+    unsigned int flags;
+    unsigned int length;
+    char* data;
+};
+struct SoundTagMapNode {
+    SoundTagMapNode* left;
+    SoundTagMapNode* right;
+    SoundTagMapNode* parent;
+    void* glyphIndexWord;
+    unsigned int flags;
+    unsigned int length;
+    char* data;
+};
 // Free an uncommitted formatted-text-map node on exceptional exit.
-struct AE5F4Guard { void* a; SoundTagMapNode* volatile p; ~AE5F4Guard() { void* q = p; if (q) appFreeUni__FPv(q); } };
+struct AE5F4Guard {
+    void* a;
+    SoundTagMapNode* volatile p;
+    ~AE5F4Guard() {
+        void* q = p;
+        if (q)
+            appFreeUni__FPv(q);
+    }
+};
 // Initialize shared diagnostic ownership with one reference in each counter.
-struct SharedMessageBlock { void* vtable; int refs; int count; char* buf; SharedMessageBlock(char* b) throw() { refs = 1; count = 1; vtable = s_sharedCharDeleterVtable; buf = b; } };
-struct SoundTagMapAllocs { SoundTagMapNode* volatile a; SoundTagMapNode* volatile b; };
-struct LengthErrorStorage { void* vtbl; char* volatile buf; SharedMessageBlock* ref; int pad; };
+struct SharedMessageBlock {
+    void* vtable;
+    int refs;
+    int count;
+    char* buf;
+    SharedMessageBlock(char* b) throw() {
+        refs = 1;
+        count = 1;
+        vtable = s_sharedCharDeleterVtable;
+        buf = b;
+    }
+};
+struct SoundTagMapAllocs {
+    SoundTagMapNode* volatile a;
+    SoundTagMapNode* volatile b;
+};
+struct LengthErrorStorage {
+    void* vtbl;
+    char* volatile buf;
+    SharedMessageBlock* ref;
+    int pad;
+};
 struct AE5F4Str {
     void* volatile buf;
     void* volatile ref;
     // Free uncommitted diagnostic character storage.
-    ~AE5F4Str() { if (buf) __dla__FPv(buf); }
+    ~AE5F4Str() {
+        if (buf)
+            __dla__FPv(buf);
+    }
 };
 
 // Assign a formatted-text node parent through the original exception boundary.
-inline void SoundTagNode_SetParent(SoundTagMapNode** p, SoundTagMapNode* w) {
-    try { *p = w; } catch (...) { throw; }
+inline void SoundTagNode_SetParent(SoundTagMapNode** parentSlot, SoundTagMapNode* parentNode) {
+    try {
+        *parentSlot = parentNode;
+    } catch (...) {
+        throw;
+    }
 }
 
 #pragma push
 #pragma use_lmw_stmw on
 #pragma opt_propagation off
 // Insert a formatted-text value, copying inline strings or allocating heap strings as required.
-void* CMsgDrawSoundTagMap_InsertNode(SoundTagMapHead* self, SoundTagMapNode* where, int left, int add, SoundTagMapValue* value) {
+void* CMsgDrawSoundTagMap::InsertNode(SoundTagMapNode* where, int left, int add, SoundTagMapValue* value) {
     volatile unsigned char tagC __attribute__((aligned(4)));
-    if ((unsigned int)(self->count + 0x10000) == 0xffffu) {
+    if ((unsigned int)(count + 0x10000) == 0xffffu) {
         const char* msg = (const char*)scriptAliasExceptionStrings.treeLengthError;
         LengthErrorStorage exc;
         LengthErrorStorage* ep = &exc;
@@ -401,8 +571,13 @@ void* CMsgDrawSoundTagMap_InsertNode(SoundTagMapHead* self, SoundTagMapNode* whe
         tmp.buf = buf;
         tmp.ref = (void*)&tagA;
         SharedMessageBlock* _m = (SharedMessageBlock*)__nw__FUl(0x10);
-if (_m) { _m->refs = 1; _m->count = 1; _m->vtable = s_sharedCharDeleterVtable; _m->buf = buf; }
-exc.ref = _m;
+        if (_m) {
+            _m->refs = 1;
+            _m->count = 1;
+            _m->vtable = s_sharedCharDeleterVtable;
+            _m->buf = buf;
+        }
+        exc.ref = _m;
         tmp.buf = 0;
         strcpy(exc.buf, msg);
         ep->vtbl = __vt__Q23std12length_error;
@@ -417,7 +592,7 @@ exc.ref = _m;
     SoundTagMapNode* volatile allocB;
     allocB = alloc;
     allocA = alloc;
-    guard.a = (char*)&self->root;
+    guard.a = (char*)&root;
     guard.p = alloc;
     // Phase 2: copy the key and inline bytes, or deep-copy an owned heap string.
     SoundTagMapValue* slot = (SoundTagMapValue*)&alloc->glyphIndexWord;
@@ -458,18 +633,23 @@ exc.ref = _m;
     if (pslot != 0) {
         SoundTagNode_SetParent(pslot, where);
     }
-    if (left) where->left = node; else where->right = node;
-    int old = self->count;
-    self->count = old + 1;
-    RBTree_RebalanceAfterInsert(node, (int)self->root, old);
-    if (add) self->firstNode = node;
+    if (left)
+        where->left = node;
+    else
+        where->right = node;
+    int old = count;
+    count = old + 1;
+    RBTree_RebalanceAfterInsert(node, (int)root, old);
+    if (add)
+        firstNode = node;
     return node;
 }
 #pragma opt_propagation reset
 #pragma pop
 
 // Find an insertion parent and predecessor while returning side and uniqueness hints.
-void* IntegerKeyTree_FindInsertionPosition(AE594Node* self, int* key, AE594Node** out, unsigned char* flagA, unsigned char* flagB) {
+void* IntegerKeyTree_FindInsertionPosition(AE594Node* self, int* key, AE594Node** out, unsigned char* flagA,
+                                           unsigned char* flagB) {
     *out = 0;
     AE594Node* parent = (AE594Node*)&self->right;
     AE594Node* node = self->right;
@@ -490,14 +670,19 @@ void* IntegerKeyTree_FindInsertionPosition(AE594Node* self, int* key, AE594Node*
     return parent;
 }
 
-struct OwnedPointerPair { void* first; void* owned; };
+struct OwnedPointerPair {
+    void* first;
+    void* owned;
+};
 
 // Free the owned second pointer, then optionally delete the wrapper.
 void* dtor_800AF068(void* self, int deleting) {
     if (self != 0) {
         void* p = ((OwnedPointerPair*)self)->owned;
-        if (p != 0) appFreeUni__FPv(p);
-        if (deleting > 0) __dl__FPv(self);
+        if (p != 0)
+            appFreeUni__FPv(p);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -508,8 +693,10 @@ void* OStream_dtor(void* self, int deleting) {
         void* p = *(void**)self;
         void* q = (char*)self + 8;
         ((IOSAdjustment*)p)->virtualBaseOffset = (char*)q - (char*)p;
-        if (deleting != 0 && q != 0) std_ios_base_dtor(q, 0);
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting != 0 && q != 0)
+            std_ios_base_dtor(q, 0);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -528,8 +715,10 @@ void* IOStream_dtor(void* self, int deleting) {
             p = *(void**)self;
             ((IOSAdjustment*)p)->virtualBaseOffset = (char*)&((IOStreamBases*)self)->inputAdjustment - (char*)p;
         }
-        if (deleting != 0 && ((IOStreamBases*)self)->sharedIos != 0) std_ios_base_dtor(((IOStreamBases*)self)->sharedIos, 0);
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting != 0 && ((IOStreamBases*)self)->sharedIos != 0)
+            std_ios_base_dtor(((IOStreamBases*)self)->sharedIos, 0);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -541,8 +730,10 @@ void* IStream_DtorThunk(void* self, int deleting) {
         void* first = *(void**)self;
         void* end = ((InputStreamBase*)self)->ios;
         ((IOSAdjustment*)first)->virtualBaseOffset = (char*)end - (char*)first;
-        if (deleting != 0 && end != 0) std_ios_base_dtor(end, 0);
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting != 0 && end != 0)
+            std_ios_base_dtor(end, 0);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -557,24 +748,27 @@ void* MWStringBuffer_DestroyMembers(void* self, short deleting) {
     if (self != 0) {
         if (&((StringBufferMembers*)self)->string && (((volatile StringBufferMembers*)self)->string.flags >> 31) != 0)
             appFreeUni__FPv(((StringBufferMembers*)self)->string.data);
-        if (self != 0 && &((StringBufferMembers*)self)->localeFlags != 0 && &((StringBufferMembers*)self)->localeFlags != 0) {
+        if (self != 0 && &((StringBufferMembers*)self)->localeFlags != 0 &&
+            &((StringBufferMembers*)self)->localeFlags != 0) {
             void* ptr = ((StringBufferMembers*)self)->localeReference;
             if (ptr != 0) {
                 ReleaseStringBufferLocale(ptr);
             }
         }
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
-struct AF800Object {
+struct CMsgEcbResourceView {
     void* vtable;
     int initialStateWords[3]; // Only zero initialization is established for this unit.
 };
 
 // Install the message ECB resource vtable and clear its three initial state words.
-void CMsgEcbResource_ctor(AF800Object* self) {
+CMsgEcbResource::CMsgEcbResource() {
+    CMsgEcbResourceView* self = (CMsgEcbResourceView*)this;
     int zero = 0;
     self->initialStateWords[0] = zero;
     self->vtable = (void*)&__vt__15CMsgEcbResource;
@@ -582,7 +776,7 @@ void CMsgEcbResource_ctor(AF800Object* self) {
     self->initialStateWords[2] = zero;
 }
 
-struct AF0C8Object {
+struct TextFormatTreeValue {
     int key;
     unsigned int flags;
     int stringLength;
@@ -590,7 +784,7 @@ struct AF0C8Object {
 };
 
 // Free a formatted-text value only when its small-string tag denotes heap storage.
-void TextFormatTree_DestroyStringValue(void* unused, AF0C8Object* self) {
+void TextFormatTree_DestroyStringValue(void* unused, TextFormatTreeValue* self) {
     (void)unused;
     if (self != 0 && (unsigned int)((unsigned long)self + 4) != 0 && (self->flags >> 31) != 0) {
         appFreeUni__FPv(self->ptr);
@@ -613,13 +807,20 @@ void TextFormatting_InitTwoPi() {
     s_textFormattingTwoPi = kFloat_6_2831855;
 }
 
-struct AF0FCString { unsigned char data[0x20]; };
-struct AF0FCTree { unsigned char data[0x4c]; };
+struct AF0FCString {
+    unsigned char data[0x20];
+};
+struct AF0FCTree {
+    unsigned char data[0x4c];
+};
 void MWCtypeFacet_Construct(void*, int, int, int);
 struct AF0FCObj {
-    void* vtable; unsigned char data[0x14];
+    void* vtable;
+    unsigned char data[0x14];
     // Construct the runtime character-classification facet used by numeric formatting.
-    AF0FCObj(int a, int b, int c) { MWCtypeFacet_Construct(this, a, b, c); }
+    AF0FCObj(int a, int b, int c) {
+        MWCtypeFacet_Construct(this, a, b, c);
+    }
 };
 extern void* s_localeFacetIdCounter;
 extern void* s_ctypeFacetId;
@@ -650,29 +851,40 @@ inline void AF0FCRelocate(char* base, char* target) {
 }
 // Release a locale reference through the runtime's non-throwing cleanup path.
 inline void AF0FCRelease(void* ptr) throw() {
-    if (ptr) MWSharedOwner_ReleaseReference(ptr);
+    if (ptr)
+        MWSharedOwner_ReleaseReference(ptr);
 }
 // Copy the default locale and retain its shared reference owner.
 inline void AF0FCCopyLocale(Pair* dst) throw() {
     Pair* src = (Pair*)MWLocale_GetDefault();
     dst->first = src->first;
     dst->second = src->second;
-    if (dst->second) ++((int*)dst->second)[1];
+    if (dst->second)
+        ++((int*)dst->second)[1];
 }
 
 // Six cursor words belong to streambuf, not to the adjacent owned small string.
 // +0x18..+0x20 are input/get cursors; +0x24..+0x2C are output/put cursors.
 // Their internal begin/current/end order is not established by this unit, which
 // only clears all six or sets a whole triplet to the same empty-buffer address.
-struct FormatBufferCursorWords { void* input[3]; void* output[3]; };
+struct FormatBufferCursorWords {
+    void* input[3];
+    void* output[3];
+};
 enum FormatStreamBits {
-    kFormatInputCursors = 0x08, kFormatOutputCursors = 0x10,
+    kFormatInputCursors = 0x08,
+    kFormatOutputCursors = 0x10,
     kFormatInputAndOutput = kFormatInputCursors | kFormatOutputCursors,
-    kFormatIosFlagBit2 = 4, kFormatInlineLengthMask = 0x7F,
+    kFormatIosFlagBit2 = 4,
+    kFormatInlineLengthMask = 0x7F,
     kFormatGlyphTableByteBias = 0x60
 };
-enum FormatIosOffsets { kFormatIosStateWord = 0x28, kFormatIosFlags = 0x30,
-    kFormatIosWord34 = 0x34, kFormatIosFillCharacter = 0x38 };
+enum FormatIosOffsets {
+    kFormatIosStateWord = 0x28,
+    kFormatIosFlags = 0x30,
+    kFormatIosWord34 = 0x34,
+    kFormatIosFillCharacter = 0x38
+};
 
 // Borrow the streambuf cursor block beginning at the existing p18 ABI field.
 static inline FormatBufferCursorWords* FormatCursors(void* firstCursorWord) {
@@ -691,12 +903,20 @@ void Text_AppendMappedFormattedValue(void* text, void* context) {
         char* volatile base2;
         void* vtable2;
         void* bufVtable;
-        void* p18; void* p1c; void* p20;
-        void* p24; void* p28; void* p2c;
-        void* locale; void* ref;
-        unsigned char mode; char pad39[3];
+        void* p18;
+        void* p1c;
+        void* p20;
+        void* p24;
+        void* p28;
+        void* p2c;
+        void* locale;
+        void* ref;
+        unsigned char mode;
+        char pad39[3];
         char* data;
-        unsigned int flags; int length; char* string;
+        unsigned int flags;
+        int length;
+        char* string;
         char ios[0x40];
     } stream;
     struct StreamCleanup {
@@ -705,18 +925,27 @@ void Text_AppendMappedFormattedValue(void* text, void* context) {
         // Unwind a complete stream, or only ios if later bases were never constructed.
         ~StreamCleanup() {
             if (stream) {
-                if (complete) StringStream_dtor(stream, -1);
-                else std_ios_base_dtor(stream->ios, 0);
+                if (complete)
+                    StringStream_dtor(stream, -1);
+                else
+                    std_ios_base_dtor(stream->ios, 0);
             }
         }
     };
     struct LocaleCleanup {
         Pair* locale;
         // Release the temporary retained locale unless normal exit disarmed this owner.
-        ~LocaleCleanup() { if (locale) AF0FCRelease(locale->second); }
+        ~LocaleCleanup() {
+            if (locale)
+                AF0FCRelease(locale->second);
+        }
     };
     Pair name;
-    struct String { unsigned int flags; unsigned int length; char* data; } item;
+    struct String {
+        unsigned int flags;
+        unsigned int length;
+        char* data;
+    } item;
     volatile unsigned char unused[9];
     unsigned short mapped;
     // Phase 1: construct shared ios/input bases and install a temporary locale owner.
@@ -729,11 +958,14 @@ void Text_AppendMappedFormattedValue(void* text, void* context) {
     AF0FCRelocate(stream.base, (char*)&stream.base2);
     char* ios = stream.base;
     stream.zero = 0;
-    StreamCleanup streamCleanup = { &stream, false };
-    MWIOS_InitializeStreamBuffer(ios, &stream.bufVtable); /* 0x800AF140-0x800AF178: r4 = r31+0x8c, the stream buffer; ours left the incoming context in r4 */
+    StreamCleanup streamCleanup = {&stream, false};
+    MWIOS_InitializeStreamBuffer(
+        ios,
+        &stream
+             .bufVtable); /* 0x800AF140-0x800AF178: r4 = r31+0x8c, the stream buffer; ours left the incoming context in r4 */
     *(int*)(ios + kFormatIosWord34) = 0;
     MWStream_CopyLocale(&name, ios);
-    LocaleCleanup nameCleanup = { &name };
+    LocaleCleanup nameCleanup = {&name};
     unused[8] = 0;
     if ((int)(long)s_ctypeFacetId == 0) {
         int n = (int)(long)s_localeFacetIdCounter + 1;
@@ -743,8 +975,7 @@ void Text_AppendMappedFormattedValue(void* text, void* context) {
     unsigned int index = (unsigned int)(long)s_ctypeFacetId;
     void* entries = name.first;
     void* selected;
-    if (index >= ((LocaleFacetTable*)entries)->count ||
-        (selected = ((void**) *(void**)entries)[index]) == 0) {
+    if (index >= ((LocaleFacetTable*)entries)->count || (selected = ((void**)*(void**)entries)[index]) == 0) {
         selected = new AF0FCObj(0, 0, 0);
         void* entries = name.first;
         if ((int)(long)s_ctypeFacetId == 0) {
@@ -753,7 +984,7 @@ void Text_AppendMappedFormattedValue(void* text, void* context) {
             s_ctypeFacetId = (void*)(long)n;
         }
         MWLocale_InstallFacet(entries, selected, (unsigned int)(long)s_ctypeFacetId);
-        selected = ((void**) *(void**)name.first)[index];
+        selected = ((void**)*(void**)name.first)[index];
     }
     // Facet vtable slot 7 widens the space byte 0x20 for ios fill storage at +0x38.
     // Its result is a fill character, separate from the stringbuf openmode bits below.
@@ -789,10 +1020,19 @@ void Text_AppendMappedFormattedValue(void* text, void* context) {
     stream.length = 0;
     stream.string = 0;
     char* data = stream.string;
-    if (!(stream.flags >> 31)) data = (char*)&stream.flags + 1;
+    if (!(stream.flags >> 31))
+        data = (char*)&stream.flags + 1;
     stream.data = data;
-    if (stream.mode & kFormatOutputCursors) { FormatCursors(&stream.p18)->output[1] = data; FormatCursors(&stream.p18)->output[0] = data; FormatCursors(&stream.p18)->output[2] = data; }
-    if (stream.mode & kFormatInputCursors) { FormatCursors(&stream.p18)->input[0] = data; FormatCursors(&stream.p18)->input[1] = data; FormatCursors(&stream.p18)->input[2] = data; }
+    if (stream.mode & kFormatOutputCursors) {
+        FormatCursors(&stream.p18)->output[1] = data;
+        FormatCursors(&stream.p18)->output[0] = data;
+        FormatCursors(&stream.p18)->output[2] = data;
+    }
+    if (stream.mode & kFormatInputCursors) {
+        FormatCursors(&stream.p18)->input[0] = data;
+        FormatCursors(&stream.p18)->input[1] = data;
+        FormatCursors(&stream.p18)->input[2] = data;
+    }
     // Retain the raw ios flag/state writes; the meaning of bit 2 is unresolved here.
     *(unsigned short*)(stream.base + kFormatIosFlags) |= kFormatIosFlagBit2;
     *(int*)(stream.base + kFormatIosStateWord) = 0;
@@ -803,18 +1043,26 @@ void Text_AppendMappedFormattedValue(void* text, void* context) {
     struct ItemCleanup {
         String* string;
         // Free copied narrow output only when its small-string tag selects heap mode.
-        ~ItemCleanup() { if (string && (string->flags >> 31)) appFreeUni__FPv(string->data); }
-    } itemCleanup = { &item };
+        ~ItemCleanup() {
+            if (string && (string->flags >> 31))
+                appFreeUni__FPv(string->data);
+        }
+    } itemCleanup = {&item};
     unsigned int i = 0;
     while (i < (!(item.flags >> 31) ? (*(unsigned char*)&item & kFormatInlineLengthMask) : item.length)) {
         char* bytes;
-        if (!(item.flags >> 31)) bytes = (char*)&item + 1; else bytes = item.data;
+        if (!(item.flags >> 31))
+            bytes = (char*)&item + 1;
+        else
+            bytes = item.data;
         unsigned char ch = (unsigned char)bytes[i];
         // Signed byte index with a -0x60 BYTE bias: table element index = signed(ch)-0x30.
         // Thus ASCII digit 0 starts at element 0; punctuation (e.g. minus) indexes before it.
         // Caller/table must cover every byte produced by the installed numeric locale.
-        mapped = *(unsigned short*)((char*)g_formattedByteToWideGlyphTable + (int)(signed char)ch * sizeof(unsigned short) - kFormatGlyphTableByteBias);
-        int textLen = !(*(unsigned int*)text >> 31) ? (*(unsigned char*)text & kFormatInlineLengthMask) : (int)((FormatStringView*)text)->length;
+        mapped = *(unsigned short*)((char*)g_formattedByteToWideGlyphTable +
+                                    (int)(signed char)ch * sizeof(unsigned short) - kFormatGlyphTableByteBias);
+        int textLen = !(*(unsigned int*)text >> 31) ? (*(unsigned char*)text & kFormatInlineLengthMask)
+                                                    : (int)((FormatStringView*)text)->length;
         volatile unsigned char flag;
         unsigned char copy = flag;
         WString_ReplaceRange(text, textLen, 0, &mapped, (char*)&mapped + 2, &copy);
@@ -823,10 +1071,12 @@ void Text_AppendMappedFormattedValue(void* text, void* context) {
     // Phase 4: release copied text, stringbuf storage and locale, then restore base
     // adjustments in reverse order. Guards cover exceptions; explicit teardown is normal exit.
     itemCleanup.string = 0;
-    if (item.flags >> 31) appFreeUni__FPv(item.data);
+    if (item.flags >> 31)
+        appFreeUni__FPv(item.data);
     streamCleanup.stream = 0;
     AF0FCRelocate(stream.base, stream.ios);
-    if (stream.flags >> 31) appFreeUni__FPv(stream.string);
+    if (stream.flags >> 31)
+        appFreeUni__FPv(stream.string);
     AF0FCRelease(stream.ref);
     AF0FCRelocate(stream.base, (char*)&stream.bufVtable);
     AF0FCRelocate(stream.base2, (char*)&stream.bufVtable);

@@ -1,9 +1,11 @@
+// Drive contest support: the drive system's RTTI and full-turn angle, and the
+// distance ranking that publishes each player's tied and ordered place. The
+// voice manager constructor also lives here.
 #include <decomp/static_init.h>
 #include "classes/CGolfDoc.h"
 #include "classes/CSharedDoc.h"
 #include <decomp/cw_bitfields.h>
-// Translation unit 0x802E43A8-0x802E486C (4 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CDriveSystem.h"
 
 extern "C" {
 
@@ -15,14 +17,15 @@ extern void* __nw__FUl(unsigned int);
 extern void __ct__18NativeBase80201D18Fv(void*);
 extern char __vt__13CVoiceManager[];
 extern void* g_sharedDoc;
+// Fields of a golf player's record that this file reads. They belong in the
+// class header that owns it.
 struct Player802E {
     char pad0[0xC];
-    // Orders equal-distance ranks; a player-identity role is not established here.
+    // Order used to break equal distances.
     unsigned char rankTieBreakOrder;
     char padD[0xC4 - 0xD];
-    CW_BITS2(
-        unsigned char orderedRank : 4, // High nibble: 1 + all opponents ahead, including tie-break order.
-        unsigned char tiedRank : 4) // Low nibble: equal distances retain the same rank.
+    CW_BITS2(unsigned char orderedRank : 4, // High nibble: 1 + all opponents ahead, including tie-break order.
+             unsigned char tiedRank : 4)    // Low nibble: equal distances retain the same rank.
     char padC5[0x178 - 0xC5];
     float distance;
     char pad17C[0x1C4 - 0x17C];
@@ -30,7 +33,7 @@ struct Player802E {
 };
 extern Player802E* GolfPlayer_GetEntryByIndex(void*, unsigned int);
 // Return the runtime type descriptor used for drive-contest dispatch.
-void* CDriveSystem_GetRTTI() {
+void* CDriveSystem::GetRTTI() {
     return &s_driveSystemTypeInfo;
 }
 
@@ -62,84 +65,102 @@ Obj802E* CVoiceManager_Create() {
 }
 
 // Borrow the active golf document; no reference is acquired.
-static inline void* DriveGolfDoc() { return (void*)((CSharedDoc*)g_sharedDoc)->golfDoc; }
+static inline void* DriveGolfDoc() {
+    return (void*)((CSharedDoc*)g_sharedDoc)->golfDoc;
+}
 
-enum DriveRankValue { kFirstPlace = 1, kSecondPlace = 2, kThirdPlace = 3, kIneligibleDistanceRank = -1 };
-// partyResultTier is a result category, not itself a rank: 1 -> second, 2/3 -> first.
-// The distinction between categories 2 and 3 is unresolved in this unit.
-enum DriveSinglePlayerTier { kTierAwardsSecond = 1, kTierAwardsFirstA = 2, kTierAwardsFirstB = 3 };
+enum DriveRankValue {
+    kFirstPlace = 1,
+    kSecondPlace = 2,
+    kThirdPlace = 3,
+    kIneligibleDistanceRank = -1
+};
+// partyResultTier is a result category, not a rank: 1 gives second place,
+// 2 and 3 give first place.
+enum DriveSinglePlayerTier {
+    kTierAwardsSecond = 1,
+    kTierAwardsFirstA = 2,
+    kTierAwardsFirstB = 3
+};
+
+} // extern "C"
 
 // Snapshot distances and publish tied/ordered ranks for the drive contest.
-// Requires 1..4 players (fixed scratch arrays). Distances use existing course units.
-// A sole eligible leader is promoted first; remaining comparisons include negative
-// distances too. Only orderedRank breaks equal distances using the legacy id byte.
-void CDriveSystem_UpdateDistanceRanks() {
+// Requires 1..4 players (fixed scratch arrays). A sole eligible leader is
+// promoted first; remaining comparisons include negative distances too. Only
+// orderedRank breaks equal distances, by the lower tie-break byte.
+void CDriveSystem::UpdateDistanceRanks() {
     int count = ((CGolfDoc*)DriveGolfDoc())->playerCount;
     int i;
     int j;
     int k;
 
-    // Phase 1: snapshot every distance before changing any rank nibble.
+    // Snapshot every distance before any rank nibble changes.
     for (i = 0; i < count; i++) {
-        void* a = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-        void* b = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-        float distance = ((Player802E*)a)->distance;
-        ((Player802E*)b)->previousDistance = distance;
+        Player802E* sourceEntry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
+        Player802E* destinationEntry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
+        float distance = sourceEntry->distance;
+        destinationEntry->previousDistance = distance;
     }
 
-    // Phase 2a: single-player awards come from the party-result category.
+    // A single player is placed by the party result category; every other
+    // category takes third place.
     if (count == 1) {
         int resultTier = ((CSharedDoc*)g_sharedDoc)->partyResultTier;
-        void* obj0 = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), 0);
-        ((Player802E*)obj0)->orderedRank = kThirdPlace;
+        Player802E* playerEntry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), 0);
+        playerEntry->orderedRank = kThirdPlace;
 
         switch (resultTier) {
         case kTierAwardsFirstA:
         case kTierAwardsFirstB: {
-            void* o = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), 0);
-            ((Player802E*)o)->orderedRank = kFirstPlace;
+            Player802E* entry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), 0);
+            entry->orderedRank = kFirstPlace;
             break;
         }
         case kTierAwardsSecond: {
-            void* o = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), 0);
-            ((Player802E*)o)->orderedRank = kSecondPlace;
+            Player802E* entry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), 0);
+            entry->orderedRank = kSecondPlace;
             break;
         }
         }
 
-        void* src = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), 0);
-        void* dst = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), 0);
-        ((Player802E*)dst)->tiedRank = ((Player802E*)src)->orderedRank;
+        Player802E* rankedSource = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), 0);
+        Player802E* rankedDestination = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), 0);
+        rankedDestination->tiedRank = rankedSource->orderedRank;
     } else {
         float minimumEligibleDistance = kFloat_0_NumericMenuInput;
         int soleLeader[4] = {0, 0, 0, 0};
         int distanceRank[4];
 
-        // Phase 2b: -1 excludes negative distances; otherwise count strictly
-        // farther eligible opponents. Zero therefore marks every eligible leader.
+        // Start at -1 so a zero rank means the player is eligible. Count the
+        // strictly farther eligible opponents.
         int unranked = kIneligibleDistanceRank;
         for (j = 0; j < count; j++) {
             distanceRank[j] = unranked;
-            void* obj = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
-            float playerDistance = ((Player802E*)obj)->distance;
+            Player802E* playerEntry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+            float playerDistance = playerEntry->distance;
             if (!(playerDistance < minimumEligibleDistance)) {
                 distanceRank[j] = distanceRank[j] + 1;
                 for (k = 0; k < count; k++) {
-                    void* objj = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)k);
-                    float distance = ((Player802E*)objj)->distance;
-                    if (j == k) continue;
-                    if (distance < minimumEligibleDistance) continue;
-                    if (!(playerDistance < distance)) continue;
+                    Player802E* opponentEntry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)k);
+                    float distance = opponentEntry->distance;
+                    if (j == k)
+                        continue;
+                    if (distance < minimumEligibleDistance)
+                        continue;
+                    if (!(playerDistance < distance))
+                        continue;
                     distanceRank[j]++;
                 }
             }
         }
 
-        // Phase 3: starting at -1 makes zero mean EXACTLY ONE leader.
-        // Tied leaders receive no sole-leader preference; no eligible leader gives -1.
+        // Starting at -1 makes zero mean exactly one leader. Tied leaders get no
+        // sole-leader preference, and no eligible leader leaves this at -1.
         int eligibleLeaderCountMinusOne = -1;
         for (k = 0; k < count; k++) {
-            if (distanceRank[k] == 0) eligibleLeaderCountMinusOne++;
+            if (distanceRank[k] == 0)
+                eligibleLeaderCountMinusOne++;
         }
 
         for (k = 0; k < count; k++) {
@@ -148,45 +169,48 @@ void CDriveSystem_UpdateDistanceRanks() {
             }
         }
 
-        // Phase 4: both ranks start at one. Each preferred/farther opponent
-        // increments both; a smaller equal-distance tie-break key increments only
-        // orderedRank. These are competition ranks (ties can leave rank gaps).
-        int firstRank = kFirstPlace;
-        for (i = 0; i < count; i++) {
-            void* obji = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-            ((Player802E*)obji)->orderedRank = kFirstPlace;
+        // Both ranks start at one and rise for each player ahead, so equal
+        // distances share a rank. Only orderedRank counts the tie-break byte.
+        // The outer counter is j and the inner one i, which keeps the original's
+        // register allocation.
+        for (j = 0; j < count; j++) {
+            Player802E* rankedPlayerEntry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+            rankedPlayerEntry->orderedRank = kFirstPlace;
 
-            void* obji2 = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-            ((Player802E*)obji2)->tiedRank = kFirstPlace;
+            Player802E* rankedPlayerTieEntry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+            rankedPlayerTieEntry->tiedRank = kFirstPlace;
 
-            for (j = 0; j < ((CGolfDoc*)DriveGolfDoc())->playerCount; j++) {
+            for (i = 0; i < ((CGolfDoc*)DriveGolfDoc())->playerCount; i++) {
                 if (j != i) {
-                    if (soleLeader[i] < soleLeader[j]) {
-                        void* o = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-                        ((Player802E*)o)->orderedRank++;
+                    if (soleLeader[j] < soleLeader[i]) {
+                        Player802E* entry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+                        entry->orderedRank++;
 
-                        o = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-                        ((Player802E*)o)->tiedRank++;
-                    } else if (soleLeader[i] == soleLeader[j]) {
-                        void* objj = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
-                        void* obji3 = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-                        if (((Player802E*)obji3)->distance < ((Player802E*)objj)->distance) {
-                            void* o = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-                            ((Player802E*)o)->orderedRank++;
+                        entry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+                        entry->tiedRank++;
+                    } else if (soleLeader[j] == soleLeader[i]) {
+                        Player802E* opponentEntry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
+                        Player802E* rankedPlayerDistanceEntry =
+                            GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+                        if (rankedPlayerDistanceEntry->distance < opponentEntry->distance) {
+                            Player802E* entry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+                            entry->orderedRank++;
 
-                            o = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-                            ((Player802E*)o)->tiedRank++;
+                            entry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+                            entry->tiedRank++;
                         } else {
-                            objj = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
-                            obji3 = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-                            if (((Player802E*)obji3)->distance == ((Player802E*)objj)->distance) {
-                                void* oj = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
-                                void* oi = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-                                unsigned char otherTieBreakOrder = ((Player802E*)oj)->rankTieBreakOrder;
-                                unsigned char tieBreakOrder = ((Player802E*)oi)->rankTieBreakOrder;
+                            opponentEntry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
+                            rankedPlayerDistanceEntry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+                            if (rankedPlayerDistanceEntry->distance == opponentEntry->distance) {
+                                Player802E* opponentTieBreak =
+                                    GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
+                                Player802E* rankedTieBreak =
+                                    GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+                                unsigned char otherTieBreakOrder = opponentTieBreak->rankTieBreakOrder;
+                                unsigned char tieBreakOrder = rankedTieBreak->rankTieBreakOrder;
                                 if (tieBreakOrder > otherTieBreakOrder) {
-                                    void* o = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)i);
-                                    ((Player802E*)o)->orderedRank++;
+                                    Player802E* entry = GolfPlayer_GetEntryByIndex(DriveGolfDoc(), (unsigned char)j);
+                                    entry->orderedRank++;
                                 }
                             }
                         }
@@ -196,9 +220,6 @@ void CDriveSystem_UpdateDistanceRanks() {
         }
     }
 }
-
-
-} // extern "C"
 
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push

@@ -1,3 +1,7 @@
+// The chat message interface (CChatMsg): its constructor, which acquires the default
+// fixed-font resource that chat messages draw with.
+// Teardown is in chatmsg_singleton_teardown.cpp.
+
 #include "game/chatmsg_match.h"
 
 // Install the chat-message interface and acquire its default fixed-font resource.

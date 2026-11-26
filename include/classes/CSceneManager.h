@@ -1,5 +1,9 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CSceneManager: the scene's object pools and draw lists.
+//
+// The four pools own allocation blocks of scene objects; the lists gather
+// records for one frame. The class is declared without virtual functions on
+// purpose: its vtable is taken from the original game data, so `vtbl` is
+// spelled out as a member.
 #ifndef CLASSES_CSCENEMANAGER_H
 #define CLASSES_CSCENEMANAGER_H
 
@@ -7,85 +11,94 @@
 
 class CSceneManager {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0xc];                  // 0x4
-    int firstBeachNode;                         // 0x10: 1 use in CSceneManager_Ctor
-    int beachIterator;                         // 0x14: 1 use in CSceneManager_Ctor
-    void* beachAllocationBlocks;                       // 0x18: 3 uses in CSceneManager_dtor, CSceneManager_Ctor
-    int freeBeachNodes;                         // 0x1c: 1 use in CSceneManager_Ctor
-    int beachAllocationBatchSize;                         // 0x20: 1 use in CSceneManager_Ctor
-    int beachBucketMask;                         // 0x24: 1 use in CSceneManager_Ctor
-    int beachBucketCount;                         // 0x28: 4 uses in CSceneManager_Ctor
-    void* beachBuckets;                       // 0x2c: 6 uses in CSceneManager_Ctor, CSceneManager_dtor
-    char beachPoolMutex[0x18];                 // 0x30
-    int firstRiverNode;                         // 0x48: 1 use in CSceneManager_Ctor
-    int riverIterator;                         // 0x4c: 1 use in CSceneManager_Ctor
-    void* riverAllocationBlocks;                       // 0x50: 3 uses in CSceneManager_dtor, CSceneManager_Ctor
-    int freeRiverNodes;                         // 0x54: 1 use in CSceneManager_Ctor
-    int riverAllocationBatchSize;                         // 0x58: 1 use in CSceneManager_Ctor
-    int riverBucketMask;                         // 0x5c: 1 use in CSceneManager_Ctor
-    int riverBucketCount;                         // 0x60: 4 uses in CSceneManager_Ctor
-    void* riverBuckets;                       // 0x64: 6 uses in CSceneManager_Ctor, CSceneManager_dtor
-    char riverPoolMutex[0x18];                 // 0x68
-    int firstGeneratedTextureNode;                         // 0x80: 1 use in CSceneManager_Ctor
-    int generatedTextureIterator;                         // 0x84: 1 use in CSceneManager_Ctor
-    void* generatedTextureAllocationBlocks;                       // 0x88: 3 uses in CSceneManager_dtor, CSceneManager_Ctor
-    int freeGeneratedTextureNodes;                         // 0x8c: 1 use in CSceneManager_Ctor
-    int generatedTextureAllocationBatchSize;                         // 0x90: 1 use in CSceneManager_Ctor
-    int generatedTextureBucketMask;                         // 0x94: 1 use in CSceneManager_Ctor
-    int generatedTextureBucketCount;                         // 0x98: 4 uses in CSceneManager_Ctor
-    void* generatedTextureBuckets;                       // 0x9c: 6 uses in CSceneManager_Ctor, CSceneManager_dtor
-    char generatedTexturePoolMutex[0x18];                 // 0xa0
-    int firstBoundaryNode;                         // 0xb8: 1 use in CSceneManager_Ctor
-    int boundaryIterator;                         // 0xbc: 1 use in CSceneManager_Ctor
-    void* boundaryAllocationBlocks;                       // 0xc0: 3 uses in CSceneManager_dtor, CSceneManager_Ctor
-    int freeBoundaryNodes;                         // 0xc4: 1 use in CSceneManager_Ctor
-    int boundaryAllocationBatchSize;                         // 0xc8: 1 use in CSceneManager_Ctor
-    int boundaryBucketMask;                         // 0xcc: 1 use in CSceneManager_Ctor
-    int boundaryBucketCount;                         // 0xd0: 4 uses in CSceneManager_Ctor
-    void* boundaryBuckets;                       // 0xd4: 6 uses in CSceneManager_Ctor, CSceneManager_dtor
-    char boundaryPoolMutex[0x18];                 // 0xd8
-    int generatedSurface;                         // 0xf0: 1 use in CSceneManager_Ctor
-    void* marker;                       // 0xf4: 4 uses in CSceneManager_Ctor, CSceneManager_dtor
-    void* weatherEffect;                       // 0xf8: 3 uses in CSceneManager_dtor, CSceneManager_Ctor
-    void* secondaryWeatherEffect;                       // 0xfc: 3 uses in CSceneManager_dtor, CSceneManager_Ctor
-    unsigned char sceneViewOptionEnabled;              // 0x100: 1 use in CSceneManager_Ctor
-    unsigned char unk_101;              // 0x101: 1 use in CSceneManager_Ctor
-    unsigned char alternateRenderSelection;              // 0x102: 2 uses in CSceneManager_Ctor
-    char pad_103[0x1];                  // 0x103
-    int renderRecordCount;                        // 0x104: 1 use in CSceneManager_Ctor
-    void* lastRenderRecord;                      // 0x108: 1 use in CSceneManager_Ctor
-    void* firstRenderRecord;                      // 0x10c: 4 uses in CSceneManager_dtor, CSceneManager_Ctor
-    int overlayDrawableCount;                        // 0x110: 1 use in CSceneManager_Ctor
-    void* lastOverlayDrawable;                      // 0x114: 1 use in CSceneManager_Ctor
-    void* firstOverlayDrawable;                      // 0x118: 3 uses in CSceneManager_dtor, CSceneManager_Ctor
-    int deferredDrawableCount;                        // 0x11c: 1 use in CSceneManager_Ctor
-    void* lastDeferredDrawable;                      // 0x120: 1 use in CSceneManager_Ctor
-    void* firstDeferredDrawable;                      // 0x124: 3 uses in CSceneManager_dtor, CSceneManager_Ctor
-    int transparentObjectCount;                        // 0x128: 1 use in CSceneManager_Ctor
-    void* lastTransparentObject;                      // 0x12c: 1 use in CSceneManager_Ctor
-    void* firstTransparentObject;                      // 0x130: 3 uses in CSceneManager_dtor, CSceneManager_Ctor
-    char pad_134[0x4];                  // 0x134
-    int debugPointCount;                        // 0x138: 1 use in CSceneManager_Ctor
-    void* lastDebugPoint;                      // 0x13c: 1 use in CSceneManager_Ctor
-    void* firstDebugPoint;                      // 0x140: 2 uses in CSceneManager_Ctor, CSceneManager_dtor
-    char pad_144[0x1];                  // 0x144
-    unsigned char objectNamesVisible;              // 0x145: 1 use in CSceneManager_Ctor
-    char pad_146[0x2];                  // 0x146
-    int renderEnabled;                        // 0x148: 1 use in CSceneManager_Ctor
-    int unk_14C;                        // 0x14c: 1 use in CSceneManager_Ctor
-    int debugNameFont;                        // 0x150: 2 uses in CSceneManager_Ctor
-    char pad_154[0xc];                  // 0x154
-    unsigned char cameraProximityFadeEnabled;              // 0x160: 1 use in CSceneManager_Ctor
-    unsigned char effectRenderPassActive;              // 0x161: 1 use in CSceneManager_Ctor
-    char pad_162[0x2];                  // 0x162
-    int previousCameraMode;                        // 0x164: 1 use in CSceneManager_Ctor
-    int debugDrawFlags;                        // 0x168: 1 use in CSceneManager_Ctor
+    void* vtbl;                               // 0x0: original vtable pointer
+    char pad_004[0xc];                        // 0x4
+    int firstBeachNode;                       // 0x10
+    int beachIterator;                        // 0x14
+    void* beachAllocationBlocks;              // 0x18
+    int freeBeachNodes;                       // 0x1c
+    int beachAllocationBatchSize;             // 0x20
+    int beachBucketMask;                      // 0x24
+    int beachBucketCount;                     // 0x28
+    void* beachBuckets;                       // 0x2c
+    char beachPoolMutex[0x18];                // 0x30
+    int firstRiverNode;                       // 0x48
+    int riverIterator;                        // 0x4c
+    void* riverAllocationBlocks;              // 0x50
+    int freeRiverNodes;                       // 0x54
+    int riverAllocationBatchSize;             // 0x58
+    int riverBucketMask;                      // 0x5c
+    int riverBucketCount;                     // 0x60
+    void* riverBuckets;                       // 0x64
+    char riverPoolMutex[0x18];                // 0x68
+    int firstGeneratedTextureNode;            // 0x80
+    int generatedTextureIterator;             // 0x84
+    void* generatedTextureAllocationBlocks;   // 0x88
+    int freeGeneratedTextureNodes;            // 0x8c
+    int generatedTextureAllocationBatchSize;  // 0x90
+    int generatedTextureBucketMask;           // 0x94
+    int generatedTextureBucketCount;          // 0x98
+    void* generatedTextureBuckets;            // 0x9c
+    char generatedTexturePoolMutex[0x18];     // 0xa0
+    int firstBoundaryNode;                    // 0xb8
+    int boundaryIterator;                     // 0xbc
+    void* boundaryAllocationBlocks;           // 0xc0
+    int freeBoundaryNodes;                    // 0xc4
+    int boundaryAllocationBatchSize;          // 0xc8
+    int boundaryBucketMask;                   // 0xcc
+    int boundaryBucketCount;                  // 0xd0
+    void* boundaryBuckets;                    // 0xd4
+    char boundaryPoolMutex[0x18];             // 0xd8
+    void* generatedSurface;                   // 0xf0
+    void* marker;                             // 0xf4
+    void* weatherEffect;                      // 0xf8
+    void* secondaryWeatherEffect;             // 0xfc
+    unsigned char sceneViewOptionEnabled;     // 0x100
+    unsigned char unk_101;                    // 0x101
+    unsigned char alternateRenderSelection;   // 0x102
+    char pad_103[0x1];                        // 0x103
+    int renderRecordCount;                    // 0x104
+    void* lastRenderRecord;                   // 0x108
+    void* firstRenderRecord;                  // 0x10c
+    int overlayDrawableCount;                 // 0x110
+    void* lastOverlayDrawable;                // 0x114
+    void* firstOverlayDrawable;               // 0x118
+    int deferredDrawableCount;                // 0x11c
+    void* lastDeferredDrawable;               // 0x120
+    void* firstDeferredDrawable;              // 0x124
+    int transparentObjectCount;               // 0x128
+    void* lastTransparentObject;              // 0x12c
+    void* firstTransparentObject;             // 0x130
+    char pad_134[0x4];                        // 0x134
+    int debugPointCount;                      // 0x138
+    void* lastDebugPoint;                     // 0x13c
+    void* firstDebugPoint;                    // 0x140
+    char pad_144[0x1];                        // 0x144
+    unsigned char objectNamesVisible;         // 0x145
+    char pad_146[0x2];                        // 0x146
+    int renderEnabled;                        // 0x148
+    int unk_14C;                              // 0x14c
+    int debugNameFont;                        // 0x150
+    char pad_154[0xc];                        // 0x154
+    unsigned char cameraProximityFadeEnabled; // 0x160
+    unsigned char effectRenderPassActive;     // 0x161
+    char pad_162[0x2];                        // 0x162
+    int previousCameraMode;                   // 0x164
+    int debugDrawFlags;                       // 0x168
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x10, 0x30, 0x48, 0x68, 0x80, 0xa0, 0xb8, 0xd8, 0x104, 0x108, 0x110, 0x114, 0x11c, 0x120, 0x128, 0x12c, 0x138, 0x13c
+    static void RemoveUnretainedRenderRecords(void* object);
+
+    void RenderCourseScene(void* camera);
+
+    // Course scene ownership: the objects built from the course data, and the
+    // pass that releases them.
+    void CreateCourseObjects();
+    void ClearOwnedSceneObjects();
+
+    CSceneManager();
+    ~CSceneManager();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CSCENEMANAGER_OFF(f, o) typedef char CSceneManager_off_##f[((int)&((CSceneManager*)0)->f == (o)) ? 1 : -1]
 CSCENEMANAGER_OFF(firstBeachNode, 0x10);
 CSCENEMANAGER_OFF(beachIterator, 0x14);
@@ -151,4 +164,4 @@ CSCENEMANAGER_OFF(previousCameraMode, 0x164);
 CSCENEMANAGER_OFF(debugDrawFlags, 0x168);
 #undef CSCENEMANAGER_OFF
 
-#endif  // CLASSES_CSCENEMANAGER_H
+#endif // CLASSES_CSCENEMANAGER_H

@@ -15,8 +15,8 @@ struct LayoutResourceOwnerView {
     char pad_38[4];
     unsigned char activationSoundEnabled; // Layout_Init initializes to one; meaning not established.
     char pad_3D[3];
-    void* pangyaIcons; // +0x40: destroyed as an array of PANGYA_ICON_OBJECT_VAR.
-    void* sharedFile; // +0x44: CSharedFileHandle_Destroy.
+    void* pangyaIcons;        // +0x40: destroyed as an array of PANGYA_ICON_OBJECT_VAR.
+    void* sharedFile;         // +0x44: CSharedFileHandle_Destroy.
     void* activationActionId; // +0x48: Layout_Init's second argument; role not established.
     unsigned int extendedFormat;
     unsigned int extendedItemTable;
@@ -24,7 +24,8 @@ struct LayoutResourceOwnerView {
     void* secondarySharedFile; // +0x58: CSharedFileHandle_Destroy.
 };
 
-#define OFF(f, o) typedef char LayoutController800779EC_off_##f[((int)&((LayoutResourceOwnerView*)0)->f == (o)) ? 1 : -1]
+#define OFF(f, o) \
+    typedef char LayoutController800779EC_off_##f[((int)&((LayoutResourceOwnerView*)0)->f == (o)) ? 1 : -1]
 OFF(ownedObject, 0x4);
 OFF(standardItems, 0x8);
 OFF(cachedPointerX0Bits, 0x10);

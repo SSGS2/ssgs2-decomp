@@ -5,9 +5,9 @@
 
 struct InflateOutput802CE62C {
     char pad_000[0xc];
-    unsigned char* nextOutput; // 0xc: Zlib_InflateFlushWindow copies to and advances pointer
+    unsigned char* nextOutput;    // 0xc: Zlib_InflateFlushWindow copies to and advances pointer
     unsigned int availableOutput; // 0x10: Zlib_InflateFlushWindow caps copy size and subtracts
-    unsigned int totalOutput; // 0x14: Zlib_InflateFlushWindow accumulates copied bytes
+    unsigned int totalOutput;     // 0x14: Zlib_InflateFlushWindow accumulates copied bytes
     char pad_018[0x18];
     void* checksum; // 0x30: Zlib_InflateFlushWindow stores callback result
 };
@@ -21,4 +21,3 @@ OFF(checksum, 0x30);
 #define AsInflateOutput802CE62C(p) ((InflateOutput802CE62C*)(p))
 
 #endif
-

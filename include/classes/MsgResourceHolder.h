@@ -6,7 +6,7 @@
 struct MsgResourceHolder {
     int unk_0;
     void* messageResource; // +0x4: output of WFixedFont_CreateMsgEcbResource; deleted by Dtor.
-    void* resourceOwner; // +0x8: font +0x10 passed to WFixedFont_CreateMsgEcbResource.
+    void* resourceOwner;   // +0x8: font +0x10 passed to WFixedFont_CreateMsgEcbResource.
 };
 
 #define OFF(f, o) typedef char MsgResourceHolder_off_##f[((int)&((MsgResourceHolder*)0)->f == (o)) ? 1 : -1]

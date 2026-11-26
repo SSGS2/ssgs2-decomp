@@ -12,11 +12,9 @@ template <class T> struct char_traits;
 template <class T> class allocator;
 
 // MSL's 12-byte small-string representation; short wide text starts at +2.
-template <class T, class Traits = char_traits<T>, class Allocator = allocator<T> >
-class basic_string;
+template <class T, class Traits = char_traits<T>, class Allocator = allocator<T> > class basic_string;
 
-template <>
-class basic_string<wchar_t, char_traits<wchar_t>, app::app_allocator<wchar_t> > {
+template <> class basic_string<wchar_t, char_traits<wchar_t>, app::app_allocator<wchar_t> > {
 public:
     unsigned int flags;
     unsigned int length;
@@ -30,7 +28,8 @@ public:
 // the inline body; member/local lifetime users need it visible to match MWCC.
 #if !defined(GAME_WSTRING_IMPLEMENTATION) && !defined(GAME_WSTRING_DECLARATIONS_ONLY)
 inline basic_string<wchar_t, char_traits<wchar_t>, app::app_allocator<wchar_t> >::~basic_string() {
-    if (flags >> 31) appFreeUni__FPv(data);
+    if (flags >> 31)
+        appFreeUni__FPv(data);
 }
 #endif
 }

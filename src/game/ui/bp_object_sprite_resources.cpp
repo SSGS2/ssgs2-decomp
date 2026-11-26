@@ -6,8 +6,8 @@
 // Keep sheet texels, script source rectangles, group names and texture IDs in
 // agreement when replacing prompts/fonts. Resizing only a sheet changes sampling,
 // not layout. Camera aspect / GX viewport/scissor are selected by other units.
-// Entry points: CBpLoad_SetFilenameAndOpenSharedFile and
-// CBpObject_SetScriptResourcePath retain paths; BpObject_PollLoad
+// Entry points: CBpLoad::SetFilenameAndOpenSharedFile and
+// CBpObject::SetScriptResourcePath retains paths; BpObject_PollLoad
 // owns command work but borrows shared resource bytes; GetOrCreateNamedGroup /
 // UIGroup_GetOrCreateById return cache-owned groups invalidated by ClearResources.
 // Shared layouts: CBpObject.h, CBpLoad.h, BpTreeLinks.h, BpIntObjectNode.h.
@@ -33,29 +33,47 @@
 #include "classes/BpIntObjectNode.h"
 #include "classes/CBpObject.h"
 // Borrow the loader layout; its mutex protects access to the shared file handle.
-static inline CBpLoad* AsCBpLoad(void* object) { return (CBpLoad*)object; }
+static inline CBpLoad* AsCBpLoad(void* object) {
+    return (CBpLoad*)object;
+}
 // Borrow the sprite/script owner layout without adjusting or retaining its pointer.
-static inline CBpObject* AsCBpObject(void* object) { return (CBpObject*)object; }
-// Translation unit 0x800C4C08-0x800C7630 (21 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+static inline CBpObject* AsCBpObject(void* object) {
+    return (CBpObject*)object;
+}
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
+#include "classes/CSharedFileHandle.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CBpEditSprite.h"
 
 // Construct a tree payload in caller-provided storage.
-inline void* operator new(size_t, void* p) throw() { return p; }
+inline void* operator new(size_t, void* p) throw() {
+    return p;
+}
 // Placement-delete cleanup leaves that storage with the caller.
 inline void operator delete(void*, void*) throw() {}
 
 extern "C" {
 
-enum BpLoadState { kLoadWaitingForFile = 1, kLoadWaitingForObjects = 2, kLoadReady = 3 };
+enum BpLoadState {
+    kLoadWaitingForFile = 1,
+    kLoadWaitingForObjects = 2,
+    kLoadReady = 3
+};
 // Load state is separate from script playback state. PollLoad advances at most
 // one state per call: 1 waits for shared bytes and prepares work, 2 polls each
 // mapped object's readiness, 3 returns ready. Transitions themselves return 0.
-enum BpScriptState { kScriptResourceSet = 2, kScriptRunning = 3 };
-enum BpStringConstants { kInlineStringLengthMask = 0x7F, kStringHeapTagShift = 31,
-    kTreeRootLinkOffset = 4, kTreePayloadOffset = 0xC };
+enum BpScriptState {
+    kScriptResourceSet = 2,
+    kScriptRunning = 3
+};
+enum BpStringConstants {
+    kInlineStringLengthMask = 0x7F,
+    kStringHeapTagShift = 31,
+    kTreeRootLinkOffset = 4,
+    kTreePayloadOffset = 0xC
+};
 enum BpStringOffset {
     kB2dExtension = 0,
     kWorkSizeDiagnostic = 5,
@@ -75,8 +93,10 @@ struct BpScriptEntryView {
     char entryState[8];
     void* next;
 };
-struct BpControllerStateView { char baseStorage[0x14]; int updateState; };
-
+struct BpControllerStateView {
+    char baseStorage[0x14];
+    int updateState;
+};
 
 void* B2d_SelectHighestCommandTotalItem(void*);
 int B2dGroup_IsActive(void*);
@@ -113,12 +133,15 @@ struct TableLock {
     char data[8];
 
     // Acquire the shared BP table lock with the original lock-mode arguments.
-    TableLock(int a, int b) { TableLock_ctor(this, a, b); }
+    TableLock(int a, int b) {
+        TableLock_ctor(this, a, b);
+    }
     ~TableLock();
 };
 
 // Reset pooled sprite vertex counts while holding the global BP table lock.
-void CBpObject_ResetSpriteVertexCountsLocked(C6288Object* self) {
+void CBpObject::ResetSpriteVertexCountsLocked() {
+    C6288Object* self = (C6288Object*)this;
     TableLock temp(1, 1);
     BpSpritePool_MarkAllInactive(self->objectArray);
 }
@@ -151,7 +174,8 @@ struct BpIntegerTreeHeader_u800C4C08 {
 // Find insertion parent/side and the greatest existing key <= the requested integer key.
 // Output flags: insertOnLeft is the final search edge; allVisitedKeysGreater
 // stays one only when no visited key was <= the request (including an empty tree).
-void* BpIntObjectTree_FindInsertionPosition(void* tree, const int* key, void** greatestNotAboveKey, unsigned char* insertOnLeft, unsigned char* allVisitedKeysGreater) {
+void* BpIntObjectTree_FindInsertionPosition(void* tree, const int* key, void** greatestNotAboveKey,
+                                            unsigned char* insertOnLeft, unsigned char* allVisitedKeysGreater) {
     *greatestNotAboveKey = 0;
     void* insertionParent = (char*)tree + kTreeRootLinkOffset;
     void* node = ((BpIntegerTreeHeader_u800C4C08*)tree)->root;
@@ -185,13 +209,18 @@ void* CSharedFilePtr_GetLoadedBuffer(void*);
 struct WInstanceLock {
     void* lock;
     // Borrow and acquire a loader's instance mutex.
-    WInstanceLock(void* l) : lock(l) { OSLockMutex((OSMutex*)l); }
+    WInstanceLock(void* l) : lock(l) {
+        OSLockMutex((OSMutex*)l);
+    }
     // Unlock the borrowed mutex at scope exit.
-    ~WInstanceLock() { OSUnlockMutex((OSMutex*)lock); }
+    ~WInstanceLock() {
+        OSUnlockMutex((OSMutex*)lock);
+    }
 };
 
 // Poll a shared file under the loader mutex and latch completion once its buffer exists.
-int CBpLoad_PollLoad(C5C00Object* self) {
+int CBpLoad::PollLoad() {
+    C5C00Object* self = (C5C00Object*)this;
     if (self->loaded != 0)
         return 1;
     void* result;
@@ -206,8 +235,7 @@ int CBpLoad_PollLoad(C5C00Object* self) {
 }
 
 // Retail BP diagnostic hook; formatted messages are discarded.
-void BpObject_DiagnosticStub(int, ...) {
-}
+void BpObject_DiagnosticStub(int, ...) {}
 
 struct C5F18Object {
     char padding00[4];
@@ -226,18 +254,13 @@ int BpObject_IsCurrentScriptComplete(C5F18Object* self) {
     return (isPlaying == 0) ? 1 : 0;
 }
 
-struct C617CObject {
-    char padding00[0x1c];
-    void* objectRoot;
-};
-
 // Find an exact integer-keyed object value, returning null if the lower bound has a different key.
 // Returns a borrowed map value. Texture interpretation is supported by both
 // callers in b2d_sprite_and_bp_texture_draw.cpp (descriptor lookup/quad submission), not checked by this tree.
-void* CBpObject_FindTextureById(C617CObject* self, int key) {
+void* CBpObject::FindTextureById(int key) {
     TableLock temp(1, 1);
-    void* node = self->objectRoot;
-    void* parent = &self->objectRoot;
+    void* node = objectRoot;
+    void* parent = &objectRoot;
     while (node != 0) {
         int nodeKey = AsBpIntObjectNode(node)->key; // original node +0xc
         if (nodeKey >= key) {
@@ -247,14 +270,14 @@ void* CBpObject_FindTextureById(C617CObject* self, int key) {
             node = AsBpTreeLinks(node)->right;
         }
     }
-    if (parent != &self->objectRoot) {
+    if (parent != &objectRoot) {
         int pKey = AsBpIntObjectNode(parent)->key;
         if (key < pKey) {
-            parent = &self->objectRoot;
+            parent = &objectRoot;
         }
     }
     void* result;
-    if (parent == &self->objectRoot) {
+    if (parent == &objectRoot) {
         result = 0;
     } else {
         result = AsBpIntObjectNode(parent)->value; // original node +0x10
@@ -347,7 +370,8 @@ struct C5E50Object {
 };
 
 // Replace the loader filename and create its shared-file handle under the instance mutex.
-int CBpLoad_SetFilenameAndOpenSharedFile(C5E50Object* self, const char* filename) {
+int CBpLoad::SetFilenameAndOpenSharedFile(const char* filename) {
+    C5E50Object* self = (C5E50Object*)this;
     {
         Frame5E50 local((char*)&AsCBpLoad(self)->mutexStorage);
         unsigned int previousLength;
@@ -358,7 +382,8 @@ int CBpLoad_SetFilenameAndOpenSharedFile(C5E50Object* self, const char* filename
         }
         local.argument = local.source;
         unsigned int filenameLength = strlen(filename);
-        String_ReplaceRange((char*)&AsCBpLoad(self)->filenameStorage, 0, previousLength, filename, filename + filenameLength, &local.argument);
+        String_ReplaceRange((char*)&AsCBpLoad(self)->filenameStorage, 0, previousLength, filename,
+                            filename + filenameLength, &local.argument);
         void* filenameData;
         if ((self->filenameTag >> kStringHeapTagShift) == 0) {
             filenameData = (char*)&self->filenameTag + 1;
@@ -370,73 +395,75 @@ int CBpLoad_SetFilenameAndOpenSharedFile(C5E50Object* self, const char* filename
     return 1;
 }
 
-struct C5C80Object {
-    char padding00[4];
-    void* script;
-    char padding08[0x20];
-    int loadState;
-    char padding2c[0x8];
-    int callbackListEmpty;
-    char padding38[0x24];
-    void* loader;
-    unsigned int pathTag;
-    int pathLongLength;
-};
-
 // Set a script resource, retain its directory prefix and pass the full filename to the loader.
-int CBpObject_SetScriptResourcePath(C5C80Object* self, const char* filename, int scriptHandle) {
+// The path lives in scriptPathStorage: a long string has bit 31 set in its first word,
+// with its length at +4; otherwise the first byte holds the inline length.
+int CBpObject::SetScriptResourcePath(const char* filename, int scriptHandle) {
     TableLock temp(1, 1);
     if (filename == 0) {
         return 0;
     }
-    self->script = (void*)scriptHandle;
-    self->loadState = kLoadWaitingForFile;
-    self->callbackListEmpty = 0;
+    script = (void*)scriptHandle;
+    loadState = kLoadWaitingForFile;
+    callbackListEmpty = 0;
 
     unsigned int previousLength;
-    if ((self->pathTag >> kStringHeapTagShift) == 0) {
-        previousLength = *(unsigned char*)(((char*)&AsCBpObject(self)->scriptPathStorage[0])) & kInlineStringLengthMask;
+    if ((*(unsigned int*)scriptPathStorage >> kStringHeapTagShift) == 0) {
+        previousLength = *(unsigned char*)scriptPathStorage & kInlineStringLengthMask;
     } else {
-        previousLength = (unsigned int)self->pathLongLength;
+        previousLength = (unsigned int)*(int*)(scriptPathStorage + 4);
     }
-    struct { unsigned char argument; char padding[3]; unsigned char source; } local1;
+    struct {
+        unsigned char argument;
+        char padding[3];
+        unsigned char source;
+    } local1;
     local1.argument = local1.source;
     unsigned int filenameLength = strlen(filename);
-    String_ReplaceRange(((char*)&AsCBpObject(self)->scriptPathStorage[0]), 0, previousLength, filename, filename + filenameLength, &local1.argument);
+    String_ReplaceRange(scriptPathStorage, 0, previousLength, filename, filename + filenameLength, &local1.argument);
 
     char* base = bpSpriteControlStrings;
     char* separatorText = base + kPathSeparator;
-    unsigned int lastSeparator = (unsigned int)MWString_ReverseFindSubstring(((char*)&AsCBpObject(self)->scriptPathStorage[0]), separatorText, -1, (int)strlen(separatorText));
+    unsigned int lastSeparator =
+        (unsigned int)MWString_ReverseFindSubstring(scriptPathStorage, separatorText, -1, (int)strlen(separatorText));
     if (lastSeparator == 0xffffffffu) {
-        if ((self->pathTag >> kStringHeapTagShift) == 0) {
-            previousLength = *(unsigned char*)(((char*)&AsCBpObject(self)->scriptPathStorage[0])) & kInlineStringLengthMask;
+        if ((*(unsigned int*)scriptPathStorage >> kStringHeapTagShift) == 0) {
+            previousLength = *(unsigned char*)scriptPathStorage & kInlineStringLengthMask;
         } else {
-            previousLength = (unsigned int)self->pathLongLength;
+            previousLength = (unsigned int)*(int*)(scriptPathStorage + 4);
         }
         char* emptyText = base + kEmptyPath;
-        struct { unsigned char argument; char padding[3]; unsigned char source; } local2;
+        struct {
+            unsigned char argument;
+            char padding[3];
+            unsigned char source;
+        } local2;
         local2.argument = local2.source;
         unsigned int len2 = strlen(emptyText);
-        String_ReplaceRange(((char*)&AsCBpObject(self)->scriptPathStorage[0]), 0, previousLength, emptyText, emptyText + len2, &local2.argument);
+        String_ReplaceRange(scriptPathStorage, 0, previousLength, emptyText, emptyText + len2, &local2.argument);
     } else {
-        if ((self->pathTag >> kStringHeapTagShift) == 0) {
-            previousLength = *(unsigned char*)(((char*)&AsCBpObject(self)->scriptPathStorage[0])) & kInlineStringLengthMask;
+        if ((*(unsigned int*)scriptPathStorage >> kStringHeapTagShift) == 0) {
+            previousLength = *(unsigned char*)scriptPathStorage & kInlineStringLengthMask;
         } else {
-            previousLength = (unsigned int)self->pathLongLength;
+            previousLength = (unsigned int)*(int*)(scriptPathStorage + 4);
         }
-        struct { unsigned char argument; char padding[3]; unsigned char source; } local3;
+        struct {
+            unsigned char argument;
+            char padding[3];
+            unsigned char source;
+        } local3;
         local3.argument = local3.source;
         unsigned int eraseStart = (unsigned int)(lastSeparator + 1);
         unsigned int eraseLength = previousLength - (unsigned int)lastSeparator;
-        String_ReplaceRange(((char*)&AsCBpObject(self)->scriptPathStorage[0]), eraseStart, eraseLength, 0, 0, &local3.argument);
+        String_ReplaceRange(scriptPathStorage, eraseStart, eraseLength, 0, 0, &local3.argument);
     }
 
-    void* loader = self->loader;
-    void** vtable = *(void***)loader;
+    void* loaderObject = loader;
+    void** vtable = *(void***)loaderObject;
     void (*setFilename)(void*, const char*) = (void (*)(void*, const char*))vtable[4];
-    setFilename(loader, filename);
+    setFilename(loaderObject, filename);
 
-    AsCBpObject(self)->scriptState = kScriptResourceSet;
+    scriptState = kScriptResourceSet;
     return 1;
 }
 
@@ -453,23 +480,16 @@ void RBTree_RebalanceAfterErase(void*, void*);
 void appFreeUni__FPv(void*);
 extern int g_bpEntryMapDefaultValue;
 
-struct C5FA4Object {
-    char padding00[0x18];
-    int objectCount;
-    Node* objectRoot; // 0x1c, sentinel at &objectRoot? actually objectRoot field at 0x1c
-    Node* firstObject;  // 0x20
-};
-
 // Destroy and erase an existing object for the ID, then store the replacement in the integer map.
 // Takes ownership of value for later deleting-destructor cleanup. Replacing a
 // key destroys its OLD value first; passing that same pointer would retain a
 // dangling value. Tree keys are plain integers; payloads start at node +0x0c.
-int CBpObject_ReplaceObjectById(C5FA4Object* self, int key, int value) {
+int CBpObject::ReplaceObjectById(int key, int value) {
     TableLock temp(1, 1);
-    if (self->objectCount != 0) {
+    if (objectCount != 0) {
         // Find the old value, destroy it, update firstObject, and erase its node.
-        Node* node = self->objectRoot;
-        Node* parent = (Node*)(((char*)&AsCBpObject(self)->objectRoot));
+        Node* node = (Node*)objectRoot;
+        Node* parent = (Node*)(((char*)&objectRoot));
         while (node != 0) {
             if (node->key >= key) {
                 parent = node;
@@ -478,44 +498,49 @@ int CBpObject_ReplaceObjectById(C5FA4Object* self, int key, int value) {
                 node = node->right;
             }
         }
-        if (parent != (Node*)(((char*)&AsCBpObject(self)->objectRoot))) {
-            parent = (key >= parent->key) ? parent : (Node*)(((char*)&AsCBpObject(self)->objectRoot));
+        if (parent != (Node*)(((char*)&objectRoot))) {
+            parent = (key >= parent->key) ? parent : (Node*)(((char*)&objectRoot));
         }
-        if (parent != (Node*)(((char*)&AsCBpObject(self)->objectRoot))) {
+        if (parent != (Node*)(((char*)&objectRoot))) {
             Node* toErase = parent;
             if (toErase->value != 0) {
                 void** vt = *(void***)toErase->value;
                 void (*dtor)(void*, int) = (void (*)(void*, int))vt[2];
                 dtor(toErase->value, 1);
             }
-            if (toErase == (Node*)self->firstObject) {
+            if (toErase == (Node*)firstObject) {
                 Node* r = toErase->right;
                 if (r) {
-                    while (r->left) r = r->left;
+                    while (r->left)
+                        r = r->left;
                     parent = r;
                 } else {
                     while (1) {
                         Node* p = (Node*)(parent->parent & ~1u);
-                        if (parent != p->left) parent = p;
-                        else { parent = p; break; }
+                        if (parent != p->left)
+                            parent = p;
+                        else {
+                            parent = p;
+                            break;
+                        }
                     }
                 }
-                self->firstObject = parent;
+                firstObject = parent;
             }
-            RBTree_RebalanceAfterErase(toErase, self->objectRoot);
+            RBTree_RebalanceAfterErase(toErase, objectRoot);
             appFreeUni__FPv(toErase);
-            self->objectCount--;
+            objectCount--;
         }
     }
     // Recompute insertion position after erasure; commit replacement ownership.
     Node* found;
     unsigned char a, b;
-    Node* pos = IntegerKeyTree_FindInsertionPosition(((char*)&AsCBpObject(self)->objectCount), &key, &found, &a, &b);
+    Node* pos = IntegerKeyTree_FindInsertionPosition(((char*)&objectCount), &key, &found, &a, &b);
     if (found == 0 || found->key < key) {
         int item[2];
         item[0] = key;
         item[1] = g_bpEntryMapDefaultValue;
-        Node* inserted = BpEntryTree_InsertNode(((char*)&AsCBpObject(self)->objectCount), pos, a, b, item);
+        Node* inserted = BpEntryTree_InsertNode(((char*)&objectCount), pos, a, b, item);
         inserted->value = (void*)value;
     } else {
         found->value = (void*)value;
@@ -539,11 +564,15 @@ extern void RBTree_RebalanceAfterInsert(void*, void*);
 
 // Release the message array if construction of its shared ownership control block throws.
 struct Holder6ED8 {
-    char* p; char* flag;
+    char* p;
+    char* flag;
     // Guard an exception-message array during shared control-block construction.
-    Holder6ED8(char* b, char* f) : p(b), flag(f) {}
+    Holder6ED8(char* buffer, char* f) : p(buffer), flag(f) {}
     // Release the array if the guard has not been disarmed.
-    ~Holder6ED8() { if (p) __dla__FPv(p); }
+    ~Holder6ED8() {
+        if (p)
+            __dla__FPv(p);
+    }
 };
 struct Flag6ED8 {
     char value;
@@ -553,7 +582,9 @@ struct Flag6ED8 {
 
 // Reproduce the original length_error message ownership and exception-construction cleanup.
 struct ErrBase6ED8 {
-    void* vt; char* buf; void* ref;
+    void* vt;
+    char* buf;
+    void* ref;
     // Copy the diagnostic and attach its shared ownership control block.
     ErrBase6ED8(const char* msg0) {
         vt = __vt__Q23std11logic_error;
@@ -562,12 +593,18 @@ struct ErrBase6ED8 {
         Flag6ED8 extra;
         done = 0;
         unsigned n = strlen(msg) + 1;
-        char* b = (char*)__nwa__FUl(n * 2 - n);
-        buf = b;
+        char* buffer = (char*)__nwa__FUl(n * 2 - n);
+        buf = buffer;
         {
-            Holder6ED8 h(b, &done);
+            Holder6ED8 h(buffer, &done);
             void* r = __nw__FUl(16);
-            if (r) { int table = (int)s_sharedCharDeleterVtable; *((int*)r + 1) = 1; *((int*)r + 2) = 1; *((int*)r) = table; *((char**)r + 3) = b; }
+            if (r) {
+                int table = (int)s_sharedCharDeleterVtable;
+                *((int*)r + 1) = 1;
+                *((int*)r + 2) = 1;
+                *((int*)r) = table;
+                *((char**)r + 3) = buffer;
+            }
             ref = r;
             h.p = 0;
         }
@@ -579,7 +616,10 @@ struct ErrBase6ED8 {
 
 struct Err2_6ED8 : ErrBase6ED8 {
     // Construct and throw the map's length_error diagnostic.
-    Err2_6ED8() : ErrBase6ED8(bpSpriteControlStrings + kTreeLengthError) { vt = __vt__Q23std12length_error; __throw(bpSpriteControlStrings + kLengthErrorType, this, (void (*)())__dt__Q23std12length_errorFv); }
+    Err2_6ED8() : ErrBase6ED8(bpSpriteControlStrings + kTreeLengthError) {
+        vt = __vt__Q23std12length_error;
+        __throw(bpSpriteControlStrings + kLengthErrorType, this, (void (*)())__dt__Q23std12length_errorFv);
+    }
     // Preserve the original empty derived cleanup body.
     ~Err2_6ED8() {}
 };
@@ -593,18 +633,22 @@ struct C6ED8Object {
 // State-callback tree payload, NOT the named-group string-tree payload below.
 // The ABI name BpStateCallbackTree_InsertNode is historical: TryInvokeCurrentCallback
 // reads this SAME tree at object+44/+48 and interprets its values as member calls.
-// CBpObject_Ctor (ui_group_and_bp_edit_sprite.cpp) passes BpTransformPair {int key; uint32 value[3]}.
+// CBpObject::CBpObject (ui_group_and_bp_edit_sprite.cpp) passes BpTransformPair {int key; uint32 value[3]}.
 // Keys are scriptState: 2 = resource set, 3 = running (s_bpResourceSetCallbackState /
-// s_bpRunningCallbackState, u800C2F30_data). Values come from zeroInitializationWords
+// s_bpRunningCallbackState, the data section). Values come from zeroInitializationWords
 // / s_bpRunningStateCallback and are a CodeWarrior member-function descriptor
 // {this adjustment, virtual selector, function/slot word}, tested by __ptmf_test.
 // They borrow code identity; none is an owned allocation or MSL string. Keep all
 // three descriptor words together and do not reinterpret them as vector floats.
 // Node = BpTreeLinks +0..B, payload +C..1B, sizeof 0x1C, alignment 4.
 // Prefix grouping retains the original three-word copy followed by the last word.
-struct BpTransformCopyPrefix { int key; unsigned int value0, value1; };
+struct BpTransformCopyPrefix {
+    int key;
+    unsigned int value0, value1;
+};
 struct Value6ED8 {
-    BpTransformCopyPrefix prefix; unsigned int value2;
+    BpTransformCopyPrefix prefix;
+    unsigned int value2;
     // Copy a script-state/member-descriptor record without acquiring a resource.
     Value6ED8(const Value6ED8& v) : prefix(v.prefix), value2(v.value2) {}
 };
@@ -614,7 +658,10 @@ struct Alloc6ED8 {
     void* allocation;
     void* copy;
     // Allocate a 28-byte node (12-byte links plus 16-byte key/value payload).
-    Alloc6ED8() : flag(0) { allocation = appMallocDummy__FUl(0x1c); copy = allocation; }
+    Alloc6ED8() : flag(0) {
+        allocation = appMallocDummy__FUl(0x1c);
+        copy = allocation;
+    }
 };
 struct NodeGuard6ED8 {
     void* allocator;
@@ -622,14 +669,25 @@ struct NodeGuard6ED8 {
     // Borrow allocator state and guard the unlinked node.
     NodeGuard6ED8(void* a, void* n) : allocator(a), node(n) {}
     // Free a node only if insertion did not transfer ownership to the tree.
-    ~NodeGuard6ED8() { if (node) appFreeUni__FPv(node); }
+    ~NodeGuard6ED8() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 // Allocate one integer-keyed callback node using the matching allocator wrapper.
-inline void* Allocate6ED8() { Alloc6ED8 a; return a.allocation; }
+inline void* Allocate6ED8() {
+    Alloc6ED8 a;
+    return a.allocation;
+}
 // Copy-construct the key/value payload after the node links.
-inline void* ConstructValue6ED8(void* p, const Value6ED8& v) { new ((char*)p + kTreePayloadOffset) Value6ED8(v); return p; }
+inline void* ConstructValue6ED8(void* p, const Value6ED8& v) {
+    new ((char*)p + kTreePayloadOffset) Value6ED8(v);
+    return p;
+}
 // Construct the parent link in the node header.
-inline void ConstructParent6ED8(void* p, void* v) { new (p) void*(v); }
+inline void ConstructParent6ED8(void* p, void* v) {
+    new (p) void*(v);
+}
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -641,7 +699,8 @@ inline void ConstructParent6ED8(void* p, void* v) { new (p) void*(v); }
 // appFreeUni__FPv; value words have no separate release. Count-limit throws before
 // mutation. The node guard frees an unlinked allocation on unwinding; allocator
 // null is unchecked. Once linked, count/root/first may change during rebalancing.
-void* BpStateCallbackTree_InsertNode(C6ED8Object* self, void* parent, int insertLeft, int becomesFirst, const Value6ED8* keyValue) {
+void* BpStateCallbackTree_InsertNode(C6ED8Object* self, void* parent, int insertLeft, int becomesFirst,
+                                     const Value6ED8* keyValue) {
     if ((unsigned)self->count + 0x10000u == 0xffffu) {
         Err2_6ED8 err;
     }
@@ -672,15 +731,19 @@ extern char s_bpCtrl[];
 extern char s_bpCtrlDtorRegistration_BpObject[];
 extern void* g_currentBpCallbackObject;
 extern float kZeroCallbackPosition;
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor(void*);
 void* gtl_Vec2_Copy(void*, void*);
 int __ptmf_test(void*);
 
 struct C55Object {
-    char padding00[0x14]; int key; char padding18[0x30]; Node* root;
+    char padding00[0x14];
+    int key;
+    char padding18[0x30];
+    Node* root;
 };
-struct C55CallbackObject { int invoke(); };
+struct C55CallbackObject {
+    int invoke();
+};
 // Invoke the current script's member callback on THIS CBpObject, not on the
 // controller or callbackPosition. The three-word CodeWarrior member-function
 // descriptor is copied from callback tree {links +0, script key +C, descriptor +10}.
@@ -699,7 +762,7 @@ int BpObject_TryInvokeCurrentCallback(C55Object* self, void* callbackPosition) {
     TableLock temp(1, 1);
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlDtorRegistration_BpObject);
             s_bpCtrlInitialized = 1;
         }
@@ -726,8 +789,14 @@ int BpObject_TryInvokeCurrentCallback(C55Object* self, void* callbackPosition) {
     if (parent == (Node*)&self->root) {
         return 0;
     }
-    struct Callback55 { int words[3]; };
-    struct CallbackTreeNode { BpTreeLinks links; int key; Callback55 callback; };
+    struct Callback55 {
+        int words[3];
+    };
+    struct CallbackTreeNode {
+        BpTreeLinks links;
+        int key;
+        Callback55 callback;
+    };
     Callback55 local = ((CallbackTreeNode*)parent)->callback;
     if (__ptmf_test(&local) == 0) {
         return 1;
@@ -744,7 +813,7 @@ int BpObject_TryInvokeCurrentCallback(C55Object* self, void* callbackPosition) {
         AsCBpObject(self)->callbackPosition[0] = zero;
         AsCBpObject(self)->callbackPosition[1] = zero;
     }
-// The descriptor is a CodeWarrior member-function record {this adjustment, slot, code token}.
+    // The descriptor is a CodeWarrior member-function record {this adjustment, slot, code token}.
     typedef int (C55CallbackObject::*Callback)();
     if ((((C55CallbackObject*)self)->*(*(Callback*)&local))() == 0) {
         g_currentBpCallbackObject = 0;
@@ -767,17 +836,21 @@ void MapTree_FreeSubtree(void* self, void* node) {
             branch2 = AsBpTreeLinks(branch1)->left;
             if (branch2 != 0) {
                 child = AsBpTreeLinks(branch2)->left;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 child = AsBpTreeLinks(branch2)->right;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 appFreeUni__FPv(branch2);
             }
             branch2 = AsBpTreeLinks(branch1)->right;
             if (branch2 != 0) {
                 child = AsBpTreeLinks(branch2)->left;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 child = AsBpTreeLinks(branch2)->right;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 appFreeUni__FPv(branch2);
             }
             appFreeUni__FPv(branch1);
@@ -787,17 +860,21 @@ void MapTree_FreeSubtree(void* self, void* node) {
             branch1 = AsBpTreeLinks(branch2)->left;
             if (branch1 != 0) {
                 child = AsBpTreeLinks(branch1)->left;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 child = AsBpTreeLinks(branch1)->right;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 appFreeUni__FPv(branch1);
             }
             branch1 = AsBpTreeLinks(branch2)->right;
             if (branch1 != 0) {
                 child = AsBpTreeLinks(branch1)->left;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 child = AsBpTreeLinks(branch1)->right;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 appFreeUni__FPv(branch1);
             }
             appFreeUni__FPv(branch2);
@@ -811,17 +888,21 @@ void MapTree_FreeSubtree(void* self, void* node) {
             branch0 = AsBpTreeLinks(branch1)->left;
             if (branch0 != 0) {
                 child = AsBpTreeLinks(branch0)->left;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 child = AsBpTreeLinks(branch0)->right;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 appFreeUni__FPv(branch0);
             }
             branch0 = AsBpTreeLinks(branch1)->right;
             if (branch0 != 0) {
                 child = AsBpTreeLinks(branch0)->left;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 child = AsBpTreeLinks(branch0)->right;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 appFreeUni__FPv(branch0);
             }
             appFreeUni__FPv(branch1);
@@ -831,17 +912,21 @@ void MapTree_FreeSubtree(void* self, void* node) {
             branch0 = AsBpTreeLinks(branch1)->left;
             if (branch0 != 0) {
                 child = AsBpTreeLinks(branch0)->left;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 child = AsBpTreeLinks(branch0)->right;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 appFreeUni__FPv(branch0);
             }
             branch0 = AsBpTreeLinks(branch1)->right;
             if (branch0 != 0) {
                 child = AsBpTreeLinks(branch0)->left;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 child = AsBpTreeLinks(branch0)->right;
-                if (child != 0) MapTree_FreeSubtree(self, child);
+                if (child != 0)
+                    MapTree_FreeSubtree(self, child);
                 appFreeUni__FPv(branch0);
             }
             appFreeUni__FPv(branch1);
@@ -854,7 +939,11 @@ void MapTree_FreeSubtree(void* self, void* node) {
 
 #pragma push
 #pragma use_lmw_stmw on
-struct C733CObject { int count; void* root; void* sentinel; };
+struct C733CObject {
+    int count;
+    void* root;
+    void* sentinel;
+};
 // Free every node in a map and restore its empty root/sentinel state.
 // This is the same node-only cleanup despite the exported NamedGroup spelling;
 // it does not inspect a key or mapped value. Payload teardown is the caller's job.
@@ -1010,7 +1099,6 @@ void* NamedObjectMap_InsertNode(void*, void*, int, int, void*);
 void StringObj_dtor(void*, int);
 void appFreeUni__FPv(void*);
 void* BpSlot_GetSpriteListHead(void*);
-void CBpEditSprite_ctor(void*, void*);
 void UIGroupVector_Append(void*, void*);
 int UIGroup_GetItemCount(void*);
 extern void* g_bpNamedGroupKeyAllocator;
@@ -1038,7 +1126,9 @@ struct C62D4Object {
     void* vtable;
     char padding04[0x10];
     // Construct an editor group attached to its owning BP object.
-    C62D4Object(void* owner) { CBpEditSprite_ctor(this, owner); }
+    C62D4Object(void* owner) {
+        ((CBpEditSprite*)this)->__ct(owner);
+    }
 };
 
 struct C62D4Node {
@@ -1090,8 +1180,8 @@ struct C62D4Container {
 };
 
 // Return a reference to the smaller string length.
-static inline const unsigned int& Min62D4(const unsigned int& a, const unsigned int& b) {
-    return a < b ? a : b;
+static inline const unsigned int& Min62D4(const unsigned int& length1, const unsigned int& length2) {
+    return length1 < length2 ? length1 : length2;
 }
 
 #pragma push
@@ -1224,7 +1314,6 @@ void* BpObject_GetOrCreateNamedGroup(C62D4Container* self, const char* key) {
             found = (C62D4Node*)header;
     }
 
-
     // Lookup C: the temporary key owns its heap bytes; the cache result is borrowed.
     if (searchFlag != 0)
         appFreeUni__FPv(search.data);
@@ -1265,7 +1354,8 @@ void* BpObject_GetOrCreateNamedGroup(C62D4Container* self, const char* key) {
     C62D4Node* position;
     unsigned char insertLeft;
     unsigned char insertRight;
-    void* insertion = StringTree_FindInsertionPosition(((char*)&AsCBpObject(self)->namedGroupCount), &insertKey, (void**)&position, (char*)&insertLeft, (char*)&insertRight);
+    void* insertion = StringTree_FindInsertionPosition(((char*)&AsCBpObject(self)->namedGroupCount), &insertKey,
+                                                       (void**)&position, (char*)&insertLeft, (char*)&insertRight);
 
     C62D4Pair* pair;
     // Original 0x800C62D4 / 0x800C6834: reuse the key or insert it before storing.
@@ -1322,11 +1412,12 @@ void* BpObject_GetOrCreateNamedGroup(C62D4Container* self, const char* key) {
                 String_ReserveCapacity(&localKey, insertKey.length);
                 C62D4CharArgument copyLocal;
                 copyLocal.argument = copyLocal.source;
-                String_ReplaceRange(&localKey, 0, 0, insertKey.data,
-                    insertKey.data + insertKey.length, (char*)&copyLocal.argument);
+                String_ReplaceRange(&localKey, 0, 0, insertKey.data, insertKey.data + insertKey.length,
+                                    (char*)&copyLocal.argument);
             }
             localKey.allocator = g_bpNamedGroupKeyAllocator;
-            C62D4Node* inserted = (C62D4Node*)NamedObjectMap_InsertNode(((char*)&AsCBpObject(self)->namedGroupCount), insertion, insertLeft, insertRight, &localKey);
+            C62D4Node* inserted = (C62D4Node*)NamedObjectMap_InsertNode(((char*)&AsCBpObject(self)->namedGroupCount),
+                                                                        insertion, insertLeft, insertRight, &localKey);
             pair = (C62D4Pair*)((char*)inserted + kTreePayloadOffset);
             if (localKey.string.flags >> kStringHeapTagShift)
                 appFreeUni__FPv(localKey.string.data);
@@ -1553,8 +1644,8 @@ void* UIGroup_GetOrCreateById(C6834Container* self, int key) {
     C62D4Node* position;
     unsigned char insertLeft;
     unsigned char insertRight;
-    void* insertion = StringTree_FindInsertionPosition(((char*)&AsCBpObject(self)->namedGroupCount), &insertKey, (void**)&position,
-        (char*)&insertLeft, (char*)&insertRight);
+    void* insertion = StringTree_FindInsertionPosition(((char*)&AsCBpObject(self)->namedGroupCount), &insertKey,
+                                                       (void**)&position, (char*)&insertLeft, (char*)&insertRight);
 
     C62D4Pair* pair;
     // Original 0x800C62D4 / 0x800C6834: reuse the key or insert it before storing.
@@ -1612,13 +1703,13 @@ void* UIGroup_GetOrCreateById(C6834Container* self, int key) {
                 C62D4CharArgument copyLocal;
                 copyLocal.argument = copyLocal.source;
                 String_ReplaceRange(&localKey, 0, 0, insertKey.string.data,
-                    insertKey.string.data + insertKey.string.length, (char*)&copyLocal.argument);
+                                    insertKey.string.data + insertKey.string.length, (char*)&copyLocal.argument);
             }
             localKey.allocator = g_bpNamedGroupKeyAllocator;
             C62D4Node* inserted;
             try {
-                inserted = (C62D4Node*)NamedObjectMap_InsertNode(((char*)&AsCBpObject(self)->namedGroupCount), insertion,
-                    insertLeft, insertRight, &localKey);
+                inserted = (C62D4Node*)NamedObjectMap_InsertNode(((char*)&AsCBpObject(self)->namedGroupCount),
+                                                                 insertion, insertLeft, insertRight, &localKey);
             } catch (...) {
                 if (localKey.string.flags >> kStringHeapTagShift)
                     appFreeUni__FPv(localKey.string.data);
@@ -1638,7 +1729,6 @@ extern "C" void BpObject_ClearWorkBuffers(void*);
 extern "C" void B2dFile_Reset(void*);
 extern "C" void RBTree_FreeTrivialSubtree(void*, void*);
 extern "C" void StringValueTree_DestroySubtree(void*, void*);
-extern "C" void CSharedFileHandle_Destroy(void*, int);
 
 // Release a group node's copied heap key; inline bytes and group values stay untouched.
 // The key-address guard is retained because its wrapping address test emits code.
@@ -1656,17 +1746,21 @@ static inline void ReleaseBpGroupHeapKey(void* node) {
 // Free the deeper integer-key child subtrees; the caller releases this node afterward.
 static inline void ReleaseBpIntegerChildSubtrees(void* owner, void* grandchildNode) {
     void* subtree = AsBpTreeLinks(grandchildNode)->left;
-    if (subtree != 0) RBTree_FreeTrivialSubtree((char*)&AsCBpObject(owner)->objectCount, subtree);
+    if (subtree != 0)
+        RBTree_FreeTrivialSubtree((char*)&AsCBpObject(owner)->objectCount, subtree);
     subtree = AsBpTreeLinks(grandchildNode)->right;
-    if (subtree != 0) RBTree_FreeTrivialSubtree((char*)&AsCBpObject(owner)->objectCount, subtree);
+    if (subtree != 0)
+        RBTree_FreeTrivialSubtree((char*)&AsCBpObject(owner)->objectCount, subtree);
 }
 
 // Free the deeper string-key child subtrees; the caller releases this node afterward.
 static inline void ReleaseBpStringChildSubtrees(void* owner, void* grandchildNode) {
     void* subtree = AsBpTreeLinks(grandchildNode)->left;
-    if (subtree != 0) StringValueTree_DestroySubtree((char*)&AsCBpObject(owner)->namedGroupCount, subtree);
+    if (subtree != 0)
+        StringValueTree_DestroySubtree((char*)&AsCBpObject(owner)->namedGroupCount, subtree);
     subtree = AsBpTreeLinks(grandchildNode)->right;
-    if (subtree != 0) StringValueTree_DestroySubtree((char*)&AsCBpObject(owner)->namedGroupCount, subtree);
+    if (subtree != 0)
+        StringValueTree_DestroySubtree((char*)&AsCBpObject(owner)->namedGroupCount, subtree);
 }
 
 #pragma push
@@ -1675,9 +1769,9 @@ static inline void ReleaseBpStringChildSubtrees(void* owner, void* grandchildNod
 // Invalidates all borrowed resource/group/script pointers. Requires an initialized
 // script, loader and sprite pool. The expanded postorder traversals deliberately
 // separate deleting VALUES from freeing NODES; do not merge those ownership steps.
-int CBpObject_ClearResources(void* self) {
+int CBpObject::ClearResources() {
     TableLock t1(1, 1);
-    void* owner = self;
+    void* owner = this;
     // Script phase: release script work while the shared resource bytes still live.
     BpObject_ClearWorkBuffers(AsCBpObject(owner)->script);
     B2dFile_Reset(AsCBpObject(owner)->script);
@@ -1696,12 +1790,13 @@ int CBpObject_ClearResources(void* self) {
         while (node != sentinel) {
             void* val = AsBpIntObjectNode(node)->value;
             if (val != 0) {
-                void (*dtor)(void*, int) = (void(*)(void*,int))(*(void***)val)[2];
+                void (*dtor)(void*, int) = (void (*)(void*, int))(*(void***)val)[2];
                 dtor(val, 1);
             }
             void* successor = AsBpTreeLinks(node)->right;
             if (successor != 0) {
-                while (*(void**)successor != 0) successor = *(void**)successor;
+                while (*(void**)successor != 0)
+                    successor = *(void**)successor;
                 node = successor;
             } else {
                 while (true) {
@@ -1800,12 +1895,13 @@ int CBpObject_ClearResources(void* self) {
         while (node != sentinel) {
             void* val = ((C62D4Node*)node)->value;
             if (val != 0) {
-                void (*dtor)(void*, int) = (void(*)(void*,int))(*(void***)val)[2];
+                void (*dtor)(void*, int) = (void (*)(void*, int))(*(void***)val)[2];
                 dtor(val, 1);
             }
             void* successor = AsBpTreeLinks(node)->right;
             if (successor != 0) {
-                while (*(void**)successor != 0) successor = *(void**)successor;
+                while (*(void**)successor != 0)
+                    successor = *(void**)successor;
                 node = successor;
             } else {
                 while (true) {
@@ -1923,11 +2019,13 @@ int CBpObject_ClearResources(void* self) {
         OSLockMutex((OSMutex*)lockPtr);
         unsigned filenameLength;
         unsigned filenameFlags = AsCBpLoad(loader)->filenameStorage;
-        filenameLength = (!(filenameFlags >> kStringHeapTagShift)) ? (*(unsigned char*)&AsCBpLoad(loader)->filenameStorage) & kInlineStringLengthMask : (*(unsigned*)&AsCBpLoad(loader)->filenameLongLength);
+        filenameLength = (!(filenameFlags >> kStringHeapTagShift))
+                             ? (*(unsigned char*)&AsCBpLoad(loader)->filenameStorage) & kInlineStringLengthMask
+                             : (*(unsigned*)&AsCBpLoad(loader)->filenameLongLength);
         if (filenameLength != 0) {
             void* sharedFile = AsCBpLoad(loader)->sharedFileHandle;
             if (sharedFile != 0) {
-                CSharedFileHandle_Destroy(sharedFile, 1);
+                CSharedFileHandle::Destroy(sharedFile, 1);
                 AsCBpLoad(loader)->sharedFileHandle = 0;
             }
             unsigned u = AsCBpLoad(loader)->filenameStorage;
@@ -2008,12 +2106,14 @@ int BpObject_PollLoad(void* object) {
             int spriteWorkCount = 0, animationWorkCount = 0, labelWorkCount = 0;
             {
                 TableLock t(1, 1);
-                int size = B2dFile_CalculateCommandWorkSize(self->resourceBuffer, &spriteWorkCount, &animationWorkCount, &labelWorkCount);
+                int size = B2dFile_CalculateCommandWorkSize(self->resourceBuffer, &spriteWorkCount, &animationWorkCount,
+                                                            &labelWorkCount);
                 self->scriptBuffer = appMallocUni__FUl((unsigned)size);
                 memset(self->scriptBuffer, 0, (unsigned)size);
                 BpSlot_RegisterWork(self->script, self->scriptBuffer, spriteWorkCount, animationWorkCount);
                 char* base = bpSpriteControlStrings;
-                BpObject_DiagnosticStub((int)(base + kWorkSizeDiagnostic), size, spriteWorkCount, animationWorkCount, labelWorkCount);
+                BpObject_DiagnosticStub((int)(base + kWorkSizeDiagnostic), size, spriteWorkCount, animationWorkCount,
+                                        labelWorkCount);
             }
             void* fnptr = (void*)BpScript_CreateNamedGsrTexture;
             B2d_SetTextureSubcommandCallback(fnptr);
@@ -2048,11 +2148,13 @@ int BpObject_PollLoad(void* object) {
                     int spriteWorkCount = 0, animationWorkCount = 0, labelWorkCount = 0;
                     {
                         TableLock t(1, 1);
-                        int size = B2dFile_CalculateCommandWorkSize(self->resourceBuffer, &spriteWorkCount, &animationWorkCount, &labelWorkCount);
+                        int size = B2dFile_CalculateCommandWorkSize(self->resourceBuffer, &spriteWorkCount,
+                                                                    &animationWorkCount, &labelWorkCount);
                         self->scriptBuffer = appMallocUni__FUl((unsigned)size);
                         memset(self->scriptBuffer, 0, (unsigned)size);
                         BpSlot_RegisterWork(self->script, self->scriptBuffer, spriteWorkCount, animationWorkCount);
-                        BpObject_DiagnosticStub((int)(base + kWorkSizeDiagnostic), size, spriteWorkCount, animationWorkCount, labelWorkCount);
+                        BpObject_DiagnosticStub((int)(base + kWorkSizeDiagnostic), size, spriteWorkCount,
+                                                animationWorkCount, labelWorkCount);
                     }
                     self->loadState = kLoadWaitingForObjects;
                     return 0;

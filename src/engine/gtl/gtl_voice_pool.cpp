@@ -1,9 +1,11 @@
+// Voice pool for the audio system: the pool of software voices and their hardware voice grid,
+// output mix coefficients, pan remapping, and the DVD file stream position helpers.
+
 #include <decomp/static_init.h>
 #include "classes/Voice8040E9BC.h"
+#include "classes/GtlDvdFileStream.h"
 // Existing Voice fields replace raw offsets below; original addresses 0x8041095C-0x80412070.
 // Voice dimensions/node: 0x8041095C-0x80412070; layout owned by gtl_voice_and_stream_tasks.cpp.
-// Translation unit 0x8041095C-0x80412070 (27 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
@@ -16,8 +18,14 @@ extern "C" {
 // A node address is Voice + kVoiceLinkOffset; subtract that offset before using Voice
 // fields. Subtract kPriorityBeforeLink from the node to read the signed priority word.
 // Returning a voice transfers its embedded link, never the caller-owned Voice storage.
-struct VoicePoolLink { VoicePoolLink* next; VoicePoolLink* prev; };
-struct VoicePoolList { unsigned int count; VoicePoolLink sentinel; };
+struct VoicePoolLink {
+    VoicePoolLink* next;
+    VoicePoolLink* prev;
+};
+struct VoicePoolList {
+    unsigned int count;
+    VoicePoolLink sentinel;
+};
 struct VoicePoolState {
     unsigned char initialized;
     char reserved[3];
@@ -25,11 +33,26 @@ struct VoicePoolState {
     VoicePoolList free;
 };
 // Preserve byte cursors in grid loops: columns are four AX-voice pointers wide.
-struct VoiceGridCursor { void* previousCell; void* axVoice; };
-struct AxVoiceHandle { void* hardwareVoice; };
-struct AxPlaybackState { char reserved[0x38]; unsigned short state; };
-struct VoiceRemoteLevels { char reserved[0xDC]; float volume[4]; float send[4]; };
-struct VoicePriority { char reserved[0xAC]; int priority; };
+struct VoiceGridCursor {
+    void* previousCell;
+    void* axVoice;
+};
+struct AxVoiceHandle {
+    void* hardwareVoice;
+};
+struct AxPlaybackState {
+    char reserved[0x38];
+    unsigned short state;
+};
+struct VoiceRemoteLevels {
+    char reserved[0xDC];
+    float volume[4];
+    float send[4];
+};
+struct VoicePriority {
+    char reserved[0xAC];
+    int priority;
+};
 struct AudioControllerVoiceState {
     unsigned char active;
     char reserved[4];
@@ -42,15 +65,29 @@ enum {
     kFreeListOffset = (int)&((VoicePoolState*)0)->free,
     kActiveSentinelOffset = (int)&((VoicePoolState*)0)->active.sentinel,
     kFreeSentinelOffset = (int)&((VoicePoolState*)0)->free.sentinel,
-    kVoiceBytes = sizeof(Voice), kVoiceLinkOffset = (int)&((Voice*)0)->poolLinkNext,
+    kVoiceBytes = sizeof(Voice),
+    kVoiceLinkOffset = (int)&((Voice*)0)->poolLinkNext,
     kPriorityBeforeLink = (int)&((Voice*)0)->poolLinkNext - (int)&((VoicePriority*)0)->priority,
-    kVoiceColumnBytes = 4 * sizeof(void*), kVoiceRowBytes = sizeof(void*),
-    kAxStopped = 0, kAxPlaying = 1, kVoiceStopped = 1, kVoiceStolen = 2,
-    kVoiceAxRemoved = 3, kProtectedPriority = 0xFF,
-    kSeekStart = 0, kSeekEnd = 2,
-    kOutputMono = 0, kOutputStereo = 1, kOutputSurround = 2, kOutputSpatialRemap = 3,
-    kMainOutput = 1, kFirstRemoteOutput = 2, kMaximumMixCoefficient = 0xFFFF,
-    kMainMixCoefficientCount = 12, kRemoteOutputCount = 4, kQ15Unity = 32768
+    kVoiceColumnBytes = 4 * sizeof(void*),
+    kVoiceRowBytes = sizeof(void*),
+    kAxStopped = 0,
+    kAxPlaying = 1,
+    kVoiceStopped = 1,
+    kVoiceStolen = 2,
+    kVoiceAxRemoved = 3,
+    kProtectedPriority = 0xFF,
+    kSeekStart = 0,
+    kSeekEnd = 2,
+    kOutputMono = 0,
+    kOutputStereo = 1,
+    kOutputSurround = 2,
+    kOutputSpatialRemap = 3,
+    kMainOutput = 1,
+    kFirstRemoteOutput = 2,
+    kMaximumMixCoefficient = 0xFFFF,
+    kMainMixCoefficientCount = 12,
+    kRemoteOutputCount = 4,
+    kQ15Unity = 32768
 };
 
 typedef char VoicePoolState_size[(sizeof(VoicePoolState) == 28) ? 1 : -1];
@@ -65,13 +102,16 @@ struct InterruptUnwindCleanup {
     // Arm interrupt restoration with the saved previous level.
     explicit InterruptUnwindCleanup(BOOL saved) : level(saved), active(true) {}
     // Disarm unwind restoration and return the saved level for explicit restoration.
-    BOOL release() { active = false; return level; }
+    BOOL release() {
+        active = false;
+        return level;
+    }
     // Restore interrupts on unwind while the cleanup remains armed.
     ~InterruptUnwindCleanup() {
-        if (active) OSRestoreInterrupts(level);
+        if (active)
+            OSRestoreInterrupts(level);
     }
 };
-
 
 extern float kFloat_6_2831855;
 extern float s_twoPi_8041095C_VoicePool;
@@ -84,14 +124,14 @@ extern unsigned char s_voicePoolDestructorRegistration[0xC];
 extern void* s_dvdFileStreamBaseTypeInfo;
 extern float s_twoPi_8041095C_DvdStreamRoot;
 extern const float kFloat_1_0_AudioVoice, kFloat_0_AudioVoice, kFloat_neg0_12_AudioVoice, kFloat_0_88_AudioVoice;
-extern const float kFloat_0_5_AudioVoice, kFloat_1_12_AudioVoice, kFloat_0_85_AudioSpatialCurve, kFloat_0_14999998_AudioSpatialCurve;
+extern const float kFloat_0_5_AudioVoice, kFloat_1_12_AudioVoice, kFloat_0_85_AudioSpatialCurve,
+    kFloat_0_14999998_AudioSpatialCurve;
 extern const float kFloat_2_AudioMath, kFloat_0_35000002_AudioSpatialCurve;
 extern const float kFloat_3_AudioVoice, kAudioStereoLeftPanOffset, kAudioSurroundRearAttenuationDb;
 
 // Return the SDK's configured maximum AX voice count.
 int AXGetMaxVoices();
 void __dl__FPv(void*);
-void gtl_Voice_StopAllAxVoiceRamps(char*);
 void GtlVoice_NotifyOutputBufferReadStarted(void*);
 void gtl_nw4r_detail_Voice_ApplyPendingParameters(void*);
 void GtlVoice_UpdatePlaybackState(void*);
@@ -105,7 +145,6 @@ void GtlVoice_Stop(void*);
 void GtlVoice_Release(void*);
 void gtl_nw4r_detail_Voice_Dtor(void*, int);
 void IntrusiveList_UnlinkNodeAndDecrementCount(void*, void*);
-void gtl_Voice_ComputeOutputMixCoefficients(void*, int, int, unsigned char*, void**);
 int AudioVoice_RampMixCoefficients(void*, void*);
 void AudioVoice_SetDspParameterFEIfAllocated(void*, int);
 void gtl_AxVoice_SetEightMixCoefficients(void*, void*);
@@ -113,7 +152,6 @@ int GtlVoice_IsSourceBaseInRange(void*, void*, void*);
 void AXSetVoiceState(void*, int);
 void* GtlVoicePool_GetInstance(void*);
 void gtl_AxVoicePool_ReleaseVoice(void*, void*);
-void* gtl_Voice_AllocateAxVoiceGrid(void*, void*, void*, int, void*, void*);
 void GtlVoice_SetAllocatedPrioritiesTo16(void*);
 float AudioGain_DecibelsToLinear(float);
 float gtl_Audio_LookupPanGain(float);
@@ -127,12 +165,6 @@ void GtlVoicePool_InitializeMathConstants();
 // Initialize the DVD-position unit's two-pi constant.
 void GtlDvdFilePosition_InitializeMathConstants();
 
-// Link DVD stream base type information and initialize its math constant.
-void gtl_nw4r_ut_DvdFileStream_InitializeBaseTypeInfoAndConstants();
-
-// Clear the root stream type-information word and initialize its math constant.
-void GtlDvdFileStream_InitializeRootTypeInfoAndConstants();
-
 // Return the caller-owned storage needed for the maximum software voice count.
 int gtl_VoicePool_GetRequiredMemorySize();
 
@@ -145,23 +177,16 @@ void* dtor_80411914(void* self, int shouldDelete);
 // Default voice hook: no work is required.
 void gtl_nw4r_detail_Voice_vfunc_0(void*);
 
- #pragma use_lmw_stmw on
+#pragma use_lmw_stmw on
 // Stop and notify a software voice if any source lies in the removed memory range.
 void gtl_nw4r_detail_Voice_StopForRemovedSource(void* self, void* sourceBegin, void* sourceEnd);
- #pragma use_lmw_stmw reset
-
-// Default DVD async-wait hook: no work is required.
-void gtl_nw4r_ut_DvdFileStream_vfunc_5(void*);
-
-// Report no result for the default DVD async-result hook.
-int gtl_nw4r_ut_DvdFileStream_vfunc_6(void*);
+#pragma use_lmw_stmw reset
 
 // Detach both pool lists and optionally free the pool object.
 void* gtl_VoicePool_Dtor(void* self, int shouldDelete);
 
 #pragma use_lmw_stmw on
 // Stop mix and volume ramps for every allocated cell of the AX-voice grid.
-void gtl_Voice_StopAllAxVoiceRamps(char* self);
 #pragma use_lmw_stmw reset
 
 // Optionally free this trivial DVD-position object.
@@ -202,12 +227,12 @@ void gtl_VoicePool_Shutdown(unsigned char* self);
 // (reason 1) -> Release. The callback must tolerate the released/stopped voice state.
 // Returns borrowed pool Voice* on success or null on priority/AX allocation failure;
 // a failed new allocation does not undo a completed steal. Return via Release.
-void* gtl_VoicePool_AcquireVoice(void* self, void* sourceColumns, void* mixRows, int priority, void* eventCallback, void* callbackArgument);
+void* gtl_VoicePool_AcquireVoice(void* self, void* sourceColumns, void* mixRows, int priority, void* eventCallback,
+                                 void* callbackArgument);
 
- #pragma use_lmw_stmw on
+#pragma use_lmw_stmw on
 // Apply main/remote mix ramps and auxiliary coefficients to each allocated AX cell.
-int gtl_Voice_ApplyOutputMixCoefficients(unsigned char* self);
- #pragma use_lmw_stmw reset
+#pragma use_lmw_stmw reset
 
 #pragma use_lmw_stmw on
 // Release remaining AX cells, clear playback flags, and report the removal reason.
@@ -215,10 +240,10 @@ void GtlVoice_HandleAxVoiceRemoval(void* value, int mode, unsigned char* self);
 #pragma use_lmw_stmw reset
 
 // Remap pan and surround coordinates through the output-mode-3 piecewise curve.
-void GtlVoice_RemapPanForOutputMode3(float a, float b, void* unused, float* outA, float* outB);
+void GtlVoice_RemapPanForOutputMode3(float pan, float surroundPan, void* unused, float* outA, float* outB);
 
 // Convert a nonnegative gain to saturated unsigned Q15 without changing conversion calls.
-static unsigned short fn_80410D78_pack(float value) {
+static unsigned short ConvertGainToQ15(float value) {
     unsigned long result = Runtime_ConvertDoubleToUnsigned((double)((float)kQ15Unity * value));
     if (result < kMaximumMixCoefficient)
         result = Runtime_ConvertDoubleToUnsigned((double)((float)kQ15Unity * value));
@@ -237,7 +262,6 @@ static unsigned short fn_80410D78_pack(float value) {
 // rear-right (aux C is absent). Remote r uses aux[2*r] for mono gain, aux[2*r+1]=0.
 // outputLineMask bit 0 enables main and aux; bits 1..4 enable remote outputs 0..3.
 // Build twelve main/auxiliary and eight remote coefficients for one source/channel cell.
-void gtl_Voice_ComputeOutputMixCoefficients(void* object, int sourceChannel, int channelIndex, unsigned char* outBytes, void** auxPtr);
 
 } // extern "C"
 
@@ -246,8 +270,10 @@ void gtl_Voice_ComputeOutputMixCoefficients(void* object, int sourceChannel, int
 #pragma force_active on
 STATIC_INIT_ENTRY(".CRT$XCU80462700", _ctors_u8041095C_0, GtlVoicePool_InitializeMathConstants);
 STATIC_INIT_ENTRY(".CRT$XCU80462700", _ctors_u8041095C_1, GtlDvdFilePosition_InitializeMathConstants);
-STATIC_INIT_ENTRY(".CRT$XCU80462700", _ctors_u8041095C_2, gtl_nw4r_ut_DvdFileStream_InitializeBaseTypeInfoAndConstants);
-STATIC_INIT_ENTRY(".CRT$XCU80462700", _ctors_u8041095C_3, GtlDvdFileStream_InitializeRootTypeInfoAndConstants);
+STATIC_INIT_ENTRY(".CRT$XCU80462700", _ctors_u8041095C_2,
+                  gtl::nw4r::ut::DvdFileStream::InitializeBaseTypeInfoAndConstants);
+STATIC_INIT_ENTRY(".CRT$XCU80462700", _ctors_u8041095C_3,
+                  gtl::nw4r::ut::DvdFileStream::InitializeRootTypeInfoAndConstants);
 #pragma pop
 
 // Game entry points in original address order.
@@ -255,23 +281,25 @@ extern "C" {
 
 #pragma push
 #pragma use_lmw_stmw on
+} // extern "C"
+
 // Apply calculated mix/remote coefficients to each allocated AX cell.
-int gtl_Voice_ApplyOutputMixCoefficients(unsigned char* self) {
+int gtl::nw4r::detail::Voice::ApplyOutputMixCoefficients() {
     volatile unsigned char padding[16];
     int result = 0;
-    unsigned char* row = self;
+    unsigned char* row = (unsigned char*)this;
     int i = 0;
-    for (; i < ((Voice*)self)->sourceChannelCount; ++i) {
+    for (; i < this->sourceChannelCount; ++i) {
         unsigned char* cell = row;
-        for (int j = 0; j < ((Voice*)self)->outputVoiceCount; ++j) {
+        for (int j = 0; j < this->outputVoiceCount; ++j) {
             void* value = ((VoiceGridCursor*)cell)->axVoice;
             if (value != 0) {
-                unsigned short aux[8];     // gtl_Voice_ComputeOutputMixCoefficients writes 8 halfwords here
-                unsigned short data[12];   // and 12 halfwords here
-                gtl_Voice_ComputeOutputMixCoefficients(self, i, j, (unsigned char*)data, (void**)aux);
+                unsigned short aux[8]; // gtl::nw4r::detail::Voice::ComputeOutputMixCoefficients writes 8 halfwords here
+                unsigned short data[12]; // and 12 halfwords here
+                ComputeOutputMixCoefficients(i, j, (unsigned char*)data, (void**)aux);
                 int found = AudioVoice_RampMixCoefficients(value, data);
                 result = (result | found) != 0;
-                if ((*(unsigned int*)&((Voice*)self)->outputLineMask) <= 1)
+                if ((*(unsigned int*)&this->outputLineMask) <= 1)
                     AudioVoice_SetDspParameterFEIfAllocated(value, 0);
                 else {
                     AudioVoice_SetDspParameterFEIfAllocated(value, 1);
@@ -289,7 +317,8 @@ int gtl_Voice_ApplyOutputMixCoefficients(unsigned char* self) {
 #pragma push
 #pragma use_lmw_stmw on
 // Stop volume and mix ramps for every allocated AX grid cell.
-void gtl_Voice_StopAllAxVoiceRamps(char* self) {
+void gtl::nw4r::detail::Voice::StopAllAxVoiceRamps() {
+    char* self = (char*)this;
     int offset = 0;
     int i = 0;
     for (; i < ((Voice*)self)->outputVoiceCount; i++) {
@@ -305,6 +334,8 @@ void gtl_Voice_StopAllAxVoiceRamps(char* self) {
     }
 }
 #pragma pop
+
+extern "C" {
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -345,66 +376,74 @@ void GtlVoice_HandleAxVoiceRemoval(void* value, int mode, unsigned char* self) {
     ((Voice*)self)->sourceChannelCount = 0;
     if (clear)
         GtlVoice_Release(self);
-    void (*callback)(void*, int, void*) = (*(void (**)(void*, int, void*))&((Voice*)self)->eventCallback);
+    void (*callback)(void*, int, void*) = (*(void (**)(void*, int, void*)) & ((Voice*)self)->eventCallback);
     if (callback != 0)
         callback(self, notifyMode, (*(void**)&((Voice*)self)->callbackArgument));
 }
 #pragma pop
 
 // Remap pan coordinates with the output-mode-3 piecewise gain curve.
-void GtlVoice_RemapPanForOutputMode3(float a, float b, void* unused, float* outA, float* outB) {
-    float delta = b - kFloat_1_0_AudioVoice;
-    if (__fabsf(a) <= __fabsf(delta)) {
+void GtlVoice_RemapPanForOutputMode3(float pan, float surroundPan, void* unused, float* outA, float* outB) {
+    float delta = surroundPan - kFloat_1_0_AudioVoice;
+    if (__fabsf(pan) <= __fabsf(delta)) {
         if (delta <= kFloat_0_AudioVoice) {
-            *outA = a;
+            *outA = pan;
             *outB = kFloat_0_88_AudioVoice * delta + kFloat_neg0_12_AudioVoice;
         } else {
-            *outA = kFloat_0_5_AudioVoice * a;
+            *outA = kFloat_0_5_AudioVoice * pan;
             *outB = kFloat_1_12_AudioVoice * delta + kFloat_neg0_12_AudioVoice;
         }
-    } else if (a >= kFloat_0_AudioVoice) {
+    } else if (pan >= kFloat_0_AudioVoice) {
         if (delta <= kFloat_0_AudioVoice) {
-            float t = -delta / a;
-            *outA = (kFloat_0_14999998_AudioSpatialCurve * t + kFloat_0_85_AudioSpatialCurve) * __fabsf(a);
-            *outB = kFloat_neg0_12_AudioVoice + (kFloat_2_AudioMath * delta + kFloat_0_88_AudioVoice * a);
+            float t = -delta / pan;
+            *outA = (kFloat_0_14999998_AudioSpatialCurve * t + kFloat_0_85_AudioSpatialCurve) * __fabsf(pan);
+            *outB = kFloat_neg0_12_AudioVoice + (kFloat_2_AudioMath * delta + kFloat_0_88_AudioVoice * pan);
         } else {
-            float t = -delta / a;
-            *outA = (kFloat_0_35000002_AudioSpatialCurve * t + kFloat_0_85_AudioSpatialCurve) * __fabsf(a);
-            *outB = kFloat_1_12_AudioVoice * a + kFloat_neg0_12_AudioVoice;
+            float t = -delta / pan;
+            *outA = (kFloat_0_35000002_AudioSpatialCurve * t + kFloat_0_85_AudioSpatialCurve) * __fabsf(pan);
+            *outB = kFloat_1_12_AudioVoice * pan + kFloat_neg0_12_AudioVoice;
         }
     } else if (delta <= kFloat_0_AudioVoice) {
-        float t = -delta / a;
-        *outA = (kFloat_0_14999998_AudioSpatialCurve * t - kFloat_0_85_AudioSpatialCurve) * __fabsf(a);
-        *outB = kFloat_neg0_12_AudioVoice + (kFloat_2_AudioMath * delta - kFloat_1_12_AudioVoice * a);
+        float t = -delta / pan;
+        *outA = (kFloat_0_14999998_AudioSpatialCurve * t - kFloat_0_85_AudioSpatialCurve) * __fabsf(pan);
+        *outB = kFloat_neg0_12_AudioVoice + (kFloat_2_AudioMath * delta - kFloat_1_12_AudioVoice * pan);
     } else {
-        float t = -delta / a;
-        *outA = (kFloat_0_35000002_AudioSpatialCurve * t - kFloat_0_85_AudioSpatialCurve) * __fabsf(a);
-        *outB = kFloat_1_12_AudioVoice * (-a) + kFloat_neg0_12_AudioVoice;
+        float t = -delta / pan;
+        *outA = (kFloat_0_35000002_AudioSpatialCurve * t - kFloat_0_85_AudioSpatialCurve) * __fabsf(pan);
+        *outB = kFloat_1_12_AudioVoice * (-pan) + kFloat_neg0_12_AudioVoice;
     }
     *outB += kFloat_1_0_AudioVoice;
 }
 
+} // extern "C"
+
 // Calculate one cell's main/aux and remote gains into caller-owned Q15 arrays.
-void gtl_Voice_ComputeOutputMixCoefficients(void* object, int sourceChannel, int channelIndex, unsigned char* outBytes, void** auxPtr) {
-    unsigned char* self = (unsigned char*)object;
+void gtl::nw4r::detail::Voice::ComputeOutputMixCoefficients(int sourceChannel, int channelIndex,
+                                                            unsigned char* outBytes, void** auxPtr) {
+    unsigned char* self = (unsigned char*)this;
     unsigned short* out = (unsigned short*)outBytes;
     unsigned short* aux = (unsigned short*)auxPtr;
-    unsigned int flags = (*(unsigned int*)&((Voice*)self)->outputLineMask);
-    VoiceChannelParameters* channel = (VoiceChannelParameters*)(self + channelIndex * sizeof(VoiceChannelParameters) + (int)&((Voice*)0)->channels);
+    unsigned int flags = (*(unsigned int*)&this->outputLineMask);
+    VoiceChannelParameters* channel =
+        (VoiceChannelParameters*)(self + channelIndex * sizeof(VoiceChannelParameters) + (int)&((Voice*)0)->channels);
 
     // Four channel scales (the original keeps them in f31..f28).
     float mainScale, auxAScale, auxBScale, auxCScale;
     {
-        float volume = kFloat_0_AudioVoice, mainSend = kFloat_0_AudioVoice, auxASend = kFloat_0_AudioVoice, auxBSend = kFloat_0_AudioVoice, auxCSend = kFloat_0_AudioVoice;
+        float volume = kFloat_0_AudioVoice, mainSend = kFloat_0_AudioVoice, auxASend = kFloat_0_AudioVoice,
+              auxBSend = kFloat_0_AudioVoice, auxCSend = kFloat_0_AudioVoice;
         if (flags & kMainOutput) {
-            float gain = ((Voice*)self)->auxASend + channel->auxASendOffset;
-            volume = ((Voice*)self)->mainVolume;
-            mainSend = ((Voice*)self)->mainSend;
-            if (gain > kFloat_1_0_AudioVoice) auxASend = kFloat_1_0_AudioVoice;
-            else if (gain < auxCSend) auxASend = auxCSend;
-            else auxASend = gain;
-            auxBSend = ((Voice*)self)->auxBSend;
-            auxCSend = ((Voice*)self)->auxCSend;
+            float gain = this->auxASend + channel->auxASendOffset;
+            volume = this->mainVolume;
+            mainSend = this->mainSend;
+            if (gain > kFloat_1_0_AudioVoice)
+                auxASend = kFloat_1_0_AudioVoice;
+            else if (gain < auxCSend)
+                auxASend = auxCSend;
+            else
+                auxASend = gain;
+            auxBSend = this->auxBSend;
+            auxCSend = this->auxCSend;
         }
         mainScale = volume * mainSend;
         auxAScale = volume * auxASend;
@@ -426,12 +465,13 @@ void gtl_Voice_ComputeOutputMixCoefficients(void* object, int sourceChannel, int
     // Phase 2: resolve pan coordinates and front/rear gains (dimensionless).
     float leftGain = kFloat_0_AudioVoice, rightGain = kFloat_0_AudioVoice, frontGain, rearGain;
     // Mode zero pans the stereo source channels independently instead of blending them.
-    if (((Voice*)self)->sourceChannelCount == 2 && ((Voice*)self)->stereoPanMode == 0) {
-        float a = (((Voice*)self)->pan + ((Voice*)self)->panOffset) + channel->panOffset;
-        float b = (((Voice*)self)->surroundPan + ((Voice*)self)->surroundPanOffset) + channel->surroundPanOffset;
+    if (this->sourceChannelCount == 2 && this->stereoPanMode == 0) {
+        float a = (this->pan + this->panOffset) + channel->panOffset;
+        float b = (this->surroundPan + this->surroundPanOffset) + channel->surroundPanOffset;
         float scale = kFloat_1_0_AudioVoice;
         // Gain mode zero applies the +3 dB pan compensation.
-        if (((Voice*)self)->panGainMode == 0) scale = AudioGain_DecibelsToLinear(kFloat_3_AudioVoice);
+        if (this->panGainMode == 0)
+            scale = AudioGain_DecibelsToLinear(kFloat_3_AudioVoice);
         if (sourceChannel == 0) {
             leftGain = scale * gtl_Audio_LookupPanGain(a);
             rightGain = kFloat_0_AudioVoice;
@@ -443,13 +483,15 @@ void gtl_Voice_ComputeOutputMixCoefficients(void* object, int sourceChannel, int
         rearGain = AudioPan_LookupScaledGain(kFloat_2_AudioMath - b);
     } else {
         float adjust = kFloat_0_AudioVoice;
-        if (((Voice*)self)->sourceChannelCount == 2) {
-            if (sourceChannel == 0) adjust = kAudioStereoLeftPanOffset;
-            else if (sourceChannel == 1) adjust = kFloat_1_0_AudioVoice;
+        if (this->sourceChannelCount == 2) {
+            if (sourceChannel == 0)
+                adjust = kAudioStereoLeftPanOffset;
+            else if (sourceChannel == 1)
+                adjust = kFloat_1_0_AudioVoice;
         }
         int panMode = gtl_AudioController_GetOutputMode(gtl_AudioController_GetInstance());
-        float x = (adjust + (((Voice*)self)->pan + ((Voice*)self)->panOffset)) + channel->panOffset;
-        float y = (((Voice*)self)->surroundPan + ((Voice*)self)->surroundPanOffset) + channel->surroundPanOffset;
+        float x = (adjust + (this->pan + this->panOffset)) + channel->panOffset;
+        float y = (this->surroundPan + this->surroundPanOffset) + channel->surroundPanOffset;
         float remappedPan, remappedSurroundPan;
         if (panMode == kOutputSpatialRemap) {
             GtlVoice_RemapPanForOutputMode3(x, y, self, &remappedPan, &remappedSurroundPan);
@@ -458,7 +500,8 @@ void gtl_Voice_ComputeOutputMixCoefficients(void* object, int sourceChannel, int
             remappedSurroundPan = y;
         }
         float scale = kFloat_1_0_AudioVoice;
-        if (((Voice*)self)->sourceChannelCount == 1 && ((Voice*)self)->panGainMode == 0) scale = AudioGain_DecibelsToLinear(kFloat_3_AudioVoice);
+        if (this->sourceChannelCount == 1 && this->panGainMode == 0)
+            scale = AudioGain_DecibelsToLinear(kFloat_3_AudioVoice);
         leftGain = scale * gtl_Audio_LookupPanGain(remappedPan);
         rightGain = scale * gtl_Audio_LookupPanGain(-remappedPan);
         frontGain = AudioPan_LookupScaledGain(remappedSurroundPan);
@@ -469,38 +512,68 @@ void gtl_Voice_ComputeOutputMixCoefficients(void* object, int sourceChannel, int
     float monoGain = kFloat_0_5_AudioVoice * (leftGain + rightGain);
 
     // Phase 3: place gains in the selected output layout, then quantize to Q15.
-    float coefficients[kMainMixCoefficientCount];   // the twelve coefficients, in output order
-    for (int i = 0; i < kMainMixCoefficientCount; ++i) coefficients[i] = kFloat_0_AudioVoice;
+    float coefficients[kMainMixCoefficientCount]; // the twelve coefficients, in output order
+    for (int i = 0; i < kMainMixCoefficientCount; ++i)
+        coefficients[i] = kFloat_0_AudioVoice;
     int mode = gtl_AudioController_GetOutputMode(gtl_AudioController_GetInstance());
     if (mode == kOutputStereo) {
-        coefficients[0] = mainScale * leftGain; coefficients[1] = mainScale * rightGain;
-        coefficients[3] = auxAScale * leftGain; coefficients[4] = auxAScale * rightGain;
-        coefficients[6] = auxBScale * leftGain; coefficients[7] = auxBScale * rightGain;
-        coefficients[9] = auxCScale * leftGain; coefficients[10] = auxCScale * rightGain;
+        coefficients[0] = mainScale * leftGain;
+        coefficients[1] = mainScale * rightGain;
+        coefficients[3] = auxAScale * leftGain;
+        coefficients[4] = auxAScale * rightGain;
+        coefficients[6] = auxBScale * leftGain;
+        coefficients[7] = auxBScale * rightGain;
+        coefficients[9] = auxCScale * leftGain;
+        coefficients[10] = auxCScale * rightGain;
     } else if (mode == kOutputMono) {
-        coefficients[0] = mainScale * monoGain; coefficients[1] = coefficients[0];
-        coefficients[3] = auxAScale * monoGain; coefficients[4] = coefficients[3];
-        coefficients[6] = auxBScale * monoGain; coefficients[7] = coefficients[6];
-        coefficients[9] = auxCScale * monoGain; coefficients[10] = coefficients[9];
+        coefficients[0] = mainScale * monoGain;
+        coefficients[1] = coefficients[0];
+        coefficients[3] = auxAScale * monoGain;
+        coefficients[4] = coefficients[3];
+        coefficients[6] = auxBScale * monoGain;
+        coefficients[7] = coefficients[6];
+        coefficients[9] = auxCScale * monoGain;
+        coefficients[10] = coefficients[9];
     } else if (mode == kOutputSurround) {
-        float frontLeftGain = leftGain * frontGain, frontRightGain = rightGain * frontGain, rearOutputGain = rearAttenuation * rearGain;
-        coefficients[0] = mainScale * frontLeftGain; coefficients[1] = mainScale * frontRightGain; coefficients[2] = mainScale * rearOutputGain;
-        coefficients[3] = auxAScale * frontLeftGain; coefficients[4] = auxAScale * frontRightGain; coefficients[5] = auxAScale * rearOutputGain;
-        coefficients[6] = auxBScale * frontLeftGain; coefficients[7] = auxBScale * frontRightGain; coefficients[8] = auxBScale * rearOutputGain;
-        coefficients[9] = auxCScale * frontLeftGain; coefficients[10] = auxCScale * frontRightGain; coefficients[11] = auxCScale * rearOutputGain;
+        float frontLeftGain = leftGain * frontGain, frontRightGain = rightGain * frontGain,
+              rearOutputGain = rearAttenuation * rearGain;
+        coefficients[0] = mainScale * frontLeftGain;
+        coefficients[1] = mainScale * frontRightGain;
+        coefficients[2] = mainScale * rearOutputGain;
+        coefficients[3] = auxAScale * frontLeftGain;
+        coefficients[4] = auxAScale * frontRightGain;
+        coefficients[5] = auxAScale * rearOutputGain;
+        coefficients[6] = auxBScale * frontLeftGain;
+        coefficients[7] = auxBScale * frontRightGain;
+        coefficients[8] = auxBScale * rearOutputGain;
+        coefficients[9] = auxCScale * frontLeftGain;
+        coefficients[10] = auxCScale * frontRightGain;
+        coefficients[11] = auxCScale * rearOutputGain;
     } else if (mode == kOutputSpatialRemap) {
-        float rearLeftGain = leftGain * rearGain, frontLeftGain = leftGain * frontGain, frontRightGain = rightGain * frontGain, rearOutputGain = rightGain * rearGain;
-        coefficients[0] = mainScale * frontLeftGain; coefficients[1] = mainScale * frontRightGain; coefficients[2] = mainScale * rearLeftGain;
-        coefficients[3] = auxAScale * frontLeftGain; coefficients[4] = auxAScale * frontRightGain; coefficients[5] = auxAScale * rearLeftGain;
-        coefficients[6] = auxBScale * frontLeftGain; coefficients[7] = auxBScale * frontRightGain; coefficients[8] = auxBScale * rearLeftGain;
-        coefficients[9] = mainScale * rearOutputGain; coefficients[10] = auxAScale * rearOutputGain; coefficients[11] = auxBScale * rearOutputGain;
+        float rearLeftGain = leftGain * rearGain, frontLeftGain = leftGain * frontGain,
+              frontRightGain = rightGain * frontGain, rearOutputGain = rightGain * rearGain;
+        coefficients[0] = mainScale * frontLeftGain;
+        coefficients[1] = mainScale * frontRightGain;
+        coefficients[2] = mainScale * rearLeftGain;
+        coefficients[3] = auxAScale * frontLeftGain;
+        coefficients[4] = auxAScale * frontRightGain;
+        coefficients[5] = auxAScale * rearLeftGain;
+        coefficients[6] = auxBScale * frontLeftGain;
+        coefficients[7] = auxBScale * frontRightGain;
+        coefficients[8] = auxBScale * rearLeftGain;
+        coefficients[9] = mainScale * rearOutputGain;
+        coefficients[10] = auxAScale * rearOutputGain;
+        coefficients[11] = auxBScale * rearOutputGain;
     }
-    for (int i = 0; i < kMainMixCoefficientCount; ++i) out[i] = fn_80410D78_pack(coefficients[i]);
+    for (int i = 0; i < kMainMixCoefficientCount; ++i)
+        out[i] = ConvertGainToQ15(coefficients[i]);
     for (int i = 0; i < kRemoteOutputCount; ++i) {
-        aux[i * 2] = fn_80410D78_pack(monoGain * remoteScales[i]);
+        aux[i * 2] = ConvertGainToQ15(monoGain * remoteScales[i]);
         aux[i * 2 + 1] = 0;
     }
 }
+
+extern "C" {
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -541,7 +614,7 @@ void gtl_nw4r_detail_Voice_StopForRemovedSource(void* self, void* sourceBegin, v
         ((Voice*)voice)->hardwarePaused = 0;
         ((Voice*)voice)->pauseRequested = 0;
         ((Voice*)voice)->playbackRequested = 0;
-        void (*callback)(void*, int, void*) = (*(void (**)(void*, int, void*))&((Voice*)voice)->eventCallback);
+        void (*callback)(void*, int, void*) = (*(void (**)(void*, int, void*)) & ((Voice*)voice)->eventCallback);
         if (callback != 0)
             callback(self, kVoiceStopped, (*(void**)&((Voice*)voice)->callbackArgument));
     }
@@ -552,7 +625,9 @@ void gtl_nw4r_detail_Voice_StopForRemovedSource(void* self, void* sourceBegin, v
 void gtl_nw4r_detail_Voice_vfunc_0(void*) {}
 
 // Initialize the voice-pool angle constant.
-void GtlVoicePool_InitializeMathConstants() { s_twoPi_8041095C_VoicePool = kFloat_6_2831855; }
+void GtlVoicePool_InitializeMathConstants() {
+    s_twoPi_8041095C_VoicePool = kFloat_6_2831855;
+}
 
 // Return borrowed singleton storage after initializing its circular lists.
 void* gtl_VoicePool_GetInstance() {
@@ -604,7 +679,9 @@ void* dtor_80411914(void* self, int shouldDelete) {
 }
 
 // Return bytes required for the maximum software-voice pool.
-int gtl_VoicePool_GetRequiredMemorySize() { return AXGetMaxVoices() * kVoiceBytes; }
+int gtl_VoicePool_GetRequiredMemorySize() {
+    return AXGetMaxVoices() * kVoiceBytes;
+}
 
 // Construct caller-owned Voice slots and link them into the free list.
 void gtl_VoicePool_Initialize(unsigned char* self, void* items, unsigned int bytes) {
@@ -617,7 +694,8 @@ void gtl_VoicePool_Initialize(unsigned char* self, void* items, unsigned int byt
                 gtl_nw4r_detail_Voice_Ctor(item);
             void* sentinel = end;
             void* local = end;
-            gtl_IntrusiveList_InsertBefore(self + kFreeListOffset, &local, (unsigned char*)&((Voice*)item)->poolLinkNext);
+            gtl_IntrusiveList_InsertBefore(self + kFreeListOffset, &local,
+                                           (unsigned char*)&((Voice*)item)->poolLinkNext);
             item += kVoiceBytes;
         }
         *self = 1;
@@ -630,9 +708,10 @@ void gtl_VoicePool_Shutdown(unsigned char* self) {
         BOOL level = OSDisableInterrupts();
         InterruptUnwindCleanup interruptCleanup0(level);
         while (*(void**)&((VoicePoolState*)self)->active.count != 0) {
-            unsigned char* item = (unsigned char*)*(void**)&((VoicePoolState*)self)->active.sentinel.next - kVoiceLinkOffset;
+            unsigned char* item =
+                (unsigned char*)*(void**)&((VoicePoolState*)self)->active.sentinel.next - kVoiceLinkOffset;
             GtlVoice_Stop(item);
-            void (**callback)(void*, int, void*) = (void (**)(void*, int, void*))&((Voice*)item)->eventCallback;
+            void (**callback)(void*, int, void*) = (void (**)(void*, int, void*)) & ((Voice*)item)->eventCallback;
             if (*callback != 0)
                 (*callback)(item, kVoiceStopped, (*(void**)&((Voice*)item)->callbackArgument));
             GtlVoice_Release(item);
@@ -648,7 +727,8 @@ void gtl_VoicePool_Shutdown(unsigned char* self) {
 }
 
 // Borrow a free/stealable software voice, allocate its AX grid, and order its priority.
-void* gtl_VoicePool_AcquireVoice(void* self, void* sourceColumns, void* mixRows, int priority, void* eventCallback, void* callbackArgument) {
+void* gtl_VoicePool_AcquireVoice(void* self, void* sourceColumns, void* mixRows, int priority, void* eventCallback,
+                                 void* callbackArgument) {
     // Supported priority input is 0..255; no clamp is performed. Comparison is
     // signed before storage truncates to u8. Out-of-range callers can therefore
     // choose a victim using a different priority from the one later stored.
@@ -667,7 +747,7 @@ void* gtl_VoicePool_AcquireVoice(void* self, void* sourceColumns, void* mixRows,
             allocationAvailability = ((Voice*)voice)->sourceChannelCount * ((Voice*)voice)->outputVoiceCount;
             GtlVoice_Stop(voice);
             GtlVoice_Release(voice);
-            void (*callback)(void*, int, void*) = (*(void (**)(void*, int, void*))&((Voice*)voice)->eventCallback);
+            void (*callback)(void*, int, void*) = (*(void (**)(void*, int, void*)) & ((Voice*)voice)->eventCallback);
             if (callback != 0)
                 callback(voice, kVoiceStolen, (*(void**)&((Voice*)voice)->callbackArgument));
         } else {
@@ -681,7 +761,9 @@ void* gtl_VoicePool_AcquireVoice(void* self, void* sourceColumns, void* mixRows,
 
     // Phase 2: allocate the hardware grid before moving the free link into active.
     unsigned char* voice = (unsigned char*)*(void**)&((VoicePoolState*)manager)->free.sentinel.next - kVoiceLinkOffset;
-    void* result = gtl_Voice_AllocateAxVoiceGrid(voice, sourceColumns, mixRows, priority, eventCallback, callbackArgument);
+    void* result = (void*)((gtl::nw4r::detail::Voice*)voice)
+                       ->AllocateAxVoiceGrid((int)sourceColumns, (int)mixRows, priority, (int)eventCallback,
+                                             (int)callbackArgument);
     if (result == 0) {
         OSRestoreInterrupts(interruptCleanup0.release());
         return 0;
@@ -710,7 +792,7 @@ void* gtl_VoicePool_AcquireVoice(void* self, void* sourceColumns, void* mixRows,
         int activePriority = *(int*)((char*)current - kPriorityBeforeLink);
         void* currentVoice = (char*)current - kVoiceLinkOffset;
         if (activePriority <= 1)
-            break;  // original 0x80411C88: ble leaves the loop
+            break; // original 0x80411C88: ble leaves the loop
         if (activePriority != kProtectedPriority)
             GtlVoice_SetAllocatedPrioritiesTo16(currentVoice);
         current = ((VoicePoolLink*)current)->next;
@@ -765,7 +847,7 @@ void GtlVoicePool_StopActiveVoiceRamps(void* self) {
     while (node != end) {
         void* current = node;
         node = *(void**)node;
-        gtl_Voice_StopAllAxVoiceRamps((char*)current - kVoiceLinkOffset);
+        ((gtl::nw4r::detail::Voice*)((char*)current - kVoiceLinkOffset))->StopAllAxVoiceRamps();
     }
     OSRestoreInterrupts(level);
 }
@@ -785,13 +867,16 @@ void gtl_AudioController_MarkActiveVoices(void* self, int mask) {
         node = *(void**)node;
         obj = (unsigned char*)current - (int)&((AudioControllerVoiceState*)0)->link;
         value = ((AudioControllerVoiceState*)obj)->active;
-        if (value != 0) ((AudioControllerVoiceState*)obj)->pendingParameterMask |= mask;
+        if (value != 0)
+            ((AudioControllerVoiceState*)obj)->pendingParameterMask |= mask;
     }
     OSRestoreInterrupts(saved);
 }
 
 // Initialize the DVD-position angle constant.
-void GtlDvdFilePosition_InitializeMathConstants() { s_twoPi_8041095C_DvdFilePosition = kFloat_6_2831855; }
+void GtlDvdFilePosition_InitializeMathConstants() {
+    s_twoPi_8041095C_DvdFilePosition = kFloat_6_2831855;
+}
 
 // Advance the unsigned file position and clamp the wrapped sum to length.
 int gtl_DvdFilePosition_AdvanceClamped(unsigned int* self, unsigned int delta) {
@@ -826,21 +911,24 @@ void* dtor_80411FFC(void* self, int shouldDelete) {
     return self;
 }
 
+} // extern "C"
+
 // Link DVD base type information and initialize its angle constant.
-void gtl_nw4r_ut_DvdFileStream_InitializeBaseTypeInfoAndConstants() {
+void gtl::nw4r::ut::DvdFileStream::InitializeBaseTypeInfoAndConstants() {
     s_dvdFileStreamBaseTypeInfo = &s_dvdFileStreamRootTypeInfo;
     s_twoPi_8041095C_DvdStreamBase = kFloat_6_2831855;
 }
 
 // Default DVD wait hook has no work.
-void gtl_nw4r_ut_DvdFileStream_vfunc_5(void*) {}
+void gtl::nw4r::ut::DvdFileStream::vfunc_5(void*) {}
 
 // Return zero from the default DVD result hook.
-int gtl_nw4r_ut_DvdFileStream_vfunc_6(void*) { return 0; }
+int gtl::nw4r::ut::DvdFileStream::vfunc_6(void*) {
+    return 0;
+}
 
 // Clear DVD root type information and initialize its angle constant.
-void GtlDvdFileStream_InitializeRootTypeInfoAndConstants() {
+void gtl::nw4r::ut::DvdFileStream::InitializeRootTypeInfoAndConstants() {
     s_dvdFileStreamRootTypeInfo = 0;
     s_twoPi_8041095C_DvdStreamRoot = kFloat_6_2831855;
 }
-} // extern "C"

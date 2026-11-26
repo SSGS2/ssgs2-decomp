@@ -1,20 +1,26 @@
+// Puppet construction and setup: the overlay coordinate mode, the instance and animation indexes,
+// the bone sort key reset, and the puppet constructor.
+
 #include <decomp/static_init.h>
 #include "classes/WPuppet.h"
 #include "classes/WOverlay.h"
 #define AsWPuppet(p) ((WPuppet*)(p))
-// Translation unit 0x8004F8B4
 #include "sdk_protos.h"
 #include "game/wvector.h"
 
 extern "C" {
 
 // Store the overlay drawing options supplied by its caller.
-void WOverlay_SetCoordMode(void* self, int value) { AsWOverlay(self)->coordMode = value; } // 0x8004F8B4
+void WOverlay_SetCoordMode(void* self, int value) {
+    AsWOverlay(self)->coordMode = value;
+} // 0x8004F8B4
 
 extern float s_twoPi_8004F8B4;
 extern float kFloat_6_2831855;
 // Initialize this unit\'s full-turn angle during static initialization.
-void InitializePuppetFullTurnAngle() { s_twoPi_8004F8B4 = kFloat_6_2831855; }
+void InitializePuppetFullTurnAngle() {
+    s_twoPi_8004F8B4 = kFloat_6_2831855;
+}
 
 void BaseObject_ctor(void*);
 void Vec3_Zero(void*);
@@ -32,7 +38,10 @@ void WPuppetCachedBoneList_dtor(void*, int);
 void WPuppetMaterialVector_dtor(void*, int);
 void WPuppetChildList_dtor(void*, int);
 
-enum PuppetInitialCapacity { kInitialInstanceBlockSize = 16, kInitialInstanceBucketCount = 16 };
+enum PuppetInitialCapacity {
+    kInitialInstanceBlockSize = 16,
+    kInitialInstanceBucketCount = 16
+};
 
 // Construction view of the instance index; the shared header leaves its middle words opaque.
 struct PuppetInstanceIndex {
@@ -41,15 +50,22 @@ struct PuppetInstanceIndex {
     int* buckets;
     char mutex[0x18];
 };
-struct PuppetBaseInit { char baseState[0x14]; int resourceState; };
+struct PuppetBaseInit {
+    char baseState[0x14];
+    int resourceState;
+};
 
 // Scope-bound locking keeps constructor failure paths paired with OSUnlockMutex.
 struct PuppetLock {
     OSMutex* mutex;
     // Acquire a borrowed embedded mutex; never allocate or destroy the mutex itself.
-    PuppetLock(char* p) : mutex((OSMutex*)p) { OSLockMutex(mutex); }
+    PuppetLock(char* p) : mutex((OSMutex*)p) {
+        OSLockMutex(mutex);
+    }
     // Release the constructor lock on normal return and exception unwinding.
-    ~PuppetLock() { OSUnlockMutex(mutex); }
+    ~PuppetLock() {
+        OSUnlockMutex(mutex);
+    }
 };
 
 // Constructor unwind stages (stage advances only after the listed members are ready):
@@ -62,45 +78,49 @@ struct PuppetConstruction {
     int stage;
     // Unwind only the subobjects whose initialization stage completed.
     ~PuppetConstruction() {
-        if (!self) return;
+        if (!self)
+            return;
         if (stage >= 3) {
             WPuppetChildList_dtor(self + (int)&((WPuppet*)0)->childCount, -1);
             WPuppetMaterialVector_dtor(self + (int)&((WPuppet*)0)->materials, -1);
             WPuppetCachedBoneList_dtor(self + (int)&((WPuppet*)0)->cachedBoneCount, -1);
         }
-        if (stage >= 2) WPuppetAnimationInstances_dtor(self + (int)&((WPuppet*)0)->animationInstances, -1);
-        if (stage >= 1) WPuppetOwnedInstances_dtor(self + (int)&((WPuppet*)0)->ownedInstances, -1);
+        if (stage >= 2)
+            WPuppetAnimationInstances_dtor(self + (int)&((WPuppet*)0)->animationInstances, -1);
+        if (stage >= 1)
+            WPuppetOwnedInstances_dtor(self + (int)&((WPuppet*)0)->ownedInstances, -1);
         __dt__9WResourceFv(self, -1);
     }
 };
 
 #pragma opt_propagation off
 // Initialize instance bookkeeping and allocate an empty hash-bucket table.
-inline void InitInstanceIndex(char* p, int blockSize, int bucketCount) {
-    ((PuppetInstanceIndex*)p)->first = 0;
-    ((PuppetInstanceIndex*)p)->ownedTail = 0;
-    ((PuppetInstanceIndex*)p)->ownedHead = 0;
-    ((PuppetInstanceIndex*)p)->blockSize = blockSize;
-    ((PuppetInstanceIndex*)p)->cursor = 0;
-    ((PuppetInstanceIndex*)p)->bucketCount = bucketCount;
-    if (((PuppetInstanceIndex*)p)->bucketCount > 0) {
-        ((PuppetInstanceIndex*)p)->buckets = (int*)appMallocUni__FUl(((PuppetInstanceIndex*)p)->bucketCount * sizeof(int*));
-        ((PuppetInstanceIndex*)p)->bucketMask = ((PuppetInstanceIndex*)p)->bucketCount - 1;
-        for (int i = 0; i < ((PuppetInstanceIndex*)p)->bucketCount; ++i)
-            (((PuppetInstanceIndex*)p)->buckets)[i] = 0;
+inline void InitInstanceIndex(char* instanceIndex, int blockSize, int bucketCount) {
+    ((PuppetInstanceIndex*)instanceIndex)->first = 0;
+    ((PuppetInstanceIndex*)instanceIndex)->ownedTail = 0;
+    ((PuppetInstanceIndex*)instanceIndex)->ownedHead = 0;
+    ((PuppetInstanceIndex*)instanceIndex)->blockSize = blockSize;
+    ((PuppetInstanceIndex*)instanceIndex)->cursor = 0;
+    ((PuppetInstanceIndex*)instanceIndex)->bucketCount = bucketCount;
+    if (((PuppetInstanceIndex*)instanceIndex)->bucketCount > 0) {
+        ((PuppetInstanceIndex*)instanceIndex)->buckets =
+            (int*)appMallocUni__FUl(((PuppetInstanceIndex*)instanceIndex)->bucketCount * sizeof(int*));
+        ((PuppetInstanceIndex*)instanceIndex)->bucketMask = ((PuppetInstanceIndex*)instanceIndex)->bucketCount - 1;
+        for (int i = 0; i < ((PuppetInstanceIndex*)instanceIndex)->bucketCount; ++i)
+            (((PuppetInstanceIndex*)instanceIndex)->buckets)[i] = 0;
     } else {
-        ((PuppetInstanceIndex*)p)->buckets = 0;
+        ((PuppetInstanceIndex*)instanceIndex)->buckets = 0;
     }
 }
 #pragma opt_propagation on
 
 // Initialize and lock the animation instance index before populating its buckets.
-inline void InitAnimationIndex(char* p) {
-    *(int*)&((PuppetInstanceIndex*)p)->buckets = 0;
-    OSInitMutex((OSMutex*)(p + (int)&((PuppetInstanceIndex*)0)->mutex));
-    char* mutex = p + (int)&((PuppetInstanceIndex*)0)->mutex;
+inline void InitAnimationIndex(char* instanceIndex) {
+    *(int*)&((PuppetInstanceIndex*)instanceIndex)->buckets = 0;
+    OSInitMutex((OSMutex*)(instanceIndex + (int)&((PuppetInstanceIndex*)0)->mutex));
+    char* mutex = instanceIndex + (int)&((PuppetInstanceIndex*)0)->mutex;
     PuppetLock lock(mutex);
-    InitInstanceIndex(p, kInitialInstanceBlockSize, kInitialInstanceBucketCount);
+    InitInstanceIndex(instanceIndex, kInitialInstanceBlockSize, kInitialInstanceBucketCount);
 }
 
 #pragma opt_propagation off
@@ -121,7 +141,7 @@ void* WPuppet_ctor(void* self) {
     float boundsSphere[4];
     char* puppetBytes = (char*)self;
     BaseObject_ctor(self);
-    PuppetConstruction construction = { puppetBytes, 0 };
+    PuppetConstruction construction = {puppetBytes, 0};
 
     // Phase 1: initialize the base vtable and both protected instance indices.
     {
@@ -133,7 +153,8 @@ void* WPuppet_ctor(void* self) {
         OSInitMutex((OSMutex*)ownedMutexAddress);
         char* ownedMutex = puppetBytes + (int)&((WPuppet*)0)->ownedInstances.mutex;
         PuppetLock lock(ownedMutex);
-        InitInstanceIndex(puppetBytes + (int)&((WPuppet*)0)->ownedInstances, kInitialInstanceBlockSize, kInitialInstanceBucketCount);
+        InitInstanceIndex(puppetBytes + (int)&((WPuppet*)0)->ownedInstances, kInitialInstanceBlockSize,
+                          kInitialInstanceBucketCount);
     }
     construction.stage = 1;
     InitAnimationIndex(puppetBytes + (int)&((WPuppet*)0)->animationInstances);
@@ -188,7 +209,8 @@ void* WPuppet_ctor(void* self) {
 
     *(int*)&AsWPuppet(puppetBytes)->layerController = zero;
     *(int*)&AsWPuppet(puppetBytes)->layerResource = zero;
-    int defaultRenderValue = 1; *(int*)&AsWPuppet(puppetBytes)->renderStateValue = defaultRenderValue;
+    int defaultRenderValue = 1;
+    *(int*)&AsWPuppet(puppetBytes)->renderStateValue = defaultRenderValue;
     *(int*)&AsWPuppet(puppetBytes)->boundObjects = zero;
     *(int*)&AsWPuppet(puppetBytes)->namedResources = zero;
     *(int*)&AsWPuppet(puppetBytes)->boneController = zero;
@@ -256,7 +278,8 @@ void* WPuppet_ctor(void* self) {
     *(int*)&AsWPuppet(puppetBytes)->renderParamsEnabled = 0;
     Memory_Clear(puppetBytes + (int)&((WPuppet*)0)->renderParams, 0x68);
 
-    InvalidateBoneSortKeyAndClearCount((unsigned int*)(puppetBytes + (int)&((WPuppet*)0)->materialCount), (int*)(puppetBytes + (int)&((WPuppet*)0)->boneSortKey));
+    InvalidateBoneSortKeyAndClearCount((unsigned int*)(puppetBytes + (int)&((WPuppet*)0)->materialCount),
+                                       (int*)(puppetBytes + (int)&((WPuppet*)0)->boneSortKey));
     // Phase 4: commit ownership; the unwind guard must no longer destroy these members.
     construction.self = 0;
     return self;

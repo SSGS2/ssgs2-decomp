@@ -1,11 +1,14 @@
-// Translation unit 0x80042B00-0x800441A0 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Heap allocation: the operator new and delete entry points, the MEM1 and MEM2 heaps, and array heaps.
+// Allocation tries MEM1 first, then MEM2, unless a sticky MEM2 preference is set.
+// Free picks the heap from address bit 28.
 
 #include "sdk_protos.h"
+#include "classes/GtlNoticeOwner.h"
+#include "classes/GtlHeapObject.h"
 
 // OS clock word 0x800000F8 is bus frequency in Hz; timer frequency is bus/4.
-// The unsigned tick expression scales nominally to microseconds before conversion.
-// Evaluate the legacy timestamp conversion; the float result is intentionally discarded.
+// The unsigned tick expression is scaled to microseconds before the double conversion.
+// The double is converted to float and the result is discarded.
 // The argument still affects code generation and exception metadata.
 static inline void TimestampSink(const double& value) {
     float truncated = (float)value;
@@ -13,10 +16,15 @@ static inline void TimestampSink(const double& value) {
 }
 
 enum HeapPolicy {
-    kMem1Heap = 0, kMem2Heap = 1, kHeapArena = 5,
-    kDescriptorLimitWord = 5, kStickyMem2ThresholdBytes = 0x200,
-    kMem2AddressBit = 0x10000000, kTimestampDivisor = 125000,
-    kTimestampScaleShift = 3, kBusToTimerShift = 2
+    kMem1Heap = 0,
+    kMem2Heap = 1,
+    kHeapArena = 5,
+    kDescriptorLimitWord = 5,
+    kStickyMem2ThresholdBytes = 0x200,
+    kMem2AddressBit = 0x10000000,
+    kTimestampDivisor = 125000,
+    kTimestampScaleShift = 3,
+    kBusToTimerShift = 2
 };
 
 // Allocations are owned by their callers; free selects the heap from address bit 28.
@@ -37,19 +45,16 @@ struct Descriptor {
     unsigned int words[12];
 };
 
-void GtlNoticeOwner_InvokeFreeLocked(void* a, void* b, int c);
 void MemoryManager_InitHeaps(void* p);
 void AppHeap_QueryMaxAllocatableSize(int a, int b, int* p);
-void gtl_IHeapObject_Create(Descriptor* a, void* b);
-void* GtlNoticeOwner_AllocateWithOptionalLock(void* a, unsigned int b, int c);
 extern unsigned int kArrayHeap0Descriptor[12];
 extern unsigned int mem2HeapDescriptorDefaults[12];
 extern char s_arrayHeapMutex[24];
 
 // Create two adjacent heap handles from borrowed descriptor templates and arena IDs.
 // This retained helper has no callers in this unit.
-static void setup_pair(int* heapHandles, unsigned int* firstTemplate, unsigned int* secondTemplate,
-                       int firstHeapId, int secondHeapId) {
+static void setup_pair(int* heapHandles, unsigned int* firstTemplate, unsigned int* secondTemplate, int firstHeapId,
+                       int secondHeapId) {
     int firstLimitBytes;
     int secondLimitBytes;
     MemoryManager_InitHeaps(&firstLimitBytes);
@@ -57,12 +62,12 @@ static void setup_pair(int* heapHandles, unsigned int* firstTemplate, unsigned i
     AppHeap_QueryMaxAllocatableSize(firstHeapId, kHeapArena, &firstLimitBytes);
     Descriptor firstDescriptor = *(Descriptor*)firstTemplate;
     firstDescriptor.words[kDescriptorLimitWord] = (unsigned int)firstLimitBytes;
-    gtl_IHeapObject_Create(&firstDescriptor, heapHandles);
+    gtl::IHeapObject::Create(&firstDescriptor, heapHandles);
     secondLimitBytes = 0;
     AppHeap_QueryMaxAllocatableSize(secondHeapId, kHeapArena, &secondLimitBytes);
     Descriptor secondDescriptor = *(Descriptor*)secondTemplate;
     secondDescriptor.words[kDescriptorLimitWord] = (unsigned int)secondLimitBytes;
-    gtl_IHeapObject_Create(&secondDescriptor, heapHandles + 1);
+    gtl::IHeapObject::Create(&secondDescriptor, heapHandles + 1);
 }
 
 // Scoped lock on the allocator mutex (original symbol __dt__9AllocLockFv).
@@ -77,22 +82,25 @@ struct AllocLock {
     }
     // Release the mutex on normal exit and exception unwinding.
     ~AllocLock() {
-        if (locked) OSUnlockMutex(m);
+        if (locked)
+            OSUnlockMutex(m);
     }
     // Delete guard storage through the same address-based heap policy as scalar delete.
     static void operator delete(void* self) throw() {
         s_scalarNewCallBalance = s_scalarNewCallBalance - 1;
         if (((unsigned int)self & kMem2AddressBit) != 0) {
             void* selectedHeap = (void*)g_mem2Heap;
-            // Integer tick scaling is nominally microseconds; truncation/overflow precede double conversion.
-            TimestampSink((double)((OSGetTick() << kTimestampScaleShift) / ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
-            GtlNoticeOwner_InvokeFreeLocked(selectedHeap, self, 0);
+            // Integer tick scaling gives microseconds; truncation and overflow happen before the double conversion.
+            TimestampSink((double)((OSGetTick() << kTimestampScaleShift) /
+                                   ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
+            ((GtlNoticeOwner*)selectedHeap)->InvokeFreeLocked(self, 0);
         } else {
             s_preferMem2Heap = 0;
             void* selectedHeap = (void*)g_mem1Heap;
-            // Integer tick scaling is nominally microseconds; truncation/overflow precede double conversion.
-            TimestampSink((double)((OSGetTick() << kTimestampScaleShift) / ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
-            GtlNoticeOwner_InvokeFreeLocked(selectedHeap, self, 0);
+            // Integer tick scaling gives microseconds; truncation and overflow happen before the double conversion.
+            TimestampSink((double)((OSGetTick() << kTimestampScaleShift) /
+                                   ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
+            ((GtlNoticeOwner*)selectedHeap)->InvokeFreeLocked(self, 0);
         }
     }
 };
@@ -100,7 +108,9 @@ struct AllocLock {
 struct InitTmp {
     int v;
     // Preserve the heap-manager initialization token used by this reconstruction.
-    InitTmp() { MemoryManager_InitHeaps(this); }
+    InitTmp() {
+        MemoryManager_InitHeaps(this);
+    }
 };
 
 // Create both heap handles, then initialize their common mutex (lazy scalar path).
@@ -112,12 +122,12 @@ static inline void init_heap() {
     AppHeap_QueryMaxAllocatableSize(kMem1Heap, kHeapArena, &mem1LimitBytes);
     mem1Descriptor = *(Descriptor*)kArrayHeap0Descriptor;
     mem1Descriptor.words[kDescriptorLimitWord] = (unsigned int)mem1LimitBytes;
-    gtl_IHeapObject_Create(&mem1Descriptor, &g_mem1Heap);
+    gtl::IHeapObject::Create(&mem1Descriptor, &g_mem1Heap);
     mem2LimitBytes = 0;
     AppHeap_QueryMaxAllocatableSize(kMem2Heap, kHeapArena, &mem2LimitBytes);
     mem2Descriptor = *(Descriptor*)mem2HeapDescriptorDefaults;
     mem2Descriptor.words[kDescriptorLimitWord] = (unsigned int)mem2LimitBytes;
-    gtl_IHeapObject_Create(&mem2Descriptor, &g_mem2Heap);
+    gtl::IHeapObject::Create(&mem2Descriptor, &g_mem2Heap);
     OSInitMutex((OSMutex*)&s_arrayHeapMutex);
 }
 
@@ -125,9 +135,10 @@ static inline void init_heap() {
 // Retained helper; the exported allocation paths below spell out their lock scopes.
 static inline void* heap_alloc(void* heap, unsigned int size) {
     void* result = heap;
-    if (!size) return 0;
+    if (!size)
+        return 0;
     AllocLock lockGuard((OSMutex*)&s_arrayHeapMutex);
-    result = GtlNoticeOwner_AllocateWithOptionalLock(result, size, 0);
+    result = (void*)((GtlNoticeOwner*)result)->AllocateWithOptionalLock(size, 0);
     return result;
 }
 
@@ -142,36 +153,41 @@ void* __nw__FUl(unsigned int size) {
         result = 0;
     } else if (s_preferMem2Heap) {
         // A sticky preference skips the MEM1 attempt.
-        if (!g_mem1Heap) init_heap();
+        if (!g_mem1Heap)
+            init_heap();
         result = (void*)g_mem2Heap;
         if (!size) {
             result = 0;
         } else {
             AllocLock lockGuard((OSMutex*)&s_arrayHeapMutex);
-            result = GtlNoticeOwner_AllocateWithOptionalLock(result, size, 0);
+            result = (void*)((GtlNoticeOwner*)result)->AllocateWithOptionalLock(size, 0);
         }
     } else {
         // Repeated lazy-init tests are intentional: preserve the original call/lock order.
-        if (!g_mem1Heap) init_heap();
-        if (!g_mem1Heap) init_heap();
+        if (!g_mem1Heap)
+            init_heap();
+        if (!g_mem1Heap)
+            init_heap();
         result = (void*)g_mem1Heap;
         if (!size) {
             result = 0;
         } else {
             AllocLock lockGuard((OSMutex*)&s_arrayHeapMutex);
-            result = GtlNoticeOwner_AllocateWithOptionalLock(result, size, 0);
+            result = (void*)((GtlNoticeOwner*)result)->AllocateWithOptionalLock(size, 0);
         }
         // MEM1 failed: retry on MEM2 and possibly make that preference sticky.
         if (!result) {
-            if (!g_mem1Heap) init_heap();
+            if (!g_mem1Heap)
+                init_heap();
             result = (void*)g_mem2Heap;
             if (!size) {
                 result = 0;
             } else {
                 AllocLock lockGuard((OSMutex*)&s_arrayHeapMutex);
-                result = GtlNoticeOwner_AllocateWithOptionalLock(result, size, 0);
+                result = (void*)((GtlNoticeOwner*)result)->AllocateWithOptionalLock(size, 0);
             }
-            if (size < kStickyMem2ThresholdBytes) s_preferMem2Heap = 1;
+            if (size < kStickyMem2ThresholdBytes)
+                s_preferMem2Heap = 1;
         }
     }
     return result;
@@ -193,12 +209,12 @@ static inline void init_array_heap() {
     AppHeap_QueryMaxAllocatableSize(kMem1Heap, kHeapArena, &mem1LimitBytes);
     mem1Descriptor = *(Descriptor*)kArrayHeap0Descriptor;
     mem1Descriptor.words[kDescriptorLimitWord] = (unsigned int)mem1LimitBytes;
-    gtl_IHeapObject_Create(&mem1Descriptor, &g_mem1Heap);
+    gtl::IHeapObject::Create(&mem1Descriptor, &g_mem1Heap);
     mem2LimitBytes = 0;
     AppHeap_QueryMaxAllocatableSize(kMem2Heap, kHeapArena, &mem2LimitBytes);
     mem2Descriptor = *(Descriptor*)mem2HeapDescriptorDefaults;
     mem2Descriptor.words[kDescriptorLimitWord] = (unsigned int)mem2LimitBytes;
-    gtl_IHeapObject_Create(&mem2Descriptor, &g_mem2Heap);
+    gtl::IHeapObject::Create(&mem2Descriptor, &g_mem2Heap);
     OSInitMutex((OSMutex*)&s_arrayHeapMutex);
 }
 
@@ -211,12 +227,12 @@ static inline void init_array_heap_second() {
     AppHeap_QueryMaxAllocatableSize(kMem1Heap, kHeapArena, &mem1LimitBytes);
     mem1Descriptor = *(Descriptor*)kArrayHeap0Descriptor;
     mem1Descriptor.words[kDescriptorLimitWord] = (unsigned int)mem1LimitBytes;
-    gtl_IHeapObject_Create(&mem1Descriptor, &g_mem1Heap);
+    gtl::IHeapObject::Create(&mem1Descriptor, &g_mem1Heap);
     mem2LimitBytes = 0;
     AppHeap_QueryMaxAllocatableSize(kMem2Heap, kHeapArena, &mem2LimitBytes);
     mem2Descriptor = *(Descriptor*)mem2HeapDescriptorDefaults;
     mem2Descriptor.words[kDescriptorLimitWord] = (unsigned int)mem2LimitBytes;
-    gtl_IHeapObject_Create(&mem2Descriptor, &g_mem2Heap);
+    gtl::IHeapObject::Create(&mem2Descriptor, &g_mem2Heap);
     OSInitMutex((OSMutex*)&s_arrayHeapMutex);
 }
 
@@ -239,7 +255,7 @@ void* __nwa__FUl(unsigned int size) {
             result = 0;
         } else {
             AllocLock lockGuard((OSMutex*)&s_arrayHeapMutex);
-            result = GtlNoticeOwner_AllocateWithOptionalLock(result, size, 0);
+            result = (void*)((GtlNoticeOwner*)result)->AllocateWithOptionalLock(size, 0);
         }
     } else {
         if (!g_mem1Heap) {
@@ -253,7 +269,7 @@ void* __nwa__FUl(unsigned int size) {
             result = 0;
         } else {
             AllocLock lockGuard((OSMutex*)&s_arrayHeapMutex);
-            result = GtlNoticeOwner_AllocateWithOptionalLock(result, size, 0);
+            result = (void*)((GtlNoticeOwner*)result)->AllocateWithOptionalLock(size, 0);
         }
         // MEM1 failed: retry on MEM2 and possibly make that preference sticky.
         if (!result) {
@@ -265,9 +281,10 @@ void* __nwa__FUl(unsigned int size) {
                 result = 0;
             } else {
                 AllocLock lockGuard((OSMutex*)&s_arrayHeapMutex);
-                result = GtlNoticeOwner_AllocateWithOptionalLock(result, size, 0);
+                result = (void*)((GtlNoticeOwner*)result)->AllocateWithOptionalLock(size, 0);
             }
-            if (size < kStickyMem2ThresholdBytes) s_preferMem2Heap = 1;
+            if (size < kStickyMem2ThresholdBytes)
+                s_preferMem2Heap = 1;
         }
     }
     return result;
@@ -292,7 +309,7 @@ void* AppMemory_AllocateWithHeapFallback(unsigned int size) {
             result = 0;
         } else {
             AllocLock lockGuard((OSMutex*)&s_arrayHeapMutex);
-            result = GtlNoticeOwner_AllocateWithOptionalLock(result, size, 0);
+            result = (void*)((GtlNoticeOwner*)result)->AllocateWithOptionalLock(size, 0);
         }
     } else {
         if (!g_mem1Heap) {
@@ -306,7 +323,7 @@ void* AppMemory_AllocateWithHeapFallback(unsigned int size) {
             result = 0;
         } else {
             AllocLock lockGuard((OSMutex*)&s_arrayHeapMutex);
-            result = GtlNoticeOwner_AllocateWithOptionalLock(result, size, 0);
+            result = (void*)((GtlNoticeOwner*)result)->AllocateWithOptionalLock(size, 0);
         }
         // MEM1 failed: retry on MEM2 and possibly make that preference sticky.
         if (!result) {
@@ -318,9 +335,10 @@ void* AppMemory_AllocateWithHeapFallback(unsigned int size) {
                 result = 0;
             } else {
                 AllocLock lockGuard((OSMutex*)&s_arrayHeapMutex);
-                result = GtlNoticeOwner_AllocateWithOptionalLock(result, size, 0);
+                result = (void*)((GtlNoticeOwner*)result)->AllocateWithOptionalLock(size, 0);
             }
-            if (size < kStickyMem2ThresholdBytes) s_preferMem2Heap = 1;
+            if (size < kStickyMem2ThresholdBytes)
+                s_preferMem2Heap = 1;
         }
     }
     return result;
@@ -333,13 +351,15 @@ void __dl__FPv(void* p) throw() {
     s_scalarNewCallBalance = s_scalarNewCallBalance - 1;
     if (((unsigned int)p & kMem2AddressBit) != 0) {
         void* selectedHeap = (void*)g_mem2Heap;
-        TimestampSink((double)((OSGetTick() << kTimestampScaleShift) / ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
-        GtlNoticeOwner_InvokeFreeLocked(selectedHeap, p, 0);
+        TimestampSink((double)((OSGetTick() << kTimestampScaleShift) /
+                               ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
+        ((GtlNoticeOwner*)selectedHeap)->InvokeFreeLocked(p, 0);
     } else {
         s_preferMem2Heap = 0;
         void* selectedHeap = (void*)g_mem1Heap;
-        TimestampSink((double)((OSGetTick() << kTimestampScaleShift) / ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
-        GtlNoticeOwner_InvokeFreeLocked(selectedHeap, p, 0);
+        TimestampSink((double)((OSGetTick() << kTimestampScaleShift) /
+                               ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
+        ((GtlNoticeOwner*)selectedHeap)->InvokeFreeLocked(p, 0);
     }
 }
 
@@ -348,13 +368,15 @@ void __dla__FPv(void* p) throw() {
     s_arrayNewCallBalance = s_arrayNewCallBalance - 1;
     if (((unsigned int)p & kMem2AddressBit) != 0) {
         void* selectedHeap = (void*)g_mem2Heap;
-        TimestampSink((double)((OSGetTick() << kTimestampScaleShift) / ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
-        GtlNoticeOwner_InvokeFreeLocked(selectedHeap, p, 0);
+        TimestampSink((double)((OSGetTick() << kTimestampScaleShift) /
+                               ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
+        ((GtlNoticeOwner*)selectedHeap)->InvokeFreeLocked(p, 0);
     } else {
         s_preferMem2Heap = 0;
         void* selectedHeap = (void*)g_mem1Heap;
-        TimestampSink((double)((OSGetTick() << kTimestampScaleShift) / ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
-        GtlNoticeOwner_InvokeFreeLocked(selectedHeap, p, 0);
+        TimestampSink((double)((OSGetTick() << kTimestampScaleShift) /
+                               ((*(unsigned int*)0x800000F8 >> kBusToTimerShift) / kTimestampDivisor)));
+        ((GtlNoticeOwner*)selectedHeap)->InvokeFreeLocked(p, 0);
     }
 }
 

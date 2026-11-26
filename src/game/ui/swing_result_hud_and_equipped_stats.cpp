@@ -1,10 +1,14 @@
+// Equipped Power, Control and Spin totals (the stats a character gets from equipped parts and club
+// upgrades), and the swing-result HUD that shows a shot result and fades it out.
+// Also holds small helpers for the mini-game hole and the shared message resource holder.
+
 #include <decomp/static_init.h>
 // Equipped Power/Control/Spin and swing-result HUD fades. CTourWindow uses the
 // stat accumulator for a temporary character/caddie preview; CSwingResult2d
 // owns a Layout base and changes its elements, not the render presentation rate.
-// Modding lookup: kSwingResultFadeUpdates starts the countdown; vfunc_9 decrements
-// ONCE PER UPDATE, while vfunc_11 converts that countdown to alpha using the
-// separate kFloat_10_SwingResult in u8031F3A4_data.cpp. Change both durations
+// Modding lookup: kSwingResultFadeUpdates starts the countdown; UpdateFadeCountdown decrements
+// ONCE PER UPDATE, while the fade alpha update converts that countdown to alpha using the
+// separate kFloat_10_SwingResult in the data section. Change both durations
 // together in a later mod. At 30 updates/s the baseline ten calls take ~1/3 s;
 // rendering at 60 fps alone does not provide a time-correct fade.
 // Result IDs 0..6 map to layout elements 1,2,3,4,5,7,6; 0 is the background,
@@ -17,11 +21,13 @@
 #include "classes/SavePlayerRecord.h"
 #include "classes/MsgResourceHolder.h"
 #include "classes/WFixedFont.h"
+#include "classes/CMiniGameHole.h"
+#include "classes/CSwingResult2d.h"
+#include "classes/CClubCustomTbl.h"
 // Borrow the shared document through its established field view; no ownership change.
-static inline CSharedDoc* AsCSharedDoc(void* object) { return (CSharedDoc*)object; }
-// Translation unit 0x8031F3A4-0x8031FD4C (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
+static inline CSharedDoc* AsCSharedDoc(void* object) {
+    return (CSharedDoc*)object;
+}
 
 enum EquipmentAndSwingConstants {
     kEquippedPartCount = 24,
@@ -58,9 +64,18 @@ struct SavedCharacterEquipment {
     signed char auxPartInventoryIndex;
     char reserved32[2];
 };
-struct SavedPartAtByteCursor { char prefix[0x2CE]; short partInventoryIndex; };
-struct SavedAuxPartAtCharacterCursor { char prefix[0x2FF]; signed char inventoryIndex; };
-struct SavedClubUpgradeAtClubCursor { char prefix[0x4AD]; signed char level; };
+struct SavedPartAtByteCursor {
+    char prefix[0x2CE];
+    short partInventoryIndex;
+};
+struct SavedAuxPartAtCharacterCursor {
+    char prefix[0x2FF];
+    signed char inventoryIndex;
+};
+struct SavedClubUpgradeAtClubCursor {
+    char prefix[0x4AD];
+    signed char level;
+};
 struct ClubUpgradeBonuses {
     short lookupKey;
     short power;
@@ -70,8 +85,8 @@ struct ClubUpgradeBonuses {
 typedef char SavedCharacterEquipment_size[(sizeof(SavedCharacterEquipment) == 0x34) ? 1 : -1];
 typedef char EquippedAttributeState_powerOffset[((int)&((EquippedAttributeState*)0)->power == 4) ? 1 : -1];
 
-struct OwnedMessageResource { 
-virtual void destroy(int);
+struct OwnedMessageResource {
+    virtual void destroy(int);
 };
 
 extern "C" {
@@ -97,7 +112,8 @@ extern void Layout_SetElementEnabled(void*, int, int);
 extern void Layout_SetElementColor(void*, int, int); // Set the element's packed RGBA color.
 extern int Layout_Update(void*);
 extern const float kFloat_255_SwingResult; // 255.0f: full fade opacity.
-extern const float kFloat_10_SwingResult; // 10.0f: alpha denominator in update calls; keep with kSwingResultFadeUpdates.
+extern const float
+    kFloat_10_SwingResult; // 10.0f: alpha denominator in update calls; keep with kSwingResultFadeUpdates.
 extern void* ItemInventory_FindCharacterData(void*, void*);
 extern void* ItemInventory_GetCharacterIdAt(void*, int);
 extern void* ItemInventory_GetPartIdAt(void*, int);
@@ -106,7 +122,6 @@ extern void* ItemInventory_GetAuxPartIdAt(void*, int);
 extern void* ItemInventory_FindPartData(void*, void*);
 extern void* ItemInventory_FindCaddieData(void*, void*);
 extern void* ItemInventory_FindAuxPartData(void*, void*);
-extern void* CClubCustomTbl_FindUpgradeEntry(int, int);
 extern void Memory_Copy(void*, void*, int);
 struct SwingResultLayout {
     char layoutBaseStorage[0x5c];
@@ -121,19 +136,33 @@ struct SwingResultLayout {
 typedef char SwingResultLayout_size[(sizeof(SwingResultLayout) == 0x78) ? 1 : -1];
 typedef char SwingResultLayout_timerOffset[((int)&((SwingResultLayout*)0)->fadeFramesRemaining == 0x68) ? 1 : -1];
 // Accept the mini-game-hole lifecycle stage without extra work; no state changes.
-int CMiniGameHole_vfunc_5() { return 1; }
+int CMiniGameHole::vfunc_5() {
+    return 1;
+}
 // Accept the mini-game-hole lifecycle stage without extra work; no state changes.
-int CMiniGameHole_vfunc_4() { return 1; }
+int CMiniGameHole::vfunc_4() {
+    return 1;
+}
 // Accept the mini-game-hole lifecycle stage without extra work; no state changes.
-int CMiniGameHole_vfunc_3() { return 1; }
+int CMiniGameHole::vfunc_3() {
+    return 1;
+}
 // Accept the mini-game-hole lifecycle stage without extra work; no state changes.
-int CMiniGameHole_vfunc_2() { return 1; }
+int CMiniGameHole::vfunc_2() {
+    return 1;
+}
 // Accept the mini-game-hole lifecycle stage without extra work; no state changes.
-int CMiniGameHole_vfunc_1() { return 1; }
+int CMiniGameHole::vfunc_1() {
+    return 1;
+}
 // Initialize this component's angle constant to one turn during static initialization.
-void InitFullTurnConstant3368() { s_fullTurnConstant3368 = kFloat_6_2831855; }
+void InitFullTurnConstant3368() {
+    s_fullTurnConstant3368 = kFloat_6_2831855;
+}
 // Initialize this component's angle constant to one turn during static initialization.
-void InitFullTurnConstant3370() { s_fullTurnConstant3370 = kFloat_6_2831855; }
+void InitFullTurnConstant3370() {
+    s_fullTurnConstant3370 = kFloat_6_2831855;
+}
 // Attach a save record to the attribute accumulator and clear its power, control, and spin totals.
 // playerRecordAddress is a borrowed Wii pointer in an int ABI slot; it must
 // outlive subsequent Compute calls. No save data is modified or released here.
@@ -150,13 +179,17 @@ void PlayerStats_InitEquippedAttributeState(void* self, int playerRecordAddress)
 // pointers are borrowed; state totals are overwritten before output is copied.
 int PlayerStats_ComputeEquippedAttributeTotals(void* state, void* attributesOut) {
     EquippedAttributeState* self = (EquippedAttributeState*)state;
-    self->power = 0; self->control = 0; self->spin = 0;
+    self->power = 0;
+    self->control = 0;
+    self->spin = 0;
     // Phase 1: base character, 24 equipped parts and this character's auxiliary part.
     SavePlayerRecord* characterRecord = self->playerRecord;
-    void* characterId = ItemInventory_GetCharacterIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, (signed char)(unsigned char)characterRecord->characterIndex);
+    void* characterId = ItemInventory_GetCharacterIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                                       (signed char)(unsigned char)characterRecord->characterIndex);
     // As in the game, missing character IDs suppress both part and auxiliary-part bonuses.
     if (characterId != 0) {
-        IFF_STRUCT::sChar* characterData = (IFF_STRUCT::sChar*)ItemInventory_FindCharacterData(AsCSharedDoc(g_sharedDoc)->itemInventory, characterId);
+        IFF_STRUCT::sChar* characterData =
+            (IFF_STRUCT::sChar*)ItemInventory_FindCharacterData(AsCSharedDoc(g_sharedDoc)->itemInventory, characterId);
         if (characterData != 0) {
             self->power = (char)(int)characterData->stats[kPowerAttribute];
             self->control = (char)(int)characterData->stats[kControlAttribute];
@@ -173,7 +206,8 @@ int PlayerStats_ComputeEquippedAttributeTotals(void* state, void* attributesOut)
             short partInventoryIndex = ((SavedPartAtByteCursor*)partByteCursor)->partInventoryIndex;
             void* partId = ItemInventory_GetPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, partInventoryIndex);
             if (partId != 0) {
-                IFF_STRUCT::sPart* partData = (IFF_STRUCT::sPart*)ItemInventory_FindPartData(AsCSharedDoc(g_sharedDoc)->itemInventory, partId);
+                IFF_STRUCT::sPart* partData =
+                    (IFF_STRUCT::sPart*)ItemInventory_FindPartData(AsCSharedDoc(g_sharedDoc)->itemInventory, partId);
                 if (partData != 0) {
                     signed char currentPower = self->power;
                     short powerBonus = (short)partData->stats[kPowerAttribute];
@@ -192,9 +226,12 @@ int PlayerStats_ComputeEquippedAttributeTotals(void* state, void* attributesOut)
         void* auxPartRecord = self->playerRecord;
         signed char auxCharacterIndex = ((SavePlayerRecord*)auxPartRecord)->characterIndex;
         void* auxCharacterCursor = (char*)auxPartRecord + (int)auxCharacterIndex * sizeof(SavedCharacterEquipment);
-        void* auxPartId = ItemInventory_GetAuxPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, (signed char)(unsigned char)((SavedAuxPartAtCharacterCursor*)auxCharacterCursor)->inventoryIndex);
+        void* auxPartId = ItemInventory_GetAuxPartIdAt(
+            AsCSharedDoc(g_sharedDoc)->itemInventory,
+            (signed char)(unsigned char)((SavedAuxPartAtCharacterCursor*)auxCharacterCursor)->inventoryIndex);
         if (auxPartId != 0) {
-            IFF_STRUCT::sAuxPart* auxPartData = (IFF_STRUCT::sAuxPart*)ItemInventory_FindAuxPartData(AsCSharedDoc(g_sharedDoc)->itemInventory, auxPartId);
+            IFF_STRUCT::sAuxPart* auxPartData = (IFF_STRUCT::sAuxPart*)ItemInventory_FindAuxPartData(
+                AsCSharedDoc(g_sharedDoc)->itemInventory, auxPartId);
             if (auxPartData != 0) {
                 signed char currentPower = self->power;
                 signed char powerBonus = (signed char)auxPartData->stats[kPowerAttribute];
@@ -214,7 +251,8 @@ int PlayerStats_ComputeEquippedAttributeTotals(void* state, void* attributesOut)
     if (caddieIndex != kNoCaddie) {
         void* caddieId = ItemInventory_GetCaddieIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, caddieIndex);
         if (caddieId != 0) {
-            IFF_STRUCT::sCaddie* caddieData = (IFF_STRUCT::sCaddie*)ItemInventory_FindCaddieData(AsCSharedDoc(g_sharedDoc)->itemInventory, caddieId);
+            IFF_STRUCT::sCaddie* caddieData =
+                (IFF_STRUCT::sCaddie*)ItemInventory_FindCaddieData(AsCSharedDoc(g_sharedDoc)->itemInventory, caddieId);
             if (caddieData != 0) {
                 signed char currentPower = self->power;
                 short powerBonus = (short)caddieData->stats[kPowerAttribute];
@@ -232,7 +270,7 @@ int PlayerStats_ComputeEquippedAttributeTotals(void* state, void* attributesOut)
     signed char clubSetIndex = clubRecord->clubSetIndex;
     void* clubCursor = (char*)clubRecord + ((int)clubSetIndex << 1);
     signed char upgradeLevel = (signed char)(unsigned char)((SavedClubUpgradeAtClubCursor*)clubCursor)->level;
-    void* clubBonuses = CClubCustomTbl_FindUpgradeEntry(clubSetIndex, upgradeLevel);
+    void* clubBonuses = CClubCustomTbl::FindUpgradeEntry(clubSetIndex, upgradeLevel);
     if (clubBonuses != 0) {
         signed char currentPower = self->power;
         short powerBonus = ((ClubUpgradeBonuses*)clubBonuses)->power;
@@ -245,39 +283,55 @@ int PlayerStats_ComputeEquippedAttributeTotals(void* state, void* attributesOut)
         self->spin = (char)(currentSpin + spinBonus);
     }
     // Accumulation wraps in byte storage before this signed comparison; there is no lower-bound clamp.
-    if ((signed char)(unsigned char)self->power > kMaximumEquippedAttribute) self->power = kMaximumEquippedAttribute;
-    if ((signed char)(unsigned char)self->control > kMaximumEquippedAttribute) self->control = kMaximumEquippedAttribute;
-    if ((signed char)(unsigned char)self->spin > kMaximumEquippedAttribute) self->spin = kMaximumEquippedAttribute;
+    if ((signed char)(unsigned char)self->power > kMaximumEquippedAttribute)
+        self->power = kMaximumEquippedAttribute;
+    if ((signed char)(unsigned char)self->control > kMaximumEquippedAttribute)
+        self->control = kMaximumEquippedAttribute;
+    if ((signed char)(unsigned char)self->spin > kMaximumEquippedAttribute)
+        self->spin = kMaximumEquippedAttribute;
     Memory_Copy(attributesOut, &self->power, 3);
     return 1;
 }
 // Initialize this component's angle constant to one turn during static initialization.
-void InitFullTurnConstant3378() { s_fullTurnConstant3378 = kFloat_6_2831855; }
+void InitFullTurnConstant3378() {
+    s_fullTurnConstant3378 = kFloat_6_2831855;
+}
 // Initialize this component's angle constant to one turn during static initialization.
-void InitFullTurnConstant3380() { s_fullTurnConstant3380 = kFloat_6_2831855; }
+void InitFullTurnConstant3380() {
+    s_fullTurnConstant3380 = kFloat_6_2831855;
+}
 // Initialize this component's angle constant to one turn during static initialization.
-void InitFullTurnConstant3388() { s_fullTurnConstant3388 = kFloat_6_2831855; }
+void InitFullTurnConstant3388() {
+    s_fullTurnConstant3388 = kFloat_6_2831855;
+}
 // Initialize this component's angle constant to one turn during static initialization.
-void InitFullTurnConstant3390() { s_fullTurnConstant3390 = kFloat_6_2831855; }
+void InitFullTurnConstant3390() {
+    s_fullTurnConstant3390 = kFloat_6_2831855;
+}
 // Accept the result layout's update stage without extra work; no state changes.
-int CSwingResult2d_vfunc_10() { return 1; }
+int CSwingResult2d::vfunc_10() {
+    return 1;
+}
 
 // Enable swing-result rendering and request a redraw.
-int CSwingResult2d_EnableAndRequestRedraw(SwingResultLayout* self) {
+int CSwingResult2d::EnableAndRequestRedraw() {
+    SwingResultLayout* self = (SwingResultLayout*)this;
     self->enabled = 1;
     self->needsRedraw = 1;
     return 1;
 }
 
 // Hide the result immediately and request a redraw.
-int CSwingResult2d_HideImmediately(SwingResultLayout* self) {
+int CSwingResult2d::HideImmediately() {
+    SwingResultLayout* self = (SwingResultLayout*)this;
     self->visibilityState = kSwingResultHidden;
     self->needsRedraw = 1;
     return 1;
 }
 
 // Begin a ten-update fade-in; restart from the transparent endpoint on repeated requests.
-int CSwingResult2d_StartFadeIn(SwingResultLayout* self) {
+int CSwingResult2d::StartFadeIn() {
+    SwingResultLayout* self = (SwingResultLayout*)this;
     self->visibilityState = kSwingResultFadingIn;
     self->needsRedraw = 1;
     self->fadeFramesRemaining = kSwingResultFadeUpdates;
@@ -285,7 +339,8 @@ int CSwingResult2d_StartFadeIn(SwingResultLayout* self) {
 }
 
 // Begin a ten-update fade-out if shown/fading; a hidden result stays untouched.
-int CSwingResult2d_StartFadeOut(SwingResultLayout* self) {
+int CSwingResult2d::StartFadeOut() {
+    SwingResultLayout* self = (SwingResultLayout*)this;
     if (self->visibilityState != kSwingResultHidden) {
         self->visibilityState = kSwingResultFadingOut;
         self->needsRedraw = 1;
@@ -295,14 +350,16 @@ int CSwingResult2d_StartFadeOut(SwingResultLayout* self) {
 }
 
 // Report whether the swing result is visible or fading.
-int CSwingResult2d_vfunc_8(SwingResultLayout* self) {
+int CSwingResult2d::IsVisibleOrFading() {
+    SwingResultLayout* self = (SwingResultLayout*)this;
     return self->visibilityState != kSwingResultHidden;
 }
 
 // Select one of seven result graphics and whether the additional element is shown.
 // Invalid resultKind returns 0 and preserves all fields; nonzero showExtraElement
 // is treated as true. A successful selection returns 1 but does not show the HUD.
-int CSwingResult2d_SetResultKindAndExtraElement(SwingResultLayout* self, int resultKind, int showExtraElement) {
+int CSwingResult2d::SetResultKindAndExtraElement(int resultKind, int showExtraElement) {
+    SwingResultLayout* self = (SwingResultLayout*)this;
     if (resultKind < 0 || resultKind > kMaximumResultKind) {
         return 0;
     }
@@ -323,15 +380,16 @@ int ItemInventory_IsSlot14ClubSetId(int clubSetId) {
 // layout is the initialized borrowed result object; mode is forwarded unchanged
 // to Layout_LoadExtended. Return 1 means request submitted, not asynchronous
 // resource readiness; no layout ownership transfers to the caller.
-int CSwingResult2d_LoadOwnLayout(void* layout, int loadMode) {
+int CSwingResult2d::LoadOwnLayout(void* layout, int loadMode) {
     Layout_LoadExtended(layout, loadMode, swingResultLayoutName);
     return 1;
 }
 
 // Consume one fade update and publish the endpoint on zero; return 1 even if idle.
 // Rendering/enabled do not gate this timer. Do not replace this with a delta-time
-// decrement without coordinating fade alpha and state transitions in vfunc_11.
-int CSwingResult2d_UpdateFadeCountdown(SwingResultLayout* self) {
+// decrement without coordinating fade alpha and state transitions in the fade alpha update.
+int CSwingResult2d::UpdateFadeCountdown() {
+    SwingResultLayout* self = (SwingResultLayout*)this;
     int fadeStateOrFrames = self->fadeFramesRemaining;
     if (fadeStateOrFrames != 0) {
         int remainingFrames = fadeStateOrFrames - 1;
@@ -352,7 +410,8 @@ int CSwingResult2d_UpdateFadeCountdown(SwingResultLayout* self) {
 // Initialize the layout base, install the result vtable, and start disabled and hidden.
 // Caller supplies sizeof(SwingResultLayout) storage. showExtraElement is not
 // initialized here: set the selection with vfunc_4 before enabling a visible HUD.
-SwingResultLayout* CSwingResult2d_Ctor(SwingResultLayout* self) {
+CSwingResult2d::CSwingResult2d() {
+    SwingResultLayout* self = (SwingResultLayout*)this;
     Layout_Init(self, 5);
     self->resultKind = 0;
     self->vtable = (void*)__vt__14CSwingResult2d;
@@ -360,20 +419,14 @@ SwingResultLayout* CSwingResult2d_Ctor(SwingResultLayout* self) {
     self->fadeFramesRemaining = 0;
     self->enabled = 0;
     self->needsRedraw = 0;
-    return self;
 }
 
 // Destroy the layout base and optionally release the result object.
 // Null is accepted; shouldDelete>0 releases storage. Returned self is only an
 // ABI echo and may be dangling; no ownership or valid result object is returned.
-SwingResultLayout* CSwingResult2d_dtor(SwingResultLayout* self, int shouldDelete) {
-    if (self != 0) {
-        Layout_Destroy(self, 0);
-        if (shouldDelete > 0) {
-            __dl__FPv(self);
-        }
-    }
-    return self;
+CSwingResult2d::~CSwingResult2d() {
+    SwingResultLayout* self = (SwingResultLayout*)this;
+    Layout_Destroy(self, 0);
 }
 
 // Create a message resource through the shared font and retain its owner.
@@ -401,7 +454,8 @@ void* MsgResourceHolder_Ctor(void* self) {
 // bonusAttributes may be null or must have a short at that slot. Missing character
 // data contributes zero. Only the bonus's LOW BYTE is added, then the sum wraps.
 int CharacterStats_GetBasePlusBonusByte(int attributeIndex, void* characterId, void* bonusAttributes) {
-    IFF_STRUCT::sChar* characterData = (IFF_STRUCT::sChar*)ItemInventory_FindCharacterData(AsCSharedDoc(g_sharedDoc)->itemInventory, characterId);
+    IFF_STRUCT::sChar* characterData =
+        (IFF_STRUCT::sChar*)ItemInventory_FindCharacterData(AsCSharedDoc(g_sharedDoc)->itemInventory, characterId);
     unsigned char baseAttribute = 0;
     if (characterData != 0) {
         baseAttribute = characterData->baseStats[attributeIndex];
@@ -430,7 +484,9 @@ void* MsgResourceHolder_Dtor(void* self, int shouldDelete) {
     return self;
 }
 
-struct CSwingResult2dBase { char layoutAndResultStorage[0x74]; };
+struct CSwingResult2dBase {
+    char layoutAndResultStorage[0x74];
+};
 class CSwingResult2dV : public CSwingResult2dBase {
 public:
     virtual void v0();
@@ -449,10 +505,10 @@ public:
 // Update the base layout and combine all three virtual update-stage results.
 // Requires live self. All +0x2C/+0x30/+0x34 stages run even if an earlier stage
 // returns zero; the bitwise AND is intentional, not short-circuit Boolean AND.
-int CSwingResult2d_vfunc_3(void* self) {
-    int updated = Layout_Update(self);
+int CSwingResult2d::vfunc_3() {
+    int updated = Layout_Update(this);
     int result = updated & 1;
-    CSwingResult2dV* obj = (CSwingResult2dV*)self;
+    CSwingResult2dV* obj = (CSwingResult2dV*)this;
     result &= obj->vfunc2C();
     result &= obj->vfunc30();
     result &= obj->vfunc34();
@@ -463,46 +519,62 @@ int CSwingResult2d_vfunc_3(void* self) {
 // Returns 0 with no layout writes when disabled/clean, 1 after publishing dirty
 // state. Alpha is truncated to int and upper-clamped only; callers maintain the
 // countdown in 0..10. Hide first disables all nine elements before selection.
-int CSwingResult2d_RefreshElementColorsAndEnabled(SwingResultLayout* self) {
+} // extern "C"
+// The layout view is cast at each use: a local copy of the pointer swaps registers.
+int CSwingResult2d::RefreshElementColorsAndEnabled() {
     // The fade timer updates independently; this flag gates layout writes only.
-    if (self->enabled == 0) return 0;
-    if (self->needsRedraw == 0) return 0;
-    self->needsRedraw = 0;
-    float maximumAlpha = kFloat_255_SwingResult;
-    float fadeDuration = kFloat_10_SwingResult;
+    if (((SwingResultLayout*)this)->enabled == 0)
+        return 0;
+    if (((SwingResultLayout*)this)->needsRedraw == 0)
+        return 0;
+    ((SwingResultLayout*)this)->needsRedraw = 0;
     for (int element = 0; element < kSwingResultElementCount; ++element) {
-        Layout_SetElementEnabled(self, element, 0);
+        Layout_SetElementEnabled(this, element, 0);
         int alpha = kFullOpacity;
-        int visibilityState = self->visibilityState;
+        int visibilityState = ((SwingResultLayout*)this)->visibilityState;
         if (visibilityState == kSwingResultFadingIn) {
-            int fadeProgress = kSwingResultFadeUpdates - self->fadeFramesRemaining;
-            alpha = (int)(maximumAlpha * (float)fadeProgress / fadeDuration);
+            int fadeProgress = kSwingResultFadeUpdates - ((SwingResultLayout*)this)->fadeFramesRemaining;
+            alpha = (int)(kFloat_255_SwingResult * (float)fadeProgress / kFloat_10_SwingResult);
         } else if (visibilityState == kSwingResultFadingOut) {
-            int fadeProgress = self->fadeFramesRemaining;
-            alpha = (int)(maximumAlpha * (float)fadeProgress / fadeDuration);
+            int fadeProgress = ((SwingResultLayout*)this)->fadeFramesRemaining;
+            alpha = (int)(kFloat_255_SwingResult * (float)fadeProgress / kFloat_10_SwingResult);
         }
-        if (alpha > kFullOpacity) alpha = kFullOpacity;
+        if (alpha > kFullOpacity)
+            alpha = kFullOpacity;
         // Subtracting 256 produces white RGB and the requested low-byte alpha (0xFFFFFF00 | alpha).
-        Layout_SetElementColor(self, element, alpha - kWhiteRgbColorBias);
+        Layout_SetElementColor(this, element, alpha - kWhiteRgbColorBias);
     }
-    if (self->visibilityState != kSwingResultHidden) {
-        Layout_SetElementEnabled(self, kSwingResultBackgroundElement, 1);
-        switch (self->resultKind) {
-            case 0: Layout_SetElementEnabled(self, 1, 1); break;
-            case 1: Layout_SetElementEnabled(self, 2, 1); break;
-            case 2: Layout_SetElementEnabled(self, 3, 1); break;
-            case 3: Layout_SetElementEnabled(self, 4, 1); break;
-            case 4: Layout_SetElementEnabled(self, 5, 1); break;
-            case 5: Layout_SetElementEnabled(self, 7, 1); break;
-            case 6: Layout_SetElementEnabled(self, 6, 1); break;
+    if (((SwingResultLayout*)this)->visibilityState != kSwingResultHidden) {
+        Layout_SetElementEnabled(this, kSwingResultBackgroundElement, 1);
+        switch (((SwingResultLayout*)this)->resultKind) {
+        case 0:
+            Layout_SetElementEnabled(this, 1, 1);
+            break;
+        case 1:
+            Layout_SetElementEnabled(this, 2, 1);
+            break;
+        case 2:
+            Layout_SetElementEnabled(this, 3, 1);
+            break;
+        case 3:
+            Layout_SetElementEnabled(this, 4, 1);
+            break;
+        case 4:
+            Layout_SetElementEnabled(this, 5, 1);
+            break;
+        case 5:
+            Layout_SetElementEnabled(this, 7, 1);
+            break;
+        case 6:
+            Layout_SetElementEnabled(this, 6, 1);
+            break;
         }
-        if (self->showExtraElement != 0) {
-            Layout_SetElementEnabled(self, kSwingResultExtraElement, 1);
+        if (((SwingResultLayout*)this)->showExtraElement != 0) {
+            Layout_SetElementEnabled(this, kSwingResultExtraElement, 1);
         }
     }
     return 1;
 }
-} // extern "C"
 
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push

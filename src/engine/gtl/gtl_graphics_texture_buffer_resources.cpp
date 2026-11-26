@@ -1,6 +1,8 @@
+// Graphics resource storage: texture, index and vertex buffers, render surfaces and texture palettes.
+// Each kind answers description and lock queries, flushes data for the GPU and frees its storage.
+// The cube-face storage is here too.
+
 #include "classes/RenderQueryOutput8042.h"
-// Translation unit 0x8042B0A4-0x8042C0C8 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -15,7 +17,9 @@ struct GraphicsDescriptionResult {
     unsigned int format, resourceKind, usage, reserved0C, storageBytes;
     unsigned int reserved14, reserved18, width, height;
 };
-struct GraphicsLockResult { unsigned int pitchBytes, storageAddress; };
+struct GraphicsLockResult {
+    unsigned int pitchBytes, storageAddress;
+};
 typedef char DescriptionResultSize[(sizeof(GraphicsDescriptionResult) == sizeof(Fn8042Output)) ? 1 : -1];
 typedef char LockResultSize[(sizeof(GraphicsLockResult) == 8) ? 1 : -1];
 
@@ -49,28 +53,49 @@ struct MipDescriptionCursor {
     unsigned int width, height, offset, storageSize;
 };
 enum GraphicsConstants {
-    kCacheLineBytes = 0x20, kResourceKindShift = 13, kResourceKindMask = 7,
-    kCubeFaceCount = 6, kPlatformWii = 7,
-    kVertexBufferKind = 0, kIndexBufferKind = 1, kSurfaceKind = 2,
-    kTexture2DKind = 3, kCubeTextureKind = 4, kPaletteKind = 5
+    kCacheLineBytes = 0x20,
+    kResourceKindShift = 13,
+    kResourceKindMask = 7,
+    kCubeFaceCount = 6,
+    kPlatformWii = 7,
+    kVertexBufferKind = 0,
+    kIndexBufferKind = 1,
+    kSurfaceKind = 2,
+    kTexture2DKind = 3,
+    kCubeTextureKind = 4,
+    kPaletteKind = 5
 };
 // Resource header: refs in bits 16..31, kind in 13..15, allocation bookkeeping
 // in 9..12, aligned allocator in bit 8, owned storage in bit 7. The +4 storage
 // word is a base address; index/vertex payload access adds a four-byte prefix.
-enum GraphicsStorageConstants { kDefaultMipLevels = 8, kBufferPrefixBytes = 4,
-                               kPackedRGBA8 = 6, kPlatformRGBA8 = (int)0x80000006 };
+enum GraphicsStorageConstants {
+    kDefaultMipLevels = 8,
+    kBufferPrefixBytes = 4,
+    kPackedRGBA8 = 6,
+    kPlatformRGBA8 = (int)0x80000006
+};
 enum GraphicsHeaderBits {
-    kHeaderLowHalfMask = 0xFFFF, kHeaderOneReference = 0x10000,
-    kHeaderResourceKindMask = 0xE000, kHeaderAllocationBookkeepingMask = 0x1E00,
-    kHeaderAlignedAllocator = 0x100, kHeaderOwnsStorage = 0x80
+    kHeaderLowHalfMask = 0xFFFF,
+    kHeaderOneReference = 0x10000,
+    kHeaderResourceKindMask = 0xE000,
+    kHeaderAllocationBookkeepingMask = 0x1E00,
+    kHeaderAlignedAllocator = 0x100,
+    kHeaderOwnsStorage = 0x80
 };
 // Only the allocator selection is established here: 1 sets aligned callbacks,
 // 0/2 select ordinary callbacks, and other values preserve the previous bit.
-enum GraphicsAllocationMode { kOrdinaryAllocation = 0, kAlignedAllocation = 1,
-                              kOtherOrdinaryAllocation = 2, kKnownAllocationModeEnd = 3 };
+enum GraphicsAllocationMode {
+    kOrdinaryAllocation = 0,
+    kAlignedAllocation = 1,
+    kOtherOrdinaryAllocation = 2,
+    kKnownAllocationModeEnd = 3
+};
 // Decoder output format IDs; names state the proven storage density. Channel
 // interpretation is left to the image-format layer rather than guessed here.
-enum DecodedAlphaFormat { kHalfBytePerTexelFormat = 0x21, kBytePerTexelFormat = 0x1C };
+enum DecodedAlphaFormat {
+    kHalfBytePerTexelFormat = 0x21,
+    kBytePerTexelFormat = 0x1C
+};
 static const unsigned int kDXTAlpha4Format = 0xC0000030u;
 static const unsigned int kDXTSeparateAlphaFormat = 0xC0000032u;
 
@@ -139,7 +164,6 @@ struct RenderSurfaceDescription {
     unsigned int format;
 };
 
-
 struct GraphicsResourceStorage {
     unsigned int flags;
     void* buffer;
@@ -173,18 +197,24 @@ struct Fn8042TexBuf;
 void ByteBuffer_InitEmpty(Fn8042TexBuf* self);
 void ByteBuffer_ResizeZeroFilled(Fn8042TexBuf* self, unsigned int size);
 void* ByteBuffer_DeletingDtor(Fn8042TexBuf* self, short flag);
-void gtl_Image_CopyFromPlatformLayout(void*, unsigned int, unsigned int, unsigned int, void*, unsigned int, unsigned int, unsigned int, unsigned int);
+void gtl_Image_CopyFromPlatformLayout(void*, unsigned int, unsigned int, unsigned int, void*, unsigned int,
+                                      unsigned int, unsigned int, unsigned int);
 void gtl_DXT_DecompressImage(void*, unsigned int, void*, unsigned int, unsigned int, unsigned int);
-void gtl_Image_CopyToPlatformLayout(void*, unsigned int, unsigned int, void*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
+void gtl_Image_CopyToPlatformLayout(void*, unsigned int, unsigned int, void*, unsigned int, unsigned int, unsigned int,
+                                    unsigned int, unsigned int);
 
 struct Fn8042TexBuf {
     void* data;
     unsigned int field04;
     unsigned int field08;
     // Construct empty temporary conversion storage.
-    Fn8042TexBuf() { ByteBuffer_InitEmpty(this); }
+    Fn8042TexBuf() {
+        ByteBuffer_InitEmpty(this);
+    }
     // Release temporary pixels through the byte-buffer destructor.
-    ~Fn8042TexBuf() { ByteBuffer_DeletingDtor(this, -1); }
+    ~Fn8042TexBuf() {
+        ByteBuffer_DeletingDtor(this, -1);
+    }
 };
 
 struct RenderSurfaceFormatView {
@@ -194,7 +224,8 @@ struct RenderSurfaceFormatView {
 
 void GraphicsResource_InitializeHeader(GraphicsResourceHeader* self, unsigned int arg2, unsigned int arg3, int arg4);
 int GraphicsResource_AllocateStorage(GraphicsResourceStorage* self, unsigned int size);
-void TextureDescription_Initialize(unsigned int, unsigned int, unsigned int, void*, unsigned int, unsigned int, unsigned int);
+void TextureDescription_Initialize(unsigned int, unsigned int, unsigned int, void*, unsigned int, unsigned int,
+                                   unsigned int);
 void __dl__FPv(void*);
 void* CubeResourceStorage_dtor(void* self, short flag);
 void gtl_Graphics_FreeWithCallback(void* self);
@@ -205,7 +236,8 @@ unsigned int Texture_CalculateMipStorageSize(unsigned int, unsigned int, unsigne
 
 void* memcpy(void*, const void*, unsigned int);
 
-void Texture_BuildMipLayout(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, void*, unsigned int);
+void Texture_BuildMipLayout(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, void*,
+                            unsigned int);
 
 #pragma push
 #pragma optimization_level 1
@@ -237,7 +269,9 @@ void* __alloca(unsigned int);
 #pragma use_lmw_stmw on
 #pragma opt_dead_assignments on
 // Split each compressed mip's color blocks from alpha data, decode alpha and append it in Wii layout.
-int Texture_SplitCompressedColorAndAlphaMipData(char* dst, register char* src, register unsigned int width, register unsigned int height, register unsigned int format, register unsigned int levels) {
+int Texture_SplitCompressedColorAndAlphaMipData(char* dst, register char* src, register unsigned int width,
+                                                register unsigned int height, register unsigned int format,
+                                                register unsigned int levels) {
     // Borrowed, disjoint buffers; caller reserves the color chain followed by
     // the alpha chain. Dimensions are texels and are halved without clamping.
     // Return is always 1; valid format/level sizes are a caller precondition.
@@ -298,7 +332,8 @@ int Texture_SplitCompressedColorAndAlphaMipData(char* dst, register char* src, r
         outData = outTex.data;
         midInputCopy = midInput;
         outCopy = outData;
-        gtl_Image_CopyToPlatformLayout(midInputCopy, mipWidth, 0, outCopy, mipWidth, mipHeight, 0, decodedFormat, kPlatformWii);
+        gtl_Image_CopyToPlatformLayout(midInputCopy, mipWidth, 0, outCopy, mipWidth, mipHeight, 0, decodedFormat,
+                                       kPlatformWii);
         void* copyData = outTex.data;
         void* copyDataCopy = copyData;
         memcpy(alphaOutput, copyDataCopy, decodedBytes);
@@ -314,17 +349,21 @@ int Texture_SplitCompressedColorAndAlphaMipData(char* dst, register char* src, r
 #pragma push
 #pragma optimization_level 0
 // Initialize a surface description, allocate its backing pixels and flush the resource header.
-RenderSurfaceFormatView* RenderSurface_Ctor(RenderSurfaceFormatView* self, unsigned int width, unsigned int height, volatile unsigned int format, volatile unsigned int allocationMode) {
+RenderSurfaceFormatView* RenderSurface_Ctor(RenderSurfaceFormatView* self, unsigned int width, unsigned int height,
+                                            volatile unsigned int format, volatile unsigned int allocationMode) {
     GraphicsResource_InitializeHeader((GraphicsResourceHeader*)self, kSurfaceKind, 1, 1);
     TextureDescription_Initialize(width, height, format, self, 0, 0, allocationMode);
-    GraphicsResource_AllocateStorage((GraphicsResourceStorage*)self, Texture_CalculateMipStorageSize(width, height, 1, self->format));
+    GraphicsResource_AllocateStorage((GraphicsResourceStorage*)self,
+                                     Texture_CalculateMipStorageSize(width, height, 1, self->format));
     DCFlushRange(self, kCacheLineBytes);
     return self;
 }
 #pragma pop
 
-void IndexBuffer_InitializeDescriptorFields(unsigned int, unsigned int, unsigned int, unsigned int, void*, unsigned int, unsigned int);
-void VertexBuffer_InitializeDescriptorFields(unsigned int, unsigned int, unsigned int, unsigned int, void*, unsigned int);
+void IndexBuffer_InitializeDescriptorFields(unsigned int, unsigned int, unsigned int, unsigned int, void*, unsigned int,
+                                            unsigned int);
+void VertexBuffer_InitializeDescriptorFields(unsigned int, unsigned int, unsigned int, unsigned int, void*,
+                                             unsigned int);
 unsigned int FlexibleVertexFormat_GetStride(unsigned int);
 void VertexInput_FindAndCopyFormatDescriptor(void*, unsigned int);
 unsigned int gtl_ImageFormat_GetBytesPerElement(unsigned int);
@@ -348,15 +387,17 @@ int GraphicsResource_AllocateStorage(GraphicsResourceStorage* self, unsigned int
 #pragma inline_depth(0)
 #pragma use_lmw_stmw on
 // Build a palette descriptor and allocate enough storage for its entry format.
-GraphicsResourceStorage* TexturePalette_Ctor(GraphicsResourceStorage* self, void* paletteTypeWord, unsigned int unused, unsigned int textureFormat, unsigned int allocationMode) {
+GraphicsResourceStorage* TexturePalette_Ctor(GraphicsResourceStorage* self, void* paletteTypeWord, unsigned int unused,
+                                             unsigned int textureFormat, unsigned int allocationMode) {
     // paletteTypeWord carries a numeric palette type in the legacy pointer ABI.
     unsigned int g4 = allocationMode;
     unsigned int g3 = textureFormat;
-    void* a = paletteTypeWord;
+    void* paletteType = paletteTypeWord;
     GraphicsResourceStorage* s = self;
     GraphicsResource_InitializeHeader((GraphicsResourceHeader*)s, kPaletteKind, 1, (int)g4);
-    TexturePalette_InitializeDescriptorFields(a, s, 0, g3, g4);
-    GraphicsResource_AllocateStorage(s, Texture_CalculateMipStorageSize(TexturePalette_GetEntryCountForType((unsigned int)a), 1, 1, g3));
+    TexturePalette_InitializeDescriptorFields(paletteType, s, 0, g3, g4);
+    GraphicsResource_AllocateStorage(
+        s, Texture_CalculateMipStorageSize(TexturePalette_GetEntryCountForType((unsigned int)paletteType), 1, 1, g3));
     return s;
 }
 #pragma pop
@@ -371,7 +412,9 @@ int Texture_GetKind4LevelDescription(void* self, unsigned int levels, GraphicsDe
     result->resourceKind = kCubeTextureKind;
     result->usage = ((SquareTextureDescription*)self)->usage;
     result->reserved0C = 0;
-    result->storageBytes = Texture_CalculateMipStorageSize(((SquareTextureDescription*)self)->edgeLength, ((SquareTextureDescription*)self)->edgeLength, levels, ((SquareTextureDescription*)self)->format);
+    result->storageBytes = Texture_CalculateMipStorageSize(((SquareTextureDescription*)self)->edgeLength,
+                                                           ((SquareTextureDescription*)self)->edgeLength, levels,
+                                                           ((SquareTextureDescription*)self)->format);
     result->reserved14 = 0;
     result->reserved18 = 0;
     result->width = ((SquareTextureDescription*)self)->edgeLength;
@@ -383,9 +426,11 @@ int Texture_GetKind4LevelDescription(void* self, unsigned int levels, GraphicsDe
 #pragma push
 #pragma optimization_level 0
 // Initialize a texture header, defaulting an unspecified level count to eight.
-TextureLevelCountView* TextureResource_InitHeader(TextureLevelCountView* self, void* resourceKind, unsigned int requestedLevels, void* allocationMode) {
+TextureLevelCountView* TextureResource_InitHeader(TextureLevelCountView* self, void* resourceKind,
+                                                  unsigned int requestedLevels, void* allocationMode) {
     unsigned int levelCount;
-    GraphicsResource_InitializeHeader((GraphicsResourceHeader*)self, (unsigned int)resourceKind, 1, (int)allocationMode);
+    GraphicsResource_InitializeHeader((GraphicsResourceHeader*)self, (unsigned int)resourceKind, 1,
+                                      (int)allocationMode);
     if (requestedLevels == 0) {
         levelCount = kDefaultMipLevels;
     } else {
@@ -397,7 +442,8 @@ TextureLevelCountView* TextureResource_InitHeader(TextureLevelCountView* self, v
 #pragma pop
 
 // Reset storage words and encode reference count, kind, ownership and allocation flags.
-void GraphicsResource_InitializeHeader(GraphicsResourceHeader* self, unsigned int resourceKind, unsigned int ownsStorage, int allocationMode) {
+void GraphicsResource_InitializeHeader(GraphicsResourceHeader* self, unsigned int resourceKind,
+                                       unsigned int ownsStorage, int allocationMode) {
     self->storage = 0;
     self->auxiliaryStorage = 0;
     unsigned int flags = self->flags;
@@ -656,7 +702,8 @@ int RepeatHalfwords(void* dest, void* src, unsigned int size, unsigned int unuse
 
 #pragma inline_depth(0)
 // Build mip descriptors and allocate pixels, adding separate alpha storage for the special DXT format.
-void* Texture_Ctor2D(void* self, unsigned int width, unsigned int height, unsigned int levels, unsigned int layoutFlags, unsigned int format, unsigned int allocationMode) {
+void* Texture_Ctor2D(void* self, unsigned int width, unsigned int height, unsigned int levels, unsigned int layoutFlags,
+                     unsigned int format, unsigned int allocationMode) {
     volatile unsigned int saved = layoutFlags;
     TextureResource_InitHeader((TextureLevelCountView*)self, (void*)kTexture2DKind, levels, (void*)allocationMode);
     Texture_BuildMipLayout(width, height, levels, saved, format, allocationMode, self, 0);
@@ -670,7 +717,8 @@ void* Texture_Ctor2D(void* self, unsigned int width, unsigned int height, unsign
 #pragma push
 #pragma optimization_level 0
 // Initialize an index buffer, allocate/cache-align its payload and clear it.
-void* IndexBuffer_Ctor(IndexBufferDescription* self, unsigned int indexCount, unsigned int usage, unsigned int format, unsigned int allocationMode, unsigned int indexStride) {
+void* IndexBuffer_Ctor(IndexBufferDescription* self, unsigned int indexCount, unsigned int usage, unsigned int format,
+                       unsigned int allocationMode, unsigned int indexStride) {
     GraphicsResource_InitializeHeader((GraphicsResourceHeader*)self, kIndexBufferKind, 1, (int)allocationMode);
     self->indexCount = indexCount;
     self->format = format;
@@ -693,23 +741,23 @@ int TexturePalette_CopyOrDeinterleaveEntries(void* dest, void* src, unsigned int
     // Caller owns both buffers. Platform RGBA8 writes two halfword planes;
     // packed RGBA8 copies entries verbatim. Unsupported formats still return 1.
     switch (textureFormat) {
-        case kPlatformRGBA8: {
-            unsigned short* d = (unsigned short*)dest;
-            unsigned short* s = (unsigned short*)src;
-            unsigned int n = TexturePalette_GetEntryCountForType(paletteType);
-            for (unsigned int i = 0; i < n; i++) {
-                d[i] = s[i * 2];
-                d[i + n] = s[i * 2 + 1];
-            }
-            break;
+    case kPlatformRGBA8: {
+        unsigned short* d = (unsigned short*)dest;
+        unsigned short* s = (unsigned short*)src;
+        unsigned int n = TexturePalette_GetEntryCountForType(paletteType);
+        for (unsigned int i = 0; i < n; i++) {
+            d[i] = s[i * 2];
+            d[i + n] = s[i * 2 + 1];
         }
-        case kPackedRGBA8: {
-            unsigned int count = gtl_ImageFormat_FromPlatformFormat(textureFormat, kPlatformWii);
-            unsigned int stride = TexturePalette_GetEntryCountForType(paletteType);
-            unsigned int size = gtl_ImageFormat_GetBytesPerElement(count) * stride;
-            memcpy(dest, src, size);
-            break;
-        }
+        break;
+    }
+    case kPackedRGBA8: {
+        unsigned int count = gtl_ImageFormat_FromPlatformFormat(textureFormat, kPlatformWii);
+        unsigned int stride = TexturePalette_GetEntryCountForType(paletteType);
+        unsigned int size = gtl_ImageFormat_GetBytesPerElement(count) * stride;
+        memcpy(dest, src, size);
+        break;
+    }
     }
     return 1;
 }
@@ -752,19 +800,22 @@ void* CubeResourceStorage_dtor(void* rawSelf, short rawFlag) {
                 if ((((CubeResourceStorage*)rawSelf)->flags >> 8) & 1) {
                     g_graphicsMemoryCallbacks->freeAligned(((CubeResourceStorage*)rawSelf)->storage);
                 } else {
-                    ((void (*)(void*))g_graphicsMemoryCallbacks->releaseStorage)(((CubeResourceStorage*)rawSelf)->storage);
+                    ((void (*)(void*))g_graphicsMemoryCallbacks->releaseStorage)(
+                        ((CubeResourceStorage*)rawSelf)->storage);
                 }
             }
         }
         ((CubeResourceStorage*)rawSelf)->storage = 0;
-        if (rawFlag > 0) gtl_Graphics_FreeWithCallback(rawSelf);
+        if (rawFlag > 0)
+            gtl_Graphics_FreeWithCallback(rawSelf);
     }
     return rawSelf;
 }
 #pragma pop
 
 // Allocate vertex storage and any extra native-format stream, then clear and flush the header.
-void* VertexBuffer_Ctor(GraphicsResourceStorage* self, unsigned int byteCount, unsigned int usage, unsigned int vertexFormat, unsigned int allocationMode) {
+void* VertexBuffer_Ctor(GraphicsResourceStorage* self, unsigned int byteCount, unsigned int usage,
+                        unsigned int vertexFormat, unsigned int allocationMode) {
     char local[0x30];
     GraphicsResource_InitializeHeader((GraphicsResourceHeader*)self, kVertexBufferKind, 1, (int)allocationMode);
     VertexBuffer_InitializeDescriptorFields(byteCount, usage, vertexFormat, allocationMode, (char*)self, 0);
@@ -775,7 +826,8 @@ void* VertexBuffer_Ctor(GraphicsResourceStorage* self, unsigned int byteCount, u
         bool needsConvertedStream = nativeStride - *(unsigned int*)(local + 0x24);
         if (needsConvertedStream) {
             unsigned int vertexCount = byteCount / FlexibleVertexFormat_GetStride(vertexFormat);
-            size += Render_AlignSizeToMultiple((void*)(*(unsigned int*)(local + 0x24) * vertexCount + kBufferPrefixBytes), kCacheLineBytes);
+            size += Render_AlignSizeToMultiple(
+                (void*)(*(unsigned int*)(local + 0x24) * vertexCount + kBufferPrefixBytes), kCacheLineBytes);
         }
     }
     GraphicsResource_AllocateStorage(self, size);

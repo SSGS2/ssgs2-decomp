@@ -1,11 +1,13 @@
 #ifndef GAME_SHOP_PRODUCT_H
 #define GAME_SHOP_PRODUCT_H
 
-namespace IFF_STRUCT { struct sChar; }
+namespace IFF_STRUCT {
+struct sChar;
+}
 
-template<class T> class CShopProduct;
+template <class T> class CShopProduct;
 
-template<> class CShopProduct<IFF_STRUCT::sChar> {
+template <> class CShopProduct<IFF_STRUCT::sChar> {
 public:
     CShopProduct(void* value);
     ~CShopProduct();
@@ -23,12 +25,17 @@ public:
     virtual void slot08();
     CShopProductAvatar(void*, unsigned char);
     ~CShopProductAvatar();
+
+    int IsOwnedOrEquipped(void* productRecord, int testEquipped);
+
+    int RebuildFromCharacterTable(void* filterContext);
+    static int ReturnFalse();
 };
 
 class CShopProductInterface;
 namespace std {
-template<class T> struct allocator {};
-template<class T, class Alloc = allocator<T> > class vector {
+template <class T> struct allocator {};
+template <class T, class Alloc = allocator<T> > class vector {
 public:
     T* data;
     unsigned size;
@@ -51,6 +58,13 @@ public:
     char object24[0x2D70 - 0x24];
     unsigned char ready;
     CBuildProduct(int, unsigned char);
+
+    int vfunc_1();
+    int GetProductCount(int category);
+    int SelectSaveRecord(void* src);
+    int* GetProductDrawEntries(int category);
+    void* GetTextureEntryAt(int category, int entryIndex);
+    int* GetProductRecords(int category);
 };
 
 #endif

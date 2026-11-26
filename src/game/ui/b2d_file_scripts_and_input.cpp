@@ -1,9 +1,12 @@
+// B2D script files: registering a file into a script slot, finding and running its named
+// script labels, and building the opcode handler index for each slot.
+// Also the input key lists that scripts use (call labels and user data), the fixed-point
+// sine and cosine tables, and small sprite setters.
+
 #include <decomp/static_init.h>
 extern "C" {
 extern unsigned char b2dFileLabelHookNames[];
 }
-// Translation unit 0x800BF4E0-0x800C0C18 (22 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 #include "sdk_protos.h"
 #include "classes/BpSpriteDrawView.h"
 
@@ -13,11 +16,25 @@ extern "C" {
 // Offsets are bytes from file base (stringsOffset + firstArgument for label names).
 // argumentWords includes firstArgument; even zero arguments occupy the 12-byte header.
 // Registered file memory and all returned label pointers are borrowed and must outlive use.
-struct B2dFileHeader { int signature; int commandsOffset; int stringsOffset; int commandCount; };
-struct B2dCommand { int opcode; int argumentWords; int firstArgument; };
+struct B2dFileHeader {
+    int signature;
+    int commandsOffset;
+    int stringsOffset;
+    int commandCount;
+};
+struct B2dCommand {
+    int opcode;
+    int argumentWords;
+    int firstArgument;
+};
 // The descriptor's third word is 0x00050000 (scratch 5, draw objects 0); on the Wii the first short is the high
 // half of the word.
-struct B2dCommandHandler { int opcode; int (*execute)(int, void*); short scratchUnits16Bytes; short drawObjectCount; };
+struct B2dCommandHandler {
+    int opcode;
+    int (*execute)(int, void*);
+    short scratchUnits16Bytes;
+    short drawObjectCount;
+};
 struct B2dScriptSlot {
     int handle;
     void* file;
@@ -27,26 +44,56 @@ struct B2dScriptSlot {
     char labelControl[0x12];
     char alignment[2];
 };
-struct B2dInputKeyList { int handle; int state; void* userData; int callLabels[0x12]; };
-typedef char B2dCommandHandlerSizeCheck[sizeof(B2dCommandHandler)==12 ? 1 : -1];
-struct BpSpriteState { short objectKind; short flags; };
+struct B2dInputKeyList {
+    int handle;
+    int state;
+    void* userData;
+    int callLabels[0x12];
+};
+typedef char B2dCommandHandlerSizeCheck[sizeof(B2dCommandHandler) == 12 ? 1 : -1];
+struct BpSpriteState {
+    short objectKind;
+    short flags;
+};
 // Handler scratchUnits16Bytes counts 16-byte work units, not words or bytes.
 enum B2dLimits {
-    kB2dSlotCount=40, kB2dScriptsPerSlot=128, kB2dCallLabelCount=18, kB2dHandlerCount=38,
-    kB2dSlotBytes=sizeof(B2dScriptSlot), kB2dKeyListBytes=sizeof(B2dInputKeyList),
-    kB2dSlotArrayBytes=kB2dSlotCount*kB2dSlotBytes,
-    kB2dCommandHeaderBytes=sizeof(B2dCommand), kB2dWordBytes=sizeof(int),
-    kB2dScriptsOffset=(int)&((B2dScriptSlot*)0)->scripts,
-    kB2dDrawObjectBytes=0x1C8, kB2dScratchUnitBytes=16, kB2dControlBytesOffset=(int)&((B2dScriptSlot*)0)->labelControl
+    kB2dSlotCount = 40,
+    kB2dScriptsPerSlot = 128,
+    kB2dCallLabelCount = 18,
+    kB2dHandlerCount = 38,
+    kB2dSlotBytes = sizeof(B2dScriptSlot),
+    kB2dKeyListBytes = sizeof(B2dInputKeyList),
+    kB2dSlotArrayBytes = kB2dSlotCount * kB2dSlotBytes,
+    kB2dCommandHeaderBytes = sizeof(B2dCommand),
+    kB2dWordBytes = sizeof(int),
+    kB2dScriptsOffset = (int)&((B2dScriptSlot*)0)->scripts,
+    kB2dDrawObjectBytes = 0x1C8,
+    kB2dScratchUnitBytes = 16,
+    kB2dControlBytesOffset = (int)&((B2dScriptSlot*)0)->labelControl
 };
-enum B2dOpcode { kB2dScriptLabel=1, kB2dEndLine=2, kB2dFirstCallLabel=0x13, kB2dLastCallLabel=0x24 };
-enum B2dControlFlags { kB2dLabelActive=1, kB2dControlledExecution=6, kB2dTransientControl=14 };
-enum BpSpriteFlags { kBpSpriteDisabled=0x10 };
-enum FixedPointTrig { kTrigTableCount=1024, kTrigIndexMask=kTrigTableCount-1, kTrigFullTurnDegrees=360, kTrigFixedScale=4096 };
+enum B2dOpcode {
+    kB2dScriptLabel = 1,
+    kB2dEndLine = 2,
+    kB2dFirstCallLabel = 0x13,
+    kB2dLastCallLabel = 0x24
+};
+enum B2dControlFlags {
+    kB2dLabelActive = 1,
+    kB2dControlledExecution = 6,
+    kB2dTransientControl = 14
+};
+enum BpSpriteFlags {
+    kBpSpriteDisabled = 0x10
+};
+enum FixedPointTrig {
+    kTrigTableCount = 1024,
+    kTrigIndexMask = kTrigTableCount - 1,
+    kTrigFullTurnDegrees = 360,
+    kTrigFixedScale = 4096
+};
 // Explicit byte sizes guard private views used by the opaque C interfaces below.
-typedef char B2dSlotSizeCheck[sizeof(B2dScriptSlot)==0x224 ? 1 : -1];
-typedef char B2dKeyListSizeCheck[sizeof(B2dInputKeyList)==0x54 ? 1 : -1];
-
+typedef char B2dSlotSizeCheck[sizeof(B2dScriptSlot) == 0x224 ? 1 : -1];
+typedef char B2dKeyListSizeCheck[sizeof(B2dInputKeyList) == 0x54 ? 1 : -1];
 
 extern float kFloat_6_2831855;
 extern float s_b2dFileTwoPi;
@@ -92,16 +139,18 @@ int B2dInp_ResetKeyList(int);
 #pragma use_lmw_stmw on
 // Byte view across adjacent diagnostic strings, preserving the original symbol plus offset relocations.
 struct ScriptDiagnosticLayout {
-    char flagControlAll[0x10]; // _B2dFlgCtlAll
+    char flagControlAll[0x10];  // _B2dFlgCtlAll
     char getLabelPointer[0x5C]; // B2dFileGetLabelPtr, followed by intervening diagnostics
-    char getCommandList[0x14]; // pB2dFileGetCmdList
-    char getDataPointer[0x10]; // B2dFileGetDatPtr
+    char getCommandList[0x14];  // pB2dFileGetCmdList
+    char getDataPointer[0x10];  // B2dFileGetDatPtr
 };
-struct ScriptMessages { char text[0x100]; };
+struct ScriptMessages {
+    char text[0x100];
+};
 enum ScriptDiagnosticOffsets {
-    kDiagnosticGetLabelPointer=(int)&((ScriptDiagnosticLayout*)0)->getLabelPointer,
-    kDiagnosticGetCommandList=(int)&((ScriptDiagnosticLayout*)0)->getCommandList,
-    kDiagnosticGetDataPointer=(int)&((ScriptDiagnosticLayout*)0)->getDataPointer
+    kDiagnosticGetLabelPointer = (int)&((ScriptDiagnosticLayout*)0)->getLabelPointer,
+    kDiagnosticGetCommandList = (int)&((ScriptDiagnosticLayout*)0)->getCommandList,
+    kDiagnosticGetDataPointer = (int)&((ScriptDiagnosticLayout*)0)->getDataPointer
 };
 // Find a named script label by resolving each command's name offset through the registered file.
 static inline int* FindScript(int index, void* name, ScriptMessages* msg) {
@@ -113,27 +162,32 @@ static inline int* FindScript(int index, void* name, ScriptMessages* msg) {
         int i = 0;
         int offset = 0;
         for (; i < kB2dScriptsPerSlot; ++i, offset += 4) {
-            if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+            if (g_bpCommandSlots == 0)
+                g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
             // The byte iterator selects scripts[0] of a shifted layout view.
             char* slot = (char*)g_bpCommandSlots + (offset + stride);
             int* entry = (int*)((B2dScriptSlot*)slot)->scripts[0];
-            if (entry == 0) return 0;
+            if (entry == 0)
+                return 0;
             int labelNameOffset = ((B2dCommand*)entry)->firstArgument;
             void* data;
             if (index < 0 || index >= kB2dSlotCount) {
                 BpCtrl_InvokeGlobalHook(-1, b2dSourceFileName, 0x90, ((char*)(msg->text + kDiagnosticGetLabelPointer)));
                 data = 0;
             } else {
-                if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+                if (g_bpCommandSlots == 0)
+                    g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
                 char* f = (char*)((B2dScriptSlot*)(stride + g_bpCommandSlots))->file;
                 if (f == 0) {
-                    BpCtrl_InvokeGlobalHook(-2, b2dSourceFileName, 0x98, ((char*)(msg->text + kDiagnosticGetLabelPointer)));
+                    BpCtrl_InvokeGlobalHook(-2, b2dSourceFileName, 0x98,
+                                            ((char*)(msg->text + kDiagnosticGetLabelPointer)));
                     data = 0;
                 } else {
                     data = (void*)(((B2dFileHeader*)f)->stringsOffset + (labelNameOffset + (int)f));
                 }
             }
-            if (!strcmp((const char*)data, (const char*)name)) return entry;
+            if (!strcmp((const char*)data, (const char*)name))
+                return entry;
         }
     }
     return 0;
@@ -145,13 +199,16 @@ int B2dFile_ExecuteNamedScript(int index, void* name) {
     ScriptMessages* msg;
     msg = (ScriptMessages*)b2dFlagControlAllDiagnostic;
     int* words = FindScript(index, name, msg);
-    if (words == 0) return -1;
+    if (words == 0)
+        return -1;
     if (index < 0 || index >= kB2dSlotCount) {
         BpCtrl_InvokeGlobalHook(-1, b2dSourceFileName, 0x62, msg->text);
     } else {
-        if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+        if (g_bpCommandSlots == 0)
+            g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
         char* p = (char*)g_bpCommandSlots + index * kB2dSlotBytes;
-        for (int i = 0; i < kB2dCallLabelCount; ++i) ((B2dScriptSlot*)p)->labelControl[i] &= ~kB2dLabelActive;
+        for (int i = 0; i < kB2dCallLabelCount; ++i)
+            ((B2dScriptSlot*)p)->labelControl[i] &= ~kB2dLabelActive;
     }
     // Phase 2: reset input labels, then consume inline callback labels or dispatch handlers.
     B2dInp_ResetKeyList(index);
@@ -168,10 +225,12 @@ int B2dFile_ExecuteNamedScript(int index, void* name) {
                 BpCtrl_InvokeGlobalHook(-1, b2dSourceFileName, 0x90, ((char*)(msg->text + kDiagnosticGetLabelPointer)));
                 data = 0;
             } else {
-                if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+                if (g_bpCommandSlots == 0)
+                    g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
                 char* f = *(char**)(index * kB2dSlotBytes + g_bpCommandSlots + 4);
                 if (f == 0) {
-                    BpCtrl_InvokeGlobalHook(-2, b2dSourceFileName, 0x98, ((char*)(msg->text + kDiagnosticGetLabelPointer)));
+                    BpCtrl_InvokeGlobalHook(-2, b2dSourceFileName, 0x98,
+                                            ((char*)(msg->text + kDiagnosticGetLabelPointer)));
                     data = 0;
                 } else {
                     data = (void*)(((B2dFileHeader*)f)->stringsOffset + (dataOffset + (int)f));
@@ -187,10 +246,12 @@ int B2dFile_ExecuteNamedScript(int index, void* name) {
             } else {
                 item = s_b2dCommandHandlers[type];
             }
-            if (item == 0) break;
+            if (item == 0)
+                break;
             result = ((int (*)(int, void*))((B2dCommandHandler*)item)->execute)(index, (void*)words);
         }
-        if (result < 0 || result == 1) break;
+        if (result < 0 || result == 1)
+            break;
         int n = words[1];
         words = (int*)((char*)words + kB2dCommandHeaderBytes + (n < 1 ? 0 : n - 1) * 4);
     }
@@ -209,9 +270,11 @@ int B2dFile_ExecuteNamedScriptWithControlFlags(int index, void* name) {
     if (index < 0 || index >= kB2dSlotCount) {
         BpCtrl_InvokeGlobalHook(-1, b2dSourceFileName, 0x62, msg);
     } else {
-        if (0 == g_bpCommandSlots) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+        if (0 == g_bpCommandSlots)
+            g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
         char* p = (char*)g_bpCommandSlots + index * kB2dSlotBytes;
-        for (int i = 0; i < kB2dCallLabelCount; ++i) ((B2dScriptSlot*)p)->labelControl[i] |= kB2dControlledExecution;
+        for (int i = 0; i < kB2dCallLabelCount; ++i)
+            ((B2dScriptSlot*)p)->labelControl[i] |= kB2dControlledExecution;
     }
     // Resolve while control bits are installed. Exhaustion clears entry in the
     // loop condition; a successful strcmp exits with the borrowed command intact.
@@ -223,18 +286,23 @@ int B2dFile_ExecuteNamedScriptWithControlFlags(int index, void* name) {
         int i = 0;
         int offset = 0;
         for (; i < kB2dScriptsPerSlot || (entry = 0, false); ++i, offset += 4) {
-            if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+            if (g_bpCommandSlots == 0)
+                g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
             // The byte iterator selects scripts[0] of a shifted layout view.
             char* slot = (char*)g_bpCommandSlots + stride + offset;
             entry = (char*)((B2dScriptSlot*)slot)->scripts[0];
-            if (entry == 0) { entry = 0; break; }
+            if (entry == 0) {
+                entry = 0;
+                break;
+            }
             int dataOffset = ((B2dCommand*)entry)->firstArgument;
             void* data;
             if (index < 0 || index >= kB2dSlotCount) {
                 BpCtrl_InvokeGlobalHook(-1, b2dSourceFileName, 0x90, ((char*)(msg + kDiagnosticGetLabelPointer)));
                 data = 0;
             } else {
-                if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+                if (g_bpCommandSlots == 0)
+                    g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
                 char* f = (char*)((B2dScriptSlot*)((char*)g_bpCommandSlots + stride))->file;
                 if (f == 0) {
                     BpCtrl_InvokeGlobalHook(-2, b2dSourceFileName, 0x98, ((char*)(msg + kDiagnosticGetLabelPointer)));
@@ -243,7 +311,8 @@ int B2dFile_ExecuteNamedScriptWithControlFlags(int index, void* name) {
                     data = f + dataOffset + ((B2dFileHeader*)f)->stringsOffset;
                 }
             }
-            if (!strcmp((const char*)data, (const char*)name)) break;
+            if (!strcmp((const char*)data, (const char*)name))
+                break;
         }
     }
     // Phase 2: execute the resolved label with the same callback/handler rules as above.
@@ -254,9 +323,11 @@ int B2dFile_ExecuteNamedScriptWithControlFlags(int index, void* name) {
         if (index < 0 || index >= kB2dSlotCount) {
             BpCtrl_InvokeGlobalHook(-1, b2dSourceFileName, 0x62, msg);
         } else {
-            if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+            if (g_bpCommandSlots == 0)
+                g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
             char* p = (char*)g_bpCommandSlots + index * kB2dSlotBytes;
-            for (int i = 0; i < kB2dCallLabelCount; ++i) ((B2dScriptSlot*)p)->labelControl[i] &= ~kB2dLabelActive;
+            for (int i = 0; i < kB2dCallLabelCount; ++i)
+                ((B2dScriptSlot*)p)->labelControl[i] &= ~kB2dLabelActive;
         }
         B2dInp_ResetKeyList(index);
         int* words = (int*)entry;
@@ -271,12 +342,15 @@ int B2dFile_ExecuteNamedScriptWithControlFlags(int index, void* name) {
                     BpCtrl_InvokeGlobalHook(-1, b2dSourceFileName, 0x90, ((char*)(msg + kDiagnosticGetLabelPointer)));
                     data = 0;
                 } else {
-                    if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+                    if (g_bpCommandSlots == 0)
+                        g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
                     char* f = *(char**)((char*)g_bpCommandSlots + index * kB2dSlotBytes + 4);
                     if (f == 0) {
-                        BpCtrl_InvokeGlobalHook(-2, b2dSourceFileName, 0x98, ((char*)(msg + kDiagnosticGetLabelPointer)));
+                        BpCtrl_InvokeGlobalHook(-2, b2dSourceFileName, 0x98,
+                                                ((char*)(msg + kDiagnosticGetLabelPointer)));
                         data = 0;
-                    } else data = f + dataOffset + ((B2dFileHeader*)f)->stringsOffset;
+                    } else
+                        data = f + dataOffset + ((B2dFileHeader*)f)->stringsOffset;
                 }
                 B2dInp_SetCallLabel(index, label, data);
                 r = 0;
@@ -288,10 +362,12 @@ int B2dFile_ExecuteNamedScriptWithControlFlags(int index, void* name) {
                 } else {
                     item = s_b2dCommandHandlers[type];
                 }
-                if (item == 0) break;
+                if (item == 0)
+                    break;
                 r = ((int (*)(int, void*))((B2dCommandHandler*)item)->execute)(index, words);
             }
-            if (r < 0 || r == 1) break;
+            if (r < 0 || r == 1)
+                break;
             int n = words[1];
             words = (int*)((char*)words + kB2dCommandHeaderBytes + (n > 1 ? (n - 1) * 4 : 0));
         }
@@ -301,9 +377,11 @@ int B2dFile_ExecuteNamedScriptWithControlFlags(int index, void* name) {
     if (index < 0 || index >= kB2dSlotCount) {
         BpCtrl_InvokeGlobalHook(-1, b2dSourceFileName, 0x62, msg);
     } else {
-        if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+        if (g_bpCommandSlots == 0)
+            g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
         char* p = (char*)g_bpCommandSlots + index * kB2dSlotBytes;
-        for (int i = 0; i < kB2dCallLabelCount; ++i) ((B2dScriptSlot*)p)->labelControl[i] &= ~kB2dTransientControl;
+        for (int i = 0; i < kB2dCallLabelCount; ++i)
+            ((B2dScriptSlot*)p)->labelControl[i] &= ~kB2dTransientControl;
     }
     // Phase 3 complete: temporary control bits have been cleared for every call label.
     return result;
@@ -316,15 +394,20 @@ int B2dFile_Reset(int index) {
         BpCtrl_InvokeGlobalHook(-1, b2dSourceFileName, 0x4B0, b2dFileResetFunctionName);
         return -1;
     }
-    if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+    if (g_bpCommandSlots == 0)
+        g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
     int off = index * kB2dSlotBytes;
     char* p = (char*)g_bpCommandSlots + off;
     ((B2dScriptSlot*)p)->handle = -1;
     ((B2dScriptSlot*)p)->file = 0;
     ((B2dScriptSlot*)p)->currentScript = -1;
     int* slotWord = (int*)p;
-    for (int i = 0; i < kB2dScriptsPerSlot; ++i) { slotWord[kB2dScriptsOffset / sizeof(int)] = 0; slotWord++; }
-    for (int i = kB2dControlBytesOffset; i < kB2dSlotBytes; ++i) p[i] = 0;
+    for (int i = 0; i < kB2dScriptsPerSlot; ++i) {
+        slotWord[kB2dScriptsOffset / sizeof(int)] = 0;
+        slotWord++;
+    }
+    for (int i = kB2dControlBytesOffset; i < kB2dSlotBytes; ++i)
+        p[i] = 0;
     return 0;
 }
 
@@ -353,7 +436,8 @@ void Math_RotateIntegerPoints2D(int* points, int count, int pivotX, int pivotY, 
 
 // Reset every script slot and build the opcode-to-handler index from the descriptor table.
 int B2dFile_InitializeSlotsAndIndex() {
-    for (int i = 0; i < kB2dSlotCount; i++) B2dFile_Reset(i);
+    for (int i = 0; i < kB2dSlotCount; i++)
+        B2dFile_Reset(i);
     memset(s_b2dCommandHandlers, 0, kB2dHandlerCount * sizeof(void*));
     B2dCommandHandler** dst = (B2dCommandHandler**)s_b2dCommandHandlers;
     B2dCommandHandler* src = (B2dCommandHandler*)s_b2dCommandHandlerDescriptors;
@@ -404,7 +488,8 @@ int B2dFile_Register(int index, void* fileData) {
         return -1;
     }
     B2dFile_Reset(index);
-    if (g_bpCommandSlots == 0) g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
+    if (g_bpCommandSlots == 0)
+        g_bpCommandSlots = (int)__nwa__FUl(kB2dSlotArrayBytes);
     char* entry = (char*)g_bpCommandSlots + index * kB2dSlotBytes;
     ((B2dScriptSlot*)entry)->handle = index;
     ((B2dScriptSlot*)entry)->file = fileData;
@@ -420,8 +505,11 @@ void B2dInpResetKeyList() {
     for (int i = 0; i < kB2dSlotCount; i++) {
         p->state = zero;
         p->userData = (void*)zero;
-        if (i < 0 || i >= kB2dSlotCount) BpCtrl_InvokeGlobalHook(-1, kBpInputSourceFilename, 0x82, b2dInputResetKeyListFunctionName);
-        else for (int j = 0; j < kB2dCallLabelCount; j++) p->callLabels[j] = zero;
+        if (i < 0 || i >= kB2dSlotCount)
+            BpCtrl_InvokeGlobalHook(-1, kBpInputSourceFilename, 0x82, b2dInputResetKeyListFunctionName);
+        else
+            for (int j = 0; j < kB2dCallLabelCount; j++)
+                p->callLabels[j] = zero;
         ++p;
     }
     g_b2dInputCallback = 0;
@@ -469,11 +557,13 @@ void B2dInp_SetUserData(int index, void* userData) {
         void* entry = (char*)s_b2dInputKeyLists + index * kB2dKeyListBytes;
         keyList = entry;
         if (((B2dInputKeyList*)entry)->handle < 0) {
-            BpCtrl_InvokeGlobalHook(((B2dInputKeyList*)entry)->handle, kBpInputSourceFilename, 0x43, b2dInpGetInfoPtrFunctionName);
+            BpCtrl_InvokeGlobalHook(((B2dInputKeyList*)entry)->handle, kBpInputSourceFilename, 0x43,
+                                    b2dInpGetInfoPtrFunctionName);
             keyList = 0;
         }
     }
-    if (keyList) ((B2dInputKeyList*)keyList)->userData = userData;
+    if (keyList)
+        ((B2dInputKeyList*)keyList)->userData = userData;
 }
 
 // Store the callback label value after validating the key-list handle and label index.
@@ -496,7 +586,8 @@ int B2dInp_SetCallLabel(int index, int labelIndex, void* labelValue) {
         labels = 0;
     else
         labels = entry + 3;
-    if (labels == 0) return -2;
+    if (labels == 0)
+        return -2;
     if (labelIndex < 0 || labelIndex >= kB2dCallLabelCount) {
         BpCtrl_InvokeGlobalHook(-1, kBpInputSourceFilename, 0x70, b2dInputSetCallLabelFunctionName);
         return -1;
@@ -540,7 +631,8 @@ int B2dFile_CalculateCommandWorkSize(void* object, int* outDrawObjectCount, int*
             labelCount = labelCount + 1;
             break;
         case kB2dEndLine:
-            if (maxLineScratchUnits < lineScratchUnits) maxLineScratchUnits = lineScratchUnits;
+            if (maxLineScratchUnits < lineScratchUnits)
+                maxLineScratchUnits = lineScratchUnits;
             lineScratchUnits = 0;
             break;
         default:
@@ -555,7 +647,8 @@ int B2dFile_CalculateCommandWorkSize(void* object, int* outDrawObjectCount, int*
                 } else {
                     info = (int*)s_b2dCommandHandlers[type];
                 }
-                if (info == 0) return -1;
+                if (info == 0)
+                    return -1;
                 lineScratchUnits = lineScratchUnits + ((B2dCommandHandler*)info)->scratchUnits16Bytes;
                 drawObjectCount = drawObjectCount + ((B2dCommandHandler*)info)->drawObjectCount;
             }
@@ -565,9 +658,12 @@ int B2dFile_CalculateCommandWorkSize(void* object, int* outDrawObjectCount, int*
         entryIndex = entryIndex + 1;
         entry = entry + kB2dCommandHeaderBytes + (size > 1 ? size - 1 : 0) * 4;
     }
-    if (outScratchUnits != 0) *outScratchUnits = maxLineScratchUnits;
-    if (outDrawObjectCount != 0) *outDrawObjectCount = drawObjectCount;
-    if (outLabelCount != 0) *outLabelCount = labelCount;
+    if (outScratchUnits != 0)
+        *outScratchUnits = maxLineScratchUnits;
+    if (outDrawObjectCount != 0)
+        *outDrawObjectCount = drawObjectCount;
+    if (outLabelCount != 0)
+        *outLabelCount = labelCount;
     return drawObjectCount * kB2dDrawObjectBytes + (maxLineScratchUnits << 4);
 }
 #pragma pop
@@ -575,21 +671,32 @@ int B2dFile_CalculateCommandWorkSize(void* object, int* outDrawObjectCount, int*
 // Empty module hook retained for linkage.
 void B2dFile_EmptyModuleHook() {}
 // Initialize this B2D module's two-pi value.
-void B2dFile_InitializeTwoPi() { s_b2dFileTwoPi = kFloat_6_2831855; }
+void B2dFile_InitializeTwoPi() {
+    s_b2dFileTwoPi = kFloat_6_2831855;
+}
 // Empty sprite module hook retained for linkage.
 void BpSprite_EmptyModuleHook() {}
 // Initialize this sprite module's two-pi value.
-void BpSprite_InitializeTwoPi() { s_bpSpriteTwoPi = kFloat_6_2831855; }
+void BpSprite_InitializeTwoPi() {
+    s_bpSpriteTwoPi = kFloat_6_2831855;
+}
 
 // Initialize the fixed-point trig module's two-pi value.
-void FixedPointTrig_InitializeTwoPi() { s_initializedTwoPi_800C0700 = kFloat_6_2831855; }
+void FixedPointTrig_InitializeTwoPi() {
+    s_initializedTwoPi_800C0700 = kFloat_6_2831855;
+}
 
 // Return one sine-table word with the index wrapped to 1024 samples; ABI exposes the word as void*.
-void* Trig_GetSinTableEntry(unsigned int index) { return s_fixedPointSinTable[(index & kTrigIndexMask)]; }
+void* Trig_GetSinTableEntry(unsigned int index) {
+    return s_fixedPointSinTable[(index & kTrigIndexMask)];
+}
 
 // Set a pooled draw object's opacity, reporting a null object through the diagnostic hook.
 void BpSprite_SetOpacity(void* object, int value) {
-    if (object == 0) { BpCtrl_InvokeGlobalHook(-1, b2dSpriteSourceFileName, 0xD6, bpSpriteSetAlphaFunctionName); return; }
+    if (object == 0) {
+        BpCtrl_InvokeGlobalHook(-1, b2dSpriteSourceFileName, 0xD6, bpSpriteSetAlphaFunctionName);
+        return;
+    }
     ((BpSpriteDrawView*)object)->opacity = value; // 0x800C0BEC: pooled draw object's opacity
 }
 
@@ -611,7 +718,9 @@ int BpSprite_SetEnabled(void* object, int value) {
 }
 
 // Replace the global B2D input callback.
-void B2d_SetInputCallback(void* value) { g_b2dInputCallback = value; }
+void B2d_SetInputCallback(void* value) {
+    g_b2dInputCallback = value;
+}
 
 } // extern "C"
 

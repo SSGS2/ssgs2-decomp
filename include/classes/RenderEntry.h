@@ -2,15 +2,15 @@
 #ifndef CLASSES_RENDERENTRY_H
 #define CLASSES_RENDERENTRY_H
 struct RenderEntry {
-        unsigned char state;
-        char pad[3];
-        float sortKey;
-        int flagsOrTextureSlot;
-        int vertexCount;
-        int vertexFormatOrPrimitiveFlags;
-        int vertexData;
-        int primitiveType;
-        int resourceOverride;
+    unsigned char state;
+    char pad[3];
+    float sortKey;
+    int flagsOrTextureSlot;
+    int vertexCount;
+    int vertexFormatOrPrimitiveFlags;
+    int vertexData;
+    int primitiveType;
+    int resourceOverride;
 };
 #define OFF(f, o) typedef char RenderEntry_off_##f[((int)&((RenderEntry*)0)->f == (o)) ? 1 : -1]
 OFF(state, 0x0);

@@ -4,11 +4,11 @@
 #define CLASSES_PTRARRAY8023_H
 class PtrArray8023 {
 public:
-    void* vtable;                 // +0x00: constructor-selected original vtable
-    int parameter;                // +0x04: constructor argument; meaning unknown
-    void* data;                   // +0x08: pointer storage, freed by destructors
-    int count;                    // +0x0C: PtrArray_GetCount; incremented on append
-    unsigned int capacity;        // +0x10: append allocation limit
+    void* vtable;          // +0x00: constructor-selected original vtable
+    int parameter;         // +0x04: constructor argument; meaning unknown
+    void* data;            // +0x08: pointer storage, freed by destructors
+    int count;             // +0x0C: PtrArray_GetCount; incremented on append
+    unsigned int capacity; // +0x10: append allocation limit
 };
 #define PTRARRAY8023_OFF(f, o) typedef char PtrArray8023_off_##f[((int)&((PtrArray8023*)0)->f == (o)) ? 1 : -1]
 PTRARRAY8023_OFF(vtable, 0x0);

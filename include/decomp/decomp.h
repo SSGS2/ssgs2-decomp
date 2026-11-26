@@ -19,26 +19,26 @@
 // (This version of CW does not support pragmas inside macros.)
 #else
 // Force reference specific data
-#define DECOMP_FORCEACTIVE(module, ...)                                        \
-    void fake_function(...);                                                   \
-    void CONCAT(FORCEACTIVE##module, __LINE__)(void);                          \
-    void CONCAT(FORCEACTIVE##module, __LINE__)(void) {                         \
-        fake_function(__VA_ARGS__);                                            \
+#define DECOMP_FORCEACTIVE(module, ...)                \
+    void fake_function(...);                           \
+    void CONCAT(FORCEACTIVE##module, __LINE__)(void);  \
+    void CONCAT(FORCEACTIVE##module, __LINE__)(void) { \
+        fake_function(__VA_ARGS__);                    \
     }
 
 // Force literal ordering, such as floats in sdata2
-#define DECOMP_FORCELITERAL(module, ...)                                       \
-    void CONCAT(FORCELITERAL##module, __LINE__)(void);                         \
-    void CONCAT(FORCELITERAL##module, __LINE__)(void) {                        \
-        (__VA_ARGS__);                                                         \
+#define DECOMP_FORCELITERAL(module, ...)                \
+    void CONCAT(FORCELITERAL##module, __LINE__)(void);  \
+    void CONCAT(FORCELITERAL##module, __LINE__)(void) { \
+        (__VA_ARGS__);                                  \
     }
 
 // Force reference destructor
-#define DECOMP_FORCEACTIVE_DTOR(module, cls)                                   \
-    void CONCAT(FORCEDTOR##module##cls, __LINE__)(void);                       \
-    void CONCAT(FORCEDTOR##module##cls, __LINE__)(void) {                      \
-        cls dummy;                                                             \
-        dummy.~cls();                                                          \
+#define DECOMP_FORCEACTIVE_DTOR(module, cls)              \
+    void CONCAT(FORCEDTOR##module##cls, __LINE__)(void);  \
+    void CONCAT(FORCEDTOR##module##cls, __LINE__)(void) { \
+        cls dummy;                                        \
+        dummy.~cls();                                     \
     }
 
 #define DECOMP_INLINE inline

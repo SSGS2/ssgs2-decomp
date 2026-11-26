@@ -5,7 +5,7 @@
 
 struct DvdStreamFields {
     char pad_000[0x8];
-    void* readResult; // 0x8
+    void* readResult;   // 0x8
     void* readCallback; // 0xC
     void* readUserData; // 0x10
     char pad_014[0x8];

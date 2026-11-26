@@ -1,7 +1,7 @@
 // Memory / heap reservation and the engine's list/fixed-vector allocators.
 // MemoryManager_InitHeaps consumes OS MEM1/MEM2 arenas; application allocation
 // wrappers in memory_heap_init_and_alloc.cpp/gtl_heap_allocators.cpp use the published heap handles.
-// Shared layouts: gtl_CListAllocator and gtl_CFixedVectorAllocator; defaults and
+// Shared layouts: gtl::CListAllocator and gtl::CFixedVectorAllocator; defaults and
 // error tables retain their linked definitions (listAllocatorInitDefaults etc.).
 // Modder lookup:
 // - MEM1 reservation: kMem1ReservedBytes = 0x100000 bytes (1 MiB), subtracted
@@ -25,12 +25,9 @@
 // Neither pragma provides locking; callers serialize list mutation/enumeration.
 #pragma ipa file
 #include "classes/gtl_CFixedVectorAllocator.h"
-#define Asgtl_CFixedVectorAllocator(p) ((gtl_CFixedVectorAllocator*)(p))
 #include "classes/gtl_CListAllocator.h"
-#define Asgtl_CListAllocator(p) ((gtl_CListAllocator*)(p))
+#include "classes/gtl_IMemoryAllocator.h"
 #pragma auto_inline off
-// Translation unit 0x80420D68-0x80421FE8 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
@@ -48,12 +45,8 @@ struct AllocatorInitParameters {
     unsigned int slotAddress, slotBytes;
 };
 // Complete fixed-vector receiver extent is 0x2C bytes, aligned for 32-bit words.
-// gtl_CFixedVectorAllocator.h describes ONLY the common +00..+27 prefix; it is
-// not an allocation-size contract. This complementary view names the final
-// +28 arena-byte word written by Initialize. Both views alias ONE allocation.
 // Evidence: gtl_heap_allocators.cpp SubObjB::operator new requests kAllocatorObjectBytes
-// (0x2C), not sizeof(gtl_CFixedVectorAllocator). Never allocate just that prefix.
-struct FixedVectorInitTail { char prefix[0x28]; unsigned int arenaBytes; };
+// (0x2C), the size of gtl::CFixedVectorAllocator. Never allocate a smaller object.
 // Sizes and offsets are bytes unless named Blocks/Count. blockShift is log2 of
 // blockSize. List block counts include overhead; fixed-vector counts cover payload.
 // Caller-owned arenas and the fixed allocator's slot array must outlive the
@@ -63,7 +56,7 @@ struct FixedVectorInitTail { char prefix[0x28]; unsigned int arenaBytes; };
 struct MainMemoryStateView {
     char mutexStorage[0x18];
     char destructorRegistration[12];
-    gtl_CListAllocator defaultAllocator;
+    gtl::CListAllocator defaultAllocator;
 };
 typedef char MainMemoryAllocatorOffset[((int)&((MainMemoryStateView*)0)->defaultAllocator == 0x24) ? 1 : -1];
 struct AllocatorIterationState {
@@ -75,8 +68,8 @@ enum MemoryConstants {
     kMem2Heap = 1,
     kMinimumAlignmentShift = 2,
     kMaximumAlignmentShift = 7,
-    kMem1ReservedBytes = 0x100000, // byte tail excluded from the MEM1 expandable heap
-    kDefaultAllocatorBytes = 0x10000, // backing allocation; pair with template arenaBytes
+    kMem1ReservedBytes = 0x100000,     // byte tail excluded from the MEM1 expandable heap
+    kDefaultAllocatorBytes = 0x10000,  // backing allocation; pair with template arenaBytes
     kDefaultAllocatorAlignment = 0x80, // positive alignment => allocate from heap start
     kFileErrorCount = 1490,
     kFileErrorEntryBytes = 8,
@@ -98,10 +91,7 @@ extern char __vt__Q23gtl16IMemoryAllocator[];
 extern char __vt__Q23gtl14CListAllocator[];
 extern char __vt__Q23gtl21CFixedVectorAllocator[];
 void GtlDefaultAllocator_FreeLocked(void*);
-unsigned int gtl_CListAllocator_Initialize(void*, void* = 0);
-unsigned int gtl_CFixedVectorAllocator_Initialize(void*, void*);
-unsigned int gtl_CListAllocator_InsertFreeBlock(void*, unsigned int, unsigned int);
-unsigned int gtl_CFixedVectorAllocator_InsertFreeBlock(void*, unsigned int, unsigned int);
+void* Destroy__Q23gtl14CListAllocatorFi(void*, int);
 unsigned int MEMGetAllocatableSizeForExpHeapEx(void*, unsigned int);
 void* OSGetMEM1ArenaHi();
 void* OSGetMEM2ArenaHi();
@@ -122,17 +112,16 @@ struct CompareValue {
     int value;
 };
 
-int bsearch(void**, const char*, int, int,
-                int (*)(const CompareValue*, const CompareValue*));
+int bsearch(void**, const char*, int, int, int (*)(const CompareValue*, const CompareValue*));
 
 // Compare file-error keys for bsearch; preserve the original negative return value of -11.
-// Required a/b: readable 8-byte records (ignored word +0, signed code +4),
+// Required key/element: readable 8-byte records (ignored word +0, signed code +4),
 // naturally word aligned. Returns -11 / 0 / 1 for less / equal / greater;
 // no writes, allocation, or retained pointers. Table ordering uses signed codes.
-int FileError_CompareCode(const CompareValue* a, const CompareValue* b) {
-    if (a->value < b->value)
+int FileError_CompareCode(const CompareValue* key, const CompareValue* element) {
+    if (key->value < element->value)
         return -11;
-    return a->value > b->value;
+    return key->value > element->value;
 }
 
 struct ObjectVTable {
@@ -147,15 +136,27 @@ struct ObjectWithValue {
     unsigned int value;
 };
 
-struct AllocatorReferencePrefix { char pad[4]; };
-class AllocatorSizeCalls : public AllocatorReferencePrefix { public: 
-virtual void v08(); virtual void v0C(); virtual void v10(); virtual void v14(); virtual void v18(); virtual unsigned int v1C();
+struct AllocatorReferencePrefix {
+    char pad[4];
 };
+class AllocatorSizeCalls : public AllocatorReferencePrefix {
+public:
+    virtual void v08();
+    virtual void v0C();
+    virtual void v10();
+    virtual void v14();
+    virtual void v18();
+    virtual unsigned int v1C();
+};
+} // extern "C"
+
 // Return arena bytes minus the total size of the free blocks.
-unsigned int gtl_CListAllocator_GetUsedBytes(ObjectWithValue* p) {
-    unsigned int value = ((AllocatorSizeCalls*)p)->v1C();
-    return p->value - value;
+unsigned int gtl::CListAllocator::GetUsedBytes() {
+    unsigned int value = ((AllocatorSizeCalls*)this)->v1C();
+    return ((ObjectWithValue*)this)->value - value;
 }
+
+extern "C" {
 
 // Publish the error only if its code appears in the supported file-error table.
 // p is a 32-bit error CODE transported as void*, never dereferenced or retained
@@ -206,7 +207,10 @@ struct AllocationInfo {
 // ListAllocator_vfunc_9 enumerate allocated     free          free
 // ListAllocator_vfunc_8 count     allocated     free          returns 0
 // AppHeap_QueryMaxAllocatableSize MEM1          MEM2          fails, out unchanged
-enum AllocatorListSelector { kAllocatedBlocks = 0, kFreeBlocks = 1 };
+enum AllocatorListSelector {
+    kAllocatedBlocks = 0,
+    kFreeBlocks = 1
+};
 
 struct VectorBlockLinks {
     unsigned int value;
@@ -225,8 +229,10 @@ struct ListAllocatorIterationView {
     unsigned int freeHead;
 };
 
+} // extern "C"
+
 // Insert a header in address order and coalesce adjacent free ranges in both directions.
-unsigned int gtl_CListAllocator_InsertFreeBlock(void* owner, unsigned int head, unsigned int item) {
+unsigned int gtl::CListAllocator::InsertFreeBlock(unsigned int head, unsigned int item) {
     unsigned int prev = 0;
     unsigned int next = head;
     while (next) {
@@ -242,7 +248,7 @@ unsigned int gtl_CListAllocator_InsertFreeBlock(void* owner, unsigned int head, 
         ((ListFreeBlock*)next)->previous = item;
         unsigned int size;
         unsigned int count;
-        size = Asgtl_CListAllocator(owner)->blockSize;
+        size = this->blockSize;
         count = ((ListFreeBlock*)item)->blockCount;
         unsigned int end = item + count * size;
         if (end == next) {
@@ -259,7 +265,7 @@ unsigned int gtl_CListAllocator_InsertFreeBlock(void* owner, unsigned int head, 
         ((ListFreeBlock*)prev)->next = item;
         unsigned int size;
         unsigned int count;
-        size = Asgtl_CListAllocator(owner)->blockSize;
+        size = this->blockSize;
         count = ((ListFreeBlock*)prev)->blockCount;
         unsigned int end = prev + count * size;
         if (end == item) {
@@ -277,7 +283,7 @@ unsigned int gtl_CListAllocator_InsertFreeBlock(void* owner, unsigned int head, 
 // Insert a slot in address order, coalesce contiguous payload ranges, and release redundant slots.
 // Ordering compares slot addresses, not payload addresses. Coalescing separately
 // compares payload endpoints; changing the sort key would change behavior.
-unsigned int gtl_CFixedVectorAllocator_InsertFreeBlock(void* owner, unsigned int head, unsigned int item) {
+unsigned int gtl::CFixedVectorAllocator::InsertFreeBlock(unsigned int head, unsigned int item) {
     unsigned int next = head;
     unsigned int prev = 0;
     while (next) {
@@ -290,7 +296,7 @@ unsigned int gtl_CFixedVectorAllocator_InsertFreeBlock(void* owner, unsigned int
     ((VectorFreeBlock*)item)->previous = prev;
     if (next) {
         ((VectorFreeBlock*)next)->previous = item;
-        unsigned int size = Asgtl_CFixedVectorAllocator(owner)->blockSize;
+        unsigned int size = this->blockSize;
         unsigned int count = ((VectorFreeBlock*)item)->blockCount;
         if (((VectorFreeBlock*)item)->payloadAddress + count * size == ((VectorFreeBlock*)next)->payloadAddress) {
             ((VectorFreeBlock*)item)->blockCount = count + ((VectorFreeBlock*)next)->blockCount;
@@ -303,7 +309,7 @@ unsigned int gtl_CFixedVectorAllocator_InsertFreeBlock(void* owner, unsigned int
     }
     if (prev) {
         ((VectorFreeBlock*)prev)->next = item;
-        unsigned int size = Asgtl_CFixedVectorAllocator(owner)->blockSize;
+        unsigned int size = this->blockSize;
         unsigned int count = ((VectorFreeBlock*)prev)->blockCount;
         if (((VectorFreeBlock*)prev)->payloadAddress + count * size == ((VectorFreeBlock*)item)->payloadAddress) {
             ((VectorFreeBlock*)prev)->blockCount = count + ((VectorFreeBlock*)item)->blockCount;
@@ -321,47 +327,47 @@ unsigned int gtl_CFixedVectorAllocator_InsertFreeBlock(void* owner, unsigned int
 // Parameters are borrowed. arenaBytes rounds UP, so backing storage must cover
 // the rounded extent. slotBytes supplies complete 32-byte headers. Returns 0 for
 // absent parameters or zero blocks/slots; fields already written are not rolled back.
-// dst requires the FULL 0x2C-byte receiver described by FixedVectorInitTail,
-// not merely the 0x28-byte shared prefix. source is a seven-word configuration;
-// keep it disjoint from dst and the arena/slot storage written below. blockShift
+// The receiver is the full 0x2C-byte object. source is a seven-word configuration;
+// keep it disjoint from this object and the arena/slot storage written below. blockShift
 // must permit 1u<<shift and the rounded-byte sum without unsigned overflow.
-unsigned int gtl_CFixedVectorAllocator_Initialize(void* dst, void* source) {
+unsigned int gtl::CFixedVectorAllocator::Initialize(void* source) {
     if (!source)
         return 0;
-    gtl_CFixedVectorAllocator* allocator = (gtl_CFixedVectorAllocator*)dst;
     AllocatorInitParameters* parameters = (AllocatorInitParameters*)source;
     unsigned int one = 1;
     unsigned int zero = 0;
-    (*(unsigned int*)&allocator->slots) = parameters->slotAddress;
-    (*(unsigned int*)&allocator->allocatedHead) = zero;
-    allocator->freeHead = parameters->slotAddress;
+    (*(unsigned int*)&this->slots) = parameters->slotAddress;
+    (*(unsigned int*)&this->allocatedHead) = zero;
+    this->freeHead = parameters->slotAddress;
     unsigned int slotCount = parameters->slotBytes >> 5;
-    allocator->slotCount = slotCount;
+    this->slotCount = slotCount;
     unsigned int arenaBytes = parameters->arenaBytes;
-    ((FixedVectorInitTail*)allocator)->arenaBytes = arenaBytes;
-    allocator->bestFit = parameters->bestFit;
+    this->capacity = arenaBytes;
+    this->bestFit = parameters->bestFit;
     unsigned int shift = parameters->blockShift;
-    allocator->blockShift = shift;
+    this->blockShift = shift;
     unsigned int value = (one << shift) + arenaBytes - 1;
     unsigned int arenaBlocks = value >> shift;
     unsigned int blockBytes = one << parameters->blockShift;
-    allocator->blockSize = blockBytes;
+    this->blockSize = blockBytes;
     if (!arenaBlocks)
         return 0;
     if (!slotCount)
         return 0;
-    ((unsigned int*)(*(unsigned int*)&allocator->slots))[0] = parameters->arenaAddress;
-    ((unsigned int*)(*(unsigned int*)&allocator->slots))[1] = zero;
-    ((unsigned int*)(*(unsigned int*)&allocator->slots))[2] = zero;
-    ((unsigned int*)(*(unsigned int*)&allocator->slots))[3] = arenaBlocks;
-    ((unsigned int*)(*(unsigned int*)&allocator->slots))[4] = one;
+    ((unsigned int*)(*(unsigned int*)&this->slots))[0] = parameters->arenaAddress;
+    ((unsigned int*)(*(unsigned int*)&this->slots))[1] = zero;
+    ((unsigned int*)(*(unsigned int*)&this->slots))[2] = zero;
+    ((unsigned int*)(*(unsigned int*)&this->slots))[3] = arenaBlocks;
+    ((unsigned int*)(*(unsigned int*)&this->slots))[4] = one;
     unsigned int i = 1;
-    while (i < allocator->slotCount) {
-        ((unsigned int*)(*(unsigned int*)&allocator->slots))[i * 8 + 4] = zero;
+    while (i < this->slotCount) {
+        ((unsigned int*)(*(unsigned int*)&this->slots))[i * 8 + 4] = zero;
         ++i;
     }
     return one;
 }
+
+extern "C" {
 
 // Enumerate allocated/free list headers using the stored cursor and return payload/offset/size.
 // Set out->payloadAddress=0 to start; keep it nonzero to continue. which==0 selects
@@ -377,14 +383,16 @@ unsigned int gtl_CFixedVectorAllocator_Initialize(void* dst, void* source) {
 // allocation to dereference/free. arenaOffset names HEADER offset, while
 // payloadAddress is HEADER+blockSize. blockBytes includes the header blocks;
 // consumers must subtract overheadBlocks*blockSize for payload capacity.
-unsigned int gtl_CListAllocator_GetNextBlockInfo(ListAllocatorIterationView* p, AllocationInfo* out, int which) {
+} // extern "C"
+
+unsigned int gtl::CListAllocator::GetNextBlockInfo(AllocationInfo* out, int which) {
     if (!out)
         return 0;
     ListFreeBlock* selected;
     if (which == kAllocatedBlocks)
-        selected = (ListFreeBlock*)p->allocatedHead;
+        selected = (ListFreeBlock*)((ListAllocatorIterationView*)this)->allocatedHead;
     else
-        selected = (ListFreeBlock*)p->freeHead;
+        selected = (ListFreeBlock*)((ListAllocatorIterationView*)this)->freeHead;
     if (!selected)
         return 0;
     ListFreeBlock* item;
@@ -392,16 +400,18 @@ unsigned int gtl_CListAllocator_GetNextBlockInfo(ListAllocatorIterationView* p, 
     if (first == 0) {
         item = selected;
     } else {
-        item = (ListFreeBlock*)p->iterationCursor;
+        item = (ListFreeBlock*)((ListAllocatorIterationView*)this)->iterationCursor;
         if (!item)
             return 0;
     }
-    out->payloadAddress = (unsigned int)item + p->blockSize;
-    out->arenaOffset = (unsigned int)item - p->arenaAddress;
-    out->blockBytes = item->blockCount << p->blockShift;
-    p->iterationCursor = item->next;
+    out->payloadAddress = (unsigned int)item + ((ListAllocatorIterationView*)this)->blockSize;
+    out->arenaOffset = (unsigned int)item - ((ListAllocatorIterationView*)this)->arenaAddress;
+    out->blockBytes = item->blockCount << ((ListAllocatorIterationView*)this)->blockShift;
+    ((ListAllocatorIterationView*)this)->iterationCursor = (unsigned int)item->next;
     return 1;
 }
+
+extern "C" {
 
 struct LinkNode {
     LinkNode* prev;
@@ -411,29 +421,32 @@ struct LinkNode {
 // Unlink an allocated payload's preceding header and coalesce it into the free list.
 // item must be a live payload from p, or null (returns 0). A foreign pointer is
 // not validated. Successful free invalidates the payload and returns 1.
-unsigned int gtl_CListAllocator_FreeBlock(ListAllocatorIterationView* p, VectorBlockLinks* item) {
+} // extern "C"
+
+unsigned int gtl::CListAllocator::FreeBlock(VectorBlockLinks* item) {
     if (!item)
         return 0;
-    unsigned int head = p->allocatedHead;
-    LinkNode* node = (LinkNode*)((char*)item - p->blockSize);
+    unsigned int head = ((ListAllocatorIterationView*)this)->allocatedHead;
+    LinkNode* node = (LinkNode*)((char*)item - ((ListAllocatorIterationView*)this)->blockSize);
     if (node->next)
         node->next->prev = node->prev;
     if (!node->prev)
         head = (unsigned int)node->next;
     else
         node->prev->next = node->next;
-    p->allocatedHead = head;
-    p->freeHead = gtl_CListAllocator_InsertFreeBlock(p, p->freeHead, (unsigned int)node);
+    ((ListAllocatorIterationView*)this)->allocatedHead = head;
+    ((ListAllocatorIterationView*)this)->freeHead =
+        InsertFreeBlock(((ListAllocatorIterationView*)this)->freeHead, (unsigned int)node);
     return 1;
 }
 
 // Find the payload's header slot, unlink it, and coalesce it into the free list.
 // value must be null or a live allocation from p. The search assumes membership
 // and has no end check for an unknown non-null pointer.
-unsigned int gtl_CFixedVectorAllocator_FreeBlock(void* p, void* value) {
+unsigned int gtl::CFixedVectorAllocator::FreeBlock(void* value) {
     if (!value)
         return 0;
-    VectorBlockLinks* first = (*(VectorBlockLinks**)&Asgtl_CFixedVectorAllocator(p)->allocatedHead);
+    VectorBlockLinks* first = (*(VectorBlockLinks**)&this->allocatedHead);
     VectorBlockLinks* item = first;
     for (;;) {
         if (item->value == (unsigned int)value)
@@ -446,18 +459,17 @@ unsigned int gtl_CFixedVectorAllocator_FreeBlock(void* p, void* value) {
         first = item->next;
     else
         item->prev->next = item->next;
-    (*(VectorBlockLinks**)&Asgtl_CFixedVectorAllocator(p)->allocatedHead) = first;
-    Asgtl_CFixedVectorAllocator(p)->freeHead = gtl_CFixedVectorAllocator_InsertFreeBlock(p, Asgtl_CFixedVectorAllocator(p)->freeHead, (unsigned int)item);
+    (*(VectorBlockLinks**)&this->allocatedHead) = first;
+    this->freeHead = this->InsertFreeBlock(this->freeHead, (unsigned int)item);
     return 1;
 }
 
 // Round the arena down to whole blocks, calculate header overhead, and install one free header.
 // source is borrowed and required for success. Fields are written before the
 // size check returns 0 for an arena too small to hold header plus payload.
-unsigned int gtl_CListAllocator_Initialize(void* p, void* source) {
+unsigned int gtl::CListAllocator::Initialize(void* source) {
     if (!source)
         return 0;
-    gtl_CListAllocator* allocator = (gtl_CListAllocator*)p;
     AllocatorInitParameters* parameters = (AllocatorInitParameters*)source;
     unsigned int* head;
     unsigned int zero;
@@ -471,21 +483,21 @@ unsigned int gtl_CListAllocator_Initialize(void* p, void* source) {
     head = (unsigned int*)parameters->arenaAddress;
     zero = 0;
     one = 1;
-    allocator->arenaAddress = (unsigned int)head;
-    (*(unsigned int*)&allocator->allocatedHead) = zero;
+    this->arenaAddress = (unsigned int)head;
+    (*(unsigned int*)&this->allocatedHead) = zero;
     workingCount = parameters->arenaAddress;
-    (*(unsigned int*)&allocator->freeHead) = workingCount;
+    (*(unsigned int*)&this->freeHead) = workingCount;
     workingCount = parameters->blockShift;
     workingBytes = parameters->arenaBytes;
     roundedBytes = one << workingCount;
     workingCount = roundedBytes - 1;
     roundedBytes = workingBytes & ~workingCount;
-    allocator->arenaSize = roundedBytes;
+    this->arenaSize = roundedBytes;
     workingCount = parameters->bestFit;
-    allocator->bestFitEnabled = workingCount;
+    this->bestFitEnabled = workingCount;
     alignmentShift = parameters->blockShift;
     workingBytes = one << alignmentShift;
-    allocator->blockShift = alignmentShift;
+    this->blockShift = alignmentShift;
     roundedBytes = workingBytes + roundedBytes;
     workingCount = roundedBytes - 1;
     blockShiftCopy = parameters->blockShift;
@@ -493,17 +505,19 @@ unsigned int gtl_CListAllocator_Initialize(void* p, void* source) {
     headerBlocks = workingBytes >> alignmentShift;
     workingCount = workingCount >> alignmentShift;
     roundedBytes = one << blockShiftCopy;
-    allocator->overheadBlocks = headerBlocks;
-    allocator->blockSize = roundedBytes;
+    this->overheadBlocks = headerBlocks;
+    this->blockSize = roundedBytes;
     if (workingCount <= headerBlocks)
         return 0;
     head[0] = zero;
-    unsigned int* headerWords = (unsigned int*)allocator->arenaAddress;
+    unsigned int* headerWords = (unsigned int*)this->arenaAddress;
     headerWords[1] = zero;
-    headerWords = (unsigned int*)allocator->arenaAddress;
+    headerWords = (unsigned int*)this->arenaAddress;
     headerWords[2] = workingCount;
     return 1;
 }
+
+extern "C" {
 
 // Query MEM1/MEM2 capacity at a power-of-two alignment from four through 128 bytes.
 unsigned int AppHeap_QueryMaxAllocatableSize(int which, unsigned int shift, void* out) {
@@ -528,6 +542,8 @@ unsigned int AppHeap_QueryMaxAllocatableSize(int which, unsigned int shift, void
     return 1;
 }
 
+} // extern "C"
+
 // Install the fixed-vector allocator interface and initialize it from optional arena parameters.
 // Requires fresh 0x2C-byte storage. Return p is an object address, NOT success:
 // Initialize's status is discarded. Null source leaves arena/slot/list fields
@@ -537,30 +553,29 @@ unsigned int AppHeap_QueryMaxAllocatableSize(int which, unsigned int shift, void
 // Failed initialization owns no backing allocation to release: arenas/slots
 // stay borrowed. The heap factory (gtl_heap_allocators.cpp) supplies real buffers but tests
 // only the returned pointer; that caller adds no initialization-status check.
-void* gtl_CFixedVectorAllocator_Ctor(void* p, void* source) {
-    gtl_CFixedVectorAllocator* fields = (gtl_CFixedVectorAllocator*)p;
-    fields->referenceCount = 1;
-    (*(unsigned int*)&fields->vtable) = (unsigned int)__vt__Q23gtl16IMemoryAllocator;
-    ((AllocatorIterationState*)fields)->nextBlock = 0;
+void* gtl::CFixedVectorAllocator::Ctor(void* source) {
+    this->referenceCount = 1;
+    (*(unsigned int*)&this->vtable) = (unsigned int)__vt__Q23gtl16IMemoryAllocator;
+    this->cursor = 0;
     if (source) {
         AllocatorInitParameters* src = (AllocatorInitParameters*)source;
-        fields->bestFit = src->bestFit;
-        fields->blockShift = src->blockShift;
-        fields->blockSize = 1 << src->blockShift;
+        this->bestFit = src->bestFit;
+        this->blockShift = src->blockShift;
+        this->blockSize = 1 << src->blockShift;
     }
-    (*(unsigned int*)&fields->vtable) = (unsigned int)__vt__Q23gtl21CFixedVectorAllocator;
-    gtl_CFixedVectorAllocator_Initialize(p, source);
-    return p;
+    (*(unsigned int*)&this->vtable) = (unsigned int)__vt__Q23gtl21CFixedVectorAllocator;
+    Initialize(source);
+    return this;
 }
 
 // Sum free-list block counts after converting them to bytes.
-unsigned int gtl_CListAllocator_SumFreeBlockBytes(FreeListView* p) {
+unsigned int gtl::CListAllocator::SumFreeBlockBytes() {
     volatile unsigned int result;
-    unsigned int shift = p->shift;
+    unsigned int shift = ((FreeListView*)this)->shift;
     volatile ReductionState stateB;
     volatile ReductionState stateA;
     volatile unsigned int* presult = &result;
-    ListNode* node = p->first;
+    ListNode* node = ((FreeListView*)this)->first;
     stateA.result = (unsigned int*)presult;
     stateA.shift = shift;
     result = 0;
@@ -573,19 +588,22 @@ unsigned int gtl_CListAllocator_SumFreeBlockBytes(FreeListView* p) {
     return result;
 }
 
+extern "C" {
+
 // Counting keeps a volatile node/counter and a pointer to that counter. Disable
 // propagation/lifetime merging so MWCC retains each reload and loop-carried store.
 #pragma opt_propagation off
 #pragma opt_lifetimes off
 // Count the headers in the requested allocated (0) or free (1) list.
-unsigned int gtl_CListAllocator_CountListHeaders(AllocationListsView* p, int which) {
+} // extern "C"
+unsigned int gtl::CListAllocator::CountListHeaders(int which) {
     volatile ListNode* node;
     switch (which) {
     case 0:
-        node = p->first;
+        node = ((AllocationListsView*)this)->first;
         break;
     case 1:
-        node = p->second;
+        node = ((AllocationListsView*)this)->second;
         break;
     default:
         return 0;
@@ -598,6 +616,7 @@ unsigned int gtl_CListAllocator_CountListHeaders(AllocationListsView* p, int whi
     }
     return count;
 }
+extern "C" {
 #pragma opt_propagation reset
 #pragma opt_lifetimes reset
 
@@ -608,13 +627,18 @@ unsigned int gtl_CListAllocator_CountListHeaders(AllocationListsView* p, int whi
 #pragma opt_lifetimes off
 #pragma opt_common_subs off
 // Return the largest free-list range in bytes.
-unsigned int gtl_CListAllocator_GetLargestFreeRange(const FreeListView* p) {
-    unsigned int shift = p->shift;
+} // extern "C"
+unsigned int gtl::CListAllocator::GetLargestFreeRange() const {
+    unsigned int shift = ((FreeListView*)this)->shift;
     unsigned int one = 1;
     volatile unsigned int result;
     volatile unsigned int temporary;
-    volatile ListNode* node = p->first;
-    struct State { unsigned int* result; unsigned int shift; unsigned int one; };
+    volatile ListNode* node = ((FreeListView*)this)->first;
+    struct State {
+        unsigned int* result;
+        unsigned int shift;
+        unsigned int one;
+    };
     volatile State stateB;
     volatile State stateA;
     stateB.result = (unsigned int*)&result;
@@ -636,9 +660,12 @@ unsigned int gtl_CListAllocator_GetLargestFreeRange(const FreeListView* p) {
     }
     return result;
 }
+extern "C" {
 #pragma opt_propagation reset
 #pragma opt_lifetimes reset
 #pragma opt_common_subs reset
+
+} // extern "C"
 
 // Install the list allocator interface and initialize it from optional arena parameters.
 // Requires fresh 0x2C-byte storage. Like the fixed-vector constructor above,
@@ -647,34 +674,35 @@ unsigned int gtl_CListAllocator_GetLargestFreeRange(const FreeListView* p) {
 // header. Only a subsequent successful gtl_CListAllocator_Initialize makes it
 // usable for allocation/free/queries. No failure status/rollback is synthesized;
 // callers retain backing storage ownership and must check Initialize explicitly.
-void* CListAllocator_Ctor(void* p, void* source) {
-    gtl_CListAllocator* fields = (gtl_CListAllocator*)p;
-    fields->referenceCount = 1;
-    (*(unsigned int*)&fields->vtable) = (unsigned int)__vt__Q23gtl16IMemoryAllocator;
-    ((AllocatorIterationState*)fields)->nextBlock = 0;
+void* gtl::CListAllocator::Ctor(void* source) {
+    this->referenceCount = 1;
+    (*(unsigned int*)&this->vtable) = (unsigned int)__vt__Q23gtl16IMemoryAllocator;
+    ((AllocatorIterationState*)this)->nextBlock = 0;
     if (source) {
-        fields->bestFitEnabled = ((AllocatorInitParameters*)source)->bestFit;
-        fields->blockShift = ((AllocatorInitParameters*)source)->blockShift;
-        fields->blockSize = 1 << ((AllocatorInitParameters*)source)->blockShift;
+        this->bestFitEnabled = ((AllocatorInitParameters*)source)->bestFit;
+        this->blockShift = ((AllocatorInitParameters*)source)->blockShift;
+        this->blockSize = 1 << ((AllocatorInitParameters*)source)->blockShift;
     }
-    (*(unsigned int*)&fields->vtable) = (unsigned int)__vt__Q23gtl14CListAllocator;
-    gtl_CListAllocator_Initialize(p, source);
-    return p;
+    (*(unsigned int*)&this->vtable) = (unsigned int)__vt__Q23gtl14CListAllocator;
+    Initialize(source);
+    return this;
 }
 
 // Invoke the allocator deleter only for a positive deleting-destructor argument.
-void* gtl_CListAllocator_dtor(void* p, int deletingFlag) {
-    if (p && deletingFlag > 0)
-        GtlDefaultAllocator_FreeLocked(p);
-    return p;
+void* gtl::CListAllocator::Destroy(int deletingFlag) {
+    if (this && deletingFlag > 0)
+        GtlDefaultAllocator_FreeLocked(this);
+    return this;
 }
 
 // Invoke the base allocator deleter only for a positive deleting-destructor argument.
-void* gtl_IMemoryAllocator_dtor(void* p, int deletingFlag) {
-    if (p && deletingFlag > 0)
-        GtlDefaultAllocator_FreeLocked(p);
-    return p;
+void* gtl::IMemoryAllocator::Destroy(int deletingFlag) {
+    if (this && deletingFlag > 0)
+        GtlDefaultAllocator_FreeLocked(this);
+    return this;
 }
+
+extern "C" {
 
 // Copy bytes with memcpy; source and destination must not overlap.
 void* Memory_Copy(void* dst, const void* src, size_t n) {
@@ -710,7 +738,9 @@ void* Memory_Clear(void* p, size_t n) {
     return memset(p, 0, n);
 }
 
-struct ReallocBase { char pad[4]; };
+struct ReallocBase {
+    char pad[4];
+};
 class ReallocOwner : public ReallocBase {
 public:
     virtual void v08();
@@ -727,22 +757,24 @@ public:
 #pragma opt_common_subs off
 #pragma opt_propagation off
 #pragma opt_lifetimes off
+} // extern "C"
+
 // Resize a payload via free/allocate/move, retrying its old payload size if allocation fails.
 // oldPayload must be live and non-null. This frees it BEFORE allocating, and
 // copies requestedBytes on success even when growing. The fallback copies the old
 // payload length; there is no second-allocation null check or preserving-on-failure
 // realloc guarantee. Keep these existing lengths when modifying the allocator.
-unsigned int gtl_CListAllocator_Reallocate(void* owner, void* oldPayload, unsigned int requestedBytes) {
+unsigned int gtl::CListAllocator::Reallocate(void* oldPayload, unsigned int requestedBytes) {
     unsigned int total;
     unsigned int blockSize;
     unsigned int shift;
     unsigned int overheadBlocks;
     unsigned int oldBlockBytes;
     unsigned int overheadBytes;
-    shift = Asgtl_CListAllocator(owner)->blockShift;
-    blockSize = Asgtl_CListAllocator(owner)->blockSize;
+    shift = this->blockShift;
+    blockSize = this->blockSize;
     unsigned int roundingBlockBytes = 1u << shift;
-    overheadBlocks = Asgtl_CListAllocator(owner)->overheadBlocks;
+    overheadBlocks = this->overheadBlocks;
     total = requestedBytes + roundingBlockBytes;
     void* base = (char*)oldPayload - blockSize;
     unsigned int oldSize = ((ListFreeBlock*)base)->blockCount;
@@ -753,17 +785,19 @@ unsigned int gtl_CListAllocator_Reallocate(void* owner, void* oldPayload, unsign
     if (newBlockCount == oldSize) {
         return (unsigned int)oldPayload;
     }
-    ((ReallocOwner*)owner)->free(oldPayload);
-    void* newPayload = ((ReallocOwner*)owner)->alloc(requestedBytes, 0);
+    ((ReallocOwner*)this)->free(oldPayload);
+    void* newPayload = ((ReallocOwner*)this)->alloc(requestedBytes, 0);
     if (!newPayload) {
         unsigned int oldPayloadBytes = oldBlockBytes - overheadBytes;
-        newPayload = ((ReallocOwner*)owner)->alloc(oldPayloadBytes, 0);
+        newPayload = ((ReallocOwner*)this)->alloc(oldPayloadBytes, 0);
         Memory_Move(newPayload, oldPayload, oldPayloadBytes);
     } else {
         Memory_Move(newPayload, oldPayload, requestedBytes);
     }
     return (unsigned int)newPayload;
 }
+
+extern "C" {
 #pragma opt_lifetimes reset
 #pragma opt_propagation reset
 #pragma opt_common_subs reset
@@ -774,16 +808,18 @@ unsigned int gtl_CListAllocator_Reallocate(void* owner, void* oldPayload, unsign
 #pragma use_lmw_stmw on
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
+} // extern "C"
+
 // Find and resize a payload via its separate slot; retry the old size if allocation fails.
 // Null payload returns 0. For a NONNULL payload the allocated chain MUST be
 // nonempty: allocatedHead is dereferenced before a null-head check. An unmatched
 // payload returns 0 only after traversing a valid nonempty chain to its end.
 // A size change frees before allocating;
 // copy lengths and the unchecked fallback follow the list resize contract above.
-unsigned int gtl_CFixedVectorAllocator_ReallocPayload(ReallocOwner* owner, void* oldPayload, unsigned int requestedBytes) {
+unsigned int gtl::CFixedVectorAllocator::ReallocPayload(void* oldPayload, unsigned int requestedBytes) {
     if (!oldPayload)
         return 0;
-    void* node = Asgtl_CFixedVectorAllocator(owner)->allocatedHead;
+    void* node = this->allocatedHead;
     do {
         if ((void*)((VectorFreeBlock*)node)->payloadAddress == oldPayload) {
             break;
@@ -795,7 +831,7 @@ unsigned int gtl_CFixedVectorAllocator_ReallocPayload(ReallocOwner* owner, void*
                 node = next;
         }
     } while (1);
-    unsigned int shift = Asgtl_CFixedVectorAllocator(owner)->blockShift;
+    unsigned int shift = this->blockShift;
     unsigned int roundingBlockBytes = 1u << shift;
     unsigned int oldBlockCount = ((VectorFreeBlock*)node)->blockCount;
     unsigned int total = requestedBytes + roundingBlockBytes;
@@ -804,16 +840,18 @@ unsigned int gtl_CFixedVectorAllocator_ReallocPayload(ReallocOwner* owner, void*
     if (requestedBlocks == oldBlockCount) {
         return (unsigned int)oldPayload;
     }
-    owner->free(oldPayload);
-    void* newPayload = owner->alloc(requestedBytes, 0);
+    ((ReallocOwner*)this)->free(oldPayload);
+    void* newPayload = ((ReallocOwner*)this)->alloc(requestedBytes, 0);
     if (!newPayload) {
-        newPayload = owner->alloc(oldBlockBytes, 0);
+        newPayload = ((ReallocOwner*)this)->alloc(oldBlockBytes, 0);
         Memory_Move(newPayload, oldPayload, oldBlockBytes);
     } else {
         Memory_Move(newPayload, oldPayload, requestedBytes);
     }
     return (unsigned int)newPayload;
 }
+
+extern "C" {
 #pragma opt_lifetimes reset
 #pragma opt_common_subs reset
 #pragma use_lmw_stmw reset
@@ -844,7 +882,8 @@ void MemoryManager_InitHeaps() {
     OSSetMEM1ArenaLo((char*)mem1lo + mem1HeapBytes);
     OSSetMEM2ArenaLo((char*)mem2lo + mem2size);
     // Phase 2: reserve the default list arena and copy its initialization options.
-    void* defaultArena = MEMAllocFromExpHeapEx((void*)g_mem1ExpHeap, kDefaultAllocatorBytes, kDefaultAllocatorAlignment);
+    void* defaultArena =
+        MEMAllocFromExpHeapEx((void*)g_mem1ExpHeap, kDefaultAllocatorBytes, kDefaultAllocatorAlignment);
     unsigned int initParameters[7];
     unsigned char allocatorInitializedByte = s_defaultListAllocatorInitialized;
     int allocatorWasInitialized = (signed char)allocatorInitializedByte;
@@ -860,11 +899,13 @@ void MemoryManager_InitHeaps() {
     initParameters[3] = s_defaultListAllocatorArena;
     // Phase 3: register the singleton once, initialize it, and publish heap readiness.
     if (allocatorWasInitialized == 0) {
-        CListAllocator_Ctor(base + (int)&((MainMemoryStateView*)0)->defaultAllocator, 0);
-        __register_global_object(base + (int)&((MainMemoryStateView*)0)->defaultAllocator, (void*)gtl_CListAllocator_dtor, base + (int)&((MainMemoryStateView*)0)->destructorRegistration);
+        ((gtl::CListAllocator*)(base + (int)&((MainMemoryStateView*)0)->defaultAllocator))->Ctor(0);
+        __register_global_object(base + (int)&((MainMemoryStateView*)0)->defaultAllocator,
+                                 (void*)Destroy__Q23gtl14CListAllocatorFi,
+                                 base + (int)&((MainMemoryStateView*)0)->destructorRegistration);
         s_defaultListAllocatorInitialized = 1;
     }
-    gtl_CListAllocator_Initialize(base + (int)&((MainMemoryStateView*)0)->defaultAllocator, initParameters);
+    ((gtl::CListAllocator*)(base + (int)&((MainMemoryStateView*)0)->defaultAllocator))->Initialize(initParameters);
     unsigned int referenceCount = *(unsigned int*)(base + (int)&((MainMemoryStateView*)0)->defaultAllocator);
     g_defaultListAllocator = (unsigned int)(base + (int)&((MainMemoryStateView*)0)->defaultAllocator);
     OSInitMutex((OSMutex*)base);
@@ -894,7 +935,8 @@ void MemoryManager_InitHeaps() {
 // reverses units inside [rowBegin,rowBegin+packedCount). Widths 1/2/4/8 reverse;
 // other widths only copy. This unusual endpoint is existing behavior. Callers
 // provide non-overlapping, sufficiently sized and aligned storage for every row.
-void Memory_CopyAndReverseStridedBlocks(void* destination, void* source, unsigned int packedLayout, unsigned int rowStride, unsigned int rowCount) {
+void Memory_CopyAndReverseStridedBlocks(void* destination, void* source, unsigned int packedLayout,
+                                        unsigned int rowStride, unsigned int rowCount) {
     unsigned int packedCount;
     unsigned int unitBytes;
     unsigned int copyBytes;
@@ -988,7 +1030,7 @@ struct ListBlock {
     unsigned int count;
 };
 
-// Scan state of gtl_CListAllocator_AllocateBlocks. Two volatile copies (ListBlockState `a` and
+// Scan state of CListAllocator::AllocateBlocks. Two volatile copies (ListBlockState `a` and
 // ListBlockCursor `b`) hold identical values; the volatile copies exist to reproduce the original
 // code and do not mean the state is shared with other threads. `best` (a) is the result slot
 // (the chosen free range, 0 if none) and `ref` / b.result point at it; `gap` is the smallest
@@ -1025,13 +1067,15 @@ struct ListAllocOwner {
 
 #pragma opt_common_subs off
 #pragma opt_propagation off
+} // extern "C"
+
 // Choose a first/best-fit free range, split usable excess, and link the allocated header.
 // owner: the list allocator object; sizeArg: payload bytes wanted. Returns the payload address
 // (header address + blockSize) or 0 if the arena is unset, sizeArg is 0, or no free range fits.
 // Range sizing: needed = ceil(sizeArg / (1 << blockShift)) + overheadBlocks (blocks).
-// Shared allocation contract (also fixed-vector vfunc_1 below): initialized owner
+// Shared allocation contract (also CFixedVectorAllocator::Allocate below): initialized owner
 // required, arena/slot bytes borrowed for allocator lifetime; result is a live
-// payload to return to this SAME allocator's vfunc_3, never OS/free/delete.
+// payload to return to this SAME allocator's free routine, never OS/free/delete.
 // Set B=1u<<blockShift. Shift must be <32; list B must be >=16 so its header fits
 // BEFORE the returned header+B payload. Base addresses must have B alignment for
 // B-aligned results (initializer does not align them). Fixed-vector slot array
@@ -1054,7 +1098,7 @@ struct ListAllocOwner {
 // success mutates both chains. No thread safety; external synchronization needed.
 // CSE/propagation off preserves the volatile a/b scan-state copies and the chosen
 // header address through split/unlink/publication; merging them changes MWCC code.
-void* gtl_CListAllocator_AllocateBlocks(void* owner, unsigned int sizeArg) {
+void* gtl::CListAllocator::AllocateBlocks(unsigned int sizeArg) {
     // Phase 1: round payload bytes to blocks and include header overhead.
     ListBlock* best;
     unsigned int gap;
@@ -1067,23 +1111,23 @@ void* gtl_CListAllocator_AllocateBlocks(void* owner, unsigned int sizeArg) {
     unsigned int shift;
     unsigned int limit;
     unsigned int needed;
-    if (Asgtl_CListAllocator(owner)->arenaAddress == 0)
+    if (this->arenaAddress == 0)
         return 0;
     if (sizeArg == 0)
         return 0;
     zero = 0;
-    shift = Asgtl_CListAllocator(owner)->blockShift;
+    shift = this->blockShift;
     volatile ListBlockCursor b;
     volatile ListBlockState a;
     ref = (ListBlock**)&a.best;
     needed = 1;
-    limit = Asgtl_CListAllocator(owner)->overheadBlocks;
+    limit = this->overheadBlocks;
     a.ref = ref;
     needed = ((sizeArg + (needed << shift) - 1) >> shift) + limit;
     a.best = (ListBlock*)zero;
-    bestFitEnabled = Asgtl_CListAllocator(owner)->bestFitEnabled;
-    shiftCopy = Asgtl_CListAllocator(owner)->blockShift;
-    node = (*(ListBlock**)&Asgtl_CListAllocator(owner)->freeHead);
+    bestFitEnabled = this->bestFitEnabled;
+    shiftCopy = this->blockShift;
+    node = (*(ListBlock**)&this->freeHead);
     a.bestFitEnabled = bestFitEnabled;
     a.shift = shiftCopy;
     a.needed = needed;
@@ -1129,8 +1173,8 @@ void* gtl_CListAllocator_AllocateBlocks(void* owner, unsigned int sizeArg) {
     // Phase 2: split only if the excess can support another header and payload;
     // otherwise unlink the entire free range.
     gap = best->count - needed;
-    if (gap > Asgtl_CListAllocator(owner)->overheadBlocks) {
-        unsigned int esize = Asgtl_CListAllocator(owner)->blockSize;
+    if (gap > this->overheadBlocks) {
+        unsigned int esize = this->blockSize;
         ListBlock* newnode = (ListBlock*)((char*)best + needed * esize);
         newnode->count = gap;
         newnode->prev = a.best->prev;
@@ -1141,10 +1185,10 @@ void* gtl_CListAllocator_AllocateBlocks(void* owner, unsigned int sizeArg) {
         if (newnode->prev)
             newnode->prev->next = newnode;
         else
-            (*(ListBlock**)&Asgtl_CListAllocator(owner)->freeHead) = newnode;
+            (*(ListBlock**)&this->freeHead) = newnode;
     } else {
         ListBlock* next = best->next;
-        ListBlock* head = (*(ListBlock**)&Asgtl_CListAllocator(owner)->freeHead);
+        ListBlock* head = (*(ListBlock**)&this->freeHead);
         if (next)
             next->prev = best->prev;
         ListBlock* prev = best->prev;
@@ -1152,21 +1196,23 @@ void* gtl_CListAllocator_AllocateBlocks(void* owner, unsigned int sizeArg) {
             head = best->next;
         else
             prev->next = best->next;
-        (*(ListBlock**)&Asgtl_CListAllocator(owner)->freeHead) = head;
+        (*(ListBlock**)&this->freeHead) = head;
     }
 
     // Phase 3: prepend the chosen header to allocatedHead and return its payload.
-    ListBlock* allocatedHead = (*(ListBlock**)&Asgtl_CListAllocator(owner)->allocatedHead);
+    ListBlock* allocatedHead = (*(ListBlock**)&this->allocatedHead);
     ListBlock* found = a.best;
     found->next = allocatedHead;
     found->prev = 0;
     if (allocatedHead)
         allocatedHead->prev = found;
-    (*(ListBlock**)&Asgtl_CListAllocator(owner)->allocatedHead) = found;
-    unsigned int esize = Asgtl_CListAllocator(owner)->blockSize;
+    (*(ListBlock**)&this->allocatedHead) = found;
+    unsigned int esize = this->blockSize;
     ListBlock* allocated = a.best;
     return (char*)allocated + esize;
 }
+
+extern "C" {
 #pragma opt_propagation reset
 #pragma opt_common_subs reset
 
@@ -1197,14 +1243,16 @@ struct FindCursor {
 
 #pragma opt_common_subs off
 #pragma opt_propagation off
+} // extern "C"
+
 // Choose a first/best-fit range and use an unused header slot to describe any remainder.
 // A split requires an unused slot; callers must provision enough because slot
 // exhaustion is not checked before dereference. Returns null for zero size,
 // absent slot storage, or no suitable range; payloads remain arena-owned.
 // Size/alignment/nonoverflow/list invariants: shared allocation contract above
-// gtl_CListAllocator_AllocateBlocks. These two optimizer controls retain FindState and
+// CListAllocator::AllocateBlocks. These two optimizer controls retain FindState and
 // FindCursor as distinct scan/commit views, including the unused-slot search.
-void* gtl_CFixedVectorAllocator_Allocate(void* owner, unsigned int size) {
+void* gtl::CFixedVectorAllocator::Allocate(unsigned int size) {
     // Phase 1: round the request to payload blocks, without list-header overhead.
     unsigned int shiftCopy;
     unsigned int bestFitEnabled;
@@ -1214,21 +1262,21 @@ void* gtl_CFixedVectorAllocator_Allocate(void* owner, unsigned int size) {
     BlockNode* node;
     unsigned int shift;
     unsigned int needed;
-    if ((*(unsigned int*)&Asgtl_CFixedVectorAllocator(owner)->slots) == 0)
+    if ((*(unsigned int*)&this->slots) == 0)
         return 0;
     if (size == 0)
         return 0;
     zero = 0;
-    shift = Asgtl_CFixedVectorAllocator(owner)->blockShift;
+    shift = this->blockShift;
     volatile FindCursor b;
     volatile FindState a;
     a.best = (BlockNode*)zero;
     ref = (BlockNode**)&a.best;
     one = 1;
     needed = (size + (one << shift) - 1) >> shift;
-    bestFitEnabled = Asgtl_CFixedVectorAllocator(owner)->bestFit;
-    shiftCopy = Asgtl_CFixedVectorAllocator(owner)->blockShift;
-    node = (*(BlockNode**)&Asgtl_CFixedVectorAllocator(owner)->freeHead);
+    bestFitEnabled = this->bestFit;
+    shiftCopy = this->blockShift;
+    node = (*(BlockNode**)&this->freeHead);
     a.ref = ref;
     a.bestFitEnabled = bestFitEnabled;
     a.shift = shiftCopy;
@@ -1270,16 +1318,16 @@ void* gtl_CFixedVectorAllocator_Allocate(void* owner, unsigned int size) {
         return 0;
     unsigned int remainder = best->count - needed;
     if (remainder != 0) {
-        unsigned int slotCount = Asgtl_CFixedVectorAllocator(owner)->slotCount;
+        unsigned int slotCount = this->slotCount;
         BlockNode* slot = 0;
         for (unsigned int i = 0; i < slotCount; i++) {
-            BlockNode* s = (BlockNode*)((char*)(*(BlockNode**)&Asgtl_CFixedVectorAllocator(owner)->slots) + i * kFixedVectorSlotBytes);
+            BlockNode* s = (BlockNode*)((char*)(*(BlockNode**)&this->slots) + i * kFixedVectorSlotBytes);
             if (s->flag == 0) {
                 slot = s;
                 break;
             }
         }
-        unsigned int elemSize = Asgtl_CFixedVectorAllocator(owner)->blockSize;
+        unsigned int elemSize = this->blockSize;
         slot->base = best->base + needed * elemSize;
         slot->prev = a.best->prev;
         slot->next = a.best->next;
@@ -1291,10 +1339,10 @@ void* gtl_CFixedVectorAllocator_Allocate(void* owner, unsigned int size) {
         if (slot->prev)
             slot->prev->next = slot;
         else
-            (*(BlockNode**)&Asgtl_CFixedVectorAllocator(owner)->freeHead) = slot;
+            (*(BlockNode**)&this->freeHead) = slot;
     } else {
         BlockNode* nxt = best->next;
-        BlockNode* head = (*(BlockNode**)&Asgtl_CFixedVectorAllocator(owner)->freeHead);
+        BlockNode* head = (*(BlockNode**)&this->freeHead);
         if (nxt)
             nxt->prev = best->prev;
         BlockNode* prv = best->prev;
@@ -1302,18 +1350,20 @@ void* gtl_CFixedVectorAllocator_Allocate(void* owner, unsigned int size) {
             head = best->next;
         else
             prv->next = best->next;
-        (*(BlockNode**)&Asgtl_CFixedVectorAllocator(owner)->freeHead) = head;
+        (*(BlockNode**)&this->freeHead) = head;
     }
     // Phase 3: prepend the chosen slot to allocatedHead; its base is the payload.
-    BlockNode* oldHead = (*(BlockNode**)&Asgtl_CFixedVectorAllocator(owner)->allocatedHead);
+    BlockNode* oldHead = (*(BlockNode**)&this->allocatedHead);
     BlockNode* found = a.best;
     found->next = oldHead;
     found->prev = 0;
     if (oldHead)
         oldHead->prev = found;
-    (*(BlockNode**)&Asgtl_CFixedVectorAllocator(owner)->allocatedHead) = found;
+    (*(BlockNode**)&this->allocatedHead) = found;
     return (void*)a.best->base;
 }
+
+extern "C" {
 #pragma opt_propagation reset
 #pragma opt_common_subs reset
 

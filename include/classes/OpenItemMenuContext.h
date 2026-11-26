@@ -5,7 +5,7 @@
 
 class OpenItemMenuContext {
 public:
-    void* saveRecord; // 0x0: CTourMain_ProcessItemMenu
+    void* saveRecord;    // 0x0: CTourMain_ProcessItemMenu
     unsigned char event; // 0x4: OpenItemMenu_UpdateEntryVisuals
     char pad_005[0x3];
     int eventValue; // 0x8: OpenItemMenu_UpdateEntryVisuals
@@ -14,7 +14,7 @@ public:
     char pad_015[0xf];
     int nextState; // 0x24: CTourMain_ProcessItemMenu
     char pad_028[0x8];
-    int linkActive; // 0x30: CTourMain_ProcessItemMenu
+    int linkActive;      // 0x30: CTourMain_ProcessItemMenu
     int useDefaultNames; // 0x34: CTourMain_ProcessItemMenu, CTourMain_PrepareSelectedEncounter
 };
 

@@ -1,18 +1,38 @@
+// The name-entry screen (CNameEntryMain) with its on-screen keyboard and texture, plus small
+// utilities: the hardware clock, calendar fields, the screen rectangle and init hooks.
+
 #include <decomp/static_init.h>
-// Translation unit 0x8007D2D4-0x8007DB30 (14 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CNameEntryMain.h"
+#include "classes/CNowReloading.h"
+#include "classes/CPackTextureResource.h"
 
-inline CNameEntryMain* AsCNameEntryMain(void* object) { return (CNameEntryMain*)object; }
+inline CNameEntryMain* AsCNameEntryMain(void* object) {
+    return (CNameEntryMain*)object;
+}
 
-enum ScreenGeometry { kScreenWidth = 640, kScreenHeight = 480 };
-enum HardwareTime { kBusClockAddress = 0x800000F8u, kMillisecondsDivisorMultiplier = 0x10624DD3u };
-enum ScreenAxis { kHorizontalAxis = 0, kVerticalAxis = 1 };
-enum NameEntryLayout { kNameEntryLayoutIndex = 5, kInitializeKeyboardSlot = 3 };
-struct OwnedAllocation { void* data; void* end; };
+enum ScreenGeometry {
+    kScreenWidth = 640,
+    kScreenHeight = 480
+};
+enum HardwareTime {
+    kBusClockAddress = 0x800000F8u,
+    kMillisecondsDivisorMultiplier = 0x10624DD3u
+};
+enum ScreenAxis {
+    kHorizontalAxis = 0,
+    kVerticalAxis = 1
+};
+enum NameEntryLayout {
+    kNameEntryLayoutIndex = 5,
+    kInitializeKeyboardSlot = 3
+};
+struct OwnedAllocation {
+    void* data;
+    void* end;
+};
 
 extern "C" {
 
@@ -21,34 +41,32 @@ extern float s_twoPi_8007D2D4;
 extern float s_initializedTwoPi_8007D3F0;
 extern float s_twoPi_8007D2D4_805E27C8;
 
-extern void OSReport(const char *, ...);
+extern void OSReport(const char*, ...);
 extern const char s_messageBoxReportText[];
 
 extern unsigned long long __div2i(unsigned long long, unsigned long long);
-extern void OSTicksToCalendarTime(unsigned long long, int *);
-extern unsigned int vsprintf(void *, const void *, unsigned int);
-extern void *memset(void *, int, unsigned int);
-extern void *memcpy(void *, const void *, unsigned int);
-extern void appFreeUni__FPv(void *);
-extern void __dl__FPv(void *);
-extern void *MPBase1_Ctor(void *);
-extern void SaveData_InitPlayerRecord(void *);
-extern void *__nw__FUl(unsigned int);
-extern void *ResourceTable_FindEntryByName(void *, const char *, int *);
-extern void CPackTextureResource_Init(void *, const char *, int, void *);
-extern void *SoftKeyboard_Ctor(void *, int);
-extern void *Layout_Init(void *, int);
-extern void MPBase1_SetAutoStart(void *, int);
-extern void Allocation_Dtor(void *);
-extern void SaveData_Ctor(const char *);
-extern unsigned int SaveData_GetCurrentSlotIndex(void *);
-extern void SaveData_InitBlankRecord(void *, int, int);
-extern void *SaveData_GetCurrentRecord(void *);
-extern void CNowReloading_Init(void *);
-extern void CNowReloading_dtor(void *);
-extern void LoadingIndicator_CreatePlayer(void *);
+extern void OSTicksToCalendarTime(unsigned long long, int*);
+extern unsigned int vsprintf(void*, const void*, unsigned int);
+extern void* memset(void*, int, unsigned int);
+extern void* memcpy(void*, const void*, unsigned int);
+extern void appFreeUni__FPv(void*);
+extern void __dl__FPv(void*);
+extern void* MPBase1_Ctor(void*);
+extern void SaveData_InitPlayerRecord(void*);
+extern void* __nw__FUl(unsigned int);
+extern void* ResourceTable_FindEntryByName(void*, const char*, int*);
+extern void* SoftKeyboard_Ctor(void*, int);
+extern void* Layout_Init(void*, int);
+extern void MPBase1_SetAutoStart(void*, int);
+extern void Allocation_Dtor(void*);
+extern void SaveData_Ctor(const char*);
+extern unsigned int SaveData_GetCurrentSlotIndex(void*);
+extern void SaveData_InitBlankRecord(void*, int, int);
+extern void* SaveData_GetCurrentRecord(void*);
+extern void __dt__13CNowReloadingFv(void*);
+extern void LoadingIndicator_CreatePlayer(void*);
 // The deleting destructor takes the flag in r4; a base subobject is destroyed with 0 (it never frees itself).
-extern void __dt__7MPBase1Fv(void *);
+extern void __dt__7MPBase1Fv(void*);
 extern void SoftKeyboard_dtor(void*, int);
 extern const char __vt__14CNameEntryMain[];
 extern const char nameEntryAndStringErrorStrings[];
@@ -57,23 +75,23 @@ extern const char s_resourceTableDtorRegistration_NameEntry[];
 extern const char s_saveData[];
 extern const char s_nowReloadingDtorRegistration_804E9154[];
 extern signed char s_resourceTableInitialized;
-extern void *s_resourceTableStorage;
+extern void* s_resourceTableStorage;
 extern signed char s_saveDataInitialized;
 extern signed char s_nowReloadingInitialized;
-extern void *s_nowReloading;
+extern void* s_nowReloading;
 extern float kFloat_0_MessageCursor;
 
 // Convert the hardware time base to milliseconds using the bus-clock frequency.
 unsigned int OS_GetTimeMilliseconds() {
     unsigned long long time = OSGetTime();
-    unsigned int busClockHz = *(volatile unsigned int *)kBusClockAddress;
+    unsigned int busClockHz = *(volatile unsigned int*)kBusClockAddress;
     unsigned int scaledClock = __mulhwu(kMillisecondsDivisorMultiplier, busClockHz >> 2);
     unsigned long long divisor = scaledClock >> 6;
     return __div2i(time, divisor);
 }
 
 // Release an owned allocation and optionally delete its two-pointer wrapper.
-void *dtor_8007D2D4(void *self, int deallocate) {
+void* dtor_8007D2D4(void* self, int deallocate) {
     if (self) {
         ((OwnedAllocation*)self)->end = 0;
         if (self && ((OwnedAllocation*)self)->data) {
@@ -87,8 +105,8 @@ void *dtor_8007D2D4(void *self, int deallocate) {
 }
 
 // Write year, month (1-based), weekday, day, hour, minute, second and milliseconds as shorts.
-void Calendar_GetCurrentShortFields(short *out) {
-// OSCalendarTime is 10 ints (usec included).
+void Calendar_GetCurrentShortFields(short* out) {
+    // OSCalendarTime is 10 ints (usec included).
     int values[9];
     OSTicksToCalendarTime(OSGetTime(), values);
     out[0] = values[5];
@@ -129,7 +147,7 @@ struct Rect {
 };
 
 // Translate both corners of an integer rectangle.
-int Rect_Offset(Rect *rect, int dx, int dy) {
+int Rect_Offset(Rect* rect, int dx, int dy) {
     rect->left += dx;
     rect->right += dx;
     rect->top += dy;
@@ -146,11 +164,12 @@ int Compatibility_ReportSuccess() {
 // Only the copy is bounded: vsprintf must fit its output and NUL in buffer[0x800].
 // destination needs size writable bytes; strncpy pads short output, but does not
 // guarantee a terminator when the formatted length is at least size.
-unsigned int String_VFormatBoundedCopy(void *destination, unsigned int size, const void *format, unsigned int argumentsAddress) {
+unsigned int String_VFormatBoundedCopy(void* destination, unsigned int size, const void* format,
+                                       unsigned int argumentsAddress) {
     char buffer[0x800];
     memset(buffer, 0, sizeof(buffer));
     unsigned int length = vsprintf(buffer, format, argumentsAddress);
-    strncpy((char *)destination, buffer, size);
+    strncpy((char*)destination, buffer, size);
     if (size > length)
         size = length;
     return size;
@@ -172,7 +191,7 @@ unsigned int OS_GetTimeLow() {
 }
 
 // Write the full-screen rectangle as left, top, right, bottom.
-int Rect_GetScreenBounds(int *out) {
+int Rect_GetScreenBounds(int* out) {
     out[0] = 0;
     out[1] = 0;
     out[2] = kScreenWidth;
@@ -187,30 +206,37 @@ void NameEntryUnit_InitThirdTwoPi() {
 
 } // extern "C"
 
-void *operator new(size_t);
-void operator delete(void *) throw();
+void* operator new(size_t);
+void operator delete(void*) throw();
 
 struct KeyboardLayout {
     char data[0x5c];
-    KeyboardLayout(int n) { Layout_Init(this, n); }
+    KeyboardLayout(int n) {
+        Layout_Init(this, n);
+    }
 };
 
 struct NameEntryTextureResource {
     char data[0x20];
-    NameEntryTextureResource(const char *name, int textureNamesAddress, void *textureCountWord) {
-        CPackTextureResource_Init(this, name, textureNamesAddress, textureCountWord);
+    NameEntryTextureResource(const char* name, int textureNamesAddress, void* textureCountWord) {
+        ((CPackTextureResource*)this)
+            ->Init((const char*)name, (void**)textureNamesAddress, (unsigned int)textureCountWord);
     }
 };
 
 struct SoftKeyboardBase {
-    void *vtable;
+    void* vtable;
     char pad04[0xA8];
-    SoftKeyboardBase() { SoftKeyboard_Ctor(this, 0); }
-    ~SoftKeyboardBase() { SoftKeyboard_dtor(this, -1); }
+    SoftKeyboardBase() {
+        SoftKeyboard_Ctor(this, 0);
+    }
+    ~SoftKeyboardBase() {
+        SoftKeyboard_dtor(this, -1);
+    }
 };
 
 struct NameEntryKeyboard {
-    void *vtable;
+    void* vtable;
     char pad04[0xA8];
     unsigned char flagAC;
     char padAD[3];
@@ -219,10 +245,10 @@ struct NameEntryKeyboard {
     float valueB8;
     float valueBC;
     int valueC0;
-    void *children[4];
+    void* children[4];
     NameEntryKeyboard() {
         SoftKeyboard_Ctor(this, 0);
-        vtable = (void *)__vt__22CSoftKeyboardNameEntry;
+        vtable = (void*)__vt__22CSoftKeyboardNameEntry;
         float zero = kFloat_0_MessageCursor;
         valueB0 = -1;
         flagAC = 0;
@@ -252,50 +278,59 @@ struct PlayerRecordCopyWords {
 
 struct NameEntryBase {
     char data[0x20];
-    NameEntryBase() { MPBase1_Ctor(this); }
-    ~NameEntryBase() { __dt__7MPBase1Fv(this); }
+    NameEntryBase() {
+        MPBase1_Ctor(this);
+    }
+    ~NameEntryBase() {
+        __dt__7MPBase1Fv(this);
+    }
 };
 
-inline void *operator new(size_t, void *storage) { return storage; }
+inline void* operator new(size_t, void* storage) {
+    return storage;
+}
 
 struct NameEntryConstruction : NameEntryBase {
-    void *object;
+    void* object;
     PlayerRecordCopyWords config;
-    void *dialog;
-    void *state;
-    void *resource;
+    void* dialog;
+    void* state;
+    void* resource;
     void initialize();
 };
 
 // Build the keyboard and texture resource, reset the current save slot, and start the loading indicator.
 inline void NameEntryConstruction::initialize() {
-    void *self = this;
+    void* self = this;
     MPBase1_Ctor(this);
     object = 0;
-    *(void **)self = (void *)__vt__14CNameEntryMain;
+    *(void**)self = (void*)__vt__14CNameEntryMain;
     SaveData_InitPlayerRecord(AsCNameEntryMain(self)->pendingPlayerRecord);
-    void *resourceTable = Sing_805DC620();
+    void* resourceTable = Sing_805DC620();
     resource = 0;
     int textureNamesAddress = 0;
     if (!resourceTable) {
         if (!s_resourceTableInitialized) {
             s_resourceTableStorage = 0;
-            __register_global_object(&s_resourceTableStorage, (void *)Allocation_Dtor, (void *)s_resourceTableDtorRegistration_NameEntry);
+            __register_global_object(&s_resourceTableStorage, (void*)Allocation_Dtor,
+                                     (void*)s_resourceTableDtorRegistration_NameEntry);
             s_resourceTableInitialized = 1;
         }
         Sing_805DC620() = &s_resourceTableStorage;
     }
-    void *textureResource;
+    void* textureResource;
     {
-        void *textureCountWord = ResourceTable_FindEntryByName(Sing_805DC620(), nameEntryAndStringErrorStrings, &textureNamesAddress);
-        textureResource = new NameEntryTextureResource(nameEntryAndStringErrorStrings, textureNamesAddress, textureCountWord);
+        void* textureCountWord =
+            ResourceTable_FindEntryByName(Sing_805DC620(), nameEntryAndStringErrorStrings, &textureNamesAddress);
+        textureResource =
+            new NameEntryTextureResource(nameEntryAndStringErrorStrings, textureNamesAddress, textureCountWord);
     }
     resource = textureResource;
-    NameEntryKeyboard *created = new NameEntryKeyboard;
+    NameEntryKeyboard* created = new NameEntryKeyboard;
     object = created;
-    ((void (**)(void *))(*(void **)created))[kInitializeKeyboardSlot](created);
+    ((void (**)(void*))(*(void**)created))[kInitializeKeyboardSlot](created);
     MPBase1_SetAutoStart(self, 1);
-    void *saveData = Sing_805DC5E0();
+    void* saveData = GetSaveDataSlot();
     textureResource = 0;
     AsCNameEntryMain(self)->dialog = 0;
     AsCNameEntryMain(self)->state = 0;
@@ -304,25 +339,32 @@ inline void NameEntryConstruction::initialize() {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        Sing_805DC5E0() = (void *)s_saveData;
+        GetSaveDataSlot() = (void*)s_saveData;
     }
-    unsigned int slotIndex = SaveData_GetCurrentSlotIndex(Sing_805DC5E0());
-    if (!Sing_805DC5E0()) {
-        if (!s_saveDataInitialized) { SaveData_Ctor(s_saveData); s_saveDataInitialized = 1; }
-        Sing_805DC5E0() = (void *)s_saveData;
+    unsigned int slotIndex = SaveData_GetCurrentSlotIndex(GetSaveDataSlot());
+    if (!GetSaveDataSlot()) {
+        if (!s_saveDataInitialized) {
+            SaveData_Ctor(s_saveData);
+            s_saveDataInitialized = 1;
+        }
+        GetSaveDataSlot() = (void*)s_saveData;
     }
-    SaveData_InitBlankRecord(Sing_805DC5E0(), slotIndex, 0);
+    SaveData_InitBlankRecord(GetSaveDataSlot(), slotIndex, 0);
     slotIndex = 0;
-    if (!Sing_805DC5E0()) {
-        if (!s_saveDataInitialized) { SaveData_Ctor(s_saveData); s_saveDataInitialized = 1; }
-        Sing_805DC5E0() = (void *)s_saveData;
+    if (!GetSaveDataSlot()) {
+        if (!s_saveDataInitialized) {
+            SaveData_Ctor(s_saveData);
+            s_saveDataInitialized = 1;
+        }
+        GetSaveDataSlot() = (void*)s_saveData;
     }
-    void *currentRecord = SaveData_GetCurrentRecord(Sing_805DC5E0());
-    config = *(const PlayerRecordCopyWords *)currentRecord;
+    void* currentRecord = SaveData_GetCurrentRecord(GetSaveDataSlot());
+    config = *(const PlayerRecordCopyWords*)currentRecord;
     if (!Sing_805DC610()) {
         if (!s_nowReloadingInitialized) {
-            CNowReloading_Init(&s_nowReloading);
-            __register_global_object(&s_nowReloading, (void *)CNowReloading_dtor, (void *)s_nowReloadingDtorRegistration_804E9154);
+            ((CNowReloading*)(&s_nowReloading))->Init();
+            __register_global_object(&s_nowReloading, (void*)__dt__13CNowReloadingFv,
+                                     (void*)s_nowReloadingDtorRegistration_804E9154);
             s_nowReloadingInitialized = 1;
         }
         Sing_805DC610() = &s_nowReloading;
@@ -333,9 +375,8 @@ inline void NameEntryConstruction::initialize() {
 extern "C" {
 
 // Construct the name-entry screen in caller-provided storage.
-void *CNameEntryMain_ctor(void *self) {
-    ((NameEntryConstruction *)self)->initialize();
-    return self;
+CNameEntryMain::CNameEntryMain() {
+    ((NameEntryConstruction*)this)->initialize();
 }
 
 } // extern "C"

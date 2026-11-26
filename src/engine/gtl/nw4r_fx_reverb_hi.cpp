@@ -1,16 +1,21 @@
-// Translation unit 0x8040A858-0x8040A8A8 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// High-quality reverb effect: processes the left, right and surround sample buffers while
+// the effect is enabled.
+//
+// gtl_nw4r_FxReverbHi_ProcessBuffers passes the buffer addresses it is given to the SDK
+// reverb callback. It does not copy the samples.
 
 #include "sdk_protos.h"
 
-namespace gtl { namespace nw4r {
+namespace gtl {
+namespace nw4r {
 struct FxReverbHi {
     char effectBase[0xC];
     unsigned char enabled;
     char outputAndParameters[0x23];
     char reverb[1];
 };
-} }
+}
+}
 
 struct ReverbBuffers {
     // Three borrowed sample-buffer addresses, not samples or channel lengths.

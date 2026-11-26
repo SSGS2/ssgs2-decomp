@@ -7,7 +7,7 @@ Ball, Item, Caddie, CaddieItem, SetItem, Course, Desc, HairStyle, AuxPart. `Item
 ## Byte order and the swap formats
 
 The tables are the PC little-endian format, version 11. The Wii converts each record in place with
-`CSwapEndianFormat` (0x80068998 / 0x800693F0) driven by one format string per table (string pool `lbl_8046DFD0`):
+`CSwapEndianFormat` (0x80068998 / 0x800693F0) driven by one format string per table (string pool `iffSchemaAndCourseStrings`):
 
 | Token | Meaning |
 |---|---|
@@ -34,11 +34,11 @@ bytes in the 2011 PC client). Format `C40 C40 I I M[ 7 1 ] M[ 3 5 ] S`:
 | Off | Size | Field | Evidence |
 |---|---|---|---|
 | 0x00 | 40 | name: message id, e.g. `MSG_CLUBSETNAME_AI1` | data; shop copies it |
-| 0x28 | 40 | icon name, e.g. `club01_01` | data; clubset preview loads it (u802B4360) |
+| 0x28 | 40 | icon name, e.g. `club01_01` | data; clubset preview loads it (`src/game/ui/exhibition_model_preview.cpp`) |
 | 0x50 | 4 | typeId (table key) | loaders copy it into each entry's key (`tmp.first = body[0x50]`) |
 | 0x54 | 4 | price | data (3500, 1400, 300 ...), 0 for starter items |
 | 0x58 | 1 | bits: level 7 + flag 1 | first field = required level (6, 11, 16, 21, 26, 31 = start of each PangYa rank); PC "level: low 7 bits" |
-| 0x59 | 1 | bits: 3 + 5 | first field nonzero: item starts unlocked (new-save bitsets in 0x80072824 / 0x80073060; hair shop list in `CShopProductHair_vfunc_6`) |
+| 0x59 | 1 | bits: 3 + 5 | first field nonzero: item starts unlocked (new-save bitsets in 0x80072824 / 0x80073060; hair shop check in `CShopProductHair::CheckUnlockAndOwnership`) |
 | 0x5A | 2 | unknown (0, 18 or 166) | |
 
 ## Type ids
@@ -58,18 +58,18 @@ Stat arrays are always in the PangYa order **Power, Control, Accuracy (Impact), 
 `StatsStruct`; confirmed by the ring data: `MSG_RINGNAME_POW` = [1,0,0,0,0], `CTR` = [0,1,0,0,0], `SPN` = [0,0,0,1,0]).
 
 **Character (0x11C)**: 0x5C model (`m_def`), 0x84 hair texture, 0xAC base/shirt texture, 0xD4 face/skin texture,
-0xFC u32 stats[5] (added to the stat bars, fn_8024F60C), 0x110 float scale (1.0-1.2 by character; scales the player
-model matrix in u8013AE84), 0x114 u8 default part count (`ItemInventory_GetDefaultPartIds`), 0x115 u8 unknown,
+0xFC u32 stats[5] (added to the stat bars, `CCharaEntry::UpdateStatBars`), 0x110 float scale (1.0-1.2 by character; scales the player
+model matrix in `src/game/golf/golf_player_actor.cpp`), 0x114 u8 default part count (`ItemInventory_GetDefaultPartIds`), 0x115 u8 unknown,
 0x116 u8[5] (equal to the stats in all 8 records; PC: base level per stat), 0x11B u8.
 
 **Part (0x19C)**: 0x5C model, 0x84 textures[3], 0xFC second textures[3], 0x174 u16 stats[5] (summed for the stat
 bars), 0x17E u16 slot stats[5], 0x188 u32 sub-part ids[2], 0x190 u32 hide mask (slots this part covers;
-shop model refresh u802CBF2C), 0x194 u32 unknown (2048 in 7 parts), 0x198 u8 part type (0 top, 1 bottom, 2 hat,
+shop model refresh in `src/game/ui/shop_screen_selection_and_ownership.cpp`), 0x194 u32 unknown (2048 in 7 parts), 0x198 u8 part type (0 top, 1 bottom, 2 hat,
 3 gloves, 4 shoes, 5 default/base; PangLib `PartType`; shop category and filter mask).
 
 **Club (0x88)**: 0x5C model (`club01_01_w`), 0x84 u8 club kind (0 wood, 1 iron, 2 wedge, 3 putter).
 
-**ClubSet (0x8C)**: 0x5C u32 stats[5], 0x70 u32 club ids[4] (wood, iron, wedge, putter; loaded by u800EE8AC),
+**ClubSet (0x8C)**: 0x5C u32 stats[5], 0x70 u32 club ids[4] (wood, iron, wedge, putter; loaded in `src/game/fx/club_trail_and_ring_effects.cpp`),
 0x80 u16 second stat array[5] (PC: slot stats or stat limits), 0x8A u16.
 
 **Ball (0x2C0)**: 0x5C effect files[7] (`.seq`), 0x174 effect bones[7], 0x28C model (`ball_low`; the preview loads
@@ -91,6 +91,6 @@ appends three built-in courses (TUTORIAL, TEST, RANDOM); `ItemInventory_GetArchi
 **HairStyle (0x60)**: 0x5C u8 colour index, 0x5D u8 character index.
 
 **AuxPart / rings (0x70)**: 0x5C u8 stats[5], 0x61 u8 slot stats[5], 0x66 u16, 0x68/0x6A/0x6C u16 rates in percent
-for properties 1-3, 0x6E s8 added to property 0 (fn_801F42A4, the PC `CSharedDoc::GetAuxPartProperty`).
+for properties 1-3, 0x6E s8 added to property 0 (`CSharedDoc_ComputeAuxPartModifier`, the PC `CSharedDoc::GetAuxPartProperty`).
 
 **Desc (0x2C)**: 0x00 message id (`MSG_CHRDESC_KEN`), 0x28 u32 typeId of the described item (the key).

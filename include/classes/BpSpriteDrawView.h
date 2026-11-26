@@ -21,7 +21,8 @@ public:
     char pad_80[0x2C];
     int positionX; // 0xAC: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
     char pad_B0[0x8];
-    char* formatProperty; // 0xB8: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
+    char*
+        formatProperty; // 0xB8: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
     char pad_BC[0x8];
     int positionY; // 0xC4: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
     char pad_C8[0x14];
@@ -31,11 +32,13 @@ public:
     char pad_F8[0x14];
     int opacity; // 0x10C: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
     char pad_110[0x8];
-    char* blendProperty; // 0x118: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
+    char*
+        blendProperty; // 0x118: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
     char pad_11C[0x20];
     int tileColumns; // 0x13C: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
     char pad_140[0x8];
-    char* tileFlipProperty; // 0x148: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
+    char*
+        tileFlipProperty; // 0x148: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
     char pad_14C[0x8];
     int tileRows; // 0x154: BpSprite_DrawTilesUnrotated, BpSprite_DrawTilesRotated, BpSprite_ComputeUnrotatedRect / BpSprite_ComputeRotatedQuad
     char pad_158[0x14];

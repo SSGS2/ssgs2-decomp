@@ -1,6 +1,9 @@
+// Camera-motion (VCG) scripts: the player and source classes that sample key groups over time,
+// the parser that loads a script into groups, and the framebuffer fade overlay.
+
 #include <decomp/static_init.h>
 // Camera/model-preview VCG motion scripts and framebuffer fade ownership.
-// Frame rate lookup: CVCGPlayer_AdvancePlayback adds kFloat_1_VCGPlayer (1 script
+// Frame rate lookup: CVCGPlayer::AdvancePlayback adds kFloat_1_VCGPlayer (1 script
 // tick/call). Its SAME constant is subtracted from duration at a nonlooping end;
 // a future mod wanting a separate step must separate those two roles first.
 // CameraScript_ParseGroupData scales duration AND all three timing phases by
@@ -13,7 +16,7 @@
 // Engine_GetViewport width/height, one mip, kFramebufferTextureFormat=0x80000006
 // (platform RGBA8). Change viewport dimensions and copy/draw consumers together.
 // There is no local screen width, aspect ratio, scissor or presentation interval.
-// Scalar definitions: u8023A378_data.cpp and the shared fade pool; binary layouts
+// Scalar definitions: the data section and the shared fade pool; binary layouts
 // and ownership aliases are mapped below. Packed scripts use native Wii big-endian
 // Unless specified, self/output pointers are required and borrowed. Destructors
 // accept null; positive deleting flags release wrapper storage and return the
@@ -24,13 +27,14 @@
 #include "game/types.h"
 #include "classes/CVCGSource.h"
 #include "classes/CVCGPlayer.h"
+#include "classes/CVCGFile.h"
 
 #define AsCVCGPlayer(p) ((CVCGPlayer*)(p))
 
-#define AsCVCGSource(p) ((CVCGSource*)(p))
-
 // Construct into caller-owned vector storage without allocating.
-inline void *operator new(size_t, void *p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 // Placement delete leaves allocation cleanup to the vector transaction guard.
 inline void operator delete(void*, void*) {}
 
@@ -47,17 +51,28 @@ static const unsigned int kMotionVectorGrowthTier1 = 0x071c71c7u;
 static const unsigned int kMotionVectorGrowthTier2 = 0x0e38e38eu;
 // Runtime/key layout constants: units are bytes, not point counts.
 enum MotionStorageLayout {
-    kMotionKeyBytes = 0x28, kMotionGroupBytes = 0x44,
-    kSecondTrackOffset = 0x0C, kDirectionOffset = 0x18,
-    kDirectionSecondComponentOffset = 0x1C, kScalarOffset = 0x24,
-    kGroupKeysOffset = 0x38, kGroupKeyCountOffset = 0x3C,
+    kMotionKeyBytes = 0x28,
+    kMotionGroupBytes = 0x44,
+    kSecondTrackOffset = 0x0C,
+    kDirectionOffset = 0x18,
+    kDirectionSecondComponentOffset = 0x1C,
+    kScalarOffset = 0x24,
+    kGroupKeysOffset = 0x38,
+    kGroupKeyCountOffset = 0x3C,
     kVectorXYZBytes = 0x0C
 };
 static const int kLinearMotion = 0, kBezierMotion = 1, kCubicMotion = 2;
 static const int kFadeIdle = 0, kFadeIncreasing = 1, kFadeOpaque = 2, kFadeDecreasing = 3;
-static const unsigned int kFramebufferTextureFormat = 0x80000006u; // Engine platform-bit | GX RGBA8 (6); paired with EFB capture.
-enum CameraPlaybackLoopMode { kStopAtGroupEnd = 0, kRestartGroupAtEnd = 1 };
-enum FadeTextureLayout { kFadeMipCount = 1, kFadeBaseMipLevel = 0 };
+static const unsigned int kFramebufferTextureFormat =
+    0x80000006u; // Engine platform-bit | GX RGBA8 (6); paired with EFB capture.
+enum CameraPlaybackLoopMode {
+    kStopAtGroupEnd = 0,
+    kRestartGroupAtEnd = 1
+};
+enum FadeTextureLayout {
+    kFadeMipCount = 1,
+    kFadeBaseMipLevel = 0
+};
 
 // Storage map: source/player +4 is the logical group count, +8/+C/+10 is
 // {group allocation, constructed count, capacity}. Each group is 0x44 bytes:
@@ -72,7 +87,8 @@ extern const float kFloat_6_2831855;
 extern float s_vcgPlayerTwoPiCache;
 extern float s_vcgSourceTwoPiCache;
 extern const float kFloat_0_VCGPlayer;
-extern const float kFloat_1_VCGPlayer; // Shared 1 script tick: advance AND duration-1 endpoint. Larger is faster and changes final pose.
+extern const float
+    kFloat_1_VCGPlayer; // Shared 1 script tick: advance AND duration-1 endpoint. Larger is faster and changes final pose.
 
 extern char __vt__10CVCGPlayer[];
 extern char s_vcgSourceVtable[];
@@ -81,29 +97,29 @@ struct GroupRecords;
 struct GroupValues;
 struct MotionItem;
 struct SplineArg;
-int GroupVector_SampleMotionAtTime(GroupRecords *, MotionItem *, int, float);
-void CVCGFile_Ctor(void *);
-void CVCGFile_dtor(void *, int);
-void __dl__FPv(void *);
-int GroupVector_GetValues(GroupRecords *, GroupValues *, int);
-void CameraMotionGroupVector_AppendDefaultGroups(void *, unsigned int);
+int GroupVector_SampleMotionAtTime(GroupRecords*, MotionItem*, int, float);
+void __dt__8CVCGFileFv(void*, int);
+void __dl__FPv(void*);
+int GroupVector_GetValues(GroupRecords*, GroupValues*, int);
+void CameraMotionGroupVector_AppendDefaultGroups(void*, unsigned int);
 struct RemovalVector;
-void CameraMotionGroupVector_RemoveBackGroups(RemovalVector *, int);
+void CameraMotionGroupVector_RemoveBackGroups(RemovalVector*, int);
 int EventTiming_IsDurationScalingEnabled();
-int CameraMotionGroupVector_ComputeTrackLengths(GroupRecords *, int);
-void *__nwa__FUl(unsigned int);
-void __dla__FPv(void *);
-char *strcpy(char *, const char *);
-void __dt__Q23std12length_errorFv(void *);
+int CameraMotionGroupVector_ComputeTrackLengths(GroupRecords*, int);
+void* __nwa__FUl(unsigned int);
+void __dla__FPv(void*);
+char* strcpy(char*, const char*);
+void __dt__Q23std12length_errorFv(void*);
 extern const char vcgVectorExceptionStrings[];
 extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12length_error[];
-extern float kFloat_0_8333333_CameraDuration; // binary32 ~5/6: all phase durations, reducing calls at unchanged tick/call.
+extern float
+    kFloat_0_8333333_CameraDuration; // binary32 ~5/6: all phase durations, reducing calls at unchanged tick/call.
 
 struct VTableSlot {
-    void *(*allocate)(unsigned int);
-    void (*destroy)(void *);
+    void* (*allocate)(unsigned int);
+    void (*destroy)(void*);
 };
 extern VTableSlot s_vcgAllocatorCallbacks;
 
@@ -117,45 +133,59 @@ struct PointAllocator {
 };
 
 struct ErrorAllocation {
-    char *pointer;
-    char *allocator;
+    char* pointer;
+    char* allocator;
     // Adopt exception text until its control block is constructed.
-    ErrorAllocation(char *p, char *a) : pointer(p), allocator(a) {}
+    ErrorAllocation(char* p, char* a) : pointer(p), allocator(a) {}
     // Free exception text when adoption by the control block did not complete.
-    ~ErrorAllocation() { if (pointer) __dla__FPv(pointer); }
+    ~ErrorAllocation() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct ErrorControlBase {
-    void *table;
+    void* table;
     unsigned strong, weak;
     // Initialize a shared character deleter with one strong and one weak owner.
-    ErrorControlBase() { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; }
+    ErrorControlBase() {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+    }
 };
 struct ErrorControl : ErrorControlBase {
-    char *pointer;
+    char* pointer;
     // Adopt the allocated character buffer after base ownership initialization.
-    ErrorControl(char *p) { pointer = p; }
+    ErrorControl(char* p) {
+        pointer = p;
+    }
 };
 namespace std {
 struct exception {
-    void *table;
+    void* table;
 };
 struct logic_error : exception {
     // Install the logic-error runtime type before the derived message is built.
-    logic_error() { table = __vt__Q23std11logic_error; }
+    logic_error() {
+        table = __vt__Q23std11logic_error;
+    }
     ~logic_error();
 };
 struct length_error : logic_error {
-    char *text;
-    void *control;
+    char* text;
+    void* control;
     // Deep-copy the vector error message and construct its shared ownership block.
     length_error() {
-        const char *message = vcgVectorExceptionStrings;
-        struct Allocator { char value; char pad[3]; } allocator;
+        const char* message = vcgVectorExceptionStrings;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned n = strlen(message) + 1;
-        text = (char *)__nwa__FUl(2 * n - n);
+        text = (char*)__nwa__FUl(2 * n - n);
         {
-            char *p = text;
+            char* p = text;
             ErrorAllocation allocation(p, &allocator.value);
             control = new ErrorControl(p);
             allocation.pointer = 0;
@@ -164,32 +194,39 @@ struct length_error : logic_error {
         table = __vt__Q23std12length_error;
     }
 
-
     ~length_error();
 };
 }
 
 // Throw a vector-length exception without the point allocator tag.
-inline void VectorThrow() { throw std::length_error(); }
+inline void VectorThrow() {
+    throw std::length_error();
+}
 // Throw a vector-length exception within the point allocator's cleanup scope.
 inline void PointVectorThrow() {
     PointAllocator allocator;
     throw std::length_error();
 }
 // Select the larger capacity increment, preserving the chosen reference.
-inline const unsigned &VectorMax(const unsigned &a, const unsigned &b) { return a < b ? b : a; }
+inline const unsigned& VectorMax(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 // Choose point-vector capacity with overflow checks and the original two growth tiers.
 inline unsigned GrowthCapacity(unsigned cp, unsigned need) {
     PointAllocator allocator;
-    if (need > kMotionPointLimit - cp) PointVectorThrow();
-    if (cp < kMotionPointGrowthTier1) return cp + VectorMax((cp + 1) * 3 / 5, need);
-    if (cp < kMotionPointGrowthTier2) return cp + VectorMax((cp + 1) / 2, need);
+    if (need > kMotionPointLimit - cp)
+        PointVectorThrow();
+    if (cp < kMotionPointGrowthTier1)
+        return cp + VectorMax((cp + 1) * 3 / 5, need);
+    if (cp < kMotionPointGrowthTier2)
+        return cp + VectorMax((cp + 1) / 2, need);
     return kMotionPointLimit;
 }
 // Allocate storage for 0x28-byte motion points through the VCG allocator.
-inline void *AllocatePoints(unsigned n) {
+inline void* AllocatePoints(unsigned n) {
     PointAllocator allocator;
-    if (n > kMotionPointLimit) PointVectorThrow();
+    if (n > kMotionPointLimit)
+        PointVectorThrow();
     return s_vcgAllocatorCallbacks.allocate(n * 0x28);
 }
 
@@ -210,11 +247,19 @@ struct Pt {
         w[5] = w[6] = w[7] = w[8] = w[9] = 0;
     }
     // Copy the key's stored bits with the original exception boundary.
-    Pt(const Pt &other) { try { *this = other; } catch (...) { throw; } }
+    Pt(const Pt& other) {
+        try {
+            *this = other;
+        } catch (...) {
+            throw;
+        }
+    }
 };
 // Float components are stored as unsigned words to preserve bitwise copies;
 // vector helpers interpret those words as float, never as integer coordinates.
-struct MotionVec { unsigned int x, y, z; };
+struct MotionVec {
+    unsigned int x, y, z;
+};
 // Camera-key consumer schema (CEventCameraSC_CAM_SET_UpdateCameraAnimation in
 // effect_fade_and_camera_script.cpp, CRoundDol3D in round_dol3d_spinning_dolfini_scene.cpp, camera work in camera_work_shot_cameras.cpp): +0 eye position,
 // +0xC target position (world XYZ), +0x18 up vector, +0x24 field of view in radians.
@@ -223,20 +268,23 @@ struct MotionVec { unsigned int x, y, z; };
 // pair as (sin(angle),cos(angle),0), angle=atan2(up.x,up.y); this is camera roll
 // in the stored XY plane, not yaw or an angle measured from gameplay world Z.
 // Single-key sampling copies all stored up components verbatim, including Z.
-struct MotionItem { MotionVec firstPositionTrack, secondPositionTrack, planarDirectionStorage; float value; };
+struct MotionItem {
+    MotionVec firstPositionTrack, secondPositionTrack, planarDirectionStorage;
+    float value;
+};
 struct PointBuffer {
-    Pt *data;
+    Pt* data;
     unsigned size;
     unsigned cap;
-    unsigned *owner;
+    unsigned* owner;
     unsigned offset;
     // Begin an empty guarded replacement for the destination key allocation.
-    PointBuffer(unsigned *p) : data(0), size(0), cap(0), owner(p), offset(0) {}
+    PointBuffer(unsigned* p) : data(0), size(0), cap(0), owner(p), offset(0) {}
     // Release the guarded key allocation; keys contain no nested owned objects.
     ~PointBuffer() {
         if (data) {
             PointAllocator allocator;
-            size -= ((char *)data + size) - (char *)data;
+            size -= ((char*)data + size) - (char*)data;
             s_vcgAllocatorCallbacks.destroy(data);
         }
     }
@@ -254,7 +302,9 @@ struct PackedCameraGroup {
     unsigned char formatBytes[4]; // Copied verbatim; their individual meanings remain unresolved.
     short duration, keyCount, interpolation, accelerationTime, cruiseTime, decelerationTime;
 };
-struct PackedCameraScript { unsigned int signature, groupCount, groupOffsets[1]; };
+struct PackedCameraScript {
+    unsigned int signature, groupCount, groupOffsets[1];
+};
 typedef char PackedCameraGroupSize[sizeof(PackedCameraGroup) == 0x10 ? 1 : -1];
 struct PlaybackState {
     int groupIndex;
@@ -270,26 +320,37 @@ struct ParsedGroup {
     float cruiseTime;
     float decelerationTime;
     unsigned char pad[0x10];
-    Pt *data;
+    Pt* data;
     unsigned int size;
     unsigned int cap;
 };
-struct Manager { void* vtable; unsigned int groupCount; ParsedGroup *groups; unsigned int storedGroupCount; };
+struct Manager {
+    void* vtable;
+    unsigned int groupCount;
+    ParsedGroup* groups;
+    unsigned int storedGroupCount;
+};
 // Convert a group index into a byte displacement in expanded group storage.
-inline unsigned GroupOffset(int index) { return index * sizeof(ParsedGroup); }
+inline unsigned GroupOffset(int index) {
+    return index * sizeof(ParsedGroup);
+}
 // Convert a key index into a byte displacement in the nested key allocation.
-inline unsigned PointOffset(int index) { return index * sizeof(MotionItem); }
+inline unsigned PointOffset(int index) {
+    return index * sizeof(MotionItem);
+}
 
 // One 0x28 byte entry of the nested buffer.
 struct SmallItem {
     unsigned words[10];
     // Copy one motion key as ten stored words.
-    SmallItem(const SmallItem &other) { *this = other; }
+    SmallItem(const SmallItem& other) {
+        *this = other;
+    }
 };
 
 // Nested buffer stored at +0x38 of a Group.
 struct SmallBufferStorage {
-    SmallItem *data;
+    SmallItem* data;
     unsigned size;
     unsigned capacity;
     // Initialize an empty owned nested key allocation.
@@ -299,7 +360,7 @@ struct SmallBufferStorage {
         if (data) {
             unsigned n = size;
             PointAllocator allocator;
-            size = n - (((char *)data + n) - (char *)data);
+            size = n - (((char*)data + n) - (char*)data);
             s_vcgAllocatorCallbacks.destroy(data);
         }
     }
@@ -316,17 +377,18 @@ struct SmallBuffer : SmallBufferImpl {
     // Construct an empty key buffer through the storage base.
     SmallBuffer() {}
     // Deep-copy keys into a separately owned allocation, updating constructed size.
-    SmallBuffer(const SmallBuffer &other) {
-        const SmallItem *src = other.data;
-        const SmallItem *end = src + other.size;
+    SmallBuffer(const SmallBuffer& other) {
+        const SmallItem* src = other.data;
+        const SmallItem* end = src + other.size;
         unsigned n = end - src;
         if (n != 0) {
             PointAllocator allocator;
-            if (n > kMotionPointLimit) PointVectorThrow();
-            data = (SmallItem *)s_vcgAllocatorCallbacks.allocate(n * 0x28);
+            if (n > kMotionPointLimit)
+                PointVectorThrow();
+            data = (SmallItem*)s_vcgAllocatorCallbacks.allocate(n * 0x28);
             capacity = n;
             PointAllocator copyAllocator;
-            SmallItem *dst = data + size;
+            SmallItem* dst = data + size;
             while (src != end) {
                 new (dst) SmallItem(*src);
                 ++src;
@@ -352,24 +414,56 @@ struct GroupHeader {
 
 // Expanded group header word roles; integer access preserves float component bits.
 enum ExpandedGroupWord {
-    kGroupDurationWord, kGroupKeyCountWord, kGroupInterpolationWord,
-    kGroupAccelerationWord, kGroupCruiseWord, kGroupDecelerationWord,
-    kGroupFirstLengthWord, kGroupFirstSpeedWord, kGroupSecondLengthWord, kGroupSecondSpeedWord
+    kGroupDurationWord,
+    kGroupKeyCountWord,
+    kGroupInterpolationWord,
+    kGroupAccelerationWord,
+    kGroupCruiseWord,
+    kGroupDecelerationWord,
+    kGroupFirstLengthWord,
+    kGroupFirstSpeedWord,
+    kGroupSecondLengthWord,
+    kGroupSecondSpeedWord
 };
 struct CopyGroupHeader : GroupHeader {
     // Leave an unpopulated header untouched until parsing/copying fills it.
     CopyGroupHeader() {}
     // Copy packed halfwords and expanded words with their original access widths.
-    CopyGroupHeader(const CopyGroupHeader &other) {
-        unsigned short a = other.h[0], b = other.h[1]; h[0] = a; h[1] = b;
-        a = other.h[2]; b = other.h[3]; h[2] = a; h[3] = b;
-        a = other.h[4]; b = other.h[5]; h[4] = a; h[5] = b;
-        a = other.h[6]; b = other.h[7]; h[6] = a; h[7] = b;
-        unsigned c = other.w[kGroupDurationWord], d = other.w[kGroupKeyCountWord]; w[kGroupDurationWord] = c; w[kGroupKeyCountWord] = d;
-        c = other.w[kGroupInterpolationWord]; d = other.w[kGroupAccelerationWord]; w[kGroupInterpolationWord] = c; w[kGroupAccelerationWord] = d;
-        c = other.w[kGroupCruiseWord]; d = other.w[kGroupDecelerationWord]; w[kGroupCruiseWord] = c; w[kGroupDecelerationWord] = d;
-        c = other.w[kGroupFirstLengthWord]; d = other.w[kGroupFirstSpeedWord]; w[kGroupFirstLengthWord] = c; w[kGroupFirstSpeedWord] = d;
-        c = other.w[kGroupSecondLengthWord]; d = other.w[kGroupSecondSpeedWord]; w[kGroupSecondLengthWord] = c; w[kGroupSecondSpeedWord] = d;
+    CopyGroupHeader(const CopyGroupHeader& other) {
+        unsigned short a = other.h[0], b = other.h[1];
+        h[0] = a;
+        h[1] = b;
+        a = other.h[2];
+        b = other.h[3];
+        h[2] = a;
+        h[3] = b;
+        a = other.h[4];
+        b = other.h[5];
+        h[4] = a;
+        h[5] = b;
+        a = other.h[6];
+        b = other.h[7];
+        h[6] = a;
+        h[7] = b;
+        unsigned c = other.w[kGroupDurationWord], d = other.w[kGroupKeyCountWord];
+        w[kGroupDurationWord] = c;
+        w[kGroupKeyCountWord] = d;
+        c = other.w[kGroupInterpolationWord];
+        d = other.w[kGroupAccelerationWord];
+        w[kGroupInterpolationWord] = c;
+        w[kGroupAccelerationWord] = d;
+        c = other.w[kGroupCruiseWord];
+        d = other.w[kGroupDecelerationWord];
+        w[kGroupCruiseWord] = c;
+        w[kGroupDecelerationWord] = d;
+        c = other.w[kGroupFirstLengthWord];
+        d = other.w[kGroupFirstSpeedWord];
+        w[kGroupFirstLengthWord] = c;
+        w[kGroupFirstSpeedWord] = d;
+        c = other.w[kGroupSecondLengthWord];
+        d = other.w[kGroupSecondSpeedWord];
+        w[kGroupSecondLengthWord] = c;
+        w[kGroupSecondSpeedWord] = d;
     }
 };
 
@@ -379,32 +473,32 @@ struct Group {
     // Construct empty nested storage; the header is populated later.
     Group() : buffer() {}
     // Copy the header and deep-copy its owned motion keys.
-    Group(const Group &other) : header(other.header), buffer(other.buffer) {}
+    Group(const Group& other) : header(other.header), buffer(other.buffer) {}
 };
 
 // The vector of Groups: data at +0, size at +4, capacity at +8.
 struct GroupVector {
-    Group *data;
+    Group* data;
     unsigned size;
     unsigned capacity;
 };
 
 // Temporary owner of a Group block; destroys its elements and frees the block.
 struct GroupBuffer {
-    Group *data;
+    Group* data;
     unsigned size;
     unsigned capacity;
-    unsigned *owner;
+    unsigned* owner;
     unsigned offset;
     // Begin a guarded replacement group allocation with an empty constructed range.
-    GroupBuffer(unsigned *p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
+    GroupBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Destroy constructed groups in reverse order, then release their outer block.
     ~GroupBuffer() {
         if (data) {
             unsigned n = size;
             PointAllocator allocator;
             size -= n;
-            Group *p = data + n;
+            Group* p = data + n;
             while (n != 0) {
                 --p;
                 p->~Group();
@@ -418,7 +512,8 @@ struct GroupBuffer {
 struct GroupValues {
     float duration;
     int keyCount, interpolation;
-    float accelerationTime, cruiseTime, decelerationTime, firstTrackLength, firstTrackSpeed, secondTrackLength, secondTrackSpeed;
+    float accelerationTime, cruiseTime, decelerationTime, firstTrackLength, firstTrackSpeed, secondTrackLength,
+        secondTrackSpeed;
 };
 struct GroupRecord {
     char prefix[0x10];
@@ -441,16 +536,17 @@ struct GroupRecord {
 // These casts change access vocabulary only. No construction or ownership moves.
 // Fade ResetState/ResourceState below describe a DIFFERENT object, never a group.
 struct GroupRecords {
-    void *unknown;
+    void* unknown;
     int size;
-    GroupRecord *data;
+    GroupRecord* data;
 };
 
 // Copy a group's timing, interpolation mode, lengths and speeds to the caller.
 // Requires index >= 0; returns 0 for index >= logical count, else writes out and returns 1.
-inline int GetGroupValues(GroupRecords *v, GroupValues *out, int index) {
-    if (index >= v->size) return 0;
-    GroupValues *src = &v->data[index].values;
+inline int GetGroupValues(GroupRecords* v, GroupValues* out, int index) {
+    if (index >= v->size)
+        return 0;
+    GroupValues* src = &v->data[index].values;
     out->duration = src->duration;
     out->keyCount = src->keyCount;
     out->interpolation = src->interpolation;
@@ -467,44 +563,47 @@ inline int GetGroupValues(GroupRecords *v, GroupValues *out, int index) {
 struct MotionContext {
     int index;
     float fraction;
-    GroupValues *values;
-    MotionItem *data;
+    GroupValues* values;
+    MotionItem* data;
 };
-void Vec3_Subtract(void *, const void *, const void *);
-void Vec3_Scale(void *, const void *, float);
-void Vec3_Add(void *, const void *, const void *);
-void GroupVector_FindMotionSegmentAtTime(int, int *, float *, float *, void *, float);
-void GroupVector_SampleBezierMotion(int, int, SplineArg *, float);
-void GroupMotion_SampleCubicVectorPair(int, char *, SplineArg *, float);
-void GroupVector_InterpolatePlanarDirection(int, char *, SplineArg *);
+void Vec3_Subtract(void*, const void*, const void*);
+void Vec3_Scale(void*, const void*, float);
+void Vec3_Add(void*, const void*, const void*);
+void GroupVector_FindMotionSegmentAtTime(int, int*, float*, float*, void*, float);
+void GroupVector_SampleBezierMotion(int, int, SplineArg*, float);
+void GroupMotion_SampleCubicVectorPair(int, char*, SplineArg*, float);
+void GroupVector_InterpolatePlanarDirection(int, char*, SplineArg*);
 extern const float kFloat_0_GroupVector, kFloat_0_5_MotionCurve;
 
 // Integrate acceleration, constant speed and deceleration into script time.
 // The result has script-time units; multiplying by either track speed gives
 // distance along that track. Callers provide valid nonnegative phase durations.
-inline float IntegrateMotionScriptTime(GroupValues *values, float time) {
+inline float IntegrateMotionScriptTime(GroupValues* values, float time) {
     if (time <= values->accelerationTime) {
         if (kFloat_0_GroupVector != values->accelerationTime) {
             time *= time;
             time /= values->accelerationTime;
             return time * kFloat_0_5_MotionCurve;
-        } else return kFloat_0_GroupVector;
+        } else
+            return kFloat_0_GroupVector;
     } else if (time <= values->accelerationTime + values->cruiseTime) {
         return values->accelerationTime * kFloat_0_5_MotionCurve + (time - values->accelerationTime);
     } else {
         float remaining = values->duration - time;
         float decel = remaining * remaining / values->decelerationTime;
-        return values->decelerationTime * kFloat_0_5_MotionCurve + (values->accelerationTime * kFloat_0_5_MotionCurve + values->cruiseTime) - decel * kFloat_0_5_MotionCurve;
+        return values->decelerationTime * kFloat_0_5_MotionCurve +
+               (values->accelerationTime * kFloat_0_5_MotionCurve + values->cruiseTime) -
+               decel * kFloat_0_5_MotionCurve;
     }
 }
 
 struct RemovalBase {
-    SmallItem *data;
+    SmallItem* data;
     unsigned size, capacity;
     // Clear logical key size and free the nested allocation during group removal.
     ~RemovalBase() {
         if (data) {
-            size -= ((char *)data + size) - (char *)data;
+            size -= ((char*)data + size) - (char*)data;
             s_vcgAllocatorCallbacks.destroy(data);
         }
     }
@@ -526,22 +625,23 @@ struct RemovalGroup {
     RemovalBuffer buffer;
 };
 struct RemovalVector {
-    RemovalGroup *data;
+    RemovalGroup* data;
     unsigned size, capacity;
 };
 
 struct ClearRecords {
-    void *unknown;
+    void* unknown;
     int size;
-    RemovalGroup *data;
+    RemovalGroup* data;
     unsigned used;
 };
 
-float Vec3_Length(const void *);
+float Vec3_Length(const void*);
 extern const float kCameraTrackSpeedNumeratorFactor;
 
 extern const float kFloat_1_Spline;
-extern float kFloat_neg3_1415927_AngleInterpolation, kFloat_6_2831855_AngleInterpolation, kFloat_3_1415927_AngleInterpolation;
+extern float kFloat_neg3_1415927_AngleInterpolation, kFloat_6_2831855_AngleInterpolation,
+    kFloat_3_1415927_AngleInterpolation;
 
 extern const float kFloat_0_805E0218;
 extern float s_motionFadeTwoPiCache;
@@ -560,7 +660,7 @@ struct AllocTag {
 };
 
 struct VecStore {
-    MotionVec* data;   // 0x00
+    MotionVec* data; // 0x00
     u32 size;        // 0x04
     u32 cap;         // 0x08
     // Clear logical size and free the owned three-word-vector allocation.
@@ -592,33 +692,33 @@ struct VecGuard_u8023A378 {
 };
 
 struct SplineCfg {
-    u32 headerWord;       // 0x00
-    s32 count;       // 0x04
+    u32 headerWord; // 0x00
+    s32 count;      // 0x04
     char pad08[0x10];
-    f32 firstTrackLength;         // 0x18
-    f32 firstTrackSpeed;         // 0x1c
-    f32 secondTrackLength;         // 0x20
-    f32 secondTrackSpeed;         // 0x24
+    f32 firstTrackLength;  // 0x18
+    f32 firstTrackSpeed;   // 0x1c
+    f32 secondTrackLength; // 0x20
+    f32 secondTrackSpeed;  // 0x24
 };
 
 struct SplineArg {
-    s32 index;       // 0x00
-    f32 value;       // 0x04
-    SplineCfg* cfg;  // 0x08
-    char* points;    // 0x0c
+    s32 index;      // 0x00
+    f32 value;      // 0x04
+    SplineCfg* cfg; // 0x08
+    char* points;   // 0x0c
 };
 
 struct ErrObj {
-    u32 vptr;        // 0x00
-    char* msg;       // 0x04
-    void* rep;       // 0x08
+    u32 vptr;  // 0x00
+    char* msg; // 0x04
+    void* rep; // 0x08
 };
 
 struct Rep16 {
-    u32 vptr;        // 0x00
-    u32 refs;        // 0x04
-    u32 cap; // 0x08: second shared-control counter, not vector capacity (name is provisional)
-    char* data;      // 0x0c
+    u32 vptr;   // 0x00
+    u32 refs;   // 0x04
+    u32 cap;    // 0x08: second shared-control counter, not vector capacity (name is provisional)
+    char* data; // 0x0c
     // Adopt exception text and initialize both shared-control counters to one.
     Rep16(char* p) : refs(1), cap(1) {
         vptr = (u32)s_sharedCharDeleterVtable;
@@ -632,7 +732,10 @@ struct MsgGuard {
     // Own text until shared-control construction succeeds.
     MsgGuard(char* p, volatile char* a) : data(p), alloc(a) {}
     // Free text if its ownership was not transferred.
-    ~MsgGuard() { if (data) __dla__FPv(data); }
+    ~MsgGuard() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 
 struct ErrBase : ErrObj {
@@ -651,7 +754,9 @@ struct ErrBase : ErrObj {
         strcpy(msg, s);
     }
     // Forward destruction to the retained exception base runtime.
-    ~ErrBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~ErrBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 
 struct LengthErr : ErrBase {
@@ -691,9 +796,13 @@ struct OwnerStore {
 template <class T> class vcg_allocator {
 public:
     // Return vector storage through the VCG allocator that created it.
-    void deallocate(T* p, unsigned long) { s_vcgAllocatorCallbacks.destroy(p); }
+    void deallocate(T* p, unsigned long) {
+        s_vcgAllocatorCallbacks.destroy(p);
+    }
 };
-struct VcgRecord { u32 words[3]; };
+struct VcgRecord {
+    u32 words[3];
+};
 typedef std::vector<VcgRecord, vcg_allocator<VcgRecord> > VcgVector;
 // Release the nested vector allocation owned by one motion group.
 inline void destroyOwner(StoreOwner* p) {
@@ -703,9 +812,7 @@ inline void destroyOwner(StoreOwner* p) {
 }
 
 struct SharedResource {
-    CW_BITS2(
-        u32 refs : 16,
-        u32 flags : 16)
+    CW_BITS2(u32 refs : 16, u32 flags : 16)
 };
 
 struct ResourceState {
@@ -728,14 +835,14 @@ struct ResourceState {
 
 struct ResourceConfig {
     u32 unknown[2];
-    u32 arg0, arg1;
+    u32 width, height;
     u32 tail[2];
 };
 
 struct ResourceInfo {
-    u32 arg3;
+    u32 format;
     char pad04[0x18];
-    u32 arg0, arg1;
+    u32 width, height;
 };
 
 struct ResourceBuffer {
@@ -754,8 +861,7 @@ s32 Texture_UnlockLevel(SharedResource*, s32);
 
 extern unsigned char s_releaseFadeResourceOnCompletion;
 extern const float kFloat_255_Fade;
-void Engine_CopyFramebufferToTexture(s32, s32, SharedResource*, s32, s32, s32, s32, s32,
-                 s32, s32, s32, f32);
+void Engine_CopyFramebufferToTexture(s32, s32, SharedResource*, s32, s32, s32, s32, s32, s32, s32, s32, f32);
 
 // Lazily create the fade framebuffer texture and optionally clear its pixels.
 // Returns 0 on create/description/lock/unlock failure. A texture already stored
@@ -767,14 +873,19 @@ inline s32 acquireResource(ResourceState* p) {
     ResourceInfo info;
     ResourceConfig config;
     ResourceBuffer buffer;
-    if (p->resource) return 1;
+    if (p->resource)
+        return 1;
     Engine_GetViewport(&config);
-    if (!Texture_Create2D(config.arg0, config.arg1, 1, 0, kFramebufferTextureFormat, 0, p, 0)) return 0;
+    if (!Texture_Create2D(config.width, config.height, 1, 0, kFramebufferTextureFormat, 0, p, 0))
+        return 0;
     if (s_clearFramebufferTextureOnCreate) {
-        if (!Texture_GetLevelDescription(p->resource, 0, &info)) return 0;
-        if (!Texture_LockLevel(p->resource, 0, &buffer, 0, 0)) return 0;
-        Memory_Clear(buffer.data, Texture_CalculateMipStorageSize(info.arg0, info.arg1, 1, info.arg3));
-        if (!Texture_UnlockLevel(p->resource, 0)) return 0;
+        if (!Texture_GetLevelDescription(p->resource, 0, &info))
+            return 0;
+        if (!Texture_LockLevel(p->resource, 0, &buffer, 0, 0))
+            return 0;
+        Memory_Clear(buffer.data, Texture_CalculateMipStorageSize(info.width, info.height, 1, info.format));
+        if (!Texture_UnlockLevel(p->resource, 0))
+            return 0;
     }
     s_fadeOverlayTextureReady = 1;
     return 1;
@@ -783,16 +894,19 @@ inline s32 acquireResource(ResourceState* p) {
 // Optionally clear the new framebuffer texture, then publish its ready flag.
 inline void FinishResourceLoad(ResourceState* p, ResourceInfo* info, ResourceBuffer* buffer) {
     if (s_clearFramebufferTextureOnCreate) {
-        if (!Texture_GetLevelDescription(p->resource, 0, info)) return;
-        if (!Texture_LockLevel(p->resource, 0, buffer, 0, 0)) return;
-        Memory_Clear(buffer->data, Texture_CalculateMipStorageSize(info->arg0, info->arg1, 1, info->arg3));
-        if (!Texture_UnlockLevel(p->resource, 0)) return;
+        if (!Texture_GetLevelDescription(p->resource, 0, info))
+            return;
+        if (!Texture_LockLevel(p->resource, 0, buffer, 0, 0))
+            return;
+        Memory_Clear(buffer->data, Texture_CalculateMipStorageSize(info->width, info->height, 1, info->format));
+        if (!Texture_UnlockLevel(p->resource, 0))
+            return;
     }
     s_fadeOverlayTextureReady = 1;
 }
 
 // Clear and release the vector's storage, then optionally delete its wrapper.
-void *GroupVector_dtor(void *self, int shouldDelete) {
+void* GroupVector_dtor(void* self, int shouldDelete) {
     if (self) {
         (*(void**)&((GroupVector*)self)->size) = 0;
         if (self) {
@@ -813,31 +927,25 @@ void VCGPlayer_InitAngleCache() {
 }
 
 // Initialize a stopped camera-motion player at group zero and time zero.
-void *CVCGPlayer_Ctor(void *self) {
-    CVCGFile_Ctor(self);
+CVCGPlayer::CVCGPlayer() {
+    ((CVCGFile*)this)->__ct();
     float value = kFloat_0_VCGPlayer;
-    *(void **)self = __vt__10CVCGPlayer;
-    AsCVCGPlayer(self)->groupIndex = 0;
-    AsCVCGPlayer(self)->playbackTime = value;
-    AsCVCGPlayer(self)->stopped = 1;
-    return self;
+    *(void**)this = __vt__10CVCGPlayer;
+    groupIndex = 0;
+    playbackTime = value;
+    stopped = 1;
 }
 
 // Destroy the camera-file base and optionally delete the player.
-void *CVCGPlayer_dtor(void *self, int shouldDelete) {
-    if (self) {
-        CVCGFile_dtor(self, 0);
-        if (shouldDelete > 0)
-            __dl__FPv(self);
-    }
-    return self;
+CVCGPlayer::~CVCGPlayer() {
+    __dt__8CVCGFileFv(this, 0);
 }
 
-// Sample the active group into output (a MotionItem address encoded as an int).
-// Return the underlying sampler's 0/1 result; caller retains output storage.
-int CVCGPlayer_SampleCurrentMotion(void *self, int output) {
-    float time = AsCVCGPlayer(self)->playbackTime;
-    return GroupVector_SampleMotionAtTime((GroupRecords *)self, (MotionItem *)output, AsCVCGPlayer(self)->groupIndex, time);
+// Sample the active group at the current playback time into output.
+// Returns the sampler's 0/1 result; the caller keeps ownership of output.
+int CVCGPlayer::SampleCurrentMotion(void* output) {
+    float time = playbackTime;
+    return GroupVector_SampleMotionAtTime((GroupRecords*)this, (MotionItem*)output, groupIndex, time);
 }
 
 // Advance one time unit, stopping on the last frame or restarting a looping group.
@@ -847,24 +955,24 @@ int CVCGPlayer_SampleCurrentMotion(void *self, int output) {
 // all other values keep advancing. No leftover time is carried across a loop.
 // No dt is accepted here. Preserve increment-before-boundary-test and the
 // shared step/end-offset role when introducing a later frame-rate setting.
-int CVCGPlayer_AdvancePlayback(void *self) {
+int CVCGPlayer::AdvancePlayback() {
     char groupValues[0x28];
-    if (AsCVCGPlayer(self)->stopped == 0) {
-        float value = AsCVCGPlayer(self)->playbackTime;
-        AsCVCGPlayer(self)->playbackTime = value + kFloat_1_VCGPlayer;
-        void *groupIndex = (*(void **)&AsCVCGPlayer(self)->groupIndex);
-        float *durationOutput = (float *)groupValues;
-        GroupVector_GetValues((GroupRecords *)self, (GroupValues *)durationOutput, (int)groupIndex);
+    if (stopped == 0) {
+        float value = playbackTime;
+        playbackTime = value + kFloat_1_VCGPlayer;
+        void* groupIndex = (*(void**)&this->groupIndex);
+        float* durationOutput = (float*)groupValues;
+        GroupVector_GetValues((GroupRecords*)this, (GroupValues*)durationOutput, (int)groupIndex);
         float duration = *durationOutput;
-        if (duration <= AsCVCGPlayer(self)->playbackTime) {
-            int loopMode = AsCVCGPlayer(self)->loopMode;
+        if (duration <= playbackTime) {
+            int loopMode = this->loopMode;
             if (loopMode == kStopAtGroupEnd) {
                 float delta = kFloat_1_VCGPlayer;
-                AsCVCGPlayer(self)->stopped = 1;
+                stopped = 1;
                 float newValue = duration - delta;
-                AsCVCGPlayer(self)->playbackTime = newValue;
+                playbackTime = newValue;
             } else if (loopMode == kRestartGroupAtEnd) {
-                AsCVCGPlayer(self)->playbackTime = kFloat_0_VCGPlayer;
+                playbackTime = kFloat_0_VCGPlayer;
             }
         }
     }
@@ -872,20 +980,19 @@ int CVCGPlayer_AdvancePlayback(void *self) {
 }
 
 // Validate a group, select its loop mode, and restart playback at time zero.
-// groupIndex is a NONNEGATIVE integer passed through a pointer-shaped ABI, not
-// a pointer to an index. Returns 0 with playback unchanged for index>=count;
+// index is a nonnegative group number, not a pointer. Returns 0 with playback unchanged for index>=count;
 // negative indices are not rejected and are invalid inputs. See loop-mode map
 // above. Returns 1 after publication; no allocation or resource transfer occurs.
-int CVCGPlayer_StartGroupPlayback(void *self, void *groupIndex, int loopMode) {
+int CVCGPlayer::StartGroupPlayback(unsigned int index, int mode) {
     char groupValues[0x28];
-    int result = GroupVector_GetValues((GroupRecords *)self, (GroupValues *)groupValues, (int)groupIndex);
+    int result = GroupVector_GetValues((GroupRecords*)this, (GroupValues*)groupValues, (int)index);
     if (!result)
         return 0;
     float z = kFloat_0_VCGPlayer;
-    (*(void **)&AsCVCGPlayer(self)->groupIndex) = groupIndex;
-    AsCVCGPlayer(self)->playbackTime = z;
-    AsCVCGPlayer(self)->stopped = 0;
-    AsCVCGPlayer(self)->loopMode = loopMode;
+    groupIndex = (int)index;
+    playbackTime = z;
+    stopped = 0;
+    loopMode = mode;
     return 1;
 }
 
@@ -897,14 +1004,14 @@ int CVCGPlayer_StartGroupPlayback(void *self, void *groupIndex, int loopMode) {
 // Copy the selected group, playback time, stopped flag and loop mode to the caller.
 // output is nullable PlaybackState[1] (16 bytes); null returns 0 unchanged,
 // otherwise writes all four fields and returns 1. No pointer to internal state escapes.
-int CVCGPlayer_GetPlaybackState(void *self, void *output) {
+int CVCGPlayer::GetPlaybackState(void* output) {
     if (output) {
         int loopMode, stopped, groupIndex;
         float playbackTime;
-        groupIndex = AsCVCGPlayer(self)->groupIndex;
-        playbackTime = AsCVCGPlayer(self)->playbackTime;
-        stopped = AsCVCGPlayer(self)->stopped;
-        loopMode = AsCVCGPlayer(self)->loopMode;
+        groupIndex = this->groupIndex;
+        playbackTime = this->playbackTime;
+        stopped = this->stopped;
+        loopMode = this->loopMode;
         ((PlaybackState*)output)->groupIndex = groupIndex;
         ((PlaybackState*)output)->time = playbackTime;
         ((PlaybackState*)output)->stopped = stopped;
@@ -921,12 +1028,12 @@ void VCGSource_InitAngleCache() {
 }
 
 // Initialize an empty camera-motion group source.
-void CVCGSource_Ctor(void *self) {
-    (*(int*)&AsCVCGSource(self)->entries) = 0;
-    *(void **)self = s_vcgSourceVtable;
-    AsCVCGSource(self)->entryCount = 0;
-    AsCVCGSource(self)->entryCapacity = 0;
-    AsCVCGSource(self)->groupCount = 0;
+CVCGSource::CVCGSource() {
+    (*(int*)&entries) = 0;
+    *(void**)this = s_vcgSourceVtable;
+    entryCount = 0;
+    entryCapacity = 0;
+    groupCount = 0;
 }
 
 #pragma push
@@ -940,110 +1047,105 @@ void CVCGSource_Ctor(void *self) {
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
 // Destroy every group's nested point storage and release the source vector.
-void *CVCGSource_dtor(void *self, int shouldDelete) {
-    if (self) {
-        // Phase 1: clear logical key counts before reverse destruction of constructed groups.
-        {
-            int offset;
-            char *item;
-            int i;
-            item = s_vcgSourceVtable;
-            i = 0;
-            offset = 0;
-            *(void **)self = item;
-            while (i < AsCVCGSource(self)->groupCount) {
-                char *items = (*(char**)&AsCVCGSource(self)->entries);
-                ++i;
-                item = items + offset;
-                offset += kMotionGroupBytes;
-                int n = *(int *)(item + kGroupKeyCountOffset);
-                char *data = *(char **)(item + kGroupKeysOffset);
-                *(int *)(item + kGroupKeyCountOffset) -= (data + n) - data;
-            }
+CVCGSource::~CVCGSource() {
+    // Phase 1: clear logical key counts before reverse destruction of constructed groups.
+    {
+        int offset;
+        char* item;
+        int i;
+        item = s_vcgSourceVtable;
+        i = 0;
+        offset = 0;
+        *(void**)this = item;
+        while (i < groupCount) {
+            char* items = (*(char**)&entries);
+            ++i;
+            item = items + offset;
+            offset += kMotionGroupBytes;
+            int n = *(int*)(item + kGroupKeyCountOffset);
+            char* data = *(char**)(item + kGroupKeysOffset);
+            *(int*)(item + kGroupKeyCountOffset) -= (data + n) - data;
         }
+    }
 
-        // Phase 2: destroy constructed groups in reverse order. Nested +0x38
-        // guards model destructor layers; they are not pointer-validity checks.
-        {
-            VTableSlot *vt;
-            char *cur;
-            int used;
-            int bytes;
-            char *items;
-            used = AsCVCGSource(self)->entryCount;
-            vt = &s_vcgAllocatorCallbacks;
-            items = (*(char**)&AsCVCGSource(self)->entries);
-            bytes = used * kMotionGroupBytes;
-            AsCVCGSource(self)->entryCount -= used;
-            cur = items + bytes;
-            while (used != 0) {
-                if ((cur -= kMotionGroupBytes) != 0) {
+    // Phase 2: destroy constructed groups in reverse order. Nested +0x38
+    // guards model destructor layers; they are not pointer-validity checks.
+    {
+        VTableSlot* vt;
+        char* cur;
+        int used;
+        int bytes;
+        char* items;
+        used = entryCount;
+        vt = &s_vcgAllocatorCallbacks;
+        items = (*(char**)&entries);
+        bytes = used * kMotionGroupBytes;
+        entryCount -= used;
+        cur = items + bytes;
+        while (used != 0) {
+            if ((cur -= kMotionGroupBytes) != 0) {
+                if (cur + kGroupKeysOffset != 0) {
                     if (cur + kGroupKeysOffset != 0) {
                         if (cur + kGroupKeysOffset != 0) {
                             if (cur + kGroupKeysOffset != 0) {
-                                if (cur + kGroupKeysOffset != 0) {
-                                    if (*(void **)(cur + kGroupKeysOffset) != 0) {
-                                        int n = *(int *)(cur + kGroupKeyCountOffset);
-                                        char *data = *(char **)(cur + kGroupKeysOffset);
-                                        *(int *)(cur + kGroupKeyCountOffset) -= (data + n) - data;
-                                        vt->destroy(*(void **)(cur + kGroupKeysOffset));
-                                    }
+                                if (*(void**)(cur + kGroupKeysOffset) != 0) {
+                                    int n = *(int*)(cur + kGroupKeyCountOffset);
+                                    char* data = *(char**)(cur + kGroupKeysOffset);
+                                    *(int*)(cur + kGroupKeyCountOffset) -= (data + n) - data;
+                                    vt->destroy(*(void**)(cur + kGroupKeysOffset));
                                 }
                             }
                         }
                     }
                 }
-                --used;
             }
+            --used;
         }
+    }
 
-        // Nested buffers are released; clear the logical count and release the
-        // outer vector through its retained destructor layers.
-        AsCVCGSource(self)->groupCount = 0;
-        if ((void *)((char *)self + 8)) {
-            if ((void *)((char *)self + 8)) {
-                if ((void *)((char *)self + 8)) {
-                    if ((void *)((char *)self + 8)) {
-                        int bytes;
-                        char *items = (*(char**)&AsCVCGSource(self)->entries);
-                        if (items != 0) {
-                            char *cur;
-                            int used;
-                            VTableSlot *vt;
-                            used = AsCVCGSource(self)->entryCount;
-                            vt = &s_vcgAllocatorCallbacks;
-                            bytes = used * kMotionGroupBytes;
-                            AsCVCGSource(self)->entryCount -= used;
-                            cur = items + bytes;
-                            while (used != 0) {
-                                if ((cur -= kMotionGroupBytes) != 0) {
+    // Nested buffers are released; clear the logical count and release the
+    // outer vector through its retained destructor layers.
+    groupCount = 0;
+    if ((void*)((char*)this + 8)) {
+        if ((void*)((char*)this + 8)) {
+            if ((void*)((char*)this + 8)) {
+                if ((void*)((char*)this + 8)) {
+                    int bytes;
+                    char* items = (*(char**)&entries);
+                    if (items != 0) {
+                        char* cur;
+                        int used;
+                        VTableSlot* vt;
+                        used = entryCount;
+                        vt = &s_vcgAllocatorCallbacks;
+                        bytes = used * kMotionGroupBytes;
+                        entryCount -= used;
+                        cur = items + bytes;
+                        while (used != 0) {
+                            if ((cur -= kMotionGroupBytes) != 0) {
+                                if (cur + kGroupKeysOffset != 0) {
                                     if (cur + kGroupKeysOffset != 0) {
                                         if (cur + kGroupKeysOffset != 0) {
                                             if (cur + kGroupKeysOffset != 0) {
-                                                if (cur + kGroupKeysOffset != 0) {
-                                                    if (*(void **)(cur + kGroupKeysOffset) != 0) {
-                                                        int n = *(int *)(cur + kGroupKeyCountOffset);
-                                                        char *data = *(char **)(cur + kGroupKeysOffset);
-                                                        *(int *)(cur + kGroupKeyCountOffset) -= (data + n) - data;
-                                                        vt->destroy(*(void **)(cur + kGroupKeysOffset));
-                                                    }
+                                                if (*(void**)(cur + kGroupKeysOffset) != 0) {
+                                                    int n = *(int*)(cur + kGroupKeyCountOffset);
+                                                    char* data = *(char**)(cur + kGroupKeysOffset);
+                                                    *(int*)(cur + kGroupKeyCountOffset) -= (data + n) - data;
+                                                    vt->destroy(*(void**)(cur + kGroupKeysOffset));
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                --used;
                             }
-                            s_vcgAllocatorCallbacks.destroy(AsCVCGSource(self)->entries);
+                            --used;
                         }
+                        s_vcgAllocatorCallbacks.destroy(entries);
                     }
                 }
             }
         }
-        if (shouldDelete > 0)
-            __dl__FPv(self);
     }
-    return self;
 }
 #pragma pop
 
@@ -1068,26 +1170,28 @@ void *CVCGSource_dtor(void *self, int shouldDelete) {
 // count keys, not bytes. Zero keys can be parsed but cannot be sampled; one key
 // uses direct-copy sampling, >=2 uses interpolation. Neither storage capacity
 // nor representability establishes valid durations/phases/denominators above.
-int CameraScript_ParseGroupData(Manager *self, PackedCameraScript *file) {
+int CameraScript_ParseGroupData(Manager* self, PackedCameraScript* file) {
     // Trust the packed file's offsets/counts: no file length or signature is
     // checked here. The input stays borrowed; all motion keys are copied.
-    PackedCameraGroup *record;
-    unsigned *groupFileOffsets;
+    PackedCameraGroup* record;
+    unsigned* groupFileOffsets;
     unsigned groupByteOffset;
     int groupIndex;
     // Resize the outer group vector to match the file's logical group count.
     self->groupCount = file->groupCount;
     unsigned int oldGroupCount = self->storedGroupCount;
     unsigned int fileGroupCount = file->groupCount;
-    if (fileGroupCount > oldGroupCount) CameraMotionGroupVector_AppendDefaultGroups((char *)self + 8, fileGroupCount - oldGroupCount);
-    else if (fileGroupCount < oldGroupCount) CameraMotionGroupVector_RemoveBackGroups((RemovalVector *)((char *)self + 8), oldGroupCount - fileGroupCount);
+    if (fileGroupCount > oldGroupCount)
+        CameraMotionGroupVector_AppendDefaultGroups((char*)self + 8, fileGroupCount - oldGroupCount);
+    else if (fileGroupCount < oldGroupCount)
+        CameraMotionGroupVector_RemoveBackGroups((RemovalVector*)((char*)self + 8), oldGroupCount - fileGroupCount);
     groupFileOffsets = file->groupOffsets;
     for (groupIndex = 0; groupIndex < (int)file->groupCount; ++groupIndex) {
         unsigned int fileByteOffset = groupFileOffsets[groupIndex];
         groupByteOffset = GroupOffset(groupIndex);
         record = (PackedCameraGroup*)((char*)file + fileByteOffset);
         // Preserve the packed header and expand timing fields to runtime floats.
-        PackedCameraGroup *dst = (PackedCameraGroup*)((char*)self->groups + groupByteOffset);
+        PackedCameraGroup* dst = (PackedCameraGroup*)((char*)self->groups + groupByteOffset);
         dst->formatBytes[0] = record->formatBytes[0];
         dst->formatBytes[1] = record->formatBytes[1];
         dst->formatBytes[2] = record->formatBytes[2];
@@ -1098,35 +1202,35 @@ int CameraScript_ParseGroupData(Manager *self, PackedCameraScript *file) {
         dst->accelerationTime = record->accelerationTime;
         dst->cruiseTime = record->cruiseTime;
         dst->decelerationTime = record->decelerationTime;
-        ((ParsedGroup *)((char *)self->groups + groupByteOffset))->duration = (float)record->duration;
-        ((ParsedGroup *)((char *)self->groups + groupByteOffset))->keyCount = record->keyCount;
-        ((ParsedGroup *)((char *)self->groups + groupByteOffset))->accelerationTime = (float)record->accelerationTime;
-        ((ParsedGroup *)((char *)self->groups + groupByteOffset))->cruiseTime = (float)record->cruiseTime;
-        ((ParsedGroup *)((char *)self->groups + groupByteOffset))->decelerationTime = (float)record->decelerationTime;
+        ((ParsedGroup*)((char*)self->groups + groupByteOffset))->duration = (float)record->duration;
+        ((ParsedGroup*)((char*)self->groups + groupByteOffset))->keyCount = record->keyCount;
+        ((ParsedGroup*)((char*)self->groups + groupByteOffset))->accelerationTime = (float)record->accelerationTime;
+        ((ParsedGroup*)((char*)self->groups + groupByteOffset))->cruiseTime = (float)record->cruiseTime;
+        ((ParsedGroup*)((char*)self->groups + groupByteOffset))->decelerationTime = (float)record->decelerationTime;
         if (EventTiming_IsDurationScalingEnabled() != 0) {
             float s = kFloat_0_8333333_CameraDuration;
-            ((ParsedGroup *)((char *)self->groups + groupByteOffset))->duration *= s;
-            ((ParsedGroup *)((char *)self->groups + groupByteOffset))->accelerationTime *= s;
-            ((ParsedGroup *)((char *)self->groups + groupByteOffset))->cruiseTime *= s;
-            ((ParsedGroup *)((char *)self->groups + groupByteOffset))->decelerationTime *= s;
+            ((ParsedGroup*)((char*)self->groups + groupByteOffset))->duration *= s;
+            ((ParsedGroup*)((char*)self->groups + groupByteOffset))->accelerationTime *= s;
+            ((ParsedGroup*)((char*)self->groups + groupByteOffset))->cruiseTime *= s;
+            ((ParsedGroup*)((char*)self->groups + groupByteOffset))->decelerationTime *= s;
         }
         switch (record->interpolation) {
         case 0:
-            ((ParsedGroup *)((char *)self->groups + groupByteOffset))->interpolation = 0;
+            ((ParsedGroup*)((char*)self->groups + groupByteOffset))->interpolation = 0;
             break;
         case 1:
-            ((ParsedGroup *)((char *)self->groups + groupByteOffset))->interpolation = 1;
+            ((ParsedGroup*)((char*)self->groups + groupByteOffset))->interpolation = 1;
             break;
         case 2:
-            ((ParsedGroup *)((char *)self->groups + groupByteOffset))->interpolation = 2;
+            ((ParsedGroup*)((char*)self->groups + groupByteOffset))->interpolation = 2;
             break;
         default:
-            ((ParsedGroup *)((char *)self->groups + groupByteOffset))->interpolation = 0;
+            ((ParsedGroup*)((char*)self->groups + groupByteOffset))->interpolation = 0;
             break;
         }
         // Resize this group's owned key buffer. During growth, temp describes
         // the constructed suffix plus the copied prefix until the allocation swap.
-        ParsedGroup *g = (ParsedGroup *)((char *)self->groups + groupByteOffset);
+        ParsedGroup* g = (ParsedGroup*)((char*)self->groups + groupByteOffset);
         unsigned int requiredKeys = (unsigned int)record->keyCount;
         if (requiredKeys > g->size) {
             unsigned int additionalKeys = requiredKeys - g->size;
@@ -1137,7 +1241,7 @@ int CameraScript_ParseGroupData(Manager *self, PackedCameraScript *file) {
             }
             if (additionalKeys <= cap && g->size <= cap - additionalKeys) {
                 PointAllocator allocator;
-                Pt *p = g->data + g->size;
+                Pt* p = g->data + g->size;
                 unsigned int cnt = additionalKeys;
                 while (cnt != 0) {
                     Pt tmp;
@@ -1146,43 +1250,42 @@ int CameraScript_ParseGroupData(Manager *self, PackedCameraScript *file) {
                     ++g->size;
                     --cnt;
                 }
-            }
-            else {
+            } else {
                 unsigned need = g->size + additionalKeys - g->cap;
                 PointBuffer temp(&g->cap);
                 unsigned newCapacity = GrowthCapacity(g->cap, need);
-                temp.data = (Pt *)AllocatePoints(newCapacity);
+                temp.data = (Pt*)AllocatePoints(newCapacity);
                 temp.cap = newCapacity;
                 temp.offset = g->size;
-                Pt *p = temp.data + g->size + temp.size;
+                Pt* p = temp.data + g->size + temp.size;
                 {
-                PointAllocator allocator;
-                while (additionalKeys != 0) {
-                    Pt tmp;
-                    new (p) Pt(tmp);
-                    ++temp.size;
-                    ++p;
-                    --additionalKeys;
+                    PointAllocator allocator;
+                    while (additionalKeys != 0) {
+                        Pt tmp;
+                        new (p) Pt(tmp);
+                        ++temp.size;
+                        ++p;
+                        --additionalKeys;
+                    }
                 }
-                }
-                Pt *src = g->data + g->size;
-                Pt *dst = temp.data + temp.offset;
+                Pt* src = g->data + g->size;
+                Pt* dst = temp.data + temp.offset;
                 {
-                PointAllocator allocator;
-                while (src > g->data) {
-                    --dst;
-                    --src;
-                    new (dst) Pt(*src);
-                    --temp.offset;
-                    ++temp.size;
-                }
+                    PointAllocator allocator;
+                    while (src > g->data) {
+                        --dst;
+                        --src;
+                        new (dst) Pt(*src);
+                        --temp.offset;
+                        ++temp.size;
+                    }
                 }
                 g->size = 0;
                 unsigned constructedKeys = temp.size;
                 unsigned oldCapacity = g->cap;
-                Pt *fresh = temp.data;
+                Pt* fresh = temp.data;
                 g->cap = temp.cap;
-                Pt *oldKeyData = g->data;
+                Pt* oldKeyData = g->data;
                 g->data = fresh;
                 temp.cap = oldCapacity;
                 temp.data = oldKeyData;
@@ -1195,12 +1298,12 @@ int CameraScript_ParseGroupData(Manager *self, PackedCameraScript *file) {
             g->size -= remove;
         }
         // Copy packed keys after the header, then derive both distance/speed pairs.
-        MotionItem *incoming = (MotionItem*)((char*)record + sizeof(PackedCameraGroup));
+        MotionItem* incoming = (MotionItem*)((char*)record + sizeof(PackedCameraGroup));
         for (int j = 0; j < (int)record->keyCount; ++j, ++incoming) {
-            *(MotionItem *)((char *)((ParsedGroup *)((char *)self->groups + groupByteOffset))->data + PointOffset(j)) =
+            *(MotionItem*)((char*)((ParsedGroup*)((char*)self->groups + groupByteOffset))->data + PointOffset(j)) =
                 *incoming;
         }
-        CameraMotionGroupVector_ComputeTrackLengths((GroupRecords *)self, groupIndex);
+        CameraMotionGroupVector_ComputeTrackLengths((GroupRecords*)self, groupIndex);
     }
     return 1;
 }
@@ -1208,9 +1311,12 @@ int CameraScript_ParseGroupData(Manager *self, PackedCameraScript *file) {
 // Choose group-vector capacity with overflow protection.
 inline unsigned GroupGrowth(unsigned cp, unsigned need) {
     PointAllocator allocator;
-    if (need > kMotionGroupLimit - cp) PointVectorThrow();
-    if (cp < kMotionGroupGrowthTier1) return cp + VectorMax((cp + 1) * 3 / 5, need);
-    if (cp < kMotionGroupGrowthTier2) return cp + VectorMax((cp + 1) / 2, need);
+    if (need > kMotionGroupLimit - cp)
+        PointVectorThrow();
+    if (cp < kMotionGroupGrowthTier1)
+        return cp + VectorMax((cp + 1) * 3 / 5, need);
+    if (cp < kMotionGroupGrowthTier2)
+        return cp + VectorMax((cp + 1) / 2, need);
     return kMotionGroupLimit;
 }
 
@@ -1230,19 +1336,19 @@ inline unsigned GroupGrowth(unsigned cp, unsigned need) {
 // a count, not bytes; invalid/overflow growth throws before publication. Guards
 // build the suffix and deep-copy the prefix before swapping allocation ownership.
 // Key allocations remain per-group; outer capacity is not a playback duration.
-void CameraMotionGroupVector_AppendDefaultGroups(void *vector, unsigned int additionalGroups) {
-    register GroupVector *v = (GroupVector *)vector;
+void CameraMotionGroupVector_AppendDefaultGroups(void* vector, unsigned int additionalGroups) {
+    register GroupVector* v = (GroupVector*)vector;
     PointAllocator allocator;
 
     // 0x8023B114: Finish in-place insertion before entering the growth transaction.
     do {
         if (additionalGroups > v->capacity || v->size > v->capacity - additionalGroups) {
             unsigned needed = v->size + additionalGroups - v->capacity;
-            unsigned cp = *(volatile unsigned *)&v->capacity;
+            unsigned cp = *(volatile unsigned*)&v->capacity;
             GroupGrowth(cp, needed);
             break;
         } else {
-            Group *p = v->data + v->size;
+            Group* p = v->data + v->size;
             PointAllocator fillAllocator;
             while (additionalGroups != 0) {
                 {
@@ -1261,7 +1367,8 @@ void CameraMotionGroupVector_AppendDefaultGroups(void *vector, unsigned int addi
 
         GroupBuffer temp(&v->capacity);
         unsigned oldCapacityForGrowth = v->capacity;
-        if (needed > kMotionGroupLimit - oldCapacityForGrowth) PointVectorThrow();
+        if (needed > kMotionGroupLimit - oldCapacityForGrowth)
+            PointVectorThrow();
         unsigned capacity;
         if (oldCapacityForGrowth < kMotionGroupGrowthTier1) {
             capacity = oldCapacityForGrowth + VectorMax((3 * (oldCapacityForGrowth + 1)) / 5, needed);
@@ -1271,12 +1378,13 @@ void CameraMotionGroupVector_AppendDefaultGroups(void *vector, unsigned int addi
             capacity = kMotionGroupLimit;
         }
         PointAllocator blockAllocator;
-        if (capacity > kMotionGroupLimit) PointVectorThrow();
+        if (capacity > kMotionGroupLimit)
+            PointVectorThrow();
 
-        temp.data = (Group *)s_vcgAllocatorCallbacks.allocate(capacity * 0x44);
+        temp.data = (Group*)s_vcgAllocatorCallbacks.allocate(capacity * 0x44);
         temp.capacity = capacity;
         temp.offset = v->size;
-        Group *p = temp.data + temp.offset + temp.size;
+        Group* p = temp.data + temp.offset + temp.size;
         PointAllocator fillAllocator;
         while (additionalGroups != 0) {
             {
@@ -1289,9 +1397,9 @@ void CameraMotionGroupVector_AppendDefaultGroups(void *vector, unsigned int addi
         }
 
         // New suffix is constructed; deep-copy the old prefix backwards.
-        Group *begin = v->data;
-        Group *src = begin + v->size;
-        Group *dst = temp.data + temp.offset;
+        Group* begin = v->data;
+        Group* src = begin + v->size;
+        Group* dst = temp.data + temp.offset;
         PointAllocator moveAllocator;
         while (src > begin) {
             --src;
@@ -1303,12 +1411,12 @@ void CameraMotionGroupVector_AppendDefaultGroups(void *vector, unsigned int addi
 
         // Commit only after construction succeeds; destroy the old nested keys
         // before the guard frees the old outer allocation.
-        Group *oldData = v->data;
-        Group *oldBegin = oldData + temp.offset;
-        Group *oldEnd = oldBegin + v->size;
+        Group* oldData = v->data;
+        Group* oldBegin = oldData + temp.offset;
+        Group* oldEnd = oldBegin + v->size;
         unsigned oldSize = v->size;
         unsigned oldCapacity = v->capacity;
-        Group *data = temp.data;
+        Group* data = temp.data;
         unsigned size = temp.size;
         unsigned newCapacity = temp.capacity;
         temp.data = oldData;
@@ -1319,7 +1427,7 @@ void CameraMotionGroupVector_AppendDefaultGroups(void *vector, unsigned int addi
         v->size = size;
         temp.size = oldSize;
         {
-            Group *p = oldEnd;
+            Group* p = oldEnd;
             while (p > oldBegin) {
                 --p;
                 p->~Group();
@@ -1332,9 +1440,9 @@ void CameraMotionGroupVector_AppendDefaultGroups(void *vector, unsigned int addi
 
 // Destroy the requested suffix of groups and reduce the vector size.
 // Requires 0 <= count <= v->size; releases nested keys but retains outer capacity.
-void CameraMotionGroupVector_RemoveBackGroups(RemovalVector *v, int count) {
+void CameraMotionGroupVector_RemoveBackGroups(RemovalVector* v, int count) {
     int remaining = count;
-    RemovalGroup *p = v->data + v->size;
+    RemovalGroup* p = v->data + v->size;
     v->size -= count;
     while (remaining != 0) {
         --p;
@@ -1361,67 +1469,78 @@ void CameraMotionGroupVector_RemoveBackGroups(RemovalVector *v, int count) {
 // uninitialized, then still calls direction/FOV interpolation: undefined reads,
 // possible invalid key accesses/partial output, not a clean return-0 failure.
 // No default pose or unchanged-output guarantee applies to that invalid input.
-int GroupVector_SampleMotionAtTime(GroupRecords *v, MotionItem *out, int index, float time) {
+int GroupVector_SampleMotionAtTime(GroupRecords* v, MotionItem* out, int index, float time) {
     GroupValues values;
-    if (!GetGroupValues(v, &values, index)) return 0;
-    if (time > values.duration) return 0;
+    if (!GetGroupValues(v, &values, index))
+        return 0;
+    if (time > values.duration)
+        return 0;
     if (values.keyCount == 1) {
-        if (index >= v->size) return 0;
-        GroupRecord *p = &v->data[index];
-        if (*(short *)(p->prefix + 6) <= 0) return 0;
-        *out = *(MotionItem *)p->buffer.data;
+        if (index >= v->size)
+            return 0;
+        GroupRecord* p = &v->data[index];
+        if (*(short*)(p->prefix + 6) <= 0)
+            return 0;
+        *out = *(MotionItem*)p->buffer.data;
         return 1;
     }
     // Integrate timing once, then dispatch position interpolation by group mode.
     float integratedTime = IntegrateMotionScriptTime(&values, time);
     MotionContext context;
-    GroupRecord *record = &v->data[index];
+    GroupRecord* record = &v->data[index];
     context.values = &values;
-    context.data = (MotionItem *)record->buffer.data;
-    switch (*(volatile int *)&context.values->interpolation) {
+    context.data = (MotionItem*)record->buffer.data;
+    switch (*(volatile int*)&context.values->interpolation) {
     case kLinearMotion: {
         int segment;
         float secondResidualDistance, firstResidualDistance;
         float secondTrackDelta[3], firstTrackDelta[3];
-        GroupVector_FindMotionSegmentAtTime((int)v, &segment, &firstResidualDistance, &secondResidualDistance, &context, integratedTime);
+        GroupVector_FindMotionSegmentAtTime((int)v, &segment, &firstResidualDistance, &secondResidualDistance, &context,
+                                            integratedTime);
         context.index = segment;
-        Vec3_Subtract(firstTrackDelta, &context.data[segment + 1].firstPositionTrack, &context.data[segment].firstPositionTrack);
+        Vec3_Subtract(firstTrackDelta, &context.data[segment + 1].firstPositionTrack,
+                      &context.data[segment].firstPositionTrack);
         Vec3_Scale(firstTrackDelta, firstTrackDelta, context.fraction);
         Vec3_Add(&out->firstPositionTrack, firstTrackDelta, &context.data[segment].firstPositionTrack);
-        Vec3_Subtract(secondTrackDelta, &context.data[segment + 1].secondPositionTrack, &context.data[segment].secondPositionTrack);
+        Vec3_Subtract(secondTrackDelta, &context.data[segment + 1].secondPositionTrack,
+                      &context.data[segment].secondPositionTrack);
         Vec3_Scale(secondTrackDelta, secondTrackDelta, context.fraction);
         Vec3_Add(&out->secondPositionTrack, secondTrackDelta, &context.data[segment].secondPositionTrack);
         break;
     }
-    case kBezierMotion: GroupVector_SampleBezierMotion((int)v, (int)out, (SplineArg *)&context, integratedTime); break;
-    case kCubicMotion: GroupMotion_SampleCubicVectorPair((int)v, (char *)out, (SplineArg *)&context, integratedTime); break;
+    case kBezierMotion:
+        GroupVector_SampleBezierMotion((int)v, (int)out, (SplineArg*)&context, integratedTime);
+        break;
+    case kCubicMotion:
+        GroupMotion_SampleCubicVectorPair((int)v, (char*)out, (SplineArg*)&context, integratedTime);
+        break;
     }
     // All modes publish a segment/fraction used by direction and scalar interpolation.
-    GroupVector_InterpolatePlanarDirection((int)v, (char *)out, (SplineArg *)&context);
-    MotionItem *p = &context.data[context.index];
+    GroupVector_InterpolatePlanarDirection((int)v, (char*)out, (SplineArg*)&context);
+    MotionItem* p = &context.data[context.index];
     out->value = context.fraction * (p[1].value - p[0].value) + p[0].value;
     return 1;
 }
 
 // Return the number of stored motion groups through the output pointer.
-int GroupVector_GetCount(GroupVector *v, unsigned *out) {
+int GroupVector_GetCount(GroupVector* v, unsigned* out) {
     *out = v->size;
     return 1;
 }
 
 // Return one group's timing and track parameters when its index is valid.
-int GroupVector_GetValues(GroupRecords *v, GroupValues *out, int index) {
+int GroupVector_GetValues(GroupRecords* v, GroupValues* out, int index) {
     return GetGroupValues(v, out, index);
 }
 
 // Clear nested key buffers, destroy all groups and reset the logical group count.
-int CameraMotionGroupVector_Clear(ClearRecords *v) {
-    RemovalGroup *g;
+int CameraMotionGroupVector_Clear(ClearRecords* v) {
+    RemovalGroup* g;
     for (int i = 0; i < v->size; ++i) {
         g = &v->data[i];
-        g->buffer.size -= ((char *)g->buffer.data + g->buffer.size) - (char *)g->buffer.data;
+        g->buffer.size -= ((char*)g->buffer.data + g->buffer.size) - (char*)g->buffer.data;
     }
-    RemovalGroup *p;
+    RemovalGroup* p;
     int remaining = v->used;
     p = v->data + remaining;
     v->used -= remaining;
@@ -1439,33 +1558,39 @@ int CameraMotionGroupVector_Clear(ClearRecords *v) {
 // storage must match keyCount; duration+cruiseTime must be nonzero. Returns 1
 // after writing both length/speed pairs. Length is script-coordinate distance;
 // speed is that distance per integrated tick. No camera/world transform occurs.
-int CameraMotionGroupVector_ComputeTrackLengths(GroupRecords *v, int index) {
-    if (index >= v->size) return 0;
+int CameraMotionGroupVector_ComputeTrackLengths(GroupRecords* v, int index) {
+    if (index >= v->size)
+        return 0;
     int offset = 0;
-    GroupRecord *p = &v->data[index];
+    GroupRecord* p = &v->data[index];
     int next;
     float sum[2] = {0, 0};
     float delta[3];
     for (index = 0; index < (int)p->values.keyCount - 1; ++index, offset += sizeof(SmallItem)) {
         next = (index + 1) * sizeof(SmallItem);
-        Vec3_Subtract(delta, (char *)p->buffer.data + next, (char *)p->buffer.data + offset);
+        Vec3_Subtract(delta, (char*)p->buffer.data + next, (char*)p->buffer.data + offset);
         sum[0] += Vec3_Length(delta);
-        Vec3_Subtract(delta, (char *)p->buffer.data + next + 0xc, (char *)p->buffer.data + offset + 0xc);
+        Vec3_Subtract(delta, (char*)p->buffer.data + next + 0xc, (char*)p->buffer.data + offset + 0xc);
         float length = Vec3_Length(delta);
         sum[1] += length;
     }
     p->values.firstTrackLength = sum[0];
     p->values.secondTrackLength = sum[1];
-    p->values.firstTrackSpeed = (kCameraTrackSpeedNumeratorFactor * sum[0]) / (p->values.duration + p->values.cruiseTime);
-    p->values.secondTrackSpeed = (kCameraTrackSpeedNumeratorFactor * sum[1]) / (p->values.duration + p->values.cruiseTime);
+    p->values.firstTrackSpeed =
+        (kCameraTrackSpeedNumeratorFactor * sum[0]) / (p->values.duration + p->values.cruiseTime);
+    p->values.secondTrackSpeed =
+        (kCameraTrackSpeedNumeratorFactor * sum[1]) / (p->values.duration + p->values.cruiseTime);
     return 1;
 }
 
 // Choose three-word-vector capacity while rejecting an overflowing request.
 inline unsigned VecGrowth(unsigned cp, unsigned need) {
-    if (need > kMotionVectorLimit - cp) PointVectorThrow();
-    if (cp < kMotionVectorGrowthTier1) return cp + VectorMax((cp + 1) * 3 / 5, need);
-    if (cp < kMotionVectorGrowthTier2) return cp + VectorMax((cp + 1) / 2, need);
+    if (need > kMotionVectorLimit - cp)
+        PointVectorThrow();
+    if (cp < kMotionVectorGrowthTier1)
+        return cp + VectorMax((cp + 1) * 3 / 5, need);
+    if (cp < kMotionVectorGrowthTier2)
+        return cp + VectorMax((cp + 1) / 2, need);
     return kMotionVectorLimit;
 }
 // Bezier compiler policy (retain this source shape, not a gameplay setting):
@@ -1545,7 +1670,7 @@ void GroupVector_SampleBezierMotion(s32 forwardedContext, s32 outputAddress, Spl
                 MotionVec* p = controlPoints.data + controlPoints.size;
                 while (workCount != 0) {
                     MotionVec z = {0, 0, 0};
-                    new(p) MotionVec(z);
+                    new (p) MotionVec(z);
                     --workCount;
                     ++p;
                     ++controlPoints.size;
@@ -1563,8 +1688,8 @@ void GroupVector_SampleBezierMotion(s32 forwardedContext, s32 outputAddress, Spl
                 }
 
                 {
-                    MotionVec* replacementData =
-                    (MotionVec*)((void* (*)(u32))s_vcgAllocatorCallbacks.allocate)(scratchCapacity * kVectorXYZBytes);
+                    MotionVec* replacementData = (MotionVec*)((void* (*)(u32))s_vcgAllocatorCallbacks.allocate)(
+                        scratchCapacity * kVectorXYZBytes);
                     MotionVec* p;
                     MotionVec* src;
                     MotionVec* dst;
@@ -1575,11 +1700,12 @@ void GroupVector_SampleBezierMotion(s32 forwardedContext, s32 outputAddress, Spl
                     guard.data = replacementData;
                     guard.cap = scratchCapacity;
                     guard.remaining = controlPoints.size;
-                    p = (MotionVec*)((char*)replacementData + controlPoints.size * kVectorXYZBytes + guard.size * kVectorXYZBytes);
+                    p = (MotionVec*)((char*)replacementData + controlPoints.size * kVectorXYZBytes +
+                                     guard.size * kVectorXYZBytes);
                     AllocTag constructAlloc;
                     while (workCount != 0) {
                         MotionVec z = {0, 0, 0};
-                        new(p) MotionVec(z);
+                        new (p) MotionVec(z);
                         ++guard.size;
                         --workCount;
                         ++p;
@@ -1591,7 +1717,7 @@ void GroupVector_SampleBezierMotion(s32 forwardedContext, s32 outputAddress, Spl
                     while (src > begin) {
                         --dst;
                         --src;
-                        new(dst) MotionVec(*src);
+                        new (dst) MotionVec(*src);
                         --guard.remaining;
                         ++guard.size;
                     }
@@ -1656,7 +1782,8 @@ void GroupVector_SampleBezierMotion(s32 forwardedContext, s32 outputAddress, Spl
     Vector_CopyComponents((void*)(outputAddress + kSecondTrackOffset), controlPoints.data);
 
     // Phase 4: position evaluation is global, but direction/scalar still need a local segment.
-    GroupVector_FindMotionSegmentAtTime(forwardedContext, &segmentIndex, &firstResidualDistance, &secondResidualDistance, sample, integratedTime);
+    GroupVector_FindMotionSegmentAtTime(forwardedContext, &segmentIndex, &firstResidualDistance,
+                                        &secondResidualDistance, sample, integratedTime);
     sample->index = segmentIndex;
 }
 
@@ -1689,7 +1816,8 @@ void GroupMotion_SampleCubicVectorPair(s32 forwardedContext, char* output, Splin
     MotionVec temp1;
     f32 firstResidualDistance, secondResidualDistance;
     s32 segmentIndex;
-    GroupVector_FindMotionSegmentAtTime(forwardedContext, &segmentIndex, &firstResidualDistance, &secondResidualDistance, sample, integratedTime);
+    GroupVector_FindMotionSegmentAtTime(forwardedContext, &segmentIndex, &firstResidualDistance,
+                                        &secondResidualDistance, sample, integratedTime);
     sample->index = segmentIndex;
     // The last argument is integrated motion time. Segment lookup produces u
     // in [0,1] for Hermite weights: h0=2u^3-3u^2+1,
@@ -1700,22 +1828,30 @@ void GroupMotion_SampleCubicVectorPair(s32 forwardedContext, char* output, Splin
     f32 h2 = h3 - square;
     f32 h0 = kFloat_1_Spline + (h2 + h3);
     h2 += u;
-    char *points = sample->points;
+    char* points = sample->points;
     s32 current = segmentIndex;
     Vec3_Subtract(&delta0, points + (current + 1) * kMotionKeyBytes, points + current * kMotionKeyBytes);
     if (kFloat_0_GroupVector != Vec3_Length(&delta0)) {
         s32 lowKeyIndex = segmentIndex - 1;
         s32 highKeyIndex = segmentIndex + 1;
-        if (lowKeyIndex < 0) lowKeyIndex = 0;
-        if (highKeyIndex >= sample->cfg->count) highKeyIndex = sample->cfg->count - 1;
-        Vec3_Subtract(&tangent0[0], sample->points + highKeyIndex * kMotionKeyBytes, sample->points + lowKeyIndex * kMotionKeyBytes);
-        if (highKeyIndex - lowKeyIndex > 1) Vec3_Scale(&tangent0[0], &tangent0[0], (f32)(highKeyIndex - lowKeyIndex));
+        if (lowKeyIndex < 0)
+            lowKeyIndex = 0;
+        if (highKeyIndex >= sample->cfg->count)
+            highKeyIndex = sample->cfg->count - 1;
+        Vec3_Subtract(&tangent0[0], sample->points + highKeyIndex * kMotionKeyBytes,
+                      sample->points + lowKeyIndex * kMotionKeyBytes);
+        if (highKeyIndex - lowKeyIndex > 1)
+            Vec3_Scale(&tangent0[0], &tangent0[0], (f32)(highKeyIndex - lowKeyIndex));
         lowKeyIndex = segmentIndex;
         highKeyIndex = segmentIndex + 2;
-        if (lowKeyIndex < 0) lowKeyIndex = 0;
-        if (highKeyIndex >= sample->cfg->count) highKeyIndex = sample->cfg->count - 1;
-        Vec3_Subtract(&tangent0[1], sample->points + highKeyIndex * kMotionKeyBytes, sample->points + lowKeyIndex * kMotionKeyBytes);
-        if (highKeyIndex - lowKeyIndex > 1) Vec3_Scale(&tangent0[1], &tangent0[1], (f32)(highKeyIndex - lowKeyIndex));
+        if (lowKeyIndex < 0)
+            lowKeyIndex = 0;
+        if (highKeyIndex >= sample->cfg->count)
+            highKeyIndex = sample->cfg->count - 1;
+        Vec3_Subtract(&tangent0[1], sample->points + highKeyIndex * kMotionKeyBytes,
+                      sample->points + lowKeyIndex * kMotionKeyBytes);
+        if (highKeyIndex - lowKeyIndex > 1)
+            Vec3_Scale(&tangent0[1], &tangent0[1], (f32)(highKeyIndex - lowKeyIndex));
         Vec3_Scale(output, sample->points + segmentIndex * kMotionKeyBytes, h0);
         Vec3_Scale(&temp0, sample->points + (segmentIndex + 1) * kMotionKeyBytes, kFloat_1_Spline - h0);
         Vec3_Add(output, output, &temp0);
@@ -1730,29 +1866,41 @@ void GroupMotion_SampleCubicVectorPair(s32 forwardedContext, char* output, Splin
     // (highKeyIndex-lowKeyIndex); replacing it by a conventional average would change this curve.
     points = sample->points;
     current = segmentIndex;
-    Vec3_Subtract(&delta1, points + (current + 1) * kMotionKeyBytes + kSecondTrackOffset, points + current * kMotionKeyBytes + kSecondTrackOffset);
+    Vec3_Subtract(&delta1, points + (current + 1) * kMotionKeyBytes + kSecondTrackOffset,
+                  points + current * kMotionKeyBytes + kSecondTrackOffset);
     if (kFloat_0_GroupVector != Vec3_Length(&delta1)) {
         s32 highKeyIndex = segmentIndex + 1;
         s32 lowKeyIndex = segmentIndex - 1;
-        if (lowKeyIndex < 0) lowKeyIndex = 0;
-        if (highKeyIndex >= sample->cfg->count) highKeyIndex = sample->cfg->count - 1;
-        Vec3_Subtract(&tangent1[0], sample->points + highKeyIndex * kMotionKeyBytes + kSecondTrackOffset, sample->points + lowKeyIndex * kMotionKeyBytes + kSecondTrackOffset);
-        if (highKeyIndex - lowKeyIndex > 1) Vec3_Scale(&tangent1[0], &tangent1[0], (f32)(highKeyIndex - lowKeyIndex));
+        if (lowKeyIndex < 0)
+            lowKeyIndex = 0;
+        if (highKeyIndex >= sample->cfg->count)
+            highKeyIndex = sample->cfg->count - 1;
+        Vec3_Subtract(&tangent1[0], sample->points + highKeyIndex * kMotionKeyBytes + kSecondTrackOffset,
+                      sample->points + lowKeyIndex * kMotionKeyBytes + kSecondTrackOffset);
+        if (highKeyIndex - lowKeyIndex > 1)
+            Vec3_Scale(&tangent1[0], &tangent1[0], (f32)(highKeyIndex - lowKeyIndex));
         lowKeyIndex = segmentIndex;
         highKeyIndex = segmentIndex + 2;
-        if (lowKeyIndex < 0) lowKeyIndex = 0;
-        if (highKeyIndex >= sample->cfg->count) highKeyIndex = sample->cfg->count - 1;
-        Vec3_Subtract(&tangent1[1], sample->points + highKeyIndex * kMotionKeyBytes + kSecondTrackOffset, sample->points + lowKeyIndex * kMotionKeyBytes + kSecondTrackOffset);
-        if (highKeyIndex - lowKeyIndex > 1) Vec3_Scale(&tangent1[1], &tangent1[1], (f32)(highKeyIndex - lowKeyIndex));
-        Vec3_Scale(output + kSecondTrackOffset, sample->points + segmentIndex * kMotionKeyBytes + kSecondTrackOffset, h0);
-        Vec3_Scale(&temp1, sample->points + (segmentIndex + 1) * kMotionKeyBytes + kSecondTrackOffset, kFloat_1_Spline - h0);
+        if (lowKeyIndex < 0)
+            lowKeyIndex = 0;
+        if (highKeyIndex >= sample->cfg->count)
+            highKeyIndex = sample->cfg->count - 1;
+        Vec3_Subtract(&tangent1[1], sample->points + highKeyIndex * kMotionKeyBytes + kSecondTrackOffset,
+                      sample->points + lowKeyIndex * kMotionKeyBytes + kSecondTrackOffset);
+        if (highKeyIndex - lowKeyIndex > 1)
+            Vec3_Scale(&tangent1[1], &tangent1[1], (f32)(highKeyIndex - lowKeyIndex));
+        Vec3_Scale(output + kSecondTrackOffset, sample->points + segmentIndex * kMotionKeyBytes + kSecondTrackOffset,
+                   h0);
+        Vec3_Scale(&temp1, sample->points + (segmentIndex + 1) * kMotionKeyBytes + kSecondTrackOffset,
+                   kFloat_1_Spline - h0);
         Vec3_Add(output + kSecondTrackOffset, output + kSecondTrackOffset, &temp1);
         Vec3_Scale(&temp1, &tangent1[0], h2);
         Vec3_Add(output + kSecondTrackOffset, output + kSecondTrackOffset, &temp1);
         Vec3_Scale(&temp1, &tangent1[1], h3);
         Vec3_Add(output + kSecondTrackOffset, output + kSecondTrackOffset, &temp1);
     } else {
-        Vector_CopyComponents(output + kSecondTrackOffset, sample->points + segmentIndex * kMotionKeyBytes + kSecondTrackOffset);
+        Vector_CopyComponents(output + kSecondTrackOffset,
+                              sample->points + segmentIndex * kMotionKeyBytes + kSecondTrackOffset);
     }
 }
 
@@ -1761,7 +1909,8 @@ void GroupMotion_SampleCubicVectorPair(s32 forwardedContext, char* output, Splin
 // residual distances in the selected segment; sample->value receives its fraction.
 // Requires >=2 keys. Equal track speeds choose track two; exhaustion selects
 // the final segment at fraction 1. A zero-length selected segment instead uses 0.
-void GroupVector_FindMotionSegmentAtTime(s32 unused, s32* segmentIndex, f32* firstTrackDistance, f32* secondTrackDistance, void* sampleContext, f32 integratedTime) {
+void GroupVector_FindMotionSegmentAtTime(s32 unused, s32* segmentIndex, f32* firstTrackDistance,
+                                         f32* secondTrackDistance, void* sampleContext, f32 integratedTime) {
     SplineArg* p = (SplineArg*)sampleContext;
     MotionVec tmp;
     f32 lengths[2];
@@ -1782,15 +1931,19 @@ void GroupVector_FindMotionSegmentAtTime(s32 unused, s32* segmentIndex, f32* fir
         if (p->cfg->firstTrackSpeed > p->cfg->secondTrackSpeed) {
             if (lengths[0] >= *firstTrackDistance) {
                 *segmentIndex = i;
-                if (lengths[0] == kFloat_0_GroupVector) p->value = kFloat_0_GroupVector;
-                else p->value = *firstTrackDistance / lengths[0];
+                if (lengths[0] == kFloat_0_GroupVector)
+                    p->value = kFloat_0_GroupVector;
+                else
+                    p->value = *firstTrackDistance / lengths[0];
                 break;
             }
         } else {
             if (lengths[1] >= *secondTrackDistance) {
                 *segmentIndex = i;
-                if (lengths[1] == kFloat_0_GroupVector) p->value = kFloat_0_GroupVector;
-                else p->value = *secondTrackDistance / lengths[1];
+                if (lengths[1] == kFloat_0_GroupVector)
+                    p->value = kFloat_0_GroupVector;
+                else
+                    p->value = *secondTrackDistance / lengths[1];
                 break;
             }
         }
@@ -1814,13 +1967,18 @@ void GroupVector_InterpolatePlanarDirection(s32 unused, char* output, SplineArg*
     f32 y = *(f32*)(sample->points + sample->index * kMotionKeyBytes + kDirectionSecondComponentOffset);
     angles[0] = atan2(*(f32*)(sample->points + sample->index * kMotionKeyBytes + kDirectionOffset), y);
     y = *(f32*)(sample->points + sample->index * kMotionKeyBytes + (kMotionKeyBytes + kDirectionSecondComponentOffset));
-    angles[1] = atan2(*(f32*)(sample->points + sample->index * kMotionKeyBytes + (kMotionKeyBytes + kDirectionOffset)), y);
+    angles[1] =
+        atan2(*(f32*)(sample->points + sample->index * kMotionKeyBytes + (kMotionKeyBytes + kDirectionOffset)), y);
     f32 delta = angles[1] - angles[0];
-    if (delta < kFloat_neg3_1415927_AngleInterpolation) delta += kFloat_6_2831855_AngleInterpolation;
-    if (delta > kFloat_3_1415927_AngleInterpolation) delta -= kFloat_6_2831855_AngleInterpolation;
+    if (delta < kFloat_neg3_1415927_AngleInterpolation)
+        delta += kFloat_6_2831855_AngleInterpolation;
+    if (delta > kFloat_3_1415927_AngleInterpolation)
+        delta -= kFloat_6_2831855_AngleInterpolation;
     f32 angle = sample->value * delta + angles[0];
-    if (angle < kFloat_neg3_1415927_AngleInterpolation) angle += kFloat_6_2831855_AngleInterpolation;
-    if (angle > kFloat_3_1415927_AngleInterpolation) angle -= kFloat_6_2831855_AngleInterpolation;
+    if (angle < kFloat_neg3_1415927_AngleInterpolation)
+        angle += kFloat_6_2831855_AngleInterpolation;
+    if (angle > kFloat_3_1415927_AngleInterpolation)
+        angle -= kFloat_6_2831855_AngleInterpolation;
     *(f32*)(output + kDirectionOffset) = Math_SinApprox(angle);
     f32 cosine = Math_CosApprox(angle);
     f32 zero = kFloat_0_GroupVector;
@@ -1832,7 +1990,8 @@ void GroupVector_InterpolatePlanarDirection(s32 unused, char* output, SplineArg*
 StoreOwner* dtor_8023D548(StoreOwner* p, s32 deleting) {
     if (p) {
         ((VcgVector*)&p->store)->~VcgVector();
-        if (deleting > 0) __dl__FPv(p);
+        if (deleting > 0)
+            __dl__FPv(p);
     }
     return p;
 }
@@ -1896,7 +2055,8 @@ OwnerStore* OwnerStore_dtor(OwnerStore* p, s32 deleting) {
                 ((void (*)(void*))s_vcgAllocatorCallbacks.destroy)(p->data);
             }
         }
-        if (deleting > 0) __dl__FPv(p);
+        if (deleting > 0)
+            __dl__FPv(p);
     }
     return p;
 }
@@ -1942,7 +2102,7 @@ ResourceState* FadeOverlay_Init(ResourceState* p) {
     p->phase = kFadeIdle;
     p->captureRequested = 0;
     Engine_GetViewport(&config);
-    if (Texture_Create2D(config.arg0, config.arg1, 1, 0, kFramebufferTextureFormat, 0, p, 0)) {
+    if (Texture_Create2D(config.width, config.height, 1, 0, kFramebufferTextureFormat, 0, p, 0)) {
         FinishResourceLoad(p, &info, &buffer);
     }
     return p;
@@ -1953,11 +2113,13 @@ ResourceState* ResourceState_Dtor(ResourceState* p, s32 deleting) {
     if (p) {
         SharedResource* resource = p->resource;
         if (resource) {
-            if (--resource->refs == 0) CubeResourceStorage_dtor(resource, 1);
+            if (--resource->refs == 0)
+                CubeResourceStorage_dtor(resource, 1);
             p->resource = 0;
         }
         s_fadeOverlayTextureReady = 0;
-        if (deleting > 0) __dl__FPv(p);
+        if (deleting > 0)
+            __dl__FPv(p);
     }
     return p;
 }
@@ -2001,7 +2163,8 @@ void FadeState_Update(ResourceState* p) {
             if (s_releaseFadeResourceOnCompletion || p->releaseOnCompletion) {
                 SharedResource* resource = p->resource;
                 if (resource) {
-                    if (--resource->refs == 0) CubeResourceStorage_dtor(resource, 1);
+                    if (--resource->refs == 0)
+                        CubeResourceStorage_dtor(resource, 1);
                     p->resource = 0;
                 }
                 s_fadeOverlayTextureReady = 0;
@@ -2018,8 +2181,6 @@ void FadeState_Update(ResourceState* p) {
     p->captureRequested = 0;
 }
 
-
-
 } // extern "C"
 
 /* Static initialisers run from the .ctors table, as in the original. */
@@ -2029,4 +2190,3 @@ STATIC_INIT_ENTRY(".CRT$XCU80462280", _ctors_u8023A378_0, VCGPlayer_InitAngleCac
 STATIC_INIT_ENTRY(".CRT$XCU80462280", _ctors_u8023A378_1, VCGSource_InitAngleCache);
 STATIC_INIT_ENTRY(".CRT$XCU80462280", _ctors_u8023A378_2, MotionFade_InitAngleCache);
 #pragma pop
-

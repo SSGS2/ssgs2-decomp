@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CPASSWORDMAIN_H
 #define CLASSES_CPASSWORDMAIN_H
 
@@ -7,17 +5,32 @@
 
 class CPasswordMain {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x14];                 // 0x4
-    void* taskMainVtable;                       // 0x18: 2 uses in CPasswordMain_Ctor, CPasswordMain_dtor
-    int passwordPanelEntryId;                         // 0x1c: 9 uses in CPasswordMain_OnDestroy, CPasswordMain_dtor, CPasswordMain_OnProcess...
-    int backgroundEntryId;                         // 0x20: 9 uses in CPasswordMain_OnDestroy, CPasswordMain_dtor, CPasswordMain_OnProcess...
-    int titleCaptionEntryId;                         // 0x24: 9 uses in CPasswordMain_OnDestroy, CPasswordMain_dtor, CPasswordMain_OnProcess...
-    void* textRenderer;                       // 0x28: 10 uses in CPasswordMain_OnDestroy, CPasswordMain_OnProcess, CPasswordMain_dtor...
-    unsigned char transitionRequested;               // 0x2c: 3 uses in CPasswordMain_OnProcess, CPasswordMain_Ctor
+    void* vtbl;                        // 0x0: original vtable pointer
+    char pad_004[0x14];                // 0x4
+    void* taskMainVtable;              // 0x18
+    int passwordPanelEntryId;          // 0x1c
+    int backgroundEntryId;             // 0x20
+    int titleCaptionEntryId;           // 0x24
+    void* textRenderer;                // 0x28
+    unsigned char transitionRequested; // 0x2c
+
+    static void OnPreLoadInit();
+    static void OnInit();
+    static void* GetRTTI();
+    void OnLoad();
+    void OnProcess();
+    static void GetPasswordText(void* selfUnused, void* outputText, unsigned int index);
+    void OnDisplay();
+    void OnDestroy();
+    void BuildTextLabels();
+
+    // Adjust the task-main interface pointer back to the owning actor for destruction.
+    void DtorThunk18(int deleteFlag);
+
+    CPasswordMain();
+    ~CPasswordMain();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CPASSWORDMAIN_OFF(f, o) typedef char CPasswordMain_off_##f[((int)&((CPasswordMain*)0)->f == (o)) ? 1 : -1]
 CPASSWORDMAIN_OFF(taskMainVtable, 0x18);
 CPASSWORDMAIN_OFF(passwordPanelEntryId, 0x1c);
@@ -27,4 +40,4 @@ CPASSWORDMAIN_OFF(textRenderer, 0x28);
 CPASSWORDMAIN_OFF(transitionRequested, 0x2c);
 #undef CPASSWORDMAIN_OFF
 
-#endif  // CLASSES_CPASSWORDMAIN_H
+#endif // CLASSES_CPASSWORDMAIN_H

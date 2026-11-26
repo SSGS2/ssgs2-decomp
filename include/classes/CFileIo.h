@@ -1,5 +1,8 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CFileIo: the common file object behind the pad and flash save devices.
+//
+// It owns at most one open file handle, a status word, a path and a device
+// prefix, and the buffer that a read or write transfers through. The vtable
+// still comes from the original data, so it is spelled out as a member.
 #ifndef CLASSES_CFILEIO_H
 #define CLASSES_CFILEIO_H
 
@@ -7,28 +10,50 @@
 
 class CFileIo {
 public:
-    void* vtable;                        // 0x0: 2 uses in CFileIo_InitMembers, CFileIo_dtor
-    void* ioBuffer;                        // 0x4: 6 uses in CFileIo_SetPathAndAllocateBuffer, CFileIo_dtor, CFileIo_InitMembers
-    int statusCode;                          // 0x8: 1 use in CFileIo_InitMembers
-    int fileHandle;                          // 0xc: 3 uses in CFileIo_dtor, CFileIo_InitMembers
-    int referenceCount;                         // 0x10: 1 use in CFileIo_InitMembers
-    unsigned char busy;               // 0x14: 1 use in CFileIo_InitMembers
-    char pad_015[0x3];                  // 0x15
-    unsigned int pathFlags;                // 0x18: 8 uses in CFileIo_SetPathAndAllocateBuffer, CFileIo_InitMembers, CFileIo_dtor (CONFLICT sizes [1, 4])
-    unsigned int pathLength;                // 0x1c: 4 uses in CFileIo_SetPathAndAllocateBuffer, CFileIo_InitMembers
-    void* pathData;                       // 0x20: 4 uses in CFileIo_SetPathAndAllocateBuffer, CFileIo_InitMembers, CFileIo_dtor
-    unsigned int devicePrefixFlags;                // 0x24: 5 uses in CFileIo_SetPathAndAllocateBuffer, CFileIo_InitMembers, CFileIo_dtor (CONFLICT sizes [1, 4])
-    unsigned int devicePrefixLength;                // 0x28: 2 uses in CFileIo_InitMembers, CFileIo_SetPathAndAllocateBuffer
-    int devicePrefixData;                         // 0x2c: 3 uses in CFileIo_InitMembers, CFileIo_dtor, CFileIo_SetPathAndAllocateBuffer
-    int requestedBufferSize;                         // 0x30: 3 uses in CFileIo_SetPathAndAllocateBuffer, CFileIo_InitMembers
-    char pad_034[0x1c];                 // 0x34
-    int saveAreaStatusFlags;                         // 0x50: 1 use in CFileIo_InitMembers
-    int transferredBytes;                         // 0x54: 1 use in CFileIo_InitMembers
+    // Lifetime and shared state.
+    ~CFileIo();
+    void InitMembers();
+    int AddRef();
+    int ReleaseRef();
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x18, 0x19, 0x24, 0x38, 0x40, 0x48
+    // Handle and status.
+    int CloseHandle();
+    int IsBusy();
+    int GetBuffer();
+    int GetStatusCode();
+    int SetStatusCode(int status);
+    int SetSaveAreaStatusFlags(int saveAreaFlags);
+    int GetSaveAreaStatusFlags();
+    int GetTransferredBytes();
+    int SetTransferredBytes(int transferred);
+
+    // Path and transfer buffer.
+    int SetPathAndAllocateBuffer(const char* fullPath, int requestedBufferSize);
+    int Open(int completionCallback, void* openDisposition);
+    int DeletePath(int completionCallback);
+    int QueryDiskFreeSpace(int completionCallback);
+    int WritePaddedBuffer(void* source, int completionCallback);
+
+    void* vtable;                    // 0x00
+    void* ioBuffer;                  // 0x04
+    int statusCode;                  // 0x08
+    int fileHandle;                  // 0x0c
+    int referenceCount;              // 0x10
+    unsigned char busy;              // 0x14
+    char pad_015[0x3];               // 0x15
+    unsigned int pathFlags;          // 0x18  small-string flags and length
+    unsigned int pathLength;         // 0x1c  heap length
+    void* pathData;                  // 0x20  heap text
+    unsigned int devicePrefixFlags;  // 0x24
+    unsigned int devicePrefixLength; // 0x28
+    void* devicePrefixData;          // 0x2c
+    int requestedBufferSize;         // 0x30
+    char pad_034[0x4];               // 0x34
+    unsigned int deviceInfo[6];      // 0x38  cleared when a path is installed
+    int saveAreaStatusFlags;         // 0x50
+    int transferredBytes;            // 0x54
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CFILEIO_OFF(f, o) typedef char CFileIo_off_##f[((int)&((CFileIo*)0)->f == (o)) ? 1 : -1]
 CFILEIO_OFF(ioBuffer, 0x4);
 CFILEIO_OFF(statusCode, 0x8);
@@ -42,8 +67,10 @@ CFILEIO_OFF(devicePrefixFlags, 0x24);
 CFILEIO_OFF(devicePrefixLength, 0x28);
 CFILEIO_OFF(devicePrefixData, 0x2c);
 CFILEIO_OFF(requestedBufferSize, 0x30);
+CFILEIO_OFF(deviceInfo, 0x38);
 CFILEIO_OFF(saveAreaStatusFlags, 0x50);
 CFILEIO_OFF(transferredBytes, 0x54);
 #undef CFILEIO_OFF
+typedef char CFileIo_size[(sizeof(CFileIo) == 0x58) ? 1 : -1];
 
-#endif  // CLASSES_CFILEIO_H
+#endif // CLASSES_CFILEIO_H

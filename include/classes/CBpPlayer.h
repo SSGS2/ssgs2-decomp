@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CBPPLAYER_H
 #define CLASSES_CBPPLAYER_H
 
@@ -7,56 +5,67 @@
 
 class CBpPlayer {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    void* messageTextContext; // 0x4: CBpPlayer_StartLoad destroys this resource
-    void* loadEvent; // 0x8: CBpPlayer_StartLoad: CEventLoad_ctor result
-    void* fixedFontRenderer; // 0xC: EventText_PollMessageResources: WFixedFont_CreateMsgEcbResource receiver
-    int controlEntryId; // 0x10: CBpPlayer_LoadMessageResources: CBpCtrl_CreateEntry out parameter
-    void* textureArrays[2]; // 0x14: CBpPlayer_LoadMessageResources: arrays of 0x28-byte CBpTex
-    void* speedController; // 0x1C: CBpPlayer_PollResourceLoad: ns0::CSpdCtrl allocation
-    void* textureResource; // 0x20: CBpPlayer_PollResourceLoad: CPackTextureResource_PollLoad
-    void* speakerNameDraw; // 0x24: CBpPlayer_ReleaseResources: pair-list removal and virtual destruction
-    int speakerSlotIndex; // 0x28: CBpPlayer_ReleaseResources: reset to -1
-    int speakerTableIndex; // 0x2C: CBpPlayer_ReleaseResources: reset to -1
-    int speakerIndex; // 0x30: CBpPlayer_ReleaseResources: reset to -1
-    int messageAlpha; // 0x34: CBpPlayer_ReleaseResources: reset to zero
-    void* messageDraw; // 0x38: CBpPlayer_ReleaseResources: pair-list removal and virtual destruction
+    void* vtbl;                    // 0x0: original vtable pointer
+    void* messageTextContext;      // 0x4: StartLoad destroys this resource
+    void* loadEvent;               // 0x8: StartLoad: CEventLoad_ctor result
+    void* fixedFontRenderer;       // 0xC: EventText_PollMessageResources: WFixedFont_CreateMsgEcbResource receiver
+    int controlEntryId;            // 0x10: LoadMessageResources: CBpCtrl_CreateEntry out parameter
+    void* textureArrays[2];        // 0x14: LoadMessageResources: arrays of 0x28-byte CBpTex
+    void* speedController;         // 0x1C: CBpPlayer_PollResourceLoad: ns0::CSpdCtrl allocation
+    void* textureResource;         // 0x20: CBpPlayer_PollResourceLoad: CPackTextureResource_PollLoad
+    void* speakerNameDraw;         // 0x24: CBpPlayer_ReleaseResources: pair-list removal and virtual destruction
+    int speakerSlotIndex;          // 0x28: CBpPlayer_ReleaseResources: reset to -1
+    int speakerTableIndex;         // 0x2C: CBpPlayer_ReleaseResources: reset to -1
+    int speakerIndex;              // 0x30: CBpPlayer_ReleaseResources: reset to -1
+    int messageAlpha;              // 0x34: CBpPlayer_ReleaseResources: reset to zero
+    void* messageDraw;             // 0x38: CBpPlayer_ReleaseResources: pair-list removal and virtual destruction
     unsigned int advanceRequested; // 0x3C: CBpPlayer_ReleaseResources: reset to zero
     union {
-        unsigned int messageRequestScriptFlags;                // 0x40: 1 use in CBpPlayer_Dtor
-        unsigned char stringBytes_40[4]; // 0x40: CBpPlayer_ReleaseResources inline string flag/data bytes
+        unsigned int messageRequestScriptFlags; // 0x40
+        unsigned char stringBytes_40[4];        // 0x40: CBpPlayer_ReleaseResources inline string flag/data bytes
     };
-    unsigned int stringLength_44; // 0x44: CBpPlayer_ReleaseResources: heap-string reset
-    void* messageRequestScriptData;                       // 0x48: 1 use in CBpPlayer_Dtor
+    unsigned int stringLength_44;   // 0x44: CBpPlayer_ReleaseResources: heap-string reset
+    void* messageRequestScriptData; // 0x48
     union {
-        unsigned int windowOutScriptFlags;                // 0x4c: 1 use in CBpPlayer_Dtor
-        unsigned char stringBytes_4C[4]; // 0x4C: CBpPlayer_ReleaseResources inline string flag/data bytes
+        unsigned int windowOutScriptFlags; // 0x4c
+        unsigned char stringBytes_4C[4];   // 0x4C: CBpPlayer_ReleaseResources inline string flag/data bytes
     };
     unsigned int stringLength_50; // 0x50: CBpPlayer_ReleaseResources: heap-string reset
-    void* windowOutScriptData;                       // 0x54: 1 use in CBpPlayer_Dtor
+    void* windowOutScriptData;    // 0x54
     union {
-        unsigned int windowInScriptFlags;                // 0x58: 1 use in CBpPlayer_Dtor
-        unsigned char stringBytes_58[4]; // 0x58: CBpPlayer_ReleaseResources inline string flag/data bytes
+        unsigned int windowInScriptFlags; // 0x58
+        unsigned char stringBytes_58[4];  // 0x58: CBpPlayer_ReleaseResources inline string flag/data bytes
     };
     unsigned int stringLength_5C; // 0x5C: CBpPlayer_ReleaseResources: heap-string reset
-    void* windowInScriptData;                       // 0x60: 1 use in CBpPlayer_Dtor
+    void* windowInScriptData;     // 0x60
     union {
-        unsigned int messageReadyScriptFlags;                // 0x64: 1 use in CBpPlayer_Dtor
-        unsigned char stringBytes_64[4]; // 0x64: CBpPlayer_ReleaseResources inline string flag/data bytes
+        unsigned int messageReadyScriptFlags; // 0x64
+        unsigned char stringBytes_64[4];      // 0x64: CBpPlayer_ReleaseResources inline string flag/data bytes
     };
     unsigned int stringLength_68; // 0x68: CBpPlayer_ReleaseResources: heap-string reset
-    void* messageReadyScriptData;                       // 0x6c: 1 use in CBpPlayer_Dtor
+    void* messageReadyScriptData; // 0x6c
     union {
-        unsigned int messageAdvanceScriptFlags;                // 0x70: 1 use in CBpPlayer_Dtor
-        unsigned char stringBytes_70[4]; // 0x70: CBpPlayer_ReleaseResources inline string flag/data bytes
+        unsigned int messageAdvanceScriptFlags; // 0x70
+        unsigned char stringBytes_70[4];        // 0x70: CBpPlayer_ReleaseResources inline string flag/data bytes
     };
-    unsigned int stringLength_74; // 0x74: CBpPlayer_ReleaseResources: heap-string reset
-    void* messageAdvanceScriptData;                       // 0x78: 1 use in CBpPlayer_Dtor
-    void* sharedFile; // 0x7C: CBpPlayer_StartLoad, SharedFile_Create result
-    void* speedFile; // 0x80: CBpPlayer_LoadMessageResources, SharedFile_Create result
+    unsigned int stringLength_74;   // 0x74: CBpPlayer_ReleaseResources: heap-string reset
+    void* messageAdvanceScriptData; // 0x78
+    void* sharedFile;               // 0x7C: StartLoad, SharedFile_Create result
+    void* speedFile;                // 0x80: LoadMessageResources, SharedFile_Create result
+
+    // Replace the message loaders and request the message key and text resources.
+    void StartLoad(const char* name, int flag, void* arg);
+    // Load the story window, portrait textures and character speed file.
+    void LoadMessageResources();
+
+    int PollResourceLoad();
+    int GetControlEntry();
+
+    void ReleaseResources();
+    CBpPlayer();
+    ~CBpPlayer();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CBPPLAYER_OFF(f, o) typedef char CBpPlayer_off_##f[((int)&((CBpPlayer*)0)->f == (o)) ? 1 : -1]
 CBPPLAYER_OFF(vtbl, 0x0);
 CBPPLAYER_OFF(messageRequestScriptFlags, 0x40);
@@ -97,4 +106,4 @@ CBPPLAYER_OFF(stringBytes_64, 0x64);
 CBPPLAYER_OFF(stringBytes_70, 0x70);
 #undef CBPPLAYER_OFF
 
-#endif  // CLASSES_CBPPLAYER_H
+#endif // CLASSES_CBPPLAYER_H

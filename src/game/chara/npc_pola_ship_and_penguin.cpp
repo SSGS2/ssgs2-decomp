@@ -1,3 +1,6 @@
+// Polar ship and penguin NPCs: the ship that follows a spline path, the penguin that wanders over
+// the ground, and the spray and sequence effects they attach to their animations.
+
 typedef unsigned long new_size_t;
 #include "MSL/error_message.h"
 #include "classes/CFxSequence.h"
@@ -5,10 +8,9 @@ typedef unsigned long new_size_t;
 #include "game/wvector.h"
 #include "game/exception.h"
 #include "classes/CCreature.h"
+#include "classes/CFx.h"
 
 #define AsCCreature(p) ((CCreature*)(p))
-// Translation unit 0x801A3B4C-0x801A51D0 (9 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -21,7 +23,7 @@ struct CreatureStringPool {
     char vectorLengthError[0x14];
     char lengthErrorType[0x37];
     char otherNpcNames[0xE7];
-    char effectTag[4]; // "*fx"
+    char effectTag[4];          // "*fx"
     char effectTripleFormat[9]; // "%s %s %s"
     char sprayExtension[4];
     char sequenceExtension[4];
@@ -33,9 +35,14 @@ struct CreatureStringPool {
 };
 static const int kCreatureRangeErrorOffset = (int)&((CreatureStringPool*)0)->vectorRangeError;
 static const int kCreatureRangeTypeOffset = (int)&((CreatureStringPool*)0)->rangeErrorType;
-enum { kCreatureLoopOnce = 1, kEffectAttachmentBlocked = 0x40000,
-       kCreatureMoveSlot = 0x90 / 4, kCreatureSetupSlot = 0x98 / 4,
-       kCreatureGroundTestSlot = 0xA0 / 4, kCreatureSecondaryVtableBytes = 0xC };
+enum {
+    kCreatureLoopOnce = 1,
+    kEffectAttachmentBlocked = 0x40000,
+    kCreatureMoveSlot = 0x90 / 4,
+    kCreatureSetupSlot = 0x98 / 4,
+    kCreatureGroundTestSlot = 0xA0 / 4,
+    kCreatureSecondaryVtableBytes = 0xC
+};
 static const unsigned int kMaxEffectPointers = 0x3FFFFFFFu;
 static const unsigned int kEffectSmallGrowthLimit = 0x15555555u;
 static const unsigned int kEffectHalfGrowthLimit = 0x2AAAAAAAu;
@@ -47,11 +54,21 @@ struct AnimationRangeView {
     char reserved08[0x10];
     void* name;
 };
-struct CreatureEffectSource { char reserved00[0x74]; unsigned int flags; float transform[12]; };
-struct CreatureEffectEvent { char reserved00[0x18]; char attachment[0x10]; void* commandText; };
+struct CreatureEffectSource {
+    char reserved00[0x74];
+    unsigned int flags;
+    float transform[12];
+};
+struct CreatureEffectEvent {
+    char reserved00[0x18];
+    char attachment[0x10];
+    void* commandText;
+};
 
-void* CCreature_Draw(void*);
-void CCreature_dtor(void*, int);
+// The draw thunk returns the result register of CCreature::Draw, which returns
+// nothing, so the member is called under its mangled name with a pointer type.
+void* Draw__9CCreatureFv(void*);
+void __dt__9CCreatureFv(void*, int);
 void __dl__FPv(void*);
 void Spline_EvaluatePosition(void*, void*, float);
 void __as__7WVectorFRC7WVector(void*, void*);
@@ -79,7 +96,6 @@ int sscanf(void*, const char*, ...);
 char* strchr(char*, int);
 int String_CompareCString(const char*, const char*);
 void FxAttachment_Init(void*);
-void* CFx_CreateAttachedEffect(void*, void*, const char*, int, int, int);
 unsigned int strlen(const char*);
 char* strcpy(char*, const char*);
 void* appMallocDummy__FUl(unsigned int);
@@ -163,7 +179,11 @@ struct Vec3Buf_801A4574 {
 typedef Vec3Buf_801A4574 CreaturePathBuffer;
 
 // Return caller-provided placement storage without allocating.
-extern "C++" { inline void* operator new(new_size_t, void* p) { return p; } }
+extern "C++" {
+inline void* operator new(new_size_t, void* p) {
+    return p;
+}
+}
 
 struct CreaturePathInput {
     Vec3_801A4574* begin;
@@ -185,13 +205,13 @@ void* ntNpc_PolaShip_Draw(void* self) {
         return self;
     if (*(unsigned char*)&AsCCreature(self)->unk_120 == 1)
         return self;
-    return CCreature_Draw(self);
+    return Draw__9CCreatureFv(self);
 }
 
 // Destroy the creature base and optionally free the penguin.
 void* ntNpc_PolaPenguin1_Dtor(void* self, int shouldDelete) {
     if (self != 0) {
-        CCreature_dtor(self, 0);
+        __dt__9CCreatureFv(self, 0);
         if (shouldDelete > 0)
             __dl__FPv(self);
     }
@@ -199,27 +219,39 @@ void* ntNpc_PolaPenguin1_Dtor(void* self, int shouldDelete) {
 }
 
 struct ErrorAlloc_801A40AC {
-    char value; char pad[3];
+    char value;
+    char pad[3];
     // Initialize the empty exception allocator token.
     ErrorAlloc_801A40AC() : value(0) {}
 };
 struct BufferGuard_801A40AC {
-    char* data; void* allocator;
+    char* data;
+    void* allocator;
     // Guard the allocated error-message array.
     BufferGuard_801A40AC(char* p, void* a) : data(p), allocator(a) {}
     // Transfer the message buffer to its shared owner.
-    char* release() { char* p = data; data = 0; return p; }
+    char* release() {
+        char* p = data;
+        data = 0;
+        return p;
+    }
     // Release an error-message array still owned by this guard.
-    ~BufferGuard_801A40AC() { if (data) __dla__FPv(data); }
+    ~BufferGuard_801A40AC() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 // Shared RTTI: std::tr1::detail::shared_ptr_deleter<char, std::detail::default_delete<char[]> >.
 // Use the common 16-byte ABI view in MSL/error_message.h; keep this local alias for callers.
-typedef ::std::detail::__message_control ExceptionCount_801A40AC;
-namespace std { struct logic_error : exception {
+typedef ::std::detail::__message_control SharedPtrDeleterCommon;
+namespace std {
+struct logic_error : exception {
     // Install the requested standard exception vtable in existing storage.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
     char* data;
-    ExceptionCount_801A40AC* owner;
+    SharedPtrDeleterCommon* owner;
     // Own a copied message through the runtime's reference-counted char deleter.
     logic_error(const char* text) {
         SetTable(__vt__Q23std11logic_error);
@@ -229,17 +261,20 @@ namespace std { struct logic_error : exception {
         {
             char* p = data;
             BufferGuard_801A40AC guard(p, &allocator);
-            owner = new ExceptionCount_801A40AC(p);
+            owner = new SharedPtrDeleterCommon(p);
             guard.release();
         }
         strcpy(data, text);
     }
     ~logic_error();
-}; }
+};
+}
 namespace std {
 struct out_of_range : logic_error {
     // Install the out-of-range exception vtable after copying the message.
-    out_of_range(const char* p) : logic_error(p) { SetTable(__vt__Q23std12out_of_range); }
+    out_of_range(const char* p) : logic_error(p) {
+        SetTable(__vt__Q23std12out_of_range);
+    }
     ~out_of_range();
 };
 }
@@ -247,7 +282,9 @@ struct out_of_range : logic_error {
 namespace std {
 struct length_error : logic_error {
     // Install the length-error exception vtable after copying the message.
-    length_error(const char* p) : logic_error(p) { SetTable(__vt__Q23std12length_error); }
+    length_error(const char* p) : logic_error(p) {
+        SetTable(__vt__Q23std12length_error);
+    }
     ~length_error();
 };
 }
@@ -291,34 +328,46 @@ struct CreatureEffectAttachment {
 };
 
 // Return the larger requested vector growth increment by reference.
-extern "C++" { inline const unsigned int& max_801A3B4C(const unsigned int& a, const unsigned int& b) { return a < b ? b : a; } }
+extern "C++" {
+inline const unsigned int& SelectLarger(const unsigned int& a, const unsigned int& b) {
+    return a < b ? b : a;
+}
+}
 
-// arg is a borrowed [source,event] pair; nonnull events must contain a valid *fx
+// sourceEvent is a borrowed [source,event] pair; nonnull events must contain a valid *fx
 // triple of tag/filename/attachment tokens fitting the fixed arrays. sscanf
 // has no width limits and its result is unchecked. Spray handles are not retained;
 // sequence handles are appended even if the FX factory returns null.
 // Parse an animation effect tag, attach a spray or sequence, and retain sequence handles.
-void ntNpc_PolaShip_ParseAttachedEffectCommand(char* self, void** arg) {
-    if (!arg) return;
-    void* commandText = ((CreatureEffectEvent*)arg[1])->commandText;
-    if (!commandText) return;
+void ntNpc_PolaShip_ParseAttachedEffectCommand(char* self, void** sourceEvent) {
+    if (!sourceEvent)
+        return;
+    void* commandText = ((CreatureEffectEvent*)sourceEvent[1])->commandText;
+    if (!commandText)
+        return;
     char* strings = (char*)npcResourceStrings;
     CreatureEffectAttachment attachment;
     char effectFilename[0x20];
     char attachmentName[0x20];
     char tag[0x40];
-    sscanf(strstr(commandText, ((CreatureStringPool*)strings)->effectTag), ((CreatureStringPool*)strings)->effectTripleFormat, tag, effectFilename, attachmentName);
-    if (!arg[0] || (((CreatureEffectSource*)arg[0])->flags & kEffectAttachmentBlocked)) return;
+    sscanf(strstr(commandText, ((CreatureStringPool*)strings)->effectTag),
+           ((CreatureStringPool*)strings)->effectTripleFormat, tag, effectFilename, attachmentName);
+    if (!sourceEvent[0] || (((CreatureEffectSource*)sourceEvent[0])->flags & kEffectAttachmentBlocked))
+        return;
     char* extension = strchr(effectFilename, '.');
-    if (!extension || strlen(extension) < 4) return;
-    if (String_CompareCString(extension + 1, ((CreatureStringPool*)strings)->sprayExtension) && String_CompareCString(extension + 1, ((CreatureStringPool*)strings)->sequenceExtension)) return;
+    if (!extension || strlen(extension) < 4)
+        return;
+    if (String_CompareCString(extension + 1, ((CreatureStringPool*)strings)->sprayExtension) &&
+        String_CompareCString(extension + 1, ((CreatureStringPool*)strings)->sequenceExtension))
+        return;
     // Parse/validate is complete. Bind the source transform and event attachment.
     FxAttachment_Init(&attachment);
-    attachment.sourceTransform = ((CreatureEffectSource*)arg[0])->transform;
-    attachment.eventAttachment = ((CreatureEffectEvent*)arg[1])->attachment;
-    void* effect = CFx_CreateAttachedEffect(g_fx, &attachment, effectFilename, 0, 0, 0);
+    attachment.sourceTransform = ((CreatureEffectSource*)sourceEvent[0])->transform;
+    attachment.eventAttachment = ((CreatureEffectEvent*)sourceEvent[1])->attachment;
+    void* effect = ((CFx*)g_fx)->CreateAttachedEffect((Vec2_8010*)(&attachment), effectFilename, 0, 0, 0);
     const char* text = npcResourceStrings;
-    if (String_CompareCString(extension + 1, ((const CreatureStringPool*)text)->sequenceExtension)) return;
+    if (String_CompareCString(extension + 1, ((const CreatureStringPool*)text)->sequenceExtension))
+        return;
     // Retain only sequences; append in place or reserve/copy/publish a larger array.
     CreatureEffectVector* effects = (CreatureEffectVector*)&AsCCreature(self)->sequenceEffectHandles;
     unsigned int effectCount = effects->size;
@@ -340,10 +389,10 @@ void ntNpc_PolaShip_ParseAttachedEffectCommand(char* self, void** arg) {
         newCapacity = kMaxEffectPointers;
     } else if (newCapacity < kEffectSmallGrowthLimit) {
         unsigned int growth = (newCapacity + 1) * 3 / 5;
-        newCapacity += max_801A3B4C(growth, additionalCount);
+        newCapacity += SelectLarger(growth, additionalCount);
     } else if (newCapacity < kEffectHalfGrowthLimit) {
         unsigned int growth = (newCapacity + 1) / 2;
-        newCapacity += max_801A3B4C(growth, additionalCount);
+        newCapacity += SelectLarger(growth, additionalCount);
     } else {
         newCapacity = kMaxEffectPointers;
     }
@@ -387,7 +436,8 @@ void ntNpc_PolaShip_UpdateSplineTransform(ShipSplineView* self) {
     Spline_EvaluatePosition(&previousPosition, &self->spline, previousPathTime);
     Spline_EvaluatePosition(&pathPosition, &self->spline, self->pathTime);
     *(WVector*)(&self->position) = *(WVector*)&pathPosition;
-    if (Vec3_NearlyEqualWithTolerance(&previousPosition, self->pathPoints + (self->pathPointCount - 1), kFloat_0_00001_CreaturePath))
+    if (Vec3_NearlyEqualWithTolerance(&previousPosition, self->pathPoints + (self->pathPointCount - 1),
+                                      kFloat_0_00001_CreaturePath))
         self->pathTime = kFloat_0_Creature;
     previousPosition.y = self->position.y;
     Matrix_BuildCameraTransform(&result, &previousPosition, &self->position);
@@ -399,7 +449,8 @@ void ntNpc_PolaShip_UpdateSplineTransform(ShipSplineView* self) {
 // the owned vector. Spline_Init consumes/copies temporary positions and cumulative
 // distances synchronously; both arrays are freed immediately after it returns.
 // Copy path points, set the initial pose, and build an arc-length spline from cumulative distances.
-void ntNpc_PolaShip_SetPathAndInitSpline(ShipPathSetupView* self, const CreaturePathInput* path, float initialAnimationFrame) {
+void ntNpc_PolaShip_SetPathAndInitSpline(ShipPathSetupView* self, const CreaturePathInput* path,
+                                         float initialAnimationFrame) {
     // Phase 1: clear logical contents and reserve enough storage for the new path.
     CreaturePathVector* points = &self->points;
     unsigned int pointCount = path->count;
@@ -543,7 +594,9 @@ struct PenguinAnimationView {
 // animation clock, +AD gates updates, +12C/+130 retain the sequence vector.
 // Sequence byte +80 is set to 0 on ground-test entry and 1 on exit; the
 // wider CFxSequence playback semantics are deliberately not inferred here.
-enum { kSequencePlaybackByte = 0x80 };
+enum {
+    kSequencePlaybackByte = 0x80
+};
 struct ShipAnimationView {
     void** vtable;
     char reserved04[0x20];
@@ -586,7 +639,8 @@ void ntNpc_PolaShip_UpdateAnimationAndMovement(ShipAnimationView* self, float dt
         const char* action = (const char*)(((const CreatureStringPool*)npcResourceStrings)->defaultShipAction);
         // 0x801A40AC: retain the animation guard before changing its range.
         if (anim != 0) {
-            if (self->animationRange == 0 || CString_Compare(((AnimationRangeView*)self->animationRange)->name, action) != 0) {
+            if (self->animationRange == 0 ||
+                CString_Compare(((AnimationRangeView*)self->animationRange)->name, action) != 0) {
                 void* found = WPuppet_FindAnimationRangeByName(anim, action);
                 if (found) {
                     self->animationRange = found;
@@ -601,7 +655,8 @@ void ntNpc_PolaShip_UpdateAnimationAndMovement(ShipAnimationView* self, float dt
     }
     {
         float t = self->animationFrame;
-        AnimationEventParser_ProcessFrameRange(&AsCCreature(self)->secondaryVtable, self->animation, t - dt, t, self->animationRange, (void*)-1, 0);
+        AnimationEventParser_ProcessFrameRange(&AsCCreature(self)->secondaryVtable, self->animation, t - dt, t,
+                                               self->animationRange, (void*)-1, 0);
     }
     if (self->animationFrame > ((AnimationRangeView*)self->animationRange)->endFrame)
         self->animationFrame -= ((AnimationRangeView*)self->animationRange)->endFrame - *(float*)self->animationRange;
@@ -609,14 +664,16 @@ void ntNpc_PolaShip_UpdateAnimationAndMovement(ShipAnimationView* self, float dt
     self->pathTime += kFloat_10_CreatureMotion * dt;
     ((void (*)(void*, float))self->vtable[kCreatureMoveSlot])(self, dt);
     // Toggle sequence state only on a ground-test edge, using the retained latch.
-    if (!self->groundTestLatched && ((int (*)(void*, void*, float))self->vtable[kCreatureGroundTestSlot])(self, (void*)&AsCCreature(self)->transform[9], kFloat_0_8_805DF2D8)) {
+    if (!self->groundTestLatched && ((int (*)(void*, void*, float))self->vtable[kCreatureGroundTestSlot])(
+                                        self, (void*)&AsCCreature(self)->transform[9], kFloat_0_8_805DF2D8)) {
         unsigned int handleByteOffset = 0;
         for (unsigned int i = 0; i < self->sequenceCount; ++i) {
             if (i >= self->sequenceCount)
                 do {
                     const char* msg_ = npcResourceStrings + kCreatureRangeErrorOffset;
                     std::out_of_range err_(msg_);
-                    __throw((void*)(npcResourceStrings + kCreatureRangeTypeOffset), &err_, (void*)__dt__Q23std12out_of_rangeFv);
+                    __throw((void*)(npcResourceStrings + kCreatureRangeTypeOffset), &err_,
+                            (void*)__dt__Q23std12out_of_rangeFv);
                 } while (0);
             unsigned char* sequence = *(unsigned char**)((char*)self->sequenceHandles + handleByteOffset);
             if (sequence[kSequencePlaybackByte] != 0)
@@ -624,14 +681,16 @@ void ntNpc_PolaShip_UpdateAnimationAndMovement(ShipAnimationView* self, float dt
             handleByteOffset += 4;
         }
         self->groundTestLatched = 1;
-    } else if (self->groundTestLatched && !((int (*)(void*, void*, float))self->vtable[kCreatureGroundTestSlot])(self, (void*)&AsCCreature(self)->transform[9], kFloat_0_8_805DF2D8)) {
+    } else if (self->groundTestLatched && !((int (*)(void*, void*, float))self->vtable[kCreatureGroundTestSlot])(
+                                              self, (void*)&AsCCreature(self)->transform[9], kFloat_0_8_805DF2D8)) {
         unsigned int handleByteOffset = 0;
         for (unsigned int i = 0; i < self->sequenceCount; ++i) {
             if (i >= self->sequenceCount)
                 do {
                     const char* msg_ = npcResourceStrings + kCreatureRangeErrorOffset;
                     std::out_of_range err_(msg_);
-                    __throw((void*)(npcResourceStrings + kCreatureRangeTypeOffset), &err_, (void*)__dt__Q23std12out_of_rangeFv);
+                    __throw((void*)(npcResourceStrings + kCreatureRangeTypeOffset), &err_,
+                            (void*)__dt__Q23std12out_of_rangeFv);
                 } while (0);
             unsigned char* sequence = *(unsigned char**)((char*)self->sequenceHandles + handleByteOffset);
             if (sequence[kSequencePlaybackByte] != 1)
@@ -643,8 +702,42 @@ void ntNpc_PolaShip_UpdateAnimationAndMovement(ShipAnimationView* self, float dt
 }
 #pragma pop
 
-struct V90_ { 
-virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7(); virtual void v8(); virtual void v9(); virtual void v10(); virtual void v11(); virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15(); virtual void v16(); virtual void v17(); virtual void v18(); virtual void v19(); virtual void v20(); virtual void v21(); virtual void v22(); virtual void v23(); virtual void v24(); virtual void v25(); virtual void v26(); virtual void v27(); virtual void v28(); virtual void v29(); virtual void v30(); virtual void v31(); virtual void v32(); virtual void v33(); virtual void v34(float);
+struct V90_ {
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
+    virtual void v26();
+    virtual void v27();
+    virtual void v28();
+    virtual void v29();
+    virtual void v30();
+    virtual void v31();
+    virtual void v32();
+    virtual void v33();
+    virtual void v34(float);
 };
 // Advance animation events, stop or wrap at the range end, then update creature movement.
 void ntNpc_PolaPenguin1_UpdateAnimationAndMovement(PenguinAnimationView* self, float dt) {
@@ -653,7 +746,8 @@ void ntNpc_PolaPenguin1_UpdateAnimationAndMovement(PenguinAnimationView* self, f
     self->animationFrame = (self->animationFrame + dt);
     if (self->animationFrame < kFloat_0_Creature)
         return;
-    AnimationEventParser_ProcessFrameRange(&AsCCreature(self)->secondaryVtable, self->puppet, self->animationFrame - dt, self->animationFrame, self->animationRange, (void*)-1, 0);
+    AnimationEventParser_ProcessFrameRange(&AsCCreature(self)->secondaryVtable, self->puppet, self->animationFrame - dt,
+                                           self->animationFrame, self->animationRange, (void*)-1, 0);
     float cur = self->animationFrame;
     float endFrame = ((AnimationRangeView*)self->animationRange)->endFrame;
     if (cur > endFrame) {
@@ -697,11 +791,11 @@ void* ntNpc_PolaPenguin1_Ctor(PenguinAnimationView* self, void* arg, float movem
     AsCCreature(self)->movementSpeed = movementSpeed;
     void** vtable = *(void***)(volatile char*)self;
     try {
-    ((void (*)(PenguinAnimationView*, void*))vtable[kCreatureSetupSlot])(self, arg);
-    AsCCreature(self)->cellSize = kFloat_48_Creature;
-    return self;
+        ((void (*)(PenguinAnimationView*, void*))vtable[kCreatureSetupSlot])(self, arg);
+        AsCCreature(self)->cellSize = kFloat_48_Creature;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        __dt__9CCreatureFv(self, -1);
         throw;
     }
 }
@@ -736,8 +830,13 @@ void Matrix_SetAxisRotation(Mat_801A4FC0*, float, int);
 // The new target need not be near either the current position or the old target.
 // Choose a terrain target when close, turn toward it at a bounded rate, and advance along the ground.
 void ntNpc_PolaPenguin1_Wander(PenguinMovementView* self, float dt) {
-    Mat_801A4FC0 combinedTransform; Mat_801A4FC0 turnTransform;
-    Vec3_801A toCurrentPosition; Vec3_801A toTarget; Vec3_801A frameDisplacement; Vec3_801A forwardVelocity; Vec3_801A groundPosition;
+    Mat_801A4FC0 combinedTransform;
+    Mat_801A4FC0 turnTransform;
+    Vec3_801A toCurrentPosition;
+    Vec3_801A toTarget;
+    Vec3_801A frameDisplacement;
+    Vec3_801A forwardVelocity;
+    Vec3_801A groundPosition;
     __mi__FRC7WVectorRC7WVector(&toCurrentPosition, &self->position, &self->targetPosition);
     float distanceToTarget = WVectorLen(*(WVector*)&toCurrentPosition);
     float one = kFloat_1_Creature;
@@ -749,12 +848,15 @@ void ntNpc_PolaPenguin1_Wander(PenguinMovementView* self, float dt) {
 
             float y = AsCCreature(axisView)->movementBoundsMax[0];
             float inv = one - rnd;
-            AsCCreature(axisView)->targetPosition[0] = rnd * AsCCreature(axisView)->movementBoundsOrigin[0] /* first bounds endpoint, not a spawn operation */ + ((inv * y));
+            AsCCreature(axisView)->targetPosition[0] =
+                rnd * AsCCreature(axisView)->movementBoundsOrigin[0] /* first bounds endpoint, not a spawn operation */
+                + ((inv * y));
             // Move to the next x/y/z lane of the three parallel vectors.
             axisView = sizeof(float) + axisView;
         }
         Vec3_801A targetOnGround;
-        GetGroundPoint__9CQuadTreeF7WVectorbPib(&targetOnGround, CQuadTree_GetInstance(), GGP_VEC_ARG(self->targetPosition), 0, 0, 0);
+        GetGroundPoint__9CQuadTreeF7WVectorbPib(&targetOnGround, CQuadTree_GetInstance(),
+                                                GGP_VEC_ARG(self->targetPosition), 0, 0, 0);
         *(WVector*)self->targetPosition = *(WVector*)&targetOnGround;
     }
     // Target now lies on terrain; clamp the signed XZ heading correction to turnRate*dt.
@@ -772,7 +874,8 @@ void ntNpc_PolaPenguin1_Wander(PenguinMovementView* self, float dt) {
     __ml__FfRC7WVector(&forwardVelocity, &self->forwardAxis, self->movementSpeed);
     __ml__FRC7WVectorf(&frameDisplacement, &forwardVelocity, dt);
     *(WVector*)(&self->position) += *(WVector*)&frameDisplacement;
-    GetGroundPoint__9CQuadTreeF7WVectorbPib(&groundPosition, CQuadTree_GetInstance(), GGP_VEC_ARG(&self->position), 1, 0, 0);
+    GetGroundPoint__9CQuadTreeF7WVectorbPib(&groundPosition, CQuadTree_GetInstance(), GGP_VEC_ARG(&self->position), 1,
+                                            0, 0);
     *(WVector*)(&self->position) = *(WVector*)&groundPosition;
 }
 

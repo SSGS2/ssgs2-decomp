@@ -1,16 +1,21 @@
+// BP object and loader teardown: borrowed views of the BP object and BP loader layouts,
+// and the destructors that free string-value trees and the heap text stored in them.
+
 #include "game/string.h"
 #include "classes/CBpLoad.h"
 #include "classes/CBpObject.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CSharedFileHandle.h"
 
 // Borrow the BP object's reconstructed layout without transferring ownership.
-inline CBpObject* AsCBpObject(void* object) { return (CBpObject*)object; }
+inline CBpObject* AsCBpObject(void* object) {
+    return (CBpObject*)object;
+}
 
 // Borrow the loader's reconstructed layout without transferring ownership.
-inline CBpLoad* AsCBpLoad(void* object) { return (CBpLoad*)object; }
-
-// Translation unit 0x800C4568-0x800C4C08 (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+inline CBpLoad* AsCBpLoad(void* object) {
+    return (CBpLoad*)object;
+}
 
 #pragma use_lmw_stmw on
 
@@ -28,20 +33,22 @@ extern void OSUnlockMutex(void*);
 struct InstanceLock_u800C4568 {
     void* mutex;
     // Lock the borrowed per-loader mutex for the enclosing scope.
-    InstanceLock_u800C4568(void* m) : mutex(m) { OSLockMutex(m); }
+    InstanceLock_u800C4568(void* m) : mutex(m) {
+        OSLockMutex(m);
+    }
     // Release the per-loader mutex on both normal and exceptional exits.
-    ~InstanceLock_u800C4568() { OSUnlockMutex(mutex); }
+    ~InstanceLock_u800C4568() {
+        OSUnlockMutex(mutex);
+    }
 };
 
 extern void TableLock_ctor(TableLock*, int, int);
-extern void CBpObject_ClearResources(void*);
 extern void BpNamedGroupTree_ClearNodes(void*);
 
 extern void* StringValueTree_dtor(void*, int);
 extern void dtor_800C42A4(void*, int);
 extern void dtor_800C3FE0(void*, int);
 extern void __dl__FPv(void*);
-extern void CSharedFileHandle_Destroy(void*, int);
 extern void appFreeUni__FPv(void*);
 extern void StringValueTree_DestroySubtree(void*, void*);
 
@@ -49,16 +56,16 @@ extern unsigned char __vt__9CBpObject[];
 extern unsigned char __vt__7CBpLoad[];
 
 struct FlagByte {
-    CW_BITS2(
-        unsigned char sign : 1,
-        unsigned char low7 : 7)
+    CW_BITS2(unsigned char sign : 1, unsigned char low7 : 7)
     unsigned char firstInlineCharacter;
 };
 
 struct TableLock {
-// TableLock_ctor writes two words (8 bytes) into the guard.
+    // TableLock_ctor writes two words (8 bytes) into the guard.
     // Enter the shared BP-table lock with the original two lock-mode arguments.
-    TableLock(int a, int b) { TableLock_ctor(this, a, b); }
+    TableLock(int a, int b) {
+        TableLock_ctor(this, a, b);
+    }
     ~TableLock();
 };
 
@@ -71,24 +78,34 @@ struct TreeNode {
     void* allocation;
 };
 
-struct StringValueTree { unsigned int count; TreeNode* root; TreeNode* first; };
+struct StringValueTree {
+    unsigned int count;
+    TreeNode* root;
+    TreeNode* first;
+};
 // The header is embedded: count at +0, root at +4, first at +8. Heap nodes
 // have three links at +0/+4/+8 followed by a small/heap string at +0xC.
 // Inline text belongs to the node; only strings with the high flag bit set
 // own an additional allocation. These destructors free nodes and heap text.
-enum StringStorage { kHeapStringBit = 31, kInlineStringLengthMask = 0x7f,
-                     kNodeStringOffset = (int)&((TreeNode*)0)->flags };
+enum StringStorage {
+    kHeapStringBit = 31,
+    kInlineStringLengthMask = 0x7f,
+    kNodeStringOffset = (int)&((TreeNode*)0)->flags
+};
 
 // Release a node's heap-backed string before freeing the node itself.
 inline void FreeStringValueNode(TreeNode* node) {
     if (((int)node + kNodeStringOffset) != 0 && ((int)node + kNodeStringOffset) != 0 &&
-        ((node->flags >> kHeapStringBit) != 0)) appFreeUni__FPv(node->allocation);
+        ((node->flags >> kHeapStringBit) != 0))
+        appFreeUni__FPv(node->allocation);
     appFreeUni__FPv(node);
 }
 // Recurse below the explicitly expanded levels, then release this subtree root.
 inline void FreeStringValueLeaf(void* tree, TreeNode* node) {
-    if (node->left != 0) StringValueTree_DestroySubtree(tree, node->left);
-    if (node->right != 0) StringValueTree_DestroySubtree(tree, node->right);
+    if (node->left != 0)
+        StringValueTree_DestroySubtree(tree, node->left);
+    if (node->right != 0)
+        StringValueTree_DestroySubtree(tree, node->right);
     FreeStringValueNode(node);
 }
 
@@ -122,10 +139,12 @@ void* StringValueTree_dtor(void* self, int deleteFlag) {
                                         TreeNode* leftValue2 = grandchild->left;
                                         __typeof__(grandchild->right) cachedLeafRight1 = grandchild->right;
                                         leaf = leftValue2;
-                                        if (leaf) FreeStringValueLeaf(self, leaf);
+                                        if (leaf)
+                                            FreeStringValueLeaf(self, leaf);
                                         TreeNode* rightValue = grandchild->right;
                                         leaf = rightValue;
-                                        if (leaf != 0) FreeStringValueLeaf(self, leaf);
+                                        if (leaf != 0)
+                                            FreeStringValueLeaf(self, leaf);
                                         FreeStringValueNode(grandchild);
                                     }
                                     TreeNode* rightValue2 = branch->right;
@@ -150,9 +169,11 @@ void* StringValueTree_dtor(void* self, int deleteFlag) {
                                         TreeNode* leftValue5 = grandchild->left;
                                         TreeNode* leftValue6 = grandchild->left;
                                         leaf = leftValue3;
-                                        if (leaf) FreeStringValueLeaf(self, leaf);
+                                        if (leaf)
+                                            FreeStringValueLeaf(self, leaf);
                                         leaf = grandchild->right;
-                                        if (leaf) FreeStringValueLeaf(self, leaf);
+                                        if (leaf)
+                                            FreeStringValueLeaf(self, leaf);
                                         FreeStringValueNode(grandchild);
                                     }
                                     FreeStringValueNode(branch);
@@ -169,13 +190,15 @@ void* StringValueTree_dtor(void* self, int deleteFlag) {
                                         TreeNode* rightValue11 = grandchild->right;
                                         leaf = leftValue8;
                                         __typeof__(grandchild->right) cachedLeafRight5 = grandchild->right;
-                                        if (leaf) FreeStringValueLeaf(self, leaf);
+                                        if (leaf)
+                                            FreeStringValueLeaf(self, leaf);
                                         TreeNode* rightValue12 = grandchild->right;
                                         TreeNode* rightValue13 = grandchild->right;
                                         __typeof__(grandchild->right) cachedLeafRight8 = grandchild->right;
                                         TreeNode* rightValue14 = grandchild->right;
                                         leaf = rightValue13;
-                                        if (leaf) FreeStringValueLeaf(self, leaf);
+                                        if (leaf)
+                                            FreeStringValueLeaf(self, leaf);
                                         FreeStringValueNode(grandchild);
                                     }
                                     TreeNode* rightValue15 = branch->right;
@@ -186,9 +209,11 @@ void* StringValueTree_dtor(void* self, int deleteFlag) {
                                     if (grandchild) {
                                         TreeNode* leftValue9 = grandchild->left;
                                         leaf = leftValue9;
-                                        if (leaf) FreeStringValueLeaf(self, leaf);
+                                        if (leaf)
+                                            FreeStringValueLeaf(self, leaf);
                                         leaf = grandchild->right;
-                                        if (leaf) FreeStringValueLeaf(self, leaf);
+                                        if (leaf)
+                                            FreeStringValueLeaf(self, leaf);
                                         FreeStringValueNode(grandchild);
                                     }
                                     FreeStringValueNode(branch);
@@ -201,7 +226,8 @@ void* StringValueTree_dtor(void* self, int deleteFlag) {
                 }
             }
         }
-        if (0 < deleteFlag) __dl__FPv(self);
+        if (0 < deleteFlag)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -213,76 +239,66 @@ void* StringValueTree_dtor(void* self, int deleteFlag) {
 // +24 objectArray and +5C loader are separately allocated polymorphic owners.
 // ClearResources/ClearNodes run under the table lock. Header/string destruction
 // follows outside it; deleteFlag > 0 finally frees the enclosing object.
-void* CBpObject_dtor(void* self, int deleteFlag) {
-    if (self != 0) {
-        *(void**)self = __vt__9CBpObject;
+CBpObject::~CBpObject() {
+    *(void**)this = __vt__9CBpObject;
+    {
+        TableLock lock(1, 1);
+        ClearResources();
+        volatile char* objectBytes = (char*)this;
+        BpNamedGroupTree_ClearNodes((void*)(objectBytes + (int)&((CBpObject*)0)->pad_044));
         {
-            TableLock lock(1, 1);
-            CBpObject_ClearResources(self);
-            volatile char* objectBytes = (char*)self;
-            BpNamedGroupTree_ClearNodes((void*)(objectBytes + (int)&((CBpObject*)0)->pad_044));
-            {
-                void* ownedObject = AsCBpObject(self)->loader;
-                if (ownedObject != 0) {
-                    ((VirtualOwned*)ownedObject)->destroy(1);
-                }
-            }
-            {
-                void* ownedObject = AsCBpObject(self)->objectArray;
-                if (ownedObject != 0) {
-                    ((VirtualOwned*)ownedObject)->destroy(1);
-                }
+            void* ownedObject = loader;
+            if (ownedObject != 0) {
+                ((VirtualOwned*)ownedObject)->destroy(1);
             }
         }
-        // All shared-table edits are complete; destroy each embedded owner once.
-        ((NString*)AsCBpObject(self)->scriptPathStorage)->~NString(); // CBpObject_dtor: inline path at +0x60
-        StringValueTree_dtor((char*)&AsCBpObject(self)->namedGroupCount, -1);
-        dtor_800C42A4(AsCBpObject(self)->pad_044, -1);
-        dtor_800C3FE0((char*)&AsCBpObject(self)->objectCount, -1);
-        if (deleteFlag > 0) {
-            __dl__FPv(self);
+        {
+            void* ownedObject = objectArray;
+            if (ownedObject != 0) {
+                ((VirtualOwned*)ownedObject)->destroy(1);
+            }
         }
     }
-    return self;
+    // All shared-table edits are complete; destroy each embedded owner once.
+    ((NString*)scriptPathStorage)->~NString(); // CBpObject::~CBpObject: inline path at +0x60
+    StringValueTree_dtor((char*)&namedGroupCount, -1);
+    dtor_800C42A4(pad_044, -1);
+    dtor_800C3FE0((char*)&objectCount, -1);
 }
 
 // Close an outstanding shared file, clear its filename under the mutex, and release filename storage.
 // The file-close path is conditional on a NONEMPTY filename. selected length
 // uses a pointer-shaped ABI word below but is only tested for zero, never read
 // as an address. Emptying heap text retains its allocation until after unlock.
-void* CBpLoad_dtor(void* self, int deleteFlag) {
-    if (self != 0) {
-        *(void**)self = __vt__7CBpLoad;
-        {
-            InstanceLock_u800C4568 lock((void*)((char*)&AsCBpLoad(self)->mutexStorage));
-            unsigned int filenameFlags = AsCBpLoad(self)->filenameStorage;
-            void* filenameLengthWord;
-            if ((filenameFlags >> kHeapStringBit) == 0) filenameLengthWord = (void*)(*(unsigned char*)&AsCBpLoad(self)->filenameStorage & kInlineStringLengthMask);
-            else filenameLengthWord = AsCBpLoad(self)->filenameLongLength;
-            if (filenameLengthWord != 0) {
-                void* ownedObject = AsCBpLoad(self)->sharedFileHandle;
-                if (ownedObject != 0) {
-                    CSharedFileHandle_Destroy(ownedObject, 1);
-                    AsCBpLoad(self)->sharedFileHandle = 0;
-                }
-                if ((AsCBpLoad(self)->filenameStorage >> kHeapStringBit) == 0) {
-                    ((unsigned char*)&AsCBpLoad(self)->filenameStorage)[1] = 0;
-                    ((FlagByte*)((char*)&AsCBpLoad(self)->filenameStorage))->low7 = 0;
-                } else {
-                    *(unsigned char*)AsCBpLoad(self)->filenameHeapData = 0;
-                    AsCBpLoad(self)->filenameLongLength = 0;
-                }
+CBpLoad::~CBpLoad() {
+    *(void**)this = __vt__7CBpLoad;
+    {
+        InstanceLock_u800C4568 lock((void*)((char*)&mutexStorage));
+        unsigned int filenameFlags = filenameStorage;
+        void* filenameLengthWord;
+        if ((filenameFlags >> kHeapStringBit) == 0)
+            filenameLengthWord = (void*)(*(unsigned char*)&filenameStorage & kInlineStringLengthMask);
+        else
+            filenameLengthWord = filenameLongLength;
+        if (filenameLengthWord != 0) {
+            void* ownedObject = sharedFileHandle;
+            if (ownedObject != 0) {
+                CSharedFileHandle::Destroy(ownedObject, 1);
+                sharedFileHandle = 0;
+            }
+            if ((filenameStorage >> kHeapStringBit) == 0) {
+                ((unsigned char*)&filenameStorage)[1] = 0;
+                ((FlagByte*)((char*)&filenameStorage))->low7 = 0;
+            } else {
+                *(unsigned char*)filenameHeapData = 0;
+                filenameLongLength = 0;
             }
         }
-        // The mutex scope ended; release heap text, then optionally the wrapper.
-        if (((int)self + 8) != 0 && ((AsCBpLoad(self)->filenameStorage >> kHeapStringBit) != 0)) {
-            appFreeUni__FPv(AsCBpLoad(self)->filenameHeapData);
-        }
-        if (deleteFlag > 0) {
-            __dl__FPv(self);
-        }
     }
-    return self;
+    // The mutex scope ended; release heap text, then optionally the wrapper.
+    if (((int)this + 8) != 0 && ((filenameStorage >> kHeapStringBit) != 0)) {
+        appFreeUni__FPv(filenameHeapData);
+    }
 }
 
 } // extern "C"

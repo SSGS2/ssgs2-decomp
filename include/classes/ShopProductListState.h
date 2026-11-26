@@ -4,11 +4,12 @@
 #ifndef CLASSES_SHOPPRODUCTLISTSTATE_H
 #define CLASSES_SHOPPRODUCTLISTSTATE_H
 struct ShopProductListState {
-    void* vtable; // 0x0
-    void* context; // 0x4: constructor argument; stronger ownership unknown
-    void** items; // 0x8
+    void* vtable;           // 0x0
+    void* context;          // 0x4: constructor argument; stronger ownership unknown
+    void** items;           // 0x8
     unsigned int itemCount; // 0xC
-    unsigned int itemCapacity; // 0x10: grow routines CShopProductParts_RebuildFromPartTable / CShopProductHair_BuildProductList
+    unsigned int
+        itemCapacity; // 0x10: grow routines CShopProductParts_RebuildFromPartTable / CShopProductHair_BuildProductList
 };
 #define OFF(f, o) typedef char ShopProductListState_off_##f[((int)&((ShopProductListState*)0)->f == (o)) ? 1 : -1]
 OFF(vtable, 0x0);

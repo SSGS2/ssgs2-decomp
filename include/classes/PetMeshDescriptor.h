@@ -7,8 +7,8 @@ struct PetMeshDescriptor {
     char pad_000[0xA];
     unsigned short vertexStride; // 0xA
     char pad_00C[0x2];
-    unsigned short triangleCount; // 0xE
-    unsigned short indexResource; // 0x10
+    unsigned short triangleCount;  // 0xE
+    unsigned short indexResource;  // 0x10
     unsigned short vertexResource; // 0x12
 };
 

@@ -8,7 +8,7 @@ struct PadMemDevice {
     unsigned int nameStorageWord; // 0x4
     char pad_008[0x4];
     void* nameData; // 0xC
-    void* device; // 0x10
+    void* device;   // 0x10
 };
 
 #define OFF(f, o) typedef char PadMemDevice_off_##f[((int)&((PadMemDevice*)0)->f == (o)) ? 1 : -1]

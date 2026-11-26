@@ -1,3 +1,6 @@
+// Generic renderer vertex-stream binding: prepares a mesh's vertex buffers, index data and
+// material state for a caller, and releases reference-counted renderer resources.
+
 #include <decomp/cw_bitfields.h>
 // gtl mesh vertex-stream binding. Modding lookup: mesh buffer/decl indices choose
 // the resources; effectType chooses built-in render path; material depth +0xD4
@@ -6,8 +9,6 @@
 // Graphics upload/creation: gtl_generic_model_graphics_load.cpp and resource APIs; generic_modeling_resource_description.cpp only queries
 // counts. Material state setup: gtl_generic_renderer_material.cpp; resource material records: below.
 // No draw is issued here. This prepares persistent renderer state for a caller.
-// Translation unit 0x803DDE94-0x803DE3E0 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 typedef unsigned int u32;
 
@@ -15,13 +16,18 @@ typedef unsigned short u16;
 
 typedef float f32;
 
-struct BVS_Vec3 { f32 x, y, z; };
+struct BVS_Vec3 {
+    f32 x, y, z;
+};
 
 enum MeshBindingValue {
-    kNoBuiltinEffect = 0, kBuiltinWithoutExtraUpload = 1,
-    kBuiltinDepthProjection = 2, kBuiltinAdditiveStreams = 3,
+    kNoBuiltinEffect = 0,
+    kBuiltinWithoutExtraUpload = 1,
+    kBuiltinDepthProjection = 2,
+    kBuiltinAdditiveStreams = 3,
     kBuiltinTextureProjection = 6,
-    kDepthProjectionFloatSlot = 6, kTextureProjectionSettingsSlot = 9
+    kDepthProjectionFloatSlot = 6,
+    kTextureProjectionSettingsSlot = 9
 };
 
 struct BVS_VBDesc {
@@ -32,26 +38,24 @@ struct BVS_VBDesc {
 };
 
 struct BVS_RefRes {
-    CW_BITS2(
-        u32 rc : 16,
-        u32 rest : 16)
+    CW_BITS2(u32 rc : 16, u32 rest : 16)
 };
 
 struct BVS_Mesh {
-    u16 effectType;   // 0x0
-    u16 type7Id;      // 0x2
-    u16 materialIdx;  // 0x4
+    u16 effectType;  // 0x0
+    u16 type7Id;     // 0x2
+    u16 materialIdx; // 0x4
     char reserved6[0x4];
-    u16 stride;       // 0xa
+    u16 stride; // 0xa
     char unkC[0x6];
-    u16 bufferIdx;    // 0x12
+    u16 bufferIdx; // 0x12
     char unk14[0x4];
-    u16 declIdx;      // 0x18
+    u16 declIdx; // 0x18
 };
 
 struct BVS_Material {
     char unk0[0xd4];
-    f32 depth;        // +D4 authored scalar; this path computes -(value)*(1/512).
+    f32 depth; // +D4 authored scalar; this path computes -(value)*(1/512).
     char reservedD8[0x8];
     char settings[0x10]; // +E0 four native float words; see upload contract below.
 };
@@ -70,14 +74,14 @@ struct BVS_Material {
 typedef char BVS_Material_size[(sizeof(BVS_Material) == 0xF0) ? 1 : -1];
 
 struct BVS_Renderer {
-    BVS_Mesh* mesh;       // 0x0
+    BVS_Mesh* mesh; // 0x0
     char unk4[0x4];
-    void** baseVertexBuffers;       // 0x8: base vertex buffers, indexed by mesh.bufferIdx
+    void** baseVertexBuffers;          // 0x8: base vertex buffers, indexed by mesh.bufferIdx
     void** additiveVertexBuffers;      // 0xc: optional additive position/normal streams, same index
-    void** mergedVertexBuffers;      // 0x10: optional writable CPU-sum output buffers, same index
-    void** additiveStreamDeclarations;       // 0x14: two-stream declarations indexed by bufferIdx
-    void** singleStreamDeclarations;       // 0x18: single-stream declarations indexed by declIdx
-    BVS_Material* mats;   // 0x1c
+    void** mergedVertexBuffers;        // 0x10: optional writable CPU-sum output buffers, same index
+    void** additiveStreamDeclarations; // 0x14: two-stream declarations indexed by bufferIdx
+    void** singleStreamDeclarations;   // 0x18: single-stream declarations indexed by declIdx
+    BVS_Material* mats;                // 0x1c
 };
 
 extern "C" {
@@ -102,7 +106,8 @@ extern const f32 kMaterialDepthToProjectionScale;
 // Drop the temporary acquired reference; Engine_SetType*Resource retains its
 // own reference. Zero count invokes deleting destructor, never called on null.
 static inline void BVS_Release(BVS_RefRes* resource) {
-    if (--resource->rc == 0) CubeResourceStorage_dtor(resource, 1);
+    if (--resource->rc == 0)
+        CubeResourceStorage_dtor(resource, 1);
 }
 // Required mesh/base-buffer/declaration/material arrays with valid mesh indices.
 // All resources are borrowed from self and must outlive submission/draw. CPU
@@ -127,8 +132,7 @@ static inline void BVS_Release(BVS_RefRes* resource) {
 // upstream authoring unit and, because of the indexed-source issue, its actual
 // engine consumption are unestablished. kMaterialDepthToProjectionScale is the
 // external constant symbol for 1/512; do not reinterpret it as a pixel size.
-int gtl_GenericRenderer_BindVertexStreams(BVS_Renderer* self)
-{
+int gtl_GenericRenderer_BindVertexStreams(BVS_Renderer* self) {
     void* vb2;
     BVS_Mesh* mesh;
     void* vb;
@@ -222,14 +226,17 @@ int gtl_GenericRenderer_BindVertexStreams(BVS_Renderer* self)
         Engine_SetVertexDeclaration(self->singleStreamDeclarations[mesh->declIdx]);
         m = self->mesh;
         eff = 0;
-        if (m->effectType != 0) GraphicsResource_AcquireBuiltinEffect(m->effectType, &eff);
+        if (m->effectType != 0)
+            GraphicsResource_AcquireBuiltinEffect(m->effectType, &eff);
         Engine_SetType6Resource(eff);
         t7 = 0;
-        if (m->type7Id != 0) GraphicsResource_AcquireCachedType7(m->type7Id, &t7);
+        if (m->type7Id != 0)
+            GraphicsResource_AcquireCachedType7(m->type7Id, &t7);
         Engine_SetType7Resource(t7);
         switch (m->effectType) {
         case kNoBuiltinEffect:
-        case kBuiltinWithoutExtraUpload: break;
+        case kBuiltinWithoutExtraUpload:
+            break;
         case kBuiltinDepthProjection: {
             f32 depth;
             depth = -self->mats[m->materialIdx].depth;
@@ -238,7 +245,8 @@ int gtl_GenericRenderer_BindVertexStreams(BVS_Renderer* self)
             break;
         }
         case kBuiltinTextureProjection:
-            TextureProjection_CopySettingsFloatRangeThunk(kTextureProjectionSettingsSlot, self->mats[m->materialIdx].settings, 1);
+            TextureProjection_CopySettingsFloatRangeThunk(kTextureProjectionSettingsSlot,
+                                                          self->mats[m->materialIdx].settings, 1);
             break;
         }
         if (eff != 0) {

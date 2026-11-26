@@ -5,9 +5,10 @@
 
 class ResourceTreeLinks {
 public:
-    void* left; // 0x0: CameraResourceGroupTree_FindInsertionPosition follows when the requested key is smaller
+    void* left;  // 0x0: CameraResourceGroupTree_FindInsertionPosition follows when the requested key is smaller
     void* right; // 0x4: CameraResourceGroupTree_FindInsertionPosition follows otherwise
-    void* taggedParent; // 0x8: CameraOwnedAnimationIterator_PostIncrement and CameraOwnedGroupIterator_PostIncrement mask off bit 0 while climbing
+    void*
+        taggedParent; // 0x8: CameraOwnedAnimationIterator_PostIncrement and CameraOwnedGroupIterator_PostIncrement mask off bit 0 while climbing
 };
 
 #define OFF(f, o) typedef char ResourceTreeLinks_off_##f[((int)&((ResourceTreeLinks*)0)->f == (o)) ? 1 : -1]

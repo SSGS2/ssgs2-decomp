@@ -1,8 +1,11 @@
+// GTL audio thread and stream player: the audio thread's message loop and frame callback, the
+// singleton stream queues and mutex, intrusive-list and bitmap block pool helpers, and playback start.
+
+#include "classes/Voice8040E9BC.h"
 #include <decomp/static_init.h>
 #include "classes/StreamWorker8040C2C8.h"
+#include "classes/GtlStrmPlayer.h"
 #define AsStreamWorker8040C2C8(p) ((StreamWorker8040C2C8*)(p))
-// Translation unit 0x8040C2C8-0x8040D32C (25 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
@@ -33,15 +36,21 @@ void* dtor_8040C988(void* self, int deleteFlag) {
 
 struct InterruptBase {
     // Run the nondeleting interrupt-guard base cleanup.
-    ~InterruptBase() { dtor_8040C988(this, 0); }
+    ~InterruptBase() {
+        dtor_8040C988(this, 0);
+    }
 };
 
 struct InterruptLock : InterruptBase {
     int level;
     // Serialize bitmap edits against interrupt handlers, preserving the prior level.
-    InterruptLock() { level = OSDisableInterrupts(); }
+    InterruptLock() {
+        level = OSDisableInterrupts();
+    }
     // Restore the interrupt state that existed before this guard.
-    ~InterruptLock() { OSRestoreInterrupts(level); }
+    ~InterruptLock() {
+        OSRestoreInterrupts(level);
+    }
 };
 
 static const unsigned int kAudioMessageUpdate = 1;
@@ -50,13 +59,17 @@ static const int kStreamLoadCommandCount = 32;
 enum StreamPlaybackConstants {
     kStreamAdpcmFormat = 0,
     kStreamChannelSlots = 2,
-    kStreamSeekSamples = 0, kStreamSeekMilliseconds = 1,
+    kStreamSeekSamples = 0,
+    kStreamSeekMilliseconds = 1,
     kStreamHardwareVoiceType1 = 1 // hardware voice-type domain is forwarded unchanged
 };
 enum AdpcmDecoderWord {
     kAdpcmCoefficientCount = 16,
-    kAdpcmGain = 16, kAdpcmPredictorScale = 17,
-    kAdpcmHistory1 = 18, kAdpcmHistory2 = 19, kAdpcmDecoderWords = 20
+    kAdpcmGain = 16,
+    kAdpcmPredictorScale = 17,
+    kAdpcmHistory1 = 18,
+    kAdpcmHistory2 = 19,
+    kAdpcmDecoderWords = 20
 };
 
 struct BlockPool {
@@ -79,7 +92,8 @@ struct BlockPool {
 // Reserve the first free bitmap slot while interrupts are disabled.
 void* BitmapBlockPool_Allocate(BlockPool* self) {
     InterruptLock lock;
-    if (self->count >= self->capacity) return 0;
+    if (self->count >= self->capacity)
+        return 0;
     int stride;
     int offset;
     int count;
@@ -180,9 +194,13 @@ struct GlobalLockBase {
 };
 struct GlobalLock : GlobalLockBase {
     // Acquire the singleton worker mutex; OS mutex nesting is intentional.
-    GlobalLock() { OSLockMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(gtl_AudioWorker_GetInstance())->mutex)); }
+    GlobalLock() {
+        OSLockMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(gtl_AudioWorker_GetInstance())->mutex));
+    }
     // Release the same global worker mutex at scope exit.
-    ~GlobalLock() { OSUnlockMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(gtl_AudioWorker_GetInstance())->mutex)); }
+    ~GlobalLock() {
+        OSUnlockMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(gtl_AudioWorker_GetInstance())->mutex));
+    }
 };
 
 // Unlock the global worker mutex and optionally delete the lock wrapper.
@@ -237,7 +255,8 @@ inline void InitStreamSingleton() {
     self->prev = (void*)&self->prev;
     self->next = (void*)&self->prev;
     self->running = 0;
-    OSInitMessageQueue((OSMessageQueue*)((char*)&AsStreamWorker8040C2C8(self)->messageQueue), (OSMessage*)((char*)&AsStreamWorker8040C2C8(self)->messageBuffer), 4);
+    OSInitMessageQueue((OSMessageQueue*)((char*)&AsStreamWorker8040C2C8(self)->messageQueue),
+                       (OSMessage*)((char*)&AsStreamWorker8040C2C8(self)->messageBuffer), 4);
     OSInitThreadQueue((OSThreadQueue*)((char*)&AsStreamWorker8040C2C8(self)->threadQueue));
     OSInitMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(self)->mutex));
 }
@@ -248,7 +267,8 @@ inline void InitStreamSingleton() {
 void* gtl_AudioWorker_GetInstance() {
     if (!s_audioWorkerInitialized) {
         InitStreamSingleton();
-        __register_global_object(s_gtlAudioWorker, (void*)gtl_AudioWorker_Dtor, s_audioWorkerDtorRegistration_VoiceManager);
+        __register_global_object(s_gtlAudioWorker, (void*)gtl_AudioWorker_Dtor,
+                                 s_audioWorkerDtorRegistration_VoiceManager);
         s_audioWorkerInitialized = 1;
     }
     return s_gtlAudioWorker;
@@ -274,14 +294,17 @@ void gtl_AudioWorker_Stop(StreamSingleton* self) {
             singleton->prev = anchor;
             singleton->next = anchor;
             singleton->running = zero;
-            OSInitMessageQueue((OSMessageQueue*)((char*)&AsStreamWorker8040C2C8(singleton)->messageQueue), (OSMessage*)((char*)&AsStreamWorker8040C2C8(singleton)->messageBuffer), 4);
+            OSInitMessageQueue((OSMessageQueue*)((char*)&AsStreamWorker8040C2C8(singleton)->messageQueue),
+                               (OSMessage*)((char*)&AsStreamWorker8040C2C8(singleton)->messageBuffer), 4);
             OSInitThreadQueue((OSThreadQueue*)((char*)&AsStreamWorker8040C2C8(singleton)->threadQueue));
             OSInitMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(singleton)->mutex));
-            __register_global_object(s_gtlAudioWorker, (void*)gtl_AudioWorker_Dtor, s_audioWorkerDtorRegistration_VoiceManager);
+            __register_global_object(s_gtlAudioWorker, (void*)gtl_AudioWorker_Dtor,
+                                     s_audioWorkerDtorRegistration_VoiceManager);
             s_audioWorkerInitialized = 1;
         }
         // Blocking jam puts stop ahead of queued updates; join waits for callback removal.
-        OSJamMessage((OSMessageQueue*)((char*)&AsStreamWorker8040C2C8(s_gtlAudioWorker)->messageQueue), (OSMessage)kAudioMessageStop, 1);
+        OSJamMessage((OSMessageQueue*)((char*)&AsStreamWorker8040C2C8(s_gtlAudioWorker)->messageQueue),
+                     (OSMessage)kAudioMessageStop, 1);
         OSJoinThread((OSThread*)self, 0);
         self->running = 0;
     }
@@ -295,11 +318,13 @@ void GtlVoicePool_StopActiveVoiceRamps(void*);
 void gtl_AudioWorker_OnAudioFrame(void*) {
     if (!s_audioWorkerInitialized) {
         InitStreamSingleton();
-        __register_global_object(s_gtlAudioWorker, (void*)gtl_AudioWorker_Dtor, s_audioWorkerDtorRegistration_VoiceManager);
+        __register_global_object(s_gtlAudioWorker, (void*)gtl_AudioWorker_Dtor,
+                                 s_audioWorkerDtorRegistration_VoiceManager);
         s_audioWorkerInitialized = 1;
     }
     // Nonblocking send may drop a wake-up when the four-message queue is full.
-    OSSendMessage((OSMessageQueue*)((char*)&AsStreamWorker8040C2C8(s_gtlAudioWorker)->messageQueue), (OSMessage)kAudioMessageUpdate, 0);
+    OSSendMessage((OSMessageQueue*)((char*)&AsStreamWorker8040C2C8(s_gtlAudioWorker)->messageQueue),
+                  (OSMessage)kAudioMessageUpdate, 0);
     gtl_AudioObjects_ProcessAudioFrame();
     void* extraReceiver6 = (void*)gtl_VoicePool_GetInstance();
     GtlVoicePool_StopActiveVoiceRamps(extraReceiver6);
@@ -341,7 +366,8 @@ struct PlayerCommandOwner {
 
 // Register the frame callback for the duration of the worker message loop.
 int gtl_AudioWorker_ThreadEntry(PlayerCommandOwner* self) {
-    gtl_AudioController_RegisterCallback(gtl_AudioController_GetInstance(), &self->command, gtl_AudioWorker_OnAudioFrame);
+    gtl_AudioController_RegisterCallback(gtl_AudioController_GetInstance(), &self->command,
+                                         gtl_AudioWorker_OnAudioFrame);
     gtl_AudioWorker_RunMessageLoop(self);
     gtl_AudioController_UnregisterCallback(gtl_AudioController_GetInstance(), &self->command);
     return 0;
@@ -414,7 +440,8 @@ PlayerDraft* gtl_nw4r_detail_StrmPlayer_Ctor(PlayerDraft* self) {
     self->usedList.count = 0;
     self->usedList.prev = (void*)&self->usedList.prev;
     self->usedList.next = (void*)&self->usedList.prev;
-    __construct_array(self->commands, (void*)gtl_nw4r_detail_StrmPlayerLoadCommand_Ctor, (void*)dtor_804033F8, sizeof(LoadCommand), kStreamLoadCommandCount);
+    __construct_array(self->commands, (void*)gtl_nw4r_detail_StrmPlayerLoadCommand_Ctor, (void*)dtor_804033F8,
+                      sizeof(LoadCommand), kStreamLoadCommandCount);
     self->field4A0 = 0;
     OSInitMutex((OSMutex*)&self->mutex);
     void* head = (void*)&self->freeList.prev;
@@ -467,11 +494,14 @@ struct MutexBase {
 struct MutexGuard : MutexBase {
     OSMutex* mutex;
     // Lock the supplied borrowed OS mutex for this scope.
-    MutexGuard(OSMutex* value) : mutex(value) { OSLockMutex(mutex); }
+    MutexGuard(OSMutex* value) : mutex(value) {
+        OSLockMutex(mutex);
+    }
     // Unlock the OS mutex; it remains owned by its enclosing object.
-    ~MutexGuard() { OSUnlockMutex(mutex); }
+    ~MutexGuard() {
+        OSUnlockMutex(mutex);
+    }
 };
-
 
 void* GtlVoicePool_GetInstance();
 void GtlVoicePool_DrainPendingReleases(void*);
@@ -563,7 +593,8 @@ void gtl_AudioWorker_RunMessageLoop(void* object) {
 // stack is caller-owned bytes and must outlive Stop()/join; OSCreateThread gets
 // the top (stack+stackSize). Failure leaves running set, matching existing behavior.
 bool gtl_AudioWorker_Start(StreamSingleton* self, int priority, char* stack, unsigned int stackSize) {
-    if (self->running) return true;
+    if (self->running)
+        return true;
     self->stackBase = (int)stack;
     self->running = 1;
     if (!s_audioWorkerInitialized) {
@@ -579,31 +610,34 @@ bool gtl_AudioWorker_Start(StreamSingleton* self, int priority, char* stack, uns
         singleton->prev = anchor;
         singleton->next = anchor;
         singleton->running = zero;
-        OSInitMessageQueue((OSMessageQueue*)((char*)&AsStreamWorker8040C2C8(singleton)->messageQueue), (OSMessage*)((char*)&AsStreamWorker8040C2C8(singleton)->messageBuffer), 4);
+        OSInitMessageQueue((OSMessageQueue*)((char*)&AsStreamWorker8040C2C8(singleton)->messageQueue),
+                           (OSMessage*)((char*)&AsStreamWorker8040C2C8(singleton)->messageBuffer), 4);
         OSInitThreadQueue((OSThreadQueue*)((char*)&AsStreamWorker8040C2C8(singleton)->threadQueue));
         OSInitMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(singleton)->mutex));
-        __register_global_object(s_gtlAudioWorker, (void*)gtl_AudioWorker_Dtor, s_audioWorkerDtorRegistration_VoiceManager);
+        __register_global_object(s_gtlAudioWorker, (void*)gtl_AudioWorker_Dtor,
+                                 s_audioWorkerDtorRegistration_VoiceManager);
         s_audioWorkerInitialized = 1;
     }
     int result = OSCreateThread((OSThread*)self, (void* (*)(void*))gtl_AudioWorker_ThreadEntry, s_gtlAudioWorker,
-                            stack + stackSize, stackSize, priority, 0);
-    if (result) OSResumeThread((OSThread*)self);
+                                stack + stackSize, stackSize, priority, 0);
+    if (result)
+        OSResumeThread((OSThread*)self);
     return result != 0;
 }
 
 struct StreamConfig {
     unsigned char sampleFormat, loopFlag, channelCount, reserved; // +00..03
-    unsigned short sampleRate, blockHeaderBytes; // +04 Hz, +06 bytes per file block
-    unsigned int loopStartSample;       // +08 sample index
-    unsigned int totalSamples;          // +0C exclusive sample end (loop end when cropped)
-    unsigned int fileDataOffset;        // +10 byte offset of first file block
-    unsigned int fileBlockCount;        // +14 number of file blocks
-    unsigned int blockBytes;            // +18 full block bytes PER SOURCE CHANNEL
-    unsigned int samplesPerBlock;       // +1C divisor for seeks/loop positions
-    unsigned int lastBlockBytes;        // +20 unaligned final block bytes per channel
-    unsigned int lastBlockSamples;      // +24 valid samples in final block
-    unsigned int lastBlockAlignedBytes; // +28 final bytes rounded up to 32
-    unsigned int unresolved2C;          // +2C copied verbatim; no consumer identified
+    unsigned short sampleRate, blockHeaderBytes;                  // +04 Hz, +06 bytes per file block
+    unsigned int loopStartSample;                                 // +08 sample index
+    unsigned int totalSamples;                                    // +0C exclusive sample end (loop end when cropped)
+    unsigned int fileDataOffset;                                  // +10 byte offset of first file block
+    unsigned int fileBlockCount;                                  // +14 number of file blocks
+    unsigned int blockBytes;                                      // +18 full block bytes PER SOURCE CHANNEL
+    unsigned int samplesPerBlock;                                 // +1C divisor for seeks/loop positions
+    unsigned int lastBlockBytes;                                  // +20 unaligned final block bytes per channel
+    unsigned int lastBlockSamples;                                // +24 valid samples in final block
+    unsigned int lastBlockAlignedBytes;                           // +28 final bytes rounded up to 32
+    unsigned int unresolved2C;                                    // +2C copied verbatim; no consumer identified
 };
 // Configuration is copied by value; channelCount must fit the two supplied
 // decoder-state slots for ADPCM preparation. Field domains are corroborated by
@@ -645,8 +679,8 @@ struct StreamPlayback {
 void gtl_nw4r_detail_StrmPlayer_PreloadBlocks(void*, int);
 // Copy a halfword pair while prefetching the next pair's first word.
 // carried/second are caller scratch registers; source needs three readable words.
-static inline void copyDecoderStatePair(unsigned short* dest, const unsigned short* source,
-                                       unsigned short& carried, unsigned short& second) {
+static inline void copyDecoderStatePair(unsigned short* dest, const unsigned short* source, unsigned short& carried,
+                                        unsigned short& second) {
     second = source[1];
     dest[0] = carried;
     carried = source[2];
@@ -655,8 +689,9 @@ static inline void copyDecoderStatePair(unsigned short* dest, const unsigned sho
 #pragma inline_depth(2)
 #pragma opt_propagation off
 // Copy the stream configuration and per-channel ADPCM state, then preload playback blocks.
-bool gtl_nw4r_detail_StrmPlayer_PreparePlayback(StreamPlayback* self, void* bufferPool, int seekUnit, int seekPosition, int voiceAllocationArgument,
-                   void* reader, int readerUserData, StreamSettings* settings) {
+bool gtl_nw4r_detail_StrmPlayer_PreparePlayback(StreamPlayback* self, void* bufferPool, int seekUnit, int seekPosition,
+                                                int voiceAllocationArgument, void* reader, int readerUserData,
+                                                StreamSettings* settings) {
     // settings is copied; bufferPool and reader stay borrowed through resource
     // release. readerUserData is forwarded unchanged to read/release callbacks.
     // seekUnit: 0=samples, 1=milliseconds (ResolveStartBlock in gtl_strm_player_streaming.cpp).
@@ -664,13 +699,15 @@ bool gtl_nw4r_detail_StrmPlayer_PreparePlayback(StreamPlayback* self, void* buff
     // through ResetState to voice acquisition; its finer domain is unresolved.
     // Preloading precedes setting active; return is always true even if preload
     // releases resources on failure. Callers must check readiness separately.
-    unsigned int unresolved2C,lastBlockAlignedBytes,lastBlockSamples,lastBlockBytes,samplesPerBlock,blockBytes,fileBlockCount,fileDataOffset,totalSamples,loopStartSample;
-    unsigned short blockHeaderBytes,sampleRateHz;
-    unsigned char unresolved03,sourceChannelCount,loopEnabled,sampleFormat;
+    unsigned int unresolved2C, lastBlockAlignedBytes, lastBlockSamples, lastBlockBytes, samplesPerBlock, blockBytes,
+        fileBlockCount, fileDataOffset, totalSamples, loopStartSample;
+    unsigned short blockHeaderBytes, sampleRateHz;
+    unsigned char unresolved03, sourceChannelCount, loopEnabled, sampleFormat;
     int clampedSeekPosition;
     GlobalLock lock;
     // Phase 1: release prior playback and reset voice-allocation state under the global lock.
-    if (self->active) gtl_nw4r_detail_StrmPlayer_ReleaseResources((StrmPlayer*)self);
+    if (self->active)
+        gtl_nw4r_detail_StrmPlayer_ReleaseResources((StrmPlayer*)self);
     gtl_nw4r_detail_StrmPlayer_ResetState(self, voiceAllocationArgument);
     clampedSeekPosition = seekPosition < 0 ? 0 : seekPosition;
     // Phase 2: retain configuration values, not the caller's settings pointer.
@@ -755,20 +792,30 @@ bool gtl_nw4r_detail_StrmPlayer_PreparePlayback(StreamPlayback* self, void* buff
 #pragma inline_depth(3)
 struct StartLockBase {
     // Preserve the original nondeleting startup-guard base cleanup.
-    ~StartLockBase() { LockGuardBase_dtor(this, 0); }
+    ~StartLockBase() {
+        LockGuardBase_dtor(this, 0);
+    }
 };
 struct StartLock : StartLockBase {
     // Serialize playback startup against worker updates with the singleton mutex.
-    StartLock() { OSLockMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(gtl_AudioWorker_GetInstance())->mutex)); }
+    StartLock() {
+        OSLockMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(gtl_AudioWorker_GetInstance())->mutex));
+    }
     // Release the startup operation's worker-mutex nesting level.
-    ~StartLock() { OSUnlockMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(gtl_AudioWorker_GetInstance())->mutex)); }
+    ~StartLock() {
+        OSUnlockMutex((OSMutex*)((char*)&AsStreamWorker8040C2C8(gtl_AudioWorker_GetInstance())->mutex));
+    }
 };
 struct StartInterrupt : StartLockBase {
     int level;
     // Disable interrupts while merging pause sources and updating the voice.
-    StartInterrupt() { level = OSDisableInterrupts(); }
+    StartInterrupt() {
+        level = OSDisableInterrupts();
+    }
     // Restore the interrupt state saved by this startup scope.
-    ~StartInterrupt() { OSRestoreInterrupts(level); }
+    ~StartInterrupt() {
+        OSRestoreInterrupts(level);
+    }
 };
 struct StartSamples {
     // Words 0..15 are coefficients, followed by gain, predictor/scale, yn1, yn2.
@@ -820,13 +867,10 @@ struct StartPlayer {
     unsigned short history1[kStreamChannelSlots];
     unsigned short history2[kStreamChannelSlots];
 };
-int gtl_StrmPlayer_ResolveStartBlock(void*, unsigned int*, unsigned int*, unsigned int*);
 unsigned int AudioStream_ByteOffsetToSampleOffset(int, unsigned char);
 void GtlVoice_ConfigureSamplePlayback(void*, StartPacket*, unsigned int);
 void GtlVoiceGroup_SetHardwareVoiceType(void*, int);
-void GtlStrmPlayer_ConfigureBlockBoundaryAddresses(void*, int);
 void GtlVoice_RequestStart(void*);
-void StrmPlayer_SetPauseFlag(void*, unsigned int);
 extern char s_activeStreamPlayers[];
 
 // Fill one borrowed channel packet with saved coefficients and current decoder history.
@@ -843,10 +887,13 @@ static inline void fillStartChannelPacket(StartChannel* dest, StartPlayer* sourc
 // Caller holds the worker mutex and an interrupt guard for this atomic merge.
 static inline void synchronizeStartPause(StartPlayer* self) {
     unsigned int pause = 0;
-    if (self->pauseRequested) pause = 1;
-    if (self->waitingForReads) pause = 1;
+    if (self->pauseRequested)
+        pause = 1;
+    if (self->waitingForReads)
+        pause = 1;
     if (pause != self->voicePaused) {
-        if (self->voice) StrmPlayer_SetPauseFlag(self->voice, pause);
+        if (self->voice)
+            ((gtl::nw4r::detail::Voice*)(self->voice))->SetPauseFlag(pause);
         self->voicePaused = pause;
     }
 }
@@ -856,15 +903,19 @@ bool gtl_nw4r_detail_StrmPlayer_StartPlayback(StartPlayer* self) {
     // Ready and a voice are required. Repeated calls on a started player succeed
     // without starting twice. The stack packet is consumed by ConfigureSamplePlayback.
     StartLock lock;
-    if (!self->ready) return false;
-    if (!self->voice) return false;
+    if (!self->ready)
+        return false;
+    if (!self->voice)
+        return false;
     if (!self->started) {
         // Phase 1: resolve a FILE block, an in-block sample offset (ADPCM), and
         // completed loops caused by seeking past the end. These are not bytes.
         unsigned int firstFileBlock = 0;
         unsigned int sampleOffset = 0;
         unsigned int completedLoops = 0;
-        if (!gtl_StrmPlayer_ResolveStartBlock(self, &firstFileBlock, &sampleOffset, &completedLoops)) return false;
+        if (!((gtl::nw4r::detail::StrmPlayer*)self)
+                 ->ResolveStartBlock((int*)&firstFileBlock, &sampleOffset, (int*)&completedLoops))
+            return false;
         self->completedLoopCount += completedLoops;
         // Phase 2: describe the circular BUFFER as a looping hardware sample
         // range. Logical file looping is handled separately by block boundaries.
@@ -874,7 +925,8 @@ bool gtl_nw4r_detail_StrmPlayer_StartPlayback(StartPlayer* self) {
         packet.channelCount = self->channelCount;
         packet.sampleRateHz = self->rate;
         packet.loopStartSample = 0;
-        packet.endSample = AudioStream_ByteOffsetToSampleOffset(self->bufferBlockBytes * self->currentCycleBlocks, self->format);
+        packet.endSample =
+            AudioStream_ByteOffsetToSampleOffset(self->bufferBlockBytes * self->currentCycleBlocks, self->format);
         StartChannel* dest = packet.channels;
         StartPlayer* source = self;
         StartPlayer* history = self;
@@ -888,8 +940,10 @@ bool gtl_nw4r_detail_StrmPlayer_StartPlayback(StartPlayer* self) {
         // then request playback. A ring range and a file-loop range differ.
         GtlVoice_ConfigureSamplePlayback(self->voice, &packet, sampleOffset);
         GtlVoiceGroup_SetHardwareVoiceType(self->voice, kStreamHardwareVoiceType1);
-        if (firstFileBlock == self->fileBlockCount - 2) GtlStrmPlayer_ConfigureBlockBoundaryAddresses(self, 1);
-        else if (firstFileBlock == self->fileBlockCount - 1) GtlStrmPlayer_ConfigureBlockBoundaryAddresses(self, 0);
+        if (firstFileBlock == self->fileBlockCount - 2)
+            ((gtl::nw4r::detail::StrmPlayer*)self)->ConfigureBlockBoundaryAddresses(1);
+        else if (firstFileBlock == self->fileBlockCount - 1)
+            ((gtl::nw4r::detail::StrmPlayer*)self)->ConfigureBlockBoundaryAddresses(0);
         GtlVoice_RequestStart(self->voice);
         // Phase 4: requested pause OR read backlog determines effective pause.
         {

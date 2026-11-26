@@ -1,3 +1,7 @@
+// Inventory table loaders for the ball, club-set and item tables: each reads IFF bytes into an
+// owned table, resizing it first and then copying every entry.
+// Each table has its own allocator and growth helpers, and throws a length error on overflow.
+
 #include <decomp/ct_member.h>
 #include "iff/IffStruct.h"
 namespace exception_runtime {
@@ -7,9 +11,6 @@ void __dt__Q23std12length_errorFv(void*, int);
 extern const char iffSchemaAndCourseStrings[];
 }
 }
-
-// Translation unit 0x8018AD5C-0x8018C1F8 (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 #include "game/exception.h"
@@ -24,9 +25,15 @@ extern const char iffSchemaAndCourseStrings[];
 // Resize precedes deserialization: prefix entries survive growth temporarily,
 // but EVERY entry is overwritten by the incoming records in the final phase.
 enum IffLoaderLimits {
-    kClubSetMaxEntries = 0x1C71C71, kClubSetSmallGrowth = 0x97B425, kClubSetHalfGrowth = 0x12F684A,
-    kItemMaxEntries = 0x28F5C28, kItemSmallGrowth = 0xDA740D, kItemHalfGrowth = 0x1B4E81A,
-    kBallMaxEntries = 0x5C90A1, kBallSmallGrowth = 0x1EDAE0, kBallHalfGrowth = 0x3DB5C0
+    kClubSetMaxEntries = 0x1C71C71,
+    kClubSetSmallGrowth = 0x97B425,
+    kClubSetHalfGrowth = 0x12F684A,
+    kItemMaxEntries = 0x28F5C28,
+    kItemSmallGrowth = 0xDA740D,
+    kItemHalfGrowth = 0x1B4E81A,
+    kBallMaxEntries = 0x5C90A1,
+    kBallSmallGrowth = 0x1EDAE0,
+    kBallHalfGrowth = 0x3DB5C0
 };
 // Max entries = floor(0xffffffff / entryStride), preventing byte-size overflow.
 // Growth thresholds are floor(max/3), floor(2*max/3): add max(needed, 3/5 of
@@ -40,14 +47,19 @@ enum IffLoaderLimits {
 extern "C" void __throw(const char*, void*, void*);
 
 // Placement allocation borrows an existing destination without allocating.
-inline void* operator new(size_t, void* address) throw() { return address; }
+inline void* operator new(size_t, void* address) throw() {
+    return address;
+}
 // Placement-construction failure leaves deallocation to the buffer owner.
 inline void operator delete(void*, void*) throw() {}
 
 extern "C" {
 
 struct BallRecordStorage {
-    union { IFF_STRUCT::sBall value; unsigned int words[sizeof(IFF_STRUCT::sBall) / 4]; };
+    union {
+        IFF_STRUCT::sBall value;
+        unsigned int words[sizeof(IFF_STRUCT::sBall) / 4];
+    };
     // Leave raw record storage uninitialized until the deserialize phase.
     BallRecordStorage() {}
 };
@@ -78,7 +90,10 @@ extern void* appMallocDummy__FUl(unsigned int);
 extern void appFreeUni__FPv(void*);
 
 struct ClubSetRecordStorage {
-    union { IFF_STRUCT::sClubSet value; unsigned int words[sizeof(IFF_STRUCT::sClubSet) / 4]; };
+    union {
+        IFF_STRUCT::sClubSet value;
+        unsigned int words[sizeof(IFF_STRUCT::sClubSet) / 4];
+    };
     // Leave raw record storage uninitialized until the deserialize phase.
     ClubSetRecordStorage() {}
 };
@@ -108,7 +123,10 @@ struct ClubSetTableLoader {
 };
 
 struct ItemRecordStorage {
-    union { IFF_STRUCT::sItem value; unsigned int words[sizeof(IFF_STRUCT::sItem) / 4]; };
+    union {
+        IFF_STRUCT::sItem value;
+        unsigned int words[sizeof(IFF_STRUCT::sItem) / 4];
+    };
     // Leave raw record storage uninitialized until the deserialize phase.
     ItemRecordStorage() {}
 };
@@ -139,7 +157,7 @@ extern char s_sharedCharDeleterVtable[];
 extern void* __nw__FUl(unsigned long);
 extern void __dla__FPv(void*);
 
-struct ErrorRef8018BB2C {
+struct SharedControlBlock {
     void* vtable;
     unsigned int strong;
     unsigned int weak;
@@ -151,16 +169,23 @@ struct TextGuard8018BB2C {
     // Own temporary exception text until its shared holder is established.
     TextGuard8018BB2C(char* ptr, char* owner) : text(ptr), allocator(owner) {}
     // Free exception text only if ownership was not released to a holder.
-    ~TextGuard8018BB2C() { if (text) __dla__FPv(text); }
+    ~TextGuard8018BB2C() {
+        if (text)
+            __dla__FPv(text);
+    }
 };
 
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 struct ErrorBase8018BB2C : std::exception {
     // Install the exception subtype's original vtable pointer.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
 
     // Begin exception construction with the logic_error base vtable.
-    ErrorBase8018BB2C() { SetTable(__vt__Q23std11logic_error); }
+    ErrorBase8018BB2C() {
+        SetTable(__vt__Q23std11logic_error);
+    }
 };
 namespace std {
 struct length_error : ErrorBase8018BB2C {
@@ -175,7 +200,7 @@ struct length_error : ErrorBase8018BB2C {
         {
             char* p = text;
             TextGuard8018BB2C guard(p, &allocator);
-            ErrorRef8018BB2C* ref = (ErrorRef8018BB2C*)__nw__FUl(0x10);
+            SharedControlBlock* ref = (SharedControlBlock*)__nw__FUl(0x10);
             if (ref) {
                 ref->strong = 1;
                 ref->weak = 1;
@@ -200,7 +225,9 @@ struct LengthError8018B460 {
     char* text;
     void* control;
     // Unwind the exception base without deleting this stack object.
-    ~LengthError8018B460() { __dt__Q23std9exceptionFv(this, -1); }
+    ~LengthError8018B460() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 #pragma does_not_return __throw
 struct LengthThrow8018B460 : LengthError8018B460 {
@@ -214,7 +241,7 @@ struct LengthThrow8018B460 : LengthError8018B460 {
         {
             char* p = text;
             TextGuard8018BB2C guard(p, &inner);
-            ErrorRef8018BB2C* ref = (ErrorRef8018BB2C*)__nw__FUl(0x10);
+            SharedControlBlock* ref = (SharedControlBlock*)__nw__FUl(0x10);
             if (ref) {
                 ref->strong = 1;
                 ref->weak = 1;
@@ -230,7 +257,7 @@ struct LengthThrow8018B460 : LengthError8018B460 {
     }
 };
 
-struct Resize8018AD5C {
+struct ClubSetResizeGuard {
     // Transaction owns next.begin until commit. remaining marks the unfilled
     // prefix; size counts constructed suffix+copied prefix. Commit swaps in the
     // old buffer so this guard frees it; it does not destroy record payloads.
@@ -240,10 +267,9 @@ struct Resize8018AD5C {
     unsigned int* ownerCapacity;
     unsigned int remaining;
     // Start an empty club-set resize transaction linked to owner capacity.
-    Resize8018AD5C(unsigned int* owner)
-        : begin(0), size(0), capacity(0), ownerCapacity(owner), remaining(0) {}
+    ClubSetResizeGuard(unsigned int* owner) : begin(0), size(0), capacity(0), ownerCapacity(owner), remaining(0) {}
     // Free the uncommitted buffer, or the old buffer swapped here at commit.
-    ~Resize8018AD5C() {
+    ~ClubSetResizeGuard() {
         if (begin) {
             Allocator8018AD5C allocator;
             size -= size;
@@ -256,11 +282,14 @@ struct Resize8018AD5C {
 inline void lengthError8018AD5C() {
     Allocator8018AD5C allocator;
     {
-        union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+        union {
+            double alignment;
+            unsigned char bytes[sizeof(std::length_error)];
+        } storage;
         std::length_error* error = (std::length_error*)storage.bytes;
         error->__ct();
         exception_runtime::__throw(exception_runtime::iffSchemaAndCourseStrings + 0x2F9, error,
-            (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                   (void*)exception_runtime::__dt__Q23std12length_errorFv);
     }
 }
 
@@ -268,16 +297,19 @@ inline void lengthError8018AD5C() {
 inline unsigned int recommend8018AD5C(const unsigned int& capacity, unsigned int needed) {
     Allocator8018AD5C allocator;
     unsigned int cap = capacity;
-    if (needed > kClubSetMaxEntries - cap) lengthError8018AD5C();
+    if (needed > kClubSetMaxEntries - cap)
+        lengthError8018AD5C();
     if (cap < kClubSetSmallGrowth) {
         unsigned int increment = ((cap + 1) * 3) / 5;
         const unsigned int* amount = &increment;
-        if (increment < needed) amount = &needed;
+        if (increment < needed)
+            amount = &needed;
         return cap + *amount;
     } else if (cap < kClubSetHalfGrowth) {
         unsigned int increment = (cap + 1) / 2;
         const unsigned int* amount = &increment;
-        if (increment < needed) amount = &needed;
+        if (increment < needed)
+            amount = &needed;
         return cap + *amount;
     }
     return kClubSetMaxEntries;
@@ -286,7 +318,8 @@ inline unsigned int recommend8018AD5C(const unsigned int& capacity, unsigned int
 // Allocate owned storage for count club-set entries, or throw on size overflow.
 inline void* allocate8018AD5C(unsigned int count) {
     Allocator8018AD5C allocator;
-    if (count > kClubSetMaxEntries) lengthError8018AD5C();
+    if (count > kClubSetMaxEntries)
+        lengthError8018AD5C();
     return appMallocDummy__FUl(count * 0x90);
 }
 // Placement-construct a tagged club-set entry in already allocated storage.
@@ -299,21 +332,26 @@ inline void copyConstruct8018AD5C(ClubSetLoadEntry* dest, const ClubSetLoadEntry
 }
 // Borrow the larger growth amount; caller must keep both arguments alive.
 inline const unsigned int& max8018AD5C(const unsigned int& first, const unsigned int& second) {
-    if (first < second) return second;
+    if (first < second)
+        return second;
     return first;
 }
-struct Index8018AD5C {
+struct EntryIndex {
     unsigned int value;
     // Start deserialization at entry zero.
-    Index8018AD5C() : value(0) {}
+    EntryIndex() : value(0) {}
     // Expose the current destination entry index.
-    operator unsigned int() const { return value; }
+    operator unsigned int() const {
+        return value;
+    }
     // Advance to the next destination entry.
-    void operator++() { ++value; }
+    void operator++() {
+        ++value;
+    }
 };
 
 // Copy the old club-set prefix backwards into the transaction's reserved prefix.
-inline void moveRecords8018AD5C(ClubSetTableLoader* self, Resize8018AD5C& next) {
+inline void moveRecords8018AD5C(ClubSetTableLoader* self, ClubSetResizeGuard& next) {
     ClubSetLoadEntry* first = self->begin;
     ClubSetLoadEntry* old = first + self->size;
     ClubSetLoadEntry* moved = next.begin + next.remaining;
@@ -328,7 +366,8 @@ inline void moveRecords8018AD5C(ClubSetTableLoader* self, Resize8018AD5C& next) 
 }
 
 // Resize the owned club-set table, then replace every entry from borrowed IFF bytes.
-void ItemInventory_ReadClubSetTable(ClubSetTableLoader* self, const unsigned char* input) { ClubSetRecordStorage noGrowInitial;
+void ItemInventory_ReadClubSetTable(ClubSetTableLoader* self, const unsigned char* input) {
+    ClubSetRecordStorage noGrowInitial;
     const unsigned char* src;
     unsigned int extra;
     ClubSetRecordStorage raw;
@@ -337,7 +376,10 @@ void ItemInventory_ReadClubSetTable(ClubSetTableLoader* self, const unsigned cha
     ClubSetRecordStorage growInitial;
     ClubSetRecordStorage growValue;
     ClubSetRecordStorage noGrowValue;
-    struct Header { unsigned short count; unsigned char rest[6]; } header;
+    struct Header {
+        unsigned short count;
+        unsigned char rest[6];
+    } header;
     memcpy(&header, input, 8);
     unsigned int count = header.count;
     const unsigned char* savedInput = 8 + input;
@@ -369,15 +411,17 @@ void ItemInventory_ReadClubSetTable(ClubSetTableLoader* self, const unsigned cha
                 break;
             }
 
-            { int target;
+            {
+                int target;
                 unsigned int cap;
                 unsigned int prefixSizeBeforeGrowth = self->size;
-                Resize8018AD5C next(&self->capacity);
+                ClubSetResizeGuard next(&self->capacity);
                 unsigned int entriesToAppend = extra;
                 unsigned int needed = prefixSizeBeforeGrowth + entriesToAppend - self->capacity;
                 unsigned int capacityBeforeRecommendation = self->capacity;
                 cap = capacityBeforeRecommendation;
-                if (needed > kClubSetMaxEntries - cap) lengthError8018AD5C();
+                if (needed > kClubSetMaxEntries - cap)
+                    lengthError8018AD5C();
                 if (cap < kClubSetSmallGrowth) {
                     unsigned int capacityPlusOneForThreeFifths = cap + 1;
                     unsigned int increment = ((capacityPlusOneForThreeFifths) * 3) / 5;
@@ -387,7 +431,8 @@ void ItemInventory_ReadClubSetTable(ClubSetTableLoader* self, const unsigned cha
                 } else if (cap < kClubSetHalfGrowth) {
                     unsigned int capacityPlusOneForHalf = 1 + cap;
                     target = cap + max8018AD5C(((capacityPlusOneForHalf) / 2), needed);
-                } else target = kClubSetMaxEntries;
+                } else
+                    target = kClubSetMaxEntries;
                 int allocationCount = target;
                 next.begin = (ClubSetLoadEntry*)allocate8018AD5C(allocationCount);
                 next.remaining = self->size;
@@ -431,7 +476,7 @@ void ItemInventory_ReadClubSetTable(ClubSetTableLoader* self, const unsigned cha
 
     // Phase 3: size == count. Copy each packed record and cache its typeId.
     // Initial filler bytes are not meaningful serialized defaults.
-    Index8018AD5C index;
+    EntryIndex index;
     int i = 0;
     while (i < header.count) {
         memcpy(&raw, src, 0x8C);
@@ -444,17 +489,16 @@ void ItemInventory_ReadClubSetTable(ClubSetTableLoader* self, const unsigned cha
     }
 }
 
-struct Resize8018BB2C {
+struct ItemResizeGuard {
     ItemLoadEntry* begin;
     unsigned int size;
     unsigned int capacity;
     unsigned int* ownerCapacity;
     unsigned int remaining;
     // Start an empty item resize transaction linked to owner capacity.
-    Resize8018BB2C(unsigned int* owner)
-        : begin(0), size(0), capacity(0), ownerCapacity(owner), remaining(0) {}
+    ItemResizeGuard(unsigned int* owner) : begin(0), size(0), capacity(0), ownerCapacity(owner), remaining(0) {}
     // Free the uncommitted buffer, or the old buffer swapped here at commit.
-    ~Resize8018BB2C() {
+    ~ItemResizeGuard() {
         if (begin) {
             Allocator8018AD5C allocator;
             size -= size;
@@ -467,11 +511,14 @@ struct Resize8018BB2C {
 inline void lengthError8018BB2C() {
     Allocator8018AD5C allocator;
     {
-        union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+        union {
+            double alignment;
+            unsigned char bytes[sizeof(std::length_error)];
+        } storage;
         std::length_error* error = (std::length_error*)storage.bytes;
         error->__ct();
         exception_runtime::__throw(exception_runtime::iffSchemaAndCourseStrings + 0x2F9, error,
-            (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                   (void*)exception_runtime::__dt__Q23std12length_errorFv);
     }
 }
 
@@ -479,16 +526,19 @@ inline void lengthError8018BB2C() {
 inline unsigned int recommend8018BB2C(const unsigned int& capacity, unsigned int needed) {
     Allocator8018AD5C allocator;
     unsigned int cap = capacity;
-    if (needed > kItemMaxEntries - cap) lengthError8018BB2C();
+    if (needed > kItemMaxEntries - cap)
+        lengthError8018BB2C();
     if (cap < kItemSmallGrowth) {
         unsigned int increment = ((cap + 1) * 3) / 5;
         const unsigned int* amount = &increment;
-        if (increment < needed) amount = &needed;
+        if (increment < needed)
+            amount = &needed;
         return cap + *amount;
     } else if (cap < kItemHalfGrowth) {
         unsigned int increment = (cap + 1) / 2;
         const unsigned int* amount = &increment;
-        if (increment < needed) amount = &needed;
+        if (increment < needed)
+            amount = &needed;
         return cap + *amount;
     }
     return kItemMaxEntries;
@@ -497,7 +547,8 @@ inline unsigned int recommend8018BB2C(const unsigned int& capacity, unsigned int
 // Allocate owned storage for count item entries, or throw on size overflow.
 inline void* allocate8018BB2C(unsigned int count) {
     Allocator8018AD5C allocator;
-    if (count > kItemMaxEntries) lengthError8018BB2C();
+    if (count > kItemMaxEntries)
+        lengthError8018BB2C();
     return appMallocDummy__FUl(count * 0x64);
 }
 // Placement-construct a tagged item entry in already allocated storage.
@@ -510,7 +561,7 @@ inline void copyConstruct8018BB2C(ItemLoadEntry* dest, const ItemLoadEntry& valu
 }
 
 // Copy the old item prefix backwards, accounting for each constructed entry.
-inline void moveRecords8018BB2C(ItemTableLoader* self, Resize8018BB2C& next) {
+inline void moveRecords8018BB2C(ItemTableLoader* self, ItemResizeGuard& next) {
     ItemLoadEntry* first = self->begin;
     ItemLoadEntry* old = first + self->size;
     ItemLoadEntry* moved = next.begin + next.remaining;
@@ -534,7 +585,10 @@ void ItemInventory_ReadItemTable(ItemTableLoader* self, const unsigned char* inp
     ItemRecordStorage growInitial;
     ItemRecordStorage growValue;
     ItemRecordStorage noGrowValue;
-    struct Header { unsigned short count; unsigned char rest[6]; } header;
+    struct Header {
+        unsigned short count;
+        unsigned char rest[6];
+    } header;
     memcpy(&header, input, 8);
     unsigned int count = header.count;
     src = input + 8;
@@ -564,17 +618,19 @@ void ItemInventory_ReadItemTable(ItemTableLoader* self, const unsigned char* inp
                 unsigned int cap;
                 unsigned int oldSize = self->size;
                 unsigned int oldCap = self->capacity;
-                Resize8018BB2C next(&self->capacity);
+                ItemResizeGuard next(&self->capacity);
                 unsigned int needed = oldSize + extra - self->capacity;
                 cap = self->capacity;
-                if (needed > kItemMaxEntries - cap) lengthError8018BB2C();
+                if (needed > kItemMaxEntries - cap)
+                    lengthError8018BB2C();
                 if (cap < kItemSmallGrowth) {
                     unsigned int increment = ((cap + 1) * 3) / 5;
                     target = cap + max8018AD5C(increment, needed);
                 } else if (cap < kItemHalfGrowth) {
                     unsigned int increment = (cap + 1) / 2;
                     target = cap + max8018AD5C(increment, needed);
-                } else target = kItemMaxEntries;
+                } else
+                    target = kItemMaxEntries;
                 next.begin = (ItemLoadEntry*)allocate8018BB2C(target);
                 next.remaining = self->size;
                 ItemLoadEntry* dest = next.begin + self->size + next.size;
@@ -609,7 +665,7 @@ void ItemInventory_ReadItemTable(ItemTableLoader* self, const unsigned char* inp
     }
 
     // Phase 3: overwrite all count entries from fixed-stride packed item bytes.
-    Index8018AD5C index;
+    EntryIndex index;
     int i = 0;
     while (i < header.count) {
         memcpy(&raw, src, 0x60);
@@ -621,17 +677,16 @@ void ItemInventory_ReadItemTable(ItemTableLoader* self, const unsigned char* inp
     }
 }
 
-struct Resize8018B460 {
+struct BallResizeGuard {
     BallLoadEntry* begin;
     unsigned int size;
     unsigned int capacity;
     unsigned int* ownerCapacity;
     unsigned int remaining;
     // Start an empty ball resize transaction linked to owner capacity.
-    Resize8018B460(unsigned int* owner)
-        : begin(0), size(0), capacity(0), ownerCapacity(owner), remaining(0) {}
+    BallResizeGuard(unsigned int* owner) : begin(0), size(0), capacity(0), ownerCapacity(owner), remaining(0) {}
     // Free the uncommitted buffer, or the old buffer swapped here at commit.
-    ~Resize8018B460() {
+    ~BallResizeGuard() {
         if (begin) {
             Allocator8018AD5C allocator;
             size -= size;
@@ -650,16 +705,19 @@ inline void lengthError8018B460() {
 inline unsigned int recommend8018B460(const unsigned int& capacity, unsigned int needed) {
     Allocator8018AD5C allocator;
     unsigned int cap = capacity;
-    if (needed > kBallMaxEntries - cap) lengthError8018B460();
+    if (needed > kBallMaxEntries - cap)
+        lengthError8018B460();
     if (cap < kBallSmallGrowth) {
         unsigned int increment = ((cap + 1) * 3) / 5;
         const unsigned int* amount = &increment;
-        if (increment < needed) amount = &needed;
+        if (increment < needed)
+            amount = &needed;
         return cap + *amount;
     } else if (cap < kBallHalfGrowth) {
         unsigned int increment = (cap + 1) / 2;
         const unsigned int* amount = &increment;
-        if (increment < needed) amount = &needed;
+        if (increment < needed)
+            amount = &needed;
         return cap + *amount;
     }
     return kBallMaxEntries;
@@ -668,7 +726,8 @@ inline unsigned int recommend8018B460(const unsigned int& capacity, unsigned int
 // Allocate owned storage for count ball entries, or throw on size overflow.
 inline void* allocate8018B460(unsigned int count) {
     Allocator8018AD5C allocator;
-    if (count > kBallMaxEntries) lengthError8018B460();
+    if (count > kBallMaxEntries)
+        lengthError8018B460();
     return appMallocDummy__FUl(count * 0x2C4);
 }
 // Placement-construct a tagged ball entry in already allocated storage.
@@ -692,7 +751,10 @@ void ItemInventory_ReadBallTable(BallTableLoader* self, const unsigned char* inp
     BallRecordStorage noGrowValue;
     // Phase 1: read the unvalidated native-endian header, then match logical
     // size to count; a shrink retains the existing allocation and capacity.
-    struct Header { unsigned short count; unsigned char rest[6]; } header;
+    struct Header {
+        unsigned short count;
+        unsigned char rest[6];
+    } header;
     memcpy(&header, input, 8);
     unsigned int count = header.count;
     src = input + 8;
@@ -720,16 +782,18 @@ void ItemInventory_ReadBallTable(BallTableLoader* self, const unsigned char* inp
                 unsigned int target;
                 unsigned int cap;
                 unsigned int needed = self->size + extra - self->capacity;
-                Resize8018B460 next(&self->capacity);
+                BallResizeGuard next(&self->capacity);
                 cap = self->capacity;
-                if (needed > kBallMaxEntries - cap) lengthError8018B460();
+                if (needed > kBallMaxEntries - cap)
+                    lengthError8018B460();
                 if (cap < kBallSmallGrowth) {
                     unsigned int increment = ((cap + 1) * 3) / 5;
                     target = cap + max8018AD5C(increment, needed);
                 } else if (cap < kBallHalfGrowth) {
                     unsigned int increment = (cap + 1) / 2;
                     target = cap + max8018AD5C(increment, needed);
-                } else target = kBallMaxEntries;
+                } else
+                    target = kBallMaxEntries;
                 next.begin = (BallLoadEntry*)allocate8018B460(target);
                 next.remaining = self->size;
                 BallLoadEntry* dest = next.begin + self->size + next.size;

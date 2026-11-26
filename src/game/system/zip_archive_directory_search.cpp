@@ -1,5 +1,5 @@
-// Translation unit 0x802D1CE4-0x802D2714 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// ZIP directory search: finds the end-of-central-directory record of an archive and sets up
+// the archive context from it. Reads follow the game's legacy short-read policy.
 
 #pragma use_lmw_stmw on
 
@@ -12,8 +12,10 @@ enum ZipDirectoryConstants {
     kZipSearchStep = 0x400,
     kZipSignatureLength = 4,
     kZipSearchBufferSize = kZipSearchStep + kZipSignatureLength,
-    kZipSignatureP = 0x50, kZipSignatureK = 0x4b,
-    kZipEndSignatureLow = 0x05, kZipEndSignatureHigh = 0x06
+    kZipSignatureP = 0x50,
+    kZipSignatureK = 0x4b,
+    kZipEndSignatureLow = 0x05,
+    kZipEndSignatureHigh = 0x06
 };
 void* malloc(unsigned int);
 void free(void*);
@@ -55,7 +57,9 @@ struct ZipArchiveInput {
 
 struct ZipArchiveContext {
     unsigned int stream;
-    struct { unsigned int entryCount, commentLength; } globalInfo;
+    struct {
+        unsigned int entryCount, commentLength;
+    } globalInfo;
     unsigned int bytesBeforeArchive;
     unsigned int currentEntryIndex;
     unsigned int currentEntryOffset;
@@ -81,8 +85,10 @@ typedef char U802D1E38Info_off_f30[((int)&((ZipArchiveContext*)0)->localHeaderOf
 // Preserve the legacy short-read policy; neither flag has a confirmed standalone meaning.
 static inline int ZipLegacyShortReadStatus(ZipArchiveInput* stream) {
     int shortReadIsError;
-    if (stream->streamFlags[0] && stream->bufferFlags[0]) shortReadIsError = 1;
-    else shortReadIsError = 0;
+    if (stream->streamFlags[0] && stream->bufferFlags[0])
+        shortReadIsError = 1;
+    else
+        shortReadIsError = 0;
     return shortReadIsError ? kZipReadError : 0;
 }
 
@@ -120,7 +126,8 @@ typedef char ZipEndRecordScratchSize[sizeof(ZipEndRecordScratch) == 16 ? 1 : -1]
 // These are not general checked readers and must not be 'fixed'.
 void* ZipStream_OpenArchiveContext(ZipArchiveInput* self) {
     // Phase 1: find the end record and position the stream at its signature.
-    if (!self) return 0;
+    if (!self)
+        return 0;
     int diskNumber, directoryDiskNumber, totalEntries;
     int bytesRead;
     int error = 0;
@@ -128,10 +135,13 @@ void* ZipStream_OpenArchiveContext(ZipArchiveInput* self) {
     ZipArchiveContext archive = {};
     header.signature = 0;
     unsigned int directoryEnd = (unsigned int)ZipStream_FindEndOfCentralDirectoryLegacy((ZipSearchStream*)self);
-    if (directoryEnd == (unsigned int)kZipReadError) error = kZipReadError;
-    if (!error) self->position = directoryEnd;
+    if (directoryEnd == (unsigned int)kZipReadError)
+        error = kZipReadError;
+    if (!error)
+        self->position = directoryEnd;
     if (!error) {
-        if (ZipStream_ReadU32LE(self, &header.signature)) error = kZipReadError;
+        if (ZipStream_ReadU32LE(self, &header.signature))
+            error = kZipReadError;
     }
 
     // Phase 2: decode the five u16 fields around the two u32 directory fields.
@@ -139,152 +149,216 @@ void* ZipStream_OpenArchiveContext(ZipArchiveInput* self) {
     diskNumber = 0;
     if (!error) {
         bytesRead = 1;
-        if (self->position + 1 > self->size) bytesRead = self->size - self->position;
+        if (self->position + 1 > self->size)
+            bytesRead = self->size - self->position;
         memcpy(&header.disk[0], (char*)self->data + self->position, bytesRead);
         self->position += bytesRead;
         unsigned int byteValue;
         unsigned int wordValue;
         int readError;
-        if (bytesRead == 1) { byteValue = header.disk[0]; readError = 0; }
-        else { readError = ZipLegacyShortReadStatus(self); }
+        if (bytesRead == 1) {
+            byteValue = header.disk[0];
+            readError = 0;
+        } else {
+            readError = ZipLegacyShortReadStatus(self);
+        }
         wordValue = byteValue;
         if (readError == 0) {
             bytesRead = 1;
-            if (self->position + 1 > self->size) bytesRead = self->size - self->position;
+            if (self->position + 1 > self->size)
+                bytesRead = self->size - self->position;
             memcpy(&header.disk[1], (char*)self->data + self->position, bytesRead);
             self->position += bytesRead;
-            if (bytesRead == 1) { byteValue = header.disk[1]; readError = 0; }
-            else { readError = ZipLegacyShortReadStatus(self); }
+            if (bytesRead == 1) {
+                byteValue = header.disk[1];
+                readError = 0;
+            } else {
+                readError = ZipLegacyShortReadStatus(self);
+            }
         }
         wordValue += byteValue << 8;
         diskNumber = (int)(wordValue & -(readError == 0));
-        if (readError != 0) error = kZipReadError;
+        if (readError != 0)
+            error = kZipReadError;
     }
 
     // u16 #2: central-directory disk number, staging bytes +6/+7.
     directoryDiskNumber = 0;
     if (!error) {
         bytesRead = 1;
-        if (self->position + 1 > self->size) bytesRead = self->size - self->position;
+        if (self->position + 1 > self->size)
+            bytesRead = self->size - self->position;
         memcpy(&header.directoryDisk[0], (char*)self->data + self->position, bytesRead);
         self->position += bytesRead;
         unsigned int byteValue;
         unsigned int wordValue;
         int readError;
-        if (bytesRead == 1) { byteValue = header.directoryDisk[0]; readError = 0; }
-        else { readError = ZipLegacyShortReadStatus(self); }
+        if (bytesRead == 1) {
+            byteValue = header.directoryDisk[0];
+            readError = 0;
+        } else {
+            readError = ZipLegacyShortReadStatus(self);
+        }
         wordValue = byteValue;
         if (readError == 0) {
             bytesRead = 1;
-            if (self->position + 1 > self->size) bytesRead = self->size - self->position;
+            if (self->position + 1 > self->size)
+                bytesRead = self->size - self->position;
             memcpy(&header.directoryDisk[1], (char*)self->data + self->position, bytesRead);
             self->position += bytesRead;
-            if (bytesRead == 1) { byteValue = header.directoryDisk[1]; readError = 0; }
-            else { readError = ZipLegacyShortReadStatus(self); }
+            if (bytesRead == 1) {
+                byteValue = header.directoryDisk[1];
+                readError = 0;
+            } else {
+                readError = ZipLegacyShortReadStatus(self);
+            }
         }
         wordValue += byteValue << 8;
         directoryDiskNumber = (int)(wordValue & -(readError == 0));
-        if (readError != 0) error = kZipReadError;
+        if (readError != 0)
+            error = kZipReadError;
     }
 
     // u16 #3: entries on this disk (stored in globalInfo.entryCount), staging bytes +4/+5.
     if (!error) {
         bytesRead = 1;
-        if (self->position + 1 > self->size) bytesRead = self->size - self->position;
+        if (self->position + 1 > self->size)
+            bytesRead = self->size - self->position;
         memcpy(&header.entriesOnDisk[0], (char*)self->data + self->position, bytesRead);
         self->position += bytesRead;
         unsigned int byteValue;
         unsigned int wordValue;
         int readError;
-        if (bytesRead == 1) { byteValue = header.entriesOnDisk[0]; readError = 0; }
-        else { readError = ZipLegacyShortReadStatus(self); }
+        if (bytesRead == 1) {
+            byteValue = header.entriesOnDisk[0];
+            readError = 0;
+        } else {
+            readError = ZipLegacyShortReadStatus(self);
+        }
         wordValue = byteValue;
         if (readError == 0) {
             bytesRead = 1;
-            if (self->position + 1 > self->size) bytesRead = self->size - self->position;
+            if (self->position + 1 > self->size)
+                bytesRead = self->size - self->position;
             memcpy(&header.entriesOnDisk[1], (char*)self->data + self->position, bytesRead);
             self->position += bytesRead;
-            if (bytesRead == 1) { byteValue = header.entriesOnDisk[1]; readError = 0; }
-            else { readError = ZipLegacyShortReadStatus(self); }
+            if (bytesRead == 1) {
+                byteValue = header.entriesOnDisk[1];
+                readError = 0;
+            } else {
+                readError = ZipLegacyShortReadStatus(self);
+            }
         }
         wordValue += byteValue << 8;
-        if (readError == 0) archive.globalInfo.entryCount = wordValue;
-        else archive.globalInfo.entryCount = 0;
-        if (readError != 0) error = kZipReadError;
+        if (readError == 0)
+            archive.globalInfo.entryCount = wordValue;
+        else
+            archive.globalInfo.entryCount = 0;
+        if (readError != 0)
+            error = kZipReadError;
     }
 
     // u16 #4: total entries across all disks, staging bytes +2/+3.
     totalEntries = 0;
     if (!error) {
         bytesRead = 1;
-        if (self->position + 1 > self->size) bytesRead = self->size - self->position;
+        if (self->position + 1 > self->size)
+            bytesRead = self->size - self->position;
         memcpy(&header.totalEntries[0], (char*)self->data + self->position, bytesRead);
         self->position += bytesRead;
         unsigned int byteValue;
         unsigned int wordValue;
         int readError;
-        if (bytesRead == 1) { byteValue = header.totalEntries[0]; readError = 0; }
-        else { readError = ZipLegacyShortReadStatus(self); }
+        if (bytesRead == 1) {
+            byteValue = header.totalEntries[0];
+            readError = 0;
+        } else {
+            readError = ZipLegacyShortReadStatus(self);
+        }
         wordValue = byteValue;
         if (readError == 0) {
             bytesRead = 1;
-            if (self->position + 1 > self->size) bytesRead = self->size - self->position;
+            if (self->position + 1 > self->size)
+                bytesRead = self->size - self->position;
             memcpy(&header.totalEntries[1], (char*)self->data + self->position, bytesRead);
             self->position += bytesRead;
-            if (bytesRead == 1) { byteValue = header.totalEntries[1]; readError = 0; }
-            else { readError = ZipLegacyShortReadStatus(self); }
+            if (bytesRead == 1) {
+                byteValue = header.totalEntries[1];
+                readError = 0;
+            } else {
+                readError = ZipLegacyShortReadStatus(self);
+            }
         }
         wordValue += byteValue << 8;
         totalEntries = (int)(wordValue & -(readError == 0));
-        if (readError != 0) error = kZipReadError;
+        if (readError != 0)
+            error = kZipReadError;
     }
 
     if (!error) {
-        if (totalEntries != archive.globalInfo.entryCount || directoryDiskNumber != 0 || diskNumber != 0) error = kZipBadArchive;
+        if (totalEntries != archive.globalInfo.entryCount || directoryDiskNumber != 0 || diskNumber != 0)
+            error = kZipBadArchive;
     }
     if (!error) {
-        if (ZipStream_ReadU32LE(self, &archive.centralDirectorySize)) error = kZipReadError;
+        if (ZipStream_ReadU32LE(self, &archive.centralDirectorySize))
+            error = kZipReadError;
     }
     if (!error) {
-        if (ZipStream_ReadU32LE(self, &archive.centralDirectoryOffset)) error = kZipReadError;
+        if (ZipStream_ReadU32LE(self, &archive.centralDirectoryOffset))
+            error = kZipReadError;
     }
 
     // u16 #5: archive-comment byte length, staging bytes +0/+1.
     if (!error) {
         bytesRead = 1;
-        if (self->position + 1 > self->size) bytesRead = self->size - self->position;
+        if (self->position + 1 > self->size)
+            bytesRead = self->size - self->position;
         memcpy(&header.commentLength[0], (char*)self->data + self->position, bytesRead);
         self->position += bytesRead;
         unsigned int byteValue;
         unsigned int wordValue;
         int readError;
-        if (bytesRead == 1) { byteValue = header.commentLength[0]; readError = 0; }
-        else { readError = ZipLegacyShortReadStatus(self); }
+        if (bytesRead == 1) {
+            byteValue = header.commentLength[0];
+            readError = 0;
+        } else {
+            readError = ZipLegacyShortReadStatus(self);
+        }
         wordValue = byteValue;
         if (readError == 0) {
             bytesRead = 1;
-            if (self->position + 1 > self->size) bytesRead = self->size - self->position;
+            if (self->position + 1 > self->size)
+                bytesRead = self->size - self->position;
             memcpy(&header.commentLength[1], (char*)self->data + self->position, bytesRead);
             self->position += bytesRead;
-            if (bytesRead == 1) { byteValue = header.commentLength[1]; readError = 0; }
-            else { readError = ZipLegacyShortReadStatus(self); }
+            if (bytesRead == 1) {
+                byteValue = header.commentLength[1];
+                readError = 0;
+            } else {
+                readError = ZipLegacyShortReadStatus(self);
+            }
         }
         wordValue += byteValue << 8;
-        if (readError == 0) archive.globalInfo.commentLength = wordValue;
-        else archive.globalInfo.commentLength = 0;
-        if (readError != 0) error = kZipReadError;
+        if (readError == 0)
+            archive.globalInfo.commentLength = wordValue;
+        else
+            archive.globalInfo.commentLength = 0;
+        if (readError != 0)
+            error = kZipReadError;
     }
 
     if (!error) {
         if (directoryEnd + self->archiveBaseOffset < archive.centralDirectoryOffset + archive.centralDirectorySize) {
-            if (!error) error = kZipBadArchive;
+            if (!error)
+                error = kZipBadArchive;
         }
     }
 
     // Phase 3: on any parse/consistency error, consume the stream and return null.
     if (error != 0) {
         if (self) {
-            if (self->ownsFileHandle[0]) File_CloseHandle((void*)self->fileHandle);
+            if (self->ownsFileHandle[0])
+                File_CloseHandle((void*)self->fileHandle);
             __dl__FPv(self);
         }
         return 0;
@@ -294,7 +368,8 @@ void* ZipStream_OpenArchiveContext(ZipArchiveInput* self) {
     // initialize first-entry validity. Failure of that entry read does not make
     // opening fail; currentEntryValid records its result in the returned context.
     archive.stream = (unsigned int)self;
-    archive.bytesBeforeArchive = directoryEnd + self->archiveBaseOffset - (archive.centralDirectoryOffset + archive.centralDirectorySize);
+    archive.bytesBeforeArchive =
+        directoryEnd + self->archiveBaseOffset - (archive.centralDirectoryOffset + archive.centralDirectorySize);
     archive.endOfDirectoryOffset = directoryEnd;
     archive.activeReadState = 0;
     self->archiveBaseOffset = 0;
@@ -304,8 +379,9 @@ void* ZipStream_OpenArchiveContext(ZipArchiveInput* self) {
     if (context) {
         context->currentEntryOffset = context->centralDirectoryOffset;
         context->currentEntryIndex = 0;
-        context->currentEntryValid = (ZipArchive_ReadCentralDirectoryEntry(context, context->currentEntryInfo, &context->localHeaderOffset,
-                               0, 0, 0, 0, 0, 0) == 0);
+        context->currentEntryValid =
+            (ZipArchive_ReadCentralDirectoryEntry(context, context->currentEntryInfo, &context->localHeaderOffset, 0, 0,
+                                                  0, 0, 0, 0) == 0);
     }
     return context;
 }
@@ -360,7 +436,8 @@ int ZipStream_FindEndOfCentralDirectoryLegacy(ZipSearchStream* self) {
                     unsigned char* bytes = (unsigned char*)searchBuffer;
                     if (bytes[signatureIndex] == kZipSignatureP) {
                         unsigned char* signature = bytes + signatureIndex;
-                        if (signature[1] == kZipSignatureK && signature[2] == kZipEndSignatureLow && signature[3] == kZipEndSignatureHigh) {
+                        if (signature[1] == kZipSignatureK && signature[2] == kZipEndSignatureLow &&
+                            signature[3] == kZipEndSignatureHigh) {
                             foundOffset = (int)chunkStart + signatureIndex;
                             break;
                         }

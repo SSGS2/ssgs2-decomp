@@ -5,12 +5,19 @@
 
 class CSimpleSpd {
 public:
-    void* resource; // 0x0: CSimpleSpd_Ctor creates shared file handle
-    void* texture; // 0x4: CSimpleSpd_Ctor constructs 0x28-byte CBpTex
-    void* layout; // 0x8: CSimpleSpd_Ctor constructs 0x30-byte ns0::CSpdCtrl
+    void* resource;        // 0x0: CSimpleSpd_Ctor creates shared file handle
+    void* texture;         // 0x4: CSimpleSpd_Ctor constructs 0x28-byte CBpTex
+    void* layout;          // 0x8: CSimpleSpd_Ctor constructs 0x30-byte ns0::CSpdCtrl
     unsigned char opacity; // 0xc: CSimpleSpd_ApplyElementOpacity places byte into low byte of color
     char pad_00D[0x3];
     void* vtbl; // 0x10: CSimpleSpd_Ctor installs __vt__10CSimpleSpd here
+
+    int GetSpritePosition2D(unsigned int index, void* arg2);
+    int ApplyElementOpacity(unsigned int index);
+    void SetOpacity(unsigned char opacity);
+
+    ~CSimpleSpd();
+    CSimpleSpd(void* resource, void* textureResource);
 };
 
 #define OFF(f, o) typedef char CSimpleSpd_off_##f[((int)&((CSimpleSpd*)0)->f == (o)) ? 1 : -1]

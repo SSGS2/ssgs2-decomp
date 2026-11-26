@@ -6,8 +6,8 @@
 class Buffer801BC334 {
 public:
     char pad_000[0x4];
-    void* data; // 0x4: Buffer_dtor
-    short unk_8; // 0x8: Buffer_dtor
+    void* data;          // 0x4: Buffer_dtor
+    short unk_8;         // 0x8: Buffer_dtor
     unsigned char unk_A; // 0xA: Buffer_dtor
 };
 

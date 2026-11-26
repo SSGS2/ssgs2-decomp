@@ -1,13 +1,13 @@
 // GtlAllocationRange: layout view owned by gtl_heap_allocators.cpp.
-// Evidence: gtl_CFixedVectorAllocator_GetNextRange output. No virtual declarations or runtime objects.
+// Evidence: gtl::CFixedVectorAllocator::GetNextRange output. No virtual declarations or runtime objects.
 #ifndef CLASSES_GTLALLOCATIONRANGE_H
 #define CLASSES_GTLALLOCATIONRANGE_H
 
 class GtlAllocationRange {
 public:
-    int address; // 0x0; gtl_CFixedVectorAllocator_GetNextRange output
-    int offsetFromBase; // 0x4; gtl_CFixedVectorAllocator_GetNextRange output
-    int byteSize; // 0x8; gtl_CFixedVectorAllocator_GetNextRange output
+    int address;        // 0x0; gtl::CFixedVectorAllocator::GetNextRange output
+    int offsetFromBase; // 0x4; gtl::CFixedVectorAllocator::GetNextRange output
+    int byteSize;       // 0x8; gtl::CFixedVectorAllocator::GetNextRange output
 };
 
 #define OFF(f, o) typedef char GtlAllocationRange_off_##f[((int)&((GtlAllocationRange*)0)->f == (o)) ? 1 : -1]

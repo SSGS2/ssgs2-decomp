@@ -1,12 +1,21 @@
+// Registries that map keys to bone controllers and texture coordinates: the layer-controller and
+// bone-controller maps, the rotation registry, and the texture-coordinate registry.
+// The maps are ordered trees; erasing or destroying an entry frees its tree node.
+
 #include <decomp/static_init.h>
 #include "MSL/error_message.h"
-// Translation unit 0x8025F0BC-0x8025F9F0 (8 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
+#include "classes/CRotateRegistry.h"
+#include "classes/CTextureCoordinateRegistry.h"
 
-enum { kFullCountTestBias = 0x10000u, kBiasedFullCount = 0xFFFFu, kLengthErrorTypeOffset = 0x1A,
-       kControllerNodeBytes = 0x14, kControllerPayloadBytes = 0x40 };
+enum {
+    kFullCountTestBias = 0x10000u,
+    kBiasedFullCount = 0xFFFFu,
+    kLengthErrorTypeOffset = 0x1A,
+    kControllerNodeBytes = 0x14,
+    kControllerPayloadBytes = 0x40
+};
 
 extern "C" {
 
@@ -29,16 +38,16 @@ extern char __vt__Q23std12length_error[];
 extern char modelRegistryTreeErrorStrings[];
 void __dt__Q23std12length_errorFv(void*);
 struct LayerControllerNode {
-    LayerControllerNode* left; // 0
+    LayerControllerNode* left;  // 0
     LayerControllerNode* right; // 4
-    unsigned int parent_color; // 8
-    unsigned int key; // c
-    void* data; // 10
+    unsigned int parent_color;  // 8
+    unsigned int key;           // c
+    void* data;                 // 10
 };
 struct LayerControllerTree {
     char padding00[0x08];
-    int count; // 8
-    LayerControllerNode* root; // c
+    int count;                   // 8
+    LayerControllerNode* root;   // c
     LayerControllerNode* header; // 10
 };
 // Shared tree convention in this file: header/end is an embedded pseudo-node
@@ -61,7 +70,7 @@ struct BoneControllerVectorTree {
     char padding00[4];
     unsigned int count; // 4
     char padding08[4];
-    BoneControllerVectorNode* root; // c
+    BoneControllerVectorNode* root;   // c
     BoneControllerVectorNode* header; // 10
 };
 
@@ -77,23 +86,25 @@ struct BoneControllerNode {
     unsigned int data;
 };
 
-struct Fn8025F4E4Exc {
+struct LengthErrorView {
     void* vtable;
     char* msg;
     void* rep;
 };
 
-
 // Shared RTTI: std::tr1::detail::shared_ptr_deleter<char, std::detail::default_delete<char[]> >.
 // Use the common 16-byte ABI view in MSL/error_message.h; keep this local alias for callers.
-typedef ::std::detail::__message_control Fn8025F4E4Rep;
+typedef ::std::detail::__message_control MessageControlView;
 
 void __dla__FPv(void*);
-struct Fn8025F4E4Guard {
+struct MessageCopyGuard {
     char* p;
     char* allocator;
     // Free the error text if construction of its ownership block fails.
-    ~Fn8025F4E4Guard() { if (p) __dla__FPv(p); }
+    ~MessageCopyGuard() {
+        if (p)
+            __dla__FPv(p);
+    }
 };
 
 // Construction/unwind overlay. Numeric suffixes are historical slot labels;
@@ -103,7 +114,7 @@ struct Fn8025F4E4Guard {
 // node14/node18 retain allocation addresses; node2c is the armed node-free guard.
 // self28 borrows &tree->root (the sentinel); self54/self6c anchor the unwind frame.
 // These stores describe construction state, not additional owning pointers.
-struct Fn8025F4E4Frame {
+struct ConstructionFrame {
     unsigned char b08;
     char padding01[3];
     unsigned char b0c;
@@ -115,7 +126,7 @@ struct Fn8025F4E4Frame {
     char padding14[4];
     char* self28;
     BoneControllerNode* node2c;
-    Fn8025F4E4Exc exc;
+    LengthErrorView exc;
     char padding34[0x18];
     void* self54;
     char padding50[0x14];
@@ -137,19 +148,21 @@ struct BoneControllerTree {
     BoneControllerNode* root;
     BoneControllerNode* firstNode; // Cached first iterator.
 };
-BoneControllerVectorNode* BoneControllerMap_InsertNode(BoneControllerTree*, BoneControllerNode*, int, int, BoneControllerPair*);
+BoneControllerVectorNode* BoneControllerMap_InsertNode(BoneControllerTree*, BoneControllerNode*, int, int,
+                                                       BoneControllerPair*);
 int BoneControllerMap_SetIndexedPayload(BoneControllerVectorTree*, void*, const BoneControllerPayload*);
 
 #pragma use_lmw_stmw on
 // Copy a key/value pair into a new tree node, link and rebalance it, or throw if the tree is full.
-BoneControllerVectorNode* BoneControllerMap_InsertNode(BoneControllerTree* tree, BoneControllerNode* parent, int insertLeft, int becomesFirst, BoneControllerPair* entry) {
+BoneControllerVectorNode* BoneControllerMap_InsertNode(BoneControllerTree* tree, BoneControllerNode* parent,
+                                                       int insertLeft, int becomesFirst, BoneControllerPair* entry) {
     // ABI phase: construct the length_error and its owned message only on the
     // full-tree sentinel. The bias comparison recognizes UINT_MAX, not 65535 nodes.
     // The construction frame's numbered slots and alloca(0) reproduce unwind bookkeeping; they
     // are not controller fields. Parent and entry are borrowed; node copies entry.
-    Fn8025F4E4Frame construction;
+    ConstructionFrame construction;
     if ((unsigned int)(tree->count + kFullCountTestBias) == kBiasedFullCount) {
-        Fn8025F4E4Exc* exc = &construction.exc;
+        LengthErrorView* exc = &construction.exc;
         exc->vtable = __vt__Q23std11logic_error;
         construction.b0c = 0;
         construction.b08 = 0;
@@ -158,10 +171,10 @@ BoneControllerVectorNode* BoneControllerMap_InsertNode(BoneControllerTree* tree,
         char* ownedMessageCopy = (char*)__nwa__FUl(messageBytes * 2 - messageBytes);
         exc->msg = ownedMessageCopy;
         {
-            Fn8025F4E4Guard guard;
+            MessageCopyGuard guard;
             guard.p = ownedMessageCopy;
             guard.allocator = (char*)&construction.b08;
-            exc->rep = new Fn8025F4E4Rep(ownedMessageCopy);
+            exc->rep = new MessageControlView(ownedMessageCopy);
             guard.p = 0;
         }
         strcpy(exc->msg, messageText);
@@ -224,22 +237,31 @@ int BoneControllerMap_SetIndexedPayload(BoneControllerVectorTree* self, void* ke
     BoneControllerVectorNode* insertionCandidate;
     unsigned char becomesFirst, insertLeft;
     unsigned int count = self->count;
-    if (count <= *indexKey) return 0;
+    if (count <= *indexKey)
+        return 0;
     // Lower_bound: retain the first node >= key; reject a non-equal candidate.
     BoneControllerVectorNode* node = self->root;
     BoneControllerVectorNode* parent = (BoneControllerVectorNode*)&self->root;
     while (node) {
-        if (node->key >= *indexKey) { parent = node; node = node->left; }
-        else node = node->right;
+        if (node->key >= *indexKey) {
+            parent = node;
+            node = node->left;
+        } else
+            node = node->right;
     }
-    if (parent == (BoneControllerVectorNode*)&self->root || *indexKey < parent->key) parent = (BoneControllerVectorNode*)&self->root;
-    if ((BoneControllerVectorNode*)&self->root == parent) payloadCopy = (BoneControllerPayload*)__nw__FUl(kControllerPayloadBytes);
-    else payloadCopy = ((const BoneControllerMappedEntry*)&parent->key)->ownedPayload;
-    if (!payloadCopy) return 0;
+    if (parent == (BoneControllerVectorNode*)&self->root || *indexKey < parent->key)
+        parent = (BoneControllerVectorNode*)&self->root;
+    if ((BoneControllerVectorNode*)&self->root == parent)
+        payloadCopy = (BoneControllerPayload*)__nw__FUl(kControllerPayloadBytes);
+    else
+        payloadCopy = ((const BoneControllerMappedEntry*)&parent->key)->ownedPayload;
+    if (!payloadCopy)
+        return 0;
     *payloadCopy = *value;
     // Find/create the key slot after copying the payload. The pair begins at
     // +0xC; mappedEntry->ownedPayload is the pointer at +0x10.
-    void* insertionParent = BoneControllerVectorTree_FindInsertionPosition(&self->padding08, key, (void**)&insertionCandidate, &insertLeft, &becomesFirst);
+    void* insertionParent = BoneControllerVectorTree_FindInsertionPosition(
+        &self->padding08, key, (void**)&insertionCandidate, &insertLeft, &becomesFirst);
     BoneControllerVectorNode* candidate = insertionCandidate;
     BoneControllerMappedEntry* mappedEntry;
     // An existing key skips insertion and keeps its slot.
@@ -248,13 +270,17 @@ int BoneControllerMap_SetIndexedPayload(BoneControllerVectorTree* self, void* ke
             mappedEntry = (BoneControllerMappedEntry*)&candidate->key;
             unsigned int wanted = *indexKey;
             unsigned int existing = candidate->key;
-            if (existing >= wanted) break;
+            if (existing >= wanted)
+                break;
         }
         {
             unsigned int keyAndDefaultValue[2];
             keyAndDefaultValue[0] = *indexKey;
             keyAndDefaultValue[1] = s_boneControllerNullMappedValue;
-            mappedEntry = (BoneControllerMappedEntry*)&BoneControllerMap_InsertNode((BoneControllerTree*)(&self->padding08), (BoneControllerNode*)insertionParent, insertLeft, becomesFirst, (BoneControllerPair*)keyAndDefaultValue)->key;
+            mappedEntry = (BoneControllerMappedEntry*)&BoneControllerMap_InsertNode(
+                              (BoneControllerTree*)(&self->padding08), (BoneControllerNode*)insertionParent, insertLeft,
+                              becomesFirst, (BoneControllerPair*)keyAndDefaultValue)
+                              ->key;
         }
     } while (0);
     mappedEntry->ownedPayload = payloadCopy;
@@ -271,12 +297,12 @@ void ModelRegistry_InitFullTurn() {
 struct Fn8025F428Object {
     virtual void padding00();
     virtual void padding04();
-    virtual void call10();
+    virtual int call10();
 };
 
 // Dispatch the object's third virtual operation (vtable slot +0x10).
-void Registry_DispatchVirtualOperation10(Fn8025F428Object* self) {
-    self->call10();
+int Registry_DispatchVirtualOperation10(Fn8025F428Object* self) {
+    return self->call10();
 }
 
 struct RegistryTreeNode {
@@ -292,8 +318,10 @@ struct RegistrySubtree {
 void RBTree_DestroySubtree(RegistrySubtree*, RegistrySubtree*);
 // Recurse below a non-null node, then free that node; mapped objects are untouched.
 static inline void DestroyRegistryNodeWithDescendants(RegistrySubtree* self, RegistryTreeNode* node) {
-    if (node->left) RBTree_DestroySubtree(self, (RegistrySubtree*)node->left);
-    if (node->right) RBTree_DestroySubtree(self, (RegistrySubtree*)node->right);
+    if (node->left)
+        RBTree_DestroySubtree(self, (RegistrySubtree*)node->left);
+    if (node->right)
+        RBTree_DestroySubtree(self, (RegistrySubtree*)node->right);
     appFreeUni__FPv(node);
 }
 
@@ -332,7 +360,7 @@ void RBTree_DestroySubtree(RegistrySubtree* self, RegistrySubtree* tree) {
                 DestroyRegistryNodeWithDescendants(self, second);
             }
             // This branch's left child is gone; visit its right child before freeing it.
-        second = third->right;
+            second = third->right;
             if (second) {
                 DestroyRegistryNodeWithDescendants(self, second);
             }
@@ -385,12 +413,13 @@ struct TextureCoordinateNode {
 
 struct TextureCoordinateTree {
     char padding00[0x0C];
-    TextureCoordinateNode* rootSlot; // Root slot; its ADDRESS serves as the end iterator.
+    TextureCoordinateNode* rootSlot;  // Root slot; its ADDRESS serves as the end iterator.
     TextureCoordinateNode* firstNode; // Cached first in-order node, not the tree root.
 };
 
 // Delete every mapped texture-coordinate object while preserving the tree and its keys.
-int CTextureCoordinateRegistry_DeleteAllValues(TextureCoordinateTree* self) {
+int CTextureCoordinateRegistry::DeleteAllValues() {
+    TextureCoordinateTree* self = (TextureCoordinateTree*)this;
     TextureCoordinateNode* node = self->firstNode;
     void* zero = 0;
     TextureCoordinateNode* sentinel = (TextureCoordinateNode*)&self->rootSlot;
@@ -416,33 +445,36 @@ int CTextureCoordinateRegistry_DeleteAllValues(TextureCoordinateTree* self) {
     return 1;
 }
 
-struct Fn8025F940Obj {
-    void* vtable;      // 0x00
-    void* field04;     // 0x04
-    int field08;       // 0x08
-    int field0C;       // 0x0C
-    void* field10;     // 0x10
+struct CRotateRegistryView {
+    void* vtable;  // 0x00
+    void* field04; // 0x04
+    int field08;   // 0x08
+    int field0C;   // 0x0C
+    void* field10; // 0x10
     // Initialize the base registry, then install the rotation-registry vtable.
-    Fn8025F940Obj(void* arg) {
+    CRotateRegistryView(void* arg) {
         RotateRegistry_Init(this, arg);
         vtable = (void*)__vt__15CRotateRegistry;
     }
 };
 
-struct Fn8025F940VTable {
+struct CRotateRegistryVTableView {
     void* padding00;
     void* padding04;
-    void (*destroy)(Fn8025F940Obj*, int);
-    int (*initialize)(Fn8025F940Obj*);
+    void (*destroy)(CRotateRegistryView*, int);
+    int (*initialize)(CRotateRegistryView*);
 };
 
-class Q0b { public: 
-virtual void v08(int); virtual int v0C();
+class Q0b {
+public:
+    virtual void v08(int);
+    virtual int v0C();
 };
 // Construct and initialize a rotation registry; destroy it and return null if initialization fails.
-void* CRotateRegistry_Create(void* arg) {
-    Fn8025F940Obj* p = new Fn8025F940Obj(arg);
-    if (p == 0) return 0;
+void* CRotateRegistry::Create(void* arg) {
+    CRotateRegistryView* p = new CRotateRegistryView(arg);
+    if (p == 0)
+        return 0;
     int r = ((Q0b*)p)->v0C();
     if (r == 0) {
         if (p != 0) {
@@ -457,7 +489,8 @@ void* CRotateRegistry_Create(void* arg) {
 inline void AdvanceLayerControllerIterator(LayerControllerNode*& node) {
     if (node->right != 0) {
         LayerControllerNode* child = node->right;
-        while (child->left != 0) child = child->left;
+        while (child->left != 0)
+            child = child->left;
         node = child;
     } else {
         LayerControllerNode* parent;
@@ -469,20 +502,20 @@ inline void AdvanceLayerControllerIterator(LayerControllerNode*& node) {
 
 #pragma opt_lifetimes off
 // Find the layer controller, delete its mapped value, erase/rebalance the node, and update the first iterator.
-int LayerControllerMap_EraseAndDeleteByKey(LayerControllerTree* self, void* arg) {
-    // arg borrows an unsigned key word. Return 0 if absent, 1 after deletion.
+int LayerControllerMap_EraseAndDeleteByKey(LayerControllerTree* self, void* key) {
+    // key borrows an unsigned key word. Return 0 if absent, 1 after deletion.
     // Phase 1: lower_bound + equality test, then delete ONLY the owned value.
     LayerControllerNode* candidate = (LayerControllerNode*)&self->root;
     LayerControllerNode* search = self->root;
     while (search != 0) {
-        if (search->key >= *(unsigned int*)arg) {
+        if (search->key >= *(unsigned int*)key) {
             candidate = search;
             search = search->left;
         } else {
             search = search->right;
         }
     }
-    if (candidate == (LayerControllerNode*)&self->root || *(unsigned int*)arg < candidate->key)
+    if (candidate == (LayerControllerNode*)&self->root || *(unsigned int*)key < candidate->key)
         candidate = (LayerControllerNode*)&self->root;
     if ((LayerControllerNode*)&self->root == candidate) {
         return 0;
@@ -496,25 +529,25 @@ int LayerControllerMap_EraseAndDeleteByKey(LayerControllerTree* self, void* arg)
     LayerControllerNode* eraseSearch = self->root;
     LayerControllerNode* eraseCandidate = (LayerControllerNode*)&self->root;
     while (eraseSearch != 0) {
-        if (eraseSearch->key >= *(unsigned int*)arg) {
+        if (eraseSearch->key >= *(unsigned int*)key) {
             eraseCandidate = eraseSearch;
             eraseSearch = eraseSearch->left;
         } else {
             eraseSearch = eraseSearch->right;
         }
     }
-    if (eraseCandidate == (LayerControllerNode*)&self->root || *(unsigned int*)arg < eraseCandidate->key)
+    if (eraseCandidate == (LayerControllerNode*)&self->root || *(unsigned int*)key < eraseCandidate->key)
         eraseCandidate = (LayerControllerNode*)&self->root;
     if (eraseCandidate != (LayerControllerNode*)&self->root) {
-    // Advance cached begin before unlinking; rebalance, free node, decrement count.
-    candidate = eraseCandidate;
-    if (eraseCandidate == self->header) {
-        AdvanceLayerControllerIterator(eraseCandidate);
-        self->header = eraseCandidate;
-    }
-    RBTree_RebalanceAfterErase(candidate, self->root);
-    appFreeUni__FPv(candidate);
-    self->count -= 1;
+        // Advance cached begin before unlinking; rebalance, free node, decrement count.
+        candidate = eraseCandidate;
+        if (eraseCandidate == self->header) {
+            AdvanceLayerControllerIterator(eraseCandidate);
+            self->header = eraseCandidate;
+        }
+        RBTree_RebalanceAfterErase(candidate, self->root);
+        appFreeUni__FPv(candidate);
+        self->count -= 1;
     }
     return 1;
 }

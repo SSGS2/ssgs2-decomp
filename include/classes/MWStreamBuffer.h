@@ -4,13 +4,13 @@
 #define CLASSES_MWSTREAMBUFFER_H
 
 struct MWStreamBuffer {
-    void* vtbl; // 0x0
-    unsigned int getBegin; // 0x4
+    void* vtbl;              // 0x0
+    unsigned int getBegin;   // 0x4
     unsigned int getCurrent; // 0x8
-    unsigned int getEnd; // 0xC
-    unsigned int putBegin; // 0x10
+    unsigned int getEnd;     // 0xC
+    unsigned int putBegin;   // 0x10
     unsigned int putCurrent; // 0x14
-    unsigned int putEnd; // 0x18
+    unsigned int putEnd;     // 0x18
     char pad_01C[0x8];
     unsigned char mode; // 0x24
     char pad_025[0x3];

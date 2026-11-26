@@ -1,8 +1,12 @@
+// CPU thinking controller and shot positions: CComThinkCtrl holds the command results and
+// options for the rival's decisions, and CComThinkShotPos caches the shot positions it picks.
+// Also the name maps and entry lookup the controller uses.
+
 #include <decomp/static_init.h>
 #include <decomp/ct_member.h>
 // Controller results: specialLandingResult (+1AC), firstLandingWithinTargetResult
 // (+1B0), and finalPositionWithinTargetResult (+1B4).
-// CComShotOnePoint_EvaluateShotResult supplies the three simulation results; the boost,
+// CComShotOnePoint::EvaluateShotResult supplies the three simulation results; the boost,
 // carry and area-stop condition evaluators treat zero as false and nonzero
 // as true. These are results, not difficulty or probability controls.
 // conditionOptions (+EC..+1A8) holds 48 condition options: callers distinguish
@@ -14,10 +18,23 @@ struct ComThinkSettingsView {
     int conditionOptions[48];
     int specialLandingResult, firstLandingWithinTargetResult, finalPositionWithinTargetResult;
 };
-struct OwnedBufferView { void* vtable; void* data; };
-struct ShotPositionArray { void* data; int count; int capacity; };
-struct EcbTableCountView { char header[8]; int count; };
-enum { kShotPositionStride = 0x34, kMapNodeAllocationSize = 0x20 };
+struct OwnedBufferView {
+    void* vtable;
+    void* data;
+};
+struct ShotPositionArray {
+    void* data;
+    int count;
+    int capacity;
+};
+struct EcbTableCountView {
+    char header[8];
+    int count;
+};
+enum {
+    kShotPositionStride = 0x34,
+    kMapNodeAllocationSize = 0x20
+};
 struct ComThinkExceptionStrings {
     char commandsAndDiagnostics[0x2ee];
     char treeInsertLengthError[26];
@@ -32,12 +49,10 @@ extern const char comThinkCommandStrings[];
 }
 }
 
-// Translation unit 0x8022DBE4-0x8022F108 (23 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "sdk_protos.h"
 #include "classes/CComThinkShotPos.h"
 #include "classes/CComThinkEcb.h"
+#include "classes/CComThinkCtrl.h"
 
 #define AsCComThinkEcb(p) ((CComThinkEcb*)(p))
 
@@ -65,9 +80,24 @@ extern "C" char __vt__16CComThinkShotPos[];
 extern "C" void __dt__Q23std12length_errorFv(void*);
 // strcpy declared in sdk_protos.h
 
-struct InsertList { int size; int root; void* unused; void* first; };
-struct InsertNode { void* leftChild; void* rightChild; void* parentAndColor; unsigned char value[20]; };
-struct InsertValue { int key; unsigned int stringFlags; unsigned char data[12]; int extra; };
+struct InsertList {
+    int size;
+    int root;
+    void* unused;
+    void* first;
+};
+struct InsertNode {
+    void* leftChild;
+    void* rightChild;
+    void* parentAndColor;
+    unsigned char value[20];
+};
+struct InsertValue {
+    int key;
+    unsigned int stringFlags;
+    unsigned char data[12];
+    int extra;
+};
 
 // Tree ABI used by both insertions: root at +4 is the root link (stored as an
 // integer), unused at +8 is part of the sentinel, first at +0xC caches
@@ -79,18 +109,29 @@ struct InsertValue { int key; unsigned int stringFlags; unsigned char data[12]; 
 
 // ABI support for the two map insertions follows. Their near-duplicate string/error
 // constructors retain different unwind lifetimes; the AI-facing operations begin
-// at CComThinkCtrl_GetCommandState. Reuse ownership helpers, not these ABI types.
+// at CComThinkCtrl::GetCommandState. Reuse ownership helpers, not these ABI types.
 // Allocation guards remain live until string construction transfers ownership.
 struct ErrHolder {
     void* p;
     char* flag;
     // Own the error-text allocation until its shared control block adopts it.
-    ErrHolder(void* b, char* f) { p = b; flag = f; }
+    ErrHolder(void* b, char* f) {
+        p = b;
+        flag = f;
+    }
     // Free unadopted error-text storage on exceptional exit.
-    ~ErrHolder() { if (p) __dla__FPv(p); }
+    ~ErrHolder() {
+        if (p)
+            __dla__FPv(p);
+    }
 };
 
-struct ErrRef { int vt; int c1; int c2; char* s; };
+struct ErrRef {
+    int vt;
+    int c1;
+    int c2;
+    char* s;
+};
 
 struct ErrBase2 {
     void* vt;
@@ -106,7 +147,12 @@ struct ErrBase2 {
         {
             ErrHolder h(b, &done);
             ErrRef* r = (ErrRef*)__nw__FUl(16);
-            if (r) { r->c1 = 1; r->c2 = 1; r->vt = (int)s_sharedCharDeleterVtable; r->s = b; }
+            if (r) {
+                r->c1 = 1;
+                r->c2 = 1;
+                r->vt = (int)s_sharedCharDeleterVtable;
+                r->s = b;
+            }
             ref = r;
             h.p = 0;
         }
@@ -118,14 +164,20 @@ struct ErrBase2 {
 
 struct Err2 : ErrBase2 {
     // Construct and immediately throw the reconstructed length-error object.
-    Err2(const char* msg) : ErrBase2(msg) { vt = __vt__Q23std12length_error; __throw(comThinkCommandStrings + COM_MEMBER_OFFSET(ComThinkExceptionStrings, lengthErrorType), this, (void (*)())__dt__Q23std12length_errorFv); }
+    Err2(const char* msg) : ErrBase2(msg) {
+        vt = __vt__Q23std12length_error;
+        __throw(comThinkCommandStrings + COM_MEMBER_OFFSET(ComThinkExceptionStrings, lengthErrorType), this,
+                (void (*)())__dt__Q23std12length_errorFv);
+    }
     // Perform no additional local cleanup for this error specialization.
     ~Err2() {}
 };
 
 extern "C++" {
 // Return caller-provided placement storage without allocating.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 }
 
 struct TargetErrBase {
@@ -139,12 +191,17 @@ struct TargetErrBase {
         volatile char allocator __attribute__((aligned(4))) = 0;
         done = 0;
         int n = strlen(msg) + 1;
-        char* b = (char*)__nwa__FUl(n * 2 - n);
-        buf = b;
+        char* buffer = (char*)__nwa__FUl(n * 2 - n);
+        buf = buffer;
         {
-            ErrHolder h(b, &done);
+            ErrHolder h(buffer, &done);
             ErrRef* r = (ErrRef*)__nw__FUl(16);
-            if (r) { r->c1 = 1; r->c2 = 1; r->vt = (int)s_sharedCharDeleterVtable; r->s = b; }
+            if (r) {
+                r->c1 = 1;
+                r->c2 = 1;
+                r->vt = (int)s_sharedCharDeleterVtable;
+                r->s = buffer;
+            }
             ref = r;
             h.p = 0;
         }
@@ -186,7 +243,8 @@ struct InsertString {
             String_ReserveCapacity(this, (const void*)s.length);
             volatile char allocator __attribute__((aligned(4)));
             char copy __attribute__((aligned(4))) = allocator;
-            ((void (*)(void*, int, int, const void*, const void*, const void*))String_ReplaceRange)(this, 0, 0, s.data, s.data + s.length, &copy);
+            ((void (*)(void*, int, int, const void*, const void*, const void*))String_ReplaceRange)(
+                this, 0, 0, s.data, s.data + s.length, &copy);
         }
     }
 };
@@ -206,8 +264,11 @@ struct InsertPosition {
     void* p;
     // Store the borrowed parent/sentinel link with the original unwind boundary.
     InsertPosition(void* pos) {
-        try { p = pos; }
-        catch (...) { throw; }
+        try {
+            p = pos;
+        } catch (...) {
+            throw;
+        }
     }
 };
 struct InsertGuard {
@@ -216,7 +277,10 @@ struct InsertGuard {
     // Own a newly allocated node until tree insertion links it.
     InsertGuard(void* a, InsertNode* const& n) : allocator(a), p(n) {}
     // Free a node whose insertion did not transfer ownership to the tree.
-    ~InsertGuard() { if (p) appFreeUni__FPv(p); }
+    ~InsertGuard() {
+        if (p)
+            appFreeUni__FPv(p);
+    }
 };
 
 struct TargetGuard_u8022DBE4 {
@@ -225,7 +289,10 @@ struct TargetGuard_u8022DBE4 {
     // Own the volatile-slot node until its payload has been copied and linked.
     TargetGuard_u8022DBE4(void* a, InsertNode* volatile const& n) : allocator(a), p(n) {}
     // Free a node whose insertion did not transfer ownership to the tree.
-    ~TargetGuard_u8022DBE4() { if (p) appFreeUni__FPv(p); }
+    ~TargetGuard_u8022DBE4() {
+        if (p)
+            appFreeUni__FPv(p);
+    }
 };
 
 // Separate copy view retains this instantiation's exception/unwind and allocator lifetimes.
@@ -236,24 +303,27 @@ struct TargetString {
     int extra;
     // Copy inline or owned text, then preserve the callback word.
     TargetString(const TargetString& s) {
-      try {
-        if (!(s.flags >> 31)) {
-            flags = s.flags;
-            unsigned int n = s.length;
-            char* p = s.data;
-            length = n;
-            data = p;
-        } else {
-            flags = 0;
-            length = 0;
-            data = 0;
-            String_ReserveCapacity(this, (const void*)s.length);
+        try {
+            if (!(s.flags >> 31)) {
+                flags = s.flags;
+                unsigned int n = s.length;
+                char* p = s.data;
+                length = n;
+                data = p;
+            } else {
+                flags = 0;
+                length = 0;
+                data = 0;
+                String_ReserveCapacity(this, (const void*)s.length);
                 volatile char allocator __attribute__((aligned(4)));
                 char copy __attribute__((aligned(4))) = allocator;
-                ((void (*)(void*, int, int, const void*, const void*, const void*))String_ReplaceRange)(this, 0, 0, s.data, s.data + s.length, &copy);
+                ((void (*)(void*, int, int, const void*, const void*, const void*))String_ReplaceRange)(
+                    this, 0, 0, s.data, s.data + s.length, &copy);
+            }
+            extra = s.extra;
+        } catch (...) {
+            throw;
         }
-        extra = s.extra;
-      } catch (...) { throw; }
     }
 };
 struct TargetData {
@@ -274,16 +344,21 @@ struct TargetPayload {
 // position points at a parent node (or the header root slot); insertLeft selects its
 // left link. updateFirstNode comes from FindInsertionPosition's second output flag.
 // value is borrowed and deep-copied; the returned node belongs to list.
-void* ComActionMap_InsertNode(InsertList* list, void** position, int insertLeft, int updateFirstNode, const InsertValue* value) {
+void* ComActionMap_InsertNode(InsertList* list, void** position, int insertLeft, int updateFirstNode,
+                              const InsertValue* value) {
     // Phase 1: enforce the node-count limit before acquiring any storage.
     if ((unsigned int)list->size == 0xffffffffU) {
         const char* msg = comThinkCommandStrings + COM_MEMBER_OFFSET(ComThinkExceptionStrings, treeInsertLengthError);
         {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct(msg);
-            exception_runtime::__throw(exception_runtime::comThinkCommandStrings + COM_MEMBER_OFFSET(ComThinkExceptionStrings, lengthErrorType), error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+            exception_runtime::__throw(exception_runtime::comThinkCommandStrings +
+                                           COM_MEMBER_OFFSET(ComThinkExceptionStrings, lengthErrorType),
+                                       error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
     }
     // Phase 2: allocate and copy the payload while the guard owns the node.
@@ -302,11 +377,14 @@ void* ComActionMap_InsertNode(InsertList* list, void** position, int insertLeft,
     guard.p = 0;
     node->leftChild = 0;
     new (&node->parentAndColor) InsertPosition(position);
-    if (insertLeft) position[0] = node;
-    else position[1] = node;
+    if (insertLeft)
+        position[0] = node;
+    else
+        position[1] = node;
     list->size++;
     RBTree_RebalanceAfterInsert(node, list->root);
-    if (updateFirstNode) list->first = node;
+    if (updateFirstNode)
+        list->first = node;
     return node;
 }
 #pragma pop
@@ -314,17 +392,22 @@ void* ComActionMap_InsertNode(InsertList* list, void** position, int insertLeft,
 #pragma push
 #pragma use_lmw_stmw on
 // Copy a condition payload into a new tree node with unwind cleanup before linking.
-void* ComConditionMap_InsertNode(InsertList* list, void** position, int insertLeft, int updateFirstNode, const InsertValue* value) {
+void* ComConditionMap_InsertNode(InsertList* list, void** position, int insertLeft, int updateFirstNode,
+                                 const InsertValue* value) {
     // Same insertion contract as the action map; this string copy has its own
     // exception-lifetime shape. Keep its guards separate from the action copy.
     if ((unsigned int)list->size == 0xffffffffU) {
         const char* msg = comThinkCommandStrings + COM_MEMBER_OFFSET(ComThinkExceptionStrings, treeInsertLengthError);
         {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct(msg);
-            exception_runtime::__throw(exception_runtime::comThinkCommandStrings + COM_MEMBER_OFFSET(ComThinkExceptionStrings, lengthErrorType), error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+            exception_runtime::__throw(exception_runtime::comThinkCommandStrings +
+                                           COM_MEMBER_OFFSET(ComThinkExceptionStrings, lengthErrorType),
+                                       error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
     }
     volatile char allocator __attribute__((aligned(4))) = 0;
@@ -337,18 +420,23 @@ void* ComConditionMap_InsertNode(InsertList* list, void** position, int insertLe
     // Payload construction completes before the node becomes reachable.
     try {
         new ((char*)allocated + 12) InsertPayload(*(const InsertPayload*)value);
-    } catch (...) { throw; }
+    } catch (...) {
+        throw;
+    }
     InsertNode* node = guard.p;
     // Ownership now passes from the allocation guard to the tree.
     node->rightChild = 0;
     guard.p = 0;
     node->leftChild = 0;
     new (&node->parentAndColor) InsertPosition(position);
-    if (insertLeft) position[0] = node;
-    else position[1] = node;
+    if (insertLeft)
+        position[0] = node;
+    else
+        position[1] = node;
     list->size++;
     RBTree_RebalanceAfterInsert(node, list->root);
-    if (updateFirstNode) list->first = node;
+    if (updateFirstNode)
+        list->first = node;
     return node;
 }
 #pragma pop
@@ -359,61 +447,75 @@ extern "C" void* __dla__FPv(void*);
 // Destroy a stateless base object, optionally releasing its allocation.
 void* dtor_8022DD24(void* self, int flag) {
     if (self != 0) {
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
 // Return the embedded command-state block beginning after the controller header.
-void* CComThinkCtrl_GetCommandState(void* controller) { return ((ComThinkSettingsView*)controller)->commandState; }
+void* CComThinkCtrl::GetCommandState(void* controller) {
+    return ((ComThinkSettingsView*)controller)->commandState;
+}
 
 // Store the simulated special-landing result (zero=false, nonzero=true); no normalization is performed.
-void CComThinkCtrl_SetSpecialLandingResult(void* controller, int value) { ((ComThinkSettingsView*)controller)->specialLandingResult = value; }
+void CComThinkCtrl::SetSpecialLandingResult(int value) {
+    specialLandingResult = value;
+}
 
 // Read the simulated special-landing result (zero=false, nonzero=true).
-int CComThinkCtrl_GetSpecialLandingResult(void* controller) { return ((ComThinkSettingsView*)controller)->specialLandingResult; }
+int CComThinkCtrl::GetSpecialLandingResult(void* controller) {
+    return ((ComThinkSettingsView*)controller)->specialLandingResult;
+}
 
 // Store the simulated first-landing-within-target result; no normalization is performed.
-void CComThinkCtrl_SetFirstLandingWithinTargetResult(void* controller, int value) { ((ComThinkSettingsView*)controller)->firstLandingWithinTargetResult = value; }
+void CComThinkCtrl::SetFirstLandingWithinTargetResult(int value) {
+    firstLandingWithinTargetResult = value;
+}
 
 // Read the simulated first-landing-within-target result.
-int CComThinkCtrl_GetFirstLandingWithinTargetResult(void* controller) { return ((ComThinkSettingsView*)controller)->firstLandingWithinTargetResult; }
+int CComThinkCtrl::GetFirstLandingWithinTargetResult(void* controller) {
+    return ((ComThinkSettingsView*)controller)->firstLandingWithinTargetResult;
+}
 
 // Store the simulated final-position-within-target result; no normalization is performed.
-void CComThinkCtrl_SetFinalWithinTargetResult(void* controller, int value) { ((ComThinkSettingsView*)controller)->finalPositionWithinTargetResult = value; }
+void CComThinkCtrl::SetFinalWithinTargetResult(int value) {
+    finalPositionWithinTargetResult = value;
+}
 
 // Read the simulated final-position-within-target result.
-int CComThinkCtrl_GetFinalWithinTargetResult(void* controller) { return ((ComThinkSettingsView*)controller)->finalPositionWithinTargetResult; }
+int CComThinkCtrl::GetFinalWithinTargetResult(void* controller) {
+    return ((ComThinkSettingsView*)controller)->finalPositionWithinTargetResult;
+}
 
-// Read an indexed controller value; the caller supplies a valid index.
-// Valid indices are 0..47; no bounds checking is performed here.
-int CComThinkCtrl_GetOption(void* controller, int optionIndex) { return ((ComThinkSettingsView*)controller)->conditionOptions[optionIndex]; }
+// Read one condition option result. The caller supplies a valid index; there is
+// no bounds check here.
+int CComThinkCtrl::GetOption(int optionIndex) {
+    return conditionOptions[optionIndex];
+}
 
 extern "C" float kFloat_6_2831855;
 extern "C" float s_comThinkTwoPi;
 
 // Initialize the AI unit's shared scalar at startup.
-void InitializeComThinkScalars(void) { s_comThinkTwoPi = kFloat_6_2831855; }
+void InitializeComThinkScalars(void) {
+    s_comThinkTwoPi = kFloat_6_2831855;
+}
 
 extern "C" void appFreeUni__FPv(void*);
 extern "C" void __dl__FPv(void*);
 extern "C" void* __dla__FPv(void*);
 extern "C" char __vt__16CComThinkShotPos[];
-extern "C" void CComThinkShotPos_ClearCachedData(void*);
 extern "C" void* ComThinkShotPosMap_dtor(void*, int);
 extern "C" void* ShotPositionArray_dtor(void*, int);
 extern "C" void ComThinkShotPosMap_DestroySubtree(void*, void*);
 
 // Clear cached shot positions and their lookup map, then optionally free the owner.
-void* CComThinkShotPos_dtor(void* self, int flag) {
-    if (self != 0) {
-        *(void**)self = __vt__16CComThinkShotPos;
-        CComThinkShotPos_ClearCachedData(self);
-        ComThinkShotPosMap_dtor(((char*)&AsCComThinkShotPos(self)->cachedPositionMapCount), -1);
-        ShotPositionArray_dtor(((char*)&AsCComThinkShotPos(self)->cachedPositions), -1);
-        if (flag > 0) __dl__FPv(self);
-    }
-    return self;
+CComThinkShotPos::~CComThinkShotPos() {
+    *(void**)this = __vt__16CComThinkShotPos;
+    ClearCachedData();
+    ComThinkShotPosMap_dtor(((char*)&priorityCount), -1);
+    ShotPositionArray_dtor(((char*)&candidates), -1);
 }
 
 // Destroy cached 52-byte string-bearing records and free their backing allocation.
@@ -436,12 +538,21 @@ void* ShotPositionArray_dtor(void* self, int flag) {
             }
             appFreeUni__FPv(data[0]);
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
-struct TreeNode { TreeNode* first; TreeNode* second; int parentAndColor; int key; unsigned int flag; unsigned int stringLength; void* stringData; };
+struct TreeNode {
+    TreeNode* first;
+    TreeNode* second;
+    int parentAndColor;
+    int key;
+    unsigned int flag;
+    unsigned int stringLength;
+    void* stringData;
+};
 // first/second are left/right children; parentAndColor holds the packed parent pointer and node color.
 // flag bit 31 owns stringData; otherwise the three string words contain inline
 // bytes. TreeNode is a node/payload view, never a map header or sentinel.
@@ -449,9 +560,11 @@ struct TreeNode { TreeNode* first; TreeNode* second; int parentAndColor; int key
 static inline void FreeNodeString(TreeNode* node) {
     // (the repeated address tests are the compiler's own checks from the original expansion)
     char* n = (char*)node;
-    if (n + COM_MEMBER_OFFSET(TreeNode, key) != 0 && n + COM_MEMBER_OFFSET(TreeNode, flag) != 0 && n + COM_MEMBER_OFFSET(TreeNode, flag) != 0) {
+    if (n + COM_MEMBER_OFFSET(TreeNode, key) != 0 && n + COM_MEMBER_OFFSET(TreeNode, flag) != 0 &&
+        n + COM_MEMBER_OFFSET(TreeNode, flag) != 0) {
         unsigned int stringFlags = node->flag;
-        if (stringFlags >> 31) appFreeUni__FPv(node->stringData);
+        if (stringFlags >> 31)
+            appFreeUni__FPv(node->stringData);
     }
 }
 // Destruction schedule for each non-null node:
@@ -468,7 +581,8 @@ static inline void ReleaseTreeNodeString(TreeNode* node) {
     if ((char*)node + COM_MEMBER_OFFSET(TreeNode, key) != 0) {
         if ((char*)node + COM_MEMBER_OFFSET(TreeNode, flag) != 0) {
             if ((char*)node + COM_MEMBER_OFFSET(TreeNode, flag) != 0) {
-                if (node->flag >> 31) appFreeUni__FPv(node->stringData);
+                if (node->flag >> 31)
+                    appFreeUni__FPv(node->stringData);
             }
         }
     }
@@ -480,8 +594,10 @@ void Tree_FreeSubtree(void*, void*);
 
 // Release both descendants, the owned string, then this non-null map node.
 static inline void FreeActionMapLeaf(void* owner, TreeNode* node) {
-    if (node->first) Tree_FreeSubtree(owner, node->first);
-    if (node->second) Tree_FreeSubtree(owner, node->second);
+    if (node->first)
+        Tree_FreeSubtree(owner, node->first);
+    if (node->second)
+        Tree_FreeSubtree(owner, node->second);
     ComActionMap_DestroyStringPayload(owner, (char*)node + COM_MEMBER_OFFSET(TreeNode, key));
     appFreeUni__FPv(node);
 }
@@ -572,8 +688,10 @@ void ComConditionMap_FreeSubtree(void*, void*);
 
 // Release both descendants, the owned string, then this non-null map node.
 static inline void FreeConditionMapLeaf(void* owner, TreeNode* node) {
-    if (node->first) ComConditionMap_FreeSubtree(owner, node->first);
-    if (node->second) ComConditionMap_FreeSubtree(owner, node->second);
+    if (node->first)
+        ComConditionMap_FreeSubtree(owner, node->first);
+    if (node->second)
+        ComConditionMap_FreeSubtree(owner, node->second);
     ComConditionMap_DestroyStringPayload(owner, (char*)node + COM_MEMBER_OFFSET(TreeNode, key));
     appFreeUni__FPv(node);
 }
@@ -665,7 +783,10 @@ extern "C" void* Table_GetEntry(void*, int);
 extern "C" char __vt__12CComThinkEcb[];
 
 void* dtor_8022DD24(void*, int);
-struct LocalException { void* volatile p; const char* volatile s; };
+struct LocalException {
+    void* volatile p;
+    const char* volatile s;
+};
 void* dtor_8022DD24(void*, int);
 #pragma push
 #pragma use_lmw_stmw on
@@ -679,24 +800,25 @@ static inline int AdvanceEcbCursor(int index) {
 // Fetch one candidate after index; return zero at the count bound or a null entry.
 // Only a successful name match publishes index/entry through the caller's cursor.
 // Reference parameters reuse its scratch slots so this ABI helper emits the same loop.
-static inline int FetchNextEcbCandidate(void* volatile& tableSlot, int& index,
-    void*& table, int& limit, int& candidate, int& more) {
+static inline int FetchNextEcbCandidate(void* volatile& tableSlot, int& index, void*& table, int& limit, int& candidate,
+                                        int& more) {
     return (table = tableSlot,
-        // Phase 1: sample the current table and its count.
-        limit = table != 0 ? ((EcbTableCountView*)table)->count : 0,
-        // Phase 2: stop at the bound, otherwise advance before looking up.
-        index >= limit - 1 ? (candidate = 0, more = 0) :
-        (index = AdvanceEcbCursor(index),
-         candidate = (int)Table_GetEntry(table, index), more = candidate != 0),
-        more != 0);
+            // Phase 1: sample the current table and its count.
+            limit = table != 0 ? ((EcbTableCountView*)table)->count : 0,
+            // Phase 2: stop at the bound, otherwise advance before looking up.
+            index >= limit - 1 ? (candidate = 0, more = 0)
+                               : (index = AdvanceEcbCursor(index), candidate = (int)Table_GetEntry(table, index),
+                                  more = candidate != 0),
+            more != 0);
 }
 
 // Advance the ECB cursor until both name hash and full name match; return the index and entry.
-int CComThinkCtrl_FindNextEntryByName(void* self, void* entryName, int* cursor) {
+int CComThinkCtrl::FindNextEntryByName(void* entryName, int* cursor) {
     LocalException local;
     local.p = 0;
-    void* current = AsCComThinkEcb(self)->entryTable;
-    if (current != 0) local.p = current;
+    void* current = AsCComThinkEcb(this)->entryTable;
+    if (current != 0)
+        local.p = current;
     int index = *cursor;
     local.s = __vt__12CComThinkEcb;
     int nameHash = Hash_XorStringBytes(entryName, __vt__12CComThinkEcb);
@@ -734,8 +856,10 @@ int CComThinkCtrl_FindNextEntryByName(void* self, void* entryName, int* cursor) 
 void* dtor_8022E95C(void* self, int flag) {
     if (self != 0) {
         void* p = ((OwnedBufferView*)self)->data;
-        if (p != 0) appFreeUni__FPv(p);
-        if (flag > 0) __dl__FPv(self);
+        if (p != 0)
+            appFreeUni__FPv(p);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -744,56 +868,67 @@ void* dtor_8022E95C(void* self, int flag) {
 void* dtor_8022E9BC(void* self, int flag) {
     if (self != 0) {
         void* p = ((OwnedBufferView*)self)->data;
-        if (p != 0) appFreeUni__FPv(p);
-        if (flag > 0) __dl__FPv(self);
+        if (p != 0)
+            appFreeUni__FPv(p);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
 // Release the heap string inside a condition-map key/value payload.
 void ComConditionMap_DestroyStringPayload(void* /*a*/, char* p) {
-    if (p == 0) return;
-    if (p + 4 == 0) return;
-    if (p + 4 == 0) return;
+    if (p == 0)
+        return;
+    if (p + 4 == 0)
+        return;
+    if (p + 4 == 0)
+        return;
     unsigned int v = *(unsigned int*)(p + 4);
-    if (!(v >> 31)) return;
+    if (!(v >> 31))
+        return;
     appFreeUni__FPv(*(void**)(p + 0xc));
 }
 
 // Release the heap string inside an action-map key/value payload.
 void ComActionMap_DestroyStringPayload(void* /*a*/, char* p) {
-    if (p == 0) return;
-    if (p + 4 == 0) return;
-    if (p + 4 == 0) return;
+    if (p == 0)
+        return;
+    if (p + 4 == 0)
+        return;
+    if (p + 4 == 0)
+        return;
     unsigned int v = *(unsigned int*)(p + 4);
-    if (!(v >> 31)) return;
+    if (!(v >> 31))
+        return;
     appFreeUni__FPv(*(void**)(p + 0xc));
 }
 
 // Initialize an empty cache array and a map whose tail points at its root slot.
-void CComThinkShotPos_Ctor(void* p) {
-    char* base = (char*)p;
+CComThinkShotPos::CComThinkShotPos() {
+    char* base = (char*)this;
     void* vt = __vt__16CComThinkShotPos;
     int zero = 0;
-    char* rootLink = base + COM_MEMBER_OFFSET(CComThinkShotPos, cachedPositionMapRoot);
+    char* rootLink = base + COM_MEMBER_OFFSET(CComThinkShotPos, priorityRoot);
     *(void**)base = vt;
-    AsCComThinkShotPos(base)->cachedPositions = zero;
-    AsCComThinkShotPos(base)->cachedPositionCount = zero;
-    AsCComThinkShotPos(base)->cachedPositionCapacity = zero;
-    AsCComThinkShotPos(base)->cachedPositionMapCount = zero;
-    AsCComThinkShotPos(base)->cachedPositionMapRoot = zero;
-    AsCComThinkShotPos(base)->cachedPositionMapLast = rootLink;
+    AsCComThinkShotPos(base)->candidates = 0;
+    AsCComThinkShotPos(base)->candidateCount = zero;
+    AsCComThinkShotPos(base)->candidateCapacity = zero;
+    AsCComThinkShotPos(base)->priorityCount = zero;
+    AsCComThinkShotPos(base)->priorityRoot = 0;
+    AsCComThinkShotPos(base)->priorityFirst = rootLink;
 }
 
 #pragma push
 #pragma use_lmw_stmw on
 // Finish one expanded shot-position leaf; scratch references retain the caller's traversal lifetimes.
-static inline void FreeShotPositionLeaf(void* owner, char* leafNode,
-    void*& leftDescendant, void*& rightDescendant) {
+static inline void FreeShotPositionLeaf(void* owner, char* leafNode, void*& leftDescendant, void*& rightDescendant) {
     leftDescendant = ((TreeNode*)leafNode)->first;
-    if (leftDescendant != 0) ComThinkShotPosMap_DestroySubtree(owner, leftDescendant);
+    if (leftDescendant != 0)
+        ComThinkShotPosMap_DestroySubtree(owner, leftDescendant);
     rightDescendant = ((TreeNode*)leafNode)->second;
-    if (rightDescendant != 0) ComThinkShotPosMap_DestroySubtree(owner, rightDescendant);
+    if (rightDescendant != 0)
+        ComThinkShotPosMap_DestroySubtree(owner, rightDescendant);
     FreeNodeString((TreeNode*)leafNode);
     appFreeUni__FPv(leafNode);
 }
@@ -885,7 +1020,8 @@ void* ComThinkShotPosMap_dtor(void* self, int deleting) {
             appFreeUni__FPv(rootNode);
         }
         // Phase 3: optionally release the map header itself.
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }

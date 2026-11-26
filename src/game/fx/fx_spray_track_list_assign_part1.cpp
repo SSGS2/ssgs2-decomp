@@ -1,6 +1,7 @@
+// Copy assignment for three spray track lists: spawn, emitter orbit and gravity point.
+// Each is a circular list with a 12-byte header. Nodes are reused, and only the tail is grown or freed.
+
 #include "game/wvector.h"
-// Translation unit 0x801134F0-0x801146EC (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -9,7 +10,7 @@ extern "C" {
 // End is the embedded pair at header+4; an empty list links both words to End.
 // Nodes start with prev/next at +0/+4 and inline payload at +8. Spawn and
 // gravity nodes are 0x20 bytes; orbit nodes are 0x30. All active Node* views
-// store prev first. List801134F0::sentinelPrev is that prev link,
+// store prev first. OrbitTrackList::sentinelPrev is that prev link,
 // so &list->sentinelPrev is End, whereas list->sentinelPrev is the tail node.
 // Payload copies do not establish ownership of pointed-to resources: meanings
 // of opaque words are unresolved here. appFreeUni frees the node allocation.
@@ -38,12 +39,14 @@ struct ListNode80114108 {
     float z;
 };
 
-struct List80114108 {
+struct GravityPointTrackList {
     unsigned int size;
     ListNode80114108* sentinelPrev;
     ListNode80114108* begin;
     // Read the logical gravity-node count, excluding the embedded sentinel.
-    unsigned int count() const { return size; }
+    unsigned int count() const {
+        return size;
+    }
 };
 
 void* appMallocDummy__FUl(unsigned int);
@@ -55,7 +58,7 @@ void dtor_80110204(void*);
 void dtor_80110150(void*);
 void* appMallocDummy__FUl(unsigned int);
 
-struct Elem80113B1C {
+struct SpawnTrackPayload {
     // Payload +0/+4/+8 are integer words, +0xC is float, +0x10 integer,
     // +0x14 float. This assignment unit does not resolve their gameplay roles.
     int a;
@@ -66,20 +69,22 @@ struct Elem80113B1C {
     float f;
 };
 
-struct NodeBase80113B1C {
-    NodeBase80113B1C* prev;
-    NodeBase80113B1C* next;
+struct SpawnTrackLink {
+    SpawnTrackLink* prev;
+    SpawnTrackLink* next;
 };
 
-struct Node80113B1C : NodeBase80113B1C {
-    Elem80113B1C v;
+struct SpawnTrackNode : SpawnTrackLink {
+    SpawnTrackPayload v;
 };
 
-struct List80113B1C {
+struct SpawnTrackList {
     unsigned int size;
-    NodeBase80113B1C end;
+    SpawnTrackLink end;
     // Read the logical spawn-node count, excluding the embedded sentinel.
-    unsigned int count() const { return size; }
+    unsigned int count() const {
+        return size;
+    }
 };
 
 struct BidirTag80113B1C {
@@ -87,24 +92,24 @@ struct BidirTag80113B1C {
     char padding[3];
 };
 
-struct TempBase80113B1C {
+struct SpawnTrackTempBase {
     volatile unsigned int size;
     struct {
-        NodeBase80113B1C* volatile prev;
-        NodeBase80113B1C* volatile next;
+        SpawnTrackLink* volatile prev;
+        SpawnTrackLink* volatile next;
     } end;
     // Free any staged spawn suffix not transferred to the destination list.
-    ~TempBase80113B1C() {
-        NodeBase80113B1C* node;
-        NodeBase80113B1C* e;
-        e = (NodeBase80113B1C*)&end;
+    ~SpawnTrackTempBase() {
+        SpawnTrackLink* node;
+        SpawnTrackLink* e;
+        e = (SpawnTrackLink*)&end;
         node = end.next;
         if (node != e) {
-            NodeBase80113B1C* last = e->prev;
+            SpawnTrackLink* last = e->prev;
             node->prev->next = last->next;
             last->next->prev = node->prev;
             while (node != e) {
-                NodeBase80113B1C* cur = node;
+                SpawnTrackLink* cur = node;
                 node = node->next;
                 appFreeUni__FPv(cur);
                 --size;
@@ -114,18 +119,19 @@ struct TempBase80113B1C {
 };
 
 struct NodeGuard80113B1C {
-    NodeBase80113B1C* volatile end;
-    Node80113B1C* node;
+    SpawnTrackLink* volatile end;
+    SpawnTrackNode* node;
     // Own a new spawn allocation until payload construction succeeds.
-    NodeGuard80113B1C(NodeBase80113B1C* e, Node80113B1C* n) : end(e), node(n) {}
+    NodeGuard80113B1C(SpawnTrackLink* e, SpawnTrackNode* n) : end(e), node(n) {}
     // Free the node if construction failed before ownership transfer.
     ~NodeGuard80113B1C() {
-        if (node) appFreeUni__FPv(node);
+        if (node)
+            appFreeUni__FPv(node);
     }
 };
 
 // Advance by signed n; caller guarantees the destination remains in the valid range.
-static inline void advance80113B1C(NodeBase80113B1C*& it, int n, const BidirTag80113B1C&) {
+static inline void advance80113B1C(SpawnTrackLink*& it, int n, const BidirTag80113B1C&) {
     if (n >= 0) {
         while (n > 0) {
             it = it->next;
@@ -140,19 +146,19 @@ static inline void advance80113B1C(NodeBase80113B1C*& it, int n, const BidirTag8
 }
 
 struct Range80113B1C {
-    NodeBase80113B1C* volatile first;
-    NodeBase80113B1C* volatile last;
+    SpawnTrackLink* volatile first;
+    SpawnTrackLink* volatile last;
 };
 
 // Borrow the smaller count; preserve the library's reference-return convention.
-static inline const unsigned int& min80113B1C(const unsigned int& a, const unsigned int& b) {
-    return b < a ? b : a;
+static inline const unsigned int& min80113B1C(const unsigned int& selfCount, const unsigned int& otherCount) {
+    return otherCount < selfCount ? otherCount : selfCount;
 }
 
 // Copy the six spawn payload words into a reused destination node.
-static inline void copyValue80113B1C(const Node80113B1C* src, Node80113B1C* dst) {
-    const Elem80113B1C* from = &src->v;
-    Elem80113B1C* to = &dst->v;
+static inline void copyValue80113B1C(const SpawnTrackNode* src, SpawnTrackNode* dst) {
+    const SpawnTrackPayload* from = &src->v;
+    SpawnTrackPayload* to = &dst->v;
     to->a = from->a;
     to->b = from->b;
     to->c = from->c;
@@ -162,9 +168,9 @@ static inline void copyValue80113B1C(const Node80113B1C* src, Node80113B1C* dst)
 }
 
 // Assign a spawn payload while retaining the destination's links.
-static inline void assignValue80113B1C(Node80113B1C* dst, const Node80113B1C* src) {
-    Elem80113B1C* to = &dst->v;
-    const Elem80113B1C* from = &src->v;
+static inline void assignValue80113B1C(SpawnTrackNode* dst, const SpawnTrackNode* src) {
+    SpawnTrackPayload* to = &dst->v;
+    const SpawnTrackPayload* from = &src->v;
     to->a = from->a;
     to->b = from->b;
     to->c = from->c;
@@ -174,56 +180,63 @@ static inline void assignValue80113B1C(Node80113B1C* dst, const Node80113B1C* sr
 }
 
 // Initialize a newly allocated spawn payload with the original unwind boundary.
-static inline void constructValue80113B1C(const Node80113B1C* src, Node80113B1C* dst) {
+static inline void constructValue80113B1C(const SpawnTrackNode* src, SpawnTrackNode* dst) {
     unsigned char* to = (unsigned char*)&dst->v;
     const unsigned char* from = (const unsigned char*)&src->v;
     if (to) {
         unsigned int a = *(const unsigned int*)(from + 0x0);
         unsigned int b = *(const unsigned int*)(from + 0x4);
         try {
-        *(unsigned int*)(to + 0x0) = a;
-        *(unsigned int*)(to + 0x4) = b;
-        struct Words4 { unsigned int v[4]; };
-        *(Words4*)(to + 8) = *(const Words4*)(from + 8);
-        } catch (...) { throw; }
+            *(unsigned int*)(to + 0x0) = a;
+            *(unsigned int*)(to + 0x4) = b;
+            struct Words4 {
+                unsigned int v[4];
+            };
+            *(Words4*)(to + 8) = *(const Words4*)(from + 8);
+        } catch (...) {
+            throw;
+        }
     }
 }
 
-struct TempList80113B1C : TempBase80113B1C {
+struct SpawnTrackTempList : SpawnTrackTempBase {
     // Initialize the temporary's empty embedded sentinel and logical count.
-    void initialize(unsigned int count, NodeBase80113B1C* endp) {
+    void initialize(unsigned int count, SpawnTrackLink* endp) {
         end.next = endp;
         size = count;
         end.prev = endp;
     }
     // Copy [first,last) into a separately owned suffix, updating unwind cursors.
-    TempList80113B1C(NodeBase80113B1C* first, NodeBase80113B1C* last,
-        NodeBase80113B1C* volatile& cur, NodeBase80113B1C* volatile& lastCopy,
-        Node80113B1C* volatile& allocation, Node80113B1C* volatile& constructed) {
-        struct Tag { volatile char value; char padding[3]; } innerTag, tag;
-        NodeBase80113B1C* endp;
+    SpawnTrackTempList(SpawnTrackLink* first, SpawnTrackLink* last, SpawnTrackLink* volatile& cur,
+                       SpawnTrackLink* volatile& lastCopy, SpawnTrackNode* volatile& allocation,
+                       SpawnTrackNode* volatile& constructed) {
+        struct Tag {
+            volatile char value;
+            char padding[3];
+        } innerTag, tag;
+        SpawnTrackLink* endp;
         unsigned int count;
-        endp = (NodeBase80113B1C*)&end;
+        endp = (SpawnTrackLink*)&end;
         count = 0;
         initialize(count, endp);
-        TempBase80113B1C* target = this;
+        SpawnTrackTempBase* target = this;
         tag.value = 0;
         lastCopy = last;
         cur = first;
         if (first != last) {
             while (cur != lastCopy) {
                 {
-                    NodeBase80113B1C* insertion;
-                    Node80113B1C* source;
-                    source = (Node80113B1C*)cur;
+                    SpawnTrackLink* insertion;
+                    SpawnTrackNode* source;
+                    source = (SpawnTrackNode*)cur;
                     innerTag.value = 0;
-                    insertion = (NodeBase80113B1C*)&target->end;
-                    Node80113B1C* n = (Node80113B1C*)appMallocDummy__FUl(0x20);
+                    insertion = (SpawnTrackLink*)&target->end;
+                    SpawnTrackNode* n = (SpawnTrackNode*)appMallocDummy__FUl(0x20);
                     allocation = n;
                     constructed = n;
                     NodeGuard80113B1C guard(insertion, n);
                     constructValue80113B1C(source, n);
-                    Node80113B1C* owned = guard.node;
+                    SpawnTrackNode* owned = guard.node;
                     guard.node = 0;
                     n = owned;
                     insertion->prev->next = n;
@@ -239,50 +252,50 @@ struct TempList80113B1C : TempBase80113B1C {
 };
 
 // Locate the common-prefix boundary using the nearer end of the source list.
-static inline NodeBase80113B1C* select80113B1C(const List80113B1C* other, const volatile unsigned int& minimum) {
+static inline SpawnTrackLink* select80113B1C(const SpawnTrackList* other, const volatile unsigned int& minimum) {
     BidirTag80113B1C tagB;
     BidirTag80113B1C tagA;
-    unsigned int otherSize = ((const volatile List80113B1C*)other)->size;
+    unsigned int otherSize = ((const volatile SpawnTrackList*)other)->size;
     unsigned int m = minimum;
-    NodeBase80113B1C* start;
+    SpawnTrackLink* start;
     if (m <= otherSize / 2) {
         tagA.unused = 0;
         start = other->end.next;
         advance80113B1C(start, (int)m, tagA);
     } else {
         tagB.unused = 0;
-        start = (NodeBase80113B1C*)&other->end;
+        start = (SpawnTrackLink*)&other->end;
         advance80113B1C(start, (int)(m - otherSize), tagB);
     }
     return start;
 }
 
 // Copy the spawn track, reusing nodes and growing or shrinking only its tail.
-List80113B1C* FxSpraySpawnTrackList_Assign(List80113B1C* self, const List80113B1C* other) {
+SpawnTrackList* FxSpraySpawnTrackList_Assign(SpawnTrackList* self, const SpawnTrackList* other) {
     if (self != other) {
-        NodeBase80113B1C* volatile savedStart;
+        SpawnTrackLink* volatile savedStart;
         unsigned int selfCount;
         unsigned int otherCount;
-        NodeBase80113B1C* volatile sourceLast;
-        NodeBase80113B1C* volatile sourceFirst;
-        NodeBase80113B1C* volatile tailLast;
-        NodeBase80113B1C* volatile tailFirst;
-        Node80113B1C* volatile constructed;
-        Node80113B1C* volatile allocation;
-        NodeBase80113B1C* volatile lastCopy;
-        NodeBase80113B1C* volatile cur;
-        NodeBase80113B1C* volatile shrinkStop;
-        NodeBase80113B1C* volatile shrinkFirst;
-        NodeBase80113B1C* volatile erase;
-        NodeBase80113B1C* volatile growStop;
-        NodeBase80113B1C* volatile growFirst;
+        SpawnTrackLink* volatile sourceLast;
+        SpawnTrackLink* volatile sourceFirst;
+        SpawnTrackLink* volatile tailLast;
+        SpawnTrackLink* volatile tailFirst;
+        SpawnTrackNode* volatile constructed;
+        SpawnTrackNode* volatile allocation;
+        SpawnTrackLink* volatile lastCopy;
+        SpawnTrackLink* volatile cur;
+        SpawnTrackLink* volatile shrinkStop;
+        SpawnTrackLink* volatile shrinkFirst;
+        SpawnTrackLink* volatile erase;
+        SpawnTrackLink* volatile growStop;
+        SpawnTrackLink* volatile growFirst;
         otherCount = other->count();
         selfCount = self->count();
         const volatile unsigned int& minimum = min80113B1C(selfCount, otherCount);
-        NodeBase80113B1C* start = select80113B1C(other, minimum);
+        SpawnTrackLink* start = select80113B1C(other, minimum);
 
-        NodeBase80113B1C* end = (NodeBase80113B1C*)&other->end;
-        NodeBase80113B1C* sourceStart = other->end.next;
+        SpawnTrackLink* end = (SpawnTrackLink*)&other->end;
+        SpawnTrackLink* sourceStart = other->end.next;
         tailFirst = start;
         tailLast = end;
         sourceLast = end;
@@ -291,30 +304,30 @@ List80113B1C* FxSpraySpawnTrackList_Assign(List80113B1C* self, const List80113B1
 
         // Growth: stage source[minimum..end) under a temporary owning sentinel.
         if (start != end) {
-            TempList80113B1C temp(start, end, cur, lastCopy, allocation, constructed);
-            NodeBase80113B1C* firstValue;
-            NodeBase80113B1C* stopValue;
-            NodeBase80113B1C* lastT;
-            NodeBase80113B1C* firstT;
-            Node80113B1C* s;
-            NodeBase80113B1C* dst;
+            SpawnTrackTempList temp(start, end, cur, lastCopy, allocation, constructed);
+            SpawnTrackLink* firstValue;
+            SpawnTrackLink* stopValue;
+            SpawnTrackLink* lastT;
+            SpawnTrackLink* firstT;
+            SpawnTrackNode* s;
+            SpawnTrackLink* dst;
             stopValue = tailFirst;
             firstValue = sourceFirst;
-            NodeBase80113B1C* volatile& stopCopy = growStop;
+            SpawnTrackLink* volatile& stopCopy = growStop;
             stopCopy = stopValue;
             dst = self->end.next;
-            NodeBase80113B1C* volatile& firstCopy = growFirst;
+            SpawnTrackLink* volatile& firstCopy = growFirst;
             firstCopy = firstValue;
             // Tail allocation succeeded: overwrite the reused common prefix.
             while (firstCopy != stopCopy) {
-                s = (Node80113B1C*)firstCopy;
-                copyValue80113B1C(s, (Node80113B1C*)dst);
+                s = (SpawnTrackNode*)firstCopy;
+                copyValue80113B1C(s, (SpawnTrackNode*)dst);
                 firstCopy = firstCopy->next;
                 dst = dst->next;
             }
             // Splice staged nodes before destination End; temp then owns none.
             if (temp.size != 0) {
-                NodeBase80113B1C* endp = (NodeBase80113B1C*)&temp.end;
+                SpawnTrackLink* endp = (SpawnTrackLink*)&temp.end;
                 firstT = endp->next;
                 lastT = endp->prev;
                 endp->next = endp;
@@ -328,26 +341,26 @@ List80113B1C* FxSpraySpawnTrackList_Assign(List80113B1C* self, const List80113B1
             }
         } else {
             // Equal/shrinking: assign the source prefix, then free excess nodes.
-            Node80113B1C* s;
-            NodeBase80113B1C* dst;
-            NodeBase80113B1C* volatile& stopCopy = shrinkStop;
+            SpawnTrackNode* s;
+            SpawnTrackLink* dst;
+            SpawnTrackLink* volatile& stopCopy = shrinkStop;
             stopCopy = start;
             dst = self->end.next;
-            NodeBase80113B1C* volatile& firstCopy = shrinkFirst;
+            SpawnTrackLink* volatile& firstCopy = shrinkFirst;
             firstCopy = sourceStart;
             while (firstCopy != stopCopy) {
-                s = (Node80113B1C*)firstCopy;
-                assignValue80113B1C((Node80113B1C*)dst, s);
+                s = (SpawnTrackNode*)firstCopy;
+                assignValue80113B1C((SpawnTrackNode*)dst, s);
                 firstCopy = firstCopy->next;
                 dst = dst->next;
             }
-            NodeBase80113B1C* e = (NodeBase80113B1C*)&self->end;
+            SpawnTrackLink* e = (SpawnTrackLink*)&self->end;
             erase = dst;
             if (dst != e) {
-                NodeBase80113B1C* lastNode = e->prev;
+                SpawnTrackLink* lastNode = e->prev;
                 dst->prev->next = lastNode->next;
                 lastNode->next->prev = dst->prev;
-                NodeBase80113B1C* cur;
+                SpawnTrackLink* cur;
                 while ((cur = erase) != e) {
                     erase = cur->next;
                     appFreeUni__FPv(cur);
@@ -359,12 +372,12 @@ List80113B1C* FxSpraySpawnTrackList_Assign(List80113B1C* self, const List80113B1
     return self;
 }
 
-struct Node801134F0 {
-    Node801134F0* prev;
-    Node801134F0* next;
+struct OrbitTrackLink {
+    OrbitTrackLink* prev;
+    OrbitTrackLink* next;
 };
 
-struct Value801134F0 : Node801134F0 {
+struct OrbitTrackNode : OrbitTrackLink {
     // +0x00/+0x0C: two WVector-compatible triples; +0x18..+0x27: four
     // copied words: uint at +18, float at +1C, uint at +20, float at +24.
     // Gameplay meanings and coordinate spaces are unresolved; copying is bitwise.
@@ -372,35 +385,37 @@ struct Value801134F0 : Node801134F0 {
     unsigned char value[0x28];
 };
 
-struct List801134F0 {
+struct OrbitTrackList {
     unsigned int size;
-    Node801134F0* sentinelPrev; // Embedded sentinel.prev; take its ADDRESS to get End.
-    Node801134F0* begin;
+    OrbitTrackLink* sentinelPrev; // Embedded sentinel.prev; take its ADDRESS to get End.
+    OrbitTrackLink* begin;
     // Read the logical orbit-node count, excluding the embedded sentinel.
-    unsigned int count() const { return size; }
+    unsigned int count() const {
+        return size;
+    }
 };
 
 // Borrow the smaller count for the orbit/gravity common-prefix calculation.
-static inline const unsigned int& min801134F0(const unsigned int& a, const unsigned int& b) {
-    return b < a ? b : a;
+static inline const unsigned int& min801134F0(const unsigned int& selfCount, const unsigned int& otherCount) {
+    return otherCount < selfCount ? otherCount : selfCount;
 }
 
-struct TempBase801134F0 {
+struct OrbitTrackTempBase {
     volatile unsigned int size;
-    Node801134F0* volatile tail;
-    Node801134F0* volatile head;
+    OrbitTrackLink* volatile tail;
+    OrbitTrackLink* volatile head;
     // Free the staged orbit suffix if it has not been spliced into self.
-    ~TempBase801134F0() {
-        Node801134F0* node;
-        Node801134F0* e;
-        e = (Node801134F0*)&tail;
+    ~OrbitTrackTempBase() {
+        OrbitTrackLink* node;
+        OrbitTrackLink* e;
+        e = (OrbitTrackLink*)&tail;
         node = head;
         if (node != e) {
-            Node801134F0* last = e->prev;
+            OrbitTrackLink* last = e->prev;
             node->prev->next = last->next;
             last->next->prev = node->prev;
             while (node != e) {
-                Node801134F0* cur = node;
+                OrbitTrackLink* cur = node;
                 node = node->next;
                 appFreeUni__FPv(cur);
                 --size;
@@ -415,16 +430,22 @@ struct BidirTag801134F0 {
 };
 
 // Move an orbit iterator by signed distance within its valid circular list.
-static inline void advance801134F0(Node801134F0*& it, int n, const BidirTag801134F0&) {
+static inline void advance801134F0(OrbitTrackLink*& it, int n, const BidirTag801134F0&) {
     if (n >= 0) {
-        while (n > 0) { it = it->next; --n; }
+        while (n > 0) {
+            it = it->next;
+            --n;
+        }
     } else {
-        while (n < 0) { it = it->prev; ++n; }
+        while (n < 0) {
+            it = it->prev;
+            ++n;
+        }
     }
 }
 
 // Copy two vectors and four trailing words, retaining the orbit node links.
-static inline void assign801134F0(Value801134F0* dst, const Value801134F0* src) {
+static inline void assign801134F0(OrbitTrackNode* dst, const OrbitTrackNode* src) {
     unsigned char* to;
     const unsigned char* from;
     to = dst->value;
@@ -438,23 +459,24 @@ static inline void assign801134F0(Value801134F0* dst, const Value801134F0* src) 
 }
 
 struct Range801134F0 {
-    Node801134F0* volatile first;
-    Node801134F0* volatile last;
+    OrbitTrackLink* volatile first;
+    OrbitTrackLink* volatile last;
 };
 
-struct NodeGuard801134F0 {
-    Node801134F0* volatile end;
-    Value801134F0* node;
+struct OrbitNodeGuard {
+    OrbitTrackLink* volatile end;
+    OrbitTrackNode* node;
     // Own one orbit allocation until its inline payload is constructed.
-    NodeGuard801134F0(Node801134F0* e, Value801134F0* n) : end(e), node(n) {}
+    OrbitNodeGuard(OrbitTrackLink* e, OrbitTrackNode* n) : end(e), node(n) {}
     // Release an orbit allocation still held by this construction guard.
-    ~NodeGuard801134F0() {
-        if (node) appFreeUni__FPv(node);
+    ~OrbitNodeGuard() {
+        if (node)
+            appFreeUni__FPv(node);
     }
 };
 
 // Initialize the 0x28-byte inline orbit payload under its original unwind scope.
-static inline void construct801134F0(Value801134F0* n, const Value801134F0* source) {
+static inline void construct801134F0(OrbitTrackNode* n, const OrbitTrackNode* source) {
     unsigned char* to = n->value;
     const unsigned char* from = source->value;
     if (to) {
@@ -464,49 +486,53 @@ static inline void construct801134F0(Value801134F0* n, const Value801134F0* sour
             *(unsigned int*)to = a;
             *(unsigned int*)(to + 4) = b;
             *(unsigned int*)(to + 8) = *(const unsigned int*)(from + 8);
-            struct Words3 { unsigned int v[3]; };
+            struct Words3 {
+                unsigned int v[3];
+            };
             *(Words3*)(to + 0xc) = *(const Words3*)(from + 0xc);
             *(unsigned int*)(to + 0x18) = *(const unsigned int*)(from + 0x18);
             *(float*)(to + 0x1c) = *(const float*)(from + 0x1c);
             *(unsigned int*)(to + 0x20) = *(const unsigned int*)(from + 0x20);
             *(float*)(to + 0x24) = *(const float*)(from + 0x24);
-        } catch (...) { throw; }
+        } catch (...) {
+            throw;
+        }
     }
 }
 
-struct TempList801134F0 : TempBase801134F0 {
+struct OrbitTrackTempList : OrbitTrackTempBase {
     // Link both temporary orbit ends to its embedded empty sentinel.
-    void initialize(Node801134F0* endp) {
+    void initialize(OrbitTrackLink* endp) {
         head = endp;
         size = 0;
         tail = endp;
     }
     // Copy the missing orbit suffix under temporary node ownership.
-    TempList801134F0(Node801134F0* first, Node801134F0* last,
-        Node801134F0* volatile& cur, Node801134F0* volatile& lastCopy,
-        Value801134F0* volatile& allocation, Value801134F0* volatile& constructed) {
+    OrbitTrackTempList(OrbitTrackLink* first, OrbitTrackLink* last, OrbitTrackLink* volatile& cur,
+                       OrbitTrackLink* volatile& lastCopy, OrbitTrackNode* volatile& allocation,
+                       OrbitTrackNode* volatile& constructed) {
         BidirTag801134F0 innerTag, outerTag;
-        Node801134F0* endp;
-        endp = (Node801134F0*)&tail;
+        OrbitTrackLink* endp;
+        endp = (OrbitTrackLink*)&tail;
         initialize(endp);
-        TempBase801134F0* target = this;
+        OrbitTrackTempBase* target = this;
         outerTag.unused = 0;
         lastCopy = last;
         cur = first;
         if (first != last) {
             while (cur != lastCopy) {
                 {
-                    Value801134F0* source;
-                    Node801134F0* insertion;
-                    source = (Value801134F0*)cur;
+                    OrbitTrackNode* source;
+                    OrbitTrackLink* insertion;
+                    source = (OrbitTrackNode*)cur;
                     innerTag.unused = 0;
-                    insertion = (Node801134F0*)&target->tail;
-                    Value801134F0* n = (Value801134F0*)appMallocDummy__FUl(0x30);
+                    insertion = (OrbitTrackLink*)&target->tail;
+                    OrbitTrackNode* n = (OrbitTrackNode*)appMallocDummy__FUl(0x30);
                     allocation = n;
                     constructed = n;
-                    NodeGuard801134F0 guard(insertion, n);
+                    OrbitNodeGuard guard(insertion, n);
                     construct801134F0(n, source);
-                    Value801134F0* owned = guard.node;
+                    OrbitTrackNode* owned = guard.node;
                     guard.node = 0;
                     n = owned;
                     insertion->prev->next = n;
@@ -522,53 +548,53 @@ struct TempList801134F0 : TempBase801134F0 {
 };
 
 // Locate the source orbit node at the end of the reusable common prefix.
-static inline Node801134F0* select801134F0(const List801134F0* other, const volatile unsigned int& minimum) {
+static inline OrbitTrackLink* select801134F0(const OrbitTrackList* other, const volatile unsigned int& minimum) {
     BidirTag801134F0 tagB;
     BidirTag801134F0 tagA;
-    unsigned int otherSize = ((const volatile List801134F0*)other)->size;
+    unsigned int otherSize = ((const volatile OrbitTrackList*)other)->size;
     unsigned int m = minimum;
-    Node801134F0* start;
+    OrbitTrackLink* start;
     if (m <= otherSize / 2) {
         tagA.unused = 0;
         start = other->begin;
         advance801134F0(start, (int)m, tagA);
     } else {
         tagB.unused = 0;
-        start = (Node801134F0*)&other->sentinelPrev;
+        start = (OrbitTrackLink*)&other->sentinelPrev;
         advance801134F0(start, (int)(m - otherSize), tagB);
     }
     return start;
 }
 
 // Copy an orbit-layout track, staging a growing tail or freeing a shrinking tail.
-List801134F0* FxSprayEmitterOrbitTrackList_Assign(List801134F0* self, const List801134F0* other) {
+OrbitTrackList* FxSprayEmitterOrbitTrackList_Assign(OrbitTrackList* self, const OrbitTrackList* other) {
     if (self != other) {
         // Phase 1: locate source[m] and stage iterator aliases for either tail path.
-        Node801134F0* volatile savedStart;
-        Node801134F0* volatile sourceLast;
+        OrbitTrackLink* volatile savedStart;
+        OrbitTrackLink* volatile sourceLast;
         unsigned int otherCount;
-        Node801134F0* volatile tailLast;
-        Node801134F0* volatile sourceFirst;
-        Value801134F0* volatile constructed;
-        Node801134F0* volatile tailFirst;
-        Node801134F0* volatile lastCopy;
-        Value801134F0* volatile allocation;
-        Node801134F0* volatile shrinkFirst;
-        Node801134F0* volatile cur;
-        Node801134F0* volatile shrinkStop;
-        Node801134F0* volatile growStop;
-        Node801134F0* volatile erase;
+        OrbitTrackLink* volatile tailLast;
+        OrbitTrackLink* volatile sourceFirst;
+        OrbitTrackNode* volatile constructed;
+        OrbitTrackLink* volatile tailFirst;
+        OrbitTrackLink* volatile lastCopy;
+        OrbitTrackNode* volatile allocation;
+        OrbitTrackLink* volatile shrinkFirst;
+        OrbitTrackLink* volatile cur;
+        OrbitTrackLink* volatile shrinkStop;
+        OrbitTrackLink* volatile growStop;
+        OrbitTrackLink* volatile erase;
         otherCount = other->count();
 
         unsigned int selfCount;
         selfCount = self->count();
-        Node801134F0* volatile growFirst;
+        OrbitTrackLink* volatile growFirst;
         unsigned int savedSelfCount = selfCount;
         const volatile unsigned int& minimum = min801134F0(savedSelfCount, otherCount);
-        Node801134F0* start = select801134F0(other, minimum);
+        OrbitTrackLink* start = select801134F0(other, minimum);
         tailFirst = start;
-        Node801134F0* sourceStart = other->begin;
-        Node801134F0* end = (Node801134F0*)&other->sentinelPrev;
+        OrbitTrackLink* sourceStart = other->begin;
+        OrbitTrackLink* end = (OrbitTrackLink*)&other->sentinelPrev;
         sourceLast = end;
         tailLast = end;
         savedStart = start;
@@ -577,23 +603,23 @@ List801134F0* FxSprayEmitterOrbitTrackList_Assign(List801134F0* self, const List
         // Growth: construct a detached tail before overwriting the reused prefix.
         if (start != end) {
             const unsigned char* from;
-            Value801134F0* dst;
+            OrbitTrackNode* dst;
             unsigned char* to;
-            Node801134F0* firstValue;
-            Node801134F0* stopValue;
-            TempList801134F0 temp(start, end, cur, lastCopy, allocation, constructed);
-            Node801134F0* last;
-            Node801134F0* first;
+            OrbitTrackLink* firstValue;
+            OrbitTrackLink* stopValue;
+            OrbitTrackTempList temp(start, end, cur, lastCopy, allocation, constructed);
+            OrbitTrackLink* last;
+            OrbitTrackLink* first;
             stopValue = tailFirst;
-            Value801134F0* s;
+            OrbitTrackNode* s;
             firstValue = sourceFirst;
-            Node801134F0* volatile& stopCopy = growStop;
+            OrbitTrackLink* volatile& stopCopy = growStop;
             stopCopy = stopValue;
-            dst = (Value801134F0*)self->begin;
-            Node801134F0* volatile& firstCopy = growFirst;
+            dst = (OrbitTrackNode*)self->begin;
+            OrbitTrackLink* volatile& firstCopy = growFirst;
             firstCopy = firstValue;
             while (stopCopy != firstCopy) {
-                s = (Value801134F0*)firstCopy;
+                s = (OrbitTrackNode*)firstCopy;
                 to = dst->value;
                 from = s->value;
                 *(WVector*)to = *(WVector*)from;
@@ -602,16 +628,16 @@ List801134F0* FxSprayEmitterOrbitTrackList_Assign(List801134F0* self, const List
                 *(float*)(to + 0x1c) = *(const float*)(from + 0x1c);
                 *(unsigned int*)(to + 0x20) = *(const unsigned int*)(from + 0x20);
                 *(float*)(to + 0x24) = *(const float*)(from + 0x24);
-                dst = (Value801134F0*)dst->next;
+                dst = (OrbitTrackNode*)dst->next;
                 firstCopy = firstCopy->next;
             }
             // Transfer every staged node into self; leave the temporary empty.
             if (temp.size) {
-                Node801134F0* at = dst;
+                OrbitTrackLink* at = dst;
                 first = temp.head;
                 last = temp.tail;
-                temp.head = (Node801134F0*)&temp.tail;
-                temp.tail = (Node801134F0*)&temp.tail;
+                temp.head = (OrbitTrackLink*)&temp.tail;
+                temp.tail = (OrbitTrackLink*)&temp.tail;
                 at->prev->next = first;
                 first->prev = at->prev;
                 at->prev = last;
@@ -622,28 +648,28 @@ List801134F0* FxSprayEmitterOrbitTrackList_Assign(List801134F0* self, const List
         } else {
             // Equal/shrinking: source[m] is End; copy the entire source then erase
             // self's remaining tail. No allocation occurs on this path.
-            Node801134F0* dst;
-            Node801134F0* volatile& stopCopy = shrinkStop;
+            OrbitTrackLink* dst;
+            OrbitTrackLink* volatile& stopCopy = shrinkStop;
 
-            Value801134F0* s;
+            OrbitTrackNode* s;
             stopCopy = start;
             dst = self->begin;
-            Node801134F0* volatile& firstCopy = shrinkFirst;
+            OrbitTrackLink* volatile& firstCopy = shrinkFirst;
             firstCopy = sourceStart;
             while (firstCopy != stopCopy) {
-                s = (Value801134F0*)firstCopy;
-                assign801134F0((Value801134F0*)dst, s);
+                s = (OrbitTrackNode*)firstCopy;
+                assign801134F0((OrbitTrackNode*)dst, s);
                 firstCopy = firstCopy->next;
                 dst = dst->next;
             }
             // Prefix now matches the source; detach/free the remaining old suffix.
-            Node801134F0* e = (Node801134F0*)&self->sentinelPrev;
+            OrbitTrackLink* e = (OrbitTrackLink*)&self->sentinelPrev;
             erase = dst;
             if (dst != e) {
-                Node801134F0* last = e->prev;
+                OrbitTrackLink* last = e->prev;
                 dst->prev->next = last->next;
                 last->next->prev = dst->prev;
-                Node801134F0* cur;
+                OrbitTrackLink* cur;
                 while ((cur = erase) != e) {
                     erase = cur->next;
                     appFreeUni__FPv(cur);
@@ -655,29 +681,29 @@ List801134F0* FxSprayEmitterOrbitTrackList_Assign(List801134F0* self, const List
     return self;
 }
 
-struct Node80114108 {
-    Node80114108* prev;
-    Node80114108* next;
+struct GravityPointTrackNode {
+    GravityPointTrackNode* prev;
+    GravityPointTrackNode* next;
     unsigned int a, b, c;
     float x, y, z;
 };
 
-struct TempBase80114108 {
+struct GravityPointTrackTempBase {
     volatile unsigned int size;
-    Node80114108* volatile tail;
-    Node80114108* volatile head;
+    GravityPointTrackNode* volatile tail;
+    GravityPointTrackNode* volatile head;
     // Free the staged gravity suffix if it remains owned on scope exit.
-    ~TempBase80114108() {
-        Node80114108* node;
-        Node80114108* e;
-        e = (Node80114108*)&tail;
+    ~GravityPointTrackTempBase() {
+        GravityPointTrackNode* node;
+        GravityPointTrackNode* e;
+        e = (GravityPointTrackNode*)&tail;
         node = head;
         if (node != e) {
-            Node80114108* last = e->prev;
+            GravityPointTrackNode* last = e->prev;
             node->prev->next = last->next;
             last->next->prev = node->prev;
             while (node != e) {
-                Node80114108* cur = node;
+                GravityPointTrackNode* cur = node;
                 node = node->next;
                 appFreeUni__FPv(cur);
                 --size;
@@ -687,34 +713,39 @@ struct TempBase80114108 {
 };
 
 struct Range80114108 {
-    Node80114108* volatile first;
-    Node80114108* volatile last;
+    GravityPointTrackNode* volatile first;
+    GravityPointTrackNode* volatile last;
 };
 
-struct NodeGuard80114108 {
-    Node80114108* volatile end;
-    Node80114108* node;
+struct GravityPointNodeGuard {
+    GravityPointTrackNode* volatile end;
+    GravityPointTrackNode* node;
     // Retain one gravity allocation until its payload has been copied.
-    NodeGuard80114108(Node80114108* e, Node80114108* n) : end(e), node(n) {}
+    GravityPointNodeGuard(GravityPointTrackNode* e, GravityPointTrackNode* n) : end(e), node(n) {}
     // Free a gravity node that was not transferred to its temporary list.
-    ~NodeGuard80114108() { if (node) appFreeUni__FPv(node); }
+    ~GravityPointNodeGuard() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 
 // Initialize the six-word gravity payload without assigning node links.
-static inline void construct80114108(Node80114108* n, const Node80114108* source) {
+static inline void construct80114108(GravityPointTrackNode* n, const GravityPointTrackNode* source) {
     unsigned int* to = &n->a;
     const unsigned int* from = &source->a;
     if (to) {
         unsigned int a = from[0];
         unsigned int b = from[1];
         try {
-        to[0] = a;
-        to[1] = b;
-        to[2] = from[2];
-        *(float*)(to + 3) = *(const float*)(from + 3);
-        *(float*)(to + 4) = *(const float*)(from + 4);
-        *(float*)(to + 5) = *(const float*)(from + 5);
-        } catch (...) { throw; }
+            to[0] = a;
+            to[1] = b;
+            to[2] = from[2];
+            *(float*)(to + 3) = *(const float*)(from + 3);
+            *(float*)(to + 4) = *(const float*)(from + 4);
+            *(float*)(to + 5) = *(const float*)(from + 5);
+        } catch (...) {
+            throw;
+        }
     }
 }
 
@@ -723,38 +754,39 @@ struct Tag80114108 {
     char padding[3];
 };
 
-struct TempList80114108 : TempBase80114108 {
+struct GravityPointTrackTempList : GravityPointTrackTempBase {
     // Initialize the empty gravity suffix sentinel and zero count.
-    void initialize(Node80114108* endp) {
+    void initialize(GravityPointTrackNode* endp) {
         size = 0;
         head = endp;
         tail = endp;
     }
     // Copy a missing gravity suffix into an independently owned circular list.
-    TempList80114108(Node80114108* first, Node80114108* last,
-        Node80114108* volatile& cur, Node80114108* volatile& lastCopy,
-        Node80114108* volatile& allocation, Node80114108* volatile& constructed) {
+    GravityPointTrackTempList(GravityPointTrackNode* first, GravityPointTrackNode* last,
+                              GravityPointTrackNode* volatile& cur, GravityPointTrackNode* volatile& lastCopy,
+                              GravityPointTrackNode* volatile& allocation,
+                              GravityPointTrackNode* volatile& constructed) {
         Tag80114108 innerTag;
         Tag80114108 outerTag;
-        initialize((Node80114108*)&tail);
-        TempBase80114108* target = this;
+        initialize((GravityPointTrackNode*)&tail);
+        GravityPointTrackTempBase* target = this;
         outerTag.value = 0;
         lastCopy = last;
         cur = first;
         if (first != last) {
             while (cur != lastCopy) {
                 {
-                    Node80114108* insertion;
-                    Node80114108* source;
+                    GravityPointTrackNode* insertion;
+                    GravityPointTrackNode* source;
                     source = cur;
                     innerTag.value = 0;
-                    insertion = (Node80114108*)&target->tail;
-                    Node80114108* n = (Node80114108*)appMallocDummy__FUl(0x20);
+                    insertion = (GravityPointTrackNode*)&target->tail;
+                    GravityPointTrackNode* n = (GravityPointTrackNode*)appMallocDummy__FUl(0x20);
                     allocation = n;
                     constructed = n;
-                    NodeGuard80114108 guard(insertion, n);
+                    GravityPointNodeGuard guard(insertion, n);
                     construct80114108(n, source);
-                    Node80114108* owned = guard.node;
+                    GravityPointTrackNode* owned = guard.node;
                     guard.node = 0;
                     n = owned;
                     insertion->prev->next = n;
@@ -770,16 +802,22 @@ struct TempList80114108 : TempBase80114108 {
 };
 
 // Move a gravity iterator by signed distance within its list.
-static inline void advance80114108(Node80114108*& it, int n) {
+static inline void advance80114108(GravityPointTrackNode*& it, int n) {
     if (n >= 0) {
-        while (n > 0) { it = it->next; --n; }
+        while (n > 0) {
+            it = it->next;
+            --n;
+        }
     } else {
-        while (n < 0) { it = it->prev; ++n; }
+        while (n < 0) {
+            it = it->prev;
+            ++n;
+        }
     }
 }
 
 // Assign the gravity payload (vector plus three floats), retaining node links.
-static inline void assign80114108(Node80114108* dst, const Node80114108* src) {
+static inline void assign80114108(GravityPointTrackNode* dst, const GravityPointTrackNode* src) {
     unsigned int* to = &dst->a;
     const unsigned int* from = &src->a;
     *(WVector*)to = *(WVector*)from;
@@ -789,7 +827,7 @@ static inline void assign80114108(Node80114108* dst, const Node80114108* src) {
 }
 
 // Copy a reused gravity payload on the tail-growth path.
-static inline void assignGrow80114108(const Node80114108* src, Node80114108* dst) {
+static inline void assignGrow80114108(const GravityPointTrackNode* src, GravityPointTrackNode* dst) {
     const unsigned int* from = &src->a;
     unsigned int* to = &dst->a;
     *(WVector*)to = *(WVector*)from;
@@ -799,49 +837,51 @@ static inline void assignGrow80114108(const Node80114108* src, Node80114108* dst
 }
 
 // Locate the gravity source's common-prefix boundary from its nearer end.
-static inline Node80114108* select80114108(const List80114108* other, const volatile unsigned int& minimum) {
+static inline GravityPointTrackNode* select80114108(const GravityPointTrackList* other,
+                                                    const volatile unsigned int& minimum) {
     Tag80114108 tagB;
     Tag80114108 tagA;
-    unsigned int otherSize = ((const volatile List80114108*)other)->size;
+    unsigned int otherSize = ((const volatile GravityPointTrackList*)other)->size;
     unsigned int m = minimum;
-    Node80114108* start;
+    GravityPointTrackNode* start;
     if (m <= otherSize / 2) {
         tagA.value = 0;
-        start = (Node80114108*)other->begin;
+        start = (GravityPointTrackNode*)other->begin;
         advance80114108(start, (int)m);
     } else {
         tagB.value = 0;
-        start = (Node80114108*)&other->sentinelPrev;
+        start = (GravityPointTrackNode*)&other->sentinelPrev;
         advance80114108(start, (int)(m - otherSize));
     }
     return start;
 }
 
 // Copy a gravity track, reusing its common prefix and adjusting its owning tail.
-List80114108* FxSprayGravityPointTrackList_Assign(List80114108* self, const List80114108* other) {
+GravityPointTrackList* FxSprayGravityPointTrackList_Assign(GravityPointTrackList* self,
+                                                           const GravityPointTrackList* other) {
     if (self != other) {
-        Node80114108* volatile savedStart;
+        GravityPointTrackNode* volatile savedStart;
         unsigned int selfCount;
         unsigned int otherCount;
-        Node80114108* volatile sourceLast;
-        Node80114108* volatile sourceFirst;
-        Node80114108* volatile tailLast;
-        Node80114108* volatile tailFirst;
-        Node80114108* volatile constructed;
-        Node80114108* volatile allocation;
-        Node80114108* volatile lastCopy;
-        Node80114108* volatile cur;
-        Node80114108* volatile shrinkStop;
-        Node80114108* volatile shrinkFirst;
-        Node80114108* volatile erase;
-        Node80114108* volatile growStop;
-        Node80114108* volatile growFirst;
+        GravityPointTrackNode* volatile sourceLast;
+        GravityPointTrackNode* volatile sourceFirst;
+        GravityPointTrackNode* volatile tailLast;
+        GravityPointTrackNode* volatile tailFirst;
+        GravityPointTrackNode* volatile constructed;
+        GravityPointTrackNode* volatile allocation;
+        GravityPointTrackNode* volatile lastCopy;
+        GravityPointTrackNode* volatile cur;
+        GravityPointTrackNode* volatile shrinkStop;
+        GravityPointTrackNode* volatile shrinkFirst;
+        GravityPointTrackNode* volatile erase;
+        GravityPointTrackNode* volatile growStop;
+        GravityPointTrackNode* volatile growFirst;
         otherCount = other->count();
         selfCount = self->count();
         const volatile unsigned int& minimum = min801134F0(selfCount, otherCount);
-        Node80114108* start = select80114108(other, minimum);
-        Node80114108* end = (Node80114108*)&other->sentinelPrev;
-        Node80114108* sourceStart = (Node80114108*)other->begin;
+        GravityPointTrackNode* start = select80114108(other, minimum);
+        GravityPointTrackNode* end = (GravityPointTrackNode*)&other->sentinelPrev;
+        GravityPointTrackNode* sourceStart = (GravityPointTrackNode*)other->begin;
         tailFirst = start;
         tailLast = end;
         sourceLast = end;
@@ -849,15 +889,15 @@ List80114108* FxSprayGravityPointTrackList_Assign(List80114108* self, const List
         sourceFirst = sourceStart;
         // Growth: build a temporary tail, assign existing values, then splice.
         if (start != end) {
-            TempList80114108 temp(start, end, cur, lastCopy, allocation, constructed);
-            Node80114108* firstValue;
-            Node80114108* stopValue;
+            GravityPointTrackTempList temp(start, end, cur, lastCopy, allocation, constructed);
+            GravityPointTrackNode* firstValue;
+            GravityPointTrackNode* stopValue;
             stopValue = tailFirst;
             firstValue = sourceFirst;
-            Node80114108* volatile& stopCopy = growStop;
+            GravityPointTrackNode* volatile& stopCopy = growStop;
             stopCopy = stopValue;
-            Node80114108* dst = (Node80114108*)self->begin;
-            Node80114108* volatile& firstCopy = growFirst;
+            GravityPointTrackNode* dst = (GravityPointTrackNode*)self->begin;
+            GravityPointTrackNode* volatile& firstCopy = growFirst;
             firstCopy = firstValue;
             while (firstCopy != stopCopy) {
                 assignGrow80114108(firstCopy, dst);
@@ -866,12 +906,12 @@ List80114108* FxSprayGravityPointTrackList_Assign(List80114108* self, const List
             }
             // Empty the temporary sentinel as ownership transfers to self.
             if (temp.size != 0) {
-                Node80114108* last;
-                Node80114108* first;
+                GravityPointTrackNode* last;
+                GravityPointTrackNode* first;
                 first = temp.head;
                 last = temp.tail;
-                temp.head = (Node80114108*)&temp.tail;
-                temp.tail = (Node80114108*)&temp.tail;
+                temp.head = (GravityPointTrackNode*)&temp.tail;
+                temp.tail = (GravityPointTrackNode*)&temp.tail;
                 dst->prev->next = first;
                 first->prev = dst->prev;
                 dst->prev = last;
@@ -880,10 +920,10 @@ List80114108* FxSprayGravityPointTrackList_Assign(List80114108* self, const List
                 temp.size = 0;
             }
         } else {
-            Node80114108* volatile& stopCopy = shrinkStop;
+            GravityPointTrackNode* volatile& stopCopy = shrinkStop;
             stopCopy = start;
-            Node80114108* dst = (Node80114108*)self->begin;
-            Node80114108* volatile& firstCopy = shrinkFirst;
+            GravityPointTrackNode* dst = (GravityPointTrackNode*)self->begin;
+            GravityPointTrackNode* volatile& firstCopy = shrinkFirst;
             firstCopy = sourceStart;
             while (firstCopy != stopCopy) {
                 assign80114108(dst, firstCopy);
@@ -891,13 +931,13 @@ List80114108* FxSprayGravityPointTrackList_Assign(List80114108* self, const List
                 dst = dst->next;
             }
             // Shrink only after the reusable prefix contains all source values.
-            Node80114108* e = (Node80114108*)&self->sentinelPrev;
+            GravityPointTrackNode* e = (GravityPointTrackNode*)&self->sentinelPrev;
             erase = dst;
             if (dst != e) {
-                Node80114108* last = e->prev;
+                GravityPointTrackNode* last = e->prev;
                 dst->prev->next = last->next;
                 last->next->prev = dst->prev;
-                Node80114108* cur;
+                GravityPointTrackNode* cur;
                 while ((cur = erase) != e) {
                     erase = cur->next;
                     appFreeUni__FPv(cur);

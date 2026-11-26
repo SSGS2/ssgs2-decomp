@@ -1,29 +1,38 @@
+// Controller-memory save menu and synchronous preloads: the save and title checks, the save state
+// machine, and the preloaders for files, sprites, textures, puppets and script directives.
+
 #include <decomp/static_init.h>
 #include <decomp/local_class.h>
 #include "MSL/error_message.h"
 // Wii Remote save menu and synchronous puppet-resource preloading.
 // Mod lookup:
 // - save confirmation/messages: PadSaveState below, memorySaveDialogMessages
-//   (six byte extents of UTF-16 message text), CPadMemoryMenuSave_AdvanceSaveStateMachine.
+//   (six byte extents of UTF-16 message text), CPadMemoryMenuSave::AdvanceSaveStateMachine.
 // - retry policy: kPadSaveMaxRetries=3 means three EXTRA writes on verification
 //   mismatch only (four attempts total); failure/disconnection do not retry.
 // - serialized logical record: kPadSaveRecordBytes=0x47C; InitSaveRecordAndFade
 //   owns a snapshot, GetSaveRecord borrows it or delegates to the common summary.
 //   SaveForm replication/digest and device alignment are separate in pad_memory_menu_load.cpp.
-// - preload grammar: CPreloadSpr_ParseResourceDirective, PreloadScriptStrings;
+// - preload grammar: CPreloadSpr::ParseResourceDirective, PreloadScriptStrings;
 //   pointer-vector growth changes storage, not loaded-resource lifetimes.
 // Base UI/dialog/guard cleanup: CFileIoMenu in file_io_menu_save_load_base.cpp. Device access and
 // verification: pad_memory_menu_load.cpp; access state machines/buffers: file_io_access_read_write.cpp and
 // file_io_flash_and_write_access.cpp; singleton device callbacks: file_io_pad_and_flash_io.cpp. See ownership map
 // before the save update routine. There is no device callback owned by this menu.
-// Translation unit 0x80272E70-0x802744E4 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CPadMemoryMenuSave.h"
 #include "classes/CPadMemoryMenu.h"
 #include "classes/CPreloadWPuppet.h"
+#include "classes/CFileIoMenu.h"
+#include "classes/CPreloadSpr.h"
+#include "classes/CPreloadWPuppetSync.h"
+#include "classes/CPreloadSeqSync.h"
+#include "classes/CPreloadFile.h"
+#include "classes/CPreloadFileSync.h"
+#include "classes/CPreloadTextureSync.h"
+#include "classes/CPreloadSprSync.h"
 
 #define AsCPadMemoryMenu(p) ((CPadMemoryMenu*)(p))
 
@@ -46,33 +55,31 @@ enum PadSaveState {
     kPadSaveFinish = 12,
     kPadSaveComplete = 13
 };
-enum { kPadSaveMaxRetries = 3, kPadSaveRecordBytes = 0x47C, kPreloadTokenCount = 16 };
-enum { kPreloadTailResourceArgument = 6, kPreloadTokenBytes = 0x104,
-       kPreloadMaxPointers = 0x3fffffffU };
+enum {
+    kPadSaveMaxRetries = 3,
+    kPadSaveRecordBytes = 0x47C,
+    kPreloadTokenCount = 16
+};
+enum {
+    kPreloadTailResourceArgument = 6,
+    kPreloadTokenBytes = 0x104,
+    kPreloadMaxPointers = 0x3fffffffU
+};
 
 // Save protocol: check screen -> query title -> read matching title or confirm
 // overwrite -> write -> read back -> verify. A mismatch permits three additional
 // writes; device/access errors go directly to failure dialogs. State 12 finishes
 // the base menu, 13 is terminal. Update returning 1 means the tick succeeded,
-// not that saving completed; vfunc_20 tests state 13. Returns 0 propagate a base,
+// not that saving completed; IsSaveComplete tests state 13. Returns 0 propagate a base,
 // dialog, I/O-creation, or finish-hook failure. Pending I/O leaves the state intact.
 
 extern "C" {
 
 int OwnedObjectList_DestroyAll(void*);
-void CFileIoMenu_Draw(void*);
-void CPreloadFileSync_Create(void*);
-void CPreloadSprSync_Create(void*);
-void CPreloadSeqSync_Create(void*);
-void CPreloadTextureSync_Create(void*);
-int CPreloadWPuppet_OpenSourceFile(void*, void*);
-int CPreloadWPuppet_LoadFileResources(void*);
-int CFileIoMenu_vfunc_8(void*);
 void SharedContext_SetCurrent(void*);
-void CFileIoMenu_Ctor(void*, void*);
-void CPreloadWPuppet_dtor(void*, int);
-void CFileIoMenu_dtor(void*, int);
-void CPreloadWPuppet_Ctor(void*);
+void __ct__11CFileIoMenuFv(void*, void*);
+void __dt__15CPreloadWPuppetFv(void*, int);
+void __dt__14CPadMemoryMenuFv(void*, int);
 void* __nw__FUl(unsigned int);
 void FadeOverlay_Init(void*);
 void ResourceState_Dtor(void*);
@@ -102,21 +109,19 @@ extern char s_sharedCharDeleterVtable[];
 void* appMallocDummy__FUl(unsigned int);
 void* memcpy(void*, const void*, unsigned int);
 void* memset(void*, int, unsigned int);
-int CPreloadSpr_ParseResourceDirective(void*, void*, unsigned char*);
-int CPreloadFile_ScanFormat(void*, const char*, ...);
 struct PreloadScriptStrings {
     char whitespace[5]; // 0x0
     char padding5[1];
-    char scanLine[3]; // 0x6
-    char equalsDelimiter[2]; // 0x9
-    char commaDelimiter[2]; // 0xB
+    char scanLine[3];               // 0x6
+    char equalsDelimiter[2];        // 0x9
+    char commaDelimiter[2];         // 0xB
     char argumentTrimCharacters[6]; // 0xD
-    char sourceKeyword[7]; // 0x13
-    char wordDelimiters[3]; // 0x1A
-    char petKeyword[5]; // 0x1D
-    char tailKeyword[5]; // 0x22
-    char soundKeyword[6]; // 0x27
-    char vectorLengthError[20]; // 0x2D
+    char sourceKeyword[7];          // 0x13
+    char wordDelimiters[3];         // 0x1A
+    char petKeyword[5];             // 0x1D
+    char tailKeyword[5];            // 0x22
+    char soundKeyword[6];           // 0x27
+    char vectorLengthError[20];     // 0x2D
 };
 extern PreloadScriptStrings puppetPreloadParserStrings;
 extern char __vt__19CPreloadWPuppetSync[];
@@ -126,32 +131,16 @@ int PadMemory_QueryStoredTitle(void*, int*);
 void WString_ReserveCapacity(void*, int);
 void WString_ReplaceRange(void*, int, int, void*, void*, void*);
 void appFreeUni__FPv(void*);
-int CFileIoMenu_Update(void*);
-int CPadMemoryMenu_HasScreenPointer(void*);
-int CPadMemoryMenu_CreateReadFileIo(void*);
-int CFileIoMenu_ShowOkCancelDialog(void*, const char*);
-int CFileIoMenu_IsCommonDialogComplete(void*);
-int CFileIoMenu_IsCommonDialogAccepted(void*);
-int CFileIoMenu_QueryFileAccessStatus(void*);
-int CPadMemoryMenu_HasFileErrorC73D(void*);
-int CFileIoMenu_CreateButtonlessCommonDialog(void*, const char*);
-int CPadMemoryMenu_CreateWriteFileIo(void*);
-int CPadMemoryMenu_IsDeviceDisconnected(void*);
-int CFileIoMenu_ShowAcknowledgeDialog(void*, const char*);
-int CFileIoMenu_QueryAccessFailure(void*);
-int CPadMemoryMenu_VerifyWrittenRecord(void*);
-int CFileIoMenu_DestroyCommonDialog(void*);
 struct PadSaveDialogStrings {
     char confirmOverwrite[50]; // 0x0
-    char confirmSave[48]; // 0x32
-    char saving[46]; // 0x62
-    char disconnected[54]; // 0x90
-    char saveFailed[52]; // 0xC6
-    char saveSucceeded[58]; // 0xFA
+    char confirmSave[48];      // 0x32
+    char saving[46];           // 0x62
+    char disconnected[54];     // 0x90
+    char saveFailed[52];       // 0xC6
+    char saveSucceeded[58];    // 0xFA
 };
 extern PadSaveDialogStrings memorySaveDialogMessages;
 extern unsigned short* g_padSaveGameTitle;
-int CFileIoMenu_BuildCurrentPlayerProfile(void*);
 extern float s_puppetSyncFullTurn;
 extern float kFloat_6_2831855;
 extern float s_padMemoryMenuFullTurn;
@@ -162,28 +151,41 @@ struct PadSaveStateView {
     unsigned int saveState;
 };
 
-struct OwnedPreloadResource { 
-virtual void destroy(int);
+struct OwnedPreloadResource {
+    virtual void destroy(int);
 };
 struct SpritePreloadView {
-    virtual void f0(); virtual void f1(); virtual void f2(); virtual void f3();
+    virtual void f0();
+    virtual void f1();
+    virtual void f2();
+    virtual void f3();
     virtual void* f6(void*);
     char base[0x0c];
     OwnedPreloadResource* child;
 };
 
 struct Fn80273814Obj {
-    virtual void f0(); virtual void f1();
-    virtual void destroy(int); virtual void f3();
+    virtual void f0();
+    virtual void f1();
+    virtual void destroy(int);
+    virtual void f3();
     virtual int init(void*);
     char base[0x10];
     // Initialize the puppet-preloader base in existing object storage.
-    Fn80273814Obj() { CPreloadWPuppet_Ctor(this); }
+    Fn80273814Obj() {
+        ((CPreloadWPuppet*)this)->__ct();
+    }
 };
 
 struct PadSaveCompletionView {
-    virtual void f0(); virtual void f1(); virtual void f2(); virtual void f3();
-    virtual void f4(); virtual void f5(); virtual void f6(); virtual void f7();
+    virtual void f0();
+    virtual void f1();
+    virtual void f2();
+    virtual void f3();
+    virtual void f4();
+    virtual void f5();
+    virtual void f6();
+    virtual void f7();
     virtual void fX();
     virtual int updateSave();
     // Same receiver, virtual update slot (table +0x2C).
@@ -191,43 +193,48 @@ struct PadSaveCompletionView {
     unsigned int saveState;
 };
 
-// Destroy the synchronous puppet preloader and optionally free its allocation.
-void* CPreloadWPuppetSync_dtor(void* arg, int shouldDelete) {
-    if (arg != 0) {
-        CPreloadWPuppet_dtor(arg, 0);
-        if (shouldDelete > 0) __dl__FPv(arg);
-    }
-    return arg;
+// Destroy the synchronous puppet preloader's base part.
+CPreloadWPuppetSync::~CPreloadWPuppetSync() {
+    __dt__15CPreloadWPuppetFv(this, 0);
 }
 
 // Replace the previously owned child with a newly created preload resource.
-int CPreloadSpr_OpenNamedSourceFile(SpritePreloadView* self, void* arg) {
-    if (self->child != 0) {
-        if (self->child != 0) {
-            self->child->destroy(1);
+int CPreloadSpr::OpenNamedSourceFile(void* arg) {
+    if (((SpritePreloadView*)this)->child != 0) {
+        if (((SpritePreloadView*)this)->child != 0) {
+            ((SpritePreloadView*)this)->child->destroy(1);
         }
-        self->child = 0;
+        ((SpritePreloadView*)this)->child = 0;
     }
-    self->child = (OwnedPreloadResource*)self->f6(arg);
-    if (self->child == 0) return 0;
+    ((SpritePreloadView*)this)->child = (OwnedPreloadResource*)((SpritePreloadView*)this)->f6(arg);
+    if (((SpritePreloadView*)this)->child == 0)
+        return 0;
     return 1;
 }
 
 struct Fn80273814Alloc {
     char data[0x14];
     // Construct the puppet base and install the synchronous-preloader vtable.
-    Fn80273814Alloc() { CPreloadWPuppet_Ctor(this); *(void**)this = &__vt__19CPreloadWPuppetSync; }
+    Fn80273814Alloc() {
+        ((CPreloadWPuppet*)this)->__ct();
+        *(void**)this = &__vt__19CPreloadWPuppetSync;
+    }
 };
-struct PreloadInitDispatch { 
-virtual void destroy(int); virtual void f1(); virtual void f2(); virtual int init(void*);
+struct PreloadInitDispatch {
+    virtual void destroy(int);
+    virtual void f1();
+    virtual void f2();
+    virtual int init(void*);
 };
 // Allocate and initialize a synchronous puppet preloader; destroy it on failure.
-Fn80273814Alloc* CPreloadWPuppetSync_Create(void* arg) {
+Fn80273814Alloc* CPreloadWPuppetSync::Create(void* arg) {
     Fn80273814Alloc* obj = new Fn80273814Alloc;
     PreloadInitDispatch* vobj = (PreloadInitDispatch*)obj;
-    if (obj == 0) return 0;
+    if (obj == 0)
+        return 0;
     if (!vobj->init(arg)) {
-        if (obj != 0) vobj->destroy(1);
+        if (obj != 0)
+            vobj->destroy(1);
         return 0;
     }
     return obj;
@@ -236,48 +243,76 @@ Fn80273814Alloc* CPreloadWPuppetSync_Create(void* arg) {
 // Scan script lines until a resource is loaded, or the input is exhausted.
 // Returns 0 after one successful resource append, allowing work to span ticks;
 // returns 1 for end-of-input or no attached file. Unknown directives are skipped.
-int CPreloadSpr_ProcessScriptEntries(void* self) {
-    if (((CPreloadWPuppet*)self)->file == 0) return 1;
+int CPreloadSpr::ProcessScriptEntries() {
+    if (((CPreloadWPuppet*)this)->file == 0)
+        return 1;
     unsigned char found;
     char buffer[0x400];
-    while (CPreloadFile_ScanFormat(((CPreloadWPuppet*)self)->file, puppetPreloadParserStrings.scanLine, buffer)) {
+    while (((CPreloadFile*)(((CPreloadWPuppet*)this)->file))->ScanFormat(puppetPreloadParserStrings.scanLine, buffer)) {
         found = 0;
-        CPreloadSpr_ParseResourceDirective(self, String_TrimCharacterSet(buffer, puppetPreloadParserStrings.whitespace), &found);
-        if (found) return 0;
+        ParseResourceDirective(String_TrimCharacterSet(buffer, puppetPreloadParserStrings.whitespace), &found);
+        if (found)
+            return 0;
     }
     return 1;
 }
 
-struct Fn80272FE4String {
+struct DirectiveTokenizer {
     unsigned int flags, position, inputLength;
-    char padding0C[4]; char* tokenBuffer; char padding14[4];
+    char padding0C[4];
+    char* tokenBuffer;
+    char padding14[4];
     // Initialize the directive tokenizer over borrowed input.
-    Fn80272FE4String() { cTokenV_Init(this); }
+    DirectiveTokenizer() {
+        cTokenV_Init(this);
+    }
     // Release tokenizer-owned buffers without deleting this stack wrapper.
-    ~Fn80272FE4String() { cToken_dtor(this, 0); }
+    ~DirectiveTokenizer() {
+        cToken_dtor(this, 0);
+    }
 };
-struct Fn80272FE4Buf {
+struct ArgumentTokenizer {
     unsigned int flags, position, inputLength;
-    char padding0C[4]; char* tokenBuffer; char padding14[4];
+    char padding0C[4];
+    char* tokenBuffer;
+    char padding14[4];
     // Initialize the nested source-argument tokenizer.
-    Fn80272FE4Buf() { cTokenV_Init(this); }
+    ArgumentTokenizer() {
+        cTokenV_Init(this);
+    }
     // Release tokenizer-owned buffers without deleting this stack wrapper.
-    ~Fn80272FE4Buf() { cToken_dtor(this, 0); }
+    ~ArgumentTokenizer() {
+        cToken_dtor(this, 0);
+    }
 };
-struct PreloadedResourceList { void** begin; unsigned int size, capacity; };
+struct PreloadedResourceList {
+    void** begin;
+    unsigned int size, capacity;
+};
 // This pointer vector owns loaded resources; growing it moves pointer words and
 // zeroes the old slots without releasing resources. DestroyOwnedObjects performs
 // resource destruction. Realloc guards own only vector storage, not its payloads.
-struct Fn80272FE4Out {
-    unsigned int flag; unsigned int size; char* data;
+struct PetNameString {
+    unsigned int flag;
+    unsigned int size;
+    char* data;
     // Initialize an empty inline pet-name string.
-    Fn80272FE4Out() : flag(0), size(0), data(0) {}
+    PetNameString() : flag(0), size(0), data(0) {}
     // Release pet-name characters only when heap-owned.
-    ~Fn80272FE4Out() { if (flag >> 31) appFreeUni__FPv(data); }
+    ~PetNameString() {
+        if (flag >> 31)
+            appFreeUni__FPv(data);
+    }
 };
-struct Fn80272FE4Tag { unsigned char byte; char pad[3]; };
+struct Fn80272FE4Tag {
+    unsigned char byte;
+    char pad[3];
+};
 struct ScriptPreloadDispatch {
-    virtual void f0(); virtual void f1(); virtual void f2(); virtual void f3();
+    virtual void f0();
+    virtual void f1();
+    virtual void f2();
+    virtual void f3();
     virtual void f4();
     virtual void* loadPet(void*);
     virtual void* loadSource(void*);
@@ -292,7 +327,10 @@ struct Fn80272FE4DeleteArray {
     char* data;
     void* tag;
     // Release temporary error-text characters until shared ownership is installed.
-    ~Fn80272FE4DeleteArray() { if (data) __dla__FPv(data); }
+    ~Fn80272FE4DeleteArray() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 // Shared RTTI: std::tr1::detail::shared_ptr_deleter<char, std::detail::default_delete<char[]> >.
 // Use the common 16-byte ABI view in MSL/error_message.h; keep this local alias for callers.
@@ -347,26 +385,27 @@ inline void ThrowPreloadLengthError() {
     throw std::length_error(puppetPreloadParserStrings.vectorLengthError);
 }
 // Find the first ASCII space in a small or heap-backed string.
-inline int FindPetNameSpace(Fn80272FE4Out* out) {
+inline int FindPetNameSpace(PetNameString* out) {
     unsigned char* begin;
     unsigned int len;
     if ((out->flag >> 31) == 0) {
-        len=*(unsigned char*)out & 0x7f;
-        begin=(unsigned char*)out + 1;
+        len = *(unsigned char*)out & 0x7f;
+        begin = (unsigned char*)out + 1;
     } else {
-        begin=(unsigned char*)out->data;
-        len=out->size;
+        begin = (unsigned char*)out->data;
+        len = out->size;
     }
     if (len != 0) {
         unsigned char* end = begin + len;
         for (unsigned char* p = begin; p < end; ++p)
-            if (*p == ' ') return p - begin;
+            if (*p == ' ')
+                return p - begin;
     }
     return -1;
 }
 // Choose the original pointer-vector growth amount without changing temporary lifetimes.
-inline unsigned int RecommendPreloadCapacity(unsigned int cap, const unsigned int& need,
-                                  unsigned int& grown60, unsigned int& grown50) {
+inline unsigned int RecommendPreloadCapacity(unsigned int cap, const unsigned int& need, unsigned int& grown60,
+                                             unsigned int& grown50) {
     if (cap < 0x15555555u) {
         grown60 = (cap + 1) * 3 / 5;
         return cap + MaxPreloadCapacity(need, grown60);
@@ -377,15 +416,20 @@ inline unsigned int RecommendPreloadCapacity(unsigned int cap, const unsigned in
     }
     return 0x3fffffffu;
 }
-struct Fn80272FE4Realloc {
+struct ResourceListGrowth {
     void** begin;
     unsigned int size, capacity;
     unsigned int* oldCapacity;
     unsigned int offset;
     // Initialize empty growth storage and borrow the original-capacity pointer.
-    Fn80272FE4Realloc(unsigned int* c) : begin(0), size(0), capacity(0), oldCapacity(c), offset(0) {}
+    ResourceListGrowth(unsigned int* c) : begin(0), size(0), capacity(0), oldCapacity(c), offset(0) {}
     // Free vector storage still owned after growth/exchange; resources stay borrowed.
-    ~Fn80272FE4Realloc() { if (begin) { size = 0; appFreeUni__FPv(begin); } }
+    ~ResourceListGrowth() {
+        if (begin) {
+            size = 0;
+            appFreeUni__FPv(begin);
+        }
+    }
 };
 
 #pragma use_lmw_stmw on
@@ -393,10 +437,10 @@ struct Fn80272FE4Realloc {
 // inputArg borrows a NUL-terminated line. Returns 0 for blank/comment lines, 1
 // otherwise, including unknown directives and load failure. loadedResource is a
 // required output byte: only 1 means a resource was appended and ownership passed
-// to self. Grammar: key=arg0,...,arg15; source uses arg0 (the petKeyword token
-// followed by a name selects loadPet); tail uses arg6. sound loads nothing here.
+// to self. Grammar: key=first,...,sixteenth; source uses the first argument (the petKeyword token
+// followed by a name selects loadPet); tail uses the seventh argument. sound loads nothing here.
 // Exact source spelling: source=*pet NAME [ignored suffix] uses loadPet(NAME);
-// other source values use loadSource(arg0). Leading ';' is a comment only in byte
+// other source values use loadSource(first argument). Leading ';' is a comment only in byte
 // zero; callers trim whole lines. Keys are case-sensitive CString comparisons.
 // Key and EVERY comma token must fit 0x104 bytes including NUL (<=259 payload
 // bytes before trimming). cToken_ReadUntilDelimiter (token_parser_and_bubble.cpp) has no output
@@ -404,7 +448,7 @@ struct Fn80272FE4Realloc {
 // is no truncation/error return. It preserves two-byte character pairs.
 // Fewer than sixteen args become empty strings at exhausted input; extras are
 // ignored. Missing '=' is not diagnosed: the entire line becomes the key, and
-// empty arguments follow. Empty tail arg6 loads nothing. source with empty arg0
+// empty arguments follow. Empty tail (seventh argument) loads nothing. source with empty first argument
 // or failed token-buffer allocation has no safe contract (null may reach strcmp).
 // '*pet' without an ASCII space skips loading; only text between first and second
 // ASCII spaces is the pet name (tabs delimit the first token but not name slicing).
@@ -414,68 +458,81 @@ struct Fn80272FE4Realloc {
 // throw. The loaded resource has no local destroy guard before append, so this
 // path supplies no resource rollback guarantee on allocation failure. Existing
 // list storage remains owned by self; temp guards free only pointer arrays.
-int CPreloadSpr_ParseResourceDirective(void* self, void* inputArg, unsigned char* loadedResource) {
+int CPreloadSpr::ParseResourceDirective(void* inputArg, unsigned char* loadedResource) {
     // Phase 1: split and trim the directive and its fixed sixteen argument slots.
     unsigned int grown60, grown50, additionalCapacity;
-    ScriptPreloadDispatch* loader = (ScriptPreloadDispatch*)self;
-    PreloadedResourceList* resources = (PreloadedResourceList*)((char*)self + 4);
+    ScriptPreloadDispatch* loader = (ScriptPreloadDispatch*)this;
+    PreloadedResourceList* resources = (PreloadedResourceList*)((char*)this + 4);
     const char* input = (const char*)inputArg;
     char firstCharacter = input[0];
     *loadedResource = 0;
-    if (firstCharacter == 0 || firstCharacter == ';') return 0;
-    Fn80272FE4String source;
+    if (firstCharacter == 0 || firstCharacter == ';')
+        return 0;
+    DirectiveTokenizer source;
     char key[kPreloadTokenBytes];
     char arguments[kPreloadTokenCount][kPreloadTokenBytes];
     cTokenV_SetInputBuffer(&source, input, strlen(input));
     cToken_ReadUntilDelimiter(&source, key, puppetPreloadParserStrings.equalsDelimiter, 1);
     String_TrimCharacterSet(key, puppetPreloadParserStrings.whitespace);
-    for (int i=0; i<kPreloadTokenCount; ++i) {
+    for (int i = 0; i < kPreloadTokenCount; ++i) {
         cToken_ReadUntilDelimiter(&source, arguments[i], puppetPreloadParserStrings.commaDelimiter, 1);
         String_TrimCharacterSet(arguments[i], puppetPreloadParserStrings.argumentTrimCharacters);
     }
     // Phase 2: resolve one resource. source requires a readable first token;
     // this existing path assumes tokenizer storage and valid directive contents.
-    void* resource=0;
+    void* resource = 0;
     if (CString_Compare(key, puppetPreloadParserStrings.sourceKeyword) == 0) {
-        Fn80272FE4Buf line;
+        ArgumentTokenizer line;
         cTokenV_SetInputBuffer(&line, arguments[0], strlen(arguments[0]));
         char* token;
         const char* delimiters = puppetPreloadParserStrings.wordDelimiters;
-        if (FxSprayScriptBuffer_EnsureTerminatorCapacity(&line) == 0) token=0;
+        if (FxSprayScriptBuffer_EnsureTerminatorCapacity(&line) == 0)
+            token = 0;
         else {
-            token=line.tokenBuffer;
-            *token=0;
+            token = line.tokenBuffer;
+            *token = 0;
             while ((*(int*)&line.position) < (*(int*)&line.inputLength)) {
-                cToken_ReadUntilDelimiter(&line,token,delimiters,2);
-                if (*token != 0) break;
+                cToken_ReadUntilDelimiter(&line, token, delimiters, 2);
+                if (*token != 0)
+                    break;
             }
         }
-        if (strcmp(token,puppetPreloadParserStrings.petKeyword) == 0) {
-            Fn80272FE4Out petName;
-            unsigned int n=strlen(arguments[0]);
-            String_ReserveCapacity(&petName,n);
-            volatile Fn80272FE4Tag termA1; Fn80272FE4Tag termB1; termB1.byte = termA1.byte;
-            String_ReplaceRange(&petName,0,0,arguments[0],arguments[0]+n,&termB1);
-            int firstSpace=FindPetNameSpace(&petName);
+        if (strcmp(token, puppetPreloadParserStrings.petKeyword) == 0) {
+            PetNameString petName;
+            unsigned int n = strlen(arguments[0]);
+            String_ReserveCapacity(&petName, n);
+            volatile Fn80272FE4Tag termA1;
+            Fn80272FE4Tag termB1;
+            termB1.byte = termA1.byte;
+            String_ReplaceRange(&petName, 0, 0, arguments[0], arguments[0] + n, &termB1);
+            int firstSpace = FindPetNameSpace(&petName);
             if ((unsigned int)(firstSpace + 0x10000) != 0xffff) {
-                Fn80272FE4Tag termB2; volatile Fn80272FE4Tag termA2; termB2.byte = termA2.byte;
-                String_ReplaceRange(&petName,0,firstSpace+1,0,0,&termB2);
-                int secondSpace=FindPetNameSpace(&petName);
+                Fn80272FE4Tag termB2;
+                volatile Fn80272FE4Tag termA2;
+                termB2.byte = termA2.byte;
+                String_ReplaceRange(&petName, 0, firstSpace + 1, 0, 0, &termB2);
+                int secondSpace = FindPetNameSpace(&petName);
                 if ((unsigned int)(secondSpace + 0x10000) != 0xffff) {
-                    Fn80272FE4Tag termB3; volatile Fn80272FE4Tag termA3; termB3.byte = termA3.byte;
-                    String_ReplaceRange(&petName,secondSpace,-1,0,0,&termB3);
+                    Fn80272FE4Tag termB3;
+                    volatile Fn80272FE4Tag termA3;
+                    termB3.byte = termA3.byte;
+                    String_ReplaceRange(&petName, secondSpace, -1, 0, 0, &termB3);
                 }
                 char* begin;
-                if ((petName.flag >> 31) == 0) begin=(char*)&petName + 1;
-                else begin=petName.data;
+                if ((petName.flag >> 31) == 0)
+                    begin = (char*)&petName + 1;
+                else
+                    begin = petName.data;
                 resource = loader->loadPet(begin);
             }
         } else {
             resource = loader->loadSource(arguments[0]);
         }
-    } else if (CString_Compare(key,puppetPreloadParserStrings.tailKeyword)==0) {
-        if (strlen(arguments[kPreloadTailResourceArgument]) != 0) resource = loader->loadSource(arguments[kPreloadTailResourceArgument]);
-    } else CString_Compare(key,puppetPreloadParserStrings.soundKeyword);
+    } else if (CString_Compare(key, puppetPreloadParserStrings.tailKeyword) == 0) {
+        if (strlen(arguments[kPreloadTailResourceArgument]) != 0)
+            resource = loader->loadSource(arguments[kPreloadTailResourceArgument]);
+    } else
+        CString_Compare(key, puppetPreloadParserStrings.soundKeyword);
     // Phase 3: append directly or grow/copy/exchange storage. The new resource
     // becomes vector-owned only on this path; old pointer slots are relinquished.
     if (resource) {
@@ -487,15 +544,18 @@ int CPreloadSpr_ParseResourceDirective(void* self, void* inputArg, unsigned char
             resources->size = next;
             data[next - 1] = (void*)resource;
         } else {
-            if (kPreloadMaxPointers - cap < 1) ThrowPreloadLengthError();
+            if (kPreloadMaxPointers - cap < 1)
+                ThrowPreloadLengthError();
             size = resources->size;
             cap = resources->capacity;
             additionalCapacity = size + 1 - cap;
-            Fn80272FE4Realloc temp(&resources->capacity);
+            ResourceListGrowth temp(&resources->capacity);
             cap = resources->capacity;
-            if (additionalCapacity > kPreloadMaxPointers - cap) ThrowPreloadLengthError();
+            if (additionalCapacity > kPreloadMaxPointers - cap)
+                ThrowPreloadLengthError();
             unsigned int newCap = RecommendPreloadCapacity(cap, additionalCapacity, grown60, grown50);
-            if (newCap > kPreloadMaxPointers) throw std::length_error(puppetPreloadParserStrings.vectorLengthError);
+            if (newCap > kPreloadMaxPointers)
+                throw std::length_error(puppetPreloadParserStrings.vectorLengthError);
             temp.begin = (void**)appMallocDummy__FUl(newCap * 4);
             temp.offset = resources->size;
             (temp.begin + temp.offset)[temp.size] = (void*)resource;
@@ -518,7 +578,7 @@ int CPreloadSpr_ParseResourceDirective(void* self, void* inputArg, unsigned char
             resources->size = temp.size;
             temp.size = 0;
         }
-        *loadedResource=1;
+        *loadedResource = 1;
     }
     return 1;
 }
@@ -527,146 +587,211 @@ int CPreloadSpr_ParseResourceDirective(void* self, void* inputArg, unsigned char
 // Invoke this menu's virtual update; if it succeeds, report state 13, otherwise
 // report complete (1). Thus update failure also ends polling; 1 is not proof of a
 // successful save. Required live receiver; no attached-object/null test occurs.
-int CPadMemoryMenuSave_UpdateAndReportSaveComplete(PadSaveCompletionView* arg) {
-    if (arg->updateSave()) return arg->saveState == kPadSaveComplete;
+int CPadMemoryMenuSave::UpdateAndReportSaveComplete(PadSaveCompletionView* arg) {
+    if (arg->updateSave())
+        return arg->saveState == kPadSaveComplete;
     return 1;
 }
 
 #pragma dont_inline on
-// Destroy the controller-memory menu base and optionally free the allocation.
-void* CPadMemoryMenu_dtor(void* arg, int shouldDelete) {
-    if (arg != 0) {
-        CFileIoMenu_dtor(arg, 0);
-        if (shouldDelete > 0) __dl__FPv(arg);
-    }
-    return arg;
+// Destroy the controller-memory menu base.
+CPadMemoryMenu::~CPadMemoryMenu() {
+    ((CFileIoMenu*)this)->Destroy(0);
 }
 #pragma dont_inline off
 
 // 0x80272F28: tail-call with the caller's owner pointer; the caller at 0x8026C5D0 tests the result at 0x8026C600.
 // Destroy every resource owned by the sprite preloader.
-int SpritePreload_DestroyOwnedObjects(void* arg) { return OwnedObjectList_DestroyAll(arg); }
+int SpritePreload_DestroyOwnedObjects(void* arg) {
+    return OwnedObjectList_DestroyAll(arg);
+}
 // Draw the save menu through its file-menu base.
-void CPadMemoryMenuSave_Draw(void* forwarded0) { CFileIoMenu_Draw(forwarded0); }
+void CPadMemoryMenuSave::Draw(void* forwarded0) {
+    ((CFileIoMenu*)forwarded0)->Draw();
+}
 // Report that this synchronous preloader is available.
-int CPreloadWPuppetSync_vfunc_1() { return 1; }
+int CPreloadWPuppetSync::vfunc_1() {
+    return 1;
+}
 // Report that this synchronous preloader is ready.
-int CPreloadWPuppetSync_IsResourcesReady() { return 1; }
+int CPreloadWPuppetSync::IsResourcesReady() {
+    return 1;
+}
 // Create a synchronous file resource for the supplied preload request.
-void CPreloadWPuppetSync_CreateFileSync(void*, void* arg) { CPreloadFileSync_Create(arg); }
+void* CPreloadWPuppetSync::CreateFileSync(void* arg) {
+    return CPreloadFileSync::Create(arg);
+}
 // Create a synchronous sprite resource for the supplied preload request.
-void CPreloadWPuppetSync_CreateSprSync(void*, void* arg) { CPreloadSprSync_Create(arg); }
+void* CPreloadWPuppetSync::CreateSprSync(void* arg) {
+    return CPreloadSprSync::Create((const char*)arg);
+}
 // Create a synchronous sequence resource for the supplied preload request.
-void CPreloadWPuppetSync_CreateSeqSync(void*, void* arg) { CPreloadSeqSync_Create(arg); }
+void* CPreloadWPuppetSync::CreateSeqSync(void* arg) {
+    return CPreloadSeqSync::Create(arg);
+}
 // Create a synchronous texture resource for the supplied preload request.
-void CPreloadWPuppetSync_CreateTextureSync(void*, void* arg) { CPreloadTextureSync_Create(arg); }
+void* CPreloadWPuppetSync::CreateTextureSync(void* arg) {
+    return CPreloadTextureSync::Create(arg);
+}
 // Initialize the controller-memory menu unit's angle constant.
-void InitPadMemoryMenuAngleConstant() { s_padMemoryMenuFullTurn = kFloat_6_2831855; }
+void InitPadMemoryMenuAngleConstant() {
+    s_padMemoryMenuFullTurn = kFloat_6_2831855;
+}
 // Report whether the save state machine has reached its terminal state.
-int CPadMemoryMenuSave_vfunc_20(PadSaveStateView* arg) { return arg->saveState == kPadSaveComplete; }
+int CPadMemoryMenuSave::IsSaveComplete(PadSaveStateView* arg) {
+    return arg->saveState == kPadSaveComplete;
+}
 // Initialize the controller-memory save unit's angle constant.
-void InitPadMemorySaveAngleConstant() { s_padMemorySaveFullTurn = kFloat_6_2831855; }
+void InitPadMemorySaveAngleConstant() {
+    s_padMemorySaveFullTurn = kFloat_6_2831855;
+}
 // Initialize the synchronous preload unit's angle constant.
-void InitPuppetSyncAngleConstant() { s_puppetSyncFullTurn = kFloat_6_2831855; }
+void InitPuppetSyncAngleConstant() {
+    s_puppetSyncFullTurn = kFloat_6_2831855;
+}
 
 // Initialize the puppet input, then synchronously load its file resources.
-int CPreloadWPuppetSync_OpenFileAndLoadResources(void* arg, void* name) {
-    if (CPreloadWPuppet_OpenSourceFile(arg, name) == 0) return 0;
-    return CPreloadWPuppet_LoadFileResources(arg);
+int CPreloadWPuppetSync::OpenFileAndLoadResources(void* arg, void* name) {
+    if (((CPreloadWPuppet*)arg)->OpenSourceFile(name) == 0)
+        return 0;
+    return ((CPreloadWPuppet*)arg)->LoadFileResources();
 }
 
 #pragma dont_inline on
 // Initialize the file-menu base and store this menu's context in the shared global.
-int CPadMemoryMenu_SetCurrentSharedContext(void* arg) {
-    if (!CFileIoMenu_vfunc_8(arg)) return 0;
+int CPadMemoryMenu::SetCurrentSharedContext(void* arg) {
+    if (!((CFileIoMenu*)arg)->vfunc_8())
+        return 0;
     SharedContext_SetCurrent(AsCPadMemoryMenuSave(arg)->sharedContext); // Context supplied to the menu constructor.
     return 1;
 }
 #pragma dont_inline off
 
 #pragma dont_inline on
-// Construct the file-menu base and remember the controller context.
-void* CPadMemoryMenu_Ctor(void* arg, void* value) {
-    CFileIoMenu_Ctor(arg, value);
-    AsCPadMemoryMenu(arg)->controllerIndex = value;
-    *(void**)arg = &__vt__14CPadMemoryMenu;
-    return arg;
+// Construct the file-menu base and remember the controller context. A named member, not a constructor: the derived
+// menus do not derive from this class and call it from their own constructors.
+void* CPadMemoryMenu::Init(void* value) {
+    __ct__11CFileIoMenuFv(this, value);
+    controllerIndex = value;
+    vtbl = &__vt__14CPadMemoryMenu;
+    return this;
 }
 #pragma dont_inline off
 
 // Query the attached preload file's completion status, or succeed when none exists.
-int CPreloadWPuppet_QueryFileCompletion(void* arg) {
-    struct V { 
-    virtual int a() DECOMP_LOCAL_VIRTUAL; virtual int b() DECOMP_LOCAL_VIRTUAL; virtual int c() DECOMP_LOCAL_VIRTUAL; virtual int d() DECOMP_LOCAL_VIRTUAL; virtual int e() DECOMP_LOCAL_VIRTUAL;
+int CPreloadWPuppet::QueryFileCompletion() {
+    struct V {
+        virtual int a() DECOMP_LOCAL_VIRTUAL;
+        virtual int b() DECOMP_LOCAL_VIRTUAL;
+        virtual int c() DECOMP_LOCAL_VIRTUAL;
+        virtual int d() DECOMP_LOCAL_VIRTUAL;
+        virtual int e() DECOMP_LOCAL_VIRTUAL;
     };
-    V* p = (V*)((CPreloadWPuppet*)arg)->file;
-    if (p != 0) return p->c();
+    V* p = (V*)file;
+    if (p != 0)
+        return p->c();
     return 1;
 }
 
 #pragma dont_inline on
 // Return whether the controller-memory title query succeeds (status zero).
-int CPadMemoryMenu_HasStoredTitle(void* arg) {
+int CPadMemoryMenu::HasStoredTitle() {
     int titlePointer;
-    int status = PadMemory_QueryStoredTitle(AsCPadMemoryMenu(arg)->controllerIndex, &titlePointer);
+    int status = PadMemory_QueryStoredTitle(controllerIndex, &titlePointer);
     return status == 0;
 }
 #pragma dont_inline off
 
-struct Fn80274274Tag { unsigned char byte; char pad[3]; };
+struct Fn80274274Tag {
+    unsigned char byte;
+    char pad[3];
+};
 
-struct Fn80274274String {
+struct TitleString {
     unsigned int flags;
     unsigned int length;
     unsigned short* data;
     // Initialize an empty inline UTF-16 title string.
-    Fn80274274String() : flags(0), length(0), data(0) {}
+    TitleString() : flags(0), length(0), data(0) {}
     // Free title characters only when heap-owned.
-    ~Fn80274274String() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~TitleString() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
     // Return the title length in UTF-16 code units from inline or heap storage.
-    unsigned int size() const { unsigned int n; if (flags >> 31) n = length; else n = *(const unsigned char*)this & 127; return n; }
+    unsigned int size() const {
+        unsigned int n;
+        if (flags >> 31)
+            n = length;
+        else
+            n = *(const unsigned char*)this & 127;
+        return n;
+    }
 };
 
 // Select the shorter UTF-16 range by reference.
-inline const unsigned int& MinTitleLength(const unsigned int& a, const unsigned int& b) { return a < b ? a : b; }
+inline const unsigned int& MinTitleLength(const unsigned int& a, const unsigned int& b) {
+    return a < b ? a : b;
+}
 
 // Read the UTF-16 string length from inline or heap storage.
-inline unsigned int GetTitleLength(const Fn80274274String* s) {
+inline unsigned int GetTitleLength(const TitleString* s) {
     unsigned int n;
     unsigned int f = s->flags >> 31;
-    if (f == 0) n = *(const unsigned char*)s & 127;
-    else n = s->length;
+    if (f == 0)
+        n = *(const unsigned char*)s & 127;
+    else
+        n = s->length;
     return n;
 }
 
 // Compare UTF-16 contents first, then break ties by length.
-inline int CompareTitleContents(Fn80274274String* key, Fn80274274String* other, unsigned int& m, unsigned int& b, unsigned int& nc, unsigned int& a) {
+inline int CompareTitleContents(TitleString* key, TitleString* other, unsigned int& m, unsigned int& b,
+                                unsigned int& nc, unsigned int& a) {
     unsigned int n;
     const void* p;
-    if (!(other->flags >> 31)) { n = *(unsigned char*)other & 127; p = (char*)other + 2; }
-    else { p = other->data; n = other->length; }
+    if (!(other->flags >> 31)) {
+        n = *(unsigned char*)other & 127;
+        p = (char*)other + 2;
+    } else {
+        p = other->data;
+        n = other->length;
+    }
     unsigned int flag = key->flags >> 31;
     nc = n;
-    if (flag == 0) a = *(unsigned char*)key & 127;
-    else a = key->length;
-    const void* q; unsigned int raw;
-    if (!(key->flags >> 31)) { raw = *(unsigned char*)key & 127; q = (char*)key + 2; }
-    else { q = key->data; raw = key->length; }
+    if (flag == 0)
+        a = *(unsigned char*)key & 127;
+    else
+        a = key->length;
+    const void* q;
+    unsigned int raw;
+    if (!(key->flags >> 31)) {
+        raw = *(unsigned char*)key & 127;
+        q = (char*)key + 2;
+    } else {
+        q = key->data;
+        raw = key->length;
+    }
     b = raw;
     m = MinTitleLength(a, b);
     int cmp = wmemcmp((const wchar_t*)q, (const wchar_t*)p, MinTitleLength(nc, m));
     if (cmp == 0) {
-        if (m < n) return -1;
-        else if (m == n) return 0;
-        else return 1;
+        if (m < n)
+            return -1;
+        else if (m == n)
+            return 0;
+        else
+            return 1;
     }
     return cmp;
 }
 
 // Compare two unsigned lengths and return their ordering.
 inline int CompareTitleLengths(unsigned int a, unsigned int b) {
-    if (a < b) return -1;
-    if (a == b) return 0;
+    if (a < b)
+        return -1;
+    if (a == b)
+        return 0;
     return 1;
 }
 
@@ -674,53 +799,89 @@ inline int CompareTitleLengths(unsigned int a, unsigned int b) {
 // A failed device query returns 0. The borrowed device/title pointers are copied
 // into owned engine strings for comparison; lengths count UTF-16 code units,
 // range endpoints use bytes (two per code unit). Temporaries free their buffers.
-int CPadMemoryMenu_StoredTitleMatchesGame(void* self) {
+int CPadMemoryMenu::StoredTitleMatchesGame() {
     int titlePointer;
     unsigned int m, b, nc, a;
-    if (PadMemory_QueryStoredTitle(AsCPadMemoryMenu(self)->controllerIndex, &titlePointer)) return 0;
-    Fn80274274String storedTitle;
+    if (PadMemory_QueryStoredTitle(controllerIndex, &titlePointer))
+        return 0;
+    TitleString storedTitle;
     unsigned int storedTitleLength;
     unsigned short* storedTitleText = (unsigned short*)titlePointer;
     storedTitleLength = wcslen((const wchar_t*)storedTitleText);
     WString_ReserveCapacity(&storedTitle, storedTitleLength);
     {
-        volatile Fn80274274Tag a; Fn80274274Tag b; b.byte = a.byte;
-        WString_ReplaceRange(&storedTitle, 0, 0, storedTitleText, (char*)storedTitleText + storedTitleLength * 2, &b.byte);
+        volatile Fn80274274Tag a;
+        Fn80274274Tag b;
+        b.byte = a.byte;
+        WString_ReplaceRange(&storedTitle, 0, 0, storedTitleText, (char*)storedTitleText + storedTitleLength * 2,
+                             &b.byte);
     }
-    Fn80274274String expectedTitle;
+    TitleString expectedTitle;
     unsigned short* gameTitleText = (unsigned short*)g_padSaveGameTitle;
     unsigned int gameTitleLength = wcslen((const wchar_t*)gameTitleText);
     WString_ReserveCapacity(&expectedTitle, gameTitleLength);
     {
-        volatile Fn80274274Tag a2; Fn80274274Tag b2; b2.byte = a2.byte;
+        volatile Fn80274274Tag a2;
+        Fn80274274Tag b2;
+        b2.byte = a2.byte;
         WString_ReplaceRange(&expectedTitle, 0, 0, gameTitleText, (char*)gameTitleText + gameTitleLength * 2, &b2.byte);
     }
 
     unsigned int titlesMatch = GetTitleLength(&storedTitle) == GetTitleLength(&expectedTitle);
-    if (titlesMatch) titlesMatch = CompareTitleContents(&storedTitle, &expectedTitle, m, b, nc, a) == 0;
-    if (!titlesMatch) return 0;
+    if (titlesMatch)
+        titlesMatch = CompareTitleContents(&storedTitle, &expectedTitle, m, b, nc, a) == 0;
+    if (!titlesMatch)
+        return 0;
     return 1;
 }
 
 // Return the save-record handle, falling back to the current-player profile when absent.
-int CPadMemoryMenuSave_GetSaveRecord(void* arg) {
-    int saveRecordOrProfile = (*(int*)&AsCPadMemoryMenuSave(arg)->saveData);
+int CPadMemoryMenuSave::GetSaveRecord() {
+    int saveRecordOrProfile = (*(int*)&saveData);
     switch (saveRecordOrProfile) {
-        case 0: saveRecordOrProfile = CFileIoMenu_BuildCurrentPlayerProfile(arg); break;
+    case 0:
+        saveRecordOrProfile = ((CFileIoMenu*)this)->BuildCurrentPlayerProfile();
+        break;
     }
     return saveRecordOrProfile;
 }
 
 struct PadSaveUpdateView {
-    virtual void f0(); virtual void f1(); virtual void f2(); virtual void f3();
-    virtual void f4(); virtual void f5(); virtual void f6(); virtual void f7();
-    virtual void f8(); virtual void f9(); virtual int finishSave(); virtual void f11();
-    virtual void f12(); virtual void f13(); virtual void f14(); virtual void f15();
-    virtual void f16(); virtual void f17(); virtual void f18(); virtual void f19();
-    virtual void f20(); virtual void f21(); virtual void f22(); virtual void f23();
-    virtual void f24(); virtual void f25(); virtual void f26(); virtual void f27();
-    virtual void f28(); virtual void f29(); virtual void f30(); virtual void f31();
-    virtual void f32(); virtual void f33(); virtual int f34_special();
+    virtual void f0();
+    virtual void f1();
+    virtual void f2();
+    virtual void f3();
+    virtual void f4();
+    virtual void f5();
+    virtual void f6();
+    virtual void f7();
+    virtual void f8();
+    virtual void f9();
+    virtual int finishSave();
+    virtual void f11();
+    virtual void f12();
+    virtual void f13();
+    virtual void f14();
+    virtual void f15();
+    virtual void f16();
+    virtual void f17();
+    virtual void f18();
+    virtual void f19();
+    virtual void f20();
+    virtual void f21();
+    virtual void f22();
+    virtual void f23();
+    virtual void f24();
+    virtual void f25();
+    virtual void f26();
+    virtual void f27();
+    virtual void f28();
+    virtual void f29();
+    virtual void f30();
+    virtual void f31();
+    virtual void f32();
+    virtual void f33();
+    virtual int f34_special();
     char base[0x40];
     unsigned int state;
     unsigned int retryCount;
@@ -732,7 +893,7 @@ struct PadSaveUpdateView {
 // derived destructor frees it. No I/O operation borrows the caller's init record.
 // F = menu-owned saveForm +28; A = menu-owned fileIoAccess +18. Read/write creation
 // REPLACES F then A (pad_memory_menu_load.cpp); these calls are not rollback transactions.
-// W = A-owned write copy (CFileIoAccessWrite_InitializeBuffer, file_io_flash_and_write_access.cpp):
+// W = A-owned write copy (CFileIoAccessWrite::InitializeBuffer, file_io_flash_and_write_access.cpp):
 // CreateWriteFileIo frees its temporary replicated image before return; W stays
 // live through open/write/close, freed by access destroy (file_io_access_read_write.cpp).
 // R = backing CFileIo-owned aligned read buffer, borrowed through A by verification;
@@ -766,93 +927,125 @@ struct PadSaveUpdateView {
 // do not destroy it manually while callbacks can run. Base destructor releases
 // A, F, D and I/O system guards; derived destructor disables fade and frees P.
 // Advance save confirmation, asynchronous write, verification, retries, and dialogs.
-int CPadMemoryMenuSave_AdvanceSaveStateMachine(PadSaveUpdateView* self) {
-    if (!CFileIoMenu_Update(self)) return 0;
+int CPadMemoryMenuSave::AdvanceSaveStateMachine() {
+    PadSaveUpdateView* self = (PadSaveUpdateView*)this;
+    if (!((CFileIoMenu*)self)->Update())
+        return 0;
     switch (self->state) {
     // Phase 1: choose whether an existing title can be read or needs overwrite approval.
     case kPadSaveCheckScreen:
-        if (CPadMemoryMenu_HasScreenPointer(self)) self->state = kPadSaveCheckExistingTitle;
-        else self->state = kPadSaveFinish;
+        if (((CPadMemoryMenu*)self)->HasScreenPointer())
+            self->state = kPadSaveCheckExistingTitle;
+        else
+            self->state = kPadSaveFinish;
         break;
     case kPadSaveCheckExistingTitle:
-        if (CPadMemoryMenu_HasStoredTitle(self)) {
-            if (CPadMemoryMenu_StoredTitleMatchesGame(self)) {
-                if (!CPadMemoryMenu_CreateReadFileIo(self)) return 0;
+        if (((CPadMemoryMenu*)self)->HasStoredTitle()) {
+            if (((CPadMemoryMenu*)self)->StoredTitleMatchesGame()) {
+                if (!((CPadMemoryMenu*)self)->CreateReadFileIo())
+                    return 0;
                 self->state = kPadSaveWaitRead;
-            } else self->state = kPadSaveOpenOverwritePrompt;
-        } else self->state = kPadSaveStartWrite;
+            } else
+                self->state = kPadSaveOpenOverwritePrompt;
+        } else
+            self->state = kPadSaveStartWrite;
         break;
     case kPadSaveOpenOverwritePrompt:
-        if (!CFileIoMenu_ShowOkCancelDialog(self, memorySaveDialogMessages.confirmOverwrite)) return 0;
+        if (!((CFileIoMenu*)self)->ShowOkCancelDialog(memorySaveDialogMessages.confirmOverwrite))
+            return 0;
         self->state = kPadSaveWaitOverwritePrompt;
         break;
     case kPadSaveWaitOverwritePrompt:
-        if (!CFileIoMenu_IsCommonDialogComplete(self)) break;
-        if (CFileIoMenu_IsCommonDialogAccepted(self)) self->state = kPadSaveStartWrite;
-        else self->state = kPadSaveFinish;
+        if (!((CFileIoMenu*)self)->IsCommonDialogComplete())
+            break;
+        if (((CFileIoMenu*)self)->IsCommonDialogAccepted())
+            self->state = kPadSaveStartWrite;
+        else
+            self->state = kPadSaveFinish;
         break;
     case kPadSaveWaitRead:
-        if (!CFileIoMenu_QueryFileAccessStatus(self)) break;
-        if (CPadMemoryMenu_HasFileErrorC73D(self)) self->state = kPadSaveOpenOverwritePrompt;
+        if (!((CFileIoMenu*)self)->QueryFileAccessStatus())
+            break;
+        if (((CPadMemoryMenu*)self)->HasFileErrorC73D())
+            self->state = kPadSaveOpenOverwritePrompt;
         else {
-            if (!CFileIoMenu_ShowOkCancelDialog(self, memorySaveDialogMessages.confirmSave)) return 0;
+            if (!((CFileIoMenu*)self)->ShowOkCancelDialog(memorySaveDialogMessages.confirmSave))
+                return 0;
             self->state = kPadSaveWaitSavePrompt;
         }
         break;
     case kPadSaveWaitSavePrompt:
-        if (!CFileIoMenu_IsCommonDialogComplete(self)) break;
-        if (CFileIoMenu_IsCommonDialogAccepted(self)) self->state = kPadSaveStartWrite;
-        else self->state = kPadSaveFinish;
+        if (!((CFileIoMenu*)self)->IsCommonDialogComplete())
+            break;
+        if (((CFileIoMenu*)self)->IsCommonDialogAccepted())
+            self->state = kPadSaveStartWrite;
+        else
+            self->state = kPadSaveFinish;
         break;
     case kPadSaveStartWrite:
         // Phase 2: keep a buttonless progress dialog while the asynchronous write runs.
-        if (!CFileIoMenu_CreateButtonlessCommonDialog(self, memorySaveDialogMessages.saving)) return 0;
-        if (!CPadMemoryMenu_CreateWriteFileIo(self)) return 0;
+        if (!((CFileIoMenu*)self)->CreateButtonlessCommonDialog(memorySaveDialogMessages.saving))
+            return 0;
+        if (!((CPadMemoryMenu*)self)->CreateWriteFileIo())
+            return 0;
         self->state = kPadSaveWaitWrite;
         break;
     case kPadSaveWaitWrite:
-        if (!CFileIoMenu_QueryFileAccessStatus(self)) break;
-        if (CPadMemoryMenu_IsDeviceDisconnected(self)) {
-            if (!CFileIoMenu_ShowAcknowledgeDialog(self, memorySaveDialogMessages.disconnected)) return 0;
+        if (!((CFileIoMenu*)self)->QueryFileAccessStatus())
+            break;
+        if (((CPadMemoryMenu*)self)->IsDeviceDisconnected()) {
+            if (!((CFileIoMenu*)self)->ShowAcknowledgeDialog(memorySaveDialogMessages.disconnected))
+                return 0;
             self->state = kPadSaveWaitDisconnectMessage;
-        } else if (CFileIoMenu_QueryAccessFailure(self)) {
-            if (!CFileIoMenu_ShowAcknowledgeDialog(self, memorySaveDialogMessages.saveFailed)) return 0;
+        } else if (((CFileIoMenu*)self)->QueryAccessFailure()) {
+            if (!((CFileIoMenu*)self)->ShowAcknowledgeDialog(memorySaveDialogMessages.saveFailed))
+                return 0;
             self->state = kPadSaveWaitFailureMessage;
         } else {
-            if (!CPadMemoryMenu_CreateReadFileIo(self)) return 0;
+            if (!((CPadMemoryMenu*)self)->CreateReadFileIo())
+                return 0;
             self->state = kPadSaveWaitVerificationRead;
         }
         break;
     case kPadSaveWaitDisconnectMessage:
-        if (!CFileIoMenu_IsCommonDialogComplete(self)) break;
-        if (!CFileIoMenu_ShowAcknowledgeDialog(self, memorySaveDialogMessages.saveFailed)) return 0;
+        if (!((CFileIoMenu*)self)->IsCommonDialogComplete())
+            break;
+        if (!((CFileIoMenu*)self)->ShowAcknowledgeDialog(memorySaveDialogMessages.saveFailed))
+            return 0;
         self->state = kPadSaveWaitFailureMessage;
         break;
     case kPadSaveWaitVerificationRead:
         // Phase 3: verify readback; only verification mismatch retries the write.
-        if (!CFileIoMenu_QueryFileAccessStatus(self)) break;
-        if (CPadMemoryMenu_VerifyWrittenRecord(self)) {
-            if (!CFileIoMenu_ShowAcknowledgeDialog(self, memorySaveDialogMessages.saveSucceeded)) return 0;
+        if (!((CFileIoMenu*)self)->QueryFileAccessStatus())
+            break;
+        if (((CPadMemoryMenu*)self)->VerifyWrittenRecord()) {
+            if (!((CFileIoMenu*)self)->ShowAcknowledgeDialog(memorySaveDialogMessages.saveSucceeded))
+                return 0;
             self->state = kPadSaveWaitSuccessMessage;
         } else if (self->retryCount < kPadSaveMaxRetries) {
             ++self->retryCount;
-            if (!CPadMemoryMenu_CreateWriteFileIo(self)) return 0;
+            if (!((CPadMemoryMenu*)self)->CreateWriteFileIo())
+                return 0;
             self->state = kPadSaveWaitWrite;
         } else {
-            if (!CFileIoMenu_ShowAcknowledgeDialog(self, memorySaveDialogMessages.saveFailed)) return 0;
+            if (!((CFileIoMenu*)self)->ShowAcknowledgeDialog(memorySaveDialogMessages.saveFailed))
+                return 0;
             self->state = kPadSaveWaitFailureMessage;
         }
         break;
     case kPadSaveWaitSuccessMessage:
-        if (CFileIoMenu_IsCommonDialogComplete(self)) self->state = kPadSaveFinish;
+        if (((CFileIoMenu*)self)->IsCommonDialogComplete())
+            self->state = kPadSaveFinish;
         break;
     case kPadSaveWaitFailureMessage:
-        if (CFileIoMenu_IsCommonDialogComplete(self)) self->state = kPadSaveFinish;
+        if (((CFileIoMenu*)self)->IsCommonDialogComplete())
+            self->state = kPadSaveFinish;
         break;
     case kPadSaveFinish:
         // Phase 4: dispose the dialog and wait for the base finish hook before terminal state.
-        CFileIoMenu_DestroyCommonDialog(self);
-        if (!self->finishSave()) return 0;
+        ((CFileIoMenu*)self)->DestroyCommonDialog();
+        if (!self->finishSave())
+            return 0;
         self->state = kPadSaveComplete;
         break;
     }
@@ -861,15 +1054,32 @@ int CPadMemoryMenuSave_AdvanceSaveStateMachine(PadSaveUpdateView* self) {
 
 struct PadSaveInitDispatch {
     virtual void destroy(int);
-    virtual void a(); virtual void b(); virtual void c(); virtual void d(); virtual void e(); virtual void f(); virtual void g(); virtual void h();
-    virtual void i(); virtual void j(); virtual void k(); virtual void l(); virtual void m(); virtual void n();
-    virtual void o(); virtual void p(); virtual void q(); virtual void r(); virtual void s(); virtual void t();
+    virtual void a();
+    virtual void b();
+    virtual void c();
+    virtual void d();
+    virtual void e();
+    virtual void f();
+    virtual void g();
+    virtual void h();
+    virtual void i();
+    virtual void j();
+    virtual void k();
+    virtual void l();
+    virtual void m();
+    virtual void n();
+    virtual void o();
+    virtual void p();
+    virtual void q();
+    virtual void r();
+    virtual void s();
+    virtual void t();
     virtual int init(void*);
 };
 
 // Construct the base menu and initialize save state, retries, and record ownership.
 inline CPadMemoryMenuSave::CPadMemoryMenuSave(void* s) {
-    CPadMemoryMenu_Ctor(this, s);
+    ((CPadMemoryMenu*)this)->Init(s);
     vtbl = __vt__18CPadMemoryMenuSave;
     saveState = kPadSaveCheckScreen;
     retryCount = 0;
@@ -877,60 +1087,64 @@ inline CPadMemoryMenuSave::CPadMemoryMenuSave(void* s) {
 }
 
 // Allocate the save menu in its first state and initialize it with the supplied record.
-void* CPadMemoryMenuSave_Create(void* self, void* arg) {
-    CPadMemoryMenuSave* obj = new CPadMemoryMenuSave(self);
+void* CPadMemoryMenuSave::Create(void* arg) {
+    CPadMemoryMenuSave* obj = new CPadMemoryMenuSave(this);
     PadSaveInitDispatch* o = (PadSaveInitDispatch*)obj;
-    if (o == 0) return 0;
-    if (!o->init(arg)) { if (o != 0) o->destroy(1); return 0; }
+    if (o == 0)
+        return 0;
+    if (!o->init(arg)) {
+        if (o != 0)
+            o->destroy(1);
+        return 0;
+    }
     return o;
 }
 
 // Disable the alternate fade overlay and release the owned save-record copy.
-void* CPadMemoryMenuSave_dtor(void* self, int shouldDelete) {
-    char* obj = (char*)self;
-    if (obj != 0) {
-        int _g = ((int&)Sing_805DC608());
-        *(void**)obj = __vt__18CPadMemoryMenuSave;
-        if (_g == 0) {
-            if (!s_fadeOverlayInitialized) {
-                FadeOverlay_Init(s_fadeOverlay);
-                __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, s_padSaveFadeOverlayDtorRegistration);
-                s_fadeOverlayInitialized = 1;
-            }
-            ((int&)Sing_805DC608()) = (int)s_fadeOverlay;
+CPadMemoryMenuSave::~CPadMemoryMenuSave() {
+    int _g = ((int&)Sing_805DC608());
+    vtbl = __vt__18CPadMemoryMenuSave;
+    if (_g == 0) {
+        if (!s_fadeOverlayInitialized) {
+            FadeOverlay_Init(s_fadeOverlay);
+            __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, s_padSaveFadeOverlayDtorRegistration);
+            s_fadeOverlayInitialized = 1;
         }
-        FadeState_SetAlternateDrawEnabled((void*)((int&)Sing_805DC608()), 0);
-        if (AsCPadMemoryMenuSave(obj)->saveData != 0) {
-            __dl__FPv(AsCPadMemoryMenuSave(obj)->saveData);
-            AsCPadMemoryMenuSave(obj)->saveData = 0;
-        }
-        CPadMemoryMenu_dtor(self, 0);
-        if (shouldDelete > 0) __dl__FPv(self);
+        ((int&)Sing_805DC608()) = (int)s_fadeOverlay;
     }
-    return self;
+    FadeState_SetAlternateDrawEnabled((void*)((int&)Sing_805DC608()), 0);
+    if (saveData != 0) {
+        __dl__FPv(saveData);
+        saveData = 0;
+    }
+    __dt__14CPadMemoryMenuFv(this, 0);
 }
 
 // Copy the optional save-record prefix and enable the save-menu fade overlay.
 // arg is borrowed; a non-null record is copied into self-owned 0x47C-byte storage.
 // A null arg preserves the existing saveData. Returns 0 on base init/allocation
 // failure; the shared fade overlay is enabled only after that work succeeds.
-int CPadMemoryMenuSave_InitSaveRecordAndFade(void* self, void* arg) {
-    if (!CPadMemoryMenu_SetCurrentSharedContext(self)) return 0;
+int CPadMemoryMenuSave::InitSaveRecordAndFade(void* arg) {
+    if (!CPadMemoryMenu::SetCurrentSharedContext(this))
+        return 0;
     if (arg != 0) {
-        if (AsCPadMemoryMenuSave(self)->saveData != 0) {
-            __dl__FPv(AsCPadMemoryMenuSave(self)->saveData);
-            AsCPadMemoryMenuSave(self)->saveData = 0;
+        if (saveData != 0) {
+            __dl__FPv(saveData);
+            saveData = 0;
         }
         struct Fn80273B50Alloc {
             char data[kPadSaveRecordBytes];
             // Initialize a newly allocated save-record prefix before its contents are copied.
-            Fn80273B50Alloc() { SaveRecordPrefix_ClearCtor(this); }
+            Fn80273B50Alloc() {
+                SaveRecordPrefix_ClearCtor(this);
+            }
         };
         Fn80273B50Alloc* obj = new Fn80273B50Alloc;
-        AsCPadMemoryMenuSave(self)->saveData = obj;
-        if (obj == 0) return 0;
+        saveData = obj;
+        if (obj == 0)
+            return 0;
         Memory_Clear(obj, kPadSaveRecordBytes);
-        SaveData_CopyRecordPrefix47C(AsCPadMemoryMenuSave(self)->saveData, arg);
+        SaveData_CopyRecordPrefix47C(saveData, arg);
     }
     if (((int&)Sing_805DC608()) == 0) {
         if (!s_fadeOverlayInitialized) {

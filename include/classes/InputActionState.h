@@ -8,10 +8,10 @@
 class InputActionState {
 public:
     char pad_000[0x4];
-    void* bindings; // 0x4: CInputManager_dtor: freed binding storage
+    void* bindings;   // 0x4: CInputManager_dtor: freed binding storage
     int bindingCount; // 0x8: CInputManager_dtor: storage count cleared
     char pad_00C[0xc];
-    unsigned int active; // 0x18: Pointer_Update: computed from bindings
+    unsigned int active;         // 0x18: Pointer_Update: computed from bindings
     unsigned int previousActive; // 0x1C: Pointer_Update: previous active low bit
     char pad_020[0x4];
     unsigned char forceActive; // 0x24: Pointer_Update: forces active then clears

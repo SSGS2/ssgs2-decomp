@@ -1,6 +1,7 @@
-// Translation unit 0x80412858-0x80412938 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// DVD device: OpenFile, which resolves a path on the DVD to a directory entry, allocates the file
+// wrapper and opens it with the DVD SDK. Failures return the error sentinel and set the last error.
 
+#include "classes/GtlFileIoDeviceDVD.h"
 #include "sdk_protos.h"
 
 struct DVDFile {
@@ -9,8 +10,15 @@ struct DVDFile {
     int deviceState[7]; // Zeroed wrapper state; individual roles are not established here.
 };
 
-enum FileError { kFileOk = 0, kFileNotFound = 2, kFileOpenFailed = 0x6E };
-enum { kPathBufferSize = 0x110, kInvalidEntryNumber = -1 };
+enum FileError {
+    kFileOk = 0,
+    kFileNotFound = 2,
+    kFileOpenFailed = 0x6E
+};
+enum {
+    kPathBufferSize = 0x110,
+    kInvalidEntryNumber = -1
+};
 typedef char DVDFile_size_check[(sizeof(DVDFile) == 0x5C) ? 1 : -1];
 
 extern "C" {
@@ -24,9 +32,9 @@ void File_SetLastError(int);
 // Resolve the slash-prefixed DVD path, allocate its wrapper, and open the SDK file.
 // Failures return the device API's (DVDFile*)-1 sentinel and set its last error.
 // path must be NUL-terminated, shorter than kPathBufferSize, and contain '/'.
-// Text before the first slash is discarded. self is unused. The returned wrapper
+// Text before the first slash is discarded. The device is unused. The returned wrapper
 // belongs to the caller's device-close path; allocation failure has no local handler.
-extern "C" DVDFile* gtl_CFileIoDeviceDVD_OpenFile(void* self, const char* path) {
+DVDFile* gtl::CFileIoDeviceDVD::OpenFile(const char* path) {
     // Resolve the device-relative path before allocating any wrapper storage.
     char buffer[kPathBufferSize];
     strcpy(buffer, path);

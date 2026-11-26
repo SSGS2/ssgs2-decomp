@@ -1,24 +1,35 @@
+// Rain effect (CRain) and the MT19937 random generator it draws from: 500 falling line segments
+// drawn with a screen overlay, and the generator's state table and seeding.
+// Rain drops move through the camera volume and wrap at its bounds, following the wind.
+
 #include <decomp/static_init.h>
 #include "classes/WView.h"
 #define AsWView(p) ((WView*)(p))
 #include "game/types.h"
 #include "sdk_protos.h"
 #include "classes/CRain.h"
+#include "classes/CRandomHouse.h"
 
 #include "classes/RandomTable.h"
 #include <decomp/cw_bitfields.h>
-#define AsCRain(p) ((CRain*)(p))
-// Translation unit 0x801DB98C-0x801DD078 (19 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CWind.h"
 
 static const int kRainDropCount = 500;
 static const int kMtStateWords = 624;
 static const int kMtUnseededIndex = 625;
 static const unsigned int kMtDefaultSeed = 0x1105;
 // MT19937 recurrence: M=397, N-M=227; the last word wraps to word zero.
-enum { kMtTwistOffset = 397, kMtWrapOffset = 227, kMtLastWord = 623 };
+enum {
+    kMtTwistOffset = 397,
+    kMtWrapOffset = 227,
+    kMtLastWord = 623
+};
 // Each drop is two XYZ/RGBA vertices (16 bytes each); the overlay is four vertices.
-enum { kRainVertexBytes = 16, kRainSegmentBytes = 32, kRainOverlayVertices = 4 };
+enum {
+    kRainVertexBytes = 16,
+    kRainSegmentBytes = 32,
+    kRainOverlayVertices = 4
+};
 
 // Coordinates below are in game world units; the camera stores three basis
 // vectors followed by its world translation. Rain direction also stores line length.
@@ -46,8 +57,7 @@ extern float Math_CosApprox(float);
 extern float Math_SinApprox(float);
 extern void Vec3_Normalize(float*, float*);
 extern void Vec3_Scale(float*, float*, float);
-extern void* CWind_GetInstance(void*);
-extern void CWind_GetWindVector(float*, void*);
+extern "C" void GetWindVector__5CWindFv(void* result, const void* self);
 extern int g_randomHouse;
 extern char s_randomHouseBaseVtable[16];
 extern char __vt__12CRandomHouse[16];
@@ -91,15 +101,10 @@ struct OrderedDtorObject {
     volatile int state;
 };
 
-// Clear the random-house singleton, destroy its base, and optionally free the object.
-void* __dt__15RandomHouseBaseFv(void* self, int deleting) {
-    if (self != 0) {
-        g_randomHouse = 0;
-        BaseObject_dtor(self, 0);
-        if (deleting > 0)
-            __dl__FPv(self);
-    }
-    return self;
+// Clear the random-house singleton and destroy the base object.
+RandomHouseBase::~RandomHouseBase() {
+    g_randomHouse = 0;
+    BaseObject_dtor(this, 0);
 }
 
 // Reset the buffer count and free its storage, then optionally delete the buffer owner.
@@ -164,20 +169,6 @@ void* dtor_801DBAE0(OrderedDtorObject* self, int deleting) {
     return self;
 }
 
-struct RandomHouseBase {
-    char storage[0x10];
-    // Construct the base and publish this object as the random-house singleton.
-    RandomHouseBase() {
-        BaseObject_ctor(this);
-        *(void**)this = s_randomHouseBaseVtable;
-        g_randomHouse = (int)this;
-    }
-    ~RandomHouseBase();
-};
-struct CRandomHouse : RandomHouseBase {
-    char rest[0xC];
-    CRandomHouse();
-};
 // Allocate the fixed 624-word state; the first draw performs lazy seeding.
 CRandomHouse::CRandomHouse() {
     void* self = this;
@@ -209,34 +200,27 @@ void QuadTree_InitializeCollisionConstants() {
 }
 
 struct RefCount_801DBF84 {
-    CW_BITS2(
-        unsigned int refs : 16,
-        unsigned int other : 16)
+    CW_BITS2(unsigned int refs : 16, unsigned int other : 16)
 };
 
 // Release the rain and overlay vertex buffers, then optionally delete the effect.
-void* CRain_dtor(void* self, int deleting) {
-    if (self != 0) {
-        void** p = (void**)self;
-        RefCount_801DBF84* first = (RefCount_801DBF84*)p[8];
-        *(void**)self = __vt__5CRain;
-        if (first != 0) {
-            first->refs--;
-            if (first->refs == 0)
-                CubeResourceStorage_dtor(first, 1);
-            p[8] = 0;
-        }
-        RefCount_801DBF84* second = (RefCount_801DBF84*)p[9];
-        if (second != 0) {
-            second->refs--;
-            if (second->refs == 0)
-                CubeResourceStorage_dtor(second, 1);
-            p[9] = 0;
-        }
-        if (deleting > 0)
-            __dl__FPv(self);
+CRain::~CRain() {
+    void** p = (void**)this;
+    RefCount_801DBF84* first = (RefCount_801DBF84*)p[8];
+    *(void**)this = __vt__5CRain;
+    if (first != 0) {
+        first->refs--;
+        if (first->refs == 0)
+            CubeResourceStorage_dtor(first, 1);
+        p[8] = 0;
     }
-    return self;
+    RefCount_801DBF84* second = (RefCount_801DBF84*)p[9];
+    if (second != 0) {
+        second->refs--;
+        if (second->refs == 0)
+            CubeResourceStorage_dtor(second, 1);
+        p[9] = 0;
+    }
 }
 
 // Compute the axis-aligned rain volume from the current camera transform.
@@ -250,12 +234,14 @@ void Rain_ComputeCameraVolumeBounds(void* /*unused*/, float* min, float* max) {
     for (int i = 0; i < 4; ++i) {
         float y = kFloat_160_Rain;
         float x = y;
-        if (i & 1) x *= scale;
-        if (i & 2) y *= scale;
-        float a[3], b[3];
-        Vec3_Scale(a, (float*)s_cameraTransform, x);
+        if (i & 1)
+            x *= scale;
+        if (i & 2)
+            y *= scale;
+        float xOffset[3], b[3];
+        Vec3_Scale(xOffset, (float*)s_cameraTransform, x);
         Vec3_Scale(b, (float*)(s_cameraTransform + 12), y);
-        Vec3_Add(rowDst, a, b);
+        Vec3_Add(rowDst, xOffset, b);
         Vec3_Scale(b, (float*)(s_cameraTransform + 24), kFloat_320_Rain);
         Vec3_Add(&corners[i * 3 + 12], rowSrc, b);
         rowSrc += 3;
@@ -266,12 +252,18 @@ void Rain_ComputeCameraVolumeBounds(void* /*unused*/, float* min, float* max) {
     Vector_CopyComponents(max, corners);
     float* p = corners + 3;
     for (int k = 0; k < 7; ++k) {
-        if (min[0] > p[0]) min[0] = p[0];
-        if (min[1] > p[1]) min[1] = p[1];
-        if (min[2] > p[2]) min[2] = p[2];
-        if (max[0] < p[0]) max[0] = p[0];
-        if (max[1] < p[1]) max[1] = p[1];
-        if (max[2] < p[2]) max[2] = p[2];
+        if (min[0] > p[0])
+            min[0] = p[0];
+        if (min[1] > p[1])
+            min[1] = p[1];
+        if (min[2] > p[2])
+            min[2] = p[2];
+        if (max[0] < p[0])
+            max[0] = p[0];
+        if (max[1] < p[1])
+            max[1] = p[1];
+        if (max[2] < p[2])
+            max[2] = p[2];
         p += 3;
     }
     Vec3_Add(min, min, (float*)(s_cameraTransform + 36));
@@ -309,11 +301,17 @@ public:
     virtual void state68(int);
 };
 // Bind rain render state and vertex buffers, then draw the 500 rain segments.
-void CRain_DrawLineSegments(void* self) {
+void CRain::DrawLineSegments() {
     // Install the fixed rain material, then the view transform and XYZ/RGBA stream.
-    struct Defaults { unsigned int words[24]; };
-    struct StateA { unsigned int words[12]; };
-    struct StateB { unsigned int words[10]; };
+    struct Defaults {
+        unsigned int words[24];
+    };
+    struct StateA {
+        unsigned int words[12];
+    };
+    struct StateB {
+        unsigned int words[10];
+    };
     Defaults defaults = *(Defaults*)kRainRenderStateDefaults;
     float transform[16];
     StateB stateB;
@@ -335,7 +333,7 @@ void CRain_DrawLineSegments(void* self) {
     Matrix_ExpandAffineTo4x4(((char*)&AsWView(g_view)->inputTransform), transform);
     SetTransform(0, transform);
     Engine_SetFlexibleVertexFormat(0xF001);
-    Engine_SetVertexStream(0, AsCRain(self)->vertexBuffer, 0, kRainVertexBytes);
+    Engine_SetVertexStream(0, vertexBuffer, 0, kRainVertexBytes);
     DrawPrimitiveFromBoundBuffers(0xA8, 0, kRainDropCount);
 }
 #pragma pop
@@ -384,8 +382,10 @@ unsigned int MT19937_NextU32(RandomTable* self) {
 
 // Fill MT19937 state with the legacy 69069 generator; seed zero reuses the saved seed.
 void MT19937_Seed(RandomTable* self, unsigned int seed) {
-    if (seed == 0) seed = self->seed;
-    else self->seed = seed;
+    if (seed == 0)
+        seed = self->seed;
+    else
+        self->seed = seed;
     for (int i = 0; i < kMtStateWords; ++i) {
         self->data[i] = seed & 0xFFFF0000;
         seed = seed * 69069 + 1;
@@ -396,7 +396,9 @@ void MT19937_Seed(RandomTable* self, unsigned int seed) {
 }
 
 typedef Vec3f Vec3;
-struct Bounds { Vec3 min, max; };
+struct Bounds {
+    Vec3 min, max;
+};
 
 class RainVirtual {
 public:
@@ -405,10 +407,15 @@ public:
     virtual void slot2();
     virtual void slot3();
 };
-struct Obj801DC054 { void* vt; char pad[0x10]; float dropDirection[3]; void* particles; };
+struct Obj801DC054 {
+    void* vt;
+    char pad[0x10];
+    float dropDirection[3];
+    void* particles;
+};
 #pragma opt_propagation off
 // Move rain line segments through the camera volume, wrapping each coordinate at its bounds.
-void CRain_UpdateDropVertices(Obj801DC054* object, float timeStep) {
+void CRain::UpdateDropVertices(Obj801DC054* object, float timeStep) {
     // Refresh wind direction and camera bounds before borrowing writable buffer data.
     int firstVertexByteOffset;
     int dropIndex;
@@ -421,7 +428,8 @@ void CRain_UpdateDropVertices(Obj801DC054* object, float timeStep) {
     Rain_ComputeCameraVolumeBounds(self, minBound, maxBound);
 
     float stepVector[3];
-    float step = (kFloat_15_Rain * timeStep); Vec3_Scale(stepVector, self->dropDirection, step);
+    float step = (kFloat_15_Rain * timeStep);
+    Vec3_Scale(stepVector, self->dropDirection, step);
     float* vertices;
     Resource_GetOffsetPtr(self->particles, 0, 0, (int)&vertices, 0);
     float wrapWidth = kFloat_320_Rain;
@@ -467,9 +475,10 @@ void CRain_UpdateDropVertices(Obj801DC054* object, float timeStep) {
 #pragma opt_propagation reset
 
 // Combine downward rain motion with wind, normalize it, and scale the drop direction.
-void CRain_UpdateDropDirection(float* self) {
+void CRain::UpdateDropDirection() {
+    float* self = (float*)this;
     float wind[3];
-    CWind_GetWindVector(wind, CWind_GetInstance(self));
+    GetWindVector__5CWindFv(wind, CWind::GetInstance());
     float downwardZ;
     float downwardY;
     float downwardX;
@@ -486,11 +495,22 @@ void CRain_UpdateDropDirection(float* self) {
     Vec3_Scale(self + 5, self + 5, kFloat_15_Rain);
 }
 
-struct Particle2D { float x, y, z; unsigned char pad[8]; unsigned char a, b, c, d; };
+struct Particle2D {
+    float x, y, z;
+    unsigned char pad[8];
+    unsigned char a, b, c, d;
+};
 struct ParticleSystem;
-struct ParticleVtable { void (*slots[6])(ParticleSystem*); };
-struct ParticleVertex { float x, y, z; unsigned char r, g, b, a; };
-struct ParticlePair { ParticleVertex first, second; };
+struct ParticleVtable {
+    void (*slots[6])(ParticleSystem*);
+};
+struct ParticleVertex {
+    float x, y, z;
+    unsigned char r, g, b, a;
+};
+struct ParticlePair {
+    ParticleVertex first, second;
+};
 class ParticleVirtual {
 public:
     virtual void slot0();
@@ -498,11 +518,21 @@ public:
     virtual void slot2();
     virtual void slot3();
 };
-struct ParticleSystem { ParticleVtable* vtable; float scale; char pad[0xC]; float direction[3]; void* particles; void* small; };
-struct ParticleRefs { CW_BITS2( unsigned refs:16, unsigned other:16) };
+struct ParticleSystem {
+    ParticleVtable* vtable;
+    float scale;
+    char pad[0xC];
+    float direction[3];
+    void* particles;
+    void* small;
+};
+struct ParticleRefs {
+    CW_BITS2(unsigned refs : 16, unsigned other : 16)
+};
 
 // Build 500 translucent rain segments and the four-vertex screen overlay.
-ParticleSystem* CRain_ctor(ParticleSystem* self) {
+CRain::CRain() {
+    ParticleSystem* self = (ParticleSystem*)this;
     // Initialize ownership slots and derive the world-space line direction.
     self->scale = kFloat_1_Rain;
     self->vtable = (ParticleVtable*)__vt__5CRain;
@@ -513,7 +543,8 @@ ParticleSystem* CRain_ctor(ParticleSystem* self) {
     if (self->particles != 0) {
         ParticleRefs* count = (ParticleRefs*)self->particles;
         count->refs--;
-        if (count->refs == 0) CubeResourceStorage_dtor(count, 1);
+        if (count->refs == 0)
+            CubeResourceStorage_dtor(count, 1);
         self->particles = 0;
     }
     // Allocate 500 line pairs, scatter their starts around the camera, and fade
@@ -542,7 +573,8 @@ ParticleSystem* CRain_ctor(ParticleSystem* self) {
     if (self->small != 0) {
         ParticleRefs* count = (ParticleRefs*)self->small;
         count->refs--;
-        if (count->refs == 0) CubeResourceStorage_dtor(count, 1);
+        if (count->refs == 0)
+            CubeResourceStorage_dtor(count, 1);
         self->small = 0;
     }
     VertexBuffer_Create(kRainOverlayVertices * kRainVertexBytes, 0, 0xF005, 0, &self->small, 0);
@@ -564,27 +596,16 @@ ParticleSystem* CRain_ctor(ParticleSystem* self) {
         smallVertices[i].b = 0x30;
     }
     GraphicsBuffer_Flush(self->small);
-    return self;
 }
 
 // Release the MT19937 state array and clear the singleton before base destruction.
-void* CRandomHouse_dtor(void* self, int deleting) {
-    if (self != 0) {
-        void** p = (void**)self;
-        void* resource = p[4];
-        *p = __vt__12CRandomHouse;
-        if (resource != 0) {
-            __dla__FPv(resource);
-            p[4] = 0;
-        }
-        if (self != 0) {
-            g_randomHouse = 0;
-            BaseObject_dtor(self, 0);
-        }
-        if (deleting > 0)
-            __dl__FPv(self);
+CRandomHouse::~CRandomHouse() {
+    unsigned int* storage = data;
+    *(void**)this = __vt__12CRandomHouse;
+    if (storage != 0) {
+        __dla__FPv(storage);
+        data = 0;
     }
-    return self;
 }
 
 // Initialize this random-house helper's full-turn angle cache.
@@ -593,8 +614,7 @@ void InitRandomHouseHelperFullTurnAngle() {
 }
 
 // Disabled computer-shot logging entry point; accepts arguments without output.
-void ComShot_Log(int arg0, ...) {
-}
+void ComShot_Log(int arg0, ...) {}
 
 } // extern "C"
 

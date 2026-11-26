@@ -1,5 +1,5 @@
 // GTL model/animation resource: borrow an element from a tagged file chunk.
-// API index: gtl_IGenericResourceFile_GetChunkElement forwards a tag/index to
+// API index: gtl::IGenericResourceFile::GetChunkElement forwards a tag/index to
 // gtl_ResourceFile_GetChunkElement (gtl_image_decode_and_tiling.cpp). This is format infrastructure;
 // it exposes no gameplay tuning constants. Lifetime ends when the backing file
 // is released, including through the resource destructor in gtl_generic_animation_resource_part1.cpp.
@@ -10,8 +10,8 @@
 // {u32 tag, u32 elementCount, u32 elementStrideBytes, u32 fileByteOffset}.
 // Object_GetField8/C are offset accessors reused across unrelated types: the
 // primitive-buffer names at their definitions in gtl_render_state_and_primitive.cpp do not apply here.
-// Translation unit 0x803D8678-0x803D86E4 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+
+#include "classes/GtlIGenericResourceFile.h"
 
 extern "C" {
 
@@ -26,9 +26,10 @@ void* gtl_ResourceFile_GetChunkElement(void*, void*, int, int);
 // missing tag, zero count*stride, or index >= count. Null is data absence, not
 // an error code; no error/output state is written. File bounds/overflow are not
 // validated. Preserve the context-before-file accessor evaluation order.
-void* gtl_IGenericResourceFile_GetChunkElement(void* self, int chunkTag, int elementIndex) {
-    void* forwardedChunkContext = Object_GetFieldC(*(unsigned int*)((char*)self + 8));
-    return gtl_ResourceFile_GetChunkElement(Object_GetField8(*(unsigned int*)((char*)self + 8)), forwardedChunkContext, chunkTag, elementIndex);
-}
-
 } // extern "C"
+
+void* gtl::IGenericResourceFile::GetChunkElement(int chunkTag, int elementIndex) {
+    void* forwardedChunkContext = Object_GetFieldC((unsigned int)resourceBuffer);
+    return gtl_ResourceFile_GetChunkElement(Object_GetField8((unsigned int)resourceBuffer), forwardedChunkContext,
+                                            chunkTag, elementIndex);
+}

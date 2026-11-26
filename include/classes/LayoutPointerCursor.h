@@ -4,13 +4,13 @@
 #define CLASSES_LAYOUTCURSOR800779EC_H
 
 struct LayoutPointerCursor {
-    void* player; // 0x0: Layout_UpdateCursorFromPlayer (0x80077BC8) passes to gtl_InputEx_GetScreenPointer.
-    float minX; // 0x4: Layout_CursorFromPointer (0x800779F8) clamps cursorX from below.
-    float minY; // 0x8: same, lower y bound.
-    float maxX; // 0xC: same, upper x bound.
-    float maxY; // 0x10: same, upper y bound.
-    float cursorX; // 0x14: Layout_GetCursorPosition / LayoutCursor_InitBounds.
-    float cursorY; // 0x18: Layout_GetCursorPosition / LayoutCursor_InitBounds.
+    void* player;      // 0x0: Layout_UpdateCursorFromPlayer (0x80077BC8) passes to gtl_InputEx_GetScreenPointer.
+    float minX;        // 0x4: Layout_CursorFromPointer (0x800779F8) clamps cursorX from below.
+    float minY;        // 0x8: same, lower y bound.
+    float maxX;        // 0xC: same, upper x bound.
+    float maxY;        // 0x10: same, upper y bound.
+    float cursorX;     // 0x14: Layout_GetCursorPosition / LayoutCursor_InitBounds.
+    float cursorY;     // 0x18: Layout_GetCursorPosition / LayoutCursor_InitBounds.
     float cursorDepth; // 0x1C: Layout_GetCursorDepth (0x80077C48).
 };
 

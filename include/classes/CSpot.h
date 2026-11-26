@@ -1,100 +1,156 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CSpot: the aiming and landing marker actor on the golf course.
+//
+// It shows where the shot is expected to land, the distance to it, and the other
+// players' markers. This header covers the whole object; loading, animation and
+// teardown are in spot_marker_actor.cpp and drawing and messages are in
+// spot_marker_draw_and_messages.cpp.
+//
+// The class is declared without virtual functions on purpose: its vtable is
+// still taken from the original game data, so `vtbl` is spelled out as a member.
 #ifndef CLASSES_CSPOT_H
 #define CLASSES_CSPOT_H
 
 #include "game/types.h"
+#include "game/wvector.h"
+
+// One of the nine marker textures. The loader and ready test are virtual calls
+// made through the texture object's own vtable.
+struct SpotTextureBinding {
+    char storage[0x28];
+};
+
+// A message to the marker: a header, a type, one 32-bit value that the type
+// gives a meaning to, and a second pointer some types use for a world position.
+struct SpotMessage {
+    unsigned int header; // 0x00
+    int type;            // 0x04
+    union {
+        int integer;
+        void* pointer;
+        float* scalar;
+    } value;             // 0x08
+    void* secondPointer; // 0x0C
+};
 
 class CSpot {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x18];                 // 0x4
-    void* distanceText;                       // 0x1c: 5 uses in CSpot_OnDestroy, CSpot_OnLoad, CSpot_Ctor
-    void* playerNumberText;                       // 0x20: 5 uses in CSpot_OnDestroy, CSpot_OnLoad, CSpot_Ctor
-    float position[3]; // 0x24: CSpot_OnProcess copies targetPosition here
-    float previousPosition[3]; // 0x30: CSpot_OnInit Vec3_Zero
-    float transitionReferencePosition[3]; // 0x3C: CSpot_HandleMsg case 6 copies the supplied vector
-    float heading;                       // 0x48: 3 uses in CSpot_HandleMsg, CSpot_OnInit
-    float positionBlend;                       // 0x4c: 5 uses in CSpot_OnProcess, CSpot_HandleMsg, CSpot_OnInit
-    float unk_50[3]; // 0x50: CSpot_OnInit Vec3_Zero
-    float initialRandomOffset[3]; // 0x5C: CSpot_OnInit stores scaled random horizontal vector
-    float targetPosition[3]; // 0x68: CSpot_OnProcess stores GetGroundPoint result
-    char pad_074[0x4];
-    int groundHitIndex; // 0x78: CSpot_OnProcess GetGroundPoint out parameter
-    float rotationPhase; // 0x7C: CSpot_DrawFallingMarker rotates the marker by 0.7 * this value
-    unsigned char enabled;               // 0x80: 5 uses in CSpot_HandleMsg, CSpot_OnInit, CSpot_OnProcess
-    char pad_081[3];
-    float arrowWidth; // 0x84: CSpot_DrawMarkersAndLabels arrowRect/shadowRect width
-    float endpointSize; // 0x88: CSpot_DrawMarkersAndLabels validRect/invalidRect width and height
-    void* clubRangeInfo;                       // 0x8c: 6 uses in CSpot_OnDestroy, CSpot_OnLoad, CSpot_Ctor
-    unsigned int markerColor; // 0x90: CSpot_DrawMarkersAndLabels interpolates packed colors and passes to drawing
-    char pad_094[4];
-    float labelHeightOffset; // 0x98: CSpot_DrawMarkersAndLabels subtracts this from projected label y
-    void* indicatorBitmap;                       // 0x9c: 2 uses in CSpot_OnLoad, CSpot_Ctor
-    void* fallingBitmap;                       // 0xa0: 2 uses in CSpot_OnLoad, CSpot_Ctor
-    void* slopeBitmap;                       // 0xa4: 2 uses in CSpot_OnLoad, CSpot_Ctor
-    void* targetHolePositionBitmap;                       // 0xa8: 2 uses in CSpot_OnLoad, CSpot_Ctor
-    float pulsePhase;                       // 0xac: 6 uses in CSpot_OnProcess, CSpot_OnInit, CSpot_HandleMsg
-    float arrowProgress;                       // 0xb0: 1 use in CSpot_OnProcess
-    char pad_0B4[0x8];                  // 0xb4
-    void* validTargetOverlay;                       // 0xbc: 2 uses in CSpot_OnLoad, CSpot_Ctor
-    void* invalidTargetOverlay;                       // 0xc0: 2 uses in CSpot_OnLoad, CSpot_Ctor
-    void* arrowOverlay;                       // 0xc4: 2 uses in CSpot_OnLoad, CSpot_Ctor
-    void* playerMarkerOverlay;                       // 0xc8: 2 uses in CSpot_OnLoad, CSpot_Ctor
-    char pad_0CC[0x16c];                // 0xcc
-    float markerHeading;                      // 0x238: 3 uses in CSpot_OnProcess, CSpot_OnInit
-    void* scoreTargetBitmap;                      // 0x23c: 2 uses in CSpot_OnLoad, CSpot_Ctor
-    char pad_240[0x14];
-    float markerScreen[2]; // 0x254: CSpot_DrawMarkersAndLabels projected marker x/y
-    char pad_25C[0x30];
-    float ballScreen[2]; // 0x28C: CSpot_DrawMarkersAndLabels projected ball x/y
-    char pad_294[0xA0];
-    unsigned char targetDirty;              // 0x334: 7 uses in CSpot_OnProcess, CSpot_HandleMsg, CSpot_OnInit
-    char pad_335[0xb];                  // 0x335
-    unsigned char playerMarkersVisible;              // 0x340: 3 uses in CSpot_OnProcess, CSpot_OnPreLoadInit
-    char pad_341[0x3];                  // 0x341
-    int messageValueAtLoad;                        // 0x344: 2 uses in CSpot_OnLoad, CSpot_Ctor
+    enum {
+        kTextureCount = 9
+    };
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x18, 0x24, 0x30, 0x3c, 0x50, 0x5c, 0x68, 0x78, 0xd0, 0x254, 0x28c, 0x2c4, 0x2fc
+    CSpot();
+
+    // Actor callbacks.
+    void OnPreLoadInit();
+    void OnDestroy();
+    void OnLoad();
+    void OnInit();
+    void OnProcess(float deltaSeconds);
+
+    // Drawing.
+    void DrawMarkersAndLabels();
+    void DrawFallingMarker();
+    void DrawTexturedMarker();
+    void DrawPlayerMarker(int playerIndex);
+
+    // Messages.
+    void HandleMsg(const SpotMessage* message);
+
+    void* vtbl; // 0x00: original vtable pointer
+    char pad_004[4];
+    int unk_08;                                        // 0x08: the constructor sets 1
+    char pad_00C[0xC];                                 // 0x0C
+    void* taskVtbl;                                    // 0x18: second interface; the preload queue is given its address
+    void* distanceText;                                // 0x1C
+    void* playerNumberText;                            // 0x20
+    float position[3];                                 // 0x24: where the marker is drawn
+    float previousPosition[3];                         // 0x30
+    float transitionReferencePosition[3];              // 0x3C
+    float heading;                                     // 0x48: radians about the Y axis
+    float positionBlend;                               // 0x4C: 1 when the marker sits at `position`
+    WVector unk_50;                                    // 0x50: zeroed by OnInit
+    WVector initialRandomOffset;                       // 0x5C: random horizontal offset chosen by OnInit
+    float targetPosition[3];                           // 0x68: ground point under the aim
+    float targetHeightOffset;                          // 0x74
+    int groundHitIndex;                                // 0x78: GetGroundPoint output
+    float rotationPhase;                               // 0x7C: radians, advances while enabled
+    unsigned char enabled;                             // 0x80
+    char pad_081[3];                                   // 0x81
+    float arrowWidth;                                  // 0x84
+    float endpointSize;                                // 0x88
+    void* clubRangeInfo;                               // 0x8C: owned CClubRangeInfo
+    unsigned int markerColor;                          // 0x90: packed color
+    float labelWidthOffset;                            // 0x94
+    float labelHeightOffset;                           // 0x98
+    void* indicatorBitmap;                             // 0x9C
+    void* fallingBitmap;                               // 0xA0
+    void* slopeBitmap;                                 // 0xA4
+    void* targetHolePositionBitmap;                    // 0xA8
+    float pulsePhase;                                  // 0xAC: 0 to 1
+    float arrowProgress;                               // 0xB0
+    float arrowBlend;                                  // 0xB4: 0 to 1, bounces
+    float arrowBlendDirection;                         // 0xB8: +1 or -1
+    void* validTargetOverlay;                          // 0xBC
+    void* invalidTargetOverlay;                        // 0xC0
+    void* arrowOverlay;                                // 0xC4
+    void* playerMarkerOverlay;                         // 0xC8
+    void* auxiliaryMarker;                             // 0xCC: destroyed with OverlayPlayer_Destroy
+    SpotTextureBinding textureBindings[kTextureCount]; // 0xD0
+    float markerHeading;                               // 0x238
+    void* scoreTargetBitmap;                           // 0x23C
+    void* markerScreenLink;                            // 0x240: points at the marker's screen record
+    void* ballScreenLink;                              // 0x244: points at the ball's screen record
+    void* fourthScreenLink;                            // 0x248: points at the fourth screen record
+    void* thirdScreenLink;                             // 0x24C: points at the third screen record
+    int screenRecordCount;                             // 0x250
+    float markerScreen[2];         // 0x254: projected marker x and y; first of four 0x38-byte records
+    char pad_25C[0x30];            // 0x25C
+    float ballScreen[2];           // 0x28C: projected ball x and y; the second record
+    char pad_294[0x30];            // 0x294
+    char thirdScreenRecord[0x38];  // 0x2C4
+    char fourthScreenRecord[0x38]; // 0x2FC
+    unsigned char targetDirty;     // 0x334: the landing point must be recomputed
+    char pad_335[7];               // 0x335
+    void* markerVertices;          // 0x33C: heap array, allocated with a 0x10-byte header
+    bool playerMarkersVisible;     // 0x340
+    char pad_341[3];               // 0x341
+    int messageValueAtLoad;        // 0x344
+
+    void DrawScoreTarget();
+    static void DrawProjectedClippedQuad(void* obj, void* worldPosition, unsigned int color);
+    static void* GetRTTI();
+    static void* vfunc_1Thunk18(void* arg);
+
+    ~CSpot();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define CSPOT_OFF(f, o) typedef char CSpot_off_##f[((int)&((CSpot*)0)->f == (o)) ? 1 : -1]
-CSPOT_OFF(position, 0x24);
-CSPOT_OFF(transitionReferencePosition, 0x3C);
-CSPOT_OFF(rotationPhase, 0x7C);
-CSPOT_OFF(arrowWidth, 0x84);
-CSPOT_OFF(endpointSize, 0x88);
-CSPOT_OFF(markerColor, 0x90);
-CSPOT_OFF(labelHeightOffset, 0x98);
-CSPOT_OFF(markerScreen, 0x254);
-CSPOT_OFF(ballScreen, 0x28C);
-CSPOT_OFF(previousPosition, 0x30);
-CSPOT_OFF(unk_50, 0x50);
-CSPOT_OFF(initialRandomOffset, 0x5C);
-CSPOT_OFF(targetPosition, 0x68);
-CSPOT_OFF(groundHitIndex, 0x78);
-CSPOT_OFF(distanceText, 0x1c);
-CSPOT_OFF(playerNumberText, 0x20);
-CSPOT_OFF(heading, 0x48);
-CSPOT_OFF(positionBlend, 0x4c);
-CSPOT_OFF(enabled, 0x80);
-CSPOT_OFF(clubRangeInfo, 0x8c);
-CSPOT_OFF(indicatorBitmap, 0x9c);
-CSPOT_OFF(fallingBitmap, 0xa0);
-CSPOT_OFF(slopeBitmap, 0xa4);
-CSPOT_OFF(targetHolePositionBitmap, 0xa8);
-CSPOT_OFF(pulsePhase, 0xac);
-CSPOT_OFF(arrowProgress, 0xb0);
-CSPOT_OFF(validTargetOverlay, 0xbc);
-CSPOT_OFF(invalidTargetOverlay, 0xc0);
-CSPOT_OFF(arrowOverlay, 0xc4);
-CSPOT_OFF(playerMarkerOverlay, 0xc8);
-CSPOT_OFF(markerHeading, 0x238);
-CSPOT_OFF(scoreTargetBitmap, 0x23c);
-CSPOT_OFF(targetDirty, 0x334);
-CSPOT_OFF(playerMarkersVisible, 0x340);
-CSPOT_OFF(messageValueAtLoad, 0x344);
-#undef CSPOT_OFF
+#define CSPOT_OFFSET(field, offset) typedef char CSpot_offset_##field[((int)&((CSpot*)0)->field == (offset)) ? 1 : -1]
+CSPOT_OFFSET(taskVtbl, 0x18);
+CSPOT_OFFSET(position, 0x24);
+CSPOT_OFFSET(previousPosition, 0x30);
+CSPOT_OFFSET(transitionReferencePosition, 0x3C);
+CSPOT_OFFSET(heading, 0x48);
+CSPOT_OFFSET(unk_50, 0x50);
+CSPOT_OFFSET(initialRandomOffset, 0x5C);
+CSPOT_OFFSET(targetPosition, 0x68);
+CSPOT_OFFSET(groundHitIndex, 0x78);
+CSPOT_OFFSET(enabled, 0x80);
+CSPOT_OFFSET(arrowWidth, 0x84);
+CSPOT_OFFSET(clubRangeInfo, 0x8C);
+CSPOT_OFFSET(labelHeightOffset, 0x98);
+CSPOT_OFFSET(pulsePhase, 0xAC);
+CSPOT_OFFSET(validTargetOverlay, 0xBC);
+CSPOT_OFFSET(textureBindings, 0xD0);
+CSPOT_OFFSET(markerHeading, 0x238);
+CSPOT_OFFSET(markerScreen, 0x254);
+CSPOT_OFFSET(ballScreen, 0x28C);
+CSPOT_OFFSET(thirdScreenRecord, 0x2C4);
+CSPOT_OFFSET(fourthScreenRecord, 0x2FC);
+CSPOT_OFFSET(targetDirty, 0x334);
+CSPOT_OFFSET(markerVertices, 0x33C);
+CSPOT_OFFSET(playerMarkersVisible, 0x340);
+CSPOT_OFFSET(messageValueAtLoad, 0x344);
+#undef CSPOT_OFFSET
+typedef char CSpot_size[(sizeof(CSpot) == 0x348) ? 1 : -1];
 
-#endif  // CLASSES_CSPOT_H
+#endif // CLASSES_CSPOT_H

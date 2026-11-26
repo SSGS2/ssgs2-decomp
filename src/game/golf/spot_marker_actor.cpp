@@ -1,11 +1,12 @@
-#include "classes/CGolfDoc.h" // Layout offsets checked in the header.
+// The shot marker actor: creation, loading its sprites and fonts, per-frame
+// animation, and teardown. Drawing and messages are in
+// spot_marker_draw_and_messages.cpp.
+#include "classes/CClubRangeInfo.h"
+#include "classes/CGolfDoc.h"
 #include "classes/CSharedDoc.h"
 #include "classes/CSpot.h"
-
-// Borrow the checked marker actor layout without constructing or owning storage.
-inline CSpot* AsCSpot(void* object) { return (CSpot*)object; }
-// Translation unit 0x800EFEAC-0x800F0998 (7 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "game/wvector.h"
+#include "classes/CQuadTree.h"
 
 extern "C" {
 
@@ -13,11 +14,9 @@ void __ct__18NativeBase80201D18Fv(void*);
 void __construct_array(void*, void (*)(void*), void (*)(void*), int, int);
 void IActor_AddSkipFlags(void*, int);
 void ResourcePreloadQueue_AddRequest(void*, int, int, float, void*, float, const char*, int, int, int);
-void __dt__9CInfoBaseFv(void*, int);
-void __dl__FPv(void*);
 void __dla__FPv(void*);
-void CBpTex_dtor(void*);
-void CBpTex_Init(void*);
+extern "C" void __dt__6CBpTexFv(void*);
+extern "C" void __ct__6CBpTexFv(void*);
 void Vec3_Zero(void*);
 float Random_RangeFloat(int, float, float);
 float Math_SinApprox(float);
@@ -25,22 +24,16 @@ float Math_CosApprox(float);
 void* InstanceTable_Get(void);
 float GolfParameter_ResolveFloat(void*, int);
 void __ml__FfRC7WVector(float*, const float*, float);
-void __pl__FRC7WVectorRC7WVector(void*, void*, void*);
-void __as__7WVectorFRC7WVector(void*, float*);
 void Matrix_SetAxisRotation(void*, float, int);
 int Pointer_IsActionActive(void*, void*, int);
 int Pointer_GetRisingActionBits(void*, void*, int);
 void* CQuadTree_GetInstance(void);
-float CQuadTree_GetMinPowerOnGround(void*);
 void* GolfBall__Fv(void);
 void GetGroundPoint__9CQuadTreeF7WVectorbPib(void*, void*, void*, int, void*, int);
-float CQuadTree_GetMaxPowerOnGround(void*);
 void Object_DeleteVirtual(void*, void*);
 void ResourceManager_ReleaseId(void*, void*);
 void OverlayPlayer_Destroy(void*, int);
 void ResourceHandle_Dtor(void*, int);
-void* __nw__FUl(unsigned int);
-void __ct__14CClubRangeInfoFv(void*);
 void DebugText_Init(void*);
 void DebugText_LoadGlyphAtlas(void*, const char*, float, float, int, int, const char*);
 void* WOverlay_Create(void*, const char*, int);
@@ -49,13 +42,15 @@ extern int g_resourceManager;
 extern CSharedDoc* g_sharedDoc;
 extern int g_inputPointer;
 extern void* g_chatMsg;
-// Linked marker constants: glyph offsets 3/-30, endpoint size 12, label offsets 20;
-// angles -pi/pi/2*pi, range jitter scale 0.02, and equality tolerance 0.00001.
-extern const float kFloat_0_spot, kFloat_1_spot, kSpotDistanceGlyphOffsetX, kSpotGlyphOffsetY, kSpotLabelOffset, kFloat_2_Marker, kSpotEndpointSize;
-extern const float kFloat_NegPi_Spot, kFloat_Pi_Spot, kSpotWorldUnitsPerYard, kSpotRangeJitterFraction, kFloat_TwoPi_Spot, kFloat_0_5_Marker, kSpotComparisonEpsilon, kFloat_neg1_U800EFEAC;
-// Linked comparison targets: one, one, and zero, respectively.
+// Float constants, still linked from the original data.
+extern const float kFloat_0_spot, kFloat_1_spot, kSpotDistanceGlyphOffsetX, kSpotGlyphOffsetY, kSpotLabelOffset,
+    kFloat_2_Marker, kSpotEndpointSize;
+extern const float kFloat_NegPi_Spot, kFloat_Pi_Spot, kSpotWorldUnitsPerYard, kSpotRangeJitterFraction,
+    kFloat_TwoPi_Spot, kFloat_0_5_Marker, kSpotComparisonEpsilon, kFloat_neg1_U800EFEAC;
+// Reference values the blends are compared with: all three are 1, 1 and 0.
 extern float g_spotPositionBlendReference, g_spotArrowPositionBlendReference, g_spotHeightReference;
-// Packed CP932/ASCII pool; field sizes preserve the original byte offsets.
+
+// The strings the actor loads. The field sizes give the original byte offsets.
 struct SpotIndicatorStrings {
     char taskName[9];
     char distanceFont[15];
@@ -71,192 +66,65 @@ struct SpotIndicatorStrings {
     char slopeBitmap[11];
     char targetHoleBitmap[22];
     char scoreTargetBitmap[18];
-    char leftControlAction[9];
-    char rightControlAction[9];
-    char hideAction[5];
-    char distanceFormat[6];
+    char leftControlAction[9];  // "LCONTROL"
+    char rightControlAction[9]; // "RCONTROL"
+    char hideAction[5];         // "HIDE"
+    char distanceFormat[6];     // "%.0fy"
     char padding[5];
 };
 typedef char SpotStringPoolSize[(sizeof(SpotIndicatorStrings) == 0xF8) ? 1 : -1];
 typedef char SpotHideStringOffset[((int)&((SpotIndicatorStrings*)0)->hideAction == 0xE8) ? 1 : -1];
 extern const SpotIndicatorStrings spotIndicatorStrings;
-extern const char* const s_spotPlayerMarkerBitmapNames[9]; // Player/COM marker bitmap names.
+// The bitmap names of the nine marker textures.
+struct TextureNameList {
+    const char* names[CSpot::kTextureCount];
+};
+extern const TextureNameList s_spotPlayerMarkerBitmapNames;
 extern void* g_sceneManager;
 extern char __vt__5CSpot[];
 
+} // extern "C"
+
+#define kZero kFloat_0_spot
+#define kOne kFloat_1_spot
+#define kPi kFloat_Pi_Spot
+#define kTwoPi kFloat_TwoPi_Spot
+
 static const unsigned int kFloatSignBit = 0x80000000U;
 
-enum { kSpotTextureCount = 9, kSpotTextureBindingBytes = 0x28,
-       kSpotPreloadResourceKind = 5, kSpotActorSkipFlags = 0x1400,
-       kTutorialScoreTargetStageLimit = 6, kRefreshTargetFlag = 1,
-       kPuttingClubKind = 3 };
-struct SpotTextureBinding { char storage[kSpotTextureBindingBytes]; };
-struct SpotScreenRecord { char storage[0x38]; };
-
-// Complete local construction view. Shared named fields also use CSpot's checked layout.
-struct SpotState {
-    void* vtable;
-    int reserved04;
-    int displayPriority;
-    char reserved0C[0x0C];
-    void* baseVtable;
-    void* distanceText;
-    void* playerNumberText;
-    char position[0x0C];
-    float previousPositionX;
-    char reserved34[0x14];
-    float heading;
-    float positionBlend;
-    char motionOffset[0x0C];
-    char randomOffset[0x0C];
-    char targetPosition[0x0C];
-    float targetHeightOffset;
-    int groundHitIndex;
-    float rotationPhase;
-    unsigned char enabled;
-    char reserved81[3];
-    float arrowWidth;
-    float endpointSize;
-    void* clubRangeInfo;
-    char markerColor[4];
-    float labelWidthOffset;
-    float labelHeightOffset;
-    void* indicatorBitmap;
-    void* fallingBitmap;
-    void* slopeBitmap;
-    void* targetHoleBitmap;
-    float pulsePhase;
-    char arrowProgress[4];
-    float arrowBlend;
-    float arrowBlendDirection;
-    void* validTargetOverlay;
-    void* invalidTargetOverlay;
-    void* arrowOverlay;
-    void* playerMarkerOverlay;
-    void* auxiliaryMarker;
-    SpotTextureBinding textureBindings[kSpotTextureCount];
-    float markerHeading;
-    void* scoreTargetBitmap;
-    void* markerScreenLink;
-    void* ballScreenLink;
-    void* fourthScreenLink;
-    void* thirdScreenLink;
-    int screenRecordCount;
-    SpotScreenRecord screenRecords[4];
-    unsigned char targetDirty;
-    char reserved335[7];
-    void* markerVertices;
-    unsigned char playerMarkersVisible;
-    char reserved341[3];
-    int messageValueAtLoad;
-    char reserved348[0x14];
-    unsigned char reserved35C;
-    char pad35D[3];
-    float reserved360;
-    float reserved364;
-    float reserved368;
+enum {
+    kPreloadResourceKind = 5,
+    kActorSkipFlags = 0x1400,
+    kTutorialScoreTargetStageLimit = 6,
+    kRefreshTargetFlag = 1,
+    kPuttingClubKind = 3,
+    kTaskVtblOffset = 0x3C // offset of the second interface's vtable inside __vt__5CSpot
 };
 
-struct SpotMessageState { char precedingFields[0x10]; int messageValue; };
-struct SelectedClubState { char precedingFields[0xA]; unsigned char kind; };
+// Fields of other classes that this file reads. They belong in those classes'
+// headers once those exist.
+struct ChatMessageState {
+    char pad_00[0x10];
+    int messageValue; // 0x10
+};
+struct SelectedClubState {
+    char pad_00[0xA];
+    unsigned char kind; // 0x0A
+};
 struct ShotMarkerParameters {
-    char precedingFields[4];
-    SelectedClubState* selectedClub;
-    char precedingFlags[0x44];
-    unsigned int flags;
-    char precedingHeight[0x20];
-    float markerHeightOffset;
-};
-typedef char SpotStateTextureOffset[((int)&((SpotState*)0)->textureBindings == 0xD0) ? 1 : -1];
-typedef char SpotStateScreenOffset[((int)&((SpotState*)0)->screenRecords == 0x254) ? 1 : -1];
-typedef char SpotStateDirtyOffset[((int)&((SpotState*)0)->targetDirty == 0x334) ? 1 : -1];
-
-struct ClubRangeInfoStorage {
-    char storage[0x24];
-    // Construct the marker's owned club-range info object in its original storage.
-    ClubRangeInfoStorage() { __ct__14CClubRangeInfoFv(this); }
+    char pad_00[4];
+    SelectedClubState* selectedClub; // 0x04
+    char pad_08[0x44];
+    unsigned int flags; // 0x4C
+    char pad_50[0x20];
+    float markerHeightOffset; // 0x70
 };
 
-struct DebugTextStorage {
-    char storage[0x124];
-    // Construct a marker debug label in its original storage.
-    DebugTextStorage() { DebugText_Init(this); }
-};
-
-struct TextureBindingLoader {
+// The nine marker textures are driven through their own vtables.
+struct TextureBindingVtbl {
     virtual void v0();
     virtual void bindTexture(void*);
 };
-
-// Create glyph atlases, marker overlays, nine texture bindings, and target bitmaps.
-void CSpot_OnLoad(SpotState* self) {
-    void* clubRange = new ClubRangeInfoStorage();
-    AsCSpot(self)->clubRangeInfo = clubRange;
-    void* distanceLabel = new DebugTextStorage();
-    AsCSpot(self)->distanceText = distanceLabel;
-    DebugText_LoadGlyphAtlas(distanceLabel, (spotIndicatorStrings.distanceFont), kSpotDistanceGlyphOffsetX, kSpotGlyphOffsetY, 0x10, 0x10, spotIndicatorStrings.distanceGlyphs);
-    void* playerLabel = new DebugTextStorage();
-    AsCSpot(self)->playerNumberText = playerLabel;
-    DebugText_LoadGlyphAtlas(playerLabel, spotIndicatorStrings.playerNumberFont, kFloat_0_spot, kSpotGlyphOffsetY, 0x20, 0x10, spotIndicatorStrings.playerNumberGlyphs);
-    AsCSpot(self)->validTargetOverlay = WOverlay_Create((void*)g_resourceManager, spotIndicatorStrings.validTargetOverlay, 0);
-    AsCSpot(self)->invalidTargetOverlay = WOverlay_Create((void*)g_resourceManager, spotIndicatorStrings.invalidTargetOverlay, 0);
-    AsCSpot(self)->arrowOverlay = WOverlay_Create((void*)g_resourceManager, spotIndicatorStrings.arrowOverlay, 0);
-    AsCSpot(self)->playerMarkerOverlay = WOverlay_Create((void*)g_resourceManager, spotIndicatorStrings.playerMarkerOverlay, 0);
-    void* textureNames[kSpotTextureCount];
-    { const char* const* source = s_spotPlayerMarkerBitmapNames; for (int k = 0; k < kSpotTextureCount; ++k) textureNames[k] = (void*)source[k]; }
-    SpotTextureBinding* binding = self->textureBindings;
-    for (int i = 0; i < kSpotTextureCount; ++i, ++binding) {
-        ((TextureBindingLoader*)binding)->bindTexture(textureNames[i]);
-    }
-    AsCSpot(self)->indicatorBitmap = ResourceManager_LoadBitmap((void*)g_resourceManager, spotIndicatorStrings.indicatorBitmap, 0, 0, 0);
-    AsCSpot(self)->fallingBitmap = ResourceManager_LoadBitmap((void*)g_resourceManager, spotIndicatorStrings.fallingBitmap, 0, 0, 0);
-    AsCSpot(self)->slopeBitmap = ResourceManager_LoadBitmap((void*)g_resourceManager, spotIndicatorStrings.slopeBitmap, 0, 0, 0);
-    AsCSpot(self)->targetHolePositionBitmap = ResourceManager_LoadBitmap((void*)g_resourceManager, spotIndicatorStrings.targetHoleBitmap, 0, 0, 0);
-    if (((CGolfDoc*)g_sharedDoc->golfDoc)->tutorialStage /* 0x98 */ < kTutorialScoreTargetStageLimit)
-        AsCSpot(self)->scoreTargetBitmap = ResourceManager_LoadBitmap((void*)g_resourceManager, spotIndicatorStrings.scoreTargetBitmap, 0, 0, 0);
-    self->messageValueAtLoad = ((SpotMessageState*)g_chatMsg)->messageValue;
-}
-
-// Reset marker animation and seed a random horizontal offset scaled by shot range.
-void CSpot_OnInit(SpotState* self) {
-    float tmp[3];
-    float pos[3];
-    self->groundHitIndex = 0;
-    self->heading = kFloat_0_spot;
-    self->rotationPhase = kFloat_0_spot;
-    Vec3_Zero(AsCSpot(self)->position /* 0x24 */);
-    Vec3_Zero(AsCSpot(self)->targetPosition /* 0x68 */);
-    Vec3_Zero(AsCSpot(self)->previousPosition /* 0x30 */);
-    self->positionBlend = kFloat_1_spot;
-    self->enabled = 1;
-    self->arrowWidth = kFloat_2_Marker;
-    self->endpointSize = kSpotEndpointSize;
-    self->labelWidthOffset = kSpotLabelOffset;
-    self->labelHeightOffset = kSpotLabelOffset;
-    self->targetHeightOffset = kFloat_0_spot;
-    self->targetDirty = 1;
-    self->pulsePhase = kFloat_0_spot;
-    AsCSpot(self)->markerHeading = kFloat_0_spot;
-    self->arrowBlend = kFloat_0_spot;
-    self->arrowBlendDirection = kFloat_1_spot;
-    Vec3_Zero(self->motionOffset);
-    float angle = Random_RangeFloat(-1, kFloat_NegPi_Spot, kFloat_Pi_Spot);
-    float sine = Math_SinApprox(angle);
-    pos[0] = Math_CosApprox(angle);
-    pos[1] = kFloat_0_spot;
-    pos[2] = sine;
-    float shotRange = GolfParameter_ResolveFloat(InstanceTable_Get(), 0);
-    float jitterRange = kSpotWorldUnitsPerYard * shotRange;
-    jitterRange = kSpotRangeJitterFraction * jitterRange;
-    float scale = Random_RangeFloat(-1, kFloat_0_spot, jitterRange);
-    __ml__FfRC7WVector(tmp, pos, scale);
-    __as__7WVectorFRC7WVector(self->randomOffset, tmp);
-}
-
-struct OwnedSpotObject {
-    virtual void destroy(int);
-};
-
 struct TextureBindingReadiness {
     virtual void nh0();
     virtual void nh1();
@@ -264,275 +132,339 @@ struct TextureBindingReadiness {
     virtual void nh3();
     virtual int isReady();
 };
+// A vector copied as three raw words, as the original does here.
+struct VectorWords {
+    unsigned int x, y, z;
+};
+struct OwnedSpotObject {
+    virtual void destroy(int);
+};
 
-// Keep each global/slot test separate: release calls may change manager state.
-// Delete an overlay through the resource manager and clear its owning actor slot.
-inline void DeleteSpotOverlay(void*& overlay) {
+// Storage for objects the actor allocates, built by the original constructors.
+struct DebugTextStorage {
+    char storage[0x124];
+    DebugTextStorage() {
+        DebugText_Init(this);
+    }
+};
+
+static inline CGolfDoc* GolfDoc() {
+    return (CGolfDoc*)g_sharedDoc->golfDoc;
+}
+
+static inline WVector& AsVector(float* v) {
+    return *(WVector*)v;
+}
+
+// Construct the actor with no resources loaded.
+CSpot::CSpot() {
+    __ct__18NativeBase80201D18Fv(this);
+    vtbl = __vt__5CSpot;
+    taskVtbl = __vt__5CSpot + kTaskVtblOffset;
+    distanceText = 0;
+    playerNumberText = 0;
+    clubRangeInfo = 0;
+    indicatorBitmap = 0;
+    fallingBitmap = 0;
+    slopeBitmap = 0;
+    targetHolePositionBitmap = 0;
+    arrowOverlay = 0;
+    playerMarkerOverlay = 0;
+    auxiliaryMarker = 0;
+    __construct_array(textureBindings, __ct__6CBpTexFv, __dt__6CBpTexFv, sizeof(SpotTextureBinding), kTextureCount);
+    scoreTargetBitmap = 0;
+    markerVertices = 0;
+    messageValueAtLoad = 0;
+    IActor_AddSkipFlags(this, kActorSkipFlags);
+    markerScreenLink = &markerScreen;
+    unk_08 = 1;
+    ballScreenLink = &ballScreen;
+    fourthScreenLink = fourthScreenRecord;
+    thirdScreenLink = thirdScreenRecord;
+    screenRecordCount = 0;
+    validTargetOverlay = 0;
+    invalidTargetOverlay = 0;
+}
+
+// Show the other players' markers and queue the second interface for preloading.
+void CSpot::OnPreLoadInit() {
+    playerMarkersVisible = 1;
+    void* taskInterface = this;
+    if (this != 0) {
+        taskInterface = &taskVtbl;
+    }
+    ResourcePreloadQueue_AddRequest(g_sceneManager, kPreloadResourceKind, 0, kOne, taskInterface, kZero,
+                                    spotIndicatorStrings.taskName, 0, 0, 0);
+}
+
+// Delete an overlay through the resource manager and clear its slot.
+// Each global and slot test stays separate: the release calls may change the manager.
+inline void DeleteOverlay(void*& overlay) {
     if (g_resourceManager && overlay) {
         Object_DeleteVirtual((void*)g_resourceManager, overlay);
         overlay = 0;
     }
 }
-// Release a bitmap resource handle and clear the actor slot when the manager is live.
-inline void ReleaseSpotBitmap(void*& bitmap) {
+// Release a bitmap through the resource manager and clear its slot.
+inline void ReleaseBitmap(void*& bitmap) {
     if (g_resourceManager && bitmap) {
         ResourceManager_ReleaseId((void*)g_resourceManager, bitmap);
         bitmap = 0;
     }
 }
 
-// Release marker overlays, bitmap handles, labels, and the optional vertex array.
-void CSpot_OnDestroy(SpotState* self) {
-    DeleteSpotOverlay(self->arrowOverlay);
-    DeleteSpotOverlay(self->validTargetOverlay);
-    DeleteSpotOverlay(self->invalidTargetOverlay);
-    ReleaseSpotBitmap(self->indicatorBitmap);
-    ReleaseSpotBitmap(self->fallingBitmap);
-    ReleaseSpotBitmap(self->slopeBitmap);
-    DeleteSpotOverlay(self->playerMarkerOverlay);
-    ReleaseSpotBitmap(self->scoreTargetBitmap);
-    ReleaseSpotBitmap(self->targetHoleBitmap);
-    if (self->auxiliaryMarker) { OverlayPlayer_Destroy((void*)self->auxiliaryMarker, 1); self->auxiliaryMarker = 0; }
-    if (self->playerNumberText) { ResourceHandle_Dtor((void*)self->playerNumberText, 1); self->playerNumberText = 0; }
-    if (self->distanceText) { ResourceHandle_Dtor((void*)self->distanceText, 1); self->distanceText = 0; }
-    if (self->clubRangeInfo) {
-        if (self->clubRangeInfo) {
-            void* object = (void*)self->clubRangeInfo;
+// Release the overlays, bitmaps, labels, club range info and vertex array.
+void CSpot::OnDestroy() {
+    DeleteOverlay(arrowOverlay);
+    DeleteOverlay(validTargetOverlay);
+    DeleteOverlay(invalidTargetOverlay);
+    ReleaseBitmap(indicatorBitmap);
+    ReleaseBitmap(fallingBitmap);
+    ReleaseBitmap(slopeBitmap);
+    DeleteOverlay(playerMarkerOverlay);
+    ReleaseBitmap(scoreTargetBitmap);
+    ReleaseBitmap(targetHolePositionBitmap);
+    if (auxiliaryMarker) {
+        OverlayPlayer_Destroy(auxiliaryMarker, 1);
+        auxiliaryMarker = 0;
+    }
+    if (playerNumberText) {
+        ResourceHandle_Dtor(playerNumberText, 1);
+        playerNumberText = 0;
+    }
+    if (distanceText) {
+        ResourceHandle_Dtor(distanceText, 1);
+        distanceText = 0;
+    }
+    if (clubRangeInfo) {
+        if (clubRangeInfo) {
+            void* object = clubRangeInfo;
             ((OwnedSpotObject*)object)->destroy(1);
         }
-        self->clubRangeInfo = 0;
+        clubRangeInfo = 0;
     }
-    if (self->markerVertices) {
-        if (self->markerVertices)
-            __dla__FPv((char*)self->markerVertices - 0x10);
-        self->markerVertices = 0;
+    if (markerVertices) {
+        if (markerVertices) {
+            __dla__FPv((char*)markerVertices - 0x10);
+        }
+        markerVertices = 0;
     }
 }
 
-// Show player markers and queue the secondary task interface for resource preloading.
-void CSpot_OnPreLoadInit(void* arg) {
-    SpotState* p = (SpotState*)arg;
-    AsCSpot(p)->playerMarkersVisible = 1;
-    void* adjusted = p;
-    if (p != 0) adjusted = &p->baseVtable;
-    ResourcePreloadQueue_AddRequest(g_sceneManager, kSpotPreloadResourceKind, 0, kFloat_1_spot, adjusted, kFloat_0_spot, spotIndicatorStrings.taskName, 0, 0, 0);
-}
+// Destroy the club range info; the deleting flag frees the object.
+CClubRangeInfo::~CClubRangeInfo() {}
 
-// Destroy the club-range info base and optionally free its allocation.
-void* CClubRangeInfo_dtor(void* ptr, int shouldDelete) {
-    if (ptr) {
-        __dt__9CInfoBaseFv(ptr, 0);
-        if (shouldDelete > 0)
-            __dl__FPv(ptr);
+// Create the glyph atlases, overlays, texture bindings and bitmaps.
+void CSpot::OnLoad() {
+    void* clubRange = new CClubRangeInfo();
+    clubRangeInfo = clubRange;
+    void* distanceLabel = new DebugTextStorage();
+    distanceText = distanceLabel;
+    DebugText_LoadGlyphAtlas(distanceLabel, (spotIndicatorStrings.distanceFont), kSpotDistanceGlyphOffsetX,
+                             kSpotGlyphOffsetY, 0x10, 0x10, spotIndicatorStrings.distanceGlyphs);
+    void* playerLabel = new DebugTextStorage();
+    playerNumberText = playerLabel;
+    DebugText_LoadGlyphAtlas(playerLabel, spotIndicatorStrings.playerNumberFont, kZero, kSpotGlyphOffsetY, 0x20, 0x10,
+                             spotIndicatorStrings.playerNumberGlyphs);
+    validTargetOverlay = WOverlay_Create((void*)g_resourceManager, spotIndicatorStrings.validTargetOverlay, 0);
+    invalidTargetOverlay = WOverlay_Create((void*)g_resourceManager, spotIndicatorStrings.invalidTargetOverlay, 0);
+    arrowOverlay = WOverlay_Create((void*)g_resourceManager, spotIndicatorStrings.arrowOverlay, 0);
+    playerMarkerOverlay = WOverlay_Create((void*)g_resourceManager, spotIndicatorStrings.playerMarkerOverlay, 0);
+    TextureNameList textureNames = s_spotPlayerMarkerBitmapNames;
+    SpotTextureBinding* binding = textureBindings;
+    for (int i = 0; i < kTextureCount; ++i, ++binding) {
+        ((TextureBindingVtbl*)binding)->bindTexture((void*)textureNames.names[i]);
     }
-    return ptr;
+    indicatorBitmap =
+        ResourceManager_LoadBitmap((void*)g_resourceManager, spotIndicatorStrings.indicatorBitmap, 0, 0, 0);
+    fallingBitmap = ResourceManager_LoadBitmap((void*)g_resourceManager, spotIndicatorStrings.fallingBitmap, 0, 0, 0);
+    slopeBitmap = ResourceManager_LoadBitmap((void*)g_resourceManager, spotIndicatorStrings.slopeBitmap, 0, 0, 0);
+    targetHolePositionBitmap =
+        ResourceManager_LoadBitmap((void*)g_resourceManager, spotIndicatorStrings.targetHoleBitmap, 0, 0, 0);
+    if (GolfDoc()->tutorialStage < kTutorialScoreTargetStageLimit) {
+        scoreTargetBitmap =
+            ResourceManager_LoadBitmap((void*)g_resourceManager, spotIndicatorStrings.scoreTargetBitmap, 0, 0, 0);
+    }
+    messageValueAtLoad = ((ChatMessageState*)g_chatMsg)->messageValue;
 }
 
-// Construct the actor, texture bindings, and four projected-screen record links.
-SpotState* CSpot_Ctor(SpotState* self) {
-    __ct__18NativeBase80201D18Fv(self);
-    self->vtable = __vt__5CSpot;
-    self->baseVtable = __vt__5CSpot + 0x3c;
-    self->distanceText = 0;
-    self->playerNumberText = 0;
-    self->clubRangeInfo = 0;
-    self->indicatorBitmap = 0;
-    self->fallingBitmap = 0;
-    self->slopeBitmap = 0;
-    self->targetHoleBitmap = 0;
-    self->arrowOverlay = 0;
-    self->playerMarkerOverlay = 0;
-    self->auxiliaryMarker = 0;
-    __construct_array(self->textureBindings, CBpTex_Init, CBpTex_dtor, sizeof(SpotTextureBinding), kSpotTextureCount);
-    self->scoreTargetBitmap = 0;
-    self->markerVertices = 0;
-    self->messageValueAtLoad = 0;
-    IActor_AddSkipFlags(self, kSpotActorSkipFlags);
-    self->markerScreenLink = &self->screenRecords[0];
-    self->displayPriority = 1;
-    self->ballScreenLink = &self->screenRecords[1];
-    self->fourthScreenLink = &self->screenRecords[3];
-    self->thirdScreenLink = &self->screenRecords[2];
-    self->screenRecordCount = 0;
-    self->validTargetOverlay = 0;
-    self->invalidTargetOverlay = 0;
-    return self;
+// Reset the marker's animation state and pick a random horizontal offset,
+// scaled by a fraction of the shot range.
+void CSpot::OnInit() {
+    groundHitIndex = 0;
+    heading = kZero;
+    rotationPhase = kZero;
+    Vec3_Zero(position);
+    Vec3_Zero(targetPosition);
+    Vec3_Zero(previousPosition);
+    positionBlend = kOne;
+    enabled = 1;
+    arrowWidth = kFloat_2_Marker;
+    endpointSize = kSpotEndpointSize;
+    labelWidthOffset = kSpotLabelOffset;
+    labelHeightOffset = kSpotLabelOffset;
+    targetHeightOffset = kZero;
+    targetDirty = 1;
+    pulsePhase = kZero;
+    markerHeading = kZero;
+    arrowBlend = kZero;
+    arrowBlendDirection = kOne;
+    Vec3_Zero(&unk_50);
+    // The product is built in a named local, the way the original does; the
+    // operator form puts its temporary in a different stack slot.
+    float scaled[3];
+    float angle = Random_RangeFloat(-1, kFloat_NegPi_Spot, kPi);
+    float sine = Math_SinApprox(angle);
+    float direction[3];
+    direction[0] = Math_CosApprox(angle);
+    direction[1] = kZero;
+    direction[2] = sine;
+    float shotRange = GolfParameter_ResolveFloat(InstanceTable_Get(), 0);
+    float jitterRange = kSpotWorldUnitsPerYard * shotRange;
+    jitterRange = kSpotRangeJitterFraction * jitterRange;
+    float scale = Random_RangeFloat(-1, kZero, jitterRange);
+    __ml__FfRC7WVector(scaled, direction, scale);
+    initialRandomOffset = AsVector(scaled);
 }
 
-// Wait for textures, handle the HIDE action, and animate/recompute the shot landing marker.
-void CSpot_OnProcess(SpotState* self, float deltaTime) {
-    float animationStep = deltaTime;
+// Whether two values are within the comparison tolerance of each other. The
+// absolute difference is taken by testing the sign bit.
+static inline bool IsNear(float reference, float value) {
+    float difference = value - reference;
+    float magnitude = (*(unsigned int*)&difference & kFloatSignBit) ? -difference : difference;
+    return magnitude < kSpotComparisonEpsilon;
+}
+
+// Wait for the textures, handle the HIDE action, and animate the marker: advance
+// its phases, find the ground point under the aim, and sweep the arrow.
+void CSpot::OnProcess(float deltaSeconds) {
+    float animationStep = deltaSeconds;
+    SpotTextureBinding* binding = textureBindings;
     int allTexturesReady = 1;
-    SpotTextureBinding* binding = self->textureBindings;
-    for (int i = 0; i < kSpotTextureCount; ++i) {
+    for (int i = 0; i < kTextureCount; ++i) {
         int bindingReady = ((TextureBindingReadiness*)binding)->isReady();
         allTexturesReady = allTexturesReady & bindingReady;
         ++binding;
     }
-    // Phase 1: all texture bindings must be ready before input or marker animation.
+    // Nothing happens until every texture is ready.
     if (allTexturesReady) {
-
-        // Phase 2: reset placement, tutorial heading, and input visibility.
-        self->targetHeightOffset = kFloat_0_spot;
-        __as__7WVectorFRC7WVector(AsCSpot(self)->position /* 0x24 */, AsCSpot(self)->targetPosition /* 0x68 */);
+        // Reset the placement, turn the tutorial marker, and check the input.
+        targetHeightOffset = kZero;
+        AsVector(position) = AsVector(targetPosition);
         {
-            void* p = InstanceTable_Get();
-            ((ShotMarkerParameters*)p)->markerHeightOffset = kFloat_0_spot;
+            void* parameters = InstanceTable_Get();
+            ((ShotMarkerParameters*)parameters)->markerHeightOffset = kZero;
         }
         {
-            void* g = (void*)g_sharedDoc;
-            void* obj = (void*)((CSharedDoc*)g)->golfDoc;
-            unsigned char b = ((CGolfDoc*)obj)->tutorialMarkerVisible /* 0xB8 */;
-            if (b) {
-                float f1 = AsCSpot(self)->markerHeading;
-                f1 = kFloat_Pi_Spot * animationStep + f1;
-                if (f1 > kFloat_TwoPi_Spot) f1 = f1 - kFloat_TwoPi_Spot;
-                AsCSpot(self)->markerHeading = f1;
+            unsigned char tutorialMarkerVisible = GolfDoc()->tutorialMarkerVisible;
+            if (tutorialMarkerVisible) {
+                markerHeading = kPi * animationStep + markerHeading;
+                if (markerHeading > kTwoPi) {
+                    markerHeading = markerHeading - kTwoPi;
+                }
             }
         }
         {
-            void* p = InstanceTable_Get();
-            if (((ShotMarkerParameters*)p)->flags & kRefreshTargetFlag) self->targetDirty = 1;
+            void* parameters = InstanceTable_Get();
+            if (((ShotMarkerParameters*)parameters)->flags & kRefreshTargetFlag) {
+                targetDirty = 1;
+            }
         }
         {
-            const SpotIndicatorStrings* actions = &spotIndicatorStrings;
-            // HIDE toggles player markers only when neither control action is held.
-            int r = Pointer_IsActionActive((void*)g_inputPointer, (void*)actions->leftControlAction, 1);
-            if (!r) {
-                r = Pointer_IsActionActive((void*)g_inputPointer, (void*)actions->rightControlAction, 1);
-                if (!r) {
-                    r = Pointer_GetRisingActionBits((void*)g_inputPointer, (void*)actions->hideAction, 1);
-                    if (r) {
-                        self->playerMarkersVisible = (self->playerMarkersVisible == 0) ? 1 : 0;
+            // HIDE toggles the other players' markers only when neither control action is held.
+            int held = Pointer_IsActionActive((void*)g_inputPointer, (void*)spotIndicatorStrings.leftControlAction, 1);
+            if (!held) {
+                held = Pointer_IsActionActive((void*)g_inputPointer, (void*)spotIndicatorStrings.rightControlAction, 1);
+                if (!held) {
+                    held =
+                        Pointer_GetRisingActionBits((void*)g_inputPointer, (void*)spotIndicatorStrings.hideAction, 1);
+                    if (held) {
+                        playerMarkersVisible = !playerMarkersVisible;
                     }
                 }
             }
         }
-        // Phase 3: advance marker phases, refresh ground placement, then animate lie feedback.
-        if (self->enabled) {
-
+        // Advance the phases, then refresh the ground point and animate the arrow.
+        if (enabled) {
             {
-                float f1 = self->rotationPhase;
-                f1 = kFloat_Pi_Spot * animationStep + f1;
-                self->rotationPhase = f1;
-                if (f1 > kFloat_TwoPi_Spot) {
-                    self->rotationPhase = f1 - kFloat_TwoPi_Spot;
+                rotationPhase = kPi * animationStep + rotationPhase;
+                if (rotationPhase > kTwoPi) {
+                    rotationPhase = rotationPhase - kTwoPi;
                 }
             }
             {
-                float f1 = self->pulsePhase;
-                f1 = kFloat_0_5_Marker * animationStep + f1;
-                self->pulsePhase = f1;
-                if (f1 > kFloat_1_spot) {
-                    self->pulsePhase = kFloat_0_spot;
+                pulsePhase = kFloat_0_5_Marker * animationStep + pulsePhase;
+                if (pulsePhase > kOne) {
+                    pulsePhase = kZero;
                 }
             }
-            // Phase 4: resolve ball + heading-rotated range to a world-space ground point.
-            if (self->targetDirty) {
-                float f1 = self->positionBlend;
-                float f0 = g_spotPositionBlendReference;
-                f1 = f1 - f0;
-                float af1 = f1;
-                unsigned int u = *(unsigned int*)&af1;
-                if (u & kFloatSignBit) af1 = -af1;
-                volatile bool nearTarget = af1 < kSpotComparisonEpsilon;
+            // Place the target at the ball plus the aim range turned by the heading, on the ground.
+            if (targetDirty) {
+                bool nearTarget = IsNear(g_spotPositionBlendReference, positionBlend);
                 if (nearTarget) {
-                    void* p = InstanceTable_Get();
-                    if (((ShotMarkerParameters*)p)->flags & kRefreshTargetFlag) self->pulsePhase = kFloat_0_spot;
-                    self->targetDirty = 0;
-                    self->groundHitIndex = 0;
-                    float headingMatrix[16];
-                    Matrix_SetAxisRotation(headingMatrix, AsCSpot(self)->heading, 1);
-                    void* p2 = InstanceTable_Get();
-                    float rangeYards = GolfParameter_ResolveFloat(p2, 0);
+                    void* parameters = InstanceTable_Get();
+                    if (((ShotMarkerParameters*)parameters)->flags & kRefreshTargetFlag) {
+                        pulsePhase = kZero;
+                    }
+                    targetDirty = 0;
+                    groundHitIndex = 0;
+                    float headingMatrix[12];
+                    VectorWords groundQueryPosition;
+                    WVector groundPosition;
+                    Matrix_SetAxisRotation(headingMatrix, heading, 1);
+                    void* rangeParameters = InstanceTable_Get();
+                    float rangeYards = GolfParameter_ResolveFloat(rangeParameters, 0);
                     float rangeWorldUnits = kSpotWorldUnitsPerYard * rangeYards;
-                    float rangeOffset[3];
-                    __ml__FfRC7WVector(rangeOffset, headingMatrix + 6, rangeWorldUnits);
-                    void* r = GolfBall__Fv();
-                    float ballPlusRange[3];
-                    __pl__FRC7WVectorRC7WVector(ballPlusRange, r, rangeOffset);
-                    float targetCopy[3];
-                    __as__7WVectorFRC7WVector(targetCopy, ballPlusRange);
-                    // World-space landing candidate: ball + rotated range; copy for the ground-query ABI.
-                    float groundQueryPosition[3];
-                    groundQueryPosition[0] = targetCopy[0];
-                    groundQueryPosition[1] = targetCopy[1];
-                    groundQueryPosition[2] = targetCopy[2];
-                    void* m = CQuadTree_GetInstance();
-                    float groundPosition[3];
-                    GetGroundPoint__9CQuadTreeF7WVectorbPib(groundPosition, m, groundQueryPosition, 1, &AsCSpot(self)->groundHitIndex /* 0x78 */, 1);
-                    __as__7WVectorFRC7WVector(AsCSpot(self)->targetPosition /* 0x68 */, groundPosition);
+                    WVector rangeOffset = rangeWorldUnits * *(WVector*)(headingMatrix + 6);
+                    WVector* ball = (WVector*)GolfBall__Fv();
+                    WVector ballPlusRange = *ball + rangeOffset;
+                    WVector targetCopy;
+                    targetCopy = ballPlusRange;
+                    // The ground query takes the vector as three raw words.
+                    groundQueryPosition = *(VectorWords*)&targetCopy;
+                    void* quadTree = CQuadTree_GetInstance();
+                    GetGroundPoint__9CQuadTreeF7WVectorbPib(&groundPosition, quadTree, &groundQueryPosition, 1,
+                                                            &groundHitIndex, 1);
+                    AsVector(targetPosition) = groundPosition;
                     {
-                        float f1 = self->targetHeightOffset;
-                        float f0 = g_spotHeightReference;
-                        f1 = f1 - f0;
-                        float af = f1;
-                        unsigned int uu = *(unsigned int*)&af;
-                        if (uu & kFloatSignBit) af = -af;
-                        volatile bool nearGround = af < kSpotComparisonEpsilon;
+                        bool nearGround = IsNear(g_spotHeightReference, targetHeightOffset);
                         if (nearGround) {
-                            // Snap to the ground target when the height offset is within tolerance.
-                            __as__7WVectorFRC7WVector(AsCSpot(self)->position /* 0x24 */, AsCSpot(self)->targetPosition /* 0x68 */);
+                            // Snap the marker to the target when the height offset is within tolerance.
+                            AsVector(position) = AsVector(targetPosition);
                         }
                     }
                 }
             }
 
             {
-                void* p = InstanceTable_Get();
-                // Phase 5: animate the arrow with the current club and ground lie.
-                SelectedClubState* q = ((ShotMarkerParameters*)p)->selectedClub;
-                unsigned char clubKind = q->kind;
-                if (clubKind != kPuttingClubKind) {
-                    float f1 = self->positionBlend;
-                    float f0 = g_spotArrowPositionBlendReference;
-                    f1 = f1 - f0;
-                    float af1 = f1;
-                    unsigned int u = *(unsigned int*)&af1;
-                    if (u & kFloatSignBit) af1 = -af1;
-                    volatile bool nearDirection = af1 < kSpotComparisonEpsilon;
-                    if (!nearDirection) {
-                        AsCSpot(self)->arrowProgress = kFloat_1_spot;
-                    } else {
-                        float f2 = kFloat_2_Marker;
-                        float blendDirection = self->arrowBlendDirection;
-                        float previousBlend = self->arrowBlend;
-                        f2 = f2 * blendDirection;
-                        float one = kFloat_1_spot;
-                        f2 = f2 * animationStep + previousBlend;
-                        self->arrowBlend = f2;
-                        if (f2 > one) {
-                            self->arrowBlend = one;
-                            self->arrowBlendDirection = kFloat_neg1_U800EFEAC;
-                        } else {
-                            float zero = kFloat_0_spot;
-                            if (zero > f2) {
-                                self->arrowBlend = zero;
-                                self->arrowBlendDirection = one;
-                            }
-                        }
-                        void* m = CQuadTree_GetInstance();
-                        float lowerLieScale = CQuadTree_GetMinPowerOnGround(m);
-                        float blend = self->arrowBlend;
-                        float unitWeight = kFloat_1_spot;
-                        // Visual sweep between the lower/upper lie scales with weight blend^2.
-                        // The triangular blend reverses at 0/1; squaring slows its lower-end sweep.
-                        // This sets marker arrow progress, not ball-flight physics; preserve FP order.
-                        float lowerWeight = unitWeight - blend * blend; // fnmsubs: 1 - blend^2
-                        float weightedLowerGround = lowerWeight * lowerLieScale;
-                        void* m2 = CQuadTree_GetInstance();
-                        float upperLieScale = CQuadTree_GetMaxPowerOnGround(m2);
-                        float blendForUpper = self->arrowBlend;
-                        AsCSpot(self)->arrowProgress = blendForUpper * blendForUpper * upperLieScale + weightedLowerGround;
+                void* parameters = InstanceTable_Get();
+                // Sweep the arrow, unless the club is a putter or the marker is still blending.
+                SelectedClubState* club = ((ShotMarkerParameters*)parameters)->selectedClub;
+                unsigned char clubKind = club->kind;
+                if (clubKind != kPuttingClubKind && IsNear(g_spotArrowPositionBlendReference, positionBlend)) {
+                    // The blend moves back and forth between 0 and 1 at kFloat_2_Marker per second.
+                    float rate = kFloat_2_Marker * arrowBlendDirection;
+                    float blend = rate * animationStep + arrowBlend;
+                    arrowBlend = blend;
+                    if (blend > kOne) {
+                        arrowBlend = kOne;
+                        arrowBlendDirection = kFloat_neg1_U800EFEAC;
+                    } else if (blend < kZero) {
+                        arrowBlend = kZero;
+                        arrowBlendDirection = kOne;
                     }
+                    // The arrow's position sweeps between the lower and upper lie scales with weight
+                    // blend squared. It only places the arrow; the ball flight is not affected.
+                    float lowerLieScale = ((CQuadTree*)CQuadTree_GetInstance())->GetMinPowerOnGround();
+                    float lowerWeight = kOne - arrowBlend * arrowBlend;
+                    float weightedLowerGround = lowerWeight * lowerLieScale;
+                    float upperLieScale = ((CQuadTree*)CQuadTree_GetInstance())->GetMaxPowerOnGround();
+                    float blendSquared = arrowBlend * arrowBlend;
+                    arrowProgress = blendSquared * upperLieScale + weightedLowerGround;
                 } else {
-                    AsCSpot(self)->arrowProgress = kFloat_1_spot;
+                    arrowProgress = kOne;
                 }
             }
-
         }
     }
-    return;
 }
-
-} // extern "C"

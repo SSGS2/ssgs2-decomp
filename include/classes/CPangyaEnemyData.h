@@ -1,4 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
 // The original vtable (__vt__16CPangyaEnemyData) and typeinfo stay data symbols.
 #ifndef CLASSES_CPANGYAENEMYDATA_H
 #define CLASSES_CPANGYAENEMYDATA_H
@@ -6,9 +5,10 @@
 // RTTI base class: CEcbCtl<STYPE_CENEMYDATA> (not declared here)
 class CPangyaEnemyData {
 public:
-    void* dataBuffer; // 0x0: CPangyaEnemyData_LoadSharedFile writes the loaded data buffer here
+    void* dataBuffer;  // 0x0: CPangyaEnemyData_LoadSharedFile writes the loaded data buffer here
     void* enemyVtable; // 0x4: CPangyaEnemyData_Init/dtor install __vt__16CPangyaEnemyData here
-    void* sharedFile; // 0x8: CPangyaEnemyData_LoadSharedFile stores SharedFile_Create result; destructor destroys handle
+    void*
+        sharedFile; // 0x8: CPangyaEnemyData_LoadSharedFile stores SharedFile_Create result; destructor destroys handle
 
     // Slots 1-44 all report a constant "valid" answer for this data object.
 
@@ -103,12 +103,18 @@ public:
     int vfunc_42();
     int vfunc_43();
     int vfunc_44();
+
+    void Init();
+    void LoadSharedFile();
+
+    ~CPangyaEnemyData();
 };
 
-#define CPANGYAENEMYDATA_OFF(f, o) typedef char CPangyaEnemyData_off_##f[((int)&((CPangyaEnemyData*)0)->f == (o)) ? 1 : -1]
+#define CPANGYAENEMYDATA_OFF(f, o) \
+    typedef char CPangyaEnemyData_off_##f[((int)&((CPangyaEnemyData*)0)->f == (o)) ? 1 : -1]
 CPANGYAENEMYDATA_OFF(dataBuffer, 0x0);
 CPANGYAENEMYDATA_OFF(enemyVtable, 0x4);
 CPANGYAENEMYDATA_OFF(sharedFile, 0x8);
 #undef CPANGYAENEMYDATA_OFF
 
-#endif  // CLASSES_CPANGYAENEMYDATA_H
+#endif // CLASSES_CPANGYAENEMYDATA_H

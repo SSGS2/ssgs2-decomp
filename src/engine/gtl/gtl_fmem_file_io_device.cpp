@@ -1,3 +1,7 @@
+// The FMEM file device's directory search handle: the file-name buffers and pattern it holds,
+// their growth and release, and the exception types used when they overflow or go out of range.
+
+#include "classes/GtlFileIoDeviceFMEM.h"
 #include <decomp/ct_member.h>
 typedef unsigned long new_size_t;
 struct FmemPathStringPool {
@@ -25,9 +29,6 @@ extern const char filePathUtilityStrings[];
 }
 }
 
-// Translation unit 0x8041B6A4-0x8041C290 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #pragma use_lmw_stmw on
 
 extern "C" {
@@ -49,7 +50,6 @@ void __dla__FPv(void*);
 int NANDReadDir(const char*, void*, unsigned int*);
 int NANDReadDirAsync(const char*, void*, unsigned int*, void*, void*);
 void NANDSetUserData(void*, void*);
-void gtl_CFileIoDeviceFMEM_DispatchNandCallback();
 void FileIOString_ReplaceRangeWithAllocator(void*, unsigned int, unsigned int, const char*, const char*, void*);
 void FileIOString_ReplaceRange(void*, unsigned int, unsigned int, const char*, const char*, void*);
 void FileIOString_dtor(void*, int);
@@ -64,7 +64,11 @@ extern char __vt__Q23std11logic_error[];
 extern char __vt__Q23std12length_error[];
 extern char __vt__Q23std12out_of_range[];
 extern char s_sharedCharDeleterVtable[], filePathUtilityStrings[], s_nandAsyncCommandBlock[];
-struct Link3Async { void* callback; void* buffer; unsigned int size; };
+struct Link3Async {
+    void* callback;
+    void* buffer;
+    unsigned int size;
+};
 extern Link3Async s_fmemAsyncOperation;
 
 // FindFirstFile's output uses the file layer's 0x140-byte find-data record.
@@ -88,15 +92,18 @@ enum FmemFindConstants {
 
 // Completion receives status, transient find-data, the search handle and borrowed user context.
 // gtl_file_io_nand_dir_listing.cpp passes an uninitialized find-data record on failure: inspect status first.
-typedef void* (*FmemFindCompletion)(void* status, FmemFindData*, void* handle, void* context);
 
 struct Link3SmallString {
     unsigned int flags, length;
     char* data;
     // Read the character count from the active inline/heap representation.
-    unsigned int size() const { return flags >> 31 ? length : *(const unsigned char*)this & 0x7f; }
+    unsigned int size() const {
+        return flags >> 31 ? length : *(const unsigned char*)this & 0x7f;
+    }
     // Borrow the active character storage until this string changes or is destroyed.
-    const char* text() const { return flags >> 31 ? data : (const char*)this + 1; }
+    const char* text() const {
+        return flags >> 31 ? data : (const char*)this + 1;
+    }
 };
 struct Link3FindHandle {
     void** vtable;
@@ -114,11 +121,20 @@ struct Link3Callback {
 struct Link3CharGuard {
     char* data;
     // Release a message array if exception construction has not transferred it.
-    ~Link3CharGuard() { if (data) __dla__FPv(data); }
+    ~Link3CharGuard() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
-struct Link3ErrorControl { void* table; int strong, weak; char* text; };
+struct Link3ErrorControl {
+    void* table;
+    int strong, weak;
+    char* text;
+};
 // Construct a foreign exception object in caller-provided aligned storage.
-void* operator new(new_size_t, void* p) { return p; }
+void* operator new(new_size_t, void* p) {
+    return p;
+}
 
 } // extern "C"
 
@@ -126,7 +142,9 @@ namespace std {
 struct exception {
     void* table;
     // Install the base exception table before the derived error table.
-    exception() { table = __vt__Q23std11logic_error; }
+    exception() {
+        table = __vt__Q23std11logic_error;
+    }
     ~exception();
 };
 struct length_error : exception {
@@ -148,7 +166,7 @@ struct out_of_range : exception {
 // Allocate an exception message and its shared ownership record with unwind cleanup.
 static void Link3MakeMessage(char*& message, void*& control, const char* text) {
     message = (char*)__nwa__FUl(strlen(text) + 1);
-    Link3CharGuard guard = { message };
+    Link3CharGuard guard = {message};
     Link3ErrorControl* owner = (Link3ErrorControl*)__nw__FUl(16);
     if (owner) {
         owner->strong = owner->weak = 1;
@@ -180,7 +198,8 @@ struct Link3HandleConstruction {
     bool asynchronous;
     // Unwind a partially constructed handle using its selected allocator path.
     ~Link3HandleConstruction() {
-        if (!handle) return;
+        if (!handle)
+            return;
         if (asynchronous) {
             FindHandleNames_dtor_8041C514(&handle->names, -1);
             FileIOString_dtor_8041F6F4(&handle->pattern, -1);
@@ -195,7 +214,8 @@ struct Link3CallbackConstruction {
     Link3Callback* object;
     // Unwind a completion object until its path and base are fully constructed.
     ~Link3CallbackConstruction() {
-        if (!object) return;
+        if (!object)
+            return;
         FileIOString_dtor_8041F6F4(&object->path, -1);
         FileIOCallback_dtor(object, 0);
         FileIO_Free(object);
@@ -204,9 +224,14 @@ struct Link3CallbackConstruction {
 struct Link3Name {
     Link3SmallString value;
     // Start with an empty inline directory-entry name.
-    Link3Name() { value.flags = value.length = 0; value.data = 0; }
+    Link3Name() {
+        value.flags = value.length = 0;
+        value.data = 0;
+    }
     // Release the temporary entry name's heap representation if present.
-    ~Link3Name() { FileIOString_dtor(&value, -1); }
+    ~Link3Name() {
+        FileIOString_dtor(&value, -1);
+    }
 };
 struct Link3ByteStorage {
     char* data;
@@ -216,30 +241,43 @@ struct Link3ByteStorage {
     // Start a replacement buffer that borrows the owner's capacity word.
     Link3ByteStorage(unsigned int* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Release untransferred storage, or the old buffer after a successful swap.
-    ~Link3ByteStorage() { if (data) { size = 0; FileIO_Free(data); } }
+    ~Link3ByteStorage() {
+        if (data) {
+            size = 0;
+            FileIO_Free(data);
+        }
+    }
 };
 // Free a search handle's names and pattern through the synchronous or asynchronous allocator path.
 static void Link3FreeHandle(Link3FindHandle* handle, bool asynchronous) {
-    if (!handle) return;
+    if (!handle)
+        return;
     if (handle->names) {
         handle->bytes = 0;
-        if (asynchronous) FileIO_InvokeAllocatorCallback3(handle->names);
-        else FileIO_Free(handle->names);
+        if (asynchronous)
+            FileIO_InvokeAllocatorCallback3(handle->names);
+        else
+            FileIO_Free(handle->names);
     }
     if (handle->pattern.flags >> 31) {
-        if (asynchronous) FileIO_InvokeAllocatorCallback3(handle->pattern.data);
-        else FileIO_Free(handle->pattern.data);
+        if (asynchronous)
+            FileIO_InvokeAllocatorCallback3(handle->pattern.data);
+        else
+            FileIO_Free(handle->pattern.data);
     }
     FileIO_Free(handle);
 }
 // Choose geometric buffer growth, throwing on unsigned capacity overflow.
 static unsigned int Link3Grow(unsigned int capacity, unsigned int needed) {
     if (needed > ~capacity) {
-        union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+        union {
+            double alignment;
+            unsigned char bytes[sizeof(std::length_error)];
+        } storage;
         std::length_error* error = (std::length_error*)storage.bytes;
         error->__ct(filePathUtilityStrings + kFmemVectorLengthError);
         exception_runtime::__throw(exception_runtime::filePathUtilityStrings + kFmemLengthErrorType, error,
-            (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                   (void*)exception_runtime::__dt__Q23std12length_errorFv);
     }
     if (capacity < 0x55555555U) {
         unsigned int growth = (3 * (capacity + 1)) / 5;
@@ -255,7 +293,11 @@ static unsigned int Link3Grow(unsigned int capacity, unsigned int needed) {
 static void Link3ResizeNames(Link3FindHandle* handle, unsigned int size) {
     // Phase 1: reuse capacity when possible; reject impossible growth before allocation.
     unsigned int oldSize = handle->bytes;
-    if (size <= oldSize) { if (size < oldSize) handle->bytes = size; return; }
+    if (size <= oldSize) {
+        if (size < oldSize)
+            handle->bytes = size;
+        return;
+    }
     unsigned int added = size - oldSize;
     if (added <= handle->capacity && oldSize <= handle->capacity - added) {
         memset((char*)handle->names + oldSize, 0, added);
@@ -264,11 +306,14 @@ static void Link3ResizeNames(Link3FindHandle* handle, unsigned int size) {
     }
     unsigned int needed = oldSize + added - handle->capacity;
     if (needed > ~handle->capacity) {
-        union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+        union {
+            double alignment;
+            unsigned char bytes[sizeof(std::length_error)];
+        } storage;
         std::length_error* error = (std::length_error*)storage.bytes;
         error->__ct(filePathUtilityStrings + kFmemVectorLengthError);
         exception_runtime::__throw(exception_runtime::filePathUtilityStrings + kFmemLengthErrorType, error,
-            (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                   (void*)exception_runtime::__dt__Q23std12length_errorFv);
     }
     // Phase 2: construct the new suffix, move the prefix, and swap storage ownership.
     Link3ByteStorage storage(&handle->capacity);
@@ -294,6 +339,8 @@ static void Link3ResizeNames(Link3FindHandle* handle, unsigned int size) {
     storage.size = 0;
 }
 
+} // extern "C"
+
 // Find the first matching NAND entry, or allocate and submit an asynchronous directory search.
 // With callback == 0, result is required and filled before return. With a callback,
 // result is unused: return means submission succeeded, not that a match was found.
@@ -302,7 +349,8 @@ static void Link3ResizeNames(Link3FindHandle* handle, unsigned int size) {
 // Precondition: only one FMEM async operation may be outstanding across the device.
 // s_fmemAsyncOperation and s_nandAsyncCommandBlock are shared with other operations;
 // this function neither checks occupancy nor supports reentrant submission.
-void* gtl_CFileIoDeviceFMEM_FindFirstFile(void*, const char* path, FmemFindData* result, FmemFindCompletion callback, void* context) {
+void* gtl::CFileIoDeviceFMEM::FindFirstFile(const char* path, FmemFindData* result, FmemFindCompletion callback,
+                                            void* context) {
     // Phase 1: split a device-prefixed path into directory and wildcard pattern.
     char directory[0x104];
     strcpy(directory, path);
@@ -322,10 +370,13 @@ void* gtl_CFileIoDeviceFMEM_FindFirstFile(void*, const char* path, FmemFindData*
         handle->pattern.data = 0;
         handle->names = 0;
         handle->bytes = handle->capacity = handle->offset = handle->count = handle->next = 0;
-        Link3HandleConstruction construction = { handle, asynchronous };
+        Link3HandleConstruction construction = {handle, asynchronous};
         unsigned int n = strlen(pattern);
-        if (asynchronous) FileIOString_ReplaceRange(&handle->pattern, 0, handle->pattern.size(), pattern, pattern+n, &allocatorTag);
-        else FileIOString_ReplaceRangeWithAllocator(&handle->pattern, 0, handle->pattern.size(), pattern, pattern+n, &allocatorTag);
+        if (asynchronous)
+            FileIOString_ReplaceRange(&handle->pattern, 0, handle->pattern.size(), pattern, pattern + n, &allocatorTag);
+        else
+            FileIOString_ReplaceRangeWithAllocator(&handle->pattern, 0, handle->pattern.size(), pattern, pattern + n,
+                                                   &allocatorTag);
         construction.handle = 0;
     }
     if (!asynchronous) {
@@ -337,22 +388,25 @@ void* gtl_CFileIoDeviceFMEM_FindFirstFile(void*, const char* path, FmemFindData*
         }
         int bytes = (int)(handle->count * kNandDirectoryNameBytes);
         int remainder = bytes % kNandBufferAlignment;
-        unsigned int aligned = (unsigned int)bytes + (remainder ? kNandBufferAlignment-remainder : 0);
+        unsigned int aligned = (unsigned int)bytes + (remainder ? kNandBufferAlignment - remainder : 0);
         Link3ResizeNames(handle, aligned);
         NANDReadDir(search, handle->names, &handle->count);
         Link3Name name;
         bool found = false;
         for (unsigned int i = 0; i < handle->count; ++i) {
             if (handle->offset >= handle->bytes) {
-                union { double alignment; unsigned char bytes[sizeof(std::out_of_range)]; } storage;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(std::out_of_range)];
+                } storage;
                 std::out_of_range* error = (std::out_of_range*)storage.bytes;
                 error->__ct(filePathUtilityStrings + kFmemVectorIndexOutOfRange);
                 exception_runtime::__throw(exception_runtime::filePathUtilityStrings + kFmemOutOfRangeType, error,
-                    (void*)exception_runtime::__dt__Q23std12out_of_rangeFv);
+                                           (void*)exception_runtime::__dt__Q23std12out_of_rangeFv);
             }
             const char* entry = (char*)handle->names + handle->offset;
             unsigned int n = strlen(entry);
-            FileIOString_ReplaceRangeWithAllocator(&name.value, 0, name.value.size(), entry, entry+n, &allocatorTag);
+            FileIOString_ReplaceRangeWithAllocator(&name.value, 0, name.value.size(), entry, entry + n, &allocatorTag);
             handle->offset += name.value.size() + 1;
             if (((int (*)(void*, const char*))handle->vtable[2])(handle, name.value.text())) {
                 handle->next = i + 1;
@@ -360,7 +414,10 @@ void* gtl_CFileIoDeviceFMEM_FindFirstFile(void*, const char* path, FmemFindData*
                 break;
             }
         }
-        if (!found) { Link3FreeHandle(handle, false); return (void*)-1; }
+        if (!found) {
+            Link3FreeHandle(handle, false);
+            return (void*)-1;
+        }
         memset(result, 0, sizeof(FmemFindData));
         strcpy(((FmemFindData*)result)->name, name.value.text());
         unsigned int count = 0;
@@ -376,9 +433,9 @@ void* gtl_CFileIoDeviceFMEM_FindFirstFile(void*, const char* path, FmemFindData*
             completion->path.data = 0;
             completion->callback = callback;
             completion->context = context;
-            Link3CallbackConstruction construction = { completion };
+            Link3CallbackConstruction construction = {completion};
             unsigned int n = strlen(search);
-            FileIOString_ReplaceRange(&completion->path, 0, completion->path.size(), search, search+n, &allocatorTag);
+            FileIOString_ReplaceRange(&completion->path, 0, completion->path.size(), search, search + n, &allocatorTag);
             construction.object = 0;
         }
         // Publish the sole pending operation before handing its context to NAND.
@@ -387,13 +444,19 @@ void* gtl_CFileIoDeviceFMEM_FindFirstFile(void*, const char* path, FmemFindData*
         s_fmemAsyncOperation.size = kFindFirstOperationBytes;
         s_fmemAsyncOperation.buffer = FileIO_Alloc(s_fmemAsyncOperation.size);
         NANDSetUserData(s_nandAsyncCommandBlock, &s_fmemAsyncOperation);
-        int error = NANDReadDirAsync(search, 0, &handle->count, (void*)gtl_CFileIoDeviceFMEM_DispatchNandCallback, s_nandAsyncCommandBlock);
+        int error = NANDReadDirAsync(search, 0, &handle->count, (void*)gtl::CFileIoDeviceFMEM::DispatchNandCallback,
+                                     s_nandAsyncCommandBlock);
         int translated;
-        if (error == 0) translated = 0;
-        else if (error <= -1 && error >= -6) translated = kNandErrorBase-error;
-        else if (error <= -8 && error >= -15) translated = kNandErrorBase-error;
-        else if (error == -128) translated = kFileErrorNandFatal;
-        else translated = kFileErrorUnknownNand;
+        if (error == 0)
+            translated = 0;
+        else if (error <= -1 && error >= -6)
+            translated = kNandErrorBase - error;
+        else if (error <= -8 && error >= -15)
+            translated = kNandErrorBase - error;
+        else if (error == -128)
+            translated = kFileErrorNandFatal;
+        else
+            translated = kFileErrorUnknownNand;
         File_SetLastError(translated);
         if (error) {
             // Rejected submission transfers no ownership: retire staging, callback and handle.
@@ -408,4 +471,4 @@ void* gtl_CFileIoDeviceFMEM_FindFirstFile(void*, const char* path, FmemFindData*
     return handle;
 }
 
-} // extern "C"
+extern "C" {} // extern "C"

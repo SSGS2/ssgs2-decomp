@@ -5,7 +5,7 @@
 
 class CEventFadeLayout {
 public:
-    void* vtable; // 0x0: constructor installs __vt__23CEventEffectSC_EFF_FADE
+    void* vtable;            // 0x0: constructor installs __vt__23CEventEffectSC_EFF_FADE
     unsigned char direction; // 0x4: vfunc_1 chooses alpha inversion
     char pad_5[0x3];
     unsigned int count; // 0x8: vfunc_1 divides elapsed time and checks completion

@@ -662,9 +662,10 @@ void OSUnlockMutex(OSMutex* mutex);
 // OSReturnToMenu @ 0x80344C90: declared by <revolution/OS/OSReset.h>
 // OSResetSystem @ 0x80344E00: declared by <revolution/OS/OSReset.h>
 // OSGetCurrentThread @ 0x80345BC0: prototype from <revolution/OS/OSThread.h>
-OSThread*OSGetCurrentThread(void);
+OSThread* OSGetCurrentThread(void);
 // OSCreateThread @ 0x80346158: prototype from <revolution/OS/OSThread.h>
-BOOL OSCreateThread(OSThread* thread, OSThreadFunc func, void* funcArg, void* stackBegin, u32 stackSize, s32 prio, u16 flags);
+BOOL OSCreateThread(OSThread* thread, OSThreadFunc func, void* funcArg, void* stackBegin, u32 stackSize, s32 prio,
+                    u16 flags);
 // OSSleepThread @ 0x80346BEC: declared by <revolution/OS/OSThread.h>
 // OSGetTime @ 0x80347788: declared by <revolution/OS/OSTime.h>
 // OSGetTick @ 0x803477A0: declared by <revolution/OS/OSTime.h>
@@ -685,15 +686,18 @@ void GXSetVtxDesc(GXAttr name, GXAttrType type);
 // GXSetVtxAttrFmt @ 0x80360DF0: prototype from <revolution/GX/GXAttr.h>
 void GXSetVtxAttrFmt(GXVtxFmt fmt, GXAttr attr, GXCompCnt compCnt, GXCompType compType, u8 shift);
 // GXSetTexCoordGen2 @ 0x80361224: prototype from <revolution/GX/GXAttr.h>
-void GXSetTexCoordGen2(GXTexCoordID id, GXTexGenType type, GXTexGenSrc src, u32 texMtxIdx, GXBool normalize, u32 dualTexMtxIdx);
+void GXSetTexCoordGen2(GXTexCoordID id, GXTexGenType type, GXTexGenSrc src, u32 texMtxIdx, GXBool normalize,
+                       u32 dualTexMtxIdx);
 // GXSetNumTexGens @ 0x8036144C: prototype from <revolution/GX/GXAttr.h>
 void GXSetNumTexGens(u8 num);
 // GXSetNumChans @ 0x80363140: prototype from <revolution/GX/GXLight.h>
 void GXSetNumChans(u8 num);
 // GXSetChanCtrl @ 0x80363164: prototype from <revolution/GX/GXLight.h>
-void GXSetChanCtrl(GXChannelID chan, GXBool enable, GXColorSrc ambSrc, GXColorSrc matSrc, GXLightID lightMask, GXDiffuseFn diffFn, GXAttnFn attnFn);
+void GXSetChanCtrl(GXChannelID chan, GXBool enable, GXColorSrc ambSrc, GXColorSrc matSrc, GXLightID lightMask,
+                   GXDiffuseFn diffFn, GXAttnFn attnFn);
 // GXInitTexObj @ 0x803632C8: prototype from <revolution/GX/GXTexture.h>
-void GXInitTexObj(GXTexObj* obj, void* image, u16 w, u16 h, GXTexFmt fmt, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t, GXBool mipmap);
+void GXInitTexObj(GXTexObj* obj, void* image, u16 w, u16 h, GXTexFmt fmt, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t,
+                  GXBool mipmap);
 // GXLoadTexObj @ 0x80363804: prototype from <revolution/GX/GXTexture.h>
 void GXLoadTexObj(const GXTexObj*, GXTexMapID);
 // GXSetTevColorIn @ 0x80364590: prototype from <revolution/GX/GXTev.h>
@@ -823,4 +827,4 @@ void* Memory_Clear(void* p, size_t n);
 }
 #endif
 
-#endif  // SDK_PROTOS_H
+#endif // SDK_PROTOS_H

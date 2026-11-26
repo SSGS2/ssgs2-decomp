@@ -1,9 +1,14 @@
-#include <decomp/static_init.h>
-// RTTI names share the golf-player string pool; retain its original storage symbol.
-enum { kGolfPlayerTypeNameOffset = 0x6C4 };
+// Golf player type information: the CGolfPlayer runtime type descriptor and its registration,
+// which also sets up two fixed coordinate-basis matrices.
 
-// Translation unit 0x8014B0F4-0x8014B210 (22 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include <decomp/static_init.h>
+#include "classes/CCreature.h"
+#include "classes/CDisposable.h"
+#include "classes/CGolfPlayer.h"
+// RTTI names share the golf-player string pool; retain its original storage symbol.
+enum {
+    kGolfPlayerTypeNameOffset = 0x6C4
+};
 
 extern "C" {
 
@@ -25,7 +30,7 @@ extern const float kFloat_1_GolfPlayer;
 // Legacy shared name; this use supplies -1 to a fixed basis, not a slope calculation.
 extern const float kGroundSlopeSign_GolfPlayer;
 
-void IntPair_Set(void*, void*, void*);
+void* IntPair_Set(void*, void*, void*);
 void* ActorFactoryRegistry_GetInstance();
 void StringMap_SetByName(void*, void*, const char*);
 void CGolfPlayer_Create();
@@ -34,48 +39,50 @@ void TaskRegistry_AppendFactory(void*, const char*);
 void Matrix_SetBasisElements(void*, float, float, float, float, float, float, float, float, float);
 
 // Reserved empty hook; this implementation performs no work.
-void CCreature_vfunc_25() {}
+void CCreature::vfunc_25() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_24() {}
+void CDisposable::vfunc_24() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_23() {}
+void CDisposable::vfunc_23() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_22() {}
+void CDisposable::vfunc_22() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_21() {}
+void CDisposable::vfunc_21() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_20() {}
+void CDisposable::vfunc_20() {}
 // Default virtual hook with no work in this implementation.
-void CGolfPlayer_vfunc_31() {}
+void CGolfPlayer::vfunc_31() {}
 // Default virtual hook with no work in this implementation.
-void CGolfPlayer_vfunc_25() {}
+void CGolfPlayer::vfunc_25() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_10() {}
+void CDisposable::vfunc_10() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_18() {}
+void CDisposable::vfunc_18() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_17() {}
+void CDisposable::vfunc_17() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_16() {}
+void CDisposable::vfunc_16() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_15() {}
+void CDisposable::vfunc_15() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_14() {}
+void CDisposable::vfunc_14() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_11() {}
+void CDisposable::vfunc_11() {}
 // Reserved empty hook; this implementation performs no work.
-void CDisposable_vfunc_9() {}
+void CDisposable::vfunc_9() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_8() {}
+void CDisposable::vfunc_8() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_7() {}
+void CDisposable::vfunc_7() {}
 // Default virtual hook with no work in this implementation.
-void CDisposable_vfunc_6() {}
+void CDisposable::vfunc_6() {}
 // Reserved empty hook; this implementation performs no work.
-void CCreature_vfunc_4() {}
+void CCreature::vfunc_4() {}
 // Return the shared runtime type descriptor for golf-player actors.
 // Borrowed process-lifetime descriptor; caller must not free it.
-void* CGolfPlayer_GetRTTI() { return &s_golfPlayerTypeInfo; }
+void* CGolfPlayer::GetRTTI() {
+    return &s_golfPlayerTypeInfo;
+}
 
 // Register the golf-player RTTI/factory and initialize the two fixed coordinate-basis matrices.
 void CGolfPlayer_RegisterType() {
@@ -94,7 +101,9 @@ void CGolfPlayer_RegisterType() {
     float zeroForInverse = kFloat_0_GolfPlayer;
     float oneForInverse = kFloat_1_GolfPlayer;
     float negativeOneForInverse = kGroundSlopeSign_GolfPlayer;
-    Matrix_SetBasisElements(&golfPlayerInverseBasisMatrix, zeroForInverse, oneForInverse, zeroForInverse, negativeOneForInverse, zeroForInverse, zeroForInverse, zeroForInverse, zeroForInverse, oneForInverse);
+    Matrix_SetBasisElements(&golfPlayerInverseBasisMatrix, zeroForInverse, oneForInverse, zeroForInverse,
+                            negativeOneForInverse, zeroForInverse, zeroForInverse, zeroForInverse, zeroForInverse,
+                            oneForInverse);
 }
 
 } // extern "C"

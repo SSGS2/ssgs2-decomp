@@ -1,27 +1,32 @@
+// Beach wavelets and ground strips: the wave strip geometry and its point arrays, the wavelet
+// setup from a beach parameter name, and the strip parameter lists that CBeach fills in.
+
 #include "game/types.h"
 #include "game/wvector.h"
-// Translation unit 0x8020FEF0-0x80211250 (10 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "classes/CSharedDoc.h"
 #include "sdk_protos.h"
 #include "classes/CWavelet.h"
 #include "classes/CGolfDoc.h"
 #include "classes/CBeach.h"
+#include "classes/CTutorial.h"
 
 // Borrow the wavelet layout view; callers retain ownership of the enclosing object.
-static inline CWavelet* AsCWavelet(void* p) { return (CWavelet*)p; }
+static inline CWavelet* AsCWavelet(void* p) {
+    return (CWavelet*)p;
+}
 
 // Construct a record in existing vector storage; no allocation occurs.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 // Placement-delete is a no-op because the vector owns the enclosing allocation.
 inline void operator delete(void*, void*) {}
 
 extern "C" {
 
 // Preserve the strip-point constructor hook; vectors are filled by the geometry builder.
-void GroundStripPoint_DefaultConstructNoOp(void*) {
-}
+void GroundStripPoint_DefaultConstructNoOp(void*) {}
 
 struct Entry8020 {
     Vec3f center;
@@ -49,7 +54,10 @@ extern void* __nw__FUl(unsigned int);
 extern void __dl__FPv(void*);
 extern void appFreeUni__FPv(void*);
 
-enum PackedResourceConstants { kPackedResourceCountShift = 16, kPackedResourceMetadataMask = 0xFFFF };
+enum PackedResourceConstants {
+    kPackedResourceCountShift = 16,
+    kPackedResourceMetadataMask = 0xFFFF
+};
 
 struct GroundStripStorage {
     void* vtable;
@@ -92,46 +100,60 @@ void GroundStripOwner_Init(GroundStripStorage* self) {
 }
 
 // Release referenced buffers, the bitmap, texture data and all owned strip arrays.
-void* CWavelet_dtor(GroundStripStorage* self, int deleting) {
-    if (self) {
-        unsigned int zero = 0;
-        self->vtable = &s_waveletVtable_804B1B48;
-        self->stripRowCount = zero;
-        self->stripCount = zero;
-        for (unsigned int i = zero; i < (unsigned int)self->vertexBufferCount; ++i) {
-            void* item = self->vertexBuffers[i];
-            if (item) {
-                unsigned int* ref = (unsigned int*)item;
-                unsigned int value = *ref;
-                value = (value & kPackedResourceMetadataMask) | (((value >> kPackedResourceCountShift) - 1) << kPackedResourceCountShift);
-                *ref = value;
-                if ((value >> kPackedResourceCountShift) == zero) CubeResourceStorage_dtor(item, 1);
-                self->vertexBuffers[i] = (void*)zero;
-            }
+CWavelet::~CWavelet() {
+    GroundStripStorage* self = (GroundStripStorage*)this;
+    unsigned int zero = 0;
+    self->vtable = &s_waveletVtable_804B1B48;
+    self->stripRowCount = zero;
+    self->stripCount = zero;
+    for (unsigned int i = zero; i < (unsigned int)self->vertexBufferCount; ++i) {
+        void* item = self->vertexBuffers[i];
+        if (item) {
+            unsigned int* ref = (unsigned int*)item;
+            unsigned int value = *ref;
+            value = (value & kPackedResourceMetadataMask) |
+                    (((value >> kPackedResourceCountShift) - 1) << kPackedResourceCountShift);
+            *ref = value;
+            if ((value >> kPackedResourceCountShift) == zero)
+                CubeResourceStorage_dtor(item, 1);
+            self->vertexBuffers[i] = (void*)zero;
         }
-        self->vertexBufferCount = zero;
-        if (g_resourceManager && self->bitmap) {
-            ResourceManager_ReleaseId(g_resourceManager, self->bitmap);
-            self->bitmap = (void*)zero;
-        }
-        self->textureGeneratorVtable = &__vt__10CGeneTex3D;
-        if (self->generatedTextureData) { __dla__FPv(self->generatedTextureData); self->generatedTextureData = (void*)zero; }
-        if (self->vertexBuffers) { self->vertexBufferCount = zero; appFreeUni__FPv(self->vertexBuffers); }
-        if (self->stripParameters) { self->stripCount = zero; appFreeUni__FPv(self->stripParameters); }
-        if (self->stripRows) { self->stripRowCount = zero; appFreeUni__FPv(self->stripRows); }
-        if (deleting > 0) __dl__FPv(self);
     }
-    return self;
+    self->vertexBufferCount = zero;
+    if (g_resourceManager && self->bitmap) {
+        ResourceManager_ReleaseId(g_resourceManager, self->bitmap);
+        self->bitmap = (void*)zero;
+    }
+    self->textureGeneratorVtable = &__vt__10CGeneTex3D;
+    if (self->generatedTextureData) {
+        __dla__FPv(self->generatedTextureData);
+        self->generatedTextureData = (void*)zero;
+    }
+    if (self->vertexBuffers) {
+        self->vertexBufferCount = zero;
+        appFreeUni__FPv(self->vertexBuffers);
+    }
+    if (self->stripParameters) {
+        self->stripCount = zero;
+        appFreeUni__FPv(self->stripParameters);
+    }
+    if (self->stripRows) {
+        self->stripRowCount = zero;
+        appFreeUni__FPv(self->stripRows);
+    }
 }
 
 extern char s_tutorialRttiDescriptor;
 
 // Return the tutorial class RTTI descriptor.
-void* CTutorial_GetRTTI() {
+void* CTutorial::GetRTTI() {
     return &s_tutorialRttiDescriptor;
 }
 
-struct StripPointArrayHeader { Entry8020* data; int size; };
+struct StripPointArrayHeader {
+    Entry8020* data;
+    int size;
+};
 
 // Clear the strip-point array's logical size without releasing its storage.
 void GroundStripPointVector_Clear(int* array) {
@@ -158,7 +180,6 @@ extern void GraphicsBuffer_Flush(void*);
 extern void GroundStripBufferVector_Append(void*, void*);
 extern int SharedDoc_GetCourseId();
 extern void* GolfDoc_GetCurrent();
-extern unsigned char CGolfDoc_GetCurrentHoleNumber(void*);
 extern const float kFloat_0_805DFDA4, kFloat_1_SceneEffects_805DFDC0, kFloat_5_SceneEffects;
 extern const float kFloat_0_5_Wavelet;
 extern void GroundStripPointVector_Append(void*, void*);
@@ -174,15 +195,30 @@ enum StripGeometryConstants {
     kBytesPerStripPoint = 2 * sizeof(GroundStripVertex),
     kStripVertexFormat = (0x12 << 16) - 0xFFF,
     kOpaqueColorChannel = 0xFF,
-    kCourseId0 = 0, kCourseId1 = 1, kCourseId6 = 6, // Numeric IDs: course names unverified.
-    kHole3 = 2, kHole9 = 8, kHole11 = 10, kHole18 = 17
+    kCourseId0 = 0,
+    kCourseId1 = 1,
+    kCourseId6 = 6, // Numeric IDs: course names unverified.
+    kHole3 = 2,
+    kHole9 = 8,
+    kHole11 = 10,
+    kHole18 = 17
 };
-struct Record80211018 { unsigned int words[9]; };
-struct Container80211018 { Record80211018* data; unsigned int size, capacity, spare; };
+struct StripPointRecord {
+    unsigned int words[9];
+};
+struct Container80211018 {
+    StripPointRecord* data;
+    unsigned int size, capacity, spare;
+};
 // Grow the point-record array, preserving its elements and freeing the previous allocation.
 void GroundStripPointVector_Reserve(Container80211018*, unsigned int);
-struct Node80210 { unsigned char pad[0x30]; };
-struct ObjList80210 { Node80210* data; unsigned int size, capacity, spare; };
+struct Node80210 {
+    unsigned char pad[0x30];
+};
+struct ObjList80210 {
+    Node80210* data;
+    unsigned int size, capacity, spare;
+};
 struct Target80210 {
     virtual void slot08();
     virtual void slot0C();
@@ -201,7 +237,9 @@ struct Target80210 {
 // Each buffer gets UV/RGB setup here; XYZ, alpha, and the first center's RGB are
 // not written here. Later geometry updates must populate them before rendering.
 void GroundStrip_BuildGeometry(void* strip, void* pathPoints, int parameterNameAddress, int bufferCount) {
-    struct StripRow { Vec3_80210 center, outerEdge, widthDirection; } row;
+    struct StripRow {
+        Vec3_80210 center, outerEdge, widthDirection;
+    } row;
     Vec3_80210 temporaryPoint, groundPoint;
     void* vertexBuffer;
     char* volatile vertexStream;
@@ -209,8 +247,11 @@ void GroundStrip_BuildGeometry(void* strip, void* pathPoints, int parameterNameA
     ((Target80210*)strip)->slot14(parameterNameAddress);
     WVector_DefaultConstructNoOp(&temporaryPoint);
     GroundStripPointVector_Clear((int*)&((GroundStripStorage*)strip)->stripRows);
-    GroundStripPointVector_Reserve((Container80211018*)&((GroundStripStorage*)strip)->stripRows, (unsigned int)Vec3Vector_GetPointCount(pathPoints));
-    struct Words { unsigned int xBits, yBits, zBits; };
+    GroundStripPointVector_Reserve((Container80211018*)&((GroundStripStorage*)strip)->stripRows,
+                                   (unsigned int)Vec3Vector_GetPointCount(pathPoints));
+    struct Words {
+        unsigned int xBits, yBits, zBits;
+    };
     void* src = Vec3Vector_GetPointAt(pathPoints, 1);
     Words params = *(Words*)src;
     Vec3_80210 direction, perpendicular, up, outerPoint, widthOffset, segment;
@@ -232,13 +273,16 @@ void GroundStrip_BuildGeometry(void* strip, void* pathPoints, int parameterNameA
         *(WVector*)(&row.center) = *(WVector*)(Vec3Vector_GetPointAt(pathPoints, rowIndex));
         row.center.y = groundHeightOrOuterV;
         if (rowIndex == (unsigned int)Vec3Vector_GetPointCount(pathPoints) - 1) {
-            *(WVector*)(&row.widthDirection) = *(WVector*)&EntryArray_GetEntry((Entry8020**)&((GroundStripStorage*)strip)->stripRows, rowIndex - 1)->widthDirection;
+            *(WVector*)(&row.widthDirection) =
+                *(WVector*)&EntryArray_GetEntry((Entry8020**)&((GroundStripStorage*)strip)->stripRows, rowIndex - 1)
+                     ->widthDirection;
         } else {
             currentPoint = Vec3Vector_GetPointAt(pathPoints, rowIndex);
             __mi__FRC7WVectorRC7WVector(&direction, Vec3Vector_GetPointAt(pathPoints, rowIndex + 1), currentPoint);
             *(WVector*)(&row.widthDirection) = *(WVector*)&direction;
             row.widthDirection.y = zeroHeight;
-            Vector_CrossProduct(&perpendicular, Vec3_Set(&up, zeroHeight, kFloat_1_SceneEffects_805DFDC0, zeroHeight), &row.widthDirection);
+            Vector_CrossProduct(&perpendicular, Vec3_Set(&up, zeroHeight, kFloat_1_SceneEffects_805DFDC0, zeroHeight),
+                                &row.widthDirection);
             *(WVector*)(&row.widthDirection) = (*(WVector*)&perpendicular).Normalize();
         }
         __ml__FfRC7WVector(&widthOffset, &row.widthDirection, ((GroundStripStorage*)strip)->width);
@@ -253,17 +297,22 @@ void GroundStrip_BuildGeometry(void* strip, void* pathPoints, int parameterNameA
     groundHeightOrOuterV = kFloat_1_SceneEffects_805DFDC0;
     float zeroUv = kFloat_0_805DFDA4;
     for (bufferIndex = 0; bufferIndex < bufferCount; ++bufferIndex) {
-        VertexBuffer_Create(Vec3Vector_GetPointCount(pathPoints) * kBytesPerStripPoint, 0, kStripVertexFormat, 0, &vertexBuffer, 0);
+        VertexBuffer_Create(Vec3Vector_GetPointCount(pathPoints) * kBytesPerStripPoint, 0, kStripVertexFormat, 0,
+                            &vertexBuffer, 0);
         Resource_GetOffsetPtr(vertexBuffer, 0, 0, (void*)&vertexStream, 0);
         ((GroundStripVertex*)vertexStream)->u = zeroUv;
         ((GroundStripVertex*)vertexStream)->v = zeroUv;
         pointIndex = 1;
         vertexByteOffset = kBytesPerStripPoint;
-        for (; pointIndex < (unsigned int)Vec3Vector_GetPointCount(pathPoints); ++pointIndex, vertexByteOffset += kBytesPerStripPoint) {
+        for (; pointIndex < (unsigned int)Vec3Vector_GetPointCount(pathPoints);
+             ++pointIndex, vertexByteOffset += kBytesPerStripPoint) {
             vertex = vertexStream + vertexByteOffset;
             previousCenter = EntryArray_GetEntry((Entry8020**)&((GroundStripStorage*)strip)->stripRows, pointIndex - 1);
-            __mi__FRC7WVectorRC7WVector(&segment, EntryArray_GetEntry((Entry8020**)&((GroundStripStorage*)strip)->stripRows, pointIndex), previousCenter);
-            ((GroundStripVertex*)vertex)->u = ((GroundStripVertex*)vertex - 2)->u + WVectorLen(*(WVector*)&segment) / ((GroundStripStorage*)strip)->width;
+            __mi__FRC7WVectorRC7WVector(
+                &segment, EntryArray_GetEntry((Entry8020**)&((GroundStripStorage*)strip)->stripRows, pointIndex),
+                previousCenter);
+            ((GroundStripVertex*)vertex)->u = ((GroundStripVertex*)vertex - 2)->u +
+                                              WVectorLen(*(WVector*)&segment) / ((GroundStripStorage*)strip)->width;
             ((GroundStripVertex*)(vertexStream + vertexByteOffset))->v = zeroUv;
             ((GroundStripVertex*)(vertexStream + vertexByteOffset))->blue = kOpaqueColorChannel;
             ((GroundStripVertex*)(vertexStream + vertexByteOffset))->green = kOpaqueColorChannel;
@@ -271,7 +320,8 @@ void GroundStrip_BuildGeometry(void* strip, void* pathPoints, int parameterNameA
         }
         pointIndex = 0;
         vertexByteOffset = sizeof(GroundStripVertex);
-        for (; pointIndex < (unsigned int)Vec3Vector_GetPointCount(pathPoints); ++pointIndex, vertexByteOffset += kBytesPerStripPoint) {
+        for (; pointIndex < (unsigned int)Vec3Vector_GetPointCount(pathPoints);
+             ++pointIndex, vertexByteOffset += kBytesPerStripPoint) {
             vertex = vertexStream + vertexByteOffset;
             ((GroundStripVertex*)vertex)->u = ((GroundStripVertex*)vertex - 1)->u;
             ((GroundStripVertex*)(vertexStream + vertexByteOffset))->v = groundHeightOrOuterV;
@@ -279,20 +329,26 @@ void GroundStrip_BuildGeometry(void* strip, void* pathPoints, int parameterNameA
             ((GroundStripVertex*)(vertexStream + vertexByteOffset))->green = kOpaqueColorChannel;
             ((GroundStripVertex*)(vertexStream + vertexByteOffset))->red = kOpaqueColorChannel;
         }
-        GraphicsBuffer_Flush(vertexBuffer); GroundStripBufferVector_Append(&((GroundStripStorage*)strip)->vertexBuffers, &vertexBuffer);
+        GraphicsBuffer_Flush(vertexBuffer);
+        GroundStripBufferVector_Append(&((GroundStripStorage*)strip)->vertexBuffers, &vertexBuffer);
     }
     // Course-specific exceptions use zero-based hole numbers; preserve repeated document queries.
-    if (
-        ((unsigned char)SharedDoc_GetCourseId() == kCourseId0 && (unsigned char)CGolfDoc_GetCurrentHoleNumber(GolfDoc_GetCurrent()) == kHole18) ||
-        ((unsigned char)SharedDoc_GetCourseId() == kCourseId1 && (unsigned char)CGolfDoc_GetCurrentHoleNumber(GolfDoc_GetCurrent()) == kHole18) ||
-        ((unsigned char)SharedDoc_GetCourseId() == kCourseId6 && (unsigned char)CGolfDoc_GetCurrentHoleNumber(GolfDoc_GetCurrent()) == kHole9))
+    if (((unsigned char)SharedDoc_GetCourseId() == kCourseId0 &&
+         (unsigned char)((CGolfDoc*)GolfDoc_GetCurrent())->GetCurrentHoleNumber() == kHole18) ||
+        ((unsigned char)SharedDoc_GetCourseId() == kCourseId1 &&
+         (unsigned char)((CGolfDoc*)GolfDoc_GetCurrent())->GetCurrentHoleNumber() == kHole18) ||
+        ((unsigned char)SharedDoc_GetCourseId() == kCourseId6 &&
+         (unsigned char)((CGolfDoc*)GolfDoc_GetCurrent())->GetCurrentHoleNumber() == kHole9))
         ((CBeach*)strip)->maxRowHeightDelta = kFloat_5_SceneEffects;
-    else if (
-        ((unsigned char)SharedDoc_GetCourseId() == kCourseId0 && (unsigned char)CGolfDoc_GetCurrentHoleNumber(GolfDoc_GetCurrent()) == kHole3) ||
-        ((unsigned char)SharedDoc_GetCourseId() == kCourseId1 && (unsigned char)CGolfDoc_GetCurrentHoleNumber(GolfDoc_GetCurrent()) == kHole3) ||
-        ((unsigned char)SharedDoc_GetCourseId() == kCourseId6 && (unsigned char)CGolfDoc_GetCurrentHoleNumber(GolfDoc_GetCurrent()) == kHole11))
+    else if (((unsigned char)SharedDoc_GetCourseId() == kCourseId0 &&
+              (unsigned char)((CGolfDoc*)GolfDoc_GetCurrent())->GetCurrentHoleNumber() == kHole3) ||
+             ((unsigned char)SharedDoc_GetCourseId() == kCourseId1 &&
+              (unsigned char)((CGolfDoc*)GolfDoc_GetCurrent())->GetCurrentHoleNumber() == kHole3) ||
+             ((unsigned char)SharedDoc_GetCourseId() == kCourseId6 &&
+              (unsigned char)((CGolfDoc*)GolfDoc_GetCurrent())->GetCurrentHoleNumber() == kHole11))
         ((CBeach*)strip)->maxRowHeightDelta = kFloat_1_SceneEffects_805DFDC0;
-    else ((CBeach*)strip)->maxRowHeightDelta = kFloat_0_5_Wavelet;
+    else
+        ((CBeach*)strip)->maxRowHeightDelta = kFloat_0_5_Wavelet;
 }
 #pragma opt_common_subs reset
 #pragma opt_loop_invariants reset
@@ -325,20 +381,35 @@ struct BeachParameterNode {
     BeachParameterRecordView parameter;
 };
 // Opaque tree-owner storage borrowed from CGolfDoc; no node layout is implied.
-struct BeachParameterTreeStorageView { unsigned char pad[0x40]; };
+struct BeachParameterTreeStorageView {
+    unsigned char pad[0x40];
+};
 extern void* g_sharedDoc;
-extern void* BeachParameterTree_FindInsertionPosition(BeachParameterTreeStorageView*, int*, BeachParameterRecordView**, unsigned char*, unsigned char*);
-extern BeachParameterRecordView* Payload44Tree_InsertAndRebalance(BeachParameterTreeStorageView*, void*, unsigned char, unsigned char, void*);
+extern void* BeachParameterTree_FindInsertionPosition(BeachParameterTreeStorageView*, int*, BeachParameterRecordView**,
+                                                      unsigned char*, unsigned char*);
+extern BeachParameterRecordView* Payload44Tree_InsertAndRebalance(BeachParameterTreeStorageView*, void*, unsigned char,
+                                                                  unsigned char, void*);
 extern void* ResourceManager_LoadBitmap(void*, void*, int, int, int);
-extern const float kFloat_0_080000006_Wavelet, kFloat_0_72_Wavelet, kFloat_0_5_Wavelet, kFloat_0_2_Wavelet, kFloat_4_Wavelet;
+extern const float kFloat_0_080000006_Wavelet, kFloat_0_72_Wavelet, kFloat_0_5_Wavelet, kFloat_0_2_Wavelet,
+    kFloat_4_Wavelet;
 
-struct StripParameterWordCopy { unsigned int words[6]; };
+struct StripParameterWordCopy {
+    unsigned int words[6];
+};
 struct StripParameterLeadingChannels {
     float x, y, z;
     // Initialize the record's leading three scalar channels in source order.
-    void initialize(float a, float b, float c) { x = a; y = b; z = c; }
+    void initialize(float newX, float newY, float newZ) {
+        x = newX;
+        y = newY;
+        z = newZ;
+    }
     // Copy the leading channels without changing their float representation.
-    void assign(const StripParameterLeadingChannels& other) { x = other.x; y = other.y; z = other.z; }
+    void assign(const StripParameterLeadingChannels& other) {
+        x = other.x;
+        y = other.y;
+        z = other.z;
+    }
 };
 struct StripParameterAllocatorTag {
     volatile unsigned char value;
@@ -350,7 +421,7 @@ struct StripParameterAllocatorTag {
 // are not established here. Keep argument order when changing strip defaults.
 struct StripParameterRecord {
     float x, y, z, w, scale; // +0,+4,+8,+12,+16: scalar channels 0..4; roles unresolved.
-    unsigned int mode; // +20: first strip 0, appended default 2.
+    unsigned int mode;       // +20: first strip 0, appended default 2.
     // Leave fields untouched for placement construction followed by explicit assignment.
     StripParameterRecord() {}
     // Copy all six words as a payload; these records contain no owning pointers.
@@ -361,28 +432,38 @@ struct StripParameterRecord {
     StripParameterRecord(float a, float b, float c, float d, float e, unsigned int f)
         : x(a), y(b), z(c), w(d), scale(e), mode(f) {}
     // Write the five scalar channels and mode without allocating storage.
-    void initialize(float a, float b, float c, float d, float e, unsigned int f) {
-        ((StripParameterLeadingChannels*)this)->initialize(a, b, c);
-        w = d; scale = e; mode = f;
+    void initialize(float newX, float newY, float newZ, float newW, float newScale, unsigned int newMode) {
+        ((StripParameterLeadingChannels*)this)->initialize(newX, newY, newZ);
+        w = newW;
+        scale = newScale;
+        mode = newMode;
     }
     // Assign each scalar channel and mode from another nonowning record.
     void assign(const StripParameterRecord& other) {
         ((StripParameterLeadingChannels*)this)->assign(*(const StripParameterLeadingChannels*)&other);
-        w = other.w; scale = other.scale; mode = other.mode;
+        w = other.w;
+        scale = other.scale;
+        mode = other.mode;
     }
 };
 extern const float kFloat_38_4_ShotDirection;
-struct StripParameterVectorView { unsigned char pad[0x2C]; StripParameterRecord* data; unsigned int size, capacity; };
+struct StripParameterVectorView {
+    unsigned char pad[0x2C];
+    StripParameterRecord* data;
+    unsigned int size, capacity;
+};
 extern // Reserve strip-parameter storage and append defaults, marking the first strip as the start.
-void CBeach_AppendDefaultStripParameters(StripParameterVectorView*, unsigned int);
 
-struct StripExceptionMessageGuard {
+    struct StripExceptionMessageGuard {
     void* data;
     StripParameterAllocatorTag* allocator;
     // Guard a new exception-message allocation while constructing its shared owner.
     StripExceptionMessageGuard(void* p, StripParameterAllocatorTag* a) : data(p), allocator(a) {}
     // Free the message unless successful construction transferred ownership.
-    ~StripExceptionMessageGuard() { if (data) __dla__FPv(data); }
+    ~StripExceptionMessageGuard() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 struct StripExceptionMessageOwner {
     void* vtable;
@@ -403,7 +484,9 @@ namespace std {
 struct exception {
     void* vtable;
     // Install the reconstructed exception-base dispatch table.
-    exception() { vtable = __vt__Q23std11logic_error; }
+    exception() {
+        vtable = __vt__Q23std11logic_error;
+    }
     ~exception();
 };
 }
@@ -434,7 +517,9 @@ struct logic_error : exception {
 };
 struct length_error : logic_error {
     // Build the logic-error message and select length_error dispatch.
-    length_error(const char* const& message) : logic_error(message) { vtable = __vt__Q23std12length_error; }
+    length_error(const char* const& message) : logic_error(message) {
+        vtable = __vt__Q23std12length_error;
+    }
     ~length_error();
 };
 }
@@ -450,7 +535,8 @@ enum StripParameterLimits {
     kStripThreeFifthsGrowthLimit = 0x38E38E3,
     kStripHalfGrowthLimit = 0x71C71C6,
     kMaxStripPointCount = 0x71C71C7,
-    kFirstStripMode = 0, kDefaultStripMode = 2
+    kFirstStripMode = 0,
+    kDefaultStripMode = 2
 };
 
 struct StripParameterReserveGuard {
@@ -461,7 +547,8 @@ struct StripParameterReserveGuard {
     // Allocate requested record capacity after the element-byte overflow check.
     void allocate(unsigned int requested) {
         StripParameterAllocatorTag allocator;
-        if (requested > kStripParameterMaxCount) lengthError8021011C(); // UINT_MAX / sizeof(StripParameterRecord).
+        if (requested > kStripParameterMaxCount)
+            lengthError8021011C(); // UINT_MAX / sizeof(StripParameterRecord).
         data = (StripParameterRecord*)appMallocDummy__FUl(requested * sizeof(StripParameterRecord));
     }
     // Release whichever record allocation remains with the guard after the swap.
@@ -493,22 +580,23 @@ struct StripParameterInsertionGuard {
 };
 
 // Exchange vector storage while preserving the reserve path's volatile size reload.
-inline void swapStorage8021011C(StripParameterRecord*& a, unsigned int& as, unsigned int& ac,
-                               StripParameterRecord*& b, unsigned int& bs, unsigned int& bc, bool reload = false) {
+inline void swapStorage8021011C(StripParameterRecord*& currentData, unsigned int& as, unsigned int& ac,
+                                StripParameterRecord*& replacementData, unsigned int& bs, unsigned int& bc,
+                                bool reload = false) {
     unsigned int oldCap;
     unsigned int oldSize;
     StripParameterRecord* replacement;
-    StripParameterRecord* old = a;
-    replacement = b;
+    StripParameterRecord* old = currentData;
+    replacement = replacementData;
     oldCap = ac;
     unsigned int cap = bc;
     oldSize = reload ? *(volatile unsigned int*)&as : as;
     unsigned int size = bs;
-    b = old;
+    replacementData = old;
     StripParameterAllocatorTag allocator;
     ac = cap;
     bc = oldCap;
-    a = replacement;
+    currentData = replacement;
     as = size;
     bs = oldSize;
 }
@@ -517,7 +605,6 @@ inline void swapStorage8021011C(StripParameterRecord*& a, unsigned int& as, unsi
 inline const unsigned int& max8021011C(const unsigned int& a, const unsigned int& b) {
     return a < b ? b : a;
 }
-
 
 // Choose the original capacity growth regime without overflowing element storage.
 inline unsigned int capacity8021011C(const unsigned int& oldCap, const unsigned int& need) {
@@ -535,7 +622,8 @@ inline unsigned int capacity8021011C(const unsigned int& oldCap, const unsigned 
 // Reserve capacity, append `requested` default records, then mark element zero as first.
 // This is not reserve-only: existing size increases by requested. Element zero
 // must exist even when requested == 0; use on an empty vector requires requested > 0.
-void CBeach_AppendDefaultStripParameters(StripParameterVectorView* self, unsigned int requested) {
+void CBeach::AppendDefaultStripParameters(unsigned int requested) {
+    StripParameterVectorView* self = (StripParameterVectorView*)this;
     unsigned int cap;
     unsigned int oldCap;
     int i;
@@ -550,12 +638,12 @@ void CBeach_AppendDefaultStripParameters(StripParameterVectorView* self, unsigne
         StripParameterRecord* dst = reserve.data + reserve.size;
         while (src < end) {
             new (dst) StripParameterRecord(*src);
-            ++src; ++dst;
+            ++src;
+            ++dst;
             ++reserve.size;
         }
         *(volatile unsigned int*)&self->size = 0;
-        swapStorage8021011C(self->data, self->size, self->capacity,
-                           reserve.data, reserve.size, reserve.capacity, true);
+        swapStorage8021011C(self->data, self->size, self->capacity, reserve.data, reserve.size, reserve.capacity, true);
     }
     // Phase 2: append defaults; insertion may grow again when old size is nonzero.
     // Per-append ownership: construct suffix -> copy old records backward -> swap;
@@ -577,14 +665,17 @@ void CBeach_AppendDefaultStripParameters(StripParameterVectorView* self, unsigne
         } else {
             StripParameterAllocatorTag growthAllocator;
             StripParameterAllocatorTag limitAllocator;
-            if (kStripParameterMaxCount - self->capacity < 1u) lengthError8021011C();
+            if (kStripParameterMaxCount - self->capacity < 1u)
+                lengthError8021011C();
             need = self->size + 1 - self->capacity;
             StripParameterInsertionGuard insert(&self->capacity);
             oldCap = self->capacity;
-            if (need > kStripParameterMaxCount - oldCap) lengthError8021011C();
+            if (need > kStripParameterMaxCount - oldCap)
+                lengthError8021011C();
             cap = capacity8021011C(oldCap, need);
             StripParameterAllocatorTag reserveAllocator;
-            if (cap > kStripParameterMaxCount) lengthError8021011C();
+            if (cap > kStripParameterMaxCount)
+                lengthError8021011C();
             StripParameterRecord* data = (StripParameterRecord*)appMallocDummy__FUl(cap * sizeof(StripParameterRecord));
             unsigned int newSize;
             StripParameterRecord* rec;
@@ -602,14 +693,14 @@ void CBeach_AppendDefaultStripParameters(StripParameterVectorView* self, unsigne
             insert.size = newSize;
             StripParameterAllocatorTag copyAllocator;
             while (src > begin) {
-                --dst; --src;
+                --dst;
+                --src;
                 new (dst) StripParameterRecord(*src);
                 --insert.remaining;
                 ++insert.size;
             }
             self->size -= self->size;
-            swapStorage8021011C(self->data, self->size, self->capacity,
-                               insert.data, insert.size, insert.capacity);
+            swapStorage8021011C(self->data, self->size, self->capacity, insert.data, insert.size, insert.capacity);
         }
     }
     // This marks element zero of the full vector, including pre-existing records.
@@ -617,7 +708,7 @@ void CBeach_AppendDefaultStripParameters(StripParameterVectorView* self, unsigne
 }
 
 // Resolve the numeric suffix to beach parameters and configure wave texture/timing.
-void CWavelet_ConfigureFromBeachParameterName(void* self, const char* name) {
+void CWavelet::ConfigureFromBeachParameterName(const char* name) {
     // name is borrowed. Missing '_' or an unparsed suffix leaves current settings
     // untouched; a missing numeric key is inserted with zero-valued parameters.
     // timingScale is multiplied by 0.08/0.72/0.2 for timing segments; no reciprocal is taken.
@@ -628,8 +719,10 @@ void CWavelet_ConfigureFromBeachParameterName(void* self, const char* name) {
         int parameterId;
         unsigned char insertionFlag;
 
-        if (sscanf(strchr(name, '_') + 1, taskSequenceStrings.integerFormat, &parameterId) == 0) return;
-        BeachParameterTreeStorageView* parameterTree = (BeachParameterTreeStorageView*)&((CGolfDoc*)((CSharedDoc*)g_sharedDoc)->golfDoc)->beachParameterTreeCount;
+        if (sscanf(strchr(name, '_') + 1, taskSequenceStrings.integerFormat, &parameterId) == 0)
+            return;
+        BeachParameterTreeStorageView* parameterTree =
+            (BeachParameterTreeStorageView*)&((CGolfDoc*)((CSharedDoc*)g_sharedDoc)->golfDoc)->beachParameterTreeCount;
         // FindInsertionPosition writes a NODE address through this legacy payload-
         // typed output. Until +sizeof(links) is applied below it is not a payload.
         // After each branch, parameter points to the embedded ConfigItem payload.
@@ -637,73 +730,91 @@ void CWavelet_ConfigureFromBeachParameterName(void* self, const char* name) {
 
         unsigned char comparisonFlag;
         int lookupId = parameterId;
-        void* insertionPosition = BeachParameterTree_FindInsertionPosition(parameterTree, &lookupId, &parameter, &insertionFlag, &comparisonFlag);
+        void* insertionPosition = BeachParameterTree_FindInsertionPosition(parameterTree, &lookupId, &parameter,
+                                                                           &insertionFlag, &comparisonFlag);
         if (parameter == 0 || ((BeachParameterNode*)parameter)->parameter.id < parameterId) {
             volatile unsigned int constructionScratch[10] = {};
             unsigned int defaultRecord[11] = {};
 
             defaultRecord[0] = parameterId;
-            parameter = &((BeachParameterNode*)Payload44Tree_InsertAndRebalance(parameterTree, insertionPosition, insertionFlag, comparisonFlag, defaultRecord))->parameter;
+            parameter = &((BeachParameterNode*)Payload44Tree_InsertAndRebalance(
+                              parameterTree, insertionPosition, insertionFlag, comparisonFlag, defaultRecord))
+                             ->parameter;
         } else {
             parameter = &((BeachParameterNode*)parameter)->parameter;
         }
-        AsCWavelet(self)->texHandle = (unsigned int)ResourceManager_LoadBitmap(g_resourceManager, parameter->bitmapName, 0, 0, 0);
+        texHandle = (unsigned int)ResourceManager_LoadBitmap(g_resourceManager, parameter->bitmapName, 0, 0, 0);
         // Re-enter the tree: the previous call may have inserted/allocated a node.
         lookupId = parameterId;
-        parameterTree = (BeachParameterTreeStorageView*)&((CGolfDoc*)((CSharedDoc*)g_sharedDoc)->golfDoc)->beachParameterTreeCount;
-        insertionPosition = BeachParameterTree_FindInsertionPosition(parameterTree, &lookupId, &parameter, &insertionFlag, &comparisonFlag);
+        parameterTree =
+            (BeachParameterTreeStorageView*)&((CGolfDoc*)((CSharedDoc*)g_sharedDoc)->golfDoc)->beachParameterTreeCount;
+        insertionPosition = BeachParameterTree_FindInsertionPosition(parameterTree, &lookupId, &parameter,
+                                                                     &insertionFlag, &comparisonFlag);
         if (parameter == 0 || ((BeachParameterNode*)parameter)->parameter.id < parameterId) {
             volatile unsigned int constructionScratch[10] = {};
             unsigned int defaultRecord[11] = {};
             defaultRecord[0] = parameterId;
-            parameter = &((BeachParameterNode*)Payload44Tree_InsertAndRebalance(parameterTree, insertionPosition, insertionFlag, comparisonFlag, defaultRecord))->parameter;
+            parameter = &((BeachParameterNode*)Payload44Tree_InsertAndRebalance(
+                              parameterTree, insertionPosition, insertionFlag, comparisonFlag, defaultRecord))
+                             ->parameter;
         } else {
             parameter = &((BeachParameterNode*)parameter)->parameter;
         }
-        AsCWavelet(self)->width = parameter->width;
+        width = parameter->width;
         parameter = 0;
         // Re-enter the tree: the previous call may have inserted/allocated a node.
         lookupId = parameterId;
-        parameterTree = (BeachParameterTreeStorageView*)&((CGolfDoc*)((CSharedDoc*)g_sharedDoc)->golfDoc)->beachParameterTreeCount;
-        insertionPosition = BeachParameterTree_FindInsertionPosition(parameterTree, &lookupId, &parameter, &insertionFlag, &comparisonFlag);
+        parameterTree =
+            (BeachParameterTreeStorageView*)&((CGolfDoc*)((CSharedDoc*)g_sharedDoc)->golfDoc)->beachParameterTreeCount;
+        insertionPosition = BeachParameterTree_FindInsertionPosition(parameterTree, &lookupId, &parameter,
+                                                                     &insertionFlag, &comparisonFlag);
         if (!parameter || parameterId > ((BeachParameterNode*)parameter)->parameter.id) {
             volatile unsigned int constructionScratch[10] = {};
             unsigned int defaultRecord[11] = {};
 
-            defaultRecord[0] = parameterId; parameter = &((BeachParameterNode*)Payload44Tree_InsertAndRebalance(parameterTree, insertionPosition, insertionFlag, comparisonFlag, defaultRecord))->parameter;
+            defaultRecord[0] = parameterId;
+            parameter = &((BeachParameterNode*)Payload44Tree_InsertAndRebalance(
+                              parameterTree, insertionPosition, insertionFlag, comparisonFlag, defaultRecord))
+                             ->parameter;
         } else {
             parameter = &((BeachParameterNode*)parameter)->parameter;
         }
         float timingScale = parameter->timingScale;
 
-        AsCWavelet(self)->timingScale = timingScale;
+        this->timingScale = timingScale;
 
         float fadeIn = kFloat_0_080000006_Wavelet * timingScale;
-        AsCWavelet(self)->fadeInTime = fadeIn;
+        fadeInTime = fadeIn;
         __typeof__(timingScale * kFloat_0_72_Wavelet) fadeOut = kFloat_0_72_Wavelet * timingScale;
-        AsCWavelet(self)->fadeOutTime = fadeOut;
-        AsCWavelet(self)->delay = (kFloat_0_2_Wavelet * timingScale);
-        AsCWavelet(self)->deceleration = AsCWavelet(self)->width / (kFloat_4_Wavelet * fadeIn - (kFloat_0_5_Wavelet * fadeIn) * fadeIn);
+        fadeOutTime = fadeOut;
+        delay = (kFloat_0_2_Wavelet * timingScale);
+        deceleration = width / (kFloat_4_Wavelet * fadeIn - (kFloat_0_5_Wavelet * fadeIn) * fadeIn);
     }
 }
 
-struct Alloc80211018 { void* vtable; unsigned int a, b; void* data; };
+struct Alloc80211018 {
+    void* vtable;
+    unsigned int a, b;
+    void* data;
+};
 
 // Grow the point-record array while preserving existing rows and releasing old storage.
 void GroundStripPointVector_Reserve(Container80211018* self, unsigned int requested) {
-    if (requested <= self->capacity) return;
+    if (requested <= self->capacity)
+        return;
     if (requested > kMaxStripPointCount) {
         lengthError8021011C();
     }
-    Record80211018* newData = (Record80211018*)appMallocDummy__FUl(requested * sizeof(Record80211018));
-    Record80211018* oldData = self->data;
+    StripPointRecord* newData = (StripPointRecord*)appMallocDummy__FUl(requested * sizeof(StripPointRecord));
+    StripPointRecord* oldData = self->data;
     unsigned int oldSize = self->size;
     unsigned int i = 0;
-    Record80211018* src = oldData;
-    Record80211018* dst = newData;
-    Record80211018* end = oldData + oldSize;
+    StripPointRecord* src = oldData;
+    StripPointRecord* dst = newData;
+    StripPointRecord* end = oldData + oldSize;
     while (src < end) {
-        if (dst) *dst = *src;
+        if (dst)
+            *dst = *src;
         ++src;
         ++dst;
         ++i;
@@ -712,7 +823,8 @@ void GroundStripPointVector_Reserve(Container80211018* self, unsigned int reques
     self->capacity = requested;
     self->data = newData;
     self->size = i;
-    if (oldData) appFreeUni__FPv(oldData);
+    if (oldData)
+        appFreeUni__FPv(oldData);
 }
 
 } // extern "C"

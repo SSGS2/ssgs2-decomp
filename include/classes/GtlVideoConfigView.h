@@ -5,13 +5,13 @@
 
 class GtlVideoConfigView {
 public:
-    unsigned int width; // 0x0: VideoConfig_InitFromTvFormat
-    unsigned int height; // 0x4: VideoConfig_InitFromTvFormat
+    unsigned int width;      // 0x0: VideoConfig_InitFromTvFormat
+    unsigned int height;     // 0x4: VideoConfig_InitFromTvFormat
     unsigned int interlaced; // 0x8: VideoConfig_InitFromTvFormat
-    unsigned int unk_C; // 0xC: VideoConfig_InitFromTvFormat
-    unsigned int unk_10; // 0x10: VideoConfig_InitFromTvFormat
-    float refreshRateHz; // 0x14: VideoConfig_InitFromTvFormat
-    unsigned int tvMode; // 0x18: VideoConfig_InitFromTvFormat
+    unsigned int unk_C;      // 0xC: VideoConfig_InitFromTvFormat
+    unsigned int unk_10;     // 0x10: VideoConfig_InitFromTvFormat
+    float refreshRateHz;     // 0x14: VideoConfig_InitFromTvFormat
+    unsigned int tvMode;     // 0x18: VideoConfig_InitFromTvFormat
 };
 
 #define OFF(f, o) typedef char VideoConfig804326B0_off_##f[((int)&((GtlVideoConfigView*)0)->f == (o)) ? 1 : -1]

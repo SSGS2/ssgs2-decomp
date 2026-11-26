@@ -7,12 +7,12 @@
 
 class NoticeEntry {
 public:
-    unsigned int stringFlags; // 0x0: NoticeQueue_ShowItemNotice: high bit selects allocated storage
-    unsigned int stringLength; // 0x4: NoticeQueue_UpdateAndDraw: allocated string length
-    void* stringData; // 0x8: NoticeStringVector_dtor: allocated string freed
+    unsigned int stringFlags;   // 0x0: NoticeQueue_ShowItemNotice: high bit selects allocated storage
+    unsigned int stringLength;  // 0x4: NoticeQueue_UpdateAndDraw: allocated string length
+    void* stringData;           // 0x8: NoticeStringVector_dtor: allocated string freed
     float remainingDisplayTime; // 0xC: NoticeQueue_ShowItemNotice: set from kFloat_0_Notice
-    unsigned int active; // 0x10: NoticeQueue_UpdateAndDraw: last active entry selected for display
-    int persistent; // 0x14: NoticeQueue_ShowItemNotice: set to 1
+    unsigned int active;        // 0x10: NoticeQueue_UpdateAndDraw: last active entry selected for display
+    int persistent;             // 0x14: NoticeQueue_ShowItemNotice: set to 1
 };
 
 #define OFF(f, o) typedef char NoticeEntry_off_##f[((int)&((NoticeEntry*)0)->f == (o)) ? 1 : -1]

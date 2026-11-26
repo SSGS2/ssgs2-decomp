@@ -1,19 +1,28 @@
+// Puppet resource name reference counts: a tree of string values that counts how many puppets use
+// each resource name, with its cleanup and the owned allocation destructor.
+
 #include <decomp/static_init.h>
 #include "classes/MWStringStorage.h"
 
-// Translation unit 0x8005E4D8-0x8005F290 (6 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
-struct OwnedAllocation { void* vtable; void* allocation; };
-struct NameRefCountTree { unsigned int count; struct CleanupNode* root; void* leftmost; };
+struct OwnedAllocation {
+    void* vtable;
+    void* allocation;
+};
+struct NameRefCountTree {
+    unsigned int count;
+    struct CleanupNode* root;
+    void* leftmost;
+};
 // Partial owning-tree layout: count at +0, root link at +4, cached link at +8.
 // Empty initialization stores null in root and points leftmost at the root slot.
 // Nodes own their MWStringStorage key buffers; mapped values, if any, are not
 // modeled here. Teardown frees keys and nodes, never repairs count/root/leftmost.
 // A surviving wrapper therefore cannot be reused without reinitialization.
 // Address-derived offsets retain the original initializer's integer store ordering.
-enum { kNameTreeRoot = (int)&((NameRefCountTree*)0)->root,
-       kNameTreeLeftmost = (int)&((NameRefCountTree*)0)->leftmost };
+enum {
+    kNameTreeRoot = (int)&((NameRefCountTree*)0)->root,
+    kNameTreeLeftmost = (int)&((NameRefCountTree*)0)->leftmost
+};
 
 extern "C" {
 
@@ -52,17 +61,17 @@ void WPuppetResource_InitNameRefCounts() {
     *reinterpret_cast<unsigned int*>(s_puppetResourceNameRefCounts) = 0;
     *reinterpret_cast<unsigned int*>(s_puppetResourceNameRefCounts + kNameTreeRoot) = 0;
     *reinterpret_cast<unsigned int*>(s_puppetResourceNameRefCounts + kNameTreeLeftmost) =
-    reinterpret_cast<unsigned int>(s_puppetResourceNameRefCounts + kNameTreeRoot);
+        reinterpret_cast<unsigned int>(s_puppetResourceNameRefCounts + kNameTreeRoot);
     __register_global_object(s_puppetResourceNameRefCounts,
-    reinterpret_cast<void (*)(void*)>(WPuppetResource_NameRefCountsDtor),
-    s_puppetNameRefCountsDtorRegistration);
+                             reinterpret_cast<void (*)(void*)>(WPuppetResource_NameRefCountsDtor),
+                             s_puppetNameRefCountsDtorRegistration);
 }
 
 struct CleanupNode {
     CleanupNode* left;
     CleanupNode* right;
     unsigned int taggedParent; // Unused link-header word; its bit encoding is not interpreted here.
-    MWStringStorage key; // Inline or heap-owned name; release before freeing the node.
+    MWStringStorage key;       // Inline or heap-owned name; release before freeing the node.
 };
 
 #pragma push
@@ -81,8 +90,10 @@ void* dtor_8005E4D8(void* object, int flags) {
                 if (child) {
                     CleanupNode* descendant = child->left;
                     if (descendant) {
-                        if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                        if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                        if (descendant->left)
+                            StringValueTree_DestroySubtree(object, descendant->left);
+                        if (descendant->right)
+                            StringValueTree_DestroySubtree(object, descendant->right);
                         String_FreeHeapBuffer(object, &descendant->key);
                         appFreeUni__FPv(descendant);
                     }
@@ -90,8 +101,10 @@ void* dtor_8005E4D8(void* object, int flags) {
                     CleanupNode* rightValue2 = child->right;
                     descendant = rightValue2;
                     if (descendant) {
-                        if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                        if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                        if (descendant->left)
+                            StringValueTree_DestroySubtree(object, descendant->left);
+                        if (descendant->right)
+                            StringValueTree_DestroySubtree(object, descendant->right);
                         String_FreeHeapBuffer(object, &descendant->key);
                         appFreeUni__FPv(descendant);
                     }
@@ -105,8 +118,10 @@ void* dtor_8005E4D8(void* object, int flags) {
                 if (child) {
                     CleanupNode* descendant = child->left;
                     if (descendant) {
-                        if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                        if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                        if (descendant->left)
+                            StringValueTree_DestroySubtree(object, descendant->left);
+                        if (descendant->right)
+                            StringValueTree_DestroySubtree(object, descendant->right);
                         String_FreeHeapBuffer(object, &descendant->key);
                         appFreeUni__FPv(descendant);
                     }
@@ -115,8 +130,10 @@ void* dtor_8005E4D8(void* object, int flags) {
                     CleanupNode* rightValue5 = child->right;
                     descendant = rightValue5;
                     if (descendant) {
-                        if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                        if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                        if (descendant->left)
+                            StringValueTree_DestroySubtree(object, descendant->left);
+                        if (descendant->right)
+                            StringValueTree_DestroySubtree(object, descendant->right);
                         String_FreeHeapBuffer(object, &descendant->key);
                         appFreeUni__FPv(descendant);
                     }
@@ -135,16 +152,20 @@ void* dtor_8005E4D8(void* object, int flags) {
                 if (child) {
                     CleanupNode* descendant = child->left;
                     if (descendant) {
-                        if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                        if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                        if (descendant->left)
+                            StringValueTree_DestroySubtree(object, descendant->left);
+                        if (descendant->right)
+                            StringValueTree_DestroySubtree(object, descendant->right);
                         String_FreeHeapBuffer(object, &descendant->key);
                         appFreeUni__FPv(descendant);
                     }
                     CleanupNode* rightValue7 = child->right;
                     descendant = rightValue7;
                     if (descendant) {
-                        if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                        if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                        if (descendant->left)
+                            StringValueTree_DestroySubtree(object, descendant->left);
+                        if (descendant->right)
+                            StringValueTree_DestroySubtree(object, descendant->right);
                         String_FreeHeapBuffer(object, &descendant->key);
                         appFreeUni__FPv(descendant);
                     }
@@ -155,15 +176,19 @@ void* dtor_8005E4D8(void* object, int flags) {
                 if (child) {
                     CleanupNode* descendant = child->left;
                     if (descendant) {
-                        if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                        if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                        if (descendant->left)
+                            StringValueTree_DestroySubtree(object, descendant->left);
+                        if (descendant->right)
+                            StringValueTree_DestroySubtree(object, descendant->right);
                         String_FreeHeapBuffer(object, &descendant->key);
                         appFreeUni__FPv(descendant);
                     }
                     descendant = child->right;
                     if (descendant) {
-                        if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                        if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                        if (descendant->left)
+                            StringValueTree_DestroySubtree(object, descendant->left);
+                        if (descendant->right)
+                            StringValueTree_DestroySubtree(object, descendant->right);
                         String_FreeHeapBuffer(object, &descendant->key);
                         appFreeUni__FPv(descendant);
                     }
@@ -178,7 +203,8 @@ void* dtor_8005E4D8(void* object, int flags) {
             appFreeUni__FPv(root);
         }
         // Node/key ownership is exhausted; a positive flag also releases the wrapper.
-        if (flags > 0) __dl__FPv(object);
+        if (flags > 0)
+            __dl__FPv(object);
     }
     return object;
 }
@@ -205,16 +231,20 @@ void* WPuppetResource_NameRefCountsDtor(void* object, int flags) {
                                     if (child) {
                                         CleanupNode* descendant = child->left;
                                         if (descendant) {
-                                            if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                                            if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                                            if (descendant->left)
+                                                StringValueTree_DestroySubtree(object, descendant->left);
+                                            if (descendant->right)
+                                                StringValueTree_DestroySubtree(object, descendant->right);
                                             String_FreeHeapBuffer(object, &descendant->key);
                                             appFreeUni__FPv(descendant);
                                         }
                                         CleanupNode* rightValue8 = child->right;
                                         descendant = rightValue8;
                                         if (descendant) {
-                                            if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                                            if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                                            if (descendant->left)
+                                                StringValueTree_DestroySubtree(object, descendant->left);
+                                            if (descendant->right)
+                                                StringValueTree_DestroySubtree(object, descendant->right);
                                             String_FreeHeapBuffer(object, &descendant->key);
                                             appFreeUni__FPv(descendant);
                                         }
@@ -228,8 +258,10 @@ void* WPuppetResource_NameRefCountsDtor(void* object, int flags) {
                                     if (child) {
                                         CleanupNode* descendant = child->left;
                                         if (descendant) {
-                                            if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                                            if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                                            if (descendant->left)
+                                                StringValueTree_DestroySubtree(object, descendant->left);
+                                            if (descendant->right)
+                                                StringValueTree_DestroySubtree(object, descendant->right);
                                             String_FreeHeapBuffer(object, &descendant->key);
                                             appFreeUni__FPv(descendant);
                                         }
@@ -237,8 +269,10 @@ void* WPuppetResource_NameRefCountsDtor(void* object, int flags) {
                                         CleanupNode* rightValue13 = child->right;
                                         descendant = rightValue12;
                                         if (descendant) {
-                                            if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                                            if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                                            if (descendant->left)
+                                                StringValueTree_DestroySubtree(object, descendant->left);
+                                            if (descendant->right)
+                                                StringValueTree_DestroySubtree(object, descendant->right);
                                             String_FreeHeapBuffer(object, &descendant->key);
                                             appFreeUni__FPv(descendant);
                                         }
@@ -257,15 +291,19 @@ void* WPuppetResource_NameRefCountsDtor(void* object, int flags) {
                                     if (child) {
                                         CleanupNode* descendant = child->left;
                                         if (descendant) {
-                                            if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                                            if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                                            if (descendant->left)
+                                                StringValueTree_DestroySubtree(object, descendant->left);
+                                            if (descendant->right)
+                                                StringValueTree_DestroySubtree(object, descendant->right);
                                             String_FreeHeapBuffer(object, &descendant->key);
                                             appFreeUni__FPv(descendant);
                                         }
                                         descendant = child->right;
                                         if (descendant) {
-                                            if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                                            if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                                            if (descendant->left)
+                                                StringValueTree_DestroySubtree(object, descendant->left);
+                                            if (descendant->right)
+                                                StringValueTree_DestroySubtree(object, descendant->right);
                                             String_FreeHeapBuffer(object, &descendant->key);
                                             appFreeUni__FPv(descendant);
                                         }
@@ -276,15 +314,19 @@ void* WPuppetResource_NameRefCountsDtor(void* object, int flags) {
                                     if (child) {
                                         CleanupNode* descendant = child->left;
                                         if (descendant) {
-                                            if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                                            if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                                            if (descendant->left)
+                                                StringValueTree_DestroySubtree(object, descendant->left);
+                                            if (descendant->right)
+                                                StringValueTree_DestroySubtree(object, descendant->right);
                                             String_FreeHeapBuffer(object, &descendant->key);
                                             appFreeUni__FPv(descendant);
                                         }
                                         descendant = child->right;
                                         if (descendant) {
-                                            if (descendant->left) StringValueTree_DestroySubtree(object, descendant->left);
-                                            if (descendant->right) StringValueTree_DestroySubtree(object, descendant->right);
+                                            if (descendant->left)
+                                                StringValueTree_DestroySubtree(object, descendant->left);
+                                            if (descendant->right)
+                                                StringValueTree_DestroySubtree(object, descendant->right);
                                             String_FreeHeapBuffer(object, &descendant->key);
                                             appFreeUni__FPv(descendant);
                                         }
@@ -304,7 +346,8 @@ void* WPuppetResource_NameRefCountsDtor(void* object, int flags) {
             }
         }
         // The wrapper is static in normal use; only a positive deleting flag frees it.
-        if (0 < flags) __dl__FPv(object);
+        if (0 < flags)
+            __dl__FPv(object);
     }
     return object;
 }

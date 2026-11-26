@@ -9,9 +9,9 @@ struct TaskListFields {
     char pad_028[0x4];
     void* hashBuckets; // 0x2C
     char pad_030[0x370];
-    unsigned int taskFlags; // 0x3A0
+    unsigned int taskFlags;             // 0x3A0
     unsigned char skipOtherTaskUpdates; // 0x3A4
-    unsigned char namedTaskOnly; // 0x3A5
+    unsigned char namedTaskOnly;        // 0x3A5
 };
 
 #define OFF(f, o) typedef char TaskListFields_off_##f[((int)&((TaskListFields*)0)->f == (o)) ? 1 : -1]

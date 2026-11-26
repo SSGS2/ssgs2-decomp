@@ -5,6 +5,8 @@
 // For controller mapping edits, change those hooks and their buffers together;
 // this routine coordinates acquisition, conversion and failure cleanup.
 
+#include "classes/GtlInputDevice.h"
+#include "game/gtl_input.h"
 
 typedef void* (*InputExPointerSlot)(void*);
 typedef int (*InputExIntSlot)(void*);
@@ -26,8 +28,6 @@ struct GtlInputExDeviceBase : GtlInputExHeader {
     void* device;
     unsigned char initialized;
 };
-
-#define INPUT_EX_DEVICE(object) ((object)->device)
 
 // All borrow a live concrete InputEx receiver; no adapter retains the result.
 #pragma push
@@ -53,9 +53,9 @@ static inline void InputEx_ResetAfterPollFailure(GtlInputExDeviceBase* self) {
 extern "C" {
 
 int InputDevice_NoOpSuccess_80435D34(void* device);
-int gtl_IInputDevice_RefreshDriverState(void* device);
-int gtl_IInputDevice_ReadState(void* device, int stateBytes, void* stateBuffer);
 int PadManager_SetMotorEnabled(void* device, int flag);
+
+} // extern "C"
 
 // self and its +8 device must be live; virtual dispatch prefix is at +4 and the
 // attempt flag at +0xC. Slot 1 returns borrowed writable sample storage, slot 2
@@ -78,26 +78,24 @@ int PadManager_SetMotorEnabled(void* device, int flag);
 // clears initialized, disables the device motor and invokes slot 7, returning 0.
 // A failed read may have touched raw storage; there is no buffer rollback here.
 // initialized is set BEFORE attempting I/O, so hooks observe the attempted state.
-int gtl_CInputExDeviceBase_Poll(GtlInputExDeviceBase* self) {
-    self->initialized = 1;
-    if (InputDevice_NoOpSuccess_80435D34(INPUT_EX_DEVICE(self)) == 0) {
-        self->initialized = 0;
+int gtl::CInputExDeviceBase::Poll() {
+    m_initialized = 1;
+    if (InputDevice_NoOpSuccess_80435D34(m_device) == 0) {
+        m_initialized = 0;
         goto fail;
     }
-    if (gtl_IInputDevice_RefreshDriverState(INPUT_EX_DEVICE(self)) != 0) {
-        void* stateBuffer = InputEx_GetRawStateBuffer(self);
-        int stateBytes = InputEx_GetRawStateBytes(self);
-        if (gtl_IInputDevice_ReadState(INPUT_EX_DEVICE(self), stateBytes, stateBuffer) != 0) {
-            if (InputEx_PublishRawState(self) != 0) {
+    if (((gtl::IInputDevice*)m_device)->RefreshDriverState() != 0) {
+        void* stateBuffer = InputEx_GetRawStateBuffer((GtlInputExDeviceBase*)this);
+        int stateBytes = InputEx_GetRawStateBytes((GtlInputExDeviceBase*)this);
+        if (((gtl::IInputDevice*)m_device)->ReadState((unsigned int)stateBytes, (unsigned int)stateBuffer) != 0) {
+            if (InputEx_PublishRawState((GtlInputExDeviceBase*)this) != 0) {
                 return 1;
             }
         }
     }
 fail:
-    self->initialized = 0;
-    PadManager_SetMotorEnabled(INPUT_EX_DEVICE(self), 0);
-    InputEx_ResetAfterPollFailure(self);
+    m_initialized = 0;
+    PadManager_SetMotorEnabled(m_device, 0);
+    InputEx_ResetAfterPollFailure((GtlInputExDeviceBase*)this);
     return 0;
 }
-
-} // extern "C"

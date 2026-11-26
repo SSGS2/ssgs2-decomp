@@ -8,7 +8,8 @@
 class SoundChannelGroup {
 public:
     int selected; // 0x0: SoundChannelGroup_StopWithFade selects a channel with stride 0x64
-    SoundPlaybackState channels[2]; // 0x4: SoundChannelGroup_StopWithFade, SoundManager_PausePrimaryStreams loop over two playback records
+    SoundPlaybackState channels
+        [2]; // 0x4: SoundChannelGroup_StopWithFade, SoundManager_PausePrimaryStreams loop over two playback records
 };
 
 #define OFF(f, o) typedef char SoundChannelGroup_off_##f[((int)&((SoundChannelGroup*)0)->f == (o)) ? 1 : -1]

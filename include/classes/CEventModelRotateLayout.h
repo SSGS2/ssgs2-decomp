@@ -5,15 +5,15 @@
 
 class CEventModelRotateLayout {
 public:
-    void* vtable; // 0x0: event header
+    void* vtable;       // 0x0: event header
     unsigned int count; // 0x4: vfunc_1 divides elapsed time
-    void* object; // 0x8: vfunc_1 writes object angles
-    float startX; // 0xC: vfunc_1 interpolates wrapped angle
-    float startY; // 0x10: vfunc_1 interpolates wrapped angle
-    float startZ; // 0x14: vfunc_1 interpolates wrapped angle
-    float deltaX; // 0x18: vfunc_1 multiplies by time fraction
-    float deltaY; // 0x1C: vfunc_1 multiplies by time fraction
-    float deltaZ; // 0x20: vfunc_1 multiplies by time fraction
+    void* object;       // 0x8: vfunc_1 writes object angles
+    float startX;       // 0xC: vfunc_1 interpolates wrapped angle
+    float startY;       // 0x10: vfunc_1 interpolates wrapped angle
+    float startZ;       // 0x14: vfunc_1 interpolates wrapped angle
+    float deltaX;       // 0x18: vfunc_1 multiplies by time fraction
+    float deltaY;       // 0x1C: vfunc_1 multiplies by time fraction
+    float deltaZ;       // 0x20: vfunc_1 multiplies by time fraction
 };
 
 #define OFF(f, o) typedef char CEventModelRotateLayout_off_##f[((int)&((CEventModelRotateLayout*)0)->f == (o)) ? 1 : -1]

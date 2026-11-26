@@ -5,8 +5,8 @@
 
 class ComShotPositionTreeNode {
 public:
-    void* left; // 0x0
-    void* right; // 0x4
+    void* left;   // 0x0
+    void* right;  // 0x4
     void* parent; // 0x8
     char pad_00C[0x4];
     unsigned int stringFlags; // 0x10

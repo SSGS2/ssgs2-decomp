@@ -1,6 +1,8 @@
+// Voice control for the audio system: setters for a voice's pitch, pan, volume, filters and output
+// sends, plus start, stop, and sample address control for the hardware voices in a voice group.
+// Most setters store the value and mark output mixing for recomputation.
+
 #include "classes/Voice8040E9BC.h" // Voice channel parameters at +0x24, stride 0x1C
-// Translation unit 0x8040FD50-0x8041095C (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
@@ -12,9 +14,13 @@ struct dtor_8040F368 {
 
 struct InterruptGuard_dtor : dtor_8040F368 {
     // Disable interrupts and remember the previous enable state.
-    InterruptGuard_dtor() { level = OSDisableInterrupts(); }
+    InterruptGuard_dtor() {
+        level = OSDisableInterrupts();
+    }
     // Restore the saved interrupt state on every scope exit.
-    ~InterruptGuard_dtor() { OSRestoreInterrupts(level); }
+    ~InterruptGuard_dtor() {
+        OSRestoreInterrupts(level);
+    }
 };
 
 extern "C" {
@@ -44,8 +50,11 @@ struct VoiceFilterControls {
     int priority;
 };
 struct VoiceAdditionalMixControls {
-    char prefix[0xD0]; float auxiliarySend[3]; float remoteVolume[4];
-    float remoteSend[4]; float outputMix[3];
+    char prefix[0xD0];
+    float auxiliarySend[3];
+    float remoteVolume[4];
+    float remoteSend[4];
+    float outputMix[3];
 };
 typedef char VoiceOutputMixOffset[(int)&((VoiceAdditionalMixControls*)0)->outputMix == 0xFC ? 1 : -1];
 // Grid cursor contract used below:
@@ -54,19 +63,28 @@ typedef char VoiceOutputMixOffset[(int)&((VoiceAdditionalMixControls*)0)->output
 // The +1 skips the vtable-sized prefix. Such row/column cursors are address
 // projections, not separate Voice objects; never dereference unrelated members.
 // Borrow the first hardware voice pointer from this channel-grid row.
-inline Inner* FirstHardwareVoice(Object* voice) { return (Inner*)voice->hardwareVoices[0]; }
+inline Inner* FirstHardwareVoice(Object* voice) {
+    return (Inner*)voice->hardwareVoices[0];
+}
 enum VoiceDirtyFlags {
-    kVoiceStartPending = 0x01, kVoicePausePending = 0x02,
-    kVoicePitchDirty = 0x04, kVoiceVolumeDirty = 0x08,
-    kVoiceOutputMixDirty = 0x10, kVoiceLowPassDirty = 0x20,
+    kVoiceStartPending = 0x01,
+    kVoicePausePending = 0x02,
+    kVoicePitchDirty = 0x04,
+    kVoiceVolumeDirty = 0x08,
+    kVoiceOutputMixDirty = 0x10,
+    kVoiceLowPassDirty = 0x20,
     kVoiceBiquadDirty = 0x80,
     kVoiceInitialMixDirty = kVoiceVolumeDirty | kVoiceOutputMixDirty | kVoiceLowPassDirty
 };
 enum VoiceLimits {
-    kBiquadFilterMaximum = 127, kNormalVoicePriority = 16,
-    kVoiceRowBytes = 16, kChannelParameterBytes = 28,
-    kSampleParameterStride = 0x44, kAutomaticResamplingMode = 5,
-    kAxVoiceStopped = 0, kAxVoiceRunning = 1
+    kBiquadFilterMaximum = 127,
+    kNormalVoicePriority = 16,
+    kVoiceRowBytes = 16,
+    kChannelParameterBytes = 28,
+    kSampleParameterStride = 0x44,
+    kAutomaticResamplingMode = 5,
+    kAxVoiceStopped = 0,
+    kAxVoiceRunning = 1
 };
 
 struct Active {
@@ -83,29 +101,47 @@ struct Params40 {
     // Leave DSP halfwords uninitialized until the explicit copy below.
     Params40() {}
     // Copy all twenty ADPCM halfwords in their original DSP order.
-    void set(unsigned short a0, unsigned short a1, unsigned short a2, unsigned short a3,
-             unsigned short a4, unsigned short a5, unsigned short a6, unsigned short a7,
-             unsigned short a8, unsigned short a9, unsigned short a10, unsigned short a11,
-             unsigned short a12, unsigned short a13, unsigned short a14, unsigned short a15,
-             unsigned short a16, unsigned short a17, unsigned short a18, unsigned short a19) {
-        v[0]=a0; v[1]=a1; v[2]=a2; v[3]=a3; v[4]=a4; v[5]=a5;
-        v[6]=a6; v[7]=a7; v[8]=a8; v[9]=a9; v[10]=a10; v[11]=a11;
-        v[12]=a12; v[13]=a13; v[14]=a14; v[15]=a15; v[16]=a16;
-        v[17]=a17; v[18]=a18; v[19]=a19;
+    void set(unsigned short a0, unsigned short a1, unsigned short a2, unsigned short a3, unsigned short a4,
+             unsigned short a5, unsigned short a6, unsigned short a7, unsigned short a8, unsigned short a9,
+             unsigned short a10, unsigned short a11, unsigned short a12, unsigned short a13, unsigned short a14,
+             unsigned short a15, unsigned short a16, unsigned short a17, unsigned short a18, unsigned short a19) {
+        v[0] = a0;
+        v[1] = a1;
+        v[2] = a2;
+        v[3] = a3;
+        v[4] = a4;
+        v[5] = a5;
+        v[6] = a6;
+        v[7] = a7;
+        v[8] = a8;
+        v[9] = a9;
+        v[10] = a10;
+        v[11] = a11;
+        v[12] = a12;
+        v[13] = a13;
+        v[14] = a14;
+        v[15] = a15;
+        v[16] = a16;
+        v[17] = a17;
+        v[18] = a18;
+        v[19] = a19;
     }
 };
 // Header offsets are part of the stream-player ABI, not arbitrary mix controls.
 struct Params {
     unsigned char sampleFormat; // +0: sample format; zero selects ADPCM setup
-    unsigned char loopEnabled; // +1: loop enable (zero/nonzero)
+    unsigned char loopEnabled;  // +1: loop enable (zero/nonzero)
     char pad02[2];
-    int sourceRate; // +4: source sample rate, forwarded unchanged
+    int sourceRate;            // +4: source sample rate, forwarded unchanged
     int loopStartSampleOffset; // +8: loop-start sample offset
-    int endSampleOffset; // +C: end sample offset
+    int endSampleOffset;       // +C: end sample offset
     char rest[1];
 };
 // Read-only prefix view: channel records advance by 0x44 bytes in the source blob.
-struct SampleParameterBlock { char prefix[0x24]; Params40 adpcm; };
+struct SampleParameterBlock {
+    char prefix[0x24];
+    Params40 adpcm;
+};
 
 int GtlVoice_GetSamplePosition(Inner*);
 void gtl_Voice_SetLoopSampleAddress(Inner*, int, int);
@@ -134,7 +170,8 @@ void GtlVoice_SelectResamplingModeForPitch(Inner*, float, int);
 // Return the first allocated hardware voice sample position, or zero.
 int GtlVoiceGroup_GetSamplePosition(Object* self) {
     Inner* inner = FirstHardwareVoice(self);
-    if (inner) return GtlVoice_GetSamplePosition(inner);
+    if (inner)
+        return GtlVoice_GetSamplePosition(inner);
     return 0;
 }
 
@@ -142,7 +179,8 @@ int GtlVoiceGroup_GetSamplePosition(Object* self) {
 // Legacy symbol/field names say priority; streaming callers test zero for ADPCM.
 int GtlVoiceGroup_GetFirstSampleFormat(Object* self) {
     Inner* inner = FirstHardwareVoice(self);
-    if (inner) return inner->sampleFormat;
+    if (inner)
+        return inner->sampleFormat;
     return 10;
 }
 
@@ -153,13 +191,17 @@ void GtlVoice_RequestStart(Object* self) {
     self->pendingChanges |= kVoiceStartPending;
 }
 
+} // extern "C"
+
 // Queue a pause update when the requested pause flag changes.
-void StrmPlayer_SetPauseFlag(Object* self, unsigned int value) {
-    if (self->pauseRequested != value) {
-        self->pauseRequested = value;
-        self->pendingChanges |= kVoicePausePending;
+void gtl::nw4r::detail::Voice::SetPauseFlag(unsigned int value) {
+    if (pauseRequested != value) {
+        pauseRequested = value;
+        pendingChanges |= kVoicePausePending;
     }
 }
+
+extern "C" {
 
 // Store pitch scaling and defer the hardware pitch update.
 void GtlVoice_SetPitchScale(Object* self, float value) {
@@ -211,8 +253,10 @@ void GtlVoice_SetOutputLineMask(Object* self, int value) {
 
 // Clamp the biquad filter selector to 0..127 and queue its hardware update.
 void GtlVoice_SetBiquadFilterSelector(Object* self, int value) {
-    if (value > kBiquadFilterMaximum) value = kBiquadFilterMaximum;
-    else value = value < 0 ? 0 : value;
+    if (value > kBiquadFilterMaximum)
+        value = kBiquadFilterMaximum;
+    else
+        value = value < 0 ? 0 : value;
     if (value != ((VoiceFilterControls*)self)->biquadFilter) {
         ((VoiceFilterControls*)self)->biquadFilter = value;
         self->pendingChanges |= kVoiceBiquadDirty;
@@ -222,9 +266,12 @@ void GtlVoice_SetBiquadFilterSelector(Object* self, int value) {
 // Clamp voice gain to [0,1] and queue the envelope update.
 void gtl_nw4r_detail_Voice_SetVolumeScale(Object* self, float value) {
     float clamped;
-    if (value > kFloat_1_0_AudioVoice) clamped = kFloat_1_0_AudioVoice;
-    else if (value < kFloat_0_AudioVoice) clamped = kFloat_0_AudioVoice;
-    else clamped = value;
+    if (value > kFloat_1_0_AudioVoice)
+        clamped = kFloat_1_0_AudioVoice;
+    else if (value < kFloat_0_AudioVoice)
+        clamped = kFloat_0_AudioVoice;
+    else
+        clamped = value;
     if (clamped != self->volumeScale) {
         self->volumeScale = clamped;
         self->pendingChanges |= kVoiceVolumeDirty;
@@ -234,9 +281,12 @@ void gtl_nw4r_detail_Voice_SetVolumeScale(Object* self, float value) {
 // Clamp the low-pass control to [0,1] and queue its hardware update.
 void GtlVoice_SetLowPassFilter(Object* self, float value) {
     float clamped;
-    if (value > kFloat_1_0_AudioVoice) clamped = kFloat_1_0_AudioVoice;
-    else if (value < kFloat_0_AudioVoice) clamped = kFloat_0_AudioVoice;
-    else clamped = value;
+    if (value > kFloat_1_0_AudioVoice)
+        clamped = kFloat_1_0_AudioVoice;
+    else if (value < kFloat_0_AudioVoice)
+        clamped = kFloat_0_AudioVoice;
+    else
+        clamped = value;
     if (clamped != self->lowPassFilter) {
         self->lowPassFilter = clamped;
         self->pendingChanges |= kVoiceLowPassDirty;
@@ -246,9 +296,12 @@ void GtlVoice_SetLowPassFilter(Object* self, float value) {
 // Clamp main-output gain to [0,1] and mark output mixing dirty.
 void GtlVoice_SetMainOutputVolume(Object* self, float value) {
     float clamped;
-    if (value > kFloat_1_0_AudioVoice) clamped = kFloat_1_0_AudioVoice;
-    else if (value < kFloat_0_AudioVoice) clamped = kFloat_0_AudioVoice;
-    else clamped = value;
+    if (value > kFloat_1_0_AudioVoice)
+        clamped = kFloat_1_0_AudioVoice;
+    else if (value < kFloat_0_AudioVoice)
+        clamped = kFloat_0_AudioVoice;
+    else
+        clamped = value;
     if (clamped != self->mainVolume) {
         self->mainVolume = clamped;
         self->pendingChanges |= kVoiceOutputMixDirty;
@@ -259,9 +312,12 @@ void GtlVoice_SetMainOutputVolume(Object* self, float value) {
 void GtlVoice_SetMainSendOffset(Object* self, float value) {
     value += kFloat_1_0_AudioVoice;
     float clamped;
-    if (value > kFloat_1_0_AudioVoice) clamped = kFloat_1_0_AudioVoice;
-    else if (value < kFloat_0_AudioVoice) clamped = kFloat_0_AudioVoice;
-    else clamped = value;
+    if (value > kFloat_1_0_AudioVoice)
+        clamped = kFloat_1_0_AudioVoice;
+    else if (value < kFloat_0_AudioVoice)
+        clamped = kFloat_0_AudioVoice;
+    else
+        clamped = value;
     if (clamped != self->mainSend) {
         self->mainSend = clamped;
         self->pendingChanges |= kVoiceOutputMixDirty;
@@ -271,9 +327,12 @@ void GtlVoice_SetMainSendOffset(Object* self, float value) {
 // Clamp one auxiliary bus send to [0,1] and mark output mixing dirty.
 void GtlVoice_SetAuxSend(Object* self, int index, float value) {
     float clamped;
-    if (value > kFloat_1_0_AudioVoice) clamped = kFloat_1_0_AudioVoice;
-    else if (value < kFloat_0_AudioVoice) clamped = kFloat_0_AudioVoice;
-    else clamped = value;
+    if (value > kFloat_1_0_AudioVoice)
+        clamped = kFloat_1_0_AudioVoice;
+    else if (value < kFloat_0_AudioVoice)
+        clamped = kFloat_0_AudioVoice;
+    else
+        clamped = value;
     if (clamped != ((VoiceAdditionalMixControls*)self)->auxiliarySend[index]) {
         ((VoiceAdditionalMixControls*)self)->auxiliarySend[index] = clamped;
         self->pendingChanges |= kVoiceOutputMixDirty;
@@ -283,9 +342,12 @@ void GtlVoice_SetAuxSend(Object* self, int index, float value) {
 // Clamp one remote output gain to [0,1] and mark output mixing dirty.
 void GtlVoice_SetRemoteVolume(Object* self, int index, float value) {
     float clamped;
-    if (value > kFloat_1_0_AudioVoice) clamped = kFloat_1_0_AudioVoice;
-    else if (value < kFloat_0_AudioVoice) clamped = kFloat_0_AudioVoice;
-    else clamped = value;
+    if (value > kFloat_1_0_AudioVoice)
+        clamped = kFloat_1_0_AudioVoice;
+    else if (value < kFloat_0_AudioVoice)
+        clamped = kFloat_0_AudioVoice;
+    else
+        clamped = value;
     if (clamped != ((VoiceAdditionalMixControls*)self)->remoteVolume[index]) {
         ((VoiceAdditionalMixControls*)self)->remoteVolume[index] = clamped;
         self->pendingChanges |= kVoiceOutputMixDirty;
@@ -295,9 +357,12 @@ void GtlVoice_SetRemoteVolume(Object* self, int index, float value) {
 // Clamp one of three additional output-mix controls and mark mixing dirty.
 void GtlVoice_SetAdditionalOutputMixControl(Object* self, int index, float value) {
     float clamped;
-    if (value > kFloat_1_0_AudioVoice) clamped = kFloat_1_0_AudioVoice;
-    else if (value < kFloat_0_AudioVoice) clamped = kFloat_0_AudioVoice;
-    else clamped = value;
+    if (value > kFloat_1_0_AudioVoice)
+        clamped = kFloat_1_0_AudioVoice;
+    else if (value < kFloat_0_AudioVoice)
+        clamped = kFloat_0_AudioVoice;
+    else
+        clamped = value;
     if (clamped != ((VoiceAdditionalMixControls*)self)->outputMix[index]) {
         ((VoiceAdditionalMixControls*)self)->outputMix[index] = clamped;
         self->pendingChanges |= kVoiceOutputMixDirty;
@@ -308,9 +373,12 @@ void GtlVoice_SetAdditionalOutputMixControl(Object* self, int index, float value
 void GtlVoice_SetRemoteSendOffset(Object* self, int index, float value) {
     value += kFloat_1_0_AudioVoice;
     float clamped;
-    if (value > kFloat_1_0_AudioVoice) clamped = kFloat_1_0_AudioVoice;
-    else if (value < kFloat_0_AudioVoice) clamped = kFloat_0_AudioVoice;
-    else clamped = value;
+    if (value > kFloat_1_0_AudioVoice)
+        clamped = kFloat_1_0_AudioVoice;
+    else if (value < kFloat_0_AudioVoice)
+        clamped = kFloat_0_AudioVoice;
+    else
+        clamped = value;
     if (clamped != ((VoiceAdditionalMixControls*)self)->remoteSend[index]) {
         ((VoiceAdditionalMixControls*)self)->remoteSend[index] = clamped;
         self->pendingChanges |= kVoiceOutputMixDirty;
@@ -324,7 +392,8 @@ void GtlVoice_SetRowStateTriplet(Object* self, int rowIndex, int loopContextAddr
     Inner** entry = (Inner**)((char*)self + rowIndex * kVoiceRowBytes);
     for (int i = 0; i < self->outputVoiceCount; ++entry, ++i) {
         Inner* inner = entry[1];
-        if (inner) AudioVoice_SetAdpcmLoopContext(inner, loopContextAddress);
+        if (inner)
+            AudioVoice_SetAdpcmLoopContext(inner, loopContextAddress);
     }
 }
 
@@ -333,7 +402,8 @@ void GtlVoice_SetRowStateTriplet(Object* self, int rowIndex, int loopContextAddr
 // Under interrupt protection, return allocated hardware voices and release the group.
 void GtlVoice_Release(Object* self) {
     InterruptGuard_dtor guard;
-    if (!self->allocated) return;
+    if (!self->allocated)
+        return;
     char* row = (char*)self;
     Inner** entry;
     for (int i = 0; i < self->sourceChannelCount; row += kVoiceRowBytes, ++i) {
@@ -354,14 +424,16 @@ void GtlVoice_Release(Object* self) {
 // Set allocated hardware priorities to 16 unless the software voice priority is one.
 // The legacy priorityMode field aliases VoicePriority::priority at +0xAC.
 void GtlVoice_SetAllocatedPrioritiesTo16(Object* self) {
-    if (((VoiceFilterControls*)self)->priority == 1) return;
+    if (((VoiceFilterControls*)self)->priority == 1)
+        return;
     char* row = (char*)self;
     Inner** entry;
     for (int i = 0; i < self->sourceChannelCount; row += kVoiceRowBytes, ++i) {
         entry = (Inner**)row;
         for (int j = 0; j < self->outputVoiceCount; ++entry, ++j) {
             Inner* inner = entry[1];
-            if (inner) AudioVoice_SetPriorityIfAllocated(inner, kNormalVoicePriority);
+            if (inner)
+                AudioVoice_SetPriorityIfAllocated(inner, kNormalVoicePriority);
         }
     }
 }
@@ -376,26 +448,33 @@ void GtlVoiceGroup_SetHardwareVoiceType(Object* self, int voiceType) {
         entry = (Inner**)row;
         for (int j = 0; j < self->outputVoiceCount; ++entry, ++j) {
             Inner* inner = entry[1];
-            if (inner) AudioVoice_SetTypeIfAllocated(inner, voiceType);
+            if (inner)
+                AudioVoice_SetTypeIfAllocated(inner, voiceType);
         }
     }
 }
 
+} // extern "C"
+
 // Set the loop address for allocated voices in the selected row.
-void gtl_Voice_SetChannelLoopSampleAddress(Object* self, int rowIndex, int sampleBase, int loopAddress) {
-    Inner** entry = (Inner**)((char*)self + rowIndex * kVoiceRowBytes);
-    for (int i = 0; i < self->outputVoiceCount; ++entry, ++i) {
+void gtl::nw4r::detail::Voice::SetChannelLoopSampleAddress(int rowIndex, int sampleBase, int loopAddress) {
+    Inner** entry = (Inner**)((char*)this + rowIndex * kVoiceRowBytes);
+    for (int i = 0; i < outputVoiceCount; ++entry, ++i) {
         Inner* inner = entry[1];
-        if (inner) gtl_Voice_SetLoopSampleAddress(inner, sampleBase, loopAddress);
+        if (inner)
+            gtl_Voice_SetLoopSampleAddress(inner, sampleBase, loopAddress);
     }
 }
+
+extern "C" {
 
 // Set the end address for allocated voices in the selected row.
 void GtlVoiceGroup_SetRowEndSampleAddress(Object* self, int rowIndex, int sampleBase, int endAddress) {
     Inner** entry = (Inner**)((char*)self + rowIndex * kVoiceRowBytes);
     for (int i = 0; i < self->outputVoiceCount; ++entry, ++i) {
         Inner* inner = entry[1];
-        if (inner) GtlVoice_SetEndSampleAddress(inner, sampleBase, endAddress);
+        if (inner)
+            GtlVoice_SetEndSampleAddress(inner, sampleBase, endAddress);
     }
 }
 
@@ -407,7 +486,8 @@ void GtlVoiceGroup_SetLoopFlag(Object* self, int enabled) {
         entry = (Inner**)row;
         for (int j = 0; j < self->outputVoiceCount; ++entry, ++j) {
             Inner* inner = entry[1];
-            if (inner) GtlVoice_SetLoopFlag(inner, enabled);
+            if (inner)
+                GtlVoice_SetLoopFlag(inner, enabled);
         }
     }
 }
@@ -417,7 +497,8 @@ void GtlVoiceGroup_SetRowNonLoopingSampleRange(Object* self, int rowIndex, int s
     Inner** entry = (Inner**)((char*)self + rowIndex * kVoiceRowBytes);
     for (int i = 0; i < self->outputVoiceCount; ++entry, ++i) {
         Inner* inner = entry[1];
-        if (inner) GtlVoice_SetNonLoopingSampleRange(inner, sampleBase, endAddress);
+        if (inner)
+            GtlVoice_SetNonLoopingSampleRange(inner, sampleBase, endAddress);
     }
 }
 
@@ -440,8 +521,10 @@ void GtlVoice_Stop(Object* self) {
                 if (inner) {
                     Active* active = *(Active**)inner;
                     int valid = 0;
-                    if (active && active->state == kAxVoiceRunning) valid = 1;
-                    if (valid) AXSetVoiceState(active, kAxVoiceStopped);
+                    if (active && active->state == kAxVoiceRunning)
+                        valid = 1;
+                    if (valid)
+                        AXSetVoiceState(active, kAxVoiceStopped);
                 }
             }
         }
@@ -478,7 +561,8 @@ void gtl_nw4r_detail_Voice_ApplyVolume(Object* self) {
         float initialGain = channelGain * self->initialVolume;
         for (int j = 0; j < self->sourceChannelCount; entry += 4, ++j) {
             Inner* inner = entry[1];
-            if (inner) gtl_AxVoice_SetVolumeEnvelope(inner, targetGain, initialGain);
+            if (inner)
+                gtl_AxVoice_SetVolumeEnvelope(inner, targetGain, initialGain);
         }
     }
 }
@@ -501,24 +585,29 @@ void GtlVoice_ConfigureSamplePlayback(Object* self, Params* params, int sampleOf
     sourceAdpcm = &((SampleParameterBlock*)params)->adpcm;
     // For each source channel, copy decoder state once and apply it to all allocated outputs.
     int i = 0;
-    for (; i < self->sourceChannelCount; row += kVoiceRowBytes, source += kSampleParameterStride, sourceAdpcm = (Params40*)((char*)sourceAdpcm + kSampleParameterStride), ++i) {
+    for (; i < self->sourceChannelCount; row += kVoiceRowBytes, source += kSampleParameterStride,
+                                         sourceAdpcm = (Params40*)((char*)sourceAdpcm + kSampleParameterStride), ++i) {
         if (FirstHardwareVoice((Object*)row)) {
             int sampleAddress = *(int*)(source + 0x10);
             Params40 adpcmParameters;
             if (!sampleFormat) {
                 adpcmParameters.set(sourceAdpcm->v[0], sourceAdpcm->v[1], sourceAdpcm->v[2], sourceAdpcm->v[3],
-                    sourceAdpcm->v[4], sourceAdpcm->v[5], sourceAdpcm->v[6], sourceAdpcm->v[7], sourceAdpcm->v[8], sourceAdpcm->v[9],
-                    sourceAdpcm->v[10], sourceAdpcm->v[11], sourceAdpcm->v[12], sourceAdpcm->v[13], sourceAdpcm->v[14],
-                    sourceAdpcm->v[15], sourceAdpcm->v[16], sourceAdpcm->v[17], sourceAdpcm->v[18], sourceAdpcm->v[19]);
+                                    sourceAdpcm->v[4], sourceAdpcm->v[5], sourceAdpcm->v[6], sourceAdpcm->v[7],
+                                    sourceAdpcm->v[8], sourceAdpcm->v[9], sourceAdpcm->v[10], sourceAdpcm->v[11],
+                                    sourceAdpcm->v[12], sourceAdpcm->v[13], sourceAdpcm->v[14], sourceAdpcm->v[15],
+                                    sourceAdpcm->v[16], sourceAdpcm->v[17], sourceAdpcm->v[18], sourceAdpcm->v[19]);
                 // Refresh predictor/scale and sample history for this start offset.
-                AudioVoice_ReadParameterTailTriplet(&adpcmParameters.v[17], &adpcmParameters.v[18], &adpcmParameters.v[19], sampleOffset, sampleAddress, &adpcmParameters);
+                AudioVoice_ReadParameterTailTriplet(&adpcmParameters.v[17], &adpcmParameters.v[18],
+                                                    &adpcmParameters.v[19], sampleOffset, sampleAddress,
+                                                    &adpcmParameters);
             }
             Inner** entry = (Inner**)row;
             for (int j = 0; j < self->outputVoiceCount; ++entry, ++j) {
                 Inner* inner = entry[1];
                 if (inner) {
                     AudioVoice_SetSampleSourceState(inner, *(int*)(source + 0x10), sampleFormat, sourceRate);
-                    gtl_Voice_SetAddressRange(inner, params->loopEnabled != 0, sampleAddress, sampleOffset, params->loopStartSampleOffset, params->endSampleOffset);
+                    gtl_Voice_SetAddressRange(inner, params->loopEnabled != 0, sampleAddress, sampleOffset,
+                                              params->loopStartSampleOffset, params->endSampleOffset);
                     if (!sampleFormat) {
                         GtlVoice_SetAdpcmParameters(inner, &adpcmParameters);
                         // +0x28 follows the 20-halfword state: loop predictor/scale,

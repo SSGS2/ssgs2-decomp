@@ -1,3 +1,7 @@
+// Save process actor and task: CSaveProcessMain runs and draws the save menu each frame, and
+// CSaveProcessTask creates the save-process actor.
+// The file also holds the drive-error display loop and the task-name setters.
+
 #include <decomp/static_init.h>
 #include <decomp/local_class.h>
 
@@ -14,7 +18,9 @@ public:
     LocalNString_u80280D18() : flags(0), length(0), data(0) {}
 #if defined(GAME_NSTRING_TEXT_CONSTRUCTOR)
     // Copy a terminated string through the shared ABI constructor.
-    LocalNString_u80280D18(const char* text) { MWString_ConstructCString(this, text); }
+    LocalNString_u80280D18(const char* text) {
+        MWString_ConstructCString(this, text);
+    }
 #endif
 #if defined(GAME_NSTRING_RANGE_CONSTRUCTOR)
     // Copy a terminated string using the shared reserve/replace operations.
@@ -33,7 +39,10 @@ public:
     }
 #endif
     // Release storage only for a heap-backed tagged string.
-    ~LocalNString_u80280D18() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~LocalNString_u80280D18() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
     // Return the byte length from the inline tag or the heap length word.
     unsigned int size() const {
         return (flags >> 31) == 0 ? (*(const unsigned char*)this & 0x7f) : length;
@@ -44,13 +53,13 @@ public:
     }
 };
 
-// Translation unit 0x80280D18-0x802813D0 (18 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CSaveProcessMain.h"
 #include "classes/CCheckDriveStatus.h"
+#include "classes/CFlashMemoryMenuSave.h"
+#include "classes/CSaveProcessTask.h"
+#include "classes/CTask.h"
 
 #define AsCSaveProcessMain(p) ((CSaveProcessMain*)(p))
 
@@ -105,18 +114,15 @@ struct SoundManagerState;
 struct CTaskManager;
 extern SoundManagerState* g_soundManager;
 extern CTaskManager* g_taskManager;
-extern signed char s_inputManagerInitialized, s_checkDriveStatusInitialized, s_systemResetStateInitialized, s_fadeOverlayInitialized;
+extern signed char s_inputManagerInitialized, s_checkDriveStatusInitialized, s_systemResetStateInitialized,
+    s_fadeOverlayInitialized;
 void InputManager_Init(void*);
 void InputManager_Dtor(void*);
 void InputManager_SetSelectedPlayer(void*, int);
-void* CFlashMemoryMenuSave_Create();
 void SoundManager_RequestBgmStop(void*, int);
 int MPBase1_Process(void*, float);
-void CTask_RequestTransitionWithFade(void*, void*, void*, int);
 void TaskCommandQueue_AppendNamedRequest(void*, int, void*, int, int, int, int, int);
-void CCheckDriveStatus_Ctor(void*);
 void CCheckDriveStatus_dtor();
-int CCheckDriveStatus_UpdateErrorDialog(void*);
 void SystemResetState_Ctor(void*);
 void SystemResetState_Dtor();
 int SystemReset_ProcessPendingReset(void*, int);
@@ -128,12 +134,11 @@ void Engine_PresentFrame(int, int, int, int);
 void OSSleepTicks(unsigned long long);
 extern float kFloat_1_DiskError;
 
-void* CSaveProcessMain_dtor(void*, int);
-void* CSaveProcessTask_dtor(void*, int);
-void* CSaveProcessTask_Ctor(void*);
+void* __dt__16CSaveProcessMainFv(void*, int);
+void* __dt__16CSaveProcessTaskFv(void*, int);
+void* __ct__16CSaveProcessTaskFv(void*);
 void MPBase1_DrawIfInitialized(void*);
-void CTask_Ctor(void*);
-void CTask_dtor(void*, int);
+void __dt__5CTaskFv(void*, int);
 void __dt__18NativeBase80201D18Fv(void*, int);
 void __dl__FPv(void*);
 
@@ -143,9 +148,7 @@ int __cntlzw(unsigned int);
 void* String_ReserveCapacity(void*, unsigned int);
 void String_ReplaceRange(void*, int, int, const char*, const char*, char*);
 void* TaskActorTable_CreateNamedActor(void*, const char*, const char*, int, void*);
-void CTask_SetMainActor(void*, void*);
 void appFreeUni__FPv(void*);
-
 
 extern char __vt__16CSaveProcessTask[];
 extern int g_defaultActorSkipMask;
@@ -157,85 +160,104 @@ extern float s_saveProcessTaskTau;
 extern float s_driveErrorLoopTau;
 
 // Return the save-process main actor's RTTI descriptor.
-void* CSaveProcessMain_GetRTTI() { return s_saveProcessMainRtti; }
+void* CSaveProcessMain::GetRTTI() {
+    return s_saveProcessMainRtti;
+}
 // Adjust the secondary-interface receiver before destroying the save-process actor.
-void CSaveProcessMain_DtorThunk18(void* self, int deleting) { CSaveProcessMain_dtor((char*)self - 0x18, deleting); }
+void CSaveProcessMain::DtorThunk18(int deleting) {
+    __dt__16CSaveProcessMainFv((char*)this - 0x18, deleting);
+}
 // Return the save-process task's RTTI descriptor.
-void* CSaveProcessTask_GetRTTI() { return s_saveProcessTaskRtti; }
+void* CSaveProcessTask::GetRTTI() {
+    return s_saveProcessTaskRtti;
+}
 
 // Initialize this module's stored two-pi constant from the shared scalar pool.
-void SaveProcessMain_InitTauConstant() { s_saveProcessMainTau = kFloat_6_2831855; }
+void SaveProcessMain_InitTauConstant() {
+    s_saveProcessMainTau = kFloat_6_2831855;
+}
 // Initialize the save request/menu state and select input player zero.
-void* CSaveProcessMain_Ctor(void* self) {
+CSaveProcessMain::CSaveProcessMain() {
     // Phase 1: construct interfaces and clear the eight-word request/menu handle.
-    __ct__18NativeBase80201D18Fv(self);
-    int inputManagerAddress = ((int&)Sing_805DC5C8());
-    *(void**)self = __vt__16CSaveProcessMain;
-    AsCSaveProcessMain(self)->secondaryVtable = __vt__16CSaveProcessMain + 0x3c;
-    SaveRequest(self).retainedRequestWord0 = 0;
-    SaveRequest(self).transitionArg0 = 0;
-    SaveRequest(self).transitionArg1 = 0;
-    SaveRequest(self).transitionArg2 = 0;
-    SaveRequest(self).transitionArg3 = 0;
-    SaveRequest(self).retainedArg0 = 0;
-    SaveRequest(self).retainedArg1 = 0;
-    SaveRequest(self).transitionArg4 = 0;
-    AsCSaveProcessMain(self)->saveMenu = 0;
+    __ct__18NativeBase80201D18Fv(this);
+    int inputManagerAddress = ((int&)GetInputManagerSlot());
+    *(void**)this = __vt__16CSaveProcessMain;
+    secondaryVtable = __vt__16CSaveProcessMain + 0x3c;
+    SaveRequest(this).retainedRequestWord0 = 0;
+    SaveRequest(this).transitionArg0 = 0;
+    SaveRequest(this).transitionArg1 = 0;
+    SaveRequest(this).transitionArg2 = 0;
+    SaveRequest(this).transitionArg3 = 0;
+    SaveRequest(this).retainedArg0 = 0;
+    SaveRequest(this).retainedArg1 = 0;
+    SaveRequest(this).transitionArg4 = 0;
+    saveMenu = 0;
     // Phase 2: acquire the shared input manager and select player slot zero.
     if (!inputManagerAddress) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_SaveProcess);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_SaveProcess);
             s_inputManagerInitialized = 1;
         }
-        ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+        ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
     }
-    InputManager_SetSelectedPlayer((void*)((int&)Sing_805DC5C8()), 0);
-    return self;
+    InputManager_SetSelectedPlayer((void*)((int&)GetInputManagerSlot()), 0);
 }
 
 // Create/process the NAND save menu, then queue the requested task transition after it completes.
 // The actor owns saveMenu and destroys it with deleting flag 1 on completion.
 // dt is forwarded unchanged to MPBase1_Process; its time unit is defined there.
-void CSaveProcessMain_OnProcess(void* self, float dt) {
-    CSaveProcessMain* saveProcess = AsCSaveProcessMain(self);
+void CSaveProcessMain::OnProcess(float dt) {
+    CSaveProcessMain* saveProcess = this;
     // Phase 1: lazily create the menu and request BGM stop once per menu instance.
     if (!saveProcess->saveMenu) {
-        saveProcess->saveMenu = (int)CFlashMemoryMenuSave_Create();
+        saveProcess->saveMenu = (int)CFlashMemoryMenuSave::Create();
         SoundManager_RequestBgmStop((void*)g_soundManager, 1);
     }
     if (MPBase1_Process((void*)saveProcess->saveMenu, dt)) {
         // Phase 2: the menu has finished; release it before scheduling follow-up work.
         if (saveProcess->saveMenu) {
             if (saveProcess->saveMenu) {
-                struct V { 
-                virtual void m(int) DECOMP_LOCAL_VIRTUAL;
+                struct V {
+                    virtual void m(int) DECOMP_LOCAL_VIRTUAL;
                 };
                 ((V*)saveProcess->saveMenu)->m(1);
             }
             saveProcess->saveMenu = 0;
         }
         // Phase 3: queue the transition and the five forwarded request words.
-        CTask_RequestTransitionWithFade((void*)g_taskManager, s_saveProcessTransitionTargetName, s_saveProcessEmptyTransitionArgument, 0);
-        TaskCommandQueue_AppendNamedRequest((void*)g_taskManager, 0, s_saveProcessFollowUpTaskName, SaveRequest(saveProcess).transitionArg0, SaveRequest(saveProcess).transitionArg1, SaveRequest(saveProcess).transitionArg2, SaveRequest(saveProcess).transitionArg3, SaveRequest(saveProcess).transitionArg4);
+        ((CTask*)g_taskManager)
+            ->RequestTransitionWithFade(s_saveProcessTransitionTargetName, s_saveProcessEmptyTransitionArgument, 0);
+        TaskCommandQueue_AppendNamedRequest(
+            (void*)g_taskManager, 0, s_saveProcessFollowUpTaskName, SaveRequest(saveProcess).transitionArg0,
+            SaveRequest(saveProcess).transitionArg1, SaveRequest(saveProcess).transitionArg2,
+            SaveRequest(saveProcess).transitionArg3, SaveRequest(saveProcess).transitionArg4);
     }
 }
 // Initialize this module's stored two-pi constant from the shared scalar pool.
-void SaveProcessTask_InitTauConstant() { s_saveProcessTaskTau = kFloat_6_2831855; }
+void SaveProcessTask_InitTauConstant() {
+    s_saveProcessTaskTau = kFloat_6_2831855;
+}
 // Initialize this module's stored two-pi constant from the shared scalar pool.
-void DriveErrorLoop_InitTauConstant() { s_driveErrorLoopTau = kFloat_6_2831855; }
+void DriveErrorLoop_InitTauConstant() {
+    s_driveErrorLoopTau = kFloat_6_2831855;
+}
 // Draw the optional save menu through its MPBase interface.
-void CSaveProcessMain_OnDisplay(void* self) {
-    void* menu = (*(void**)&AsCSaveProcessMain(self)->saveMenu);
-    if (menu) MPBase1_DrawIfInitialized(menu);
+void CSaveProcessMain::OnDisplay() {
+    void* menu = (*(void**)&saveMenu);
+    if (menu)
+        MPBase1_DrawIfInitialized(menu);
 }
 // Copy all eight incoming request words for the transition after saving.
 // src points to at least 0x20 readable bytes; the copy retains no src pointer.
-void CSaveProcessMain_HandleMsg(void* dst, const void* src) {
+void CSaveProcessMain::HandleMsg(void* dst, const void* src) {
     SaveRequest(dst) = *(const SaveProcessRequest*)src;
 }
 // Adjust the secondary-interface receiver before destroying the save-process task.
-void CSaveProcessTask_DtorThunk8(void* self, int deleting) { CSaveProcessTask_dtor((char*)self - 8, deleting); }
+void CSaveProcessTask::DtorThunk8(int deleting) {
+    __dt__16CSaveProcessTaskFv((char*)this - 8, deleting);
+}
 
 #pragma opt_strength_reduction off
 // Run the blocking drive-error UI loop with reset handling, fading, frame presentation, and 33-ms waits.
@@ -245,30 +267,46 @@ void DriveError_RunDisplayLoop() {
     // Phase 1: borrow the shared drive-status object; this loop never destroys it.
     void* driveStatus;
     if (!((int&)Sing_805DCB20())) {
-        if (!s_checkDriveStatusInitialized) { CCheckDriveStatus_Ctor(s_checkDriveStatus); __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor, driveErrorDialogDtorRegistrations); s_checkDriveStatusInitialized = 1; }
+        if (!s_checkDriveStatusInitialized) {
+            ((CCheckDriveStatus*)s_checkDriveStatus)->__ct();
+            __register_global_object(s_checkDriveStatus, (void*)CCheckDriveStatus_dtor,
+                                     driveErrorDialogDtorRegistrations);
+            s_checkDriveStatusInitialized = 1;
+        }
         ((int&)Sing_805DCB20()) = (int)s_checkDriveStatus;
     }
     driveStatus = (void*)((int&)Sing_805DCB20());
     for (;;) {
         // Phase 2: update the dialog; only draw/present when it requests a frame.
-        if (CCheckDriveStatus_UpdateErrorDialog(driveStatus)) {
+        if (CCheckDriveStatus::UpdateErrorDialog(driveStatus)) {
             if (!((int&)Sing_805DC948())) {
-                if (!s_systemResetStateInitialized) { SystemResetState_Ctor(s_systemResetStorage); __register_global_object(s_systemResetStorage, (void*)SystemResetState_Dtor, lbl_8050A474); s_systemResetStateInitialized = 1; }
+                if (!s_systemResetStateInitialized) {
+                    SystemResetState_Ctor(s_systemResetStorage);
+                    __register_global_object(s_systemResetStorage, (void*)SystemResetState_Dtor, lbl_8050A474);
+                    s_systemResetStateInitialized = 1;
+                }
                 ((int&)Sing_805DC948()) = (int)s_systemResetStorage;
             }
             // A handled reset restarts the loop immediately, bypassing this sleep.
-            if (SystemReset_ProcessPendingReset((void*)((int&)Sing_805DC948()), 0)) continue;
+            if (SystemReset_ProcessPendingReset((void*)((int&)Sing_805DC948()), 0))
+                continue;
             Engine_ClearFramebuffer(0, 0, 7, 255, 0, kFloat_1_DiskError);
             // Phase 3: draw the closing fade or the still-open drive-error dialog.
             if (((CCheckDriveStatus*)driveStatus)->dialogCloseRequested) { // 0x80281214: drive-status object +0x30
                 if (!((int&)Sing_805DC608())) {
-                    if (!s_fadeOverlayInitialized) { FadeOverlay_Init(s_fadeOverlay); __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, lbl_8050A48C); s_fadeOverlayInitialized = 1; }
+                    if (!s_fadeOverlayInitialized) {
+                        FadeOverlay_Init(s_fadeOverlay);
+                        __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, lbl_8050A48C);
+                        s_fadeOverlayInitialized = 1;
+                    }
                     ((int&)Sing_805DC608()) = (int)s_fadeOverlay;
                 }
                 FadeState_Draw((void*)((int&)Sing_805DC608()));
             } else if (((CCheckDriveStatus*)driveStatus)->diskErrorDialog) {
-                struct V { 
-                virtual void a() DECOMP_LOCAL_VIRTUAL; virtual void b() DECOMP_LOCAL_VIRTUAL; virtual void draw() DECOMP_LOCAL_VIRTUAL;
+                struct V {
+                    virtual void a() DECOMP_LOCAL_VIRTUAL;
+                    virtual void b() DECOMP_LOCAL_VIRTUAL;
+                    virtual void draw() DECOMP_LOCAL_VIRTUAL;
                 };
                 ((V*)((CCheckDriveStatus*)driveStatus)->diskErrorDialog)->draw();
             }
@@ -276,47 +314,35 @@ void DriveError_RunDisplayLoop() {
         }
         {
             // Phase 4: throttle even when no frame was requested by the dialog update.
-            OSSleepTicks((long long)((*(volatile unsigned int*)kBusClockRegister >> 2) / 1000) * kDriveErrorFrameMilliseconds);
+            OSSleepTicks((long long)((*(volatile unsigned int*)kBusClockRegister >> 2) / 1000) *
+                         kDriveErrorFrameMilliseconds);
         }
     }
 }
 #pragma opt_strength_reduction reset
 
 // Initialize the task's primary/secondary interfaces and clear both actor-skip masks.
-void* CSaveProcessTask_Ctor(void* self) {
-    CTask_Ctor(self);
-    *(void**)self = __vt__16CSaveProcessTask;
-    *((void**)self + 1) = (char*)__vt__16CSaveProcessTask + kTaskFirstSecondaryVtableOffset;
-    *((void**)self + 2) = (char*)__vt__16CSaveProcessTask + kTaskSecondSecondaryVtableOffset;
+CSaveProcessTask::CSaveProcessTask() {
+    ((CTask*)this)->Init();
+    *(void**)this = __vt__16CSaveProcessTask;
+    *((void**)this + 1) = (char*)__vt__16CSaveProcessTask + kTaskFirstSecondaryVtableOffset;
+    *((void**)this + 2) = (char*)__vt__16CSaveProcessTask + kTaskSecondSecondaryVtableOffset;
     g_defaultActorSkipMask = 0;
     g_actorSkipMask = 0;
-    return self;
 }
 
 // Destroy the native actor base and optionally free the save-process actor.
 // Null is accepted; deleting > 0 frees self. Return is the original, possibly freed address.
-void* CSaveProcessMain_dtor(void* self, int deleting) {
-    if (self != 0) {
-        if (self != 0) {
-            __dt__18NativeBase80201D18Fv(self, 0);
-        }
-        if (deleting > 0) {
-            __dl__FPv(self);
-        }
+CSaveProcessMain::~CSaveProcessMain() {
+    if (this != 0) {
+        __dt__18NativeBase80201D18Fv(this, 0);
     }
-    return self;
 }
 
 // Destroy the task base and optionally free the save-process task.
 // Null is accepted; deleting > 0 frees self. Return is the original, possibly freed address.
-void* CSaveProcessTask_dtor(void* self, int deleting) {
-    if (self != 0) {
-        CTask_dtor(self, 0);
-        if (deleting > 0) {
-            __dl__FPv(self);
-        }
-    }
-    return self;
+CSaveProcessTask::~CSaveProcessTask() {
+    __dt__5CTaskFv(this, 0);
 }
 
 // Store a terminated transition target name and report whether the original name fits in 32 bytes.
@@ -342,7 +368,7 @@ int SaveProcess_SetFollowUpTaskName(const char* taskName) {
 }
 
 // Create the named save-process actor with an empty argument string and store its actor handle.
-void CSaveProcessTask_CreateActors(void* self) {
+void CSaveProcessTask::CreateActors() {
     char allocatorByte;
     int allocatorScratch;
     LocalNString_u80280D18 actorArgument;
@@ -355,8 +381,9 @@ void CSaveProcessTask_CreateActors(void* self) {
     String_ReplaceRange(&actorArgument, 0, 0, argumentText, argumentText + argumentLength, &allocatorByte);
     // Phase 2: the factory consumes the argument during the call, then the local
     // string releases its storage on return. The task stores the returned handle.
-    void* actor = TaskActorTable_CreateNamedActor(self, s_saveProcessActorClassName, s_saveProcessActorInstanceName, 0, &actorArgument);
-    CTask_SetMainActor(self, actor);
+    void* actor = TaskActorTable_CreateNamedActor(this, s_saveProcessActorClassName, s_saveProcessActorInstanceName, 0,
+                                                  &actorArgument);
+    ((CTask*)this)->SetMainActor(actor);
 }
 } // extern "C"
 

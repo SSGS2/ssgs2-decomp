@@ -1,9 +1,12 @@
+// The multiplayer results screen (CResultFightMenu) and its ranking view (ViewRank): rank animations,
+// player and score text, and the confirm or cancel input.
+
 #include <decomp/static_init.h>
 // Ranking and fight-result menus: script startup, timed reveal, score/Pang text,
 // confirmation/cancellation and resource destruction. Mod lookup: change ranking
 // row placement via ViewRank::rankRowByCharacter; refresh values/tints in
 // ViewRank_RefreshPlayerScores; fight completion delay is the shared
-// kFloat_5_FightResultAdvanceDelay consumed by CResultFightMenu_UpdateAndTryAdvance.
+// kFloat_5_FightResultAdvanceDelay consumed by CResultFightMenu::UpdateAndTryAdvance.
 // Data: rankingViewStrings/fightResultStrings, ranking group/number-name tables;
 // layouts: ViewRank.h, CResultFightMenu.h. Reveal state machine: result_menu_and_fight_result.cpp.
 #include "classes/CSharedDoc.h"
@@ -20,29 +23,31 @@
 // Borrow the corresponding typed view of existing object storage.
 #define AsViewRank(p) ((ViewRank*)(p))
 
-// Translation unit 0x803297B8-0x8032AE10 (18 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include "game/wstring.h"
 #include "classes/CResultFightMenu.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CFontNumDraw.h"
 
 // Borrow the corresponding typed view of existing object storage.
-#define AsCResultFightMenu(p) ((CResultFightMenu*)(p))
 
 // Resource access map: Sing_805DC5F0 is the shared BP entry registry,
-// Sing_805DC830 the numeric-text registry, Sing_805DC5C8 the input manager.
+// Sing_805DC830 the numeric-text registry, GetInputManagerSlot the input manager.
 // Repeated ensure blocks intentionally re-read the singleton after external calls.
 // IDs/enabled words use pointer-shaped legacy ABI slots, never owned pointers.
 // Packed views of the existing resource pools; array lengths include each terminating NUL.
 struct RankingViewStringPool {
     char archive[12], layout[15], script[15], blackSpriteScript[22], messages[12], numberFont[20];
-    char confirmSound[19], blackSpriteAnimation[13], rankingAnimation[8], firstPlaceGroup[4], lastPlaceGroup[4], middlePlacesGroup[6];
+    char confirmSound[19], blackSpriteAnimation[13], rankingAnimation[8], firstPlaceGroup[4], lastPlaceGroup[4],
+        middlePlacesGroup[6];
 };
 struct FightResultStringPool {
     char layout[23], script[23], numberFont[18], introAnimation[22], confirmSound[14];
 };
-struct RankingSharedSelection { char prefix[0x120]; void* characterTypeId; };
+struct RankingSharedSelection {
+    char prefix[0x120];
+    void* characterTypeId;
+};
 // These counters occupy part of the snapshot header's aggregate result/stat storage.
 struct RankingPlayerResult {
     char prefix[0xC4];
@@ -52,16 +57,25 @@ struct RankingPlayerResult {
     int scoreToPar;
     int totalPang;
 };
-struct RankingHoleRecord { char prefix[0x18]; unsigned char par; char tail[7]; };
+struct RankingHoleRecord {
+    char prefix[0x18];
+    unsigned char par;
+    char tail[7];
+};
 // The caller supplies a player index, score (or party-mode value), and base-plus-bonus Pang.
-struct FightResultEntry { unsigned int playerIndex, scoreValue, totalPang; };
-struct FightTextureSlot { char storage[0x28]; };
+struct FightResultEntry {
+    unsigned int playerIndex, scoreValue, totalPang;
+};
+struct FightTextureSlot {
+    char storage[0x28];
+};
 struct FightResultStorage {
     char prefix[0x3C];
     FightResultEntry entries[4];
     FightTextureSlot textures[4];
 };
-#define RESULT_OFF(type, field, offset) typedef char type##_##field##_offset[((int)&((type*)0)->field == offset) ? 1 : -1]
+#define RESULT_OFF(type, field, offset) \
+    typedef char type##_##field##_offset[((int)&((type*)0)->field == offset) ? 1 : -1]
 RESULT_OFF(RankingViewStringPool, confirmSound, 0x60);
 RESULT_OFF(RankingViewStringPool, rankingAnimation, 0x80);
 RESULT_OFF(FightResultStringPool, introAnimation, 0x40);
@@ -80,14 +94,27 @@ RESULT_OFF(FightResultStorage, textures, 0x6C);
 // down four UPDATE CALLS before returning completion; input is skipped meanwhile.
 // Cancel returns completion immediately with selectionResult=2. No delta is used.
 enum RankingConstants {
-    kCharacterCount = 8, kTextureCount = 4, kRankingActivationFrames = 4,
-    kCancelAction = 3, kAlternateCancelAction = 2, kAnyInputPlayer = -1,
-    kPlacementShift = 4, kPlacementMask = 15, kFirstPlace = 1, kLastPlace = 8, kRankRowSpacing = 28,
-    kPlayerNameColor = 0xD0003EFF, kOtherNameColor = 0x000000FF,
-    kPlayerNumberTint = 0xFF3E00D0, kOtherNumberTint = 0xFF000000,
-    kFightLayoutElementCount = 27, kFightHiddenGroupCount = 26,
-    kFightNumericEntryCount = 16, kRankingConfirmElement = 0,
-    kRankingConfirmPlayerFlags = 5, kRankingConfirmVisualState = 2
+    kCharacterCount = 8,
+    kTextureCount = 4,
+    kRankingActivationFrames = 4,
+    kCancelAction = 3,
+    kAlternateCancelAction = 2,
+    kAnyInputPlayer = -1,
+    kPlacementShift = 4,
+    kPlacementMask = 15,
+    kFirstPlace = 1,
+    kLastPlace = 8,
+    kRankRowSpacing = 28,
+    kPlayerNameColor = 0xD0003EFF,
+    kOtherNameColor = 0x000000FF,
+    kPlayerNumberTint = 0xFF3E00D0,
+    kOtherNumberTint = 0xFF000000,
+    kFightLayoutElementCount = 27,
+    kFightHiddenGroupCount = 26,
+    kFightNumericEntryCount = 16,
+    kRankingConfirmElement = 0,
+    kRankingConfirmPlayerFlags = 5,
+    kRankingConfirmVisualState = 2
 };
 
 extern "C" {
@@ -99,13 +126,10 @@ extern void BpObject_Draw(void*);
 extern int BpObject_IsCurrentScriptComplete(void*);
 extern void Layout_DrawWithOpacity(void*, float);
 extern void UITextTable_Draw(void*);
-extern void CResultFightMenu_DrawLayoutTextureQuad(void*, unsigned int);
 extern int Layout_PollLoadComplete(void*);
 extern void CBpCtrl_dtor(void*);
-extern int CBpCtrl_PollAllEntriesLoaded(void*);
 extern void* IdMap_Lookup(void*, void*);
 extern void BpObject_SetEnabled(void*, void*);
-extern void __ct__7CBpCtrlFv(void*);
 extern void __register_global_object(void*, void*, void*);
 extern float kFloat_6_2831855;
 extern float kFloat_1_ResultFightMenu;
@@ -117,24 +141,20 @@ extern void ViewRank_DrawEntryText(void*);
 extern void PointerArray_DeleteValue(void*, void*);
 extern void PointerVector_InitReserved(void*);
 extern void PointerVector_DestroyStorage(void*);
-extern void CBpCtrl_DeleteEntryById(void*, void*);
 extern void Layout_Destroy(void*, int);
 extern void __destroy_arr(void*, void*, int, int);
 extern void __dl__FPv(void*);
 extern void InputManager_Init(void*);
 extern void InputManager_Dtor(void*);
 extern void InputManager_SetSelectedPlayer(void*, int);
-extern void CFontNumDraw_RegisterEntries(void*, void*, int, void*, void*);
 extern void MPBase1_Ctor(void*);
 extern void* __nw__FUl(unsigned int);
 extern void Layout_Init(void*, int);
 extern void Layout_LoadExtended(void*, int, const char*);
 extern void __construct_array(void*, void*, void*, int, int);
-extern void CBpCtrl_CreateEntry(void*, const char*, void*, int);
-extern void CBpTex_dtor(void*);
-extern void CBpTex_Init(void*);
+extern "C" void __dt__6CBpTexFv(void*);
+extern "C" void __ct__6CBpTexFv(void*);
 extern void __dt__16CWarningLogoBaseFv(void*);
-extern void* CFontNumDraw_CreateInVector(void*);
 extern void* GolfPlayer_GetEntryByIndex(void*, unsigned char);
 extern int SharedDoc_IsPlayerFlag0Set(int);
 extern signed char s_pointerVectorInitialized;
@@ -168,9 +188,6 @@ extern void BpObject_StartScriptByName(void*, void*, int);
 extern void* BpObject_GetOrCreateNamedGroup(void*, void*);
 extern void UIGroup_SetEnabled(void*, int);
 extern void Text_SetPosition(void*, void*);
-extern void CMsgDraw_ClearFormattingAndRevealAll(void*);
-extern void CMsgDraw_SetColor(void*, int);
-extern void CMsgDraw_UpdateReveal(void*);
 extern void Text_DrawGlyphs(void*);
 extern void Text_SetContent(void*, void*);
 extern void WString_ReplaceRange(void*, int, int, int, int, unsigned char*);
@@ -180,10 +197,8 @@ extern void* SaveData_GetCurrentRecord(void*);
 extern int wcslen(void*);
 extern int UIGroup_SetPosition(void*, void*);
 extern int UIGroup_GetPosition(void*, void*);
-extern int CMsgDraw_ResetTextState(void*);
 extern void* s_rankingCharacterNameMessageKeys[];
 extern void* s_rankingPositionGroupNames[];
-extern int CResultFightMenu_UpdateRevealSequence(void*, float);
 extern int InputManager_IsAnyMenuAdvanceActionActive(void*);
 extern void Sound_PlayByName(void*, void*, int, int, int, int, float, float, float);
 
@@ -207,7 +222,7 @@ extern void* s_rankingPangNumberEntryNames[];
 static inline void EnsureResultBpRegistry(void* registration) {
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(&s_bpCtrl);
+            ((CBpCtrl*)&s_bpCtrl)->__ct();
             __register_global_object(&s_bpCtrl, (void*)CBpCtrl_dtor, registration);
             s_bpCtrlInitialized = 1;
         }
@@ -216,50 +231,47 @@ static inline void EnsureResultBpRegistry(void* registration) {
 }
 
 // Draw both ranking scripts, the layout and character names; enable the numeric score table.
-void ViewRank_Draw(void* arg) {
+void ViewRank_Draw(void* viewRank) {
     EnsureResultBpRegistry(&s_bpCtrlDtorRecord_Menu);
-    void* obj = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(arg)->secondaryEntryId));
+    void* obj = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(viewRank)->secondaryEntryId));
     BpObject_TryInvokeCurrentCallback(obj, 0);
     BpObject_Draw(obj);
     EnsureResultBpRegistry(&s_bpCtrlDtorRecord_Menu);
-    obj = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(arg)->entryId));
+    obj = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(viewRank)->entryId));
     BpObject_TryInvokeCurrentCallback(obj, 0);
     BpObject_Draw(obj);
-    Layout_DrawWithOpacity(AsViewRank(arg)->layout, kFloat_1_Ranking);
-    ViewRank_DrawEntryText(arg);
-    AsUITextTable(AsViewRank(arg)->numberDraw)->drawEnabled = 1;
+    Layout_DrawWithOpacity(AsViewRank(viewRank)->layout, kFloat_1_Ranking);
+    ViewRank_DrawEntryText(viewRank);
+    AsUITextTable(AsViewRank(viewRank)->numberDraw)->drawEnabled = 1;
 }
 
 // Release numeric text, script entry, layout and four texture slots, then optionally delete this menu.
-void* CResultFightMenu_dtor(void* arg, int flags) {
-    if (arg) {
-        AsCResultFightMenu(arg)->vtbl = &__vt__16CResultFightMenu;
-        UITextTable_ClearEntries(AsCResultFightMenu(arg)->numberDraw);
-        if ((*(int*)&AsCResultFightMenu(arg)->numberDraw)) {
-            if (!Sing_805DC830()) {
-                if (!s_pointerVectorInitialized) {
-                    PointerVector_InitReserved(&s_fontNumDrawRegistry);
-                    __register_global_object(&s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage, &s_fontNumDrawDtorRegistration_FightResults);
-                    s_pointerVectorInitialized = 1;
-                }
-                Sing_805DC830() = &s_fontNumDrawRegistry;
+CResultFightMenu::~CResultFightMenu() {
+    vtbl = &__vt__16CResultFightMenu;
+    UITextTable_ClearEntries(numberDraw);
+    if ((*(int*)&numberDraw)) {
+        if (!Sing_805DC830()) {
+            if (!s_pointerVectorInitialized) {
+                PointerVector_InitReserved(&s_fontNumDrawRegistry);
+                __register_global_object(&s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage,
+                                         &s_fontNumDrawDtorRegistration_FightResults);
+                s_pointerVectorInitialized = 1;
             }
-            PointerArray_DeleteValue(Sing_805DC830(), AsCResultFightMenu(arg)->numberDraw);
+            Sing_805DC830() = &s_fontNumDrawRegistry;
         }
-        if (AsCResultFightMenu(arg)->scriptEntryId != -1) {
-            EnsureResultBpRegistry(&s_bpCtrlDtorRegistration_ResultFightMenu);
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), (*(void**)&AsCResultFightMenu(arg)->scriptEntryId));
-            AsCResultFightMenu(arg)->scriptEntryId = -1;
-        }
-        void* p = AsCResultFightMenu(arg)->layout;
-        if (p) {
-            Layout_Destroy(p, 1);
-            AsCResultFightMenu(arg)->layout = 0;
-        }
-        __destroy_arr(((FightResultStorage*)arg)->textures, (void*)CBpTex_dtor, 0x28, 4);
-        if (flags > 0) __dl__FPv(arg);
+        PointerArray_DeleteValue(Sing_805DC830(), numberDraw);
     }
-    return arg;
+    if (scriptEntryId != -1) {
+        EnsureResultBpRegistry(&s_bpCtrlDtorRegistration_ResultFightMenu);
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById((int)(*(void**)&scriptEntryId));
+        scriptEntryId = -1;
+    }
+    void* p = layout;
+    if (p) {
+        Layout_Destroy(p, 1);
+        layout = 0;
+    }
+    __destroy_arr(((FightResultStorage*)this)->textures, (void*)__dt__6CBpTexFv, 0x28, 4);
 }
 
 struct WStr32 {
@@ -267,10 +279,14 @@ struct WStr32 {
     unsigned int size;
     void* data;
     // Release the temporary wide string heap buffer if present.
-    ~WStr32() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~WStr32() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
     // Return borrowed inline/heap UTF-16 text without transferring ownership.
     void* chars() {
-        if ((flags >> 31) == 0) return (char*)this + 2;
+        if ((flags >> 31) == 0)
+            return (char*)this + 2;
         return data;
     }
 };
@@ -279,26 +295,31 @@ struct WStr32 {
 #pragma use_lmw_stmw on
 #pragma opt_loop_invariants off
 // Place each character name at its rank slot; use the save name and highlight color for the player.
-void ViewRank_DrawEntryText(void* arg) {
-    ItemInventory_FindCharacterIndex(AsCSharedDoc(g_sharedDoc)->itemInventory, ((RankingSharedSelection*)g_sharedDoc)->characterTypeId);
+void ViewRank_DrawEntryText(void* viewRank) {
+    ItemInventory_FindCharacterIndex(AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                     ((RankingSharedSelection*)g_sharedDoc)->characterTypeId);
     // Two raw 32-bit words hold screen-space float X/Y returned by the UI;
     // integer storage preserves the original word copies (no numeric conversion).
     int pos[2] = {0, 0};
-    CMsgDraw_ResetTextState(AsViewRank(arg)->messageDraw);
+    ((CMsgDraw*)(AsViewRank(viewRank)->messageDraw))->ResetTextState();
     void* text;
-    void* item = arg; // biased by 4 per character: only rankRowByCharacter[0] is read
+    void* item = viewRank; // biased by 4 per character: only rankRowByCharacter[0] is read
     void** names = s_rankingCharacterNameMessageKeys;
     int index = 0;
     // Character-index iteration selects a rank-position group for each name.
     do {
         EnsureResultBpRegistry(&s_bpCtrlDtorRecord_Menu);
-        UIGroup_GetPosition(BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(arg)->entryId)), s_rankingPositionGroupNames[AsViewRank(item)->rankRowByCharacter[0]]), pos);
-        Text_SetPosition(AsViewRank(arg)->messageDraw, pos);
-        CMsgDraw_ClearFormattingAndRevealAll(AsViewRank(arg)->messageDraw);
+        UIGroup_GetPosition(
+            BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(viewRank)->entryId)),
+                                           s_rankingPositionGroupNames[AsViewRank(item)->rankRowByCharacter[0]]),
+            pos);
+        Text_SetPosition(AsViewRank(viewRank)->messageDraw, pos);
+        ((CMsgDraw*)(AsViewRank(viewRank)->messageDraw))->ClearFormattingAndRevealAll();
         {
             WString name;
             int len;
-            if (index == ItemInventory_FindCharacterIndex(AsCSharedDoc(g_sharedDoc)->itemInventory, ((RankingSharedSelection*)g_sharedDoc)->characterTypeId)) {
+            if (index == ItemInventory_FindCharacterIndex(AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                                          ((RankingSharedSelection*)g_sharedDoc)->characterTypeId)) {
                 void* extraReceiver5 = (void*)SaveData_AcquireInitializedInstance();
                 text = SaveData_GetCurrentRecord(extraReceiver5);
                 len = ((name.flags >> 31) == 0) ? (*(unsigned char*)&name.flags & 0x7F) : name.length;
@@ -310,9 +331,9 @@ void ViewRank_DrawEntryText(void* arg) {
                 *(unsigned char*)&c10 = *(volatile unsigned char*)&c14;
                 int n = wcslen(text);
                 WString_ReplaceRange(&name, 0, len, (int)text, (int)((char*)text + n * 2), (unsigned char*)&c10);
-                CMsgDraw_SetColor(AsViewRank(arg)->messageDraw, kPlayerNameColor);
+                ((CMsgDraw*)(AsViewRank(viewRank)->messageDraw))->SetColor(kPlayerNameColor);
             } else {
-                text = (void*)MessageTable_FindTextByName(AsViewRank(arg)->taggedText, *names);
+                text = (void*)MessageTable_FindTextByName(AsViewRank(viewRank)->taggedText, *names);
                 len = ((name.flags >> 31) == 0) ? (*(unsigned char*)&name.flags & 0x7F) : name.length;
                 // Same allocator-token ABI as the save-name path above.
                 volatile int c0c;
@@ -320,22 +341,23 @@ void ViewRank_DrawEntryText(void* arg) {
                 *(unsigned char*)&c08 = *(volatile unsigned char*)&c0c;
                 int n = wcslen(text);
                 WString_ReplaceRange(&name, 0, len, (int)text, (int)((char*)text + n * 2), (unsigned char*)&c08);
-                CMsgDraw_SetColor(AsViewRank(arg)->messageDraw, 0xFF);
+                ((CMsgDraw*)(AsViewRank(viewRank)->messageDraw))->SetColor(0xFF);
             }
-            Text_SetContent(AsViewRank(arg)->messageDraw, ((name.flags >> 31) == 0) ? (void*)((char*)&name + 2) : name.data);
+            Text_SetContent(AsViewRank(viewRank)->messageDraw,
+                            ((name.flags >> 31) == 0) ? (void*)((char*)&name + 2) : name.data);
         }
         ++index;
         item = (char*)item + 4;
         ++names;
     } while (index < 8);
-    CMsgDraw_UpdateReveal(AsViewRank(arg)->messageDraw);
-    ((CMsgDraw*)AsViewRank(arg)->messageDraw)->drawSuppressed = 0; // original +0x94, followed by Text_DrawGlyphs
-    Text_DrawGlyphs(AsViewRank(arg)->messageDraw);
+    ((CMsgDraw*)(AsViewRank(viewRank)->messageDraw))->UpdateReveal();
+    ((CMsgDraw*)AsViewRank(viewRank)->messageDraw)->drawSuppressed = 0; // original +0x94, followed by Text_DrawGlyphs
+    Text_DrawGlyphs(AsViewRank(viewRank)->messageDraw);
 }
 #pragma pop
 
 // Start ranking scripts and select the first-place, last-place or intermediate rank marker.
-void ViewRank_StartRankingAnimation(void* arg) {
+void ViewRank_StartRankingAnimation(void* viewRank) {
     int local[6];
     local[0] = 0;
     local[1] = 0;
@@ -344,11 +366,11 @@ void ViewRank_StartRankingAnimation(void* arg) {
     void* state;
     int mode;
     EnsureResultBpRegistry(&s_bpCtrlDtorRecord_Menu);
-    obj = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(arg)->secondaryEntryId));
+    obj = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(viewRank)->secondaryEntryId));
     // blackSpriteAnimation is the secondary object's animation script name.
     BpObject_StartScriptByName(obj, rankingViewStrings.blackSpriteAnimation, 1);
     EnsureResultBpRegistry(&s_bpCtrlDtorRecord_Menu);
-    obj = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(arg)->entryId));
+    obj = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(viewRank)->entryId));
     BpObject_StartScriptByName(obj, rankingViewStrings.rankingAnimation, 1);
     extern int s_rankingPlacementMarkerGroupNames[];
     names = &local[2];
@@ -365,77 +387,83 @@ void ViewRank_StartRankingAnimation(void* arg) {
     state = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), 0);
     mode = (((RankingPlayerResult*)state)->rankFlags >> kPlacementShift) & kPlacementMask;
     switch (mode) {
-        case 8:
-            UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(obj, rankingViewStrings.lastPlaceGroup), 1);
-            break;
-        case 1:
-            UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(obj, rankingViewStrings.firstPlaceGroup), 1);
-            break;
-        default:
-            obj = BpObject_GetOrCreateNamedGroup(obj, rankingViewStrings.middlePlacesGroup);
-            UIGroup_SetEnabled(obj, 1);
-            state = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), 0);
-            {
-                unsigned char m = (((RankingPlayerResult*)state)->rankFlags >> kPlacementShift) & kPlacementMask;
-                *(float*)&local[1] = (float)((m - 2) * 0x1C);
-            }
-            UIGroup_SetPosition(obj, local);
-            break;
+    case 8:
+        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(obj, rankingViewStrings.lastPlaceGroup), 1);
+        break;
+    case 1:
+        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(obj, rankingViewStrings.firstPlaceGroup), 1);
+        break;
+    default:
+        obj = BpObject_GetOrCreateNamedGroup(obj, rankingViewStrings.middlePlacesGroup);
+        UIGroup_SetEnabled(obj, 1);
+        state = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), 0);
+        {
+            unsigned char placement = (((RankingPlayerResult*)state)->rankFlags >> kPlacementShift) & kPlacementMask;
+            *(float*)&local[1] = (float)((placement - 2) * 0x1C);
+        }
+        UIGroup_SetPosition(obj, local);
+        break;
     }
 }
 
-struct FightTex { 
-virtual void _0(); virtual void init(int);
+struct FightTex {
+    virtual void _0();
+    virtual void init(int);
 };
 struct FightLayout {
     char storage[0x5C];
     // Initialize the owned fight-result layout with the requested mode.
-    FightLayout(int n) { Layout_Init(this, n); }
+    FightLayout(int n) {
+        Layout_Init(this, n);
+    }
 };
 #pragma push
 #pragma use_lmw_stmw on
 #pragma opt_common_subs off
 #pragma opt_strength_reduction off
 // Create the multiplayer results layout, script, number table and four result textures.
-void* CResultFightMenu_Ctor(void* arg, void* resultMode) {
-    MPBase1_Ctor(arg);
-    AsCResultFightMenu(arg)->vtbl = &__vt__16CResultFightMenu;
-    AsCResultFightMenu(arg)->resultMode = resultMode;
+CResultFightMenu::CResultFightMenu(void* resultMode) {
+    MPBase1_Ctor(this);
+    vtbl = &__vt__16CResultFightMenu;
+    this->resultMode = resultMode;
     int zero = 0;
-    (*(int*)&AsCResultFightMenu(arg)->layout) = zero;
-    AsCResultFightMenu(arg)->scriptEntryId = -1;
-    (*(int*)&AsCResultFightMenu(arg)->scriptObject) = zero;
-    (*(int*)&AsCResultFightMenu(arg)->numberDraw) = zero;
-    AsCResultFightMenu(arg)->displayStarted = zero;
-    AsCResultFightMenu(arg)->introScriptComplete = zero;
-    AsCResultFightMenu(arg)->elapsedTime = kFloat_0_FightResultReveal;
-    (*(int*)&AsCResultFightMenu(arg)->entryCount) = zero;
+    (*(int*)&layout) = zero;
+    scriptEntryId = -1;
+    (*(int*)&scriptObject) = zero;
+    (*(int*)&numberDraw) = zero;
+    displayStarted = zero;
+    introScriptComplete = zero;
+    elapsedTime = kFloat_0_FightResultReveal;
+    (*(int*)&entryCount) = zero;
     // Initialize embedded textures and reveal counters before acquiring UI resources.
-    __construct_array(((FightResultStorage*)arg)->textures, (void*)CBpTex_Init, (void*)CBpTex_dtor, 0x28, 4);
-    AsCResultFightMenu(arg)->revealState = zero;
-    AsCResultFightMenu(arg)->revealRowIndex = zero;
-    AsCResultFightMenu(arg)->scoreRevealStep = zero;
-    AsCResultFightMenu(arg)->revealElapsedTime = kFloat_0_FightResultReveal;
+    __construct_array(((FightResultStorage*)this)->textures, (void*)__ct__6CBpTexFv, (void*)__dt__6CBpTexFv, 0x28, 4);
+    revealState = zero;
+    revealRowIndex = zero;
+    scoreRevealStep = zero;
+    revealElapsedTime = kFloat_0_FightResultReveal;
     // Create the layout and register its script; the menu stores registry IDs/pointers.
     zero = (int)new FightLayout(5);
-    AsCResultFightMenu(arg)->layout = (void*)zero;
+    layout = (void*)zero;
     Layout_LoadExtended((void*)zero, 0, fightResultStrings.layout);
     EnsureResultBpRegistry(&s_bpCtrlDtorRegistration_ResultFightMenu);
-    CBpCtrl_CreateEntry(Sing_805DC5F0(), fightResultStrings.script, &AsCResultFightMenu(arg)->scriptEntryId, 0);
+    ((CBpCtrl*)Sing_805DC5F0())->CreateEntry(fightResultStrings.script, &scriptEntryId, 0);
     EnsureResultBpRegistry(&s_bpCtrlDtorRegistration_ResultFightMenu);
-    AsCResultFightMenu(arg)->scriptObject = IdMap_Lookup(Sing_805DC5F0(), (void*)AsCResultFightMenu(arg)->scriptEntryId);
+    scriptObject = IdMap_Lookup(Sing_805DC5F0(), (void*)scriptEntryId);
     if (!Sing_805DC830()) {
         if (!s_pointerVectorInitialized) {
             PointerVector_InitReserved(&s_fontNumDrawRegistry);
-            __register_global_object(&s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage, &s_fontNumDrawDtorRegistration_FightResults);
+            __register_global_object(&s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage,
+                                     &s_fontNumDrawDtorRegistration_FightResults);
             s_pointerVectorInitialized = 1;
         }
         Sing_805DC830() = &s_fontNumDrawRegistry;
     }
-    AsCResultFightMenu(arg)->numberDraw = CFontNumDraw_CreateInVector(Sing_805DC830());
+    numberDraw = CFontNumDraw::CreateInVector((PtrVector*)Sing_805DC830());
     // Load one texture per fixed row using the existing resource-ID table.
     extern int s_fightResultTextureIds[];
-    struct Arr4 { int v[4]; };
+    struct Arr4 {
+        int v[4];
+    };
     Arr4 params;
     *(Arr4*)&params = *(Arr4*)s_fightResultTextureIds;
     int* pp = params.v;
@@ -444,17 +472,16 @@ void* CResultFightMenu_Ctor(void* arg, void* resultMode) {
     i = 0;
     offset = 0;
     do {
-        ((FightTex*)(((char*)((FightResultStorage*)arg)->textures + offset)))->init(*pp);
+        ((FightTex*)(((char*)((FightResultStorage*)this)->textures + offset)))->init(*pp);
         ++i;
         ++pp;
         offset += 0x28;
     } while (i < 4);
-    return arg;
 }
 #pragma pop
 
 // Select the smallest eligible input selector, falling back to all players, and register score numbers.
-void CResultFightMenu_InitPlayerAndScoreNumbers(void* arg) {
+void CResultFightMenu::InitPlayerAndScoreNumbers() {
     int i = 0;
     // Prefer eligible players with the smallest first-word input selector (< 3).
     // If none qualify, repeat without the eligibility test. -1 only tracks discovery.
@@ -463,7 +490,8 @@ void CResultFightMenu_InitPlayerAndScoreNumbers(void* arg) {
     while (i < AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->playerCount) {
         void* entry = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)i);
         if (threshold > *(int*)entry && !SharedDoc_IsPlayerFlag0Set(i)) {
-            threshold = *(int*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)i);
+            threshold =
+                *(int*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)i);
             best = i;
         }
         ++i;
@@ -472,21 +500,26 @@ void CResultFightMenu_InitPlayerAndScoreNumbers(void* arg) {
         i = 0;
         while (i < AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->playerCount) {
             void* entry = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)i);
-            if (threshold > *(int*)entry) threshold = *(int*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)i);
+            if (threshold > *(int*)entry)
+                threshold =
+                    *(int*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)i);
             ++i;
         }
     }
-    if (!Sing_805DC5C8()) {
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, &s_inputManagerDtorRegistration_FightResults);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     &s_inputManagerDtorRegistration_FightResults);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
-    InputManager_SetSelectedPlayer(Sing_805DC5C8(), threshold);
-    CFontNumDraw_RegisterEntries(AsCResultFightMenu(arg)->numberDraw, &s_fightResultNumberDescriptors, kFightNumericEntryCount, AsCResultFightMenu(arg)->scriptObject, fightResultStrings.numberFont);
-    AsUITextTable(AsCResultFightMenu(arg)->numberDraw)->drawEnabled = 1;
+    InputManager_SetSelectedPlayer(GetInputManagerSlot(), threshold);
+    ((CFontNumDraw*)numberDraw)
+        ->RegisterEntries(&s_fightResultNumberDescriptors, kFightNumericEntryCount, scriptObject,
+                          fightResultStrings.numberFont);
+    AsUITextTable(numberDraw)->drawEnabled = 1;
 }
 
 // Initialize this result animation angle constant to one full turn.
@@ -497,77 +530,82 @@ void FightResult_InitFullTurnAngle1() {
 // entries is borrowed for the copy; count must not exceed the four embedded rows.
 // This routine does not sort rows or clamp count.
 // Copy the caller's player-index/score/Pang rows into the fixed result array; the caller supplies a valid count.
-void CResultFightMenu_SetEntries(void* arg, void* entries, unsigned int count) {
-    unsigned int v1;
-    unsigned int v0;
-    unsigned int v2;
-    AsCResultFightMenu(arg)->entryCount = count;
-    char* dst = (char*)arg;
+void CResultFightMenu::SetEntries(void* entries, unsigned int count) {
+    unsigned int scoreValue;
+    unsigned int playerIndex;
+    unsigned int totalPang;
+    entryCount = count;
+    char* dst = (char*)this;
     unsigned int* src = (unsigned int*)entries;
     unsigned int i = 0;
-    while (i < AsCResultFightMenu(arg)->entryCount) {
-        v0 = src[0];
+    while (i < entryCount) {
+        playerIndex = src[0];
         ++i;
-        v1 = src[1];
-        ((FightResultStorage*)dst)->entries[0].playerIndex = v0;
-        v2 = src[2];
+        scoreValue = src[1];
+        ((FightResultStorage*)dst)->entries[0].playerIndex = playerIndex;
+        totalPang = src[2];
         src = (unsigned int*)((char*)src + sizeof(FightResultEntry));
-        ((FightResultStorage*)dst)->entries[0].scoreValue = v1;
-        ((FightResultStorage*)dst)->entries[0].totalPang = v2;
+        ((FightResultStorage*)dst)->entries[0].scoreValue = scoreValue;
+        ((FightResultStorage*)dst)->entries[0].totalPang = totalPang;
         dst += sizeof(FightResultEntry);
     }
 }
 
-struct VObj8C4 { 
-virtual void _0(); virtual void _1(); virtual void _2(); virtual void _3(); virtual int _4();
+struct VObj8C4 {
+    virtual void _0();
+    virtual void _1();
+    virtual void _2();
+    virtual void _3();
+    virtual int _4();
 };
 // 0x803297B8 unit: lazily prepare the script controller before polling it.
 static inline int CResultFightMenu_PollScriptEntries() {
     EnsureResultBpRegistry(&s_bpCtrlDtorRegistration_ResultFightMenu);
-    return CBpCtrl_PollAllEntriesLoaded(Sing_805DC5F0());
+    return ((CBpCtrl*)Sing_805DC5F0())->PollAllEntriesLoaded();
 }
 
 // Report ready only after the layout, scripts and all four textures have loaded.
-int CResultFightMenu_PollLoadComplete(void* arg) {
-    if (!Layout_PollLoadComplete(AsCResultFightMenu(arg)->layout) ||
-        !CResultFightMenu_PollScriptEntries()) return 0;
-    FightTextureSlot* obj = ((FightResultStorage*)arg)->textures;
+int CResultFightMenu::PollLoadComplete() {
+    if (!Layout_PollLoadComplete(layout) || !CResultFightMenu_PollScriptEntries())
+        return 0;
+    FightTextureSlot* obj = ((FightResultStorage*)this)->textures;
     for (unsigned int i = 0; i < 4; ++i) {
-        if (!((VObj8C4*)obj)->_4()) return 0;
+        if (!((VObj8C4*)obj)->_4())
+            return 0;
         ++obj;
     }
     return 1;
 }
 
 // Set the numeric table and both ranking scripts to the requested enabled state.
-void ViewRank_SetEnabled(void* arg, void* value) {
-    void* sub = AsViewRank(arg)->numberDraw;
+void ViewRank_SetEnabled(void* viewRank, void* value) {
+    void* sub = AsViewRank(viewRank)->numberDraw;
     (*(void**)&AsUITextTable(sub)->drawEnabled) = value;
     EnsureResultBpRegistry(&s_bpCtrlDtorRecord_Menu);
-    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(arg)->entryId)), value);
+    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(viewRank)->entryId)), value);
     EnsureResultBpRegistry(&s_bpCtrlDtorRecord_Menu);
-    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(arg)->secondaryEntryId)), value);
+    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(viewRank)->secondaryEntryId)), value);
 }
 
 // Draw active result scripts, layout, numeric table and each populated result texture.
-void CResultFightMenu_Draw(void* arg) {
-    if (AsCResultFightMenu(arg)->displayStarted != 0) {
+void CResultFightMenu::Draw() {
+    if (displayStarted != 0) {
         ResultMenu_DrawSharedQuad();
-        BpObject_TryInvokeCurrentCallback(AsCResultFightMenu(arg)->scriptObject, 0);
-        BpObject_Draw(AsCResultFightMenu(arg)->scriptObject);
-        if (BpObject_IsCurrentScriptComplete(AsCResultFightMenu(arg)->scriptObject)) {
-            Layout_DrawWithOpacity(AsCResultFightMenu(arg)->layout, kFloat_1_ResultFightMenu);
-            UITextTable_Draw(AsCResultFightMenu(arg)->numberDraw);
-            for (unsigned int i = 0; i < AsCResultFightMenu(arg)->entryCount; ++i) {
-                CResultFightMenu_DrawLayoutTextureQuad(arg, i);
+        BpObject_TryInvokeCurrentCallback(scriptObject, 0);
+        BpObject_Draw(scriptObject);
+        if (BpObject_IsCurrentScriptComplete(scriptObject)) {
+            Layout_DrawWithOpacity(layout, kFloat_1_ResultFightMenu);
+            UITextTable_Draw(numberDraw);
+            for (unsigned int i = 0; i < entryCount; ++i) {
+                DrawLayoutTextureQuad(i);
             }
         }
     }
 }
 
 // Advance the result layout.
-void CResultFightMenu_UpdateLayout(void* arg) {
-    Layout_Update(AsCResultFightMenu(arg)->layout);
+void CResultFightMenu::UpdateLayout() {
+    Layout_Update(layout);
 }
 
 #pragma push
@@ -575,7 +613,8 @@ void CResultFightMenu_UpdateLayout(void* arg) {
 // Rank lower stroke totals first, then higher Pang; exact ties prefer the player, then lower character index.
 void ViewRank_ComputeCharacterRanks(void* object) {
     void* list = ((CRival*)g_rival)->strokeUse;
-    int playerCharacterIndex = ItemInventory_FindCharacterIndex(AsCSharedDoc(g_sharedDoc)->itemInventory, ((RankingSharedSelection*)g_sharedDoc)->characterTypeId);
+    int playerCharacterIndex = ItemInventory_FindCharacterIndex(
+        AsCSharedDoc(g_sharedDoc)->itemInventory, ((RankingSharedSelection*)g_sharedDoc)->characterTypeId);
     int characterIndex = 0;
     int* rankDestination = (int*)object;
     do {
@@ -583,10 +622,13 @@ void ViewRank_ComputeCharacterRanks(void* object) {
         // Player uses the game-provided placement; rival rows count better competitors.
         if (characterIndex == playerCharacterIndex) {
             void* info = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), 0);
-            ((ViewRank*)rankDestination)->rankRowByCharacter[0] = ((((RankingPlayerResult*)info)->rankFlags >> kPlacementShift) & kPlacementMask) - 1;
+            ((ViewRank*)rankDestination)->rankRowByCharacter[0] =
+                ((((RankingPlayerResult*)info)->rankFlags >> kPlacementShift) & kPlacementMask) - 1;
         } else {
-            int subjectStrokes = RivalStrokeUse_GetStrokesThroughHole(list, characterIndex, AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1);
-            int subjectPang = RivalStrokeUse_GetPangThroughHole(list, characterIndex, AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1);
+            int subjectStrokes = RivalStrokeUse_GetStrokesThroughHole(
+                list, characterIndex, AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1);
+            int subjectPang = RivalStrokeUse_GetPangThroughHole(
+                list, characterIndex, AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1);
             int otherCharacterIndex = 0;
             while (otherCharacterIndex < kCharacterCount) {
                 if (characterIndex != otherCharacterIndex) {
@@ -597,8 +639,12 @@ void ViewRank_ComputeCharacterRanks(void* object) {
                         item = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), 0);
                         otherPang = ((RankingPlayerResult*)item)->totalPang;
                     } else {
-                        otherStrokes = RivalStrokeUse_GetStrokesThroughHole(list, otherCharacterIndex, AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1);
-                        otherPang = RivalStrokeUse_GetPangThroughHole(list, otherCharacterIndex, AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1);
+                        otherStrokes = RivalStrokeUse_GetStrokesThroughHole(
+                            list, otherCharacterIndex,
+                            AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1);
+                        otherPang = RivalStrokeUse_GetPangThroughHole(
+                            list, otherCharacterIndex,
+                            AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1);
                     }
                     // Increment once if the other character precedes this rival:
                     // 1. lower stroke total; 2. equal strokes, higher Pang;
@@ -606,10 +652,16 @@ void ViewRank_ComputeCharacterRanks(void* object) {
                     // lower character index. The else-if chain counts at most once.
                     // The player's own row bypasses this comparison entirely and
                     // uses rankFlags placement, so it need not mirror rival ranks.
-                    if (subjectStrokes > otherStrokes) ++((ViewRank*)rankDestination)->rankRowByCharacter[0];
-                    else if (subjectStrokes == otherStrokes && subjectPang < otherPang) ++((ViewRank*)rankDestination)->rankRowByCharacter[0];
-                    else if (subjectStrokes == otherStrokes && subjectPang == otherPang && otherCharacterIndex == playerCharacterIndex) ++((ViewRank*)rankDestination)->rankRowByCharacter[0];
-                    else if (subjectStrokes == otherStrokes && subjectPang == otherPang && characterIndex > otherCharacterIndex) ++((ViewRank*)rankDestination)->rankRowByCharacter[0];
+                    if (subjectStrokes > otherStrokes)
+                        ++((ViewRank*)rankDestination)->rankRowByCharacter[0];
+                    else if (subjectStrokes == otherStrokes && subjectPang < otherPang)
+                        ++((ViewRank*)rankDestination)->rankRowByCharacter[0];
+                    else if (subjectStrokes == otherStrokes && subjectPang == otherPang &&
+                             otherCharacterIndex == playerCharacterIndex)
+                        ++((ViewRank*)rankDestination)->rankRowByCharacter[0];
+                    else if (subjectStrokes == otherStrokes && subjectPang == otherPang &&
+                             characterIndex > otherCharacterIndex)
+                        ++((ViewRank*)rankDestination)->rankRowByCharacter[0];
                 }
                 ++otherCharacterIndex;
             }
@@ -630,62 +682,78 @@ void ViewRank_ComputeCharacterRanks(void* object) {
 // Returns 0 while disabled/waiting; 1 plays confirmSound and asks the owner to
 // leave the menu. It does not latch completion: further calls can play it again.
 // Layout/script/number resources remain menu-owned until the destructor.
-int CResultFightMenu_UpdateAndTryAdvance(void* self, float delta) {
-    Layout_Update(AsCResultFightMenu(self)->layout);
-    if (!AsCResultFightMenu(self)->updateEnabled) return 0;
+int CResultFightMenu::UpdateAndTryAdvance(float delta) {
+    Layout_Update(layout);
+    if (!updateEnabled)
+        return 0;
     // Phase 1: start the intro once and hide layout elements/script score groups.
-    if (!AsCResultFightMenu(self)->displayStarted) {
-        AsCResultFightMenu(self)->displayStarted = 1;
+    if (!displayStarted) {
+        displayStarted = 1;
         unsigned int i = 0;
-        for (int j = 0; j < kFightLayoutElementCount; ++j) Layout_SetElementEnabled(AsCResultFightMenu(self)->layout, j, 0);
-        BpObject_StartScriptByName(AsCResultFightMenu(self)->scriptObject, fightResultStrings.introAnimation, 1);
-        struct NameList { void* p[26]; };
+        for (int j = 0; j < kFightLayoutElementCount; ++j)
+            Layout_SetElementEnabled(layout, j, 0);
+        BpObject_StartScriptByName(scriptObject, fightResultStrings.introAnimation, 1);
+        struct NameList {
+            void* p[26];
+        };
         NameList names = *(NameList*)s_fightResultInitiallyHiddenGroupNames;
         i = 0;
         do {
-            UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCResultFightMenu(self)->scriptObject, names.p[(unsigned char)i]), 0);
+            UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(scriptObject, names.p[(unsigned char)i]), 0);
             ++i;
         } while (i < kFightHiddenGroupCount);
     }
     // Phase 2: the intro script gates score reveal; delta is elapsed seconds.
-    if (!BpObject_IsCurrentScriptComplete(AsCResultFightMenu(self)->scriptObject)) return 0;
-    if (!AsCResultFightMenu(self)->introScriptComplete) AsCResultFightMenu(self)->introScriptComplete = 1;
+    if (!BpObject_IsCurrentScriptComplete(scriptObject))
+        return 0;
+    if (!introScriptComplete)
+        introScriptComplete = 1;
     // 0x8032AB2C: Join the pending return while animation or input is incomplete.
     do {
         // Phase 3: only accumulate the advance delay after score reveal completes.
-        if (CResultFightMenu_UpdateRevealSequence(self, delta)) {
+        if (UpdateRevealSequence(delta)) {
             float lim = kFloat_5_FightResultAdvanceDelay;
-            float t = AsCResultFightMenu(self)->elapsedTime;
+            float t = elapsedTime;
             t += delta;
-            AsCResultFightMenu(self)->elapsedTime = t;
+            elapsedTime = t;
             if (!(t >= lim)) {
-                if (!Sing_805DC5C8()) {
+                if (!GetInputManagerSlot()) {
                     if (!s_inputManagerInitialized) {
                         InputManager_Init(&s_gameInputManager);
-                        __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, &s_inputManagerDtorRegistration_FightResults);
+                        __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                                 &s_inputManagerDtorRegistration_FightResults);
                         s_inputManagerInitialized = 1;
                     }
-                    Sing_805DC5C8() = &s_gameInputManager;
+                    GetInputManagerSlot() = &s_gameInputManager;
                 }
-                if (!InputManager_IsAnyMenuAdvanceActionActive(Sing_805DC5C8())) break;
+                if (!InputManager_IsAnyMenuAdvanceActionActive(GetInputManagerSlot()))
+                    break;
             }
-            Sound_PlayByName(g_soundManager, fightResultStrings.confirmSound, 0, 0, 0, 0, kFloat_0_5_FightResultConfirmSound, kFloat_200_FightResultConfirmSound, kFloat_1_ResultFightMenu);
+            Sound_PlayByName(g_soundManager, fightResultStrings.confirmSound, 0, 0, 0, 0,
+                             kFloat_0_5_FightResultConfirmSound, kFloat_200_FightResultConfirmSound,
+                             kFloat_1_ResultFightMenu);
             return 1;
         }
     } while (0);
 
     return 0;
 }
-
 }
-namespace app { template <class T> struct app_allocator {}; }
+namespace app {
+template <class T> struct app_allocator {};
+}
 namespace std {
 template <class T, class A> struct LocalVector_u803297B8 {
     void* p;
     unsigned int a;
     int b;
     // Release the activation-ID vector allocation; integer elements need no cleanup.
-    ~LocalVector_u803297B8() { if (p) { a -= ((char*)p + a) - (char*)p; appFreeUni__FPv(p); } }
+    ~LocalVector_u803297B8() {
+        if (p) {
+            a -= ((char*)p + a) - (char*)p;
+            appFreeUni__FPv(p);
+        }
+    }
 };
 }
 extern "C" {
@@ -693,50 +761,54 @@ extern "C" {
 #pragma push
 // 0x803297B8 unit: poll the alternate cancel action with lazy input setup.
 static inline int ViewRank_PollAlternateCancel() {
-    if (!Sing_805DC5C8()) {
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, &s_inputManagerDtorRegistration_Ranking);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     &s_inputManagerDtorRegistration_Ranking);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
-    return Input_IsActionPressed(Sing_805DC5C8(), kAlternateCancelAction, kAnyInputPlayer);
+    return Input_IsActionPressed(GetInputManagerSlot(), kAlternateCancelAction, kAnyInputPlayer);
 }
 
 // Poll confirmation/cancel; return completion, with selectionResult 1=confirm, 2=cancel.
 // Confirm waits four update calls; cancellation completes in the current call.
-int ViewRank_UpdateConfirmOrCancel(void* arg) {
-    Layout_Update(AsViewRank(arg)->layout);
+int ViewRank_UpdateConfirmOrCancel(void* viewRank) {
+    Layout_Update(AsViewRank(viewRank)->layout);
     // After confirmation, finish when the four-call countdown reaches zero.
-    int old = AsViewRank(arg)->activationDelay;
+    int old = AsViewRank(viewRank)->activationDelay;
     int cnt = old - 1;
-    AsViewRank(arg)->activationDelay = cnt;
+    AsViewRank(viewRank)->activationDelay = cnt;
     if (old > 0) {
         return (cnt == 0) ? 1 : 0;
     }
-std::LocalVector_u803297B8<int, app::app_allocator<int> > locals = {0, 0, 0};
+    std::LocalVector_u803297B8<int, app::app_allocator<int> > locals = {0, 0, 0};
     // Element 0 is confirmation; flags 5 and visual state 2 record its pressed state.
-    int activated = Layout_CollectActivated(AsViewRank(arg)->layout, (void*)&locals, 0);
+    int activated = Layout_CollectActivated(AsViewRank(viewRank)->layout, (void*)&locals, 0);
     if (activated) {
-        Layout_SetElementPlayerFlag(AsViewRank(arg)->layout, kRankingConfirmElement, 0, kRankingConfirmPlayerFlags);
-        Layout_SetElementValueState(AsViewRank(arg)->layout, kRankingConfirmElement, kRankingConfirmVisualState);
-        Sound_PlayByName(g_soundManager, (char*)&rankingViewStrings.confirmSound, 0, 0, 0, 0, kFloat_0_5_RankingConfirmSound, kFloat_200_RankingConfirmSound, kFloat_1_Ranking);
-        AsViewRank(arg)->activationDelay = kRankingActivationFrames;
-        AsViewRank(arg)->selectionResult = 1;
+        Layout_SetElementPlayerFlag(AsViewRank(viewRank)->layout, kRankingConfirmElement, 0,
+                                    kRankingConfirmPlayerFlags);
+        Layout_SetElementValueState(AsViewRank(viewRank)->layout, kRankingConfirmElement, kRankingConfirmVisualState);
+        Sound_PlayByName(g_soundManager, (char*)&rankingViewStrings.confirmSound, 0, 0, 0, 0,
+                         kFloat_0_5_RankingConfirmSound, kFloat_200_RankingConfirmSound, kFloat_1_Ranking);
+        AsViewRank(viewRank)->activationDelay = kRankingActivationFrames;
+        AsViewRank(viewRank)->selectionResult = 1;
         return 0;
     }
-    if (!Sing_805DC5C8()) {
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, &s_inputManagerDtorRegistration_Ranking);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     &s_inputManagerDtorRegistration_Ranking);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
-    int pressed = Input_IsActionPressed(Sing_805DC5C8(), kCancelAction, kAnyInputPlayer);
+    int pressed = Input_IsActionPressed(GetInputManagerSlot(), kCancelAction, kAnyInputPlayer);
     if (pressed || ViewRank_PollAlternateCancel()) {
-        AsViewRank(arg)->selectionResult = 2;
+        AsViewRank(viewRank)->selectionResult = 2;
         return 1;
     }
     return 0;
@@ -746,7 +818,7 @@ std::LocalVector_u803297B8<int, app::app_allocator<int> > locals = {0, 0, 0};
 #pragma push
 #pragma use_lmw_stmw on
 // Fill each ranked row with score relative to par and Pang through the current hole, highlighting the player.
-// Required initialized arg, sharedDoc/itemInventory/golfDoc, rival/strokeUse,
+// Required initialized viewRank, sharedDoc/itemInventory/golfDoc, rival/strokeUse,
 // and loaded ranking BP entry/numberDraw. No pointer/lookup failure is checked.
 // rankRowByCharacter has eight entries indexed by character [0,7]; every value
 // must be a valid [0,7] row in ALL four score/Pang group/number-name tables.
@@ -761,7 +833,7 @@ std::LocalVector_u803297B8<int, app::app_allocator<int> > locals = {0, 0, 0};
 // Writes UI score integers (strokes minus cumulative par), Pang totals (currency
 // units) and tint, and clears numberEntriesDirty. No score/history is modified.
 // References are borrowed for this call; UI and document owners must remain live.
-void ViewRank_RefreshPlayerScores(void* arg) {
+void ViewRank_RefreshPlayerScores(void* viewRank) {
     int playerCharacterIndex;
     void* rankCursor;
     void* rankingScript;
@@ -773,8 +845,9 @@ void ViewRank_RefreshPlayerScores(void* arg) {
     void* scoreGroup;
     void* pangGroup;
     EnsureResultBpRegistry(&s_bpCtrlDtorRecord_Menu);
-    rankingScript = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(arg)->entryId));
-    playerCharacterIndex = ItemInventory_FindCharacterIndex(AsCSharedDoc(g_sharedDoc)->itemInventory, ((RankingSharedSelection*)g_sharedDoc)->characterTypeId);
+    rankingScript = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsViewRank(viewRank)->entryId));
+    playerCharacterIndex = ItemInventory_FindCharacterIndex(AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                                            ((RankingSharedSelection*)g_sharedDoc)->characterTypeId);
     rivalScores = ((CRival*)g_rival)->strokeUse;
     void* golfDoc = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
     parThroughCurrentHole = 0;
@@ -786,10 +859,10 @@ void ViewRank_RefreshPlayerScores(void* arg) {
         parThroughCurrentHole += ((RankingHoleRecord*)hole)->par;
         ++holeIndex;
     }
-    if (AsViewRank(arg)->numberEntriesDirty != 0) {
-        AsViewRank(arg)->numberEntriesDirty = 0;
+    if (AsViewRank(viewRank)->numberEntriesDirty != 0) {
+        AsViewRank(viewRank)->numberEntriesDirty = 0;
     }
-    rankCursor = arg;
+    rankCursor = viewRank;
     characterIndex = 0;
     // Phase 2: map each character to its row, set colors, then write score/Pang numbers.
     while (characterIndex < kCharacterCount) {
@@ -805,15 +878,21 @@ void ViewRank_RefreshPlayerScores(void* arg) {
             UIGroup_SetTintColor(scoreGroup, kPlayerNumberTint);
             UIGroup_SetTintColor(pangGroup, kPlayerNumberTint);
         } else {
-            scoreToPar = RivalStrokeUse_GetStrokesThroughHole(rivalScores, characterIndex, AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1) - parThroughCurrentHole;
-            pang = RivalStrokeUse_GetPangThroughHole(rivalScores, characterIndex, AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1);
+            scoreToPar = RivalStrokeUse_GetStrokesThroughHole(
+                             rivalScores, characterIndex,
+                             AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1) -
+                         parThroughCurrentHole;
+            pang = RivalStrokeUse_GetPangThroughHole(
+                rivalScores, characterIndex,
+                AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex + 1);
             UIGroup_SetTintColor(scoreGroup, kOtherNumberTint);
             UIGroup_SetTintColor(pangGroup, kOtherNumberTint);
         }
         idx = AsViewRank(rankCursor)->rankRowByCharacter[0];
-        UITextTable_SetInteger(AsViewRank(arg)->numberDraw, ((void**)s_rankingScoreNumberEntryNames)[idx], scoreToPar);
+        UITextTable_SetInteger(AsViewRank(viewRank)->numberDraw, ((void**)s_rankingScoreNumberEntryNames)[idx],
+                               scoreToPar);
         idx = AsViewRank(rankCursor)->rankRowByCharacter[0];
-        UITextTable_SetInteger(AsViewRank(arg)->numberDraw, ((void**)s_rankingPangNumberEntryNames)[idx], pang);
+        UITextTable_SetInteger(AsViewRank(viewRank)->numberDraw, ((void**)s_rankingPangNumberEntryNames)[idx], pang);
         ++characterIndex;
         rankCursor = (char*)rankCursor + 4;
     }

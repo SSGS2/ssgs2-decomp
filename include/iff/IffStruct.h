@@ -10,18 +10,16 @@
 #define IFF_OFFSET(type, field) ((int)DECOMP_OFFSETOF(type, field))
 
 struct IffLevelBits {
-    CW_BITS2(
-        unsigned char level : 7,
-        unsigned char unk_58 : 1)
+    CW_BITS2(unsigned char level : 7, unsigned char unk_58 : 1)
 };
 
 struct IffItemCommon {
-    char name[40];                     // 0x00: message id
-    char icon[40];                     // 0x28: icon resource name
-    unsigned int typeId;               // 0x50: record key; kind = typeId >> 26
-    int price;                        // 0x54
-    unsigned char levelFlags;         // 0x58: required level = levelFlags >> 1 (Wii bit order)
-    unsigned char shopFlags;          // 0x59: nonzero upper three bits mean initially unlocked
+    char name[40];            // 0x00: message id
+    char icon[40];            // 0x28: icon resource name
+    unsigned int typeId;      // 0x50: record key; kind = typeId >> 26
+    int price;                // 0x54
+    unsigned char levelFlags; // 0x58: required level = levelFlags >> 1 (Wii bit order)
+    unsigned char shopFlags;  // 0x59: nonzero upper three bits mean initially unlocked
     unsigned short commonFlagWord;
 };
 
@@ -29,52 +27,52 @@ namespace IFF_STRUCT {
 // Every stat array uses Power, Control, Accuracy, Spin, Curve, in that order.
 struct sChar {
     IffItemCommon common;
-    char model[40];                    // 0x5C
-    char hairTexture[40];              // 0x84
-    char baseTexture[40];              // 0xAC
-    char faceTexture[40];              // 0xD4
-    unsigned int stats[5];             // 0xFC
-    float scale;                      // 0x110
-    unsigned char defaultPartCount;    // 0x114
+    char model[40];                 // 0x5C
+    char hairTexture[40];           // 0x84
+    char baseTexture[40];           // 0xAC
+    char faceTexture[40];           // 0xD4
+    unsigned int stats[5];          // 0xFC
+    float scale;                    // 0x110
+    unsigned char defaultPartCount; // 0x114
     unsigned char optionalPartCount;
-    unsigned char baseStats[5];        // 0x116
+    unsigned char baseStats[5]; // 0x116
     unsigned char unk_11B;
 };
 
 struct sPart {
     IffItemCommon common;
-    char model[40];                    // 0x5C
-    char textures[3][40];              // 0x84
-    char secondTextures[3][40];        // 0xFC
-    unsigned short stats[5];           // 0x174
-    unsigned short slotStats[5];       // 0x17E
-    unsigned int subPartIds[2];        // 0x188
-    unsigned int hideMask;             // 0x190: body slots covered by this part
+    char model[40];              // 0x5C
+    char textures[3][40];        // 0x84
+    char secondTextures[3][40];  // 0xFC
+    unsigned short stats[5];     // 0x174
+    unsigned short slotStats[5]; // 0x17E
+    unsigned int subPartIds[2];  // 0x188
+    unsigned int hideMask;       // 0x190: body slots covered by this part
     unsigned int modelHideMask;
-    unsigned char partType;            // 0x198: top, bottom, hat, gloves, shoes, base
+    unsigned char partType; // 0x198: top, bottom, hat, gloves, shoes, base
     unsigned char unk_199[3];
 };
 
 struct sClub {
     IffItemCommon common;
-    char model[40];                    // 0x5C
-    unsigned char clubKind;            // 0x84: wood, iron, wedge, putter
+    char model[40];         // 0x5C
+    unsigned char clubKind; // 0x84: wood, iron, wedge, putter
     unsigned char unk_85[3];
 };
 
 struct sClubSet {
     IffItemCommon common;
-    unsigned int stats[5];             // 0x5C
-    unsigned int clubIds[4];           // 0x70: wood, iron, wedge, putter
-    unsigned short slotStats[5];       // 0x80: second stat array
+    unsigned int stats[5];       // 0x5C
+    unsigned int clubIds[4];     // 0x70: wood, iron, wedge, putter
+    unsigned short slotStats[5]; // 0x80: second stat array
     unsigned short unk_8A;
 };
 
 struct sBall {
     IffItemCommon common;
-    char effectFiles[7][40];           // 0x5C
-    char effectBones[7][40];           // 0x174
-    char model[40];                    // 0x28C
+    char effectFiles[7][40]; // 0x5C
+    char effectBones[7][40]; // 0x174
+    char model[40];          // 0x28C
     unsigned int unk_2B4;
     unsigned int unk_2B8;
     unsigned short unk_2BC;
@@ -89,57 +87,57 @@ struct sItem {
 
 struct sCaddie {
     IffItemCommon common;
-    char model[40];                    // 0x5C
-    unsigned short stats[5];           // 0x84: stat bonuses
+    char model[40];          // 0x5C
+    unsigned short stats[5]; // 0x84: stat bonuses
     unsigned short unk_8E;
 };
 
 struct sCadItem {
     IffItemCommon common;
-    char model[40];                    // 0x5C
+    char model[40]; // 0x5C
     unsigned short initialPowerShotMeter;
     unsigned short unk_86;
 };
 
 struct sSetItem {
     IffItemCommon common;
-    unsigned int itemIds[8];           // 0x5C
-    unsigned char itemCount;           // 0x7C
+    unsigned int itemIds[8]; // 0x5C
+    unsigned char itemCount; // 0x7C
     unsigned char hairStyleInventoryIndex;
     unsigned short unk_7E;
 };
 
 struct sCourse {
     IffItemCommon common;
-    char mapName[40];                  // 0x5C
-    char ambientSound[40];             // 0x84
-    char propertyFile[40];             // 0xAC
-    char skyEffect[40];                // 0xD4
-    float pangRate;                    // 0xFC
-    unsigned char courseFlags;        // 0x100: low nibble is shared-map variant
+    char mapName[40];          // 0x5C
+    char ambientSound[40];     // 0x84
+    char propertyFile[40];     // 0xAC
+    char skyEffect[40];        // 0xD4
+    float pangRate;            // 0xFC
+    unsigned char courseFlags; // 0x100: low nibble is shared-map variant
     unsigned char unk_101[3];
 };
 
 // Desc.iff is the exception: no common item header.
 struct sDesc {
-    char name[40];                     // 0x00: description message id
-    unsigned int typeId;               // 0x28: id of the described item
+    char name[40];       // 0x00: description message id
+    unsigned int typeId; // 0x28: id of the described item
 };
 
 struct sHairStyle {
     IffItemCommon common;
-    unsigned char colourIndex;         // 0x5C
-    unsigned char characterIndex;      // 0x5D
+    unsigned char colourIndex;    // 0x5C
+    unsigned char characterIndex; // 0x5D
     unsigned short unk_5E;
 };
 
 struct sAuxPart {
     IffItemCommon common;
-    unsigned char stats[5];            // 0x5C
-    unsigned char slotStats[5];        // 0x61
+    unsigned char stats[5];     // 0x5C
+    unsigned char slotStats[5]; // 0x61
     unsigned short unk_66;
-    unsigned short propertyRates[3];   // 0x68: percentages for properties 1..3
-    signed char property0Bonus;        // 0x6E
+    unsigned short propertyRates[3]; // 0x68: percentages for properties 1..3
+    signed char property0Bonus;      // 0x6E
     unsigned char unk_6F;
 };
 } // namespace IFF_STRUCT

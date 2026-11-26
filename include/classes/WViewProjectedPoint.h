@@ -7,11 +7,11 @@ struct WViewProjectedPoint {
     float screenX; // 0x00: WView_ProjectWorldPoint stores viewport-transformed coordinates
     float screenY; // 0x04
     float screenZ; // 0x08
-    float rhw; // 0x0c: WView_ProjectWorldPoint stores 1.0f
+    float rhw;     // 0x0c: WView_ProjectWorldPoint stores 1.0f
     char pad_010[0x18];
-    float projectedX; // 0x28: perspective-divided x, compared against -1 and 1
-    float projectedY; // 0x2c: perspective-divided y, compared against -1 and 1
-    float projectedZ; // 0x30: perspective-divided z, compared against 0 and 1
+    float projectedX;        // 0x28: perspective-divided x, compared against -1 and 1
+    float projectedY;        // 0x2c: perspective-divided y, compared against -1 and 1
+    float projectedZ;        // 0x30: perspective-divided z, compared against 0 and 1
     unsigned char clipFlags; // 0x34: x=4/8, y=0x20/0x10, z=1/2
 };
 

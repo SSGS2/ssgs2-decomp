@@ -1,3 +1,7 @@
+// River texture layers (CRiver) and the lava layer setup: the terrain strips built from a river
+// centerline, the texture layers scrolled and drawn over them, and the lava constructor and destructor.
+// The strips, textures and vertex buffers are released when the lava object is destroyed.
+
 #include "classes/WView.h"
 #define AsWView(p) ((WView*)(p))
 #include "classes/CSharedDoc.h"
@@ -9,6 +13,7 @@
 #include "iff/IffStruct.h"
 #include "classes/CRiver.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CQuadTree.h"
 
 #define AsCRiver(p) ((CRiver*)(p))
 
@@ -24,8 +29,6 @@ struct LavaOwnedState {
     void* materialData;
 };
 #define LavaOwned(p) ((LavaOwnedState*)(p))
-// Translation unit 0x801E356C-0x801E4C08 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 typedef Vec3f Vec3;
 // Packed texture and exception strings; member sizes include NUL.
@@ -64,24 +67,37 @@ struct RiverCameraState {
 };
 
 // Construct a path node directly in its caller-provided allocation.
-inline void* operator new(size_t, void* p) { return p; }
-struct NodeExtra { float value[2]; };
+inline void* operator new(size_t, void* p) {
+    return p;
+}
+struct NodeExtra {
+    float value[2];
+};
 // Two bank positions and cumulative V coordinates, one pair per river section.
 struct PathNode {
-    Vec3 pos[2]; float vCoordinates[2];
+    Vec3 pos[2];
+    float vCoordinates[2];
     // Leave bank positions and V coordinates for the section builder to initialize.
     PathNode() {}
     // Copy one bank pair and its V coordinates with original exception boundaries.
     PathNode(const PathNode& p) {
         try {
-        *(Arr3*)&pos[0] = *(const Arr3*)&p.pos[0];
-        *(Arr3*)&pos[1] = *(const Arr3*)&p.pos[1];
-        *(NodeExtra*)vCoordinates = *(const NodeExtra*)p.vCoordinates;
-        } catch (...) { throw; }
+            *(Arr3*)&pos[0] = *(const Arr3*)&p.pos[0];
+            *(Arr3*)&pos[1] = *(const Arr3*)&p.pos[1];
+            *(NodeExtra*)vCoordinates = *(const NodeExtra*)p.vCoordinates;
+        } catch (...) {
+            throw;
+        }
     }
 };
-struct Box3 { Vec3 min, max; };
-struct NodeArray { PathNode* begin; unsigned int size; unsigned int cap; };
+struct Box3 {
+    Vec3 min, max;
+};
+struct NodeArray {
+    PathNode* begin;
+    unsigned int size;
+    unsigned int cap;
+};
 struct RiverTextureLayer {
     float vOffset;
     float vScrollSpeed;
@@ -100,21 +116,40 @@ struct RiverMeshState {
     char materialStorage[0x18];
     void* vertexBuffers[2];
 };
-struct RiverCenterline { Vec3* points; unsigned int count; };
-struct RenderStates { unsigned int words[30]; };
-struct RenderStages { unsigned int words[12]; };
-struct RenderSamplers { unsigned int words[10]; };
-struct RenderConstants { RenderStates states; RenderStages stages; RenderSamplers samplers; };
+struct RiverCenterline {
+    Vec3* points;
+    unsigned int count;
+};
+struct RenderStates {
+    unsigned int words[30];
+};
+struct RenderStages {
+    unsigned int words[12];
+};
+struct RenderSamplers {
+    unsigned int words[10];
+};
+struct RenderConstants {
+    RenderStates states;
+    RenderStages stages;
+    RenderSamplers samplers;
+};
 
 // These are engine wrapper IDs, not GX register numbers. Only transform roles
 // established by the supplied matrices are named; state/parameter meanings remain
 // unresolved rather than borrowing similarly numbered constants from another API.
 enum RiverDrawConstants {
-    kRiverViewTransform = 0, kRiverProjectionTransform = 1,
-    kRiverIdentityTransform2 = 2, kRiverIdentityTransform11 = 11,
-    kRiverStatePairCount = 15, kRiverStagePairCount = 6, kRiverSamplerPairCount = 5,
-    kRiverVertexBytes = 0x18, kRiverSectionVertexBytes = 0x30,
-    kRiverVertexFormat = 0x11F001, kRiverTriangleStrip = 0x98
+    kRiverViewTransform = 0,
+    kRiverProjectionTransform = 1,
+    kRiverIdentityTransform2 = 2,
+    kRiverIdentityTransform11 = 11,
+    kRiverStatePairCount = 15,
+    kRiverStagePairCount = 6,
+    kRiverSamplerPairCount = 5,
+    kRiverVertexBytes = 0x18,
+    kRiverSectionVertexBytes = 0x30,
+    kRiverVertexFormat = 0x11F001,
+    kRiverTriangleStrip = 0x98
 };
 
 extern "C" {
@@ -171,43 +206,58 @@ void __amu__7WVectorFf(Vec3*, float);
 void __ml__FRC7WVectorf(Vec3*, Vec3*, float);
 float WVectorLen__FRC7WVector(Vec3*);
 void* CQuadTree_GetInstance();
-float CQuadTree_GetLowestGround(void*, const Vec3&);
 // A by-value Box3 argument is a pointer to a copy in CodeWarrior's ABI.
 void GroundRegionList_AppendBounds(void*, Box3, int);
 #define GRL_BOX_ARG(b) (b)
 void* appMallocDummy__FUl(unsigned int);
 void VertexBuffer_Create(int, int, unsigned int, int, void**, int);
 void Vector_CopyComponents(void*, void*);
-void CRiver_LoadTextureLayers(void*, char*);
 } // extern "C"
 
 struct NodeAllocation {
-    char* pointer; char* allocator;
+    char* pointer;
+    char* allocator;
     // Guard allocated diagnostic text until its control block takes ownership.
     NodeAllocation(char* p, char* a) : pointer(p), allocator(a) {}
     // Free diagnostic text if ownership transfer did not finish.
-    ~NodeAllocation() { if (pointer) __dla__FPv(pointer); }
+    ~NodeAllocation() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct NodeControlBase {
-    void* table; unsigned strong, weak;
+    void* table;
+    unsigned strong, weak;
     // Initialize one strong and weak reference for diagnostic text ownership.
-    NodeControlBase() { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; }
+    NodeControlBase() {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+    }
 };
 struct NodeControl : NodeControlBase {
     char* pointer;
     // Store the diagnostic allocation in its shared control block.
-    NodeControl(char* p) { pointer = p; }
+    NodeControl(char* p) {
+        pointer = p;
+    }
 };
 namespace std {
 struct logic_error : exception {
     // Install the local exception ABI vtable.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
-    char* text; void* control;
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
+    char* text;
+    void* control;
     // Copy the river vector diagnostic into reference-counted string storage.
     logic_error() {
         SetTable(__vt__Q23std11logic_error);
         const char* message = (riverTextureStrings + kRiverName_vectorLengthError);
-        struct Allocator { char value; char pad[3]; } allocator;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned n = strlen(message) + 1;
         text = new char[2 * n - n];
@@ -232,22 +282,42 @@ struct length_error : logic_error {
 };
 }
 struct NodeBuf3 {
-    PathNode* data; unsigned int size; unsigned int cap;
+    PathNode* data;
+    unsigned int size;
+    unsigned int cap;
     // Initialize an empty guarded section buffer for initial reserve.
     NodeBuf3() : data(0), size(0), cap(0) {}
     // Free the section allocation currently owned by this reserve buffer.
-    ~NodeBuf3() { if (data) { size = size - size; appFreeUni__FPv(data); } }
+    ~NodeBuf3() {
+        if (data) {
+            size = size - size;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 struct NodeBuf5 {
-    PathNode* data; unsigned int size; unsigned int cap; unsigned int* owner; unsigned int offset;
+    PathNode* data;
+    unsigned int size;
+    unsigned int cap;
+    unsigned int* owner;
+    unsigned int offset;
     // Initialize a split buffer for suffix construction and prefix relocation.
     NodeBuf5(unsigned int* p) : data(0), size(0), cap(0), owner(p), offset(0) {}
     // Free the allocation left in the split buffer after unwind or commit.
-    ~NodeBuf5() { if (data) { size = size - size; appFreeUni__FPv(data); } }
+    ~NodeBuf5() {
+        if (data) {
+            size = size - size;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 // Return the larger section-vector growth bound by reference.
-inline const unsigned int& NodeMax(const unsigned int& a, const unsigned int& b) { return a < b ? b : a; }
-struct RC801E3830 { CW_BITS2( unsigned hi : 16, unsigned lo : 16) };
+inline const unsigned int& NodeMax(const unsigned int& a, const unsigned int& b) {
+    return a < b ? b : a;
+}
+struct RC801E3830 {
+    CW_BITS2(unsigned hi : 16, unsigned lo : 16)
+};
 // Byte cursors preserve the original scheduling of the two 24-byte vertices per section.
 inline unsigned char* RiverVertexBytes(void* vertices, unsigned int vertexOffset) {
     return (unsigned char*)vertices + vertexOffset;
@@ -262,10 +332,10 @@ extern "C" {
 // the larger layer offset along that ray. There is no bound/timeout or fallback.
 // self owns the appended nodes and replacement vertex buffers; the centerline and
 // name are borrowed. Repeated calls append to existing nodes (not cleared here).
-void CRiver_BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
+void CRiver::BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
     RiverMeshState* self = (RiverMeshState*)self_;
     RiverCenterline* centerline = (RiverCenterline*)centerlineArg;
-    CRiver_LoadTextureLayers(self, name);
+    ((CRiver*)self)->LoadTextureLayers(name);
 
     Box3 box;
     Vec3_Zero(&box.min);
@@ -292,7 +362,7 @@ void CRiver_BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
     self->halfWidth = kFloat_0_River;
     bankHeight = (firstLayerHeight < bankHeight) ? bankHeight : firstLayerHeight;
     Vec3 heightPoint = centerline->points[1];
-    bankHeight = CQuadTree_GetLowestGround(CQuadTree_GetInstance(), heightPoint) + bankHeight;
+    bankHeight = ((CQuadTree*)CQuadTree_GetInstance())->GetLowestGround(&heightPoint) + bankHeight;
 
     // Phase 2: grow in 3.2 world-unit steps until one bank sample clears both
     // layers, then add one safety step. bankSampleWorld is the sampled world
@@ -306,7 +376,7 @@ void CRiver_BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
         __ml__FfRC7WVector(&bankStepWorld, &bankOffset, self->halfWidth);
         __pl__FRC7WVectorRC7WVector(&bankSampleWorld, start, &bankStepWorld);
         Vec3 heightPoint = bankSampleWorld;
-        height = CQuadTree_GetLowestGround(CQuadTree_GetInstance(), heightPoint);
+        height = ((CQuadTree*)CQuadTree_GetInstance())->GetLowestGround(&heightPoint);
     } while (!(height > bankHeight));
     self->halfWidth = self->halfWidth + kFloat_3_2_river;
 
@@ -360,8 +430,8 @@ void CRiver_BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
         Vec3* segmentPoints = centerline->points + seg;
         Vec3 p0 = segmentPoints[0];
         Vec3 p1 = segmentPoints[1];
-        float startGroundY = CQuadTree_GetLowestGround(CQuadTree_GetInstance(), p0);
-        float endGroundY = CQuadTree_GetLowestGround(CQuadTree_GetInstance(), p1);
+        float startGroundY = ((CQuadTree*)CQuadTree_GetInstance())->GetLowestGround(&p0);
+        float endGroundY = ((CQuadTree*)CQuadTree_GetInstance())->GetLowestGround(&p1);
         float delta = endGroundY - startGroundY;
         delta = (delta > kFloat_0_River) ? delta : -delta;
         float sampleIntervals = (float)ceil(delta / kFloat_1_6_River);
@@ -380,7 +450,7 @@ void CRiver_BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
             __pl__FRC7WVectorRC7WVector(&ip, &a2, &a1);
             __as__7WVectorFRC7WVector(&sampleWorldPosition, &ip);
             Vec3 cpCopy = sampleWorldPosition;
-            float sampleGroundY = CQuadTree_GetLowestGround(CQuadTree_GetInstance(), cpCopy);
+            float sampleGroundY = ((CQuadTree*)CQuadTree_GetInstance())->GetLowestGround(&cpCopy);
             float previousGroundY = lastGroundY;
             lastGroundY = sampleGroundY;
             if (!(sampleGroundY > kFloat_1_6_River + previousGroundY)) {
@@ -460,11 +530,13 @@ void CRiver_BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
                     new (dst) PathNode(node);
                     self->nodes.size = self->nodes.size + 1;
                 } else {
-                    if (0x7FFFFFFu - self->nodes.cap < 1) throw std::length_error();
+                    if (0x7FFFFFFu - self->nodes.cap < 1)
+                        throw std::length_error();
                     unsigned int needed = self->nodes.size + 1 - self->nodes.cap;
                     NodeBuf5 buf(&self->nodes.cap);
                     unsigned int capacity = self->nodes.cap;
-                    if (needed > 0x7FFFFFFu - capacity) throw std::length_error();
+                    if (needed > 0x7FFFFFFu - capacity)
+                        throw std::length_error();
                     unsigned int newCap;
                     if (capacity < 0x2AAAAAAu) {
                         unsigned int grow = (3 * (capacity + 1)) / 5;
@@ -475,7 +547,8 @@ void CRiver_BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
                     } else {
                         newCap = 0x7FFFFFFu;
                     }
-                    if (newCap > 0x7FFFFFFu) throw std::length_error();
+                    if (newCap > 0x7FFFFFFu)
+                        throw std::length_error();
                     buf.data = (PathNode*)appMallocDummy__FUl(newCap << 5);
                     unsigned int oldSize = self->nodes.size;
                     buf.cap = newCap;
@@ -526,7 +599,8 @@ void CRiver_BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
         if (emitter->vertexBuffers[0] != 0) {
             RC801E3830* rc = (RC801E3830*)emitter->vertexBuffers[0];
             rc->hi--;
-            if (rc->hi == 0) CubeResourceStorage_dtor(rc, 1);
+            if (rc->hi == 0)
+                CubeResourceStorage_dtor(rc, 1);
             emitter->vertexBuffers[0] = 0;
         }
         if (AsCRiver(layer)->layerEnabled) {
@@ -539,7 +613,8 @@ void CRiver_BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
             for (unsigned int j = 0; j < outputIndex; ++j, nodeOffset += 0x20, firstVertex += 2, secondVertex += 2) {
                 unsigned int vertexOffset = firstVertex * 0x18;
                 Vector_CopyComponents(RiverVertexBytes(vertices, vertexOffset), (char*)self->nodes.begin + nodeOffset);
-                Vector_CopyComponents((char*)vertices + secondVertex * 0x18, (char*)self->nodes.begin + nodeOffset + 0xc);
+                Vector_CopyComponents((char*)vertices + secondVertex * 0x18,
+                                      (char*)self->nodes.begin + nodeOffset + 0xc);
                 *(float*)(RiverVertexBytes(vertices, vertexOffset) + 0x10) = AsCRiver(layer)->layerUExtent;
                 *(float*)(RiverVertexBytes(vertices, vertexOffset) + 0x28) = kFloat_0_River;
                 unsigned char on = 0xff;
@@ -565,23 +640,23 @@ void CRiver_BuildTerrainStrips(void* self_, void* centerlineArg, char* name) {
 // Parse optional layer IDs and load course-specific, pink or default wind river textures.
 // name is borrowed and must contain the expected underscore separators when the
 // course-specific pattern matches; this routine does not validate strchr results.
-void CRiver_LoadTextureLayers(void* self, char* name) {
+void CRiver::LoadTextureLayers(char* name) {
     int ids[2];
     ids[0] = -1;
     ids[1] = -1;
     if (strstr(name, riverTextureStrings)) {
         char* pos = strchr(name, '_');
         if ((sscanf(pos + 1, (riverTextureStrings + kRiverName_layerIdFormat), &ids[0])))
-            AsCRiver(self)->layerEnabled = 1;
+            layerEnabled = 1;
         else
-            AsCRiver(self)->layerEnabled = 0;
+            layerEnabled = 0;
         pos = strrchr(name, '_');
         if (sscanf(pos + 1, (riverTextureStrings + kRiverName_layerIdFormat), &ids[1]) && ids[1] != ids[0])
-            AsCRiver(self)->secondLayerEnabled = 1;
+            secondLayerEnabled = 1;
         else
-            AsCRiver(self)->secondLayerEnabled = 0;
+            secondLayerEnabled = 0;
         float one = kFloat_1_River;
-        char* item = (char*)self;
+        char* item = (char*)this;
         for (int i = 0; i < 2; ++i, item += 0x1c) {
             if (AsCRiver(item)->layerEnabled) {
                 AsCRiver(item)->layerVOffset = Random_RangeFloat(-1, kFloat_0_River, kFloat_1_River);
@@ -590,17 +665,18 @@ void CRiver_LoadTextureLayers(void* self, char* name) {
                 AsCRiver(item)->layerUExtent = one;
                 AsCRiver(item)->layerHeightOffset = ids[i] ? kFloat_3_2_river : kFloat_2_24_River;
                 void* mgr = AsCSharedDoc(g_sharedDoc)->selectedCourseData;
-                char* arg = mgr ? ((IFF_STRUCT::sCourse*)mgr)->mapName : 0;
+                char* mapName = mgr ? ((IFF_STRUCT::sCourse*)mgr)->mapName : 0;
                 const char* suffix = (riverTextureStrings + kRiverName_downstream);
                 suffix = (i == 0) ? (riverTextureStrings + kRiverName_upstream) : suffix;
-                char* str = String_FormatTemporary((riverTextureStrings + kRiverName_courseTextureFormat), arg, suffix);
+                char* str =
+                    String_FormatTemporary((riverTextureStrings + kRiverName_courseTextureFormat), mapName, suffix);
                 AsCRiver(item)->layerBitmap = ResourceManager_LoadBitmap(g_resourceManager, str, 0, 0, 0);
             }
         }
     } else {
         float ten = kFloat_10_56_River;
         float three_two = kFloat_3_2_river;
-        char* item = (char*)self;
+        char* item = (char*)this;
         for (int i = 0; i < 2; ++i, item += 0x1c) {
             AsCRiver(item)->layerVOffset = Random_RangeFloat(-1, kFloat_0_River, kFloat_1_River);
             float one = kFloat_1_River;
@@ -627,24 +703,25 @@ void CRiver_LoadTextureLayers(void* self, char* name) {
 }
 
 // Scroll the V coordinate of each enabled texture layer by elapsed time.
-void CRiver_ScrollTextureLayers(void* self, float deltaSeconds) {
-    unsigned char layerEnabled = AsCRiver(self)->layerEnabled;
+void CRiver::ScrollTextureLayers(float deltaSeconds) {
+    unsigned char layerEnabled = this->layerEnabled;
     if (layerEnabled != 0) {
         float vOffset;
         float scrollSpeed;
-        scrollSpeed = AsCRiver(self)->layerVScrollSpeed;
-        vOffset = AsCRiver(self)->layerVOffset;
+        scrollSpeed = layerVScrollSpeed;
+        vOffset = layerVOffset;
         vOffset = vOffset - deltaSeconds * scrollSpeed;
-        AsCRiver(self)->layerVOffset = vOffset;
+        layerVOffset = vOffset;
     }
-    layerEnabled = AsCRiver(self)->secondLayerEnabled;
-    if (layerEnabled == 0) return;
+    layerEnabled = secondLayerEnabled;
+    if (layerEnabled == 0)
+        return;
     float vOffset;
     float scrollSpeed;
-    scrollSpeed = AsCRiver(self)->secondLayerVScrollSpeed;
-    vOffset = AsCRiver(self)->secondLayerVOffset;
+    scrollSpeed = secondLayerVScrollSpeed;
+    vOffset = secondLayerVOffset;
     vOffset = vOffset - deltaSeconds * scrollSpeed;
-    AsCRiver(self)->secondLayerVOffset = vOffset;
+    secondLayerVOffset = vOffset;
 }
 
 struct RiverUpdater {
@@ -653,13 +730,32 @@ struct RiverUpdater {
     virtual void update();
 };
 struct RiverTextures {
-    virtual void v00(); virtual void v01(); virtual void v02(); virtual void v03();
-    virtual void v04(); virtual void v05(); virtual void v06(); virtual void v07();
-    virtual void v08(); virtual void v09(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15();
-    virtual void v16(); virtual void v17(); virtual void v18(); virtual void v19();
-    virtual void v20(); virtual void v21(); virtual void v22(); virtual void v23();
-    virtual void v24(); virtual void v25();
+    virtual void v00();
+    virtual void v01();
+    virtual void v02();
+    virtual void v03();
+    virtual void v04();
+    virtual void v05();
+    virtual void v06();
+    virtual void v07();
+    virtual void v08();
+    virtual void v09();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
     virtual int texture(void*);
     virtual int sampler(void*);
 };
@@ -667,14 +763,17 @@ struct RiverTextures {
 #pragma opt_propagation off
 #pragma opt_common_subs off
 // Apply river render state, update scrolling V coordinates and draw each enabled texture layer.
-void CRiver_DrawTextureLayers(void* self) {
+void CRiver::DrawTextureLayers() {
     // Phase 1: restore the engine's default state/stage/sampler key-value lists.
     RenderConstants* constants = &riverRenderStateDefaults;
     RenderStates* states = &constants->states;
     RenderStages* stages = &constants->stages;
     RenderSamplers* samplers = &constants->samplers;
     RenderStates copy = *states;
-    struct { RenderStages args; RenderSamplers samplers; } config;
+    struct {
+        RenderStages args;
+        RenderSamplers samplers;
+    } config;
     config.args = *stages;
     config.samplers = *samplers;
     Engine_SetRenderStateList(&copy, kRiverStatePairCount);
@@ -687,7 +786,7 @@ void CRiver_DrawTextureLayers(void* self) {
     SetTransform(kRiverViewTransform, ((RiverCameraState*)dev)->view);
     SetTransform(kRiverProjectionTransform, ((RiverCameraState*)dev)->projection);
     Engine_SetType7Resource(0);
-    ((RiverUpdater*)&LavaOwned(self)->materialFlags)->update();
+    ((RiverUpdater*)&LavaOwned(this)->materialFlags)->update();
     SetTransform(kRiverIdentityTransform2, kIdentityMatrix4x4);
     SetTransform(kRiverIdentityTransform11, kIdentityMatrix4x4);
     Engine_SetTextureStageState(0, 0, 0);
@@ -703,28 +802,28 @@ void CRiver_DrawTextureLayers(void* self) {
     // by layer index and write that same V to both bank vertices. Bind texture
     // and sampler, flush CPU writes, and draw the resulting triangle strip.
     // nodeCount must describe at least two sections for the unsigned count below.
-    char* item = (char*)self;
-    char* emitter = (char*)self;
+    char* item = (char*)this;
+    char* emitter = (char*)this;
     for (int i = 0; i < 2; ++i, emitter += 4, item += 0x1c) {
         if (AsCRiver(item)->layerEnabled) {
             void* buffer;
             Resource_GetOffsetPtr(AsCRiver(emitter)->vertexBuffer, 0, 0, &buffer, 0);
             unsigned int sourceOffset = 0;
             unsigned int destOffset = 0;
-            for (unsigned int n = 0; n < AsCRiver(self)->nodeCount; ++n, sourceOffset += 0x20, destOffset += 0x30) {
-                char* base = i * 4 + (*(char**)&AsCRiver(self)->nodes);
+            for (unsigned int n = 0; n < nodeCount; ++n, sourceOffset += 0x20, destOffset += 0x30) {
+                char* base = i * 4 + (*(char**)&nodes);
                 float value = AsCRiver(item)->layerVOffset + *(float*)(sourceOffset + base + 0x18);
                 *(float*)((char*)buffer + destOffset + 0x2c) = value;
                 *(float*)((char*)buffer + destOffset + 0x14) = value;
             }
             GraphicsBuffer_Flush(AsCRiver(emitter)->vertexBuffer);
             void* p = AsCRiver(item)->layerBitmap;
-            int a = (((RiverTextures*)AsWView(g_view)->renderTarget))->texture(p);
-            Engine_SetTextureStageResource(0, a);
-            int b = (((RiverTextures*)AsWView(g_view)->renderTarget))->sampler(p);
-            Engine_SetTexturePalette(0, b);
+            int textureId = (((RiverTextures*)AsWView(g_view)->renderTarget))->texture(p);
+            Engine_SetTextureStageResource(0, textureId);
+            int samplerId = (((RiverTextures*)AsWView(g_view)->renderTarget))->sampler(p);
+            Engine_SetTexturePalette(0, samplerId);
             Engine_SetVertexStream(0, AsCRiver(emitter)->vertexBuffer, 0, kRiverVertexBytes);
-            DrawPrimitiveFromBoundBuffers(kRiverTriangleStrip, 0, AsCRiver(self)->nodeCount * 2 - 2);
+            DrawPrimitiveFromBoundBuffers(kRiverTriangleStrip, 0, nodeCount * 2 - 2);
         }
     }
 }
@@ -773,9 +872,19 @@ void ntRiver_Lava_Ctor(void* self) {
 #pragma use_lmw_stmw on
 #pragma opt_propagation off
 #pragma opt_common_subs off
-struct RC801E4AB0 { CW_BITS2( unsigned hi : 16, unsigned lo : 16) };
-struct Vec801E4AB0 { void* data; int size; };
-struct Obj801E4AB0 { char pad[0x40]; Vec801E4AB0 a; char pad2[4]; Vec801E4AB0 b; };
+struct RC801E4AB0 {
+    CW_BITS2(unsigned hi : 16, unsigned lo : 16)
+};
+struct Vec801E4AB0 {
+    void* data;
+    int size;
+};
+struct Obj801E4AB0 {
+    char pad[0x40];
+    Vec801E4AB0 a;
+    char pad2[4];
+    Vec801E4AB0 b;
+};
 // Release both textures and vertex buffers, material data and owned arrays, then optionally delete.
 void* ntRiver_Lava_dtor(void* self, int deleting) {
     if (self != 0) {

@@ -2,8 +2,6 @@
 // GtlFxChorus.h; processing: Chorus_ProcessThreeChannelBuffers (SDK thunk).
 // There are no effect tuning constants here; delay/depth/rate belong to SetParams.
 #include "classes/GtlFxChorus.h"
-// Translation unit 0x8040A124-0x8040A174 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 struct ChorusBuffer {
     // Three Wii bus-lane addresses, in the caller/SDK's lane order 0,1,2.

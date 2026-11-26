@@ -1,3 +1,7 @@
+// Party balloon mini-game: CBalloonSystem and its small, medium and big balloons, with spawn,
+// idle and hit animation, scale sequences, explosion effects and sphere collision checks.
+// It also holds the balloon list and vector helpers the system uses.
+
 #include <decomp/static_init.h>
 #include <decomp/ct_member.h>
 extern "C" {
@@ -9,46 +13,65 @@ extern unsigned char s_hitBalloonQueue[];
 struct Elem_80069EA0;
 namespace std {
 template <> struct __vec_destroys_elements<Elem_80069EA0*> {
-    enum { value = 2 };
+    enum {
+        value = 2
+    };
     // Pointer slots have no element destructor; the owning vector frees only its array.
     static void destroy(Elem_80069EA0**) {}
 };
 }
 typedef std::vector<Elem_80069EA0*, app::app_allocator<Elem_80069EA0*> > Elem_80069EA0Vector;
 struct BalloonEffectStrings {
-    char redCharacterModel[22]; // +0x0: "balloon_chara_red.pet"
-    char ballModel[17]; // +0x16: "balloon_ball.pet"
-    char objectNameFormat[12]; // +0x27: "BALLOON%03d"
-    char vectorLengthError[20]; // +0x33: "vector length error"
-    char lengthErrorType[55]; // +0x47: "!std::exception!!std::logic_error!!std::length_error!!"
-    char hammerEffect[17]; // +0x7E: "Stamp_hammer.seq"
-    char hammerSound[24]; // +0x8F: "party_goods_piko_hammer"
-    char recoverSound[28]; // +0xA7: "party_goods_recover_balloon"
-    char smallExplosionEffect[20]; // +0xC3: "party_bln_bom01.seq"
-    char smallExplosionSound[26]; // +0xD7: "party_balloon_explosion_s"
+    char redCharacterModel[22];     // +0x0: "balloon_chara_red.pet"
+    char ballModel[17];             // +0x16: "balloon_ball.pet"
+    char objectNameFormat[12];      // +0x27: "BALLOON%03d"
+    char vectorLengthError[20];     // +0x33: "vector length error"
+    char lengthErrorType[55];       // +0x47: "!std::exception!!std::logic_error!!std::length_error!!"
+    char hammerEffect[17];          // +0x7E: "Stamp_hammer.seq"
+    char hammerSound[24];           // +0x8F: "party_goods_piko_hammer"
+    char recoverSound[28];          // +0xA7: "party_goods_recover_balloon"
+    char smallExplosionEffect[20];  // +0xC3: "party_bln_bom01.seq"
+    char smallExplosionSound[26];   // +0xD7: "party_balloon_explosion_s"
     char mediumExplosionEffect[20]; // +0xF1: "party_bln_bom02.seq"
-    char mediumExplosionSound[26]; // +0x105: "party_balloon_explosion_m"
-    char largeExplosionEffect[20]; // +0x11F: "party_bln_bom03.seq"
-    char largeExplosionSound[26]; // +0x133: "party_balloon_explosion_l"
+    char mediumExplosionSound[26];  // +0x105: "party_balloon_explosion_m"
+    char largeExplosionEffect[20];  // +0x11F: "party_bln_bom03.seq"
+    char largeExplosionSound[26];   // +0x133: "party_balloon_explosion_l"
 };
 
 #include "classes/BalloonState80069C.h"
 
 // Spawn kinds select size and whether the red character model/random sound slot is used.
 enum BalloonSpawnKind {
-    kSmallBalloon = 1, kMediumBalloon = 2, kLargeBalloon = 3,
-    kSmallCharacterBalloon = 4, kMediumCharacterBalloon = 5, kLargeCharacterBalloon = 6
+    kSmallBalloon = 1,
+    kMediumBalloon = 2,
+    kLargeBalloon = 3,
+    kSmallCharacterBalloon = 4,
+    kMediumCharacterBalloon = 5,
+    kLargeCharacterBalloon = 6
 };
 enum BalloonConstants {
-    kSmallScaleEndpointCount = 2, kMediumScaleEndpointCount = 3, kLargeScaleEndpointCount = 4,
-    kRandomPhaseSteps = 1000, kBalloonSoundSlots = 12, kBalloonOpaque = 255,
-    kSmallBalloonSize = 10, kMediumBalloonSize = 17, kLargeBalloonSize = 25,
-    kSpawnedQueueWord = 3, kUnhitQueueWord = 9, kHitQueueWord = 15,
-    kHammerTargetScale = 7, kBalloonVectorMaxWords = 0x3FFFFFFF,
-    kBalloonVectorGrowthLimit = 0x15555555, kBalloonVectorHalfGrowthLimit = 0x2AAAAAAA,
-    kBalloonTransformOffset = 0x30, kBalloonAnimationStepsOffset = 0x8C,
-    kBalloonAttachmentOffset = 0xA4, kBalloonOriginOffset = 0xE0,
-    kBalloonVectorLengthErrorOffset = 0x33, kBalloonLengthErrorTypeOffset = 0x47
+    kSmallScaleEndpointCount = 2,
+    kMediumScaleEndpointCount = 3,
+    kLargeScaleEndpointCount = 4,
+    kRandomPhaseSteps = 1000,
+    kBalloonSoundSlots = 12,
+    kBalloonOpaque = 255,
+    kSmallBalloonSize = 10,
+    kMediumBalloonSize = 17,
+    kLargeBalloonSize = 25,
+    kSpawnedQueueWord = 3,
+    kUnhitQueueWord = 9,
+    kHitQueueWord = 15,
+    kHammerTargetScale = 7,
+    kBalloonVectorMaxWords = 0x3FFFFFFF,
+    kBalloonVectorGrowthLimit = 0x15555555,
+    kBalloonVectorHalfGrowthLimit = 0x2AAAAAAA,
+    kBalloonTransformOffset = 0x30,
+    kBalloonAnimationStepsOffset = 0x8C,
+    kBalloonAttachmentOffset = 0xA4,
+    kBalloonOriginOffset = 0xE0,
+    kBalloonVectorLengthErrorOffset = 0x33,
+    kBalloonLengthErrorTypeOffset = 0x47
 };
 
 // Balloon units/contracts: position and origin are world-space vectors; scale is
@@ -84,21 +107,69 @@ extern const char balloonEffectStrings[];
 #include "classes/CMediumBalloon.h"
 #include "classes/CSmallBalloon.h"
 #include "classes/CBalloonSystem.h"
-
-#define AsCBalloonSystem(p) ((CBalloonSystem*)(p))
-
-#define AsCSmallBalloon(p) ((CSmallBalloon*)(p))
-
-#define AsCMediumBalloon(p) ((CMediumBalloon*)(p))
+#include "classes/CFx.h"
 
 #define AsCBigBalloon(p) ((CBigBalloon*)(p))
 // Return caller-provided placement storage without allocating.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
+
+// Shared symbols used by the balloon classes' member functions.
+extern "C" {
+extern void* g_fx;
+extern void* g_soundManager;
+extern void* g_resourceManager;
+extern int s_liveBalloonCount;
+extern char balloonEffectStrings[];
+extern char balloonDefaultScaleValues[];
+extern const unsigned int bigBalloonInitialFloatValues[];
+extern unsigned int kBalloonParameterWords[2];
+extern char s_balloonInterfaceVtable[];
+extern char s_unhitBalloonQueue[];
+extern unsigned int s_spawnedBalloonList[];
+extern unsigned int s_balloonQueueStatics[];
+extern char __vt__13CSmallBalloon[];
+extern char __vt__14CMediumBalloon[];
+extern char __vt__11CBigBalloon[];
+extern char __vt__14CBalloonSystem[];
+extern float kFloat_0_5_Balloon;
+extern float kFloat_1_Balloon;
+extern const float kFloat_200_805DD8D0;
+extern const float kFloat_51_Balloon;
+extern const float kFloat_2_balloon;
+extern const float kFloat_1_5_Balloon;
+extern float kFloat_0_05235988_805DD8C8;
+extern float kFloat_0_041887902_Balloon;
+extern const float kFloat_6_2831855_Balloon;
+extern const float kFloat_1e03_Balloon;
+extern const float kFloat_0_Balloon;
+
+void* __nwa__FUl(unsigned int);
+void* __nw__FUl(unsigned int);
+void* appMallocDummy__FUl(unsigned long);
+void appFreeUni__FPv(void*);
+void* memcpy(void*, const void*, unsigned int);
+void* memset(void*, int, unsigned int);
+void __dla__FPv(void*);
+void __dl__FPv(void*);
+int rand();
+void ResourceManager_ReleaseObject(void*, void*, int);
+void Sound_PlayByName(void*, const char*, int, int, const char*, int, float, float, float);
+void BalloonState_QueueModelPreload(void*);
+void Balloon_PrepareForDestroy(void*);
+void* IBalloon_dtor(void*, int);
+void FxAttachment_Init(void*);
+void Vec3_CopySourceToDestination(void*, void*);
+void PSMTX44Identity(void*);
+void* ResourceManager_LoadByExtension(void*, const char*, int, int, int);
+void __ct__18NativeBase80201D18Fv(void*);
+void __dt__18NativeBase80201D18Fv(void*, int);
+void PartyStampHammer_EnsureSharedQueue();
+}
 
 // ---- merged from party_balloon_system.cpp ----
 namespace ns0 {
-// Translation unit 0x80069C94-0x8006B1B4 (19 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -172,7 +243,6 @@ void Mtx44_SetTranslation(void*, float, float, float);
 void* PSMTX44Concat(void*, void*, void*);
 void Matrix_ExtractAffineFrom4x4(void*, void*);
 void Model_SetMatrixRecursive(void*, int, void*);
-void CFx_CreateAttachedEffect(void*, void*, const char*, int, int, int);
 void Sound_PlayByName(void*, const char*, int, int, const char*, int, float, float, float);
 void Balloon_StartHammerEffect(void*);
 
@@ -196,11 +266,17 @@ void* Balloon_InitState(char* obj, void* spawnPosition, int baseScale, int flag)
     AsBalloonState80069C(obj)->scale = static_cast<float>(AsBalloonState80069C(obj)->baseScale);
     AsBalloonState80069C(obj)->opacity = 0xFF;
     (*(WVector*)&AsBalloonState80069C(obj)->position) = (*(WVector*)&AsBalloonState80069C(obj)->origin);
-    AsBalloonState80069C(obj)->bobPhase = kFloat_6_2831855_Balloon * (static_cast<float>(rand() % kRandomPhaseSteps) / kFloat_1e03_Balloon);
-    AsBalloonState80069C(obj)->heading = kFloat_6_2831855_Balloon * (static_cast<float>(rand() % kRandomPhaseSteps) / kFloat_1e03_Balloon);
+    AsBalloonState80069C(obj)->bobPhase =
+        kFloat_6_2831855_Balloon * (static_cast<float>(rand() % kRandomPhaseSteps) / kFloat_1e03_Balloon);
+    AsBalloonState80069C(obj)->heading =
+        kFloat_6_2831855_Balloon * (static_cast<float>(rand() % kRandomPhaseSteps) / kFloat_1e03_Balloon);
     PSMTX44Identity(obj + kBalloonTransformOffset);
     // Phase 2: acquire the selected model and reset the attachment's borrowed links.
-    AsBalloonState80069C(obj)->model = ResourceManager_LoadByExtension(reinterpret_cast<void*>(g_resourceManager), flag ? ((BalloonEffectStrings*)balloonEffectStrings)->redCharacterModel : ((BalloonEffectStrings*)balloonEffectStrings)->ballModel, 0, 1, 0);
+    AsBalloonState80069C(obj)->model =
+        ResourceManager_LoadByExtension(reinterpret_cast<void*>(g_resourceManager),
+                                        flag ? ((BalloonEffectStrings*)balloonEffectStrings)->redCharacterModel
+                                             : ((BalloonEffectStrings*)balloonEffectStrings)->ballModel,
+                                        0, 1, 0);
     Memory_Clear(obj + kBalloonAnimationStepsOffset, 0x14);
     AsBalloonState80069C(obj)->attachmentTransform0 = 0;
     AsBalloonState80069C(obj)->attachmentScreenX = kFloat_0_Balloon;
@@ -212,7 +288,7 @@ void* Balloon_InitState(char* obj, void* spawnPosition, int baseScale, int flag)
     AsBalloonState80069C(obj)->attachmentPosition2 = 0;
     AsBalloonState80069C(obj)->attachmentTransform3 = 0;
     AsBalloonState80069C(obj)->attachmentPosition3 = 0;
-        s_liveBalloonCount = (s_liveBalloonCount + 1);
+    s_liveBalloonCount = (s_liveBalloonCount + 1);
     sprintf(obj + 4, ((BalloonEffectStrings*)balloonEffectStrings)->objectNameFormat);
     return obj;
 }
@@ -229,38 +305,57 @@ extern "C" {
 // These legacy type names survive in exception cleanup symbols. The aliases below
 // distinguish scale-word growth storage from shared exception-message ownership.
 struct LayoutVectorAllocation {
-    char* pointer; char* allocator;
+    char* pointer;
+    char* allocator;
     // Own the temporary character array until its shared control block is built.
     LayoutVectorAllocation(char* p, char* a) : pointer(p), allocator(a) {}
     // Free the temporary character array if ownership was not transferred.
-    ~LayoutVectorAllocation() { if (pointer) __dla__FPv(pointer); }
+    ~LayoutVectorAllocation() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct LayoutVectorControlBase {
-    void* table; unsigned strong, weak;
+    void* table;
+    unsigned strong, weak;
     // Initialize both shared character ownership counts to one.
-    LayoutVectorControlBase() { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; }
+    LayoutVectorControlBase() {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+    }
 };
 struct LayoutVectorControl : LayoutVectorControlBase {
     char* pointer;
     // Attach the character buffer to its shared deletion control block.
-    LayoutVectorControl(char* p) { pointer = p; }
+    LayoutVectorControl(char* p) {
+        pointer = p;
+    }
 };
 struct LayoutVectorErrorBase {
     void* table;
     // Install the reconstructed logic-error base vtable.
-    LayoutVectorErrorBase() { table = __vt__Q23std11logic_error; }
+    LayoutVectorErrorBase() {
+        table = __vt__Q23std11logic_error;
+    }
     // Destroy the reconstructed exception base without freeing this storage.
-    ~LayoutVectorErrorBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~LayoutVectorErrorBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 typedef LayoutVectorAllocation BalloonErrorMessageGuard;
 typedef LayoutVectorControl BalloonErrorMessageOwner;
 namespace std {
 struct length_error : LayoutVectorErrorBase {
-    char* text; void* control;
+    char* text;
+    void* control;
     // Construct the vector length-error text and its shared character owner.
     length_error() {
         const char* message = ((BalloonEffectStrings*)balloonEffectStrings)->vectorLengthError;
-        struct Allocator { char value; char pad[3]; } allocator;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned n = strlen(message) + 1;
         text = (char*)__nwa__FUl(2 * n - n);
@@ -277,30 +372,59 @@ struct length_error : LayoutVectorErrorBase {
 };
 }
 struct LayoutVectorBuffer {
-    unsigned int* data; unsigned size; unsigned capacity; unsigned* owner; volatile unsigned offset;
+    unsigned int* data;
+    unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    volatile unsigned offset;
     // Initialize empty growth storage with a borrowed original-capacity pointer.
     LayoutVectorBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free whichever vector allocation this temporary owns after exchange.
-    ~LayoutVectorBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~LayoutVectorBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 // Return the larger growth increment by reference.
-inline const unsigned& LayoutVectorMax(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+inline const unsigned& LayoutVectorMax(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 typedef LayoutVectorBuffer BalloonScaleGrowthStorage;
 
-struct UIntVector { unsigned int* data; unsigned int size; unsigned int capacity; };
+struct UIntVector {
+    unsigned int* data;
+    unsigned int size;
+    unsigned int capacity;
+};
 struct UIntTempVector {
-    unsigned int* data; unsigned int size, cap;
+    unsigned int* data;
+    unsigned int size, cap;
     // Initialize an empty temporary scale-word vector.
     UIntTempVector() : data(0), size(0), cap(0) {}
     // Clear the temporary count and free its owned scale-word storage.
-    ~UIntTempVector() { if (data) { unsigned int n = size; size -= n; appFreeUni__FPv(data); } }
+    ~UIntTempVector() {
+        if (data) {
+            unsigned int n = size;
+            size -= n;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 struct UIntTempVectorZ {
-    unsigned int* data; unsigned int size, cap;
+    unsigned int* data;
+    unsigned int size, cap;
     // Initialize temporary vector fields from the caller-supplied zero word.
     UIntTempVectorZ(unsigned int z) : data((unsigned int*)z), size(z), cap(z) {}
     // Clear the temporary count and free its owned scale-word storage.
-    ~UIntTempVectorZ() { if (data) { unsigned int n = size; size -= n; appFreeUni__FPv(data); } }
+    ~UIntTempVectorZ() {
+        if (data) {
+            unsigned int n = size;
+            size -= n;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 struct FiveFloats {
     float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep;
@@ -343,13 +467,15 @@ void Balloon_StartHammerEffect(void* self) {
     short targetRadius = kHammerTargetScale;
     AsBalloonState80069C(obj)->targetScale = targetRadius;
     scaleValues->size = oldSize - scaleValues->size;
-    AsBalloonState80069C(obj)->scaleDelta = (short)((targetRadius - AsBalloonState80069C(obj)->scale) * kFloat_0_5_Balloon);
+    AsBalloonState80069C(obj)->scaleDelta =
+        (short)((targetRadius - AsBalloonState80069C(obj)->scale) * kFloat_0_5_Balloon);
     if (scaleValues->capacity < kSmallScaleEndpointCount) {
         UIntTempVector temp;
         temp.data = (unsigned int*)appMallocDummy__FUl(8);
         temp.cap = kSmallScaleEndpointCount;
         unsigned int* first = scaleValues->data;
-        int copiedWordCount = (int)(reinterpret_cast<char*>(scaleValues->data + scaleValues->size) - reinterpret_cast<char*>(first)) / 4;
+        int copiedWordCount =
+            (int)(reinterpret_cast<char*>(scaleValues->data + scaleValues->size) - reinterpret_cast<char*>(first)) / 4;
         memcpy(temp.data + temp.size, first, copiedWordCount * 4);
         memset(first, 0, copiedWordCount * 4);
         temp.size += copiedWordCount;
@@ -374,32 +500,45 @@ void Balloon_StartHammerEffect(void* self) {
             scaleValues->data[next - 1] = *defaultScaleWords;
         } else {
             if (kBalloonVectorMaxWords - scaleValues->capacity < 1) {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(std::length_error)];
+                } storage;
                 std::length_error* error = (std::length_error*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
             unsigned int needed = scaleValues->size + 1 - scaleValues->capacity;
             BalloonScaleGrowthStorage temp(&scaleValues->capacity);
             unsigned int capacity = scaleValues->capacity;
             if (needed > kBalloonVectorMaxWords - capacity) {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(std::length_error)];
+                } storage;
                 std::length_error* error = (std::length_error*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
             if (capacity < kBalloonVectorGrowthLimit) {
                 capacity += LayoutVectorMax((3 * (capacity + 1)) / 5, needed);
             } else if (capacity < kBalloonVectorHalfGrowthLimit) {
                 capacity += LayoutVectorMax((capacity + 1) / 2, needed);
-            } else capacity = kBalloonVectorMaxWords;
+            } else
+                capacity = kBalloonVectorMaxWords;
             if (capacity > kBalloonVectorMaxWords) {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(std::length_error)];
+                } storage;
                 std::length_error* error = (std::length_error*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
             unsigned int* data = (unsigned int*)appMallocDummy__FUl(capacity * 4);
@@ -407,7 +546,9 @@ void Balloon_StartHammerEffect(void* self) {
             temp.offset = appendIndex;
             (data + appendIndex)[temp.size] = *defaultScaleWords;
             unsigned int* oldData = scaleValues->data;
-            int count = (int)(reinterpret_cast<char*>(scaleValues->data + scaleValues->size) - reinterpret_cast<char*>(oldData)) / 4;
+            int count = (int)(reinterpret_cast<char*>(scaleValues->data + scaleValues->size) -
+                              reinterpret_cast<char*>(oldData)) /
+                        4;
             temp.data = data;
             temp.capacity = capacity;
             temp.size = temp.size + 1;
@@ -432,94 +573,122 @@ void Balloon_StartHammerEffect(void* self) {
     // Phase 3: restore per-update animation rates, then attach and sound the hit.
     SetFiveFloats(obj, MakeFiveFloats());
     AsBalloonState80069C(obj)->effectPosition = AsBalloonState80069C(obj)->position;
-    CFx_CreateAttachedEffect(reinterpret_cast<void*>(g_fx), &AsBalloonState80069C(obj)->attachmentScreenX,
-                ((BalloonEffectStrings*)balloonEffectStrings)->hammerEffect, 1, 0, 0);
-    Sound_PlayByName(reinterpret_cast<void*>(g_soundManager), ((BalloonEffectStrings*)balloonEffectStrings)->hammerSound,
-                0, 0, ((BalloonEffectStrings*)balloonEffectStrings)->hammerSound, 0, kFloat_0_5_Balloon,
-                kFloat_200_805DD8D0, kFloat_1_Balloon);
+    ((CFx*)(reinterpret_cast<void*>(g_fx)))
+        ->CreateAttachedEffect((Vec2_8010*)(&AsBalloonState80069C(obj)->attachmentScreenX),
+                               ((BalloonEffectStrings*)balloonEffectStrings)->hammerEffect, 1, 0, 0);
+    Sound_PlayByName(reinterpret_cast<void*>(g_soundManager),
+                     ((BalloonEffectStrings*)balloonEffectStrings)->hammerSound, 0, 0,
+                     ((BalloonEffectStrings*)balloonEffectStrings)->hammerSound, 0, kFloat_0_5_Balloon,
+                     kFloat_200_805DD8D0, kFloat_1_Balloon);
 }
 
-void* IBalloon_dtor(void*, int);
+} // extern "C"
 
-// Create a small balloon with its initial scale sequence and default animation increments.
-void* CSmallBalloon_ctor(char* obj, void* spawnPosition, int selection) {
-    // Recipe: base radius 10, the two kBalloonParameterWords endpoints, then five default increments.
-    // Modify the named recipe inputs; reserve/copy/commit below owns backing storage only.
-    // Phase 1: construct the base state/model from the borrowed world origin.
-    // spawnPosition is a borrowed world-position vector; selection chooses the model.
-    // First initialize the base, then reserve and append two raw float endpoints.
+} // namespace ns0
+
+// The scale sequence is a vector of raw float words. These aliases name the
+// vector helpers that the balloon sizes share.
+typedef ns0::UIntVector BalloonScaleVector;
+typedef ns0::UIntTempVectorZ BalloonScaleTemp;
+typedef ns0::LayoutVectorBuffer BalloonScaleGrowth;
+typedef ns0::std::length_error BalloonLengthError;
+using ns0::LayoutVectorMax;
+using ns0::MakeFiveFloats;
+using ns0::SetFiveFloats;
+
+// Create a small balloon with its initial scale sequence and default animation
+// increments. It is named rather than a constructor because the constructor
+// form compiles differently.
+CSmallBalloon* CSmallBalloon::Init(void* spawnPosition, int characterModel) {
+    // Base radius 10, then the two kBalloonParameterWords endpoints.
     unsigned int* defaultScaleWords;
     int i;
-    Balloon_InitState(obj, spawnPosition, kSmallBalloonSize, selection);
-    // Phase 2: reserve and append the two endpoint words under unwind cleanup.
+    ns0::Balloon_InitState((char*)this, spawnPosition, kSmallBalloonSize, characterModel);
     try {
-        UIntVector* scaleValues = reinterpret_cast<UIntVector*>(&AsBalloonState80069C(obj)->scaleValues);
-        unsigned int oldSize = scaleValues->size;
-        *reinterpret_cast<void**>(obj) = const_cast<char*>(__vt__13CSmallBalloon);
-        scaleValues->size = oldSize - scaleValues->size;
-        if (scaleValues->capacity < kSmallScaleEndpointCount) {
+        BalloonScaleVector* scaleSequence = reinterpret_cast<BalloonScaleVector*>(&scaleValues);
+        unsigned int oldSize = scaleSequence->size;
+        vtbl = __vt__13CSmallBalloon;
+        scaleSequence->size = oldSize - scaleSequence->size;
+        if (scaleSequence->capacity < kSmallScaleEndpointCount) {
             unsigned int zero = 0;
-            UIntTempVectorZ temp(zero);
+            BalloonScaleTemp temp(zero);
             temp.data = (unsigned int*)appMallocDummy__FUl(8);
             temp.cap = kSmallScaleEndpointCount;
-            unsigned int* first = scaleValues->data;
-            int copiedWordCount = (int)(reinterpret_cast<char*>(scaleValues->data + scaleValues->size) - reinterpret_cast<char*>(first)) / 4;
+            unsigned int* first = scaleSequence->data;
+            int copiedWordCount = (int)(reinterpret_cast<char*>(scaleSequence->data + scaleSequence->size) -
+                                        reinterpret_cast<char*>(first)) /
+                                  4;
             memcpy(temp.data + zero, first, copiedWordCount * 4);
             memset(first, 0, copiedWordCount * 4);
             temp.size += copiedWordCount;
-            unsigned int* p = scaleValues->data;
-            unsigned int oldCapacity = scaleValues->capacity;
-            scaleValues->size = 0;
-            scaleValues->capacity = temp.cap;
+            unsigned int* p = scaleSequence->data;
+            unsigned int oldCapacity = scaleSequence->capacity;
+            scaleSequence->size = 0;
+            scaleSequence->capacity = temp.cap;
             temp.cap = oldCapacity;
-            scaleValues->data = temp.data;
+            scaleSequence->data = temp.data;
             temp.data = p;
-            scaleValues->size = temp.size;
+            scaleSequence->size = temp.size;
             temp.size = 0;
         }
         defaultScaleWords = kBalloonParameterWords;
         for (i = 0; i < kSmallScaleEndpointCount; ++i) {
-            unsigned int size = scaleValues->size;
-            if (size < scaleValues->capacity) {
+            unsigned int size = scaleSequence->size;
+            if (size < scaleSequence->capacity) {
                 unsigned int next = size + 1;
-                scaleValues->size = next;
-                scaleValues->data[next - 1] = *defaultScaleWords;
+                scaleSequence->size = next;
+                scaleSequence->data[next - 1] = *defaultScaleWords;
             } else {
-                if (kBalloonVectorMaxWords - scaleValues->capacity < 1) {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                    std::length_error* error = (std::length_error*)storage.bytes;
+                if (kBalloonVectorMaxWords - scaleSequence->capacity < 1) {
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(BalloonLengthError)];
+                    } storage;
+                    BalloonLengthError* error = (BalloonLengthError*)storage.bytes;
                     error->__ct();
-                    exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                    exception_runtime::__throw(
+                        ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                         (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
-                unsigned int needed = scaleValues->size + 1 - scaleValues->capacity;
-                BalloonScaleGrowthStorage temp(&scaleValues->capacity);
-                unsigned int capacity = scaleValues->capacity;
+                unsigned int needed = scaleSequence->size + 1 - scaleSequence->capacity;
+                BalloonScaleGrowth temp(&scaleSequence->capacity);
+                unsigned int capacity = scaleSequence->capacity;
                 if (needed > kBalloonVectorMaxWords - capacity) {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                    std::length_error* error = (std::length_error*)storage.bytes;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(BalloonLengthError)];
+                    } storage;
+                    BalloonLengthError* error = (BalloonLengthError*)storage.bytes;
                     error->__ct();
-                    exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                    exception_runtime::__throw(
+                        ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                         (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
                 if (capacity < kBalloonVectorGrowthLimit) {
                     capacity += LayoutVectorMax((3 * (capacity + 1)) / 5, needed);
                 } else if (capacity < kBalloonVectorHalfGrowthLimit) {
                     capacity += LayoutVectorMax((capacity + 1) / 2, needed);
-                } else capacity = kBalloonVectorMaxWords;
+                } else
+                    capacity = kBalloonVectorMaxWords;
                 if (capacity > kBalloonVectorMaxWords) {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                    std::length_error* error = (std::length_error*)storage.bytes;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(BalloonLengthError)];
+                    } storage;
+                    BalloonLengthError* error = (BalloonLengthError*)storage.bytes;
                     error->__ct();
-                    exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                    exception_runtime::__throw(
+                        ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                         (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
                 unsigned int* data = (unsigned int*)appMallocDummy__FUl(capacity * 4);
-                unsigned int appendIndex = scaleValues->size;
+                unsigned int appendIndex = scaleSequence->size;
                 temp.offset = appendIndex;
                 (data + appendIndex)[temp.size] = *defaultScaleWords;
-                unsigned int* oldData = scaleValues->data;
-                int count = (int)(reinterpret_cast<char*>(scaleValues->data + scaleValues->size) - reinterpret_cast<char*>(oldData)) / 4;
+                unsigned int* oldData = scaleSequence->data;
+                int count = (int)(reinterpret_cast<char*>(scaleSequence->data + scaleSequence->size) -
+                                  reinterpret_cast<char*>(oldData)) /
+                            4;
                 temp.data = data;
                 temp.capacity = capacity;
                 temp.size = temp.size + 1;
@@ -528,53 +697,56 @@ void* CSmallBalloon_ctor(char* obj, void* spawnPosition, int selection) {
                 memcpy(data + offset, oldData, count * 4);
                 memset(oldData, 0, count * 4);
                 unsigned int newSize = temp.size + count;
-                oldData = scaleValues->data;
+                oldData = scaleSequence->data;
                 data = temp.data;
-                unsigned int oldCapacity = scaleValues->capacity;
+                unsigned int oldCapacity = scaleSequence->capacity;
                 temp.data = oldData;
-                scaleValues->size = 0;
-                scaleValues->capacity = temp.capacity;
+                scaleSequence->size = 0;
+                scaleSequence->capacity = temp.capacity;
                 temp.capacity = oldCapacity;
-                scaleValues->data = data;
-                scaleValues->size = newSize;
+                scaleSequence->data = data;
+                scaleSequence->size = newSize;
                 temp.size = 0;
             }
             ++defaultScaleWords;
         }
-        // Phase 3: install per-update rates only after the endpoint vector is ready.
-        SetFiveFloats(obj, MakeFiveFloats());
-        AsBalloonState80069C(obj)->unk_A0 = 1;
-        return obj;
+        // Install the per-update rates only after the endpoint vector is ready.
+        SetFiveFloats((char*)this, MakeFiveFloats());
+        sizeClass = 1;
+        return this;
     } catch (...) {
-        IBalloon_dtor(obj, -1);
+        IBalloon_dtor(this, -1);
         throw;
     }
 }
+
+namespace ns0 {
+extern "C" {
 
 // Release the balloon model and scale buffer, decrement the live count, and optionally delete the object.
 // Repeated subobject guards retain the original inlined vector-destruction branches.
 void* IBalloon_dtor(void* self, int deallocate) {
     if (self != 0) {
         *reinterpret_cast<void**>(self) = const_cast<char*>(s_balloonInterfaceVtable);
-        ResourceManager_ReleaseObject(reinterpret_cast<void*>(g_resourceManager),
-                    AsBalloonState80069C(self)->model, 0);
+        ResourceManager_ReleaseObject(reinterpret_cast<void*>(g_resourceManager), AsBalloonState80069C(self)->model, 0);
         --s_liveBalloonCount;
         if (&AsBalloonState80069C(self)->scaleValues != 0) {
-        if (&AsBalloonState80069C(self)->scaleValues != 0) {
-        if (&AsBalloonState80069C(self)->scaleValues != 0) {
-        if (&AsBalloonState80069C(self)->scaleValues != 0) {
-        if (&AsBalloonState80069C(self)->scaleValues != 0) {
-            void* resource = *reinterpret_cast<void**>(&AsBalloonState80069C(self)->scaleValues);
-            if (resource != 0) {
-            volatile int* pc = reinterpret_cast<volatile int*>(&AsBalloonState80069C(self)->scaleCount);
-            int v = *pc;
-            *pc = v - v;
-            appFreeUni__FPv(resource);
+            if (&AsBalloonState80069C(self)->scaleValues != 0) {
+                if (&AsBalloonState80069C(self)->scaleValues != 0) {
+                    if (&AsBalloonState80069C(self)->scaleValues != 0) {
+                        if (&AsBalloonState80069C(self)->scaleValues != 0) {
+                            void* resource = *reinterpret_cast<void**>(&AsBalloonState80069C(self)->scaleValues);
+                            if (resource != 0) {
+                                volatile int* pc =
+                                    reinterpret_cast<volatile int*>(&AsBalloonState80069C(self)->scaleCount);
+                                int v = *pc;
+                                *pc = v - v;
+                                appFreeUni__FPv(resource);
+                            }
+                        }
+                    }
+                }
             }
-        }
-        }
-        }
-        }
         }
         if (deallocate > 0) {
             __dl__FPv(self);
@@ -583,37 +755,39 @@ void* IBalloon_dtor(void* self, int deallocate) {
     return (void*)self;
 }
 
-// Destroy a small balloon's shared resources and optionally free its allocation.
-void* CSmallBalloon_dtor(void* self, int deallocate) {
-    if (self != 0) {
-    if (self != 0) {
-        *reinterpret_cast<void**>(self) = const_cast<char*>(s_balloonInterfaceVtable);
-        ResourceManager_ReleaseObject(reinterpret_cast<void*>(g_resourceManager),
-                    AsBalloonState80069C(self)->model, 0);
+} // extern "C"
+
+} // namespace ns0
+
+// The original tests the scale vector's address before each nested subobject
+// release; the address is non-null and the checks remain in the code.
+static inline int SmallBalloonScaleStorageAddress(CSmallBalloon* self) {
+    return (int)self + (int)&((CSmallBalloon*)0)->scaleValues;
+}
+
+// Release the small balloon's model and scale storage. The original tests the
+// receiver again before the body, so the nested check stays.
+CSmallBalloon::~CSmallBalloon() {
+    if (this) {
+        vtbl = (void*)s_balloonInterfaceVtable;
+        ResourceManager_ReleaseObject(g_resourceManager, model, 0);
         --s_liveBalloonCount;
-        if (&AsBalloonState80069C(self)->scaleValues != 0) {
-        if (&AsBalloonState80069C(self)->scaleValues != 0) {
-        if (&AsBalloonState80069C(self)->scaleValues != 0) {
-        if (&AsBalloonState80069C(self)->scaleValues != 0) {
-        if (&AsBalloonState80069C(self)->scaleValues != 0) {
-            void* resource = *reinterpret_cast<void**>(&AsBalloonState80069C(self)->scaleValues);
+        if (SmallBalloonScaleStorageAddress(this) && SmallBalloonScaleStorageAddress(this) &&
+            SmallBalloonScaleStorageAddress(this) && SmallBalloonScaleStorageAddress(this) &&
+            SmallBalloonScaleStorageAddress(this)) {
+            void* resource = scaleValues;
             if (resource != 0) {
-            volatile int* pc = reinterpret_cast<volatile int*>(&AsBalloonState80069C(self)->scaleCount);
-            *pc = *pc - *pc;
-            appFreeUni__FPv(resource);
+                // The original reads the count word back through an aliasing view
+                // before zeroing it, which keeps the subtract in the code.
+                scaleCount -= *(unsigned int*)&scaleCount;
+                appFreeUni__FPv(resource);
             }
         }
-        }
-        }
-        }
-        }
-        }
-        if (deallocate > 0) {
-            __dl__FPv(self);
-        }
     }
-    return (void*)self;
 }
+
+namespace ns0 {
+extern "C" {
 
 // Project a balloon's world position and clamp screen coordinates to the viewport.
 void Balloon_ProjectAndClampScreenPosition(void* self, void* source) {
@@ -623,14 +797,18 @@ void Balloon_ProjectAndClampScreenPosition(void* self, void* source) {
     void* camera = Camera_GetRenderState(reinterpret_cast<void*>(g_view));
     float bounds[3];
     Vec3_ProjectToViewport(bounds, AsBalloonState80069C(source)->position, cameraData,
-                ((BalloonCameraMatrices*)camera)->projection,
-                ((BalloonCameraMatrices*)camera)->view, kIdentityMatrix4x4);
-    if (bounds[0] < kFloat_0_Balloon) bounds[0] = kFloat_0_Balloon;
+                           ((BalloonCameraMatrices*)camera)->projection, ((BalloonCameraMatrices*)camera)->view,
+                           kIdentityMatrix4x4);
+    if (bounds[0] < kFloat_0_Balloon)
+        bounds[0] = kFloat_0_Balloon;
     float limit0 = AsWView(g_view)->viewportWidth;
-    if (bounds[0] > limit0) bounds[0] = limit0;
-    if (bounds[1] < kFloat_0_Balloon) bounds[1] = kFloat_0_Balloon;
+    if (bounds[0] > limit0)
+        bounds[0] = limit0;
+    if (bounds[1] < kFloat_0_Balloon)
+        bounds[1] = kFloat_0_Balloon;
     float limit1 = AsWView(g_view)->viewportHeight;
-    if (bounds[1] > limit1) bounds[1] = limit1;
+    if (bounds[1] > limit1)
+        bounds[1] = limit1;
     int tmp1;
     int tmp0 = *reinterpret_cast<int*>(bounds);
     bounds[2] = kFloat_0_Balloon;
@@ -704,17 +882,14 @@ void BalloonBase_InitTwoPiCache() {
 // Detach the balloon's named puppet from the draw scene before destruction.
 void Balloon_PrepareForDestroy(const void* self) {
     if (g_sceneManager != 0) {
-        DrawScene_SetNamedObjectPuppet(reinterpret_cast<void*>(g_sceneManager),
-                    AsBalloonState80069C(self)->name, 0);
+        DrawScene_SetNamedObjectPuppet(reinterpret_cast<void*>(g_sceneManager), AsBalloonState80069C(self)->name, 0);
     }
 }
 
 // Enqueue the balloon model as a named scene preload.
 void BalloonState_QueueModelPreload(void* self) {
-    ResourcePreloadQueue_AddRequest(reinterpret_cast<void*>(g_sceneManager), 4,
-                AsBalloonState80069C(self)->model, kFloat_1_Balloon,
-                0, kFloat_0_Balloon,
-                AsBalloonState80069C(self)->name, 0, 0, 0);
+    ResourcePreloadQueue_AddRequest(reinterpret_cast<void*>(g_sceneManager), 4, AsBalloonState80069C(self)->model,
+                                    kFloat_1_Balloon, 0, kFloat_0_Balloon, AsBalloonState80069C(self)->name, 0, 0, 0);
 }
 
 // Set visibility subject to scale-sequence state and apply opacity recursively to the model.
@@ -779,12 +954,13 @@ void Balloon_UpdateAnimation(void* self) {
         if (targetRadius >= 0) {
             delta = AsBalloonState80069C(obj)->scaleDelta;
             float position = AsBalloonState80069C(obj)->scale + (float)delta;
-                AsBalloonState80069C(obj)->scale = position;
+            AsBalloonState80069C(obj)->scale = position;
             int done = 0;
             if (delta > 0 && (float)targetRadius <= position) {
                 done = 1;
             } else if (delta < 0) {
-                if ((float)AsBalloonState80069C(obj)->targetScale >= AsBalloonState80069C(obj)->scale) done = 1;
+                if ((float)AsBalloonState80069C(obj)->targetScale >= AsBalloonState80069C(obj)->scale)
+                    done = 1;
             }
             if (done) {
                 AsBalloonState80069C(obj)->scale = (float)AsBalloonState80069C(obj)->targetScale;
@@ -796,19 +972,23 @@ void Balloon_UpdateAnimation(void* self) {
         // update idle bob/heading or grow/fade the selected hit sequence.
         short index = AsBalloonState80069C(obj)->currentIndex;
         float endpoint;
-        if (index < 0) endpoint = *reinterpret_cast<float*>((*(float**)&AsBalloonState80069C(obj)->scaleValues));
-        else if ((unsigned int)index >= (*(volatile unsigned int*)&AsBalloonState80069C(obj)->scaleCount)) endpoint = reinterpret_cast<float*>((*(float**)&AsBalloonState80069C(obj)->scaleValues))[AsBalloonState80069C(obj)->scaleCount - 1];
-        else endpoint = reinterpret_cast<float*>((*(float**)&AsBalloonState80069C(obj)->scaleValues))[index];
+        if (index < 0)
+            endpoint = *reinterpret_cast<float*>((*(float**)&AsBalloonState80069C(obj)->scaleValues));
+        else if ((unsigned int)index >= (*(volatile unsigned int*)&AsBalloonState80069C(obj)->scaleCount))
+            endpoint = reinterpret_cast<float*>(
+                (*(float**)&AsBalloonState80069C(obj)->scaleValues))[AsBalloonState80069C(obj)->scaleCount - 1];
+        else
+            endpoint = reinterpret_cast<float*>((*(float**)&AsBalloonState80069C(obj)->scaleValues))[index];
 
-        if (AsBalloonState80069C(obj)->scale >= endpoint &&
-            AsBalloonState80069C(obj)->opacity <= 0) {
+        if (AsBalloonState80069C(obj)->scale >= endpoint && AsBalloonState80069C(obj)->opacity <= 0) {
             AsBalloonState80069C(obj)->active = 0;
             return;
         } else if (index < 0) {
             (*(WVector*)&AsBalloonState80069C(obj)->position) = (*(WVector*)&AsBalloonState80069C(obj)->origin);
             float angle = AsBalloonState80069C(obj)->bobPhase + AsBalloonState80069C(obj)->bobPhaseStep;
             AsBalloonState80069C(obj)->bobPhase = angle;
-            if (angle >= kFloat_6_2831855_Balloon) AsBalloonState80069C(obj)->bobPhase = kFloat_0_Balloon;
+            if (angle >= kFloat_6_2831855_Balloon)
+                AsBalloonState80069C(obj)->bobPhase = kFloat_0_Balloon;
             float y;
             float sine = Math_SinApprox(AsBalloonState80069C(obj)->bobPhase);
             float currentY;
@@ -817,31 +997,35 @@ void Balloon_UpdateAnimation(void* self) {
             y = AsBalloonState80069C(obj)->heading + AsBalloonState80069C(obj)->headingStep;
             AsBalloonState80069C(obj)->heading = y;
             AsBalloonState80069C(obj)->position[1] = scaleY * sine + currentY;
-            if (y >= kFloat_6_2831855_Balloon) AsBalloonState80069C(obj)->heading = kFloat_0_Balloon;
+            if (y >= kFloat_6_2831855_Balloon)
+                AsBalloonState80069C(obj)->heading = kFloat_0_Balloon;
         } else {
             short opacity = AsBalloonState80069C(obj)->opacity;
             int remain = (int)((float)opacity - AsBalloonState80069C(obj)->opacityStep);
             AsBalloonState80069C(obj)->opacity = remain;
-            if ((short)remain < 0) AsBalloonState80069C(obj)->opacity = 0;
+            if ((short)remain < 0)
+                AsBalloonState80069C(obj)->opacity = 0;
             float progress = AsBalloonState80069C(obj)->scale + AsBalloonState80069C(obj)->scaleStep;
-                AsBalloonState80069C(obj)->scale = progress;
-            if (progress >= endpoint) AsBalloonState80069C(obj)->scale = endpoint;
+            AsBalloonState80069C(obj)->scale = progress;
+            if (progress >= endpoint)
+                AsBalloonState80069C(obj)->scale = endpoint;
         }
         // Phase 3: construct scale, Y rotation and world translation, concatenate
         // in the existing helper argument order, then extract the affine model
         // matrix. Do not infer conventional matrix multiplication from call names.
         char matrix[0xF0];
         Mtx44_SetScale(matrix + 0xB0, AsBalloonState80069C(obj)->scale / kFloat_2_56_Balloon,
-                    AsBalloonState80069C(obj)->scale / kFloat_2_56_Balloon,
-                    AsBalloonState80069C(obj)->scale / kFloat_2_56_Balloon);
+                       AsBalloonState80069C(obj)->scale / kFloat_2_56_Balloon,
+                       AsBalloonState80069C(obj)->scale / kFloat_2_56_Balloon);
         Mtx44_SetRotationY(matrix + 0x70, AsBalloonState80069C(obj)->heading);
         Mtx44_SetTranslation(matrix + 0x30, (*(float*)&AsBalloonState80069C(obj)->position),
-                    AsBalloonState80069C(obj)->position[1], AsBalloonState80069C(obj)->position[2]);
+                             AsBalloonState80069C(obj)->position[1], AsBalloonState80069C(obj)->position[2]);
         void* combined = PSMTX44Concat(obj + kBalloonTransformOffset, matrix + 0x70, matrix + 0x30);
         PSMTX44Concat(obj + kBalloonTransformOffset, matrix + 0xB0, combined);
         Matrix_ExtractAffineFrom4x4(obj + kBalloonTransformOffset, matrix);
         Model_SetMatrixRecursive(AsBalloonState80069C(obj)->model, 0, matrix);
-        WPuppet_SetOpacityRecursive(AsBalloonState80069C(obj)->model, (unsigned char)AsBalloonState80069C(obj)->opacity);
+        WPuppet_SetOpacityRecursive(AsBalloonState80069C(obj)->model,
+                                    (unsigned char)AsBalloonState80069C(obj)->opacity);
     }
 }
 
@@ -851,17 +1035,13 @@ void Balloon_UpdateAnimation(void* self) {
 
 // ---- merged from party_balloon_system.cpp ----
 namespace ns1 {
-// Translation unit 0x8006B1B4-0x8006C4D4 (8 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
 // Small balloons have no extra per-frame update hook.
-void CSmallBalloon_vfunc_3() {}
+void CSmallBalloon::vfunc_3() {}
 // Medium balloons have no extra per-frame update hook.
-void CMediumBalloon_vfunc_3() {}
-void* CMediumBalloon_dtor(void*, int);
-void CMediumBalloon_StartExplosionEffect(void*);
+void CMediumBalloon::vfunc_3() {}
 
 extern char __vt__14CMediumBalloon[];
 extern char balloonDefaultScaleValues[];
@@ -912,36 +1092,55 @@ void appFreeUni__FPv(void*);
 extern "C" {
 
 struct LengthVectorAllocation {
-    char* pointer; char* allocator;
+    char* pointer;
+    char* allocator;
     // Own the temporary character array until its shared control block is built.
     LengthVectorAllocation(char* p, char* a) : pointer(p), allocator(a) {}
     // Free the temporary character array if ownership was not transferred.
-    ~LengthVectorAllocation() { if (pointer) __dla__FPv(pointer); }
+    ~LengthVectorAllocation() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct LengthVectorControlBase {
-    void* table; unsigned strong, weak;
+    void* table;
+    unsigned strong, weak;
     // Initialize both shared character ownership counts to one.
-    LengthVectorControlBase() { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; }
+    LengthVectorControlBase() {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+    }
 };
 struct LengthVectorControl : LengthVectorControlBase {
     char* pointer;
     // Attach the character buffer to its shared deletion control block.
-    LengthVectorControl(char* p) { pointer = p; }
+    LengthVectorControl(char* p) {
+        pointer = p;
+    }
 };
 struct LengthVectorErrorBase {
     void* table;
     // Install the reconstructed logic-error base vtable.
-    LengthVectorErrorBase() { table = __vt__Q23std11logic_error; }
+    LengthVectorErrorBase() {
+        table = __vt__Q23std11logic_error;
+    }
     // Destroy the reconstructed exception base without freeing this storage.
-    ~LengthVectorErrorBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~LengthVectorErrorBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 namespace std {
 struct length_error : LengthVectorErrorBase {
-    char* text; void* control;
+    char* text;
+    void* control;
     // Construct the vector length-error text and its shared character owner.
     length_error() {
         const char* message = ((BalloonEffectStrings*)balloonEffectStrings)->vectorLengthError;
-        struct Allocator { char value; char pad[3]; } allocator;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned n = strlen(message) + 1;
         text = (char*)__nwa__FUl(2 * n - n);
@@ -959,21 +1158,42 @@ struct length_error : LengthVectorErrorBase {
 }
 
 struct LengthVectorBuffer {
-    unsigned int* data; unsigned size; unsigned capacity; unsigned* owner; volatile unsigned offset;
+    unsigned int* data;
+    unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    volatile unsigned offset;
     // Initialize empty growth storage with a borrowed original-capacity pointer.
     LengthVectorBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free whichever vector allocation this temporary owns after exchange.
-    ~LengthVectorBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~LengthVectorBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 // Return the larger growth increment by reference.
-inline const unsigned& LengthVectorMax(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
-struct UIntVector { unsigned int* data; unsigned int size; unsigned int capacity; };
+inline const unsigned& LengthVectorMax(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
+struct UIntVector {
+    unsigned int* data;
+    unsigned int size;
+    unsigned int capacity;
+};
 struct UIntTempVector {
-    unsigned int* data; unsigned int size, cap;
+    unsigned int* data;
+    unsigned int size, cap;
     // Initialize an empty temporary scale-word vector.
     UIntTempVector() : data(0), size(0), cap(0) {}
     // Clear the temporary count and free its owned scale-word storage.
-    ~UIntTempVector() { if (data) { size -= size; appFreeUni__FPv(data); } }
+    ~UIntTempVector() {
+        if (data) {
+            size -= size;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 struct SmallBalloonFloats {
     float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep;
@@ -1002,82 +1222,105 @@ inline void SetSmallBalloonFloats(char* obj, SmallBalloonFloats v) {
     AsBalloonState80069C(obj)->headingStep = v.headingStep;
 }
 
+} // extern "C"
+
+} // namespace ns1
+
+typedef ns0::UIntTempVector BalloonScaleTempDefault;
+using ns1::MakeSmallBalloonFloats;
+using ns1::SetSmallBalloonFloats;
+
 // Restore a small balloon's scale sequence and play its recovery sound.
-void CSmallBalloon_RestoreScaleSequence(char* obj) {
+void CSmallBalloon::RestoreScaleSequence() {
     // Phase 1: reset the target-radius ramp and reserve endpoint storage.
-    UIntVector* scaleValues = reinterpret_cast<UIntVector*>(&AsBalloonState80069C(obj)->scaleValues);
-    unsigned int oldSize = scaleValues->size;
+    BalloonScaleVector* scaleSequence = reinterpret_cast<BalloonScaleVector*>(&scaleValues);
+    unsigned int oldSize = scaleSequence->size;
     short targetRadius = kSmallBalloonSize;
-    AsBalloonState80069C(obj)->targetScale = targetRadius;
-    scaleValues->size = oldSize - scaleValues->size;
-    AsBalloonState80069C(obj)->scaleDelta = (short)((targetRadius - AsBalloonState80069C(obj)->scale) * kFloat_0_5_Balloon);
-    if (scaleValues->capacity < kSmallScaleEndpointCount) {
-        UIntTempVector temp;
+    targetScale = targetRadius;
+    scaleSequence->size = oldSize - scaleSequence->size;
+    scaleDelta = (short)((targetRadius - scale) * kFloat_0_5_Balloon);
+    if (scaleSequence->capacity < kSmallScaleEndpointCount) {
+        BalloonScaleTempDefault temp;
         temp.data = (unsigned int*)appMallocDummy__FUl(8);
         temp.cap = kSmallScaleEndpointCount;
-        unsigned int* first = scaleValues->data;
-        int copiedWordCount = (int)(reinterpret_cast<char*>(scaleValues->data + scaleValues->size) - reinterpret_cast<char*>(first)) / 4;
+        unsigned int* first = scaleSequence->data;
+        int copiedWordCount =
+            (int)(reinterpret_cast<char*>(scaleSequence->data + scaleSequence->size) - reinterpret_cast<char*>(first)) /
+            4;
         memcpy(temp.data + temp.size, first, copiedWordCount * 4);
         memset(first, 0, copiedWordCount * 4);
-        unsigned int* oldData = scaleValues->data;
+        unsigned int* oldData = scaleSequence->data;
         unsigned int* newData = temp.data;
         unsigned int newSize = temp.size + copiedWordCount;
-        unsigned int oldCapacity = scaleValues->capacity;
+        unsigned int oldCapacity = scaleSequence->capacity;
         unsigned int newCapacity = temp.cap;
         temp.data = oldData;
-        scaleValues->size = 0;
-        scaleValues->capacity = newCapacity;
+        scaleSequence->size = 0;
+        scaleSequence->capacity = newCapacity;
         temp.cap = oldCapacity;
-        scaleValues->data = newData;
-        scaleValues->size = newSize;
+        scaleSequence->data = newData;
+        scaleSequence->size = newSize;
         temp.size = 0;
     }
-    // Phase 2: append radius 30, then radius 20; the expanded growth path
-    // owns only the endpoint allocation and preserves the length-error ABI.
-    unsigned int* defaultScaleWords = kBalloonParameterWords;
     // Phase 2: append the default endpoints, growing/copying/exchanging if full.
+    unsigned int* defaultScaleWords = kBalloonParameterWords;
     for (int i = 0; i < kSmallScaleEndpointCount; ++i) {
-        unsigned int size = scaleValues->size;
-        if (size < scaleValues->capacity) {
+        unsigned int size = scaleSequence->size;
+        if (size < scaleSequence->capacity) {
             unsigned int next = size + 1;
-            scaleValues->size = next;
-            scaleValues->data[next - 1] = *defaultScaleWords;
+            scaleSequence->size = next;
+            scaleSequence->data[next - 1] = *defaultScaleWords;
         } else {
-            if (kBalloonVectorMaxWords - scaleValues->capacity < 1) {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                std::length_error* error = (std::length_error*)storage.bytes;
+            if (kBalloonVectorMaxWords - scaleSequence->capacity < 1) {
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(BalloonLengthError)];
+                } storage;
+                BalloonLengthError* error = (BalloonLengthError*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
-            unsigned int needed = scaleValues->size + 1 - scaleValues->capacity;
-            LengthVectorBuffer temp(&scaleValues->capacity);
-            unsigned int capacity = scaleValues->capacity;
+            unsigned int needed = scaleSequence->size + 1 - scaleSequence->capacity;
+            BalloonScaleGrowth temp(&scaleSequence->capacity);
+            unsigned int capacity = scaleSequence->capacity;
             if (needed > kBalloonVectorMaxWords - capacity) {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                std::length_error* error = (std::length_error*)storage.bytes;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(BalloonLengthError)];
+                } storage;
+                BalloonLengthError* error = (BalloonLengthError*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
             if (capacity < kBalloonVectorGrowthLimit) {
-                capacity += LengthVectorMax((3 * (capacity + 1)) / 5, needed);
+                capacity += LayoutVectorMax((3 * (capacity + 1)) / 5, needed);
             } else if (capacity < kBalloonVectorHalfGrowthLimit) {
-                capacity += LengthVectorMax((capacity + 1) / 2, needed);
-            } else capacity = kBalloonVectorMaxWords;
+                capacity += LayoutVectorMax((capacity + 1) / 2, needed);
+            } else
+                capacity = kBalloonVectorMaxWords;
             if (capacity > kBalloonVectorMaxWords) {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                std::length_error* error = (std::length_error*)storage.bytes;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(BalloonLengthError)];
+                } storage;
+                BalloonLengthError* error = (BalloonLengthError*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
             unsigned int* data = (unsigned int*)appMallocDummy__FUl(capacity * 4);
-            unsigned int appendIndex = scaleValues->size;
+            unsigned int appendIndex = scaleSequence->size;
             temp.offset = appendIndex;
             (data + appendIndex)[temp.size] = *defaultScaleWords;
-            unsigned int* oldData = scaleValues->data;
-            int count = (int)(reinterpret_cast<char*>(scaleValues->data + scaleValues->size) - reinterpret_cast<char*>(oldData)) / 4;
+            unsigned int* oldData = scaleSequence->data;
+            int count = (int)(reinterpret_cast<char*>(scaleSequence->data + scaleSequence->size) -
+                              reinterpret_cast<char*>(oldData)) /
+                        4;
             temp.data = data;
             temp.capacity = capacity;
             temp.size = temp.size + 1;
@@ -1086,99 +1329,117 @@ void CSmallBalloon_RestoreScaleSequence(char* obj) {
             memcpy(data + offset, oldData, count * 4);
             memset(oldData, 0, count * 4);
             unsigned int newSize = temp.size + count;
-            oldData = scaleValues->data;
+            oldData = scaleSequence->data;
             data = temp.data;
-            unsigned int oldCapacity = scaleValues->capacity;
+            unsigned int oldCapacity = scaleSequence->capacity;
             temp.data = oldData;
-            scaleValues->size = 0;
-            scaleValues->capacity = temp.capacity;
+            scaleSequence->size = 0;
+            scaleSequence->capacity = temp.capacity;
             temp.capacity = oldCapacity;
-            scaleValues->data = data;
-            scaleValues->size = newSize;
+            scaleSequence->data = data;
+            scaleSequence->size = newSize;
             temp.size = 0;
         }
         ++defaultScaleWords;
     }
     // Phase 3: restore per-update rates and play the recovery sound.
-    SetSmallBalloonFloats(obj, MakeSmallBalloonFloats());
-    Sound_PlayByName(g_soundManager, ((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, 0, ((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, kFloat_0_5_Balloon, kFloat_200_805DD8D0, kFloat_1_Balloon);
+    SetSmallBalloonFloats((char*)this, MakeSmallBalloonFloats());
+    Sound_PlayByName(g_soundManager, ((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, 0,
+                     ((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, kFloat_0_5_Balloon,
+                     kFloat_200_805DD8D0, kFloat_1_Balloon);
 }
 // Restore a medium balloon's scale sequence and play its recovery sound.
-void CMediumBalloon_RestoreScaleSequence(void* self) {
+void CMediumBalloon::RestoreScaleSequence() {
     // Phase 1: reset the target-radius ramp and reserve endpoint storage.
-    char* obj = reinterpret_cast<char*>(self);
-    UIntVector* scaleValues = reinterpret_cast<UIntVector*>(&AsBalloonState80069C(obj)->scaleValues);
-    unsigned int oldSize = scaleValues->size;
+    BalloonScaleVector* scaleSequence = reinterpret_cast<BalloonScaleVector*>(&scaleValues);
+    unsigned int oldSize = scaleSequence->size;
     short targetRadius = kMediumBalloonSize;
-    AsBalloonState80069C(obj)->targetScale = targetRadius;
-    scaleValues->size = oldSize - oldSize;
-    AsBalloonState80069C(obj)->scaleDelta = (short)((targetRadius - AsBalloonState80069C(obj)->scale) * kFloat_0_5_Balloon);
-    if (scaleValues->capacity < kMediumScaleEndpointCount) {
-        UIntTempVector temp;
+    targetScale = targetRadius;
+    scaleSequence->size = oldSize - oldSize;
+    scaleDelta = (short)((targetRadius - scale) * kFloat_0_5_Balloon);
+    if (scaleSequence->capacity < kMediumScaleEndpointCount) {
+        BalloonScaleTempDefault temp;
         temp.data = (unsigned int*)appMallocDummy__FUl(12);
         temp.cap = kMediumScaleEndpointCount;
-        unsigned int* first = scaleValues->data;
-        int copiedWordCount = (int)(reinterpret_cast<char*>(scaleValues->data + scaleValues->size) - reinterpret_cast<char*>(first)) / 4;
+        unsigned int* first = scaleSequence->data;
+        int copiedWordCount =
+            (int)(reinterpret_cast<char*>(scaleSequence->data + scaleSequence->size) - reinterpret_cast<char*>(first)) /
+            4;
         memcpy(temp.data + temp.size, first, copiedWordCount * 4);
         memset(first, 0, copiedWordCount * 4);
         temp.size += copiedWordCount;
-        unsigned int* oldData = scaleValues->data;
+        unsigned int* oldData = scaleSequence->data;
         unsigned int* newData = temp.data;
         temp.data = oldData;
         unsigned int newSize = temp.size + copiedWordCount;
-        unsigned int oldCapacity = scaleValues->capacity;
+        unsigned int oldCapacity = scaleSequence->capacity;
         unsigned int newCapacity = temp.cap;
-        scaleValues->size = 0;
-        scaleValues->capacity = newCapacity;
+        scaleSequence->size = 0;
+        scaleSequence->capacity = newCapacity;
         temp.cap = oldCapacity;
-        scaleValues->data = newData;
-        scaleValues->size = newSize;
+        scaleSequence->data = newData;
+        scaleSequence->size = newSize;
         temp.size = 0;
     }
     unsigned int* defaultScaleWords = reinterpret_cast<unsigned int*>(balloonDefaultScaleValues);
     // Phase 2: append the default endpoints, growing/copying/exchanging if full.
     for (int i = 0; i < kMediumScaleEndpointCount; ++i) {
-        unsigned int size = scaleValues->size;
-        if (size < scaleValues->capacity) {
+        unsigned int size = scaleSequence->size;
+        if (size < scaleSequence->capacity) {
             unsigned int next = size + 1;
-            scaleValues->size = next;
-            scaleValues->data[next - 1] = *defaultScaleWords;
+            scaleSequence->size = next;
+            scaleSequence->data[next - 1] = *defaultScaleWords;
         } else {
-            if (kBalloonVectorMaxWords - scaleValues->capacity < 1) {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                std::length_error* error = (std::length_error*)storage.bytes;
+            if (kBalloonVectorMaxWords - scaleSequence->capacity < 1) {
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(BalloonLengthError)];
+                } storage;
+                BalloonLengthError* error = (BalloonLengthError*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
-            LengthVectorBuffer temp(&scaleValues->capacity);
-            unsigned int needed = scaleValues->size + 1 - scaleValues->capacity;
-            unsigned int capacity = scaleValues->capacity;
+            BalloonScaleGrowth temp(&scaleSequence->capacity);
+            unsigned int needed = scaleSequence->size + 1 - scaleSequence->capacity;
+            unsigned int capacity = scaleSequence->capacity;
             if (needed > kBalloonVectorMaxWords - capacity) {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                std::length_error* error = (std::length_error*)storage.bytes;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(BalloonLengthError)];
+                } storage;
+                BalloonLengthError* error = (BalloonLengthError*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
             if (capacity < kBalloonVectorGrowthLimit) {
-                capacity += LengthVectorMax((3 * (capacity + 1)) / 5, needed);
+                capacity += LayoutVectorMax((3 * (capacity + 1)) / 5, needed);
             } else if (capacity < kBalloonVectorHalfGrowthLimit) {
-                capacity += LengthVectorMax((capacity + 1) / 2, needed);
-            } else capacity = kBalloonVectorMaxWords;
+                capacity += LayoutVectorMax((capacity + 1) / 2, needed);
+            } else
+                capacity = kBalloonVectorMaxWords;
             if (capacity > kBalloonVectorMaxWords) {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                std::length_error* error = (std::length_error*)storage.bytes;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(BalloonLengthError)];
+                } storage;
+                BalloonLengthError* error = (BalloonLengthError*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
             unsigned int* data = (unsigned int*)appMallocDummy__FUl(capacity * 4);
-            unsigned int appendIndex = scaleValues->size;
+            unsigned int appendIndex = scaleSequence->size;
             temp.offset = appendIndex;
             (data + appendIndex)[temp.size] = *defaultScaleWords;
-            unsigned int* oldData = scaleValues->data;
-            int count = (int)(reinterpret_cast<char*>(scaleValues->data + scaleValues->size) - reinterpret_cast<char*>(oldData)) / 4;
+            unsigned int* oldData = scaleSequence->data;
+            int count = (int)(reinterpret_cast<char*>(scaleSequence->data + scaleSequence->size) -
+                              reinterpret_cast<char*>(oldData)) /
+                        4;
             temp.data = data;
             temp.capacity = capacity;
             temp.size = temp.size + 1;
@@ -1187,23 +1448,27 @@ void CMediumBalloon_RestoreScaleSequence(void* self) {
             memcpy(data + offset, oldData, count * 4);
             memset(oldData, 0, count * 4);
             unsigned int newSize = temp.size + count;
-            oldData = scaleValues->data;
+            oldData = scaleSequence->data;
             data = temp.data;
-            unsigned int oldCapacity = scaleValues->capacity;
+            unsigned int oldCapacity = scaleSequence->capacity;
             temp.data = oldData;
-            scaleValues->size = 0;
-            scaleValues->capacity = temp.capacity;
+            scaleSequence->size = 0;
+            scaleSequence->capacity = temp.capacity;
             temp.capacity = oldCapacity;
-            scaleValues->data = data;
-            scaleValues->size = newSize;
+            scaleSequence->data = data;
+            scaleSequence->size = newSize;
             temp.size = 0;
         }
         ++defaultScaleWords;
     }
     // Phase 3: restore per-update rates and play the recovery sound.
-    SetSmallBalloonFloats(obj, MakeSmallBalloonFloats());
-    Sound_PlayByName(g_soundManager, ((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, 0, ((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, kFloat_0_5_Balloon, kFloat_200_805DD8D0, kFloat_1_Balloon);
+    SetSmallBalloonFloats((char*)this, MakeSmallBalloonFloats());
+    Sound_PlayByName(g_soundManager, ((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, 0,
+                     ((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, kFloat_0_5_Balloon,
+                     kFloat_200_805DD8D0, kFloat_1_Balloon);
 }
+namespace ns1 {
+extern "C" {
 // Retain the compiled legacy medium-balloon scale reset, including its length-error construction.
 static void old_8006BE4C(void* self) {
     char* p = (char*)self;
@@ -1211,7 +1476,10 @@ static void old_8006BE4C(void* self) {
     unsigned int cap = AsBalloonState80069C(p)->scaleCapacity;
     (*(unsigned short*)&AsBalloonState80069C(p)->targetScale) = 0x11;
     AsBalloonState80069C(p)->scaleCount = size - size;
-    AsBalloonState80069C(p)->scaleDelta = (short)(((float)(unsigned int)(*(unsigned short*)&AsBalloonState80069C(p)->targetScale) - AsBalloonState80069C(p)->scale) * kFloat_0_5_Balloon);
+    AsBalloonState80069C(p)->scaleDelta =
+        (short)(((float)(unsigned int)(*(unsigned short*)&AsBalloonState80069C(p)->targetScale) -
+                 AsBalloonState80069C(p)->scale) *
+                kFloat_0_5_Balloon);
     if (cap < 3) {
         void* old = AsBalloonState80069C(p)->scaleValues;
         unsigned int n = 3;
@@ -1254,7 +1522,8 @@ static void old_8006BE4C(void* self) {
             exc[0] = &__vt__Q23std12length_error;
             exc[1] = buf;
             exc[2] = obj;
-            __throw((char*)balloonEffectStrings + kBalloonLengthErrorTypeOffset, exc, (void*)__dt__Q23std12length_errorFv);
+            __throw((char*)balloonEffectStrings + kBalloonLengthErrorTypeOffset, exc,
+                    (void*)__dt__Q23std12length_errorFv);
         }
         unsigned int diff = newSize - cap;
         unsigned int newCap;
@@ -1274,7 +1543,8 @@ static void old_8006BE4C(void* self) {
             exc[0] = &__vt__Q23std12length_error;
             exc[1] = buf;
             exc[2] = obj;
-            __throw((char*)balloonEffectStrings + kBalloonLengthErrorTypeOffset, exc, (void*)__dt__Q23std12length_errorFv);
+            __throw((char*)balloonEffectStrings + kBalloonLengthErrorTypeOffset, exc,
+                    (void*)__dt__Q23std12length_errorFv);
         }
         if (cap < kBalloonVectorGrowthLimit) {
             unsigned int growth = (3 * (cap + 1)) / 5;
@@ -1301,7 +1571,8 @@ static void old_8006BE4C(void* self) {
             exc[0] = &__vt__Q23std12length_error;
             exc[1] = buf;
             exc[2] = obj;
-            __throw((char*)balloonEffectStrings + kBalloonLengthErrorTypeOffset, exc, (void*)__dt__Q23std12length_errorFv);
+            __throw((char*)balloonEffectStrings + kBalloonLengthErrorTypeOffset, exc,
+                    (void*)__dt__Q23std12length_errorFv);
         }
         {
             void* oldbegin = AsBalloonState80069C(p)->scaleValues;
@@ -1319,7 +1590,9 @@ static void old_8006BE4C(void* self) {
         }
     }
     {
-        struct FiveF { float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep; };
+        struct FiveF {
+            float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep;
+        };
         FiveF v;
         v.opacityStep = kFloat_51_Balloon;
         v.scaleStep = kFloat_2_balloon;
@@ -1328,22 +1601,33 @@ static void old_8006BE4C(void* self) {
         v.headingStep = kFloat_0_041887902_Balloon;
         (*(FiveF*)&AsBalloonState80069C(p)->opacityStep) = v;
     }
-    Sound_PlayByName(g_soundManager, balloonEffectStrings + 0xA7, 0, 0, balloonEffectStrings + 0xA7, 0, kFloat_0_5_Balloon, kFloat_200_805DD8D0, kFloat_1_Balloon);
+    Sound_PlayByName(g_soundManager, balloonEffectStrings + 0xA7, 0, 0, balloonEffectStrings + 0xA7, 0,
+                     kFloat_0_5_Balloon, kFloat_200_805DD8D0, kFloat_1_Balloon);
 }
-void CFx_CreateAttachedEffect(void*, void*, const char*, int, int, int);
 void Sound_PlayByName(void*, const char*, int, int, const char*, int, float, float, float);
 void ResourceManager_ReleaseObject(void*, void*, int);
 void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
 
+} // extern "C"
+
+} // namespace ns1
+
 // Attach the small explosion effect at the balloon position and play its sound.
-void CSmallBalloon_StartExplosionEffect(void* self) {
-    AsCSmallBalloon(self)->effectPosition = AsBalloonState80069C(self)->position;
-    CFx_CreateAttachedEffect(g_fx, &AsBalloonState80069C(self)->attachmentScreenX, ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionEffect, 1, 0, 0);
-    Sound_PlayByName(g_soundManager, ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionSound, 0, 0, ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionSound, 0, kFloat_0_5_Balloon, kFloat_200_805DD8D0, kFloat_1_Balloon);
+void CSmallBalloon::StartExplosionEffect() {
+    effectPosition = position;
+    ((CFx*)g_fx)
+        ->CreateAttachedEffect((Vec2_8010*)(&attachmentScreenX),
+                               ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionEffect, 1, 0, 0);
+    Sound_PlayByName(g_soundManager, ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionSound, 0, 0,
+                     ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionSound, 0, kFloat_0_5_Balloon,
+                     kFloat_200_805DD8D0, kFloat_1_Balloon);
 }
 
-// Temporary vector-like objects used by CMediumBalloon_ctor (layout: begin, size, capacity).
+namespace ns1 {
+extern "C" {
+
+// Temporary vector-like objects used by CMediumBalloon::Init (layout: begin, size, capacity).
 #pragma opt_propagation off
 // XVec owns temporary medium-balloon float-word storage; YVec extends it
 // with growth metadata. Names are retained for exception relocation identity.
@@ -1391,7 +1675,9 @@ template <class T> inline const T& xmax(const T& a, const T& b) {
     return a < b ? b : a;
 }
 
-struct FiveF { float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep; };
+struct FiveF {
+    float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep;
+};
 
 // Copy the five adjacent balloon animation rates without changing their aggregate-copy ABI.
 inline void setFive(void* dst, FiveF v) {
@@ -1399,8 +1685,7 @@ inline void setFive(void* dst, FiveF v) {
 }
 
 // Construct and throw the legacy medium-vector length error; currently uncalled.
-static inline void ThrowLegacyMediumVectorLengthError()
-{
+static inline void ThrowLegacyMediumVectorLengthError() {
     char flag = 0;
     LenErrObj e;
     void* sbuf;
@@ -1430,7 +1715,11 @@ static inline void ThrowLegacyMediumVectorLengthError()
 
 // Despite void** storage, each element is a raw IEEE-754 float word, never
 // a pointee: copy/zero/free the allocation without deleting individual elements.
-struct MediumVector { char pad[0x24]; void** data; unsigned int size, capacity; };
+struct MediumVector {
+    char pad[0x24];
+    void** data;
+    unsigned int size, capacity;
+};
 // Adopt the temporary scale vector plus appended elements; leave its old allocation for cleanup.
 inline void MediumTargetSwap(MediumVector* v, YVec& t, int count) {
     unsigned int capacity;
@@ -1460,52 +1749,53 @@ template <class T> inline void MediumExchange(T& a, T& b) {
 }
 #pragma opt_propagation reset
 
-// Choose the medium/small explosion effect and sound from the stored balloon type.
-void CMediumBalloon_StartExplosionEffect(void* self) {
-    char* p = (char*)self;
-    const char* text = ((BalloonEffectStrings*)balloonEffectStrings)->mediumExplosionEffect;
-    AsCMediumBalloon(p)->attachedEffectPosition = p + 0x7C;
-    text = (AsCMediumBalloon(p)->baseScale != kMediumBalloonSize) ? ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionEffect : text;
-    CFx_CreateAttachedEffect(g_fx, p + 0xA4, text, 1, 0, 0);
-    const char* text2 = ((BalloonEffectStrings*)balloonEffectStrings)->mediumExplosionSound;
-    if (AsCMediumBalloon(p)->baseScale != kMediumBalloonSize)
-        text2 = ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionSound;
-    Sound_PlayByName(g_soundManager, text2, 0, 0, text2, 0, kFloat_0_5_Balloon, kFloat_200_805DD8D0, kFloat_1_Balloon);
-}
-
-// Form the legacy integer subobject guard using the declared scale-storage field offset.
-static inline int MediumBalloonScaleStorageAddress(void* self) {
-    return (int)self + (int)&((CMediumBalloon*)0)->items;
-}
-
-// Release medium-balloon resources and optionally delete the allocation.
-void* CMediumBalloon_dtor(void* self, int doDelete) {
-    if (self != 0 && self != 0) {
-        *(void**)self = s_balloonInterfaceVtable;
-        ResourceManager_ReleaseObject(g_resourceManager, AsCMediumBalloon(self)->balloonModel, 0);
-        --*(int*)(&s_liveBalloonCount);
-        if (MediumBalloonScaleStorageAddress(self) && MediumBalloonScaleStorageAddress(self) && MediumBalloonScaleStorageAddress(self) && MediumBalloonScaleStorageAddress(self) && MediumBalloonScaleStorageAddress(self)) {
-            // Endpoint floats are stored as word bits; destroy the allocation, never the endpoint values.
-            void** scaleWordAllocation = (*(void***)&AsCMediumBalloon(self)->items);
-            if (scaleWordAllocation != 0) {
-                (*(volatile int*)&AsCMediumBalloon(self)->itemCount) = AsCMediumBalloon(self)->itemCount - (*(volatile int*)&AsCMediumBalloon(self)->itemCount);
-                appFreeUni__FPv(scaleWordAllocation);
-            }
-        }
-    }
-    if (doDelete > 0)
-        __dl__FPv(self);
-    return self;
-}
-
 } // extern "C"
 
 } // namespace ns1
 
+// Choose the medium/small explosion effect and sound from the stored balloon type.
+void CMediumBalloon::StartExplosionEffect() {
+    const char* text = ((BalloonEffectStrings*)balloonEffectStrings)->mediumExplosionEffect;
+    effectPosition = position;
+    text =
+        (baseScale != kMediumBalloonSize) ? ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionEffect : text;
+    ((CFx*)g_fx)->CreateAttachedEffect((Vec2_8010*)(&attachmentScreenX), text, 1, 0, 0);
+    const char* text2 = ((BalloonEffectStrings*)balloonEffectStrings)->mediumExplosionSound;
+    if (baseScale != kMediumBalloonSize)
+        text2 = ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionSound;
+    Sound_PlayByName(g_soundManager, text2, 0, 0, text2, 0, kFloat_0_5_Balloon, kFloat_200_805DD8D0, kFloat_1_Balloon);
+}
+
+// The original tests the scale vector's address before each nested subobject
+// release; the address is non-null and the checks remain in the code.
+static inline int MediumBalloonScaleStorageAddress(CMediumBalloon* self) {
+    return (int)self + (int)&((CMediumBalloon*)0)->scaleValues;
+}
+
+// Release the medium balloon's model and scale storage. The original tests the
+// receiver again before the body, so the nested check stays.
+CMediumBalloon::~CMediumBalloon() {
+    if (this) {
+        vtbl = (void*)s_balloonInterfaceVtable;
+        ResourceManager_ReleaseObject(g_resourceManager, model, 0);
+        --s_liveBalloonCount;
+        if (MediumBalloonScaleStorageAddress(this) && MediumBalloonScaleStorageAddress(this) &&
+            MediumBalloonScaleStorageAddress(this) && MediumBalloonScaleStorageAddress(this) &&
+            MediumBalloonScaleStorageAddress(this)) {
+            // Endpoint floats are stored as word bits; destroy the allocation, never the endpoint values.
+            void** scaleWordAllocation = (*(void***)&scaleValues);
+            if (scaleWordAllocation != 0) {
+                // The original reads the count word back through an aliasing view
+                // before zeroing it, which keeps the subtract in the code.
+                scaleCount -= *(unsigned int*)&scaleCount;
+                appFreeUni__FPv(scaleWordAllocation);
+            }
+        }
+    }
+}
+
 // ---- merged from party_balloon_system.cpp ----
 namespace ns2 {
-// Translation unit 0x8006C4D4-0x8006DAE8 (17 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -1515,7 +1805,8 @@ extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12length_error[];
 extern const unsigned int bigBalloonInitialFloatValues[];
-extern float kFloat_51_Balloon, kFloat_2_balloon, kFloat_1_5_Balloon, kFloat_0_05235988_805DD8C8, kFloat_0_041887902_Balloon;
+extern float kFloat_51_Balloon, kFloat_2_balloon, kFloat_1_5_Balloon, kFloat_0_05235988_805DD8C8,
+    kFloat_0_041887902_Balloon;
 void Balloon_InitState(void*, void*, int, int);
 void* memcpy(void*, const void*, unsigned int);
 void* memset(void*, int, unsigned int);
@@ -1528,7 +1819,11 @@ void __dt__Q23std12length_errorFv();
 void* appMallocDummy__FUl(int);
 void appFreeUni__FPv(void*);
 
-struct C4Vector { char pad[0x24]; void** data; unsigned int size, capacity; };
+struct C4Vector {
+    char pad[0x24];
+    void** data;
+    unsigned int size, capacity;
+};
 void* __nw__FUl(unsigned int);
 void __dla__FPv(void*);
 struct C4Storage {
@@ -1537,7 +1832,12 @@ struct C4Storage {
     // Initialize an empty temporary scale-word allocation.
     C4Storage() : data(0), size(0), capacity(0) {}
     // Clear the element count and free the allocation held by this temporary.
-    ~C4Storage() { if (data) { *(unsigned int*)((char*)this + 4) -= ((unsigned int*)this)[1]; appFreeUni__FPv(data); } }
+    ~C4Storage() {
+        if (data) {
+            *(unsigned int*)((char*)this + 4) -= ((unsigned int*)this)[1];
+            appFreeUni__FPv(data);
+        }
+    }
 };
 struct C4Insert : C4Storage {
     unsigned int* owner;
@@ -1550,30 +1850,46 @@ struct C4Ref {
     int refs, owners;
     char* text;
     // Initialize shared character ownership and attach its deletion vtable.
-    C4Ref(char* p) { refs = 1; owners = 1; table = s_sharedCharDeleterVtable; text = p; }
+    C4Ref(char* p) {
+        refs = 1;
+        owners = 1;
+        table = s_sharedCharDeleterVtable;
+        text = p;
+    }
 };
 struct C4Guard {
     char* text;
     void* allocator;
     // Release character storage if no shared owner adopted it.
-    ~C4Guard() { if (text) __dla__FPv(text); }
+    ~C4Guard() {
+        if (text)
+            __dla__FPv(text);
+    }
 };
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 struct C4ErrorBase {
     void* table;
     // Install the reconstructed logic-error base vtable.
-    C4ErrorBase() { table = __vt__Q23std11logic_error; }
+    C4ErrorBase() {
+        table = __vt__Q23std11logic_error;
+    }
     // Destroy the reconstructed exception base without freeing this storage.
-    ~C4ErrorBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~C4ErrorBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 namespace std {
 struct length_error : C4ErrorBase {
     ~length_error();
-    char* text; void* control;
+    char* text;
+    void* control;
     // Construct the vector length-error text and its shared character owner.
     length_error() {
         const char* message = ((BalloonEffectStrings*)balloonEffectStrings)->vectorLengthError;
-        struct Allocator { char value; char pad[3]; } allocator;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned n = strlen(message) + 1;
         text = (char*)__nwa__FUl(2 * n - n);
@@ -1595,7 +1911,9 @@ namespace std {
 struct exception {
     void* table;
     // Initialize the reconstructed exception base for this local instantiation.
-    exception() { table = ns2::__vt__Q23std11logic_error; }
+    exception() {
+        table = ns2::__vt__Q23std11logic_error;
+    }
     ~exception();
 };
 namespace detail {
@@ -1603,28 +1921,34 @@ struct CharArrayGuard_u80069C94 {
     char* text;
     void* allocator;
     // Release character storage if no shared owner adopted it.
-    ~CharArrayGuard_u80069C94() { if (text) ns2::__dla__FPv(text); }
+    ~CharArrayGuard_u80069C94() {
+        if (text)
+            ns2::__dla__FPv(text);
+    }
 };
 }
 struct length_error : exception {
     ~length_error();
-    char* text; void* control;
+    char* text;
+    void* control;
     // Construct the vector length-error text and its shared character owner.
     length_error() {
-        using namespace ns2;
-        const char* message = ((BalloonEffectStrings*)balloonEffectStrings)->vectorLengthError;
-        struct Allocator { char value; char pad[3]; } allocator;
+        const char* message = ((BalloonEffectStrings*)ns2::balloonEffectStrings)->vectorLengthError;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned n = strlen(message) + 1;
-        text = (char*)__nwa__FUl(2 * n - n);
+        text = (char*)ns2::__nwa__FUl(2 * n - n);
         {
             char* p = text;
             detail::CharArrayGuard_u80069C94 guard = {p, &allocator.value};
-            control = new C4Ref(p);
+            control = new ns2::C4Ref(p);
             guard.text = 0;
         }
         strcpy(text, message);
-        table = __vt__Q23std12length_error;
+        table = ns2::__vt__Q23std12length_error;
     }
     DECOMP_CT_MEMBER(length_error)
 };
@@ -1634,21 +1958,34 @@ extern "C" {
 // Construct and throw the original vector length error using aligned stack storage.
 inline void MediumFail() {
     {
-        union { double alignment; unsigned char bytes[sizeof(::std::length_error)]; } storage;
+        union {
+            double alignment;
+            unsigned char bytes[sizeof(::std::length_error)];
+        } storage;
         ::std::length_error* error = (::std::length_error*)storage.bytes;
         error->__ct();
-        exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
-            (void*)exception_runtime::__dt__Q23std12length_errorFv);
+        exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType,
+                                   error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
     }
 }
+} // extern "C"
+
+} // namespace ns1
+
+typedef ns1::MediumVector BalloonVectorView;
+typedef ns1::XVec BalloonVectorTemp;
+typedef ns1::YVec BalloonVectorGrowth;
+using ns1::MediumFail;
+using ns1::MediumTargetSwap;
+
 #pragma opt_propagation off
 // Construct a medium balloon and reserve/append its default scale values with exception cleanup.
-void* CMediumBalloon_ctor(void* self, void* spawnPosition, void* modelSelection) {
+// It is named rather than a constructor because the constructor form compiles differently.
+CMediumBalloon* CMediumBalloon::Init(void* spawnPosition, int characterModel) {
     // Recipe: base radius 17, three balloonDefaultScaleValues endpoints, then five default increments.
     // The pointer-shaped endpoint slots are raw float words, not owned object pointers.
-    // Phase 1: copy the borrowed world spawn vector into the base and select the model.
     int i;
-    MediumVector* scaleSequence;
+    BalloonVectorView* scaleSequence;
     unsigned int zero;
     int reserveWordCount;
     unsigned int bytes;
@@ -1663,19 +2000,18 @@ void* CMediumBalloon_ctor(void* self, void* spawnPosition, void* modelSelection)
     unsigned int offset;
     const unsigned int* endpointWords;
 
-    Balloon_InitState(self, spawnPosition, kMediumBalloonSize, modelSelection);
-    scaleSequence = (MediumVector*)self;
+    ns0::Balloon_InitState((char*)this, spawnPosition, kMediumBalloonSize, characterModel);
+    scaleSequence = (BalloonVectorView*)this;
     unsigned int size;
     size = scaleSequence->size;
-    *(void**)self = __vt__14CMediumBalloon;
+    vtbl = __vt__14CMediumBalloon;
     scaleSequence->size = size - scaleSequence->size;
-    // Phase 2: reserve three float words, then append defaults in table order.
+    // Reserve three float words, then append defaults in table order.
     if (scaleSequence->capacity < kMediumScaleEndpointCount) {
-
         void** old;
 
         zero = 0;
-        XVec reservedStorage(zero);
+        BalloonVectorTemp reservedStorage(zero);
         reservedStorage.buf = (void**)appMallocDummy__FUl(12);
         reservedStorage.cap = kMediumScaleEndpointCount;
         old = scaleSequence->data;
@@ -1685,12 +2021,16 @@ void* CMediumBalloon_ctor(void* self, void* spawnPosition, void* modelSelection)
         memset(old, 0, bytes);
         reservedStorage.size += reserveWordCount;
         scaleSequence->size = zero;
-        MediumExchange(scaleSequence->capacity, reservedStorage.cap);
-        MediumExchange(scaleSequence->data, reservedStorage.buf);
-        MediumExchange(scaleSequence->size, reservedStorage.size);
+        ns1::MediumExchange(scaleSequence->capacity, reservedStorage.cap);
+        ns1::MediumExchange(scaleSequence->data, reservedStorage.buf);
+        ns1::MediumExchange(scaleSequence->size, reservedStorage.size);
     }
-    struct Values { float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep; };
-    struct ValueBits { unsigned a,b,c,d,e; };
+    struct Values {
+        float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep;
+    };
+    struct ValueBits {
+        unsigned a, b, c, d, e;
+    };
     Values copy;
     endpointWords = (const unsigned int*)balloonDefaultScaleValues;
     for (i = 0; i < kMediumScaleEndpointCount; ++i, ++endpointWords) {
@@ -1701,20 +2041,23 @@ void* CMediumBalloon_ctor(void* self, void* spawnPosition, void* modelSelection)
             scaleSequence->size = size;
             scaleSequence->data[size - 1] = (void*)*endpointWords;
         } else {
-
-            if (kBalloonVectorMaxWords - scaleSequence->capacity < 1) MediumFail();
+            if (kBalloonVectorMaxWords - scaleSequence->capacity < 1)
+                MediumFail();
             additionalWords = scaleSequence->size + 1 - scaleSequence->capacity;
-            YVec temp(&scaleSequence->capacity);
+            BalloonVectorGrowth temp(&scaleSequence->capacity);
             grownCapacity = scaleSequence->capacity;
-            if (additionalWords > kBalloonVectorMaxWords - grownCapacity) MediumFail();
+            if (additionalWords > kBalloonVectorMaxWords - grownCapacity)
+                MediumFail();
             if (grownCapacity < kBalloonVectorGrowthLimit) {
                 growthThreeFifths = (grownCapacity + 1) * 3 / 5;
-                grownCapacity += xmax(growthThreeFifths, additionalWords);
+                grownCapacity += ns1::xmax(growthThreeFifths, additionalWords);
             } else if (grownCapacity < kBalloonVectorHalfGrowthLimit) {
                 growthHalf = (grownCapacity + 1) / 2;
-                grownCapacity += xmax(growthHalf, additionalWords);
-            } else grownCapacity = kBalloonVectorMaxWords;
-            if (grownCapacity > kBalloonVectorMaxWords) MediumFail();
+                grownCapacity += ns1::xmax(growthHalf, additionalWords);
+            } else
+                grownCapacity = kBalloonVectorMaxWords;
+            if (grownCapacity > kBalloonVectorMaxWords)
+                MediumFail();
             newWords = (void**)appMallocDummy__FUl(grownCapacity * 4);
             oldSize = scaleSequence->size;
             temp.offset = oldSize;
@@ -1731,30 +2074,35 @@ void* CMediumBalloon_ctor(void* self, void* spawnPosition, void* modelSelection)
             MediumTargetSwap(scaleSequence, temp, oldWordCount);
         }
     }
-    // Phase 3: install animation increments and medium size class.
-    float vals[5] = {kFloat_51_Balloon, kFloat_2_balloon, kFloat_1_5_Balloon, kFloat_0_05235988_805DD8C8, kFloat_0_041887902_Balloon};
+    // Install animation increments and the medium size class.
+    float vals[5] = {kFloat_51_Balloon, kFloat_2_balloon, kFloat_1_5_Balloon, kFloat_0_05235988_805DD8C8,
+                     kFloat_0_041887902_Balloon};
     *(ValueBits*)&copy = *(ValueBits*)vals;
-    (*(Values*)&AsBalloonState80069C(self)->opacityStep) = copy;
-    AsCMediumBalloon(self)->sizeClass = 2;
-    return self;
+    *(Values*)&opacityStep = copy;
+    sizeClass = 2;
+    return this;
 }
 #pragma opt_propagation reset
-}
-}
+
 namespace ns2 {
 extern "C" {
 // Throw the large-balloon vector's fixed length error; the supplied message is unused.
 inline void C4Fail(const char* message) {
     {
-        union { double alignment; unsigned char bytes[sizeof(::std::length_error)]; } storage;
+        union {
+            double alignment;
+            unsigned char bytes[sizeof(::std::length_error)];
+        } storage;
         ::std::length_error* error = (::std::length_error*)storage.bytes;
         error->__ct();
-        exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
-            (void*)exception_runtime::__dt__Q23std12length_errorFv);
+        exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType,
+                                   error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
     }
 }
 // Return the larger growth increment by reference.
-inline const unsigned int& C4Max(const unsigned int& a, const unsigned int& b) { return a < b ? b : a; }
+inline const unsigned int& C4Max(const unsigned int& a, const unsigned int& b) {
+    return a < b ? b : a;
+}
 // Adopt temporary scale storage and transfer the old allocation to its cleanup guard.
 inline void C4Swap(C4Vector* v, C4Storage& t) {
     void** p = v->data;
@@ -1821,28 +2169,42 @@ inline void C4Reserve(C4Vector* v) {
     temp.size += n;
     C4ExchangeVector(v, temp, zero);
 }
+} // extern "C"
+
+} // namespace ns2
+
+typedef ns2::C4Vector BalloonWordVector;
+typedef ns2::C4Insert BalloonWordInsert;
+using ns2::C4Fail;
+using ns2::C4Reserve;
+using ns2::C4TargetSwap;
+
 #pragma opt_propagation off
 // Construct a large balloon and reserve/append its default scale values with exception cleanup.
-void* CBigBalloon_ctor(void* self, void* spawnPosition, int modelSelection) {
+// It is named rather than a constructor because the constructor form compiles differently.
+CBigBalloon* CBigBalloon::Init(void* spawnPosition, int characterModel) {
     // Recipe: base radius 25, four table endpoints, then the five shared animation increments.
     // The void* slots below hold raw float bits; they never own pointed-to objects.
-    // Phase 1: initialize the base and reserve the endpoint array.
-    Balloon_InitState(self, spawnPosition, kLargeBalloonSize, modelSelection);
-    C4Vector* scaleWords = (C4Vector*)self;
+    ns0::Balloon_InitState((char*)this, spawnPosition, kLargeBalloonSize, characterModel);
+    BalloonWordVector* scaleWords = (BalloonWordVector*)this;
     unsigned int capacity;
     unsigned int size;
     size = scaleWords->size;
     capacity = scaleWords->capacity;
-    *(void**)self = __vt__11CBigBalloon;
+    vtbl = __vt__11CBigBalloon;
     scaleWords->size = size - scaleWords->size;
     if (capacity < 4) {
         C4Reserve(scaleWords);
     }
-    struct Values { float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep; };
-    struct ValueBits { unsigned a,b,c,d,e; };
+    struct Values {
+        float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep;
+    };
+    struct ValueBits {
+        unsigned a, b, c, d, e;
+    };
     Values copy;
     const unsigned int* endpointWords = bigBalloonInitialFloatValues;
-    // Phase 2: append the endpoint bit patterns in table order before publishing animation rates.
+    // Append the endpoint bit patterns in table order before publishing animation rates.
     for (int i = 0; i < kLargeScaleEndpointCount; ++i, ++endpointWords) {
         unsigned int size = scaleWords->size;
         unsigned int capacity = scaleWords->capacity;
@@ -1854,19 +2216,23 @@ void* CBigBalloon_ctor(void* self, void* spawnPosition, int modelSelection) {
             unsigned int threeFifthsIncrement;
             unsigned int halfIncrement;
             unsigned int requiredAdditionalWords;
-            if (0x3fffffff - scaleWords->capacity < 1) C4Fail(((BalloonEffectStrings*)balloonEffectStrings)->vectorLengthError);
+            if (0x3fffffff - scaleWords->capacity < 1)
+                C4Fail(((BalloonEffectStrings*)balloonEffectStrings)->vectorLengthError);
             requiredAdditionalWords = scaleWords->size + 1 - scaleWords->capacity;
-            C4Insert growthStorage(&scaleWords->capacity);
+            BalloonWordInsert growthStorage(&scaleWords->capacity);
             unsigned int newCapacity = scaleWords->capacity;
-            if (requiredAdditionalWords > 0x3fffffff - newCapacity) C4Fail(((BalloonEffectStrings*)balloonEffectStrings)->vectorLengthError);
+            if (requiredAdditionalWords > 0x3fffffff - newCapacity)
+                C4Fail(((BalloonEffectStrings*)balloonEffectStrings)->vectorLengthError);
             if (newCapacity < 0x15555555) {
                 threeFifthsIncrement = (newCapacity + 1) * 3 / 5;
-                newCapacity += C4Max(threeFifthsIncrement, requiredAdditionalWords);
+                newCapacity += ns2::C4Max(threeFifthsIncrement, requiredAdditionalWords);
             } else if (newCapacity < 0x2aaaaaaa) {
                 halfIncrement = (newCapacity + 1) / 2;
-                newCapacity += C4Max(halfIncrement, requiredAdditionalWords);
-            } else newCapacity = 0x3fffffff;
-            if (newCapacity > 0x3fffffff) C4Fail(((BalloonEffectStrings*)balloonEffectStrings)->vectorLengthError);
+                newCapacity += ns2::C4Max(halfIncrement, requiredAdditionalWords);
+            } else
+                newCapacity = 0x3fffffff;
+            if (newCapacity > 0x3fffffff)
+                C4Fail(((BalloonEffectStrings*)balloonEffectStrings)->vectorLengthError);
             void** replacementWords = (void**)appMallocDummy__FUl(newCapacity * 4);
             unsigned int oldSize = scaleWords->size;
             growthStorage.offset = oldSize;
@@ -1883,20 +2249,25 @@ void* CBigBalloon_ctor(void* self, void* spawnPosition, int modelSelection) {
             C4TargetSwap(scaleWords, growthStorage, n);
         }
     }
-    float vals[5] = {kFloat_51_Balloon, kFloat_2_balloon, kFloat_1_5_Balloon, kFloat_0_05235988_805DD8C8, kFloat_0_041887902_Balloon};
+    float vals[5] = {kFloat_51_Balloon, kFloat_2_balloon, kFloat_1_5_Balloon, kFloat_0_05235988_805DD8C8,
+                     kFloat_0_041887902_Balloon};
     *(ValueBits*)&copy = *(ValueBits*)vals;
-    (*(Values*)&AsBalloonState80069C(self)->opacityStep) = copy;
-    AsCBigBalloon(self)->sizeClass = 3;
-    return self;
+    *(Values*)&opacityStep = copy;
+    sizeClass = 3;
+    return this;
 }
 #pragma opt_propagation reset
 
-extern const double kDouble_4503601774854144_LayoutText;
+namespace ns2 {
+extern "C" {
+
 extern float kFloat_0_5_Balloon, kFloat_1_Balloon, kFloat_200_805DD8D0;
 extern void* g_soundManager;
 void Sound_PlayByName(void*, const char*, int, int, const char*, int, float, float, float);
 // Convert a stored unsigned parameter word numerically to float.
-inline float C4U2F(unsigned int v) { return (float)v; }
+inline float C4U2F(unsigned int v) {
+    return (float)v;
+}
 struct BBigFloats {
     float opacityStep, scaleStep, bobAmplitude, bobPhaseStep, headingStep;
     // Leave animation-step fields for the caller to fill.
@@ -1923,71 +2294,94 @@ inline void SetBigFloats(char* obj, BBigFloats v) {
     AsBalloonState80069C(obj)->bobPhaseStep = v.bobPhaseStep;
     AsBalloonState80069C(obj)->headingStep = v.headingStep;
 }
+} // extern "C"
+
+} // namespace ns2
+
+using ns2::C4Insert;
+using ns2::C4Max;
+using ns2::C4Storage;
+using ns2::C4Swap;
+using ns2::C4Vector;
+using ns2::MakeBigFloats;
+using ns2::SetBigFloats;
+
 // Restore the large balloon's scale sequence, animation increments, and recovery sound.
-void CBigBalloon_ResetScaleSequence(void* self) {
+void CBigBalloon::ResetScaleSequence() {
     // Phase 1: reset the target-radius ramp and reserve endpoint storage.
-    char* obj = (char*)self;
     int targetRadius = kLargeBalloonSize;
-    AsCBigBalloon(obj)->scaleCount -= AsCBigBalloon(obj)->scaleCount;
-    AsCBigBalloon(obj)->targetScale = targetRadius;
-    AsCBigBalloon(obj)->scaleDelta =
-        (unsigned short)((targetRadius - AsCBigBalloon(obj)->scale) * kFloat_0_5_Balloon);
-    C4Vector* scaleValues = (C4Vector*)self;
-    if (scaleValues->capacity < kLargeScaleEndpointCount) {
+    scaleCount -= scaleCount;
+    targetScale = targetRadius;
+    scaleDelta = (unsigned short)((targetRadius - scale) * kFloat_0_5_Balloon);
+    C4Vector* scaleWords = (C4Vector*)this;
+    if (scaleWords->capacity < kLargeScaleEndpointCount) {
         C4Storage temp;
         temp.data = (void**)appMallocDummy__FUl(0x10);
         temp.capacity = kLargeScaleEndpointCount;
-        void** first = scaleValues->data;
-        int copiedWordCount = (int)((char*)(scaleValues->data + scaleValues->size) - (char*)first) / 4;
+        void** first = scaleWords->data;
+        int copiedWordCount = (int)((char*)(scaleWords->data + scaleWords->size) - (char*)first) / 4;
         memcpy(temp.data + temp.size, first, copiedWordCount * 4);
         memset(first, 0, copiedWordCount * 4);
         temp.size += copiedWordCount;
-        C4Swap(scaleValues, temp);
+        C4Swap(scaleWords, temp);
     }
     void** defaultScaleWords = (void**)bigBalloonInitialFloatValues;
     // Phase 2: append the default endpoints, growing/copying/exchanging if full.
     for (int i = 0; i < kLargeScaleEndpointCount; ++i) {
-        unsigned int size = scaleValues->size;
-        if (size < scaleValues->capacity) {
+        unsigned int size = scaleWords->size;
+        if (size < scaleWords->capacity) {
             unsigned int next = size + 1;
-            scaleValues->size = next;
-            scaleValues->data[next - 1] = *defaultScaleWords;
+            scaleWords->size = next;
+            scaleWords->data[next - 1] = *defaultScaleWords;
         } else {
-            if (kBalloonVectorMaxWords - scaleValues->capacity < 1) {
-                union { double alignment; unsigned char bytes[sizeof(::std::length_error)]; } storage;
+            if (kBalloonVectorMaxWords - scaleWords->capacity < 1) {
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(::std::length_error)];
+                } storage;
                 ::std::length_error* error = (::std::length_error*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
-            C4Insert temp(&scaleValues->capacity);
-            unsigned int need = scaleValues->size + 1 - scaleValues->capacity;
-            unsigned int capacity = scaleValues->capacity;
+            C4Insert temp(&scaleWords->capacity);
+            unsigned int need = scaleWords->size + 1 - scaleWords->capacity;
+            unsigned int capacity = scaleWords->capacity;
             if (need > kBalloonVectorMaxWords - capacity) {
-                union { double alignment; unsigned char bytes[sizeof(::std::length_error)]; } storage;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(::std::length_error)];
+                } storage;
                 ::std::length_error* error = (::std::length_error*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
             if (capacity < 0x15555555) {
                 capacity += C4Max((3 * (capacity + 1)) / 5, need);
             } else if (capacity < 0x2AAAAAAA) {
                 capacity += C4Max((capacity + 1) / 2, need);
-            } else capacity = kBalloonVectorMaxWords;
+            } else
+                capacity = kBalloonVectorMaxWords;
             if (capacity > kBalloonVectorMaxWords) {
-                union { double alignment; unsigned char bytes[sizeof(::std::length_error)]; } storage;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(::std::length_error)];
+                } storage;
                 ::std::length_error* error = (::std::length_error*)storage.bytes;
                 error->__ct();
-                exception_runtime::__throw(((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
+                exception_runtime::__throw(
+                    ((BalloonEffectStrings*)exception_runtime::balloonEffectStrings)->lengthErrorType, error,
                     (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
             void** data = (void**)appMallocDummy__FUl(capacity * 4);
-            unsigned int appendIndex = scaleValues->size;
+            unsigned int appendIndex = scaleWords->size;
             temp.offset = appendIndex;
             (data + appendIndex)[temp.size] = *defaultScaleWords;
-            void** oldData = scaleValues->data;
-            int count = (int)((char*)(scaleValues->data + scaleValues->size) - (char*)oldData) / 4;
+            void** oldData = scaleWords->data;
+            int count = (int)((char*)(scaleWords->data + scaleWords->size) - (char*)oldData) / 4;
             temp.data = data;
             temp.capacity = capacity;
             temp.size = temp.size + 1;
@@ -1996,15 +2390,19 @@ void CBigBalloon_ResetScaleSequence(void* self) {
             memcpy(data + offset, oldData, count * 4);
             memset(oldData, 0, count * 4);
             temp.size += count;
-            C4Swap(scaleValues, temp);
+            C4Swap(scaleWords, temp);
         }
         ++defaultScaleWords;
     }
     // Phase 3: restore per-update rates and play the recovery sound.
-    SetBigFloats((char*)scaleValues, MakeBigFloats());
+    SetBigFloats((char*)scaleWords, MakeBigFloats());
     Sound_PlayByName(g_soundManager, (char*)((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, 0,
-                (char*)((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, kFloat_0_5_Balloon, kFloat_200_805DD8D0, kFloat_1_Balloon);
+                     (char*)((BalloonEffectStrings*)balloonEffectStrings)->recoverSound, 0, kFloat_0_5_Balloon,
+                     kFloat_200_805DD8D0, kFloat_1_Balloon);
 }
+
+namespace ns2 {
+extern "C" {
 
 extern float kBalloonBallCollisionRadius;
 extern const float kFloat_6_2831855;
@@ -2028,32 +2426,36 @@ void appFreeUni__FPv(void*);
 void* appMallocDummy__FUl(int);
 void BalloonState_QueueModelPreload(void*);
 void Balloon_PrepareForDestroy(void*);
-void CSmallBalloon_ctor(void*, void*, int);
-void CMediumBalloon_ctor(void*, void*, int);
-void* CBigBalloon_ctor(void*, void*, int);
 void __dl__FPv(void*);
 void* __nw__FUl(unsigned int);
-void CBalloonSystem_DestroySharedQueue();
 void __ct__18NativeBase80201D18Fv(void*);
 void __dt__18NativeBase80201D18Fv(void*, int);
 void Memory_Clear(void*, int);
 void PartyStampHammer_EnsureSharedQueue();
 
-void CFx_CreateAttachedEffect(void*, void*, const char*, int, int, int);
 void Sound_PlayByName(void*, const char*, int, int, const char*, int, float, float, float);
 
 // Large balloons have no extra per-frame update hook.
-void CBigBalloon_vfunc_3() {}
+void CBigBalloon::vfunc_3() {}
+
+} // extern "C"
+
+} // namespace ns2
+
 // Queue word ABI: list[0]=count; list+1 is the {prev,next} sentinel.
 // Real nodes are {prev,next,balloon}. Spawned owns balloons; unhit/hit borrow
 // them. Destroy spawned payloads first, then free nodes in all three lists.
 // Initialize the balloon system after destroying/resetting its shared balloon queues.
-void* CBalloonSystem_ctor(void* self) {
+// Named rather than a constructor because the generated constructor does not
+// return the object.
+#pragma push
+#pragma use_lmw_stmw on
+CBalloonSystem* CBalloonSystem::Init() {
     // Phase 1: destroy owning-list payloads before freeing owning and borrowing nodes.
     unsigned int* base = s_balloonQueueStatics;
-    __ct__18NativeBase80201D18Fv(self);
-    *(void**)self = __vt__14CBalloonSystem;
-    (*(int*)&AsCBalloonSystem(self)->balloonsHitThisFrame) = 0;
+    __ct__18NativeBase80201D18Fv(this);
+    vtbl = __vt__14CBalloonSystem;
+    balloonsHitThisFrame = 0;
     {
         unsigned int* sentinel = (unsigned int*)((char*)(base + kSpawnedQueueWord)) + 1;
         unsigned int* it = (unsigned int*)sentinel[1];
@@ -2119,25 +2521,29 @@ void* CBalloonSystem_ctor(void* self) {
         }
     }
     // Phase 2: clear the separate hammer queue after balloon/list cleanup.
-    CBalloonSystem_DestroySharedQueue();
-    AsCBalloonSystem(self)->unk_8 = 3;
-    Memory_Clear((char*)&AsCBalloonSystem(self)->lastHitSlotIndex, 0x10);
-    AsCBalloonSystem(self)->lastHitSlotIndex = -1;
-    return self;
+    CBalloonSystem::DestroySharedQueue();
+    unk_8 = 3;
+    Memory_Clear((char*)&lastHitSlotIndex, 0x10);
+    lastHitSlotIndex = -1;
+    return this;
 }
+#pragma pop
 
 #pragma push
 #pragma use_lmw_stmw on
+// A balloon seen through its vtable: slot 2 destroys the object.
 struct BVirtualBalloon {
     virtual void destroy(int);
 };
 #pragma opt_common_subs off
-// Destroy queued balloons and list nodes, destroy the native base, and optionally delete the system.
-void* CBalloonSystem_dtor(void* self, int deleting) {
+// Destroy queued balloons and list nodes, then the native base. This is the
+// original destructor, as a named member because the generated destructor
+// reorders the queue base setup and no longer matches.
+CBalloonSystem* CBalloonSystem::Destroy(int deleting) {
     // Phase 1: destroy owning-list payloads before freeing owning and borrowing nodes.
     unsigned int* base = s_balloonQueueStatics;
-    if (self) {
-        *(void**)self = __vt__14CBalloonSystem;
+    if (this) {
+        vtbl = __vt__14CBalloonSystem;
         {
             unsigned int* list = (unsigned int*)((char*)(base + kSpawnedQueueWord));
             unsigned int* it = (unsigned int*)list[2];
@@ -2202,28 +2608,47 @@ void* CBalloonSystem_dtor(void* self, int deleting) {
             }
         }
         // Phase 2: clear the separate hammer queue after balloon/list cleanup.
-        CBalloonSystem_DestroySharedQueue();
-        __dt__18NativeBase80201D18Fv(self, 0);
-        if (deleting > 0) __dl__FPv(self);
+        CBalloonSystem::DestroySharedQueue();
+        __dt__18NativeBase80201D18Fv(this, 0);
+        if (deleting > 0)
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
 #pragma pop
 
+namespace ns2 {
+extern "C" {
+
 // Restore the default ball radius used for balloon collisions.
-void BalloonCollision_ResetBallRadius() { kBalloonBallCollisionRadius = kFloat_5_BalloonCollision; }
+void BalloonCollision_ResetBallRadius() {
+    kBalloonBallCollisionRadius = kFloat_5_BalloonCollision;
+}
 // Return the shared queue of balloons still eligible for a hit.
-char* Balloon_GetUnhitBalloonQueue() { return s_unhitBalloonQueue; }
+char* Balloon_GetUnhitBalloonQueue() {
+    return s_unhitBalloonQueue;
+}
 // Return the ball collision radius shared with the balloon mode.
-float BalloonCollision_GetBallRadius() { return kBalloonBallCollisionRadius; }
+float BalloonCollision_GetBallRadius() {
+    return kBalloonBallCollisionRadius;
+}
 // Initialize the balloon-system helper's two-pi cache.
-void Balloon_InitTwoPi() { s_twoPi_Balloon = kFloat_6_2831855; }
+void Balloon_InitTwoPi() {
+    s_twoPi_Balloon = kFloat_6_2831855;
+}
 // Set the ball radius used by balloon collision checks and report success.
-int Balloon_SetBallCollisionRadius(float value) { kBalloonBallCollisionRadius = value; return 1; }
+int Balloon_SetBallCollisionRadius(float value) {
+    kBalloonBallCollisionRadius = value;
+    return 1;
+}
 // The balloon system has no additional preload initialization.
-void CBalloonSystem_OnPreLoadInit() {}
+void CBalloonSystem::OnPreLoadInit() {}
 // The balloon system has no additional load-stage work.
-void CBalloonSystem_OnLoad() {}
+void CBalloonSystem::OnLoad() {}
+
+} // extern "C"
+
+} // namespace ns2
 
 struct BNode {
     BNode* prev;
@@ -2249,7 +2674,9 @@ struct BSpill {
     void* volatile v38;
     void* volatile v3c;
 };
-struct BAlloc { char value; };
+struct BAlloc {
+    char value;
+};
 struct BTempBase {
     int size;
     BNode head;
@@ -2272,9 +2699,10 @@ struct BTempBase {
 };
 struct BTemp : BTempBase {
     // Copy borrowed balloon pointers into a temporary list of newly allocated nodes.
-    BTemp(BNode*& it, BNode* stop, volatile BAlloc& nodeAllocator, volatile BAlloc& valueCopyAllocator, volatile BAlloc& temporaryListAllocator,
-          void* volatile& pendingNode, void* volatile& insertionPosition, void* volatile& pendingBalloonValue, void* volatile& nodeStorage,
-          void* volatile& allocationResult, void*& value) {
+    BTemp(BNode*& it, BNode* stop, volatile BAlloc& nodeAllocator, volatile BAlloc& valueCopyAllocator,
+          volatile BAlloc& temporaryListAllocator, void* volatile& pendingNode, void* volatile& insertionPosition,
+          void* volatile& pendingBalloonValue, void* volatile& nodeStorage, void* volatile& allocationResult,
+          void*& value) {
         size = 0;
         head.prev = head.next = &head;
         temporaryListAllocator.value = 0;
@@ -2291,7 +2719,11 @@ struct BTemp : BTempBase {
             insertionPosition = pos;
             pendingNode = node;
             if (slot) {
-                try { *slot = value; } catch (...) { __throw(0, 0, 0); }
+                try {
+                    *slot = value;
+                } catch (...) {
+                    __throw(0, 0, 0);
+                }
             }
             BNode* made = (BNode*)pendingNode;
             pendingNode = 0;
@@ -2304,11 +2736,14 @@ struct BTemp : BTempBase {
     }
 };
 // Borrow the shared unhit-list header; each access still resolves its global address.
-static inline BList* UnhitBalloonList() { return (BList*)s_unhitBalloonQueue; }
+static inline BList* UnhitBalloonList() {
+    return (BList*)s_unhitBalloonQueue;
+}
+
 #pragma push
 #pragma use_lmw_stmw on
 // Copy spawned balloons into the unhit queue, reusing nodes and splicing or freeing the remainder.
-void CBalloonSystem_OnInit() {
+void CBalloonSystem::OnInit() {
     // Queue roles: spawned = source; unhit = destination. Nodes own links, not balloon objects.
     // pendingNode/nodeStorage/allocationResult track allocation until splice commits;
     // copiedValue temporaries preserve the volatile stores on each reuse path.
@@ -2321,7 +2756,8 @@ void CBalloonSystem_OnInit() {
     void* volatile nodeStorage;
     void* volatile allocationResult;
     BNode* volatile retiredNodeCursor;
-    volatile BAlloc shortSourceCopyAllocator, longSourceCopyAllocator, temporaryListAllocator, valueCopyAllocator, nodeAllocator, scanAllocator;
+    volatile BAlloc shortSourceCopyAllocator, longSourceCopyAllocator, temporaryListAllocator, valueCopyAllocator,
+        nodeAllocator, scanAllocator;
     BNode* sourceEnd;
     BNode* copyBoundary;
     BNode* sourceTailIterator;
@@ -2339,7 +2775,8 @@ void CBalloonSystem_OnInit() {
     // Phase 2: if source is longer, copy the shared prefix and splice new tail nodes.
     if (copyBoundary != sourceEnd) {
         sourceTailIterator = copyBoundary;
-        BTemp temp(sourceTailIterator, sourceEnd, nodeAllocator, valueCopyAllocator, temporaryListAllocator, pendingNode, insertionPosition, pendingBalloonValue, nodeStorage, allocationResult, pendingBalloon);
+        BTemp temp(sourceTailIterator, sourceEnd, nodeAllocator, valueCopyAllocator, temporaryListAllocator,
+                   pendingNode, insertionPosition, pendingBalloonValue, nodeStorage, allocationResult, pendingBalloon);
         BNode* target = UnhitBalloonList()->head.next;
         while (sourceCursor != copyBoundary) {
             longSourceCopyAllocator.value = 0;
@@ -2392,48 +2829,54 @@ void CBalloonSystem_OnInit() {
 #pragma pop
 
 #pragma opt_common_subs off
-// Release the large balloon's shared resources and optionally delete its allocation.
-void* CBigBalloon_dtor(void* self, int deleting) {
-    if (self) {
-        if (self) {
-            *(void**)self = (char*)s_balloonInterfaceVtable;
-            ResourceManager_ReleaseObject(g_resourceManager, AsCBigBalloon(self)->model, 0);
-            --s_liveBalloonCount;
-            if (&AsBalloonState80069C(self)->scaleValues != 0) {
-                if (&AsBalloonState80069C(self)->scaleValues != 0) {
-                    if (&AsBalloonState80069C(self)->scaleValues != 0) {
-                        if (&AsBalloonState80069C(self)->scaleValues != 0) {
-                            if (&AsBalloonState80069C(self)->scaleValues != 0) {
-                                if (((void**)self)[9]) {
-                                    AsCBigBalloon(self)->scaleCount -= ((unsigned int*)self)[10];
-                                    appFreeUni__FPv(((void**)self)[9]);
-                                }
-                            }
-                        }
-                    }
-                }
+
+// The original tests the scale vector's address before each nested subobject
+// release; the address is non-null and the checks remain in the code.
+static inline int BigBalloonScaleStorageAddress(CBigBalloon* self) {
+    return (int)self + (int)&((CBigBalloon*)0)->scaleValues;
+}
+
+// Release the large balloon's model and scale storage. The original tests the
+// receiver again before the body, so the nested check stays.
+CBigBalloon::~CBigBalloon() {
+    if (this) {
+        vtbl = (void*)s_balloonInterfaceVtable;
+        ResourceManager_ReleaseObject(g_resourceManager, model, 0);
+        --s_liveBalloonCount;
+        if (BigBalloonScaleStorageAddress(this) && BigBalloonScaleStorageAddress(this) &&
+            BigBalloonScaleStorageAddress(this) && BigBalloonScaleStorageAddress(this) &&
+            BigBalloonScaleStorageAddress(this)) {
+            if (scaleValues) {
+                // The original reads the count word back through an aliasing view
+                // before zeroing it, which keeps the subtract in the code.
+                scaleCount -= *(unsigned int*)&scaleCount;
+                appFreeUni__FPv(scaleValues);
             }
         }
-        if (deleting > 0) __dl__FPv(self);
     }
-    return self;
 }
 #pragma opt_common_subs reset
 
 struct CSmallBalloonNew {
     char unk[0xF0];
     // Construct a small balloon in this allocation using a borrowed spawn origin.
-    CSmallBalloonNew(void* o, int f) { CSmallBalloon_ctor(this, o, f); }
+    CSmallBalloonNew(void* o, int f) {
+        ((CSmallBalloon*)this)->Init(o, f);
+    }
 };
 struct CMediumBalloonNew {
     char unk[0xF0];
     // Construct a medium balloon in this allocation using a borrowed spawn origin.
-    CMediumBalloonNew(void* o, int f) { CMediumBalloon_ctor(this, o, f); }
+    CMediumBalloonNew(void* o, int f) {
+        ((CMediumBalloon*)this)->Init(o, f);
+    }
 };
 struct CBigBalloonNew {
     char unk[0xF0];
     // Construct a large balloon in this allocation using a borrowed spawn origin.
-    CBigBalloonNew(void* o, int f) { CBigBalloon_ctor(this, o, f); }
+    CBigBalloonNew(void* o, int f) {
+        ((CBigBalloon*)this)->Init(o, f);
+    }
 };
 
 struct SpawnNodeGuard {
@@ -2441,7 +2884,10 @@ struct SpawnNodeGuard {
     // Start with no unlinked spawn-list allocation.
     SpawnNodeGuard() : p(0) {}
     // Free an unlinked node if insertion did not transfer ownership.
-    ~SpawnNodeGuard() { if (p) appFreeUni__FPv(p); }
+    ~SpawnNodeGuard() {
+        if (p)
+            appFreeUni__FPv(p);
+    }
 };
 
 #pragma push
@@ -2450,7 +2896,7 @@ struct SpawnNodeGuard {
 // spawnPosition is borrowed and copied by construction. type must be 1..6 and
 // allocations must succeed: this path uses balloon immediately without null
 // validation. Returns the new spawned-list count, not a balloon pointer.
-int CBalloonSystem_Spawn(void* spawnPosition, int type) {
+int CBalloonSystem::Spawn(void* spawnPosition, int type) {
     // Phase 1: choose size/model; character cases deliberately fall through.
     void* base;
     unsigned int* sentinel;
@@ -2478,38 +2924,42 @@ int CBalloonSystem_Spawn(void* spawnPosition, int type) {
     // Phase 2: enqueue its model, then transfer a new node to the owning list.
     BalloonState_QueueModelPreload(balloon);
     {
-    SpawnNodeGuard guard;
-    void* volatile v18;
-    void* volatile v34;
-    void* volatile v10;
-    void* volatile v0c;
-    base = s_spawnedBalloonList;
-    volatile char v8 = 0;
-    sentinel = (unsigned int*)base + 1;
-    void* node = appMallocDummy__FUl(0xC);
-    v10 = node;
-    v0c = node;
-    v18 = sentinel;
-    guard.p = node;
-    void** slot = &((BNode*)node)->value;
-    if (slot) {
-        v34 = base;
-        try { *slot = balloon; } catch (...) { __throw(0, 0, 0); }
-    }
-    void* tail = (void*)sentinel[0];
-    guard.p = 0;
-    ((BNode*)tail)->next = (BNode*)node;
-    *(void**)node = (void*)sentinel[0];
-    sentinel[0] = (unsigned int)node;
-    ((BNode*)node)->next = (BNode*)sentinel;
-    ++s_spawnedBalloonList[0];
+        SpawnNodeGuard guard;
+        void* volatile v18;
+        void* volatile v34;
+        void* volatile v10;
+        void* volatile v0c;
+        base = s_spawnedBalloonList;
+        volatile char v8 = 0;
+        sentinel = (unsigned int*)base + 1;
+        void* node = appMallocDummy__FUl(0xC);
+        v10 = node;
+        v0c = node;
+        v18 = sentinel;
+        guard.p = node;
+        void** slot = &((BNode*)node)->value;
+        if (slot) {
+            v34 = base;
+            try {
+                *slot = balloon;
+            } catch (...) {
+                __throw(0, 0, 0);
+            }
+        }
+        void* tail = (void*)sentinel[0];
+        guard.p = 0;
+        ((BNode*)tail)->next = (BNode*)node;
+        *(void**)node = (void*)sentinel[0];
+        sentinel[0] = (unsigned int)node;
+        ((BNode*)node)->next = (BNode*)sentinel;
+        ++s_spawnedBalloonList[0];
     }
     return (int)s_spawnedBalloonList[0];
 }
 #pragma pop
 
 // Detach/destroy queued balloons and clear the three shared lists and hammer queue.
-void CBalloonSystem_DestroyAllQueuedBalloons() {
+void CBalloonSystem::DestroyAllQueuedBalloons() {
     // Phase 1: detach and destroy payloads in the owning spawned list.
     unsigned int* base = s_balloonQueueStatics;
     unsigned int* it = (unsigned int*)((unsigned int*)((char*)(base + 3)))[2];
@@ -2517,20 +2967,20 @@ void CBalloonSystem_DestroyAllQueuedBalloons() {
     for (; it != sentinel; it = (unsigned int*)it[1]) {
         Balloon_PrepareForDestroy((void*)it[2]);
         if (it[2]) {
-                if (it[2]) {
+            if (it[2]) {
                 void* obj = (void*)it[2];
                 typedef void (*Dtor)(void*, int);
 
-                    Dtor dtor = *(Dtor*)((char*)*(void**)obj + 8);
-                    dtor(obj, 1);
+                Dtor dtor = *(Dtor*)((char*)*(void**)obj + 8);
+                dtor(obj, 1);
             }
             it[2] = 0;
         }
     }
     {
         // Phase 2: free owning-list nodes, then the two borrowing-list node sets.
-            unsigned int* list = ((unsigned int*)((char*)(3 + base)));
-            unsigned int* s = (list + 1);
+        unsigned int* list = ((unsigned int*)((char*)(3 + base)));
+        unsigned int* s = (list + 1);
         unsigned int* cur = (unsigned int*)s[1];
         if (cur != s) {
             unsigned int* tail = (unsigned int*)*s;
@@ -2545,7 +2995,7 @@ void CBalloonSystem_DestroyAllQueuedBalloons() {
         }
     }
     {
-            unsigned int* list = ((unsigned int*)((char*)(base + kUnhitQueueWord)));
+        unsigned int* list = ((unsigned int*)((char*)(base + kUnhitQueueWord)));
         unsigned int* s = 1 + list;
         unsigned int* cur = (unsigned int*)s[1];
         if (cur != s) {
@@ -2561,8 +3011,8 @@ void CBalloonSystem_DestroyAllQueuedBalloons() {
         }
     }
     {
-            unsigned int* list = ((unsigned int*)((char*)(kHitQueueWord + base)));
-            unsigned int* s = (1 + list);
+        unsigned int* list = ((unsigned int*)((char*)(kHitQueueWord + base)));
+        unsigned int* s = (1 + list);
         unsigned int* cur = (unsigned int*)s[1];
         if (cur != s) {
             unsigned int* tail = (unsigned int*)*s;
@@ -2576,31 +3026,32 @@ void CBalloonSystem_DestroyAllQueuedBalloons() {
             }
         }
     }
-    CBalloonSystem_DestroySharedQueue();
+    CBalloonSystem::DestroySharedQueue();
 }
 
 // Choose the large/small explosion effect and sound from the stored balloon type.
-void CBigBalloon_StartExplosionEffect(void* self) {
-    void* first = AsBalloonState80069C(self)->position;
-    ((void**)self)[0xBC / 4] = first;
-    unsigned short baseRadius = AsCBigBalloon(self)->baseScale;
-    const char* name;
-    if (baseRadius != kLargeBalloonSize) name = ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionEffect;
-    else name = ((BalloonEffectStrings*)balloonEffectStrings)->largeExplosionEffect;
-    CFx_CreateAttachedEffect(g_fx, &AsBalloonState80069C(self)->attachmentScreenX, name, 1, 0, 0);
+void CBigBalloon::StartExplosionEffect() {
+    void* first = position;
+    effectPosition = first;
+    unsigned short baseRadius = baseScale;
+    const char* effectName;
+    if (baseRadius != kLargeBalloonSize)
+        effectName = ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionEffect;
+    else
+        effectName = ((BalloonEffectStrings*)balloonEffectStrings)->largeExplosionEffect;
+    ((CFx*)g_fx)->CreateAttachedEffect((Vec2_8010*)(&attachmentScreenX), effectName, 1, 0, 0);
 
-    baseRadius = AsCBigBalloon(self)->baseScale;
+    baseRadius = baseScale;
     const char* label = ((BalloonEffectStrings*)balloonEffectStrings)->largeExplosionSound;
-    if (baseRadius != kLargeBalloonSize) label = ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionSound;
-    Sound_PlayByName(g_soundManager, label, 0, 0, label,
-                0, kFloat_0_5_Balloon, kFloat_200_805DD8D0, kFloat_1_Balloon);
+    if (baseRadius != kLargeBalloonSize)
+        label = ((BalloonEffectStrings*)balloonEffectStrings)->smallExplosionSound;
+    Sound_PlayByName(g_soundManager, label, 0, 0, label, 0, kFloat_0_5_Balloon, kFloat_200_805DD8D0, kFloat_1_Balloon);
 }
 
-} // extern "C"
-
-} // namespace ns2
-
-extern "C" { void BalloonBase_InitTwoPiCache(); void Balloon_InitTwoPi(); }
+extern "C" {
+void BalloonBase_InitTwoPiCache();
+void Balloon_InitTwoPi();
+}
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push
 #pragma force_active on

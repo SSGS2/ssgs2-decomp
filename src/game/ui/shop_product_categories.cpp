@@ -1,16 +1,20 @@
+// Shop product categories: one class per product type (ball, caddie, caddie item, club set,
+// equipment item, hair, avatar).
+//
+// Each category decides whether a product is owned or equipped from the save record, and builds
+// its product list. The file also copies a character record for an inventory index.
+
 #include <decomp/static_init.h>
-enum { kHairRecordCopyBias = 0x10, kHairConfigurationPairedWords = 0x46 };
+enum {
+    kHairRecordCopyBias = 0x10,
+    kHairConfigurationPairedWords = 0x46
+};
 // Base product prefix shared by these shop categories; ids use the original pointer-valued C ABI.
 struct ShopProductListView {
     void* vtable;
     void* saveData;
     void** records;
     unsigned int recordCount;
-};
-struct CaddieItemProductView {
-    ShopProductListView products;
-    unsigned int capacity;
-    unsigned int caddieTypeId;
 };
 enum ShopItemIdBits {
     kItemSerialMask = 0x03FFFFFF,
@@ -28,26 +32,23 @@ enum SavedItemFlagExtraction {
     kTwoHighBits = 0xC0000000
 };
 // Preserve the two-step shift/mask and signed shift: CodeWarrior emits different code for a direct bool mask.
-#include "classes/SavePlayerRecord.h" // CShopProductHair_CheckUnlockAndOwnership: slot ownership bits at +0x114
+#include "classes/SavePlayerRecord.h" // CShopProductHair::CheckUnlockAndOwnership: slot ownership bits at +0x114
 #include "classes/CSharedDoc.h"
 #include "classes/ShopProductRecord.h"
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
-// Translation unit 0x80237E24-0x80238E9C (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
-struct ObjCtorVt {
-    virtual void v0();
-    virtual void v1();
-    virtual void v2();
-    virtual void v3();
-    virtual void v4();
-    virtual void init(void* arg);
-};
+#include "classes/ObjCtorVt.h"
 
 #include "game/shop_product.h"
 #include "classes/CShopProductHair.h"
-
-#define AsCShopProductHair(p) ((CShopProductHair*)(p))
+#include "classes/CShopBaseA.h"
+#include "classes/CShopBaseE.h"
+#include "classes/CShopProductBall.h"
+#include "classes/CShopProductEquipItem.h"
+#include "classes/CShopProductInterface.h"
+#include "classes/CShopProductClubSet.h"
+#include "classes/CShopProductCaddie.h"
+#include "classes/CShopProductCaddieItem.h"
 
 extern "C" {
 
@@ -65,7 +66,7 @@ struct Fn80238B40Arg {
     void* saveData; // Save-data object.
 };
 
-struct Fn80238B40Arg2 {
+struct ShopProductRecordView {
     char padding[0x50];
     void* typeId; // Numeric item type ID carried in a pointer-sized ABI word.
 };
@@ -124,27 +125,25 @@ struct Fn80238854Vtable {
 };
 
 // Destroy category resources and free the product only for a positive deleting-destructor flag.
-void* CShopProductHair_dtor(void* self, int shouldDelete) {
-    if (self) {
-        ShopHairProductList_dtor(self, 0);
-        if (shouldDelete > 0)
-            __dl__FPv(self);
-    }
-    return self;
+CShopProductHair::~CShopProductHair() {
+    ShopHairProductList_dtor(this, 0);
 }
 
-class InterfaceVirtual { public: 
-virtual void v08(); virtual void v0C(int);
+class InterfaceVirtual {
+public:
+    virtual void v08();
+    virtual void v0C(int);
 };
 // Restore the interface vtable, dispatch its cleanup hook and optionally free the object.
-void* CShopProductInterface_dtor(void* self, int shouldDelete) {
-    if (self) {
-        *(void**)self = &s_shopProductInterfaceVtable;
-        ((InterfaceVirtual*)self)->v0C(shouldDelete);
+// A named member rather than a destructor: it takes the free flag and returns the object.
+void* CShopProductInterface::Destroy(int shouldDelete) {
+    if (this) {
+        vtbl = &s_shopProductInterfaceVtable;
+        ((InterfaceVirtual*)this)->v0C(shouldDelete);
         if (shouldDelete > 0)
-            __dl__FPv(self);
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
 
 // Copy the full character record for an inventory index; null output, empty lists or missing ids fail.
@@ -155,14 +154,20 @@ int CharacterProducts_CopyRecordForInventoryCharacter(void* self, void* characte
         return 0;
     if (((ShopProductListView*)self)->saveData == 0)
         return 0;
-    void* characterTypeId = ItemInventory_GetCharacterIdAt(((char*)&AsCSharedDoc(g_sharedDoc)->itemInventory), characterIndex);
+    void* characterTypeId =
+        ItemInventory_GetCharacterIdAt(((char*)&AsCSharedDoc(g_sharedDoc)->itemInventory), characterIndex);
     void** entries = ((ShopProductListView*)self)->records;
     void** end;
     for (void** entry = entries; end = entries + ((ShopProductListView*)self)->recordCount, !(end == entry); ++entry) {
         void* source = *entry;
         if (characterTypeId == (void*)((ShopProductRecord*)source)->typeId) { // 0x80237E24: product +0x50
-            struct Pair { unsigned char b0; unsigned char b1; };
-            struct P40 { Pair e[0x14]; };
+            struct Pair {
+                unsigned char b0;
+                unsigned char b1;
+            };
+            struct P40 {
+                Pair e[0x14];
+            };
             struct UObj {
                 unsigned int commonWords[0x16];
                 unsigned int commonTailWord;
@@ -172,7 +177,8 @@ int CharacterProducts_CopyRecordForInventoryCharacter(void* self, void* characte
                 P40 faceTexture;
                 unsigned int power, control, accuracy, spin, curve;
                 float modelScale;
-                unsigned char defaultPartCount, reservedCharacterByte, basePower, baseControl, baseAccuracy, baseSpin, baseCurve, reservedTail;
+                unsigned char defaultPartCount, reservedCharacterByte, basePower, baseControl, baseAccuracy, baseSpin,
+                    baseCurve, reservedTail;
             };
             *(UObj*)characterRecordOut = *(UObj*)source;
             return 1;
@@ -182,24 +188,13 @@ int CharacterProducts_CopyRecordForInventoryCharacter(void* self, void* characte
 }
 
 class V1C8854 {
-    public: 
+public:
     virtual void v08();
     virtual void v0C();
     virtual void v10();
     virtual void v14();
     virtual void v18();
     virtual void v1C(void*);
-}
-;
-struct CShopBaseC {
-    CShopBaseC(void*);
-    ~CShopBaseC();
-    void** vtable;
-    void v1C(void* p) { ((ObjCtorVt*)this)->init(p); }
-};
-struct CShopProductCaddieItem : CShopBaseC {
-    char pad[0x10]; void* caddieTypeId;
-    CShopProductCaddieItem(void* a, void* b, void* c);
 };
 // Remember the caddie type ID in the original pointer-sized ABI slot before initializing its products.
 CShopProductCaddieItem::CShopProductCaddieItem(void* caddieTypeIdValue, void* b, void* c) : CShopBaseC(b) {
@@ -209,9 +204,10 @@ CShopProductCaddieItem::CShopProductCaddieItem(void* caddieTypeIdValue, void* b,
 }
 
 // Test the saved owned flag, or the equipped flag when testEquipped is set; missing save records fail.
-int CShopProductBall_vfunc_6(void* self, void* productRecord, int testEquipped) {
+int CShopProductBall::IsOwnedOrEquipped(void* productRecord, int testEquipped) {
     volatile unsigned char savedFlags;
-    if (SaveData_CopyBallRecord(((ShopProductListView*)self)->saveData, (unsigned char*)&savedFlags, (void*)((ShopProductRecord*)productRecord)->typeId) == 0)
+    if (SaveData_CopyBallRecord(((ShopProductListView*)this)->saveData, (unsigned char*)&savedFlags,
+                                (void*)((ShopProductRecord*)productRecord)->typeId) == 0)
         return 0;
     if (testEquipped) {
         unsigned int flagInSignBit = (unsigned int)savedFlags << kEquippedFlagToSignBit;
@@ -224,9 +220,10 @@ int CShopProductBall_vfunc_6(void* self, void* productRecord, int testEquipped) 
     }
 }
 // Test the saved owned flag, or the equipped flag when testEquipped is set; missing save records fail.
-int CShopProductCaddie_IsOwnedOrEquipped(void* self, void* productRecord, int testEquipped) {
+int CShopProductCaddie::IsOwnedOrEquipped(void* productRecord, int testEquipped) {
     volatile unsigned char savedFlags[8];
-    if (SaveData_CopyCaddieRecord(((ShopProductListView*)self)->saveData, (unsigned char*)savedFlags, (void*)((ShopProductRecord*)productRecord)->typeId) == 0)
+    if (SaveData_CopyCaddieRecord(context, (unsigned char*)savedFlags,
+                                  (void*)((ShopProductRecord*)productRecord)->typeId) == 0)
         return 0;
     if (testEquipped) {
         unsigned int flagInSignBit = (unsigned int)savedFlags[0] << kEquippedFlagToSignBit;
@@ -240,9 +237,10 @@ int CShopProductCaddie_IsOwnedOrEquipped(void* self, void* productRecord, int te
 }
 
 // Test the saved owned flag, or the equipped flag when testEquipped is set; missing save records fail.
-int CShopProductClubSet_vfunc_6(void* self, void* productRecord, int testEquipped) {
+int CShopProductClubSet::IsOwnedOrEquipped(void* productRecord, int testEquipped) {
     volatile unsigned char savedFlags[2];
-    if (SaveData_CopyClubSetRecord(((ShopProductListView*)self)->saveData, (unsigned char*)savedFlags, (void*)((ShopProductRecord*)productRecord)->typeId) == 0)
+    if (SaveData_CopyClubSetRecord(context, (unsigned char*)savedFlags,
+                                   (void*)((ShopProductRecord*)productRecord)->typeId) == 0)
         return 0;
     if (testEquipped) {
         unsigned int flagInSignBit = (unsigned int)savedFlags[0] << kEquippedFlagToSignBit;
@@ -256,26 +254,25 @@ int CShopProductClubSet_vfunc_6(void* self, void* productRecord, int testEquippe
 }
 
 class HairVt {
-    public: 
+public:
     virtual void v08();
     virtual void v0C();
     virtual void v10();
     virtual void v14();
     virtual void v18();
     virtual void v1C(void*);
-}
-;
+};
 // Construct the hair product and copy its 71-word configuration before category initialization.
-void* CShopProductHair_Ctor(void* self, void* source, void* baseArg, void* initArg) {
+CShopProductHair::CShopProductHair(void* source, void* baseArg, void* initArg) {
     unsigned int* destinationWords;
     unsigned int* sourceWords;
     int i;
-    ShopHairPointerArray_Initialize(self, baseArg);
-    *(void**)self = &__vt__16CShopProductHair;
-    destinationWords = (unsigned int*)((char*)self + kHairRecordCopyBias);
+    ShopHairPointerArray_Initialize(this, baseArg);
+    *(void**)this = &__vt__16CShopProductHair;
+    destinationWords = (unsigned int*)((char*)this + kHairRecordCopyBias);
     sourceWords = (unsigned int*)((char*)source - 4);
     unsigned int* end = sourceWords + kHairConfigurationPairedWords;
-    for (; sourceWords != end; ) {
+    for (; sourceWords != end;) {
         unsigned int firstWord = sourceWords[1];
         unsigned int secondWord = sourceWords[2];
         sourceWords += 2;
@@ -284,50 +281,33 @@ void* CShopProductHair_Ctor(void* self, void* source, void* baseArg, void* initA
         destinationWords += 2;
     }
     destinationWords[1] = sourceWords[1];
-    ((HairVt*)self)->v1C(initArg);
-    return self;
+    ((HairVt*)this)->v1C(initArg);
 }
 
 class V1C7E24 {
-    public: 
+public:
     virtual void v08();
     virtual void v0C();
     virtual void v10();
     virtual void v14();
     virtual void v18();
     virtual void v1C(void*);
-}
-;
-struct CShopBaseA {
-    CShopBaseA(void*, void*);
-    ~CShopBaseA();
-    void** vtable;
-    void v1C(void* p) { ((ObjCtorVt*)this)->init(p); }
 };
-struct CShopProductBall : CShopBaseA {
-    CShopProductBall(void* a, void* b);
-};
+
 // Initialize the ball category base and invoke its product-list initialization hook.
-CShopProductBall::CShopProductBall(void* a, void* b) : CShopBaseA(a, b) { vtable = (void**)__vt__16CShopProductBall; v1C(b); }
+CShopProductBall::CShopProductBall(void* a, void* b) : CShopBaseA(a, b) {
+    vtable = (void**)__vt__16CShopProductBall;
+    v1C(b);
+}
 
 class V1C8708 {
-    public: 
+public:
     virtual void v08();
     virtual void v0C();
     virtual void v10();
     virtual void v14();
     virtual void v18();
     virtual void v1C(void*);
-}
-;
-struct CShopBaseB {
-    CShopBaseB(void*, void*);
-    ~CShopBaseB();
-    void** vtable;
-    void v1C(void* p) { ((ObjCtorVt*)this)->init(p); }
-};
-struct CShopProductCaddie : CShopBaseB {
-    CShopProductCaddie(void* a, void* b);
 };
 // Initialize the caddie category base and invoke its product-list initialization hook.
 CShopProductCaddie::CShopProductCaddie(void* a, void* b) : CShopBaseB(a, b) {
@@ -335,43 +315,25 @@ CShopProductCaddie::CShopProductCaddie(void* a, void* b) : CShopBaseB(a, b) {
     v1C(b);
 }
 
-struct CShopBaseD {
-    CShopBaseD(void*);
-    ~CShopBaseD();
-    void** vtable;
-    void v1C(void* p) { ((ObjCtorVt*)this)->init(p); }
-};
-struct CShopProductClubSet : CShopBaseD {
-    CShopProductClubSet(void* a, void* b);
-};
 // Initialize the club-set provider and populate its category products.
 CShopProductClubSet::CShopProductClubSet(void* a, void* b) : CShopBaseD(a) {
     vtable = (void**)__vt__19CShopProductClubSet;
     v1C(b);
 }
 
-struct CShopBaseE {
-    CShopBaseE(void*);
-    ~CShopBaseE();
-    void** vtable;
-    void v1C(void* p) { ((ObjCtorVt*)this)->init(p); }
-};
-struct CShopProductEquipItem : CShopBaseE {
-    CShopProductEquipItem(void* a, void* b);
-};
 // Initialize the equipment provider and populate its category products.
 CShopProductEquipItem::CShopProductEquipItem(void* a, void* b) : CShopBaseE(a) {
     vtable = (void**)__vt__21CShopProductEquipItem;
     v1C(b);
 }
 
-
 // Require both the saved item flag and an item id belonging to this caddie.
-int CShopProductCaddieItem_IsAvailableForCaddie(void* self, void* productRecord, int testEquipped) {
-    int available = SaveData_TestCaddieItemFlag(((ShopProductListView*)self)->saveData, (void*)((ShopProductRecord*)productRecord)->typeId, testEquipped);
+int CShopProductCaddieItem::IsAvailableForCaddie(void* productRecord, int testEquipped) {
+    int available =
+        SaveData_TestCaddieItemFlag(context, (void*)((ShopProductRecord*)productRecord)->typeId, testEquipped);
     int result = 0;
-    if (available &&
-        ((((ShopProductRecord*)productRecord)->typeId >> kCaddieItemOwnerShift) & kCaddieItemOwnerMask) == (((CaddieItemProductView*)self)->caddieTypeId & kItemSerialMask))
+    if (available && ((((ShopProductRecord*)productRecord)->typeId >> kCaddieItemOwnerShift) & kCaddieItemOwnerMask) ==
+                         ((unsigned int)caddieTypeId & kItemSerialMask))
         result = 1;
     return result;
 }
@@ -380,80 +342,87 @@ int CShopProductCaddieItem_IsAvailableForCaddie(void* self, void* productRecord,
 
 CShopProductAvatar::~CShopProductAvatar() {}
 
-
 extern "C" {
 
 // Destroy category resources and free the product only for a positive deleting-destructor flag.
-void* CShopProductBall_dtor(void* self, int shouldDelete) {
-    if (self) {
-        __dt__10CShopBaseAFv(self, 0);
+// A named member rather than a destructor: it takes the free flag and returns the object.
+void* CShopProductBall::Destroy(int shouldDelete) {
+    if (this) {
+        __dt__10CShopBaseAFv(this, 0);
         if (shouldDelete > 0)
-            __dl__FPv(self);
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
 
 // Destroy category resources and free the product only for a positive deleting-destructor flag.
-void* CShopProductCaddie_dtor(void* self, int shouldDelete) {
-    if (self) {
-        __dt__10CShopBaseBFv(self, 0);
+// A named member rather than a destructor: it takes the free flag and returns the object.
+void* CShopProductCaddie::Destroy(int shouldDelete) {
+    if (this) {
+        __dt__10CShopBaseBFv(this, 0);
         if (shouldDelete > 0)
-            __dl__FPv(self);
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
 
 // Destroy category resources and free the product only for a positive deleting-destructor flag.
-void* CShopProductCaddieItem_dtor(void* self, int shouldDelete) {
-    if (self) {
-        __dt__10CShopBaseCFv(self, 0);
+// A named member rather than a destructor: it takes the free flag and returns the object.
+void* CShopProductCaddieItem::Destroy(int shouldDelete) {
+    if (this) {
+        __dt__10CShopBaseCFv(this, 0);
         if (shouldDelete > 0)
-            __dl__FPv(self);
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
 
 // Destroy category resources and free the product only for a positive deleting-destructor flag.
-void* CShopProductClubSet_dtor(void* self, int shouldDelete) {
-    if (self) {
-        __dt__10CShopBaseDFv(self, 0);
+// A named member rather than a destructor: it takes the free flag and returns the object.
+void* CShopProductClubSet::Destroy(int shouldDelete) {
+    if (this) {
+        __dt__10CShopBaseDFv(this, 0);
         if (shouldDelete > 0)
-            __dl__FPv(self);
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
 
 // Destroy category resources and free the product only for a positive deleting-destructor flag.
-void* CShopProductEquipItem_dtor(void* self, int shouldDelete) {
-    if (self) {
-        __dt__10CShopBaseEFv(self, 0);
+// A named member rather than a destructor: it takes the free flag and returns the object.
+void* CShopProductEquipItem::Destroy(int shouldDelete) {
+    if (this) {
+        __dt__10CShopBaseEFv(this, 0);
         if (shouldDelete > 0)
-            __dl__FPv(self);
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
 
 // Delegate equipment-item availability to the save-data flag query.
-int CShopProductEquipItem_vfunc_6(Fn80238B40Arg* product, Fn80238B40Arg2* productRecord, int testEquipped) {
+int CShopProductEquipItem::vfunc_6(Fn80238B40Arg* product, ShopProductRecordView* productRecord, int testEquipped) {
     return SaveData_IsConsumableAvailable(product->saveData, productRecord->typeId, testEquipped);
 }
 
 // Report that this product interface is ready.
-int CShopProductInterface_vfunc_1() {
+int CShopProductInterface::vfunc_1() {
     return 1;
 }
 
 // Test the saved owned flag, or the equipped flag when testEquipped is set; missing save records fail.
 // An equipped avatar must also match the active saved character index.
-int CShopProductAvatar_IsOwnedOrEquipped(void* self, void* productRecord, int testEquipped) {
+int CShopProductAvatar::IsOwnedOrEquipped(void* productRecord, int testEquipped) {
     volatile unsigned char savedFlags[0x38];
     if (testEquipped) {
-        int index = ItemInventory_FindCharacterIndex(((char*)&AsCSharedDoc(g_sharedDoc)->itemInventory), (void*)((ShopProductRecord*)productRecord)->typeId);
-        signed char current = AsSavePlayerRecord(SaveData_GetCurrentRecord(((ShopProductListView*)self)->saveData))->characterIndex;
+        int index = ItemInventory_FindCharacterIndex(((char*)&AsCSharedDoc(g_sharedDoc)->itemInventory),
+                                                     (void*)((ShopProductRecord*)productRecord)->typeId);
+        signed char current =
+            AsSavePlayerRecord(SaveData_GetCurrentRecord(((ShopProductListView*)this)->saveData))->characterIndex;
         if (current != index)
             return 0;
     }
-    if (SaveData_CopyCharacterEquipmentRecord(((ShopProductListView*)self)->saveData, (unsigned char*)savedFlags, (void*)((ShopProductRecord*)productRecord)->typeId) == 0)
+    if (SaveData_CopyCharacterEquipmentRecord(((ShopProductListView*)this)->saveData, (unsigned char*)savedFlags,
+                                              (void*)((ShopProductRecord*)productRecord)->typeId) == 0)
         return 0;
     if (testEquipped) {
         unsigned int flagInSignBit = (unsigned int)savedFlags[0] << kEquippedFlagToSignBit;
@@ -471,12 +440,16 @@ struct CShopProductHairExceptionBuffer {
     void* table;
     char* text;
     void* owner;
-    ~CShopProductHairExceptionBuffer() { __dt__Q23std9exceptionFv(this); }
+    ~CShopProductHairExceptionBuffer() {
+        __dt__Q23std9exceptionFv(this);
+    }
 };
 struct CShopProductHairExceptionGuard {
     void* text;
     void* allocator;
-    ~CShopProductHairExceptionGuard() { __dt__Q33std6detail16char_array_guardFv(this, 0); }
+    ~CShopProductHairExceptionGuard() {
+        __dt__Q33std6detail16char_array_guardFv(this, 0);
+    }
 };
 struct CShopProductHairExceptionOwner {
     void* table;
@@ -491,18 +464,19 @@ struct CShopProductHairExceptionOwner {
     }
 };
 // Offer initially unlocked hairstyles for this character; optionally require the save-slot ownership bit.
-int CShopProductHair_CheckUnlockAndOwnership(void* self, void* hairStyleRecord, int testOwned) {
+int CShopProductHair::CheckUnlockAndOwnership(void* hairStyleRecord, int testOwned) {
     int result = 0;
     unsigned char shopFlags = ((IFF_STRUCT::sHairStyle*)hairStyleRecord)->common.shopFlags;
-    unsigned int characterTypeId = *(volatile unsigned int*)&AsCShopProductHair(self)->characterTypeId; // 0x80238C4C: +0x64
+    unsigned int characterTypeId = *(volatile unsigned int*)&this->characterTypeId; // 0x80238C4C: +0x64
     if ((shopFlags >> kHairInitiallyUnlockedShift) & kHairInitiallyUnlockedMask) {
         unsigned char index = ((IFF_STRUCT::sHairStyle*)hairStyleRecord)->characterIndex;
         if ((characterTypeId & kItemSerialMask) == index)
             result = 1;
     }
     if (testOwned) {
-        unsigned int index = ItemInventory_FindHairStyleIndex(((char*)&AsCSharedDoc(g_sharedDoc)->itemInventory), (void*)((ShopProductRecord*)hairStyleRecord)->typeId);
-        void* data = SaveData_GetCurrentRecord(AsCShopProductHair(self)->saveData);
+        unsigned int index = ItemInventory_FindHairStyleIndex(((char*)&AsCSharedDoc(g_sharedDoc)->itemInventory),
+                                                              (void*)((ShopProductRecord*)hairStyleRecord)->typeId);
+        void* data = SaveData_GetCurrentRecord(saveData);
         if (index >= kHairStyleCount) {
             CShopProductHairExceptionBuffer buffer;
             CShopProductHairExceptionBuffer* bp = &buffer;
@@ -512,7 +486,7 @@ int CShopProductHair_CheckUnlockAndOwnership(void* self, void* hairStyleRecord, 
             unsigned int len = strlen(messageText) + 1;
             char* message = (char*)__nwa__FUl(len * 2 - len);
             bp->text = message;
-            CShopProductHairExceptionGuard guard = { message, &empty };
+            CShopProductHairExceptionGuard guard = {message, &empty};
             bp->owner = new CShopProductHairExceptionOwner(message);
             guard.text = 0;
             strcpy(bp->text, shopHairOwnershipBoundsError);
@@ -521,7 +495,7 @@ int CShopProductHair_CheckUnlockAndOwnership(void* self, void* hairStyleRecord, 
         }
         unsigned int offset = (index >> kOwnershipWordShift) * sizeof(unsigned int);
         unsigned int shift = index & kOwnershipBitMask;
-                unsigned int ownedStylesWord = AsSavePlayerRecord(data)->ownedHairStyles[offset / sizeof(unsigned int)];
+        unsigned int ownedStylesWord = AsSavePlayerRecord(data)->ownedHairStyles[offset / sizeof(unsigned int)];
         unsigned int mask = 1u << shift;
         unsigned int present = mask & ownedStylesWord;
         unsigned int isOwned = present != 0;

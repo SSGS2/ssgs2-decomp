@@ -1,9 +1,11 @@
-// Translation unit 0x80080CF4-0x80080FB4 (10 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Shop task: the task that creates, draws and releases the Pangya2 shop (CShop2Main).
+// Its state is set through setState; destroy frees the task when the flag asks for it.
 
 #include "game/singletons.h"
 #include "classes/CShop2Main.h"
 #include "classes/CTaskMain.h"
+#include "classes/CTask.h"
+#include "classes/CPangya2Shop.h"
 
 // Type of the object held in CShop2Main::shop; only its virtual destructor is needed here (delete).
 struct Base80080CF4 {
@@ -26,11 +28,9 @@ void SoundManager_RequestBgmChange(void*, void*, int, int);
 void SaveData_Ctor(void*);
 void* SaveData_GetCurrentRecord(void*);
 void SaveRecord_CopyCtor(void*, void*);
-void CPangya2Shop_Ctor(void*, void*, int);
 int MPBase1_Process(void*, float);
 void SaveProcess_SetTransitionTargetName(void*);
 void SaveProcess_SetFollowUpTaskName(void*);
-void CTask_RequestTransitionWithFade(void*, void*, void*, int);
 void TaskCommandQueue_AppendNamedRequest(void*, int, void*, int, int, int, int, int);
 void MPBase1_DrawIfInitialized(int);
 
@@ -40,18 +40,29 @@ void MPBase1_DrawIfInitialized(int);
 struct Cls80080DA4 {
     char data[0x8e0];
     // Construct an owned shop from a borrowed save-record snapshot; z is forwarded unchanged.
-    Cls80080DA4(void* b, int z) { CPangya2Shop_Ctor(this, b, z); }
+    Cls80080DA4(void* b, int z) {
+        ((CPangya2Shop*)this)->Init(b, z);
+    }
 };
 
 // Offsets into the existing packed string table, not independently owned strings.
 enum ShopTransitionStrings {
-    kShopBgmName = 0, kSaveTransitionTarget = 0xE, kSaveFollowUpTask = 0x19,
-    kSaveTransitionTask = 0x24, kSaveTransitionArgument = 0x35,
+    kShopBgmName = 0,
+    kSaveTransitionTarget = 0xE,
+    kSaveFollowUpTask = 0x19,
+    kSaveTransitionTask = 0x24,
+    kSaveTransitionArgument = 0x35,
     kQueuedShopTask = 0x36
 };
 // The event handler accepts exactly these values; their wider task meaning is unresolved.
-enum ShopTaskState { kShopTaskState1 = 1, kShopTaskState2 = 2 };
-enum { kShopSecondaryVtableOffset = 0x3C, kShopTaskRequestCode = 6 };
+enum ShopTaskState {
+    kShopTaskState1 = 1,
+    kShopTaskState2 = 2
+};
+enum {
+    kShopSecondaryVtableOffset = 0x3C,
+    kShopTaskRequestCode = 6
+};
 
 // Deleting destructor: restore the vtables, drop the shop object, then the base destructor and, for a
 // positive flag, the freed memory.
@@ -66,8 +77,10 @@ void* CShop2Main::destroy(int flag) {
             delete ownedShop;
             shop = 0;
         }
-        if (this) __dt__18NativeBase80201D18Fv(this, 0);
-        if (flag > 0) __dl__FPv(this);
+        if (this)
+            __dt__18NativeBase80201D18Fv(this, 0);
+        if (flag > 0)
+            __dl__FPv(this);
     }
     return this;
 }
@@ -83,15 +96,15 @@ void CShop2Main::create() {
     char recordSnapshot[0x830]; // 0x828-byte record plus the original stack-buffer slack.
     SoundManager_RequestBgmChange(g_soundManager, titleSaveTransitionStrings + kShopBgmName, 0, 1);
     // Resolve the save singleton, constructing its static storage only once.
-    if (Sing_805DC5E0() == 0) {
+    if (GetSaveDataSlot() == 0) {
         if (s_saveDataInitialized == 0) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        Sing_805DC5E0() = s_saveData;
+        GetSaveDataSlot() = s_saveData;
     }
     // The stack snapshot is borrowed only during construction; shop survives this call.
-    SaveRecord_CopyCtor(recordSnapshot, SaveData_GetCurrentRecord(Sing_805DC5E0()));
+    SaveRecord_CopyCtor(recordSnapshot, SaveData_GetCurrentRecord(GetSaveDataSlot()));
     shop = new Cls80080DA4(recordSnapshot, 0);
 }
 
@@ -105,23 +118,27 @@ extern "C" void update__10CShop2MainFv(CShop2Main* self, float dt) {
     if (MPBase1_Process(self->shop, dt)) {
         SaveProcess_SetTransitionTargetName(titleSaveTransitionStrings + kSaveTransitionTarget);
         SaveProcess_SetFollowUpTaskName(titleSaveTransitionStrings + kSaveFollowUpTask);
-        CTask_RequestTransitionWithFade(g_taskManager, titleSaveTransitionStrings + kSaveTransitionTask, titleSaveTransitionStrings + kSaveTransitionArgument, 0);
-        TaskCommandQueue_AppendNamedRequest(g_taskManager, 0, titleSaveTransitionStrings + kQueuedShopTask, kShopTaskRequestCode, 0, 0, 0, 0);
+        ((CTask*)g_taskManager)
+            ->RequestTransitionWithFade(titleSaveTransitionStrings + kSaveTransitionTask,
+                                        titleSaveTransitionStrings + kSaveTransitionArgument, 0);
+        TaskCommandQueue_AppendNamedRequest(g_taskManager, 0, titleSaveTransitionStrings + kQueuedShopTask,
+                                            kShopTaskRequestCode, 0, 0, 0, 0);
     }
 }
 
 // Dispatch the shop's initialized-only draw hook; ownership remains with this task.
-void CShop2Main::release() {
+void CShop2Main::draw() {
     MPBase1_DrawIfInitialized((int)shop);
 }
-
 
 // State 1 and 2 are selectable; any other value leaves the state alone.
 void CShop2Main::setState(CShop2MainEvent* arg) {
     int requestedState = arg->state;
     if (requestedState != kShopTaskState2) {
-        if (requestedState >= kShopTaskState2) return;
-        if (requestedState < kShopTaskState1) return;
+        if (requestedState >= kShopTaskState2)
+            return;
+        if (requestedState < kShopTaskState1)
+            return;
         state = kShopTaskState1;
         return;
     }
@@ -144,7 +161,8 @@ void* __dt__11AuxMenuBaseFv(void* self, int flag) {
 void* CTaskMain::destroy(int flag) {
     if (this != 0) {
         __dt__18NativeBase80201D18Fv(this, 0);
-        if (flag > 0) __dl__FPv(this);
+        if (flag > 0)
+            __dl__FPv(this);
     }
     return this;
 }

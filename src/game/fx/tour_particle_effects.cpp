@@ -1,10 +1,11 @@
+// Tour particle effects: the trail and burst particle emitters, their particle pointer vectors,
+// and their construction and destruction.
+
 #include <decomp/static_init.h>
-// Translation unit 0x80333CE8-0x80333FFC (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 // Same trail/burst layout used by the emitter methods in tour_load_effect_particles.cpp.
 struct ParticlePointerVector {
-    void** data;                        // owning particle pointer slots
+    void** data; // owning particle pointer slots
     int count;
     int capacity;
 };
@@ -26,7 +27,10 @@ struct TourParticleEmitter {
     int burstFrame;
     int burstEnabled;
 };
-enum { kDefaultTrailDurationFrames = 40, kParticlePointerBytes = sizeof(void*) };
+enum {
+    kDefaultTrailDurationFrames = 40,
+    kParticlePointerBytes = sizeof(void*)
+};
 typedef char TourParticleEmitter_size[(sizeof(TourParticleEmitter) == 0x5c) ? 1 : -1];
 
 extern "C" {
@@ -35,7 +39,7 @@ void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
 void* memmove(void*, const void*, unsigned int);
 void __destroy_new_array(void*, void*);
-void CBpTex_dtor();
+extern "C" void __dt__6CBpTexFv();
 
 // Release a trail-particle pointer vector buffer; individual particles are released by the emitter.
 void* dtor_80333CE8(void* self, int shouldDelete) {
@@ -75,7 +79,7 @@ void* TourParticleEffects_Dtor(void* self, int shouldDelete) {
         TourParticleEmitter* emitter = (TourParticleEmitter*)self;
         void* textureArray = emitter->textures;
         if (textureArray != 0) {
-            __destroy_new_array(textureArray, (void*)CBpTex_dtor);
+            __destroy_new_array(textureArray, (void*)__dt__6CBpTexFv);
             emitter->textures = 0;
         }
         void** firstSlot = emitter->trailParticles.data;
@@ -143,7 +147,9 @@ extern float s_tourParticleFullTurnAngle;
 void TourParticleEffects_EmptyHook() {}
 
 // Initialize the tour particle full-turn angle cache.
-void TourParticleEffects_InitFullTurnAngle() { s_tourParticleFullTurnAngle = kFloat_6_2831855; }
+void TourParticleEffects_InitFullTurnAngle() {
+    s_tourParticleFullTurnAngle = kFloat_6_2831855;
+}
 
 // Initialize empty trail/burst emitters with the default spread, duration, and emission count.
 void TourParticleEffects_Init(void* self) {

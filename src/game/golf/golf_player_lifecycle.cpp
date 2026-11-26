@@ -1,24 +1,46 @@
+// Golf player and golf document lifecycle: constructing and destroying CGolfPlayer, creating
+// CGolfDoc, the pending-load cleanup trees, and the string and list containers they own.
+
 #include <decomp/static_init.h>
 #include "MSL/vector.h"
 // Vector destroyed by dtor_8013AA48; element type not known yet (Elem_8013AA48 is a tag);
 // its size reset loads the size twice (form 2).
 struct Elem_8013AA48;
-namespace std { template <> struct __vec_destroys_elements<Elem_8013AA48*> { enum { value = 2 }; static void destroy(Elem_8013AA48**) {} }; }
+namespace std {
+template <> struct __vec_destroys_elements<Elem_8013AA48*> {
+    enum {
+        value = 2
+    };
+    static void destroy(Elem_8013AA48**) {}
+};
+}
 typedef std::vector<Elem_8013AA48*, app::app_allocator<Elem_8013AA48*> > Elem_8013AA48Vector;
 #include "classes/CGolfPlayer.h"
+#include "classes/CGolfDoc.h"
 // 0x8013A3F8: existing tree-sentinel fields and four affine matrices at +0x2E8.
 
 #define AsCGolfPlayer(p) ((CGolfPlayer*)(p))
-enum { kPlayerSecondaryVtableIndex = 15, kWhitePlayerLightRgb = 0x00FFFFFF,
-       kHeapStringFlagShift = 31, kInlineStringLengthMask = 0x7F };
-// Translation unit 0x801398B0-0x8013AE84 (16 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+enum {
+    kPlayerSecondaryVtableIndex = 15,
+    kWhitePlayerLightRgb = 0x00FFFFFF,
+    kHeapStringFlagShift = 31,
+    kInlineStringLengthMask = 0x7F
+};
 
 extern "C" {
 
-struct PlayerCleanupItem { char prefix[0x80]; void* allocation; };
-struct ListNode { ListNode* prev; ListNode* next; };
-struct PlayerCleanupNode { ListNode links; PlayerCleanupItem* item; };
+struct PlayerCleanupItem {
+    char prefix[0x80];
+    void* allocation;
+};
+struct ListNode {
+    ListNode* prev;
+    ListNode* next;
+};
+struct PlayerCleanupNode {
+    ListNode links;
+    PlayerCleanupItem* item;
+};
 void __dl__FPv(void*);
 void appFreeUni__FPv(void*);
 extern void __ct__18NativeBase80201D18Fv(void*);
@@ -29,7 +51,7 @@ extern unsigned int __vt__11CGolfPlayer[];
 
 extern void* InstanceTable_Get();
 extern void InstanceTable_ClearCachedResources(void*);
-extern void CTailEffect_dtor(void*, int);
+extern void __dt__11CTailEffectFv(void*, int);
 extern void __destroy_new_array(void*, void*);
 extern void PlayerModel_Dtor();
 extern void* PlayerAnimationState_dtor(void*, int);
@@ -37,19 +59,31 @@ extern void SoundManager_ReleaseSoundBank(void*, void*);
 extern void __dla__FPv(void*);
 extern void* g_soundManager;
 
-struct CleanupEntry { unsigned int flags; char reserved04[4]; void* heapName; };
+struct CleanupEntry {
+    unsigned int flags;
+    char reserved04[4];
+    void* heapName;
+};
 struct ICleanup {
     virtual void destroy(int);
 };
-struct CleanupList { int count; ListNode sentinel; };
+struct CleanupList {
+    int count;
+    ListNode sentinel;
+};
 struct CleanupObject {
-    char prefix[0x2C0]; int cleanupCount; ListNode cleanupSentinel;
-    char reserved2CC[0x100]; CleanupEntry* entries; int entryCount;
+    char prefix[0x2C0];
+    int cleanupCount;
+    ListNode cleanupSentinel;
+    char reserved2CC[0x100];
+    CleanupEntry* entries;
+    int entryCount;
 };
 
 #pragma use_lmw_stmw on
 // Release player models, animation states, tail effects, loaded sound banks and pending-load resources.
-void CGolfPlayer_OnDestroy(CleanupObject* self) {
+void CGolfPlayer::OnDestroy() {
+    CleanupObject* self = (CleanupObject*)this;
     InstanceTable_ClearCachedResources(InstanceTable_Get());
     ListNode* node = self->cleanupSentinel.next;
     ListNode* sentinel = &self->cleanupSentinel;
@@ -81,10 +115,22 @@ void CGolfPlayer_OnDestroy(CleanupObject* self) {
             --self->cleanupCount;
         }
     }
-    if (AsCGolfPlayer(self)->tailEffects[0] != 0) { CTailEffect_dtor(AsCGolfPlayer(self)->tailEffects[0], 1); AsCGolfPlayer(self)->tailEffects[0] = 0; }
-    if (AsCGolfPlayer(self)->tailEffects[1] != 0) { CTailEffect_dtor(AsCGolfPlayer(self)->tailEffects[1], 1); AsCGolfPlayer(self)->tailEffects[1] = 0; }
-    if (AsCGolfPlayer(self)->tailEffects[2] != 0) { CTailEffect_dtor(AsCGolfPlayer(self)->tailEffects[2], 1); AsCGolfPlayer(self)->tailEffects[2] = 0; }
-    if (AsCGolfPlayer(self)->tailEffects[3] != 0) { CTailEffect_dtor(AsCGolfPlayer(self)->tailEffects[3], 1); AsCGolfPlayer(self)->tailEffects[3] = 0; }
+    if (AsCGolfPlayer(self)->tailEffects[0] != 0) {
+        __dt__11CTailEffectFv(AsCGolfPlayer(self)->tailEffects[0], 1);
+        AsCGolfPlayer(self)->tailEffects[0] = 0;
+    }
+    if (AsCGolfPlayer(self)->tailEffects[1] != 0) {
+        __dt__11CTailEffectFv(AsCGolfPlayer(self)->tailEffects[1], 1);
+        AsCGolfPlayer(self)->tailEffects[1] = 0;
+    }
+    if (AsCGolfPlayer(self)->tailEffects[2] != 0) {
+        __dt__11CTailEffectFv(AsCGolfPlayer(self)->tailEffects[2], 1);
+        AsCGolfPlayer(self)->tailEffects[2] = 0;
+    }
+    if (AsCGolfPlayer(self)->tailEffects[3] != 0) {
+        __dt__11CTailEffectFv(AsCGolfPlayer(self)->tailEffects[3], 1);
+        AsCGolfPlayer(self)->tailEffects[3] = 0;
+    }
     if (AsCGolfPlayer(self)->playerModels != 0) {
         __destroy_new_array(AsCGolfPlayer(self)->playerModels, (void*)PlayerModel_Dtor);
         AsCGolfPlayer(self)->playerModels = 0;
@@ -131,7 +177,7 @@ void CGolfPlayer_OnDestroy(CleanupObject* self) {
 
 extern void* s_golfDocTypeInfo;
 // Return the golf-document runtime type descriptor.
-void* CGolfDoc_GetRTTI() {
+void* CGolfDoc::GetRTTI() {
     return &s_golfDocTypeInfo;
 }
 
@@ -172,7 +218,9 @@ void* dtor_8013AA48(OwnedArrayHeader* self, int deleting) {
     return ::std::__vector_deleting_dtor((Elem_8013AA48Vector*)self, deleting);
 }
 
-struct EntryListRecord { char bytes[0xA8]; };
+struct EntryListRecord {
+    char bytes[0xA8];
+};
 struct EntryList {
     void* entries;
     unsigned int count;
@@ -188,12 +236,22 @@ void* EntryList_GetEntryOrFallback(EntryList* self, int index) {
 }
 
 typedef CGolfPlayer MainObject;
-extern MainObject* CGolfPlayer_Ctor(MainObject*);
-struct CleanupNode { CleanupNode* left; CleanupNode* right; void* parent; unsigned int key; unsigned int flags; char pad14[4]; void* owned; };
+extern MainObject* __ct__11CGolfPlayerFv(MainObject*);
+struct CleanupNode {
+    CleanupNode* left;
+    CleanupNode* right;
+    void* parent;
+    unsigned int key;
+    unsigned int flags;
+    char pad14[4];
+    void* owned;
+};
 struct GolfPlayerStorage {
     char storage[0x3E8];
     // Construct a player within the newly allocated full-size object storage.
-    GolfPlayerStorage() { CGolfPlayer_Ctor((MainObject*)this); }
+    GolfPlayerStorage() {
+        ((CGolfPlayer*)((MainObject*)this))->__ct();
+    }
 };
 
 #pragma opt_propagation off
@@ -205,40 +263,65 @@ struct GolfPlayerStorage {
 #pragma always_inline on
 // Destroy deeper pending-load descendants, the heap-backed name, and this frontier node.
 static inline void DestroyPlayerPendingLoadFrontier(MainObject* owner, CleanupNode* node) {
-    if (node->left != 0) IntStringTree_DestroySubtree((char*)&AsCGolfPlayer(owner)->pendingModelLoadCount, node->left);
-    if (node->right != 0) IntStringTree_DestroySubtree((char*)&AsCGolfPlayer(owner)->pendingModelLoadCount, node->right);
-    if (&node->key && &node->flags && ((node->flags >> kHeapStringFlagShift) != 0)) appFreeUni__FPv(node->owned);
+    if (node->left != 0)
+        IntStringTree_DestroySubtree((char*)&AsCGolfPlayer(owner)->pendingModelLoadCount, node->left);
+    if (node->right != 0)
+        IntStringTree_DestroySubtree((char*)&AsCGolfPlayer(owner)->pendingModelLoadCount, node->right);
+    if (&node->key && &node->flags && ((node->flags >> kHeapStringFlagShift) != 0))
+        appFreeUni__FPv(node->owned);
     appFreeUni__FPv(node);
 }
 #pragma pop
 
 // Initialize player resources, lighting, pending-load containers and four identity channel transforms.
-MainObject* CGolfPlayer_Ctor(MainObject* self) {
+CGolfPlayer::CGolfPlayer() {
+    MainObject* self = (MainObject*)this;
     // Phase 1: establish base interfaces and empty resource owners. No model,
     // animation, tail effect or sound-name storage is owned at this point.
     __ct__18NativeBase80201D18Fv(self);
     self->vtbl = (void*)__vt__11CGolfPlayer;
     self->sub_vtbl = __vt__11CGolfPlayer + kPlayerSecondaryVtableIndex;
-    self->attachedSprayIds = 0; self->attachedSprayCount = 0; self->attachedSprayCapacity = 0; self->attachedSequenceIds = 0;
-    self->attachedSequenceCount = 0; self->attachedSequenceCapacity = 0; self->clubPuppet = 0; self->playerModels = 0; self->animationStates = 0;
+    self->attachedSprayIds = 0;
+    self->attachedSprayCount = 0;
+    self->attachedSprayCapacity = 0;
+    self->attachedSequenceIds = 0;
+    self->attachedSequenceCount = 0;
+    self->attachedSequenceCapacity = 0;
+    self->clubPuppet = 0;
+    self->playerModels = 0;
+    self->animationStates = 0;
     AsCGolfPlayer(self)->tailEffects[0] = 0;
     AsCGolfPlayer(self)->tailEffects[1] = 0;
     AsCGolfPlayer(self)->tailEffects[2] = 0;
     AsCGolfPlayer(self)->tailEffects[3] = 0;
-    self->lightType = 0; self->lightColor = 0; self->ambientLightColor = 0; self->cleanupListCount = 0; self->playerStates = 0;
+    self->lightType = 0;
+    self->lightColor = 0;
+    self->ambientLightColor = 0;
+    self->cleanupListCount = 0;
+    self->playerStates = 0;
     // +0x284 starts as packed white RGB; its later lighting role is unresolved.
     self->unk_284 = kWhitePlayerLightRgb;
-    self->lightDirection.z = 0.0f; self->lightDirection.y = 0.0f; self->lightDirection.x = 0.0f;
+    self->lightDirection.z = 0.0f;
+    self->lightDirection.y = 0.0f;
+    self->lightDirection.x = 0.0f;
     self->attachmentPositionLocked = 0;
     self->cleanupListPrev = self->cleanupListNext = &self->cleanupListPrev;
-    self->readyForQueuedAnimation = 1; self->playerIndexOffset = 0;
-    self->processingSuspended = self->avatarPreloadPending = 0; self->preloadPlayerIndex = -1; self->avatarPreloader = 0;
-    self->loadedSoundNames = 0; self->loadedSoundNameCapacity = 0; self->pendingModelLoadCount = self->pendingModelLoadRoot = 0;
+    self->readyForQueuedAnimation = 1;
+    self->playerIndexOffset = 0;
+    self->processingSuspended = self->avatarPreloadPending = 0;
+    self->preloadPlayerIndex = -1;
+    self->avatarPreloader = 0;
+    self->loadedSoundNames = 0;
+    self->loadedSoundNameCapacity = 0;
+    self->pendingModelLoadCount = self->pendingModelLoadRoot = 0;
     self->firstPendingModelLoad = (char*)&AsCGolfPlayer(self)->pendingModelLoadRoot;
     // Preserve unknown runtime defaults: bytes +2CD/+2E0=0, float +2D0=0,
     // words +2D8/+2DC/+2E4=0. These writes do not establish behavioral names.
-    self->unk_2CD = 0; self->unk_2D0 = 0.0f; self->unk_2D8 = self->unk_2DC = 0;
-    self->singlePowerShotReady = self->doublePowerShotDisabled = 0; self->unk_2E4 = 0;
+    self->unk_2CD = 0;
+    self->unk_2D0 = 0.0f;
+    self->unk_2D8 = self->unk_2DC = 0;
+    self->singlePowerShotReady = self->doublePowerShotDisabled = 0;
+    self->unk_2E4 = 0;
     self->loadedSoundNameCount = 0;
     // Phase 2: compiler-shaped empty-container cleanup. The sound-name range has
     // zero elements, so this loop cannot execute; its slots/lifetimes preserve ABI.
@@ -273,7 +356,8 @@ MainObject* CGolfPlayer_Ctor(MainObject* self) {
                     if (n2 != 0) {
                         DestroyPlayerPendingLoadFrontier(self, n2);
                     }
-                    if (&n1->key && &n1->flags && ((n1->flags >> kHeapStringFlagShift) != 0)) appFreeUni__FPv(n1->owned);
+                    if (&n1->key && &n1->flags && ((n1->flags >> kHeapStringFlagShift) != 0))
+                        appFreeUni__FPv(n1->owned);
                     appFreeUni__FPv(n1);
                 }
                 n1 = n0->right;
@@ -286,10 +370,12 @@ MainObject* CGolfPlayer_Ctor(MainObject* self) {
                     if (n2 != 0) {
                         DestroyPlayerPendingLoadFrontier(self, n2);
                     }
-                    if (&n1->key && &n1->flags && ((n1->flags >> kHeapStringFlagShift) != 0)) appFreeUni__FPv(n1->owned);
+                    if (&n1->key && &n1->flags && ((n1->flags >> kHeapStringFlagShift) != 0))
+                        appFreeUni__FPv(n1->owned);
                     appFreeUni__FPv(n1);
                 }
-                if (&n0->key && &n0->flags && ((n0->flags >> kHeapStringFlagShift) != 0)) appFreeUni__FPv(n0->owned);
+                if (&n0->key && &n0->flags && ((n0->flags >> kHeapStringFlagShift) != 0))
+                    appFreeUni__FPv(n0->owned);
                 appFreeUni__FPv(n0);
             }
             n0 = *(CleanupNode**)((char*)root + 4);
@@ -304,7 +390,8 @@ MainObject* CGolfPlayer_Ctor(MainObject* self) {
                     if (n2 != 0) {
                         DestroyPlayerPendingLoadFrontier(self, n2);
                     }
-                    if (&n1->key && &n1->flags && ((n1->flags >> kHeapStringFlagShift) != 0)) appFreeUni__FPv(n1->owned);
+                    if (&n1->key && &n1->flags && ((n1->flags >> kHeapStringFlagShift) != 0))
+                        appFreeUni__FPv(n1->owned);
                     appFreeUni__FPv(n1);
                 }
                 n1 = n0->right;
@@ -317,13 +404,16 @@ MainObject* CGolfPlayer_Ctor(MainObject* self) {
                     if (n2 != 0) {
                         DestroyPlayerPendingLoadFrontier(self, n2);
                     }
-                    if (&n1->key && &n1->flags && ((n1->flags >> kHeapStringFlagShift) != 0)) appFreeUni__FPv(n1->owned);
+                    if (&n1->key && &n1->flags && ((n1->flags >> kHeapStringFlagShift) != 0))
+                        appFreeUni__FPv(n1->owned);
                     appFreeUni__FPv(n1);
                 }
-                if (&n0->key && &n0->flags && ((n0->flags >> kHeapStringFlagShift) != 0)) appFreeUni__FPv(n0->owned);
+                if (&n0->key && &n0->flags && ((n0->flags >> kHeapStringFlagShift) != 0))
+                    appFreeUni__FPv(n0->owned);
                 appFreeUni__FPv(n0);
             }
-            if (&root->key && &root->flags && ((root->flags >> kHeapStringFlagShift) != 0)) appFreeUni__FPv(root->owned);
+            if (&root->key && &root->flags && ((root->flags >> kHeapStringFlagShift) != 0))
+                appFreeUni__FPv(root->owned);
             appFreeUni__FPv(root);
         }
         AsCGolfPlayer(self)->pendingModelLoadCount = 0;
@@ -331,8 +421,8 @@ MainObject* CGolfPlayer_Ctor(MainObject* self) {
         AsCGolfPlayer(self)->firstPendingModelLoad = (char*)&AsCGolfPlayer(self)->pendingModelLoadRoot;
     }
     // Reset the four breath-effect 3x4 affine matrices (CGolfPlayer::slots_2E8) to identity.
-    for (unsigned char i = 0; i < 4; ++i) Matrix_SetIdentityAffine(((float (*)[12])AsCGolfPlayer(self)->slots_2E8)[i]);
-    return self;
+    for (unsigned char i = 0; i < 4; ++i)
+        Matrix_SetIdentityAffine(((float (*)[12])AsCGolfPlayer(self)->slots_2E8)[i]);
 }
 #pragma opt_propagation reset
 #pragma opt_lifetimes reset
@@ -362,11 +452,11 @@ void* dtor_8013AAC8(OwnedArrayHeader* self, int deleting) {
             if (self != 0) {
                 if (self != 0) {
                     if (self != 0) {
-                    if (self->object != 0) {
-                        int count = self->count;
-                        self->count = count - count;
-                        appFreeUni__FPv(self->object);
-                    }
+                        if (self->object != 0) {
+                            int count = self->count;
+                            self->count = count - count;
+                            appFreeUni__FPv(self->object);
+                        }
                     }
                 }
             }
@@ -421,7 +511,10 @@ void* PlayerAnimationState_dtor(void* self, int deleting) {
     return self;
 }
 
-struct CleanupTreeNode { CleanupTreeNode* left; CleanupTreeNode* right; };
+struct CleanupTreeNode {
+    CleanupTreeNode* left;
+    CleanupTreeNode* right;
+};
 #pragma use_lmw_stmw on
 // Free all nodes in this plain binary subtree without destroying payload objects.
 void PlayerPlainTree_DestroySubtree(void* self, CleanupTreeNode* node) {
@@ -433,14 +526,18 @@ void PlayerPlainTree_DestroySubtree(void* self, CleanupTreeNode* node) {
         if (b != 0) {
             c = b->left;
             if (c != 0) {
-                if (c->left != 0) PlayerPlainTree_DestroySubtree(self, c->left);
-                if (c->right != 0) PlayerPlainTree_DestroySubtree(self, c->right);
+                if (c->left != 0)
+                    PlayerPlainTree_DestroySubtree(self, c->left);
+                if (c->right != 0)
+                    PlayerPlainTree_DestroySubtree(self, c->right);
                 appFreeUni__FPv(c);
             }
             c = b->right;
             if (c != 0) {
-                if (c->left != 0) PlayerPlainTree_DestroySubtree(self, c->left);
-                if (c->right != 0) PlayerPlainTree_DestroySubtree(self, c->right);
+                if (c->left != 0)
+                    PlayerPlainTree_DestroySubtree(self, c->left);
+                if (c->right != 0)
+                    PlayerPlainTree_DestroySubtree(self, c->right);
                 appFreeUni__FPv(c);
             }
             appFreeUni__FPv(b);
@@ -449,14 +546,18 @@ void PlayerPlainTree_DestroySubtree(void* self, CleanupTreeNode* node) {
         if (c != 0) {
             b = c->left;
             if (b != 0) {
-                if (b->left != 0) PlayerPlainTree_DestroySubtree(self, b->left);
-                if (b->right != 0) PlayerPlainTree_DestroySubtree(self, b->right);
+                if (b->left != 0)
+                    PlayerPlainTree_DestroySubtree(self, b->left);
+                if (b->right != 0)
+                    PlayerPlainTree_DestroySubtree(self, b->right);
                 appFreeUni__FPv(b);
             }
             b = c->right;
             if (b != 0) {
-                if (b->left != 0) PlayerPlainTree_DestroySubtree(self, b->left);
-                if (b->right != 0) PlayerPlainTree_DestroySubtree(self, b->right);
+                if (b->left != 0)
+                    PlayerPlainTree_DestroySubtree(self, b->left);
+                if (b->right != 0)
+                    PlayerPlainTree_DestroySubtree(self, b->right);
                 appFreeUni__FPv(b);
             }
             appFreeUni__FPv(c);
@@ -469,14 +570,18 @@ void PlayerPlainTree_DestroySubtree(void* self, CleanupTreeNode* node) {
         if (b != 0) {
             a = b->left;
             if (a != 0) {
-                if (a->left != 0) PlayerPlainTree_DestroySubtree(self, a->left);
-                if (a->right != 0) PlayerPlainTree_DestroySubtree(self, a->right);
+                if (a->left != 0)
+                    PlayerPlainTree_DestroySubtree(self, a->left);
+                if (a->right != 0)
+                    PlayerPlainTree_DestroySubtree(self, a->right);
                 appFreeUni__FPv(a);
             }
             a = b->right;
             if (a != 0) {
-                if (a->left != 0) PlayerPlainTree_DestroySubtree(self, a->left);
-                if (a->right != 0) PlayerPlainTree_DestroySubtree(self, a->right);
+                if (a->left != 0)
+                    PlayerPlainTree_DestroySubtree(self, a->left);
+                if (a->right != 0)
+                    PlayerPlainTree_DestroySubtree(self, a->right);
                 appFreeUni__FPv(a);
             }
             appFreeUni__FPv(b);
@@ -485,14 +590,18 @@ void PlayerPlainTree_DestroySubtree(void* self, CleanupTreeNode* node) {
         if (b != 0) {
             a = b->left;
             if (a != 0) {
-                if (a->left != 0) PlayerPlainTree_DestroySubtree(self, a->left);
-                if (a->right != 0) PlayerPlainTree_DestroySubtree(self, a->right);
+                if (a->left != 0)
+                    PlayerPlainTree_DestroySubtree(self, a->left);
+                if (a->right != 0)
+                    PlayerPlainTree_DestroySubtree(self, a->right);
                 appFreeUni__FPv(a);
             }
             a = b->right;
             if (a != 0) {
-                if (a->left != 0) PlayerPlainTree_DestroySubtree(self, a->left);
-                if (a->right != 0) PlayerPlainTree_DestroySubtree(self, a->right);
+                if (a->left != 0)
+                    PlayerPlainTree_DestroySubtree(self, a->left);
+                if (a->right != 0)
+                    PlayerPlainTree_DestroySubtree(self, a->right);
                 appFreeUni__FPv(a);
             }
             appFreeUni__FPv(b);
@@ -507,8 +616,10 @@ void PlayerPlainTree_DestroyRootAndChildren(void*, void*);
 #pragma always_inline on
 // Recursively free any deeper descendants and then this payload-free frontier node.
 static inline void DestroyPlayerPlainFrontier(void* owner, CleanupTreeNode* node) {
-    if (node->left != 0) PlayerPlainTree_DestroyRootAndChildren(owner, node->left);
-    if (node->right != 0) PlayerPlainTree_DestroyRootAndChildren(owner, node->right);
+    if (node->left != 0)
+        PlayerPlainTree_DestroyRootAndChildren(owner, node->left);
+    if (node->right != 0)
+        PlayerPlainTree_DestroyRootAndChildren(owner, node->right);
     appFreeUni__FPv(node);
 }
 #pragma pop
@@ -584,8 +695,15 @@ void PlayerPlainTree_DestroyRootAndChildren(void* self, void* root) {
     appFreeUni__FPv(root);
 }
 
-struct SmallString { unsigned char size; char data[11]; };
-struct String { unsigned int flags; unsigned int size; unsigned int heapDataOrInlineBytes; };
+struct SmallString {
+    unsigned char size;
+    char data[11];
+};
+struct String {
+    unsigned int flags;
+    unsigned int size;
+    unsigned int heapDataOrInlineBytes;
+};
 extern unsigned int String_ReserveCapacity(String*, unsigned int);
 extern void String_ReplaceRange(String*, int, int, const char*, const char*, unsigned char*);
 extern int memcmp(const char*, const char*, unsigned int);
@@ -600,7 +718,12 @@ extern unsigned int strlen(const char*);
 struct GStr {
     union {
         unsigned int flags;
-        struct { unsigned char size; char inlinePrefix[3]; unsigned int len; void* ptr; } h;
+        struct {
+            unsigned char size;
+            char inlinePrefix[3];
+            unsigned int len;
+            void* ptr;
+        } h;
     } u;
 };
 // Map entry: a three-word string key followed by the mapped object at +0xc.
@@ -629,7 +752,9 @@ struct NamedObjectTable {
 
 #pragma opt_common_subs off
 #pragma use_lmw_stmw on
-struct EmptyGStr { unsigned char byte; };
+struct EmptyGStr {
+    unsigned char byte;
+};
 // Read the inline or heap string length according to the ownership flag.
 static inline unsigned int StringKey_GetLength(const GStr* s) {
     unsigned int result;
@@ -656,8 +781,8 @@ static inline void StringKey_Copy(GStr* dest, const GStr* arg) {
         String_ReserveCapacity((String*)dest, arg->u.h.len);
         EmptyGStr allocator;
         EmptyGStr copy = allocator;
-        String_ReplaceRange((String*)dest, 0, 0, (const char*)arg->u.h.ptr,
-                    (const char*)arg->u.h.ptr + arg->u.h.len, (unsigned char*)&copy);
+        String_ReplaceRange((String*)dest, 0, 0, (const char*)arg->u.h.ptr, (const char*)arg->u.h.ptr + arg->u.h.len,
+                            (unsigned char*)&copy);
     }
 }
 // Assign a byte range using the original string allocator ABI.
@@ -680,7 +805,8 @@ static inline int StringKey_CompareToBytes(unsigned int queryLength, unsigned in
     }
     unsigned int compareLength = storedLengthAgain;
     unsigned int commonLength = StringKey_MinLength(storedLength, compareLength);
-    int comparison = memcmp((const char*)storedBytes, (const char*)queryBytes, (unsigned int)StringKey_MinLength(queryLength, commonLength));
+    int comparison = memcmp((const char*)storedBytes, (const char*)queryBytes,
+                            (unsigned int)StringKey_MinLength(queryLength, commonLength));
     int decision;
     if (comparison == 0) {
         if (commonLength < queryLength)
@@ -721,7 +847,8 @@ extern void* NamedObjectTable_FindOrFallback(void* self, const char* name) {
         // Release a temporary lookup/insertion key only if it owns heap storage.
         ~StringCleanup() {
             unsigned int* words = (unsigned int*)object;
-            if (words[0] >> kHeapStringFlagShift) appFreeUni__FPv(*(void**)(words + 2));
+            if (words[0] >> kHeapStringFlagShift)
+                appFreeUni__FPv(*(void**)(words + 2));
         }
     };
     // Phase 1: own a temporary copy of the query, then find the first stored key
@@ -790,7 +917,8 @@ extern void* NamedObjectTable_FindOrFallback(void* self, const char* name) {
     unsigned char insertSide;
     unsigned char becomesFirst;
     GStr* slot;
-    insertionPosition = (void*)StringTree_FindInsertionPosition((String*)&((NamedObjectTable*)self)->count, (String*)&value, &entry, &insertSide, &becomesFirst);
+    insertionPosition = (void*)StringTree_FindInsertionPosition((String*)&((NamedObjectTable*)self)->count,
+                                                                (String*)&value, &entry, &insertSide, &becomesFirst);
     // Retain the shared value cleanup after lookup or insertion.
     do {
         if (entry != 0) {
@@ -807,7 +935,9 @@ extern void* NamedObjectTable_FindOrFallback(void* self, const char* name) {
             StringKey_Copy(copyKey, &value);
             StringCleanup copyCleanup = {&copy};
             copy.mappedValue = (void*)g_defaultNamedObjectValue;
-            slot = &((NamedObjectNode*)NamedObjectMap_InsertNode(&((NamedObjectTable*)self)->count, insertionPosition, insertSide, becomesFirst, (String*)&copy))->key;
+            slot = &((NamedObjectNode*)NamedObjectMap_InsertNode(&((NamedObjectTable*)self)->count, insertionPosition,
+                                                                 insertSide, becomesFirst, (String*)&copy))
+                        ->key;
         }
     } while (0);
     {
@@ -823,10 +953,11 @@ extern void* NamedObjectTable_FindOrFallback(void* self, const char* name) {
 
 extern unsigned char s_iObjectTypeInfo;
 extern unsigned char golfParameterXmlStrings[];
-extern float s_golfDocFactoryFullTurnAngle; // Cached full-turn angle initialized with the golf-document factory registration.
+extern float
+    s_golfDocFactoryFullTurnAngle; // Cached full-turn angle initialized with the golf-document factory registration.
 extern const float kFloat_6_2831855;
 extern const char s_golfDocFactoryTypeName[];
-extern void IntPair_Set(void*, const char*, void*);
+extern void* IntPair_Set(void*, const char*, void*);
 extern void* ActorFactoryRegistry_GetInstance();
 extern void StringMap_SetByName(void*, void*, const char*);
 extern void* CGolfDoc_Create();
@@ -834,8 +965,11 @@ extern void* CGolfDoc_Create();
 // Register the golf-document runtime type and its factory callback.
 void CGolfDoc_RegisterType() {
     s_golfDocFactoryFullTurnAngle = kFloat_6_2831855;
-    enum { kGolfDocumentTypeNameOffset = 0x1A1 };
-    IntPair_Set(&s_golfDocTypeInfo, (const char*)golfParameterXmlStrings + kGolfDocumentTypeNameOffset, &s_iObjectTypeInfo);
+    enum {
+        kGolfDocumentTypeNameOffset = 0x1A1
+    };
+    IntPair_Set(&s_golfDocTypeInfo, (const char*)golfParameterXmlStrings + kGolfDocumentTypeNameOffset,
+                &s_iObjectTypeInfo);
     void* state = ActorFactoryRegistry_GetInstance();
     StringMap_SetByName(state, (void*)CGolfDoc_Create, s_golfDocFactoryTypeName);
 }

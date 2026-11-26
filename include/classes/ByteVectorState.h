@@ -4,8 +4,8 @@
 #define CLASSES_BYTEVECTORSTATE_H
 
 struct ByteVectorState {
-    void* data; // 0x0
-    unsigned int size; // 0x4
+    void* data;            // 0x0
+    unsigned int size;     // 0x4
     unsigned int capacity; // 0x8
 };
 

@@ -1,6 +1,10 @@
-// Translation unit 0x803E78EC-0x803E8244 (12 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Transform helpers for nodes and textures, frustum plane construction, bounding box projection,
+// the stopwatch timer, and initialization of the extended input device base.
+// Euler angles build a quaternion, which is then used for the node and texture matrices.
+
 #include "sdk_protos.h"
+#include "game/gtl_input.h"
+#include "classes/GtlInputDevice.h"
 
 // gtl utility API bundle (no gameplay tuning):
 // - Model/texture transforms: BuildNodeMatrix/BuildTextureMatrix; the transform
@@ -51,16 +55,18 @@ extern "C" const float kHalfFieldOfViewScale;
 extern "C" const float kFrustumPlaneNegativeZ;
 
 struct GtlStopwatch {
-    unsigned char valid; // frequency-query success; gates every operation
+    unsigned char valid;             // frequency-query success; gates every operation
     unsigned char accumulateOnStart; // initialized 1; Start/Reset clear it
     char unk2[6];
-    long long frequency; // ticks/second
-    long long heldTick; // nonzero overrides current timer reads; zero means live
-    long long lastTick; // baseline advanced by Start/Reset/GetElapsedSeconds
+    long long frequency;   // ticks/second
+    long long heldTick;    // nonzero overrides current timer reads; zero means live
+    long long lastTick;    // baseline advanced by Start/Reset/GetElapsedSeconds
     long long storedTicks; // Start adds (now-heldTick); Reset assigns a timestamp
 };
 
-struct GtlMtx44 { float m[4][4]; };
+struct GtlMtx44 {
+    float m[4][4];
+};
 
 struct GtlRefCountedBase {
     int refCount;
@@ -77,11 +83,11 @@ struct GtlInputExDeviceDtorView {
 };
 
 struct GtlTextureTransform {
-    float scale[3];       // +0: modes 0..5 use XY; mode 6 also reads Z
+    float scale[3]; // +0: modes 0..5 use XY; mode 6 also reads Z
     char unkC[4];
     float rotation[4];    // +0x10: mode-6 XYZW quaternion
-    float translation[3];// +0x20: modes 0..5 use XY; mode 6 also reads Z
-    int mode;            // +0x2C: 0..5 planar scale/translation; 6 full transform
+    float translation[3]; // +0x20: modes 0..5 use XY; mode 6 also reads Z
+    int mode;             // +0x2C: 0..5 planar scale/translation; 6 full transform
 };
 
 struct GtlNodeTransform {
@@ -95,15 +101,9 @@ struct GtlNodeTransform {
 extern "C" {
 
 int gtl_InputEx_EnumerateItemCallback();
-int gtl_IInputDevice_SetDescriptor(void* device, int value);
 int InputDevice_NoOpSuccess_80435FB4(void* device, void* a, int b);
 int InputDevice_NoOpSuccess_80435D34(void* device);
-void* gtl_IInputDevice_EnumerateItems(void* device, void* a, void* b);
-int gtl_IInputDevice_GetProviderId(void* device, int* providerOut);
 GtlInputExButtonConfig* gtl_InputEx_GetButtonConfiguration(int providerId, unsigned int index, void* table);
-void gtl_IInputExButton_SetThreshold(void* button, float value);
-void gtl_IInputExButton_SetRepeatInterval(void* button, int value);
-void gtl_IInputExButton_SetRepeatDelay(void* button, int value);
 float Vec3_Length(void* v);
 
 int Timer_GetTickFrequency(long long* out);
@@ -123,8 +123,6 @@ int gtl_InputEx_EnumerateItemCallback();
 
 void* __dt__Q23gtl18CInputExDeviceBaseFv(GtlInputExDeviceDtorView* self, int flags);
 
-int gtl_CInputExDeviceBase_Initialize(GtlInputExDeviceBase* self, const GtlInputExInitParams* params);
-
 void Mtx44_SetRotationX(GtlMtx44* m, float angle);
 void Mtx44_SetRotationY(GtlMtx44* m, float angle);
 void Mtx44_SetRotationZ(GtlMtx44* m, float angle);
@@ -133,7 +131,8 @@ void Quat_FromMatrix44(void* q, const GtlMtx44* m);
 void* gtl_Transform_QuaternionFromEuler(void* out, float z, float x, float y);
 
 void PSMTX44Identity(float* m);
-void Mtx44_BuildTransformation(float* m, const void* a, const void* b, const void* scale, const void* c, const void* rotation, const void* translation);
+void Mtx44_BuildTransformation(float* m, const void* a, const void* b, const void* scale, const void* c,
+                               const void* rotation, const void* translation);
 float* gtl_Transform_BuildTextureMatrix(float* m, const GtlTextureTransform* t);
 
 float Vec3_Dot(const void* a, const void* b);
@@ -398,6 +397,8 @@ void* __dt__Q23gtl18CInputExDeviceBaseFv(GtlInputExDeviceDtorView* self, int fla
     return self;
 }
 
+} // extern "C"
+
 // Required self/params/device; buttonTable must match provider/index lookup.
 // Pointers are installed without AddRef here: caller must supply the reference
 // later consumed by the destructor. Configuration threshold is a raw button
@@ -409,35 +410,35 @@ void* __dt__Q23gtl18CInputExDeviceBaseFv(GtlInputExDeviceDtorView* self, int fla
 // first missing config -> finish device setup, return 1 even if that call fails;
 // initialized is set to 1 only when that final call succeeds, never cleared.
 // Initialize may therefore leave an old initialized value on any failure path.
-int gtl_CInputExDeviceBase_Initialize(GtlInputExDeviceBase* self, const GtlInputExInitParams* params) {
-    self->device = params->device;
-    self->buttonTable = params->buttonTable;
-    if (!gtl_IInputDevice_SetDescriptor(params->device, params->descriptor)) {
+int gtl::CInputExDeviceBase::Initialize(const GtlInputExInitParams* params) {
+    m_device = params->device;
+    m_buttonTable = params->buttonTable;
+    if (!((gtl::IInputDevice*)(params->device))->SetDescriptor(params->descriptor)) {
         return 0;
     }
-    if (!InputDevice_NoOpSuccess_80435FB4(self->device, ((void**)s_activeInputExInitDescriptor)[2], 6)) {
+    if (!InputDevice_NoOpSuccess_80435FB4(m_device, ((void**)s_activeInputExInitDescriptor)[2], 6)) {
         return 0;
     }
-    s_activeInputDevice = self->device;
-    if (!gtl_IInputDevice_EnumerateItems(self->device, (void*)gtl_InputEx_EnumerateItemCallback, 0)) {
+    s_activeInputDevice = m_device;
+    if (!((gtl::IInputDevice*)(m_device))->EnumerateItems((void*)gtl_InputEx_EnumerateItemCallback, 0)) {
         return 0;
     }
-    unsigned int count = self->getCount();
+    unsigned int count = ((GtlInputExDeviceBase*)this)->getCount();
     int providerId;
-    gtl_IInputDevice_GetProviderId(self->device, &providerId);
+    ((gtl::IInputDevice*)(m_device))->GetProviderId(&providerId);
     void* button;
     unsigned int index = 0;
     int allButtonsConfigured;
     while (index < count) {
-        button = self->getButton(index);
-        GtlInputExButtonConfig* config = gtl_InputEx_GetButtonConfiguration(providerId, index, self->buttonTable);
+        button = ((GtlInputExDeviceBase*)this)->getButton(index);
+        GtlInputExButtonConfig* config = gtl_InputEx_GetButtonConfiguration(providerId, index, m_buttonTable);
         if (!config) {
             allButtonsConfigured = 0;
             goto finishButtonConfiguration;
         }
-        gtl_IInputExButton_SetThreshold(button, config->threshold);
-        gtl_IInputExButton_SetRepeatInterval(button, config->repeatInterval);
-        gtl_IInputExButton_SetRepeatDelay(button, config->repeatDelay);
+        ((gtl::IInputExButton*)button)->SetThreshold(config->threshold);
+        ((gtl::IInputExButton*)button)->SetRepeatInterval(config->repeatInterval);
+        ((gtl::IInputExButton*)button)->SetRepeatDelay(config->repeatDelay);
         index++;
     }
     allButtonsConfigured = 1;
@@ -445,10 +446,8 @@ finishButtonConfiguration:
     if (allButtonsConfigured) {
         return 0;
     }
-    if (InputDevice_NoOpSuccess_80435D34(self->device)) {
-        self->initialized = 1;
+    if (InputDevice_NoOpSuccess_80435D34(m_device)) {
+        m_initialized = 1;
     }
     return 1;
 }
-
-} // extern "C"

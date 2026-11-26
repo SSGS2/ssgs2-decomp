@@ -1,3 +1,8 @@
+// Texture projection and input device code: the six-face render to texture, the two texture stages
+// used for projected textures, and the TEV tint combiner setup.
+// Also holds the input device methods (item lookup, state reads, descriptors) and the GtlRecordDeque
+// container that stores their records.
+
 #include <decomp/offset_of.h>
 extern "C" {
 extern unsigned char kIndirectBumpXYZMatrix[];
@@ -5,12 +10,9 @@ extern unsigned char kIndirectBumpXYZMatrix[];
 #include "classes/RenderStateSnapshot.h"
 #include "classes/GtlInputDevice.h"
 #include "classes/GtlInputDeviceRecords.h"
-#define AsGtlInputDevice(p) ((GtlInputDevice*)(p))
 #include "classes/GtlRecordDeque.h"
 #define AsGtlRecordDeque(p) ((GtlRecordDeque*)(p))
 
-// Translation unit 0x80434998-0x804360D0 (24 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 // Projected texture/six-face rendering plus input-driver/record-deque adapters.
 // Mod lookup: face accumulation -> SixFaceRenderer_RenderToTexture and
 // s_sixFaceRenderResources/templates; tint -> TextureProjection_SetupTintCombiner;
@@ -69,8 +71,10 @@ struct InputItemOutput {
     void* value;
     void* rangeMaximum;
 };
-typedef char SixFaceResources_facesOffset[((int)DECOMP_OFFSETOF(SixFaceRenderResources, faceTransforms) == 0x84) ? 1 : -1];
-typedef char SixFaceResources_materialOffset[((int)DECOMP_OFFSETOF(SixFaceRenderResources, material) == 0x24C) ? 1 : -1];
+typedef char
+    SixFaceResources_facesOffset[((int)DECOMP_OFFSETOF(SixFaceRenderResources, faceTransforms) == 0x84) ? 1 : -1];
+typedef char
+    SixFaceResources_materialOffset[((int)DECOMP_OFFSETOF(SixFaceRenderResources, material) == 0x24C) ? 1 : -1];
 typedef char SixFaceResources_textureOffset[((int)DECOMP_OFFSETOF(SixFaceRenderResources, texture) == 0x290) ? 1 : -1];
 typedef char ProjectionState_stageOffset[((int)DECOMP_OFFSETOF(TextureProjectionState, firstStage) == 0x84) ? 1 : -1];
 typedef char InputItemOutput_valueOffset[((int)DECOMP_OFFSETOF(InputItemOutput, value) == 0x10) ? 1 : -1];
@@ -88,7 +92,8 @@ enum {
     kInputTypeMask = 0xFF,
     kInputOrdinalShift = 8,
     kInputOrdinalMask = 0xFFFF,
-    kViewportWidthWord = 2, kViewportHeightWord = 3,
+    kViewportWidthWord = 2,
+    kViewportHeightWord = 3,
     kTransformView = 0,
     kTransformProjection = 1,
     kTransformFirstTexture = 2,
@@ -115,13 +120,26 @@ enum {
 
 // GX combiner operands (color and alpha inputs use different selector spaces).
 enum {
-    kGXColorPrevious = 0, kGXColorTexture = 8, kGXColorRaster = 10,
-    kGXColorOne = 12, kGXColorConstant = 14, kGXColorZero = 15,
-    kGXAlphaRaster = 5, kGXAlphaZero = 7,
-    kGXTevAdd = 0, kGXTevCompareGR16Greater = 10,
-    kGXTevNoBias = 0, kGXTevScaleOne = 0, kGXTevPrevious = 0,
-    kGXNoTexture = 255, kGXNoColorChannel = 255, kGXColor0Alpha0 = 4,
-    kGXRed = 0, kGXGreen = 1, kGXBlue = 2, kGXAlpha = 3,
+    kGXColorPrevious = 0,
+    kGXColorTexture = 8,
+    kGXColorRaster = 10,
+    kGXColorOne = 12,
+    kGXColorConstant = 14,
+    kGXColorZero = 15,
+    kGXAlphaRaster = 5,
+    kGXAlphaZero = 7,
+    kGXTevAdd = 0,
+    kGXTevCompareGR16Greater = 10,
+    kGXTevNoBias = 0,
+    kGXTevScaleOne = 0,
+    kGXTevPrevious = 0,
+    kGXNoTexture = 255,
+    kGXNoColorChannel = 255,
+    kGXColor0Alpha0 = 4,
+    kGXRed = 0,
+    kGXGreen = 1,
+    kGXBlue = 2,
+    kGXAlpha = 3,
     kGXKonstColor0 = 12,
     kSnapshotMatrixBytes = 16 * sizeof(float),
     kSnapshotStageBytes = 25 * sizeof(void*),
@@ -140,7 +158,7 @@ struct VObj {
     virtual void* v03();
     virtual void* v04();
     virtual int v05(unsigned int, void*, int); // read state into caller buffer address
-    virtual void* v06(void*); // query buffered sample count for a controller channel
+    virtual void* v06(void*);                  // query buffered sample count for a controller channel
     virtual void* v07();
     virtual void* v08();
     virtual int v09(unsigned char, void*);
@@ -157,9 +175,6 @@ void std_ThrowLengthError();
 void* gtl_Graphics_AllocateWithCallback(unsigned int);
 void gtl_Graphics_FreeWithCallback(void*);
 void __dl__FPv(void*);
-void* GtlRecordDeque_DestroyStorageVolatile(void*, short);
-void GtlRecordDeque_CopyConstructElement(void*, unsigned int*, unsigned int*);
-int gtl_IInputDevice_ResolveItemHandle(void*, void**, void*);
 void SetTransform(unsigned int, void*);
 void Engine_SetTextureStageState(unsigned int, unsigned int, void*);
 void Engine_SetTextureStageParameter(unsigned int, unsigned int, void*);
@@ -238,8 +253,12 @@ inline void CopyRenderWords(void* dst, const void* src, unsigned int pairs) {
     } while (--n != 0);
 }
 
-struct Blk18 { unsigned int w[18]; };
-struct Blk26 { unsigned int w[26]; };
+struct Blk18 {
+    unsigned int w[18];
+};
+struct Blk26 {
+    unsigned int w[26];
+};
 
 // Level-description fields used by this pass; the preceding 28 bytes are opaque.
 struct ProjectionTextureDescription {
@@ -252,28 +271,28 @@ typedef char ProjectionTextureDescription_size[(sizeof(ProjectionTextureDescript
 // These arrays are WORKING COPIES of templates, not the saved caller state.
 // Engine_SaveRenderState/RestoreRenderState own the external snapshot boundary.
 struct SixFaceRenderFrame {
-    void* destinationTexture;                // Render-target texture passed to the copy operation.
-    void* ambientColorAddress;                  // 0x1c
-    void* materialColorAddress;                  // 0x20
-    void* lightColorAddress;                  // 0x24
-    Col ambientColor;                // 0x28
-    Col materialColor;                // 0x2c
-    Col lightColor;                // 0x30
-    Col colorScratch;                // 0x34
-    unsigned int viewport[6];      // 0x38
-    unsigned char light[0x40];   // 0x50
-    unsigned char normalMatrix[0x40]; // 0x90
-    unsigned int textureTransform[16];    // 0xd0
-    unsigned char worldToView[0x40];// 0x110
-    unsigned char inverseView[0x40];// 0x150
-    unsigned int identityWorld[16];   // 0x190
-    unsigned int stageParameters[10];   // 0x1d0
-    unsigned int secondStageStates[16];   // 0x1f8
-    unsigned int firstStageStates[16];   // 0x238
-    ProjectionTextureDescription textureDescription;   // 0x278
-    unsigned int materialTemplate[26];   // 0x29c
-    unsigned int renderStates[18];   // 0x304
-    char pad1[0x14];           // tail
+    void* destinationTexture;                        // Render-target texture passed to the copy operation.
+    void* ambientColorAddress;                       // 0x1c
+    void* materialColorAddress;                      // 0x20
+    void* lightColorAddress;                         // 0x24
+    Col ambientColor;                                // 0x28
+    Col materialColor;                               // 0x2c
+    Col lightColor;                                  // 0x30
+    Col colorScratch;                                // 0x34
+    unsigned int viewport[6];                        // 0x38
+    unsigned char light[0x40];                       // 0x50
+    unsigned char normalMatrix[0x40];                // 0x90
+    unsigned int textureTransform[16];               // 0xd0
+    unsigned char worldToView[0x40];                 // 0x110
+    unsigned char inverseView[0x40];                 // 0x150
+    unsigned int identityWorld[16];                  // 0x190
+    unsigned int stageParameters[10];                // 0x1d0
+    unsigned int secondStageStates[16];              // 0x1f8
+    unsigned int firstStageStates[16];               // 0x238
+    ProjectionTextureDescription textureDescription; // 0x278
+    unsigned int materialTemplate[26];               // 0x29c
+    unsigned int renderStates[18];                   // 0x304
+    char pad1[0x14];                                 // tail
 };
 
 #pragma push
@@ -343,7 +362,7 @@ void SixFaceRenderer_RenderToTexture(void* destinationTexture, void** faceTextur
         SetTransform(2, f.textureTransform);
         SetTransform(3, f.textureTransform);
         PSMTX44Transpose(f.normalMatrix, s_sixFaceRenderResources.faceTransforms[i]);
-        GXLoadNrmMtxImm((const float(*)[4])f.normalMatrix, 0);
+        GXLoadNrmMtxImm((const float (*)[4])f.normalMatrix, 0);
         s_normalMatrixOverrideActive = 1;
         // White material/light, black ambient and a light along view -Z weight
         // each face through its transformed normals. Geometry is shared by faces.
@@ -382,17 +401,20 @@ void SixFaceRenderer_RenderToTexture(void* destinationTexture, void** faceTextur
         // Draw the face's triangle fan and strip into the same accumulation target.
         // lineVertices/lineIndices are legacy field names; 0xA0 is GX_TRIANGLEFAN.
         Engine_SetVertexStream(0, s_sixFaceRenderResources.lineVertices, 0, kFaceVertexStride);
-        DrawPrimitiveFromBoundBuffers(kGXTriangleFan, 0, GX_GetPrimitiveCount(s_sixFaceRenderResources.lineIndices, kGXTriangleFan));
+        DrawPrimitiveFromBoundBuffers(kGXTriangleFan, 0,
+                                      GX_GetPrimitiveCount(s_sixFaceRenderResources.lineIndices, kGXTriangleFan));
         Engine_SetVertexStream(0, s_sixFaceRenderResources.stripVertices, 0, kFaceVertexStride);
-        DrawPrimitiveFromBoundBuffers(kGXTriangleStrip, 0, GX_GetPrimitiveCount(s_sixFaceRenderResources.stripIndices, kGXTriangleStrip));
+        DrawPrimitiveFromBoundBuffers(kGXTriangleStrip, 0,
+                                      GX_GetPrimitiveCount(s_sixFaceRenderResources.stripIndices, kGXTriangleStrip));
     }
     // Phase 4: copy after all six contributions and restore the engine snapshot.
     // normalMatrixOverrideActive is explicitly cleared, not restored to its entry
     // value; direct GX lighting/matrix calls are outside the field layout above.
     // This routine is neither a nested snapshot nor a scoped GX-state guard.
     s_normalMatrixOverrideActive = 0;
-// The callee reads eleven integer arguments; the original call also loads an ignored f1.
-    ((void (*)(int, float, int, void*, int, int, int, int, int, int, int, int))Engine_CopyFramebufferToTexture)(0, kFloat_0_Framebuffer, 0, f.destinationTexture, 0, 0, 0, 0, 0, 0, 0, 0);
+    // The callee reads eleven integer arguments; the original call also loads an ignored f1.
+    ((void (*)(int, float, int, void*, int, int, int, int, int, int, int, int))Engine_CopyFramebufferToTexture)(
+        0, kFloat_0_Framebuffer, 0, f.destinationTexture, 0, 0, 0, 0, 0, 0, 0, 0);
     Engine_RestoreRenderState();
 }
 #pragma pop
@@ -442,7 +464,8 @@ void TextureProjection_SetupTintCombiner() {
 void* dtor_804359C4(void* p, short volatile deleting) {
     volatile void* self = p;
     if (self) {
-        volatile char* base = (char*)*(volatile void**)&AsGtlRecordDeque(self)->data + *(volatile int*)&AsGtlRecordDeque(self)->firstIndex * kRecordBytes;
+        volatile char* base = (char*)*(volatile void**)&AsGtlRecordDeque(self)->data +
+                              *(volatile int*)&AsGtlRecordDeque(self)->firstIndex * kRecordBytes;
         volatile char* cur = base + *(volatile int*)&AsGtlRecordDeque(self)->size * kRecordBytes;
         volatile void* unused27 = 0;
         volatile char* unused28 = 0;
@@ -454,7 +477,7 @@ void* dtor_804359C4(void* p, short volatile deleting) {
         (void)unused27;
         (void)unused28;
         *(volatile int*)&AsGtlRecordDeque(self)->size = 0;
-        GtlRecordDeque_DestroyStorageVolatile((void*)self, 0);
+        ((GtlRecordDeque*)self)->DestroyStorageVolatile(0);
         if (deleting > 0)
             __dl__FPv((void*)self);
     }
@@ -462,33 +485,33 @@ void* dtor_804359C4(void* p, short volatile deleting) {
 }
 
 // Copy a half-open range backwards into free slots before the deque front.
-void GtlRecordDeque_PrependRange(void* deque, char* volatile first, char* last) {
-    char* destination = (char*)AsGtlRecordDeque(deque)->data + AsGtlRecordDeque(deque)->firstIndex * kRecordBytes;
+void GtlRecordDeque::PrependRange(char* volatile first, char* last) {
+    char* destination = (char*)data + firstIndex * kRecordBytes;
     char* source = last;
     while (first < source) {
         source -= kRecordBytes;
         destination -= kRecordBytes;
-        GtlRecordDeque_CopyConstructElement(AsGtlRecordDeque(deque)->allocator, (unsigned int*)destination, (unsigned int*)source);
-        --AsGtlRecordDeque(deque)->firstIndex;
-        ++*(int*)&AsGtlRecordDeque(deque)->size;
+        CopyConstructElement(allocator, destination, source);
+        --firstIndex;
+        ++size;
     }
 }
 
 // Clear the deque count and free its storage, optionally deleting the container.
-void* GtlRecordDeque_DestroyStorage(void* deque, short deleting) {
-    void* self = deque;
+void* GtlRecordDeque::DestroyStorage(short deleting) {
+    void* self = this;
     short del = deleting;
     unsigned int oldSize = 0;
     unsigned char allocatorTag = 0;
     unsigned char copiedAllocatorTag = 0;
-    if (deque) {
-        if (AsGtlRecordDeque(deque)->data) {
-            void* data = AsGtlRecordDeque(deque)->data;
-            oldSize = AsGtlRecordDeque(deque)->size;
+    if (this) {
+        if (data) {
+            void* oldData = data;
+            oldSize = size;
             allocatorTag = 0;
-            AsGtlRecordDeque(deque)->size = oldSize - oldSize;
+            size = oldSize - oldSize;
             copiedAllocatorTag = allocatorTag;
-            gtl_Graphics_FreeWithCallback(data);
+            gtl_Graphics_FreeWithCallback(oldData);
         }
         if (del > 0)
             __dl__FPv(self);
@@ -498,16 +521,16 @@ void* GtlRecordDeque_DestroyStorage(void* deque, short deleting) {
 }
 
 // Release deque storage using the original volatile cleanup sequence.
-void* GtlRecordDeque_DestroyStorageVolatile(void* deque, short volatile deleting) {
-    void* self = deque;
+void* GtlRecordDeque::DestroyStorageVolatile(short volatile deleting) {
+    void* self = this;
     if (self) {
-        if (AsGtlRecordDeque(self)->data) {
-            volatile unsigned int* size = (volatile unsigned int*)(((char*)&AsGtlRecordDeque(self)->size));
+        if (data) {
+            volatile unsigned int* sizeWord = (volatile unsigned int*)&size;
             volatile unsigned char allocatorTag = 0;
-            *size = *size - *size;
+            *sizeWord = *sizeWord - *sizeWord;
             volatile unsigned char copiedAllocatorTag = allocatorTag;
             (void)copiedAllocatorTag;
-            gtl_Graphics_FreeWithCallback(AsGtlRecordDeque(self)->data);
+            gtl_Graphics_FreeWithCallback(data);
         }
         if (deleting > 0)
             __dl__FPv(self);
@@ -515,75 +538,83 @@ void* GtlRecordDeque_DestroyStorageVolatile(void* deque, short volatile deleting
     return self;
 }
 
+} // extern "C"
+
 // Refresh the controller channel's sample count and reapply its retained motor request.
-int gtl_IInputDevice_RefreshDriverState(void* device) {
-    VObj* driver = (VObj*)InputDriver_GetByProviderId(AsGtlInputDevice(device)->provider);
-    *(void**)&AsGtlInputDevice(device)->activeChannel = AsGtlInputDevice(device)->state;
-    AsGtlInputDevice(device)->deviceResult = driver->v06(AsGtlInputDevice(device)->state);
-    unsigned char motorRequest = AsGtlInputDevice(device)->motorEnabled;
-    driver = (VObj*)InputDriver_GetByProviderId(AsGtlInputDevice(device)->provider);
-    if (driver->v09(motorRequest, *(void**)&AsGtlInputDevice(device)->activeChannel))
-        AsGtlInputDevice(device)->motorEnabled = motorRequest;
+int gtl::IInputDevice::RefreshDriverState() {
+    VObj* driver = (VObj*)InputDriver_GetByProviderId(provider);
+    *(void**)&activeChannel = state;
+    deviceResult = driver->v06(state);
+    unsigned char motorRequest = motorEnabled;
+    driver = (VObj*)InputDriver_GetByProviderId(provider);
+    if (driver->v09(motorRequest, *(void**)&activeChannel))
+        motorEnabled = motorRequest;
     return 1;
 }
 
 // Delegate item enumeration when an input descriptor is installed.
-void* gtl_IInputDevice_EnumerateItems(void* device, void* a, void* b) {
-    if (*(int*)&AsGtlInputDevice(device)->descriptor == 0)
+void* gtl::IInputDevice::EnumerateItems(void* a, void* b) {
+    if (*(int*)&descriptor == 0)
         return 0;
-    return InputDriver_EnumerateItems(InputDriver_GetByProviderId(AsGtlInputDevice(device)->provider), a, b);
+    return InputDriver_EnumerateItems(InputDriver_GetByProviderId(provider), a, b);
 }
+
+extern "C" {
 
 struct Elem18 {
     unsigned int w[6];
 };
 
+} // extern "C"
+
 #pragma push
 #pragma use_frame_pointer on
 // Copy one 24-byte record; the allocator argument is unused for this record type.
-void GtlRecordDeque_CopyConstructElement(void* deque, unsigned int* destination, unsigned int* source) {
+void GtlRecordDeque::CopyConstructElement(void* allocator, void* destination, void* source) {
     if (destination)
         *(Elem18*)destination = *(Elem18*)source;
 }
 #pragma pop
 
 // Allocate storage for a checked number of 24-byte records and store the capacity.
-void GtlRecordDeque_AllocateStorage(void* deque, void* unused, unsigned int count) {
+void GtlRecordDeque::AllocateStorage(void* unused, unsigned int count) {
     unsigned int max = kMaxRecordCount;
-    unsigned int current = *(unsigned int*)&AsGtlRecordDeque(deque)->allocator;
-    unsigned int* oldData = (unsigned int*)AsGtlRecordDeque(deque)->data;
+    unsigned int current = *(unsigned int*)&allocator;
+    unsigned int* oldData = (unsigned int*)data;
     if (count > max)
         std_ThrowLengthError();
-    void* data = gtl_Graphics_AllocateWithCallback(count * kRecordBytes);
-    AsGtlRecordDeque(deque)->data = data;
-    AsGtlRecordDeque(deque)->capacity = count;
+    void* newData = gtl_Graphics_AllocateWithCallback(count * kRecordBytes);
+    data = newData;
+    capacity = count;
     (void)current;
     (void)oldData;
 }
 
 // Release the input device only for a positive deleting-destructor flag.
-void* gtl_IInputDevice_dtor(void* device, int flag) {
-    if (device && flag > 0)
-        __dl__Q23gtl25IInputResourceMemOperatorFPv(device);
-    return device;
+void* gtl::IInputDevice::Destroy(int deleting) {
+    if (this && deleting > 0)
+        __dl__Q23gtl25IInputResourceMemOperatorFPv(this);
+    return this;
 }
 
 // Initialize an empty deque with the supplied allocator.
-void GtlRecordDeque_Initialize(GtlRecordDeque* p, void* allocator) {
-    p->data = 0;
-    p->size = 0;
-    p->capacity = 0;
-    p->allocator = allocator;
-    p->firstIndex = 0;
+void GtlRecordDeque::Initialize(void* allocator) {
+    data = 0;
+    size = 0;
+    capacity = 0;
+    this->allocator = allocator;
+    firstIndex = 0;
 }
 
 // Install a descriptor and ask the provider to rebuild its per-item handle mapping.
-int gtl_IInputDevice_SetDescriptor(void* device, int value) {
-    *(int*)&AsGtlInputDevice(device)->descriptor = value;
-    void* driverResult = InputDriver_GetByProviderId(AsGtlInputDevice(device)->provider);
-    InputDriver_BuildDescriptorMapping(driverResult, ((char*)&AsGtlInputDevice(device)->handles), *(int*)&AsGtlInputDevice(device)->descriptor);
+int gtl::IInputDevice::SetDescriptor(int value) {
+    *(int*)&descriptor = value;
+    void* driverResult = InputDriver_GetByProviderId(provider);
+    InputDriver_BuildDescriptorMapping(driverResult, ((char*)&handles), *(int*)&descriptor);
     return 1;
 }
+
+extern "C" {
 
 // Return success for this no-op input-device operation; its caller-specific role is unconfirmed.
 int InputDevice_NoOpSuccess_80435D34() {
@@ -595,32 +626,34 @@ int InputDevice_NoOpSuccess_80435FB4() {
     return 1;
 }
 
+} // extern "C"
+
 // Validate and clear the output buffer, then ask the provider to fill it unless unavailable.
-int gtl_IInputDevice_ReadState(void* device, unsigned int stateBytes, unsigned int outputAddress) {
+int gtl::IInputDevice::ReadState(unsigned int stateBytes, unsigned int outputAddress) {
     if (!outputAddress)
         return 0;
-    void* item = AsGtlInputDevice(device)->descriptor;
+    void* item = descriptor;
     if (!item)
         return 0;
-    if (((GtlInputDescriptor*)item)->stateSizeBytes != stateBytes) // gtl_IInputDevice_ReadState: +0xC
+    if (((GtlInputDescriptor*)item)->stateSizeBytes != stateBytes) // +0xC: size of the state record
         return 0;
     Memory_Clear((void*)outputAddress, stateBytes);
-    if (AsGtlInputDevice(device)->activeChannel == kUnavailableInputChannel)
+    if (activeChannel == kUnavailableInputChannel)
         return 0;
-    void* driverResult = InputDriver_GetByProviderId(AsGtlInputDevice(device)->provider);
-    return ((VObj*)driverResult)->v05(outputAddress, AsGtlInputDevice(device)->descriptor, AsGtlInputDevice(device)->activeChannel);
+    void* driverResult = InputDriver_GetByProviderId(provider);
+    return ((VObj*)driverResult)->v05(outputAddress, descriptor, activeChannel);
 }
 
 // Read the query in queryAndValue, resolve its provider handle, then write the requested payload.
 // Requires an installed descriptor and room for InputItemOutput (24 bytes).
 // Resolve failure returns 0 without changing payload; success returns 1 even
 // for an unknown valueKind, which leaves both payload words unchanged.
-int gtl_IInputDevice_ReadItemDataByKind(void* device, int valueKind, void* queryAndValue) {
+int gtl::IInputDevice::ReadItemDataByKind(int valueKind, void* queryAndValue) {
     void* handle = 0;
-    if (!gtl_IInputDevice_ResolveItemHandle(device, &handle, queryAndValue))
+    if (!ResolveItemHandle(&handle, queryAndValue))
         return 0;
-    void* driverResult = InputDriver_GetByProviderId(AsGtlInputDevice(device)->provider);
-    void* data = ((VObj*)driverResult)->v02(handle, AsGtlInputDevice(device)->activeChannel);
+    void* driverResult = InputDriver_GetByProviderId(provider);
+    void* data = ((VObj*)driverResult)->v02(handle, activeChannel);
     switch (valueKind) {
     case kInputButton:
         ((InputItemOutput*)queryAndValue)->value = ((InputItemValues*)data)->button;
@@ -637,18 +670,20 @@ int gtl_IInputDevice_ReadItemDataByKind(void* device, int valueKind, void* query
 }
 
 // Install the provider/channel pair and initialize every descriptor handle to the default sentinel.
-void gtl_IInputDevice_Ctor(void* device, const unsigned int* providerAndChannel) {
-    *(unsigned long long*)&AsGtlInputDevice(device)->provider = *(unsigned long long*)providerAndChannel;
-    AsGtlInputDevice(device)->unk_0 = 1;
-    AsGtlInputDevice(device)->vtbl = &__vt__Q23gtl12IInputDevice;
-    AsGtlInputDevice(device)->activeChannel = kUnavailableInputChannel;
-    *(int*)&AsGtlInputDevice(device)->descriptor = 0;
-    *(int*)&AsGtlInputDevice(device)->deviceResult = 0;
-    AsGtlInputDevice(device)->motorEnabled = 0;
-    void** descriptorItem = (void**)AsGtlInputDevice(device)->handles;
+void gtl::IInputDevice::Init(const unsigned int* providerAndChannel) {
+    *(unsigned long long*)&provider = *(unsigned long long*)providerAndChannel;
+    unk_0 = 1;
+    vtbl = &__vt__Q23gtl12IInputDevice;
+    activeChannel = kUnavailableInputChannel;
+    *(int*)&descriptor = 0;
+    *(int*)&deviceResult = 0;
+    motorEnabled = 0;
+    void** descriptorItem = (void**)handles;
     for (int i = 0; i < kInputHandleCount; ++i)
         descriptorItem[i] = s_defaultInputItemHandle;
 }
+
+extern "C" {
 
 // Exchange two pointer values.
 void Pointer_Swap(void** a, void** b) {
@@ -657,17 +692,19 @@ void Pointer_Swap(void** a, void** b) {
     *b = temp;
 }
 
+} // extern "C"
+
 // Resolve an exact key or the Nth descriptor matching a type mask to its provider handle.
 // Query type 1: keyOrMaskIndex is the full 32-bit exact key.
 // Query type 2: bits 7..0 are an intersecting type mask, bits 23..8 a ZERO-BASED
 // ordinal among matches; bits 31..24 are ignored. Handles follow descriptor order.
 // Requires descriptor != null and valid query/output addresses; failure leaves
 // *handleOut untouched. The returned handle is borrowed from the provider map.
-int gtl_IInputDevice_ResolveItemHandle(void* device, void** handleOut, void* itemQuery) {
-    int queryKind = ((GtlInputItemQuery*)itemQuery)->type; // gtl_IInputDevice_ResolveItemHandle: +0xC
-    void* descriptor = AsGtlInputDevice(device)->descriptor;
-    unsigned int* descriptorItems = ((GtlInputDescriptor*)descriptor)->items; // +0x14
-    unsigned int itemCount = ((GtlInputDescriptor*)descriptor)->itemCount; // +0x10
+int gtl::IInputDevice::ResolveItemHandle(void** handleOut, void* itemQuery) {
+    int queryKind = ((GtlInputItemQuery*)itemQuery)->type; // +0xC
+    void* descriptorValue = descriptor;
+    unsigned int* descriptorItems = ((GtlInputDescriptor*)descriptorValue)->items; // +0x14
+    unsigned int itemCount = ((GtlInputDescriptor*)descriptorValue)->itemCount;    // +0x10
     unsigned int providerHandle = kInvalidInputHandle;
     if (queryKind == kInputQueryMaskedOrdinal) {
         unsigned int packedQuery = ((GtlInputItemQuery*)itemQuery)->keyOrMaskIndex; // +8
@@ -678,7 +715,7 @@ int gtl_IInputDevice_ResolveItemHandle(void* device, void** handleOut, void* ite
         for (unsigned int i = 0; i < itemCount; ++i) {
             if (mask & (descriptorItem->typeMask & kInputTypeMask)) { // +8
                 if (matchOrdinal == matches) {
-                    providerHandle = AsGtlInputDevice(device)->handles[i];
+                    providerHandle = handles[i];
                     break;
                 }
                 ++matches;
@@ -690,7 +727,7 @@ int gtl_IInputDevice_ResolveItemHandle(void* device, void** handleOut, void* ite
         GtlInputDescriptorItem* descriptorItem = (GtlInputDescriptorItem*)descriptorItems;
         for (unsigned int i = 0; i < itemCount; ++i) {
             if (itemKey == descriptorItem->key) { // +4
-                providerHandle = AsGtlInputDevice(device)->handles[i];
+                providerHandle = handles[i];
                 break;
             }
             ++descriptorItem;
@@ -703,38 +740,54 @@ int gtl_IInputDevice_ResolveItemHandle(void* device, void** handleOut, void* ite
 }
 
 // Grow capacity by the larger of the request and a size-dependent increment, with overflow checks.
-unsigned int GtlRecordDeque_CalculateGrowthCapacity(void* deque, unsigned int additionalCount) {
+unsigned int GtlRecordDeque::CalculateGrowthCapacity(unsigned int additionalCount) {
     volatile unsigned int max = kMaxRecordCount;
-    unsigned int capacity = AsGtlRecordDeque(deque)->capacity;
-    if (additionalCount > max - capacity)
+    unsigned int current = capacity;
+    if (additionalCount > max - current)
         std_ThrowLengthError();
     volatile unsigned int three = 3;
     unsigned int third = max / three;
-    if (capacity < third) {
+    if (current < third) {
         volatile unsigned int five = 5;
-        unsigned int growth = ((capacity + 1) * three) / five;
+        unsigned int growth = ((current + 1) * three) / five;
         unsigned int* chosen = growth < additionalCount ? &additionalCount : &growth;
-        return capacity + *chosen;
-    } else if (capacity < third * 2) {
-        unsigned int growth = (capacity + 1) / 2;
+        return current + *chosen;
+    } else if (current < third * 2) {
+        unsigned int growth = (current + 1) / 2;
         unsigned int* chosen = growth < additionalCount ? &additionalCount : &growth;
-        return capacity + *chosen;
+        return current + *chosen;
     }
     return max;
 }
+
+extern "C" {
 
 // Restore transforms, stage states, sampler parameters and texture for the two selected stages.
 void Engine_ApplySelectedTextureStageState() {
     unsigned int firstStage = *(unsigned int*)(s_textureProjectionState + kProjectionFirstStage);
     unsigned int secondStage = *(unsigned int*)(s_textureProjectionState + kProjectionSecondStage);
-    SetTransform(firstStage + kTransformFirstTexture, s_renderStateSnapshot + (firstStage + kTransformFirstTexture) * kSnapshotMatrixBytes + kSnapshotTransforms);
-    SetTransform(secondStage + kTransformFirstTexture, s_renderStateSnapshot + (secondStage + kTransformFirstTexture) * kSnapshotMatrixBytes + kSnapshotTransforms);
-    Engine_SetTextureStageState(firstStage, kTextureStateProjectionCount, *(void**)(s_renderStateSnapshot + firstStage * kSnapshotStageBytes + kSnapshotProjectionCount));
-    Engine_SetTextureStageState(secondStage, kTextureStateProjectionCount, *(void**)(s_renderStateSnapshot + secondStage * kSnapshotStageBytes + kSnapshotProjectionCount));
-    Engine_SetTextureStageState(firstStage, kTextureStateCoordinateSource, *(void**)(s_renderStateSnapshot + firstStage * kSnapshotStageBytes + kSnapshotCoordinateSource));
-    Engine_SetTextureStageState(secondStage, kTextureStateCoordinateSource, *(void**)(s_renderStateSnapshot + secondStage * kSnapshotStageBytes + kSnapshotCoordinateSource));
-    Engine_SetTextureStageParameter(secondStage, 0, *(void**)(s_renderStateSnapshot + secondStage * kSnapshotSamplerBytes + kSnapshotSampler0));
-    Engine_SetTextureStageParameter(secondStage, 1, *(void**)(s_renderStateSnapshot + secondStage * kSnapshotSamplerBytes + kSnapshotSampler1));
+    SetTransform(firstStage + kTransformFirstTexture, s_renderStateSnapshot +
+                                                          (firstStage + kTransformFirstTexture) * kSnapshotMatrixBytes +
+                                                          kSnapshotTransforms);
+    SetTransform(secondStage + kTransformFirstTexture,
+                 s_renderStateSnapshot + (secondStage + kTransformFirstTexture) * kSnapshotMatrixBytes +
+                     kSnapshotTransforms);
+    Engine_SetTextureStageState(
+        firstStage, kTextureStateProjectionCount,
+        *(void**)(s_renderStateSnapshot + firstStage * kSnapshotStageBytes + kSnapshotProjectionCount));
+    Engine_SetTextureStageState(
+        secondStage, kTextureStateProjectionCount,
+        *(void**)(s_renderStateSnapshot + secondStage * kSnapshotStageBytes + kSnapshotProjectionCount));
+    Engine_SetTextureStageState(
+        firstStage, kTextureStateCoordinateSource,
+        *(void**)(s_renderStateSnapshot + firstStage * kSnapshotStageBytes + kSnapshotCoordinateSource));
+    Engine_SetTextureStageState(
+        secondStage, kTextureStateCoordinateSource,
+        *(void**)(s_renderStateSnapshot + secondStage * kSnapshotStageBytes + kSnapshotCoordinateSource));
+    Engine_SetTextureStageParameter(
+        secondStage, 0, *(void**)(s_renderStateSnapshot + secondStage * kSnapshotSamplerBytes + kSnapshotSampler0));
+    Engine_SetTextureStageParameter(
+        secondStage, 1, *(void**)(s_renderStateSnapshot + secondStage * kSnapshotSamplerBytes + kSnapshotSampler1));
     Engine_SetTextureStageResource(secondStage, ((void**)s_renderStateSnapshot)[secondStage]);
 }
 
@@ -753,12 +806,13 @@ void Engine_UpdateTextureProjectionMatrices() {
     Engine_GetTransform(kTransformProjection, projection);
     for (int i = 0; i < 16; ++i)
         textureProjection[i] = projection[i];
-    textureProjection[10]=-1.0f;
-    textureProjection[14]=0.0f;
+    textureProjection[10] = -1.0f;
+    textureProjection[14] = 0.0f;
     Mtx44_SetScale(clipScale, 0.5f, -0.5f, 1.0f);
     Mtx44_SetTranslation(clipTranslation, 0.5f, 0.5f, 0.0f);
     PSMTX44Concat(clipScale, clipScale, clipTranslation);
-    Mtx44_Concat3(((TextureProjectionState*)s_textureProjectionState)->textureMatrix, view, textureProjection, clipScale);
+    Mtx44_Concat3(((TextureProjectionState*)s_textureProjectionState)->textureMatrix, view, textureProjection,
+                  clipScale);
     // Write A=projection[10], B=projection[14], r=depthScale, d=depthOffset.
     // r=(A-1)/(A+1) for A<0 (reciprocal otherwise), d=B*(1-r)/r.
     // Then s=d*r, span=s-d; coefficients are a=s/span, b=s*d/span.
@@ -778,24 +832,23 @@ void Engine_UpdateTextureProjectionMatrices() {
     // encoding is separate from world distance and from UV's Y-origin flip.
     // Requires A+1, A-1, r, span nonzero and finite (plus z!=0 at sampling).
     // No guards/clamps/status: unsupported matrices publish nonfinite values.
-    float projectionZ=projection[10], depth=projection[14];
-    float depthScale,depthOffset;
+    float projectionZ = projection[10], depth = projection[14];
+    float depthScale, depthOffset;
     if (projectionZ < 0.0f) {
-        depthScale=(projectionZ-1.0f)/(1.0f+projectionZ);
-        depthOffset=(depth-depth*((projectionZ-1.0f)/(1.0f+projectionZ)))/depthScale;
+        depthScale = (projectionZ - 1.0f) / (1.0f + projectionZ);
+        depthOffset = (depth - depth * ((projectionZ - 1.0f) / (1.0f + projectionZ))) / depthScale;
+    } else {
+        depthScale = (1.0f + projectionZ) / (projectionZ - 1.0f);
+        depthOffset = (depth - depth * ((1.0f + projectionZ) / (projectionZ - 1.0f))) / depthScale;
     }
-    else {
-        depthScale=(1.0f+projectionZ)/(projectionZ-1.0f);
-        depthOffset=(depth-depth*((1.0f+projectionZ)/(projectionZ-1.0f)))/depthScale;
-    }
-    float scaledDepth=depthOffset*depthScale, depthSpan=scaledDepth-depthOffset;
-    float* depthMatrix=(float*)(((TextureProjectionState*)s_textureProjectionState)->depthMatrix);
+    float scaledDepth = depthOffset * depthScale, depthSpan = scaledDepth - depthOffset;
+    float* depthMatrix = (float*)(((TextureProjectionState*)s_textureProjectionState)->depthMatrix);
     Mtx44_SetScale(depthMatrix, 0.0f, 0.0f, 0.0f);
-    depthMatrix[8]=scaledDepth/depthSpan;
-    depthMatrix[9]=(float)kDepthByteScale*depthMatrix[8];
-    depthMatrix[12]=scaledDepth*depthOffset/depthSpan;
-    depthMatrix[13]=(float)kDepthByteScale*depthMatrix[12];
-    depthMatrix[10]=1.0f;
+    depthMatrix[8] = scaledDepth / depthSpan;
+    depthMatrix[9] = (float)kDepthByteScale * depthMatrix[8];
+    depthMatrix[12] = scaledDepth * depthOffset / depthSpan;
+    depthMatrix[13] = (float)kDepthByteScale * depthMatrix[12];
+    depthMatrix[10] = 1.0f;
     PSMTX44Concat(depthMatrix, view, depthMatrix);
 }
 
@@ -803,40 +856,51 @@ void Engine_UpdateTextureProjectionMatrices() {
 void TextureProjection_ApplyTwoStageTransforms() {
     // Save the selected stages first; Engine_ApplySelectedTextureStageState is
     // the matching restore. Generated coordinates use position, three components.
-    *(unsigned int*)(s_textureProjectionState+kProjectionFirstStage)=0;
-    *(unsigned int*)(s_textureProjectionState+kProjectionSecondStage)=1;
-    unsigned int firstStage=*(volatile unsigned int*)(s_textureProjectionState+kProjectionFirstStage), secondStage=*(volatile unsigned int*)(s_textureProjectionState+kProjectionSecondStage);
-    unsigned int firstTransform=firstStage+kTransformFirstTexture, secondTransform=secondStage+kTransformFirstTexture;
-    Engine_GetTransform(firstTransform, s_renderStateSnapshot+firstTransform*kSnapshotMatrixBytes+kSnapshotTransforms);
-    Engine_GetTransform(secondTransform, s_renderStateSnapshot+secondTransform*kSnapshotMatrixBytes+kSnapshotTransforms);
-    Engine_GetTextureStageState(firstStage,kTextureStateProjectionCount,s_renderStateSnapshot+firstStage*kSnapshotStageBytes+kSnapshotProjectionCount);
-    Engine_GetTextureStageState(secondStage,kTextureStateProjectionCount,s_renderStateSnapshot+secondStage*kSnapshotStageBytes+kSnapshotProjectionCount);
-    Engine_GetTextureStageState(firstStage,kTextureStateCoordinateSource,s_renderStateSnapshot+firstStage*kSnapshotStageBytes+kSnapshotCoordinateSource);
-    Engine_GetTextureStageState(secondStage,kTextureStateCoordinateSource,s_renderStateSnapshot+secondStage*kSnapshotStageBytes+kSnapshotCoordinateSource);
-    Engine_GetRenderStateRowField(secondStage,0,s_renderStateSnapshot+secondStage*kSnapshotSamplerBytes+kSnapshotSampler0);
-    Engine_GetRenderStateRowField(secondStage,1,s_renderStateSnapshot+secondStage*kSnapshotSamplerBytes+kSnapshotSampler1);
-    Engine_GetTextureStageResource(secondStage,s_renderStateSnapshot+secondStage*4);
+    *(unsigned int*)(s_textureProjectionState + kProjectionFirstStage) = 0;
+    *(unsigned int*)(s_textureProjectionState + kProjectionSecondStage) = 1;
+    unsigned int firstStage = *(volatile unsigned int*)(s_textureProjectionState + kProjectionFirstStage),
+                 secondStage = *(volatile unsigned int*)(s_textureProjectionState + kProjectionSecondStage);
+    unsigned int firstTransform = firstStage + kTransformFirstTexture,
+                 secondTransform = secondStage + kTransformFirstTexture;
+    Engine_GetTransform(firstTransform,
+                        s_renderStateSnapshot + firstTransform * kSnapshotMatrixBytes + kSnapshotTransforms);
+    Engine_GetTransform(secondTransform,
+                        s_renderStateSnapshot + secondTransform * kSnapshotMatrixBytes + kSnapshotTransforms);
+    Engine_GetTextureStageState(firstStage, kTextureStateProjectionCount,
+                                s_renderStateSnapshot + firstStage * kSnapshotStageBytes + kSnapshotProjectionCount);
+    Engine_GetTextureStageState(secondStage, kTextureStateProjectionCount,
+                                s_renderStateSnapshot + secondStage * kSnapshotStageBytes + kSnapshotProjectionCount);
+    Engine_GetTextureStageState(firstStage, kTextureStateCoordinateSource,
+                                s_renderStateSnapshot + firstStage * kSnapshotStageBytes + kSnapshotCoordinateSource);
+    Engine_GetTextureStageState(secondStage, kTextureStateCoordinateSource,
+                                s_renderStateSnapshot + secondStage * kSnapshotStageBytes + kSnapshotCoordinateSource);
+    Engine_GetRenderStateRowField(secondStage, 0,
+                                  s_renderStateSnapshot + secondStage * kSnapshotSamplerBytes + kSnapshotSampler0);
+    Engine_GetRenderStateRowField(secondStage, 1,
+                                  s_renderStateSnapshot + secondStage * kSnapshotSamplerBytes + kSnapshotSampler1);
+    Engine_GetTextureStageResource(secondStage, s_renderStateSnapshot + secondStage * 4);
     // Convert the previously built view/projection matrices for the current world
     // transform, then cancel current world/view as required by position texgen.
-    unsigned char world[64], textureProjection[64], depthProjection[64], inverseWorld[64], inverseView[64], view[64], viewToWorld[64];
-    Engine_GetTransform(kTransformWorld,world);
-    PSMTX44Concat(textureProjection,world,s_textureProjectionState+4);
-    PSMTX44Concat(depthProjection,world,s_textureProjectionState+kProjectionDepthMatrix);
-    Engine_GetTransform(kTransformView,view);
-    Mtx44_InvertLegacyCofactors(inverseWorld,0,world);
-    Mtx44_InvertLegacyCofactors(inverseView,0,view);
-    PSMTX44Concat(viewToWorld,inverseView,inverseWorld);
-    PSMTX44Concat(textureProjection,viewToWorld,textureProjection);
-    PSMTX44Concat(depthProjection,viewToWorld,depthProjection);
-    SetTransform(kTransformFirstTexture,textureProjection);
-    SetTransform(kTransformFirstTexture + 1,depthProjection);
-    Engine_SetTextureStageState(firstStage,kTextureStateProjectionCount,(void*)3);
-    Engine_SetTextureStageState(secondStage,kTextureStateProjectionCount,(void*)3);
-    Engine_SetTextureStageState(firstStage,kTextureStateCoordinateSource,(void*)kProjectedPositionCoordinates);
-    Engine_SetTextureStageState(secondStage,kTextureStateCoordinateSource,(void*)kProjectedPositionCoordinates);
-    Engine_SetTextureStageParameter(secondStage,0,(void*)0);
-    Engine_SetTextureStageParameter(secondStage,1,(void*)1);
-    Engine_SetTextureStageResource(secondStage,*(void**)s_textureProjectionState);
+    unsigned char world[64], textureProjection[64], depthProjection[64], inverseWorld[64], inverseView[64], view[64],
+        viewToWorld[64];
+    Engine_GetTransform(kTransformWorld, world);
+    PSMTX44Concat(textureProjection, world, s_textureProjectionState + 4);
+    PSMTX44Concat(depthProjection, world, s_textureProjectionState + kProjectionDepthMatrix);
+    Engine_GetTransform(kTransformView, view);
+    Mtx44_InvertLegacyCofactors(inverseWorld, 0, world);
+    Mtx44_InvertLegacyCofactors(inverseView, 0, view);
+    PSMTX44Concat(viewToWorld, inverseView, inverseWorld);
+    PSMTX44Concat(textureProjection, viewToWorld, textureProjection);
+    PSMTX44Concat(depthProjection, viewToWorld, depthProjection);
+    SetTransform(kTransformFirstTexture, textureProjection);
+    SetTransform(kTransformFirstTexture + 1, depthProjection);
+    Engine_SetTextureStageState(firstStage, kTextureStateProjectionCount, (void*)3);
+    Engine_SetTextureStageState(secondStage, kTextureStateProjectionCount, (void*)3);
+    Engine_SetTextureStageState(firstStage, kTextureStateCoordinateSource, (void*)kProjectedPositionCoordinates);
+    Engine_SetTextureStageState(secondStage, kTextureStateCoordinateSource, (void*)kProjectedPositionCoordinates);
+    Engine_SetTextureStageParameter(secondStage, 0, (void*)0);
+    Engine_SetTextureStageParameter(secondStage, 1, (void*)1);
+    Engine_SetTextureStageResource(secondStage, *(void**)s_textureProjectionState);
 }
 
 } // extern "C"

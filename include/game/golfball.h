@@ -17,40 +17,40 @@
 // Event 1 carries contactNormal; 3 carries an object-hit sound; 5 starts booster warp.
 // Event 2/4 and the subkind domain retain numeric names pending stronger evidence.
 struct sExpected {
-    WVector m_pos;               // +00: world XYZ position (+Y up)
-    WVector velocity;            // +0C: world velocity
-    float rotation[2];          // +18: live ball's rotation pair
-    char eventSoundName[0x40];   // +20: storage bounded by the event bytes
+    WVector m_pos;                         // +00: world XYZ position (+Y up)
+    WVector velocity;                      // +0C: world velocity
+    float rotation[2];                     // +18: live ball's rotation pair
+    char eventSoundName[0x40];             // +20: storage bounded by the event bytes
     unsigned char eventKind, eventSubkind; // +60, +61
     char pad_062[2];
-    WVector contactNormal;       // +64
-    int motionState;             // +70: copy of live m_state
+    WVector contactNormal; // +64
+    int motionState;       // +70: copy of live m_state
 };
 typedef char ShotSamplePublicSize[sizeof(sExpected) == 0x74 ? 1 : -1];
 
 class CGolfBall {
 public:
-    sExpected* PreData(int index);  // PreData__9CGolfBallFi
+    sExpected* PreData(int index); // PreData__9CGolfBallFi
 
-    WVector m_pos;                  // 0x00 [Reset] 12-byte copy from the argument
-    WVector m_velocity;             // 0x0C [Reset] Vec3_Zero(this + 0xC)
-    int m_state;                    // 0x18 [Reset] = 0
+    WVector m_pos;      // 0x00 [Reset] 12-byte copy from the argument
+    WVector m_velocity; // 0x0C [Reset] Vec3_Zero(this + 0xC)
+    int m_state;        // 0x18 [Reset] = 0
     char unk1C[0x28 - 0x1C];
-    int groundTriangleHandle;      // +28: FindGroundTriangleAtPoint; -1 means off mesh
-    float m_rotation[2];            // 0x2C [Reset] Vec2_Zero(this + 0x2C)
-    float m_initCurve;               // 0x34 [Reset] = constant (all four floats get the same constant)
-    float m_initSpin;               // 0x38 [Reset]
-    float m_curve;                  // 0x3C [Reset]
-    float m_spin;                   // 0x40 [Reset]
-    int m_powerFlags;               // 0x44 [Reset] = 0
-    int m_flags;                    // 0x48 [Reset] = 0
-    char unk4C[0x58 - 0x4C];        // not touched by Reset (YaPang: m_spinImpulse WVector)
-    unsigned char m_recoveryRequired;         // 0x58 [Reset] = 0
-    unsigned char m_groundType;     // 0x59 [Reset] = 1
+    int groundTriangleHandle;         // +28: FindGroundTriangleAtPoint; -1 means off mesh
+    float m_rotation[2];              // 0x2C [Reset] Vec2_Zero(this + 0x2C)
+    float m_initCurve;                // 0x34 [Reset] = constant (all four floats get the same constant)
+    float m_initSpin;                 // 0x38 [Reset]
+    float m_curve;                    // 0x3C [Reset]
+    float m_spin;                     // 0x40 [Reset]
+    int m_powerFlags;                 // 0x44 [Reset] = 0
+    int m_flags;                      // 0x48 [Reset] = 0
+    char unk4C[0x58 - 0x4C];          // not touched by Reset (YaPang: m_spinImpulse WVector)
+    unsigned char m_recoveryRequired; // 0x58 [Reset] = 0
+    unsigned char m_groundType;       // 0x59 [Reset] = 1
     char unk5A[2];
-    int m_lie;                      // 0x5C [Reset] = 0
-    int m_shotStage;                // 0x60 [Reset] = 0
-    int m_preDataCount;             // 0x64 [Reset] = 0; [PreData] highest valid record index (clamp), [mgr] ++
+    int m_lie;          // 0x5C [Reset] = 0
+    int m_shotStage;    // 0x60 [Reset] = 0
+    int m_preDataCount; // 0x64 [Reset] = 0; [PreData] highest valid record index (clamp), [mgr] ++
     union {
         int m_eventPreDataIndex[16]; // legacy extent includes the timing word
         struct {
@@ -58,27 +58,39 @@ public:
             float simulationSeconds; // +A4: launch-loop simulation clock
         };
     }; // +68..+A3 [Reset] = -1; +A4 is simulation time, not an event index
-    int m_contactMaterialIndex;    // 0xA8 [Reset] = -1
-    unsigned char m_bounceCount;    // 0xAC [Reset] = 0
+    int m_contactMaterialIndex;  // 0xA8 [Reset] = -1
+    unsigned char m_bounceCount; // 0xAC [Reset] = 0
     char unkAD;
-    short m_firstContactId;         // 0xAE [Reset] = -1
-    int m_firstContactIndex;        // 0xB0 [Reset] = -1
-    short m_lastContactId;          // 0xB4 [Reset] = -1
+    short m_firstContactId;  // 0xAE [Reset] = -1
+    int m_firstContactIndex; // 0xB0 [Reset] = -1
+    short m_lastContactId;   // 0xB4 [Reset] = -1
     char unkB6[2];
-    int m_lastContactIndex;         // 0xB8 [Reset] = -1
-    float m_mass;                   // 0xBC [ctor] = constant (YaPang m_mass)
-    float m_radius;                 // 0xC0 [ctor] = constant (YaPang m_radius)
-    sExpected m_preData[900];       // 0xC4 [PreData] 0x74-byte records; [Reset] memset(this+0xC4, 0, 0x197D0)
-    sExpected* m_pPreDataOverflow;  // 0x19894 [PreData] records >= 900 live here, [ctor] = 0; [Reset] freed (new[] cookie at -0x10)
-    unsigned char m_overflowBlocks; // 0x19898 [Reset] = 0; [CGolfBall_GetOrAllocatePreDataAt] grows the buffer in blocks of 0x3C records
+    int m_lastContactIndex;   // 0xB8 [Reset] = -1
+    float m_mass;             // 0xBC [ctor] = constant (YaPang m_mass)
+    float m_radius;           // 0xC0 [ctor] = constant (YaPang m_radius)
+    sExpected m_preData[900]; // 0xC4 [PreData] 0x74-byte records; [Reset] memset(this+0xC4, 0, 0x197D0)
+    sExpected*
+        m_pPreDataOverflow; // 0x19894 [PreData] records >= 900 live here, [ctor] = 0; [Reset] freed (new[] cookie at -0x10)
+    unsigned char
+        m_overflowBlocks; // 0x19898 [Reset] = 0; [CGolfBall_GetOrAllocatePreDataAt] grows the buffer in blocks of 0x3C records
     char unk19899[3];
     union {
         unsigned char m_holeInCrypt[16];
-        struct { int holeInEncodedValue, holeInAddressMix, holeInKey; char holeInTail[4]; };
+        struct {
+            int holeInEncodedValue, holeInAddressMix, holeInKey;
+            char holeInTail[4];
+        };
     }; // +1989C: obfuscated hole-in value block
-                                     //   [Reset] writes ~(0 ^ word@0x198A4) at 0x1989C and the 4 bytes at 0x198A0;
-                                     //   [ctor] fills 0x198A4 (u32), 0x198A8 (u16), 0x198AA (u8) with random bytes
+    //   [Reset] writes ~(0 ^ word@0x198A4) at 0x1989C and the 4 bytes at 0x198A0;
+    //   [ctor] fills 0x198A4 (u32), 0x198A8 (u16), 0x198AA (u8) with random bytes
     CGolfBall();
+
+    void* NewPreData();
+    void ClearBuffer();
+    void* GetOrAllocatePreDataAt(int index);
+
+    void Reset(void* arg);
+    float GetRadius();
 };
 
 // Global accessor: lazily creates the one ball manager. static_R.sel: GolfBall__Fv.

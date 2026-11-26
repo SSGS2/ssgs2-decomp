@@ -1,166 +1,201 @@
-// CPangInfo: partial layout used by the methods that reference it.
-// Non-virtual layout view; unknown meanings retain their offset names.
+// CPangInfo: the Pang reward presentation in the HUD.
+//
+// It counts the earned Pang and bonus Pang up, schedules one entry per reward
+// category, and draws the totals and the reward banners.
+//
+// The class is not declared with virtual functions: its vtable comes from the
+// original data, so `vtbl` is spelled out as a member.
 #ifndef CLASSES_CPANGINFO_H
 #define CLASSES_CPANGINFO_H
 
 #include "game/types.h"
+#include "classes/CInfoBase.h"
 
-class CPangInfo {
+class CPangInfo : public CInfoBase {
 public:
-    char pad_000[0xc]; // 0x0
-    unsigned int textColor; // 0xc: CPangInfo_Draw
-    char pad_010[0x4]; // 0x10
-    void* textBuffer; // 0x14: CPangInfo_dtor, CPangInfo_Draw
-    void* textRenderer; // 0x18: CPangInfo_Draw
-    char pad_01C[0x4]; // 0x1c
-    unsigned int flags; // 0x20: CPangInfo_Draw, CPangInfo_CalculateShotRewards, CPangInfo_ResetPangAndBonusAnimation
-    int countingSoundAlias; // 0x24: CPangInfo_ResetPangAndBonusAnimation, CPangInfo_AnimateRewardEntries
-    int earnedPang; // 0x28: CPangInfo_UpdateShotRewardsAndBonuses, CPangInfo_CalculateShotRewards, CPangInfo_ResetPangAndBonusAnimation
-    int earnedBonusPang; // 0x2c: CPangInfo_UpdateShotRewardsAndBonuses, CPangInfo_CalculateShotRewards, CPangInfo_ResetPangAndBonusAnimation
-    unsigned int startingPang; // 0x30: CPangInfo_ResetBonusAnimations
-    unsigned int startingBonusPang; // 0x34: CPangInfo_ResetBonusAnimations
-    int settledPang; // 0x38: CPangInfo_AnimateRewardEntries
-    int settledBonusPang; // 0x3c: CPangInfo_AnimateRewardEntries
-    int pangBeforeMultiplier; // 0x40: CPangInfo_ResetPangAndBonusAnimation, CPangInfo_AnimateRewardEntries
-    int bonusPangBeforeMultiplier; // 0x44: CPangInfo_ResetPangAndBonusAnimation, CPangInfo_AnimateRewardEntries
-    int pangAnimationState; // 0x48: CPangInfo_Draw, CPangInfo_ResetPangAndBonusAnimation, CPangInfo_AnimateRewardEntries
-    int displayedPang; // 0x4c: CPangInfo_Draw, CPangInfo_AnimateRewardEntries
-    char pad_050[0x4]; // 0x50
-    float pangAnimationTime; // 0x54: CPangInfo_ResetPangAndBonusAnimation, CPangInfo_AnimateRewardEntries
-    float pangBaselineY; // 0x58: CPangInfo_Draw
-    char pad_05C[0x14]; // 0x5c
-    unsigned char pangOpacity; // 0x70: CPangInfo_Draw
-    char pad_071[0x3]; // 0x71
-    int bonusPangAnimationState; // 0x74: CPangInfo_ResetPangAndBonusAnimation, CPangInfo_AnimateRewardEntries
-    int displayedBonusPang; // 0x78: CPangInfo_Draw, CPangInfo_AnimateRewardEntries
-    char pad_07C[0x4]; // 0x7c
-    float bonusPangAnimationTime; // 0x80: CPangInfo_ResetPangAndBonusAnimation, CPangInfo_AnimateRewardEntries
-    char pad_084[0x1c]; // 0x84
-    int bonusEntryState; // 0xa0: CPangInfo_UpdateShotRewardsAndBonuses, CPangInfo_Draw, CPangInfo_CalculateShotRewards
-    int bonusEntryValue; // 0xa4: CPangInfo_Draw, CPangInfo_AnimateRewardEntries
-    int bonusEntryOrder; // 0xa8: CPangInfo_AnimateRewardEntries, CPangInfo_ScheduleBonusEntry
-    float bonusEntryAnimationTime; // 0xac: CPangInfo_UpdateShotRewardsAndBonuses, CPangInfo_Draw, CPangInfo_AnimateRewardEntries
-    float bonusEntryY; // 0xb0: CPangInfo_Draw, CPangInfo_AnimateRewardEntries
-    float bonusEntryTargetY; // 0xb4: CPangInfo_AnimateRewardEntries
-    char pad_0B8[0x10]; // 0xb8
-    unsigned char bonusEntryOpacity; // 0xc8: CPangInfo_Draw, CPangInfo_AnimateRewardEntries, CPangInfo_ResetBonusAnimations
-    char pad_0C9[0x3]; // 0xc9
-    int longDriveMultiplierState; // 0xcc: CPangInfo_CalculateShotRewards
-    int longDriveMultiplier; // 0xd0: CPangInfo_CalculateShotRewards
-    char pad_0D4[0x24]; // 0xd4
-    int approachBonusState; // 0xf8: CPangInfo_CalculateShotRewards
-    char pad_0FC[0x28]; // 0xfc
-    int longPuttBonusState; // 0x124: CPangInfo_CalculateShotRewards, CPangInfo_UpdateLongPuttBonus
-    unsigned int longPuttBonusPang; // 0x128: CPangInfo_UpdateLongPuttBonus
-    char pad_12C[0x4]; // 0x12c
-    float longPuttBonusAnimationTime; // 0x130: CPangInfo_UpdateLongPuttBonus
-    char pad_134[0x1c]; // 0x134
-    int chipInBonusState; // 0x150: CPangInfo_CalculateShotRewards, CPangInfo_UpdateChipInBonus
-    unsigned int chipInBonusPang; // 0x154: CPangInfo_UpdateChipInBonus
-    char pad_158[0x4]; // 0x158
-    float chipInBonusAnimationTime; // 0x15c: CPangInfo_UpdateChipInBonus
-    char pad_160[0x1c]; // 0x160
-    int pinContactBonusState; // 0x17c: CPangInfo_CalculateShotRewards
-    int pinContactBonusPang; // 0x180: CPangInfo_CalculateShotRewards
-    char pad_184[0x24]; // 0x184
-    int matchEarlyWinBonusState; // 0x1a8: CPangInfo_CalculateShotRewards
-    char pad_1AC[0x8]; // 0x1ac
-    float matchEarlyWinBonusAnimationTime; // 0x1b4: CPangInfo_UpdateShotRewardsAndBonuses
-    char pad_1B8[0x1c]; // 0x1b8
-    int specialShotBonusState; // 0x1d4: CPangInfo_CalculateShotRewards
-    int specialShotBonusPang; // 0x1d8: CPangInfo_CalculateShotRewards
-    char pad_1DC[0x10]; // 0x1dc
-    float specialShotBonusUvX; // 0x1ec: CPangInfo_CalculateShotRewards
-    float specialShotBonusUvY; // 0x1f0: CPangInfo_CalculateShotRewards
-    char pad_1F4[0xc]; // 0x1f4
-    int scoreBonusState; // 0x200: CPangInfo_CalculateShotRewards, CPangInfo_UpdateScoreBonusState, CPangInfo_UpdateConditionalBonusEntry
-    int scoreBonusPang; // 0x204: CPangInfo_CalculateShotRewards, CPangInfo_AnimateRewardEntries
-    int scoreBonusOrder; // 0x208: CPangInfo_ScheduleBonusEntry
-    float scoreBonusAnimationTime; // 0x20c: CPangInfo_UpdateScoreBonusState
-    char pad_210[0xc]; // 0x210
-    float scoreBonusUvY; // 0x21c: CPangInfo_CalculateShotRewards
-    char pad_220[0xc]; // 0x220
-    int powerSpinMultiplierState; // 0x22c: CPangInfo_CalculateShotRewards
-    char pad_230[0x28]; // 0x230
-    int powerCurveMultiplierState; // 0x258: CPangInfo_CalculateShotRewards
-    char pad_25C[0x28]; // 0x25c
-    int objectHitMultiplierState; // 0x284: CPangInfo_CalculateShotRewards, CPangInfo_ScheduleBonusEntry, CPangInfo_UpdateObjectHitMultiplier
-    int objectHitMultiplier; // 0x288: CPangInfo_CalculateShotRewards, CPangInfo_UpdateObjectHitMultiplier, CPangInfo_ResetBonusAnimations
-    int objectHitMultiplierOrder; // 0x28c: CPangInfo_ScheduleBonusEntry
-    float objectHitMultiplierAnimationTime; // 0x290: CPangInfo_UpdateObjectHitMultiplier
-    char pad_294[0x4]; // 0x294
-    float objectHitMultiplierTargetY; // 0x298: CPangInfo_ScheduleBonusEntry
-    char pad_29C[0x14]; // 0x29c
-    int holeInOneBonusState; // 0x2b0: CPangInfo_Draw, CPangInfo_CalculateShotRewards
-    int holeInOneBonusPang; // 0x2b4: CPangInfo_CalculateShotRewards
-    char pad_2B8[0x4]; // 0x2b8
-    float holeInOneBonusAnimationTime; // 0x2bc: CPangInfo_UpdateShotRewardsAndBonuses
-    char pad_2C0[0x1c]; // 0x2c0
-    int roundCompletionBonusState; // 0x2dc: CPangInfo_CalculateShotRewards
-    int roundCompletionBonusPang; // 0x2e0: CPangInfo_CalculateShotRewards
-    char pad_2E4[0x4]; // 0x2e4
-    float roundCompletionBonusAnimationTime; // 0x2e8: CPangInfo_UpdateShotRewardsAndBonuses
-    char pad_2EC[0x1c]; // 0x2ec
-    int pangMultiplierState; // 0x308: CPangInfo_UpdateShotRewardsAndBonuses, CPangInfo_CalculateShotRewards, CPangInfo_AnimateRewardEntries
-    int pangMultiplier; // 0x30c: CPangInfo_CalculateShotRewards
-    int pangMultiplierOrder; // 0x310: CPangInfo_ScheduleBonusEntry
-    float pangMultiplierAnimationTime; // 0x314: CPangInfo_UpdateShotRewardsAndBonuses
-    char pad_318[0x4]; // 0x318
-    float pangMultiplierTargetY; // 0x31c: CPangInfo_AnimateRewardEntries, CPangInfo_ScheduleBonusEntry
-    char pad_320[0x14]; // 0x320
-    int recoveryBonusState; // 0x334: CPangInfo_CalculateShotRewards, CPangInfo_UpdateRecoveryBonus
-    int recoveryBonusPang; // 0x338: CPangInfo_UpdateRecoveryBonus
-    char pad_33C[0x4]; // 0x33c
-    float recoveryBonusAnimationTime; // 0x340: CPangInfo_UpdateRecoveryBonus
-    char pad_344[0x1c]; // 0x344
-    int ballBonusState; // 0x360: CPangInfo_Draw, CPangInfo_CalculateShotRewards, CPangInfo_AnimateRewardEntries
-    int ballBonusPang; // 0x364: CPangInfo_CalculateShotRewards
-    char pad_368[0x4]; // 0x368
-    float ballBonusAnimationTime; // 0x36c: CPangInfo_UpdateShotRewardsAndBonuses
-    char pad_370[0x4]; // 0x370
-    float ballBonusTargetY; // 0x374: CPangInfo_AnimateRewardEntries
-    char pad_378[0x14]; // 0x378
-    int ballBounceBonusState; // 0x38c: CPangInfo_CalculateShotRewards, CPangInfo_AnimateRewardEntries, CPangInfo_UpdateBallBounceBonus
-    int ballBounceBonusPang; // 0x390: CPangInfo_CalculateShotRewards, CPangInfo_UpdateBallBounceBonus
-    char pad_394[0x4]; // 0x394
-    float ballBounceBonusAnimationTime; // 0x398: CPangInfo_UpdateBallBounceBonus
-    char pad_39C[0x4]; // 0x39c
-    float ballBounceBonusTargetY; // 0x3a0: CPangInfo_AnimateRewardEntries
-    char pad_3A4[0x14]; // 0x3a4
-    int powerShotBonusState; // 0x3b8: CPangInfo_CalculateShotRewards, CPangInfo_AnimateRewardEntries
-    int powerShotBonusPang; // 0x3bc: CPangInfo_CalculateShotRewards
-    char pad_3C0[0x4]; // 0x3c0
-    float powerShotBonusAnimationTime; // 0x3c4: CPangInfo_UpdateShotRewardsAndBonuses
-    char pad_3C8[0x4]; // 0x3c8
-    float powerShotBonusTargetY; // 0x3cc: CPangInfo_AnimateRewardEntries
-    char pad_3D0[0x18]; // 0x3d0
-    float holeDirectionY; // 0x3e8: CPangInfo_CalculateShotRewards
-    char pad_3EC[0x4]; // 0x3ec
-    int scoreRelativeToPar; // 0x3f0: CPangInfo_CalculateShotRewards, CPangInfo_UpdateConditionalBonusEntry, CPangInfo_UpdateObjectHitMultiplier
-    int clubType; // 0x3f4: CPangInfo_CalculateShotRewards
-    int shotGroundType; // 0x3f8: CPangInfo_CalculateShotRewards
-    float clubDistanceYards; // 0x3fc: CPangInfo_CalculateShotRewards
-    float holeDistanceYards; // 0x400: CPangInfo_CalculateShotRewards
-    float shotTravelDistanceYards; // 0x404: CPangInfo_UpdateLongPuttBonus, CPangInfo_UpdateChipInBonus
-    float remainingDistanceYards; // 0x408: CPangInfo_UpdateChipInBonus
-    int scheduledBonusCount; // 0x40c: CPangInfo_ResetPangAndBonusAnimation, CPangInfo_ScheduleBonusEntry, CPangInfo_ResetBonusAnimations
-    int processedTrajectoryFrame; // 0x410: CPangInfo_ResetPangAndBonusAnimation, CPangInfo_UpdateObjectHitMultiplier, CPangInfo_UpdateBallBounceBonus
-    float bonusBannerStartX; // 0x414: CPangInfo_ScheduleBonusEntry
-    float bonusBannerStartY; // 0x418: CPangInfo_ScheduleBonusEntry
-    char pad_41C[0x20]; // 0x41c
-    float holeInOneBannerElapsed; // 0x43c: CPangInfo_Ctor, CPangInfo_UpdateShotRewardsAndBonuses, CPangInfo_Draw
-    float ballBonusBannerElapsed; // 0x440: CPangInfo_Ctor, CPangInfo_UpdateShotRewardsAndBonuses, CPangInfo_Draw
-    char pad_444[0x8]; // 0x444
-    float completionDelayElapsed; // 0x44c: CPangInfo_Ctor, CPangInfo_ResetPangAndBonusAnimation
-    int unk_450; // 0x450: CPangInfo_Draw
-    char pad_454[0x14]; // 0x454
-    int rewardedBounceCount; // 0x468: CPangInfo_ResetPangAndBonusAnimation, CPangInfo_UpdateBallBounceBonus, CPangInfo_ResetBonusAnimations
-    int lastRewardedBounceFrame; // 0x46c: CPangInfo_ResetPangAndBonusAnimation, CPangInfo_UpdateBallBounceBonus, CPangInfo_ResetBonusAnimations
+    CPangInfo();
+    ~CPangInfo();
+
+    void InitScreenPositions();
+    void ResetFromCurrentPlayer();
+    void UpdateShotRewardsAndBonuses(float dt);
+    void CalculateShotRewards(int includeEndOfHoleFallback);
+    void CalculateMatchPlayHoleRewards();
+    void ResetPangAndBonusAnimation(int initialDisplayFlags, int initialEntryState);
+    void AdvanceRewardDisplayTimers(float delta);
+    void AnimateRewardEntries(float delta);
+    void UpdateSettlementFlags();
+    void UpdateCompletionDelay(float delta);
+    void ScheduleBonusEntry(int category);
+    void UpdateLongPuttBonus();
+    void UpdateChipInBonus();
+    void UpdateRecoveryBonus();
+    void UpdateScoreBonusState();
+    void UpdateConditionalBonusEntry(int index, int value);
+    void UpdateObjectHitMultiplier();
+    void UpdateBallBounceBonus();
+    void Draw();
+    void ResetBonusAnimations();
+    void FinishDisplayedTotals();
+
+    void* textRenderer; // 0x18: CPangInfo::Draw
+    int displayMode;    // 0x1c
+    unsigned int flags; // 0x20: CPangInfo::Draw, CPangInfo::CalculateShotRewards, CPangInfo::ResetPangAndBonusAnimation
+    int countingSoundAlias; // 0x24: CPangInfo::ResetPangAndBonusAnimation, CPangInfo::AnimateRewardEntries
+    int earnedPang; // 0x28: CPangInfo::UpdateShotRewardsAndBonuses, CPangInfo::CalculateShotRewards, CPangInfo::ResetPangAndBonusAnimation
+    int earnedBonusPang; // 0x2c: CPangInfo::UpdateShotRewardsAndBonuses, CPangInfo::CalculateShotRewards, CPangInfo::ResetPangAndBonusAnimation
+    unsigned int startingPang;      // 0x30: CPangInfo::ResetBonusAnimations
+    unsigned int startingBonusPang; // 0x34: CPangInfo::ResetBonusAnimations
+    int settledPang;                // 0x38: CPangInfo::AnimateRewardEntries
+    int settledBonusPang;           // 0x3c: CPangInfo::AnimateRewardEntries
+    int pangBeforeMultiplier;       // 0x40: CPangInfo::ResetPangAndBonusAnimation, CPangInfo::AnimateRewardEntries
+    int bonusPangBeforeMultiplier;  // 0x44: CPangInfo::ResetPangAndBonusAnimation, CPangInfo::AnimateRewardEntries
+    int pangAnimationState; // 0x48: CPangInfo::Draw, CPangInfo::ResetPangAndBonusAnimation, CPangInfo::AnimateRewardEntries
+    int displayedPang;      // 0x4c: CPangInfo::Draw, CPangInfo::AnimateRewardEntries
+    int pangEntryOrder;     // 0x50
+    float pangAnimationTime;      // 0x54: CPangInfo::ResetPangAndBonusAnimation, CPangInfo::AnimateRewardEntries
+    float pangBaselineY;          // 0x58: CPangInfo::Draw
+    char pad_05C[0x4];            // 0x5c
+    float pangUvX;                // 0x60
+    float pangUvY;                // 0x64
+    float pangUvWidth;            // 0x68
+    float pangUvHeight;           // 0x6c
+    unsigned char pangOpacity;    // 0x70: CPangInfo::Draw
+    char pad_071[0x3];            // 0x71
+    int bonusPangAnimationState;  // 0x74: CPangInfo::ResetPangAndBonusAnimation, CPangInfo::AnimateRewardEntries
+    int displayedBonusPang;       // 0x78: CPangInfo::Draw, CPangInfo::AnimateRewardEntries
+    char pad_07C[0x4];            // 0x7c
+    float bonusPangAnimationTime; // 0x80: CPangInfo::ResetPangAndBonusAnimation, CPangInfo::AnimateRewardEntries
+    char pad_084[0x1c];           // 0x84
+    int bonusEntryState; // 0xa0: CPangInfo::UpdateShotRewardsAndBonuses, CPangInfo::Draw, CPangInfo::CalculateShotRewards
+    int bonusEntryValue; // 0xa4: CPangInfo::Draw, CPangInfo::AnimateRewardEntries
+    int bonusEntryOrder; // 0xa8: CPangInfo::AnimateRewardEntries, CPangInfo::ScheduleBonusEntry
+    float
+        bonusEntryAnimationTime; // 0xac: CPangInfo::UpdateShotRewardsAndBonuses, CPangInfo::Draw, CPangInfo::AnimateRewardEntries
+    float bonusEntryY;           // 0xb0: CPangInfo::Draw, CPangInfo::AnimateRewardEntries
+    float bonusEntryTargetY; // 0xb4: CPangInfo::AnimateRewardEntries
+    char pad_0B8[0x10];      // 0xb8
+    unsigned char
+        bonusEntryOpacity; // 0xc8: CPangInfo::Draw, CPangInfo::AnimateRewardEntries, CPangInfo::ResetBonusAnimations
+    char pad_0C9[0x3];     // 0xc9
+    int longDriveMultiplierState;          // 0xcc: CPangInfo::CalculateShotRewards
+    int longDriveMultiplier;               // 0xd0: CPangInfo::CalculateShotRewards
+    char pad_0D4[0x24];                    // 0xd4
+    int approachBonusState;                // 0xf8: CPangInfo::CalculateShotRewards
+    char pad_0FC[0x28];                    // 0xfc
+    int longPuttBonusState;                // 0x124: CPangInfo::CalculateShotRewards, CPangInfo::UpdateLongPuttBonus
+    unsigned int longPuttBonusPang;        // 0x128: CPangInfo::UpdateLongPuttBonus
+    char pad_12C[0x4];                     // 0x12c
+    float longPuttBonusAnimationTime;      // 0x130: CPangInfo::UpdateLongPuttBonus
+    char pad_134[0x1c];                    // 0x134
+    int chipInBonusState;                  // 0x150: CPangInfo::CalculateShotRewards, CPangInfo::UpdateChipInBonus
+    unsigned int chipInBonusPang;          // 0x154: CPangInfo::UpdateChipInBonus
+    char pad_158[0x4];                     // 0x158
+    float chipInBonusAnimationTime;        // 0x15c: CPangInfo::UpdateChipInBonus
+    char pad_160[0x1c];                    // 0x160
+    int pinContactBonusState;              // 0x17c: CPangInfo::CalculateShotRewards
+    int pinContactBonusPang;               // 0x180: CPangInfo::CalculateShotRewards
+    char pad_184[0x24];                    // 0x184
+    int matchEarlyWinBonusState;           // 0x1a8: CPangInfo::CalculateShotRewards
+    char pad_1AC[0x8];                     // 0x1ac
+    float matchEarlyWinBonusAnimationTime; // 0x1b4: CPangInfo::UpdateShotRewardsAndBonuses
+    char pad_1B8[0x1c];                    // 0x1b8
+    int specialShotBonusState;             // 0x1d4: CPangInfo::CalculateShotRewards
+    int specialShotBonusPang;              // 0x1d8: CPangInfo::CalculateShotRewards
+    char pad_1DC[0x10];                    // 0x1dc
+    float specialShotBonusUvX;             // 0x1ec: CPangInfo::CalculateShotRewards
+    float specialShotBonusUvY;             // 0x1f0: CPangInfo::CalculateShotRewards
+    char pad_1F4[0xc];                     // 0x1f4
+    int scoreBonusState; // 0x200: CPangInfo::CalculateShotRewards, CPangInfo::UpdateScoreBonusState, CPangInfo::UpdateConditionalBonusEntry
+    int scoreBonusPang;            // 0x204: CPangInfo::CalculateShotRewards, CPangInfo::AnimateRewardEntries
+    int scoreBonusOrder;           // 0x208: CPangInfo::ScheduleBonusEntry
+    float scoreBonusAnimationTime; // 0x20c: CPangInfo::UpdateScoreBonusState
+    char pad_210[0xc];             // 0x210
+    float scoreBonusUvY;           // 0x21c: CPangInfo::CalculateShotRewards
+    char pad_220[0xc];             // 0x220
+    int powerSpinMultiplierState;  // 0x22c: CPangInfo::CalculateShotRewards
+    char pad_230[0x28];            // 0x230
+    int powerCurveMultiplierState; // 0x258: CPangInfo::CalculateShotRewards
+    char pad_25C[0x28];            // 0x25c
+    int objectHitMultiplierState; // 0x284: CPangInfo::CalculateShotRewards, CPangInfo::ScheduleBonusEntry, CPangInfo::UpdateObjectHitMultiplier
+    int objectHitMultiplier; // 0x288: CPangInfo::CalculateShotRewards, CPangInfo::UpdateObjectHitMultiplier, CPangInfo::ResetBonusAnimations
+    int objectHitMultiplierOrder;            // 0x28c: CPangInfo::ScheduleBonusEntry
+    float objectHitMultiplierAnimationTime;  // 0x290: CPangInfo::UpdateObjectHitMultiplier
+    char pad_294[0x4];                       // 0x294
+    float objectHitMultiplierTargetY;        // 0x298: CPangInfo::ScheduleBonusEntry
+    char pad_29C[0x14];                      // 0x29c
+    int holeInOneBonusState;                 // 0x2b0: CPangInfo::Draw, CPangInfo::CalculateShotRewards
+    int holeInOneBonusPang;                  // 0x2b4: CPangInfo::CalculateShotRewards
+    char pad_2B8[0x4];                       // 0x2b8
+    float holeInOneBonusAnimationTime;       // 0x2bc: CPangInfo::UpdateShotRewardsAndBonuses
+    char pad_2C0[0x1c];                      // 0x2c0
+    int roundCompletionBonusState;           // 0x2dc: CPangInfo::CalculateShotRewards
+    int roundCompletionBonusPang;            // 0x2e0: CPangInfo::CalculateShotRewards
+    char pad_2E4[0x4];                       // 0x2e4
+    float roundCompletionBonusAnimationTime; // 0x2e8: CPangInfo::UpdateShotRewardsAndBonuses
+    char pad_2EC[0x1c];                      // 0x2ec
+    int pangMultiplierState; // 0x308: CPangInfo::UpdateShotRewardsAndBonuses, CPangInfo::CalculateShotRewards, CPangInfo::AnimateRewardEntries
+    int pangMultiplier;                // 0x30c: CPangInfo::CalculateShotRewards
+    int pangMultiplierOrder;           // 0x310: CPangInfo::ScheduleBonusEntry
+    float pangMultiplierAnimationTime; // 0x314: CPangInfo::UpdateShotRewardsAndBonuses
+    char pad_318[0x4];                 // 0x318
+    float pangMultiplierTargetY;       // 0x31c: CPangInfo::AnimateRewardEntries, CPangInfo::ScheduleBonusEntry
+    char pad_320[0x14];                // 0x320
+    int recoveryBonusState;            // 0x334: CPangInfo::CalculateShotRewards, CPangInfo::UpdateRecoveryBonus
+    int recoveryBonusPang;             // 0x338: CPangInfo::UpdateRecoveryBonus
+    char pad_33C[0x4];                 // 0x33c
+    float recoveryBonusAnimationTime;  // 0x340: CPangInfo::UpdateRecoveryBonus
+    char pad_344[0x1c];                // 0x344
+    int ballBonusState; // 0x360: CPangInfo::Draw, CPangInfo::CalculateShotRewards, CPangInfo::AnimateRewardEntries
+    int ballBonusPang;  // 0x364: CPangInfo::CalculateShotRewards
+    char pad_368[0x4];  // 0x368
+    float ballBonusAnimationTime; // 0x36c: CPangInfo::UpdateShotRewardsAndBonuses
+    char pad_370[0x4];            // 0x370
+    float ballBonusTargetY;       // 0x374: CPangInfo::AnimateRewardEntries
+    char pad_378[0x14];           // 0x378
+    int ballBounceBonusState; // 0x38c: CPangInfo::CalculateShotRewards, CPangInfo::AnimateRewardEntries, CPangInfo::UpdateBallBounceBonus
+    int ballBounceBonusPang;            // 0x390: CPangInfo::CalculateShotRewards, CPangInfo::UpdateBallBounceBonus
+    char pad_394[0x4];                  // 0x394
+    float ballBounceBonusAnimationTime; // 0x398: CPangInfo::UpdateBallBounceBonus
+    char pad_39C[0x4];                  // 0x39c
+    float ballBounceBonusTargetY;       // 0x3a0: CPangInfo::AnimateRewardEntries
+    char pad_3A4[0x14];                 // 0x3a4
+    int powerShotBonusState;            // 0x3b8: CPangInfo::CalculateShotRewards, CPangInfo::AnimateRewardEntries
+    int powerShotBonusPang;             // 0x3bc: CPangInfo::CalculateShotRewards
+    char pad_3C0[0x4];                  // 0x3c0
+    float powerShotBonusAnimationTime;  // 0x3c4: CPangInfo::UpdateShotRewardsAndBonuses
+    char pad_3C8[0x4];                  // 0x3c8
+    float powerShotBonusTargetY;        // 0x3cc: CPangInfo::AnimateRewardEntries
+    char pad_3D0[0x18];                 // 0x3d0
+    float holeDirectionY;               // 0x3e8: CPangInfo::CalculateShotRewards
+    char pad_3EC[0x4];                  // 0x3ec
+    int scoreRelativeToPar; // 0x3f0: CPangInfo::CalculateShotRewards, CPangInfo::UpdateConditionalBonusEntry, CPangInfo::UpdateObjectHitMultiplier
+    int clubType;                  // 0x3f4: CPangInfo::CalculateShotRewards
+    int shotGroundType;            // 0x3f8: CPangInfo::CalculateShotRewards
+    float clubDistanceYards;       // 0x3fc: CPangInfo::CalculateShotRewards
+    float holeDistanceYards;       // 0x400: CPangInfo::CalculateShotRewards
+    float shotTravelDistanceYards; // 0x404: CPangInfo::UpdateLongPuttBonus, CPangInfo::UpdateChipInBonus
+    float remainingDistanceYards;  // 0x408: CPangInfo::UpdateChipInBonus
+    int scheduledBonusCount; // 0x40c: CPangInfo::ResetPangAndBonusAnimation, CPangInfo::ScheduleBonusEntry, CPangInfo::ResetBonusAnimations
+    int processedTrajectoryFrame; // 0x410: CPangInfo::ResetPangAndBonusAnimation, CPangInfo::UpdateObjectHitMultiplier, CPangInfo::UpdateBallBounceBonus
+    float bonusBannerStartX; // 0x414: CPangInfo::ScheduleBonusEntry
+    float bonusBannerStartY; // 0x418: CPangInfo::ScheduleBonusEntry
+    char pad_41C[0x20];      // 0x41c
+    float
+        holeInOneBannerElapsed; // 0x43c: CPangInfo::CPangInfo, CPangInfo::UpdateShotRewardsAndBonuses, CPangInfo::Draw
+    float
+        ballBonusBannerElapsed; // 0x440: CPangInfo::CPangInfo, CPangInfo::UpdateShotRewardsAndBonuses, CPangInfo::Draw
+    char pad_444[0x8];          // 0x444
+    float completionDelayElapsed; // 0x44c: CPangInfo::CPangInfo, CPangInfo::ResetPangAndBonusAnimation
+    int unk_450;                  // 0x450: CPangInfo::Draw
+    bool counting;                // 0x454
+    char pad_455[3];              // 0x455
+    int playerValues[4];          // 0x458
+    int rewardedBounceCount; // 0x468: CPangInfo::ResetPangAndBonusAnimation, CPangInfo::UpdateBallBounceBonus, CPangInfo::ResetBonusAnimations
+    int lastRewardedBounceFrame; // 0x46c: CPangInfo::ResetPangAndBonusAnimation, CPangInfo::UpdateBallBounceBonus, CPangInfo::ResetBonusAnimations
 };
 
-#define CPANGINFO_OFF(f, o) typedef char CPangInfo_off_##f[((int)&((CPangInfo*)0)->f == (o)) ? 1 : -1]
-CPANGINFO_OFF(textColor, 0xc);
-CPANGINFO_OFF(textBuffer, 0x14);
+#define CPANGINFO_OFF(f, o) typedef char CPangInfo::off_##f[((int)&((CPangInfo*)0)->f == (o)) ? 1 : -1]
 CPANGINFO_OFF(textRenderer, 0x18);
 CPANGINFO_OFF(flags, 0x20);
 CPANGINFO_OFF(countingSoundAlias, 0x24);
@@ -261,5 +296,6 @@ CPANGINFO_OFF(unk_450, 0x450);
 CPANGINFO_OFF(rewardedBounceCount, 0x468);
 CPANGINFO_OFF(lastRewardedBounceFrame, 0x46c);
 #undef CPANGINFO_OFF
+typedef char CPangInfo::size[(sizeof(CPangInfo) == 0x470) ? 1 : -1];
 
 #endif // CLASSES_CPANGINFO_H

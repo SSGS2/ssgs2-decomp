@@ -7,7 +7,7 @@ struct FontCacheNode {
     void* object; // 0x0
     char pad_004[0x8];
     void* previous; // 0xC
-    void* next; // 0x10
+    void* next;     // 0x10
 };
 
 #define OFF(f, o) typedef char FontCacheNode_off_##f[((int)&((FontCacheNode*)0)->f == (o)) ? 1 : -1]

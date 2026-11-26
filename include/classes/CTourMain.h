@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CTOURMAIN_H
 #define CLASSES_CTOURMAIN_H
 
@@ -7,22 +5,46 @@
 
 class CTourMain {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x14];                 // 0x4
-    void* secondaryVtable;              // 0x18: 2 uses in CTourMain_Ctor, CTourMain_dtor
-    void* tourSelect;                   // 0x1c: 9 uses in CTourMain_OnProcess, CTourMain_dtor, CTourMain_Ctor...
-    void* tourConfirm;                       // 0x20: 12 uses in CTourMain_OnProcess, CTourMain_dtor, CTourMain_Ctor...
-    int state;                          // 0x24: 6 uses in CTourMain_OnProcess, CTourMain_Ctor, CTourMain_OnDisplay
-    int pendingState;                   // 0x28: 19 uses in CTourMain_OnProcess, CTourMain_Ctor
-    int exitDestination;                         // 0x2c: 4 uses in CTourMain_OnProcess, CTourMain_Ctor
-    int messageLatch;                         // 0x30: 3 uses in CTourMain_HandleMsg, CTourMain_Ctor
-    char playerRecordCopy[0x828];                // 0x34
-    void* saveMenu;                     // 0x85c: 7 uses in CTourMain_OnProcess, CTourMain_Ctor, CTourMain_OnDisplay
+    void* vtbl;                   // 0x0: original vtable pointer
+    char pad_004[0x14];           // 0x4
+    void* secondaryVtable;        // 0x18
+    void* tourSelect;             // 0x1c
+    void* tourConfirm;            // 0x20
+    int state;                    // 0x24
+    int pendingState;             // 0x28
+    int exitDestination;          // 0x2c
+    int messageLatch;             // 0x30
+    char playerRecordCopy[0x828]; // 0x34
+    void* saveMenu;               // 0x85c
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x34
+    void InitItemMap(float dt);
+    int PollItemMapResources();
+    void UpdateItemMenuVisuals(float dt);
+    void ResetItemMapControls();
+    int PrepareSelectedEncounter(void* data);
+    int ProcessSelectedMapItem();
+    void UpdateItemMapLayout();
+    void DrawItemMenu();
+    void HandleItemMapNavigation();
+    int ProcessItemMenu(float dt);
+
+    static void OnPreLoadInit();
+    static void OnLoad();
+    static void OnInit();
+    static void OnDestroy();
+    static void* GetRTTI();
+    void HandleMsg(int* state);
+    void OnDisplay();
+    void OnProcess(float deltaSeconds);
+
+    CTourMain();
+    ~CTourMain();
+
+    // Destructor entry for the secondary interface's vtable: its this pointer is
+    // 0x18 bytes past the object's start.
+    void DtorThunk18(int deleting);
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CTOURMAIN_OFF(f, o) typedef char CTourMain_off_##f[((int)&((CTourMain*)0)->f == (o)) ? 1 : -1]
 CTOURMAIN_OFF(secondaryVtable, 0x18);
 CTOURMAIN_OFF(tourSelect, 0x1c);
@@ -34,4 +56,4 @@ CTOURMAIN_OFF(messageLatch, 0x30);
 CTOURMAIN_OFF(saveMenu, 0x85c);
 #undef CTOURMAIN_OFF
 
-#endif  // CLASSES_CTOURMAIN_H
+#endif // CLASSES_CTOURMAIN_H

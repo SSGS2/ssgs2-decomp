@@ -1,36 +1,25 @@
-#include <decomp/cw_bitfields.h>
-// Translation unit 0x803DB750-0x803DB888 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
-struct GenericModelingRes {
-    CW_BITS2(
-        unsigned int refCount : 16,
-        unsigned int unk0 : 16)
-};
-
-struct gtl_IGenericModelingResource {
-    char reserved00[0xC];
-    GenericModelingRes** resA;
-    char unk10[0x8];
-    GenericModelingRes** resB;
-};
+// Replaces one graphics handle in a model resource. The old handle loses one reference and is destroyed at zero;
+// the new handle gains one. Type 3 selects the textures table and type 5 the palettes table; type 4 is ignored.
+#include "classes/GtlIGenericModelingResource.h"
 
 extern "C" {
 
-void CubeResourceStorage_dtor(GenericModelingRes* p, int flags);
-int gtl_IGenericModelingResource_SetResource(gtl_IGenericModelingResource* self, int type, int index, GenericModelingRes* res)
-{
+void CubeResourceStorage_dtor(GtlRefHeader* p, int flags);
+}
+
+// Required live self. Returns 1 for every selector, including unsupported ones.
+int gtl::IGenericModelingResource::SetResource(int type, int index, GtlRefHeader* res) {
     switch (type) {
     case 3: {
-        GenericModelingRes* old = self->resA[index];
+        GtlRefHeader* old = ((GtlRefHeader**)textures.data)[index];
         if (old != 0) {
             old->refCount--;
             if (old->refCount == 0)
                 CubeResourceStorage_dtor(old, 1);
         }
-        self->resA[index] = 0;
+        ((GtlRefHeader**)textures.data)[index] = 0;
         if (res != 0) {
-            self->resA[index] = res;
+            ((GtlRefHeader**)textures.data)[index] = res;
             res->refCount++;
         }
         break;
@@ -38,15 +27,15 @@ int gtl_IGenericModelingResource_SetResource(gtl_IGenericModelingResource* self,
     case 4:
         break;
     case 5: {
-        GenericModelingRes* old = self->resB[index];
+        GtlRefHeader* old = ((GtlRefHeader**)palettes.data)[index];
         if (old != 0) {
             old->refCount--;
             if (old->refCount == 0)
                 CubeResourceStorage_dtor(old, 1);
         }
-        self->resB[index] = 0;
+        ((GtlRefHeader**)palettes.data)[index] = 0;
         if (res != 0) {
-            self->resB[index] = res;
+            ((GtlRefHeader**)palettes.data)[index] = res;
             res->refCount++;
         }
         break;
@@ -54,5 +43,3 @@ int gtl_IGenericModelingResource_SetResource(gtl_IGenericModelingResource* self,
     }
     return 1;
 }
-
-} // extern "C"

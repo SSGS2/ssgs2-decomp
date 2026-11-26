@@ -1,28 +1,34 @@
+// The club submenu (CClubSubMenu), the player status panel (CPlayerStatus) and the club
+// level-up dialog (CClubLvUpDialog) in the clubhouse shop.
+//
+// Covers menu navigation and confirmation for each menu variant, and the club upgrade levels
+// and prices that the level-up dialog shows.
+
 #include <decomp/static_init.h>
-// Translation unit 0x802DEA60-0x802E001C (20 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "classes/CPangya2Shop.h"
 #include "classes/CPlayerStatus.h"
 #include "classes/CClubSubMenu.h"
 #include "classes/CClubLvUpDialog.h"
+#include "classes/CClubCustomTbl.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CFontNumDraw.h"
 #define AsCClubLvUpDialog(p) ((CClubLvUpDialog*)(p))
 
 #define AsCClubSubMenu(p) ((CClubSubMenu*)(p))
 
 #define AsCPlayerStatus(p) ((CPlayerStatus*)(p))
 
-#define AsCPangya2Shop(p) ((CPangya2Shop*)(p))
 extern "C" {
 
 // The action constants below are IDs consumed by Input_IsActionPressed, not hardware button bits.
 // Replacing the Wii Remote mapping belongs in the action/device layer; menu behavior uses these actions.
-static const int kStatusReverseTextureCursorOffset = 0x0C; // Four slots are addressed at cursor[19] while moving backward.
-static const int kSubMenuMarkedChoiceOffset = 0x18; // Marked-choice byte; address form preserves local-class symbol bookkeeping.
+static const int kStatusReverseTextureCursorOffset =
+    0x0C; // Four slots are addressed at cursor[19] while moving backward.
+static const int kSubMenuMarkedChoiceOffset =
+    0x18;                                  // Marked-choice byte; address form preserves local-class symbol bookkeeping.
 static const int kSubMenuLayoutOffset = 4; // CClubSubMenu::layout
-
-
 
 static const int kActionPrevious = 0;
 static const int kActionNext = 1;
@@ -47,12 +53,16 @@ static const int kClubChoiceCount = 3;
 // 0x12's value state reflects firstChoiceMarked for variants 0-2 only.
 // Text/action names for these art IDs remain unresolved in this unit.
 enum ClubSubMenuVariant {
-    kClubThreeChoices = 0, kClubTwoChoicesLabel13 = 1,
-    kClubTwoChoicesLabel14 = 2, kClubTwoChoicesLabel15 = 3
+    kClubThreeChoices = 0,
+    kClubTwoChoicesLabel13 = 1,
+    kClubTwoChoicesLabel14 = 2,
+    kClubTwoChoicesLabel15 = 3
 };
 enum ClubSubMenuArt {
-    kClubMarkedFirstLabel = 0x12, kClubVariantLabel13 = 0x13,
-    kClubVariantLabel14 = 0x14, kClubVariantLabel15 = 0x15,
+    kClubMarkedFirstLabel = 0x12,
+    kClubVariantLabel13 = 0x13,
+    kClubVariantLabel14 = 0x14,
+    kClubVariantLabel15 = 0x15,
     kClubThirdChoiceLabel = 0x16
 };
 
@@ -70,17 +80,24 @@ static const int kLevelPurchaseSound = 0x8F;
 static const int kPlayerStatusScriptName = 0xF;
 
 // Partial views of the save record and customization-price row; retain signed level bytes.
-struct ClubUpgradeLevel { signed char pad; signed char level; };
-struct ClubUpgradePlayerView {
-    char pad_000[0x28]; int pang;
-    char pad_02C[0x480]; ClubUpgradeLevel clubUpgrades[5];
+struct ClubUpgradeLevel {
+    signed char pad;
+    signed char level;
 };
-struct ClubUpgradePrice { char pad_000[8]; int pangCost; };
-
+struct ClubUpgradePlayerView {
+    char pad_000[0x28];
+    int pang;
+    char pad_02C[0x480];
+    ClubUpgradeLevel clubUpgrades[5];
+};
+struct ClubUpgradePrice {
+    char pad_000[8];
+    int pangCost;
+};
 
 extern const float kFloat_1_ShopDialog;
-extern const float kFloat_0_5_ClubSubMenu; // 0.5: club submenu sound parameter
-extern const float kFloat_200_ClubSubMenu; // 200: club submenu sound parameter
+extern const float kFloat_0_5_ClubSubMenu;         // 0.5: club submenu sound parameter
+extern const float kFloat_200_ClubSubMenu;         // 200: club submenu sound parameter
 extern const float kClubDialogSoundParameter0_0_5; // 0.5: level-up dialog sound parameter
 extern const float kClubDialogSoundParameter1_200; // 200: level-up dialog sound parameter
 extern const float kFloat_1_ClubLevelDialog;
@@ -101,18 +118,14 @@ extern void Layout_Destroy(void*, int);
 extern void Layout_Init(void*, int);
 extern void Layout_LoadExtended(void*, int, void*);
 extern void* __nw__FUl(unsigned int);
-extern void* CFontNumDraw_CreateInVector(void*);
 extern void Memory_Clear(void*, int);
 extern void* __nwa__FUl(unsigned int);
-extern void CBpCtrl_CreateEntry(void*, const char*, int*, int);
 extern int IdMap_Lookup(void*, int);
 extern void __ct__13CClubHouseMsgFv(void*);
 extern void __destroy_new_array(void*, void*);
 extern void UITextTable_ClearEntries(void*);
 extern void PointerVector_InitReserved(void*);
 extern void PointerArray_DeleteValue(void*, void*);
-extern void __ct__7CBpCtrlFv(void*);
-extern void CBpCtrl_DeleteEntryById(void*, int);
 extern void __register_global_object(void*, void*, void*);
 extern void PointerVector_DestroyStorage();
 extern void CBpCtrl_dtor();
@@ -123,7 +136,6 @@ extern int Input_IsActionPressed(void*, int, int);
 extern void InputManager_Init(void*);
 extern int Layout_CollectActivated(void*, int**, int*);
 extern void appFreeUni__FPv(void*);
-extern void* CClubCustomTbl_FindUpgradeEntry(int, int);
 extern void PlayerData_SetClubUpgradeLevel(int, int, void*);
 extern void Layout_GetElementEnabled(void*, int, int*);
 extern void InputManager_Dtor();
@@ -135,19 +147,15 @@ extern unsigned char s_fontNumDrawRegistry[];
 extern unsigned char s_bpCtrl[];
 extern unsigned char s_playerStatusNumberRegistryDtorRegistration[];
 extern unsigned char s_playerStatusBpCtrlDtorRegistration[];
-extern void CBpTex_dtor(void*);
-extern void CBpTex_Init(void*);
+extern "C" void __dt__6CBpTexFv(void*);
+extern "C" void __ct__6CBpTexFv(void*);
 extern void* __construct_new_array(void*, void*, void*, int, int);
 extern void __dl__FPv(void*);
-extern int CClubSubMenu_UpdateSelectionDelay(void*);
-extern int CClubSubMenu_ProcessNavigation(void*);
-extern int CClubSubMenu_ProcessConfirmation(void*);
-extern int CClubSubMenu_UpdateSelectionHighlight(void*);
 extern unsigned char __vt__12CClubSubMenu[];
 extern unsigned char clubSubMenuStrings[]; // club submenu layout and sound-name pool
 extern const unsigned char clubLevelUpDialogStrings[];
 extern const unsigned char kPlayerStatusEquipmentTextureCounts[]; // four equipment texture-array counts
-extern unsigned char playerStatusResourceStrings[]; // player-status layout and script-name pool
+extern unsigned char playerStatusResourceStrings[];               // player-status layout and script-name pool
 extern signed char s_pointerVectorInitialized;
 extern signed char s_bpCtrlInitialized;
 extern signed char s_inputManagerInitialized;
@@ -158,16 +166,18 @@ extern unsigned char s_clubLevelInputManagerDtorRegistration[];
 struct Fn802DED7C_Object {
     char data[0x5C];
     // Construct the embedded layout with the supplied layout mode.
-    Fn802DED7C_Object(int arg) { Layout_Init(this, arg); }
+    Fn802DED7C_Object(int arg) {
+        Layout_Init(this, arg);
+    }
 };
 
 // Report whether the selected second/third menu choice is valid for the current variant.
-int CClubSubMenu_IsSecondaryActionSelected(void* owner) {
+int CClubSubMenu::IsSecondaryActionSelected() {
     // Original 0x802DF2DC: the two selectable states share the true result.
-    int state = AsCClubSubMenu(owner)->selectedElementIndex;
+    int state = selectedElementIndex;
     switch (state) {
     case kSecondClubChoice:
-        if (AsCClubSubMenu(owner)->menuVariant != 0)
+        if (menuVariant != 0)
             break;
         return 0;
     case kThirdClubChoice:
@@ -180,17 +190,17 @@ Lret1: // Preserve the original label's compiler bookkeeping for local-class sym
 }
 
 // Prefer pointer hover, then previous/next actions; wrap selection and play movement feedback.
-int CClubSubMenu_ProcessNavigation(void* menu) {
+int CClubSubMenu::ProcessNavigation() {
     // Phase 1: a changed pointer hover wins; a stable hover suppresses button navigation.
     int selectionChanged = 0;
     int elementIndex = kFirstClubChoice;
     for (;;) {
-        if (Layout_HitTestPlayer(AsCClubSubMenu(menu)->layout, elementIndex)) {
-            if (elementIndex == AsCClubSubMenu(menu)->selectedElementIndex) {
+        if (Layout_HitTestPlayer(layout, elementIndex)) {
+            if (elementIndex == selectedElementIndex) {
                 selectionChanged = 0;
             } else {
-                AsCClubSubMenu(menu)->selectedElementIndex = elementIndex;
-                CClubSubMenu_UpdateSelectionHighlight(menu);
+                selectedElementIndex = elementIndex;
+                CClubSubMenu::UpdateSelectionHighlight(this);
                 selectionChanged = 1;
             }
             break;
@@ -206,7 +216,7 @@ int CClubSubMenu_ProcessNavigation(void* menu) {
 
     elementIndex = kFirstClubChoice;
     for (;;) {
-        if (Layout_HitTestPlayer(AsCClubSubMenu(menu)->layout, elementIndex))
+        if (Layout_HitTestPlayer(layout, elementIndex))
             return 0;
         ++elementIndex;
         if (elementIndex > kThirdClubChoice)
@@ -214,160 +224,168 @@ int CClubSubMenu_ProcessNavigation(void* menu) {
     }
 
     // Phase 2: outside all hit targets, use previous/next with variant-dependent wrapping.
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_clubSubMenuInputManagerDtorRegistration);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_clubSubMenuInputManagerDtorRegistration);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
     // Original 0x802DF31C: either navigation direction shares the feedback tail.
-    if (Input_IsActionPressed(Sing_805DC5C8(), kActionPrevious, kAnyInputPlayer)) {
+    if (Input_IsActionPressed(GetInputManagerSlot(), kActionPrevious, kAnyInputPlayer)) {
         // Move to the previous eligible menu choice; result translation occurs on confirmation.
-    int selectedElement = AsCClubSubMenu(menu)->selectedElementIndex;
+        int selectedElement = selectedElementIndex;
         if (selectedElement >= kSecondClubChoice) {
-            AsCClubSubMenu(menu)->selectedElementIndex = selectedElement - 1;
+            selectedElementIndex = selectedElement - 1;
         } else {
             int thirdChoiceAvailable = 0;
-            Layout_GetElementEnabled(AsCClubSubMenu(menu)->layout, 0x11, &thirdChoiceAvailable);
+            Layout_GetElementEnabled(layout, 0x11, &thirdChoiceAvailable);
             if (thirdChoiceAvailable)
-                AsCClubSubMenu(menu)->selectedElementIndex = kThirdClubChoice;
+                selectedElementIndex = kThirdClubChoice;
             else
-                AsCClubSubMenu(menu)->selectedElementIndex = kSecondClubChoice;
+                selectedElementIndex = kSecondClubChoice;
         }
     } else {
-        if (Sing_805DC5C8() == 0) {
+        if (GetInputManagerSlot() == 0) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(&s_gameInputManager);
-                __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_clubSubMenuInputManagerDtorRegistration);
+                __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_clubSubMenuInputManagerDtorRegistration);
                 s_inputManagerInitialized = 1;
             }
-            Sing_805DC5C8() = &s_gameInputManager;
+            GetInputManagerSlot() = &s_gameInputManager;
         }
-        if (Input_IsActionPressed(Sing_805DC5C8(), kActionNext, kAnyInputPlayer)) {
-            int selectedElement = AsCClubSubMenu(menu)->selectedElementIndex;
+        if (Input_IsActionPressed(GetInputManagerSlot(), kActionNext, kAnyInputPlayer)) {
+            int selectedElement = selectedElementIndex;
             if (selectedElement < kSecondClubChoice) {
-                AsCClubSubMenu(menu)->selectedElementIndex = selectedElement + 1;
+                selectedElementIndex = selectedElement + 1;
             } else if (selectedElement == kSecondClubChoice) {
                 int thirdChoiceAvailable = 0;
-                Layout_GetElementEnabled(AsCClubSubMenu(menu)->layout, 0x11, &thirdChoiceAvailable);
+                Layout_GetElementEnabled(layout, 0x11, &thirdChoiceAvailable);
                 if (thirdChoiceAvailable)
-                    AsCClubSubMenu(menu)->selectedElementIndex = kThirdClubChoice;
+                    selectedElementIndex = kThirdClubChoice;
                 else
-                    AsCClubSubMenu(menu)->selectedElementIndex = kFirstClubChoice;
+                    selectedElementIndex = kFirstClubChoice;
             } else {
-                AsCClubSubMenu(menu)->selectedElementIndex = kFirstClubChoice;
+                selectedElementIndex = kFirstClubChoice;
             }
         } else {
             return 0;
         }
     }
-    CClubSubMenu_UpdateSelectionHighlight(menu);
-    Sound_PlayByName(g_soundManager, (const char*)(clubSubMenuStrings + kSubMenuMoveSound),
-                0, 0, 0, 0, kFloat_0_5_ClubSubMenu, kFloat_200_ClubSubMenu, kFloat_1_ShopDialog);
+    CClubSubMenu::UpdateSelectionHighlight(this);
+    Sound_PlayByName(g_soundManager, (const char*)(clubSubMenuStrings + kSubMenuMoveSound), 0, 0, 0, 0,
+                     kFloat_0_5_ClubSubMenu, kFloat_200_ClubSubMenu, kFloat_1_ShopDialog);
     return 1;
 }
 
 #pragma opt_propagation off
 // Handle cancel/confirm actions, translate the choice to a result, and start pressed feedback.
-int CClubSubMenu_ProcessConfirmation(void* menu) {
-    if (Sing_805DC5C8() == 0) {
+int CClubSubMenu::ProcessConfirmation() {
+    if (GetInputManagerSlot() == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_clubSubMenuInputManagerDtorRegistration);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_clubSubMenuInputManagerDtorRegistration);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
-    if (Input_IsActionPressed(Sing_805DC5C8(), kActionCancel, kAnyInputPlayer)) {
-        AsCClubSubMenu(menu)->selectionResult = 0;
-        Sound_PlayByName(g_soundManager, (const char*)(clubSubMenuStrings + kSubMenuCancelSound),
-                    0, 0, 0, 0, kFloat_0_5_ClubSubMenu, kFloat_200_ClubSubMenu, kFloat_1_ShopDialog);
+    if (Input_IsActionPressed(GetInputManagerSlot(), kActionCancel, kAnyInputPlayer)) {
+        selectionResult = 0;
+        Sound_PlayByName(g_soundManager, (const char*)(clubSubMenuStrings + kSubMenuCancelSound), 0, 0, 0, 0,
+                         kFloat_0_5_ClubSubMenu, kFloat_200_ClubSubMenu, kFloat_1_ShopDialog);
         return 1;
     }
 
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_clubSubMenuInputManagerDtorRegistration);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_clubSubMenuInputManagerDtorRegistration);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
-    if (!Input_IsActionPressed(Sing_805DC5C8(), kActionConfirm, kAnyInputPlayer))
+    if (!Input_IsActionPressed(GetInputManagerSlot(), kActionConfirm, kAnyInputPlayer))
         return 0;
 
-    int selectedElement = AsCClubSubMenu(menu)->selectedElementIndex;
+    int selectedElement = selectedElementIndex;
     switch (selectedElement) {
     case kFirstClubChoice:
-        AsCClubSubMenu(menu)->selectionResult = 1;
+        selectionResult = 1;
         break;
     case kSecondClubChoice: {
-        int variant = AsCClubSubMenu(menu)->menuVariant;
+        int variant = menuVariant;
         if ((unsigned int)variant <= 1)
-            AsCClubSubMenu(menu)->selectionResult = 2;
+            selectionResult = 2;
         else if (variant == 2)
-            AsCClubSubMenu(menu)->selectionResult = 3;
+            selectionResult = 3;
         else
-            AsCClubSubMenu(menu)->selectionResult = 4;
+            selectionResult = 4;
         break;
     }
     case kThirdClubChoice:
-        AsCClubSubMenu(menu)->selectionResult = 3;
+        selectionResult = 3;
         break;
     }
 
     // Latch pressed feedback and move the paired label by one layout unit for three frames.
-    Layout_SetElementValueState(AsCClubSubMenu(menu)->layout, AsCClubSubMenu(menu)->selectedElementIndex, 3);
-    Layout_SetElementPlayerFlag(AsCClubSubMenu(menu)->layout, AsCClubSubMenu(menu)->selectedElementIndex, 0, 5);
+    Layout_SetElementValueState(layout, selectedElementIndex, 3);
+    Layout_SetElementPlayerFlag(layout, selectedElementIndex, 0, 5);
     float labelPosition[2] = {0.0f, 0.0f};
     unsigned char* labelElementTable = kClubSubMenuLabelElements;
-    int variantIndex = AsCClubSubMenu(menu)->menuVariant;
-    int labelElement = *(int*)(labelElementTable + variantIndex * 0xC + AsCClubSubMenu(menu)->selectedElementIndex * 4 - 0x3C);
-    Layout_GetElementPosition(AsCClubSubMenu(menu)->layout, labelElement, labelPosition);
+    int variantIndex = menuVariant;
+    int labelElement = *(int*)(labelElementTable + variantIndex * 0xC + selectedElementIndex * 4 - 0x3C);
+    Layout_GetElementPosition(layout, labelElement, labelPosition);
     labelPosition[0] += kFloat_1_ShopDialog;
     labelPosition[1] += kFloat_1_ShopDialog;
-    labelElement = *(int*)(labelElementTable + variantIndex * 0xC + AsCClubSubMenu(menu)->selectedElementIndex * 4 - 0x3C);
-    Layout_SetElementPosition(AsCClubSubMenu(menu)->layout, labelElement, labelPosition);
-    AsCClubSubMenu(menu)->selectionDelayFrames = kSelectionFeedbackFrames;
-    Sound_PlayByName(g_soundManager, (const char*)(clubSubMenuStrings + kSubMenuClickSound),
-                0, 0, 0, 0, kFloat_0_5_ClubSubMenu, kFloat_200_ClubSubMenu, kFloat_1_ShopDialog);
+    labelElement = *(int*)(labelElementTable + variantIndex * 0xC + selectedElementIndex * 4 - 0x3C);
+    Layout_SetElementPosition(layout, labelElement, labelPosition);
+    selectionDelayFrames = kSelectionFeedbackFrames;
+    Sound_PlayByName(g_soundManager, (const char*)(clubSubMenuStrings + kSubMenuClickSound), 0, 0, 0, 0,
+                     kFloat_0_5_ClubSubMenu, kFloat_200_ClubSubMenu, kFloat_1_ShopDialog);
     return 1;
 }
 #pragma opt_propagation reset
 
 // Count down pressed feedback, restore the selected label's position, and unlock input.
-int CClubSubMenu_UpdateSelectionDelay(void* menu) {
-    int remainingFrames = AsCClubSubMenu(menu)->selectionDelayFrames;
+int CClubSubMenu::UpdateSelectionDelay() {
+    int remainingFrames = selectionDelayFrames;
     if (remainingFrames == -1)
         return 0;
-    AsCClubSubMenu(menu)->selectionDelayFrames = remainingFrames - 1;
+    selectionDelayFrames = remainingFrames - 1;
     if (remainingFrames > 0)
         return 1;
     float pressedOffset = kFloat_1_ShopDialog;
     int elementIndex = kFirstClubChoice;
     do {
-        if (elementIndex == AsCClubSubMenu(menu)->selectedElementIndex) {
-            Layout_SetElementValueState(AsCClubSubMenu(menu)->layout, elementIndex, 2);
+        if (elementIndex == selectedElementIndex) {
+            Layout_SetElementValueState(layout, elementIndex, 2);
             float labelPosition[2] = {0.0f, 0.0f};
-            Layout_GetElementPosition(AsCClubSubMenu(menu)->layout, *(int*)(kClubSubMenuLabelElements + AsCClubSubMenu(menu)->menuVariant * 0xC + AsCClubSubMenu(menu)->selectedElementIndex * 4 - 0x3C), labelPosition);
+            Layout_GetElementPosition(
+                layout, *(int*)(kClubSubMenuLabelElements + menuVariant * 0xC + selectedElementIndex * 4 - 0x3C),
+                labelPosition);
             labelPosition[0] -= pressedOffset;
             labelPosition[1] -= pressedOffset;
-            Layout_SetElementPosition(AsCClubSubMenu(menu)->layout, *(int*)(kClubSubMenuLabelElements + AsCClubSubMenu(menu)->menuVariant * 0xC + AsCClubSubMenu(menu)->selectedElementIndex * 4 - 0x3C), labelPosition);
-        } else if (AsCClubSubMenu(menu)->firstChoiceMarked && elementIndex == kFirstClubChoice) {
-            Layout_SetElementValueState(AsCClubSubMenu(menu)->layout, elementIndex, 1);
+            Layout_SetElementPosition(
+                layout, *(int*)(kClubSubMenuLabelElements + menuVariant * 0xC + selectedElementIndex * 4 - 0x3C),
+                labelPosition);
+        } else if (firstChoiceMarked && elementIndex == kFirstClubChoice) {
+            Layout_SetElementValueState(layout, elementIndex, 1);
         } else {
-            Layout_SetElementValueState(AsCClubSubMenu(menu)->layout, elementIndex, 0);
+            Layout_SetElementValueState(layout, elementIndex, 0);
         }
         ++elementIndex;
     } while (elementIndex <= kThirdClubChoice);
-    AsCClubSubMenu(menu)->selectionDelayFrames = -1;
+    selectionDelayFrames = -1;
     return 1;
 }
 
 // Set focused/unfocused visuals for the choices available in the current menu variant.
-int CClubSubMenu_UpdateSelectionHighlight(void* menu) {
+int CClubSubMenu::UpdateSelectionHighlight(void* menu) {
     void* self = menu;
     int elementIndex = kFirstClubChoice;
     for (;;) {
@@ -377,17 +395,29 @@ int CClubSubMenu_UpdateSelectionHighlight(void* menu) {
             Layout_SetElementValueState(AsCClubSubMenu(self)->layout, elementIndex, 2);
             Layout_SetElementFeedbackState(AsCClubSubMenu(self)->layout, elementIndex, 2);
             if (AsCClubSubMenu(self)->firstChoiceMarked && elementIndex == kFirstClubChoice) {
-                Layout_SetElementValueState(AsCClubSubMenu(self)->layout, ((int(*)[3])kClubSubMenuLabelElements)[AsCClubSubMenu(self)->menuVariant][elementIndex - kFirstClubChoice], 3);
+                Layout_SetElementValueState(AsCClubSubMenu(self)->layout,
+                                            ((int (*)[3])kClubSubMenuLabelElements)[AsCClubSubMenu(self)->menuVariant]
+                                                                                   [elementIndex - kFirstClubChoice],
+                                            3);
             } else {
-                Layout_SetElementValueState(AsCClubSubMenu(self)->layout, ((int(*)[3])kClubSubMenuLabelElements)[AsCClubSubMenu(self)->menuVariant][elementIndex - kFirstClubChoice], 2);
+                Layout_SetElementValueState(AsCClubSubMenu(self)->layout,
+                                            ((int (*)[3])kClubSubMenuLabelElements)[AsCClubSubMenu(self)->menuVariant]
+                                                                                   [elementIndex - kFirstClubChoice],
+                                            2);
             }
         } else {
             Layout_SetElementValueState(AsCClubSubMenu(self)->layout, elementIndex, 0);
             Layout_SetElementFeedbackState(AsCClubSubMenu(self)->layout, elementIndex, 1);
             if (AsCClubSubMenu(self)->firstChoiceMarked && elementIndex == kFirstClubChoice) {
-                Layout_SetElementValueState(AsCClubSubMenu(self)->layout, ((int(*)[3])kClubSubMenuLabelElements)[AsCClubSubMenu(self)->menuVariant][elementIndex - kFirstClubChoice], 1);
+                Layout_SetElementValueState(AsCClubSubMenu(self)->layout,
+                                            ((int (*)[3])kClubSubMenuLabelElements)[AsCClubSubMenu(self)->menuVariant]
+                                                                                   [elementIndex - kFirstClubChoice],
+                                            1);
             } else {
-                Layout_SetElementValueState(AsCClubSubMenu(self)->layout, ((int(*)[3])kClubSubMenuLabelElements)[AsCClubSubMenu(self)->menuVariant][elementIndex - kFirstClubChoice], 0);
+                Layout_SetElementValueState(AsCClubSubMenu(self)->layout,
+                                            ((int (*)[3])kClubSubMenuLabelElements)[AsCClubSubMenu(self)->menuVariant]
+                                                                                   [elementIndex - kFirstClubChoice],
+                                            0);
             }
         }
         ++elementIndex;
@@ -398,97 +428,92 @@ int CClubSubMenu_UpdateSelectionHighlight(void* menu) {
 }
 
 #pragma use_lmw_stmw on
-struct VDel802DEA60 { 
-virtual void d0(int);
+struct VDel802DEA60 {
+    virtual void d0(int);
 };
 
 // Release the status layout, equipment textures, number renderer, script entry, and message object.
-void* CPlayerStatus_dtor(void* statusMemory, int deleteFlag) {
-    if (statusMemory != 0) {
-        void** self = (void**)statusMemory;
-        self[0] = __vt__13CPlayerStatus;
-        if (self[2] != 0) {
-            Layout_Destroy(self[2], 1);
-            self[2] = 0;
-        }
-        void** textureSlotCursor = (void**)((char*)statusMemory + kStatusReverseTextureCursorOffset);
-        for (int i = 3; i >= 0; --i, --textureSlotCursor) {
-            if (textureSlotCursor[19] != 0) {
-                __destroy_new_array(textureSlotCursor[19], (void*)CBpTex_dtor);
-                textureSlotCursor[19] = 0;
-            }
-        }
-        UITextTable_ClearEntries(AsCPlayerStatus(statusMemory)->numberDraw);
-        if (AsCPlayerStatus(statusMemory)->numberDraw != 0) {
-            if (Sing_805DC830() == 0) {
-                if (s_pointerVectorInitialized == 0) {
-                    PointerVector_InitReserved(s_fontNumDrawRegistry);
-                    __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage, s_playerStatusNumberRegistryDtorRegistration);
-                    s_pointerVectorInitialized = 1;
-                }
-                Sing_805DC830() = s_fontNumDrawRegistry;
-            }
-            PointerArray_DeleteValue(Sing_805DC830(), AsCPlayerStatus(statusMemory)->numberDraw);
-        }
-        if (AsCPlayerStatus(statusMemory)->scriptEntryId != -1) {
-            if (Sing_805DC5F0() == 0) {
-                if (s_bpCtrlInitialized == 0) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_playerStatusBpCtrlDtorRegistration);
-                    s_bpCtrlInitialized = 1;
-                }
-                Sing_805DC5F0() = s_bpCtrl;
-            }
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCPlayerStatus(statusMemory)->scriptEntryId);
-            AsCPlayerStatus(statusMemory)->scriptEntryId = -1;
-        }
-        void* message = AsCPlayerStatus(statusMemory)->clubHouseMessage;
-        if (message != 0) {
-            if (message != 0) {
-                ((VDel802DEA60*)message)->d0(1);
-            }
-            AsCPlayerStatus(statusMemory)->clubHouseMessage = 0;
-        }
-        if (deleteFlag > 0)
-            __dl__FPv(statusMemory);
+CPlayerStatus::~CPlayerStatus() {
+    void** self = (void**)this;
+    self[0] = __vt__13CPlayerStatus;
+    if (self[2] != 0) {
+        Layout_Destroy(self[2], 1);
+        self[2] = 0;
     }
-    return statusMemory;
+    void** textureSlotCursor = (void**)((char*)this + kStatusReverseTextureCursorOffset);
+    for (int i = 3; i >= 0; --i, --textureSlotCursor) {
+        if (textureSlotCursor[19] != 0) {
+            __destroy_new_array(textureSlotCursor[19], (void*)__dt__6CBpTexFv);
+            textureSlotCursor[19] = 0;
+        }
+    }
+    UITextTable_ClearEntries(numberDraw);
+    if (numberDraw != 0) {
+        if (Sing_805DC830() == 0) {
+            if (s_pointerVectorInitialized == 0) {
+                PointerVector_InitReserved(s_fontNumDrawRegistry);
+                __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage,
+                                         s_playerStatusNumberRegistryDtorRegistration);
+                s_pointerVectorInitialized = 1;
+            }
+            Sing_805DC830() = s_fontNumDrawRegistry;
+        }
+        PointerArray_DeleteValue(Sing_805DC830(), numberDraw);
+    }
+    if (scriptEntryId != -1) {
+        if (Sing_805DC5F0() == 0) {
+            if (s_bpCtrlInitialized == 0) {
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_playerStatusBpCtrlDtorRegistration);
+                s_bpCtrlInitialized = 1;
+            }
+            Sing_805DC5F0() = s_bpCtrl;
+        }
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(scriptEntryId);
+        scriptEntryId = -1;
+    }
+    void* message = clubHouseMessage;
+    if (message != 0) {
+        if (message != 0) {
+            ((VDel802DEA60*)message)->d0(1);
+        }
+        clubHouseMessage = 0;
+    }
 }
 #pragma use_lmw_stmw reset
 
 // Return a completed menu result only after its pressed-feedback delay has ended.
-int CClubSubMenu_GetSelectionResult(void* menu, int* resultOut) {
-    int selectionResult = AsCClubSubMenu(menu)->selectionResult;
-    if (selectionResult == -1 || AsCClubSubMenu(menu)->selectionDelayFrames != -1)
+int CClubSubMenu::GetSelectionResult(int* resultOut) {
+    int selectionResult = this->selectionResult;
+    if (selectionResult == -1 || selectionDelayFrames != -1)
         return 0;
     *resultOut = selectionResult;
-    if (AsCClubSubMenu(menu)->selectionResult == 0) {
-        Sound_PlayByName(g_soundManager, (const char*)(clubSubMenuStrings + kSubMenuCloseSound),
-                    0, 0, 0, 0, kFloat_0_5_ClubSubMenu, kFloat_200_ClubSubMenu, kFloat_1_ShopDialog);
+    if (this->selectionResult == 0) {
+        Sound_PlayByName(g_soundManager, (const char*)(clubSubMenuStrings + kSubMenuCloseSound), 0, 0, 0, 0,
+                         kFloat_0_5_ClubSubMenu, kFloat_200_ClubSubMenu, kFloat_1_ShopDialog);
     }
     return 1;
 }
 
 // Allocate/load the club submenu layout and initialize an unconfirmed first choice.
-void* CClubSubMenu_Ctor(void* owner) {
-    *(void**)owner = __vt__12CClubSubMenu;
+CClubSubMenu::CClubSubMenu() {
+    *(void**)this = __vt__12CClubSubMenu;
     Fn802DED7C_Object* child = new Fn802DED7C_Object(5);
-    AsCClubSubMenu(owner)->layout = child;
+    layout = child;
     int minusOne = -1;
     int mask = kFirstClubChoice;
     unsigned char* name = clubSubMenuStrings;
-    AsCClubSubMenu(owner)->selectedElementIndex = mask;
-    AsCClubSubMenu(owner)->menuVariant = minusOne;
-    AsCClubSubMenu(owner)->selectionDelayFrames = minusOne;
-    AsCClubSubMenu(owner)->selectionResult = minusOne;
-    AsCClubSubMenu(owner)->firstChoiceMarked = 0;
+    selectedElementIndex = mask;
+    menuVariant = minusOne;
+    selectionDelayFrames = minusOne;
+    selectionResult = minusOne;
+    firstChoiceMarked = 0;
     Layout_LoadExtended(child, 0, name);
-    return owner;
 }
 
 #pragma opt_lifetimes off
 // Switch the two menu element groups and enable the choices appropriate to that group.
-int CClubSubMenu_SetPrimaryElementGroupEnabled(void* menu, int firstGroupEnabled) {
+int CClubSubMenu::SetPrimaryElementGroupEnabled(void* menu, int firstGroupEnabled) {
     void* self = menu;
     int mode = firstGroupEnabled;
     int enabled = 0;
@@ -514,30 +539,25 @@ int CClubSubMenu_SetPrimaryElementGroupEnabled(void* menu, int firstGroupEnabled
 #pragma opt_lifetimes reset
 
 // Update the layout and process navigation/confirmation while pressed feedback is idle.
-int CClubSubMenu_Update(void* owner) {
-    Layout_Update(AsCClubSubMenu(owner)->layout);
-    if (CClubSubMenu_UpdateSelectionDelay(owner) == 0) {
-        if (CClubSubMenu_ProcessNavigation(owner) != 0)
+int CClubSubMenu::Update() {
+    Layout_Update(layout);
+    if (UpdateSelectionDelay() == 0) {
+        if (ProcessNavigation() != 0)
             return 1;
-        CClubSubMenu_ProcessConfirmation(owner);
+        ProcessConfirmation();
     }
     return 1;
 }
 
 // Release the submenu layout and optionally delete the menu object.
-void* CClubSubMenu_dtor(void* owner, int deleteFlag) {
-    if (owner != 0) {
-        int* field = (int*)owner;
-        int child = field[1];
-        *(void**)owner = __vt__12CClubSubMenu;
-        if (child != 0) {
-            Layout_Destroy((void*)child, 1);
-            field[1] = 0;
-        }
-        if (deleteFlag > 0)
-            __dl__FPv(owner);
+CClubSubMenu::~CClubSubMenu() {
+    int* field = (int*)this;
+    int child = field[1];
+    *(void**)this = __vt__12CClubSubMenu;
+    if (child != 0) {
+        Layout_Destroy((void*)child, 1);
+        field[1] = 0;
     }
-    return owner;
 }
 
 // Initialize the submenu's cached full-turn angle from the shared constant.
@@ -551,20 +571,20 @@ void CPlayerStatus_InitFullTurnAngle() {
 }
 
 // Advance the submenu layout without processing menu input.
-int CClubSubMenu_UpdateLayout(void* owner) {
-    Layout_Update(AsCClubSubMenu(owner)->layout);
+int CClubSubMenu::UpdateLayout() {
+    Layout_Update(layout);
     return 1;
 }
 
 // Reset the submenu layout's mode byte to zero.
-int CClubSubMenu_ResetLayoutMode(void* owner) {
-    Layout_SetModeByte(AsCClubSubMenu(owner)->layout, 0);
+int CClubSubMenu::ResetLayoutMode() {
+    Layout_SetModeByte(layout, 0);
     return 1;
 }
 
 // Draw the submenu layout at full opacity.
-int CClubSubMenu_Draw(void* owner) {
-    void* layout = AsCClubSubMenu(owner)->layout;
+int CClubSubMenu::Draw() {
+    void* layout = this->layout;
     float f = kFloat_1_ShopDialog;
     Layout_DrawWithOpacity(layout, f);
     return 1;
@@ -572,9 +592,10 @@ int CClubSubMenu_Draw(void* owner) {
 
 #pragma use_lmw_stmw on
 // Build the player-status layout, four equipment texture arrays, message object, and script/number renderer.
-void* CPlayerStatus_Ctor(void* statusMemory, void* playerRecord) {
+// A named member rather than a constructor: the constructor form of this body scores lower.
+void* CPlayerStatus::Init(void* playerRecord) {
     // Phase 1: initialize the borrowed player record, owned layout and club-house message.
-    char* self = (char*)statusMemory;
+    char* self = (char*)this;
     *(void**)self = __vt__13CPlayerStatus;
     AsCPlayerStatus(self)->playerRecord = playerRecord;
     void* layout = __nw__FUl(0x5c);
@@ -589,15 +610,14 @@ void* CPlayerStatus_Ctor(void* statusMemory, void* playerRecord) {
     AsCPlayerStatus(self)->scriptEntryId = -1;
     (*(int*)&AsCPlayerStatus(self)->numberDraw) = 0;
     void* message = __nw__FUl(0x20);
-    if (message != 0)
-        {
-            try {
-                __ct__13CClubHouseMsgFv(message);
-            } catch (...) {
-                __dl__FPv(message);
-                throw;
-            }
+    if (message != 0) {
+        try {
+            __ct__13CClubHouseMsgFv(message);
+        } catch (...) {
+            __dl__FPv(message);
+            throw;
         }
+    }
     AsCPlayerStatus(self)->clubHouseMessage = message;
     Layout_LoadExtended(*(void**)(self + 8), 0, playerStatusResourceStrings);
     // Phase 2: construct owned CBpTex arrays (0x28 bytes/entry, 0x10-byte array header).
@@ -626,7 +646,7 @@ void* CPlayerStatus_Ctor(void* statusMemory, void* playerRecord) {
         if (block != 0) {
             arrayConstructed = 1;
             // the array pointer is __construct_new_array's result (mr r27,r3 at 0x802DFD08), past the header
-            items = __construct_new_array(block, (void*)CBpTex_Init, (void*)CBpTex_dtor, 0x28, count);
+            items = __construct_new_array(block, (void*)__ct__6CBpTexFv, (void*)__dt__6CBpTexFv, 0x28, count);
         }
         AsCPlayerStatus(textureSlotCursor)->equipmentTextures = items;
         equipmentKind = equipmentKind + 1;
@@ -639,26 +659,28 @@ void* CPlayerStatus_Ctor(void* statusMemory, void* playerRecord) {
     if (Sing_805DC830() == 0) {
         if (s_pointerVectorInitialized == 0) {
             PointerVector_InitReserved(s_fontNumDrawRegistry);
-            __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage, s_playerStatusNumberRegistryDtorRegistration);
+            __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage,
+                                     s_playerStatusNumberRegistryDtorRegistration);
             s_pointerVectorInitialized = 1;
         }
         Sing_805DC830() = s_fontNumDrawRegistry;
     }
-    void* numberRenderer = CFontNumDraw_CreateInVector(Sing_805DC830());
+    void* numberRenderer = CFontNumDraw::CreateInVector((PtrVector*)Sing_805DC830());
     volatile void* scriptController = Sing_805DC5F0();
     *(void**)(self + 0xA0) = (scriptController, numberRenderer);
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_playerStatusBpCtrlDtorRegistration);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    CBpCtrl_CreateEntry(Sing_805DC5F0(), (const char*)(playerStatusResourceStrings + kPlayerStatusScriptName), (int*)(self + 0x9C), 0);
+    ((CBpCtrl*)Sing_805DC5F0())
+        ->CreateEntry((const char*)(playerStatusResourceStrings + kPlayerStatusScriptName), (int*)(self + 0x9C), 0);
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_playerStatusBpCtrlDtorRegistration);
             s_bpCtrlInitialized = 1;
         }
@@ -670,16 +692,16 @@ void* CPlayerStatus_Ctor(void* statusMemory, void* playerRecord) {
 #pragma use_lmw_stmw reset
 
 // Report whether the shop layout has completed loading.
-int CPangya2Shop_IsLayoutLoaded(void* owner) {
-    return Layout_PollLoadComplete(AsCPangya2Shop(owner)->layout) != 0;
+int CPangya2Shop::IsLayoutLoaded() {
+    return Layout_PollLoadComplete(layout) != 0;
 }
 
 // Reset the choice/result and configure visible menu groups for one of four variants.
 // firstChoiceMarked selects label state; it is not an ownership flag. Returns 1.
 // An unknown variant still resets selection/result, highlights and plays open sound,
 // but leaves the old menuVariant/visibility intact (there is no validation fallback).
-int CClubSubMenu_OpenVariant(void* menu, int variant, unsigned char firstChoiceMarked) {
-    char* self = (char*)menu;
+int CClubSubMenu::OpenVariant(int variant, unsigned char firstChoiceMarked) {
+    char* self = (char*)this;
     *(unsigned char*)&AsCClubSubMenu(self)->firstChoiceMarked = firstChoiceMarked;
     *(int*)&AsCClubSubMenu(self)->selectionResult = -1;
     *(int*)&AsCClubSubMenu(self)->selectedElementIndex = kFirstClubChoice;
@@ -690,7 +712,7 @@ int CClubSubMenu_OpenVariant(void* menu, int variant, unsigned char firstChoiceM
             Layout_SetElementValueState(*(void**)&AsCClubSubMenu(self)->layout, kClubMarkedFirstLabel, 1);
         else
             Layout_SetElementValueState(*(void**)&AsCClubSubMenu(self)->layout, kClubMarkedFirstLabel, 0);
-        CClubSubMenu_SetPrimaryElementGroupEnabled(self, 1);
+        CClubSubMenu::SetPrimaryElementGroupEnabled(self, 1);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubMarkedFirstLabel, 1);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubVariantLabel13, 1);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubVariantLabel14, 0);
@@ -703,7 +725,7 @@ int CClubSubMenu_OpenVariant(void* menu, int variant, unsigned char firstChoiceM
             Layout_SetElementValueState(*(void**)&AsCClubSubMenu(self)->layout, kClubMarkedFirstLabel, 1);
         else
             Layout_SetElementValueState(*(void**)&AsCClubSubMenu(self)->layout, kClubMarkedFirstLabel, 0);
-        CClubSubMenu_SetPrimaryElementGroupEnabled(self, 0);
+        CClubSubMenu::SetPrimaryElementGroupEnabled(self, 0);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubMarkedFirstLabel, 1);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubVariantLabel13, 1);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubVariantLabel14, 0);
@@ -716,7 +738,7 @@ int CClubSubMenu_OpenVariant(void* menu, int variant, unsigned char firstChoiceM
             Layout_SetElementValueState(*(void**)&AsCClubSubMenu(self)->layout, kClubMarkedFirstLabel, 1);
         else
             Layout_SetElementValueState(*(void**)&AsCClubSubMenu(self)->layout, kClubMarkedFirstLabel, 0);
-        CClubSubMenu_SetPrimaryElementGroupEnabled(self, 0);
+        CClubSubMenu::SetPrimaryElementGroupEnabled(self, 0);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubMarkedFirstLabel, 1);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubVariantLabel13, 0);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubVariantLabel14, 1);
@@ -725,7 +747,7 @@ int CClubSubMenu_OpenVariant(void* menu, int variant, unsigned char firstChoiceM
         break;
     case kClubTwoChoicesLabel15:
         *(int*)&AsCClubSubMenu(self)->menuVariant = kClubTwoChoicesLabel15;
-        CClubSubMenu_SetPrimaryElementGroupEnabled(self, 0);
+        CClubSubMenu::SetPrimaryElementGroupEnabled(self, 0);
         Layout_SetElementEnabled(*(void**)&AsCClubSubMenu(self)->layout, kClubMarkedFirstLabel, 1);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubVariantLabel13, 0);
         Layout_SetElementEnabled(*(void**)(self + kSubMenuLayoutOffset), kClubVariantLabel14, 0);
@@ -735,9 +757,9 @@ int CClubSubMenu_OpenVariant(void* menu, int variant, unsigned char firstChoiceM
     default:
         break;
     }
-    CClubSubMenu_UpdateSelectionHighlight(self);
-    Sound_PlayByName(g_soundManager, (const char*)(clubSubMenuStrings + kSubMenuOpenSound),
-                0, 0, 0, 0, kFloat_0_5_ClubSubMenu, kFloat_200_ClubSubMenu, kFloat_1_ShopDialog);
+    CClubSubMenu::UpdateSelectionHighlight(self);
+    Sound_PlayByName(g_soundManager, (const char*)(clubSubMenuStrings + kSubMenuOpenSound), 0, 0, 0, 0,
+                     kFloat_0_5_ClubSubMenu, kFloat_200_ClubSubMenu, kFloat_1_ShopDialog);
     return 1;
 }
 
@@ -748,19 +770,21 @@ int CClubSubMenu_OpenVariant(void* menu, int variant, unsigned char firstChoiceM
 // affordability/index validity. This routine does not validate the price lookup.
 // choice 0 accepts, other choices cancel; if no ID in [0,2] is found, -1 still
 // reaches feedback calls. Preserve that behavior when changing the UI contract.
-int CClubLvUpDialog_ProcessInput(char* self) {
-    if (Sing_805DC5C8() == 0) {
+int CClubLvUpDialog::ProcessInput() {
+    char* self = (char*)this;
+    if (GetInputManagerSlot() == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_clubLevelInputManagerDtorRegistration);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_clubLevelInputManagerDtorRegistration);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
-    if (Input_IsActionPressed(Sing_805DC5C8(), kActionCancel, kAnyInputPlayer)) {
+    if (Input_IsActionPressed(GetInputManagerSlot(), kActionCancel, kAnyInputPlayer)) {
         AsCClubLvUpDialog(self)->result = kLevelUpCancel;
-        Sound_PlayByName(g_soundManager, (const char*)(clubLevelUpDialogStrings + kLevelCancelSound),
-                    0, 0, 0, 0, kClubDialogSoundParameter0_0_5, kClubDialogSoundParameter1_200, kFloat_1_ClubLevelDialog);
+        Sound_PlayByName(g_soundManager, (const char*)(clubLevelUpDialogStrings + kLevelCancelSound), 0, 0, 0, 0,
+                         kClubDialogSoundParameter0_0_5, kClubDialogSoundParameter1_200, kFloat_1_ClubLevelDialog);
         return 1;
     }
     // Own the temporary activated-element array, including early-return paths.
@@ -800,18 +824,20 @@ int CClubLvUpDialog_ProcessInput(char* self) {
         AsCClubLvUpDialog(self)->result = kLevelUpAccept;
         ClubUpgradePlayerView* upgradeLevels = (ClubUpgradePlayerView*)AsCClubLvUpDialog(self)->playerData;
         int oldLevel = upgradeLevels->clubUpgrades[AsCClubLvUpDialog(self)->clubIndex].level;
-        void* upgradePrice = CClubCustomTbl_FindUpgradeEntry((signed char)AsCClubLvUpDialog(self)->clubIndex, (signed char)(oldLevel + 1));
+        void* upgradePrice = CClubCustomTbl::FindUpgradeEntry((signed char)AsCClubLvUpDialog(self)->clubIndex,
+                                                              (signed char)(oldLevel + 1));
         // This OR is true for every integer oldLevel; it provides no bounds validation.
         // Preserve the original OR: changing it to AND changes purchase behavior.
         if (oldLevel > 0 || oldLevel <= 4) {
             int nextLevel = (signed char)(oldLevel + 1);
             int* playerRecord = (*(int**)&AsCClubLvUpDialog(self)->playerData);
             ((ClubUpgradePlayerView*)playerRecord)->pang -= ((ClubUpgradePrice*)upgradePrice)->pangCost;
-            PlayerData_SetClubUpgradeLevel((signed char)AsCClubLvUpDialog(self)->clubIndex, nextLevel, (*(int**)&AsCClubLvUpDialog(self)->playerData));
-            Sound_PlayByName(g_soundManager, (const char*)(clubLevelUpDialogStrings + kLevelUpgradeSound),
-                        0, 0, 0, 0, kClubDialogSoundParameter0_0_5, kClubDialogSoundParameter1_200, kFloat_1_ClubLevelDialog);
-            Sound_PlayByName(g_soundManager, (const char*)(clubLevelUpDialogStrings + kLevelPurchaseSound),
-                        0, 0, 0, 0, kClubDialogSoundParameter0_0_5, kClubDialogSoundParameter1_200, kFloat_1_ClubLevelDialog);
+            PlayerData_SetClubUpgradeLevel((signed char)AsCClubLvUpDialog(self)->clubIndex, nextLevel,
+                                           (*(int**)&AsCClubLvUpDialog(self)->playerData));
+            Sound_PlayByName(g_soundManager, (const char*)(clubLevelUpDialogStrings + kLevelUpgradeSound), 0, 0, 0, 0,
+                             kClubDialogSoundParameter0_0_5, kClubDialogSoundParameter1_200, kFloat_1_ClubLevelDialog);
+            Sound_PlayByName(g_soundManager, (const char*)(clubLevelUpDialogStrings + kLevelPurchaseSound), 0, 0, 0, 0,
+                             kClubDialogSoundParameter0_0_5, kClubDialogSoundParameter1_200, kFloat_1_ClubLevelDialog);
         }
     } else {
         AsCClubLvUpDialog(self)->result = kLevelUpCancel;
@@ -822,13 +848,15 @@ int CClubLvUpDialog_ProcessInput(char* self) {
     Layout_SetElementValueState(AsCClubLvUpDialog(self)->layout, choice, 2);
     Layout_SetElementPlayerFlag(AsCClubLvUpDialog(self)->layout, AsCClubLvUpDialog(self)->selectedElement, 0, 5);
     float labelPosition[2] = {0.0f, 0.0f};
-    Layout_GetElementPosition(AsCClubLvUpDialog(self)->layout, AsCClubLvUpDialog(self)->selectedElement + 3, labelPosition);
+    Layout_GetElementPosition(AsCClubLvUpDialog(self)->layout, AsCClubLvUpDialog(self)->selectedElement + 3,
+                              labelPosition);
     labelPosition[0] += kFloat_1_ClubLevelDialog;
     labelPosition[1] += kFloat_1_ClubLevelDialog;
-    Layout_SetElementPosition(AsCClubLvUpDialog(self)->layout, AsCClubLvUpDialog(self)->selectedElement + 3, labelPosition);
+    Layout_SetElementPosition(AsCClubLvUpDialog(self)->layout, AsCClubLvUpDialog(self)->selectedElement + 3,
+                              labelPosition);
     AsCClubLvUpDialog(self)->selectionDelayFrames = kSelectionFeedbackFrames;
-    Sound_PlayByName(g_soundManager, (const char*)(clubLevelUpDialogStrings + kLevelClickSound),
-                0, 0, 0, 0, kClubDialogSoundParameter0_0_5, kClubDialogSoundParameter1_200, kFloat_1_ClubLevelDialog);
+    Sound_PlayByName(g_soundManager, (const char*)(clubLevelUpDialogStrings + kLevelClickSound), 0, 0, 0, 0,
+                     kClubDialogSoundParameter0_0_5, kClubDialogSoundParameter1_200, kFloat_1_ClubLevelDialog);
     return 1;
 }
 #pragma opt_lifetimes reset
@@ -842,5 +870,3 @@ int CClubLvUpDialog_ProcessInput(char* self) {
 STATIC_INIT_ENTRY(".CRT$XCU8046255C", _ctors_u802DEA60_0, CClubSubMenu_InitFullTurnAngle);
 STATIC_INIT_ENTRY(".CRT$XCU8046255C", _ctors_u802DEA60_1, CPlayerStatus_InitFullTurnAngle);
 #pragma pop
-
-

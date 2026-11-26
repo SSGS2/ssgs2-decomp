@@ -5,8 +5,8 @@
 
 class ThinkRuleTree {
 public:
-    void* first; // 0x0: ComConditionTree_Init clears first link
-    char* root; // 0x4: ComConditionTree_dtor/ThinkActionTree_dtor start recursive cleanup here
+    void* first;   // 0x0: ComConditionTree_Init clears first link
+    char* root;    // 0x4: ComConditionTree_dtor/ThinkActionTree_dtor start recursive cleanup here
     void* current; // 0x8: ComConditionTree_Init sets to address of root
 };
 

@@ -1,3 +1,7 @@
+// Menu layouts: their elements (position, scale, color, visibility and hit areas), the pointer
+// and cursor hit tests, and the per-frame update and draw passes.
+// Also has the element vectors, the activation sound helper, and loading and load-completion polling.
+
 #include <decomp/ct_member.h>
 typedef unsigned long new_size_t;
 #include "MSL/error_message.h"
@@ -22,10 +26,15 @@ extern const char s_layoutStringPool[];
 // Position/scale/source-size setters do NOT rebuild the cached hit rectangle;
 // use Layout_WriteElementRect as well for a mod that moves/resizes input areas.
 // Hover-only offsets/scale change drawing without changing cached hit bounds.
-enum LayoutLoadPhase { kLayoutWaitingForFile = 0, kLayoutBuildingItems = 1,
-    kLayoutReady = 2 };
+enum LayoutLoadPhase {
+    kLayoutWaitingForFile = 0,
+    kLayoutBuildingItems = 1,
+    kLayoutReady = 2
+};
 #include "game/singletons.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CSpdCtrl.h"
+#include "classes/CBpTex.h"
 extern "C" unsigned long Runtime_ConvertDoubleToUnsigned(double x);
 
 // Accessor contract (all Set/GetElement definitions below): live layout and
@@ -36,29 +45,29 @@ extern "C" unsigned long Runtime_ConvertDoubleToUnsigned(double x);
 // read/written verbatim; negative geometry/scales are not clamped here.
 struct LayoutElement {
     char unk0[0x4];
-    int drawEnabled; // Draw enable: SetElementEnabled/initialization -> hover draw gate.
+    int drawEnabled;            // Draw enable: SetElementEnabled/initialization -> hover draw gate.
     int activationSoundEnabled; // Nonzero admits activation sound; separate from draw/player gates.
-    int hitLeft; // Cached hit left, integer truncation of position.X - origin.X*scale.X.
-    int hitTop; // Cached hit top, integer truncation of position.Y - origin.Y*scale.Y.
-    int hitRight; // Cached hit right = integer truncation of (leftFloat + width*scale.X).
-    int hitBottom; // Cached hit bottom = integer truncation of (topFloat + height*scale.Y).
-    float positionX; // Base position X (layout units).
-    float positionY; // Base position Y.
-    float scaleX; // Dimensionless X scale.
-    float scaleY; // Dimensionless Y scale.
-    float sourceWidth; // Source width before scale.
-    float sourceHeight; // Source height before scale.
-    float originX; // Source origin X before scale.
-    float originY; // Source origin Y before scale.
-    float rotationRadians; // Rotation radians, Sprite getter -> geometry setter (hit AABB ignores rotation).
-    int packedColor; // Packed color; opacity path multiplies ONLY low byte by t.
-    int clonedItemId; // Cloned sprite/square ID when duplicate IDs exist, zero -> item.id.
-    int unk48i; // Owned child resource handles; standard uses first two,
-    int unk4Ci; // extended uses all four. PollLoadComplete waits on ready().
+    int hitLeft;                // Cached hit left, integer truncation of position.X - origin.X*scale.X.
+    int hitTop;                 // Cached hit top, integer truncation of position.Y - origin.Y*scale.Y.
+    int hitRight;               // Cached hit right = integer truncation of (leftFloat + width*scale.X).
+    int hitBottom;              // Cached hit bottom = integer truncation of (topFloat + height*scale.Y).
+    float positionX;            // Base position X (layout units).
+    float positionY;            // Base position Y.
+    float scaleX;               // Dimensionless X scale.
+    float scaleY;               // Dimensionless Y scale.
+    float sourceWidth;          // Source width before scale.
+    float sourceHeight;         // Source height before scale.
+    float originX;              // Source origin X before scale.
+    float originY;              // Source origin Y before scale.
+    float rotationRadians;      // Rotation radians, Sprite getter -> geometry setter (hit AABB ignores rotation).
+    int packedColor;            // Packed color; opacity path multiplies ONLY low byte by t.
+    int clonedItemId;           // Cloned sprite/square ID when duplicate IDs exist, zero -> item.id.
+    int unk48i;                 // Owned child resource handles; standard uses first two,
+    int unk4Ci;                 // extended uses all four. PollLoadComplete waits on ready().
     int unk50i;
     int unk54i;
     char normalValueSelector; // Value-state byte consumed by Layout_GetElementValue.
-    char hoverValueSelector; // Hover selector consumed by Layout_GetElementValue(alt!=0).
+    char hoverValueSelector;  // Hover selector consumed by Layout_GetElementValue(alt!=0).
     char reserved5A[0x2];
     int playerFlags[4]; // 0x5C: one per player
 }; // size 0x6C
@@ -83,26 +92,36 @@ struct Layout {
     char unk0[0x4];
     void* spdRoot;
     LayoutItem* items; // 0x8
-    int elementCount; // Element/item count. Standard supplied by caller; extended from resource table.
+    int elementCount;  // Element/item count. Standard supplied by caller; extended from resource table.
     char unk10[0x1C];
     int w2C;
-    int loadPhase; // LayoutLoadPhase, written by PollLoadComplete; see transition map below.
-    int allPlayersMode; // Nonzero: test all four players; zero: selected player only.
-    int hoverFeedbackPending; // Update publishes 1; first hover draw consumes/reset to 0.
+    int loadPhase;                 // LayoutLoadPhase, written by PollLoadComplete; see transition map below.
+    int allPlayersMode;            // Nonzero: test all four players; zero: selected player only.
+    int hoverFeedbackPending;      // Update publishes 1; first hover draw consumes/reset to 0.
     char soundAdmissionBytes[0x4]; // +3C: first byte enables activation sound.
-    LayoutElement* elements; // 0x40
+    LayoutElement* elements;       // 0x40
     int w44;
     char activationActionIdBytes[0x4]; // +48: native int action ID via LayoutActionView.
-    int extended; // 0x4C: nonzero selects the extended update path
+    int extended;                      // 0x4C: nonzero selects the extended update path
     char spdResourceTable[0x4];
     LayoutItemEx* itemsEx; // 0x54: used instead of items when extended
 };
 
 // Supplemental byte views for sound admission, separate from sprite/render
 // flags. The extended sound gate at +10 is NOT LayoutItemEx::flag at +11.
-struct LayoutSoundAdmissionView { char prefix[0x3C]; unsigned char enabled; };
-struct LayoutActionView { char prefix[0x48]; int actionId; };
-struct LayoutExtendedSoundItemView { char prefix[0x10]; signed char soundGate; char suffix[0x13]; };
+struct LayoutSoundAdmissionView {
+    char prefix[0x3C];
+    unsigned char enabled;
+};
+struct LayoutActionView {
+    char prefix[0x48];
+    int actionId;
+};
+struct LayoutExtendedSoundItemView {
+    char prefix[0x10];
+    signed char soundGate;
+    char suffix[0x13];
+};
 typedef char LayoutExtendedSoundItemSize[sizeof(LayoutExtendedSoundItemView) == 0x24 ? 1 : -1];
 extern "C" {
 
@@ -110,7 +129,7 @@ int Layout_UpdateStandard(Layout* layout);
 int Layout_UpdateExtended(Layout* layout);
 
 // 0x80078440: called for every active layout, every frame. Returns the update result: the original tail-calls
-// both helpers (b at 0x8007844C/0x80078450), and CBallWind2d_vfunc_3 (0x8030D804) uses r3 & 1.
+// both helpers (b at 0x8007844C/0x80078450), and CBallWind2d::Update (0x8030D804) uses r3 & 1.
 int Layout_Update(Layout* layout) {
     if (layout->extended) {
         return Layout_UpdateExtended(layout);
@@ -332,22 +351,22 @@ extern int Input_IsActionPressed(LayoutSingleton*, int, int);
 extern int InputManager_GetSelectedPlayer(LayoutSingleton*);
 extern void InputManager_RaiseCursorAppearance(LayoutSingleton*, int, int);
 extern // Append one copied int (used for element ordinals); ptr is a required
-// initialized {data,size,capacity} vector, size<=capacity, capacity<=0x3FFFFFFF.
-// value is a required readable int and may alias a live vector element: read
-// it before clearing/freeing old storage. Own the new array, never the value.
-// Spare capacity: publish size then store. Growth: check length, allocate,
-// append, copy old prefix, zero old bytes, adopt new array, then free old via
-// temp's destructor. Allocator must return usable storage or throw. Length or
-// allocation throw before publication preserves vector/value; no rollback for
-// invalid pointers. Volatile reloads and temporary lifetime retain EH behavior.
-void LayoutIntVector_PushBack(void*, int*);
+    // initialized {data,size,capacity} vector, size<=capacity, capacity<=0x3FFFFFFF.
+    // value is a required readable int and may alias a live vector element: read
+    // it before clearing/freeing old storage. Own the new array, never the value.
+    // Spare capacity: publish size then store. Growth: check length, allocate,
+    // append, copy old prefix, zero old bytes, adopt new array, then free old via
+    // temp's destructor. Allocator must return usable storage or throw. Length or
+    // allocation throw before publication preserves vector/value; no rollback for
+    // invalid pointers. Volatile reloads and temporary lifetime retain EH behavior.
+    void LayoutIntVector_PushBack(void*, int*);
 extern // Append one copied player ordinal to the optional activation companion
-// vector; same initialized-vector/aliasing/ownership/length-failure contract as
-// LayoutIntVector_PushBack. Does not coordinate a transaction with that vector:
-// CollectActivated has already appended the index if this allocation throws.
-// Growth stages: checked capacity -> append into new storage -> copy/zero old
-// prefix -> publish new storage/count -> guard releases old allocation.
-void LayoutActivatedVector_PushBack(void*, int*);
+    // vector; same initialized-vector/aliasing/ownership/length-failure contract as
+    // LayoutIntVector_PushBack. Does not coordinate a transaction with that vector:
+    // CollectActivated has already appended the index if this allocation throws.
+    // Growth stages: checked capacity -> append into new storage -> copy/zero old
+    // prefix -> publish new storage/count -> guard releases old allocation.
+    void LayoutActivatedVector_PushBack(void*, int*);
 #pragma push
 #pragma use_lmw_stmw on
 // Append each (element,player) activation in element-major/player-minor order.
@@ -366,7 +385,8 @@ int Layout_CollectActivated(Layout* layout, void* indices, void* players) {
     for (index = 0; (unsigned)index < (unsigned)layout->elementCount; ++index) {
         if (layout->allPlayersMode) {
             for (int player = 0; player < 4; ++player) {
-                if (Input_IsActionPressed(input, *(int*)layout->activationActionIdBytes, player) && Layout_HitTest(layout, index, player)) {
+                if (Input_IsActionPressed(input, *(int*)layout->activationActionIdBytes, player) &&
+                    Layout_HitTest(layout, index, player)) {
                     LayoutIntVector_PushBack(indices, &index);
                     if (players) {
                         int value = player;
@@ -378,9 +398,11 @@ int Layout_CollectActivated(Layout* layout, void* indices, void* players) {
             }
         } else {
             singlePlayer = InputManager_GetSelectedPlayer(input);
-            if (Input_IsActionPressed(input, *(int*)layout->activationActionIdBytes, -1) && Layout_HitTest(layout, index, singlePlayer)) {
+            if (Input_IsActionPressed(input, *(int*)layout->activationActionIdBytes, -1) &&
+                Layout_HitTest(layout, index, singlePlayer)) {
                 LayoutIntVector_PushBack(indices, &index);
-                if (players) LayoutActivatedVector_PushBack(players, &singlePlayer);
+                if (players)
+                    LayoutActivatedVector_PushBack(players, &singlePlayer);
                 InputManager_RaiseCursorAppearance(input, 3, singlePlayer);
                 result = 1;
             }
@@ -392,15 +414,16 @@ int Layout_CollectActivated(Layout* layout, void* indices, void* players) {
 // Lazily construct/register the process-owned input manager, then return a
 // borrowed singleton. Callers never delete it; initialization is unsynchronized.
 LayoutSingleton* LayoutManager_GetInstance() {
-    if (((LayoutSingleton *&)Sing_805DC5C8()) == 0) {
+    if (((LayoutSingleton*&)GetInputManagerSlot()) == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_layoutInputManagerDtorRegistration);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_layoutInputManagerDtorRegistration);
             s_inputManagerInitialized = 1;
         }
-        ((LayoutSingleton *&)Sing_805DC5C8()) = &s_gameInputManager;
+        ((LayoutSingleton*&)GetInputManagerSlot()) = &s_gameInputManager;
     }
-    return ((LayoutSingleton *&)Sing_805DC5C8());
+    return ((LayoutSingleton*&)GetInputManagerSlot());
 }
 
 struct LayoutCounter {
@@ -416,25 +439,27 @@ extern LayoutCounter lbl_804E5FC8c;
 void Layout_SetActive(Layout* layout, int value) {
     if (layout->allPlayersMode != value) {
         if (value != 0) {
-            if (((LayoutSingleton *&)Sing_805DC5C8()) == 0) {
+            if (((LayoutSingleton*&)GetInputManagerSlot()) == 0) {
                 if (s_inputManagerInitialized == 0) {
                     InputManager_Init(&s_gameInputManager);
-                    __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_layoutInputManagerDtorRegistration);
+                    __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                             s_layoutInputManagerDtorRegistration);
                     s_inputManagerInitialized = 1;
                 }
-                ((LayoutSingleton *&)Sing_805DC5C8()) = &s_gameInputManager;
+                ((LayoutSingleton*&)GetInputManagerSlot()) = &s_gameInputManager;
             }
-            ((LayoutCounter*)((LayoutSingleton *&)Sing_805DC5C8()))->count++;
+            ((LayoutCounter*)((LayoutSingleton*&)GetInputManagerSlot()))->count++;
         } else {
-            if (((LayoutSingleton *&)Sing_805DC5C8()) == 0) {
+            if (((LayoutSingleton*&)GetInputManagerSlot()) == 0) {
                 if (s_inputManagerInitialized == 0) {
                     InputManager_Init(&s_gameInputManager);
-                    __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_layoutInputManagerDtorRegistration);
+                    __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                             s_layoutInputManagerDtorRegistration);
                     s_inputManagerInitialized = 1;
                 }
-                ((LayoutSingleton *&)Sing_805DC5C8()) = &s_gameInputManager;
+                ((LayoutSingleton*&)GetInputManagerSlot()) = &s_gameInputManager;
             }
-            ((LayoutCounter*)((LayoutSingleton *&)Sing_805DC5C8()))->count--;
+            ((LayoutCounter*)((LayoutSingleton*&)GetInputManagerSlot()))->count--;
         }
         layout->allPlayersMode = value;
     }
@@ -449,19 +474,20 @@ int Layout_LoadExtended(Layout* layout, int arg, int name) {
     layout->extended = 1;
     layout->elementCount = 0;
     int h = SharedFile_Create(name, 0);
-    LayoutSingleton* s = ((LayoutSingleton *&)Sing_805DC5C8());
+    LayoutSingleton* s = ((LayoutSingleton*&)GetInputManagerSlot());
     layout->loadPhase = 0;
     layout->hoverFeedbackPending = 0;
     layout->w44 = h;
     if (s == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_layoutInputManagerDtorRegistration);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_layoutInputManagerDtorRegistration);
             s_inputManagerInitialized = 1;
         }
-        ((LayoutSingleton *&)Sing_805DC5C8()) = &s_gameInputManager;
+        ((LayoutSingleton*&)GetInputManagerSlot()) = &s_gameInputManager;
     }
-    InputManager_SetSelectedPlayer(((LayoutSingleton *&)Sing_805DC5C8()), arg);
+    InputManager_SetSelectedPlayer(((LayoutSingleton*&)GetInputManagerSlot()), arg);
     return 1;
 }
 
@@ -491,8 +517,10 @@ int Layout_HitTestPointerPointInElement(Layout* layout, int index, int slot) {
     int a;
     int b;
     float k = kHitRectangleOffset;
-    int c; int d;  layout = layout;
-// The original reads the bounds even when the element load is skipped (it uses the stale registers).
+    int c;
+    int d;
+    layout = layout;
+    // The original reads the bounds even when the element load is skipped (it uses the stale registers).
 
     if (index + layout->elements != 0) {
 
@@ -502,9 +530,15 @@ int Layout_HitTestPointerPointInElement(Layout* layout, int index, int slot) {
         d = layout->elements[index].hitBottom;
     }
     float* pt = (float*)((char*)layout + (8 * slot));
-    if ((float)a + k < pt[4]) { if ((float)b + k < pt[5]) { if ((float)c + k > pt[4]) { if ((float)d + k > pt[5]) {
-        return 1;
-    } } } }
+    if ((float)a + k < pt[4]) {
+        if ((float)b + k < pt[5]) {
+            if ((float)c + k > pt[4]) {
+                if ((float)d + k > pt[5]) {
+                    return 1;
+                }
+            }
+        }
+    }
     return 0;
 }
 
@@ -519,7 +553,9 @@ extern const float kSoundMinimumGain;
 // Ignore global/eligibility/draw gates; no cache/resource/ownership changes.
 int Layout_HitTestElementCircle(Layout* layout, int index, int slot) {
     int a, c, b, d;
-    struct P { float x, y; };
+    struct P {
+        float x, y;
+    };
     if (layout->spdRoot == 0) {
         return 0;
     }
@@ -541,9 +577,10 @@ int Layout_HitTestElementCircle(Layout* layout, int index, int slot) {
 
     float dx = k + (ctr.x - pt[4]);
     float dy = k + (ctr.y - pt[5]);
-float r = Math_SquareRootApprox(hw * hw);
+    float r = Math_SquareRootApprox(hw * hw);
     float dist = Math_SquareRootApprox(dx * dx + dy * dy);
-    if (dist <= r) return 1;
+    if (dist <= r)
+        return 1;
     return 0;
 }
 
@@ -555,7 +592,8 @@ int Layout_HitTestElement(Layout* layout, int index, int slot) {
     int a;
     unsigned int g;
     int b;
-     int c; int d;
+    int c;
+    int d;
     if (!(layout->extended)) {
         g = layout->items[index].hitShapeSelector;
     } else {
@@ -572,9 +610,13 @@ int Layout_HitTestElement(Layout* layout, int index, int slot) {
         d = layout->elements[index].hitBottom;
     }
     float* pt = (float*)((char*)layout + (8 * slot));
-    if ((float)a + k < pt[4]) { if ((float)b + k < pt[5]) { if ((float)c + k > pt[4] && (float)d + k > pt[5]) {
-        return 1;
-    } } }
+    if ((float)a + k < pt[4]) {
+        if ((float)b + k < pt[5]) {
+            if ((float)c + k > pt[4] && (float)d + k > pt[5]) {
+                return 1;
+            }
+        }
+    }
     return 0;
 }
 
@@ -592,9 +634,12 @@ int Layout_HitTestElementForSelectedPlayer(Layout* layout, int index) {
     int c;
     int g;
 
-    if (layout->extended) g = layout->itemsEx[index].hitShapeSelector;
-    else g = layout->items[index].hitShapeSelector;
-    if (g) return Layout_HitTestElementCircle(layout, index, slot);
+    if (layout->extended)
+        g = layout->itemsEx[index].hitShapeSelector;
+    else
+        g = layout->items[index].hitShapeSelector;
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, slot);
     float k = kHitRectangleOffset;
     index = (int)(*(LayoutElement* volatile*)&layout->elements + index);
     if (index) {
@@ -614,7 +659,8 @@ int Layout_HitTestElementForSelectedPlayer(Layout* layout, int index) {
     __typeof__(_p437) _p740 = _p35 * 8;
     slot = _p430;
     float* pt = (float*)((char*)layout + slot);
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
 }
 
@@ -626,12 +672,20 @@ int Layout_HitTestElementForSelectedPlayer(Layout* layout, int index) {
 int Layout_HitTestPlayer(Layout* layout, int index) {
     unsigned int slot = InputManager_GetSelectedPlayer(LayoutManager_GetInstance());
 
-    int g = 0; int a; int b; int c;
-    if (g_layoutHitTestingEnabled == 0) return 0;
-    if (layout->extended) g |= layout->itemsEx[index].hitShapeSelector;
-    else g |= layout->items[index].hitShapeSelector;
-    if (!layout->elements[index].playerFlags[slot]) return 0;
-    if (g) return Layout_HitTestElementCircle(layout, index, slot);
+    int g = 0;
+    int a;
+    int b;
+    int c;
+    if (g_layoutHitTestingEnabled == 0)
+        return 0;
+    if (layout->extended)
+        g |= layout->itemsEx[index].hitShapeSelector;
+    else
+        g |= layout->items[index].hitShapeSelector;
+    if (!layout->elements[index].playerFlags[slot])
+        return 0;
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, slot);
     float k = kHitRectangleOffset;
     LayoutElement* e = *(LayoutElement* volatile*)&layout->elements + index;
     if (e) {
@@ -642,7 +696,8 @@ int Layout_HitTestPlayer(Layout* layout, int index) {
     }
     slot = slot * 8;
     float* pt = (float*)((char*)layout + slot);
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)index + k > pt[5]) return 1;
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)index + k > pt[5])
+        return 1;
     return 0;
 }
 
@@ -657,18 +712,26 @@ int Layout_GetElementValue(Layout* layout, int index, int alt) {
         if (alt) {
             LayoutElement* e = &layout->elements[index];
             switch (e->hoverValueSelector) {
-            case 0: return e->unk48i;
-            case 1: return e->unk4Ci;
-            case 2: return e->unk50i;
-            case 3: return e->unk54i;
+            case 0:
+                return e->unk48i;
+            case 1:
+                return e->unk4Ci;
+            case 2:
+                return e->unk50i;
+            case 3:
+                return e->unk54i;
             }
         } else {
             LayoutElement* e = &layout->elements[index];
             switch (e->normalValueSelector) {
-            case 0: return e->unk48i;
-            case 1: return e->unk4Ci;
-            case 2: return e->unk50i;
-            case 3: return e->unk54i;
+            case 0:
+                return e->unk48i;
+            case 1:
+                return e->unk4Ci;
+            case 2:
+                return e->unk50i;
+            case 3:
+                return e->unk54i;
             }
         }
     } else {
@@ -704,22 +767,25 @@ int Layout_InitStandard(Layout* layout, int arg, int a8, int count, int name) {
     layout->elementCount = count;
     layout->items = (LayoutItem*)(long)a8;
     void* storage = __nwa__FUl(count * sizeof(LayoutElementObj) + 16);
-    layout->elements = storage ? (LayoutElement*)__construct_new_array(storage,
-        (void*)CSPDPangyaIcon_PangyaIconObject_ctor, (void*)CSPDPangyaIcon_PANGYA_ICON_OBJECT_VAR_dtor,
-        sizeof(LayoutElementObj), count) : 0;
+    layout->elements = storage
+                           ? (LayoutElement*)__construct_new_array(storage, (void*)CSPDPangyaIcon_PangyaIconObject_ctor,
+                                                                   (void*)CSPDPangyaIcon_PANGYA_ICON_OBJECT_VAR_dtor,
+                                                                   sizeof(LayoutElementObj), count)
+                           : 0;
     int h = SharedFile_Create(name, 0);
     layout->w44 = h;
     layout->loadPhase = 0;
     layout->hoverFeedbackPending = 0;
-    if (((LayoutSingleton *&)Sing_805DC5C8()) == 0) {
+    if (((LayoutSingleton*&)GetInputManagerSlot()) == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_layoutInputManagerDtorRegistration);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_layoutInputManagerDtorRegistration);
             s_inputManagerInitialized = 1;
         }
-        ((LayoutSingleton *&)Sing_805DC5C8()) = &s_gameInputManager;
+        ((LayoutSingleton*&)GetInputManagerSlot()) = &s_gameInputManager;
     }
-    InputManager_SetSelectedPlayer(((LayoutSingleton *&)Sing_805DC5C8()), arg);
+    InputManager_SetSelectedPlayer(((LayoutSingleton*&)GetInputManagerSlot()), arg);
     return 1;
 }
 #pragma pop
@@ -729,27 +795,47 @@ int Layout_InitStandard(Layout* layout, int arg, int a8, int count, int name) {
 // Required loaded item/element arrays and slot 0..3; draw state is ignored.
 // index phases: element ordinal -> integerized element address -> slot*8 byte
 // offset. Keep those uses in order; output is only the 0/1 hit result.
-int Layout_HitTest(Layout* layout, int index, int slot) { int a;  int b;  int c;       int g = 0; int d;
+int Layout_HitTest(Layout* layout, int index, int slot) {
+    int a;
+    int b;
+    int c;
+    int g = 0;
+    int d;
 
-    if (0 == g_layoutHitTestingEnabled) return 0;
-    if (layout->extended) g |= layout->itemsEx[index].hitShapeSelector;
-    else g |= layout->items[index].hitShapeSelector;
-    if (0 == layout->elements[index].playerFlags[slot]) return 0;
-    if (0 != g) return Layout_HitTestElementCircle(layout, index, slot);
+    if (0 == g_layoutHitTestingEnabled)
+        return 0;
+    if (layout->extended)
+        g |= layout->itemsEx[index].hitShapeSelector;
+    else
+        g |= layout->items[index].hitShapeSelector;
+    if (0 == layout->elements[index].playerFlags[slot])
+        return 0;
+    if (0 != g)
+        return Layout_HitTestElementCircle(layout, index, slot);
     index = (int)(*(LayoutElement* volatile*)&layout->elements + index);
     float k = kHitRectangleOffset;
-    if (index) { a = ((LayoutElement*)index)->hitLeft; b = ((LayoutElement*)index)->hitTop; c = ((LayoutElement*)index)->hitRight; d = ((LayoutElement*)index)->hitBottom; }
+    if (index) {
+        a = ((LayoutElement*)index)->hitLeft;
+        b = ((LayoutElement*)index)->hitTop;
+        c = ((LayoutElement*)index)->hitRight;
+        d = ((LayoutElement*)index)->hitBottom;
+    }
 
     index = (8 * slot);
     float* pt = (float*)((char*)layout + index);
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
 }
 extern int CSharedFilePtr_GetLoadedBuffer(int);
 extern void* Table_ResolveDataOffset(void*, int);
 extern signed char* OffsetStringNode_GetText(void*);
-struct LayoutReadyObject { 
-virtual void pad0(); virtual void pad1(); virtual void pad2(); virtual void pad3(); virtual int ready();
+struct LayoutReadyObject {
+    virtual void pad0();
+    virtual void pad1();
+    virtual void pad2();
+    virtual void pad3();
+    virtual int ready();
 };
 // Call required borrowed child handle's readiness virtual slot 4; return its
 // status verbatim. No reference transfer; zero means pending to the poller.
@@ -762,7 +848,8 @@ inline int LayoutReadyCall(int value) {
 // Returned text is borrowed from the table. Missing entry returns null;
 // PollLoadComplete dereferences it, so valid poll inputs must resolve text.
 inline signed char* LayoutReadyFlag(Layout* layout, int index, int field) {
-    void* entry = Table_ResolveDataOffset(*(void**)layout->spdResourceTable, ((int*)((char*)layout->itemsEx + index))[field]);
+    void* entry =
+        Table_ResolveDataOffset(*(void**)layout->spdResourceTable, ((int*)((char*)layout->itemsEx + index))[field]);
     return entry ? OffsetStringNode_GetText(entry) : 0;
 }
 #pragma push
@@ -783,41 +870,64 @@ int Layout_PollLoadComplete(Layout* layout) {
     int state = layout->loadPhase;
     switch (state) {
     case 0:
-        if (!CSharedFilePtr_GetLoadedBuffer(layout->w44)) { result = 0; break; }
-        layout->loadPhase = (result = 0) + 1; break;
+        if (!CSharedFilePtr_GetLoadedBuffer(layout->w44)) {
+            result = 0;
+            break;
+        }
+        layout->loadPhase = (result = 0) + 1;
+        break;
     case 1:
-        if (!layout->spdRoot) { result = 0; break; }
+        if (!layout->spdRoot) {
+            result = 0;
+            break;
+        }
         result = 1;
-        for (i = 0, exoff = 0, elemoff = 0, itemoff = 0; i < (unsigned)layout->elementCount; exoff += 0x24, elemoff += 0x6c, itemoff += 0x1c, ++i) {
+        for (i = 0, exoff = 0, elemoff = 0, itemoff = 0; i < (unsigned)layout->elementCount;
+             exoff += 0x24, elemoff += 0x6c, itemoff += 0x1c, ++i) {
             if (layout->extended) {
                 if (*LayoutReadyFlag(layout, exoff, 5)) {
                     int obj = ((LayoutElement*)((char*)layout->elements + elemoff))->unk48i;
-                    if (obj && !LayoutReadyCall(obj)) result = 0;
+                    if (obj && !LayoutReadyCall(obj))
+                        result = 0;
                 }
                 if (*LayoutReadyFlag(layout, exoff, 6)) {
                     int obj = ((LayoutElement*)((char*)layout->elements + elemoff))->unk4Ci;
-                    if (obj && !LayoutReadyCall(obj)) { result = 0; break; }
+                    if (obj && !LayoutReadyCall(obj)) {
+                        result = 0;
+                        break;
+                    }
                 }
                 if (*LayoutReadyFlag(layout, exoff, 7)) {
                     int obj = ((LayoutElement*)((char*)layout->elements + elemoff))->unk50i;
-                    if (obj && !LayoutReadyCall(obj)) { result = 0; break; }
+                    if (obj && !LayoutReadyCall(obj)) {
+                        result = 0;
+                        break;
+                    }
                 }
                 if (*LayoutReadyFlag(layout, exoff, 8)) {
                     int obj = ((LayoutElement*)((char*)layout->elements + elemoff))->unk54i;
-                    if (obj && !LayoutReadyCall(obj)) { result = 0; break; }
+                    if (obj && !LayoutReadyCall(obj)) {
+                        result = 0;
+                        break;
+                    }
                 }
             } else {
                 if (((int*)((char*)layout->items + itemoff))[1]) {
                     int obj = ((LayoutElement*)((char*)layout->elements + elemoff))->unk48i;
-                    if (obj && !LayoutReadyCall(obj)) result = 0;
+                    if (obj && !LayoutReadyCall(obj))
+                        result = 0;
                 }
                 if (((int*)((char*)layout->items + itemoff))[2]) {
                     int obj = ((LayoutElement*)((char*)layout->elements + elemoff))->unk4Ci;
-                    if (obj && !LayoutReadyCall(obj)) { result = 0; break; }
+                    if (obj && !LayoutReadyCall(obj)) {
+                        result = 0;
+                        break;
+                    }
                 }
             }
         }
-        if (result) layout->loadPhase = 2;
+        if (result)
+            layout->loadPhase = 2;
         break;
     default:
         result = 1;
@@ -853,7 +963,8 @@ static inline unsigned int LayoutFade(unsigned int color, float t) {
     } else if (t >= kFloat_1_LayoutUnit) {
         a = color;
     } else {
-        a = (color & 0xFF00) | (unsigned char)Runtime_ConvertDoubleToUnsigned((float)(unsigned char)color * t) | (color & 0xFFFF0000);
+        a = (color & 0xFF00) | (unsigned char)Runtime_ConvertDoubleToUnsigned((float)(unsigned char)color * t) |
+            (color & 0xFFFF0000);
     }
     return a;
 }
@@ -919,7 +1030,8 @@ void Layout_DrawElementWithOpacity(Layout* layout, unsigned int index, float t) 
     }
 }
 
-extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[], s_layoutStringPool[];
+extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[],
+    s_layoutStringPool[];
 extern unsigned long strlen(const char*);
 extern char* strcpy(char*, const char*);
 extern void* memcpy(void*, const void*, unsigned long);
@@ -934,15 +1046,21 @@ struct LayoutVectorAllocation : std::detail::__message_buffer_guard {
     // Guard exception-message bytes until the shared message owner adopts them.
     LayoutVectorAllocation(char* p, char* a) : std::detail::__message_buffer_guard(p, a) {}
     // Dispose unadopted exception-message storage on return/unwind.
-    ~LayoutVectorAllocation() { dispose(); }
+    ~LayoutVectorAllocation() {
+        dispose();
+    }
 };
 typedef std::detail::__message_control LayoutVectorControl;
 struct LayoutVectorErrorBase_layout {
     void* table;
     // Initialize the standard logic_error base vtable before attaching its message.
-    LayoutVectorErrorBase_layout() { table = __vt__Q23std11logic_error; }
+    LayoutVectorErrorBase_layout() {
+        table = __vt__Q23std11logic_error;
+    }
     // Tear down the exception base without deleting its enclosing stack object.
-    ~LayoutVectorErrorBase_layout() { __dt__Q23std9exceptionFv(this, -1); }
+    ~LayoutVectorErrorBase_layout() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 namespace std {
 struct length_error : LayoutVectorErrorBase_layout {
@@ -958,35 +1076,63 @@ struct length_error : LayoutVectorErrorBase_layout {
 }
 } // extern C
 // Placement construction borrows supplied storage; never allocates or owns it.
-inline void* operator new(new_size_t, void* p) { return p; }
+inline void* operator new(new_size_t, void* p) {
+    return p;
+}
 extern "C" {
 // Build a length_error and transfer its cleanup to the exception runtime; never returns.
 inline void LayoutVectorThrow() {
     {
-        union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+        union {
+            double alignment;
+            unsigned char bytes[sizeof(std::length_error)];
+        } storage;
         std::length_error* error = (std::length_error*)storage.bytes;
         error->__ct();
         exception_runtime::__throw(exception_runtime::s_layoutStringPool + 0x14, error,
-            (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                   (void*)exception_runtime::__dt__Q23std12length_errorFv);
     }
 }
-struct LayoutIntVector { int* volatile data; unsigned size, capacity; };
+struct LayoutIntVector {
+    int* volatile data;
+    unsigned size, capacity;
+};
 struct LayoutVectorBuffer {
-    int* data; volatile unsigned size; unsigned capacity; unsigned* owner; volatile unsigned offset;
+    int* data;
+    volatile unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    volatile unsigned offset;
     // Start with no array; borrow the owner capacity word for the growth transaction.
     LayoutVectorBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free whichever allocation remains guard-owned (old array after publication).
-    ~LayoutVectorBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~LayoutVectorBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 struct LayoutHoverBuffer {
-    int* data; unsigned size; unsigned capacity; unsigned* owner; unsigned offset;
+    int* data;
+    unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    unsigned offset;
     // Nonvolatile growth guard for hover append; no allocation at construction.
     LayoutHoverBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free the guarded array on normal return or unwinding; never free owner metadata.
-    ~LayoutHoverBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~LayoutHoverBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 // Select a borrowed capacity candidate by unsigned comparison; ties keep a.
-inline const unsigned& LayoutVectorMax(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+inline const unsigned& LayoutVectorMax(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -1002,18 +1148,23 @@ void LayoutIntVector_PushBack(void* ptr, int* value) {
         int item = *value;
         v->size = next;
         v->data[next - 1] = item;
-    } else { unsigned int count;
-        if (0x3FFFFFFFu - v->capacity < 1) LayoutVectorThrow();
+    } else {
+        unsigned int count;
+        if (0x3FFFFFFFu - v->capacity < 1)
+            LayoutVectorThrow();
 
         unsigned needed = *(volatile unsigned*)&v->size + 1 - *(volatile unsigned*)&v->capacity;
         LayoutVectorBuffer allocationGuard(&v->capacity);
         unsigned capacity = v->capacity;
         if (needed > 0x3FFFFFFFu - capacity) {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct();
             exception_runtime::__throw(exception_runtime::s_layoutStringPool + 0x14, error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                       (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
         if (capacity < 0x15555555u) {
             capacity += LayoutVectorMax((3 * (capacity + 1)) / 5, needed);
@@ -1021,13 +1172,17 @@ void LayoutIntVector_PushBack(void* ptr, int* value) {
             unsigned largeCapacity = capacity;
             unsigned halfGrowthNumerator = 1 + largeCapacity;
             capacity += LayoutVectorMax((halfGrowthNumerator) / 2, needed);
-        } else capacity = 0x3FFFFFFF;
+        } else
+            capacity = 0x3FFFFFFF;
         if (capacity > 0x3FFFFFFFu) {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct();
             exception_runtime::__throw(exception_runtime::s_layoutStringPool + 0x14, error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                       (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
         unsigned capacityValue2 = capacity;
         int* data = (int*)appMallocDummy__FUl(capacityValue2 * 4);
@@ -1035,7 +1190,8 @@ void LayoutIntVector_PushBack(void* ptr, int* value) {
         allocationGuard.offset = oldSize;
 
         ((oldSize + data))[allocationGuard.size++] = *value;
-        unsigned sizeBeforeMove = v->size; int* oldData = v->data;
+        unsigned sizeBeforeMove = v->size;
+        int* oldData = v->data;
 
         int* oldEnd = sizeBeforeMove + oldData;
         count = ((char*)(oldEnd) - (char*)oldData) / 4;
@@ -1071,7 +1227,6 @@ void LayoutIntVector_PushBack(void* ptr, int* value) {
 
         v->size = newSize;
         allocationGuard.capacity = (capacityValue4);
-
     }
 }
 #pragma pop
@@ -1089,8 +1244,13 @@ void LayoutActivatedVector_PushBack(void* ptr, int* value) {
         item = *value;
         v->size = next;
         v->data[next - 1] = item;
-    } else { __typeof__(v->capacity) capacityAtGrowthEntry = v->capacity; unsigned capacityValue5 = v->capacity; int count; __typeof__(v->size) sizeAtGrowthEntry = v->size;
-        if (0x3FFFFFFFu - v->capacity < 1) LayoutVectorThrow();
+    } else {
+        __typeof__(v->capacity) capacityAtGrowthEntry = v->capacity;
+        unsigned capacityValue5 = v->capacity;
+        int count;
+        __typeof__(v->size) sizeAtGrowthEntry = v->size;
+        if (0x3FFFFFFFu - v->capacity < 1)
+            LayoutVectorThrow();
         __typeof__(sizeAtGrowthEntry + 1) nextSizeFromEntryRead = 1 + sizeAtGrowthEntry;
         __typeof__(sizeAtGrowthEntry + 1) nextSizeFromEntryReadAgain = sizeAtGrowthEntry + 1;
         __typeof__(v->size) sizeBeforeGuard = v->size;
@@ -1106,11 +1266,14 @@ void LayoutActivatedVector_PushBack(void* ptr, int* value) {
         unsigned needed = *(volatile unsigned*)&v->size + 1 - *(volatile unsigned*)&v->capacity;
         unsigned capacity = v->capacity;
         if (needed > 0x3FFFFFFFu - capacity) {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct();
             exception_runtime::__throw(exception_runtime::s_layoutStringPool + 0x14, error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                       (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
         if (capacity < 0x15555555u) {
             __typeof__(capacity) smallCapacity = capacity;
@@ -1121,13 +1284,17 @@ void LayoutActivatedVector_PushBack(void* ptr, int* value) {
             __typeof__(halfGrowthNumerator) halfGrowthNumeratorAgain = 1 + largeCapacity;
             __typeof__(halfGrowthNumeratorAgain) halfGrowthNumeratorFinal = largeCapacity + 1;
             capacity += LayoutVectorMax((halfGrowthNumeratorFinal) / 2, needed);
-        } else capacity = 0x3FFFFFFF;
+        } else
+            capacity = 0x3FFFFFFF;
         if (capacity > 0x3FFFFFFFu) {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct();
             exception_runtime::__throw(exception_runtime::s_layoutStringPool + 0x14, error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                       (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
         unsigned capacityValue7 = capacity;
         int* data = (int*)appMallocDummy__FUl(capacityValue7 * 4);
@@ -1138,7 +1305,8 @@ void LayoutActivatedVector_PushBack(void* ptr, int* value) {
 
         __typeof__(sizeBeforeAppend) sizeBeforeMove = v->size;
 
-        int* oldData = v->data; count = ((char*)(oldData + sizeBeforeMove) - (char*)oldData) / 4;
+        int* oldData = v->data;
+        count = ((char*)(oldData + sizeBeforeMove) - (char*)oldData) / 4;
         int countValue2 = count;
         unsigned capacityValue8 = capacity;
         allocationGuard.capacity = capacityValue8;
@@ -1170,7 +1338,6 @@ void LayoutActivatedVector_PushBack(void* ptr, int* value) {
         allocationGuard.capacity = (capacityValue9);
         v->size = newSize;
         allocationGuard.size = 0;
-
     }
 }
 
@@ -1183,23 +1350,41 @@ extern void Sound_PlayByName(void*, const char*, int, int, int, int, float, floa
 // into caller scratch and compare strict interior at playerCursor[4/5]. The
 // cursor is layout+8*player, so those words are layout+0x10+8*player XY. Bounds
 // scratch persists only to retain original load/register lifetimes; no ownership.
-inline int Layout_SoundHit(Layout* layout, int index, int player, int& circleHitShape, float rectangleOffset, float* playerCursor, int& left, int& top, int& right, int& bottom) {
-    if (circleHitShape) return Layout_HitTestElementCircle(layout, index, player);
+inline int Layout_SoundHit(Layout* layout, int index, int player, int& circleHitShape, float rectangleOffset,
+                           float* playerCursor, int& left, int& top, int& right, int& bottom) {
+    if (circleHitShape)
+        return Layout_HitTestElementCircle(layout, index, player);
     LayoutElement* e = layout->elements + index;
-    if (e) { left = e->hitLeft; top = e->hitTop; right = e->hitRight; bottom = e->hitBottom; }
+    if (e) {
+        left = e->hitLeft;
+        top = e->hitTop;
+        right = e->hitRight;
+        bottom = e->hitBottom;
+    }
 
-    if ((float)left + rectangleOffset < playerCursor[4] && (float)top + rectangleOffset < playerCursor[5] && (float)right + rectangleOffset > playerCursor[4] && (float)bottom + rectangleOffset > playerCursor[5]) return 1;
+    if ((float)left + rectangleOffset < playerCursor[4] && (float)top + rectangleOffset < playerCursor[5] &&
+        (float)right + rectangleOffset > playerCursor[4] && (float)bottom + rectangleOffset > playerCursor[5])
+        return 1;
     return 0;
 }
 // Same geometry contract as Layout_SoundHit, forming the selected player's
 // cursor internally. Only rectangle scratch outputs are written; no state change.
-inline int Layout_SoundHitSingle(Layout* layout, int index, int player, int& circleHitShape, float rectangleOffset, int& left, int& top, int& right, int& bottom) {
-    if (circleHitShape) return Layout_HitTestElementCircle(layout, index, player);
+inline int Layout_SoundHitSingle(Layout* layout, int index, int player, int& circleHitShape, float rectangleOffset,
+                                 int& left, int& top, int& right, int& bottom) {
+    if (circleHitShape)
+        return Layout_HitTestElementCircle(layout, index, player);
     LayoutElement* e = layout->elements + index;
-    if (e) { left = e->hitLeft; top = e->hitTop; right = e->hitRight; bottom = e->hitBottom; }
+    if (e) {
+        left = e->hitLeft;
+        top = e->hitTop;
+        right = e->hitRight;
+        bottom = e->hitBottom;
+    }
 
     float* playerCursor = (float*)((char*)layout + player * 8);
-    if ((float)left + rectangleOffset < playerCursor[4] && (float)top + rectangleOffset < playerCursor[5] && (float)right + rectangleOffset > playerCursor[4] && (float)bottom + rectangleOffset > playerCursor[5]) return 1;
+    if ((float)left + rectangleOffset < playerCursor[4] && (float)top + rectangleOffset < playerCursor[5] &&
+        (float)right + rectangleOffset > playerCursor[4] && (float)bottom + rectangleOffset > playerCursor[5])
+        return 1;
     return 0;
 }
 // One sound at most per update. Required loaded layout and sampled input.
@@ -1225,10 +1410,12 @@ void Layout_PlayActivationSound(Layout* layout) {
     int circleHitShape;
     int left, top, right, bottom;
     int selectedLeft, selectedTop, selectedRight, selectedBottom;
-    if (!((LayoutSoundAdmissionView*)layout)->enabled) return;
+    if (!((LayoutSoundAdmissionView*)layout)->enabled)
+        return;
     int hasIneligibleActivation = 0;
     int hasEligibleActivation = 0;
-    if (!g_layoutHitTestingEnabled) return;
+    if (!g_layoutHitTestingEnabled)
+        return;
     float rectangleOffset = kHitRectangleOffset;
     for (int index = 0; (unsigned)index < (unsigned)layout->elementCount; ++index) {
         int soundGate;
@@ -1240,18 +1427,29 @@ void Layout_PlayActivationSound(Layout* layout) {
         } else {
             hitShapeByte = (unsigned char)layout->items[index].hitShapeSelector;
             circleHitShape = (signed char)hitShapeByte;
-            struct Bits { CW_BITSP2(unsigned char, 6, unsigned char unused:1, signed char value:1) };
+            struct Bits {
+                CW_BITSP2(unsigned char, 6, unsigned char unused : 1, signed char value : 1)
+            };
             soundGate = ((Bits*)((char*)&layout->items[index] + 0x18))->value;
         }
         if (layout->allPlayersMode) {
             playerCursor = (float*)layout;
             int ineligibleHit[4], eligibleHit[4];
-            for (int player = 0, unused = (playerFlagByteOffset = 0); player < 4; ++player, playerCursor += 2, playerFlagByteOffset += 4) {
+            for (int player = 0, unused = (playerFlagByteOffset = 0); player < 4;
+                 ++player, playerCursor += 2, playerFlagByteOffset += 4) {
                 ineligibleHit[player] = 0;
                 eligibleHit[player] = 0;
-                if (Input_IsActionPressed(LayoutManager_GetInstance(), ((LayoutActionView*)layout)->actionId, player) && Layout_SoundHit(layout, index, player, circleHitShape, rectangleOffset, playerCursor, left, top, right, bottom)) {
-                    if (layout->elements[index].activationSoundEnabled && soundGate && *(int*)((char*)layout->elements[index].playerFlags + playerFlagByteOffset) && layout->elements[index].drawEnabled) eligibleHit[player] = 1;
-                    if (layout->elements[index].activationSoundEnabled && soundGate && !*(int*)((char*)layout->elements[index].playerFlags + playerFlagByteOffset) && layout->elements[index].drawEnabled) ineligibleHit[player] = 1;
+                if (Input_IsActionPressed(LayoutManager_GetInstance(), ((LayoutActionView*)layout)->actionId, player) &&
+                    Layout_SoundHit(layout, index, player, circleHitShape, rectangleOffset, playerCursor, left, top,
+                                    right, bottom)) {
+                    if (layout->elements[index].activationSoundEnabled && soundGate &&
+                        *(int*)((char*)layout->elements[index].playerFlags + playerFlagByteOffset) &&
+                        layout->elements[index].drawEnabled)
+                        eligibleHit[player] = 1;
+                    if (layout->elements[index].activationSoundEnabled && soundGate &&
+                        !*(int*)((char*)layout->elements[index].playerFlags + playerFlagByteOffset) &&
+                        layout->elements[index].drawEnabled)
+                        ineligibleHit[player] = 1;
                 }
                 hasEligibleActivation |= eligibleHit[player];
                 hasIneligibleActivation |= ineligibleHit[player];
@@ -1262,17 +1460,27 @@ void Layout_PlayActivationSound(Layout* layout) {
                 int eligibleHit = 0;
                 int player = InputManager_GetSelectedPlayer(LayoutManager_GetInstance());
 
-                if (Input_IsActionPressed(LayoutManager_GetInstance(), ((LayoutActionView*)layout)->actionId, player) && Layout_SoundHitSingle(layout, index, player, circleHitShape, rectangleOffset, selectedLeft, selectedTop, selectedRight, selectedBottom)) {
-                    if (layout->elements[index].activationSoundEnabled && soundGate && layout->elements[index].playerFlags[player] && layout->elements[index].drawEnabled) eligibleHit = 1;
-                    if (layout->elements[index].activationSoundEnabled && soundGate && !layout->elements[index].playerFlags[player] && layout->elements[index].drawEnabled) ineligibleHit = 1;
+                if (Input_IsActionPressed(LayoutManager_GetInstance(), ((LayoutActionView*)layout)->actionId, player) &&
+                    Layout_SoundHitSingle(layout, index, player, circleHitShape, rectangleOffset, selectedLeft,
+                                          selectedTop, selectedRight, selectedBottom)) {
+                    if (layout->elements[index].activationSoundEnabled && soundGate &&
+                        layout->elements[index].playerFlags[player] && layout->elements[index].drawEnabled)
+                        eligibleHit = 1;
+                    if (layout->elements[index].activationSoundEnabled && soundGate &&
+                        !layout->elements[index].playerFlags[player] && layout->elements[index].drawEnabled)
+                        ineligibleHit = 1;
                 }
                 hasEligibleActivation |= eligibleHit;
                 hasIneligibleActivation |= ineligibleHit;
             }
         }
     }
-    if (hasEligibleActivation) Sound_PlayByName(g_soundManager, s_layoutStringPool + 0x4B, 0, 0, 0, 0, kSoundMinimumGain, kSoundAttenuationRange, kFloat_1_LayoutUnit);
-    else if (hasIneligibleActivation) Sound_PlayByName(g_soundManager, s_layoutStringPool + 0x59, 0, 0, 0, 0, kSoundMinimumGain, kSoundAttenuationRange, kFloat_1_LayoutUnit);
+    if (hasEligibleActivation)
+        Sound_PlayByName(g_soundManager, s_layoutStringPool + 0x4B, 0, 0, 0, 0, kSoundMinimumGain,
+                         kSoundAttenuationRange, kFloat_1_LayoutUnit);
+    else if (hasIneligibleActivation)
+        Sound_PlayByName(g_soundManager, s_layoutStringPool + 0x59, 0, 0, 0, 0, kSoundMinimumGain,
+                         kSoundAttenuationRange, kFloat_1_LayoutUnit);
 }
 } // extern "C"
 
@@ -1281,16 +1489,27 @@ extern "C" {
 // eligibility, then circle/rectangle. pt points at layout+8*player; pt[4/5]
 // are the sampled pointer XY. k is the existing rectangle offset. No writes.
 inline int LayoutCollectHit(Layout* layout, int index, int player, float* pt, float k) {
-    if (!g_layoutHitTestingEnabled) return 0;
+    if (!g_layoutHitTestingEnabled)
+        return 0;
     int g;
-    if (layout->extended) g = layout->itemsEx[index].hitShapeSelector;
-    else g = layout->items[index].hitShapeSelector;
-    if (!layout->elements[index].playerFlags[player]) return 0;
-    if (g) return Layout_HitTestElementCircle(layout, index, player);
+    if (layout->extended)
+        g = layout->itemsEx[index].hitShapeSelector;
+    else
+        g = layout->items[index].hitShapeSelector;
+    if (!layout->elements[index].playerFlags[player])
+        return 0;
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, player);
     int d, c, b, a;
     index = (int)(layout->elements + index);
-    if (index) { a = ((LayoutElement*)index)->hitLeft; b = ((LayoutElement*)index)->hitTop; c = ((LayoutElement*)index)->hitRight; d = ((LayoutElement*)index)->hitBottom; }
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if (index) {
+        a = ((LayoutElement*)index)->hitLeft;
+        b = ((LayoutElement*)index)->hitTop;
+        c = ((LayoutElement*)index)->hitRight;
+        d = ((LayoutElement*)index)->hitBottom;
+    }
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
 }
 // Append a hovered element ordinal; same initialized-vector and copied-value
@@ -1306,15 +1525,21 @@ inline void LayoutPushBack(LayoutIntVector* v, const int* value) {
         *(volatile unsigned*)&v->size = next;
         (d + next)[-1] = *value;
     } else {
-        if (0x3FFFFFFFu - v->capacity < 1) LayoutVectorThrow();
+        if (0x3FFFFFFFu - v->capacity < 1)
+            LayoutVectorThrow();
         LayoutHoverBuffer temp(&v->capacity);
         unsigned needed = 1 + v->size - v->capacity;
         unsigned capacity = v->capacity;
-        if (needed > 0x3FFFFFFFu - capacity) LayoutVectorThrow();
-        if (capacity < 0x15555555u) capacity += LayoutVectorMax((3 * (capacity + 1)) / 5, needed);
-        else if (capacity < 0x2AAAAAAAu) capacity += LayoutVectorMax((capacity + 1) / 2, needed);
-        else capacity = 0x3FFFFFFF;
-        if (capacity > 0x3FFFFFFFu) LayoutVectorThrow();
+        if (needed > 0x3FFFFFFFu - capacity)
+            LayoutVectorThrow();
+        if (capacity < 0x15555555u)
+            capacity += LayoutVectorMax((3 * (capacity + 1)) / 5, needed);
+        else if (capacity < 0x2AAAAAAAu)
+            capacity += LayoutVectorMax((capacity + 1) / 2, needed);
+        else
+            capacity = 0x3FFFFFFF;
+        if (capacity > 0x3FFFFFFFu)
+            LayoutVectorThrow();
         int* data = (int*)appMallocDummy__FUl(capacity * 4);
         unsigned int oldSize = v->size;
         temp.offset = oldSize;
@@ -1355,20 +1580,22 @@ inline void LayoutPushBack(LayoutIntVector* v, const int* value) {
 int Layout_CollectHovered(Layout* layout, LayoutIntVector* v, int player) {
     v->size -= (unsigned int)v->size;
     if (player == 5) {
-        if (!((LayoutSingleton *&)Sing_805DC5C8())) {
+        if (!((LayoutSingleton*&)GetInputManagerSlot())) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(&s_gameInputManager);
-                __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_layoutInputManagerDtorRegistration);
+                __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_layoutInputManagerDtorRegistration);
                 s_inputManagerInitialized = 1;
             }
-            ((LayoutSingleton *&)Sing_805DC5C8()) = &s_gameInputManager;
+            ((LayoutSingleton*&)GetInputManagerSlot()) = &s_gameInputManager;
         }
-        player = InputManager_GetSelectedPlayer(((LayoutSingleton *&)Sing_805DC5C8()));
+        player = InputManager_GetSelectedPlayer(((LayoutSingleton*&)GetInputManagerSlot()));
     }
     float k = kHitRectangleOffset;
     float* pt = (float*)((char*)layout + 8 * player);
     for (unsigned index = 0; index < (unsigned)layout->elementCount; ++index) {
-        if (LayoutCollectHit(layout, index, player, pt, k)) LayoutPushBack(v, (int*)&index);
+        if (LayoutCollectHit(layout, index, player, pt, k))
+            LayoutPushBack(v, (int*)&index);
     }
     return 0 != v->size;
 }
@@ -1376,12 +1603,9 @@ int Layout_CollectHovered(Layout* layout, LayoutIntVector* v, int player) {
 #pragma pop
 }
 extern "C" {
-void __ct__Q23ns08CSpdCtrlFv(void*);
-void CBpTex_Init(void*);
 int CSharedFilePtr_GetLoadedBuffer(int);
 void SpdManager_BuildItemsFromResource(void*, void*, int);
 int SpdSquareList_CloneEntry(void*, unsigned int index);
-int CSpdSprite_CloneAndRegister(void*, unsigned int index);
 void Sprite_GetPosition2D(void*, float*);
 void Sprite_GetScale2D(void*, float*);
 void Sprite_GetOrigin2D(void*, float*);
@@ -1394,21 +1618,33 @@ void Layout_PlayActivationSound(Layout*);
 struct LayoutStandardRoot {
     char data[0x30];
     // Construct the owned standard sprite-manager root in caller-provided new storage.
-    LayoutStandardRoot() { __ct__Q23ns08CSpdCtrlFv(this); }
+    LayoutStandardRoot() {
+        ((CSpdCtrl*)this)->__ct();
+    }
 };
-struct LayoutStandardVirtual { 
-virtual void a(); virtual void load(void*);
+struct LayoutStandardVirtual {
+    virtual void a();
+    virtual void load(void*);
 };
 struct LayoutStandardChild {
-    void (**table)(); char data[0x24];
+    void (**table)();
+    char data[0x24];
     // Initialize one owned optional texture child before asynchronous resource loading.
-    LayoutStandardChild() { CBpTex_Init(this); }
+    LayoutStandardChild() {
+        ((CBpTex*)this)->__ct();
+    }
     // Synchronously dispatch the borrowed resource descriptor to virtual load slot 1.
-    void load(void* p) { ((LayoutStandardVirtual*)this)->load(p); }
+    void load(void* p) {
+        ((LayoutStandardVirtual*)this)->load(p);
+    }
 };
 struct LayoutStandardItem {
-    short id; char pad2[2]; void* resource4; void* resource8; char padC[12];
-    CW_BITSP2(signed char, 6, signed char flag:1, signed char enabled:1) char pad19[3];
+    short id;
+    char pad2[2];
+    void* resource4;
+    void* resource8;
+    char padC[12];
+    CW_BITSP2(signed char, 6, signed char flag : 1, signed char enabled : 1) char pad19[3];
 };
 #pragma push
 #pragma use_lmw_stmw on
@@ -1427,9 +1663,11 @@ int Layout_UpdateStandard(Layout* layout) {
     int p;
 
     switch (layout->loadPhase) {
-    case kLayoutWaitingForFile: break;
+    case kLayoutWaitingForFile:
+        break;
     case kLayoutBuildingItems:
-        if (layout->spdRoot) break;
+        if (layout->spdRoot)
+            break;
         layout->spdRoot = new LayoutStandardRoot;
         SpdManager_BuildItemsFromResource(layout->spdRoot, (void*)CSharedFilePtr_GetLoadedBuffer(layout->w44), 0);
         for (int i = 0; (unsigned)i < (unsigned)layout->elementCount; ++i) {
@@ -1437,11 +1675,13 @@ int Layout_UpdateStandard(Layout* layout) {
             if (!(((LayoutStandardItem*)layout->items)[i].flag)) {
                 if (((LayoutStandardItem*)layout->items)[i].resource4) {
                     layout->elements[i].unk48i = (int)new LayoutStandardChild;
-                    ((LayoutStandardChild*)layout->elements[i].unk48i)->load(((LayoutStandardItem*)layout->items)[i].resource4);
+                    ((LayoutStandardChild*)layout->elements[i].unk48i)
+                        ->load(((LayoutStandardItem*)layout->items)[i].resource4);
                 }
                 if (((LayoutStandardItem*)layout->items)[i].resource8) {
                     layout->elements[i].unk4Ci = (int)new LayoutStandardChild;
-                    ((LayoutStandardChild*)layout->elements[i].unk4Ci)->load(((LayoutStandardItem*)layout->items)[i].resource8);
+                    ((LayoutStandardChild*)layout->elements[i].unk4Ci)
+                        ->load(((LayoutStandardItem*)layout->items)[i].resource8);
                 }
             }
             layout->elements[i].playerFlags[0] = ((LayoutStandardItem*)layout->items)[i].enabled;
@@ -1449,15 +1689,18 @@ int Layout_UpdateStandard(Layout* layout) {
             layout->elements[i].playerFlags[2] = ((LayoutStandardItem*)layout->items)[i].enabled;
             layout->elements[i].playerFlags[3] = ((LayoutStandardItem*)layout->items)[i].enabled;
         }
-        for (int i = 0; (unsigned)i < (unsigned)layout->elementCount; ++i) layout->elements[i].clonedItemId = 0;
+        for (int i = 0; (unsigned)i < (unsigned)layout->elementCount; ++i)
+            layout->elements[i].clonedItemId = 0;
         for (int i = 1; (unsigned)i < (unsigned)layout->elementCount; ++i) {
             for (int j = 0; (unsigned)j < (unsigned)i; ++j) {
                 short idI = layout->items[i].id;
                 short idJ = layout->items[j].id;
                 if (idI == idJ) {
 
-                    if ((((LayoutStandardItem*)layout->items)[i].flag)) layout->elements[i].clonedItemId = SpdSquareList_CloneEntry(layout->spdRoot, idI);
-                    else layout->elements[i].clonedItemId = CSpdSprite_CloneAndRegister(layout->spdRoot, idI);
+                    if ((((LayoutStandardItem*)layout->items)[i].flag))
+                        layout->elements[i].clonedItemId = SpdSquareList_CloneEntry(layout->spdRoot, idI);
+                    else
+                        layout->elements[i].clonedItemId = ((CSpdCtrl*)(layout->spdRoot))->CloneAndRegister(idI);
                 }
             }
         }
@@ -1465,11 +1708,15 @@ int Layout_UpdateStandard(Layout* layout) {
             void* obj;
 
             if (!(!((((LayoutStandardItem*)layout->items)[i].flag)))) {
-                if (layout->elements[i].clonedItemId) obj = (void*)SpdManager_GetSquareAt(layout->spdRoot, layout->elements[i].clonedItemId);
-                else obj = (void*)SpdManager_GetSquareAt(layout->spdRoot, layout->items[i].id);
+                if (layout->elements[i].clonedItemId)
+                    obj = (void*)SpdManager_GetSquareAt(layout->spdRoot, layout->elements[i].clonedItemId);
+                else
+                    obj = (void*)SpdManager_GetSquareAt(layout->spdRoot, layout->items[i].id);
             } else {
-                if (layout->elements[i].clonedItemId) obj = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->elements[i].clonedItemId);
-                else obj = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->items[i].id);
+                if (layout->elements[i].clonedItemId)
+                    obj = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->elements[i].clonedItemId);
+                else
+                    obj = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->items[i].id);
             }
             Sprite_GetPosition2D(obj, &layout->elements[i].positionX);
             Sprite_GetScale2D(obj, &layout->elements[i].scaleX);
@@ -1479,10 +1726,10 @@ int Layout_UpdateStandard(Layout* layout) {
             SpdGeometry_GetRotationRadians(obj, &layout->elements[i].rotationRadians);
             layout->elements[i].drawEnabled = 1;
             layout->elements[i].activationSoundEnabled = 1;
-            float position[2] = {0,0};
-            float size[2] = {0,0};
-            float scale[2] = {0,0};
-            float origin[2] = {0,0};
+            float position[2] = {0, 0};
+            float size[2] = {0, 0};
+            float scale[2] = {0, 0};
+            float origin[2] = {0, 0};
             Sprite_GetPosition2D(obj, position);
             Sprite_GetSourceSize2D(obj, size);
             Sprite_GetScale2D(obj, scale);
@@ -1533,7 +1780,8 @@ int Layout_UpdateStandard(Layout* layout) {
         InputManager_GetPointerPosition(input, (char*)layout + _p386 + 0x10, _p850);
         char* point = (char*)layout + 0x10;
         for (p = 0; 4 > p; ++p, point += 8) {
-            if (p != player) InputManager_GetPointerPosition(input, point, p);
+            if (p != player)
+                InputManager_GetPointerPosition(input, point, p);
         }
         Layout_PlayActivationSound(layout);
         int enabled = 0;
@@ -1544,7 +1792,8 @@ int Layout_UpdateStandard(Layout* layout) {
                 enabled |= layout->elements[i].playerFlags[1];
                 enabled |= layout->elements[i].playerFlags[2];
                 enabled |= layout->elements[i].playerFlags[3];
-            } else enabled |= layout->elements[i].playerFlags[InputManager_GetSelectedPlayer(input2)];
+            } else
+                enabled |= layout->elements[i].playerFlags[InputManager_GetSelectedPlayer(input2)];
         }
         int enabledValue = enabled;
         InputManager_RequestPointerInput(input2, enabledValue);
@@ -1560,8 +1809,9 @@ void* SpdManager_GetResourceFlags(void*);
 void* Table_GetEntry(void*, int);
 #pragma push
 #pragma use_lmw_stmw on
-struct LayoutExtendedChild { 
-virtual void pad(); virtual void load(void*);
+struct LayoutExtendedChild {
+    virtual void pad();
+    virtual void load(void*);
 };
 // Same phase protocol as UpdateStandard; extended records come from the loaded
 // table and create four optional children via relative resource references.
@@ -1573,9 +1823,11 @@ int Layout_UpdateExtended(Layout* layout) {
     layout->hoverFeedbackPending = 1;
     LayoutSingleton* input2;
     switch (layout->loadPhase) {
-    case kLayoutWaitingForFile: break;
+    case kLayoutWaitingForFile:
+        break;
     case kLayoutBuildingItems:
-        if (layout->spdRoot) break;
+        if (layout->spdRoot)
+            break;
         layout->spdRoot = new LayoutStandardRoot;
         SpdManager_BuildItemsFromResource(layout->spdRoot, (void*)CSharedFilePtr_GetLoadedBuffer(layout->w44), 0);
         *(void**)layout->spdResourceTable = SpdManager_GetResourceFlags(layout->spdRoot);
@@ -1585,7 +1837,9 @@ int Layout_UpdateExtended(Layout* layout) {
         int countValue6 = count;
         layout->elementCount = countValue5;
         void* elements = __nwa__FUl(countValue6 * 0x6c + 0x10);
-        if (elements) elements = __construct_new_array(elements, (void*)CSPDPangyaIcon_PangyaIconObject_ctor, (void*)CSPDPangyaIcon_PANGYA_ICON_OBJECT_VAR_dtor, 0x6c, count);
+        if (elements)
+            elements = __construct_new_array(elements, (void*)CSPDPangyaIcon_PangyaIconObject_ctor,
+                                             (void*)CSPDPangyaIcon_PANGYA_ICON_OBJECT_VAR_dtor, 0x6c, count);
         layout->elements = (LayoutElement*)elements;
         for (int i = 0; (unsigned)i < (unsigned)layout->elementCount; ++i) {
             if (!layout->itemsEx[i].flag) {
@@ -1611,25 +1865,34 @@ int Layout_UpdateExtended(Layout* layout) {
             layout->elements[i].playerFlags[2] = *(signed char*)((char*)&layout->itemsEx[i] + 0x10);
             layout->elements[i].playerFlags[3] = *(signed char*)((char*)&layout->itemsEx[i] + 0x10);
         }
-        for (int i = 0; (unsigned)i < (unsigned)layout->elementCount; ++i) layout->elements[i].clonedItemId = 0;
+        for (int i = 0; (unsigned)i < (unsigned)layout->elementCount; ++i)
+            layout->elements[i].clonedItemId = 0;
         for (int i = 1; (unsigned)i < (unsigned)layout->elementCount; ++i) {
             for (int j = 0; (unsigned)j < (unsigned)i; ++j) {
                 if (layout->itemsEx[j].id == layout->itemsEx[i].id) {
 
-                    if ((layout->itemsEx[i].flag)) layout->elements[i].clonedItemId = SpdSquareList_CloneEntry(layout->spdRoot, layout->itemsEx[i].id);
-                    else layout->elements[i].clonedItemId = CSpdSprite_CloneAndRegister(layout->spdRoot, layout->itemsEx[i].id);
+                    if ((layout->itemsEx[i].flag))
+                        layout->elements[i].clonedItemId =
+                            SpdSquareList_CloneEntry(layout->spdRoot, layout->itemsEx[i].id);
+                    else
+                        layout->elements[i].clonedItemId =
+                            ((CSpdCtrl*)(layout->spdRoot))->CloneAndRegister(layout->itemsEx[i].id);
                 }
             }
         }
         for (int i = 0; (unsigned)i < (unsigned)layout->elementCount; ++i) {
             void* obj;
 
-                    if (!(!(!(!(!(!((layout->itemsEx[i].flag)))))))) {
-                if (layout->elements[i].clonedItemId) obj = (void*)SpdManager_GetSquareAt(layout->spdRoot, layout->elements[i].clonedItemId);
-                else obj = (void*)SpdManager_GetSquareAt(layout->spdRoot, layout->itemsEx[i].id);
+            if (!(!(!(!(!(!((layout->itemsEx[i].flag)))))))) {
+                if (layout->elements[i].clonedItemId)
+                    obj = (void*)SpdManager_GetSquareAt(layout->spdRoot, layout->elements[i].clonedItemId);
+                else
+                    obj = (void*)SpdManager_GetSquareAt(layout->spdRoot, layout->itemsEx[i].id);
             } else {
-                if (layout->elements[i].clonedItemId) obj = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->elements[i].clonedItemId);
-                else obj = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->itemsEx[i].id);
+                if (layout->elements[i].clonedItemId)
+                    obj = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->elements[i].clonedItemId);
+                else
+                    obj = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->itemsEx[i].id);
             }
             Sprite_GetPosition2D(obj, &layout->elements[i].positionX);
             Sprite_GetScale2D(obj, &layout->elements[i].scaleX);
@@ -1639,10 +1902,10 @@ int Layout_UpdateExtended(Layout* layout) {
             SpdGeometry_GetRotationRadians(obj, &layout->elements[i].rotationRadians);
             layout->elements[i].drawEnabled = 1;
             layout->elements[i].activationSoundEnabled = 1;
-            float position[2] = {0,0};
-            float size[2] = {0,0};
-            float scale[2] = {0,0};
-            float origin[2] = {0,0};
+            float position[2] = {0, 0};
+            float size[2] = {0, 0};
+            float scale[2] = {0, 0};
+            float origin[2] = {0, 0};
             Sprite_GetPosition2D(obj, position);
             Sprite_GetSourceSize2D(obj, size);
             Sprite_GetScale2D(obj, scale);
@@ -1688,10 +1951,14 @@ int Layout_UpdateExtended(Layout* layout) {
     case kLayoutReady:
         input = LayoutManager_GetInstance();
         int player = InputManager_GetSelectedPlayer(input);
-        __typeof__(player) _p546 = player; __typeof__(8 * _p546) _p279 = 8 * _p546; __typeof__(_p279) _p470 = _p546 * 8; InputManager_GetPointerPosition(input, (char*)layout + _p470 + 0x10, _p546);
+        __typeof__(player) _p546 = player;
+        __typeof__(8 * _p546) _p279 = 8 * _p546;
+        __typeof__(_p279) _p470 = _p546 * 8;
+        InputManager_GetPointerPosition(input, (char*)layout + _p470 + 0x10, _p546);
         char* point = (char*)layout + 0x10;
         for (p = 0; 4 > p; ++p, point += 8) {
-            if (p != player) InputManager_GetPointerPosition(input, point, p);
+            if (p != player)
+                InputManager_GetPointerPosition(input, point, p);
         }
         Layout_PlayActivationSound(layout);
         int enabled = 0;
@@ -1723,7 +1990,8 @@ int Layout_UpdateExtended(Layout* layout) {
                 __typeof__(_p887 | enabled) _p683 = _p887 | enabled;
                 enabled = _p683;
                 enabled = enabled | layout->elements[i].playerFlags[3];
-            } else enabled |= layout->elements[i].playerFlags[InputManager_GetSelectedPlayer(input2)];
+            } else
+                enabled |= layout->elements[i].playerFlags[InputManager_GetSelectedPlayer(input2)];
         }
         int enabledValue4 = enabled;
         InputManager_RequestPointerInput(input2, enabledValue4);
@@ -1736,58 +2004,107 @@ int Layout_UpdateExtended(Layout* layout) {
 }
 
 extern "C" {
-struct LayoutUpdatePair { float x,y; };
+struct LayoutUpdatePair {
+    float x, y;
+};
 extern const LayoutUpdatePair s_layoutUpdateScaleX;
 extern int s_layoutUpdateScaleY;
 inline int LayoutUpdateHit(Layout* layout, unsigned index, int player, float* pt, float k) {
-    if (!g_layoutHitTestingEnabled) return 0;
+    if (!g_layoutHitTestingEnabled)
+        return 0;
     signed char g;
-    if (layout->extended) g = (unsigned char)layout->itemsEx[index].hitShapeSelector;
-    else g = (unsigned char)layout->items[index].hitShapeSelector;
-    if (!layout->elements[index].playerFlags[player]) return 0;
-    if (g) return Layout_HitTestElementCircle(layout, index, player);
+    if (layout->extended)
+        g = (unsigned char)layout->itemsEx[index].hitShapeSelector;
+    else
+        g = (unsigned char)layout->items[index].hitShapeSelector;
+    if (!layout->elements[index].playerFlags[player])
+        return 0;
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, player);
     int d, c, b, a;
     LayoutElement* e = layout->elements + index;
-    if (e) { a = e->hitLeft; b = e->hitTop; c = e->hitRight; d = e->hitBottom; }
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if (e) {
+        a = e->hitLeft;
+        b = e->hitTop;
+        c = e->hitRight;
+        d = e->hitBottom;
+    }
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
-}inline int LayoutUpdateFallbackHoverHit(Layout* layout, unsigned index, int player, int g, float k, float* pt) {
-    if (g) return Layout_HitTestElementCircle(layout, index, player);
+}
+inline int LayoutUpdateFallbackHoverHit(Layout* layout, unsigned index, int player, int g, float k, float* pt) {
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, player);
     int d, c, b, a;
     LayoutElement* e = layout->elements + index;
-    if (e) { a = e->hitLeft; b = e->hitTop; c = e->hitRight; d = e->hitBottom; }
+    if (e) {
+        a = e->hitLeft;
+        b = e->hitTop;
+        c = e->hitRight;
+        d = e->hitBottom;
+    }
 
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
 }
 inline int LayoutUpdateFallbackHoverHitSingle(Layout* layout, unsigned index, int player, int g, float k) {
-    if (g) return Layout_HitTestElementCircle(layout, index, player);
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, player);
     int d, c, b, a;
     LayoutElement* e = layout->elements + index;
-    if (e) { a = e->hitLeft; b = e->hitTop; c = e->hitRight; d = e->hitBottom; }
+    if (e) {
+        a = e->hitLeft;
+        b = e->hitTop;
+        c = e->hitRight;
+        d = e->hitBottom;
+    }
 
     float* pt = (float*)((char*)layout + player * 8);
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
 }
 
-inline int LayoutUpdateHitMulti(Layout* layout, unsigned index, int player, float* pt, float k, int& a, int& b, int& c, int& d) {
-    if (!g_layoutHitTestingEnabled) return 0;
+inline int LayoutUpdateHitMulti(Layout* layout, unsigned index, int player, float* pt, float k, int& a, int& b, int& c,
+                                int& d) {
+    if (!g_layoutHitTestingEnabled)
+        return 0;
     signed char g;
-    if (layout->extended) g = (unsigned char)layout->itemsEx[index].hitShapeSelector;
-    else g = (unsigned char)layout->items[index].hitShapeSelector;
-    if (!layout->elements[index].playerFlags[player]) return 0;
-    if (g) return Layout_HitTestElementCircle(layout, index, player);
+    if (layout->extended)
+        g = (unsigned char)layout->itemsEx[index].hitShapeSelector;
+    else
+        g = (unsigned char)layout->items[index].hitShapeSelector;
+    if (!layout->elements[index].playerFlags[player])
+        return 0;
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, player);
     LayoutElement* e = layout->elements + index;
-    if (e) { a = e->hitLeft; b = e->hitTop; c = e->hitRight; d = e->hitBottom; }
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if (e) {
+        a = e->hitLeft;
+        b = e->hitTop;
+        c = e->hitRight;
+        d = e->hitBottom;
+    }
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
-}inline int LayoutUpdateFallbackHoverHitMulti(Layout* layout, unsigned index, int player, int g, float k, float* pt, int& a, int& b, int& c, int& d) {
-    if (g) return Layout_HitTestElementCircle(layout, index, player);
+}
+inline int LayoutUpdateFallbackHoverHitMulti(Layout* layout, unsigned index, int player, int g, float k, float* pt,
+                                             int& a, int& b, int& c, int& d) {
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, player);
     LayoutElement* e = layout->elements + index;
-    if (e) { a = e->hitLeft; b = e->hitTop; c = e->hitRight; d = e->hitBottom; }
+    if (e) {
+        a = e->hitLeft;
+        b = e->hitTop;
+        c = e->hitRight;
+        d = e->hitBottom;
+    }
 
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
 }
 
@@ -1814,12 +2131,19 @@ inline int LayoutUpdateHitMulti(Layout* layout, unsigned index, int player, floa
 void Layout_UpdateCursorHover(Layout* layout, float t) {
     int ha;
     float* pt;
-    int hb; int hc; int hd;
-    int sa; int sb; int sc; int sd;
-    if (!layout->spdRoot) return;
+    int hb;
+    int hc;
+    int hd;
+    int sa;
+    int sb;
+    int sc;
+    int sd;
+    if (!layout->spdRoot)
+        return;
     UIRender_SetDefaultState(layout);
     LayoutSingleton* input = LayoutManager_GetInstance();
-    if (!input) return;
+    if (!input)
+        return;
     int previous = layout->hoverFeedbackPending;
     layout->hoverFeedbackPending = 0;
     float k = -4.0f;
@@ -1829,111 +2153,142 @@ void Layout_UpdateCursorHover(Layout* layout, float t) {
         if (layout->allPlayersMode) {
             pt = (float*)layout;
             for (int player = 0; player < 4; ++player, pt += 2) {
-                if (previous && LayoutUpdateHitMulti(layout,index,player,pt,k,ha,hb,hc,hd)) {
-                    InputManager_RaiseCursorAppearance(input,2,player);
+                if (previous && LayoutUpdateHitMulti(layout, index, player, pt, k, ha, hb, hc, hd)) {
+                    InputManager_RaiseCursorAppearance(input, 2, player);
                     hovered = 1;
                 } else if (enabled) {
                     if (!layout->itemsEx[index].hitShapeSelector) {
-                        if (*(signed char*)((char*)&layout->itemsEx[index]+0x10) && LayoutUpdateFallbackHoverHitMulti(layout,index,player,0,k,pt,sa,sb,sc,sd) && previous) InputManager_RaiseCursorAppearance(input,1,player);
+                        if (*(signed char*)((char*)&layout->itemsEx[index] + 0x10) &&
+                            LayoutUpdateFallbackHoverHitMulti(layout, index, player, 0, k, pt, sa, sb, sc, sd) &&
+                            previous)
+                            InputManager_RaiseCursorAppearance(input, 1, player);
                     } else if (1 == layout->itemsEx[index].hitShapeSelector) {
-                        if (*(signed char*)((char*)&layout->itemsEx[index]+0x10) && Layout_HitTestElementCircle(layout,index,player) && previous) InputManager_RaiseCursorAppearance(input,1,player);
+                        if (*(signed char*)((char*)&layout->itemsEx[index] + 0x10) &&
+                            Layout_HitTestElementCircle(layout, index, player) && previous)
+                            InputManager_RaiseCursorAppearance(input, 1, player);
                     }
                 }
             }
         } else {
             int player = InputManager_GetSelectedPlayer(input);
-            if (previous && LayoutUpdateHit(layout,index,player,(float*)((char*)layout+player*8),k)) {
-                InputManager_RaiseCursorAppearance(input,2,player);
+            if (previous && LayoutUpdateHit(layout, index, player, (float*)((char*)layout + player * 8), k)) {
+                InputManager_RaiseCursorAppearance(input, 2, player);
                 hovered = 1;
             } else if (enabled) {
                 if (layout->itemsEx[index].hitShapeSelector == 0) {
-                    if (*(signed char*)((char*)&layout->itemsEx[index]+0x10) && LayoutUpdateFallbackHoverHitSingle(layout,index,player,0,k) && previous) InputManager_RaiseCursorAppearance(input,1,player);
+                    if (*(signed char*)((char*)&layout->itemsEx[index] + 0x10) &&
+                        LayoutUpdateFallbackHoverHitSingle(layout, index, player, 0, k) && previous)
+                        InputManager_RaiseCursorAppearance(input, 1, player);
                 } else if (layout->itemsEx[index].hitShapeSelector == 1) {
-                    if (*(signed char*)((char*)&layout->itemsEx[index]+0x10) && Layout_HitTestElementCircle(layout,index,player) && previous) InputManager_RaiseCursorAppearance(input,1,player);
+                    if (*(signed char*)((char*)&layout->itemsEx[index] + 0x10) &&
+                        Layout_HitTestElementCircle(layout, index, player) && previous)
+                        InputManager_RaiseCursorAppearance(input, 1, player);
                 }
             }
         }
         if (enabled) {
             float temp[2];
-            float position[2] = {0,0};
+            float position[2] = {0, 0};
             LayoutUpdatePair scale;
-            *(int*)&scale.x = *(int*)&s_layoutUpdateScaleX; *(int*)&scale.y = s_layoutUpdateScaleY;
-    if (0 == layout->itemsEx[index].flag) {
-        LayoutObject* obj;
-        if (!(!(!(layout->elements[index].clonedItemId != 0)))) {
-            obj = (LayoutObject*)SpdManager_GetSpriteAt(layout->spdRoot, layout->itemsEx[index].id);
-        } else {
-            obj = (LayoutObject*)SpdManager_GetSpriteAt(layout->spdRoot, layout->elements[index].clonedItemId);
-        }
-        if (hovered) {
-            float z = *(float*)((char*)&layout->itemsEx[index]+0xc);
-            float y;
-            float x = *(float*)((char*)&layout->itemsEx[index]+4);
-            y = *(float*)((char*)&layout->itemsEx[index]+8);
-            position[0] = x; position[1] = y; scale.x = z; scale.y = z;
-        }
-        temp[0] = position[0] + (*(LayoutElement* volatile*)&layout->elements)[index].positionX;
-        temp[1] = position[1] + (*(LayoutElement* volatile*)&layout->elements)[index].positionY;
-        Sprite_SetPosition2D(obj,temp);
-        temp[0] = (*(LayoutElement* volatile*)&layout->elements)[index].originX; temp[1] = (*(LayoutElement* volatile*)&layout->elements)[index].originY; Sprite_SetOrigin2D(obj,temp);
-        temp[0] = scale.x * (*(LayoutElement* volatile*)&layout->elements)[index].scaleX; temp[1] = scale.y * (*(LayoutElement* volatile*)&layout->elements)[index].scaleY; Sprite_SetScale2D(obj,temp);
-        Sprite_SetSourceSize2D(obj, &layout->elements[index].sourceWidth);
-        unsigned color = layout->elements[index].packedColor;
-        unsigned faded;
-        if (t <= 0.0f) faded = 0;
-        else if (t >= 1.0f) faded = color;
-        else faded = (color & 0xff00) | (unsigned char)Runtime_ConvertDoubleToUnsigned((float)(unsigned char)color * t) | (color & 0xffff0000);
-        Sprite_SetPackedColor(obj, faded);
-        SpdGeometry_SetRotationRadians(obj, layout->elements[index].rotationRadians);
-        if (0 != layout->spdRoot) {
-            void* child;
-            unsigned int v = Layout_GetElementValue(layout, index, hovered);
-            if (layout->elements[(unsigned)index].clonedItemId != 0) {
-                child = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->elements[(unsigned)index].clonedItemId);
-            } else if (!(layout->extended)) {
-                        child = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->items[(unsigned)index].id);
-            } else {
-                child = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->itemsEx[(unsigned)index].id);
-            }
-            TextureRegion_SetSourceAndNormalizeBounds(child, v);
-        }
-        obj->v1();
-        SimpleSpd_DrawBpSprite(obj);
-    } else {
-        unsigned color;
-        LayoutObject* obj;
-        if (!(layout->elements[index].clonedItemId)) {
-                    obj = (LayoutObject*)SpdManager_GetSquareAt(layout->spdRoot, layout->itemsEx[index].id);
-        } else {
-            obj = (LayoutObject*)SpdManager_GetSquareAt(layout->spdRoot, layout->elements[index].clonedItemId);
-        }
-        if (hovered) {
-            float z = *(float*)((char*)&layout->itemsEx[index]+0xc);
-            float y;
-            float x = *(float*)((char*)&layout->itemsEx[index]+4);
-            y = *(float*)((char*)&layout->itemsEx[index]+8);
-            position[0] = x; position[1] = y; scale.x = z; scale.y = z;
-        }
-        temp[0] = position[0] + (*(LayoutElement* volatile*)&layout->elements)[index].positionX;
-        temp[1] = position[1] + (*(LayoutElement* volatile*)&layout->elements)[index].positionY;
-        Sprite_SetPosition2D(obj,temp);
+            *(int*)&scale.x = *(int*)&s_layoutUpdateScaleX;
+            *(int*)&scale.y = s_layoutUpdateScaleY;
+            if (0 == layout->itemsEx[index].flag) {
+                LayoutObject* obj;
+                if (!(!(!(layout->elements[index].clonedItemId != 0)))) {
+                    obj = (LayoutObject*)SpdManager_GetSpriteAt(layout->spdRoot, layout->itemsEx[index].id);
+                } else {
+                    obj = (LayoutObject*)SpdManager_GetSpriteAt(layout->spdRoot, layout->elements[index].clonedItemId);
+                }
+                if (hovered) {
+                    float z = *(float*)((char*)&layout->itemsEx[index] + 0xc);
+                    float y;
+                    float x = *(float*)((char*)&layout->itemsEx[index] + 4);
+                    y = *(float*)((char*)&layout->itemsEx[index] + 8);
+                    position[0] = x;
+                    position[1] = y;
+                    scale.x = z;
+                    scale.y = z;
+                }
+                temp[0] = position[0] + (*(LayoutElement* volatile*)&layout->elements)[index].positionX;
+                temp[1] = position[1] + (*(LayoutElement* volatile*)&layout->elements)[index].positionY;
+                Sprite_SetPosition2D(obj, temp);
                 temp[0] = (*(LayoutElement* volatile*)&layout->elements)[index].originX;
                 temp[1] = (*(LayoutElement* volatile*)&layout->elements)[index].originY;
-                Sprite_SetOrigin2D(obj,temp);
+                Sprite_SetOrigin2D(obj, temp);
                 temp[0] = scale.x * (*(LayoutElement* volatile*)&layout->elements)[index].scaleX;
                 temp[1] = scale.y * (*(LayoutElement* volatile*)&layout->elements)[index].scaleY;
-                Sprite_SetScale2D(obj,temp);
-        Sprite_SetSourceSize2D(obj, &layout->elements[index].sourceWidth);
-        color = layout->elements[index].packedColor;
-        unsigned faded;
-        if (t <= 0.0f) faded = 0;
-        else if (t >= 1.0f) faded = color;
-        else faded = (color & 0xff00) | (unsigned char)Runtime_ConvertDoubleToUnsigned((float)(unsigned char)color * t) | (color & 0xffff0000);
+                Sprite_SetScale2D(obj, temp);
+                Sprite_SetSourceSize2D(obj, &layout->elements[index].sourceWidth);
+                unsigned color = layout->elements[index].packedColor;
+                unsigned faded;
+                if (t <= 0.0f)
+                    faded = 0;
+                else if (t >= 1.0f)
+                    faded = color;
+                else
+                    faded = (color & 0xff00) |
+                            (unsigned char)Runtime_ConvertDoubleToUnsigned((float)(unsigned char)color * t) |
+                            (color & 0xffff0000);
                 Sprite_SetPackedColor(obj, faded);
-        SpdGeometry_SetRotationRadians(obj, layout->elements[index].rotationRadians);
-        obj->v1();
-        SimpleSpd_DrawBpSprite(obj);
-    }
+                SpdGeometry_SetRotationRadians(obj, layout->elements[index].rotationRadians);
+                if (0 != layout->spdRoot) {
+                    void* child;
+                    unsigned int v = Layout_GetElementValue(layout, index, hovered);
+                    if (layout->elements[(unsigned)index].clonedItemId != 0) {
+                        child = (void*)SpdManager_GetSpriteAt(layout->spdRoot,
+                                                              layout->elements[(unsigned)index].clonedItemId);
+                    } else if (!(layout->extended)) {
+                        child = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->items[(unsigned)index].id);
+                    } else {
+                        child = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->itemsEx[(unsigned)index].id);
+                    }
+                    TextureRegion_SetSourceAndNormalizeBounds(child, v);
+                }
+                obj->v1();
+                SimpleSpd_DrawBpSprite(obj);
+            } else {
+                unsigned color;
+                LayoutObject* obj;
+                if (!(layout->elements[index].clonedItemId)) {
+                    obj = (LayoutObject*)SpdManager_GetSquareAt(layout->spdRoot, layout->itemsEx[index].id);
+                } else {
+                    obj = (LayoutObject*)SpdManager_GetSquareAt(layout->spdRoot, layout->elements[index].clonedItemId);
+                }
+                if (hovered) {
+                    float z = *(float*)((char*)&layout->itemsEx[index] + 0xc);
+                    float y;
+                    float x = *(float*)((char*)&layout->itemsEx[index] + 4);
+                    y = *(float*)((char*)&layout->itemsEx[index] + 8);
+                    position[0] = x;
+                    position[1] = y;
+                    scale.x = z;
+                    scale.y = z;
+                }
+                temp[0] = position[0] + (*(LayoutElement* volatile*)&layout->elements)[index].positionX;
+                temp[1] = position[1] + (*(LayoutElement* volatile*)&layout->elements)[index].positionY;
+                Sprite_SetPosition2D(obj, temp);
+                temp[0] = (*(LayoutElement* volatile*)&layout->elements)[index].originX;
+                temp[1] = (*(LayoutElement* volatile*)&layout->elements)[index].originY;
+                Sprite_SetOrigin2D(obj, temp);
+                temp[0] = scale.x * (*(LayoutElement* volatile*)&layout->elements)[index].scaleX;
+                temp[1] = scale.y * (*(LayoutElement* volatile*)&layout->elements)[index].scaleY;
+                Sprite_SetScale2D(obj, temp);
+                Sprite_SetSourceSize2D(obj, &layout->elements[index].sourceWidth);
+                color = layout->elements[index].packedColor;
+                unsigned faded;
+                if (t <= 0.0f)
+                    faded = 0;
+                else if (t >= 1.0f)
+                    faded = color;
+                else
+                    faded = (color & 0xff00) |
+                            (unsigned char)Runtime_ConvertDoubleToUnsigned((float)(unsigned char)color * t) |
+                            (color & 0xffff0000);
+                Sprite_SetPackedColor(obj, faded);
+                SpdGeometry_SetRotationRadians(obj, layout->elements[index].rotationRadians);
+                obj->v1();
+                SimpleSpd_DrawBpSprite(obj);
+            }
         }
     }
 }
@@ -1941,39 +2296,69 @@ void Layout_UpdateCursorHover(Layout* layout, float t) {
 extern const LayoutUpdatePair s_layoutDefaultScaleX;
 extern int s_layoutDefaultScaleY;
 inline int LayoutStandardHit(Layout* layout, unsigned index, int player, float* pt, float k) {
-    if (!g_layoutHitTestingEnabled) return 0;
+    if (!g_layoutHitTestingEnabled)
+        return 0;
     int g;
-    if (layout->extended) g = layout->itemsEx[index].hitShapeSelector;
-    else g = layout->items[index].hitShapeSelector;
-    if (!layout->elements[index].playerFlags[player]) return 0;
-    if (g) return Layout_HitTestElementCircle(layout, index, player);
+    if (layout->extended)
+        g = layout->itemsEx[index].hitShapeSelector;
+    else
+        g = layout->items[index].hitShapeSelector;
+    if (!layout->elements[index].playerFlags[player])
+        return 0;
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, player);
     int d, c, b, a;
     LayoutElement* e = layout->elements + index;
-    if (e) { a = e->hitLeft; b = e->hitTop; c = e->hitRight; d = e->hitBottom; }
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if (e) {
+        a = e->hitLeft;
+        b = e->hitTop;
+        c = e->hitRight;
+        d = e->hitBottom;
+    }
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
-}inline int LayoutStandardFallbackHoverHit(Layout* layout, unsigned index, int player, int g, float k, float* pt) {
-    if (g) return Layout_HitTestElementCircle(layout, index, player);
+}
+inline int LayoutStandardFallbackHoverHit(Layout* layout, unsigned index, int player, int g, float k, float* pt) {
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, player);
     int d, c, b, a;
     LayoutElement* e = layout->elements + index;
-    if (e) { a = e->hitLeft; b = e->hitTop; c = e->hitRight; d = e->hitBottom; }
+    if (e) {
+        a = e->hitLeft;
+        b = e->hitTop;
+        c = e->hitRight;
+        d = e->hitBottom;
+    }
 
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
 }
 inline int LayoutStandardFallbackHoverHitSingle(Layout* layout, unsigned index, int player, int g, float k) {
-    if (g) return Layout_HitTestElementCircle(layout, index, player);
+    if (g)
+        return Layout_HitTestElementCircle(layout, index, player);
     int d, c, b, a;
     LayoutElement* e = layout->elements + index;
-    if (e) { a = e->hitLeft; b = e->hitTop; c = e->hitRight; d = e->hitBottom; }
+    if (e) {
+        a = e->hitLeft;
+        b = e->hitTop;
+        c = e->hitRight;
+        d = e->hitBottom;
+    }
 
     float* pt = (float*)((char*)layout + player * 8);
-    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5]) return 1;
+    if ((float)a + k < pt[4] && (float)b + k < pt[5] && (float)c + k > pt[4] && (float)d + k > pt[5])
+        return 1;
     return 0;
 }
 
-struct LayoutStandardBits { CW_BITSP2(signed char, 5, signed char pad : 1, signed char sound : 2) };
-struct LayoutStandardRenderBits { CW_BITSP1(signed char, 6, signed char render : 2) };
+struct LayoutStandardBits {
+    CW_BITSP2(signed char, 5, signed char pad : 1, signed char sound : 2)
+};
+struct LayoutStandardRenderBits {
+    CW_BITSP1(signed char, 6, signed char render : 2)
+};
 // Standard hover/render: see extended contract above. Packed +18 decoding is
 // intentionally sign-extending: masks 0x60 (feedback) and 0xC0 (draw kind)
 // overlap, and shifting makes the high selected bit decide zero vs negative.
@@ -1982,10 +2367,12 @@ struct LayoutStandardRenderBits { CW_BITSP1(signed char, 6, signed char render :
 // these are shared pool values, not independent tuning settings.
 void Layout_UpdateCursorHoverFeedback(Layout* layout, float t) {
     float* pt;
-    if (!layout->spdRoot) return;
+    if (!layout->spdRoot)
+        return;
     UIRender_SetDefaultState(layout);
     LayoutSingleton* input = LayoutManager_GetInstance();
-    if (!input) return;
+    if (!input)
+        return;
     int previous = layout->hoverFeedbackPending;
     layout->hoverFeedbackPending = 0;
     float k = kHitRectangleOffset;
@@ -1995,112 +2382,144 @@ void Layout_UpdateCursorHoverFeedback(Layout* layout, float t) {
         if (layout->allPlayersMode) {
             pt = (float*)layout;
             for (int player = 0; player < 4; ++player, pt += 2) {
-                if (previous && LayoutStandardHit(layout,index,player,pt,k)) {
-                    InputManager_RaiseCursorAppearance(input,2,player);
+                if (previous && LayoutStandardHit(layout, index, player, pt, k)) {
+                    InputManager_RaiseCursorAppearance(input, 2, player);
                     hovered = 1;
                 } else if (enabled) {
                     if (layout->items[index].hitShapeSelector == 0) {
-                        if (((int)((*((unsigned char*)&layout->items[index]+0x18) & 0x60u) << 25) >> 31) && LayoutStandardFallbackHoverHit(layout,index,player,0,k,pt) && previous) InputManager_RaiseCursorAppearance(input,1,player);
+                        if (((int)((*((unsigned char*)&layout->items[index] + 0x18) & 0x60u) << 25) >> 31) &&
+                            LayoutStandardFallbackHoverHit(layout, index, player, 0, k, pt) && previous)
+                            InputManager_RaiseCursorAppearance(input, 1, player);
                     } else if (layout->items[index].hitShapeSelector == 1) {
-                        if (((int)((*((unsigned char*)&layout->items[index]+0x18) & 0x60u) << 25) >> 31) && Layout_HitTestElementCircle(layout,index,player) && previous) InputManager_RaiseCursorAppearance(input,1,player);
+                        if (((int)((*((unsigned char*)&layout->items[index] + 0x18) & 0x60u) << 25) >> 31) &&
+                            Layout_HitTestElementCircle(layout, index, player) && previous)
+                            InputManager_RaiseCursorAppearance(input, 1, player);
                     }
                 }
             }
         } else {
             int player = InputManager_GetSelectedPlayer(input);
-            if (previous && LayoutStandardHit(layout,index,player,(float*)((char*)layout+player*8),k)) {
-                InputManager_RaiseCursorAppearance(input,2,player);
+            if (previous && LayoutStandardHit(layout, index, player, (float*)((char*)layout + player * 8), k)) {
+                InputManager_RaiseCursorAppearance(input, 2, player);
                 hovered = 1;
             } else if (enabled) {
                 if (layout->items[index].hitShapeSelector == 0) {
-                    if (((int)((*((unsigned char*)&layout->items[index]+0x18) & 0x60u) << 25) >> 31) && LayoutStandardFallbackHoverHitSingle(layout,index,player,0,k) && previous) InputManager_RaiseCursorAppearance(input,1,player);
+                    if (((int)((*((unsigned char*)&layout->items[index] + 0x18) & 0x60u) << 25) >> 31) &&
+                        LayoutStandardFallbackHoverHitSingle(layout, index, player, 0, k) && previous)
+                        InputManager_RaiseCursorAppearance(input, 1, player);
                 } else if (layout->items[index].hitShapeSelector == 1) {
-                    if (((int)((*((unsigned char*)&layout->items[index]+0x18) & 0x60u) << 25) >> 31) && Layout_HitTestElementCircle(layout,index,player) && previous) InputManager_RaiseCursorAppearance(input,1,player);
+                    if (((int)((*((unsigned char*)&layout->items[index] + 0x18) & 0x60u) << 25) >> 31) &&
+                        Layout_HitTestElementCircle(layout, index, player) && previous)
+                        InputManager_RaiseCursorAppearance(input, 1, player);
                 }
             }
         }
         if (enabled) {
             float temp[2];
-            float position[2] = {0,0};
+            float position[2] = {0, 0};
             LayoutUpdatePair scale;
             LayoutItem* items = layout->items;
-            *(int*)&scale.x = *(int*)&s_layoutDefaultScaleX; *(int*)&scale.y = s_layoutDefaultScaleY;
-    if (((int)((*((unsigned char*)&items[index]+0x18) & 0xc0u) << 24) >> 31) == 0) {
-        LayoutObject* obj;
-        if (layout->elements[index].clonedItemId != 0) {
-            obj = (LayoutObject*)SpdManager_GetSpriteAt(layout->spdRoot, layout->elements[index].clonedItemId);
-        } else {
-            obj = (LayoutObject*)SpdManager_GetSpriteAt(layout->spdRoot, layout->items[index].id);
-        }
-        if (hovered) {
-            float z;
-            float y;
-            z = *(float*)((char*)&layout->items[index]+0x14);
-            float x = *(float*)((char*)&layout->items[index]+0xc);
-            y = *(float*)((char*)&layout->items[index]+0x10);
-            position[0] = x; position[1] = y;
-            scale.x = z; scale.y = z;
-        }
-        temp[0] = position[0] + (*(LayoutElement* volatile*)&layout->elements)[index].positionX;
-        temp[1] = position[1] + (*(LayoutElement* volatile*)&layout->elements)[index].positionY;
-        Sprite_SetPosition2D(obj,temp);
-        temp[0] = (*(LayoutElement* volatile*)&layout->elements)[index].originX; temp[1] = (*(LayoutElement* volatile*)&layout->elements)[index].originY; Sprite_SetOrigin2D(obj,temp);
-        temp[0] = scale.x * (*(LayoutElement* volatile*)&layout->elements)[index].scaleX; temp[1] = scale.y * (*(LayoutElement* volatile*)&layout->elements)[index].scaleY; Sprite_SetScale2D(obj,temp);
-        Sprite_SetSourceSize2D(obj, &layout->elements[index].sourceWidth);
-        unsigned color = layout->elements[index].packedColor;
-        unsigned faded;
-        if (t <= 0.0f) faded = 0;
-        else if (t >= 1.0f) faded = color;
-        else faded = (color & 0xff00) | (unsigned char)Runtime_ConvertDoubleToUnsigned((float)(unsigned char)color * t) | (color & 0xffff0000);
-        Sprite_SetPackedColor(obj, faded);
-        SpdGeometry_SetRotationRadians(obj, layout->elements[index].rotationRadians);
-        if (layout->spdRoot != 0) {
-            int v = Layout_GetElementValue(layout, index, hovered);
-            void* child;
-            if (layout->elements[(unsigned)index].clonedItemId != 0) {
-                child = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->elements[(unsigned)index].clonedItemId);
-            } else if (layout->extended) {
-                child = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->itemsEx[(unsigned)index].id);
+            *(int*)&scale.x = *(int*)&s_layoutDefaultScaleX;
+            *(int*)&scale.y = s_layoutDefaultScaleY;
+            if (((int)((*((unsigned char*)&items[index] + 0x18) & 0xc0u) << 24) >> 31) == 0) {
+                LayoutObject* obj;
+                if (layout->elements[index].clonedItemId != 0) {
+                    obj = (LayoutObject*)SpdManager_GetSpriteAt(layout->spdRoot, layout->elements[index].clonedItemId);
+                } else {
+                    obj = (LayoutObject*)SpdManager_GetSpriteAt(layout->spdRoot, layout->items[index].id);
+                }
+                if (hovered) {
+                    float z;
+                    float y;
+                    z = *(float*)((char*)&layout->items[index] + 0x14);
+                    float x = *(float*)((char*)&layout->items[index] + 0xc);
+                    y = *(float*)((char*)&layout->items[index] + 0x10);
+                    position[0] = x;
+                    position[1] = y;
+                    scale.x = z;
+                    scale.y = z;
+                }
+                temp[0] = position[0] + (*(LayoutElement* volatile*)&layout->elements)[index].positionX;
+                temp[1] = position[1] + (*(LayoutElement* volatile*)&layout->elements)[index].positionY;
+                Sprite_SetPosition2D(obj, temp);
+                temp[0] = (*(LayoutElement* volatile*)&layout->elements)[index].originX;
+                temp[1] = (*(LayoutElement* volatile*)&layout->elements)[index].originY;
+                Sprite_SetOrigin2D(obj, temp);
+                temp[0] = scale.x * (*(LayoutElement* volatile*)&layout->elements)[index].scaleX;
+                temp[1] = scale.y * (*(LayoutElement* volatile*)&layout->elements)[index].scaleY;
+                Sprite_SetScale2D(obj, temp);
+                Sprite_SetSourceSize2D(obj, &layout->elements[index].sourceWidth);
+                unsigned color = layout->elements[index].packedColor;
+                unsigned faded;
+                if (t <= 0.0f)
+                    faded = 0;
+                else if (t >= 1.0f)
+                    faded = color;
+                else
+                    faded = (color & 0xff00) |
+                            (unsigned char)Runtime_ConvertDoubleToUnsigned((float)(unsigned char)color * t) |
+                            (color & 0xffff0000);
+                Sprite_SetPackedColor(obj, faded);
+                SpdGeometry_SetRotationRadians(obj, layout->elements[index].rotationRadians);
+                if (layout->spdRoot != 0) {
+                    int v = Layout_GetElementValue(layout, index, hovered);
+                    void* child;
+                    if (layout->elements[(unsigned)index].clonedItemId != 0) {
+                        child = (void*)SpdManager_GetSpriteAt(layout->spdRoot,
+                                                              layout->elements[(unsigned)index].clonedItemId);
+                    } else if (layout->extended) {
+                        child = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->itemsEx[(unsigned)index].id);
+                    } else {
+                        child = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->items[(unsigned)index].id);
+                    }
+                    TextureRegion_SetSourceAndNormalizeBounds(child, v);
+                }
+                obj->v1();
+                SimpleSpd_DrawBpSprite(obj);
             } else {
-                child = (void*)SpdManager_GetSpriteAt(layout->spdRoot, layout->items[(unsigned)index].id);
+                unsigned color;
+                LayoutObject* obj;
+                if (layout->elements[index].clonedItemId != 0) {
+                    obj = (LayoutObject*)SpdManager_GetSquareAt(layout->spdRoot, layout->elements[index].clonedItemId);
+                } else {
+                    obj = (LayoutObject*)SpdManager_GetSquareAt(layout->spdRoot, layout->items[index].id);
+                }
+                if (hovered) {
+                    float z;
+                    float y;
+                    z = *(float*)((char*)&layout->items[index] + 0x14);
+                    float x = *(float*)((char*)&layout->items[index] + 0xc);
+                    y = *(float*)((char*)&layout->items[index] + 0x10);
+                    position[0] = x;
+                    position[1] = y;
+                    scale.x = z;
+                    scale.y = z;
+                }
+                temp[0] = position[0] + (*(LayoutElement* volatile*)&layout->elements)[index].positionX;
+                temp[1] = position[1] + (*(LayoutElement* volatile*)&layout->elements)[index].positionY;
+                Sprite_SetPosition2D(obj, temp);
+                temp[0] = (*(LayoutElement* volatile*)&layout->elements)[index].originX;
+                temp[1] = (*(LayoutElement* volatile*)&layout->elements)[index].originY;
+                Sprite_SetOrigin2D(obj, temp);
+                temp[0] = scale.x * (*(LayoutElement* volatile*)&layout->elements)[index].scaleX;
+                temp[1] = scale.y * (*(LayoutElement* volatile*)&layout->elements)[index].scaleY;
+                Sprite_SetScale2D(obj, temp);
+                Sprite_SetSourceSize2D(obj, &layout->elements[index].sourceWidth);
+                color = layout->elements[index].packedColor;
+                unsigned faded;
+                if (t <= 0.0f)
+                    faded = 0;
+                else if (t >= 1.0f)
+                    faded = color;
+                else
+                    faded = (color & 0xff00) |
+                            (unsigned char)Runtime_ConvertDoubleToUnsigned((float)(unsigned char)color * t) |
+                            (color & 0xffff0000);
+                Sprite_SetPackedColor(obj, faded);
+                SpdGeometry_SetRotationRadians(obj, layout->elements[index].rotationRadians);
+                obj->v1();
+                SimpleSpd_DrawBpSprite(obj);
             }
-            TextureRegion_SetSourceAndNormalizeBounds(child, v);
-        }
-        obj->v1();
-        SimpleSpd_DrawBpSprite(obj);
-    } else {
-        unsigned color;
-        LayoutObject* obj;
-        if (layout->elements[index].clonedItemId != 0) {
-            obj = (LayoutObject*)SpdManager_GetSquareAt(layout->spdRoot, layout->elements[index].clonedItemId);
-        } else {
-            obj = (LayoutObject*)SpdManager_GetSquareAt(layout->spdRoot, layout->items[index].id);
-        }
-        if (hovered) {
-            float z;
-            float y;
-            z = *(float*)((char*)&layout->items[index]+0x14);
-            float x = *(float*)((char*)&layout->items[index]+0xc);
-            y = *(float*)((char*)&layout->items[index]+0x10);
-            position[0] = x; position[1] = y;
-            scale.x = z; scale.y = z;
-        }
-        temp[0] = position[0] + (*(LayoutElement* volatile*)&layout->elements)[index].positionX;
-        temp[1] = position[1] + (*(LayoutElement* volatile*)&layout->elements)[index].positionY;
-        Sprite_SetPosition2D(obj,temp);
-        temp[0] = (*(LayoutElement* volatile*)&layout->elements)[index].originX; temp[1] = (*(LayoutElement* volatile*)&layout->elements)[index].originY; Sprite_SetOrigin2D(obj,temp);
-        temp[0] = scale.x * (*(LayoutElement* volatile*)&layout->elements)[index].scaleX; temp[1] = scale.y * (*(LayoutElement* volatile*)&layout->elements)[index].scaleY; Sprite_SetScale2D(obj,temp);
-        Sprite_SetSourceSize2D(obj, &layout->elements[index].sourceWidth);
-        color = layout->elements[index].packedColor;
-        unsigned faded;
-        if (t <= 0.0f) faded = 0;
-        else if (t >= 1.0f) faded = color;
-        else faded = (color & 0xff00) | (unsigned char)Runtime_ConvertDoubleToUnsigned((float)(unsigned char)color * t) | (color & 0xffff0000);
-        Sprite_SetPackedColor(obj, faded);
-        SpdGeometry_SetRotationRadians(obj, layout->elements[index].rotationRadians);
-        obj->v1();
-        SimpleSpd_DrawBpSprite(obj);
-    }
         }
     }
 }

@@ -20,7 +20,7 @@ static const int kKonstColorByteOffset = 0x78;
 // PREVIOUS0/PREVIOUS1 (0 and 1) are both treated as the running TEV result (GX_CC_CPREV) by every switch below;
 // the game's distinction between them is not established.
 
-#include "revolution/gx/GXTypes.h"
+#include "revolution/GX/GXTypes.h"
 
 // Texture/palette handles and fixed-size stage records share this state block.
 struct TextureStageOperation {
@@ -67,15 +67,23 @@ static const int kVertexUnused = 0x11;
 // Declaration usage IDs follow the position/weights/indices/normal/UV/color
 // categories; they are unrelated to GX attribute numbers.
 enum VertexUsage {
-    kUsagePosition = 0, kUsageBlendWeights = 1, kUsageBlendIndices = 2,
-    kUsageNormal = 3, kUsageTexCoord = 5, kUsageColor = 10,
+    kUsagePosition = 0,
+    kUsageBlendWeights = 1,
+    kUsageBlendIndices = 2,
+    kUsageNormal = 3,
+    kUsageTexCoord = 5,
+    kUsageColor = 10,
     kUsageEnd = 0xFF
 };
 enum VertexFormatBits {
-    kFormatPosition = 0x1, kFormatPositionVariant5 = 0x5,
-    kFormatNormal = 0x400, kFormatPackedColor = 0xF000,
-    kFormatTexCoordVariant1 = 0x10000, kFormatTexCoordVariant2 = 0x20000,
-    kFormatFourByteIndices = 0x400000, kFormatOneByteAdvanceType5 = 0x800000
+    kFormatPosition = 0x1,
+    kFormatPositionVariant5 = 0x5,
+    kFormatNormal = 0x400,
+    kFormatPackedColor = 0xF000,
+    kFormatTexCoordVariant1 = 0x10000,
+    kFormatTexCoordVariant2 = 0x20000,
+    kFormatFourByteIndices = 0x400000,
+    kFormatOneByteAdvanceType5 = 0x800000
 };
 static const unsigned int kTextureStageCount = 8;
 static const int kVertexConversionRuleCount = 0x41;
@@ -86,9 +94,6 @@ static const unsigned int kTextureFormatPairSecond = 0x32;
 static const unsigned int kPlatformFormatBias = 0x80000000u;
 static const unsigned int kTextureFormatIndexed = 9;
 static const unsigned int kPaletteFormatSplit = 6;
-
-// Translation unit 0x8042D650-0x8042EB30 (14 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -149,9 +154,10 @@ int TextureStage_HasActiveEntryAtOrBeyondLimit(volatile unsigned int* arg, unsig
 int TextureStage_CountTextureMapSlotsBeforeIndex(void* volatile values, volatile unsigned int count) {
     register unsigned int total = 0;
     register unsigned int i = 0;
-    for (; i < count; ) {
+    for (; i < count;) {
         register int value = TextureStage_ClassifyTextureSlot(values, i);
-        if (value == 0) break;
+        if (value == 0)
+            break;
         total += value;
         i++;
     }
@@ -161,7 +167,7 @@ int TextureStage_CountTextureMapSlotsBeforeIndex(void* volatile values, volatile
 #pragma use_frame_pointer reset
 #pragma use_lmw_stmw reset
 
-void TextureResource_GetLevelDescription(void* arg0, void* arg1, unsigned int* state);
+void TextureResource_GetLevelDescription(void* level, void* description, unsigned int* resource);
 
 #pragma global_optimizer off
 #pragma optimization_level 1
@@ -169,10 +175,13 @@ void TextureResource_GetLevelDescription(void* arg0, void* arg1, unsigned int* s
 // Recognize either texture format that consumes a pair of GX texture maps.
 int TextureStage_UsesPairedTextureFormat(unsigned int* values, unsigned int index) {
     unsigned int value = values[index];
-    if (value == 0) return 0;
+    if (value == 0)
+        return 0;
     volatile unsigned int result[9];
     TextureResource_GetLevelDescription((void*)0, (void*)result, (unsigned int*)value);
-    if (result[0] + kTextureFormatPairBias == kTextureFormatPairFirst || result[0] + kTextureFormatPairBias == kTextureFormatPairSecond) return 1;
+    if (result[0] + kTextureFormatPairBias == kTextureFormatPairFirst ||
+        result[0] + kTextureFormatPairBias == kTextureFormatPairSecond)
+        return 1;
     return 0;
 }
 #pragma use_lmw_stmw reset
@@ -188,13 +197,16 @@ int TextureStage_UsesPairedTextureFormat(unsigned int* values, unsigned int inde
 #pragma use_frame_pointer on
 #pragma use_lmw_stmw on
 // Count preceding TEV stages, including lighting and split-palette expansion.
-int TextureStage_GetAlphaCombinerBaseIndex(void* arg, volatile unsigned int count) {
+int TextureStage_GetAlphaCombinerBaseIndex(void* stageState, volatile unsigned int count) {
     register int total = 0;
     total++;
-    if (((TextureStageState*)arg)->extraLightingStage != 0) total++;
+    if (((TextureStageState*)stageState)->extraLightingStage != 0)
+        total++;
     for (unsigned int i = 0; i < count; i++) {
-        if (TextureStage_UsesSplitIndexedPalette(arg, i)) total += 3;
-        else total += 1;
+        if (TextureStage_UsesSplitIndexedPalette(stageState, i))
+            total += 3;
+        else
+            total += 1;
     }
     return total;
 }
@@ -246,13 +258,13 @@ void TextureStage_ConfigureTevColorCombiner(register unsigned char* self, regist
     if (!TextureStage_HasActiveEntryAtOrBeyondLimit((volatile unsigned int*)self, index))
         return;
 
-// When an unsupported operation/argument skips the input assignments, the original still programs GX from the
-// stale stack words it holds.
+    // When an unsupported operation/argument skips the input assignments, the original still programs GX from the
+    // stale stack words it holds.
     int baseStage = TextureStage_GetAlphaCombinerBaseIndex(self, index);
     firstStage = baseStage;
     hasPreparedColor = 0;
     currentStage = baseStage;
-// Recognize an indexed texture with the palette format that needs three TEV stages.
+    // Recognize an indexed texture with the palette format that needs three TEV stages.
     if (TextureStage_UsesSplitIndexedPalette(self, index)) {
         volatile int secondPreparationStage;
         volatile int firstPreparationStage;
@@ -409,8 +421,9 @@ void TextureStage_ConfigureTevColorCombiner(register unsigned char* self, regist
         case kArgumentPrevious1:
             colorInputA = GX_CC_CPREV;
             break;
-        case 22: break;
-}
+        case 22:
+            break;
+        }
         operation = GX_TEV_ADD;
         colorInputB = GX_CC_ZERO;
         colorInputC = GX_CC_ZERO;
@@ -580,14 +593,30 @@ int VertexDeclaration_GetStride(register void* declaration) {
     register unsigned int elementBytes = 0;
     lastElement = (char*)declaration + lastElementIndex * 12;
     switch (((VertexElement*)lastElement)->type) {
-    case kVertexFloat1: elementBytes = 4; break;
-    case kVertexFloat2: elementBytes = 8; break;
-    case kVertexFloat3: elementBytes = 12; break;
-    case kVertexFloat4: elementBytes = 16; break;
-    case kVertexPackedColor: elementBytes = 4; break;
-    case kVertexStorageType5: elementBytes = 4; break;
-    case kVertexShort2: elementBytes = 4; break;
-    case kVertexShort4: elementBytes = 8; break;
+    case kVertexFloat1:
+        elementBytes = 4;
+        break;
+    case kVertexFloat2:
+        elementBytes = 8;
+        break;
+    case kVertexFloat3:
+        elementBytes = 12;
+        break;
+    case kVertexFloat4:
+        elementBytes = 16;
+        break;
+    case kVertexPackedColor:
+        elementBytes = 4;
+        break;
+    case kVertexStorageType5:
+        elementBytes = 4;
+        break;
+    case kVertexShort2:
+        elementBytes = 4;
+        break;
+    case kVertexShort4:
+        elementBytes = 8;
+        break;
     }
     return ((VertexElement*)lastElement)->offset + elementBytes;
 }
@@ -602,20 +631,18 @@ int VertexDeclaration_GetElementCount(void* volatile entries) {
     for (;;) {
         Key key = *(volatile Key*)kVertexElementTerminatorComparison;
         unsigned char* e = (unsigned char*)entries + i * 12;
-        if (*(volatile unsigned short*)e == key.stream &&
-            *(volatile unsigned short*)(e + 2) == key.offset &&
-            (*(volatile unsigned int*)(e + 4) == key.type ||
-             *(volatile unsigned int*)(e + 4) == 0xFFFFFFFFu) &&
-            *(volatile unsigned char*)(e + 8) == key.method &&
-            *(volatile unsigned char*)(e + 9) == key.usage &&
+        if (*(volatile unsigned short*)e == key.stream && *(volatile unsigned short*)(e + 2) == key.offset &&
+            (*(volatile unsigned int*)(e + 4) == key.type || *(volatile unsigned int*)(e + 4) == 0xFFFFFFFFu) &&
+            *(volatile unsigned char*)(e + 8) == key.method && *(volatile unsigned char*)(e + 9) == key.usage &&
             *(volatile unsigned char*)(e + 10) == key.usageIndex) {
             found = 1;
         } else {
             found = 0;
         }
-// The rodata constant holds big-endian word values (0x00FF0000, 0x11); model-file declarations are swapped at load
-// and carry the native layout {stream 0xFF, offset 0, type 0x11 or -1}.
-        if (found) break;
+        // The rodata constant holds big-endian word values (0x00FF0000, 0x11); model-file declarations are swapped at load
+        // and carry the native layout {stream 0xFF, offset 0, type 0x11 or -1}.
+        if (found)
+            break;
         i++;
     }
     return i;
@@ -680,37 +707,69 @@ int VertexDeclaration_TryConvertToFormatFlags(unsigned char* entries, unsigned i
             entry = entries + search * 12;
             if (((VertexElement*)entry)->offset == data && ((VertexElement*)entry)->stream == 0)
                 break;
-            if (search == table[0][0] - 1) return 0;
+            if (search == table[0][0] - 1)
+                return 0;
         }
-    for (idx = last + 1; idx < kVertexConversionRuleCount; ++idx) {
+        for (idx = last + 1; idx < kVertexConversionRuleCount; ++idx) {
             t = (TblEnt*)((unsigned int*)table + 1) + idx;
-            if (t->code == ((VertexElement*)entry)->usage && t->usageIndex == ((VertexElement*)entry)->usageIndex && t->type == ((VertexElement*)entry)->type) {
+            if (t->code == ((VertexElement*)entry)->usage && t->usageIndex == ((VertexElement*)entry)->usageIndex &&
+                t->type == ((VertexElement*)entry)->type) {
                 switch (t->code) {
                 // Rules are consumed in table order, never reused. Weights
                 // require an earlier position and may occur once; indices may
                 // occur once and require position unless using type 0xFE.
-                case kUsagePosition: positionSeen = 1; break;
-                case kUsageBlendWeights: if (positionSeen == 0 || weightsSeen != 0) return 0; weightsSeen = 1; break;
-                case kUsageBlendIndices: if ((positionSeen == 0 && t->type != kVertexSpecialByte) || indicesSeen != 0) return 0; indicesSeen = 1; break;
+                case kUsagePosition:
+                    positionSeen = 1;
+                    break;
+                case kUsageBlendWeights:
+                    if (positionSeen == 0 || weightsSeen != 0)
+                        return 0;
+                    weightsSeen = 1;
+                    break;
+                case kUsageBlendIndices:
+                    if ((positionSeen == 0 && t->type != kVertexSpecialByte) || indicesSeen != 0)
+                        return 0;
+                    indicesSeen = 1;
+                    break;
                 }
                 value = 0;
                 // UV rules replace the extra word; other rules OR their flags.
-                if (t->code == kUsageTexCoord) extra = t->value;
-                else value = t->value;
+                if (t->code == kUsageTexCoord)
+                    extra = t->value;
+                else
+                    value = t->value;
                 type = t->type;
                 size = 0;
                 aggregate |= value;
                 last = idx;
                 switch (type) {
-                case kVertexFloat1: size = 4; break;
-                case kVertexFloat2: size = 8; break;
-                case kVertexFloat3: size = 0xC; break;
-                case kVertexFloat4: size = 0x10; break;
-                case kVertexPackedColor: size = 4; break;
-                case kVertexStorageType5: size = 4; break;
-                case kVertexShort2: size = 4; break;
-                case kVertexShort4: size = 8; break;
-                case kVertexSpecialByte: size = 1; break;
+                case kVertexFloat1:
+                    size = 4;
+                    break;
+                case kVertexFloat2:
+                    size = 8;
+                    break;
+                case kVertexFloat3:
+                    size = 0xC;
+                    break;
+                case kVertexFloat4:
+                    size = 0x10;
+                    break;
+                case kVertexPackedColor:
+                    size = 4;
+                    break;
+                case kVertexStorageType5:
+                    size = 4;
+                    break;
+                case kVertexShort2:
+                    size = 4;
+                    break;
+                case kVertexShort4:
+                    size = 8;
+                    break;
+                case kVertexSpecialByte:
+                    size = 1;
+                    break;
                 }
                 data += size;
                 break;
@@ -932,14 +991,14 @@ void TextureResource_GetLevelDescription(void* level, void* description, unsigne
         unsigned int handleBits = *resource;
         resourceKind = (handleBits >> 13) & 0x7;
         switch (resourceKind) {
-            case 3:
-                Texture_GetLevelDescription(resource, level, description);
-                break;
-            case 4:
-                Texture_GetKind4LevelDescription(resource, level, description);
-                break;
-            default:
-                break;
+        case 3:
+            Texture_GetLevelDescription(resource, level, description);
+            break;
+        case 4:
+            Texture_GetKind4LevelDescription(resource, level, description);
+            break;
+        default:
+            break;
         }
     }
 }

@@ -1,10 +1,14 @@
+// Controller sampling and report building for the Wii Remote, Nunchuk, Classic Controller and GameCube.
+// InputDriver_UpdateAll polls the hardware and stores sample histories, which each driver's
+// provider functions turn into the reports the game reads.
+
 #include <decomp/static_init.h>
 #include <decomp/local_class.h>
 // Controller sampling and report translation (Wii Remote, Nunchuk/FreeStyle,
 // Classic Controller, GameCube). InputDriver_UpdateAll polls hardware before
 // publishing histories through provider vtables; game_input_manager_cursor_rumble.cpp consumes InputEx actions.
 // Modding lookup:
-// - Classic buttons/axes: ClassicReportSlot + ClassicButtonBit, vfunc_5 below.
+// - Classic buttons/axes: ClassicReportSlot + ClassicButtonBit, converted by the Classic functions below.
 //   The 20-slot ABI includes R but no separate digital L slot. Preserve this map.
 // - Analog sensitivity: kControllerAnalogReportScale (100000) and Y sign (-1),
 //   phase1_shared_data.cpp; shared by Classic, pointing and gtl_pad_drivers_gc_classic_freestyle.cpp FreeStyle.
@@ -25,7 +29,7 @@
 //   no dead zone (0/10000); their acceleration samples need not fit +/-1g.
 // - Idle detection/frame rate: Engine_UpdateInput thresholds and kIdleResetUpdates;
 //   counters are polling calls, independent of KPAD's number of returned samples.
-// No viewport/aspect conversion happens here: pointer floats stay in KPAD space.
+// No viewport or aspect scaling happens here: pointer floats stay in KPAD space.
 // All channel APIs require 0..3; histories hold 0..16 samples. Descriptor getters
 // borrow static storage (Classic item 0..19, pointing 0..21, layer 0..3).
 // No driver getter transfers ownership. Calls run on the engine input thread;
@@ -37,10 +41,9 @@ extern unsigned char nunchukReportItems[];
 #include "game/types.h"
 #include "classes/GtlRvlInputHistory.h"
 #include "classes/GtlPadDriverState.h"
-// Translation unit 0x80436FA0-0x80438310 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
+#include "classes/CRvlPointingDeviceDriver.h"
 
 extern "C" {
 
@@ -58,7 +61,7 @@ struct KpadSampleWords {
     signed char status;
     signed char pointingValidity;
     unsigned char dataFormat;
-    int extensionWords[9]; // Nunchuk/Classic payload, copied verbatim before provider-specific conversion.
+    int extensionWords[9]; // Nunchuk/Classic payload, copied unchanged for provider-specific decoding.
 };
 
 struct KpadChannelHistory {
@@ -73,7 +76,8 @@ enum InputHistoryBytes {
     kClassicSampleBytes = sizeof(GtlClassicPadSample),
     kPointingHistoryBytes = sizeof(GtlPointingDeviceHistory),
     kPointingSampleBytes = sizeof(GtlPointingDeviceSample),
-    kKpadHistoryBytes = sizeof(KpadChannelHistory), kKpadSampleBytes = sizeof(KpadSampleWords)
+    kKpadHistoryBytes = sizeof(KpadChannelHistory),
+    kKpadSampleBytes = sizeof(KpadSampleWords)
 };
 
 struct ControllerPollingState {
@@ -117,8 +121,12 @@ enum InputCatalogOffset {
     kClassicItemsOffset = (int)&((InputItemCatalog*)0)->classic,
     kPointingItemsOffset = (int)&((InputItemCatalog*)0)->pointing
 };
-enum ControllerLimits { kControllerChannels = 4, kHistorySamples = 16,
-    kIdleResetUpdates = 1800, kButtonPressedShift = 7 };
+enum ControllerLimits {
+    kControllerChannels = 4,
+    kHistorySamples = 16,
+    kIdleResetUpdates = 1800,
+    kButtonPressedShift = 7
+};
 // Baselines are SDK report units: these are activity thresholds, not controller
 // dead zones or cursor sensitivity. Larger values admit more motion as idle.
 // Preserve strict > comparisons and float precision; safe tuning ranges unknown.
@@ -139,15 +147,36 @@ enum ControllerLimits { kControllerChannels = 4, kHistorySamples = 16,
 static const float kIdleAccelerationSpeedThreshold = 0.05f;
 static const float kIdlePointerSpeedThreshold = 0.0001f;
 static const float kIdleAccelerationDriftThreshold = 0.25f;
-enum { kTrackedPointerValidity = 2 };
-enum DriverResult { kDriverReady = 0, kDriverDisconnected = 1,
-    kDriverCommunicationError = 2, kDriverWrongDevice = 3, kDriverNoData = 4 };
-enum WpadStatus { kWpadOk = 0, kWpadNoController = -1,
-    kWpadCommunicationError = -2, kWpadWrongDevice = -3, kWpadInvalidSample = -4 };
-enum ProviderId { kProviderPointing = 0xB, kProviderFreeStyle = 0xC,
-    kProviderClassic = 0xD, kProviderGameCube = 0xE };
-enum { kExtensionUnavailable = 0xFD, kRemoteWithoutExtension = 0,
-    kMotorOff = 0, kMotorOn = 1, kRemoteButtonMask = 0xFFFF9FFF };
+enum {
+    kTrackedPointerValidity = 2
+};
+enum DriverResult {
+    kDriverReady = 0,
+    kDriverDisconnected = 1,
+    kDriverCommunicationError = 2,
+    kDriverWrongDevice = 3,
+    kDriverNoData = 4
+};
+enum WpadStatus {
+    kWpadOk = 0,
+    kWpadNoController = -1,
+    kWpadCommunicationError = -2,
+    kWpadWrongDevice = -3,
+    kWpadInvalidSample = -4
+};
+enum ProviderId {
+    kProviderPointing = 0xB,
+    kProviderFreeStyle = 0xC,
+    kProviderClassic = 0xD,
+    kProviderGameCube = 0xE
+};
+enum {
+    kExtensionUnavailable = 0xFD,
+    kRemoteWithoutExtension = 0,
+    kMotorOff = 0,
+    kMotorOn = 1,
+    kRemoteButtonMask = 0xFFFF9FFF
+};
 // Bit positions in KPAD's held-button word (extension Z/C are removed above).
 enum PointingReportSlot {
     kPointingReportPointerX = 0,
@@ -195,22 +224,47 @@ enum ClassicReportSlot {
     kClassicReportZL = 18,
     kClassicReportZR = 19
 };
-enum RemoteButtonBit { kRemoteLeft = 0, kRemoteRight = 1, kRemoteDown = 2,
-    kRemoteUp = 3, kRemotePlus = 4, kRemoteTwo = 8, kRemoteOne = 9,
-    kRemoteB = 10, kRemoteA = 11, kRemoteMinus = 12, kRemoteHome = 15 };
-enum ClassicButtonBit { kClassicUp = 0, kClassicLeft = 1, kClassicZR = 2,
-    kClassicX = 3, kClassicA = 4, kClassicY = 5, kClassicB = 6,
-    kClassicZL = 7, kClassicR = 8, kClassicPlus = 10, kClassicHome = 11,
-    kClassicMinus = 12, kClassicL = 13, kClassicDown = 14, kClassicRight = 15 };
-
+enum RemoteButtonBit {
+    kRemoteLeft = 0,
+    kRemoteRight = 1,
+    kRemoteDown = 2,
+    kRemoteUp = 3,
+    kRemotePlus = 4,
+    kRemoteTwo = 8,
+    kRemoteOne = 9,
+    kRemoteB = 10,
+    kRemoteA = 11,
+    kRemoteMinus = 12,
+    kRemoteHome = 15
+};
+enum ClassicButtonBit {
+    kClassicUp = 0,
+    kClassicLeft = 1,
+    kClassicZR = 2,
+    kClassicX = 3,
+    kClassicA = 4,
+    kClassicY = 5,
+    kClassicB = 6,
+    kClassicZL = 7,
+    kClassicR = 8,
+    kClassicPlus = 10,
+    kClassicHome = 11,
+    kClassicMinus = 12,
+    kClassicL = 13,
+    kClassicDown = 14,
+    kClassicRight = 15
+};
 
 extern int kInputProviderClassic;
 extern int kGcDriverCapabilityCode;
 extern int kInputProviderPointing;
 extern int kNunchukDriverCapabilityCode;
-extern signed char s_gameCubePadDriverRegistered, s_freeStylePadDriverRegistered, s_classicPadDriverRegistered, s_pointingDriverRegistered;
-extern char s_gameCubePadDriverStorage[], s_pointingDriverStorage[], s_freeStylePadDriverStorage[], s_classicPadDriverStorage[];
-extern char __vt__Q23gtl12CGCPadDriver[], __vt__Q23gtl24CRvlPointingDeviceDriver[], __vt__Q23gtl22CRvlFreeStylePadDriver[], __vt__Q23gtl20CRvlClassicPadDriver[];
+extern signed char s_gameCubePadDriverRegistered, s_freeStylePadDriverRegistered, s_classicPadDriverRegistered,
+    s_pointingDriverRegistered;
+extern char s_gameCubePadDriverStorage[], s_pointingDriverStorage[], s_freeStylePadDriverStorage[],
+    s_classicPadDriverStorage[];
+extern char __vt__Q23gtl12CGCPadDriver[], __vt__Q23gtl24CRvlPointingDeviceDriver[],
+    __vt__Q23gtl22CRvlFreeStylePadDriver[], __vt__Q23gtl20CRvlClassicPadDriver[];
 extern char s_inputDriverDestructorRegistrations[];
 extern char s_classicPadInputItems[];
 extern char s_pointingInputItems[];
@@ -244,7 +298,7 @@ int gtl_CRvlPointingDeviceDriver_vfunc_7() {
 
 // Return the buffered sample count for a Classic Controller channel.
 int gtl_CRvlClassicPadDriver_vfunc_6(void* self, int channel) {
-    return ((GtlClassicPadDriver*)self)->channels[channel].sampleCount; // 0x80437060.
+    return ((gtl::CRvlClassicPadDriver*)self)->channels[channel].sampleCount; // 0x80437060.
 }
 
 // Scan newest samples first; return ready if any sample is valid, otherwise the final mapped error.
@@ -252,7 +306,7 @@ int gtl_CRvlClassicPadDriver_vfunc_6(void* self, int channel) {
 // error comes from the oldest sample if none is ready; 0xFD overrides status.
 int gtl_CRvlClassicPadDriver_GetChannelStatus(void* self, int channel) {
     char* record = (char*)self + channel * kClassicHistoryBytes;
-    int count = ((GtlClassicPadDriver*)record)->channels[0].sampleCount;
+    int count = ((gtl::CRvlClassicPadDriver*)record)->channels[0].sampleCount;
     if (count < 1)
         return kDriverNoData;
     int i = count - 1;
@@ -262,15 +316,27 @@ int gtl_CRvlClassicPadDriver_GetChannelStatus(void* self, int channel) {
         int status = ((GtlClassicPadSample*)item)->status;
         unsigned int extensionType = ((GtlClassicPadSample*)item)->extensionType;
         switch (status) {
-        case kWpadOk: result = kDriverReady; break;
-        case kWpadNoController: result = kDriverDisconnected; break;
-        case kWpadCommunicationError: result = kDriverCommunicationError; break;
-        case kWpadWrongDevice: result = kDriverWrongDevice; break;
+        case kWpadOk:
+            result = kDriverReady;
+            break;
+        case kWpadNoController:
+            result = kDriverDisconnected;
+            break;
+        case kWpadCommunicationError:
+            result = kDriverCommunicationError;
+            break;
+        case kWpadWrongDevice:
+            result = kDriverWrongDevice;
+            break;
         case kWpadInvalidSample:
-        default: result = kDriverNoData; break;
+        default:
+            result = kDriverNoData;
+            break;
         }
-        if (extensionType == kExtensionUnavailable) result = kDriverDisconnected;
-        if (result == kDriverReady) return result;
+        if (extensionType == kExtensionUnavailable)
+            result = kDriverDisconnected;
+        if (result == kDriverReady)
+            return result;
     }
     return result;
 }
@@ -286,9 +352,9 @@ void* gtl_CRvlClassicPadDriver_vfunc_2(void*, int channel, int layer) {
 }
 
 // Write the Classic Controller provider ID to the caller.
-// Receiver is unused; arg1 requires one writable int. Always returns 1.
-int gtl_CRvlClassicPadDriver_GetInputProviderId(void*, int* arg1) {
-    *arg1 = kInputProviderClassic;
+// Receiver is unused; providerId requires one writable int. Always returns 1.
+int gtl_CRvlClassicPadDriver_GetInputProviderId(void*, int* providerId) {
+    *providerId = kInputProviderClassic;
     return 1;
 }
 
@@ -299,7 +365,7 @@ int gtl_CRvlPointingDeviceDriver_vfunc_6(void* self, int channel) {
 
 #pragma opt_common_subs off
 // Scan newest samples first; return ready if any sample is valid, otherwise the final mapped error.
-int CRvlPointingDeviceDriver_GetChannelStatus(void* self, int channel) {
+int CRvlPointingDeviceDriver::GetChannelStatus(int channel) {
     char* base;
     int count;
     int result;
@@ -307,7 +373,7 @@ int CRvlPointingDeviceDriver_GetChannelStatus(void* self, int channel) {
     int i;
     int status;
     unsigned int extensionType;
-    base = (char*)self + channel * kPointingHistoryBytes;
+    base = (char*)this + channel * kPointingHistoryBytes;
     count = ((GtlPointingDeviceHistory*)(base + 4))->sampleCount;
     base = base + 4;
     if (count < 1)
@@ -319,15 +385,27 @@ int CRvlPointingDeviceDriver_GetChannelStatus(void* self, int channel) {
         status = ((GtlPointingDeviceSample*)item)->status;
         extensionType = ((GtlPointingDeviceSample*)item)->extensionType;
         switch (status) {
-        case kWpadOk: result = kDriverReady; break;
-        case kWpadNoController: result = kDriverDisconnected; break;
-        case kWpadCommunicationError: result = kDriverCommunicationError; break;
-        case kWpadWrongDevice: result = kDriverWrongDevice; break;
+        case kWpadOk:
+            result = kDriverReady;
+            break;
+        case kWpadNoController:
+            result = kDriverDisconnected;
+            break;
+        case kWpadCommunicationError:
+            result = kDriverCommunicationError;
+            break;
+        case kWpadWrongDevice:
+            result = kDriverWrongDevice;
+            break;
         case kWpadInvalidSample:
-        default: result = kDriverNoData; break;
+        default:
+            result = kDriverNoData;
+            break;
         }
-        if (extensionType == kExtensionUnavailable) result = kDriverDisconnected;
-        if (result == kDriverReady) return result;
+        if (extensionType == kExtensionUnavailable)
+            result = kDriverDisconnected;
+        if (result == kDriverReady)
+            return result;
     }
     return result;
 }
@@ -339,9 +417,9 @@ void* gtl_CRvlPointingDeviceDriver_vfunc_1(void*, int itemIndex) {
 }
 
 // Write the Wii Remote pointing provider ID to the caller.
-// Receiver is unused; arg1 requires one writable int. Always returns 1.
-int gtl_CRvlPointingDeviceDriver_GetInputProviderId(void*, int* arg1) {
-    *arg1 = kInputProviderPointing;
+// Receiver is unused; providerId requires one writable int. Always returns 1.
+int gtl_CRvlPointingDeviceDriver_GetInputProviderId(void*, int* providerId) {
+    *providerId = kInputProviderPointing;
     return 1;
 }
 
@@ -397,7 +475,7 @@ int gtl_CRvlPointingDeviceDriver_CopyHistories(void* self, void* channelHistorie
         *(int*)dst = *(int*)src;
         out = dst + 4;
         in = src + 8;
-        // Select the Remote fields; extension-specific conversion belongs to other drivers.
+        // Select the Remote fields; extension-specific decoding belongs to other drivers.
         for (i = 0; i < 16; ++i, out += kPointingSampleBytes, in += kKpadSampleBytes) {
             heldButtons = ((KpadSampleView*)in)->heldButtons;
             copiedAcceleration = (char*)&((GtlPointingDeviceSample*)out)->accelerationX;
@@ -424,45 +502,52 @@ int gtl_CRvlPointingDeviceDriver_CopyHistories(void* self, void* channelHistorie
 #pragma opt_lifetimes reset
 
 // Destroy the registered GameCube driver storage when deletion is requested.
-void* GameCubePadDriver_DestroyRegisteredInstance(void* arg0, int arg1) {
-    if (arg0 != 0 && arg1 > 0)
-        __dl__Q23gtl25IInputResourceMemOperatorFPv(arg0);
-    return arg0;
+void* GameCubePadDriver_DestroyRegisteredInstance(void* instance, int deleteFlag) {
+    if (instance != 0 && deleteFlag > 0)
+        __dl__Q23gtl25IInputResourceMemOperatorFPv(instance);
+    return instance;
 }
 
 // Destroy the registered Wii Remote pointing driver storage when deletion is requested.
-void* RvlPointingDriver_DestroyRegisteredInstance(void* arg0, int arg1) {
-    if (arg0 != 0 && arg1 > 0)
-        __dl__Q23gtl25IInputResourceMemOperatorFPv(arg0);
-    return arg0;
+void* RvlPointingDriver_DestroyRegisteredInstance(void* instance, int deleteFlag) {
+    if (instance != 0 && deleteFlag > 0)
+        __dl__Q23gtl25IInputResourceMemOperatorFPv(instance);
+    return instance;
 }
 
 // Destroy the registered Nunchuk driver storage when deletion is requested.
-void* RvlFreeStyleDriver_DestroyRegisteredInstance(void* arg0, int arg1) {
-    if (arg0 != 0 && arg1 > 0)
-        __dl__Q23gtl25IInputResourceMemOperatorFPv(arg0);
-    return arg0;
+void* RvlFreeStyleDriver_DestroyRegisteredInstance(void* instance, int deleteFlag) {
+    if (instance != 0 && deleteFlag > 0)
+        __dl__Q23gtl25IInputResourceMemOperatorFPv(instance);
+    return instance;
 }
 
 // Destroy the registered Classic Controller driver storage when deletion is requested.
-void* RvlClassicDriver_DestroyRegisteredInstance(void* arg0, int arg1) {
-    if (arg0 != 0 && arg1 > 0)
-        __dl__Q23gtl25IInputResourceMemOperatorFPv(arg0);
-    return arg0;
+void* RvlClassicDriver_DestroyRegisteredInstance(void* instance, int deleteFlag) {
+    if (instance != 0 && deleteFlag > 0)
+        __dl__Q23gtl25IInputResourceMemOperatorFPv(instance);
+    return instance;
 }
 
 // Forward WPAD releases to the registered allocator callback.
 int InputDriver_FreeCallback(void* arg0) {
-    struct FnTable2 { void* unk; void (*fn)(void*); };
+    struct FnTable2 {
+        void* unk;
+        void (*fn)(void*);
+    };
     ((FnTable2*)g_inputAllocator)->fn(arg0);
     return 0;
 }
 
 extern char s_controllerPollingState[];
 extern char s_wiiRemoteChannelHistories[];
-struct SavedWords { int first; int second; };
+struct SavedWords {
+    int first;
+    int second;
+};
 extern SavedWords s_inputAllocatorCallbacks;
-extern int kInputAxisType0, kInputAxisId1, kInputAxisId2, kInputAxisCode3, kInt_4_inputDriver, kInputAxisId5, kInt_7_inputDriver;
+extern int kInputAxisType0, kInputAxisId1, kInputAxisId2, kInputAxisCode3, kInt_4_inputDriver, kInputAxisId5,
+    kInt_7_inputDriver;
 extern char gcReportItems[];
 extern char kGameCubePadChannelMasks[];
 extern char s_nativeGameCubePadReadBuffer[];
@@ -482,8 +567,9 @@ extern int s_inputIdleFrameCount;
 extern int WPADProbe(int, void*);
 extern int KPADRead(int, void*, int);
 // Measure input activity with the original double fabs intrinsic and float result.
-static inline float InputActivityAbsolute(double value) { return (float)__fabs(value); }
-
+static inline float InputActivityAbsolute(double value) {
+    return (float)__fabs(value);
+}
 
 struct ObjTable {
     virtual void fn(void*);
@@ -491,7 +577,7 @@ struct ObjTable {
 
 // Initialize item IDs for the GameCube, Nunchuk, Classic and pointing descriptors.
 // These ID words are report TYPES, not unique control numbers. Full GC/FreeStyle
-// slot -> control -> ID map (consumer: corresponding vfunc_5 in gtl_pad_drivers_gc_classic_freestyle.cpp):
+// slot -> control -> ID map (consumer: the matching report function in gtl_pad_drivers_gc_classic_freestyle.cpp):
 // GC  0 stick X ->0, 1 negated stick Y ->1, 2 C-stick X ->2,
 //     3 negated C-stick Y ->3, 4 L analog ->4, 5 R analog ->5;
 //     6 Up,7 Down,8 Left,9 Right,10 A,11 B,12 X,13 Y,14 Z,15 Start ->7.
@@ -588,44 +674,47 @@ int InputDriver_PollGameCubePads() {
     unsigned char* dst;
     unsigned char* src;
     unsigned int* wp;
-    unsigned char ch;
+    unsigned char statusByte;
     unsigned int mask;
     int i, j;
     unsigned int words[4];
     unsigned short values[6];
-    unsigned char* vb = (unsigned char*)values;
-    unsigned int* g = (unsigned int*)kGameCubePadChannelMasks;
-    words[0] = g[0];
-    words[1] = g[1];
-    words[2] = g[2];
-    words[3] = g[3];
-    PADRead(s_nativeGameCubePadReadBuffer, words[2], words[1], words[0], g);
+    unsigned char* valueBytes = (unsigned char*)values;
+    unsigned int* maskTable = (unsigned int*)kGameCubePadChannelMasks;
+    words[0] = maskTable[0];
+    words[1] = maskTable[1];
+    words[2] = maskTable[2];
+    words[3] = maskTable[3];
+    PADRead(s_nativeGameCubePadReadBuffer, words[2], words[1], words[0], maskTable);
     src = (unsigned char*)s_nativeGameCubePadReadBuffer;
     dst = (unsigned char*)s_controllerPollingState;
     wp = words;
     mask = 0;
     for (i = 0; i < 4; i++, dst += 0x10, src += 0xc, wp++) {
-        unsigned short* ps = (unsigned short*)src;
-        values[0] = ps[0];
-        values[1] = ps[1];
-        values[2] = ps[2];
-        values[3] = ps[3];
-        values[4] = ps[4];
-        values[5] = ps[5];
-        ch = vb[10];
-        if ((signed char)ch == 0) {
+        unsigned short* sourceShorts = (unsigned short*)src;
+        values[0] = sourceShorts[0];
+        values[1] = sourceShorts[1];
+        values[2] = sourceShorts[2];
+        values[3] = sourceShorts[3];
+        values[4] = sourceShorts[4];
+        values[5] = sourceShorts[5];
+        statusByte = valueBytes[10];
+        if ((signed char)statusByte == 0) {
             *(unsigned short*)(dst + 4) = values[0];
-            for (j = 0; j < 8; j++) dst[6 + j] = vb[2 + j];
-            dst[14] = *(volatile unsigned char*)(vb + 10);
+            for (j = 0; j < 8; j++)
+                dst[6 + j] = valueBytes[2 + j];
+            dst[14] = *(volatile unsigned char*)(valueBytes + 10);
             *(unsigned int*)dst = 1;
         } else {
             Memory_Clear(dst + 4, 12);
-            dst[14] = ch;
+            dst[14] = statusByte;
             *(unsigned int*)dst = 0;
         }
-        if ((signed char)ch == -1) mask |= *wp;
+        if ((signed char)statusByte == -1)
+            mask |= *wp;
     }
-    if (mask) PADReset(mask);
+    if (mask)
+        PADReset(mask);
     return 1;
 }
 #pragma use_lmw_stmw reset
@@ -653,11 +742,11 @@ int InputDriver_PollGameCubePads() {
 // gtl_InputEx_Initialize (gtl_input_ex_devices_part2.cpp) additionally clears wrapper slots on reentry;
 // it is not evidence that reinitializing a live input system is safe.
 int InputDriver_InitializeSystem(const void* allocatorCallbacks) {
-    s_inputAllocatorCallbacks.first=*(const int*)allocatorCallbacks;
-    s_inputAllocatorCallbacks.second=*((const int*)allocatorCallbacks+1);
-    *(int*)((char*)&g_inputAllocator)= (int)&s_inputAllocatorCallbacks;
+    s_inputAllocatorCallbacks.first = *(const int*)allocatorCallbacks;
+    s_inputAllocatorCallbacks.second = *((const int*)allocatorCallbacks + 1);
+    *(int*)((char*)&g_inputAllocator) = (int)&s_inputAllocatorCallbacks;
     fn_803566A8();
-    WPADRegisterAllocator((void*)InputDriver_AllocCallback,(void*)InputDriver_FreeCallback);
+    WPADRegisterAllocator((void*)InputDriver_AllocCallback, (void*)InputDriver_FreeCallback);
     fn_803D29FC();
     // Initialize descriptor ranges before publishing the first hardware histories.
     void* gameCubeDriver = (void*)InputDriver_GetByProviderId(kProviderGameCube);
@@ -701,7 +790,8 @@ void* InputDriver_GetByProviderId(int id) {
         if (!((int&)Sing_805DD688())) {
             if (!s_gameCubePadDriverRegistered) {
                 *(int*)s_gameCubePadDriverStorage = (int)__vt__Q23gtl12CGCPadDriver;
-                __register_global_object(s_gameCubePadDriverStorage, (void*)GameCubePadDriver_DestroyRegisteredInstance, regmem);
+                __register_global_object(s_gameCubePadDriverStorage, (void*)GameCubePadDriver_DestroyRegisteredInstance,
+                                         regmem);
                 s_gameCubePadDriverRegistered = 1;
             }
             ((int&)Sing_805DD688()) = (int)s_gameCubePadDriverStorage;
@@ -712,7 +802,8 @@ void* InputDriver_GetByProviderId(int id) {
         if (!((int&)Sing_805DD6A0())) {
             if (!s_pointingDriverRegistered) {
                 *(int*)s_pointingDriverStorage = (int)__vt__Q23gtl24CRvlPointingDeviceDriver;
-                __register_global_object(s_pointingDriverStorage, (void*)RvlPointingDriver_DestroyRegisteredInstance, regmem + 0x24);
+                __register_global_object(s_pointingDriverStorage, (void*)RvlPointingDriver_DestroyRegisteredInstance,
+                                         regmem + 0x24);
                 s_pointingDriverRegistered = 1;
             }
             ((int&)Sing_805DD6A0()) = (int)s_pointingDriverStorage;
@@ -723,7 +814,8 @@ void* InputDriver_GetByProviderId(int id) {
         if (!((int&)Sing_805DD690())) {
             if (!s_freeStylePadDriverRegistered) {
                 *(int*)s_freeStylePadDriverStorage = (int)__vt__Q23gtl22CRvlFreeStylePadDriver;
-                __register_global_object(s_freeStylePadDriverStorage, (void*)RvlFreeStyleDriver_DestroyRegisteredInstance, regmem + 0x0c);
+                __register_global_object(s_freeStylePadDriverStorage,
+                                         (void*)RvlFreeStyleDriver_DestroyRegisteredInstance, regmem + 0x0c);
                 s_freeStylePadDriverRegistered = 1;
             }
             ((int&)Sing_805DD690()) = (int)s_freeStylePadDriverStorage;
@@ -734,7 +826,8 @@ void* InputDriver_GetByProviderId(int id) {
         if (!((int&)Sing_805DD698())) {
             if (!s_classicPadDriverRegistered) {
                 *(int*)s_classicPadDriverStorage = (int)__vt__Q23gtl20CRvlClassicPadDriver;
-                __register_global_object(s_classicPadDriverStorage, (void*)RvlClassicDriver_DestroyRegisteredInstance, regmem + 0x18);
+                __register_global_object(s_classicPadDriverStorage, (void*)RvlClassicDriver_DestroyRegisteredInstance,
+                                         regmem + 0x18);
                 s_classicPadDriverRegistered = 1;
             }
             ((int&)Sing_805DD698()) = (int)s_classicPadDriverStorage;
@@ -763,12 +856,17 @@ void* InputDriver_GetByProviderId(int id) {
 // must return stable borrowed item/range storage for the call. Final cursor is
 // local, not returned to caller. count==0 writes nothing but still returns ready.
 int gtl_CRvlClassicPadDriver_BuildStateReports(void* self, void* reportCursor, int reportOptions, int channel) {
-    if (!reportCursor) return 0;
+    if (!reportCursor)
+        return 0;
     char* record = (char*)self + channel * 0x244;
     char* item;
-    int count = ((GtlClassicPadDriver*)record)->channels[0].sampleCount;
-    struct CheckTable { 
-    virtual void unused0() DECOMP_LOCAL_VIRTUAL; virtual void unused1() DECOMP_LOCAL_VIRTUAL; virtual void unused2() DECOMP_LOCAL_VIRTUAL; virtual void unused3() DECOMP_LOCAL_VIRTUAL; virtual int check(int) DECOMP_LOCAL_VIRTUAL;
+    int count = ((gtl::CRvlClassicPadDriver*)record)->channels[0].sampleCount;
+    struct CheckTable {
+        virtual void unused0() DECOMP_LOCAL_VIRTUAL;
+        virtual void unused1() DECOMP_LOCAL_VIRTUAL;
+        virtual void unused2() DECOMP_LOCAL_VIRTUAL;
+        virtual void unused3() DECOMP_LOCAL_VIRTUAL;
+        virtual int check(int) DECOMP_LOCAL_VIRTUAL;
     };
     int channelStatus = ((CheckTable*)self)->check(channel);
     float scale = kControllerAnalogReportScale;
@@ -779,9 +877,11 @@ int gtl_CRvlClassicPadDriver_BuildStateReports(void* self, void* reportCursor, i
         int reportValues[20];
         volatile unsigned int* flags = (volatile unsigned int*)item;
         reportValues[kClassicReportLeftStickX] = (int)(scale * ((GtlClassicPadSample*)item)->leftStickX);
-        reportValues[kClassicReportLeftStickY] = (int)(negativeScale * (scale * ((GtlClassicPadSample*)item)->leftStickY));
+        reportValues[kClassicReportLeftStickY] =
+            (int)(negativeScale * (scale * ((GtlClassicPadSample*)item)->leftStickY));
         reportValues[kClassicReportRightStickX] = (int)(scale * ((GtlClassicPadSample*)item)->rightStickX);
-        reportValues[kClassicReportRightStickY] = (int)(negativeScale * (scale * ((GtlClassicPadSample*)item)->rightStickY));
+        reportValues[kClassicReportRightStickY] =
+            (int)(negativeScale * (scale * ((GtlClassicPadSample*)item)->rightStickY));
         reportValues[kClassicReportLeftTrigger] = (int)(scale * ((GtlClassicPadSample*)item)->leftTrigger);
         reportValues[kClassicReportRightTrigger] = (int)(scale * ((GtlClassicPadSample*)item)->rightTrigger);
         reportValues[kClassicReportUp] = (*(unsigned int*)flags & 1) << kButtonPressedShift;
@@ -798,7 +898,8 @@ int gtl_CRvlClassicPadDriver_BuildStateReports(void* self, void* reportCursor, i
         reportValues[kClassicReportY] = (*(unsigned int*)flags >> kClassicY & 1) << kButtonPressedShift;
         reportValues[kClassicReportZL] = (*(unsigned int*)flags >> kClassicZL & 1) << kButtonPressedShift;
         reportValues[kClassicReportZR] = (*(unsigned int*)flags >> kClassicZR & 1) << kButtonPressedShift;
-        if (!ready) Memory_Set(reportValues, sizeof(reportValues), 0);
+        if (!ready)
+            Memory_Set(reportValues, sizeof(reportValues), 0);
         reportCursor = (void*)InputDriver_BuildStateReport(self, reportCursor, reportOptions, reportValues, channel);
     }
     return ready;
@@ -809,10 +910,10 @@ int gtl_CRvlClassicPadDriver_BuildStateReports(void* self, void* reportCursor, i
 // with 22 source values and this pointing channel's sampleCount. reportOptions
 // is a descriptor pointer here; zeroing source values still leaves unmatched
 // output bytes unchanged. Null cursor returns 0 before any status/history access.
-int CRvlPointingDeviceDriver_BuildStateReports(void* self, void* reportCursor, void* reportOptions, int channel) {
+int CRvlPointingDeviceDriver::BuildStateReports(void* reportCursor, void* reportOptions, int channel) {
     if (!reportCursor)
         return 0;
-    char* record = (char*)self + channel * 0x304;
+    char* record = (char*)this + channel * 0x304;
     char* item;
     int count = ((GtlPointingDeviceDriver*)record)->channels[0].sampleCount;
     struct CheckTable {
@@ -822,7 +923,7 @@ int CRvlPointingDeviceDriver_BuildStateReports(void* self, void* reportCursor, v
         virtual void d() DECOMP_LOCAL_VIRTUAL;
         virtual int check(int) DECOMP_LOCAL_VIRTUAL;
     };
-    int channelStatus = ((CheckTable*)self)->check(channel);
+    int channelStatus = ((CheckTable*)this)->check(channel);
     float scale = kControllerAnalogReportScale;
     item = record + 8;
     int ready = (channelStatus == kDriverReady);
@@ -837,20 +938,31 @@ int CRvlPointingDeviceDriver_BuildStateReports(void* self, void* reportCursor, v
         reportValues[kPointingReportAccelerationZ] = (int)(scale * ((GtlPointingDeviceSample*)item)->accelerationZ);
         reportValues[kPointingReportPointerDistance] = (int)(scale * ((GtlPointingDeviceSample*)item)->pointerDistance);
         reportValues[kPointingReportPointingValidity] = ((GtlPointingDeviceSample*)item)->pointingValidity;
-        reportValues[kPointingReportUp] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteUp & 1) << kButtonPressedShift;
-        reportValues[kPointingReportDown] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteDown & 1) << kButtonPressedShift;
+        reportValues[kPointingReportUp] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteUp & 1)
+                                          << kButtonPressedShift;
+        reportValues[kPointingReportDown] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteDown & 1)
+                                            << kButtonPressedShift;
         reportValues[kPointingReportLeft] = (((GtlPointingDeviceSample*)item)->buttons & 1) << kButtonPressedShift;
-        reportValues[kPointingReportRight] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteRight & 1) << kButtonPressedShift;
-        reportValues[kPointingReportPlus] = (((GtlPointingDeviceSample*)item)->buttons >> kRemotePlus & 1) << kButtonPressedShift;
-        reportValues[kPointingReportMinus] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteMinus & 1) << kButtonPressedShift;
-        reportValues[kPointingReportHome] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteHome & 1) << kButtonPressedShift;
-        reportValues[kPointingReportA] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteA & 1) << kButtonPressedShift;
-        reportValues[kPointingReportB] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteB & 1) << kButtonPressedShift;
-        reportValues[kPointingReportOne] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteOne & 1) << kButtonPressedShift;
-        reportValues[kPointingReportTwo] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteTwo & 1) << kButtonPressedShift;
+        reportValues[kPointingReportRight] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteRight & 1)
+                                             << kButtonPressedShift;
+        reportValues[kPointingReportPlus] = (((GtlPointingDeviceSample*)item)->buttons >> kRemotePlus & 1)
+                                            << kButtonPressedShift;
+        reportValues[kPointingReportMinus] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteMinus & 1)
+                                             << kButtonPressedShift;
+        reportValues[kPointingReportHome] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteHome & 1)
+                                            << kButtonPressedShift;
+        reportValues[kPointingReportA] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteA & 1)
+                                         << kButtonPressedShift;
+        reportValues[kPointingReportB] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteB & 1)
+                                         << kButtonPressedShift;
+        reportValues[kPointingReportOne] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteOne & 1)
+                                           << kButtonPressedShift;
+        reportValues[kPointingReportTwo] = (((GtlPointingDeviceSample*)item)->buttons >> kRemoteTwo & 1)
+                                           << kButtonPressedShift;
         if (!ready)
             Memory_Set(reportValues, sizeof(reportValues), 0);
-        reportCursor = (void*)InputDriver_BuildStateReport(self, reportCursor, (int)reportOptions, reportValues, channel);
+        reportCursor =
+            (void*)InputDriver_BuildStateReport(this, reportCursor, (int)reportOptions, reportValues, channel);
     }
     return ready;
 }
@@ -910,61 +1022,96 @@ int Engine_UpdateInput() {
         int validSampleCount = 0;
         int destinationIndex = 0;
         int i;
-        // Phase 2: compact successful samples. Word views preserve floating-point
-        // bit patterns without numeric conversion; byte status fields are widened
+        // Phase 2: compact successful samples. Word views keep floating-point
+        // bit patterns unchanged; byte status fields are widened
         // explicitly. The full extension payload is copied, then cleared for type 0.
         for (i = 0; i < polling->readBuffer.count; i++) {
-            char* d = outputChannel + destinationIndex * 0x84;
-            char* s = (char*)readBuffer + i * 0x84;
-            KpadSampleWords* __restrict dst = (KpadSampleWords*)(d + 8);
-            KpadSampleWords* __restrict src = (KpadSampleWords*)(s + 8);
+            char* destinationSample = outputChannel + destinationIndex * 0x84;
+            char* sourceSample = (char*)readBuffer + i * 0x84;
+            KpadSampleWords* __restrict dst = (KpadSampleWords*)(destinationSample + 8);
+            KpadSampleWords* __restrict src = (KpadSampleWords*)(sourceSample + 8);
             int extensionType;
             int b;
             int a;
             float y, x;
-            if (((KpadChannelHistory*)s)->samples[0].status != 0)
+            if (((KpadChannelHistory*)sourceSample)->samples[0].status != 0)
                 continue;
             a = *(volatile int*)&src->heldButtons;
             extensionType = *(volatile unsigned char*)&src->extensionType;
             dst->heldButtons = a;
             b = src->pressedButtons;
-            a = src->releasedButtons; dst->pressedButtons = b;
-            b = src->accelerationXBits; dst->releasedButtons = a;
-            a = src->accelerationYBits; dst->accelerationXBits = b;
-            b = src->accelerationZBits; dst->accelerationYBits = a;
-            x = src->accelerationMagnitude; dst->accelerationZBits = b;
-            y = src->accelerationSpeed; dst->accelerationMagnitude = x;
-            a = src->pointerXBits; dst->accelerationSpeed = y;
-            b = src->pointerYBits; dst->pointerXBits = a;
-            a = src->pointerDeltaXBits; dst->pointerYBits = b;
-            b = src->pointerDeltaYBits; dst->pointerDeltaXBits = a;
-            y = src->pointerSpeed; dst->pointerDeltaYBits = b;
-            a = src->horizonXBits; dst->pointerSpeed = y;
-            b = src->horizonYBits; dst->horizonXBits = a;
-            a = src->horizonDeltaXBits; dst->horizonYBits = b;
-            b = src->horizonDeltaYBits; dst->horizonDeltaXBits = a;
-            x = src->horizonSpeed; dst->horizonDeltaYBits = b;
-            y = src->pointerDistance; dst->horizonSpeed = x;
-            x = src->pointerDistanceDelta; dst->pointerDistance = y;
-            y = src->pointerDistanceSpeed; dst->pointerDistanceDelta = x;
-            b = src->verticalAccelerationXBits; dst->pointerDistanceSpeed = y;
-            a = src->verticalAccelerationYBits; dst->verticalAccelerationXBits = b;
-            b = src->extensionType; dst->verticalAccelerationYBits = a;
-            a = (unsigned char)src->status; dst->extensionType = b;
-            b = (unsigned char)src->pointingValidity; dst->status = a;
-            a = (unsigned char)src->dataFormat; dst->pointingValidity = b;
-            b = src->extensionWords[0]; dst->dataFormat = a;
-            a = src->extensionWords[1]; dst->extensionWords[0] = b;
-            b = src->extensionWords[2]; dst->extensionWords[1] = a;
-            a = src->extensionWords[3]; dst->extensionWords[2] = b;
-            b = src->extensionWords[4]; dst->extensionWords[3] = a;
-            a = src->extensionWords[5]; dst->extensionWords[4] = b;
-            b = src->extensionWords[6]; dst->extensionWords[5] = a;
-            a = src->extensionWords[7]; dst->extensionWords[6] = b;
-            b = src->extensionWords[8]; dst->extensionWords[7] = a;
+            a = src->releasedButtons;
+            dst->pressedButtons = b;
+            b = src->accelerationXBits;
+            dst->releasedButtons = a;
+            a = src->accelerationYBits;
+            dst->accelerationXBits = b;
+            b = src->accelerationZBits;
+            dst->accelerationYBits = a;
+            x = src->accelerationMagnitude;
+            dst->accelerationZBits = b;
+            y = src->accelerationSpeed;
+            dst->accelerationMagnitude = x;
+            a = src->pointerXBits;
+            dst->accelerationSpeed = y;
+            b = src->pointerYBits;
+            dst->pointerXBits = a;
+            a = src->pointerDeltaXBits;
+            dst->pointerYBits = b;
+            b = src->pointerDeltaYBits;
+            dst->pointerDeltaXBits = a;
+            y = src->pointerSpeed;
+            dst->pointerDeltaYBits = b;
+            a = src->horizonXBits;
+            dst->pointerSpeed = y;
+            b = src->horizonYBits;
+            dst->horizonXBits = a;
+            a = src->horizonDeltaXBits;
+            dst->horizonYBits = b;
+            b = src->horizonDeltaYBits;
+            dst->horizonDeltaXBits = a;
+            x = src->horizonSpeed;
+            dst->horizonDeltaYBits = b;
+            y = src->pointerDistance;
+            dst->horizonSpeed = x;
+            x = src->pointerDistanceDelta;
+            dst->pointerDistance = y;
+            y = src->pointerDistanceSpeed;
+            dst->pointerDistanceDelta = x;
+            b = src->verticalAccelerationXBits;
+            dst->pointerDistanceSpeed = y;
+            a = src->verticalAccelerationYBits;
+            dst->verticalAccelerationXBits = b;
+            b = src->extensionType;
+            dst->verticalAccelerationYBits = a;
+            a = (unsigned char)src->status;
+            dst->extensionType = b;
+            b = (unsigned char)src->pointingValidity;
+            dst->status = a;
+            a = (unsigned char)src->dataFormat;
+            dst->pointingValidity = b;
+            b = src->extensionWords[0];
+            dst->dataFormat = a;
+            a = src->extensionWords[1];
+            dst->extensionWords[0] = b;
+            b = src->extensionWords[2];
+            dst->extensionWords[1] = a;
+            a = src->extensionWords[3];
+            dst->extensionWords[2] = b;
+            b = src->extensionWords[4];
+            dst->extensionWords[3] = a;
+            a = src->extensionWords[5];
+            dst->extensionWords[4] = b;
+            b = src->extensionWords[6];
+            dst->extensionWords[5] = a;
+            a = src->extensionWords[7];
+            dst->extensionWords[6] = b;
+            b = src->extensionWords[8];
+            dst->extensionWords[7] = a;
             dst->extensionWords[8] = b;
             if (extensionType == kRemoteWithoutExtension)
-                Memory_Clear(((KpadSampleView*)(d + 8))->extensionData, sizeof(((KpadSampleView*)0)->extensionData));
+                Memory_Clear(((KpadSampleView*)(destinationSample + 8))->extensionData,
+                             sizeof(((KpadSampleView*)0)->extensionData));
             validSampleCount++;
             destinationIndex++;
         }
@@ -982,17 +1129,28 @@ int Engine_UpdateInput() {
         volatile float* dst = (volatile float*)polling->idleAcceleration;
         float x, y, z;
         x = ((KpadSampleView*)&sourceChannels[0].samples[0])->acceleration[0];
-        y = ((KpadSampleView*)&sourceChannels[0].samples[0])->acceleration[1]; dst[0] = x;
-        z = ((KpadSampleView*)&sourceChannels[0].samples[0])->acceleration[2]; dst[1] = y;
-        x = ((KpadSampleView*)&sourceChannels[1].samples[0])->acceleration[0]; dst[2] = z;
-        y = ((KpadSampleView*)&sourceChannels[1].samples[0])->acceleration[1]; dst[3] = x;
-        z = ((KpadSampleView*)&sourceChannels[1].samples[0])->acceleration[2]; dst[4] = y;
-        x = ((KpadSampleView*)&sourceChannels[2].samples[0])->acceleration[0]; dst[5] = z;
-        y = ((KpadSampleView*)&sourceChannels[2].samples[0])->acceleration[1]; dst[6] = x;
-        z = ((KpadSampleView*)&sourceChannels[2].samples[0])->acceleration[2]; dst[7] = y;
-        x = ((KpadSampleView*)&sourceChannels[3].samples[0])->acceleration[0]; dst[8] = z;
-        y = ((KpadSampleView*)&sourceChannels[3].samples[0])->acceleration[1]; dst[9] = x;
-        z = ((KpadSampleView*)&sourceChannels[3].samples[0])->acceleration[2]; dst[10] = y;
+        y = ((KpadSampleView*)&sourceChannels[0].samples[0])->acceleration[1];
+        dst[0] = x;
+        z = ((KpadSampleView*)&sourceChannels[0].samples[0])->acceleration[2];
+        dst[1] = y;
+        x = ((KpadSampleView*)&sourceChannels[1].samples[0])->acceleration[0];
+        dst[2] = z;
+        y = ((KpadSampleView*)&sourceChannels[1].samples[0])->acceleration[1];
+        dst[3] = x;
+        z = ((KpadSampleView*)&sourceChannels[1].samples[0])->acceleration[2];
+        dst[4] = y;
+        x = ((KpadSampleView*)&sourceChannels[2].samples[0])->acceleration[0];
+        dst[5] = z;
+        y = ((KpadSampleView*)&sourceChannels[2].samples[0])->acceleration[1];
+        dst[6] = x;
+        z = ((KpadSampleView*)&sourceChannels[2].samples[0])->acceleration[2];
+        dst[7] = y;
+        x = ((KpadSampleView*)&sourceChannels[3].samples[0])->acceleration[0];
+        dst[8] = z;
+        y = ((KpadSampleView*)&sourceChannels[3].samples[0])->acceleration[1];
+        dst[9] = x;
+        z = ((KpadSampleView*)&sourceChannels[3].samples[0])->acceleration[2];
+        dst[10] = y;
         dst[11] = z;
     }
     // Phase 4: classify activity against slot 0 and the baseline, then count idle calls.
@@ -1001,15 +1159,23 @@ int Engine_UpdateInput() {
     channelBase = (char*)polling->channels;
     int baselineOffset = 0;
     // Activity means buttons, acceleration speed, tracked-pointer motion, or baseline drift.
-    for (channelIndex = 0, channelOffset = 0; channelIndex < 4; channelIndex++, channelOffset += 0x848, baselineOffset += 12) {
+    for (channelIndex = 0, channelOffset = 0; channelIndex < 4;
+         channelIndex++, channelOffset += 0x848, baselineOffset += 12) {
         b = channelBase + channelOffset;
         if ((channelIndex == 0 && ((KpadChannelHistory*)b)->count == 0) ||
             ((KpadChannelHistory*)b)->samples[0].heldButtons != 0 ||
             ((KpadChannelHistory*)b)->samples[0].accelerationSpeed > kIdleAccelerationSpeedThreshold ||
-            (((KpadChannelHistory*)b)->samples[0].pointingValidity == kTrackedPointerValidity && ((KpadChannelHistory*)b)->samples[0].pointerSpeed > kIdlePointerSpeedThreshold) ||
-            InputActivityAbsolute(((KpadSampleView*)&((KpadChannelHistory*)b)->samples[0])->acceleration[0] - *(float*)((char*)idleAcceleration + baselineOffset)) > kIdleAccelerationDriftThreshold ||
-            InputActivityAbsolute(((KpadSampleView*)&((KpadChannelHistory*)b)->samples[0])->acceleration[1] - *(float*)((char*)idleAcceleration + baselineOffset + 4)) > kIdleAccelerationDriftThreshold ||
-            InputActivityAbsolute(((KpadSampleView*)&((KpadChannelHistory*)b)->samples[0])->acceleration[2] - *(float*)((char*)idleAcceleration + baselineOffset + 8)) > kIdleAccelerationDriftThreshold)
+            (((KpadChannelHistory*)b)->samples[0].pointingValidity == kTrackedPointerValidity &&
+             ((KpadChannelHistory*)b)->samples[0].pointerSpeed > kIdlePointerSpeedThreshold) ||
+            InputActivityAbsolute(((KpadSampleView*)&((KpadChannelHistory*)b)->samples[0])->acceleration[0] -
+                                  *(float*)((char*)idleAcceleration + baselineOffset)) >
+                kIdleAccelerationDriftThreshold ||
+            InputActivityAbsolute(((KpadSampleView*)&((KpadChannelHistory*)b)->samples[0])->acceleration[1] -
+                                  *(float*)((char*)idleAcceleration + baselineOffset + 4)) >
+                kIdleAccelerationDriftThreshold ||
+            InputActivityAbsolute(((KpadSampleView*)&((KpadChannelHistory*)b)->samples[0])->acceleration[2] -
+                                  *(float*)((char*)idleAcceleration + baselineOffset + 8)) >
+                kIdleAccelerationDriftThreshold)
             allIdle = 0;
     }
     // More than 1800 idle updates requests a fresh acceleration baseline on the next update.
@@ -1017,8 +1183,7 @@ int Engine_UpdateInput() {
     if (allIdle) {
         idleFrames = s_inputIdleFrameCount + 1;
         s_inputIdleFrameCount = idleFrames;
-    }
-    else
+    } else
         s_inputIdleFrameCount = idleFrames = 0;
     if (idleFrames > kIdleResetUpdates) {
         s_inputIdleBaselineRefreshPending = 1;

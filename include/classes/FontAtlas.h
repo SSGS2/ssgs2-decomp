@@ -6,9 +6,10 @@
 struct FontAtlas {
     char pad_000[4];
     void* fontBuffer; // 0x4: FontAtlas_LoadPages supplies this buffer to gtl_FontData_InitView
-    void* fontData; // 0x8: FontAtlas_LoadPages stores reader; FontAtlas_GetFontData in font_atlas_and_mwstring.cpp returns it
+    void*
+        fontData; // 0x8: FontAtlas_LoadPages stores reader; FontAtlas_GetFontData in font_atlas_and_mwstring.cpp returns it
     char pages[0xC]; // 0xC: FontAtlas_LoadPages appends page pairs through FontAtlasPageVector_PushBack
-    int lineHeight; // 0x18: FontAtlas_LoadPages copies reader result; FontAtlas_GetLineHeight returns this word
+    int lineHeight;  // 0x18: FontAtlas_LoadPages copies reader result; FontAtlas_GetLineHeight returns this word
 };
 
 #define OFF(f, o) typedef char FontAtlas_off_##f[((int)&((FontAtlas*)0)->f == (o)) ? 1 : -1]

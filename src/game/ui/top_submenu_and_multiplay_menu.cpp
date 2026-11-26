@@ -1,14 +1,17 @@
+// Submenus of the top menu (CTopSubMenu) and the five-choice multiplayer menu (CMultiPlayTopMenu):
+// their scripts, drawing, input handling and results. Also the title's render-context helpers.
+
 #include <decomp/static_init.h>
 // Top Menu submenus, Multiplayer menu and title resource/render-context setup.
 // Widescreen mod lookup:
-// - CTopSubMenu_Draw draws BP -> layout -> hover message -> optional modals.
+// - CTopSubMenu::Draw draws BP -> layout -> hover message -> optional modals.
 //   Layout_DrawWithOpacity uses kTopSubMenuLayoutFullOpacityStorage=1.0 (first
-//   binary32 word of an eight-byte slot, u802BC3F8_data.cpp). This is opacity,
+//   binary32 word of an eight-byte slot, the data section). This is opacity,
 //   not aspect. BP/layout/message draw calls are separate coordinate consumers.
-// - Submenu message anchor: vfunc_3 reads element menuItemCount*4 in the layout.
+// - Submenu message anchor: CTopSubMenu::Show reads element menuItemCount*4 in the layout.
 //   Item i uses four elements: 4*i+1 is the activation target; +2/+3 hold states.
 //   Change layout/script positions together with hit tests and hover text.
-// - Multiplayer background: vfunc_4 takes position and source dimensions from
+// - Multiplayer background: CMultiPlayTopMenu::Draw takes position and source dimensions from
 //   the named BP group (multiPlayTopMenuStrings+kMultiplayerBackgroundGroup).
 //   Both quads use that UI rectangle; no 640/480/resolution is baked into it.
 // - There is no projection, viewport or scissor setter here. Widescreen behavior
@@ -20,15 +23,15 @@
 // Required receivers are live constructed objects except nullable deleting dtors;
 // input/update methods run on the normal UI thread with valid shared singletons.
 // The title owns activeMenu/textureResource. Submenu modals are created and deleted
-// by vfunc_5; layout/BP/base resources follow CTopSubMenu_dtor's separate cleanup.
+// by UpdateScriptsDialogsAndInput; layout/BP/base resources follow ~CTopSubMenu's separate cleanup.
 // Shared schemas are in classes/CTopSubMenu.h, CMultiPlayTopMenu.h and
-// CPangya2TitleMain.h; u802BC3F8_data.cpp contains quad templates/scalars.
+// CPangya2TitleMain.h; the data section contains quad templates/scalars.
 #include "classes/CSharedDoc.h"
 // Borrow the existing CSharedDoc ABI view without allocation or ownership changes.
-static inline CSharedDoc* AsCSharedDoc(const void* p) { return (CSharedDoc*)p; }
+static inline CSharedDoc* AsCSharedDoc(const void* p) {
+    return (CSharedDoc*)p;
+}
 #include "game/vector.h"
-// Translation unit 0x802BC3F8-0x802BD994 (26 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "classes/CPangya2TitleMain.h"
@@ -36,31 +39,57 @@ static inline CSharedDoc* AsCSharedDoc(const void* p) { return (CSharedDoc*)p; }
 #include "classes/CMultiPlayTopMenu.h"
 #include "classes/SavePlayerRecord.h"
 #include "classes/CEnemyRenderRecord.h"
+#include "classes/CPackTextureResource.h"
+#include "classes/CTopMenuBase.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CBpCtrlHandle.h"
+#include "classes/COptionDialog.h"
 
 // Borrow the existing CMultiPlayTopMenu ABI view without allocation or ownership changes.
-static inline CMultiPlayTopMenu* AsCMultiPlayTopMenu(const void* p) { return (CMultiPlayTopMenu*)p; }
+static inline CMultiPlayTopMenu* AsCMultiPlayTopMenu(const void* p) {
+    return (CMultiPlayTopMenu*)p;
+}
 
 // Borrow the existing CTopSubMenu ABI view without allocation or ownership changes.
-static inline CTopSubMenu* AsCTopSubMenu(const void* p) { return (CTopSubMenu*)p; }
+static inline CTopSubMenu* AsCTopSubMenu(const void* p) {
+    return (CTopSubMenu*)p;
+}
 
 // Borrow the existing CPangya2TitleMain ABI view without allocation or ownership changes.
-static inline CPangya2TitleMain* AsCPangya2TitleMain(const void* p) { return (CPangya2TitleMain*)p; }
+static inline CPangya2TitleMain* AsCPangya2TitleMain(const void* p) {
+    return (CPangya2TitleMain*)p;
+}
 
 enum TopMenuLayout {
-    kElementsPerMenuItem = 4, kPlayerInfoEntry = 13,
-    kMultiplayerItemCount = 5, kMultiplayerMessageElement = 20,
-    kSubMenuExtraGroup = 16, kMultiplayerScriptIndex = 9, kSubMenuScriptIndex = 10,
+    kElementsPerMenuItem = 4,
+    kPlayerInfoEntry = 13,
+    kMultiplayerItemCount = 5,
+    kMultiplayerMessageElement = 20,
+    kSubMenuExtraGroup = 16,
+    kMultiplayerScriptIndex = 9,
+    kSubMenuScriptIndex = 10,
     kPlayerInfoFadeOutFrames = 15
 };
 enum TopMenuStringOffsets {
-    kMultiplayerBackgroundGroup = 0x33, kMultiplayerEnterScript = 0x38,
-    kMultiplayerMessageGroup = 0x3B, kMultiplayerExitScript = 0x46,
-    kSubMenuMessageGroup = 3, kSubMenuExitScript = 0x0E
+    kMultiplayerBackgroundGroup = 0x33,
+    kMultiplayerEnterScript = 0x38,
+    kMultiplayerMessageGroup = 0x3B,
+    kMultiplayerExitScript = 0x46,
+    kSubMenuMessageGroup = 3,
+    kSubMenuExitScript = 0x0E
 };
 // Keep secondary-interface byte addition: taking the member address changes CodeWarrior scheduling.
-enum MenuInterfaceOffset { kMenuInterfaceOffset = (int)&((CTopSubMenu*)0)->interfaceVtable };
-enum TitleTaskVtable { kTitleTaskInterfaceVtableOffset = 0x3C };
-enum TopMenuDrawing { kQuadVertexCount = 4, kTriangleStrip = 0x98, kMenuVertexFormat = 0x11F005 };
+enum MenuInterfaceOffset {
+    kMenuInterfaceOffset = (int)&((CTopSubMenu*)0)->interfaceVtable
+};
+enum TitleTaskVtable {
+    kTitleTaskInterfaceVtableOffset = 0x3C
+};
+enum TopMenuDrawing {
+    kQuadVertexCount = 4,
+    kTriangleStrip = 0x98,
+    kMenuVertexFormat = 0x11F005
+};
 // UI/table contract: item i owns elements 4*i..4*i+3; 4*i+1 is hit-tested,
 // and +2/+3 receive paired value-state updates. The message follows all items.
 // menuMode selects a shared help/result table window starting at 0,3,8,12.
@@ -82,23 +111,43 @@ enum TopMenuDrawing { kQuadVertexCount = 4, kTriangleStrip = 0x98, kMenuVertexFo
 // CPangya2TopMenu_UpdateMenuState currently constructs modes 0/2/3 with counts 2/3/3;
 // mode 1 has a four-item table window but its caller's layoutIndex is -1, so it
 // is NOT supported by that factory. Direct callers need their own valid layout.
-enum SubMenuTableBase { kSubMenuMode1Base = 3, kSubMenuMode2Base = 8, kSubMenuMode3Base = 12 };
-enum MultiplayerChoiceElement { kMultiplayerChoice1 = 1, kMultiplayerChoice2 = 5,
-    kMultiplayerChoice3 = 9, kMultiplayerChoice4 = 13, kMultiplayerChoice5 = 17 };
+enum SubMenuTableBase {
+    kSubMenuMode1Base = 3,
+    kSubMenuMode2Base = 8,
+    kSubMenuMode3Base = 12
+};
+enum MultiplayerChoiceElement {
+    kMultiplayerChoice1 = 1,
+    kMultiplayerChoice2 = 5,
+    kMultiplayerChoice3 = 9,
+    kMultiplayerChoice4 = 13,
+    kMultiplayerChoice5 = 17
+};
 // Result codes are externally consumed: these names identify ordinal table slots.
-enum MultiplayerChoiceResult { kMultiplayerResult1 = 3, kMultiplayerResult2 = 4,
-    kMultiplayerResult3 = 5, kMultiplayerResult4 = 6, kMultiplayerResult5 = 7 };
+enum MultiplayerChoiceResult {
+    kMultiplayerResult1 = 3,
+    kMultiplayerResult2 = 4,
+    kMultiplayerResult3 = 5,
+    kMultiplayerResult4 = 6,
+    kMultiplayerResult5 = 7
+};
 struct TopMenuVertex {
     float x, y, z;
     unsigned char red, green, blue, alpha;
     float u, v;
 };
 typedef char TopMenuVertex_size[(sizeof(TopMenuVertex) == 0x18) ? 1 : -1];
-union TopMenuQuad { unsigned int words[24]; TopMenuVertex vertices[4]; };
+union TopMenuQuad {
+    unsigned int words[24];
+    TopMenuVertex vertices[4];
+};
 
 // Existing RenderContext supplies vector and enemy-record storage; the save-slot
 // prefix comprises four complete 0x828-byte player records.
-enum TitleRenderStorage { kTitlePlayerCount = 4, kEnemyRecordCount = 4 };
+enum TitleRenderStorage {
+    kTitlePlayerCount = 4,
+    kEnemyRecordCount = 4
+};
 
 extern "C" {
 
@@ -111,8 +160,7 @@ struct RenderContextConstructionCleanup_u802BC3F8 {
     bool active;
     // Arm only AFTER OnInit has constructed all four vectors and four enemy
     // records. This guard covers ResetPlayerRecords, not those constructors.
-    explicit RenderContextConstructionCleanup_u802BC3F8(void* object)
-        : base((char*)object), active(true) {}
+    explicit RenderContextConstructionCleanup_u802BC3F8(void* object) : base((char*)object), active(true) {}
     // Release fully constructed enemy records and vector buffers on reset unwind.
     // ResetPlayerRecords (party_main_and_versus_main.cpp) clears size, grows via a temporary vector
     // and swaps only after allocation, then copies a SavePlayerRecord per slot.
@@ -145,15 +193,8 @@ static void InitializeNewRenderContext(void* base) {
     cleanup.active = false;
 }
 
-extern int CTopMenuBase_PollLoad(void*);
-extern int CTopMenuBase_GetFirstActivatedElement(void*);
-extern int CTopMenuBase_ResetItemPlayerStates(void*);
-extern void CTopMenuBase_HideItemGroup(void*, int);
-extern void CTopMenuBase_SyncItemPosition(void*, int);
 extern void MenuMessage_ResetTextState(void*);
-extern int CTopMenuBase_HitTestPlayer(void*, int);
 extern void MenuMessage_SetText(void*, void*);
-extern void CTopMenuBase_ReleaseTextureResource(void*);
 extern void MenuMessage_SetPosition(void*, void*);
 extern void Layout_GetElementPosition(void*, int, void*);
 extern void BpObject_TryInvokeCurrentCallback(void*, int);
@@ -166,22 +207,15 @@ extern int HomeMenu_OverrideBlockedState(void*, int);
 extern void HomeButtonMenu_InitializeState(const char*);
 extern void HomeButtonResources_dtor(void*);
 extern void IFadeMenuBase_StartMenuFadeOut(void*);
-extern void CTopMenuBase_EnablePreviousElement(void*, int);
 extern int Layout_PollLoadComplete(void*);
-extern void __ct__7CBpCtrlFv(void*);
 extern void CBpCtrl_dtor(void*, int);
-extern int CBpCtrl_PollAllEntriesLoaded(void*);
 extern void BpObject_SetEnabled(void*, int);
 extern void BpObject_StartScriptByName(void*, const char*, int);
-extern void CBpCtrlHandle_SetScriptIndex(void*, int);
 extern void __dt__7MPBase2Fv(void*, int);
 extern void CBpCtrlHandle_Dtor(void*, int);
 extern void __dl__FPv(void*);
 extern void __register_global_object(void*, void*, void*);
-extern int CMultiPlayTopMenu_HandleSelection(char*);
-extern void* CMultiPlayTopMenu_dtor(void*, int);
-extern int CTopSubMenu_HandleSelection(char*);
-extern void* CTopSubMenu_dtor(void*, int);
+extern void* __dt__11CTopSubMenuFv(void*, int);
 extern void __ct__18NativeBase80201D18Fv(void*);
 extern void BpObject_Draw(void*);
 extern void Layout_DrawWithOpacity(void*, float);
@@ -200,14 +234,10 @@ extern unsigned int multiplayerBackgroundQuadTemplate[24];
 extern unsigned int multiplayerOverlayQuadTemplate[24];
 extern float kMultiplayerLayoutFullOpacityStorage;
 extern void MPBase1_Ctor(void*, int, int, int, int);
-extern void CTopMenuBase_InitMembers(void*, int, int, int, const char*);
 extern void __dt__16CWarningLogoBaseFv(void*);
 extern void MenuMessage_DrawText(void*);
 extern void Layout_Update(void*);
 extern void* ResourceTable_FindEntryByName(void*, const char*, int*);
-extern void CPackTextureResource_Init(void*, const char*, int, void*);
-extern void CPackTextureResource_PollLoad(void*);
-extern int CPackTextureResource_IsLoadFinished(void*);
 extern void Allocation_Dtor(void*);
 extern signed char s_resourceTableInitialized;
 extern void* s_resourceTableStorage;
@@ -217,7 +247,6 @@ extern signed char s_renderContextInitialized;
 extern char s_renderContext[];
 extern char s_renderContextDtorRegistration_TitleMain[];
 extern void SaveData_InitPlayerRecord(void*);
-
 
 extern void __construct_array(void*, void*, void*, int, int);
 extern void PartyItemRecord_InitDefaults(void*);
@@ -233,20 +262,16 @@ extern char s_movieControllerDtorRegistration_TitleMain[];
 extern void __dt__18NativeBase80201D18Fv(void*, int);
 extern void* __nw__FUl(unsigned int);
 extern int BpObject_IsCurrentScriptComplete(void*);
-extern void COptionDialog_Ctor(void*, int);
 extern int MPBase1_Process(void*, float);
 extern void SaveData_Ctor(void*);
 extern void* SaveData_GetCurrentRecord(void*);
-extern void CPlayerInfo_Ctor(void*, void*);
+extern void __ct__11CPlayerInfoFi(void*, void*);
 extern void FadeOverlay_Init(void*);
 extern void ResourceState_Dtor(void);
 extern void FadeState_RequestFramebufferCapture(void*);
 extern void FadeState_StartFadeIn(void*, int);
 extern void FadeState_StartFadeOut(void*, int);
-extern void CTopMenuBase_UpdateHoverElementPairs(void*);
-extern void CTopMenuBase_ProcessInput(void*);
 extern void MenuMessage_UpdateReveal(void*);
-extern int CTopMenuBase_HitTestPlayer(void*, int);
 extern signed char s_saveDataInitialized;
 extern signed char s_fadeOverlayInitialized;
 extern char s_saveData[];
@@ -275,25 +300,35 @@ extern int s_bpCtrlHandle[2];
 extern char s_bpCtrlDtorRegistration_TopSubMenu[];
 extern char s_bpCtrlHandleDtorRegistration_TopSubMenu[];
 extern char s_bpCtrlDtorRegistration_TopSubMenu[];
-struct VTable { void* a; void* b; void (*destroy)(void*, int); };
-struct DynObj { 
-virtual void destroy(int);
+struct VTable {
+    void* a;
+    void* b;
+    void (*destroy)(void*, int);
+};
+struct DynObj {
+    virtual void destroy(int);
 };
 
 struct Alloc860 {
     char pad[0x860];
     // Construct the owned options dialog using the original dialog selector.
-    Alloc860(int x) { COptionDialog_Ctor(this, x); }
+    Alloc860(int x) {
+        ((COptionDialog*)this)->__ct(x);
+    }
 };
 struct AllocA8 {
     char pad[0xA8];
     // Construct the owned player-info dialog over the borrowed save record.
-    AllocA8(void* x) { CPlayerInfo_Ctor(this, x); }
+    AllocA8(void* x) {
+        __ct__11CPlayerInfoFi(this, x);
+    }
 };
 struct AllocTask {
     char pad[0x20];
     // Construct the owned texture-pack loader from its name, size and resource.
-    AllocTask(const char* s, int a, void* r) { CPackTextureResource_Init(this, s, a, r); }
+    AllocTask(const char* s, int entryItems, void* r) {
+        ((CPackTextureResource*)this)->Init((const char*)s, (void**)entryItems, (unsigned int)r);
+    }
 };
 
 #pragma push
@@ -303,52 +338,53 @@ struct AllocTask {
 #pragma opt_lifetimes off
 #pragma opt_strength_reduction off
 // Advance menu scripts or modal dialogs; otherwise update hover text and process submenu input.
-int CTopSubMenu_UpdateScriptsDialogsAndInput(void* self, float dt) {
+int CTopSubMenu::UpdateScriptsDialogsAndInput(float dt) {
     // Priority order is exclusive: script -> completed selection -> options ->
     // player info -> ordinary input. Return 1 only after selection's script ends;
     // dt is nonnegative simulated SECONDS per update, forwarded unchanged through
     // MPBase1_Process (event_face_and_mpbase1_menu.cpp). The main-frame seconds hook is produced from
-    // reciprocal 25/30 updates/s in CMainFrame_UpdateVirtualHooks (main_frame_letter_and_mouse_cursor.cpp).
+    // reciprocal 25/30 updates/s in CMainFrame::UpdateVirtualHooks (main_frame_letter_and_mouse_cursor.cpp).
     // COptionDialog_UpdateAndProcessInput (option_dialog_control_mode_audio.cpp) subtracts dt from its inputDelay in seconds
     // and forwards it to its save menu; CPlayerInfo_UpdatePageInputAndDispatch (player_info_screen.cpp) ignores
     // the float ABI argument and uses integer scroll calls/BP completion instead.
     // No local timer multiplies dt here; 15-call overlay fades remain call-based.
     int result = 0;
-    if (AsCTopSubMenu(self)->scriptRunning) {
+    if (scriptRunning) {
         // Phase 1: scripts own positioning and block new input until completion.
-        for (int i = 0; i < AsCTopSubMenu(self)->menuItemCount * kElementsPerMenuItem; ++i)
-            CTopMenuBase_SyncItemPosition(&AsCTopSubMenu(self)->interfaceVtable, i); // original +0x18
-        int _r = (BpObject_IsCurrentScriptComplete(AsCTopSubMenu(self)->bpObject) == 0);
-        AsCTopSubMenu(self)->scriptRunning = (unsigned char)_r;
-    } else if (AsCTopSubMenu(self)->selectionComplete) {
+        for (int i = 0; i < menuItemCount * kElementsPerMenuItem; ++i)
+            ((CTopMenuBase*)(&interfaceVtable))->SyncItemPosition(i); // original +0x18
+        int _r = (BpObject_IsCurrentScriptComplete(bpObject) == 0);
+        scriptRunning = (unsigned char)_r;
+    } else if (selectionComplete) {
         result = 1;
-    } else if (AsCTopSubMenu(self)->optionDialogRequested) {
+    } else if (optionDialogRequested) {
         // Phase 2a: lazily create, process and delete the owned options modal.
-        if (!AsCTopSubMenu(self)->optionDialog) {
-            AsCTopSubMenu(self)->optionDialog = new Alloc860(1);
+        if (!optionDialog) {
+            optionDialog = new Alloc860(1);
         }
-        if (MPBase1_Process(AsCTopSubMenu(self)->optionDialog, dt)) {
-            void* q = AsCTopSubMenu(self)->optionDialog;
+        if (MPBase1_Process(optionDialog, dt)) {
+            void* q = optionDialog;
             if (q) {
-                if (q) ((DynObj*)q)->destroy(1);
+                if (q)
+                    ((DynObj*)q)->destroy(1);
             }
-            AsCTopSubMenu(self)->optionDialog = 0;
-            AsCTopSubMenu(self)->optionDialogRequested = 0;
+            optionDialog = 0;
+            optionDialogRequested = 0;
         }
-    } else if (AsCTopSubMenu(self)->playerInfoRequested) {
+    } else if (playerInfoRequested) {
         // Phase 2b: create player info against the current save record and fade in.
         // Singleton creation below registers module cleanup, not dialog ownership.
-        if (!AsCTopSubMenu(self)->playerInfo) {
-            AsCTopSubMenu(self)->playerInfo = new AllocA8(SaveData_GetCurrentRecord(
-                Sing_805DC5E0() ? Sing_805DC5E0() :
-                (s_saveDataInitialized ? 0 : (SaveData_Ctor(s_saveData), s_saveDataInitialized = 1, 0),
-                 Sing_805DC5E0() = s_saveData,
-                 Sing_805DC5E0())
-            ));
+        if (!playerInfo) {
+            playerInfo = new AllocA8(SaveData_GetCurrentRecord(
+                GetSaveDataSlot()
+                    ? GetSaveDataSlot()
+                    : (s_saveDataInitialized ? 0 : (SaveData_Ctor(s_saveData), s_saveDataInitialized = 1, 0),
+                       GetSaveDataSlot() = s_saveData, GetSaveDataSlot())));
             if (!Sing_805DC608()) {
                 if (!s_fadeOverlayInitialized) {
                     FadeOverlay_Init(s_fadeOverlay);
-                    __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, s_fadeOverlayDtorRegistration_TopSubMenu);
+                    __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor,
+                                             s_fadeOverlayDtorRegistration_TopSubMenu);
                     s_fadeOverlayInitialized = 1;
                 }
                 Sing_805DC608() = s_fadeOverlay;
@@ -357,27 +393,30 @@ int CTopSubMenu_UpdateScriptsDialogsAndInput(void* self, float dt) {
             if (!Sing_805DC608()) {
                 if (!s_fadeOverlayInitialized) {
                     FadeOverlay_Init(s_fadeOverlay);
-                    __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, s_fadeOverlayDtorRegistration_TopSubMenu);
+                    __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor,
+                                             s_fadeOverlayDtorRegistration_TopSubMenu);
                     s_fadeOverlayInitialized = 1;
                 }
                 Sing_805DC608() = s_fadeOverlay;
             }
             FadeState_StartFadeIn(Sing_805DC608(), 0);
         }
-        if (MPBase1_Process(AsCTopSubMenu(self)->playerInfo, dt)) {
+        if (MPBase1_Process(playerInfo, dt)) {
             // Modal completion deletes it, re-enters the menu script and fades out.
-            void* q = AsCTopSubMenu(self)->playerInfo;
+            void* q = playerInfo;
             if (q) {
-                if (q) ((DynObj*)q)->destroy(1);
+                if (q)
+                    ((DynObj*)q)->destroy(1);
             }
-            AsCTopSubMenu(self)->playerInfo = 0;
-            AsCTopSubMenu(self)->playerInfoRequested = 0;
-            AsCTopSubMenu(self)->scriptRunning = 1;
-            BpObject_StartScriptByName(AsCTopSubMenu(self)->bpObject, topSubMenuScriptStrings, 1);
+            playerInfo = 0;
+            playerInfoRequested = 0;
+            scriptRunning = 1;
+            BpObject_StartScriptByName(bpObject, topSubMenuScriptStrings, 1);
             if (!Sing_805DC608()) {
                 if (!s_fadeOverlayInitialized) {
                     FadeOverlay_Init(s_fadeOverlay);
-                    __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, s_fadeOverlayDtorRegistration_TopSubMenu);
+                    __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor,
+                                             s_fadeOverlayDtorRegistration_TopSubMenu);
                     s_fadeOverlayInitialized = 1;
                 }
                 Sing_805DC608() = s_fadeOverlay;
@@ -387,43 +426,60 @@ int CTopSubMenu_UpdateScriptsDialogsAndInput(void* self, float dt) {
     } else {
         // Phase 3: resolve hovered help text (fallback is one slot after the last
         // visible item), then process hover pairs and selection input.
-        Layout_Update(AsCTopSubMenu(self)->layout);
-        MenuMessage_ResetTextState(AsCTopSubMenu(self)->menuMessage);
+        Layout_Update(layout);
+        MenuMessage_ResetTextState(menuMessage);
         int found = 0;
-        for (int i = 0, index = 1; i < AsCTopSubMenu(self)->menuItemCount; ++i, index += kElementsPerMenuItem) {
-            if (CTopMenuBase_HitTestPlayer(&AsCTopSubMenu(self)->interfaceVtable, index)) { // original +0x18
+        for (int i = 0, index = 1; i < menuItemCount; ++i, index += kElementsPerMenuItem) {
+            if (((CTopMenuBase*)(&interfaceVtable))->HitTestPlayer(index)) { // original +0x18
                 int bucket = (i * kElementsPerMenuItem + 1) / kElementsPerMenuItem;
-                int mode = AsCTopSubMenu(self)->menuMode;
+                int mode = menuMode;
                 int slot = -1;
                 switch (mode) {
-                case 0: slot = bucket; break;
-                case 1: slot = bucket + kSubMenuMode1Base; break;
-                case 2: slot = bucket + kSubMenuMode2Base; break;
-                case 3: slot = bucket + kSubMenuMode3Base; break;
+                case 0:
+                    slot = bucket;
+                    break;
+                case 1:
+                    slot = bucket + kSubMenuMode1Base;
+                    break;
+                case 2:
+                    slot = bucket + kSubMenuMode2Base;
+                    break;
+                case 3:
+                    slot = bucket + kSubMenuMode3Base;
+                    break;
                 }
-                MenuMessage_SetText(AsCTopSubMenu(self)->menuMessage, topSubMenuHelpMessages[slot]);
+                MenuMessage_SetText(menuMessage, topSubMenuHelpMessages[slot]);
                 found = 1;
                 break;
             }
         }
         if (!found) {
-            int bucket = ((AsCTopSubMenu(self)->menuItemCount - 1) * kElementsPerMenuItem + 1) / kElementsPerMenuItem;
-            int mode = AsCTopSubMenu(self)->menuMode;
+            int bucket = ((menuItemCount - 1) * kElementsPerMenuItem + 1) / kElementsPerMenuItem;
+            int mode = menuMode;
             int slot = -1;
             switch (mode) {
-            case 0: slot = bucket; break;
-            case 1: slot = bucket + kSubMenuMode1Base; break;
-            case 2: slot = bucket + kSubMenuMode2Base; break;
-            case 3: slot = bucket + kSubMenuMode3Base; break;
+            case 0:
+                slot = bucket;
+                break;
+            case 1:
+                slot = bucket + kSubMenuMode1Base;
+                break;
+            case 2:
+                slot = bucket + kSubMenuMode2Base;
+                break;
+            case 3:
+                slot = bucket + kSubMenuMode3Base;
+                break;
             }
-            MenuMessage_SetText(AsCTopSubMenu(self)->menuMessage, *(void**)((char*)topSubMenuHelpMessages + slot * sizeof(void*) + sizeof(void*)));
+            MenuMessage_SetText(menuMessage,
+                                *(void**)((char*)topSubMenuHelpMessages + slot * sizeof(void*) + sizeof(void*)));
         }
-        CTopMenuBase_UpdateHoverElementPairs(&AsCTopSubMenu(self)->interfaceVtable); // original +0x18
-        CTopMenuBase_ProcessInput(&AsCTopSubMenu(self)->interfaceVtable); // original +0x18
+        ((CTopMenuBase*)(&interfaceVtable))->UpdateHoverElementPairs(); // original +0x18
+        ((CTopMenuBase*)(&interfaceVtable))->ProcessInput();            // original +0x18
     }
     // Every branch still services BP callbacks and message reveal once per update.
-    BpObject_TryInvokeCurrentCallback(AsCTopSubMenu(self)->bpObject, 0);
-    MenuMessage_UpdateReveal(AsCTopSubMenu(self)->menuMessage);
+    BpObject_TryInvokeCurrentCallback(bpObject, 0);
+    MenuMessage_UpdateReveal(menuMessage);
     return result;
 }
 #pragma pop
@@ -441,30 +497,31 @@ int CTopSubMenu_UpdateScriptsDialogsAndInput(void* self, float dt) {
 // reveal. Borrowed group/layout positions are copied before input processing.
 // Keep repeated singleton lookups: initialization registers shared cleanup, not
 // ownership of this menu; changing their order can change exception side effects.
-void CTopSubMenu_Show(void* self) {
+void CTopSubMenu::Show() {
     int i;
     int selected;
     int offset;
-    if (AsCTopSubMenu(self)->layout) {
+    if (layout) {
         i = 0;
         offset = 1;
-        for (; i < AsCTopSubMenu(self)->menuItemCount; offset += kElementsPerMenuItem, ++i)
-            Layout_SetElementEnabled(AsCTopSubMenu(self)->layout, offset, 0);
+        for (; i < menuItemCount; offset += kElementsPerMenuItem, ++i)
+            Layout_SetElementEnabled(layout, offset, 0);
     }
-    BpObject_SetEnabled(AsCTopSubMenu(self)->bpObject, 1);
-    BpObject_StartScriptByName(AsCTopSubMenu(self)->bpObject, topSubMenuScriptStrings, 1);
-    AsCTopSubMenu(self)->scriptRunning = 1;
+    BpObject_SetEnabled(bpObject, 1);
+    BpObject_StartScriptByName(bpObject, topSubMenuScriptStrings, 1);
+    scriptRunning = 1;
     int j = 0;
-    for (; j < AsCTopSubMenu(self)->menuItemCount * kElementsPerMenuItem; ++j) {
-        CTopMenuBase_HideItemGroup(&AsCTopSubMenu(self)->interfaceVtable, j); // original +0x18
-        CTopMenuBase_SyncItemPosition(&AsCTopSubMenu(self)->interfaceVtable, j); // original +0x18
+    for (; j < menuItemCount * kElementsPerMenuItem; ++j) {
+        ((CTopMenuBase*)(&interfaceVtable))->HideItemGroup(j);    // original +0x18
+        ((CTopMenuBase*)(&interfaceVtable))->SyncItemPosition(j); // original +0x18
     }
-    CTopMenuBase_HideItemGroup(&AsCTopSubMenu(self)->interfaceVtable, 16); // original +0x18
-    BpObject_TryInvokeCurrentCallback(AsCTopSubMenu(self)->bpObject, 0);
+    ((CTopMenuBase*)(&interfaceVtable))->HideItemGroup(16); // original +0x18
+    BpObject_TryInvokeCurrentCallback(bpObject, 0);
     int messagePositionWords[2] = {0, 0};
-    Layout_GetElementPosition(AsCTopSubMenu(self)->layout, AsCTopSubMenu(self)->menuItemCount * kElementsPerMenuItem, messagePositionWords);
-    MenuMessage_SetPosition(AsCTopSubMenu(self)->menuMessage, messagePositionWords);
-    void* messageGroup = (void*)BpObject_GetOrCreateNamedGroup(AsCTopSubMenu(self)->bpObject, topSubMenuScriptStrings + kSubMenuMessageGroup);
+    Layout_GetElementPosition(layout, menuItemCount * kElementsPerMenuItem, messagePositionWords);
+    MenuMessage_SetPosition(menuMessage, messagePositionWords);
+    void* messageGroup =
+        (void*)BpObject_GetOrCreateNamedGroup(bpObject, topSubMenuScriptStrings + kSubMenuMessageGroup);
     unsigned int color = UIGroup_GetTintColor(messageGroup);
     // Packed input bytes [A,R,G,B] become [B,G,R,FF] for the message multiplier:
     // reverse the RGB byte order and force opaque alpha, discarding input A.
@@ -473,60 +530,80 @@ void CTopSubMenu_Show(void* self) {
     blueAndGreen |= (color & 0x000000ffu) << 24;
     redAndOpaqueAlpha |= 0xff;
     color = blueAndGreen | redAndOpaqueAlpha;
-    MenuMessage_SetColorMultiplier(AsCTopSubMenu(self)->menuMessage, &color);
-    Layout_SetElementEnabled(AsCTopSubMenu(self)->layout, AsCTopSubMenu(self)->menuItemCount * kElementsPerMenuItem, 0);
-    MenuMessage_ResetTextState(AsCTopSubMenu(self)->menuMessage);
+    MenuMessage_SetColorMultiplier(menuMessage, &color);
+    Layout_SetElementEnabled(layout, menuItemCount * kElementsPerMenuItem, 0);
+    MenuMessage_ResetTextState(menuMessage);
     selected = 0;
     i = 0;
     offset = 1;
-    for (; i < AsCTopSubMenu(self)->menuItemCount; offset += kElementsPerMenuItem, ++i) {
-        if (CTopMenuBase_HitTestPlayer(&AsCTopSubMenu(self)->interfaceVtable, offset)) { // original +0x18
+    for (; i < menuItemCount; offset += kElementsPerMenuItem, ++i) {
+        if (((CTopMenuBase*)(&interfaceVtable))->HitTestPlayer(offset)) { // original +0x18
             int bucket = (i * kElementsPerMenuItem + 1) / kElementsPerMenuItem;
             int slot = -1;
-            switch (AsCTopSubMenu(self)->menuMode) {
-            case 0: slot = bucket; break;
-            case 1: slot = bucket + kSubMenuMode1Base; break;
-            case 2: slot = bucket + kSubMenuMode2Base; break;
-            case 3: slot = bucket + kSubMenuMode3Base; break;
+            switch (menuMode) {
+            case 0:
+                slot = bucket;
+                break;
+            case 1:
+                slot = bucket + kSubMenuMode1Base;
+                break;
+            case 2:
+                slot = bucket + kSubMenuMode2Base;
+                break;
+            case 3:
+                slot = bucket + kSubMenuMode3Base;
+                break;
             }
-            MenuMessage_SetText(AsCTopSubMenu(self)->menuMessage, topSubMenuHelpMessages[slot]);
+            MenuMessage_SetText(menuMessage, topSubMenuHelpMessages[slot]);
             selected = 1;
             break;
         }
     }
     if (!selected) {
-        int bucket = ((AsCTopSubMenu(self)->menuItemCount - 1) * kElementsPerMenuItem + 1) / kElementsPerMenuItem;
+        int bucket = ((menuItemCount - 1) * kElementsPerMenuItem + 1) / kElementsPerMenuItem;
         int slot = -1;
-        switch (AsCTopSubMenu(self)->menuMode) {
-        case 0: slot = bucket; break;
-        case 1: slot = bucket + kSubMenuMode1Base; break;
-        case 2: slot = bucket + kSubMenuMode2Base; break;
-        case 3: slot = bucket + kSubMenuMode3Base; break;
+        switch (menuMode) {
+        case 0:
+            slot = bucket;
+            break;
+        case 1:
+            slot = bucket + kSubMenuMode1Base;
+            break;
+        case 2:
+            slot = bucket + kSubMenuMode2Base;
+            break;
+        case 3:
+            slot = bucket + kSubMenuMode3Base;
+            break;
         }
-        MenuMessage_SetText(AsCTopSubMenu(self)->menuMessage, *(void**)((char*)topSubMenuHelpMessages + slot * sizeof(void*) + sizeof(void*)));
+        MenuMessage_SetText(menuMessage,
+                            *(void**)((char*)topSubMenuHelpMessages + slot * sizeof(void*) + sizeof(void*)));
     }
     if (!Sing_805DC5F8()) {
         if (!s_bpCtrlHandleInitialized) {
             s_bpCtrlHandle[0] = -1;
             s_bpCtrlHandle[1] = -1;
-            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, s_bpCtrlHandleDtorRegistration_TopSubMenu);
+            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor,
+                                     s_bpCtrlHandleDtorRegistration_TopSubMenu);
             s_bpCtrlHandleInitialized = 1;
         }
         Sing_805DC5F8() = s_bpCtrlHandle;
     }
     void* _g = Sing_805DC5F8();
-    if (_g) { }
-    (*(void**)&AsCTopSubMenu(self)->previousScriptIndex) = ((void**)_g)[1];
+    if (_g) {
+    }
+    (*(void**)&previousScriptIndex) = ((void**)_g)[1];
     if (!Sing_805DC5F8()) {
         if (!s_bpCtrlHandleInitialized) {
             s_bpCtrlHandle[0] = -1;
             s_bpCtrlHandle[1] = -1;
-            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, s_bpCtrlHandleDtorRegistration_TopSubMenu);
+            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor,
+                                     s_bpCtrlHandleDtorRegistration_TopSubMenu);
             s_bpCtrlHandleInitialized = 1;
         }
         Sing_805DC5F8() = s_bpCtrlHandle;
     }
-    CBpCtrlHandle_SetScriptIndex(Sing_805DC5F8(), kSubMenuScriptIndex);
+    ((CBpCtrlHandle*)Sing_805DC5F8())->SetScriptIndex(kSubMenuScriptIndex);
 }
 #pragma pop
 
@@ -537,17 +614,27 @@ void CTopSubMenu_Show(void* self) {
 #pragma opt_lifetimes off
 #pragma opt_strength_reduction off
 // Open player info for entry 13, or publish the selected mode and play the exit script.
-int CTopSubMenu_HandleSelection(char* self) {
-    int index = CTopMenuBase_GetFirstActivatedElement(&AsCTopSubMenu(self)->interfaceVtable); // original +0x18
-    if (index == -1) return 0;
+int CTopSubMenu::HandleSelection() {
+    char* self = (char*)this;
+    int index = ((CTopMenuBase*)(&AsCTopSubMenu(self)->interfaceVtable))->GetFirstActivatedElement(); // original +0x18
+    if (index == -1)
+        return 0;
     int bucket = index / kElementsPerMenuItem;
     int mode = AsCTopSubMenu(self)->menuMode;
     int slot = -1;
     switch (mode) {
-    case 0: slot = bucket; break;
-    case 1: slot = bucket + kSubMenuMode1Base; break;
-    case 2: slot = bucket + kSubMenuMode2Base; break;
-    case 3: slot = bucket + kSubMenuMode3Base; break;
+    case 0:
+        slot = bucket;
+        break;
+    case 1:
+        slot = bucket + kSubMenuMode1Base;
+        break;
+    case 2:
+        slot = bucket + kSubMenuMode2Base;
+        break;
+    case 3:
+        slot = bucket + kSubMenuMode3Base;
+        break;
     }
     if (slot == kPlayerInfoEntry) {
         AsCTopSubMenu(self)->playerInfoRequested = 1;
@@ -557,16 +644,24 @@ int CTopSubMenu_HandleSelection(char* self) {
     }
     int slot2 = -1;
     switch (mode) {
-    case 0: slot2 = bucket; break;
-    case 1: slot2 = bucket + kSubMenuMode1Base; break;
-    case 2: slot2 = bucket + kSubMenuMode2Base; break;
-    case 3: slot2 = bucket + kSubMenuMode3Base; break;
+    case 0:
+        slot2 = bucket;
+        break;
+    case 1:
+        slot2 = bucket + kSubMenuMode1Base;
+        break;
+    case 2:
+        slot2 = bucket + kSubMenuMode2Base;
+        break;
+    case 3:
+        slot2 = bucket + kSubMenuMode3Base;
+        break;
     }
     AsCTopSubMenu(self)->resultReady = 1; // original +0x28
     int val = topSubMenuResults[slot2];
     AsCTopSubMenu(self)->selectionComplete = 1;
     AsCTopSubMenu(self)->result = val;
-    CTopMenuBase_EnablePreviousElement(&AsCTopSubMenu(self)->interfaceVtable, index); // original +0x18
+    CTopMenuBase::EnablePreviousElement(&AsCTopSubMenu(self)->interfaceVtable, index); // original +0x18
     BpObject_StartScriptByName(AsCTopSubMenu(self)->bpObject, topSubMenuScriptStrings + kSubMenuExitScript, 1);
     AsCTopSubMenu(self)->scriptRunning = 1;
     return 1;
@@ -574,43 +669,45 @@ int CTopSubMenu_HandleSelection(char* self) {
 #pragma pop
 
 // Enter the five-choice multiplayer menu and initialize its script, hover text and button states.
-void CMultiPlayTopMenu_StartMenu(void* self) {
+void CMultiPlayTopMenu::StartMenu() {
     if (!Sing_805DC820()) {
         if (!s_homeMenuInitialized) {
             HomeButtonMenu_InitializeState(s_homeButtonResourceState);
-            __register_global_object(s_homeButtonResourceState, (void*)HomeButtonResources_dtor, s_multiPlayHomeMenuDtorRegistration);
+            __register_global_object(s_homeButtonResourceState, (void*)HomeButtonResources_dtor,
+                                     s_multiPlayHomeMenuDtorRegistration);
             s_homeMenuInitialized = 1;
         }
         Sing_805DC820() = s_homeButtonResourceState;
     }
     HomeMenu_OverrideBlockedState(Sing_805DC820(), 0);
-    CTopMenuBase_ResetItemPlayerStates(&AsCMultiPlayTopMenu(self)->secondaryVtable); // original +0x18
-    BpObject_StartScriptByName(AsCMultiPlayTopMenu(self)->bpObject, multiPlayTopMenuStrings + kMultiplayerEnterScript, 1);
-    AsCMultiPlayTopMenu(self)->scriptRunning = 1;
-    MenuMessage_ResetTextState(AsCMultiPlayTopMenu(self)->menuMessage);
+    ((CTopMenuBase*)(&secondaryVtable))->ResetItemPlayerStates(); // original +0x18
+    BpObject_StartScriptByName(bpObject, multiPlayTopMenuStrings + kMultiplayerEnterScript, 1);
+    scriptRunning = 1;
+    MenuMessage_ResetTextState(menuMessage);
     for (int i = 0; i < kMultiplayerMessageElement; ++i) {
-        CTopMenuBase_HideItemGroup(&AsCMultiPlayTopMenu(self)->secondaryVtable, i); // original +0x18
-        CTopMenuBase_SyncItemPosition(&AsCMultiPlayTopMenu(self)->secondaryVtable, i); // original +0x18
+        ((CTopMenuBase*)(&secondaryVtable))->HideItemGroup(i);    // original +0x18
+        ((CTopMenuBase*)(&secondaryVtable))->SyncItemPosition(i); // original +0x18
     }
-    BpObject_TryInvokeCurrentCallback(AsCMultiPlayTopMenu(self)->bpObject, 0);
+    BpObject_TryInvokeCurrentCallback(bpObject, 0);
     int pair[2] = {0, 0};
-    Layout_GetElementPosition(AsCMultiPlayTopMenu(self)->layout, kMultiplayerMessageElement, pair);
-    MenuMessage_SetPosition(AsCMultiPlayTopMenu(self)->menuMessage, pair);
-    void* extraReceiver2 = (void*)BpObject_GetOrCreateNamedGroup(AsCMultiPlayTopMenu(self)->bpObject, multiPlayTopMenuStrings + kMultiplayerMessageGroup);
+    Layout_GetElementPosition(layout, kMultiplayerMessageElement, pair);
+    MenuMessage_SetPosition(menuMessage, pair);
+    void* extraReceiver2 =
+        (void*)BpObject_GetOrCreateNamedGroup(bpObject, multiPlayTopMenuStrings + kMultiplayerMessageGroup);
     unsigned int color = UIGroup_GetTintColor(extraReceiver2);
     // Apply the same [A,R,G,B] -> [B,G,R,FF] byte mapping as the submenu.
     unsigned int _r0 = (color >> 8) & 0x0000ff00u;
     unsigned int _r5 = ((color << 8) & 0x00ff0000u) | (color << 24);
     _r0 |= 0xff;
     color = _r5 | _r0;
-    MenuMessage_SetColorMultiplier(AsCMultiPlayTopMenu(self)->menuMessage, &color);
-    Layout_SetElementEnabled(AsCMultiPlayTopMenu(self)->layout, kMultiplayerMessageElement, 0);
-    if (AsCMultiPlayTopMenu(self)->layout && Layout_PollLoadComplete(AsCMultiPlayTopMenu(self)->layout)) {
+    MenuMessage_SetColorMultiplier(menuMessage, &color);
+    Layout_SetElementEnabled(layout, kMultiplayerMessageElement, 0);
+    if (layout && Layout_PollLoadComplete(layout)) {
         int n = 0;
         int item = 2;
         do {
-            Layout_SetElementValueState(AsCMultiPlayTopMenu(self)->layout, item, 1);
-            Layout_SetElementValueState(AsCMultiPlayTopMenu(self)->layout, item + 1, 1);
+            Layout_SetElementValueState(layout, item, 1);
+            Layout_SetElementValueState(layout, item + 1, 1);
             ++n;
             item += kElementsPerMenuItem;
         } while (n < kMultiplayerItemCount);
@@ -624,67 +721,91 @@ void CMultiPlayTopMenu_StartMenu(void* self) {
         }
         Sing_805DC5F8() = s_bpCtrlHandle;
     }
-    CBpCtrlHandle_SetScriptIndex(Sing_805DC5F8(), kMultiplayerScriptIndex);
-    IFadeMenuBase_StartMenuFadeOut(self);
-    CTopMenuBase_ReleaseTextureResource(&AsCMultiPlayTopMenu(self)->secondaryVtable); // original +0x18
+    ((CBpCtrlHandle*)Sing_805DC5F8())->SetScriptIndex(kMultiplayerScriptIndex);
+    IFadeMenuBase_StartMenuFadeOut(this);
+    ((CTopMenuBase*)(&secondaryVtable))->ReleaseTextureResource(); // original +0x18
 }
 
 // Map activated elements 1/5/9/13/17 to results 3-7, then publish and animate the selection.
-int CMultiPlayTopMenu_HandleSelection(char* self) {
-    int index = CTopMenuBase_GetFirstActivatedElement(self + kMenuInterfaceOffset);
-    if (index == -1) return 0;
+int CMultiPlayTopMenu::HandleSelection() {
+    char* self = (char*)this;
+    int index = ((CTopMenuBase*)(self + kMenuInterfaceOffset))->GetFirstActivatedElement();
+    if (index == -1)
+        return 0;
     switch ((unsigned int)index) {
-    case kMultiplayerChoice1:  AsCMultiPlayTopMenu(self)->result = kMultiplayerResult1; break; // original +0x24
-    case kMultiplayerChoice2:  AsCMultiPlayTopMenu(self)->result = kMultiplayerResult2; break;
-    case kMultiplayerChoice3:  AsCMultiPlayTopMenu(self)->result = kMultiplayerResult3; break;
-    case kMultiplayerChoice4:  AsCMultiPlayTopMenu(self)->result = kMultiplayerResult4; break;
-    case kMultiplayerChoice5:  AsCMultiPlayTopMenu(self)->result = kMultiplayerResult5; break;
-    case 0: case 2: case 3: case 4: case 6: case 7: case 8: case 10: case 11: case 12: case 14: case 15: case 16:       
-    default: break;
+    case kMultiplayerChoice1:
+        AsCMultiPlayTopMenu(self)->result = kMultiplayerResult1;
+        break; // original +0x24
+    case kMultiplayerChoice2:
+        AsCMultiPlayTopMenu(self)->result = kMultiplayerResult2;
+        break;
+    case kMultiplayerChoice3:
+        AsCMultiPlayTopMenu(self)->result = kMultiplayerResult3;
+        break;
+    case kMultiplayerChoice4:
+        AsCMultiPlayTopMenu(self)->result = kMultiplayerResult4;
+        break;
+    case kMultiplayerChoice5:
+        AsCMultiPlayTopMenu(self)->result = kMultiplayerResult5;
+        break;
+    case 0:
+    case 2:
+    case 3:
+    case 4:
+    case 6:
+    case 7:
+    case 8:
+    case 10:
+    case 11:
+    case 12:
+    case 14:
+    case 15:
+    case 16:
+    default:
+        break;
     }
     AsCMultiPlayTopMenu(self)->resultReady = 1; // original +0x28
     AsCMultiPlayTopMenu(self)->exitRequested = 1;
-    BpObject_StartScriptByName(AsCMultiPlayTopMenu(self)->bpObject, multiPlayTopMenuStrings + kMultiplayerExitScript, 1);
+    BpObject_StartScriptByName(AsCMultiPlayTopMenu(self)->bpObject, multiPlayTopMenuStrings + kMultiplayerExitScript,
+                               1);
     AsCMultiPlayTopMenu(self)->scriptRunning = 1; // Wait for the exit script to finish.
-    CTopMenuBase_EnablePreviousElement(self + kMenuInterfaceOffset, index);
+    CTopMenuBase::EnablePreviousElement(self + kMenuInterfaceOffset, index);
     return 1;
 }
 
 // Disable the submenu BP object, restore the previous script and destroy its menu base.
-void* CTopSubMenu_dtor(void* self, int deleting) {
-    if (self) {
-    char* q = (char*)self;
-    *(void**)q = __vt__11CTopSubMenu;
-    AsCTopSubMenu(q)->interfaceVtable = __vt__11CTopSubMenu + 0x28;
-    BpObject_SetEnabled(AsCTopSubMenu(q)->bpObject, 0);
+CTopSubMenu::~CTopSubMenu() {
+    vtbl = __vt__11CTopSubMenu;
+    interfaceVtable = __vt__11CTopSubMenu + 0x28;
+    BpObject_SetEnabled(bpObject, 0);
     if (!Sing_805DC5F8()) {
         if (!s_bpCtrlHandleInitialized) {
             s_bpCtrlHandle[0] = -1;
             s_bpCtrlHandle[1] = -1;
-            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, s_bpCtrlHandleDtorRegistration_TopSubMenu);
+            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor,
+                                     s_bpCtrlHandleDtorRegistration_TopSubMenu);
             s_bpCtrlHandleInitialized = 1;
         }
         Sing_805DC5F8() = s_bpCtrlHandle;
     }
-    CBpCtrlHandle_SetScriptIndex(Sing_805DC5F8(), AsCTopSubMenu(q)->previousScriptIndex);
-    __dt__7MPBase2Fv(q + kMenuInterfaceOffset, 0);
-    if (deleting > 0) __dl__FPv(q);
-    }
-    return self;
+    ((CBpCtrlHandle*)Sing_805DC5F8())->SetScriptIndex(previousScriptIndex);
+    __dt__7MPBase2Fv((char*)this + kMenuInterfaceOffset, 0);
 }
 
 // Report ready when both the submenu layout and all BP entries have loaded.
-int CTopSubMenu_PollLoadComplete(void* self) {
-    if (!Layout_PollLoadComplete(AsCTopSubMenu(self)->layout)) return 0;
+int CTopSubMenu::PollLoadComplete() {
+    if (!Layout_PollLoadComplete(layout))
+        return 0;
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_TopSubMenu);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    if (!CBpCtrl_PollAllEntriesLoaded(Sing_805DC5F0())) return 0;
+    if (!((CBpCtrl*)Sing_805DC5F0())->PollAllEntriesLoaded())
+        return 0;
     return 1;
 }
 
@@ -693,20 +814,26 @@ int CTopSubMenu_PollLoadComplete(void* self) {
 // moves. The opacity scalar is normalized 1.0, consumed separately by layout;
 // changing it does not fade the BP object or hover text. Preserve call order for
 // layered drawing and the external widescreen draw-context recognition sites.
-void CTopSubMenu_Draw(void* self) {
-    BpObject_Draw(AsCTopSubMenu(self)->bpObject);
-    Layout_DrawWithOpacity(AsCTopSubMenu(self)->layout, kTopSubMenuLayoutFullOpacityStorage);
-    MenuMessage_DrawText(AsCTopSubMenu(self)->menuMessage);
-    void* q = AsCTopSubMenu(self)->optionDialog;
-    if (q) MPBase1_DrawIfInitialized(q);
-    q = AsCTopSubMenu(self)->playerInfo;
-    if (q) MPBase1_DrawIfInitialized(q);
+void CTopSubMenu::Draw() {
+    BpObject_Draw(bpObject);
+    Layout_DrawWithOpacity(layout, kTopSubMenuLayoutFullOpacityStorage);
+    MenuMessage_DrawText(menuMessage);
+    void* q = optionDialog;
+    if (q)
+        MPBase1_DrawIfInitialized(q);
+    q = playerInfo;
+    if (q)
+        MPBase1_DrawIfInitialized(q);
 }
 
 #pragma push
 #pragma use_lmw_stmw on
-class AlphaMenu { public: 
-virtual void v08(); virtual void v0c(); virtual void v10(); virtual void v14(int);
+class AlphaMenu {
+public:
+    virtual void v08();
+    virtual void v0c();
+    virtual void v10();
+    virtual void v14(int);
 };
 // Draw the multiplayer background/half-alpha overlay, then BP, layout, text and options.
 // Required named background group supplies position/dimensions in UI coordinates.
@@ -716,10 +843,10 @@ virtual void v08(); virtual void v0c(); virtual void v10(); virtual void v14(int
 // nonnegative low byte. The second quad halves it with signed rounding.
 // Clears texture stage/resource before the untextured overlay; no general render
 // state restore is performed. Do not fold these draws across context boundaries.
-void CMultiPlayTopMenu_Draw(void* self) {
+void CMultiPlayTopMenu::Draw() {
     float position[2] = {0.0f, 0.0f};
     float dimensions[2] = {0.0f, 0.0f};
-    void* data = BpObject_GetOrCreateNamedGroup(AsCMultiPlayTopMenu(self)->bpObject, multiPlayTopMenuStrings + kMultiplayerBackgroundGroup);
+    void* data = BpObject_GetOrCreateNamedGroup(bpObject, multiPlayTopMenuStrings + kMultiplayerBackgroundGroup);
     UIGroup_GetPosition(data, position);
     UIGroup_GetSourceSize(data, dimensions);
     int doubledOpacity = UIGroup_GetCombinedOpacity(data) * 2;
@@ -728,9 +855,11 @@ void CMultiPlayTopMenu_Draw(void* self) {
     // while vertex alpha takes the low byte of the nonnegative result.
     doubledOpacity = doubledOpacity - 1;
     int alpha = doubledOpacity & ((-doubledOpacity & ~doubledOpacity) >> 31);
-    ((*(AlphaMenu**)&AsCMultiPlayTopMenu(self)->menuTexture))->v14(doubledOpacity);
+    ((*(AlphaMenu**)&menuTexture))->v14(doubledOpacity);
 
-    struct CopyBlock { unsigned int v[24]; };
+    struct CopyBlock {
+        unsigned int v[24];
+    };
     TopMenuQuad first;
     *(CopyBlock*)&first = *(CopyBlock*)multiplayerBackgroundQuadTemplate;
     first.vertices[0].x = position[0];
@@ -771,15 +900,17 @@ void CMultiPlayTopMenu_Draw(void* self) {
     prim = GX_GetPrimitiveCount(kQuadVertexCount, kTriangleStrip);
     Engine_SetFlexibleVertexFormat(kMenuVertexFormat);
     DrawPrimitiveUP(kTriangleStrip, prim, second.words, sizeof(TopMenuVertex));
-    BpObject_Draw(AsCMultiPlayTopMenu(self)->bpObject);
-    Layout_DrawWithOpacity(AsCMultiPlayTopMenu(self)->layout, kMultiplayerLayoutFullOpacityStorage);
-    MenuMessage_DrawText(AsCMultiPlayTopMenu(self)->menuMessage);
-    void* q = AsCMultiPlayTopMenu(self)->optionDialog;
-    if (q) MPBase1_DrawIfInitialized(q);
+    BpObject_Draw(bpObject);
+    Layout_DrawWithOpacity(layout, kMultiplayerLayoutFullOpacityStorage);
+    MenuMessage_DrawText(menuMessage);
+    void* q = optionDialog;
+    if (q)
+        MPBase1_DrawIfInitialized(q);
 }
 #pragma pop
-class Y3 { public: 
-virtual void v08(int);
+class Y3 {
+public:
+    virtual void v08(int);
 };
 // Invalidate the title's active menu before destroying its texture-pack loader.
 // CPangya2TitleMain_OnProcess (title_main_and_top_menu.cpp) creates/replaces activeMenu. Menu and
@@ -788,20 +919,20 @@ virtual void v08(int);
 // deleting the pack ends its loader/resource lifetime. Neither pointer may be
 // cached by a caller past teardown. Both owner slots are cleared; repeated calls
 // skip them. Shared render/BP singletons outlive this hook and are not deleted.
-void CPangya2TitleMain_OnDestroy(void* self) {
-    if (AsCPangya2TitleMain(self)->activeMenu) {
-        void* q = AsCPangya2TitleMain(self)->activeMenu;
+void CPangya2TitleMain::OnDestroy() {
+    if (activeMenu) {
+        void* q = activeMenu;
         if (q) {
             ((Y3*)q)->v08(1);
         }
-        AsCPangya2TitleMain(self)->activeMenu = 0;
+        activeMenu = 0;
     }
-    if (AsCPangya2TitleMain(self)->textureResource) {
-        void* q = AsCPangya2TitleMain(self)->textureResource;
+    if (textureResource) {
+        void* q = textureResource;
         if (q) {
             ((Y3*)q)->v08(1);
         }
-        AsCPangya2TitleMain(self)->textureResource = 0;
+        textureResource = 0;
     }
 }
 
@@ -810,7 +941,7 @@ void CPangya2TitleMain_OnDestroy(void* self) {
 // Initialize submenu base/interfaces and clear result/player-info ownership.
 // c is menuMode, with counts/bounds in the table map above. a is a borrowed loaded
 // layout address encoded as int; b is its borrowed BP object address; d is the
-// menu item count, NOT pixels or a BP entry ID. CTopMenuBase_InitMembers
+// menu item count, NOT pixels or a BP entry ID. CTopMenuBase::InitMembers
 // (top_menu_base_and_menu_message.cpp) stores a/b/d at interface+4/+8/+14 and sets borrowsResources=1;
 // layout must provide the four elements per item, final message anchor and extra
 // group 16 used here; BP must provide in/out and R_MSG_info groups. Caller owns
@@ -821,14 +952,16 @@ void CPangya2TitleMain_OnDestroy(void* self) {
 // Fresh self only; returns self. __dt__7MPBase2Fv (top_menu_base_and_menu_message.cpp) tests the stored
 // borrowsResources flag: with 1 it skips layout destruction, BP-entry deletion
 // and texture release. It still destroys the owned MenuMessage/options helper.
-// CTopSubMenu_dtor restores the prior BP script index before that base cleanup.
+// ~CTopSubMenu restores the prior BP script index before that base cleanup.
 // Thus the factory's layout/BP owner must outlive the submenu; this constructor
 // does not transfer those resources to base cleanup.
 // The secondary interface lives at +0x18 and receives vtable+0x28, not the owner
 // vtable. Preserve that distinction in all callbacks and deleting thunks.
-void* CTopSubMenu_Ctor(char* self, int a, int b, int c, int d) {
-    MPBase1_Ctor(self, a, b, c, d);
-    CTopMenuBase_InitMembers(self + kMenuInterfaceOffset, a, b, d, topSubMenuElementIds);
+CTopSubMenu::CTopSubMenu(int layoutAddress, int bpObjectAddress, int c, int itemCount) {
+    char* self = (char*)this;
+    MPBase1_Ctor(self, layoutAddress, bpObjectAddress, c, itemCount);
+    ((CTopMenuBase*)(self + kMenuInterfaceOffset))
+        ->InitMembers(layoutAddress, bpObjectAddress, itemCount, topSubMenuElementIds);
     *(void**)self = __vt__11CTopSubMenu;
     AsCTopSubMenu(self)->interfaceVtable = __vt__11CTopSubMenu + 0x28;
     (*(void**)&AsCTopSubMenu(self)->menuMode) = (void*)c;
@@ -836,7 +969,6 @@ void* CTopSubMenu_Ctor(char* self, int a, int b, int c, int d) {
     (*(int*)&AsCTopSubMenu(self)->playerInfo) = 0;
     AsCTopSubMenu(self)->playerInfoRequested = 0;
     AsCTopSubMenu(self)->previousScriptIndex = -1;
-    return (void*)self;
 }
 #pragma pop
 
@@ -847,50 +979,50 @@ void TopSubMenu_InitFullTurnConstant(void) {
 
 // Copy the published submenu result to required out; return 1 if available.
 // Return 0 leaves *out unchanged. Reading does not consume/reset resultReady.
-int CTopSubMenu_TryGetResult(void* self, int* out) {
-    if (AsCTopSubMenu(self)->resultReady) { // original +0x28
-        *out = AsCTopSubMenu(self)->result;
+int CTopSubMenu::TryGetResult(int* out) {
+    if (resultReady) { // original +0x28
+        *out = result;
         return 1;
     }
     return 0;
 }
 
 // Initialize title-task interfaces and clear menu/resource ownership.
-void* CPangya2TitleMain_ctor(void* self) {
-    __ct__18NativeBase80201D18Fv(self);
+CPangya2TitleMain::CPangya2TitleMain() {
+    __ct__18NativeBase80201D18Fv(this);
     void* base = __vt__17CPangya2TitleMain;
     int zero = 0;
-    *(void**)self = base;
-    AsCPangya2TitleMain(self)->interfaceVtable = (char*)base + kTitleTaskInterfaceVtableOffset;
-    (*(int*)&AsCPangya2TitleMain(self)->activeMenu) = zero;
-    AsCPangya2TitleMain(self)->topMenuResult = -1;
-    (*(int*)&AsCPangya2TitleMain(self)->textureResource) = zero;
-    return self;
+    *(void**)this = base;
+    interfaceVtable = (char*)base + kTitleTaskInterfaceVtableOffset;
+    (*(int*)&activeMenu) = zero;
+    topMenuResult = -1;
+    (*(int*)&textureResource) = zero;
 }
 
 // Title pre-load hook; no setup is required.
-void CPangya2TitleMain_OnPreLoadInit(void) {
-}
+void CPangya2TitleMain::OnPreLoadInit() {}
 
 // Own a mode-transition texture-pack loader and synchronously poll it to completion.
 // Requires resource table initialization; name/metadata are borrowed, loader is
 // deleted by OnDestroy/dtor. No timeout, failure branch or previous-loader release
 // occurs here: invoke once per load lifecycle. Pool name is modeTransitionStrings.
-void CPangya2TitleMain_OnLoad(void* self) {
-    int arg = 0;
+void CPangya2TitleMain::OnLoad() {
+    int entryItems = 0;
     if (!Sing_805DC620()) {
         if (!s_resourceTableInitialized) {
             s_resourceTableStorage = 0;
-            __register_global_object(&s_resourceTableStorage, (void*)Allocation_Dtor, s_resourceTableDtorRegistration_TitleMain);
+            __register_global_object(&s_resourceTableStorage, (void*)Allocation_Dtor,
+                                     s_resourceTableDtorRegistration_TitleMain);
             s_resourceTableInitialized = 1;
         }
         Sing_805DC620() = &s_resourceTableStorage;
     }
-    int result = (int)ResourceTable_FindEntryByName(Sing_805DC620(), modeTransitionStrings, &arg);
-    AllocTask* task = new AllocTask(modeTransitionStrings, arg, (void*)result);
-    AsCPangya2TitleMain(self)->textureResource = task;
+    int result = (int)ResourceTable_FindEntryByName(Sing_805DC620(), modeTransitionStrings, &entryItems);
+    AllocTask* task = new AllocTask(modeTransitionStrings, entryItems, (void*)result);
+    textureResource = task;
     // PollLoad clears the pending archive path when loading finishes.
-    while (!CPackTextureResource_IsLoadFinished(AsCPangya2TitleMain(self)->textureResource)) CPackTextureResource_PollLoad(AsCPangya2TitleMain(self)->textureResource);
+    while (!((CPackTextureResource*)(textureResource))->IsLoadFinished())
+        ((CPackTextureResource*)textureResource)->PollLoad();
 }
 
 // Initialize shared four-player render storage, then reset it and title menu state.
@@ -898,7 +1030,8 @@ void CPangya2TitleMain_OnLoad(void* self) {
 // global destruction. InitializeNewRenderContext guards reset AFTER complete
 // vector/enemy-record construction (see its failure ledger). Every call resets player records, partyGameMode=0 and
 // menuState=-1; title does not take ownership of the shared singleton.
-void CPangya2TitleMain_OnInit(char* self) {
+void CPangya2TitleMain::OnInit() {
+    char* self = (char*)this;
     char* end;
     char* cur;
     char* member;
@@ -914,10 +1047,12 @@ void CPangya2TitleMain_OnInit(char* self) {
             } while (cur < end);
             ((IntVectorArray*)end)->__ct();
             member = ((RenderContext*)base)->players;
-            __construct_array(member, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor, sizeof(CEnemyRenderRecord), kEnemyRecordCount);
+            __construct_array(member, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor,
+                              sizeof(CEnemyRenderRecord), kEnemyRecordCount);
             *(int*)(member + 0x290) = 0;
             InitializeNewRenderContext(base);
-            __register_global_object(s_renderContext, (void*)__dt__13RenderContextFv, s_renderContextDtorRegistration_TitleMain);
+            __register_global_object(s_renderContext, (void*)__dt__13RenderContextFv,
+                                     s_renderContextDtorRegistration_TitleMain);
             s_renderContextInitialized = 1;
         }
         Sing_805DC648() = s_renderContext;
@@ -928,47 +1063,45 @@ void CPangya2TitleMain_OnInit(char* self) {
 }
 
 // Stop the movie controller, destroy title resources and optionally free the title task.
-void* CPangya2TitleMain_dtor(void* self, int deleting) {
-    if (self) {
-        *(void**)self = __vt__17CPangya2TitleMain;
-        AsCPangya2TitleMain(self)->interfaceVtable = __vt__17CPangya2TitleMain + 0x3c;
-        if (!Sing_805DC950()) {
-            if (!s_movieControllerInitialized) {
-                MovieController_Ctor(s_movieController);
-                __register_global_object(s_movieController, (void*)MovieController_Dtor, s_movieControllerDtorRegistration_TitleMain);
-                s_movieControllerInitialized = 1;
-            }
-            Sing_805DC950() = s_movieController;
+CPangya2TitleMain::~CPangya2TitleMain() {
+    *(void**)this = __vt__17CPangya2TitleMain;
+    interfaceVtable = __vt__17CPangya2TitleMain + 0x3c;
+    if (!Sing_805DC950()) {
+        if (!s_movieControllerInitialized) {
+            MovieController_Ctor(s_movieController);
+            __register_global_object(s_movieController, (void*)MovieController_Dtor,
+                                     s_movieControllerDtorRegistration_TitleMain);
+            s_movieControllerInitialized = 1;
         }
-        MovieController_ReleaseAudioAndResetLatches(Sing_805DC950());
-        void* q = AsCPangya2TitleMain(self)->activeMenu;
-        if (q) {
-            if (q) {
-((Y3*)q)->v08(1);
-            }
-            AsCPangya2TitleMain(self)->activeMenu = 0;
-        }
-        q = AsCPangya2TitleMain(self)->textureResource;
-        if (q) {
-            if (q) {
-((Y3*)q)->v08(1);
-            }
-            AsCPangya2TitleMain(self)->textureResource = 0;
-        }
-        if (self) __dt__18NativeBase80201D18Fv(self, 0);
-        if (deleting > 0) __dl__FPv(self);
+        Sing_805DC950() = s_movieController;
     }
-    return self;
+    MovieController_ReleaseAudioAndResetLatches(Sing_805DC950());
+    void* q = activeMenu;
+    if (q) {
+        if (q) {
+            ((Y3*)q)->v08(1);
+        }
+        activeMenu = 0;
+    }
+    q = textureResource;
+    if (q) {
+        if (q) {
+            ((Y3*)q)->v08(1);
+        }
+        textureResource = 0;
+    }
+    if (this)
+        __dt__18NativeBase80201D18Fv(this, 0);
 }
 
 // Poll the multiplayer menu base until its resources are ready.
-int CMultiPlayTopMenu_PollLoadComplete(void* self) {
-    return CTopMenuBase_PollLoad(&AsCMultiPlayTopMenu(self)->secondaryVtable); // original +0x18
+int CMultiPlayTopMenu::PollLoadComplete() {
+    return ((CTopMenuBase*)(&secondaryVtable))->PollLoad(); // original +0x18
 }
 
 // Update the multiplayer layout.
-void CMultiPlayTopMenu_UpdateLayout(void* self) {
-    Layout_Update(AsCMultiPlayTopMenu(self)->layout);
+void CMultiPlayTopMenu::UpdateLayout() {
+    Layout_Update(layout);
 }
 
 // Initialize the multiplayer module angle constant to one full turn.
@@ -977,28 +1110,28 @@ void MultiplayerTopMenu_InitFullTurnConstant(void) {
 }
 
 // Adjust the secondary menu interface pointer back to its owning object before selection.
-int CMultiPlayTopMenu_HandleSelectionThunk24(void* self) {
-    return CMultiPlayTopMenu_HandleSelection((char*)self - 0x18);
+int CMultiPlayTopMenu::HandleSelectionThunk24() {
+    return ((CMultiPlayTopMenu*)((char*)this - 0x18))->HandleSelection();
 }
 
 // Adjust the secondary menu interface pointer back to its owner before destruction.
-void* CMultiPlayTopMenu_DtorThunk24(void* self, int n) {
-    return CMultiPlayTopMenu_dtor((char*)self - 0x18, n);
+void* CMultiPlayTopMenu::DtorThunk24(int n) {
+    return ((CMultiPlayTopMenu*)((char*)this - 0x18))->Dtor(n);
 }
 
 // Update the submenu layout.
-void CTopSubMenu_UpdateLayout(void* self) {
-    Layout_Update(AsCTopSubMenu(self)->layout);
+void CTopSubMenu::UpdateLayout() {
+    Layout_Update(layout);
 }
 
 // Adjust the secondary submenu interface pointer back to its owner before selection.
-int CTopSubMenu_HandleSelectionThunk24(void* self) {
-    return CTopSubMenu_HandleSelection((char*)self - 0x18);
+int CTopSubMenu::HandleSelectionThunk24() {
+    return ((CTopSubMenu*)((char*)this - 0x18))->HandleSelection();
 }
 
 // Adjust the secondary submenu interface pointer back to its owner before destruction.
-void* CTopSubMenu_DtorThunk24(void* self, int n) {
-    return CTopSubMenu_dtor((char*)self - 0x18, n);
+void* CTopSubMenu::DtorThunk24(int n) {
+    return __dt__11CTopSubMenuFv((char*)this - 0x18, n);
 }
 } // extern "C"
 

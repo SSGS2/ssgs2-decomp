@@ -5,10 +5,10 @@
 
 class FontTreeLinks80250 {
 public:
-    void* left; // 0x0; CFontNumDraw_dtor
+    void* left;  // 0x0; CFontNumDraw_dtor
     void* right; // 0x4; CFontNumDraw_dtor
     char pad_8[0x4];
-    int key; // 0xC; CFontNumDraw_dtor
+    int key;     // 0xC; CFontNumDraw_dtor
     void* value; // 0x10; CFontNumDraw_dtor
 };
 

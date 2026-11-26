@@ -1,5 +1,3 @@
-// Translation unit 0x803DC3AC-0x803DC474 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 // Renderer draw-queue teardown. InitializeContext (gtl_generic_renderer_init.cpp) invokes this before
 // reusing scratch buffers. Queue allocation/capacity belongs to ContextCtor,
 // ResizeScratchBuffers (gtl_generic_renderer_scratch_buffers.cpp) and ContextDtor (gtl_generic_renderer_context.cpp), not this routine.
@@ -17,21 +15,21 @@ struct GenericRef : GenericRefBase {
 
 struct GenericDrawEntry {
     char reserved00[8];
-    GenericRef *a; // +8: first retained resource; concrete renderer role unresolved.
-    GenericRef *b; // +C: second retained resource; concrete renderer role unresolved.
+    GenericRef* a; // +8: first retained resource; concrete renderer role unresolved.
+    GenericRef* b; // +C: second retained resource; concrete renderer role unresolved.
     char unk10[0x40];
 };
 
 struct GenericRenderer {
     char reserved00[0x184];
-    GenericDrawEntry *queue;
+    GenericDrawEntry* queue;
     char reserved188[8];
     u32 count;
 };
 
 extern "C" {
 
-extern GenericRenderer *g_genericRendererContext;
+extern GenericRenderer* g_genericRendererContext;
 
 // Consume count live entries in 0x50-byte slots, dropping +8 then +C references.
 // Renderer, queue and BOTH resource pointers in every live entry are required:
@@ -43,12 +41,12 @@ extern GenericRenderer *g_genericRendererContext;
 // Callbacks must not reenter clearing or invalidate queue/live entries. The loop
 // reloads global context/count, so caching these would change callback behavior.
 void gtl_GenericRenderer_ClearDrawQueue(void) {
-    GenericDrawEntry *entry;
-    GenericRef *resource;
+    GenericDrawEntry* entry;
+    GenericRef* resource;
     u32 entryByteOffset = 0;
     u32 entryIndex = 0;
     while (entryIndex < g_genericRendererContext->count) {
-        entry = (GenericDrawEntry *)((char *)g_genericRendererContext->queue + entryByteOffset);
+        entry = (GenericDrawEntry*)((char*)g_genericRendererContext->queue + entryByteOffset);
         resource = entry->a;
         if (--resource->rc == 0 && resource) {
             resource->Release(1);

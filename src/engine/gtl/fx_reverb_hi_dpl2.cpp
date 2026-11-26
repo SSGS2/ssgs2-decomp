@@ -1,5 +1,5 @@
-// Translation unit 0x8040AB50-0x8040AD68 (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// High-quality DPL2 reverb effect: keeps the requested controls, clamps them to the SDK
+// limits and applies them to the active effect.
 
 #include "sdk_protos.h"
 
@@ -12,10 +12,11 @@ struct ReverbParams {
 
 struct FxReverbHiDpl2 {
     char baseEffectStorage[12];
-    unsigned char initializationAttempted; // +0x0c: legacy name for the initialized/shutdown guard, not playback activity.
+    unsigned char
+        initializationAttempted; // +0x0c: legacy name for the initialized/shutdown guard, not playback activity.
     char reservedBeforeParams[11];
     ReverbParams params; // Unclamped requested values, preserved for GetParams.
-    char effect[0x178]; // SDK reverb work storage; trailing floats below are its settings.
+    char effect[0x178];  // SDK reverb work storage; trailing floats below are its settings.
     // SDK order differs from ReverbParams: coloration, mix, time, damping, preDelay, crosstalk.
     float coloration, mix, time, damping, preDelay, crosstalk;
 };
@@ -47,7 +48,8 @@ void gtl_nw4r_FxReverbHiDpl2_ShutdownEffect(FxReverbHiDpl2* self) {
     if (self->initializationAttempted) {
         unsigned int previousAllocateHook, previousFreeHook;
         self->initializationAttempted = 0;
-        gtl_AudioEffects_InstallAllocatorHooks(&self->initializationAttempted, &previousAllocateHook, &previousFreeHook);
+        gtl_AudioEffects_InstallAllocatorHooks(&self->initializationAttempted, &previousAllocateHook,
+                                               &previousFreeHook);
         AXFXReverbHiShutdownDpl2(self->effect);
         gtl_AudioEffects_RestoreAllocatorHooks(&self->initializationAttempted, previousAllocateHook, previousFreeHook);
     }
@@ -65,7 +67,8 @@ bool gtl_nw4r_FxReverbHiDpl2_SetParams(FxReverbHiDpl2* self, const ReverbParams*
     self->damping = clamp(params->damping, kFloat_1_Reverb);
     self->crosstalk = clamp(params->crosstalk, kFloat_1_Reverb);
     self->mix = clamp(params->mix, kFloat_1_Reverb);
-    if (!self->initializationAttempted) return true;
+    if (!self->initializationAttempted)
+        return true;
     // Reconfigure under the effect's allocator, restoring both global hooks even on failure.
     unsigned int previousAllocateHook, previousFreeHook;
     gtl_AudioEffects_InstallAllocatorHooks(&self->initializationAttempted, &previousAllocateHook, &previousFreeHook);

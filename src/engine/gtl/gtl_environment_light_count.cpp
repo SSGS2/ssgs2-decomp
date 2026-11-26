@@ -2,7 +2,7 @@
 // environment resource. API lookup: GetLightCount here; CopyLights (environment_light_resource_export.cpp)
 // copies that many 0x88-byte light descriptions; environment Apply (gtl_generic_environment.cpp)
 // uses the reference-list tag to select lights for render slots.
-// Producer: gtl_IGenericEnvironmentResource_CreateFromMemory (gtl_generic_resource_loading.cpp) copies
+// Producer: gtl::IGenericEnvironmentResource::CreateFromMemory (gtl_generic_resource_loading.cpp) copies
 // input bytes into an IG3DXBuffer and retains it at wrapper +8. Destructor
 // (gtl_generic_environment_resource.cpp) decrements its reference and releases at zero. Queries borrow it;
 // neither output nor this function acquires a reference. Keep the wrapper live.
@@ -16,31 +16,27 @@
 // raw +0xC (buffer length here). The latter is passed as an obsolete second ABI
 // argument, NOT a chunk pointer: GetChunkElementCount ignores it and scans data.
 // No gameplay light-count limit is defined here; edit environment data/Apply.
-// Translation unit 0x803DBB84-0x803DBBEC (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+
+#include "classes/GtlIGenericEnvironmentResource.h"
 
 extern "C" {
-
-struct gtl_IGenericEnvironmentResource {
-    char reserved00[8];
-    void* resourceBuffer; // Retained IG3DXBuffer; borrowed for the duration of this query.
-};
 
 void* Object_GetFieldC(void* obj);
 void* Object_GetField8(void* obj);
 int gtl_ResourceFile_GetChunkElementCount(void* file, void* chunk, unsigned int tag);
 
-enum { kEnvironmentLightReferenceTag = 0x0067696C };
-
-// Required self/res/data and writable count (one int); trusted directory must fit
-// the live resource. Writes the FIRST matching chunk's element count, or zero
-// if absent, then returns 1 in both cases. Return value is completion, not count
-// or proof of validity. No null/bounds/version checks or recoverable failure exit;
-// invalid inputs can fault. Output must not overlap resource/wrapper storage.
-int gtl_IGenericEnvironmentResource_GetLightCount(gtl_IGenericEnvironmentResource* self, int* count) {
-    void* ignoredLengthWord = Object_GetFieldC(self->resourceBuffer);
-    *count = gtl_ResourceFile_GetChunkElementCount(Object_GetField8(self->resourceBuffer), ignoredLengthWord, kEnvironmentLightReferenceTag);
-    return 1;
-}
+enum {
+    kEnvironmentLightReferenceTag = 0x0067696C
+};
 
 } // extern "C"
+
+// Writes the FIRST matching chunk's element count to count, or zero if absent, then returns 1 in both cases.
+// Return value is completion, not count or proof of validity. No null/bounds/version checks or recoverable
+// failure exit; invalid inputs can fault. Output must not overlap resource/wrapper storage.
+int gtl::IGenericEnvironmentResource::GetLightCount(int* count) {
+    void* ignoredLengthWord = Object_GetFieldC(resourceBuffer);
+    *count = gtl_ResourceFile_GetChunkElementCount(Object_GetField8(resourceBuffer), ignoredLengthWord,
+                                                   kEnvironmentLightReferenceTag);
+    return 1;
+}

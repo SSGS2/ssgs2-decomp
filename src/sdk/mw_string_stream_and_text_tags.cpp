@@ -1,14 +1,11 @@
 #include "classes/MWStringStorage.h"
 #include "classes/MWStreamBuffer.h"
 #include "classes/MWStreamState.h"
-// Translation unit 0x800AF820-0x800BA958 (77 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 #include "sdk_protos.h"
 #include "classes/CSerifuEcb.h"
 #include <decomp/cw_bitfields.h>
 
 #define AsCSerifuEcb(p) ((CSerifuEcb*)(p))
-
 
 // Navigation: String_*/StdString_* and MWStream* implement narrow runtime text;
 // Text_ExpandTaggedText/MessageTable_ExpandTextByIndex implement game UTF-16 tags.
@@ -24,22 +21,62 @@
 // Metrowerks uses 12-byte small strings: bit 31 selects heap storage;
 // otherwise the first byte holds a 7-bit length and characters start at byte one.
 enum StreamFormatFlags {
-    kBoolAlpha = 0x1, kDecimal = 0x2, kFixed = 0x4, kHexadecimal = 0x8,
-    kInternal = 0x10, kLeft = 0x20, kOctal = 0x40, kRight = 0x80,
-    kScientific = 0x100, kShowBase = 0x200, kShowPoint = 0x400,
-    kShowPositive = 0x800, kUnitBuffer = 0x2000, kUppercase = 0x4000,
-    kBaseField = 0x4A, kAdjustField = 0xB0, kFloatField = 0x104
+    kBoolAlpha = 0x1,
+    kDecimal = 0x2,
+    kFixed = 0x4,
+    kHexadecimal = 0x8,
+    kInternal = 0x10,
+    kLeft = 0x20,
+    kOctal = 0x40,
+    kRight = 0x80,
+    kScientific = 0x100,
+    kShowBase = 0x200,
+    kShowPoint = 0x400,
+    kShowPositive = 0x800,
+    kUnitBuffer = 0x2000,
+    kUppercase = 0x4000,
+    kBaseField = 0x4A,
+    kAdjustField = 0xB0,
+    kFloatField = 0x104
 };
 enum StreamBufferMode {
-    kAppendMode = 1, kInputMode = 8, kOutputMode = 0x10, kInputOutputMode = 0x18
+    kAppendMode = 1,
+    kInputMode = 8,
+    kOutputMode = 0x10,
+    kInputOutputMode = 0x18
 };
-enum StreamSeekOrigin { kSeekBegin = 1, kSeekCurrent = 2, kSeekEnd = 4 };
-enum StreamStatus { kStreamBad = 1, kStreamFail = 4, kStreamBadOrFail = 5, kEndOfFile = -1 };
-enum StringStorageLimits { kInlineCapacity = 11, kInlineLengthMask = 0x7F };
-enum MessageTagKind { kUnknownMessageTag = -1, kMappedValueTag = 0, kDiscardedTag = 1, kNamedTextTag = 2 };
-enum MessageTagLimits { kTagLookupCodeUnits = 256, kTagKindCount = 3, kMappedTagHandlerCount = 2, kCarriageReturn = 13 };
+enum StreamSeekOrigin {
+    kSeekBegin = 1,
+    kSeekCurrent = 2,
+    kSeekEnd = 4
+};
+enum StreamStatus {
+    kStreamBad = 1,
+    kStreamFail = 4,
+    kStreamBadOrFail = 5,
+    kEndOfFile = -1
+};
+enum StringStorageLimits {
+    kInlineCapacity = 11,
+    kInlineLengthMask = 0x7F
+};
+enum MessageTagKind {
+    kUnknownMessageTag = -1,
+    kMappedValueTag = 0,
+    kDiscardedTag = 1,
+    kNamedTextTag = 2
+};
+enum MessageTagLimits {
+    kTagLookupCodeUnits = 256,
+    kTagKindCount = 3,
+    kMappedTagHandlerCount = 2,
+    kCarriageReturn = 13
+};
 
-enum MessageTableFormat { kIndexedTextTable = 0, kNamedTextTable = 1 };
+enum MessageTableFormat {
+    kIndexedTextTable = 0,
+    kNamedTextTable = 1
+};
 
 // Additional ios_base fields beyond the prefix described by MWStreamState.h.
 struct StreamIosView {
@@ -59,10 +96,22 @@ struct StreamSentryView {
     char padding[2];
     void* reference;
 };
-struct StreamLocaleView { void* facets; void* reference; };
-struct LocaleFacetArrayView { void** entries; unsigned int count; };
-struct LocaleReferenceView { void* vtable; int references; };
-struct StreamVirtualBaseView { char slots[0x3C]; int iosBaseOffset; };
+struct StreamLocaleView {
+    void* facets;
+    void* reference;
+};
+struct LocaleFacetArrayView {
+    void** entries;
+    unsigned int count;
+};
+struct LocaleReferenceView {
+    void* vtable;
+    int references;
+};
+struct StreamVirtualBaseView {
+    char slots[0x3C];
+    int iosBaseOffset;
+};
 struct StringStreamView {
     void* vtable;
     char padding04[8];
@@ -94,14 +143,40 @@ enum NumPunctStorageOffset {
     kNumPunctFalseNameOffset = (int)&((NumPunctView*)0)->falseName,
     kNumPunctStringBytes = sizeof(MWStringStorage)
 };
-struct MessageTableHeader { char header[8]; int entryCount; };
-struct OffsetTableHeader { void* data; int groupCount; };
-struct MessageTableEntry { void* keyOffset; void* textOffset; void* namedTextOffset; };
-struct MessageResourceView { void* vtable; void* table; void* groups; int format; };
-struct ResourceDataView { char header[8]; void* data; };
-struct StreamPositionView { int high, low, state; };
-struct InputStreamLocaleView { char base[0x1C]; StreamLocaleView locale; };
-struct StringBufferStorageView { MWStreamBuffer buffer; MWStringStorage text; };
+struct MessageTableHeader {
+    char header[8];
+    int entryCount;
+};
+struct OffsetTableHeader {
+    void* data;
+    int groupCount;
+};
+struct MessageTableEntry {
+    void* keyOffset;
+    void* textOffset;
+    void* namedTextOffset;
+};
+struct MessageResourceView {
+    void* vtable;
+    void* table;
+    void* groups;
+    int format;
+};
+struct ResourceDataView {
+    char header[8];
+    void* data;
+};
+struct StreamPositionView {
+    int high, low, state;
+};
+struct InputStreamLocaleView {
+    char base[0x1C];
+    StreamLocaleView locale;
+};
+struct StringBufferStorageView {
+    MWStreamBuffer buffer;
+    MWStringStorage text;
+};
 enum StringStreamOffsets {
     kStringStreamBufferOffset = (int)&((StringStreamView*)0)->streamBuffer,
     kStringStreamSecondaryOffset = (int)&((StringStreamView*)0)->secondaryVtable,
@@ -124,10 +199,10 @@ extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12out_of_range[];
 extern char __vt__Q23std12length_error[];
 struct StringErrorStrings {
-    char outOfRange[27]; // 0x0
-    char outOfRangeType[55]; // 0x1B
-    char lengthError[27]; // 0x52
-    char lengthErrorType[55]; // 0x6D
+    char outOfRange[27];         // 0x0
+    char outOfRangeType[55];     // 0x1B
+    char lengthError[27];        // 0x52
+    char lengthErrorType[55];    // 0x6D
     char reserveLengthError[35]; // 0xA4
 };
 extern StringErrorStrings stringErrorStrings_AF820;
@@ -195,18 +270,26 @@ void* StringStream_dtor(void* value, int deleteFlag) {
             if (base + kStringStreamTextOffset != 0 && ((((StringStreamView*)base)->text.flags >> 31) != 0))
                 appFreeUni__FPv(((StringStreamView*)base)->text.data);
             if (base + kStringStreamLocaleOffset != 0 && ((StringStreamView*)base)->locale.reference != 0)
-                try { MWSharedOwner_ReleaseReference(((StringStreamView*)base)->locale.reference); } catch (...) { __unexpected(); }
+                try {
+                    MWSharedOwner_ReleaseReference(((StringStreamView*)base)->locale.reference);
+                } catch (...) {
+                    __unexpected();
+                }
         }
         vtable = *(void**)base;
         ((StreamVirtualBaseView*)vtable)->iosBaseOffset = (int)(base + kStringStreamBufferOffset) - (int)vtable;
         if (base + kStringStreamSecondaryOffset != 0) {
             void* secondary = ((StringStreamView*)base)->secondaryVtable;
-            if (secondary != 0) ((StreamVirtualBaseView*)secondary)->iosBaseOffset = (int)(base + kStringStreamBufferOffset) - (int)secondary;
+            if (secondary != 0)
+                ((StreamVirtualBaseView*)secondary)->iosBaseOffset =
+                    (int)(base + kStringStreamBufferOffset) - (int)secondary;
         }
         vtable = *(void**)base;
         ((StreamVirtualBaseView*)vtable)->iosBaseOffset = (int)(base + kStringStreamSecondaryOffset) - (int)vtable;
-        if ((short)deleteFlag != 0 && base + kStringStreamIosBaseOffset != 0) std_ios_base_dtor(base + kStringStreamIosBaseOffset, 0);
-        if ((short)deleteFlag > 0) __dl__FPv(value);
+        if ((short)deleteFlag != 0 && base + kStringStreamIosBaseOffset != 0)
+            std_ios_base_dtor(base + kStringStreamIosBaseOffset, 0);
+        if ((short)deleteFlag > 0)
+            __dl__FPv(value);
     }
     return value;
 }
@@ -220,21 +303,28 @@ void OStreamSentry_Ctor(void* value, void* reference) {
     unsigned char flags = ((StreamIosView*)object)->state;
     if (flags == 0) {
         try {
-            if (((StreamIosView*)object)->tiedStream) OStream_Flush(((StreamIosView*)object)->tiedStream);
+            if (((StreamIosView*)object)->tiedStream)
+                OStream_Flush(((StreamIosView*)object)->tiedStream);
         } catch (...) {
             object = *(void**)reference;
             flags = ((StreamIosView*)object)->state;
-            if ((flags & kStreamFail) == 0) ((StreamIosView*)object)->state |= kStreamBad;
+            if ((flags & kStreamFail) == 0)
+                ((StreamIosView*)object)->state |= kStreamBad;
             object = *(void**)reference;
-            if ((((StreamIosView*)object)->exceptions & ((StreamIosView*)object)->state) != 0) __throw(0, 0, 0);
+            if ((((StreamIosView*)object)->exceptions & ((StreamIosView*)object)->state) != 0)
+                __throw(0, 0, 0);
             return;
         }
         object = *(void**)reference;
         flags = ((StreamIosView*)object)->state;
-        if (flags == 0) { ((StreamSentryView*)value)->ok = 1; return; }
+        if (flags == 0) {
+            ((StreamSentryView*)value)->ok = 1;
+            return;
+        }
     }
     ((StreamIosView*)object)->state |= kStreamFail;
-    if (((StreamIosView*)object)->buffer == 0) ((StreamIosView*)object)->state |= kStreamBad;
+    if (((StreamIosView*)object)->buffer == 0)
+        ((StreamIosView*)object)->state |= kStreamBad;
     if ((((StreamIosView*)object)->exceptions & ((StreamIosView*)object)->state) != 0)
         MWStream_ThrowFailure(object, iosClearFailureMessage);
 }
@@ -256,7 +346,10 @@ struct ReserveArrayGuard {
     // Retain an unfinished message allocation for exception cleanup.
     ReserveArrayGuard(char* p, unsigned char& a) : data(p), allocator(&a) {}
     // Delete message bytes unless ownership was transferred.
-    ~ReserveArrayGuard() { if (data) __dla__FPv(data); }
+    ~ReserveArrayGuard() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 }
 namespace std {
@@ -270,7 +363,10 @@ struct logic_error : exception {
     // Copy the exception message and give its allocation a reference-counted deleter.
     logic_error(const char* message) {
         vt = __vt__Q23std11logic_error;
-        struct Allocator { unsigned char data; char padding[3]; };
+        struct Allocator {
+            unsigned char data;
+            char padding[3];
+        };
         Allocator allocator2;
         volatile Allocator allocator;
         allocator.data = 0;
@@ -280,9 +376,18 @@ struct logic_error : exception {
         char* p = text;
         {
             ReserveArrayGuard guard(p, allocator2.data);
-            struct Block { void* vt; int a, b; char* text; };
+            struct Block {
+                void* vt;
+                int a, b;
+                char* text;
+            };
             Block* block = (Block*)__nw__FUl(sizeof(Block));
-            if (block) { block->a = 1; block->b = 1; block->vt = s_sharedCharDeleterVtable; block->text = p; }
+            if (block) {
+                block->a = 1;
+                block->b = 1;
+                block->vt = s_sharedCharDeleterVtable;
+                block->text = p;
+            }
             ref = block;
             guard.data = 0;
         }
@@ -293,18 +398,26 @@ struct logic_error : exception {
 };
 struct length_error : logic_error {
     // Construct a length_error by retagging the completed logic_error base.
-    length_error(const char* message) : logic_error(message) { vt = __vt__Q23std12length_error; }
+    length_error(const char* message) : logic_error(message) {
+        vt = __vt__Q23std12length_error;
+    }
     ~length_error();
 };
 struct out_of_range : logic_error {
     // Construct an out_of_range by retagging its completed base.
-    out_of_range(const char* message) : logic_error(message) { vt = __vt__Q23std12out_of_range; }
+    out_of_range(const char* message) : logic_error(message) {
+        vt = __vt__Q23std12out_of_range;
+    }
     ~out_of_range();
 };
 }
 extern "C" {
-struct ReserveWordBits { CW_BITS2( unsigned int heap : 1, unsigned int capacity : 31) };
-struct ReserveByteBits { CW_BITS2( unsigned char heap : 1, unsigned char length : 7) };
+struct ReserveWordBits {
+    CW_BITS2(unsigned int heap : 1, unsigned int capacity : 31)
+};
+struct ReserveByteBits {
+    CW_BITS2(unsigned char heap : 1, unsigned char length : 7)
+};
 #pragma push
 #pragma use_lmw_stmw on
 // Resize string capacity while preserving contents; a failed shrink leaves it intact.
@@ -320,9 +433,15 @@ void StdString_ReserveCapacity(void* value, unsigned int requested) {
     unsigned int length;
     bool oldHeap = ((ReserveWordBits*)self)->heap;
     unsigned int oldCapacity;
-    if (!oldHeap) { length = *self & kInlineLengthMask; oldCapacity = kInlineCapacity; }
-    else { length = AsMWStringStorage(self)->length; oldCapacity = ((ReserveWordBits*)self)->capacity; }
-    if (requested < length) requested = length;
+    if (!oldHeap) {
+        length = *self & kInlineLengthMask;
+        oldCapacity = kInlineCapacity;
+    } else {
+        length = AsMWStringStorage(self)->length;
+        oldCapacity = ((ReserveWordBits*)self)->capacity;
+    }
+    if (requested < length)
+        requested = length;
     newCapacity = kInlineCapacity;
     newCapacity = (requested + 1 > kInlineCapacity) ? (requested + 16) & ~15u : newCapacity;
     // Phase 2: choose inline/heap destination and allocate before releasing old bytes.
@@ -335,19 +454,26 @@ void StdString_ReserveCapacity(void* value, unsigned int requested) {
             newData = self + 1;
             heap = 0;
         } else {
-            if (newCapacity > oldCapacity) newData = (unsigned char*)__nw__FUl(newCapacity);
+            if (newCapacity > oldCapacity)
+                newData = (unsigned char*)__nw__FUl(newCapacity);
             else {
-                try { newData = (unsigned char*)__nw__FUl(newCapacity); }
-                catch (...) { return; }
+                try {
+                    newData = (unsigned char*)__nw__FUl(newCapacity);
+                } catch (...) {
+                    return;
+                }
             }
             heap = 1;
-            if (oldHeap) oldData = (*(unsigned char**)&AsMWStringStorage(self)->data);
-            else oldData = self + 1;
+            if (oldHeap)
+                oldData = (*(unsigned char**)&AsMWStringStorage(self)->data);
+            else
+                oldData = self + 1;
         }
         // Phase 3: preserve text, terminate, release old ownership, publish representation.
         memmove(newData, oldData, length);
         newData[length] = 0;
-        if (oldHeap) __dl__FPv(oldData);
+        if (oldHeap)
+            __dl__FPv(oldData);
         ((ReserveWordBits*)self)->heap = heap;
         if (!heap) {
             ((ReserveByteBits*)self)->length = length;
@@ -365,15 +491,18 @@ void StdString_ReserveCapacity(void* value, unsigned int requested) {
 // Append one output byte, growing the backing string and rebasing get/put pointers.
 int MWStringBuf_Overflow(void* value, int input) {
     unsigned char* self = (unsigned char*)value;
-    if ((AsMWStreamBuffer(self)->mode & kOutputMode) == 0) return -1;
-    if (input == -1) return 0;
+    if ((AsMWStreamBuffer(self)->mode & kOutputMode) == 0)
+        return -1;
+    if (input == -1)
+        return 0;
     unsigned int begin = AsMWStreamBuffer(self)->putCurrent;
     unsigned int end = AsMWStreamBuffer(self)->putEnd;
     if (begin < end) {
         *(unsigned char*)begin = (unsigned char)input;
         ++begin;
         AsMWStreamBuffer(self)->putCurrent = begin;
-        if (AsMWStreamBuffer(self)->highWater < begin) AsMWStreamBuffer(self)->highWater = begin;
+        if (AsMWStreamBuffer(self)->highWater < begin)
+            AsMWStreamBuffer(self)->highWater = begin;
         if (AsMWStreamBuffer(self)->mode & kInputMode) {
             if (AsMWStreamBuffer(self)->getEnd < AsMWStreamBuffer(self)->highWater)
                 AsMWStreamBuffer(self)->getEnd = AsMWStreamBuffer(self)->highWater;
@@ -387,15 +516,18 @@ int MWStringBuf_Overflow(void* value, int input) {
         int size = AsMWStreamBuffer(self)->highWater - first;
         int need = begin - first + 1;
         int getOffset = AsMWStreamBuffer(self)->getCurrent - AsMWStreamBuffer(self)->getBegin;
-        if (size < need) size = need;
+        if (size < need)
+            size = need;
         char c = (char)input;
         unsigned char alloc;
         void* text = &((StringBufferStorageView*)self)->text;
         String_ReplaceRange(text, fn_string_len(text), 0, &c, &c + 1, &alloc);
         unsigned int capacity = (*(unsigned int*)text >> 31 ? *(unsigned int*)text & 0x7fffffff : kInlineCapacity) - 1;
         unsigned int length = fn_string_len(text);
-        if (capacity > length) String_ReplaceRepeatedChar(text, length, 0, capacity - length, 0);
-        else String_ReplaceRepeatedChar(text, capacity, length - capacity, 0, 0);
+        if (capacity > length)
+            String_ReplaceRepeatedChar(text, length, 0, capacity - length, 0);
+        else
+            String_ReplaceRepeatedChar(text, capacity, length - capacity, 0, 0);
         unsigned char* data = fn_string_ptr(text);
         if (AsMWStreamBuffer(self)->mode & kInputMode) {
             AsMWStreamBuffer(self)->getBegin = (unsigned int)data;
@@ -416,13 +548,17 @@ int MWStringBuf_Overflow(void* value, int input) {
 extern void* StdString_ReplaceRepeatedChar(void*, unsigned int, unsigned int, unsigned int, signed char = 0);
 // Find a decimal point, returning -1 through offset when the input has none.
 // Caller-owned cursors retain this compiler's original register allocation.
-static inline void FindDecimalPoint(unsigned char* const& digitData, const unsigned int& n,
-        const int& decimalPoint, int& offset, unsigned char*& end, unsigned char*& cursor) {
+static inline void FindDecimalPoint(unsigned char* const& digitData, const unsigned int& n, const int& decimalPoint,
+                                    int& offset, unsigned char*& end, unsigned char*& cursor) {
     if (n != 0) {
         end = digitData + n;
-        cursor = digitData; signed char c = (signed char)decimalPoint;
+        cursor = digitData;
+        signed char c = (signed char)decimalPoint;
         for (; cursor < end; ++cursor)
-            if (c == (signed char)*cursor) { offset = cursor - digitData; return; }
+            if (c == (signed char)*cursor) {
+                offset = cursor - digitData;
+                return;
+            }
     }
     offset = -1;
 }
@@ -435,21 +571,30 @@ void NumericText_InsertGroupingSeparators(int decimalPoint, int separator, void*
     int offset;
     unsigned int inlineGrouping, heapDigits;
     inlineGrouping = !(*(unsigned int*)grouping >> 31);
-    unsigned int groupingLength = inlineGrouping ? (*grouping & kInlineLengthMask) : AsMWStringStorage(grouping)->length;
-    if (groupingLength == 0) return;
+    unsigned int groupingLength =
+        inlineGrouping ? (*grouping & kInlineLengthMask) : AsMWStringStorage(grouping)->length;
+    if (groupingLength == 0)
+        return;
     heapDigits = *(unsigned int*)digits >> 31;
     unsigned int inlineDigits = !heapDigits;
     unsigned int digitLength = inlineDigits ? (*digits & kInlineLengthMask) : AsMWStringStorage(digits)->length;
-    if (digitLength <= 1) return;
+    if (digitLength <= 1)
+        return;
     unsigned char* digitData;
     unsigned int n;
-    if (heapDigits == 0) { n = *digits & kInlineLengthMask; digitData = digits + 1; }
-    else { digitData = (*(unsigned char**)&AsMWStringStorage(digits)->data); n = AsMWStringStorage(digits)->length; }
+    if (heapDigits == 0) {
+        n = *digits & kInlineLengthMask;
+        digitData = digits + 1;
+    } else {
+        digitData = (*(unsigned char**)&AsMWStringStorage(digits)->data);
+        n = AsMWStringStorage(digits)->length;
+    }
 
     unsigned char* scanEnd;
     unsigned char* scan;
     FindDecimalPoint(digitData, n, decimalPoint, offset, scanEnd, scan);
-    if ((unsigned)(offset + 0x10000) == 0xffff) offset = inlineDigits ? (*digits & kInlineLengthMask) : AsMWStringStorage(digits)->length;
+    if ((unsigned)(offset + 0x10000) == 0xffff)
+        offset = inlineDigits ? (*digits & kInlineLengthMask) : AsMWStringStorage(digits)->length;
     unsigned int groupIndex = 0;
     unsigned int groupSize = *(inlineGrouping ? grouping + 1 : (*(unsigned char**)&AsMWStringStorage(grouping)->data));
     unsigned int digitsInGroup = 0;
@@ -460,7 +605,8 @@ void NumericText_InsertGroupingSeparators(int decimalPoint, int separator, void*
             unsigned int sh = !(*(unsigned int*)grouping >> 31);
             unsigned int length = sh ? (*grouping & kInlineLengthMask) : AsMWStringStorage(grouping)->length;
             ++groupIndex;
-            if (groupIndex < length) groupSize = (sh ? grouping + 1 : (*(unsigned char**)&AsMWStringStorage(grouping)->data))[groupIndex];
+            if (groupIndex < length)
+                groupSize = (sh ? grouping + 1 : (*(unsigned char**)&AsMWStringStorage(grouping)->data))[groupIndex];
             digitsInGroup = 0;
         }
     }
@@ -479,11 +625,14 @@ int MessageTable_FindTextByName(void* messageTable, void* name) {
     int index = -1;
     for (;;) {
         int size = container.head ? ((MessageTableHeader*)container.head)->entryCount : 0;
-        if (index >= size - 1) return 0;
+        if (index >= size - 1)
+            return 0;
         ++index;
-        if (index < 0) index = 0;
+        if (index < 0)
+            index = 0;
         void* current = Table_GetEntry(container.head, (void*)index);
-        if (!current) return 0;
+        if (!current)
+            return 0;
         void* node = *(void**)current;
         void* candidate = Table_ResolveDataOffset(container.head, node);
         int matched = *(int*)candidate == hash;
@@ -502,11 +651,14 @@ struct FlushGuard2404 {
     unsigned char ok, flushing;
     void* reference;
     // Prepare the output sentry and tied-stream handling.
-    FlushGuard2404(void* p) { OStreamSentry_Ctor(this, p); }
+    FlushGuard2404(void* p) {
+        OStreamSentry_Ctor(this, p);
+    }
     // Flush unit-buffered output on scope exit unless already flushing or failed.
     ~FlushGuard2404() {
         unsigned char* object = *(unsigned char**)reference;
-        if ((((StreamIosView*)object)->state & 5) == 0 && (AsMWStreamState(object)->flags & kUnitBuffer) && flushing == 0)
+        if ((((StreamIosView*)object)->state & 5) == 0 && (AsMWStreamState(object)->flags & kUnitBuffer) &&
+            flushing == 0)
             OStream_Flush(reference);
     }
 };
@@ -526,18 +678,22 @@ void* OStream_Flush(void* value) {
     if (buffer != 0) {
         int failed = 0;
         try {
-            if (buffer->sync() == -1) failed = 1;
+            if (buffer->sync() == -1)
+                failed = 1;
         } catch (...) {
             ((StreamIosView*)*(void**)value)->state |= kStreamBad;
-            if (((StreamIosView*)*(void**)value)->exceptions & 1) throw;
+            if (((StreamIosView*)*(void**)value)->exceptions & 1)
+                throw;
         }
         if (failed) {
             unsigned char* object = *(unsigned char**)value;
             ((StreamIosView*)object)->state |= kStreamBad;
-            if (((StreamIosView*)object)->buffer == 0) ((StreamIosView*)object)->state |= kStreamBad;
+            if (((StreamIosView*)object)->buffer == 0)
+                ((StreamIosView*)object)->state |= kStreamBad;
             unsigned int exceptions = (*(volatile unsigned char*)&((StreamIosView*)object)->exceptions);
             unsigned int state = ((StreamIosView*)object)->state;
-            if (state & exceptions) MWStream_ThrowFailure(object, iosClearFailureMessage);
+            if (state & exceptions)
+                MWStream_ThrowFailure(object, iosClearFailureMessage);
         }
     }
     return value;
@@ -551,8 +707,8 @@ int MessageTable_GetTextByIndex(void* first, void* second);
 int TextResource_FindNamedEntry(void* first, void* second);
 // Twelve-byte mutable UTF-16 string object; distinct from the byte-string ABI.
 struct WStringObject {
-    unsigned int flags; // High bit selects heap; inline length is byte0 & 0x7F.
-    unsigned int heapLength; // UTF-16 code units; inactive as metadata in inline form.
+    unsigned int flags;       // High bit selects heap; inline length is byte0 & 0x7F.
+    unsigned int heapLength;  // UTF-16 code units; inactive as metadata in inline form.
     unsigned short* heapData; // Owned only in heap form; inline characters start at +2.
 };
 int Text_ExpandTaggedText(void* messageTable, WStringObject* output, unsigned short* source, void* allowNamedLookup);
@@ -583,9 +739,13 @@ void MWStreamPosition_ResetInvalid(void* value) {
     ((StreamPositionView*)value)->state = 0;
 }
 // Default stream synchronization hook reports success.
-int MWStreamBuffer_DefaultSync() { return 0; }
+int MWStreamBuffer_DefaultSync() {
+    return 0;
+}
 // Default stream hook returns zero.
-int MWStreamBuffer_DefaultZeroHook() { return 0; }
+int MWStreamBuffer_DefaultZeroHook() {
+    return 0;
+}
 // Copy the stream locale handle and retain its shared reference count.
 void MWStream_CopyLocale(void* value, void* source) {
     void* shared = ((StreamIosView*)source)->locale;
@@ -609,7 +769,11 @@ extern int StdNumPunct_GetFalseName(void*, void*);
 extern void StdString_ReserveCapacity(void*, unsigned int);
 typedef int (*DispatchFn)(void*, void*);
 typedef int (*PutBoolFn)(void*, void*, void*, signed char, int);
-struct StringRep12 { unsigned int word; unsigned int length; unsigned char* data; };
+struct StringRep12 {
+    unsigned int word;
+    unsigned int length;
+    unsigned char* data;
+};
 // Write a byte directly when space remains, otherwise dispatch to buffer overflow.
 static inline int bput_byte(void** pout, signed char c) {
     void* out = *pout;
@@ -627,9 +791,11 @@ static inline void bput_pad(void** pout, int count, signed char c) {
     for (int i = 0; i < count; ++i) {
         int failed = 0;
         if (*pout != 0) {
-            if (bput_byte(pout, c) == -1) failed = 1;
+            if (bput_byte(pout, c) == -1)
+                failed = 1;
         }
-        if (failed) *pout = 0;
+        if (failed)
+            *pout = 0;
     }
 }
 // Write a character range, preserving the iterator failure state.
@@ -639,9 +805,11 @@ static inline void bput_text(void** pout, unsigned char* data, int count) {
         ++data;
         int failed = 0;
         if (*pout != 0) {
-            if (bput_byte(pout, c) == -1) failed = 1;
+            if (bput_byte(pout, c) == -1)
+                failed = 1;
         }
-        if (failed) *pout = 0;
+        if (failed)
+            *pout = 0;
     }
 }
 #pragma push
@@ -689,8 +857,11 @@ int StdNumPut_PutBool(void* self, void* iter, void* source, signed char fill, in
         // Release the retained locale reference; unexpected release exceptions terminate.
         ~LocaleCleanup() {
             if (locale && ((StreamLocaleView*)locale)->reference) {
-                try { MWSharedOwner_ReleaseReference(((StreamLocaleView*)locale)->reference); }
-                catch (...) { __unexpected(); }
+                try {
+                    MWSharedOwner_ReleaseReference(((StreamLocaleView*)locale)->reference);
+                } catch (...) {
+                    __unexpected();
+                }
             }
         }
     };
@@ -699,7 +870,8 @@ int StdNumPut_PutBool(void* self, void* iter, void* source, signed char fill, in
         // Destroy the partially built facet strings backwards, then free the facet.
         ~FacetCleanup() {
             if (facet) {
-                for (int offset = kNumPunctFalseNameOffset; offset >= kNumPunctGroupingOffset; offset -= kNumPunctStringBytes) {
+                for (int offset = kNumPunctFalseNameOffset; offset >= kNumPunctGroupingOffset;
+                     offset -= kNumPunctStringBytes) {
                     if (*(unsigned int*)(facet + offset) >> 31)
                         __dl__FPv(*(void**)(facet + offset + 8));
                 }
@@ -724,9 +896,10 @@ int StdNumPut_PutBool(void* self, void* iter, void* source, signed char fill, in
         void* volatile leftPaddingSnapshot;
         unsigned char localeSnapshot[8];
         ((void (*)(void*, void*))MWStream_CopyLocale)(localeSnapshot, source);
-        LocaleCleanup localeCleanup = { localeSnapshot };
+        LocaleCleanup localeCleanup = {localeSnapshot};
         volatile unsigned char localeConstructionMarker = 0;
-        if (s_numPunctCharFacetId == 0) s_numPunctCharFacetId = ++s_localeFacetIdCounter;
+        if (s_numPunctCharFacetId == 0)
+            s_numPunctCharFacetId = ++s_localeFacetIdCounter;
         unsigned int index = s_numPunctCharFacetId;
         void** facetArray = (void**)*(void**)localeSnapshot;
         void* facet = index < ((LocaleFacetArrayView*)facetArray)->count ? ((void**)*facetArray)[index] : 0;
@@ -737,13 +910,17 @@ int StdNumPut_PutBool(void* self, void* iter, void* source, signed char fill, in
                 InitializeEmptyBoolPunctuation(pendingFacet);
                 // Facet ownership: the guard owns its strings/allocation until disarmed;
                 // MWLocale_InstallFacet below then publishes it in the retained locale.
-                FacetCleanup facetCleanup = { pendingFacet };
+                FacetCleanup facetCleanup = {pendingFacet};
                 ((void (*)(void*, char*, signed char))StdString_ConstructCString)(truename, boolTrueNameString, 0);
-                StringCleanup trueCleanup = { truename };
-                if ((((NumPunctView*)pendingFacet)->trueName.flags >> 31) == 0 && (*(unsigned int*)truename >> 31) == 0) {
+                StringCleanup trueCleanup = {truename};
+                if ((((NumPunctView*)pendingFacet)->trueName.flags >> 31) == 0 &&
+                    (*(unsigned int*)truename >> 31) == 0) {
                     *(StringRep12*)(pendingFacet + kNumPunctTrueNameOffset) = *(StringRep12*)truename;
                 } else {
-                    unsigned int count = (((NumPunctView*)pendingFacet)->trueName.flags >> 31) ? ((NumPunctView*)pendingFacet)->trueName.length : (unsigned int)(pendingFacet[kNumPunctTrueNameOffset] & kInlineLengthMask);
+                    unsigned int count =
+                        (((NumPunctView*)pendingFacet)->trueName.flags >> 31)
+                            ? ((NumPunctView*)pendingFacet)->trueName.length
+                            : (unsigned int)(pendingFacet[kNumPunctTrueNameOffset] & kInlineLengthMask);
                     unsigned char* data;
                     unsigned int length;
                     if ((*(unsigned int*)truename >> 31) == 0) {
@@ -755,16 +932,22 @@ int StdNumPut_PutBool(void* self, void* iter, void* source, signed char fill, in
                     }
                     volatile unsigned int allocatorBits;
                     unsigned char alloc = *((volatile unsigned char*)&allocatorBits);
-                    StdString_ReplaceRange(pendingFacet + kNumPunctTrueNameOffset, 0, count, (char*)data, (char*)(data + length), &alloc);
+                    StdString_ReplaceRange(pendingFacet + kNumPunctTrueNameOffset, 0, count, (char*)data,
+                                           (char*)(data + length), &alloc);
                 }
                 trueCleanup.string = 0;
-                if (*(unsigned int*)truename >> 31) __dl__FPv((*(void**)&AsMWStringStorage(truename)->data));
+                if (*(unsigned int*)truename >> 31)
+                    __dl__FPv((*(void**)&AsMWStringStorage(truename)->data));
                 ((void (*)(void*, char*, signed char))StdString_ConstructCString)(falsename, falseKeywordString, 0);
-                StringCleanup falseCleanup = { falsename };
-                if ((((NumPunctView*)pendingFacet)->falseName.flags >> 31) == 0 && (*(unsigned int*)falsename >> 31) == 0) {
+                StringCleanup falseCleanup = {falsename};
+                if ((((NumPunctView*)pendingFacet)->falseName.flags >> 31) == 0 &&
+                    (*(unsigned int*)falsename >> 31) == 0) {
                     *(StringRep12*)(pendingFacet + kNumPunctFalseNameOffset) = *(StringRep12*)falsename;
                 } else {
-                    unsigned int count = (((NumPunctView*)pendingFacet)->falseName.flags >> 31) ? ((NumPunctView*)pendingFacet)->falseName.length : (unsigned int)(pendingFacet[kNumPunctFalseNameOffset] & kInlineLengthMask);
+                    unsigned int count =
+                        (((NumPunctView*)pendingFacet)->falseName.flags >> 31)
+                            ? ((NumPunctView*)pendingFacet)->falseName.length
+                            : (unsigned int)(pendingFacet[kNumPunctFalseNameOffset] & kInlineLengthMask);
                     unsigned char* data;
                     unsigned int length;
                     if ((*(unsigned int*)falsename >> 31) == 0) {
@@ -776,14 +959,18 @@ int StdNumPut_PutBool(void* self, void* iter, void* source, signed char fill, in
                     }
                     volatile unsigned int allocatorBits;
                     unsigned char alloc = *((volatile unsigned char*)&allocatorBits);
-                    StdString_ReplaceRange(pendingFacet + kNumPunctFalseNameOffset, 0, count, (char*)data, (char*)(data + length), &alloc);
+                    StdString_ReplaceRange(pendingFacet + kNumPunctFalseNameOffset, 0, count, (char*)data,
+                                           (char*)(data + length), &alloc);
                 }
                 falseCleanup.string = 0;
-                if (*(unsigned int*)falsename >> 31) __dl__FPv((*(void**)&AsMWStringStorage(falsename)->data));
+                if (*(unsigned int*)falsename >> 31)
+                    __dl__FPv((*(void**)&AsMWStringStorage(falsename)->data));
                 facetCleanup.facet = 0;
             }
-            if (s_numPunctCharFacetId == 0) s_numPunctCharFacetId = ++s_localeFacetIdCounter;
-            ((void (*)(void*, void*, unsigned int))MWLocale_InstallFacet)(*(void**)localeSnapshot, facet, s_numPunctCharFacetId);
+            if (s_numPunctCharFacetId == 0)
+                s_numPunctCharFacetId = ++s_localeFacetIdCounter;
+            ((void (*)(void*, void*, unsigned int))MWLocale_InstallFacet)(*(void**)localeSnapshot, facet,
+                                                                          s_numPunctCharFacetId);
             facet = ((void**)*facetArray)[index];
         }
         // The stream still owns the locale/facet; release only this temporary reference.
@@ -791,14 +978,20 @@ int StdNumPut_PutBool(void* self, void* iter, void* source, signed char fill, in
         {
             void* cleanup = ((StreamLocaleView*)localeSnapshot)->reference;
             if (cleanup != 0) {
-                try { MWSharedOwner_ReleaseReference(cleanup); } catch (...) { __unexpected(); for (;;) {} }
+                try {
+                    MWSharedOwner_ReleaseReference(cleanup);
+                } catch (...) {
+                    __unexpected();
+                    for (;;) {
+                    }
+                }
             }
         }
         // Phase 2: copy only the selected localized name into an owned field string.
         signed char truenameValid = 0;
         signed char falsenameValid = 0;
-        StringCleanup truePartCleanup = { 0 };
-        StringCleanup falsePartCleanup = { 0 };
+        StringCleanup truePartCleanup = {0};
+        StringCleanup falsePartCleanup = {0};
         unsigned char* chosen;
         if (value != 0) {
             StdNumPunct_GetTrueName(truenamePart, facet);
@@ -825,10 +1018,12 @@ int StdNumPut_PutBool(void* self, void* iter, void* source, signed char fill, in
             StdString_ReplaceRange(text, 0, 0, (char*)data, (char*)(data + length), &alloc);
         }
         falsePartCleanup.string = 0;
-        if (falsenameValid && (*(unsigned int*)falsenamePart >> 31)) __dl__FPv((*(void**)&AsMWStringStorage(falsenamePart)->data));
+        if (falsenameValid && (*(unsigned int*)falsenamePart >> 31))
+            __dl__FPv((*(void**)&AsMWStringStorage(falsenamePart)->data));
         truePartCleanup.string = 0;
-        if (truenameValid && (*(unsigned int*)truenamePart >> 31)) __dl__FPv((*(void**)&AsMWStringStorage(truenamePart)->data));
-        StringCleanup textCleanup = { text };
+        if (truenameValid && (*(unsigned int*)truenamePart >> 31))
+            __dl__FPv((*(void**)&AsMWStringStorage(truenamePart)->data));
+        StringCleanup textCleanup = {text};
         int isShort = !(*(unsigned int*)text >> 31);
         unsigned int length = isShort ? (unsigned int)(text[0] & kInlineLengthMask) : *(unsigned int*)(text + 4);
         unsigned char* data = isShort ? text + 1 : *(unsigned char**)(text + 8);
@@ -837,7 +1032,8 @@ int StdNumPut_PutBool(void* self, void* iter, void* source, signed char fill, in
         int width = (*(int*)&AsMWStreamState(iosBytes)->width);
         volatile void* outputStart = (void*)*(unsigned int*)iter;
         int remaining = 0;
-        if (width > (int)length) remaining = width - (int)length;
+        if (width > (int)length)
+            remaining = width - (int)length;
         unsigned short alignment = AsMWStreamState(iosBytes)->flags & kAdjustField;
         if (alignment != kLeft && alignment != kInternal) {
             volatile void* rightPadding = outputStart;
@@ -865,7 +1061,8 @@ int StdNumPut_PutBool(void* self, void* iter, void* source, signed char fill, in
         }
         AsMWStreamState(iosBytes)->width = 0;
         textCleanup.string = 0;
-        if (*(unsigned int*)text >> 31) __dl__FPv(*(void**)(text + 8));
+        if (*(unsigned int*)text >> 31)
+            __dl__FPv(*(void**)(text + 8));
         return (int)outputEnd;
     }
     // Numeric path delegates integer formatting and iterator failure handling.
@@ -899,24 +1096,28 @@ void* MWOStream_InsertSigned32(void* reference, void* input) {
                         void* array;
                         void* cleanup;
                         // Retain the stream locale for the nested formatting operation.
-                        LocaleReference(void* owner) { MWStream_CopyLocale(this, owner); }
+                        LocaleReference(void* owner) {
+                            MWStream_CopyLocale(this, owner);
+                        }
                         // Release the locale reference when formatting leaves this scope.
                         ~LocaleReference() throw() {
-                            if (cleanup) MWSharedOwner_ReleaseReference(cleanup);
+                            if (cleanup)
+                                MWSharedOwner_ReleaseReference(cleanup);
                         }
                     } shared(*(void**)reference);
-                    if (s_streamLocaleFacetId == 0) s_streamLocaleFacetId = ++s_localeFacetIdCounter;
+                    if (s_streamLocaleFacetId == 0)
+                        s_streamLocaleFacetId = ++s_localeFacetIdCounter;
                     unsigned int index = s_streamLocaleFacetId;
                     void* array = shared.array;
-                    element = index < ((LocaleFacetArrayView*)array)->count
-                        ? ((void**)*(void**)array)[index] : 0;
+                    element = index < ((LocaleFacetArrayView*)array)->count ? ((void**)*(void**)array)[index] : 0;
                     if (!element) {
                         element = __nw__FUl(8);
                         if (element) {
                             (*(unsigned int*)&((LocaleReferenceView*)element)->references) = 0;
                             *(void**)element = stdNumPutCharVtable;
                         }
-                        if (s_streamLocaleFacetId == 0) s_streamLocaleFacetId = ++s_localeFacetIdCounter;
+                        if (s_streamLocaleFacetId == 0)
+                            s_streamLocaleFacetId = ++s_localeFacetIdCounter;
                         MWLocale_InstallFacet(array, element, s_streamLocaleFacetId);
                         element = ((void**)*(void**)array)[index];
                     }
@@ -927,20 +1128,23 @@ void* MWOStream_InsertSigned32(void* reference, void* input) {
                 pair[1] = pair[0];
                 signed char flag = ((StreamIosView*)owner)->fill;
                 void* vt = *(void**)element;
-                unsigned int result = ((unsigned int (*)(void*, unsigned int*, void*, signed char, void*))
-                    (((void**)vt)[4]))(element, pair, owner, flag, input);
+                unsigned int result = ((unsigned int (*)(void*, unsigned int*, void*, signed char, void*))(
+                    ((void**)vt)[4]))(element, pair, owner, flag, input);
                 failed = result == 0;
             } catch (...) {
                 unsigned char* owner = *(unsigned char**)reference;
                 ((StreamIosView*)owner)->state |= kStreamBad;
                 owner = *(unsigned char**)reference;
-                if (((StreamIosView*)owner)->exceptions & 1) throw;
+                if (((StreamIosView*)owner)->exceptions & 1)
+                    throw;
             }
             if (failed) {
                 unsigned char* owner = *(unsigned char**)reference;
                 ((StreamIosView*)owner)->state |= kStreamBadOrFail;
-                if (((StreamIosView*)owner)->buffer == 0) ((StreamIosView*)owner)->state |= kStreamBad;
-                if (((StreamIosView*)owner)->exceptions & ((StreamIosView*)owner)->state) MWStream_ThrowFailure(owner, iosClearFailureMessage);
+                if (((StreamIosView*)owner)->buffer == 0)
+                    ((StreamIosView*)owner)->state |= kStreamBad;
+                if (((StreamIosView*)owner)->exceptions & ((StreamIosView*)owner)->state)
+                    MWStream_ThrowFailure(owner, iosClearFailureMessage);
             }
         }
     } catch (...) {
@@ -951,7 +1155,9 @@ void* MWOStream_InsertSigned32(void* reference, void* input) {
 }
 #pragma pop
 // Default underflow hook reports end of file.
-int MWStreamBuffer_DefaultUnderflow() { return -1; }
+int MWStreamBuffer_DefaultUnderflow() {
+    return -1;
+}
 struct VDisp06AC {
     virtual void v0();
     virtual void v1();
@@ -981,50 +1187,91 @@ void MWStringBuf_SeekOffset(void* output, void* state, long long amount, int ope
     int adjusted;
     unsigned int mask = flags & kInputOutputMode;
     if ((kInputOutputMode == mask && operation == kSeekCurrent) || mask == 0) {
-        result[1] = -1; result[0] = -1; result[2] = 0; return;
+        result[1] = -1;
+        result[0] = -1;
+        result[2] = 0;
+        return;
     }
-    if (((flags & kInputMode) && !(AsMWStreamBuffer(data)->mode & kInputMode)) || ((flags & kOutputMode) && !(AsMWStreamBuffer(data)->mode & kOutputMode))) {
-        result[1] = -1; result[0] = -1; result[2] = 0; return;
+    if (((flags & kInputMode) && !(AsMWStreamBuffer(data)->mode & kInputMode)) ||
+        ((flags & kOutputMode) && !(AsMWStreamBuffer(data)->mode & kOutputMode))) {
+        result[1] = -1;
+        result[0] = -1;
+        result[2] = 0;
+        return;
     }
-    if (((flags & kInputMode) && !(*(int*)&AsMWStreamBuffer(data)->getCurrent)) || ((flags & kOutputMode) && !(*(int*)&AsMWStreamBuffer(data)->putCurrent))) {
-        result[1] = -1; result[0] = -1; result[2] = 0; return;
+    if (((flags & kInputMode) && !(*(int*)&AsMWStreamBuffer(data)->getCurrent)) ||
+        ((flags & kOutputMode) && !(*(int*)&AsMWStreamBuffer(data)->putCurrent))) {
+        result[1] = -1;
+        result[0] = -1;
+        result[2] = 0;
+        return;
     }
-    if (AsMWStreamBuffer(data)->highWater < AsMWStreamBuffer(data)->putCurrent) AsMWStreamBuffer(data)->highWater = AsMWStreamBuffer(data)->putCurrent;
-    if (AsMWStreamBuffer(data)->getEnd && AsMWStreamBuffer(data)->getEnd < AsMWStreamBuffer(data)->highWater) AsMWStreamBuffer(data)->getEnd = AsMWStreamBuffer(data)->highWater;
-    if (flags & kOutputMode) adjusted = (*(int*)&AsMWStreamBuffer(data)->highWater) - (*(int*)&AsMWStreamBuffer(data)->putBegin);
-    else adjusted = (*(int*)&AsMWStreamBuffer(data)->highWater) - (*(int*)&AsMWStreamBuffer(data)->getBegin);
+    if (AsMWStreamBuffer(data)->highWater < AsMWStreamBuffer(data)->putCurrent)
+        AsMWStreamBuffer(data)->highWater = AsMWStreamBuffer(data)->putCurrent;
+    if (AsMWStreamBuffer(data)->getEnd && AsMWStreamBuffer(data)->getEnd < AsMWStreamBuffer(data)->highWater)
+        AsMWStreamBuffer(data)->getEnd = AsMWStreamBuffer(data)->highWater;
+    if (flags & kOutputMode)
+        adjusted = (*(int*)&AsMWStreamBuffer(data)->highWater) - (*(int*)&AsMWStreamBuffer(data)->putBegin);
+    else
+        adjusted = (*(int*)&AsMWStreamBuffer(data)->highWater) - (*(int*)&AsMWStreamBuffer(data)->getBegin);
     long long first;
     limit = adjusted;
     switch (operation) {
-    case kSeekBegin: first = 0; break;
+    case kSeekBegin:
+        first = 0;
+        break;
     case kSeekCurrent:
-        if (flags & kOutputMode) first = (*(int*)&AsMWStreamBuffer(data)->putCurrent) - (*(int*)&AsMWStreamBuffer(data)->putBegin);
-        else first = (*(int*)&AsMWStreamBuffer(data)->getCurrent) - (*(int*)&AsMWStreamBuffer(data)->getBegin);
+        if (flags & kOutputMode)
+            first = (*(int*)&AsMWStreamBuffer(data)->putCurrent) - (*(int*)&AsMWStreamBuffer(data)->putBegin);
+        else
+            first = (*(int*)&AsMWStreamBuffer(data)->getCurrent) - (*(int*)&AsMWStreamBuffer(data)->getBegin);
         break;
     case kSeekEnd:
-        if (flags & kOutputMode) first = limit;
-        else first = (*(int*)&AsMWStreamBuffer(data)->getEnd) - (*(int*)&AsMWStreamBuffer(data)->getBegin);
+        if (flags & kOutputMode)
+            first = limit;
+        else
+            first = (*(int*)&AsMWStreamBuffer(data)->getEnd) - (*(int*)&AsMWStreamBuffer(data)->getBegin);
         break;
     default:
-        result[1] = -1; result[0] = -1; result[2] = 0; return;
+        result[1] = -1;
+        result[0] = -1;
+        result[2] = 0;
+        return;
     }
     long long sum = first + amount;
-    if (sum < 0 || sum > limit) { result[1] = -1; result[0] = -1; result[2] = 0; return; }
-    if ((AsMWStreamBuffer(data)->mode & kAppendMode) && (flags & kOutputMode) && sum != limit) { result[2] = 0; result[1] = -1; result[0] = -1; return; }
-    if (flags & kInputMode) (*(int*)&AsMWStreamBuffer(data)->getCurrent) = (*(int*)&AsMWStreamBuffer(data)->getBegin) + (int)sum;
-    if (flags & kOutputMode) (*(int*)&AsMWStreamBuffer(data)->putCurrent) = (*(int*)&AsMWStreamBuffer(data)->putBegin) + (int)sum;
-    result[1] = (int)sum; result[0] = (int)(sum >> 32); result[2] = 0;
+    if (sum < 0 || sum > limit) {
+        result[1] = -1;
+        result[0] = -1;
+        result[2] = 0;
+        return;
+    }
+    if ((AsMWStreamBuffer(data)->mode & kAppendMode) && (flags & kOutputMode) && sum != limit) {
+        result[2] = 0;
+        result[1] = -1;
+        result[0] = -1;
+        return;
+    }
+    if (flags & kInputMode)
+        (*(int*)&AsMWStreamBuffer(data)->getCurrent) = (*(int*)&AsMWStreamBuffer(data)->getBegin) + (int)sum;
+    if (flags & kOutputMode)
+        (*(int*)&AsMWStreamBuffer(data)->putCurrent) = (*(int*)&AsMWStreamBuffer(data)->putBegin) + (int)sum;
+    result[1] = (int)sum;
+    result[0] = (int)(sum >> 32);
+    result[2] = 0;
 }
 
 // Select the smaller erase length by reference.
-static inline unsigned int* MinEraseLength(unsigned int* a, unsigned int* b) { return *b < *a ? b : a; }
+static inline unsigned int* MinEraseLength(unsigned int* a, unsigned int* b) {
+    return *b < *a ? b : a;
+}
 #pragma push
 #pragma use_lmw_stmw on
 // Replace a byte range with repeated characters using the game allocator.
 // Indices/counts are bytes, eraseCount clamps to the suffix. Returns self; throws
 // out_of_range for position>length and length_error on size overflow. The game
 // allocator owns new storage. Standard-string variant below uses operator new/delete.
-void* String_ReplaceRepeatedChar(void* self, unsigned int position, unsigned int eraseCount, unsigned int repeatCount, signed char fillCharacter) {
+void* String_ReplaceRepeatedChar(void* self, unsigned int position, unsigned int eraseCount, unsigned int repeatCount,
+                                 signed char fillCharacter) {
     unsigned char* storage = (unsigned char*)self;
     unsigned int flagWord = *(unsigned int*)storage;
     int usesHeap = flagWord >> 31;
@@ -1052,23 +1299,31 @@ void* String_ReplaceRepeatedChar(void* self, unsigned int position, unsigned int
     unsigned int newLen = length - removedLength + repeatCount;
     if (newLen >= capacity) {
         unsigned int newCap = (capacity + 15) & ~15;
-        while (newCap < newLen + 1) newCap = (newCap * 2 + 15) & ~15;
+        while (newCap < newLen + 1)
+            newCap = (newCap * 2 + 15) & ~15;
         char* data = (char*)appMallocDummy__FUl(newCap);
-        if (position) memcpy(data, oldData, position);
+        if (position)
+            memcpy(data, oldData, position);
         memset(data + position, (unsigned char)fillCharacter, repeatCount);
-        if (suffix - removedLength) memcpy(data + position + repeatCount, oldData + position + removedLength, suffix - removedLength);
+        if (suffix - removedLength)
+            memcpy(data + position + repeatCount, oldData + position + removedLength, suffix - removedLength);
         data[newLen] = s_gameStringRepeatGrowTerminator;
-        if (usesHeap) appFreeUni__FPv(oldData);
-        else *(unsigned int*)storage |= 0x80000000;
+        if (usesHeap)
+            appFreeUni__FPv(oldData);
+        else
+            *(unsigned int*)storage |= 0x80000000;
         AsMWStringStorage(storage)->data = data;
         AsMWStringStorage(storage)->length = newLen;
         *(unsigned int*)storage = (*(unsigned int*)storage & 0x80000000) | newCap;
     } else {
-        if (suffix - removedLength) memmove(oldData + position + repeatCount, oldData + position + removedLength, suffix - removedLength);
+        if (suffix - removedLength)
+            memmove(oldData + position + repeatCount, oldData + position + removedLength, suffix - removedLength);
         memset(oldData + position, (unsigned char)fillCharacter, repeatCount);
         oldData[newLen] = s_gameStringRepeatInPlaceTerminator;
-        if (!usesHeap) storage[0] = (storage[0] & 0x80) | (newLen & kInlineLengthMask);
-        else AsMWStringStorage(storage)->length = newLen;
+        if (!usesHeap)
+            storage[0] = (storage[0] & 0x80) | (newLen & kInlineLengthMask);
+        else
+            AsMWStringStorage(storage)->length = newLen;
     }
     return self;
 }
@@ -1079,9 +1334,16 @@ struct InsertTemp {
     unsigned int length;
     char* data;
     // Create an empty owned string to protect overlapping insertion data.
-    InsertTemp() { word = 0; length = 0; data = 0; }
+    InsertTemp() {
+        word = 0;
+        length = 0;
+        data = 0;
+    }
     // Free the overlap-protection string if it grew onto the heap.
-    ~InsertTemp() { if (word >> 31) __dl__FPv(data); }
+    ~InsertTemp() {
+        if (word >> 31)
+            __dl__FPv(data);
+    }
 };
 // Clamp an unsigned erase count to the available suffix.
 static inline const unsigned int& MinStringRangeLength(const unsigned int& a, const unsigned int& b) {
@@ -1093,7 +1355,8 @@ static inline const unsigned int& MinStringRangeLength(const unsigned int& a, co
 // self is initialized owned storage; [first,last) is a borrowed ordered byte range,
 // possibly inside the current text. Return self; position>length and excessive
 // length throw. allocPlace is ABI allocator-token storage, not a text/fill pointer.
-void* StdString_ReplaceRange(void* self, unsigned int position, unsigned int eraseCount, char* first, char* last, unsigned char* allocPlace) {
+void* StdString_ReplaceRange(void* self, unsigned int position, unsigned int eraseCount, char* first, char* last,
+                             unsigned char* allocPlace) {
     unsigned char* storage = (unsigned char*)self;
     unsigned int word = *(unsigned int*)storage;
     int usesHeap = word >> 31;
@@ -1113,7 +1376,8 @@ void* StdString_ReplaceRange(void* self, unsigned int position, unsigned int era
         capacity = word & 0x7fffffff;
         length = AsMWStringStorage(storage)->length;
     }
-    if (position > length) throw std::out_of_range(stringErrorStrings_AF820.outOfRange);
+    if (position > length)
+        throw std::out_of_range(stringErrorStrings_AF820.outOfRange);
     unsigned int suffix = length - position;
     removed = MinStringRangeLength(eraseCount, suffix);
     insertLength = (unsigned int)(last - first);
@@ -1126,14 +1390,20 @@ void* StdString_ReplaceRange(void* self, unsigned int position, unsigned int era
     if (newLength >= capacity) {
         unsigned int newCapacity = (capacity + 15) & ~15u;
         unsigned int limit = newLength + 1;
-        while (newCapacity < limit) newCapacity = (newCapacity * 2 + 15) & ~15u;
+        while (newCapacity < limit)
+            newCapacity = (newCapacity * 2 + 15) & ~15u;
         char* data = (char*)__nw__FUl(newCapacity);
-        if (position != 0) memcpy(data, oldData, position);
+        if (position != 0)
+            memcpy(data, oldData, position);
         memmove(data + position, first, insertLength);
-        if (tail != 0) memcpy((void*)((unsigned int)(data + position) + insertLength), (void*)(removed + (unsigned int)(oldData + position)), tail);
+        if (tail != 0)
+            memcpy((void*)((unsigned int)(data + position) + insertLength),
+                   (void*)(removed + (unsigned int)(oldData + position)), tail);
         data[newLength] = s_stdStringRangeGrowTerminator;
-        if (usesHeap) __dl__FPv(oldData);
-        else *(unsigned int*)storage |= 0x80000000;
+        if (usesHeap)
+            __dl__FPv(oldData);
+        else
+            *(unsigned int*)storage |= 0x80000000;
         // Publish ownership only after prefix, insertion, suffix and terminator exist.
         AsMWStringStorage(storage)->data = data;
         AsMWStringStorage(storage)->length = newLength;
@@ -1141,21 +1411,26 @@ void* StdString_ReplaceRange(void* self, unsigned int position, unsigned int era
     } else {
         InsertTemp tmp;
         unsigned int empty = 0;
-        if (tail != 0
-            && (unsigned int)(oldData + position) + insertLength < (unsigned int)last
-            && (unsigned int)last <= (unsigned int)(oldData + length)) {
+        if (tail != 0 && (unsigned int)(oldData + position) + insertLength < (unsigned int)last &&
+            (unsigned int)last <= (unsigned int)(oldData + length)) {
             unsigned int tmpCount = tmp.data == 0 ? (((unsigned char*)&tmp)[0] & kInlineLengthMask) : 0;
             volatile unsigned int spare;
             unsigned char allocByte = *(volatile unsigned char*)&spare;
             StdString_ReplaceRange(&tmp, 0, tmpCount, first, last, &allocByte);
-            if (tmp.word >> 31) first = tmp.data;
-            else first = (char*)&tmp + 1;
+            if (tmp.word >> 31)
+                first = tmp.data;
+            else
+                first = (char*)&tmp + 1;
         }
-        if (tail != 0) memmove((void*)((unsigned int)(oldData + position) + insertLength), (void*)((unsigned int)(oldData + position) + removed), tail);
+        if (tail != 0)
+            memmove((void*)((unsigned int)(oldData + position) + insertLength),
+                    (void*)((unsigned int)(oldData + position) + removed), tail);
         memmove(oldData + position, first, insertLength);
         oldData[newLength] = s_stdStringRangeInPlaceTerminator;
-        if (!usesHeap) ((ReserveByteBits*)storage)->length = newLength;
-        else AsMWStringStorage(storage)->length = newLength;
+        if (!usesHeap)
+            ((ReserveByteBits*)storage)->length = newLength;
+        else
+            AsMWStringStorage(storage)->length = newLength;
     }
     return self;
 }
@@ -1164,7 +1439,8 @@ void* StdString_ReplaceRange(void* self, unsigned int position, unsigned int era
 #pragma push
 #pragma use_lmw_stmw on
 // Replace a range with repeated bytes using the standard-string allocator.
-void* StdString_ReplaceRepeatedChar(void* self, unsigned int position, unsigned int eraseCount, unsigned int repeatCount, signed char fillCharacter) {
+void* StdString_ReplaceRepeatedChar(void* self, unsigned int position, unsigned int eraseCount,
+                                    unsigned int repeatCount, signed char fillCharacter) {
     unsigned char* storage = (unsigned char*)self;
     unsigned int word = *(unsigned int*)storage;
     int usesHeap = word >> 31;
@@ -1183,21 +1459,31 @@ void* StdString_ReplaceRepeatedChar(void* self, unsigned int position, unsigned 
     unsigned int newLen = length - removedLength + repeatCount;
     if (newLen >= capacity) {
         unsigned int newCap = (capacity + 15) & ~15;
-        while (newCap < newLen + 1) newCap = (newCap * 2 + 15) & ~15;
+        while (newCap < newLen + 1)
+            newCap = (newCap * 2 + 15) & ~15;
         char* data = (char*)__nw__FUl(newCap);
-        if (position) memcpy(data, oldData, position);
+        if (position)
+            memcpy(data, oldData, position);
         memset(data + position, (unsigned char)fillCharacter, repeatCount);
-        if (suffix - removedLength) memcpy(data + position + repeatCount, oldData + position + removedLength, suffix - removedLength);
+        if (suffix - removedLength)
+            memcpy(data + position + repeatCount, oldData + position + removedLength, suffix - removedLength);
         data[newLen] = s_stdStringRepeatGrowTerminator;
-        if (usesHeap) __dl__FPv(oldData); else *(unsigned int*)storage |= 0x80000000;
+        if (usesHeap)
+            __dl__FPv(oldData);
+        else
+            *(unsigned int*)storage |= 0x80000000;
         AsMWStringStorage(storage)->data = data;
         AsMWStringStorage(storage)->length = newLen;
         *(unsigned int*)storage = (*(unsigned int*)storage & 0x80000000) | newCap;
     } else {
-        if (suffix - removedLength) memmove(oldData + position + repeatCount, oldData + position + removedLength, suffix - removedLength);
+        if (suffix - removedLength)
+            memmove(oldData + position + repeatCount, oldData + position + removedLength, suffix - removedLength);
         memset(oldData + position, (unsigned char)fillCharacter, repeatCount);
         oldData[newLen] = s_stdStringRepeatInPlaceTerminator;
-        if (!usesHeap) storage[0] = (storage[0] & 0x80) | (newLen & kInlineLengthMask); else AsMWStringStorage(storage)->length = newLen;
+        if (!usesHeap)
+            storage[0] = (storage[0] & 0x80) | (newLen & kInlineLengthMask);
+        else
+            AsMWStringStorage(storage)->length = newLen;
     }
     return self;
 }
@@ -1215,38 +1501,60 @@ void MWStringBuf_SeekPosition(void* output, void* state, void* input, unsigned i
     unsigned int reading = mode & kInputMode;
     if ((reading && ((AsMWStreamBuffer(v)->mode & kInputMode) == 0)) ||
         ((mode &= kOutputMode) && ((AsMWStreamBuffer(v)->mode & kOutputMode) == 0))) {
-        out[0] = out[1] = 0xFFFFFFFF; out[2] = 0; return;
+        out[0] = out[1] = 0xFFFFFFFF;
+        out[2] = 0;
+        return;
     }
-    if ((reading && AsMWStreamBuffer(v)->getCurrent == 0) ||
-        (mode && AsMWStreamBuffer(v)->putCurrent == 0)) {
-        out[0] = out[1] = 0xFFFFFFFF; out[2] = 0; return;
+    if ((reading && AsMWStreamBuffer(v)->getCurrent == 0) || (mode && AsMWStreamBuffer(v)->putCurrent == 0)) {
+        out[0] = out[1] = 0xFFFFFFFF;
+        out[2] = 0;
+        return;
     }
-    if ((*(char**)&AsMWStreamBuffer(v)->highWater) < (*(char**)&AsMWStreamBuffer(v)->putCurrent)) (*(char**)&AsMWStreamBuffer(v)->highWater) = (*(char**)&AsMWStreamBuffer(v)->putCurrent);
-    if ((*(char**)&AsMWStreamBuffer(v)->getEnd) && (*(char**)&AsMWStreamBuffer(v)->getEnd) < (*(char**)&AsMWStreamBuffer(v)->highWater)) (*(char**)&AsMWStreamBuffer(v)->getEnd) = (*(char**)&AsMWStreamBuffer(v)->highWater);
+    if ((*(char**)&AsMWStreamBuffer(v)->highWater) < (*(char**)&AsMWStreamBuffer(v)->putCurrent))
+        (*(char**)&AsMWStreamBuffer(v)->highWater) = (*(char**)&AsMWStreamBuffer(v)->putCurrent);
+    if ((*(char**)&AsMWStreamBuffer(v)->getEnd) &&
+        (*(char**)&AsMWStreamBuffer(v)->getEnd) < (*(char**)&AsMWStreamBuffer(v)->highWater))
+        (*(char**)&AsMWStreamBuffer(v)->getEnd) = (*(char**)&AsMWStreamBuffer(v)->highWater);
     long long position = *(long long*)input;
     int difference;
-    if (mode) difference = (*(char**)&AsMWStreamBuffer(v)->highWater) - (*(char**)&AsMWStreamBuffer(v)->putBegin);
-    else difference = (*(char**)&AsMWStreamBuffer(v)->highWater) - (*(char**)&AsMWStreamBuffer(v)->getBegin);
+    if (mode)
+        difference = (*(char**)&AsMWStreamBuffer(v)->highWater) - (*(char**)&AsMWStreamBuffer(v)->putBegin);
+    else
+        difference = (*(char**)&AsMWStreamBuffer(v)->highWater) - (*(char**)&AsMWStreamBuffer(v)->getBegin);
     long long amount = difference;
     if (position < 0 || position > amount) {
-        out[0] = out[1] = 0xFFFFFFFF; out[2] = 0; return;
+        out[0] = out[1] = 0xFFFFFFFF;
+        out[2] = 0;
+        return;
     }
     if ((AsMWStreamBuffer(v)->mode & kAppendMode) && mode && position != amount) {
-        out[2] = 0; out[0] = out[1] = 0xFFFFFFFF; return;
+        out[2] = 0;
+        out[0] = out[1] = 0xFFFFFFFF;
+        return;
     }
-    if (reading) (*(char**)&AsMWStreamBuffer(v)->getCurrent) = (*(char**)&AsMWStreamBuffer(v)->getBegin) + (int)position;
-    if (mode) (*(char**)&AsMWStreamBuffer(v)->putCurrent) = (*(char**)&AsMWStreamBuffer(v)->putBegin) + (int)position;
+    if (reading)
+        (*(char**)&AsMWStreamBuffer(v)->getCurrent) = (*(char**)&AsMWStreamBuffer(v)->getBegin) + (int)position;
+    if (mode)
+        (*(char**)&AsMWStreamBuffer(v)->putCurrent) = (*(char**)&AsMWStreamBuffer(v)->putBegin) + (int)position;
     unsigned int hi = ((unsigned int*)input)[0];
     unsigned int lo = ((unsigned int*)input)[1];
     unsigned int extra = ((unsigned int*)input)[2];
-    out[1] = lo; out[0] = hi; out[2] = extra;
+    out[1] = lo;
+    out[0] = hi;
+    out[2] = extra;
 }
 // Default putback hook reports failure.
-int MWStreamBuffer_DefaultPutbackFailure() { return -1; }
+int MWStreamBuffer_DefaultPutbackFailure() {
+    return -1;
+}
 // Default overflow hook reports failure.
-int MWStreamBuffer_DefaultOverflow() { return -1; }
+int MWStreamBuffer_DefaultOverflow() {
+    return -1;
+}
 // Copy the string from the stream buffer embedded at offset 0x14.
-int MWStringStream_CopyBufferString(void* first, char* second) { return MWStringBuf_GetString(first, second + 0x14); }
+int MWStringStream_CopyBufferString(void* first, char* second) {
+    return MWStringBuf_GetString(first, second + 0x14);
+}
 // Read up to the requested byte count, refilling through the virtual hook as needed.
 int MWStreamBuffer_Read(void* first, void* destination, int length) {
     void* self = first;
@@ -1274,7 +1582,8 @@ int MWStreamBuffer_Read(void* first, void* destination, int length) {
         } else {
             DispatchFn read = ((DispatchFn*)*(void**)self)[11];
             int result = ((int (*)(void*))read)(self);
-            if (result == -1) break;
+            if (result == -1)
+                break;
             byte = result;
         }
         *(unsigned char*)output = byte;
@@ -1288,8 +1597,21 @@ int MWStreamBuffer_Read(void* first, void* destination, int length) {
 static inline const int& MinBufferTransfer(const int& a, const int& b) {
     return (b < a) ? b : a;
 }
-class C38 { public: 
-virtual void v08(); virtual void v0C(); virtual void v10(); virtual void v14(); virtual void v18(); virtual void v1C(); virtual void v20(); virtual void v24(); virtual void v28(); virtual void v2C(); virtual void v30(); virtual void v34(); virtual int v38(int);
+class C38 {
+public:
+    virtual void v08();
+    virtual void v0C();
+    virtual void v10();
+    virtual void v14();
+    virtual void v18();
+    virtual void v1C();
+    virtual void v20();
+    virtual void v24();
+    virtual void v28();
+    virtual void v2C();
+    virtual void v30();
+    virtual void v34();
+    virtual int v38(int);
 };
 // Write up to the requested byte count, invoking overflow when the put area is full.
 int MWStreamBuffer_Write(void* first, void* source, int length) {
@@ -1317,7 +1639,8 @@ int MWStreamBuffer_Write(void* first, void* source, int length) {
         } else {
             result = ((C38*)self)->v38((unsigned char)byte);
         }
-        if (result == -1) break;
+        if (result == -1)
+            break;
         ++count;
         --requested;
     }
@@ -1356,16 +1679,24 @@ int MWStringBuf_GetString(void* first, void* second) {
         local[4] = local[0];
         String_ReplaceRange(self, 0, 0, (char*)start, (char*)end, (unsigned char*)local + 4);
     }
-// The original returns no value: its callers never read one.
+    // The original returns no value: its callers never read one.
 }
 // Report that this message-table context supports the operation.
-int CSerifuEcb_vfunc_4() { return 1; }
+int CSerifuEcb_vfunc_4() {
+    return 1;
+}
 // Report that this message-table context is ready.
-int CSerifuEcb_vfunc_3() { return 1; }
+int CSerifuEcb_vfunc_3() {
+    return 1;
+}
 // Report that this message-table context is available.
-int CSerifuEcb_vfunc_2() { return 1; }
+int CSerifuEcb_vfunc_2() {
+    return 1;
+}
 // Report successful message-table context status.
-int CSerifuEcb_vfunc_1() { return 1; }
+int CSerifuEcb_vfunc_1() {
+    return 1;
+}
 // Return the data pointer from the context's attached resource.
 void* MessageContext_GetResourceData(void* value) {
     return ((ResourceDataView*)((MessageResourceView*)value)->table)->data;
@@ -1433,7 +1764,6 @@ void StdString_CopyConstructStorage(void* output, void* unused, const void* sour
 }
 #pragma pop
 
-
 // Release grouping and boolean-name strings owned by a punctuation facet.
 void* MWNumPunct_Destroy(char* value, int deleteFlag) {
     if (value != 0) {
@@ -1443,7 +1773,8 @@ void* MWNumPunct_Destroy(char* value, int deleteFlag) {
             __dl__FPv(*(void**)(value + 0x20));
         if (value + 0x0c != 0 && (*(unsigned int*)(value + 0x0c) >> 31) != 0)
             __dl__FPv(*(void**)(value + 0x14));
-        if (deleteFlag > 0) __dl__FPv(value);
+        if (deleteFlag > 0)
+            __dl__FPv(value);
     }
     return (void*)value;
 }
@@ -1476,9 +1807,16 @@ int StdNumPunct_GetFalseName(void* first, void* second) {
     DispatchFn function = ((DispatchFn*)table)[7];
     return function(first, second);
 }
-struct Sb6D9C { void** vt; char pad[0x10]; unsigned char* pptr; unsigned char* epptr; };
+struct Sb6D9C {
+    void** vt;
+    char pad[0x10];
+    unsigned char* pptr;
+    unsigned char* epptr;
+};
 // A single stream-buffer pointer is an output iterator; null records sticky write failure.
-struct It6D9C { Sb6D9C* sb; };
+struct It6D9C {
+    Sb6D9C* sb;
+};
 typedef It6D9C HexOutputIterator;
 typedef Sb6D9C HexStreamBuffer;
 // Retain the shared locale until the enclosing formatting operation leaves scope.
@@ -1486,15 +1824,21 @@ struct Loc6D9C {
     void** arr;
     void* ref;
     // Retain the stream locale so fetched facet pointers remain valid in scope.
-    Loc6D9C(void* s) { ((void (*)(void*, void*))MWStream_CopyLocale)(this, s); }
+    Loc6D9C(void* s) {
+        ((void (*)(void*, void*))MWStream_CopyLocale)(this, s);
+    }
     // Release the retained locale on normal or exception exit.
-    ~Loc6D9C() throw() { if (ref) MWSharedOwner_ReleaseReference(ref); }
+    ~Loc6D9C() throw() {
+        if (ref)
+            MWSharedOwner_ReleaseReference(ref);
+    }
 };
 typedef Loc6D9C RetainedHexLocale;
 
 // Lazily allocate the character-classification facet identifier.
 static inline unsigned int GetCtypeFacetId() {
-    if (!s_ctypeFacetId) s_ctypeFacetId = ++s_localeFacetIdCounter;
+    if (!s_ctypeFacetId)
+        s_ctypeFacetId = ++s_localeFacetIdCounter;
     return s_ctypeFacetId;
 }
 struct Guard6D9C {
@@ -1511,7 +1855,8 @@ static inline void* GetHexCtypeFacet(const Loc6D9C& loc) {
     void* f;
     if (idx >= ((unsigned int*)loc.arr)[1] || (f = ((void**)loc.arr[0])[idx]) == 0) {
         f = __nw__FUl(0x18);
-        if (f) ((void (*)(void*, int, int, bool))MWCtypeFacet_Construct)(f, 0, 0, false);
+        if (f)
+            ((void (*)(void*, int, int, bool))MWCtypeFacet_Construct)(f, 0, 0, false);
         void** a = loc.arr;
         ((void (*)(void*, void*, unsigned int))MWLocale_InstallFacet)(a, f, GetCtypeFacetId());
         f = ((void**)loc.arr[0])[idx];
@@ -1532,19 +1877,24 @@ static inline void WriteHexIteratorByte(HexOutputIterator& it, char c) {
         } else {
             r = ((int (*)(HexStreamBuffer*, int))sb->vt[0x38 / 4])(sb, (unsigned char)c);
         }
-        if (r == -1) failed = true;
+        if (r == -1)
+            failed = true;
     }
-    if (failed) it.sb = 0;
+    if (failed)
+        it.sb = 0;
 }
 // Write the requested number of padding characters.
 static inline HexOutputIterator PadHexIterator(HexOutputIterator it, int n, char c) {
     int i = 0;
-    if (n > 0) for (; i < n; i++) WriteHexIteratorByte(it, c);
+    if (n > 0)
+        for (; i < n; i++)
+            WriteHexIteratorByte(it, c);
     return it;
 }
 // Copy a character range through the output iterator.
 static inline HexOutputIterator WriteHexIteratorText(HexOutputIterator it, const char* p, int n) {
-    for (int i = 0; i < n; i++) WriteHexIteratorByte(it, *p++);
+    for (int i = 0; i < n; i++)
+        WriteHexIteratorByte(it, *p++);
     return it;
 }
 // Replace only the selected format-flag group.
@@ -1563,8 +1913,9 @@ struct Saver6D9C {
     unsigned short flags;
     unsigned char except;
     // Snapshot flags, width, precision and exception mask before nested formatting.
-    Saver6D9C(unsigned char* st) : s(st), width(AsMWStreamState(st)->width), prec(AsMWStreamState(st)->precision),
-        flags(AsMWStreamState(st)->flags), except(((StreamIosView*)st)->exceptions) {}
+    Saver6D9C(unsigned char* st)
+        : s(st), width(AsMWStreamState(st)->width), prec(AsMWStreamState(st)->precision),
+          flags(AsMWStreamState(st)->flags), except(((StreamIosView*)st)->exceptions) {}
     // Restore saved formatting and enforce the restored stream exception mask.
     ~Saver6D9C() {
         unsigned char* st = s;
@@ -1572,8 +1923,10 @@ struct Saver6D9C {
         AsMWStreamState(st)->width = width;
         AsMWStreamState(st)->precision = prec;
         ((StreamIosView*)st)->exceptions = except;
-        if (((StreamIosView*)st)->buffer == 0) ((StreamIosView*)st)->state |= 1;
-        if (((StreamIosView*)st)->exceptions & ((StreamIosView*)st)->state) MWStream_ThrowFailure(st, streamRestoreFailureMessage);
+        if (((StreamIosView*)st)->buffer == 0)
+            ((StreamIosView*)st)->state |= 1;
+        if (((StreamIosView*)st)->exceptions & ((StreamIosView*)st)->state)
+            MWStream_ThrowFailure(st, streamRestoreFailureMessage);
     }
 };
 #pragma push
@@ -1593,7 +1946,8 @@ void* Stream_WriteFixedWidthHex32(void* self, HexOutputIterator* out, void* sour
         ReplaceStreamFlagGroup(streamBytes, kInternal, kAdjustField);
         AsMWStreamState(streamBytes)->width = 10;
         void* zeroCharacterFacet = GetHexCtypeFacet(RetainedHexLocale(streamBytes));
-        char zeroFillCharacter = ((char (*)(void*, char))(*(void***)zeroCharacterFacet)[0x1c / 4])(zeroCharacterFacet, '0');
+        char zeroFillCharacter =
+            ((char (*)(void*, char))(*(void***)zeroCharacterFacet)[0x1c / 4])(zeroCharacterFacet, '0');
         int prefixLength = 0;
         void* prefixCharacterFacet = GetHexCtypeFacet(RetainedHexLocale(streamBytes));
         char pre[4];
@@ -1606,35 +1960,57 @@ void* Stream_WriteFixedWidthHex32(void* self, HexOutputIterator* out, void* sour
                 *q = ((char (*)(void*, char))(*(void***)prefixCharacterFacet)[0x1c / 4])(prefixCharacterFacet, 'x');
             prefixLength += 2;
         }
-        int digitCount = ((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(streamBytes, value, digits, prefixCharacterFacet, 0);
+        int digitCount = ((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(
+            streamBytes, value, digits, prefixCharacterFacet, 0);
         char* d = fieldText;
         int zeroPaddingCount = 0;
-        if ((*(int*)&AsMWStreamState(streamBytes)->width) > prefixLength + digitCount) zeroPaddingCount = (*(int*)&AsMWStreamState(streamBytes)->width) - (prefixLength + digitCount);
+        if ((*(int*)&AsMWStreamState(streamBytes)->width) > prefixLength + digitCount)
+            zeroPaddingCount = (*(int*)&AsMWStreamState(streamBytes)->width) - (prefixLength + digitCount);
         unsigned short numberAlignment = AsMWStreamState(streamBytes)->flags & kAdjustField;
-        if (numberAlignment != kLeft && numberAlignment != kInternal) for (int i = 0; i < zeroPaddingCount; i++) *d++ = zeroFillCharacter;
-        { char* p = pre; for (int i = 0; i < prefixLength; i++) *d++ = *p++; }
-        if (numberAlignment == kInternal) for (int i = 0; i < zeroPaddingCount; i++) *d++ = zeroFillCharacter;
-        { char* p = digits; for (int i = 0; i < digitCount; i++) *d++ = *p++; }
-        if (numberAlignment == kLeft) for (int i = 0; i < zeroPaddingCount; i++) *d++ = zeroFillCharacter;
+        if (numberAlignment != kLeft && numberAlignment != kInternal)
+            for (int i = 0; i < zeroPaddingCount; i++)
+                *d++ = zeroFillCharacter;
+        {
+            char* p = pre;
+            for (int i = 0; i < prefixLength; i++)
+                *d++ = *p++;
+        }
+        if (numberAlignment == kInternal)
+            for (int i = 0; i < zeroPaddingCount; i++)
+                *d++ = zeroFillCharacter;
+        {
+            char* p = digits;
+            for (int i = 0; i < digitCount; i++)
+                *d++ = *p++;
+        }
+        if (numberAlignment == kLeft)
+            for (int i = 0; i < zeroPaddingCount; i++)
+                *d++ = zeroFillCharacter;
         AsMWStreamState(streamBytes)->width = 0;
     }
     // Phase 2: emit the completed field through the sticky-failure output iterator.
     HexOutputIterator it = *out;
     int outerPaddingCount = 0;
-    if ((*(int*)&AsMWStreamState(streamBytes)->width) > 10) outerPaddingCount = (*(int*)&AsMWStreamState(streamBytes)->width) - 10;
+    if ((*(int*)&AsMWStreamState(streamBytes)->width) > 10)
+        outerPaddingCount = (*(int*)&AsMWStreamState(streamBytes)->width) - 10;
     unsigned short fieldAlignment = AsMWStreamState(streamBytes)->flags & kAdjustField;
-    if (fieldAlignment != kLeft && fieldAlignment != kInternal) it = PadHexIterator(it, outerPaddingCount, fill);
+    if (fieldAlignment != kLeft && fieldAlignment != kInternal)
+        it = PadHexIterator(it, outerPaddingCount, fill);
     HexOutputIterator afterInternalPadding = it;
-    if (fieldAlignment == kInternal) afterInternalPadding = PadHexIterator(it, outerPaddingCount, fill);
+    if (fieldAlignment == kInternal)
+        afterInternalPadding = PadHexIterator(it, outerPaddingCount, fill);
     HexOutputIterator afterFieldText = WriteHexIteratorText(afterInternalPadding, fieldText, 10);
     HexOutputIterator afterTrailingPadding = afterFieldText;
-    if (fieldAlignment == kLeft) afterTrailingPadding = PadHexIterator(afterFieldText, outerPaddingCount, fill);
+    if (fieldAlignment == kLeft)
+        afterTrailingPadding = PadHexIterator(afterFieldText, outerPaddingCount, fill);
     AsMWStreamState(streamBytes)->width = 0;
     return afterTrailingPadding.sb;
 }
 #pragma pop
 // Store the caller's current context in the shared global.
-void SharedContext_SetCurrent(void* value) { g_currentSharedContext = value; }
+void SharedContext_SetCurrent(void* value) {
+    g_currentSharedContext = value;
+}
 // Optionally free the message-resource allocation.
 void* CMsgEcbResource_dtor(void* value, int deleteFlag) {
     if (value != 0 && deleteFlag > 0) {
@@ -1661,10 +2037,14 @@ void* LocaleRef_dtor(void* value, short deleteFlag) {
     if (value != 0) {
         void* child = ((StreamLocaleView*)value)->reference;
         if (child != 0) {
-            try { MWSharedOwner_ReleaseReference(child); }
-            catch (...) { __unexpected(); }
+            try {
+                MWSharedOwner_ReleaseReference(child);
+            } catch (...) {
+                __unexpected();
+            }
         }
-        if (deleteFlag > 0) __dl__FPv(value);
+        if (deleteFlag > 0)
+            __dl__FPv(value);
     }
     return value;
 }
@@ -1674,11 +2054,15 @@ void* MWInputStream_Destroy(void* value, short deleteFlag) {
         if ((char*)value + (int)&((InputStreamLocaleView*)0)->locale != 0) {
             void* child = ((InputStreamLocaleView*)value)->locale.reference;
             if (child != 0) {
-                try { MWSharedOwner_ReleaseReference(child); }
-                catch (...) { __unexpected(); }
+                try {
+                    MWSharedOwner_ReleaseReference(child);
+                } catch (...) {
+                    __unexpected();
+                }
             }
         }
-        if (deleteFlag > 0) __dl__FPv(value);
+        if (deleteFlag > 0)
+            __dl__FPv(value);
     }
     return value;
 }
@@ -1697,8 +2081,14 @@ void* MWFormatSupport_DeleteTrivialObject(void* value, int deleteFlag) {
     return value;
 }
 extern void Text_AppendMappedFormattedValue(void*, void*);
-struct TagEntry { int tagKind; unsigned short* name; };
-struct TagHandler { unsigned short* name; int (*handler)(void*); };
+struct TagEntry {
+    int tagKind;
+    unsigned short* name;
+};
+struct TagHandler {
+    unsigned short* name;
+    int (*handler)(void*);
+};
 struct TagText {
     unsigned int word;
     unsigned int length;
@@ -1706,7 +2096,10 @@ struct TagText {
     // Construct an empty owning byte string for a narrowed tag key.
     TagText() : word(0), length(0), data(0) {}
     // Release heap storage owned by the narrowed key.
-    ~TagText() { if (word >> 31) appFreeUni__FPv(data); }
+    ~TagText() {
+        if (word >> 31)
+            appFreeUni__FPv(data);
+    }
 };
 struct TagGroup {
     void* head;
@@ -1717,27 +2110,37 @@ struct TagGroup {
 // Match a UTF-16 tag name before its closing delimiter and return the following character.
 static inline unsigned short* find_tag(unsigned short* text, unsigned short* limit, unsigned short* name) {
     unsigned short* start = text;
-    if (!start) return 0;
+    if (!start)
+        return 0;
     while (*start) {
         unsigned short* hit = 0;
         if (start) {
             unsigned short* p = start;
             unsigned short* q = start;
             for (int i = 0; *q; ++p, ++q, ++i) {
-                if (limit == p) break;
-                if (name[0] == *q) { hit = start + i; break; }
+                if (limit == p)
+                    break;
+                if (name[0] == *q) {
+                    hit = start + i;
+                    break;
+                }
             }
         }
-        if (!hit) return 0;
+        if (!hit)
+            return 0;
         unsigned short* a = hit + 1;
         unsigned short* b = name + 1;
         int differs = 0;
         while (*b) {
-            if (*a != *b) { differs = 1; break; }
+            if (*a != *b) {
+                differs = 1;
+                break;
+            }
             ++a;
             ++b;
         }
-        if (!differs) return a;
+        if (!differs)
+            return a;
         start = hit + 1;
     }
     return 0;
@@ -1746,8 +2149,10 @@ static inline unsigned short* find_tag(unsigned short* text, unsigned short* lim
 static inline void append_wide(WStringObject* text, unsigned short c) {
     unsigned int length;
     // The byte load is the inline length tag; word 1 is WStringObject::heapLength.
-    if ((*(unsigned int*)text >> 31) == 0) length = *(unsigned char*)text & kInlineLengthMask;
-    else length = ((unsigned int*)text)[1];
+    if ((*(unsigned int*)text >> 31) == 0)
+        length = *(unsigned char*)text & kInlineLengthMask;
+    else
+        length = ((unsigned int*)text)[1];
     volatile unsigned int tmp;
     unsigned char local = *((volatile unsigned char*)&tmp);
     WString_ReplaceRange(text, length, 0, &c, &c + 1, &local);
@@ -1778,7 +2183,8 @@ int Text_ExpandTaggedText(void* messageTable, WStringObject* output, unsigned sh
     unsigned short wideLookupKey[kTagLookupCodeUnits];
     for (; *source; ++source) {
         unsigned int ch = *source;
-        if (ch == kCarriageReturn) continue;
+        if (ch == kCarriageReturn)
+            continue;
         if (ch != '\\') {
             append_wide(output, ch);
             continue;
@@ -1794,8 +2200,12 @@ int Text_ExpandTaggedText(void* messageTable, WStringObject* output, unsigned sh
             unsigned short* p = tagBegin;
             unsigned short* q = tagBegin;
             for (int i = 0; *q; ++p, ++q, ++i) {
-                if (!p) break;
-                if (*q == '>') { tagEnd = tagBegin + i; break; }
+                if (!p)
+                    break;
+                if (*q == '>') {
+                    tagEnd = tagBegin + i;
+                    break;
+                }
             }
         }
         unsigned short* tagArgument = 0;
@@ -1804,7 +2214,10 @@ int Text_ExpandTaggedText(void* messageTable, WStringObject* output, unsigned sh
             TagEntry* entry = (TagEntry*)s_messageTagKindTable;
             for (int i = 0; i < kTagKindCount; ++i, ++entry) {
                 tagArgument = find_tag(tagBegin, tagEnd, entry->name);
-                if (tagArgument) { tagKind = entry->tagKind; break; }
+                if (tagArgument) {
+                    tagKind = entry->tagKind;
+                    break;
+                }
             }
         }
         switch (tagKind) {
@@ -1829,7 +2242,8 @@ int Text_ExpandTaggedText(void* messageTable, WStringObject* output, unsigned sh
             unsigned short* leadingSpaces = tagArgument;
             int spaceCount = 0;
             while (*leadingSpaces) {
-                if (*leadingSpaces != ' ') break;
+                if (*leadingSpaces != ' ')
+                    break;
                 ++leadingSpaces;
                 ++spaceCount;
             }
@@ -1839,7 +2253,8 @@ int Text_ExpandTaggedText(void* messageTable, WStringObject* output, unsigned sh
             unsigned short* keyBoundaryProbe = name;
             unsigned short* keyDestination = wideLookupKey;
             while (*keySource) {
-                if (*keySource == ' ' || tagEnd == keyBoundaryProbe) break;
+                if (*keySource == ' ' || tagEnd == keyBoundaryProbe)
+                    break;
                 *keyDestination = *keySource;
                 ++keySource;
                 ++keyBoundaryProbe;
@@ -1856,7 +2271,8 @@ int Text_ExpandTaggedText(void* messageTable, WStringObject* output, unsigned sh
                 unsigned char alloc = *((volatile unsigned char*)&tmp);
                 for (unsigned short* p = wideLookupKey; *p; ++p) {
                     char keyByte = (char)*p;
-                    String_ReplaceRange(&narrowLookupKey, fn_string_len(&narrowLookupKey), 0, &keyByte, &keyByte + 1, &alloc);
+                    String_ReplaceRange(&narrowLookupKey, fn_string_len(&narrowLookupKey), 0, &keyByte, &keyByte + 1,
+                                        &alloc);
                 }
                 // Phase 3: select the format-1 table or grouped named-entry lookup.
                 // Hash equality is only a prefilter; exact byte-name equality is required.
@@ -1871,11 +2287,16 @@ int Text_ExpandTaggedText(void* messageTable, WStringObject* output, unsigned sh
                     void* entry;
                     for (;;) {
                         int size = group.head ? ((MessageTableHeader*)group.head)->entryCount : 0;
-                        if (size - 1 <= entryIndex) { entry = 0; break; }
+                        if (size - 1 <= entryIndex) {
+                            entry = 0;
+                            break;
+                        }
                         ++entryIndex;
-                        if (entryIndex < 0) entryIndex = 0;
+                        if (entryIndex < 0)
+                            entryIndex = 0;
                         entry = Table_GetEntry(group.head, (void*)entryIndex);
-                        if (!entry) break;
+                        if (!entry)
+                            break;
                         void* node = *(void**)entry;
                         int matched = *(int*)Table_ResolveDataOffset(group.head, node) == hash;
                         if (matched) {
@@ -1890,12 +2311,15 @@ int Text_ExpandTaggedText(void* messageTable, WStringObject* output, unsigned sh
                     }
                     replacement = (unsigned short*)entry;
                 } else {
-                    replacement = (unsigned short*)TextResource_FindNamedEntry(messageTable, fn_string_ptr(&narrowLookupKey));
+                    replacement =
+                        (unsigned short*)TextResource_FindNamedEntry(messageTable, fn_string_ptr(&narrowLookupKey));
                 }
             }
             // Phase 4: append replacement text literally; a miss leaves the tag unconsumed.
-            if (!replacement) continue;
-            for (; *replacement; ++replacement) append_wide(output, *replacement);
+            if (!replacement)
+                continue;
+            for (; *replacement; ++replacement)
+                append_wide(output, *replacement);
             source = tagEnd;
             break;
         }
@@ -1914,25 +2338,32 @@ void MessageTable_ExpandEntryText(void* messageTable, WStringObject* output, voi
 }
 // Extend the readable range to the high-water mark and peek the current byte.
 int MWStringBuf_Underflow(char* value) {
-    if ((*(void**)&AsMWStreamBuffer(value)->getCurrent) == 0) return -1;
+    if ((*(void**)&AsMWStreamBuffer(value)->getCurrent) == 0)
+        return -1;
     unsigned char* end = (*(unsigned char**)&AsMWStreamBuffer(value)->putCurrent);
     unsigned char* current = (*(unsigned char**)&AsMWStreamBuffer(value)->highWater);
-    if (current < end) (*(unsigned char**)&AsMWStreamBuffer(value)->highWater) = end;
+    if (current < end)
+        (*(unsigned char**)&AsMWStreamBuffer(value)->highWater) = end;
     unsigned char* reloaded = (*(unsigned char**)&AsMWStreamBuffer(value)->highWater);
     unsigned char* position = (*(unsigned char**)&AsMWStreamBuffer(value)->getEnd);
-    if (position < reloaded) (*(unsigned char**)&AsMWStreamBuffer(value)->getEnd) = reloaded;
+    if (position < reloaded)
+        (*(unsigned char**)&AsMWStreamBuffer(value)->getEnd) = reloaded;
     position = (*(unsigned char**)&AsMWStreamBuffer(value)->getEnd);
     unsigned char* buffer = (*(unsigned char**)&AsMWStreamBuffer(value)->getCurrent);
-    (void)end; (void)current;
-    if (buffer < position) return buffer[0];
+    (void)end;
+    (void)current;
+    if (buffer < position)
+        return buffer[0];
     return -1;
 }
 // Replace a game string's contents with a NUL-terminated byte string.
 int NString_AssignCString(void* value, char* string) {
     unsigned int flags = *(unsigned int*)value;
     unsigned int length;
-    if ((flags >> 31) == 0) length = *(unsigned char*)value & kInlineLengthMask;
-    else length = AsMWStringStorage(value)->length;
+    if ((flags >> 31) == 0)
+        length = *(unsigned char*)value & kInlineLengthMask;
+    else
+        length = AsMWStringStorage(value)->length;
     volatile unsigned int tmp;
     unsigned char local = *((volatile unsigned char*)&tmp);
     unsigned int stringLength = strlen(string);
@@ -1979,11 +2410,13 @@ int TextResource_FindNamedEntry(void* resource, void* name) {
 int MessageTable_GetTextByIndex(void* messageTable, void* index) {
     int type = AsCSerifuEcb(messageTable)->formatType;
     if (type != kNamedTextTable) {
-        if (type != kIndexedTextTable) return 0;
+        if (type != kIndexedTextTable)
+            return 0;
         unsigned char local[8];
         *(void**)local = 0;
         void* ptr = AsCSerifuEcb(messageTable)->table;
-        if (ptr != 0) *(void**)local = ptr;
+        if (ptr != 0)
+            *(void**)local = ptr;
         *(void**)(local + 4) = __vt__14CMsgFormatCtrl;
         void* item = Table_GetEntry(*(void**)local, index);
         return (int)Table_ResolveDataOffset(*(void**)local, ((MessageTableEntry*)item)->textOffset);
@@ -1991,7 +2424,8 @@ int MessageTable_GetTextByIndex(void* messageTable, void* index) {
     unsigned char local[8];
     *(void**)local = 0;
     void* ptr = AsCSerifuEcb(messageTable)->table;
-    if (ptr != 0) *(void**)local = ptr;
+    if (ptr != 0)
+        *(void**)local = ptr;
     *(void**)(local + 4) = __vt__10CSerifuEcb;
     void* item = Table_GetEntry(*(void**)local, index);
     return (int)Table_ResolveDataOffset(*(void**)local, ((MessageTableEntry*)item)->namedTextOffset);
@@ -2001,7 +2435,8 @@ void* StreamFormattingSnapshot_dtor(void* value, int deleteFlag) {
     if (value != 0) {
         AsMWStreamState(*(void**)value)->flags = ((StreamFormattingSnapshot*)value)->flags;
         (*(void**)&AsMWStreamState(*(void**)value)->width) = (*(void**)&((StreamFormattingSnapshot*)value)->width);
-        (*(void**)&AsMWStreamState(*(void**)value)->precision) = (*(void**)&((StreamFormattingSnapshot*)value)->precision);
+        (*(void**)&AsMWStreamState(*(void**)value)->precision) =
+            (*(void**)&((StreamFormattingSnapshot*)value)->precision);
         void* object = *(void**)value;
         ((StreamIosView*)object)->exceptions = ((StreamFormattingSnapshot*)value)->exceptions;
         if (((StreamIosView*)object)->buffer == 0)
@@ -2010,7 +2445,8 @@ void* StreamFormattingSnapshot_dtor(void* value, int deleteFlag) {
         unsigned char tmp33 = ((StreamIosView*)object)->exceptions;
         if (tmp33 & tmp32)
             MWStream_ThrowFailure(object, streamRestoreFailureMessage);
-        if (deleteFlag > 0) __dl__FPv(value);
+        if (deleteFlag > 0)
+            __dl__FPv(value);
     }
     return value;
 }
@@ -2060,8 +2496,10 @@ void MWNumPunct_CopyFalseName(void* output, void* source) {
 void* MWString_dtor(void* value, int deleteFlag) {
     if (value != 0) {
         unsigned int flags = *(unsigned int*)value;
-        if ((flags >> 31) != 0) __dl__FPv((*(void**)&AsMWStringStorage(value)->data));
-        if (deleteFlag > 0) __dl__FPv(value);
+        if ((flags >> 31) != 0)
+            __dl__FPv((*(void**)&AsMWStringStorage(value)->data));
+        if (deleteFlag > 0)
+            __dl__FPv(value);
     }
     return value;
 }
@@ -2070,15 +2508,19 @@ void* MWStringStorage_Release(void* value, int deleteFlag) {
     if (value != 0) {
         if (value != 0) {
             unsigned int flags = *(unsigned int*)value;
-            if ((flags >> 31) != 0) __dl__FPv((*(void**)&AsMWStringStorage(value)->data));
+            if ((flags >> 31) != 0)
+                __dl__FPv((*(void**)&AsMWStringStorage(value)->data));
         }
-        if (deleteFlag > 0) __dl__FPv(value);
+        if (deleteFlag > 0)
+            __dl__FPv(value);
     }
     return value;
 }
 // Move back one byte, allowing replacement only for writable or unchanged input.
 int MWStringBuf_PutbackFailure(void* value, int byte) {
-    if ((*(unsigned char**)&AsMWStreamBuffer(value)->getBegin) >= (*(unsigned char**)&AsMWStreamBuffer(value)->getCurrent)) return -1;
+    if ((*(unsigned char**)&AsMWStreamBuffer(value)->getBegin) >=
+        (*(unsigned char**)&AsMWStreamBuffer(value)->getCurrent))
+        return -1;
     unsigned char* end = (*(unsigned char**)&AsMWStreamBuffer(value)->getCurrent);
     if (byte == -1) {
         --end;
@@ -2087,8 +2529,10 @@ int MWStringBuf_PutbackFailure(void* value, int byte) {
     }
     unsigned char flags = AsMWStreamBuffer(value)->mode;
     signed char signedByte = (signed char)byte;
-    if ((flags & kOutputMode) == 0 && signedByte != (signed char)end[-1]) return -1;
-    (*(unsigned char**)&AsMWStreamBuffer(value)->getCurrent) = (*(unsigned char**)&AsMWStreamBuffer(value)->getCurrent) - 1;
+    if ((flags & kOutputMode) == 0 && signedByte != (signed char)end[-1])
+        return -1;
+    (*(unsigned char**)&AsMWStreamBuffer(value)->getCurrent) =
+        (*(unsigned char**)&AsMWStreamBuffer(value)->getCurrent) - 1;
     *((*(unsigned char**)&AsMWStreamBuffer(value)->getCurrent)) = (unsigned char)signedByte;
     return byte;
 }
@@ -2098,9 +2542,11 @@ void* OStreamSentry_dtor(void* value, int deleteFlag) {
         void* reference = ((StreamSentryView*)value)->reference;
         void* object = *(void**)reference;
         unsigned char flags = ((StreamIosView*)object)->state;
-        if ((flags & kStreamBadOrFail) == 0 && (AsMWStreamState(object)->flags & kUnitBuffer) != 0 && ((StreamSentryView*)value)->flushing == 0)
+        if ((flags & kStreamBadOrFail) == 0 && (AsMWStreamState(object)->flags & kUnitBuffer) != 0 &&
+            ((StreamSentryView*)value)->flushing == 0)
             OStream_Flush(reference);
-        if (deleteFlag > 0) __dl__FPv(value);
+        if (deleteFlag > 0)
+            __dl__FPv(value);
     }
     return value;
 }
@@ -2118,7 +2564,8 @@ static inline void* GetUnsignedOutputCtypeFacet(void* ios) {
     void* f;
     if (idx >= ((unsigned int*)loc.arr)[1] || (f = ((void**)loc.arr[0])[idx]) == 0) {
         f = __nw__FUl(0x18);
-        if (f) ((void (*)(void*, int, int, bool))MWCtypeFacet_Construct)(f, 0, 0, false);
+        if (f)
+            ((void (*)(void*, int, int, bool))MWCtypeFacet_Construct)(f, 0, 0, false);
         void** a = loc.arr;
         ((void (*)(void*, void*, unsigned int))MWLocale_InstallFacet)(a, f, GetCtypeFacetId());
         f = ((void**)loc.arr[0])[idx];
@@ -2132,9 +2579,11 @@ static inline void PadUnsignedOutput(void** pout, int count, signed char c) {
         for (; i < count; ++i) {
             int failed = 0;
             if (*pout != 0) {
-                if (bput_byte(pout, c) == -1) failed = 1;
+                if (bput_byte(pout, c) == -1)
+                    failed = 1;
             }
-            if (failed) *pout = 0;
+            if (failed)
+                *pout = 0;
         }
 }
 // Write a byte range and preserve output-iterator failure.
@@ -2146,9 +2595,11 @@ static inline void WriteUnsignedOutputText(void** pout, unsigned char* data, int
             ++data;
             int failed = 0;
             if (*pout != 0) {
-                if (bput_byte(pout, c) == -1) failed = 1;
+                if (bput_byte(pout, c) == -1)
+                    failed = 1;
             }
-            if (failed) *pout = 0;
+            if (failed)
+                *pout = 0;
         }
 }
 #pragma push
@@ -2187,7 +2638,8 @@ void* Stream_WriteUnsigned64(void* unused, void** iter, void* ios, unsigned char
         int width = (*(int*)&AsMWStreamState(s)->width);
         int remaining = 0;
         void* volatile canon = out;
-        if (width > count) remaining = width - count;
+        if (width > count)
+            remaining = width - count;
         unsigned short adj = AsMWStreamState(s)->flags & kAdjustField;
         if (adj != kLeft && adj != kInternal) {
             void* volatile pad = out;
@@ -2245,7 +2697,8 @@ void* Stream_WriteUnsigned64(void* unused, void** iter, void* ios, unsigned char
         int total = prefixCount + digitCount;
         void* volatile canon = out;
         int remaining = 0;
-        if (total < width) remaining = width - total;
+        if (total < width)
+            remaining = width - total;
         unsigned short adj = AsMWStreamState(s)->flags & kAdjustField;
         if (adj != kLeft && adj != kInternal) {
             void* volatile pad = out;
@@ -2294,7 +2747,8 @@ void* Stream_WriteUnsigned64(void* unused, void** iter, void* ios, unsigned char
         int width = (*(int*)&AsMWStreamState(s)->width);
         int remaining = 0;
         void* volatile canon = out;
-        if (width > digitCount) remaining = width - digitCount;
+        if (width > digitCount)
+            remaining = width - digitCount;
         unsigned short adj = AsMWStreamState(s)->flags & kAdjustField;
         if (adj != kLeft && adj != kInternal) {
             void* volatile pad = out;
@@ -2345,36 +2799,63 @@ struct Raw8E54 {};
 struct String9C {
     unsigned int words[3];
     // Initialize an empty owning standard-string representation.
-    String9C() { words[0] = 0; words[1] = 0; words[2] = 0; }
+    String9C() {
+        words[0] = 0;
+        words[1] = 0;
+        words[2] = 0;
+    }
     // Reserve uninitialized result storage; callee must fill every string word.
     String9C(Raw8E54*) {}
     // Copy a borrowed NUL-terminated byte string into owned storage.
-    String9C(char* text) { ((void (*)(void*, char*, signed char))StdString_ConstructCString)(this, text, 0); }
+    String9C(char* text) {
+        ((void (*)(void*, char*, signed char))StdString_ConstructCString)(this, text, 0);
+    }
     // Copy the borrowed punctuation facet's grouping string.
-    String9C(void* facet) { ((void* (*)(void*, void*))MWNumPunct_GetGrouping)(this, facet); }
+    String9C(void* facet) {
+        ((void* (*)(void*, void*))MWNumPunct_GetGrouping)(this, facet);
+    }
     // Free owned heap bytes, leaving inline storage in the wrapper.
-    ~String9C() { if (words[0] >> 31) __dl__FPv((void*)words[2]); }
+    ~String9C() {
+        if (words[0] >> 31)
+            __dl__FPv((void*)words[2]);
+    }
     // Test whether characters live inline in the wrapper.
-    bool small() const { return !(words[0] >> 31); }
+    bool small() const {
+        return !(words[0] >> 31);
+    }
     // Return the active representation's length in bytes.
-    unsigned int size() const { return small() ? (*(unsigned char*)this & kInlineLengthMask) : words[1]; }
+    unsigned int size() const {
+        return small() ? (*(unsigned char*)this & kInlineLengthMask) : words[1];
+    }
     // Borrow mutable characters until the next string mutation.
-    char* data() const { return small() ? (char*)this + 1 : (char*)words[2]; }
+    char* data() const {
+        return small() ? (char*)this + 1 : (char*)words[2];
+    }
     // Copy inline words directly; replace the range when either string owns heap storage.
     void assign(const String9C& other) {
         bool heap = words[0] >> 31;
         unsigned int first;
         if (!heap && !((first = other.words[0]) >> 31)) {
             unsigned int a = first, b = other.words[1];
-            words[0] = a; words[1] = b; words[2] = other.words[2];
+            words[0] = a;
+            words[1] = b;
+            words[2] = other.words[2];
         } else {
             unsigned int n = heap ? words[1] : (*(unsigned char*)this & kInlineLengthMask);
             char* p;
             unsigned int len;
-            if (!(other.words[0] >> 31)) { p = (char*)&other + 1; len = *(unsigned char*)&other & kInlineLengthMask; }
-            else { p = (char*)other.words[2]; len = other.words[1]; }
+            if (!(other.words[0] >> 31)) {
+                p = (char*)&other + 1;
+                len = *(unsigned char*)&other & kInlineLengthMask;
+            } else {
+                p = (char*)other.words[2];
+                len = other.words[1];
+            }
             volatile unsigned int allocator;
-            struct Allocator { unsigned char byte; unsigned char padding[3]; } local;
+            struct Allocator {
+                unsigned char byte;
+                unsigned char padding[3];
+            } local;
             local.byte = *(volatile unsigned char*)&allocator;
             StdString_ReplaceRange(this, 0, n, p, p + len, (unsigned char*)&local);
         }
@@ -2384,7 +2865,10 @@ struct FacetBase9C {
     void* vt;
     unsigned int refs;
     // Initialize an unreferenced punctuation facet base.
-    FacetBase9C() { refs = 0; vt = numPunctCharVtable; }
+    FacetBase9C() {
+        refs = 0;
+        vt = numPunctCharVtable;
+    }
     // No base-owned allocation needs cleanup in this local view.
     ~FacetBase9C() {}
 };
@@ -2434,7 +2918,8 @@ static inline void ReverseFormattedDigits(char* first, char* last) {
 // output is caller-provided writable space for digits plus locale separators;
 // returned byte count excludes a terminator (none is written). writer/source are
 // borrowed facets/stream state. number is the unsigned 64-bit magnitude.
-int MWNumPut_ConvertUnsigned64Digits(void* source, unsigned long long number, char* output, void* writer, int suppressGrouping) {
+int MWNumPut_ConvertUnsigned64Digits(void* source, unsigned long long number, char* output, void* writer,
+                                     int suppressGrouping) {
     RetainedNumericLocale locale(source);
     unsigned char* localeBytes = (unsigned char*)&locale;
     if (!number) {
@@ -2442,20 +2927,29 @@ int MWNumPut_ConvertUnsigned64Digits(void* source, unsigned long long number, ch
         return 1;
     }
     FacetConstructionMarker facetConstructionMarker;
-    if (s_numPunctCharFacetId == 0) s_numPunctCharFacetId = ++s_localeFacetIdCounter;
+    if (s_numPunctCharFacetId == 0)
+        s_numPunctCharFacetId = ++s_localeFacetIdCounter;
     void* punctuationFacet;
     int index = s_numPunctCharFacetId;
     if (index >= ((unsigned int*)locale.arr)[1] || (punctuationFacet = ((void**)locale.arr[0])[index]) == 0) {
         punctuationFacet = new DefaultNumericPunctuation;
         void* array = *(void**)localeBytes;
-        if (!s_numPunctCharFacetId) s_numPunctCharFacetId = ++s_localeFacetIdCounter;
+        if (!s_numPunctCharFacetId)
+            s_numPunctCharFacetId = ++s_localeFacetIdCounter;
         ((void (*)(void*, void*, unsigned int))MWLocale_InstallFacet)(array, punctuationFacet, s_numPunctCharFacetId);
         punctuationFacet = ((void**)locale.arr[0])[index];
     }
     // Phase 1: resolve punctuation/grouping and select the numeric base.
     unsigned int base = 10;
 
-    switch ((AsMWStreamState(source)->flags) & kBaseField) { case kOctal: base = 8; break; case kHexadecimal: base = 16; break; }
+    switch ((AsMWStreamState(source)->flags) & kBaseField) {
+    case kOctal:
+        base = 8;
+        break;
+    case kHexadecimal:
+        base = 16;
+        break;
+    }
     char* nextDigit = output;
     OwnedFacetString grouping(punctuationFacet);
     unsigned int groupingLength = grouping.size();
@@ -2463,12 +2957,18 @@ int MWNumPut_ConvertUnsigned64Digits(void* source, unsigned long long number, ch
     unsigned int groupIndex = 0;
     unsigned char digitsInGroup = 0;
     unsigned char groupSize = 0;
-    if (useGrouping) { groupSize = grouping.data()[0]; if (groupSize == 0) useGrouping = 0; }
-    if (suppressGrouping) useGrouping = 0;
+    if (useGrouping) {
+        groupSize = grouping.data()[0];
+        if (groupSize == 0)
+            useGrouping = 0;
+    }
+    if (suppressGrouping)
+        useGrouping = 0;
     unsigned int groupSeparator;
     if (useGrouping) {
         groupSeparator = ((PunctuationSeparatorInterface*)punctuationFacet)->separator();
-    } else groupSeparator = 0;
+    } else
+        groupSeparator = 0;
     bool useUpper = (AsMWStreamState(source)->flags & kUppercase) != 0;
     // Phase 2: generate least-significant digits first; grouping consumes digit
     // counts from right to left, reuses the final group size, and zero disables it.
@@ -2476,28 +2976,34 @@ int MWNumPut_ConvertUnsigned64Digits(void* source, unsigned long long number, ch
         unsigned int baseValue = base;
         char digit;
         unsigned long long rem = __mod2u(number >> 32, (unsigned int)number, 0, baseValue);
-        if (10 > rem) digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x30));
-        else if (useUpper) digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x37));
-        else digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x57));
+        if (10 > rem)
+            digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x30));
+        else if (useUpper)
+            digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x37));
+        else
+            digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x57));
         *nextDigit = digit;
         nextDigit = nextDigit + 1;
         unsigned int baseValue2 = base;
         number = __div2u(number >> 32, (unsigned int)number, 0, baseValue2);
-        if (0 != number) { if (useGrouping) {
-            ++digitsInGroup;
-            if ((unsigned int)digitsInGroup == (unsigned int)groupSize) {
-                *nextDigit = (char)groupSeparator;
-                nextDigit = nextDigit + 1;
-                unsigned int len = grouping.size();
-                groupIndex = groupIndex + 1;
-                if (groupIndex < len) {
+        if (0 != number) {
+            if (useGrouping) {
+                ++digitsInGroup;
+                if ((unsigned int)digitsInGroup == (unsigned int)groupSize) {
+                    *nextDigit = (char)groupSeparator;
+                    nextDigit = nextDigit + 1;
+                    unsigned int len = grouping.size();
+                    groupIndex = groupIndex + 1;
+                    if (groupIndex < len) {
                         unsigned int groupingIndex = groupIndex;
                         groupSize = grouping.data()[groupingIndex];
-                    if (!groupSize) useGrouping = 0;
+                        if (!groupSize)
+                            useGrouping = 0;
+                    }
+                    digitsInGroup = 0;
                 }
-                digitsInGroup = 0;
             }
-        } }
+        }
     }
     // Phase 3: reverse the complete byte range into display order (no NUL appended).
     ReverseFormattedDigits(output, nextDigit);
@@ -2505,13 +3011,15 @@ int MWNumPut_ConvertUnsigned64Digits(void* source, unsigned long long number, ch
 }
 // Lazily allocate the numeric-punctuation facet identifier.
 static inline unsigned int GetIntegerPunctuationFacetId() {
-    if (!s_numPunctCharFacetId) s_numPunctCharFacetId = ++s_localeFacetIdCounter;
+    if (!s_numPunctCharFacetId)
+        s_numPunctCharFacetId = ++s_localeFacetIdCounter;
     return s_numPunctCharFacetId;
 }
 // Convert an unsigned 32-bit value to locale digits with optional grouping.
 // Same caller-owned unterminated digit-buffer contract as the 64-bit converter;
 // suppressGrouping is treated as a boolean value, never dereferenced.
-int MWNumPut_ConvertUnsigned32Digits(void* source, unsigned int number, char* output, void* writer, void* suppressGrouping, int /*unused*/) {
+int MWNumPut_ConvertUnsigned32Digits(void* source, unsigned int number, char* output, void* writer,
+                                     void* suppressGrouping, int /*unused*/) {
     RetainedNumericLocale locale(source);
     unsigned char* localeBytes = (unsigned char*)&locale;
     if (number == 0) {
@@ -2519,18 +3027,27 @@ int MWNumPut_ConvertUnsigned32Digits(void* source, unsigned int number, char* ou
         return 1;
     }
     FacetConstructionMarker facetConstructionMarker;
-    if (!s_numPunctCharFacetId) s_numPunctCharFacetId = ++s_localeFacetIdCounter;
+    if (!s_numPunctCharFacetId)
+        s_numPunctCharFacetId = ++s_localeFacetIdCounter;
     void* punctuationFacet;
     unsigned int index = s_numPunctCharFacetId;
     if (index >= ((unsigned int*)locale.arr)[1] || (punctuationFacet = ((void**)locale.arr[0])[index]) == 0) {
         punctuationFacet = new DefaultNumericPunctuation;
-        ((void (*)(void*, void*, unsigned int))MWLocale_InstallFacet)(locale.arr, punctuationFacet, GetIntegerPunctuationFacetId());
+        ((void (*)(void*, void*, unsigned int))MWLocale_InstallFacet)(locale.arr, punctuationFacet,
+                                                                      GetIntegerPunctuationFacetId());
         punctuationFacet = ((void**)locale.arr[0])[index];
     }
     // Phase 1: resolve punctuation/grouping and select the numeric base.
     unsigned int base = 10;
     unsigned short srcFlags = AsMWStreamState(source)->flags;
-    switch (srcFlags & kBaseField) { case kOctal: base = 8; break; case kHexadecimal: base = 16; break; }
+    switch (srcFlags & kBaseField) {
+    case kOctal:
+        base = 8;
+        break;
+    case kHexadecimal:
+        base = 16;
+        break;
+    }
     char* nextDigit = output;
     OwnedFacetString grouping(punctuationFacet);
     unsigned int groupingLength = grouping.size();
@@ -2538,12 +3055,18 @@ int MWNumPut_ConvertUnsigned32Digits(void* source, unsigned int number, char* ou
     unsigned int groupIndex = 0;
     unsigned char digitsInGroup = 0;
     unsigned char groupSize = 0;
-    if (useGrouping) { groupSize = grouping.data()[0]; if (groupSize == 0) useGrouping = 0; }
-    if (suppressGrouping) useGrouping = 0;
+    if (useGrouping) {
+        groupSize = grouping.data()[0];
+        if (groupSize == 0)
+            useGrouping = 0;
+    }
+    if (suppressGrouping)
+        useGrouping = 0;
     unsigned int groupSeparator;
     if (useGrouping) {
         groupSeparator = ((PunctuationSeparatorInterface*)punctuationFacet)->separator();
-    } else groupSeparator = 0;
+    } else
+        groupSeparator = 0;
     unsigned int upperBit = AsMWStreamState(source)->flags & kUppercase;
     bool useUpper = upperBit != 0;
     // Phase 2: generate least-significant digits first; grouping consumes digit
@@ -2551,9 +3074,12 @@ int MWNumPut_ConvertUnsigned32Digits(void* source, unsigned int number, char* ou
     while (number != 0) {
         unsigned int rem = number % base;
         char digit;
-        if (rem < 10) digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x30));
-        else if (useUpper) digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x37));
-        else digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x57));
+        if (rem < 10)
+            digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x30));
+        else if (useUpper)
+            digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x37));
+        else
+            digit = ((CharacterWidenInterface*)writer)->widen((signed char)(rem + 0x57));
         *nextDigit = digit;
         ++nextDigit;
         number /= base;
@@ -2567,7 +3093,8 @@ int MWNumPut_ConvertUnsigned32Digits(void* source, unsigned int number, char* ou
                 ++groupIndex;
                 if (groupIndex < len) {
                     groupSize = grouping.data()[groupIndex];
-                    if (!groupSize) useGrouping = 0;
+                    if (!groupSize)
+                        useGrouping = 0;
                 }
                 digitsInGroup = 0;
             }
@@ -2591,7 +3118,9 @@ int MWNumPut_ConvertUnsigned32Digits(void* source, unsigned int number, char* ou
 struct Facet6514 {
     char storage[0x18];
     // Initialize the default byte-character classification facet.
-    Facet6514() { ((void (*)(void*, void*, bool, unsigned int))MWCtypeFacet_Construct)(this, 0, false, 0); }
+    Facet6514() {
+        ((void (*)(void*, void*, bool, unsigned int))MWCtypeFacet_Construct)(this, 0, false, 0);
+    }
 };
 // Find or create a character-classification facet for numeric output.
 static inline void* GetNumericCtypeFacet(const Loc6D9C& loc) {
@@ -2644,46 +3173,64 @@ struct Sb6514 {
         return overflow((unsigned char)c);
     }
 };
-struct It6514 { Sb6514* sb; };
-struct Source6514 { char pad[0x2c]; int width; unsigned short flags; };
+struct It6514 {
+    Sb6514* sb;
+};
+struct Source6514 {
+    char pad[0x2c];
+    int width;
+    unsigned short flags;
+};
 typedef Sb6514 NumericOutputBuffer;
 typedef It6514 CheckedNumericOutput;
 typedef Source6514 NumericFormattingState;
 // Write one byte, clearing the iterator buffer on output failure.
 static inline void WriteNumericIteratorByte(CheckedNumericOutput& it, char c) {
     bool failed = false;
-    if (it.sb && it.sb->sputc(c) == -1) failed = true;
-    if (failed) it.sb = 0;
+    if (it.sb && it.sb->sputc(c) == -1)
+        failed = true;
+    if (failed)
+        it.sb = 0;
 }
 // Emit fill characters through the checked output iterator.
 static inline CheckedNumericOutput PadNumericIterator(CheckedNumericOutput it, int n, char c) {
     int i = 0;
-    if (n > 0) for (; i < n; ++i) WriteNumericIteratorByte(it, c);
+    if (n > 0)
+        for (; i < n; ++i)
+            WriteNumericIteratorByte(it, c);
     return it;
 }
 // Emit a character range through the checked output iterator.
 static inline CheckedNumericOutput WriteNumericIteratorText(CheckedNumericOutput it, const char* p, int n) {
     int i = 0;
-    if (n > 0) for (; i < n; ++i) WriteNumericIteratorByte(it, *p++);
+    if (n > 0)
+        for (; i < n; ++i)
+            WriteNumericIteratorByte(it, *p++);
     return it;
 }
 // Emit sign/base prefix and digits with left, right, or internal padding, then clear width.
-static inline CheckedNumericOutput WriteNumericParts(CheckedNumericOutput it, int signCount, char* sign, int length, char* data, NumericFormattingState* s, char fill) {
+static inline CheckedNumericOutput WriteNumericParts(CheckedNumericOutput it, int signCount, char* sign, int length,
+                                                     char* data, NumericFormattingState* s, char fill) {
     int padding = 0;
     int width = s->width;
-    if (width > signCount + length) padding = width - (signCount + length);
+    if (width > signCount + length)
+        padding = width - (signCount + length);
     unsigned short adjust = s->flags & kAdjustField;
-    if (adjust != kLeft && adjust != kInternal) it = PadNumericIterator(it, padding, fill);
+    if (adjust != kLeft && adjust != kInternal)
+        it = PadNumericIterator(it, padding, fill);
     CheckedNumericOutput result;
     result = WriteNumericIteratorText(it, sign, signCount);
-    if (adjust == kInternal) result = PadNumericIterator(result, padding, fill);
+    if (adjust == kInternal)
+        result = PadNumericIterator(result, padding, fill);
     result = WriteNumericIteratorText(result, data, length);
-    if (adjust == kLeft) result = PadNumericIterator(result, padding, fill);
+    if (adjust == kLeft)
+        result = PadNumericIterator(result, padding, fill);
     s->width = 0;
     return result;
 }
 // Format sign and magnitude, including NaN/infinity, with the selected float notation.
-CheckedNumericOutput MWStream_FormatDouble(double value, void* unused, CheckedNumericOutput* out, void* source, char fill) {
+CheckedNumericOutput MWStream_FormatDouble(double value, void* unused, CheckedNumericOutput* out, void* source,
+                                           char fill) {
     NumericFormattingState* s = (NumericFormattingState*)source;
     void* entry = GetNumericCtypeFacet(Loc6D9C(source));
     int signCount = 0;
@@ -2700,13 +3247,21 @@ CheckedNumericOutput MWStream_FormatDouble(double value, void* unused, CheckedNu
     OwnedFacetString parts;
     if (__fpclassifyd(value) > 2) {
         switch (s->flags & kFloatField) {
-        case kFixed: MWStream_FormatDoubleFixed(source, &parts, value); break;
-        case kScientific: ((void (*)(void*, void*, double))MWStream_FormatDoubleScientific)(source, &parts, value); break;
-        default: ((void (*)(void*, void*, double))MWStream_FormatDoubleGeneral)(source, &parts, value); break;
+        case kFixed:
+            MWStream_FormatDoubleFixed(source, &parts, value);
+            break;
+        case kScientific:
+            ((void (*)(void*, void*, double))MWStream_FormatDoubleScientific)(source, &parts, value);
+            break;
+        default:
+            ((void (*)(void*, void*, double))MWStream_FormatDoubleGeneral)(source, &parts, value);
+            break;
         }
     } else {
-        if (__fpclassifyd(value) == 1) parts.assign(OwnedFacetString(s_mwNaNText));
-        else parts.assign(OwnedFacetString(s_mwInfinityText));
+        if (__fpclassifyd(value) == 1)
+            parts.assign(OwnedFacetString(s_mwNaNText));
+        else
+            parts.assign(OwnedFacetString(s_mwInfinityText));
         if (s->flags & kUppercase) {
             void* upper = GetNumericCtypeFacet(Loc6D9C(source));
             unsigned int n = parts.size();
@@ -2739,13 +3294,15 @@ struct GeneralFormatPunctuationFacet {
 // Find or create the locale's numeric-punctuation facet.
 static inline void* GetGeneralFormatPunctuation(const Loc6D9C& loc) {
     Guard6D9C guard;
-    if (!s_numPunctCharFacetId) s_numPunctCharFacetId = ++s_localeFacetIdCounter;
+    if (!s_numPunctCharFacetId)
+        s_numPunctCharFacetId = ++s_localeFacetIdCounter;
     unsigned int idx = s_numPunctCharFacetId;
     void* f;
     if (idx >= ((unsigned int*)loc.arr)[1] || (f = ((void**)loc.arr[0])[idx]) == 0) {
         Facet9C* fresh = new Facet9C;
         void** array = loc.arr;
-        if (!s_numPunctCharFacetId) s_numPunctCharFacetId = ++s_localeFacetIdCounter;
+        if (!s_numPunctCharFacetId)
+            s_numPunctCharFacetId = ++s_localeFacetIdCounter;
         ((void (*)(void*, void*, unsigned int))MWLocale_InstallFacet)(array, fresh, s_numPunctCharFacetId);
         f = ((void**)loc.arr[0])[idx];
     }
@@ -2757,7 +3314,8 @@ static inline int FindFormatCharacter(OwnedFacetString& s, signed char c) {
     if (n != 0) {
         char* base = s.data();
         for (char* p = base; p < base + n; ++p)
-            if (c == *p) return p - base;
+            if (c == *p)
+                return p - base;
     }
     return -1;
 }
@@ -2768,7 +3326,10 @@ static inline int FindFormatCharacter(OwnedFacetString& s, signed char c) {
 // Its read is preserved for code identity; this comment does not make it defined C++.
 static inline void EraseFormatRange(OwnedFacetString& s, unsigned int pos, unsigned int n) {
     volatile unsigned int allocator;
-    struct Allocator { unsigned char byte; unsigned char padding[3]; } local;
+    struct Allocator {
+        unsigned char byte;
+        unsigned char padding[3];
+    } local;
     local.byte = *(volatile unsigned char*)&allocator;
     StdString_ReplaceRange(&s, pos, n, 0, 0, (unsigned char*)&local);
 }
@@ -2780,7 +3341,8 @@ void MWStream_FormatDoubleGeneral(void* stream, void* output, double value) {
     OwnedFacetString& str = *(OwnedFacetString*)output;
     Saver6D9C saver(s);
     int precision = saver.prec;
-    if (precision == 0) precision = 1;
+    if (precision == 0)
+        precision = 1;
     AsMWStreamState(s)->precision = precision - 1;
     // Phase 1: build scientific digits at precision-1 and obtain their decimal exponent.
     int exponent = ((int (*)(void*, void*, double))MWStream_FormatDoubleScientific)(stream, output, value);
@@ -2792,10 +3354,13 @@ void MWStream_FormatDoubleGeneral(void* stream, void* output, double value) {
     // Phase 2: exponent in [-4,precision) chooses fixed notation; otherwise keep
     // scientific notation. Trimming and locale grouping follow that choice.
     if (exponent >= -4 && exponent < precision) {
-        if (str.data()[1] == point) EraseFormatRange(str, precision + 1, -1);
-        else EraseFormatRange(str, 1, -1);
+        if (str.data()[1] == point)
+            EraseFormatRange(str, precision + 1, -1);
+        else
+            EraseFormatRange(str, 1, -1);
         if (exponent < 0) {
-            if (str.data()[1] == point) EraseFormatRange(str, 1, 1);
+            if (str.data()[1] == point)
+                EraseFormatRange(str, 1, 1);
             StdString_ReplaceRepeatedChar(&str, 0, 0, -exponent, zero);
             StdString_ReplaceRepeatedChar(&str, 1, 0, 1, point);
         } else if (exponent > 0) {
@@ -2807,9 +3372,11 @@ void MWStream_FormatDoubleGeneral(void* stream, void* output, double value) {
             if (FindFormatCharacter(str, point) != -1) {
                 char* end = str.data() + str.size();
                 char* p = end - 1;
-                while (zero == *p) --p;
+                while (zero == *p)
+                    --p;
                 ++p;
-                if (p != end) EraseFormatRange(str, p - str.data(), end - p);
+                if (p != end)
+                    EraseFormatRange(str, p - str.data(), end - p);
                 if (str.data()[str.size() - 1] == point) {
                     unsigned char* head = (unsigned char*)&str;
                     if (str.small()) {
@@ -2831,14 +3398,19 @@ void MWStream_FormatDoubleGeneral(void* stream, void* output, double value) {
         unsigned short flags = AsMWStreamState(s)->flags;
         if (!(flags & kShowPoint) && str.data()[1] == point) {
             signed char e;
-            if (flags & kUppercase) e = ((GeneralFormatCharacterFacet*)ctype)->widen('E');
-            else e = ((GeneralFormatCharacterFacet*)ctype)->widen('e');
+            if (flags & kUppercase)
+                e = ((GeneralFormatCharacterFacet*)ctype)->widen('E');
+            else
+                e = ((GeneralFormatCharacterFacet*)ctype)->widen('e');
             char* epos = str.data() + FindFormatCharacter(str, e);
             char* p = epos - 1;
-            while (zero == *p) --p;
+            while (zero == *p)
+                --p;
             ++p;
-            if (p != epos) EraseFormatRange(str, p - str.data(), epos - p);
-            if (str.data()[2] == e) EraseFormatRange(str, 1, 1);
+            if (p != epos)
+                EraseFormatRange(str, p - str.data(), epos - p);
+            if (str.data()[2] == e)
+                EraseFormatRange(str, 1, 1);
         }
     }
 }
@@ -2853,7 +3425,9 @@ struct Dec8E54 {
     // Reserve raw digit-result storage for the decimal conversion routine.
     Dec8E54() : digits((Raw8E54*)0) {}
 };
-struct SmallStr8E54 { CW_BITS2( unsigned char heap : 1, unsigned char len : 7) char data[1]; };
+struct SmallStr8E54 {
+    CW_BITS2(unsigned char heap : 1, unsigned char len : 7) char data[1];
+};
 // Replace a string with one character and a trailing NUL.
 static inline void AssignSingleFormatCharacter(OwnedFacetString& s, char c) {
     char* p;
@@ -2870,7 +3444,10 @@ static inline void AssignSingleFormatCharacter(OwnedFacetString& s, char c) {
 // Insert a character range at a string position.
 static inline void InsertFormatRange(OwnedFacetString& s, unsigned int pos, char* first, char* last) {
     volatile unsigned int allocator;
-    struct Allocator { unsigned char byte; unsigned char padding[3]; } local;
+    struct Allocator {
+        unsigned char byte;
+        unsigned char padding[3];
+    } local;
     local.byte = *(volatile unsigned char*)&allocator;
     StdString_ReplaceRange(&s, pos, 0, first, last, (unsigned char*)&local);
 }
@@ -2891,18 +3468,29 @@ struct It8350 {
     // Wrap a borrowed character cursor.
     It8350(char* q) : p(q) {}
     // Return a cursor advanced by n bytes.
-    It8350 operator+(int n) const { return It8350(p + n); }
+    It8350 operator+(int n) const {
+        return It8350(p + n);
+    }
     // Return the byte distance between two cursors in the same string.
-    int operator-(const It8350& o) const { return p - o.p; }
+    int operator-(const It8350& o) const {
+        return p - o.p;
+    }
 };
 // Return an iterator to the string's first character.
-static inline It8350 FormatStringBegin(OwnedFacetString& s) { return It8350(s.data()); }
+static inline It8350 FormatStringBegin(OwnedFacetString& s) {
+    return It8350(s.data());
+}
 // Return an iterator just beyond the string's last character.
 static inline It8350 FormatStringEnd(OwnedFacetString& s) {
     char* first;
     unsigned int len;
-    if (!(s.words[0] >> 31)) { first = (char*)&s + 1; len = *(unsigned char*)&s & kInlineLengthMask; }
-    else { first = (char*)s.words[2]; len = s.words[1]; }
+    if (!(s.words[0] >> 31)) {
+        first = (char*)&s + 1;
+        len = *(unsigned char*)&s & kInlineLengthMask;
+    } else {
+        first = (char*)s.words[2];
+        len = s.words[1];
+    }
     return It8350(first + len);
 }
 // Insert a one-byte range at a character iterator.
@@ -2922,7 +3510,8 @@ static inline void ReverseFormatRange(It8350 first, It8350 last) {
 }
 // Lazily allocate the punctuation facet identifier for floating-point formatting.
 static inline unsigned int GetFloatingPunctuationFacetId() {
-    if (!s_numPunctCharFacetId) s_numPunctCharFacetId = ++s_localeFacetIdCounter;
+    if (!s_numPunctCharFacetId)
+        s_numPunctCharFacetId = ++s_localeFacetIdCounter;
     return s_numPunctCharFacetId;
 }
 // Find or create numeric punctuation for scientific-format output.
@@ -2938,7 +3527,10 @@ static inline void* GetScientificPunctuation(Loc6D9C& loc) {
     }
     return f;
 }
-struct GuardV8E54 { unsigned char byte; unsigned char padding[3]; };
+struct GuardV8E54 {
+    unsigned char byte;
+    unsigned char padding[3];
+};
 // Find or create character classification for fixed-format output.
 static inline void* GetFixedCtypeFacet(const Loc6D9C& loc) {
     GuardV8E54 guard;
@@ -2985,14 +3577,18 @@ int MWStream_FormatDoubleScientific(void* source, void* output, double value) {
     unsigned char zero = ((CharacterWidenInterface*)ctype)->widen('0');
     char point = ((Punct8E54*)punct)->point();
     char expChar;
-    if (AsMWStreamState(s)->flags & kUppercase) expChar = ((CharacterWidenInterface*)ctype)->widen('E');
-    else expChar = ((CharacterWidenInterface*)ctype)->widen('e');
+    if (AsMWStreamState(s)->flags & kUppercase)
+        expChar = ((CharacterWidenInterface*)ctype)->widen('E');
+    else
+        expChar = ((CharacterWidenInterface*)ctype)->widen('e');
     OwnedFacetString& str = *(OwnedFacetString*)output;
     int precision = (*(int*)&AsMWStreamState(s)->precision);
     if (kDouble_0_StreamNumberFormatting == value) {
         AssignSingleFormatCharacter(str, zero);
-        if ((AsMWStreamState(s)->flags & kShowPoint) || 0 < precision) AppendFormatCharacter(str, point);
-        if (0 < precision) StdString_ReplaceRepeatedChar(&str, str.size(), 0, precision, zero);
+        if ((AsMWStreamState(s)->flags & kShowPoint) || 0 < precision)
+            AppendFormatCharacter(str, point);
+        if (0 < precision)
+            StdString_ReplaceRepeatedChar(&str, str.size(), 0, precision, zero);
         AppendFormatCharacter(str, expChar);
         AppendFormatCharacter(str, ((CharacterWidenInterface*)ctype)->widen('+'));
         StdString_ReplaceRepeatedChar(&str, str.size(), 0, 2, zero);
@@ -3055,7 +3651,8 @@ void MWStream_FormatDoubleFixed(void* stream, void* output, double value) {
     OwnedFacetString& str = *(OwnedFacetString*)output;
     if (kDouble_0_StreamNumberFormatting == value) {
         AssignSingleFormatCharacter(str, zero);
-        if ((AsMWStreamState(s)->flags & kShowPoint) || precision > 0) AppendFormatCharacter(str, point);
+        if ((AsMWStreamState(s)->flags & kShowPoint) || precision > 0)
+            AppendFormatCharacter(str, point);
         char zeroValue = zero;
         StdString_ReplaceRepeatedChar(&str, str.size(), 0, precision, zeroValue);
         return;
@@ -3075,21 +3672,28 @@ void MWStream_FormatDoubleFixed(void* stream, void* output, double value) {
     if (digits < 0) {
         int p = (*(int*)&AsMWStreamState(s)->precision);
         AssignSingleFormatCharacter(str, zero);
-        if ((AsMWStreamState(s)->flags & kShowPoint) || p > 0) AppendFormatCharacter(str, point);
+        if ((AsMWStreamState(s)->flags & kShowPoint) || p > 0)
+            AppendFormatCharacter(str, point);
         StdString_ReplaceRepeatedChar(&str, str.size(), 0, p, zero);
         return;
     }
     if (0 == digits) {
         if (exp == -1) {
-            if (MWDecimalDigits_ShouldRoundUp(&dec, 0) == 1) AssignSingleFormatCharacter(str, one);
-            else AssignSingleFormatCharacter(str, zero);
-            if (AsMWStreamState(s)->flags & kShowPoint) AppendFormatCharacter(str, point);
+            if (MWDecimalDigits_ShouldRoundUp(&dec, 0) == 1)
+                AssignSingleFormatCharacter(str, one);
+            else
+                AssignSingleFormatCharacter(str, zero);
+            if (AsMWStreamState(s)->flags & kShowPoint)
+                AppendFormatCharacter(str, point);
         } else {
             AssignSingleFormatCharacter(str, zero);
             AppendFormatCharacter(str, point);
-            if (exp < -2) StdString_ReplaceRepeatedChar(&str, str.size(), 0, -2 - exp, zero);
-            if (MWDecimalDigits_ShouldRoundUp(&dec, 0) == 1) AppendFormatCharacter(str, one);
-            else AppendFormatCharacter(str, zero);
+            if (exp < -2)
+                StdString_ReplaceRepeatedChar(&str, str.size(), 0, -2 - exp, zero);
+            if (MWDecimalDigits_ShouldRoundUp(&dec, 0) == 1)
+                AppendFormatCharacter(str, one);
+            else
+                AppendFormatCharacter(str, zero);
         }
         return;
     }
@@ -3106,15 +3710,22 @@ void MWStream_FormatDoubleFixed(void* stream, void* output, double value) {
         OwnedFacetString t;
         AssignSingleFormatCharacter(t, zero);
         AppendFormatCharacter(t, point);
-        if (exp < -1) StdString_ReplaceRepeatedChar(&t, t.size(), 0, -1 - exp, zero);
+        if (exp < -1)
+            StdString_ReplaceRepeatedChar(&t, t.size(), 0, -1 - exp, zero);
         unsigned int at = t.size();
         unsigned int len;
         char* first;
-        if (!(str.words[0] >> 31)) { first = (char*)&str + 1; len = *(unsigned char*)&str & kInlineLengthMask; }
-        else { first = (char*)str.words[2]; len = str.words[1]; }
+        if (!(str.words[0] >> 31)) {
+            first = (char*)&str + 1;
+            len = *(unsigned char*)&str & kInlineLengthMask;
+        } else {
+            first = (char*)str.words[2];
+            len = str.words[1];
+        }
         InsertFormatRange(t, at, first, first + len);
         str.assign(t);
-        if (2 + precision - t.size() == 1) AppendFormatCharacter(str, zero);
+        if (2 + precision - t.size() == 1)
+            AppendFormatCharacter(str, zero);
         return;
     }
     char zeroValue2 = zero;
@@ -3128,9 +3739,12 @@ void MWStream_FormatDoubleFixed(void* stream, void* output, double value) {
 #pragma push
 #pragma use_lmw_stmw on
 // Format a signed 64-bit integer, using unsigned bit-pattern conversion for octal/hex.
-CheckedNumericOutput NumPut_FormatSigned64(void* self, CheckedNumericOutput* out, NumericFormattingState* s, char fill, long long value) {
+CheckedNumericOutput NumPut_FormatSigned64(void* self, CheckedNumericOutput* out, NumericFormattingState* s, char fill,
+                                           long long value) {
     switch (s->flags & kBaseField) {
-    case kOctal: { CheckedNumericOutput it = *out;  void* entry = GetNumericCtypeFacet(Loc6D9C(s));
+    case kOctal: {
+        CheckedNumericOutput it = *out;
+        void* entry = GetNumericCtypeFacet(Loc6D9C(s));
         int count = 0;
         char buf[0x28];
 
@@ -3138,37 +3752,51 @@ CheckedNumericOutput NumPut_FormatSigned64(void* self, CheckedNumericOutput* out
 
         if (0 == value || (s->flags & kShowBase)) {
             *p = ((CharacterWidenInterface*)entry)->widen((signed char)'0');
-                p = (p + 1);
+            p = (p + 1);
             count++;
         }
-        if (value) count += MWNumPut_ConvertUnsigned64Digits(s, (unsigned long long)value, p, entry, 0);
-            int padding = 0;
-        if (s->width > count) padding = s->width - count;
-            unsigned short adjust = s->flags & kAdjustField;
-        if (adjust != kLeft && adjust != kInternal) it = PadNumericIterator(it, padding, fill);
-            CheckedNumericOutput result = it;
-        if (adjust == kInternal) result = PadNumericIterator(it, padding, fill);
-            result = WriteNumericIteratorText(result, buf, count);
-        if (adjust == kLeft) result = PadNumericIterator(result, padding, fill);
+        if (value)
+            count += MWNumPut_ConvertUnsigned64Digits(s, (unsigned long long)value, p, entry, 0);
+        int padding = 0;
+        if (s->width > count)
+            padding = s->width - count;
+        unsigned short adjust = s->flags & kAdjustField;
+        if (adjust != kLeft && adjust != kInternal)
+            it = PadNumericIterator(it, padding, fill);
+        CheckedNumericOutput result = it;
+        if (adjust == kInternal)
+            result = PadNumericIterator(it, padding, fill);
+        result = WriteNumericIteratorText(result, buf, count);
+        if (adjust == kLeft)
+            result = PadNumericIterator(result, padding, fill);
         s->width = 0;
         return result;
     }
-    case kHexadecimal: { int prefixCount = 0;  char digits[0x28];
+    case kHexadecimal: {
+        int prefixCount = 0;
+        char digits[0x28];
         CheckedNumericOutput it = *out;
         void* entry = GetNumericCtypeFacet(Loc6D9C(s));
         char prefix[2];
 
         if (s->flags & kShowBase) {
-                char* q = (1 + prefix);
+            char* q = (1 + prefix);
             prefix[0] = ((CharacterWidenInterface*)entry)->widen((signed char)'0');
-            if (s->flags & kUppercase) *q = ((CharacterWidenInterface*)entry)->widen((signed char)'X');
-            else *q = ((CharacterWidenInterface*)entry)->widen((signed char)'x');
+            if (s->flags & kUppercase)
+                *q = ((CharacterWidenInterface*)entry)->widen((signed char)'X');
+            else
+                *q = ((CharacterWidenInterface*)entry)->widen((signed char)'x');
             prefixCount += 2;
         }
 
-        return WriteNumericParts(it, prefixCount, prefix, MWNumPut_ConvertUnsigned64Digits(s, (unsigned long long)value, digits, entry, 0), digits, s, fill);
+        return WriteNumericParts(it, prefixCount, prefix,
+                                 MWNumPut_ConvertUnsigned64Digits(s, (unsigned long long)value, digits, entry, 0),
+                                 digits, s, fill);
     }
-    default: { char digits[0x28];  char sign;  CheckedNumericOutput it = *out;
+    default: {
+        char digits[0x28];
+        char sign;
+        CheckedNumericOutput it = *out;
 
         void* entry = GetNumericCtypeFacet(Loc6D9C(s));
         int signCount = 0;
@@ -3191,9 +3819,11 @@ CheckedNumericOutput NumPut_FormatSigned64(void* self, CheckedNumericOutput* out
 #pragma push
 #pragma use_lmw_stmw on
 // Format a signed 32-bit integer with sign, base prefix, and width padding.
-CheckedNumericOutput NumPut_FormatSignedInteger(void* self, CheckedNumericOutput* out, NumericFormattingState* s, char fill, int value) {
+CheckedNumericOutput NumPut_FormatSignedInteger(void* self, CheckedNumericOutput* out, NumericFormattingState* s,
+                                                char fill, int value) {
     switch (s->flags & kBaseField) {
-    case kOctal: { char buf[0x28];
+    case kOctal: {
+        char buf[0x28];
         CheckedNumericOutput it = *out;
         void* entry = GetNumericCtypeFacet(Loc6D9C(s));
 
@@ -3204,19 +3834,26 @@ CheckedNumericOutput NumPut_FormatSignedInteger(void* self, CheckedNumericOutput
             p++;
             count++;
         }
-        if (value != 0) count += ((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(s, value, p, entry, 0);
+        if (value != 0)
+            count += ((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(s, value, p,
+                                                                                                         entry, 0);
         int padding = 0;
-        if (s->width > count) padding = s->width - count;
-            unsigned short adjust = s->flags & kAdjustField;
-        if (adjust != kLeft && adjust != kInternal) it = PadNumericIterator(it, padding, fill);
+        if (s->width > count)
+            padding = s->width - count;
+        unsigned short adjust = s->flags & kAdjustField;
+        if (adjust != kLeft && adjust != kInternal)
+            it = PadNumericIterator(it, padding, fill);
         CheckedNumericOutput result = it;
-        if (adjust == kInternal) result = PadNumericIterator(it, padding, fill);
-            result = WriteNumericIteratorText(result, buf, count);
-        if (adjust == kLeft) result = PadNumericIterator(result, padding, fill);
+        if (adjust == kInternal)
+            result = PadNumericIterator(it, padding, fill);
+        result = WriteNumericIteratorText(result, buf, count);
+        if (adjust == kLeft)
+            result = PadNumericIterator(result, padding, fill);
         s->width = 0;
         return result;
     }
-    case kHexadecimal: { int prefixCount = 0;
+    case kHexadecimal: {
+        int prefixCount = 0;
         CheckedNumericOutput it = *out;
         void* entry = GetNumericCtypeFacet(Loc6D9C(s));
         char prefix[2];
@@ -3225,12 +3862,17 @@ CheckedNumericOutput NumPut_FormatSignedInteger(void* self, CheckedNumericOutput
         if (s->flags & kShowBase) {
             char* q = 1 + prefix;
             prefix[0] = ((CharacterWidenInterface*)entry)->widen((signed char)'0');
-            if (s->flags & kUppercase) *q = ((CharacterWidenInterface*)entry)->widen((signed char)'X');
-            else *q = ((CharacterWidenInterface*)entry)->widen((signed char)'x');
+            if (s->flags & kUppercase)
+                *q = ((CharacterWidenInterface*)entry)->widen((signed char)'X');
+            else
+                *q = ((CharacterWidenInterface*)entry)->widen((signed char)'x');
             prefixCount += 2;
         }
 
-        return WriteNumericParts(it, prefixCount, prefix, (((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(s, value, digits, entry, 0)), digits, s, fill);
+        return WriteNumericParts(it, prefixCount, prefix,
+                                 (((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(
+                                     s, value, digits, entry, 0)),
+                                 digits, s, fill);
     }
     default: {
         CheckedNumericOutput it = *out;
@@ -3247,7 +3889,9 @@ CheckedNumericOutput NumPut_FormatSignedInteger(void* self, CheckedNumericOutput
             sign = ((CharacterWidenInterface*)entry)->widen((signed char)'-');
             magnitude = 0u - magnitude;
         }
-        char digits[0x28]; int length = ((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(s, magnitude, digits, entry, 0);
+        char digits[0x28];
+        int length = ((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(
+            s, magnitude, digits, entry, 0);
         return WriteNumericParts(it, signCount, &sign, length, digits, s, fill);
     }
     }
@@ -3257,33 +3901,42 @@ CheckedNumericOutput NumPut_FormatSignedInteger(void* self, CheckedNumericOutput
 #pragma push
 #pragma use_lmw_stmw on
 // Format an unsigned 32-bit integer with base prefix and width padding.
-CheckedNumericOutput NumPut_FormatUnsigned32(void* self, CheckedNumericOutput* out, NumericFormattingState* s, char fill, unsigned int value) {
+CheckedNumericOutput NumPut_FormatUnsigned32(void* self, CheckedNumericOutput* out, NumericFormattingState* s,
+                                             char fill, unsigned int value) {
     switch (s->flags & kBaseField) {
     case kOctal: {
         CheckedNumericOutput it = *out;
         void* entry = GetNumericCtypeFacet(Loc6D9C(s));
 
-        char buf[0x28]; char* p = buf;
+        char buf[0x28];
+        char* p = buf;
         int count = 0;
         if (!value || (s->flags & kShowBase)) {
             *p = ((CharacterWidenInterface*)entry)->widen((signed char)'0');
             p++;
             count += 1;
         }
-        if (value) count += ((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(s, value, p, entry, 0);
-            int padding = 0;
+        if (value)
+            count += ((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(s, value, p,
+                                                                                                         entry, 0);
+        int padding = 0;
         CheckedNumericOutput it2 = it;
-        if (s->width > count) padding = s->width - count;
-            unsigned short adjust = s->flags & kAdjustField;
-        if (adjust != kLeft && adjust != kInternal) it2 = PadNumericIterator(it, padding, fill);
+        if (s->width > count)
+            padding = s->width - count;
+        unsigned short adjust = s->flags & kAdjustField;
+        if (adjust != kLeft && adjust != kInternal)
+            it2 = PadNumericIterator(it, padding, fill);
         CheckedNumericOutput result = it2;
-        if (adjust == kInternal) result = PadNumericIterator(it2, padding, fill);
-            result = WriteNumericIteratorText(result, buf, count);
-        if (adjust == kLeft) result = PadNumericIterator(result, padding, fill);
+        if (adjust == kInternal)
+            result = PadNumericIterator(it2, padding, fill);
+        result = WriteNumericIteratorText(result, buf, count);
+        if (adjust == kLeft)
+            result = PadNumericIterator(result, padding, fill);
         s->width = 0;
         return result;
     }
-    case kHexadecimal: { unsigned int prefixCount = 0;
+    case kHexadecimal: {
+        unsigned int prefixCount = 0;
         CheckedNumericOutput it = *out;
         void* entry = GetNumericCtypeFacet(Loc6D9C(s));
         char prefix[2];
@@ -3291,13 +3944,16 @@ CheckedNumericOutput NumPut_FormatUnsigned32(void* self, CheckedNumericOutput* o
         char digits[0x28];
         if (s->flags & kShowBase) {
 
-                prefix[0] = ((CharacterWidenInterface*)entry)->widen((signed char)'0');
-                char* q = (prefix + 1);
-            if (s->flags & kUppercase) *q = ((CharacterWidenInterface*)entry)->widen((signed char)'X');
-            else *q = ((CharacterWidenInterface*)entry)->widen((signed char)'x');
+            prefix[0] = ((CharacterWidenInterface*)entry)->widen((signed char)'0');
+            char* q = (prefix + 1);
+            if (s->flags & kUppercase)
+                *q = ((CharacterWidenInterface*)entry)->widen((signed char)'X');
+            else
+                *q = ((CharacterWidenInterface*)entry)->widen((signed char)'x');
             prefixCount += 2;
         }
-        int length = ((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(s, value, digits, entry, 0);
+        int length = ((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(
+            s, value, digits, entry, 0);
         return WriteNumericParts(it, prefixCount, prefix, length, digits, s, fill);
     }
     default: {
@@ -3305,11 +3961,13 @@ CheckedNumericOutput NumPut_FormatUnsigned32(void* self, CheckedNumericOutput* o
         void* entry = GetNumericCtypeFacet(Loc6D9C(s));
         char digits[0x28];
 
-        return WriteNumericParts(it, 0, digits, (((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(s, value, digits, entry, 0)), digits, s, fill);
+        return WriteNumericParts(it, 0, digits,
+                                 (((int (*)(void*, unsigned int, char*, void*, int))MWNumPut_ConvertUnsigned32Digits)(
+                                     s, value, digits, entry, 0)),
+                                 digits, s, fill);
     }
     }
 }
 #pragma pop
 
 } // extern "C"
-

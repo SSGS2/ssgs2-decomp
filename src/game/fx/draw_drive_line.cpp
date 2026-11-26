@@ -1,8 +1,8 @@
+// Drive line effect: the on/off marker pattern along the predicted shot line for each course,
+// and the CDrawDriveLine object that holds the prediction.
+
 #include <decomp/static_init.h>
 #include "game/draw_drive_line_match.h"
-
-// Translation unit 0x80277528-0x8027775C (4 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 static const int kMarkerCount = 18;
 static const int kLastThresholdRow = 13;
@@ -12,7 +12,10 @@ static const int kLeadInMarker = 1;
 static const int kActiveMarker = 2;
 // These are child protocol values, not difficulty levels; the meaning of state 4
 // is unresolved. Keep invoke's returned byte rather than assuming it accepted 4.
-enum { kPredictionChildBytes = 12, kPredictionRequestedState = 4 };
+enum {
+    kPredictionChildBytes = 12,
+    kPredictionRequestedState = 4
+};
 
 extern "C" {
 extern float kFloat_6_2831855;
@@ -68,9 +71,12 @@ void DriveLineMarkers_Clear(int* markers) {
 void DriveLineMarkers_Generate(int* markers, int courseIndex) {
     // Phase 1: choose the course row, then generate independent active markers.
     int tableRow;
-    if (courseIndex < 0) tableRow = 0;
-    else if (courseIndex > kLastThresholdRow) tableRow = kLastThresholdRow;
-    else tableRow = courseIndex;
+    if (courseIndex < 0)
+        tableRow = 0;
+    else if (courseIndex > kLastThresholdRow)
+        tableRow = kLastThresholdRow;
+    else
+        tableRow = courseIndex;
 
     int* markerCursor = markers;
     int i;

@@ -1,13 +1,19 @@
+// Item inventory loading from IFF archives: reads the item and character tables from an archive into
+// the item manager's storage.
+// The name comparison and vector growth helpers at the top serve that loader.
+
 typedef unsigned long new_size_t;
 #include "classes/CItemManager.h"
 #include "classes/CSwapEndianFormat.h"
 #include "iff/IffStruct.h"
-// Translation unit 0x8018839C-0x801898A8 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/exception.h"
+#include "classes/CSharedFileHandle.h"
+#include "classes/CSharedFilePtr.h"
 // Construct records in caller-provided storage; allocation is handled by their vector.
-inline void* operator new(new_size_t, void* p) { return p; }
+inline void* operator new(new_size_t, void* p) {
+    return p;
+}
 
 extern "C" {
 
@@ -24,11 +30,9 @@ void* SharedFile_Create(const char*, int);
 int CSharedFilePtr_GetLoadedBuffer(void*);
 // Pointer-shaped ABI declarations below carry the byte count in one 32-bit word;
 // GetSize's definition in shared_file_loading.cpp returns an integer, not a string address.
-const char* CSharedFilePtr_GetSize(void*);
 void* Archive_Open(const char*, const char*, int);
 void Archive_GetEntryInfo(void*, int, void*);
 void Archive_Close(void*);
-void CSharedFileHandle_Destroy(void*, short);
 void __dla__FPv(void*);
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 extern const char iffSchemaAndCourseStrings[];
@@ -112,38 +116,59 @@ enum {
 extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[];
 
 struct VectorAllocation {
-    char* pointer; char* allocator;
+    char* pointer;
+    char* allocator;
     // Guard a new exception-message allocation until its control block owns it.
     VectorAllocation(char* p, char* a) : pointer(p), allocator(a) {}
     // Release the message only if ownership has not been transferred.
-    ~VectorAllocation() { if (pointer) __dla__FPv(pointer); }
+    ~VectorAllocation() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct VectorControlBase {
-    void* table; unsigned strong, weak;
+    void* table;
+    unsigned strong, weak;
     // Initialize the message control block with one strong and one weak reference.
-    VectorControlBase() { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; }
+    VectorControlBase() {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+    }
 };
 struct VectorControl : VectorControlBase {
     char* pointer;
     // Attach the allocated message bytes to their reference-counted deleter.
-    VectorControl(char* p) { pointer = p; }
+    VectorControl(char* p) {
+        pointer = p;
+    }
 };
-namespace std { struct logic_error : exception {
+namespace std {
+struct logic_error : exception {
     // Replace the exception's dynamic type table during staged construction.
-    void SetTable(void* table) { *(void**)this = table; }
+    void SetTable(void* table) {
+        *(void**)this = table;
+    }
     // Initialize the logic_error base before the concrete length_error.
-    logic_error() { SetTable(__vt__Q23std11logic_error); }
+    logic_error() {
+        SetTable(__vt__Q23std11logic_error);
+    }
     ~logic_error();
-}; }
+};
+}
 } // extern "C"
 
 namespace std {
 struct length_error : logic_error {
-    char* text; void* control;
+    char* text;
+    void* control;
     // Build the standard vector-length exception with a shared copy of the pooled message.
     length_error() {
         const char* message = iffSchemaAndCourseStrings + kIffVectorLengthError;
-        struct Allocator { char tag; char pad[3]; } allocator;
+        struct Allocator {
+            char tag;
+            char pad[3];
+        } allocator;
         allocator.tag = 0;
         unsigned n = strlen(message) + 1;
         text = (char*)__nwa__FUl(2 * n - n);
@@ -163,15 +188,15 @@ struct length_error : logic_error {
 extern "C" {
 struct ElemVector;
 // Eight-byte native-endian IFF header; count controls the following packed records.
-struct Header8839C { unsigned short count, bindingId; unsigned int version; };
+struct Header8839C {
+    unsigned short count, bindingId;
+    unsigned int version;
+};
 // Return a reference to the larger growth term, preserving the vector template's evaluation.
-inline const unsigned& MaxRef8839C(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+inline const unsigned& MaxRef8839C(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 void Archive_ReadEntry(void*, int, void*, unsigned, int);
-void CSwapEndianFormat_ctor(void*);
-void CSwapEndianFormat_SetContext(void*, int);
-void CSwapEndianFormat_RegisterFormat(void*, const char*, unsigned, unsigned);
-void CSwapEndianFormat_CopyAndSwap(void*, void*, void*, unsigned);
-void CSwapEndianFormat_dtor(void*, short);
 int String_CompareCString(const char*, const char*);
 // Compare an archive member name using the game's string comparator (zero means equal).
 static inline int CompareIffMemberName(const char* actual, const char* expected) {
@@ -192,9 +217,13 @@ void ItemInventory_ReadAuxPartTable(void*, void*, unsigned);
 struct Reader8839C {
     CSwapEndianFormat format;
     // Begin an endian-format context for this archive member.
-    Reader8839C() { CSwapEndianFormat_ctor(this); }
+    Reader8839C() {
+        ((CSwapEndianFormat*)this)->__ct();
+    }
     // Tear down registered formats on normal exit or exception unwinding.
-    ~Reader8839C() { CSwapEndianFormat_dtor(this, -1); }
+    ~Reader8839C() {
+        format.Destroy(-1);
+    }
 };
 struct DescLoadEntry {
     unsigned lookupKey;
@@ -211,14 +240,26 @@ struct DescLoadEntry {
 // boundary not yet copied, and size counts constructed entries. After the swap, data
 // owns the old allocation and the destructor frees it. owner refers to capacity metadata.
 struct Buffer8839C {
-    DescLoadEntry* data; volatile unsigned size; unsigned capacity; unsigned* owner; volatile unsigned offset;
+    DescLoadEntry* data;
+    volatile unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    volatile unsigned offset;
     // Begin an empty, scoped allocation transaction for the destination vector.
     Buffer8839C(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free whichever allocation remains owned by the transaction.
-    ~Buffer8839C() { if (data) { size = size - size; appFreeUni__FPv(data); } }
+    ~Buffer8839C() {
+        if (data) {
+            size = size - size;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 // Contiguous keyed records; size/capacity are entry counts, not byte counts.
-struct Vector8839C { DescLoadEntry* data; unsigned size, capacity; };
+struct Vector8839C {
+    DescLoadEntry* data;
+    unsigned size, capacity;
+};
 #pragma use_lmw_stmw on
 #pragma opt_strength_reduction off
 #pragma opt_loop_invariants off
@@ -232,12 +273,16 @@ int ItemInventory_LoadIffArchive(void* self) {
     __alloca(0);
     // Acquire loaded archive bytes, then open the in-memory archive before clearing tables.
     void* sharedFile = SharedFile_Create(iffSchemaAndCourseStrings, 0);
-    while (!CSharedFilePtr_GetLoadedBuffer(sharedFile)) {}
+    while (!CSharedFilePtr_GetLoadedBuffer(sharedFile)) {
+    }
     char* archiveBytes = (char*)CSharedFilePtr_GetLoadedBuffer(sharedFile);
-    const char* archiveSize = CSharedFilePtr_GetSize(sharedFile);
+    const char* archiveSize = (const char*)CSharedFilePtr::GetSize(sharedFile);
     void* archive = Archive_Open(archiveBytes, archiveSize, kIffArchiveReadMode);
     // Preserve asymmetric failure cleanup: bytes are deleted here, but the handle is not destroyed.
-    if (!archive) { __dla__FPv(archiveBytes); return 0; }
+    if (!archive) {
+        __dla__FPv(archiveBytes);
+        return 0;
+    }
     CItemManager* manager = (CItemManager*)self;
     // Reset logical contents while retaining allocations. Club-set size is not reset here;
     // its recognized-member reader controls it. Preserve this list when changing reload behavior.
@@ -254,7 +299,12 @@ int ItemInventory_LoadIffArchive(void* self) {
     manager->descriptions.size -= manager->descriptions.size;
     manager->auxParts.size -= manager->auxParts.size;
     manager->lockEnabled = 0;
-    struct Properties { int count; char name[0x124]; unsigned size; char tail[8]; } properties;
+    struct Properties {
+        int count;
+        char name[0x124];
+        unsigned size;
+        char tail[8];
+    } properties;
     DescLoadEntry inPlaceDefault, reallocationDefault;
     Archive_GetEntryInfo(archive, kArchiveRootEntry, &properties);
     DescLoadEntry inPlaceFill(inPlaceDefault), reallocationFill(reallocationDefault);
@@ -265,75 +315,76 @@ int ItemInventory_LoadIffArchive(void* self) {
         unsigned char* data = (unsigned char*)__nwa__FUl(properties.size);
         Archive_ReadEntry(archive, archiveEntryIndex, data, properties.size, kIffArchiveReadMode);
         Reader8839C reader;
-        CSwapEndianFormat_SetContext(&reader, kIffFormatContext);
+        ((CSwapEndianFormat*)(&reader))->SetContext(kIffFormatContext);
         const char* strings = iffSchemaAndCourseStrings;
-        CSwapEndianFormat_RegisterFormat(&reader, strings + kIffHeaderFormat, sizeof(Header8839C), 1);
+        ((CSwapEndianFormat*)(&reader))->RegisterFormat(strings + kIffHeaderFormat, sizeof(Header8839C), 1);
         // Decode count first, then register the selected payload schema and swap in place.
         Header8839C header;
-        CSwapEndianFormat_CopyAndSwap(&reader, &header, data, sizeof(Header8839C));
+        ((CSwapEndianFormat*)(&reader))->CopyAndSwap(&header, data, sizeof(Header8839C));
         if (!CompareIffMemberName(properties.name, strings + kIffCharacterFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffCharacterFormat, sizeof(IFF_STRUCT::sChar), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffCharacterFormat, sizeof(IFF_STRUCT::sChar), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ((void (*)(void*, void*, unsigned))ItemInventory_ReadCharacterTable)(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffPartFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffPartFormat, sizeof(IFF_STRUCT::sPart), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffPartFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffPartFormat, sizeof(IFF_STRUCT::sPart), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadPartTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffClubFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffClubFormat, sizeof(IFF_STRUCT::sClub), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffClubFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffClubFormat, sizeof(IFF_STRUCT::sClub), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadClubTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffClubSetFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffClubSetFormat, sizeof(IFF_STRUCT::sClubSet), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffClubSetFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffClubSetFormat, sizeof(IFF_STRUCT::sClubSet), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadClubSetTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffBallFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffBallFormat, sizeof(IFF_STRUCT::sBall), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffBallFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffBallFormat, sizeof(IFF_STRUCT::sBall), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadBallTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffItemFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffItemFormat, sizeof(IFF_STRUCT::sItem), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffItemFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffItemFormat, sizeof(IFF_STRUCT::sItem), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadItemTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffCaddieFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffCaddieFormat, sizeof(IFF_STRUCT::sCaddie), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffCaddieFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffCaddieFormat, sizeof(IFF_STRUCT::sCaddie), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadCaddieTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffCaddieItemFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffCaddieItemFormat, sizeof(IFF_STRUCT::sCadItem), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffCaddieItemFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffCaddieItemFormat, sizeof(IFF_STRUCT::sCadItem), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadCaddieItemTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffSetItemFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffSetItemFormat, sizeof(IFF_STRUCT::sSetItem), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffSetItemFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffSetItemFormat, sizeof(IFF_STRUCT::sSetItem), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadSetItemTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffCourseFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffCourseFormat, sizeof(IFF_STRUCT::sCourse), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffCourseFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffCourseFormat, sizeof(IFF_STRUCT::sCourse), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadCourseTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffHairStyleFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffHairStyleFormat, sizeof(IFF_STRUCT::sHairStyle), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffHairStyleFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffHairStyleFormat, sizeof(IFF_STRUCT::sHairStyle), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadHairStyleTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffAuxPartFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffAuxPartFormat, sizeof(IFF_STRUCT::sAuxPart), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffAuxPartFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffAuxPartFormat, sizeof(IFF_STRUCT::sAuxPart), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             ItemInventory_ReadAuxPartTable(self, data, properties.size);
-        } else
-        if (!CompareIffMemberName(properties.name, strings + kIffDescriptionFile)) {
-            CSwapEndianFormat_RegisterFormat(&reader, strings + kIffDescriptionFormat, sizeof(IFF_STRUCT::sDesc), header.count);
-            CSwapEndianFormat_CopyAndSwap(&reader, data, data, properties.size);
+        } else if (!CompareIffMemberName(properties.name, strings + kIffDescriptionFile)) {
+            ((CSwapEndianFormat*)(&reader))
+                ->RegisterFormat(strings + kIffDescriptionFormat, sizeof(IFF_STRUCT::sDesc), header.count);
+            ((CSwapEndianFormat*)(&reader))->CopyAndSwap(data, data, properties.size);
             // Description-table specialization: resize keyed entries, then overwrite each payload/key.
             Header8839C descriptionHeader;
             memcpy(&descriptionHeader, data, sizeof(Header8839C));
@@ -345,43 +396,78 @@ int ItemInventory_LoadIffArchive(void* self) {
                     // Reserve enough entries using the original 3/5 or 1/2 growth policy.
                     unsigned capacity = descriptions->capacity;
                     unsigned needed = descriptions->size + add - capacity;
-                    if (needed > kMaxDescriptionEntries - capacity) throw std::length_error();
-                    if (capacity < kSmallDescriptionGrowthLimit) {} else if (capacity < kMediumDescriptionGrowthLimit) {}
+                    if (needed > kMaxDescriptionEntries - capacity)
+                        throw std::length_error();
+                    if (capacity < kSmallDescriptionGrowthLimit) {
+                    } else if (capacity < kMediumDescriptionGrowthLimit) {
+                    }
                     Buffer8839C temp(&descriptions->capacity);
                     needed = descriptions->size + add - descriptions->capacity;
                     capacity = descriptions->capacity;
-                    if (needed > kMaxDescriptionEntries - capacity) throw std::length_error();
-                    if (capacity < kSmallDescriptionGrowthLimit) capacity += MaxRef8839C(3 * (capacity + 1) / 5, needed);
-                    else if (capacity < kMediumDescriptionGrowthLimit) capacity += MaxRef8839C((capacity + 1) / 2, needed);
-                    else capacity = kMaxDescriptionEntries;
-                    if (capacity > kMaxDescriptionEntries) throw std::length_error();
+                    if (needed > kMaxDescriptionEntries - capacity)
+                        throw std::length_error();
+                    if (capacity < kSmallDescriptionGrowthLimit)
+                        capacity += MaxRef8839C(3 * (capacity + 1) / 5, needed);
+                    else if (capacity < kMediumDescriptionGrowthLimit)
+                        capacity += MaxRef8839C((capacity + 1) / 2, needed);
+                    else
+                        capacity = kMaxDescriptionEntries;
+                    if (capacity > kMaxDescriptionEntries)
+                        throw std::length_error();
                     DescLoadEntry* allocation = (DescLoadEntry*)appMallocDummy__FUl(capacity * sizeof(DescLoadEntry));
                     unsigned oldSize = descriptions->size;
-                    temp.data = allocation; temp.capacity = capacity; temp.offset = oldSize;
+                    temp.data = allocation;
+                    temp.capacity = capacity;
+                    temp.offset = oldSize;
                     // Construct the new suffix first; copy the old prefix backward into its final slots.
                     DescLoadEntry* out = allocation + oldSize + temp.size;
-                    while (add != 0) { if (out) new (out) DescLoadEntry(reallocationFill); ++temp.size; --add; ++out; }
+                    while (add != 0) {
+                        if (out)
+                            new (out) DescLoadEntry(reallocationFill);
+                        ++temp.size;
+                        --add;
+                        ++out;
+                    }
                     DescLoadEntry* old = descriptions->data;
                     DescLoadEntry* end = old + descriptions->size;
                     DescLoadEntry* dest = temp.data + temp.offset;
-                    while (end > old) { --dest; --end; if (dest) *dest = *end; --temp.offset; ++temp.size; }
+                    while (end > old) {
+                        --dest;
+                        --end;
+                        if (dest)
+                            *dest = *end;
+                        --temp.offset;
+                        ++temp.size;
+                    }
                     // Commit the replacement; temp now owns and frees the previous allocation.
                     DescLoadEntry* previous = descriptions->data;
                     DescLoadEntry* replacement = temp.data;
                     unsigned size = temp.size, oldCapacity = descriptions->capacity;
-                    descriptions->size = 0; temp.data = previous;
-                    descriptions->capacity = temp.capacity; temp.capacity = oldCapacity;
-                    descriptions->data = replacement; descriptions->size = size; temp.size = 0;
+                    descriptions->size = 0;
+                    temp.data = previous;
+                    descriptions->capacity = temp.capacity;
+                    temp.capacity = oldCapacity;
+                    descriptions->data = replacement;
+                    descriptions->size = size;
+                    temp.size = 0;
                 } else {
                     // Existing capacity suffices: append directly and advance logical size.
                     DescLoadEntry* out = descriptions->data + descriptions->size;
-                    while (add != 0) { if (out) new (out) DescLoadEntry(inPlaceFill); ++descriptions->size; --add; ++out; }
+                    while (add != 0) {
+                        if (out)
+                            new (out) DescLoadEntry(inPlaceFill);
+                        ++descriptions->size;
+                        --add;
+                        ++out;
+                    }
                 }
-            } else if (descriptionHeader.count < descriptions->size) descriptions->size = descriptions->size - (descriptions->size - descriptionHeader.count);
+            } else if (descriptionHeader.count < descriptions->size)
+                descriptions->size = descriptions->size - (descriptions->size - descriptionHeader.count);
             // The destination now has exactly header.count slots; source records omit the lookup key.
             for (int descriptionIndex = 0; descriptionIndex < descriptionHeader.count; ++descriptionIndex) {
                 DescLoadEntry::Payload body;
-                memcpy(&body, source, sizeof(IFF_STRUCT::sDesc)); source += sizeof(IFF_STRUCT::sDesc);
+                memcpy(&body, source, sizeof(IFF_STRUCT::sDesc));
+                source += sizeof(IFF_STRUCT::sDesc);
                 DescLoadEntry copy;
                 copy.body = body;
                 copy.lookupKey = copy.body.value.typeId;
@@ -393,7 +479,8 @@ int ItemInventory_LoadIffArchive(void* self) {
     }
     // Release archive state before destroying the shared-file handle backing its bytes.
     Archive_Close(archive);
-    if (sharedFile) CSharedFileHandle_Destroy(sharedFile, 1);
+    if (sharedFile)
+        CSharedFileHandle::Destroy(sharedFile, 1);
     return 1;
 }
 #pragma opt_strength_reduction reset
@@ -409,9 +496,15 @@ struct CharacterLoadEntry {
     // Leave scratch/default-fill storage uninitialized, as in the original vector specialization.
     CharacterLoadEntry() {}
     // Wrap a disk record, leaving its lookup key to be filled separately.
-    CharacterLoadEntry(const CharacterRecordStorage& record) { lookupKey = 0; body = record; }
+    CharacterLoadEntry(const CharacterRecordStorage& record) {
+        lookupKey = 0;
+        body = record;
+    }
     // Preserve both key and payload when relocating an existing entry.
-    CharacterLoadEntry(const CharacterLoadEntry& o) { lookupKey = o.lookupKey; body = o.body; }
+    CharacterLoadEntry(const CharacterLoadEntry& o) {
+        lookupKey = o.lookupKey;
+        body = o.body;
+    }
 };
 
 struct ElemVector {
@@ -429,15 +522,26 @@ struct Header {
 // Same transaction/ownership convention as Buffer8839C, specialized for keyed character records.
 // The vector owns entry storage; payloads are inline records, with no separately owned buffers.
 struct ElemBuffer {
-    CharacterLoadEntry* data; volatile unsigned size; unsigned capacity; unsigned* owner; volatile unsigned offset;
+    CharacterLoadEntry* data;
+    volatile unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    volatile unsigned offset;
     // Begin an empty scoped character-vector allocation.
     ElemBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Release the uncommitted allocation, or the old allocation after a successful swap.
-    ~ElemBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~ElemBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 
 // Choose the larger requested growth term by reference.
-inline const unsigned& MaxRef(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+inline const unsigned& MaxRef(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 
 #pragma use_lmw_stmw on
 // Resize the keyed character table and copy each character record from an already-swapped IFF member.
@@ -456,13 +560,15 @@ void ItemInventory_ReadCharacterTable(ElemVector* self, const unsigned char* inp
         if (add > self->capacity || self->size > self->capacity - add) {
             unsigned int capacity = self->capacity;
             unsigned int needed = self->size + add - capacity;
-            if (needed > kMaxCharacterEntries - capacity) throw std::length_error();
+            if (needed > kMaxCharacterEntries - capacity)
+                throw std::length_error();
             if (capacity < kSmallCharacterGrowthLimit) {
             } else if (capacity < kMediumCharacterGrowthLimit) {
             }
             ElemBuffer temp(&self->capacity);
             capacity = self->capacity;
-            if (needed > kMaxCharacterEntries - capacity) throw std::length_error();
+            if (needed > kMaxCharacterEntries - capacity)
+                throw std::length_error();
             if (capacity < kSmallCharacterGrowthLimit) {
                 capacity += MaxRef((3 * (capacity + 1)) / 5, needed);
             } else if (capacity < kMediumCharacterGrowthLimit) {
@@ -470,7 +576,8 @@ void ItemInventory_ReadCharacterTable(ElemVector* self, const unsigned char* inp
             } else {
                 capacity = kMaxCharacterEntries;
             }
-            if (capacity > kMaxCharacterEntries) throw std::length_error();
+            if (capacity > kMaxCharacterEntries)
+                throw std::length_error();
             // Construct the appended suffix before relocating the old prefix backward.
             CharacterLoadEntry* data = (CharacterLoadEntry*)appMallocDummy__FUl(capacity * sizeof(CharacterLoadEntry));
             unsigned int oldSize = self->size;
@@ -480,7 +587,8 @@ void ItemInventory_ReadCharacterTable(ElemVector* self, const unsigned char* inp
             CharacterLoadEntry x(fill.body);
             CharacterLoadEntry* out = data + oldSize + temp.size;
             for (; add != 0; --add) {
-                if (out) new (out) CharacterLoadEntry(x);
+                if (out)
+                    new (out) CharacterLoadEntry(x);
                 ++temp.size;
                 ++out;
             }
@@ -490,7 +598,8 @@ void ItemInventory_ReadCharacterTable(ElemVector* self, const unsigned char* inp
             while (srcEnd > oldData) {
                 --dstEnd;
                 --srcEnd;
-                if (dstEnd) new (dstEnd) CharacterLoadEntry(*srcEnd);
+                if (dstEnd)
+                    new (dstEnd) CharacterLoadEntry(*srcEnd);
                 --temp.offset;
                 ++temp.size;
             }
@@ -511,7 +620,8 @@ void ItemInventory_ReadCharacterTable(ElemVector* self, const unsigned char* inp
             CharacterLoadEntry x(fill.body);
             CharacterLoadEntry* out = self->data + self->size;
             for (; add != 0; --add) {
-                if (out) new (out) CharacterLoadEntry(x);
+                if (out)
+                    new (out) CharacterLoadEntry(x);
                 ++self->size;
                 ++out;
             }

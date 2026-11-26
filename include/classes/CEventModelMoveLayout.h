@@ -5,9 +5,9 @@
 
 class CEventModelMoveLayout {
 public:
-    void* vtable; // 0x0: constructor installs __vt__22CEventModelSC_MDL_MOVE
-    unsigned int count; // 0x4: constructor scales duration; vfunc_1 divides elapsed time
-    void* object; // 0x8: constructor resolves SlotTable entry
+    void* vtable;           // 0x0: constructor installs __vt__22CEventModelSC_MDL_MOVE
+    unsigned int count;     // 0x4: constructor scales duration; vfunc_1 divides elapsed time
+    void* object;           // 0x8: constructor resolves SlotTable entry
     float startPosition[3]; // 0xC: constructor copies object +0x1C; vfunc_1 adds scaled delta
     float deltaPosition[3]; // 0x18: constructor optionally subtracts start; vfunc_1 scales
 };

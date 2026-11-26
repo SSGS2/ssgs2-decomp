@@ -7,16 +7,23 @@ struct ShopErrorTextOwner {
 };
 
 // Compare container cursors without changing their iterator representation.
-template <class T> inline bool same_pos(const T& a, const T& b) { return a == b; }
-// Translation unit 0x802356DC-0x80236BF4 (16 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+template <class T> inline bool same_pos(const T& lhs, const T& rhs) {
+    return lhs == rhs;
+}
 
 #include "sdk_protos.h"
 #include "classes/ShopProductRecord.h"
+#include "classes/CShopProductInterface.h"
+#include "classes/CShopProductBall.h"
+#include "classes/CShopProductClubSet.h"
+#include "classes/CShopProductEquipItem.h"
 
 // Four-byte pointer arrays cap element count before byte-size overflow; growth uses 3/5 then 1/2.
-enum ProductVectorLimits { kMaxProductPointerCount = 0x3FFFFFFF,
-    kThreeFifthsGrowthLimit = 0x15555555, kHalfGrowthLimit = 0x2AAAAAAA };
+enum ProductVectorLimits {
+    kMaxProductPointerCount = 0x3FFFFFFF,
+    kThreeFifthsGrowthLimit = 0x15555555,
+    kHalfGrowthLimit = 0x2AAAAAAA
+};
 
 extern "C" {
 
@@ -26,10 +33,14 @@ extern void __dl__FPv(void*);
 extern void appFreeUni__FPv(void*);
 extern void* __nw__FUl(unsigned int);
 extern void* appMallocDummy__FUl(unsigned int);
-extern void CShopProductInterface_dtor(void*, int);
 
-struct CopyVTable { void* entries[4]; int (*copy)(void*, void*); };
-struct CopyObject { CopyVTable* vtable; };
+struct CopyVTable {
+    void* entries[4];
+    int (*copy)(void*, void*);
+};
+struct CopyObject {
+    CopyVTable* vtable;
+};
 
 struct CopyDispatch {
     virtual ~CopyDispatch();
@@ -37,7 +48,7 @@ struct CopyDispatch {
     virtual int copy(void*);
 };
 
-// Common-header output schema (both vfunc_4 implementations):
+// Common-header output schema (both common-header copy functions):
 // [00,28) name/message-id bytes; [28,50) icon-name bytes; [50,54) type ID;
 // [54,58) price bits; byte 58 level flags; byte 59 shop flags; [5A,5C) unresolved flags.
 // dest borrows at least 0x5C writable bytes. Return 0 for null dest or failed indexed copy,
@@ -212,9 +223,12 @@ static inline void CopyProductNameAndIcon(volatile const unsigned char* source, 
     dest[0x4f] = b4f;
 }
 
+} // extern "C"
+
 // Copy the selected club-set common IFF header; preserve bytewise name/icon loads.
-int CShopProductClubSet_CopyCommonHeader(CopyObject* source, unsigned char* dest, unsigned int index) {
-    if (dest == 0) return 0;
+int CShopProductClubSet::CopyCommonHeader(unsigned char* dest, unsigned int index) {
+    if (dest == 0)
+        return 0;
     struct Temp {
         volatile unsigned char nameAndIcon[0x50];
         unsigned int typeId;
@@ -225,21 +239,26 @@ int CShopProductClubSet_CopyCommonHeader(CopyObject* source, unsigned char* dest
         unsigned char padding[0x2bc - 0x5c];
     } temp;
     typedef int (*CopyByIndex)(CopyObject*, void*, unsigned int);
-    if (((CopyByIndex)source->vtable->copy)(source, &temp, index) == 0) return 0;
+    CopyObject* source = (CopyObject*)this;
+    if (((CopyByIndex)source->vtable->copy)(source, &temp, index) == 0)
+        return 0;
     CopyProductNameAndIcon(temp.nameAndIcon, dest);
-    // Phase 3: copy scalar header fields; the final flag word remains semantically unresolved.
-    ((ShopProductRecord*)dest)->typeId = temp.typeId; // CShopProductClubSet_CopyCommonHeader: +0x50
+    // Phase 3: copy scalar header fields, including the final common-header flag word.
+    ((ShopProductRecord*)dest)->typeId = temp.typeId;
     *(unsigned int*)&((IFF_STRUCT::sClubSet*)dest)->common.price = temp.pricePangBits;
     ((IFF_STRUCT::sClubSet*)dest)->common.levelFlags = temp.levelFlags;
     ((IFF_STRUCT::sClubSet*)dest)->common.shopFlags = temp.shopFlags;
-    ((IFF_STRUCT::sClubSet*)dest)->common.commonFlagWord = temp.commonFlags; // Preserve the final common-header flag word.
+    ((IFF_STRUCT::sClubSet*)dest)->common.commonFlagWord = temp.commonFlags;
     return 1;
 }
+
+extern "C" {
 #pragma opt_common_subs reset
 #pragma opt_common_subs off
 // Copy the selected ball common IFF header; preserve bytewise name/icon loads.
 int CShopProductBall_CopyCommonRecord(CopyObject* source, unsigned char* dest, unsigned int index) {
-    if (dest == 0) return 0;
+    if (dest == 0)
+        return 0;
     struct Temp {
         volatile unsigned char nameAndIcon[0x50];
         unsigned int typeId;
@@ -250,7 +269,8 @@ int CShopProductBall_CopyCommonRecord(CopyObject* source, unsigned char* dest, u
         unsigned char padding[0x2c0 - 0x5c];
     } temp;
     typedef int (*CopyByIndex)(CopyObject*, void*, unsigned int);
-    if (((CopyByIndex)source->vtable->copy)(source, &temp, index) == 0) return 0;
+    if (((CopyByIndex)source->vtable->copy)(source, &temp, index) == 0)
+        return 0;
     CopyProductNameAndIcon(temp.nameAndIcon, dest);
     // Phase 3: copy scalar common-header fields.
     ((ShopProductRecord*)dest)->typeId = temp.typeId; // CShopProductBall_CopyCommonRecord: +0x50
@@ -273,20 +293,26 @@ struct PtrArray {
 
 // Copy a valid indexed ball record into caller storage.
 int CShopProductBall_CopyRecord(PtrArray* array, void* dest, unsigned int index) {
-    if (dest == 0) return 0;
-    if (array->count <= index) return 0;
+    if (dest == 0)
+        return 0;
+    if (array->count <= index)
+        return 0;
     void* entry = array->data[index];
-    if (entry == 0) return 0;
+    if (entry == 0)
+        return 0;
     Memory_Copy(dest, entry, sizeof(IFF_STRUCT::sBall));
     return 1;
 }
 
 // Copy a valid indexed consumable record into caller storage.
 int CShopProductEquipItem_CopyRecord(PtrArray* array, void* dest, unsigned int index) {
-    if (dest == 0) return 0;
-    if (array->count <= index) return 0;
+    if (dest == 0)
+        return 0;
+    if (array->count <= index)
+        return 0;
     void* entry = array->data[index];
-    if (entry == 0) return 0;
+    if (entry == 0)
+        return 0;
     Memory_Copy(dest, entry, sizeof(IFF_STRUCT::sItem));
     return 1;
 }
@@ -322,7 +348,10 @@ int CShopProductEquipItem_DeleteAll(PtrArray* array) {
     return 1;
 }
 
-struct VTable { void* entries[3]; void (*destroy)(void*); };
+struct VTable {
+    void* entries[3];
+    void (*destroy)(void*);
+};
 struct DtorDispatch {
     virtual ~DtorDispatch();
     virtual void destroy();
@@ -339,13 +368,15 @@ void* __dt__10CShopBaseAFv(DtorObject* self, int deallocate) {
     if (self != 0) {
         self->vtable = (VTable*)&s_shopBaseAVtable;
         ((DtorDispatch*)self)->destroy();
-        if (&self->data != 0 && &self->data != 0 && &self->data != 0 && &self->data != 0 && &self->data != 0 && self->data != 0) {
+        if (&self->data != 0 && &self->data != 0 && &self->data != 0 && &self->data != 0 && &self->data != 0 &&
+            self->data != 0) {
             unsigned int count = self->count;
             self->count = count - *(volatile unsigned int*)&count;
             appFreeUni__FPv(self->data);
         }
-        CShopProductInterface_dtor(self, 0);
-        if (deallocate > 0) __dl__FPv(self);
+        ((CShopProductInterface*)self)->Destroy(0);
+        if (deallocate > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -355,13 +386,15 @@ void* __dt__10CShopBaseEFv(DtorObject* self, int deallocate) {
     if (self != 0) {
         self->vtable = (VTable*)&s_shopBaseEVtable;
         ((DtorDispatch*)self)->destroy();
-        if (&self->data != 0 && &self->data != 0 && &self->data != 0 && &self->data != 0 && &self->data != 0 && self->data != 0) {
+        if (&self->data != 0 && &self->data != 0 && &self->data != 0 && &self->data != 0 && &self->data != 0 &&
+            self->data != 0) {
             unsigned int count = self->count;
             self->count = count - *(volatile unsigned int*)&count;
             appFreeUni__FPv(self->data);
         }
-        CShopProductInterface_dtor(self, 0);
-        if (deallocate > 0) __dl__FPv(self);
+        ((CShopProductInterface*)self)->Destroy(0);
+        if (deallocate > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -372,8 +405,8 @@ int CShopBaseA_ReturnFalse() {
 }
 
 // Return the number of product pointers in the ball list.
-int CShopProductBall_GetCount(int* arg) {
-    return arg[3];
+int CShopProductBall_GetCount(int* self) {
+    return self[3];
 }
 
 // Return false for this unsupported shop-product interface operation.
@@ -408,45 +441,33 @@ extern ShopInventoryTables* g_sharedDoc;
 // Aggregate copy view of sClubSet; the split word pairs retain the original copy schedule.
 struct ClubSetCopyRecord {
     struct Prefix {
-    unsigned int commonHeaderWords[23];
-    unsigned int power;
-    unsigned int control;
-    unsigned int accuracy;
-    unsigned int spin;
-    unsigned int curve;
-    struct WordPair { unsigned int a, b; } woodAndIronIds, wedgeAndPutterIds;
+        unsigned int commonHeaderWords[23];
+        unsigned int power;
+        unsigned int control;
+        unsigned int accuracy;
+        unsigned int spin;
+        unsigned int curve;
+        struct WordPair {
+            unsigned int a, b;
+        } woodAndIronIds, wedgeAndPutterIds;
     } prefix;
-    struct HalfPair { unsigned short a, b; } powerAndControlSlots, accuracyAndSpinSlots;
+    struct HalfPair {
+        unsigned short a, b;
+    } powerAndControlSlots, accuracyAndSpinSlots;
     unsigned short curveSlots;
     unsigned short recordFlags;
 };
 
-struct VTable802359E4 {
-    void* e0;
-    void* e4;
-    void* e8;
-    int (*check)(void*);
-    void* e10;
-    void* e14;
-    void* e18;
-    void* e1c;
-    int (*acceptsRecord)(void*, void*, void*);
-};
-
-struct ClubSetProductList {
-// Slot 0x20 is the acceptance predicate; the caller allocates and appends.
-    virtual ~ClubSetProductList();
+// Virtual-call view of a product list: check is slot 0x0C and the acceptance predicate is slot 0x20.
+// The shop product classes declare no virtual functions, so the list code calls through this view.
+struct ProductListVirtualView {
+    virtual ~ProductListVirtualView();
     virtual int check();
     virtual void method10();
     virtual void method14();
     virtual void method18();
     virtual void method1c();
-    // Acceptance predicate at slot 0x20; caller allocates and appends.
-    virtual int insert(ClubSetCopyRecord*, int);
-    unsigned int productFilter;
-    ClubSetCopyRecord** data;
-    unsigned int size;
-    unsigned int capacity;
+    virtual int insert(void*, int);
 };
 
 extern "C" void* memcpy(void*, const void*, unsigned int);
@@ -459,37 +480,45 @@ extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12length_error[];
 
-struct ThrowObj802356DC { void* vtable; void* data; void* ref; };
-struct ThrowGuard802356DC { unsigned* a; unsigned* b; };
+struct ThrowObj802356DC {
+    void* vtable;
+    void* data;
+    void* ref;
+};
+struct ThrowGuard802356DC {
+    unsigned* a;
+    unsigned* b;
+};
 
-#define THROW_VECTOR_LENGTH_ERROR() do { \
-    char* errorText = comThinkVectorErrorStrings; \
-    ThrowObj802356DC errorObject; \
-    ThrowGuard802356DC guard; \
-    char emptyChar = 0; \
-    errorObject.vtable = __vt__Q23std11logic_error; \
-    unsigned errorLength = strlen(errorText) + 1; \
-    char* errorCopy = (char*)__nwa__FUl((errorLength << 1) - errorLength); \
-    errorObject.data = errorCopy; \
-    guard.a = (unsigned*)errorCopy; \
-    guard.b = (unsigned*)&emptyChar; \
-    void* errorOwner = __nw__FUl(0x10); \
-    if (errorOwner != 0) { \
-        ((ShopErrorTextOwner*)errorOwner)->owners = 1; \
-        ((ShopErrorTextOwner*)errorOwner)->references = 1; \
-        *(void**)errorOwner = s_sharedCharDeleterVtable; \
-        ((ShopErrorTextOwner*)errorOwner)->data = errorCopy; \
-    } \
-    errorObject.ref = errorOwner; \
-    guard.a = 0; \
-    char* stale = 0; \
-    if (stale != 0) { \
-        __dla__FPv(stale); \
-    } \
-    strcpy((char*)errorObject.data, errorText); \
-    errorObject.vtable = __vt__Q23std12length_error; \
-    __throw(comThinkVectorErrorStrings + 0x14, &errorObject, (void (*)())__dt__Q23std12length_errorFv); \
-} while (0)
+#define THROW_VECTOR_LENGTH_ERROR()                                                                         \
+    do {                                                                                                    \
+        char* errorText = comThinkVectorErrorStrings;                                                       \
+        ThrowObj802356DC errorObject;                                                                       \
+        ThrowGuard802356DC guard;                                                                           \
+        char emptyChar = 0;                                                                                 \
+        errorObject.vtable = __vt__Q23std11logic_error;                                                     \
+        unsigned errorLength = strlen(errorText) + 1;                                                       \
+        char* errorCopy = (char*)__nwa__FUl((errorLength << 1) - errorLength);                              \
+        errorObject.data = errorCopy;                                                                       \
+        guard.a = (unsigned*)errorCopy;                                                                     \
+        guard.b = (unsigned*)&emptyChar;                                                                    \
+        void* errorOwner = __nw__FUl(0x10);                                                                 \
+        if (errorOwner != 0) {                                                                              \
+            ((ShopErrorTextOwner*)errorOwner)->owners = 1;                                                  \
+            ((ShopErrorTextOwner*)errorOwner)->references = 1;                                              \
+            *(void**)errorOwner = s_sharedCharDeleterVtable;                                                \
+            ((ShopErrorTextOwner*)errorOwner)->data = errorCopy;                                            \
+        }                                                                                                   \
+        errorObject.ref = errorOwner;                                                                       \
+        guard.a = 0;                                                                                        \
+        char* stale = 0;                                                                                    \
+        if (stale != 0) {                                                                                   \
+            __dla__FPv(stale);                                                                              \
+        }                                                                                                   \
+        strcpy((char*)errorObject.data, errorText);                                                         \
+        errorObject.vtable = __vt__Q23std12length_error;                                                    \
+        __throw(comThinkVectorErrorStrings + 0x14, &errorObject, (void (*)())__dt__Q23std12length_errorFv); \
+    } while (0)
 
 template <class T>
 // Return a borrowed reference to the larger argument, choosing a on equality.
@@ -509,16 +538,16 @@ struct BallCopyRecord {
     unsigned short f2be;
 };
 
-struct VectorGuard802363D8 {
+struct PointerVectorGuard {
     ClubSetCopyRecord** data;
     unsigned size;
     unsigned capacity;
     unsigned* allocator;
     unsigned tail;
     // Begin a pending pointer-vector owner with no allocation and the caller's allocator token.
-    VectorGuard802363D8(unsigned* a) : data(0), size(0), capacity(0), allocator(a), tail(0) {}
+    PointerVectorGuard(unsigned* a) : data(0), size(0), capacity(0), allocator(a), tail(0) {}
     // Free pointer storage only; this guard never deletes pointed-to product records.
-    ~VectorGuard802363D8() {
+    ~PointerVectorGuard() {
         if (data != 0) {
             size = 0;
             appFreeUni__FPv(data);
@@ -528,11 +557,14 @@ struct VectorGuard802363D8 {
 
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 
-struct ArrayGuard802363D8 {
+struct TextArrayGuard {
     char* data;
     char* allocator;
     // Release an exception-text array unless its allocation has been transferred to a control block.
-    ~ArrayGuard802363D8() { if (data != 0) __dla__FPv(data); }
+    ~TextArrayGuard() {
+        if (data != 0)
+            __dla__FPv(data);
+    }
 };
 
 } // extern "C"
@@ -552,7 +584,7 @@ struct logic_error : exception {
         unsigned length = strlen(text) + 1;
         char* copy = (char*)__nwa__FUl((length << 1) - length);
         data = copy;
-        ArrayGuard802363D8 guard;
+        TextArrayGuard guard;
         guard.data = copy;
         guard.allocator = &allocator;
         void* owner = __nw__FUl(0x10);
@@ -582,24 +614,30 @@ extern "C" {
 
 // A pending vector owns its allocation until the completed vector is swapped in.
 #define THROW_TARGET_LENGTH_ERROR() throw std::length_error("vector length error")
+
+} // extern "C"
+
 #pragma push
 #pragma use_lmw_stmw on
 // Filter the shared club-set table and append owned copies of accepted IFF records.
-// filter is passed unchanged to the acceptance predicate at virtual slot 0x20; its numeric values
-// are not established here. That slot tests acceptance; this function performs the allocation.
-// Returns 0 for failed check/null record allocation, 1 after scanning. Existing products remain;
-// failure may leave earlier accepted records appended. Source records are borrowed, never freed.
-int CShopProductClubSet_CollectAcceptedRecords(register ClubSetProductList* self, register int filter) {
+// filter is passed unchanged to the acceptance predicate at vtable slot 0x20, which decides
+// acceptance; this function performs the allocation. Returns 0 for failed check or record
+// allocation, 1 after scanning. Existing products remain; failure may leave earlier accepted
+// records appended. Source records are borrowed, never freed.
+int CShopProductClubSet::CollectAcceptedRecords(register int filter) {
+    ProductListVirtualView* list = (ProductListVirtualView*)this;
     // Phase 1: validate the receiver and visit keyed inventory records (4-byte key + 0x8C payload).
-    if (self->check() == 0) return 0;
+    if (list->check() == 0)
+        return 0;
     ShopInventoryTables* inventory = g_sharedDoc;
     unsigned int record = (unsigned int)inventory->clubSetTable;
     while ((unsigned int)(inventory->clubSetTable + inventory->clubSetCount * 0x90) != record) {
         ClubSetCopyRecord* source = (ClubSetCopyRecord*)(record + 4);
-        if (self->insert(source, filter) != 0) {
+        if (list->insert(source, filter) != 0) {
             // Phase 2: allocate/copy an independent accepted record, preserving halfword loads.
             ClubSetCopyRecord* product = (ClubSetCopyRecord*)__nw__FUl(0x8c);
-            if (product == 0) return 0;
+            if (product == 0)
+                return 0;
             product->prefix = source->prefix;
             volatile ClubSetCopyRecord::HalfPair* halves = &source->powerAndControlSlots;
             unsigned short h80 = halves->a;
@@ -614,29 +652,29 @@ int CShopProductClubSet_CollectAcceptedRecords(register ClubSetProductList* self
             product->curveSlots = source->curveSlots;
             product->recordFlags = source->recordFlags;
             // Phase 3: append directly if possible; otherwise build replacement pointer storage.
-            unsigned size = self->size;
-            if (size < self->capacity) {
-                self->size = size + 1;
-                self->data[self->size - 1] = product;
+            unsigned int currentSize = size;
+            if (currentSize < capacity) {
+                size = currentSize + 1;
+                ((ClubSetCopyRecord**)begin)[size - 1] = product;
             } else {
-                if (kMaxProductPointerCount - self->capacity < 1) {
+                if (kMaxProductPointerCount - capacity < 1) {
                     THROW_TARGET_LENGTH_ERROR();
                 }
-                unsigned int additionalSlots = self->size + 1 - self->capacity;
-                VectorGuard802363D8 pending(&self->capacity);
-                unsigned int capacity = self->capacity;
-                if (additionalSlots > kMaxProductPointerCount - capacity) {
+                unsigned int additionalSlots = size + 1 - capacity;
+                PointerVectorGuard pending(&capacity);
+                unsigned int currentCapacity = capacity;
+                if (additionalSlots > kMaxProductPointerCount - currentCapacity) {
                     THROW_TARGET_LENGTH_ERROR();
                 }
                 unsigned int newCapacity;
-                if (capacity < kThreeFifthsGrowthLimit) {
-                    unsigned int grow = (capacity + 1) * 3 / 5;
+                if (currentCapacity < kThreeFifthsGrowthLimit) {
+                    unsigned int grow = (currentCapacity + 1) * 3 / 5;
                     const unsigned int& chosen = (grow < additionalSlots) ? additionalSlots : grow;
-                    newCapacity = capacity + chosen;
-                } else if (capacity < kHalfGrowthLimit) {
-                    unsigned int grow = (capacity + 1) / 2;
+                    newCapacity = currentCapacity + chosen;
+                } else if (currentCapacity < kHalfGrowthLimit) {
+                    unsigned int grow = (currentCapacity + 1) / 2;
                     const unsigned int& chosen = (grow < additionalSlots) ? additionalSlots : grow;
-                    newCapacity = capacity + chosen;
+                    newCapacity = currentCapacity + chosen;
                 } else {
                     newCapacity = kMaxProductPointerCount;
                 }
@@ -644,27 +682,27 @@ int CShopProductClubSet_CollectAcceptedRecords(register ClubSetProductList* self
                     THROW_TARGET_LENGTH_ERROR();
                 }
                 ClubSetCopyRecord** allocatedData = (ClubSetCopyRecord**)appMallocDummy__FUl(newCapacity * 4);
-                pending.tail = self->size;
+                pending.tail = size;
                 pending.capacity = newCapacity;
                 (allocatedData + pending.tail)[pending.size] = product;
                 pending.data = allocatedData;
                 ++pending.size;
                 // Transfer pointers, not records. The pending guard will free only the old array.
-                ClubSetCopyRecord** old = self->data;
-                int count = ((char*)(old + self->size) - (char*)old) / 4;
+                ClubSetCopyRecord** old = (ClubSetCopyRecord**)begin;
+                int count = ((char*)(old + size) - (char*)old) / 4;
                 pending.tail -= count;
                 memcpy(pending.data + pending.tail, old, count * 4);
                 memset(old, 0, count * 4);
                 pending.size += count;
-                self->size = 0;
-                ClubSetCopyRecord** oldData = self->data;
+                size = 0;
+                ClubSetCopyRecord** oldData = (ClubSetCopyRecord**)begin;
                 ClubSetCopyRecord** newData = pending.data;
                 pending.data = oldData;
-                unsigned oldCapacity = self->capacity;
-                self->capacity = pending.capacity;
+                unsigned oldCapacity = capacity;
+                capacity = pending.capacity;
                 pending.capacity = oldCapacity;
-                self->data = newData;
-                self->size = pending.size;
+                begin = (void**)newData;
+                size = pending.size;
                 pending.size = 0;
             }
         }
@@ -674,69 +712,58 @@ int CShopProductClubSet_CollectAcceptedRecords(register ClubSetProductList* self
 }
 #pragma pop
 
-struct BallProductList {
-    virtual ~BallProductList();
-    virtual int check();
-    virtual void method10();
-    virtual void method14();
-    virtual void method18();
-    virtual void method1c();
-    // Same acceptance predicate slot as ClubSetProductList; no insertion here.
-    virtual int insert(BallCopyRecord*, int);
-    unsigned productFilter;
-    ClubSetCopyRecord** data;
-    unsigned size;
-    unsigned capacity;
-};
-
-#define THROW_RECORD_LENGTH_ERROR() do { \
-    throw std::length_error("vector length error"); \
-} while (0)
+#define THROW_RECORD_LENGTH_ERROR()                     \
+    do {                                                \
+        throw std::length_error("vector length error"); \
+    } while (0)
 
 #pragma push
 #pragma use_lmw_stmw on
 // Filter the shared ball table and append owned copies of accepted IFF records.
-// Same filter/return/partial-append contract as the club-set builder; filter values remain opaque.
-int CShopProductBall_AppendFilteredRecords(register BallProductList* self, register int filter) {
+// Same filter, return and partial-append contract as the club-set builder.
+int CShopProductBall::AppendFilteredRecords(register int filter) {
     // Phase 1: validate and scan keyed ball records (4-byte key + 0x2C0 payload).
-    if (self->check() == 0) return 0;
+    ProductListVirtualView* list = (ProductListVirtualView*)this;
+    if (list->check() == 0)
+        return 0;
     ShopInventoryTables* inventory = g_sharedDoc;
     unsigned int record = (unsigned int)inventory->ballTable;
     while ((unsigned int)(inventory->ballTable + inventory->ballCount * 0x2C4) != record) {
         BallCopyRecord* source = (BallCopyRecord*)(record + 4);
-        if (self->insert(source, filter) != 0) {
+        if (list->insert(source, filter) != 0) {
             // Phase 2: copy an accepted borrowed payload into a newly owned ball record.
             BallCopyRecord* product = (BallCopyRecord*)__nw__FUl(0x2C0);
-            if (product == 0) return 0;
+            if (product == 0)
+                return 0;
             *product = *source;
             // Phase 3: append, growing only the pointer array when capacity is exhausted.
-            BallProductList* vec = self;
-            unsigned size = vec->size;
-            if (size < vec->capacity) {
-                vec->size = size + 1;
-                vec->data[vec->size - 1] = (ClubSetCopyRecord*)product;
+            unsigned int currentSize = size;
+            if (currentSize < capacity) {
+                size = currentSize + 1;
+                ((ClubSetCopyRecord**)begin)[size - 1] = (ClubSetCopyRecord*)product;
             } else {
                 unsigned int threeFifthsGrowth;
                 unsigned int growHalf;
                 unsigned int additionalSlots;
-                if (kMaxProductPointerCount - vec->capacity < 1) {
+                if (kMaxProductPointerCount - capacity < 1) {
                     THROW_RECORD_LENGTH_ERROR();
                 }
-                additionalSlots = vec->size + 1 - vec->capacity;
-                VectorGuard802363D8 pending(&vec->capacity);
-                unsigned int capacity = vec->capacity;
-                if (additionalSlots > kMaxProductPointerCount - capacity) {
+                additionalSlots = size + 1 - capacity;
+                PointerVectorGuard pending(&capacity);
+                unsigned int currentCapacity = capacity;
+                if (additionalSlots > kMaxProductPointerCount - currentCapacity) {
                     THROW_RECORD_LENGTH_ERROR();
                 }
                 unsigned int newCapacity;
-                if (capacity < kThreeFifthsGrowthLimit) {
-                    threeFifthsGrowth = (capacity + 1) * 3 / 5;
-                    const unsigned int& chosen = (threeFifthsGrowth < additionalSlots) ? additionalSlots : threeFifthsGrowth;
-                    newCapacity = capacity + chosen;
-                } else if (capacity < kHalfGrowthLimit) {
-                    growHalf = (capacity + 1) / 2;
+                if (currentCapacity < kThreeFifthsGrowthLimit) {
+                    threeFifthsGrowth = (currentCapacity + 1) * 3 / 5;
+                    const unsigned int& chosen =
+                        (threeFifthsGrowth < additionalSlots) ? additionalSlots : threeFifthsGrowth;
+                    newCapacity = currentCapacity + chosen;
+                } else if (currentCapacity < kHalfGrowthLimit) {
+                    growHalf = (currentCapacity + 1) / 2;
                     const unsigned int& chosen = (growHalf < additionalSlots) ? additionalSlots : growHalf;
-                    newCapacity = capacity + chosen;
+                    newCapacity = currentCapacity + chosen;
                 } else {
                     newCapacity = kMaxProductPointerCount;
                 }
@@ -744,27 +771,27 @@ int CShopProductBall_AppendFilteredRecords(register BallProductList* self, regis
                     THROW_RECORD_LENGTH_ERROR();
                 }
                 ClubSetCopyRecord** allocatedData = (ClubSetCopyRecord**)appMallocDummy__FUl(newCapacity * 4);
-                pending.tail = vec->size;
+                pending.tail = size;
                 pending.capacity = newCapacity;
                 (allocatedData + pending.tail)[pending.size] = (ClubSetCopyRecord*)product;
                 pending.data = allocatedData;
                 ++pending.size;
                 // Transfer record pointers and swap arrays; pending owns the previous array after swap.
-                ClubSetCopyRecord** old = vec->data;
-                int count = ((char*)(old + vec->size) - (char*)old) / 4;
+                ClubSetCopyRecord** old = (ClubSetCopyRecord**)begin;
+                int count = ((char*)(old + size) - (char*)old) / 4;
                 pending.tail -= count;
                 memcpy(pending.data + pending.tail, old, count * 4);
                 memset(old, 0, count * 4);
                 pending.size += count;
-                vec->size = 0;
-                ClubSetCopyRecord** oldData = vec->data;
+                size = 0;
+                ClubSetCopyRecord** oldData = (ClubSetCopyRecord**)begin;
                 ClubSetCopyRecord** newData = pending.data;
                 pending.data = oldData;
-                unsigned oldCapacity = vec->capacity;
-                vec->capacity = pending.capacity;
+                unsigned oldCapacity = capacity;
+                capacity = pending.capacity;
                 pending.capacity = oldCapacity;
-                vec->data = newData;
-                vec->size = pending.size;
+                begin = (void**)newData;
+                size = pending.size;
                 pending.size = 0;
             }
         }
@@ -774,31 +801,29 @@ int CShopProductBall_AppendFilteredRecords(register BallProductList* self, regis
 }
 #pragma pop
 
-// Return the product COUNT encoded as a pointer-sized integer at receiver +0xC.
-// This is not an address, owned allocation, or pointer to a count; do not dereference
-// or free it. arg is a borrowed product-list object passed through a legacy int** ABI.
-int* CShopProductEquipItem_GetCount(int** arg) {
-    return arg[3];
+// Return the product count, stored as a pointer-sized value at +0xC. It is not an address.
+int* CShopProductEquipItem::GetCount() {
+    return (int*)size;
 }
 
+extern "C" {
+
 // Initialize an empty product-pointer list with its filter and base-A vtable.
-void __ct__10CShopBaseAFPvPv(unsigned int* arg, unsigned int value) {
-    arg[2] = 0;
-    arg[0] = (unsigned int)&s_shopBaseAVtable;
-    arg[3] = 0;
-    arg[4] = 0;
-    arg[1] = value;
+void __ct__10CShopBaseAFPvPv(unsigned int* self, unsigned int value) {
+    self[2] = 0;
+    self[0] = (unsigned int)&s_shopBaseAVtable;
+    self[3] = 0;
+    self[4] = 0;
+    self[1] = value;
 }
 
 // Initialize an empty product-pointer list with its filter and base-E vtable.
-void __ct__10CShopBaseEFPv(unsigned int* arg, unsigned int value) {
-    arg[2] = 0;
-    arg[0] = (unsigned int)&s_shopBaseEVtable;
-    arg[3] = 0;
-    arg[4] = 0;
-    arg[1] = value;
+void __ct__10CShopBaseEFPv(unsigned int* self, unsigned int value) {
+    self[2] = 0;
+    self[0] = (unsigned int)&s_shopBaseEVtable;
+    self[3] = 0;
+    self[4] = 0;
+    self[1] = value;
 }
 
 } // extern "C"
-
-

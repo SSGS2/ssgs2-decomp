@@ -51,5 +51,5 @@ inline A522CSize A522CRecommend(A522CVec* v, A522CSize n) {
 struct A522CItem {
     char data[0x4c];
     // Initialize one owned accessory-state object for player i.
-    A522CItem(int i) { CAccState_Ctor(this, i); }
+    A522CItem(int i) { ((PadAccState*)this)->Init(i); }
 };

@@ -7,7 +7,8 @@ class RenderState80422F10 {
 public:
     char pad_000[0x64];
     unsigned int textures[8]; // 0x64: Render_ApplyTevState loops over eight texture handles
-    unsigned int palettes[8]; // 0x84: Render_ApplyTevState calls TexturePalette_GetDescription for the corresponding palette
+    unsigned int
+        palettes[8]; // 0x84: Render_ApplyTevState calls TexturePalette_GetDescription for the corresponding palette
     char pad_0A4[0x18];
     int flexibleVertexFormat; // 0xBC: Render_ApplyLightingChannels, Render_ApplyVertexInputState, Render_SetFlexibleVertexFormatState, VertexInput_CountTextureCoordinateGenerators, Render_ApplyTevState
     char pad_0C0[0x10];
@@ -15,36 +16,36 @@ public:
     char pad_0D4[0x4];
     int type7Resource; // 0xD8: Render_ApplyTevState
     char pad_0DC[0x4];
-    int fogEnabled; // 0xE0: Render_ApplyFogState
-    int lightingEnabled; // 0xE4: Render_ApplyLightingChannels
-    int depthCompare; // 0xE8: Render_ApplyDepthState passes as GXCompare to GXSetZMode
-    int alphaCompare; // 0xEC: Render_ApplyAlphaTestState
+    int fogEnabled;          // 0xE0: Render_ApplyFogState
+    int lightingEnabled;     // 0xE4: Render_ApplyLightingChannels
+    int depthCompare;        // 0xE8: Render_ApplyDepthState passes as GXCompare to GXSetZMode
+    int alphaCompare;        // 0xEC: Render_ApplyAlphaTestState
     unsigned int depthWrite; // 0xF0: Render_ApplyDepthState passes as update enable to GXSetZMode
-    unsigned int depthTest; // 0xF4: Render_ApplyDepthState passes as compare enable to GXSetZMode
-    int alphaTestEnabled; // 0xF8: Render_ApplyAlphaTestState
+    unsigned int depthTest;  // 0xF4: Render_ApplyDepthState passes as compare enable to GXSetZMode
+    int alphaTestEnabled;    // 0xF8: Render_ApplyAlphaTestState
     char pad_0FC[0x8];
-    int blendEnabled; // 0x104: Render_ApplyBlendState
+    int blendEnabled;            // 0x104: Render_ApplyBlendState
     unsigned int alphaReference; // 0x108: Render_ApplyAlphaTestState
-    int blendOperation; // 0x10C: Render_ApplyBlendState
-    int sourceBlend; // 0x110: Render_ApplyBlendState passes as source GXBlendFactor
-    int destinationBlend; // 0x114: Render_ApplyBlendState passes as destination GXBlendFactor
+    int blendOperation;          // 0x10C: Render_ApplyBlendState
+    int sourceBlend;             // 0x110: Render_ApplyBlendState passes as source GXBlendFactor
+    int destinationBlend;        // 0x114: Render_ApplyBlendState passes as destination GXBlendFactor
     unsigned int logicOperation; // 0x118: Render_ApplyBlendState
     char pad_11C[0x8];
     int materialColorSource; // 0x124: Render_ApplyLightingChannels
-    int ambientColorSource; // 0x128: Render_ApplyLightingChannels, Render_ApplyTevState
+    int ambientColorSource;  // 0x128: Render_ApplyLightingChannels, Render_ApplyTevState
     char pad_12C[0x4];
-    void* fogType; // 0x130: Render_ApplyFogState
-    unsigned char fogRed; // 0x134: Render_ApplyFogState
+    void* fogType;          // 0x130: Render_ApplyFogState
+    unsigned char fogRed;   // 0x134: Render_ApplyFogState
     unsigned char fogGreen; // 0x135: Render_ApplyFogState
-    unsigned char fogBlue; // 0x136: Render_ApplyFogState
+    unsigned char fogBlue;  // 0x136: Render_ApplyFogState
     unsigned char fogAlpha; // 0x137: Render_ApplyFogState
-    float fogStart; // 0x138: Render_ApplyFogState passes as first float to GXSetFog
-    float fogEnd; // 0x13C: Render_ApplyFogState passes as second float to GXSetFog
+    float fogStart;         // 0x138: Render_ApplyFogState passes as first float to GXSetFog
+    float fogEnd;           // 0x13C: Render_ApplyFogState passes as second float to GXSetFog
     char pad_140[0x14];
     unsigned int colorWriteMask; // 0x154: Render_ApplyColorWriteState, Render_ApplyAlphaWriteState
     int specularLightingEnabled; // 0x158: Render_ApplyLightingChannels, Render_ApplyTevState
-    float depthScale; // 0x15C: Render_ApplyDepthScaleOffset
-    float depthOffset; // 0x160: Render_ApplyDepthScaleOffset
+    float depthScale;            // 0x15C: Render_ApplyDepthScaleOffset
+    float depthOffset;           // 0x160: Render_ApplyDepthScaleOffset
     char pad_164[0x4];
     float normalizedPointSize; // 0x168: Render_ApplyPointSize scales by 255 before GXSetPointSize
     char pad_16C[0x12D4];
@@ -52,8 +53,8 @@ public:
     char pad_1460[0x78];
     int lightingStateDirty; // 0x14D8: Render_SetFlexibleVertexFormatState
     char pad_14DC[0x68];
-    int drawStateDirty; // 0x1544: Render_SetFlexibleVertexFormatState
-    int textureStateDirty; // 0x1548: Render_ApplyTevState
+    int drawStateDirty;     // 0x1544: Render_SetFlexibleVertexFormatState
+    int textureStateDirty;  // 0x1548: Render_ApplyTevState
     int materialStateDirty; // 0x154C: Render_SetFlexibleVertexFormatState
     char pad_1550[0x68];
     int projectionTransformDirty; // 0x15B8: Render_SetFlexibleVertexFormatState
@@ -63,7 +64,7 @@ public:
     int replaceLightingTevStage; // 0x16A0: Render_ApplyTevState
     char pad_16A4[0x34C];
     float fogNearPlane; // 0x19F0: Render_ApplyFogState
-    float fogFarPlane; // 0x19F4: Render_ApplyFogState
+    float fogFarPlane;  // 0x19F4: Render_ApplyFogState
 };
 
 #define OFF(f, o) typedef char RenderState80422F10_off_##f[((int)&((RenderState80422F10*)0)->f == (o)) ? 1 : -1]

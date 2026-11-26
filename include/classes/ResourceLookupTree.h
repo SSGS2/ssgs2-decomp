@@ -6,7 +6,7 @@
 class ResourceLookupTree {
 public:
     void* unk_0; // 0x0: CameraResourceLookupTree_Clear clears with root
-    void* root; // 0x4: CameraResourceGroupTree_FindInsertionPosition begins its search here
+    void* root;  // 0x4: CameraResourceGroupTree_FindInsertionPosition begins its search here
     void* first; // 0x8: CameraResourceLookupTree_Clear resets to the +4 sentinel
 };
 

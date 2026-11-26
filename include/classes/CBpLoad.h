@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CBPLOAD_H
 #define CLASSES_CBPLOAD_H
 
@@ -7,40 +5,42 @@
 
 class CBpLoad {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    int loaded;                          // 0x4: 1 use in CBpObject_Ctor
-    unsigned int filenameStorage;                 // 0x8: 5 uses in CBpLoad_dtor, CBpLoad_SetFilenameAndOpenSharedFile (CONFLICT sizes [1, 4])
-    void* filenameLongLength;                        // 0xc: 3 uses in CBpLoad_dtor, CBpObject_Ctor
-    void* filenameHeapData;                       // 0x10: 3 uses in CBpLoad_dtor, CBpObject_Ctor
-    void* sharedFileHandle;                       // 0x14: 3 uses in CBpLoad_dtor, CBpObject_Ctor
-    int mutexStorage;                         // 0x18: 2 uses in CBpObject_Ctor
-    void* unk_1C;                       // 0x1c: 3 uses in CBpObject_Ctor
-    void* unk_20;                       // 0x20: 2 uses in CBpObject_Ctor
-    void* sprite;                       // 0x24: 1 use in CBpObject_Ctor
-    int unk_28;                         // 0x28: 1 use in CBpObject_Ctor
-    int unk_2C;                         // 0x2c: 1 use in CBpObject_Ctor
-    int unk_30;                         // 0x30: 1 use in CBpObject_Ctor
-    int unk_34;                         // 0x34: 1 use in CBpObject_Ctor
-    int unk_38;                         // 0x38: 1 use in CBpObject_Ctor
-    int unk_3C;                         // 0x3c: 1 use in CBpObject_Ctor
-    char pad_040[0x4];                  // 0x40
-    int unk_44;                         // 0x44: 1 use in CBpObject_Ctor
-    void* unk_48;                       // 0x48: 1 use in CBpObject_Ctor
-    void* unk_4C;                       // 0x4c: 1 use in CBpObject_Ctor
-    int unk_50;                         // 0x50: 1 use in CBpObject_Ctor
-    void* unk_54;                       // 0x54: 1 use in CBpObject_Ctor
-    void* unk_58;                       // 0x58: 1 use in CBpObject_Ctor
-    void* unk_5C;                       // 0x5c: 1 use in CBpObject_Ctor
-    int unk_60;                         // 0x60: 1 use in CBpObject_Ctor
-    int unk_64;                         // 0x64: 1 use in CBpObject_Ctor
-    int unk_68;                         // 0x68: 1 use in CBpObject_Ctor
-    float unk_6C;                       // 0x6c: 1 use in CBpObject_Ctor
-    float unk_70;                       // 0x70: 1 use in CBpObject_Ctor
+    void* vtbl;                   // 0x0: original vtable pointer
+    int loaded;                   // 0x4
+    unsigned int filenameStorage; // 0x8
+    void* filenameLongLength;     // 0xc
+    void* filenameHeapData;       // 0x10
+    void* sharedFileHandle;       // 0x14
+    int mutexStorage;             // 0x18
+    void* unk_1C;                 // 0x1c
+    void* unk_20;                 // 0x20
+    void* sprite;                 // 0x24
+    int unk_28;                   // 0x28
+    int unk_2C;                   // 0x2c
+    int unk_30;                   // 0x30
+    int unk_34;                   // 0x34
+    int unk_38;                   // 0x38
+    int unk_3C;                   // 0x3c
+    char pad_040[0x4];            // 0x40
+    int unk_44;                   // 0x44
+    void* unk_48;                 // 0x48
+    void* unk_4C;                 // 0x4c
+    int unk_50;                   // 0x50
+    void* unk_54;                 // 0x54
+    void* unk_58;                 // 0x58
+    void* unk_5C;                 // 0x5c
+    int unk_60;                   // 0x60
+    int unk_64;                   // 0x64
+    int unk_68;                   // 0x68
+    float unk_6C;                 // 0x6c
+    float unk_70;                 // 0x70
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x8, 0x9, 0x18, 0x1c, 0x44, 0x48, 0x54
+    int PollLoad();
+    int SetFilenameAndOpenSharedFile(const char* filename);
+
+    ~CBpLoad();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CBPLOAD_OFF(f, o) typedef char CBpLoad_off_##f[((int)&((CBpLoad*)0)->f == (o)) ? 1 : -1]
 CBPLOAD_OFF(loaded, 0x4);
 CBPLOAD_OFF(filenameStorage, 0x8);
@@ -71,4 +71,4 @@ CBPLOAD_OFF(unk_6C, 0x6c);
 CBPLOAD_OFF(unk_70, 0x70);
 #undef CBPLOAD_OFF
 
-#endif  // CLASSES_CBPLOAD_H
+#endif // CLASSES_CBPLOAD_H

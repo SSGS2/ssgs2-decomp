@@ -15,7 +15,7 @@ void BaseObject_dtor(void*, int);
 
 class CChatMsg;
 
-template<class T> struct WSingleton {
+template <class T> struct WSingleton {
     void* vtable;
     char unk04[12];
 

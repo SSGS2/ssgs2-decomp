@@ -1,5 +1,5 @@
 // Global affine camera transform s_cameraTransform, used by CCamera methods in camera_movement_and_input.cpp.
-// CCamera_UpdateForwardMovement passes +0x24 to vector operations; CCamera_HandleMovementInput copies that position.
+// CCamera::UpdateForwardMovement passes +0x24 to vector operations; CCamera::HandleMovementInput copies that position.
 #ifndef CLASSES_CAMERATRANSFORM800D_H
 #define CLASSES_CAMERATRANSFORM800D_H
 struct CameraTransform800D {

@@ -1,52 +1,66 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CComet: the tapered trail behind a shot.
+//
+// The trail is a ring of world-space edge pairs; the newest edge is committed
+// on a sample timer, and the live head edge between updates is stored apart
+// from the ring. The bitmap and the quad renderer are owned by the object.
 #ifndef CLASSES_CCOMET_H
 #define CLASSES_CCOMET_H
 
 #include "game/types.h"
+#include "game/wvector.h"
+
+// One trail cross-section: the two ends of the ribbon at one sample.
+struct BallRibbonEdge {
+    WVector left;
+    WVector right;
+};
 
 class CComet {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x8];                  // 0x4
-    int trailCapacity;                  // 0xc: 4 uses in CComet_CommitTrailEdge, CComet_DrawTrail
-    int trailIndex;                     // 0x10: 8 uses in CComet_CommitTrailEdge, CComet_DrawTrail, CComet_StartTrail
-    float sampleElapsed;                // 0x14: 6 uses in CComet_UpdateTrail, CComet_StartTrail
-    float sampleInterval;               // 0x18: 2 uses in CComet_UpdateTrail
-    unsigned char active;               // 0x1c: 4 uses in CComet_UpdateTrail, CComet_StartTrail, CComet_DrawTrail
-    char pad_01D[0xf7];                 // 0x1d
-    void* material;                     // 0x114: 11 uses in CComet_DrawTrail, CComet_dtor
-    float edgeA[3];                    // 0x118: CComet_StartTrail: ball position + scaled perpendicular
-    float edgeB[3];                    // 0x124: CComet_StartTrail: ball position - scaled perpendicular
-    char pad_130[0x1c8];
-    float trailLength;                  // 0x2f8: 11 uses in CComet_DrawTrail, CComet_CommitTrailEdge, CComet_UpdateTrail...
-    char pad_2FC[0x4];                  // 0x2fc
-    float brightness;                   // 0x300: 6 uses in CComet_UpdateTrail, CComet_StartTrail, CComet_DrawTrail
-    void* bitmap;                       // 0x304: 3 uses in CComet_dtor, CComet_DrawTrail
-    int hasPendingTrailEdge;                        // 0x308: 6 uses in CComet_DrawTrail, CComet_StartTrail, CComet_CommitTrailEdge...
+    CComet();
+    ~CComet();
 
-    float trailEdgeA[3];               // 0x30c: CComet_UpdateTrail: ball position + scaled perpendicular
-    float trailEdgeB[3];               // 0x318: CComet_UpdateTrail: ball position - scaled perpendicular
+    void StartTrail();
+    void CommitTrailEdge();
+    void UpdateTrail(float delta);
+    void DrawTrail();
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x114, 0x118, 0x124
+    void* vtbl;               // 0x000
+    int clearedWord04;        // 0x004
+    int clearedWord08;        // 0x008
+    int trailCapacity;        // 0x00C
+    int trailIndex;           // 0x010  newest committed edge
+    float sampleElapsed;      // 0x014
+    float sampleInterval;     // 0x018
+    unsigned char active;     // 0x01C
+    char pad_01D[0xF7];       // 0x01D
+    void* material;           // 0x114
+    BallRibbonEdge edges[20]; // 0x118  ring of committed edges
+    float trailLength;        // 0x2F8  committed edges, truncated for drawing
+    char pad_2FC[0x4];        // 0x2FC
+    float brightness;         // 0x300
+    void* bitmap;             // 0x304
+    int hasPendingTrailEdge;  // 0x308
+    WVector headLeft;         // 0x30C  live head edge, before it is committed
+    WVector headRight;        // 0x318
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CCOMET_OFF(f, o) typedef char CComet_off_##f[((int)&((CComet*)0)->f == (o)) ? 1 : -1]
-CCOMET_OFF(trailCapacity, 0xc);
+CCOMET_OFF(trailCapacity, 0xC);
 CCOMET_OFF(trailIndex, 0x10);
 CCOMET_OFF(sampleElapsed, 0x14);
 CCOMET_OFF(sampleInterval, 0x18);
-CCOMET_OFF(active, 0x1c);
+CCOMET_OFF(active, 0x1C);
 CCOMET_OFF(material, 0x114);
-CCOMET_OFF(trailLength, 0x2f8);
+CCOMET_OFF(edges, 0x118);
+CCOMET_OFF(trailLength, 0x2F8);
 CCOMET_OFF(brightness, 0x300);
 CCOMET_OFF(bitmap, 0x304);
 CCOMET_OFF(hasPendingTrailEdge, 0x308);
-CCOMET_OFF(edgeA, 0x118);
-CCOMET_OFF(edgeB, 0x124);
-CCOMET_OFF(trailEdgeA, 0x30C);
-CCOMET_OFF(trailEdgeB, 0x318);
+CCOMET_OFF(headLeft, 0x30C);
+CCOMET_OFF(headRight, 0x318);
 #undef CCOMET_OFF
+typedef char CComet_size[(sizeof(CComet) == 0x324) ? 1 : -1];
+typedef char BallRibbonEdge_size[(sizeof(BallRibbonEdge) == 0x18) ? 1 : -1];
 
-#endif  // CLASSES_CCOMET_H
+#endif // CLASSES_CCOMET_H

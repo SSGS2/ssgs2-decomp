@@ -1,5 +1,3 @@
-// Translation unit 0x803E56D8-0x803E68B0 (16 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 // Bitmap-font text batching and drawing. Mod lookup: FormatTextVertices appends
 // Shift-JIS text as glyph quads; s_bitmapFontGlyphScaleXY holds horizontal/vertical scale,
 // s_bitmapFontHorizontalBearing the horizontal bearing adjustment. Draw consumes the queued batch.
@@ -21,17 +19,16 @@ struct StaticStringObj {
 
 extern "C" {
 
-
 extern StaticStringObj s_bitmapFontPathString;
 extern u8 s_bitmapFontStringRegistrationSlot[];
-void MWString_dtor(void *, int);
+void MWString_dtor(void*, int);
 
 extern s32 s_bitmapFontInitialized;
-extern void *s_bitmapFontVertexBuffer;
+extern void* s_bitmapFontVertexBuffer;
 extern s32 s_bitmapFontPrimitiveType;
 extern s32 s_bitmapFontDefaultPackedColor;
 extern s32 s_bitmapFontQueuedGlyphCount;
-extern void *s_bitmapFontResourceBuffer;
+extern void* s_bitmapFontResourceBuffer;
 extern s32 s_bitmapFontHorizontalBearing;
 extern s32 s_bitmapFontLastPageRunIndex;
 extern f32 s_bitmapFontGlyphScaleXY[2];
@@ -43,16 +40,17 @@ extern u8 s_bitmapFontState[];
 // DC188[2] x/y scales. B1920 is PageTab plus the header/quad lookup tables below.
 
 void gtl_BitmapFont_Initialize(int);
-void *gtl_FontData_InitView(void *self, void *font);
-int gtl_FontData_FindGlyph(void *font, unsigned int c, void *glyph);
-void gtl_BitmapFont_WriteGlyphQuad(void *dst, s32 flags, s32 a, void *b, void *c, void *uv, void *xy, s32 tex, f32 z);
-int Text_ConvertShiftJisUsingCodeTable(void *, void *, unsigned char *text, int byteLimit, unsigned short *result, int useTable);
-int ShiftJIS_IsLeadByte(void *self, unsigned int c);
-void VertexBuffer_GetDescription(void *buffer, void *desc);
-void Resource_GetOffsetPtr(void *buffer, int offset, int size, void *out, int flags);
-void GraphicsBuffer_Flush(void *buffer);
-void FontDataView_dtor(void *, int);
-int vsprintf(char *, const char *, void *);
+void* gtl_FontData_InitView(void* self, void* font);
+int gtl_FontData_FindGlyph(void* font, unsigned int c, void* glyph);
+void gtl_BitmapFont_WriteGlyphQuad(void* dst, s32 flags, s32 a, void* b, void* c, void* uv, void* xy, s32 tex, f32 z);
+int Text_ConvertShiftJisUsingCodeTable(void*, void*, unsigned char* text, int byteLimit, unsigned short* result,
+                                       int useTable);
+int ShiftJIS_IsLeadByte(void* self, unsigned int c);
+void VertexBuffer_GetDescription(void* buffer, void* desc);
+void Resource_GetOffsetPtr(void* buffer, int offset, int size, void* out, int flags);
+void GraphicsBuffer_Flush(void* buffer);
+void FontDataView_dtor(void*, int);
+int vsprintf(char*, const char*, void*);
 
 struct Glyph {
     u16 u;
@@ -88,9 +86,13 @@ struct Vec3Bits {
 struct HeapObj {
     unsigned char data[16];
     // Borrow a font-buffer view for glyph lookup; the shared font remains owned globally.
-    HeapObj(void *arg) { gtl_FontData_InitView(this, arg); }
+    HeapObj(void* arg) {
+        gtl_FontData_InitView(this, arg);
+    }
     // Destroy only the temporary view, through the resource-view destructor ABI.
-    ~HeapObj() { FontDataView_dtor(this, -1); }
+    ~HeapObj() {
+        FontDataView_dtor(this, -1);
+    }
 };
 
 // Append formatted Shift-JIS text at a borrowed {x,y,z} origin; return no status.
@@ -107,33 +109,33 @@ struct HeapObj {
 // scaleX*(width+advance); z is copied unchanged. Input origin is never written.
 // Writes shared vertices/page runs and increments DD33C, then flushes the buffer.
 // Draw later clears the batch; buffer/font/texture ownership remains global.
-void gtl_BitmapFont_FormatTextVertices(Vec3 *origin, const char *format, ...) {
+void gtl_BitmapFont_FormatTextVertices(Vec3* origin, const char* format, ...) {
     struct {
         unsigned int argumentState;
-        void *registerSaveArea;
-        void *overflowArguments;
+        void* registerSaveArea;
+        void* overflowArguments;
     } ap;
     char cbuf[0x400];
     u16 wbuf[0x400];
     Vec3 pos;
     u32 desc[4];
-    u8 *verts;
-    u8 *dst;
-    u8 *tabBase = s_bitmapFontState;
-    char *p;
+    u8* verts;
+    u8* dst;
+    u8* tabBase = s_bitmapFontState;
+    char* p;
     s32 count;
     s32 processedCodepoints;
     s32 glyphByteOffset;
-    PageSlot *pageBatches;
-    FontTab *fontMetrics;
-    u16 *wp;
+    PageSlot* pageBatches;
+    FontTab* fontMetrics;
+    u16* wp;
 
     if (s_bitmapFontInitialized == 0) {
         gtl_BitmapFont_Initialize(0);
     }
     __va_setup(&ap);
     vsprintf(cbuf, format, &ap);
-    *(Vec3Bits *)&pos = *(Vec3Bits *)origin;
+    *(Vec3Bits*)&pos = *(Vec3Bits*)origin;
     p = cbuf;
     count = 0;
     while (true) {
@@ -171,7 +173,7 @@ void gtl_BitmapFont_FormatTextVertices(Vec3 *origin, const char *format, ...) {
     // The one-word-before cursor is never dereferenced: store [1], advance two
     // words, store [0]. Keep that store/update shape for CodeWarrior's stwu.
     u32 n = 0x100;
-    u32 *clr = (u32 *)wbuf - 1;
+    u32* clr = (u32*)wbuf - 1;
     do {
         clr[1] = 0;
         clr += 2;
@@ -180,13 +182,13 @@ void gtl_BitmapFont_FormatTextVertices(Vec3 *origin, const char *format, ...) {
     // -1 auto-scans the NUL within 1024 input bytes. Last argument 0x400 is
     // merely nonzero "use conversion table", NOT an output-capacity argument
     // (gtl_heap_allocators.cpp); capacity safety follows from the formatted-byte bound.
-    Text_ConvertShiftJisUsingCodeTable(0, 0, (unsigned char *)cbuf, -1, wbuf, 0x400);
+    Text_ConvertShiftJisUsingCodeTable(0, 0, (unsigned char*)cbuf, -1, wbuf, 0x400);
     wp = wbuf;
     // B1920+0x50: 2048 {count,page} runs; +0x4050: 20 palette words;
     // +0x40A0: copied font header (lineHeight at +0x10). Quad tables at
     // +0x40C8/+0x4398 are passed through unchanged to WriteGlyphQuad.
-    fontMetrics = (FontTab *)((u8 *)s_bitmapFontState + 0x40A0);
-    pageBatches = (PageSlot *)(tabBase + 0x50);
+    fontMetrics = (FontTab*)((u8*)s_bitmapFontState + 0x40A0);
+    pageBatches = (PageSlot*)(tabBase + 0x50);
     glyphByteOffset = 0;
     processedCodepoints = 0;
     while (true) {
@@ -225,9 +227,12 @@ void gtl_BitmapFont_FormatTextVertices(Vec3 *origin, const char *format, ...) {
             xy[2] = x1;
             xy[3] = pos.y + ((f32)line * s_bitmapFontGlyphScaleXY[1]);
             pos.x = x0;
-// The definition reads nine arguments (z = pos.z); the original call also loads r9/r10 and f2..f8, which the
-// callee ignores.
-            ((void (*)(void *, s32, s32, void *, void *, void *, void *, s32, s32, s32, f32, f32, f32, f32, f32, f32, f32, f32))gtl_BitmapFont_WriteGlyphQuad)(dst, 0x11F005, s_bitmapFontPrimitiveType, tabBase + 0x40C8, tabBase + 0x4398, uv, xy, s_bitmapFontDefaultPackedColor, 0, 0, pos.z, x1, pos.y, wd, v1, u1, v0, u0);
+            // The definition reads nine arguments (z = pos.z); the original call also loads r9/r10 and f2..f8, which the
+            // callee ignores.
+            ((void (*)(void*, s32, s32, void*, void*, void*, void*, s32, s32, s32, f32, f32, f32, f32, f32, f32, f32,
+                       f32))gtl_BitmapFont_WriteGlyphQuad)(dst, 0x11F005, s_bitmapFontPrimitiveType, tabBase + 0x40C8,
+                                                           tabBase + 0x4398, uv, xy, s_bitmapFontDefaultPackedColor, 0,
+                                                           0, pos.z, x1, pos.y, wd, v1, u1, v0, u0);
             switch (s_bitmapFontPrimitiveType) {
             case 0x98:
                 Memory_Copy(dst - 0x18, dst, 0x18);
@@ -235,7 +240,7 @@ void gtl_BitmapFont_FormatTextVertices(Vec3 *origin, const char *format, ...) {
                 break;
             }
             glyphByteOffset += 0x90;
-            PageSlot *pageRun = pageBatches + s_bitmapFontLastPageRunIndex;
+            PageSlot* pageRun = pageBatches + s_bitmapFontLastPageRunIndex;
             pos.x += s_bitmapFontGlyphScaleXY[0] * (f32)(glyph.w + glyph.adv);
             u16 page = glyph.page;
             if (page != pageRun->page) {
@@ -255,28 +260,28 @@ void gtl_BitmapFont_FormatTextVertices(Vec3 *origin, const char *format, ...) {
 }
 
 extern f32 kIdentityMatrix4x4[16];
-void Engine_GetRenderState(u32 state, u32 *value);
+void Engine_GetRenderState(u32 state, u32* value);
 void Engine_SetCachedRenderState(u32 state, u32 value);
-void Engine_GetTextureStageState(u32 stage, u32 state, u32 *value);
+void Engine_GetTextureStageState(u32 stage, u32 state, u32* value);
 void Engine_SetTextureStageState(u32 stage, u32 state, u32 value);
-void Engine_GetRenderStateRowField(u32 stage, u32 state, u32 *value);
+void Engine_GetRenderStateRowField(u32 stage, u32 state, u32* value);
 void Engine_SetTextureStageParameter(u32 stage, u32 type, u32 value);
-void Engine_GetTransform(u32 type, void *matrix);
-void Engine_AcquireType6Resource(void **res);
-void Engine_AcquireType7Resource(void **res);
-void Engine_GetTextureStageResource(u32 stage, void **res);
-void Engine_SetTextureStageResource(u32 stage, void *res);
-void Render_GetVertexDeclaration(void **res);
+void Engine_GetTransform(u32 type, void* matrix);
+void Engine_AcquireType6Resource(void** res);
+void Engine_AcquireType7Resource(void** res);
+void Engine_GetTextureStageResource(u32 stage, void** res);
+void Engine_SetTextureStageResource(u32 stage, void* res);
+void Render_GetVertexDeclaration(void** res);
 void Engine_SetFlexibleVertexFormat(u32 fvf);
-void Engine_SetType6Resource(void *res);
-void Engine_SetType7Resource(void *res);
-void SetTransform(u32 type, const void *matrix);
-void Engine_SetTexturePalette(u32 stage, void *tex);
-void Engine_SetVertexStreamZeroOffset(u32 stream, void *vb, u32 stride);
+void Engine_SetType6Resource(void* res);
+void Engine_SetType7Resource(void* res);
+void SetTransform(u32 type, const void* matrix);
+void Engine_SetTexturePalette(u32 stage, void* tex);
+void Engine_SetVertexStreamZeroOffset(u32 stream, void* vb, u32 stride);
 void DrawPrimitiveFromBoundBuffers(u32 type, u32 start, u32 count);
-void Engine_SetVertexDeclaration(void *decl);
-void CubeResourceStorage_dtor(void *obj, s32 flags);
-void *memset(void *, int, size_t);
+void Engine_SetVertexDeclaration(void* decl);
+void CubeResourceStorage_dtor(void* obj, s32 flags);
+void* memset(void*, int, size_t);
 
 struct SaveTab {
     u32 render[34];
@@ -294,7 +299,7 @@ struct RenderStateSaver {
     StateRec recs[17];
     u32 saved[17];
     // Capture 17 current render-state values, then apply the font's paired defaults.
-    RenderStateSaver(SaveTab *src) {
+    RenderStateSaver(SaveTab* src) {
         Memory_Copy(recs, src->render, 0x88);
         for (u32 i = 0; i < 17; i++) {
             Engine_GetRenderState(recs[i].id, &saved[i]);
@@ -313,7 +318,7 @@ struct TexStateSaver {
     StateRec recs[8];
     u32 saved[8];
     // Capture/apply eight stage-zero texture-state values from the font defaults.
-    TexStateSaver(SaveTab *src) {
+    TexStateSaver(SaveTab* src) {
         Memory_Copy(recs, src->tex, 0x40);
         for (u32 i = 0; i < 8; i++) {
             Engine_GetTextureStageState(0, recs[i].id, &saved[i]);
@@ -332,7 +337,7 @@ struct ParamSaver {
     StateRec recs[5];
     u32 saved[5];
     // Capture/apply five stage-zero parameter values from the font defaults.
-    ParamSaver(SaveTab *src) {
+    ParamSaver(SaveTab* src) {
         Memory_Copy(recs, src->param, 0x28);
         for (u32 i = 0; i < 5; i++) {
             Engine_GetRenderStateRowField(0, recs[i].id, &saved[i]);
@@ -350,30 +355,34 @@ struct ParamSaver {
 struct TransformGuard {
     f32 mtx[16];
     // Borrow a value copy of transform slot 2 before font drawing sets identity.
-    TransformGuard() { Engine_GetTransform(2, mtx); }
+    TransformGuard() {
+        Engine_GetTransform(2, mtx);
+    }
     // Restore transform slot 2 from its saved sixteen float words.
-    ~TransformGuard() { SetTransform(2, mtx); }
+    ~TransformGuard() {
+        SetTransform(2, mtx);
+    }
 };
 
 struct RefObj {
-    CW_BITS2(
-        u32 count : 16,
-        u32 rest : 16)
+    CW_BITS2(u32 count : 16, u32 rest : 16)
 };
 
-#define RELEASE_REF(p)                                                         \
-    RefObj *q = p;                                                             \
-    if (q != 0) {                                                              \
-        if (--q->count == 0) {                                                 \
-            CubeResourceStorage_dtor(q, 1);                                               \
-        }                                                                      \
-        p = 0;                                                                 \
+#define RELEASE_REF(p)                      \
+    RefObj* q = p;                          \
+    if (q != 0) {                           \
+        if (--q->count == 0) {              \
+            CubeResourceStorage_dtor(q, 1); \
+        }                                   \
+        p = 0;                              \
     }
 
 struct Type6Guard {
-    RefObj *p;
+    RefObj* p;
     // Retain current type-6 binding until restoration (numeric engine API kind).
-    Type6Guard() { Engine_AcquireType6Resource((void **)&p); }
+    Type6Guard() {
+        Engine_AcquireType6Resource((void**)&p);
+    }
     // Restore the binding, then relinquish our retained reference.
     ~Type6Guard() {
         Engine_SetType6Resource(p);
@@ -382,9 +391,11 @@ struct Type6Guard {
 };
 
 struct VFmtGuard {
-    RefObj *p;
+    RefObj* p;
     // Retain current type-7 binding until restoration; not the vertex declaration.
-    VFmtGuard() { Engine_AcquireType7Resource((void **)&p); }
+    VFmtGuard() {
+        Engine_AcquireType7Resource((void**)&p);
+    }
     // Restore type 7 and release the guard's retained reference.
     ~VFmtGuard() {
         Engine_SetType7Resource(p);
@@ -393,9 +404,11 @@ struct VFmtGuard {
 };
 
 struct VDeclGuard {
-    RefObj *p;
+    RefObj* p;
     // Retain the current vertex declaration before selecting the font FVF.
-    VDeclGuard() { Render_GetVertexDeclaration((void **)&p); }
+    VDeclGuard() {
+        Render_GetVertexDeclaration((void**)&p);
+    }
     // Restore the declaration, then release the guard's retained reference.
     ~VDeclGuard() {
         Engine_SetVertexDeclaration(p);
@@ -404,11 +417,12 @@ struct VDeclGuard {
 };
 
 extern "C++" {
-template <int N>
-struct TexResGuard {
-    RefObj *p;
+template <int N> struct TexResGuard {
+    RefObj* p;
     // Retain stage N's texture resource; Draw instantiates N in [0,7].
-    TexResGuard() { Engine_GetTextureStageResource(N, (void **)&p); }
+    TexResGuard() {
+        Engine_GetTextureStageResource(N, (void**)&p);
+    }
     // Restore this stage's binding and release its retained reference.
     ~TexResGuard() {
         Engine_SetTextureStageResource(N, p);
@@ -440,15 +454,15 @@ struct PageTab {
 // rollback contract exists for failed engine calls. Resource ownership persists.
 void gtl_BitmapFont_Draw(void) {
     s32 startVtx;
-    SaveTab *src = &s_bitmapFontDefaultRenderStates;
-    PageTab *tab = (PageTab *)s_bitmapFontState;
+    SaveTab* src = &s_bitmapFontDefaultRenderStates;
+    PageTab* tab = (PageTab*)s_bitmapFontState;
     if (s_bitmapFontQueuedGlyphCount > 0) {
         u32 i;
         s32 k;
-        PageSlot *rec;
-        u32 *tex0;
+        PageSlot* rec;
+        u32* tex0;
         startVtx = 0;
-        u32 *tex1;
+        u32* tex1;
         switch (s_bitmapFontPrimitiveType) {
         case 0x98:
             startVtx = (s_bitmapFontQueuedGlyphCount * 6) - 2;
@@ -484,8 +498,8 @@ void gtl_BitmapFont_Draw(void) {
         tex1 = tab->tex1;
         k = 0;
         while (k <= s_bitmapFontLastPageRunIndex) {
-            Engine_SetTextureStageResource(0, (void *)tex0[rec->page]);
-            Engine_SetTexturePalette(0, (void *)tex1[rec->page]);
+            Engine_SetTextureStageResource(0, (void*)tex0[rec->page]);
+            Engine_SetTexturePalette(0, (void*)tex1[rec->page]);
             Engine_SetVertexStreamZeroOffset(0, s_bitmapFontVertexBuffer, 0x18);
             DrawPrimitiveFromBoundBuffers(s_bitmapFontPrimitiveType, 0, startVtx);
             rec += 1;
@@ -499,14 +513,14 @@ void gtl_BitmapFont_Draw(void) {
 }
 #pragma use_lmw_stmw reset
 
-void __dl__FPv(void *);
+void __dl__FPv(void*);
 
 // ABI destructor: restore type 6/release its retained reference; optionally free self.
 // All ABI guard destructors below accept null; flags>0 frees, otherwise storage remains.
-void *Type6Guard_dtor(Type6Guard *self, int flags) {
+void* Type6Guard_dtor(Type6Guard* self, int flags) {
     if (self != 0) {
         Engine_SetType6Resource(self->p);
-        RefObj *q = self->p;
+        RefObj* q = self->p;
         if (q != 0) {
             if (--q->count == 0) {
                 CubeResourceStorage_dtor(q, 1);
@@ -521,7 +535,7 @@ void *Type6Guard_dtor(Type6Guard *self, int flags) {
 }
 
 // ABI destructor: restore type 7 and release its saved reference, then optional delete.
-void *VFmtGuard_dtor(VFmtGuard *self, int flags) {
+void* VFmtGuard_dtor(VFmtGuard* self, int flags) {
     if (self != 0) {
         Engine_SetType7Resource(self->p);
         RELEASE_REF(self->p)
@@ -533,7 +547,7 @@ void *VFmtGuard_dtor(VFmtGuard *self, int flags) {
 }
 
 // ABI destructor: restore the saved vertex declaration/release, then optional delete.
-void *VDeclGuard_dtor(VDeclGuard *self, int flags) {
+void* VDeclGuard_dtor(VDeclGuard* self, int flags) {
     if (self != 0) {
         Engine_SetVertexDeclaration(self->p);
         RELEASE_REF(self->p)
@@ -547,7 +561,7 @@ void *VDeclGuard_dtor(VDeclGuard *self, int flags) {
 #pragma push
 #pragma use_lmw_stmw on
 // ABI destructor: restore the 17 saved render states, then optionally free the guard.
-void *RenderStateSaver_dtor(RenderStateSaver *self, int flags) {
+void* RenderStateSaver_dtor(RenderStateSaver* self, int flags) {
     if (self != 0) {
         for (u32 i = 0; i < 17; i++) {
             Engine_SetCachedRenderState(self->recs[i].id, self->saved[i]);
@@ -561,7 +575,7 @@ void *RenderStateSaver_dtor(RenderStateSaver *self, int flags) {
 #pragma pop
 
 // ABI destructor: restore transform slot 2, then optionally free the guard.
-void *TransformGuard_dtor(TransformGuard *self, int flags) {
+void* TransformGuard_dtor(TransformGuard* self, int flags) {
     if (self != 0) {
         SetTransform(2, self->mtx);
         if (flags > 0) {
@@ -572,7 +586,7 @@ void *TransformGuard_dtor(TransformGuard *self, int flags) {
 }
 
 // ABI destructor: restore/release stage 0's retained texture; optionally free self.
-void *TexResGuard_stage0_dtor(TexResGuard<0> *self, int flags) {
+void* TexResGuard_stage0_dtor(TexResGuard<0>* self, int flags) {
     if (self != 0) {
         Engine_SetTextureStageResource(0, self->p);
         RELEASE_REF(self->p)
@@ -584,7 +598,7 @@ void *TexResGuard_stage0_dtor(TexResGuard<0> *self, int flags) {
 }
 
 // ABI destructor: restore/release stage 1's retained texture; optionally free self.
-void *TexResGuard1_dtor(TexResGuard<1> *self, int flags) {
+void* TexResGuard1_dtor(TexResGuard<1>* self, int flags) {
     if (self != 0) {
         Engine_SetTextureStageResource(1, self->p);
         RELEASE_REF(self->p)
@@ -596,7 +610,7 @@ void *TexResGuard1_dtor(TexResGuard<1> *self, int flags) {
 }
 
 // ABI destructor: restore/release stage 2's retained texture; optionally free self.
-void *TexResGuard2_dtor(TexResGuard<2> *self, int flags) {
+void* TexResGuard2_dtor(TexResGuard<2>* self, int flags) {
     if (self != 0) {
         Engine_SetTextureStageResource(2, self->p);
         RELEASE_REF(self->p)
@@ -608,7 +622,7 @@ void *TexResGuard2_dtor(TexResGuard<2> *self, int flags) {
 }
 
 // ABI destructor: restore/release stage 3's retained texture; optionally free self.
-void *TexResGuard3_dtor(TexResGuard<3> *self, int flags) {
+void* TexResGuard3_dtor(TexResGuard<3>* self, int flags) {
     if (self != 0) {
         Engine_SetTextureStageResource(3, self->p);
         RELEASE_REF(self->p)
@@ -620,7 +634,7 @@ void *TexResGuard3_dtor(TexResGuard<3> *self, int flags) {
 }
 
 // ABI destructor: restore/release stage 4's retained texture; optionally free self.
-void *TexResGuard_Stage4_dtor(TexResGuard<4> *self, int flags) {
+void* TexResGuard_Stage4_dtor(TexResGuard<4>* self, int flags) {
     if (self != 0) {
         Engine_SetTextureStageResource(4, self->p);
         RELEASE_REF(self->p)
@@ -632,7 +646,7 @@ void *TexResGuard_Stage4_dtor(TexResGuard<4> *self, int flags) {
 }
 
 // ABI destructor: restore/release stage 5's retained texture; optionally free self.
-void *TexResGuard5_dtor(TexResGuard<5> *self, int flags) {
+void* TexResGuard5_dtor(TexResGuard<5>* self, int flags) {
     if (self != 0) {
         Engine_SetTextureStageResource(5, self->p);
         RELEASE_REF(self->p)
@@ -644,7 +658,7 @@ void *TexResGuard5_dtor(TexResGuard<5> *self, int flags) {
 }
 
 // ABI destructor: restore/release stage 6's retained texture; optionally free self.
-void *TexResGuard6_dtor(TexResGuard<6> *self, int flags) {
+void* TexResGuard6_dtor(TexResGuard<6>* self, int flags) {
     if (self != 0) {
         Engine_SetTextureStageResource(6, self->p);
         RELEASE_REF(self->p)
@@ -656,7 +670,7 @@ void *TexResGuard6_dtor(TexResGuard<6> *self, int flags) {
 }
 
 // ABI destructor: restore/release stage 7's retained texture; optionally free self.
-void *TexResGuard_Stage7_dtor(TexResGuard<7> *self, int flags) {
+void* TexResGuard_Stage7_dtor(TexResGuard<7>* self, int flags) {
     if (self != 0) {
         Engine_SetTextureStageResource(7, self->p);
         RELEASE_REF(self->p)
@@ -672,7 +686,7 @@ void gtl_BitmapFont_InitStaticString(void) {
     s_bitmapFontPathString.a = 0;
     s_bitmapFontPathString.b = 0;
     s_bitmapFontPathString.c = 0;
-    __register_global_object(&s_bitmapFontPathString, (void *)MWString_dtor, s_bitmapFontStringRegistrationSlot);
+    __register_global_object(&s_bitmapFontPathString, (void*)MWString_dtor, s_bitmapFontStringRegistrationSlot);
 }
 
 } // extern "C"

@@ -1,16 +1,28 @@
+// Movie playback audio and video: the decoder's sample queues, mixing of the stereo PCM into the
+// DMA buffers, stream volume fades, and drawing the decoded video frame with its GX setup.
+// The registry tree cleanup (RotateRegistry) is also here.
+
+#include "classes/GtlMediaSample.h"
 #include <decomp/static_init.h>
-// Translation unit 0x8025D2A4-0x8025E8F8 (26 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "classes/FloatTween.h"
 #include "revolution/GX/GXTypes.h"
+#include "classes/CHashPath.h"
 
 // PCM is interleaved signed 16-bit L/R: one stereo frame = four bytes.
 // A queue message borrows a persistent three-word descriptor. That descriptor
 // owns allocation; cursor/stereoFrames track the mixer's unconsumed portion.
 // Ownership of reuse moves freeQueue -> producer -> readyQueue -> mixer -> freeQueue.
-struct MovieAudioSampleBuffer { void* allocation; void* cursor; unsigned int stereoFrames; };
-struct MovieAudioFormat { char reserved[0x9C]; unsigned int sampleFrames; char tail[4]; };
+struct MovieAudioSampleBuffer {
+    void* allocation;
+    void* cursor;
+    unsigned int stereoFrames;
+};
+struct MovieAudioFormat {
+    char reserved[0x9C];
+    unsigned int sampleFrames;
+    char tail[4];
+};
 struct MovieAudioQueueStorage {
     void* freeMessages[6];
     void* readyMessages[6];
@@ -47,7 +59,8 @@ enum MovieAudioConstants {
 extern "C" {
 extern float kFloat_6_2831855;
 extern const float kFloat_0_RenderTexture;
-extern float kMovieProjectionFarZ;extern float s_movieAudioFullTurn;
+extern float kMovieProjectionFarZ;
+extern float s_movieAudioFullTurn;
 extern char s_streamVolumeFadeTween[0x20];
 extern void* s_movieSampleBuffers[18];
 
@@ -57,7 +70,6 @@ extern void* s_audioMixPreserveStereo;
 void FloatTween_Init(void*, float);
 int FloatTween_Update(void*, float);
 void gtl_Media_CreateFilterManager(void*, void*);
-void* CHashPath_FindPathForwarder(void*, int);
 void Audio_InitializeDMAMixingQueues(void*);
 extern volatile float s_audioMasterVolumeScale;
 extern int s_audioVolumeQ15;
@@ -89,19 +101,23 @@ int AIGetDMAStartAddr();
 void AIInitDMA(void*, int);
 void DCInvalidateRange(void*, unsigned int);
 void Audio_MixQueuedStereoSamples(void*, void*, int);
-int gtl_CMediaSample_GetData(void*, void**);
 int OSReceiveMessage(void*, void**, int);
 void Memory_Copy(void*, void*, unsigned int);
 void OSSendMessage(void*, void*, int);
 void MovieRenderer_DrawMediaSample(void*, void*);
 void Memory_Copy(void*, void*, unsigned int);
-int gtl_CMediaSample_CopyFormat(void*, void**);
 void MovieRenderer_SetupGXState(void*, unsigned short, unsigned short);
 void Media_DrawThreePlaneTextureQuad(void*, void*, void*, void*, int, int, int, int, unsigned short, unsigned short);
-void GXSetAlphaUpdate(int); void GXSetNumTexGens(int); void GXSetNumChans(int); void GXSetNumTevStages(int);
-void GXSetTevSwapModeTable(int, int, int, int, int); void GXSetTevOrder(int, int, int, int);
-void GXSetTevKColorSel(int, int); void GXSetTevColorIn(int, int, int, int, int);
-void GXSetTevColorOp(int, int, int, int, int, int); void GXSetTevAlphaIn(int, int, int, int, int);
+void GXSetAlphaUpdate(int);
+void GXSetNumTexGens(int);
+void GXSetNumChans(int);
+void GXSetNumTevStages(int);
+void GXSetTevSwapModeTable(int, int, int, int, int);
+void GXSetTevOrder(int, int, int, int);
+void GXSetTevKColorSel(int, int);
+void GXSetTevColorIn(int, int, int, int, int);
+void GXSetTevColorOp(int, int, int, int, int, int);
+void GXSetTevAlphaIn(int, int, int, int, int);
 void GXSetTevAlphaOp(int, int, int, int, int, int);
 void* __nwa__FUl(unsigned int);
 void C_MTXOrtho(void*, float, float, float, float, float, float);
@@ -123,7 +139,9 @@ void GXSetVtxAttrFmt(int, int, int, int, int);
 void GXSetTevKAlphaSel(int, int);
 void GXSetTevColorS10(int, void*);
 void GXSetTevKColor(int, void*);
-struct MovieRenderStatePairs { int v[18]; };
+struct MovieRenderStatePairs {
+    int v[18];
+};
 extern MovieRenderStatePairs kMovieRenderStatePairs;
 extern unsigned short kMovieYuvInitialColorR;
 extern unsigned short kMovieYuvInitialColorG;
@@ -142,12 +160,30 @@ extern unsigned char kMovieYuvKonst2G;
 extern unsigned char kMovieYuvKonst2B;
 extern unsigned char kMovieYuvKonst2A;
 
-struct MovieStartView { void* pad00; void* manager; int pad08; int state; };
+struct MovieStartView {
+    void* pad00;
+    void* manager;
+    int pad08;
+    int state;
+};
 struct MovieStartDecoder {
-    virtual void m2(); virtual void m3(); virtual void m4(); virtual void m5();
-    virtual void getState(int*); virtual void configure(void*); virtual void m8(); virtual int start();
-    virtual void m10(); virtual void m11(); virtual void m12(); virtual void m13(); virtual void m14(); virtual void m15();
-    virtual void m16(); virtual void m17(); virtual void getAudioFormat(void*);
+    virtual void m2();
+    virtual void m3();
+    virtual void m4();
+    virtual void m5();
+    virtual void getState(int*);
+    virtual void configure(void*);
+    virtual void m8();
+    virtual int start();
+    virtual void m10();
+    virtual void m11();
+    virtual void m12();
+    virtual void m13();
+    virtual void m14();
+    virtual void m15();
+    virtual void m16();
+    virtual void m17();
+    virtual void getAudioFormat(void*);
 };
 #pragma push
 #pragma use_lmw_stmw on
@@ -166,9 +202,11 @@ int Movie_ConfigureAndStartDecoder(MovieStartView* self, void* arg) {
     } else {
         mgr->getState(&type);
         ok = 1;
-        if (type != kDecoderReady && type != kDecoderState4) ok = 0;
+        if (type != kDecoderReady && type != kDecoderState4)
+            ok = 0;
     }
-    if (ok == 0) return 0;
+    if (ok == 0)
+        return 0;
     ((MovieStartDecoder*)self->manager)->configure(arg);
     ((MovieStartDecoder*)self->manager)->getAudioFormat(&format);
     // Phase 2: replace the six descriptor-owned allocations. Caller must already
@@ -209,7 +247,8 @@ int Movie_ConfigureAndStartDecoder(MovieStartView* self, void* arg) {
 #pragma use_lmw_stmw on
 // Resolve Y/U/V sample planes, draw a full-screen movie quad, then restore the base TEV setup.
 void MovieRenderer_DrawMediaSample(void* self, void* resource) {
-    if (resource == 0) return;
+    if (resource == 0)
+        return;
     struct ResInfo {
         void* field00;
         char pad0x94[0x94];
@@ -218,11 +257,14 @@ void MovieRenderer_DrawMediaSample(void* self, void* resource) {
         char pad0xa0[8];
     };
     ResInfo info;
-    gtl_CMediaSample_CopyFormat(resource, (void**)&info);
+    ((gtl::CMediaSample*)resource)->CopyFormat((void**)&info);
     void* data;
-    gtl_CMediaSample_GetData(resource, &data);
-    if (data == 0) return;
-    struct PlanarVideoSample { unsigned int offsets[6]; };
+    ((gtl::CMediaSample*)resource)->GetData((int*)&data);
+    if (data == 0)
+        return;
+    struct PlanarVideoSample {
+        unsigned int offsets[6];
+    };
     PlanarVideoSample* planes = (PlanarVideoSample*)data;
     void* yPlane = (char*)data + planes->offsets[1];
     void* uPlane = (char*)data + planes->offsets[3];
@@ -230,11 +272,18 @@ void MovieRenderer_DrawMediaSample(void* self, void* resource) {
     unsigned short height = info.height;
     unsigned short width = info.width;
     MovieRenderer_SetupGXState(self, width, height);
-    Media_DrawThreePlaneTextureQuad(self, yPlane, uPlane, vPlane, 0, 0, width, height, kMovieScreenWidth, kMovieScreenHeight);
-    GXSetAlphaUpdate(GX_TRUE); GXSetNumTexGens(1); GXSetNumChans(1); GXSetNumTevStages(1);
-    GXSetTevSwapModeTable(GX_TEV_SWAP1, GX_CH_RED, GX_CH_ALPHA, GX_CH_BLUE, GX_CH_ALPHA); GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0);
-    GXSetTevKColorSel(GX_TEVSTAGE0, GX_TEV_KCSEL_K0); GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_KONST, GX_CC_ONE, GX_CC_RASC);
-    GXSetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV); GXSetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+    Media_DrawThreePlaneTextureQuad(self, yPlane, uPlane, vPlane, 0, 0, width, height, kMovieScreenWidth,
+                                    kMovieScreenHeight);
+    GXSetAlphaUpdate(GX_TRUE);
+    GXSetNumTexGens(1);
+    GXSetNumChans(1);
+    GXSetNumTevStages(1);
+    GXSetTevSwapModeTable(GX_TEV_SWAP1, GX_CH_RED, GX_CH_ALPHA, GX_CH_BLUE, GX_CH_ALPHA);
+    GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+    GXSetTevKColorSel(GX_TEVSTAGE0, GX_TEV_KCSEL_K0);
+    GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_KONST, GX_CC_ONE, GX_CC_RASC);
+    GXSetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+    GXSetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
     GXSetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
 }
 #pragma pop
@@ -248,8 +297,10 @@ int Movie_ReturnZero() {
 void Audio_MixNextDMABuffer() {
     // AI callback context: preserve the previous completed DMA source before
     // chaining the old callback, which may schedule a new hardware buffer.
-    if (g_currentAudioDmaBuffer != 0) g_audioMixSourceBuffer = g_currentAudioDmaBuffer;
-    if (s_previousAudioDmaCallback != 0) ((void (*)())s_previousAudioDmaCallback)();
+    if (g_currentAudioDmaBuffer != 0)
+        g_audioMixSourceBuffer = g_currentAudioDmaBuffer;
+    if (s_previousAudioDmaCallback != 0)
+        ((void (*)())s_previousAudioDmaCallback)();
     int current = AIGetDMAStartAddr();
     // AI reports a physical address; +0x80000000 obtains its cached CPU alias.
     g_currentAudioDmaBuffer = current + 0x80000000;
@@ -261,8 +312,10 @@ void Audio_MixNextDMABuffer() {
     // The original protocol ENABLES interrupts while mixing and restores the
     // previous mask afterward; this is not a critical-section lock.
     unsigned int interrupts = OSEnableInterrupts();
-    if (g_audioMixSourceBuffer != 0) DCInvalidateRange((void*)g_audioMixSourceBuffer, kDmaBufferBytes);
-    Audio_MixQueuedStereoSamples(s_audioDmaBuffers + s_audioDmaBufferIndex * kDmaBufferBytes, (void*)g_audioMixSourceBuffer, kDmaStereoFrames);
+    if (g_audioMixSourceBuffer != 0)
+        DCInvalidateRange((void*)g_audioMixSourceBuffer, kDmaBufferBytes);
+    Audio_MixQueuedStereoSamples(s_audioDmaBuffers + s_audioDmaBufferIndex * kDmaBufferBytes,
+                                 (void*)g_audioMixSourceBuffer, kDmaStereoFrames);
     DCFlushRange(s_audioDmaBuffers + s_audioDmaBufferIndex * kDmaBufferBytes, kDmaBufferBytes);
     OSRestoreInterrupts(interrupts);
 }
@@ -271,14 +324,20 @@ void Audio_MixNextDMABuffer() {
 // resource/data are borrowed for this call. Blocking receives/sends transfer the
 // descriptor's reuse rights; the decoder's sample bytes are copied, never retained.
 void Audio_QueueMediaSampleForMixing(void* self, void* resource) {
-    if (resource == 0) return;
+    if (resource == 0)
+        return;
     void* data = 0;
-    gtl_CMediaSample_GetData(resource, &data);
-    if (data == 0) return;
+    ((gtl::CMediaSample*)resource)->GetData((int*)&data);
+    if (data == 0)
+        return;
     void* queueMessage;
     void* sampleBuffer = OSReceiveMessage(s_movieSampleFreeQueue, &queueMessage, 1) == 1 ? queueMessage : 0;
-    if (sampleBuffer == 0) return;
-    struct AudioSampleDescriptor { unsigned int stereoFrames; unsigned int dataOffset; };
+    if (sampleBuffer == 0)
+        return;
+    struct AudioSampleDescriptor {
+        unsigned int stereoFrames;
+        unsigned int dataOffset;
+    };
     AudioSampleDescriptor* sample = (AudioSampleDescriptor*)data;
     unsigned int pcmBytes = sample->stereoFrames * kPcmBytesPerStereoFrame;
     void* pcmData = (char*)sample + sample->dataOffset;
@@ -294,18 +353,41 @@ void Audio_QueueMediaSampleForMixing(void* self, void* resource) {
 //   reference-counted sample object through *out (null when nothing is ready).
 // Sample objects are reference counted: Ref::count is the first word and vtable slot 2 is
 // the deleting destructor (called with flag 1) that runs when the last reference drops.
-struct MovieDrawView { void* audioMixingEnabled; void* decoder; void* playbackReferences; };
+struct MovieDrawView {
+    void* audioMixingEnabled;
+    void* decoder;
+    void* playbackReferences;
+};
 struct MovieSampleDecoder {
-    virtual void m0(); virtual void m1(); virtual void m2(); virtual void m3();
-    virtual void m4(); virtual void m5(); virtual void m6(); virtual void m7();
-    virtual void m8(); virtual void m9(); virtual void m10(); virtual void m11();
-    virtual void m12(); virtual void m13(); virtual void m14(); virtual void m15();
-    virtual void m16(); virtual void getVideoSample(void**); virtual void getAudioSample(void**); virtual void m19(void**);
+    virtual void m0();
+    virtual void m1();
+    virtual void m2();
+    virtual void m3();
+    virtual void m4();
+    virtual void m5();
+    virtual void m6();
+    virtual void m7();
+    virtual void m8();
+    virtual void m9();
+    virtual void m10();
+    virtual void m11();
+    virtual void m12();
+    virtual void m13();
+    virtual void m14();
+    virtual void m15();
+    virtual void m16();
+    virtual void getVideoSample(void**);
+    virtual void getAudioSample(void**);
+    virtual void m19(void**);
 };
 // Draw the current video sample and queue its audio sample, releasing both acquired references.
 int MovieRenderer_DrawCurrentSamples(MovieDrawView* self) {
-    if (self->decoder == 0) return 0;
-    struct Ref { int count; void** vtable; };
+    if (self->decoder == 0)
+        return 0;
+    struct Ref {
+        int count;
+        void** vtable;
+    };
     Ref* buf = 0;
     // Acquire: video sample -> draw -> release (drop one reference, destroy at zero).
     ((MovieSampleDecoder*)self->decoder)->getVideoSample((void**)&buf);
@@ -317,7 +399,8 @@ int MovieRenderer_DrawCurrentSamples(MovieDrawView* self) {
         }
         buf = 0;
     }
-    if (self->audioMixingEnabled == 0) return 0;
+    if (self->audioMixingEnabled == 0)
+        return 0;
     // Same acquire/consume/release pattern for the audio sample; the release below is the
     // same refcount drop as above, written out again by the original code.
     ((MovieSampleDecoder*)self->decoder)->getAudioSample((void**)&buf);
@@ -347,8 +430,10 @@ void Audio_SetStreamVolumeWithFade(float targetVolume, float fadeSeconds) {
     interruptMask = OSEnableInterrupts();
     int volumeQ15 = (int)(kFloat_32768_SwingTimer * scaled);
     s_audioVolumeQ15 = volumeQ15;
-    if (volumeQ15 < 0) s_audioVolumeQ15 = 0;
-    else if (volumeQ15 > kAudioUnityQ15) s_audioVolumeQ15 = kAudioUnityQ15;
+    if (volumeQ15 < 0)
+        s_audioVolumeQ15 = 0;
+    else if (volumeQ15 > kAudioUnityQ15)
+        s_audioVolumeQ15 = kAudioUnityQ15;
     OSRestoreInterrupts(interruptMask);
 }
 
@@ -360,7 +445,8 @@ void Audio_InitializeDMAMixingQueues(void* self) {
     // Phase 1: leave the owner unchanged if AI has not initialized. Otherwise
     // clear only 0xC0 of each 0x180-byte DMA slot, exactly as the original does.
     char* base = s_movieAudioQueueStorage;
-    if (AICheckInit() == 0) return;
+    if (AICheckInit() == 0)
+        return;
     char* dmaBuffers = ((char*)(base + kMovieDmaBuffersOffset));
     // Startup clears only the first 0xC0 bytes of each 0x180-byte DMA buffer.
     int offset = 0;
@@ -376,7 +462,8 @@ void Audio_InitializeDMAMixingQueues(void* self) {
     g_currentAudioDmaBuffer = zero;
     g_audioMixSourceBuffer = zero;
     OSInitMessageQueue(((char*)(base + kMovieFreeQueueOffset)), base, kMovieSampleBufferCount);
-    OSInitMessageQueue(((char*)(base + kMovieReadyQueueOffset)), base + kMovieReadyMessagesOffset, kMovieSampleBufferCount);
+    OSInitMessageQueue(((char*)(base + kMovieReadyQueueOffset)), base + kMovieReadyMessagesOffset,
+                       kMovieSampleBufferCount);
     g_audioMixCurrentBuffer = zero;
     // Phase 2: publish both queues before installing our callback atomically with
     // respect to AI interrupts; retain the old callback for chaining/restoration.
@@ -390,9 +477,36 @@ void Audio_InitializeDMAMixingQueues(void* self) {
 // Slot map for the decoder as used here: isStopped() is vtable slot 2 (polled until it returns
 // nonzero) and release() is slot 20 (destroys the decoder object). The other slots are not
 // called from this unit and are left unnamed (m<N> = slot N).
-struct MovieCloseView { int pad0; void* decoder; int pad08; int sampleBuffersReady; };
-struct MovieCloseDecoder { 
-virtual void m0(); virtual void m1(); virtual int isStopped(); virtual void m3(); virtual int m4(); virtual void m5(); virtual void m6(); virtual void m7(); virtual void m8(); virtual void m9(); virtual void m10(); virtual void m11(); virtual void m12(); virtual void m13(); virtual void m14(); virtual void m15(); virtual void m16(); virtual void m17(); virtual void m18(); virtual void m19(); virtual void release(); virtual void m21(); virtual void m22();
+struct MovieCloseView {
+    int pad0;
+    void* decoder;
+    int pad08;
+    int sampleBuffersReady;
+};
+struct MovieCloseDecoder {
+    virtual void m0();
+    virtual void m1();
+    virtual int isStopped();
+    virtual void m3();
+    virtual int m4();
+    virtual void m5();
+    virtual void m6();
+    virtual void m7();
+    virtual void m8();
+    virtual void m9();
+    virtual void m10();
+    virtual void m11();
+    virtual void m12();
+    virtual void m13();
+    virtual void m14();
+    virtual void m15();
+    virtual void m16();
+    virtual void m17();
+    virtual void m18();
+    virtual void m19();
+    virtual void release();
+    virtual void m21();
+    virtual void m22();
 };
 #pragma push
 #pragma use_lmw_stmw on
@@ -402,7 +516,8 @@ void MovieAudio_ReleaseSampleBuffersAndManager(MovieCloseView* self) {
     // Callers must stop production first. This path assumes the mix callback
     // cannot consume freed descriptors during the subsequent buffer-release loop.
     if (self->decoder != 0) {
-        while (!((MovieCloseDecoder*)self->decoder)->isStopped()) {}
+        while (!((MovieCloseDecoder*)self->decoder)->isStopped()) {
+        }
     }
     for (int i = 0; i < kMovieSampleBufferCount; ++i) {
         int index = i * kSampleBufferWords;
@@ -414,12 +529,16 @@ void MovieAudio_ReleaseSampleBuffersAndManager(MovieCloseView* self) {
     // Phase 2: restore the saved callback while interrupts are disabled, then
     // clear ready state and release the decoder. A null saved callback is skipped.
     unsigned int mask = OSDisableInterrupts();
-    if (s_previousAudioDmaCallback != 0) AudioInterface_SetDmaCallback((void*)s_previousAudioDmaCallback);
+    if (s_previousAudioDmaCallback != 0)
+        AudioInterface_SetDmaCallback((void*)s_previousAudioDmaCallback);
     OSRestoreInterrupts(mask);
     s_previousAudioDmaCallback = 0;
     MovieCloseDecoder* manager = (MovieCloseDecoder*)self->decoder;
     self->sampleBuffersReady = 0;
-    if (manager != 0) { manager->release(); self->decoder = 0; }
+    if (manager != 0) {
+        manager->release();
+        self->decoder = 0;
+    }
 }
 #pragma pop
 
@@ -438,11 +557,11 @@ void MovieAudio_InitializeVolumeTween() {
 }
 
 struct RotateRegistryFields {
-    void* vtable;      // 0x00
-    void* owner;       // 0x04
-    int treeHeader;       // 0x08
+    void* vtable;       // 0x00
+    void* owner;        // 0x04
+    int treeHeader;     // 0x08
     int treeRoot;       // 0x0C
-    void* treeSentinel;     // 0x10
+    void* treeSentinel; // 0x10
 };
 
 struct MovieStateDecoder {
@@ -489,7 +608,8 @@ struct MovieBufferView {
 // Report whether the attached decoder is in state 2 or 4.
 int Movie_IsDecoderReadyOrState4(MovieQueryView* self) {
     MovieStateDecoder* p = self->decoder;
-    if (p == 0) return 0;
+    if (p == 0)
+        return 0;
     int decoderState;
     p->getState(&decoderState);
     return decoderState == kDecoderReady || decoderState == kDecoderState4;
@@ -499,7 +619,8 @@ int Movie_IsDecoderReadyOrState4(MovieQueryView* self) {
 void Movie_AcquirePlaybackReference(MoviePlaybackView* self) {
     MoviePlaybackDecoder* p = self->decoder;
     if (p != 0) {
-        if (self->playbackReferences == 0 && self->sampleBuffersReady != 0) p->resume();
+        if (self->playbackReferences == 0 && self->sampleBuffersReady != 0)
+            p->resume();
         self->playbackReferences++;
     }
 }
@@ -511,7 +632,8 @@ void Movie_ReleaseSampleBuffers(MovieBufferView* self) {
     // This shorter path requests stop but does not wait or restore the callback;
     // callers must ensure no producer/mixer can still access the freed allocations.
     MoviePlaybackDecoder* p = self->decoder;
-    if (p != 0) p->stop();
+    if (p != 0)
+        p->stop();
     for (int i = 0; i < kMovieSampleBufferCount; i++) {
         int idx = i * kSampleBufferWords;
         if (s_movieSampleBuffers[idx] != 0) {
@@ -553,21 +675,25 @@ void* MoviePlayback_DeleteIfFlagged(void* self, int flag) {
 // Clamp the playback reference count at zero and pause when the last ready reference is released.
 void Movie_ReleasePlaybackReference(MoviePlaybackView* self) {
     MoviePlaybackDecoder* p = (MoviePlaybackDecoder*)self->decoder;
-    if (p == 0) return;
+    if (p == 0)
+        return;
     int cnt = self->playbackReferences;
     cnt = cnt - 1;
     self->playbackReferences = cnt;
-    if (cnt > 0) return;
+    if (cnt > 0)
+        return;
     int zero = 0;
     self->playbackReferences = zero;
-    if (self->sampleBuffersReady == 0) return;
+    if (self->sampleBuffersReady == 0)
+        return;
     p->pause();
 }
 
 // Query whether the decoder reports state 3; an absent decoder returns false.
 int Movie_IsDecoderState3(MoviePlaybackView* self) {
     MovieStateDecoder* p = (MovieStateDecoder*)self->decoder;
-    if (p == 0) return 0;
+    if (p == 0)
+        return 0;
     int decoderState;
     p->getState(&decoderState);
     return decoderState == kDecoderState3;
@@ -576,7 +702,8 @@ int Movie_IsDecoderState3(MoviePlaybackView* self) {
 // Query whether the decoder reports state 4; an absent decoder returns false.
 int Movie_IsDecoderState4(MoviePlaybackView* self) {
     MovieStateDecoder* p = (MovieStateDecoder*)self->decoder;
-    if (p == 0) return 0;
+    if (p == 0)
+        return 0;
     int decoderState;
     p->getState(&decoderState);
     return decoderState == kDecoderState4;
@@ -590,15 +717,25 @@ void MovieAudio_SetMasterVolume(float value) {
     unsigned int interruptMask = OSEnableInterrupts();
     int volumeQ15 = (int)(kFloat_32768_SwingTimer * scaled);
     s_audioVolumeQ15 = volumeQ15;
-    if (volumeQ15 < 0) s_audioVolumeQ15 = 0;
-    else if (volumeQ15 > kAudioUnityQ15) s_audioVolumeQ15 = kAudioUnityQ15;
+    if (volumeQ15 < 0)
+        s_audioVolumeQ15 = 0;
+    else if (volumeQ15 > kAudioUnityQ15)
+        s_audioVolumeQ15 = kAudioUnityQ15;
     OSRestoreInterrupts(interruptMask);
 }
 
-struct MovieOpenView { int pad0; void* manager; int playbackReferences; };
-struct MovieDecoderCreateArgs { int a; int b; };
-struct MovieOpenDecoder { 
-virtual void m0(); virtual int openResource(void*, int);
+struct MovieOpenView {
+    int pad0;
+    void* manager;
+    int playbackReferences;
+};
+struct MovieDecoderCreateArgs {
+    int a;
+    int b;
+};
+struct MovieOpenDecoder {
+    virtual void m0();
+    virtual int openResource(void*, int);
 };
 // Create a media filter manager, initialize mixing, and open the resolved movie resource.
 int Movie_OpenResource(MovieOpenView* self, int arg, int a, int b) {
@@ -606,24 +743,28 @@ int Movie_OpenResource(MovieOpenView* self, int arg, int a, int b) {
     args.a = a;
     args.b = b;
     gtl_Media_CreateFilterManager(&self->manager, &args);
-    if (self->manager == 0) return 0;
+    if (self->manager == 0)
+        return 0;
     Audio_InitializeDMAMixingQueues(self);
     self->playbackReferences = 0;
-    void* resource = CHashPath_FindPathForwarder(g_resourceManager, arg);
+    void* resource = ((CHashPath*)g_resourceManager)->FindPathForwarder((const char*)arg);
     return ((MovieOpenDecoder*)self->manager)->openResource(resource, 1);
 }
 
 // Advance the stream-volume tween and apply the saturated master-scaled Q15 gain.
 void Audio_UpdateStreamVolumeFade(float elapsedSeconds) {
-    if (FloatTween_Update(s_streamVolumeFadeTween, elapsedSeconds) == 0) return;
+    if (FloatTween_Update(s_streamVolumeFadeTween, elapsedSeconds) == 0)
+        return;
     float masterVolume = s_audioMasterVolumeScale;
     float streamVolume = ((FloatTween*)s_streamVolumeFadeTween)->value; // Audio_UpdateStreamVolumeFade: tween +4
     float scaled = masterVolume * streamVolume;
     unsigned int interruptMask = OSEnableInterrupts();
     int volumeQ15 = (int)(kFloat_32768_SwingTimer * scaled);
     s_audioVolumeQ15 = volumeQ15;
-    if (volumeQ15 < 0) s_audioVolumeQ15 = 0;
-    else if (volumeQ15 > kAudioUnityQ15) s_audioVolumeQ15 = kAudioUnityQ15;
+    if (volumeQ15 < 0)
+        s_audioVolumeQ15 = 0;
+    else if (volumeQ15 > kAudioUnityQ15)
+        s_audioVolumeQ15 = kAudioUnityQ15;
     OSRestoreInterrupts(interruptMask);
 }
 
@@ -633,36 +774,69 @@ void GXLoadTexObj(void*, int);
 void GXBegin(int, int, int);
 // Load full-resolution Y and half-resolution U/V textures, then emit a screen-space GX quad.
 void Media_DrawThreePlaneTextureQuad(void* renderer, void* yPlane, void* uPlane, void* vPlane, int screenX, int screenY,
-                 int textureWidth, int textureHeight, unsigned short screenWidth, unsigned short screenHeight) {
+                                     int textureWidth, int textureHeight, unsigned short screenWidth,
+                                     unsigned short screenHeight) {
     // Planes are borrowed YUV 4:2:0 bytes (even texture dimensions expected).
     // Screen coordinates/sizes are pixels; texture coordinates are integer 0/1.
     char yTexture[0x20];
     char uTexture[0x20];
     char vTexture[0x20];
-    GXInitTexObj(yTexture, yPlane, (unsigned int)textureWidth, (unsigned int)textureHeight, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);
-    GXInitTexObjLOD(yTexture, GX_NEAR, GX_NEAR, kFloat_0_RenderTexture, kFloat_0_RenderTexture, kFloat_0_RenderTexture, GX_FALSE, GX_FALSE, GX_ANISO_1);
+    GXInitTexObj(yTexture, yPlane, (unsigned int)textureWidth, (unsigned int)textureHeight, GX_TF_I8, GX_CLAMP,
+                 GX_CLAMP, GX_FALSE);
+    GXInitTexObjLOD(yTexture, GX_NEAR, GX_NEAR, kFloat_0_RenderTexture, kFloat_0_RenderTexture, kFloat_0_RenderTexture,
+                    GX_FALSE, GX_FALSE, GX_ANISO_1);
     GXLoadTexObj(yTexture, GX_TEXMAP0);
     int chromaHeight = textureHeight >> 1;
     int chromaWidth = (unsigned short)textureWidth >> 1;
-    GXInitTexObj(uTexture, uPlane, (unsigned int)chromaWidth, (unsigned int)chromaHeight, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);
-    GXInitTexObjLOD(uTexture, GX_NEAR, GX_NEAR, kFloat_0_RenderTexture, kFloat_0_RenderTexture, kFloat_0_RenderTexture, GX_FALSE, GX_FALSE, GX_ANISO_1);
+    GXInitTexObj(uTexture, uPlane, (unsigned int)chromaWidth, (unsigned int)chromaHeight, GX_TF_I8, GX_CLAMP, GX_CLAMP,
+                 GX_FALSE);
+    GXInitTexObjLOD(uTexture, GX_NEAR, GX_NEAR, kFloat_0_RenderTexture, kFloat_0_RenderTexture, kFloat_0_RenderTexture,
+                    GX_FALSE, GX_FALSE, GX_ANISO_1);
     GXLoadTexObj(uTexture, GX_TEXMAP1);
-    GXInitTexObj(vTexture, vPlane, (unsigned int)chromaWidth, (unsigned short)chromaHeight, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);
-    GXInitTexObjLOD(vTexture, GX_NEAR, GX_NEAR, kFloat_0_RenderTexture, kFloat_0_RenderTexture, kFloat_0_RenderTexture, GX_FALSE, GX_FALSE, GX_ANISO_1);
+    GXInitTexObj(vTexture, vPlane, (unsigned int)chromaWidth, (unsigned short)chromaHeight, GX_TF_I8, GX_CLAMP,
+                 GX_CLAMP, GX_FALSE);
+    GXInitTexObjLOD(vTexture, GX_NEAR, GX_NEAR, kFloat_0_RenderTexture, kFloat_0_RenderTexture, kFloat_0_RenderTexture,
+                    GX_FALSE, GX_FALSE, GX_ANISO_1);
     GXLoadTexObj(vTexture, GX_TEXMAP2);
     GXBegin(GX_QUADS, GX_VTXFMT7, 4);
     // GX FIFO emits, per vertex, XYZ as signed-16 bit patterns followed by ST
     // as unsigned-16 values. Keep volatile write order: each store feeds hardware.
     volatile unsigned short* fifo = (volatile unsigned short*)0xCC008000;
-    *fifo = screenX; *fifo = screenY; *fifo = 0; *fifo = 0; *fifo = 0;
-    *fifo = screenX + screenWidth; *fifo = screenY; *fifo = 0; *fifo = 1; *fifo = 0;
-    *fifo = screenX + screenWidth; *fifo = screenY + screenHeight; *fifo = 0; *fifo = 1; *fifo = 1;
-    *fifo = screenX; *fifo = screenY + screenHeight; *fifo = 0; *fifo = 0; *fifo = 1;
+    *fifo = screenX;
+    *fifo = screenY;
+    *fifo = 0;
+    *fifo = 0;
+    *fifo = 0;
+    *fifo = screenX + screenWidth;
+    *fifo = screenY;
+    *fifo = 0;
+    *fifo = 1;
+    *fifo = 0;
+    *fifo = screenX + screenWidth;
+    *fifo = screenY + screenHeight;
+    *fifo = 0;
+    *fifo = 1;
+    *fifo = 1;
+    *fifo = screenX;
+    *fifo = screenY + screenHeight;
+    *fifo = 0;
+    *fifo = 0;
+    *fifo = 1;
 }
 
-struct RegistryTreeNode { void* left; void* right; };
-struct RotateRegistryTreeView { char prefix[8]; int header; RegistryTreeNode* root; };
-struct RotateRegistryVtableView { char prefix[0x10]; void (*releaseEntries)(void*); };
+struct RegistryTreeNode {
+    void* left;
+    void* right;
+};
+struct RotateRegistryTreeView {
+    char prefix[8];
+    int header;
+    RegistryTreeNode* root;
+};
+struct RotateRegistryVtableView {
+    char prefix[0x10];
+    void (*releaseEntries)(void*);
+};
 // Borrow the embedded tree header used as allocator/context for recursive cleanup.
 static inline void* RotateRegistryTreeHeader(void* object) {
     return (void*)&((RotateRegistryTreeView*)object)->header;
@@ -691,14 +865,18 @@ void* RotateRegistry_dtor(void* object, int flag) {
                 if (p != 0) {
                     c = (RegistryTreeNode*)p->left;
                     if (c != 0) {
-                        if (c->left != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
-                        if (c->right != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
+                        if (c->left != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
+                        if (c->right != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
                         appFreeUni__FPv(c);
                     }
                     c = (RegistryTreeNode*)p->right;
                     if (c != 0) {
-                        if (c->left != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
-                        if (c->right != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
+                        if (c->left != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
+                        if (c->right != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
                         appFreeUni__FPv(c);
                     }
                     appFreeUni__FPv(p);
@@ -707,14 +885,18 @@ void* RotateRegistry_dtor(void* object, int flag) {
                 if (p != 0) {
                     c = (RegistryTreeNode*)p->left;
                     if (c != 0) {
-                        if (c->left != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
-                        if (c->right != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
+                        if (c->left != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
+                        if (c->right != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
                         appFreeUni__FPv(c);
                     }
                     c = (RegistryTreeNode*)p->right;
                     if (c != 0) {
-                        if (c->left != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
-                        if (c->right != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
+                        if (c->left != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
+                        if (c->right != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
                         appFreeUni__FPv(c);
                     }
                     appFreeUni__FPv(p);
@@ -727,14 +909,18 @@ void* RotateRegistry_dtor(void* object, int flag) {
                 if (p != 0) {
                     c = (RegistryTreeNode*)p->left;
                     if (c != 0) {
-                        if (c->left != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
-                        if (c->right != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
+                        if (c->left != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
+                        if (c->right != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
                         appFreeUni__FPv(c);
                     }
                     c = (RegistryTreeNode*)p->right;
                     if (c != 0) {
-                        if (c->left != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
-                        if (c->right != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
+                        if (c->left != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
+                        if (c->right != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
                         appFreeUni__FPv(c);
                     }
                     appFreeUni__FPv(p);
@@ -743,14 +929,18 @@ void* RotateRegistry_dtor(void* object, int flag) {
                 if (p != 0) {
                     c = (RegistryTreeNode*)p->left;
                     if (c != 0) {
-                        if (c->left != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
-                        if (c->right != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
+                        if (c->left != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
+                        if (c->right != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
                         appFreeUni__FPv(c);
                     }
                     c = (RegistryTreeNode*)p->right;
                     if (c != 0) {
-                        if (c->left != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
-                        if (c->right != 0) RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
+                        if (c->left != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->left);
+                        if (c->right != 0)
+                            RBTree_DestroySubtree(RotateRegistryTreeHeader(object), c->right);
                         appFreeUni__FPv(c);
                     }
                     appFreeUni__FPv(p);
@@ -759,18 +949,20 @@ void* RotateRegistry_dtor(void* object, int flag) {
             }
             appFreeUni__FPv(top);
         }
-        if (flag > 0) __dl__FPv(object);
+        if (flag > 0)
+            __dl__FPv(object);
     }
     return object;
 }
 #pragma pop
-// Configure orthographic GX drawing and four TEV stages for planar YUV conversion.
+// Configure orthographic GX drawing and four TEV stages that turn planar YUV into RGB.
 void MovieRenderer_SetupGXState(void* self, unsigned short width, unsigned short height) {
     // Projection uses source-image pixel dimensions; the emitted quad separately
     // supplies its destination dimensions. Texture maps 0/1/2 hold Y/U/V.
     (void)self;
     float mtx[16];
-    C_MTXOrtho(mtx, kFloat_0_RenderTexture, (float)height, kFloat_0_RenderTexture, (float)width, kFloat_0_RenderTexture, kMovieProjectionFarZ);
+    C_MTXOrtho(mtx, kFloat_0_RenderTexture, (float)height, kFloat_0_RenderTexture, (float)width, kFloat_0_RenderTexture,
+               kMovieProjectionFarZ);
     GXSetProjection(mtx, GX_ORTHOGRAPHIC);
     float mtx2[12];
     PSMTXIdentity(mtx2);
@@ -803,7 +995,7 @@ void MovieRenderer_SetupGXState(void* self, unsigned short width, unsigned short
     //   stage 1  C = 2*(C + V*K1)            A = A - Va*K1a
     //   stage 2  C = C + Y                   A = A + Ya        (both clamped)
     //   stage 3  out = A*(1-K2) + C*K2       (APREV is used as a color input: lerp by K2)
-    // Together these form the YUV->RGB matrix; tuning the konst values changes the conversion.
+    // Together these form the YUV-to-RGB matrix; the konst colors set its coefficients.
     GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD1, GX_TEXMAP1, GX_COLOR_NULL);
     GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_TEXC, GX_CC_KONST, GX_CC_C0);
     GXSetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_FALSE, GX_TEVPREV);
@@ -829,17 +1021,29 @@ void MovieRenderer_SetupGXState(void* self, unsigned short width, unsigned short
     GXSetTevAlphaIn(GX_TEVSTAGE3, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
     GXSetTevAlphaOp(GX_TEVSTAGE3, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
     GXSetTevKColorSel(GX_TEVSTAGE3, GX_TEV_KCSEL_K2);
-    unsigned short h0 = kMovieYuvInitialColorR; unsigned short h1 = kMovieYuvInitialColorG; unsigned short h2 = kMovieYuvInitialColorB; unsigned short h3 = kMovieYuvInitialColorA;
-    unsigned short bufh[4] = {h0,h1,h2,h3};
+    unsigned short h0 = kMovieYuvInitialColorR;
+    unsigned short h1 = kMovieYuvInitialColorG;
+    unsigned short h2 = kMovieYuvInitialColorB;
+    unsigned short h3 = kMovieYuvInitialColorA;
+    unsigned short bufh[4] = {h0, h1, h2, h3};
     GXSetTevColorS10(GX_TEVREG0, bufh);
-    unsigned char b0 = kMovieYuvKonst0R; unsigned char b1 = kMovieYuvKonst0G; unsigned char b2 = kMovieYuvKonst0B; unsigned char b3 = kMovieYuvKonst0A;
-    unsigned char bufb0[4] = {b0,b1,b2,b3};
+    unsigned char b0 = kMovieYuvKonst0R;
+    unsigned char b1 = kMovieYuvKonst0G;
+    unsigned char b2 = kMovieYuvKonst0B;
+    unsigned char b3 = kMovieYuvKonst0A;
+    unsigned char bufb0[4] = {b0, b1, b2, b3};
     GXSetTevKColor(GX_KCOLOR0, bufb0);
-    unsigned char c0 = kMovieYuvKonst1R; unsigned char c1 = kMovieYuvKonst1G; unsigned char c2 = kMovieYuvKonst1B; unsigned char c3 = kMovieYuvKonst1A;
-    unsigned char bufb1[4] = {c0,c1,c2,c3};
+    unsigned char c0 = kMovieYuvKonst1R;
+    unsigned char c1 = kMovieYuvKonst1G;
+    unsigned char c2 = kMovieYuvKonst1B;
+    unsigned char c3 = kMovieYuvKonst1A;
+    unsigned char bufb1[4] = {c0, c1, c2, c3};
     GXSetTevKColor(GX_KCOLOR1, bufb1);
-    unsigned char d0 = kMovieYuvKonst2R; unsigned char d1 = kMovieYuvKonst2G; unsigned char d2 = kMovieYuvKonst2B; unsigned char d3 = kMovieYuvKonst2A;
-    unsigned char bufb2[4] = {d0,d1,d2,d3};
+    unsigned char d0 = kMovieYuvKonst2R;
+    unsigned char d1 = kMovieYuvKonst2G;
+    unsigned char d2 = kMovieYuvKonst2B;
+    unsigned char d3 = kMovieYuvKonst2A;
+    unsigned char bufb2[4] = {d0, d1, d2, d3};
     GXSetTevKColor(GX_KCOLOR2, bufb2);
     GXSetTevSwapModeTable(GX_TEV_SWAP0, GX_CH_RED, GX_CH_GREEN, GX_CH_BLUE, GX_CH_ALPHA);
 }

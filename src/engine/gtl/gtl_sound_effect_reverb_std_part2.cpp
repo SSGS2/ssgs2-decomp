@@ -1,5 +1,7 @@
-// Translation unit 0x803FADB0-0x803FADCC (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Helpers for the standard reverb effect (CSoundEffectReverbStd): the enable setter and getter,
+// and a plain release of the wrapper's allocation.
+//
+// Destroy and the effect's teardown are in gtl_sound_effect_reverb_std_part1.cpp.
 
 #include "classes/SoundEffectReverbStdState.h"
 
@@ -14,16 +16,16 @@ void dtor_803FADB0(void* self) {
     gtl_Audio_Free(self);
 }
 
+} // extern "C"
+
 // Request enable mode (0 disables, 1 enables) on the borrowed embedded effect at +0x14.
 // The helper rejects other modes unless already cached; its return value is discarded.
-void gtl_CSoundEffectReverbStd_SetEnabled(void* self, int enabledMode) {
-    gtl_SoundEffect_SetEnabled(self, ((SoundEffectReverbStdState*)self)->effect, enabledMode);
+void gtl::CSoundEffectReverbStd::SetEnabled(int enabledMode) {
+    gtl_SoundEffect_SetEnabled(this, effect, enabledMode);
 }
 
 // Write the embedded effect's boolean enable state to the borrowed int at outputAddress.
 // This int parameter carries a Wii address, not an enable value; it must be writable.
-void gtl_CSoundEffectReverbStd_GetEnabled(void* self, int outputAddress) {
-    gtl_SoundEffect_GetEnabled(self, ((SoundEffectReverbStdState*)self)->effect, outputAddress);
+void gtl::CSoundEffectReverbStd::GetEnabled(int outputAddress) {
+    gtl_SoundEffect_GetEnabled(this, effect, outputAddress);
 }
-
-} // extern "C"

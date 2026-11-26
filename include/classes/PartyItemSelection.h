@@ -8,7 +8,8 @@
 
 class PartyItemSelection {
 public:
-    PartyItemRecord records[4]; // 0x0: CPartyItemSelect_InitializeSelectionLayout: four records constructed with stride 0xA4
+    PartyItemRecord
+        records[4]; // 0x0: CPartyItemSelect_InitializeSelectionLayout: four records constructed with stride 0xA4
     int count; // 0x290: CPartyItemSelect_CopyCompletedSelection: copied after four records; loops use as record count
 };
 

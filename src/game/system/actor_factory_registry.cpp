@@ -1,3 +1,7 @@
+// Actor factory registry: the global map from class names to actor factories, which
+// TaskRegistry uses to create actors by name, plus teardown helpers for its tree storage.
+// The factory interface vtable is installed here as well.
+
 #include <decomp/static_init.h>
 #include <decomp/offset_of.h>
 // Actor factory registry and string-map node storage (0x8029E9FC-0x8029F418).
@@ -9,21 +13,19 @@
 //   GMap_ClearOwnedEntries in string_map_tree_utils.cpp govern VALUE ownership (see header below).
 // - Node/key storage only: GMapBase_DestroyStorage / StringTree_DestroyStorage.
 //   These are lower-level teardown, not substitutes for GMap_Dtor or clear().
-// Headers: StringTree8029EA / ResourceStringNode. No gameplay tuning knobs here;
+// Headers: StringTree / ResourceStringNode. No gameplay tuning knobs here;
 // tau initialization is startup plumbing, not the actor selection policy.
 #include "classes/StringTree8029EA.h"
 #include "classes/ResourceStringNode.h"
 #undef AsStringTree8029EA
 // Interpret an existing registry header without changing its lifetime.
-static inline StringTree8029EA* AsStringTree8029EA(void* tree) {
-    return (StringTree8029EA*)tree;
+static inline StringTree* AsStringTree(void* tree) {
+    return (StringTree*)tree;
 }
 // Interpret existing node storage without taking ownership.
 static inline ResourceStringNode* AsResourceStringNode(void* node) {
     return (ResourceStringNode*)node;
 }
-// Translation unit 0x8029E9FC-0x8029F418 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 extern float kFloat_6_2831855;
@@ -66,8 +68,14 @@ void* dtor_8029EA18(void* self, int deleting) {
 // freeing keys/nodes in both trees. Second-tree values are not deleted there.
 // The storage-only destructors below never delete values in either tree; callers
 // must finish value cleanup before using them for an owning tree.
-struct RegistryTreeHeader { unsigned int headerWord; void* root; void* first; };
-struct ActorFactoryRegistryStorage { RegistryTreeHeader trees[2]; };
+struct RegistryTreeHeader {
+    unsigned int headerWord;
+    void* root;
+    void* first;
+};
+struct ActorFactoryRegistryStorage {
+    RegistryTreeHeader trees[2];
+};
 typedef char RegistryTreeHeader_size[(sizeof(RegistryTreeHeader) == 12) ? 1 : -1];
 
 } // extern "C"
@@ -124,9 +132,11 @@ static inline void FreeRegistryStringNode(void* node) {
 // Release a branch's children before its own key/node; do not touch its value.
 static inline void DestroyRegistryBranch(void* self, void* node) {
     void* leftSubtree = AsResourceStringNode(node)->left;
-    if (leftSubtree != 0) StringMap_DestroySubtree(self, leftSubtree);
+    if (leftSubtree != 0)
+        StringMap_DestroySubtree(self, leftSubtree);
     void* rightSubtree = AsResourceStringNode(node)->right;
-    if (rightSubtree != 0) StringMap_DestroySubtree(self, rightSubtree);
+    if (rightSubtree != 0)
+        StringMap_DestroySubtree(self, rightSubtree);
     FreeRegistryStringNode(node);
 }
 
@@ -140,73 +150,73 @@ static inline void DestroyRegistryBranch(void* self, void* node) {
 // Header links are not reset: this destructor is not a reusable clear operation.
 void* GMapBase_DestroyStorage(void* self, int deleting) {
     if (self != 0) {
-      // Preserve repeated inlined container guards required by this binary.
-      if (self != 0 && self != 0 && self != 0 && self != 0 && self != 0) {
-        void* root = AsStringTree8029EA(self)->root;
-        if (root != 0) {
-            // Phase 1: dispose the complete left branch in postorder. At the
-            // deepest unrolled level, StringMap_DestroySubtree owns recursion.
-            void* leftChild = AsResourceStringNode(root)->left;
-            if (leftChild != 0) {
-                void* leftGrandchild = AsResourceStringNode(leftChild)->left;
-                if (leftGrandchild != 0) {
-                    void* leftGreatGrandchild = AsResourceStringNode(leftGrandchild)->left;
-                    if (leftGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, leftGreatGrandchild);
+        // Preserve repeated inlined container guards required by this binary.
+        if (self != 0 && self != 0 && self != 0 && self != 0 && self != 0) {
+            void* root = AsStringTree(self)->root;
+            if (root != 0) {
+                // Phase 1: dispose the complete left branch in postorder. At the
+                // deepest unrolled level, StringMap_DestroySubtree owns recursion.
+                void* leftChild = AsResourceStringNode(root)->left;
+                if (leftChild != 0) {
+                    void* leftGrandchild = AsResourceStringNode(leftChild)->left;
+                    if (leftGrandchild != 0) {
+                        void* leftGreatGrandchild = AsResourceStringNode(leftGrandchild)->left;
+                        if (leftGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, leftGreatGrandchild);
+                        }
+                        void* rightGreatGrandchild = AsResourceStringNode(leftGrandchild)->right;
+                        if (rightGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, rightGreatGrandchild);
+                        }
+                        FreeRegistryStringNode(leftGrandchild);
                     }
-                    void* rightGreatGrandchild = AsResourceStringNode(leftGrandchild)->right;
-                    if (rightGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, rightGreatGrandchild);
+                    void* rightGrandchild = AsResourceStringNode(leftChild)->right;
+                    if (rightGrandchild != 0) {
+                        void* leftGreatGrandchild = AsResourceStringNode(rightGrandchild)->left;
+                        if (leftGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, leftGreatGrandchild);
+                        }
+                        void* rightGreatGrandchild = AsResourceStringNode(rightGrandchild)->right;
+                        if (rightGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, rightGreatGrandchild);
+                        }
+                        FreeRegistryStringNode(rightGrandchild);
                     }
-                    FreeRegistryStringNode(leftGrandchild);
+                    FreeRegistryStringNode(leftChild);
                 }
-                void* rightGrandchild = AsResourceStringNode(leftChild)->right;
-                if (rightGrandchild != 0) {
-                    void* leftGreatGrandchild = AsResourceStringNode(rightGrandchild)->left;
-                    if (leftGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, leftGreatGrandchild);
+                // Phase 2: dispose the right branch after all left nodes are gone.
+                void* rightChild = AsResourceStringNode(root)->right;
+                if (rightChild != 0) {
+                    void* leftGrandchild = AsResourceStringNode(rightChild)->left;
+                    if (leftGrandchild != 0) {
+                        void* leftGreatGrandchild = AsResourceStringNode(leftGrandchild)->left;
+                        if (leftGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, leftGreatGrandchild);
+                        }
+                        void* rightGreatGrandchild = AsResourceStringNode(leftGrandchild)->right;
+                        if (rightGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, rightGreatGrandchild);
+                        }
+                        FreeRegistryStringNode(leftGrandchild);
                     }
-                    void* rightGreatGrandchild = AsResourceStringNode(rightGrandchild)->right;
-                    if (rightGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, rightGreatGrandchild);
+                    void* rightGrandchild = AsResourceStringNode(rightChild)->right;
+                    if (rightGrandchild != 0) {
+                        void* leftGreatGrandchild = AsResourceStringNode(rightGrandchild)->left;
+                        if (leftGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, leftGreatGrandchild);
+                        }
+                        void* rightGreatGrandchild = AsResourceStringNode(rightGrandchild)->right;
+                        if (rightGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, rightGreatGrandchild);
+                        }
+                        FreeRegistryStringNode(rightGrandchild);
                     }
-                    FreeRegistryStringNode(rightGrandchild);
+                    FreeRegistryStringNode(rightChild);
                 }
-                FreeRegistryStringNode(leftChild);
+                // Phase 3: both branches are gone; release the root key and node.
+                FreeRegistryStringNode(root);
             }
-            // Phase 2: dispose the right branch after all left nodes are gone.
-            void* rightChild = AsResourceStringNode(root)->right;
-            if (rightChild != 0) {
-                void* leftGrandchild = AsResourceStringNode(rightChild)->left;
-                if (leftGrandchild != 0) {
-                    void* leftGreatGrandchild = AsResourceStringNode(leftGrandchild)->left;
-                    if (leftGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, leftGreatGrandchild);
-                    }
-                    void* rightGreatGrandchild = AsResourceStringNode(leftGrandchild)->right;
-                    if (rightGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, rightGreatGrandchild);
-                    }
-                    FreeRegistryStringNode(leftGrandchild);
-                }
-                void* rightGrandchild = AsResourceStringNode(rightChild)->right;
-                if (rightGrandchild != 0) {
-                    void* leftGreatGrandchild = AsResourceStringNode(rightGrandchild)->left;
-                    if (leftGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, leftGreatGrandchild);
-                    }
-                    void* rightGreatGrandchild = AsResourceStringNode(rightGrandchild)->right;
-                    if (rightGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, rightGreatGrandchild);
-                    }
-                    FreeRegistryStringNode(rightGrandchild);
-                }
-                FreeRegistryStringNode(rightChild);
-            }
-            // Phase 3: both branches are gone; release the root key and node.
-            FreeRegistryStringNode(root);
         }
-      }
         // Phase 4: optionally release the containing allocation; return its address.
         if (deleting > 0) {
             __dl__FPv(self);
@@ -219,73 +229,73 @@ void* GMapBase_DestroyStorage(void* self, int deleting) {
 // Same ownership and deleting-flag contract as GMapBase_DestroyStorage above.
 void* StringTree_DestroyStorage(void* self, int deleting) {
     if (self != 0) {
-      // Preserve repeated inlined container guards required by this binary.
-      if (self != 0 && self != 0 && self != 0 && self != 0 && self != 0) {
-        void* root = AsStringTree8029EA(self)->root;
-        if (root != 0) {
-            // Phase 1: dispose the complete left branch in postorder. At the
-            // deepest unrolled level, StringMap_DestroySubtree owns recursion.
-            void* leftChild = AsResourceStringNode(root)->left;
-            if (leftChild != 0) {
-                void* leftGrandchild = AsResourceStringNode(leftChild)->left;
-                if (leftGrandchild != 0) {
-                    void* leftGreatGrandchild = AsResourceStringNode(leftGrandchild)->left;
-                    if (leftGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, leftGreatGrandchild);
+        // Preserve repeated inlined container guards required by this binary.
+        if (self != 0 && self != 0 && self != 0 && self != 0 && self != 0) {
+            void* root = AsStringTree(self)->root;
+            if (root != 0) {
+                // Phase 1: dispose the complete left branch in postorder. At the
+                // deepest unrolled level, StringMap_DestroySubtree owns recursion.
+                void* leftChild = AsResourceStringNode(root)->left;
+                if (leftChild != 0) {
+                    void* leftGrandchild = AsResourceStringNode(leftChild)->left;
+                    if (leftGrandchild != 0) {
+                        void* leftGreatGrandchild = AsResourceStringNode(leftGrandchild)->left;
+                        if (leftGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, leftGreatGrandchild);
+                        }
+                        void* rightGreatGrandchild = AsResourceStringNode(leftGrandchild)->right;
+                        if (rightGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, rightGreatGrandchild);
+                        }
+                        FreeRegistryStringNode(leftGrandchild);
                     }
-                    void* rightGreatGrandchild = AsResourceStringNode(leftGrandchild)->right;
-                    if (rightGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, rightGreatGrandchild);
+                    void* rightGrandchild = AsResourceStringNode(leftChild)->right;
+                    if (rightGrandchild != 0) {
+                        void* leftGreatGrandchild = AsResourceStringNode(rightGrandchild)->left;
+                        if (leftGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, leftGreatGrandchild);
+                        }
+                        void* rightGreatGrandchild = AsResourceStringNode(rightGrandchild)->right;
+                        if (rightGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, rightGreatGrandchild);
+                        }
+                        FreeRegistryStringNode(rightGrandchild);
                     }
-                    FreeRegistryStringNode(leftGrandchild);
+                    FreeRegistryStringNode(leftChild);
                 }
-                void* rightGrandchild = AsResourceStringNode(leftChild)->right;
-                if (rightGrandchild != 0) {
-                    void* leftGreatGrandchild = AsResourceStringNode(rightGrandchild)->left;
-                    if (leftGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, leftGreatGrandchild);
+                // Phase 2: dispose the right branch after all left nodes are gone.
+                void* rightChild = AsResourceStringNode(root)->right;
+                if (rightChild != 0) {
+                    void* leftGrandchild = AsResourceStringNode(rightChild)->left;
+                    if (leftGrandchild != 0) {
+                        void* leftGreatGrandchild = AsResourceStringNode(leftGrandchild)->left;
+                        if (leftGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, leftGreatGrandchild);
+                        }
+                        void* rightGreatGrandchild = AsResourceStringNode(leftGrandchild)->right;
+                        if (rightGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, rightGreatGrandchild);
+                        }
+                        FreeRegistryStringNode(leftGrandchild);
                     }
-                    void* rightGreatGrandchild = AsResourceStringNode(rightGrandchild)->right;
-                    if (rightGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, rightGreatGrandchild);
+                    void* rightGrandchild = AsResourceStringNode(rightChild)->right;
+                    if (rightGrandchild != 0) {
+                        void* leftGreatGrandchild = AsResourceStringNode(rightGrandchild)->left;
+                        if (leftGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, leftGreatGrandchild);
+                        }
+                        void* rightGreatGrandchild = AsResourceStringNode(rightGrandchild)->right;
+                        if (rightGreatGrandchild != 0) {
+                            DestroyRegistryBranch(self, rightGreatGrandchild);
+                        }
+                        FreeRegistryStringNode(rightGrandchild);
                     }
-                    FreeRegistryStringNode(rightGrandchild);
+                    FreeRegistryStringNode(rightChild);
                 }
-                FreeRegistryStringNode(leftChild);
+                // Phase 3: both branches are gone; release the root key and node.
+                FreeRegistryStringNode(root);
             }
-            // Phase 2: dispose the right branch after all left nodes are gone.
-            void* rightChild = AsResourceStringNode(root)->right;
-            if (rightChild != 0) {
-                void* leftGrandchild = AsResourceStringNode(rightChild)->left;
-                if (leftGrandchild != 0) {
-                    void* leftGreatGrandchild = AsResourceStringNode(leftGrandchild)->left;
-                    if (leftGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, leftGreatGrandchild);
-                    }
-                    void* rightGreatGrandchild = AsResourceStringNode(leftGrandchild)->right;
-                    if (rightGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, rightGreatGrandchild);
-                    }
-                    FreeRegistryStringNode(leftGrandchild);
-                }
-                void* rightGrandchild = AsResourceStringNode(rightChild)->right;
-                if (rightGrandchild != 0) {
-                    void* leftGreatGrandchild = AsResourceStringNode(rightGrandchild)->left;
-                    if (leftGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, leftGreatGrandchild);
-                    }
-                    void* rightGreatGrandchild = AsResourceStringNode(rightGrandchild)->right;
-                    if (rightGreatGrandchild != 0) {
-                        DestroyRegistryBranch(self, rightGreatGrandchild);
-                    }
-                    FreeRegistryStringNode(rightGrandchild);
-                }
-                FreeRegistryStringNode(rightChild);
-            }
-            // Phase 3: both branches are gone; release the root key and node.
-            FreeRegistryStringNode(root);
         }
-      }
         // Phase 4: optionally release the containing allocation; return its address.
         if (deleting > 0) {
             __dl__FPv(self);
@@ -295,4 +305,3 @@ void* StringTree_DestroyStorage(void* self, int deleting) {
 }
 
 } // extern "C"
-

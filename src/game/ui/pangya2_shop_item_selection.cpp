@@ -1,32 +1,51 @@
+// Pangya2 shop: checking the selected parts for unowned items and opening the product-info pane
+// for the selected item. Also holds the growable-array helpers that the shop's selection scan uses.
+
 #include "classes/CSharedDoc.h"
 // Borrow the shared-document layout without adjusting or owning its address.
-static inline CSharedDoc* AsCSharedDoc(void* p) { return (CSharedDoc*)p; }
+static inline CSharedDoc* AsCSharedDoc(void* p) {
+    return (CSharedDoc*)p;
+}
 #include "classes/CPangya2Shop.h"
 #include "classes/CShopProductsTab.h"
 #include "iff/IffStruct.h"
 // Borrow the shop layout without changing the underlying object or its lifetime.
-static inline CPangya2Shop* AsCPangya2Shop(void* p) { return (CPangya2Shop*)p; }
-
-// Translation unit 0x802C9D94-0x802CAA54 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+static inline CPangya2Shop* AsCPangya2Shop(void* p) {
+    return (CPangya2Shop*)p;
+}
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
+#include "classes/CItemInfo.h"
+#include "classes/CBuildProduct.h"
 
 // Construct an exception in caller-provided storage; no allocation or ownership transfer.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 typedef CPangya2Shop Obj;
 
 // Category selects the product builder, not a UI element ID. Input action 0x14
 // opens item details; -1 lets InputManager choose the input device.
-enum { kShopCharacters = 0, kShopItems = 1, kShopCaddies = 2,
-       kShowItemInfoAction = 0x14, kAnyInputDevice = -1, kNoSelection = -1,
-       kEquipmentSlotCount = 24, kPartIndexCount = 0x30e,
-       kPartBitWordCount = 25, kPartBitsPerWord = 32, kPartBitWordShift = 5,
-       kClzZeroToBooleanShift = 5,
-       kPointerBytes = 4, kMaximumScanItems = 0x3fffffffU,
-       kScanGrowthThreeFifthsLimit = 0x15555555U, kScanGrowthHalfLimit = 0x2aaaaaaaU };
+enum {
+    kShopCharacters = 0,
+    kShopItems = 1,
+    kShopCaddies = 2,
+    kShowItemInfoAction = 0x14,
+    kAnyInputDevice = -1,
+    kNoSelection = -1,
+    kEquipmentSlotCount = 24,
+    kPartIndexCount = 0x30e,
+    kPartBitWordCount = 25,
+    kPartBitsPerWord = 32,
+    kPartBitWordShift = 5,
+    kClzZeroToBooleanShift = 5,
+    kPointerBytes = 4,
+    kMaximumScanItems = 0x3fffffffU,
+    kScanGrowthThreeFifthsLimit = 0x15555555U,
+    kScanGrowthHalfLimit = 0x2aaaaaaaU
+};
 
 // Layout view for fields hidden in the shared shop header padding.
 // +0x54: bit i gates scanning equipment part index i (782 logical bits in 25 words).
@@ -52,9 +71,9 @@ typedef char SelectionStrideCheck[sizeof(ShopPartSelection) == 0x34 ? 1 : -1];
 // +0x0e and +0x36 contain 40-byte message IDs (not necessarily NUL-terminated).
 // Keep the three clear spans: the ten-byte stat region is NOT ten stat entries.
 struct ItemInfoBuffer {
-    int pangPrice;       // +0x00: price in Pang.
-    char statBonusesAndReserved[0xa];   // +0x04: three short stats and four reserved bytes.
-    char nameMessageId[0x28];  // +0x0e: localized name message ID.
+    int pangPrice;                    // +0x00: price in Pang.
+    char statBonusesAndReserved[0xa]; // +0x04: three short stats and four reserved bytes.
+    char nameMessageId[0x28];         // +0x0e: localized name message ID.
     char descriptionMessageId[0x28];  // +0x36: localized description message ID.
 };
 
@@ -71,20 +90,10 @@ extern void InputManager_Dtor(void*);
 extern void* __register_global_object(void*, void*, void*);
 extern int Input_IsActionPressed(void*, int, int);
 
-extern int CShopProductsTab_GetSelectedProductIndex(void*);
 extern int ShopProductTable_GetRecordAt(void*, int, int);
-extern int CBuildProduct_GetTextureEntryAt(void*, int, int);
-extern void CItemInfo_Show(void*);
-extern void CItemInfo_SetDisplayedData(void*, int*);
-extern int CShopProductsTab_IsSelectedProductOwned(void*);
-extern void CItemInfo_SetNotBuyGroupEnabled(void*, int);
-extern void CItemInfo_SetItemTexture(void*, int);
-extern void CPangya2Shop_UpdateControlScriptSelection(Obj*);
-extern int CPangya2Shop_GetSelectedProductInfo(Obj*, int*);
 extern void* g_sharedDoc;
 extern void* ItemInventory_GetPartIdAt(void*, int);
 extern void* ItemInventory_GetAuxPartIdAt(void*, int);
-extern int CPangya2Shop_IsItemOwned(void*, void*);
 extern void* appMallocDummy__FUl(unsigned int);
 extern void appFreeUni__FPv(void*);
 extern void* __nwa__FUl(unsigned int);
@@ -119,17 +128,27 @@ struct ScanBuffer {
     char* data;
     char* allocator;
     // Release text on construction failure; a cleared data pointer disarms cleanup.
-    ~ScanBuffer() { if (data) __dla__FPv(data); }
+    ~ScanBuffer() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 
-struct ScanAllocator { char value; char padding[3]; };
+struct ScanAllocator {
+    char value;
+    char padding[3];
+};
 
 struct ScanErrorBase {
     void* vtable;
     // Install the logic_error base vtable before constructing its shared message.
-    ScanErrorBase() { vtable = __vt__Q23std11logic_error; }
+    ScanErrorBase() {
+        vtable = __vt__Q23std11logic_error;
+    }
     // Destroy the exception base without freeing the enclosing exception storage.
-    ~ScanErrorBase() { __dt__Q23std9exceptionFv(this, 0); }
+    ~ScanErrorBase() {
+        __dt__Q23std9exceptionFv(this, 0);
+    }
 };
 
 struct ScanError : ScanErrorBase {
@@ -162,15 +181,19 @@ struct ScanError : ScanErrorBase {
 
 // Build and throw a 12-byte error object with the supplied derived RTTI/destructor.
 // Caller-scope construction preserves CodeWarrior exception cleanup boundaries.
-#define SCAN_THROW(message, table, type, destructor) \
-    { \
-        struct { unsigned int words[3]; } storage; \
+#define SCAN_THROW(message, table, type, destructor)          \
+    {                                                         \
+        struct {                                              \
+            unsigned int words[3];                            \
+        } storage;                                            \
         ScanError* error = new (&storage) ScanError(message); \
-        error->vtable = table; \
-        __throw(type, error, (void*)destructor); \
+        error->vtable = table;                                \
+        __throw(type, error, (void*)destructor);              \
     }
 
-#define SCAN_LENGTH_ERROR() SCAN_THROW(shopStrings.vectorLengthError, __vt__Q23std12length_error, shopStrings.lengthErrorType, __dt__Q23std12length_errorFv)
+#define SCAN_LENGTH_ERROR()                                                                            \
+    SCAN_THROW(shopStrings.vectorLengthError, __vt__Q23std12length_error, shopStrings.lengthErrorType, \
+               __dt__Q23std12length_errorFv)
 
 // Own the array of item-ID words. The void* element type carries numeric type IDs,
 // not dereferenceable item objects (GetPartIdAt returns the inventory entry key).
@@ -181,11 +204,19 @@ struct ScanVector {
     unsigned int size;
     unsigned int capacity;
     // Return the number of stored IDs, not bytes or allocated slots.
-    unsigned int count() const { return size; }
+    unsigned int count() const {
+        return size;
+    }
     // Drop n entries from the logical end; caller guarantees n <= size.
-    void erase(unsigned int n) { size -= n; }
+    void erase(unsigned int n) {
+        size -= n;
+    }
     // Start empty without acquiring storage.
-    ScanVector() { data = 0; size = 0; capacity = 0; }
+    ScanVector() {
+        data = 0;
+        size = 0;
+        capacity = 0;
+    }
     // Forget entries and release only the owned pointer-array allocation.
     ~ScanVector() {
         if (data) {
@@ -241,49 +272,55 @@ static inline unsigned int scan_next(unsigned int capacity, const unsigned int& 
 // value is an item-ID word. indexed selects the existing byte-indexed write expression;
 // it does not select a different container or transfer item ownership.
 // Phase order on growth: validate -> allocate/append -> copy/clear -> swap -> free old array.
-#define SCAN_PUSH(v, value, indexed) \
-    if ((v).capacity > (v).size) { \
-        if (indexed) { \
-            unsigned int size = ++(v).size; \
-            *(void**)((unsigned int)(v).data + (size - 1) * kPointerBytes) = value; \
-        } else { \
-            unsigned int size = ++(v).size; \
-            *((v).data + size - 1) = value; \
-        } \
-    } else { \
-        if (kMaximumScanItems - (v).capacity < 1U) { SCAN_LENGTH_ERROR(); } \
-        ScanGrowth growth; \
-        growth.data = 0; \
-        growth.size = 0; \
-        growth.capacity = 0; \
-        growth.oldCapacity = &(v).capacity; \
-        growth.start = 0; \
-        unsigned int extra = (v).size + 1 - (v).capacity; \
-        unsigned int cap = (v).capacity; \
-        if (extra > kMaximumScanItems - cap) { SCAN_LENGTH_ERROR(); } \
-        unsigned int next = scan_next(cap, extra); \
-        if (next > kMaximumScanItems) { SCAN_LENGTH_ERROR(); } \
-        void** data = (void**)appMallocDummy__FUl(next * kPointerBytes); \
-        growth.start = (v).size; \
-        growth.data = data; \
-        *(void**)((unsigned int)(data + (v).size) + growth.size * kPointerBytes) = value; \
-        growth.capacity = next; \
-        void** old = (v).data; \
-        ++growth.size; \
+#define SCAN_PUSH(v, value, indexed)                                                             \
+    if ((v).capacity > (v).size) {                                                               \
+        if (indexed) {                                                                           \
+            unsigned int size = ++(v).size;                                                      \
+            *(void**)((unsigned int)(v).data + (size - 1) * kPointerBytes) = value;              \
+        } else {                                                                                 \
+            unsigned int size = ++(v).size;                                                      \
+            *((v).data + size - 1) = value;                                                      \
+        }                                                                                        \
+    } else {                                                                                     \
+        if (kMaximumScanItems - (v).capacity < 1U) {                                             \
+            SCAN_LENGTH_ERROR();                                                                 \
+        }                                                                                        \
+        ScanGrowth growth;                                                                       \
+        growth.data = 0;                                                                         \
+        growth.size = 0;                                                                         \
+        growth.capacity = 0;                                                                     \
+        growth.oldCapacity = &(v).capacity;                                                      \
+        growth.start = 0;                                                                        \
+        unsigned int extra = (v).size + 1 - (v).capacity;                                        \
+        unsigned int cap = (v).capacity;                                                         \
+        if (extra > kMaximumScanItems - cap) {                                                   \
+            SCAN_LENGTH_ERROR();                                                                 \
+        }                                                                                        \
+        unsigned int next = scan_next(cap, extra);                                               \
+        if (next > kMaximumScanItems) {                                                          \
+            SCAN_LENGTH_ERROR();                                                                 \
+        }                                                                                        \
+        void** data = (void**)appMallocDummy__FUl(next * kPointerBytes);                         \
+        growth.start = (v).size;                                                                 \
+        growth.data = data;                                                                      \
+        *(void**)((unsigned int)(data + (v).size) + growth.size * kPointerBytes) = value;        \
+        growth.capacity = next;                                                                  \
+        void** old = (v).data;                                                                   \
+        ++growth.size;                                                                           \
         int count = ((int)((unsigned int)(old + (v).size) - (unsigned int)old)) / kPointerBytes; \
-        growth.start -= count; \
-        unsigned int bytes = count * kPointerBytes; \
-        memcpy(data + growth.start, old, bytes); \
-        memset(old, 0, bytes); \
-        unsigned int size = growth.size + count; \
-        void** previous = (v).data; \
-        (v).data = growth.data; \
-        unsigned int previousCapacity = (v).capacity; \
-        (v).capacity = growth.capacity; \
-        growth.capacity = previousCapacity; \
-        growth.data = previous; \
-        (v).size = size; \
-        growth.size = 0; \
+        growth.start -= count;                                                                   \
+        unsigned int bytes = count * kPointerBytes;                                              \
+        memcpy(data + growth.start, old, bytes);                                                 \
+        memset(old, 0, bytes);                                                                   \
+        unsigned int size = growth.size + count;                                                 \
+        void** previous = (v).data;                                                              \
+        (v).data = growth.data;                                                                  \
+        unsigned int previousCapacity = (v).capacity;                                            \
+        (v).capacity = growth.capacity;                                                          \
+        growth.capacity = previousCapacity;                                                      \
+        growth.data = previous;                                                                  \
+        (v).size = size;                                                                         \
+        growth.size = 0;                                                                         \
     }
 
 #pragma push
@@ -293,28 +330,33 @@ static inline unsigned int scan_next(unsigned int capacity, const unsigned int& 
 // or auxiliary selection is unowned, otherwise 0. Ordinary indices other than -1
 // must be in [0,782) or throw out_of_range; vector growth can throw length_error.
 // Inventory IDs are copied as values; the temporary ID array is always released.
-int CPangya2Shop_HasUnownedSelectedParts(void* self) {
+int CPangya2Shop::HasUnownedSelectedParts() {
     ScanVector found;
-    int offset = (int)AsCPangya2Shop(self)->currentCharaIndex * (int)sizeof(ShopPartSelection);
+    int offset = (int)currentCharaIndex * (int)sizeof(ShopPartSelection);
     // Keep the byte cursor for CodeWarrior scheduling; field-derived offsets describe each access.
-    char* selectionCursor = (char*)self + offset;
+    char* selectionCursor = (char*)this + offset;
 
     // Phase 1: scan all 24 ordinary slots; a match must pass both bitset and ownership tests.
     int slot = 0;
     do {
         int index = *(short*)(selectionCursor + IFF_OFFSET(ShopPartScanView, selections[0].partIndices));
         if (index != kNoSelection) {
-            struct BitReference { unsigned int* data; unsigned int index; };
+            struct BitReference {
+                unsigned int* data;
+                unsigned int index;
+            };
             BitReference reference;
-            reference.data = scan_bits(self);
+            reference.data = scan_bits(this);
             reference.index = index;
             BitReference copy = reference;
             if ((unsigned int)index >= (unsigned int)kPartIndexCount) {
-                SCAN_THROW(bitsetTestOutOfRangeMessage, __vt__Q23std12out_of_range, shopStrings.outOfRangeType, __dt__Q23std12out_of_rangeFv);
+                SCAN_THROW(bitsetTestOutOfRangeMessage, __vt__Q23std12out_of_range, shopStrings.outOfRangeType,
+                           __dt__Q23std12out_of_rangeFv);
             }
             int eligible = 0;
             if ((copy.data[(unsigned int)index >> kPartBitWordShift] & (1u << (index & (kPartBitsPerWord - 1)))) &&
-                CPangya2Shop_IsItemOwned(self, ItemInventory_GetPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, index)) == 0) {
+                IsItemOwned((unsigned int)ItemInventory_GetPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, index)) ==
+                    0) {
                 eligible = 1;
             }
             if (eligible) {
@@ -327,14 +369,15 @@ int CPangya2Shop_HasUnownedSelectedParts(void* self) {
     } while (slot < kEquipmentSlotCount);
 
     // Phase 2: append an unowned auxiliary selection, then reduce the collection to a Boolean.
-    int index = *((signed char*)self + offset + IFF_OFFSET(ShopPartScanView, selections[0].auxiliaryIndex));
+    int index = *((signed char*)this + offset + IFF_OFFSET(ShopPartScanView, selections[0].auxiliaryIndex));
     if (index != kNoSelection) {
-        if (!CPangya2Shop_IsItemOwned(self, ItemInventory_GetAuxPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, index))) {
+        if (!IsItemOwned((unsigned int)ItemInventory_GetAuxPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, index))) {
             void* itemId = ItemInventory_GetAuxPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, index);
             SCAN_PUSH(found, itemId, 1);
         }
     }
-    if (found.size != 0) return 1;
+    if (found.size != 0)
+        return 1;
     return 0;
 }
 #pragma pop
@@ -343,18 +386,20 @@ int CPangya2Shop_HasUnownedSelectedParts(void* self) {
 // obj and its selected tab/builders/dialog are borrowed live shop objects. Return
 // 1 once the dialog is opened, 0 for absent input or rejected selection. A failed
 // product-info lookup still opens the pane and supplies its selected texture.
-int CPangya2Shop_OpenSelectedItemInfo(Obj* obj) {
+int CPangya2Shop::OpenSelectedItemInfo() {
+    Obj* obj = (Obj*)this;
     // Phase 1: acquire the input singleton, then require a selection and action 0x14.
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_80516C10);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_80516C10);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
 
-    void* inputManager = Sing_805DC5C8();
+    void* inputManager = GetInputManagerSlot();
 
     if (obj->selectedListIndex == kNoSelection) {
         return 0;
@@ -369,21 +414,24 @@ int CPangya2Shop_OpenSelectedItemInfo(Obj* obj) {
             return 0;
         }
         void* selectedTab = ((void**)obj->productLists)[obj->selectedListIndex];
-        int selectedProduct = CShopProductsTab_GetSelectedProductIndex(selectedTab);
+        int selectedProduct = (int)((CShopProductsTab*)selectedTab)->GetSelectedProductIndex();
         int category = obj->categoryIndex;
         void* selectedRecord = 0;
         switch (category) {
-            case kShopCharacters:
-                selectedRecord = (void*)(long)ShopProductTable_GetRecordAt(obj->charaProductBuilder, obj->selectedListIndex, selectedProduct);
-                break;
-            case kShopItems:
-                selectedRecord = (void*)(long)ShopProductTable_GetRecordAt(obj->itemProductBuilder, obj->selectedListIndex, selectedProduct);
-                break;
-            case kShopCaddies:
-                selectedRecord = (void*)(long)ShopProductTable_GetRecordAt(obj->caddieProductBuilder, obj->selectedListIndex, selectedProduct);
-                break;
-            default:
-                break;
+        case kShopCharacters:
+            selectedRecord = (void*)(long)ShopProductTable_GetRecordAt(obj->charaProductBuilder, obj->selectedListIndex,
+                                                                       selectedProduct);
+            break;
+        case kShopItems:
+            selectedRecord = (void*)(long)ShopProductTable_GetRecordAt(obj->itemProductBuilder, obj->selectedListIndex,
+                                                                       selectedProduct);
+            break;
+        case kShopCaddies:
+            selectedRecord = (void*)(long)ShopProductTable_GetRecordAt(obj->caddieProductBuilder,
+                                                                       obj->selectedListIndex, selectedProduct);
+            break;
+        default:
+            break;
         }
         if (selectedRecord == 0) {
             return 0;
@@ -403,7 +451,7 @@ int CPangya2Shop_OpenSelectedItemInfo(Obj* obj) {
     }
 
     // Phase 3: show the pane, copy stack payload to its controls, and gate the unowned group.
-    CItemInfo_Show(obj->itemInfo);
+    ((CItemInfo*)(obj->itemInfo))->Show();
 
     ItemInfoBuffer itemInfoData;
     itemInfoData.pangPrice = 0;
@@ -411,39 +459,42 @@ int CPangya2Shop_OpenSelectedItemInfo(Obj* obj) {
     Memory_Clear(itemInfoData.nameMessageId, 0x28);
     Memory_Clear(itemInfoData.descriptionMessageId, 0x28);
 
-    if (CPangya2Shop_GetSelectedProductInfo(obj, &itemInfoData.pangPrice)) {
-        CItemInfo_SetDisplayedData(obj->itemInfo, &itemInfoData.pangPrice);
+    if (((CPangya2Shop*)obj)->GetSelectedProductInfo(&itemInfoData.pangPrice)) {
+        ((CItemInfo*)(obj->itemInfo))->SetDisplayedData((ItemInfoDisplayData*)&itemInfoData);
         void* selectedTab = ((void**)obj->productLists)[obj->selectedListIndex];
-        int ownershipResult = CShopProductsTab_IsSelectedProductOwned(selectedTab);
+        int ownershipResult = ((CShopProductsTab*)selectedTab)->IsSelectedProductOwned();
         unsigned int leadingZeroBits = (unsigned int)__cntlzw(ownershipResult);
         int notOwned = (int)(leadingZeroBits >> kClzZeroToBooleanShift); // 32 >> 5 iff result == 0.
-        CItemInfo_SetNotBuyGroupEnabled(obj->itemInfo, notOwned);
+        ((CItemInfo*)(obj->itemInfo))->SetNotBuyGroupEnabled(notOwned);
     }
 
     // Phase 4: choose the matching builder texture, then mark the pane open and refresh controls.
     {
         int textureEntry = 0;
         void* selectedTab = ((void**)obj->productLists)[obj->selectedListIndex];
-        int selectedProduct = CShopProductsTab_GetSelectedProductIndex(selectedTab);
+        int selectedProduct = (int)((CShopProductsTab*)selectedTab)->GetSelectedProductIndex();
         int category = obj->categoryIndex;
         switch (category) {
-            case kShopCharacters:
-                textureEntry = CBuildProduct_GetTextureEntryAt(obj->charaProductBuilder, obj->selectedListIndex, selectedProduct);
-                break;
-            case kShopItems:
-                textureEntry = CBuildProduct_GetTextureEntryAt(obj->itemProductBuilder, obj->selectedListIndex, selectedProduct);
-                break;
-            case kShopCaddies:
-                textureEntry = CBuildProduct_GetTextureEntryAt(obj->caddieProductBuilder, obj->selectedListIndex, selectedProduct);
-                break;
-            default:
-                break;
+        case kShopCharacters:
+            textureEntry = (int)((CBuildProduct*)(obj->charaProductBuilder))
+                               ->GetTextureEntryAt(obj->selectedListIndex, selectedProduct);
+            break;
+        case kShopItems:
+            textureEntry = (int)((CBuildProduct*)(obj->itemProductBuilder))
+                               ->GetTextureEntryAt(obj->selectedListIndex, selectedProduct);
+            break;
+        case kShopCaddies:
+            textureEntry = (int)((CBuildProduct*)(obj->caddieProductBuilder))
+                               ->GetTextureEntryAt(obj->selectedListIndex, selectedProduct);
+            break;
+        default:
+            break;
         }
-        CItemInfo_SetItemTexture(obj->itemInfo, textureEntry);
+        ((CItemInfo*)(obj->itemInfo))->SetItemTexture(textureEntry);
     }
 
     obj->itemInfoOpen = 1;
-    CPangya2Shop_UpdateControlScriptSelection(obj);
+    ((CPangya2Shop*)obj)->UpdateControlScriptSelection();
     return 1;
 }
 

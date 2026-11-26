@@ -1,7 +1,10 @@
+// Options dialog: the control mode choice (button or swing), audio output and volume settings,
+// and the save-record fields they write. Also the tour map preview setup.
+
 #include <decomp/static_init.h>
 #include <decomp/local_class.h>
 // Options / saved Control Mode defaults (0x802E9EE8), plus the Tour context init.
-// - Button default: COptionDialog_UpdateAndProcessInput, ResetOptions case. Out-of-match only,
+// - Button default: COptionDialog::UpdateAndProcessInput, ResetOptions case. Out-of-match only,
 //   it clears BOTH high bits using kKeepNonExtendedOptions (Swing Righty).
 //   A future mod must also consider SaveData_InitBlankRecord (save_data_records_and_defaults.cpp,
 //   site 0x80073768); a reset action and creation of a new user are separate paths.
@@ -12,7 +15,7 @@
 // - BGM/SE: streamVolumePercent / bufferVolumePercent at record+0x4E0/+0x4E4;
 //   kDefaultVolumePercent=80 and kMaxVolumePercent=100. Mixer receives percent/100.
 // - Repeat pacing: kOptionSelectionDelaySeconds=0.1, volume repeat=0.02 in
-//   u802E9EE8_data.cpp. Each held tick changes one percentage point; the countdown
+//   the data section. Each held tick changes one percentage point; the countdown
 //   returns early and carries no extra repeats after a large delta.
 // - UI masks: same companion's double kOptionVolumeMaskUnitsPerPercent=2.55;
 //   mask X is round(2.55*(100-volume)), a dimensionless scale in [0,255],
@@ -25,50 +28,85 @@
 // save record, then opens a NAND save modal for non-shared users. Selection alone
 // never persists. Safe test cases: normal/shared records, in/out-of-match Options,
 // Button with either hand bit, cancel after Default, and volume 0/100 endpoints.
-struct SavedCharacterModeRecord { unsigned char progress[0x4A]; };
+struct SavedCharacterModeRecord {
+    unsigned char progress[0x4A];
+};
 // Saved per-character progress is borrowed by the tour-map initializer; no copy/retain.
 struct SavedModeDataView {
     SavedCharacterModeRecord characters[11];
     unsigned char characterOrder[8];
     signed char orderSelectionIndex;
 };
-struct SavedRecordModeView { char playerData[0x4EC]; SavedModeDataView modeData; };
+struct SavedRecordModeView {
+    char playerData[0x4EC];
+    SavedModeDataView modeData;
+};
 // These words belong to the 0x828-byte player save record, not a UI object.
 struct SavedAudioOptionsView {
     char playerData[0x4E0];
-    int streamVolumePercent; int bufferVolumePercent; unsigned int optionFlags;
+    int streamVolumePercent;
+    int bufferVolumePercent;
+    unsigned int optionFlags;
 };
 typedef char SavedAudioOptions_flags_offset[((int)&((SavedAudioOptionsView*)0)->optionFlags == 0x4E8) ? 1 : -1];
-typedef char SavedRecordMode_selection_offset[((int)&((SavedRecordModeView*)0)->modeData.orderSelectionIndex == 0x822) ? 1 : -1];
+typedef char
+    SavedRecordMode_selection_offset[((int)&((SavedRecordModeView*)0)->modeData.orderSelectionIndex == 0x822) ? 1 : -1];
 // Layout map: 0..3 are independent stream/buffer decrement/increment buttons.
 // IDs 4..19 use even control/odd caption pairs. Standard mode stops at ID 13.
 // Value states: 0 normal, 2 selected/pressed, 3 volume limit reached.
 // Output codes 0/1/2 are Mono/Stereo/Dolby Pro Logic II. ExtendedChoice0/1/2
 // are Swing Righty/Swing Lefty/Button (legacy local names kept beside the layout map).
 enum OptionElement {
-    StreamDown = 0, StreamUp = 1, BufferDown = 2, BufferUp = 3,
-    ApplyOptions = 4, ApplyOptionsLabel = 5, ResetOptions = 6, ResetOptionsLabel = 7,
-    OutputMode0 = 8, OutputMode0Label = 9, OutputMode1 = 10, OutputMode1Label = 11,
-    OutputMode2 = 12, OutputMode2Label = 13,
-    ExtendedChoice0 = 14, ExtendedChoice0Label = 15,
-    ExtendedChoice1 = 16, ExtendedChoice1Label = 17,
-    ExtendedChoice2 = 18, ExtendedChoice2Label = 19,
-    StandardOptionElementCount = 14, ExtendedOptionElementCount = 20
+    StreamDown = 0,
+    StreamUp = 1,
+    BufferDown = 2,
+    BufferUp = 3,
+    ApplyOptions = 4,
+    ApplyOptionsLabel = 5,
+    ResetOptions = 6,
+    ResetOptionsLabel = 7,
+    OutputMode0 = 8,
+    OutputMode0Label = 9,
+    OutputMode1 = 10,
+    OutputMode1Label = 11,
+    OutputMode2 = 12,
+    OutputMode2Label = 13,
+    ExtendedChoice0 = 14,
+    ExtendedChoice0Label = 15,
+    ExtendedChoice1 = 16,
+    ExtendedChoice1Label = 17,
+    ExtendedChoice2 = 18,
+    ExtendedChoice2Label = 19,
+    StandardOptionElementCount = 14,
+    ExtendedOptionElementCount = 20
 };
 // Bit 31 chooses Button; bit 30 chooses Lefty only when Button is clear.
 // Keep both masks coordinated with the separate blank-record initializer.
 static const unsigned kExtendedChoice2Mask = 0x80000000u;
 static const unsigned kExtendedChoice1Mask = 0x40000000u;
 static const unsigned kKeepNonExtendedOptions = 0x3FFFFFFFu;
-enum { kDefaultVolumePercent = 80, kMaxVolumePercent = 100,
-       kConfirmInputAction = 4, kCancelInputAction = 6,
-       kLayoutSelected = 2, kLayoutDisabled = 3,
-       kLayoutInputFlagSelector = 5, kAllPlayers = -1 };
+enum {
+    kDefaultVolumePercent = 80,
+    kMaxVolumePercent = 100,
+    kConfirmInputAction = 4,
+    kCancelInputAction = 6,
+    kLayoutSelected = 2,
+    kLayoutDisabled = 3,
+    kLayoutInputFlagSelector = 5,
+    kAllPlayers = -1
+};
 struct OptionResourceStrings {
-    char archive[11]; char outerLayout[15]; char innerLayout[14];
-    char outerAnimation[15]; char innerAnimation[14];
-    char outerScript[11]; char innerScript[10]; char cancelSound[23];
-    char volumeSound[14]; char streamVolumeMask[16]; char bufferVolumeMask[16];
+    char archive[11];
+    char outerLayout[15];
+    char innerLayout[14];
+    char outerAnimation[15];
+    char innerAnimation[14];
+    char outerScript[11];
+    char innerScript[10];
+    char cancelSound[23];
+    char volumeSound[14];
+    char streamVolumeMask[16];
+    char bufferVolumeMask[16];
 };
 
 #include "classes/OpenItemMenuState.h"
@@ -115,22 +153,35 @@ struct TourMapInitializationView {
     short initialSelection;
 };
 typedef char TourMapInitializationView_tree_offset[(int)&((TourMapInitializationView*)0)->previews == 0x10 ? 1 : -1];
-typedef char TourMapInitializationView_context_offset[(int)&((TourMapInitializationView*)0)->menuContext == (int)&((OpenItemMenuState*)0)->menuContext ? 1 : -1];
-typedef char TourMapInitializationView_group_offset[(int)&((TourMapInitializationView*)0)->modeGroup == (int)&((OpenItemMenuState*)0)->modeGroup ? 1 : -1];
-typedef char TourMapInitializationView_mode_offset[(int)&((TourMapInitializationView*)0)->tourCharacterIndex == (int)&((OpenItemMenuState*)0)->tourCharacterIndex ? 1 : -1];
-enum { kTourMapLoadArchives = 1, kInitialTourMapWindowState = 4 };
+typedef char TourMapInitializationView_context_offset
+    [(int)&((TourMapInitializationView*)0)->menuContext == (int)&((OpenItemMenuState*)0)->menuContext ? 1 : -1];
+typedef char TourMapInitializationView_group_offset
+    [(int)&((TourMapInitializationView*)0)->modeGroup == (int)&((OpenItemMenuState*)0)->modeGroup ? 1 : -1];
+typedef char TourMapInitializationView_mode_offset[(int)&((TourMapInitializationView*)0)->tourCharacterIndex ==
+                                                           (int)&((OpenItemMenuState*)0)->tourCharacterIndex
+                                                       ? 1
+                                                       : -1];
+enum {
+    kTourMapLoadArchives = 1,
+    kInitialTourMapWindowState = 4
+};
 #include "classes/CBpCtrlHandle.h"
-// Translation unit 0x802E9EE8-0x802EB60C (11 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/COptionDialog.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CFlashMemoryMenuSave.h"
+#include "classes/CPackTextureResource.h"
+#include "classes/CBpCtrl.h"
 
 // View the existing storage as COptionDialog without transferring ownership.
-static inline ::COptionDialog* AsCOptionDialog(const volatile void* p) { return (::COptionDialog*)p; }
-enum { kOptionRecordOffset = (int)&((::COptionDialog*)0)->pad_024 };
+static inline ::COptionDialog* AsCOptionDialog(const volatile void* p) {
+    return (::COptionDialog*)p;
+}
+enum {
+    kOptionRecordOffset = (int)&((::COptionDialog*)0)->savedRecordCopy
+};
 
 extern "C" {
 
@@ -164,7 +215,6 @@ extern int kOptionVolumeMaskInitialXBits;
 extern int kOptionVolumeMaskInitialYBits;
 extern int optionVolumeButtonIds[4];
 
-void CPackTextureResource_PollLoad(void*);
 void Layout_Update(void*);
 void __ct__7CBpCtrlFv(void*);
 void SaveData_Ctor(void*);
@@ -175,7 +225,6 @@ void Layout_ReadElementRect(void*, int, int*);
 void Layout_WriteElementRect(void*, int, int*);
 void Layout_SetElementSecondaryState(void*, int, int);
 void CBpCtrl_dtor(void);
-void COptionDialog_RefreshAudioOutputModeButtons(void*, void*);
 int MPBase1_Process(void*, float);
 void BpObject_TryInvokeCurrentCallback(void*, int);
 void* IdMap_Lookup(void*, void*);
@@ -197,7 +246,6 @@ void Layout_SetElementPlayerFlag(void*, int, int, int);
 void Layout_SetElementFeedbackState(void*, int, int);
 void SaveData_SetCurrentRecord(void*, void*);
 int SaveData_IsSharedRecordMode(void*);
-void* CFlashMemoryMenuSave_Create(void);
 void appFreeUni__FPv(void*);
 int InputManager_GetSelectedPlayer(void*);
 int Layout_HitTest(void*, int, int);
@@ -206,20 +254,14 @@ void SoundManager_SetOutputMode(void*, int);
 void SoundManager_SetStreamVolume(void*, float, float);
 void SoundManager_SetBufferVolume(void*, float, float);
 void COptionDialog_UpdateVolumeControls(void*);
-void COptionDialog_RefreshControlModeSelection(void*, void*);
-void CBpCtrlHandle_ReleaseEntry(void*);
 void CBpCtrl_dtor(void);
 void CBpCtrlHandle_Dtor(void);
 void* IdMap_Lookup(void*, void*);
 void BpObject_Draw(void*);
 void Layout_DrawWithOpacity(void*, float);
 void MPBase1_DrawIfInitialized(void*);
-int CPackTextureResource_IsLoadFinished(void*);
 int Layout_PollLoadComplete(void*);
-int CBpCtrl_PollAllEntriesLoaded(void*);
-void CBpCtrl_DeleteEntryById(void*, int);
 void Layout_Destroy(void*, int);
-void CBpCtrlHandle_SetScriptIndex(void*, int);
 void __dl__FPv(void*);
 void Layout_SetElementValueState(void*, int, int);
 void Layout_SetElementFeedbackState(void*, int, int);
@@ -228,7 +270,6 @@ void Layout_SetElementPlayerFlag(void*, int, int, int);
 void* BpObject_GetOrCreateNamedGroup(void*, const char*);
 int UIGroup_SetScale(void*, float*);
 double Math_RoundDoubleHalfAwayFromZero(double); // Round to nearest, with half values rounded away from zero.
-
 }
 // Adapt a no-argument destructor callback to the runtime registration overload.
 inline void* __register_global_object(void* object, void (*destructor)(), void* regmem) {
@@ -238,100 +279,66 @@ extern "C" {
 
 // Highlight one of three extended choices from the saved high option bits.
 // Controls the out-of-match Control Mode row; Button takes precedence over Lefty.
-// arg points to the start of a complete 0x828-byte save record, not its option-flags word.
-// Bit 31 comes from arg; bit 30 comes from self. Current callers pass self's copied record.
-void COptionDialog_RefreshControlModeSelection(void* self, void* arg) {
-    if (AsCOptionDialog(self)->controlModeOptionsVisible != 0) {
+// saveRecord points to a complete 0x828-byte save record, not its option-flags word.
+// Bit 31 comes from saveRecord; bit 30 comes from this dialog. Current callers pass the dialog's copied record.
+void COptionDialog::RefreshControlModeSelection(void* saveRecord) {
+    if (controlModeOptionsVisible != 0) {
         int i;
         for (i = ExtendedChoice0; i <= ExtendedChoice2Label; ++i) {
-            void* layout = AsCOptionDialog(self)->layout;
             Layout_SetElementValueState(layout, i, 0);
-            layout = AsCOptionDialog(self)->layout;
             Layout_SetElementFeedbackState(layout, i, 1);
-            layout = AsCOptionDialog(self)->layout;
             Layout_SetElementPlayerFlagsAndState(layout, i, 1);
         }
-        if ((((SavedAudioOptionsView*)arg)->optionFlags >> 31) == 0) {
-            void* layout;
-            if (((AsCOptionDialog(self)->optionFlags >> 30) & 1) != 0) {
-                layout = AsCOptionDialog(self)->layout;
+        if ((((SavedAudioOptionsView*)saveRecord)->optionFlags >> 31) == 0) {
+            if (((optionFlags >> 30) & 1) != 0) {
                 Layout_SetElementValueState(layout, ExtendedChoice1, 2);
-                layout = AsCOptionDialog(self)->layout;
                 Layout_SetElementValueState(layout, ExtendedChoice1Label, 2);
-                layout = AsCOptionDialog(self)->layout;
                 Layout_SetElementPlayerFlag(layout, ExtendedChoice1, 0, 5);
-                layout = AsCOptionDialog(self)->layout;
                 Layout_SetElementPlayerFlag(layout, ExtendedChoice1Label, 0, 5);
             } else {
-                layout = AsCOptionDialog(self)->layout;
                 Layout_SetElementValueState(layout, ExtendedChoice0, 2);
-                layout = AsCOptionDialog(self)->layout;
                 Layout_SetElementValueState(layout, ExtendedChoice0Label, 2);
-                layout = AsCOptionDialog(self)->layout;
                 Layout_SetElementPlayerFlag(layout, ExtendedChoice0, 0, 5);
-                layout = AsCOptionDialog(self)->layout;
                 Layout_SetElementPlayerFlag(layout, ExtendedChoice0Label, 0, 5);
             }
         } else {
-            void* layout = AsCOptionDialog(self)->layout;
             Layout_SetElementValueState(layout, ExtendedChoice2, 2);
-            layout = AsCOptionDialog(self)->layout;
             Layout_SetElementValueState(layout, ExtendedChoice2Label, 2);
-            layout = AsCOptionDialog(self)->layout;
             Layout_SetElementPlayerFlag(layout, ExtendedChoice2, 0, 5);
-            layout = AsCOptionDialog(self)->layout;
             Layout_SetElementPlayerFlag(layout, ExtendedChoice2Label, 0, 5);
         }
     }
 }
 
 // Highlight the selected audio output mode stored in option bits 28 and 29.
-// arg is a full save record; mode 3 clears highlights without selecting any output button.
-void COptionDialog_RefreshAudioOutputModeButtons(void* self, void* arg) {
+// saveRecord is a full save record; mode 3 clears highlights without selecting any output button.
+void COptionDialog::RefreshAudioOutputModeButtons(void* saveRecord) {
     int i;
     for (i = OutputMode0; i <= OutputMode2Label; ++i) {
-        void* layout = AsCOptionDialog(self)->layout;
         Layout_SetElementValueState(layout, i, 0);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementFeedbackState(layout, i, 1);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementPlayerFlagsAndState(layout, i, 1);
     }
-    unsigned mode = (((SavedAudioOptionsView*)arg)->optionFlags >> 28) & 3;
+    unsigned mode = (((SavedAudioOptionsView*)saveRecord)->optionFlags >> 28) & 3;
     switch (mode) {
-    case 0: {
-        void* layout = AsCOptionDialog(self)->layout;
+    case 0:
         Layout_SetElementValueState(layout, OutputMode0, 2);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementValueState(layout, OutputMode0Label, 2);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementPlayerFlag(layout, OutputMode0, 0, 5);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementPlayerFlag(layout, OutputMode0Label, 0, 5);
         break;
-    }
-    case 1: {
-        void* layout = AsCOptionDialog(self)->layout;
+    case 1:
         Layout_SetElementValueState(layout, OutputMode1, 2);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementValueState(layout, OutputMode1Label, 2);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementPlayerFlag(layout, OutputMode1, 0, 5);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementPlayerFlag(layout, OutputMode1Label, 0, 5);
         break;
-    }
-    case 2: {
-        void* layout = AsCOptionDialog(self)->layout;
+    case 2:
         Layout_SetElementValueState(layout, OutputMode2, 2);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementValueState(layout, OutputMode2Label, 2);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementPlayerFlag(layout, OutputMode2, 0, 5);
-        layout = AsCOptionDialog(self)->layout;
         Layout_SetElementPlayerFlag(layout, OutputMode2Label, 0, 5);
         break;
-    }
     }
 }
 
@@ -356,10 +363,7 @@ struct OptionActivated {
 };
 
 struct OptionFlags {
-    CW_BITS3(
-        unsigned first : 2,
-        unsigned mode : 2,
-        unsigned rest : 28)
+    CW_BITS3(unsigned first : 2, unsigned mode : 2, unsigned rest : 28)
 };
 struct OptionOwned {
     virtual ~OptionOwned();
@@ -378,18 +382,18 @@ struct OptionStrings {
 // Handle apply/reset, audio-mode selection, held volume controls, and the modal save menu.
 // dt and inputDelay use seconds. Returns 0 while active; 1 closes the caller's dialog.
 // Audio changes preview immediately. Apply copies the full save slot; cancel restores saved audio.
-int COptionDialog_UpdateAndProcessInput(void* self, float dt) {
+int COptionDialog::UpdateAndProcessInput(float dt) {
     OptionRegistration& regmem = *(OptionRegistration*)s_bpCtrlDtorRegistration_80519F20;
     unsigned eventIndex;
     int* volumeButton;
     int changed;
     unsigned volumeButtonIndex;
     int index;
-    unsigned char* p = (unsigned char*)self;
+    unsigned char* p = (unsigned char*)this;
     OptionStrings* strings;
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, &regmem.control);
             s_bpCtrlInitialized = 1;
         }
@@ -420,17 +424,27 @@ int COptionDialog_UpdateAndProcessInput(void* self, float dt) {
     // Phase 2: expire selection/repeat feedback before processing a new layout activation.
     if (AsCOptionDialog(p)->inputDelay > 0.0f) {
         AsCOptionDialog(p)->inputDelay -= dt;
-        if (AsCOptionDialog(p)->inputDelay > 0.0f) return 0;
-        if (AsCOptionDialog(p)->closePending) return 1;
-        ((void(*)(void*, void*))COptionDialog_UpdateVolumeControls)(self, p + kOptionRecordOffset);
+        if (AsCOptionDialog(p)->inputDelay > 0.0f)
+            return 0;
+        if (AsCOptionDialog(p)->closePending)
+            return 1;
+        ((void (*)(void*, void*))COptionDialog_UpdateVolumeControls)(this, p + kOptionRecordOffset);
         Layout_SetElementValueState(AsCOptionDialog(p)->layout, ResetOptions, 0);
         Layout_SetElementValueState(AsCOptionDialog(p)->layout, ResetOptionsLabel, 0);
         Layout_SetElementPlayerFlag(AsCOptionDialog(p)->layout, ResetOptions, 1, 5);
         Layout_SetElementPlayerFlag(AsCOptionDialog(p)->layout, ResetOptionsLabel, 1, 5);
     }
-    if (!Sing_805DC5C8()) { if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, regmem.input); s_inputManagerInitialized = 1; } Sing_805DC5C8() = s_gameInputManager; }
-    if (Input_IsActionPressed(Sing_805DC5C8(), kCancelInputAction, kAllPlayers)) {
-        Sound_PlayByName(g_soundManager, ((OptionResourceStrings*)optionMenuStrings)->cancelSound, 0, 0, 0, 0, kFloat_0_5_OptionSound, kFloat_200_OptionSound, kFloat_1_OptionMenu);
+    if (!GetInputManagerSlot()) {
+        if (!s_inputManagerInitialized) {
+            InputManager_Init(s_gameInputManager);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, regmem.input);
+            s_inputManagerInitialized = 1;
+        }
+        GetInputManagerSlot() = s_gameInputManager;
+    }
+    if (Input_IsActionPressed(GetInputManagerSlot(), kCancelInputAction, kAllPlayers)) {
+        Sound_PlayByName(g_soundManager, ((OptionResourceStrings*)optionMenuStrings)->cancelSound, 0, 0, 0, 0,
+                         kFloat_0_5_OptionSound, kFloat_200_OptionSound, kFloat_1_OptionMenu);
         SoundManager_ApplySavedAudioSettings(g_soundManager, kFloat_1_OptionMenu);
         return 1;
     }
@@ -446,42 +460,42 @@ int COptionDialog_UpdateAndProcessInput(void* self, float dt) {
             case ApplyOptions:
                 Layout_SetElementValueState(AsCOptionDialog(p)->layout, ApplyOptions, 2);
                 Layout_SetElementValueState(AsCOptionDialog(p)->layout, ApplyOptionsLabel, 2);
-            {
-                unsigned char controlModeOptionsVisible = AsCOptionDialog(p)->controlModeOptionsVisible;
-                int limit = ExtendedOptionElementCount;
-                if (!controlModeOptionsVisible) limit = StandardOptionElementCount;
-                for (int i = 0; i < limit; ++i) {
-                    Layout_SetElementPlayerFlag(AsCOptionDialog(p)->layout, i, 0, 5);
-                }
-                if (!Sing_805DC5E0()) {
-                    if (!s_saveDataInitialized) {
-                        SaveData_Ctor(s_saveData);
-                        s_saveDataInitialized = 1;
+                {
+                    unsigned char controlModeOptionsVisible = AsCOptionDialog(p)->controlModeOptionsVisible;
+                    int limit = ExtendedOptionElementCount;
+                    if (!controlModeOptionsVisible)
+                        limit = StandardOptionElementCount;
+                    for (int i = 0; i < limit; ++i) {
+                        Layout_SetElementPlayerFlag(AsCOptionDialog(p)->layout, i, 0, 5);
                     }
-                    Sing_805DC5E0() = s_saveData;
-                }
-                SaveData_SetCurrentRecord(Sing_805DC5E0(), p + kOptionRecordOffset);
-                if (!Sing_805DC5E0()) {
-                    if (!s_saveDataInitialized) {
-                        SaveData_Ctor(s_saveData);
-                        s_saveDataInitialized = 1;
+                    if (!GetSaveDataSlot()) {
+                        if (!s_saveDataInitialized) {
+                            SaveData_Ctor(s_saveData);
+                            s_saveDataInitialized = 1;
+                        }
+                        GetSaveDataSlot() = s_saveData;
                     }
-                    Sing_805DC5E0() = s_saveData;
+                    SaveData_SetCurrentRecord(GetSaveDataSlot(), p + kOptionRecordOffset);
+                    if (!GetSaveDataSlot()) {
+                        if (!s_saveDataInitialized) {
+                            SaveData_Ctor(s_saveData);
+                            s_saveDataInitialized = 1;
+                        }
+                        GetSaveDataSlot() = s_saveData;
+                    }
+                    if (SaveData_IsSharedRecordMode(GetSaveDataSlot())) {
+                        // This stores close-delay state but still returns 1 below in
+                        // this call; preserve that existing immediate completion.
+                        float closeDelay = kOptionSelectionDelaySeconds;
+                        AsCOptionDialog(p)->closePending = 1;
+                        AsCOptionDialog(p)->inputDelay = closeDelay;
+                    } else {
+                        AsCOptionDialog(p)->saveMenu = CFlashMemoryMenuSave::Create();
+                        return 0;
+                    }
+                    return 1;
                 }
-                if (SaveData_IsSharedRecordMode(Sing_805DC5E0())) {
-                    // This stores close-delay state but still returns 1 below in
-                    // this call; preserve that existing immediate completion.
-                    float closeDelay = kOptionSelectionDelaySeconds;
-                    AsCOptionDialog(p)->closePending = 1;
-                    AsCOptionDialog(p)->inputDelay = closeDelay;
-                } else {
-                    AsCOptionDialog(p)->saveMenu = CFlashMemoryMenuSave_Create();
-                    return 0;
-                }
-                return 1;
-            }
-            case ResetOptions:
-            {
+            case ResetOptions: {
                 // Retail Default: Swing Righty outside a match, Stereo, BGM/SE 80%.
                 // In-match sound-only Options preserves both Control Mode/hand bits.
                 if (AsCOptionDialog(p)->controlModeOptionsVisible) {
@@ -491,9 +505,9 @@ int COptionDialog_UpdateAndProcessInput(void* self, float dt) {
                 (*(unsigned int*)&AsCOptionDialog(p)->streamVolumePercent) = kDefaultVolumePercent;
                 ((OptionFlags*)(&AsCOptionDialog(p)->optionFlags))->mode = 1;
                 changed = 1;
-                COptionDialog_RefreshAudioOutputModeButtons(self, p + kOptionRecordOffset);
-                ((void(*)(void*, void*))COptionDialog_UpdateVolumeControls)(self, p + kOptionRecordOffset);
-                COptionDialog_RefreshControlModeSelection(self, p + kOptionRecordOffset);
+                RefreshAudioOutputModeButtons(p + kOptionRecordOffset);
+                ((void (*)(void*, void*))COptionDialog_UpdateVolumeControls)(this, p + kOptionRecordOffset);
+                RefreshControlModeSelection(p + kOptionRecordOffset);
                 Layout_SetElementValueState(AsCOptionDialog(p)->layout, ResetOptions, 2);
                 Layout_SetElementValueState(AsCOptionDialog(p)->layout, ResetOptionsLabel, 2);
                 Layout_SetElementPlayerFlag(AsCOptionDialog(p)->layout, ResetOptions, 0, 5);
@@ -501,48 +515,43 @@ int COptionDialog_UpdateAndProcessInput(void* self, float dt) {
                 AsCOptionDialog(p)->inputDelay = delay;
                 break;
             }
-            case OutputMode0:
-            {
+            case OutputMode0: {
                 ((OptionFlags*)(&AsCOptionDialog(p)->optionFlags))->mode = 0;
                 changed = 1;
-                COptionDialog_RefreshAudioOutputModeButtons(self, p + kOptionRecordOffset);
+                RefreshAudioOutputModeButtons(p + kOptionRecordOffset);
                 break;
             }
-            case OutputMode1:
-            {
+            case OutputMode1: {
                 ((OptionFlags*)(&AsCOptionDialog(p)->optionFlags))->mode = 1;
                 changed = 1;
-                COptionDialog_RefreshAudioOutputModeButtons(self, p + kOptionRecordOffset);
+                RefreshAudioOutputModeButtons(p + kOptionRecordOffset);
                 break;
             }
-            case OutputMode2:
-            {
+            case OutputMode2: {
                 ((OptionFlags*)(&AsCOptionDialog(p)->optionFlags))->mode = 2;
                 changed = 1;
-                COptionDialog_RefreshAudioOutputModeButtons(self, p + kOptionRecordOffset);
+                RefreshAudioOutputModeButtons(p + kOptionRecordOffset);
                 break;
             }
-            case ExtendedChoice1:
-            {
+            case ExtendedChoice1: {
                 unsigned optionBits = AsCOptionDialog(p)->optionFlags;
                 optionBits = (optionBits & 0x7FFFFFFF) | kExtendedChoice1Mask;
                 AsCOptionDialog(p)->optionFlags = optionBits;
-                COptionDialog_RefreshControlModeSelection(self, p + kOptionRecordOffset);
+                RefreshControlModeSelection(p + kOptionRecordOffset);
                 break;
             }
-            case ExtendedChoice0:
-            {
+            case ExtendedChoice0: {
                 unsigned optionBits = AsCOptionDialog(p)->optionFlags;
                 optionBits &= kKeepNonExtendedOptions;
                 AsCOptionDialog(p)->optionFlags = optionBits;
-                COptionDialog_RefreshControlModeSelection(self, p + kOptionRecordOffset);
+                RefreshControlModeSelection(p + kOptionRecordOffset);
                 break;
             }
             case ExtendedChoice2: {
                 unsigned optionBits = AsCOptionDialog(p)->optionFlags;
                 optionBits = (optionBits | kExtendedChoice2Mask) & ~kExtendedChoice1Mask;
                 AsCOptionDialog(p)->optionFlags = optionBits;
-                COptionDialog_RefreshControlModeSelection(self, p + kOptionRecordOffset);
+                RefreshControlModeSelection(p + kOptionRecordOffset);
                 break;
             }
             default:
@@ -551,7 +560,9 @@ int COptionDialog_UpdateAndProcessInput(void* self, float dt) {
         }
     }
     // Repeat the four volume controls while the input action is held.
-    struct FourInts { int values[4]; };
+    struct FourInts {
+        int values[4];
+    };
     strings = (OptionStrings*)optionMenuStrings;
     FourInts vals = *(FourInts*)optionVolumeButtonIds;
     volumeButton = vals.values;
@@ -559,43 +570,51 @@ int COptionDialog_UpdateAndProcessInput(void* self, float dt) {
     for (volumeButtonIndex = 0; volumeButtonIndex < 4; ++volumeButtonIndex, ++volumeButton) {
         index = *volumeButton;
         int& idx = index;
-        if (!Sing_805DC5C8()) {
+        if (!GetInputManagerSlot()) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
                 __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, regmem.input);
                 s_inputManagerInitialized = 1;
             }
-            Sing_805DC5C8() = s_gameInputManager;
+            GetInputManagerSlot() = s_gameInputManager;
         }
-        void* mgr = (void*)InputManager_GetSelectedPlayer(Sing_805DC5C8());
+        void* mgr = (void*)InputManager_GetSelectedPlayer(GetInputManagerSlot());
         if (Layout_HitTest(AsCOptionDialog(p)->layout, idx, (int)mgr)) {
-            if (!Sing_805DC5C8()) {
+            if (!GetInputManagerSlot()) {
                 if (!s_inputManagerInitialized) {
                     InputManager_Init(s_gameInputManager);
                     __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, regmem.input);
                     s_inputManagerInitialized = 1;
                 }
-                Sing_805DC5C8() = s_gameInputManager;
+                GetInputManagerSlot() = s_gameInputManager;
             }
-            if (Input_IsActionButtonDown(Sing_805DC5C8(), kConfirmInputAction, -1)) {
+            if (Input_IsActionButtonDown(GetInputManagerSlot(), kConfirmInputAction, -1)) {
                 switch (idx) {
                 case StreamDown: {
-                    int v = AsCOptionDialog(p)->streamVolumePercent; AsCOptionDialog(p)->streamVolumePercent = v - 1;
+                    int v = AsCOptionDialog(p)->streamVolumePercent;
+                    AsCOptionDialog(p)->streamVolumePercent = v - 1;
                     break;
-                } case StreamUp: {
-                    int v = AsCOptionDialog(p)->streamVolumePercent; AsCOptionDialog(p)->streamVolumePercent = v + 1;
+                }
+                case StreamUp: {
+                    int v = AsCOptionDialog(p)->streamVolumePercent;
+                    AsCOptionDialog(p)->streamVolumePercent = v + 1;
                     break;
-                } case BufferDown: {
-                    int v = AsCOptionDialog(p)->bufferVolumePercent; AsCOptionDialog(p)->bufferVolumePercent = v - 1;
+                }
+                case BufferDown: {
+                    int v = AsCOptionDialog(p)->bufferVolumePercent;
+                    AsCOptionDialog(p)->bufferVolumePercent = v - 1;
                     break;
-                } case BufferUp: {
-                    int v = AsCOptionDialog(p)->bufferVolumePercent; AsCOptionDialog(p)->bufferVolumePercent = v + 1;
+                }
+                case BufferUp: {
+                    int v = AsCOptionDialog(p)->bufferVolumePercent;
+                    AsCOptionDialog(p)->bufferVolumePercent = v + 1;
                     break;
                 }
                 }
                 int ret = SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager, strings->volumeSound);
                 if (!ret) {
-                    Sound_PlayByName(g_soundManager, strings->volumeSound, 0, 0, strings->volumeSound, 0, kFloat_0_5_OptionSound, kFloat_200_OptionSound, kFloat_1_OptionMenu);
+                    Sound_PlayByName(g_soundManager, strings->volumeSound, 0, 0, strings->volumeSound, 0,
+                                     kFloat_0_5_OptionSound, kFloat_200_OptionSound, kFloat_1_OptionMenu);
                 }
                 AsCOptionDialog(p)->inputDelay = repeatDelay;
                 changed = 1;
@@ -609,8 +628,12 @@ int COptionDialog_UpdateAndProcessInput(void* self, float dt) {
     if (changed) {
         unsigned optionBits = AsCOptionDialog(p)->optionFlags;
         SoundManager_SetOutputMode(g_soundManager, (optionBits >> 28) & 3);
-        SoundManager_SetStreamVolume(g_soundManager, (float)AsCOptionDialog(p)->streamVolumePercent / kFloat_100_OptionDialog, kFloat_0_OptionDialog);
-        SoundManager_SetBufferVolume(g_soundManager, (float)AsCOptionDialog(p)->bufferVolumePercent / kFloat_100_OptionDialog, kFloat_0_OptionDialog);
+        SoundManager_SetStreamVolume(g_soundManager,
+                                     (float)AsCOptionDialog(p)->streamVolumePercent / kFloat_100_OptionDialog,
+                                     kFloat_0_OptionDialog);
+        SoundManager_SetBufferVolume(g_soundManager,
+                                     (float)AsCOptionDialog(p)->bufferVolumePercent / kFloat_100_OptionDialog,
+                                     kFloat_0_OptionDialog);
     }
     return 0;
 }
@@ -619,27 +642,27 @@ int COptionDialog_UpdateAndProcessInput(void* self, float dt) {
 #pragma opt_common_subs off
 // Copy the active save record into the dialog and initialize button and caption state.
 // Initialization snapshots the entire save slot so Apply can preserve unrelated fields.
-void COptionDialog_InitializeFromSaveData(void* self) {
+void COptionDialog::InitializeFromSaveData() {
     // Phase 1: discard the old texture request and snapshot the active save slot.
-    void* owned = AsCOptionDialog(self)->textureResource;
+    void* owned = textureResource;
     if (owned != 0) {
         if (owned != 0) {
-            struct VBase { 
-            virtual void destroy(int) DECOMP_LOCAL_VIRTUAL;
+            struct VBase {
+                virtual void destroy(int) DECOMP_LOCAL_VIRTUAL;
             };
             ((VBase*)owned)->destroy(1);
         }
-        AsCOptionDialog(self)->textureResource = 0;
+        textureResource = 0;
     }
-    void* state = Sing_805DC5E0();
+    void* state = GetSaveDataSlot();
     if (state == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        Sing_805DC5E0() = s_saveData;
+        GetSaveDataSlot() = s_saveData;
     }
-    void* source = SaveData_GetCurrentRecord(Sing_805DC5E0());
+    void* source = SaveData_GetCurrentRecord(GetSaveDataSlot());
     // Preserve the original copy grouping for the complete 0x828-byte save slot.
     struct Settings {
         unsigned first[151];
@@ -653,16 +676,15 @@ void COptionDialog_InitializeFromSaveData(void* self) {
         unsigned setting[5];
         unsigned short final[414];
     };
-    struct COptionDialog { char dialogPrefix[0x24]; Settings settings; };
-    ((COptionDialog*)self)->settings = *(Settings*)source;
+    *(Settings*)savedRecordCopy = *(Settings*)source;
     // Phase 2: refresh controls from the snapshot, then select inner/outer BP script.
-    COptionDialog_RefreshAudioOutputModeButtons(self, AsCOptionDialog(self)->pad_024);
-    ((void(*)(void*, void*))COptionDialog_UpdateVolumeControls)(self, AsCOptionDialog(self)->pad_024);
-    COptionDialog_RefreshControlModeSelection(self, AsCOptionDialog(self)->pad_024);
+    RefreshAudioOutputModeButtons(savedRecordCopy);
+    ((void (*)(void*, void*))COptionDialog_UpdateVolumeControls)(this, savedRecordCopy);
+    RefreshControlModeSelection(savedRecordCopy);
     void* manager = Sing_805DC5F0();
     if (!manager) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlDtorRegistration_80519F20);
             s_bpCtrlInitialized = 1;
         }
@@ -670,27 +692,26 @@ void COptionDialog_InitializeFromSaveData(void* self) {
     }
     int index;
     int limit;
-    void* obj = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsCOptionDialog(self)->bpEntryId));
-    if (*(((unsigned char*)(&AsCOptionDialog(self)->controlModeOptionsVisible))) != 0) {
+    void* obj = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&bpEntryId));
+    if (controlModeOptionsVisible != 0) {
         BpObject_StartScriptByName(obj, ((OptionResourceStrings*)optionMenuStrings)->outerScript, 1);
     } else {
         BpObject_StartScriptByName(obj, ((OptionResourceStrings*)optionMenuStrings)->innerScript, 1);
     }
     BpObject_TryInvokeCurrentCallback(obj, 0);
     limit = ExtendedOptionElementCount;
-    if (*(((unsigned char*)(&AsCOptionDialog(self)->controlModeOptionsVisible))) == 0) limit = StandardOptionElementCount;
+    if (controlModeOptionsVisible == 0)
+        limit = StandardOptionElementCount;
     int values[4] = {};
     // Phase 3: copy control rectangles to captions; both share hit/feedback geometry.
     for (index = 4; index < limit; index += 2) {
-        void* layout = ((::COptionDialog*)self)->layout;
         Layout_ReadElementRect(layout, index, values);
-        layout = ((::COptionDialog*)self)->layout;
         Layout_WriteElementRect(layout, index + 1, values);
     }
-    Layout_SetElementSecondaryState(((::COptionDialog*)self)->layout, 1, 0);
-    Layout_SetElementSecondaryState(((::COptionDialog*)self)->layout, 0, 0);
-    Layout_SetElementSecondaryState(((::COptionDialog*)self)->layout, 3, 0);
-    Layout_SetElementSecondaryState(((::COptionDialog*)self)->layout, 2, 0);
+    Layout_SetElementSecondaryState(layout, 1, 0);
+    Layout_SetElementSecondaryState(layout, 0, 0);
+    Layout_SetElementSecondaryState(layout, 3, 0);
+    Layout_SetElementSecondaryState(layout, 2, 0);
     void* entries = Sing_805DC5F8();
     if (!entries) {
         if (!s_bpCtrlHandleInitialized) {
@@ -703,7 +724,7 @@ void COptionDialog_InitializeFromSaveData(void* self) {
     }
     entries = Sing_805DC5F8();
     bool missingEntries = entries == 0;
-    (*(void**)&AsCOptionDialog(self)->previousScriptIndex) = *(void**)&((CBpCtrlHandle*)entries)->scriptIndex; // 0x802E9EE8 unit: handle +4
+    previousScriptIndex = ((CBpCtrlHandle*)entries)->scriptIndex;
     if (missingEntries) {
         if (!s_bpCtrlHandleInitialized) {
             s_bpCtrlHandle[0] = -1;
@@ -713,28 +734,28 @@ void COptionDialog_InitializeFromSaveData(void* self) {
         }
         Sing_805DC5F8() = s_bpCtrlHandle;
     }
-    CBpCtrlHandle_ReleaseEntry(Sing_805DC5F8());
-    *(((unsigned char*)(&AsCOptionDialog(self)->closePending))) = 0;
+    ((CBpCtrlHandle*)Sing_805DC5F8())->ReleaseEntry();
+    closePending = 0;
 }
 
 #pragma pop
 // Poll the option texture and update the option layout.
-void COptionDialog_UpdateLayoutAndTexture(void* self) {
-    void* ptr = AsCOptionDialog(self)->textureResource;
+void COptionDialog::UpdateLayoutAndTexture() {
+    void* ptr = textureResource;
     if (ptr != 0)
-        CPackTextureResource_PollLoad(ptr);
-    ptr = AsCOptionDialog(self)->layout;
+        ((CPackTextureResource*)ptr)->PollLoad();
+    ptr = layout;
     if (ptr != 0)
         Layout_Update(ptr);
 }
 
 // Initialize a mode-record UI context and resolve the selected character progress record.
-// arg begins with a borrowed save-record pointer. orderSelectionIndex must index characterOrder,
+// menuContext begins with a borrowed save-record pointer. orderSelectionIndex must index characterOrder,
 // whose result must index characters[11]. +0x90 stores that character index despite its mode name.
 // Required ranges: orderSelectionIndex 0..7, characterOrder value 0..10. The
 // context and save record must outlive this initialized Tour object. It neither
 // releases old handles nor allocates replacements: call only on fresh/cleared state.
-void ModeRecordUiContext_Initialize(void* self, void* arg) {
+void ModeRecordUiContext_Initialize(void* self, void* menuContext) {
     TourMapInitializationView* s = (TourMapInitializationView*)self;
     float zero = kFloat_0_OpenItemMenu;
     (*(volatile int*)&s->previews.header) = 0;
@@ -746,8 +767,8 @@ void ModeRecordUiContext_Initialize(void* self, void* arg) {
     s->state = kTourMapLoadArchives;
     s->pendingState = 0;
     s->windowState = kInitialTourMapWindowState;
-    s->menuContext = arg;
-    void* saveRecord = *(void**)arg;
+    s->menuContext = menuContext;
+    void* saveRecord = *(void**)menuContext;
     unsigned char characterIndex;
     signed char orderIndex;
     void* modeData = (void*)&((SavedRecordModeView*)saveRecord)->modeData;
@@ -755,7 +776,8 @@ void ModeRecordUiContext_Initialize(void* self, void* arg) {
     orderIndex = ((SavedRecordModeView*)saveRecord)->modeData.orderSelectionIndex;
     characterIndex = ((SavedModeDataView*)modeData)->characterOrder[orderIndex];
     s->tourCharacterIndex = characterIndex;
-    *(void**)&s->selectionRecord = (char*)((SavedModeDataView*)modeData)->characters + characterIndex * sizeof(SavedCharacterModeRecord);
+    *(void**)&s->selectionRecord =
+        (char*)((SavedModeDataView*)modeData)->characters + characterIndex * sizeof(SavedCharacterModeRecord);
     *(int*)&s->eventResource = 0;
     *(int*)&s->flashMemorySaveMenu = 0;
     *(int*)&s->shop = 0;
@@ -782,21 +804,24 @@ void ModeRecordUiContext_Initialize(void* self, void* arg) {
 }
 
 // Wait for the texture, option layout, and all BP controller entries to finish loading.
-int COptionDialog_IsLoaded(void* self) {
-    void* ptr = AsCOptionDialog(self)->textureResource;
-    if (ptr != 0 && !CPackTextureResource_IsLoadFinished(ptr)) return 0;
-    if (!Layout_PollLoadComplete(AsCOptionDialog(self)->layout)) return 0;
+int COptionDialog::IsLoaded() {
+    void* ptr = textureResource;
+    if (ptr != 0 && !((CPackTextureResource*)ptr)->IsLoadFinished())
+        return 0;
+    if (!Layout_PollLoadComplete(layout))
+        return 0;
     void* state = Sing_805DC5F0();
     if (state == 0) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlDtorRegistration_80519F20);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    int ok = CBpCtrl_PollAllEntriesLoaded(Sing_805DC5F0());
-    if (ok == 0) return 0;
+    int ok = ((CBpCtrl*)Sing_805DC5F0())->PollAllEntriesLoaded();
+    if (ok == 0)
+        return 0;
     return 1;
 }
 
@@ -804,51 +829,49 @@ int COptionDialog_IsLoaded(void* self) {
 // should_delete > 0 frees self; returned address then must not be dereferenced.
 // saveMenu is released by the process-completion path, not this destructor;
 // preserve the caller's requirement that it has completed before dialog teardown.
-void* COptionDialog_dtor(void* self, int should_delete) {
-    if (self != 0) {
-        *(void**)self = __vt__13COptionDialog;
-        void* ptr = AsCOptionDialog(self)->textureResource;
+COptionDialog::~COptionDialog() {
+    *(void**)this = __vt__13COptionDialog;
+    void* ptr = textureResource;
+    if (ptr != 0) {
         if (ptr != 0) {
-            if (ptr != 0) {
-                struct VBase { 
-                virtual void call0(int) DECOMP_LOCAL_VIRTUAL; virtual void call1(int) DECOMP_LOCAL_VIRTUAL;
-                };
-                ((VBase*)ptr)->call0(1);
-            }
-            AsCOptionDialog(self)->textureResource = 0;
+            struct VBase {
+                virtual void call0(int) DECOMP_LOCAL_VIRTUAL;
+                virtual void call1(int) DECOMP_LOCAL_VIRTUAL;
+            };
+            ((VBase*)ptr)->call0(1);
         }
-        if (AsCOptionDialog(self)->bpEntryId != -1) {
-            void* state = Sing_805DC5F0();
-            if (state == 0) {
-                if (!s_bpCtrlInitialized) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlDtorRegistration_80519F20);
-                    s_bpCtrlInitialized = 1;
-                }
-                Sing_805DC5F0() = s_bpCtrl;
-            }
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCOptionDialog(self)->bpEntryId);
-            AsCOptionDialog(self)->bpEntryId = -1;
-        }
-        ptr = AsCOptionDialog(self)->layout;
-        if (ptr != 0) {
-            Layout_Destroy(ptr, 1);
-            AsCOptionDialog(self)->layout = 0;
-        }
-        void* state2 = Sing_805DC5F8();
-        if (state2 == 0) {
-            if (!s_bpCtrlHandleInitialized) {
-                s_bpCtrlHandle[0] = -1;
-                s_bpCtrlHandle[1] = -1;
-                __register_global_object(s_bpCtrlHandle, (void (*)())CBpCtrlHandle_Dtor, s_bpCtrlHandleDtorRegistration_OptionMenu);
-                s_bpCtrlHandleInitialized = 1;
-            }
-            Sing_805DC5F8() = s_bpCtrlHandle;
-        }
-        CBpCtrlHandle_SetScriptIndex(Sing_805DC5F8(), AsCOptionDialog(self)->previousScriptIndex);
-        if (should_delete > 0) __dl__FPv(self);
+        textureResource = 0;
     }
-    return self;
+    if (bpEntryId != -1) {
+        void* state = Sing_805DC5F0();
+        if (state == 0) {
+            if (!s_bpCtrlInitialized) {
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlDtorRegistration_80519F20);
+                s_bpCtrlInitialized = 1;
+            }
+            Sing_805DC5F0() = s_bpCtrl;
+        }
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(bpEntryId);
+        bpEntryId = -1;
+    }
+    ptr = layout;
+    if (ptr != 0) {
+        Layout_Destroy(ptr, 1);
+        layout = 0;
+    }
+    void* state2 = Sing_805DC5F8();
+    if (state2 == 0) {
+        if (!s_bpCtrlHandleInitialized) {
+            s_bpCtrlHandle[0] = -1;
+            s_bpCtrlHandle[1] = -1;
+            __register_global_object(s_bpCtrlHandle, (void (*)())CBpCtrlHandle_Dtor,
+                                     s_bpCtrlHandleDtorRegistration_OptionMenu);
+            s_bpCtrlHandleInitialized = 1;
+        }
+        Sing_805DC5F8() = s_bpCtrlHandle;
+    }
+    ((CBpCtrlHandle*)Sing_805DC5F8())->SetScriptIndex(previousScriptIndex);
 }
 
 // Disable volume buttons at their limits and scale the two volume-mask groups.
@@ -856,8 +879,14 @@ void* COptionDialog_dtor(void* self, int should_delete) {
 // Mask X = round(unitsPerPercent * (100 - percent)); mask Y keeps its initial pool value.
 // Both arguments are scale factors; the UI setter converts them to 1/1024 units.
 void COptionDialog_UpdateVolumeControls(void* self) {
-    union { double d; unsigned int u[2]; } conv2;
-    union { double d; unsigned int u[2]; } conv;
+    union {
+        double d;
+        unsigned int u[2];
+    } conv2;
+    union {
+        double d;
+        unsigned int u[2];
+    } conv;
     float maskScale[2];
     int i;
     void* obj;
@@ -898,7 +927,7 @@ void COptionDialog_UpdateVolumeControls(void* self) {
     void* state = Sing_805DC5F0();
     if (state == 0) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlDtorRegistration_80519F20);
             s_bpCtrlInitialized = 1;
         }
@@ -930,19 +959,19 @@ void COptionDialog_UpdateVolumeControls(void* self) {
 }
 
 // Draw option animation and layout, then draw the active save menu when present.
-void COptionDialog_Draw(void* self) {
+void COptionDialog::Draw() {
     if (*(volatile void**)&Sing_805DC5F0() == 0) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlDtorRegistration_80519F20);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    void* optionAnimation = (void*)IdMap_Lookup(Sing_805DC5F0(), (*(void**)&AsCOptionDialog(self)->bpEntryId));
+    void* optionAnimation = (void*)IdMap_Lookup(Sing_805DC5F0(), (*(void**)&bpEntryId));
     BpObject_Draw(optionAnimation);
-    Layout_DrawWithOpacity(AsCOptionDialog(self)->layout, kFloat_1_OptionMenu);
-    void* ptr = AsCOptionDialog(self)->saveMenu;
+    Layout_DrawWithOpacity(layout, kFloat_1_OptionMenu);
+    void* ptr = saveMenu;
     if (ptr != 0)
         MPBase1_DrawIfInitialized(ptr);
 }

@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CSHOPPRODUCTSTAB_H
 #define CLASSES_CSHOPPRODUCTSTAB_H
 
@@ -7,33 +5,60 @@
 
 class CShopProductsTab {
 public:
-    void* vtbl;                        // 0x0: 2 uses in CShopProductsTab_Ctor, CShopProductsTab_dtor
-    int selectedProductIndex;                          // 0x4: 2 uses in CShopProductsTab_Ctor, CShopProductsTab_Reset
-    int productCount;                          // 0x8: 3 uses in CShopProductsTab_Reset, CShopProductsTab_Ctor
-    int drawOffsetX;                          // 0xc: 1 use in CShopProductsTab_Ctor
-    int drawOffsetY;                         // 0x10: 1 use in CShopProductsTab_Ctor
-    int drawOffsetZ;                         // 0x14: 1 use in CShopProductsTab_Ctor
-    int productDrawEntries;                         // 0x18: 3 uses in CShopProductsTab_Reset, CShopProductsTab_Ctor
-    void* layout;                       // 0x1c: 7 uses in CShopProductsTab_dtor, CShopProductsTab_Ctor, CShopProductsTab_Reset
-    int navigationDelayFrames;                         // 0x20: 1 use in CShopProductsTab_Ctor
-    int productRecords;                         // 0x24: 1 use in CShopProductsTab_Ctor
-    void* secondaryLayout;                       // 0x28: 5 uses in CShopProductsTab_dtor, CShopProductsTab_Ctor
-    void* tertiaryLayout;                       // 0x2c: 4 uses in CShopProductsTab_dtor, CShopProductsTab_Ctor
-    void* scriptObject;                       // 0x30: 5 uses in CShopProductsTab_Reset, CShopProductsTab_Ctor
-    int scriptEntryId;                         // 0x34: 5 uses in CShopProductsTab_dtor, CShopProductsTab_Ctor
-    void* playerRecord;                       // 0x38: 1 use in CShopProductsTab_Ctor
-    unsigned char selectedProductNew;               // 0x3c: 1 use in CShopProductsTab_Ctor
-    unsigned char selectedProductOwned;               // 0x3d: 1 use in CShopProductsTab_Ctor
-    unsigned char selectedProductEquipped;               // 0x3e: 1 use in CShopProductsTab_Ctor
-    char pad_03F[0x1];                  // 0x3f
-    int selectedProductQuantity;                         // 0x40: 1 use in CShopProductsTab_Ctor
-    void* numberDraw;                       // 0x44: 7 uses in CShopProductsTab_dtor, CShopProductsTab_Ctor, CShopProductsTab_Reset
+    void* vtbl;                            // 0x0
+    int selectedProductIndex;              // 0x4
+    int productCount;                      // 0x8
+    int drawOffsetX;                       // 0xc
+    int drawOffsetY;                       // 0x10
+    int drawOffsetZ;                       // 0x14
+    int productDrawEntries;                // 0x18
+    void* layout;                          // 0x1c
+    int navigationDelayFrames;             // 0x20
+    int productRecords;                    // 0x24
+    void* secondaryLayout;                 // 0x28
+    void* tertiaryLayout;                  // 0x2c
+    void* scriptObject;                    // 0x30
+    int scriptEntryId;                     // 0x34
+    void* playerRecord;                    // 0x38
+    unsigned char selectedProductNew;      // 0x3c
+    unsigned char selectedProductOwned;    // 0x3d
+    unsigned char selectedProductEquipped; // 0x3e
+    char pad_03F[0x1];                     // 0x3f
+    int selectedProductQuantity;           // 0x40
+    void* numberDraw;                      // 0x44
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x34
+    void* Init(int productCount, const void* drawOffset, void* playerRecord);
+    int Destroy(int flag);
+    int Reset();
+    int PollLoad();
+    int UpdateLayouts();
+    int UpdateNavigationDelay();
+    int Draw();
+    void* GetSelectedProductIndex();
+    int RefreshVisibleSlotIndicators();
+    int IsSelectedProductOwned();
+    int RefreshVisibleProducts();
+    int HandleNavigationInput();
+    int HandleNavigationActivation();
+    int UpdateProductStatus(unsigned int typeId);
+    int UpdateCharacterStatus(const char* typeIdArg);
+    int UpdatePartStatus(void* typeIdArg);
+    int UpdateCaddieStatus(void* typeIdArg);
+    int UpdateCaddieItemStatus(void* typeIdArg);
+    int UpdateClubSetStatus(void* typeIdArg);
+    int UpdateBallStatus(void* typeIdArg);
+    int UpdateSlotIndicators(int visibleSlot);
+    int ApplyDrawOffsetY();
+    int ClearProductFlag(void* typeIdArg);
+    int SetProductArrays(void* entries, void* arg);
+    int SetProductCount(int count);
+    int SetEnabled(int enable);
+    int SelectProductByTypeId(void* typeIdArg);
+    int DrawProductQuads() const;
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define CSHOPPRODUCTSTAB_OFF(f, o) typedef char CShopProductsTab_off_##f[((int)&((CShopProductsTab*)0)->f == (o)) ? 1 : -1]
+#define CSHOPPRODUCTSTAB_OFF(f, o) \
+    typedef char CShopProductsTab_off_##f[((int)&((CShopProductsTab*)0)->f == (o)) ? 1 : -1]
 CSHOPPRODUCTSTAB_OFF(selectedProductIndex, 0x4);
 CSHOPPRODUCTSTAB_OFF(productCount, 0x8);
 CSHOPPRODUCTSTAB_OFF(drawOffsetX, 0xc);
@@ -55,4 +80,4 @@ CSHOPPRODUCTSTAB_OFF(selectedProductQuantity, 0x40);
 CSHOPPRODUCTSTAB_OFF(numberDraw, 0x44);
 #undef CSHOPPRODUCTSTAB_OFF
 
-#endif  // CLASSES_CSHOPPRODUCTSTAB_H
+#endif // CLASSES_CSHOPPRODUCTSTAB_H

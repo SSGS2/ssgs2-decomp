@@ -1,23 +1,44 @@
-// GtlInputDevice: layout-only view owned by gtl_texture_projection_input_device.cpp (gtl_IInputDevice_Ctor through gtl_IInputDevice_ReadItemDataByKind).
-// No virtual methods, constructors, or generated RTTI.
+// gtl::IInputDevice: one input device bound to a driver provider and a controller channel.
+// It has no virtual methods; its vtable pointer is installed by Init.
 #ifndef CLASSES_GTLINPUTDEVICE_H
 #define CLASSES_GTLINPUTDEVICE_H
 
-class GtlInputDevice {
+struct DriverEntry;
+
+namespace gtl {
+
+class IInputDevice {
 public:
-    int unk_0; // 0x0: gtl_IInputDevice_Ctor initializes to 1
-    void* vtbl; // 0x4: gtl_IInputDevice_Ctor installs __vt__Q23gtl12IInputDevice
-    int activeChannel; // 0x8: channel copied from state by RefreshDriverState; 5 = unavailable; ReadState passes it to the driver
-    void* provider; // 0xc: gtl_IInputDevice_RefreshDriverState passes to InputDriver_GetByProviderId
-    void* state; // 0x10: gtl_IInputDevice_RefreshDriverState passes to device vfunc_6
-    void* descriptor; // 0x14: gtl_IInputDevice_ResolveItemHandle treats as descriptor; gtl_IInputDevice_SetDescriptor writes an integer
-    unsigned int handles[256]; // 0x18: gtl_IInputDevice_Ctor initializes 256 entries; gtl_IInputDevice_ResolveItemHandle indexes them
-    unsigned char motorEnabled; // 0x418: gtl_IInputDevice_RefreshDriverState passes to device vfunc_9
+    // Creation and destruction
+    static int Create(const DriverEntry* entry, void** destination);
+    void Init(const unsigned int* providerAndChannel);
+    void* Destroy(int deleting);
+
+    // Driver queries
+    int RefreshDriverState();
+    int SetDescriptor(int value);
+    void* EnumerateItems(void* a, void* b);
+    int ReadState(unsigned int stateBytes, unsigned int outputAddress);
+    int ResolveItemHandle(void** handleOut, void* itemQuery);
+    int ReadItemDataByKind(int valueKind, void* queryAndValue);
+    int GetDeviceResult(int* resultOut);
+    int GetProviderId(int* providerOut);
+
+    int unk_0;                  // 0x0: set to 1 by Init
+    void* vtbl;                 // 0x4: installed by Init
+    int activeChannel;          // 0x8: channel copied from state by RefreshDriverState; 5 = unavailable
+    void* provider;             // 0xc: passed to InputDriver_GetByProviderId
+    void* state;                // 0x10: controller channel handed to the driver by RefreshDriverState
+    void* descriptor;           // 0x14: installed by SetDescriptor; ResolveItemHandle reads it as a descriptor
+    unsigned int handles[256];  // 0x18: provider handle per descriptor item
+    unsigned char motorEnabled; // 0x418: motor request, re-sent by RefreshDriverState
     char pad_419[0x3];
-    void* deviceResult; // 0x41c: gtl_IInputDevice_RefreshDriverState stores result of device vfunc_6
+    void* deviceResult; // 0x41c: result of the last driver sample count
 };
 
-#define OFF(f, o) typedef char GtlInputDevice_off_##f[((int)&((GtlInputDevice*)0)->f == (o)) ? 1 : -1]
+} // namespace gtl
+
+#define OFF(f, o) typedef char GtlInputDevice_off_##f[((int)&((gtl::IInputDevice*)0)->f == (o)) ? 1 : -1]
 OFF(unk_0, 0x0);
 OFF(vtbl, 0x4);
 OFF(activeChannel, 0x8);
@@ -28,5 +49,6 @@ OFF(handles, 0x18);
 OFF(motorEnabled, 0x418);
 OFF(deviceResult, 0x41c);
 #undef OFF
+typedef char GtlInputDevice_size[(sizeof(gtl::IInputDevice) == 0x420) ? 1 : -1];
 
 #endif

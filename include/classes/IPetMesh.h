@@ -5,11 +5,11 @@
 
 struct IPetMesh {
     unsigned int referenceCount; // 0x0
-    void* vtbl; // 0x4
-    unsigned int unk_8; // 0x8
-    void* resource; // 0xC
-    void* groups; // 0x10
-    unsigned int groupCount; // 0x14
+    void* vtbl;                  // 0x4
+    unsigned int unk_8;          // 0x8
+    void* resource;              // 0xC
+    void* groups;                // 0x10
+    unsigned int groupCount;     // 0x14
 };
 
 #define OFF(f, o) typedef char IPetMesh_off_##f[((int)&((IPetMesh*)0)->f == (o)) ? 1 : -1]

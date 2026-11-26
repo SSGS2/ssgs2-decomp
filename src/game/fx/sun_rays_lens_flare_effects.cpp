@@ -1,8 +1,11 @@
+// Sun disc, sun rays and lens-flare effects: their course resources, phase advance, and drawing.
+// The item window (CItemWindow) and letter (CLetter) actors are registered and cleaned up here too.
+
 #include <decomp/static_init.h>
 // Course sun disc / sun rays / lens-flare resources and drawing (0x80192C70),
 // plus CItemWindow registration/destruction and CLetter initialization/cleanup.
 // CPvsFxBox in pvsfxbox_sky_and_wind_particles.cpp owns the auxiliary effect and supplies direction + dt.
-// Mod lookup (float pools: u80192C70_data.cpp; preserve exact stored precision):
+// Mod lookup (float pools: the data section; preserve exact stored precision):
 // - Sun rays OFF: PvsFxAuxiliaryResources_Draw phase4 emits five rotating accent
 //   disc and lens flares. A future edit must decide whether to keep RNG draws too:
 //   five rand() calls here affect later users of the shared C RNG.
@@ -65,27 +68,33 @@
 #include "game/singletons.h"
 #include "game/wvector.h"
 #include "game/types.h"
+#include "classes/CBpCtrl.h"
+#include "classes/W3dSpr.h"
 enum CourseEffectResourceLayout {
-    kCourseOverlayCount = 2, kCourseSpriteCount = 4,
-    kOverlayHandleArrayBytes = 8, kSpriteHandleArrayBytes = 16,
+    kCourseOverlayCount = 2,
+    kCourseSpriteCount = 4,
+    kOverlayHandleArrayBytes = 8,
+    kSpriteHandleArrayBytes = 16,
     kCourseOverlayDrawOptions = 0x2200 // WOverlay_SetCoordMode -> WOverlay::coordMode
 };
 static const unsigned int kFloatSignBit = 0x80000000u;
 static const unsigned int kWhiteRgbBits = 0x00FFFFFFu;
-// Translation unit 0x80192C70-0x80193E80 (13 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
 // Views of course selection bytes currently covered by padding in the shared headers.
 struct CourseResourceSelection {
-    char reserved0[0x9C6]; unsigned char weatherVariant;
-    char reserved9C7[0x1D]; char courseResourceName[0x20];
+    char reserved0[0x9C6];
+    unsigned char weatherVariant;
+    char reserved9C7[0x1D];
+    char courseResourceName[0x20];
 };
 // +0x3B7 is a course-file hole number (golf_bg_hole_resources.cpp), not currentHoleIndex at +0x3B6.
 // The +0x3B7 byte is the displayed hole number used in resource paths.
-struct CourseHoleSelection { char reserved0[0x3B7]; unsigned char holeNumber; };
-
+struct CourseHoleSelection {
+    char reserved0[0x3B7];
+    unsigned char holeNumber;
+};
 
 extern float s_letterAngularPeriod;
 extern const float kFloat_6_2831855;
@@ -101,7 +110,7 @@ extern char itemWindowStrings[];
 // Four native big-endian float words: base8, center1.5, outer1.5, accent1.
 // Definition remains in the split original .rodata, address 0x8046E850.
 extern unsigned int kCourseEffectSpriteDimensionScaleWords[];
-void IntPair_Set(void*, const char*, void*);
+void* IntPair_Set(void*, const char*, void*);
 void* ActorFactoryRegistry_GetInstance();
 void StringMap_SetByName(void*, void*, const char*);
 void CItemWindow_Create();
@@ -109,9 +118,7 @@ void* TaskRegistry_GetInstance();
 void TaskRegistry_AppendFactory(void*, const char*);
 void Object_DeleteVirtual(void*, void*);
 void ResourceManager_DeleteResource(void*, void*);
-void CBpCtrl_DeleteEntryById(void*, int);
 void __dl__FPv(void*);
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor();
 void __register_global_object(void*, void*, void*);
 void OverlayMapTree_FreeSubtree(void*, void*);
@@ -131,15 +138,12 @@ int ResourceManager_GetBitmapHeight(void*, int);
 void ResourceManager_ReleaseId(void*, int);
 void __as__7WVectorFRC7WVector(void*, void*);
 void Normalize__7WVectorFv(void*);
-void W3dSpr_SetColor(void*, unsigned int);
 void __ml__FRC7WVectorf(void*, void*, float);
 void __pl__FRC7WVectorRC7WVector(void*, void*, void*);
 void __as__7WVectorFRC7WVector(void*, void*);
-void Matrix_TransformPoint(void*, void*, void*);
+void* Matrix_TransformPoint(void*, void*, void*);
 void WView_ProjectViewPoint(void*, void*, void*, int);
 void Camera_SetClip(void*, float, float, int);
-void W3dSpr_SetPos(void*, void*);
-void W3dSpr_SetRect(void*, float, float, float, float);
 void Billboard_DrawOrientedQuad(void*, void*, unsigned int, int);
 void Particle_DrawRotatedBillboard(void*, void*, float, unsigned int);
 int rand();
@@ -165,7 +169,12 @@ extern const float kFloat_60_ItemEffects;
 extern const float kCourseFlareReferenceViewportWidth;
 extern const float kCourseFlareSizeJitterDivisor;
 extern void* g_sharedDoc;
-struct FlareHighlight { unsigned int overlayIndex; float centerOffsetFactor; float widthFraction; unsigned int tintARGB; };
+struct FlareHighlight {
+    unsigned int overlayIndex;
+    float centerOffsetFactor;
+    float widthFraction;
+    unsigned int tintARGB;
+};
 // Seven 0x10-byte runtime rows at .data 0x804AF238, not serialized pointers:
 // (overlay index, signed center-offset multiplier, viewport size fraction, ARGB).
 // Baseline (index,pos,size): (0,.5,.03),(0,.4,.05),(0,.2,.032),
@@ -196,12 +205,23 @@ void CItemWindow_RegisterType() {
     TaskRegistry_AppendFactory(object, s_itemWindowTaskFactoryName);
 }
 
-struct OverlayTreeNode { OverlayTreeNode* left; OverlayTreeNode* right; };
-struct LetterListNode { void* object; char payload[8]; LetterListNode* previous; LetterListNode* next; };
+struct OverlayTreeNode {
+    OverlayTreeNode* left;
+    OverlayTreeNode* right;
+};
+struct LetterListNode {
+    void* object;
+    char payload[8];
+    LetterListNode* previous;
+    LetterListNode* next;
+};
 
-struct Obj_80192FFC { char reserved00[0x14]; void* first[2]; };
+struct Obj_80192FFC {
+    char reserved00[0x14];
+    void* first[2];
+};
 
-extern void IntPair_Set(void*, const char*, void*);
+extern void* IntPair_Set(void*, const char*, void*);
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -216,7 +236,7 @@ Obj_80192FFC* PvsFxAuxiliaryResources_Dtor(Obj_80192FFC* self, int destroy) {
         while (i < kCourseOverlayCount) {
             void* manager = g_resourceManager;
             if (manager != 0) {
-            void* node = AsOwnedResources80192FFC(p)->firstResource;
+                void* node = AsOwnedResources80192FFC(p)->firstResource;
                 if (node != 0) {
                     Object_DeleteVirtual(manager, node);
                     AsOwnedResources80192FFC(p)->firstResource = (void*)zero;
@@ -239,7 +259,8 @@ Obj_80192FFC* PvsFxAuxiliaryResources_Dtor(Obj_80192FFC* self, int destroy) {
             ++j;
             q += 4;
         }
-        if (destroy > 0) __dl__FPv(self);
+        if (destroy > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -248,12 +269,22 @@ Obj_80192FFC* PvsFxAuxiliaryResources_Dtor(Obj_80192FFC* self, int destroy) {
 struct WInstanceLock {
     void* p;
     // Acquire the borrowed name-hash mutex for this scope.
-    WInstanceLock(void* pp) : p(pp) { OSLockMutex(pp); }
+    WInstanceLock(void* pp) : p(pp) {
+        OSLockMutex(pp);
+    }
     // Release the mutex acquired by this scope guard.
-    ~WInstanceLock() { OSUnlockMutex(p); }
+    ~WInstanceLock() {
+        OSUnlockMutex(p);
+    }
 };
 
-struct Obj_80193A74 { char reserved00[8]; void* head; char reserved0c[0x10]; void* owned; char listMutex[0x20]; };
+struct Obj_80193A74 {
+    char reserved00[8];
+    void* head;
+    char reserved0c[0x10];
+    void* owned;
+    char listMutex[0x20];
+};
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -262,28 +293,30 @@ struct Obj_80193A74 { char reserved00[8]; void* head; char reserved0c[0x10]; voi
 Obj_80193A74* dtor_80193A74(Obj_80193A74* self, int destroy) {
     if (self != 0) {
         {
-        WInstanceLock lock((char*)self + (int)&((Obj_80193A74*)0)->listMutex);
-        if (self->head != 0) {
-            void* newHead;
-            void* lockPtr = (char*)self + (int)&((Obj_80193A74*)0)->listMutex;
-            void* node;
-            while ((node = self->head) != 0) {
-                OSLockMutex(lockPtr);
-                ((LetterListNode*)node)->next->previous = ((LetterListNode*)node)->previous;
-                ((LetterListNode*)node)->previous->next = ((LetterListNode*)node)->next;
-                newHead = ((LetterListNode*)node)->next;
-                if (newHead == node) newHead = 0;
-                OSUnlockMutex(lockPtr);
-                self->head = newHead;
-                appFreeUni__FPv(node);
+            WInstanceLock lock((char*)self + (int)&((Obj_80193A74*)0)->listMutex);
+            if (self->head != 0) {
+                void* newHead;
+                void* lockPtr = (char*)self + (int)&((Obj_80193A74*)0)->listMutex;
+                void* node;
+                while ((node = self->head) != 0) {
+                    OSLockMutex(lockPtr);
+                    ((LetterListNode*)node)->next->previous = ((LetterListNode*)node)->previous;
+                    ((LetterListNode*)node)->previous->next = ((LetterListNode*)node)->next;
+                    newHead = ((LetterListNode*)node)->next;
+                    if (newHead == node)
+                        newHead = 0;
+                    OSUnlockMutex(lockPtr);
+                    self->head = newHead;
+                    appFreeUni__FPv(node);
+                }
+            }
+            if (self->owned != 0) {
+                appFreeUni__FPv(self->owned);
+                self->owned = 0;
             }
         }
-        if (self->owned != 0) {
-            appFreeUni__FPv(self->owned);
-            self->owned = 0;
-        }
-        }
-        if (destroy > 0) __dl__FPv(self);
+        if (destroy > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -306,7 +339,8 @@ struct Obj_80193B4C {
 // +0x5C is fade DURATION, not a dimensionless scale;
 // see the lookup above. dt comes from main-frame reciprocal updates-per-second
 // (main_frame_letter_and_mouse_cursor.cpp), so .5 and the blink thresholds share seconds. Resources are untouched.
-void CLetter_OnPreLoadInit(Obj_80193B4C* self) {
+void CLetter::OnPreLoadInit() {
+    Obj_80193B4C* self = (Obj_80193B4C*)this;
     self->messageFadeDurationSeconds = kFloat_0_5_Rival;
     self->messageDisplayEnabled = 1;
     self->replayBlinkTimer = kFloat_0_Letter;
@@ -343,7 +377,8 @@ struct Obj_80193B68 {
 // reset chooses no known script, zero value/counter and alignment 2=right. It
 // does not clear currentMessage, alpha, .5s duration, elapsed blink or resources;
 // resource loading/SHOW must establish them before drawing. No message is sent.
-void CLetter_OnInit(Obj_80193B68* self) {
+void CLetter::OnInit() {
+    Obj_80193B68* self = (Obj_80193B68*)this;
     float zero = kFloat_0_Letter;
     self->messageState = 0;
     self->textAlignment = 2;
@@ -352,7 +387,7 @@ void CLetter_OnInit(Obj_80193B68* self) {
     self->completedScriptHoldUpdates = 0;
 }
 
-struct Obj_80193964 {
+struct LetterView {
     void* vtable;
     char actorHeader[4];
     int displayPriority;
@@ -375,7 +410,8 @@ struct Obj_80193964 {
 };
 
 // Initialize the letter actor, its mutex-protected name hash and resource handles.
-Obj_80193964* CLetter_Ctor(Obj_80193964* self) {
+CLetter::CLetter() {
+    LetterView* self = (LetterView*)this;
     __ct__18NativeBase80201D18Fv(self);
     int zero = 0;
     self->currentMessage = zero;
@@ -410,15 +446,14 @@ Obj_80193964* CLetter_Ctor(Obj_80193964* self) {
     self->displayPriority = 4;
     // IActor_Skipped (task_registry_actor_and_debug_text.cpp) tests actor.skipMask against *g_actorSkipMask.
     // Golf-task setup (golf_task_loading_and_pause.cpp) points that global at CGolfDoc.gameStateFlags;
-    // 0x2000 is the hole-results state (CGolfRule_EnterState, golf_rule_round_flow_and_shot_sim.cpp). This
+    // 0x2000 is the hole-results state (CGolfRule::EnterState, golf_rule_round_flow_and_shot_sim.cpp). This
     // opts the letter actor into scheduler skipping during results; it neither
     // clears a letter nor changes its local messageState. Outside golf the
     // global may be null, in which case this bit alone never skips the actor.
     IActor_AddSkipFlags(self, 0x2000);
-    return self;
 }
 
-struct VObj_801930BC {
+struct WOverlayView {
     virtual void Vfn0(); // +08: uncalled destructor slot
     virtual void setDrawingOptions(int);
     // +0C: WOverlay_SetCoordMode stores coordMode
@@ -448,7 +483,7 @@ void PvsFxAuxiliaryResources_LoadCourseParameters(Obj_801930BC* self, void* arg)
     dimensionScaleWords[3] = *dimensionScaleSource++;
     for (unsigned int i = 0; i < kCourseOverlayCount; ++i) {
         self->resource[i] = WOverlay_Create(g_resourceManager, s_courseEffectOverlayNames[i], 0);
-        ((VObj_801930BC*)self->resource[i])->setDrawingOptions(kCourseOverlayDrawOptions);
+        ((WOverlayView*)self->resource[i])->setDrawingOptions(kCourseOverlayDrawOptions);
     }
     Obj_801930BC* spriteSlotCursor = self;
     const char** spriteNameCursor = s_courseEffectSpriteNames;
@@ -462,7 +497,8 @@ void PvsFxAuxiliaryResources_LoadCourseParameters(Obj_801930BC* self, void* arg)
         int height = ResourceManager_GetBitmapHeight(g_resourceManager, handle);
         dimensionSlotCursor->dimensions[0] = w;
         dimensionSlotCursor->dimensions[1] = *dimensionScaleCursor * (float)height;
-        if (g_resourceManager != 0 && handle != 0) ResourceManager_ReleaseId(g_resourceManager, handle);
+        if (g_resourceManager != 0 && handle != 0)
+            ResourceManager_ReleaseId(g_resourceManager, handle);
         ++spriteNameCursor;
         spriteSlotCursor = (Obj_801930BC*)((char*)spriteSlotCursor + 4);
         ++dimensionScaleCursor;
@@ -483,20 +519,23 @@ void PvsFxAuxiliaryResources_LoadCourseParameters(Obj_801930BC* self, void* arg)
     int outerAlphaByte = (int)outerScaledAlpha;
     unsigned int packedAlphaBits = (unsigned int)outerAlphaByte << 24;
     unsigned int color = packedAlphaBits | kWhiteRgbBits;
-    W3dSpr_SetColor((void*)outerSpriteHandle, color);
+    ((W3dSpr*)outerSpriteHandle)->SetColor(color);
     float accentScaledAlpha = kCourseEffectAlphaByteScale * self->alpha;
     int accentSpriteHandle = (int)self->pane[3];
     int accentAlphaByte = (int)accentScaledAlpha;
     packedAlphaBits = (unsigned int)accentAlphaByte << 24;
     color = packedAlphaBits | kWhiteRgbBits;
-    W3dSpr_SetColor((void*)accentSpriteHandle, color);
+    ((W3dSpr*)accentSpriteHandle)->SetColor(color);
     self->phaseRadians = kFloat_0_TransformedText;
 }
 
 extern const float kCourseAuxiliaryPhaseRadiansPerSecond;
 extern const float kCourseAuxiliaryPhaseWrapRadians;
 
-struct Obj_801932F8 { char reserved00[0xC]; float phaseRadians; };
+struct Obj_801932F8 {
+    char reserved00[0xC];
+    float phaseRadians;
+};
 
 // PvsFxAuxiliaryResources_UpdatePhase: advance sun-ray phase by delta SECONDS.
 // The symbol below keeps its AdvancePhase name. Negative/large deltas
@@ -510,7 +549,9 @@ void PvsFxAuxiliaryResources_AdvancePhase(Obj_801932F8* self, float delta) {
 
 extern void* memset(void*, int, unsigned int);
 
-struct Obj_80192FB0 { char reserved00[0x2C]; };
+struct Obj_80192FB0 {
+    char reserved00[0x2C];
+};
 
 // Clear both arrays of owned overlay/sprite handles.
 Obj_80192FB0* PvsFxAuxiliaryResources_Ctor(Obj_80192FB0* self) {
@@ -522,9 +563,11 @@ Obj_80192FB0* PvsFxAuxiliaryResources_Ctor(Obj_80192FB0* self) {
 // Free both unexpanded child subtrees, then the current overlay-tree node.
 static inline void FreeOverlayNodeAndSubtrees(CItemWindow* self, void* branchNode) {
     void* leftSubtree = ((OverlayTreeNode*)branchNode)->left;
-    if (leftSubtree != 0) OverlayMapTree_FreeSubtree(&self->pad_18, leftSubtree);
+    if (leftSubtree != 0)
+        OverlayMapTree_FreeSubtree(&self->pad_18, leftSubtree);
     void* rightSubtree = ((OverlayTreeNode*)branchNode)->right;
-    if (rightSubtree != 0) OverlayMapTree_FreeSubtree(&self->pad_18, rightSubtree);
+    if (rightSubtree != 0)
+        OverlayMapTree_FreeSubtree(&self->pad_18, rightSubtree);
     appFreeUni__FPv(branchNode);
 }
 
@@ -539,84 +582,83 @@ static inline void FreeOverlayNodeAndSubtrees(CItemWindow* self, void* branchNod
 // overlays were loaded. Direct destruction with live payloads leaks them; this
 // function neither substitutes for OnDestroy nor transfers them to the manager.
 // The normal release path requires the resource manager still to be available.
-CItemWindow* CItemWindow_dtor(CItemWindow* self, int destroy) {
-    // Phases: free overlay-tree nodes in postorder, destroy the actor base,
-    // then optionally delete self. The tree walk does not call a payload destructor.
-    if (self != 0) {
-        // Repeated address guards are emitted nested-member destructor tests.
-        // Keep their control flow; cursors follow the unrolled postorder walk.
-        void *branchCursorA, *branchCursorB, *branchCursorC, *rootNode;
-        if (&self->pad_18 != 0) {
-        if (&self->pad_18 != 0) {
-        if (&self->pad_18 != 0) {
-        if (&self->pad_18 != 0) {
-        if (&self->pad_18 != 0) {
-        if (&self->pad_18 != 0) {
-        rootNode = self->overlayRoot;
-        if (rootNode != 0) {
-            branchCursorC = ((OverlayTreeNode*)rootNode)->left;
-            if (branchCursorC != 0) {
-                branchCursorB = ((OverlayTreeNode*)branchCursorC)->left;
-                if (branchCursorB != 0) {
-                    branchCursorA = ((OverlayTreeNode*)branchCursorB)->left;
-                    if (branchCursorA != 0) {
-                        FreeOverlayNodeAndSubtrees(self, branchCursorA);
+CItemWindow::~CItemWindow() {
+    // Repeated address guards are emitted nested-member destructor tests.
+    // Keep their control flow; cursors follow the unrolled postorder walk.
+    void *branchCursorA, *branchCursorB, *branchCursorC, *rootNode;
+    if (&pad_18 != 0) {
+        if (&pad_18 != 0) {
+            if (&pad_18 != 0) {
+                if (&pad_18 != 0) {
+                    if (&pad_18 != 0) {
+                        if (&pad_18 != 0) {
+                            rootNode = overlayRoot;
+                            if (rootNode != 0) {
+                                branchCursorC = ((OverlayTreeNode*)rootNode)->left;
+                                if (branchCursorC != 0) {
+                                    branchCursorB = ((OverlayTreeNode*)branchCursorC)->left;
+                                    if (branchCursorB != 0) {
+                                        branchCursorA = ((OverlayTreeNode*)branchCursorB)->left;
+                                        if (branchCursorA != 0) {
+                                            FreeOverlayNodeAndSubtrees(this, branchCursorA);
+                                        }
+                                        branchCursorA = ((OverlayTreeNode*)branchCursorB)->right;
+                                        if (branchCursorA != 0) {
+                                            FreeOverlayNodeAndSubtrees(this, branchCursorA);
+                                        }
+                                        appFreeUni__FPv(branchCursorB);
+                                    }
+                                    branchCursorA = ((OverlayTreeNode*)branchCursorC)->right;
+                                    if (branchCursorA != 0) {
+                                        branchCursorB = ((OverlayTreeNode*)branchCursorA)->left;
+                                        if (branchCursorB != 0) {
+                                            FreeOverlayNodeAndSubtrees(this, branchCursorB);
+                                        }
+                                        branchCursorB = ((OverlayTreeNode*)branchCursorA)->right;
+                                        if (branchCursorB != 0) {
+                                            FreeOverlayNodeAndSubtrees(this, branchCursorB);
+                                        }
+                                        appFreeUni__FPv(branchCursorA);
+                                    }
+                                    appFreeUni__FPv(branchCursorC);
+                                }
+                                branchCursorA = ((OverlayTreeNode*)rootNode)->right;
+                                if (branchCursorA != 0) {
+                                    branchCursorB = ((OverlayTreeNode*)branchCursorA)->left;
+                                    if (branchCursorB != 0) {
+                                        branchCursorC = ((OverlayTreeNode*)branchCursorB)->left;
+                                        if (branchCursorC != 0) {
+                                            FreeOverlayNodeAndSubtrees(this, branchCursorC);
+                                        }
+                                        branchCursorC = ((OverlayTreeNode*)branchCursorB)->right;
+                                        if (branchCursorC != 0) {
+                                            FreeOverlayNodeAndSubtrees(this, branchCursorC);
+                                        }
+                                        appFreeUni__FPv(branchCursorB);
+                                    }
+                                    branchCursorB = ((OverlayTreeNode*)branchCursorA)->right;
+                                    if (branchCursorB != 0) {
+                                        branchCursorC = ((OverlayTreeNode*)branchCursorB)->left;
+                                        if (branchCursorC != 0) {
+                                            FreeOverlayNodeAndSubtrees(this, branchCursorC);
+                                        }
+                                        branchCursorC = ((OverlayTreeNode*)branchCursorB)->right;
+                                        if (branchCursorC != 0) {
+                                            FreeOverlayNodeAndSubtrees(this, branchCursorC);
+                                        }
+                                        appFreeUni__FPv(branchCursorB);
+                                    }
+                                    appFreeUni__FPv(branchCursorA);
+                                }
+                                appFreeUni__FPv(rootNode);
+                            }
+                        }
                     }
-                    branchCursorA = ((OverlayTreeNode*)branchCursorB)->right;
-                    if (branchCursorA != 0) {
-                        FreeOverlayNodeAndSubtrees(self, branchCursorA);
-                    }
-                    appFreeUni__FPv(branchCursorB);
                 }
-                branchCursorA = ((OverlayTreeNode*)branchCursorC)->right;
-                if (branchCursorA != 0) {
-                    branchCursorB = ((OverlayTreeNode*)branchCursorA)->left;
-                    if (branchCursorB != 0) {
-                        FreeOverlayNodeAndSubtrees(self, branchCursorB);
-                    }
-                    branchCursorB = ((OverlayTreeNode*)branchCursorA)->right;
-                    if (branchCursorB != 0) {
-                        FreeOverlayNodeAndSubtrees(self, branchCursorB);
-                    }
-                    appFreeUni__FPv(branchCursorA);
-                }
-                appFreeUni__FPv(branchCursorC);
             }
-            branchCursorA = ((OverlayTreeNode*)rootNode)->right;
-            if (branchCursorA != 0) {
-                branchCursorB = ((OverlayTreeNode*)branchCursorA)->left;
-                if (branchCursorB != 0) {
-                    branchCursorC = ((OverlayTreeNode*)branchCursorB)->left;
-                    if (branchCursorC != 0) {
-                        FreeOverlayNodeAndSubtrees(self, branchCursorC);
-                    }
-                    branchCursorC = ((OverlayTreeNode*)branchCursorB)->right;
-                    if (branchCursorC != 0) {
-                        FreeOverlayNodeAndSubtrees(self, branchCursorC);
-                    }
-                    appFreeUni__FPv(branchCursorB);
-                }
-                branchCursorB = ((OverlayTreeNode*)branchCursorA)->right;
-                if (branchCursorB != 0) {
-                    branchCursorC = ((OverlayTreeNode*)branchCursorB)->left;
-                    if (branchCursorC != 0) {
-                        FreeOverlayNodeAndSubtrees(self, branchCursorC);
-                    }
-                    branchCursorC = ((OverlayTreeNode*)branchCursorB)->right;
-                    if (branchCursorC != 0) {
-                        FreeOverlayNodeAndSubtrees(self, branchCursorC);
-                    }
-                    appFreeUni__FPv(branchCursorB);
-                }
-                appFreeUni__FPv(branchCursorA);
-            }
-            appFreeUni__FPv(rootNode);
         }
-        } } } } } }
-        __dt__18NativeBase80201D18Fv(self, 0);
-        if (destroy > 0) __dl__FPv(self);
     }
-    return self;
+    __dt__18NativeBase80201D18Fv(this, 0);
 }
 #pragma pop
 
@@ -624,7 +666,7 @@ CItemWindow* CItemWindow_dtor(CItemWindow* self, int destroy) {
 #pragma use_lmw_stmw on
 #pragma opt_common_subs off
 // Advance the circular message-list iterator under the name-hash mutex.
-static inline void* Next_80193B8C(Obj_80193964* self) {
+static inline void* Next_80193B8C(LetterView* self) {
     void* lp = ((CLetter*)self)->nameHashMutex;
     void* item;
     OSLockMutex(lp);
@@ -632,7 +674,8 @@ static inline void* Next_80193B8C(Obj_80193964* self) {
     if (node != 0) {
         unsigned int nx = (unsigned int)node->next;
         item = node->object;
-        if (nx == (unsigned int)self->activeHead) nx = 0;
+        if (nx == (unsigned int)self->activeHead)
+            nx = 0;
         self->iterator = nx;
         OSUnlockMutex(lp);
     } else {
@@ -654,7 +697,7 @@ struct Item_80193B8C {
 };
 
 // Reset the message-list iterator and return its first object.
-static inline void* First_80193B8C(Obj_80193964* self) {
+static inline void* First_80193B8C(LetterView* self) {
     WInstanceLock lock0(((CLetter*)self)->nameHashMutex);
     self->iterator = self->activeHead;
     return Next_80193B8C(self);
@@ -675,14 +718,15 @@ static inline void* First_80193B8C(Obj_80193964* self) {
 // all cached borrowed pointers. A later use requires the load/init lifecycle,
 // not reuse of a pre-destroy iterator or currentMessage. This is a serial actor
 // lifecycle precondition, not a claim that the mutex joins another thread.
-void CLetter_OnDestroy(Obj_80193964* self) {
+void CLetter::OnDestroy() {
+    LetterView* self = (LetterView*)this;
     // Phase 1: unregister the singleton-owned controller entry and release the title font.
     if (self->bpEntryId != -1) {
         void* g = Sing_805DC5F0();
         if (g == 0) {
 
             if (((signed char)s_bpCtrlInitialized) == 0) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_ItemWindow);
                 s_bpCtrlInitialized = 1;
             }
@@ -690,7 +734,7 @@ void CLetter_OnDestroy(Obj_80193964* self) {
         }
         g = Sing_805DC5F0();
 
-        CBpCtrl_DeleteEntryById(g, self->bpEntryId);
+        ((CBpCtrl*)g)->DeleteEntryById(self->bpEntryId);
         self->bpEntryId = -1;
     }
     if (self->titleFont != 0) {
@@ -718,7 +762,8 @@ void CLetter_OnDestroy(Obj_80193964* self) {
         payloadWrapper = Next_80193B8C(self);
     }
     // Phase 3: splice the active ring into the free ring, or recycle one node at a time.
-    { WInstanceLock lock1(((CLetter*)self)->nameHashMutex);  
+    {
+        WInstanceLock lock1(((CLetter*)self)->nameHashMutex);
         int activeRingHead = self->activeHead;
 
         if (activeRingHead != 0 && self->freeHead != 0) {
@@ -728,9 +773,11 @@ void CLetter_OnDestroy(Obj_80193964* self) {
             void* freeHeadNode = (void*)self->freeHead;
             (*(int*)&((LetterListNode*)activeTailNode)->next) = ((*(int*)&((LetterListNode*)freeHeadNode)->next));
 
-            void* activeHeadForTail = (void*)self->activeHead; void* freeHeadForTail = (void*)self->freeHead;
+            void* activeHeadForTail = (void*)self->activeHead;
+            void* freeHeadForTail = (void*)self->freeHead;
 
-            (*(int*)&((LetterListNode*)freeHeadForTail)->next->previous) = ((*(int*)&((LetterListNode*)activeHeadForTail)->previous));
+            (*(int*)&((LetterListNode*)freeHeadForTail)->next->previous) =
+                ((*(int*)&((LetterListNode*)activeHeadForTail)->previous));
 
             void* freeHeadForSplice = (void*)self->freeHead;
             void* activeHeadForSplice = (void*)self->activeHead;
@@ -749,7 +796,8 @@ void CLetter_OnDestroy(Obj_80193964* self) {
                 ((LetterListNode*)recycledNode)->next->previous = ((LetterListNode*)recycledNode)->previous;
                 ((LetterListNode*)recycledNode)->previous->next = ((LetterListNode*)recycledNode)->next;
                 nextActiveHead = ((LetterListNode*)recycledNode)->next;
-                if (nextActiveHead == recycledNode) nextActiveHead = 0;
+                if (nextActiveHead == recycledNode)
+                    nextActiveHead = 0;
                 OSUnlockMutex(listMutex);
                 recycledNode = (void*)self->activeHead;
                 freeRingHead = (void*)self->freeHead;
@@ -793,18 +841,29 @@ typedef Vec3f Vec3_80193320;
 // Text's 0x00C00000 adds 0x00400000 (queued primitive) to additive alpha.
 // Facing 0 looks toward the eye; 2 uses the camera axes (w3d_sprite_and_billboard.cpp).
 enum CourseEffectDrawOptions {
-    kCourseEffectAdditiveAlpha = 0x00800000, kCourseEffectLatePass = 0x00300000,
+    kCourseEffectAdditiveAlpha = 0x00800000,
+    kCourseEffectLatePass = 0x00300000,
     kCourseEffectReplayPass = 0x20000000,
     kCourseEffectLayerFlags = kCourseEffectReplayPass | kCourseEffectAdditiveAlpha,
     kCourseEffectBaseFlags = kCourseEffectLayerFlags | kCourseEffectLatePass,
-    kCourseEffectFlareFlags = 0x00C00000, kCourseEffectWeatherTint = 0xFF505050u,
-    kCourseEffectFaceEye = 0, kCourseEffectUseViewAxes = 2,
-    kAccentCount = 5, kHighlightCount = 7,
-    kAccentJitterRange = 800, kAccentJitterCenter = 400,
+    kCourseEffectFlareFlags = 0x00C00000,
+    kCourseEffectWeatherTint = 0xFF505050u,
+    kCourseEffectFaceEye = 0,
+    kCourseEffectUseViewAxes = 2,
+    kAccentCount = 5,
+    kHighlightCount = 7,
+    kAccentJitterRange = 800,
+    kAccentJitterCenter = 400,
     kHighlightJitterRange = 500 // positive-only jitter, no centering subtraction
 };
-struct TextPoint_80193320 { float x, y, z, w; };
-struct Proj_80193320 { float x, y, z; float pad[9]; double d; };
+struct TextPoint_80193320 {
+    float x, y, z, w;
+};
+struct Proj_80193320 {
+    float x, y, z;
+    float pad[9];
+    double d;
+};
 struct Cam_80193320 {
     char pad0[0x178];
     float nearClip;
@@ -817,26 +876,28 @@ struct Self_80193320 {
     float normalizedDirectionX, normalizedDirectionY, normalizedDirectionZ;
     float phaseRadians; // Same +0x0C word written by PvsFxAuxiliaryResources_AdvancePhase.
     char pad10[0x4];
-    void* overlays[2]; // Same owned handles as Obj_801930BC::resource, not text strings.
-    void* baseSprite; // Base billboard; late pass, doubled dimensions, camera axes.
-    void* centerSprite; // Center billboard; also used for the weather-tinted variant.
-    void* outerSprite; // Outer billboard; doubled dimensions.
-    void* accentSprite; // Rotating accent billboard; reused for five draws.
-    float baseWidthWorld, baseHeightWorld; // +0x2C: world units
+    void* overlays[2];                         // Same owned handles as Obj_801930BC::resource, not text strings.
+    void* baseSprite;                          // Base billboard; late pass, doubled dimensions, camera axes.
+    void* centerSprite;                        // Center billboard; also used for the weather-tinted variant.
+    void* outerSprite;                         // Outer billboard; doubled dimensions.
+    void* accentSprite;                        // Rotating accent billboard; reused for five draws.
+    float baseWidthWorld, baseHeightWorld;     // +0x2C: world units
     float centerWidthWorld, centerHeightWorld; // +0x34: world units
-    float outerWidthWorld, outerHeightWorld; // +0x3C: world units
+    float outerWidthWorld, outerHeightWorld;   // +0x3C: world units
     float accentWidthWorld, accentHeightWorld; // +0x44: world units
 };
 
 // Set the outer layer's doubled dimensions with a centered world-space pivot.
-static inline void SetCourseEffectOuterSize(Self_80193320* self, float two) {
+static inline void SetCourseEffectOuterSize(Self_80193320* self, float doubleFactor) {
     {
         float storedOuterWidth = self->outerWidthWorld;
-        float outerScaledWidth = storedOuterWidth * two; 
+        float outerScaledWidth = storedOuterWidth * doubleFactor;
         void* outerSprite = self->outerSprite;
         float storedOuterHeight = self->outerHeightWorld;
-        float outerScaledHeight = storedOuterHeight * two;
-        W3dSpr_SetRect(outerSprite, outerScaledWidth, outerScaledHeight, kFloat_0_5_LetterSprite * outerScaledWidth, kFloat_0_5_LetterSprite * outerScaledHeight);
+        float outerScaledHeight = storedOuterHeight * doubleFactor;
+        ((W3dSpr*)outerSprite)
+            ->SetRect(outerScaledWidth, outerScaledHeight, kFloat_0_5_LetterSprite * outerScaledWidth,
+                      kFloat_0_5_LetterSprite * outerScaledHeight);
     }
 }
 
@@ -846,8 +907,8 @@ static inline void SetCourseEffectOuterSize(Self_80193320* self, float two) {
 // IMPORTANT legacy boundary: outerWidthWorld/outerHeightWorld are cached WORLD
 // sprite sizes, but the
 // existing renderer uses their numeric values as PIXEL margins without a
-// projection. This adapter names that interpretation at its only conversion
-// boundary; it does not claim a physical world-to-pixel conversion. For a later
+// projection. This adapter keeps that reading in one place and does not
+// claim a physical world-to-pixel mapping. For a later
 // mod, replace both horizontal edges together, and both vertical edges together
 // here. Leave billboard W3dSpr sizes in world units. Keep the short-circuit
 // calculation order: eagerly constructing a rectangle changes FP evaluation.
@@ -856,9 +917,11 @@ static inline void SetCourseEffectOuterSize(Self_80193320* self, float two) {
 // Expression adapter keeps short-circuit branches in the draw operation: an
 // int-returning inline predicate materializes a Boolean and adds instructions.
 // Arguments here must be side-effect-free local pointers/scalars.
-#define IsOutsideAccentCullingRectanglePx(self, camera, screenX, screenY) \
-    ((screenX) < kCourseEffectSpriteCullingMargin * -(self)->outerWidthWorld || (screenX) > kCourseEffectSpriteCullingMargin * (self)->outerWidthWorld + (camera)->w || \
-     (screenY) < kCourseEffectSpriteCullingMargin * -(self)->outerHeightWorld || (screenY) > kCourseEffectSpriteCullingMargin * (self)->outerHeightWorld + (camera)->h)
+#define IsOutsideAccentCullingRectanglePx(self, camera, screenX, screenY)                    \
+    ((screenX) < kCourseEffectSpriteCullingMargin * -(self)->outerWidthWorld ||              \
+     (screenX) > kCourseEffectSpriteCullingMargin * (self)->outerWidthWorld + (camera)->w || \
+     (screenY) < kCourseEffectSpriteCullingMargin * -(self)->outerHeightWorld ||             \
+     (screenY) > kCourseEffectSpriteCullingMargin * (self)->outerHeightWorld + (camera)->h)
 
 // Project the course effect, cull layers, draw billboards and seven jittered flare overlays.
 // Place the effect 1000 world units along its stored direction from camera position.
@@ -867,7 +930,8 @@ static inline void SetCourseEffectOuterSize(Self_80193320* self, float two) {
 // Controls sun-disc/ray/flare visibility and sizing. Preserve five conditional
 // accent RNG calls followed by seven highlight RNG calls, the signed view-Z test,
 // strict weather-branch edges and normal-branch inclusive edges. No handles escape.
-void PvsFxAuxiliaryResources_Draw(Self_80193320* self, Cam_80193320* camera) { Vec3_80193320 viewPosition; 
+void PvsFxAuxiliaryResources_Draw(Self_80193320* self, Cam_80193320* camera) {
+    Vec3_80193320 viewPosition;
 
     // Dimension loads retain their original order around rendering calls;
     // layer extents are world units and flare rectangles are viewport pixels.
@@ -875,23 +939,30 @@ void PvsFxAuxiliaryResources_Draw(Self_80193320* self, Cam_80193320* camera) { V
     TextPoint_80193320 textureRect;
     TextPoint_80193320 screenRect;
     float matrix0[4];
-    Vec3_80193320 a;
-    __ml__FRC7WVectorf(&a, self, kFloat_1000_CourseAuxiliary);
-    __pl__FRC7WVectorRC7WVector(matrix0, (char*)&AsWView(camera)->viewMatrix[9] /* 0x68: affine translation */, &a);
+    Vec3_80193320 scaledDirection;
+    __ml__FRC7WVectorf(&scaledDirection, self, kFloat_1000_CourseAuxiliary);
+    __pl__FRC7WVectorRC7WVector(matrix0, (char*)&AsWView(camera)->viewMatrix[9] /* 0x68: affine translation */,
+                                &scaledDirection);
     *(WVector*)&worldPosition = *(WVector*)matrix0;
     Vec3_80193320 viewPositionCopy;
-    Matrix_TransformPoint(&viewPositionCopy, &worldPosition, (char*)AsWView(camera)->inputTransform /* 0x14: PvsFxAuxiliaryResources_Draw */);
+    Matrix_TransformPoint(&viewPositionCopy, &worldPosition,
+                          (char*)AsWView(camera)->inputTransform /* 0x14: PvsFxAuxiliaryResources_Draw */);
     *(WVector*)&viewPosition = *(WVector*)&viewPositionCopy;
-    Proj_80193320 projected; WView_ProjectViewPoint(camera, &projected, &viewPosition, 1);
-    if (!(viewPosition.z < kFloat_0_TransformedText)) return;
-    float two;
-    float projectedY = projected.y; float oldFar;
+    Proj_80193320 projected;
+    WView_ProjectViewPoint(camera, &projected, &viewPosition, 1);
+    if (!(viewPosition.z < kFloat_0_TransformedText))
+        return;
+    float doubleFactor;
+    float projectedY = projected.y;
+    float oldFar;
     float screenY = projectedY;
     float oldNear;
     float savedX = projected.x;
     float screenX = savedX;
-    if (screenX < kCourseEffectViewportMargin1_4 * -camera->w || screenX > camera->w * kCourseEffectOuterViewportMaximumFactor ||
-        screenY < kCourseEffectViewportMargin1_4 * -camera->h || screenY > camera->h * kCourseEffectOuterViewportMaximumFactor) {
+    if (screenX < kCourseEffectViewportMargin1_4 * -camera->w ||
+        screenX > camera->w * kCourseEffectOuterViewportMaximumFactor ||
+        screenY < kCourseEffectViewportMargin1_4 * -camera->h ||
+        screenY > camera->h * kCourseEffectOuterViewportMaximumFactor) {
         return;
     }
     textureRect.y = kFloat_0_TransformedText;
@@ -902,47 +973,60 @@ void PvsFxAuxiliaryResources_Draw(Self_80193320* self, Cam_80193320* camera) { V
     oldNear = camera->nearClip;
     oldFar = camera->farClip;
     Camera_SetClip(camera, kItemEffectCameraNearClip, kFloat_100000_ItemEffects, 0);
-    two = kFloat_2_ItemEffects;
+    doubleFactor = kFloat_2_ItemEffects;
     // Phase 2: weather variant draws only the dark center layer inside the tighter bounds.
     if (((CourseResourceSelection*)g_sharedDoc)->weatherVariant) {
-        if (screenX > kCourseEffectInnerViewportNegativeMargin * -camera->w) { if (screenX < camera->w * kCourseEffectViewportMargin1_4) { if (screenY > kCourseEffectInnerViewportNegativeMargin * -camera->h) { if (screenY < camera->h * kCourseEffectViewportMargin1_4) {
-            void* savedPane = self->centerSprite;
-            W3dSpr_SetColor(savedPane, kCourseEffectWeatherTint);
-            W3dSpr_SetPos(self->centerSprite, &worldPosition);
-            float savedW = kFloat_0_5_LetterSprite * self->centerWidthWorld;
-            float layerHeight = self->centerHeightWorld;
-            float layerPivotY = kFloat_0_5_LetterSprite * self->centerHeightWorld;
-            float savedW2 = self->centerWidthWorld;
-            W3dSpr_SetRect(self->centerSprite, savedW2, layerHeight, savedW, layerPivotY);
-            Billboard_DrawOrientedQuad(self->centerSprite, camera, kCourseEffectLayerFlags, kCourseEffectFaceEye);
-        } } } }
+        if (screenX > kCourseEffectInnerViewportNegativeMargin * -camera->w) {
+            if (screenX < camera->w * kCourseEffectViewportMargin1_4) {
+                if (screenY > kCourseEffectInnerViewportNegativeMargin * -camera->h) {
+                    if (screenY < camera->h * kCourseEffectViewportMargin1_4) {
+                        void* savedPane = self->centerSprite;
+                        ((W3dSpr*)savedPane)->SetColor(kCourseEffectWeatherTint);
+                        ((W3dSpr*)(self->centerSprite))->SetPos(&worldPosition);
+                        float savedW = kFloat_0_5_LetterSprite * self->centerWidthWorld;
+                        float layerHeight = self->centerHeightWorld;
+                        float layerPivotY = kFloat_0_5_LetterSprite * self->centerHeightWorld;
+                        float savedW2 = self->centerWidthWorld;
+                        ((W3dSpr*)(self->centerSprite))->SetRect(savedW2, layerHeight, savedW, layerPivotY);
+                        Billboard_DrawOrientedQuad(self->centerSprite, camera, kCourseEffectLayerFlags,
+                                                   kCourseEffectFaceEye);
+                    }
+                }
+            }
+        }
         Camera_SetClip(camera, oldNear, oldFar, 0);
         return;
     }
     // Phase 3: normal variant draws a doubled base layer, a centered layer, then a
     // doubled outer layer. SizeAndPivot arguments are width,height,pivotX,pivotY;
     // all these layers use a half-size pivot. Scalar aliases retain evaluation order.
-    W3dSpr_SetPos(self->baseSprite, &worldPosition);
+    ((W3dSpr*)(self->baseSprite))->SetPos(&worldPosition);
     {
-        float savedValue = self->baseWidthWorld * two;
+        float doubledBaseWidth = self->baseWidthWorld * doubleFactor;
         float baseLayerHeight = self->baseHeightWorld;
-        float h = baseLayerHeight * two;
-        float savedValue2 = kFloat_0_5_LetterSprite * savedValue;
+        float doubledBaseHeight = baseLayerHeight * doubleFactor;
+        float savedValue2 = kFloat_0_5_LetterSprite * doubledBaseWidth;
         void* savedPane1C = self->baseSprite;
-        float savedValue3 = kFloat_0_5_LetterSprite * h;
-        W3dSpr_SetRect(savedPane1C, savedValue, h, savedValue2, savedValue3);
+        float savedValue3 = kFloat_0_5_LetterSprite * doubledBaseHeight;
+        ((W3dSpr*)savedPane1C)->SetRect(doubledBaseWidth, doubledBaseHeight, savedValue2, savedValue3);
     }
     Billboard_DrawOrientedQuad(self->baseSprite, camera, kCourseEffectBaseFlags, kCourseEffectUseViewAxes);
-    if (screenX < kCourseEffectInnerViewportNegativeMargin * -camera->w || screenX > camera->w * kCourseEffectViewportMargin1_4 ||
-        screenY < kCourseEffectInnerViewportNegativeMargin * -camera->h || screenY > camera->h * kCourseEffectViewportMargin1_4) {
+    if (screenX < kCourseEffectInnerViewportNegativeMargin * -camera->w ||
+        screenX > camera->w * kCourseEffectViewportMargin1_4 ||
+        screenY < kCourseEffectInnerViewportNegativeMargin * -camera->h ||
+        screenY > camera->h * kCourseEffectViewportMargin1_4) {
         Camera_SetClip(camera, oldNear, oldFar, 0);
         return;
     }
-    W3dSpr_SetPos(self->centerSprite, &worldPosition);
-    void* centerLayer = self->centerSprite; W3dSpr_SetRect(centerLayer, self->centerWidthWorld, self->centerHeightWorld, kFloat_0_5_LetterSprite * self->centerWidthWorld, kFloat_0_5_LetterSprite * self->centerHeightWorld);
+    ((W3dSpr*)(self->centerSprite))->SetPos(&worldPosition);
+    void* centerLayer = self->centerSprite;
+    ((W3dSpr*)centerLayer)
+        ->SetRect(self->centerWidthWorld, self->centerHeightWorld, kFloat_0_5_LetterSprite * self->centerWidthWorld,
+                  kFloat_0_5_LetterSprite * self->centerHeightWorld);
     Billboard_DrawOrientedQuad(self->centerSprite, camera, kCourseEffectLayerFlags, kCourseEffectUseViewAxes);
-    void* outerLayer = self->outerSprite; W3dSpr_SetPos(outerLayer, &worldPosition);
-    SetCourseEffectOuterSize(self, two);
+    void* outerLayer = self->outerSprite;
+    ((W3dSpr*)outerLayer)->SetPos(&worldPosition);
+    SetCourseEffectOuterSize(self, doubleFactor);
     Billboard_DrawOrientedQuad(self->outerSprite, camera, kCourseEffectLayerFlags, kCourseEffectUseViewAxes);
     if (IsOutsideAccentCullingRectanglePx(self, camera, screenX, screenY)) {
         Camera_SetClip(camera, oldNear, oldFar, 0);
@@ -960,41 +1044,44 @@ void PvsFxAuxiliaryResources_Draw(Self_80193320* self, Cam_80193320* camera) { V
     angles[3] = kFloat_2_984513_ItemEffects + savedPhase2 / kFloat_neg30_ItemEffects;
     angles[4] = savedPhase3 / kFloat_60_ItemEffects;
     void* savedPane2 = self->accentSprite;
-    W3dSpr_SetPos(savedPane2, &worldPosition);
+    ((W3dSpr*)savedPane2)->SetPos(&worldPosition);
     float k1000 = kFloat_1000_CourseAuxiliary;
     float one = kFloat_1_ItemEffects;
     float half = kFloat_0_5_LetterSprite;
     // Equation for the scheduling aliases below:
-    // s = 2*(1 + jitter/1000), (w,h)=s*cachedAccentWorldSize, pivot=(w/2,h/2).
+    // accentScale = 2*(1 + jitter/1000), (accentWidth,accentHeight)=accentScale*cachedAccentWorldSize, pivot=(accentWidth/2,accentHeight/2).
     // Repeated loads/temporaries preserve the matched register schedule.
     for (int i = 0; i < kAccentCount; ++i) {
-        float s = two * (one + (float)(rand() % kAccentJitterRange - kAccentJitterCenter) / k1000);
-        float w = self->accentWidthWorld * s;
-        float accentHeight = self->accentHeightWorld * s;
-        float accentPivotX = half * w;
+        float accentScale = doubleFactor * (one + (float)(rand() % kAccentJitterRange - kAccentJitterCenter) / k1000);
+        float accentWidth = self->accentWidthWorld * accentScale;
+        float accentHeight = self->accentHeightWorld * accentScale;
+        float accentPivotX = half * accentWidth;
         float accentPivotY = half * accentHeight;
         void* accentSpriteForSize = self->accentSprite;
-        W3dSpr_SetRect(accentSpriteForSize, w, accentHeight, accentPivotX, accentPivotY);
+        ((W3dSpr*)accentSpriteForSize)->SetRect(accentWidth, accentHeight, accentPivotX, accentPivotY);
         void* accentSpriteForDraw = self->accentSprite;
         Particle_DrawRotatedBillboard(accentSpriteForDraw, camera, angles[i], kCourseEffectLayerFlags);
     }
-    float restoreFarClip = oldFar; float restoreNearClip = oldNear; Camera_SetClip(camera, restoreNearClip, restoreFarClip, 0);
+    float restoreFarClip = oldFar;
+    float restoreNearClip = oldNear;
+    Camera_SetClip(camera, restoreNearClip, restoreFarClip, 0);
     // Phase 5: clip distances are restored; draw seven screen-space flare overlays.
-    // nx/ny = projectedPixel/viewportExtent - 0.5; centerOffsetFactor scales their
-    // offset from center. Extent = (viewportWidth/640)*viewportWidth*widthFraction*r.
+    // centeredScreenX/centeredScreenY = projectedPixel/viewportExtent - 0.5; centerOffsetFactor scales their
+    // offset from center. Extent = (viewportWidth/640)*viewportWidth*widthFraction*sizeJitter.
     float scale = camera->w / kCourseFlareReferenceViewportWidth;
     float half2 = kFloat_0_5_LetterSprite;
-    float k10000 = kCourseFlareSizeJitterDivisor; float viewportHeight = camera->h;
+    float k10000 = kCourseFlareSizeJitterDivisor;
+    float viewportHeight = camera->h;
     float viewportCenterFraction = half2;
-    float ny = screenY / viewportHeight - viewportCenterFraction;
+    float centeredScreenY = screenY / viewportHeight - viewportCenterFraction;
     float viewportWidth = camera->w;
     for (int i = 0; kHighlightCount > i; ++i) {
         FlareHighlight* entry = &s_courseFlareHighlights[i];
         void* overlay = self->overlays[entry->overlayIndex];
-        float r = kFloat_1_ItemEffects + (float)(rand() % kHighlightJitterRange) / k10000;
-        float nx = screenX / viewportWidth - half2; 
+        float sizeJitter = kFloat_1_ItemEffects + (float)(rand() % kHighlightJitterRange) / k10000;
+        float centeredScreenX = screenX / viewportWidth - half2;
         float highlightSize = entry->widthFraction;
-        float jitteredHighlightSize = r * highlightSize;
+        float jitteredHighlightSize = sizeJitter * highlightSize;
         float widthForExtent = camera->w;
         float highlightWidthBeforeViewportScale = widthForExtent * jitteredHighlightSize;
         screenRect.z = scale * (highlightWidthBeforeViewportScale);
@@ -1003,11 +1090,12 @@ void PvsFxAuxiliaryResources_Draw(Self_80193320* self, Cam_80193320* camera) { V
         float highlightPositionScale = entry->centerOffsetFactor;
         screenRect.w = scale * (camera->w * jitteredHighlightSize);
         float widthForPosition = camera->w;
-        screenRect.x = widthForPosition * (nx * highlightPositionScale + half2) - highlightHalfExtent;
+        screenRect.x = widthForPosition * (centeredScreenX * highlightPositionScale + half2) - highlightHalfExtent;
         float viewportHeight = camera->h;
         unsigned int highlightTint = entry->tintARGB;
-        screenRect.y = viewportHeight * (entry->centerOffsetFactor * ny + half2) - highlightHalfExtent;
-        WOverlay_DrawTransformedRect(overlay, camera, &textureRect, kFloat_0_TransformedText, &screenRect, kCourseEffectFlareFlags, highlightTint, 0);
+        screenRect.y = viewportHeight * (entry->centerOffsetFactor * centeredScreenY + half2) - highlightHalfExtent;
+        WOverlay_DrawTransformedRect(overlay, camera, &textureRect, kFloat_0_TransformedText, &screenRect,
+                                     kCourseEffectFlareFlags, highlightTint, 0);
     }
 }
 

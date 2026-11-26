@@ -1,6 +1,8 @@
+// Pet animation state: startup full-turn angle constants, the pet animation constructor, and the
+// destructors for its owned buffers and node list.
+
 #include <decomp/static_init.h>
-// Translation unit 0x80046850-0x80046A38 (7 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CPetAnimation.h"
 
 extern "C" {
 
@@ -35,7 +37,7 @@ struct PetAnimationState {
     short mode;
 };
 struct OwnedBuffer {
-    void* entries; // Owned contiguous storage; cleanup does not destroy its elements.
+    void* entries;               // Owned contiguous storage; cleanup does not destroy its elements.
     unsigned int volatile count; // Logical count, not an allocation size in bytes.
 };
 
@@ -44,7 +46,8 @@ void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
 
 // Initialize a referenced pet-animation object with no entries and mode/amount zero.
-void CPetAnimation_ctor(PetAnimationState* self) {
+CPetAnimation::CPetAnimation() {
+    PetAnimationState* self = (PetAnimationState*)this;
     self->referenceCount = 1;
     self->vtable = (void*)__vt__13CPetAnimation;
     self->entries = 0;

@@ -1,14 +1,13 @@
 // Character selection: load gating, selection-screen reset, controller-to-player
 // assignment, avatar cleanup, and unlocked-character input availability.
-// Edit index: reset/player panels -> CCharaSelect_InitializeSelectionScreen and CharaSelectLayout;
+// Edit index: reset/player panels -> CCharaSelect::InitializeSelectionScreen and CharaSelectLayout;
 // character/save buttons -> UpdateSlotInputAvailability; async admission ->
 // PollLoadComplete; resource pumping -> UpdateLayoutAndTexture.
 // Related schemas: CCharaSelect.h, SavePlayerRecord.h, CEnemyRenderRecord.h;
-// scripts/panel layout -> charaSelectStrings (u80244B74_data.cpp).
+// scripts/panel layout -> charaSelectStrings (the data section).
 // Controllers 0..3, player slots 0..3, and character indices 0..7 are distinct.
 // There is no frame-rate setting here; availability is recomputed from save
 // equipment flags, playerStates, controller lists, gameMode and partyGameMode.
-#define AsCCharaSelect(p) ((CCharaSelect*)(p))
 #include "classes/CCharaSelect.h"
 #include "classes/CEnemyRenderTable.h"
 #include "classes/CEnemyRenderRecord.h"
@@ -17,20 +16,26 @@
 #include "classes/SavePlayerRecord.h"
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
 #include "game/vector.h"
-// Translation unit 0x80244B74-0x80245F84 (4 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #pragma use_lmw_stmw on
 
 #include "game/singletons.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CPackTextureResource.h"
+#include "classes/CBpCtrlHandle.h"
+#include "classes/CCharaSelect.h"
+#include "classes/CCharaSelect.h"
+#include "classes/CBpCtrl.h"
 extern "C" {
 
 void RenderContext_ResetPlayerRecords(void*);
 void* CharacterPreviewTable_dtor(void*, int);
 void appFreeUni__FPv(void*);
 
-struct CharaSelectionVector { unsigned int* data; unsigned int count, capacity; };
+struct CharaSelectionVector {
+    unsigned int* data;
+    unsigned int count, capacity;
+};
 // Four controller vectors hold player-slot indices, not character IDs. The render
 // table is indexed by player slot; a record supplies avatar id and flags bit15.
 // The shared context owns saved records, vectors and avatars. Reset marks assigned
@@ -48,14 +53,14 @@ struct RenderContextConstructionCleanup_u80244B74 {
     char* base;
     bool active;
     // Guard the newly constructed context members during player-record initialization.
-    explicit RenderContextConstructionCleanup_u80244B74(void* object)
-        : base((char*)object), active(true) {}
+    explicit RenderContextConstructionCleanup_u80244B74(void* object) : base((char*)object), active(true) {}
     // Unwind constructed render records and selection vectors unless disarmed.
     ~RenderContextConstructionCleanup_u80244B74() {
         if (active) {
             CharacterPreviewTable_dtor(base + kRenderRecordsOffset, -1);
             for (int index = 3; index >= 0; --index) {
-                unsigned int* vector = (unsigned int*)(base + kControllerSelectionsOffset + index * (int)sizeof(CharaSelectionVector));
+                unsigned int* vector =
+                    (unsigned int*)(base + kControllerSelectionsOffset + index * (int)sizeof(CharaSelectionVector));
                 if (vector[0]) {
                     vector[1] = 0;
                     appFreeUni__FPv((void*)vector[0]);
@@ -72,19 +77,11 @@ static void InitializeNewRenderContext(void* base) {
     cleanup.active = false;
 }
 
-
 extern void Layout_Update(void*);
-extern void CPackTextureResource_PollLoad(void*);
-extern int CPackTextureResource_IsLoadFinished(void*);
 extern int Layout_PollLoadComplete(void*);
-extern void __ct__7CBpCtrlFv(void*);
 extern void CBpCtrl_dtor(void*);
 extern void* __register_global_object(void*, void*, void*);
-extern int CBpCtrl_PollAllEntriesLoaded(void*);
 
-extern void* CBpCtrlHandle_GetInstance();
-extern void CBpCtrlHandle_SetScriptIndex(void*, int);
-extern void CCharaSelect_ResetPlayerSlot(void*, int);
 extern char* RenderContext_GetInstance();
 extern void Layout_SetElementPlayerFlagsAndState(void*, int, int);
 extern void Layout_ReadElementRect(void*, int, void*);
@@ -97,8 +94,6 @@ extern void UIGroup_SetEnabled(void*, int);
 extern void BpObject_StartScriptByName(void*, char*, int);
 extern unsigned int Vector_GetCount(void*);
 extern unsigned int* WordVector_GetElementAddress(void*, unsigned int);
-extern void CCharaSelect_SetRandomSlot(void*, int, int, int, int);
-extern void CCharaSelect_SetupSlotAvatar(void*, int, int, void*);
 extern void* RenderContext_GetOrCreate();
 extern void SaveData_CopyCurrentRecordToArray(void*, int);
 extern void LayoutIntVector_PushBack(void*, const int*);
@@ -108,7 +103,6 @@ extern void Layout_SetElementPlayerFlag(void*, int, int, int);
 extern void Layout_SetElementEnabled(void*, int, int);
 extern void SaveData_InitPlayerRecord(void*);
 extern void __construct_array(void*, void*, void*, int, int);
-
 
 extern void PartyItemRecord_InitDefaults(void*);
 extern void PlayerRenderRecord_dtor(void*);
@@ -131,15 +125,26 @@ struct CharaSelectTextureHandle {
     char prefix[0x30];
     void* texture;
 };
-struct CharaPlayerTransition { int state, elapsed; int duration; };
+struct CharaPlayerTransition {
+    int state, elapsed;
+    int duration;
+};
 enum CharaSelectLayout {
-    kFirstPlayerChoice = 0x2A, kFirstPlayerOption = 0x2E,
-    kFirstCharacterIcon = 0x21, kFirstCharacterHighlight = 0x18,
-    kFirstLockedCharacterIcon = 0x0F, kLoadSaveDataIcon = 0x29,
-    kLoadSaveDataHighlight = 0x20, kAllPlayers = 5,
-    kPlayerCount = 4, kSelectableCharacterCount = 8, kLayoutElementCount = 0x52,
-    kCharaSelectScriptIndex = 0x0E, kRandomSelectionMode = 6,
-    kModeWithoutSecondaryChoice = 7, kOneSelectionPerController = 3
+    kFirstPlayerChoice = 0x2A,
+    kFirstPlayerOption = 0x2E,
+    kFirstCharacterIcon = 0x21,
+    kFirstCharacterHighlight = 0x18,
+    kFirstLockedCharacterIcon = 0x0F,
+    kLoadSaveDataIcon = 0x29,
+    kLoadSaveDataHighlight = 0x20,
+    kAllPlayers = 5,
+    kPlayerCount = 4,
+    kSelectableCharacterCount = 8,
+    kLayoutElementCount = 0x52,
+    kCharaSelectScriptIndex = 0x0E,
+    kRandomSelectionMode = 6,
+    kModeWithoutSecondaryChoice = 7,
+    kOneSelectionPerController = 3
 };
 // Layout relationship map: icons 0x21..0x28 -> highlights 0x18..0x1F (icon-9);
 // save icon 0x29 -> highlight 0x20. Player choices 0x2A..0x2D and secondary
@@ -160,7 +165,6 @@ static const int kOnePlayerScript = (int)&((CharaSelectScriptPool*)0)->onePlayer
 static const int kTwoPlayerScript = (int)&((CharaSelectScriptPool*)0)->twoPlayers;
 static const int kThreePlayerScript = (int)&((CharaSelectScriptPool*)0)->threePlayers;
 static const int kFourPlayerScript = (int)&((CharaSelectScriptPool*)0)->fourPlayers;
-void CCharaSelect_UpdateSlotInputAvailability(CCharaSelect*);
 
 struct CharaCleanupObject {
     virtual ~CharaCleanupObject();
@@ -196,7 +200,7 @@ static inline void AlignCharacterSelectionHighlightRects(CCharaSelect* self, int
 // player indices 0..3. Assigned records supply avatar IDs, not controller IDs.
 // No bounds/loading checks here. Existing assigned avatars stay owned by the
 // context; only unassigned avatars are deleted. All layout/script state is reset.
-void CCharaSelect_InitializeSelectionScreen(CCharaSelect* self) {
+void CCharaSelect::InitializeSelectionScreen() {
     int elementRect[4];
     int assignedSlots[4];
     char* scriptStrings;
@@ -211,108 +215,112 @@ void CCharaSelect_InitializeSelectionScreen(CCharaSelect* self) {
     int cleanupIndex;
     char* renderContext;
     // Phase 1: reset player slots and hide layout controls outside the active count.
-    CBpCtrlHandle_SetScriptIndex(CBpCtrlHandle_GetInstance(), kCharaSelectScriptIndex);
+    ((CBpCtrlHandle*)(CBpCtrlHandle::GetInstance()))->SetScriptIndex(kCharaSelectScriptIndex);
     playerSlotCursor = 0;
     for (; playerSlotCursor < kPlayerCount; playerSlotCursor++) {
-        CCharaSelect_ResetPlayerSlot(self, playerSlotCursor);
+        ResetPlayerSlot(playerSlotCursor);
     }
     playerSlotCursor = (&((CharaRenderContext*)RenderContext_GetInstance())->renderTable)->count;
     for (; playerSlotCursor < kPlayerCount; playerSlotCursor++) {
-        Layout_SetElementPlayerFlagsAndState(self->layout, playerSlotCursor + kFirstPlayerChoice, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, playerSlotCursor + kFirstPlayerOption, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, playerSlotCursor, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, playerSlotCursor + kFirstPlayerChoice, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, playerSlotCursor + kFirstPlayerOption, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, playerSlotCursor, 0);
     }
-    Layout_SetElementPlayerFlagsAndState(self->layout, 0x32, 0);
-    Layout_SetElementPlayerFlagsAndState(self->layout, 0x33, 0);
-    Layout_SetElementPlayerFlagsAndState(self->layout, 0x34, 0);
-    Layout_SetElementPlayerFlagsAndState(self->layout, 0x35, 0);
-    Layout_SetElementPlayerFlagsAndState(self->layout, 0x36, 0);
-    Layout_SetElementPlayerFlagsAndState(self->layout, 0x37, 0);
-    Layout_SetElementPlayerFlagsAndState(self->layout, 0x38, 0);
-    Layout_SetElementPlayerFlagsAndState(self->layout, 0x39, 0);
+    Layout_SetElementPlayerFlagsAndState(layout, 0x32, 0);
+    Layout_SetElementPlayerFlagsAndState(layout, 0x33, 0);
+    Layout_SetElementPlayerFlagsAndState(layout, 0x34, 0);
+    Layout_SetElementPlayerFlagsAndState(layout, 0x35, 0);
+    Layout_SetElementPlayerFlagsAndState(layout, 0x36, 0);
+    Layout_SetElementPlayerFlagsAndState(layout, 0x37, 0);
+    Layout_SetElementPlayerFlagsAndState(layout, 0x38, 0);
+    Layout_SetElementPlayerFlagsAndState(layout, 0x39, 0);
     // Phase 2: align each highlight rect with its icon; these are paired element IDs.
-    AlignCharacterSelectionHighlightRects(self, elementRect);
-    ((CharaPlayerTransition*)self->playerTransitions)[0].elapsed = 0;
-    ((CharaPlayerTransition*)self->playerTransitions)[0].state = 0;
-    ((CharaPlayerTransition*)self->playerTransitions)[1].elapsed = 0;
-    ((CharaPlayerTransition*)self->playerTransitions)[1].state = 0;
-    ((CharaPlayerTransition*)self->playerTransitions)[2].elapsed = 0;
-    ((CharaPlayerTransition*)self->playerTransitions)[2].state = 0;
-    ((CharaPlayerTransition*)self->playerTransitions)[3].elapsed = 0;
-    ((CharaPlayerTransition*)self->playerTransitions)[3].state = 0;
-    IFadeMenuBase_StartMenuFadeOut(self);
+    AlignCharacterSelectionHighlightRects(this, elementRect);
+    ((CharaPlayerTransition*)playerTransitions)[0].elapsed = 0;
+    ((CharaPlayerTransition*)playerTransitions)[0].state = 0;
+    ((CharaPlayerTransition*)playerTransitions)[1].elapsed = 0;
+    ((CharaPlayerTransition*)playerTransitions)[1].state = 0;
+    ((CharaPlayerTransition*)playerTransitions)[2].elapsed = 0;
+    ((CharaPlayerTransition*)playerTransitions)[2].state = 0;
+    ((CharaPlayerTransition*)playerTransitions)[3].elapsed = 0;
+    ((CharaPlayerTransition*)playerTransitions)[3].state = 0;
+    IFadeMenuBase_StartMenuFadeOut(this);
     void* bpController = CBpCtrl_GetInstance();
-    void* c = IdMap_Lookup(bpController, self->primaryBpEntryId);
+    void* primaryBpEntry = IdMap_Lookup(bpController, primaryBpEntryId);
     scriptStrings = charaSelectStrings;
-    BpObject_StartScriptByName(c, scriptStrings + kStartSelectionScript, 1);
+    BpObject_StartScriptByName(primaryBpEntry, scriptStrings + kStartSelectionScript, 1);
 
     // Phase 3: select the player-count script and hide unused player panels.
     int activePlayerCount = (&((CharaRenderContext*)RenderContext_GetInstance())->renderTable)->count;
     switch (activePlayerCount) {
     case 1: {
         bpController = CBpCtrl_GetInstance();
-        void* c1 = IdMap_Lookup(bpController, self->primaryBpEntryId);
+        void* c1 = IdMap_Lookup(bpController, primaryBpEntryId);
         void* d1 = UIGroup_GetOrCreateById(c1, 0x410);
         UIGroup_SetEnabled(d1, 0);
         bpController = CBpCtrl_GetInstance();
-        void* c2 = IdMap_Lookup(bpController, self->primaryBpEntryId);
+        void* c2 = IdMap_Lookup(bpController, primaryBpEntryId);
         void* d2 = UIGroup_GetOrCreateById(c2, 0x411);
         UIGroup_SetEnabled(d2, 0);
         bpController = CBpCtrl_GetInstance();
-        void* c3 = IdMap_Lookup(bpController, self->primaryBpEntryId);
+        void* c3 = IdMap_Lookup(bpController, primaryBpEntryId);
         void* d3 = UIGroup_GetOrCreateById(c3, 0x412);
         UIGroup_SetEnabled(d3, 0);
         bpController = CBpCtrl_GetInstance();
-        void* c4 = IdMap_Lookup(bpController, self->secondaryBpEntryId);
+        void* c4 = IdMap_Lookup(bpController, secondaryBpEntryId);
         BpObject_StartScriptByName(c4, scriptStrings + kOnePlayerScript, 1);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x2b, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x2f, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x2c, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x30, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x2d, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x31, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x2b, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x2f, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x2c, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x30, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x2d, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x31, 0);
     } break;
     case 2: {
         bpController = CBpCtrl_GetInstance();
-        void* c1 = IdMap_Lookup(bpController, self->primaryBpEntryId);
+        void* c1 = IdMap_Lookup(bpController, primaryBpEntryId);
         void* d1 = UIGroup_GetOrCreateById(c1, 0x411);
         UIGroup_SetEnabled(d1, 0);
         bpController = CBpCtrl_GetInstance();
-        void* c2 = IdMap_Lookup(bpController, self->primaryBpEntryId);
+        void* c2 = IdMap_Lookup(bpController, primaryBpEntryId);
         void* d2 = UIGroup_GetOrCreateById(c2, 0x412);
         UIGroup_SetEnabled(d2, 0);
         bpController = CBpCtrl_GetInstance();
-        void* c3 = IdMap_Lookup(bpController, self->secondaryBpEntryId);
+        void* c3 = IdMap_Lookup(bpController, secondaryBpEntryId);
         BpObject_StartScriptByName(c3, scriptStrings + kTwoPlayerScript, 1);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x2c, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x30, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x2d, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x31, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x2c, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x30, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x2d, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x31, 0);
     } break;
     case 3: {
         bpController = CBpCtrl_GetInstance();
-        void* c1 = IdMap_Lookup(bpController, self->primaryBpEntryId);
+        void* c1 = IdMap_Lookup(bpController, primaryBpEntryId);
         void* d1 = UIGroup_GetOrCreateById(c1, 0x412);
         UIGroup_SetEnabled(d1, 0);
         bpController = CBpCtrl_GetInstance();
-        void* c2 = IdMap_Lookup(bpController, self->secondaryBpEntryId);
+        void* c2 = IdMap_Lookup(bpController, secondaryBpEntryId);
         BpObject_StartScriptByName(c2, scriptStrings + kThreePlayerScript, 1);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x2d, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, 0x31, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x2d, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, 0x31, 0);
     } break;
     case 4: {
         bpController = CBpCtrl_GetInstance();
-        void* c1 = IdMap_Lookup(bpController, self->secondaryBpEntryId);
+        void* c1 = IdMap_Lookup(bpController, secondaryBpEntryId);
         BpObject_StartScriptByName(c1, scriptStrings + kFourPlayerScript, 1);
     } break;
-    default: break;
+    default:
+        break;
     }
 
     // playerSlotCursor changes to a byte offset below; contextByteOffset walks vector headers.
     renderContext = RenderContext_GetInstance();
     int renderRecordCount = (&((CharaRenderContext*)renderContext)->renderTable)->count; // original +0x2360
     if (renderRecordCount != 0) {
-        assignedSlots[0] = 0; assignedSlots[1] = 0; assignedSlots[2] = 0; assignedSlots[3] = 0;
+        assignedSlots[0] = 0;
+        assignedSlots[1] = 0;
+        assignedSlots[2] = 0;
+        assignedSlots[3] = 0;
         int* assignedSlotsBegin = assignedSlots;
         outerChoiceIndex = 0;
         contextByteOffset = 0;
@@ -322,21 +330,27 @@ void CCharaSelect_InitializeSelectionScreen(CCharaSelect* self) {
         // size here, while playerSlotCursor indexes render-record storage.
         for (; outerChoiceIndex < kPlayerCount; outerChoiceIndex++) {
             innerChoiceIndex = 0;
-            while (innerChoiceIndex < Vector_GetCount((char*)((CharaRenderContext*)RenderContext_GetInstance())->selections + contextByteOffset)) {
+            while (innerChoiceIndex <
+                   Vector_GetCount((char*)((CharaRenderContext*)RenderContext_GetInstance())->selections +
+                                   contextByteOffset)) {
                 renderContext = RenderContext_GetInstance();
-                unsigned int* selectedSlot = WordVector_GetElementAddress((char*)((CharaRenderContext*)renderContext)->selections + contextByteOffset, innerChoiceIndex);
+                unsigned int* selectedSlot = WordVector_GetElementAddress(
+                    (char*)((CharaRenderContext*)renderContext)->selections + contextByteOffset, innerChoiceIndex);
                 playerSlot = *selectedSlot;
                 playerSlotCursor = playerSlot * (int)sizeof(CEnemyRenderRecord);
                 renderContext = RenderContext_GetInstance();
                 void* renderRecord = ((CharaRenderContext*)renderContext)->renderTable.recordStorage + playerSlotCursor;
                 avatarId = ((CEnemyRenderRecord*)renderRecord)->characterInventoryIndex;
                 renderContext = RenderContext_GetInstance();
-                unsigned short recordFlags = ((CEnemyRenderRecord*)(((CharaRenderContext*)renderContext)->renderTable.recordStorage + playerSlotCursor))->flags; // original +0x20EE
+                unsigned short recordFlags =
+                    ((CEnemyRenderRecord*)(((CharaRenderContext*)renderContext)->renderTable.recordStorage +
+                                           playerSlotCursor))
+                        ->flags; // original +0x20EE
                 int computerPlayer = (recordFlags >> 15) & 1;
-                CCharaSelect_SetRandomSlot(self, playerSlot, outerChoiceIndex, computerPlayer, 0);
-                CCharaSelect_SetupSlotAvatar(self, playerSlot, outerChoiceIndex, (void*)avatarId);
-                Layout_SetElementPlayerFlagsAndState(self->layout, playerSlot + kFirstPlayerChoice, 0);
-                Layout_SetElementPlayerFlagsAndState(self->layout, playerSlot + kFirstPlayerOption, 0);
+                SetRandomSlot(playerSlot, outerChoiceIndex, computerPlayer, 0);
+                SetupSlotAvatar(playerSlot, outerChoiceIndex, avatarId);
+                Layout_SetElementPlayerFlagsAndState(layout, playerSlot + kFirstPlayerChoice, 0);
+                Layout_SetElementPlayerFlagsAndState(layout, playerSlot + kFirstPlayerOption, 0);
                 assignedSlots[playerSlot] = 1;
                 innerChoiceIndex++;
             }
@@ -352,12 +366,20 @@ void CCharaSelect_InitializeSelectionScreen(CCharaSelect* self) {
         for (; cleanupIndex < kPlayerCount; cleanupIndex++) {
             if (*assignedSlot == 0) {
                 renderContext = RenderContext_GetInstance();
-                int avatarAddress = (int)((CEnemyRenderRecord*)(((CharaRenderContext*)renderContext)->renderTable.recordStorage + contextByteOffset))->renderObject; // original +0x2170
+                int avatarAddress =
+                    (int)((CEnemyRenderRecord*)(((CharaRenderContext*)renderContext)->renderTable.recordStorage +
+                                                contextByteOffset))
+                        ->renderObject; // original +0x2170
                 if (avatarAddress != 0) {
                     renderContext = RenderContext_GetInstance();
-                    delete (CharaCleanupObject*)((CEnemyRenderRecord*)(((CharaRenderContext*)renderContext)->renderTable.recordStorage + contextByteOffset))->renderObject;
+                    delete (CharaCleanupObject*)((CEnemyRenderRecord*)(((CharaRenderContext*)renderContext)
+                                                                           ->renderTable.recordStorage +
+                                                                       contextByteOffset))
+                        ->renderObject;
                     renderContext = RenderContext_GetInstance();
-                    ((CEnemyRenderRecord*)(((CharaRenderContext*)renderContext)->renderTable.recordStorage + contextByteOffset))->renderObject = 0;
+                    ((CEnemyRenderRecord*)(((CharaRenderContext*)renderContext)->renderTable.recordStorage +
+                                           contextByteOffset))
+                        ->renderObject = 0;
                 }
                 void* currentSharedObject = RenderContext_GetOrCreate();
                 SaveData_CopyCurrentRecordToArray(currentSharedObject, cleanupIndex);
@@ -368,34 +390,32 @@ void CCharaSelect_InitializeSelectionScreen(CCharaSelect* self) {
     }
 
     // Phase 6: refresh controller masks, install random mode if requested, clear secondary states.
-    CCharaSelect_UpdateSlotInputAvailability(self);
+    UpdateSlotInputAvailability();
     void* currentSharedObject = SharedDoc_GetCurrent();
     unsigned int gameMode = AsCSharedDoc(currentSharedObject)->gameMode; // SharedDoc_GetInstance, original +0x808
     if (gameMode == kRandomSelectionMode) {
-        Layout_SetElementPlayerFlagsAndState(self->layout, kFirstPlayerChoice, 0);
+        Layout_SetElementPlayerFlagsAndState(layout, kFirstPlayerChoice, 0);
         renderContext = RenderContext_GetInstance();
-        LayoutIntVector_PushBack(((CharaRenderContext*)renderContext)->selections, &kCharacterRandomSelectionInitialValue);
-        CCharaSelect_SetRandomSlot(self, 0, 0, 0, 1);
+        LayoutIntVector_PushBack(((CharaRenderContext*)renderContext)->selections,
+                                 &kCharacterRandomSelectionInitialValue);
+        SetRandomSlot(0, 0, 0, 1);
     }
     for (cleanupIndex = 0; cleanupIndex < kLayoutElementCount; cleanupIndex++) {
         // Clear the secondary state word for every layout element.
-        Layout_SetElementSecondaryState(self->layout, cleanupIndex, 0);
+        Layout_SetElementSecondaryState(layout, cleanupIndex, 0);
     }
 }
 
 #pragma opt_propagation reset
 
 // Update the selection layout and poll the character-selection texture resource.
-void CCharaSelect_UpdateLayoutAndTexture(CCharaSelect* self) {
-    Layout_Update(self->layout);
-    CPackTextureResource_PollLoad(((CharaSelectTextureHandle*)self)->texture);
+void CCharaSelect::UpdateLayoutAndTexture() {
+    Layout_Update(layout);
+    ((CPackTextureResource*)(((CharaSelectTextureHandle*)this)->texture))->PollLoad();
 }
 
 struct CRecBits {
-    CW_BITS3(
-        unsigned char reservedHighBit : 1,
-        signed char characterSelectable : 1,
-        unsigned char remainingFlags : 6)
+    CW_BITS3(unsigned char reservedHighBit : 1, signed char characterSelectable : 1, unsigned char remainingFlags : 6)
 };
 struct SavedOutfitSelection {
     CRecBits flags;
@@ -430,19 +450,21 @@ static inline void* GetSharedCharaRenderContext() {
     if (Sing_805DC648() == 0) {
         if (s_renderContextInitialized == 0) {
             char* base = s_renderContext;
-            char* p = base;
-            char* e = base + kControllerSelectionsOffset;
-            char* q;
+            char* playerRecord = base;
+            char* playerRecordsEnd = base + kControllerSelectionsOffset;
+            char* renderTable;
             do {
-                SaveData_InitPlayerRecord(p);
-                p += (int)sizeof(SavePlayerRecord);
-            } while (p < e);
-            ((IntVectorArray*)(e))->__ct();
-            q = base + kRenderRecordsOffset;
-            __construct_array(q, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor, (int)sizeof(CEnemyRenderRecord), kPlayerCount);
-            AsCEnemyRenderTable(q)->count = 0;
+                SaveData_InitPlayerRecord(playerRecord);
+                playerRecord += (int)sizeof(SavePlayerRecord);
+            } while (playerRecord < playerRecordsEnd);
+            ((IntVectorArray*)(playerRecordsEnd))->__ct();
+            renderTable = base + kRenderRecordsOffset;
+            __construct_array(renderTable, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor,
+                              (int)sizeof(CEnemyRenderRecord), kPlayerCount);
+            AsCEnemyRenderTable(renderTable)->count = 0;
             InitializeNewRenderContext(base);
-            __register_global_object(s_renderContext, (void*)__dt__13RenderContextFv, s_renderContextRegistrations_805041E8);
+            __register_global_object(s_renderContext, (void*)__dt__13RenderContextFv,
+                                     s_renderContextRegistrations_805041E8);
             s_renderContextInitialized = 1;
         }
         Sing_805DC648() = s_renderContext;
@@ -465,7 +487,7 @@ static inline void* GetSharedCharaRenderContext() {
 // own bit. Empty lists grant no character input. COM (render flags bit15) blocks
 // loading save data; gameMode 6 also suppresses enabling the save-data button.
 // No state or ownership changes outside layout flags; no validation/failure code.
-void CCharaSelect_UpdateSlotInputAvailability(CCharaSelect* self) {
+void CCharaSelect::UpdateSlotInputAvailability() {
     int playerSlot;
     int outerChoiceIndex;
     int innerChoiceIndex;
@@ -475,69 +497,77 @@ void CCharaSelect_UpdateSlotInputAvailability(CCharaSelect* self) {
 
     // Phase 1: expose only active player-slot controls.
     for (playerSlot = 0; playerSlot < ((CharaRenderContextView*)GetSharedCharaRenderContext())->count; playerSlot++) {
-        Layout_SetElementPlayerFlag(self->layout, playerSlot + kFirstPlayerChoice, 1, kAllPlayers);
+        Layout_SetElementPlayerFlag(layout, playerSlot + kFirstPlayerChoice, 1, kAllPlayers);
         if (AsCSharedDoc(g_sharedDoc)->gameMode == kModeWithoutSecondaryChoice) {
-            Layout_SetElementPlayerFlag(self->layout, playerSlot + kFirstPlayerOption, 0, kAllPlayers);
+            Layout_SetElementPlayerFlag(layout, playerSlot + kFirstPlayerOption, 0, kAllPlayers);
         } else {
-            Layout_SetElementPlayerFlag(self->layout, playerSlot + kFirstPlayerOption, 1, kAllPlayers);
+            Layout_SetElementPlayerFlag(layout, playerSlot + kFirstPlayerOption, 1, kAllPlayers);
         }
     }
 
-    for (playerSlot = ((CharaRenderContextView*)GetSharedCharaRenderContext())->count; playerSlot < kPlayerCount; playerSlot++) {
-        Layout_SetElementPlayerFlag(self->layout, playerSlot + kFirstPlayerChoice, 0, kAllPlayers);
-        Layout_SetElementPlayerFlag(self->layout, playerSlot + kFirstPlayerOption, 0, kAllPlayers);
+    for (playerSlot = ((CharaRenderContextView*)GetSharedCharaRenderContext())->count; playerSlot < kPlayerCount;
+         playerSlot++) {
+        Layout_SetElementPlayerFlag(layout, playerSlot + kFirstPlayerChoice, 0, kAllPlayers);
+        Layout_SetElementPlayerFlag(layout, playerSlot + kFirstPlayerOption, 0, kAllPlayers);
     }
 
     // outerChoiceIndex = controller 0..3; innerChoiceIndex = index in its selection list.
     // Phase 2: disable assigned slots and lock each controller to its active selection.
     for (outerChoiceIndex = 0; outerChoiceIndex < kPlayerCount; outerChoiceIndex++) {
-        for (innerChoiceIndex = 0; innerChoiceIndex < ((CharaRenderContextView*)GetSharedCharaRenderContext())->lists[outerChoiceIndex].count; innerChoiceIndex++) {
-            selectedSlot = ((CharaRenderContextView*)GetSharedCharaRenderContext())->lists[outerChoiceIndex].items[innerChoiceIndex];
-            if (AsCCharaSelect(self)->playerStates[selectedSlot] != 0) {
-                Layout_SetElementPlayerFlag(self->layout, selectedSlot + kFirstPlayerChoice, 0, kAllPlayers);
-                Layout_SetElementPlayerFlag(self->layout, selectedSlot + kFirstPlayerOption, 0, kAllPlayers);
+        for (innerChoiceIndex = 0;
+             innerChoiceIndex < ((CharaRenderContextView*)GetSharedCharaRenderContext())->lists[outerChoiceIndex].count;
+             innerChoiceIndex++) {
+            selectedSlot = ((CharaRenderContextView*)GetSharedCharaRenderContext())
+                               ->lists[outerChoiceIndex]
+                               .items[innerChoiceIndex];
+            if (playerStates[selectedSlot] != 0) {
+                Layout_SetElementPlayerFlag(layout, selectedSlot + kFirstPlayerChoice, 0, kAllPlayers);
+                Layout_SetElementPlayerFlag(layout, selectedSlot + kFirstPlayerOption, 0, kAllPlayers);
             }
         }
         if (((CharaRenderContextView*)GetSharedCharaRenderContext())->lists[outerChoiceIndex].count != 0) {
             CharaRenderContextView* renderContext = (CharaRenderContextView*)GetSharedCharaRenderContext();
             int lastSelectionIndex = renderContext->lists[outerChoiceIndex].count - 1;
             selectedSlot = renderContext->lists[outerChoiceIndex].items[lastSelectionIndex];
-            if (AsCCharaSelect(self)->playerStates[selectedSlot] == 1) {
+            if (playerStates[selectedSlot] == 1) {
                 for (innerChoiceIndex = 0; innerChoiceIndex < kPlayerCount; innerChoiceIndex++) {
-                    Layout_SetElementPlayerFlag(self->layout, innerChoiceIndex + kFirstPlayerChoice, 0, outerChoiceIndex);
-                    Layout_SetElementPlayerFlag(self->layout, innerChoiceIndex + kFirstPlayerOption, 0, outerChoiceIndex);
+                    Layout_SetElementPlayerFlag(layout, innerChoiceIndex + kFirstPlayerChoice, 0, outerChoiceIndex);
+                    Layout_SetElementPlayerFlag(layout, innerChoiceIndex + kFirstPlayerOption, 0, outerChoiceIndex);
                 }
             }
         }
         if ((*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kOneSelectionPerController) {
             if (((CharaRenderContextView*)GetSharedCharaRenderContext())->lists[outerChoiceIndex].count != 0) {
                 for (innerChoiceIndex = 0; innerChoiceIndex < kPlayerCount; innerChoiceIndex++) {
-                    Layout_SetElementPlayerFlag(self->layout, innerChoiceIndex + kFirstPlayerChoice, 0, outerChoiceIndex);
-                    Layout_SetElementPlayerFlag(self->layout, innerChoiceIndex + kFirstPlayerOption, 0, outerChoiceIndex);
+                    Layout_SetElementPlayerFlag(layout, innerChoiceIndex + kFirstPlayerChoice, 0, outerChoiceIndex);
+                    Layout_SetElementPlayerFlag(layout, innerChoiceIndex + kFirstPlayerOption, 0, outerChoiceIndex);
                 }
             }
         }
     }
 
-    Layout_SetElementPlayerFlag(self->layout, kLoadSaveDataIcon, 0, kAllPlayers);
-    Layout_SetElementPlayerFlag(self->layout, kLoadSaveDataHighlight, 0, kAllPlayers);
+    Layout_SetElementPlayerFlag(layout, kLoadSaveDataIcon, 0, kAllPlayers);
+    Layout_SetElementPlayerFlag(layout, kLoadSaveDataHighlight, 0, kAllPlayers);
 
     // outerChoiceIndex = character 0..7; innerChoiceIndex = controller 0..3.
     // Phase 3: enumerate character equipment and each controller's active player slot.
     characterEquipmentByteOffset = 0;
     for (outerChoiceIndex = 0; outerChoiceIndex < kSelectableCharacterCount; outerChoiceIndex++) {
         characterAvailable = 0;
-        for (playerSlot = 0; playerSlot < ((CharaRenderContextView*)GetSharedCharaRenderContext())->count; playerSlot++) {
-            if (((CRecBits*)((char*)GetSharedCharaRenderContext() + playerSlot * (int)sizeof(SavePlayerRecord) + characterEquipmentByteOffset + kSavedCharacterEquipmentOffset))->characterSelectable != 0) {
+        for (playerSlot = 0; playerSlot < ((CharaRenderContextView*)GetSharedCharaRenderContext())->count;
+             playerSlot++) {
+            if (((CRecBits*)((char*)GetSharedCharaRenderContext() + playerSlot * (int)sizeof(SavePlayerRecord) +
+                             characterEquipmentByteOffset + kSavedCharacterEquipmentOffset))
+                    ->characterSelectable != 0) {
                 characterAvailable = 1;
             }
         }
         if (characterAvailable != 0) {
-            Layout_SetElementEnabled(self->layout, outerChoiceIndex + kFirstCharacterIcon, 1);
-            Layout_SetElementEnabled(self->layout, outerChoiceIndex + kFirstLockedCharacterIcon, 0);
+            Layout_SetElementEnabled(layout, outerChoiceIndex + kFirstCharacterIcon, 1);
+            Layout_SetElementEnabled(layout, outerChoiceIndex + kFirstLockedCharacterIcon, 0);
         } else {
-            Layout_SetElementEnabled(self->layout, outerChoiceIndex + kFirstCharacterIcon, 0);
-            Layout_SetElementEnabled(self->layout, outerChoiceIndex + kFirstLockedCharacterIcon, 1);
+            Layout_SetElementEnabled(layout, outerChoiceIndex + kFirstCharacterIcon, 0);
+            Layout_SetElementEnabled(layout, outerChoiceIndex + kFirstLockedCharacterIcon, 1);
         }
         for (innerChoiceIndex = 0; innerChoiceIndex < kPlayerCount; innerChoiceIndex++) {
             if (((CharaRenderContextView*)GetSharedCharaRenderContext())->lists[innerChoiceIndex].count != 0) {
@@ -547,24 +577,26 @@ void CCharaSelect_UpdateSlotInputAvailability(CCharaSelect* self) {
             } else {
                 selectedSlot = -1;
             }
-            if (selectedSlot >= 0 && AsCCharaSelect(self)->playerStates[selectedSlot] == 1
-                && ((CRecBits*)((char*)GetSharedCharaRenderContext() + selectedSlot * (int)sizeof(SavePlayerRecord) + characterEquipmentByteOffset + kSavedCharacterEquipmentOffset))->characterSelectable != 0) {
-                Layout_SetElementPlayerFlag(self->layout, outerChoiceIndex + kFirstCharacterIcon, 1, innerChoiceIndex);
-                Layout_SetElementPlayerFlag(self->layout, outerChoiceIndex + kFirstCharacterHighlight, 1, innerChoiceIndex);
+            if (selectedSlot >= 0 && playerStates[selectedSlot] == 1 &&
+                ((CRecBits*)((char*)GetSharedCharaRenderContext() + selectedSlot * (int)sizeof(SavePlayerRecord) +
+                             characterEquipmentByteOffset + kSavedCharacterEquipmentOffset))
+                        ->characterSelectable != 0) {
+                Layout_SetElementPlayerFlag(layout, outerChoiceIndex + kFirstCharacterIcon, 1, innerChoiceIndex);
+                Layout_SetElementPlayerFlag(layout, outerChoiceIndex + kFirstCharacterHighlight, 1, innerChoiceIndex);
                 if ((((CharaRenderContextView*)GetSharedCharaRenderContext())->entries[selectedSlot].flags >> 15) & 1) {
                     if (AsCSharedDoc(g_sharedDoc)->gameMode != kRandomSelectionMode) {
-                        Layout_SetElementPlayerFlag(self->layout, kLoadSaveDataIcon, 0, innerChoiceIndex);
+                        Layout_SetElementPlayerFlag(layout, kLoadSaveDataIcon, 0, innerChoiceIndex);
                     }
-                    Layout_SetElementPlayerFlag(self->layout, kLoadSaveDataHighlight, 0, innerChoiceIndex);
+                    Layout_SetElementPlayerFlag(layout, kLoadSaveDataHighlight, 0, innerChoiceIndex);
                 } else {
                     if (AsCSharedDoc(g_sharedDoc)->gameMode != kRandomSelectionMode) {
-                        Layout_SetElementPlayerFlag(self->layout, kLoadSaveDataIcon, 1, innerChoiceIndex);
-                        Layout_SetElementPlayerFlag(self->layout, kLoadSaveDataHighlight, 1, innerChoiceIndex);
+                        Layout_SetElementPlayerFlag(layout, kLoadSaveDataIcon, 1, innerChoiceIndex);
+                        Layout_SetElementPlayerFlag(layout, kLoadSaveDataHighlight, 1, innerChoiceIndex);
                     }
                 }
             } else {
-                Layout_SetElementPlayerFlag(self->layout, outerChoiceIndex + kFirstCharacterIcon, 0, innerChoiceIndex);
-                Layout_SetElementPlayerFlag(self->layout, outerChoiceIndex + kFirstCharacterHighlight, 0, innerChoiceIndex);
+                Layout_SetElementPlayerFlag(layout, outerChoiceIndex + kFirstCharacterIcon, 0, innerChoiceIndex);
+                Layout_SetElementPlayerFlag(layout, outerChoiceIndex + kFirstCharacterHighlight, 0, innerChoiceIndex);
             }
         }
         characterEquipmentByteOffset += (int)sizeof(SavedOutfitSelection);
@@ -572,23 +604,21 @@ void CCharaSelect_UpdateSlotInputAvailability(CCharaSelect* self) {
 }
 #pragma opt_lifetimes reset
 
-
-
 // Wait for texture, Bp entries and layout loading to finish before activating selection.
-int CCharaSelect_PollLoadComplete(CCharaSelect* self) {
-    if (CPackTextureResource_IsLoadFinished(((CharaSelectTextureHandle*)self)->texture) == 0) {
+int CCharaSelect::PollLoadComplete() {
+    if (((CPackTextureResource*)(((CharaSelectTextureHandle*)this)->texture))->IsLoadFinished() == 0) {
         return 0;
     }
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_805041C4);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    if (CBpCtrl_PollAllEntriesLoaded(Sing_805DC5F0()) != 0) {
-        return Layout_PollLoadComplete(self->layout);
+    if (((CBpCtrl*)Sing_805DC5F0())->PollAllEntriesLoaded() != 0) {
+        return Layout_PollLoadComplete(layout);
     }
     return 0;
 }

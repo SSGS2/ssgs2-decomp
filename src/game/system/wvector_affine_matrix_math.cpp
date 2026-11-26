@@ -1,5 +1,5 @@
-// Translation unit 0x8004BF18-0x8004CF18 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Vector and affine matrix math: dot and cross products, vector lengths and normalizing,
+// matrix concatenation and inversion, transforms of points and directions, and nearly-equal tests.
 
 #include "sdk_protos.h"
 #include "fp_fused.h"
@@ -18,7 +18,10 @@
 extern "C" {
 
 // MSL/math.h classification values; ordering is part of Normalize's <= test.
-enum MslFloatClass { kMslFloatNaN = 1, kMslFloatInfinite = 2 };
+enum MslFloatClass {
+    kMslFloatNaN = 1,
+    kMslFloatInfinite = 2
+};
 
 extern float kFloat_0_Matrix;
 extern float kFloat_1_matrixQuaternion;
@@ -36,9 +39,13 @@ static inline float vdot3(float x1, float y1, float z1, float x2, float y2, floa
 
 // Remove a float's sign using the original sign-bit test (including signed zero).
 static inline float fabsd(float f) {
-    union { float f; int i; } u;
+    union {
+        float f;
+        int i;
+    } u;
     u.f = f;
-    if (u.i & 0x80000000) f = -f;
+    if (u.i & 0x80000000)
+        f = -f;
     return f;
 }
 
@@ -49,21 +56,28 @@ static inline int lt(float a, float b) {
 
 // Require every absolute component difference to be strictly below the shared epsilon.
 static inline int isNear(const float* v, const float* z) {
-    union U { float f; int i; };
+    union U {
+        float f;
+        int i;
+    };
     U u0, u1, u2;
     float a0, a1, a2;
     u0.f = v[0] - z[0];
     a0 = u0.f;
-    if (u0.i & 0x80000000) a0 = -a0;
+    if (u0.i & 0x80000000)
+        a0 = -a0;
     if (lt(a0, kVectorComparisonEpsilon)) {
         u1.f = v[1] - z[1];
         a1 = u1.f;
-        if (u1.i & 0x80000000) a1 = -a1;
+        if (u1.i & 0x80000000)
+            a1 = -a1;
         if (lt(a1, kVectorComparisonEpsilon)) {
             u2.f = v[2] - z[2];
             a2 = u2.f;
-            if (u2.i & 0x80000000) a2 = -a2;
-            if (lt(a2, kVectorComparisonEpsilon)) return 1;
+            if (u2.i & 0x80000000)
+                a2 = -a2;
+            if (lt(a2, kVectorComparisonEpsilon))
+                return 1;
         }
     }
     return 0;
@@ -78,7 +92,6 @@ static inline float vlen2(const float* a) {
     z2 = z;
     return vdot3(x, y, z, x2, y2, z2);
 }
-
 }
 
 // Normalize in place, retrying exceptional reciprocal lengths; return this vector.
@@ -121,7 +134,8 @@ WVector& WVector::Normalize() {
         float zero = kFloat_0_Matrix;
         float* p = value;
         for (int i = 0; i < 3; ++i, ++p)
-            if (__fpclassifyf(*p) == kMslFloatNaN) *p = zero;
+            if (__fpclassifyf(*p) == kMslFloatNaN)
+                *p = zero;
         zv[0] = kFloat_0_Matrix;
         zv[1] = kFloat_0_Matrix;
         zv[2] = kFloat_0_Matrix;
@@ -137,7 +151,8 @@ WVector& WVector::Normalize() {
             value[2] = z;
             return *this;
         }
-        float x = value[0] * kVectorNormalizationRetryScale, y = value[1] * kVectorNormalizationRetryScale, z = value[2] * kVectorNormalizationRetryScale;
+        float x = value[0] * kVectorNormalizationRetryScale, y = value[1] * kVectorNormalizationRetryScale,
+              z = value[2] * kVectorNormalizationRetryScale;
         value[0] = x;
         value[1] = y;
         value[2] = z;
@@ -231,7 +246,8 @@ int Vec3_NearlyEqual(const float* lhs, const float* rhs) {
             tmp[2] = dz;
             dz = (*(unsigned int*)&tmp[2] & 0x80000000) ? -dz : dz;
             unsigned int c2 = dz < kVectorComparisonEpsilon;
-            if (c2) return 1;
+            if (c2)
+                return 1;
         }
     }
     return 0;
@@ -240,7 +256,9 @@ int Vec3_NearlyEqual(const float* lhs, const float* rhs) {
 // Copy an affine matrix, scale its nine basis elements and preserve translation.
 void Matrix_CopyScaledBasis(float* dst, const float* src, float scale) {
     float v9, v11, v10;
-    v9 = src[9]; v10 = src[10]; v11 = src[11];
+    v9 = src[9];
+    v10 = src[10];
+    v11 = src[11];
     float g0[3], g1[3], g2[3];
     float z0 = src[2] * scale;
     float y0 = src[1] * scale;
@@ -251,13 +269,27 @@ void Matrix_CopyScaledBasis(float* dst, const float* src, float scale) {
     float z2 = src[8] * scale;
     float y2 = src[7] * scale;
     float x2 = src[6] * scale;
-    g0[0] = x0; g0[1] = y0; g0[2] = z0;
-    dst[0] = g0[0]; dst[1] = g0[1]; dst[2] = g0[2];
-    g1[0] = x1; g1[1] = y1; g1[2] = z1;
-    dst[3] = g1[0]; dst[4] = g1[1]; dst[5] = g1[2];
-    g2[0] = x2; g2[1] = y2; g2[2] = z2;
-    dst[6] = g2[0]; dst[7] = g2[1]; dst[8] = g2[2];
-    dst[9] = v9; dst[10] = v10; dst[11] = v11;
+    g0[0] = x0;
+    g0[1] = y0;
+    g0[2] = z0;
+    dst[0] = g0[0];
+    dst[1] = g0[1];
+    dst[2] = g0[2];
+    g1[0] = x1;
+    g1[1] = y1;
+    g1[2] = z1;
+    dst[3] = g1[0];
+    dst[4] = g1[1];
+    dst[5] = g1[2];
+    g2[0] = x2;
+    g2[1] = y2;
+    g2[2] = z2;
+    dst[6] = g2[0];
+    dst[7] = g2[1];
+    dst[8] = g2[2];
+    dst[9] = v9;
+    dst[10] = v10;
+    dst[11] = v11;
 }
 
 // Scale the nine contiguous basis elements in place; translation is outside this range.
@@ -272,11 +304,16 @@ void Matrix3x3_ScaleAssign(float* value, float scale) {
     a6 = value[6] * scale;
     a7 = value[7] * scale;
     a8 = value[8] * scale;
-    value[0] = a0; value[1] = a1; value[2] = a2;
-    value[3] = a3; value[4] = a4; value[5] = a5;
-    value[6] = a6; value[7] = a7; value[8] = a8;
+    value[0] = a0;
+    value[1] = a1;
+    value[2] = a2;
+    value[3] = a3;
+    value[4] = a4;
+    value[5] = a5;
+    value[6] = a6;
+    value[7] = a7;
+    value[8] = a8;
 }
-
 }
 
 // Return vector length using the shared approximate square root.
@@ -296,9 +333,7 @@ float WVectorLen(const WVector& v) {
     return Math_SquareRootApprox((float)f10);
 }
 
-extern "C" {
-
-}
+extern "C" {}
 
 // Return this vector's length after double-precision accumulation of its square.
 float WVector::Magnitude() const {
@@ -334,11 +369,19 @@ void Matrix_CopyAffine(float* dst, const float* src) {
     j = src[9];
     k = src[10];
     l = src[11];
-    dst[0] = a; dst[1] = b; dst[2] = c; dst[3] = d;
-    dst[4] = e; dst[5] = f; dst[6] = g; dst[7] = h;
-    dst[8] = i; dst[9] = j; dst[10] = k; dst[11] = l;
+    dst[0] = a;
+    dst[1] = b;
+    dst[2] = c;
+    dst[3] = d;
+    dst[4] = e;
+    dst[5] = f;
+    dst[6] = g;
+    dst[7] = h;
+    dst[8] = i;
+    dst[9] = j;
+    dst[10] = k;
+    dst[11] = l;
 }
-
 }
 
 // Return the component-wise sum without modifying either input.
@@ -349,9 +392,7 @@ WVector operator+(const WVector& lhs, const WVector& rhs) {
     return WVector(x, y, z);
 }
 
-extern "C" {
-
-}
+extern "C" {}
 
 // Return the component-wise difference lhs-rhs.
 WVector operator-(const WVector& lhs, const WVector& rhs) {
@@ -361,9 +402,7 @@ WVector operator-(const WVector& lhs, const WVector& rhs) {
     return WVector(x, y, z);
 }
 
-extern "C" {
-
-}
+extern "C" {}
 
 // Add another vector in place and return this vector.
 WVector& WVector::operator+=(const WVector& other) {
@@ -376,9 +415,7 @@ WVector& WVector::operator+=(const WVector& other) {
     return *this;
 }
 
-extern "C" {
-
-}
+extern "C" {}
 
 #pragma opt_lifetimes on
 // Return the dot product with double accumulation and one final float rounding.
@@ -410,7 +447,8 @@ float Vec3_DotProduct(const float* lhs, const float* rhs) {
     float f3 = rhs[0];
     double f10 = (double)f0 * (double)f3;
 
-    float f4 = rhs[1]; f10 = (double)f1 * (double)f4 + f10;
+    float f4 = rhs[1];
+    f10 = (double)f1 * (double)f4 + f10;
 
     volatile float tmp[4];
     f10 = (double)f2 * (double)(rhs[2]) + f10;
@@ -421,27 +459,97 @@ float Vec3_DotProduct(const float* lhs, const float* rhs) {
 // Transform a point (implicit w=1), including the matrix translation row.
 // dst/value may be the same three-float vector; matrix supplies all twelve floats.
 // This point operation includes translation; Matrix_TransformDirection uses w=0.
-void Matrix_TransformPoint(float* dst, const float* value, const float* matrix) {
+void* Matrix_TransformPoint(float* dst, const float* value, const float* matrix) {
     typedef __vec2x32float__ Pair;
-    union Packed { Pair pair; float f[2]; } a, b, v, w, out;
+    union Packed {
+        Pair pair;
+        float f[2];
+    } a, b, v, w, out;
     a.pair = *(const Pair*)(matrix + 0);
     b.pair = *(const Pair*)(matrix + 3);
     Pair c = *(const Pair*)(matrix + 6);
     Pair d = *(const Pair*)(matrix + 9);
-    v.f[0] = value[0]; v.f[1] = value[0];
-    w.f[0] = value[2]; w.f[1] = value[2];
+    v.f[0] = value[0];
+    v.f[1] = value[0];
+    w.f[0] = value[2];
+    w.f[1] = value[2];
     out.pair = w.pair * c + v.pair * a.pair;
-    v.f[0] = value[1]; v.f[1] = value[1];
+    v.f[0] = value[1];
+    v.f[1] = value[1];
     // The original rounds y*m before adding the translation lane.
     volatile Pair ym = v.pair * b.pair;
     out.pair = out.pair + (ym + d);
     float x = out.f[0], y = out.f[1];
     volatile float ymz = value[1] * matrix[5];
     float z = (value[2] * matrix[8] + value[0] * matrix[2]) + (ymz + matrix[11]);
-    dst[1] = y; dst[0] = x; dst[2] = z;
+    dst[1] = y;
+    dst[0] = x;
+    dst[2] = z;
+    return dst;
 }
 
 // Transform a direction (implicit w=0), retaining the original zero*translation terms.
+// clang-format off
+#ifdef __MWERKS__
+asm void Matrix_TransformDirection(float* dst, const float* value, const float* matrix) {
+    nofralloc
+    stwu r1, -64(r1)
+    stfd f31, 48(r1)
+    psq_st f31, 56(r1), 0, 0
+    stfd f30, 32(r1)
+    psq_st f30, 40(r1), 0, 0
+    psq_l f0, 0(r5), 0, 0
+    li r0, 0
+    psq_l f1, 12(r5), 0, 0
+    stw r0, 8(r1)
+    ps_merge00 f2, f0, f1
+    psq_l f10, 8(r5), 1, 0
+    ps_merge11 f4, f0, f1
+    psq_l f11, 20(r5), 1, 0
+    stw r0, 12(r1)
+    psq_l f0, 24(r5), 0, 0
+    psq_l f1, 36(r5), 0, 0
+    ps_merge00 f6, f10, f11
+    ps_merge11 f8, f10, f11
+    psq_l f10, 32(r5), 1, 0
+    psq_l f11, 44(r5), 1, 0
+    ps_merge00 f3, f0, f1
+    ps_merge11 f5, f0, f1
+    psq_l f0, 0(r4), 0, 0
+    psq_l f1, 8(r4), 1, 0
+    ps_merge00 f7, f10, f11
+    psq_l f13, 8(r1), 0, 0
+    ps_merge11 f9, f10, f11
+    ps_mul f10, f0, f2
+    ps_merge00 f1, f1, f13
+    ps_mul f2, f0, f4
+    ps_madd f11, f1, f3, f10
+    ps_madd f3, f1, f5, f2
+    ps_mul f10, f0, f6
+    ps_sum0 f12, f11, f11, f11
+    ps_mul f2, f0, f8
+    ps_madd f11, f1, f7, f10
+    ps_sum1 f13, f3, f12, f3
+    ps_madd f3, f1, f9, f2
+    ps_sum0 f4, f11, f11, f11
+    psq_st f13, 16(r1), 0, 0
+    ps_sum1 f13, f3, f4, f3
+    lfs f30, 20(r1)
+    lfs f31, 16(r1)
+    stfs f30, 4(r3)
+    psq_st f13, 24(r1), 0, 0
+    lfs f30, 24(r1)
+    stfs f31, 0(r3)
+    stfs f30, 8(r3)
+    psq_l f31, 56(r1), 0, 0
+    lfd f31, 48(r1)
+    psq_l f30, 40(r1), 0, 0
+    lfd f30, 32(r1)
+    addi r1, r1, 64
+    blr
+}
+#else
+// clang-format on
 void Matrix_TransformDirection(float* dst, const float* value, const float* matrix) {
     // Same 4x3 row-major layout as Matrix_TransformPoint (rows m[0..2],
     // m[3..5], m[6..8], translation m[9..11]), but with w = 0: the original
@@ -460,25 +568,34 @@ void Matrix_TransformDirection(float* dst, const float* value, const float* matr
     dst[0] = ox;
     dst[2] = oz;
 }
+#endif
 
 // Store a*b (apply a then b); stage all twelve results so dst may alias either input.
 void Matrix_ConcatAffine(float* dst, const float* a, const float* b) {
-    float x0 = a[0]*b[0] + a[1]*b[3] + a[2]*b[6];
-    float x1 = a[0]*b[1] + a[1]*b[4] + a[2]*b[7];
-    float x2 = a[0]*b[2] + a[1]*b[5] + a[2]*b[8];
-    float x3 = a[3]*b[0] + a[4]*b[3] + a[5]*b[6];
-    float x4 = a[3]*b[1] + a[4]*b[4] + a[5]*b[7];
-    float x5 = a[3]*b[2] + a[4]*b[5] + a[5]*b[8];
-    float x6 = a[6]*b[0] + a[7]*b[3] + a[8]*b[6];
-    float x7 = a[6]*b[1] + a[7]*b[4] + a[8]*b[7];
-    float x8 = a[6]*b[2] + a[7]*b[5] + a[8]*b[8];
-    float x9 = b[9] + (a[9]*b[0] + a[10]*b[3] + a[11]*b[6]);
-    float x10 = b[10] + (a[9]*b[1] + a[10]*b[4] + a[11]*b[7]);
-    float x11 = b[11] + (a[9]*b[2] + a[10]*b[5] + a[11]*b[8]);
-    dst[0] = x0; dst[1] = x1; dst[2] = x2;
-    dst[3] = x3; dst[4] = x4; dst[5] = x5;
-    dst[6] = x6; dst[7] = x7; dst[8] = x8;
-    dst[9] = x9; dst[10] = x10; dst[11] = x11;
+    float x0 = a[0] * b[0] + a[1] * b[3] + a[2] * b[6];
+    float x1 = a[0] * b[1] + a[1] * b[4] + a[2] * b[7];
+    float x2 = a[0] * b[2] + a[1] * b[5] + a[2] * b[8];
+    float x3 = a[3] * b[0] + a[4] * b[3] + a[5] * b[6];
+    float x4 = a[3] * b[1] + a[4] * b[4] + a[5] * b[7];
+    float x5 = a[3] * b[2] + a[4] * b[5] + a[5] * b[8];
+    float x6 = a[6] * b[0] + a[7] * b[3] + a[8] * b[6];
+    float x7 = a[6] * b[1] + a[7] * b[4] + a[8] * b[7];
+    float x8 = a[6] * b[2] + a[7] * b[5] + a[8] * b[8];
+    float x9 = b[9] + (a[9] * b[0] + a[10] * b[3] + a[11] * b[6]);
+    float x10 = b[10] + (a[9] * b[1] + a[10] * b[4] + a[11] * b[7]);
+    float x11 = b[11] + (a[9] * b[2] + a[10] * b[5] + a[11] * b[8]);
+    dst[0] = x0;
+    dst[1] = x1;
+    dst[2] = x2;
+    dst[3] = x3;
+    dst[4] = x4;
+    dst[5] = x5;
+    dst[6] = x6;
+    dst[7] = x7;
+    dst[8] = x8;
+    dst[9] = x9;
+    dst[10] = x10;
+    dst[11] = x11;
 }
 
 // Invert the basis by cofactors and set translation to -t*inverseBasis; no singularity check.
@@ -512,13 +629,27 @@ void Matrix_InvertAffine(float* dst, const float* m) {
     inv = kFloat_1_matrixQuaternion / (a * A + b * B + c * C);
     float r10, r11, r12, r00, r01, r02, r20, r21, r22;
     // Phase 2: write the adjugate/det basis; rRC denotes inverse row R, column C.
-    r10 = inv * B; r11 = inv * (a * i - c * g); r12 = inv * (c * d - a * f);
-    tx = m[9]; ty = m[10]; tz = m[11];
-    dst[3] = r10; dst[5] = r12; dst[4] = r11;
-    r00 = inv * A; r01 = inv * (c * h - bi); r02 = inv * (b * f - c * e);
-    dst[0] = r00; dst[1] = r01; dst[2] = r02;
-    r20 = inv * C; r21 = inv * (b * g - a * h); r22 = inv * (a * e - b * d);
-    dst[6] = r20; dst[7] = r21; dst[8] = r22;
+    r10 = inv * B;
+    r11 = inv * (a * i - c * g);
+    r12 = inv * (c * d - a * f);
+    tx = m[9];
+    ty = m[10];
+    tz = m[11];
+    dst[3] = r10;
+    dst[5] = r12;
+    dst[4] = r11;
+    r00 = inv * A;
+    r01 = inv * (c * h - bi);
+    r02 = inv * (b * f - c * e);
+    dst[0] = r00;
+    dst[1] = r01;
+    dst[2] = r02;
+    r20 = inv * C;
+    r21 = inv * (b * g - a * h);
+    r22 = inv * (a * e - b * d);
+    dst[6] = r20;
+    dst[7] = r21;
+    dst[8] = r22;
     float t2, t1, t0;
     // Phase 3: translation cancels the original offset in the inverse space.
     t0 = -(tx * r00 + ty * r10 + tz * r20);
@@ -528,7 +659,6 @@ void Matrix_InvertAffine(float* dst, const float* m) {
     dst[10] = t1;
     dst[11] = t2;
 }
-
 }
 
 // Subtract another vector in place and return this vector.
@@ -572,7 +702,6 @@ void Vec3_DivideAssign(float* value, float scale) {
     value[1] = y;
     value[2] = z;
 }
-
 }
 
 // Return a scaled vector without modifying src.
@@ -587,9 +716,7 @@ WVector operator*(const WVector& src, float scale) {
     return WVector(x, y, z);
 }
 
-extern "C" {
-
-}
+extern "C" {}
 
 // Return a scaled vector for scalar-first multiplication.
 WVector operator*(float scale, const WVector& src) {
@@ -603,9 +730,7 @@ WVector operator*(float scale, const WVector& src) {
     return WVector(x, y, z);
 }
 
-extern "C" {
-
-}
+extern "C" {}
 
 // Scale each component in place and return this vector.
 WVector& WVector::operator*=(float scale) {
@@ -631,7 +756,6 @@ void Vec3_Zero(float* value) {
     value[1] = zero;
     value[0] = zero;
 }
-
 }
 
 // Copy all components and return this vector, including for self-assignment.
@@ -655,7 +779,8 @@ float Vec3_CalculateLengthSquared(const float* value) {
 
 // Set the three source-axis basis rows in destination coordinates; clear translation.
 // Argument order is X row, Y row, Z row, each in XYZ component order.
-void Matrix_SetBasisElements(float* value, float xBasisX, float xBasisY, float xBasisZ, float yBasisX, float yBasisY, float yBasisZ, float zBasisX, float zBasisY, float zBasisZ) {
+void Matrix_SetBasisElements(float* value, float xBasisX, float xBasisY, float xBasisZ, float yBasisX, float yBasisY,
+                             float yBasisZ, float zBasisX, float zBasisY, float zBasisZ) {
     float zero = kFloat_0_Matrix;
     value[0] = xBasisX;
     value[1] = xBasisY;

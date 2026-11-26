@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CSAVEPROCESSMAIN_H
 #define CLASSES_CSAVEPROCESSMAIN_H
 
@@ -7,22 +5,34 @@
 
 class CSaveProcessMain {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x14];                 // 0x4
-    void* secondaryVtable;              // 0x18: 1 use in CSaveProcessMain_Ctor
-    int retainedRequestWord0;                         // 0x1c: 2 uses in CSaveProcessMain_Ctor, CSaveProcessMain_HandleMsg
-    int transitionArg0;                         // 0x20: 1 use in CSaveProcessMain_Ctor
-    int transitionArg1;                         // 0x24: 1 use in CSaveProcessMain_Ctor
-    int transitionArg2;                         // 0x28: 1 use in CSaveProcessMain_Ctor
-    int transitionArg3;                         // 0x2c: 1 use in CSaveProcessMain_Ctor
-    int retainedRequestArg0;                         // 0x30: 1 use in CSaveProcessMain_Ctor
-    int retainedRequestArg1;                         // 0x34: 1 use in CSaveProcessMain_Ctor
-    int transitionArg4;                         // 0x38: 1 use in CSaveProcessMain_Ctor
-    int saveMenu;                         // 0x3c: 2 uses in CSaveProcessMain_Ctor, CSaveProcessMain_OnDisplay
+    void* vtbl;               // 0x0: original vtable pointer
+    char pad_004[0x14];       // 0x4
+    void* secondaryVtable;    // 0x18
+    int retainedRequestWord0; // 0x1c
+    int transitionArg0;       // 0x20
+    int transitionArg1;       // 0x24
+    int transitionArg2;       // 0x28
+    int transitionArg3;       // 0x2c
+    int retainedRequestArg0;  // 0x30
+    int retainedRequestArg1;  // 0x34
+    int transitionArg4;       // 0x38
+    int saveMenu;             // 0x3c
+
+    static void* GetRTTI();
+    void OnProcess(float dt);
+    void OnDisplay();
+    static void HandleMsg(void* dst, const void* src);
+
+    CSaveProcessMain();
+    ~CSaveProcessMain();
+
+    // Destructor entry for the secondary interface's vtable: its this pointer is
+    // 0x18 bytes past the object's start.
+    void DtorThunk18(int deleting);
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define CSAVEPROCESSMAIN_OFF(f, o) typedef char CSaveProcessMain_off_##f[((int)&((CSaveProcessMain*)0)->f == (o)) ? 1 : -1]
+#define CSAVEPROCESSMAIN_OFF(f, o) \
+    typedef char CSaveProcessMain_off_##f[((int)&((CSaveProcessMain*)0)->f == (o)) ? 1 : -1]
 CSAVEPROCESSMAIN_OFF(secondaryVtable, 0x18);
 CSAVEPROCESSMAIN_OFF(retainedRequestWord0, 0x1c);
 CSAVEPROCESSMAIN_OFF(transitionArg0, 0x20);
@@ -35,4 +45,4 @@ CSAVEPROCESSMAIN_OFF(transitionArg4, 0x38);
 CSAVEPROCESSMAIN_OFF(saveMenu, 0x3c);
 #undef CSAVEPROCESSMAIN_OFF
 
-#endif  // CLASSES_CSAVEPROCESSMAIN_H
+#endif // CLASSES_CSAVEPROCESSMAIN_H

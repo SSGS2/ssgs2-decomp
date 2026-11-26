@@ -1,3 +1,7 @@
+// Camera mode handling for CCameraWork: installing the fixed camera, preloading
+// the player, rule and indexed animation groups, starting a transition, and
+// choosing the next or a random mode. One function picks and starts the group
+// animation a shot camera plays at its pivot.
 #include "classes/CGolfDoc.h"
 #define AsCGolfDoc(p) ((CGolfDoc*)(p))
 #include "classes/CSharedDoc.h"
@@ -6,8 +10,7 @@
 #define AsCCameraWork(p) ((CCameraWork*)(p))
 #include "game/types.h"
 #include "game/wvector.h"
-// Translation unit 0x800D80CC-0x800D89AC (16 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CVCGPlayer.h"
 
 extern "C" {
 
@@ -25,7 +28,10 @@ enum CameraAnimationGroupKind {
     kRuleResourceGroup = 1,
     kPlayerAnimationGroup = 2
 };
-enum { kExcludedPlayerKind = 3, kExtendedCameraSelector = 3 };
+enum {
+    kExcludedPlayerKind = 3,
+    kExtendedCameraSelector = 3
+};
 struct CameraGroupNode {
     CameraGroupNode* left;
     CameraGroupNode* right;
@@ -38,10 +44,22 @@ struct CameraGroupTree {
     void* endStorage;
     CameraGroupNode* first;
 };
-struct GolfRosterEntry { char playerData[8]; int kind; };
-struct InstanceCameraSelection { char state[0xA]; unsigned char selector; };
-struct InstanceCameraRoot { void* vtable; InstanceCameraSelection* settings; };
-struct AffineCameraFrame { float basis[9]; WVector translation; };
+struct GolfRosterEntry {
+    char playerData[8];
+    int kind;
+};
+struct InstanceCameraSelection {
+    char state[0xA];
+    unsigned char selector;
+};
+struct InstanceCameraRoot {
+    void* vtable;
+    InstanceCameraSelection* settings;
+};
+struct AffineCameraFrame {
+    float basis[9];
+    WVector translation;
+};
 typedef char CameraFrame_translation_offset[((int)&((AffineCameraFrame*)0)->translation == 0x24) ? 1 : -1];
 
 void* GolfPlayer_GetEntryByIndex(void*, void*);
@@ -87,29 +105,28 @@ unsigned char SharedDoc_GetGolfRuleType() {
 }
 
 // Mark this camera work object as no longer installed.
-void CCameraWork_UninstallCamera(char* value) {
+void CCameraWork::UninstallCamera() {
+    char* value = (char*)this;
     (*(char*)&AsCCameraWork(value)->installed) = 0;
 }
 
-void CCameraWork_ConfigureMode(void*, int, int);
 void __as__7WVectorFRC7WVector(void*, void*);
 
 // Select the fixed-position mode, copy the position, and mark the camera installed.
-void CCameraWork_SetInstalledCamera(void* self, void* position) {
-    CCameraWork_ConfigureMode(self, kInstalledPositionMode, 0);
-    (*(WVector*)&AsCCameraWork(self)->position[0]) = *(WVector*)position;
-    (*(char*)&AsCCameraWork(self)->installed) = 1;
+void CCameraWork::SetInstalledCamera(void* position) {
+    ConfigureMode(kInstalledPositionMode, 0);
+    (*(WVector*)&this->position[0]) = *(WVector*)position;
+    (*(char*)&installed) = 1;
 }
 
 void* GolfDoc_GetCurrent();
 unsigned char GolfDoc_GetPlayerCount();
 void* GolfPlayer_GetCurrentEntryByIndex(void*);
-void* CGolfDoc_GetItemSelection(void*, unsigned int);
-int ResourceGroups_FindNamedValue(void*, void*, int);
+void* ResourceGroups_FindNamedValue(void*, void*, const char*);
 void CameraResourceGroups_LoadPlayerResourceGroup(void*, void*);
-int CameraWorkTable_FindAnimation(void*, void*, int);
+void* CameraWorkTable_FindAnimation(void*, void*, const char*);
 void CameraResourceGroups_LoadPlayerAnimationGroup(void*, void*);
-int ResourceGroups_FindNamedValueInThirdTable(void*, int, int);
+void* ResourceGroups_FindNamedValueInThirdTable(void*, int, const char*);
 void CameraWorkTable_LoadAnimationSet(void*, int);
 void CameraGroupIterator_GetFirst(int*, const char*);
 int* CameraGroupIterator_GetKeyAddress(int**);
@@ -121,35 +138,38 @@ void CameraGroupIterator_PostIncrement(void**, void**, int);
 #pragma opt_common_subs off
 #pragma opt_strength_reduction off
 // Preload player and indexed camera groups, excluding inactive roster entries.
-void CCameraWork_PreloadPlayerAndIndexedGroups(void* self) {
+void CCameraWork::PreloadPlayerAndIndexedGroups() {
     void* characterKey;
     for (unsigned char i = 0; i < GolfDoc_GetPlayerCount(); ++i) {
         void* entry = GolfPlayer_GetCurrentEntryByIndex((void*)(unsigned int)i);
         if (((GolfRosterEntry*)entry)->kind != kExcludedPlayerKind) {
             void* table = GolfDoc_GetCurrent();
-            void* item = CGolfDoc_GetItemSelection(table, i);
+            void* item = ((CGolfDoc*)table)->GetItemSelection(i);
             characterKey = *(void**)item;
-            if (!ResourceGroups_FindNamedValue(self, characterKey, 0)) CameraResourceGroups_LoadPlayerResourceGroup(self, characterKey);
+            if (!ResourceGroups_FindNamedValue(this, characterKey, 0))
+                CameraResourceGroups_LoadPlayerResourceGroup(this, characterKey);
         }
     }
     for (unsigned char i = 0; i < GolfDoc_GetPlayerCount(); ++i) {
         void* entry = GolfPlayer_GetCurrentEntryByIndex((void*)(unsigned int)i);
         if (((GolfRosterEntry*)entry)->kind != kExcludedPlayerKind) {
-            void* item = CGolfDoc_GetItemSelection(GolfDoc_GetCurrent(), i);
+            void* item = ((CGolfDoc*)GolfDoc_GetCurrent())->GetItemSelection(i);
             characterKey = *(void**)item;
-            if (!CameraWorkTable_FindAnimation(self, characterKey, 0)) CameraResourceGroups_LoadPlayerAnimationGroup(self, characterKey);
+            if (!CameraWorkTable_FindAnimation(this, characterKey, 0))
+                CameraResourceGroups_LoadPlayerAnimationGroup(this, characterKey);
         }
     }
     int groupIterator;
-    CameraGroupIterator_GetFirst(&groupIterator, (char*)&AsCCameraWork(self)->indexedCameraGroups[0]);
+    CameraGroupIterator_GetFirst(&groupIterator, (char*)&indexedCameraGroups[0]);
     // Original 0x800D80CC: compute the groupEnd iterator at every test.
     int previousIterator;
     int groupEnd;
-    while ((CameraGroupIterator_GetEnd((void**)&groupEnd, (char*)&AsCCameraWork(self)->indexedCameraGroups[0]),
+    while ((CameraGroupIterator_GetEnd((void**)&groupEnd, (char*)&indexedCameraGroups[0]),
             CameraGroupIterator_NotEqual(&groupIterator, &groupEnd))) {
         int* node = CameraGroupIterator_GetKeyAddress((int**)&groupIterator);
         unsigned char value = *(unsigned char*)node;
-        if (!ResourceGroups_FindNamedValueInThirdTable(self, value, 0)) CameraWorkTable_LoadAnimationSet(self, value);
+        if (!ResourceGroups_FindNamedValueInThirdTable(this, value, 0))
+            CameraWorkTable_LoadAnimationSet(this, value);
         CameraGroupIterator_PostIncrement((void**)&previousIterator, (void**)&groupIterator, 0);
     }
     (void)characterKey;
@@ -174,8 +194,7 @@ void CameraGroupIterator_PostIncrement(void** out, void** link, int unused) {
     void* cur = *link;
     void* parent;
     // Walk up until the current node is its parent's left child.
-    while ((cur = *link,
-            parent = (void*)((unsigned int)((CameraGroupNode*)cur)->parentAndColor & ~1u),
+    while ((cur = *link, parent = (void*)((unsigned int)((CameraGroupNode*)cur)->parentAndColor & ~1u),
             cur != ((CameraGroupNode*)parent)->left)) {
         *link = parent;
     }
@@ -185,9 +204,6 @@ void CameraGroupIterator_PostIncrement(void** out, void** link, int unused) {
 
 void* InstanceTable_Get();
 void Vec2_Zero(void*);
-void CCameraWork_ConfigureMode(void*, int, int);
-void CCameraWork_SelectShotCameraMode(void*, int);
-void CCameraWork_BuildModeCurve(void*, void*);
 extern int s_extendedCameraModeWeights[];
 extern int s_cameraModeWeightsStorage[];
 extern char s_cameraTransform[256];
@@ -195,7 +211,6 @@ extern const float kFloat_0_CameraWork;
 extern const float kFloat_0_95993108;
 
 void Matrix_CopyAffine(void*, void*);
-void CCameraWork_SetupMode202Transition(void*, void*, void*);
 void Matrix_ExtractUniformScaleNormalizedRotation(void*, void*);
 void* Matrix_TransformPoint(void*, void*, void*);
 void* GolfBall__Fv();
@@ -212,27 +227,28 @@ extern const float kFloat_30_0;
 extern const float kFloat_neg1_CameraWork;
 #pragma opt_common_subs off
 // Start a matrix transition from the raised ball/target midpoint toward the input frame.
-void CCameraWork_SetupMode202Transition(void* self, void* initialTransform, void* targetPosition) {
+void CCameraWork::SetupMode202Transition(void* initialTransform, void* targetPosition) {
     float initial = kFloat_0_95993108;
-    AsCCameraWork(self)->resetFovPending = 0;
-    AsCCameraWork(self)->fov = initial;
-    (*(char*)&AsCCameraWork(self)->randomModeRequested) = 0;
-    (*(char*)&AsCCameraWork(self)->groupAnimationActive) = 0;
-    Matrix_CopyAffine((char*)&AsCCameraWork(self)->transform[0], initialTransform);
-    CCameraWork_ConfigureMode(self, kMatrixTransitionMode, 1);
-    Matrix_ExtractUniformScaleNormalizedRotation((char*)&AsCCameraWork(self)->transform[0], (char*)&AsCCameraWork(self)->rotation[0]);
-    Vec3 cameraForward, ballToTarget, transformedForward, forwardAxis, ballToTargetDifference, raisedPosition, halfwayPosition, halfwayOffset, heightOffset;
+    resetFovPending = 0;
+    fov = initial;
+    (*(char*)&randomModeRequested) = 0;
+    (*(char*)&groupAnimationActive) = 0;
+    Matrix_CopyAffine((char*)&transform[0], initialTransform);
+    ConfigureMode(kMatrixTransitionMode, 1);
+    Matrix_ExtractUniformScaleNormalizedRotation((char*)&transform[0], (char*)&rotation[0]);
+    Vec3 cameraForward, ballToTarget, transformedForward, forwardAxis, ballToTargetDifference, raisedPosition,
+        halfwayPosition, halfwayOffset, heightOffset;
     float zero = kFloat_0_CameraWork;
     forwardAxis.x = zero;
     forwardAxis.y = zero;
     forwardAxis.z = kFloat_1_CameraWork;
-    Matrix_TransformPoint(&transformedForward, &forwardAxis, (char*)&AsCCameraWork(self)->rotation[0]);
+    Matrix_TransformPoint(&transformedForward, &forwardAxis, (char*)&rotation[0]);
     __as__7WVectorFRC7WVector(&cameraForward, &transformedForward);
     void* ballPosition = GolfBall__Fv();
     __mi__FRC7WVectorRC7WVector(&ballToTargetDifference, targetPosition, ballPosition);
     __as__7WVectorFRC7WVector(&ballToTarget, &ballToTargetDifference);
     float heading = Vector_SignedAngleXZ(&ballToTarget, &cameraForward);
-    AsCCameraWork(self)->heading = heading;
+    this->heading = heading;
     zero = kFloat_0_CameraWork;
     heightOffset.x = zero;
     heightOffset.y = kFloat_10_cameraWork;
@@ -241,19 +257,19 @@ void CCameraWork_SetupMode202Transition(void* self, void* initialTransform, void
     ballPosition = GolfBall__Fv();
     __pl__FRC7WVectorRC7WVector(&halfwayPosition, ballPosition, &halfwayOffset);
     __pl__FRC7WVectorRC7WVector(&raisedPosition, &halfwayPosition, &heightOffset);
-    __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->position[0], &raisedPosition);
-    __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->startPosition[0], (char*)&AsCCameraWork(self)->position[0]);
-    __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->endPosition[0], &((AffineCameraFrame*)initialTransform)->translation);
-    Matrix_CopyAffine((char*)&AsCCameraWork(self)->previousTransform[0], (char*)&AsCCameraWork(self)->transform[0]);
+    __as__7WVectorFRC7WVector((char*)&position[0], &raisedPosition);
+    __as__7WVectorFRC7WVector((char*)&startPosition[0], (char*)&position[0]);
+    __as__7WVectorFRC7WVector((char*)&endPosition[0], &((AffineCameraFrame*)initialTransform)->translation);
+    Matrix_CopyAffine((char*)&previousTransform[0], (char*)&transform[0]);
 }
 #pragma opt_common_subs on
 
 // Select the next positive-weight camera mode and reset its input and curve state.
-void CCameraWork_CycleMode(void* self, void* preserveHistory) {
-    volatile void* vself = self;
+void CCameraWork::CycleMode(void* preserveHistory) {
+    volatile void* vself = this;
     if (!preserveHistory) {
         int old = AsCCameraWork(vself)->actionCount;
-        AsCCameraWork(self)->actionCount = old - AsCCameraWork(self)->actionCount;
+        actionCount = old - actionCount;
     }
     unsigned char selector = ((InstanceCameraRoot*)InstanceTable_Get())->settings->selector;
     int nextMode;
@@ -271,91 +287,82 @@ void CCameraWork_CycleMode(void* self, void* preserveHistory) {
             nextMode = (nextMode + 1) % availableModeCount;
         } while (s_cameraModeWeightsStorage[nextMode] <= 0);
     }
-    (*(char*)&AsCCameraWork(self)->inputMoved) = 0;
-    AsCCameraWork(self)->inputFovOffset = kFloat_0_CameraWork;
-    Vec2_Zero((char*)&AsCCameraWork(self)->inputRotationOffset[0]);
-    AsCCameraWork(self)->mode = nextMode;
-    AsCCameraWork(self)->pendingAction = -1;
-    (*(char*)&AsCCameraWork(self)->unk_164) = 0; // Clear the per-shot camera latch; its trigger is still unresolved.
-    (*(char*)&AsCCameraWork(self)->randomModeRequested) = 0;
-    AsCCameraWork(self)->fov = kFloat_0_95993108;
-    AsCCameraWork(self)->resetFovPending = 0;
-    AsCCameraWork(self)->historyIndex = 0;
-    CCameraWork_ConfigureMode(self, nextMode, 1);
-    CCameraWork_SelectShotCameraMode(self, 1);
-    CCameraWork_BuildModeCurve(self, (*(void**)&AsCCameraWork(self)->action));
+    (*(char*)&inputMoved) = 0;
+    inputFovOffset = kFloat_0_CameraWork;
+    Vec2_Zero((char*)&inputRotationOffset[0]);
+    mode = nextMode;
+    pendingAction = -1;
+    (*(char*)&unk_164) = 0; // Clear the per-shot camera latch; its trigger is still unresolved.
+    (*(char*)&randomModeRequested) = 0;
+    fov = kFloat_0_95993108;
+    resetFovPending = 0;
+    historyIndex = 0;
+    ConfigureMode(nextMode, 1);
+    ((CCameraWork*)this)->SelectShotCameraMode(1);
+    ((CCameraWork*)this)->BuildModeCurve((*(unsigned int*)&action));
 }
 
-unsigned int CGolfDoc_ResolveTurnAfterMatchHoleOut(void*);
 void* GroupVector_GetCount(void*, void*);
 void* GroupVector_GetValues(void*, void*, unsigned int);
-void CVCGPlayer_StartGroupPlayback(void*, int, int);
-void CCameraWork_ResetTrajectoryPlayback(void*);
 
+// The original compiles this function with these optimizations off.
 #pragma opt_common_subs off
 #pragma opt_strength_reduction off
 #pragma opt_lifetimes off
 #pragma opt_propagation off
-// Choose a player/rule animation group at a pivot and return its duration, or -1.
-float CCameraWork_StartGroupAnimationAtPivot(void* camera, int groupKind, int variant, void* pivotPosition, void* unused) {
-    int playerOrRuleIndex;
-    void* self;
-    int selectedVariant;
-    int selectedGroupKind;
+// Start the animation group that belongs to a player, a rule or a named group at
+// a pivot, and return its length in seconds, or -1 when no group was found.
+float CCameraWork::StartGroupAnimationAtPivot(int groupKind, const char* name, void* pivotPosition) {
+    CCameraWork* self = this;
+    int index = 0;
     float animationSegment[12];
     unsigned int segmentCount;
-    playerOrRuleIndex = 0;
-    self = camera;
-    selectedVariant = variant;
-    selectedGroupKind = groupKind;
-    (*(char*)&AsCCameraWork(self)->randomModeRequested) = (char)playerOrRuleIndex;
-    (*(char*)&AsCCameraWork(self)->groupAnimationActive) = 1;
-    (*(WVector*)&AsCCameraWork(self)->pivotPosition[0]) = *(WVector*)pivotPosition;
-    (*(void**)&AsCCameraWork(self)->pivot) = (char*)&AsCCameraWork(self)->pivotPosition[0];
-    AsCCameraWork(self)->roll = kFloat_0_CameraWork;
-    AsCCameraWork(self)->animationGroup = playerOrRuleIndex;
-    if (selectedGroupKind == kPlayerResourceGroup) {
-        playerOrRuleIndex = (unsigned char)CGolfDoc_ResolveTurnAfterMatchHoleOut(GolfDoc_GetCurrent());
+    self->randomModeRequested = (unsigned char)index;
+    self->groupAnimationActive = 1;
+    (*(WVector*)&self->pivotPosition[0]) = *(WVector*)pivotPosition;
+    self->pivot = (int)&self->pivotPosition[0];
+    self->roll = kFloat_0_CameraWork;
+    self->animationGroup = (void*)index;
+    if (groupKind == kPlayerResourceGroup) {
+        index = (unsigned char)((CGolfDoc*)GolfDoc_GetCurrent())->ResolveTurnAfterMatchHoleOut();
         void* table = GolfDoc_GetCurrent();
-        void* itemSelection = CGolfDoc_GetItemSelection(table, (unsigned char)playerOrRuleIndex);
+        void* itemSelection = ((CGolfDoc*)table)->GetItemSelection((unsigned char)index);
         // The first selection word is a character ID carried in a pointer-typed ABI slot.
-        (*(void**)&AsCCameraWork(self)->animationGroup) = (void*)ResourceGroups_FindNamedValue(self, *(void**)itemSelection, selectedVariant);
-    } else if (selectedGroupKind == kPlayerAnimationGroup) {
-        playerOrRuleIndex = (unsigned char)CGolfDoc_ResolveTurnAfterMatchHoleOut(GolfDoc_GetCurrent());
+        self->animationGroup = ResourceGroups_FindNamedValue(self, *(void**)itemSelection, name);
+    } else if (groupKind == kPlayerAnimationGroup) {
+        index = (unsigned char)((CGolfDoc*)GolfDoc_GetCurrent())->ResolveTurnAfterMatchHoleOut();
         void* table = GolfDoc_GetCurrent();
-        void* itemSelection = CGolfDoc_GetItemSelection(table, (unsigned char)playerOrRuleIndex);
-        (*(void**)&AsCCameraWork(self)->animationGroup) = (void*)CameraWorkTable_FindAnimation(self, *(void**)itemSelection, selectedVariant);
-    } else if (selectedGroupKind == kRuleResourceGroup) {
-        int t = SharedDoc_GetGolfRuleType();
-        playerOrRuleIndex = (unsigned char)t;
-        (*(void**)&AsCCameraWork(self)->animationGroup) = (void*)ResourceGroups_FindNamedValueInThirdTable(self, playerOrRuleIndex, selectedVariant);
+        void* itemSelection = ((CGolfDoc*)table)->GetItemSelection((unsigned char)index);
+        self->animationGroup = CameraWorkTable_FindAnimation(self, *(void**)itemSelection, name);
+    } else if (groupKind == kRuleResourceGroup) {
+        index = (unsigned char)SharedDoc_GetGolfRuleType();
+        self->animationGroup = ResourceGroups_FindNamedValueInThirdTable(self, index, name);
     }
-    CCameraWork_ResetTrajectoryPlayback(self);
+    ((CCameraWork*)self)->ResetTrajectoryPlayback();
     float durationSeconds = kFloat_0_CameraWork;
-    if ((*(void**)&AsCCameraWork(self)->animationGroup)) {
-        GroupVector_GetCount((*(void**)&AsCCameraWork(self)->animationGroup), &segmentCount);
-        (*(unsigned int*)&AsCCameraWork(self)->groupValueCount) = segmentCount;
-        for (playerOrRuleIndex = 0; playerOrRuleIndex < AsCCameraWork(self)->groupValueCount; ++playerOrRuleIndex) {
-            GroupVector_GetValues((*(void**)&AsCCameraWork(self)->animationGroup), &animationSegment, (unsigned int)playerOrRuleIndex);
+    if (self->animationGroup) {
+        GroupVector_GetCount(self->animationGroup, &segmentCount);
+        self->groupValueCount = (int)segmentCount;
+        for (index = 0; index < self->groupValueCount; ++index) {
+            GroupVector_GetValues(self->animationGroup, &animationSegment, (unsigned int)index);
             durationSeconds += animationSegment[0];
         }
-        AsCCameraWork(self)->animationSegmentIndex = 0;
+        self->animationSegmentIndex = 0;
         durationSeconds /= kFloat_30_0;
-        CVCGPlayer_StartGroupPlayback((*(void**)&AsCCameraWork(self)->animationGroup), 0, 0);
-        (*(void**)&AsCCameraWork(self)->playingAnimationGroup) = (*(void**)&AsCCameraWork(self)->animationGroup);
+        ((CVCGPlayer*)(self->animationGroup))->StartGroupPlayback(0, 0);
+        self->playingAnimationGroup = self->animationGroup;
     } else {
-        (*(void**)&AsCCameraWork(self)->playingAnimationGroup) = 0;
+        self->playingAnimationGroup = 0;
     }
-    if ((*(void**)&AsCCameraWork(self)->playingAnimationGroup)) {
-        AsCCameraWork(self)->duration = durationSeconds;
-        AsCCameraWork(self)->animationTime = kFloat_0_CameraWork;
+    if (self->playingAnimationGroup) {
+        self->duration = durationSeconds;
+        self->animationTime = kFloat_0_CameraWork;
         return durationSeconds;
     } else {
-        float f1 = kFloat_neg1_CameraWork;
-        AsCCameraWork(self)->duration = f1;
-        return f1;
+        float noDuration = kFloat_neg1_CameraWork;
+        self->duration = noDuration;
+        return noDuration;
     }
-    (void)unused;
 }
 #pragma opt_lifetimes reset
 #pragma opt_propagation reset
@@ -364,55 +371,64 @@ float CCameraWork_StartGroupAnimationAtPivot(void* camera, int groupKind, int va
 
 int rand();
 // Reset camera playback; optionally choose a random mode using configured weights.
-void CCameraWork_ResetMode(void* self, int mode) {
-    AsCCameraWork(self)->inputFovOffset = kFloat_0_CameraWork;
-    (*(char*)&AsCCameraWork(self)->inputMoved) = 0;
-    Vec2_Zero((char*)&AsCCameraWork(self)->inputRotationOffset[0]);
-    AsCCameraWork(self)->pendingAction = -1;
-    (*(char*)&AsCCameraWork(self)->groupAnimationActive) = 0;
-    Matrix_CopyAffine((char*)&AsCCameraWork(self)->transform[0], s_cameraTransform);
-    Matrix_CopyAffine((char*)&AsCCameraWork(self)->previousTransform[0], s_cameraTransform);
-    AsCCameraWork(self)->fov = kFloat_0_95993108;
-    AsCCameraWork(self)->resetFovPending = 0;
-    (*(char*)&AsCCameraWork(self)->randomModeRequested) = (mode == kRandomCameraMode);
+void CCameraWork::ResetMode(int mode) {
+    inputFovOffset = kFloat_0_CameraWork;
+    (*(char*)&inputMoved) = 0;
+    Vec2_Zero((char*)&inputRotationOffset[0]);
+    pendingAction = -1;
+    (*(char*)&groupAnimationActive) = 0;
+    Matrix_CopyAffine((char*)&transform[0], s_cameraTransform);
+    Matrix_CopyAffine((char*)&previousTransform[0], s_cameraTransform);
+    fov = kFloat_0_95993108;
+    resetFovPending = 0;
+    (*(char*)&randomModeRequested) = (mode == kRandomCameraMode);
     int randomValue = rand();
-    volatile void* vself = self;
+    volatile void* vself = this;
     int old = AsCCameraWork(vself)->actionCount;
-    AsCCameraWork(self)->randomValue = randomValue;
-    AsCCameraWork(self)->historyIndex = -1;
-    AsCCameraWork(self)->actionCount = old - AsCCameraWork(self)->actionCount;
-    (*(void**)&AsCCameraWork(self)->pivot) = GolfBall__Fv();
-    AsCCameraWork(self)->playingAnimationGroup = 0;
+    this->randomValue = randomValue;
+    historyIndex = -1;
+    actionCount = old - actionCount;
+    (*(void**)&pivot) = GolfBall__Fv();
+    playingAnimationGroup = 0;
     if (mode == kRandomCameraMode) {
         void* state = InstanceTable_Get();
         unsigned char selector = ((InstanceCameraRoot*)state)->settings->selector;
         if (selector == kExtendedCameraSelector) {
             int modeWeight;
-            int remainingWeight = AsCCameraWork(self)->randomValue % AsCCameraWork(self)->extendedModeWeightTotal;
-            int modeCount = AsCCameraWork(self)->extendedModeCount;
+            int remainingWeight = this->randomValue % extendedModeWeightTotal;
+            int modeCount = extendedModeCount;
             for (int i = 0; i < modeCount; ++i) {
                 modeWeight = s_extendedCameraModeWeights[i];
                 modeWeight = modeWeight > 0 ? modeWeight : 0;
                 remainingWeight = remainingWeight - modeWeight;
-                if (remainingWeight <= 0) { mode = i + kFirstExtendedCameraMode; break; }
+                if (remainingWeight <= 0) {
+                    mode = i + kFirstExtendedCameraMode;
+                    break;
+                }
             }
         } else if (mode == kRandomCameraMode) {
             int modeWeight;
-            int remainingWeight = AsCCameraWork(self)->randomValue % AsCCameraWork(self)->modeWeightTotal;
-            int modeCount = AsCCameraWork(self)->modeCount;
+            int remainingWeight = this->randomValue % modeWeightTotal;
+            int modeCount = this->modeCount;
             for (int i = 0; i < modeCount; ++i) {
                 modeWeight = s_cameraModeWeightsStorage[i];
 
                 modeWeight = (modeWeight > 0) ? modeWeight : 0;
                 remainingWeight = remainingWeight - modeWeight;
-                if (remainingWeight <= 0) { mode = i; break; }
+                if (remainingWeight <= 0) {
+                    mode = i;
+                    break;
+                }
             }
         }
     }
-    AsCCameraWork(self)->mode = mode;
-    CCameraWork_ConfigureMode(self, mode, 1);
-    AsCCameraWork(self)->animationGroup = 0;
-    if (mode < kFirstTransitionCameraMode) { CCameraWork_SelectShotCameraMode(self, 0); CCameraWork_BuildModeCurve(self, (*(void**)&AsCCameraWork(self)->action)); }
+    this->mode = mode;
+    ConfigureMode(mode, 1);
+    animationGroup = 0;
+    if (mode < kFirstTransitionCameraMode) {
+        ((CCameraWork*)this)->SelectShotCameraMode(0);
+        ((CCameraWork*)this)->BuildModeCurve((*(unsigned int*)&action));
+    }
 }
 
 } // extern "C"

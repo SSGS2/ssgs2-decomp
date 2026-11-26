@@ -1,4 +1,3 @@
-
 // User Data: four saved player slots and the shared record used without a slot.
 // Modding lookup (Controls / Button control): SaveData_InitBlankRecord clears
 // kSavedControlAndAudioOptions at record +0x4E8 with kKeepAudioAndOtherOptions.
@@ -19,7 +18,9 @@
 #include "classes/SavePlayerRecord.h" // SaveData_InitPlayerRecord (0x80075F38): owned slot layout
 #include "classes/CSharedDoc.h"
 // Borrow the shared-document fields; no pointer adjustment or ownership transfer.
-static inline CSharedDoc* AsCSharedDoc(void* p) { return (CSharedDoc*)p; }
+static inline CSharedDoc* AsCSharedDoc(void* p) {
+    return (CSharedDoc*)p;
+}
 #include "classes/CItemManager.h"
 
 // Save slots are 0x828 bytes. This view and SavePlayerRecord describe the same
@@ -31,7 +32,7 @@ static inline CSharedDoc* AsCSharedDoc(void* p) { return (CSharedDoc*)p; }
 // returns unchanged when the requested tier is already set. Thus secondary
 // implies primary for these grants, but primary does not imply secondary.
 // SaveData_TestPartFlag selects +03C for zero and +0AC for ANY nonzero selector;
-// CShopProductParts_AcceptsPart and CShopProductSetItem's member check consume
+// CShopProductParts::AcceptsPart and CShopProductSetItem's member check consume
 // the selected tier to admit inventory rows. This selector is independent of
 // useSharedRecord/currentSlot, which choose the record containing BOTH banks.
 // InitDefaultInventoryRecord (save_data_records_and_inventory_init.cpp) seeds primary from shopFlags bits 5..7,
@@ -39,10 +40,17 @@ static inline CSharedDoc* AsCSharedDoc(void* p) { return (CSharedDoc*)p; }
 // No source evidence assigns a purchase/payment meaning to the tier: mods can
 // choose the required tier from this policy without inventing such a meaning.
 enum SaveLimits {
-    kSaveSlotCount = 4, kCharacterCount = 8, kOutfitPartCount = 24,
-    kPartFlagCount = 782, kCourseFlagCount = 14, kNoInventoryIndex = -1,
-    kItemKindShift = 26, kPartItemKind = 2, kCharacterIdShift = 18,
-    kCharacterIdMask = 0xFF, kUnavailableItemFlag = 0x02000000,
+    kSaveSlotCount = 4,
+    kCharacterCount = 8,
+    kOutfitPartCount = 24,
+    kPartFlagCount = 782,
+    kCourseFlagCount = 14,
+    kNoInventoryIndex = -1,
+    kItemKindShift = 26,
+    kPartItemKind = 2,
+    kCharacterIdShift = 18,
+    kCharacterIdMask = 0xFF,
+    kUnavailableItemFlag = 0x02000000,
     // 0x1A0 is the BYTE size of characters[8] (8 * 0x34), used by the original as an element-count bound;
     // real records hold kCharacterCount (8) entries. Kept at the original value so callers behave identically.
     kCharacterLookupBound = 0x1A0,
@@ -56,17 +64,24 @@ struct SavedCharacterEquipment {
     signed char hairStyleIndex;
     signed char auxPartIndex;
 };
-struct SavedCaddieEquipment { unsigned char flags; char reserved[3]; unsigned int value; };
-struct SavedClubSetEquipment { unsigned char flags; signed char upgradeLevel; };
+struct SavedCaddieEquipment {
+    unsigned char flags;
+    char reserved[3];
+    unsigned int value;
+};
+struct SavedClubSetEquipment {
+    unsigned char flags;
+    signed char upgradeLevel;
+};
 // Eight serialized bytes per course. Initialization proves the widths and empty
 // encodings below; it does not establish the gameplay meaning of +0 or +6.
 struct SavedCourseRecord {
     unsigned int clearedWord;
     unsigned short scoreOrEmpty; // 0x7FFF means no recorded score at initialization.
-    signed char indexOrNone;    // -1 in an empty record; index domain unresolved.
-    unsigned char padding;     // left as cleared by Memory_Clear
+    signed char indexOrNone;     // -1 in an empty record; index domain unresolved.
+    unsigned char padding;       // left as cleared by Memory_Clear
 };
-typedef char SavedCourseRecord_size[sizeof(SavedCourseRecord)==8 ? 1 : -1];
+typedef char SavedCourseRecord_size[sizeof(SavedCourseRecord) == 8 ? 1 : -1];
 // Tour-mode transfer, relative to record+4EC, big-endian save representation:
 // +000..32D = 11 area records of 0x4A bytes (NOT 407 independent progress values).
 // Each area: +0 flags byte, +1 padding, +2 signed currentNode (-1 or 0..34),
@@ -87,7 +102,7 @@ struct SavedTourAreaProgress {
     short currentNode;
     unsigned short nodes[35];
 };
-typedef char SavedTourAreaProgress_size[sizeof(SavedTourAreaProgress)==0x4A ? 1 : -1];
+typedef char SavedTourAreaProgress_size[sizeof(SavedTourAreaProgress) == 0x4A ? 1 : -1];
 struct ModeRecordTransferView {
     SavedTourAreaProgress areas[11];
     signed char areaOrder[8];
@@ -107,16 +122,16 @@ typedef char ModeRecordTransferView_size[(sizeof(ModeRecordTransferView) == 0x33
 // preserve their bit patterns and widths when editing equipment/course defaults.
 // New gameplay meaning needs evidence from the consumer, not a numeric default.
 struct SavedSecondaryBanks {
-    unsigned int unresolvedFlagWord;       // +140
+    unsigned int unresolvedFlagWord;        // +140
     unsigned int partSizedFlags[25];        // +144: bitset storage, meaning unverified
     unsigned int sixWordFlags[6];           // +1A8
     unsigned int unresolvedSmallFlags[4];   // +1C0..1CC
     unsigned int checked45BitFlags[2];      // +1D0
-    unsigned int unresolvedTrailingFlag;   // +1D8
+    unsigned int unresolvedTrailingFlag;    // +1D8
     unsigned int unresolvedScalarWords[15]; // +1DC..214; float/word mix
     unsigned char defaultByteTable[64];     // +218: filled with byte value 8
 };
-typedef char SavedSecondaryBanks_size[(sizeof(SavedSecondaryBanks)==0x118)?1:-1];
+typedef char SavedSecondaryBanks_size[(sizeof(SavedSecondaryBanks) == 0x118) ? 1 : -1];
 struct PlayerRecordView {
     unsigned short firstNameCodeUnit; // First name code unit, tested for nonzero to determine occupancy.
     char reservedHeader[0x2A];
@@ -124,26 +139,26 @@ struct PlayerRecordView {
     signed char caddieItemIndex;
     signed char equippedItemIndices[8];
     char selectionPadding[3];
-    unsigned int primaryPartFlags[25];       // 0x03C: 782 bits, plus unused high bits
-    unsigned int primaryCaddieItemFlags;     // 0x0A0
+    unsigned int primaryPartFlags[25];   // 0x03C: 782 bits, plus unused high bits
+    unsigned int primaryCaddieItemFlags; // 0x0A0
     unsigned int reservedFlags[2];
-    unsigned int alternatePartFlags[25];     // 0x0AC: selected by the test parameter
-    unsigned int alternateCaddieItemFlags;   // 0x110
-    unsigned int ownedHairStyles[2];         // 0x114: shared SavePlayerRecord layout
-    short itemCounts[12];                   // 0x11C
+    unsigned int alternatePartFlags[25];   // 0x0AC: selected by the test parameter
+    unsigned int alternateCaddieItemFlags; // 0x110
+    unsigned int ownedHairStyles[2];       // 0x114: shared SavePlayerRecord layout
+    short itemCounts[12];                  // 0x11C
     short reservedItemCount;
-    signed char auxPartFlags[7];            // 0x136
+    signed char auxPartFlags[7]; // 0x136
     char itemPadding[3];
     SavedSecondaryBanks secondaryBanks;
-    unsigned int unlockedCourses;           // 0x258
-    SavedCourseRecord courseRecords[kCourseFlagCount]; // 0x25C: fourteen 8-byte records
+    unsigned int unlockedCourses;                        // 0x258
+    SavedCourseRecord courseRecords[kCourseFlagCount];   // 0x25C: fourteen 8-byte records
     SavedCharacterEquipment characters[kCharacterCount]; // 0x2CC
-    SavedCaddieEquipment caddies[8];          // 0x46C
-    SavedClubSetEquipment clubSets[15];      // 0x4AC
-    unsigned char balls[11];                // 0x4CA
+    SavedCaddieEquipment caddies[8];                     // 0x46C
+    SavedClubSetEquipment clubSets[15];                  // 0x4AC
+    unsigned char balls[11];                             // 0x4CA
     char settingsPadding[3];
-    unsigned char systemSettings[0x14];     // 0x4D8
-    unsigned char modeRecords[0x33C];        // 0x4EC
+    unsigned char systemSettings[0x14]; // 0x4D8
+    unsigned char modeRecords[0x33C];   // 0x4EC
 };
 struct SaveRecordSetView {
     unsigned int currentSlot;
@@ -168,14 +183,27 @@ struct SaveRecordSetView {
 // Copy operations preserve field widths and padding gaps: do not replace them
 // with a whole-struct assignment/memcpy without rechecking the binary and save format.
 enum SaveEncoding {
-    kDefaultVolumePercent = 80, kDefaultUnlockedCourseCount = 6,
-    kBitsPerFlagWord = 32, kFlagWordIndexShift = 5, kFlagBitIndexMask = 31,
-    kChecked45FlagCount = 45, kEquipmentInitialFlagMask = 0xC0, kEmptyPartFillWord = 0xFFFF,
-    kTrailingRecordScratchOffset = 0x28D0, kTrailingRecordScratchBytes = 0x47C,
-    kClubSetCount = 15, kBallCount = 11, kCaddieCount = 8, kModeProgressCount = 11,
-    kClubSetIffStride = 0x90, kBallIffStride = 0x2C4, kIffRowPayloadOffset = 4,
-    kIffEquipmentFlagsOffset = 0x59, kStarterLastClubUpgrade = 3,
-    kKeepAudioAndOtherOptions = 0x3FFFFFFF, kModeInitialFlags = 0xC0
+    kDefaultVolumePercent = 80,
+    kDefaultUnlockedCourseCount = 6,
+    kBitsPerFlagWord = 32,
+    kFlagWordIndexShift = 5,
+    kFlagBitIndexMask = 31,
+    kChecked45FlagCount = 45,
+    kEquipmentInitialFlagMask = 0xC0,
+    kEmptyPartFillWord = 0xFFFF,
+    kTrailingRecordScratchOffset = 0x28D0,
+    kTrailingRecordScratchBytes = 0x47C,
+    kClubSetCount = 15,
+    kBallCount = 11,
+    kCaddieCount = 8,
+    kModeProgressCount = 11,
+    kClubSetIffStride = 0x90,
+    kBallIffStride = 0x2C4,
+    kIffRowPayloadOffset = 4,
+    kIffEquipmentFlagsOffset = 0x59,
+    kStarterLastClubUpgrade = 3,
+    kKeepAudioAndOtherOptions = 0x3FFFFFFF,
+    kModeInitialFlags = 0xC0
 };
 // Native big-endian u32 at +0x4E8: Button bit 31, Lefty bit 30, audio
 // output mode bits 29..28 (0 Mono, 1 Stereo, 2 Dolby Pro Logic II).
@@ -188,8 +216,10 @@ static const unsigned int kSavedLeftHandedBit = 0x40000000u;
 // starter rows independently. Caddies have no IFF test here: only row 0 gets both.
 // To change starters, change the row tests, not the IFF-derived bit or both bits.
 enum StarterEquipmentEncoding {
-    kIffActiveEquipmentBit = 0x80, kStarterEquipmentBit = 0x40,
-    kCaddieStarterBits = 0xC0, kEmptyCourseScore = 0x7FFF
+    kIffActiveEquipmentBit = 0x80,
+    kStarterEquipmentBit = 0x40,
+    kCaddieStarterBits = 0xC0,
+    kEmptyCourseScore = 0x7FFF
 };
 // Borrow one saved value record; the caller selects the active slot/shared record.
 static inline PlayerRecordView* AsPlayerRecord(void* record) {
@@ -199,7 +229,8 @@ static inline PlayerRecordView* AsPlayerRecord(void* record) {
 static inline SaveRecordSetView* AsSaveRecordSet(void* saveData) {
     return (SaveRecordSetView*)saveData;
 }
-#define RECORD_OFFSET(field, offset) typedef char PlayerRecordView_##field[((int)&((PlayerRecordView*)0)->field == offset) ? 1 : -1]
+#define RECORD_OFFSET(field, offset) \
+    typedef char PlayerRecordView_##field[((int)&((PlayerRecordView*)0)->field == offset) ? 1 : -1]
 RECORD_OFFSET(characterIndex, 0x2C);
 RECORD_OFFSET(primaryPartFlags, 0x3C);
 RECORD_OFFSET(primaryCaddieItemFlags, 0xA0);
@@ -219,9 +250,6 @@ RECORD_OFFSET(modeRecords, 0x4EC);
 #undef RECORD_OFFSET
 typedef char PlayerRecordView_size[(sizeof(PlayerRecordView) == 0x828) ? 1 : -1];
 typedef char SavedCharacterEquipment_size[(sizeof(SavedCharacterEquipment) == 0x34) ? 1 : -1];
-
-// Translation unit 0x80073060-0x800779EC (57 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #define char_array_guard CharArrayGuard_u80073060
 #include "game/stdexcept_local.h"
@@ -244,7 +272,8 @@ extern volatile signed char s_saveDataInitialized;
 extern unsigned char s_saveData[];
 extern void Memory_Copy(void*, void*, unsigned int);
 extern void ShotGauge_ResetTotal();
-extern int ItemInventory_FindAuxPartIndex(void*, void*); /* (table, key): defined in item_inventory_tables.cpp as (Table74* table, void* key) */
+extern int ItemInventory_FindAuxPartIndex(
+    void*, void*); /* (table, key): defined in item_inventory_tables.cpp as (Table74* table, void* key) */
 extern int ItemInventory_FindItemIndex(void*, unsigned int);
 extern int ItemInventory_GetCharacterIdAt(void*, int);
 extern int ItemInventory_GetPartIdAt(void*, int);
@@ -302,7 +331,8 @@ void SaveData_InitializeDefaultEquipmentRecord(unsigned char* equipment, unsigne
 int SaveData_TestPartFlag(void* arg, void* key, int test);
 
 extern char outOfRangeExceptionTypeString[];
-extern char bitsetTestRangeErrorText[], bitset14SetRangeErrorText[], bitset45AssignRangeErrorText[], s_shopPurchaseBitRangeErrorText[];
+extern char bitsetTestRangeErrorText[], bitset14SetRangeErrorText[], bitset45AssignRangeErrorText[],
+    s_shopPurchaseBitRangeErrorText[];
 extern char bitsetTestRangeError[];
 extern char bitsetTestOutOfRangeMessage[], bitsetSetOutOfRangeMessage[], bitset782ResetRangeErrorText[];
 }
@@ -317,8 +347,9 @@ struct BitReference {
     // Return the selected single-word bit, throwing the original range exception if invalid.
     int test() const {
         unsigned int i = index;
-        if (i >= kBitsPerFlagWord)
-            { std::out_of_range error(bitsetTestRangeError, outOfRangeExceptionTypeString); }
+        if (i >= kBitsPerFlagWord) {
+            std::out_of_range error(bitsetTestRangeError, outOfRangeExceptionTypeString);
+        }
         return (*words & (1u << i)) != 0;
     }
 };
@@ -377,20 +408,22 @@ struct Bits14 {
     }
 };
 struct FlagByte {
-    CW_BITS3(
-        unsigned char pad : 1,
-        signed char flag : 1,
-        unsigned char rest : 6)
+    CW_BITS3(unsigned char pad : 1, signed char flag : 1, unsigned char rest : 6)
 };
 struct Ref782 {
     unsigned int* words;
     unsigned int index;
     // Borrow a 25-word part bank and remember a logical bit index.
-    Ref782(unsigned int* p, unsigned int i) { words = p; index = i; }
+    Ref782(unsigned int* p, unsigned int i) {
+        words = p;
+        index = i;
+    }
     // Read one of the 782 valid part bits, throwing for an invalid index.
     int test() const {
         unsigned int i = index;
-        if (i >= kPartFlagCount) { std::out_of_range error(bitsetTestOutOfRangeMessage, outOfRangeExceptionTypeString); }
+        if (i >= kPartFlagCount) {
+            std::out_of_range error(bitsetTestOutOfRangeMessage, outOfRangeExceptionTypeString);
+        }
         return (words[i >> 5] & (1u << (i & 31))) != 0;
     }
 };
@@ -429,7 +462,7 @@ Ref45* Bitset45Reference_Assign(Ref45* ref, int value);
 #pragma use_lmw_stmw off
 
 // Initialize all 25 words of a part-sized flag bank from its stored default word.
-void SaveFlags_InitPartBank(unsigned int* arg);
+void SaveFlags_InitPartBank(unsigned int* flagWords);
 
 struct CharacterEquipmentTransfer {
     unsigned char flags;
@@ -440,7 +473,8 @@ struct CharacterEquipmentTransfer {
 
 // Write one character outfit into the active save record, preserving each original field store.
 // characterIndex must be 0..7; no bounds check is performed. equipment is borrowed.
-void SaveData_SetCharacterEquipmentRecord(unsigned char* saveData, const CharacterEquipmentTransfer* equipment, int characterIndex);
+void SaveData_SetCharacterEquipmentRecord(unsigned char* saveData, const CharacterEquipmentTransfer* equipment,
+                                          int characterIndex);
 
 // Copy an outfit by character inventory index, using the existing lookup limit.
 // Same 0x34-byte output and 0..7 caller precondition as the ID-based copy above;
@@ -519,7 +553,7 @@ void SaveFlags_ClearWord_774E8(unsigned int* flags);
 void SaveFlags_ClearWord_776F8(unsigned int* flags);
 
 // Initialize a two-word bitset to 32 set bits followed by 19 set bits.
-void SaveFlags_Init51BitsSet(unsigned int* arg);
+void SaveFlags_Init51BitsSet(unsigned int* flagWords);
 
 // Zero the caller-provided flag word; its owning field is not established here.
 void SaveFlags_ClearWord_77738(unsigned int* flags);
@@ -528,14 +562,14 @@ void SaveFlags_ClearWord_77738(unsigned int* flags);
 void SaveFlags_ClearWord_77744(unsigned int* flags);
 
 // Initialize both words of a small flag bank from the same stored default.
-void SaveFlags_InitTwoDefaultWords(unsigned int* arg);
+void SaveFlags_InitTwoDefaultWords(unsigned int* flagWords);
 
 // Initialize six flag words from the same stored default.
-void SaveFlags_InitSixDefaultWords(unsigned int* arg);
+void SaveFlags_InitSixDefaultWords(unsigned int* flagWords);
 
 // Returns the pair in r3:r4 unchanged (blr at 0x80077774); SaveData_InitDefaultInventoryRecord stores both (0x80072DE0-0x80072DE8).
 // Return the two input words as a 64-bit pair, retaining the original volatile saves.
-unsigned long long SaveRecord_PreserveWordPair(unsigned int arg1, unsigned int arg2);
+unsigned long long SaveRecord_PreserveWordPair(unsigned int highWord, unsigned int lowWord);
 
 // Zero the caller-provided flag word; its owning field is not established here.
 void SaveFlags_ClearWord_778B0(unsigned int* flags);
@@ -545,13 +579,13 @@ void SaveFlags_ClearWord_778B0(unsigned int* flags);
 void SaveFlags_ClearCourseAvailabilityWord(unsigned int* flags);
 
 // Return the selected save-slot index.
-unsigned int SaveData_GetCurrentSlotIndex(unsigned int* arg);
+unsigned int SaveData_GetCurrentSlotIndex(unsigned int* saveData);
 
 // Return the flag indicating that the selected save slot changed.
-unsigned char SaveData_HasSlotSelectionChanged(unsigned char* arg);
+unsigned char SaveData_HasSlotSelectionChanged(unsigned char* saveData);
 
 // Return whether save access currently uses the shared record.
-unsigned char SaveData_IsSharedRecordMode(unsigned char* arg);
+unsigned char SaveData_IsSharedRecordMode(unsigned char* saveData);
 
 // Test the slot-used word for a valid save-slot index.
 unsigned int SaveData_IsSlotUsed(unsigned char* saveData, int slotIndex);
@@ -564,49 +598,75 @@ unsigned char* SaveData_GetCurrentRecord(unsigned char* saveData);
 
 // Copy-granularity views of regions of PlayerRecordView, used only by the two record copy functions below.
 // Their element widths reproduce the original copy loops; they are not separate on-save types.
-struct RecW151 { unsigned int a[151]; };   // 0x000..0x25C header, inventory flags, statistics, unlocked courses
-struct RecW28 { unsigned int a[28]; };     // 0x25C..0x2CC courseRecords
-struct RecH208 { unsigned short a[208]; }; // 0x2CC..0x46C characters[8]
-struct RecW16 { unsigned int a[16]; };     // 0x46C..0x4AC caddies[8]
-struct RecB24 { unsigned char a[24]; };    // 0x4AC..0x4C4 first twelve clubSets entries
-struct RecB6 { unsigned char a[6]; };      // 0x4C4..0x4CA last three clubSets entries
-struct RecB8 { unsigned char a[8]; };
-struct RecB3 { unsigned char a[3]; };
-struct RecB11 { unsigned char a[11]; };    // 0x4CA..0x4D5 balls[11]
-struct RecW5 { unsigned int a[5]; };
-struct RecH414 { unsigned short a[414]; };
-struct RecW5H414 { unsigned int a[5]; unsigned short b[414]; }; // 0x4D8.. systemSettings + start of modeRecords
+struct RecW151 {
+    unsigned int a[151];
+}; // 0x000..0x25C header, inventory flags, statistics, unlocked courses
+struct RecW28 {
+    unsigned int a[28];
+}; // 0x25C..0x2CC courseRecords
+struct RecH208 {
+    unsigned short a[208];
+}; // 0x2CC..0x46C characters[8]
+struct RecW16 {
+    unsigned int a[16];
+}; // 0x46C..0x4AC caddies[8]
+struct RecB24 {
+    unsigned char a[24];
+}; // 0x4AC..0x4C4 first twelve clubSets entries
+struct RecB6 {
+    unsigned char a[6];
+}; // 0x4C4..0x4CA last three clubSets entries
+struct RecB8 {
+    unsigned char a[8];
+};
+struct RecB3 {
+    unsigned char a[3];
+};
+struct RecB11 {
+    unsigned char a[11];
+}; // 0x4CA..0x4D5 balls[11]
+struct RecW5 {
+    unsigned int a[5];
+};
+struct RecH414 {
+    unsigned short a[414];
+};
+struct RecW5H414 {
+    unsigned int a[5];
+    unsigned short b[414];
+}; // 0x4D8.. systemSettings + start of modeRecords
 
 // Prefix of PlayerRecordView (0x000..0x25C): header, selected item indices, ownership flag banks, item counts
 // and the statistics block. Field names follow PlayerRecordView; statistics words are named by byte offset
 // because their meaning is not established.
 struct RecordPrefix0x25C {
-    unsigned short headerWords[16];       // 0x000: firstNameCodeUnit + reservedHeader
-    unsigned int headerWord20;            // 0x020
-    unsigned int headerWord24;            // 0x024
-    unsigned int headerWord28;            // 0x028
-    unsigned char selectedIndices[5];     // 0x02C: characterIndex, clubSetIndex, ballIndex, caddieIndex, caddieItemIndex
-    unsigned char equippedItemIndices[8]; // 0x031
-    unsigned int primaryPartFlags[25];    // 0x03C
-    unsigned int primaryCaddieItemFlags;  // 0x0A0
-    unsigned int reservedFlags[2];        // 0x0A4
-    unsigned int alternatePartFlags[25];  // 0x0AC
-    unsigned int alternateCaddieItemFlags;// 0x110
-    unsigned int ownedHairStyles[2];      // 0x114
-    unsigned short itemCounts[12];        // 0x11C
-    unsigned short reservedItemCount;     // 0x134
-    unsigned char auxPartFlags[7];        // 0x136
-    unsigned int unresolvedFlagWord;                 // 0x140: secondary banks begin here; keep float lanes below for copy code
-    unsigned int partSizedFlags[25];             // 0x144
-    unsigned int sixWordFlags[6];              // 0x1A8
+    unsigned short headerWords[16];   // 0x000: firstNameCodeUnit + reservedHeader
+    unsigned int headerWord20;        // 0x020
+    unsigned int headerWord24;        // 0x024
+    unsigned int headerWord28;        // 0x028
+    unsigned char selectedIndices[5]; // 0x02C: characterIndex, clubSetIndex, ballIndex, caddieIndex, caddieItemIndex
+    unsigned char equippedItemIndices[8];  // 0x031
+    unsigned int primaryPartFlags[25];     // 0x03C
+    unsigned int primaryCaddieItemFlags;   // 0x0A0
+    unsigned int reservedFlags[2];         // 0x0A4
+    unsigned int alternatePartFlags[25];   // 0x0AC
+    unsigned int alternateCaddieItemFlags; // 0x110
+    unsigned int ownedHairStyles[2];       // 0x114
+    unsigned short itemCounts[12];         // 0x11C
+    unsigned short reservedItemCount;      // 0x134
+    unsigned char auxPartFlags[7];         // 0x136
+    unsigned int unresolvedFlagWord;       // 0x140: secondary banks begin here; keep float lanes below for copy code
+    unsigned int partSizedFlags[25];       // 0x144
+    unsigned int sixWordFlags[6];          // 0x1A8
     unsigned int unresolvedSmallFlag0, unresolvedSmallFlag1, unresolvedSmallFlag2, unresolvedSmallFlag3; // 0x1C0
-    unsigned int checked45BitFlags[2];              // 0x1D0
-    unsigned int unresolvedTrailingFlag, stat1DC, stat1E0, stat1E4, stat1E8, stat1EC, stat1F0, stat1F4, stat1F8, stat1FC, stat200; // 0x1D8
-    float stat204, stat208, stat20C;      // 0x204
-    unsigned int stat210;                 // 0x210
-    float stat214;                        // 0x214
-    unsigned char stat218[64];            // 0x218
-    unsigned int unlockedCourses;         // 0x258
+    unsigned int checked45BitFlags[2];                                                                   // 0x1D0
+    unsigned int unresolvedTrailingFlag, stat1DC, stat1E0, stat1E4, stat1E8, stat1EC, stat1F0, stat1F4, stat1F8,
+        stat1FC, stat200;            // 0x1D8
+    float stat204, stat208, stat20C; // 0x204
+    unsigned int stat210;            // 0x210
+    float stat214;                   // 0x214
+    unsigned char stat218[64];       // 0x218
+    unsigned int unlockedCourses;    // 0x258
 };
 typedef char RecordPrefix0x25C_size_check[(sizeof(RecordPrefix0x25C) == 0x25C) ? 1 : -1];
 
@@ -644,10 +704,12 @@ int SaveData_LoadValidatedItemSelection(void* saveData, void* selection, signed 
 void SaveData_SetModeRecords(unsigned char* saveData, unsigned short* modeRecords);
 
 // Write a caddie flag byte and value word into the active save record.
-void SaveData_SetCaddieRecordAt(unsigned char* saveData, const unsigned char* caddieEquipment, unsigned int caddieIndex);
+void SaveData_SetCaddieRecordAt(unsigned char* saveData, const unsigned char* caddieEquipment,
+                                unsigned int caddieIndex);
 
 // Write a club-set flag byte and upgrade level into the active save record.
-void SaveData_SetClubSetRecordAt(unsigned char* saveData, const unsigned char* clubSetEquipment, unsigned int clubSetIndex);
+void SaveData_SetClubSetRecordAt(unsigned char* saveData, const unsigned char* clubSetEquipment,
+                                 unsigned int clubSetIndex);
 
 // Copy the existing 0x47C-byte record prefix; this API does not copy a complete slot.
 void* SaveData_CopyRecordPrefix47C(void* destination, void* source);
@@ -806,8 +868,9 @@ struct Bits7583C {
     unsigned int word;
     // Set/clear one checked shared-record course-availability bit.
     void set(unsigned int i, int value) {
-        if (i >= kCourseFlagCount)
-            { std::out_of_range error(bitset14SetRangeErrorText, outOfRangeExceptionTypeString); }
+        if (i >= kCourseFlagCount) {
+            std::out_of_range error(bitset14SetRangeErrorText, outOfRangeExceptionTypeString);
+        }
         unsigned int mask = 1u << i;
         if (value)
             word |= mask;
@@ -816,7 +879,7 @@ struct Bits7583C {
     }
 };
 
-struct Cfg7583C {
+struct SharedCourseFlagsView {
     unsigned char pad[0x2300];
     Bits7583C bits;
 };
@@ -840,53 +903,100 @@ void SaveData_InitializeDefaultEquipmentRecord(unsigned char* equipment, unsigne
 
     switch (characterIndex) {
     case 0:
-        outfit->partIndices[0] = 0; outfit->partIndices[1] = noItem; outfit->partIndices[2] = 0x0D;
-        outfit->partIndices[3] = 0x24; outfit->partIndices[4] = 0x27; outfit->partIndices[5] = 0x31;
-        outfit->partIndices[6] = noItem; outfit->partIndices[7] = 0x42; outfit->partIndices[8] = 0x44;
+        outfit->partIndices[0] = 0;
+        outfit->partIndices[1] = noItem;
+        outfit->partIndices[2] = 0x0D;
+        outfit->partIndices[3] = 0x24;
+        outfit->partIndices[4] = 0x27;
+        outfit->partIndices[5] = 0x31;
+        outfit->partIndices[6] = noItem;
+        outfit->partIndices[7] = 0x42;
+        outfit->partIndices[8] = 0x44;
         outfit->hairStyleIndex = 0;
         break;
     case 1:
-        outfit->partIndices[0] = 0x66; outfit->partIndices[1] = 0x68; outfit->partIndices[2] = 0x77;
-        outfit->partIndices[3] = 0x85; outfit->partIndices[4] = noItem; outfit->partIndices[5] = noItem;
-        outfit->partIndices[6] = 0x99; outfit->partIndices[7] = 0xA3;
+        outfit->partIndices[0] = 0x66;
+        outfit->partIndices[1] = 0x68;
+        outfit->partIndices[2] = 0x77;
+        outfit->partIndices[3] = 0x85;
+        outfit->partIndices[4] = noItem;
+        outfit->partIndices[5] = noItem;
+        outfit->partIndices[6] = 0x99;
+        outfit->partIndices[7] = 0xA3;
         outfit->hairStyleIndex = 6;
         break;
     case 2:
-        outfit->partIndices[0] = 0xB4; outfit->partIndices[1] = 0xC0; outfit->partIndices[2] = 0xC3;
-        outfit->partIndices[3] = 0xD6; outfit->partIndices[4] = 0xD7; outfit->partIndices[5] = 0xE1;
-        outfit->partIndices[6] = 0xE9; outfit->partIndices[7] = 0xEE;
+        outfit->partIndices[0] = 0xB4;
+        outfit->partIndices[1] = 0xC0;
+        outfit->partIndices[2] = 0xC3;
+        outfit->partIndices[3] = 0xD6;
+        outfit->partIndices[4] = 0xD7;
+        outfit->partIndices[5] = 0xE1;
+        outfit->partIndices[6] = 0xE9;
+        outfit->partIndices[7] = 0xEE;
         outfit->hairStyleIndex = 0x0C;
         break;
     case 3:
-        outfit->partIndices[0] = 0x110; outfit->partIndices[1] = 0x111; outfit->partIndices[2] = 0x125;
-        outfit->partIndices[3] = noItem; outfit->partIndices[4] = 0x137; outfit->partIndices[5] = noItem;
-        outfit->partIndices[6] = 0x14B; outfit->partIndices[7] = 0x15A; outfit->partIndices[10] = 0x16E;
+        outfit->partIndices[0] = 0x110;
+        outfit->partIndices[1] = 0x111;
+        outfit->partIndices[2] = 0x125;
+        outfit->partIndices[3] = noItem;
+        outfit->partIndices[4] = 0x137;
+        outfit->partIndices[5] = noItem;
+        outfit->partIndices[6] = 0x14B;
+        outfit->partIndices[7] = 0x15A;
+        outfit->partIndices[10] = 0x16E;
         outfit->hairStyleIndex = 0x12;
         break;
     case 4:
-        outfit->partIndices[0] = 0x17E; outfit->partIndices[1] = 0x17F; outfit->partIndices[2] = 0x197;
-        outfit->partIndices[3] = 0x1A2; outfit->partIndices[4] = 0x1B3; outfit->partIndices[5] = 0x1C6;
-        outfit->partIndices[6] = 0x1C9; outfit->partIndices[7] = 0x1CA;
+        outfit->partIndices[0] = 0x17E;
+        outfit->partIndices[1] = 0x17F;
+        outfit->partIndices[2] = 0x197;
+        outfit->partIndices[3] = 0x1A2;
+        outfit->partIndices[4] = 0x1B3;
+        outfit->partIndices[5] = 0x1C6;
+        outfit->partIndices[6] = 0x1C9;
+        outfit->partIndices[7] = 0x1CA;
         outfit->hairStyleIndex = 0x18;
         break;
     case 5:
-        outfit->partIndices[0] = 0x1DA; outfit->partIndices[1] = 0x1DB; outfit->partIndices[2] = 0x1F5;
-        outfit->partIndices[3] = 0x1F8; outfit->partIndices[4] = 0x203; outfit->partIndices[5] = noItem;
-        outfit->partIndices[6] = 0x220; outfit->partIndices[7] = 0x23C; outfit->partIndices[8] = 0x240;
-        outfit->partIndices[9] = 0x241; outfit->partIndices[14] = 0x250;
+        outfit->partIndices[0] = 0x1DA;
+        outfit->partIndices[1] = 0x1DB;
+        outfit->partIndices[2] = 0x1F5;
+        outfit->partIndices[3] = 0x1F8;
+        outfit->partIndices[4] = 0x203;
+        outfit->partIndices[5] = noItem;
+        outfit->partIndices[6] = 0x220;
+        outfit->partIndices[7] = 0x23C;
+        outfit->partIndices[8] = 0x240;
+        outfit->partIndices[9] = 0x241;
+        outfit->partIndices[14] = 0x250;
         outfit->hairStyleIndex = 0x1D;
         break;
     case 6:
-        outfit->partIndices[0] = 0x261; outfit->partIndices[1] = 0x262; outfit->partIndices[2] = 0x275;
-        outfit->partIndices[3] = 0x286; outfit->partIndices[4] = 0x28D; outfit->partIndices[5] = 0x29E;
-        outfit->partIndices[6] = 0x2A7; outfit->partIndices[7] = 0x2AA;
+        outfit->partIndices[0] = 0x261;
+        outfit->partIndices[1] = 0x262;
+        outfit->partIndices[2] = 0x275;
+        outfit->partIndices[3] = 0x286;
+        outfit->partIndices[4] = 0x28D;
+        outfit->partIndices[5] = 0x29E;
+        outfit->partIndices[6] = 0x2A7;
+        outfit->partIndices[7] = 0x2AA;
         outfit->hairStyleIndex = 0x24;
         break;
     case 7:
-        outfit->partIndices[0] = 0x2B5; outfit->partIndices[1] = 0x2B6; outfit->partIndices[2] = 0x2BC;
-        outfit->partIndices[3] = noItem; outfit->partIndices[4] = 0x2D4; outfit->partIndices[5] = noItem;
-        outfit->partIndices[6] = noItem; outfit->partIndices[7] = 0x2EE; outfit->partIndices[8] = noItem;
-        outfit->partIndices[9] = 0x300; outfit->partIndices[10] = 0x301; outfit->partIndices[11] = 0x302;
+        outfit->partIndices[0] = 0x2B5;
+        outfit->partIndices[1] = 0x2B6;
+        outfit->partIndices[2] = 0x2BC;
+        outfit->partIndices[3] = noItem;
+        outfit->partIndices[4] = 0x2D4;
+        outfit->partIndices[5] = noItem;
+        outfit->partIndices[6] = noItem;
+        outfit->partIndices[7] = 0x2EE;
+        outfit->partIndices[8] = noItem;
+        outfit->partIndices[9] = 0x300;
+        outfit->partIndices[10] = 0x301;
+        outfit->partIndices[11] = 0x302;
         outfit->partIndices[12] = 0x304;
         outfit->hairStyleIndex = 0x2C;
         break;
@@ -909,7 +1019,7 @@ int SaveData_InitializeBlankRecordSet(unsigned char* saveData) {
     for (int i = 0; i < kSaveSlotCount; i++)
         SaveData_InitBlankRecord(saveData, i, 0);
     SaveData_InitBlankRecord(saveData, 0, 1);
-// The original returns no value: its callers never read one.
+    // The original returns no value: its callers never read one.
 }
 #pragma pop
 
@@ -924,20 +1034,28 @@ struct SavedSystemSettingsView {
 };
 // Eleven 0x4A-byte mode records precede the eight-area order suffix.
 // The first byte doubles as the mode-wide initial flag byte in this format.
-struct SavedModeProgressEntry { unsigned char header[2]; short indexOrNone; char rest[0x46]; };
-struct SavedModeDefaultsView {
-    SavedModeProgressEntry progress[kModeProgressCount]; unsigned char order[kCharacterCount]; signed char selection;
+struct SavedModeProgressEntry {
+    unsigned char header[2];
+    short indexOrNone;
+    char rest[0x46];
 };
-typedef char SavedSystemSettingsView_size[sizeof(SavedSystemSettingsView)==0x14 ? 1 : -1];
-typedef char SavedModeProgressEntry_size[sizeof(SavedModeProgressEntry)==0x4A ? 1 : -1];
+struct SavedModeDefaultsView {
+    SavedModeProgressEntry progress[kModeProgressCount];
+    unsigned char order[kCharacterCount];
+    signed char selection;
+};
+typedef char SavedSystemSettingsView_size[sizeof(SavedSystemSettingsView) == 0x14 ? 1 : -1];
+typedef char SavedModeProgressEntry_size[sizeof(SavedModeProgressEntry) == 0x4A ? 1 : -1];
 
 // Field-derived byte addresses retain the compiler's original settings-base lifetime.
 enum SavedSettingsOffsets {
-    kSavedStreamVolumePercent = (int)&((PlayerRecordView*)0)->systemSettings + (int)&((SavedSystemSettingsView*)0)->streamVolumePercent,
-    kSavedBufferVolumePercent = (int)&((PlayerRecordView*)0)->systemSettings + (int)&((SavedSystemSettingsView*)0)->bufferVolumePercent,
-    kSavedControlAndAudioOptions = (int)&((PlayerRecordView*)0)->systemSettings + (int)&((SavedSystemSettingsView*)0)->controlAndAudioOptions
+    kSavedStreamVolumePercent = (int)&((PlayerRecordView*)0)->systemSettings +
+        (int)&((SavedSystemSettingsView*)0)->streamVolumePercent,
+    kSavedBufferVolumePercent = (int)&((PlayerRecordView*)0)->systemSettings +
+        (int)&((SavedSystemSettingsView*)0)->bufferVolumePercent,
+    kSavedControlAndAudioOptions = (int)&((PlayerRecordView*)0)->systemSettings +
+        (int)&((SavedSystemSettingsView*)0)->controlAndAudioOptions
 };
-
 
 // Seed one empty course record without writing the serialized padding byte.
 static inline void InitializeEmptyCourseRecord(SavedCourseRecord* course, int invalid) {
@@ -968,29 +1086,42 @@ static inline void InitializeEmptyCourseRecords(unsigned char* record, int inval
 static inline void InitializeStarterCaddieFlags(signed char* flags) {
     for (int row = 0; row < kCaddieCount; flags += sizeof(SavedCaddieEquipment), row++) {
         *flags &= ~kCaddieStarterBits;
-        if (row == 0) *flags |= kCaddieStarterBits;
+        if (row == 0)
+            *flags |= kCaddieStarterBits;
     }
 }
 
 // Seed club starter rows 0/14 independently of each IFF row's active bit.
 // Cursors borrow the record/IFF banks; all fifteen IFF rows must exist.
-static inline void InitializeStarterClubSets(unsigned char*& flag, unsigned char*& secondary, unsigned char*& clubSetTableCursor, int& i) {
-    for (i = 0; i < kClubSetCount; i++, flag += sizeof(SavedClubSetEquipment), secondary += sizeof(SavedClubSetEquipment)) {
+static inline void InitializeStarterClubSets(unsigned char*& flag, unsigned char*& secondary,
+                                             unsigned char*& clubSetTableCursor, int& i) {
+    for (i = 0; i < kClubSetCount;
+         i++, flag += sizeof(SavedClubSetEquipment), secondary += sizeof(SavedClubSetEquipment)) {
         *(signed char*)flag = (*(signed char*)flag | kIffActiveEquipmentBit) & ~kStarterEquipmentBit;
         ((SavedClubSetEquipment*)&AsPlayerRecord(secondary)->clubSets[0])->upgradeLevel = 0;
-        if (i == 0 || i == kClubSetCount - 1) *flag |= kStarterEquipmentBit;
+        if (i == 0 || i == kClubSetCount - 1)
+            *flag |= kStarterEquipmentBit;
         CSharedDoc* manager = g_sharedDoc;
         clubSetTableCursor = (unsigned char*)((CItemManager*)&AsCSharedDoc(manager)->itemInventory)->clubSets.data;
         unsigned char* item;
-        if (i < 0 || (unsigned int)i >= ((CItemManager*)&AsCSharedDoc(manager)->itemInventory)->clubSets.size) item = 0;
-        else { int index = i; while (index != 0) { clubSetTableCursor += kClubSetIffStride; index--; } item = clubSetTableCursor + kIffRowPayloadOffset; }
-        struct Bits { CW_BITS2( unsigned char active:3, unsigned char rest:5) };
+        if (i < 0 || (unsigned int)i >= ((CItemManager*)&AsCSharedDoc(manager)->itemInventory)->clubSets.size)
+            item = 0;
+        else {
+            int index = i;
+            while (index != 0) {
+                clubSetTableCursor += kClubSetIffStride;
+                index--;
+            }
+            item = clubSetTableCursor + kIffRowPayloadOffset;
+        }
+        struct Bits {
+            CW_BITS2(unsigned char active : 3, unsigned char rest : 5)
+        };
         if (((Bits*)(item + kIffEquipmentFlagsOffset))->active != 0)
             *flag |= kIffActiveEquipmentBit;
         else
             *(signed char*)flag &= ~kIffActiveEquipmentBit;
     }
-
 }
 
 // Seed ball starter row 0 independently of each IFF row's active bit.
@@ -999,19 +1130,29 @@ static inline void InitializeStarterBalls(unsigned char*& record, unsigned char*
     for (i = 0; i < kBallCount; i++) {
         unsigned char* entry = &AsPlayerRecord(record)->balls[i];
         *(signed char*)entry = (*(signed char*)entry | kIffActiveEquipmentBit) & ~kStarterEquipmentBit;
-        if (i == 0) *entry |= kStarterEquipmentBit;
+        if (i == 0)
+            *entry |= kStarterEquipmentBit;
         CSharedDoc* manager = g_sharedDoc;
         ballTableCursor = (unsigned char*)((CItemManager*)&AsCSharedDoc(manager)->itemInventory)->balls.data;
         unsigned char* item;
-        if (i < 0 || (unsigned int)i >= ((CItemManager*)&AsCSharedDoc(manager)->itemInventory)->balls.size) item = 0;
-        else { int index = i; while (index != 0) { ballTableCursor += kBallIffStride; index--; } item = ballTableCursor + kIffRowPayloadOffset; }
-        struct Bits { CW_BITS2( unsigned char active:3, unsigned char rest:5) };
+        if (i < 0 || (unsigned int)i >= ((CItemManager*)&AsCSharedDoc(manager)->itemInventory)->balls.size)
+            item = 0;
+        else {
+            int index = i;
+            while (index != 0) {
+                ballTableCursor += kBallIffStride;
+                index--;
+            }
+            item = ballTableCursor + kIffRowPayloadOffset;
+        }
+        struct Bits {
+            CW_BITS2(unsigned char active : 3, unsigned char rest : 5)
+        };
         if (((Bits*)(item + kIffEquipmentFlagsOffset))->active != 0)
             *entry |= kIffActiveEquipmentBit;
         else
             *(signed char*)entry &= ~kIffActiveEquipmentBit;
     }
-
 }
 
 // Create starter User Data, including Swing Righty defaults, for one slot/shared record.
@@ -1065,10 +1206,12 @@ void SaveData_InitBlankRecord(void* saveData, int slotIndex, int useSharedRecord
     // changes only bits 29..28. Do not call this mask an audio reset: clearing
     *(unsigned int*)(record + kSavedStreamVolumePercent) = kDefaultVolumePercent;
     *(unsigned int*)(record + kSavedBufferVolumePercent) = kDefaultVolumePercent;
-// The stock default record has bit 31 set and bit 30 (Lefty) clear; audio and other bits follow the stock mask.
+    // The stock default record has bit 31 set and bit 30 (Lefty) clear; audio and other bits follow the stock mask.
     *(unsigned int*)(record + kSavedControlAndAudioOptions) &= kKeepAudioAndOtherOptions;
     unsigned int value = SaveData_GetSystemSoundMode();
-    struct Packed { CW_BITS3( unsigned int first:2, unsigned int value:2, unsigned int rest:28) };
+    struct Packed {
+        CW_BITS3(unsigned int first : 2, unsigned int value : 2, unsigned int rest : 28)
+    };
     ((Packed*)(record + kSavedControlAndAudioOptions))->value = value;
     Network_GetWirelessMacAddress(AsPlayerRecord(record)->systemSettings);
     // Phase 5: clear mode records and retain the serialized character order.
@@ -1098,16 +1241,16 @@ int SaveData_SelectSlot(unsigned int* saveData, int slotIndex) {
 #pragma push
 #pragma use_lmw_stmw on
 // Return the selected save-slot index.
-unsigned int SaveData_GetCurrentSlotIndex(unsigned int* arg) {
-    return AsSaveRecordSet(arg)->currentSlot;
+unsigned int SaveData_GetCurrentSlotIndex(unsigned int* saveData) {
+    return AsSaveRecordSet(saveData)->currentSlot;
 }
 #pragma pop
 
 #pragma push
 #pragma use_lmw_stmw on
 // Return the flag indicating that the selected save slot changed.
-unsigned char SaveData_HasSlotSelectionChanged(unsigned char* arg) {
-    return AsSaveRecordSet(arg)->slotChanged;
+unsigned char SaveData_HasSlotSelectionChanged(unsigned char* saveData) {
+    return AsSaveRecordSet(saveData)->slotChanged;
 }
 #pragma pop
 
@@ -1117,64 +1260,73 @@ unsigned char SaveData_HasSlotSelectionChanged(unsigned char* arg) {
 int SaveData_SetSharedRecordMode(unsigned char* saveData, int enableSharedRecord, unsigned char initializationFlags) {
     // Phase 1: create and seed a fresh shared record; disabling simply selects slot mode.
     if (enableSharedRecord != 0) {
-    AsSaveRecordSet(saveData)->sharedInitializationFlags = initializationFlags;
-    AsSaveRecordSet(saveData)->useSharedRecord = 1;
-    SaveData_InitBlankRecord(saveData, 0, 1);
-    SaveData_SeedSharedAvailabilityFlags(saveData);
-    // Phase 2 (flags==0 only): OR character/course availability across all four slots.
-    if (AsSaveRecordSet(saveData)->sharedInitializationFlags == 0) {
-        SavedCharacterEquipment* slotCharacters = AsSaveRecordSet(saveData)->slots[0].characters;
-        unsigned char* slotCourseFlags = (unsigned char*)&AsSaveRecordSet(saveData)->slots[0].unlockedCourses;
-        Bits14* sharedCourseFlags = (Bits14*)&AsSaveRecordSet(saveData)->sharedRecord.unlockedCourses;
-        for (int slotIndex = 0; slotIndex < kSaveSlotCount; slotIndex++) {
-            ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[0].flags)->flag |= ((FlagByte*)&slotCharacters[0].flags)->flag;
-            ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[1].flags)->flag |= ((FlagByte*)&slotCharacters[1].flags)->flag;
-            ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[2].flags)->flag |= ((FlagByte*)&slotCharacters[2].flags)->flag;
-            ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[3].flags)->flag |= ((FlagByte*)&slotCharacters[3].flags)->flag;
-            ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[4].flags)->flag |= ((FlagByte*)&slotCharacters[4].flags)->flag;
-            ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[5].flags)->flag |= ((FlagByte*)&slotCharacters[5].flags)->flag;
-            ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[6].flags)->flag |= ((FlagByte*)&slotCharacters[6].flags)->flag;
-            ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[7].flags)->flag |= ((FlagByte*)&slotCharacters[7].flags)->flag;
-            for (int i = 0; i < kCourseFlagCount; i++) {
-                int availableInEitherRecord = (sharedCourseFlags->test(i) | ((Bits14*)slotCourseFlags)->test(i)) != 0;
-                sharedCourseFlags->set(i, availableInEitherRecord);
+        AsSaveRecordSet(saveData)->sharedInitializationFlags = initializationFlags;
+        AsSaveRecordSet(saveData)->useSharedRecord = 1;
+        SaveData_InitBlankRecord(saveData, 0, 1);
+        SaveData_SeedSharedAvailabilityFlags(saveData);
+        // Phase 2 (flags==0 only): OR character/course availability across all four slots.
+        if (AsSaveRecordSet(saveData)->sharedInitializationFlags == 0) {
+            SavedCharacterEquipment* slotCharacters = AsSaveRecordSet(saveData)->slots[0].characters;
+            unsigned char* slotCourseFlags = (unsigned char*)&AsSaveRecordSet(saveData)->slots[0].unlockedCourses;
+            Bits14* sharedCourseFlags = (Bits14*)&AsSaveRecordSet(saveData)->sharedRecord.unlockedCourses;
+            for (int slotIndex = 0; slotIndex < kSaveSlotCount; slotIndex++) {
+                ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[0].flags)->flag |=
+                    ((FlagByte*)&slotCharacters[0].flags)->flag;
+                ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[1].flags)->flag |=
+                    ((FlagByte*)&slotCharacters[1].flags)->flag;
+                ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[2].flags)->flag |=
+                    ((FlagByte*)&slotCharacters[2].flags)->flag;
+                ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[3].flags)->flag |=
+                    ((FlagByte*)&slotCharacters[3].flags)->flag;
+                ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[4].flags)->flag |=
+                    ((FlagByte*)&slotCharacters[4].flags)->flag;
+                ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[5].flags)->flag |=
+                    ((FlagByte*)&slotCharacters[5].flags)->flag;
+                ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[6].flags)->flag |=
+                    ((FlagByte*)&slotCharacters[6].flags)->flag;
+                ((FlagByte*)&AsSaveRecordSet(saveData)->sharedRecord.characters[7].flags)->flag |=
+                    ((FlagByte*)&slotCharacters[7].flags)->flag;
+                for (int i = 0; i < kCourseFlagCount; i++) {
+                    int availableInEitherRecord =
+                        (sharedCourseFlags->test(i) | ((Bits14*)slotCourseFlags)->test(i)) != 0;
+                    sharedCourseFlags->set(i, availableInEitherRecord);
+                }
+                slotCourseFlags += sizeof(PlayerRecordView);
+                slotCharacters = (SavedCharacterEquipment*)((unsigned char*)slotCharacters + sizeof(PlayerRecordView));
             }
-            slotCourseFlags += sizeof(PlayerRecordView);
-            slotCharacters = (SavedCharacterEquipment*)((unsigned char*)slotCharacters + sizeof(PlayerRecordView));
+            // Phase 3: reset selected shared secondary fields; slot contents remain intact.
+            // These are not the primary/alternate inventory banks merged above.
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.unresolvedFlagWord = 0;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[0] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[1] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[2] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[3] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[4] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[5] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[6] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[7] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[8] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[9] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[10] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[11] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[12] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[13] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[14] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[15] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[16] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[17] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[18] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[19] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[20] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[21] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[22] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[23] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[24] = s_saveFlagsPartBankDefault;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.unresolvedSmallFlags[0] = 0;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.unresolvedSmallFlags[1] = 0;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.unresolvedSmallFlags[2] = 0;
+            AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.unresolvedSmallFlags[3] = 0;
         }
-        // Phase 3: reset selected shared secondary fields; slot contents remain intact.
-        // These are not the primary/alternate inventory banks merged above.
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.unresolvedFlagWord = 0;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[0] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[1] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[2] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[3] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[4] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[5] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[6] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[7] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[8] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[9] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[10] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[11] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[12] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[13] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[14] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[15] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[16] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[17] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[18] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[19] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[20] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[21] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[22] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[23] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.partSizedFlags[24] = s_saveFlagsPartBankDefault;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.unresolvedSmallFlags[0] = 0;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.unresolvedSmallFlags[1] = 0;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.unresolvedSmallFlags[2] = 0;
-        AsSaveRecordSet(saveData)->sharedRecord.secondaryBanks.unresolvedSmallFlags[3] = 0;
-    }
     } else {
         AsSaveRecordSet(saveData)->useSharedRecord = 0;
     }
@@ -1185,8 +1337,8 @@ int SaveData_SetSharedRecordMode(unsigned char* saveData, int enableSharedRecord
 #pragma push
 #pragma use_lmw_stmw on
 // Return whether save access currently uses the shared record.
-unsigned char SaveData_IsSharedRecordMode(unsigned char* arg) {
-    return AsSaveRecordSet(arg)->useSharedRecord;
+unsigned char SaveData_IsSharedRecordMode(unsigned char* saveData) {
+    return AsSaveRecordSet(saveData)->useSharedRecord;
 }
 #pragma pop
 
@@ -1269,7 +1421,8 @@ void SaveData_SetInventoryAndStatisticsPrefix(unsigned char* saveData, unsigned 
 // SaveRewards_SetCharacterFlags caller (save_rewards_item_unlock_flags.cpp) passes a separate stack copy.
 // Writes flags, 24 part halfwords, hair and auxiliary bytes; leaves +1 padding.
 // No validation, allocation or failure result; invalid inputs can corrupt saves.
-void SaveData_SetCharacterEquipmentRecord(unsigned char* saveData, const CharacterEquipmentTransfer* equipment, int characterIndex) {
+void SaveData_SetCharacterEquipmentRecord(unsigned char* saveData, const CharacterEquipmentTransfer* equipment,
+                                          int characterIndex) {
     unsigned char* record;
     if (AsSaveRecordSet(saveData)->useSharedRecord != 0)
         record = (unsigned char*)&AsSaveRecordSet(saveData)->sharedRecord;
@@ -1320,7 +1473,8 @@ void SaveData_SetCharacterEquipmentRecord(unsigned char* saveData, const Charact
 // Exact self-copy is safe; otherwise require disjoint source/destination:
 // the byte store precedes the word load, so this is not a snapshot/memmove.
 // No ownership transfer, allocation, validation or failure status.
-void SaveData_SetCaddieRecordAt(unsigned char* saveData, const unsigned char* caddieEquipment, unsigned int caddieIndex) {
+void SaveData_SetCaddieRecordAt(unsigned char* saveData, const unsigned char* caddieEquipment,
+                                unsigned int caddieIndex) {
     unsigned char* record;
     if (AsSaveRecordSet(saveData)->useSharedRecord != 0)
         record = (unsigned char*)&AsSaveRecordSet(saveData)->sharedRecord;
@@ -1346,7 +1500,8 @@ void SaveData_SetCaddieRecordAt(unsigned char* saveData, const unsigned char* ca
 // stack status pair; this setter copies bits without interpreting either byte.
 // Exact self-copy or disjoint records only: stores follow source order and no
 // overlap snapshot is taken. Writes both bytes; no retained pointer or status.
-void SaveData_SetClubSetRecordAt(unsigned char* saveData, const unsigned char* clubSetEquipment, unsigned int clubSetIndex) {
+void SaveData_SetClubSetRecordAt(unsigned char* saveData, const unsigned char* clubSetEquipment,
+                                 unsigned int clubSetIndex) {
     unsigned char* record;
     if (AsSaveRecordSet(saveData)->useSharedRecord != 0)
         record = (unsigned char*)&AsSaveRecordSet(saveData)->sharedRecord;
@@ -1369,7 +1524,8 @@ void SaveData_SetBallRecordAt(unsigned char* saveData, unsigned char* ballFlags,
     if (AsSaveRecordSet(saveData)->useSharedRecord != 0)
         record = (unsigned int)saveData + 0x20A8;
     else
-        record = (unsigned int)(unsigned char*)&AsSaveRecordSet(saveData)->slots[AsSaveRecordSet(saveData)->currentSlot];
+        record =
+            (unsigned int)(unsigned char*)&AsSaveRecordSet(saveData)->slots[AsSaveRecordSet(saveData)->currentSlot];
     ((unsigned char*)(record + ballIndex))[0x4CA] = *ballFlags;
 }
 #pragma pop
@@ -1385,9 +1541,13 @@ void SaveData_SetModeRecords(unsigned char* saveData, unsigned short* modeRecord
         saveData += *(unsigned int*)saveData * sizeof(PlayerRecordView);
         record = saveData + 8;
     }
-    struct Halves { unsigned short a[0x197]; };
+    struct Halves {
+        unsigned short a[0x197];
+    };
     *(Halves*)(record + 0x4EC) = *(Halves*)modeRecords;
-    struct Bytes { unsigned char a[9]; };
+    struct Bytes {
+        unsigned char a[9];
+    };
     *(Bytes*)(record + 0x81A) = *(Bytes*)(((ModeRecordTransferView*)modeRecords)->areaOrder);
     *(unsigned short*)(record + 0x824) = ((ModeRecordTransferView*)modeRecords)->rewardCount;
     record[0x826] = ((unsigned char*)modeRecords)[0x33A];
@@ -1404,7 +1564,8 @@ int SaveData_ValidateCharacterOutfitParts(unsigned char* equipmentRecords) {
         partCursor = characterRecord;
         int partSlot = 0;
         do {
-            int typeId = ItemInventory_GetPartIdAt((unsigned char*)&AsCSharedDoc(g_sharedDoc)->itemInventory, *(short*)(partCursor + 2));
+            int typeId = ItemInventory_GetPartIdAt((unsigned char*)&AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                                   *(short*)(partCursor + 2));
             if (typeId != 0) {
                 if ((unsigned int)typeId >> kItemKindShift != kPartItemKind)
                     return 0;
@@ -1426,39 +1587,64 @@ int SaveData_ValidateCharacterOutfitParts(unsigned char* equipmentRecords) {
 int SaveData_CopyCharacterEquipmentRecord(unsigned char* saveData, unsigned char* equipment, void* characterKey) {
     unsigned char* saveBytes = saveData;
     unsigned char* resultBytes = equipment;
-    int index = ItemInventory_FindCharacterIndex((unsigned char*)&AsCSharedDoc(g_sharedDoc)->itemInventory, characterKey);
+    int index =
+        ItemInventory_FindCharacterIndex((unsigned char*)&AsCSharedDoc(g_sharedDoc)->itemInventory, characterKey);
     if (index < 0 || (unsigned int)index >= kCharacterLookupBound)
         return 0;
     unsigned char* characterRecordBytes;
     if (AsSaveRecordSet(saveBytes)->useSharedRecord != 0)
         characterRecordBytes = saveBytes + 0x20A8;
     else
-        characterRecordBytes = (unsigned char*)&AsSaveRecordSet(saveBytes)->slots[AsSaveRecordSet(saveBytes)->currentSlot];
+        characterRecordBytes =
+            (unsigned char*)&AsSaveRecordSet(saveBytes)->slots[AsSaveRecordSet(saveBytes)->currentSlot];
     characterRecordBytes += index * 0x34;
     resultBytes[0] = characterRecordBytes[0x2CC];
-    unsigned short v2 = *(unsigned short*)(characterRecordBytes + 0x2D0), v1 = *(unsigned short*)(characterRecordBytes + 0x2CE);
-    *(unsigned short*)(resultBytes + 2) = v1; *(unsigned short*)(resultBytes + 4) = v2;
-    unsigned short v4 = *(unsigned short*)(characterRecordBytes + 0x2D4), v3 = *(unsigned short*)(characterRecordBytes + 0x2D2);
-    *(unsigned short*)(resultBytes + 6) = v3; *(unsigned short*)(resultBytes + 8) = v4;
-    unsigned short v6 = *(unsigned short*)(characterRecordBytes + 0x2D8), v5 = *(unsigned short*)(characterRecordBytes + 0x2D6);
-    *(unsigned short*)(resultBytes + 0xA) = v5; *(unsigned short*)(resultBytes + 0xC) = v6;
-    unsigned short v8 = *(unsigned short*)(characterRecordBytes + 0x2DC), v7 = *(unsigned short*)(characterRecordBytes + 0x2DA);
-    *(unsigned short*)(resultBytes + 0xE) = v7; *(unsigned short*)(resultBytes + 0x10) = v8;
-    unsigned short v10 = *(unsigned short*)(characterRecordBytes + 0x2E0), v9 = *(unsigned short*)(characterRecordBytes + 0x2DE);
-    *(unsigned short*)(resultBytes + 0x12) = v9; *(unsigned short*)(resultBytes + 0x14) = v10;
-    unsigned short v12 = *(unsigned short*)(characterRecordBytes + 0x2E4), v11 = *(unsigned short*)(characterRecordBytes + 0x2E2);
-    *(unsigned short*)(resultBytes + 0x16) = v11; *(unsigned short*)(resultBytes + 0x18) = v12;
-    unsigned short v14 = *(unsigned short*)(characterRecordBytes + 0x2E8), v13 = *(unsigned short*)(characterRecordBytes + 0x2E6);
-    *(unsigned short*)(resultBytes + 0x1A) = v13; *(unsigned short*)(resultBytes + 0x1C) = v14;
-    unsigned short v16 = *(unsigned short*)(characterRecordBytes + 0x2EC), v15 = *(unsigned short*)(characterRecordBytes + 0x2EA);
-    *(unsigned short*)(resultBytes + 0x1E) = v15; *(unsigned short*)(resultBytes + 0x20) = v16;
-    unsigned short v18 = *(unsigned short*)(characterRecordBytes + 0x2F0), v17 = *(unsigned short*)(characterRecordBytes + 0x2EE);
-    *(unsigned short*)(resultBytes + 0x22) = v17; *(unsigned short*)(resultBytes + 0x24) = v18;
-    unsigned short v20 = *(unsigned short*)(characterRecordBytes + 0x2F4), v19 = *(unsigned short*)(characterRecordBytes + 0x2F2);
-    *(unsigned short*)(resultBytes + 0x26) = v19; *(unsigned short*)(resultBytes + 0x28) = v20;
-    unsigned short v22 = *(unsigned short*)(characterRecordBytes + 0x2F8), v21 = *(unsigned short*)(characterRecordBytes + 0x2F6);
-    *(unsigned short*)(resultBytes + 0x2A) = v21; *(unsigned short*)(resultBytes + 0x2C) = v22;
-    unsigned short v24 = *(unsigned short*)(characterRecordBytes + 0x2FC), v23 = *(unsigned short*)(characterRecordBytes + 0x2FA);
+    unsigned short v2 = *(unsigned short*)(characterRecordBytes + 0x2D0),
+                   v1 = *(unsigned short*)(characterRecordBytes + 0x2CE);
+    *(unsigned short*)(resultBytes + 2) = v1;
+    *(unsigned short*)(resultBytes + 4) = v2;
+    unsigned short v4 = *(unsigned short*)(characterRecordBytes + 0x2D4),
+                   v3 = *(unsigned short*)(characterRecordBytes + 0x2D2);
+    *(unsigned short*)(resultBytes + 6) = v3;
+    *(unsigned short*)(resultBytes + 8) = v4;
+    unsigned short v6 = *(unsigned short*)(characterRecordBytes + 0x2D8),
+                   v5 = *(unsigned short*)(characterRecordBytes + 0x2D6);
+    *(unsigned short*)(resultBytes + 0xA) = v5;
+    *(unsigned short*)(resultBytes + 0xC) = v6;
+    unsigned short v8 = *(unsigned short*)(characterRecordBytes + 0x2DC),
+                   v7 = *(unsigned short*)(characterRecordBytes + 0x2DA);
+    *(unsigned short*)(resultBytes + 0xE) = v7;
+    *(unsigned short*)(resultBytes + 0x10) = v8;
+    unsigned short v10 = *(unsigned short*)(characterRecordBytes + 0x2E0),
+                   v9 = *(unsigned short*)(characterRecordBytes + 0x2DE);
+    *(unsigned short*)(resultBytes + 0x12) = v9;
+    *(unsigned short*)(resultBytes + 0x14) = v10;
+    unsigned short v12 = *(unsigned short*)(characterRecordBytes + 0x2E4),
+                   v11 = *(unsigned short*)(characterRecordBytes + 0x2E2);
+    *(unsigned short*)(resultBytes + 0x16) = v11;
+    *(unsigned short*)(resultBytes + 0x18) = v12;
+    unsigned short v14 = *(unsigned short*)(characterRecordBytes + 0x2E8),
+                   v13 = *(unsigned short*)(characterRecordBytes + 0x2E6);
+    *(unsigned short*)(resultBytes + 0x1A) = v13;
+    *(unsigned short*)(resultBytes + 0x1C) = v14;
+    unsigned short v16 = *(unsigned short*)(characterRecordBytes + 0x2EC),
+                   v15 = *(unsigned short*)(characterRecordBytes + 0x2EA);
+    *(unsigned short*)(resultBytes + 0x1E) = v15;
+    *(unsigned short*)(resultBytes + 0x20) = v16;
+    unsigned short v18 = *(unsigned short*)(characterRecordBytes + 0x2F0),
+                   v17 = *(unsigned short*)(characterRecordBytes + 0x2EE);
+    *(unsigned short*)(resultBytes + 0x22) = v17;
+    *(unsigned short*)(resultBytes + 0x24) = v18;
+    unsigned short v20 = *(unsigned short*)(characterRecordBytes + 0x2F4),
+                   v19 = *(unsigned short*)(characterRecordBytes + 0x2F2);
+    *(unsigned short*)(resultBytes + 0x26) = v19;
+    *(unsigned short*)(resultBytes + 0x28) = v20;
+    unsigned short v22 = *(unsigned short*)(characterRecordBytes + 0x2F8),
+                   v21 = *(unsigned short*)(characterRecordBytes + 0x2F6);
+    *(unsigned short*)(resultBytes + 0x2A) = v21;
+    *(unsigned short*)(resultBytes + 0x2C) = v22;
+    unsigned short v24 = *(unsigned short*)(characterRecordBytes + 0x2FC),
+                   v23 = *(unsigned short*)(characterRecordBytes + 0x2FA);
     *(unsigned short*)(resultBytes + 0x2E) = v23;
     *(unsigned short*)(resultBytes + 0x30) = v24;
     resultBytes[0x32] = characterRecordBytes[0x2FE];
@@ -1482,7 +1668,9 @@ int SaveData_CopyCharacterEquipmentRecordAt(unsigned char* saveData, unsigned ch
     }
     unsigned char* characterRecordBytes = record + characterIndex * 0x34;
     equipment[0] = characterRecordBytes[0x2CC];
-    struct Halves { unsigned short a[24]; };
+    struct Halves {
+        unsigned short a[24];
+    };
     *(Halves*)(equipment + 2) = *(Halves*)(characterRecordBytes + 0x2CE);
     equipment[0x32] = characterRecordBytes[0x2FE];
     equipment[0x33] = characterRecordBytes[0x2FF];
@@ -1540,7 +1728,8 @@ int SaveData_CopyBallRecord(unsigned char* saveData, unsigned char* ballFlags, v
     if (AsSaveRecordSet(saveData)->useSharedRecord != 0)
         record = (unsigned int)saveData + 0x20A8;
     else
-        record = (unsigned int)(unsigned char*)&AsSaveRecordSet(saveData)->slots[AsSaveRecordSet(saveData)->currentSlot];
+        record =
+            (unsigned int)(unsigned char*)&AsSaveRecordSet(saveData)->slots[AsSaveRecordSet(saveData)->currentSlot];
     unsigned char* entry = (unsigned char*)(record + index);
     *ballFlags = entry[0x4CA];
     return 1;
@@ -1551,16 +1740,21 @@ int SaveData_CopyBallRecord(unsigned char* saveData, unsigned char* ballFlags, v
 // Resolve a part ID and test the selected primary/alternate bank of the active record.
 int SaveData_TestPartFlag(void* saveData, void* partKey, int useAlternateFlags) {
     int index = ItemInventory_FindPartIndex((unsigned char*)&AsCSharedDoc(g_sharedDoc)->itemInventory, partKey);
-    if (index < 0 || (unsigned int)index >= 0x30E) return 0;
+    if (index < 0 || (unsigned int)index >= 0x30E)
+        return 0;
     unsigned char* saveBytes = (unsigned char*)saveData;
     unsigned char* record;
     if (useAlternateFlags != 0) {
-        if (AsSaveRecordSet(saveBytes)->useSharedRecord != 0) record = saveBytes + 0x20A8;
-        else record = (unsigned char*)&AsSaveRecordSet(saveBytes)->slots[AsSaveRecordSet(saveBytes)->currentSlot];
+        if (AsSaveRecordSet(saveBytes)->useSharedRecord != 0)
+            record = saveBytes + 0x20A8;
+        else
+            record = (unsigned char*)&AsSaveRecordSet(saveBytes)->slots[AsSaveRecordSet(saveBytes)->currentSlot];
         return check782(AsPlayerRecord(record)->alternatePartFlags, index);
     }
-    if (AsSaveRecordSet(saveBytes)->useSharedRecord != 0) record = saveBytes + 0x20A8;
-    else record = (unsigned char*)&AsSaveRecordSet(saveBytes)->slots[AsSaveRecordSet(saveBytes)->currentSlot];
+    if (AsSaveRecordSet(saveBytes)->useSharedRecord != 0)
+        record = saveBytes + 0x20A8;
+    else
+        record = (unsigned char*)&AsSaveRecordSet(saveBytes)->slots[AsSaveRecordSet(saveBytes)->currentSlot];
     return check782(AsPlayerRecord(record)->primaryPartFlags, index);
 }
 #pragma pop
@@ -1568,7 +1762,8 @@ int SaveData_TestPartFlag(void* saveData, void* partKey, int useAlternateFlags) 
 #pragma push
 // Look up caddie equipment and test the selected flag bank in the active record.
 int SaveData_TestCaddieItemFlag(void* saveData, void* caddieItemKey, int useAlternateFlags) {
-    int index = ItemInventory_FindCaddieItemIndex((unsigned char*)&AsCSharedDoc(g_sharedDoc)->itemInventory, caddieItemKey);
+    int index =
+        ItemInventory_FindCaddieItemIndex((unsigned char*)&AsCSharedDoc(g_sharedDoc)->itemInventory, caddieItemKey);
     if (index < 0 || (unsigned int)index >= 0x20)
         return 0;
     unsigned char* saveBytes = (unsigned char*)saveData;
@@ -1592,14 +1787,16 @@ int SaveData_TestCaddieItemFlag(void* saveData, void* caddieItemKey, int useAlte
 #pragma use_lmw_stmw on
 // Return whether the active save record has a nonzero flag for the requested ring.
 int SaveData_HasAuxPart(unsigned char* saveData, void* auxPartKey) {
-    int index = ItemInventory_FindAuxPartIndex((unsigned char*)&AsCSharedDoc(g_sharedDoc)->itemInventory, auxPartKey); // The auxiliary-part key is supplied by the caller.
+    int index = ItemInventory_FindAuxPartIndex((unsigned char*)&AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                               auxPartKey); // The auxiliary-part key is supplied by the caller.
     if (index < 0 || index >= 7)
         return 0;
     unsigned int record;
     if (AsSaveRecordSet(saveData)->useSharedRecord != 0)
         record = (unsigned int)saveData + IFF_OFFSET(SaveRecordSetView, sharedRecord);
     else
-        record = (unsigned int)saveData + AsSaveRecordSet(saveData)->currentSlot * sizeof(PlayerRecordView) + IFF_OFFSET(SaveRecordSetView, slots);
+        record = (unsigned int)saveData + AsSaveRecordSet(saveData)->currentSlot * sizeof(PlayerRecordView) +
+                 IFF_OFFSET(SaveRecordSetView, slots);
     // Keep index first in the address expression to preserve the original add operands.
     return *(signed char*)(record + index + IFF_OFFSET(PlayerRecordView, auxPartFlags)) != 0;
 }
@@ -1619,7 +1816,8 @@ int SaveData_IsConsumableAvailable(unsigned char* saveData, unsigned int itemTyp
         if (AsSaveRecordSet(saveData)->useSharedRecord != 0)
             record = (unsigned char*)&AsSaveRecordSet(saveData)->sharedRecord;
         else
-            record = saveData + AsSaveRecordSet(saveData)->currentSlot * sizeof(PlayerRecordView) + IFF_OFFSET(SaveRecordSetView, slots);
+            record = saveData + AsSaveRecordSet(saveData)->currentSlot * sizeof(PlayerRecordView) +
+                     IFF_OFFSET(SaveRecordSetView, slots);
         equipped = 0;
         if (itemIndex == AsPlayerRecord(record)->equippedItemIndices[0])
             equipped = 1;
@@ -1659,7 +1857,13 @@ int AvatarData_ResolveSavedOutfitIds(unsigned char* saveData, unsigned char* res
         return 0;
     *(int*)resolvedEquipment = ItemInventory_GetCharacterIdAt(inventory, characterIndex);
     *(int*)(resolvedEquipment + 4) = characterIndex;
-    struct Info { unsigned char b0; unsigned char pad; short h[24]; signed char c; unsigned char d; };
+    struct Info {
+        unsigned char b0;
+        unsigned char pad;
+        short h[24];
+        signed char c;
+        unsigned char d;
+    };
     typedef IffRecordStorage<IFF_STRUCT::sHairStyle> HairStyleCopy;
     Info equipment;
     HairStyleCopy hairStyleRecord;
@@ -1675,7 +1879,9 @@ int AvatarData_ResolveSavedOutfitIds(unsigned char* saveData, unsigned char* res
             record = (unsigned char*)&AsSaveRecordSet(saveData)->slots[AsSaveRecordSet(saveData)->currentSlot];
         entry = record + (unsigned int)characterIndex * 0x34;
         equipment.b0 = entry[0x2CC];
-        struct Halves { unsigned short a[24]; };
+        struct Halves {
+            unsigned short a[24];
+        };
         *(Halves*)equipment.h = *(Halves*)(entry + 0x2CE);
         equipment.c = entry[0x2FE];
         equipment.d = entry[0x2FF];
@@ -1689,7 +1895,12 @@ int AvatarData_ResolveSavedOutfitIds(unsigned char* saveData, unsigned char* res
     if (hairStyleId == 0)
         return 0;
     hairStyleRecord = *(HairStyleCopy*)ItemInventory_FindHairStyleData(inventory, hairStyleId);
-    { struct B68 { CW_BITS2( unsigned char hi : 5, unsigned char lo : 3) }; ((B68*)(resolvedEquipment + 0x68))->hi = hairStyleRecord.value.colourIndex; }
+    {
+        struct B68 {
+            CW_BITS2(unsigned char hi : 5, unsigned char lo : 3)
+        };
+        ((B68*)(resolvedEquipment + 0x68))->hi = hairStyleRecord.value.colourIndex;
+    }
     return 1;
 }
 #pragma pop
@@ -1723,19 +1934,19 @@ int SaveData_LoadValidatedItemSelection(void* saveData, void* selection, signed 
 #pragma opt_propagation reset
 // Seed shared availability bits with the fixed starter masks and course selections.
 extern "C" int SaveData_SeedSharedAvailabilityFlags(unsigned char* saveData) {
-    unsigned char b0 = saveData[0x2374];
-    unsigned char b1 = saveData[0x23A8];
-    unsigned char b2 = saveData[0x23DC];
-    b0 |= 0x40;
-    unsigned char b3 = saveData[0x2410];
-    b1 |= 0x40;
-    b2 |= 0x40;
-    saveData[0x2374] = b0;
-    b3 |= 0x40;
-    saveData[0x23A8] = b1;
-    saveData[0x23DC] = b2;
-    saveData[0x2410] = b3;
-    Cfg7583C* sharedCourseFlags = (Cfg7583C*)saveData;
+    unsigned char character0Flags = saveData[0x2374];
+    unsigned char character1Flags = saveData[0x23A8];
+    unsigned char character2Flags = saveData[0x23DC];
+    character0Flags |= 0x40;
+    unsigned char character3Flags = saveData[0x2410];
+    character1Flags |= 0x40;
+    character2Flags |= 0x40;
+    saveData[0x2374] = character0Flags;
+    character3Flags |= 0x40;
+    saveData[0x23A8] = character1Flags;
+    saveData[0x23DC] = character2Flags;
+    saveData[0x2410] = character3Flags;
+    SharedCourseFlagsView* sharedCourseFlags = (SharedCourseFlagsView*)saveData;
     for (int i = 0; i < kDefaultUnlockedCourseCount; i++)
         sharedCourseFlags->bits.set(i, 1);
     unsigned int* p4 = (unsigned int*)(saveData + 0x2148);
@@ -1787,7 +1998,7 @@ template <class T> static inline void SeedSaveBank25(T* bank, unsigned int value
 #pragma opt_propagation off
 // Lazily initialize the save singleton and its record defaults, then ensure IFF data is loaded.
 extern "C" void* SaveData_AcquireInitializedInstance() {
-    if (((volatile unsigned int&)Sing_805DC5E0()) == 0) {
+    if (((volatile unsigned int&)GetSaveDataSlot()) == 0) {
         if (s_saveDataInitialized == 0) {
             unsigned int sharedTailDefaultWord;
             unsigned int slotTailDefaultWord;
@@ -1808,32 +2019,32 @@ extern "C" void* SaveData_AcquireInitializedInstance() {
             slotTailDefaultWord = s_saveRecordDefaultTailWord;
             zero = 0;
             do {
-            // Seed the primary part bank; defaults are stored words, not inferred ownership.
-            SeedSaveBank25(AsPlayerRecord(slotCursor)->primaryPartFlags, slotDefaultWord);
-            AsPlayerRecord(slotCursor)->primaryCaddieItemFlags = zero;
-            AsPlayerRecord(slotCursor)->reservedFlags[0] = slotZeroWord;
-            AsPlayerRecord(slotCursor)->reservedFlags[1] = slotZeroWord;
-            // Seed the alternate part bank independently of the primary bank.
-            SeedSaveBank25(AsPlayerRecord(slotCursor)->alternatePartFlags, slotDefaultWord);
-            AsPlayerRecord(slotCursor)->alternateCaddieItemFlags = zero;
-            AsPlayerRecord(slotCursor)->ownedHairStyles[0] = slotZeroWord;
-            AsPlayerRecord(slotCursor)->ownedHairStyles[1] = slotZeroWord;
-            AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedFlagWord = zero;
-            SeedSaveBank25(AsPlayerRecord(slotCursor)->secondaryBanks.partSizedFlags, slotDefaultWord);
-            AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[0] = slotTailDefaultWord;
-            AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[1] = slotTailDefaultWord;
-            AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[2] = slotTailDefaultWord;
-            AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[3] = slotTailDefaultWord;
-            AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[4] = slotTailDefaultWord;
-            AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[5] = slotTailDefaultWord;
-            AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedSmallFlags[0] = zero;
-            AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedSmallFlags[1] = zero;
-            AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedSmallFlags[2] = zero;
-            AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedSmallFlags[3] = zero;
-            AsPlayerRecord(slotCursor)->secondaryBanks.checked45BitFlags[0] = slotZeroWord;
-            AsPlayerRecord(slotCursor)->secondaryBanks.checked45BitFlags[1] = slotZeroWord;
-            AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedTrailingFlag = zero;
-            AsPlayerRecord(slotCursor)->unlockedCourses = zero;
+                // Seed the primary part bank; defaults are stored words, not inferred ownership.
+                SeedSaveBank25(AsPlayerRecord(slotCursor)->primaryPartFlags, slotDefaultWord);
+                AsPlayerRecord(slotCursor)->primaryCaddieItemFlags = zero;
+                AsPlayerRecord(slotCursor)->reservedFlags[0] = slotZeroWord;
+                AsPlayerRecord(slotCursor)->reservedFlags[1] = slotZeroWord;
+                // Seed the alternate part bank independently of the primary bank.
+                SeedSaveBank25(AsPlayerRecord(slotCursor)->alternatePartFlags, slotDefaultWord);
+                AsPlayerRecord(slotCursor)->alternateCaddieItemFlags = zero;
+                AsPlayerRecord(slotCursor)->ownedHairStyles[0] = slotZeroWord;
+                AsPlayerRecord(slotCursor)->ownedHairStyles[1] = slotZeroWord;
+                AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedFlagWord = zero;
+                SeedSaveBank25(AsPlayerRecord(slotCursor)->secondaryBanks.partSizedFlags, slotDefaultWord);
+                AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[0] = slotTailDefaultWord;
+                AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[1] = slotTailDefaultWord;
+                AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[2] = slotTailDefaultWord;
+                AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[3] = slotTailDefaultWord;
+                AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[4] = slotTailDefaultWord;
+                AsPlayerRecord(slotCursor)->secondaryBanks.sixWordFlags[5] = slotTailDefaultWord;
+                AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedSmallFlags[0] = zero;
+                AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedSmallFlags[1] = zero;
+                AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedSmallFlags[2] = zero;
+                AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedSmallFlags[3] = zero;
+                AsPlayerRecord(slotCursor)->secondaryBanks.checked45BitFlags[0] = slotZeroWord;
+                AsPlayerRecord(slotCursor)->secondaryBanks.checked45BitFlags[1] = slotZeroWord;
+                AsPlayerRecord(slotCursor)->secondaryBanks.unresolvedTrailingFlag = zero;
+                AsPlayerRecord(slotCursor)->unlockedCourses = zero;
                 slotCursor += sizeof(PlayerRecordView);
             } while (slotCursor < (unsigned char*)&AsSaveRecordSet(saveSetBase)->sharedRecord);
             // Phase 2: seed the separate shared record using the same stored defaults.
@@ -1841,56 +2052,99 @@ extern "C" void* SaveData_AcquireInitializedInstance() {
             sharedZeroWord = s_saveRecordZeroWord;
             saveSetStorage = s_saveData;
             literalZero = 0;
-            SeedSaveBank25(((volatile SaveRecordSetView*)saveSetBase)->sharedRecord.primaryPartFlags, sharedDefaultWord);
+            SeedSaveBank25(((volatile SaveRecordSetView*)saveSetBase)->sharedRecord.primaryPartFlags,
+                           sharedDefaultWord);
             ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.primaryCaddieItemFlags = literalZero;
             ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.reservedFlags[0] = sharedZeroWord;
             ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.reservedFlags[1] = sharedZeroWord;
-            SeedSaveBank25(((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.alternatePartFlags, sharedDefaultWord);
+            SeedSaveBank25(((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.alternatePartFlags,
+                           sharedDefaultWord);
             ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.alternateCaddieItemFlags = literalZero;
             ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.ownedHairStyles[0] = sharedZeroWord;
             ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.ownedHairStyles[1] = sharedZeroWord;
             ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedFlagWord = literalZero;
-            SeedSaveBank25(((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.partSizedFlags, sharedDefaultWord);
+            SeedSaveBank25(((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.partSizedFlags,
+                           sharedDefaultWord);
             sharedTailDefaultWord = s_saveRecordDefaultTailWord;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedSmallFlags[0] = literalZero;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[0] = sharedTailDefaultWord;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[1] = sharedTailDefaultWord;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[2] = sharedTailDefaultWord;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[3] = sharedTailDefaultWord;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[4] = sharedTailDefaultWord;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[5] = sharedTailDefaultWord;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedSmallFlags[1] = literalZero;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedSmallFlags[2] = literalZero;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedSmallFlags[3] = literalZero;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.checked45BitFlags[0] = sharedZeroWord;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.checked45BitFlags[1] = sharedZeroWord;
-            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedTrailingFlag = literalZero;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedSmallFlags[0] =
+                literalZero;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[0] =
+                sharedTailDefaultWord;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[1] =
+                sharedTailDefaultWord;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[2] =
+                sharedTailDefaultWord;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[3] =
+                sharedTailDefaultWord;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[4] =
+                sharedTailDefaultWord;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.sixWordFlags[5] =
+                sharedTailDefaultWord;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedSmallFlags[1] =
+                literalZero;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedSmallFlags[2] =
+                literalZero;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedSmallFlags[3] =
+                literalZero;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.checked45BitFlags[0] =
+                sharedZeroWord;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.checked45BitFlags[1] =
+                sharedZeroWord;
+            ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.secondaryBanks.unresolvedTrailingFlag =
+                literalZero;
             ((volatile SaveRecordSetView*)saveSetStorage)->sharedRecord.unlockedCourses = literalZero;
             // Phase 3: initialize the legacy 0x47C-byte prefix scratch after the record set.
-            SeedSaveBank25(((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->primaryPartFlags, sharedDefaultWord);
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->primaryCaddieItemFlags = literalZero;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->reservedFlags[0] = sharedZeroWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->reservedFlags[1] = sharedZeroWord;
-            SeedSaveBank25(((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->alternatePartFlags, sharedDefaultWord);
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->alternateCaddieItemFlags = literalZero;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->ownedHairStyles[0] = sharedZeroWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->ownedHairStyles[1] = sharedZeroWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.unresolvedFlagWord = literalZero;
-            SeedSaveBank25(((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.partSizedFlags, sharedDefaultWord);
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.sixWordFlags[0] = sharedTailDefaultWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.sixWordFlags[1] = sharedTailDefaultWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.sixWordFlags[2] = sharedTailDefaultWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.sixWordFlags[3] = sharedTailDefaultWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.sixWordFlags[4] = sharedTailDefaultWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.sixWordFlags[5] = sharedTailDefaultWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.unresolvedSmallFlags[0] = literalZero;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.unresolvedSmallFlags[1] = literalZero;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.unresolvedSmallFlags[2] = literalZero;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.unresolvedSmallFlags[3] = literalZero;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.checked45BitFlags[0] = sharedZeroWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.checked45BitFlags[1] = sharedZeroWord;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->secondaryBanks.unresolvedTrailingFlag = literalZero;
-            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->unlockedCourses = literalZero;
+            SeedSaveBank25(
+                ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->primaryPartFlags,
+                sharedDefaultWord);
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->primaryCaddieItemFlags =
+                literalZero;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->reservedFlags[0] =
+                sharedZeroWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->reservedFlags[1] =
+                sharedZeroWord;
+            SeedSaveBank25(
+                ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->alternatePartFlags,
+                sharedDefaultWord);
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->alternateCaddieItemFlags =
+                literalZero;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->ownedHairStyles[0] =
+                sharedZeroWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->ownedHairStyles[1] =
+                sharedZeroWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.unresolvedFlagWord = literalZero;
+            SeedSaveBank25(((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                               ->secondaryBanks.partSizedFlags,
+                           sharedDefaultWord);
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.sixWordFlags[0] = sharedTailDefaultWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.sixWordFlags[1] = sharedTailDefaultWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.sixWordFlags[2] = sharedTailDefaultWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.sixWordFlags[3] = sharedTailDefaultWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.sixWordFlags[4] = sharedTailDefaultWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.sixWordFlags[5] = sharedTailDefaultWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.unresolvedSmallFlags[0] = literalZero;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.unresolvedSmallFlags[1] = literalZero;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.unresolvedSmallFlags[2] = literalZero;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.unresolvedSmallFlags[3] = literalZero;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.checked45BitFlags[0] = sharedZeroWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.checked45BitFlags[1] = sharedZeroWord;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))
+                ->secondaryBanks.unresolvedTrailingFlag = literalZero;
+            ((volatile PlayerRecordView*)(saveSetStorage + kTrailingRecordScratchOffset))->unlockedCourses =
+                literalZero;
             // Phase 4: clear the trailing scratch, load IFF once, then initialize playable defaults.
             // Raw storage must include this trailing scratch beyond SaveRecordSetView.
             Memory_Clear(saveSetStorage + kTrailingRecordScratchOffset, kTrailingRecordScratchBytes);
@@ -1902,16 +2156,16 @@ extern "C" void* SaveData_AcquireInitializedInstance() {
             s_saveData[4] = 0;
             s_saveData[5] = 0;
             s_saveData[6] = 0;
-            for (int i = 0; i < kSaveSlotCount; ++i) SaveData_InitBlankRecord(s_saveData, i, 0);
+            for (int i = 0; i < kSaveSlotCount; ++i)
+                SaveData_InitBlankRecord(s_saveData, i, 0);
             SaveData_InitBlankRecord(s_saveData, 0, 1);
             s_saveDataInitialized = 1;
         }
-        ((volatile unsigned int&)Sing_805DC5E0()) = (unsigned int)s_saveData;
+        ((volatile unsigned int&)GetSaveDataSlot()) = (unsigned int)s_saveData;
     }
-    return (void*)Sing_805DC5E0();
+    return (void*)GetSaveDataSlot();
 }
 #pragma pop
-
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -1980,7 +2234,8 @@ void* SaveRecord_CopyCtor(void* destination, void* source) {
     // Seed the primary part bank; defaults are stored words, not inferred ownership.
     SeedPrimaryPartDefaults(recordWords);
     AsPlayerRecord(recordWords)->primaryCaddieItemFlags = zero;
-    AsPlayerRecord(recordWords)->reservedFlags[0] = s_saveRecordZeroWord; AsPlayerRecord(recordWords)->reservedFlags[1] = s_saveRecordZeroWord;
+    AsPlayerRecord(recordWords)->reservedFlags[0] = s_saveRecordZeroWord;
+    AsPlayerRecord(recordWords)->reservedFlags[1] = s_saveRecordZeroWord;
     // Seed the alternate part bank independently of the primary bank.
     SeedAlternatePartDefaults(recordWords);
     AsPlayerRecord(recordWords)->alternateCaddieItemFlags = zero;
@@ -2181,8 +2436,9 @@ unsigned char* SharedDoc_GetItemInventory() {
 #pragma use_lmw_stmw on
 // Set or clear one checked part flag in a 782-bit flag set.
 unsigned int* Bitset782_AssignBit(unsigned int* bits, unsigned int index, int value) {
-    if (index >= kPartFlagCount)
-        { std::out_of_range error(bitsetSetOutOfRangeMessage, outOfRangeExceptionTypeString); }
+    if (index >= kPartFlagCount) {
+        std::out_of_range error(bitsetSetOutOfRangeMessage, outOfRangeExceptionTypeString);
+    }
     unsigned int mask = 1u << (index & kFlagBitIndexMask);
     unsigned int word = index >> kFlagWordIndexShift;
     if (value != 0)
@@ -2197,10 +2453,11 @@ unsigned int* Bitset782_AssignBit(unsigned int* bits, unsigned int index, int va
 #pragma use_lmw_stmw on
 // Clear one checked part flag in a 782-bit flag set.
 unsigned int* Bitset782_ResetBit(unsigned int* bits, unsigned int index) {
-    if (index >= kPartFlagCount)
-        { std::out_of_range error(bitset782ResetRangeErrorText, outOfRangeExceptionTypeString); }
+    if (index >= kPartFlagCount) {
+        std::out_of_range error(bitset782ResetRangeErrorText, outOfRangeExceptionTypeString);
+    }
     unsigned int word = index >> 5;
-    * (bits + word) &= ~(1u << (index & 31));
+    *(bits + word) &= ~(1u << (index & 31));
     return bits;
 }
 #pragma pop
@@ -2217,8 +2474,9 @@ void SaveFlags_ClearWord_774E8(unsigned int* flags) {
 #pragma use_lmw_stmw on
 // Set or clear one checked bit in a single-word flag set.
 unsigned int* Bitset32_AssignBit(unsigned int* bits, unsigned int index, int value) {
-    if (index >= 0x20)
-        { std::out_of_range error(s_shopPurchaseBitRangeErrorText, outOfRangeExceptionTypeString); }
+    if (index >= 0x20) {
+        std::out_of_range error(s_shopPurchaseBitRangeErrorText, outOfRangeExceptionTypeString);
+    }
     unsigned int mask = 1u << index;
     if (value != 0)
         *bits |= mask;
@@ -2231,41 +2489,41 @@ unsigned int* Bitset32_AssignBit(unsigned int* bits, unsigned int index, int val
 #pragma push
 #pragma use_lmw_stmw on
 // Initialize a two-word bitset to 32 set bits followed by 19 set bits.
-void SaveFlags_Init51BitsSet(unsigned int* arg) {
-    arg[0] = -1;
-    arg[1] = (arg[0] << 13) >> 13;
+void SaveFlags_Init51BitsSet(unsigned int* flagWords) {
+    flagWords[0] = -1;
+    flagWords[1] = (flagWords[0] << 13) >> 13;
 }
 #pragma pop
 
 #pragma push
 #pragma use_lmw_stmw off
 // Initialize all 25 words of a part-sized flag bank from its stored default word.
-void SaveFlags_InitPartBank(unsigned int* arg) {
-    arg[0] = s_saveFlagsPartBankDefault;
-    arg[1] = s_saveFlagsPartBankDefault;
-    arg[2] = s_saveFlagsPartBankDefault;
-    arg[3] = s_saveFlagsPartBankDefault;
-    arg[4] = s_saveFlagsPartBankDefault;
-    arg[5] = s_saveFlagsPartBankDefault;
-    arg[6] = s_saveFlagsPartBankDefault;
-    arg[7] = s_saveFlagsPartBankDefault;
-    arg[8] = s_saveFlagsPartBankDefault;
-    arg[9] = s_saveFlagsPartBankDefault;
-    arg[10] = s_saveFlagsPartBankDefault;
-    arg[11] = s_saveFlagsPartBankDefault;
-    arg[12] = s_saveFlagsPartBankDefault;
-    arg[13] = s_saveFlagsPartBankDefault;
-    arg[14] = s_saveFlagsPartBankDefault;
-    arg[15] = s_saveFlagsPartBankDefault;
-    arg[16] = s_saveFlagsPartBankDefault;
-    arg[17] = s_saveFlagsPartBankDefault;
-    arg[18] = s_saveFlagsPartBankDefault;
-    arg[19] = s_saveFlagsPartBankDefault;
-    arg[20] = s_saveFlagsPartBankDefault;
-    arg[21] = s_saveFlagsPartBankDefault;
-    arg[22] = s_saveFlagsPartBankDefault;
-    arg[23] = s_saveFlagsPartBankDefault;
-    arg[24] = s_saveFlagsPartBankDefault;
+void SaveFlags_InitPartBank(unsigned int* flagWords) {
+    flagWords[0] = s_saveFlagsPartBankDefault;
+    flagWords[1] = s_saveFlagsPartBankDefault;
+    flagWords[2] = s_saveFlagsPartBankDefault;
+    flagWords[3] = s_saveFlagsPartBankDefault;
+    flagWords[4] = s_saveFlagsPartBankDefault;
+    flagWords[5] = s_saveFlagsPartBankDefault;
+    flagWords[6] = s_saveFlagsPartBankDefault;
+    flagWords[7] = s_saveFlagsPartBankDefault;
+    flagWords[8] = s_saveFlagsPartBankDefault;
+    flagWords[9] = s_saveFlagsPartBankDefault;
+    flagWords[10] = s_saveFlagsPartBankDefault;
+    flagWords[11] = s_saveFlagsPartBankDefault;
+    flagWords[12] = s_saveFlagsPartBankDefault;
+    flagWords[13] = s_saveFlagsPartBankDefault;
+    flagWords[14] = s_saveFlagsPartBankDefault;
+    flagWords[15] = s_saveFlagsPartBankDefault;
+    flagWords[16] = s_saveFlagsPartBankDefault;
+    flagWords[17] = s_saveFlagsPartBankDefault;
+    flagWords[18] = s_saveFlagsPartBankDefault;
+    flagWords[19] = s_saveFlagsPartBankDefault;
+    flagWords[20] = s_saveFlagsPartBankDefault;
+    flagWords[21] = s_saveFlagsPartBankDefault;
+    flagWords[22] = s_saveFlagsPartBankDefault;
+    flagWords[23] = s_saveFlagsPartBankDefault;
+    flagWords[24] = s_saveFlagsPartBankDefault;
 }
 #pragma pop
 
@@ -2280,13 +2538,13 @@ void SaveFlags_ClearWord_776F8(unsigned int* flags) {
 #pragma push
 #pragma use_lmw_stmw on
 // Initialize six flag words from the same stored default.
-void SaveFlags_InitSixDefaultWords(unsigned int* arg) {
-    arg[0] = s_saveFlagsSixWordDefault;
-    arg[1] = s_saveFlagsSixWordDefault;
-    arg[2] = s_saveFlagsSixWordDefault;
-    arg[3] = s_saveFlagsSixWordDefault;
-    arg[4] = s_saveFlagsSixWordDefault;
-    arg[5] = s_saveFlagsSixWordDefault;
+void SaveFlags_InitSixDefaultWords(unsigned int* flagWords) {
+    flagWords[0] = s_saveFlagsSixWordDefault;
+    flagWords[1] = s_saveFlagsSixWordDefault;
+    flagWords[2] = s_saveFlagsSixWordDefault;
+    flagWords[3] = s_saveFlagsSixWordDefault;
+    flagWords[4] = s_saveFlagsSixWordDefault;
+    flagWords[5] = s_saveFlagsSixWordDefault;
 }
 #pragma pop
 
@@ -2309,22 +2567,22 @@ void SaveFlags_ClearWord_77744(unsigned int* flags) {
 #pragma push
 #pragma use_lmw_stmw on
 // Initialize both words of a small flag bank from the same stored default.
-void SaveFlags_InitTwoDefaultWords(unsigned int* arg) {
-    arg[0] = s_saveFlagsTwoWordDefault;
-    arg[1] = s_saveFlagsTwoWordDefault;
+void SaveFlags_InitTwoDefaultWords(unsigned int* flagWords) {
+    flagWords[0] = s_saveFlagsTwoWordDefault;
+    flagWords[1] = s_saveFlagsTwoWordDefault;
 }
 #pragma pop
 
 #pragma push
 #pragma use_lmw_stmw on
 // Preserve the two ABI input words as a 64-bit pair without changing their values.
-unsigned long long SaveRecord_PreserveWordPair(unsigned int arg1, unsigned int arg2) {
+unsigned long long SaveRecord_PreserveWordPair(unsigned int highWord, unsigned int lowWord) {
     volatile unsigned int saved2;
     volatile unsigned int saved1;
-    saved1 = arg1;
-    saved2 = arg2;
-// The Wii stores arg1:arg2 as one 64-bit big-endian value.
-    return ((unsigned long long)arg1 << 32) | arg2;
+    saved1 = highWord;
+    saved2 = lowWord;
+    // The Wii stores highWord:lowWord as one 64-bit big-endian value.
+    return ((unsigned long long)highWord << 32) | lowWord;
 }
 #pragma pop
 
@@ -2334,8 +2592,9 @@ unsigned long long SaveRecord_PreserveWordPair(unsigned int arg1, unsigned int a
 Ref45* Bitset45Reference_Assign(Ref45* ref, int value) {
     unsigned int i = ref->index;
     unsigned int* words = ref->words;
-    if (i >= 0x2D)
-        { std::out_of_range error(bitset45AssignRangeErrorText, outOfRangeExceptionTypeString); }
+    if (i >= 0x2D) {
+        std::out_of_range error(bitset45AssignRangeErrorText, outOfRangeExceptionTypeString);
+    }
     unsigned int word = i >> 5;
     unsigned int mask = 1u << (i & 31);
     if (value != 0)
@@ -2366,8 +2625,9 @@ void SaveFlags_ClearCourseAvailabilityWord(unsigned int* flags) {
 #pragma use_lmw_stmw on
 // Set or clear one checked course flag in a 14-bit flag set.
 unsigned int* Bitset14_AssignBit(unsigned int* bits, unsigned int index, int value) {
-    if (index >= kCourseFlagCount)
-        { std::out_of_range error(bitset14SetRangeErrorText, outOfRangeExceptionTypeString); }
+    if (index >= kCourseFlagCount) {
+        std::out_of_range error(bitset14SetRangeErrorText, outOfRangeExceptionTypeString);
+    }
     unsigned int mask = 1u << index;
     if (value != 0)
         *bits |= mask;
@@ -2383,6 +2643,5 @@ unsigned int* Bitset14_AssignBit(unsigned int* bits, unsigned int index, int val
 // (0x140..0x217), +0x258 unlocked courses, +0x25C 14 course records, +0x2CC outfit part indices, +0x46C caddie
 // values, +0x4E0 stream/buffer volume and control/audio options, +0x4EC 11 Tour area records (0x4A each).
 // The packed 0x47C-byte profile ("Save Character Data" to the Wii Remote memory) carries the same fields at packed
-// offsets (layout in CFileIoMenu_BuildCurrentPlayerProfile).
-
+// offsets (layout in CFileIoMenu::BuildCurrentPlayerProfile).
 }

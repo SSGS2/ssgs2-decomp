@@ -1,15 +1,31 @@
+// Pad-memory file device support: the file-IO string and vector storage layouts (inline or heap),
+// the async state setup, and the open-file callback that finishes a pad-memory open.
+
 #include <decomp/static_init.h>
 #include <decomp/cw_string_guard.h>
 #include "classes/MWStringStorage.h"
 #include "classes/FmemOperationCallback.h"
 #include "classes/FmemFileState.h"
+#include "classes/GtlFileIoDevicePADMEM.h"
+#include "classes/CCallBackOpenFile.h"
 // String storage is 12 bytes: heap = {flag/capacity, length, pointer}; inline =
 // {high-bit tag + 7-bit length, 11 bytes including the terminator}. Capacity
 // counts allocated bytes, so logical length must remain strictly below capacity.
 // The views overlap: copy characters before publishing a new representation.
-struct FileIOInlineString { unsigned char taggedLength; char data[11]; };
-struct FileIOVectorStorage { void* data; unsigned int count; unsigned int capacity; };
-struct PadMemoryHandle { void* vtable; int word1; int word2; };
+struct FileIOInlineString {
+    unsigned char taggedLength;
+    char data[11];
+};
+struct FileIOVectorStorage {
+    void* data;
+    unsigned int count;
+    unsigned int capacity;
+};
+struct PadMemoryHandle {
+    void* vtable;
+    int word1;
+    int word2;
+};
 static const unsigned int kInlineStringCapacity = 11;
 static const unsigned int kMaximumStringLength = 0x7ffffffeU;
 static const unsigned int kStringCapacityMask = 0x7fffffffU;
@@ -50,7 +66,9 @@ struct default_delete_chars {
     // Construct the policy without initializing its compiler-visible scratch byte.
     default_delete_chars(int) {}
     // Release the character array owned by an exception message.
-    void operator()(char* p) const { delete[] p; }
+    void operator()(char* p) const {
+        delete[] p;
+    }
 };
 struct CharArrayGuard_u8041F634 {
     char* ptr;
@@ -58,9 +76,14 @@ struct CharArrayGuard_u8041F634 {
     // Borrow the deleter and guard p until ownership reaches the control block.
     CharArrayGuard_u8041F634(char* p, default_delete_chars& d) : ptr(p), deleter(d) {}
     // Free the buffer if control-block construction did not take ownership.
-    ~CharArrayGuard_u8041F634() { if (ptr) deleter(ptr); }
+    ~CharArrayGuard_u8041F634() {
+        if (ptr)
+            deleter(ptr);
+    }
     // Disarm cleanup after successful ownership transfer.
-    void release() { ptr = 0; }
+    void release() {
+        ptr = 0;
+    }
 };
 struct message_control {
     const void* table;
@@ -68,7 +91,10 @@ struct message_control {
     int weakCount;
     char* ptr;
     // Take ownership of the message array with one strong and one weak reference.
-    message_control(char* p) : useCount(1), weakCount(1) { table = s_sharedCharDeleterVtable; ptr = p; }
+    message_control(char* p) : useCount(1), weakCount(1) {
+        table = s_sharedCharDeleterVtable;
+        ptr = p;
+    }
 };
 }
 class logic_error : public exception {
@@ -91,7 +117,8 @@ public:
 #pragma pop
     // Copy the diagnostic, then publish this exception's address to the throw adapter.
     // Address references use the Wii's 32-bit integer ABI; they are never lengths.
-    logic_error(const char* text, unsigned long& publishedErrorAddress, unsigned long& messageBufferAddress, unsigned int& diagnosticAddress) {
+    logic_error(const char* text, unsigned long& publishedErrorAddress, unsigned long& messageBufferAddress,
+                unsigned int& diagnosticAddress) {
         detail::default_delete_chars deleter(0);
         volatile detail::default_delete_chars original;
         deleter.unused = 0;
@@ -108,7 +135,8 @@ public:
     }
     // Copy diagnosticAddress's text into owned storage and publish this exception.
     // diagnosticAddress/publishedErrorAddress carry address bits, not string lengths.
-    logic_error(unsigned int& diagnosticAddress, unsigned int& publishedErrorAddress, detail::default_delete_chars& deleter, char*& messageBufferAddress) {
+    logic_error(unsigned int& diagnosticAddress, unsigned int& publishedErrorAddress,
+                detail::default_delete_chars& deleter, char*& messageBufferAddress) {
         unsigned int length = strlen((const char*)diagnosticAddress) + 1;
         message = static_cast<char*>(operator new[]((length << 1) - length));
         {
@@ -121,6 +149,7 @@ public:
         publishedErrorAddress = (unsigned int)this;
     }
     virtual ~logic_error();
+
 private:
     char* message;
     detail::message_control* control;
@@ -130,7 +159,9 @@ extern "C" void __dt__Q23std12length_errorFv(void*);
 class out_of_range : public logic_error {
 public:
     // Construct and throw a range error through the caller's scratch slots.
-    out_of_range(unsigned int& diagnosticAddress, unsigned int& publishedErrorAddress, const char* typeName, detail::default_delete_chars& deleter, char*& messageBufferAddress) : logic_error(diagnosticAddress, publishedErrorAddress, deleter, messageBufferAddress) {
+    out_of_range(unsigned int& diagnosticAddress, unsigned int& publishedErrorAddress, const char* typeName,
+                 detail::default_delete_chars& deleter, char*& messageBufferAddress)
+        : logic_error(diagnosticAddress, publishedErrorAddress, deleter, messageBufferAddress) {
         __throw(typeName, (void*)publishedErrorAddress, (void*)__dt__Q23std12out_of_rangeFv);
     }
     // Construct and throw a range error with a copied message.
@@ -142,7 +173,9 @@ public:
 class length_error : public logic_error {
 public:
     // Construct and throw a length error through the caller's scratch slots.
-    length_error(unsigned int& diagnosticAddress, unsigned int& publishedErrorAddress, const char* typeName, detail::default_delete_chars& deleter, char*& messageBufferAddress) : logic_error(diagnosticAddress, publishedErrorAddress, deleter, messageBufferAddress) {
+    length_error(unsigned int& diagnosticAddress, unsigned int& publishedErrorAddress, const char* typeName,
+                 detail::default_delete_chars& deleter, char*& messageBufferAddress)
+        : logic_error(diagnosticAddress, publishedErrorAddress, deleter, messageBufferAddress) {
         __throw(typeName, (void*)publishedErrorAddress, (void*)__dt__Q23std12length_errorFv);
     }
     // Construct and throw a length error with a copied message.
@@ -150,7 +183,9 @@ public:
         __throw(typeName, this, (void*)__dt__Q23std12length_errorFv);
     }
     // Throw a length error after publishing its address to the throw adapter.
-    length_error(const char* text, const char* typeName, unsigned long& publishedErrorAddress, unsigned long& messageBufferAddress, unsigned int& diagnosticAddress) : logic_error(text, publishedErrorAddress, messageBufferAddress, diagnosticAddress) {
+    length_error(const char* text, const char* typeName, unsigned long& publishedErrorAddress,
+                 unsigned long& messageBufferAddress, unsigned int& diagnosticAddress)
+        : logic_error(text, publishedErrorAddress, messageBufferAddress, diagnosticAddress) {
         __throw(typeName, (void*)publishedErrorAddress, (void*)__dt__Q23std12length_errorFv);
     }
     virtual ~length_error();
@@ -159,7 +194,6 @@ public:
 #pragma pop
 #include "sdk_protos.h"
 #include <decomp/cw_bitfields.h>
-
 
 extern "C" void FileIO_Free(void* p);
 extern "C" void* FmemAsync_OperationStateDtor(void* p, int n);
@@ -187,7 +221,8 @@ void* FmemAsync_InitOperationState() {
     s_fmemAsyncOperation[0] = 0;
     s_fmemAsyncOperation[1] = 0;
     s_fmemAsyncOperation[2] = 0;
-    return __register_global_object(s_fmemAsyncOperation, (void*)FmemAsync_OperationStateDtor, &s_fmemOperationDtorRegistration);
+    return __register_global_object(s_fmemAsyncOperation, (void*)FmemAsync_OperationStateDtor,
+                                    &s_fmemOperationDtorRegistration);
 }
 
 // Optionally free the operation-state object; return its original address.
@@ -251,7 +286,9 @@ void* dtor_8041FDEC(void* p, int n) {
 // last-error to 0x6f; the already allocated handle is not released on this path.
 // Allocation failure is not checked before submission; successful submission can
 // therefore return null. The callee must consume/copy the stack-backed suffix.
-void* gtl_CFileIoDevicePADMEM_OpenHandle(void* self, const char* path) {
+} // extern "C"
+
+void* gtl::CFileIoDevicePADMEM::OpenHandle(const char* path) {
     char buf[kPathBufferBytes];
     strncpy(buf, path, kPathBufferBytes);
     char* slash = strchr(buf, '/');
@@ -272,37 +309,43 @@ void* gtl_CFileIoDevicePADMEM_OpenHandle(void* self, const char* path) {
     }
 }
 
+namespace gtl {
+
 // Publish open success/failure, invoke the user callback, and release callback storage.
-// resultCode == 0 means success. self and non-null completionData are consumed;
+// resultCode == 0 means success. this and non-null completionData are consumed;
 // fileState is borrowed and survives this callback. In this callback variant,
 // callbackPayload holds a FUNCTION address; callbackArgument in fileState is
 // the user context (file +0x94).
 // Invocation is synchronous and precedes all releases: the user callback must
-// leave self/completionData alive for the cleanup below. Vtable slot 2 destroys
-// self with -1 (without freeing storage); allocator callback 3 frees it afterward.
-void* gtl_CCallBackOpenFile_OnOpenComplete(void* self, int resultCode, void* completionData) {
+// leave this/completionData alive for the cleanup below. Vtable slot 2 destroys
+// this with -1 (without freeing storage); allocator callback 3 frees it afterward.
+void* CCallBackOpenFile::OnOpenComplete(int resultCode, void* completionData) {
     int openResult = resultCode;
     void* completionStorage = completionData;
     if (resultCode == 0) {
         File_SetLastError(0);
-        void* fileState = *(void**)&AsFmemOperationCallback(self)->argument;
+        void* fileState = *(void**)&argument;
         AsFmemFileState(fileState)->operationState = kFileOpenSucceeded;
     } else {
-        void* fileState = *(void**)&AsFmemOperationCallback(self)->argument;
+        void* fileState = *(void**)&argument;
         AsFmemFileState(fileState)->operationState = kFileOpenFailed;
     }
-    if (*(void**)&AsFmemOperationCallback(self)->callbackPayload != 0) {
-        void* fileState = *(void**)&AsFmemOperationCallback(self)->argument;
+    if (*(void**)&callbackPayload != 0) {
+        void* fileState = *(void**)&argument;
         int userContext = AsFmemFileState(fileState)->callbackArgument;
-        ((void(*)(int, int, void*, int))*(void**)&AsFmemOperationCallback(self)->callbackPayload)(openResult, 1, fileState, userContext);
+        ((void (*)(int, int, void*, int)) * (void**)&callbackPayload)(openResult, 1, fileState, userContext);
     }
     if (completionStorage != 0) {
         FileIO_InvokeAllocatorCallback3(completionStorage);
     }
-    void** vt = *(void***)self;
-    ((void(*)(void*, int))vt[2])(self, -1);
-    return FileIO_InvokeAllocatorCallback3(self);
+    void** vt = *(void***)this;
+    ((void (*)(void*, int))vt[2])(this, -1);
+    return FileIO_InvokeAllocatorCallback3(this);
 }
+
+} // namespace gtl
+
+extern "C" {
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -312,13 +355,17 @@ extern "C" void __dla__FPv(void*);
 
 #pragma push
 #pragma use_lmw_stmw on
- #pragma opt_propagation on
- #pragma opt_common_subs on
- #pragma opt_lifetimes off
+#pragma opt_propagation on
+#pragma opt_common_subs on
+#pragma opt_lifetimes off
 // Resize string capacity, preserving content and switching between inline and heap storage.
 void FileIOString_Reserve(void* selfArg, size_t requestedCapacity) {
-    struct Bits { CW_BITS2( unsigned int heap:1, unsigned int cap:31) };
-    struct ByteBits { CW_BITS2( unsigned char heap:1, unsigned char len:7) };
+    struct Bits {
+        CW_BITS2(unsigned int heap : 1, unsigned int cap : 31)
+    };
+    struct ByteBits {
+        CW_BITS2(unsigned char heap : 1, unsigned char len : 7)
+    };
     size_t newCapacity;
     register void* self = selfArg;
     // One compiler scratch slot spans two non-overlapping phases: a character
@@ -331,7 +378,8 @@ void FileIOString_Reserve(void* selfArg, size_t requestedCapacity) {
     // Validate and choose capacity without truncating the current string.
     if (capacityOrBufferAddress > kMaximumStringLength) {
         currentLength = (size_t)(filePathUtilityStrings + kReserveLengthErrorOffset);
-        std::length_error error((const char*)currentLength, filePathUtilityStrings + kLengthErrorTypeOffset, newCapacity, heap, currentLength);
+        std::length_error error((const char*)currentLength, filePathUtilityStrings + kLengthErrorTypeOffset,
+                                newCapacity, heap, currentLength);
     }
     unsigned int storageFlags = AsMWStringStorage(self)->flags;
     heap = storageFlags >> 31;
@@ -398,14 +446,21 @@ void FileIOString_Reserve(void* selfArg, size_t requestedCapacity) {
 #pragma opt_propagation off
 #pragma opt_common_subs off
 #pragma opt_lifetimes on
-struct StringAllocator { char unused; };
+struct StringAllocator {
+    char unused;
+};
 // Replace a string slice, preserving aliased input through a temporary when necessary.
 // Replace min(count, length-pos) characters with [srcFirst, srcLast); return self.
 // Source is borrowed and may alias this string. Invalid pos/length throws; the
 // allocator owns replacement storage, while the local string owns any alias copy.
-void* FileIOString_ReplaceRange(void* self, size_t pos, size_t count, const void* srcFirst, const void* srcLast, const StringAllocator& allocator) {
-    struct Bits { CW_BITS2( unsigned int heap:1, unsigned int cap:31) };
-    struct ByteBits { CW_BITS2( unsigned char heap:1, unsigned char len:7) };
+void* FileIOString_ReplaceRange(void* self, size_t pos, size_t count, const void* srcFirst, const void* srcLast,
+                                const StringAllocator& allocator) {
+    struct Bits {
+        CW_BITS2(unsigned int heap : 1, unsigned int cap : 31)
+    };
+    struct ByteBits {
+        CW_BITS2(unsigned char heap : 1, unsigned char len : 7)
+    };
     int isHeap;
     register unsigned int suffixLength;
     register unsigned int newLength;
@@ -431,7 +486,8 @@ void* FileIOString_ReplaceRange(void* self, size_t pos, size_t count, const void
     if (pos > currentLength) {
         suffixLength = (unsigned int)(filePathUtilityStrings + kStringRangeErrorOffset);
         std::detail::default_delete_chars deleter;
-        std::out_of_range error(suffixLength, newLength, filePathUtilityStrings + kOutOfRangeTypeOffset, deleter, replacementBuffer);
+        std::out_of_range error(suffixLength, newLength, filePathUtilityStrings + kOutOfRangeTypeOffset, deleter,
+                                replacementBuffer);
     }
     availableLength = currentLength - pos;
     const size_t& clampedEraseLength = availableLength < count ? availableLength : count;
@@ -440,7 +496,8 @@ void* FileIOString_ReplaceRange(void* self, size_t pos, size_t count, const void
     if (sourceLength > kMaximumStringLength || currentLength - erasedLength > kMaximumStringLength - sourceLength) {
         newLength = (unsigned int)(filePathUtilityStrings + kStringLengthErrorOffset);
         std::detail::default_delete_chars deleter;
-        std::length_error error(newLength, suffixLength, filePathUtilityStrings + kLengthErrorTypeOffset, deleter, replacementBuffer);
+        std::length_error error(newLength, suffixLength, filePathUtilityStrings + kLengthErrorTypeOffset, deleter,
+                                replacementBuffer);
     }
     newLength = sourceLength + (currentLength - erasedLength);
     suffixLength = currentLength - (pos + erasedLength);
@@ -472,12 +529,21 @@ void* FileIOString_ReplaceRange(void* self, size_t pos, size_t count, const void
         // Reuse storage; save an overlapping source before shifting the suffix.
         const void* srcData = srcFirst;
         // Release only an owned heap alias-copy when this scope exits.
-        struct LocalStr { unsigned int storageFlags; unsigned int len; void* data; ~LocalStr() { if (storageFlags >> 31) FileIO_InvokeAllocatorCallback3(data); } } local = {0, 0, 0};
+        struct LocalStr {
+            unsigned int storageFlags;
+            unsigned int len;
+            void* data;
+            ~LocalStr() {
+                if (storageFlags >> 31)
+                    FileIO_InvokeAllocatorCallback3(data);
+            }
+        } local = {0, 0, 0};
         if (suffixLength != 0) {
             char* suffixDestination = characters + pos + sourceLength;
             const void* srcEnd = srcLast;
             if (!(suffixDestination >= srcEnd) && !(srcEnd > characters + currentLength)) {
-                size_t aliasCopyLength = !(local.storageFlags >> 31) ? (*(unsigned char*)&local & kInlineLengthMask) : local.len;
+                size_t aliasCopyLength =
+                    !(local.storageFlags >> 31) ? (*(unsigned char*)&local & kInlineLengthMask) : local.len;
                 StringAllocator copy;
                 volatile StringAllocator original;
                 copy.unused = original.unused;

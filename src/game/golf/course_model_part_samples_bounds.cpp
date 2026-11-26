@@ -11,7 +11,7 @@
 //   empty-box sentinels, shared with WPuppet_ComputeMeshBounds (wpuppet_mesh_bounds.cpp).
 //   They are not clipping distances. No vertices leaves this inverted box intact.
 // - Constructor fallback bounds: kFloat_neg6_3999996_Bounds/+6_3999996_Bounds
-//   in u8005F290_data.cpp are exact +/-6.3999996185 model-distance floats;
+//   in the data section are exact +/-6.3999996185 model-distance floats;
 //   extraction immediately overwrites them with the empty-box sentinels.
 // - Normals: storeNormals != 0 stores normalize((v2-v1) cross (v0-v1)); preserve
 //   winding, float operation order, and the first-triangle-per-part-ID rule.
@@ -39,9 +39,14 @@
 // Payload teardown therefore belongs to the collision-data consumer.
 // MeshPart vertices are borrowed triangle lists in bone-local coordinates.
 typedef Vec3f Vec3;
-struct VectorWork { Vec3 a, b, transformed, normal; }; // a=v0-v1, b=v2-v1; normal=normalize(b cross a).
+struct VectorWork {
+    Vec3 a, b, transformed, normal;
+}; // a=v0-v1, b=v2-v1; normal=normalize(b cross a).
 struct Triangle {
-    Vec3 v[3]; Vec3 normal; char pad30[12]; int id;
+    Vec3 v[3];
+    Vec3 normal;
+    char pad30[12];
+    int id;
     // Allocate without initializing vertex/normal data; extraction fills used members.
     Triangle() {}
 };
@@ -56,29 +61,54 @@ struct Link {
 };
 // Runtime Wii records, not serialized GBIN: 32-bit pointers, native big-endian
 // floats. MeshPart is 0x10 bytes, Mesh is 8; vertices are packed 12-byte XYZ.
-struct MeshPart { int id; unsigned count; Vec3* vertices; int padC; };
-struct Mesh { unsigned count; MeshPart* parts; };
-struct Resource { int refs; 
-virtual ~Resource();
+struct MeshPart {
+    int id;
+    unsigned count;
+    Vec3* vertices;
+    int padC;
+};
+struct Mesh {
+    unsigned count;
+    MeshPart* parts;
+};
+struct Resource {
+    int refs;
+    virtual ~Resource();
 };
 struct Node {
-    char pad0[8]; char name[0x70]; float transform[12];
+    char pad0[8];
+    char name[0x70];
+    float transform[12];
     // Borrow the inline bone name; the source node retains storage.
-    const char* getName() const { return name; }
+    const char* getName() const {
+        return name;
+    }
     // Borrow the affine bone transform used to place extracted vertices.
-    const float* getTransform() const { return transform; }
+    const float* getTransform() const {
+        return transform;
+    }
 };
 struct Entry {
-    Node* node; char* other;
+    Node* node;
+    char* other;
     // Borrow the bone node paired with this source descriptor.
-    Node* getNode() const { return node; }
+    Node* getNode() const {
+        return node;
+    }
 };
-struct Source { char pad0[0x13c]; Entry* entries; unsigned count; };
+struct Source {
+    char pad0[0x13c];
+    Entry* entries;
+    unsigned count;
+};
 
 enum CollisionStorage {
-    kLookupSlotCount = 64, kLookupAllocationBytes = 256,
-    kPooledLinkBytes = 24, kCollisionNameBytes = 32,
-    kPositionBytes = 12, kVerticesPerTriangle = 3
+    kLookupSlotCount = 64,
+    kLookupAllocationBytes = 256,
+    kPooledLinkBytes = 24,
+    kCollisionNameBytes = 32,
+    kPositionBytes = 12,
+    kVerticesPerTriangle = 3
 };
 
 extern "C" {
@@ -92,7 +122,7 @@ int CString_Compare(const void*, const void*);
 int WPuppet_CreateMeshByBoneName(void*, Resource**, const void*);
 unsigned short IPetMesh_GetGroupCount(Resource*);
 Mesh* IPetMesh_GetGroupByIndex(Resource*, unsigned short);
-void Matrix_TransformPoint(void*, const void*, const void*);
+void* Matrix_TransformPoint(void*, const void*, const void*);
 void __mi__FRC7WVectorRC7WVector(void*, const void*, const void*);
 void Vector_CrossProduct(void*, const void*, const void*);
 void Normalize__7WVectorFv(void*);
@@ -103,17 +133,26 @@ extern const float kFloat_neg6_3999996_Bounds, kFloat_6_3999996_Bounds, kBoundsI
 
 class InstanceLock_u8005F290 {
     OSMutex* mutex;
+
 public:
     // Lock the borrowed instance mutex for this scope.
-    InstanceLock_u8005F290(OSMutex* m) : mutex(m) { OSLockMutex(mutex); }
+    InstanceLock_u8005F290(OSMutex* m) : mutex(m) {
+        OSLockMutex(mutex);
+    }
     // Unlock the same mutex on normal or exceptional scope exit.
-    ~InstanceLock_u8005F290() { OSUnlockMutex(mutex); }
+    ~InstanceLock_u8005F290() {
+        OSUnlockMutex(mutex);
+    }
 };
 
 // Extend a minimum bound with one coordinate, preserving original NaN ordering.
-inline float lower(float bound, float value) { return bound > value ? value : bound; }
+inline float lower(float bound, float value) {
+    return bound > value ? value : bound;
+}
 // Extend a maximum bound with one coordinate, preserving original NaN ordering.
-inline float upper(float bound, float value) { return bound < value ? value : bound; }
+inline float upper(float bound, float value) {
+    return bound < value ? value : bound;
+}
 
 // Circular live/free rings use null for an empty ring. blocks links the first
 // Link of each allocation (a block header, never a payload slot). clear recycles
@@ -143,13 +182,16 @@ struct List {
         if (size > 0) {
             slots = (int*)appMallocUni__FUl(kLookupAllocationBytes);
             mask = size - 1;
-            for (int i = 0; i < size; ++i) slots[i] = 0;
+            for (int i = 0; i < size; ++i)
+                slots[i] = 0;
         } else {
             slots = 0;
         }
     }
     // Delegate link/lookup teardown to LockedNodeList_dtor; this does not delete Triangle*.
-    ~List() { LockedNodeList_dtor(this, -1); }
+    ~List() {
+        LockedNodeList_dtor(this, -1);
+    }
 
     // Splice node before into, or create a one-node ring; return the ring origin.
     Link* insert(Link* into, Link* node) {
@@ -175,12 +217,15 @@ struct List {
         node->next->prev = node->prev;
         node->prev->next = node->next;
         Link* next = node->next;
-        if (next == node) next = 0;
+        if (next == node)
+            next = 0;
         OSUnlockMutex(m);
         return next;
     }
     // Unlink the current ring head without releasing its payload.
-    Link* removeFirst() { return remove(head); }
+    Link* removeFirst() {
+        return remove(head);
+    }
     // Recycle all live links into the free ring; keep allocated blocks and slots.
     void clear() {
         InstanceLock_u8005F290 clearLock(&mutex);
@@ -198,7 +243,8 @@ struct List {
                 head = next;
             }
         }
-        for (int i = 0; i < size; ++i) slots[i] = 0;
+        for (int i = 0; i < size; ++i)
+            slots[i] = 0;
     }
     // Borrow the next live triangle and advance the cursor once around the ring.
     Triangle* next() {
@@ -207,7 +253,8 @@ struct List {
         if (cursor) {
             Triangle* value = cursor->value;
             Link* n = cursor->next;
-            if (n == head) n = 0;
+            if (n == head)
+                n = 0;
             cursor = n;
             OSUnlockMutex(m);
             return value;
@@ -260,9 +307,13 @@ struct Obj {
         list.clear();
         memset(name, 0, kCollisionNameBytes);
         Vec3 hi, lo;
-        lo.x = kFloat_neg6_3999996_Bounds; lo.y = kFloat_neg6_3999996_Bounds; lo.z = kFloat_neg6_3999996_Bounds;
+        lo.x = kFloat_neg6_3999996_Bounds;
+        lo.y = kFloat_neg6_3999996_Bounds;
+        lo.z = kFloat_neg6_3999996_Bounds;
         __as__7WVectorFRC7WVector(&min, &lo);
-        hi.x = kFloat_6_3999996_Bounds; hi.y = kFloat_6_3999996_Bounds; hi.z = kFloat_6_3999996_Bounds;
+        hi.x = kFloat_6_3999996_Bounds;
+        hi.y = kFloat_6_3999996_Bounds;
+        hi.z = kFloat_6_3999996_Bounds;
         __as__7WVectorFRC7WVector(&max, &hi);
     }
 };
@@ -301,9 +352,12 @@ enum CollisionLayout {
 // triangle, lookup array or link block is dereferenced, not a recoverable result.
 extern "C" void* PuppetMesh_CreatePartSamplesAndBounds(Source* self, int storeNormals) {
     Obj* collisionData = new Obj;
-    collisionData->min.x = kBoundsInitMin; collisionData->max.x = kBoundsInitMax;
-    collisionData->min.y = kBoundsInitMin; collisionData->max.y = kBoundsInitMax;
-    collisionData->min.z = kBoundsInitMin; collisionData->max.z = kBoundsInitMax;
+    collisionData->min.x = kBoundsInitMin;
+    collisionData->max.x = kBoundsInitMax;
+    collisionData->min.y = kBoundsInitMin;
+    collisionData->max.y = kBoundsInitMax;
+    collisionData->min.z = kBoundsInitMin;
+    collisionData->max.z = kBoundsInitMax;
     strncpy(collisionData->name, ((WPuppet*)self)->resourceName, sizeof(collisionData->name) - 1);
     Resource* resource = 0;
     unsigned entryIndex = 0;
@@ -320,29 +374,37 @@ extern "C" void* PuppetMesh_CreatePartSamplesAndBounds(Source* self, int storeNo
                     Mesh* mesh = IPetMesh_GetGroupByIndex(resource, (unsigned short)meshGroupIndex);
                     int partIndex = 0;
                     while (partIndex < mesh->count) {
-                        for (int vertexIndex = 0; vertexIndex < mesh->parts[partIndex].count; vertexIndex += kVerticesPerTriangle) {
+                        for (int vertexIndex = 0; vertexIndex < mesh->parts[partIndex].count;
+                             vertexIndex += kVerticesPerTriangle) {
                             Triangle* triangle = new Triangle;
                             // Phase 2: transform each local vertex and extend candidate bounds.
                             for (int cornerIndex = 0; cornerIndex < kVerticesPerTriangle; ++cornerIndex) {
                                 Vec3* outputVertex = &triangle->v[cornerIndex];
-                                memcpy(outputVertex, mesh->parts[partIndex].vertices + (vertexIndex + cornerIndex), kPositionBytes);
+                                memcpy(outputVertex, mesh->parts[partIndex].vertices + (vertexIndex + cornerIndex),
+                                       kPositionBytes);
                                 Matrix_TransformPoint(&vectors.transformed, outputVertex, node->getTransform());
                                 *(WVector*)outputVertex = *(WVector*)(&vectors.transformed);
                                 // Obj::min/max occupy float words 15..17 and 18..20;
                                 // keep the word-address form for identical generated loads/stores.
                                 for (int axis = 0; axis < 3; ++axis) {
-                                    ((float*)collisionData)[kMinimumBoundFloatWord + axis] = lower(((float*)collisionData)[kMinimumBoundFloatWord + axis], ((float*)outputVertex)[axis]);
-                                    ((float*)collisionData)[kMaximumBoundFloatWord + axis] = upper(((float*)collisionData)[kMaximumBoundFloatWord + axis], ((float*)outputVertex)[axis]);
+                                    ((float*)collisionData)[kMinimumBoundFloatWord + axis] =
+                                        lower(((float*)collisionData)[kMinimumBoundFloatWord + axis],
+                                              ((float*)outputVertex)[axis]);
+                                    ((float*)collisionData)[kMaximumBoundFloatWord + axis] =
+                                        upper(((float*)collisionData)[kMaximumBoundFloatWord + axis],
+                                              ((float*)outputVertex)[axis]);
                                 }
                             }
                             // Phase 3: retain only the first triangle for each mesh-part ID.
                             Triangle* found = collisionData->list.first();
                             while (found) {
-                                if (found->id == mesh->parts[partIndex].id) break;
+                                if (found->id == mesh->parts[partIndex].id)
+                                    break;
                                 found = collisionData->list.next();
                             }
                             if (found) {
-                                if (triangle) __dl__FPv(triangle);
+                                if (triangle)
+                                    __dl__FPv(triangle);
                             } else {
                                 if (storeNormals) {
                                     // Zero-area triangles are still eligible as the FIRST sample
@@ -376,4 +438,3 @@ extern "C" void* PuppetMesh_CreatePartSamplesAndBounds(Source* self, int storeNo
     }
     return collisionData;
 }
-

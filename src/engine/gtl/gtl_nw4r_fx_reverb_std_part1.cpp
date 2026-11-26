@@ -1,7 +1,10 @@
+// Standard reverb effect, first part: the constructor with clamped default settings, the
+// initialization and output buffer calls, and the DPL2 reverb active check.
+//
+// It also sets the audio effect's full-turn angle constant at startup.
+
 #include <decomp/static_init.h>
 #include "iff/IffStruct.h"
-// Translation unit 0x8040AD68-0x8040B02C (7 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -18,7 +21,9 @@ extern const float kFloat_1_ReverbClamp;
 // Raw requested settings in this order; the separate trailing scalars are clamped DSP settings.
 // predelay/time use the AXFX time scale (0..0.1 and 0..10); the other values use 0..1.
 // The precise time unit is not established by this wrapper.
-struct ReverbParams { float predelay, time, coloration, damping, mix; };
+struct ReverbParams {
+    float predelay, time, coloration, damping, mix;
+};
 extern ReverbParams defaultStandardReverbParameters;
 void AudioReverbStd_ApplySettings(void*);
 void gtl_AudioEffects_InstallAllocatorHooks(void*, unsigned int*, unsigned int*);
@@ -111,7 +116,8 @@ void gtl_nw4r_FxReverbHiDpl2_ProcessChannelBuffers(ReverbState* self, void*, Rev
 // Returns the SDK initialization result as bool (or true if already active).
 // Existing behavior sets active even when initialization fails; preserve that ordering.
 bool gtl_nw4r_FxReverbStd_Initialize(ReverbState* self) {
-    if (self->active) return true;
+    if (self->active)
+        return true;
     unsigned int savedAllocateHook;
     unsigned int savedFreeHook;
     gtl_AudioEffects_InstallAllocatorHooks(&self->active, &savedAllocateHook, &savedFreeHook);

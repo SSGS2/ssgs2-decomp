@@ -1,3 +1,7 @@
+// Shot cameras for CCameraWork: the pose for each camera mode (launch, hole, power shot,
+// trajectory event) and the per-frame updates that track the ball and move the camera.
+// Mode selection and the manual input offsets are here too.
+
 #include <decomp/local_class.h>
 #include <decomp/ct_member.h>
 // Shot camera policy, pose setup, curve evaluation and manual controller offsets.
@@ -7,7 +11,7 @@
 // - Change a camera's placement/motion: ConfigureMode -> mode definition index
 //   beside CameraCallbackSlot -> Configure* helper and its named update callback.
 //   Literal geometry is defined IN those helpers; scalar pools are in
-//   u800D89AC_data.cpp. CameraSetupFrameSlot identifies scratch, not tuning data.
+//   the data section. CameraSetupFrameSlot identifies scratch, not tuning data.
 // - Change orbit/curve timing: BuildModeCurve and the indexed evaluator; keep
 //   trajectory sample coordinates distinct from animationTime gameplay seconds.
 // - Controller sensitivity / return speed / zoom limits: UpdateInputOffsets has
@@ -37,15 +41,21 @@ struct CameraTrajectorySample {
     int groundEffectState; // value 3 enables the near-ground FOV adjustment
 };
 typedef char CameraTrajectorySample_size[(sizeof(CameraTrajectorySample) == 0x74) ? 1 : -1];
-struct CameraActorResponse { char reserved00[0x45]; unsigned char cameraAllowed; };
-struct BonePositionView { char reserved00[0x9C]; float worldPosition[3]; };
+struct CameraActorResponse {
+    char reserved00[0x45];
+    unsigned char cameraAllowed;
+};
+struct BonePositionView {
+    char reserved00[0x9C];
+    float worldPosition[3];
+};
 
 // Policy gate producer map (do not substitute ball motion state for club category):
 // - InstanceTable_Get()->selected+0xA is clubGroup: RegisterClubParameters in
 //   club_selection_and_shot_params.cpp writes 0 wood/1 iron/2 wedge/3 putter. This byte is not a
 //   camera state, despite the older local variable name "state".
 // - CGolfDoc::impactGrade=1 is miss (0 unset,2 poor,3 good,4 Pangya). Producers:
-//   CGolfRule_CommitShotGauge in golf_rule_round_flow_and_shot_sim.cpp and CRival_PrepareShotGauge in
+//   CGolfRule::CommitShotGauge in golf_rule_round_flow_and_shot_sim.cpp and CRival_PrepareShotGauge in
 //   com_shot_cpu_rival_ai.cpp; miss is selected outside the good/poor impact windows.
 // - Event[11] records the first sample after powerFlags bit0x10's live m_flags
 //   bit0x10 clears. Event[14] similarly records bit0x40 clearing, but only after
@@ -57,16 +67,32 @@ struct BonePositionView { char reserved00[0x9C]; float worldPosition[3]; };
 //   The bit transitions are established; a player-facing effect name is not
 //   needed to edit the selection probabilities and is deliberately not invented.
 enum ShotCameraSelectionCodes {
-    kShotCameraPutterCategory = 3, kShotCameraMissImpact = 1,
-    kShotCameraGreenGround = 2, kShotCameraPowerMask = 0x70,
-    kShotCameraPowerBit10 = 0x10, kShotCameraPowerBit20 = 0x20, kShotCameraPowerBit40 = 0x40,
-    kShotCameraSecondEventSlot = 1, kShotCameraEventSlot11 = 11, kShotCameraEventSlot14 = 14,
-    kShotCameraCaddieQuery = 0x11, kShotCameraCutSampleState = 2,
-    kShotCameraNormalChance = 1, kShotCameraBoostedChance = 5
+    kShotCameraPutterCategory = 3,
+    kShotCameraMissImpact = 1,
+    kShotCameraGreenGround = 2,
+    kShotCameraPowerMask = 0x70,
+    kShotCameraPowerBit10 = 0x10,
+    kShotCameraPowerBit20 = 0x20,
+    kShotCameraPowerBit40 = 0x40,
+    kShotCameraSecondEventSlot = 1,
+    kShotCameraEventSlot11 = 11,
+    kShotCameraEventSlot14 = 14,
+    kShotCameraCaddieQuery = 0x11,
+    kShotCameraCutSampleState = 2,
+    kShotCameraNormalChance = 1,
+    kShotCameraBoostedChance = 5
 };
 
-enum CameraPowerShotVariant { kPowerShotNoVariant = 0, kPowerShotVariant1 = 1, kPowerShotVariant2 = 2 };
-enum CameraActionFlags { kCameraFollowCurrentBall = 1, kCameraCutAtEvent = 0x20000000, kCameraShakeActive = 0x80000000u };
+enum CameraPowerShotVariant {
+    kPowerShotNoVariant = 0,
+    kPowerShotVariant1 = 1,
+    kPowerShotVariant2 = 2
+};
+enum CameraActionFlags {
+    kCameraFollowCurrentBall = 1,
+    kCameraCutAtEvent = 0x20000000,
+    kCameraShakeActive = 0x80000000u
+};
 enum CameraAction {
     kCameraAction0 = 0,
     kCameraAction1 = 1,
@@ -119,71 +145,73 @@ enum CameraAction {
 
 // Address-preserving view of the existing resource string pool.
 struct CameraWorkStrings {
-    char m_def[6]; // 0x0
-    char ken[4]; // 0x6
-    char f_def[6]; // 0xa
-    char eri[4]; // 0x10
-    char a_def[6]; // 0x14
-    char dai[4]; // 0x1a
-    char c_def[6]; // 0x1e
-    char ces[4]; // 0x24
-    char d_def[6]; // 0x28
-    char max[4]; // 0x2e
-    char e_def[6]; // 0x32
-    char koo[4]; // 0x38
-    char g_def[6]; // 0x3c
-    char ari[4]; // 0x42
-    char h_def[6]; // 0x46
-    char kaz[4]; // 0x4c
-    char albatrossPose[23]; // 0x50
-    char Albatross[10]; // 0x67
-    char holeInOnePose[25]; // 0x71
-    char HoleInOne[10]; // 0x8a
-    char birdiePose[25]; // 0x94
-    char Birdie[7]; // 0xad
-    char parPose[21]; // 0xb4
-    char Par[4]; // 0xc9
-    char bogeyPose[19]; // 0xcd
-    char Bogey[6]; // 0xe0
-    char doublePower04Pose[25]; // 0xe6
-    char DoublePower04[14]; // 0xff
-    char doublePower03Pose[25]; // 0x10d
-    char DoublePower03[14]; // 0x126
-    char doublePower02Pose[25]; // 0x134
-    char DoublePower02[14]; // 0x14d
-    char doublePower01Pose[25]; // 0x15b
-    char DoublePower01[14]; // 0x174
-    char stroke[7]; // 0x182
-    char match[6]; // 0x189
+    char m_def[6];                // 0x0
+    char ken[4];                  // 0x6
+    char f_def[6];                // 0xa
+    char eri[4];                  // 0x10
+    char a_def[6];                // 0x14
+    char dai[4];                  // 0x1a
+    char c_def[6];                // 0x1e
+    char ces[4];                  // 0x24
+    char d_def[6];                // 0x28
+    char max[4];                  // 0x2e
+    char e_def[6];                // 0x32
+    char koo[4];                  // 0x38
+    char g_def[6];                // 0x3c
+    char ari[4];                  // 0x42
+    char h_def[6];                // 0x46
+    char kaz[4];                  // 0x4c
+    char albatrossPose[23];       // 0x50
+    char Albatross[10];           // 0x67
+    char holeInOnePose[25];       // 0x71
+    char HoleInOne[10];           // 0x8a
+    char birdiePose[25];          // 0x94
+    char Birdie[7];               // 0xad
+    char parPose[21];             // 0xb4
+    char Par[4];                  // 0xc9
+    char bogeyPose[19];           // 0xcd
+    char Bogey[6];                // 0xe0
+    char doublePower04Pose[25];   // 0xe6
+    char DoublePower04[14];       // 0xff
+    char doublePower03Pose[25];   // 0x10d
+    char DoublePower03[14];       // 0x126
+    char doublePower02Pose[25];   // 0x134
+    char DoublePower02[14];       // 0x14d
+    char doublePower01Pose[25];   // 0x15b
+    char DoublePower01[14];       // 0x174
+    char stroke[7];               // 0x182
+    char match[6];                // 0x189
     char singleAwardCeremony[12]; // 0x18f
-    char Single[7]; // 0x19b
+    char Single[7];               // 0x19b
     char vector_length_error[20]; // 0x1a2
     char lengthErrorTypeName[55]; // 0x1b6
-    char PLAYER_d[10]; // 0x1ed
-    char Bip01_HeadNub[14]; // 0x1f7
-    char Bip01_Head[11]; // 0x205
-    char Player[7]; // 0x210
-    char Caddie[7]; // 0x217
-    char ballWindSoundAlias[10]; // 0x21e
-    char pass_RL[8]; // 0x228
-    char pass_LR[8]; // 0x230
-    char caddieLabel[11]; // 0x238
-    char Head[5]; // 0x243
+    char PLAYER_d[10];            // 0x1ed
+    char Bip01_HeadNub[14];       // 0x1f7
+    char Bip01_Head[11];          // 0x205
+    char Player[7];               // 0x210
+    char Caddie[7];               // 0x217
+    char ballWindSoundAlias[10];  // 0x21e
+    char pass_RL[8];              // 0x228
+    char pass_LR[8];              // 0x230
+    char caddieLabel[11];         // 0x238
+    char Head[5];                 // 0x243
     char reserved248[1];
-    char camera_double_power_camera[28]; // 0x249
-    char camera_hole_end_camera[24]; // 0x265
-    char vcg[5]; // 0x27d
-    char nameSeparator[2]; // 0x282
-    char rank[6]; // 0x284
-    char tree_insert_length_error[26]; // 0x28a
+    char camera_double_power_camera[28];        // 0x249
+    char camera_hole_end_camera[24];            // 0x265
+    char vcg[5];                                // 0x27d
+    char nameSeparator[2];                      // 0x282
+    char rank[6];                               // 0x284
+    char tree_insert_length_error[26];          // 0x28a
     char basic_string_reserve_length_error[35]; // 0x2a4
-    char basic_string_out_of_range[27]; // 0x2c7
-    char outOfRangeTypeName[55]; // 0x2e2
-    char basic_string_length_error[27]; // 0x319
+    char basic_string_out_of_range[27];         // 0x2c7
+    char outOfRangeTypeName[55];                // 0x2e2
+    char basic_string_length_error[27];         // 0x319
 };
 
 #include "game/golfball.h"
-struct CameraTransformView { float right[3], up[3], forward[3], position[3]; };
+struct CameraTransformView {
+    float right[3], up[3], forward[3], position[3];
+};
 #include "classes/CSharedDoc.h"
 #include "classes/WPuppet.h"
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
@@ -202,35 +230,18 @@ extern const CameraWorkStrings cameraWorkStrings;
 #include "game/singletons.h"
 #include "game/types.h"
 #include "sdk_protos.h"
+#include "classes/CVCGPlayer.h"
+#include "classes/CQuadTree.h"
 // Construct an exception payload in caller-provided storage without allocating it again.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 // ---- merged from camera_work_shot_cameras.cpp ----
 namespace ns0 {
 // The mode setup scratch slots and bit-copy views preserve CodeWarrior scheduling.
-// Shared field names are provisional; no shared class header is modified here.
-// Translation unit 0x800D89AC-0x800DB814 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
-
-struct CameraModeSetupState {
-    char pad0[0x10]; float inputFovOffset; float inputRotationOffset[2];
-    unsigned char inputMoved; char pad1d[3]; int callbackWord0; int callbackWord1; int callbackWord2;
-    float position[3]; float target[3];
-    char pad44[0x10]; int action; int pad58; int pendingAction; int actionFlags;
-    char pad64[0xc]; float curveStartFrame; int elapsedTimeBits; int cutoffFrame; int previousFrameIndex; int frameIndex;
-    char pad84[0x18]; float currentForward[3]; float currentPosition[3]; float previousRotation[3];
-    char padc0[0xc]; float previousForward[3]; float previousPosition[3];
-    char pade4[0x60]; float transitionPosition[3]; char pad150[4]; float animationTime;
-    char pad158[0x14]; float heading;
-    char pad170[0x30]; unsigned char flag1a0; // +1a0: shared randomModeRequested also retains manual offsets
-    char pad1a1[0xf]; int animationGroup;
-    char pad1b4[0x10]; float startQuaternion[4]; float endQuaternion[4]; float startPosition[3]; float endPosition[3];
-    float horizontalBallDistance; float ballHeightOffset; float duration; float fov; char pad20c[4]; unsigned char groundClearanceEnabled; char pad211[7];
-    int* actionHistory; unsigned actionCount; unsigned actionCapacity; int historyIndex;
-    int randomValue; unsigned char installed; char pad22d[3]; float roll; int powerShotVariant; int pad238; int actionSubstate;
-};
 
 extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[];
 extern const CameraWorkStrings cameraWorkStrings;
@@ -260,7 +271,6 @@ extern void __mi__FRC7WVectorRC7WVector(void*, const void*, const void*);
 extern void __ml__FRC7WVectorf(void*, const void*, float);
 extern void __ml__FfRC7WVector(void*, const void*, float);
 extern void Vec2_Zero(void*);
-extern void CCameraWork_ResetTrajectoryPlayback(void*);
 extern void Matrix_BuildCameraTransform(void*, const void*, const void*);
 extern void Vector_CrossProduct(void*, const void*, const void*);
 extern void* Normalize__7WVectorFv(void*);
@@ -272,49 +282,75 @@ extern float Random_RangeFloat(int, float, float);
 extern void* String_FormatTemporary(const char*, ...);
 extern void* NamedEffectList_FindByName(void*, void*);
 extern char* WPuppet_FindOrCacheBone(void*, const char*);
-extern void CGolfDoc_BuildCameraMatrix(void*, void*);
 extern void Matrix3x3_ToQuat(void*, const void*);
-extern void Matrix_TransformPoint(void*, const void*, const void*);
+extern void* Matrix_TransformPoint(void*, const void*, const void*);
 extern float __ml__FRC7WVectorRC7WVector(const void*, const void*);
 struct Sink {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virtual void v4();
-    virtual void v5(); virtual void v6(); virtual void v7(); virtual void v8(); virtual void send(void*);
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void send(void*);
 };
 extern Sink* TaskActorTable_FindByName(void*, const void*);
 extern void* Object_GetChild(void*);
 extern void* g_taskManager;
 
 struct LayoutVectorAllocation {
-    char* pointer; char* allocator;
+    char* pointer;
+    char* allocator;
     // Guard a partially constructed exception message until ownership transfers.
     LayoutVectorAllocation(char* p, char* a) : pointer(p), allocator(a) {}
     // Free an exception message whose ownership was not transferred.
-    ~LayoutVectorAllocation() { if (pointer) __dla__FPv(pointer); }
+    ~LayoutVectorAllocation() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct LayoutVectorControlBase {
-    void* table; unsigned strong, weak;
+    void* table;
+    unsigned strong, weak;
     // Initialize the shared message reference counts and base deleter table.
-    LayoutVectorControlBase() { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; }
+    LayoutVectorControlBase() {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+    }
 };
 struct LayoutVectorControl : LayoutVectorControlBase {
     char* pointer;
     // Attach the allocated message to its reference-counted control block.
-    LayoutVectorControl(char* p) { pointer = p; }
+    LayoutVectorControl(char* p) {
+        pointer = p;
+    }
 };
 struct LayoutVectorErrorBase {
     void* table;
     // Install the standard logic-error base table before constructing its payload.
-    LayoutVectorErrorBase() { table = __vt__Q23std11logic_error; }
+    LayoutVectorErrorBase() {
+        table = __vt__Q23std11logic_error;
+    }
     // Run the standard exception base destructor without freeing this storage.
-    ~LayoutVectorErrorBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~LayoutVectorErrorBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 namespace std {
 struct length_error : LayoutVectorErrorBase {
-    char* text; void* control;
+    char* text;
+    void* control;
     // Allocate and copy the camera vector length-error message with exception-safe ownership.
     length_error() {
         const char* message = cameraWorkStrings.vector_length_error;
-        struct Allocator { char value; char pad[3]; } allocator;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } allocator;
         allocator.value = 0;
         unsigned n = strlen(message) + 1;
         text = (char*)__nwa__FUl(2 * n - n);
@@ -335,19 +371,34 @@ struct length_error : LayoutVectorErrorBase {
 extern "C" {
 
 struct LayoutVectorBuffer {
-    int* data; volatile unsigned size; unsigned capacity; unsigned* owner; volatile unsigned offset;
+    int* data;
+    volatile unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    volatile unsigned offset;
     // Track a pending vector allocation and its original capacity owner.
     LayoutVectorBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free the pending allocation on failure, or the replaced old allocation after commit.
-    ~LayoutVectorBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~LayoutVectorBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 // Select a growth count by reference to preserve the caller's temporary lifetimes.
-inline const unsigned& LayoutVectorMax(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+inline const unsigned& LayoutVectorMax(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 
 // Tests whether a scalar is within the camera zero tolerance.
-static inline bool CameraIsNearZero(const float& v) { return ((*(const unsigned*)&v & 0x80000000u) ? -v : v) < 0.00001f; }
+static inline bool CameraIsNearZero(const float& v) {
+    return ((*(const unsigned*)&v & 0x80000000u) ? -v : v) < 0.00001f;
+}
 // Absolute value without changing the compiler's sign-bit test.
-static inline float CameraAbs(float x) { return (*(unsigned*)&x & 0x80000000u) ? -x : x; }
+static inline float CameraAbs(float x) {
+    return (*(unsigned*)&x & 0x80000000u) ? -x : x;
+}
 
 // Original frame coordinates for mode setup. Names describe the value produced/consumed,
 // not a new stack allocation. CameraScratchAddress converts from this coordinate system.
@@ -578,7 +629,10 @@ enum CameraSetupFrameSlot {
     kSetupMidpointActorMatrixPosition = 0xdbc,
     kSetupLaunchPoseHeading = 0xdc8,
 };
-enum { kCameraSetupBufferOrigin = 0x78, kCameraSetupBufferBytes = 0xD80 };
+enum {
+    kCameraSetupBufferOrigin = 0x78,
+    kCameraSetupBufferBytes = 0xD80
+};
 
 #undef F_
 #define F_ ((char*)frame)
@@ -589,12 +643,20 @@ static inline void* CameraScratchAddress(char* scratch, int stackOffset) {
 // Borrow a world vector/displacement view; these references never own scratch.
 // XYZ components are floats, while CopyCurrentHoleToCameraScratch writes their
 // representations through CameraPositionWords. Never numerically convert those bits.
-struct CameraScratchVector { float x, y, z; };
+struct CameraScratchVector {
+    float x, y, z;
+};
 // Return the three-float view at an existing slot, without extending its lifetime.
 static inline CameraScratchVector& CameraVectorAt(char* frame, int slot) {
     return *(CameraScratchVector*)&frame[slot - kCameraSetupBufferOrigin];
 }
-struct CallbackDescriptorPrefix { int a, b; }; struct CameraCallbackDescriptor { CallbackDescriptorPrefix ab; int c; };
+struct CallbackDescriptorPrefix {
+    int a, b;
+};
+struct CameraCallbackDescriptor {
+    CallbackDescriptorPrefix ab;
+    int c;
+};
 // Borrow the descriptor view of the mixed weights/descriptor data anchor; never index it as weights.
 static inline CameraCallbackDescriptor* CameraCallbackDescriptors() {
     return (CameraCallbackDescriptor*)s_extendedCameraModeWeights;
@@ -708,17 +770,26 @@ enum CameraCallbackSlot {
 };
 
 // Install one borrowed ABI descriptor; switch exit is explicit at every call site.
-static inline void InstallCameraCallback(CameraModeSetupState* self, 
-    const CameraCallbackDescriptor* descriptors, CameraCallbackSlot slot) {
-    *(CameraCallbackDescriptor*)&self->callbackWord0 = descriptors[slot];
+static inline void InstallCameraCallback(CCameraWork* self, const CameraCallbackDescriptor* descriptors,
+                                         CameraCallbackSlot slot) {
+    *(CameraCallbackDescriptor*)&self->motionCallbackThisAdjustment = descriptors[slot];
 }
 
 #undef G90
 #define G90 ((char*)AsCSharedDoc(g_sharedDoc)->golfDoc) // original +0xb90
 // Hole records have a 32-byte stride and bit-copied XYZ position words at +0x0c.
-struct CameraPositionXYWords { int x, y; };
-struct CameraPositionWords { CameraPositionXYWords xy; int z; };
-struct CameraHoleRecordView { char reserved00[0xc]; CameraPositionWords position; char reserved18[8]; };
+struct CameraPositionXYWords {
+    int x, y;
+};
+struct CameraPositionWords {
+    CameraPositionXYWords xy;
+    int z;
+};
+struct CameraHoleRecordView {
+    char reserved00[0xc];
+    CameraPositionWords position;
+    char reserved18[8];
+};
 typedef char CameraHoleRecordStride[(sizeof(CameraHoleRecordView) == 32) ? 1 : -1];
 // Copy the current cup's world position into caller-owned scratch without float conversions.
 static inline void CopyCurrentHoleToCameraScratch(char* frame, int slot) {
@@ -731,243 +802,345 @@ static inline void CopyCurrentHoleToCameraScratch(char* frame, int slot) {
 // Initialize the shared walk pose from launch position and the first event's velocity.
 // Output: position = launch + 40*normalize(up x eventVelocity) + 8Y + random[-5,5]*normalize(eventVelocity);
 // target = launch+2Y. Each slot argument names caller-owned scratch with the original lifetime.
-static inline void ConfigureCameraWalkPose(CameraModeSetupState* self, char* frame, char* ball,
-    int clampedFirstEventIndex, float startFrame, int upSlot, int crossSlot, int lateralSlot,
-    int velocitySlot, int longitudinalSlot, int raisedLaunchSlot, int worldPositionSlot) {
-    self->curveStartFrame = startFrame;
-    CameraVectorAt(frame, upSlot).x = 0.0f; CameraVectorAt(frame, upSlot).y = 1.0f; CameraVectorAt(frame, upSlot).z = 0.0f;
-    Vector_CrossProduct(CameraScratchAddress(frame, crossSlot), CameraScratchAddress(frame, upSlot), ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, clampedFirstEventIndex))->velocity);
+static inline void ConfigureCameraWalkPose(CCameraWork* self, char* frame, char* ball, int clampedFirstEventIndex,
+                                           float startFrame, int upSlot, int crossSlot, int lateralSlot,
+                                           int velocitySlot, int longitudinalSlot, int raisedLaunchSlot,
+                                           int worldPositionSlot) {
+    self->motionStartFrame = startFrame;
+    CameraVectorAt(frame, upSlot).x = 0.0f;
+    CameraVectorAt(frame, upSlot).y = 1.0f;
+    CameraVectorAt(frame, upSlot).z = 0.0f;
+    Vector_CrossProduct(CameraScratchAddress(frame, crossSlot), CameraScratchAddress(frame, upSlot),
+                        ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, clampedFirstEventIndex))->velocity);
     __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, crossSlot));
-    __ml__FRC7WVectorf(CameraScratchAddress(frame, lateralSlot), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 40.0f);
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, lateralSlot));
+    __ml__FRC7WVectorf(CameraScratchAddress(frame, lateralSlot),
+                       Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 40.0f);
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, lateralSlot));
     CameraVectorAt(frame, kSetupDirectionWork).y += 8.0f;
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, velocitySlot), ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, clampedFirstEventIndex))->velocity);
-    { void* normalizedEventVelocity = Normalize__7WVectorFv(CameraScratchAddress(frame, velocitySlot));
-      __ml__FRC7WVectorf(CameraScratchAddress(frame, longitudinalSlot), normalizedEventVelocity, (float)(self->randomValue % 11) - 5.0f); }
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, raisedLaunchSlot), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupDirectionWork));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, worldPositionSlot), CameraScratchAddress(frame, raisedLaunchSlot), CameraScratchAddress(frame, longitudinalSlot));
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, velocitySlot),
+                              ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, clampedFirstEventIndex))->velocity);
+    {
+        void* normalizedEventVelocity = Normalize__7WVectorFv(CameraScratchAddress(frame, velocitySlot));
+        __ml__FRC7WVectorf(CameraScratchAddress(frame, longitudinalSlot), normalizedEventVelocity,
+                           (float)(self->randomValue % 11) - 5.0f);
+    }
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, raisedLaunchSlot), PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupDirectionWork));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, worldPositionSlot),
+                                CameraScratchAddress(frame, raisedLaunchSlot),
+                                CameraScratchAddress(frame, longitudinalSlot));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, worldPositionSlot));
     __as__7WVectorFRC7WVector(self->target, PreData__9CGolfBallFi(ball, 0));
     self->target[1] += 2.0f;
-
 }
 
 #pragma opt_propagation off
 // Place a raised world camera along the bisector of the two cutoff-neighbor directions.
-static inline void ConfigureCutoffBisectorCamera(CameraModeSetupState* self, char* frame, char* ball, void*& nextDirection) {
-    self->curveStartFrame = -1.0f;
+static inline void ConfigureCutoffBisectorCamera(CCameraWork* self, char* frame, char* ball, void*& nextDirection) {
+    self->motionStartFrame = -1.0f;
     char* cutoffSample = PreData__9CGolfBallFi(ball, self->cutoffFrame);
     char* neighborSample = PreData__9CGolfBallFi(ball, self->cutoffFrame + 1);
     __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupCutoffToNextSample), neighborSample, cutoffSample);
     nextDirection = Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupCutoffToNextSample));
     cutoffSample = PreData__9CGolfBallFi(ball, self->cutoffFrame);
     neighborSample = PreData__9CGolfBallFi(ball, self->cutoffFrame - 1);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupCutoffToPreviousSample), neighborSample, cutoffSample);
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupCutoffToPreviousSample), neighborSample,
+                                cutoffSample);
     void* previousDirection = Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupCutoffToPreviousSample));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupCutoffDirectionSum), previousDirection, nextDirection);
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupCutoffDirectionSum));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupCutoffDirectionSum), previousDirection,
+                                nextDirection);
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupCutoffDirectionSum));
     CameraVectorAt(frame, kSetupDirectionWork).y = 0.0f;
-    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupCutoffBisectorOffset), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 160.0f);
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupCutoffBisectorOffset));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupCutoffBisectorPosition), PreData__9CGolfBallFi(ball, self->cutoffFrame), CameraScratchAddress(frame, kSetupDirectionWork));
+    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupCutoffBisectorOffset),
+                       Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 160.0f);
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupCutoffBisectorOffset));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupCutoffBisectorPosition),
+                                PreData__9CGolfBallFi(ball, self->cutoffFrame),
+                                CameraScratchAddress(frame, kSetupDirectionWork));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupCutoffBisectorPosition));
     self->position[1] += 96.0f;
 }
 
 // Frame the launch from a raised quarter-turn offset in world space.
-static inline void ConfigureLaunchQuarterCamera(CameraModeSetupState* self, char* frame, char* ball) {
+static inline void ConfigureLaunchQuarterCamera(CCameraWork* self, char* frame, char* ball) {
     self->heading = 1.5707964f;
-    CameraVectorAt(frame, kSetupQuarterTargetRise).x = 0.0f; CameraVectorAt(frame, kSetupQuarterTargetRise).y = 3.0f; CameraVectorAt(frame, kSetupQuarterTargetRise).z = 0.0f;
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupQuarterTarget), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupQuarterTargetRise));
+    CameraVectorAt(frame, kSetupQuarterTargetRise).x = 0.0f;
+    CameraVectorAt(frame, kSetupQuarterTargetRise).y = 3.0f;
+    CameraVectorAt(frame, kSetupQuarterTargetRise).z = 0.0f;
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupQuarterTarget), PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupQuarterTargetRise));
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupQuarterTarget));
-    CameraVectorAt(frame, kSetupQuarterCameraRise).x = 0.0f; CameraVectorAt(frame, kSetupQuarterCameraRise).y = 3.0f; CameraVectorAt(frame, kSetupQuarterCameraRise).z = 0.0f;
-    Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupQuarterHeadingMatrix), self->heading + AsCGolfDoc(G90)->headingRadians, 1);
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupQuarterCameraOffset), CameraScratchAddress(frame, kSetupQuarterForwardBasis), 15.0f);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupQuarterCameraBase), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupQuarterCameraOffset));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupQuarterCameraPosition), CameraScratchAddress(frame, kSetupQuarterCameraBase), CameraScratchAddress(frame, kSetupQuarterCameraRise));
+    CameraVectorAt(frame, kSetupQuarterCameraRise).x = 0.0f;
+    CameraVectorAt(frame, kSetupQuarterCameraRise).y = 3.0f;
+    CameraVectorAt(frame, kSetupQuarterCameraRise).z = 0.0f;
+    Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupQuarterHeadingMatrix),
+                           self->heading + AsCGolfDoc(G90)->headingRadians, 1);
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupQuarterCameraOffset),
+                       CameraScratchAddress(frame, kSetupQuarterForwardBasis), 15.0f);
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupQuarterCameraBase), PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupQuarterCameraOffset));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupQuarterCameraPosition),
+                                CameraScratchAddress(frame, kSetupQuarterCameraBase),
+                                CameraScratchAddress(frame, kSetupQuarterCameraRise));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupQuarterCameraPosition));
 }
 
 // Frame the launch from its horizontal velocity cross product.
-static inline void ConfigureRaisedLaunchSideCamera(CameraModeSetupState* self, char* frame, char* ball) {
-    CameraVectorAt(frame, kSetupRaisedSideUp).x = 0.0f; CameraVectorAt(frame, kSetupRaisedSideUp).y = 1.0f; CameraVectorAt(frame, kSetupRaisedSideUp).z = 0.0f;
-    Vector_CrossProduct(CameraScratchAddress(frame, kSetupRaisedSideCross), CameraScratchAddress(frame, kSetupRaisedSideUp), ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, 0))->velocity);
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupRaisedSideCross));
+static inline void ConfigureRaisedLaunchSideCamera(CCameraWork* self, char* frame, char* ball) {
+    CameraVectorAt(frame, kSetupRaisedSideUp).x = 0.0f;
+    CameraVectorAt(frame, kSetupRaisedSideUp).y = 1.0f;
+    CameraVectorAt(frame, kSetupRaisedSideUp).z = 0.0f;
+    Vector_CrossProduct(CameraScratchAddress(frame, kSetupRaisedSideCross),
+                        CameraScratchAddress(frame, kSetupRaisedSideUp),
+                        ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, 0))->velocity);
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupRaisedSideCross));
     Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork));
-    CameraVectorAt(frame, kSetupRaisedSideRise).x = 0.0f; CameraVectorAt(frame, kSetupRaisedSideRise).y = 32.0f; CameraVectorAt(frame, kSetupRaisedSideRise).z = 0.0f;
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupRaisedSideLateralOffset), CameraScratchAddress(frame, kSetupDirectionWork), 16.0f);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupRaisedSideBase), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupRaisedSideLateralOffset));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupRaisedSidePosition), CameraScratchAddress(frame, kSetupRaisedSideBase), CameraScratchAddress(frame, kSetupRaisedSideRise));
+    CameraVectorAt(frame, kSetupRaisedSideRise).x = 0.0f;
+    CameraVectorAt(frame, kSetupRaisedSideRise).y = 32.0f;
+    CameraVectorAt(frame, kSetupRaisedSideRise).z = 0.0f;
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupRaisedSideLateralOffset),
+                       CameraScratchAddress(frame, kSetupDirectionWork), 16.0f);
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupRaisedSideBase), PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupRaisedSideLateralOffset));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupRaisedSidePosition),
+                                CameraScratchAddress(frame, kSetupRaisedSideBase),
+                                CameraScratchAddress(frame, kSetupRaisedSideRise));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupRaisedSidePosition));
     __as__7WVectorFRC7WVector(self->target, PreData__9CGolfBallFi(ball, 0));
     self->target[1] += 2.5f;
 }
 
 // Place a raised camera behind the launch velocity.
-static inline void ConfigureRaisedLaunchRearCamera(CameraModeSetupState* self, char* frame, char* ball) {
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, 0))->velocity);
-    CameraVectorAt(frame, kSetupRaisedRearRise).x = 0.0f; CameraVectorAt(frame, kSetupRaisedRearRise).y = 25.0f; CameraVectorAt(frame, kSetupRaisedRearRise).z = 0.0f;
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupRaisedRearOffset), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 5.0f);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupRaisedRearBase), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupRaisedRearRise));
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupRaisedRearPosition), CameraScratchAddress(frame, kSetupRaisedRearBase), CameraScratchAddress(frame, kSetupRaisedRearOffset));
+static inline void ConfigureRaisedLaunchRearCamera(CCameraWork* self, char* frame, char* ball) {
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, 0))->velocity);
+    CameraVectorAt(frame, kSetupRaisedRearRise).x = 0.0f;
+    CameraVectorAt(frame, kSetupRaisedRearRise).y = 25.0f;
+    CameraVectorAt(frame, kSetupRaisedRearRise).z = 0.0f;
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupRaisedRearOffset),
+                       Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 5.0f);
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupRaisedRearBase), PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupRaisedRearRise));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupRaisedRearPosition),
+                                CameraScratchAddress(frame, kSetupRaisedRearBase),
+                                CameraScratchAddress(frame, kSetupRaisedRearOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupRaisedRearPosition));
     __as__7WVectorFRC7WVector(self->target, PreData__9CGolfBallFi(ball, 0));
 }
 
 // Frame the launch using the golf heading and a forward offset.
-static inline void ConfigureLaunchFrontCamera(CameraModeSetupState* self, char* frame, char* ball) {
-    CameraVectorAt(frame, kSetupFrontTargetRise).x = 0.0f; CameraVectorAt(frame, kSetupFrontTargetRise).y = 3.0f; CameraVectorAt(frame, kSetupFrontTargetRise).z = 0.0f;
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupFrontTarget), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupFrontTargetRise));
+static inline void ConfigureLaunchFrontCamera(CCameraWork* self, char* frame, char* ball) {
+    CameraVectorAt(frame, kSetupFrontTargetRise).x = 0.0f;
+    CameraVectorAt(frame, kSetupFrontTargetRise).y = 3.0f;
+    CameraVectorAt(frame, kSetupFrontTargetRise).z = 0.0f;
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupFrontTarget), PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupFrontTargetRise));
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupFrontTarget));
-    Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupFrontHeadingMatrix), 1.7453293f + AsCGolfDoc(G90)->headingRadians, 1);
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupFrontOffset), CameraScratchAddress(frame, kSetupFrontForwardBasis), 16.0f);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupFrontPosition), self->target, CameraScratchAddress(frame, kSetupFrontOffset));
+    Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupFrontHeadingMatrix),
+                           1.7453293f + AsCGolfDoc(G90)->headingRadians, 1);
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupFrontOffset),
+                       CameraScratchAddress(frame, kSetupFrontForwardBasis), 16.0f);
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupFrontPosition), self->target,
+                                CameraScratchAddress(frame, kSetupFrontOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupFrontPosition));
 }
 
 // Look at the launch/cup midpoint from a rotated launch offset.
-static inline void ConfigureShotAndHoleCamera(CameraModeSetupState* self, char* frame, char* ball) {
+static inline void ConfigureShotAndHoleCamera(CCameraWork* self, char* frame, char* ball) {
     CopyCurrentHoleToCameraScratch(frame, kSetupShotHoleCup);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupShotHoleDirection), CameraScratchAddress(frame, kSetupShotHoleCup), PreData__9CGolfBallFi(ball, 0));
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupShotHoleDirection));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupShotHoleDirection),
+                                CameraScratchAddress(frame, kSetupShotHoleCup), PreData__9CGolfBallFi(ball, 0));
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupShotHoleDirection));
     CameraVectorAt(frame, kSetupDirectionWork).y = 0.0f;
     Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupShotHoleRotation), -2.6179938f, 1);
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupShotHoleUnrotatedOffset), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 20.0f);
-    Matrix_TransformPoint(CameraScratchAddress(frame, kSetupShotHoleRotatedOffset), CameraScratchAddress(frame, kSetupShotHoleUnrotatedOffset), CameraScratchAddress(frame, kSetupShotHoleRotation));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupShotHolePosition), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupShotHoleRotatedOffset));
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupShotHoleUnrotatedOffset),
+                       Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 20.0f);
+    Matrix_TransformPoint(CameraScratchAddress(frame, kSetupShotHoleRotatedOffset),
+                          CameraScratchAddress(frame, kSetupShotHoleUnrotatedOffset),
+                          CameraScratchAddress(frame, kSetupShotHoleRotation));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupShotHolePosition), PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupShotHoleRotatedOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupShotHolePosition));
     self->position[1] += 20.0f;
     CopyCurrentHoleToCameraScratch(frame, kSetupShotHoleTargetCup);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupShotHoleEndpointSum), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupShotHoleTargetCup));
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupShotHoleMidpointTarget), CameraScratchAddress(frame, kSetupShotHoleEndpointSum), 0.5f);
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupShotHoleEndpointSum), PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupShotHoleTargetCup));
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupShotHoleMidpointTarget),
+                       CameraScratchAddress(frame, kSetupShotHoleEndpointSum), 0.5f);
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupShotHoleMidpointTarget));
 }
 
 // Look at the launch/cup midpoint from a reverse cup offset.
-static inline void ConfigureHoleReverseCamera(CameraModeSetupState* self, char* frame, char* ball) {
+static inline void ConfigureHoleReverseCamera(CCameraWork* self, char* frame, char* ball) {
     CopyCurrentHoleToCameraScratch(frame, kSetupReverseHoleCup);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupReverseHoleDirection), CameraScratchAddress(frame, kSetupReverseHoleCup), PreData__9CGolfBallFi(ball, 0));
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupReverseHoleDirection));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupReverseHoleDirection),
+                                CameraScratchAddress(frame, kSetupReverseHoleCup), PreData__9CGolfBallFi(ball, 0));
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupReverseHoleDirection));
     CameraVectorAt(frame, kSetupDirectionWork).y = 0.0f;
     CopyCurrentHoleToCameraScratch(frame, kSetupReverseHoleOrigin);
     Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupReverseHoleRotation), -1.0471976f, 1);
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupReverseHoleOffset), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 20.0f);
-    Matrix_TransformPoint(CameraScratchAddress(frame, kSetupReverseHoleRotatedOffset), CameraScratchAddress(frame, kSetupReverseHoleOffset), CameraScratchAddress(frame, kSetupReverseHoleRotation));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupReverseHolePosition), CameraScratchAddress(frame, kSetupReverseHoleOrigin), CameraScratchAddress(frame, kSetupReverseHoleRotatedOffset));
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupReverseHoleOffset),
+                       Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 20.0f);
+    Matrix_TransformPoint(CameraScratchAddress(frame, kSetupReverseHoleRotatedOffset),
+                          CameraScratchAddress(frame, kSetupReverseHoleOffset),
+                          CameraScratchAddress(frame, kSetupReverseHoleRotation));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupReverseHolePosition),
+                                CameraScratchAddress(frame, kSetupReverseHoleOrigin),
+                                CameraScratchAddress(frame, kSetupReverseHoleRotatedOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupReverseHolePosition));
     self->position[1] += 20.0f;
     CopyCurrentHoleToCameraScratch(frame, kSetupReverseHoleTargetCup);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupReverseHoleEndpointSum), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupReverseHoleTargetCup));
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupReverseHoleMidpointTarget), CameraScratchAddress(frame, kSetupReverseHoleEndpointSum), 0.5f);
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupReverseHoleEndpointSum),
+                                PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupReverseHoleTargetCup));
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupReverseHoleMidpointTarget),
+                       CameraScratchAddress(frame, kSetupReverseHoleEndpointSum), 0.5f);
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupReverseHoleMidpointTarget));
 }
 
 // Frame the live ball from a perpendicular cup offset.
-static inline void ConfigureHoleSideCamera(CameraModeSetupState* self, char* frame, char* ball) {
+static inline void ConfigureHoleSideCamera(CCameraWork* self, char* frame, char* ball) {
     CopyCurrentHoleToCameraScratch(frame, kSetupSideHoleCup);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupSideHoleDirection), CameraScratchAddress(frame, kSetupSideHoleCup), PreData__9CGolfBallFi(ball, 0));
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupSideHoleDirection));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupSideHoleDirection),
+                                CameraScratchAddress(frame, kSetupSideHoleCup), PreData__9CGolfBallFi(ball, 0));
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupSideHoleDirection));
     CameraVectorAt(frame, kSetupDirectionWork).y = 0.0f;
     CopyCurrentHoleToCameraScratch(frame, kSetupSideHoleOrigin);
     Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupSideHoleRotation), -1.5707964f, 1);
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupSideHoleOffset), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 10.0f);
-    Matrix_TransformPoint(CameraScratchAddress(frame, kSetupSideHoleRotatedOffset), CameraScratchAddress(frame, kSetupSideHoleOffset), CameraScratchAddress(frame, kSetupSideHoleRotation));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupSideHolePosition), CameraScratchAddress(frame, kSetupSideHoleOrigin), CameraScratchAddress(frame, kSetupSideHoleRotatedOffset));
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupSideHoleOffset),
+                       Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 10.0f);
+    Matrix_TransformPoint(CameraScratchAddress(frame, kSetupSideHoleRotatedOffset),
+                          CameraScratchAddress(frame, kSetupSideHoleOffset),
+                          CameraScratchAddress(frame, kSetupSideHoleRotation));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupSideHolePosition),
+                                CameraScratchAddress(frame, kSetupSideHoleOrigin),
+                                CameraScratchAddress(frame, kSetupSideHoleRotatedOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupSideHolePosition));
     self->position[1] += 20.0f;
     __as__7WVectorFRC7WVector(self->target, ball);
 }
 
 // Frame the live ball from an offset opposite its velocity at the cup.
-static inline void ConfigureHoleVelocityCamera(CameraModeSetupState* self, char* frame, char* ball) {
+static inline void ConfigureHoleVelocityCamera(CCameraWork* self, char* frame, char* ball) {
     CopyCurrentHoleToCameraScratch(frame, kSetupVelocityHoleCup);
     __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupVelocityHoleOffset), Normalize__7WVectorFv(ball + 0xc), 10.0f);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupVelocityHolePosition), CameraScratchAddress(frame, kSetupVelocityHoleCup), CameraScratchAddress(frame, kSetupVelocityHoleOffset));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupVelocityHolePosition),
+                                CameraScratchAddress(frame, kSetupVelocityHoleCup),
+                                CameraScratchAddress(frame, kSetupVelocityHoleOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupVelocityHolePosition));
     self->position[1] += 10.0f;
     __as__7WVectorFRC7WVector(self->target, ball);
 }
 
 // Frame the live ball from a short rotated cup offset.
-static inline void ConfigureHoleNearCamera(CameraModeSetupState* self, char* frame, char* ball) {
+static inline void ConfigureHoleNearCamera(CCameraWork* self, char* frame, char* ball) {
     CopyCurrentHoleToCameraScratch(frame, kSetupNearHoleCup);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupNearHoleDirection), CameraScratchAddress(frame, kSetupNearHoleCup), ball);
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupNearHoleDirection));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupNearHoleDirection),
+                                CameraScratchAddress(frame, kSetupNearHoleCup), ball);
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupNearHoleDirection));
     CameraVectorAt(frame, kSetupDirectionWork).y = 0.0f;
     CopyCurrentHoleToCameraScratch(frame, kSetupNearHoleOrigin);
     Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupNearHoleRotation), -0.34906584f, 1);
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupNearHoleOffset), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 15.0f);
-    Matrix_TransformPoint(CameraScratchAddress(frame, kSetupNearHoleRotatedOffset), CameraScratchAddress(frame, kSetupNearHoleOffset), CameraScratchAddress(frame, kSetupNearHoleRotation));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupNearHolePosition), CameraScratchAddress(frame, kSetupNearHoleOrigin), CameraScratchAddress(frame, kSetupNearHoleRotatedOffset));
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupNearHoleOffset),
+                       Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 15.0f);
+    Matrix_TransformPoint(CameraScratchAddress(frame, kSetupNearHoleRotatedOffset),
+                          CameraScratchAddress(frame, kSetupNearHoleOffset),
+                          CameraScratchAddress(frame, kSetupNearHoleRotation));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupNearHolePosition),
+                                CameraScratchAddress(frame, kSetupNearHoleOrigin),
+                                CameraScratchAddress(frame, kSetupNearHoleRotatedOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupNearHolePosition));
     self->position[1] += 20.0f;
     __as__7WVectorFRC7WVector(self->target, ball);
 }
 
 // Frame the ball from a distant cup offset with a narrow field of view.
-static inline void ConfigureHoleTelephotoCamera(CameraModeSetupState* self, char* frame, char* ball) {
+static inline void ConfigureHoleTelephotoCamera(CCameraWork* self, char* frame, char* ball) {
     CopyCurrentHoleToCameraScratch(frame, kSetupTelephotoHoleCup);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupTelephotoHoleDirection), CameraScratchAddress(frame, kSetupTelephotoHoleCup), PreData__9CGolfBallFi(ball, 0));
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupTelephotoHoleDirection));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupTelephotoHoleDirection),
+                                CameraScratchAddress(frame, kSetupTelephotoHoleCup), PreData__9CGolfBallFi(ball, 0));
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupTelephotoHoleDirection));
     CameraVectorAt(frame, kSetupDirectionWork).y = 0.0f;
     Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork));
     CopyCurrentHoleToCameraScratch(frame, kSetupTelephotoHoleOrigin);
     Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupTelephotoHoleRotation), -0.05235988f, 1);
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupTelephotoHoleOffset), CameraScratchAddress(frame, kSetupDirectionWork), 60.0f);
-    Matrix_TransformPoint(CameraScratchAddress(frame, kSetupTelephotoHoleRotatedOffset), CameraScratchAddress(frame, kSetupTelephotoHoleOffset), CameraScratchAddress(frame, kSetupTelephotoHoleRotation));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupTelephotoHolePosition), CameraScratchAddress(frame, kSetupTelephotoHoleOrigin), CameraScratchAddress(frame, kSetupTelephotoHoleRotatedOffset));
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupTelephotoHoleOffset),
+                       CameraScratchAddress(frame, kSetupDirectionWork), 60.0f);
+    Matrix_TransformPoint(CameraScratchAddress(frame, kSetupTelephotoHoleRotatedOffset),
+                          CameraScratchAddress(frame, kSetupTelephotoHoleOffset),
+                          CameraScratchAddress(frame, kSetupTelephotoHoleRotation));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupTelephotoHolePosition),
+                                CameraScratchAddress(frame, kSetupTelephotoHoleOrigin),
+                                CameraScratchAddress(frame, kSetupTelephotoHoleRotatedOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupTelephotoHolePosition));
     __as__7WVectorFRC7WVector(self->target, ball);
     self->fov = 0.17453292f;
 }
 
 // Place the camera below the cup and look slightly upward.
-static inline void ConfigureBelowHoleCamera(CameraModeSetupState* self, char* frame) {
-    CameraVectorAt(frame, kSetupBelowHoleOffset).x = 0.0f; CameraVectorAt(frame, kSetupBelowHoleOffset).y = -2.0f; CameraVectorAt(frame, kSetupBelowHoleOffset).z = 0.0f;
+static inline void ConfigureBelowHoleCamera(CCameraWork* self, char* frame) {
+    CameraVectorAt(frame, kSetupBelowHoleOffset).x = 0.0f;
+    CameraVectorAt(frame, kSetupBelowHoleOffset).y = -2.0f;
+    CameraVectorAt(frame, kSetupBelowHoleOffset).z = 0.0f;
     CopyCurrentHoleToCameraScratch(frame, kSetupBelowHoleCup);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupBelowHolePosition), CameraScratchAddress(frame, kSetupBelowHoleCup), CameraScratchAddress(frame, kSetupBelowHoleOffset));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupBelowHolePosition),
+                                CameraScratchAddress(frame, kSetupBelowHoleCup),
+                                CameraScratchAddress(frame, kSetupBelowHoleOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupBelowHolePosition));
-    CameraVectorAt(frame, kSetupBelowHoleLookOffset).x = 0.0f; CameraVectorAt(frame, kSetupBelowHoleLookOffset).y = 1.0f; CameraVectorAt(frame, kSetupBelowHoleLookOffset).z = 0.2f;
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupBelowHoleTarget), self->position, CameraScratchAddress(frame, kSetupBelowHoleLookOffset));
+    CameraVectorAt(frame, kSetupBelowHoleLookOffset).x = 0.0f;
+    CameraVectorAt(frame, kSetupBelowHoleLookOffset).y = 1.0f;
+    CameraVectorAt(frame, kSetupBelowHoleLookOffset).z = 0.2f;
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupBelowHoleTarget), self->position,
+                                CameraScratchAddress(frame, kSetupBelowHoleLookOffset));
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupBelowHoleTarget));
 }
 
 // Capture the golf-document pose and initialize its narrow-FOV transition.
-static inline void ConfigureNarrowGolfCamera(CameraModeSetupState* self, char* frame) {
-    CGolfDoc_BuildCameraMatrix(CameraScratchAddress(frame, kSetupGolfViewMatrix), G90);
-    Matrix_CopyAffine(self->previousRotation, CameraScratchAddress(frame, kSetupGolfViewMatrix));
-    __as__7WVectorFRC7WVector(self->position, self->previousPosition);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupGolfViewTarget), self->position, self->previousForward);
+static inline void ConfigureNarrowGolfCamera(CCameraWork* self, char* frame) {
+    CGolfDoc::BuildCameraMatrix(CameraScratchAddress(frame, kSetupGolfViewMatrix), G90);
+    Matrix_CopyAffine(self->previousTransform, CameraScratchAddress(frame, kSetupGolfViewMatrix));
+    __as__7WVectorFRC7WVector(self->position, &self->previousTransform[9]);
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupGolfViewTarget), self->position,
+                                &self->previousTransform[6]);
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupGolfViewTarget));
     self->fov = 0.017453292f;
     self->duration = 1.0f;
     self->animationTime = 0.0f;
-    self->curveStartFrame = -1.0f;
+    self->motionStartFrame = -1.0f;
 }
 
 // Initialize ball-orbit distance, height and heading before disabling ground clearance.
-static inline void ConfigureBallOrbitCamera(CameraModeSetupState* self) {
+static inline void ConfigureBallOrbitCamera(CCameraWork* self) {
     self->heading = 2.6179938f;
     self->horizontalBallDistance = 80.0f;
     self->ballHeightOffset = 15.0f;
-    self->curveStartFrame = -1.0f;
+    self->motionStartFrame = -1.0f;
 }
 
 // Initialize quaternion and world-position endpoints for the golf-view blend.
-static inline void ConfigureGolfPoseBlendCamera(CameraModeSetupState* self, char* frame) {
-    Matrix3x3_ToQuat(self->startQuaternion, self->previousRotation);
-    CGolfDoc_BuildCameraMatrix(CameraScratchAddress(frame, kSetupBlendDestinationGolfMatrix), G90);
+static inline void ConfigureGolfPoseBlendCamera(CCameraWork* self, char* frame) {
+    Matrix3x3_ToQuat(self->startQuaternion, self->previousTransform);
+    CGolfDoc::BuildCameraMatrix(CameraScratchAddress(frame, kSetupBlendDestinationGolfMatrix), G90);
     Matrix3x3_ToQuat(self->endQuaternion, CameraScratchAddress(frame, kSetupBlendDestinationGolfMatrix));
-    __as__7WVectorFRC7WVector(self->startPosition, self->previousPosition);
+    __as__7WVectorFRC7WVector(self->startPosition, &self->previousTransform[9]);
     __as__7WVectorFRC7WVector(self->endPosition, G90 + 0x348);
     self->animationTime = 0.0f;
     self->duration = 1.0f;
-    self->curveStartFrame = -1.0f;
+    self->motionStartFrame = -1.0f;
 }
 
 // Initialize the raised cup target and orbit distance.
-static inline void ConfigureRaisedHoleOrbitCamera(CameraModeSetupState* self, char* frame) {
-    self->curveStartFrame = -1.0f;
+static inline void ConfigureRaisedHoleOrbitCamera(CCameraWork* self, char* frame) {
+    self->motionStartFrame = -1.0f;
     CopyCurrentHoleToCameraScratch(frame, kSetupRaisedOrbitCup);
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupRaisedOrbitCup));
     self->target[1] += 3.0f;
@@ -976,145 +1149,222 @@ static inline void ConfigureRaisedHoleOrbitCamera(CameraModeSetupState* self, ch
 }
 
 // Choose a randomized side/height offset around the first trajectory event.
-static inline void ConfigureEventSideCamera(CameraModeSetupState* self, char* frame, char* ball, int clampedFirstEventIndex) {
+static inline void ConfigureEventSideCamera(CCameraWork* self, char* frame, char* ball, int clampedFirstEventIndex) {
     float sideSign = (self->randomValue % 2) ? 1.0f : -1.0f;
-    CameraVectorAt(frame, kSetupEventSideUp).x = 0.0f; CameraVectorAt(frame, kSetupEventSideUp).y = sideSign; CameraVectorAt(frame, kSetupEventSideUp).z = 0.0f;
-    Vector_CrossProduct(CameraScratchAddress(frame, kSetupEventSideCross), CameraScratchAddress(frame, kSetupEventSideUp), ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, clampedFirstEventIndex))->velocity);
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupEventSideCross));
-    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupEventSideOffset), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 10.0f);
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupEventSideOffset));
+    CameraVectorAt(frame, kSetupEventSideUp).x = 0.0f;
+    CameraVectorAt(frame, kSetupEventSideUp).y = sideSign;
+    CameraVectorAt(frame, kSetupEventSideUp).z = 0.0f;
+    Vector_CrossProduct(CameraScratchAddress(frame, kSetupEventSideCross),
+                        CameraScratchAddress(frame, kSetupEventSideUp),
+                        ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, clampedFirstEventIndex))->velocity);
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupEventSideCross));
+    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupEventSideOffset),
+                       Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 10.0f);
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupEventSideOffset));
     float heightOffset = (float)(self->randomValue % 11) - 5.0f;
-    CameraVectorAt(frame, kSetupEventHeightOffset).x = 0.0f; CameraVectorAt(frame, kSetupEventHeightOffset).z = 0.0f;
+    CameraVectorAt(frame, kSetupEventHeightOffset).x = 0.0f;
+    CameraVectorAt(frame, kSetupEventHeightOffset).z = 0.0f;
     CameraVectorAt(frame, kSetupEventHeightOffset).y = heightOffset;
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupRaisedEventPosition), PreData__9CGolfBallFi(ball, clampedFirstEventIndex), CameraScratchAddress(frame, kSetupEventHeightOffset));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventTransitionPosition), CameraScratchAddress(frame, kSetupRaisedEventPosition), CameraScratchAddress(frame, kSetupDirectionWork));
-    __as__7WVectorFRC7WVector(self->transitionPosition, CameraScratchAddress(frame, kSetupEventTransitionPosition));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupRaisedEventPosition),
+                                PreData__9CGolfBallFi(ball, clampedFirstEventIndex),
+                                CameraScratchAddress(frame, kSetupEventHeightOffset));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventTransitionPosition),
+                                CameraScratchAddress(frame, kSetupRaisedEventPosition),
+                                CameraScratchAddress(frame, kSetupDirectionWork));
+    __as__7WVectorFRC7WVector(self->motionStartPosition, CameraScratchAddress(frame, kSetupEventTransitionPosition));
     self->actionFlags = self->randomValue % 2 + 1;
 }
 
 // Choose a normal or recovery transition offset from second-event travel.
-static inline void ConfigureSecondEventCamera(CameraModeSetupState* self, char* frame, char* ball, 
-    int lastSampleIndex, int clampedSecondEventIndex) {
+static inline void ConfigureSecondEventCamera(CCameraWork* self, char* frame, char* ball, int lastSampleIndex,
+                                              int clampedSecondEventIndex) {
     char* eventSample = PreData__9CGolfBallFi(ball, clampedSecondEventIndex);
     char* lastSample = PreData__9CGolfBallFi(ball, lastSampleIndex);
     __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupSecondEventToLast), lastSample, eventSample);
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupSecondEventToLast));
-    if (CameraIsNearZero(CameraVectorAt(frame, kSetupDirectionWork).x) && CameraIsNearZero(CameraVectorAt(frame, kSetupDirectionWork).z)) {
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupSecondEventToLast));
+    if (CameraIsNearZero(CameraVectorAt(frame, kSetupDirectionWork).x) &&
+        CameraIsNearZero(CameraVectorAt(frame, kSetupDirectionWork).z)) {
         char* launchSample = PreData__9CGolfBallFi(ball, 0);
         char* fallbackLastSample = PreData__9CGolfBallFi(ball, lastSampleIndex);
-        __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventFallbackLaunchToLast), fallbackLastSample, launchSample);
-        __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupEventFallbackLaunchToLast));
+        __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventFallbackLaunchToLast), fallbackLastSample,
+                                    launchSample);
+        __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                                  CameraScratchAddress(frame, kSetupEventFallbackLaunchToLast));
         CameraVectorAt(frame, kSetupDirectionWork).y = 0.0f;
         Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork));
     } else {
         CameraVectorAt(frame, kSetupDirectionWork).y = 0.0f;
         float headingOffset = Random_RangeFloat(self->randomValue, -2.0943951f, 2.0943951f);
         Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupRandomEventRotation), headingOffset, 1);
-        Matrix_TransformDirection(CameraScratchAddress(frame, kSetupRandomizedEventDirection), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), CameraScratchAddress(frame, kSetupRandomEventRotation));
-        __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupRandomizedEventDirection));
+        Matrix_TransformDirection(CameraScratchAddress(frame, kSetupRandomizedEventDirection),
+                                  Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)),
+                                  CameraScratchAddress(frame, kSetupRandomEventRotation));
+        __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                                  CameraScratchAddress(frame, kSetupRandomizedEventDirection));
     }
     if (((CGolfBall*)ball)->m_recoveryRequired) {
-        CameraVectorAt(frame, kSetupEventRecoveryRise).x = 0.0f; CameraVectorAt(frame, kSetupEventRecoveryRise).y = 25.0f; CameraVectorAt(frame, kSetupEventRecoveryRise).z = 0.0f;
-        __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupEventRecoveryOffset), CameraScratchAddress(frame, kSetupDirectionWork), 50.0f);
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventRecoveryBase), PreData__9CGolfBallFi(ball, lastSampleIndex), CameraScratchAddress(frame, kSetupEventRecoveryOffset));
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventRecoveryTransition), CameraScratchAddress(frame, kSetupEventRecoveryBase), CameraScratchAddress(frame, kSetupEventRecoveryRise));
-        __as__7WVectorFRC7WVector(self->transitionPosition, CameraScratchAddress(frame, kSetupEventRecoveryTransition));
+        CameraVectorAt(frame, kSetupEventRecoveryRise).x = 0.0f;
+        CameraVectorAt(frame, kSetupEventRecoveryRise).y = 25.0f;
+        CameraVectorAt(frame, kSetupEventRecoveryRise).z = 0.0f;
+        __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupEventRecoveryOffset),
+                           CameraScratchAddress(frame, kSetupDirectionWork), 50.0f);
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventRecoveryBase),
+                                    PreData__9CGolfBallFi(ball, lastSampleIndex),
+                                    CameraScratchAddress(frame, kSetupEventRecoveryOffset));
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventRecoveryTransition),
+                                    CameraScratchAddress(frame, kSetupEventRecoveryBase),
+                                    CameraScratchAddress(frame, kSetupEventRecoveryRise));
+        __as__7WVectorFRC7WVector(self->motionStartPosition,
+                                  CameraScratchAddress(frame, kSetupEventRecoveryTransition));
     } else {
-        CameraVectorAt(frame, kSetupEventNormalRise).x = 0.0f; CameraVectorAt(frame, kSetupEventNormalRise).y = 10.0f; CameraVectorAt(frame, kSetupEventNormalRise).z = 0.0f;
-        __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupEventNormalOffset), CameraScratchAddress(frame, kSetupDirectionWork), 20.0f);
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventNormalBase), PreData__9CGolfBallFi(ball, lastSampleIndex), CameraScratchAddress(frame, kSetupEventNormalOffset));
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventNormalTransition), CameraScratchAddress(frame, kSetupEventNormalBase), CameraScratchAddress(frame, kSetupEventNormalRise));
-        __as__7WVectorFRC7WVector(self->transitionPosition, CameraScratchAddress(frame, kSetupEventNormalTransition));
+        CameraVectorAt(frame, kSetupEventNormalRise).x = 0.0f;
+        CameraVectorAt(frame, kSetupEventNormalRise).y = 10.0f;
+        CameraVectorAt(frame, kSetupEventNormalRise).z = 0.0f;
+        __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupEventNormalOffset),
+                           CameraScratchAddress(frame, kSetupDirectionWork), 20.0f);
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventNormalBase),
+                                    PreData__9CGolfBallFi(ball, lastSampleIndex),
+                                    CameraScratchAddress(frame, kSetupEventNormalOffset));
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupEventNormalTransition),
+                                    CameraScratchAddress(frame, kSetupEventNormalBase),
+                                    CameraScratchAddress(frame, kSetupEventNormalRise));
+        __as__7WVectorFRC7WVector(self->motionStartPosition, CameraScratchAddress(frame, kSetupEventNormalTransition));
     }
 }
 
 // Place a raised camera beside the trajectory midpoint.
-static inline void ConfigureTrajectorySideMidpointCamera(CameraModeSetupState* self, char* frame, char* ball, 
-    int lastSampleIndex, int clampedFirstEventIndex) {
-    self->curveStartFrame = -1.0f;
+static inline void ConfigureTrajectorySideMidpointCamera(CCameraWork* self, char* frame, char* ball,
+                                                         int lastSampleIndex, int clampedFirstEventIndex) {
+    self->motionStartFrame = -1.0f;
     float sideSign = (self->randomValue % 2) ? 1.0f : -1.0f;
-    CameraVectorAt(frame, kSetupSideMidpointSignedUp).x = 0.0f; CameraVectorAt(frame, kSetupSideMidpointSignedUp).y = sideSign; CameraVectorAt(frame, kSetupSideMidpointSignedUp).z = 0.0f;
-    Vector_CrossProduct(CameraScratchAddress(frame, kSetupSideMidpointCross), CameraScratchAddress(frame, kSetupSideMidpointSignedUp), ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, 0))->velocity);
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupSideMidpointCross));
+    CameraVectorAt(frame, kSetupSideMidpointSignedUp).x = 0.0f;
+    CameraVectorAt(frame, kSetupSideMidpointSignedUp).y = sideSign;
+    CameraVectorAt(frame, kSetupSideMidpointSignedUp).z = 0.0f;
+    Vector_CrossProduct(CameraScratchAddress(frame, kSetupSideMidpointCross),
+                        CameraScratchAddress(frame, kSetupSideMidpointSignedUp),
+                        ((CameraTrajectorySample*)PreData__9CGolfBallFi(ball, 0))->velocity);
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupSideMidpointCross));
     CameraVectorAt(frame, kSetupDirectionWork).y = 0.0f;
-    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupSideMidpointOffset), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 30.0f);
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), CameraScratchAddress(frame, kSetupSideMidpointOffset));
+    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupSideMidpointOffset),
+                       Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupDirectionWork)), 30.0f);
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              CameraScratchAddress(frame, kSetupSideMidpointOffset));
     char* launchSample = PreData__9CGolfBallFi(ball, 0);
     char* lastSample = PreData__9CGolfBallFi(ball, lastSampleIndex);
     __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupLaunchToLastSample), lastSample, launchSample);
-    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupHalfLaunchToLastSample), CameraScratchAddress(frame, kSetupLaunchToLastSample), 0.5f);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupTrajectoryMidpoint), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupHalfLaunchToLastSample));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupSideMidpointPosition), CameraScratchAddress(frame, kSetupTrajectoryMidpoint), CameraScratchAddress(frame, kSetupDirectionWork));
+    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupHalfLaunchToLastSample),
+                       CameraScratchAddress(frame, kSetupLaunchToLastSample), 0.5f);
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupTrajectoryMidpoint), PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupHalfLaunchToLastSample));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupSideMidpointPosition),
+                                CameraScratchAddress(frame, kSetupTrajectoryMidpoint),
+                                CameraScratchAddress(frame, kSetupDirectionWork));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupSideMidpointPosition));
     self->position[1] = 2.0f + ((float*)PreData__9CGolfBallFi(ball, clampedFirstEventIndex))[1];
 }
 
 // Blend two world-space head-bone positions and frame the player at golf heading.
-static inline void ConfigurePlayerHeadCamera(CameraModeSetupState* self, char* frame, 
-    const CameraWorkStrings& resources, void*& playerObject, void*& sceneManager) {
+static inline void ConfigurePlayerHeadCamera(CCameraWork* self, char* frame, const CameraWorkStrings& resources,
+                                             void*& playerObject, void*& sceneManager) {
     sceneManager = g_sceneManager;
-    playerObject = NamedEffectList_FindByName(sceneManager, String_FormatTemporary(resources.PLAYER_d, AsCGolfDoc(G90)->currentPlayer)); // original +0x3c1
+    playerObject = NamedEffectList_FindByName(
+        sceneManager, String_FormatTemporary(resources.PLAYER_d, AsCGolfDoc(G90)->currentPlayer)); // original +0x3c1
     float headNubWeight = 0.3f;
     char* headNubBone = WPuppet_FindOrCacheBone(playerObject, resources.Bip01_HeadNub);
     char* headBone = WPuppet_FindOrCacheBone(playerObject, resources.Bip01_Head);
     __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupWeightedHeadNub), headNubBone + 0x9c, headNubWeight);
     __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupWeightedHead), headBone + 0x9c, 1.0f - headNubWeight);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupHeadTarget), CameraScratchAddress(frame, kSetupWeightedHead), CameraScratchAddress(frame, kSetupWeightedHeadNub));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupHeadTarget),
+                                CameraScratchAddress(frame, kSetupWeightedHead),
+                                CameraScratchAddress(frame, kSetupWeightedHeadNub));
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupHeadTarget));
-    Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupHeadHeadingMatrix), 0.34906584f + AsCGolfDoc(G90)->headingRadians, 1); // original +kSetupReverseHoleRotatedOffset
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupHeadCameraOffset), CameraScratchAddress(frame, kSetupHeadForwardBasis), 3.0f);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupHeadCameraPosition), self->target, CameraScratchAddress(frame, kSetupHeadCameraOffset));
+    Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupHeadHeadingMatrix),
+                           0.34906584f + AsCGolfDoc(G90)->headingRadians,
+                           1); // original +kSetupReverseHoleRotatedOffset
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupHeadCameraOffset),
+                       CameraScratchAddress(frame, kSetupHeadForwardBasis), 3.0f);
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupHeadCameraPosition), self->target,
+                                CameraScratchAddress(frame, kSetupHeadCameraOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupHeadCameraPosition));
     self->position[1] += 0.5f;
-    self->curveStartFrame = -1.0f;
+    self->motionStartFrame = -1.0f;
 }
 
 // Randomize a wide raised launch view around golf heading.
-static inline void ConfigureLaunchWideCamera(CameraModeSetupState* self, char* frame, char* ball) {
-    CameraVectorAt(frame, kSetupWideTargetRise).x = 0.0f; CameraVectorAt(frame, kSetupWideTargetRise).y = 3.0f; CameraVectorAt(frame, kSetupWideTargetRise).z = 0.0f;
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupWideTarget), PreData__9CGolfBallFi(GolfBall__Fv(), 0), CameraScratchAddress(frame, kSetupWideTargetRise));
+static inline void ConfigureLaunchWideCamera(CCameraWork* self, char* frame, char* ball) {
+    CameraVectorAt(frame, kSetupWideTargetRise).x = 0.0f;
+    CameraVectorAt(frame, kSetupWideTargetRise).y = 3.0f;
+    CameraVectorAt(frame, kSetupWideTargetRise).z = 0.0f;
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupWideTarget), PreData__9CGolfBallFi(GolfBall__Fv(), 0),
+                                CameraScratchAddress(frame, kSetupWideTargetRise));
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupWideTarget));
-    CameraVectorAt(frame, kSetupWideCameraRise).x = 0.0f; CameraVectorAt(frame, kSetupWideCameraRise).y = 10.0f; CameraVectorAt(frame, kSetupWideCameraRise).z = 0.0f;
+    CameraVectorAt(frame, kSetupWideCameraRise).x = 0.0f;
+    CameraVectorAt(frame, kSetupWideCameraRise).y = 10.0f;
+    CameraVectorAt(frame, kSetupWideCameraRise).z = 0.0f;
     char* golfDocument = G90;
     float headingOffset = Random_RangeFloat(self->randomValue, -1.5707964f, 1.5707964f);
-    Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupWideHeadingMatrix), AsCGolfDoc(golfDocument)->headingRadians + headingOffset, 1);
-    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupWideCameraOffset), CameraScratchAddress(frame, kSetupWideForwardBasis), 30.0f);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupWideCameraBase), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupWideCameraOffset));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupWideCameraPosition), CameraScratchAddress(frame, kSetupWideCameraBase), CameraScratchAddress(frame, kSetupWideCameraRise));
+    Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupWideHeadingMatrix),
+                           AsCGolfDoc(golfDocument)->headingRadians + headingOffset, 1);
+    __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupWideCameraOffset),
+                       CameraScratchAddress(frame, kSetupWideForwardBasis), 30.0f);
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupWideCameraBase), PreData__9CGolfBallFi(ball, 0),
+                                CameraScratchAddress(frame, kSetupWideCameraOffset));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupWideCameraPosition),
+                                CameraScratchAddress(frame, kSetupWideCameraBase),
+                                CameraScratchAddress(frame, kSetupWideCameraRise));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupWideCameraPosition));
 }
 
 // Gate the special launch pose by power-shot variant and animation group.
-static inline void ConfigurePowerLaunchCamera(CameraModeSetupState* self, char* frame, char* ball) {
+static inline void ConfigurePowerLaunchCamera(CCameraWork* self, char* frame, char* ball) {
     if (self->powerShotVariant || self->animationGroup) {
-        self->curveStartFrame = -1.0f;
+        self->motionStartFrame = -1.0f;
     } else {
-        self->curveStartFrame = 15.0f;
-        Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupLaunchPoseHeading), AsCGolfDoc(G90)->headingRadians, 1);
-        CameraVectorAt(frame, kSetupLaunchCameraLocalOffset).x = 10.0f; CameraVectorAt(frame, kSetupLaunchCameraLocalOffset).y = 0.0f; CameraVectorAt(frame, kSetupLaunchCameraLocalOffset).z = -20.0f;
-        Matrix_TransformDirection(CameraScratchAddress(frame, kSetupLaunchCameraWorldOffset), CameraScratchAddress(frame, kSetupLaunchCameraLocalOffset), CameraScratchAddress(frame, kSetupLaunchPoseHeading));
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupLaunchCameraPosition), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupLaunchCameraWorldOffset));
+        self->motionStartFrame = 15.0f;
+        Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupLaunchPoseHeading), AsCGolfDoc(G90)->headingRadians,
+                               1);
+        CameraVectorAt(frame, kSetupLaunchCameraLocalOffset).x = 10.0f;
+        CameraVectorAt(frame, kSetupLaunchCameraLocalOffset).y = 0.0f;
+        CameraVectorAt(frame, kSetupLaunchCameraLocalOffset).z = -20.0f;
+        Matrix_TransformDirection(CameraScratchAddress(frame, kSetupLaunchCameraWorldOffset),
+                                  CameraScratchAddress(frame, kSetupLaunchCameraLocalOffset),
+                                  CameraScratchAddress(frame, kSetupLaunchPoseHeading));
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupLaunchCameraPosition),
+                                    PreData__9CGolfBallFi(ball, 0),
+                                    CameraScratchAddress(frame, kSetupLaunchCameraWorldOffset));
         __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupLaunchCameraPosition));
-        CameraVectorAt(frame, kSetupLaunchTargetLocalOffset).x = 0.0f; CameraVectorAt(frame, kSetupLaunchTargetLocalOffset).y = 2.0f; CameraVectorAt(frame, kSetupLaunchTargetLocalOffset).z = -2.0f;
-        Matrix_TransformDirection(CameraScratchAddress(frame, kSetupLaunchTargetWorldOffset), CameraScratchAddress(frame, kSetupLaunchTargetLocalOffset), CameraScratchAddress(frame, kSetupLaunchPoseHeading));
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupLaunchTargetPosition), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupLaunchTargetWorldOffset));
+        CameraVectorAt(frame, kSetupLaunchTargetLocalOffset).x = 0.0f;
+        CameraVectorAt(frame, kSetupLaunchTargetLocalOffset).y = 2.0f;
+        CameraVectorAt(frame, kSetupLaunchTargetLocalOffset).z = -2.0f;
+        Matrix_TransformDirection(CameraScratchAddress(frame, kSetupLaunchTargetWorldOffset),
+                                  CameraScratchAddress(frame, kSetupLaunchTargetLocalOffset),
+                                  CameraScratchAddress(frame, kSetupLaunchPoseHeading));
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupLaunchTargetPosition),
+                                    PreData__9CGolfBallFi(ball, 0),
+                                    CameraScratchAddress(frame, kSetupLaunchTargetWorldOffset));
         __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupLaunchTargetPosition));
     }
 }
 
 // Choose the golf pose or rolled trajectory sample for the power-shot frame.
-static inline void ConfigurePowerTrajectoryCamera(CameraModeSetupState* self, char* frame) {
+static inline void ConfigurePowerTrajectoryCamera(CCameraWork* self, char* frame) {
     if (self->powerShotVariant || self->animationGroup) {
-        self->curveStartFrame = -1.0f;
+        self->motionStartFrame = -1.0f;
     } else {
-        self->curveStartFrame = 15.0f;
+        self->motionStartFrame = 15.0f;
         self->frameIndex = ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[0];
         if (self->frameIndex < ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[10]) {
             __as__7WVectorFRC7WVector(self->position, G90 + 0x348);
-            __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupShotFrameTarget), self->position, G90 + 0x33c);
+            __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupShotFrameTarget), self->position,
+                                        G90 + 0x33c);
             __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupShotFrameTarget));
         } else {
-            self->roll = 0.2617994f - 0.0029088822f * (float)(self->frameIndex - ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[10]);
+            self->roll = 0.2617994f - 0.0029088822f * (float)(self->frameIndex -
+                                                              ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[10]);
             int blendSampleIndex = (self->frameIndex * 4 + ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[10]) / 5;
             __as__7WVectorFRC7WVector(self->position, PreData__9CGolfBallFi(GolfBall__Fv(), blendSampleIndex));
             self->position[1] += 1.0f;
@@ -1124,229 +1374,343 @@ static inline void ConfigurePowerTrajectoryCamera(CameraModeSetupState* self, ch
 }
 
 // Place a randomized elevated cup-side view looking toward the launch.
-static inline void ConfigureElevatedHoleSideCamera(CameraModeSetupState* self, char* frame, char* ball) {
+static inline void ConfigureElevatedHoleSideCamera(CCameraWork* self, char* frame, char* ball) {
     CopyCurrentHoleToCameraScratch(frame, kSetupElevatedHoleCup);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupElevatedHoleCupToLaunch), PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupElevatedHoleCup));
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupElevatedHoleCupToLaunch)));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupElevatedHoleCupToLaunch),
+                                PreData__9CGolfBallFi(ball, 0), CameraScratchAddress(frame, kSetupElevatedHoleCup));
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupElevatedHoleCupToLaunch)));
     float sideSign = (self->randomValue % 2) ? 1.0f : -1.0f;
-    CameraVectorAt(frame, kSetupElevatedHoleSignedUp).x = 0.0f; CameraVectorAt(frame, kSetupElevatedHoleSignedUp).y = sideSign; CameraVectorAt(frame, kSetupElevatedHoleSignedUp).z = 0.0f;
-    CameraVectorAt(frame, kSetupElevatedHoleRise).x = 0.0f; CameraVectorAt(frame, kSetupElevatedHoleRise).y = 25.0f; CameraVectorAt(frame, kSetupElevatedHoleRise).z = 0.0f;
+    CameraVectorAt(frame, kSetupElevatedHoleSignedUp).x = 0.0f;
+    CameraVectorAt(frame, kSetupElevatedHoleSignedUp).y = sideSign;
+    CameraVectorAt(frame, kSetupElevatedHoleSignedUp).z = 0.0f;
+    CameraVectorAt(frame, kSetupElevatedHoleRise).x = 0.0f;
+    CameraVectorAt(frame, kSetupElevatedHoleRise).y = 25.0f;
+    CameraVectorAt(frame, kSetupElevatedHoleRise).z = 0.0f;
     CopyCurrentHoleToCameraScratch(frame, kSetupElevatedHoleOrigin);
-    Vector_CrossProduct(CameraScratchAddress(frame, kSetupElevatedHoleSideCross), CameraScratchAddress(frame, kSetupElevatedHoleSignedUp), CameraScratchAddress(frame, kSetupDirectionWork));
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupElevatedHoleCombinedDirection), CameraScratchAddress(frame, kSetupDirectionWork), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupElevatedHoleSideCross)));
-    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupElevatedHoleOffset), CameraScratchAddress(frame, kSetupElevatedHoleCombinedDirection), 3.0f);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupElevatedHoleRaisedOrigin), CameraScratchAddress(frame, kSetupElevatedHoleOrigin), CameraScratchAddress(frame, kSetupElevatedHoleRise));
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupElevatedHolePosition), CameraScratchAddress(frame, kSetupElevatedHoleRaisedOrigin), CameraScratchAddress(frame, kSetupElevatedHoleOffset));
+    Vector_CrossProduct(CameraScratchAddress(frame, kSetupElevatedHoleSideCross),
+                        CameraScratchAddress(frame, kSetupElevatedHoleSignedUp),
+                        CameraScratchAddress(frame, kSetupDirectionWork));
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupElevatedHoleCombinedDirection),
+                                CameraScratchAddress(frame, kSetupDirectionWork),
+                                Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupElevatedHoleSideCross)));
+    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupElevatedHoleOffset),
+                       CameraScratchAddress(frame, kSetupElevatedHoleCombinedDirection), 3.0f);
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupElevatedHoleRaisedOrigin),
+                                CameraScratchAddress(frame, kSetupElevatedHoleOrigin),
+                                CameraScratchAddress(frame, kSetupElevatedHoleRise));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupElevatedHolePosition),
+                                CameraScratchAddress(frame, kSetupElevatedHoleRaisedOrigin),
+                                CameraScratchAddress(frame, kSetupElevatedHoleOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupElevatedHolePosition));
     __as__7WVectorFRC7WVector(self->target, PreData__9CGolfBallFi(ball, 0));
 }
 
 // Build the midpoint view and notify the Player actor of its world pose.
-static inline void ConfigureTrajectoryMidpointCamera(CameraModeSetupState* self, char* frame, char* ball) {
-    *(CameraCallbackDescriptor*)CameraScratchAddress(frame, kSetupMidpointLaunch) = *(CameraCallbackDescriptor*)PreData__9CGolfBallFi(ball, 0);
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointLastToLaunch), CameraScratchAddress(frame, kSetupMidpointLaunch), PreData__9CGolfBallFi(ball, ((CGolfBall*)ball)->m_preDataCount));
-    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupMidpointLastToLaunch)));
+static inline void ConfigureTrajectoryMidpointCamera(CCameraWork* self, char* frame, char* ball) {
+    *(CameraCallbackDescriptor*)CameraScratchAddress(frame, kSetupMidpointLaunch) =
+        *(CameraCallbackDescriptor*)PreData__9CGolfBallFi(ball, 0);
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointLastToLaunch),
+                                CameraScratchAddress(frame, kSetupMidpointLaunch),
+                                PreData__9CGolfBallFi(ball, ((CGolfBall*)ball)->m_preDataCount));
+    __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupDirectionWork),
+                              Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupMidpointLastToLaunch)));
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupMidpointLaunch));
-    *(CameraCallbackDescriptor*)CameraScratchAddress(frame, kSetupMidpointActorPosition) = *(CameraCallbackDescriptor*)CameraScratchAddress(frame, kSetupMidpointLaunch);
-    Sink* sink = TaskActorTable_FindByName(g_taskManager ? Object_GetChild(g_taskManager) : 0, cameraWorkStrings.Player);
+    *(CameraCallbackDescriptor*)CameraScratchAddress(frame, kSetupMidpointActorPosition) =
+        *(CameraCallbackDescriptor*)CameraScratchAddress(frame, kSetupMidpointLaunch);
+    Sink* sink =
+        TaskActorTable_FindByName(g_taskManager ? Object_GetChild(g_taskManager) : 0, cameraWorkStrings.Player);
     if (sink) {
         int* actorMessage = (int*)CameraScratchAddress(frame, kSetupMidpointActorMessage);
         int playerSlot = AsCGolfDoc(G90)->currentPlayer;
-        actorMessage[0] = 0; actorMessage[1] = 30; actorMessage[2] = playerSlot; actorMessage[3] = (int)CameraScratchAddress(frame, kSetupMidpointActorMatrix);
-        actorMessage[4] = 0; actorMessage[5] = 0; actorMessage[6] = 0; actorMessage[7] = 0;
-        if (sink) sink->send(actorMessage);
-        __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupMidpointActorPosition), CameraScratchAddress(frame, kSetupMidpointActorMatrixPosition));
+        actorMessage[0] = 0;
+        actorMessage[1] = 30;
+        actorMessage[2] = playerSlot;
+        actorMessage[3] = (int)CameraScratchAddress(frame, kSetupMidpointActorMatrix);
+        actorMessage[4] = 0;
+        actorMessage[5] = 0;
+        actorMessage[6] = 0;
+        actorMessage[7] = 0;
+        if (sink)
+            sink->send(actorMessage);
+        __as__7WVectorFRC7WVector(CameraScratchAddress(frame, kSetupMidpointActorPosition),
+                                  CameraScratchAddress(frame, kSetupMidpointActorMatrixPosition));
         CameraVectorAt(frame, kSetupMidpointActorPosition).y = 0.0f;
     }
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointActorToLaunch), CameraScratchAddress(frame, kSetupMidpointLaunch), CameraScratchAddress(frame, kSetupMidpointActorPosition));
-    *(CameraCallbackDescriptor*)CameraScratchAddress(frame, kSetupMidpointActorDirection) = *(CameraCallbackDescriptor*)Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupMidpointActorToLaunch));
-    CameraVectorAt(frame, kSetupMidpointUp).x = 0.0f; CameraVectorAt(frame, kSetupMidpointUp).y = 1.0f; CameraVectorAt(frame, kSetupMidpointUp).z = 0.0f;
-    Vector_CrossProduct(CameraScratchAddress(frame, kSetupMidpointSideCross), CameraScratchAddress(frame, kSetupMidpointUp), CameraScratchAddress(frame, kSetupDirectionWork));
-    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupMidpointSideOffset), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupMidpointSideCross)), 3.0f);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointPosition), PreData__9CGolfBallFi(ball, ((CGolfBall*)ball)->m_preDataCount / 2), CameraScratchAddress(frame, kSetupMidpointSideOffset));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointActorToLaunch),
+                                CameraScratchAddress(frame, kSetupMidpointLaunch),
+                                CameraScratchAddress(frame, kSetupMidpointActorPosition));
+    *(CameraCallbackDescriptor*)CameraScratchAddress(frame, kSetupMidpointActorDirection) =
+        *(CameraCallbackDescriptor*)Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupMidpointActorToLaunch));
+    CameraVectorAt(frame, kSetupMidpointUp).x = 0.0f;
+    CameraVectorAt(frame, kSetupMidpointUp).y = 1.0f;
+    CameraVectorAt(frame, kSetupMidpointUp).z = 0.0f;
+    Vector_CrossProduct(CameraScratchAddress(frame, kSetupMidpointSideCross),
+                        CameraScratchAddress(frame, kSetupMidpointUp),
+                        CameraScratchAddress(frame, kSetupDirectionWork));
+    __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupMidpointSideOffset),
+                       Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupMidpointSideCross)), 3.0f);
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointPosition),
+                                PreData__9CGolfBallFi(ball, ((CGolfBall*)ball)->m_preDataCount / 2),
+                                CameraScratchAddress(frame, kSetupMidpointSideOffset));
     __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupMidpointPosition));
-    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointCameraToTarget), self->target, self->position);
-    *(CameraCallbackDescriptor*)CameraScratchAddress(frame, kSetupMidpointLookDirection) = *(CameraCallbackDescriptor*)Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupMidpointCameraToTarget));
-    if (__ml__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointActorDirection), CameraScratchAddress(frame, kSetupMidpointLookDirection)) >= 0.0f) {
-        CameraVectorAt(frame, kSetupMidpointReverseUp).x = 0.0f; CameraVectorAt(frame, kSetupMidpointReverseUp).y = -1.0f; CameraVectorAt(frame, kSetupMidpointReverseUp).z = 0.0f;
-        Vector_CrossProduct(CameraScratchAddress(frame, kSetupMidpointReverseCross), CameraScratchAddress(frame, kSetupMidpointReverseUp), CameraScratchAddress(frame, kSetupDirectionWork));
-        __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupMidpointReverseOffset), Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupMidpointReverseCross)), 3.0f);
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointReversePosition), PreData__9CGolfBallFi(ball, ((CGolfBall*)ball)->m_preDataCount / 2), CameraScratchAddress(frame, kSetupMidpointReverseOffset));
+    __mi__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointCameraToTarget), self->target,
+                                self->position);
+    *(CameraCallbackDescriptor*)CameraScratchAddress(frame, kSetupMidpointLookDirection) =
+        *(CameraCallbackDescriptor*)Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupMidpointCameraToTarget));
+    if (__ml__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointActorDirection),
+                                    CameraScratchAddress(frame, kSetupMidpointLookDirection)) >= 0.0f) {
+        CameraVectorAt(frame, kSetupMidpointReverseUp).x = 0.0f;
+        CameraVectorAt(frame, kSetupMidpointReverseUp).y = -1.0f;
+        CameraVectorAt(frame, kSetupMidpointReverseUp).z = 0.0f;
+        Vector_CrossProduct(CameraScratchAddress(frame, kSetupMidpointReverseCross),
+                            CameraScratchAddress(frame, kSetupMidpointReverseUp),
+                            CameraScratchAddress(frame, kSetupDirectionWork));
+        __ml__FRC7WVectorf(CameraScratchAddress(frame, kSetupMidpointReverseOffset),
+                           Normalize__7WVectorFv(CameraScratchAddress(frame, kSetupMidpointReverseCross)), 3.0f);
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupMidpointReversePosition),
+                                    PreData__9CGolfBallFi(ball, ((CGolfBall*)ball)->m_preDataCount / 2),
+                                    CameraScratchAddress(frame, kSetupMidpointReverseOffset));
         __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupMidpointReversePosition));
     }
 }
 
 // Initialize the selected power-shot variant quaternion and position endpoints.
-static inline void ConfigurePowerShotBlendCamera(CameraModeSetupState* self, char* frame) {
-    self->curveStartFrame = -1.0f;
+static inline void ConfigurePowerShotBlendCamera(CCameraWork* self, char* frame) {
+    self->motionStartFrame = -1.0f;
     char* golfDocument = G90;
     switch (self->powerShotVariant) {
     case kPowerShotVariant1: // Configure the first existing variant.
-        CameraVectorAt(frame, kSetupPowerBlend1StartLocalPosition).x = -5.92f; CameraVectorAt(frame, kSetupPowerBlend1StartLocalPosition).y = -4.61f; CameraVectorAt(frame, kSetupPowerBlend1StartLocalPosition).z = 37.5f;
-        Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerBlend1StartWorldPosition), CameraScratchAddress(frame, kSetupPowerBlend1StartLocalPosition), golfDocument + 0x324);
-        __as__7WVectorFRC7WVector(self->startPosition, CameraScratchAddress(frame, kSetupPowerBlend1StartWorldPosition));
-        CameraVectorAt(frame, kSetupPowerBlend1StartLookOffset).x = 0.21f; CameraVectorAt(frame, kSetupPowerBlend1StartLookOffset).y = 0.3f; CameraVectorAt(frame, kSetupPowerBlend1StartLookOffset).z = -0.93f;
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerBlend1StartTarget), self->startPosition, CameraScratchAddress(frame, kSetupPowerBlend1StartLookOffset));
-        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupPowerBlend1StartPose), self->startPosition, CameraScratchAddress(frame, kSetupPowerBlend1StartTarget));
+        CameraVectorAt(frame, kSetupPowerBlend1StartLocalPosition).x = -5.92f;
+        CameraVectorAt(frame, kSetupPowerBlend1StartLocalPosition).y = -4.61f;
+        CameraVectorAt(frame, kSetupPowerBlend1StartLocalPosition).z = 37.5f;
+        Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerBlend1StartWorldPosition),
+                              CameraScratchAddress(frame, kSetupPowerBlend1StartLocalPosition), golfDocument + 0x324);
+        __as__7WVectorFRC7WVector(self->startPosition,
+                                  CameraScratchAddress(frame, kSetupPowerBlend1StartWorldPosition));
+        CameraVectorAt(frame, kSetupPowerBlend1StartLookOffset).x = 0.21f;
+        CameraVectorAt(frame, kSetupPowerBlend1StartLookOffset).y = 0.3f;
+        CameraVectorAt(frame, kSetupPowerBlend1StartLookOffset).z = -0.93f;
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerBlend1StartTarget), self->startPosition,
+                                    CameraScratchAddress(frame, kSetupPowerBlend1StartLookOffset));
+        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupPowerBlend1StartPose), self->startPosition,
+                                    CameraScratchAddress(frame, kSetupPowerBlend1StartTarget));
         Matrix3x3_ToQuat(self->startQuaternion, CameraScratchAddress(frame, kSetupPowerBlend1StartPose));
-        CameraVectorAt(frame, kSetupPowerBlend1EndLocalPosition).x = 0.99f; CameraVectorAt(frame, kSetupPowerBlend1EndLocalPosition).y = -5.4f; CameraVectorAt(frame, kSetupPowerBlend1EndLocalPosition).z = 37.78f;
-        Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerBlend1EndWorldPosition), CameraScratchAddress(frame, kSetupPowerBlend1EndLocalPosition), golfDocument + 0x324);
+        CameraVectorAt(frame, kSetupPowerBlend1EndLocalPosition).x = 0.99f;
+        CameraVectorAt(frame, kSetupPowerBlend1EndLocalPosition).y = -5.4f;
+        CameraVectorAt(frame, kSetupPowerBlend1EndLocalPosition).z = 37.78f;
+        Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerBlend1EndWorldPosition),
+                              CameraScratchAddress(frame, kSetupPowerBlend1EndLocalPosition), golfDocument + 0x324);
         __as__7WVectorFRC7WVector(self->endPosition, CameraScratchAddress(frame, kSetupPowerBlend1EndWorldPosition));
-        CameraVectorAt(frame, kSetupPowerBlend1EndLookOffset).x = -0.3f; CameraVectorAt(frame, kSetupPowerBlend1EndLookOffset).y = 0.41f; CameraVectorAt(frame, kSetupPowerBlend1EndLookOffset).z = -0.86f;
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerBlend1EndTarget), self->endPosition, CameraScratchAddress(frame, kSetupPowerBlend1EndLookOffset));
-        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupPowerBlend1EndPose), self->endPosition, CameraScratchAddress(frame, kSetupPowerBlend1EndTarget));
+        CameraVectorAt(frame, kSetupPowerBlend1EndLookOffset).x = -0.3f;
+        CameraVectorAt(frame, kSetupPowerBlend1EndLookOffset).y = 0.41f;
+        CameraVectorAt(frame, kSetupPowerBlend1EndLookOffset).z = -0.86f;
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerBlend1EndTarget), self->endPosition,
+                                    CameraScratchAddress(frame, kSetupPowerBlend1EndLookOffset));
+        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupPowerBlend1EndPose), self->endPosition,
+                                    CameraScratchAddress(frame, kSetupPowerBlend1EndTarget));
         Matrix3x3_ToQuat(self->endQuaternion, CameraScratchAddress(frame, kSetupPowerBlend1EndPose));
         break;
     case kPowerShotVariant2: // Configure the second existing variant.
-        CameraVectorAt(frame, kSetupPowerBlend2StartLocalPosition).x = -10.28f; CameraVectorAt(frame, kSetupPowerBlend2StartLocalPosition).y = -0.51f; CameraVectorAt(frame, kSetupPowerBlend2StartLocalPosition).z = 17.76f;
-        Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerBlend2StartWorldPosition), CameraScratchAddress(frame, kSetupPowerBlend2StartLocalPosition), golfDocument + 0x324);
-        __as__7WVectorFRC7WVector(self->startPosition, CameraScratchAddress(frame, kSetupPowerBlend2StartWorldPosition));
-        CameraVectorAt(frame, kSetupPowerBlend2StartLookOffset).x = 0.93f; CameraVectorAt(frame, kSetupPowerBlend2StartLookOffset).y = 0.09f; CameraVectorAt(frame, kSetupPowerBlend2StartLookOffset).z = 0.35f;
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerBlend2StartTarget), self->startPosition, CameraScratchAddress(frame, kSetupPowerBlend2StartLookOffset));
-        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupPowerBlend2StartPose), self->startPosition, CameraScratchAddress(frame, kSetupPowerBlend2StartTarget));
+        CameraVectorAt(frame, kSetupPowerBlend2StartLocalPosition).x = -10.28f;
+        CameraVectorAt(frame, kSetupPowerBlend2StartLocalPosition).y = -0.51f;
+        CameraVectorAt(frame, kSetupPowerBlend2StartLocalPosition).z = 17.76f;
+        Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerBlend2StartWorldPosition),
+                              CameraScratchAddress(frame, kSetupPowerBlend2StartLocalPosition), golfDocument + 0x324);
+        __as__7WVectorFRC7WVector(self->startPosition,
+                                  CameraScratchAddress(frame, kSetupPowerBlend2StartWorldPosition));
+        CameraVectorAt(frame, kSetupPowerBlend2StartLookOffset).x = 0.93f;
+        CameraVectorAt(frame, kSetupPowerBlend2StartLookOffset).y = 0.09f;
+        CameraVectorAt(frame, kSetupPowerBlend2StartLookOffset).z = 0.35f;
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerBlend2StartTarget), self->startPosition,
+                                    CameraScratchAddress(frame, kSetupPowerBlend2StartLookOffset));
+        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupPowerBlend2StartPose), self->startPosition,
+                                    CameraScratchAddress(frame, kSetupPowerBlend2StartTarget));
         Matrix3x3_ToQuat(self->startQuaternion, CameraScratchAddress(frame, kSetupPowerBlend2StartPose));
-        CameraVectorAt(frame, kSetupPowerBlend2EndLocalPosition).x = -6.45f; CameraVectorAt(frame, kSetupPowerBlend2EndLocalPosition).y = 0.62f; CameraVectorAt(frame, kSetupPowerBlend2EndLocalPosition).z = 13.05f;
-        Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerBlend2EndWorldPosition), CameraScratchAddress(frame, kSetupPowerBlend2EndLocalPosition), golfDocument + 0x324);
+        CameraVectorAt(frame, kSetupPowerBlend2EndLocalPosition).x = -6.45f;
+        CameraVectorAt(frame, kSetupPowerBlend2EndLocalPosition).y = 0.62f;
+        CameraVectorAt(frame, kSetupPowerBlend2EndLocalPosition).z = 13.05f;
+        Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerBlend2EndWorldPosition),
+                              CameraScratchAddress(frame, kSetupPowerBlend2EndLocalPosition), golfDocument + 0x324);
         __as__7WVectorFRC7WVector(self->endPosition, CameraScratchAddress(frame, kSetupPowerBlend2EndWorldPosition));
-        CameraVectorAt(frame, kSetupPowerBlend2EndLookOffset).x = 0.1f; CameraVectorAt(frame, kSetupPowerBlend2EndLookOffset).y = -0.07f; CameraVectorAt(frame, kSetupPowerBlend2EndLookOffset).z = 0.99f;
-        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerBlend2EndTarget), self->endPosition, CameraScratchAddress(frame, kSetupPowerBlend2EndLookOffset));
-        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupPowerBlend2EndPose), self->endPosition, CameraScratchAddress(frame, kSetupPowerBlend2EndTarget));
+        CameraVectorAt(frame, kSetupPowerBlend2EndLookOffset).x = 0.1f;
+        CameraVectorAt(frame, kSetupPowerBlend2EndLookOffset).y = -0.07f;
+        CameraVectorAt(frame, kSetupPowerBlend2EndLookOffset).z = 0.99f;
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerBlend2EndTarget), self->endPosition,
+                                    CameraScratchAddress(frame, kSetupPowerBlend2EndLookOffset));
+        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupPowerBlend2EndPose), self->endPosition,
+                                    CameraScratchAddress(frame, kSetupPowerBlend2EndTarget));
         Matrix3x3_ToQuat(self->endQuaternion, CameraScratchAddress(frame, kSetupPowerBlend2EndPose));
         break;
-    case kPowerShotNoVariant: break; // Retain endpoints when no variant is selected.
+    case kPowerShotNoVariant:
+        break; // Retain endpoints when no variant is selected.
     }
     self->duration = 0.5f;
 }
 
 // Construct the selected static power-shot pose and clear its motion callback.
-static inline void ConfigureStaticPowerShotCamera(CameraModeSetupState* self, char* frame) {
-    self->curveStartFrame = -1.0f;
+static inline void ConfigureStaticPowerShotCamera(CCameraWork* self, char* frame) {
+    self->motionStartFrame = -1.0f;
     switch (self->powerShotVariant) {
     case kPowerShotVariant1: { // Configure the first existing variant.
-            char* golfDocument = G90;
-            Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupPowerStatic1Rotation), 2.0943952f, 1);
-            __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic1BasisSum), golfDocument + 0x330, golfDocument + 0x33c);
-            __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic1Offset), CameraScratchAddress(frame, kSetupPowerStatic1BasisSum), 32.0f);
-            Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerStatic1RotatedOffset), CameraScratchAddress(frame, kSetupPowerStatic1Offset), CameraScratchAddress(frame, kSetupPowerStatic1Rotation));
-            __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic1Position), GolfBall__Fv(), CameraScratchAddress(frame, kSetupPowerStatic1RotatedOffset));
-            __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupPowerStatic1Position));
-            __as__7WVectorFRC7WVector(self->target, GolfBall__Fv());
-            break;
-        }
-    case kPowerShotVariant2: { // Configure the second existing variant.
-            char* golfDocument = G90;
-            Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupPowerStatic2Rotation), -1.9198622f, 1);
-            __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic2BasisSum), golfDocument + 0x330, golfDocument + 0x33c);
-            __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic2Offset), CameraScratchAddress(frame, kSetupPowerStatic2BasisSum), 32.0f);
-            Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerStatic2RotatedOffset), CameraScratchAddress(frame, kSetupPowerStatic2Offset), CameraScratchAddress(frame, kSetupPowerStatic2Rotation));
-            __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic2Position), GolfBall__Fv(), CameraScratchAddress(frame, kSetupPowerStatic2RotatedOffset));
-            __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupPowerStatic2Position));
-            CameraVectorAt(frame, kSetupPowerStatic2TargetRise).x = 0.0f; CameraVectorAt(frame, kSetupPowerStatic2TargetRise).y = 2.0f; CameraVectorAt(frame, kSetupPowerStatic2TargetRise).z = 0.0f;
-            __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic2Target), GolfBall__Fv(), CameraScratchAddress(frame, kSetupPowerStatic2TargetRise));
-            __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupPowerStatic2Target));
-            break;
-        }
+        char* golfDocument = G90;
+        Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupPowerStatic1Rotation), 2.0943952f, 1);
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic1BasisSum), golfDocument + 0x330,
+                                    golfDocument + 0x33c);
+        __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic1Offset),
+                           CameraScratchAddress(frame, kSetupPowerStatic1BasisSum), 32.0f);
+        Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerStatic1RotatedOffset),
+                              CameraScratchAddress(frame, kSetupPowerStatic1Offset),
+                              CameraScratchAddress(frame, kSetupPowerStatic1Rotation));
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic1Position), GolfBall__Fv(),
+                                    CameraScratchAddress(frame, kSetupPowerStatic1RotatedOffset));
+        __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupPowerStatic1Position));
+        __as__7WVectorFRC7WVector(self->target, GolfBall__Fv());
+        break;
     }
-    *(CameraCallbackDescriptor*)&self->callbackWord0 = *(const CameraCallbackDescriptor*)zeroInitializationWords;
+    case kPowerShotVariant2: { // Configure the second existing variant.
+        char* golfDocument = G90;
+        Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupPowerStatic2Rotation), -1.9198622f, 1);
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic2BasisSum), golfDocument + 0x330,
+                                    golfDocument + 0x33c);
+        __ml__FfRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic2Offset),
+                           CameraScratchAddress(frame, kSetupPowerStatic2BasisSum), 32.0f);
+        Matrix_TransformPoint(CameraScratchAddress(frame, kSetupPowerStatic2RotatedOffset),
+                              CameraScratchAddress(frame, kSetupPowerStatic2Offset),
+                              CameraScratchAddress(frame, kSetupPowerStatic2Rotation));
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic2Position), GolfBall__Fv(),
+                                    CameraScratchAddress(frame, kSetupPowerStatic2RotatedOffset));
+        __as__7WVectorFRC7WVector(self->position, CameraScratchAddress(frame, kSetupPowerStatic2Position));
+        CameraVectorAt(frame, kSetupPowerStatic2TargetRise).x = 0.0f;
+        CameraVectorAt(frame, kSetupPowerStatic2TargetRise).y = 2.0f;
+        CameraVectorAt(frame, kSetupPowerStatic2TargetRise).z = 0.0f;
+        __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupPowerStatic2Target), GolfBall__Fv(),
+                                    CameraScratchAddress(frame, kSetupPowerStatic2TargetRise));
+        __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupPowerStatic2Target));
+        break;
+    }
+    }
+    *(CameraCallbackDescriptor*)&self->motionCallbackThisAdjustment =
+        *(const CameraCallbackDescriptor*)zeroInitializationWords;
 }
 
 // Save the current world pose including roll, then restart trajectory playback.
-static inline void CaptureCameraTransitionPose(CameraModeSetupState* self, char* frame, float& capturedRoll) {
-    __as__7WVectorFRC7WVector(self->position, self->currentPosition);
-    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupCapturedCurrentTarget), self->currentPosition, self->currentForward);
+static inline void CaptureCameraTransitionPose(CCameraWork* self, char* frame, float& capturedRoll) {
+    __as__7WVectorFRC7WVector(self->position, &self->transform[9]);
+    __pl__FRC7WVectorRC7WVector(CameraScratchAddress(frame, kSetupCapturedCurrentTarget), &self->transform[9],
+                                &self->transform[6]);
     __as__7WVectorFRC7WVector(self->target, CameraScratchAddress(frame, kSetupCapturedCurrentTarget));
     capturedRoll = self->roll;
     void* capturedPose;
     if (CameraIsNearZero(capturedRoll)) {
-        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupCapturedPoseMatrix), self->position, self->target);
+        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupCapturedPoseMatrix), self->position,
+                                    self->target);
         capturedPose = CameraScratchAddress(frame, kSetupCapturedPoseMatrix);
     } else {
-        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupUnrolledPoseMatrix), self->position, self->target);
+        Matrix_BuildCameraTransform(CameraScratchAddress(frame, kSetupUnrolledPoseMatrix), self->position,
+                                    self->target);
         Matrix_SetAxisRotation(CameraScratchAddress(frame, kSetupRollRotationMatrix), capturedRoll, 2);
-        Matrix_ConcatAffine(CameraScratchAddress(frame, kSetupCapturedPoseMatrix), CameraScratchAddress(frame, kSetupRollRotationMatrix), CameraScratchAddress(frame, kSetupUnrolledPoseMatrix));
+        Matrix_ConcatAffine(CameraScratchAddress(frame, kSetupCapturedPoseMatrix),
+                            CameraScratchAddress(frame, kSetupRollRotationMatrix),
+                            CameraScratchAddress(frame, kSetupUnrolledPoseMatrix));
         capturedPose = CameraScratchAddress(frame, kSetupCapturedPoseMatrix);
     }
-    Matrix_CopyAffine(self->previousRotation, capturedPose);
-    CCameraWork_ResetTrajectoryPlayback(self);
+    Matrix_CopyAffine(self->previousTransform, capturedPose);
+    self->ResetTrajectoryPlayback();
 }
 
 // Select a shot-camera action, record/replay its history, and initialize its pose and callback.
 // requestedAction is a CameraAction code; captureTransition saves the current pose and restarts playback.
 // installed suppresses the entire operation. Valid historyIndex replays; otherwise append.
 // Replay the next saved action or append to owned history with transactional growth.
-#define SELECT_AND_RECORD_CAMERA_ACTION() \
-    /* Phase 1: replay the next saved action, or append the requested action to owned history. */ \
-    self->action = requestedAction; \
-    int historyCount = (int)self->actionCount; \
-    if (replayIndex >= 0 && replayIndex < historyCount) { \
-        self->historyIndex = replayIndex + 1; \
-        self->action = self->actionHistory[replayIndex]; \
-    } else { \
-        unsigned storedActionCount = *(volatile unsigned*)&self->actionCount; \
-        self->historyIndex = -1; \
-        if (storedActionCount < self->actionCapacity) { \
-            unsigned newActionCount = storedActionCount + 1; \
-            self->actionCount = newActionCount; \
-            self->actionHistory[newActionCount - 1] = self->action; \
-        } else { \
-            if (0x3FFFFFFFu - self->actionCapacity < 1) { \
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage; \
-std::length_error* error = (std::length_error*)storage.bytes; \
-                error->__ct(); \
-exception_runtime::__throw(exception_runtime::cameraWorkStrings.lengthErrorTypeName, error, \
-                (void*)exception_runtime::__dt__Q23std12length_errorFv); \
-            } \
-            unsigned additionalCapacity = self->actionCount + 1 - self->actionCapacity; \
-            LayoutVectorBuffer growthBuffer(&self->actionCapacity); \
-            unsigned capacity = self->actionCapacity; \
-            if (additionalCapacity > 0x3FFFFFFFu - capacity) { \
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage; \
-std::length_error* error = (std::length_error*)storage.bytes; \
-                error->__ct(); \
-exception_runtime::__throw(exception_runtime::cameraWorkStrings.lengthErrorTypeName, error, \
-                (void*)exception_runtime::__dt__Q23std12length_errorFv); \
-            } \
-            if (capacity < 0x15555555u) { \
-                capacity += LayoutVectorMax((3 * (capacity + 1)) / 5, additionalCapacity); \
-            } else if (capacity < 0x2AAAAAAAu) { \
-                capacity += LayoutVectorMax((capacity + 1) / 2, additionalCapacity); \
-            } else capacity = 0x3FFFFFFF; \
-            if (capacity > 0x3FFFFFFFu) { \
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage; \
-std::length_error* error = (std::length_error*)storage.bytes; \
-                error->__ct(); \
-exception_runtime::__throw(exception_runtime::cameraWorkStrings.lengthErrorTypeName, error, \
-                (void*)exception_runtime::__dt__Q23std12length_errorFv); \
-            } \
-            int* newActions = (int*)appMallocDummy__FUl(capacity * 4); \
-            unsigned oldSize = self->actionCount; \
-            growthBuffer.offset = oldSize; \
-            (newActions + oldSize)[growthBuffer.size] = self->action; \
-            int* oldActions = self->actionHistory; \
-            int copiedActionCount = (self->actionHistory + self->actionCount) - oldActions; \
-            growthBuffer.data = newActions; \
-            growthBuffer.capacity = capacity; \
-            growthBuffer.size = growthBuffer.size + 1; \
-            int copyStart = oldSize - copiedActionCount; \
-            growthBuffer.offset = copyStart; \
-            memcpy(newActions + copyStart, oldActions, copiedActionCount * 4); \
-            memset(oldActions, 0, copiedActionCount * 4); \
-            unsigned newSize = growthBuffer.size + copiedActionCount; \
-            oldActions = self->actionHistory; \
-            newActions = growthBuffer.data; \
-            growthBuffer.data = oldActions; \
-            self->actionCount = 0; \
-            self->actionCapacity = growthBuffer.capacity; \
-            growthBuffer.size = 0; \
-            self->actionHistory = newActions; \
-            self->actionCount = newSize; \
-            growthBuffer.capacity = capacity; \
-        } \
+#define SELECT_AND_RECORD_CAMERA_ACTION()                                                                   \
+    /* Phase 1: replay the next saved action, or append the requested action to owned history. */           \
+    this->action = requestedAction;                                                                         \
+    int historyCount = (int)this->actionCount;                                                              \
+    if (replayIndex >= 0 && replayIndex < historyCount) {                                                   \
+        this->historyIndex = replayIndex + 1;                                                               \
+        this->action = this->actionHistory[replayIndex];                                                    \
+    } else {                                                                                                \
+        unsigned storedActionCount = *(volatile unsigned*)&this->actionCount;                               \
+        this->historyIndex = -1;                                                                            \
+        if (storedActionCount < this->actionCapacity) {                                                     \
+            unsigned newActionCount = storedActionCount + 1;                                                \
+            this->actionCount = newActionCount;                                                             \
+            this->actionHistory[newActionCount - 1] = this->action;                                         \
+        } else {                                                                                            \
+            if (0x3FFFFFFFu - this->actionCapacity < 1) {                                                   \
+                union {                                                                                     \
+                    int alignment;                                                                          \
+                    unsigned char bytes[sizeof(std::length_error)];                                         \
+                } storage;                                                                                  \
+                std::length_error* error = (std::length_error*)storage.bytes;                               \
+                error->__ct();                                                                              \
+                exception_runtime::__throw(exception_runtime::cameraWorkStrings.lengthErrorTypeName, error, \
+                                           (void*)exception_runtime::__dt__Q23std12length_errorFv);         \
+            }                                                                                               \
+            unsigned additionalCapacity = this->actionCount + 1 - this->actionCapacity;                     \
+            LayoutVectorBuffer growthBuffer(&this->actionCapacity);                                         \
+            unsigned capacity = this->actionCapacity;                                                       \
+            if (additionalCapacity > 0x3FFFFFFFu - capacity) {                                              \
+                union {                                                                                     \
+                    int alignment;                                                                          \
+                    unsigned char bytes[sizeof(std::length_error)];                                         \
+                } storage;                                                                                  \
+                std::length_error* error = (std::length_error*)storage.bytes;                               \
+                error->__ct();                                                                              \
+                exception_runtime::__throw(exception_runtime::cameraWorkStrings.lengthErrorTypeName, error, \
+                                           (void*)exception_runtime::__dt__Q23std12length_errorFv);         \
+            }                                                                                               \
+            if (capacity < 0x15555555u) {                                                                   \
+                capacity += LayoutVectorMax((3 * (capacity + 1)) / 5, additionalCapacity);                  \
+            } else if (capacity < 0x2AAAAAAAu) {                                                            \
+                capacity += LayoutVectorMax((capacity + 1) / 2, additionalCapacity);                        \
+            } else                                                                                          \
+                capacity = 0x3FFFFFFF;                                                                      \
+            if (capacity > 0x3FFFFFFFu) {                                                                   \
+                union {                                                                                     \
+                    int alignment;                                                                          \
+                    unsigned char bytes[sizeof(std::length_error)];                                         \
+                } storage;                                                                                  \
+                std::length_error* error = (std::length_error*)storage.bytes;                               \
+                error->__ct();                                                                              \
+                exception_runtime::__throw(exception_runtime::cameraWorkStrings.lengthErrorTypeName, error, \
+                                           (void*)exception_runtime::__dt__Q23std12length_errorFv);         \
+            }                                                                                               \
+            int* newActions = (int*)appMallocDummy__FUl(capacity * 4);                                      \
+            unsigned oldSize = this->actionCount;                                                           \
+            growthBuffer.offset = oldSize;                                                                  \
+            (newActions + oldSize)[growthBuffer.size] = this->action;                                       \
+            int* oldActions = this->actionHistory;                                                          \
+            int copiedActionCount = (this->actionHistory + this->actionCount) - oldActions;                 \
+            growthBuffer.data = newActions;                                                                 \
+            growthBuffer.capacity = capacity;                                                               \
+            growthBuffer.size = growthBuffer.size + 1;                                                      \
+            int copyStart = oldSize - copiedActionCount;                                                    \
+            growthBuffer.offset = copyStart;                                                                \
+            memcpy(newActions + copyStart, oldActions, copiedActionCount * 4);                              \
+            memset(oldActions, 0, copiedActionCount * 4);                                                   \
+            unsigned newSize = growthBuffer.size + copiedActionCount;                                       \
+            oldActions = this->actionHistory;                                                               \
+            newActions = growthBuffer.data;                                                                 \
+            growthBuffer.data = oldActions;                                                                 \
+            this->actionCount = 0;                                                                          \
+            this->actionCapacity = growthBuffer.capacity;                                                   \
+            growthBuffer.size = 0;                                                                          \
+            this->actionHistory = newActions;                                                               \
+            this->actionCount = newSize;                                                                    \
+            growthBuffer.capacity = capacity;                                                               \
+        }                                                                                                   \
     }
 
-// Install a requested/replayed action and initialize its geometry/transition.
+} // extern "C"
 
-void CCameraWork_ConfigureMode(CameraModeSetupState* self, int requestedAction, int captureTransition) {
+} // namespace ns0
+
+// Install a requested/replayed action and initialize its geometry/transition.
+void CCameraWork::ConfigureMode(int requestedAction, int captureTransition) {
+    // The setup helpers and scratch layout are local to this file.
+    using namespace ns0;
     char frame[kCameraSetupBufferBytes];
     CameraCallbackDescriptor* callbackDescriptors;
     int lastSampleIndex;
@@ -1354,32 +1718,36 @@ void CCameraWork_ConfigureMode(CameraModeSetupState* self, int requestedAction, 
     int clampedFirstEventIndex;
     int clampedSecondEventIndex;
     callbackDescriptors = CameraCallbackDescriptors();
-    if (self->installed) return;
+    if (installed)
+        return;
     ball = GolfBall__Fv();
     int firstEventIndex = ((CGolfBall*)ball)->m_eventPreDataIndex[2];
     int secondEventIndex = ((CGolfBall*)ball)->m_eventPreDataIndex[1];
-    int replayIndex = self->historyIndex;
+    int replayIndex = historyIndex;
     lastSampleIndex = ((CGolfBall*)ball)->m_preDataCount;
     clampedFirstEventIndex = firstEventIndex > 0 ? firstEventIndex : 0;
     clampedSecondEventIndex = secondEventIndex > 0 ? secondEventIndex : 0;
     SELECT_AND_RECORD_CAMERA_ACTION();
 
     // Phase 2: reset manual offsets unless random mode retains them, and capture transition pose.
-    if (!self->flag1a0) {
-        self->inputMoved = 0;
-        self->inputFovOffset = 0.0f;
-        Vec2_Zero(self->inputRotationOffset);
+    if (!randomModeRequested) {
+        inputMoved = 0;
+        inputFovOffset = 0.0f;
+        Vec2_Zero(inputRotationOffset);
     }
     if (captureTransition) {
         float capturedRoll;
-        CaptureCameraTransitionPose(self, frame, capturedRoll);
+        CaptureCameraTransitionPose(this, frame, capturedRoll);
     }
-    if (self->action < 100 && captureTransition) self->curveStartFrame = 45.0f;
-    else self->curveStartFrame = -1.0f;
-    self->previousFrameIndex = -2;
-    self->roll = 0.0f;
-    if (self->action < 100 && captureTransition && ((CGolfBall*)GolfBall__Fv())->m_preDataCount < 30) {
-        *(CameraCallbackDescriptor*)&self->callbackWord0 = *(const CameraCallbackDescriptor*)zeroInitializationWords;
+    if (action < 100 && captureTransition)
+        motionStartFrame = 45.0f;
+    else
+        motionStartFrame = -1.0f;
+    lastPreMotionFrame = -2;
+    roll = 0.0f;
+    if (action < 100 && captureTransition && ((CGolfBall*)GolfBall__Fv())->m_preDataCount < 30) {
+        *(CameraCallbackDescriptor*)&motionCallbackThisAdjustment =
+            *(const CameraCallbackDescriptor*)zeroInitializationWords;
     } else {
         // Phase 3: install the action descriptor and any action-specific geometry.
         // Low actions build trajectory views; 100-range actions frame the hole; 200-range
@@ -1397,236 +1765,403 @@ void CCameraWork_ConfigureMode(CameraModeSetupState* self, int requestedAction, 
         // 106..112/150: named cup/launch/velocity offsets -> world position/target; 112 narrows FOV.
         // 203..208: initialize orbit parameters, captured transforms or quaternion endpoints.
         // Every install exits explicitly; no action falls through to a neighboring setup.
-        switch (self->action) {
+        switch (action) {
         // Install this action's update callback; no geometry is built here.
-        case kCameraAction0: { InstallCameraCallback(self, callbackDescriptors, kCallbackAction0); break; }
+        case kCameraAction0: {
+            InstallCameraCallback(this, callbackDescriptors, kCallbackAction0);
+            break;
+        }
         // Install this action's update callback; no geometry is built here.
-        case kCameraAction1: self->curveStartFrame = -1.0f; { InstallCameraCallback(self, callbackDescriptors, kCallbackAction1); break; }
+        case kCameraAction1:
+            motionStartFrame = -1.0f;
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackAction1);
+                break;
+            }
         // Install this action's update callback; no geometry is built here.
-        case kCameraAction2: { InstallCameraCallback(self, callbackDescriptors, kCallbackAction2); break; }
+        case kCameraAction2: {
+            InstallCameraCallback(this, callbackDescriptors, kCallbackAction2);
+            break;
+        }
         // Set up event side camera and install its callback.
         case kCameraEventSideView: {
-                ConfigureEventSideCamera(self, frame, ball, clampedFirstEventIndex);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackEventSideView); break; }
+            ConfigureEventSideCamera(this, frame, ball, clampedFirstEventIndex);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackEventSideView);
+                break;
             }
+        }
         // Share second-event geometry, then choose the action-specific descriptor.
         case kCameraSecondEventView:
         // Set up second event camera and install its callback.
         case kCameraSecondEventAlternateView: {
-                ConfigureSecondEventCamera(self, frame, ball, lastSampleIndex, clampedSecondEventIndex);
-                if (self->action == kCameraSecondEventView) { InstallCameraCallback(self, callbackDescriptors, kCallbackSecondEventView); break; }
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackSecondEventAlternateView); break; }
-            }
-        // Install this action's update callback; no geometry is built here.
-        case kCameraAction5: { InstallCameraCallback(self, callbackDescriptors, kCallbackAction5); break; }
-        // Install this action's update callback; no geometry is built here.
-        case kCameraAction7: self->curveStartFrame = -1.0f; { InstallCameraCallback(self, callbackDescriptors, kCallbackAction7); break; }
-        // Install this action's update callback; no geometry is built here.
-        case kCameraAction8: { InstallCameraCallback(self, callbackDescriptors, kCallbackAction8); break; }
-        // Set up camera walk pose and install its callback.
-        case kCameraWalkView9: {
-                ConfigureCameraWalkPose(self, frame, ball, clampedFirstEventIndex, -1.0f, kSetupWalkAction9Up, kSetupWalkAction9Cross, kSetupWalkAction9LateralOffset, kSetupWalkAction9EventVelocity, kSetupWalkAction9LongitudinalOffset, kSetupWalkAction9RaisedLaunch, kSetupWalkAction9Position);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackWalkView9); break; }
-            }
-        // Install this action's update callback; no geometry is built here.
-        case kCameraAction10: { InstallCameraCallback(self, callbackDescriptors, kCallbackAction10); break; }
-        // Set up camera walk pose and install its callback.
-        case kCameraWalkView18: {
-                ConfigureCameraWalkPose(self, frame, ball, clampedFirstEventIndex, -1.0f, kSetupWalkAction18Up, kSetupWalkAction18Cross, kSetupWalkAction18LateralOffset, kSetupWalkAction18EventVelocity, kSetupWalkAction18LongitudinalOffset, kSetupWalkAction18RaisedLaunch, kSetupWalkAction18Position);
-                self->heading = 0.2617994f;
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackWalkView18); break; }
-            }
-        // Install the Action19 descriptor.
-        case kCameraAction19: {
-                self->animationTime = 0.0f;
-                self->curveStartFrame = -1.0f;
-                self->heading = 0.0f;
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackAction19); break; }
-            }
-        // Set up camera walk pose and install its callback.
-        case kCameraWalkView12: {
-                ConfigureCameraWalkPose(self, frame, ball, clampedFirstEventIndex, -1.0f, kSetupWalkAction12Up, kSetupWalkAction12Cross, kSetupWalkAction12LateralOffset, kSetupWalkAction12EventVelocity, kSetupWalkAction12LongitudinalOffset, kSetupWalkAction12RaisedLaunch, kSetupWalkAction12Position);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackWalkView12); break; }
-            }
-        // Set up trajectory side midpoint camera and install its callback.
-        case kCameraTrajectorySideMidpointView: {
-                ConfigureTrajectorySideMidpointCamera(self, frame, ball, lastSampleIndex, clampedFirstEventIndex);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackTrajectorySideMidpointView); break; }
-            }
-        // Set up cutoff bisector camera and install its callback.
-        case kCameraCutoffBisectorView: {
-                void* nextDirection;
-                ConfigureCutoffBisectorCamera(self, frame, ball, nextDirection);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackCutoffBisectorView); break; }
-            }
-        // Set up player head camera and install its callback.
-        case kCameraPlayerHeadView: {
-                const CameraWorkStrings& resources = cameraWorkStrings;
-                void* playerObject;
-                void* sceneManager;
-                ConfigurePlayerHeadCamera(self, frame, resources, playerObject, sceneManager);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackPlayerHeadView); break; }
-            }
-        // Set up launch quarter camera and install its callback.
-        case kCameraLaunchQuarterView: {
-                ConfigureLaunchQuarterCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackLaunchQuarterView); break; }
-            }
-        // Set up launch wide camera and install its callback.
-        case kCameraLaunchRandomWideView: {
-                ConfigureLaunchWideCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackLaunchRandomWideView); break; }
-            }
-        // Install this action's update callback; no geometry is built here.
-        case kCameraAction23: self->curveStartFrame = 0.0f; { InstallCameraCallback(self, callbackDescriptors, kCallbackAction23); break; }
-        // Set up power launch camera and install its callback.
-        case kCameraPowerLaunchView: {
-                ConfigurePowerLaunchCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackPowerLaunchView); break; }
-            }
-        // Set up power trajectory camera and install its callback.
-        case kCameraPowerTrajectoryView: {
-                ConfigurePowerTrajectoryCamera(self, frame);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackPowerTrajectoryView); break; }
-            }
-        // Install the PowerStartView descriptor.
-        case kCameraPowerStartView: {
-                if (self->powerShotVariant || self->animationGroup) self->curveStartFrame = -1.0f;
-                else self->curveStartFrame = 15.0f;
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackPowerStartView); break; }
-            }
-        // Set up camera walk pose and install its callback.
-        case kCameraWalkView27: {
-                ConfigureCameraWalkPose(self, frame, ball, clampedFirstEventIndex, 15.0f, kSetupWalkAction27Up, kSetupWalkAction27Cross, kSetupWalkAction27LateralOffset, kSetupWalkAction27EventVelocity, kSetupWalkAction27LongitudinalOffset, kSetupWalkAction27RaisedLaunch, kSetupWalkAction27Position);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackWalkView27); break; }
-            }
-        // Install pitch tracking; this case builds no initial geometry.
-        case kCameraTrackBallPitch: { InstallCameraCallback(self, callbackDescriptors, kCallbackTrackBallPitch); break; }
-        // Set up raised launch side camera and install its callback.
-        case kCameraRaisedLaunchSideView: {
-                ConfigureRaisedLaunchSideCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackRaisedLaunchSideView); break; }
-            }
-        // Set up raised launch rear camera and install its callback.
-        case kCameraRaisedLaunchRearView: {
-                ConfigureRaisedLaunchRearCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackRaisedLaunchRearView); break; }
-            }
-        // Set up elevated hole side camera and install its callback.
-        case kCameraElevatedHoleSideView: {
-                ConfigureElevatedHoleSideCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackElevatedHoleSideView); break; }
-            }
-        // Set up trajectory midpoint camera and install its callback.
-        case kCameraTrajectoryMidpointView: {
-                ConfigureTrajectoryMidpointCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackTrajectoryMidpointView); break; }
-            }
-        // Install this action's update callback; no geometry is built here.
-        case kCameraAction105: { InstallCameraCallback(self, callbackDescriptors, kCallbackAction105); break; }
-        // Set up launch front camera and install its callback.
-        case kCameraLaunchFrontView: {
-                ConfigureLaunchFrontCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackLaunchFrontView); self->groundClearanceEnabled = 0; break; }
-            }
-        // Set up shot and hole camera and install its callback.
-        case kCameraShotAndHoleView: {
-                ConfigureShotAndHoleCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackShotAndHoleView); break; }
-            }
-        // Set up hole reverse camera and install its callback.
-        case kCameraHoleReverseView: {
-                ConfigureHoleReverseCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackHoleReverseView); break; }
-            }
-        // Set up hole side camera and install its callback.
-        case kCameraHoleSideView: {
-                ConfigureHoleSideCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackHoleSideView); break; }
-            }
-        // Set up hole velocity camera and install its callback.
-        case kCameraHoleVelocityView: {
-                ConfigureHoleVelocityCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackHoleVelocityView); break; }
-            }
-        // Set up hole near camera and install its callback.
-        case kCameraHoleNearView: {
-                ConfigureHoleNearCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackHoleNearView); break; }
-            }
-        // Set up hole telephoto camera and install its callback.
-        case kCameraHoleTelephotoView: {
-                ConfigureHoleTelephotoCamera(self, frame, ball);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackHoleTelephotoView); break; }
-            }
-        // Set up below hole camera and install its callback.
-        case kCameraBelowHoleView: {
-                ConfigureBelowHoleCamera(self, frame);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackBelowHoleView); break; }
-            }
-        // Set up narrow golf camera and install its callback.
-        case kCameraNarrowGolfView: {
-                ConfigureNarrowGolfCamera(self, frame);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackNarrowGolfView); break; }
-            }
-        // Set up ball orbit camera and install its callback.
-        case kCameraOrbitToBall: {
-                ConfigureBallOrbitCamera(self);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackOrbitToBall); self->groundClearanceEnabled = 0; break; }
-            }
-        // Set up golf pose blend camera and install its callback.
-        case kCameraBlendToGolfView: {
-                ConfigureGolfPoseBlendCamera(self, frame);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackBlendToGolfView); break; }
-            }
-        // Install this action's update callback; no geometry is built here.
-        case kCameraAction200: { InstallCameraCallback(self, callbackDescriptors, kCallbackAction200); break; }
-        // Install this action's update callback; no geometry is built here.
-        case kCameraAction201: { InstallCameraCallback(self, callbackDescriptors, kCallbackAction201); break; }
-        // Install this action's update callback; no geometry is built here.
-        case kCameraAction202: self->curveStartFrame = -1.0f; { InstallCameraCallback(self, callbackDescriptors, kCallbackAction202); break; }
-        // Build the variant pose and clear motion callback.
-        case kCameraPowerShotStaticView: {
-                ConfigureStaticPowerShotCamera(self, frame);
+            ConfigureSecondEventCamera(this, frame, ball, lastSampleIndex, clampedSecondEventIndex);
+            if (action == kCameraSecondEventView) {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackSecondEventView);
                 break;
             }
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackSecondEventAlternateView);
+                break;
+            }
+        }
+        // Install this action's update callback; no geometry is built here.
+        case kCameraAction5: {
+            InstallCameraCallback(this, callbackDescriptors, kCallbackAction5);
+            break;
+        }
+        // Install this action's update callback; no geometry is built here.
+        case kCameraAction7:
+            motionStartFrame = -1.0f;
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackAction7);
+                break;
+            }
+        // Install this action's update callback; no geometry is built here.
+        case kCameraAction8: {
+            InstallCameraCallback(this, callbackDescriptors, kCallbackAction8);
+            break;
+        }
+        // Set up camera walk pose and install its callback.
+        case kCameraWalkView9: {
+            ConfigureCameraWalkPose(this, frame, ball, clampedFirstEventIndex, -1.0f, kSetupWalkAction9Up,
+                                    kSetupWalkAction9Cross, kSetupWalkAction9LateralOffset,
+                                    kSetupWalkAction9EventVelocity, kSetupWalkAction9LongitudinalOffset,
+                                    kSetupWalkAction9RaisedLaunch, kSetupWalkAction9Position);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackWalkView9);
+                break;
+            }
+        }
+        // Install this action's update callback; no geometry is built here.
+        case kCameraAction10: {
+            InstallCameraCallback(this, callbackDescriptors, kCallbackAction10);
+            break;
+        }
+        // Set up camera walk pose and install its callback.
+        case kCameraWalkView18: {
+            ConfigureCameraWalkPose(this, frame, ball, clampedFirstEventIndex, -1.0f, kSetupWalkAction18Up,
+                                    kSetupWalkAction18Cross, kSetupWalkAction18LateralOffset,
+                                    kSetupWalkAction18EventVelocity, kSetupWalkAction18LongitudinalOffset,
+                                    kSetupWalkAction18RaisedLaunch, kSetupWalkAction18Position);
+            heading = 0.2617994f;
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackWalkView18);
+                break;
+            }
+        }
+        // Install the Action19 descriptor.
+        case kCameraAction19: {
+            animationTime = 0.0f;
+            motionStartFrame = -1.0f;
+            heading = 0.0f;
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackAction19);
+                break;
+            }
+        }
+        // Set up camera walk pose and install its callback.
+        case kCameraWalkView12: {
+            ConfigureCameraWalkPose(this, frame, ball, clampedFirstEventIndex, -1.0f, kSetupWalkAction12Up,
+                                    kSetupWalkAction12Cross, kSetupWalkAction12LateralOffset,
+                                    kSetupWalkAction12EventVelocity, kSetupWalkAction12LongitudinalOffset,
+                                    kSetupWalkAction12RaisedLaunch, kSetupWalkAction12Position);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackWalkView12);
+                break;
+            }
+        }
+        // Set up trajectory side midpoint camera and install its callback.
+        case kCameraTrajectorySideMidpointView: {
+            ConfigureTrajectorySideMidpointCamera(this, frame, ball, lastSampleIndex, clampedFirstEventIndex);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackTrajectorySideMidpointView);
+                break;
+            }
+        }
+        // Set up cutoff bisector camera and install its callback.
+        case kCameraCutoffBisectorView: {
+            void* nextDirection;
+            ConfigureCutoffBisectorCamera(this, frame, ball, nextDirection);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackCutoffBisectorView);
+                break;
+            }
+        }
+        // Set up player head camera and install its callback.
+        case kCameraPlayerHeadView: {
+            const CameraWorkStrings& resources = cameraWorkStrings;
+            void* playerObject;
+            void* sceneManager;
+            ConfigurePlayerHeadCamera(this, frame, resources, playerObject, sceneManager);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackPlayerHeadView);
+                break;
+            }
+        }
+        // Set up launch quarter camera and install its callback.
+        case kCameraLaunchQuarterView: {
+            ConfigureLaunchQuarterCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackLaunchQuarterView);
+                break;
+            }
+        }
+        // Set up launch wide camera and install its callback.
+        case kCameraLaunchRandomWideView: {
+            ConfigureLaunchWideCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackLaunchRandomWideView);
+                break;
+            }
+        }
+        // Install this action's update callback; no geometry is built here.
+        case kCameraAction23:
+            motionStartFrame = 0.0f;
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackAction23);
+                break;
+            }
+        // Set up power launch camera and install its callback.
+        case kCameraPowerLaunchView: {
+            ConfigurePowerLaunchCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackPowerLaunchView);
+                break;
+            }
+        }
+        // Set up power trajectory camera and install its callback.
+        case kCameraPowerTrajectoryView: {
+            ConfigurePowerTrajectoryCamera(this, frame);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackPowerTrajectoryView);
+                break;
+            }
+        }
+        // Install the PowerStartView descriptor.
+        case kCameraPowerStartView: {
+            if (powerShotVariant || animationGroup)
+                motionStartFrame = -1.0f;
+            else
+                motionStartFrame = 15.0f;
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackPowerStartView);
+                break;
+            }
+        }
+        // Set up camera walk pose and install its callback.
+        case kCameraWalkView27: {
+            ConfigureCameraWalkPose(this, frame, ball, clampedFirstEventIndex, 15.0f, kSetupWalkAction27Up,
+                                    kSetupWalkAction27Cross, kSetupWalkAction27LateralOffset,
+                                    kSetupWalkAction27EventVelocity, kSetupWalkAction27LongitudinalOffset,
+                                    kSetupWalkAction27RaisedLaunch, kSetupWalkAction27Position);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackWalkView27);
+                break;
+            }
+        }
+        // Install pitch tracking; this case builds no initial geometry.
+        case kCameraTrackBallPitch: {
+            InstallCameraCallback(this, callbackDescriptors, kCallbackTrackBallPitch);
+            break;
+        }
+        // Set up raised launch side camera and install its callback.
+        case kCameraRaisedLaunchSideView: {
+            ConfigureRaisedLaunchSideCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackRaisedLaunchSideView);
+                break;
+            }
+        }
+        // Set up raised launch rear camera and install its callback.
+        case kCameraRaisedLaunchRearView: {
+            ConfigureRaisedLaunchRearCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackRaisedLaunchRearView);
+                break;
+            }
+        }
+        // Set up elevated hole side camera and install its callback.
+        case kCameraElevatedHoleSideView: {
+            ConfigureElevatedHoleSideCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackElevatedHoleSideView);
+                break;
+            }
+        }
+        // Set up trajectory midpoint camera and install its callback.
+        case kCameraTrajectoryMidpointView: {
+            ConfigureTrajectoryMidpointCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackTrajectoryMidpointView);
+                break;
+            }
+        }
+        // Install this action's update callback; no geometry is built here.
+        case kCameraAction105: {
+            InstallCameraCallback(this, callbackDescriptors, kCallbackAction105);
+            break;
+        }
+        // Set up launch front camera and install its callback.
+        case kCameraLaunchFrontView: {
+            ConfigureLaunchFrontCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackLaunchFrontView);
+                groundClearanceEnabled = 0;
+                break;
+            }
+        }
+        // Set up shot and hole camera and install its callback.
+        case kCameraShotAndHoleView: {
+            ConfigureShotAndHoleCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackShotAndHoleView);
+                break;
+            }
+        }
+        // Set up hole reverse camera and install its callback.
+        case kCameraHoleReverseView: {
+            ConfigureHoleReverseCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackHoleReverseView);
+                break;
+            }
+        }
+        // Set up hole side camera and install its callback.
+        case kCameraHoleSideView: {
+            ConfigureHoleSideCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackHoleSideView);
+                break;
+            }
+        }
+        // Set up hole velocity camera and install its callback.
+        case kCameraHoleVelocityView: {
+            ConfigureHoleVelocityCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackHoleVelocityView);
+                break;
+            }
+        }
+        // Set up hole near camera and install its callback.
+        case kCameraHoleNearView: {
+            ConfigureHoleNearCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackHoleNearView);
+                break;
+            }
+        }
+        // Set up hole telephoto camera and install its callback.
+        case kCameraHoleTelephotoView: {
+            ConfigureHoleTelephotoCamera(this, frame, ball);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackHoleTelephotoView);
+                break;
+            }
+        }
+        // Set up below hole camera and install its callback.
+        case kCameraBelowHoleView: {
+            ConfigureBelowHoleCamera(this, frame);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackBelowHoleView);
+                break;
+            }
+        }
+        // Set up narrow golf camera and install its callback.
+        case kCameraNarrowGolfView: {
+            ConfigureNarrowGolfCamera(this, frame);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackNarrowGolfView);
+                break;
+            }
+        }
+        // Set up ball orbit camera and install its callback.
+        case kCameraOrbitToBall: {
+            ConfigureBallOrbitCamera(this);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackOrbitToBall);
+                groundClearanceEnabled = 0;
+                break;
+            }
+        }
+        // Set up golf pose blend camera and install its callback.
+        case kCameraBlendToGolfView: {
+            ConfigureGolfPoseBlendCamera(this, frame);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackBlendToGolfView);
+                break;
+            }
+        }
+        // Install this action's update callback; no geometry is built here.
+        case kCameraAction200: {
+            InstallCameraCallback(this, callbackDescriptors, kCallbackAction200);
+            break;
+        }
+        // Install this action's update callback; no geometry is built here.
+        case kCameraAction201: {
+            InstallCameraCallback(this, callbackDescriptors, kCallbackAction201);
+            break;
+        }
+        // Install this action's update callback; no geometry is built here.
+        case kCameraAction202:
+            motionStartFrame = -1.0f;
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackAction202);
+                break;
+            }
+        // Build the variant pose and clear motion callback.
+        case kCameraPowerShotStaticView: {
+            ConfigureStaticPowerShotCamera(this, frame);
+            break;
+        }
         // Set up power shot blend camera and install its callback.
         case kCameraPowerShotBlendView: {
-                ConfigurePowerShotBlendCamera(self, frame);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackPowerShotBlendView); break; }
+            ConfigurePowerShotBlendCamera(this, frame);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackPowerShotBlendView);
+                break;
             }
+        }
         // Set up raised hole orbit camera and install its callback.
         case kCameraRaisedHoleOrbit: {
-                ConfigureRaisedHoleOrbitCamera(self, frame);
-                { InstallCameraCallback(self, callbackDescriptors, kCallbackRaisedHoleOrbit); self->actionSubstate = 0; break; }
+            ConfigureRaisedHoleOrbitCamera(this, frame);
+            {
+                InstallCameraCallback(this, callbackDescriptors, kCallbackRaisedHoleOrbit);
+                unk_23C = 0;
+                break;
             }
-        default: { InstallCameraCallback(self, callbackDescriptors, kCallbackDefault); break; }
+        }
+        default: {
+            InstallCameraCallback(this, callbackDescriptors, kCallbackDefault);
+            break;
+        }
         }
     }
     return;
 }
 #pragma opt_propagation reset
 
-} // extern "C"
-
-} // namespace ns0
-
 // ---- merged from camera_work_shot_cameras.cpp ----
 namespace ns1 {
-// Translation unit 0x800DB814-0x800DCEF8 (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
 typedef Vec3f Vec3;
-struct Data_8012140C { char pad[0x70]; };
-struct Data_801EA168 { char pad[4]; void* field; };
-struct Data_801EA168_Inner { char pad[0xA]; unsigned char state; };
+struct Data_8012140C {
+    char pad[0x70];
+};
+struct Data_801EA168 {
+    char pad[4];
+    void* field;
+};
+struct Data_801EA168_Inner {
+    char pad[0xA];
+    unsigned char state;
+};
 
 void* GolfBall__Fv();
 void* PreData__9CGolfBallFi(void*, int);
 void* CQuadTree_GetInstance();
-int CQuadTree_GetObjColNum(void*);
 void* InstanceTable_Get();
 unsigned char GetGroundType__9CQuadTreeF7WVector(void*, Vec3*);
 void __as__7WVectorFRC7WVector(void*, void*);
@@ -1635,7 +2170,6 @@ void __ml__FRC7WVectorf(void*, void*, float);
 void Vector_CrossProduct(void*, void*, void*);
 void* Normalize__7WVectorFv(void*);
 void Sound_StopByAlias(void*, const char*);
-void CCameraWork_ConfigureMode(void*, int, int);
 void __mi__FRC7WVectorRC7WVector(Vec3*, Vec3*, void*);
 float Vector_SignedAngleXZ(Vec3*, Vec3*);
 float Magnitude__7WVectorCFv(Vec3*);
@@ -1685,67 +2219,100 @@ extern void* g_soundManager;
 #pragma opt_lifetimes off
 #pragma opt_strength_reduction off
 #pragma use_lmw_stmw on
+} // extern "C"
+} // namespace ns1
+
+typedef Vec3f Vec3;
+extern "C" char* GolfBall__Fv();
+extern "C" void* InstanceTable_Get();
+extern "C" void* CQuadTree_GetInstance();
+extern "C" unsigned char GetGroundType__9CQuadTreeF7WVector(void*, const void*);
+extern "C" const float kFloat_0_CameraWork;
+extern "C" const float kFloat_neg1_CameraWork;
+extern "C" const float kFloat_5_CameraWork;
+extern "C" void Sound_StopByAlias(void*, const char*);
+extern "C" void* g_soundManager;
+extern "C" const CameraWorkStrings cameraWorkStrings;
+extern "C" void __as__7WVectorFRC7WVector(void*, const void*);
+
 // Reset camera timing, one-shot sound flags, and terrain handling for a new ball trajectory.
-void CCameraWork_ResetTrajectoryPlayback(void* self) {
+void CCameraWork::ResetTrajectoryPlayback() {
     int r29flag;
     int r28flag;
     int r27flag;
     int v0 = ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[2];
-    AsCCameraWork(self)->firstEventFrame = (float)v0;
+    firstEventFrame = (float)v0;
     int v1 = ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[1];
-    AsCCameraWork(self)->secondEventFrame = (float)v1;
+    secondEventFrame = (float)v1;
 
     void* tmp = GolfBall__Fv();
-    int n = AsCCameraWork(self)->randomValue;
+    int n = randomValue;
     int count = ((CGolfBall*)tmp)->m_preDataCount;
 
     r29flag = 0;
-    AsCCameraWork(self)->lastPreMotionFrame = -2;
-    AsCCameraWork(self)->trajectoryLastFrame = (float)count;
-    (*(unsigned int*)&AsCCameraWork(self)->frameIndex) = 0;
-    AsCCameraWork(self)->animationTime = kFloat_0_CameraWork;
-    AsCCameraWork(self)->directionalSoundPlayed = 0;
-    AsCCameraWork(self)->ballProximitySoundState = 0;
-    AsCCameraWork(self)->lastShakeUpdateTime = kFloat_0_CameraWork;
-    AsCCameraWork(self)->lastProximitySoundUpdateTime = kFloat_0_CameraWork;
-    AsCCameraWork(self)->duration = kFloat_neg1_CameraWork;
-    AsCCameraWork(self)->groundClearanceEnabled = 1;
-    AsCCameraWork(self)->targetRiseHeight = kFloat_5_CameraWork;
-    AsCCameraWork(self)->unk_23C = 2;
+    lastPreMotionFrame = -2;
+    trajectoryLastFrame = (float)count;
+    (*(unsigned int*)&frameIndex) = 0;
+    animationTime = kFloat_0_CameraWork;
+    directionalSoundPlayed = 0;
+    ballProximitySoundState = 0;
+    lastShakeUpdateTime = kFloat_0_CameraWork;
+    lastProximitySoundUpdateTime = kFloat_0_CameraWork;
+    duration = kFloat_neg1_CameraWork;
+    groundClearanceEnabled = 1;
+    targetRiseHeight = kFloat_5_CameraWork;
+    unk_23C = 2;
 
     r28flag = 0;
     r27flag = 0;
     bool eligible = n % 6 == 0;
     if (eligible) {
-        if (CQuadTree_GetObjColNum(CQuadTree_GetInstance()) == 0) r29flag = eligible;
+        if (((CQuadTree*)CQuadTree_GetInstance())->GetObjColNum() == 0)
+            r29flag = eligible;
     }
     if (r29flag != 0) {
         void* e = InstanceTable_Get();
         unsigned char state = *((unsigned char*)*(void**)((unsigned char*)e + 4) + 0xA);
-        if (state != 3) r27flag = 1;
+        if (state != 3)
+            r27flag = 1;
     }
     if (r27flag != 0) {
         void* a = GolfBall__Fv();
         void* b = GolfBall__Fv();
-        Vec3 vec = *(Vec3*)PreData__9CGolfBallFi(b, ((CGolfBall*)a)->m_preDataCount);
-        if (GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &vec) == 2) r28flag = 1;
+        Vec3 vec = *(Vec3*)ns1::PreData__9CGolfBallFi(b, ((CGolfBall*)a)->m_preDataCount);
+        if (GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &vec) == 2)
+            r28flag = 1;
     }
-    if (r28flag != 0) AsCCameraWork(self)->forceGroundEffect = 1;
-    else AsCCameraWork(self)->forceGroundEffect = 0;
-    AsCCameraWork(self)->unk_164 = 0;
-    AsCCameraWork(self)->holeOutDetected = 0;
-    (*(int*)&AsCCameraWork(self)->actionFlags) = 1;
-    __as__7WVectorFRC7WVector((unsigned char*)AsCCameraWork(self)->initialBallPosition, GolfBall__Fv());
+    if (r28flag != 0)
+        forceGroundEffect = 1;
+    else
+        forceGroundEffect = 0;
+    unk_164 = 0;
+    holeOutDetected = 0;
+    (*(int*)&actionFlags) = 1;
+    __as__7WVectorFRC7WVector((unsigned char*)initialBallPosition, GolfBall__Fv());
     Sound_StopByAlias(g_soundManager, cameraWorkStrings.ballWindSoundAlias);
 }
+
+namespace ns1 {
+extern "C" {
 
 #pragma opt_propagation reset
 #pragma opt_common_subs reset
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-struct Evt_ { 
-virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7(); virtual void v8(); virtual void v9(void*);
+struct Evt_ {
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9(void*);
 };
 // Ordered shot-camera decision table (earlier returns take precedence):
 // Gate/predicate                         Action or continuation
@@ -1765,20 +2332,55 @@ virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virt
 // Power selection does not return: ConfigureMode's installed guard and the
 // subsequent interval policy remain part of the contract. Percentages reuse
 // the same rand() result; do not replace them with independent random draws.
+} // extern "C"
+} // namespace ns1
+
+extern "C" {
+extern CSharedDoc* g_sharedDoc;
+int SharedDoc_IsPlayerFlag0Set(unsigned char);
+void __mi__FRC7WVectorRC7WVector(void*, const void*, const void*);
+void __pl__FRC7WVectorRC7WVector(void*, const void*, const void*);
+void __ml__FfRC7WVector(void*, const void*, float);
+void __ml__FRC7WVectorf(void*, const void*, float);
+void __as__7WVectorFRC7WVector(void*, const void*);
+}
+extern "C" float Vector_SignedAngleXZ(Vec3*, Vec3*);
+extern "C" const float kFloat_0_7853982_CameraWork;
+extern "C" const float kFloat_16_CameraWork;
+extern "C" void* g_taskManager;
+extern "C" void* Object_GetChild(void*);
+extern "C" void* TaskActorTable_FindByName(void*, const char*);
+struct Evt_ {
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9(void*);
+};
+extern "C" const float kFloat_60_CameraWork;
+extern "C" const float kFloat_30_0;
+extern "C" const float kFloat_90_CameraWork;
 // Choose the next shot-camera action from ball events, ground type, and special-shot flags.
-void CCameraWork_SelectShotCameraMode(void* self, int boostSelectionChance) {
+void CCameraWork::SelectShotCameraMode(int boostSelectionChance) {
     // Phase 1: handle view/player restrictions and impact-grade-specific camera selection.
     int v1;
     Vec3 vec;
-    unsigned char* p = (unsigned char*)self;
-    if (!AsCCameraWork(p)->shotCameraSelectionEnabled) return;
+    if (!shotCameraSelectionEnabled)
+        return;
     unsigned char state = *((unsigned char*)*(void**)((unsigned char*)InstanceTable_Get() + 4) + 0xA);
     if (state == kShotCameraPutterCategory) {
-        if (SharedDoc_IsPlayerFlag0Set(AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer)) return; // original +0x3c1
+        if (SharedDoc_IsPlayerFlag0Set(AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer))
+            return; // original +0x3c1
         void* ball = GolfBall__Fv();
         if (((CGolfBall*)ball)->m_groundType == kShotCameraGreenGround) {
             void* m = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-            unsigned char* entry = (unsigned char*)AsCGolfDoc(m)->holeRecords + *((unsigned char*)&AsCGolfDoc(m)->currentHoleIndex) * 32;
+            unsigned char* entry =
+                (unsigned char*)AsCGolfDoc(m)->holeRecords + *((unsigned char*)&AsCGolfDoc(m)->currentHoleIndex) * 32;
             Vec3 a;
             Vec3 target = *(Vec3*)(entry + 0xc);
             void* ballForVelocity = GolfBall__Fv();
@@ -1786,19 +2388,29 @@ void CCameraWork_SelectShotCameraMode(void* self, int boostSelectionChance) {
             __mi__FRC7WVectorRC7WVector(&a, &target, extra);
             float angle = Vector_SignedAngleXZ(&a, (Vec3*)&((CGolfBall*)ballForVelocity)->m_velocity);
             angle = angle > kFloat_0_CameraWork ? angle : -angle;
-            if (!(angle > kFloat_0_7853982_CameraWork)) return;
+            if (!(angle > kFloat_0_7853982_CameraWork))
+                return;
         }
-        CCameraWork_ConfigureMode(self, kCameraTrackBallPitch, 1);
+        ConfigureMode(kCameraTrackBallPitch, 1);
         return;
     }
     if (AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->impactGrade == kShotCameraMissImpact) {
         void* ball = GolfBall__Fv();
-        if (!((CGolfBall*)ball)->m_preDataCount) { CCameraWork_ConfigureMode(self, kCameraLaunchRandomWideView, 1); return; }
-        int n = AsCCameraWork(p)->randomValue;
+        if (!((CGolfBall*)ball)->m_preDataCount) {
+            ConfigureMode(kCameraLaunchRandomWideView, 1);
+            return;
+        }
+        int n = randomValue;
         switch (n % 3) {
-        case 0: CCameraWork_ConfigureMode(self, kCameraTrackBallPitch, 1); break;
-        case 1: CCameraWork_ConfigureMode(self, kCameraLaunchQuarterView, 1); break;
-        case 2: CCameraWork_ConfigureMode(self, kCameraLaunchRandomWideView, 1); break;
+        case 0:
+            ConfigureMode(kCameraTrackBallPitch, 1);
+            break;
+        case 1:
+            ConfigureMode(kCameraLaunchQuarterView, 1);
+            break;
+        case 2:
+            ConfigureMode(kCameraLaunchRandomWideView, 1);
+            break;
         }
         return;
     }
@@ -1807,16 +2419,17 @@ void CCameraWork_SelectShotCameraMode(void* self, int boostSelectionChance) {
     int flags = ((CGolfBall*)ball)->m_powerFlags & kShotCameraPowerMask;
     if (flags) {
         void* m = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-        unsigned char* entry = (unsigned char*)AsCGolfDoc(m)->holeRecords + *((unsigned char*)&AsCGolfDoc(m)->currentHoleIndex) * 32;
+        unsigned char* entry =
+            (unsigned char*)AsCGolfDoc(m)->holeRecords + *((unsigned char*)&AsCGolfDoc(m)->currentHoleIndex) * 32;
         Vec3 target = *(Vec3*)(entry + 0xc);
         void* ballForPreDataCount = GolfBall__Fv();
         void* obj = GolfBall__Fv();
         unsigned int id = ((CGolfBall*)ballForPreDataCount)->m_preDataCount;
-        void* sel = PreData__9CGolfBallFi(obj, id);
+        void* sel = ns1::PreData__9CGolfBallFi(obj, id);
         __mi__FRC7WVectorRC7WVector(&vec, &target, sel);
         vec.y = kFloat_0_CameraWork;
         int interval = boostSelectionChance ? kShotCameraBoostedChance : kShotCameraNormalChance;
-        float len = Magnitude__7WVectorCFv(&vec);
+        float len = ns1::Magnitude__7WVectorCFv(&vec);
         if (len < kFloat_16_CameraWork) {
             int randomValue = rand();
             switch (flags) {
@@ -1826,15 +2439,18 @@ void CCameraWork_SelectShotCameraMode(void* self, int boostSelectionChance) {
                     void* c1 = GolfBall__Fv();
                     v1 = ((CGolfBall*)c1)->m_eventPreDataIndex[kShotCameraSecondEventSlot];
                     void* c2 = GolfBall__Fv();
-                    if (((CGolfBall*)c2)->m_eventPreDataIndex[kShotCameraEventSlot11] == v1) CCameraWork_ConfigureMode(self, kCameraPowerStartView, 1);
+                    if (((CGolfBall*)c2)->m_eventPreDataIndex[kShotCameraEventSlot11] == v1)
+                        ConfigureMode(kCameraPowerStartView, 1);
                 }
                 break;
             }
             case kShotCameraPowerBit20: {
                 int rem = randomValue % 100;
                 if (rem < interval * 10) {
-                    if (randomValue % 10 < 5) CCameraWork_ConfigureMode(self, kCameraPowerLaunchView, 1);
-                    else CCameraWork_ConfigureMode(self, kCameraPowerTrajectoryView, 1);
+                    if (randomValue % 10 < 5)
+                        ConfigureMode(kCameraPowerLaunchView, 1);
+                    else
+                        ConfigureMode(kCameraPowerTrajectoryView, 1);
                 }
                 break;
             }
@@ -1844,16 +2460,21 @@ void CCameraWork_SelectShotCameraMode(void* self, int boostSelectionChance) {
                     void* c1 = GolfBall__Fv();
                     v1 = ((CGolfBall*)c1)->m_eventPreDataIndex[kShotCameraSecondEventSlot];
                     void* c2 = GolfBall__Fv();
-                    if (((CGolfBall*)c2)->m_eventPreDataIndex[kShotCameraEventSlot14] == v1) CCameraWork_ConfigureMode(self, kCameraWalkView27, 1);
+                    if (((CGolfBall*)c2)->m_eventPreDataIndex[kShotCameraEventSlot14] == v1)
+                        ConfigureMode(kCameraWalkView27, 1);
                 }
                 break;
             }
             }
         }
     }
-    if (AsCCameraWork(p)->secondEventFrame < kFloat_0_CameraWork) return;
-    if (AsCCameraWork(p)->action == kCameraAction10) {
-        if (!p[0x1a2]) { CCameraWork_ConfigureMode(self, kCameraAction0, 1); return; }
+    if (secondEventFrame < kFloat_0_CameraWork)
+        return;
+    if (action == kCameraAction10) {
+        if (!unk_1A2) {
+            ConfigureMode(kCameraAction0, 1);
+            return;
+        }
         void* result = g_taskManager ? Object_GetChild(g_taskManager) : 0;
         void* event = TaskActorTable_FindByName(result, cameraWorkStrings.Caddie);
         if (event) {
@@ -1870,37 +2491,57 @@ void CCameraWork_SelectShotCameraMode(void* self, int boostSelectionChance) {
             if (event) {
                 ((Evt_*)event)->v9(evt);
             }
-            if (!returned || !((CameraActorResponse*)returned)->cameraAllowed) CCameraWork_ConfigureMode(self, kCameraAction0, 1);
+            if (!returned || !((CameraActorResponse*)returned)->cameraAllowed)
+                ConfigureMode(kCameraAction0, 1);
         }
     }
     // Phase 3: locate cut-state 2, then choose a fallback from the available frame intervals.
-    for (AsCCameraWork(p)->cutoffFrame = 0; AsCCameraWork(p)->cutoffFrame < (int)AsCCameraWork(p)->trajectoryLastFrame; ++AsCCameraWork(p)->cutoffFrame) {
-        int idx = AsCCameraWork(p)->cutoffFrame;
+    for (cutoffFrame = 0; cutoffFrame < (int)trajectoryLastFrame; ++cutoffFrame) {
+        int idx = cutoffFrame;
         void* cam = GolfBall__Fv();
-        void* sel = PreData__9CGolfBallFi(cam, idx);
-        if (sel && ((CameraTrajectorySample*)sel)->cameraCutState == kShotCameraCutSampleState) break;
+        void* sel = ns1::PreData__9CGolfBallFi(cam, idx);
+        if (sel && ((CameraTrajectorySample*)sel)->cameraCutState == kShotCameraCutSampleState)
+            break;
     }
-    int step = AsCCameraWork(p)->cutoffFrame;
-    if (step < (int)AsCCameraWork(p)->secondEventFrame) {
-        (*(int*)&AsCCameraWork(p)->actionFlags) |= kCameraCutAtEvent;
-        if ((float)step - AsCCameraWork(p)->motionStartFrame < kFloat_60_CameraWork) { CCameraWork_ConfigureMode(self, kCameraCutoffBisectorView, 1); return; }
-        int mode = AsCCameraWork(p)->action;
-        if (mode == kCameraSecondEventView || mode == kCameraSecondEventAlternateView) CCameraWork_ConfigureMode(self, kCameraTrajectorySideMidpointView, 1);
+    int step = cutoffFrame;
+    if (step < (int)secondEventFrame) {
+        (*(int*)&actionFlags) |= kCameraCutAtEvent;
+        if ((float)step - motionStartFrame < kFloat_60_CameraWork) {
+            ConfigureMode(kCameraCutoffBisectorView, 1);
+            return;
+        }
+        int mode = action;
+        if (mode == kCameraSecondEventView || mode == kCameraSecondEventAlternateView)
+            ConfigureMode(kCameraTrajectorySideMidpointView, 1);
         return;
     }
-    if (AsCCameraWork(p)->secondEventFrame - AsCCameraWork(p)->motionStartFrame < kFloat_60_CameraWork || AsCCameraWork(p)->firstEventFrame - AsCCameraWork(p)->motionStartFrame < kFloat_30_0) { CCameraWork_ConfigureMode(self, kCameraTrajectorySideMidpointView, 1); return; }
-    if (AsCCameraWork(p)->secondEventFrame - AsCCameraWork(p)->motionStartFrame < kFloat_90_CameraWork) {
-        if (SharedDoc_IsPlayerFlag0Set(AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer)) { CCameraWork_ConfigureMode(self, kCameraTrajectorySideMidpointView, 1); return; }
-        unsigned int u = (*(unsigned int*)&AsCCameraWork(p)->randomValue);
+    if (secondEventFrame - motionStartFrame < kFloat_60_CameraWork ||
+        firstEventFrame - motionStartFrame < kFloat_30_0) {
+        ConfigureMode(kCameraTrajectorySideMidpointView, 1);
+        return;
+    }
+    if (secondEventFrame - motionStartFrame < kFloat_90_CameraWork) {
+        if (SharedDoc_IsPlayerFlag0Set(AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer)) {
+            ConfigureMode(kCameraTrajectorySideMidpointView, 1);
+            return;
+        }
+        unsigned int u = (*(unsigned int*)&randomValue);
         unsigned int s = u >> 31;
         unsigned int lo = u & 1u;
         unsigned int r = (lo ^ s) - s;
         switch (r) {
-        case 0: CCameraWork_ConfigureMode(self, kCameraSecondEventView, 1); break;
-        case 1: CCameraWork_ConfigureMode(self, kCameraTrajectorySideMidpointView, 1); break;
+        case 0:
+            ConfigureMode(kCameraSecondEventView, 1);
+            break;
+        case 1:
+            ConfigureMode(kCameraTrajectorySideMidpointView, 1);
+            break;
         }
     }
 }
+
+namespace ns1 {
+extern "C" {
 
 // Build four cubic Bezier control points for the selected shot-camera action.
 // Writes curveControlPoints[0..11] as four world-space XYZ points; unsupported action
@@ -2015,7 +2656,11 @@ struct CameraCurveScratch {
 };
 typedef char CameraCurveScratch_size[(sizeof(CameraCurveScratch) == 1200) ? 1 : -1];
 
-enum CameraCurveEventSlot { kCurveFirstEventSlot = 2, kCurveSecondEventSlot = 1, kCurveTrailingEventSlot = 8 };
+enum CameraCurveEventSlot {
+    kCurveFirstEventSlot = 2,
+    kCurveSecondEventSlot = 1,
+    kCurveTrailingEventSlot = 8
+};
 // Current-hole record: copy XYZ bit patterns with the original integer loads.
 // The first three words are the tee position; the next three supply the hole position.
 struct CameraCurveHoleRecord {
@@ -2027,197 +2672,283 @@ typedef char CameraCurveHoleRecord_size[(sizeof(CameraCurveHoleRecord) == 32) ? 
 
 // Blend the captured pose through raised event/side controls toward the final sample.
 // Scratch is caller-owned; samples and camera state are borrowed world-space inputs.
-static inline void BuildCapturedToEventCurve(
-    unsigned char* cameraBytes,
-    unsigned char* ballBytes,
-    int firstEventSample,
-    int trailingEventSample,
-    CameraCurveScratch& scratch) {
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0], (unsigned char*)&AsCCameraWork(cameraBytes)->transform[9]);
-    __ml__FRC7WVectorf(&scratch.halfLaunchVelocity, ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, 0))->velocity, kFloat_0_5_CameraWork);
+static inline void BuildCapturedToEventCurve(unsigned char* cameraBytes, unsigned char* ballBytes, int firstEventSample,
+                                             int trailingEventSample, CameraCurveScratch& scratch) {
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0],
+                              (unsigned char*)&AsCCameraWork(cameraBytes)->transform[9]);
+    __ml__FRC7WVectorf(&scratch.halfLaunchVelocity,
+                       ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, 0))->velocity, kFloat_0_5_CameraWork);
     __as__7WVectorFRC7WVector(&scratch.velocityWork, &scratch.halfLaunchVelocity);
-    __pl__FRC7WVectorRC7WVector(&scratch.firstEventLead, PreData__9CGolfBallFi(ballBytes, firstEventSample), &scratch.velocityWork);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3], &scratch.firstEventLead);
-    scratch.randomSideAxis.y = AsCCameraWork(cameraBytes)->randomValue % 2 ? kFloat_1_CameraWork : kFloat_neg1_CameraWork;
-    scratch.randomSideAxis.x = kFloat_0_CameraWork; scratch.randomSideAxis.z = kFloat_0_CameraWork;
+    __pl__FRC7WVectorRC7WVector(&scratch.firstEventLead, PreData__9CGolfBallFi(ballBytes, firstEventSample),
+                                &scratch.velocityWork);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3],
+                              &scratch.firstEventLead);
+    scratch.randomSideAxis.y =
+        AsCCameraWork(cameraBytes)->randomValue % 2 ? kFloat_1_CameraWork : kFloat_neg1_CameraWork;
+    scratch.randomSideAxis.x = kFloat_0_CameraWork;
+    scratch.randomSideAxis.z = kFloat_0_CameraWork;
     Vector_CrossProduct(&scratch.launchSideCross, &scratch.randomSideAxis, &scratch.velocityWork);
     __ml__FRC7WVectorf(&scratch.scaledLaunchSide, Normalize__7WVectorFv(&scratch.launchSideCross), kFloat_30_0);
     __as__7WVectorFRC7WVector(&scratch.lateralOffset, &scratch.scaledLaunchSide);
-    scratch.trailingEventRise.x = kFloat_0_CameraWork; scratch.trailingEventRise.y = kFloat_25_CameraWork; scratch.trailingEventRise.z = kFloat_0_CameraWork;
-    __pl__FRC7WVectorRC7WVector(&scratch.raisedTrailingEvent, PreData__9CGolfBallFi(ballBytes, trailingEventSample), &scratch.trailingEventRise);
-    __pl__FRC7WVectorRC7WVector(&scratch.trailingEventSidePosition, &scratch.raisedTrailingEvent, &scratch.lateralOffset);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6], &scratch.trailingEventSidePosition);
+    scratch.trailingEventRise.x = kFloat_0_CameraWork;
+    scratch.trailingEventRise.y = kFloat_25_CameraWork;
+    scratch.trailingEventRise.z = kFloat_0_CameraWork;
+    __pl__FRC7WVectorRC7WVector(&scratch.raisedTrailingEvent, PreData__9CGolfBallFi(ballBytes, trailingEventSample),
+                                &scratch.trailingEventRise);
+    __pl__FRC7WVectorRC7WVector(&scratch.trailingEventSidePosition, &scratch.raisedTrailingEvent,
+                                &scratch.lateralOffset);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6],
+                              &scratch.trailingEventSidePosition);
     scratch.finishApproachWork.y = kFloat_0_CameraWork;
     void* finalSample = PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount);
     __mi__FRC7WVectorRC7WVector(&scratch.launchMinusFinish, (Vec3*)PreData__9CGolfBallFi(ballBytes, 0), finalSample);
     __as__7WVectorFRC7WVector(&scratch.launchMinusFinishXZ, &scratch.launchMinusFinish);
     scratch.launchMinusFinishXZ.y = kFloat_0_CameraWork;
     if (Vec3_DotProduct(&scratch.launchMinusFinishXZ, &scratch.finishApproachWork) > kFloat_0_CameraWork) {
-        __ml__FRC7WVectorf(&scratch.positiveFinishApproach, Normalize__7WVectorFv(&scratch.finishApproachWork), kFloat_15_CameraWork);
+        __ml__FRC7WVectorf(&scratch.positiveFinishApproach, Normalize__7WVectorFv(&scratch.finishApproachWork),
+                           kFloat_15_CameraWork);
         __as__7WVectorFRC7WVector(&scratch.finishApproachWork, &scratch.positiveFinishApproach);
     } else {
-        __ml__FRC7WVectorf(&scratch.negativeFinishApproach, Normalize__7WVectorFv(&scratch.finishApproachWork), kFloat_neg15_CameraWork);
+        __ml__FRC7WVectorf(&scratch.negativeFinishApproach, Normalize__7WVectorFv(&scratch.finishApproachWork),
+                           kFloat_neg15_CameraWork);
         __as__7WVectorFRC7WVector(&scratch.finishApproachWork, &scratch.negativeFinishApproach);
     }
     scratch.finishApproachWork.y += kFloat_5_CameraWork;
     __ml__FRC7WVectorf(&scratch.extendedFinishApproach, &scratch.finishApproachWork, kFloat_5_CameraWork);
-    __pl__FRC7WVectorRC7WVector(&scratch.capturedCurveFinish, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), &scratch.extendedFinishApproach);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.capturedCurveFinish);
+    __pl__FRC7WVectorRC7WVector(&scratch.capturedCurveFinish,
+                                PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                &scratch.extendedFinishApproach);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                              &scratch.capturedCurveFinish);
 }
 
 // Lead the start/event positions with their velocities and finish above the final sample.
 // All vector scratch and curve controls belong to the caller; positions use world XYZ.
-static inline void BuildVelocityLeadCurve(
-    unsigned char* cameraBytes,
-    unsigned char* ballBytes,
-    int firstEventSample,
-    int trailingEventSample,
-    int startSample,
-    CameraCurveScratch& scratch) {
-    __as__7WVectorFRC7WVector(&scratch.velocityWork, ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, startSample))->velocity);
+static inline void BuildVelocityLeadCurve(unsigned char* cameraBytes, unsigned char* ballBytes, int firstEventSample,
+                                          int trailingEventSample, int startSample, CameraCurveScratch& scratch) {
+    __as__7WVectorFRC7WVector(&scratch.velocityWork,
+                              ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, startSample))->velocity);
     __ml__FRC7WVectorf(&scratch.scaledStartVelocity, &scratch.velocityWork, kFloat_0_8_CameraWork);
-    __pl__FRC7WVectorRC7WVector(&scratch.startVelocityLead, PreData__9CGolfBallFi(ballBytes, startSample), &scratch.scaledStartVelocity);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0], &scratch.startVelocityLead);
-    __as__7WVectorFRC7WVector(&scratch.velocityWork, ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, firstEventSample))->velocity);
-    scratch.firstEventRise.x = kFloat_0_CameraWork; scratch.firstEventRise.y = kFloat_50_CameraWork; scratch.firstEventRise.z = kFloat_0_CameraWork;
+    __pl__FRC7WVectorRC7WVector(&scratch.startVelocityLead, PreData__9CGolfBallFi(ballBytes, startSample),
+                                &scratch.scaledStartVelocity);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0],
+                              &scratch.startVelocityLead);
+    __as__7WVectorFRC7WVector(&scratch.velocityWork,
+                              ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, firstEventSample))->velocity);
+    scratch.firstEventRise.x = kFloat_0_CameraWork;
+    scratch.firstEventRise.y = kFloat_50_CameraWork;
+    scratch.firstEventRise.z = kFloat_0_CameraWork;
     __ml__FRC7WVectorf(&scratch.scaledFirstEventVelocity, &scratch.velocityWork, kFloat_2_CameraWork);
-    __pl__FRC7WVectorRC7WVector(&scratch.raisedFirstEvent, PreData__9CGolfBallFi(ballBytes, firstEventSample), &scratch.firstEventRise);
-    __pl__FRC7WVectorRC7WVector(&scratch.raisedFirstEventLead, &scratch.raisedFirstEvent, &scratch.scaledFirstEventVelocity);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3], &scratch.raisedFirstEventLead);
-    __as__7WVectorFRC7WVector(&scratch.velocityWork, ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, trailingEventSample))->velocity);
-    scratch.trailingSampleRise.x = kFloat_0_CameraWork; scratch.trailingSampleRise.y = kFloat_10_cameraWork; scratch.trailingSampleRise.z = kFloat_0_CameraWork;
-    __pl__FRC7WVectorRC7WVector(&scratch.raisedTrailingSample, PreData__9CGolfBallFi(ballBytes, trailingEventSample), &scratch.trailingSampleRise);
+    __pl__FRC7WVectorRC7WVector(&scratch.raisedFirstEvent, PreData__9CGolfBallFi(ballBytes, firstEventSample),
+                                &scratch.firstEventRise);
+    __pl__FRC7WVectorRC7WVector(&scratch.raisedFirstEventLead, &scratch.raisedFirstEvent,
+                                &scratch.scaledFirstEventVelocity);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3],
+                              &scratch.raisedFirstEventLead);
+    __as__7WVectorFRC7WVector(
+        &scratch.velocityWork,
+        ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, trailingEventSample))->velocity);
+    scratch.trailingSampleRise.x = kFloat_0_CameraWork;
+    scratch.trailingSampleRise.y = kFloat_10_cameraWork;
+    scratch.trailingSampleRise.z = kFloat_0_CameraWork;
+    __pl__FRC7WVectorRC7WVector(&scratch.raisedTrailingSample, PreData__9CGolfBallFi(ballBytes, trailingEventSample),
+                                &scratch.trailingSampleRise);
     __pl__FRC7WVectorRC7WVector(&scratch.trailingVelocityLead, &scratch.raisedTrailingSample, &scratch.velocityWork);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6], &scratch.trailingVelocityLead);
-    scratch.finalSampleRise.x = kFloat_0_CameraWork; scratch.finalSampleRise.y = kFloat_10_cameraWork; scratch.finalSampleRise.z = kFloat_0_CameraWork;
-    __pl__FRC7WVectorRC7WVector(&scratch.raisedFinalSample, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), &scratch.finalSampleRise);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.raisedFinalSample);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6],
+                              &scratch.trailingVelocityLead);
+    scratch.finalSampleRise.x = kFloat_0_CameraWork;
+    scratch.finalSampleRise.y = kFloat_10_cameraWork;
+    scratch.finalSampleRise.z = kFloat_0_CameraWork;
+    __pl__FRC7WVectorRC7WVector(&scratch.raisedFinalSample,
+                                PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                &scratch.finalSampleRise);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                              &scratch.raisedFinalSample);
 }
 
 // Place controls to one side of the trajectory, extending the endpoint on recovery.
 // All vector scratch and curve controls belong to the caller; positions use world XYZ.
-static inline void BuildLateralTrajectoryCurve(
-    unsigned char* cameraBytes,
-    unsigned char* ballBytes,
-    int firstEventSample,
-    int trailingEventSample,
-    int startSample,
-    CameraCurveScratch& scratch) {
-    __as__7WVectorFRC7WVector(&scratch.velocityWork, ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, 0))->velocity);
-    scratch.trajectorySideAxis.y = AsCCameraWork(cameraBytes)->randomValue % 2 ? kFloat_1_CameraWork : kFloat_neg1_CameraWork;
-    scratch.trajectorySideAxis.x = kFloat_0_CameraWork; scratch.trajectorySideAxis.z = kFloat_0_CameraWork;
+static inline void BuildLateralTrajectoryCurve(unsigned char* cameraBytes, unsigned char* ballBytes,
+                                               int firstEventSample, int trailingEventSample, int startSample,
+                                               CameraCurveScratch& scratch) {
+    __as__7WVectorFRC7WVector(&scratch.velocityWork,
+                              ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, 0))->velocity);
+    scratch.trajectorySideAxis.y =
+        AsCCameraWork(cameraBytes)->randomValue % 2 ? kFloat_1_CameraWork : kFloat_neg1_CameraWork;
+    scratch.trajectorySideAxis.x = kFloat_0_CameraWork;
+    scratch.trajectorySideAxis.z = kFloat_0_CameraWork;
     Vector_CrossProduct(&scratch.trajectorySideCross, &scratch.trajectorySideAxis, &scratch.velocityWork);
-    __ml__FRC7WVectorf(&scratch.scaledTrajectorySide, Normalize__7WVectorFv(&scratch.trajectorySideCross), kFloat_25_CameraWork);
+    __ml__FRC7WVectorf(&scratch.scaledTrajectorySide, Normalize__7WVectorFv(&scratch.trajectorySideCross),
+                       kFloat_25_CameraWork);
     __as__7WVectorFRC7WVector(&scratch.lateralOffset, &scratch.scaledTrajectorySide);
-    __pl__FRC7WVectorRC7WVector(&scratch.sideStartPosition, PreData__9CGolfBallFi(ballBytes, startSample), &scratch.lateralOffset);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0], &scratch.sideStartPosition);
-    __as__7WVectorFRC7WVector(&scratch.velocityWork, ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, firstEventSample))->velocity);
-    scratch.sideFirstEventRise.x = kFloat_0_CameraWork; scratch.sideFirstEventRise.y = kFloat_50_CameraWork; scratch.sideFirstEventRise.z = kFloat_0_CameraWork;
+    __pl__FRC7WVectorRC7WVector(&scratch.sideStartPosition, PreData__9CGolfBallFi(ballBytes, startSample),
+                                &scratch.lateralOffset);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0],
+                              &scratch.sideStartPosition);
+    __as__7WVectorFRC7WVector(&scratch.velocityWork,
+                              ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, firstEventSample))->velocity);
+    scratch.sideFirstEventRise.x = kFloat_0_CameraWork;
+    scratch.sideFirstEventRise.y = kFloat_50_CameraWork;
+    scratch.sideFirstEventRise.z = kFloat_0_CameraWork;
     __ml__FRC7WVectorf(&scratch.sideFirstEventVelocity, &scratch.velocityWork, kFloat_1_2_CameraWork);
-    __pl__FRC7WVectorRC7WVector(&scratch.sideRaisedFirstEvent, PreData__9CGolfBallFi(ballBytes, firstEventSample), &scratch.sideFirstEventRise);
-    __pl__FRC7WVectorRC7WVector(&scratch.raisedFirstEventVelocityLead, &scratch.sideRaisedFirstEvent, &scratch.sideFirstEventVelocity);
-    __pl__FRC7WVectorRC7WVector(&scratch.sideFirstControl, &scratch.raisedFirstEventVelocityLead, &scratch.lateralOffset);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3], &scratch.sideFirstControl);
-    __as__7WVectorFRC7WVector(&scratch.velocityWork, ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, trailingEventSample))->velocity);
+    __pl__FRC7WVectorRC7WVector(&scratch.sideRaisedFirstEvent, PreData__9CGolfBallFi(ballBytes, firstEventSample),
+                                &scratch.sideFirstEventRise);
+    __pl__FRC7WVectorRC7WVector(&scratch.raisedFirstEventVelocityLead, &scratch.sideRaisedFirstEvent,
+                                &scratch.sideFirstEventVelocity);
+    __pl__FRC7WVectorRC7WVector(&scratch.sideFirstControl, &scratch.raisedFirstEventVelocityLead,
+                                &scratch.lateralOffset);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3],
+                              &scratch.sideFirstControl);
+    __as__7WVectorFRC7WVector(
+        &scratch.velocityWork,
+        ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, trailingEventSample))->velocity);
     __ml__FRC7WVectorf(&scratch.scaledTrailingEventVelocity, &scratch.velocityWork, kFloat_1_5_GolfCamera);
-    __pl__FRC7WVectorRC7WVector(&scratch.trailingEventVelocityLead, PreData__9CGolfBallFi(ballBytes, trailingEventSample), &scratch.scaledTrailingEventVelocity);
+    __pl__FRC7WVectorRC7WVector(&scratch.trailingEventVelocityLead,
+                                PreData__9CGolfBallFi(ballBytes, trailingEventSample),
+                                &scratch.scaledTrailingEventVelocity);
     __pl__FRC7WVectorRC7WVector(&scratch.sideSecondControl, &scratch.trailingEventVelocityLead, &scratch.lateralOffset);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6], &scratch.sideSecondControl);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6],
+                              &scratch.sideSecondControl);
     if (((CGolfBall*)ballBytes)->m_recoveryRequired) {
-        scratch.recoveryFinishRise.x = kFloat_0_CameraWork; scratch.recoveryFinishRise.y = kFloat_30_0; scratch.recoveryFinishRise.z = kFloat_0_CameraWork;
+        scratch.recoveryFinishRise.x = kFloat_0_CameraWork;
+        scratch.recoveryFinishRise.y = kFloat_30_0;
+        scratch.recoveryFinishRise.z = kFloat_0_CameraWork;
         __ml__FRC7WVectorf(&scratch.extendedRecoverySide, &scratch.lateralOffset, kFloat_5_CameraWork);
-        __pl__FRC7WVectorRC7WVector(&scratch.raisedRecoveryFinish, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), &scratch.recoveryFinishRise);
-        __pl__FRC7WVectorRC7WVector(&scratch.recoverySideFinish, &scratch.raisedRecoveryFinish, &scratch.extendedRecoverySide);
-        __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.recoverySideFinish);
+        __pl__FRC7WVectorRC7WVector(&scratch.raisedRecoveryFinish,
+                                    PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                    &scratch.recoveryFinishRise);
+        __pl__FRC7WVectorRC7WVector(&scratch.recoverySideFinish, &scratch.raisedRecoveryFinish,
+                                    &scratch.extendedRecoverySide);
+        __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                                  &scratch.recoverySideFinish);
     } else {
-        scratch.normalFinishRise.x = kFloat_0_CameraWork; scratch.normalFinishRise.y = kFloat_10_cameraWork; scratch.normalFinishRise.z = kFloat_0_CameraWork;
-        __pl__FRC7WVectorRC7WVector(&scratch.raisedNormalFinish, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), &scratch.normalFinishRise);
+        scratch.normalFinishRise.x = kFloat_0_CameraWork;
+        scratch.normalFinishRise.y = kFloat_10_cameraWork;
+        scratch.normalFinishRise.z = kFloat_0_CameraWork;
+        __pl__FRC7WVectorRC7WVector(&scratch.raisedNormalFinish,
+                                    PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                    &scratch.normalFinishRise);
         __pl__FRC7WVectorRC7WVector(&scratch.normalSideFinish, &scratch.raisedNormalFinish, &scratch.lateralOffset);
-        __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.normalSideFinish);
+        __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                                  &scratch.normalSideFinish);
     }
 }
 
 // Follow the last portion of the trajectory from the second event to its final frame.
 // All vector scratch and curve controls belong to the caller; positions use world XYZ.
-static inline void BuildSecondEventTailCurve(
-    unsigned char* cameraBytes,
-    unsigned char* ballBytes,
-    int secondEventSample,
-    CameraCurveScratch& scratch) {
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0], PreData__9CGolfBallFi(ballBytes, secondEventSample));
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3], PreData__9CGolfBallFi(ballBytes, secondEventSample + (int)(kFloat_0_5_CameraWork * (float)(((CGolfBall*)ballBytes)->m_preDataCount - secondEventSample))));
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6], PreData__9CGolfBallFi(ballBytes, secondEventSample + (int)(kFloat_0_75_CameraWork * (float)(((CGolfBall*)ballBytes)->m_preDataCount - secondEventSample))));
-    scratch.tailFinishRise.x = kFloat_0_CameraWork; scratch.tailFinishRise.y = kFloat_3_CameraWork; scratch.tailFinishRise.z = kFloat_0_CameraWork;
-    __pl__FRC7WVectorRC7WVector(&scratch.raisedTailFinish, PreData__9CGolfBallFi(ballBytes, (int)AsCCameraWork(cameraBytes)->trajectoryLastFrame), &scratch.tailFinishRise);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.raisedTailFinish);
+static inline void BuildSecondEventTailCurve(unsigned char* cameraBytes, unsigned char* ballBytes,
+                                             int secondEventSample, CameraCurveScratch& scratch) {
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0],
+                              PreData__9CGolfBallFi(ballBytes, secondEventSample));
+    __as__7WVectorFRC7WVector(
+        (unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3],
+        PreData__9CGolfBallFi(ballBytes, secondEventSample + (int)(kFloat_0_5_CameraWork *
+                                                                   (float)(((CGolfBall*)ballBytes)->m_preDataCount -
+                                                                           secondEventSample))));
+    __as__7WVectorFRC7WVector(
+        (unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6],
+        PreData__9CGolfBallFi(ballBytes, secondEventSample + (int)(kFloat_0_75_CameraWork *
+                                                                   (float)(((CGolfBall*)ballBytes)->m_preDataCount -
+                                                                           secondEventSample))));
+    scratch.tailFinishRise.x = kFloat_0_CameraWork;
+    scratch.tailFinishRise.y = kFloat_3_CameraWork;
+    scratch.tailFinishRise.z = kFloat_0_CameraWork;
+    __pl__FRC7WVectorRC7WVector(&scratch.raisedTailFinish,
+                                PreData__9CGolfBallFi(ballBytes, (int)AsCCameraWork(cameraBytes)->trajectoryLastFrame),
+                                &scratch.tailFinishRise);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                              &scratch.raisedTailFinish);
 }
 
 // Blend a captured pose through lateral controls; choose the endpoint by recovery and approach direction.
 // All vector scratch and curve controls belong to the caller; positions use world XYZ.
-static inline void BuildCapturedSideCurve(
-    unsigned char* cameraBytes,
-    unsigned char* ballBytes,
-    int firstEventSample,
-    int trailingEventSample,
-    CameraCurveScratch& scratch) {
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0], (unsigned char*)&AsCCameraWork(cameraBytes)->transform[9]);
-    __as__7WVectorFRC7WVector(&scratch.velocityWork, ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, 0))->velocity);
-    scratch.capturedSideAxis.y = AsCCameraWork(cameraBytes)->randomValue % 2 ? kFloat_1_CameraWork : kFloat_neg1_CameraWork;
-    scratch.capturedSideAxis.x = kFloat_0_CameraWork; scratch.capturedSideAxis.z = kFloat_0_CameraWork;
+static inline void BuildCapturedSideCurve(unsigned char* cameraBytes, unsigned char* ballBytes, int firstEventSample,
+                                          int trailingEventSample, CameraCurveScratch& scratch) {
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0],
+                              (unsigned char*)&AsCCameraWork(cameraBytes)->transform[9]);
+    __as__7WVectorFRC7WVector(&scratch.velocityWork,
+                              ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, 0))->velocity);
+    scratch.capturedSideAxis.y =
+        AsCCameraWork(cameraBytes)->randomValue % 2 ? kFloat_1_CameraWork : kFloat_neg1_CameraWork;
+    scratch.capturedSideAxis.x = kFloat_0_CameraWork;
+    scratch.capturedSideAxis.z = kFloat_0_CameraWork;
     Vector_CrossProduct(&scratch.capturedSideCross, &scratch.capturedSideAxis, &scratch.velocityWork);
     __ml__FRC7WVectorf(&scratch.scaledCapturedSide, Normalize__7WVectorFv(&scratch.capturedSideCross), kFloat_30_0);
     __as__7WVectorFRC7WVector(&scratch.lateralOffset, &scratch.scaledCapturedSide);
-    scratch.capturedFirstEventRise.x = kFloat_0_CameraWork; scratch.capturedFirstEventRise.y = kFloat_25_CameraWork; scratch.capturedFirstEventRise.z = kFloat_0_CameraWork;
+    scratch.capturedFirstEventRise.x = kFloat_0_CameraWork;
+    scratch.capturedFirstEventRise.y = kFloat_25_CameraWork;
+    scratch.capturedFirstEventRise.z = kFloat_0_CameraWork;
     __ml__FRC7WVectorf(&scratch.capturedLaunchLead, &scratch.velocityWork, kFloat_2_5_CameraWork);
-    __pl__FRC7WVectorRC7WVector(&scratch.raisedCapturedFirstEvent, PreData__9CGolfBallFi(ballBytes, firstEventSample), &scratch.capturedFirstEventRise);
-    __pl__FRC7WVectorRC7WVector(&scratch.capturedFirstEventLead, &scratch.raisedCapturedFirstEvent, &scratch.capturedLaunchLead);
+    __pl__FRC7WVectorRC7WVector(&scratch.raisedCapturedFirstEvent, PreData__9CGolfBallFi(ballBytes, firstEventSample),
+                                &scratch.capturedFirstEventRise);
+    __pl__FRC7WVectorRC7WVector(&scratch.capturedFirstEventLead, &scratch.raisedCapturedFirstEvent,
+                                &scratch.capturedLaunchLead);
     __pl__FRC7WVectorRC7WVector(&scratch.capturedFirstControl, &scratch.capturedFirstEventLead, &scratch.lateralOffset);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3], &scratch.capturedFirstControl);
-    __as__7WVectorFRC7WVector(&scratch.velocityWork, ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, firstEventSample))->velocity);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3],
+                              &scratch.capturedFirstControl);
+    __as__7WVectorFRC7WVector(&scratch.velocityWork,
+                              ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, firstEventSample))->velocity);
     __ml__FRC7WVectorf(&scratch.scaledCapturedEventVelocity, &scratch.velocityWork, kFloat_1_5_GolfCamera);
-    __pl__FRC7WVectorRC7WVector(&scratch.capturedTrailingEventLead, PreData__9CGolfBallFi(ballBytes, trailingEventSample), &scratch.scaledCapturedEventVelocity);
-    __pl__FRC7WVectorRC7WVector(&scratch.capturedSecondControl, &scratch.capturedTrailingEventLead, &scratch.lateralOffset);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6], &scratch.capturedSecondControl);
+    __pl__FRC7WVectorRC7WVector(&scratch.capturedTrailingEventLead,
+                                PreData__9CGolfBallFi(ballBytes, trailingEventSample),
+                                &scratch.scaledCapturedEventVelocity);
+    __pl__FRC7WVectorRC7WVector(&scratch.capturedSecondControl, &scratch.capturedTrailingEventLead,
+                                &scratch.lateralOffset);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6],
+                              &scratch.capturedSecondControl);
     if (((CGolfBall*)ballBytes)->m_recoveryRequired) {
-        scratch.capturedRecoveryRise.x = kFloat_0_CameraWork; scratch.capturedRecoveryRise.y = kFloat_5_CameraWork; scratch.capturedRecoveryRise.z = kFloat_0_CameraWork;
+        scratch.capturedRecoveryRise.x = kFloat_0_CameraWork;
+        scratch.capturedRecoveryRise.y = kFloat_5_CameraWork;
+        scratch.capturedRecoveryRise.z = kFloat_0_CameraWork;
         __ml__FRC7WVectorf(&scratch.extendedHoleApproach, &scratch.finishApproachWork, kFloat_40_cameraWork);
-        __pl__FRC7WVectorRC7WVector(&scratch.raisedCapturedRecoveryFinish, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), &scratch.capturedRecoveryRise);
-        __pl__FRC7WVectorRC7WVector(&scratch.capturedRecoveryFinish, &scratch.raisedCapturedRecoveryFinish, &scratch.extendedHoleApproach);
-        __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.capturedRecoveryFinish);
+        __pl__FRC7WVectorRC7WVector(&scratch.raisedCapturedRecoveryFinish,
+                                    PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                    &scratch.capturedRecoveryRise);
+        __pl__FRC7WVectorRC7WVector(&scratch.capturedRecoveryFinish, &scratch.raisedCapturedRecoveryFinish,
+                                    &scratch.extendedHoleApproach);
+        __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                                  &scratch.capturedRecoveryFinish);
     } else {
         void* finalSample = PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount);
-        __mi__FRC7WVectorRC7WVector(&scratch.capturedLaunchMinusFinish, (Vec3*)PreData__9CGolfBallFi(ballBytes, 0), finalSample);
+        __mi__FRC7WVectorRC7WVector(&scratch.capturedLaunchMinusFinish, (Vec3*)PreData__9CGolfBallFi(ballBytes, 0),
+                                    finalSample);
         __as__7WVectorFRC7WVector(&scratch.capturedLaunchMinusFinishXZ, &scratch.capturedLaunchMinusFinish);
         scratch.capturedLaunchMinusFinishXZ.y = kFloat_0_CameraWork;
         if (Vec3_DotProduct(&scratch.capturedLaunchMinusFinishXZ, &scratch.finishApproachWork) > kFloat_0_CameraWork) {
-            scratch.behindApproachRise.x = kFloat_0_CameraWork; scratch.behindApproachRise.y = kFloat_10_cameraWork; scratch.behindApproachRise.z = kFloat_0_CameraWork;
+            scratch.behindApproachRise.x = kFloat_0_CameraWork;
+            scratch.behindApproachRise.y = kFloat_10_cameraWork;
+            scratch.behindApproachRise.z = kFloat_0_CameraWork;
             __ml__FRC7WVectorf(&scratch.behindApproachOffset, &scratch.finishApproachWork, kCameraShared20);
-            __pl__FRC7WVectorRC7WVector(&scratch.raisedFinishBehindApproach, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), &scratch.behindApproachRise);
-            __mi__FRC7WVectorRC7WVector(&scratch.finishBehindHoleApproach, &scratch.raisedFinishBehindApproach, &scratch.behindApproachOffset);
-            __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.finishBehindHoleApproach);
+            __pl__FRC7WVectorRC7WVector(&scratch.raisedFinishBehindApproach,
+                                        PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                        &scratch.behindApproachRise);
+            __mi__FRC7WVectorRC7WVector(&scratch.finishBehindHoleApproach, &scratch.raisedFinishBehindApproach,
+                                        &scratch.behindApproachOffset);
+            __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                                      &scratch.finishBehindHoleApproach);
         } else {
-            scratch.aheadApproachRise.x = kFloat_0_CameraWork; scratch.aheadApproachRise.y = kFloat_10_cameraWork; scratch.aheadApproachRise.z = kFloat_0_CameraWork;
+            scratch.aheadApproachRise.x = kFloat_0_CameraWork;
+            scratch.aheadApproachRise.y = kFloat_10_cameraWork;
+            scratch.aheadApproachRise.z = kFloat_0_CameraWork;
             __ml__FRC7WVectorf(&scratch.aheadApproachOffset, &scratch.finishApproachWork, kCameraShared20);
-            __pl__FRC7WVectorRC7WVector(&scratch.raisedFinishAheadOfApproach, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), &scratch.aheadApproachRise);
-            __pl__FRC7WVectorRC7WVector(&scratch.finishAheadOfHoleApproach, &scratch.raisedFinishAheadOfApproach, &scratch.aheadApproachOffset);
-            __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.finishAheadOfHoleApproach);
+            __pl__FRC7WVectorRC7WVector(&scratch.raisedFinishAheadOfApproach,
+                                        PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                        &scratch.aheadApproachRise);
+            __pl__FRC7WVectorRC7WVector(&scratch.finishAheadOfHoleApproach, &scratch.raisedFinishAheadOfApproach,
+                                        &scratch.aheadApproachOffset);
+            __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                                      &scratch.finishAheadOfHoleApproach);
         }
     }
 }
 
 // Use random-side raised event controls and a shortened lateral endpoint offset.
 // All vector scratch and curve controls belong to the caller; positions use world XYZ.
-static inline void BuildRandomOffsetCurve(
-    unsigned char* cameraBytes,
-    unsigned char* ballBytes,
-    int firstEventSample,
-    int trailingEventSample,
-    int& randomSideParity,
-    float& randomSideSign,
-    float& randomSideZ,
-    float& randomSideX,
-    CameraCurveScratch& scratch) {
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0], (unsigned char*)&AsCCameraWork(cameraBytes)->position[0]);
+static inline void BuildRandomOffsetCurve(unsigned char* cameraBytes, unsigned char* ballBytes, int firstEventSample,
+                                          int trailingEventSample, int& randomSideParity, float& randomSideSign,
+                                          float& randomSideZ, float& randomSideX, CameraCurveScratch& scratch) {
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0],
+                              (unsigned char*)&AsCCameraWork(cameraBytes)->position[0]);
     randomSideParity = AsCCameraWork(cameraBytes)->randomValue % 2;
     randomSideZ = kFloat_10_cameraWork * (randomSideParity ? kFloat_1_CameraWork : kFloat_neg1_CameraWork);
     randomSideSign = randomSideParity ? kFloat_1_CameraWork : kFloat_neg1_CameraWork;
@@ -2225,12 +2956,16 @@ static inline void BuildRandomOffsetCurve(
     scratch.randomFirstEventOffset.z = randomSideZ;
     scratch.randomFirstEventOffset.y = kFloat_50_CameraWork;
     scratch.randomFirstEventOffset.x = randomSideX;
-    __pl__FRC7WVectorRC7WVector(&scratch.randomFirstControl, PreData__9CGolfBallFi(ballBytes, firstEventSample), &scratch.randomFirstEventOffset);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3], &scratch.randomFirstControl);
+    __pl__FRC7WVectorRC7WVector(&scratch.randomFirstControl, PreData__9CGolfBallFi(ballBytes, firstEventSample),
+                                &scratch.randomFirstEventOffset);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3],
+                              &scratch.randomFirstControl);
     scratch.randomSideUp.y = AsCCameraWork(cameraBytes)->randomValue % 2 ? kFloat_1_CameraWork : kFloat_neg1_CameraWork;
-    scratch.randomSideUp.x = kFloat_0_CameraWork; scratch.randomSideUp.z = kFloat_0_CameraWork;
+    scratch.randomSideUp.x = kFloat_0_CameraWork;
+    scratch.randomSideUp.z = kFloat_0_CameraWork;
     Vector_CrossProduct(&scratch.randomSideCross, &scratch.randomSideUp, &scratch.finishApproachWork);
-    __ml__FRC7WVectorf(&scratch.scaledRandomSide, Normalize__7WVectorFv(&scratch.randomSideCross), kFloat_15_CameraWork);
+    __ml__FRC7WVectorf(&scratch.scaledRandomSide, Normalize__7WVectorFv(&scratch.randomSideCross),
+                       kFloat_15_CameraWork);
     __as__7WVectorFRC7WVector(&scratch.lateralOffset, &scratch.scaledRandomSide);
     randomSideParity = AsCCameraWork(cameraBytes)->randomValue % 2;
     randomSideZ = kFloat_10_cameraWork * (randomSideParity ? kFloat_1_CameraWork : kFloat_neg1_CameraWork);
@@ -2239,60 +2974,99 @@ static inline void BuildRandomOffsetCurve(
     scratch.randomTrailingOffset.z = randomSideZ;
     scratch.randomTrailingOffset.y = kFloat_25_CameraWork;
     scratch.randomTrailingOffset.x = randomSideX;
-    __pl__FRC7WVectorRC7WVector(&scratch.randomRaisedTrailingEvent, PreData__9CGolfBallFi(ballBytes, trailingEventSample), &scratch.randomTrailingOffset);
-    __pl__FRC7WVectorRC7WVector(&scratch.randomSecondControl, &scratch.randomRaisedTrailingEvent, &scratch.lateralOffset);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6], &scratch.randomSecondControl);
+    __pl__FRC7WVectorRC7WVector(&scratch.randomRaisedTrailingEvent,
+                                PreData__9CGolfBallFi(ballBytes, trailingEventSample), &scratch.randomTrailingOffset);
+    __pl__FRC7WVectorRC7WVector(&scratch.randomSecondControl, &scratch.randomRaisedTrailingEvent,
+                                &scratch.lateralOffset);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6],
+                              &scratch.randomSecondControl);
     __amu__7WVectorFf(&scratch.finishApproachWork, kFloat_neg15_CameraWork);
     __ml__FRC7WVectorf(&scratch.shortenedRandomSide, &scratch.lateralOffset, kFloat_0_3_CameraWork);
     __apl__7WVectorFRC7WVector(&scratch.finishApproachWork, &scratch.shortenedRandomSide);
     scratch.finishApproachWork.y += kFloat_3_CameraWork;
     if (((CGolfBall*)ballBytes)->m_recoveryRequired) {
         __ml__FRC7WVectorf(&scratch.extendedRandomRecoveryApproach, &scratch.finishApproachWork, kFloat_5_CameraWork);
-        __pl__FRC7WVectorRC7WVector(&scratch.randomRecoveryFinish, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), &scratch.extendedRandomRecoveryApproach);
-        __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.randomRecoveryFinish);
+        __pl__FRC7WVectorRC7WVector(&scratch.randomRecoveryFinish,
+                                    PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                    &scratch.extendedRandomRecoveryApproach);
+        __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                                  &scratch.randomRecoveryFinish);
     } else {
         __ml__FRC7WVectorf(&scratch.scaledRandomNormalApproach, &scratch.finishApproachWork, kFloat_3_CameraWork);
-        __pl__FRC7WVectorRC7WVector(&scratch.randomNormalFinish, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), &scratch.scaledRandomNormalApproach);
-        __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.randomNormalFinish);
+        __pl__FRC7WVectorRC7WVector(&scratch.randomNormalFinish,
+                                    PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                    &scratch.scaledRandomNormalApproach);
+        __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                                  &scratch.randomNormalFinish);
     }
 }
 
 // Cross the event interval with a wide lateral baseline and finish behind the final sample.
 // All vector scratch and curve controls belong to the caller; positions use world XYZ.
-static inline void BuildWideEventCrossingCurve(
-    unsigned char* cameraBytes,
-    unsigned char* ballBytes,
-    int firstEventSample,
-    int trailingEventSample,
-    CameraCurveScratch& scratch) {
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0], (unsigned char*)&AsCCameraWork(cameraBytes)->position[0]);
-    scratch.wideSideDown.x = kFloat_0_CameraWork; scratch.wideSideDown.y = kFloat_neg1_CameraWork; scratch.wideSideDown.z = kFloat_0_CameraWork;
-    Vector_CrossProduct(&scratch.wideSideCross, &scratch.wideSideDown, ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, 0))->velocity);
+static inline void BuildWideEventCrossingCurve(unsigned char* cameraBytes, unsigned char* ballBytes,
+                                               int firstEventSample, int trailingEventSample,
+                                               CameraCurveScratch& scratch) {
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[0],
+                              (unsigned char*)&AsCCameraWork(cameraBytes)->position[0]);
+    scratch.wideSideDown.x = kFloat_0_CameraWork;
+    scratch.wideSideDown.y = kFloat_neg1_CameraWork;
+    scratch.wideSideDown.z = kFloat_0_CameraWork;
+    Vector_CrossProduct(&scratch.wideSideCross, &scratch.wideSideDown,
+                        ((CameraTrajectorySample*)PreData__9CGolfBallFi(ballBytes, 0))->velocity);
     __ml__FRC7WVectorf(&scratch.scaledWideSide, Normalize__7WVectorFv(&scratch.wideSideCross), kFloat_100_GolfCamera);
     __as__7WVectorFRC7WVector(&scratch.lateralOffset, &scratch.scaledWideSide);
-    scratch.wideFirstEventRise.x = kFloat_0_CameraWork; scratch.wideFirstEventRise.y = kFloat_10_cameraWork; scratch.wideFirstEventRise.z = kFloat_0_CameraWork;
-    __pl__FRC7WVectorRC7WVector(&scratch.raisedWideFirstEvent, PreData__9CGolfBallFi(ballBytes, firstEventSample), &scratch.wideFirstEventRise);
+    scratch.wideFirstEventRise.x = kFloat_0_CameraWork;
+    scratch.wideFirstEventRise.y = kFloat_10_cameraWork;
+    scratch.wideFirstEventRise.z = kFloat_0_CameraWork;
+    __pl__FRC7WVectorRC7WVector(&scratch.raisedWideFirstEvent, PreData__9CGolfBallFi(ballBytes, firstEventSample),
+                                &scratch.wideFirstEventRise);
     __pl__FRC7WVectorRC7WVector(&scratch.wideFirstControl, &scratch.raisedWideFirstEvent, &scratch.lateralOffset);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3], &scratch.wideFirstControl);
-    scratch.eventMidpointRise.x = kFloat_0_CameraWork; scratch.eventMidpointRise.y = kFloat_10_cameraWork; scratch.eventMidpointRise.z = kFloat_0_CameraWork;
-    __pl__FRC7WVectorRC7WVector(&scratch.raisedEventMidpoint, PreData__9CGolfBallFi(ballBytes, (firstEventSample + trailingEventSample) / 2), &scratch.eventMidpointRise);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[3],
+                              &scratch.wideFirstControl);
+    scratch.eventMidpointRise.x = kFloat_0_CameraWork;
+    scratch.eventMidpointRise.y = kFloat_10_cameraWork;
+    scratch.eventMidpointRise.z = kFloat_0_CameraWork;
+    __pl__FRC7WVectorRC7WVector(&scratch.raisedEventMidpoint,
+                                PreData__9CGolfBallFi(ballBytes, (firstEventSample + trailingEventSample) / 2),
+                                &scratch.eventMidpointRise);
     __mi__FRC7WVectorRC7WVector(&scratch.wideSecondControl, &scratch.raisedEventMidpoint, &scratch.lateralOffset);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6], &scratch.wideSecondControl);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[6],
+                              &scratch.wideSecondControl);
     __amu__7WVectorFf(&scratch.finishApproachWork, kFloat_neg20_CameraWork);
     scratch.finishApproachWork.y += kFloat_5_CameraWork;
-    __pl__FRC7WVectorRC7WVector(&scratch.wideCurveFinish, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), &scratch.finishApproachWork);
-    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9], &scratch.wideCurveFinish);
+    __pl__FRC7WVectorRC7WVector(&scratch.wideCurveFinish,
+                                PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                &scratch.finishApproachWork);
+    __as__7WVectorFRC7WVector((unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9],
+                              &scratch.wideCurveFinish);
 }
 
 #pragma pop
 
+} // extern "C"
+} // namespace ns1
+
+using ns1::CameraCurveScratch;
+using ns1::BuildCapturedToEventCurve;
+using ns1::BuildVelocityLeadCurve;
+using ns1::BuildLateralTrajectoryCurve;
+using ns1::BuildSecondEventTailCurve;
+using ns1::BuildCapturedSideCurve;
+using ns1::BuildRandomOffsetCurve;
+using ns1::BuildWideEventCrossingCurve;
+using ns1::kCurveFirstEventSlot;
+using ns1::kCurveSecondEventSlot;
+using ns1::kCurveTrailingEventSlot;
+using ns1::CameraCurveHoleRecord;
+using ns1::kFloat_0_1_805DDF94;
+using ns1::kFloat_1_CameraWork;
 // Build four world-space Bezier controls for action, then clamp target rise to 1..5 game units.
 // self owns the output controls; trajectory samples and current-hole records are borrowed.
-void CCameraWork_BuildModeCurve(void* self, unsigned int action) {
+void CCameraWork::BuildModeCurve(unsigned int action) {
     CameraCurveScratch scratch;
     int firstEventSample, secondEventSample, trailingEventSample, startSample;
     unsigned char* ballBytes;
-    unsigned char* cameraBytes = (unsigned char*)self;
+    unsigned char* cameraBytes = (unsigned char*)this;
     ballBytes = (unsigned char*)GolfBall__Fv();
     startSample = (int)AsCCameraWork(cameraBytes)->motionStartFrame;
     int rawFirstEventSample = ((CGolfBall*)ballBytes)->m_eventPreDataIndex[kCurveFirstEventSlot];
@@ -2303,21 +3077,27 @@ void CCameraWork_BuildModeCurve(void* self, unsigned int action) {
     firstEventSample = rawFirstEventSample & ((-rawFirstEventSample & ~rawFirstEventSample) >> 31);
     secondEventSample = rawSecondEventSample & ((-rawSecondEventSample & ~rawSecondEventSample) >> 31);
     trailingEventSample = rawTrailingEventSample & ((-rawTrailingEventSample & ~rawTrailingEventSample) >> 31);
-    if (startSample < 0) startSample = 0;
-    else if (startSample > finalSampleIndex) startSample = finalSampleIndex;
+    if (startSample < 0)
+        startSample = 0;
+    else if (startSample > finalSampleIndex)
+        startSample = finalSampleIndex;
     // Phase 1: clamp event/start indices and form the final-sample-to-hole direction.
     AsCCameraWork(cameraBytes)->targetRiseHeight = kFloat_5_CameraWork;
     void* golfDocument = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
     int holeYBits, holeXBits;
-    CameraCurveHoleRecord* holeRecord = (CameraCurveHoleRecord*)AsCGolfDoc(golfDocument)->holeRecords + *((unsigned char*)&AsCGolfDoc(golfDocument)->currentHoleIndex);
-    struct Words { int x, y, z; };
+    CameraCurveHoleRecord* holeRecord = (CameraCurveHoleRecord*)AsCGolfDoc(golfDocument)->holeRecords +
+                                        *((unsigned char*)&AsCGolfDoc(golfDocument)->currentHoleIndex);
+    struct Words {
+        int x, y, z;
+    };
     holeXBits = holeRecord->holePositionBits[0];
     holeYBits = holeRecord->holePositionBits[1];
     ((Words*)&scratch.holeWorldPosition)->x = holeXBits;
     ((Words*)&scratch.holeWorldPosition)->y = holeYBits;
     ((Words*)&scratch.holeWorldPosition)->z = holeRecord->holePositionBits[2];
-    __mi__FRC7WVectorRC7WVector(&scratch.finishToHoleDelta, &scratch.holeWorldPosition, PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount));
-    __as__7WVectorFRC7WVector(&scratch.finishApproachWork, Normalize__7WVectorFv(&scratch.finishToHoleDelta));
+    __mi__FRC7WVectorRC7WVector(&scratch.finishToHoleDelta, &scratch.holeWorldPosition,
+                                ns1::PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount));
+    __as__7WVectorFRC7WVector(&scratch.finishApproachWork, ns1::Normalize__7WVectorFv(&scratch.finishToHoleDelta));
     // Phase 2: choose endpoints and two intermediate controls for the action's framing.
     switch (action) {
     // Blend a captured pose through raised event/side controls.
@@ -2331,7 +3111,8 @@ void CCameraWork_BuildModeCurve(void* self, unsigned int action) {
         break;
     // Frame the sampled trajectory from a lateral offset.
     case kCameraAction2:
-        BuildLateralTrajectoryCurve(cameraBytes, ballBytes, firstEventSample, trailingEventSample, startSample, scratch);
+        BuildLateralTrajectoryCurve(cameraBytes, ballBytes, firstEventSample, trailingEventSample, startSample,
+                                    scratch);
         break;
     // Track the interval after the second event.
     case kCameraSecondEventView:
@@ -2347,7 +3128,8 @@ void CCameraWork_BuildModeCurve(void* self, unsigned int action) {
     case kCameraWalkView12: {
         int randomSideParity;
         float randomSideSign, randomSideZ, randomSideX;
-        BuildRandomOffsetCurve(cameraBytes, ballBytes, firstEventSample, trailingEventSample, randomSideParity, randomSideSign, randomSideZ, randomSideX, scratch);
+        BuildRandomOffsetCurve(cameraBytes, ballBytes, firstEventSample, trailingEventSample, randomSideParity,
+                               randomSideSign, randomSideZ, randomSideX, scratch);
         break;
     }
     // Cross the event interval from a wide lateral baseline.
@@ -2356,28 +3138,36 @@ void CCameraWork_BuildModeCurve(void* self, unsigned int action) {
         break;
     }
     // Phase 3: target rise = clamp(0.1 * distance(final sample, final control), 1, 5).
-    __mi__FRC7WVectorRC7WVector(&scratch.finalControlToFinalSampleDelta, (Vec3*)PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount), (unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9]);
-    float unclampedRiseHeight = kFloat_0_1_805DDF94 * Magnitude__7WVectorCFv(&scratch.finalControlToFinalSampleDelta);
+    __mi__FRC7WVectorRC7WVector(&scratch.finalControlToFinalSampleDelta,
+                                (Vec3*)ns1::PreData__9CGolfBallFi(ballBytes, ((CGolfBall*)ballBytes)->m_preDataCount),
+                                (unsigned char*)&AsCCameraWork(cameraBytes)->curveControlPoints[9]);
+    float unclampedRiseHeight =
+        kFloat_0_1_805DDF94 * ns1::Magnitude__7WVectorCFv(&scratch.finalControlToFinalSampleDelta);
     float riseHeight = kFloat_1_CameraWork;
     AsCCameraWork(cameraBytes)->targetRiseHeight = unclampedRiseHeight;
-    riseHeight = unclampedRiseHeight < riseHeight ? riseHeight : unclampedRiseHeight > kFloat_5_CameraWork ? kFloat_5_CameraWork : unclampedRiseHeight;
+    riseHeight = unclampedRiseHeight < riseHeight            ? riseHeight
+                 : unclampedRiseHeight > kFloat_5_CameraWork ? kFloat_5_CameraWork
+                                                             : unclampedRiseHeight;
     AsCCameraWork(cameraBytes)->targetRiseHeight = riseHeight;
 }
 
-} // extern "C"
+namespace ns1 {
+extern "C" {} // extern "C"
 
 } // namespace ns1
 
 // ---- merged from camera_work_shot_cameras.cpp ----
 namespace ns2 {
-// Translation unit 0x800DCEF8-0x800DE590 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
 typedef Vec3f Vec3;
-struct Mat34 { float m[12]; };
-struct Pair { float yaw, pitch; };
+struct Mat34 {
+    float m[12];
+};
+struct Pair {
+    float yaw, pitch;
+};
 
 struct CameraBezierState {
     // curvePoint0..3 are the same four XYZ controls exposed by CCameraWork at +0xE4.
@@ -2407,13 +3197,27 @@ struct CameraBezierState {
 };
 
 struct CameraSplineState {
-    char reserved00[0x2C]; Vec3 position; Vec3 target;
-    char reserved44[0x18]; int pendingAction; int actionFlags; char reserved64[4]; // +5C pending action; +60 action flags
-    float secondEventFrame; float trajectoryLastFrame; float curveStartFrame; float elapsedTime; int cutoffFrame; // +78 cutoff trajectory frame
-    char reserved7C[0x68]; Vec3 curvePoint0; Vec3 curvePoint1; Vec3 curvePoint2; Vec3 curvePoint3;
+    char reserved00[0x2C];
+    Vec3 position;
+    Vec3 target;
+    char reserved44[0x18];
+    int pendingAction;
+    int actionFlags;
+    char reserved64[4]; // +5C pending action; +60 action flags
+    float secondEventFrame;
+    float trajectoryLastFrame;
+    float curveStartFrame;
+    float elapsedTime;
+    int cutoffFrame; // +78 cutoff trajectory frame
+    char reserved7C[0x68];
+    Vec3 curvePoint0;
+    Vec3 curvePoint1;
+    Vec3 curvePoint2;
+    Vec3 curvePoint3;
 };
 
-extern float kFloat_1_CameraWork, kFloat_3_CameraWork, kFloat_40_cameraWork, kCameraSecondEventTrackingBoundaryFraction, kFloat_10_cameraWork;
+extern float kFloat_1_CameraWork, kFloat_3_CameraWork, kFloat_40_cameraWork, kCameraSecondEventTrackingBoundaryFraction,
+    kFloat_10_cameraWork;
 extern float kCameraWindSoundBallSpeedThreshold, kFloat_100_GolfCamera;
 extern const double kSignedIntToDoubleBias_CameraWork;
 
@@ -2438,18 +3242,11 @@ void Matrix_ConcatAffineAssign(Vec3*, const Vec3*);
 void Matrix_CopyAffine(Vec3*, const Vec3*);
 void __apl__7WVectorFRC7WVector(Vec3*, const Vec3*);
 void Matrix_SetAxisRotation(Vec3*, float, int);
-void CVCGPlayer_GetPlaybackState(void*, void*);
-void CVCGPlayer_StartGroupPlayback(void*, int, int);
-void CVCGPlayer_SampleCurrentMotion(void*, void*);
-void CVCGPlayer_AdvancePlayback(void*);
 void* TaskActorTable_FindByName(void*, const char*, int, int);
 void* Object_GetChild(void*);
 int rand();
-void CCameraWork_ConfigureMode(void*, int, int);
-void CCameraWork_BuildModeCurve(void*, int);
 int __ptmf_test(void*);
 void* CQuadTree_GetInstance();
-float CQuadTree_ResolveGroundHeight(void*, const Vec3*, float);
 float WVectorLen__FRC7WVector(const Vec3*);
 void* PreData__9CGolfBallFi(void*, int);
 void* InstanceTable_Get();
@@ -2457,8 +3254,10 @@ extern void* g_taskManager;
 extern CSharedDoc* g_sharedDoc;
 extern float kCameraVectorEpsilon, kFloat_3_1415927_CameraWork, kFloat_0_8_CameraWork, kFloat_0_1_805DDF94;
 extern const float kFloat_0_CameraWork;
-extern float kFloat_6_CameraWork, kCameraShared20, kFloat_10_cameraWork, kCameraGroundEffectMinimumBallDistance, kFloat_0_17453292, kCameraGroundEffectMinimumFovRadians, kFloat_0_95993108, kFloat_5_CameraWork;
-extern float kFloat_0_2617994, kFloat_2_CameraWork, kFloat_0_5235988_805DDFCC, kCameraManualMaximumFovRadians, kCameraMinimumYawRadians, kCameraMinPitchRadians;
+extern float kFloat_6_CameraWork, kCameraShared20, kFloat_10_cameraWork, kCameraGroundEffectMinimumBallDistance,
+    kFloat_0_17453292, kCameraGroundEffectMinimumFovRadians, kFloat_0_95993108, kFloat_5_CameraWork;
+extern float kFloat_0_2617994, kFloat_2_CameraWork, kFloat_0_5235988_805DDFCC, kCameraManualMaximumFovRadians,
+    kCameraMinimumYawRadians, kCameraMinPitchRadians;
 extern const float kFloat_1_0471976_cameraWork;
 extern CSharedDoc* g_sharedDoc;
 extern signed char s_inputManagerInitialized;
@@ -2468,12 +3267,12 @@ extern char s_inputManagerDtorRegistration_CameraWork[];
 extern char s_cameraTransform[];
 void InputManager_Init(void*);
 void InputManager_Dtor();
-void __register_global_object(void*, void(*)(), void*);
+void __register_global_object(void*, void (*)(), void*);
 int SharedDoc_IsPlayerFlag0Set(int);
 int Input_IsActionButtonDown(void*, int, int);
 void Vec2_Zero(Vec3*);
 void Camera_SetFov(void*, float);
-void Matrix_TransformPoint(Vec3*, const Vec3*, const Vec3*);
+void* Matrix_TransformPoint(Vec3*, const Vec3*, const Vec3*);
 void Matrix_BuildCameraTransform(void*, const void*, const void*);
 float Math_CosApprox(float);
 float Math_SinApprox(float);
@@ -2488,201 +3287,281 @@ struct CameraInputState {
     unsigned char cameraMode;
     char pad1a1[0xa0];
 };
-void CCameraWork_UpdateInputOffsets(CameraInputState*, float);
 
 struct CameraTargetState;
 typedef void (CameraTargetState::*TargetCallback)(float, float);
 
 struct CameraTargetState {
     char p00[0x20];
-// 0x20: a CodeWarrior member-function pointer {this delta, virtual offset or -1, function} (12 bytes).
-    TargetCallback callback;   // 0x20 (12 bytes)
-    Vec3 position;                // 0x2c
+    // 0x20: a CodeWarrior member-function pointer {this delta, virtual offset or -1, function} (12 bytes).
+    TargetCallback callback; // 0x20 (12 bytes)
+    Vec3 position;           // 0x2c
     char p38[4];
-    float targetY;                 // 0x3c
+    float targetY; // 0x3c
     char p40[0x14];
-    int action;               // 0x54
-    int mode;                 // 0x58
-    int pendingAction;                 // 0x5c
-    int actionFlags;               // 0x60
+    int action;        // 0x54
+    int mode;          // 0x58
+    int pendingAction; // 0x5c
+    int actionFlags;   // 0x60
     char p64[8];
-    float trajectoryLastFrame;                 // 0x6c
-    float curveStartFrame;                 // 0x70
-    float elapsedTime;                 // 0x74
+    float trajectoryLastFrame; // 0x6c
+    float curveStartFrame;     // 0x70
+    float elapsedTime;         // 0x74
     char p78[4];
-    int previousFrameIndex;               // 0x7c
-    int frameIndex;             // 0x80
+    int previousFrameIndex; // 0x7c
+    int frameIndex;         // 0x80
     char p84[0x30];
     CameraTransformView previousPose; // 0xb4..0xe3: basis plus world position
     char pE4[0x60];
-    Vec3 vec144;               // 0x144
+    Vec3 vec144; // 0x144
     char p150[4];
-    float animationTime;            // 0x154
-    float lastShakeTime;            // 0x158
-    float shakeStartTime;            // 0x15c
+    float animationTime;  // 0x154
+    float lastShakeTime;  // 0x158
+    float shakeStartTime; // 0x15c
     char p160[5];
-    unsigned char flag165;     // 0x165
+    unsigned char flag165; // 0x165
     char p166[0x3d];
-    unsigned char scriptedAnimationEnabled;        // 0x1a3
-    Vec3 pivotPosition;               // 0x1a4
-    int animationGroup;             // 0x1b0
-    int playingAnimationGroup;             // 0x1b4
+    unsigned char scriptedAnimationEnabled; // 0x1a3
+    Vec3 pivotPosition;                     // 0x1a4
+    int animationGroup;                     // 0x1b0
+    int playingAnimationGroup;              // 0x1b4
     Vec3 initialBallPosition;               // 0x1b8
     char p1c4[0x44];
-    float fov;                // 0x208
+    float fov; // 0x208
     char p20c[4];
-    unsigned char groundClearanceEnabled;        // 0x210
-    unsigned char forceGroundEffect;        // 0x211
+    unsigned char groundClearanceEnabled; // 0x210
+    unsigned char forceGroundEffect;      // 0x211
     char p212[0x32];
     CameraTransformView savedPose; // 0x244..0x273: basis plus world position
     float savedFov;                // 0x274
     char p278[0x80];
-    int animationGroupIndex;                  // 0x2f8
-    int groupValueCount;                  // 0x2fc
+    int animationGroupIndex; // 0x2f8
+    int groupValueCount;     // 0x2fc
 };
 
 struct TargetSink {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3();
-    virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7();
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
     virtual void v8();
     virtual void send(void*);
 };
-struct TargetCmd { int a; int b; void* p; int r[5]; };
+struct TargetCmd {
+    int a;
+    int b;
+    void* p;
+    int r[5];
+};
 
 // Test the camera zero tolerance while preserving the original sign-bit handling.
 static inline bool CameraTargetIsNearZero(const float& v) {
     return ((*(const unsigned*)&v & 0x80000000u) ? -v : v) < kCameraVectorEpsilon;
 }
+} // extern "C"
+} // namespace ns2
+
+extern "C" void Sound_StopByAlias(void*, const char*);
+extern "C" const CameraWorkStrings cameraWorkStrings;
+extern "C" void* g_soundManager;
 
 // Mark the proximity sound stopped and stop its shared audio alias.
-void CCameraWork_StopBallSound(CameraBezierState* self) {
-    self->state = 2;
+void CCameraWork::StopBallSound() {
+    ballProximitySoundState = 2;
     Sound_StopByAlias(g_soundManager, cameraWorkStrings.ballWindSoundAlias);
+}
+
+namespace ns2 {
+extern "C" {} // extern "C"
+} // namespace ns2
+
+typedef Vec3f Vec3;
+extern "C" {
+extern const float kFloat_1_CameraWork;
+extern const float kFloat_3_CameraWork;
+extern const float kFloat_0_CameraWork;
+extern void __ml__FfRC7WVector(void*, const void*, float);
+extern void __pl__FRC7WVectorRC7WVector(void*, const void*, const void*);
+extern void __mi__FRC7WVectorRC7WVector(void*, const void*, const void*);
+extern void __as__7WVectorFRC7WVector(void*, const void*);
+extern char* GolfBall__Fv();
+extern void Sound_StopByAlias(void*, const char*);
+extern float Magnitude__7WVectorCFv(const void*);
+extern void Sound_PlayByName(void*, const char*, void*, int, const char*, int, float, float, float);
+extern const float kFloat_0_1_805DDF94;
+extern float kCameraWindSoundBallSpeedThreshold;
+extern const float kFloat_100_GolfCamera;
+int SoundManager_IsAliasPrefixOrStreamStemActive(void*, const char*);
+void SoundManager_SetNamedVolumeScale(void*, const char*, float);
 }
 
 // Move the camera on a cubic Bezier curve while looking at the ball with a rising target.
 // P(t)=(1-t)^3*P0 + 3*(1-t)^2*t*P1 + 3*(1-t)*t^2*P2 + t^3*P3.
 // frameFraction supplies the fractional frame offset; the target-rise phase uses the same frame clock.
-void CCameraWork_UpdateBezierPositionAndBallTarget(CameraBezierState* self, float unused, float frameFraction) {
+void CCameraWork::UpdateBezierPositionAndBallTarget(float unused, float frameFraction) {
     float u3, u2, u, t2, t;
-    t = (self->elapsedTime + frameFraction - self->curveStartFrame) / (self->trajectoryLastFrame - self->curveStartFrame);
+    t = (elapsedTime + frameFraction - motionStartFrame) / (trajectoryLastFrame - motionStartFrame);
     t2 = t * t;
     u = kFloat_1_CameraWork - t;
     u2 = u * u;
     u3 = u2 * u;
     Vec3 h, offset, a, b, c, d, e, f, g;
-    __ml__FfRC7WVector(&a, &self->curvePoint3, t * t2);
+    __ml__FfRC7WVector(&a, &curveControlPoints[9], t * t2);
     float _b = kFloat_3_CameraWork * u;
-    __ml__FfRC7WVector(&b, &self->curvePoint2, _b * t2);
+    __ml__FfRC7WVector(&b, &curveControlPoints[6], _b * t2);
     float _c = kFloat_3_CameraWork * u2;
-    __ml__FfRC7WVector(&c, &self->curvePoint1, _c * t);
-    __ml__FfRC7WVector(&d, &self->curvePoint0, u3);
+    __ml__FfRC7WVector(&c, &curveControlPoints[3], _c * t);
+    __ml__FfRC7WVector(&d, &curveControlPoints[0], u3);
     __pl__FRC7WVectorRC7WVector(&e, &d, &c);
     __pl__FRC7WVectorRC7WVector(&f, &e, &b);
     __pl__FRC7WVectorRC7WVector(&g, &f, &a);
-    __as__7WVectorFRC7WVector(&self->position, &g);
-    if (self->elapsedTime < self->secondEventFrame) {
-        __as__7WVectorFRC7WVector(&self->target, GolfBall__Fv());
-    } else if (self->elapsedTime < self->trajectoryLastFrame) {
-        float mul = self->targetRiseHeight;
-        float num = self->elapsedTime + frameFraction - self->secondEventFrame;
-        float den = self->trajectoryLastFrame - self->secondEventFrame;
+    __as__7WVectorFRC7WVector(position, &g);
+    if (elapsedTime < secondEventFrame) {
+        __as__7WVectorFRC7WVector(target, GolfBall__Fv());
+    } else if (elapsedTime < trajectoryLastFrame) {
+        float mul = targetRiseHeight;
+        float num = elapsedTime + frameFraction - secondEventFrame;
+        float den = trajectoryLastFrame - secondEventFrame;
         offset.x = kFloat_0_CameraWork;
         offset.z = kFloat_0_CameraWork;
         offset.y = (num / den) * mul;
         __pl__FRC7WVectorRC7WVector(&h, GolfBall__Fv(), &offset);
-        __as__7WVectorFRC7WVector(&self->target, &h);
+        __as__7WVectorFRC7WVector(target, &h);
     }
 }
 
 // Start, attenuate, or stop the ball wind sound according to camera distance and ball speed.
 // State map: 0 not started, 1 nearby/playing, 2 stopped, 3 out of range but restartable.
 // Odd states continue speed/distance checks; attenuation is (100-distance)/100 within range.
-void CCameraWork_UpdateBallProximitySound(CameraBezierState* self) {
-    float delta = self->animationTime - self->lastProximitySoundUpdateTime;
+void CCameraWork::UpdateBallProximitySound() {
+    float delta = animationTime - lastProximitySoundUpdateTime;
     float cameraBallDistance;
-    Vec3 b, a;
-    if (delta < kFloat_0_1_805DDF94 && self->state != 1) return;
+    Vec3 b, cameraToBall;
+    if (delta < kFloat_0_1_805DDF94 && ballProximitySoundState != 1)
+        return;
     {
-        self->lastProximitySoundUpdateTime = self->animationTime;
-        __mi__FRC7WVectorRC7WVector(&a, GolfBall__Fv(), &self->position);
-        __as__7WVectorFRC7WVector(&b, &a);
+        lastProximitySoundUpdateTime = animationTime;
+        __mi__FRC7WVectorRC7WVector(&cameraToBall, GolfBall__Fv(), position);
+        __as__7WVectorFRC7WVector(&b, &cameraToBall);
         cameraBallDistance = Magnitude__7WVectorCFv(&b);
-        if (self->state == 0) {
+        if (ballProximitySoundState == 0) {
             float ballSpeed = Magnitude__7WVectorCFv(GolfBall__Fv() + 1);
             if (ballSpeed > kCameraWindSoundBallSpeedThreshold && cameraBallDistance < kFloat_100_GolfCamera) {
-                self->state = 1;
-                Sound_PlayByName(g_soundManager, cameraWorkStrings.ballWindSoundAlias, &b, 5, cameraWorkStrings.ballWindSoundAlias, 0, kFloat_0_CameraWork, kFloat_100_GolfCamera, kFloat_1_CameraWork);
+                ballProximitySoundState = 1;
+                Sound_PlayByName(g_soundManager, cameraWorkStrings.ballWindSoundAlias, &b, 5,
+                                 cameraWorkStrings.ballWindSoundAlias, 0, kFloat_0_CameraWork, kFloat_100_GolfCamera,
+                                 kFloat_1_CameraWork);
             }
-        } else if (self->state & 1) {
+        } else if (ballProximitySoundState & 1) {
             float ballSpeed = Magnitude__7WVectorCFv(GolfBall__Fv() + 1);
             if (ballSpeed > kCameraWindSoundBallSpeedThreshold) {
                 if (cameraBallDistance < kFloat_100_GolfCamera) {
-                    if (!SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager, cameraWorkStrings.ballWindSoundAlias))
-                        Sound_PlayByName(g_soundManager, cameraWorkStrings.ballWindSoundAlias, &b, 5, cameraWorkStrings.ballWindSoundAlias, 0, kFloat_0_CameraWork, kFloat_100_GolfCamera, kFloat_1_CameraWork);
-                    SoundManager_SetNamedVolumeScale(g_soundManager, cameraWorkStrings.ballWindSoundAlias, (kFloat_100_GolfCamera - cameraBallDistance) / kFloat_100_GolfCamera);
-                } else if (self->state == 1) {
+                    if (!SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager,
+                                                                      cameraWorkStrings.ballWindSoundAlias))
+                        Sound_PlayByName(g_soundManager, cameraWorkStrings.ballWindSoundAlias, &b, 5,
+                                         cameraWorkStrings.ballWindSoundAlias, 0, kFloat_0_CameraWork,
+                                         kFloat_100_GolfCamera, kFloat_1_CameraWork);
+                    SoundManager_SetNamedVolumeScale(g_soundManager, cameraWorkStrings.ballWindSoundAlias,
+                                                     (kFloat_100_GolfCamera - cameraBallDistance) /
+                                                         kFloat_100_GolfCamera);
+                } else if (ballProximitySoundState == 1) {
                     Sound_StopByAlias(g_soundManager, cameraWorkStrings.ballWindSoundAlias);
-                    self->state = 3;
+                    ballProximitySoundState = 3;
                 }
             } else {
                 Sound_StopByAlias(g_soundManager, cameraWorkStrings.ballWindSoundAlias);
-                self->state = 2;
+                ballProximitySoundState = 2;
             }
         }
     }
 }
 
+namespace ns2 {
+extern "C" {} // extern "C"
+} // namespace ns2
+
+typedef Vec3f Vec3;
+extern "C" {
+extern const float kFloat_1_CameraWork;
+extern const float kFloat_3_CameraWork;
+extern const float kFloat_40_cameraWork;
+extern const float kFloat_10_cameraWork;
+extern float kCameraSecondEventTrackingBoundaryFraction;
+extern void __ml__FfRC7WVector(void*, const void*, float);
+extern void __pl__FRC7WVectorRC7WVector(void*, const void*, const void*);
+extern void __mi__FRC7WVectorRC7WVector(void*, const void*, const void*);
+extern float Magnitude__7WVectorCFv(const void*);
+extern void __as__7WVectorFRC7WVector(void*, const void*);
+extern char* GolfBall__Fv();
+}
+
 // Evaluate a camera spline and update its ball-following target and pending action.
-void CCameraWork_UpdateBezierPositionAndBallTracking(CameraSplineState* self, float unused, float frameFraction) {
+void CCameraWork::UpdateBezierPositionAndBallTracking(float unused, float frameFraction) {
     float u3;
     float u2;
     float u;
     float t2;
     float t;
-    t = (self->elapsedTime + frameFraction - self->curveStartFrame) / (self->trajectoryLastFrame - self->curveStartFrame);
+    t = (elapsedTime + frameFraction - motionStartFrame) / (trajectoryLastFrame - motionStartFrame);
     t2 = t * t;
     u = kFloat_1_CameraWork - t;
     float uValue = u;
     u2 = uValue * uValue;
     u3 = u2 * u;
-    Vec3 h; Vec3 a; Vec3 b; Vec3 c; Vec3 d; Vec3 e; Vec3 f; Vec3 g;
-    __ml__FfRC7WVector(&a, &self->curvePoint3, t * t2);
+    Vec3 h;
+    Vec3 a;
+    Vec3 b;
+    Vec3 c;
+    Vec3 d;
+    Vec3 e;
+    Vec3 f;
+    Vec3 g;
+    __ml__FfRC7WVector(&a, &curveControlPoints[9], t * t2);
     float product = kFloat_3_CameraWork * u;
-    __ml__FfRC7WVector(&b, &self->curvePoint2, (product) * t2);
+    __ml__FfRC7WVector(&b, &curveControlPoints[6], (product)*t2);
     float product2 = kFloat_3_CameraWork * u2;
-    __ml__FfRC7WVector(&c, &self->curvePoint1, (product2) * t);
-    __ml__FfRC7WVector(&d, &self->curvePoint0, u3);
+    __ml__FfRC7WVector(&c, &curveControlPoints[3], (product2)*t);
+    __ml__FfRC7WVector(&d, &curveControlPoints[0], u3);
     __pl__FRC7WVectorRC7WVector(&e, &d, &c);
     __pl__FRC7WVectorRC7WVector(&f, &e, &b);
     __pl__FRC7WVectorRC7WVector(&g, &f, &a);
-    __as__7WVectorFRC7WVector(&self->position, &g);
+    __as__7WVectorFRC7WVector(position, &g);
 
-    if (AsCCameraWork(self)->actionFlags & kCameraCutAtEvent) {
-        if (self->elapsedTime < (float)AsCCameraWork(self)->cutoffFrame - kFloat_40_cameraWork)
-            __as__7WVectorFRC7WVector(&self->target, GolfBall__Fv());
+    if (actionFlags & kCameraCutAtEvent) {
+        if (elapsedTime < (float)cutoffFrame - kFloat_40_cameraWork)
+            __as__7WVectorFRC7WVector(target, GolfBall__Fv());
         else
-            AsCCameraWork(self)->pendingAction = kCameraCutoffBisectorView;
+            pendingAction = kCameraCutoffBisectorView;
     } else {
         // 0x800DE3A4: distant camera targets keep tracking the ball.
         do {
-            if (self->elapsedTime < kCameraSecondEventTrackingBoundaryFraction * self->secondEventFrame) {
-                __mi__FRC7WVectorRC7WVector(&h, &self->position, &self->target);
+            if (elapsedTime < kCameraSecondEventTrackingBoundaryFraction * secondEventFrame) {
+                __mi__FRC7WVectorRC7WVector(&h, position, target);
                 if (Magnitude__7WVectorCFv(&h) > kFloat_10_cameraWork) {
-                    __as__7WVectorFRC7WVector(&self->target, GolfBall__Fv());
+                    __as__7WVectorFRC7WVector(target, GolfBall__Fv());
                     break;
                 }
             }
-            AsCCameraWork(self)->pendingAction = kCameraAction2;
+            pendingAction = kCameraAction2;
         } while (0);
     }
 }
 
+namespace ns2 {
+extern "C" {} // extern "C"
+} // namespace ns2
+
 // Advance scripted or trajectory camera motion, apply shake and ground clearance, then update the view.
 // deltaTime advances animationTime; frameBlend is passed to the motion callback as its
 // fractional frame coordinate. The integer trajectory frame comes from ball event slot 0.
-void CCameraWork_UpdateMotionAndTarget(CameraTargetState* self, float deltaTime, float frameBlend) {
-    char* cam = (char*)GolfBall__Fv();
+void CCameraWork::UpdateMotionAndTarget(float deltaTime, float frameBlend) {
+    using namespace ns2;
+    CameraTargetState* self = (CameraTargetState*)this;
+    char* cam = (char*)ns2::GolfBall__Fv();
     int current = ((CGolfBall*)cam)->m_eventPreDataIndex[0];
     float step = (float)current;
     self->frameIndex = current;
@@ -2691,88 +3570,100 @@ void CCameraWork_UpdateMotionAndTarget(CameraTargetState* self, float deltaTime,
 
     // Phase 1: sample group animation or run a trajectory callback/pending action.
     if (self->scriptedAnimationEnabled) {
-        if (self->playingAnimationGroup == 0) return; // 0x800DD7B0
+        if (self->playingAnimationGroup == 0)
+            return; // 0x800DD7B0
         {
             int info[4];
-            CVCGPlayer_GetPlaybackState((void*)self->playingAnimationGroup, info);
+            ((CVCGPlayer*)(self->playingAnimationGroup))->GetPlaybackState(info);
             if (info[2] == 1) {
                 if (self->animationGroupIndex < self->groupValueCount) {
                     int n = self->animationGroupIndex + 1;
                     self->animationGroupIndex = n;
-                    CVCGPlayer_StartGroupPlayback((void*)self->playingAnimationGroup, n, 0);
+                    ((CVCGPlayer*)(self->playingAnimationGroup))->StartGroupPlayback(n, 0);
                 } else {
                     self->playingAnimationGroup = 0;
                 }
             }
         }
         if (self->playingAnimationGroup) {
+            // Camera 3x4 world matrix built from the motion sample: three axes then translation.
+            Vec3 matrix[4];
             struct {
                 Vec3 motionPosition, motionTarget, motionUp;
                 float fovRadians;
             } transform;
-            Vec3& motionPosition = transform.motionPosition;
-            Vec3& motionTarget = transform.motionTarget;
-            Vec3& motionUp = transform.motionUp;
-            // Camera 3x4 world matrix built from the motion sample: three axes then translation.
-            Vec3 matrix[4];
-            Vec3& cameraRightAxis = matrix[0];
-            Vec3& cameraUpAxis = matrix[1];
-            Vec3& cameraForwardAxis = matrix[2];
-            Vec3& cameraTranslation = matrix[3];
-            Vec3 rawForward, rightCross, upCross, positionCopy, targetCopy, upCopy;
-            Vec3 rollRotation[4]; // 3x4 matrix written by Matrix_SetAxisRotation (0x30 bytes)
-            Vec3 v8, v90;
+            Vec3 positionCopy, targetCopy, upCopy;
+            Vec3 v90;
+            Vec3 rawForward, rightCross, upCross;
+            Vec3 rollRotation[4]; // 3x4 matrix written by ns2::Matrix_SetAxisRotation (0x30 bytes)
+            Vec3 v8;
             // Phase 1a: sample the playing animation (position, target, up, field of view).
-            CVCGPlayer_SampleCurrentMotion((void*)self->animationGroup, &transform);
-            CVCGPlayer_AdvancePlayback((void*)self->animationGroup);
-            Vec3_CopySourceToDestination(&motionPosition, &positionCopy);
-            Vec3_CopySourceToDestination(&motionTarget, &targetCopy);
-            Vec3_CopySourceToDestination(&motionUp, &upCopy);
-            Matrix_SetIdentityAffine(&cameraRightAxis);
-            __mi__FRC7WVectorRC7WVector(&rawForward, &targetCopy, &positionCopy);
-            __as__7WVectorFRC7WVector(&cameraForwardAxis, &rawForward);
-            Normalize__7WVectorFv(&cameraForwardAxis);
-            __as__7WVectorFRC7WVector(&cameraUpAxis, &upCopy);
-            Normalize__7WVectorFv(&cameraUpAxis);
-            Vector_CrossProduct(&rightCross, &cameraUpAxis, &cameraForwardAxis);
-            __as__7WVectorFRC7WVector(&cameraRightAxis, &rightCross);
-            Normalize__7WVectorFv(&cameraRightAxis);
-            Vector_CrossProduct(&upCross, &cameraForwardAxis, &cameraRightAxis);
-            __as__7WVectorFRC7WVector(&cameraUpAxis, &upCross);
-            Normalize__7WVectorFv(&cameraUpAxis);
-            __as__7WVectorFRC7WVector(&cameraTranslation, &positionCopy);
+            ((CVCGPlayer*)(self->animationGroup))->SampleCurrentMotion(&transform);
+            ((CVCGPlayer*)(self->animationGroup))->AdvancePlayback();
+            ns2::Vec3_CopySourceToDestination(&transform.motionPosition, &positionCopy);
+            ns2::Vec3_CopySourceToDestination(&transform.motionTarget, &targetCopy);
+            ns2::Vec3_CopySourceToDestination(&transform.motionUp, &upCopy);
+            ns2::Matrix_SetIdentityAffine(&matrix[0]);
+            ns2::__mi__FRC7WVectorRC7WVector(&rawForward, &targetCopy, &positionCopy);
+            ns2::__as__7WVectorFRC7WVector(&matrix[2], &rawForward);
+            ns2::Normalize__7WVectorFv(&matrix[2]);
+            ns2::__as__7WVectorFRC7WVector(&matrix[1], &upCopy);
+            ns2::Normalize__7WVectorFv(&matrix[1]);
+            ns2::Vector_CrossProduct(&rightCross, &matrix[1], &matrix[2]);
+            ns2::__as__7WVectorFRC7WVector(&matrix[0], &rightCross);
+            ns2::Normalize__7WVectorFv(&matrix[0]);
+            ns2::Vector_CrossProduct(&upCross, &matrix[2], &matrix[0]);
+            ns2::__as__7WVectorFRC7WVector(&matrix[1], &upCross);
+            ns2::Normalize__7WVectorFv(&matrix[1]);
+            ns2::__as__7WVectorFRC7WVector(&matrix[3], &positionCopy);
             // Motion supplies position, target, up, then field of view in radians.
             self->fov = transform.fovRadians;
 
             {
-                void* obj = g_taskManager ? Object_GetChild(g_taskManager) : 0;
+                void* obj = ns2::g_taskManager ? ns2::Object_GetChild(ns2::g_taskManager) : 0;
                 TargetCmd cmd;
-                cmd.a = 0; cmd.b = 3; cmd.p = &v8;
-                cmd.r[0] = 0; cmd.r[1] = 0; cmd.r[2] = 0; cmd.r[3] = 0; cmd.r[4] = 0;
-                TargetSink* sink = (TargetSink*)TaskActorTable_FindByName(obj, cameraWorkStrings.Player, 3, 0);
-                if (sink) sink->send(&cmd);
+                cmd.a = 0;
+                cmd.b = 3;
+                cmd.p = &v8;
+                cmd.r[0] = 0;
+                cmd.r[1] = 0;
+                cmd.r[2] = 0;
+                cmd.r[3] = 0;
+                cmd.r[4] = 0;
+                TargetSink* sink =
+                    (TargetSink*)ns2::TaskActorTable_FindByName(obj, ns2::cameraWorkStrings.Player, 3, 0);
+                if (sink)
+                    sink->send(&cmd);
             }
             {
-                void* obj = g_taskManager ? Object_GetChild(g_taskManager) : 0;
+                void* obj = ns2::g_taskManager ? ns2::Object_GetChild(ns2::g_taskManager) : 0;
                 TargetCmd cmd;
-                cmd.a = 0; cmd.b = 4; cmd.p = &v90;
-                cmd.r[0] = 0; cmd.r[1] = 0; cmd.r[2] = 0; cmd.r[3] = 0; cmd.r[4] = 0;
-                TargetSink* sink = (TargetSink*)TaskActorTable_FindByName(obj, cameraWorkStrings.Player, 4, 0);
-                if (sink) sink->send(&cmd);
+                cmd.a = 0;
+                cmd.b = 4;
+                cmd.p = &v90;
+                cmd.r[0] = 0;
+                cmd.r[1] = 0;
+                cmd.r[2] = 0;
+                cmd.r[3] = 0;
+                cmd.r[4] = 0;
+                TargetSink* sink =
+                    (TargetSink*)ns2::TaskActorTable_FindByName(obj, ns2::cameraWorkStrings.Player, 4, 0);
+                if (sink)
+                    sink->send(&cmd);
             }
 
             // Phase 1b: query the Player actor (commands 3 and 4); a nonzero v90 means the matrix is rolled
             // by (v8.x - pi) about axis 1 before it becomes the camera transform.
             if (!CameraTargetIsNearZero(v90.x) || !CameraTargetIsNearZero(v90.y) || !CameraTargetIsNearZero(v90.z)) {
-                Matrix_SetAxisRotation(rollRotation, v8.x - kFloat_3_1415927_CameraWork, 1);
-                Matrix_ConcatAffineAssign(&cameraRightAxis, rollRotation);
+                ns2::Matrix_SetAxisRotation(rollRotation, v8.x - ns2::kFloat_3_1415927_CameraWork, 1);
+                ns2::Matrix_ConcatAffineAssign(&matrix[0], rollRotation);
             }
 
             // Script transform translations are pivot-relative: retain both poses in world space.
-            Matrix_CopyAffine((Vec3*)&self->previousPose, &cameraRightAxis);
-            __apl__7WVectorFRC7WVector((Vec3*)self->previousPose.position, &self->pivotPosition);
-            Matrix_CopyAffine((Vec3*)&self->savedPose, &cameraRightAxis);
-            __apl__7WVectorFRC7WVector((Vec3*)self->savedPose.position, &self->pivotPosition);
+            ns2::Matrix_CopyAffine((Vec3*)&self->previousPose, &matrix[0]);
+            ns2::__apl__7WVectorFRC7WVector((Vec3*)self->previousPose.position, &self->pivotPosition);
+            ns2::Matrix_CopyAffine((Vec3*)&self->savedPose, &matrix[0]);
+            ns2::__apl__7WVectorFRC7WVector((Vec3*)self->savedPose.position, &self->pivotPosition);
             self->savedFov = transform.fovRadians;
         }
     } else {
@@ -2782,45 +3673,52 @@ void CCameraWork_UpdateMotionAndTarget(CameraTargetState* self, float deltaTime,
             if (step >= self->trajectoryLastFrame) {
                 enable = 1;
             } else {
-                char* c2 = (char*)GolfBall__Fv();
+                char* c2 = (char*)ns2::GolfBall__Fv();
                 // m_holeInCrypt is the shared obfuscated hole-in value (value = ~(encoded ^ mask)).
-                struct HoleInValueWords { int encoded; unsigned char byteCopy[4]; int mask; };
+                struct HoleInValueWords {
+                    int encoded;
+                    unsigned char byteCopy[4];
+                    int mask;
+                };
                 HoleInValueWords* holeIn = (HoleInValueWords*)((CGolfBall*)c2)->m_holeInCrypt;
                 int same = ~(holeIn->encoded ^ holeIn->mask);
                 if (same == 1) {
-                    unsigned char* game = (*(unsigned char**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-                    unsigned char* tbl = (*(unsigned char**)&AsCGolfDoc(game)->holeRecords) + (AsCGolfDoc(game)->currentHoleIndex << 5);
+                    unsigned char* game = (*(unsigned char**)&AsCSharedDoc(ns2::g_sharedDoc)->golfDoc);
+                    unsigned char* tbl =
+                        (*(unsigned char**)&AsCGolfDoc(game)->holeRecords) + (AsCGolfDoc(game)->currentHoleIndex << 5);
                     Vec3 v54;
                     *(int*)&v54.x = *(int*)(tbl + 0xc);
                     *(int*)&v54.y = *(int*)(tbl + 0x10);
                     *(int*)&v54.z = *(int*)(tbl + 0x14);
                     Vec3 v48, v3c;
-                    __mi__FRC7WVectorRC7WVector(&v48, (Vec3*)GolfBall__Fv(), &v54);
-                    __as__7WVectorFRC7WVector(&v3c, &v48);
+                    ns2::__mi__FRC7WVectorRC7WVector(&v48, (Vec3*)ns2::GolfBall__Fv(), &v54);
+                    ns2::__as__7WVectorFRC7WVector(&v3c, &v48);
                     float y = v3c.y;
-                    v3c.y = kFloat_0_CameraWork;
+                    v3c.y = ns2::kFloat_0_CameraWork;
                     if (!self->flag165) {
-                        float s = ((CGolfBall*)GolfBall__Fv())->m_radius;
-                        if (Magnitude__7WVectorCFv(&v3c) < 3.0f * s && y < kFloat_0_CameraWork)
+                        float s = ((CGolfBall*)ns2::GolfBall__Fv())->m_radius;
+                        if (ns2::Magnitude__7WVectorCFv(&v3c) < 3.0f * s && y < ns2::kFloat_0_CameraWork)
                             self->flag165 = 1;
                     }
-                    if (self->flag165) enable = 1;
-                    else enable = 0;
+                    if (self->flag165)
+                        enable = 1;
+                    else
+                        enable = 0;
                 } else {
                     enable = 0;
                 }
             }
             if (enable) {
-                __as__7WVectorFRC7WVector(&self->initialBallPosition, (Vec3*)GolfBall__Fv());
-                CCameraWork_UpdateInputOffsets((CameraInputState*)self, deltaTime);
+                ns2::__as__7WVectorFRC7WVector(&self->initialBallPosition, (Vec3*)ns2::GolfBall__Fv());
+                AsCCameraWork(self)->UpdateInputOffsets(deltaTime);
                 return;
             }
         }
 
         if (self->pendingAction >= 0) {
-            CCameraWork_ConfigureMode(self, self->pendingAction, 0);
+            ((CCameraWork*)self)->ConfigureMode(self->pendingAction, 0);
             self->pendingAction = -1;
-            CCameraWork_BuildModeCurve(self, self->action);
+            AsCCameraWork(self)->BuildModeCurve(self->action);
         }
 
         if (self->elapsedTime < self->curveStartFrame) {
@@ -2829,10 +3727,10 @@ void CCameraWork_UpdateMotionAndTarget(CameraTargetState* self, float deltaTime,
             int st = self->action;
             if (st == 3 || st == 4 || st == 0xb) {
                 if (self->previousFrameIndex < (int)self->curveStartFrame) {
-                    __as__7WVectorFRC7WVector(&self->position, &self->vec144);
+                    ns2::__as__7WVectorFRC7WVector(&self->position, &self->vec144);
                 }
             }
-            if (__ptmf_test(&self->callback) != 0) {
+            if (ns2::__ptmf_test(&self->callback) != 0) {
                 (self->*self->callback)(deltaTime, frameBlend);
             }
         }
@@ -2841,19 +3739,20 @@ void CCameraWork_UpdateMotionAndTarget(CameraTargetState* self, float deltaTime,
         if ((*(unsigned*)&AsCCameraWork(self)->actionFlags) & kCameraShakeActive) {
             float f3 = self->animationTime;
             float diff = f3 - self->shakeStartTime;
-            if (diff < kFloat_0_8_CameraWork) {
-                if (!((f3 - self->lastShakeTime) < kFloat_0_1_805DDF94)) {
+            if (diff < ns2::kFloat_0_8_CameraWork) {
+                if (!((f3 - self->lastShakeTime) < ns2::kFloat_0_1_805DDF94)) {
                     int n = 1;
                     self->lastShakeTime = f3;
                     int m = 6 - (int)(6.0f * diff);
-                    if (m != 0) n = m;
-                    float base = (float)n / kCameraShared20;
+                    if (m != 0)
+                        n = m;
+                    float base = (float)n / ns2::kCameraShared20;
                     Vec3 v24, v30;
-                    v24.x = (float)(rand() % n) / kFloat_10_cameraWork - base;
-                    v24.y = (float)(rand() % n) / kFloat_10_cameraWork - base;
-                    v24.z = (float)(rand() % n) / kFloat_10_cameraWork - base;
-                    __ml__FRC7WVectorf(&v30, &v24, kFloat_0_1_805DDF94);
-                    __apl__7WVectorFRC7WVector(&self->position, &v30);
+                    v24.x = (float)(ns2::rand() % n) / ns2::kFloat_10_cameraWork - base;
+                    v24.y = (float)(ns2::rand() % n) / ns2::kFloat_10_cameraWork - base;
+                    v24.z = (float)(ns2::rand() % n) / ns2::kFloat_10_cameraWork - base;
+                    ns2::__ml__FRC7WVectorf(&v30, &v24, ns2::kFloat_0_1_805DDF94);
+                    ns2::__apl__7WVectorFRC7WVector(&self->position, &v30);
                 }
             } else {
                 self->actionFlags &= ~kCameraShakeActive;
@@ -2863,60 +3762,114 @@ void CCameraWork_UpdateMotionAndTarget(CameraTargetState* self, float deltaTime,
 
     // Phase 3: raise the camera to ground clearance; scripted targets rise by the same amount.
     if (self->groundClearanceEnabled) {
-        unsigned char* game = (*(unsigned char**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
+        unsigned char* game = (*(unsigned char**)&AsCSharedDoc(ns2::g_sharedDoc)->golfDoc);
         int vx = (*(int*)&AsCCameraWork(self)->position[0]);
         int vy = (*(int*)&AsCCameraWork(self)->position[1]);
         int vz = (*(int*)&AsCCameraWork(self)->position[2]);
         Vec3 a0, a1;
-        *(int*)&a0.x = vx; *(int*)&a0.y = vy; *(int*)&a0.z = vz;
-        *(int*)&a1.x = vx; *(int*)&a1.y = vy; *(int*)&a1.z = vz;
-        float y = CQuadTree_ResolveGroundHeight(CQuadTree_GetInstance(), &a1, AsCGolfDoc(game)->cameraGroundClearance);
+        *(int*)&a0.x = vx;
+        *(int*)&a0.y = vy;
+        *(int*)&a0.z = vz;
+        *(int*)&a1.x = vx;
+        *(int*)&a1.y = vy;
+        *(int*)&a1.z = vz;
+        float y = ((CQuadTree*)ns2::CQuadTree_GetInstance())
+                      ->ResolveGroundHeight((Vec3f*)&a1, AsCGolfDoc(game)->cameraGroundClearance);
         float selfy = self->position.y;
-        if (!(selfy < y)) y = selfy;
+        if (!(selfy < y))
+            y = selfy;
         if (self->scriptedAnimationEnabled) {
             self->targetY += y - self->position.y;
         }
-        if (self->position.y < y) self->position.y = y;
+        if (self->position.y < y)
+            self->position.y = y;
     }
 
     // 0x800DD7B0: skip ground adjustment when the camera is close enough.
     do {
         if (!self->forceGroundEffect) {
             Vec3 v60;
-            __mi__FRC7WVectorRC7WVector(&v60, &self->position, (Vec3*)GolfBall__Fv());
-            if (!(WVectorLen__FRC7WVector(&v60) > kCameraGroundEffectMinimumBallDistance)) break;
+            ns2::__mi__FRC7WVectorRC7WVector(&v60, &self->position, (Vec3*)ns2::GolfBall__Fv());
+            if (!(ns2::WVectorLen__FRC7WVector(&v60) > ns2::kCameraGroundEffectMinimumBallDistance))
+                break;
         }
         if (self->frameIndex > 0) {
-            void* o = PreData__9CGolfBallFi(GolfBall__Fv(), self->frameIndex);
+            void* o = ns2::PreData__9CGolfBallFi(ns2::GolfBall__Fv(), self->frameIndex);
             if (((CameraTrajectorySample*)o)->groundEffectState == 3 && self->action != 0x19) {
-                void* q = InstanceTable_Get();
+                void* q = ns2::InstanceTable_Get();
                 if (*(unsigned char*)((unsigned char*)(*(void**)((char*)q + 4)) + 0xa) != 3) {
-                    float f4 = self->fov - kFloat_0_17453292 * deltaTime;
-                    if (!(kCameraGroundEffectMinimumFovRadians < f4)) f4 = kCameraGroundEffectMinimumFovRadians;
-                    float f3 = f4 / kFloat_0_95993108;
-                    float f2 = kFloat_1_CameraWork - f3;
+                    float f4 = self->fov - ns2::kFloat_0_17453292 * deltaTime;
+                    if (!(ns2::kCameraGroundEffectMinimumFovRadians < f4))
+                        f4 = ns2::kCameraGroundEffectMinimumFovRadians;
+                    float f3 = f4 / ns2::kFloat_0_95993108;
+                    float f2 = ns2::kFloat_1_CameraWork - f3;
                     self->fov = f4;
-                    self->targetY = self->targetY - kFloat_5_CameraWork * f2;
+                    self->targetY = self->targetY - ns2::kFloat_5_CameraWork * f2;
                 }
             }
         }
 
     } while (0);
     // Phase 4: save the ball position for the next update and publish manual-offset view state.
-    __as__7WVectorFRC7WVector(&self->initialBallPosition, (Vec3*)GolfBall__Fv());
-    CCameraWork_UpdateInputOffsets((CameraInputState*)self, deltaTime);
+    ns2::__as__7WVectorFRC7WVector(&self->initialBallPosition, (Vec3*)ns2::GolfBall__Fv());
+    UpdateInputOffsets(deltaTime);
     return;
 }
 
+namespace ns2 {
+extern "C" {
+
 // Test the camera zero tolerance before restoring or applying input offsets.
-static inline bool CameraInputIsNearZero(const float& v) { return ((*(const unsigned*)&v & 0x80000000u) ? -v : v) < 0.00001f; }
+static inline bool CameraInputIsNearZero(const float& v) {
+    return ((*(const unsigned*)&v & 0x80000000u) ? -v : v) < 0.00001f;
+}
+
+} // extern "C"
+} // namespace ns2
+
+struct Mat34 {
+    float m[12];
+};
+struct Pair {
+    float yaw, pitch;
+};
+// Test the camera zero tolerance before restoring or applying input offsets.
+static inline bool CameraInputIsNearZero(const float& v) {
+    return ((*(const unsigned*)&v & 0x80000000u) ? -v : v) < 0.00001f;
+}
+
+extern "C" {
+extern signed char s_inputManagerInitialized;
+extern char s_gameInputManager[];
+extern char s_inputManagerDtorRegistration_CameraWork[];
+extern void* g_view;
+extern char s_cameraTransform[];
+extern CSharedDoc* g_sharedDoc;
+extern float kFloat_0_2617994, kFloat_2_CameraWork, kFloat_0_5235988_805DDFCC, kCameraManualMaximumFovRadians;
+extern float kCameraMinimumYawRadians, kCameraMinPitchRadians;
+extern const float kFloat_1_0471976_cameraWork;
+extern const float kFloat_0_17453292;
+extern const float kFloat_0_95993108;
+extern const float kFloat_0_CameraWork;
+void* Matrix_TransformPoint(void*, const void*, const void*);
+void Matrix_BuildCameraTransform(void*, const void*, const void*);
+void Matrix_CopyAffine(void*, const void*);
+void InputManager_Init(void*);
+void InputManager_Dtor();
+int Input_IsActionButtonDown(void*, int, int);
+int SharedDoc_IsPlayerFlag0Set(unsigned char);
+void Camera_SetFov(void*, float);
+void Vec2_Zero(void*);
+float Math_CosApprox(float);
+float Math_SinApprox(float);
+}
 
 // Apply camera zoom/yaw/pitch input, spring offsets back to zero, and publish the view transform.
-// Tuning / unit map: definitions in u800D89AC_data.cpp, except the shared
+// Tuning / unit map: definitions in the data section, except the shared
 // kFloat_0_95993108 in phase1_shared_data.cpp and the explicit epsilon literal.
-// dt is scaled gameplay seconds from CGolfRule_OnProcess (golf_rule_round_flow_and_shot_sim.cpp), via
+// dt is scaled gameplay seconds from CGolfRule::OnProcess (golf_rule_round_flow_and_shot_sim.cpp), via
 // UpdateMotionAndTarget or directly from PrepareNextShot. The clock/task chain
-// is CMainFrame_UpdateVirtualHooks -> CProjectG_Update(timeScale) -> task actor
+// is CMainFrame::UpdateVirtualHooks -> CProjectG_Update(timeScale) -> task actor
 // processing (main_frame_letter_and_mouse_cursor.cpp/project_g_app_and_devices.cpp/task_manager_and_actors.cpp). Some setup callers pass zero dt.
 // Rates below are radians/s, not radians/draw call.
 // inputRotationOffset[1] pitch: actions0/1 +/-kFloat_0_2617994=.2617994 (15deg/s),
@@ -2940,42 +3893,45 @@ static inline bool CameraInputIsNearZero(const float& v) { return ((*(const unsi
 // inputMoved=0 clears all offsets. Saved/random/scripted branches share clamps
 // but choose different base transforms. Calls publish view FOV/matrix, with no
 // retained input pointers or allocation and no error result.
-void CCameraWork_UpdateInputOffsets(CameraInputState* self, float dt) {
+void CCameraWork::UpdateInputOffsets(float dt) {
     // Phase 1: sample logical actions 0/1 (pitch +/-), 2/3 (yaw +/-), and spring back
     // unheld offsets without overshooting zero. Action IDs are not physical button masks.
     Mat34 matF8, matC8, mat98, mat68;
     Vec3 vec5C, vec50, vec44, target, vec2C, vec20;
     Pair angA, angB, angC;
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, InputManager_Dtor, s_inputManagerDtorRegistration_CameraWork);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    void* input = Sing_805DC5C8();
+    void* input = GetInputManagerSlot();
     int restricted = 0;
     unsigned char* game = (unsigned char*)(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-    if ((*(unsigned int*)&AsCGolfDoc(game)->gameStateFlags) == 0x40 && SharedDoc_IsPlayerFlag0Set(AsCGolfDoc(game)->currentPlayer) == 0)
+    if ((*(unsigned int*)&AsCGolfDoc(game)->gameStateFlags) == 0x40 &&
+        SharedDoc_IsPlayerFlag0Set(AsCGolfDoc(game)->currentPlayer) == 0)
         restricted = 1;
-    unsigned char* p = (unsigned char*)self;
     if ((Input_IsActionButtonDown(input, 0, -1) || Input_IsActionButtonDown(input, 1, -1) ||
-         Input_IsActionButtonDown(input, 2, -1) || Input_IsActionButtonDown(input, 3, -1)) && restricted == 0)
-        AsCCameraWork(p)->inputMoved = 1;
+         Input_IsActionButtonDown(input, 2, -1) || Input_IsActionButtonDown(input, 3, -1)) &&
+        restricted == 0)
+        inputMoved = 1;
 
     if (Input_IsActionButtonDown(input, 0, -1) == 0) {
         if (Input_IsActionButtonDown(input, 1, -1) == 0) {
-            if (!CameraInputIsNearZero(AsCCameraWork(p)->inputFovOffset)) {
-                float v = AsCCameraWork(p)->inputFovOffset;
+            if (!CameraInputIsNearZero(inputFovOffset)) {
+                float v = inputFovOffset;
                 if (v > kFloat_0_CameraWork) {
                     v = v - kFloat_1_0471976_cameraWork * dt;
-                    AsCCameraWork(p)->inputFovOffset = v;
-                    if (v < kFloat_0_CameraWork) AsCCameraWork(p)->inputFovOffset = kFloat_0_CameraWork;
+                    inputFovOffset = v;
+                    if (v < kFloat_0_CameraWork)
+                        inputFovOffset = kFloat_0_CameraWork;
                 } else {
                     v = v + kFloat_1_0471976_cameraWork * dt;
-                    AsCCameraWork(p)->inputFovOffset = v;
-                    if (v > kFloat_0_CameraWork) AsCCameraWork(p)->inputFovOffset = kFloat_0_CameraWork;
+                    inputFovOffset = v;
+                    if (v > kFloat_0_CameraWork)
+                        inputFovOffset = kFloat_0_CameraWork;
                 }
             }
         }
@@ -2983,166 +3939,177 @@ void CCameraWork_UpdateInputOffsets(CameraInputState* self, float dt) {
 
     float rateZ = kFloat_0_2617994;
     if (Input_IsActionButtonDown(input, 0, -1) && restricted == 0)
-        AsCCameraWork(p)->inputRotationOffset[1] += rateZ * dt;
+        inputRotationOffset[1] += rateZ * dt;
     if (Input_IsActionButtonDown(input, 1, -1) && restricted == 0)
-        AsCCameraWork(p)->inputRotationOffset[1] -= rateZ * dt;
+        inputRotationOffset[1] -= rateZ * dt;
     if (Input_IsActionButtonDown(input, 0, -1) == 0 && Input_IsActionButtonDown(input, 1, -1) == 0) {
-        if (!CameraInputIsNearZero(AsCCameraWork(p)->inputRotationOffset[1])) {
-            float v = AsCCameraWork(p)->inputRotationOffset[1];
+        if (!CameraInputIsNearZero(inputRotationOffset[1])) {
+            float v = inputRotationOffset[1];
             if (v > kFloat_0_CameraWork) {
                 float stepZ = kFloat_2_CameraWork * rateZ;
                 v = v - stepZ * dt;
-                AsCCameraWork(p)->inputRotationOffset[1] = v;
-                if (v < kFloat_0_CameraWork) AsCCameraWork(p)->inputRotationOffset[1] = kFloat_0_CameraWork;
+                inputRotationOffset[1] = v;
+                if (v < kFloat_0_CameraWork)
+                    inputRotationOffset[1] = kFloat_0_CameraWork;
             } else {
                 float stepZ2 = kFloat_2_CameraWork * rateZ;
                 v = v + stepZ2 * dt;
-                AsCCameraWork(p)->inputRotationOffset[1] = v;
-                if (v > kFloat_0_CameraWork) AsCCameraWork(p)->inputRotationOffset[1] = kFloat_0_CameraWork;
+                inputRotationOffset[1] = v;
+                if (v > kFloat_0_CameraWork)
+                    inputRotationOffset[1] = kFloat_0_CameraWork;
             }
         }
     }
 
     float rateY = kFloat_0_5235988_805DDFCC;
     if (Input_IsActionButtonDown(input, 2, -1) && restricted == 0)
-        AsCCameraWork(p)->inputRotationOffset[0] += rateY * dt;
+        inputRotationOffset[0] += rateY * dt;
     if (Input_IsActionButtonDown(input, 3, -1) && restricted == 0)
-        AsCCameraWork(p)->inputRotationOffset[0] -= rateY * dt;
+        inputRotationOffset[0] -= rateY * dt;
     if (Input_IsActionButtonDown(input, 2, -1) == 0 && Input_IsActionButtonDown(input, 3, -1) == 0) {
-        if (!CameraInputIsNearZero(AsCCameraWork(p)->inputRotationOffset[0])) {
-            float v = AsCCameraWork(p)->inputRotationOffset[0];
+        if (!CameraInputIsNearZero(inputRotationOffset[0])) {
+            float v = inputRotationOffset[0];
             if (v > kFloat_0_CameraWork) {
                 float stepY = kFloat_2_CameraWork * rateY;
                 v = v - stepY * dt;
-                AsCCameraWork(p)->inputRotationOffset[0] = v;
-                if (v < kFloat_0_CameraWork) AsCCameraWork(p)->inputRotationOffset[0] = kFloat_0_CameraWork;
+                inputRotationOffset[0] = v;
+                if (v < kFloat_0_CameraWork)
+                    inputRotationOffset[0] = kFloat_0_CameraWork;
             } else {
                 float stepY2 = kFloat_2_CameraWork * rateY;
                 v = v + stepY2 * dt;
-                AsCCameraWork(p)->inputRotationOffset[0] = v;
-                if (v > kFloat_0_CameraWork) AsCCameraWork(p)->inputRotationOffset[0] = kFloat_0_CameraWork;
+                inputRotationOffset[0] = v;
+                if (v > kFloat_0_CameraWork)
+                    inputRotationOffset[0] = kFloat_0_CameraWork;
             }
         }
     }
 
-    if (AsCCameraWork(p)->inputMoved == 0) {
-        AsCCameraWork(p)->inputFovOffset = kFloat_0_CameraWork;
-        Vec2_Zero((Vec3*)((unsigned char*)&AsCCameraWork(p)->inputRotationOffset[0]));
+    if (inputMoved == 0) {
+        inputFovOffset = kFloat_0_CameraWork;
+        Vec2_Zero((Vec3*)((unsigned char*)&inputRotationOffset[0]));
     }
 
     // Phase 2: choose saved/random/scripted base transform; clamp FOV and angular offsets
     // before rebuilding the world camera. In each branch a local direction becomes a
     // world-space target through that branch's camera transform.
-    if (AsCCameraWork(p)->randomModeRequested != 0) {
-        if (AsCCameraWork(p)->useSavedCameraTransform != 0) {
-            float fov = AsCCameraWork(p)->savedFov + AsCCameraWork(p)->inputFovOffset;
-            float c = fov < kFloat_0_17453292 ? kFloat_0_17453292 :
-                      fov > kCameraManualMaximumFovRadians ? kCameraManualMaximumFovRadians : fov;
-            Camera_SetFov(g_view, c);
-            if (!(CameraInputIsNearZero(AsCCameraWork(p)->inputRotationOffset[0]) && CameraInputIsNearZero(AsCCameraWork(p)->inputRotationOffset[1]))) {
-                float yaw = AsCCameraWork(p)->inputRotationOffset[0];
-                float a = yaw < kCameraMinimumYawRadians ? kCameraMinimumYawRadians :
-                          yaw > kFloat_1_0471976_cameraWork ? kFloat_1_0471976_cameraWork : yaw;
-                angA.yaw = a;
-                float pitch = AsCCameraWork(p)->inputRotationOffset[1];
-                float b = pitch < kCameraMinPitchRadians ? kCameraMinPitchRadians :
-                          pitch > kFloat_0_5235988_805DDFCC ? kFloat_0_5235988_805DDFCC : pitch;
-                angA.pitch = b;
+    if (randomModeRequested != 0) {
+        if (useSavedCameraTransform != 0) {
+            float fov = savedFov + inputFovOffset;
+            float clampedFov = fov < kFloat_0_17453292                ? kFloat_0_17453292
+                               : fov > kCameraManualMaximumFovRadians ? kCameraManualMaximumFovRadians
+                                                                      : fov;
+            Camera_SetFov(g_view, clampedFov);
+            if (!(CameraInputIsNearZero(inputRotationOffset[0]) && CameraInputIsNearZero(inputRotationOffset[1]))) {
+                float yaw = inputRotationOffset[0];
+                float clampedYaw = yaw < kCameraMinimumYawRadians      ? kCameraMinimumYawRadians
+                                   : yaw > kFloat_1_0471976_cameraWork ? kFloat_1_0471976_cameraWork
+                                                                       : yaw;
+                angA.yaw = clampedYaw;
+                float pitch = inputRotationOffset[1];
+                float clampedPitch = pitch < kCameraMinPitchRadians      ? kCameraMinPitchRadians
+                                     : pitch > kFloat_0_5235988_805DDFCC ? kFloat_0_5235988_805DDFCC
+                                                                         : pitch;
+                angA.pitch = clampedPitch;
                 float cosYaw = Math_CosApprox(angA.yaw);
                 float sinPitch = Math_SinApprox(angA.pitch);
                 vec50.x = Math_SinApprox(angA.yaw);
                 vec50.y = sinPitch;
                 vec50.z = cosYaw;
-                Matrix_TransformPoint(&vec5C, &vec50, (Vec3*)((unsigned char*)&AsCCameraWork(p)->transform[0]));
-                Matrix_BuildCameraTransform(&matF8, (unsigned char*)&AsCCameraWork(p)->savedCameraPosition[0], &vec5C);
+                Matrix_TransformPoint(&vec5C, &vec50, (Vec3*)((unsigned char*)&transform[0]));
+                Matrix_BuildCameraTransform(&matF8, (unsigned char*)&savedCameraPosition[0], &vec5C);
                 Matrix_CopyAffine((Vec3*)s_cameraTransform, (Vec3*)&matF8);
             } else {
-                Matrix_CopyAffine((Vec3*)s_cameraTransform, (Vec3*)((unsigned char*)&AsCCameraWork(p)->savedCameraRight[0]));
+                Matrix_CopyAffine((Vec3*)s_cameraTransform, (Vec3*)((unsigned char*)&savedCameraRight[0]));
             }
         } else {
-            float fov = kFloat_0_95993108 + AsCCameraWork(p)->inputFovOffset;
-            float c = fov < kFloat_0_17453292 ? kFloat_0_17453292 :
-                      fov > kCameraManualMaximumFovRadians ? kCameraManualMaximumFovRadians : fov;
-            Camera_SetFov(g_view, c);
-            if (!(CameraInputIsNearZero(AsCCameraWork(p)->inputRotationOffset[0]) && CameraInputIsNearZero(AsCCameraWork(p)->inputRotationOffset[1]))) {
-                float yaw = AsCCameraWork(p)->inputRotationOffset[0];
-                float a = yaw < kCameraMinimumYawRadians ? kCameraMinimumYawRadians :
-                          yaw > kFloat_1_0471976_cameraWork ? kFloat_1_0471976_cameraWork : yaw;
-                angB.yaw = a;
-                float pitch = AsCCameraWork(p)->inputRotationOffset[1];
-                float b = pitch < kCameraMinPitchRadians ? kCameraMinPitchRadians :
-                          pitch > kFloat_0_5235988_805DDFCC ? kFloat_0_5235988_805DDFCC : pitch;
-                angB.pitch = b;
+            float fov = kFloat_0_95993108 + inputFovOffset;
+            float clampedFov = fov < kFloat_0_17453292                ? kFloat_0_17453292
+                               : fov > kCameraManualMaximumFovRadians ? kCameraManualMaximumFovRadians
+                                                                      : fov;
+            Camera_SetFov(g_view, clampedFov);
+            if (!(CameraInputIsNearZero(inputRotationOffset[0]) && CameraInputIsNearZero(inputRotationOffset[1]))) {
+                float yaw = inputRotationOffset[0];
+                float clampedYaw = yaw < kCameraMinimumYawRadians      ? kCameraMinimumYawRadians
+                                   : yaw > kFloat_1_0471976_cameraWork ? kFloat_1_0471976_cameraWork
+                                                                       : yaw;
+                angB.yaw = clampedYaw;
+                float pitch = inputRotationOffset[1];
+                float clampedPitch = pitch < kCameraMinPitchRadians      ? kCameraMinPitchRadians
+                                     : pitch > kFloat_0_5235988_805DDFCC ? kFloat_0_5235988_805DDFCC
+                                                                         : pitch;
+                angB.pitch = clampedPitch;
                 float cosYaw = Math_CosApprox(angB.yaw);
                 float sinPitch = Math_SinApprox(angB.pitch);
                 target.x = Math_SinApprox(angB.yaw);
                 target.y = sinPitch;
                 target.z = cosYaw;
-                Matrix_TransformPoint(&vec44, &target, (Vec3*)((unsigned char*)&AsCCameraWork(p)->transform[0]));
-                Matrix_BuildCameraTransform(&matC8, (unsigned char*)&AsCCameraWork(p)->previousTransform[9], &vec44);
+                Matrix_TransformPoint(&vec44, &target, (Vec3*)((unsigned char*)&transform[0]));
+                Matrix_BuildCameraTransform(&matC8, (unsigned char*)&previousTransform[9], &vec44);
                 Matrix_CopyAffine((Vec3*)s_cameraTransform, (Vec3*)&matC8);
             } else {
-                Matrix_CopyAffine((Vec3*)s_cameraTransform, (Vec3*)((unsigned char*)&AsCCameraWork(p)->previousTransform[0]));
+                Matrix_CopyAffine((Vec3*)s_cameraTransform, (Vec3*)((unsigned char*)&previousTransform[0]));
             }
         }
     } else {
-        float fov = AsCCameraWork(p)->fov + AsCCameraWork(p)->inputFovOffset;
-        float c = fov < kFloat_0_17453292 ? kFloat_0_17453292 :
-                  fov > kCameraManualMaximumFovRadians ? kCameraManualMaximumFovRadians : fov;
-        Camera_SetFov(g_view, c);
-        if (AsCCameraWork(p)->playingAnimationGroup == 0) {
-            Matrix_BuildCameraTransform(&mat98, (unsigned char*)&AsCCameraWork(p)->position[0], (unsigned char*)&AsCCameraWork(p)->target[0]);
-            Matrix_CopyAffine((Vec3*)((unsigned char*)&AsCCameraWork(p)->previousTransform[0]), (Vec3*)&mat98);
+        float fov = this->fov + inputFovOffset;
+        float clampedFov = fov < kFloat_0_17453292                ? kFloat_0_17453292
+                           : fov > kCameraManualMaximumFovRadians ? kCameraManualMaximumFovRadians
+                                                                  : fov;
+        Camera_SetFov(g_view, clampedFov);
+        if (playingAnimationGroup == 0) {
+            Matrix_BuildCameraTransform(&mat98, (unsigned char*)&position[0], (unsigned char*)&this->target[0]);
+            Matrix_CopyAffine((Vec3*)((unsigned char*)&previousTransform[0]), (Vec3*)&mat98);
         }
-        if (!(CameraInputIsNearZero(AsCCameraWork(p)->inputRotationOffset[0]) && CameraInputIsNearZero(AsCCameraWork(p)->inputRotationOffset[1]))) {
-            float yaw = AsCCameraWork(p)->inputRotationOffset[0];
-            float a = yaw < kCameraMinimumYawRadians ? kCameraMinimumYawRadians :
-                      yaw > kFloat_1_0471976_cameraWork ? kFloat_1_0471976_cameraWork : yaw;
-            angC.yaw = a;
-            float pitch = AsCCameraWork(p)->inputRotationOffset[1];
-            float b = pitch < kCameraMinPitchRadians ? kCameraMinPitchRadians :
-                      pitch > kFloat_0_5235988_805DDFCC ? kFloat_0_5235988_805DDFCC : pitch;
-            angC.pitch = b;
+        if (!(CameraInputIsNearZero(inputRotationOffset[0]) && CameraInputIsNearZero(inputRotationOffset[1]))) {
+            float yaw = inputRotationOffset[0];
+            float clampedYaw = yaw < kCameraMinimumYawRadians      ? kCameraMinimumYawRadians
+                               : yaw > kFloat_1_0471976_cameraWork ? kFloat_1_0471976_cameraWork
+                                                                   : yaw;
+            angC.yaw = clampedYaw;
+            float pitch = inputRotationOffset[1];
+            float clampedPitch = pitch < kCameraMinPitchRadians      ? kCameraMinPitchRadians
+                                 : pitch > kFloat_0_5235988_805DDFCC ? kFloat_0_5235988_805DDFCC
+                                                                     : pitch;
+            angC.pitch = clampedPitch;
             float cosYaw = Math_CosApprox(angC.yaw);
             float sinPitch = Math_SinApprox(angC.pitch);
             vec20.x = Math_SinApprox(angC.yaw);
             vec20.y = sinPitch;
             vec20.z = cosYaw;
-            Matrix_TransformPoint(&vec2C, &vec20, (Vec3*)((unsigned char*)&AsCCameraWork(p)->previousTransform[0]));
-            Matrix_BuildCameraTransform(&mat68, (unsigned char*)&AsCCameraWork(p)->previousTransform[9], &vec2C);
+            Matrix_TransformPoint(&vec2C, &vec20, (Vec3*)((unsigned char*)&previousTransform[0]));
+            Matrix_BuildCameraTransform(&mat68, (unsigned char*)&previousTransform[9], &vec2C);
             Matrix_CopyAffine((Vec3*)s_cameraTransform, (Vec3*)&mat68);
         } else {
-            Matrix_CopyAffine((Vec3*)s_cameraTransform, (Vec3*)((unsigned char*)&AsCCameraWork(p)->previousTransform[0]));
+            Matrix_CopyAffine((Vec3*)s_cameraTransform, (Vec3*)((unsigned char*)&previousTransform[0]));
         }
         if (((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[0] > 0)
-            CCameraWork_UpdateBallProximitySound((CameraBezierState*)self);
+            UpdateBallProximitySound();
     }
 
     // Phase 3: reset the stored base FOV for the next update after publishing this frame.
-    if (AsCCameraWork(p)->resetFovPending != 0) {
+    if (resetFovPending != 0) {
         float v = kFloat_0_95993108;
-        AsCCameraWork(p)->resetFovPending = 0;
-        AsCCameraWork(p)->fov = v;
+        resetFovPending = 0;
+        this->fov = v;
     }
 }
 
-
-} // extern "C"
+namespace ns2 {
+extern "C" {} // extern "C"
 
 } // namespace ns2
 
 // ---- merged from camera_work_shot_cameras.cpp ----
+// Empty camera callback retained for its dispatch-table entry.
+void CCameraWork::NoopA() {}
+
+// Empty camera callback retained for its dispatch-table entry.
+void CCameraWork::NoopB() {}
+
 namespace ns3 {
-// Translation unit 0x800DE590-0x800DFC88 (18 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
-
-// Empty camera callback retained for its dispatch-table entry.
-void CCameraWork_NoopA() {}
-
-// Empty camera callback retained for its dispatch-table entry.
-void CCameraWork_NoopB() {}
 
 struct CameraAnimationState {
     char reservedBeforePosition[0x2C];
@@ -3186,7 +4153,7 @@ void __ml__FRC7WVectorf(void*, void*, float);
 void __ml__FfRC7WVector(void*, void*, float);
 void Vector_CrossProduct(void*, void*, void*);
 void* Normalize__7WVectorFv(void*);
-void Matrix_TransformPoint(void*, void*, void*);
+void* Matrix_TransformPoint(void*, void*, void*);
 void Matrix_SetAxisRotation(void*, float, int);
 void __mi__FRC7WVectorRC7WVector(void*, void*, void*);
 extern const float kFloat_0_CameraWork;
@@ -3225,8 +4192,35 @@ void Sound_PlayByName(void*, const char*, int, int, int, int, float, float, floa
 extern void* g_soundManager;
 extern const CameraWorkStrings cameraWorkStrings;
 
+} // extern "C"
+} // namespace ns3
+
+typedef Vec3f Vec3;
+extern "C" char* GolfBall__Fv();
+extern "C" void __as__7WVectorFRC7WVector(void*, const void*);
+extern "C" {
+extern const float kFloat_40_cameraWork;
+extern const float kFloat_0_7_CameraWork;
+extern const float kFloat_1_CameraWork;
+extern const float kFloat_0_95993108;
+extern const float kDegreesToRadians;
+extern const float kFloat_25_CameraWork;
+extern const float kFloat_0_5_CameraWork;
+extern const float kFloat_3_1415927_CameraWork;
+extern const float kFloat_15_CameraWork;
+extern const float kFloat_0_CameraWork;
+extern const float kFloat_200_CameraWork;
+extern char* PreData__9CGolfBallFi(void*, int);
+extern void __ml__FRC7WVectorf(void*, const void*, float);
+extern void __pl__FRC7WVectorRC7WVector(void*, const void*, const void*);
+extern void __mi__FRC7WVectorRC7WVector(void*, const void*, const void*);
+extern void Vector_CrossProduct(void*, const void*, const void*);
+extern void Sound_PlayByName(void*, const char*, void*, int, const char*, int, float, float, float);
+}
+void* InstanceTable_Get();
+
 // Track the shot with a pulsing FOV and one pass-by sound, then request the next camera action.
-void CCameraWork_UpdatePassByTracking(CameraAnimationState* self, float unused, float delta) {
+void CCameraWork::UpdatePassByTracking(float unused, float delta) {
     Vec3 current;
     Vec3 position;
     Vec3 direction;
@@ -3240,60 +4234,77 @@ void CCameraWork_UpdatePassByTracking(CameraAnimationState* self, float unused, 
     int frame;
     int index;
 
-    if (self->actionFlags & kCameraCutAtEvent) {
-        if (self->elapsedTime > (float)(int)self->cutoffFrame - kFloat_40_cameraWork) valid = 0;
-    } else if (self->elapsedTime > kFloat_0_7_CameraWork * self->secondEventFrame) {
+    if (actionFlags & kCameraCutAtEvent) {
+        if (elapsedTime > (float)(int)cutoffFrame - kFloat_40_cameraWork)
+            valid = 0;
+    } else if (elapsedTime > kFloat_0_7_CameraWork * secondEventFrame) {
         valid = 0;
     }
     if (valid) {
-        if (self->actionFlags & kCameraFollowCurrentBall) {
-            __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
+        if (actionFlags & kCameraFollowCurrentBall) {
+            __as__7WVectorFRC7WVector(target, GolfBall__Fv());
             index = 0;
         } else {
             index = -10;
-            __ml__FRC7WVectorf(&v0, PreData__9CGolfBallFi(GolfBall__Fv(), self->frameIndex - 9), delta);
-            __ml__FRC7WVectorf(&v1, PreData__9CGolfBallFi(GolfBall__Fv(), self->frameIndex - 10), kFloat_1_CameraWork - delta);
+            __ml__FRC7WVectorf(&v0, PreData__9CGolfBallFi(GolfBall__Fv(), frameIndex - 9), delta);
+            __ml__FRC7WVectorf(&v1, PreData__9CGolfBallFi(GolfBall__Fv(), frameIndex - 10),
+                               kFloat_1_CameraWork - delta);
             __pl__FRC7WVectorRC7WVector(&result, &v1, &v0);
-            __as__7WVectorFRC7WVector(&self->targetBytes, &result);
+            __as__7WVectorFRC7WVector(target, &result);
         }
-        self->fov = kFloat_0_95993108 - kDegreesToRadians * (kFloat_25_CameraWork * (float)sin(kFloat_0_5_CameraWork * (kFloat_3_1415927_CameraWork * ((self->elapsedTime + delta - self->curveStartFrame) / (kFloat_0_7_CameraWork * self->secondEventFrame - self->curveStartFrame)))));
+        fov =
+            kFloat_0_95993108 -
+            kDegreesToRadians *
+                (kFloat_25_CameraWork *
+                 (float)sin(kFloat_0_5_CameraWork * (kFloat_3_1415927_CameraWork *
+                                                     ((elapsedTime + delta - motionStartFrame) /
+                                                      (kFloat_0_7_CameraWork * secondEventFrame - motionStartFrame)))));
         if (*(unsigned char*)((char*)*(void**)((char*)InstanceTable_Get() + 4) + 10) == 0 &&
-            AsCCameraWork(self)->directionalSoundPlayed == 0 &&
-            self->firstEventFrame - self->elapsedTime < kFloat_15_CameraWork - (float)index) {
-            frame = (int)self->elapsedTime;
+            directionalSoundPlayed == 0 && firstEventFrame - elapsedTime < kFloat_15_CameraWork - (float)index) {
+            frame = (int)elapsedTime;
             __as__7WVectorFRC7WVector(&current, PreData__9CGolfBallFi(GolfBall__Fv(), frame));
-            frame = (int)self->elapsedTime;
+            frame = (int)elapsedTime;
             __mi__FRC7WVectorRC7WVector(&blend, PreData__9CGolfBallFi(GolfBall__Fv(), frame + 1), &current);
             __as__7WVectorFRC7WVector(&position, &blend);
             position.y = kFloat_0_CameraWork;
-            __mi__FRC7WVectorRC7WVector(&offset, (char*)&AsCCameraWork(self)->position[0], &current);
+            __mi__FRC7WVectorRC7WVector(&offset, (char*)&this->position[0], &current);
             __as__7WVectorFRC7WVector(&direction, &offset);
             direction.y = kFloat_0_CameraWork;
             Vector_CrossProduct(&axis, &position, &direction);
             if (axis.y > kFloat_0_CameraWork) {
-                Sound_PlayByName(g_soundManager, cameraWorkStrings.pass_RL, 0, 0, 0, 0, kFloat_0_5_CameraWork, kFloat_200_CameraWork, kFloat_1_CameraWork);
+                Sound_PlayByName(g_soundManager, cameraWorkStrings.pass_RL, 0, 0, 0, 0, kFloat_0_5_CameraWork,
+                                 kFloat_200_CameraWork, kFloat_1_CameraWork);
             } else {
-                Sound_PlayByName(g_soundManager, cameraWorkStrings.pass_LR, 0, 0, 0, 0, kFloat_0_5_CameraWork, kFloat_200_CameraWork, kFloat_1_CameraWork);
+                Sound_PlayByName(g_soundManager, cameraWorkStrings.pass_LR, 0, 0, 0, 0, kFloat_0_5_CameraWork,
+                                 kFloat_200_CameraWork, kFloat_1_CameraWork);
             }
-            AsCCameraWork(self)->directionalSoundPlayed = 1;
+            directionalSoundPlayed = 1;
         }
     } else {
-        self->fov = kFloat_0_95993108;
-        if (self->actionFlags & kCameraCutAtEvent) {
-            self->pendingAction = 0xE;
+        fov = kFloat_0_95993108;
+        if (actionFlags & kCameraCutAtEvent) {
+            pendingAction = 0xE;
         } else {
-            self->pendingAction = 0;
+            pendingAction = 0;
         }
     }
 }
 
 // Point the camera target directly at the current ball position.
-void CCameraWork_SetTargetToBall(CameraAnimationState* self) {
-    __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
+void CCameraWork::SetTargetToBall() {
+    __as__7WVectorFRC7WVector(target, GolfBall__Fv());
+}
+
+extern "C" {
+extern void* Normalize__7WVectorFv(void*);
+extern void __apl__7WVectorFRC7WVector(void*, void*);
+extern const float kFloat_35_Camera;
+extern const float kFloat_5_CameraWork;
+extern const float kFloat_0_CameraWork;
 }
 
 // Place a camera beside the caddie head, with actor/model fallbacks, and look at the ball.
-void CCameraWork_SetCaddieHeadView(CameraAnimationState* self) {
+void CCameraWork::SetCaddieHeadView() {
     // Resolve the caddie model and actor reply; neither lookup transfers ownership.
     extern void* g_sceneManager;
     extern void* g_taskManager;
@@ -3301,11 +4312,21 @@ void CCameraWork_SetCaddieHeadView(CameraAnimationState* self) {
     void* Object_GetChild(void*);
     void* TaskActorTable_FindByName(void*, const char*);
     void* WPuppet_FindBoneByName(void*, const char*);
-    struct Params { int a, type; void* out; int d, e, f, g, h; };
+    struct Params {
+        int a, type;
+        void* out;
+        int d, e, f, g, h;
+    };
     struct Object {
-        virtual void slot0() DECOMP_LOCAL_VIRTUAL; virtual void slot1() DECOMP_LOCAL_VIRTUAL; virtual void slot2() DECOMP_LOCAL_VIRTUAL;
-        virtual void slot3() DECOMP_LOCAL_VIRTUAL; virtual void slot4() DECOMP_LOCAL_VIRTUAL; virtual void slot5() DECOMP_LOCAL_VIRTUAL;
-        virtual void slot6() DECOMP_LOCAL_VIRTUAL; virtual void slot7() DECOMP_LOCAL_VIRTUAL; virtual void slot8() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot0() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot1() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot2() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot3() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot4() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot5() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot6() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot7() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot8() DECOMP_LOCAL_VIRTUAL;
         virtual void callback(void*) DECOMP_LOCAL_VIRTUAL;
     };
     Params params;
@@ -3327,7 +4348,8 @@ void CCameraWork_SetCaddieHeadView(CameraAnimationState* self) {
     Vec3 up;
     Vec3 a;
     void* caddiePuppet = NamedEffectList_FindByName(g_sceneManager, cameraWorkStrings.caddieLabel);
-    if (caddiePuppet == 0) return;
+    if (caddiePuppet == 0)
+        return;
     void* state = g_taskManager != 0 ? Object_GetChild(g_taskManager) : 0;
     Object* object = (Object*)TaskActorTable_FindByName(state, cameraWorkStrings.Caddie);
     if (object != 0) {
@@ -3339,7 +4361,8 @@ void CCameraWork_SetCaddieHeadView(CameraAnimationState* self) {
         params.f = 0;
         params.g = 0;
         params.h = 0;
-        if (object) object->callback(&params);
+        if (object)
+            object->callback(&params);
         __mi__FRC7WVectorRC7WVector(&difference, &source, GolfBall__Fv());
         __as__7WVectorFRC7WVector(&transform, &difference);
     } else {
@@ -3355,7 +4378,7 @@ void CCameraWork_SetCaddieHeadView(CameraAnimationState* self) {
         offset.y = kFloat_5_CameraWork;
         offset.z = kFloat_0_CameraWork;
         __pl__FRC7WVectorRC7WVector(&scale, ((BonePositionView*)headBone)->worldPosition, &offset);
-        __as__7WVectorFRC7WVector(&self->positionBytes, &scale);
+        __as__7WVectorFRC7WVector(position, &scale);
     } else if (object) {
         params2.a = 0;
         params2.type = 6;
@@ -3365,18 +4388,19 @@ void CCameraWork_SetCaddieHeadView(CameraAnimationState* self) {
         params2.f = 0;
         params2.g = 0;
         params2.h = 0;
-        if (object) object->callback(&params2);
+        if (object)
+            object->callback(&params2);
         offset2.x = kFloat_0_CameraWork;
         offset2.y = kFloat_10_cameraWork;
         offset2.z = kFloat_0_CameraWork;
         __pl__FRC7WVectorRC7WVector(&scale2, &buf, &offset2);
-        __as__7WVectorFRC7WVector(&self->positionBytes, &scale2);
+        __as__7WVectorFRC7WVector(position, &scale2);
     } else {
         offset3.x = kFloat_0_CameraWork;
         offset3.y = kFloat_10_cameraWork;
         offset3.z = kFloat_0_CameraWork;
         __pl__FRC7WVectorRC7WVector(&scale3, &((WPuppet*)caddiePuppet)->worldMatrix[9], &offset3);
-        __as__7WVectorFRC7WVector(&self->positionBytes, &scale3);
+        __as__7WVectorFRC7WVector(position, &scale3);
     }
     up.x = kFloat_0_CameraWork;
     up.y = kFloat_1_CameraWork;
@@ -3385,9 +4409,12 @@ void CCameraWork_SetCaddieHeadView(CameraAnimationState* self) {
     Vector_CrossProduct(&b, &up, &transform);
     __ml__FfRC7WVector(&c, &b, kFloat_10_cameraWork);
     __pl__FRC7WVectorRC7WVector(&sum, &c, &a);
-    __apl__7WVectorFRC7WVector(&self->positionBytes, &sum);
-    __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
+    __apl__7WVectorFRC7WVector(position, &sum);
+    __as__7WVectorFRC7WVector(target, GolfBall__Fv());
 }
+
+namespace ns3 {
+extern "C" {
 
 // Track the ball until the second event, then raise the target over the remaining trajectory.
 void CameraWork_UpdateBallTargetWithRisingOffset(CameraAnimationState* self, float unused, float delta) {
@@ -3396,7 +4423,8 @@ void CameraWork_UpdateBallTargetWithRisingOffset(CameraAnimationState* self, flo
     } else {
         char transform[12];
         float v[3];
-        float t = (self->elapsedTime + delta - self->secondEventFrame) / (self->trajectoryLastFrame - self->secondEventFrame);
+        float t =
+            (self->elapsedTime + delta - self->secondEventFrame) / (self->trajectoryLastFrame - self->secondEventFrame);
         v[0] = kFloat_0_CameraWork;
         v[2] = kFloat_0_CameraWork;
         v[1] = kFloat_5_CameraWork * t;
@@ -3406,25 +4434,68 @@ void CameraWork_UpdateBallTargetWithRisingOffset(CameraAnimationState* self, flo
     }
 }
 
+} // extern "C"
+} // namespace ns3
+
+extern "C" {
+extern const float kFloat_35_Camera;
+extern float kFloat_2_CameraWork;
+extern void Matrix_SetAxisRotation(void*, float, int);
+}
+
+extern "C" {
+extern const float kFloat_0_CameraWork;
+extern const float kFloat_10_cameraWork;
+extern const float kFloat_5_CameraWork;
+extern const float kFloat_35_Camera;
+extern const float kFloat_0_7_CameraWork;
+extern const float kFloat_200_CameraWork;
+extern const float kDegreesToRadians;
+extern const float kFloat_0_95993108;
+extern const float kFloat_1_CameraWork;
+extern float kFloat_0_2617994;
+extern float kFloat_2_CameraWork;
+extern const float kFloat_3_CameraWork;
+extern const float kFloat_40_cameraWork;
+extern const float kFloat_15_CameraWork;
+extern const float kFloat_250_CameraWork;
+extern const float kFloat_neg30_CameraWork;
+extern const float kFloat_60_CameraWork;
+extern const float kFloat_0_5_CameraWork;
+extern const float kFloat_neg1_CameraWork;
+extern const float kFloat_50_CameraWork;
+extern double kSignedIntToDoubleBias_CameraWork;
+extern const float kFloat_neg0_6981317_BezierPathCamera;
+extern const float kFloat_neg1_3089969_CameraWork;
+extern const float kFloat_1_0471976_cameraWork;
+extern const float kFloat_25_CameraWork;
+extern const float kFloat_30_0;
+extern const float kFloat_3_1415927_CameraWork;
+}
+
 // Zoom toward the ball during the first event interval, then request a follow-up action.
-void CCameraWork_UpdateInitialBallZoom(CameraAnimationState* self, float unused, float delta) {
-    if (self->elapsedTime < self->firstEventFrame) {
-        float t = (self->elapsedTime + delta) / self->firstEventFrame;
-        self->fov = kFloat_0_95993108 - kDegreesToRadians * (kFloat_35_Camera * t);
-        __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
-        self->targetY += kFloat_2_CameraWork * (kFloat_1_CameraWork - t);
+void CCameraWork::UpdateInitialBallZoom(float unused, float delta) {
+    if (elapsedTime < firstEventFrame) {
+        float t = (elapsedTime + delta) / firstEventFrame;
+        fov = kFloat_0_95993108 - kDegreesToRadians * (kFloat_35_Camera * t);
+        __as__7WVectorFRC7WVector(target, GolfBall__Fv());
+        target[1] += kFloat_2_CameraWork * (kFloat_1_CameraWork - t);
     } else {
-        self->resetFovPending = 1;
-        if (self->actionFlags & kCameraCutAtEvent) {
-            self->pendingAction = 0xE;
+        resetFovPending = 1;
+        if (actionFlags & kCameraCutAtEvent) {
+            pendingAction = 0xE;
         } else {
-            self->pendingAction = 0xB;
+            pendingAction = 0xB;
         }
     }
 }
 
+namespace ns3 {
+extern "C" {} // extern "C"
+} // namespace ns3
+
 // Follow a cubic camera path with a sinusoidal FOV and a target that rises after the second event.
-void CCameraWork_UpdateBezierBallTracking(CameraAnimationState* self, float unused, float delta) {
+void CCameraWork::UpdateBezierBallTracking(float unused, float delta) {
     Vec3 output;
     Vec3 movement;
     Vec3 curve;
@@ -3439,121 +4510,132 @@ void CCameraWork_UpdateBezierBallTracking(CameraAnimationState* self, float unus
     float u2;
     float u;
     float t2;
-    float t = (self->elapsedTime + delta - self->curveStartFrame) / (self->trajectoryLastFrame - self->curveStartFrame);
+    float t = (elapsedTime + delta - motionStartFrame) / (trajectoryLastFrame - motionStartFrame);
     u = kFloat_1_CameraWork - t;
     t2 = t * t;
     u2 = u * u;
     u3 = u2 * u;
-    __ml__FfRC7WVector(&curve, (char*)&AsCCameraWork(self)->curveControlPoints[9], t * t2);
+    __ml__FfRC7WVector(&curve, (char*)&curveControlPoints[9], t * t2);
     float control2Weight = kFloat_3_CameraWork * u;
     float control2Amount = control2Weight * t2;
-    __ml__FfRC7WVector(&p3, (char*)&AsCCameraWork(self)->curveControlPoints[6], control2Amount);
+    __ml__FfRC7WVector(&p3, (char*)&curveControlPoints[6], control2Amount);
     float control1Weight = kFloat_3_CameraWork * u2;
     float control1Amount = control1Weight * t;
-    __ml__FfRC7WVector(&p2, (char*)&AsCCameraWork(self)->curveControlPoints[3], control1Amount);
-    __ml__FfRC7WVector(&p1, (char*)&AsCCameraWork(self)->curveControlPoints[0], u3);
+    __ml__FfRC7WVector(&p2, (char*)&curveControlPoints[3], control1Amount);
+    __ml__FfRC7WVector(&p1, (char*)&curveControlPoints[0], u3);
     __pl__FRC7WVectorRC7WVector(&sum1, &p1, &p2);
     __pl__FRC7WVectorRC7WVector(&sum2, &sum1, &p3);
     __pl__FRC7WVectorRC7WVector(&sum3, &sum2, &curve);
-    __as__7WVectorFRC7WVector(&self->positionBytes, &sum3);
+    __as__7WVectorFRC7WVector(position, &sum3);
 
-    self->fov = kFloat_0_95993108 - kDegreesToRadians * (kFloat_25_CameraWork * (float)sin((double)(kFloat_3_1415927_CameraWork * t)));
-    if (self->elapsedTime < self->secondEventFrame) {
-        __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
-    } else if (self->elapsedTime < self->trajectoryLastFrame) {
+    fov = kFloat_0_95993108 -
+          kDegreesToRadians * (kFloat_25_CameraWork * (float)sin((double)(kFloat_3_1415927_CameraWork * t)));
+    if (elapsedTime < secondEventFrame) {
+        __as__7WVectorFRC7WVector(target, GolfBall__Fv());
+    } else if (elapsedTime < trajectoryLastFrame) {
 
-            movement.y = self->targetRiseHeight * ((self->elapsedTime + delta - self->secondEventFrame) / (self->trajectoryLastFrame - self->secondEventFrame));
+        movement.y =
+            targetRiseHeight * ((elapsedTime + delta - secondEventFrame) / (trajectoryLastFrame - secondEventFrame));
         movement.x = kFloat_0_CameraWork;
         movement.z = kFloat_0_CameraWork;
         __pl__FRC7WVectorRC7WVector(&output, GolfBall__Fv(), &movement);
-        __as__7WVectorFRC7WVector(&self->targetBytes, &output);
+        __as__7WVectorFRC7WVector(target, &output);
     }
 }
 
-// Follow a cubic camera path and rising ball target, cutting early when the event-cut flag is set.
-    void CCameraWork_UpdateBezierTrackingWithEventCut(CameraAnimationState* self, float unused, float delta) {
-        char weightedStart[12];
-        __typeof__(self->curveStartFrame) curveStartValue = self->curveStartFrame;
-        
-        unsigned char curvePosition[12];
-        __typeof__(curveStartValue) curveStartValueCopy = self->curveStartFrame;
-        __typeof__(curveStartValueCopy) curveStartUnusedCopy = self->curveStartFrame;
-        float curveStartForNumerator = self->curveStartFrame;
-        float curveStartForDenominator = self->curveStartFrame;
-        float t = ((self->elapsedTime + delta) - curveStartForNumerator) / (self->trajectoryLastFrame - curveStartForDenominator);
-        __typeof__(t * t) tSquaredUnused = t * t; float u = kFloat_1_CameraWork - t;
+namespace ns3 {
+extern "C" {} // extern "C"
+} // namespace ns3
 
-        float u2 = (u * u);
-        float tSquared = t * t;
-        
-        __typeof__(u2 * u) uCubed = u * u2;
-        __typeof__(u) uCopy = u;
-        __typeof__(u2) uSquaredCopy = u2;
-        __typeof__(uCubed) startWeight = u * uSquaredCopy;
-        
-        
-        float t2 = tSquared;
-        char weightedEnd[12];
-        __ml__FfRC7WVector(weightedEnd, (char*)&AsCCameraWork(self)->curveControlPoints[9], t * t2);
-        __typeof__(u) uForControl2 = u;
-        __typeof__(kFloat_3_CameraWork * uForControl2) control2Weight = kFloat_3_CameraWork * uForControl2;
-        unsigned char weightedControl2[12];
-        __ml__FfRC7WVector(weightedControl2, (char*)&AsCCameraWork(self)->curveControlPoints[6], control2Weight * t2);
-        __typeof__(kFloat_3_CameraWork * u2) control1Weight = kFloat_3_CameraWork * u2;
-        
-        float control1WeightCopy = kFloat_3_CameraWork * u2;
-        char weightedControl1[12];
-        __ml__FfRC7WVector(weightedControl1, (char*)&AsCCameraWork(self)->curveControlPoints[3], control1WeightCopy * t);
-        char curvePartial[12];
-        __ml__FfRC7WVector(weightedStart, (char*)&AsCCameraWork(self)->curveControlPoints[0], (startWeight));
-    unsigned char startAndControl1[12]; __pl__FRC7WVectorRC7WVector(startAndControl1, weightedStart, weightedControl1);
+// Follow a cubic camera path and rising ball target, cutting early when the event-cut flag is set.
+void CCameraWork::UpdateBezierTrackingWithEventCut(float unused, float delta) {
+    char weightedStart[12];
+    __typeof__(motionStartFrame) curveStartValue = motionStartFrame;
+
+    unsigned char curvePosition[12];
+    __typeof__(curveStartValue) curveStartValueCopy = motionStartFrame;
+    __typeof__(curveStartValueCopy) curveStartUnusedCopy = motionStartFrame;
+    float curveStartForNumerator = motionStartFrame;
+    float curveStartForDenominator = motionStartFrame;
+    float t = ((elapsedTime + delta) - curveStartForNumerator) / (trajectoryLastFrame - curveStartForDenominator);
+    __typeof__(t * t) tSquaredUnused = t * t;
+    float u = kFloat_1_CameraWork - t;
+
+    float u2 = (u * u);
+    float tSquared = t * t;
+
+    __typeof__(u2 * u) uCubed = u * u2;
+    __typeof__(u) uCopy = u;
+    __typeof__(u2) uSquaredCopy = u2;
+    __typeof__(uCubed) startWeight = u * uSquaredCopy;
+
+    float t2 = tSquared;
+    char weightedEnd[12];
+    __ml__FfRC7WVector(weightedEnd, (char*)&curveControlPoints[9], t * t2);
+    __typeof__(u) uForControl2 = u;
+    __typeof__(kFloat_3_CameraWork * uForControl2) control2Weight = kFloat_3_CameraWork * uForControl2;
+    unsigned char weightedControl2[12];
+    __ml__FfRC7WVector(weightedControl2, (char*)&curveControlPoints[6], control2Weight * t2);
+    __typeof__(kFloat_3_CameraWork * u2) control1Weight = kFloat_3_CameraWork * u2;
+
+    float control1WeightCopy = kFloat_3_CameraWork * u2;
+    char weightedControl1[12];
+    __ml__FfRC7WVector(weightedControl1, (char*)&curveControlPoints[3], control1WeightCopy * t);
+    char curvePartial[12];
+    __ml__FfRC7WVector(weightedStart, (char*)&curveControlPoints[0], (startWeight));
+    unsigned char startAndControl1[12];
+    __pl__FRC7WVectorRC7WVector(startAndControl1, weightedStart, weightedControl1);
     __pl__FRC7WVectorRC7WVector(curvePartial, startAndControl1, weightedControl2);
     __pl__FRC7WVectorRC7WVector(curvePosition, curvePartial, weightedEnd);
-    __as__7WVectorFRC7WVector(&self->positionBytes, curvePosition);
+    __as__7WVectorFRC7WVector(position, curvePosition);
 
-        self->fov = kFloat_0_95993108 - kDegreesToRadians * (kFloat_25_CameraWork * ((float)sin((kFloat_3_1415927_CameraWork * t))));
-    if (self->actionFlags & kCameraCutAtEvent) {
+    fov = kFloat_0_95993108 -
+          kDegreesToRadians * (kFloat_25_CameraWork * ((float)sin((kFloat_3_1415927_CameraWork * t))));
+    if (actionFlags & kCameraCutAtEvent) {
 
-            if (self->elapsedTime < ((float)(int)self->cutoffFrame - kFloat_30_0)) {
-            __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
+        if (elapsedTime < ((float)(int)cutoffFrame - kFloat_30_0)) {
+            __as__7WVectorFRC7WVector(target, GolfBall__Fv());
         } else {
-            self->pendingAction = 0xE;
+            pendingAction = 0xE;
         }
-    } else if (self->elapsedTime < self->secondEventFrame) {
-        __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
-        } else if (self->elapsedTime < self->trajectoryLastFrame) {
-            unsigned char result[12];
+    } else if (elapsedTime < secondEventFrame) {
+        __as__7WVectorFRC7WVector(target, GolfBall__Fv());
+    } else if (elapsedTime < trajectoryLastFrame) {
+        unsigned char result[12];
 
-            float v[3];
-            v[1] = self->targetRiseHeight * ((self->elapsedTime + delta - self->secondEventFrame) / (self->trajectoryLastFrame - self->secondEventFrame));
+        float v[3];
+        v[1] = targetRiseHeight * ((elapsedTime + delta - secondEventFrame) / (trajectoryLastFrame - secondEventFrame));
         v[0] = kFloat_0_CameraWork;
         v[2] = kFloat_0_CameraWork;
         __pl__FRC7WVectorRC7WVector(result, GolfBall__Fv(), v);
-        __as__7WVectorFRC7WVector(&self->targetBytes, result);
+        __as__7WVectorFRC7WVector(target, result);
     }
 }
+
+namespace ns3 {
+extern "C" {
 
 extern float kFloat_2_CameraWork;
 
-struct CameraTransitionTimer {
-    char reservedBeforePosition[0x154];
-    float animationTime;
-};
-
-void CCameraWork_ConfigureMode(CameraTransitionTimer*, int, int);
+} // extern "C"
+} // namespace ns3
 
 // Request the quarter-view action once the animation timer exceeds two units.
-void CCameraWork_RequestQuarterViewAfterDelay(CameraTransitionTimer* self) {
-    if (self->animationTime > kFloat_2_CameraWork) {
-        CCameraWork_ConfigureMode(self, 0x15, 1);
+void CCameraWork::RequestQuarterViewAfterDelay() {
+    if (animationTime > kFloat_2_CameraWork) {
+        ConfigureMode(0x15, 1);
     }
 }
 
+namespace ns3 {
+extern "C" {} // extern "C"
+} // namespace ns3
+
 // Track the ball until the second event, then move the target along a cubic Bezier curve.
-void CCameraWork_UpdateBezierTarget(CameraAnimationState* self, float unused, float delta) {
-    if (self->elapsedTime < self->secondEventFrame) {
-        __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
-    } else if (self->elapsedTime < self->trajectoryLastFrame) {
+void CCameraWork::UpdateBezierTarget(float unused, float delta) {
+    if (elapsedTime < secondEventFrame) {
+        __as__7WVectorFRC7WVector(target, GolfBall__Fv());
+    } else if (elapsedTime < trajectoryLastFrame) {
         Vec3 result;
         Vec3 p3;
         Vec3 p2;
@@ -3566,137 +4648,169 @@ void CCameraWork_UpdateBezierTarget(CameraAnimationState* self, float unused, fl
         float u2;
         float u;
         float t2;
-        float t = (self->elapsedTime + delta - self->secondEventFrame) / (self->trajectoryLastFrame - self->secondEventFrame);
+        float t = (elapsedTime + delta - secondEventFrame) / (trajectoryLastFrame - secondEventFrame);
         u = kFloat_1_CameraWork - t;
         t2 = t * t;
         u2 = u * u;
         u3 = u2 * u;
-        __ml__FfRC7WVector(&result, (char*)&AsCCameraWork(self)->curveControlPoints[9], t * t2);
+        __ml__FfRC7WVector(&result, (char*)&curveControlPoints[9], t * t2);
         float control2Weight = kFloat_3_CameraWork * u;
         float control2Amount = control2Weight * t2;
-        __ml__FfRC7WVector(&p3, (char*)&AsCCameraWork(self)->curveControlPoints[6], control2Amount);
+        __ml__FfRC7WVector(&p3, (char*)&curveControlPoints[6], control2Amount);
         float control1Weight = kFloat_3_CameraWork * u2;
         float control1Amount = control1Weight * t;
-        __ml__FfRC7WVector(&p2, (char*)&AsCCameraWork(self)->curveControlPoints[3], control1Amount);
-        __ml__FfRC7WVector(&p1, (char*)&AsCCameraWork(self)->curveControlPoints[0], u3);
+        __ml__FfRC7WVector(&p2, (char*)&curveControlPoints[3], control1Amount);
+        __ml__FfRC7WVector(&p1, (char*)&curveControlPoints[0], u3);
         __pl__FRC7WVectorRC7WVector(&sum1, &p1, &p2);
         __pl__FRC7WVectorRC7WVector(&sum2, &sum1, &p3);
         __pl__FRC7WVectorRC7WVector(&sum3, &sum2, &result);
-        __as__7WVectorFRC7WVector(&self->targetBytes, &sum3);
+        __as__7WVectorFRC7WVector(target, &sum3);
     }
+}
+
+namespace ns3 {
+extern "C" {} // extern "C"
+} // namespace ns3
+
+extern "C" {
+extern const float kFloat_neg0_6981317_BezierPathCamera;
 }
 
 // Narrow the FOV while tracking the ball, then move the target onto its Bezier path.
-void CCameraWork_UpdateBallToBezierTarget(CameraAnimationState* self, float unused, float delta) {
-    if (self->elapsedTime < self->secondEventFrame) {
+void CCameraWork::UpdateBallToBezierTarget(float unused, float delta) {
+    if (elapsedTime < secondEventFrame) {
 
-            self->fov = kFloat_0_2617994 - (kFloat_neg0_6981317_BezierPathCamera * ((self->elapsedTime + delta - self->curveStartFrame) / (self->secondEventFrame - self->curveStartFrame)));
-        __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
-    } else if (self->elapsedTime < self->trajectoryLastFrame) {
+        fov = kFloat_0_2617994 - (kFloat_neg0_6981317_BezierPathCamera *
+                                  ((elapsedTime + delta - motionStartFrame) / (secondEventFrame - motionStartFrame)));
+        __as__7WVectorFRC7WVector(target, GolfBall__Fv());
+    } else if (elapsedTime < trajectoryLastFrame) {
         float u3;
         float u2;
         float u;
-            float t2;
-            float t = ((self->elapsedTime + delta) - self->secondEventFrame) / (self->trajectoryLastFrame - self->secondEventFrame);
+        float t2;
+        float t = ((elapsedTime + delta) - secondEventFrame) / (trajectoryLastFrame - secondEventFrame);
         u = kFloat_1_CameraWork - t;
-            float uValue2 = u;
-            u2 = uValue2 * uValue2;
-            t2 = t * t;
+        float uValue2 = u;
+        u2 = uValue2 * uValue2;
+        t2 = t * t;
         unsigned char a[12], b[12], c[12], d[12];
-            float u2Value = u2;
-            u3 = u2Value * u;
+        float u2Value = u2;
+        u3 = u2Value * u;
 
-            __ml__FfRC7WVector(a, (char*)&AsCCameraWork(self)->curveControlPoints[9], t * t2);
-            __typeof__(u) uForControl2 = u;
-            __typeof__(kFloat_3_CameraWork * uForControl2) control2Weight = kFloat_3_CameraWork * uForControl2;
-            __ml__FfRC7WVector(b, (char*)&AsCCameraWork(self)->curveControlPoints[6], (control2Weight) * t2);
-        __typeof__(u2) uSquaredCopy = u2; __typeof__(uSquaredCopy * kFloat_3_CameraWork) control1Weight = kFloat_3_CameraWork * uSquaredCopy; __ml__FfRC7WVector(c, (char*)&AsCCameraWork(self)->curveControlPoints[3], (control1Weight) * t);
-            __ml__FfRC7WVector(d, (char*)&AsCCameraWork(self)->curveControlPoints[0], u3);
-        char e[12]; char f[12]; char g[12];
+        __ml__FfRC7WVector(a, (char*)&curveControlPoints[9], t * t2);
+        __typeof__(u) uForControl2 = u;
+        __typeof__(kFloat_3_CameraWork * uForControl2) control2Weight = kFloat_3_CameraWork * uForControl2;
+        __ml__FfRC7WVector(b, (char*)&curveControlPoints[6], (control2Weight)*t2);
+        __typeof__(u2) uSquaredCopy = u2;
+        __typeof__(uSquaredCopy * kFloat_3_CameraWork) control1Weight = kFloat_3_CameraWork * uSquaredCopy;
+        __ml__FfRC7WVector(c, (char*)&curveControlPoints[3], (control1Weight)*t);
+        __ml__FfRC7WVector(d, (char*)&curveControlPoints[0], u3);
+        char e[12];
+        char f[12];
+        char g[12];
         __pl__FRC7WVectorRC7WVector(e, d, c);
         __pl__FRC7WVectorRC7WVector(f, e, b);
         __pl__FRC7WVectorRC7WVector(g, f, a);
-        __as__7WVectorFRC7WVector(&self->targetBytes, g);
+        __as__7WVectorFRC7WVector(target, g);
     }
 }
 
+namespace ns3 {
+extern "C" {} // extern "C"
+} // namespace ns3
+
 // Move along a Bezier path while lifting the ball target before and after the second event.
-    void CCameraWork_UpdateBezierPositionAndRaisedBallTarget(CameraAnimationState* self, float unused, float delta) {
-        unsigned char g[12];
-        
-        float curveStartForDenominator = self->curveStartFrame;
-        char d[12];
-        float curveStartForNumerator = self->curveStartFrame;
-        unsigned char a[12];
-        float t = ((self->elapsedTime + delta) - curveStartForNumerator) / (self->trajectoryLastFrame - curveStartForDenominator);
-        float tSquared = t * t;
-        float tSquaredUnused = t * t;
-        char b[12];
-        float u = 1.0f - t;
+void CCameraWork::UpdateBezierPositionAndRaisedBallTarget(float unused, float delta) {
+    unsigned char g[12];
+
+    float curveStartForDenominator = motionStartFrame;
+    char d[12];
+    float curveStartForNumerator = motionStartFrame;
+    unsigned char a[12];
+    float t = ((elapsedTime + delta) - curveStartForNumerator) / (trajectoryLastFrame - curveStartForDenominator);
+    float tSquared = t * t;
+    float tSquaredUnused = t * t;
+    char b[12];
+    float u = 1.0f - t;
     float u2 = u * u;
 
-        __typeof__(u) uCopy = u;
-        float t2 = tSquared;
-        __typeof__(u2) uSquaredCopy = u2;
-        __typeof__(uCopy * uSquaredCopy) startWeight = uSquaredCopy * uCopy;
-        __typeof__(u) uForControl2 = u;
-        __ml__FfRC7WVector(a, (char*)&AsCCameraWork(self)->curveControlPoints[9], (t2 * t));
-        __typeof__(uForControl2 * 3.0f) control2Weight = 3.0f * uForControl2;
-        __ml__FfRC7WVector(b, (char*)&AsCCameraWork(self)->curveControlPoints[6], control2Weight * t2);
-        char c[12];
+    __typeof__(u) uCopy = u;
+    float t2 = tSquared;
+    __typeof__(u2) uSquaredCopy = u2;
+    __typeof__(uCopy * uSquaredCopy) startWeight = uSquaredCopy * uCopy;
+    __typeof__(u) uForControl2 = u;
+    __ml__FfRC7WVector(a, (char*)&curveControlPoints[9], (t2 * t));
+    __typeof__(uForControl2 * 3.0f) control2Weight = 3.0f * uForControl2;
+    __ml__FfRC7WVector(b, (char*)&curveControlPoints[6], control2Weight * t2);
+    char c[12];
 
-        __ml__FfRC7WVector(c, (char*)&AsCCameraWork(self)->curveControlPoints[3], (u2 * 3.0f) * t);
-        __ml__FfRC7WVector(d, (char*)&AsCCameraWork(self)->curveControlPoints[0], (startWeight));
+    __ml__FfRC7WVector(c, (char*)&curveControlPoints[3], (u2 * 3.0f) * t);
+    __ml__FfRC7WVector(d, (char*)&curveControlPoints[0], (startWeight));
 
-    unsigned char f[12]; char e[12]; __pl__FRC7WVectorRC7WVector(e, d, c); __pl__FRC7WVectorRC7WVector(f, e, b);
+    unsigned char f[12];
+    char e[12];
+    __pl__FRC7WVectorRC7WVector(e, d, c);
+    __pl__FRC7WVectorRC7WVector(f, e, b);
     __pl__FRC7WVectorRC7WVector(g, f, a);
-    __as__7WVectorFRC7WVector(&self->positionBytes, g);
-    if (self->elapsedTime < self->secondEventFrame) {
-        __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
-        self->targetY += 2.0f * (1.0f - t);
-        } else if (self->elapsedTime < self->trajectoryLastFrame) {
-            float v[3];
-            char result[12];
-            v[1] = self->targetRiseHeight * ((self->elapsedTime + delta - self->secondEventFrame) / (self->trajectoryLastFrame - self->secondEventFrame));
+    __as__7WVectorFRC7WVector(position, g);
+    if (elapsedTime < secondEventFrame) {
+        __as__7WVectorFRC7WVector(target, GolfBall__Fv());
+        target[1] += 2.0f * (1.0f - t);
+    } else if (elapsedTime < trajectoryLastFrame) {
+        float v[3];
+        char result[12];
+        v[1] = targetRiseHeight * ((elapsedTime + delta - secondEventFrame) / (trajectoryLastFrame - secondEventFrame));
         v[2] = 0.0f;
         v[0] = 0.0f;
 
         __pl__FRC7WVectorRC7WVector(result, GolfBall__Fv(), v);
-        __as__7WVectorFRC7WVector(&self->targetBytes, result);
+        __as__7WVectorFRC7WVector(target, result);
     }
 }
 
+namespace ns3 {
+extern "C" {} // extern "C"
+} // namespace ns3
+
 // Move on a Bezier path and rotate the ball-facing direction by the current heading.
-void CCameraWork_UpdateBezierOrbit(CameraAnimationState* self, float delta, float frameOffset) {
-    char rotation[0x30], combined[12], result[12], rotated[12]; // rotation is a 3x4 matrix (Matrix_SetAxisRotation writes 0x30)
-        float t = (self->elapsedTime + frameOffset - self->curveStartFrame) / (self->trajectoryLastFrame - self->curveStartFrame);
+void CCameraWork::UpdateBezierOrbit(float delta, float frameOffset) {
+    char rotation[0x30], combined[12], result[12],
+        rotated[12]; // rotation is a 3x4 matrix (Matrix_SetAxisRotation writes 0x30)
+    float t = (elapsedTime + frameOffset - motionStartFrame) / (trajectoryLastFrame - motionStartFrame);
     float t2 = t * t;
     float u = 1.0f - t;
     float u2 = u * u;
     float u3 = u2 * u;
     char a[12], b[12], c[12], d[12];
-    __ml__FfRC7WVector(a, (char*)&AsCCameraWork(self)->curveControlPoints[9], t * t2);
-    __ml__FfRC7WVector(b, (char*)&AsCCameraWork(self)->curveControlPoints[6], 3.0f * u * t2);
-    __ml__FfRC7WVector(c, (char*)&AsCCameraWork(self)->curveControlPoints[3], 3.0f * u2 * t);
-    __ml__FfRC7WVector(d, (char*)&AsCCameraWork(self)->curveControlPoints[0], u3);
+    __ml__FfRC7WVector(a, (char*)&curveControlPoints[9], t * t2);
+    __ml__FfRC7WVector(b, (char*)&curveControlPoints[6], 3.0f * u * t2);
+    __ml__FfRC7WVector(c, (char*)&curveControlPoints[3], 3.0f * u2 * t);
+    __ml__FfRC7WVector(d, (char*)&curveControlPoints[0], u3);
     char e[12], f[12], g[12];
     __pl__FRC7WVectorRC7WVector(e, d, c);
     __pl__FRC7WVectorRC7WVector(f, e, b);
     __pl__FRC7WVectorRC7WVector(g, f, a);
-    __as__7WVectorFRC7WVector(&self->positionBytes, g);
-    if (self->elapsedTime < self->secondEventFrame) self->heading -= 0.03490658476948738f * delta;
-    Matrix_SetAxisRotation(rotation, self->heading, 0);
+    __as__7WVectorFRC7WVector(position, g);
+    if (elapsedTime < secondEventFrame)
+        heading -= 0.03490658476948738f * delta;
+    Matrix_SetAxisRotation(rotation, heading, 0);
     void* source = GolfBall__Fv();
-    __mi__FRC7WVectorRC7WVector(rotated, source, &self->positionBytes);
+    __mi__FRC7WVectorRC7WVector(rotated, source, position);
     Matrix_TransformPoint(result, rotated, rotation);
-    __pl__FRC7WVectorRC7WVector(combined, &self->positionBytes, result);
-    __as__7WVectorFRC7WVector(&self->targetBytes, combined);
+    __pl__FRC7WVectorRC7WVector(combined, position, result);
+    __as__7WVectorFRC7WVector(target, combined);
 }
 
+namespace ns3 {
+extern "C" {} // extern "C"
+} // namespace ns3
+
 // Frame the ball from its shot-side direction, rotate the target, and finish after two animation units.
-void CCameraWork_UpdateShotSideTargetRotation(CameraAnimationState* self, float deltaTime) {
+void CCameraWork::UpdateShotSideTargetRotation(float deltaTime) {
     unsigned char rot[0x38];
-    struct Vec3i { int x, y, z; };
+    struct Vec3i {
+        int x, y, z;
+    };
     Vec3i shotDirection;
     Vec3i sideDirectionCopy;
     Vec3i sideDirection;
@@ -3722,25 +4836,31 @@ void CCameraWork_UpdateShotSideTargetRotation(CameraAnimationState* self, float 
     Vec3i* normalizedSide = (Vec3i*)Normalize__7WVectorFv(&sideDirection);
     *(long long*)&sideDirectionCopy = *(long long*)normalizedSide;
     sideDirectionCopy.z = normalizedSide->z;
-    if (self->animationTime < kFloat_2_CameraWork) {
+    if (animationTime < kFloat_2_CameraWork) {
         __ml__FfRC7WVector(a, &sideDirectionCopy, kFloat_3_CameraWork);
-        __ml__FfRC7WVector(b, &shotDirection, kFloat_2_CameraWork * (kFloat_1_CameraWork - kFloat_3_CameraWork * self->animationTime));
+        __ml__FfRC7WVector(b, &shotDirection,
+                           kFloat_2_CameraWork * (kFloat_1_CameraWork - kFloat_3_CameraWork * animationTime));
         __pl__FRC7WVectorRC7WVector(c, GolfBall__Fv(), b);
         __pl__FRC7WVectorRC7WVector(d, c, a);
-        __as__7WVectorFRC7WVector(&self->positionBytes, d);
-        if (self->animationTime < kFloat_0_5_CameraWork) {
-            __mi__FRC7WVectorRC7WVector(e, &self->positionBytes, &sideDirectionCopy);
-            __as__7WVectorFRC7WVector(&self->targetBytes, e);
+        __as__7WVectorFRC7WVector(position, d);
+        if (animationTime < kFloat_0_5_CameraWork) {
+            __mi__FRC7WVectorRC7WVector(e, position, &sideDirectionCopy);
+            __as__7WVectorFRC7WVector(target, e);
         } else {
-            if (self->heading > kFloat_neg1_3089969_CameraWork) self->heading -= kFloat_1_0471976_cameraWork * deltaTime;
-            float angle = self->heading;
+            if (heading > kFloat_neg1_3089969_CameraWork)
+                heading -= kFloat_1_0471976_cameraWork * deltaTime;
+            float angle = heading;
             Matrix_SetAxisRotation(rot, angle, 1);
             Matrix_TransformPoint(f, &sideDirectionCopy, rot);
-            __mi__FRC7WVectorRC7WVector(g, &self->positionBytes, f);
-            __as__7WVectorFRC7WVector(&self->targetBytes, g);
+            __mi__FRC7WVectorRC7WVector(g, position, f);
+            __as__7WVectorFRC7WVector(target, g);
         }
-    } else self->pendingAction = 4;
+    } else
+        pendingAction = 4;
 }
+
+namespace ns3 {
+extern "C" {
 
 // Blend the initial and current ball positions and add a fixed target height.
 void CameraWork_InterpolatePreviousAndCurrentBallTarget(CameraAnimationState* self, float unused, float delta) {
@@ -3760,68 +4880,78 @@ void CameraWork_InterpolatePreviousAndCurrentBallTarget(CameraAnimationState* se
     __as__7WVectorFRC7WVector(&self->targetBytes, target);
 }
 
+} // extern "C"
+} // namespace ns3
+
 // Track or raise the ball target and request a new action at the event cutoff.
-void CCameraWork_UpdateBallTargetWithEventCut(CameraAnimationState* self, float unused, float delta) {
-    if (self->actionFlags & kCameraCutAtEvent) {
-        if (self->elapsedTime < (float)self->cutoffFrame - kFloat_40_cameraWork) {
-            __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
+void CCameraWork::UpdateBallTargetWithEventCut(float unused, float delta) {
+    if (actionFlags & kCameraCutAtEvent) {
+        if (elapsedTime < (float)cutoffFrame - kFloat_40_cameraWork) {
+            __as__7WVectorFRC7WVector(target, GolfBall__Fv());
         } else {
-            self->pendingAction = 0xE;
+            pendingAction = 0xE;
         }
-    } else if (self->elapsedTime < self->secondEventFrame) {
-        __as__7WVectorFRC7WVector(&self->targetBytes, GolfBall__Fv());
-    } else if (self->secondEventFrame > kFloat_250_CameraWork) {
-        self->pendingAction = 4;
+    } else if (elapsedTime < secondEventFrame) {
+        __as__7WVectorFRC7WVector(target, GolfBall__Fv());
+    } else if (secondEventFrame > kFloat_250_CameraWork) {
+        pendingAction = 4;
     } else {
         char result[12];
         float v[3];
-        v[1] = 5.0f * ((self->elapsedTime + delta - self->secondEventFrame) / (1.0f + (self->trajectoryLastFrame - self->secondEventFrame)));
+        v[1] = 5.0f * ((elapsedTime + delta - secondEventFrame) / (1.0f + (trajectoryLastFrame - secondEventFrame)));
         v[0] = 0.0f;
         v[2] = 0.0f;
         __pl__FRC7WVectorRC7WVector(result, GolfBall__Fv(), v);
-        __as__7WVectorFRC7WVector(&self->targetBytes, result);
+        __as__7WVectorFRC7WVector(target, result);
     }
 }
 
+namespace ns3 {
+extern "C" {} // extern "C"
+} // namespace ns3
+
 // Roll and approach along the shot direction until the first trajectory event.
-void CCameraWork_UpdateRollingShotApproach(CameraAnimationState* self, float unused, float delta) {
+void CCameraWork::UpdateRollingShotApproach(float unused, float delta) {
     unsigned char shotDirection[12];
     unsigned char sideDirection[12];
-    char target[12];
-        float up[3];
+    char targetScratch[12]; // not read; keeps the frame layout
+    float up[3];
 
-    char position[12];
+    char ballPosition[12];
 
-        float t = ((self->elapsedTime + delta) - self->curveStartFrame) / (self->firstEventFrame - self->curveStartFrame);
-        self->roll = kDegreesToRadians * (60.0f * t - 30.0f);
+    float t = ((elapsedTime + delta) - motionStartFrame) / (firstEventFrame - motionStartFrame);
+    roll = kDegreesToRadians * (60.0f * t - 30.0f);
     void* base = GolfBall__Fv();
 
-        *(int*)shotDirection = *(int*)&((CGolfBall*)base)->m_velocity.x;
-        *(int*)((shotDirection + 4)) = *(int*)&((CGolfBall*)base)->m_velocity.y;
-        *(int*)((shotDirection + 8)) = *(int*)&((CGolfBall*)base)->m_velocity.z;
+    *(int*)shotDirection = *(int*)&((CGolfBall*)base)->m_velocity.x;
+    *(int*)((shotDirection + 4)) = *(int*)&((CGolfBall*)base)->m_velocity.y;
+    *(int*)((shotDirection + 8)) = *(int*)&((CGolfBall*)base)->m_velocity.z;
     Normalize__7WVectorFv(shotDirection);
     up[0] = kFloat_0_CameraWork;
     up[1] = kFloat_1_CameraWork;
     up[2] = kFloat_0_CameraWork;
     Vector_CrossProduct(sideDirection, up, shotDirection);
     Normalize__7WVectorFv(sideDirection);
-    unsigned char lateralOffset[12]; __ml__FfRC7WVector(lateralOffset, sideDirection, kFloat_0_5_CameraWork * t + kFloat_neg1_CameraWork);
-    __pl__FRC7WVectorRC7WVector(position, GolfBall__Fv(), lateralOffset);
-    __as__7WVectorFRC7WVector(&self->targetBytes, position);
-    unsigned char cameraPosition[12]; unsigned char rearOffset[12];
-    __ml__FfRC7WVector(rearOffset, shotDirection, kFloat_50_CameraWork * (kFloat_1_CameraWork - t)); __pl__FRC7WVectorRC7WVector(cameraPosition, &self->targetBytes, rearOffset);
-    __as__7WVectorFRC7WVector(&self->positionBytes, cameraPosition);
-    if (self->elapsedTime > self->firstEventFrame) self->pendingAction = 0;
+    unsigned char lateralOffset[12];
+    __ml__FfRC7WVector(lateralOffset, sideDirection, kFloat_0_5_CameraWork * t + kFloat_neg1_CameraWork);
+    __pl__FRC7WVectorRC7WVector(ballPosition, GolfBall__Fv(), lateralOffset);
+    __as__7WVectorFRC7WVector(target, ballPosition);
+    unsigned char cameraPosition[12];
+    unsigned char rearOffset[12];
+    __ml__FfRC7WVector(rearOffset, shotDirection, kFloat_50_CameraWork * (kFloat_1_CameraWork - t));
+    __pl__FRC7WVectorRC7WVector(cameraPosition, target, rearOffset);
+    __as__7WVectorFRC7WVector(position, cameraPosition);
+    if (elapsedTime > firstEventFrame)
+        pendingAction = 0;
 }
 
-} // extern "C"
+namespace ns3 {
+extern "C" {} // extern "C"
 
 } // namespace ns3
 
 // ---- merged from camera_work_shot_cameras.cpp ----
 namespace ns4 {
-// Translation unit 0x800DFC88-0x800E1318 (21 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -3884,7 +5014,7 @@ void __as__7WVectorFRC7WVector(void*, void*);
 float WVectorLen__FRC7WVector(void*);
 void* Normalize__7WVectorFv(void*);
 void __amu__7WVectorFf(void*, float);
-void Matrix_TransformPoint(void*, void*, void*);
+void* Matrix_TransformPoint(void*, void*, void*);
 void Vector_CrossProduct(void*, void*, void*);
 void* Matrix_BuildCameraTransform(void*, void*, void*);
 void __apl__7WVectorFRC7WVector(void*, void*);
@@ -3897,7 +5027,6 @@ void __ml__FfRC7WVector(void*, ...);
 float Magnitude__7WVectorCFv(void*);
 void Matrix_SetAxisRotation(void*, float);
 int WView_DefaultAcceptVisibility(void*, void*);
-void CCameraWork_ConfigureMode(void*, int, int);
 double sqrt(double);
 float __ml__FRC7WVectorRC7WVector(void*, void*);
 
@@ -3937,194 +5066,215 @@ struct CameraInterpolationState {
     float roll;
 };
 
-struct VecBits { unsigned int x, y, z; };
-struct VecPair { unsigned int x, y; };
-struct VecBitsP { VecPair xy; unsigned int z; };
-struct VecEntry { char reserved00[0x0C]; VecBitsP vec; char reserved18[8]; };
+struct VecBits {
+    unsigned int x, y, z;
+};
+struct VecPair {
+    unsigned int x, y;
+};
+struct VecBitsP {
+    VecPair xy;
+    unsigned int z;
+};
+struct VecEntry {
+    char reserved00[0x0C];
+    VecBitsP vec;
+    char reserved18[8];
+};
 typedef char VecEntry_size[(sizeof(VecEntry) == 0x20) ? 1 : -1];
 
+} // extern "C"
+} // namespace ns4
+
+extern "C" {
+extern const float kCameraNearHoleViewMinimumFrames;
+extern const float kFloat_0_1_805DDF94;
+float __ml__FRC7WVectorRC7WVector(void*, void*);
+float WVectorLen__FRC7WVector(void*);
+double sqrt(double);
+extern void* g_view;
+int WView_DefaultAcceptVisibility(void*, void*);
+}
+
 // Constrain ball-tracking pitch and choose a closer hole view when the trajectory approaches the hole.
-void CCameraWork_TrackBallPitchAndSelectHoleView(CameraInterpolationState* self, float amount) {
-    if (self->action == kCameraTrackBallPitch) {
-        VecBits cur = (*(VecBits*)&AsCCameraWork(self)->previousTransform[6]);
-        VecBitsP sourceBits;
-        VecBitsP targetBits;
+void CCameraWork::TrackBallPitchAndSelectHoleView(float amount) {
+    if (action == kCameraTrackBallPitch) {
+        ns4::VecBits cur = (*(ns4::VecBits*)&previousTransform[6]);
+        ns4::VecBitsP sourceBits;
+        ns4::VecBitsP targetBits;
         unsigned int posTemp[3];
-        __mi__FRC7WVectorRC7WVector(posTemp, GolfBall__Fv(), self->pos);
+        __mi__FRC7WVectorRC7WVector(posTemp, GolfBall__Fv(), position);
         unsigned int targetTemp[3];
-        sourceBits = *(VecBitsP*)Normalize__7WVectorFv(posTemp);
-        __mi__FRC7WVectorRC7WVector(targetTemp, (char*)&AsCCameraWork(self)->initialBallPosition[0], (char*)&AsCCameraWork(self)->previousTransform[9]);
-        targetBits = *(VecBitsP*)Normalize__7WVectorFv(targetTemp);
+        sourceBits = *(ns4::VecBitsP*)Normalize__7WVectorFv(posTemp);
+        __mi__FRC7WVectorRC7WVector(targetTemp, (char*)&initialBallPosition[0], (char*)&previousTransform[9]);
+        targetBits = *(ns4::VecBitsP*)Normalize__7WVectorFv(targetTemp);
         if (*(float*)&sourceBits.xy.y > *(float*)&cur.y || *(float*)&sourceBits.xy.y < *(float*)&targetBits.xy.y) {
             float out[3];
-            *(float*)&sourceBits.xy.y = *(float*)&cur.y + kFloat_0_1_805DDF94 * (amount * (*(float*)&sourceBits.xy.y - *(float*)&cur.y));
-            __pl__FRC7WVectorRC7WVector(out, self->pos, &sourceBits);
-            __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], out);
+            *(float*)&sourceBits.xy.y =
+                *(float*)&cur.y + kFloat_0_1_805DDF94 * (amount * (*(float*)&sourceBits.xy.y - *(float*)&cur.y));
+            __pl__FRC7WVectorRC7WVector(out, position, &sourceBits);
+            __as__7WVectorFRC7WVector((char*)&target[0], out);
         } else {
-            float s = (kFloat_1_CameraWork - *(float*)&cur.y * *(float*)&cur.y) / (kFloat_1_CameraWork - *(float*)&sourceBits.xy.y * *(float*)&sourceBits.xy.y);
+            float s = (kFloat_1_CameraWork - *(float*)&cur.y * *(float*)&cur.y) /
+                      (kFloat_1_CameraWork - *(float*)&sourceBits.xy.y * *(float*)&sourceBits.xy.y);
             float scale = sqrt(s);
             *(float*)&sourceBits.xy.x *= scale;
             *(float*)&sourceBits.z *= scale;
             *(float*)&sourceBits.xy.y = *(float*)&cur.y;
             float out[3];
-            __pl__FRC7WVectorRC7WVector(out, self->pos, &sourceBits);
-            __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], out);
+            __pl__FRC7WVectorRC7WVector(out, position, &sourceBits);
+            __as__7WVectorFRC7WVector((char*)&target[0], out);
         }
     } else {
-        __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], GolfBall__Fv());
+        __as__7WVectorFRC7WVector((char*)&target[0], GolfBall__Fv());
     }
-    if (self->trajectoryLastFrame > kCameraNearHoleViewMinimumFrames) { if (self->elapsedTime > kFloat_0_5_CameraWork * self->trajectoryLastFrame) {
-        float b[3];
-        VecBitsP vec2;
-        float a[3];
-        VecBitsP vec;
-        float magnitude[3];
-        VecBitsP mag;
-        {
-            void* m = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-            VecEntry* e = &((VecEntry*)AsCGolfDoc(m)->holeRecords)[AsCGolfDoc(m)->currentHoleIndex];
-            vec = e->vec;
-        }
-        {
-            void* m = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-            VecEntry* e = &((VecEntry*)AsCGolfDoc(m)->holeRecords)[AsCGolfDoc(m)->currentHoleIndex];
-            vec2 = e->vec;
-        }
-        __mi__FRC7WVectorRC7WVector(a, PreData__9CGolfBallFi(GolfBall__Fv(), 0), &vec);
-        void* trans = GolfBall__Fv();
-        void* child = GolfBall__Fv();
-        __mi__FRC7WVectorRC7WVector(b, PreData__9CGolfBallFi(child, ((CGolfBall*)trans)->m_preDataCount), &vec2);
-
-        if ((__ml__FRC7WVectorRC7WVector(b, a)) > kFloat_0_CameraWork) {
+    if (trajectoryLastFrame > kCameraNearHoleViewMinimumFrames) {
+        if (elapsedTime > kFloat_0_5_CameraWork * trajectoryLastFrame) {
+            float b[3];
+            ns4::VecBitsP vec2;
+            float a[3];
+            ns4::VecBitsP vec;
+            float magnitude[3];
+            ns4::VecBitsP mag;
             {
                 void* m = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-                VecEntry* e = &((VecEntry*)AsCGolfDoc(m)->holeRecords)[AsCGolfDoc(m)->currentHoleIndex];
-                mag = e->vec;
+                ns4::VecEntry* e = &((ns4::VecEntry*)AsCGolfDoc(m)->holeRecords)[AsCGolfDoc(m)->currentHoleIndex];
+                vec = e->vec;
             }
-            void* t = GolfBall__Fv();
-            void* c = GolfBall__Fv();
-            __mi__FRC7WVectorRC7WVector(magnitude, PreData__9CGolfBallFi(c, ((CGolfBall*)t)->m_preDataCount), &mag);
-            float len = WVectorLen__FRC7WVector(magnitude);
-            if (len < kFloat_16_CameraWork) {
-                unsigned int flags = self->randomValue;
+            {
+                void* m = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
+                ns4::VecEntry* e = &((ns4::VecEntry*)AsCGolfDoc(m)->holeRecords)[AsCGolfDoc(m)->currentHoleIndex];
+                vec2 = e->vec;
+            }
+            __mi__FRC7WVectorRC7WVector(a, PreData__9CGolfBallFi(GolfBall__Fv(), 0), &vec);
+            void* trans = GolfBall__Fv();
+            void* child = GolfBall__Fv();
+            __mi__FRC7WVectorRC7WVector(b, PreData__9CGolfBallFi(child, ((CGolfBall*)trans)->m_preDataCount), &vec2);
 
-                        CCameraWork_ConfigureMode(self, ((int)(((flags & 1)) ^ (flags >> 31)) - (int)(flags >> 31) + 0x6F), 1);
+            if ((__ml__FRC7WVectorRC7WVector(b, a)) > kFloat_0_CameraWork) {
+                {
+                    void* m = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
+                    ns4::VecEntry* e = &((ns4::VecEntry*)AsCGolfDoc(m)->holeRecords)[AsCGolfDoc(m)->currentHoleIndex];
+                    mag = e->vec;
+                }
+                void* t = GolfBall__Fv();
+                void* c = GolfBall__Fv();
+                __mi__FRC7WVectorRC7WVector(magnitude, PreData__9CGolfBallFi(c, ((CGolfBall*)t)->m_preDataCount), &mag);
+                float len = WVectorLen__FRC7WVector(magnitude);
+                if (len < kFloat_16_CameraWork) {
+                    unsigned int flags = randomValue;
+
+                    ConfigureMode(((int)(((flags & 1)) ^ (flags >> 31)) - (int)(flags >> 31) + 0x6F), 1);
+                }
             }
         }
-    } }
+    }
 }
 
-struct E0E64Manager { char reserved00[0x2BC]; void* entries; };
-struct E0E64Entry { char reserved00[0x0C]; float vec[3]; };
+namespace ns4 {
+extern "C" {
+
+struct E0E64Manager {
+    char reserved00[0x2BC];
+    void* entries;
+};
+struct E0E64Entry {
+    char reserved00[0x0C];
+    float vec[3];
+};
+
+} // extern "C"
+} // namespace ns4
 
 // Test the ball sphere against the view and choose another hole angle when it leaves the view.
-void CCameraWork_ChangeAngleWhenBallLeavesView(CameraInterpolationState* self) {
+void CCameraWork::ChangeAngleWhenBallLeavesView() {
     float value = ((CGolfBall*)GolfBall__Fv())->m_radius;
     float key[4];
     __as__7WVectorFRC7WVector(key, GolfBall__Fv());
     key[3] = value;
     if (WView_DefaultAcceptVisibility(g_view, key) == 0) {
-        unsigned int flags = self->randomValue;
+        unsigned int flags = randomValue;
         int idx = (int)((flags & 1) ^ (flags >> 31)) - (int)(flags >> 31) + 0x6D;
-        CCameraWork_ConfigureMode(self, idx, 1);
+        ConfigureMode(idx, 1);
     }
 }
 
 // Move the camera along the horizontal shot direction at a fixed rate.
-void CCameraWork_AdvanceAlongBallHorizontalVector(CameraInterpolationState* self, float amount) {
-    struct Source { unsigned int x; float y; unsigned int z; };
+void CCameraWork::AdvanceAlongBallHorizontalVector(float amount) {
+    struct Source {
+        unsigned int x;
+        float y;
+        unsigned int z;
+    };
     Source* current = (Source*)(&((CGolfBall*)GolfBall__Fv())->m_velocity);
     Source source = *current;
-    source.y = kFloat_0_CameraWork;
+    source.y = ns4::kFloat_0_CameraWork;
     float a[3], b[3];
     __ml__FRC7WVectorf(b, &source, amount);
-    __ml__FRC7WVectorf(a, b, kFloat_0_8_CameraWork);
-    __apl__7WVectorFRC7WVector(self->pos, a);
-    __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], GolfBall__Fv());
-    self->targetY += kFloat_2_5_CameraWork;
+    __ml__FRC7WVectorf(a, b, ns4::kFloat_0_8_CameraWork);
+    __apl__7WVectorFRC7WVector(position, a);
+    __as__7WVectorFRC7WVector((char*)&target[0], GolfBall__Fv());
+    target[1] += ns4::kFloat_2_5_CameraWork;
 }
 
 // Interpolate the saved camera positions and rotate the target direction over the transition.
-void CCameraWork_InterpolatePositionAndOrientation(CameraInterpolationState* self) {
+void CCameraWork::InterpolatePositionAndOrientation() {
     // Unlike the duration-normalized variant below, animationTime itself is the blend
     // factor here; duration only gates updates. Do not silently divide by duration.
-        if (!(self->animationTime > self->duration)) {
-            float c[3];
-            float b[3];
-            float pad[12];
-            float a[3];
+    if (!(animationTime > duration)) {
+        float c[3];
+        float b[3];
+        float pad[12];
+        float a[3];
 
-        __mi__FRC7WVectorRC7WVector(a, self->endPosition, self->startPosition);
+        __mi__FRC7WVectorRC7WVector(a, endPosition, startPosition);
 
-            __ml__FRC7WVectorf(b, a, self->animationTime);
-            __pl__FRC7WVectorRC7WVector(c, self->startPosition, b);
+        __ml__FRC7WVectorf(b, a, animationTime);
+        __pl__FRC7WVectorRC7WVector(c, startPosition, b);
 
-        __as__7WVectorFRC7WVector(self->pos, c);
-            float r[4];
-            float q[4];
-            Quat_Slerp(q, self->startQuaternion, self->endQuaternion, self->animationTime);
+        __as__7WVectorFRC7WVector(position, c);
+        float r[4];
+        float q[4];
+        ns4::Quat_Slerp(q, startQuaternion, endQuaternion, animationTime);
 
-            Quat_ToMatrix3x3(pad, q);
-            float d[3];
-            __pl__FRC7WVectorRC7WVector(d, (char*)&AsCCameraWork(self)->position[0], (pad + 6));
-        __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], d);
+        ns4::Quat_ToMatrix3x3(pad, q);
+        float d[3];
+        __pl__FRC7WVectorRC7WVector(d, (char*)&position[0], (pad + 6));
+        __as__7WVectorFRC7WVector((char*)&target[0], d);
     }
 }
 
-struct CameraFovState {
-    char reserved00[0x208];
-    float value;
-};
-
 // Increase the field of view toward the normal camera FOV without overshooting.
-void CCameraWork_RestoreNormalFov(CameraFovState* self, float delta) {
-    float limit = kFloat_0_95993108;
-    float value = self->value + limit * delta;
-    self->value = value;
+void CCameraWork::RestoreNormalFov(float delta) {
+    float limit = ns4::kFloat_0_95993108;
+    float value = fov + limit * delta;
+    fov = value;
     if (value > limit)
-        self->value = limit;
+        fov = limit;
 }
-
-struct CameraShakeState {
-    char reserved00[0x60];
-    unsigned int flags;
-    char reserved64[0xF0];
-    float animationTime;
-    float lastShakeTime;
-    float shakeStartTime;
-};
 
 // Start camera shake and reset its sample timer using the current animation time.
-void CCameraWork_Quake(CameraShakeState* self) {
-    float minusOne = kFloat_neg1_CameraWork;
-    float value = self->animationTime;
-    self->flags |= kCameraShakeActive;
-    self->shakeStartTime = value;
-    self->lastShakeTime = minusOne;
+void CCameraWork::Quake() {
+    float minusOne = ns4::kFloat_neg1_CameraWork;
+    float value = animationTime;
+    actionFlags |= kCameraShakeActive;
+    shakeStartTime = value;
+    lastShakeUpdateTime = minusOne;
 }
-
-struct CameraLoweringState {
-    char reserved00[0x30];
-    float value;
-    char reserved34[4];
-    char transform[1];
-};
 
 // Lower the camera and keep its target at the current ball position.
-void CCameraWork_LowerPositionAndTrackBall(CameraLoweringState* self, float delta) {
-    self->value -= kCameraLoweringSpeed * delta;
+void CCameraWork::LowerPositionAndTrackBall(float delta) {
+    position[1] -= ns4::kCameraLoweringSpeed * delta;
     void* transform = GolfBall__Fv();
-    __as__7WVectorFRC7WVector(self->transform, transform);
+    __as__7WVectorFRC7WVector((char*)&target[0], transform);
 }
-
-struct CameraBehindBallState { char reserved00[0x2C]; float pos[3]; float targetX; float targetY; };
 
 #pragma opt_propagation off
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
 #pragma opt_strength_reduction off
 // Place the camera behind a moving ball using a ground-projected target and ball-radius clearance.
-void CCameraWork_PositionBehindMovingBall(CameraBehindBallState* self) {
+void CCameraWork::PositionBehindMovingBall() {
     float buf[3];
     void* manager = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
     void* entries = *((void**)((char*)&AsCGolfDoc(manager)->holeRecords));
@@ -4135,12 +5285,12 @@ void CCameraWork_PositionBehindMovingBall(CameraBehindBallState* self) {
     point[1] = *((unsigned int*)(entryBase + 0x10));
     point[2] = *((unsigned int*)(entryBase + 0x14));
     __mi__FRC7WVectorRC7WVector(buf, (char*)GolfBall__Fv(), point);
-    buf[1] = kFloat_0_CameraWork;
+    buf[1] = ns4::kFloat_0_CameraWork;
     float length = Magnitude__7WVectorCFv(buf);
     __as__7WVectorFRC7WVector(buf, &((CGolfBall*)GolfBall__Fv())->m_velocity);
-    buf[1] = kFloat_0_CameraWork;
-    if (Magnitude__7WVectorCFv(buf) > kFloat_1_CameraWork) {
-        if (length > ((CGolfBall*)GolfBall__Fv())->m_radius * kFloat_3_CameraWork) {
+    buf[1] = ns4::kFloat_0_CameraWork;
+    if (Magnitude__7WVectorCFv(buf) > ns4::kFloat_1_CameraWork) {
+        if (length > ((CGolfBall*)GolfBall__Fv())->m_radius * ns4::kFloat_3_CameraWork) {
             float result[3];
             void* t = GolfBall__Fv();
             char* tp = (char*)t;
@@ -4151,17 +5301,17 @@ void CCameraWork_PositionBehindMovingBall(CameraBehindBallState* self) {
             saved[1] = s1;
             saved[2] = *((unsigned int*)(tp + 8));
             void* cb = CQuadTree_GetInstance();
-            GetGroundPoint__9CQuadTreeF7WVectorbPib(result, cb, saved, 0, 0, 0);
-            __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], result);
+            ns4::GetGroundPoint__9CQuadTreeF7WVectorbPib(result, cb, saved, 0, 0, 0);
+            __as__7WVectorFRC7WVector((char*)&target[0], result);
             float speed = ((CGolfBall*)GolfBall__Fv())->m_radius;
-            *((float*)((char*)&AsCCameraWork(self)->target[1])) += speed;
+            target[1] += speed;
             void* r = Normalize__7WVectorFv(buf);
             float buf14[3];
             float out8[3];
-            __ml__FfRC7WVector(out8, r, kCameraBehindBallOffset);
-            __mi__FRC7WVectorRC7WVector(buf14, (char*)&AsCCameraWork(self)->target[0], out8);
-            __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->position[0], buf14);
-            *((float*)((char*)&AsCCameraWork(self)->position[1])) += kFloat_1_CameraWork;
+            __ml__FfRC7WVector(out8, r, ns4::kCameraBehindBallOffset);
+            __mi__FRC7WVectorRC7WVector(buf14, (char*)&target[0], out8);
+            __as__7WVectorFRC7WVector((char*)&position[0], buf14);
+            position[1] += ns4::kFloat_1_CameraWork;
         }
     }
 }
@@ -4169,216 +5319,227 @@ void CCameraWork_PositionBehindMovingBall(CameraBehindBallState* self) {
 #pragma opt_common_subs reset
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
+
 // Blend the camera position while framing the ball with shot-direction and lateral offsets.
-void CCameraWork_BlendShotSidePosition(CameraInterpolationState* self, float unused, float delta) {
+void CCameraWork::BlendShotSidePosition(float unused, float delta) {
     float a0[3], d0[3], r0[3], axis[3];
     float s1[3], m1[3], s2[3], m2[3];
     float o2[3], o1[3], o6[3], o5[3], o4[3], o3[3];
     __as__7WVectorFRC7WVector(a0, &((CGolfBall*)GolfBall__Fv())->m_velocity);
-    axis[0] = kFloat_0_CameraWork;
-    axis[1] = kFloat_1_CameraWork;
-    axis[2] = kFloat_0_CameraWork;
+    axis[0] = ns4::kFloat_0_CameraWork;
+    axis[1] = ns4::kFloat_1_CameraWork;
+    axis[2] = ns4::kFloat_0_CameraWork;
     Vector_CrossProduct(r0, axis, a0);
     __as__7WVectorFRC7WVector(d0, r0);
     float sp1 = ((CGolfBall*)GolfBall__Fv())->m_radius;
     __ml__FRC7WVectorf(m1, Normalize__7WVectorFv(a0), sp1);
-    __ml__FRC7WVectorf(s1, m1, kFloat_2_CameraWork);
+    __ml__FRC7WVectorf(s1, m1, ns4::kFloat_2_CameraWork);
     __as__7WVectorFRC7WVector(a0, s1);
     float sp2 = ((CGolfBall*)GolfBall__Fv())->m_radius;
     __ml__FRC7WVectorf(m2, Normalize__7WVectorFv(d0), sp2);
-    __ml__FRC7WVectorf(s2, m2, kFloat_1_2_CameraWork);
+    __ml__FRC7WVectorf(s2, m2, ns4::kFloat_1_2_CameraWork);
     __as__7WVectorFRC7WVector(d0, s2);
-    float t = (self->elapsedTime + delta) / self->trajectoryLastFrame;
-    const float& cl = (s_cameraWorkInterpolationLimit < t) ? s_cameraWorkInterpolationLimit : t;
+    float t = (elapsedTime + delta) / trajectoryLastFrame;
+    const float& cl = (ns4::s_cameraWorkInterpolationLimit < t) ? ns4::s_cameraWorkInterpolationLimit : t;
     float f = cl;
     __pl__FRC7WVectorRC7WVector(o1, GolfBall__Fv(), d0);
     __mi__FRC7WVectorRC7WVector(o2, o1, a0);
-    __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], o2);
-    __mi__FRC7WVectorRC7WVector(o3, self->pos + 3, self->valueCC + 3);
+    __as__7WVectorFRC7WVector((char*)&target[0], o2);
+    __mi__FRC7WVectorRC7WVector(o3, target, &previousTransform[9]);
     __ml__FRC7WVectorf(o4, o3, f);
-    __pl__FRC7WVectorRC7WVector(o5, self->valueCC + 3, o4);
+    __pl__FRC7WVectorRC7WVector(o5, &previousTransform[9], o4);
     __mi__FRC7WVectorRC7WVector(o6, o5, a0);
-    __as__7WVectorFRC7WVector(self->pos, o6);
+    __as__7WVectorFRC7WVector(position, o6);
 }
 
 // Empty camera callback retained for its dispatch-table entry.
-void CCameraWork_NoopC() {}
+void CCameraWork::NoopC() {}
 // Empty camera callback retained for its dispatch-table entry.
-void CCameraWork_NoopD() {}
+void CCameraWork::NoopD() {}
 // Empty camera callback retained for its dispatch-table entry.
-void CCameraWork_NoopE() {}
-
-struct CameraRetreatState {
-    char reserved00[0x20];
-    unsigned int value20[3];
-    float pos[3];
-    char reserved38[0x1D0];
-    float fov;
-};
+void CCameraWork::NoopE() {}
 
 // Retreat along the hole-to-shot direction and widen FOV, disabling motion when close to the hole.
-void CCameraWork_RetreatFromHoleAndWidenFov(CameraRetreatState* self, float amount) {
+void CCameraWork::RetreatFromHoleAndWidenFov(float amount) {
     float direction[3];
     float point[3];
-    VecBitsP source;
-    VecBitsP target;
-    E0E64Manager* manager = (E0E64Manager*)(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
+    ns4::VecBitsP source;
+    ns4::VecBitsP targetVec;
+    ns4::E0E64Manager* manager = (ns4::E0E64Manager*)(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
     unsigned char idx = AsCGolfDoc(manager)->currentHoleIndex;
-    VecEntry* entry = &((VecEntry*)manager->entries)[idx];
+    ns4::VecEntry* entry = &((ns4::VecEntry*)manager->entries)[idx];
     source = entry->vec;
-    __mi__FRC7WVectorRC7WVector(point, ((CameraTransformView*)s_cameraTransform)->position, &source);
-    if (WVectorLen__FRC7WVector(point) < kFloat_16_CameraWork) {
-        *(VecBitsP*)self->value20 = *(VecBitsP*)zeroInitializationWords;
+    __mi__FRC7WVectorRC7WVector(point, ((CameraTransformView*)ns4::s_cameraTransform)->position, &source);
+    if (WVectorLen__FRC7WVector(point) < ns4::kFloat_16_CameraWork) {
+        *(ns4::VecBitsP*)&motionCallbackThisAdjustment = *(ns4::VecBitsP*)ns4::zeroInitializationWords;
     } else {
-        manager = (E0E64Manager*)(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
+        manager = (ns4::E0E64Manager*)(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
         idx = AsCGolfDoc(manager)->currentHoleIndex;
-        entry = &((VecEntry*)manager->entries)[idx];
-        target = entry->vec;
+        entry = &((ns4::VecEntry*)manager->entries)[idx];
+        targetVec = entry->vec;
         void* trans = GolfBall__Fv();
         void* rot = PreData__9CGolfBallFi(trans, 0);
-        __mi__FRC7WVectorRC7WVector(direction, rot, &target);
-        direction[1] = kFloat_0_CameraWork;
+        __mi__FRC7WVectorRC7WVector(direction, rot, &targetVec);
+        direction[1] = ns4::kFloat_0_CameraWork;
         Normalize__7WVectorFv(direction);
-        __amu__7WVectorFf(direction, kCameraShared20 * amount);
-        __apl__7WVectorFRC7WVector(self->pos, direction);
-        __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], GolfBall__Fv());
-        self->fov += kFloat_0_17453292 * amount;
+        ns4::__amu__7WVectorFf(direction, ns4::kCameraShared20 * amount);
+        __apl__7WVectorFRC7WVector(position, direction);
+        __as__7WVectorFRC7WVector((char*)&target[0], GolfBall__Fv());
+        fov += ns4::kFloat_0_17453292 * amount;
     }
 }
 
 // Blend saved positions while rotating the look direction through the stored heading.
-void CCameraWork_InterpolatePositionAndDirection(CameraInterpolationState* self) {
-    float rotation[12];
+void CCameraWork::InterpolatePositionAndDirection() {
+    float rotationMatrix[12];
     float c[3];
     float b[3];
     float a[3];
     float base[3];
     float u[3], w[3], v[3];
     float q[3];
-    float one = kFloat_1_CameraWork;
-    float t = kFloat_0_CameraWork;
-    float raw = one - self->animationTime / kFloat_3_CameraWork;
+    float one = ns4::kFloat_1_CameraWork;
+    float t = ns4::kFloat_0_CameraWork;
+    float raw = one - animationTime / ns4::kFloat_3_CameraWork;
     t = raw < t ? t : (raw > one ? one : raw);
-    base[0] = kFloat_0_CameraWork;
-    base[1] = kFloat_0_CameraWork;
-    base[2] = kFloat_1_CameraWork;
-    ((void (*)(void*, float, int))Matrix_SetAxisRotation)(rotation, t * self->heading, 1);
-    Matrix_TransformPoint(a, base, (char*)&AsCCameraWork(self)->rotation[0]);
-    Matrix_TransformPoint(b, a, rotation);
+    base[0] = ns4::kFloat_0_CameraWork;
+    base[1] = ns4::kFloat_0_CameraWork;
+    base[2] = ns4::kFloat_1_CameraWork;
+    ((void (*)(void*, float, int))ns4::Matrix_SetAxisRotation)(rotationMatrix, t * heading, 1);
+    ns4::Matrix_TransformPoint(a, base, (char*)&rotation[0]);
+    ns4::Matrix_TransformPoint(b, a, rotationMatrix);
     __as__7WVectorFRC7WVector(c, b);
-    float alpha = kFloat_0_CameraWork;
-    if (t < alpha) alpha = kFloat_0_CameraWork;
-    else if (t > kFloat_1_CameraWork) alpha = kFloat_1_CameraWork;
-    else alpha = t;
-    __mi__FRC7WVectorRC7WVector(v, self->startPosition, self->endPosition);
+    float alpha = ns4::kFloat_0_CameraWork;
+    if (t < alpha)
+        alpha = ns4::kFloat_0_CameraWork;
+    else if (t > ns4::kFloat_1_CameraWork)
+        alpha = ns4::kFloat_1_CameraWork;
+    else
+        alpha = t;
+    __mi__FRC7WVectorRC7WVector(v, startPosition, endPosition);
     __ml__FRC7WVectorf(w, v, alpha);
-    __pl__FRC7WVectorRC7WVector(u, self->endPosition, w);
-    __as__7WVectorFRC7WVector(self->pos, u);
-    __pl__FRC7WVectorRC7WVector(q, self->pos, c);
-    __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], q);
+    __pl__FRC7WVectorRC7WVector(u, endPosition, w);
+    __as__7WVectorFRC7WVector(position, u);
+    __pl__FRC7WVectorRC7WVector(q, position, c);
+    __as__7WVectorFRC7WVector((char*)&target[0], q);
 }
 
 // Run a short shot-relative camera move, then select the next action from the first event time.
-void CCameraWork_UpdateShortShotRelativeMove(CameraInterpolationState* self) {
-    if (self->animationTime < kFloat_2_CameraWork) {
-        void* transform = GolfBall__Fv();
-        VecBitsP source;
-        source = *(VecBitsP*)((char*)&((CGolfBall*)transform)->m_velocity);
-        Normalize__7WVectorFv(&source);
+void CCameraWork::UpdateShortShotRelativeMove() {
+    if (animationTime < ns4::kFloat_2_CameraWork) {
+        void* ball = GolfBall__Fv();
+        ns4::VecBitsP source;
+        source = *(ns4::VecBitsP*)((char*)&((CGolfBall*)ball)->m_velocity);
+        ns4::Normalize__7WVectorFv(&source);
         float cross[3];
-        float axis[3] = { kFloat_0_CameraWork, kFloat_1_CameraWork, kFloat_0_CameraWork };
-        Vector_CrossProduct(cross, axis, &source);
-        Normalize__7WVectorFv(cross);
+        float axis[3] = {ns4::kFloat_0_CameraWork, ns4::kFloat_1_CameraWork, ns4::kFloat_0_CameraWork};
+        ns4::Vector_CrossProduct(cross, axis, &source);
+        ns4::Normalize__7WVectorFv(cross);
         void* manager = GolfBall__Fv();
         void* child = GolfBall__Fv();
         float a[3];
         __mi__FRC7WVectorRC7WVector(a, child, (char*)&((CGolfBall*)manager)->m_velocity);
         float b[12];
-        Matrix_BuildCameraTransform(b, GolfBall__Fv(), a);
+        ns4::Matrix_BuildCameraTransform(b, GolfBall__Fv(), a);
         float result[3];
-        float z = kFloat_neg3_CameraWork + self->animationTime;
+        float z = ns4::kFloat_neg3_CameraWork + animationTime;
         float offset[3];
-        offset[0] = kFloat_neg0_7_CameraWork;
-        offset[1] = kFloat_neg0_3_CameraWork;
+        offset[0] = ns4::kFloat_neg0_7_CameraWork;
+        offset[1] = ns4::kFloat_neg0_3_CameraWork;
         offset[2] = z;
-        Matrix_TransformPoint(result, offset, b);
-        __as__7WVectorFRC7WVector(self->pos, result);
-        int idx = (int)self->frameIndex - 0xF;
+        ns4::Matrix_TransformPoint(result, offset, b);
+        __as__7WVectorFRC7WVector(position, result);
+        int idx = (int)frameIndex - 0xF;
         idx = idx > 0 ? idx : 0;
-        __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], PreData__9CGolfBallFi(GolfBall__Fv(), idx));
+        __as__7WVectorFRC7WVector((char*)&target[0], PreData__9CGolfBallFi(GolfBall__Fv(), idx));
     } else {
-        if (AsCCameraWork(self)->elapsedTime > AsCCameraWork(self)->firstEventFrame)
-            (*(unsigned int*)&AsCCameraWork(self)->pendingAction) = 4;
+        if (elapsedTime > firstEventFrame)
+            pendingAction = 4;
         else
-            (*(unsigned int*)&AsCCameraWork(self)->pendingAction) = 0x13;
+            pendingAction = 0x13;
     }
 }
 
-struct CameraHoleViewState {
-    char reserved00[0x2C];
-    float pos[3];
-    float target[3];
-};
-
 // Place the camera two world units below the hole and look upward with a +Z component.
-void CCameraWork_SetBelowHoleView(CameraHoleViewState* self) {
+void CCameraWork::SetBelowHoleView() {
     float c[3];
     unsigned int b[3];
-    float a[3] = { kFloat_0_CameraWork, kFloat_neg2_CameraWork, kFloat_0_CameraWork };
+    float a[3] = {ns4::kFloat_0_CameraWork, ns4::kFloat_neg2_CameraWork, ns4::kFloat_0_CameraWork};
     unsigned char idx = AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->currentHoleIndex; // original +0x3b6
-    E0E64Manager* manager = (E0E64Manager*)(*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
+    ns4::E0E64Manager* manager = (ns4::E0E64Manager*)(*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
     void* entries = manager->entries;
-    E0E64Entry* entry = (E0E64Entry*)((char*)entries + idx * 0x20);
-    b[0] = ((unsigned int*)entry)[3]; b[1] = ((unsigned int*)entry)[4]; b[2] = ((unsigned int*)entry)[5];
+    ns4::E0E64Entry* entry = (ns4::E0E64Entry*)((char*)entries + idx * 0x20);
+    b[0] = ((unsigned int*)entry)[3];
+    b[1] = ((unsigned int*)entry)[4];
+    b[2] = ((unsigned int*)entry)[5];
     __pl__FRC7WVectorRC7WVector(c, b, a);
-    __as__7WVectorFRC7WVector(self->pos, c);
+    __as__7WVectorFRC7WVector(position, c);
     float e[3];
-    float d[3] = { kFloat_0_CameraWork, kFloat_1_CameraWork, kFloat_0_2_CameraWork };
-    __pl__FRC7WVectorRC7WVector(e, self->pos, d);
-    __as__7WVectorFRC7WVector(self->target, e);
+    float d[3] = {ns4::kFloat_0_CameraWork, ns4::kFloat_1_CameraWork, ns4::kFloat_0_2_CameraWork};
+    __pl__FRC7WVectorRC7WVector(e, position, d);
+    __as__7WVectorFRC7WVector(target, e);
 }
 
 // Interpolate saved camera positions and quaternion orientations for the configured duration.
-void CCameraWork_InterpolatePositionAndQuaternion(CameraInterpolationState* self) {
-    if (!(self->animationTime > self->duration)) {
-        float amount = self->animationTime / self->duration;
-          float r[3], pad[12], c[3], b[3], a[3];
-          float q[4], d[3];
-        __mi__FRC7WVectorRC7WVector(a, self->endPosition, self->startPosition);
+void CCameraWork::InterpolatePositionAndQuaternion() {
+    if (!(animationTime > duration)) {
+        float amount = animationTime / duration;
+        float r[3], pad[12], c[3], b[3], a[3];
+        float q[4], d[3];
+        __mi__FRC7WVectorRC7WVector(a, endPosition, startPosition);
         __ml__FRC7WVectorf(b, a, amount);
-        __pl__FRC7WVectorRC7WVector(c, self->startPosition, b);
-        __as__7WVectorFRC7WVector(self->pos, c);
-        Quat_Slerp(q, self->startQuaternion, self->endQuaternion, amount);
-        Quat_ToMatrix3x3((void*)(r + 1), q);
-        __pl__FRC7WVectorRC7WVector(d, self->pos, pad + 4);
-        __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], d);
+        __pl__FRC7WVectorRC7WVector(c, startPosition, b);
+        __as__7WVectorFRC7WVector(position, c);
+        ns4::Quat_Slerp(q, startQuaternion, endQuaternion, amount);
+        ns4::Quat_ToMatrix3x3((void*)(r + 1), q);
+        __pl__FRC7WVectorRC7WVector(d, position, pad + 4);
+        __as__7WVectorFRC7WVector((char*)&target[0], d);
     }
 }
 
+extern "C" {
+extern const float kFloat_0_033333335_CameraWork;
+extern const float kFloat_0_4_CameraWork;
+extern const float kFloat_0_61086524_CameraWork;
+extern const float kFloat_0_93_GolfCamera;
+extern const float kFloat_0_9_CameraWork;
+extern const float kFloat_2_0943952_CameraWork;
+extern const float kFloat_45_CameraWork;
+extern const float kCameraOrbitDistanceDecay;
+extern const float kCameraBallFollowRollDecay;
+extern const float kFloat_1_2_CameraWork;
+extern const float kFloat_0_3_CameraWork;
+extern const float kFloat_0_75_CameraWork;
+}
+
 // Run an event-driven approach, roll, orbit, and trailing phase around the moving ball.
-void CCameraWork_UpdateEventDrivenBallOrbit(CameraInterpolationState* self, float delta, float frameOffset) {
+void CCameraWork::UpdateEventDrivenBallOrbit(float delta, float frameOffset) {
     // Four phases: narrow FOV until firstEvent-45, roll/approach until firstEvent,
     // orbit until event slot 13, then move position/target with 0.93*ball velocity.
     float t = delta;
 
-    struct Bits { int y; int x; int z; } source;
-        float value74Value = self->elapsedTime;
-        float direction[3];
-        float diff[3];
-        float value = value74Value;
-    float length = AsCCameraWork(self)->firstEventFrame;
+    struct Bits {
+        int y;
+        int x;
+        int z;
+    } source;
+    float value74Value = elapsedTime;
+    float direction[3];
+    float diff[3];
+    float value = value74Value;
+    float length = firstEventFrame;
     if (value < length - (kFloat_45_CameraWork)) {
-            t = ((value + frameOffset)) / length;
-        self->fov = kFloat_0_95993108 - kFloat_0_61086524_CameraWork * t;
-        __as__7WVectorFRC7WVector(&self->targetX, GolfBall__Fv());
-            self->targetY += kFloat_2_CameraWork * (kFloat_1_CameraWork - t);
+        t = ((value + frameOffset)) / length;
+        fov = kFloat_0_95993108 - kFloat_0_61086524_CameraWork * t;
+        __as__7WVectorFRC7WVector(target, GolfBall__Fv());
+        target[1] += kFloat_2_CameraWork * (kFloat_1_CameraWork - t);
     } else if (value < length) {
 
-            float base = kFloat_0_95993108;
-            t = (value + frameOffset) / length;
+        float base = kFloat_0_95993108;
+        t = (value + frameOffset) / length;
         float rotation = kDegreesToRadians * (kFloat_60_CameraWork * t + kFloat_neg30_CameraWork);
-        self->fov = base;
-            self->roll = rotation;
+        fov = base;
+        roll = rotation;
         Bits* src = (Bits*)(&((CGolfBall*)GolfBall__Fv())->m_velocity);
         int y = src->y;
         unsigned int x = src->x;
@@ -4386,112 +5547,124 @@ void CCameraWork_UpdateEventDrivenBallOrbit(CameraInterpolationState* self, floa
         source.x = x;
         source.z = src->z;
         Normalize__7WVectorFv(&source);
-        float axis[3] = { kFloat_0_CameraWork, kFloat_1_CameraWork, kFloat_0_CameraWork };
+        float axis[3] = {kFloat_0_CameraWork, kFloat_1_CameraWork, kFloat_0_CameraWork};
         Vector_CrossProduct(direction, axis, &source);
         Normalize__7WVectorFv(direction);
-        float out[3]; float scale[3];
-        ((void (*)(void*, void*, float))__ml__FfRC7WVector)(scale, direction, kFloat_0_5_CameraWork * t + kFloat_neg1_CameraWork);
+        float out[3];
+        float scale[3];
+        ((void (*)(void*, void*, float))__ml__FfRC7WVector)(scale, direction,
+                                                            kFloat_0_5_CameraWork * t + kFloat_neg1_CameraWork);
         __pl__FRC7WVectorRC7WVector(out, GolfBall__Fv(), scale);
-        __as__7WVectorFRC7WVector(&self->targetX, out);
-        float out2[3]; float scale2[3];
-        ((void (*)(void*, void*, float))__ml__FfRC7WVector)(scale2, &source, kFloat_50_CameraWork * (kFloat_1_CameraWork - kFloat_0_9_CameraWork * t));
-        __pl__FRC7WVectorRC7WVector(out2, &self->targetX, scale2);
-        __as__7WVectorFRC7WVector(self->pos, out2);
+        __as__7WVectorFRC7WVector(target, out);
+        float out2[3];
+        float scale2[3];
+        ((void (*)(void*, void*, float))__ml__FfRC7WVector)(
+            scale2, &source, kFloat_50_CameraWork * (kFloat_1_CameraWork - kFloat_0_9_CameraWork * t));
+        __pl__FRC7WVectorRC7WVector(out2, target, scale2);
+        __as__7WVectorFRC7WVector(position, out2);
         float out3[3];
-        __mi__FRC7WVectorRC7WVector(out3, GolfBall__Fv(), &self->targetX);
-        __as__7WVectorFRC7WVector(self->startPosition, out3);
-    } else if (!(!((int)self->frameIndex < ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[13]))) {
+        __mi__FRC7WVectorRC7WVector(out3, GolfBall__Fv(), target);
+        __as__7WVectorFRC7WVector(startPosition, out3);
+    } else if (!(!((int)frameIndex < ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[13]))) {
         float zero;
-        float speed = self->roll;
+        float speed = roll;
         zero = kFloat_0_CameraWork;
         if (speed > zero) {
             float newSpeed = speed - kFloat_1_0471976_cameraWork * t;
-            self->roll = newSpeed;
-            if (newSpeed < zero) self->roll = zero;
+            roll = newSpeed;
+            if (newSpeed < zero)
+                roll = zero;
         }
-        __mi__FRC7WVectorRC7WVector(diff, GolfBall__Fv(), self->pos);
+        __mi__FRC7WVectorRC7WVector(diff, GolfBall__Fv(), position);
         diff[1] = kFloat_0_CameraWork;
-        self->horizontalBallDistance = Magnitude__7WVectorCFv(diff);
+        horizontalBallDistance = Magnitude__7WVectorCFv(diff);
         Normalize__7WVectorFv(diff);
-        float cross[3], axis[3] = { kFloat_0_CameraWork, kFloat_1_CameraWork, kFloat_0_CameraWork };
+        float cross[3], axis[3] = {kFloat_0_CameraWork, kFloat_1_CameraWork, kFloat_0_CameraWork};
         Vector_CrossProduct(cross, diff, axis);
         __as__7WVectorFRC7WVector(diff, cross);
-        float f = kFloat_0_033333335_CameraWork * (self->elapsedTime - AsCCameraWork(self)->firstEventFrame);
-            if (f < kFloat_1_CameraWork) {
-                float step[3];
-                float scaled[3];
+        float f = kFloat_0_033333335_CameraWork * (elapsedTime - firstEventFrame);
+        if (f < kFloat_1_CameraWork) {
+            float step[3];
+            float scaled[3];
             float step2[3];
             float factor = kFloat_1_2_CameraWork * f + kFloat_1_CameraWork;
-                float value1FCValue = kFloat_2_0943952_CameraWork * self->horizontalBallDistance;
-                float value1FCValue2 = kFloat_2_0943952_CameraWork * self->horizontalBallDistance;
+            float value1FCValue = kFloat_2_0943952_CameraWork * horizontalBallDistance;
+            float value1FCValue2 = kFloat_2_0943952_CameraWork * horizontalBallDistance;
 
-                ((void (*)(void*, void*, float))__ml__FfRC7WVector)(scaled, diff, ((value1FCValue) * factor));
+            ((void (*)(void*, void*, float))__ml__FfRC7WVector)(scaled, diff, ((value1FCValue)*factor));
             __ml__FRC7WVectorf(step, scaled, t);
-            __apl__7WVectorFRC7WVector(self->pos, step);
-                float py = (self->pos[1] + t);
-            float ay = self->targetY + kFloat_0_75_CameraWork * t;
-            self->pos[1] = py;
-            self->targetY = ay;
+            __apl__7WVectorFRC7WVector(position, step);
+            float py = (position[1] + t);
+            float ay = target[1] + kFloat_0_75_CameraWork * t;
+            position[1] = py;
+            target[1] = ay;
 
-            __ml__FRC7WVectorf(step2, self->startPosition, t);
-            __apl__7WVectorFRC7WVector(&self->targetX, step2);
+            __ml__FRC7WVectorf(step2, startPosition, t);
+            __apl__7WVectorFRC7WVector(target, step2);
         }
     } else {
-        float step[3]; float scaled[3];
-        ((void (*)(void*, void*, float))__ml__FfRC7WVector)(scaled, &((CGolfBall*)GolfBall__Fv())->m_velocity, kFloat_0_93_GolfCamera);
+        float step[3];
+        float scaled[3];
+        ((void (*)(void*, void*, float))__ml__FfRC7WVector)(scaled, &((CGolfBall*)GolfBall__Fv())->m_velocity,
+                                                            kFloat_0_93_GolfCamera);
         __ml__FRC7WVectorf(step, scaled, t);
-        __apl__7WVectorFRC7WVector(self->pos, step);
-        float step2[3]; float scaled2[3];
-        ((void (*)(void*, void*, float))__ml__FfRC7WVector)(scaled2, &((CGolfBall*)GolfBall__Fv())->m_velocity, kFloat_0_93_GolfCamera);
+        __apl__7WVectorFRC7WVector(position, step);
+        float step2[3];
+        float scaled2[3];
+        ((void (*)(void*, void*, float))__ml__FfRC7WVector)(scaled2, &((CGolfBall*)GolfBall__Fv())->m_velocity,
+                                                            kFloat_0_93_GolfCamera);
         __ml__FRC7WVectorf(step2, scaled2, t);
-        __apl__7WVectorFRC7WVector(&self->targetX, step2);
-        if (((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[7] == -1 || (int)self->frameIndex < ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[7])
-            self->targetY -= kFloat_0_5_CameraWork * t;
+        __apl__7WVectorFRC7WVector(target, step2);
+        if (((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[7] == -1 ||
+            (int)frameIndex < ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[7])
+            target[1] -= kFloat_0_5_CameraWork * t;
     }
 }
 
 // Reduce heading, distance, and height while orbiting toward the ball, then request the next action.
-void CCameraWork_UpdateDescendingBallOrbit(CameraInterpolationState* self, float amount) {
-    float x = self->heading - kFloat_0_5235988_805DDFCC * amount;
-    float y = self->horizontalBallDistance - kCameraOrbitDistanceDecay * amount;
-    float z = self->ballHeightOffset - kFloat_2_CameraWork * amount;
-    self->ballHeightOffset = z;
-    self->horizontalBallDistance = y;
-    self->heading = x;
+void CCameraWork::UpdateDescendingBallOrbit(float amount) {
+    float x = heading - ns4::kFloat_0_5235988_805DDFCC * amount;
+    float y = horizontalBallDistance - kCameraOrbitDistanceDecay * amount;
+    float z = ballHeightOffset - kFloat_2_CameraWork * amount;
+    ballHeightOffset = z;
+    horizontalBallDistance = y;
+    heading = x;
     float pad[6], a[6], c[3], b[3], d[3];
-    ((void (*)(void*, float, int))Matrix_SetAxisRotation)(a, AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->headingRadians - self->heading, 1); // original +0x31C (float-pointer index 0x31C / 4)
-    ((void (*)(void*, void*, float))__ml__FfRC7WVector)(b, pad, self->horizontalBallDistance);
+    ((void (*)(void*, float, int))Matrix_SetAxisRotation)(
+        a, AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->headingRadians - heading, 1);
+    ((void (*)(void*, void*, float))__ml__FfRC7WVector)(b, pad, horizontalBallDistance);
     __mi__FRC7WVectorRC7WVector(c, GolfBall__Fv(), b);
-    __as__7WVectorFRC7WVector(self->pos, c);
-    self->pos[1] += self->ballHeightOffset;
-    __pl__FRC7WVectorRC7WVector(d, self->pos, pad);
-    __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], d);
-    if (self->heading < kFloat_0_CameraWork) self->pendingAction = 0xCC;
+    __as__7WVectorFRC7WVector(position, c);
+    position[1] += ballHeightOffset;
+    __pl__FRC7WVectorRC7WVector(d, position, pad);
+    __as__7WVectorFRC7WVector(target, d);
+    if (heading < kFloat_0_CameraWork)
+        pendingAction = 0xCC;
 }
 
 // Move along a side-offset view of the recorded trajectory, then switch to ball tracking.
-void CCameraWork_UpdateBallPathSideView(CameraInterpolationState* self, float unused, float delta) {
+void CCameraWork::UpdateBallPathSideView(float unused, float delta) {
     void* mgr = GolfBall__Fv();
-        if (!(!(((CGolfBall*)mgr)->m_eventPreDataIndex[10] > (int)self->frameIndex))) {
-            float tmp[3];
-            float scaled[3];
-            float value74Value2 = self->elapsedTime;
-            float buf[3];
-            float value74Value3 = self->elapsedTime;
-            mgr = GolfBall__Fv();
-            float value74Value4 = self->elapsedTime;
-            int cnt = ((CGolfBall*)mgr)->m_eventPreDataIndex[10];
+    if (!(!(((CGolfBall*)mgr)->m_eventPreDataIndex[10] > (int)frameIndex))) {
+        float tmp[3];
+        float scaled[3];
+        float value74Value2 = elapsedTime;
+        float buf[3];
+        float value74Value3 = elapsedTime;
+        mgr = GolfBall__Fv();
+        float value74Value4 = elapsedTime;
+        int cnt = ((CGolfBall*)mgr)->m_eventPreDataIndex[10];
 
         float v0[3];
         v0[0] = kFloat_0_CameraWork;
         v0[2] = kFloat_0_CameraWork;
         v0[1] = kFloat_1_CameraWork;
 
-            // f31 = travel progress: (elapsed frame + delta) / frame index of ball event 10.
-            // Camera position = trajectory start + (start->event-10 vector) * (0.3 * progress + 0.4)
-            //   + 5 * normalized(up x that vector); target = ball position + (0, 1 - progress, 0).
-            // (The 0.3 / 0.4 / 5 constants are shared floats kFloat_0_3/0_4/5_CameraWork.)
-            float f31 = ((value74Value4) + delta) / ((float)cnt);
+        // f31 = travel progress: (elapsed frame + delta) / frame index of ball event 10.
+        // Camera position = trajectory start + (start->event-10 vector) * (0.3 * progress + 0.4)
+        //   + 5 * normalized(up x that vector); target = ball position + (0, 1 - progress, 0).
+        // (The 0.3 / 0.4 / 5 constants are shared floats kFloat_0_3/0_4/5_CameraWork.)
+        float f31 = ((value74Value4) + delta) / ((float)cnt);
         void* childA = PreData__9CGolfBallFi(GolfBall__Fv(), 0);
         void* m2 = GolfBall__Fv();
         void* childB = PreData__9CGolfBallFi(GolfBall__Fv(), ((CGolfBall*)m2)->m_eventPreDataIndex[10]);
@@ -4499,7 +5672,7 @@ void CCameraWork_UpdateBallPathSideView(CameraInterpolationState* self, float un
 
         Vector_CrossProduct(tmp, v0, buf);
         Normalize__7WVectorFv(tmp);
-        __amu__7WVectorFf(tmp, kFloat_5_CameraWork);
+        ns4::__amu__7WVectorFf(tmp, kFloat_5_CameraWork);
 
         float buf2[3];
         void* childC = PreData__9CGolfBallFi(GolfBall__Fv(), 0);
@@ -4513,7 +5686,7 @@ void CCameraWork_UpdateBallPathSideView(CameraInterpolationState* self, float un
         __pl__FRC7WVectorRC7WVector(tmp2, childE, scaled);
         float tmp3[3];
         __pl__FRC7WVectorRC7WVector(tmp3, tmp2, tmp);
-        __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->position[0], tmp3);
+        __as__7WVectorFRC7WVector(position, tmp3);
 
         float v1[3];
         v1[0] = kFloat_0_CameraWork;
@@ -4522,15 +5695,15 @@ void CCameraWork_UpdateBallPathSideView(CameraInterpolationState* self, float un
         void* mgr2 = GolfBall__Fv();
         float tmp4[3];
         __pl__FRC7WVectorRC7WVector(tmp4, mgr2, v1);
-        __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], tmp4);
+        __as__7WVectorFRC7WVector(target, tmp4);
     } else {
-        self->pendingAction = 4;
+        pendingAction = 4;
     }
 }
 
 #pragma opt_propagation off
 // Follow interpolated trajectory samples and adjust roll and height at recorded shot events.
-void CCameraWork_UpdatePreDataBallFollow(CameraInterpolationState* self, float deltaTime, float frameBlend) {
+void CCameraWork::UpdatePreDataBallFollow(float deltaTime, float frameBlend) {
     // Before event 10, interpolate samples at (4*currentFrame + event10)/5: this looks
     // ahead toward that event. Afterward deltaTime drives roll/height, not sample blending.
     float f31;
@@ -4541,68 +5714,68 @@ void CCameraWork_UpdatePreDataBallFollow(CameraInterpolationState* self, float d
     f31 = deltaTime;
     void* mgr = GolfBall__Fv();
     int limit = ((CGolfBall*)mgr)->m_eventPreDataIndex[10];
-    if ((int)self->frameIndex < limit) {
+    if ((int)frameIndex < limit) {
         float tmp2[3];
         float tmp1[3];
         float tmp0[3];
         mgr = GolfBall__Fv();
         int cnt = ((CGolfBall*)mgr)->m_eventPreDataIndex[10];
         float denominator = (float)cnt;
-        numerator = self->elapsedTime + f30;
-        cur = self->curveStartFrame;
+        numerator = elapsedTime + f30;
+        cur = motionStartFrame;
         numerator -= cur;
-        self->roll = kFloat_0_2617994;
+        roll = kFloat_0_2617994;
         f31 = numerator / (denominator - cur);
 
         mgr = GolfBall__Fv();
         int currentSampleIndex;
         int nextSampleIndex;
-        nextSampleIndex = (((int)self->frameIndex + 1) * 4 + ((CGolfBall*)mgr)->m_eventPreDataIndex[10]) / 5;
+        nextSampleIndex = (((int)frameIndex + 1) * 4 + ((CGolfBall*)mgr)->m_eventPreDataIndex[10]) / 5;
         mgr = GolfBall__Fv();
         void* childA = PreData__9CGolfBallFi(mgr, nextSampleIndex);
         ((void (*)(void*, void*, float))__ml__FfRC7WVector)(tmp0, childA, f30);
 
         mgr = GolfBall__Fv();
-        currentSampleIndex = ((int)self->frameIndex * 4 + ((CGolfBall*)mgr)->m_eventPreDataIndex[10]) / 5;
+        currentSampleIndex = ((int)frameIndex * 4 + ((CGolfBall*)mgr)->m_eventPreDataIndex[10]) / 5;
         mgr = GolfBall__Fv();
         void* childB = PreData__9CGolfBallFi(mgr, currentSampleIndex);
         ((void (*)(void*, void*, float))__ml__FfRC7WVector)(tmp1, childB, kFloat_1_CameraWork - f30);
 
         __pl__FRC7WVectorRC7WVector(tmp2, tmp1, tmp0);
-        __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->position[0], tmp2);
+        __as__7WVectorFRC7WVector(position, tmp2);
 
-        self->pos[1] += kFloat_2_CameraWork * f31 + kFloat_neg1_CameraWork;
+        position[1] += kFloat_2_CameraWork * f31 + kFloat_neg1_CameraWork;
 
         mgr = GolfBall__Fv();
-        __as__7WVectorFRC7WVector((char*)&AsCCameraWork(self)->target[0], mgr);
+        __as__7WVectorFRC7WVector(target, mgr);
     } else {
         mgr = GolfBall__Fv();
         // Slot [2] is the earlier event and [1] the later one (the nested test below is only meaningful when
         // [2] < [1]); the same convention names them elsewhere in this file.
         int secondEventIndex = ((CGolfBall*)mgr)->m_eventPreDataIndex[1];
-        if ((int)self->frameIndex < secondEventIndex) {
+        if ((int)frameIndex < secondEventIndex) {
             mgr = GolfBall__Fv();
-            AsCCameraWork(self)->target[0] = ((CGolfBall*)mgr)->m_pos.x;
+            target[0] = ((CGolfBall*)mgr)->m_pos.x;
             mgr = GolfBall__Fv();
-            AsCCameraWork(self)->target[2] = ((CGolfBall*)mgr)->m_pos.z;
+            target[2] = ((CGolfBall*)mgr)->m_pos.z;
             mgr = GolfBall__Fv();
             int firstEventIndex = ((CGolfBall*)mgr)->m_eventPreDataIndex[2];
-            if ((int)self->frameIndex < firstEventIndex) {
-                self->roll -= kCameraBallFollowRollDecay * f31;
+            if ((int)frameIndex < firstEventIndex) {
+                roll -= kCameraBallFollowRollDecay * f31;
                 mgr = GolfBall__Fv();
                 int heightPhaseEndIndex = ((CGolfBall*)mgr)->m_eventPreDataIndex[10] + 0x1E;
-                if ((int)self->frameIndex < heightPhaseEndIndex) {
-                    self->pos[1] += kFloat_6_CameraWork * f31;
+                if ((int)frameIndex < heightPhaseEndIndex) {
+                    position[1] += ns4::kFloat_6_CameraWork * f31;
                 } else {
-                    self->targetY += kFloat_10_cameraWork * f31;
+                    target[1] += kFloat_10_cameraWork * f31;
                 }
             } else {
                 mgr = GolfBall__Fv();
                 float v = ((CGolfBall*)mgr)->m_pos.y;
-                if (self->targetY > v) {
-                    self->targetY -= kCameraShared20 * f31;
+                if (target[1] > v) {
+                    target[1] -= ns4::kCameraShared20 * f31;
                 } else {
-                    self->targetY -= kFloat_5_CameraWork * f31;
+                    target[1] -= kFloat_5_CameraWork * f31;
                 }
             }
         }
@@ -4610,6 +5783,3 @@ void CCameraWork_UpdatePreDataBallFollow(CameraInterpolationState* self, float d
 }
 
 #pragma opt_propagation reset
-} // extern "C"
-
-} // namespace ns4

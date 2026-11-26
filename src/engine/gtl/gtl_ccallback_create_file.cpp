@@ -1,28 +1,32 @@
-// Translation unit 0x8041F3A8-0x8041F420 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Destructor for the create-file callback (gtl::CCallBackCreateFile). It releases the owned path
+// string through the file-I/O allocator, resets the vtable and frees the object when asked.
 
 #include "types.h"
+#include "classes/GtlCreateFileCallback.h"
 
 extern "C" {
-void FileIO_Free(void *p);
+void FileIO_Free(void* p);
 extern char __vt__Q23gtl19CCallBackCreateFile[];
+}
+
+namespace gtl {
 
 // Release the create callback's owned path, then optionally free the callback itself.
 // The captured file/completion callback are borrowed and untouched. Null is accepted;
-// deleting > 0 frees self. The ABI returns self even when that address has been freed.
-void *gtl_CCallBackCreateFile_dtor(void *self, int deleting) {
-    if (self) {
-        void *ownedPath = *(void **)((char *)self + 8);
-        *(void **)self = (void *)__vt__Q23gtl19CCallBackCreateFile;
+// deleting > 0 frees this. The ABI returns this even when that address has been freed.
+void* CCallBackCreateFile::Destroy(int deleting) {
+    if (this) {
+        void* ownedPath = path;
+        vtbl = (void*)__vt__Q23gtl19CCallBackCreateFile;
         if (ownedPath) {
             FileIO_Free(ownedPath);
-            *(void **)((char *)self + 8) = 0;
+            path = 0;
         }
         if (deleting > 0) {
-            FileIO_Free(self);
+            FileIO_Free(this);
         }
     }
-    return self;
+    return this;
 }
 
-} // extern "C"
+} // namespace gtl

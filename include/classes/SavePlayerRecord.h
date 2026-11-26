@@ -7,9 +7,12 @@ struct SavePlayerRecord {
     unsigned short firstNameCodeUnit; // 0x00: SaveData_IsSlotUsed (0x80073DF8) tests this word
     char pad_002[0x2A];
     signed char characterIndex; // 0x2C: CPlayerStatus_InitEquipmentDisplay -> ItemInventory_GetCharacterIdAt
-    signed char clubSetIndex; // 0x2D: CPlayerStatus_UpdateEquipmentTextures; CPlayerStatus_InitEquipmentDisplay club upgrade lookup
-    signed char ballIndex; // 0x2E: CPlayerStatus_UpdateEquipmentTextures; inventory categories in SaveData_CopyBallRecord/80074CD4
-    signed char caddieIndex; // 0x2F: CPlayerStatus_InitEquipmentDisplay -> ItemInventory_GetCaddieIdAt; -1 means no caddie
+    signed char
+        clubSetIndex; // 0x2D: CPlayerStatus_UpdateEquipmentTextures; CPlayerStatus_InitEquipmentDisplay club upgrade lookup
+    signed char
+        ballIndex; // 0x2E: CPlayerStatus_UpdateEquipmentTextures; inventory categories in SaveData_CopyBallRecord/80074CD4
+    signed char
+        caddieIndex; // 0x2F: CPlayerStatus_InitEquipmentDisplay -> ItemInventory_GetCaddieIdAt; -1 means no caddie
     char pad_030[0xE4];
     unsigned int ownedHairStyles[2]; // 0x114: CShopProductHair_CheckUnlockAndOwnership (0x80238C4C), index < 0x33
     char pad_11C[0x13C];

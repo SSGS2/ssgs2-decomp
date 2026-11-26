@@ -1,21 +1,25 @@
+// Course scene: the scene manager's course objects (beaches, rivers, boundary grids, generated
+// textures, weather effects and the Score Card), their draw passes and their sort order.
+// CSceneManager::CreateCourseObjects and CSceneManager::RenderCourseScene are the entry points.
+
 #include <decomp/static_init.h>
 // Course scene drawing, course-geometry ownership, weather and Score Card setup.
-// CGolfBg_CreateCourseObjects builds beaches/rivers/lava/boundary grids/generated
-// texture surfaces from CourseData; CSceneManager_RenderCourseScene submits their
+// CSceneManager::CreateCourseObjects builds beaches/rivers/lava/boundary grids/generated
+// texture surfaces from CourseData; CSceneManager::RenderCourseScene submits their
 // opaque, shadow, effects and transparent passes. Score Card hooks own their form.
 // Shared layouts: CSceneManager, CScore, CourseData801C, CGolfDoc, CSharedDoc,
-// WVector; scalar pool: u801E8048_data.cpp. Private views below name binary offsets.
+// WVector; scalar pool: the data section. Private views below name binary offsets.
 // Modder lookup:
-// - Models/course loading: CGolfBg_CreateCourseObjects dispatches CourseGeometryKind
+// - Models/course loading: CSceneManager::CreateCourseObjects dispatches CourseGeometryKind
 //   records through CourseData/course-entry iterators. It constructs surfaces,
 //   not model filenames; ResourceManager/CGolfBg's upstream load supplies the data.
 //   Preserve entry-kind dispatch, pool insertion order and destructor ownership.
 // - Widescreen draw context: RenderCourseScene is a CONSUMER of the supplied
 //   camera and global g_view. It sets clip distances, not aspect or resolution.
-//   Main aspect lives at kViewPerspectiveAspectRatio in u80065F78_data.cpp; startup display,
+//   Main aspect lives at kViewPerspectiveAspectRatio in the data section; startup display,
 //   viewport/scissor and the separate loading projection are in engine_startup_and_ani_sprite.cpp.
 // - Clip planes: kSceneClipNear=3, kSceneClipFar=100000 scene-distance units,
-//   defined in u801E8048_data.cpp; increasing near or reducing far hides geometry.
+//   defined in the data section; increasing near or reducing far hides geometry.
 // - Camera/object fading: kSceneProximityFadeDistanceSquared=800^2, capped radius
 //   48, kSceneDistanceFadeBandSquared=25600 and record.maximumDistanceSquared
 //   share squared-distance math. Increasing the band begins the far fade sooner
@@ -34,28 +38,38 @@
 // Keep nested phase helpers inline; their caller-owned scratch preserves the original code.
 #pragma inline_max_size(100000)
 #pragma inline_max_total_size(100000)
-enum { kScoreActorInterfaceVtableOffset = 0x3C };
-// CGolfRule_EnterState (golf_rule_round_flow_and_shot_sim.cpp) defines these document-state bits.
+enum {
+    kScoreActorInterfaceVtableOffset = 0x3C
+};
+// CGolfRule::EnterState (golf_rule_round_flow_and_shot_sim.cpp) defines these document-state bits.
 // Keep camera sorting and marker suppression as separate policies over the same states.
 enum SceneGameplayState {
-    kSceneStatePlayerPreview = 0x2, kSceneStateAim = 0x8,
-    kSceneStateBallFlight = 0x80, kSceneStateCameraTransition = 0x200,
-    kSceneStatePrepareNextShot = 0x800, kSceneStateDelayedTransition = 0x1000,
-    kSceneStateHoleResults = 0x2000, kSceneStateCameraReturn = 0x40000,
-    kSceneStateFightResult = 0x80000, kSceneStateHoleOverview = 0x200000,
-    kSceneStateStorySequence = 0x1000000, kSceneStateWaitPlayerAndCaddie = 0x10000000
+    kSceneStatePlayerPreview = 0x2,
+    kSceneStateAim = 0x8,
+    kSceneStateBallFlight = 0x80,
+    kSceneStateCameraTransition = 0x200,
+    kSceneStatePrepareNextShot = 0x800,
+    kSceneStateDelayedTransition = 0x1000,
+    kSceneStateHoleResults = 0x2000,
+    kSceneStateCameraReturn = 0x40000,
+    kSceneStateFightResult = 0x80000,
+    kSceneStateHoleOverview = 0x200000,
+    kSceneStateStorySequence = 0x1000000,
+    kSceneStateWaitPlayerAndCaddie = 0x10000000
 };
 enum SceneStatePolicy {
-    kCameraPositionSortStates = kSceneStatePlayerPreview | kSceneStateBallFlight |
-        kSceneStateCameraTransition | kSceneStateCameraReturn | kSceneStateHoleOverview | kSceneStateStorySequence,
+    kCameraPositionSortStates = kSceneStatePlayerPreview | kSceneStateBallFlight | kSceneStateCameraTransition |
+        kSceneStateCameraReturn | kSceneStateHoleOverview | kSceneStateStorySequence,
     kAdditionalCameraPositionSortStates = kSceneStateDelayedTransition | kSceneStateFightResult,
-    kMarkerHiddenStates = kSceneStateCameraTransition | kSceneStatePrepareNextShot |
-        kSceneStateDelayedTransition | kSceneStateHoleResults | kSceneStateWaitPlayerAndCaddie
+    kMarkerHiddenStates = kSceneStateCameraTransition | kSceneStatePrepareNextShot | kSceneStateDelayedTransition |
+        kSceneStateHoleResults | kSceneStateWaitPlayerAndCaddie
 };
 // Byte offsets into courseGlowEffectStrings (a string pool): each selects the resource name passed to a weather
 // effect constructor (0x77 is an empty name).
 // Offset of the course-entry vector inside the course data object.
-enum { kCourseEntryVectorOffset = 0x14 };
+enum {
+    kCourseEntryVectorOffset = 0x14
+};
 enum WeatherResourceOffsets {
     kEmptyWeatherResource = 0x77,
     kSnowParticleResource = 0x78,
@@ -67,12 +81,18 @@ enum WeatherResourceOffsets {
 #include "classes/CScore.h"
 #include "classes/CourseData801C.h"
 // Borrow the CSceneManager layout view; no ownership is transferred.
-static inline CSceneManager* AsCSceneManager(void* object) { return (CSceneManager*)object; }
+static inline CSceneManager* AsCSceneManager(void* object) {
+    return (CSceneManager*)object;
+}
 // Borrow the CScore layout view; no ownership is transferred.
-static inline CScore* AsCScore(void* object) { return (CScore*)object; }
+static inline CScore* AsCScore(void* object) {
+    return (CScore*)object;
+}
 #include "game/string.h"
 // Compare iterator positions without changing the original template call boundary.
-template <class T> inline bool same_pos(const T& a, const T& b) { return a == b; }
+template <class T> inline bool same_pos(const T& lhs, const T& rhs) {
+    return lhs == rhs;
+}
 #include "game/wvector.h"
 
 #include "sdk_protos.h"
@@ -80,20 +100,31 @@ template <class T> inline bool same_pos(const T& a, const T& b) { return a == b;
 #include "game/singletons.h"
 #include "classes/CSharedDoc.h"
 #include "classes/CGolfDoc.h"
+#include "classes/CQuadTree.h"
+#include "classes/CMarker.h"
+#include "classes/CBeach.h"
+#include "classes/CPvsFxBox.h"
+#include "classes/CSnow.h"
+#include "classes/CShadowManager.h"
+#include "classes/CRain.h"
+#include "classes/CRiver.h"
 // Borrow the CSharedDoc layout view; no ownership is transferred.
-static inline CSharedDoc* AsCSharedDoc(void* object) { return (CSharedDoc*)object; }
+static inline CSharedDoc* AsCSharedDoc(void* object) {
+    return (CSharedDoc*)object;
+}
 // Borrow the CGolfDoc layout view; no ownership is transferred.
-static inline CGolfDoc* AsCGolfDoc(void* object) { return (CGolfDoc*)object; }
+static inline CGolfDoc* AsCGolfDoc(void* object) {
+    return (CGolfDoc*)object;
+}
 
 struct CleanupClass;
-struct CourseSceneConstructionView;
-struct Fn801EB1FCObject;
+struct CBeachView;
 struct Fn801EB238Item;
 struct Fn801EB238Object;
 struct Fn801EB248Object;
 struct Fn801EB82CObject;
 struct Fn801EBList;
-struct Fn801EC088Object;
+struct CScoreAlloc;
 struct ScoreConstructorView;
 struct ScoreFormOwnerView;
 struct Fn801EC280Object;
@@ -103,7 +134,6 @@ struct SortKey;
 
 extern "C" {
 
-void CSceneManager_RenderCourseScene(void* self,void* camera);
 void SceneRenderList_SortByDistanceDescending(SList* self, SortKey* key);
 void SceneRenderList_MergeByDistanceDescending(List* a, List* b, char* key);
 void SceneRenderList_InitAngleConstant();
@@ -111,9 +141,7 @@ void SceneRenderList_SortBySignedPayload(SList* self, char* key);
 void SceneRenderList_MergeBySignedPayload(List* a, List* b, char* key);
 void ScenePuppetList_SortByCameraProjectionDescending(SList* self, SortKey* key);
 void ScenePuppetList_MergeByCameraProjectionDescending(List* a, List* b, void* key);
-void CSceneManager_ClearOwnedSceneObjects(CleanupClass* arg);
-void CGolfBg_CreateCourseObjects(CourseSceneConstructionView* self);
-Fn801EB1FCObject* CBeach_Ctor(Fn801EB1FCObject* self);
+CBeachView* __ct__6CBeachFv(CBeachView* self);
 Fn801EB238Item* Array_GetItemByIndex(Fn801EB238Object* self, int index);
 void* CourseData_GetBoundaryRecordCount(Fn801EB248Object* self);
 void SceneBeachList_AppendObject(Fn801EBList* self, void** value);
@@ -122,20 +150,21 @@ void SceneGeneratedTextureList_AppendObject(Fn801EBList* self, void** value);
 void CourseEntryIterator_Advance(Fn801EB82CObject* self);
 void SceneBoundaryList_AppendObject(Fn801EBList* self, void** value);
 void CourseWeather_ConfigureEffects(void* object, unsigned char mode, int enabled);
-Fn801EC088Object* CScore_Create();
-ScoreConstructorView* CScore_Ctor(ScoreConstructorView* self);
-void CScore_OnDestroy(ScoreFormOwnerView* self);
-void CScore_OnLoad();
-void CScore_OnReload(Fn801EC280Object* first);
+CScoreAlloc* CScore_Create();
+ScoreConstructorView* __ct__6CScoreFv(ScoreConstructorView* self);
 
-struct Link { Link* prev; Link* next; };
+struct Link {
+    Link* prev;
+    Link* next;
+};
 // Copy a world-space bounding sphere by value, preserving its center and radius.
 struct Sphere {
-    Vec3f v; float r;
+    Vec3f v;
+    float r;
     // Reserve caller-owned scratch; the opacity helper fills it before reading it.
     Sphere() {}
     // Copy world-space center and radius from an existing bounding sphere.
-    Sphere(const Sphere& s):v(s.v),r(s.r) {}
+    Sphere(const Sphere& s) : v(s.v), r(s.r) {}
 };
 // Render list links precede the record payload. Distances are squared world-space distances.
 struct SceneRenderRecord {
@@ -154,19 +183,52 @@ struct SceneRenderRecord {
     unsigned int renderParameter;
     float maximumDistanceSquared;
 };
-struct CameraTransformView { Vec3f right, up, forward, position; };
-struct SceneDrawableLink { Link links; int kind; void* drawable; };
-struct TransparentSceneLink { Link links; void* puppet; float drawScale; unsigned int parameters[3]; };
-struct SceneDebugPointLink { Link links; Vec3f position; unsigned int color; };
-struct SceneSortState { char precedingFields[0x134]; unsigned char kindSortPending; };
-struct SceneHoleRecord { Vec3f tee, cup; unsigned char par; char remainingFields[7]; };
-struct SceneSurfaceBounds { char precedingFields[0x64]; Vec3f minimum, maximum; };
-struct SceneCameraMatrix { char precedingFields[0x14]; float worldToView[12]; };
-struct SceneQuadTreeDebug {
-    char precedingFields[0x20B4]; Vec3f selectedPoint;
-    char precedingWaterLevel[0xC0]; float waterLevel;
+struct CameraTransformView {
+    Vec3f right, up, forward, position;
 };
-struct PuppetOpacityView { char precedingFields[0x6C]; unsigned char opacity; };
+struct SceneDrawableLink {
+    Link links;
+    int kind;
+    void* drawable;
+};
+struct TransparentSceneLink {
+    Link links;
+    void* puppet;
+    float drawScale;
+    unsigned int parameters[3];
+};
+struct SceneDebugPointLink {
+    Link links;
+    Vec3f position;
+    unsigned int color;
+};
+struct SceneSortState {
+    char precedingFields[0x134];
+    unsigned char kindSortPending;
+};
+struct SceneHoleRecord {
+    Vec3f tee, cup;
+    unsigned char par;
+    char remainingFields[7];
+};
+struct SceneSurfaceBounds {
+    char precedingFields[0x64];
+    Vec3f minimum, maximum;
+};
+struct SceneCameraMatrix {
+    char precedingFields[0x14];
+    float worldToView[12];
+};
+struct SceneQuadTreeDebug {
+    char precedingFields[0x20B4];
+    Vec3f selectedPoint;
+    char precedingWaterLevel[0xC0];
+    float waterLevel;
+};
+struct PuppetOpacityView {
+    char precedingFields[0x6C];
+    unsigned char opacity;
+};
 struct ScenePuppetView {
     char precedingFields[0x108];
     int geometryCount;
@@ -176,10 +238,16 @@ struct ScenePuppetView {
     char precedingOpacity[0x30];
     PuppetOpacityView* opacityState;
 };
-struct SharedWeatherView { char precedingFields[0x9C6]; unsigned char selectedWeather; };
+struct SharedWeatherView {
+    char precedingFields[0x9C6];
+    unsigned char selectedWeather;
+};
 // Renderer command 26 reads cached submission state at +0x4844;
 // see RenderCourseScene for the provider, producer and distinct ==1/==2 consumers.
-enum SceneResourceProtocol { kSceneResourceQuery1A = 0x1A, kSceneResourceMode2 = 2 };
+enum SceneResourceProtocol {
+    kSceneResourceQuery1A = 0x1A,
+    kSceneResourceMode2 = 2
+};
 
 // Pair counts in the linked renderer presets; neither count is a texture dimension.
 enum ScenePresetCounts {
@@ -189,116 +257,164 @@ enum ScenePresetCounts {
 };
 enum SceneDebugDiskConstants {
     kSceneDebugCircleSegments = 128,
-    kSceneDebugDiskFillColor = 0x66000000, kSceneDebugDiskRimColor = 0xFF000000,
+    kSceneDebugDiskFillColor = 0x66000000,
+    kSceneDebugDiskRimColor = 0xFF000000,
     kSceneDebugProjectedDrawFlags = 0x300000 // Existing renderer protocol; individual bits unresolved.
 };
-enum ScenePoolIndex { kSceneBeachPool, kSceneRiverPool, kSceneTexturePool, kSceneBoundaryPool };
-enum SceneOpacity { kOpaque = 255, kNearlyOpaque = 254, kCameraInsideOpacity = 63 };
+enum ScenePoolIndex {
+    kSceneBeachPool,
+    kSceneRiverPool,
+    kSceneTexturePool,
+    kSceneBoundaryPool
+};
+enum SceneOpacity {
+    kOpaque = 255,
+    kNearlyOpaque = 254,
+    kCameraInsideOpacity = 63
+};
 // These names describe dispatch behavior visible here, not inferred gameplay object classes.
 enum SceneRecordKind {
-    kRecordShadowBoundary = 0, kRecordAlternateExcluded = 2, kRecordCountedPuppet3 = 3,
-    kRecordInheritedOpacity = 4, kRecordSkipped = 5, kRecordDeferredDrawable = 6
+    kRecordShadowBoundary = 0,
+    kRecordAlternateExcluded = 2,
+    kRecordCountedPuppet3 = 3,
+    kRecordInheritedOpacity = 4,
+    kRecordSkipped = 5,
+    kRecordDeferredDrawable = 6
 };
 enum CourseGeometryKind {
-    kEntryProjectedQuads2 = 2, kEntryProjectedQuads3 = 3, kEntryBeach = 5,
-    kEntryRiver = 7, kEntryGeneratedPolygon = 8, kEntryTextureStrip = 9, kEntryLava = 11,
+    kEntryProjectedQuads2 = 2,
+    kEntryProjectedQuads3 = 3,
+    kEntryBeach = 5,
+    kEntryRiver = 7,
+    kEntryGeneratedPolygon = 8,
+    kEntryTextureStrip = 9,
+    kEntryLava = 11,
     kBoundaryGroundGrid = 2
 };
 enum SceneRecordAndDebugBits {
-    kDisableCameraFade = 1, kForceTransparentPass = 0x100,
-    kDrawWaterPlane = 0x10, kDrawRaisedWaterPlane = 0x20
+    kDisableCameraFade = 1,
+    kForceTransparentPass = 0x100,
+    kDrawWaterPlane = 0x10,
+    kDrawRaisedWaterPlane = 0x20
 };
-enum CourseWeather { kClearWeather = 0, kCloudyWeather = 1, kRainWeather = 2, kSnowWeather = 3, kSpecialWeatherEffect = 4 };
+enum CourseWeather {
+    kClearWeather = 0,
+    kCloudyWeather = 1,
+    kRainWeather = 2,
+    kSnowWeather = 3,
+    kSpecialWeatherEffect = 4
+};
 enum WeatherParticleCounts {
-    kPetalParticleCount = 500, kLightSnowCount = 1024, kHeavySnowCount = 2048,
-    kAmbientSnowCount = 4096, kSpecialParticleCount = 512
+    kPetalParticleCount = 500,
+    kLightSnowCount = 1024,
+    kHeavySnowCount = 2048,
+    kAmbientSnowCount = 4096,
+    kSpecialParticleCount = 512
 };
 // These local course labels describe observed weather policy, not unverified display names.
 // A numeric-to-display-name table is not established by this unit; keep the byte IDs visible.
 enum WeatherCourseId {
-    kWeatherCourse4 = 4, kWeatherCourse5 = 5, kWeatherCourse6 = 6,
-    kWeatherCourse7 = 7, kRainSubstitutesSnowCourse8 = 8, kPersistentLightSnowCourse9 = 9,
-    kWeatherPetalCourse11 = 11, kWeatherSilicaCourse12 = 12, kScaledAmbientSnowCourse13 = 13,
+    kWeatherCourse4 = 4,
+    kWeatherCourse5 = 5,
+    kWeatherCourse6 = 6,
+    kWeatherCourse7 = 7,
+    kRainSubstitutesSnowCourse8 = 8,
+    kPersistentLightSnowCourse9 = 9,
+    kWeatherPetalCourse11 = 11,
+    kWeatherSilicaCourse12 = 12,
+    kScaledAmbientSnowCourse13 = 13,
     kWeatherCourseByteMask = 0xFF,
-    kWeatherPair11WrapBias = 0xF5, kWeatherPair8WrapBias = 0xF8
+    kWeatherPair11WrapBias = 0xF5,
+    kWeatherPair8WrapBias = 0xF8
 };
 
-struct P30 { unsigned w[30]; };
-struct P12 { unsigned w[12]; };
-struct P10 { unsigned w[10]; };
-struct Vertex { char data[16]; unsigned color; char rest[36]; };
+struct P30 {
+    unsigned w[30];
+};
+struct P12 {
+    unsigned w[12];
+};
+struct P10 {
+    unsigned w[10];
+};
+struct Vertex {
+    char data[16];
+    unsigned color;
+    char rest[36];
+};
 extern void *g_sharedDoc, *g_golfCupPreview, *g_shadowManager, *g_view;
-extern void **g_resourceManager;
+extern void** g_resourceManager;
 extern signed char s_renderPacketInitialized;
-extern int g_sceneRenderedGeometryCount,g_sceneCourseSurfaceCount,g_sceneRenderedPuppetCount,g_drawSceneDebugGeometry;
-extern char s_cameraTransform[],s_renderPacket[],s_sceneRenderPacketDestructorRegistration[],s_sceneProjectedEffectVertexPointers[];
+extern int g_sceneRenderedGeometryCount, g_sceneCourseSurfaceCount, g_sceneRenderedPuppetCount,
+    g_drawSceneDebugGeometry;
+extern char s_cameraTransform[], s_renderPacket[], s_sceneRenderPacketDestructorRegistration[],
+    s_sceneProjectedEffectVertexPointers[];
 extern Vertex s_projectedEffectVertex0[4];
 extern P30 kSceneRenderStatePreset;
 extern P12 kSceneTextureStageStatePreset;
 extern P10 kSceneTextureStageParameterPreset;
-extern float kFloat_1_805DF9F8,kFloat_0_805DF9FC,kSceneClipNear,kSceneClipFar;
-extern float kSceneProximityFadeDistanceSquared,kSceneProximityFadeRadiusLimit,kFloat_0_25_Scene,kSceneOpacityScale,kSceneDistanceFadeBandSquared,kSceneDebugVerticalLineHeight;
-extern float kSceneDebugPointCrossScale,kSceneDropCircleRadiusInset,kSceneCircleFullTurnRadians,kSceneCircleSegmentReciprocal128,kFloat_192_SceneDebug,kSceneHalfScale;
-void* memset(void*,int,unsigned);
-void WView_ForwardRendererParameters(void*,int);
+extern float kFloat_1_805DF9F8, kFloat_0_805DF9FC, kSceneClipNear, kSceneClipFar;
+extern float kSceneProximityFadeDistanceSquared, kSceneProximityFadeRadiusLimit, kFloat_0_25_Scene, kSceneOpacityScale,
+    kSceneDistanceFadeBandSquared, kSceneDebugVerticalLineHeight;
+extern float kSceneDebugPointCrossScale, kSceneDropCircleRadiusInset, kSceneCircleFullTurnRadians,
+    kSceneCircleSegmentReciprocal128, kFloat_192_SceneDebug, kSceneHalfScale;
+void* memset(void*, int, unsigned);
+void WView_ForwardRendererParameters(void*, int);
 void appFreeUni__FPv(void*);
 void* appMallocDummy__FUl(unsigned);
-void WPuppet_SetOpacityRecursive(void*,int);
-void CupPreview_CaptureModel(void*,void*);
-void ShadowManager_RenderShadowTextures(void*,void*);
-void CPvsFxBox_DrawEnabledEffects(void*,void*);
-void CupPreview_DrawModel(void*,void*);
-void Camera_SetClip(void*,float,float,int);
+void WPuppet_SetOpacityRecursive(void*, int);
+void CupPreview_CaptureModel(void*, void*);
+void ShadowManager_RenderShadowTextures(void*, void*);
+void CupPreview_DrawModel(void*, void*);
+void Camera_SetClip(void*, float, float, int);
 Vec3f* GolfBall__Fv();
 float Math_SquareRootApprox(float);
 float Math_SinApprox(float);
 float Math_CosApprox(float);
-void __pl__FRC7WVectorRC7WVector(void*,const void*,const void*);
-void __mi__FRC7WVectorRC7WVector(void*,const void*,const void*);
-void __ml__FfRC7WVector(void*,const void*,float);
-void __as__7WVectorFRC7WVector(void*,const void*);
+void __pl__FRC7WVectorRC7WVector(void*, const void*, const void*);
+void __mi__FRC7WVectorRC7WVector(void*, const void*, const void*);
+void __ml__FfRC7WVector(void*, const void*, float);
+void __as__7WVectorFRC7WVector(void*, const void*);
 float Vec3_CalculateLengthSquared(void*);
 float Magnitude__7WVectorCFv(void*);
-void Engine_SetRenderStateList(void*,int);
-void Engine_SetTextureStageStateList(int,void*,int);
-void Engine_SetTextureStageParameterList(int,void*,int);
-void Matrix_TransformPoint(void*,const void*,const void*);
-void WView_ProjectViewPoint(void*,void*,void*,int);
-void WView_DrawLine(void*,void*,unsigned,void*,unsigned,int);
-int WView_DefaultCapabilityTrueC(void*,void*);
-void ShadowManager_DrawProjectedModel(void*,void*);
+void Engine_SetRenderStateList(void*, int);
+void Engine_SetTextureStageStateList(int, void*, int);
+void Engine_SetTextureStageParameterList(int, void*, int);
+void* Matrix_TransformPoint(void*, const void*, const void*);
+void WView_ProjectViewPoint(void*, void*, void*, int);
+void WView_DrawLine(void*, void*, unsigned, void*, unsigned, int);
+int WView_DefaultCapabilityTrueC(void*, void*);
+void ShadowManager_DrawProjectedModel(void*, void*);
 void RenderPacket_Init(void*);
 void RenderPacket_Destroy();
-void RenderPacket_DrawBatches(void*,void*);
-void CMarker_Draw(void*);
+void RenderPacket_DrawBatches(void*, void*);
 void* CQuadTree_GetInstance();
-void CQuadTree_ReservedWiiHook(void*);
 void TextureMesh_DrawLayers(void*);
 void GroundGrid_DrawLitSurface(void*);
-void CourseEffects_EmptyHook(void*,void*);
-void* CourseData_FindSurfaceByName(void*,int);
-void WFont_Print(void*,void*,void*,int,int,float,float);
+void CourseEffects_EmptyHook(void*, void*);
+void* CourseData_FindSurfaceByName(void*, int);
+void WFont_Print(void*, void*, void*, int, int, float, float);
 // Return the active golf document through the shared-document singleton.
-static inline void* currentGolfDocument() { return (void*)AsCSharedDoc(g_sharedDoc)->golfDoc; /* +0xb90 */ }
+static inline void* currentGolfDocument() {
+    return (void*)AsCSharedDoc(g_sharedDoc)->golfDoc; /* +0xb90 */
+}
 struct VObject {
     virtual void slot8();
     virtual void slotC();
     virtual void slot10();
     virtual void slot14();
-    virtual void draw(void*,int,bool,bool,bool,float);
-}
-;
+    virtual void draw(void*, int, bool, bool, bool, float);
+};
 struct VCamera {
     virtual void slot8();
     virtual void slotC();
     virtual void flushQueue(int);
     virtual void slot14();
-    virtual void drawScenePrimitive(void*,int,int,int);
-}
-;
+    virtual void drawScenePrimitive(void*, int, int, int);
+};
 struct VService {
-// WGeneric3DR_DispatchCommand command ABI (+0x24): command, value word, output. Command 26 interprets VALUE as
-// int*, ignores output and returns null.
+    // WGeneric3DR::DispatchCommand command ABI (+0x24): command, value word, output. Command 26 interprets VALUE as
+    // int*, ignores output and returns null.
     virtual void slot8();
     virtual void slotC();
     virtual void slot10();
@@ -306,28 +422,29 @@ struct VService {
     virtual void slot18();
     virtual void slot1C();
     virtual void slot20();
-    // WGeneric3DR_DispatchCommand command ABI (+0x24): command, value word, output.
+    // WGeneric3DR::DispatchCommand command ABI (+0x24): command, value word, output.
     // Command 26 interprets VALUE as int*, ignores output and returns null.
     // This local pointer prototype preserves that 32-bit ABI at the call site.
-    virtual void query(int,int*,int);
-}
-;
+    virtual void query(int, int*, int);
+};
 struct VFont {
     virtual void slot8();
     virtual void slotC();
     virtual void slot10();
-    virtual float width(void*,void*);
+    virtual float width(void*, void*);
     virtual void slot18();
     virtual void slot1C();
     virtual void slot20();
     virtual void finish(void*);
-}
-;
+};
 // Dispatch one of the three scene-object render/update virtual hooks without changing ABI slots.
-static inline void dispatchSceneObjectHook(void* p,int s) {
-    if (s==8) ((VObject*)p)->slot8();
-    else if (s==0x10) ((VObject*)p)->slot10();
-    else ((VObject*)p)->slot14();
+static inline void dispatchSceneObjectHook(void* p, int s) {
+    if (s == 8)
+        ((VObject*)p)->slot8();
+    else if (s == 0x10)
+        ((VObject*)p)->slot10();
+    else
+        ((VObject*)p)->slot14();
 }
 // Select the camera/render pass through its original virtual interface.
 // WView slot +0x10 = WView_FlushRenderQueue, NOT a persistent camera mode.
@@ -351,64 +468,103 @@ static inline void dispatchSceneObjectHook(void* p,int s) {
 // batch. See DrawTaggedQuadBatches there for the full state-list/payload schema;
 // no incoming GPU state snapshot is restored by this adapter or by the flush.
 // Flags occupy the pointer-shaped command value word, with no payload to retain.
-static inline void flushSceneViewQueue(void* p,int flags) { ((VCamera*)p)->flushQueue(flags); }
+static inline void flushSceneViewQueue(void* p, int flags) {
+    ((VCamera*)p)->flushQueue(flags);
+}
 // Draw a puppet using its record scale and the common scene view.
-static inline void drawScenePuppet(void* p,float f) {
-    bool zero=false;
-    ((VObject*)p)->draw(g_view,1,zero,zero,zero,f);
+static inline void drawScenePuppet(void* p, float f) {
+    bool zero = false;
+    ((VObject*)p)->draw(g_view, 1, zero, zero, zero, f);
 }
 // Draw the supplied immediate-mode primitive through the camera interface.
-static inline void drawScenePrimitive(void* cam,void* p,int flags) {
-    ((VCamera*)cam)->drawScenePrimitive(p,0x10,flags,0);
+static inline void drawScenePrimitive(void* cam, void* p, int flags) {
+    ((VCamera*)cam)->drawScenePrimitive(p, 0x10, flags, 0);
 }
 // Unlink and free a temporary render list, decrementing its stored count for every node.
-static inline void clearTransientRenderList(Link* sentinel,unsigned int& count) {
-    Link* it; Link* end;
-    end=sentinel; it=end->next;
-    if(it!=end) {
-        Link* last=end->prev;
-        it->prev->next=last->next; last->next->prev=it->prev;
-        while(it!=end) { Link* old=it; it=it->next; appFreeUni__FPv(old); --count; }
+static inline void clearTransientRenderList(Link* sentinel, unsigned int& count) {
+    Link* it;
+    Link* end;
+    end = sentinel;
+    it = end->next;
+    if (it != end) {
+        Link* last = end->prev;
+        it->prev->next = last->next;
+        last->next->prev = it->prev;
+        while (it != end) {
+            Link* old = it;
+            it = it->next;
+            appFreeUni__FPv(old);
+            --count;
+        }
     }
 }
 // Sort the scene render records using a copied world-space reference position.
-static inline void sortSceneRecordsByDistanceCopied(void* self,Vec3f v) {
-    Vec3f copy=v;
-    SceneRenderList_SortByDistanceDescending((SList*)((unsigned)&AsCSceneManager(self)->renderRecordCount),(SortKey*)&copy);
+static inline void sortSceneRecordsByDistanceCopied(void* self, Vec3f v) {
+    Vec3f copy = v;
+    SceneRenderList_SortByDistanceDescending((SList*)((unsigned)&AsCSceneManager(self)->renderRecordCount),
+                                             (SortKey*)&copy);
 }
 // Keep the original volatile vector-copy boundary before distance sorting.
-static inline void sortSceneRecordsByDistance(void* self,volatile Vec3f v) {
-    sortSceneRecordsByDistanceCopied(self,*(const Vec3f*)&v);
+static inline void sortSceneRecordsByDistance(void* self, volatile Vec3f v) {
+    sortSceneRecordsByDistanceCopied(self, *(const Vec3f*)&v);
 }
-struct Flag { unsigned char v; };
+struct Flag {
+    unsigned char v;
+};
 // Run the signed payload sort using a copied zero key, preserving its volatile ABI boundary.
-static inline void sortSceneRecordsByKindCopied(void* self,volatile Flag f) {
-    Flag copy=*(const Flag*)&f;
-    SceneRenderList_SortBySignedPayload((SList*)(&AsCSceneManager(self)->renderRecordCount),(char*)&copy.v);
+static inline void sortSceneRecordsByKindCopied(void* self, volatile Flag f) {
+    Flag copy = *(const Flag*)&f;
+    SceneRenderList_SortBySignedPayload((SList*)(&AsCSceneManager(self)->renderRecordCount), (char*)&copy.v);
 }
 // Build the zero-valued sort key used by the original scene pass.
-static inline Flag makeZeroSortKey() { Flag f; f.v=0; return f; }
+static inline Flag makeZeroSortKey() {
+    Flag f;
+    f.v = 0;
+    return f;
+}
 // Apply the payload sort to the scene render list after a distance-order change.
-static inline void sortSceneRecordsByKind(void* self) { Flag a=makeZeroSortKey(); sortSceneRecordsByKindCopied(self,a); }
+static inline void sortSceneRecordsByKind(void* self) {
+    Flag a = makeZeroSortKey();
+    sortSceneRecordsByKindCopied(self, a);
+}
 struct NodeGuard_u801E8048 {
-    char flag; void* allocation; void* copy; void* head; void* n;
+    char flag;
+    void* allocation;
+    void* copy;
+    void* head;
+    void* n;
     // Initialize the allocator tag; init() arms the node pointer before a throwing operation.
-    NodeGuard_u801E8048(): flag(0) {}
+    NodeGuard_u801E8048() : flag(0) {}
     // Free an unlinked node on unwind; setting n to zero commits ownership to the render list.
-    ~NodeGuard_u801E8048() { if(n) appFreeUni__FPv(n); }
+    ~NodeGuard_u801E8048() {
+        if (n)
+            appFreeUni__FPv(n);
+    }
     // Record the newly allocated node and destination sentinel for exception cleanup.
-    void init(void* p,void* h) { allocation=p; copy=p; head=h; n=p; }
+    void init(void* p, void* h) {
+        allocation = p;
+        copy = p;
+        head = h;
+        n = p;
+    }
 };
 // Append a freshly allocated node immediately before the circular-list sentinel.
-static inline void append(Link* end,Link* n) {
-    end->prev->next=n; n->prev=end->prev; end->prev=n; n->next=end;
+static inline void append(Link* end, Link* n) {
+    end->prev->next = n;
+    n->prev = end->prev;
+    end->prev = n;
+    n->next = end;
 }
 struct WInstanceLock {
     OSMutex* mutex;
     // Acquire one recursive OS-mutex level for this scope.
-    WInstanceLock(void* p):mutex((OSMutex*)p) { OSLockMutex(mutex); }
+    WInstanceLock(void* p) : mutex((OSMutex*)p) {
+        OSLockMutex(mutex);
+    }
     // Release one recursive OS-mutex level, including on exception exit.
-    ~WInstanceLock() { OSUnlockMutex(mutex); }
+    ~WInstanceLock() {
+        OSUnlockMutex(mutex);
+    }
 };
 
 extern float kFloat_6_2831855;
@@ -438,8 +594,8 @@ struct List {
 // Move source's closed run [first,last] before destination, preserving the emitted cursor-update order.
 // Preconditions: both rings are valid/disjoint; runEnd follows last. Payloads are never copied.
 // The source gap is closed before destination links are attached; caller transfers runLength counts.
-static inline void SpliceSceneMergeRun(ListNode* destination, ListNode* first, ListNode* last,
-    ListNode*& sourceCursor, ListNode* runEnd) {
+static inline void SpliceSceneMergeRun(ListNode* destination, ListNode* first, ListNode* last, ListNode*& sourceCursor,
+                                       ListNode* runEnd) {
     first->prev->next = last->next;
     last->next->prev = first->prev;
     destination->prev->next = first;
@@ -451,8 +607,8 @@ static inline void SpliceSceneMergeRun(ListNode* destination, ListNode* first, L
 
 // Empty source's sentinel ring, append its remaining nodes before destination, and transfer its count.
 // first/last are caller snapshots: resetting source links must not erase the range endpoints.
-static inline void AppendSceneMergeRemainder(List* destinationList, List* sourceList,
-    ListNode* destination, ListNode* first, ListNode* last) {
+static inline void AppendSceneMergeRemainder(List* destinationList, List* sourceList, ListNode* destination,
+                                             ListNode* first, ListNode* last) {
     sourceList->next = (ListNode*)&sourceList->prev;
     sourceList->prev = (ListNode*)&sourceList->prev;
     destination->prev->next = first;
@@ -473,9 +629,10 @@ extern void Vec3_Subtract(void*, void*, void*);
 extern float Vec3_LengthSquared(void*);
 extern void GeneratedSurface_Destroy(void*, int);
 extern void GroundGrid_Dtor(void*, int);
-extern void CMarker_ReleaseRenderResources(void*);
 
-struct SortKey { int words[3]; };
+struct SortKey {
+    int words[3];
+};
 
 struct SNode {
     SNode* prev;
@@ -574,25 +731,37 @@ struct DList {
     char padding24[0x14];
 };
 // Return the active-ring anchor; this is neither a sentinel nor necessarily the first draw node.
-static inline DNode*& PoolActiveRing(DList* pool) { return pool->activeRing; }
+static inline DNode*& PoolActiveRing(DList* pool) {
+    return pool->activeRing;
+}
 // Return the traversal cursor, whose null value means iteration is complete.
-static inline DNode*& PoolIterationCursor(DList* pool) { return pool->iterationCursor; }
+static inline DNode*& PoolIterationCursor(DList* pool) {
+    return pool->iterationCursor;
+}
 // Read and advance a typed pool cursor while locked; drawing occurs after the lock is released.
 // Beaches include the anchor then stop in reverse order; other pools stop on wrapping forward.
-static inline void* nextSceneListObject(DList* pool,bool reverse) {
-    OSMutex* mutex=(OSMutex*)&pool->lock;
+static inline void* nextSceneListObject(DList* pool, bool reverse) {
+    OSMutex* mutex = (OSMutex*)&pool->lock;
     OSLockMutex(mutex);
-    DNode* n=PoolIterationCursor(pool); void* obj;
-    if(n) {
-        obj=n->value;
-        if(reverse) PoolIterationCursor(pool)=n==PoolActiveRing(pool)?0:n->prev;
-        else { DNode* next=n->next; PoolIterationCursor(pool)=next==PoolActiveRing(pool)?0:next; }
+    DNode* n = PoolIterationCursor(pool);
+    void* obj;
+    if (n) {
+        obj = n->value;
+        if (reverse)
+            PoolIterationCursor(pool) = n == PoolActiveRing(pool) ? 0 : n->prev;
+        else {
+            DNode* next = n->next;
+            PoolIterationCursor(pool) = next == PoolActiveRing(pool) ? 0 : next;
+        }
         OSUnlockMutex(mutex);
-    } else { OSUnlockMutex(mutex); obj=0; }
+    } else {
+        OSUnlockMutex(mutex);
+        obj = 0;
+    }
     return obj;
 }
-struct Instance { 
-virtual ~Instance();
+struct Instance {
+    virtual ~Instance();
 };
 struct CleanupClass {
     char pad[0x10];
@@ -634,7 +803,8 @@ static inline void DList_clear(DList* l) {
             n->next->prev = n->prev;
             n->prev->next = n->next;
             nx = n->next;
-            if (nx == n) nx = 0;
+            if (nx == n)
+                nx = 0;
             OSUnlockMutex((OSMutex*)mtx);
             n = l->activeRing;
             DNode* last = l->reusableRing;
@@ -677,7 +847,8 @@ static inline void DList_clear2(DList* l) {
             n->next->prev = n->prev;
             n->prev->next = n->next;
             nx = n->next;
-            if (nx == n) nx = 0;
+            if (nx == n)
+                nx = 0;
             OSUnlockMutex((OSMutex*)mtx);
             n = l->activeRing;
             last = l->reusableRing;
@@ -702,7 +873,8 @@ static inline void DList_clear2(DList* l) {
 
 // Clear the list's indexed object lookup array after object destruction.
 static inline void DList_zero(DList* l) {
-    for (int i = 0; i < l->lookupEntryCount; i++) l->array[i] = 0;
+    for (int i = 0; i < l->lookupEntryCount; i++)
+        l->array[i] = 0;
 }
 
 // Destroy a polymorphic owned scene object through its original base destructor.
@@ -717,50 +889,60 @@ void InputManager_SetCursorColorOverride(void* object, int a, int b, int c, int 
 
 // Constructor-only base fields coexist with the semantic score fields in CScore.h.
 struct ScoreConstructorView {
-	void* vtable;
-	char padding04[4];
-	int actorType;
-	char padding0C[0x0C];
-	void* actorInterfaceVtable; // secondary actor-interface vtable; borrowed static table
-	int field1C; // overlays CScore::bonusOverlayEnabled
-	float field20; // overlays CScore::elapsedTime
-	int field24; // overlays CScore::transitionState
-	int field28; // constructor flag set to 1; meaning unresolved
-	float field2C; // overlays CScore::transitionProgress
-	char padding30[8];
-	int bonusOverlay; // owned CScore::bonusOverlay; lifecycle contract beside CScore_Ctor below
-	int field3C; // overlays CScore::result
-	int field40; // overlays CScore::scoreMenuActive
-	int field44; // overlays CScore::currentPlayerId
-	int field48; // state word cleared by constructor; role unresolved
-	int field4C; // state word cleared by constructor; role unresolved
-	char padding50[4];
-	int field54; // overlays CScore::menusInitialized
-	char padding58[4];
-	int field5C; // overlays the owned CScore::scoreForm pointer word
-	int field60; // overlays the owned CScore::rankView pointer word
+    void* vtable;
+    char padding04[4];
+    int actorType;
+    char padding0C[0x0C];
+    void* actorInterfaceVtable; // secondary actor-interface vtable; borrowed static table
+    int field1C;                // overlays CScore::bonusOverlayEnabled
+    float field20;              // overlays CScore::elapsedTime
+    int field24;                // overlays CScore::transitionState
+    int field28;                // constructor flag set to 1; meaning unresolved
+    float field2C;              // overlays CScore::transitionProgress
+    char padding30[8];
+    int bonusOverlay; // owned CScore::bonusOverlay; lifecycle contract beside CScore::CScore below
+    int field3C;      // overlays CScore::result
+    int field40;      // overlays CScore::scoreMenuActive
+    int field44;      // overlays CScore::currentPlayerId
+    int field48;      // state word cleared by constructor; role unresolved
+    int field4C;      // state word cleared by constructor; role unresolved
+    char padding50[4];
+    int field54; // overlays CScore::menusInitialized
+    char padding58[4];
+    int field5C; // overlays the owned CScore::scoreForm pointer word
+    int field60; // overlays the owned CScore::rankView pointer word
 };
 
 extern char __vt__6CScore[];
 extern const float kScoreInitialTime;
 
 // Secondary actor-interface vtable shares storage with the constructor's raw +0x18 word.
-static inline void*& ScoreActorInterfaceVtable(ScoreConstructorView* score) { return score->actorInterfaceVtable; }
+static inline void*& ScoreActorInterfaceVtable(ScoreConstructorView* score) {
+    return score->actorInterfaceVtable;
+}
 
-struct ScoreFormOwnerView { char padding00[0x5C]; void* scoreForm; void* rankView; };
-struct ScoreOwned { 
-virtual void release(int);
+struct ScoreFormOwnerView {
+    char padding00[0x5C];
+    void* scoreForm;
+    void* rankView;
+};
+struct ScoreOwned {
+    virtual void release(int);
 };
 extern signed char s_inputManagerInitialized;
 extern char s_gameInputManager[];
 extern char s_scoreInputManagerDestructorRegistration[];
 void InputManager_Dtor();
 
-struct Fn801EC280Args { int values[8]; };
-struct Fn801EC280Object { void** vtable; };
+struct Fn801EC280Args {
+    int values[8];
+};
+struct Fn801EC280Object {
+    void** vtable;
+};
 // Virtual actor command hook at slot +0x2C; commands 3 and 6 initialize the score actor.
 class V2Cs {
-    public: 
+public:
     virtual void v08();
     virtual void v0C();
     virtual void v10();
@@ -771,17 +953,16 @@ class V2Cs {
     virtual void v24();
     virtual void v28();
     virtual void v2C(Fn801EC280Args*);
-}
-;
+};
 
 struct Fn801EB248Object {
-	char padding00[0x7C];
-	void* field7C;
+    char padding00[0x7C];
+    void* field7C;
 };
 
 struct Fn801EB238Object {
-	char padding00[0x9C];
-	char* items;
+    char padding00[0x9C];
+    char* items;
 };
 
 // Native Wii course boundary record (same 0x5C-byte view as CourseBoundsRecord
@@ -791,28 +972,32 @@ struct Fn801EB238Object {
 // supplied or checked. This record is not a point vector: four world corners
 // on max.y are generated by the callee. Neither interior pointer is retained.
 struct Fn801EB238Item {
-	unsigned char kind;
-	char properties[0x43];
-	Vec3f minimum, maximum;
+    unsigned char kind;
+    char properties[0x43];
+    Vec3f minimum, maximum;
 };
 typedef char SceneBoundaryRecord_size[sizeof(Fn801EB238Item) == 0x5C ? 1 : -1];
 typedef char SceneBoundaryRecord_bounds[((int)&((Fn801EB238Item*)0)->minimum == 0x44) ? 1 : -1];
 
 struct Fn801EB82CObject {
-	void* field00;
+    void* field00;
 };
 
-struct Fn801EB1FCObject {
-	void* vtable;
+struct CBeachView {
+    void* vtable;
 };
 
 extern char __vt__6CBeach[];
 
 struct Fn801EBLock {
-	// Lock the mutex represented by this address; no separate mutex allocation is owned.
-	Fn801EBLock() { OSLockMutex((OSMutex*)this); }
-	// Release the matching recursive lock acquisition.
-	~Fn801EBLock() { OSUnlockMutex((OSMutex*)this); }
+    // Lock the mutex represented by this address; no separate mutex allocation is owned.
+    Fn801EBLock() {
+        OSLockMutex((OSMutex*)this);
+    }
+    // Release the matching recursive lock acquisition.
+    ~Fn801EBLock() {
+        OSUnlockMutex((OSMutex*)this);
+    }
 };
 extern void* appMallocUni__FUl(unsigned int size);
 
@@ -835,30 +1020,32 @@ extern void* appMallocUni__FUl(unsigned int size);
 // Slab allocation must return usable storage or throw: null is dereferenced,
 // never reported as an append failure. On allocation throw before publication,
 // WInstanceLock unwinds, activeRing is unchanged, and payload ownership remains
-// with the caller; these append functions do not delete it. CGolfBg_CreateCourseObjects
+// with the caller; these append functions do not delete it. CSceneManager::CreateCourseObjects
 // holds raw new results, so that exceptional path has no local payload guard.
-// CSceneManager_ClearOwnedSceneObjects releases published payloads, recycles
+// CSceneManager::ClearOwnedSceneObjects releases published payloads, recycles
 // active nodes and clears lookups, retaining slab storage for later reuse.
 // Ring direction follows DNode: +0xC is the preceding link, +0x10 the following link.
 struct Fn801EBList {
-	void* activeRing;
-	char padding04[4];
-	void* slabRing;
-	void* reusableRing;
-	int nodesPerSlab;
-	char padding14[0x0C];
-	char mutexStorage[0x18];
+    void* activeRing;
+    char padding04[4];
+    void* slabRing;
+    void* reusableRing;
+    int nodesPerSlab;
+    char padding14[0x0C];
+    char mutexStorage[0x18];
 };
 // Return the allocation size in nodes, including the slab-header node (not live object count).
-static inline int PoolNodesPerSlab(Fn801EBList* pool) { return pool->nodesPerSlab; }
+static inline int PoolNodesPerSlab(Fn801EBList* pool) {
+    return pool->nodesPerSlab;
+}
 struct Fn801EBNode {
-	void* value;
-	unsigned int renderState;
+    void* value;
+    unsigned int renderState;
     unsigned char renderFlags;
     char padding09[3];
-	Fn801EBNode* prev;
-	Fn801EBNode* next;
-	char padding14[4];
+    Fn801EBNode* prev;
+    Fn801EBNode* next;
+    char padding14[4];
 };
 
 // Make a detached node into a one-node ring; caller holds the recursive pool mutex.
@@ -873,16 +1060,18 @@ static inline void SpliceScenePoolNodeBefore(Fn801EBNode* node, Fn801EBNode* anc
     anchor->prev = node;
     node->prev->next = node;
 }
-// Disconnect a node; caller handles singleton-to-null conversion and publishes the new head.
+// Disconnect a node. The caller turns a one-node ring into null and publishes the new head.
 static inline void UnlinkScenePoolNode(Fn801EBNode* node) {
     node->next->prev = node->prev;
     node->prev->next = node->next;
 }
 
-struct Fn801EC088Object {
-	char padding00[0x64];
-	// Construct the complete score actor in the 0x64-byte allocation.
-	Fn801EC088Object() { CScore_Ctor(reinterpret_cast<ScoreConstructorView*>(this)); }
+struct CScoreAlloc {
+    char padding00[0x64];
+    // Construct the complete score actor in the 0x64-byte allocation.
+    CScoreAlloc() {
+        ((CScore*)(reinterpret_cast<ScoreConstructorView*>(this)))->__ct();
+    }
 };
 
 extern void* CourseEntryIterator_DefaultConstruct(void* self);
@@ -902,7 +1091,6 @@ extern void MWString_CopyConstructForNameLookup(void* self, void* arg);
 extern void* MWString_GetCString(void* self);
 extern void GroundStrip_BuildGeometry(void* a, void* b, unsigned int c, int d);
 
-extern void CRiver_Ctor(void* self);
 extern void ntRiver_Lava_Ctor(void* self);
 extern unsigned int SharedDoc_GetCourseId();
 extern void GroundStripOwner_Init(void* self);
@@ -910,10 +1098,7 @@ extern void GroundStripOwner_Init(void* self);
 extern int SharedDoc_IsCourse8Or13();
 extern void ntPetal_Ctor(void*, int, const char*, int);
 extern void ntSilicaParticle_Ctor(void*, int, const char*, int);
-extern void CSnow_Ctor(void*, int, const char*, int, float);
-extern void CRain_ctor(void*);
 extern int rand();
-extern void CShadowManager_SetSelectionFlags(void*, int);
 extern void __dl__FPv(void*);
 extern const char courseGlowEffectStrings[];
 extern char __vt__6CCloud[];
@@ -938,17 +1123,24 @@ struct VEffect {
 };
 
 // Access the owner's primary effect slot; this slot can hold petals, silica, snow, cloud or rain.
-static inline void*& OwnedCourseWeatherEffect(CourseWeatherOwner* owner) { return owner->weatherEffect; }
+static inline void*& OwnedCourseWeatherEffect(CourseWeatherOwner* owner) {
+    return owner->weatherEffect;
+}
 // Access the second owned effect slot; this unit releases it but does not establish its producer.
-static inline void*& OwnedSecondaryWeatherEffect(CourseWeatherOwner* owner) { return owner->secondaryWeatherEffect; }
+static inline void*& OwnedSecondaryWeatherEffect(CourseWeatherOwner* owner) {
+    return owner->secondaryWeatherEffect;
+}
 // Access the constructor-specific scale word; its visual units are not established here.
-static inline float& CourseWeatherEffectScale(void* effect) { return ((Fn801EBA30Effect*)effect)->field04; }
+static inline float& CourseWeatherEffectScale(void* effect) {
+    return ((Fn801EBA30Effect*)effect)->field04;
+}
 
 // Release a deleting-virtual effect and clear the owning slot; callers choose when recreation is needed.
 static inline void ReleaseOwnedWeatherEffect(void*& ownedEffect) {
     Fn801EBA30Effect* weatherEffect = (Fn801EBA30Effect*)ownedEffect;
     if (weatherEffect != 0) {
-        if (weatherEffect != 0) ((VEffect*)weatherEffect)->release(1);
+        if (weatherEffect != 0)
+            ((VEffect*)weatherEffect)->release(1);
         ownedEffect = 0;
     }
 }
@@ -962,292 +1154,402 @@ struct PetalEffectAlloc {
     float field04;
     char pad[0x24];
     // Construct the petal particle effect in owned storage.
-    PetalEffectAlloc(int a, const char* s, int c) { ntPetal_Ctor(this, a, s, c); }
+    PetalEffectAlloc(int a, const char* s, int c) {
+        ntPetal_Ctor(this, a, s, c);
+    }
 };
 struct SilicaParticleEffectAlloc {
     void** vtable;
     float field04;
     char pad[0x24];
     // Construct the silica particle effect in owned storage.
-    SilicaParticleEffectAlloc(int a, const char* s, int c) { ntSilicaParticle_Ctor(this, a, s, c); }
+    SilicaParticleEffectAlloc(int a, const char* s, int c) {
+        ntSilicaParticle_Ctor(this, a, s, c);
+    }
 };
 struct SnowEffectAlloc {
     void** vtable;
     float field04;
     char pad[0x5C];
     // Construct the snow effect, forwarding particle count, resource and scale.
-    SnowEffectAlloc(int a, const char* s, int c, float f) { CSnow_Ctor(this, a, s, c, f); }
+    SnowEffectAlloc(int a, const char* s, int c, float f) {
+        ((CSnow*)this)->Init(a, s, c, f);
+    }
 };
 struct CloudEffectAlloc {
     void** vtable;
     float field04;
     // Initialize the cloud effect with unit scale and its original vtable.
-    CloudEffectAlloc() { field04 = kFloat_1_805DF9F8; vtable = (void**)__vt__6CCloud; }
+    CloudEffectAlloc() {
+        field04 = kFloat_1_805DF9F8;
+        vtable = (void**)__vt__6CCloud;
+    }
 };
 struct RainEffectAlloc {
     char pad[0x28];
     // Construct the rain effect in owned storage.
-    RainEffectAlloc() { CRain_ctor(this); }
+    RainEffectAlloc() {
+        ((CRain*)this)->__ct();
+    }
 };
 
 extern void DrawScene_NoOpHook(void* self, int a);
 extern void GroundGrid_Ctor(void* self);
 extern void GroundGrid_ConfigureSurfaceBounds(void* self, void* a, void* b);
-extern void CMarker_CreateRenderResources(void* self);
 extern void* CourseResource_GetSelectedVariant();
 extern void BuildGroundProjectedPointQuads(void* self, void* arg);
 extern unsigned int CourseEntryVector_End(void* self);
 extern int CourseEntryIterator_NotEqual(void* a, void* b);
 
-// Course-scene construction view: list10 beaches, list48 rivers/lava, list80 texture strips,
-// listB8 boundary grids; fieldF0 owns the single generated polygon surface, fieldF4 the marker.
-// Construction view of the course scene ownership pools.
-struct CourseSceneConstructionView {
-	char padding00[0x10];
-	Fn801EBList beachPool;
-	Fn801EBList riverAndLavaPool;
-	Fn801EBList generatedTexturePool;
-	Fn801EBList boundaryPool;
-	void* generatedSurface;
-	void* marker;
-};
-
 // Borrow the beach ownership pool embedded in the course scene.
-static inline Fn801EBList& CourseSceneBeachPool(CourseSceneConstructionView* scene) { return scene->beachPool; }
+static inline Fn801EBList& CourseSceneBeachPool(CSceneManager* scene) {
+    return *(Fn801EBList*)&scene->firstBeachNode;
+}
 // Borrow the shared river/lava ownership pool.
-static inline Fn801EBList& CourseSceneRiverPool(CourseSceneConstructionView* scene) { return scene->riverAndLavaPool; }
+static inline Fn801EBList& CourseSceneRiverPool(CSceneManager* scene) {
+    return *(Fn801EBList*)&scene->firstRiverNode;
+}
 // Borrow the generated-texture-strip ownership pool.
-static inline Fn801EBList& CourseSceneTexturePool(CourseSceneConstructionView* scene) { return scene->generatedTexturePool; }
+static inline Fn801EBList& CourseSceneTexturePool(CSceneManager* scene) {
+    return *(Fn801EBList*)&scene->firstGeneratedTextureNode;
+}
 // Borrow the boundary-grid ownership pool.
-static inline Fn801EBList& CourseSceneBoundaryPool(CourseSceneConstructionView* scene) { return scene->boundaryPool; }
+static inline Fn801EBList& CourseSceneBoundaryPool(CSceneManager* scene) {
+    return *(Fn801EBList*)&scene->firstBoundaryNode;
+}
 
 // Destroy a copied point-vector temporary without deleting its stack wrapper.
-struct Dtor47CC { char pad[0xC]; ~Dtor47CC(){ dtor_801247CC(this, -1); } };
+struct Dtor47CC {
+    char pad[0xC];
+    ~Dtor47CC() {
+        dtor_801247CC(this, -1);
+    }
+};
 // Destroy a copied entry-name string without deleting its stack wrapper.
-struct Dtor463FC { char pad[0xC]; ~Dtor463FC(){ ((NString*)(this))->~NString(); } };
+struct Dtor463FC {
+    char pad[0xC];
+    ~Dtor463FC() {
+        ((NString*)(this))->~NString();
+    }
+};
 
 // Construct an owned generated polygon surface.
-struct GeneratedSurfaceAlloc { char pad[0x3C]; GeneratedSurfaceAlloc() { GeneratedSurface_Init(this); } };
+struct GeneratedSurfaceAlloc {
+    char pad[0x3C];
+    GeneratedSurfaceAlloc() {
+        GeneratedSurface_Init(this);
+    }
+};
 // Construct an owned beach strip.
-struct BeachAlloc { char pad[0x54]; BeachAlloc() { CBeach_Ctor(reinterpret_cast<Fn801EB1FCObject*>(this)); } };
+struct BeachAlloc {
+    char pad[0x54];
+    BeachAlloc() {
+        ((CBeach*)(reinterpret_cast<CBeachView*>(this)))->__ct();
+    }
+};
 // Construct an owned generated-texture strip.
-struct GeneTex3DAlloc { char pad[0x54]; GeneTex3DAlloc() { GroundStripOwner_Init(this); } };
+struct GeneTex3DAlloc {
+    char pad[0x54];
+    GeneTex3DAlloc() {
+        GroundStripOwner_Init(this);
+    }
+};
 // Construct an owned river surface.
-struct RiverAlloc { char pad[0x6C]; RiverAlloc() { CRiver_Ctor(this); } };
+struct RiverAlloc {
+    char pad[0x6C];
+    RiverAlloc() {
+        ((CRiver*)this)->__ct();
+    }
+};
 // Construct an owned lava surface.
-struct LavaRiverAlloc { char pad[0x6C]; LavaRiverAlloc() { ntRiver_Lava_Ctor(this); } };
+struct LavaRiverAlloc {
+    char pad[0x6C];
+    LavaRiverAlloc() {
+        ntRiver_Lava_Ctor(this);
+    }
+};
 // Construct an owned boundary ground grid.
-struct N190 { char pad[0x190]; N190() { GroundGrid_Ctor(this); } };
-struct VObj { 
-virtual void v0(); virtual void m(void*, unsigned int);
+struct N190 {
+    char pad[0x190];
+    N190() {
+        GroundGrid_Ctor(this);
+    }
+};
+struct VObj {
+    virtual void v0();
+    virtual void m(void*, unsigned int);
 };
 
 #pragma opt_common_subs off
 // Draw overlay hooks, then deferred custom drawables, and establish the transparent-pass state.
 // The caller retains its iteration/drawable scratch variables to preserve their ABI lifetimes.
 static inline void RenderCourseOverlaysAndDeferred(void* self, void* camera, Link*& renderLink, void*& drawable) {
-    flushSceneViewQueue(camera,1);
-    for (renderLink=(*(Link**)&AsCSceneManager(self)->firstOverlayDrawable);(Link*)(&AsCSceneManager(self)->lastOverlayDrawable) != renderLink;renderLink=renderLink->next) {
-        drawable=((SceneDrawableLink*)renderLink)->drawable;
-        if (drawable) dispatchSceneObjectHook(drawable,8);
+    flushSceneViewQueue(camera, 1);
+    for (renderLink = (*(Link**)&AsCSceneManager(self)->firstOverlayDrawable);
+         (Link*)(&AsCSceneManager(self)->lastOverlayDrawable) != renderLink; renderLink = renderLink->next) {
+        drawable = ((SceneDrawableLink*)renderLink)->drawable;
+        if (drawable)
+            dispatchSceneObjectHook(drawable, 8);
     }
-    flushSceneViewQueue(camera,0);
-    AsCSceneManager(self)->effectRenderPassActive=1;
-    for (renderLink=(*(Link**)&AsCSceneManager(self)->firstDeferredDrawable);!same_pos(renderLink, (Link*)(&AsCSceneManager(self)->lastDeferredDrawable));renderLink=renderLink->next) {
-        drawable=((SceneDrawableLink*)renderLink)->drawable;
-        if (drawable) dispatchSceneObjectHook(drawable,8);
+    flushSceneViewQueue(camera, 0);
+    AsCSceneManager(self)->effectRenderPassActive = 1;
+    for (renderLink = (*(Link**)&AsCSceneManager(self)->firstDeferredDrawable);
+         !same_pos(renderLink, (Link*)(&AsCSceneManager(self)->lastDeferredDrawable)); renderLink = renderLink->next) {
+        drawable = ((SceneDrawableLink*)renderLink)->drawable;
+        if (drawable)
+            dispatchSceneObjectHook(drawable, 8);
     }
-    drawable=AsCGolfDoc(currentGolfDocument())->courseEffectBox;
-    if(drawable) CourseEffects_EmptyHook(drawable,camera);
-    flushSceneViewQueue(camera,4);
-    AsCSceneManager(self)->effectRenderPassActive=0;
+    drawable = AsCGolfDoc(currentGolfDocument())->courseEffectBox;
+    if (drawable)
+        CourseEffects_EmptyHook(drawable, camera);
+    flushSceneViewQueue(camera, 4);
+    AsCSceneManager(self)->effectRenderPassActive = 0;
 }
 
 // Allocate/link copied transparent draw parameters; the puppet remains borrowed from scene ownership.
-struct SceneTransparentPayload { void* puppet; float drawScale; unsigned renderParameter, reserved0, reserved1; };
+struct SceneTransparentPayload {
+    void* puppet;
+    float drawScale;
+    unsigned renderParameter, reserved0, reserved1;
+};
 // The caller retains the cleanup guard; setting guard.n to zero commits list ownership.
 #pragma push
 #pragma always_inline on
 // Append copied parameters to this frame's transparent queue and commit the caller's node guard.
-static inline void AppendCourseTransparentPuppet(void* self, const SceneTransparentPayload& data, NodeGuard_u801E8048& guard) {
-    Link* queueSentinel=(Link*)(&AsCSceneManager(self)->lastTransparentObject);
-    Link* newNode=(Link*)appMallocDummy__FUl(0x1c);
-    guard.init(newNode,queueSentinel);
-    if(&((TransparentSceneLink*)newNode)->puppet) {
+static inline void AppendCourseTransparentPuppet(void* self, const SceneTransparentPayload& data,
+                                                 NodeGuard_u801E8048& guard) {
+    Link* queueSentinel = (Link*)(&AsCSceneManager(self)->lastTransparentObject);
+    Link* newNode = (Link*)appMallocDummy__FUl(0x1c);
+    guard.init(newNode, queueSentinel);
+    if (&((TransparentSceneLink*)newNode)->puppet) {
         try {
-            *(SceneTransparentPayload*)&((TransparentSceneLink*)newNode)->puppet=data;
-        } catch(...) {
+            *(SceneTransparentPayload*)&((TransparentSceneLink*)newNode)->puppet = data;
+        } catch (...) {
             appFreeUni__FPv(newNode);
             throw;
         }
     }
-    append(queueSentinel,newNode);
+    append(queueSentinel, newNode);
     ++(*(unsigned*)&AsCSceneManager(self)->transparentObjectCount);
-    guard.n=0;
+    guard.n = 0;
 }
 
 // Select inherited/forced opacity or calculate near/far distance fades; distances are squared world units.
-static inline void UpdateCourseRecordOpacity(
-    void* self, Link*& renderLink, void*& drawable, Vec3f& cameraToObject, Vec3f& cameraDelta, Sphere& boundsSphere) {
+static inline void UpdateCourseRecordOpacity(void* self, Link*& renderLink, void*& drawable, Vec3f& cameraToObject,
+                                             Vec3f& cameraDelta, Sphere& boundsSphere) {
     // 3c. Select inherited/forced opacity, or compute near and far fades.
     // The computed byte is also pushed recursively into puppet materials.
-    if (((SceneRenderRecord*)renderLink)->kind==kRecordInheritedOpacity) ((SceneRenderRecord*)renderLink)->opacity=((ScenePuppetView*)((SceneRenderRecord*)renderLink)->puppet)->opacityState->opacity;
-    else if (((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags)&kSceneStateStorySequence) ((SceneRenderRecord*)renderLink)->opacity=kOpaque;
-    else if(((SceneRenderRecord*)renderLink)->puppet) {
+    if (((SceneRenderRecord*)renderLink)->kind == kRecordInheritedOpacity)
+        ((SceneRenderRecord*)renderLink)->opacity =
+            ((ScenePuppetView*)((SceneRenderRecord*)renderLink)->puppet)->opacityState->opacity;
+    else if (((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags) & kSceneStateStorySequence)
+        ((SceneRenderRecord*)renderLink)->opacity = kOpaque;
+    else if (((SceneRenderRecord*)renderLink)->puppet) {
 
-        __mi__FRC7WVectorRC7WVector(&cameraDelta,(&((CameraTransformView*)s_cameraTransform)->position),(&((ScenePuppetView*)((SceneRenderRecord*)renderLink)->puppet)->boundingSphere.v));
-        __as__7WVectorFRC7WVector(&cameraToObject,&cameraDelta);
-        float distanceSquared=Vec3_CalculateLengthSquared(&cameraToObject);
+        __mi__FRC7WVectorRC7WVector(&cameraDelta, (&((CameraTransformView*)s_cameraTransform)->position),
+                                    (&((ScenePuppetView*)((SceneRenderRecord*)renderLink)->puppet)->boundingSphere.v));
+        __as__7WVectorFRC7WVector(&cameraToObject, &cameraDelta);
+        float distanceSquared = Vec3_CalculateLengthSquared(&cameraToObject);
         int opacity;
-        if(distanceSquared>kSceneProximityFadeDistanceSquared) ((SceneRenderRecord*)renderLink)->opacity=kOpaque;
+        if (distanceSquared > kSceneProximityFadeDistanceSquared)
+            ((SceneRenderRecord*)renderLink)->opacity = kOpaque;
         else {
-            if ((((SceneRenderRecord*)renderLink)->flags&kDisableCameraFade) || !AsCSceneManager(self)->cameraProximityFadeEnabled) opacity=kOpaque;
+            if ((((SceneRenderRecord*)renderLink)->flags & kDisableCameraFade) ||
+                !AsCSceneManager(self)->cameraProximityFadeEnabled)
+                opacity = kOpaque;
             else {
-                drawable=((SceneRenderRecord*)renderLink)->puppet;
-                float fadeRadius=kSceneProximityFadeRadiusLimit;
-                *(Arr3*)&boundsSphere.v=*(Arr3*)&((ScenePuppetView*)drawable)->boundingSphere.v; boundsSphere.r=((ScenePuppetView*)drawable)->boundingSphere.r;
-                float objectRadius=boundsSphere.r;
-                fadeRadius=objectRadius>fadeRadius?fadeRadius:objectRadius;
+                drawable = ((SceneRenderRecord*)renderLink)->puppet;
+                float fadeRadius = kSceneProximityFadeRadiusLimit;
+                *(Arr3*)&boundsSphere.v = *(Arr3*)&((ScenePuppetView*)drawable)->boundingSphere.v;
+                boundsSphere.r = ((ScenePuppetView*)drawable)->boundingSphere.r;
+                float objectRadius = boundsSphere.r;
+                fadeRadius = objectRadius > fadeRadius ? fadeRadius : objectRadius;
                 // Near fade subtracts the capped fade radius squared from center distance squared.
                 // Inside the radius use opacity 63; otherwise clamp sqrt(outsideRadiusSquared)/fadeRadius.
-                float outsideRadiusSquared=distanceSquared-fadeRadius*fadeRadius;
-                if(outsideRadiusSquared<=kFloat_0_805DF9FC) opacity=kCameraInsideOpacity;
-                else if(outsideRadiusSquared>fadeRadius*fadeRadius) opacity=kOpaque;
+                float outsideRadiusSquared = distanceSquared - fadeRadius * fadeRadius;
+                if (outsideRadiusSquared <= kFloat_0_805DF9FC)
+                    opacity = kCameraInsideOpacity;
+                else if (outsideRadiusSquared > fadeRadius * fadeRadius)
+                    opacity = kOpaque;
                 else {
-                    float distanceRatio=Math_SquareRootApprox(outsideRadiusSquared)/fadeRadius,clampedRatio=kFloat_0_25_Scene;
-                    clampedRatio=distanceRatio<clampedRatio?clampedRatio:(distanceRatio>kFloat_1_805DF9F8?kFloat_1_805DF9F8:distanceRatio);
-                    opacity=(int)(kSceneOpacityScale*clampedRatio);
+                    float distanceRatio = Math_SquareRootApprox(outsideRadiusSquared) / fadeRadius,
+                          clampedRatio = kFloat_0_25_Scene;
+                    clampedRatio = distanceRatio < clampedRatio
+                                       ? clampedRatio
+                                       : (distanceRatio > kFloat_1_805DF9F8 ? kFloat_1_805DF9F8 : distanceRatio);
+                    opacity = (int)(kSceneOpacityScale * clampedRatio);
                 }
             }
-            ((SceneRenderRecord*)renderLink)->opacity=opacity;
+            ((SceneRenderRecord*)renderLink)->opacity = opacity;
         }
         // Fade linearly in squared distance across the band below the maximum distance.
-        if(((SceneRenderRecord*)renderLink)->opacity==kOpaque) {
-            float maximumDistanceSquared=((SceneRenderRecord*)renderLink)->maximumDistanceSquared;
-            if(maximumDistanceSquared>kFloat_0_805DF9FC && distanceSquared>=maximumDistanceSquared-kSceneDistanceFadeBandSquared)
-                ((SceneRenderRecord*)renderLink)->opacity=(int)(kSceneOpacityScale*(maximumDistanceSquared-distanceSquared)/kSceneDistanceFadeBandSquared);
-            else if (((SceneRenderRecord*)renderLink)->flags&kForceTransparentPass) ((SceneRenderRecord*)renderLink)->opacity=kNearlyOpaque;
+        if (((SceneRenderRecord*)renderLink)->opacity == kOpaque) {
+            float maximumDistanceSquared = ((SceneRenderRecord*)renderLink)->maximumDistanceSquared;
+            if (maximumDistanceSquared > kFloat_0_805DF9FC &&
+                distanceSquared >= maximumDistanceSquared - kSceneDistanceFadeBandSquared)
+                ((SceneRenderRecord*)renderLink)->opacity =
+                    (int)(kSceneOpacityScale * (maximumDistanceSquared - distanceSquared) /
+                          kSceneDistanceFadeBandSquared);
+            else if (((SceneRenderRecord*)renderLink)->flags & kForceTransparentPass)
+                ((SceneRenderRecord*)renderLink)->opacity = kNearlyOpaque;
         }
-    } else ((SceneRenderRecord*)renderLink)->opacity=kOpaque;
+    } else
+        ((SceneRenderRecord*)renderLink)->opacity = kOpaque;
 }
 
 // Persist material opacity and draw the puppet when the current opaque-pass policy allows it.
 static inline void RenderCourseRecordPuppet(void* self, Link*& renderLink, void*& drawable) {
-    drawable=((SceneRenderRecord*)renderLink)->puppet;
-    unsigned char alpha=((SceneRenderRecord*)renderLink)->opacity;
-    if(alpha!=((ScenePuppetView*)drawable)->opacityState->opacity) WPuppet_SetOpacityRecursive(drawable,alpha);
+    drawable = ((SceneRenderRecord*)renderLink)->puppet;
+    unsigned char alpha = ((SceneRenderRecord*)renderLink)->opacity;
+    if (alpha != ((ScenePuppetView*)drawable)->opacityState->opacity)
+        WPuppet_SetOpacityRecursive(drawable, alpha);
     // 3e. Normal selection draws opaque non-boundaries now; alternate
     // selection draws every kind except 2 here, even if alpha is reduced.
-    if(!AsCSceneManager(self)->alternateRenderSelection) {
-        if (((SceneRenderRecord*)renderLink)->opacity==kOpaque && ((SceneRenderRecord*)renderLink)->kind!=kRecordShadowBoundary) drawScenePuppet(((SceneRenderRecord*)renderLink)->puppet,((SceneRenderRecord*)renderLink)->drawScale);
-    }
-    else if (((SceneRenderRecord*)renderLink)->kind!=kRecordAlternateExcluded) drawScenePuppet(((SceneRenderRecord*)renderLink)->puppet,((SceneRenderRecord*)renderLink)->drawScale);
+    if (!AsCSceneManager(self)->alternateRenderSelection) {
+        if (((SceneRenderRecord*)renderLink)->opacity == kOpaque &&
+            ((SceneRenderRecord*)renderLink)->kind != kRecordShadowBoundary)
+            drawScenePuppet(((SceneRenderRecord*)renderLink)->puppet, ((SceneRenderRecord*)renderLink)->drawScale);
+    } else if (((SceneRenderRecord*)renderLink)->kind != kRecordAlternateExcluded)
+        drawScenePuppet(((SceneRenderRecord*)renderLink)->puppet, ((SceneRenderRecord*)renderLink)->drawScale);
 }
 
 // Draw projected model shadows and initialize/draw their render packet at a boundary record.
 static inline void RenderCourseShadowBoundary(void* camera, Link*& renderLink) {
-    if(((SceneRenderRecord*)renderLink)->kind==kRecordShadowBoundary && g_shadowManager) {
-        ShadowManager_DrawProjectedModel(g_shadowManager,camera);
-        if(!Sing_805DC7B0()) {
-            if(!s_renderPacketInitialized) {
+    if (((SceneRenderRecord*)renderLink)->kind == kRecordShadowBoundary && g_shadowManager) {
+        ShadowManager_DrawProjectedModel(g_shadowManager, camera);
+        if (!Sing_805DC7B0()) {
+            if (!s_renderPacketInitialized) {
                 RenderPacket_Init(s_renderPacket);
-                __register_global_object(s_renderPacket,(void*)RenderPacket_Destroy,s_sceneRenderPacketDestructorRegistration);
-                s_renderPacketInitialized=1;
+                __register_global_object(s_renderPacket, (void*)RenderPacket_Destroy,
+                                         s_sceneRenderPacketDestructorRegistration);
+                s_renderPacketInitialized = 1;
             }
-            Sing_805DC7B0()=s_renderPacket;
+            Sing_805DC7B0() = s_renderPacket;
         }
-        RenderPacket_DrawBatches(Sing_805DC7B0(),camera);
+        RenderPacket_DrawBatches(Sing_805DC7B0(), camera);
     }
 }
 
 // Draw allowed markers and active weather slots, then select the course-surface camera state.
 static inline void RenderCourseMarkerAndWeather(void* self, void* camera) {
-    if (!(((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags)&kMarkerHiddenStates) && AsCSceneManager(self)->marker) CMarker_Draw(AsCSceneManager(self)->marker);
-    if(AsCSceneManager(self)->weatherEffect) dispatchSceneObjectHook(AsCSceneManager(self)->weatherEffect,0x10);
-    if(AsCSceneManager(self)->secondaryWeatherEffect) dispatchSceneObjectHook(AsCSceneManager(self)->secondaryWeatherEffect,0x10);
-    if(AsCSceneManager(self)->weatherEffect||AsCSceneManager(self)->secondaryWeatherEffect) flushSceneViewQueue(camera,0);
+    if (!(((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags) & kMarkerHiddenStates) &&
+        AsCSceneManager(self)->marker)
+        ((CMarker*)(AsCSceneManager(self)->marker))->Draw();
+    if (AsCSceneManager(self)->weatherEffect)
+        dispatchSceneObjectHook(AsCSceneManager(self)->weatherEffect, 0x10);
+    if (AsCSceneManager(self)->secondaryWeatherEffect)
+        dispatchSceneObjectHook(AsCSceneManager(self)->secondaryWeatherEffect, 0x10);
+    if (AsCSceneManager(self)->weatherEffect || AsCSceneManager(self)->secondaryWeatherEffect)
+        flushSceneViewQueue(camera, 0);
 }
 
 // Draw the selected quadtree point and invoke its reserved debug hook.
-static inline void RenderCourseQuadTreeDebug(
-    Vec3f& verticalOffset, Vec3f& selectedPointForOffset, Vec3f& selectedPointForLine, Vec3f& lineEndWorld) {
-    if(g_drawSceneDebugGeometry) {
-        verticalOffset.x=kFloat_0_805DF9FC; verticalOffset.y=kSceneDebugVerticalLineHeight; verticalOffset.z=kFloat_0_805DF9FC;
-        *(Arr3*)&selectedPointForOffset=*(Arr3*)&((SceneQuadTreeDebug*)CQuadTree_GetInstance())->selectedPoint; *(Arr3*)&selectedPointForLine=*(Arr3*)&((SceneQuadTreeDebug*)CQuadTree_GetInstance())->selectedPoint;
-        __pl__FRC7WVectorRC7WVector(&lineEndWorld,&selectedPointForOffset,&verticalOffset);
-        WView_DrawLine(g_view,&selectedPointForLine,0xffff0000,&lineEndWorld,0xffff0000,0);
-        CQuadTree_ReservedWiiHook(CQuadTree_GetInstance());
+static inline void RenderCourseQuadTreeDebug(Vec3f& verticalOffset, Vec3f& selectedPointForOffset,
+                                             Vec3f& selectedPointForLine, Vec3f& lineEndWorld) {
+    if (g_drawSceneDebugGeometry) {
+        verticalOffset.x = kFloat_0_805DF9FC;
+        verticalOffset.y = kSceneDebugVerticalLineHeight;
+        verticalOffset.z = kFloat_0_805DF9FC;
+        *(Arr3*)&selectedPointForOffset = *(Arr3*)&((SceneQuadTreeDebug*)CQuadTree_GetInstance())->selectedPoint;
+        *(Arr3*)&selectedPointForLine = *(Arr3*)&((SceneQuadTreeDebug*)CQuadTree_GetInstance())->selectedPoint;
+        __pl__FRC7WVectorRC7WVector(&lineEndWorld, &selectedPointForOffset, &verticalOffset);
+        WView_DrawLine(g_view, &selectedPointForLine, 0xffff0000, &lineEndWorld, 0xffff0000, 0);
+        ((CQuadTree*)CQuadTree_GetInstance())->ReservedWiiHook();
     }
 }
 
 // Draw a debug water plane; raised selects the diagnostic plane 192 world units higher.
 // cornerIndex/cornerWorld/cornerView are borrowed caller scratch for the original frame layout.
-static inline void RenderCourseDebugWaterPlane(void* self, void* camera, bool raised,
-    int& cornerIndex, Vec3f& cornerWorld, Vec3f& cornerView) {
-    if((*(unsigned*)&AsCSceneManager(self)->debugDrawFlags)&(raised ? kDrawRaisedWaterPlane : kDrawWaterPlane)) {
-        void* surfaceBounds=CourseData_FindSurfaceByName(AsCGolfDoc(currentGolfDocument())->courseData,0);
-        for(cornerIndex=0;cornerIndex<4;++cornerIndex) {
-            cornerWorld.x=(cornerIndex&1)?((SceneSurfaceBounds*)surfaceBounds)->maximum.x:((SceneSurfaceBounds*)surfaceBounds)->minimum.x;
-            cornerWorld.z=(cornerIndex&2)?((SceneSurfaceBounds*)surfaceBounds)->maximum.z:((SceneSurfaceBounds*)surfaceBounds)->minimum.z;
-            if (raised) cornerWorld.y=kFloat_192_SceneDebug+((SceneQuadTreeDebug*)CQuadTree_GetInstance())->waterLevel;
-            else cornerWorld.y=((SceneQuadTreeDebug*)CQuadTree_GetInstance())->waterLevel;
-            Matrix_TransformPoint(&cornerView,&cornerWorld,((SceneCameraMatrix*)camera)->worldToView);
-            WView_ProjectViewPoint(camera,&s_projectedEffectVertex0[cornerIndex],&cornerView,0);
-            s_projectedEffectVertex0[cornerIndex].color=0x808080ff;
+static inline void RenderCourseDebugWaterPlane(void* self, void* camera, bool raised, int& cornerIndex,
+                                               Vec3f& cornerWorld, Vec3f& cornerView) {
+    if ((*(unsigned*)&AsCSceneManager(self)->debugDrawFlags) & (raised ? kDrawRaisedWaterPlane : kDrawWaterPlane)) {
+        void* surfaceBounds = CourseData_FindSurfaceByName(AsCGolfDoc(currentGolfDocument())->courseData, 0);
+        for (cornerIndex = 0; cornerIndex < 4; ++cornerIndex) {
+            cornerWorld.x = (cornerIndex & 1) ? ((SceneSurfaceBounds*)surfaceBounds)->maximum.x
+                                              : ((SceneSurfaceBounds*)surfaceBounds)->minimum.x;
+            cornerWorld.z = (cornerIndex & 2) ? ((SceneSurfaceBounds*)surfaceBounds)->maximum.z
+                                              : ((SceneSurfaceBounds*)surfaceBounds)->minimum.z;
+            if (raised)
+                cornerWorld.y = kFloat_192_SceneDebug + ((SceneQuadTreeDebug*)CQuadTree_GetInstance())->waterLevel;
+            else
+                cornerWorld.y = ((SceneQuadTreeDebug*)CQuadTree_GetInstance())->waterLevel;
+            Matrix_TransformPoint(&cornerView, &cornerWorld, ((SceneCameraMatrix*)camera)->worldToView);
+            WView_ProjectViewPoint(camera, &s_projectedEffectVertex0[cornerIndex], &cornerView, 0);
+            s_projectedEffectVertex0[cornerIndex].color = 0x808080ff;
         }
-        drawScenePrimitive(camera,s_sceneProjectedEffectVertexPointers,0);
+        drawScenePrimitive(camera, s_sceneProjectedEffectVertexPointers, 0);
     }
 }
 
 // Draw two camera-facing diagonals at every world-space drop debug point.
-static inline void RenderCourseDropPointCrosses(
-    void* self, void* camera, Link*& renderLink, Vec3f& positiveDiagonal, Vec3f& positiveOffset,
-    Vec3f& positiveLineEnd, Vec3f& positiveDiagonalCopy, Vec3f& positiveOffsetCopy, Vec3f& positiveLineStart,
-    Vec3f& negativeDiagonal, Vec3f& negativeOffset, Vec3f& negativeLineEnd, Vec3f& negativeDiagonalCopy,
-    Vec3f& negativeOffsetCopy, Vec3f& negativeLineStart) {
-    float scale=kSceneDebugPointCrossScale;
-    for (renderLink=(*(Link**)&AsCSceneManager(self)->firstDebugPoint);renderLink!=(Link*)(&AsCSceneManager(self)->lastDebugPoint);renderLink=renderLink->next) {
+static inline void RenderCourseDropPointCrosses(void* self, void* camera, Link*& renderLink, Vec3f& positiveDiagonal,
+                                                Vec3f& positiveOffset, Vec3f& positiveLineEnd,
+                                                Vec3f& positiveDiagonalCopy, Vec3f& positiveOffsetCopy,
+                                                Vec3f& positiveLineStart, Vec3f& negativeDiagonal,
+                                                Vec3f& negativeOffset, Vec3f& negativeLineEnd,
+                                                Vec3f& negativeDiagonalCopy, Vec3f& negativeOffsetCopy,
+                                                Vec3f& negativeLineStart) {
+    float scale = kSceneDebugPointCrossScale;
+    for (renderLink = (*(Link**)&AsCSceneManager(self)->firstDebugPoint);
+         renderLink != (Link*)(&AsCSceneManager(self)->lastDebugPoint); renderLink = renderLink->next) {
 
-        __pl__FRC7WVectorRC7WVector(&positiveDiagonal,s_cameraTransform,(&((CameraTransformView*)s_cameraTransform)->up));
-        __ml__FfRC7WVector(&positiveOffset,&positiveDiagonal,scale);
-        __pl__FRC7WVectorRC7WVector(&positiveLineEnd,(&((SceneDebugPointLink*)renderLink)->position),&positiveOffset);
-        __pl__FRC7WVectorRC7WVector(&positiveDiagonalCopy,s_cameraTransform,(&((CameraTransformView*)s_cameraTransform)->up));
-        __ml__FfRC7WVector(&positiveOffsetCopy,&positiveDiagonalCopy,scale);
-        __mi__FRC7WVectorRC7WVector(&positiveLineStart,(&((SceneDebugPointLink*)renderLink)->position),&positiveOffsetCopy);
-        WView_DrawLine(camera,&positiveLineStart,((SceneDebugPointLink*)renderLink)->color,&positiveLineEnd,((SceneDebugPointLink*)renderLink)->color,0x300000);
+        __pl__FRC7WVectorRC7WVector(&positiveDiagonal, s_cameraTransform,
+                                    (&((CameraTransformView*)s_cameraTransform)->up));
+        __ml__FfRC7WVector(&positiveOffset, &positiveDiagonal, scale);
+        __pl__FRC7WVectorRC7WVector(&positiveLineEnd, (&((SceneDebugPointLink*)renderLink)->position), &positiveOffset);
+        __pl__FRC7WVectorRC7WVector(&positiveDiagonalCopy, s_cameraTransform,
+                                    (&((CameraTransformView*)s_cameraTransform)->up));
+        __ml__FfRC7WVector(&positiveOffsetCopy, &positiveDiagonalCopy, scale);
+        __mi__FRC7WVectorRC7WVector(&positiveLineStart, (&((SceneDebugPointLink*)renderLink)->position),
+                                    &positiveOffsetCopy);
+        WView_DrawLine(camera, &positiveLineStart, ((SceneDebugPointLink*)renderLink)->color, &positiveLineEnd,
+                       ((SceneDebugPointLink*)renderLink)->color, 0x300000);
 
-        __mi__FRC7WVectorRC7WVector(&negativeDiagonal,s_cameraTransform,(&((CameraTransformView*)s_cameraTransform)->up));
-        __ml__FfRC7WVector(&negativeOffset,&negativeDiagonal,scale);
-        __pl__FRC7WVectorRC7WVector(&negativeLineEnd,(&((SceneDebugPointLink*)renderLink)->position),&negativeOffset);
-        __mi__FRC7WVectorRC7WVector(&negativeDiagonalCopy,s_cameraTransform,(&((CameraTransformView*)s_cameraTransform)->up));
-        __ml__FfRC7WVector(&negativeOffsetCopy,&negativeDiagonalCopy,scale);
-        __mi__FRC7WVectorRC7WVector(&negativeLineStart,(&((SceneDebugPointLink*)renderLink)->position),&negativeOffsetCopy);
-        WView_DrawLine(camera,&negativeLineStart,((SceneDebugPointLink*)renderLink)->color,&negativeLineEnd,((SceneDebugPointLink*)renderLink)->color,0x300000);
+        __mi__FRC7WVectorRC7WVector(&negativeDiagonal, s_cameraTransform,
+                                    (&((CameraTransformView*)s_cameraTransform)->up));
+        __ml__FfRC7WVector(&negativeOffset, &negativeDiagonal, scale);
+        __pl__FRC7WVectorRC7WVector(&negativeLineEnd, (&((SceneDebugPointLink*)renderLink)->position), &negativeOffset);
+        __mi__FRC7WVectorRC7WVector(&negativeDiagonalCopy, s_cameraTransform,
+                                    (&((CameraTransformView*)s_cameraTransform)->up));
+        __ml__FfRC7WVector(&negativeOffsetCopy, &negativeDiagonalCopy, scale);
+        __mi__FRC7WVectorRC7WVector(&negativeLineStart, (&((SceneDebugPointLink*)renderLink)->position),
+                                    &negativeOffsetCopy);
+        WView_DrawLine(camera, &negativeLineStart, ((SceneDebugPointLink*)renderLink)->color, &negativeLineEnd,
+                       ((SceneDebugPointLink*)renderLink)->color, 0x300000);
     }
 }
 
 // Project puppet bounds and center each debug label using its font width in viewport units.
-static inline void RenderCourseObjectNames(
-    void* self, void* camera, Link*& renderLink, void*& drawable, float* projectedPosition, Vec3f& boundsSum,
-    Vec3f& boundsMidpoint, Vec3f& labelAnchorWorld, Vec3f& cameraToLabel, Vec3f& labelAnchorView) {
-    if(AsCSceneManager(self)->objectNamesVisible) {
-        for (renderLink=(*(Link**)&AsCSceneManager(self)->firstRenderRecord);renderLink!=(Link*)(&AsCSceneManager(self)->lastRenderRecord);renderLink=renderLink->next) {
-            drawable=((SceneRenderRecord*)renderLink)->puppet;
-            if(!drawable) continue;
+static inline void RenderCourseObjectNames(void* self, void* camera, Link*& renderLink, void*& drawable,
+                                           float* projectedPosition, Vec3f& boundsSum, Vec3f& boundsMidpoint,
+                                           Vec3f& labelAnchorWorld, Vec3f& cameraToLabel, Vec3f& labelAnchorView) {
+    if (AsCSceneManager(self)->objectNamesVisible) {
+        for (renderLink = (*(Link**)&AsCSceneManager(self)->firstRenderRecord);
+             renderLink != (Link*)(&AsCSceneManager(self)->lastRenderRecord); renderLink = renderLink->next) {
+            drawable = ((SceneRenderRecord*)renderLink)->puppet;
+            if (!drawable)
+                continue;
 
-            __pl__FRC7WVectorRC7WVector(&boundsSum,(&((ScenePuppetView*)drawable)->boundsMax),(&((ScenePuppetView*)drawable)->boundsMin));
-            __ml__FfRC7WVector(&boundsMidpoint,&boundsSum,kSceneHalfScale);
-            __as__7WVectorFRC7WVector(&labelAnchorWorld,&boundsMidpoint);
-            labelAnchorWorld.y=((ScenePuppetView*)((SceneRenderRecord*)renderLink)->puppet)->boundsMax.y;
-            __mi__FRC7WVectorRC7WVector(&cameraToLabel,&labelAnchorWorld,(&((CameraTransformView*)s_cameraTransform)->position));
-            if (Magnitude__7WVectorCFv(&cameraToLabel)>kFloat_192_SceneDebug && WView_DefaultCapabilityTrueC(camera,(&((ScenePuppetView*)((SceneRenderRecord*)renderLink)->puppet)->boundsMin))) continue;
-            Matrix_TransformPoint(&labelAnchorView,&labelAnchorWorld,((SceneCameraMatrix*)camera)->worldToView);
-            WView_ProjectViewPoint(camera,projectedPosition,&labelAnchorView,0);
-            drawable=(*(void**)&AsCSceneManager(self)->debugNameFont);
-            float labelWidthPixels=((VFont*)drawable)->width(camera,((SceneRenderRecord*)renderLink)->displayName);
-            WFont_Print((*(void**)&AsCSceneManager(self)->debugNameFont),camera,((SceneRenderRecord*)renderLink)->displayName,0,-1,projectedPosition[0]-kSceneHalfScale*labelWidthPixels,projectedPosition[1]);
+            __pl__FRC7WVectorRC7WVector(&boundsSum, (&((ScenePuppetView*)drawable)->boundsMax),
+                                        (&((ScenePuppetView*)drawable)->boundsMin));
+            __ml__FfRC7WVector(&boundsMidpoint, &boundsSum, kSceneHalfScale);
+            __as__7WVectorFRC7WVector(&labelAnchorWorld, &boundsMidpoint);
+            labelAnchorWorld.y = ((ScenePuppetView*)((SceneRenderRecord*)renderLink)->puppet)->boundsMax.y;
+            __mi__FRC7WVectorRC7WVector(&cameraToLabel, &labelAnchorWorld,
+                                        (&((CameraTransformView*)s_cameraTransform)->position));
+            if (Magnitude__7WVectorCFv(&cameraToLabel) > kFloat_192_SceneDebug &&
+                WView_DefaultCapabilityTrueC(
+                    camera, (&((ScenePuppetView*)((SceneRenderRecord*)renderLink)->puppet)->boundsMin)))
+                continue;
+            Matrix_TransformPoint(&labelAnchorView, &labelAnchorWorld, ((SceneCameraMatrix*)camera)->worldToView);
+            WView_ProjectViewPoint(camera, projectedPosition, &labelAnchorView, 0);
+            drawable = (*(void**)&AsCSceneManager(self)->debugNameFont);
+            float labelWidthPixels = ((VFont*)drawable)->width(camera, ((SceneRenderRecord*)renderLink)->displayName);
+            WFont_Print((*(void**)&AsCSceneManager(self)->debugNameFont), camera,
+                        ((SceneRenderRecord*)renderLink)->displayName, 0, -1,
+                        projectedPosition[0] - kSceneHalfScale * labelWidthPixels, projectedPosition[1]);
         }
-        drawable=(*(void**)&AsCSceneManager(self)->debugNameFont);
+        drawable = (*(void**)&AsCSceneManager(self)->debugNameFont);
         ((VFont*)drawable)->finish(g_view);
     }
 }
@@ -1255,12 +1557,15 @@ static inline void RenderCourseObjectNames(
 // Sort queued puppets by camera-forward projection and draw them after deferred overlays.
 static inline void RenderCourseTransparentPuppets(void* self, Link*& renderLink, Vec3f& cameraForwardSortKey) {
     // Sort transparency by world position dot camera-forward (descending), not radial distance.
-    if(AsCSceneManager(self)->transparentObjectCount && !AsCSceneManager(self)->alternateRenderSelection) {
-        *(Arr3*)&cameraForwardSortKey=*(Arr3*)&((CameraTransformView*)s_cameraTransform)->forward;
-        ScenePuppetList_SortByCameraProjectionDescending((SList*)(&AsCSceneManager(self)->transparentObjectCount),(SortKey*)&cameraForwardSortKey);
-        for (renderLink=(*(Link**)&AsCSceneManager(self)->firstTransparentObject);renderLink!=(Link*)(&AsCSceneManager(self)->lastTransparentObject);renderLink=renderLink->next) {
-            drawScenePuppet(((TransparentSceneLink*)renderLink)->puppet,((TransparentSceneLink*)renderLink)->drawScale);
-            flushSceneViewQueue(g_view,2);
+    if (AsCSceneManager(self)->transparentObjectCount && !AsCSceneManager(self)->alternateRenderSelection) {
+        *(Arr3*)&cameraForwardSortKey = *(Arr3*)&((CameraTransformView*)s_cameraTransform)->forward;
+        ScenePuppetList_SortByCameraProjectionDescending((SList*)(&AsCSceneManager(self)->transparentObjectCount),
+                                                         (SortKey*)&cameraForwardSortKey);
+        for (renderLink = (*(Link**)&AsCSceneManager(self)->firstTransparentObject);
+             renderLink != (Link*)(&AsCSceneManager(self)->lastTransparentObject); renderLink = renderLink->next) {
+            drawScenePuppet(((TransparentSceneLink*)renderLink)->puppet,
+                            ((TransparentSceneLink*)renderLink)->drawScale);
+            flushSceneViewQueue(g_view, 2);
         }
     }
 }
@@ -1270,7 +1575,8 @@ static inline void RenderCourseTransparentPuppets(void* self, Link*& renderLink,
 // Borrow the selected hole's world-space cup position; hole index must already be valid.
 static inline Vec3f& CurrentSceneCupWorld() {
     return ((SceneHoleRecord*)AsCGolfDoc(currentGolfDocument())->holeRecords +
-        AsCGolfDoc(currentGolfDocument())->currentHoleIndex)->cup;
+            AsCGolfDoc(currentGolfDocument())->currentHoleIndex)
+        ->cup;
 }
 
 // Render the course scene: visibility/distance fading, opaque objects, shadows/effects, depth-sorted transparency and debug overlays.
@@ -1290,287 +1596,339 @@ static inline Vec3f& CurrentSceneCupWorld() {
 // for deferred draws; flags 4 + flag=0 before transparency; g_view flags 2 after each transparent
 // puppet. Finally forward renderer parameter word 0. Opacity mutations intentionally persist;
 // the function does not save/restore every render-state bundle to its incoming values.
-void CSceneManager_RenderCourseScene(void* self,void* camera) {
+void CSceneManager::RenderCourseScene(void* camera) {
     // Scratch remains in these caller scopes so inlined passes preserve the Wii frame layout.
     // The render pass helpers borrow references and never retain them.
     Link* renderLink;
-    if(!AsCSceneManager(self)->renderEnabled) return;
+    if (!renderEnabled)
+        return;
     // Phase 1: prepare target/counters, capture cup and shadow textures, clear last frame's queues.
-    int enabled=0;
-    if(AsCSceneManager(self)->sceneViewOptionEnabled && ((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags)!=kSceneStateHoleOverview) enabled=1;
-    WView_ForwardRendererParameters(g_view,enabled);
-    g_sceneRenderedGeometryCount=0;
-    g_sceneRenderedPuppetCount=0;
-    g_sceneCourseSurfaceCount=AsCourseData801C(AsCGolfDoc(currentGolfDocument())->courseData)->surfaceCount;
+    int enabled = 0;
+    if (sceneViewOptionEnabled &&
+        ((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags) != kSceneStateHoleOverview)
+        enabled = 1;
+    WView_ForwardRendererParameters(g_view, enabled);
+    g_sceneRenderedGeometryCount = 0;
+    g_sceneRenderedPuppetCount = 0;
+    g_sceneCourseSurfaceCount = AsCourseData801C(AsCGolfDoc(currentGolfDocument())->courseData)->surfaceCount;
     int rendererSubmissionState;
-    struct Basis { float matrix[12]; int gap; int tail; char reserved[0x28]; } basis; memset(basis.matrix,0,0x30);
-    basis.tail=0;
-    basis.matrix[8]=kFloat_1_805DF9F8;
-    basis.matrix[4]=kFloat_1_805DF9F8;
-    basis.matrix[0]=kFloat_1_805DF9F8;
-    rendererSubmissionState=0;
-    if(g_golfCupPreview) CupPreview_CaptureModel(g_golfCupPreview,camera);
-    if(g_shadowManager) ShadowManager_RenderShadowTextures(g_shadowManager,camera);
-    clearTransientRenderList((Link*)&AsCSceneManager(self)->lastTransparentObject,*(unsigned*)&AsCSceneManager(self)->transparentObjectCount);
-    clearTransientRenderList((Link*)&AsCSceneManager(self)->lastDeferredDrawable,*(unsigned*)&AsCSceneManager(self)->deferredDrawableCount);
-    void* service=*g_resourceManager;
+    struct Basis {
+        float matrix[12];
+        int gap;
+        int tail;
+        char reserved[0x28];
+    } basis;
+    memset(basis.matrix, 0, 0x30);
+    basis.tail = 0;
+    basis.matrix[8] = kFloat_1_805DF9F8;
+    basis.matrix[4] = kFloat_1_805DF9F8;
+    basis.matrix[0] = kFloat_1_805DF9F8;
+    rendererSubmissionState = 0;
+    if (g_golfCupPreview)
+        CupPreview_CaptureModel(g_golfCupPreview, camera);
+    if (g_shadowManager)
+        ShadowManager_RenderShadowTextures(g_shadowManager, camera);
+    clearTransientRenderList((Link*)&lastTransparentObject, *(unsigned*)&transparentObjectCount);
+    clearTransientRenderList((Link*)&lastDeferredDrawable, *(unsigned*)&deferredDrawableCount);
+    void* service = *g_resourceManager;
     // Query the renderer's cached submission-state word (+0x4844), NOT
     // texture readiness: CProjectG_CreateWindowProvider (project_g_app_and_devices.cpp) publishes
-    // this service at *g_resourceManager. WGeneric3DR_DispatchCommand (wgeneric3dr_immediate_renderer.cpp),
+    // this service at *g_resourceManager. WGeneric3DR::DispatchCommand (wgeneric3dr_immediate_renderer.cpp),
     // command 26, synchronously writes that word through argument 2; argument 3
     // is unused and the null return is not failure. WGeneric3D_AllocateVertexBuffer
     // (wgeneric3d_render_queue_and_soft_keyboard.cpp) sets it to 0=idle; its SubmitPrimitive/QueueTaggedPrimitive/Flush
-    // suppress work at 1=pending. WGeneric3DR_ActivateRenderSubmission (wgeneric3dr_renderer_core.cpp)
+    // suppress work at 1=pending. WGeneric3DR::ActivateRenderSubmission (wgeneric3dr_renderer_core.cpp)
     // promotes 1->2=active then invokes the reset hook; CompleteRenderSubmission
     // invokes the flush hook then changes 2->0, leaving 1 unchanged. That source's
     // state views alias this same +0x4844 (WGeneric3D.h calls it submissionState).
     // This caller's ==2 active branch merely walks to the record sentinel: no draws,
     // writes or callbacks, and it does not gate the later render passes. Do not
     // reinterpret 2 as "loading" or replace these distinct equality tests.
-    ((VService*)service)->query(kSceneResourceQuery1A,&rendererSubmissionState,0);
-    if (rendererSubmissionState==kSceneResourceMode2) {
-        Link* renderLink=(*(Link**)&AsCSceneManager(self)->firstRenderRecord);
-        while (renderLink!=(Link*)(&AsCSceneManager(self)->lastRenderRecord)) renderLink=renderLink->next;
+    ((VService*)service)->query(kSceneResourceQuery1A, &rendererSubmissionState, 0);
+    if (rendererSubmissionState == kSceneResourceMode2) {
+        Link* renderLink = (*(Link**)&firstRenderRecord);
+        while (renderLink != (Link*)(&lastRenderRecord))
+            renderLink = renderLink->next;
     }
     // Keep these four by-value sort calls here: extracting them reverses their volatile copy slots.
     // Phase 2: update persistent record order when kind/camera state requires it.
-    if(((SceneSortState*)self)->kindSortPending) {
-        sortSceneRecordsByKind(self);
-        ((SceneSortState*)self)->kindSortPending=0;
+    if (((SceneSortState*)this)->kindSortPending) {
+        sortSceneRecordsByKind(this);
+        ((SceneSortState*)this)->kindSortPending = 0;
     }
-    unsigned golfStateFlags=((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags);
-    if(golfStateFlags==kSceneStatePlayerPreview) {
-        if(AsCSceneManager(self)->previousCameraMode) {
-            AsCSceneManager(self)->previousCameraMode=0;
-            sortSceneRecordsByDistance(self,*GolfBall__Fv());
-            sortSceneRecordsByKind(self);
+    unsigned golfStateFlags = ((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags);
+    if (golfStateFlags == kSceneStatePlayerPreview) {
+        if (previousCameraMode) {
+            previousCameraMode = 0;
+            sortSceneRecordsByDistance(this, *GolfBall__Fv());
+            sortSceneRecordsByKind(this);
         }
-    } else if(golfStateFlags==kSceneStateAim) {
-        if(AsCGolfDoc(currentGolfDocument())->cameraMode) {
-            sortSceneRecordsByDistance(self,((CameraTransformView*)s_cameraTransform)->position);
-            sortSceneRecordsByKind(self);
-        } else if(AsCSceneManager(self)->previousCameraMode) {
-            sortSceneRecordsByDistance(self,*GolfBall__Fv());
-            sortSceneRecordsByKind(self);
+    } else if (golfStateFlags == kSceneStateAim) {
+        if (AsCGolfDoc(currentGolfDocument())->cameraMode) {
+            sortSceneRecordsByDistance(this, ((CameraTransformView*)s_cameraTransform)->position);
+            sortSceneRecordsByKind(this);
+        } else if (previousCameraMode) {
+            sortSceneRecordsByDistance(this, *GolfBall__Fv());
+            sortSceneRecordsByKind(this);
         }
-        AsCSceneManager(self)->previousCameraMode=AsCGolfDoc(currentGolfDocument())->cameraMode;
+        previousCameraMode = AsCGolfDoc(currentGolfDocument())->cameraMode;
     } else {
-        AsCSceneManager(self)->previousCameraMode=-1;
-        golfStateFlags=((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags);
-        if((golfStateFlags&kCameraPositionSortStates) || (golfStateFlags&kAdditionalCameraPositionSortStates)) {
-            sortSceneRecordsByDistance(self,((CameraTransformView*)s_cameraTransform)->position);
-            sortSceneRecordsByKind(self);
+        previousCameraMode = -1;
+        golfStateFlags = ((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags);
+        if ((golfStateFlags & kCameraPositionSortStates) || (golfStateFlags & kAdditionalCameraPositionSortStates)) {
+            sortSceneRecordsByDistance(this, ((CameraTransformView*)s_cameraTransform)->position);
+            sortSceneRecordsByKind(this);
         }
     }
-    void* drawable=AsCGolfDoc(currentGolfDocument())->courseEffectBox;
-    if(drawable) CPvsFxBox_DrawEnabledEffects(drawable,camera);
-    if(g_golfCupPreview) CupPreview_DrawModel(g_golfCupPreview,camera);
-    Camera_SetClip(camera,kSceneClipNear,kSceneClipFar,0);
+    void* drawable = AsCGolfDoc(currentGolfDocument())->courseEffectBox;
+    if (drawable)
+        ((CPvsFxBox*)drawable)->DrawEnabledEffects(camera);
+    if (g_golfCupPreview)
+        CupPreview_DrawModel(g_golfCupPreview, camera);
+    Camera_SetClip(camera, kSceneClipNear, kSceneClipFar, 0);
     P10 presetB;
     P12 presetA;
-    P30 preset=kSceneRenderStatePreset;
-    presetA=kSceneTextureStageStatePreset;
-    presetB=kSceneTextureStageParameterPreset;
+    P30 preset = kSceneRenderStatePreset;
+    presetA = kSceneTextureStageStatePreset;
+    presetB = kSceneTextureStageParameterPreset;
     float projectedPosition[14];
-    Engine_SetRenderStateList(&preset,kSceneRenderStatePairCount);
-    Engine_SetTextureStageStateList(0,&presetA,kSceneTextureStageStatePairCount);
-    Engine_SetTextureStageParameterList(0,&presetB,kSceneTextureStageParameterPairCount);
+    Engine_SetRenderStateList(&preset, kSceneRenderStatePairCount);
+    Engine_SetTextureStageStateList(0, &presetA, kSceneTextureStageStatePairCount);
+    Engine_SetTextureStageParameterList(0, &presetB, kSceneTextureStageParameterPairCount);
     // Phase 3: visit visible records; dispatch custom draws, cull puppets, compute alpha,
     // collect transparency, and draw ordinary opaque puppets with the shadow boundary hook.
     Vec3f cameraToObject;
-    for (renderLink=(*(Link**)&AsCSceneManager(self)->firstRenderRecord);renderLink!=(Link*)&AsCSceneManager(self)->lastRenderRecord;renderLink=renderLink->next) {
+    for (renderLink = (*(Link**)&firstRenderRecord); renderLink != (Link*)&lastRenderRecord;
+         renderLink = renderLink->next) {
         // 3a. Visibility/kind gate: deferred records copy only kind+drawable into
         // a transient node; custom drawable hooks bypass puppet culling/fades.
-        if(!((SceneRenderRecord*)renderLink)->visible) continue;
-        int objectKind=((SceneRenderRecord*)renderLink)->kind;
-        if(objectKind==kRecordSkipped) continue;
-        if(objectKind==kRecordDeferredDrawable) {
+        if (!((SceneRenderRecord*)renderLink)->visible)
+            continue;
+        int objectKind = ((SceneRenderRecord*)renderLink)->kind;
+        if (objectKind == kRecordSkipped)
+            continue;
+        if (objectKind == kRecordDeferredDrawable) {
             volatile int data[2];
-            data[0]=objectKind;
-            data[1]=(*(int*)&((SceneRenderRecord*)renderLink)->customDrawable);
+            data[0] = objectKind;
+            data[1] = (*(int*)&((SceneRenderRecord*)renderLink)->customDrawable);
             NodeGuard_u801E8048 guard;
-            Link* end=(Link*)(&AsCSceneManager(self)->lastDeferredDrawable);
-            Link* mem=(Link*)appMallocDummy__FUl(0x10);
-            guard.init(mem,end);
-            if(&((SceneDrawableLink*)mem)->kind) {
+            Link* end = (Link*)(&lastDeferredDrawable);
+            Link* mem = (Link*)appMallocDummy__FUl(0x10);
+            guard.init(mem, end);
+            if (&((SceneDrawableLink*)mem)->kind) {
                 try {
-                    ((SceneDrawableLink*)mem)->kind=data[0];
-                    ((SceneDrawableLink*)mem)->drawable=(void*)data[1];
-                } catch(...) {
+                    ((SceneDrawableLink*)mem)->kind = data[0];
+                    ((SceneDrawableLink*)mem)->drawable = (void*)data[1];
+                } catch (...) {
                     appFreeUni__FPv(mem);
                     throw;
                 }
             }
-            append(end,mem);
-            ++(*(unsigned*)&AsCSceneManager(self)->deferredDrawableCount);
-            guard.n=0;
+            append(end, mem);
+            ++(*(unsigned*)&deferredDrawableCount);
+            guard.n = 0;
             continue;
         }
-        drawable=((SceneRenderRecord*)renderLink)->customDrawable;
-        if(drawable) dispatchSceneObjectHook(drawable,8);
+        drawable = ((SceneRenderRecord*)renderLink)->customDrawable;
+        if (drawable)
+            dispatchSceneObjectHook(drawable, 8);
         else {
-            drawable=((SceneRenderRecord*)renderLink)->puppet;
-            if(!drawable) continue;
+            drawable = ((SceneRenderRecord*)renderLink)->puppet;
+            if (!drawable)
+                continue;
             // 3b. Reject beyond maximum squared distance before updating opacity
             // or queuing transparency. A nonpositive maximum disables this test.
-            if (!(((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags)&kSceneStateStorySequence) && ((SceneRenderRecord*)renderLink)->maximumDistanceSquared>kFloat_0_805DF9FC) {
+            if (!(((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags) & kSceneStateStorySequence) &&
+                ((SceneRenderRecord*)renderLink)->maximumDistanceSquared > kFloat_0_805DF9FC) {
                 Vec3f v;
-                __mi__FRC7WVectorRC7WVector(&v,(&((CameraTransformView*)s_cameraTransform)->position),(&((ScenePuppetView*)drawable)->boundingSphere.v));
-                __as__7WVectorFRC7WVector(&cameraToObject,&v);
-                float d=Vec3_CalculateLengthSquared(&cameraToObject);
-                if (((SceneRenderRecord*)renderLink)->maximumDistanceSquared<=d) continue;
+                __mi__FRC7WVectorRC7WVector(&v, (&((CameraTransformView*)s_cameraTransform)->position),
+                                            (&((ScenePuppetView*)drawable)->boundingSphere.v));
+                __as__7WVectorFRC7WVector(&cameraToObject, &v);
+                float d = Vec3_CalculateLengthSquared(&cameraToObject);
+                if (((SceneRenderRecord*)renderLink)->maximumDistanceSquared <= d)
+                    continue;
             }
-            objectKind=((SceneRenderRecord*)renderLink)->kind;
-            if (objectKind==kRecordShadowBoundary || (unsigned)(objectKind-kRecordAlternateExcluded)<=1) {
+            objectKind = ((SceneRenderRecord*)renderLink)->kind;
+            if (objectKind == kRecordShadowBoundary || (unsigned)(objectKind - kRecordAlternateExcluded) <= 1) {
                 ++g_sceneRenderedPuppetCount;
-                g_sceneRenderedGeometryCount+=((ScenePuppetView*)((SceneRenderRecord*)renderLink)->puppet)->geometryCount;
+                g_sceneRenderedGeometryCount +=
+                    ((ScenePuppetView*)((SceneRenderRecord*)renderLink)->puppet)->geometryCount;
             }
             {
                 Vec3f cameraDelta;
                 Sphere boundsSphere;
-                UpdateCourseRecordOpacity(self, renderLink, drawable, cameraToObject, cameraDelta, boundsSphere);
+                UpdateCourseRecordOpacity(this, renderLink, drawable, cameraToObject, cameraDelta, boundsSphere);
             }
-            if(((SceneRenderRecord*)renderLink)->opacity<kOpaque) {
+            if (((SceneRenderRecord*)renderLink)->opacity < kOpaque) {
                 // 3d. Retain only a borrowed puppet pointer plus copied parameters
                 // in this frame's transparent queue; scene pools own the puppet.
                 SceneTransparentPayload data;
-                data.drawScale=((SceneRenderRecord*)renderLink)->drawScale;
-                data.puppet=((SceneRenderRecord*)renderLink)->puppet;
-                data.renderParameter=((SceneRenderRecord*)renderLink)->renderParameter;
-                data.reserved0=0;
-                data.reserved1=0;
+                data.drawScale = ((SceneRenderRecord*)renderLink)->drawScale;
+                data.puppet = ((SceneRenderRecord*)renderLink)->puppet;
+                data.renderParameter = ((SceneRenderRecord*)renderLink)->renderParameter;
+                data.reserved0 = 0;
+                data.reserved1 = 0;
                 NodeGuard_u801E8048 guard;
-                AppendCourseTransparentPuppet(self, data, guard);
+                AppendCourseTransparentPuppet(this, data, guard);
             }
-            RenderCourseRecordPuppet(self, renderLink, drawable);
+            RenderCourseRecordPuppet(this, renderLink, drawable);
         }
         RenderCourseShadowBoundary(camera, renderLink);
     }
     // Phase 4: marker/weather and owned course surfaces (beach, river, boundaries, texture strips).
-    RenderCourseMarkerAndWeather(self, camera);
+    RenderCourseMarkerAndWeather(this, camera);
     {
         Vec3f verticalOffset;
-        Vec3f selectedPointForOffset,selectedPointForLine,lineEndWorld;
-        RenderCourseQuadTreeDebug(verticalOffset, selectedPointForOffset,selectedPointForLine,lineEndWorld);
+        Vec3f selectedPointForOffset, selectedPointForLine, lineEndWorld;
+        RenderCourseQuadTreeDebug(verticalOffset, selectedPointForOffset, selectedPointForLine, lineEndWorld);
     }
-    if((*(void**)&AsCSceneManager(self)->generatedSurface)) TextureMesh_DrawLayers((*(void**)&AsCSceneManager(self)->generatedSurface));
+    if ((*(void**)&generatedSurface))
+        TextureMesh_DrawLayers((*(void**)&generatedSurface));
     void* object;
     // Keep the cursor guards in these scopes to preserve exception-cleanup frame slots.
     // Four pooled traversals, in render order: beach (reverse), river/lava,
     // boundary grid, generated texture (forward). Each cursor read is locked;
     // drawing happens outside that lock. Offsets are owner-relative pool fields.
     {
-        WInstanceLock guard((&((CleanupClass*)self)->lists[kSceneBeachPool].lock));
-        drawable=PoolActiveRing(&((CleanupClass*)self)->lists[kSceneBeachPool]);
-        (*(void**)&(&((CleanupClass*)self)->lists[kSceneBeachPool])->iterationCursor)=drawable?((Fn801EBNode*)drawable)->prev:0;
-        object=nextSceneListObject(&((CleanupClass*)self)->lists[kSceneBeachPool],true); }
-    while(object) { dispatchSceneObjectHook(object,0x10); object=nextSceneListObject(&((CleanupClass*)self)->lists[kSceneBeachPool],true); }
-    {
-        WInstanceLock guard((&((CleanupClass*)self)->lists[kSceneRiverPool].lock));
-        (*(void**)&(&((CleanupClass*)self)->lists[kSceneRiverPool])->iterationCursor)=(*(void**)&(&((CleanupClass*)self)->lists[kSceneRiverPool])->activeRing);
-        object=nextSceneListObject(&((CleanupClass*)self)->lists[kSceneRiverPool],false);
+        WInstanceLock guard((&((CleanupClass*)this)->lists[kSceneBeachPool].lock));
+        drawable = PoolActiveRing(&((CleanupClass*)this)->lists[kSceneBeachPool]);
+        (*(void**)&(&((CleanupClass*)this)->lists[kSceneBeachPool])->iterationCursor) =
+            drawable ? ((Fn801EBNode*)drawable)->prev : 0;
+        object = nextSceneListObject(&((CleanupClass*)this)->lists[kSceneBeachPool], true);
     }
-    while(object) { dispatchSceneObjectHook(object,0x14); object=nextSceneListObject(&((CleanupClass*)self)->lists[kSceneRiverPool],false); }
-    {
-        WInstanceLock guard((&((CleanupClass*)self)->lists[kSceneBoundaryPool].lock));
-        (*(void**)&(&((CleanupClass*)self)->lists[kSceneBoundaryPool])->iterationCursor)=(*(void**)&(&((CleanupClass*)self)->lists[kSceneBoundaryPool])->activeRing);
-        object=nextSceneListObject(&((CleanupClass*)self)->lists[kSceneBoundaryPool],false);
+    while (object) {
+        dispatchSceneObjectHook(object, 0x10);
+        object = nextSceneListObject(&((CleanupClass*)this)->lists[kSceneBeachPool], true);
     }
-    while(object) { GroundGrid_DrawLitSurface(object); object=nextSceneListObject(&((CleanupClass*)self)->lists[kSceneBoundaryPool],false); }
     {
-        WInstanceLock guard((&((CleanupClass*)self)->lists[kSceneTexturePool].lock));
-        (*(void**)&(&((CleanupClass*)self)->lists[kSceneTexturePool])->iterationCursor)=(*(void**)&(&((CleanupClass*)self)->lists[kSceneTexturePool])->activeRing);
-        object=nextSceneListObject(&((CleanupClass*)self)->lists[kSceneTexturePool],false);
+        WInstanceLock guard((&((CleanupClass*)this)->lists[kSceneRiverPool].lock));
+        (*(void**)&(&((CleanupClass*)this)->lists[kSceneRiverPool])->iterationCursor) =
+            (*(void**)&(&((CleanupClass*)this)->lists[kSceneRiverPool])->activeRing);
+        object = nextSceneListObject(&((CleanupClass*)this)->lists[kSceneRiverPool], false);
     }
-    while(object) { dispatchSceneObjectHook(object,0x10); object=nextSceneListObject(&((CleanupClass*)self)->lists[kSceneTexturePool],false); }
+    while (object) {
+        dispatchSceneObjectHook(object, 0x14);
+        object = nextSceneListObject(&((CleanupClass*)this)->lists[kSceneRiverPool], false);
+    }
+    {
+        WInstanceLock guard((&((CleanupClass*)this)->lists[kSceneBoundaryPool].lock));
+        (*(void**)&(&((CleanupClass*)this)->lists[kSceneBoundaryPool])->iterationCursor) =
+            (*(void**)&(&((CleanupClass*)this)->lists[kSceneBoundaryPool])->activeRing);
+        object = nextSceneListObject(&((CleanupClass*)this)->lists[kSceneBoundaryPool], false);
+    }
+    while (object) {
+        GroundGrid_DrawLitSurface(object);
+        object = nextSceneListObject(&((CleanupClass*)this)->lists[kSceneBoundaryPool], false);
+    }
+    {
+        WInstanceLock guard((&((CleanupClass*)this)->lists[kSceneTexturePool].lock));
+        (*(void**)&(&((CleanupClass*)this)->lists[kSceneTexturePool])->iterationCursor) =
+            (*(void**)&(&((CleanupClass*)this)->lists[kSceneTexturePool])->activeRing);
+        object = nextSceneListObject(&((CleanupClass*)this)->lists[kSceneTexturePool], false);
+    }
+    while (object) {
+        dispatchSceneObjectHook(object, 0x10);
+        object = nextSceneListObject(&((CleanupClass*)this)->lists[kSceneTexturePool], false);
+    }
     // Phase 5: overlay and deferred custom draws precede the transparent puppet pass.
-    RenderCourseOverlaysAndDeferred(self, camera, renderLink, drawable);
+    RenderCourseOverlaysAndDeferred(this, camera, renderLink, drawable);
     {
         Vec3f cameraForwardSortKey;
-        RenderCourseTransparentPuppets(self, renderLink, cameraForwardSortKey);
+        RenderCourseTransparentPuppets(this, renderLink, cameraForwardSortKey);
     }
     // Phase 6: debug crosses/drop disk, water planes, and centered object-name labels.
     // The disk remains here because moving its nested vector/vertex scratch changes the Wii frame.
     // Drop disk points live in world XZ at cup Y; each is transformed to view then projected.
-    if(((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags)&kSceneStateCameraTransition) {
+    if (((unsigned)AsCGolfDoc(currentGolfDocument())->gameStateFlags) & kSceneStateCameraTransition) {
         {
-            Vec3f positiveDiagonal,positiveOffset,positiveLineEnd,positiveDiagonalCopy,positiveOffsetCopy,positiveLineStart;
-            Vec3f negativeDiagonal,negativeOffset,negativeLineEnd,negativeDiagonalCopy,negativeOffsetCopy,negativeLineStart;
-            RenderCourseDropPointCrosses(
-                self, camera, renderLink,
-                positiveDiagonal,positiveOffset,positiveLineEnd,positiveDiagonalCopy,positiveOffsetCopy,positiveLineStart,
-                negativeDiagonal,negativeOffset,negativeLineEnd,negativeDiagonalCopy,negativeOffsetCopy,negativeLineStart);
+            Vec3f positiveDiagonal, positiveOffset, positiveLineEnd, positiveDiagonalCopy, positiveOffsetCopy,
+                positiveLineStart;
+            Vec3f negativeDiagonal, negativeOffset, negativeLineEnd, negativeDiagonalCopy, negativeOffsetCopy,
+                negativeLineStart;
+            RenderCourseDropPointCrosses(this, camera, renderLink, positiveDiagonal, positiveOffset, positiveLineEnd,
+                                         positiveDiagonalCopy, positiveOffsetCopy, positiveLineStart, negativeDiagonal,
+                                         negativeOffset, negativeLineEnd, negativeDiagonalCopy, negativeOffsetCopy,
+                                         negativeLineStart);
         }
-        if(AsCGolfDoc(currentGolfDocument())->dropRequest) {
+        if (AsCGolfDoc(currentGolfDocument())->dropRequest) {
             // 6a. Radius is the ball-to-cup XZ distance minus the existing inset.
-            drawable=((SceneHoleRecord*)AsCGolfDoc(currentGolfDocument())->holeRecords+AsCGolfDoc(currentGolfDocument())->currentHoleIndex);
-            Vec3f cupCenterWorld=((SceneHoleRecord*)drawable)->cup,ballFromCupXZ;
-            __mi__FRC7WVectorRC7WVector(&ballFromCupXZ,GolfBall__Fv(),&cupCenterWorld);
-            ballFromCupXZ.y=kFloat_0_805DF9FC;
-            float radius=Magnitude__7WVectorCFv(&ballFromCupXZ)-kSceneDropCircleRadiusInset;
+            drawable = ((SceneHoleRecord*)AsCGolfDoc(currentGolfDocument())->holeRecords +
+                        AsCGolfDoc(currentGolfDocument())->currentHoleIndex);
+            Vec3f cupCenterWorld = ((SceneHoleRecord*)drawable)->cup, ballFromCupXZ;
+            __mi__FRC7WVectorRC7WVector(&ballFromCupXZ, GolfBall__Fv(), &cupCenterWorld);
+            ballFromCupXZ.y = kFloat_0_805DF9FC;
+            float radius = Magnitude__7WVectorCFv(&ballFromCupXZ) - kSceneDropCircleRadiusInset;
             // 6b. Project the shared triangle center and set translucent fill / black rim colors.
-            Vertex fillVertices[3]; void* fillVertexPointers[4]={&fillVertices[0],&fillVertices[1],&fillVertices[2],0};
-            fillVertices[0].color=fillVertices[1].color=fillVertices[2].color=kSceneDebugDiskFillColor;
-            Vec3f cupCenterForProjection=CurrentSceneCupWorld(),cupCenterView;
-            Matrix_TransformPoint(&cupCenterView,&cupCenterForProjection,((SceneCameraMatrix*)camera)->worldToView);
-            WView_ProjectViewPoint(camera,&fillVertices[2],&cupCenterView,0);
-            s_projectedEffectVertex0[0].color=kSceneDebugDiskRimColor;
-            s_projectedEffectVertex0[1].color=kSceneDebugDiskRimColor;
-            s_projectedEffectVertex0[2].color=kSceneDebugDiskRimColor;
-            s_projectedEffectVertex0[3].color=kSceneDebugDiskRimColor;
+            Vertex fillVertices[3];
+            void* fillVertexPointers[4] = {&fillVertices[0], &fillVertices[1], &fillVertices[2], 0};
+            fillVertices[0].color = fillVertices[1].color = fillVertices[2].color = kSceneDebugDiskFillColor;
+            Vec3f cupCenterForProjection = CurrentSceneCupWorld(), cupCenterView;
+            Matrix_TransformPoint(&cupCenterView, &cupCenterForProjection, ((SceneCameraMatrix*)camera)->worldToView);
+            WView_ProjectViewPoint(camera, &fillVertices[2], &cupCenterView, 0);
+            s_projectedEffectVertex0[0].color = kSceneDebugDiskRimColor;
+            s_projectedEffectVertex0[1].color = kSceneDebugDiskRimColor;
+            s_projectedEffectVertex0[2].color = kSceneDebugDiskRimColor;
+            s_projectedEffectVertex0[3].color = kSceneDebugDiskRimColor;
             // 6c. Each segment draws a filled triangle, then a one-world-unit-wide rim quad.
-            for(int segment=0;segment<kSceneDebugCircleSegments;++segment) {
-                for(int vertexIndex=0;vertexIndex<2;++vertexIndex) {
-                    int angleIndex=(segment+(vertexIndex&1))%kSceneDebugCircleSegments;
-                    float sinAngle=Math_SinApprox((kSceneCircleFullTurnRadians*(float)angleIndex)*kSceneCircleSegmentReciprocal128);
+            for (int segment = 0; segment < kSceneDebugCircleSegments; ++segment) {
+                for (int vertexIndex = 0; vertexIndex < 2; ++vertexIndex) {
+                    int angleIndex = (segment + (vertexIndex & 1)) % kSceneDebugCircleSegments;
+                    float sinAngle = Math_SinApprox((kSceneCircleFullTurnRadians * (float)angleIndex) *
+                                                    kSceneCircleSegmentReciprocal128);
                     Vec3f direction;
-                    direction.x=Math_CosApprox((kSceneCircleFullTurnRadians*(float)angleIndex)*kSceneCircleSegmentReciprocal128);
-                    direction.y=kFloat_0_805DF9FC;
-                    direction.z=sinAngle;
-                    Vec3f segmentCupWorld=CurrentSceneCupWorld(),radialOffsetWorld,segmentPointWorld,segmentPointView;
-                    __ml__FfRC7WVector(&radialOffsetWorld,&direction,radius);
-                    __pl__FRC7WVectorRC7WVector(&segmentPointWorld,&segmentCupWorld,&radialOffsetWorld);
-                    Matrix_TransformPoint(&segmentPointView,&segmentPointWorld,((SceneCameraMatrix*)camera)->worldToView);
-                    WView_ProjectViewPoint(camera,&fillVertices[vertexIndex],&segmentPointView,0);
+                    direction.x = Math_CosApprox((kSceneCircleFullTurnRadians * (float)angleIndex) *
+                                                 kSceneCircleSegmentReciprocal128);
+                    direction.y = kFloat_0_805DF9FC;
+                    direction.z = sinAngle;
+                    Vec3f segmentCupWorld = CurrentSceneCupWorld(), radialOffsetWorld, segmentPointWorld,
+                          segmentPointView;
+                    __ml__FfRC7WVector(&radialOffsetWorld, &direction, radius);
+                    __pl__FRC7WVectorRC7WVector(&segmentPointWorld, &segmentCupWorld, &radialOffsetWorld);
+                    Matrix_TransformPoint(&segmentPointView, &segmentPointWorld,
+                                          ((SceneCameraMatrix*)camera)->worldToView);
+                    WView_ProjectViewPoint(camera, &fillVertices[vertexIndex], &segmentPointView, 0);
                 }
-                drawScenePrimitive(camera,fillVertexPointers,kSceneDebugProjectedDrawFlags);
+                drawScenePrimitive(camera, fillVertexPointers, kSceneDebugProjectedDrawFlags);
                 // Vertex bit 0 chooses segment endpoint; bit 1 chooses inner/outer radius.
-                for(int vertexIndex=0;vertexIndex<4;++vertexIndex) {
-                    int angleIndex=(segment+(vertexIndex&1))%kSceneDebugCircleSegments;
-                    float sinAngle=Math_SinApprox((kSceneCircleFullTurnRadians*(float)angleIndex)*kSceneCircleSegmentReciprocal128);
+                for (int vertexIndex = 0; vertexIndex < 4; ++vertexIndex) {
+                    int angleIndex = (segment + (vertexIndex & 1)) % kSceneDebugCircleSegments;
+                    float sinAngle = Math_SinApprox((kSceneCircleFullTurnRadians * (float)angleIndex) *
+                                                    kSceneCircleSegmentReciprocal128);
                     Vec3f direction;
-                    direction.x=Math_CosApprox((kSceneCircleFullTurnRadians*(float)angleIndex)*kSceneCircleSegmentReciprocal128);
-                    direction.y=kFloat_0_805DF9FC;
-                    direction.z=sinAngle;
-                    float rimRadius=(vertexIndex&2)?kFloat_1_805DF9F8+radius:radius;
-                    Vec3f segmentCupWorld=CurrentSceneCupWorld(),radialOffsetWorld,segmentPointWorld,segmentPointView;
-                    __ml__FfRC7WVector(&radialOffsetWorld,&direction,rimRadius);
-                    __pl__FRC7WVectorRC7WVector(&segmentPointWorld,&segmentCupWorld,&radialOffsetWorld);
-                    Matrix_TransformPoint(&segmentPointView,&segmentPointWorld,((SceneCameraMatrix*)camera)->worldToView);
-                    WView_ProjectViewPoint(camera,&s_projectedEffectVertex0[vertexIndex],&segmentPointView,0);
+                    direction.x = Math_CosApprox((kSceneCircleFullTurnRadians * (float)angleIndex) *
+                                                 kSceneCircleSegmentReciprocal128);
+                    direction.y = kFloat_0_805DF9FC;
+                    direction.z = sinAngle;
+                    float rimRadius = (vertexIndex & 2) ? kFloat_1_805DF9F8 + radius : radius;
+                    Vec3f segmentCupWorld = CurrentSceneCupWorld(), radialOffsetWorld, segmentPointWorld,
+                          segmentPointView;
+                    __ml__FfRC7WVector(&radialOffsetWorld, &direction, rimRadius);
+                    __pl__FRC7WVectorRC7WVector(&segmentPointWorld, &segmentCupWorld, &radialOffsetWorld);
+                    Matrix_TransformPoint(&segmentPointView, &segmentPointWorld,
+                                          ((SceneCameraMatrix*)camera)->worldToView);
+                    WView_ProjectViewPoint(camera, &s_projectedEffectVertex0[vertexIndex], &segmentPointView, 0);
                 }
-                drawScenePrimitive(camera,s_sceneProjectedEffectVertexPointers,kSceneDebugProjectedDrawFlags);
+                drawScenePrimitive(camera, s_sceneProjectedEffectVertexPointers, kSceneDebugProjectedDrawFlags);
             }
         }
     }
     {
         int cornerIndex;
-        Vec3f cornerWorld,cornerView;
-        RenderCourseDebugWaterPlane(self, camera, false, cornerIndex, cornerWorld,cornerView);
+        Vec3f cornerWorld, cornerView;
+        RenderCourseDebugWaterPlane(this, camera, false, cornerIndex, cornerWorld, cornerView);
     }
     {
         int cornerIndex;
-        Vec3f cornerWorld,cornerView;
-        RenderCourseDebugWaterPlane(self, camera, true, cornerIndex, cornerWorld,cornerView);
+        Vec3f cornerWorld, cornerView;
+        RenderCourseDebugWaterPlane(this, camera, true, cornerIndex, cornerWorld, cornerView);
     }
     {
-        Vec3f boundsSum,boundsMidpoint,labelAnchorWorld,cameraToLabel,labelAnchorView;
-        RenderCourseObjectNames(
-            self, camera, renderLink, drawable, projectedPosition,
-            boundsSum,boundsMidpoint,labelAnchorWorld,cameraToLabel,labelAnchorView);
+        Vec3f boundsSum, boundsMidpoint, labelAnchorWorld, cameraToLabel, labelAnchorView;
+        RenderCourseObjectNames(this, camera, renderLink, drawable, projectedPosition, boundsSum, boundsMidpoint,
+                                labelAnchorWorld, cameraToLabel, labelAnchorView);
     }
     // Phase 7: forward renderer parameter word 0 after all scene/debug passes.
-    WView_ForwardRendererParameters(g_view,0);
+    WView_ForwardRendererParameters(g_view, 0);
 }
 
 #pragma opt_common_subs reset
@@ -1671,7 +2029,7 @@ void SceneRenderList_MergeByDistanceDescending(List* destinationList, List* sour
 }
 #pragma use_lmw_stmw reset
 
-// Initialize the scene angle conversion constant at startup.
+// Set the scene angle conversion constant.
 void SceneRenderList_InitAngleConstant() {
     s_sceneRenderListAngleConstant = kFloat_6_2831855;
 }
@@ -1799,7 +2157,8 @@ void ScenePuppetList_SortByCameraProjectionDescending(SList* self, SortKey* key)
     case 2: {
         SNode* a = self->next;
         SNode* b = a->next;
-        if (SList_less((char*)&((ScenePuppetView*)a->val)->boundingSphere.v, (char*)&((ScenePuppetView*)b->val)->boundingSphere.v, key)) {
+        if (SList_less((char*)&((ScenePuppetView*)a->val)->boundingSphere.v,
+                       (char*)&((ScenePuppetView*)b->val)->boundingSphere.v, key)) {
             SNode* t = a->prev;
             a->prev = a->next;
             a->next = t;
@@ -1813,36 +2172,36 @@ void ScenePuppetList_SortByCameraProjectionDescending(SList* self, SortKey* key)
         break;
     }
     default: {
-    half = (unsigned)self->count >> 1;
-    node = self->next;
-    n = half;
-    while (n != 0) {
-        node = node->next;
-        --n;
-    }
-
-    SList temporary;
-    half = self->count - half;
-    sent = (SNode*)&temporary.prev;
-    if (half != 0) {
-        if (&temporary != self) {
-            self->count -= half;
-            temporary.count += half;
+        half = (unsigned)self->count >> 1;
+        node = self->next;
+        n = half;
+        while (n != 0) {
+            node = node->next;
+            --n;
         }
-        SNode* last = self->prev;
-        node->prev->next = last->next;
-        last->next->prev = node->prev;
-        temporary.prev->next = node;
-        node->prev = temporary.prev;
-        temporary.prev = last;
-        last->next = sent;
-    }
-    SortKey left = *key;
-    ScenePuppetList_SortByCameraProjectionDescending(self, &left);
-    SortKey right = *key;
-    ScenePuppetList_SortByCameraProjectionDescending(&temporary, &right);
-    SortKey mergeKey = *key;
-    ScenePuppetList_MergeByCameraProjectionDescending((List*)self, (List*)&temporary, &mergeKey);
+
+        SList temporary;
+        half = self->count - half;
+        sent = (SNode*)&temporary.prev;
+        if (half != 0) {
+            if (&temporary != self) {
+                self->count -= half;
+                temporary.count += half;
+            }
+            SNode* last = self->prev;
+            node->prev->next = last->next;
+            last->next->prev = node->prev;
+            temporary.prev->next = node;
+            node->prev = temporary.prev;
+            temporary.prev = last;
+            last->next = sent;
+        }
+        SortKey left = *key;
+        ScenePuppetList_SortByCameraProjectionDescending(self, &left);
+        SortKey right = *key;
+        ScenePuppetList_SortByCameraProjectionDescending(&temporary, &right);
+        SortKey mergeKey = *key;
+        ScenePuppetList_MergeByCameraProjectionDescending((List*)self, (List*)&temporary, &mergeKey);
     }
     }
 }
@@ -1865,11 +2224,13 @@ void ScenePuppetList_MergeByCameraProjectionDescending(List* destinationList, Li
     ListNode* const sourceEnd = (ListNode*)&sourceList->prev;
     // Splice ordered runs from source into destination and maintain both live node counts.
     while (destination != destinationEnd && sourceCursor != sourceEnd) {
-        if (List_dotGreater(&((ScenePuppetView*)sourceCursor->value)->boundingSphere.v, &((ScenePuppetView*)destination->value)->boundingSphere.v, sortKey)) {
+        if (List_dotGreater(&((ScenePuppetView*)sourceCursor->value)->boundingSphere.v,
+                            &((ScenePuppetView*)destination->value)->boundingSphere.v, sortKey)) {
             runEnd = sourceCursor->next;
             int runLength = 1;
             while (runEnd != sourceEnd) {
-                if (!List_dotGreater(&((ScenePuppetView*)runEnd->value)->boundingSphere.v, &((ScenePuppetView*)destination->value)->boundingSphere.v, sortKey))
+                if (!List_dotGreater(&((ScenePuppetView*)runEnd->value)->boundingSphere.v,
+                                     &((ScenePuppetView*)destination->value)->boundingSphere.v, sortKey))
                     break;
                 ++runLength;
                 runEnd = runEnd->next;
@@ -1898,16 +2259,15 @@ void ScenePuppetList_MergeByCameraProjectionDescending(List* destinationList, Li
 #pragma opt_lifetimes off
 #pragma opt_propagation off
 // Release owned scene objects under each list mutex, empty the lookup arrays and release marker resources.
-void CSceneManager_ClearOwnedSceneObjects(CleanupClass* arg) {
+void CSceneManager::ClearOwnedSceneObjects() {
     // Destroy the singleton generated surface, then each pool's payloads. For each pool:
     // fetch/advance under lock -> destroy unlocked -> recycle nodes and zero lookup under lock.
     // Pool slabs remain allocated for reuse; the final marker call releases render resources only.
-    CleanupClass* self;
-    if (arg->owned) {
-        GeneratedSurface_Destroy(arg->owned, 1);
-        arg->owned = 0;
+    CleanupClass* self = (CleanupClass*)this;
+    if (generatedSurface) {
+        GeneratedSurface_Destroy(generatedSurface, 1);
+        generatedSurface = 0;
     }
-    self = arg;
     {
         DList* l;
         void* v;
@@ -1922,7 +2282,8 @@ void CSceneManager_ClearOwnedSceneObjects(CleanupClass* arg) {
         if (v) {
             mtx = (char*)&l->lock;
             while (v) {
-                if (v) GroundGrid_Dtor(v, 1);
+                if (v)
+                    GroundGrid_Dtor(v, 1);
                 v = DList_NextObject(l, mtx);
             }
         }
@@ -1946,7 +2307,8 @@ void CSceneManager_ClearOwnedSceneObjects(CleanupClass* arg) {
         if (v) {
             mtx = (char*)&l->lock;
             while (v) {
-                if (v) DList_releaseInstance(v);
+                if (v)
+                    DList_releaseInstance(v);
                 v = DList_NextObject(l, mtx);
             }
         }
@@ -1970,7 +2332,8 @@ void CSceneManager_ClearOwnedSceneObjects(CleanupClass* arg) {
         if (v) {
             mtx = (char*)&l->lock;
             while (v) {
-                if (v) DList_releaseInstance(v);
+                if (v)
+                    DList_releaseInstance(v);
                 v = DList_NextObject(l, mtx);
             }
         }
@@ -1994,7 +2357,8 @@ void CSceneManager_ClearOwnedSceneObjects(CleanupClass* arg) {
         if (v) {
             mtx = (char*)&l->lock;
             while (v) {
-                if (v) DList_releaseInstance(v);
+                if (v)
+                    DList_releaseInstance(v);
                 v = DList_NextObject(l, mtx);
             }
         }
@@ -2004,7 +2368,8 @@ void CSceneManager_ClearOwnedSceneObjects(CleanupClass* arg) {
             DList_zero(l);
         }
     }
-    if (self->last) CMarker_ReleaseRenderResources(self->last);
+    if (marker)
+        ((CMarker*)marker)->ReleaseRenderResources();
 }
 #pragma pop
 
@@ -2035,152 +2400,160 @@ void CSceneManager_ClearOwnedSceneObjects(CleanupClass* arg) {
 // may be dereferenced; successful allocations/services are a caller requirement.
 // No concurrent renderer may observe the partially rebuilt scene. Preserve these
 // existing failure windows in readability work; adding recovery is a separate mod.
-void CGolfBg_CreateCourseObjects(CourseSceneConstructionView* self) {
-	// Phase 1: clear previous ownership and iterate the course entry vector at courseData+0x14.
-	CSceneManager_ClearOwnedSceneObjects((CleanupClass*)self);
-	struct Iter { void* p; } iterObj;
-	void* beachObject;
-	VObj* riverObject;
-	VObj* lavaObject;
-	void* generatedTextureObject;
-	void* boundaryObject;
-	void* iteratorCopy;
-	unsigned int firstCourseEntry;
-	unsigned int endCourseEntry;
-	CourseEntryIterator_DefaultConstruct(&iterObj);
+void CSceneManager::CreateCourseObjects() {
+    // Phase 1: clear previous ownership and iterate the course entry vector at courseData+0x14.
+    ClearOwnedSceneObjects();
+    struct Iter {
+        void* p;
+    } iterObj;
+    void* beachObject;
+    VObj* riverObject;
+    VObj* lavaObject;
+    void* generatedTextureObject;
+    void* boundaryObject;
+    void* iteratorCopy;
+    unsigned int firstCourseEntry;
+    unsigned int endCourseEntry;
+    CourseEntryIterator_DefaultConstruct(&iterObj);
 
-	{
-		void* courseEntries = GolfDoc_GetCurrent();
-		courseEntries = AsCGolfDoc(courseEntries)->courseData; // CGolfDoc +0x8
-		courseEntries = static_cast<char*>(courseEntries) + kCourseEntryVectorOffset;
-		firstCourseEntry = CourseEntryVector_Begin(courseEntries);
-		void* ret = CourseEntryIterator_CopyConstruct(&iteratorCopy, &firstCourseEntry, 0);
-		CourseEntryIterator_Assign(&iterObj, ret);
-	}
+    {
+        void* courseEntries = GolfDoc_GetCurrent();
+        courseEntries = AsCGolfDoc(courseEntries)->courseData; // CGolfDoc +0x8
+        courseEntries = static_cast<char*>(courseEntries) + kCourseEntryVectorOffset;
+        firstCourseEntry = CourseEntryVector_Begin(courseEntries);
+        void* ret = CourseEntryIterator_CopyConstruct(&iteratorCopy, &firstCourseEntry, 0);
+        CourseEntryIterator_Assign(&iterObj, ret);
+    }
 
-	for (; (endCourseEntry = CourseEntryVector_End(static_cast<char*>(AsCGolfDoc(GolfDoc_GetCurrent())->courseData) + kCourseEntryVectorOffset), CourseEntryIterator_NotEqual(&iterObj, &endCourseEntry)); CourseEntryIterator_Advance(reinterpret_cast<Fn801EB82CObject*>(&iterObj))) {
+    for (; (endCourseEntry = CourseEntryVector_End(static_cast<char*>(AsCGolfDoc(GolfDoc_GetCurrent())->courseData) +
+                                                   kCourseEntryVectorOffset),
+           CourseEntryIterator_NotEqual(&iterObj, &endCourseEntry));
+         CourseEntryIterator_Advance(reinterpret_cast<Fn801EB82CObject*>(&iterObj))) {
 
-		int entryKind = CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj));
-		// Phase 2: construct each recognized entry and adopt it into the corresponding owner/list.
-		if (entryKind == kEntryGeneratedPolygon) {
-			void* p = new GeneratedSurfaceAlloc;
-			(*(void**)&AsCSceneManager(self)->generatedSurface) = p;
-			void* polygonEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
-			void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(polygonEntry));
-			Dtor47CC polygonPoints;
-			Vec3Vector_CopyCtor(&polygonPoints, entryPoints);
-			GeneratedSurface_BuildFromPolygon((*(void**)&AsCSceneManager(self)->generatedSurface), &polygonPoints);
-		} else if (CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryBeach) {
-			void* p = new BeachAlloc;
-			beachObject = p;
-			{
-			void* beachEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
-			void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(beachEntry));
-			Dtor47CC beachPoints;
-			Vec3Vector_CopyCtor(&beachPoints, entryPoints);
-			Dtor463FC beachName;
-			MWString_CopyConstructForNameLookup(&beachName, CourseEntryIterator_GetEntry(&iterObj));
-			unsigned int entryNameAddress = reinterpret_cast<unsigned int>(MWString_GetCString(&beachName));
-			// Final argument is BUFFER COUNT, not a mode enum. beach_wavelet_ground_strip.cpp allocates
-			// one vertex buffer per layer, each 2*pointCount vertices (48 bytes
-			// per path point). CBeach_UpdateWaves (ball_actor_and_ambient_sound.cpp) updates layer state;
-			// CWavelet_DrawLayers (wind_indicator_wavelet_cloud_overlay.cpp) draws the corresponding buffers;
-			// generated texture strips below request two. Point input needs >=2
-			// points and nonzero configured width. The name address is forwarded
-			// to virtual +0x14 for parameter lookup (not a numeric row count).
-			// Keep buffer/layer counts equal and <=255 for byte-indexed consumers;
-			// neither 2 nor 3 selects a separate geometry algorithm here.
-			GroundStrip_BuildGeometry(beachObject, &beachPoints, entryNameAddress, 0x3);
-			}
-			SceneBeachList_AppendObject(&CourseSceneBeachPool(self), &beachObject);
-		} else if (CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryRiver) {
-			riverObject = reinterpret_cast<VObj*>(new RiverAlloc);
-			{
-			Dtor463FC riverName;
-			MWString_CopyConstructForNameLookup(&riverName, CourseEntryIterator_GetEntry(&iterObj));
-			unsigned int entryNameAddress = reinterpret_cast<unsigned int>(MWString_GetCString(&riverName));
-			void* riverEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
-			void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(riverEntry));
-			riverObject->m(entryPoints, entryNameAddress);
-			}
-			SceneRiverList_AppendObject(&CourseSceneRiverPool(self), reinterpret_cast<void**>(&riverObject));
-		} else if (CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryLava) {
-			lavaObject = reinterpret_cast<VObj*>(new LavaRiverAlloc);
-			{
-			Dtor463FC lavaName;
-			MWString_CopyConstructForNameLookup(&lavaName, CourseEntryIterator_GetEntry(&iterObj));
-			unsigned int entryNameAddress = reinterpret_cast<unsigned int>(MWString_GetCString(&lavaName));
-			void* lavaEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
-			void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(lavaEntry));
-			lavaObject->m(entryPoints, entryNameAddress);
-			}
-			SceneRiverList_AppendObject(&CourseSceneRiverPool(self), reinterpret_cast<void**>(&lavaObject));
-		} else if (CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryTextureStrip) {
-			void* p = new GeneTex3DAlloc;
-			generatedTextureObject = p;
-			{
-			void* textureStripEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
-			void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(textureStripEntry));
-			Dtor47CC textureStripPoints;
-			Vec3Vector_CopyCtor(&textureStripPoints, entryPoints);
-			Dtor463FC textureStripName;
-			MWString_CopyConstructForNameLookup(&textureStripName, CourseEntryIterator_GetEntry(&iterObj));
-			unsigned int entryNameAddress = reinterpret_cast<unsigned int>(MWString_GetCString(&textureStripName));
-			GroundStrip_BuildGeometry(generatedTextureObject, &textureStripPoints, entryNameAddress, 0x2);
-			}
-			SceneGeneratedTextureList_AppendObject(&CourseSceneTexturePool(self), &generatedTextureObject);
-		} else {
-			if (CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryProjectedQuads3 || CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryProjectedQuads2) {
-				void* projectedQuadEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
-				void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(projectedQuadEntry));
-				BuildGroundProjectedPointQuads(AsCSceneManager(self)->marker, entryPoints);
-			}
-		}
+        int entryKind = CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj));
+        // Phase 2: construct each recognized entry and adopt it into the corresponding owner/list.
+        if (entryKind == kEntryGeneratedPolygon) {
+            void* p = new GeneratedSurfaceAlloc;
+            generatedSurface = p;
+            void* polygonEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
+            void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(polygonEntry));
+            Dtor47CC polygonPoints;
+            Vec3Vector_CopyCtor(&polygonPoints, entryPoints);
+            GeneratedSurface_BuildFromPolygon(generatedSurface, &polygonPoints);
+        } else if (CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryBeach) {
+            void* p = new BeachAlloc;
+            beachObject = p;
+            {
+                void* beachEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
+                void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(beachEntry));
+                Dtor47CC beachPoints;
+                Vec3Vector_CopyCtor(&beachPoints, entryPoints);
+                Dtor463FC beachName;
+                MWString_CopyConstructForNameLookup(&beachName, CourseEntryIterator_GetEntry(&iterObj));
+                unsigned int entryNameAddress = reinterpret_cast<unsigned int>(MWString_GetCString(&beachName));
+                // Final argument is BUFFER COUNT, not a mode enum. beach_wavelet_ground_strip.cpp allocates
+                // one vertex buffer per layer, each 2*pointCount vertices (48 bytes
+                // per path point). CBeach_UpdateWaves (ball_actor_and_ambient_sound.cpp) updates layer state;
+                // CWavelet_DrawLayers (wind_indicator_wavelet_cloud_overlay.cpp) draws the corresponding buffers;
+                // generated texture strips below request two. Point input needs >=2
+                // points and nonzero configured width. The name address is forwarded
+                // to virtual +0x14 for parameter lookup (not a numeric row count).
+                // Keep buffer/layer counts equal and <=255 for byte-indexed consumers;
+                // neither 2 nor 3 selects a separate geometry algorithm here.
+                GroundStrip_BuildGeometry(beachObject, &beachPoints, entryNameAddress, 0x3);
+            }
+            SceneBeachList_AppendObject(&CourseSceneBeachPool(this), &beachObject);
+        } else if (CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryRiver) {
+            riverObject = reinterpret_cast<VObj*>(new RiverAlloc);
+            {
+                Dtor463FC riverName;
+                MWString_CopyConstructForNameLookup(&riverName, CourseEntryIterator_GetEntry(&iterObj));
+                unsigned int entryNameAddress = reinterpret_cast<unsigned int>(MWString_GetCString(&riverName));
+                void* riverEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
+                void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(riverEntry));
+                riverObject->m(entryPoints, entryNameAddress);
+            }
+            SceneRiverList_AppendObject(&CourseSceneRiverPool(this), reinterpret_cast<void**>(&riverObject));
+        } else if (CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryLava) {
+            lavaObject = reinterpret_cast<VObj*>(new LavaRiverAlloc);
+            {
+                Dtor463FC lavaName;
+                MWString_CopyConstructForNameLookup(&lavaName, CourseEntryIterator_GetEntry(&iterObj));
+                unsigned int entryNameAddress = reinterpret_cast<unsigned int>(MWString_GetCString(&lavaName));
+                void* lavaEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
+                void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(lavaEntry));
+                lavaObject->m(entryPoints, entryNameAddress);
+            }
+            SceneRiverList_AppendObject(&CourseSceneRiverPool(this), reinterpret_cast<void**>(&lavaObject));
+        } else if (CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryTextureStrip) {
+            void* p = new GeneTex3DAlloc;
+            generatedTextureObject = p;
+            {
+                void* textureStripEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
+                void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(textureStripEntry));
+                Dtor47CC textureStripPoints;
+                Vec3Vector_CopyCtor(&textureStripPoints, entryPoints);
+                Dtor463FC textureStripName;
+                MWString_CopyConstructForNameLookup(&textureStripName, CourseEntryIterator_GetEntry(&iterObj));
+                unsigned int entryNameAddress = reinterpret_cast<unsigned int>(MWString_GetCString(&textureStripName));
+                GroundStrip_BuildGeometry(generatedTextureObject, &textureStripPoints, entryNameAddress, 0x2);
+            }
+            SceneGeneratedTextureList_AppendObject(&CourseSceneTexturePool(this), &generatedTextureObject);
+        } else {
+            if (CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryProjectedQuads3 ||
+                CourseEntry_GetKind(CourseEntryIterator_GetEntry(&iterObj)) == kEntryProjectedQuads2) {
+                void* projectedQuadEntry = (void*)CourseEntryIterator_GetEntry(&iterObj);
+                void* entryPoints = reinterpret_cast<void*>(CourseEntry_GetPointVector(projectedQuadEntry));
+                BuildGroundProjectedPointQuads(this->marker, entryPoints);
+            }
+        }
+    }
 
-	}
+    // Phase 3: turn kind-2 boundary records into owned ground grids, using bounds at +0x44.
+    Fn801EB238Item* item;
+    void* p;
+    int boundaryIndex;
+    for (boundaryIndex = 0;
+         boundaryIndex < reinterpret_cast<int>(CourseData_GetBoundaryRecordCount(
+                             reinterpret_cast<Fn801EB248Object*>(AsCGolfDoc(GolfDoc_GetCurrent())->courseData)));
+         ++boundaryIndex) {
+        void* courseData = GolfDoc_GetCurrent();
+        courseData = AsCGolfDoc(courseData)->courseData; // CGolfDoc +0x8
+        item = Array_GetItemByIndex(reinterpret_cast<Fn801EB238Object*>(courseData), boundaryIndex);
+        unsigned char boundaryKind = item->kind;
+        if (boundaryKind == kBoundaryGroundGrid) {
+            p = new N190;
+            boundaryObject = p;
+            GroundGrid_ConfigureSurfaceBounds(p, &item->minimum, item->properties);
+            SceneBoundaryList_AppendObject(&CourseSceneBoundaryPool(this), &boundaryObject);
+        }
+    }
 
-	// Phase 3: turn kind-2 boundary records into owned ground grids, using bounds at +0x44.
-	Fn801EB238Item* item;
-	void* p;
-	int boundaryIndex;
-	for (boundaryIndex = 0; boundaryIndex < reinterpret_cast<int>(CourseData_GetBoundaryRecordCount(reinterpret_cast<Fn801EB248Object*>(AsCGolfDoc(GolfDoc_GetCurrent())->courseData))); ++boundaryIndex) {
-		void* courseData = GolfDoc_GetCurrent();
-		courseData = AsCGolfDoc(courseData)->courseData; // CGolfDoc +0x8
-		item = Array_GetItemByIndex(reinterpret_cast<Fn801EB238Object*>(courseData), boundaryIndex);
-		unsigned char boundaryKind = item->kind;
-		if (boundaryKind == kBoundaryGroundGrid) {
-			p = new N190;
-			boundaryObject = p;
-			GroundGrid_ConfigureSurfaceBounds(p, &item->minimum, item->properties);
-			SceneBoundaryList_AppendObject(&CourseSceneBoundaryPool(self), &boundaryObject);
-		}
-	}
-
-	// Phase 4: finalize marker resources and configure weather from the selected course variant.
-	void* marker = AsCSceneManager(self)->marker;
-	CMarker_CreateRenderResources(marker);
-	void* variantWord = CourseResource_GetSelectedVariant();
-	unsigned char weatherCode = static_cast<unsigned char>(reinterpret_cast<unsigned int>(variantWord));
-	CourseWeather_ConfigureEffects(self, weatherCode, 0x1);
-	DrawScene_NoOpHook(self, 0x1);
+    // Phase 4: finalize marker resources and configure weather from the selected course variant.
+    void* marker = this->marker;
+    ((CMarker*)marker)->CreateRenderResources();
+    void* variantWord = CourseResource_GetSelectedVariant();
+    unsigned char weatherCode = static_cast<unsigned char>(reinterpret_cast<unsigned int>(variantWord));
+    CourseWeather_ConfigureEffects(this, weatherCode, 0x1);
+    DrawScene_NoOpHook(this, 0x1);
 }
 
 #pragma dont_inline on
 // Initialize the generated-texture base and install the beach vtable.
-Fn801EB1FCObject* CBeach_Ctor(Fn801EB1FCObject* self) {
-	GroundStripOwner_Init(self);
-	self->vtable = __vt__6CBeach;
-	return self;
+CBeach::CBeach() {
+    CBeachView* self = (CBeachView*)this;
+    GroundStripOwner_Init(self);
+    self->vtable = __vt__6CBeach;
 }
 
 // Return an indexed 0x5C-byte course-boundary record; the caller must supply a valid index.
 Fn801EB238Item* Array_GetItemByIndex(Fn801EB238Object* self, int index) {
-	return reinterpret_cast<Fn801EB238Item*>(self->items) + index;
+    return reinterpret_cast<Fn801EB238Item*>(self->items) + index;
 }
 
 // Return the course boundary-record count carried in the original pointer-valued ABI.
 void* CourseData_GetBoundaryRecordCount(Fn801EB248Object* self) {
-	return self->field7C;
+    return self->field7C;
 }
 #pragma dont_inline reset
 
@@ -2190,338 +2563,348 @@ void* CourseData_GetBoundaryRecordCount(Fn801EB248Object* self) {
 // Add a beach object to the scene's pooled circular list while holding its mutex.
 // Transfer/publication/failure contract: Fn801EBList above. No success status.
 void SceneBeachList_AppendObject(Fn801EBList* self, void** value) {
-	WInstanceLock appendLock(&self->mutexStorage[0]);
-	Fn801EBNode* slabNode;
-	char* slabMutex;
-	Fn801EBNode* slabRingAnchor;
-	int slabNodeIndex;
-	Fn801EBNode* reusableNodeOrActiveAnchor;
-	{
-		WInstanceLock reserveLock(&self->mutexStorage[0]);
-		// Phase 1: reserve and register a slab only when the reusable ring is empty.
-		// Reserve: register slab node 0; put nodes 1..nodesPerSlab-1 into the free ring.
-		if (!self->reusableRing) {
-			slabNode = static_cast<Fn801EBNode*>(appMallocUni__FUl(PoolNodesPerSlab(self) * sizeof(Fn801EBNode)));
-			slabMutex = &self->mutexStorage[0];
-			slabRingAnchor = static_cast<Fn801EBNode*>(self->slabRing);
-			OSLockMutex((OSMutex*)slabMutex);
-			if (!slabRingAnchor) {
-				InitializeScenePoolRing(slabNode);
-				OSUnlockMutex((OSMutex*)slabMutex);
-				slabRingAnchor = slabNode;
-			} else {
-				SpliceScenePoolNodeBefore(slabNode, slabRingAnchor);
-				OSUnlockMutex((OSMutex*)slabMutex);
-			}
-			self->slabRing = slabRingAnchor;
-			slabNodeIndex = 1;
-			if (PoolNodesPerSlab(self) > 1) {
-				char* freeRingMutex = &self->mutexStorage[0];
-				++slabNode;
-				while (slabNodeIndex < PoolNodesPerSlab(self)) {
-					{
-						// Insert this slab node into the free ring, creating the ring if empty.
-						reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
-						OSLockMutex((OSMutex*)freeRingMutex);
-						if (!reusableNodeOrActiveAnchor) {
-							InitializeScenePoolRing(slabNode);
-							OSUnlockMutex((OSMutex*)freeRingMutex);
-							reusableNodeOrActiveAnchor = slabNode;
-						} else {
-							SpliceScenePoolNodeBefore(slabNode, reusableNodeOrActiveAnchor);
-							OSUnlockMutex((OSMutex*)freeRingMutex);
-						}
-						self->reusableRing = reusableNodeOrActiveAnchor;
-					}
-					++slabNode;
-					++slabNodeIndex;
-				}
-			}
-		}
-		// Detach one reusable node; a singleton leaves the reusable ring empty.
-		reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
-		char* detachMutex = &self->mutexStorage[0];
-		OSLockMutex((OSMutex*)detachMutex);
-		UnlinkScenePoolNode(reusableNodeOrActiveAnchor);
-		Fn801EBNode* next = reusableNodeOrActiveAnchor->next;
-		if (next == reusableNodeOrActiveAnchor) next = 0;
-		OSUnlockMutex((OSMutex*)detachMutex);
-		self->reusableRing = next;
-	}
-	// Phase 2: initialize detached payload, then splice it into the active ring.
-	// value is reused below for the active-head address; its wrapper is not retained.
-	reusableNodeOrActiveAnchor->value = *value;
-	reusableNodeOrActiveAnchor->renderFlags = 0;
-	char* activeRingMutex = &self->mutexStorage[0];
-	*(int*)&reusableNodeOrActiveAnchor->renderState = 0;
-	value = static_cast<void**>(self->activeRing);
-	OSLockMutex((OSMutex*)activeRingMutex);
-	if (value == 0) {
-		InitializeScenePoolRing(reusableNodeOrActiveAnchor);
-		OSUnlockMutex((OSMutex*)activeRingMutex);
-	} else {
-		SpliceScenePoolNodeBefore(reusableNodeOrActiveAnchor, (Fn801EBNode*)value);
-		OSUnlockMutex((OSMutex*)activeRingMutex);
-		reusableNodeOrActiveAnchor = (Fn801EBNode*)value;
-	}
-	self->activeRing = reusableNodeOrActiveAnchor;
+    WInstanceLock appendLock(&self->mutexStorage[0]);
+    Fn801EBNode* slabNode;
+    char* slabMutex;
+    Fn801EBNode* slabRingAnchor;
+    int slabNodeIndex;
+    Fn801EBNode* reusableNodeOrActiveAnchor;
+    {
+        WInstanceLock reserveLock(&self->mutexStorage[0]);
+        // Phase 1: reserve and register a slab only when the reusable ring is empty.
+        // Reserve: register slab node 0; put nodes 1..nodesPerSlab-1 into the free ring.
+        if (!self->reusableRing) {
+            slabNode = static_cast<Fn801EBNode*>(appMallocUni__FUl(PoolNodesPerSlab(self) * sizeof(Fn801EBNode)));
+            slabMutex = &self->mutexStorage[0];
+            slabRingAnchor = static_cast<Fn801EBNode*>(self->slabRing);
+            OSLockMutex((OSMutex*)slabMutex);
+            if (!slabRingAnchor) {
+                InitializeScenePoolRing(slabNode);
+                OSUnlockMutex((OSMutex*)slabMutex);
+                slabRingAnchor = slabNode;
+            } else {
+                SpliceScenePoolNodeBefore(slabNode, slabRingAnchor);
+                OSUnlockMutex((OSMutex*)slabMutex);
+            }
+            self->slabRing = slabRingAnchor;
+            slabNodeIndex = 1;
+            if (PoolNodesPerSlab(self) > 1) {
+                char* freeRingMutex = &self->mutexStorage[0];
+                ++slabNode;
+                while (slabNodeIndex < PoolNodesPerSlab(self)) {
+                    {
+                        // Insert this slab node into the free ring, creating the ring if empty.
+                        reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
+                        OSLockMutex((OSMutex*)freeRingMutex);
+                        if (!reusableNodeOrActiveAnchor) {
+                            InitializeScenePoolRing(slabNode);
+                            OSUnlockMutex((OSMutex*)freeRingMutex);
+                            reusableNodeOrActiveAnchor = slabNode;
+                        } else {
+                            SpliceScenePoolNodeBefore(slabNode, reusableNodeOrActiveAnchor);
+                            OSUnlockMutex((OSMutex*)freeRingMutex);
+                        }
+                        self->reusableRing = reusableNodeOrActiveAnchor;
+                    }
+                    ++slabNode;
+                    ++slabNodeIndex;
+                }
+            }
+        }
+        // Detach one reusable node; a singleton leaves the reusable ring empty.
+        reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
+        char* detachMutex = &self->mutexStorage[0];
+        OSLockMutex((OSMutex*)detachMutex);
+        UnlinkScenePoolNode(reusableNodeOrActiveAnchor);
+        Fn801EBNode* next = reusableNodeOrActiveAnchor->next;
+        if (next == reusableNodeOrActiveAnchor)
+            next = 0;
+        OSUnlockMutex((OSMutex*)detachMutex);
+        self->reusableRing = next;
+    }
+    // Phase 2: initialize detached payload, then splice it into the active ring.
+    // value is reused below for the active-head address; its wrapper is not retained.
+    reusableNodeOrActiveAnchor->value = *value;
+    reusableNodeOrActiveAnchor->renderFlags = 0;
+    char* activeRingMutex = &self->mutexStorage[0];
+    *(int*)&reusableNodeOrActiveAnchor->renderState = 0;
+    value = static_cast<void**>(self->activeRing);
+    OSLockMutex((OSMutex*)activeRingMutex);
+    if (value == 0) {
+        InitializeScenePoolRing(reusableNodeOrActiveAnchor);
+        OSUnlockMutex((OSMutex*)activeRingMutex);
+    } else {
+        SpliceScenePoolNodeBefore(reusableNodeOrActiveAnchor, (Fn801EBNode*)value);
+        OSUnlockMutex((OSMutex*)activeRingMutex);
+        reusableNodeOrActiveAnchor = (Fn801EBNode*)value;
+    }
+    self->activeRing = reusableNodeOrActiveAnchor;
 }
 
 // Add a river or lava object to the scene's pooled circular list while holding its mutex.
 // Transfer/publication/failure contract: Fn801EBList above. No success status.
 void SceneRiverList_AppendObject(Fn801EBList* self, void** value) {
-	WInstanceLock appendLock(&self->mutexStorage[0]);
-	Fn801EBNode* slabNode;
-	char* slabMutex;
-	Fn801EBNode* slabRingAnchor;
-	int slabNodeIndex;
-	Fn801EBNode* reusableNodeOrActiveAnchor;
-	{
-		WInstanceLock reserveLock(&self->mutexStorage[0]);
-		// Phase 1: reserve and register a slab only when the reusable ring is empty.
-		// Reserve: register slab node 0; put nodes 1..nodesPerSlab-1 into the free ring.
-		if (!self->reusableRing) {
-			slabNode = static_cast<Fn801EBNode*>(appMallocUni__FUl(PoolNodesPerSlab(self) * sizeof(Fn801EBNode)));
-			slabMutex = &self->mutexStorage[0];
-			slabRingAnchor = static_cast<Fn801EBNode*>(self->slabRing);
-			OSLockMutex((OSMutex*)slabMutex);
-			if (!slabRingAnchor) {
-				InitializeScenePoolRing(slabNode);
-				OSUnlockMutex((OSMutex*)slabMutex);
-				slabRingAnchor = slabNode;
-			} else {
-				SpliceScenePoolNodeBefore(slabNode, slabRingAnchor);
-				OSUnlockMutex((OSMutex*)slabMutex);
-			}
-			self->slabRing = slabRingAnchor;
-			slabNodeIndex = 1;
-			if (PoolNodesPerSlab(self) > 1) {
-				char* freeRingMutex = &self->mutexStorage[0];
-				++slabNode;
-				while (slabNodeIndex < PoolNodesPerSlab(self)) {
-					{
-						// Insert this slab node into the free ring, creating the ring if empty.
-						reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
-						OSLockMutex((OSMutex*)freeRingMutex);
-						if (!reusableNodeOrActiveAnchor) {
-							InitializeScenePoolRing(slabNode);
-							OSUnlockMutex((OSMutex*)freeRingMutex);
-							reusableNodeOrActiveAnchor = slabNode;
-						} else {
-							SpliceScenePoolNodeBefore(slabNode, reusableNodeOrActiveAnchor);
-							OSUnlockMutex((OSMutex*)freeRingMutex);
-						}
-						self->reusableRing = reusableNodeOrActiveAnchor;
-					}
-					++slabNode;
-					++slabNodeIndex;
-				}
-			}
-		}
-		// Detach one reusable node; a singleton leaves the reusable ring empty.
-		reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
-		char* detachMutex = &self->mutexStorage[0];
-		OSLockMutex((OSMutex*)detachMutex);
-		UnlinkScenePoolNode(reusableNodeOrActiveAnchor);
-		Fn801EBNode* next = reusableNodeOrActiveAnchor->next;
-		if (next == reusableNodeOrActiveAnchor) next = 0;
-		OSUnlockMutex((OSMutex*)detachMutex);
-		self->reusableRing = next;
-	}
-	// Phase 2: initialize detached payload, then splice it into the active ring.
-	// value is reused below for the active-head address; its wrapper is not retained.
-	reusableNodeOrActiveAnchor->value = *value;
-	reusableNodeOrActiveAnchor->renderFlags = 0;
-	char* activeRingMutex = &self->mutexStorage[0];
-	*(int*)&reusableNodeOrActiveAnchor->renderState = 0;
-	value = static_cast<void**>(self->activeRing);
-	OSLockMutex((OSMutex*)activeRingMutex);
-	if (value == 0) {
-		InitializeScenePoolRing(reusableNodeOrActiveAnchor);
-		OSUnlockMutex((OSMutex*)activeRingMutex);
-	} else {
-		SpliceScenePoolNodeBefore(reusableNodeOrActiveAnchor, (Fn801EBNode*)value);
-		OSUnlockMutex((OSMutex*)activeRingMutex);
-		reusableNodeOrActiveAnchor = (Fn801EBNode*)value;
-	}
-	self->activeRing = reusableNodeOrActiveAnchor;
+    WInstanceLock appendLock(&self->mutexStorage[0]);
+    Fn801EBNode* slabNode;
+    char* slabMutex;
+    Fn801EBNode* slabRingAnchor;
+    int slabNodeIndex;
+    Fn801EBNode* reusableNodeOrActiveAnchor;
+    {
+        WInstanceLock reserveLock(&self->mutexStorage[0]);
+        // Phase 1: reserve and register a slab only when the reusable ring is empty.
+        // Reserve: register slab node 0; put nodes 1..nodesPerSlab-1 into the free ring.
+        if (!self->reusableRing) {
+            slabNode = static_cast<Fn801EBNode*>(appMallocUni__FUl(PoolNodesPerSlab(self) * sizeof(Fn801EBNode)));
+            slabMutex = &self->mutexStorage[0];
+            slabRingAnchor = static_cast<Fn801EBNode*>(self->slabRing);
+            OSLockMutex((OSMutex*)slabMutex);
+            if (!slabRingAnchor) {
+                InitializeScenePoolRing(slabNode);
+                OSUnlockMutex((OSMutex*)slabMutex);
+                slabRingAnchor = slabNode;
+            } else {
+                SpliceScenePoolNodeBefore(slabNode, slabRingAnchor);
+                OSUnlockMutex((OSMutex*)slabMutex);
+            }
+            self->slabRing = slabRingAnchor;
+            slabNodeIndex = 1;
+            if (PoolNodesPerSlab(self) > 1) {
+                char* freeRingMutex = &self->mutexStorage[0];
+                ++slabNode;
+                while (slabNodeIndex < PoolNodesPerSlab(self)) {
+                    {
+                        // Insert this slab node into the free ring, creating the ring if empty.
+                        reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
+                        OSLockMutex((OSMutex*)freeRingMutex);
+                        if (!reusableNodeOrActiveAnchor) {
+                            InitializeScenePoolRing(slabNode);
+                            OSUnlockMutex((OSMutex*)freeRingMutex);
+                            reusableNodeOrActiveAnchor = slabNode;
+                        } else {
+                            SpliceScenePoolNodeBefore(slabNode, reusableNodeOrActiveAnchor);
+                            OSUnlockMutex((OSMutex*)freeRingMutex);
+                        }
+                        self->reusableRing = reusableNodeOrActiveAnchor;
+                    }
+                    ++slabNode;
+                    ++slabNodeIndex;
+                }
+            }
+        }
+        // Detach one reusable node; a singleton leaves the reusable ring empty.
+        reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
+        char* detachMutex = &self->mutexStorage[0];
+        OSLockMutex((OSMutex*)detachMutex);
+        UnlinkScenePoolNode(reusableNodeOrActiveAnchor);
+        Fn801EBNode* next = reusableNodeOrActiveAnchor->next;
+        if (next == reusableNodeOrActiveAnchor)
+            next = 0;
+        OSUnlockMutex((OSMutex*)detachMutex);
+        self->reusableRing = next;
+    }
+    // Phase 2: initialize detached payload, then splice it into the active ring.
+    // value is reused below for the active-head address; its wrapper is not retained.
+    reusableNodeOrActiveAnchor->value = *value;
+    reusableNodeOrActiveAnchor->renderFlags = 0;
+    char* activeRingMutex = &self->mutexStorage[0];
+    *(int*)&reusableNodeOrActiveAnchor->renderState = 0;
+    value = static_cast<void**>(self->activeRing);
+    OSLockMutex((OSMutex*)activeRingMutex);
+    if (value == 0) {
+        InitializeScenePoolRing(reusableNodeOrActiveAnchor);
+        OSUnlockMutex((OSMutex*)activeRingMutex);
+    } else {
+        SpliceScenePoolNodeBefore(reusableNodeOrActiveAnchor, (Fn801EBNode*)value);
+        OSUnlockMutex((OSMutex*)activeRingMutex);
+        reusableNodeOrActiveAnchor = (Fn801EBNode*)value;
+    }
+    self->activeRing = reusableNodeOrActiveAnchor;
 }
 
 // Add a generated-texture object to the scene's pooled circular list while holding its mutex.
 // Transfer/publication/failure contract: Fn801EBList above. No success status.
 void SceneGeneratedTextureList_AppendObject(Fn801EBList* self, void** value) {
-	Fn801EBNode* slabNode;
-	int slabNodeIndex;
-	Fn801EBNode* reusableNodeOrActiveAnchor;
-	const WInstanceLock& appendLock = WInstanceLock(&self->mutexStorage[0]);
-	{
-		const WInstanceLock& reserveLock = WInstanceLock(&self->mutexStorage[0]);
-		// Phase 1: reserve and register a slab only when the reusable ring is empty.
-		// Reserve: register slab node 0; put nodes 1..nodesPerSlab-1 into the free ring.
-		if (!self->reusableRing) {
-			slabNode = static_cast<Fn801EBNode*>(appMallocUni__FUl(PoolNodesPerSlab(self) * sizeof(Fn801EBNode)));
-			char* slabMutex = &self->mutexStorage[0];
-			Fn801EBNode* slabRingAnchor = static_cast<Fn801EBNode*>(self->slabRing);
-			OSLockMutex((OSMutex*)slabMutex);
-			if (!slabRingAnchor) {
-				InitializeScenePoolRing(slabNode);
-				OSUnlockMutex((OSMutex*)slabMutex);
-				slabRingAnchor = slabNode;
-			} else {
-				SpliceScenePoolNodeBefore(slabNode, slabRingAnchor);
-				OSUnlockMutex((OSMutex*)slabMutex);
-			}
-			self->slabRing = slabRingAnchor;
-			slabNodeIndex = 1;
-			if (PoolNodesPerSlab(self) > 1) {
-				char* freeRingMutex = &self->mutexStorage[0];
-				++slabNode;
-				while (slabNodeIndex < PoolNodesPerSlab(self)) {
-					{
-						// Insert this slab node into the free ring, creating the ring if empty.
-						reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
-						OSLockMutex((OSMutex*)freeRingMutex);
-						if (!reusableNodeOrActiveAnchor) {
-							InitializeScenePoolRing(slabNode);
-							OSUnlockMutex((OSMutex*)freeRingMutex);
-							reusableNodeOrActiveAnchor = slabNode;
-						} else {
-							SpliceScenePoolNodeBefore(slabNode, reusableNodeOrActiveAnchor);
-							OSUnlockMutex((OSMutex*)freeRingMutex);
-						}
-						self->reusableRing = reusableNodeOrActiveAnchor;
-					}
-					++slabNode;
-					++slabNodeIndex;
-				}
-			}
-		}
-		// Detach one reusable node; a singleton leaves the reusable ring empty.
-		reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
-		char* detachMutex = &self->mutexStorage[0];
-		OSLockMutex((OSMutex*)detachMutex);
-		UnlinkScenePoolNode(reusableNodeOrActiveAnchor);
-		Fn801EBNode* next = reusableNodeOrActiveAnchor->next;
-		if (next == reusableNodeOrActiveAnchor) next = 0;
-		OSUnlockMutex((OSMutex*)detachMutex);
-		self->reusableRing = next;
-	} // reserveLock destroyed here
-	// Phase 2: initialize detached payload, then splice it into the active ring.
-	// value is reused below for the active-head address; its wrapper is not retained.
-	reusableNodeOrActiveAnchor->value = *value;
-	reusableNodeOrActiveAnchor->renderFlags = 0;
-	char* activeRingMutex = &self->mutexStorage[0];
-	*(int*)&reusableNodeOrActiveAnchor->renderState = 0;
-	value = static_cast<void**>(self->activeRing);
-	OSLockMutex((OSMutex*)activeRingMutex);
-	if (value == 0) {
-		InitializeScenePoolRing(reusableNodeOrActiveAnchor);
-		OSUnlockMutex((OSMutex*)activeRingMutex);
-	} else {
-		SpliceScenePoolNodeBefore(reusableNodeOrActiveAnchor, (Fn801EBNode*)value);
-		OSUnlockMutex((OSMutex*)activeRingMutex);
-		reusableNodeOrActiveAnchor = (Fn801EBNode*)value;
-	}
-	self->activeRing = reusableNodeOrActiveAnchor;
+    Fn801EBNode* slabNode;
+    int slabNodeIndex;
+    Fn801EBNode* reusableNodeOrActiveAnchor;
+    const WInstanceLock& appendLock = WInstanceLock(&self->mutexStorage[0]);
+    {
+        const WInstanceLock& reserveLock = WInstanceLock(&self->mutexStorage[0]);
+        // Phase 1: reserve and register a slab only when the reusable ring is empty.
+        // Reserve: register slab node 0; put nodes 1..nodesPerSlab-1 into the free ring.
+        if (!self->reusableRing) {
+            slabNode = static_cast<Fn801EBNode*>(appMallocUni__FUl(PoolNodesPerSlab(self) * sizeof(Fn801EBNode)));
+            char* slabMutex = &self->mutexStorage[0];
+            Fn801EBNode* slabRingAnchor = static_cast<Fn801EBNode*>(self->slabRing);
+            OSLockMutex((OSMutex*)slabMutex);
+            if (!slabRingAnchor) {
+                InitializeScenePoolRing(slabNode);
+                OSUnlockMutex((OSMutex*)slabMutex);
+                slabRingAnchor = slabNode;
+            } else {
+                SpliceScenePoolNodeBefore(slabNode, slabRingAnchor);
+                OSUnlockMutex((OSMutex*)slabMutex);
+            }
+            self->slabRing = slabRingAnchor;
+            slabNodeIndex = 1;
+            if (PoolNodesPerSlab(self) > 1) {
+                char* freeRingMutex = &self->mutexStorage[0];
+                ++slabNode;
+                while (slabNodeIndex < PoolNodesPerSlab(self)) {
+                    {
+                        // Insert this slab node into the free ring, creating the ring if empty.
+                        reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
+                        OSLockMutex((OSMutex*)freeRingMutex);
+                        if (!reusableNodeOrActiveAnchor) {
+                            InitializeScenePoolRing(slabNode);
+                            OSUnlockMutex((OSMutex*)freeRingMutex);
+                            reusableNodeOrActiveAnchor = slabNode;
+                        } else {
+                            SpliceScenePoolNodeBefore(slabNode, reusableNodeOrActiveAnchor);
+                            OSUnlockMutex((OSMutex*)freeRingMutex);
+                        }
+                        self->reusableRing = reusableNodeOrActiveAnchor;
+                    }
+                    ++slabNode;
+                    ++slabNodeIndex;
+                }
+            }
+        }
+        // Detach one reusable node; a singleton leaves the reusable ring empty.
+        reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
+        char* detachMutex = &self->mutexStorage[0];
+        OSLockMutex((OSMutex*)detachMutex);
+        UnlinkScenePoolNode(reusableNodeOrActiveAnchor);
+        Fn801EBNode* next = reusableNodeOrActiveAnchor->next;
+        if (next == reusableNodeOrActiveAnchor)
+            next = 0;
+        OSUnlockMutex((OSMutex*)detachMutex);
+        self->reusableRing = next;
+    } // reserveLock destroyed here
+    // Phase 2: initialize detached payload, then splice it into the active ring.
+    // value is reused below for the active-head address; its wrapper is not retained.
+    reusableNodeOrActiveAnchor->value = *value;
+    reusableNodeOrActiveAnchor->renderFlags = 0;
+    char* activeRingMutex = &self->mutexStorage[0];
+    *(int*)&reusableNodeOrActiveAnchor->renderState = 0;
+    value = static_cast<void**>(self->activeRing);
+    OSLockMutex((OSMutex*)activeRingMutex);
+    if (value == 0) {
+        InitializeScenePoolRing(reusableNodeOrActiveAnchor);
+        OSUnlockMutex((OSMutex*)activeRingMutex);
+    } else {
+        SpliceScenePoolNodeBefore(reusableNodeOrActiveAnchor, (Fn801EBNode*)value);
+        OSUnlockMutex((OSMutex*)activeRingMutex);
+        reusableNodeOrActiveAnchor = (Fn801EBNode*)value;
+    }
+    self->activeRing = reusableNodeOrActiveAnchor;
 }
 
 // Advance the course-entry iterator by one 0x20-byte entry.
 void CourseEntryIterator_Advance(Fn801EB82CObject* self) {
-	self->field00 = static_cast<char*>(self->field00) + 0x20;
+    self->field00 = static_cast<char*>(self->field00) + 0x20;
 }
 
 // Add a course boundary object to the scene's pooled circular list while holding its mutex.
 // Transfer/publication/failure contract: Fn801EBList above. No success status.
 void SceneBoundaryList_AppendObject(Fn801EBList* self, void** value) {
-	Fn801EBNode* slabNode;
-	char* slabMutex;
-	Fn801EBNode* slabRingAnchor;
-	int slabNodeIndex;
-	Fn801EBNode* reusableNodeOrActiveAnchor;
-	const WInstanceLock& appendLock = WInstanceLock(&self->mutexStorage[0]);
-	{
-		const WInstanceLock& reserveLock = WInstanceLock(&self->mutexStorage[0]);
-		// Phase 1: reserve and register a slab only when the reusable ring is empty.
-		// Reserve: register slab node 0; put nodes 1..nodesPerSlab-1 into the free ring.
-		if (!self->reusableRing) {
-			slabNode = static_cast<Fn801EBNode*>(appMallocUni__FUl(PoolNodesPerSlab(self) * sizeof(Fn801EBNode)));
-			slabMutex = &self->mutexStorage[0];
-			slabRingAnchor = static_cast<Fn801EBNode*>(self->slabRing);
-			OSLockMutex((OSMutex*)slabMutex);
-			if (!slabRingAnchor) {
-				InitializeScenePoolRing(slabNode);
-				OSUnlockMutex((OSMutex*)slabMutex);
-				slabRingAnchor = slabNode;
-			} else {
-				SpliceScenePoolNodeBefore(slabNode, slabRingAnchor);
-				OSUnlockMutex((OSMutex*)slabMutex);
-			}
-			self->slabRing = slabRingAnchor;
-			slabNodeIndex = 1;
-			if (PoolNodesPerSlab(self) > 1) {
-				char* freeRingMutex = &self->mutexStorage[0];
-				++slabNode;
-				while (slabNodeIndex < PoolNodesPerSlab(self)) {
-					{
-						// Insert this slab node into the free ring, creating the ring if empty.
-						reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
-						OSLockMutex((OSMutex*)freeRingMutex);
-						if (!reusableNodeOrActiveAnchor) {
-							InitializeScenePoolRing(slabNode);
-							OSUnlockMutex((OSMutex*)freeRingMutex);
-							reusableNodeOrActiveAnchor = slabNode;
-						} else {
-							SpliceScenePoolNodeBefore(slabNode, reusableNodeOrActiveAnchor);
-							OSUnlockMutex((OSMutex*)freeRingMutex);
-						}
-						self->reusableRing = reusableNodeOrActiveAnchor;
-					}
-					++slabNode;
-					++slabNodeIndex;
-				}
-			}
-		}
-		// Detach one reusable node; a singleton leaves the reusable ring empty.
-		reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
-		char* detachMutex = &self->mutexStorage[0];
-		OSLockMutex((OSMutex*)detachMutex);
-		UnlinkScenePoolNode(reusableNodeOrActiveAnchor);
-		Fn801EBNode* next = reusableNodeOrActiveAnchor->next;
-		if (next == reusableNodeOrActiveAnchor) next = 0;
-		OSUnlockMutex((OSMutex*)detachMutex);
-		self->reusableRing = next;
-	}
-	// Phase 2: initialize detached payload, then splice it into the active ring.
-	// value is reused below for the active-head address; its wrapper is not retained.
-	reusableNodeOrActiveAnchor->value = *value;
-	reusableNodeOrActiveAnchor->renderFlags = 0;
-	char* activeRingMutex = &self->mutexStorage[0];
-	*(int*)&reusableNodeOrActiveAnchor->renderState = 0;
-	value = static_cast<void**>(self->activeRing);
-	OSLockMutex((OSMutex*)activeRingMutex);
-	if (value == 0) {
-		InitializeScenePoolRing(reusableNodeOrActiveAnchor);
-		OSUnlockMutex((OSMutex*)activeRingMutex);
-	} else {
-		SpliceScenePoolNodeBefore(reusableNodeOrActiveAnchor, (Fn801EBNode*)value);
-		OSUnlockMutex((OSMutex*)activeRingMutex);
-		reusableNodeOrActiveAnchor = (Fn801EBNode*)value;
-	}
-	self->activeRing = reusableNodeOrActiveAnchor;
+    Fn801EBNode* slabNode;
+    char* slabMutex;
+    Fn801EBNode* slabRingAnchor;
+    int slabNodeIndex;
+    Fn801EBNode* reusableNodeOrActiveAnchor;
+    const WInstanceLock& appendLock = WInstanceLock(&self->mutexStorage[0]);
+    {
+        const WInstanceLock& reserveLock = WInstanceLock(&self->mutexStorage[0]);
+        // Phase 1: reserve and register a slab only when the reusable ring is empty.
+        // Reserve: register slab node 0; put nodes 1..nodesPerSlab-1 into the free ring.
+        if (!self->reusableRing) {
+            slabNode = static_cast<Fn801EBNode*>(appMallocUni__FUl(PoolNodesPerSlab(self) * sizeof(Fn801EBNode)));
+            slabMutex = &self->mutexStorage[0];
+            slabRingAnchor = static_cast<Fn801EBNode*>(self->slabRing);
+            OSLockMutex((OSMutex*)slabMutex);
+            if (!slabRingAnchor) {
+                InitializeScenePoolRing(slabNode);
+                OSUnlockMutex((OSMutex*)slabMutex);
+                slabRingAnchor = slabNode;
+            } else {
+                SpliceScenePoolNodeBefore(slabNode, slabRingAnchor);
+                OSUnlockMutex((OSMutex*)slabMutex);
+            }
+            self->slabRing = slabRingAnchor;
+            slabNodeIndex = 1;
+            if (PoolNodesPerSlab(self) > 1) {
+                char* freeRingMutex = &self->mutexStorage[0];
+                ++slabNode;
+                while (slabNodeIndex < PoolNodesPerSlab(self)) {
+                    {
+                        // Insert this slab node into the free ring, creating the ring if empty.
+                        reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
+                        OSLockMutex((OSMutex*)freeRingMutex);
+                        if (!reusableNodeOrActiveAnchor) {
+                            InitializeScenePoolRing(slabNode);
+                            OSUnlockMutex((OSMutex*)freeRingMutex);
+                            reusableNodeOrActiveAnchor = slabNode;
+                        } else {
+                            SpliceScenePoolNodeBefore(slabNode, reusableNodeOrActiveAnchor);
+                            OSUnlockMutex((OSMutex*)freeRingMutex);
+                        }
+                        self->reusableRing = reusableNodeOrActiveAnchor;
+                    }
+                    ++slabNode;
+                    ++slabNodeIndex;
+                }
+            }
+        }
+        // Detach one reusable node; a singleton leaves the reusable ring empty.
+        reusableNodeOrActiveAnchor = static_cast<Fn801EBNode*>(self->reusableRing);
+        char* detachMutex = &self->mutexStorage[0];
+        OSLockMutex((OSMutex*)detachMutex);
+        UnlinkScenePoolNode(reusableNodeOrActiveAnchor);
+        Fn801EBNode* next = reusableNodeOrActiveAnchor->next;
+        if (next == reusableNodeOrActiveAnchor)
+            next = 0;
+        OSUnlockMutex((OSMutex*)detachMutex);
+        self->reusableRing = next;
+    }
+    // Phase 2: initialize detached payload, then splice it into the active ring.
+    // value is reused below for the active-head address; its wrapper is not retained.
+    reusableNodeOrActiveAnchor->value = *value;
+    reusableNodeOrActiveAnchor->renderFlags = 0;
+    char* activeRingMutex = &self->mutexStorage[0];
+    *(int*)&reusableNodeOrActiveAnchor->renderState = 0;
+    value = static_cast<void**>(self->activeRing);
+    OSLockMutex((OSMutex*)activeRingMutex);
+    if (value == 0) {
+        InitializeScenePoolRing(reusableNodeOrActiveAnchor);
+        OSUnlockMutex((OSMutex*)activeRingMutex);
+    } else {
+        SpliceScenePoolNodeBefore(reusableNodeOrActiveAnchor, (Fn801EBNode*)value);
+        OSUnlockMutex((OSMutex*)activeRingMutex);
+        reusableNodeOrActiveAnchor = (Fn801EBNode*)value;
+    }
+    self->activeRing = reusableNodeOrActiveAnchor;
 }
 #pragma pop
 
 // Select shadows for clear/cloud/rain/snow: courses 4..8 and 13 disable selection flags.
 // Special weather 4 never calls this helper and leaves the shadow setting untouched.
 static inline void ApplyCourseWeatherShadowPolicy(unsigned int courseId, int& useCourseShadow) {
-        switch ((unsigned char)courseId) {
-        case kWeatherCourse4: case kWeatherCourse5: case kWeatherCourse6:
-        case kWeatherCourse7: case kRainSubstitutesSnowCourse8: case kScaledAmbientSnowCourse13:
-            useCourseShadow = 0;
-            break;
-        }
-        if (useCourseShadow == 0) CShadowManager_SetSelectionFlags(g_shadowManager, 0);
-        else CShadowManager_SetSelectionFlags(g_shadowManager, 1);
+    switch ((unsigned char)courseId) {
+    case kWeatherCourse4:
+    case kWeatherCourse5:
+    case kWeatherCourse6:
+    case kWeatherCourse7:
+    case kRainSubstitutesSnowCourse8:
+    case kScaledAmbientSnowCourse13:
+        useCourseShadow = 0;
+        break;
+    }
+    if (useCourseShadow == 0)
+        ((CShadowManager*)g_shadowManager)->SetSelectionFlags(0);
+    else
+        ((CShadowManager*)g_shadowManager)->SetSelectionFlags(1);
 }
 
 // Replace weather particles/clouds as needed and choose the course's shadow settings.
@@ -2563,9 +2946,11 @@ void CourseWeather_ConfigureEffects(void* object, unsigned char weather, int rec
     if (((courseId + kWeatherPair11WrapBias) & kWeatherCourseByteMask) <= 1 && weather != kRainWeather) {
         if (!OwnedCourseWeatherEffect(self)) {
             if ((unsigned char)courseId == kWeatherPetalCourse11) {
-                OwnedCourseWeatherEffect(self) = new PetalEffectAlloc(kPetalParticleCount, (char*)courseGlowEffectStrings + kEmptyWeatherResource, 0);
+                OwnedCourseWeatherEffect(self) = new PetalEffectAlloc(
+                    kPetalParticleCount, (char*)courseGlowEffectStrings + kEmptyWeatherResource, 0);
             } else if ((unsigned char)courseId == kWeatherSilicaCourse12) {
-                OwnedCourseWeatherEffect(self) = new SilicaParticleEffectAlloc(kPetalParticleCount, (char*)courseGlowEffectStrings + kEmptyWeatherResource, 0);
+                OwnedCourseWeatherEffect(self) = new SilicaParticleEffectAlloc(
+                    kPetalParticleCount, (char*)courseGlowEffectStrings + kEmptyWeatherResource, 0);
             }
             CourseWeatherEffectScale(OwnedCourseWeatherEffect(self)) = kWeatherPetalEffectScale;
         }
@@ -2574,7 +2959,9 @@ void CourseWeather_ConfigureEffects(void* object, unsigned char weather, int rec
     }
     if ((unsigned char)courseId == kPersistentLightSnowCourse9) {
         if (!OwnedCourseWeatherEffect(self)) {
-            SnowEffectAlloc* p = new SnowEffectAlloc(kLightSnowCount, (char*)courseGlowEffectStrings + kSnowParticleResource, 0, kWeatherSnowConstructorScale);
+            SnowEffectAlloc* p =
+                new SnowEffectAlloc(kLightSnowCount, (char*)courseGlowEffectStrings + kSnowParticleResource, 0,
+                                    kWeatherSnowConstructorScale);
             OwnedCourseWeatherEffect(self) = p;
             CourseWeatherEffectScale(p) = kFloat_0_25_Scene;
         }
@@ -2584,14 +2971,17 @@ void CourseWeather_ConfigureEffects(void* object, unsigned char weather, int rec
             if ((SharedDoc_GetCourseId() & kWeatherCourseByteMask) == kScaledAmbientSnowCourse13) {
                 particleCount = (int)(kWeatherCourse13SnowCountScale * (float)particleCount);
             }
-            SnowEffectAlloc* p = new SnowEffectAlloc(particleCount, (char*)courseGlowEffectStrings + kAmbientSnowResource, 0, kWeatherAmbientSnowConstructorScale);
+            SnowEffectAlloc* p =
+                new SnowEffectAlloc(particleCount, (char*)courseGlowEffectStrings + kAmbientSnowResource, 0,
+                                    kWeatherAmbientSnowConstructorScale);
             OwnedCourseWeatherEffect(self) = p;
             CourseWeatherEffectScale(p) = kWeatherAmbientSnowEffectScale;
         }
     } else {
         // Only this branch short-circuits unchanged weather. Ambient-course
         // branches above continue to the weather switch even without recreation.
-        if (weather == ((SharedWeatherView*)g_sharedDoc)->selectedWeather && recreateEffects == 0) return;
+        if (weather == ((SharedWeatherView*)g_sharedDoc)->selectedWeather && recreateEffects == 0)
+            return;
         ReleaseOwnedWeatherEffect(OwnedCourseWeatherEffect(self));
     }
     // Phase 2: commit selected weather, create/update its particles and select shadow behavior.
@@ -2599,75 +2989,81 @@ void CourseWeather_ConfigureEffects(void* object, unsigned char weather, int rec
     ((SharedWeatherView*)g_sharedDoc)->selectedWeather = weather;
     switch (weather) {
     case kClearWeather: { // Keep course ambience, refresh course-9 particle count, apply shadows.
-            if ((unsigned char)courseId == kPersistentLightSnowCourse9) {
-                int r = rand() % kSpecialParticleCount + kSpecialParticleCount;
-                VEffect* weatherEffect = (VEffect*)OwnedCourseWeatherEffect(self);
-                weatherEffect->update(r, kSceneHalfScale);
-            }
-            int useCourseShadow = 1;
-            ApplyCourseWeatherShadowPolicy(courseId, useCourseShadow);
-            break;
+        if ((unsigned char)courseId == kPersistentLightSnowCourse9) {
+            int r = rand() % kSpecialParticleCount + kSpecialParticleCount;
+            VEffect* weatherEffect = (VEffect*)OwnedCourseWeatherEffect(self);
+            weatherEffect->update(r, kSceneHalfScale);
         }
+        int useCourseShadow = 1;
+        ApplyCourseWeatherShadowPolicy(courseId, useCourseShadow);
+        break;
+    }
     case kCloudyWeather: { // Ensure a primary effect/cloud, refresh course 9, apply shadows.
-            if (!OwnedCourseWeatherEffect(self)) {
-                OwnedCourseWeatherEffect(self) = new CloudEffectAlloc();
-            }
-            if ((unsigned char)courseId == kPersistentLightSnowCourse9) {
-                int r = rand() % kSpecialParticleCount + kSpecialParticleCount;
-                VEffect* weatherEffect = (VEffect*)OwnedCourseWeatherEffect(self);
-                weatherEffect->update(r, kSceneHalfScale);
-            }
-            int useCourseShadow = 1;
-            ApplyCourseWeatherShadowPolicy(courseId, useCourseShadow);
-            break;
+        if (!OwnedCourseWeatherEffect(self)) {
+            OwnedCourseWeatherEffect(self) = new CloudEffectAlloc();
         }
+        if ((unsigned char)courseId == kPersistentLightSnowCourse9) {
+            int r = rand() % kSpecialParticleCount + kSpecialParticleCount;
+            VEffect* weatherEffect = (VEffect*)OwnedCourseWeatherEffect(self);
+            weatherEffect->update(r, kSceneHalfScale);
+        }
+        int useCourseShadow = 1;
+        ApplyCourseWeatherShadowPolicy(courseId, useCourseShadow);
+        break;
+    }
     case kRainWeather: { // Use snow on course 8 or rain elsewhere; update snow counts/shadows.
-            if (!OwnedCourseWeatherEffect(self)) {
-                if ((unsigned char)courseId == kRainSubstitutesSnowCourse8) {
-                    SnowEffectAlloc* p = new SnowEffectAlloc(kHeavySnowCount, (char*)courseGlowEffectStrings + kSnowParticleResource, 0, kWeatherSnowConstructorScale);
-                    OwnedCourseWeatherEffect(self) = p;
-                    CourseWeatherEffectScale(p) = kFloat_0_25_Scene;
-                } else {
-                    OwnedCourseWeatherEffect(self) = new RainEffectAlloc();
-                }
-            }
-            if (((courseId + kWeatherPair8WrapBias) & kWeatherCourseByteMask) <= 1) {
-                VEffect* weatherEffect = (VEffect*)OwnedCourseWeatherEffect(self);
-                weatherEffect->update(kHeavySnowCount, kFloat_1_805DF9F8);
-            }
-            int useCourseShadow = 1;
-            ApplyCourseWeatherShadowPolicy(courseId, useCourseShadow);
-            break;
-        }
-    case kSnowWeather: { // Ensure/update snow and apply the course shadow policy.
-            if (!OwnedCourseWeatherEffect(self)) {
-                SnowEffectAlloc* p = new SnowEffectAlloc(kHeavySnowCount, (char*)courseGlowEffectStrings + kSnowParticleResource, 0, kWeatherSnowConstructorScale);
+        if (!OwnedCourseWeatherEffect(self)) {
+            if ((unsigned char)courseId == kRainSubstitutesSnowCourse8) {
+                SnowEffectAlloc* p =
+                    new SnowEffectAlloc(kHeavySnowCount, (char*)courseGlowEffectStrings + kSnowParticleResource, 0,
+                                        kWeatherSnowConstructorScale);
                 OwnedCourseWeatherEffect(self) = p;
                 CourseWeatherEffectScale(p) = kFloat_0_25_Scene;
-            } else if (((courseId + kWeatherPair8WrapBias) & kWeatherCourseByteMask) <= 1) {
-                VEffect* weatherEffect = (VEffect*)OwnedCourseWeatherEffect(self);
-                weatherEffect->update(kHeavySnowCount, kFloat_1_805DF9F8);
+            } else {
+                OwnedCourseWeatherEffect(self) = new RainEffectAlloc();
             }
-            int useCourseShadow = 1;
-            ApplyCourseWeatherShadowPolicy(courseId, useCourseShadow);
-            break;
         }
+        if (((courseId + kWeatherPair8WrapBias) & kWeatherCourseByteMask) <= 1) {
+            VEffect* weatherEffect = (VEffect*)OwnedCourseWeatherEffect(self);
+            weatherEffect->update(kHeavySnowCount, kFloat_1_805DF9F8);
+        }
+        int useCourseShadow = 1;
+        ApplyCourseWeatherShadowPolicy(courseId, useCourseShadow);
+        break;
+    }
+    case kSnowWeather: { // Ensure/update snow and apply the course shadow policy.
+        if (!OwnedCourseWeatherEffect(self)) {
+            SnowEffectAlloc* p =
+                new SnowEffectAlloc(kHeavySnowCount, (char*)courseGlowEffectStrings + kSnowParticleResource, 0,
+                                    kWeatherSnowConstructorScale);
+            OwnedCourseWeatherEffect(self) = p;
+            CourseWeatherEffectScale(p) = kFloat_0_25_Scene;
+        } else if (((courseId + kWeatherPair8WrapBias) & kWeatherCourseByteMask) <= 1) {
+            VEffect* weatherEffect = (VEffect*)OwnedCourseWeatherEffect(self);
+            weatherEffect->update(kHeavySnowCount, kFloat_1_805DF9F8);
+        }
+        int useCourseShadow = 1;
+        ApplyCourseWeatherShadowPolicy(courseId, useCourseShadow);
+        break;
+    }
     case kSpecialWeatherEffect: { // Ensure special particles; leave the shadow selection unchanged.
-            if (!OwnedCourseWeatherEffect(self)) {
-                SnowEffectAlloc* p = new SnowEffectAlloc(kSpecialParticleCount, (char*)courseGlowEffectStrings + kSpecialWeatherResource, 2, kWeatherSnowConstructorScale);
-                OwnedCourseWeatherEffect(self) = p;
-                CourseWeatherEffectScale(p) = kWeatherSpecialEffectScale;
-            }
-            break;
+        if (!OwnedCourseWeatherEffect(self)) {
+            SnowEffectAlloc* p =
+                new SnowEffectAlloc(kSpecialParticleCount, (char*)courseGlowEffectStrings + kSpecialWeatherResource, 2,
+                                    kWeatherSnowConstructorScale);
+            OwnedCourseWeatherEffect(self) = p;
+            CourseWeatherEffectScale(p) = kWeatherSpecialEffectScale;
         }
+        break;
+    }
     default:
         break;
     }
 }
 
 // Allocate and construct the score UI actor.
-Fn801EC088Object* CScore_Create() {
-	return new Fn801EC088Object;
+CScoreAlloc* CScore_Create() {
+    return new CScoreAlloc;
 }
 
 // Initialize score/bonus transitions, menu state and owned score/rank forms.
@@ -2677,100 +3073,102 @@ Fn801EC088Object* CScore_Create() {
 // owned CBonusInfo at +38; HandleMsg command 0 deletes/replaces it when enabling
 // bonus display. OnDestroy here frees only rankView/scoreForm, NOT bonusOverlay:
 // clearing/closing the bonus workflow is a separate lifetime responsibility.
-ScoreConstructorView* CScore_Ctor(ScoreConstructorView* self) {
-	__ct__18NativeBase80201D18Fv(self);
-	int zero = 0;
-	void* base = __vt__6CScore;
-	float zeroTime = kScoreInitialTime;
-	void* actorInterfaceVtable = (char*)base + kScoreActorInterfaceVtableOffset;
-	int one = 1;
-	int actorType = 5;
-	self->vtable = base;
-	ScoreActorInterfaceVtable(self) = actorInterfaceVtable; // secondary actor interface at +0x18; not owned
-	AsCScore(self)->bonusOverlayEnabled = zero;
-	AsCScore(self)->elapsedTime = zeroTime;
-	AsCScore(self)->transitionState = zero;
-	self->field28 = one; // +0x28 constructor flag; consumers not established here
-	AsCScore(self)->transitionProgress = zeroTime;
-	*(int*)&AsCScore(self)->bonusOverlay = zero;
-	AsCScore(self)->result = zero;
-	AsCScore(self)->scoreMenuActive = zero;
-	AsCScore(self)->currentPlayerId = zero;
-	self->field48 = zero; // +0x48 state word; meaning unresolved
-	self->field4C = zero; // +0x4C state word; meaning unresolved
-	*(int*)&AsCScore(self)->scoreForm = zero;
-	*(int*)&AsCScore(self)->rankView = zero;
-	AsCScore(self)->menusInitialized = zero;
-	self->actorType = actorType;
-	return self;
+CScore::CScore() {
+    ScoreConstructorView* self = (ScoreConstructorView*)this;
+    __ct__18NativeBase80201D18Fv(self);
+    int zero = 0;
+    void* base = __vt__6CScore;
+    float zeroTime = kScoreInitialTime;
+    void* actorInterfaceVtable = (char*)base + kScoreActorInterfaceVtableOffset;
+    int one = 1;
+    int actorType = 5;
+    self->vtable = base;
+    ScoreActorInterfaceVtable(self) = actorInterfaceVtable; // secondary actor interface at +0x18; not owned
+    AsCScore(self)->bonusOverlayEnabled = zero;
+    AsCScore(self)->elapsedTime = zeroTime;
+    AsCScore(self)->transitionState = zero;
+    self->field28 = one; // +0x28 constructor flag; consumers not established here
+    AsCScore(self)->transitionProgress = zeroTime;
+    *(int*)&AsCScore(self)->bonusOverlay = zero;
+    AsCScore(self)->result = zero;
+    AsCScore(self)->scoreMenuActive = zero;
+    AsCScore(self)->currentPlayerId = zero;
+    self->field48 = zero; // +0x48 state word; meaning unresolved
+    self->field4C = zero; // +0x4C state word; meaning unresolved
+    *(int*)&AsCScore(self)->scoreForm = zero;
+    *(int*)&AsCScore(self)->rankView = zero;
+    AsCScore(self)->menusInitialized = zero;
+    self->actorType = actorType;
 }
 
 // Release score/rank forms and reset the four input cursors' draw and color overrides.
-void CScore_OnDestroy(ScoreFormOwnerView* self) {
-	{
-		void* p = AsCScore(self)->rankView;
-		if (p) {
-			if (p) {
-				((ScoreOwned*)p)->release(1);
-			}
-			AsCScore(self)->rankView = 0;
-		}
-	}
-	{
-		void* p = AsCScore(self)->scoreForm;
-		if (p) {
-			if (p) {
-				((ScoreOwned*)p)->release(1);
-			}
-			AsCScore(self)->scoreForm = 0;
-		}
-	}
-	if (!Sing_805DC5C8()) {
-		if (!s_inputManagerInitialized) {
-			InputManager_Init(s_gameInputManager);
-			__register_global_object(s_gameInputManager, reinterpret_cast<void*>(InputManager_Dtor), s_scoreInputManagerDestructorRegistration);
-			s_inputManagerInitialized = 1;
-		}
-		Sing_805DC5C8() = s_gameInputManager;
-	}
-	void* manager = Sing_805DC5C8();
-	int index = 0;
-	do {
-		InputManager_SetCursorDrawOptions(manager, 0, 0, 0, index);
-		InputManager_SetCursorColorOverride(manager, 0, 0xD6, 0x48, 0x5C, index);
-		++index;
-	} while (index < 4);
+void CScore::OnDestroy() {
+    ScoreFormOwnerView* self = (ScoreFormOwnerView*)this;
+    {
+        void* p = AsCScore(self)->rankView;
+        if (p) {
+            if (p) {
+                ((ScoreOwned*)p)->release(1);
+            }
+            AsCScore(self)->rankView = 0;
+        }
+    }
+    {
+        void* p = AsCScore(self)->scoreForm;
+        if (p) {
+            if (p) {
+                ((ScoreOwned*)p)->release(1);
+            }
+            AsCScore(self)->scoreForm = 0;
+        }
+    }
+    if (!GetInputManagerSlot()) {
+        if (!s_inputManagerInitialized) {
+            InputManager_Init(s_gameInputManager);
+            __register_global_object(s_gameInputManager, reinterpret_cast<void*>(InputManager_Dtor),
+                                     s_scoreInputManagerDestructorRegistration);
+            s_inputManagerInitialized = 1;
+        }
+        GetInputManagerSlot() = s_gameInputManager;
+    }
+    void* manager = GetInputManagerSlot();
+    int index = 0;
+    do {
+        InputManager_SetCursorDrawOptions(manager, 0, 0, 0, index);
+        InputManager_SetCursorColorOverride(manager, 0, 0xD6, 0x48, 0x5C, index);
+        ++index;
+    } while (index < 4);
 }
 
 // The score actor has no extra load-time work.
-void CScore_OnLoad() {}
+void CScore::OnLoad() {}
 
 // Send zero-filled setup commands 3 and 6 through the actor initialization hook.
-void CScore_OnReload(Fn801EC280Object* first) {
-	Fn801EC280Args args1;
-	args1.values[0] = 0;
-	args1.values[1] = 3;
-	args1.values[2] = 0;
-	args1.values[3] = 0;
-	args1.values[4] = 0;
-	args1.values[5] = 0;
-	args1.values[6] = 0;
-	args1.values[7] = 0;
-	if (first) {
-		((V2Cs*)first)->v2C(&args1);
-	}
-	Fn801EC280Args args2;
-	args2.values[0] = 0;
-	args2.values[1] = 6;
-	args2.values[2] = 0;
-	args2.values[3] = 0;
-	args2.values[4] = 0;
-	args2.values[5] = 0;
-	args2.values[6] = 0;
-	args2.values[7] = 0;
-	if (first) {
-		((V2Cs*)first)->v2C(&args2);
-	}
+void CScore::OnReload(Fn801EC280Object* first) {
+    Fn801EC280Args args1;
+    args1.values[0] = 0;
+    args1.values[1] = 3;
+    args1.values[2] = 0;
+    args1.values[3] = 0;
+    args1.values[4] = 0;
+    args1.values[5] = 0;
+    args1.values[6] = 0;
+    args1.values[7] = 0;
+    if (first) {
+        ((V2Cs*)first)->v2C(&args1);
+    }
+    Fn801EC280Args args2;
+    args2.values[0] = 0;
+    args2.values[1] = 6;
+    args2.values[2] = 0;
+    args2.values[3] = 0;
+    args2.values[4] = 0;
+    args2.values[5] = 0;
+    args2.values[6] = 0;
+    args2.values[7] = 0;
+    if (first) {
+        ((V2Cs*)first)->v2C(&args2);
+    }
 }
 
 } // extern "C"

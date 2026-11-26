@@ -1,3 +1,6 @@
+// Player info window: the statistics pages (basic, shot, personal and course), the course-record
+// list that scrolls through the three visible courses, and the window's open and close transitions.
+
 #include <decomp/static_init.h>
 extern "C" char s_playerInfoBpCtrlDestructorRegistration[];
 // The first declaration must retain noreturn for exception cleanup generation.
@@ -8,51 +11,57 @@ extern "C" void __throw(const char*, void*, void*) __attribute__((noreturn));
 #include "game/vector.h"
 #include "classes/CPlayerInfo.h"
 #include "classes/CMsgDraw.h"
+#include "classes/CPackTextureResource.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CFontNumDraw.h"
+#include "classes/CBpCtrlHandle.h"
+#include "classes/CPadSwingCtrl.h"
 
 #define AsCPlayerInfo(p) ((CPlayerInfo*)(p))
 // Byte positions in the external packed string pool; preserve its original storage and encoding.
 enum {
-    kPlayerInfo_status_zip = 0, // "status.zip"
-    kPlayerInfo_status_outgame_spd = 0xb, // "status_outgame.spd"
-    kPlayerInfo_status_outgame_b2d = 0x1e, // "status_outgame.b2d"
-    kPlayerInfo_p2_common_bg_b2d = 0x31, // "p2_common_bg.b2d"
-    kPlayerInfo_num_status_01_gsr = 0x42, // "num_status_01.gsr"
-    kPlayerInfo_num_status_00_gsr = 0x54, // "num_status_00.gsr"
-    kPlayerInfo_ui_dialog_open = 0x66, // "ui_dialog_open"
-    kPlayerInfo_basic_info = 0x75, // "basic_info"
-    kPlayerInfo_R_status_expgraph = 0x80, // "R_status_expgraph"
-    kPlayerInfo_R_status_hyphen1 = 0x92, // "R_status_hyphen1"
-    kPlayerInfo_R_status_hyphen2 = 0xa3, // "R_status_hyphen2"
-    kPlayerInfo_R_status_hyphen3 = 0xb4, // "R_status_hyphen3"
-    kPlayerInfo_R_status_hyphen4 = 0xc5, // "R_status_hyphen4"
-    kPlayerInfo_R_status_hyphen5 = 0xd6, // "R_status_hyphen5"
-    kPlayerInfo_R_status_hyphen6 = 0xe7, // "R_status_hyphen6"
-    kPlayerInfo_R_status_hyphen7 = 0xf8, // "R_status_hyphen7"
-    kPlayerInfo_R_status_hyphen8 = 0x109, // "R_status_hyphen8"
-    kPlayerInfo_R_status_hyphen9 = 0x11a, // "R_status_hyphen9"
-    kPlayerInfo_bg = 0x12b, // "bg"
-    kPlayerInfo_ui_icon_click = 0x12e, // "ui_icon_click"
-    kPlayerInfo_ui_dialog_close = 0x13c, // "ui_dialog_close"
-    kPlayerInfo_shot_info = 0x14c, // "shot_info"
-    kPlayerInfo_personal_record = 0x156, // "personal_record"
-    kPlayerInfo_course_record = 0x166, // "course_record"
-    kPlayerInfo_R_status_scroll_upendl = 0x174, // "R_status_scroll_upendl"
-    kPlayerInfo_R_status_scroll_upendc = 0x18b, // "R_status_scroll_upendc"
-    kPlayerInfo_R_status_scroll_upendr = 0x1a2, // "R_status_scroll_upendr"
-    kPlayerInfo_R_status_scroll_dendl = 0x1b9, // "R_status_scroll_dendl"
-    kPlayerInfo_R_status_scroll_dendc = 0x1cf, // "R_status_scroll_dendc"
-    kPlayerInfo_R_status_scroll_dendr = 0x1e5, // "R_status_scroll_dendr"
-    kPlayerInfo_R_status_shadow_up = 0x1fb, // "R_status_shadow_up"
-    kPlayerInfo_R_status_scrollb_upl = 0x20e, // "R_status_scrollb_upl"
-    kPlayerInfo_R_status_scrollb_upc = 0x223, // "R_status_scrollb_upc"
-    kPlayerInfo_R_status_scrollb_upr = 0x238, // "R_status_scrollb_upr"
-    kPlayerInfo_R_status_shadow_down = 0x24d, // "R_status_shadow_down"
-    kPlayerInfo_R_status_scrollb_downl = 0x262, // "R_status_scrollb_downl"
-    kPlayerInfo_R_status_scrollb_downc = 0x279, // "R_status_scrollb_downc"
-    kPlayerInfo_R_status_scrollb_downr = 0x290, // "R_status_scrollb_downr"
-    kPlayerInfo_R_MSG_playername_LC = 0x347, // "R_MSG_playername_LC"
+    kPlayerInfo_status_zip = 0,                       // "status.zip"
+    kPlayerInfo_status_outgame_spd = 0xb,             // "status_outgame.spd"
+    kPlayerInfo_status_outgame_b2d = 0x1e,            // "status_outgame.b2d"
+    kPlayerInfo_p2_common_bg_b2d = 0x31,              // "p2_common_bg.b2d"
+    kPlayerInfo_num_status_01_gsr = 0x42,             // "num_status_01.gsr"
+    kPlayerInfo_num_status_00_gsr = 0x54,             // "num_status_00.gsr"
+    kPlayerInfo_ui_dialog_open = 0x66,                // "ui_dialog_open"
+    kPlayerInfo_basic_info = 0x75,                    // "basic_info"
+    kPlayerInfo_R_status_expgraph = 0x80,             // "R_status_expgraph"
+    kPlayerInfo_R_status_hyphen1 = 0x92,              // "R_status_hyphen1"
+    kPlayerInfo_R_status_hyphen2 = 0xa3,              // "R_status_hyphen2"
+    kPlayerInfo_R_status_hyphen3 = 0xb4,              // "R_status_hyphen3"
+    kPlayerInfo_R_status_hyphen4 = 0xc5,              // "R_status_hyphen4"
+    kPlayerInfo_R_status_hyphen5 = 0xd6,              // "R_status_hyphen5"
+    kPlayerInfo_R_status_hyphen6 = 0xe7,              // "R_status_hyphen6"
+    kPlayerInfo_R_status_hyphen7 = 0xf8,              // "R_status_hyphen7"
+    kPlayerInfo_R_status_hyphen8 = 0x109,             // "R_status_hyphen8"
+    kPlayerInfo_R_status_hyphen9 = 0x11a,             // "R_status_hyphen9"
+    kPlayerInfo_bg = 0x12b,                           // "bg"
+    kPlayerInfo_ui_icon_click = 0x12e,                // "ui_icon_click"
+    kPlayerInfo_ui_dialog_close = 0x13c,              // "ui_dialog_close"
+    kPlayerInfo_shot_info = 0x14c,                    // "shot_info"
+    kPlayerInfo_personal_record = 0x156,              // "personal_record"
+    kPlayerInfo_course_record = 0x166,                // "course_record"
+    kPlayerInfo_R_status_scroll_upendl = 0x174,       // "R_status_scroll_upendl"
+    kPlayerInfo_R_status_scroll_upendc = 0x18b,       // "R_status_scroll_upendc"
+    kPlayerInfo_R_status_scroll_upendr = 0x1a2,       // "R_status_scroll_upendr"
+    kPlayerInfo_R_status_scroll_dendl = 0x1b9,        // "R_status_scroll_dendl"
+    kPlayerInfo_R_status_scroll_dendc = 0x1cf,        // "R_status_scroll_dendc"
+    kPlayerInfo_R_status_scroll_dendr = 0x1e5,        // "R_status_scroll_dendr"
+    kPlayerInfo_R_status_shadow_up = 0x1fb,           // "R_status_shadow_up"
+    kPlayerInfo_R_status_scrollb_upl = 0x20e,         // "R_status_scrollb_upl"
+    kPlayerInfo_R_status_scrollb_upc = 0x223,         // "R_status_scrollb_upc"
+    kPlayerInfo_R_status_scrollb_upr = 0x238,         // "R_status_scrollb_upr"
+    kPlayerInfo_R_status_shadow_down = 0x24d,         // "R_status_shadow_down"
+    kPlayerInfo_R_status_scrollb_downl = 0x262,       // "R_status_scrollb_downl"
+    kPlayerInfo_R_status_scrollb_downc = 0x279,       // "R_status_scrollb_downc"
+    kPlayerInfo_R_status_scrollb_downr = 0x290,       // "R_status_scrollb_downr"
+    kPlayerInfo_R_MSG_playername_LC = 0x347,          // "R_MSG_playername_LC"
     kPlayerInfo_vector_at_index_out_of_range = 0x2f2, // "vector::at index out of range"
-    kPlayerInfo_std_exception_std_logic_error_std_out_of_range = 0x310, // "!std::exception!!std::logic_error!!std::out_of_range!!"
+    kPlayerInfo_std_exception_std_logic_error_std_out_of_range =
+        0x310, // "!std::exception!!std::logic_error!!std::out_of_range!!"
 };
 
 extern "C" {
@@ -73,10 +82,7 @@ struct PlayerInfoLoadState {
 };
 
 void Layout_Update(void*);
-void CPackTextureResource_PollLoad(void*);
-int CPackTextureResource_IsLoadFinished(void*);
 int __ct__7CBpCtrlFv(void*);
-int CBpCtrl_PollAllEntriesLoaded(void*);
 int Layout_PollLoadComplete(void*);
 void CBpCtrl_dtor();
 extern signed char s_bpCtrlInitialized;
@@ -104,15 +110,13 @@ void UITextTable_ClearEntries(void*);
 void PointerVector_InitReserved(void*);
 void PointerArray_DeleteValue(void*, int);
 void PointerVector_DestroyStorage();
-void CBpCtrl_DeleteEntryById(void*, int);
 void PairVector_InitReserved(void*);
 void PointerPairList_RemoveByKey(void*, int);
 void MessageDrawPairList_Dtor();
-void CBpTex_dtor();
+extern "C" void __dt__6CBpTexFv();
 void __destroy_new_array(void*, void (*)());
 void WString_ReplaceRange(void*, int, int, void*, void*, void*);
 void CBpCtrlHandle_Dtor();
-void CBpCtrlHandle_SetScriptIndex(void*, int);
 void __dl__FPv(void*);
 struct SwingControllerInterface {
     char pad[0x58];
@@ -171,15 +175,11 @@ void Allocation_Dtor();
 void* IdMap_Lookup(void*, int);
 void* ResourceTable_FindEntryByName(void*, const char*, int*);
 void* __nw__FUl(unsigned long);
-void CPackTextureResource_Init(void*, const char*, int, void*);
 void Layout_Init(void*, int);
-int CFontNumDraw_CreateInVector(void*);
 void WFixedFont_CreateAndRegisterMsgDraw(void*, void*, int);
 void Layout_LoadExtended(void*, int, const char*);
-void CBpCtrl_CreateEntry(void*, const char*, int*, int);
 void* __nwa__FUl(unsigned long);
-void CBpTex_Init();
-void CPadSwingCtrl_Ctor(void*);
+extern "C" void __ct__6CBpTexFv();
 extern signed char s_saveDataInitialized;
 extern void* g_soundManager;
 extern char s_saveData[];
@@ -202,12 +202,10 @@ void SaveRecord_CopyCtor(void*, void*);
 void Layout_GetElementPosition(void*, int, int*);
 void Text_SetPosition(void*, int*);
 void Layout_GetElementSize(void*, int, int*);
-void CMsgDraw_SetLayoutSize(void*, int*);
 int PlayerRank_FindTierForValue(int);
 void* UIGroup_GetOrCreateById(void*, int);
 void UIGroup_SetEnabled(void*, int);
 void Layout_SetElementEnabled(void*, int, int);
-void CFontNumDraw_RegisterEntries(void*, const char*, int, void*, void*);
 void UITextTable_SetEntryResourceName(void*, int, const char*);
 void Layout_ReadElementRect(void*, int, int*);
 void Layout_WriteElementRect(void*, int, int*);
@@ -281,7 +279,7 @@ extern int s_playerInfoCoursePreviousElement;
 extern int s_playerInfoCourseCloseElement;
 extern void* jumptable_804B5C28;
 struct Vertex {
-    float x,y;
+    float x, y;
     unsigned int rest[4];
 };
 
@@ -290,8 +288,8 @@ struct Quad {
 };
 
 extern Quad s_playerInfoCharacterIconQuad;
-int GX_GetPrimitiveCount(int,int);
-void DrawPrimitiveUP(int,int,void*,int);
+int GX_GetPrimitiveCount(int, int);
+void DrawPrimitiveUP(int, int, void*, int);
 struct PlayerInfoIconOwner {
     char pad[32];
     void* layout;
@@ -309,18 +307,18 @@ extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12out_of_range[];
 void __dla__FPv(void*);
-void __dt__Q23std9exceptionFv(void*,int);
+void __dt__Q23std9exceptionFv(void*, int);
 void __dt__Q23std12out_of_rangeFv();
 struct SharedBlock {
     void* vt;
-    int a,b;
+    int a, b;
     void* data;
     // Give a newly allocated exception-message buffer its shared ownership block.
     SharedBlock(void* p) {
-        a=1;
-        b=1;
-        vt=s_sharedCharDeleterVtable;
-        data=p;
+        a = 1;
+        b = 1;
+        vt = s_sharedCharDeleterVtable;
+        data = p;
     }
 };
 
@@ -330,7 +328,8 @@ struct Guard_u8029736C {
     char* flag;
     // Free the message allocation when control-block construction fails.
     ~Guard_u8029736C() {
-        if (data) __dla__FPv(data);
+        if (data)
+            __dla__FPv(data);
     }
 };
 
@@ -340,20 +339,17 @@ struct ErrorBase_u8029736C {
     SharedBlock* block;
     // Run exception-base cleanup during local error construction/destruction.
     ~ErrorBase_u8029736C() {
-        __dt__Q23std9exceptionFv(this,0);
+        __dt__Q23std9exceptionFv(this, 0);
     }
 };
 
 extern Quad s_playerInfoCourseIconQuad;
 void BpObject_Draw(void*);
-void CMsgDraw_ResetTextState(void*);
-void CMsgDraw_ClearFormattingAndRevealAll(void*);
 unsigned int UIGroup_GetTintColor(void*);
 int UIGroup_GetCombinedOpacity(void*);
-void Text_SetContent(void*,void*);
-void Layout_DrawWithOpacity(void*,float);
+void Text_SetContent(void*, void*);
+void Layout_DrawWithOpacity(void*, float);
 void UITextTable_Draw(void*);
-void CMsgDraw_UpdateReveal(void*);
 void Text_DrawGlyphs(void*);
 struct PlayerInfoDrawState {
     char p0[0x18];
@@ -377,9 +373,9 @@ struct PlayerInfoDrawState {
     int id;
 };
 
-void UITextTable_SetInteger(void*,int,int);
-void UITextTable_SetFloat(void*,int,float);
-void NumericTextTable_ClearEntryText(void*,int);
+void UITextTable_SetInteger(void*, int, int);
+void UITextTable_SetFloat(void*, int, float);
+void NumericTextTable_ClearEntryText(void*, int);
 extern float kFloat_100_PlayerInfo;
 extern float kFloat_0_03125_PlayerInfo;
 float ShotGauge_GetTotal();
@@ -392,16 +388,16 @@ struct PlayerStatisticsRecord {
     int experience;
     int pang;
     char paddingToShotStatistics[0x1B0];
-    int sampleCountA; // +1DC: denominator of shot rate A and part of combined-rate denominator.
-    int sampleCountB; // +1E0: denominator of shot rate B and part of combined-rate denominator.
-    int shotCounter;  // +1E4: displayed as an integer at kTextShotCount; event not identified.
+    int sampleCountA;  // +1DC: denominator of shot rate A and part of combined-rate denominator.
+    int sampleCountB;  // +1E0: denominator of shot rate B and part of combined-rate denominator.
+    int shotCounter;   // +1E4: displayed as an integer at kTextShotCount; event not identified.
     int successCountA; // +1E8: numerator of shot rate A (displayed as percent).
     int personalCountA;
     int personalCountB;
-    int sampleCountC; // +1F4: denominator of shot rate C.
-    int successCountC; // +1F8: numerator of shot rate C (displayed as percent).
-    int successCountB; // +1FC: numerator of shot rate B (displayed as percent).
-    int combinedSuccessCount; // +200: numerator divided by sample A + sample B.
+    int sampleCountC;                                     // +1F4: denominator of shot rate C.
+    int successCountC;                                    // +1F8: numerator of shot rate C (displayed as percent).
+    int successCountB;                                    // +1FC: numerator of shot rate B (displayed as percent).
+    int combinedSuccessCount;                             // +200: numerator divided by sample A + sample B.
     float personalValueA, personalValueB, personalValueC; // +204/+208/+20C: truncate to 2 decimal places.
     int personalCountC;
     float shotValue; // +214: displayed directly at kTextShotValue; unit/event not established.
@@ -409,13 +405,21 @@ struct PlayerStatisticsRecord {
     // percentage; neither course completion nor achievement completion is established.
     signed char completionFlags[64];
 };
-struct PlayerInfoTextFactory { char prefix[0x10]; void* fixedFont; };
+struct PlayerInfoTextFactory {
+    char prefix[0x10];
+    void* fixedFont;
+};
 enum PlayerInfoConstants {
-    kPlayerInfoBasicPage = 0, kPlayerInfoShotPage = 1,
-    kPlayerInfoPersonalPage = 2, kPlayerInfoCoursePage = 3,
-    kPlayerInfoCourseCount = 14, kPlayerInfoCharacterCount = 8,
-    kPlayerInfoRecordWindow = 3, kPlayerInfoLastRecordWindow = kPlayerInfoCourseCount - kPlayerInfoRecordWindow,
-    kPlayerInfoFramesPerSecond = 30, kPlayerInfoFramesPerMinute = 1800,
+    kPlayerInfoBasicPage = 0,
+    kPlayerInfoShotPage = 1,
+    kPlayerInfoPersonalPage = 2,
+    kPlayerInfoCoursePage = 3,
+    kPlayerInfoCourseCount = 14,
+    kPlayerInfoCharacterCount = 8,
+    kPlayerInfoRecordWindow = 3,
+    kPlayerInfoLastRecordWindow = kPlayerInfoCourseCount - kPlayerInfoRecordWindow,
+    kPlayerInfoFramesPerSecond = 30,
+    kPlayerInfoFramesPerMinute = 1800,
     kPlayerInfoFramesPerHour = 108000,
     kPlayerInfoNameOffset = ((int)&((CPlayerInfo*)0)->nameStringFlags),
     kPlayerInfoNameInlineOffset = ((int)&((CPlayerInfo*)0)->nameStringFlags) + 2
@@ -436,29 +440,52 @@ enum PlayerInfoConstants {
 // Course scrolling shows three consecutive records starting at index 0..11
 // out of fourteen; each move gates further input for four update calls.
 enum PlayerInfoElement {
-    kPlayerInfoScrollLower = 0, kPlayerInfoScrollHigher = 1,
-    kPlayerInfoPairedScrollLower = 2, kPlayerInfoPairedScrollHigher = 3,
-    kPlayerInfoLowerMotion = 4, kPlayerInfoHigherMotion = 5,
-    kPlayerInfoPairedLowerMotion = 6, kPlayerInfoPairedHigherMotion = 7,
-    kPlayerInfoLowerEnd = 8, kPlayerInfoHigherEnd = 9,
-    kPlayerInfoPairedLowerEnd = 10, kPlayerInfoPairedHigherEnd = 11,
-    kPlayerInfoRecordPlaceholderFirst = 63, kPlayerInfoRecordPlaceholderLast = 71,
-    kPlayerInfoBasicButton = 12, kPlayerInfoShotButton = 13,
-    kPlayerInfoPersonalButton = 14, kPlayerInfoCourseButton = 15,
+    kPlayerInfoScrollLower = 0,
+    kPlayerInfoScrollHigher = 1,
+    kPlayerInfoPairedScrollLower = 2,
+    kPlayerInfoPairedScrollHigher = 3,
+    kPlayerInfoLowerMotion = 4,
+    kPlayerInfoHigherMotion = 5,
+    kPlayerInfoPairedLowerMotion = 6,
+    kPlayerInfoPairedHigherMotion = 7,
+    kPlayerInfoLowerEnd = 8,
+    kPlayerInfoHigherEnd = 9,
+    kPlayerInfoPairedLowerEnd = 10,
+    kPlayerInfoPairedHigherEnd = 11,
+    kPlayerInfoRecordPlaceholderFirst = 63,
+    kPlayerInfoRecordPlaceholderLast = 71,
+    kPlayerInfoBasicButton = 12,
+    kPlayerInfoShotButton = 13,
+    kPlayerInfoPersonalButton = 14,
+    kPlayerInfoCourseButton = 15,
     kPlayerInfoCloseButton = 16,
-    kPlayerInfoBasicHighlight = 17, kPlayerInfoShotHighlight = 18,
-    kPlayerInfoPersonalHighlight = 19, kPlayerInfoCourseHighlight = 20,
+    kPlayerInfoBasicHighlight = 17,
+    kPlayerInfoShotHighlight = 18,
+    kPlayerInfoPersonalHighlight = 19,
+    kPlayerInfoCourseHighlight = 20,
     kPlayerInfoCloseHighlight = 21,
-    kPlayerInfoPairedBasicButton = 22, kPlayerInfoPairedShotButton = 23,
-    kPlayerInfoPairedPersonalButton = 24, kPlayerInfoPairedCourseButton = 25,
+    kPlayerInfoPairedBasicButton = 22,
+    kPlayerInfoPairedShotButton = 23,
+    kPlayerInfoPairedPersonalButton = 24,
+    kPlayerInfoPairedCourseButton = 25,
     kPlayerInfoPairedCloseButton = 26,
-    kPlayerInfoPairedBasicHighlight = 27, kPlayerInfoPairedShotHighlight = 28,
-    kPlayerInfoPairedPersonalHighlight = 29, kPlayerInfoPairedCourseHighlight = 30,
-    kPlayerInfoPairedCloseHighlight = 31, kPlayerInfoNameRect = 0x20
+    kPlayerInfoPairedBasicHighlight = 27,
+    kPlayerInfoPairedShotHighlight = 28,
+    kPlayerInfoPairedPersonalHighlight = 29,
+    kPlayerInfoPairedCourseHighlight = 30,
+    kPlayerInfoPairedCloseHighlight = 31,
+    kPlayerInfoNameRect = 0x20
 };
 // Layout-manager action IDs are separate from element IDs and statistics text slots.
-enum PlayerInfoInputAction { kPlayerInfoPreviousAction = 2, kPlayerInfoNextAction = 3, kPlayerInfoCloseAction = 6 };
-enum { kPlayerInfoCourseRecordsOffset = 0x25C, kPlayerInfoCompletionBlockSize = 32 };
+enum PlayerInfoInputAction {
+    kPlayerInfoPreviousAction = 2,
+    kPlayerInfoNextAction = 3,
+    kPlayerInfoCloseAction = 6
+};
+enum {
+    kPlayerInfoCourseRecordsOffset = 0x25C,
+    kPlayerInfoCompletionBlockSize = 32
+};
 
 // Numeric table entries (separate ID namespace from layout elements):
 // Basic: AA/A9/A8 hours/minutes/seconds, B7/B8 experience progress/tier span,
@@ -506,7 +533,10 @@ enum PlayerInfoNumericText {
     kPlayerInfoScrollDelayCalls = 4
 };
 // Partial live-save view: only this displayed short is needed; its event is unresolved.
-struct PlayerInfoLiveTotalsView { char padToSavedShort[0x132]; short savedShort132; };
+struct PlayerInfoLiveTotalsView {
+    char padToSavedShort[0x132];
+    short savedShort132;
+};
 
 typedef char PlayerStatsShotsOffset[((int)&((PlayerStatisticsRecord*)0)->sampleCountA == 0x1DC) ? 1 : -1];
 typedef char PlayerStatsCompletionOffset[((int)&((PlayerStatisticsRecord*)0)->completionFlags == 0x218) ? 1 : -1];
@@ -521,21 +551,14 @@ struct StatEntry {
 void WString_DestroyMapKey(void*, OwnedWideString* object);
 void PlayerInfo_InitFullTurnConstantA();
 void PlayerInfo_InitFullTurnConstantB();
-void* CPlayerInfo_Ctor(void* self, int arg);
-PlayerInfoOwnedResources* CPlayerInfo_dtor(PlayerInfoOwnedResources* self, int freeFlag);
-void CPlayerInfo_UpdateWhileWaiting(PlayerInfoLoadState* self);
-int CPlayerInfo_PollLoadComplete(PlayerInfoLoadState* self);
-void CPlayerInfo_InitializePage(void* self);
-int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self);
-void CPlayerInfo_Draw(PlayerInfoDrawState* self);
-int CPlayerInfo_SetModeButtonStates(void* obj, int mode);
-int CPlayerInfo_PopulateStatisticsPage(void* obj,int mode);
-int CPlayerInfo_DrawRecordIcons(PlayerInfoIconOwner* self,int index);
-unsigned int* PlayerInfoWordVector_At(void* obj,unsigned int index);
+void* __ct__11CPlayerInfoFi(void* self, int arg);
+unsigned int* PlayerInfoWordVector_At(void* obj, unsigned int index);
 // Free a heap-backed wide-string map key; inline strings own no separate allocation.
 void WString_DestroyMapKey(void*, OwnedWideString* object) {
-    if (object == 0) return;
-    if (object == 0) return;
+    if (object == 0)
+        return;
+    if (object == 0)
+        return;
     if (object->flags >> 31) {
         appFreeUni__FPv(object->value);
     }
@@ -553,8 +576,14 @@ void PlayerInfo_InitFullTurnConstantB() {
 
 // Byte offsets of each object's destructor-registration record inside s_playerInfoDestructorRegistrations
 // (one 12-byte record per object registered with __register_global_object).
-enum { kRegBpCtrl = 0xc, kRegBpCtrlHandle = 0x18, kRegFontNumRegistry = 0x24, kRegPairList = 0x30,
-       kRegResourceTable = 0x3c, kRegFadeOverlay = 0x48 };
+enum {
+    kRegBpCtrl = 0xc,
+    kRegBpCtrlHandle = 0x18,
+    kRegFontNumRegistry = 0x24,
+    kRegPairList = 0x30,
+    kRegResourceTable = 0x3c,
+    kRegFadeOverlay = 0x48
+};
 
 // ---- Lazy singleton set-up ----
 // The original code pasted this block inline at every use: if the global pointer is still null, construct the
@@ -566,7 +595,7 @@ enum { kRegBpCtrl = 0xc, kRegBpCtrlHandle = 0x18, kRegFontNumRegistry = 0x24, kR
 static inline void EnsureBpCtrl(void* reg) {
     if (!((int&)Sing_805DC5F0())) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, reg);
             s_bpCtrlInitialized = 1;
         }
@@ -625,130 +654,145 @@ struct PlayerInfoPackAllocation {
     char storage[0x20];
     // Construct an owned texture pack from the borrowed archive name and script entry.
     PlayerInfoPackAllocation(const char* name, int count, void* entry) {
-        CPackTextureResource_Init(this, name, count, entry);
+        ((CPackTextureResource*)this)->Init((const char*)name, (void**)count, (unsigned int)entry);
     }
 };
 struct PlayerInfoLayoutAllocation {
     char storage[0x5c];
     // Initialize the menu-owned layout using the original allocation size.
-    PlayerInfoLayoutAllocation(int mode) { Layout_Init(this, mode); }
+    PlayerInfoLayoutAllocation(int mode) {
+        Layout_Init(this, mode);
+    }
 };
 struct PlayerInfoSwingAllocation {
     char storage[0x5c];
     // Construct the menu-owned swing controller in its original allocation.
-    PlayerInfoSwingAllocation() { CPadSwingCtrl_Ctor(this); }
+    PlayerInfoSwingAllocation() {
+        ((CPadSwingCtrl*)this)->__ct();
+    }
 };
 struct PlayerInfoCourseArrayAllocation {
     char storage[0x240];
     // Allocate array-wrapper storage through the game's array allocator.
-    static void* operator new(size_t size) { return __nwa__FUl(size); }
+    static void* operator new(size_t size) {
+        return __nwa__FUl(size);
+    }
     // Release wrapper storage if array element construction throws.
-    static void operator delete(void* block) { __dla__FPv(block); }
+    static void operator delete(void* block) {
+        __dla__FPv(block);
+    }
     // Construct fourteen owned course textures and return the array payload after its cookie.
     PlayerInfoCourseArrayAllocation(void*& result) {
-        result = __construct_new_array(this, (void*)CBpTex_Init, (void*)CBpTex_dtor, 0x28, 14);
+        result = __construct_new_array(this, (void*)__ct__6CBpTexFv, (void*)__dt__6CBpTexFv, 0x28, 14);
     }
 };
 struct PlayerInfoCharacterArrayAllocation {
     char storage[0x150];
     // Allocate array-wrapper storage through the game's array allocator.
-    static void* operator new(size_t size) { return __nwa__FUl(size); }
+    static void* operator new(size_t size) {
+        return __nwa__FUl(size);
+    }
     // Release wrapper storage if array element construction throws.
-    static void operator delete(void* block) { __dla__FPv(block); }
+    static void operator delete(void* block) {
+        __dla__FPv(block);
+    }
     // Construct eight owned character textures and return the array payload after its cookie.
     PlayerInfoCharacterArrayAllocation(void*& result) {
-        result = __construct_new_array(this, (void*)CBpTex_Init, (void*)CBpTex_dtor, 0x28, 8);
+        result = __construct_new_array(this, (void*)__ct__6CBpTexFv, (void*)__dt__6CBpTexFv, 0x28, 8);
     }
 };
 // Create the statistics layout, text renderers, script entries, course/character textures and swing controller.
-void* CPlayerInfo_Ctor(void* self, int recordPointer) {
+CPlayerInfo::CPlayerInfo(int recordPointer) {
     // recordPointer is a borrowed save-record address carried as a word. Owned
     // layout/texture arrays/swing controller are deleted by dtor; number/text
     // renderers additionally register in global registries and must be removed there.
     char* destructorRegistrations;
     char* levelData = (char*)playerLevelDefinitions;
     destructorRegistrations = (char*)s_playerInfoDestructorRegistrations;
-    MPBase1_Ctor(self, recordPointer);
-    AsCPlayerInfo(self)->vtbl = __vt__11CPlayerInfo;
-    AsCPlayerInfo(self)->bpEntryId = -1;
+    MPBase1_Ctor(this, recordPointer);
+    vtbl = __vt__11CPlayerInfo;
+    bpEntryId = -1;
     // Empty the text-state string (tag, long-string length, heap pointer).
-    AsCPlayerInfo(self)->unk_30 = 0;
-    AsCPlayerInfo(self)->unk_34 = 0;
-    AsCPlayerInfo(self)->unk_38 = 0;
-    *(int*)((char*)self+0x4c) = 0;
-    *(int*)((char*)self+0x50) = 0;
-    *(int*)((char*)self+0x54) = 0;
-    *(int*)((char*)self+0x58) = 0;
-    *(int*)((char*)self+0x5c) = 0;
-    *(int*)((char*)self+0x60) = 0;
-    *(int*)((char*)self+0x64) = 0;
-    *(int*)((char*)self+0x68) = 0;
-    *(int*)((char*)self+0x6c) = 0;
-    *(int*)((char*)self+0x70) = 0;
-    *(int*)((char*)self+0x74) = 0;
-    *(int*)((char*)self+0x78) = 0;
-    *(int*)((char*)self+0x7c) = 0;
-    *(int*)((char*)self+0x80) = 0;
-    *(int*)((char*)self+0x84) = 0;
-    *(int*)((char*)self+0x88) = 0;
-    *(int*)((char*)self+0x8c) = 0;
-    *(int*)((char*)self+0x90) = 0;
-    *(int*)((char*)self+0x94) = 0;
-    AsCPlayerInfo(self)->playerRecord = recordPointer;
-    (*(int*)&AsCPlayerInfo(self)->texturePack) = 0;
-    AsCPlayerInfo(self)->previousScriptIndex = -1;
-    AsCPlayerInfo(self)->pageEntryId = -1;
+    textStateFlags = 0;
+    unk_34 = 0;
+    textStateStorage = 0;
+    *(int*)((char*)this + 0x4c) = 0;
+    *(int*)((char*)this + 0x50) = 0;
+    *(int*)((char*)this + 0x54) = 0;
+    *(int*)((char*)this + 0x58) = 0;
+    *(int*)((char*)this + 0x5c) = 0;
+    *(int*)((char*)this + 0x60) = 0;
+    *(int*)((char*)this + 0x64) = 0;
+    *(int*)((char*)this + 0x68) = 0;
+    *(int*)((char*)this + 0x6c) = 0;
+    *(int*)((char*)this + 0x70) = 0;
+    *(int*)((char*)this + 0x74) = 0;
+    *(int*)((char*)this + 0x78) = 0;
+    *(int*)((char*)this + 0x7c) = 0;
+    *(int*)((char*)this + 0x80) = 0;
+    *(int*)((char*)this + 0x84) = 0;
+    *(int*)((char*)this + 0x88) = 0;
+    *(int*)((char*)this + 0x8c) = 0;
+    *(int*)((char*)this + 0x90) = 0;
+    *(int*)((char*)this + 0x94) = 0;
+    playerRecord = recordPointer;
+    (*(int*)&texturePack) = 0;
+    previousScriptIndex = -1;
+    pageEntryId = -1;
     // Phase 1: request the texture pack and create/register layout and text renderers.
     int count = 0;
     int resourceTable = ((int&)Sing_805DC620());
     if (!resourceTable) {
         if (!s_resourceTableInitialized) {
             s_resourceTableStorage = 0;
-            __register_global_object(&s_resourceTableStorage, (void*)Allocation_Dtor, (destructorRegistrations + kRegResourceTable));
+            __register_global_object(&s_resourceTableStorage, (void*)Allocation_Dtor,
+                                     (destructorRegistrations + kRegResourceTable));
             s_resourceTableInitialized = 1;
         }
         ((int&)Sing_805DC620()) = (int)&s_resourceTableStorage;
     }
     void* obj;
-    int resourceEntry = (int)ResourceTable_FindEntryByName((void*)((int&)Sing_805DC620()), playerInfoStrings + kPlayerInfo_status_zip, &count);
+    int resourceEntry = (int)ResourceTable_FindEntryByName((void*)((int&)Sing_805DC620()),
+                                                           playerInfoStrings + kPlayerInfo_status_zip, &count);
     obj = new PlayerInfoPackAllocation(playerInfoStrings, count, (void*)resourceEntry);
-    AsCPlayerInfo(self)->texturePack = obj;
+    texturePack = obj;
     obj = new PlayerInfoLayoutAllocation(5);
-    AsCPlayerInfo(self)->layout = obj;
+    layout = obj;
     EnsureFontNumRegistry((destructorRegistrations + kRegFontNumRegistry));
-    (*(int*)&AsCPlayerInfo(self)->numberDraw) = CFontNumDraw_CreateInVector((void*)((int&)Sing_805DC830()));
+    (*(int*)&numberDraw) = (int)CFontNumDraw::CreateInVector((PtrVector*)((int&)Sing_805DC830()));
     void* msgObj = (void*)(*(int*)&((PlayerInfoTextFactory*)g_chatMsg)->fixedFont);
-    AsCPlayerInfo(self)->textFactory = (int)msgObj;
-    WFixedFont_CreateAndRegisterMsgDraw(msgObj, &AsCPlayerInfo(self)->text, 1);
-    Layout_LoadExtended(AsCPlayerInfo(self)->layout, 0, playerInfoStrings + kPlayerInfo_status_outgame_spd);
+    textFactory = (int)msgObj;
+    WFixedFont_CreateAndRegisterMsgDraw(msgObj, &text, 1);
+    Layout_LoadExtended(layout, 0, playerInfoStrings + kPlayerInfo_status_outgame_spd);
     // Four additional UI state words start clear; their consumers are not identified here.
-    AsCPlayerInfo(self)->unk_3C = 0;
-    AsCPlayerInfo(self)->unk_40 = 0;
-    AsCPlayerInfo(self)->unk_44 = 0;
-    AsCPlayerInfo(self)->unk_48 = 0;
+    unk_3C = 0;
+    unk_40 = 0;
+    unk_44 = 0;
+    unk_48 = 0;
     EnsureBpCtrl((destructorRegistrations + kRegBpCtrl));
-    CBpCtrl_CreateEntry((void*)((int&)Sing_805DC5F0()),playerInfoStrings + kPlayerInfo_status_outgame_b2d,&AsCPlayerInfo(self)->bpEntryId,0);
+    ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+        ->CreateEntry(playerInfoStrings + kPlayerInfo_status_outgame_b2d, &bpEntryId, 0);
     EnsureBpCtrl((destructorRegistrations + kRegBpCtrl));
-    AsCPlayerInfo(self)->bpObject=IdMap_Lookup((void*)((int&)Sing_805DC5F0()),AsCPlayerInfo(self)->bpEntryId);
+    bpObject = IdMap_Lookup((void*)((int&)Sing_805DC5F0()), bpEntryId);
     // Phase 2: construct owned normal/unavailable course textures and character textures.
     // new[] adds a 0x10-byte header; returned pointers address elements, not headers.
     {
         void* arr = 0;
         new PlayerInfoCourseArrayAllocation(arr);
-        AsCPlayerInfo(self)->courseTextures = arr;
+        courseTextures = arr;
     }
     {
         void* arr = 0;
         new PlayerInfoCourseArrayAllocation(arr);
-        AsCPlayerInfo(self)->unavailableCourseTextures = arr;
+        unavailableCourseTextures = arr;
     }
     {
         void* arr = 0;
         new PlayerInfoCharacterArrayAllocation(arr);
-        AsCPlayerInfo(self)->characterTextures = arr;
+        characterTextures = arr;
     }
-    CourseTextureIds* srcA = (CourseTextureIds*)(levelData+0x598);
-    CourseTextureIds* srcB = (CourseTextureIds*)(levelData+0x748);
+    CourseTextureIds* srcA = (CourseTextureIds*)(levelData + 0x598);
+    CourseTextureIds* srcB = (CourseTextureIds*)(levelData + 0x748);
     CourseTextureIds courseIds = *srcA;
     CourseTextureIds unavailableCourseIds = *srcB;
     int* courseId = courseIds.v;
@@ -756,33 +800,36 @@ void* CPlayerInfo_Ctor(void* self, int recordPointer) {
     int* unavailableCourseId = unavailableCourseIds.v;
     int i = 0;
     do {
-        ((PlayerInfoTexture*)((char*)AsCPlayerInfo(self)->courseTextures + textureOffset))->init(*courseId);
-        ((PlayerInfoTexture*)((char*)AsCPlayerInfo(self)->unavailableCourseTextures + textureOffset))->init(*unavailableCourseId);
+        ((PlayerInfoTexture*)((char*)courseTextures + textureOffset))->init(*courseId);
+        ((PlayerInfoTexture*)((char*)unavailableCourseTextures + textureOffset))->init(*unavailableCourseId);
         ++i;
         textureOffset += 0x28;
         ++unavailableCourseId;
         ++courseId;
-    } while (i<kPlayerInfoCourseCount);
-    CharacterTextureIds* srcC = (CharacterTextureIds*)(levelData+0x81c);
+    } while (i < kPlayerInfoCourseCount);
+    CharacterTextureIds* srcC = (CharacterTextureIds*)(levelData + 0x81c);
     CharacterTextureIds characterIds = *srcC;
     i = 0;
-    do { (((PlayerInfoTexture*)AsCPlayerInfo(self)->characterTextures + i))->init(characterIds.v[i]); } while (++i<kPlayerInfoCharacterCount);
+    do {
+        (((PlayerInfoTexture*)characterTextures + i))->init(characterIds.v[i]);
+    } while (++i < kPlayerInfoCharacterCount);
     // Phase 3: allocate the swing controller and register the common background entry.
     obj = new PlayerInfoSwingAllocation;
-    AsCPlayerInfo(self)->padSwingCtrl=obj;
+    padSwingCtrl = obj;
     EnsureBpCtrl((destructorRegistrations + kRegBpCtrl));
-    CBpCtrl_CreateEntry((void*)((int&)Sing_805DC5F0()),playerInfoStrings + kPlayerInfo_p2_common_bg_b2d,&AsCPlayerInfo(self)->pageEntryId,0);
-    return self;
+    ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+        ->CreateEntry(playerInfoStrings + kPlayerInfo_p2_common_bg_b2d, &pageEntryId, 0);
 }
 
 #pragma opt_common_subs reset
 #pragma use_lmw_stmw reset
 // Destroy the layout and owned UI resources, unregister text and restore the prior script index.
-PlayerInfoOwnedResources* CPlayerInfo_dtor(PlayerInfoOwnedResources* self, int freeFlag) {
+void* CPlayerInfo::Destroy(int freeFlag) {
     // Positive freeFlag deletes self; all other values still release owned members.
     // Phase 1: destroy layout, unregister numeric/text draws and remove the primary BP entry.
     char* base = s_playerInfoDestructorRegistrations;
-    if (self != 0) {
+    PlayerInfoOwnedResources* self = (PlayerInfoOwnedResources*)this;
+    if (this != 0) {
         self->vtable = (void**)__vt__11CPlayerInfo;
         if (self->layoutWord) {
             Layout_Destroy((void*)self->layoutWord, 1);
@@ -795,7 +842,7 @@ PlayerInfoOwnedResources* CPlayerInfo_dtor(PlayerInfoOwnedResources* self, int f
         }
         if (self->bpEntryId != -1) {
             EnsureBpCtrl((base + kRegBpCtrl));
-            CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), self->bpEntryId);
+            ((CBpCtrl*)(((int&)Sing_805DC5F0())))->DeleteEntryById(self->bpEntryId);
             self->bpEntryId = -1;
         }
         EnsurePairList((base + kRegPairList));
@@ -808,15 +855,15 @@ PlayerInfoOwnedResources* CPlayerInfo_dtor(PlayerInfoOwnedResources* self, int f
         }
         // Phase 2: destroy the three binding arrays and swing controller, then empty name text.
         if (self->courseTextures) {
-            __destroy_new_array(self->courseTextures, CBpTex_dtor);
+            __destroy_new_array(self->courseTextures, __dt__6CBpTexFv);
             self->courseTextures = 0;
         }
         if (self->unavailableCourseTextures) {
-            __destroy_new_array(self->unavailableCourseTextures, CBpTex_dtor);
+            __destroy_new_array(self->unavailableCourseTextures, __dt__6CBpTexFv);
             self->unavailableCourseTextures = 0;
         }
         if (self->characterTextures) {
-            __destroy_new_array(self->characterTextures, CBpTex_dtor);
+            __destroy_new_array(self->characterTextures, __dt__6CBpTexFv);
             self->characterTextures = 0;
         }
         if (self->padSwingCtrl) {
@@ -826,7 +873,7 @@ PlayerInfoOwnedResources* CPlayerInfo_dtor(PlayerInfoOwnedResources* self, int f
             self->padSwingCtrl = 0;
         }
         unsigned char b = 0;
-        WString_ReplaceRange((char*)self+kPlayerInfoNameOffset, 0, -1, 0, 0, &b);
+        WString_ReplaceRange((char*)self + kPlayerInfoNameOffset, 0, -1, 0, 0, &b);
         if (self->texturePack) {
             if (self->texturePack) {
                 ((void (*)(void*, int))(*(void***)self->texturePack)[2])(self->texturePack, 1);
@@ -836,74 +883,81 @@ PlayerInfoOwnedResources* CPlayerInfo_dtor(PlayerInfoOwnedResources* self, int f
         // Phase 3: restore the global script index, remove the background entry,
         // and free both owned string buffers before optionally deleting self.
         EnsureBpCtrlHandle((base + kRegBpCtrlHandle));
-        CBpCtrlHandle_SetScriptIndex((void*)((int&)Sing_805DC5F8()), self->previousScriptIndex);
+        ((CBpCtrlHandle*)(((int&)Sing_805DC5F8())))->SetScriptIndex(self->previousScriptIndex);
         if (self->pageEntryId != -1) {
             EnsureBpCtrl((base + kRegBpCtrl));
-            CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), self->pageEntryId);
+            ((CBpCtrl*)(((int&)Sing_805DC5F0())))->DeleteEntryById(self->pageEntryId);
             self->pageEntryId = -1;
         }
-        if (&self->nameStringFlags && (self->nameStringFlags >> 31)) appFreeUni__FPv(self->nameStringData);
-        if (&self->textStateFlags && (self->textStateFlags >> 31)) appFreeUni__FPv(self->textStateStorage);
-        if (freeFlag > 0) __dl__FPv(self);
+        if (&self->nameStringFlags && (self->nameStringFlags >> 31))
+            appFreeUni__FPv(self->nameStringData);
+        if (&self->textStateFlags && (self->textStateFlags >> 31))
+            appFreeUni__FPv(self->textStateStorage);
+        if (freeFlag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
 // Update the layout and poll the outstanding texture pack.
-void CPlayerInfo_UpdateWhileWaiting(PlayerInfoLoadState* self) {
+void CPlayerInfo::UpdateWhileWaiting() {
+    PlayerInfoLoadState* self = (PlayerInfoLoadState*)this;
     Layout_Update(self->layout);
-    if (self->current) CPackTextureResource_PollLoad(self->current);
+    if (self->current)
+        ((CPackTextureResource*)(self->current))->PollLoad();
 }
 
 // Wait until every icon texture, script entry and layout resource has loaded.
-int CPlayerInfo_PollLoadComplete(PlayerInfoLoadState* self) {
-    if (self->current && !CPackTextureResource_IsLoadFinished(self->current)) {
+int CPlayerInfo::PollLoadComplete() {
+    PlayerInfoLoadState* self = (PlayerInfoLoadState*)this;
+    if (self->current && !((CPackTextureResource*)(self->current))->IsLoadFinished()) {
         return 0;
     }
     for (int i = 0; i < kPlayerInfoCourseCount; ++i) {
-        PlayerInfoTexture* a = ((PlayerInfoTexture*)AsCPlayerInfo(self)->courseTextures + i);
-        if (a->valid() != 0 && (((PlayerInfoTexture*)AsCPlayerInfo(self)->unavailableCourseTextures + i))->valid() != 0) {
-        }
-        else {
+        PlayerInfoTexture* texture = ((PlayerInfoTexture*)AsCPlayerInfo(self)->courseTextures + i);
+        if (texture->valid() != 0 &&
+            (((PlayerInfoTexture*)AsCPlayerInfo(self)->unavailableCourseTextures + i))->valid() != 0) {
+        } else {
             return 0;
         }
     }
     for (int i = 0; i < kPlayerInfoCharacterCount; ++i) {
-        PlayerInfoTexture* a = ((PlayerInfoTexture*)AsCPlayerInfo(self)->characterTextures + i);
-        if (!a->valid()) return 0;
+        PlayerInfoTexture* texture = ((PlayerInfoTexture*)AsCPlayerInfo(self)->characterTextures + i);
+        if (!texture->valid())
+            return 0;
     }
     EnsureBpCtrl(&s_playerInfoBpCtrlDestructorRegistration);
-    if (!CBpCtrl_PollAllEntriesLoaded((void*)((int&)Sing_805DC5F0()))) return 0;
+    if (!((CBpCtrl*)(((int&)Sing_805DC5F0())))->PollAllEntriesLoaded())
+        return 0;
     return Layout_PollLoadComplete(self->layout) != 0;
 }
 
 // Populate player name and rank, start the basic-info/background scripts and initialize the opening fade.
-void CPlayerInfo_InitializePage(void* self) {
+void CPlayerInfo::InitializePage() {
     // Phase 1: copy the save record, assemble the wide name, and select a rank icon.
     // Experience at +0x24 is converted to a tier for the rank icon.
     char* destructorRegistrations = s_playerInfoDestructorRegistrations;
-    char* playerInfo = (char*)self;
+    char* playerInfo = (char*)this;
     int rect[4];
     int v[4];
     float vec[4];
     char cbuf[16];
     LevelIconIds labels;
     PlayerInfoSaveRecord saveRecord;
-    if (!((int&)Sing_805DC5E0())) {
+    if (!((int&)GetSaveDataSlot())) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRecord_CopyCtor(&saveRecord, SaveData_GetCurrentRecord((void*)((int&)Sing_805DC5E0())));
+    SaveRecord_CopyCtor(&saveRecord, SaveData_GetCurrentRecord((void*)((int&)GetSaveDataSlot())));
     unsigned int count;
     char* namePrefix = s_playerInfoNamePrefix;
     void* experienceBar;
     if ((*(unsigned int*)(playerInfo + kPlayerInfoNameOffset) >> 31) == 0) {
         count = AsCPlayerInfo(playerInfo)->nameStringFlags & 0x7f;
-    }
-    else {
+    } else {
         count = AsCPlayerInfo(playerInfo)->nameStringLength;
     }
     cbuf[8] = cbuf[12];
@@ -911,13 +965,13 @@ void CPlayerInfo_InitializePage(void* self) {
     WString_ReplaceRange(playerInfo + kPlayerInfoNameOffset, 0, count, namePrefix, namePrefix + len * 2, &cbuf[8]);
     if ((*(unsigned int*)(playerInfo + kPlayerInfoNameOffset) >> 31) == 0) {
         count = AsCPlayerInfo(playerInfo)->nameStringFlags & 0x7f;
-    }
-    else {
+    } else {
         count = AsCPlayerInfo(playerInfo)->nameStringLength;
     }
     cbuf[0] = cbuf[4];
     len = wcslen((const wchar_t*)&saveRecord);
-    WString_ReplaceRange(playerInfo + kPlayerInfoNameOffset, count, 0, (char*)&saveRecord, (char*)&saveRecord + len * 2, &cbuf[0]);
+    WString_ReplaceRange(playerInfo + kPlayerInfoNameOffset, count, 0, (char*)&saveRecord, (char*)&saveRecord + len * 2,
+                         &cbuf[0]);
     v[2] = 0;
     v[3] = 0;
     Layout_GetElementPosition(AsCPlayerInfo(playerInfo)->layout, kPlayerInfoNameRect, v + 2);
@@ -925,30 +979,41 @@ void CPlayerInfo_InitializePage(void* self) {
     v[0] = 0;
     v[1] = 0;
     Layout_GetElementSize(AsCPlayerInfo(playerInfo)->layout, kPlayerInfoNameRect, v);
-    CMsgDraw_SetLayoutSize(AsCPlayerInfo(playerInfo)->text, v);
+    ((CMsgDraw*)(AsCPlayerInfo(playerInfo)->text))->SetLayoutSize((float*)v);
     int levelTier = PlayerRank_FindTierForValue(saveRecord.experience);
     switch (levelTier) {
-    case 0 ... 5: AsCPlayerInfo(playerInfo)->levelIconIndex = 0;
+    case 0 ... 5:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 0;
         break;
-    case 6 ... 0xa: AsCPlayerInfo(playerInfo)->levelIconIndex = 1;
+    case 6 ... 0xa:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 1;
         break;
-    case 0xb ... 0xf: AsCPlayerInfo(playerInfo)->levelIconIndex = 2;
+    case 0xb ... 0xf:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 2;
         break;
-    case 0x10 ... 0x14: AsCPlayerInfo(playerInfo)->levelIconIndex = 3;
+    case 0x10 ... 0x14:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 3;
         break;
-    case 0x15 ... 0x19: AsCPlayerInfo(playerInfo)->levelIconIndex = 4;
+    case 0x15 ... 0x19:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 4;
         break;
-    case 0x1a ... 0x1e: AsCPlayerInfo(playerInfo)->levelIconIndex = 5;
+    case 0x1a ... 0x1e:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 5;
         break;
-    case 0x1f ... 0x23: AsCPlayerInfo(playerInfo)->levelIconIndex = 6;
+    case 0x1f ... 0x23:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 6;
         break;
-    case 0x24 ... 0x28: AsCPlayerInfo(playerInfo)->levelIconIndex = 7;
+    case 0x24 ... 0x28:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 7;
         break;
-    case 0x29 ... 0x2d: AsCPlayerInfo(playerInfo)->levelIconIndex = 8;
+    case 0x29 ... 0x2d:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 8;
         break;
-    case 0x2e ... 0x32: AsCPlayerInfo(playerInfo)->levelIconIndex = 9;
+    case 0x2e ... 0x32:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 9;
         break;
-    case 0x33 ... 0x37: AsCPlayerInfo(playerInfo)->levelIconIndex = 10;
+    case 0x33 ... 0x37:
+        AsCPlayerInfo(playerInfo)->levelIconIndex = 10;
         break;
     }
     labels = *(LevelIconIds*)s_playerInfoLevelIconIds;
@@ -956,8 +1021,7 @@ void CPlayerInfo_InitializePage(void* self) {
         void* elem = UIGroup_GetOrCreateById(AsCPlayerInfo(playerInfo)->bpObject, labels.v[i]);
         if (AsCPlayerInfo(playerInfo)->levelIconIndex == i) {
             UIGroup_SetEnabled(elem, 1);
-        }
-        else {
+        } else {
             UIGroup_SetEnabled(elem, 0);
         }
     }
@@ -995,11 +1059,15 @@ void CPlayerInfo_InitializePage(void* self) {
     Layout_SetElementEnabled(AsCPlayerInfo(playerInfo)->layout, 0x3d, 0);
     Layout_SetElementEnabled(AsCPlayerInfo(playerInfo)->layout, 0x3e, 0);
     for (int i = kPlayerInfoRecordPlaceholderFirst; i <= kPlayerInfoRecordPlaceholderLast; i++)
-    Layout_SetElementEnabled(AsCPlayerInfo(playerInfo)->layout, i, 0);
+        Layout_SetElementEnabled(AsCPlayerInfo(playerInfo)->layout, i, 0);
     // Phase 2: hide anchor controls, register numeric entries and pair hit rectangles.
-    CFontNumDraw_RegisterEntries(AsCPlayerInfo(playerInfo)->numberDraw, s_playerInfoNumericTextDefinitions, 0x18, AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_num_status_01_gsr);
-    UITextTable_SetEntryResourceName(AsCPlayerInfo(playerInfo)->numberDraw, 0xb7, playerInfoStrings + kPlayerInfo_num_status_00_gsr);
-    UITextTable_SetEntryResourceName(AsCPlayerInfo(playerInfo)->numberDraw, 0xb8, playerInfoStrings + kPlayerInfo_num_status_00_gsr);
+    ((CFontNumDraw*)(AsCPlayerInfo(playerInfo)->numberDraw))
+        ->RegisterEntries(s_playerInfoNumericTextDefinitions, 0x18, AsCPlayerInfo(playerInfo)->bpObject,
+                          playerInfoStrings + kPlayerInfo_num_status_01_gsr);
+    UITextTable_SetEntryResourceName(AsCPlayerInfo(playerInfo)->numberDraw, 0xb7,
+                                     playerInfoStrings + kPlayerInfo_num_status_00_gsr);
+    UITextTable_SetEntryResourceName(AsCPlayerInfo(playerInfo)->numberDraw, 0xb8,
+                                     playerInfoStrings + kPlayerInfo_num_status_00_gsr);
     Layout_ReadElementRect(AsCPlayerInfo(playerInfo)->layout, 0xc, rect);
     Layout_WriteElementRect(AsCPlayerInfo(playerInfo)->layout, 0x16, rect);
     Layout_ReadElementRect(AsCPlayerInfo(playerInfo)->layout, 0xd, rect);
@@ -1014,7 +1082,8 @@ void CPlayerInfo_InitializePage(void* self) {
     Layout_WriteElementRect(AsCPlayerInfo(playerInfo)->layout, 2, rect);
     Layout_ReadElementRect(AsCPlayerInfo(playerInfo)->layout, 1, rect);
     Layout_WriteElementRect(AsCPlayerInfo(playerInfo)->layout, 3, rect);
-    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_dialog_open, 0, 0, 0, 0, kFloat_0_5_PlayerInfoSound, kFloat_200_StatisticsSound, kFloat_1_PlayerInfo);
+    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_dialog_open, 0, 0, 0, 0,
+                     kFloat_0_5_PlayerInfoSound, kFloat_200_StatisticsSound, kFloat_1_PlayerInfo);
     BpObject_StartScriptByName(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_basic_info, 1);
     // Phase 3: compute experience within the selected tier and transform the bar.
     // Keep this initialization hook's 0x410A terminal fallback distinct from the basic
@@ -1027,8 +1096,7 @@ void CPlayerInfo_InitializePage(void* self) {
         if ((unsigned int)experience <= playerLevelDefinitions[i].end) {
             if (i == 0) {
                 tierExperience = (float)playerLevelDefinitions[i].end;
-            }
-            else {
+            } else {
                 PlayerLevelDefinition* e = &playerLevelDefinitions[i];
                 unsigned int prev = *(unsigned int*)((char*)e - 4);
                 tierExperience = (float)(e->end - prev);
@@ -1042,26 +1110,46 @@ void CPlayerInfo_InitializePage(void* self) {
         tierExperience = (float)maximumExperience;
         experienceProgress = tierExperience;
     }
-    experienceBar = BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_R_status_expgraph);
+    experienceBar = BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject,
+                                                   playerInfoStrings + kPlayerInfo_R_status_expgraph);
     *(int*)&vec[2] = kPlayerInfoExperienceBarZeroBits;
     *(int*)&vec[3] = kPlayerInfoExperienceBarOneBits;
     UIGroup_GetPosition(experienceBar, vec);
     float ratio = experienceProgress / tierExperience;
     float barScaleX = kPlayerInfoExperienceBarScaleFactor - kPlayerInfoExperienceBarScaleFactor * ratio;
-    float barPositionOffsetX = kPlayerInfoExperienceBarPositionFactor * barScaleX - kPlayerInfoExperienceBarPositionFactor;
+    float barPositionOffsetX =
+        kPlayerInfoExperienceBarPositionFactor * barScaleX - kPlayerInfoExperienceBarPositionFactor;
     vec[2] = barScaleX;
     vec[0] = vec[0] - barPositionOffsetX;
     UIGroup_SetPosition(experienceBar, vec);
     UIGroup_SetScale(experienceBar, vec + 2);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_R_status_hyphen1), 0);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_R_status_hyphen2), 0);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_R_status_hyphen3), 0);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_R_status_hyphen4), 0);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_R_status_hyphen5), 0);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_R_status_hyphen6), 0);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_R_status_hyphen7), 0);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_R_status_hyphen8), 0);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject, playerInfoStrings + kPlayerInfo_R_status_hyphen9), 0);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject,
+                                                      playerInfoStrings + kPlayerInfo_R_status_hyphen1),
+                       0);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject,
+                                                      playerInfoStrings + kPlayerInfo_R_status_hyphen2),
+                       0);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject,
+                                                      playerInfoStrings + kPlayerInfo_R_status_hyphen3),
+                       0);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject,
+                                                      playerInfoStrings + kPlayerInfo_R_status_hyphen4),
+                       0);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject,
+                                                      playerInfoStrings + kPlayerInfo_R_status_hyphen5),
+                       0);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject,
+                                                      playerInfoStrings + kPlayerInfo_R_status_hyphen6),
+                       0);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject,
+                                                      playerInfoStrings + kPlayerInfo_R_status_hyphen7),
+                       0);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject,
+                                                      playerInfoStrings + kPlayerInfo_R_status_hyphen8),
+                       0);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(AsCPlayerInfo(playerInfo)->bpObject,
+                                                      playerInfoStrings + kPlayerInfo_R_status_hyphen9),
+                       0);
     EnsureBpCtrlHandle((destructorRegistrations + kRegBpCtrlHandle));
     // Phase 4: save/override the shared script index, start the background and fade,
     // then release the staging texture pack once the individual bindings are ready.
@@ -1070,12 +1158,13 @@ void CPlayerInfo_InitializePage(void* self) {
         if (!s_bpCtrlHandleInitialized) {
             s_bpCtrlHandle[0] = -1;
             s_bpCtrlHandle[1] = -1;
-            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, (destructorRegistrations + kRegBpCtrlHandle));
+            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor,
+                                     (destructorRegistrations + kRegBpCtrlHandle));
             s_bpCtrlHandleInitialized = 1;
         }
         ((int&)Sing_805DC5F8()) = (int)s_bpCtrlHandle;
     }
-    CBpCtrlHandle_SetScriptIndex((void*)((int&)Sing_805DC5F8()), 0xf);
+    ((CBpCtrlHandle*)(((int&)Sing_805DC5F8())))->SetScriptIndex(0xf);
     EnsureBpCtrl((destructorRegistrations + kRegBpCtrl));
     void* page = (void*)IdMap_Lookup((void*)((int&)Sing_805DC5F0()), AsCPlayerInfo(playerInfo)->pageEntryId);
     BpObject_StartScriptByName(page, playerInfoStrings + kPlayerInfo_bg, 1);
@@ -1101,8 +1190,8 @@ void CPlayerInfo_InitializePage(void* self) {
     Layout_SetElementEnabled(AsCPlayerInfo(playerInfo)->layout, kPlayerInfoPairedLowerEnd, 0);
     Layout_SetElementEnabled(AsCPlayerInfo(playerInfo)->layout, kPlayerInfoPairedHigherEnd, 0);
     for (int j = kPlayerInfoRecordPlaceholderFirst; j <= kPlayerInfoRecordPlaceholderLast; j++)
-    Layout_SetElementEnabled(AsCPlayerInfo(playerInfo)->layout, j, 0);
-    CPlayerInfo_SetModeButtonStates(playerInfo, AsCPlayerInfo(playerInfo)->page);
+        Layout_SetElementEnabled(AsCPlayerInfo(playerInfo)->layout, j, 0);
+    CPlayerInfo::SetModeButtonStates(playerInfo, AsCPlayerInfo(playerInfo)->page);
     EnsureFadeOverlay((destructorRegistrations + kRegFadeOverlay));
     FadeState_StartFadeOut((void*)((int&)Sing_805DC608()), 0xf);
 }
@@ -1128,7 +1217,8 @@ static inline void HidePlayerInfoCourseScrollControls(PlayerInfoProcessState* se
 // Process page changes, closing and course-record scrolling after the current script/fade finishes.
 // Start the close sound/fade and latch closing; retain the caller's event-vector lifetime.
 static inline void ClosePlayerInfo(PlayerInfoProcessState* self) {
-    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_dialog_close, 0, 0, 0, 0,kFloat_0_5_PlayerInfoSound,kFloat_200_StatisticsSound,kFloat_1_PlayerInfo);
+    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_dialog_close, 0, 0, 0, 0,
+                     kFloat_0_5_PlayerInfoSound, kFloat_200_StatisticsSound, kFloat_1_PlayerInfo);
     void* fadeState = (void*)FadeOverlay_GetInstance();
     FadeState_RequestFramebufferCapture(fadeState);
     FadeState_StartFadeIn((void*)FadeOverlay_GetInstance(), 0);
@@ -1137,21 +1227,49 @@ static inline void ClosePlayerInfo(PlayerInfoProcessState* self) {
 
 // Set end-cap triplets and matching shadow triplets in the original layout order.
 static inline void SetPlayerInfoScrollDecorations(PlayerInfoProcessState* self, int upperEndEnabled,
-        int lowerEndEnabled, int upperShadowEnabled, int lowerShadowEnabled) {
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_upendl), upperEndEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_upendc), upperEndEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_upendr), upperEndEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_dendl), lowerEndEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_dendc), lowerEndEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_dendr), lowerEndEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_shadow_up), upperShadowEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_upl), upperShadowEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_upc), upperShadowEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_upr), upperShadowEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_shadow_down), lowerShadowEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_downl), lowerShadowEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_downc), lowerShadowEnabled);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_downr), lowerShadowEnabled);
+                                                  int lowerEndEnabled, int upperShadowEnabled, int lowerShadowEnabled) {
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_upendl),
+        upperEndEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_upendc),
+        upperEndEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_upendr),
+        upperEndEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_dendl),
+        lowerEndEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_dendc),
+        lowerEndEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scroll_dendr),
+        lowerEndEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_shadow_up),
+        upperShadowEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_upl),
+        upperShadowEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_upc),
+        upperShadowEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_upr),
+        upperShadowEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_shadow_down),
+        lowerShadowEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_downl),
+        lowerShadowEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_downc),
+        lowerShadowEnabled);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(self->bpObject, playerInfoStrings + kPlayerInfo_R_status_scrollb_downr),
+        lowerShadowEnabled);
 }
 
 // Keep helpers inline without changing the original event-vector and scratch-index lifetimes.
@@ -1164,50 +1282,50 @@ static inline void RefreshPlayerInfoCourseScroll(PlayerInfoProcessState* self) {
     // window origin. Motion visuals remain active until the four-call gate ends.
     if (self->courseRecordIndex == 0) {
         if (self->scrollDelayActive == 0) {
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollLower, 0);
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollHigher, 1);
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollLower, 0);
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollHigher, 1);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoLowerMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoHigherMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoLowerEnd, 1);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoHigherEnd, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerEnd, 1);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherEnd, 0);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollLower, 0);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollHigher, 1);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollLower, 0);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollHigher, 1);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoLowerMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoHigherMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoLowerEnd, 1);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoHigherEnd, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerEnd, 1);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherEnd, 0);
         }
         SetPlayerInfoScrollDecorations(self, 1, 0, 0, 1);
     } else if (self->courseRecordIndex == kPlayerInfoLastRecordWindow) {
         if (self->scrollDelayActive == 0) {
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollLower, 1);
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollHigher, 0);
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollLower, 1);
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollHigher, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoLowerMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoHigherMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoLowerEnd, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoHigherEnd, 1);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerEnd, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherEnd, 1);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollLower, 1);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollHigher, 0);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollLower, 1);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollHigher, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoLowerMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoHigherMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoLowerEnd, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoHigherEnd, 1);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerEnd, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherEnd, 1);
         }
         SetPlayerInfoScrollDecorations(self, 0, 1, 1, 0);
     } else {
         if (self->scrollDelayActive == 0) {
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollLower, 1);
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollHigher, 1);
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollLower, 1);
-                Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollHigher, 1);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoLowerMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoHigherMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherMotion, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoLowerEnd, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoHigherEnd, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerEnd, 0);
-                Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherEnd, 0);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollLower, 1);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollHigher, 1);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollLower, 1);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedScrollHigher, 1);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoLowerMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoHigherMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherMotion, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoLowerEnd, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoHigherEnd, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedLowerEnd, 0);
+            Layout_SetElementEnabled(self->layout, kPlayerInfoPairedHigherEnd, 0);
         }
         SetPlayerInfoScrollDecorations(self, 0, 0, 1, 1);
     }
@@ -1217,8 +1335,8 @@ static inline void RefreshPlayerInfoCourseScroll(PlayerInfoProcessState* self) {
 static inline void ScrollPlayerInfoCourseLower(PlayerInfoProcessState* self) {
     if (self->courseRecordIndex > 0) {
         if (self->courseRecordIndex == kPlayerInfoLastRecordWindow) {
-        Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoHigherEnd, 0);
-        Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedHigherEnd, 0);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoHigherEnd, 0);
+            Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPairedHigherEnd, 0);
         }
         Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollLower, 0);
         Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoScrollHigher, 1);
@@ -1257,7 +1375,8 @@ static inline void ScrollPlayerInfoCourseHigher(PlayerInfoProcessState* self) {
 
 // Apply basic-page button activations in order; borrow the caller-owned event vector.
 // activationIndex references caller scratch to retain CodeWarrior register allocation; no ownership transfer.
-static inline void DispatchPlayerInfoBasicElements(PlayerInfoProcessState* self, IntVector* activatedElements, int& activationIndex) {
+static inline void DispatchPlayerInfoBasicElements(PlayerInfoProcessState* self, IntVector* activatedElements,
+                                                   int& activationIndex) {
     for (; (unsigned int)activationIndex < (unsigned int)Vector_GetCount(activatedElements); activationIndex++) {
         void* elementWord = PlayerInfoWordVector_At(activatedElements, activationIndex);
         int elementId = *(int*)elementWord;
@@ -1285,7 +1404,8 @@ static inline void DispatchPlayerInfoBasicElements(PlayerInfoProcessState* self,
 }
 
 // Apply shot-page button activations in order; borrow the caller-owned event vector.
-static inline void DispatchPlayerInfoShotElements(PlayerInfoProcessState* self, IntVector* activatedElements, int& activationIndex) {
+static inline void DispatchPlayerInfoShotElements(PlayerInfoProcessState* self, IntVector* activatedElements,
+                                                  int& activationIndex) {
     for (; (unsigned int)activationIndex < (unsigned int)Vector_GetCount(activatedElements); activationIndex++) {
         void* elementWord = PlayerInfoWordVector_At(activatedElements, activationIndex);
         int elementId = *(int*)elementWord;
@@ -1313,7 +1433,8 @@ static inline void DispatchPlayerInfoShotElements(PlayerInfoProcessState* self, 
 }
 
 // Apply personal-page button activations in order; borrow the caller-owned event vector.
-static inline void DispatchPlayerInfoPersonalElements(PlayerInfoProcessState* self, IntVector* activatedElements, int& activationIndex) {
+static inline void DispatchPlayerInfoPersonalElements(PlayerInfoProcessState* self, IntVector* activatedElements,
+                                                      int& activationIndex) {
     for (; (unsigned int)activationIndex < (unsigned int)Vector_GetCount(activatedElements); activationIndex++) {
         void* elementWord = PlayerInfoWordVector_At(activatedElements, activationIndex);
         int elementId = *(int*)elementWord;
@@ -1341,7 +1462,8 @@ static inline void DispatchPlayerInfoPersonalElements(PlayerInfoProcessState* se
 }
 
 // Apply course-page button activations in order; borrow the caller-owned event vector.
-static inline void DispatchPlayerInfoCourseElements(PlayerInfoProcessState* self, IntVector* activatedElements, int& activationIndex) {
+static inline void DispatchPlayerInfoCourseElements(PlayerInfoProcessState* self, IntVector* activatedElements,
+                                                    int& activationIndex) {
     for (; (unsigned int)activationIndex < (unsigned int)Vector_GetCount(activatedElements); activationIndex++) {
         void* elementWord = PlayerInfoWordVector_At(activatedElements, activationIndex);
         switch (*(int*)elementWord) {
@@ -1371,26 +1493,32 @@ static inline void DispatchPlayerInfoCourseElements(PlayerInfoProcessState* self
 }
 
 // Process gated input, dispatch page events, and refresh course-scroll presentation.
-int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
+int CPlayerInfo::UpdatePageInputAndDispatch() {
+    PlayerInfoProcessState* self = (PlayerInfoProcessState*)this;
     // Returns 1 only once a closing script is complete; page/scroll updates return 0.
     // Phase 1: gate input on closing, overlay fade, current script and scroll delay.
     int finished;
     Layout_Update(self->layout);
     finished = 0;
     if (self->closing != 0) {
-        if (BpObject_IsCurrentScriptComplete(self->bpObject) != 0) finished = 1;
+        if (BpObject_IsCurrentScriptComplete(self->bpObject) != 0)
+            finished = 1;
         return finished;
     }
     void* fadeState = (void*)FadeOverlay_GetInstance();
     if (FadeState_GetState(fadeState) != 0) {
         return 0;
     }
-    if (BpObject_IsCurrentScriptComplete(self->bpObject) == 0) return 0;
+    if (BpObject_IsCurrentScriptComplete(self->bpObject) == 0)
+        return 0;
     if (self->scrollDelayActive != 0) {
-        if (--self->scrollDelayFrames == 0) self->scrollDelayActive = 0;
-        else return 0;
+        if (--self->scrollDelayFrames == 0)
+            self->scrollDelayActive = 0;
+        else
+            return 0;
     }
-    if (self->page != self->requestedPage) self->page = self->requestedPage;
+    if (self->page != self->requestedPage)
+        self->page = self->requestedPage;
     // Phase 2: initialize each page once, consume layout events (or synthesize
     // button IDs from actions 2/3/6 = previous/next/close), then request the next
     // page. requestedPage becomes page on the following ungated update.
@@ -1398,12 +1526,14 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
     switch (page) {
     case kPlayerInfoBasicPage: {
         // Basic page: one-time setup, ordered input synthesis, then event dispatch.
-        if (self->opened == 0) self->opened = 1;
+        if (self->opened == 0)
+            self->opened = 1;
         if (self->basicPageInitialized == 0) {
             self->basicPageInitialized = 1;
             BpObject_StartScriptByName(self->bpObject, playerInfoStrings + kPlayerInfo_basic_info, 1);
             HidePlayerInfoCourseScrollControls(self);
-            for (int i = kPlayerInfoRecordPlaceholderFirst; i <= kPlayerInfoRecordPlaceholderLast; i++) Layout_SetElementEnabled(self->layout, i, 0);
+            for (int i = kPlayerInfoRecordPlaceholderFirst; i <= kPlayerInfoRecordPlaceholderLast; i++)
+                Layout_SetElementEnabled(self->layout, i, 0);
         }
         if (BpObject_IsCurrentScriptComplete(self->bpObject) != 0) {
             IntVector activatedElements;
@@ -1411,9 +1541,9 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
             if (Vector_GetCount(&activatedElements) == 0) {
                 if (Input_IsActionPressed(LayoutManager_GetInstance(), kPlayerInfoNextAction, -1) != 0) {
                     LayoutIntVector_PushBack(&activatedElements, (const char*)&s_playerInfoBasicNextElement);
-                    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,kFloat_0_5_PlayerInfoSound,kFloat_200_StatisticsSound,kFloat_1_PlayerInfo);
-                }
-                else {
+                    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,
+                                     kFloat_0_5_PlayerInfoSound, kFloat_200_StatisticsSound, kFloat_1_PlayerInfo);
+                } else {
                     if (Input_IsActionPressed(LayoutManager_GetInstance(), kPlayerInfoCloseAction, -1) != 0) {
                         LayoutIntVector_PushBack(&activatedElements, (const char*)&s_playerInfoBasicCloseElement);
                     }
@@ -1423,7 +1553,7 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
             DispatchPlayerInfoBasicElements(self, &activatedElements, activationIndex);
         }
 
-            break;
+        break;
     }
 
     case kPlayerInfoShotPage: {
@@ -1432,7 +1562,8 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
             self->shotPageInitialized = 1;
             BpObject_StartScriptByName(self->bpObject, playerInfoStrings + kPlayerInfo_shot_info, 1);
             HidePlayerInfoCourseScrollControls(self);
-            for (int i = kPlayerInfoRecordPlaceholderFirst; i <= kPlayerInfoRecordPlaceholderLast; i++) Layout_SetElementEnabled(self->layout, i, 0);
+            for (int i = kPlayerInfoRecordPlaceholderFirst; i <= kPlayerInfoRecordPlaceholderLast; i++)
+                Layout_SetElementEnabled(self->layout, i, 0);
         }
         if (BpObject_IsCurrentScriptComplete(self->bpObject) != 0) {
             IntVector activatedElements;
@@ -1440,14 +1571,14 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
             if (Vector_GetCount(&activatedElements) == 0) {
                 if (Input_IsActionPressed(LayoutManager_GetInstance(), kPlayerInfoNextAction, -1) != 0) {
                     LayoutIntVector_PushBack(&activatedElements, (const char*)&s_playerInfoShotNextElement);
-                    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,kFloat_0_5_PlayerInfoSound,kFloat_200_StatisticsSound,kFloat_1_PlayerInfo);
-                }
-                else {
+                    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,
+                                     kFloat_0_5_PlayerInfoSound, kFloat_200_StatisticsSound, kFloat_1_PlayerInfo);
+                } else {
                     if (Input_IsActionPressed(LayoutManager_GetInstance(), kPlayerInfoPreviousAction, -1) != 0) {
                         LayoutIntVector_PushBack(&activatedElements, (const char*)&s_playerInfoShotPreviousElement);
-                        Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,kFloat_0_5_PlayerInfoSound,kFloat_200_StatisticsSound,kFloat_1_PlayerInfo);
-                    }
-                    else {
+                        Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,
+                                         kFloat_0_5_PlayerInfoSound, kFloat_200_StatisticsSound, kFloat_1_PlayerInfo);
+                    } else {
                         if (Input_IsActionPressed(LayoutManager_GetInstance(), kPlayerInfoCloseAction, -1) != 0) {
                             LayoutIntVector_PushBack(&activatedElements, (const char*)&s_playerInfoShotCloseElement);
                         }
@@ -1458,7 +1589,7 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
             DispatchPlayerInfoShotElements(self, &activatedElements, activationIndex);
         }
 
-            break;
+        break;
     }
 
     case kPlayerInfoPersonalPage: {
@@ -1467,7 +1598,8 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
             self->personalPageInitialized = 1;
             BpObject_StartScriptByName(self->bpObject, playerInfoStrings + kPlayerInfo_personal_record, 1);
             HidePlayerInfoCourseScrollControls(self);
-            for (int i = kPlayerInfoRecordPlaceholderFirst; i <= kPlayerInfoRecordPlaceholderLast; i++) Layout_SetElementEnabled(self->layout, i, 0);
+            for (int i = kPlayerInfoRecordPlaceholderFirst; i <= kPlayerInfoRecordPlaceholderLast; i++)
+                Layout_SetElementEnabled(self->layout, i, 0);
         }
         if (BpObject_IsCurrentScriptComplete(self->bpObject) != 0) {
             IntVector activatedElements;
@@ -1475,16 +1607,17 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
             if (Vector_GetCount(&activatedElements) == 0) {
                 if (Input_IsActionPressed(LayoutManager_GetInstance(), kPlayerInfoNextAction, -1) != 0) {
                     LayoutIntVector_PushBack(&activatedElements, (const char*)&s_playerInfoPersonalNextElement);
-                    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,kFloat_0_5_PlayerInfoSound,kFloat_200_StatisticsSound,kFloat_1_PlayerInfo);
-                }
-                else {
+                    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,
+                                     kFloat_0_5_PlayerInfoSound, kFloat_200_StatisticsSound, kFloat_1_PlayerInfo);
+                } else {
                     if (Input_IsActionPressed(LayoutManager_GetInstance(), kPlayerInfoPreviousAction, -1) != 0) {
                         LayoutIntVector_PushBack(&activatedElements, (const char*)&s_playerInfoPersonalPreviousElement);
-                        Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,kFloat_0_5_PlayerInfoSound,kFloat_200_StatisticsSound,kFloat_1_PlayerInfo);
-                    }
-                    else {
+                        Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,
+                                         kFloat_0_5_PlayerInfoSound, kFloat_200_StatisticsSound, kFloat_1_PlayerInfo);
+                    } else {
                         if (Input_IsActionPressed(LayoutManager_GetInstance(), kPlayerInfoCloseAction, -1) != 0) {
-                            LayoutIntVector_PushBack(&activatedElements, (const char*)&s_playerInfoPersonalCloseElement);
+                            LayoutIntVector_PushBack(&activatedElements,
+                                                     (const char*)&s_playerInfoPersonalCloseElement);
                         }
                     }
                 }
@@ -1493,7 +1626,7 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
             DispatchPlayerInfoPersonalElements(self, &activatedElements, activationIndex);
         }
 
-            break;
+        break;
     }
 
     case kPlayerInfoCoursePage: {
@@ -1508,9 +1641,9 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
             if (Vector_GetCount(&activatedElements) == 0) {
                 if (Input_IsActionPressed(LayoutManager_GetInstance(), kPlayerInfoPreviousAction, -1) != 0) {
                     LayoutIntVector_PushBack(&activatedElements, (const char*)&s_playerInfoCoursePreviousElement);
-                    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,kFloat_0_5_PlayerInfoSound,kFloat_200_StatisticsSound,kFloat_1_PlayerInfo);
-                }
-                else {
+                    Sound_PlayByName(g_soundManager, playerInfoStrings + kPlayerInfo_ui_icon_click, 0, 0, 0, 0,
+                                     kFloat_0_5_PlayerInfoSound, kFloat_200_StatisticsSound, kFloat_1_PlayerInfo);
+                } else {
                     if (Input_IsActionPressed(LayoutManager_GetInstance(), kPlayerInfoCloseAction, -1) != 0) {
                         LayoutIntVector_PushBack(&activatedElements, (const char*)&s_playerInfoCourseCloseElement);
                     }
@@ -1520,12 +1653,11 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
             DispatchPlayerInfoCourseElements(self, &activatedElements, activationIndex);
             RefreshPlayerInfoCourseScroll(self);
         }
-            break;
+        break;
     }
-
     }
     int selectedPage = self->page;
-    CPlayerInfo_SetModeButtonStates(self, selectedPage);
+    CPlayerInfo::SetModeButtonStates(self, selectedPage);
     return 0;
 }
 
@@ -1536,67 +1668,70 @@ int CPlayerInfo_UpdatePageInputAndDispatch(PlayerInfoProcessState* self) {
 #pragma optimize_for_size off
 #pragma use_lmw_stmw on
 // Draw the background, statistics text, name and selected course/character record icons.
-void CPlayerInfo_Draw(PlayerInfoDrawState* self) {
+void CPlayerInfo::Draw() {
+    PlayerInfoDrawState* self = (PlayerInfoDrawState*)this;
     // Text color repacks the style's tint bytes and converts 7-bit opacity to
     // alpha using 0 -> 0, n -> 2*n-1. Icon rects are screen-space corners
     // (left,top,right,bottom); the four vertices retain template Z/color/UV words.
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
-            __register_global_object(s_bpCtrl,(void*)CBpCtrl_dtor,s_playerInfoBpCtrlDestructorRegistration);
-            s_bpCtrlInitialized=1;
+            ((CBpCtrl*)s_bpCtrl)->__ct();
+            __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_playerInfoBpCtrlDestructorRegistration);
+            s_bpCtrlInitialized = 1;
         }
-        Sing_805DC5F0()=s_bpCtrl;
+        Sing_805DC5F0() = s_bpCtrl;
     }
     {
-        void* panel=IdMap_Lookup(Sing_805DC5F0(),self->id);
-        BpObject_TryInvokeCurrentCallback(panel,0);
+        void* panel = IdMap_Lookup(Sing_805DC5F0(), self->id);
+        BpObject_TryInvokeCurrentCallback(panel, 0);
         BpObject_Draw(panel);
     }
-    BpObject_TryInvokeCurrentCallback(self->panel,0);
-    CPlayerInfo_PopulateStatisticsPage(self,self->page);
-    CMsgDraw_ResetTextState(self->text);
-    CMsgDraw_ClearFormattingAndRevealAll(self->text);
-    void* style=BpObject_GetOrCreateNamedGroup(self->panel,playerInfoStrings + kPlayerInfo_R_MSG_playername_LC);
-    unsigned int color=UIGroup_GetTintColor(style);
-    int flag=UIGroup_GetCombinedOpacity(style);
-    int alpha=flag ? flag*2-1 : 0;
-    (*(unsigned int*)&((CMsgDraw*)self->text)->colorMultiplier)=alpha | ((color<<24)|(color<<8 & 0xff0000)|(color>>8 & 0xff00));
-    Text_SetContent(self->text, !(self->stringFlag>>31) ? (char*)self+kPlayerInfoNameInlineOffset : self->stringPtr);
+    BpObject_TryInvokeCurrentCallback(self->panel, 0);
+    CPlayerInfo::PopulateStatisticsPage(self, self->page);
+    ((CMsgDraw*)(self->text))->ResetTextState();
+    ((CMsgDraw*)(self->text))->ClearFormattingAndRevealAll();
+    void* style = BpObject_GetOrCreateNamedGroup(self->panel, playerInfoStrings + kPlayerInfo_R_MSG_playername_LC);
+    unsigned int color = UIGroup_GetTintColor(style);
+    int flag = UIGroup_GetCombinedOpacity(style);
+    int alpha = flag ? flag * 2 - 1 : 0;
+    (*(unsigned int*)&((CMsgDraw*)self->text)->colorMultiplier) =
+        alpha | ((color << 24) | (color << 8 & 0xff0000) | (color >> 8 & 0xff00));
+    Text_SetContent(self->text,
+                    !(self->stringFlag >> 31) ? (char*)self + kPlayerInfoNameInlineOffset : self->stringPtr);
     BpObject_Draw(self->panel);
-    Layout_DrawWithOpacity(self->layout,kFloat_1_PlayerInfo);
-    if (self->page==3) {
-        int index=self->courseRecordIndex;
-        if (!Sing_805DC5E0()) {
+    Layout_DrawWithOpacity(self->layout, kFloat_1_PlayerInfo);
+    if (self->page == 3) {
+        int index = self->courseRecordIndex;
+        if (!GetSaveDataSlot()) {
             if (!s_saveDataInitialized) {
                 SaveData_Ctor(s_saveData);
-                s_saveDataInitialized=1;
+                s_saveDataInitialized = 1;
             }
-            Sing_805DC5E0()=s_saveData;
+            GetSaveDataSlot() = s_saveData;
         }
-        SaveData_GetCurrentRecord(Sing_805DC5E0());
-        for (int i=0;i<kPlayerInfoRecordWindow;++i) {
-            if (self->items[index+i].valid()) {
-                self->items[index+i].apply();
+        SaveData_GetCurrentRecord(GetSaveDataSlot());
+        for (int i = 0; i < kPlayerInfoRecordWindow; ++i) {
+            if (self->items[index + i].valid()) {
+                self->items[index + i].apply();
                 int rect[4];
-                Layout_ReadElementRect(self->layout,i+0x39,rect);
-                Quad quad=s_playerInfoCourseIconQuad;
-                quad.v[0].x=rect[0];
-                quad.v[0].y=rect[1];
-                quad.v[1].x=rect[2];
-                quad.v[1].y=rect[1];
-                quad.v[2].x=rect[0];
-                quad.v[2].y=rect[3];
-                quad.v[3].x=rect[2];
-                quad.v[3].y=rect[3];
-                int count=GX_GetPrimitiveCount(4,0x98);
-                DrawPrimitiveUP(0x98,count,&quad,0x18);
+                Layout_ReadElementRect(self->layout, i + 0x39, rect);
+                Quad quad = s_playerInfoCourseIconQuad;
+                quad.v[0].x = rect[0];
+                quad.v[0].y = rect[1];
+                quad.v[1].x = rect[2];
+                quad.v[1].y = rect[1];
+                quad.v[2].x = rect[0];
+                quad.v[2].y = rect[3];
+                quad.v[3].x = rect[2];
+                quad.v[3].y = rect[3];
+                int count = GX_GetPrimitiveCount(4, 0x98);
+                DrawPrimitiveUP(0x98, count, &quad, 0x18);
             }
         }
-        CPlayerInfo_DrawRecordIcons((PlayerInfoIconOwner*)self,self->courseRecordIndex);
+        ((CPlayerInfo*)((PlayerInfoIconOwner*)self))->DrawRecordIcons(self->courseRecordIndex);
     }
     UITextTable_Draw(self->numberDraw);
-    CMsgDraw_UpdateReveal(self->text);
+    ((CMsgDraw*)(self->text))->UpdateReveal();
     Text_DrawGlyphs(self->text);
 }
 
@@ -1606,8 +1741,7 @@ void CPlayerInfo_Draw(PlayerInfoDrawState* self) {
 #pragma always_inline on
 // Apply one page selection to both rows; close stays idle on every statistics page.
 // Template selection is fixed at each switch arm; retain the twenty layout calls in order.
-template<int SelectedPage>
-static inline void SelectPlayerInfoPageControls(PlayerInfoDrawState* self) {
+template <int SelectedPage> static inline void SelectPlayerInfoPageControls(PlayerInfoDrawState* self) {
     Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoBasicButton, SelectedPage != 0);
     Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoShotButton, SelectedPage != 1);
     Layout_SetElementPlayerFlagsAndState(self->layout, kPlayerInfoPersonalButton, SelectedPage != 2);
@@ -1634,7 +1768,7 @@ static inline void SelectPlayerInfoPageControls(PlayerInfoDrawState* self) {
 extern "C" {
 
 // Select the active page button in both button rows and update their highlight elements.
-int CPlayerInfo_SetModeButtonStates(void* obj, int pageIndex) {
+int CPlayerInfo::SetModeButtonStates(void* obj, int pageIndex) {
     // Unknown page indices leave the current visual state untouched and return 1.
     PlayerInfoDrawState* self = (PlayerInfoDrawState*)obj;
     switch (pageIndex) {
@@ -1662,224 +1796,258 @@ int CPlayerInfo_SetModeButtonStates(void* obj, int pageIndex) {
 // Initialize the borrowed save-data singleton while retaining each call site's reloads.
 // Do not cache the current record across these calls: copying a record may invoke other code.
 static inline void EnsurePlayerInfoSaveData() {
-    if (!Sing_805DC5E0()) {
+    if (!GetSaveDataSlot()) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
-            s_saveDataInitialized=1;
+            s_saveDataInitialized = 1;
         }
-        Sing_805DC5E0()=s_saveData;
+        GetSaveDataSlot() = s_saveData;
     }
 }
 
 // Populate the basic page and clear numeric slots owned by other pages.
 static inline void PopulatePlayerInfoBasicPage(PlayerInfoDrawState* self, PlayerStatisticsRecord* statistics) {
-    int hours=statistics->playTimeFrames/kPlayerInfoFramesPerHour;
-    if (hours<=0) hours=0;
+    int hours = statistics->playTimeFrames / kPlayerInfoFramesPerHour;
+    if (hours <= 0)
+        hours = 0;
     int seconds;
-    int minutes=statistics->playTimeFrames/kPlayerInfoFramesPerMinute-hours*60;
-    if (minutes<=0) minutes=0;
-    seconds=statistics->playTimeFrames/kPlayerInfoFramesPerSecond-hours*3600-minutes*60;
-    if (seconds<=0) seconds=0;
-    UITextTable_SetInteger(self->numberDraw,kTextPlayHours,hours);
-    UITextTable_SetInteger(self->numberDraw,kTextPlayMinutes,minutes);
-    UITextTable_SetInteger(self->numberDraw,kTextPlaySeconds,seconds);
-    int experience=statistics->experience;
-    float progress=(float)experience;
-    float total=kFloat_0_Statistics;
-    PlayerLevelDefinition* levelDefinition=playerLevelDefinitions;
+    int minutes = statistics->playTimeFrames / kPlayerInfoFramesPerMinute - hours * 60;
+    if (minutes <= 0)
+        minutes = 0;
+    seconds = statistics->playTimeFrames / kPlayerInfoFramesPerSecond - hours * 3600 - minutes * 60;
+    if (seconds <= 0)
+        seconds = 0;
+    UITextTable_SetInteger(self->numberDraw, kTextPlayHours, hours);
+    UITextTable_SetInteger(self->numberDraw, kTextPlayMinutes, minutes);
+    UITextTable_SetInteger(self->numberDraw, kTextPlaySeconds, seconds);
+    int experience = statistics->experience;
+    float progress = (float)experience;
+    float total = kFloat_0_Statistics;
+    PlayerLevelDefinition* levelDefinition = playerLevelDefinitions;
     int levelIndex;
-    for (levelIndex=0; levelIndex<56; ++levelDefinition,++levelIndex) {
-        if ((*(volatile unsigned int*)&statistics->experience)<=levelDefinition->end) {
-            if (levelIndex==0) total=(float)playerLevelDefinitions[levelIndex].end;
+    for (levelIndex = 0; levelIndex < 56; ++levelDefinition, ++levelIndex) {
+        if ((*(volatile unsigned int*)&statistics->experience) <= levelDefinition->end) {
+            if (levelIndex == 0)
+                total = (float)playerLevelDefinitions[levelIndex].end;
             else {
-                unsigned int previous=*(unsigned int*)((char*)&playerLevelDefinitions[levelIndex]-4);
-                total=(float)(playerLevelDefinitions[levelIndex].end-previous);
-                progress-=(float)previous;
+                unsigned int previous = *(unsigned int*)((char*)&playerLevelDefinitions[levelIndex] - 4);
+                total = (float)(playerLevelDefinitions[levelIndex].end - previous);
+                progress -= (float)previous;
             }
             break;
         }
     }
-    if (levelIndex==56) {
-        unsigned int maximum=3500;
-        total=(float)maximum;
-        progress=total;
+    if (levelIndex == 56) {
+        unsigned int maximum = 3500;
+        total = (float)maximum;
+        progress = total;
     }
-    UITextTable_SetFloat(self->numberDraw,kTextExperienceProgress,progress);
-    UITextTable_SetFloat(self->numberDraw,kTextExperienceSpan,total);
-    UITextTable_SetInteger(self->numberDraw,kTextPang,((PlayerStatisticsRecord*)AsCPlayerInfo(self)->playerRecord)->pang);
+    UITextTable_SetFloat(self->numberDraw, kTextExperienceProgress, progress);
+    UITextTable_SetFloat(self->numberDraw, kTextExperienceSpan, total);
+    UITextTable_SetInteger(self->numberDraw, kTextPang,
+                           ((PlayerStatisticsRecord*)AsCPlayerInfo(self)->playerRecord)->pang);
     char buffer[0x828];
     EnsurePlayerInfoSaveData();
-    SaveRecord_CopyCtor(buffer,SaveData_GetCurrentRecord(Sing_805DC5E0()));
+    SaveRecord_CopyCtor(buffer, SaveData_GetCurrentRecord(GetSaveDataSlot()));
     EnsurePlayerInfoSaveData();
-    UITextTable_SetInteger(self->numberDraw,kTextSavedShort132,((PlayerInfoLiveTotalsView*)SaveData_GetCurrentRecord(Sing_805DC5E0()))->savedShort132);
+    UITextTable_SetInteger(self->numberDraw, kTextSavedShort132,
+                           ((PlayerInfoLiveTotalsView*)SaveData_GetCurrentRecord(GetSaveDataSlot()))->savedShort132);
     {
-        float zeroFlagCount=kFloat_0_Statistics;
-        for (int flagIndex=0; flagIndex<kPlayerInfoCompletionBlockSize; ++flagIndex) if (statistics->completionFlags[flagIndex]==0) zeroFlagCount+=kFloat_1_PlayerInfo;
-        float percent=kFloat_100_PlayerInfo*(zeroFlagCount*kFloat_0_03125_PlayerInfo);
-        if (percent>=kFloat_100_PlayerInfo) percent=kFloat_100_PlayerInfo;
-        if (percent<=kFloat_0_Statistics) percent=kFloat_0_Statistics;
-        UITextTable_SetFloat(self->numberDraw,kTextCompletionFirstBlock,percent);
+        float zeroFlagCount = kFloat_0_Statistics;
+        for (int flagIndex = 0; flagIndex < kPlayerInfoCompletionBlockSize; ++flagIndex)
+            if (statistics->completionFlags[flagIndex] == 0)
+                zeroFlagCount += kFloat_1_PlayerInfo;
+        float percent = kFloat_100_PlayerInfo * (zeroFlagCount * kFloat_0_03125_PlayerInfo);
+        if (percent >= kFloat_100_PlayerInfo)
+            percent = kFloat_100_PlayerInfo;
+        if (percent <= kFloat_0_Statistics)
+            percent = kFloat_0_Statistics;
+        UITextTable_SetFloat(self->numberDraw, kTextCompletionFirstBlock, percent);
     }
     {
-        float zeroFlagCount=kFloat_0_Statistics;
-        for (int flagIndex=kPlayerInfoCompletionBlockSize; flagIndex<2*kPlayerInfoCompletionBlockSize; ++flagIndex) if (statistics->completionFlags[flagIndex]==0) zeroFlagCount+=kFloat_1_PlayerInfo;
-        float percent=kFloat_100_PlayerInfo*(zeroFlagCount*kFloat_0_03125_PlayerInfo);
-        if (percent>=kFloat_100_PlayerInfo) percent=kFloat_100_PlayerInfo;
-        if (percent<=kFloat_0_Statistics) percent=kFloat_0_Statistics;
-        UITextTable_SetFloat(self->numberDraw,kTextCompletionSecondBlock,percent);
+        float zeroFlagCount = kFloat_0_Statistics;
+        for (int flagIndex = kPlayerInfoCompletionBlockSize; flagIndex < 2 * kPlayerInfoCompletionBlockSize;
+             ++flagIndex)
+            if (statistics->completionFlags[flagIndex] == 0)
+                zeroFlagCount += kFloat_1_PlayerInfo;
+        float percent = kFloat_100_PlayerInfo * (zeroFlagCount * kFloat_0_03125_PlayerInfo);
+        if (percent >= kFloat_100_PlayerInfo)
+            percent = kFloat_100_PlayerInfo;
+        if (percent <= kFloat_0_Statistics)
+            percent = kFloat_0_Statistics;
+        UITextTable_SetFloat(self->numberDraw, kTextCompletionSecondBlock, percent);
     }
-    UITextTable_SetFloat(self->numberDraw,kTextGaugeTotal,ShotGauge_GetTotal());
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueFirst);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueSecond);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueThird);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountThird);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountSecond);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountFirst);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextShotCombinedRate);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextShotCount);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalCountA);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalCountB);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalCountC);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalValueA);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalValueB);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalValueC);
+    UITextTable_SetFloat(self->numberDraw, kTextGaugeTotal, ShotGauge_GetTotal());
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueFirst);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueSecond);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueThird);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountThird);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountSecond);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountFirst);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextShotCombinedRate);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextShotCount);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalCountA);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalCountB);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalCountC);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalValueA);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalValueB);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalValueC);
 }
 
 // Populate the shot page and clear numeric slots owned by other pages.
 static inline void PopulatePlayerInfoShotPage(PlayerInfoDrawState* self, PlayerStatisticsRecord* statistics) {
-    int rateSampleCount=statistics->sampleCountA;
-    if (rateSampleCount==0) UITextTable_SetFloat(self->numberDraw,kTextShotRateA,kFloat_0_Statistics);
-    else UITextTable_SetFloat(self->numberDraw,kTextShotRateA,kFloat_100_PlayerInfo*((float)statistics->successCountA/(float)rateSampleCount));
-    if ((rateSampleCount=statistics->sampleCountA+statistics->sampleCountB)==0) UITextTable_SetFloat(self->numberDraw,kTextShotCombinedRate,kFloat_0_Statistics);
-    else UITextTable_SetFloat(self->numberDraw,kTextShotCombinedRate,kFloat_100_PlayerInfo*((float)statistics->combinedSuccessCount/(float)rateSampleCount));
-    if ((rateSampleCount=statistics->sampleCountB)==0) UITextTable_SetFloat(self->numberDraw,kTextShotRateB,kFloat_0_Statistics);
-    else UITextTable_SetFloat(self->numberDraw,kTextShotRateB,kFloat_100_PlayerInfo*((float)statistics->successCountB/(float)rateSampleCount));
-    if ((rateSampleCount=statistics->sampleCountC)==0) UITextTable_SetFloat(self->numberDraw,kTextShotRateC,kFloat_0_Statistics);
-    else UITextTable_SetFloat(self->numberDraw,kTextShotRateC,kFloat_100_PlayerInfo*((float)statistics->successCountC/(float)rateSampleCount));
-    UITextTable_SetInteger(self->numberDraw,kTextShotCount,statistics->shotCounter);
-    UITextTable_SetFloat(self->numberDraw,kTextShotValue,statistics->shotValue);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPlayHours);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPlayMinutes);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPlaySeconds);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextExperienceProgress);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextExperienceSpan);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPang);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueFirst);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueSecond);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueThird);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountFirst);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountSecond);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountThird);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalCountA);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalCountB);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalCountC);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalValueA);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalValueB);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalValueC);
+    int rateSampleCount = statistics->sampleCountA;
+    if (rateSampleCount == 0)
+        UITextTable_SetFloat(self->numberDraw, kTextShotRateA, kFloat_0_Statistics);
+    else
+        UITextTable_SetFloat(self->numberDraw, kTextShotRateA,
+                             kFloat_100_PlayerInfo * ((float)statistics->successCountA / (float)rateSampleCount));
+    if ((rateSampleCount = statistics->sampleCountA + statistics->sampleCountB) == 0)
+        UITextTable_SetFloat(self->numberDraw, kTextShotCombinedRate, kFloat_0_Statistics);
+    else
+        UITextTable_SetFloat(self->numberDraw, kTextShotCombinedRate,
+                             kFloat_100_PlayerInfo *
+                                 ((float)statistics->combinedSuccessCount / (float)rateSampleCount));
+    if ((rateSampleCount = statistics->sampleCountB) == 0)
+        UITextTable_SetFloat(self->numberDraw, kTextShotRateB, kFloat_0_Statistics);
+    else
+        UITextTable_SetFloat(self->numberDraw, kTextShotRateB,
+                             kFloat_100_PlayerInfo * ((float)statistics->successCountB / (float)rateSampleCount));
+    if ((rateSampleCount = statistics->sampleCountC) == 0)
+        UITextTable_SetFloat(self->numberDraw, kTextShotRateC, kFloat_0_Statistics);
+    else
+        UITextTable_SetFloat(self->numberDraw, kTextShotRateC,
+                             kFloat_100_PlayerInfo * ((float)statistics->successCountC / (float)rateSampleCount));
+    UITextTable_SetInteger(self->numberDraw, kTextShotCount, statistics->shotCounter);
+    UITextTable_SetFloat(self->numberDraw, kTextShotValue, statistics->shotValue);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPlayHours);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPlayMinutes);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPlaySeconds);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextExperienceProgress);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextExperienceSpan);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPang);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueFirst);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueSecond);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueThird);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountFirst);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountSecond);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountThird);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalCountA);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalCountB);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalCountC);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalValueA);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalValueB);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalValueC);
 }
 
 // Populate the personal page and clear numeric slots owned by other pages.
 static inline void PopulatePlayerInfoPersonalPage(PlayerInfoDrawState* self, PlayerStatisticsRecord* statistics) {
-    UITextTable_SetInteger(self->numberDraw,kTextPersonalCountC,statistics->personalCountC);
-    UITextTable_SetFloat(self->numberDraw,kTextPersonalValueA,(float)(int)(kFloat_100_PlayerInfo*statistics->personalValueA)/kFloat_100_PlayerInfo);
-    UITextTable_SetFloat(self->numberDraw,kTextPersonalValueB,(float)(int)(kFloat_100_PlayerInfo*statistics->personalValueB)/kFloat_100_PlayerInfo);
-    UITextTable_SetFloat(self->numberDraw,kTextPersonalValueC,(float)(int)(kFloat_100_PlayerInfo*statistics->personalValueC)/kFloat_100_PlayerInfo);
-    UITextTable_SetInteger(self->numberDraw,kTextPersonalCountA,statistics->personalCountA);
-    UITextTable_SetInteger(self->numberDraw,kTextPersonalCountB,statistics->personalCountB);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextSavedShort132);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCompletionFirstBlock);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCompletionSecondBlock);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextShotCombinedRate);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextShotCount);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextGaugeTotal);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPlayHours);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPlayMinutes);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPlaySeconds);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextExperienceProgress);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextExperienceSpan);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPang);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueFirst);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueSecond);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueThird);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountFirst);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountSecond);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountThird);
+    UITextTable_SetInteger(self->numberDraw, kTextPersonalCountC, statistics->personalCountC);
+    UITextTable_SetFloat(self->numberDraw, kTextPersonalValueA,
+                         (float)(int)(kFloat_100_PlayerInfo * statistics->personalValueA) / kFloat_100_PlayerInfo);
+    UITextTable_SetFloat(self->numberDraw, kTextPersonalValueB,
+                         (float)(int)(kFloat_100_PlayerInfo * statistics->personalValueB) / kFloat_100_PlayerInfo);
+    UITextTable_SetFloat(self->numberDraw, kTextPersonalValueC,
+                         (float)(int)(kFloat_100_PlayerInfo * statistics->personalValueC) / kFloat_100_PlayerInfo);
+    UITextTable_SetInteger(self->numberDraw, kTextPersonalCountA, statistics->personalCountA);
+    UITextTable_SetInteger(self->numberDraw, kTextPersonalCountB, statistics->personalCountB);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextSavedShort132);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCompletionFirstBlock);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCompletionSecondBlock);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextShotCombinedRate);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextShotCount);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextGaugeTotal);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPlayHours);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPlayMinutes);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPlaySeconds);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextExperienceProgress);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextExperienceSpan);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPang);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueFirst);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueSecond);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueThird);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountFirst);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountSecond);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountThird);
 }
 
 // Populate the course page and clear numeric slots owned by other pages.
 static inline void PopulatePlayerInfoCoursePage(PlayerInfoDrawState* self) {
     EnsurePlayerInfoSaveData();
     // Three consecutive 8-byte records in a flat course array; the window advances one record.
-    StatEntry* entries=(StatEntry*)(SaveData_GetCurrentRecord(Sing_805DC5E0())+kPlayerInfoCourseRecordsOffset);
+    StatEntry* entries = (StatEntry*)(SaveData_GetCurrentRecord(GetSaveDataSlot()) + kPlayerInfoCourseRecordsOffset);
     {
-        int id=(entries+self->courseRecordIndex)[0].index;
-        if ((entries+self->courseRecordIndex)[0].index<0 || id>7) {
-            NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountFirst);
-            NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueFirst);
-            Layout_SetElementEnabled(self->layout,63,1);
-            Layout_SetElementEnabled(self->layout,64,1);
-            Layout_SetElementEnabled(self->layout,65,1);
-        }
-        else {
-            UITextTable_SetInteger(self->numberDraw,kTextCourseCountFirst,(entries+self->courseRecordIndex)[0].count);
-            UITextTable_SetInteger(self->numberDraw,kTextCourseValueFirst,(entries+self->courseRecordIndex)[0].value);
-            Layout_SetElementEnabled(self->layout,63,0);
-            Layout_SetElementEnabled(self->layout,64,0);
-            Layout_SetElementEnabled(self->layout,65,0);
+        int id = (entries + self->courseRecordIndex)[0].index;
+        if ((entries + self->courseRecordIndex)[0].index < 0 || id > 7) {
+            NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountFirst);
+            NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueFirst);
+            Layout_SetElementEnabled(self->layout, 63, 1);
+            Layout_SetElementEnabled(self->layout, 64, 1);
+            Layout_SetElementEnabled(self->layout, 65, 1);
+        } else {
+            UITextTable_SetInteger(self->numberDraw, kTextCourseCountFirst,
+                                   (entries + self->courseRecordIndex)[0].count);
+            UITextTable_SetInteger(self->numberDraw, kTextCourseValueFirst,
+                                   (entries + self->courseRecordIndex)[0].value);
+            Layout_SetElementEnabled(self->layout, 63, 0);
+            Layout_SetElementEnabled(self->layout, 64, 0);
+            Layout_SetElementEnabled(self->layout, 65, 0);
         }
     }
     {
-        int id=(entries+self->courseRecordIndex)[1].index;
-        if ((entries+self->courseRecordIndex)[1].index<0 || id>7) {
-            NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountSecond);
-            NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueSecond);
-            Layout_SetElementEnabled(self->layout,66,1);
-            Layout_SetElementEnabled(self->layout,67,1);
-            Layout_SetElementEnabled(self->layout,68,1);
-        }
-        else {
-            UITextTable_SetInteger(self->numberDraw,kTextCourseCountSecond,(entries+self->courseRecordIndex)[1].count);
-            UITextTable_SetInteger(self->numberDraw,kTextCourseValueSecond,(entries+self->courseRecordIndex)[1].value);
-            Layout_SetElementEnabled(self->layout,66,0);
-            Layout_SetElementEnabled(self->layout,67,0);
-            Layout_SetElementEnabled(self->layout,68,0);
+        int id = (entries + self->courseRecordIndex)[1].index;
+        if ((entries + self->courseRecordIndex)[1].index < 0 || id > 7) {
+            NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountSecond);
+            NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueSecond);
+            Layout_SetElementEnabled(self->layout, 66, 1);
+            Layout_SetElementEnabled(self->layout, 67, 1);
+            Layout_SetElementEnabled(self->layout, 68, 1);
+        } else {
+            UITextTable_SetInteger(self->numberDraw, kTextCourseCountSecond,
+                                   (entries + self->courseRecordIndex)[1].count);
+            UITextTable_SetInteger(self->numberDraw, kTextCourseValueSecond,
+                                   (entries + self->courseRecordIndex)[1].value);
+            Layout_SetElementEnabled(self->layout, 66, 0);
+            Layout_SetElementEnabled(self->layout, 67, 0);
+            Layout_SetElementEnabled(self->layout, 68, 0);
         }
     }
     {
-        int id=(entries+self->courseRecordIndex)[2].index;
-        if ((entries+self->courseRecordIndex)[2].index<0 || id>7) {
-            NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseCountThird);
-            NumericTextTable_ClearEntryText(self->numberDraw,kTextCourseValueThird);
-            Layout_SetElementEnabled(self->layout,69,1);
-            Layout_SetElementEnabled(self->layout,70,1);
-            Layout_SetElementEnabled(self->layout,71,1);
-        }
-        else {
-            UITextTable_SetInteger(self->numberDraw,kTextCourseCountThird,(entries+self->courseRecordIndex)[2].count);
-            UITextTable_SetInteger(self->numberDraw,kTextCourseValueThird,(entries+self->courseRecordIndex)[2].value);
-            Layout_SetElementEnabled(self->layout,69,0);
-            Layout_SetElementEnabled(self->layout,70,0);
-            Layout_SetElementEnabled(self->layout,71,0);
+        int id = (entries + self->courseRecordIndex)[2].index;
+        if ((entries + self->courseRecordIndex)[2].index < 0 || id > 7) {
+            NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseCountThird);
+            NumericTextTable_ClearEntryText(self->numberDraw, kTextCourseValueThird);
+            Layout_SetElementEnabled(self->layout, 69, 1);
+            Layout_SetElementEnabled(self->layout, 70, 1);
+            Layout_SetElementEnabled(self->layout, 71, 1);
+        } else {
+            UITextTable_SetInteger(self->numberDraw, kTextCourseCountThird,
+                                   (entries + self->courseRecordIndex)[2].count);
+            UITextTable_SetInteger(self->numberDraw, kTextCourseValueThird,
+                                   (entries + self->courseRecordIndex)[2].value);
+            Layout_SetElementEnabled(self->layout, 69, 0);
+            Layout_SetElementEnabled(self->layout, 70, 0);
+            Layout_SetElementEnabled(self->layout, 71, 0);
         }
     }
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalCountC);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalValueA);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalValueB);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalValueC);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalCountA);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPersonalCountB);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextSavedShort132);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCompletionFirstBlock);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextCompletionSecondBlock);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextShotCombinedRate);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextShotCount);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextGaugeTotal);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPlayHours);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPlayMinutes);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPlaySeconds);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextExperienceProgress);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextExperienceSpan);
-    NumericTextTable_ClearEntryText(self->numberDraw,kTextPang);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalCountC);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalValueA);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalValueB);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalValueC);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalCountA);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPersonalCountB);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextSavedShort132);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCompletionFirstBlock);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextCompletionSecondBlock);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextShotCombinedRate);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextShotCount);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextGaugeTotal);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPlayHours);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPlayMinutes);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPlaySeconds);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextExperienceProgress);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextExperienceSpan);
+    NumericTextTable_ClearEntryText(self->numberDraw, kTextPang);
 }
 
 #pragma pop
@@ -1887,31 +2055,31 @@ static inline void PopulatePlayerInfoCoursePage(PlayerInfoDrawState* self) {
 #pragma push
 #pragma inline_depth(16)
 // Fill the chosen statistics page, clearing numeric entries belonging to the other pages.
-int CPlayerInfo_PopulateStatisticsPage(void* obj,int pageIndex) {
+int CPlayerInfo::PopulateStatisticsPage(void* obj, int pageIndex) {
     // Reads current global save data, except basic entry A7 uses playerRecord.
     // Each valid page writes its values and clears the other pages' numeric text;
     // an unknown page is a no-op returning 1. No denominator clamp beyond == 0.
     PlayerStatisticsRecord* statistics;
-    PlayerInfoDrawState* self=(PlayerInfoDrawState*)obj;
+    PlayerInfoDrawState* self = (PlayerInfoDrawState*)obj;
     EnsurePlayerInfoSaveData();
-    statistics=(PlayerStatisticsRecord*)SaveData_GetCurrentRecord(Sing_805DC5E0());
+    statistics = (PlayerStatisticsRecord*)SaveData_GetCurrentRecord(GetSaveDataSlot());
     switch (pageIndex) {
     case kPlayerInfoBasicPage: {
-            PopulatePlayerInfoBasicPage(self, statistics);
-            break;
-        }
+        PopulatePlayerInfoBasicPage(self, statistics);
+        break;
+    }
     case kPlayerInfoShotPage: {
-            PopulatePlayerInfoShotPage(self, statistics);
-            break;
-        }
+        PopulatePlayerInfoShotPage(self, statistics);
+        break;
+    }
     case kPlayerInfoPersonalPage: {
-            PopulatePlayerInfoPersonalPage(self, statistics);
-            break;
-        }
+        PopulatePlayerInfoPersonalPage(self, statistics);
+        break;
+    }
     case kPlayerInfoCoursePage: {
-            PopulatePlayerInfoCoursePage(self);
-            break;
-        }
+        PopulatePlayerInfoCoursePage(self);
+        break;
+    }
     }
     return 1;
 }
@@ -1921,33 +2089,34 @@ int CPlayerInfo_PopulateStatisticsPage(void* obj,int pageIndex) {
 #undef SF
 #pragma optimize_for_size on
 // Draw up to three valid character icons for the visible course-record entries.
-int CPlayerInfo_DrawRecordIcons(PlayerInfoIconOwner* self,int index) {
-    if (!Sing_805DC5E0()) {
+int CPlayerInfo::DrawRecordIcons(int index) {
+    PlayerInfoIconOwner* self = (PlayerInfoIconOwner*)this;
+    if (!GetSaveDataSlot()) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
-            s_saveDataInitialized=1;
+            s_saveDataInitialized = 1;
         }
-        Sing_805DC5E0()=s_saveData;
+        GetSaveDataSlot() = s_saveData;
     }
-    RecordCharacterIndex* base=(RecordCharacterIndex*)(SaveData_GetCurrentRecord(Sing_805DC5E0())+0x25c);
-    RecordCharacterIndex* entry=base+index;
-    for (int i=0;i<kPlayerInfoRecordWindow;++i,++entry) {
-        int id=entry->index;
-        if (entry->index>=0 && id<=7 && self->items[id].valid()) {
+    RecordCharacterIndex* base = (RecordCharacterIndex*)(SaveData_GetCurrentRecord(GetSaveDataSlot()) + 0x25c);
+    RecordCharacterIndex* entry = base + index;
+    for (int i = 0; i < kPlayerInfoRecordWindow; ++i, ++entry) {
+        int id = entry->index;
+        if (entry->index >= 0 && id <= 7 && self->items[id].valid()) {
             self->items[entry->index].apply();
             int rect[4];
-            Layout_ReadElementRect(self->layout,i+0x3c,rect);
-            Quad quad=s_playerInfoCharacterIconQuad;
-            quad.v[0].x=rect[0];
-            quad.v[0].y=rect[1];
-            quad.v[1].x=rect[2];
-            quad.v[1].y=rect[1];
-            quad.v[2].x=rect[0];
-            quad.v[2].y=rect[3];
-            quad.v[3].x=rect[2];
-            quad.v[3].y=rect[3];
-            int count=GX_GetPrimitiveCount(4,0x98);
-            DrawPrimitiveUP(0x98,count,&quad,0x18);
+            Layout_ReadElementRect(self->layout, i + 0x3c, rect);
+            Quad quad = s_playerInfoCharacterIconQuad;
+            quad.v[0].x = rect[0];
+            quad.v[0].y = rect[1];
+            quad.v[1].x = rect[2];
+            quad.v[1].y = rect[1];
+            quad.v[2].x = rect[0];
+            quad.v[2].y = rect[3];
+            quad.v[3].x = rect[2];
+            quad.v[3].y = rect[3];
+            int count = GX_GetPrimitiveCount(4, 0x98);
+            DrawPrimitiveUP(0x98, count, &quad, 0x18);
         }
     }
     return 1;
@@ -1956,29 +2125,30 @@ int CPlayerInfo_DrawRecordIcons(PlayerInfoIconOwner* self,int index) {
 #pragma optimize_for_size on
 #pragma use_lmw_stmw on
 // Return the checked activated-element word, throwing out_of_range for an invalid index.
-unsigned int* PlayerInfoWordVector_At(void* obj,unsigned int index) {
+unsigned int* PlayerInfoWordVector_At(void* obj, unsigned int index) {
     IntVector* array = (IntVector*)obj;
-    if (index>=array->size) {
-        const char* text=playerInfoStrings + kPlayerInfo_vector_at_index_out_of_range;
-        char flag=0;
+    if (index >= array->size) {
+        const char* text = playerInfoStrings + kPlayerInfo_vector_at_index_out_of_range;
+        char flag = 0;
         ErrorBase_u8029736C error;
-        ErrorBase_u8029736C* e=&error;
-        e->vt=__vt__Q23std11logic_error;
-        unsigned long n=strlen(text)+1;
-        char* data=(char*)__nwa__FUl((n<<1)-n);
-        e->str=data;
+        ErrorBase_u8029736C* e = &error;
+        e->vt = __vt__Q23std11logic_error;
+        unsigned long n = strlen(text) + 1;
+        char* data = (char*)__nwa__FUl((n << 1) - n);
+        e->str = data;
         {
             Guard_u8029736C guard;
-            guard.data=data;
-            guard.flag=&flag;
-            e->block=new SharedBlock(data);
-            guard.data=0;
+            guard.data = data;
+            guard.flag = &flag;
+            e->block = new SharedBlock(data);
+            guard.data = 0;
         }
-        strcpy(e->str,text);
-        e->vt=__vt__Q23std12out_of_range;
-        __throw(playerInfoStrings + kPlayerInfo_std_exception_std_logic_error_std_out_of_range,e,(void*)__dt__Q23std12out_of_rangeFv);
+        strcpy(e->str, text);
+        e->vt = __vt__Q23std12out_of_range;
+        __throw(playerInfoStrings + kPlayerInfo_std_exception_std_logic_error_std_out_of_range, e,
+                (void*)__dt__Q23std12out_of_rangeFv);
     }
-    return (unsigned int*)array->items+index;
+    return (unsigned int*)array->items + index;
 }
 
 } // extern "C"

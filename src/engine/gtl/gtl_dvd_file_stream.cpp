@@ -1,7 +1,9 @@
+// The DVD file stream (gtl::nw4r::ut::DvdFileStream): setup and teardown, and the completion
+// handlers for async reads and cancels. Also the intrusive list helpers and the audio effect
+// list constants that share this unit.
+
 #include <decomp/static_init.h>
 #include "classes/GtlDvdFileStream.h"
-// Translation unit 0x80412070-0x80412370 (10 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "classes/DvdStreamFields.h"
 extern "C" {
@@ -13,70 +15,51 @@ void __dl__FPv(void*);
 int DVDFastOpen(void*, void*);
 void gtl_DvdFilePosition_SeekClamped(void*, int, int);
 
-enum { kDefaultDvdPriority = 2, kSeekFromStart = 0, kCloseVirtualSlot = 4 };
-
-struct DvdFileStreamState {
-    void* vtable;
-    unsigned char isOpen;
-    unsigned char pad05[3];
-    void* readResult;
-    void* readCallback;
-    void* readUserData;
-    unsigned int length;
-    unsigned int position;
-    void* cancelCallback;
-    void* cancelUserData;
-    unsigned char cancelPending;
-    unsigned char pad25[3];
-    unsigned char fileInfo[0x3C];
-    void* callbackOwner;
-    int priority;
-    unsigned char busy;
-    unsigned char closeOnDestroy;
-    unsigned char ownsFile;
+enum {
+    kDefaultDvdPriority = 2,
+    kSeekFromStart = 0,
+    kCloseVirtualSlot = 4
 };
-// fileInfo is the embedded SDK block at +0x28; its adjacent callbackOwner at +0x64
-// lets SDK completions recover self. Callbacks/user data are borrowed, never freed here.
-// length/position are bytes. closeOnDestroy controls closing; deleteFlag controls storage.
 
-typedef char DvdFileStreamState_priority_offset[((int)&((DvdFileStreamState*)0)->priority == 0x68) ? 1 : -1];
-typedef char DvdFileStreamState_ownership_offset[((int)&((DvdFileStreamState*)0)->ownsFile == 0x6E) ? 1 : -1];
+} // extern "C"
 
-// Open a DVD entry, initialize its callbacks, and reset the clamped read position.
+// Initialize the stream: open a DVD entry, set up its callbacks, and reset the clamped read position.
 // entryNumber carries an SDK integer entry index in the existing pointer-shaped ABI.
-// Returns self even if DVDFastOpen fails; inspect isOpen for success. Successful open is owned.
-void* gtl_nw4r_ut_DvdFileStream_Ctor(DvdFileStreamState* self, void* entryNumber) {
+// Returns this even if DVDFastOpen fails; inspect isOpen for success. Successful open is owned.
+void* gtl::nw4r::ut::DvdFileStream::Init(void* entryNumber) {
     // Phase 1: publish a closed, idle stream with no pending callbacks.
-    self->busy = 0;
-    self->vtable = __vt__Q43gtl4nw4r2ut13DvdFileStream;
-    self->length = 0;
-    self->position = 0;
-    self->closeOnDestroy = 0;
-    self->ownsFile = 0;
-    self->isOpen = 0;
-    self->priority = kDefaultDvdPriority;
-    self->readCallback = 0;
-    self->readUserData = 0;
-    self->readResult = 0;
-    self->cancelCallback = 0;
-    self->cancelPending = 0;
-    self->cancelUserData = 0;
-    self->callbackOwner = self;
+    busy = 0;
+    vtable = __vt__Q43gtl4nw4r2ut13DvdFileStream;
+    length = 0;
+    position = 0;
+    closeOnDestroy = 0;
+    ownsFile = 0;
+    isOpen = 0;
+    priority = kDefaultDvdPriority;
+    readCallback = 0;
+    readUserData = 0;
+    readResult = 0;
+    cancelCallback = 0;
+    cancelPending = 0;
+    cancelUserData = 0;
+    callbackOwner = this;
     // Phase 2: acquire the SDK file and enable destructor closing only on success.
-    if (DVDFastOpen(entryNumber, self->fileInfo)) {
-        self->length = *(unsigned int*)&AsDvdStreamFields(self)->fileLength;
-        gtl_DvdFilePosition_SeekClamped(&self->length, 0, kSeekFromStart);
-        self->closeOnDestroy = 1;
-        self->ownsFile = 1;
-        self->isOpen = 1;
+    if (DVDFastOpen(entryNumber, fileInfo)) {
+        length = *(unsigned int*)&AsDvdStreamFields(this)->fileLength;
+        gtl_DvdFilePosition_SeekClamped(&length, 0, kSeekFromStart);
+        closeOnDestroy = 1;
+        ownsFile = 1;
+        isOpen = 1;
     }
-    return self;
+    return this;
 }
+
+extern "C" {
 
 // The DVD SDK returns the embedded fileInfo pointer to completion callbacks.
 struct DvdCallbackFileInfo {
     char reserved[0x3C];
-    GtlDvdFileStream* owner;
+    gtl::nw4r::ut::DvdFileStream* owner;
 };
 struct IntrusiveLink {
     IntrusiveLink* next;
@@ -106,7 +89,10 @@ void* IntrusiveList_UnlinkNodeAndDecrementCount(int* count, IntrusiveLink** posi
     return savedNext;
 }
 
-struct IntrusiveListState { int count; IntrusiveLink sentinel; };
+struct IntrusiveListState {
+    int count;
+    IntrusiveLink sentinel;
+};
 
 // Detach every intrusive node without freeing the objects that contain them.
 // deleteFlag > 0 frees only the list header. Detached link storage remains caller-owned.
@@ -124,28 +110,34 @@ void* gtl_IntrusiveList_Dtor(void* self, int deleteFlag) {
             link->prev = 0;
             link = next;
         }
-        if (deleteFlag > 0) __dl__FPv(self);
+        if (deleteFlag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
+} // extern "C"
+
 // Close an owned stream through its virtual close method, then optionally free it.
 // closeOnDestroy, rather than ownsFile, is the condition actually tested here.
-void* gtl_nw4r_ut_DvdFileStream_dtor(void* self, int deleteFlag) {
-    if (self != 0) {
-        void** vtable;
-        unsigned char closeOnDestroy = ((DvdFileStreamState*)self)->closeOnDestroy;
-        *(void**)self = __vt__Q43gtl4nw4r2ut13DvdFileStream;
+void* gtl::nw4r::ut::DvdFileStream::Destroy(int deleteFlag) {
+    if (this != 0) {
+        void** vtbl;
+        unsigned char closeOnDestroy = this->closeOnDestroy;
+        *(void**)this = __vt__Q43gtl4nw4r2ut13DvdFileStream;
         if (closeOnDestroy != 0) {
             typedef void (*CloseMethod)(void*);
-            vtable = (void**) *(void**)self;
-            CloseMethod close = (CloseMethod)vtable[kCloseVirtualSlot];
-            close(self);
+            vtbl = (void**)*(void**)this;
+            CloseMethod close = (CloseMethod)vtbl[kCloseVirtualSlot];
+            close(this);
         }
-        if (deleteFlag > 0) __dl__FPv(self);
+        if (deleteFlag > 0)
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
+
+extern "C" {
 
 // Insert a detached node before the iterator and increment the list count.
 // Returns link; does not update *position. The list borrows the enclosing object's storage.
@@ -196,11 +188,13 @@ void GtlAudioEffectList_InitializeMathConstants() {
     s_twoPi_80412070_AudioEffectList = kFloat_6_2831855;
 }
 
+} // extern "C"
+
 // Clear cancellation-pending before forwarding (result, stream, cancelUserData).
 // fileInfo is borrowed SDK storage; result carries the signed SDK result in the existing ABI.
-void gtl_DvdFileStream_OnCancelComplete(void* result, void* fileInfo) {
+void gtl::nw4r::ut::DvdFileStream::OnCancelComplete(void* result, void* fileInfo) {
     unsigned char* state = (unsigned char*)((DvdCallbackFileInfo*)fileInfo)->owner;
-    ((GtlDvdFileStream*)state)->cancelPending = 0;
+    ((gtl::nw4r::ut::DvdFileStream*)state)->cancelPending = 0;
     typedef void (*Callback)(void*, void*, void*);
     Callback callback = (Callback)AsDvdStreamFields(state)->cancelCallback;
     if (callback != 0) {
@@ -210,9 +204,9 @@ void gtl_DvdFileStream_OnCancelComplete(void* result, void* fileInfo) {
 
 // Save the read result and clear busy state before notifying the caller.
 // Delivers (result, stream, readUserData); the user callback observes busy == 0 and the saved result.
-void gtl_DvdFileStream_OnReadComplete(void* result, void* fileInfo) {
+void gtl::nw4r::ut::DvdFileStream::OnReadComplete(void* result, void* fileInfo) {
     unsigned char* state = (unsigned char*)((DvdCallbackFileInfo*)fileInfo)->owner;
-    ((GtlDvdFileStream*)state)->busy = 0;
+    ((gtl::nw4r::ut::DvdFileStream*)state)->busy = 0;
     AsDvdStreamFields(state)->readResult = result;
     typedef void (*Callback)(void*, void*, void*);
     Callback callback = (Callback)AsDvdStreamFields(state)->readCallback;
@@ -220,8 +214,6 @@ void gtl_DvdFileStream_OnReadComplete(void* result, void* fileInfo) {
         callback(result, state, AsDvdStreamFields(state)->readUserData);
     }
 }
-
-} // extern "C"
 
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push

@@ -1,18 +1,24 @@
+// GtlFileIoDeviceDVD::StartChunkedAsyncRead: starts a DVD read that is split into chunks of at most
+// 60 KiB. The completion handler in file_io_device_dvd_read_callbacks.cpp submits the remaining chunks.
+
 #include "classes/ChunkedDvdReadRequest.h"
-// Translation unit 0x80413768-0x8041385C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/GtlFileIoDeviceDVD.h"
 
 extern "C" {
 
 int File_SetLastError(int);
 int DVDReadAsyncPrio(void*, void*, int, int, void*, int);
-void gtl_CFileIoDeviceDVD_OnReadChunkComplete(void*);
 
 enum DvdReadConstants {
-    kInvalidRequest = -1, kInvalidHandleError = 6,
-    kDefaultPriorityCode = 0xA0, kPriorityCodeShift = 6,
-    kMaximumChunkBytes = 0xF000, kSubmissionFailedError = 0x1E
+    kInvalidRequest = -1,
+    kInvalidHandleError = 6,
+    kDefaultPriorityCode = 0xA0,
+    kPriorityCodeShift = 6,
+    kMaximumChunkBytes = 0xF000,
+    kSubmissionFailedError = 0x1E
 };
+
+} // extern "C"
 
 #pragma use_lmw_stmw on
 // Start a chunked asynchronous DVD read; return 1 when accepted, 0 on immediate error.
@@ -22,10 +28,8 @@ enum DvdReadConstants {
 // completionArg is a callback address and completionArg2 its opaque user word;
 // the completion handler calls (error, bytesRead, request, userWord). Neither is
 // retained outside the request. Success clears last error, but does not mean I/O finished.
-int gtl_CFileIoDeviceDVD_StartChunkedAsyncRead(int unused, void* request, void* destination,
-                                  int length, int offset, unsigned int priorityCode,
-                                  int completionArg,
-                                  int completionArg2) {
+int gtl::CFileIoDeviceDVD::StartChunkedAsyncRead(void* request, void* destination, int length, int offset,
+                                                 unsigned int priorityCode, int completionArg, int completionArg2) {
     if ((unsigned int)request == (unsigned int)kInvalidRequest) {
         File_SetLastError(kInvalidHandleError);
         return 0;
@@ -43,8 +47,9 @@ int gtl_CFileIoDeviceDVD_StartChunkedAsyncRead(int unused, void* request, void* 
 
     // Phase 2: submit at most 60 KiB; failed submission leaves the reset state above.
     int firstChunkBytes = length < kMaximumChunkBytes ? length : kMaximumChunkBytes;
-    if (!DVDReadAsyncPrio(request, destination, firstChunkBytes, offset, (void*)gtl_CFileIoDeviceDVD_OnReadChunkComplete,
-                      ((ChunkedDvdReadRequest*)request)->priority)) {
+    if (!DVDReadAsyncPrio(request, destination, firstChunkBytes, offset,
+                          (void*)&gtl::CFileIoDeviceDVD::OnReadChunkComplete,
+                          ((ChunkedDvdReadRequest*)request)->priority)) {
         File_SetLastError(kSubmissionFailedError);
         return 0;
     }
@@ -57,5 +62,3 @@ int gtl_CFileIoDeviceDVD_StartChunkedAsyncRead(int unused, void* request, void* 
     return 1;
 }
 #pragma use_lmw_stmw reset
-
-} // extern "C"

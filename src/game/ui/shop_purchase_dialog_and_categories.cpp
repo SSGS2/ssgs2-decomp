@@ -1,6 +1,9 @@
+// Shop purchase dialog and the product category rows.
+//
+// CPurchaseDialog shows the balance, price and remaining balance, and handles its confirm and
+// cancel buttons. CProductsCategory lays out and selects the category rows.
+
 #include <decomp/static_init.h>
-// Translation unit 0x802DABF4-0x802DC0E8 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "classes/UITextTable.h"
 #include "game/singletons.h"
@@ -8,26 +11,39 @@
 #include "classes/CProductsCategory.h"
 #include "classes/CShopSubMenu.h"
 #include "classes/CShopLayoutState.h"
-
-#define AsCShopLayoutState(p) ((CShopLayoutState*)(p))
-
-#define AsCShopSubMenu(p) ((CShopSubMenu*)(p))
+#include "classes/CBpCtrl.h"
+#include "classes/CFontNumDraw.h"
 
 #define AsCProductsCategory(p) ((CProductsCategory*)(p))
 
 #define AsCPurchaseDialog(p) ((CPurchaseDialog*)(p))
 
-enum PurchaseResult { kPurchasePending = -1, kPurchaseCancelled = 0, kPurchaseConfirmed = 1 };
+enum PurchaseResult {
+    kPurchasePending = -1,
+    kPurchaseCancelled = 0,
+    kPurchaseConfirmed = 1
+};
 enum PurchaseLayout {
-    kConfirmButton = 0, kCancelButton = 1, kButtonCaptionBase = 2,
-    kSlotRectBase = 7, kPurchaseSlotCount = 8, kSelectionDelayFrames = 3,
-    kPlayerInteractionFlag = 5, kPressedElementState = 2,
+    kConfirmButton = 0,
+    kCancelButton = 1,
+    kButtonCaptionBase = 2,
+    kSlotRectBase = 7,
+    kPurchaseSlotCount = 8,
+    kSelectionDelayFrames = 3,
+    kPlayerInteractionFlag = 5,
+    kPressedElementState = 2,
     kActionCancelPurchase = 0x17,
-    kBalanceText = 0x2D, kPriceText = 0x2C, kRemainingBalanceText = 0x2E
+    kBalanceText = 0x2D,
+    kPriceText = 0x2C,
+    kRemainingBalanceText = 0x2E
 };
 enum CategoryLayout {
-    kCategoryCount = 5, kCategoryElementStride = 3, kCategoryMarkerBase = 16,
-    kCategoryRowHeight = 34, kSelectedCategoryGap = 68, kNoCategory = -1
+    kCategoryCount = 5,
+    kCategoryElementStride = 3,
+    kCategoryMarkerBase = 16,
+    kCategoryRowHeight = 34,
+    kSelectedCategoryGap = 68,
+    kNoCategory = -1
 };
 // Packed pool; lengths include terminators and match the global string-table research.
 struct PurchaseDialogStrings {
@@ -43,9 +59,10 @@ void appFreeUni__FPv(void*);
 struct ActivatedUnwindCleanup {
     volatile unsigned int* words;
     bool active;
-    explicit ActivatedUnwindCleanup(volatile void* vector)
-        : words((volatile unsigned int*)vector), active(true) {}
-    void release() { active = false; }
+    explicit ActivatedUnwindCleanup(volatile void* vector) : words((volatile unsigned int*)vector), active(true) {}
+    void release() {
+        active = false;
+    }
     ~ActivatedUnwindCleanup() {
         if (active && words[0]) {
             words[1] = 0;
@@ -53,7 +70,6 @@ struct ActivatedUnwindCleanup {
         }
     }
 };
-
 
 extern const float kFloat_6_2831855;
 extern float s_productsCategoryRuntimeTau;
@@ -73,7 +89,6 @@ extern int Input_IsActionPressed(void*, int, int);
 extern void Layout_WriteElementRect(void*, int, int*);
 extern void appFreeUni__FPv(void*);
 
-
 struct Layout;
 extern char __vt__17CProductsCategory[];
 extern char __vt__15CPurchaseDialog[];
@@ -82,8 +97,8 @@ extern const PurchaseDialogStrings purchaseDialogStrings;
 extern const char s_purchaseDialogQuadTemplate[];
 extern void* g_soundManager;
 // Set how many category rows participate in layout and interaction.
-int CProductsCategory_SetCategoryCount(CProductsCategory* category, int count) {
-    category->categoryCount = count;
+int CProductsCategory::SetCategoryCount(int count) {
+    categoryCount = count;
     return 1;
 }
 
@@ -108,11 +123,6 @@ extern void Layout_GetElementPosition(void* layout, int index, float* out);
 extern void Layout_SetElementPosition(void* layout, int index, float* out);
 extern void BpObject_TryInvokeCurrentCallback(void* layout, int value);
 extern void BpObject_Draw(void* layout);
-extern int CProductsCategory_UpdateSelectionLayout(void* layout);
-extern int CPurchaseDialog_UpdateSelectionDelay(void* layout);
-extern int CPurchaseDialog_ProcessInput(void* layout);
-extern int CPurchaseDialog_DrawSlotQuads(void* layout);
-extern int CProductsCategory_SetLayoutMode(void* layout, int v);
 extern void UITextTable_Draw(void* layout);
 extern void UITextTable_SetInteger(void* layout, int key, int count);
 extern void Layout_Destroy(void*, int);
@@ -120,13 +130,10 @@ extern void Layout_Init(void*, int);
 extern void Layout_LoadExtended(void*, int, const char*);
 extern void BpObject_SetEnabled(void*, int);
 extern void Sound_PlayByName(void*, const char*, int, int, int, int, float, float, float);
-extern void __ct__7CBpCtrlFv(void*);
 extern void CBpCtrl_dtor(void*);
-extern int CBpCtrl_PollAllEntriesLoaded(void*);
 extern void Layout_SetElementPlayerFlag(void*, int, int, int);
 extern void Layout_SetModeByte(void*, int);
 extern void BpObject_StartScriptByName(void*, const char*, int);
-extern void CFontNumDraw_RegisterEntries(void*, void*, int, void*, const char*);
 extern char s_bpCtrl[];
 extern char s_bpCtrlDtorRegistration_PurchaseDialog[];
 extern char s_purchaseDialogPriceTextEntries[];
@@ -141,48 +148,45 @@ extern void PointerVector_DestroyStorage(void*);
 extern void UITextTable_ClearEntries(void*);
 extern void PointerVector_InitReserved(void*);
 extern void PointerArray_DeleteValue(void*, void*);
-extern void CBpCtrl_DeleteEntryById(void*, int);
 extern void Layout_ReadElementRect(void*, int, int*);
 extern void Layout_LoadExtended(void*, int, const char*);
-extern void CBpCtrl_CreateEntry(void*, const char*, int*, int);
 extern int IdMap_Lookup(void*, int);
-extern void* CFontNumDraw_CreateInVector(void*);
 extern void Engine_SetFlexibleVertexFormat(int);
 extern void* GX_GetPrimitiveCount(int, int);
 extern void DrawPrimitiveUP(int, void*, void*, int);
 // Store a drawable handle in one of the purchase dialog's eight slots.
-int CPurchaseDialog_SetSlotDrawable(void* p, int idx, int val) {
+int CPurchaseDialog::SetSlotDrawable(int idx, int val) {
     if (idx >= kPurchaseSlotCount) {
         return 0;
     }
-    int* base = (int*)&AsCPurchaseDialog(p)->slot0Texture;
+    int* base = (int*)&slot0Texture;
     base[idx] = val;
     return 1;
 }
 
 // Advance the category layout's animation and interaction state.
-int CProductsCategory_UpdateLayout(void* p) {
-    void* q = AsCProductsCategory(p)->layout;
+int CProductsCategory::UpdateLayout() {
+    void* q = layout;
     Layout_Update(q);
     return 1;
 }
 
 // Draw the category layout at its configured opacity.
-int CProductsCategory_Draw(void* p) {
-    void* q = AsCProductsCategory(p)->layout;
+int CProductsCategory::Draw() {
+    void* q = layout;
     float t = kProductsCategoryOpacity;
     Layout_DrawWithOpacity(q, t);
     return 1;
 }
 
 // Report whether the shop layout has finished loading.
-int CShopLayoutState_IsLoaded(void* p) {
-    void* q = AsCShopLayoutState(p)->layout;
+int CShopLayoutState::IsLoaded() {
+    void* q = layout;
     return Layout_PollLoadComplete(q) != 0;
 }
 
 // Set each row's pressed state and swap its normal/selected captions.
-int CProductsCategory_UpdateSelectionFlags(void* p) {
+int CProductsCategory::UpdateSelectionFlags(void* p) {
     void* category = p;
     int categoryIndex = 0;
     int elementBase = 0;
@@ -202,7 +206,8 @@ int CProductsCategory_UpdateSelectionFlags(void* p) {
             buttonState = 0;
             unselected = 1;
         }
-        Layout_SetElementPlayerFlag(AsCProductsCategory(category)->layout, buttonElement, unselected, kPlayerInteractionFlag);
+        Layout_SetElementPlayerFlag(AsCProductsCategory(category)->layout, buttonElement, unselected,
+                                    kPlayerInteractionFlag);
         Layout_SetElementValueState(AsCProductsCategory(category)->layout, buttonElement, buttonState);
         Layout_SetElementEnabled(AsCProductsCategory(category)->layout, normalCaptionElement, unselected);
         unsigned showSelectedCaption = (unselected == 0) ? 1 : 0;
@@ -215,49 +220,50 @@ int CProductsCategory_UpdateSelectionFlags(void* p) {
 
 // Collect category layout activations into the caller's index vector; return
 // whether any were collected. This mutates indices even though the result is Boolean.
-int CProductsCategory_CollectActivatedIndices(void* p, void* indices) {
-    void* q = AsCProductsCategory(p)->layout;
+// The caller passes a second argument that this function never reads.
+int CProductsCategory::CollectActivatedIndices(void* indices, int unused) {
+    void* q = layout;
     return Layout_CollectActivated(q, indices, 0) != 0;
 }
 
 // Show or hide the auxiliary marker for a category index.
-int CProductsCategory_SetMarkerVisible(void* p, int idx, int val) {
+int CProductsCategory::SetMarkerVisible(int idx, int val) {
     if (idx >= 5) {
         return 0;
     }
-    void* q = AsCProductsCategory(p)->layout;
+    void* q = layout;
     Layout_SetElementEnabled(q, idx + 0x10, val);
     return 1;
 }
 
 // Update the dialog layout and run the current BP callback.
-int CPurchaseDialog_UpdateLayoutAndScript(void* p) {
-    void* r31 = p;
-    void* q = AsCPurchaseDialog(p)->layout;
+int CPurchaseDialog::UpdateLayoutAndScript() {
+    void* dialog = this;
+    void* q = layout;
     Layout_Update(q);
-    void* r = (*(void**)&AsCPurchaseDialog(r31)->bpObject);
+    void* r = (*(void**)&AsCPurchaseDialog(dialog)->bpObject);
     BpObject_TryInvokeCurrentCallback(r, 0);
     return 1;
 }
 
 // Validate and apply the selected category, then reposition the layout.
-int CProductsCategory_SetSelectedIndex(void* p, int idx) {
+int CProductsCategory::SetSelectedIndex(int idx) {
     // 0x802DB0A8: accept -1 through categoryCount inclusive; preserve the upper-bound convention.
-    if (idx < -1 || idx > AsCProductsCategory(p)->categoryCount)
+    if (idx < -1 || idx > categoryCount)
         return 0;
-    AsCProductsCategory(p)->selectedCategoryIndex = idx;
-    CProductsCategory_UpdateSelectionLayout(p);
+    selectedCategoryIndex = idx;
+    UpdateSelectionLayout();
     return 1;
 }
 
 // Hold pressed feedback, then restore the selected button caption position and clear the delay.
-int CPurchaseDialog_UpdateSelectionDelay(void* self) {
-    int remainingFrames = AsCPurchaseDialog(self)->selectionDelayFrames;
+int CPurchaseDialog::UpdateSelectionDelay() {
+    int remainingFrames = selectionDelayFrames;
     if (remainingFrames == -1) {
         return 0;
     }
     int nextFrames = remainingFrames - 1;
-    AsCPurchaseDialog(self)->selectionDelayFrames = nextFrames;
+    selectionDelayFrames = nextFrames;
     if (remainingFrames > 0) {
         return 1;
     }
@@ -265,55 +271,55 @@ int CPurchaseDialog_UpdateSelectionDelay(void* self) {
     int buttonIndex = 0;
     int zero = 0;
     while (1) {
-        if (buttonIndex == AsCPurchaseDialog(self)->selectedElement) {
+        if (buttonIndex == selectedElement) {
             float captionPosition[2] = {0.0f, 0.0f};
-            Layout_GetElementPosition(AsCPurchaseDialog(self)->layout, buttonIndex + kButtonCaptionBase, captionPosition);
+            Layout_GetElementPosition(layout, buttonIndex + kButtonCaptionBase, captionPosition);
             captionPosition[0] -= pressedOffset;
             captionPosition[1] -= pressedOffset;
-            Layout_SetElementPosition(AsCPurchaseDialog(self)->layout, buttonIndex + kButtonCaptionBase, captionPosition);
+            Layout_SetElementPosition(layout, buttonIndex + kButtonCaptionBase, captionPosition);
         }
-        Layout_SetElementValueState(AsCPurchaseDialog(self)->layout, buttonIndex, 0);
+        Layout_SetElementValueState(layout, buttonIndex, 0);
         buttonIndex++;
         if (buttonIndex > kCancelButton) {
             break;
         }
     }
-    AsCPurchaseDialog(self)->selectionDelayFrames = kPurchasePending;
+    selectionDelayFrames = kPurchasePending;
     return 1;
 }
 
 // Process input when feedback permits, then advance the layout.
-int CPurchaseDialog_Update(void* p) {
-    void* r31 = p;
-    if (CPurchaseDialog_UpdateSelectionDelay(p) == 0) {
-        CPurchaseDialog_ProcessInput(p);
+int CPurchaseDialog::Update(void* p) {
+    void* dialog = p;
+    if (((CPurchaseDialog*)p)->UpdateSelectionDelay() == 0) {
+        ((CPurchaseDialog*)p)->ProcessInput();
     }
-    void* q = AsCPurchaseDialog(r31)->layout;
+    void* q = AsCPurchaseDialog(dialog)->layout;
     Layout_Update(q);
     return 1;
 }
 
 // Draw the BP background, layout, item-slot quads, and number table.
-int CPurchaseDialog_Draw(void* p) {
-    void* r31 = p;
-    BpObject_TryInvokeCurrentCallback((*(void**)&AsCPurchaseDialog(p)->bpObject), 0);
-    BpObject_Draw((*(void**)&AsCPurchaseDialog(r31)->bpObject));
-    Layout_DrawWithOpacity(AsCPurchaseDialog(r31)->layout, kFloat_1_PurchaseDialog);
-    CPurchaseDialog_DrawSlotQuads(r31);
-    UITextTable_Draw(AsCPurchaseDialog(r31)->textTable);
+int CPurchaseDialog::Draw() {
+    void* dialog = this;
+    BpObject_TryInvokeCurrentCallback((*(void**)&bpObject), 0);
+    BpObject_Draw((*(void**)&AsCPurchaseDialog(dialog)->bpObject));
+    Layout_DrawWithOpacity(AsCPurchaseDialog(dialog)->layout, kFloat_1_PurchaseDialog);
+    ((CPurchaseDialog*)dialog)->DrawSlotQuads();
+    UITextTable_Draw(AsCPurchaseDialog(dialog)->textTable);
     return 1;
 }
 
 // Apply one of three row styles and enable only the configured categories.
-int CProductsCategory_SetLayoutMode(void* p, int v) {
+int CProductsCategory::SetLayoutMode(int v) {
     if (v >= 3 || v < 0) {
         return 0;
     }
     int r31 = 0;
     int r30 = 0;
     while (r31 < 3) {
-        Layout_SetElementValueState(AsCProductsCategory(p)->layout, r30 + 2, (signed char)v);
-        Layout_SetElementValueState(AsCProductsCategory(p)->layout, r30 + 3, (signed char)v);
+        Layout_SetElementValueState(layout, r30 + 2, (signed char)v);
+        Layout_SetElementValueState(layout, r30 + 3, (signed char)v);
         r31++;
         r30 += 3;
     }
@@ -321,17 +327,17 @@ int CProductsCategory_SetLayoutMode(void* p, int v) {
     {
         register int r30 = 0;
         while (v < 5) {
-            int r0 = AsCProductsCategory(p)->categoryCount;
+            int r0 = categoryCount;
             register int r4 = r30 + 1;
             register int r31 = r30 + 2;
             if (v < r0) {
-                Layout_SetElementPlayerFlagsAndState(AsCProductsCategory(p)->layout, r4, 1);
-                Layout_SetElementEnabled(AsCProductsCategory(p)->layout, r31, 1);
+                Layout_SetElementPlayerFlagsAndState(layout, r4, 1);
+                Layout_SetElementEnabled(layout, r31, 1);
             } else {
-                Layout_SetElementPlayerFlagsAndState(AsCProductsCategory(p)->layout, r4, 0);
-                Layout_SetElementEnabled(AsCProductsCategory(p)->layout, r31, 0);
+                Layout_SetElementPlayerFlagsAndState(layout, r4, 0);
+                Layout_SetElementEnabled(layout, r31, 0);
             }
-            Layout_SetElementEnabled(AsCProductsCategory(p)->layout, r30 + 3, 0);
+            Layout_SetElementEnabled(layout, r30 + 3, 0);
             v++;
             r30 += 3;
         }
@@ -340,85 +346,91 @@ int CProductsCategory_SetLayoutMode(void* p, int v) {
 }
 
 // Apply the category style, then validate and display the requested selection.
-int CProductsCategory_SetModeAndSelection(void* p, int v, int idx) {
-    void* r30 = p;
-    int r31 = idx;
-    AsCProductsCategory(p)->selectedCategoryIndex = kNoCategory;
-    CProductsCategory_SetLayoutMode(p, v);
-    if (r31 >= -1) {
-        int max = AsCProductsCategory(r30)->categoryCount;
-        if (r31 <= max) {
-            AsCProductsCategory(r30)->selectedCategoryIndex = r31;
-            CProductsCategory_UpdateSelectionLayout(r30);
+int CProductsCategory::SetModeAndSelection(int v, int idx) {
+    void* category = this;
+    int requestedIndex = idx;
+    selectedCategoryIndex = kNoCategory;
+    SetLayoutMode(v);
+    if (requestedIndex >= -1) {
+        int max = AsCProductsCategory(category)->categoryCount;
+        if (requestedIndex <= max) {
+            AsCProductsCategory(category)->selectedCategoryIndex = requestedIndex;
+            ((CProductsCategory*)category)->UpdateSelectionLayout();
         }
     }
     return 1;
 }
 
 // Display the current balance, purchase price, and remaining balance.
-int CPurchaseDialog_SetPriceBreakdown(void* self, int balance, int price) {
-    void* dialog = self;
+int CPurchaseDialog::SetPriceBreakdown(int balance, int price) {
+    void* dialog = this;
     int currentBalance = balance;
     int purchasePrice = price;
-    UITextTable_SetInteger(AsCPurchaseDialog(self)->textTable, kBalanceText, currentBalance);
+    UITextTable_SetInteger(textTable, kBalanceText, currentBalance);
     UITextTable_SetInteger(AsCPurchaseDialog(dialog)->textTable, kPriceText, purchasePrice);
     UITextTable_SetInteger(AsCPurchaseDialog(dialog)->textTable, kRemainingBalanceText, currentBalance - purchasePrice);
     return 1;
 }
 
-struct Obj77DB4 { char pad[0x5c]; Obj77DB4(int n) { Layout_Init(this, n); } };
+struct Obj77DB4 {
+    char pad[0x5c];
+    Obj77DB4(int n) {
+        Layout_Init(this, n);
+    }
+};
 
 // Create the dialog layout, BP resource entry, number table, and empty drawable slots.
-void* CPurchaseDialog_Ctor(void* self_) {
-    register char* self = (char*)self_;
-    AsCPurchaseDialog(self)->unk_4 = 0;
-    *(void**)self = __vt__15CPurchaseDialog;
+// A named method rather than a constructor: a constructor call through placement new adds a null check at the call site.
+void* CPurchaseDialog::Init() {
+    unk_4 = 0;
+    vtbl = __vt__15CPurchaseDialog;
     void* q = new Obj77DB4(5);
-    AsCPurchaseDialog(self)->layout = q;
-    AsCPurchaseDialog(self)->bpObject = 0;
-    AsCPurchaseDialog(self)->bpEntryId = -1;
-    AsCPurchaseDialog(self)->result = kPurchasePending;
-    (*(int*)&AsCPurchaseDialog(self)->textTable) = 0;
-    AsCPurchaseDialog(self)->selectionDelayFrames = kPurchasePending;
-    AsCPurchaseDialog(self)->selectedElement = -1;
-    AsCPurchaseDialog(self)->slot0Texture = 0;
-    AsCPurchaseDialog(self)->slot1Texture = 0;
-    AsCPurchaseDialog(self)->slot2Texture = 0;
-    AsCPurchaseDialog(self)->slot3Texture = 0;
-    AsCPurchaseDialog(self)->slot4Texture = 0;
-    AsCPurchaseDialog(self)->slot5Texture = 0;
-    AsCPurchaseDialog(self)->slot6Texture = 0;
-    AsCPurchaseDialog(self)->slot7Texture = 0;
+    layout = q;
+    bpObject = 0;
+    bpEntryId = -1;
+    result = kPurchasePending;
+    (*(int*)&textTable) = 0;
+    selectionDelayFrames = kPurchasePending;
+    selectedElement = -1;
+    slot0Texture = 0;
+    slot1Texture = 0;
+    slot2Texture = 0;
+    slot3Texture = 0;
+    slot4Texture = 0;
+    slot5Texture = 0;
+    slot6Texture = 0;
+    slot7Texture = 0;
     Layout_LoadExtended(q, 0, purchaseDialogStrings.layout);
     if (Sing_805DC5F0() == 0) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)s_bpCtrlDtorRegistration_PurchaseDialog);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    CBpCtrl_CreateEntry(Sing_805DC5F0(), purchaseDialogStrings.bpFile, (int*)(self + (int)&((CPurchaseDialog*)0)->bpEntryId), 0);
+    ((CBpCtrl*)Sing_805DC5F0())->CreateEntry(purchaseDialogStrings.bpFile, &bpEntryId, 0);
     if (Sing_805DC5F0() == 0) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)s_bpCtrlDtorRegistration_PurchaseDialog);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    int h = IdMap_Lookup(Sing_805DC5F0(), AsCPurchaseDialog(self)->bpEntryId);
-    AsCPurchaseDialog(self)->bpObject = h;
+    int h = IdMap_Lookup(Sing_805DC5F0(), bpEntryId);
+    bpObject = h;
     if (Sing_805DC830() == 0) {
         if (!s_pointerVectorInitialized) {
             PointerVector_InitReserved(s_fontNumDrawRegistry);
-            __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage, (void*)s_fontNumDrawRegistryDtorRecord_PurchaseDialog);
+            __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage,
+                                     (void*)s_fontNumDrawRegistryDtorRecord_PurchaseDialog);
             s_pointerVectorInitialized = 1;
         }
         Sing_805DC830() = s_fontNumDrawRegistry;
     }
-    AsCPurchaseDialog(self)->textTable = CFontNumDraw_CreateInVector(Sing_805DC830());
-    return self;
+    textTable = CFontNumDraw::CreateInVector((PtrVector*)Sing_805DC830());
+    return this;
 }
 
 struct SlotDrawable {
@@ -428,16 +440,19 @@ struct SlotDrawable {
     virtual void draw();
     virtual int visible();
 };
-struct SlotVertices { unsigned words[24]; };
+struct SlotVertices {
+    unsigned words[24];
+};
 
 // Draw each visible slot drawable into its layout rectangle as a textured quad.
-int CPurchaseDialog_DrawSlotQuads(void* self) {
+int CPurchaseDialog::DrawSlotQuads() {
     unsigned* quadTemplate = (unsigned*)s_purchaseDialogQuadTemplate;
-    void* slotCursor = self;
+    void* slotCursor = this;
     int index = 0;
     int zero = 0;
     for (;;) {
-        if (*(void**)&AsCPurchaseDialog(slotCursor)->slot0Texture == 0) break;
+        if (*(void**)&AsCPurchaseDialog(slotCursor)->slot0Texture == 0)
+            break;
         if ((*(SlotDrawable**)&AsCPurchaseDialog(slotCursor)->slot0Texture)->visible() != 0) {
             SlotVertices vertices;
             int rectangle[4];
@@ -445,7 +460,7 @@ int CPurchaseDialog_DrawSlotQuads(void* self) {
             rectangle[1] = zero;
             rectangle[2] = zero;
             rectangle[3] = zero;
-            Layout_ReadElementRect(AsCPurchaseDialog(self)->layout, index + kSlotRectBase, rectangle);
+            Layout_ReadElementRect(layout, index + kSlotRectBase, rectangle);
             vertices = *(SlotVertices*)quadTemplate;
             float* vertexWords = (float*)&vertices;
             vertexWords[0] = (float)rectangle[0];
@@ -463,192 +478,186 @@ int CPurchaseDialog_DrawSlotQuads(void* self) {
         }
         ++index;
         slotCursor = (char*)slotCursor + 4;
-        if (index >= kPurchaseSlotCount) break;
+        if (index >= kPurchaseSlotCount)
+            break;
     }
     return 1;
 }
 
 // Destroy the category layout and optionally delete its owning object.
-void* CProductsCategory_dtor(void* p, int deleting) {
-    if (p != 0) {
-        AsCProductsCategory(p)->vtbl = __vt__17CProductsCategory;
-        void* q = AsCProductsCategory(p)->layout;
-        if (q != 0) {
-            Layout_Destroy(q, 1);
-            AsCProductsCategory(p)->layout = 0;
-        }
-        if (deleting > 0) {
-            __dl__FPv(p);
-        }
+CProductsCategory::~CProductsCategory() {
+    vtbl = __vt__17CProductsCategory;
+    void* q = layout;
+    if (q != 0) {
+        Layout_Destroy(q, 1);
+        layout = 0;
     }
-    return p;
 }
 
 // Create the category layout and initialize its row count and selected index.
-void* CProductsCategory_Ctor(void* p, int arg) {
-    AsCProductsCategory(p)->layout = 0;
-    AsCProductsCategory(p)->vtbl = __vt__17CProductsCategory;
-    AsCProductsCategory(p)->categoryCount = arg;
-    AsCProductsCategory(p)->selectedCategoryIndex = 0;
+CProductsCategory::CProductsCategory(int arg) {
+    layout = 0;
+    vtbl = __vt__17CProductsCategory;
+    categoryCount = arg;
+    selectedCategoryIndex = 0;
     void* r31 = new Obj77DB4(5);
-    AsCProductsCategory(p)->layout = r31;
+    layout = r31;
     Layout_LoadExtended(r31, 0, s_productsCategoryLayoutPath);
-    return p;
 }
 
 // Publish a settled purchase result, hide the dialog, and play its close sound.
-int CPurchaseDialog_TryCloseWithResult(void* self, void* out) {
-    int result = AsCPurchaseDialog(self)->result;
+int CPurchaseDialog::TryCloseWithResult(void* out) {
+    int result = this->result;
     if (result == kPurchasePending) {
         return 0;
     }
-    int feedbackFrames = AsCPurchaseDialog(self)->selectionDelayFrames;
+    int feedbackFrames = selectionDelayFrames;
     if (feedbackFrames != kPurchasePending) {
         return 0;
     }
     *(int*)out = result;
-    BpObject_SetEnabled((*(void**)&AsCPurchaseDialog(self)->bpObject), 0);
-    void* textTable = AsCPurchaseDialog(self)->textTable;
+    BpObject_SetEnabled((*(void**)&bpObject), 0);
+    void* textTable = this->textTable;
     AsUITextTable(textTable)->drawEnabled = 0; // original text table +0x28
-    Sound_PlayByName(g_soundManager, purchaseDialogStrings.closeSound, 0, 0, 0, 0, kFloat_0_5_PurchaseDialog, kFloat_200_PurchaseDialogSound, kFloat_1_PurchaseDialog);
+    Sound_PlayByName(g_soundManager, purchaseDialogStrings.closeSound, 0, 0, 0, 0, kFloat_0_5_PurchaseDialog,
+                     kFloat_200_PurchaseDialogSound, kFloat_1_PurchaseDialog);
     return 1;
 }
 
 // Wait for both the submenu layout and shared BP entries to finish loading.
-int CShopSubMenu_IsLoaded(void* p) {
-    void* q = AsCShopSubMenu(p)->layout;
+int CShopSubMenu::IsLoaded() {
+    void* q = layout;
     if (Layout_PollLoadComplete(q) == 0) {
         return 0;
     }
     if (Sing_805DC5F0() == 0) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)s_bpCtrlDtorRegistration_PurchaseDialog);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    if (CBpCtrl_PollAllEntriesLoaded(Sing_805DC5F0()) == 0) {
+    if (((CBpCtrl*)Sing_805DC5F0())->PollAllEntriesLoaded() == 0) {
         return 0;
     }
     return 1;
 }
 
 // Reset the result, enable the dialog controls and text, and play the open sound.
-int CPurchaseDialog_Show(void* self) {
-    void* r31 = self;
-    AsCPurchaseDialog(self)->result = kPurchasePending;
-    BpObject_SetEnabled((*(void**)&AsCPurchaseDialog(self)->bpObject), 1);
-    void* r3 = AsCPurchaseDialog(r31)->textTable;
+int CPurchaseDialog::Show() {
+    void* dialog = this;
+    result = kPurchasePending;
+    BpObject_SetEnabled((*(void**)&bpObject), 1);
+    void* r3 = AsCPurchaseDialog(dialog)->textTable;
     AsUITextTable(r3)->drawEnabled = 1; // original text table +0x28
-    Layout_SetElementPlayerFlag(AsCPurchaseDialog(r31)->layout, 0, 1, kPlayerInteractionFlag);
-    Layout_SetElementPlayerFlag(AsCPurchaseDialog(r31)->layout, 1, 1, kPlayerInteractionFlag);
-    Layout_Update(AsCPurchaseDialog(r31)->layout);
-    Sound_PlayByName(g_soundManager, purchaseDialogStrings.openSound, 0, 0, 0, 0, kFloat_0_5_PurchaseDialog, kFloat_200_PurchaseDialogSound, kFloat_1_PurchaseDialog);
+    Layout_SetElementPlayerFlag(AsCPurchaseDialog(dialog)->layout, 0, 1, kPlayerInteractionFlag);
+    Layout_SetElementPlayerFlag(AsCPurchaseDialog(dialog)->layout, 1, 1, kPlayerInteractionFlag);
+    Layout_Update(AsCPurchaseDialog(dialog)->layout);
+    Sound_PlayByName(g_soundManager, purchaseDialogStrings.openSound, 0, 0, 0, 0, kFloat_0_5_PurchaseDialog,
+                     kFloat_200_PurchaseDialogSound, kFloat_1_PurchaseDialog);
     return 1;
 }
 
 // Start the purchase BP script, hide item panes, and register price text entries.
-int CPurchaseDialog_InitLayout(void* self) {
-    void* r30 = self;
-    Layout_SetModeByte(AsCPurchaseDialog(self)->layout, 0);
-    BpObject_StartScriptByName((*(void**)&AsCPurchaseDialog(self)->bpObject), purchaseDialogStrings.script, 1);
-    BpObject_SetEnabled((*(void**)&AsCPurchaseDialog(self)->bpObject), 0);
+int CPurchaseDialog::InitLayout() {
+    void* dialog = this;
+    Layout_SetModeByte(layout, 0);
+    BpObject_StartScriptByName((*(void**)&bpObject), purchaseDialogStrings.script, 1);
+    BpObject_SetEnabled((*(void**)&bpObject), 0);
     int r31 = 4;
     do {
-        Layout_SetElementEnabled(AsCPurchaseDialog(r30)->layout, r31, 0);
+        Layout_SetElementEnabled(AsCPurchaseDialog(dialog)->layout, r31, 0);
         r31++;
     } while (r31 <= 0xe);
-    CFontNumDraw_RegisterEntries(AsCPurchaseDialog(r30)->textTable, s_purchaseDialogPriceTextEntries, 3, (*(void**)&AsCPurchaseDialog(r30)->bpObject), purchaseDialogStrings.numberAtlas);
-    void* r4 = AsCPurchaseDialog(r30)->textTable;
+    ((CFontNumDraw*)(AsCPurchaseDialog(dialog)->textTable))
+        ->RegisterEntries(s_purchaseDialogPriceTextEntries, 3, (*(void**)&AsCPurchaseDialog(dialog)->bpObject),
+                          purchaseDialogStrings.numberAtlas);
+    void* r4 = AsCPurchaseDialog(dialog)->textTable;
     AsUITextTable(r4)->drawEnabled = 1; // original text table +0x28
     return 1;
 }
 
 // Release the layout and BP entry, unregister the text table, and optionally delete the dialog.
-void* CPurchaseDialog_dtor(void* self, int deleting) {
-    void* r30 = self;
-    if (self != 0) {
-        *(void**)self = __vt__15CPurchaseDialog;
-        void* q = AsCPurchaseDialog(self)->layout;
-        if (q != 0) {
-            Layout_Destroy(q, 1);
-            AsCPurchaseDialog(r30)->layout = 0;
-        }
-        if (AsCPurchaseDialog(r30)->bpEntryId != -1) {
-            if (Sing_805DC5F0() == 0) {
-                if (!s_bpCtrlInitialized) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)s_bpCtrlDtorRegistration_PurchaseDialog);
-                    s_bpCtrlInitialized = 1;
-                }
-                Sing_805DC5F0() = s_bpCtrl;
-            }
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCPurchaseDialog(r30)->bpEntryId);
-            AsCPurchaseDialog(r30)->bpEntryId = -1;
-        }
-        UITextTable_ClearEntries(AsCPurchaseDialog(r30)->textTable);
-        if (AsCPurchaseDialog(r30)->textTable != 0) {
-            if (Sing_805DC830() == 0) {
-                if (!s_pointerVectorInitialized) {
-                    PointerVector_InitReserved(s_fontNumDrawRegistry);
-                    __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage, (void*)s_fontNumDrawRegistryDtorRecord_PurchaseDialog);
-                    s_pointerVectorInitialized = 1;
-                }
-                Sing_805DC830() = s_fontNumDrawRegistry;
-            }
-            PointerArray_DeleteValue(Sing_805DC830(), AsCPurchaseDialog(r30)->textTable);
-        }
-        if (deleting > 0) __dl__FPv(r30);
+CPurchaseDialog::~CPurchaseDialog() {
+    vtbl = __vt__15CPurchaseDialog;
+    void* q = layout;
+    if (q != 0) {
+        Layout_Destroy(q, 1);
+        layout = 0;
     }
-    return r30;
+    if (bpEntryId != -1) {
+        if (Sing_805DC5F0() == 0) {
+            if (!s_bpCtrlInitialized) {
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)s_bpCtrlDtorRegistration_PurchaseDialog);
+                s_bpCtrlInitialized = 1;
+            }
+            Sing_805DC5F0() = s_bpCtrl;
+        }
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(bpEntryId);
+        bpEntryId = -1;
+    }
+    UITextTable_ClearEntries(textTable);
+    if (textTable != 0) {
+        if (Sing_805DC830() == 0) {
+            if (!s_pointerVectorInitialized) {
+                PointerVector_InitReserved(s_fontNumDrawRegistry);
+                __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage,
+                                         (void*)s_fontNumDrawRegistryDtorRecord_PurchaseDialog);
+                s_pointerVectorInitialized = 1;
+            }
+            Sing_805DC830() = s_fontNumDrawRegistry;
+        }
+        PointerArray_DeleteValue(Sing_805DC830(), textTable);
+    }
 }
 
 // Calculate selection-marker positions, hide auxiliary rows, and apply the initial mode.
-int CProductsCategory_InitLayout(void* self, int mode, int selected) {
+int CProductsCategory::InitLayout(int mode, int selected) {
     float anchorPosition[2];
     int zero = 0;
     int secondRowOffset = kCategoryRowHeight;
     int thirdRowOffset = 2 * kCategoryRowHeight;
     int fourthRowOffset = 3 * kCategoryRowHeight;
     int fifthRowOffset = 4 * kCategoryRowHeight;
-    Layout_SetModeByte(AsCProductsCategory(self)->layout, 0);
+    Layout_SetModeByte(layout, 0);
     ((int*)anchorPosition)[0] = zero;
     ((int*)anchorPosition)[1] = zero;
-    Layout_GetElementPosition(AsCProductsCategory(self)->layout, 0, anchorPosition);
-    AsCProductsCategory(self)->selectionY[0] = (int)(anchorPosition[1] + (float)zero);
-    AsCProductsCategory(self)->selectionY[1] = (int)(anchorPosition[1] + (float)secondRowOffset);
-    AsCProductsCategory(self)->selectionY[2] = (int)(anchorPosition[1] + (float)thirdRowOffset);
-    AsCProductsCategory(self)->selectionY[3] = (int)(anchorPosition[1] + (float)fourthRowOffset);
-    AsCProductsCategory(self)->selectionY[4] = (int)(anchorPosition[1] + (float)fifthRowOffset);
+    Layout_GetElementPosition(layout, 0, anchorPosition);
+    selectionY[0] = (int)(anchorPosition[1] + (float)zero);
+    selectionY[1] = (int)(anchorPosition[1] + (float)secondRowOffset);
+    selectionY[2] = (int)(anchorPosition[1] + (float)thirdRowOffset);
+    selectionY[3] = (int)(anchorPosition[1] + (float)fourthRowOffset);
+    selectionY[4] = (int)(anchorPosition[1] + (float)fifthRowOffset);
     for (int i = kCategoryMarkerBase; i <= kCategoryMarkerBase + kCategoryCount - 1; ++i) {
-        Layout_SetElementEnabled(AsCProductsCategory(self)->layout, i, 0);
+        Layout_SetElementEnabled(layout, i, 0);
     }
-    AsCProductsCategory(self)->selectedCategoryIndex = kNoCategory;
-    CProductsCategory_SetLayoutMode(self, mode);
-    if (selected >= -1 && selected <= AsCProductsCategory(self)->categoryCount) {
-        AsCProductsCategory(self)->selectedCategoryIndex = selected;
-        CProductsCategory_UpdateSelectionLayout(self);
+    selectedCategoryIndex = kNoCategory;
+    SetLayoutMode(mode);
+    if (selected >= -1 && selected <= categoryCount) {
+        selectedCategoryIndex = selected;
+        UpdateSelectionLayout();
     }
     return 1;
 }
 
 // Space category rows around the selected item and move the selection marker.
-int CProductsCategory_UpdateSelectionLayout(void* self) {
+int CProductsCategory::UpdateSelectionLayout() {
     float buttonPosition[2];
     float captionPosition[2];
     float markerPosition[2];
     int buttonRect[4];
-    Layout_GetElementPosition((*(void* volatile*)&AsCProductsCategory(self)->layout), 1, buttonPosition);
-    Layout_GetElementPosition((*(void* volatile*)&AsCProductsCategory(self)->layout), 2, captionPosition);
-    Layout_GetElementPosition((*(void* volatile*)&AsCProductsCategory(self)->layout), kCategoryMarkerBase, markerPosition);
-    Layout_ReadElementRect((*(void* volatile*)&AsCProductsCategory(self)->layout), 1, buttonRect);
+    Layout_GetElementPosition((*(void* volatile*)&layout), 1, buttonPosition);
+    Layout_GetElementPosition((*(void* volatile*)&layout), 2, captionPosition);
+    Layout_GetElementPosition((*(void* volatile*)&layout), kCategoryMarkerBase, markerPosition);
+    Layout_ReadElementRect((*(void* volatile*)&layout), 1, buttonRect);
     float selectedGap = kProductsCategorySelectedGap;
     int categoryIndex = 1;
     float rowHeight = kProductsCategoryRowSpacing;
     int elementBase = 3;
     while (categoryIndex < kCategoryCount) {
-        int selectedIndex = AsCProductsCategory(self)->selectedCategoryIndex;
+        int selectedIndex = selectedCategoryIndex;
         int buttonElement = elementBase + 1;
         int captionElement = elementBase + 2;
         if (categoryIndex == selectedIndex + 1) {
@@ -659,60 +668,66 @@ int CProductsCategory_UpdateSelectionLayout(void* self) {
             buttonRect[3] += kSelectedCategoryGap;
         }
         buttonPosition[1] += rowHeight;
-        Layout_SetElementPosition((*(void* volatile*)&AsCProductsCategory(self)->layout), buttonElement, buttonPosition);
+        Layout_SetElementPosition((*(void* volatile*)&layout), buttonElement, buttonPosition);
         captionPosition[1] += rowHeight;
-        Layout_SetElementPosition((*(void* volatile*)&AsCProductsCategory(self)->layout), captionElement, captionPosition);
-        Layout_SetElementPosition((*(void* volatile*)&AsCProductsCategory(self)->layout), elementBase + 3, captionPosition);
+        Layout_SetElementPosition((*(void* volatile*)&layout), captionElement, captionPosition);
+        Layout_SetElementPosition((*(void* volatile*)&layout), elementBase + 3, captionPosition);
         markerPosition[1] += rowHeight;
-        Layout_SetElementPosition((*(void* volatile*)&AsCProductsCategory(self)->layout), categoryIndex + kCategoryMarkerBase, markerPosition);
+        Layout_SetElementPosition((*(void* volatile*)&layout), categoryIndex + kCategoryMarkerBase, markerPosition);
         buttonRect[1] += kCategoryRowHeight;
         buttonRect[3] += kCategoryRowHeight;
-        Layout_WriteElementRect((*(void* volatile*)&AsCProductsCategory(self)->layout), buttonElement, buttonRect);
+        Layout_WriteElementRect((*(void* volatile*)&layout), buttonElement, buttonRect);
         categoryIndex++;
         elementBase += kCategoryElementStride;
     }
-    CProductsCategory_UpdateSelectionFlags(self);
+    CProductsCategory::UpdateSelectionFlags(this);
     float position[2] = {0.0f, 0.0f};
     int showSelection = 0;
-    if (AsCProductsCategory(self)->selectedCategoryIndex != -1) showSelection = 1;
-    Layout_SetElementEnabled((*(void* volatile*)&AsCProductsCategory(self)->layout), 0, showSelection);
-    if (AsCProductsCategory(self)->selectedCategoryIndex != -1) {
-        Layout_GetElementPosition((*(void* volatile*)&AsCProductsCategory(self)->layout), 0, position);
-        int idx = AsCProductsCategory(self)->selectedCategoryIndex;
-        int selectedY = AsCProductsCategory(self)->selectionY[idx];
+    if (selectedCategoryIndex != -1)
+        showSelection = 1;
+    Layout_SetElementEnabled((*(void* volatile*)&layout), 0, showSelection);
+    if (selectedCategoryIndex != -1) {
+        Layout_GetElementPosition((*(void* volatile*)&layout), 0, position);
+        int idx = selectedCategoryIndex;
+        int selectedY = selectionY[idx];
         float selectedPositionY = (float)(double)selectedY;
         position[1] = selectedPositionY;
-        Layout_SetElementPosition((*(void* volatile*)&AsCProductsCategory(self)->layout), 0, position);
+        Layout_SetElementPosition((*(void* volatile*)&layout), 0, position);
     }
     return 1;
 }
 
 // Handle cancel or a confirm/cancel button activation and begin pressed feedback.
-int CPurchaseDialog_ProcessInput(void* self) {
+int CPurchaseDialog::ProcessInput() {
     int captionPosition[2];
     // Raw vector header: data address, element count, capacity; IDs are in data.
     int activatedElementVectorWords[3];
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, (void*)s_inputManagerDtorRecord_PurchaseDialog);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     (void*)s_inputManagerDtorRecord_PurchaseDialog);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = (void*)s_gameInputManager;
+        GetInputManagerSlot() = (void*)s_gameInputManager;
     }
-    int cancelPressed = Input_IsActionPressed(Sing_805DC5C8(), kActionCancelPurchase, -1);
+    int cancelPressed = Input_IsActionPressed(GetInputManagerSlot(), kActionCancelPurchase, -1);
     if (cancelPressed != 0) {
-        AsCPurchaseDialog(self)->result = kPurchaseCancelled;
-        Sound_PlayByName(g_soundManager, purchaseDialogStrings.cancelSound, 0, 0, 0, 0, kFloat_0_5_PurchaseDialog, kFloat_200_PurchaseDialogSound, kFloat_1_PurchaseDialog);
+        result = kPurchaseCancelled;
+        Sound_PlayByName(g_soundManager, purchaseDialogStrings.cancelSound, 0, 0, 0, 0, kFloat_0_5_PurchaseDialog,
+                         kFloat_200_PurchaseDialogSound, kFloat_1_PurchaseDialog);
         return 1;
     }
     register int zero = 0;
-    activatedElementVectorWords[0] = zero; activatedElementVectorWords[1] = zero; activatedElementVectorWords[2] = zero;
+    activatedElementVectorWords[0] = zero;
+    activatedElementVectorWords[1] = zero;
+    activatedElementVectorWords[2] = zero;
     ActivatedUnwindCleanup activatedCleanup(&activatedElementVectorWords);
-    if (Layout_CollectActivated(AsCPurchaseDialog(self)->layout, activatedElementVectorWords, 0) == 0) {
+    if (Layout_CollectActivated(layout, activatedElementVectorWords, 0) == 0) {
         if (activatedElementVectorWords[0] != 0) {
             activatedElementVectorWords[1] = activatedElementVectorWords[1] - *(int*)&activatedElementVectorWords[1];
-            activatedCleanup.release(); appFreeUni__FPv((void*)activatedElementVectorWords[0]);
+            activatedCleanup.release();
+            appFreeUni__FPv((void*)activatedElementVectorWords[0]);
         }
         return 0;
     }
@@ -727,28 +742,32 @@ int CPurchaseDialog_ProcessInput(void* self) {
     if (selectedButton == -1) {
         if (activatedElementVectorWords[0] != 0) {
             activatedElementVectorWords[1] = activatedElementVectorWords[1] - *(int*)&activatedElementVectorWords[1];
-            activatedCleanup.release(); appFreeUni__FPv((void*)activatedElementVectorWords[0]);
+            activatedCleanup.release();
+            appFreeUni__FPv((void*)activatedElementVectorWords[0]);
         }
         return 0;
     }
-    AsCPurchaseDialog(self)->selectedElement = selectedButton;
-    Layout_SetElementValueState(AsCPurchaseDialog(self)->layout, selectedButton, kPressedElementState);
-    Layout_SetElementPlayerFlag(AsCPurchaseDialog(self)->layout, AsCPurchaseDialog(self)->selectedElement, 0, kPlayerInteractionFlag);
-    captionPosition[0] = 0; captionPosition[1] = 0;
-    Layout_GetElementPosition(AsCPurchaseDialog(self)->layout, AsCPurchaseDialog(self)->selectedElement + kButtonCaptionBase, (float*)captionPosition);
+    selectedElement = selectedButton;
+    Layout_SetElementValueState(layout, selectedButton, kPressedElementState);
+    Layout_SetElementPlayerFlag(layout, selectedElement, 0, kPlayerInteractionFlag);
+    captionPosition[0] = 0;
+    captionPosition[1] = 0;
+    Layout_GetElementPosition(layout, selectedElement + kButtonCaptionBase, (float*)captionPosition);
     *(float*)&captionPosition[0] += kFloat_1_PurchaseDialog;
     *(float*)&captionPosition[1] += kFloat_1_PurchaseDialog;
-    Layout_SetElementPosition(AsCPurchaseDialog(self)->layout, AsCPurchaseDialog(self)->selectedElement + kButtonCaptionBase, (float*)captionPosition);
-    AsCPurchaseDialog(self)->selectionDelayFrames = kSelectionDelayFrames;
-    Sound_PlayByName(g_soundManager, purchaseDialogStrings.clickSound, 0, 0, 0, 0, kFloat_0_5_PurchaseDialog, kFloat_200_PurchaseDialogSound, kFloat_1_PurchaseDialog);
+    Layout_SetElementPosition(layout, selectedElement + kButtonCaptionBase, (float*)captionPosition);
+    selectionDelayFrames = kSelectionDelayFrames;
+    Sound_PlayByName(g_soundManager, purchaseDialogStrings.clickSound, 0, 0, 0, 0, kFloat_0_5_PurchaseDialog,
+                     kFloat_200_PurchaseDialogSound, kFloat_1_PurchaseDialog);
     if (selectedButton == kConfirmButton) {
-        AsCPurchaseDialog(self)->result = kPurchaseConfirmed;
+        result = kPurchaseConfirmed;
     } else {
-        AsCPurchaseDialog(self)->result = kPurchaseCancelled;
+        result = kPurchaseCancelled;
     }
     if (activatedElementVectorWords[0] != 0) {
         activatedElementVectorWords[1] = activatedElementVectorWords[1] - *(int*)&activatedElementVectorWords[1];
-        activatedCleanup.release(); appFreeUni__FPv((void*)activatedElementVectorWords[0]);
+        activatedCleanup.release();
+        appFreeUni__FPv((void*)activatedElementVectorWords[0]);
     }
     return 1;
 }

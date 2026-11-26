@@ -1,8 +1,10 @@
+// Math helpers for 2D and 3D vectors, affine and 4x4 matrices, quaternions, planes and
+// bounding boxes (axis-aligned and oriented). Functions copy, combine and test these values,
+// and build rotation matrices from Euler angles and from an axis and angle.
+
 #include <decomp/static_init.h>
 #include "game/types.h"
 #include "fp_fused.h"
-// Translation unit 0x8004CF18-0x8004DFB0 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -19,49 +21,86 @@ extern double acos(double);
 extern float Math_SinApprox(float);
 extern float Math_CosApprox(float);
 
-struct Mat4_8004CF18 { float v[16]; };
-struct EulerAngles { float x, y, z; };
+struct Mat4_8004CF18 {
+    float v[16];
+};
+struct EulerAngles {
+    float x, y, z;
+};
 extern void Matrix_SetBasisElements(void*, float, float, float, float, float, float, float, float, float);
 // Build the affine rotation from Euler X/Y/Z angles, preserving the original multiply and rounding order.
 void Matrix_FromEulerAngles(Mat4_8004CF18* dst, const EulerAngles* angles) {
-    struct Affine { float v[12]; } combinedXY, rotationX, rotationY, rotationZ;
+    struct Affine {
+        float v[12];
+    } combinedXY, rotationX, rotationY, rotationZ;
     float sinZ, negativeSinZ, cosZ;
     cosZ = Math_CosApprox(angles->z);
     negativeSinZ = -Math_SinApprox(angles->z);
     sinZ = Math_SinApprox(angles->z);
     float cosZForBasis = Math_CosApprox(angles->z);
-    Matrix_SetBasisElements(&rotationZ, cosZForBasis, sinZ, kFloat_0_Matrix, negativeSinZ, cosZ, kFloat_0_Matrix, kFloat_0_Matrix, kFloat_0_Matrix, kFloat_1_matrixQuaternion);
-    Matrix_SetBasisElements(&rotationY, Math_CosApprox(angles->y), kFloat_0_Matrix, Math_SinApprox(angles->y), kFloat_0_Matrix, kFloat_1_matrixQuaternion, kFloat_0_Matrix, -Math_SinApprox(angles->y), kFloat_0_Matrix, Math_CosApprox(angles->y));
-    Matrix_SetBasisElements(&rotationX, kFloat_1_matrixQuaternion, kFloat_0_Matrix, kFloat_0_Matrix, kFloat_0_Matrix, Math_CosApprox(angles->x), -Math_SinApprox(angles->x), kFloat_0_Matrix, Math_SinApprox(angles->x), Math_CosApprox(angles->x));
-    combinedXY.v[0] = rotationX.v[2]*rotationY.v[6] + (rotationX.v[0]*rotationY.v[0] + rotationX.v[1]*rotationY.v[3]);
-    combinedXY.v[1] = rotationX.v[2]*rotationY.v[7] + (rotationX.v[0]*rotationY.v[1] + rotationX.v[1]*rotationY.v[4]);
-    combinedXY.v[2] = rotationX.v[2]*rotationY.v[8] + (rotationX.v[0]*rotationY.v[2] + rotationX.v[1]*rotationY.v[5]);
-    combinedXY.v[3] = rotationX.v[5]*rotationY.v[6] + (rotationX.v[3]*rotationY.v[0] + rotationX.v[4]*rotationY.v[3]);
-    combinedXY.v[4] = rotationX.v[5]*rotationY.v[7] + (rotationX.v[3]*rotationY.v[1] + rotationX.v[4]*rotationY.v[4]);
-    combinedXY.v[5] = rotationX.v[5]*rotationY.v[8] + (rotationX.v[3]*rotationY.v[2] + rotationX.v[4]*rotationY.v[5]);
-    combinedXY.v[6] = rotationX.v[8]*rotationY.v[6] + (rotationX.v[6]*rotationY.v[0] + rotationX.v[7]*rotationY.v[3]);
-    combinedXY.v[7] = rotationX.v[8]*rotationY.v[7] + (rotationX.v[6]*rotationY.v[1] + rotationX.v[7]*rotationY.v[4]);
-    combinedXY.v[8] = rotationX.v[8]*rotationY.v[8] + (rotationX.v[6]*rotationY.v[2] + rotationX.v[7]*rotationY.v[5]);
-    combinedXY.v[9] = rotationY.v[9] + (rotationX.v[11]*rotationY.v[6] + (rotationX.v[9]*rotationY.v[0] + rotationX.v[10]*rotationY.v[3]));
-    combinedXY.v[10] = rotationY.v[10] + (rotationX.v[11]*rotationY.v[7] + (rotationX.v[9]*rotationY.v[1] + rotationX.v[10]*rotationY.v[4]));
-    combinedXY.v[11] = rotationY.v[11] + (rotationX.v[11]*rotationY.v[8] + (rotationX.v[9]*rotationY.v[2] + rotationX.v[10]*rotationY.v[5]));
-    dst->v[0] = combinedXY.v[2]*rotationZ.v[6] + (combinedXY.v[0]*rotationZ.v[0] + combinedXY.v[1]*rotationZ.v[3]);
-    dst->v[1] = combinedXY.v[2]*rotationZ.v[7] + (combinedXY.v[0]*rotationZ.v[1] + combinedXY.v[1]*rotationZ.v[4]);
-    dst->v[2] = combinedXY.v[2]*rotationZ.v[8] + (combinedXY.v[0]*rotationZ.v[2] + combinedXY.v[1]*rotationZ.v[5]);
-    dst->v[3] = combinedXY.v[5]*rotationZ.v[6] + (combinedXY.v[3]*rotationZ.v[0] + combinedXY.v[4]*rotationZ.v[3]);
-    dst->v[4] = combinedXY.v[5]*rotationZ.v[7] + (combinedXY.v[3]*rotationZ.v[1] + combinedXY.v[4]*rotationZ.v[4]);
-    dst->v[5] = combinedXY.v[5]*rotationZ.v[8] + (combinedXY.v[3]*rotationZ.v[2] + combinedXY.v[4]*rotationZ.v[5]);
-    dst->v[6] = combinedXY.v[8]*rotationZ.v[6] + (combinedXY.v[6]*rotationZ.v[0] + combinedXY.v[7]*rotationZ.v[3]);
-    dst->v[7] = combinedXY.v[8]*rotationZ.v[7] + (combinedXY.v[6]*rotationZ.v[1] + combinedXY.v[7]*rotationZ.v[4]);
-    dst->v[8] = combinedXY.v[8]*rotationZ.v[8] + (combinedXY.v[6]*rotationZ.v[2] + combinedXY.v[7]*rotationZ.v[5]);
-    dst->v[9] = rotationZ.v[9] + (combinedXY.v[11]*rotationZ.v[6] + (combinedXY.v[9]*rotationZ.v[0] + combinedXY.v[10]*rotationZ.v[3]));
-    dst->v[10] = rotationZ.v[10] + (combinedXY.v[11]*rotationZ.v[7] + (combinedXY.v[9]*rotationZ.v[1] + combinedXY.v[10]*rotationZ.v[4]));
-    dst->v[11] = rotationZ.v[11] + (combinedXY.v[11]*rotationZ.v[8] + (combinedXY.v[9]*rotationZ.v[2] + combinedXY.v[10]*rotationZ.v[5]));
+    Matrix_SetBasisElements(&rotationZ, cosZForBasis, sinZ, kFloat_0_Matrix, negativeSinZ, cosZ, kFloat_0_Matrix,
+                            kFloat_0_Matrix, kFloat_0_Matrix, kFloat_1_matrixQuaternion);
+    Matrix_SetBasisElements(&rotationY, Math_CosApprox(angles->y), kFloat_0_Matrix, Math_SinApprox(angles->y),
+                            kFloat_0_Matrix, kFloat_1_matrixQuaternion, kFloat_0_Matrix, -Math_SinApprox(angles->y),
+                            kFloat_0_Matrix, Math_CosApprox(angles->y));
+    Matrix_SetBasisElements(&rotationX, kFloat_1_matrixQuaternion, kFloat_0_Matrix, kFloat_0_Matrix, kFloat_0_Matrix,
+                            Math_CosApprox(angles->x), -Math_SinApprox(angles->x), kFloat_0_Matrix,
+                            Math_SinApprox(angles->x), Math_CosApprox(angles->x));
+    combinedXY.v[0] =
+        rotationX.v[2] * rotationY.v[6] + (rotationX.v[0] * rotationY.v[0] + rotationX.v[1] * rotationY.v[3]);
+    combinedXY.v[1] =
+        rotationX.v[2] * rotationY.v[7] + (rotationX.v[0] * rotationY.v[1] + rotationX.v[1] * rotationY.v[4]);
+    combinedXY.v[2] =
+        rotationX.v[2] * rotationY.v[8] + (rotationX.v[0] * rotationY.v[2] + rotationX.v[1] * rotationY.v[5]);
+    combinedXY.v[3] =
+        rotationX.v[5] * rotationY.v[6] + (rotationX.v[3] * rotationY.v[0] + rotationX.v[4] * rotationY.v[3]);
+    combinedXY.v[4] =
+        rotationX.v[5] * rotationY.v[7] + (rotationX.v[3] * rotationY.v[1] + rotationX.v[4] * rotationY.v[4]);
+    combinedXY.v[5] =
+        rotationX.v[5] * rotationY.v[8] + (rotationX.v[3] * rotationY.v[2] + rotationX.v[4] * rotationY.v[5]);
+    combinedXY.v[6] =
+        rotationX.v[8] * rotationY.v[6] + (rotationX.v[6] * rotationY.v[0] + rotationX.v[7] * rotationY.v[3]);
+    combinedXY.v[7] =
+        rotationX.v[8] * rotationY.v[7] + (rotationX.v[6] * rotationY.v[1] + rotationX.v[7] * rotationY.v[4]);
+    combinedXY.v[8] =
+        rotationX.v[8] * rotationY.v[8] + (rotationX.v[6] * rotationY.v[2] + rotationX.v[7] * rotationY.v[5]);
+    combinedXY.v[9] = rotationY.v[9] + (rotationX.v[11] * rotationY.v[6] +
+                                        (rotationX.v[9] * rotationY.v[0] + rotationX.v[10] * rotationY.v[3]));
+    combinedXY.v[10] = rotationY.v[10] + (rotationX.v[11] * rotationY.v[7] +
+                                          (rotationX.v[9] * rotationY.v[1] + rotationX.v[10] * rotationY.v[4]));
+    combinedXY.v[11] = rotationY.v[11] + (rotationX.v[11] * rotationY.v[8] +
+                                          (rotationX.v[9] * rotationY.v[2] + rotationX.v[10] * rotationY.v[5]));
+    dst->v[0] =
+        combinedXY.v[2] * rotationZ.v[6] + (combinedXY.v[0] * rotationZ.v[0] + combinedXY.v[1] * rotationZ.v[3]);
+    dst->v[1] =
+        combinedXY.v[2] * rotationZ.v[7] + (combinedXY.v[0] * rotationZ.v[1] + combinedXY.v[1] * rotationZ.v[4]);
+    dst->v[2] =
+        combinedXY.v[2] * rotationZ.v[8] + (combinedXY.v[0] * rotationZ.v[2] + combinedXY.v[1] * rotationZ.v[5]);
+    dst->v[3] =
+        combinedXY.v[5] * rotationZ.v[6] + (combinedXY.v[3] * rotationZ.v[0] + combinedXY.v[4] * rotationZ.v[3]);
+    dst->v[4] =
+        combinedXY.v[5] * rotationZ.v[7] + (combinedXY.v[3] * rotationZ.v[1] + combinedXY.v[4] * rotationZ.v[4]);
+    dst->v[5] =
+        combinedXY.v[5] * rotationZ.v[8] + (combinedXY.v[3] * rotationZ.v[2] + combinedXY.v[4] * rotationZ.v[5]);
+    dst->v[6] =
+        combinedXY.v[8] * rotationZ.v[6] + (combinedXY.v[6] * rotationZ.v[0] + combinedXY.v[7] * rotationZ.v[3]);
+    dst->v[7] =
+        combinedXY.v[8] * rotationZ.v[7] + (combinedXY.v[6] * rotationZ.v[1] + combinedXY.v[7] * rotationZ.v[4]);
+    dst->v[8] =
+        combinedXY.v[8] * rotationZ.v[8] + (combinedXY.v[6] * rotationZ.v[2] + combinedXY.v[7] * rotationZ.v[5]);
+    dst->v[9] = rotationZ.v[9] + (combinedXY.v[11] * rotationZ.v[6] +
+                                  (combinedXY.v[9] * rotationZ.v[0] + combinedXY.v[10] * rotationZ.v[3]));
+    dst->v[10] = rotationZ.v[10] + (combinedXY.v[11] * rotationZ.v[7] +
+                                    (combinedXY.v[9] * rotationZ.v[1] + combinedXY.v[10] * rotationZ.v[4]));
+    dst->v[11] = rotationZ.v[11] + (combinedXY.v[11] * rotationZ.v[8] +
+                                    (combinedXY.v[9] * rotationZ.v[2] + combinedXY.v[10] * rotationZ.v[5]));
 }
 
-struct Quat_8004D758 { float v[4]; };
+struct CQuaternion {
+    float v[4];
+};
 // Interpolate quaternions along the shortest arc, using linear weights for nearly equal orientations.
-void Quat_Slerp(Quat_8004D758* dst, const Quat_8004D758* start, const Quat_8004D758* end, float fraction) {
+void Quat_Slerp(CQuaternion* dst, const CQuaternion* start, const CQuaternion* end, float fraction) {
     // 0x8004D794/0x8004D7A8: fmuls f1 = start[1]*end[1], then fmadds start[0]*end[0] + f1 (fused order matters for rounding).
     float dot = start->v[1] * end->v[1];
     dot = start->v[0] * end->v[0] + dot;
@@ -69,10 +108,16 @@ void Quat_Slerp(Quat_8004D758* dst, const Quat_8004D758* start, const Quat_8004D
     dot = start->v[3] * end->v[3] + dot;
     float adjustedStart[4];
     if (dot < kFloat_0_Matrix) {
-        adjustedStart[0] = -start->v[0]; adjustedStart[1] = -start->v[1]; adjustedStart[2] = -start->v[2]; adjustedStart[3] = -start->v[3];
+        adjustedStart[0] = -start->v[0];
+        adjustedStart[1] = -start->v[1];
+        adjustedStart[2] = -start->v[2];
+        adjustedStart[3] = -start->v[3];
         dot = -dot;
     } else {
-        adjustedStart[0] = start->v[0]; adjustedStart[1] = start->v[1]; adjustedStart[2] = start->v[2]; adjustedStart[3] = start->v[3];
+        adjustedStart[0] = start->v[0];
+        adjustedStart[1] = start->v[1];
+        adjustedStart[2] = start->v[2];
+        adjustedStart[3] = start->v[3];
     }
     float startWeight, endWeight;
     if (kFloat_0_05_MatrixQuaternion < kFloat_1_matrixQuaternion + dot) {
@@ -90,7 +135,8 @@ void Quat_Slerp(Quat_8004D758* dst, const Quat_8004D758* start, const Quat_8004D
         dst->v[1] = startWeight * adjustedStart[1] + endWeight * end->v[1];
         dst->v[0] = startWeight * adjustedStart[0] + endWeight * end->v[0];
     } else {
-        float orthogonalStartWeight = Math_SinApprox(kFloat_1_5707964_Quaternion * (kFloat_1_matrixQuaternion - fraction));
+        float orthogonalStartWeight =
+            Math_SinApprox(kFloat_1_5707964_Quaternion * (kFloat_1_matrixQuaternion - fraction));
         float orthogonalEndWeight = Math_SinApprox(kFloat_1_5707964_Quaternion * fraction);
         dst->v[3] = orthogonalStartWeight * adjustedStart[3] + orthogonalEndWeight * adjustedStart[2];
         dst->v[1] = orthogonalStartWeight * adjustedStart[1] + orthogonalEndWeight * adjustedStart[0];
@@ -106,19 +152,22 @@ struct Vec2_8004D5EC {
 
 typedef Vec3f Vec3_8004DF6C;
 
-struct Bounds_8004D964 { float v[6]; };
+struct CAabb {
+    float v[6];
+};
 // Test all three min/max intervals; touching faces count as overlap.
-int AABB_Overlaps(const Bounds_8004D964* a, const Bounds_8004D964* b) {
+int AABB_Overlaps(const CAabb* a, const CAabb* b) {
     const float* ap = a->v;
     const float* bp = b->v;
     for (int i = 0; i < 3; ++i, ++ap, ++bp) {
-        if (ap[0] > bp[3] || ap[3] < bp[0]) return 0;
+        if (ap[0] > bp[3] || ap[3] < bp[0])
+            return 0;
     }
     return 1;
 }
 
 // Copy bounds and add the translation to both corners, preserving the original load/store order.
-void AABB_CopyTranslated(Bounds_8004D964* dst, const Bounds_8004D964* src, const Vec3_8004DF6C* offset) {
+void AABB_CopyTranslated(CAabb* dst, const CAabb* src, const Vec3_8004DF6C* offset) {
     float maxZ;
     float y;
     float offsetZ;
@@ -185,7 +234,9 @@ Vec2_8004D5EC Vec2_Subtract(const Vec2_8004D5EC* a, const Vec2_8004D5EC* b) {
     return result;
 }
 
-struct Vec6_8004DA70 { float v[6]; };
+struct Vec6_8004DA70 {
+    float v[6];
+};
 
 // Copy the minimum and maximum bounds corners.
 void AABB_Copy(Vec6_8004DA70* dst, const Vec6_8004DA70* src) {
@@ -231,39 +282,55 @@ struct Vec4_8004D664 {
     float w;
 };
 
-struct FloatStorage12_8004DB20 { float v[12]; }; // Four Vec3 slots; bounds readers also use its first six floats.
-struct Matrix4x4_8004DE8C { float v[16]; }; // Full homogeneous matrix storage.
+struct FloatStorage12_8004DB20 {
+    float v[12];
+}; // Four Vec3 slots; bounds readers also use its first six floats.
+struct CMatrix4x4 {
+    float v[16];
+}; // Full homogeneous matrix storage.
 struct Temp_8004DB84 {
-    float x,y,z;
+    float x, y, z;
     Temp_8004DB84() {}
-    Temp_8004DB84(float a,float b,float c) { x=a; y=b; z=c; }
+    Temp_8004DB84(float a, float b, float c) {
+        x = a;
+        y = b;
+        z = c;
+    }
     Temp_8004DB84 operator*(float s) const {
         Temp_8004DB84 r;
-        r.x=x*s; r.y=y*s; r.z=z*s;
+        r.x = x * s;
+        r.y = y * s;
+        r.z = z * s;
         return r;
     }
 };
 // Convert min/max corners into a center and three axis-aligned half-extent vectors.
-void Bounds_BuildCenterAndHalfExtentAxes(Matrix4x4_8004DE8C* dst, const FloatStorage12_8004DB20* src) {
-    float zero,minZOrHalf,sourceComponent,maxX,sumX,maxY,sumZ,sumY,extentX,unused,extentY,extentZ;
-    zero=kFloat_0_Matrix;
-    sourceComponent=src->v[5]; minZOrHalf=src->v[2]; // Max Z and min Z.
-    maxY=src->v[4]; sumX=src->v[1];
-    sumZ=sourceComponent+minZOrHalf; extentZ=sourceComponent-minZOrHalf;
-    maxX=src->v[3];
-    sumY=maxY+sumX;
-    sourceComponent=src->v[0];
-    extentY=maxY-sumX;
-    minZOrHalf=kFloat_0_5_Quaternion; // Reuse the min-Z temporary as the half scale.
-    sumX=maxX+sourceComponent; extentX=maxX-sourceComponent;
-    *(Temp_8004DB84*)&dst->v[0] = Temp_8004DB84(sumX,sumY,sumZ)*minZOrHalf;
-    *(Temp_8004DB84*)&dst->v[3] = Temp_8004DB84(extentX,zero,zero)*minZOrHalf;
-    *(Temp_8004DB84*)&dst->v[6] = Temp_8004DB84(zero,extentY,zero)*minZOrHalf;
-    *(Temp_8004DB84*)&dst->v[9] = Temp_8004DB84(zero,zero,extentZ)*minZOrHalf;
+void Bounds_BuildCenterAndHalfExtentAxes(CMatrix4x4* dst, const FloatStorage12_8004DB20* src) {
+    float zero, minZOrHalf, sourceComponent, maxX, sumX, maxY, sumZ, sumY, extentX, unused, extentY, extentZ;
+    zero = kFloat_0_Matrix;
+    sourceComponent = src->v[5];
+    minZOrHalf = src->v[2]; // Max Z and min Z.
+    maxY = src->v[4];
+    sumX = src->v[1];
+    sumZ = sourceComponent + minZOrHalf;
+    extentZ = sourceComponent - minZOrHalf;
+    maxX = src->v[3];
+    sumY = maxY + sumX;
+    sourceComponent = src->v[0];
+    extentY = maxY - sumX;
+    minZOrHalf = kFloat_0_5_Quaternion; // Reuse the min-Z temporary as the half scale.
+    sumX = maxX + sourceComponent;
+    extentX = maxX - sourceComponent;
+    *(Temp_8004DB84*)&dst->v[0] = Temp_8004DB84(sumX, sumY, sumZ) * minZOrHalf;
+    *(Temp_8004DB84*)&dst->v[3] = Temp_8004DB84(extentX, zero, zero) * minZOrHalf;
+    *(Temp_8004DB84*)&dst->v[6] = Temp_8004DB84(zero, extentY, zero) * minZOrHalf;
+    *(Temp_8004DB84*)&dst->v[9] = Temp_8004DB84(zero, zero, extentZ) * minZOrHalf;
 }
 extern void* memcpy(void*, const void*, unsigned int);
 
-struct Plane_8004D6C4 { float x, y, z, w; };
+struct CPlane {
+    float x, y, z, w;
+};
 
 // Copy the normal and plane-distance term, returning the destination.
 Vec4_8004D664* Plane_Copy(Vec4_8004D664* dst, const Vec4_8004D664* src) {
@@ -274,24 +341,62 @@ Vec4_8004D664* Plane_Copy(Vec4_8004D664* dst, const Vec4_8004D664* src) {
 
 // Copy four contiguous three-float affine vectors.
 void Matrix_CopyAffineElements(FloatStorage12_8004DB20* dst, const FloatStorage12_8004DB20* src) {
-    float translationZ, translationY, translationX, basisZZ, basisZY, basisZX, basisYZ, basisYY, basisYX, basisXZ, basisXY, basisXX;
-    basisXX=src->v[0]; basisXY=src->v[1]; basisXZ=src->v[2]; basisYX=src->v[3];
-    basisYY=src->v[4]; basisYZ=src->v[5]; basisZX=src->v[6]; basisZY=src->v[7];
-    basisZZ=src->v[8]; translationX=src->v[9]; translationY=src->v[10]; translationZ=src->v[11];
-    dst->v[0]=basisXX; dst->v[1]=basisXY; dst->v[2]=basisXZ; dst->v[3]=basisYX;
-    dst->v[4]=basisYY; dst->v[5]=basisYZ; dst->v[6]=basisZX; dst->v[7]=basisZY;
-    dst->v[8]=basisZZ; dst->v[9]=translationX; dst->v[10]=translationY; dst->v[11]=translationZ;
+    float translationZ, translationY, translationX, basisZZ, basisZY, basisZX, basisYZ, basisYY, basisYX, basisXZ,
+        basisXY, basisXX;
+    basisXX = src->v[0];
+    basisXY = src->v[1];
+    basisXZ = src->v[2];
+    basisYX = src->v[3];
+    basisYY = src->v[4];
+    basisYZ = src->v[5];
+    basisZX = src->v[6];
+    basisZY = src->v[7];
+    basisZZ = src->v[8];
+    translationX = src->v[9];
+    translationY = src->v[10];
+    translationZ = src->v[11];
+    dst->v[0] = basisXX;
+    dst->v[1] = basisXY;
+    dst->v[2] = basisXZ;
+    dst->v[3] = basisYX;
+    dst->v[4] = basisYY;
+    dst->v[5] = basisYZ;
+    dst->v[6] = basisZX;
+    dst->v[7] = basisZY;
+    dst->v[8] = basisZZ;
+    dst->v[9] = translationX;
+    dst->v[10] = translationY;
+    dst->v[11] = translationZ;
 }
 
 // Copy translation first, followed by the three basis vectors.
 void Matrix_MoveLastVectorToFront(FloatStorage12_8004DB20* dst, const FloatStorage12_8004DB20* src) {
-    float basisZZ, basisZY, basisZX, basisYZ, basisYY, basisYX, basisXZ, basisXY, basisXX, translationZ, translationY, translationX;
-    translationX=src->v[9]; translationY=src->v[10]; translationZ=src->v[11]; basisXX=src->v[0];
-    basisXY=src->v[1]; basisXZ=src->v[2]; basisYX=src->v[3]; basisYY=src->v[4];
-    basisYZ=src->v[5]; basisZX=src->v[6]; basisZY=src->v[7]; basisZZ=src->v[8];
-    dst->v[0]=translationX; dst->v[1]=translationY; dst->v[2]=translationZ; dst->v[3]=basisXX;
-    dst->v[4]=basisXY; dst->v[5]=basisXZ; dst->v[6]=basisYX; dst->v[7]=basisYY;
-    dst->v[8]=basisYZ; dst->v[9]=basisZX; dst->v[10]=basisZY; dst->v[11]=basisZZ;
+    float basisZZ, basisZY, basisZX, basisYZ, basisYY, basisYX, basisXZ, basisXY, basisXX, translationZ, translationY,
+        translationX;
+    translationX = src->v[9];
+    translationY = src->v[10];
+    translationZ = src->v[11];
+    basisXX = src->v[0];
+    basisXY = src->v[1];
+    basisXZ = src->v[2];
+    basisYX = src->v[3];
+    basisYY = src->v[4];
+    basisYZ = src->v[5];
+    basisZX = src->v[6];
+    basisZY = src->v[7];
+    basisZZ = src->v[8];
+    dst->v[0] = translationX;
+    dst->v[1] = translationY;
+    dst->v[2] = translationZ;
+    dst->v[3] = basisXX;
+    dst->v[4] = basisXY;
+    dst->v[5] = basisXZ;
+    dst->v[6] = basisYX;
+    dst->v[7] = basisYY;
+    dst->v[8] = basisYZ;
+    dst->v[9] = basisZX;
+    dst->v[10] = basisZY;
+    dst->v[11] = basisZZ;
 }
 
 // Scale affine vectors 1, 2 and 3 by X, Y and Z, leaving vector 0 unchanged.
@@ -324,8 +429,21 @@ void AffineVectors_ScaleTrailingThree(FloatStorage12_8004DB20* matrix, const Vec
 }
 
 // Insert homogeneous zero/one components into four three-float affine vectors.
-void Matrix_ExpandAffineTo4x4(const FloatStorage12_8004DB20* src, Matrix4x4_8004DE8C* dst) {
-    float one; float translationZ; float translationY; float translationX; float basisZZ; float basisZY; float basisZX; float basisYZ; float basisYY; float basisYX; float zero; float basisXZ; zero = kFloat_0_Matrix; float basisXY;
+void Matrix_ExpandAffineTo4x4(const FloatStorage12_8004DB20* src, CMatrix4x4* dst) {
+    float one;
+    float translationZ;
+    float translationY;
+    float translationX;
+    float basisZZ;
+    float basisZY;
+    float basisZX;
+    float basisYZ;
+    float basisYY;
+    float basisYX;
+    float zero;
+    float basisXZ;
+    zero = kFloat_0_Matrix;
+    float basisXY;
     float basisXX;
     basisXX = src->v[0];
     basisXY = src->v[1];
@@ -341,36 +459,57 @@ void Matrix_ExpandAffineTo4x4(const FloatStorage12_8004DB20* src, Matrix4x4_8004
     translationZ = src->v[11];
 
     one = kFloat_1_matrixQuaternion;
-    dst->v[0]=basisXX;
-    dst->v[1]=basisXY;
-    dst->v[2]=basisXZ;
-    dst->v[3]=zero;
-    dst->v[4]=basisYX;
-    dst->v[5]=basisYY;
-    dst->v[6]=basisYZ;
-    dst->v[7]=zero;
-    dst->v[8]=basisZX; dst->v[9]=basisZY; dst->v[10]=basisZZ; dst->v[11]=zero;
-    dst->v[12]=translationX;
-    dst->v[13]=translationY;
-    dst->v[14]=translationZ;
-    dst->v[15]=one;
+    dst->v[0] = basisXX;
+    dst->v[1] = basisXY;
+    dst->v[2] = basisXZ;
+    dst->v[3] = zero;
+    dst->v[4] = basisYX;
+    dst->v[5] = basisYY;
+    dst->v[6] = basisYZ;
+    dst->v[7] = zero;
+    dst->v[8] = basisZX;
+    dst->v[9] = basisZY;
+    dst->v[10] = basisZZ;
+    dst->v[11] = zero;
+    dst->v[12] = translationX;
+    dst->v[13] = translationY;
+    dst->v[14] = translationZ;
+    dst->v[15] = one;
 }
 
 // Drop homogeneous components from a sixteen-float matrix into twelve affine elements.
-void Matrix_ExtractAffineFrom4x4(const Matrix4x4_8004DE8C* src, FloatStorage12_8004DB20* dst) {
-    float translationZ,translationY,translationX,basisZZ,basisZY,basisZX,basisYZ,basisYY,basisYX,basisXZ,basisXY,basisXX;
-    basisXX=src->v[0]; basisXY=src->v[1]; basisXZ=src->v[2];
-    basisYX=src->v[4]; basisYY=src->v[5]; basisYZ=src->v[6];
-    basisZX=src->v[8]; basisZY=src->v[9]; basisZZ=src->v[10];
-    translationX=src->v[12]; translationY=src->v[13]; translationZ=src->v[14];
-    dst->v[0]=basisXX; dst->v[1]=basisXY; dst->v[2]=basisXZ; dst->v[3]=basisYX;
-    dst->v[4]=basisYY; dst->v[5]=basisYZ; dst->v[6]=basisZX; dst->v[7]=basisZY;
-    dst->v[8]=basisZZ; dst->v[9]=translationX; dst->v[10]=translationY; dst->v[11]=translationZ;
+void Matrix_ExtractAffineFrom4x4(const CMatrix4x4* src, FloatStorage12_8004DB20* dst) {
+    float translationZ, translationY, translationX, basisZZ, basisZY, basisZX, basisYZ, basisYY, basisYX, basisXZ,
+        basisXY, basisXX;
+    basisXX = src->v[0];
+    basisXY = src->v[1];
+    basisXZ = src->v[2];
+    basisYX = src->v[4];
+    basisYY = src->v[5];
+    basisYZ = src->v[6];
+    basisZX = src->v[8];
+    basisZY = src->v[9];
+    basisZZ = src->v[10];
+    translationX = src->v[12];
+    translationY = src->v[13];
+    translationZ = src->v[14];
+    dst->v[0] = basisXX;
+    dst->v[1] = basisXY;
+    dst->v[2] = basisXZ;
+    dst->v[3] = basisYX;
+    dst->v[4] = basisYY;
+    dst->v[5] = basisYZ;
+    dst->v[6] = basisZX;
+    dst->v[7] = basisZY;
+    dst->v[8] = basisZZ;
+    dst->v[9] = translationX;
+    dst->v[10] = translationY;
+    dst->v[11] = translationZ;
 }
 
 // Returns dst (r3 is left untouched, blr at 0x8004D70C); its caller passes it on (0x80066430).
 // Build a plane from its normal and a point, with distance equal to their negative dot product.
-Plane_8004D6C4* Plane_FromNormalAndPoint(Plane_8004D6C4* dst, const Vec3_8004DF6C* normal, const Vec3_8004DF6C* point) {
+CPlane* Plane_FromNormalAndPoint(CPlane* dst, const Vec3_8004DF6C* normal, const Vec3_8004DF6C* point) {
     float normalX = normal->x;
     float pointX = point->x;
     double dotDouble = (double)normalX * (double)pointX;
@@ -388,12 +527,20 @@ Plane_8004D6C4* Plane_FromNormalAndPoint(Plane_8004D6C4* dst, const Vec3_8004DF6
     return dst;
 }
 
-struct MatrixStorage16_8004D4C8 { float v[16]; }; // Axis-angle scratch holds a full 4x4; basis-only setters write fewer elements.
-extern void Mtx44_SetRotationAxisAngle(MatrixStorage16_8004D4C8*, const void* axis, float); // (dst, axis, angle): the original passes r4 through untouched (0x8004D4C8)
+struct MatrixStorage16_8004D4C8 {
+    float v[16];
+}; // Axis-angle scratch holds a full 4x4; basis-only setters write fewer elements.
+extern void
+Mtx44_SetRotationAxisAngle(MatrixStorage16_8004D4C8*, const void* axis,
+                           float); // (dst, axis, angle): the original passes r4 through untouched (0x8004D4C8)
 extern float Math_CosApprox(float);
 extern float Math_SinApprox(float);
 
-enum RotationAxis { kRotateX = 0, kRotateY = 1, kRotateZ = 2 };
+enum RotationAxis {
+    kRotateX = 0,
+    kRotateY = 1,
+    kRotateZ = 2
+};
 
 // Build an X, Y or Z rotation; unknown axis values follow the Y path.
 void Matrix_SetAxisRotation(MatrixStorage16_8004D4C8* matrix, float angle, signed char axis) {
@@ -402,16 +549,16 @@ void Matrix_SetAxisRotation(MatrixStorage16_8004D4C8* matrix, float angle, signe
     switch (axis) {
     case kRotateX:
         Matrix_SetBasisElements(matrix, kFloat_1_matrixQuaternion, kFloat_0_Matrix, kFloat_0_Matrix, kFloat_0_Matrix,
-                    cosine, -sine, kFloat_0_Matrix, sine, cosine);
+                                cosine, -sine, kFloat_0_Matrix, sine, cosine);
         break;
     case kRotateZ:
-        Matrix_SetBasisElements(matrix, cosine, sine, kFloat_0_Matrix, -sine,
-                    cosine, kFloat_0_Matrix, kFloat_0_Matrix, kFloat_0_Matrix, kFloat_1_matrixQuaternion);
+        Matrix_SetBasisElements(matrix, cosine, sine, kFloat_0_Matrix, -sine, cosine, kFloat_0_Matrix, kFloat_0_Matrix,
+                                kFloat_0_Matrix, kFloat_1_matrixQuaternion);
         break;
     case kRotateY:
     default:
-        Matrix_SetBasisElements(matrix, cosine, kFloat_0_Matrix, sine, kFloat_0_Matrix,
-                    kFloat_1_matrixQuaternion, kFloat_0_Matrix, -sine, kFloat_0_Matrix, cosine);
+        Matrix_SetBasisElements(matrix, cosine, kFloat_0_Matrix, sine, kFloat_0_Matrix, kFloat_1_matrixQuaternion,
+                                kFloat_0_Matrix, -sine, kFloat_0_Matrix, cosine);
         break;
     }
 }
@@ -523,8 +670,8 @@ void Matrix_SetNegativeAxisAngleRotation(MatrixStorage16_8004D4C8* matrix, const
     float value;
     Mtx44_SetRotationAxisAngle(&temp, axis, -angle);
     value = temp.v[10];
-    Matrix_SetBasisElements(matrix, temp.v[0], temp.v[1], temp.v[2], temp.v[4],
-                temp.v[5], temp.v[6], temp.v[8], temp.v[9], value);
+    Matrix_SetBasisElements(matrix, temp.v[0], temp.v[1], temp.v[2], temp.v[4], temp.v[5], temp.v[6], temp.v[8],
+                            temp.v[9], value);
 }
 
 // Return the cursor vector multiplied by the scalar.

@@ -5,16 +5,16 @@
 
 class SpringGridVertex {
 public:
-    float x; // 0x0
-    float y; // 0x4
-    float z; // 0x8
-    float normalX; // 0xC
-    float normalY; // 0x10
-    float normalZ; // 0x14
-    float acceleration; // 0x18
-    float velocity; // 0x1C
-    float texU; // 0x20
-    float texV; // 0x24
+    float x;              // 0x0
+    float y;              // 0x4
+    float z;              // 0x8
+    float normalX;        // 0xC
+    float normalY;        // 0x10
+    float normalZ;        // 0x14
+    float acceleration;   // 0x18
+    float velocity;       // 0x1C
+    float texU;           // 0x20
+    float texV;           // 0x24
     unsigned char active; // 0x28
 };
 

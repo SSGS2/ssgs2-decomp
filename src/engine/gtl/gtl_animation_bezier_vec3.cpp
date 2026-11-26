@@ -1,5 +1,3 @@
-// Translation unit 0x803E08B0-0x803E0BCC (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 // Three-component animation interpolation. Track evaluators (gtl_animation_node_evaluate.cpp,
 // gtl_animation_model_matrices.cpp, gtl_animation_node_evaluation.cpp, gtl_animation_transform_channels.cpp, gtl_texture_animation_matrices.cpp) select keys and publish absolute
 // start/current/end times in s_animationSegmentStartTime, s_animationSampleTime,
@@ -18,7 +16,10 @@
 // Embed a scalar in the X lane of Vec2_Hermite. The Y lane contains integer
 // zero BITS (+0.0f), never a numeric integer-to-float conversion. Output Y is
 // discarded. Keep the four input initializations and call order below.
-struct ScalarHermitePair { float value; int zeroComponentBits; };
+struct ScalarHermitePair {
+    float value;
+    int zeroComponentBits;
+};
 
 extern "C" {
 
@@ -36,7 +37,8 @@ extern float kBezierCubicCoefficient;
 // Preserve float loads, double fabs conversions and expression/evaluation order.
 
 extern float gtl_Curve_FindBezierParameter(float x0, float x1, float x2, float x3, float t);
-extern void Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1, float t);
+extern void Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1,
+                         float t);
 
 // Requires two complete keys and three writable output floats, nonoverlapping
 // with either key. t is normalized segment progress, normally [0,1]; no clamp.
@@ -65,7 +67,8 @@ int gtl_Animation_InterpolateBezierVec3(float* out, const float* a, const float*
     float one = kFloat_1_GtlModel;
 
     for (component = 0; component < 3; component++) {
-        float incomingTimeOffset, outgoingTimeOffset, firstTimeControl, endTime, startTime, secondTimeControl, timeTolerance;
+        float incomingTimeOffset, outgoingTimeOffset, firstTimeControl, endTime, startTime, secondTimeControl,
+            timeTolerance;
         startTime = startKey[15];
         endTime = endKey[15];
         outgoingTimeOffset = *startTimeHandle;
@@ -91,7 +94,9 @@ int gtl_Animation_InterpolateBezierVec3(float* out, const float* a, const float*
             endValue = *endValueComponent;
             float startValueTangent = *startValueHandle;
             startValue = *startValueComponent;
-            float curveParameter = gtl_Curve_FindBezierParameter(s_animationSegmentStartTime, s_animationSegmentStartTime + *startTimeHandle, s_animationSegmentEndTime + *endTimeHandle, s_animationSegmentEndTime, s_animationSampleTime);
+            float curveParameter = gtl_Curve_FindBezierParameter(
+                s_animationSegmentStartTime, s_animationSegmentStartTime + *startTimeHandle,
+                s_animationSegmentEndTime + *endTimeHandle, s_animationSegmentEndTime, s_animationSampleTime);
             float oneMinusParameter = one - curveParameter;
             float parameterSquared = curveParameter * curveParameter;
             float oneMinusSquared = oneMinusParameter * oneMinusParameter;
@@ -124,7 +129,8 @@ int gtl_Animation_InterpolateBezierVec3(float* out, const float* a, const float*
             if ((float)__fabs((double)((endValue - secondValueControl) - middleValueSpacing)) > valueTolerance) {
                 valueHandlesLinear = 0;
             } else {
-                valueHandlesLinear = !((float)__fabs((double)(middleValueSpacing - firstValueSpacing)) > valueTolerance);
+                valueHandlesLinear =
+                    !((float)__fabs((double)(middleValueSpacing - firstValueSpacing)) > valueTolerance);
             }
 
             if (!valueHandlesLinear) {

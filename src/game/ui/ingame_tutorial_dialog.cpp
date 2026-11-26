@@ -1,20 +1,30 @@
+// The in-game tutorial dialog (CInGameTutorialDialog): tutorial pages with their shared layout,
+// the cursor and movable element groups, and the result buttons.
+//
+// Also holds the golf cup preview (CGolfCup) that the tutorial shows with its mesh.
+
 #include <decomp/static_init.h>
-#include "classes/GolfCupFields.h"
+#include "classes/CGolfCup.h"
 #include "classes/CInGameTutorialDialog.h"
+#include "classes/CMouseCursor.h"
+#include "classes/CInGameDialog.h"
 
 // Borrow the dialog layout view; the caller retains the object.
 static inline CInGameTutorialDialog* AsCInGameTutorialDialog(void* object) {
     return (CInGameTutorialDialog*)object;
 }
-// Translation unit 0x8026456C-0x80265514 (27 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 enum {
-    kTutorialCount = 7, kTutorialElementCount = 32,
-    kTutorialBodyElementCount = 18, kTutorialCursorGroupCount = 2,
-    kTutorialMovableGroupCount = 5, kDialogAcceptingInput = 4,
-    kTutorialLayoutKind = 0x18, kLayoutNeutralPlayerColor = 5
+    kTutorialCount = 7,
+    kTutorialElementCount = 32,
+    kTutorialBodyElementCount = 18,
+    kTutorialCursorGroupCount = 2,
+    kTutorialMovableGroupCount = 5,
+    kDialogAcceptingInput = 4,
+    kTutorialLayoutKind = 0x18,
+    kTutorialPageMaskWordOffset = 0x4a0 / 4, // enabledByTutorial within the table, in words
+    kLayoutNeutralPlayerColor = 5
 };
 struct TutorialLayoutTables {
     char resourceStrings[0x4A0];
@@ -34,7 +44,11 @@ typedef char TutorialLayoutTables_text[((int)&((TutorialLayoutTables*)0)->textAn
 // tutorialIndex in [0,7), element IDs in [0,32). Each named ID array below
 // selects a family; actual control identities come from the shared layout data.
 // Both groups share the x/y, player-flag, enabled layout used by the class header.
-struct TutorialElementGroup { float x, y; int playerFlag; int enabled; };
+struct TutorialElementGroup {
+    float x, y;
+    int playerFlag;
+    int enabled;
+};
 
 void appFreeUni__FPv(void*);
 
@@ -43,10 +57,11 @@ struct ActivatedUnwindCleanup {
     volatile unsigned int* words;
     bool active;
     // Arm cleanup for the temporary activated-ID vector.
-    explicit ActivatedUnwindCleanup(volatile void* vector)
-        : words((volatile unsigned int*)vector), active(true) {}
+    explicit ActivatedUnwindCleanup(volatile void* vector) : words((volatile unsigned int*)vector), active(true) {}
     // Disarm unwind cleanup before the explicit normal cleanup.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Free the activated-ID buffer only while this guard remains armed.
     ~ActivatedUnwindCleanup() {
         if (active && words[0]) {
@@ -55,7 +70,6 @@ struct ActivatedUnwindCleanup {
         }
     }
 };
-
 
 extern void* memset(void* dst, int value, unsigned int size);
 
@@ -85,7 +99,6 @@ extern char s_golfCupBaseVtable[];
 extern char __vt__8CGolfCup[];
 extern char __vt__21CInGameTutorialDialog[];
 
-void CMouseCursor_MoveTo(void* arg0, float arg1, float arg2, float arg3);
 void Layout_Destroy(void* arg0, int arg1);
 void __dt__15SmallDialogBaseFv(void* arg0, int arg1);
 void __dl__FPv(void* arg0);
@@ -94,15 +107,10 @@ void Layout_Init(void* arg0, int arg1);
 void Layout_InitStandard(void* arg0, int arg1, void* arg2, int arg3, const char* arg4);
 int __ptmf_test(void* arg0);
 int __ptmf_scall(void* arg0, void* arg1, void* arg2);
-void* CInGameTutorialDialog_Ctor(void* arg0, void* arg1);
 void Layout_Update(void* self);
 void* Layout_PollLoadComplete(void* self);
 void Layout_SetElementScale(void* self, int index, void* point);
 void Layout_GetElementPosition(void* self, int index, void* point);
-void CInGameDialog_Ctor(void* self, void* arg1);
-void CInGameTutorialDialog_PositionPageElements(void* self, float* arg1, float* arg2);
-void CInGameTutorialDialog_PositionSecondaryElements(void* self, float* arg1);
-void CInGameTutorialDialog_PositionBodyElements(void* self, float* arg1);
 void BaseObject_ctor(void* self);
 void PSMTX44Identity(void* self);
 void GolfCupMesh_CreateScaledTriangles(void* self, void* arg1, int arg2, int arg3, float arg4, float arg5, float arg6);
@@ -135,7 +143,7 @@ void* TutorialDialog_PollSharedLayout() {
         Layout_Update(g_tutorialSharedLayout);
         g_tutorialSharedLayoutReady = Layout_PollLoadComplete(g_tutorialSharedLayout);
         if (g_tutorialSharedLayoutReady != 0) {
-            int point[2] = { kTutorialButtonScaleX, kTutorialButtonScaleY };
+            int point[2] = {kTutorialButtonScaleX, kTutorialButtonScaleY};
             Layout_SetElementScale(g_tutorialSharedLayout, 3, point);
             Layout_SetElementScale(g_tutorialSharedLayout, 6, point);
             Layout_SetElementScale(g_tutorialSharedLayout, 9, point);
@@ -151,60 +159,64 @@ void* TutorialDialog_PollSharedLayout() {
 }
 
 // Reset the dialog origin, both cursor groups and five initially hidden movable groups.
-void CInGameTutorialDialog_InitGroups(void* self) {
+void CInGameTutorialDialog::InitGroups() {
     float* data = s_tutorialElementPositions;
-    struct { int a; int b; } pair;
+    struct {
+        int a;
+        int b;
+    } pair;
     pair.a = ((int*)data)[4];
     pair.b = ((int*)data)[5];
     float f0 = *(float*)&pair.a;
     float f1 = *(float*)&pair.b;
-    AsCInGameTutorialDialog(self)->positionX = f0;
-    AsCInGameTutorialDialog(self)->positionY = f1;
-    AsCInGameTutorialDialog(self)->cursorGroup0X = data[0];
-    AsCInGameTutorialDialog(self)->cursorGroup0Y = data[1];
-    AsCInGameTutorialDialog(self)->cursorGroup0PlayerFlag = 1;
-    AsCInGameTutorialDialog(self)->cursorGroup0Enabled = 1;
-    AsCInGameTutorialDialog(self)->cursorGroup1X = data[2];
-    AsCInGameTutorialDialog(self)->cursorGroup1Y = data[3];
-    AsCInGameTutorialDialog(self)->cursorGroup1PlayerFlag = 1;
-    AsCInGameTutorialDialog(self)->cursorGroup1Enabled = 1;
-    AsCInGameTutorialDialog(self)->elementGroup0X = data[30];
-    AsCInGameTutorialDialog(self)->elementGroup0Y = data[31];
-    AsCInGameTutorialDialog(self)->elementGroup0PlayerFlag = 0;
-    AsCInGameTutorialDialog(self)->elementGroup0Enabled = 0;
-    AsCInGameTutorialDialog(self)->elementGroup1X = data[32];
-    AsCInGameTutorialDialog(self)->elementGroup1Y = data[33];
-    AsCInGameTutorialDialog(self)->elementGroup1PlayerFlag = 0;
-    AsCInGameTutorialDialog(self)->elementGroup1Enabled = 0;
-    AsCInGameTutorialDialog(self)->elementGroup2X = data[34];
-    AsCInGameTutorialDialog(self)->elementGroup2Y = data[35];
-    AsCInGameTutorialDialog(self)->elementGroup2PlayerFlag = 0;
-    AsCInGameTutorialDialog(self)->elementGroup2Enabled = 0;
-    AsCInGameTutorialDialog(self)->elementGroup3X = data[36];
-    AsCInGameTutorialDialog(self)->elementGroup3Y = data[37];
-    AsCInGameTutorialDialog(self)->elementGroup3PlayerFlag = 0;
-    AsCInGameTutorialDialog(self)->elementGroup3Enabled = 0;
-    AsCInGameTutorialDialog(self)->elementGroup4X = data[38];
-    AsCInGameTutorialDialog(self)->elementGroup4Y = data[39];
-    AsCInGameTutorialDialog(self)->elementGroup4PlayerFlag = 0;
-    AsCInGameTutorialDialog(self)->elementGroup4Enabled = 0;
+    positionX = f0;
+    positionY = f1;
+    cursorGroup0X = data[0];
+    cursorGroup0Y = data[1];
+    cursorGroup0PlayerFlag = 1;
+    cursorGroup0Enabled = 1;
+    cursorGroup1X = data[2];
+    cursorGroup1Y = data[3];
+    cursorGroup1PlayerFlag = 1;
+    cursorGroup1Enabled = 1;
+    elementGroup0X = data[30];
+    elementGroup0Y = data[31];
+    elementGroup0PlayerFlag = 0;
+    elementGroup0Enabled = 0;
+    elementGroup1X = data[32];
+    elementGroup1Y = data[33];
+    elementGroup1PlayerFlag = 0;
+    elementGroup1Enabled = 0;
+    elementGroup2X = data[34];
+    elementGroup2Y = data[35];
+    elementGroup2PlayerFlag = 0;
+    elementGroup2Enabled = 0;
+    elementGroup3X = data[36];
+    elementGroup3Y = data[37];
+    elementGroup3PlayerFlag = 0;
+    elementGroup3Enabled = 0;
+    elementGroup4X = data[38];
+    elementGroup4Y = data[39];
+    elementGroup4PlayerFlag = 0;
+    elementGroup4Enabled = 0;
 }
 
 // Initialize a tutorial page, callback state, group storage and its per-page dimensions.
-void* CInGameTutorialDialog_Ctor(void* self, void* arg1) {
-    CInGameDialog_Ctor(self, arg1);
+CInGameTutorialDialog::CInGameTutorialDialog(void* arg1) {
+    CInGameDialog::Init((InGameDialogView*)this);
     void* lblptr = __vt__21CInGameTutorialDialog;
     int* g = (int*)zeroInitializationWords;
-    AsCInGameTutorialDialog(self)->tutorialIndex = (int)arg1;
-    AsCInGameTutorialDialog(self)->dialogVtable = lblptr;
-    AsCInGameTutorialDialog(self)->selectionResult = 0;
-    AsCInGameTutorialDialog(self)->callbackThisAdjustment = g[0];
-    AsCInGameTutorialDialog(self)->callbackVtableOffset = g[1];
-    AsCInGameTutorialDialog(self)->callbackFunction = g[2];
-    AsCInGameTutorialDialog(self)->callbackTarget = 0;
-    AsCInGameTutorialDialog(self)->unk_64 = -1; // unset index; its consumer is outside this unit
-    if ((int)arg1 < 0 || (int)arg1 >= kTutorialCount) AsCInGameTutorialDialog(self)->tutorialIndex = 0;
-    char* cursor = ((char*)&AsCInGameTutorialDialog(self)->cursorGroup0X);
+    tutorialIndex = (int)arg1;
+    dialogVtable = lblptr;
+    selectionResult = 0;
+    callbackThisAdjustment = g[0];
+    callbackVtableOffset = g[1];
+    callbackFunction = g[2];
+    callbackTarget = 0;
+    unk_64 = -1; // unset index; its consumer is outside this unit
+    if ((int)arg1 < 0 || (int)arg1 >= kTutorialCount)
+        tutorialIndex = 0;
+    char* cursor = ((char*)&cursorGroup0X);
     unsigned int i = 0;
     do {
         memset(cursor, 0, sizeof(TutorialElementGroup));
@@ -212,21 +224,20 @@ void* CInGameTutorialDialog_Ctor(void* self, void* arg1) {
         cursor += sizeof(TutorialElementGroup);
     } while (i < kTutorialCursorGroupCount);
     unsigned int j = 0;
-    char* cursor2 = ((char*)&AsCInGameTutorialDialog(self)->elementGroup0X);
+    char* cursor2 = ((char*)&elementGroup0X);
     do {
         memset(cursor2, 0, sizeof(TutorialElementGroup));
         ++j;
         cursor2 += sizeof(TutorialElementGroup);
     } while (j < kTutorialMovableGroupCount);
-    ((void (*)(void*))((*(void***)&AsCInGameTutorialDialog(self)->dialogVtable))[0x84 / 4])(self);
-    int index = AsCInGameTutorialDialog(self)->tutorialIndex;
+    ((void (*)(void*))((*(void***)&dialogVtable))[0x84 / 4])(this);
+    int index = tutorialIndex;
     float* base = s_tutorialPageDimensions;
     float* entry = (float*)((char*)base + index * 8);
     float a = base[index * 2];
     float b = entry[1];
-    AsCInGameTutorialDialog(self)->tutorialWidth = a;
-    AsCInGameTutorialDialog(self)->tutorialHeight = b;
-    return self;
+    tutorialWidth = a;
+    tutorialHeight = b;
 }
 
 // Destroy the shared tutorial layout and clear its readiness flag.
@@ -239,23 +250,34 @@ void TutorialLayout_DestroySharedResource() {
 }
 
 // Destroy the base dialog and optionally free this allocation.
-void* CInGameTutorialDialog_dtor(void* self, int flag) {
-    if (self != 0) {
-        __dt__15SmallDialogBaseFv(self, 0);
-        if (flag > 0) {
-            __dl__FPv(self);
-        }
-    }
-    return self;
+CInGameTutorialDialog::~CInGameTutorialDialog() {
+    __dt__15SmallDialogBaseFv(this, 0);
 }
 
-struct DialogBase4 { int primaryVtable; };
+struct DialogBase4 {
+    int primaryVtable;
+};
 class DialogV4 : public DialogBase4 {
 public:
-    virtual void v08(); virtual void v0C(); virtual void v10(int, int*); virtual int v14(); virtual void v18();
-    virtual void v1C(); virtual void v20(); virtual void v24(); virtual void v28(); virtual void v2C();
-    virtual void v30(); virtual void v34(); virtual void v38(); virtual void v3C(); virtual void v40();
-    virtual void v44(); virtual void v48(); virtual void v4C(); virtual void v50();
+    virtual void v08();
+    virtual void v0C();
+    virtual void v10(int, int*);
+    virtual int v14();
+    virtual void v18();
+    virtual void v1C();
+    virtual void v20();
+    virtual void v24();
+    virtual void v28();
+    virtual void v2C();
+    virtual void v30();
+    virtual void v34();
+    virtual void v38();
+    virtual void v3C();
+    virtual void v40();
+    virtual void v44();
+    virtual void v48();
+    virtual void v4C();
+    virtual void v50();
     virtual void v54();
     virtual void v58(void*, void*);
     virtual void v5C();
@@ -271,13 +293,17 @@ public:
 };
 
 // Dispatch the content-reset hook; slot names remain ABI placeholders.
-static inline void ResetTutorialContent(void* dialog) { ((DialogV4*)dialog)->v54(); }
+static inline void ResetTutorialContent(void* dialog) {
+    ((DialogV4*)dialog)->v54();
+}
 // Pass the caller-owned content arguments to the content hook without retaining them here.
 static inline void ApplyTutorialContent(void* dialog, void* first, void* second) {
     ((DialogV4*)dialog)->v58(first, second);
 }
 // Reset the position hook before applying the two layout hooks.
-static inline void ResetTutorialPosition(void* dialog) { ((DialogV4*)dialog)->v60(); }
+static inline void ResetTutorialPosition(void* dialog) {
+    ((DialogV4*)dialog)->v60();
+}
 // Apply both position hooks in their original order; argument roles beyond XY remain unresolved.
 static inline void ApplyTutorialPosition(void* dialog, float* first, float* second) {
     ((DialogV4*)dialog)->v64(first, second);
@@ -285,19 +311,19 @@ static inline void ApplyTutorialPosition(void* dialog, float* first, float* seco
 }
 
 // Reset page-specific content, then apply the caller's content arguments.
-void CInGameTutorialDialog_ResetAndApplyContent(void* self, void* arg1, void* arg2) {
-    ResetTutorialContent(self);
-    ApplyTutorialContent(self, arg1, arg2);
+void CInGameTutorialDialog::ResetAndApplyContent(void* arg1, void* arg2) {
+    ResetTutorialContent(this);
+    ApplyTutorialContent(this, arg1, arg2);
 }
 
 // Reset positioning and lay out the page's body and cursor elements.
-void CInGameTutorialDialog_PositionPageElements(void* self, float* arg1, float* arg2) {
-    ResetTutorialPosition(self);
-    ApplyTutorialPosition(self, arg1, arg2);
+void CInGameTutorialDialog::PositionPageElements(float* arg1, float* arg2) {
+    ResetTutorialPosition(this);
+    ApplyTutorialPosition(this, arg1, arg2);
 }
 
 // Position the two secondary elements relative to the cached secondary origin.
-void CInGameTutorialDialog_PositionSecondaryElements(void* self, float* pos) {
+void CInGameTutorialDialog::PositionSecondaryElements(float* pos) {
     float point[2] = {};
     for (unsigned int i = 0; i < 2; ++i) {
         int index = *(&s_tutorialSecondaryElementIds + i);
@@ -305,12 +331,12 @@ void CInGameTutorialDialog_PositionSecondaryElements(void* self, float* pos) {
         float y = pos[1] + s_tutorialElementPositions[index * 2 + 1];
         point[0] = x - s_tutorialElementPositions[0x70 / 4];
         point[1] = y - s_tutorialElementPositions[0x74 / 4];
-        ((DialogV4*)self)->v74(index, point);
+        ((DialogV4*)this)->v74(index, point);
     }
 }
 
 // Position the 18 body elements relative to the cached dialog origin.
-void CInGameTutorialDialog_PositionBodyElements(void* self, float* pos) {
+void CInGameTutorialDialog::PositionBodyElements(float* pos) {
     float point[2] = {};
     for (unsigned int i = 0; i < kTutorialBodyElementCount; ++i) {
         int index = s_tutorialBodyElementIds[i];
@@ -318,12 +344,12 @@ void CInGameTutorialDialog_PositionBodyElements(void* self, float* pos) {
         float y = pos[1] + s_tutorialElementPositions[index * 2 + 1];
         point[0] = x - s_tutorialElementPositions[0x10 / 4];
         point[1] = y - s_tutorialElementPositions[0x14 / 4];
-        ((DialogV4*)self)->v74(index, point);
+        ((DialogV4*)this)->v74(index, point);
     }
 }
 
 // Return the shared layout readiness token.
-void* CInGameTutorialDialog_vfunc_7() {
+void* CInGameTutorialDialog::GetSharedLayoutReady() {
     return g_tutorialSharedLayoutReady;
 }
 
@@ -346,18 +372,22 @@ struct V8Obj {
 };
 
 // Invoke the optional result callback; a false callback result keeps the dialog open.
-int CInGameTutorialDialog_InvokeResultCallback(void* self) {
-    V8Obj* callbackView = (V8Obj*)self;
-    if (__ptmf_test(((char*)&AsCInGameTutorialDialog(self)->callbackThisAdjustment)) != 0 && callbackView->obj != 0 &&
-        (callbackView->obj->*callbackView->pmf)(callbackView->arg, self) == 0) {
+int CInGameTutorialDialog::InvokeResultCallback() {
+    V8Obj* callbackView = (V8Obj*)this;
+    if (__ptmf_test(((char*)&callbackThisAdjustment)) != 0 && callbackView->obj != 0 &&
+        (callbackView->obj->*callbackView->pmf)(callbackView->arg, this) == 0) {
         return 0;
     }
     return 1;
 }
 
-struct Obj_80077DB4 { char layoutStorage[0x5C]; 
+struct Obj_80077DB4 {
+    char layoutStorage[0x5C];
     // Initialize the shared tutorial layout storage for the requested kind.
-    Obj_80077DB4(int a) { Layout_Init(this, a); } };
+    Obj_80077DB4(int layoutKind) {
+        Layout_Init(this, layoutKind);
+    }
+};
 
 // Create and start loading the 32-element shared tutorial layout once.
 void TutorialLayout_LoadSharedResource() {
@@ -368,16 +398,20 @@ void TutorialLayout_LoadSharedResource() {
     }
 }
 
-struct Obj_802648EC { char dialogStorage[0xD8]; 
+struct CInGameTutorialDialogStorage {
+    char dialogStorage[0xD8];
     // Initialize a new tutorial dialog with its borrowed constructor context.
-    Obj_802648EC(void* a) { CInGameTutorialDialog_Ctor(this, a); } };
+    CInGameTutorialDialogStorage(void* a) {
+        ((CInGameTutorialDialog*)this)->__ct(a);
+    }
+};
 
 // Allocate a tutorial page and return its pointer through a required output slot.
-int CInGameTutorialDialog_Create(void* self, void** out) {
+int CInGameTutorialDialog::Create(void** out) {
     if (out == 0) {
         return 0;
     }
-    Obj_802648EC* object = new Obj_802648EC(self);
+    CInGameTutorialDialogStorage* object = new CInGameTutorialDialogStorage(this);
     *out = object;
     return object != 0;
 }
@@ -385,10 +419,6 @@ int CInGameTutorialDialog_Create(void* self, void** out) {
 // Borrow bodyElements from the shared tutorial layout table; element IDs index the layout.
 static inline int* TutorialBodyElementIds(int* tableBase) {
     return (int*)((char*)(((TutorialLayoutTables*)tableBase)->bodyElements));
-}
-// Borrow enabledByTutorial[0] from the shared tutorial layout table; element IDs index the layout.
-static inline int* TutorialPageMaskWords(int* tableBase) {
-    return (int*)((char*)(((TutorialLayoutTables*)tableBase)->enabledByTutorial[0]));
 }
 // Borrow movableElements from the shared tutorial layout table; element IDs index the layout.
 static inline int* TutorialMovableElementIds(int* tableBase) {
@@ -414,12 +444,13 @@ static inline int TutorialElementMask(int* table, int pageIndex, int elementId) 
 
 // Read a cursor mask with element-first address arithmetic, preserving operand order.
 static inline int TutorialCursorElementMask(int* table, int pageIndex, int elementId) {
-    return *(int*)((char*)table + (elementId * sizeof(int) + pageIndex * (kTutorialElementCount * sizeof(int))));
+    return *(int*)((char*)table + elementId * sizeof(int) + pageIndex * (kTutorialElementCount * sizeof(int)));
 }
 
 #pragma opt_lifetimes off
 // Apply page visibility masks, group positions and player flags to the shared layout.
-void CInGameTutorialDialog_RefreshLayoutVisibility(void* self) {
+// The page-mask base is rebuilt from the table in each phase; the original compiles that way.
+void CInGameTutorialDialog::RefreshLayoutVisibility() {
     // Phases: apply page masks to body/secondary IDs, combine movable-group
     // flags with those masks, update both cursor families, then reset text anchors.
     int* base = (int*)&s_tutorialLayoutTables;
@@ -427,64 +458,78 @@ void CInGameTutorialDialog_RefreshLayoutVisibility(void* self) {
         // Phase 1: movableXY the body, then apply its page mask.
         float point[2];
         float y, x;
-        x = AsCInGameTutorialDialog(self)->positionX;
-        y = AsCInGameTutorialDialog(self)->positionY;
+        x = positionX;
+        y = positionY;
         point[0] = x;
         point[1] = y;
-        ((DialogV4*)self)->v78(point);
+        ((DialogV4*)this)->v78(point);
         int* elementIds = TutorialBodyElementIds(base);
-        int* pageMasks = TutorialPageMaskWords(base);
+        int* pageMasks = base + kTutorialPageMaskWordOffset;
         for (unsigned int i = 0; i < kTutorialBodyElementCount; ++i, ++elementIds) {
-            int tutorialPageIndex = AsCInGameTutorialDialog(self)->tutorialIndex;
+            int tutorialPageIndex = tutorialIndex;
             int elementId = *elementIds;
-            Layout_SetElementEnabled(g_tutorialSharedLayout, elementId, TutorialElementMask(pageMasks, tutorialPageIndex, elementId));
+            Layout_SetElementEnabled(g_tutorialSharedLayout, elementId,
+                                     TutorialElementMask(pageMasks, tutorialPageIndex, elementId));
         }
         // Phase 2: position and mask the secondary element family.
-        ((DialogV4*)self)->v7C(point);
-        pageMasks = TutorialPageMaskWords(base);
+        ((DialogV4*)this)->v7C(point);
+        pageMasks = base + kTutorialPageMaskWordOffset;
         const int* smallItems = &s_tutorialSecondaryElementIds;
         for (unsigned int i = 0; i < 2; ++i, ++smallItems) {
-            int tutorialPageIndex = AsCInGameTutorialDialog(self)->tutorialIndex;
+            int tutorialPageIndex = tutorialIndex;
             int elementId = *smallItems;
-            Layout_SetElementEnabled(g_tutorialSharedLayout, elementId, TutorialElementMask(pageMasks, tutorialPageIndex, elementId));
+            Layout_SetElementEnabled(g_tutorialSharedLayout, elementId,
+                                     TutorialElementMask(pageMasks, tutorialPageIndex, elementId));
         }
         // Phase 3: move and mask the five independent groups.
         // Five movable groups occupy 0x10 bytes each: x,y,playerFlag,enabled.
         // movableOwnerBase rebases only elementGroup0Enabled while movableXY walks matching x/y.
         // Visibility = page mask AND group.enabled; movable player color is neutral.
-        char* movableOwnerBase = (char*)self;
+        char* movableOwnerBase = (char*)this;
         elementIds = TutorialMovableElementIds(base);
-        float* movableXY = (&AsCInGameTutorialDialog(self)->elementGroup0X);
-        pageMasks = TutorialPageMaskWords(base);
+        float* movableXY = (&elementGroup0X);
+        pageMasks = base + kTutorialPageMaskWordOffset;
         for (int i = 0; i < kTutorialMovableGroupCount; ++i, movableXY += 4, movableOwnerBase += 0x10, ++elementIds) {
             int elementId = *elementIds;
-            ((DialogV4*)self)->v74(elementId, movableXY);
-            int tutorialPageIndex = AsCInGameTutorialDialog(self)->tutorialIndex;
-            Layout_SetElementEnabled(g_tutorialSharedLayout, elementId, TutorialElementMask(pageMasks, tutorialPageIndex, elementId) != 0 && AsCInGameTutorialDialog(movableOwnerBase)->elementGroup0Enabled != 0);
+            ((DialogV4*)this)->v74(elementId, movableXY);
+            int tutorialPageIndex = tutorialIndex;
+            Layout_SetElementEnabled(g_tutorialSharedLayout, elementId,
+                                     TutorialElementMask(pageMasks, tutorialPageIndex, elementId) != 0 &&
+                                         ((CInGameTutorialDialog*)movableOwnerBase)->elementGroup0Enabled != 0);
             Layout_SetElementPlayerFlag(g_tutorialSharedLayout, elementId, 0, kLayoutNeutralPlayerColor);
         }
         // Phase 4: position, enable and highlight both cursor families.
         // Cursor groups share one XY position across their 4/3 element IDs. Page masks
         // gate both enabled and playerFlag; these two controls are independent.
         elementIds = TutorialPrimaryCursorIds(base);
-        pageMasks = TutorialPageMaskWords(base);
+        pageMasks = base + kTutorialPageMaskWordOffset;
         for (unsigned int i = 0; i < 4; ++i, ++elementIds) {
             int elementId = *elementIds;
-            ((DialogV4*)self)->v74(elementId, (&AsCInGameTutorialDialog(self)->cursorGroup0X));
-            int tutorialPageIndex = AsCInGameTutorialDialog(self)->tutorialIndex;
-            Layout_SetElementEnabled(g_tutorialSharedLayout, elementId, TutorialCursorElementMask(pageMasks, tutorialPageIndex, elementId) != 0 && AsCInGameTutorialDialog(self)->cursorGroup0Enabled != 0);
-            tutorialPageIndex = AsCInGameTutorialDialog(self)->tutorialIndex;
-            Layout_SetElementPlayerFlag(g_tutorialSharedLayout, elementId, TutorialCursorElementMask(pageMasks, tutorialPageIndex, elementId) != 0 && AsCInGameTutorialDialog(self)->cursorGroup0PlayerFlag != 0, kLayoutNeutralPlayerColor);
+            ((DialogV4*)this)->v74(elementId, (&cursorGroup0X));
+            int tutorialPageIndex = tutorialIndex;
+            Layout_SetElementEnabled(g_tutorialSharedLayout, elementId,
+                                     TutorialCursorElementMask(pageMasks, tutorialPageIndex, elementId) != 0 &&
+                                         cursorGroup0Enabled != 0);
+            tutorialPageIndex = tutorialIndex;
+            Layout_SetElementPlayerFlag(g_tutorialSharedLayout, elementId,
+                                        TutorialCursorElementMask(pageMasks, tutorialPageIndex, elementId) != 0 &&
+                                            cursorGroup0PlayerFlag != 0,
+                                        kLayoutNeutralPlayerColor);
         }
         elementIds = TutorialSecondaryCursorIds(base);
-        pageMasks = TutorialPageMaskWords(base);
+        pageMasks = base + kTutorialPageMaskWordOffset;
         for (unsigned int i = 0; i < 3; ++i, ++elementIds) {
             int elementId = *elementIds;
-            ((DialogV4*)self)->v74(elementId, (&AsCInGameTutorialDialog(self)->cursorGroup1X));
-            int tutorialPageIndex = AsCInGameTutorialDialog(self)->tutorialIndex;
-            Layout_SetElementEnabled(g_tutorialSharedLayout, elementId, TutorialCursorElementMask(pageMasks, tutorialPageIndex, elementId) != 0 && AsCInGameTutorialDialog(self)->cursorGroup1Enabled != 0);
-            tutorialPageIndex = AsCInGameTutorialDialog(self)->tutorialIndex;
-            Layout_SetElementPlayerFlag(g_tutorialSharedLayout, elementId, TutorialCursorElementMask(pageMasks, tutorialPageIndex, elementId) != 0 && AsCInGameTutorialDialog(self)->cursorGroup1PlayerFlag != 0, kLayoutNeutralPlayerColor);
+            ((DialogV4*)this)->v74(elementId, (&cursorGroup1X));
+            int tutorialPageIndex = tutorialIndex;
+            Layout_SetElementEnabled(g_tutorialSharedLayout, elementId,
+                                     TutorialCursorElementMask(pageMasks, tutorialPageIndex, elementId) != 0 &&
+                                         cursorGroup1Enabled != 0);
+            tutorialPageIndex = tutorialIndex;
+            Layout_SetElementPlayerFlag(g_tutorialSharedLayout, elementId,
+                                        TutorialCursorElementMask(pageMasks, tutorialPageIndex, elementId) != 0 &&
+                                            cursorGroup1PlayerFlag != 0,
+                                        kLayoutNeutralPlayerColor);
         }
         // Phase 5: reset the four text-anchor states.
         elementIds = TutorialTextAnchorIds(base);
@@ -507,87 +552,67 @@ void GolfCup_InitFullTurnConstant() {
 // highlighting. Coordinates use the layout position units, not world coordinates.
 // Set one movable group
 // Set one movable group's enabled word.
-void CInGameTutorialDialog_vfunc_20(void* self, int index, void* value) {
-    ((TutorialElementGroup*)&AsCInGameTutorialDialog(self)->elementGroup0X)[index].enabled = (int)value; // original +0x94
+void CInGameTutorialDialog::SetMovableGroupEnabled(int index, void* value) {
+    ((TutorialElementGroup*)&elementGroup0X)[index].enabled = (int)value; // original +0x94
 }
 
 // Set one cursor group's enabled word.
-void CInGameTutorialDialog_vfunc_23(void* self, int index, void* value) {
-    ((TutorialElementGroup*)&AsCInGameTutorialDialog(self)->cursorGroup0X)[index].enabled = (int)value; // original +0x74
+void CInGameTutorialDialog::SetCursorGroupEnabled(int index, void* value) {
+    ((TutorialElementGroup*)&cursorGroup0X)[index].enabled = (int)value; // original +0x74
 }
 
 // Set one cursor group's player flag.
-void CInGameTutorialDialog_vfunc_24(void* self, int index, void* value) {
-    ((TutorialElementGroup*)&AsCInGameTutorialDialog(self)->cursorGroup0X)[index].playerFlag = (int)value; // original +0x70
+void CInGameTutorialDialog::SetCursorGroupPlayerFlag(int index, void* value) {
+    ((TutorialElementGroup*)&cursorGroup0X)[index].playerFlag = (int)value; // original +0x70
 }
 
 // Set the position of one movable group.
-void CInGameTutorialDialog_SetMovableGroupPosition(void* self, int index, float x, float y) {
-    ((TutorialElementGroup*)&AsCInGameTutorialDialog(self)->elementGroup0X)[index].x = x; // original +0x88
-    ((TutorialElementGroup*)&AsCInGameTutorialDialog(self)->elementGroup0X)[index].y = y; // original +0x8C
+void CInGameTutorialDialog::SetMovableGroupPosition(int index, float x, float y) {
+    ((TutorialElementGroup*)&elementGroup0X)[index].x = x; // original +0x88
+    ((TutorialElementGroup*)&elementGroup0X)[index].y = y; // original +0x8C
 }
 
 // Set the position of one cursor group.
-void CInGameTutorialDialog_SetCursorGroupPosition(void* self, int index, float x, float y) {
-    ((TutorialElementGroup*)&AsCInGameTutorialDialog(self)->cursorGroup0X)[index].x = x; // original +0x68
-    ((TutorialElementGroup*)&AsCInGameTutorialDialog(self)->cursorGroup0X)[index].y = y; // original +0x6C
+void CInGameTutorialDialog::SetCursorGroupPosition(int index, float x, float y) {
+    ((TutorialElementGroup*)&cursorGroup0X)[index].x = x; // original +0x68
+    ((TutorialElementGroup*)&cursorGroup0X)[index].y = y; // original +0x6C
 }
 
 // Move the mouse cursor to the selected cursor group's position.
-void CInGameTutorialDialog_MoveCursorToGroup(void* self, int index) {
-    TutorialElementGroup* item = (TutorialElementGroup*)&AsCInGameTutorialDialog(self)->cursorGroup0X + index;
-    CMouseCursor_MoveTo(g_mouseCursor, item->x, item->y, kTutorialCursorMoveSentinel); // original +0x68/+0x6C
+void CInGameTutorialDialog::MoveCursorToGroup(int index) {
+    TutorialElementGroup* item = (TutorialElementGroup*)&cursorGroup0X + index;
+    ((CMouseCursor*)g_mouseCursor)->MoveTo(item->x, item->y, kTutorialCursorMoveSentinel); // original +0x68/+0x6C
 }
 
 } // extern C
-struct GolfCupBase {
-    char storage[0x2c];
-    // Initialize the cup base vtable and publish the preview pointer.
-    GolfCupBase() {
-        BaseObject_ctor(this);
-        *(void**)this = s_golfCupBaseVtable;
-        g_golfCupPreview = this;
-    }
-    ~GolfCupBase();
-};
-struct GolfCupMatrices {
-    char storage[0x84];
-    // Initialize cup resource slots and two identity matrices through the enclosing object.
-    GolfCupMatrices() {
-        char* self = (char*)this - 0x2c;
-        *(void**)self = __vt__8CGolfCup;
-        ((GolfCupFields*)self)->model = 0;
-        ((GolfCupFields*)self)->captureQueue = 0;
-        ((GolfCupFields*)self)->captureReady = 0;
-        ((GolfCupFields*)self)->shadowMesh = 0;
-        ((GolfCupFields*)self)->captureTexture = 0;
-        PSMTX44Identity(((GolfCupFields*)self)->matrix0);
-        PSMTX44Identity(((GolfCupFields*)self)->matrix1);
-    }
-    ~GolfCupMatrices();
-};
-struct GolfCupList { char storage[12]; ~GolfCupList(); };
-struct CGolfCup : GolfCupBase {
-    GolfCupMatrices matrices;
-    GolfCupList list;
-    CGolfCup();
-};
-// Initialize cup position, matrix/list lifetimes and the three-times-scaled preview mesh.
+// Initialize the cup base vtable and publish the preview pointer, then the cup vtable,
+// resource slots and two identity matrices, then position and the three-times-scaled preview mesh.
 CGolfCup::CGolfCup() {
+    BaseObject_ctor(this);
+    *(void**)this = s_golfCupBaseVtable;
+    g_golfCupPreview = this;
+    *(void**)this = __vt__8CGolfCup;
+    model = 0;
+    captureQueue = 0;
+    active = 0;
+    shadowMesh = 0;
+    captureTexture.ptr = 0;
+    PSMTX44Identity(camera);
+    PSMTX44Identity(projection);
     register void* self = this;
     float f1 = kGolfCupPreviewMeshScale;
     float f0 = kFloat_0_GolfCup;
     float f2 = f1;
-    *(volatile int*)&((GolfCupFields*)self)->savedMaterialResources = 0;
+    *(volatile int*)&buffer = 0;
     float f3 = f1;
-    *(volatile int*)&((GolfCupFields*)self)->savedMaterialResourceCount = 0;
-    *(volatile int*)&((GolfCupFields*)self)->savedMaterialResourceCapacity = 0;
-    ((GolfCupFields*)self)->positionX = f0;
-    ((GolfCupFields*)self)->positionY = f0;
-    ((GolfCupFields*)self)->positionZ = f0;
+    *(volatile int*)&size = 0;
+    *(volatile int*)&capacity = 0;
+    pos.x = f0;
+    pos.y = f0;
+    pos.z = f0;
     int arg0 = 0;
     int arg1 = 1;
-    GolfCupMesh_CreateScaledTriangles(self, (void*)&((volatile GolfCupFields*)self)->shadowMesh, arg0, arg1, f1, f2, f3);
+    GolfCupMesh_CreateScaledTriangles(self, (void*)&((volatile CGolfCup*)self)->shadowMesh, arg0, arg1, f1, f2, f3);
 }
 extern "C" {
 
@@ -598,29 +623,32 @@ struct ActivatedList {
 };
 
 // Update the layout and publish button 0/1 as dialog result 1/2 while input is enabled.
-void CInGameTutorialDialog_UpdateButtonSelection(void* self) {
-    if (g_tutorialSharedLayout != 0 && ((DialogV4*)self)->v14() != 0) {
-        ((DialogV4*)self)->v80();
+void CInGameTutorialDialog::UpdateButtonSelection() {
+    if (g_tutorialSharedLayout != 0 && ((DialogV4*)this)->v14() != 0) {
+        ((DialogV4*)this)->v80();
         Layout_Update(g_tutorialSharedLayout);
-        if (g_tutorialSharedLayoutReady != 0 && AsCInGameTutorialDialog(self)->dialogState == kDialogAcceptingInput) {
+        if (g_tutorialSharedLayoutReady != 0 && dialogState == kDialogAcceptingInput) {
             ActivatedList list = {};
             ActivatedUnwindCleanup activatedCleanup(&list);
             int selected = -1;
             int result = Layout_CollectActivated(g_tutorialSharedLayout, &list, 0);
             if (result != 0) {
-                if (list.data[0] == 0) selected = 0;
-                else if (list.data[0] == 1) selected = 1;
+                if (list.data[0] == 0)
+                    selected = 0;
+                else if (list.data[0] == 1)
+                    selected = 1;
             }
             if (selected != -1) {
                 int points[2];
                 points[0] = kTutorialPrimaryButtonResult[0];
                 points[1] = kTutorialSecondaryButtonResult;
-                AsCInGameTutorialDialog(self)->selectionResult = points[selected];
-                ((DialogV4*)self)->v10(1, points);
+                selectionResult = points[selected];
+                ((DialogV4*)this)->v10(1, points);
             }
             if (list.data != 0) {
                 list.count -= ((char*)&list + list.count) - (char*)&list;
-                activatedCleanup.release(); appFreeUni__FPv(list.data);
+                activatedCleanup.release();
+                appFreeUni__FPv(list.data);
             }
         }
     }
@@ -628,18 +656,18 @@ void CInGameTutorialDialog_UpdateButtonSelection(void* self) {
 
 #pragma opt_lifetimes off
 // Draw the visible dialog and place its text at the first enabled text anchor.
-void CInGameTutorialDialog_DrawDialogWithText(void* self) {
-    if (g_tutorialSharedLayout != 0 && g_tutorialSharedLayoutReady != 0 && AsCInGameTutorialDialog(self)->opacity > kTutorialMinimumDrawOpacity) {
-        ((DialogV4*)self)->v80();
-        Layout_DrawWithOpacity(g_tutorialSharedLayout, AsCInGameTutorialDialog(self)->opacity);
-        if (InGameDialog_GetNonemptyWideText(self) != 0) {
+void CInGameTutorialDialog::DrawDialogWithText() {
+    if (g_tutorialSharedLayout != 0 && g_tutorialSharedLayoutReady != 0 && opacity > kTutorialMinimumDrawOpacity) {
+        ((DialogV4*)this)->v80();
+        Layout_DrawWithOpacity(g_tutorialSharedLayout, opacity);
+        if (InGameDialog_GetNonemptyWideText(this) != 0) {
             int* row;
             int index;
             int offset;
             int tutorialPageIndex;
             volatile int* choices;
             choices = (volatile int*)((char*)(s_tutorialLayoutTables.textAnchorElements));
-            tutorialPageIndex = AsCInGameTutorialDialog(self)->tutorialIndex;
+            tutorialPageIndex = tutorialIndex;
             row = s_tutorialElementVisibilityByPage[tutorialPageIndex];
             index = -1;
             offset = choices[0] * 4;
@@ -655,15 +683,16 @@ void CInGameTutorialDialog_DrawDialogWithText(void* self) {
                         index = choices[2];
                     } else {
                         offset = choices[3] * 4;
-                        if (*(int*)(offset + (char*)row) != 0) index = choices[3];
+                        if (*(int*)(offset + (char*)row) != 0)
+                            index = choices[3];
                     }
                 }
             }
             if (index != -1) {
                 int point[2];
                 Layout_GetElementPosition(g_tutorialSharedLayout, index, point);
-                int arg = Dialog_GetOpacityByte(self);
-                DialogText_DrawAligned(self, point, arg, 0, 0);
+                int arg = Dialog_GetOpacityByte(this);
+                DialogText_DrawAligned(this, point, arg, 0, 0);
             }
         }
     }
@@ -671,7 +700,7 @@ void CInGameTutorialDialog_DrawDialogWithText(void* self) {
 
 #pragma opt_lifetimes reset
 // Report whether either of the two tutorial buttons was activated.
-int CInGameTutorialDialog_IsEitherButtonActivated() {
+int CInGameTutorialDialog::IsEitherButtonActivated() {
     ActivatedList list = {};
     ActivatedUnwindCleanup activatedCleanup(&list);
     int result = Layout_CollectActivated(g_tutorialSharedLayout, &list, 0);
@@ -680,27 +709,30 @@ int CInGameTutorialDialog_IsEitherButtonActivated() {
         if (first == 0) {
             if (list.data != 0) {
                 list.count -= ((char*)&list + list.count) - (char*)&list;
-                activatedCleanup.release(); appFreeUni__FPv(list.data);
+                activatedCleanup.release();
+                appFreeUni__FPv(list.data);
             }
             return 1;
         }
         if (first == 1) {
             if (list.data != 0) {
                 list.count -= ((char*)&list + list.count) - (char*)&list;
-                activatedCleanup.release(); appFreeUni__FPv(list.data);
+                activatedCleanup.release();
+                appFreeUni__FPv(list.data);
             }
             return 1;
         }
     }
     if (list.data != 0) {
         list.count -= ((char*)&list + list.count) - (char*)&list;
-        activatedCleanup.release(); appFreeUni__FPv(list.data);
+        activatedCleanup.release();
+        appFreeUni__FPv(list.data);
     }
     return 0;
 }
 
 // Set an element position and rebuild its integer hit rectangle from its layout size.
-void CInGameTutorialDialog_SetElementPositionAndRect(void* self, void* elementId, float* inputXY) {
+void CInGameTutorialDialog::SetElementPositionAndRect(void* elementId, float* inputXY) {
     // inputXY is two layout-space floats; elementId is an integer carried by the pointer ABI.
     // The temporary first holds XY, then receives width/height; bounds truncate toward zero.
     if (g_tutorialSharedLayout != 0) {

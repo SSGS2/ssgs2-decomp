@@ -1,3 +1,6 @@
+// GTL AX voice control: volume envelopes and ramps, pitch and sample-rate interpolation, mix levels,
+// biquad and low-pass filters, and the voice pool. The AX parameter block is borrowed, not owned.
+
 #include <decomp/static_init.h>
 // GTL AX audio voice control: envelope, pitch/SRC, mixer lanes, filters and
 // ADPCM loop decoder context. Mod index: normalized envelope levels ->
@@ -7,8 +10,6 @@
 // changes for later DSP synchronization; these routines borrow the live AXVPB
 // and restore nested OS interrupt levels. The wrapper itself must be nonnull;
 // an absent object/PB makes parameter setters no-ops. No ownership transfer.
-// Translation unit 0x80407BD4-0x80409324 (16 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 extern "C" void* memcpy(void*, const void*, unsigned int);
@@ -23,24 +24,35 @@ extern "C" void* memcpy(void*, const void*, unsigned int);
 // The separate eight-pair path at +0x102 is not this twelve-lane cache; this unit
 // establishes only its positional ABI, not the destinations of its eight channels.
 struct AxParameterBlock {
-    char reserved00[0x1c]; unsigned int syncFlags;
-    char reserved20[0x10]; unsigned short sourceType, sourceCoefficient;
-    unsigned int mixerControl; unsigned short running;
-    char reserved3a[2]; unsigned short mixPairs[24];
-    char reserved6c[0x26]; unsigned short volume; short volumeStep;
-    char reserved96[0x38]; unsigned short sourceRatioHigh, sourceRatioLow;
+    char reserved00[0x1c];
+    unsigned int syncFlags;
+    char reserved20[0x10];
+    unsigned short sourceType, sourceCoefficient;
+    unsigned int mixerControl;
+    unsigned short running;
+    char reserved3a[2];
+    unsigned short mixPairs[24];
+    char reserved6c[0x26];
+    unsigned short volume;
+    short volumeStep;
+    char reserved96[0x38];
+    unsigned short sourceRatioHigh, sourceRatioLow;
     unsigned short sourceHistory[5];
     // ADPCM loop history in the AX parameter block:
     // AXVPB+DC = pb(+28).adpcmLoop(+B4), NOT an auxiliary mixer block.
     // Three DSP words: loop_pred_scale, loop_yn1, loop_yn2 (AXPBADPCMLOOP).
     unsigned short adpcmLoopContext[3];
-    unsigned short lowPass[4]; char reservedea[0x16];
+    unsigned short lowPass[4];
+    char reservedea[0x16];
     unsigned short eightMixMask, eightMixPairs[16];
-    char reserved122[0x1a]; unsigned short biquad[10];
+    char reserved122[0x1a];
+    unsigned short biquad[10];
 };
 struct AxVoiceMixCache {
-    unsigned int object, flags; char reserved08[0x14];
-    unsigned char resetMix; char reserved1d;
+    unsigned int object, flags;
+    char reserved08[0x14];
+    unsigned char resetMix;
+    char reserved1d;
     unsigned short currentMix[12];
 };
 #define AX_LAYOUT_OFF(T, f, o) typedef char T##_off_##f[((int)&((T*)0)->f == (o)) ? 1 : -1]
@@ -58,31 +70,47 @@ AX_LAYOUT_OFF(AxVoiceMixCache, currentMix, 0x1e);
 
 enum AxVoiceConstants {
     kMixCacheOffset = (int)&((AxVoiceMixCache*)0)->currentMix,
-    kRampSamples = 96, kMaxVolume = 0x7fff,
-    kSyncSourceType = 1, kSyncMix = 0x12,
-    kSyncVolume = 0x100, kSyncVolumeDelta = 0x200,
-    kSyncSourceReset = 0x10000, kSyncSourceRatio = 0x20000,
-    kSyncAdpcmLoop = 0x40000, kSyncLowPass = 0x80000,
+    kRampSamples = 96,
+    kMaxVolume = 0x7fff,
+    kSyncSourceType = 1,
+    kSyncMix = 0x12,
+    kSyncVolume = 0x100,
+    kSyncVolumeDelta = 0x200,
+    kSyncSourceReset = 0x10000,
+    kSyncSourceRatio = 0x20000,
+    kSyncAdpcmLoop = 0x40000,
+    kSyncLowPass = 0x80000,
     kSyncLowPassCoefficients = 0x100000,
     kSyncEightMix = 0x03000000,
-    kSyncBiquad = 0x10000000, kSyncTwoFilterCoefficients = 0x20000000,
+    kSyncBiquad = 0x10000000,
+    kSyncTwoFilterCoefficients = 0x20000000,
     kSyncFiveFilterCoefficients = 0x40000000,
-    kFilterTwoCoefficients = 1, kFilterFiveCoefficients = 2,
+    kFilterTwoCoefficients = 1,
+    kFilterFiveCoefficients = 2,
     kLowPassBypassFrequency = 16000
 };
-enum VoiceInterpolationMode { kSourceNoInterpolation = 0, kSourceLinear = 1,
-    kSourceTable0 = 2, kSourceTable1 = 3, kSourceTable2 = 4 };
-enum AxInterpolationType { kAxSourceTable = 0, kAxSourceLinear = 1, kAxSourceNoInterpolation = 2 };
+enum VoiceInterpolationMode {
+    kSourceNoInterpolation = 0,
+    kSourceLinear = 1,
+    kSourceTable0 = 2,
+    kSourceTable1 = 3,
+    kSourceTable2 = 4
+};
+enum AxInterpolationType {
+    kAxSourceTable = 0,
+    kAxSourceLinear = 1,
+    kAxSourceNoInterpolation = 2
+};
 
 extern "C" {
 
 extern float kFloat_6_2831855;
 extern float s_twoPi_AudioVoice;
 
-// AudioVoice_SetEightMixPairs: public symbol spelling is retained for coordinator renaming.
 void AudioVoice_SetEightMixPairs(void*, unsigned short*);
 void AudioVoice_SetMixCoefficients(unsigned int*, unsigned short*, int);
-void AudioControl_GetFiveLookupCoefficients(void*, unsigned short*, unsigned short*, unsigned short*, unsigned short*, unsigned short*);
+void AudioControl_GetFiveLookupCoefficients(void*, unsigned short*, unsigned short*, unsigned short*, unsigned short*,
+                                            unsigned short*);
 void AXGetLpfCoefs(unsigned int, unsigned short*, unsigned short*);
 void GtlVoicePool_dtor(void*);
 void InterruptGuard_dtor(void*, int);
@@ -93,8 +121,12 @@ extern float kFloat_32767_AudioVolume;
 void* __va_arg(void*, unsigned int);
 
 // Plain saved-level holders: the original restores each level exactly once and calls no destructor.
-struct SavedInterruptLevel { unsigned int level; };
-struct MixInterruptLevel { unsigned int level; };
+struct SavedInterruptLevel {
+    unsigned int level;
+};
+struct MixInterruptLevel {
+    unsigned int level;
+};
 
 struct VoiceEnvelopeState {
     unsigned int object;
@@ -143,8 +175,12 @@ void AudioVoice_SetSourceInterpolationMode(unsigned int* voice, int sourceMode) 
     lock.level = OSDisableInterrupts();
     if (*voice) {
         switch (sourceMode) {
-        case kSourceNoInterpolation: ((AxParameterBlock*)*voice)->sourceType = kAxSourceNoInterpolation; break;
-        case kSourceLinear: ((AxParameterBlock*)*voice)->sourceType = kAxSourceLinear; break;
+        case kSourceNoInterpolation:
+            ((AxParameterBlock*)*voice)->sourceType = kAxSourceNoInterpolation;
+            break;
+        case kSourceLinear:
+            ((AxParameterBlock*)*voice)->sourceType = kAxSourceLinear;
+            break;
         case kSourceTable0:
             ((AxParameterBlock*)*voice)->sourceType = kAxSourceTable;
             ((AxParameterBlock*)*voice)->sourceCoefficient = 0;
@@ -172,14 +208,27 @@ void AudioVoice_SetFilterCoefficients(unsigned int* voice, unsigned int filterTy
     // feedback sign convention belong to the coefficient providers/DSP ABI.
     SavedInterruptLevel lock;
     lock.level = OSDisableInterrupts();
-    if (!*voice) { OSRestoreInterrupts(lock.level); return; }
+    if (!*voice) {
+        OSRestoreInterrupts(lock.level);
+        return;
+    }
     unsigned int count;
-    if (filterType == kFilterTwoCoefficients) count = 2;
-    else if (filterType == kFilterFiveCoefficients) count = 5;
-    else { OSRestoreInterrupts(lock.level); return; }
+    if (filterType == kFilterTwoCoefficients)
+        count = 2;
+    else if (filterType == kFilterFiveCoefficients)
+        count = 5;
+    else {
+        OSRestoreInterrupts(lock.level);
+        return;
+    }
     unsigned short values[5];
-    struct { unsigned int a; void* b; void* c; } ap; // va_list {gpr, fpr, reserved, overflow area, register save area}
-    __va_setup(&ap); // same compiler intrinsic as Stream_ScanFormat; &voice is the spill slot, not the varargs save area
+    struct {
+        unsigned int a;
+        void* b;
+        void* c;
+    } ap; // va_list {gpr, fpr, reserved, overflow area, register save area}
+    __va_setup(
+        &ap); // same compiler intrinsic as Stream_ScanFormat; &voice is the spill slot, not the varargs save area
     for (unsigned int i = 0; i < count; ++i) {
         void* p = __va_arg(&ap, 1);
         values[i] = (unsigned short)*(unsigned int*)p;
@@ -200,8 +249,8 @@ void AudioVoice_SetFilterCoefficients(unsigned int* voice, unsigned int filterTy
 }
 
 // Copy the saved parameter tail and return its final three halfword values.
-void AudioVoice_ReadParameterTailTriplet(unsigned short* arg0, unsigned short* arg1, unsigned short* arg2,
-                 void* arg3, void* arg4, void* arg5) {
+void AudioVoice_ReadParameterTailTriplet(unsigned short* arg0, unsigned short* arg1, unsigned short* arg2, void* arg3,
+                                         void* arg4, void* arg5) {
     // arg5 borrows at least 40 readable bytes; outputs receive halfwords 17,18,19
     // in native order. arg3/arg4 are unused ABI positions. No pointer is retained.
     unsigned char temp[40];
@@ -248,7 +297,12 @@ unsigned int* GtlVoicePool_GetInstance() {
     return s_audioVoicePool;
 }
 
-struct VoiceParameterStorage { unsigned int object; unsigned int flags; char reserved08[0xCC]; unsigned char data[6]; };
+struct VoiceParameterStorage {
+    unsigned int object;
+    unsigned int flags;
+    char reserved08[0xCC];
+    unsigned char data[6];
+};
 
 // Ramp twelve mix channels over 96 samples and report whether a target differed.
 int AudioVoice_RampMixCoefficients(unsigned int* voice, unsigned short* targetMix) {
@@ -263,30 +317,51 @@ int AudioVoice_RampMixCoefficients(unsigned int* voice, unsigned short* targetMi
     }
     if (((AxVoiceMixCache*)voice)->resetMix || ((AxParameterBlock*)object)->running != 1) {
         unsigned short* dst = (unsigned short*)((char*)voice + kMixCacheOffset);
-        dst[0] = targetMix[0]; dst[1] = targetMix[1]; dst[2] = targetMix[2]; dst[3] = targetMix[3];
-        dst[4] = targetMix[4]; dst[5] = targetMix[5]; dst[6] = targetMix[6]; dst[7] = targetMix[7];
-        dst[8] = targetMix[8]; dst[9] = targetMix[9]; dst[10] = targetMix[10]; dst[11] = targetMix[11];
+        dst[0] = targetMix[0];
+        dst[1] = targetMix[1];
+        dst[2] = targetMix[2];
+        dst[3] = targetMix[3];
+        dst[4] = targetMix[4];
+        dst[5] = targetMix[5];
+        dst[6] = targetMix[6];
+        dst[7] = targetMix[7];
+        dst[8] = targetMix[8];
+        dst[9] = targetMix[9];
+        dst[10] = targetMix[10];
+        dst[11] = targetMix[11];
         ((AxVoiceMixCache*)voice)->resetMix = 0;
     }
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 0) != targetMix[0]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 1) != targetMix[1]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 2) != targetMix[2]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 3) != targetMix[3]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 4) != targetMix[4]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 5) != targetMix[5]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 6) != targetMix[6]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 7) != targetMix[7]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 8) != targetMix[8]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 9) != targetMix[9]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 10) != targetMix[10]) changed = 1;
-    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 11) != targetMix[11]) changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 0) != targetMix[0])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 1) != targetMix[1])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 2) != targetMix[2])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 3) != targetMix[3])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 4) != targetMix[4])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 5) != targetMix[5])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 6) != targetMix[6])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 7) != targetMix[7])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 8) != targetMix[8])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 9) != targetMix[9])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 10) != targetMix[10])
+        changed = 1;
+    if (*((unsigned short*)((char*)voice + kMixCacheOffset) + 11) != targetMix[11])
+        changed = 1;
     // AudioVoice_SetMixCoefficients takes 12 (current, step) pairs, in the same order GtlVoice_StopMixAndVolumeRamps builds them.
     unsigned short values[24];
     unsigned short step[12];
     unsigned short* cur = (unsigned short*)((char*)voice + kMixCacheOffset);
     // Phase 2: cache -> PB permutation: main LR, A LR, B LR, C LR, main/A/B/C S.
     // Truncation toward zero leaves a residual of less than 96 level units.
-    static const unsigned char order[12] = { 0, 1, 3, 4, 6, 7, 9, 10, 2, 5, 8, 11 };
+    static const unsigned char order[12] = {0, 1, 3, 4, 6, 7, 9, 10, 2, 5, 8, 11};
     for (int n = 0; n < 12; ++n)
         step[n] = (short)(((int)targetMix[n] - (int)cur[n]) / kRampSamples);
     for (int p = 0; p < 12; ++p) {
@@ -297,18 +372,54 @@ int AudioVoice_RampMixCoefficients(unsigned int* voice, unsigned short* targetMi
     // Phase 3: predict the level after this 96-sample block. Silence and zero
     // delta snap the software cache to target; otherwise preserve the residual
     // for a later update. The return value records pre-ramp differences.
-    if (!targetMix[0] || !step[0]) cur[0] = targetMix[0]; else cur[0] = (unsigned short)(cur[0] + step[0] * kRampSamples);
-    if (!targetMix[1] || !step[1]) cur[1] = targetMix[1]; else cur[1] = (unsigned short)(cur[1] + step[1] * kRampSamples);
-    if (!targetMix[2] || !step[2]) cur[2] = targetMix[2]; else cur[2] = (unsigned short)(cur[2] + step[2] * kRampSamples);
-    if (!targetMix[3] || !step[3]) cur[3] = targetMix[3]; else cur[3] = (unsigned short)(cur[3] + step[3] * kRampSamples);
-    if (!targetMix[4] || !step[4]) cur[4] = targetMix[4]; else cur[4] = (unsigned short)(cur[4] + step[4] * kRampSamples);
-    if (!targetMix[5] || !step[5]) cur[5] = targetMix[5]; else cur[5] = (unsigned short)(cur[5] + step[5] * kRampSamples);
-    if (!targetMix[6] || !step[6]) cur[6] = targetMix[6]; else cur[6] = (unsigned short)(cur[6] + step[6] * kRampSamples);
-    if (!targetMix[7] || !step[7]) cur[7] = targetMix[7]; else cur[7] = (unsigned short)(cur[7] + step[7] * kRampSamples);
-    if (!targetMix[8] || !step[8]) cur[8] = targetMix[8]; else cur[8] = (unsigned short)(cur[8] + step[8] * kRampSamples);
-    if (!targetMix[9] || !step[9]) cur[9] = targetMix[9]; else cur[9] = (unsigned short)(cur[9] + step[9] * kRampSamples);
-    if (!targetMix[10] || !step[10]) cur[10] = targetMix[10]; else cur[10] = (unsigned short)(cur[10] + step[10] * kRampSamples);
-    if (!targetMix[11] || !step[11]) cur[11] = targetMix[11]; else cur[11] = (unsigned short)(cur[11] + step[11] * kRampSamples);
+    if (!targetMix[0] || !step[0])
+        cur[0] = targetMix[0];
+    else
+        cur[0] = (unsigned short)(cur[0] + step[0] * kRampSamples);
+    if (!targetMix[1] || !step[1])
+        cur[1] = targetMix[1];
+    else
+        cur[1] = (unsigned short)(cur[1] + step[1] * kRampSamples);
+    if (!targetMix[2] || !step[2])
+        cur[2] = targetMix[2];
+    else
+        cur[2] = (unsigned short)(cur[2] + step[2] * kRampSamples);
+    if (!targetMix[3] || !step[3])
+        cur[3] = targetMix[3];
+    else
+        cur[3] = (unsigned short)(cur[3] + step[3] * kRampSamples);
+    if (!targetMix[4] || !step[4])
+        cur[4] = targetMix[4];
+    else
+        cur[4] = (unsigned short)(cur[4] + step[4] * kRampSamples);
+    if (!targetMix[5] || !step[5])
+        cur[5] = targetMix[5];
+    else
+        cur[5] = (unsigned short)(cur[5] + step[5] * kRampSamples);
+    if (!targetMix[6] || !step[6])
+        cur[6] = targetMix[6];
+    else
+        cur[6] = (unsigned short)(cur[6] + step[6] * kRampSamples);
+    if (!targetMix[7] || !step[7])
+        cur[7] = targetMix[7];
+    else
+        cur[7] = (unsigned short)(cur[7] + step[7] * kRampSamples);
+    if (!targetMix[8] || !step[8])
+        cur[8] = targetMix[8];
+    else
+        cur[8] = (unsigned short)(cur[8] + step[8] * kRampSamples);
+    if (!targetMix[9] || !step[9])
+        cur[9] = targetMix[9];
+    else
+        cur[9] = (unsigned short)(cur[9] + step[9] * kRampSamples);
+    if (!targetMix[10] || !step[10])
+        cur[10] = targetMix[10];
+    else
+        cur[10] = (unsigned short)(cur[10] + step[10] * kRampSamples);
+    if (!targetMix[11] || !step[11])
+        cur[11] = targetMix[11];
+    else
+        cur[11] = (unsigned short)(cur[11] + step[11] * kRampSamples);
     OSRestoreInterrupts(level);
     return changed;
 }
@@ -324,7 +435,9 @@ struct VoiceRampState {
     unsigned int sampleRateHz;
 };
 
-struct VoiceInterruptLevel { unsigned int level; };
+struct VoiceInterruptLevel {
+    unsigned int level;
+};
 
 // Write eight level/step pairs and build the nonzero-halfword enable mask.
 void AudioVoice_SetEightMixPairs(void* voiceStorage, unsigned short* mixPairs) {
@@ -351,7 +464,8 @@ void AudioVoice_SetEightMixPairs(void* voiceStorage, unsigned short* mixPairs) {
 // Store one mixer halfword and add its channel-enable bits when it is nonzero.
 inline void copyMixValue(unsigned int object, unsigned short value, int index, unsigned int bit, unsigned int& mask) {
     ((AxParameterBlock*)object)->mixPairs[index] = value;
-    if (value) mask |= bit;
+    if (value)
+        mask |= bit;
 }
 
 // Write twelve level/step pairs, build mixer enable bits and optionally sync immediately.
@@ -368,18 +482,30 @@ void AudioVoice_SetMixCoefficients(unsigned int* voice, unsigned short* mixPairs
     unsigned int object = *voice;
     if (object) {
         unsigned int mask = 0;
-        copyMixValue(object, mixPairs[0], 0, 0x00000001, mask); copyMixValue(object, mixPairs[1], 1, 0x00000005, mask);
-        copyMixValue(object, mixPairs[2], 2, 0x00000002, mask); copyMixValue(object, mixPairs[3], 3, 0x00000006, mask);
-        copyMixValue(object, mixPairs[4], 4, 0x00010000, mask); copyMixValue(object, mixPairs[5], 5, 0x00050000, mask);
-        copyMixValue(object, mixPairs[6], 6, 0x00020000, mask); copyMixValue(object, mixPairs[7], 7, 0x00060000, mask);
-        copyMixValue(object, mixPairs[8], 8, 0x00200000, mask); copyMixValue(object, mixPairs[9], 9, 0x00A00000, mask);
-        copyMixValue(object, mixPairs[10], 10, 0x00400000, mask); copyMixValue(object, mixPairs[11], 11, 0x00C00000, mask);
-        copyMixValue(object, mixPairs[12], 12, 0x04000000, mask); copyMixValue(object, mixPairs[13], 13, 0x14000000, mask);
-        copyMixValue(object, mixPairs[14], 14, 0x08000000, mask); copyMixValue(object, mixPairs[15], 15, 0x18000000, mask);
-        copyMixValue(object, mixPairs[16], 16, 0x00000008, mask); copyMixValue(object, mixPairs[17], 17, 0x00000018, mask);
-        copyMixValue(object, mixPairs[18], 18, 0x00080000, mask); copyMixValue(object, mixPairs[19], 19, 0x00180000, mask);
-        copyMixValue(object, mixPairs[20], 20, 0x01000000, mask); copyMixValue(object, mixPairs[21], 21, 0x03000000, mask);
-        copyMixValue(object, mixPairs[22], 22, 0x20000000, mask); copyMixValue(object, mixPairs[23], 23, 0x60000000, mask);
+        copyMixValue(object, mixPairs[0], 0, 0x00000001, mask);
+        copyMixValue(object, mixPairs[1], 1, 0x00000005, mask);
+        copyMixValue(object, mixPairs[2], 2, 0x00000002, mask);
+        copyMixValue(object, mixPairs[3], 3, 0x00000006, mask);
+        copyMixValue(object, mixPairs[4], 4, 0x00010000, mask);
+        copyMixValue(object, mixPairs[5], 5, 0x00050000, mask);
+        copyMixValue(object, mixPairs[6], 6, 0x00020000, mask);
+        copyMixValue(object, mixPairs[7], 7, 0x00060000, mask);
+        copyMixValue(object, mixPairs[8], 8, 0x00200000, mask);
+        copyMixValue(object, mixPairs[9], 9, 0x00A00000, mask);
+        copyMixValue(object, mixPairs[10], 10, 0x00400000, mask);
+        copyMixValue(object, mixPairs[11], 11, 0x00C00000, mask);
+        copyMixValue(object, mixPairs[12], 12, 0x04000000, mask);
+        copyMixValue(object, mixPairs[13], 13, 0x14000000, mask);
+        copyMixValue(object, mixPairs[14], 14, 0x08000000, mask);
+        copyMixValue(object, mixPairs[15], 15, 0x18000000, mask);
+        copyMixValue(object, mixPairs[16], 16, 0x00000008, mask);
+        copyMixValue(object, mixPairs[17], 17, 0x00000018, mask);
+        copyMixValue(object, mixPairs[18], 18, 0x00080000, mask);
+        copyMixValue(object, mixPairs[19], 19, 0x00180000, mask);
+        copyMixValue(object, mixPairs[20], 20, 0x01000000, mask);
+        copyMixValue(object, mixPairs[21], 21, 0x03000000, mask);
+        copyMixValue(object, mixPairs[22], 22, 0x20000000, mask);
+        copyMixValue(object, mixPairs[23], 23, 0x60000000, mask);
         ((AxParameterBlock*)object)->mixerControl = mask;
         if (syncImmediately)
             ((AxParameterBlock*)object)->syncFlags |= 0x12;
@@ -405,7 +531,8 @@ void gtl_AxVoice_SetPitch(VoiceRampState* voice, float pitch, int resetHistory) 
         OSRestoreInterrupts(lock.level);
         return;
     } else if (resetHistory) {
-        unsigned int ticks = Runtime_ConvertDoubleToUnsigned(65536.0f * (pitch * (float)(int)voice->sampleRateHz / 32000.0f));
+        unsigned int ticks =
+            Runtime_ConvertDoubleToUnsigned(65536.0f * (pitch * (float)(int)voice->sampleRateHz / 32000.0f));
         unsigned short values[7] = {(unsigned short)(ticks >> 16), (unsigned short)ticks, 0, 0, 0, 0, 0};
         SavedInterruptLevel lock2;
         lock2.level = OSDisableInterrupts();
@@ -449,8 +576,10 @@ void GtlVoice_UpdateVolumeRamp(VoiceRampState* voice) {
         int candidate2 = (int)voice->currentVolume + steps * kRampSamples;
         int dist1 = (int)voice->targetVolume - candidate1;
         int dist2 = (int)voice->targetVolume - candidate2;
-        if (dist1 < 0) dist1 = -dist1;
-        if (dist2 < 0) dist2 = -dist2;
+        if (dist1 < 0)
+            dist1 = -dist1;
+        if (dist2 < 0)
+            dist2 = -dist2;
         short selected = dist2 < dist1 ? (short)steps : (short)direction;
         ((AxParameterBlock*)object)->volumeStep = selected;
         if (((AxParameterBlock*)object)->volumeStep == 0 && voice->volumeStep == 0)
@@ -495,7 +624,8 @@ void AudioVoice_SetBiquadFilter(unsigned int* voice, unsigned int filterParamete
                 memcpy((char*)&((AxParameterBlock*)object)->biquad, temp, 0x14);
                 voice[1] |= kSyncBiquad;
                 OSRestoreInterrupts(lock2.level);
-            } else OSRestoreInterrupts(lock2.level);
+            } else
+                OSRestoreInterrupts(lock2.level);
         } else if (((AxParameterBlock*)object)->biquad[0] == kFilterFiveCoefficients) {
             unsigned short a, b, c, d, e;
             AudioControl_GetFiveLookupCoefficients((void*)filterParameters, &a, &b, &c, &d, &e);
@@ -507,7 +637,8 @@ void AudioVoice_SetBiquadFilter(unsigned int* voice, unsigned int filterParamete
             temp[2] = 0;
             temp[3] = 0;
             temp[4] = 0;
-            AudioControl_GetFiveLookupCoefficients((void*)filterParameters, &temp[5], &temp[6], &temp[7], &temp[8], &temp[9]);
+            AudioControl_GetFiveLookupCoefficients((void*)filterParameters, &temp[5], &temp[6], &temp[7], &temp[8],
+                                                   &temp[9]);
             VoiceInterruptLevel lock2;
             lock2.level = OSDisableInterrupts();
             object = *voice;
@@ -515,7 +646,8 @@ void AudioVoice_SetBiquadFilter(unsigned int* voice, unsigned int filterParamete
                 memcpy((char*)&((AxParameterBlock*)object)->biquad, temp, 0x14);
                 voice[1] |= kSyncBiquad;
                 OSRestoreInterrupts(lock2.level);
-            } else OSRestoreInterrupts(lock2.level);
+            } else
+                OSRestoreInterrupts(lock2.level);
         }
     }
     OSRestoreInterrupts(lock.level);
@@ -539,7 +671,8 @@ void gtl_AxVoice_SetLowPassFrequency(unsigned int* voice, unsigned int frequency
                 memcpy((char*)&((AxParameterBlock*)object)->lowPass, temp, 8);
                 voice[1] |= kSyncLowPass;
                 OSRestoreInterrupts(lock2.level);
-            } else OSRestoreInterrupts(lock2.level);
+            } else
+                OSRestoreInterrupts(lock2.level);
         } else if (((AxParameterBlock*)object)->lowPass[0] == 1) {
             unsigned short a, b;
             AXGetLpfCoefs(frequencyHz, &a, &b);
@@ -551,7 +684,8 @@ void gtl_AxVoice_SetLowPassFrequency(unsigned int* voice, unsigned int frequency
                 ((AxParameterBlock*)object)->lowPass[3] = b;
                 voice[1] |= kSyncLowPassCoefficients;
                 OSRestoreInterrupts(lock2.level);
-            } else OSRestoreInterrupts(lock2.level);
+            } else
+                OSRestoreInterrupts(lock2.level);
         } else {
             unsigned short temp[4];
             temp[0] = 1;
@@ -566,7 +700,8 @@ void gtl_AxVoice_SetLowPassFrequency(unsigned int* voice, unsigned int frequency
                 memcpy((char*)&((AxParameterBlock*)object)->lowPass, temp, 8);
                 voice[1] |= kSyncLowPass;
                 OSRestoreInterrupts(lock2.level);
-            } else OSRestoreInterrupts(lock2.level);
+            } else
+                OSRestoreInterrupts(lock2.level);
         }
     }
     OSRestoreInterrupts(lock.level);

@@ -5,10 +5,12 @@
 
 class CPartyItemTimebombBadge {
 public:
-    void* vtbl; // 0x0: CPartyItemTimebombBadge_Ctor
+    CPartyItemTimebombBadge(int size);
+
+    void* vtbl; // 0x0
     char pad_004[0xc];
-    int elapsedTicks; // 0x10: CPartyItemTimebombBadge_Ctor, party_CPartyItemTimebombBadge_vfunc_3, party_CPartyItemTimebombBadge_UpdateTimebomb
-    int period; // 0x14: CPartyItemTimebombBadge_Ctor, party_CPartyItemTimebombBadge_UpdateTimebomb
+    int elapsedTicks; // 0x10: party_CPartyItemTimebombBadge_vfunc_3, party_CPartyItemTimebombBadge_UpdateTimebomb
+    int period;       // 0x14: party_CPartyItemTimebombBadge_UpdateTimebomb
 };
 
 #define OFF(f, o) typedef char CPartyItemTimebombBadge_off_##f[((int)&((CPartyItemTimebombBadge*)0)->f == (o)) ? 1 : -1]

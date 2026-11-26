@@ -1,6 +1,3 @@
-// Translation unit 0x803E02F0-0x803E0594 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 // Scalar animation interpolation (Bezier/Hermite); edit curve shape here, not
 // the animation update cadence. Callers in gtl_animation_node_evaluate.cpp/gtl_animation_model_matrices.cpp/gtl_animation_node_evaluation.cpp choose
 // adjacent keys and publish the three time globals below before dispatching.
@@ -17,16 +14,17 @@
 
 extern "C" {
 
-extern float s_animationSegmentStartTime; // interval start time, set by animation evaluator
-extern float s_animationSampleTime; // absolute sample time, set by animation evaluator
-extern float s_animationSegmentEndTime; // interval end time, set by animation evaluator
-extern float kFloat_1_GtlModel; // 1.0f: complement weights
+extern float s_animationSegmentStartTime;    // interval start time, set by animation evaluator
+extern float s_animationSampleTime;          // absolute sample time, set by animation evaluator
+extern float s_animationSegmentEndTime;      // interval end time, set by animation evaluator
+extern float kFloat_1_GtlModel;              // 1.0f: complement weights
 extern float kCurveRelativeSpacingTolerance; // 0.01f: relative linear-spacing tolerance
-extern float kCurveMinimumSpacingTolerance; // 0.0001f: absolute tolerance floor, in tested axis units
-extern float kBezierCubicCoefficient; // 3.0f: cubic Bernstein coefficient
+extern float kCurveMinimumSpacingTolerance;  // 0.0001f: absolute tolerance floor, in tested axis units
+extern float kBezierCubicCoefficient;        // 3.0f: cubic Bernstein coefficient
 
 extern float gtl_Curve_FindBezierParameter(float x0, float x1, float x2, float x3, float t);
-extern void* Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1, float t);
+extern void* Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1,
+                          float t);
 
 #pragma opt_lifetimes off
 // Required borrowed a/b each expose all six floats; out exposes one writable
@@ -121,7 +119,8 @@ int gtl_Animation_InterpolateBezierFloat(float* out, const float* a, const float
         endValueCopy = endValue[0];
         startValueDelta = startOutgoingValue[0];
         startValueCopy = startValue[0];
-        curveParameter = gtl_Curve_FindBezierParameter(s_animationSegmentStartTime, timeHandle1, timeHandle2, s_animationSegmentEndTime, s_animationSampleTime);
+        curveParameter = gtl_Curve_FindBezierParameter(s_animationSegmentStartTime, timeHandle1, timeHandle2,
+                                                       s_animationSegmentEndTime, s_animationSampleTime);
         complement = one - curveParameter;
         parameterSquared = curveParameter * curveParameter;
         complementSquared = complement * complement;

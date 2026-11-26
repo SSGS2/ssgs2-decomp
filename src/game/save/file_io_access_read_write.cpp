@@ -1,11 +1,15 @@
+// File access objects for the save system: CFileIoAccess wraps a backing file resource and
+// forwards its status, and CFileIoAccessRead, CFileIoAccessReadPad and CFileIoAccessWrite
+// drive reads and writes through their update state machines.
+
 #include <decomp/static_init.h>
-// Translation unit 0x8027624C-0x80276AEC (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "classes/CFileIoAccess.h"
 #include "classes/CFileIoAccessRead.h"
 #include "classes/CFileIoAccessReadPad.h"
 #include "classes/CFileIoAccessWrite.h"
+#include "classes/CFileIo.h"
+#include "classes/CFileIoPad.h"
 
 #define AsCFileIoAccess(p) ((CFileIoAccess*)(p))
 
@@ -19,9 +23,17 @@
 // resource enters state 3 and therefore reaches state 4 in that same update.
 // Resource references belong to the accessor and are released by destroy(). The
 // write accessor also owns its buffer; the padded reader borrows its pad buffer.
-enum FileAccessState { kAccessOpen = 0, kAccessWaitOpen = 1, kAccessWaitTransfer = 2,
-    kAccessFailed = 3, kAccessFinished = 4 };
-enum { kFileOpenForWrite = 2, kFileOpenForRead = 3 };
+enum FileAccessState {
+    kAccessOpen = 0,
+    kAccessWaitOpen = 1,
+    kAccessWaitTransfer = 2,
+    kAccessFailed = 3,
+    kAccessFinished = 4
+};
+enum {
+    kFileOpenForWrite = 2,
+    kFileOpenForRead = 3
+};
 
 extern "C" {
 extern const float kFloat_6_2831855;
@@ -29,17 +41,9 @@ extern float s_twoPi_FileIoAccess;
 extern float s_twoPi_FileIoAccessRead;
 extern float s_twoPi_FileIoAccessWrite;
 extern float s_twoPi_FileIoAccessReadPad;
-extern void* CFileIoPad_CreateInstance(void*, const char*, int);
-extern int CFileIo_GetBuffer(void*);
 // Underlying CFileIo save-area status flags.
-extern int CFileIo_GetSaveAreaStatusFlags(void*);
-extern int CFileIo_GetTransferredBytes(void*);
 extern char __vt__13CFileIoAccess[];
 extern char __vt__17CFileIoAccessRead[];
-extern int CFileIo_ReleaseRef(void*);
-// Underlying CFileIo busy byte; do not advance a pending operation.
-extern int CFileIo_IsBusy(void*);
-extern int CFileIo_CloseHandle(void*);
 extern char __vt__20CFileIoAccessReadPad[];
 extern char __vt__18CFileIoAccessWrite[];
 extern void __dl__FPv(void*);
@@ -49,32 +53,28 @@ void FileIoAccess_InitializeAngleConstant() {
 }
 
 // Return the resource's borrowed buffer address as an ABI word, or zero without a resource.
-int CFileIoAccess_GetBuffer(void* p) {
-    void* v = ((CFileIoAccess*)p)->resource;
-    if (v)
-        return CFileIo_GetBuffer(v);
+int CFileIoAccess::GetBuffer() {
+    void* fileIo = resource;
+    if (fileIo)
+        return ((CFileIo*)fileIo)->GetBuffer();
     return 0;
 }
 
 // Forward save-area status bits, or zero without a resource; callers test masks 5 and 10.
-int CFileIoAccess_GetStorageFullFlags(void* p) {
-    void* v = ((CFileIoAccess*)p)->resource;
-    if (v)
-        return CFileIo_GetSaveAreaStatusFlags(v);
+int CFileIoAccess::GetStorageFullFlags() {
+    void* fileIo = resource;
+    if (fileIo)
+        return ((CFileIo*)fileIo)->GetSaveAreaStatusFlags();
     return 0;
 }
 
 // Return the backing transfer's byte count, or zero without a resource.
-int CFileIoAccess_GetTransferredBytes(void* p) {
-    void* v = ((CFileIoAccess*)p)->resource;
-    if (v)
-        return CFileIo_GetTransferredBytes(v);
+int CFileIoAccess::GetTransferredBytes() {
+    void* fileIo = resource;
+    if (fileIo)
+        return ((CFileIo*)fileIo)->GetTransferredBytes();
     return 0;
 }
-
-#pragma dont_inline on
-void CFileIoAccess_Ctor(void* p);
-#pragma dont_inline off
 
 struct Vt802764C0 {
     virtual void v0();
@@ -83,41 +83,39 @@ struct Vt802764C0 {
     virtual void v3();
     virtual void v4();
     virtual void v5();
-    virtual int v6();
+    virtual int v6(void* openOptions, void* byteCount);
 };
-// Create the backing resource through virtual slot 6 and retain it on success.
-// The original passes two arguments (path/options, size) to slot 6 in r4/r5.
-int CFileIoAccess_CreateResource(void* p) {
-    int r = ((Vt802764C0*)p)->v6();
-    (*(int*)&AsCFileIoAccessRead(p)->resource) = r;
-    return r != 0;
+// Create the backing resource through virtual slot 6 with the open options and byte count, and retain it on success.
+int CFileIoAccess::CreateResource(void* openOptions, void* byteCount) {
+    int newResource = ((Vt802764C0*)this)->v6(openOptions, byteCount);
+    resource = (void*)newResource;
+    return newResource != 0;
 }
 
 #pragma dont_inline on
 // Construct a reader with no resource, no latched failure, and an open request pending.
-void* CFileIoAccessRead_Ctor(void* p) {
-    CFileIoAccess_Ctor(p);
-    AsCFileIoAccessRead(p)->state = kAccessOpen;
-    *(void**)p = (void*)__vt__17CFileIoAccessRead;
-    return p;
+CFileIoAccessRead::CFileIoAccessRead() {
+    state = kAccessOpen;
+    vtbl = (void*)__vt__17CFileIoAccessRead;
 }
 #pragma dont_inline off
 
 // Return only the local failure latch, without querying the backing resource.
-unsigned char CFileIoAccess_GetFlag(void* p) {
-    return AsCFileIoAccess(p)->failureLatched;
+int CFileIoAccess::GetFlag() {
+    return failureLatched;
 }
 
 #pragma dont_inline on
 // Return the borrowed backing-resource address as a word; ownership stays with the accessor.
-int CFileIoAccess_GetResource(void* p) {
-    return (*(int*)&((CFileIoAccess*)p)->resource);
+int CFileIoAccess::GetResource() {
+    return (*(int*)&resource);
 }
 #pragma dont_inline off
 
 #pragma dont_inline on
 // Store the low byte in the failure latch but return the original full-width value.
-int CFileIoAccess_SetFailureFlag(char* p, int v) {
+int CFileIoAccess::SetFailureFlag(int v) {
+    char* p = (char*)this;
     AsCFileIoAccess(p)->failureLatched = (char)v; // 0x80276560: +0x8
     return v;
 }
@@ -135,7 +133,7 @@ int Object_IsStateFour(void* p) {
 }
 
 // Read access supports this capability unconditionally.
-int CFileIoAccessRead_vfunc_2() {
+int CFileIoAccessRead::vfunc_2() {
     return 1;
 }
 
@@ -148,7 +146,8 @@ void FileIoAccessReadPad_InitializeAngleConstant() {
 
 // Create a file resource using the reader's borrowed pad buffer and the given path/mode.
 extern "C" void* createPad__20CFileIoAccessReadPadFv(CFileIoAccessReadPad* self, const char* path, int mode) {
-    return CFileIoPad_CreateInstance(self->buffer, path, mode);
+    // The open argument is passed through as an opaque word.
+    return CFileIoPad::CreateInstance(self->buffer, (int)path, mode);
 }
 
 extern "C" {
@@ -159,13 +158,13 @@ void FileIoAccessWrite_InitializeAngleConstant() {
 }
 
 // Report terminal state, including failed operations after their latch update.
-int CFileIoAccessWrite_IsFinished(void* p) {
-    int v = AsCFileIoAccessWrite(p)->state;
+int CFileIoAccessWrite::IsFinished() {
+    int v = state;
     return v == kAccessFinished;
 }
 
 // Write access supports this capability unconditionally.
-int CFileIoAccessWrite_vfunc_2() {
+int CFileIoAccessWrite::vfunc_2() {
     return 1;
 }
 
@@ -183,9 +182,9 @@ struct Vt80276358 {
 };
 
 // Query the backing resource's slot-9 readiness predicate, treating null as false.
-int CFileIoAccess_QueryResourceStatusSlot9(void* self) {
+int CFileIoAccess::QueryResourceStatusSlot9() {
     int isReady = 0;
-    void* resource = ((CFileIoAccess*)self)->resource;
+    void* resource = this->resource;
     if (resource) {
         if (((Vt80276358*)resource)->v9() != 0)
             isReady = 1;
@@ -209,9 +208,9 @@ struct Vt802763C4 {
 };
 
 // Query the backing resource's slot-11 readiness predicate, treating null as false.
-int CFileIoAccess_QueryResourcePredicate11(void* self) {
+int CFileIoAccess::QueryResourcePredicate11() {
     int isReady = 0;
-    void* resource = ((CFileIoAccess*)self)->resource;
+    void* resource = this->resource;
     if (resource) {
         if (((Vt802763C4*)resource)->v11() != 0)
             isReady = 1;
@@ -230,10 +229,10 @@ struct Vt80276508 {
 };
 
 // Create the backing resource with default arguments through virtual slot 6.
-int CFileIoAccess_CreateDefaultResource(void* p) {
-    int r = ((Vt80276508*)p)->v6(0, 0);
-    (*(int*)&AsCFileIoAccessRead(p)->resource) = r;
-    return r != 0;
+int CFileIoAccess::CreateDefaultResource(void* p) {
+    int newResource = ((Vt80276508*)p)->v6(0, 0);
+    (*(int*)&AsCFileIoAccessRead(p)->resource) = newResource;
+    return newResource != 0;
 }
 
 struct Vt80276450 {
@@ -249,9 +248,9 @@ struct Vt80276450 {
 };
 
 // Query the backing resource's slot-8 readiness predicate, treating null as false.
-int CFileIoAccess_QueryResourcePredicate8(void* self) {
+int CFileIoAccess::QueryResourcePredicate8() {
     int isReady = 0;
-    void* resource = ((CFileIoAccess*)self)->resource;
+    void* resource = this->resource;
     if (resource) {
         if (((Vt80276450*)resource)->v8() != 0)
             isReady = 1;
@@ -290,7 +289,7 @@ void* CFileIoAccess::destroy(int flag) {
         void* res = resource;
         vtbl = (void*)__vt__13CFileIoAccess;
         if (res != 0) {
-            CFileIo_ReleaseRef(res);
+            ((CFileIo*)res)->ReleaseRef();
             resource = 0;
         }
         if (flag > 0)
@@ -330,10 +329,10 @@ struct Vt802762D0 {
 };
 
 // Report a resource slot-7 error or a local failure latch; this does not test completion.
-int CFileIoAccess_HasFailure(void* p) {
+int CFileIoAccess::HasFailure(void* access) {
     int flag = 1;
     int found = 0;
-    void* self = p;
+    void* self = access;
     void* v = AsCFileIoAccess(self)->resource; // 0x802762D0: +0x4
     if (v) {
         if (((Vt802762D0*)v)->v7() != 0)
@@ -362,15 +361,15 @@ struct PaddedReadAccessStorage {
     int fC;
     void* f10;
     // Keep the caller's pad buffer as a borrowed member after constructing the reader.
-    PaddedReadAccessStorage(void* a) {
-        CFileIoAccessRead_Ctor(this);
+    PaddedReadAccessStorage(void* padBuffer) {
+        ((CFileIoAccessRead*)this)->__ct();
         vtable = (void*)__vt__20CFileIoAccessReadPad;
-        f10 = a;
+        f10 = padBuffer;
     }
 };
 
 // Allocate a read accessor for a caller-supplied pad buffer; destroy it if opening fails.
-void* CFileIoAccessReadPad_Create(void* buffer, void* path, void* mode) {
+void* CFileIoAccessReadPad::Create(void* buffer, void* path, void* mode) {
     void* padBuffer = buffer;
     void* filePath = path;
     void* openMode = mode;
@@ -379,7 +378,8 @@ void* CFileIoAccessReadPad_Create(void* buffer, void* path, void* mode) {
         return 0;
     }
     if (!((Vt804B46E8*)access)->v4(filePath, openMode)) {
-        if (access) ((Vt804B46E8*)access)->m3(1);
+        if (access)
+            ((Vt804B46E8*)access)->m3(1);
         return 0;
     }
     return access;
@@ -398,49 +398,49 @@ struct FileReadResourceInterface {
 
 // Advance open, read, and close polling; latch failure before entering the finished state.
 // A successful close request immediately selects finished; it is not polled again here.
-int CFileIoAccessRead_Update(void* access) {
+int CFileIoAccessRead::Update(void* access) {
     void* self = access;
-    void* resource = (void*)CFileIoAccess_GetResource(self);
+    void* resource = (void*)((CFileIoAccess*)self)->GetResource();
     if (resource == 0) {
         AsCFileIoAccessRead(self)->state = kAccessFailed;
     }
     int state = AsCFileIoAccessRead(self)->state;
     switch (state) {
-        case kAccessOpen:
-            if (((FileReadResourceInterface*)resource)->open(kFileOpenForRead) == 0) {
+    case kAccessOpen:
+        if (((FileReadResourceInterface*)resource)->open(kFileOpenForRead) == 0) {
+            AsCFileIoAccessRead(self)->state = kAccessFailed;
+        } else {
+            AsCFileIoAccessRead(self)->state = kAccessWaitOpen;
+        }
+        break;
+    case kAccessWaitOpen:
+        // The completed open must be error-free before the transfer is submitted.
+        if (((CFileIo*)resource)->IsBusy() == 0) {
+            if (((FileReadResourceInterface*)resource)->hasError() != 0) {
                 AsCFileIoAccessRead(self)->state = kAccessFailed;
             } else {
-                AsCFileIoAccessRead(self)->state = kAccessWaitOpen;
-            }
-            break;
-        case kAccessWaitOpen:
-            // The completed open must be error-free before the transfer is submitted.
-            if (CFileIo_IsBusy(resource) == 0) {
-                if (((FileReadResourceInterface*)resource)->hasError() != 0) {
+                if (((FileReadResourceInterface*)resource)->startRead() == 0) {
                     AsCFileIoAccessRead(self)->state = kAccessFailed;
                 } else {
-                    if (((FileReadResourceInterface*)resource)->startRead() == 0) {
-                        AsCFileIoAccessRead(self)->state = kAccessFailed;
-                    } else {
-                        AsCFileIoAccessRead(self)->state = kAccessWaitTransfer;
-                    }
+                    AsCFileIoAccessRead(self)->state = kAccessWaitTransfer;
                 }
             }
-            break;
-        case kAccessWaitTransfer:
-            // Wait for transfer activity to cease, then submit close.
-            if (CFileIo_IsBusy(resource) == 0) {
-                if (CFileIo_CloseHandle(resource) == 0) {
-                    AsCFileIoAccessRead(self)->state = kAccessFailed;
-                } else {
-                    AsCFileIoAccessRead(self)->state = kAccessFinished;
-                }
+        }
+        break;
+    case kAccessWaitTransfer:
+        // Wait for transfer activity to cease, then submit close.
+        if (((CFileIo*)resource)->IsBusy() == 0) {
+            if (((CFileIo*)resource)->CloseHandle() == 0) {
+                AsCFileIoAccessRead(self)->state = kAccessFailed;
+            } else {
+                AsCFileIoAccessRead(self)->state = kAccessFinished;
             }
-            break;
-        case kAccessFailed:
-            CFileIoAccess_SetFailureFlag((char*)self, 1);
-            AsCFileIoAccessRead(self)->state = kAccessFinished;
-            break;
+        }
+        break;
+    case kAccessFailed:
+        ((CFileIoAccess*)((char*)self))->SetFailureFlag(1);
+        AsCFileIoAccessRead(self)->state = kAccessFinished;
+        break;
     }
     return 1;
 }
@@ -458,58 +458,58 @@ struct FileWriteResourceInterface {
 
 // Advance open, write, and close polling; latch failure before entering the finished state.
 // The buffer remains accessor-owned through close; callers observe state/latch separately.
-int CFileIoAccessWrite_Update(void* access) {
+int CFileIoAccessWrite::Update(void* access) {
     void* self = access;
-    void* resource = (void*)CFileIoAccess_GetResource(self);
+    void* resource = (void*)((CFileIoAccess*)self)->GetResource();
     if (resource == 0) {
         AsCFileIoAccessWrite(self)->state = kAccessFailed;
     }
     int state = AsCFileIoAccessWrite(self)->state;
     switch (state) {
-        case kAccessOpen:
-            if (((FileWriteResourceInterface*)resource)->open(kFileOpenForWrite) == 0) {
+    case kAccessOpen:
+        if (((FileWriteResourceInterface*)resource)->open(kFileOpenForWrite) == 0) {
+            AsCFileIoAccessWrite(self)->state = kAccessFailed;
+        } else {
+            AsCFileIoAccessWrite(self)->state = kAccessWaitOpen;
+        }
+        break;
+    case kAccessWaitOpen:
+        if (((CFileIo*)resource)->IsBusy() == 0) {
+            if (((FileWriteResourceInterface*)resource)->hasError() != 0) {
                 AsCFileIoAccessWrite(self)->state = kAccessFailed;
             } else {
-                AsCFileIoAccessWrite(self)->state = kAccessWaitOpen;
-            }
-            break;
-        case kAccessWaitOpen:
-            if (CFileIo_IsBusy(resource) == 0) {
-                if (((FileWriteResourceInterface*)resource)->hasError() != 0) {
+                int writeBuffer = (*(int*)&AsCFileIoAccessWrite(self)->buffer);
+                if (((FileWriteResourceInterface*)resource)->startWrite(writeBuffer) == 0) {
                     AsCFileIoAccessWrite(self)->state = kAccessFailed;
                 } else {
-                    int writeBuffer = (*(int*)&AsCFileIoAccessWrite(self)->buffer);
-                    if (((FileWriteResourceInterface*)resource)->startWrite(writeBuffer) == 0) {
-                        AsCFileIoAccessWrite(self)->state = kAccessFailed;
-                    } else {
-                        AsCFileIoAccessWrite(self)->state = kAccessWaitTransfer;
-                    }
+                    AsCFileIoAccessWrite(self)->state = kAccessWaitTransfer;
                 }
             }
-            break;
-        case kAccessWaitTransfer:
-            if (CFileIo_IsBusy(resource) == 0) {
-                if (CFileIo_CloseHandle(resource) == 0) {
-                    AsCFileIoAccessWrite(self)->state = kAccessFailed;
-                } else {
-                    AsCFileIoAccessWrite(self)->state = kAccessFinished;
-                }
+        }
+        break;
+    case kAccessWaitTransfer:
+        if (((CFileIo*)resource)->IsBusy() == 0) {
+            if (((CFileIo*)resource)->CloseHandle() == 0) {
+                AsCFileIoAccessWrite(self)->state = kAccessFailed;
+            } else {
+                AsCFileIoAccessWrite(self)->state = kAccessFinished;
             }
-            break;
-        case kAccessFailed:
-            CFileIoAccess_SetFailureFlag((char*)self, 1);
-            AsCFileIoAccessWrite(self)->state = kAccessFinished;
-            break;
+        }
+        break;
+    case kAccessFailed:
+        ((CFileIoAccess*)((char*)self))->SetFailureFlag(1);
+        AsCFileIoAccessWrite(self)->state = kAccessFinished;
+        break;
     }
     return 1;
 }
 
 #pragma dont_inline on
 // Initialize the base accessor without creating a file resource.
-void CFileIoAccess_Ctor(void* p) {
-    (*(int*)&AsCFileIoAccess(p)->resource) = 0;
-    *(void**)p = (void*)__vt__13CFileIoAccess;
-    AsCFileIoAccess(p)->failureLatched = 0;
+CFileIoAccess::CFileIoAccess() {
+    resource = 0;
+    vtbl = (void*)__vt__13CFileIoAccess;
+    failureLatched = 0;
 }
 #pragma dont_inline off
 } // extern "C"

@@ -1,3 +1,8 @@
+// Shop product lists for avatars, set items and parts.
+//
+// The avatar list is rebuilt from Character.iff and the set-item list from SetItem.iff, each
+// keeping an owned copy of every accepted record. CShopProductParts holds part records.
+
 #include "classes/CSharedDoc.h"
 #include "classes/CItemManager.h"
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
@@ -33,21 +38,20 @@ static const unsigned kLengthErrorTypeNameOffset = 0x14;
 // Named container fields preserve original +0x00/+0x04/+0x08/+0x0C/+0x10 accesses.
 #include "classes/CShopProductSetItem.h"
 #include "classes/CShopProductList.h"
+#include "classes/CShopProductParts.h"
+#include "game/shop_product.h"
+#include "classes/CShopProductInterface.h"
 
-#define AsCShopProductList(p) ((CShopProductList*)(p))
-
-#define AsCShopProductSetItem(p) ((CShopProductSetItem*)(p))
 // Compare iterator addresses without dereferencing their borrowed record pointers.
-template <class T> inline bool same_pos(const T& a, const T& b) { return a == b; }
-// Translation unit 0x8023163C-0x80232BFC (15 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+template <class T> inline bool same_pos(const T& lhs, const T& rhs) {
+    return lhs == rhs;
+}
 
 extern "C" {
 
 extern void Memory_Copy(void*, void*, unsigned int);
 extern void __dl__FPv(void*);
 extern void appFreeUni__FPv(void*);
-extern void CShopProductInterface_dtor(void*, int);
 extern void* appMallocDummy__FUl(unsigned int);
 extern void* __nw__FUl(unsigned long);
 extern int strlen(const char*);
@@ -82,41 +86,55 @@ struct SharedErrorTextOwner {
 // Build a reference-counted error string, transfer its buffer to the owner, then throw.
 // Keep this exception builder in the caller: factoring it into a function changes the
 // CodeWarrior cleanup helpers and unwind relocations, even when declared inline.
-#define THROW_VECTOR_LENGTH_ERROR() do { \
-    struct ErrObj { void* vtable; char* msg; void* owner; void* pad; }; \
-    ErrObj errorObject; \
-    errorObject.vtable = __vt__Q23std11logic_error; \
-    char cleanupChar = 0; \
-    char* errorText = comThinkVectorErrorStrings; \
-    int errorLength = strlen(errorText) + 1; \
-    char* errorCopy = (char*)__nwa__FUl((errorLength << 1) - errorLength); \
-    errorObject.msg = errorCopy; \
-    /* Free the error string unless construction transferred its allocation. */ \
-    struct TextCleanup { char* data; ~TextCleanup() { if (data) __dla__FPv(data); } }; \
-    TextCleanup textCleanup = { errorCopy }; \
-    char* volatile cleanupGuard[2]; \
-    cleanupGuard[0] = errorCopy; \
-    cleanupGuard[1] = (char*)&cleanupChar; \
-    (void)cleanupGuard; \
-    int cleanupFlag = 0; \
-    void* errorOwner = __nw__FUl(0x10); \
-    if (errorOwner != 0) { \
-        ((SharedErrorTextOwner*)errorOwner)->strongReferences = 1; \
-        ((SharedErrorTextOwner*)errorOwner)->weakReferences = 1; \
-        ((SharedErrorTextOwner*)errorOwner)->vtable = s_sharedCharDeleterVtable; \
-        ((SharedErrorTextOwner*)errorOwner)->text = errorCopy; \
-    } \
-    errorObject.owner = errorOwner; \
-    textCleanup.data = 0; \
-    cleanupGuard[0] = 0; \
-    if (cleanupChar != 0) __dla__FPv(cleanupGuard[0]); \
-    strcpy(errorObject.msg, errorText); \
-    errorObject.vtable = __vt__Q23std12length_error; \
-    __throw(errorText + kLengthErrorTypeNameOffset, &errorObject, (void*)__dt__Q23std12length_errorFv); \
-} while (0)
+#define THROW_VECTOR_LENGTH_ERROR()                                                                         \
+    do {                                                                                                    \
+        struct ErrObj {                                                                                     \
+            void* vtable;                                                                                   \
+            char* msg;                                                                                      \
+            void* owner;                                                                                    \
+            void* pad;                                                                                      \
+        };                                                                                                  \
+        ErrObj errorObject;                                                                                 \
+        errorObject.vtable = __vt__Q23std11logic_error;                                                     \
+        char cleanupChar = 0;                                                                               \
+        char* errorText = comThinkVectorErrorStrings;                                                       \
+        int errorLength = strlen(errorText) + 1;                                                            \
+        char* errorCopy = (char*)__nwa__FUl((errorLength << 1) - errorLength);                              \
+        errorObject.msg = errorCopy;                                                                        \
+        /* Free the error string unless construction transferred its allocation. */                         \
+        struct TextCleanup {                                                                                \
+            char* data;                                                                                     \
+            ~TextCleanup() {                                                                                \
+                if (data)                                                                                   \
+                    __dla__FPv(data);                                                                       \
+            }                                                                                               \
+        };                                                                                                  \
+        TextCleanup textCleanup = {errorCopy};                                                              \
+        char* volatile cleanupGuard[2];                                                                     \
+        cleanupGuard[0] = errorCopy;                                                                        \
+        cleanupGuard[1] = (char*)&cleanupChar;                                                              \
+        (void)cleanupGuard;                                                                                 \
+        int cleanupFlag = 0;                                                                                \
+        void* errorOwner = __nw__FUl(0x10);                                                                 \
+        if (errorOwner != 0) {                                                                              \
+            ((SharedErrorTextOwner*)errorOwner)->strongReferences = 1;                                      \
+            ((SharedErrorTextOwner*)errorOwner)->weakReferences = 1;                                        \
+            ((SharedErrorTextOwner*)errorOwner)->vtable = s_sharedCharDeleterVtable;                        \
+            ((SharedErrorTextOwner*)errorOwner)->text = errorCopy;                                          \
+        }                                                                                                   \
+        errorObject.owner = errorOwner;                                                                     \
+        textCleanup.data = 0;                                                                               \
+        cleanupGuard[0] = 0;                                                                                \
+        if (cleanupChar != 0)                                                                               \
+            __dla__FPv(cleanupGuard[0]);                                                                    \
+        strcpy(errorObject.msg, errorText);                                                                 \
+        errorObject.vtable = __vt__Q23std12length_error;                                                    \
+        __throw(errorText + kLengthErrorTypeNameOffset, &errorObject, (void*)__dt__Q23std12length_errorFv); \
+    } while (0)
 
 // Copy one pair from the four contiguous 40-byte character resource names.
-static inline void CopyCharacterResourceNamePair(IFF_STRUCT::sChar* recordCopy, unsigned char* sourceBytes, unsigned byteOffset) {
+static inline void CopyCharacterResourceNamePair(IFF_STRUCT::sChar* recordCopy, unsigned char* sourceBytes,
+                                                 unsigned byteOffset) {
     unsigned char first = sourceBytes[IFF_OFFSET(IFF_STRUCT::sChar, model) + byteOffset];
     unsigned char second = sourceBytes[IFF_OFFSET(IFF_STRUCT::sChar, model) + 1 + byteOffset];
     ((unsigned char*)recordCopy->model)[byteOffset] = first;
@@ -124,24 +142,31 @@ static inline void CopyCharacterResourceNamePair(IFF_STRUCT::sChar* recordCopy, 
 }
 
 // Rebuild the avatar list from Character.iff, allocating a complete copy of each accepted character.
-int CShopProductAvatar_RebuildFromCharacterTable(void* self, void* filterContext) {
+int CShopProductAvatar::RebuildFromCharacterTable(void* filterContext) {
     // Clear owned records via virtual slot 3 before scanning the borrowed inventory table.
-    if (!((int(*)(void*))(*(void***)self)[3])(self)) return 0;
+    if (!((int (*)(void*))(*(void***)this)[3])(this))
+        return 0;
     char* records = (char*)(&((SharedShopInventoryView*)g_sharedDoc)->itemInventory)->characters.data;
     char* end;
-    for (; end = (char*)(&((SharedShopInventoryView*)g_sharedDoc)->itemInventory)->characters.data +
-                        (&((SharedShopInventoryView*)g_sharedDoc)->itemInventory)->characters.size * sizeof(CharacterTableEntry), !(end == records);
+    for (;
+         end = (char*)(&((SharedShopInventoryView*)g_sharedDoc)->itemInventory)->characters.data +
+               (&((SharedShopInventoryView*)g_sharedDoc)->itemInventory)->characters.size * sizeof(CharacterTableEntry),
+         !(end == records);
          records += sizeof(CharacterTableEntry)) {
         IFF_STRUCT::sChar* sourceRecord = &((CharacterTableEntry*)records)->record;
-        if (!((int(*)(void*, void*, void*))(*(void***)self)[8])(self, sourceRecord, filterContext)) continue;
+        if (!((int (*)(void*, void*, void*))(*(void***)this)[8])(this, sourceRecord, filterContext))
+            continue;
         IFF_STRUCT::sChar* recordCopy = (IFF_STRUCT::sChar*)__nw__FUl(sizeof(IFF_STRUCT::sChar));
-        if (!recordCopy) return 0;
+        if (!recordCopy)
+            return 0;
         // Copy phase: common prefix, four resource names, then typed fields.
         // Unknown IFF bytes are retained; accepting a record never normalizes it.
-        struct WordBlock { unsigned w[0x17]; };
+        struct WordBlock {
+            unsigned w[0x17];
+        };
         *(WordBlock*)&recordCopy->common = *(WordBlock*)sourceRecord;
         unsigned char* sourceBytes = (unsigned char*)sourceRecord;
-// Copy the four 40-byte resource names in byte pairs to retain instruction order.
+        // Copy the four 40-byte resource names in byte pairs to retain instruction order.
         CopyCharacterResourceNamePair(recordCopy, sourceBytes, 0);
         CopyCharacterResourceNamePair(recordCopy, sourceBytes, 2);
         CopyCharacterResourceNamePair(recordCopy, sourceBytes, 4);
@@ -238,12 +263,12 @@ int CShopProductAvatar_RebuildFromCharacterTable(void* self, void* filterContext
         recordCopy->unk_11B = sourceRecord->unk_11B;
         // Append phase: publish the owned copy; growth below moves pointer
         // words only and retains already accepted records on later failure.
-        unsigned recordCount = (*(unsigned*)&AsPtrArray8023(self)->count);
-        unsigned pointerCapacity = AsPtrArray8023(self)->capacity;
+        unsigned recordCount = (*(unsigned*)&AsPtrArray8023(this)->count);
+        unsigned pointerCapacity = AsPtrArray8023(this)->capacity;
         if (recordCount < pointerCapacity) {
             unsigned n = recordCount + 1;
-            (*(unsigned*)&AsPtrArray8023(self)->count) = n;
-            *(void**)((*(char**)&AsPtrArray8023(self)->data) + n * 4 - 4) = recordCopy;
+            (*(unsigned*)&AsPtrArray8023(this)->count) = n;
+            *(void**)((*(char**)&AsPtrArray8023(this)->data) + n * 4 - 4) = recordCopy;
             continue;
         }
         // Pointer storage is full: compute bounded growth before allocating a replacement array.
@@ -255,7 +280,7 @@ int CShopProductAvatar_RebuildFromCharacterTable(void* self, void* filterContext
         tv[0] = 0;
         tv[1] = 0;
         tv[2] = 0;
-        tv[3] = &AsPtrArray8023(self)->capacity;
+        tv[3] = &AsPtrArray8023(this)->capacity;
         tv[4] = 0;
         (void)tv;
         if (additionalCapacity > kMaxPointerElements - pointerCapacity) {
@@ -279,36 +304,43 @@ int CShopProductAvatar_RebuildFromCharacterTable(void* self, void* filterContext
         // Allocate, append the new record, move existing pointers, and publish the new storage.
         void** newPointers = (void**)appMallocDummy__FUl(newCapacity * 4);
         newPointers[recordCount] = recordCopy;
-        void** recordPointers = (*(void***)&AsPtrArray8023(self)->data);
+        void** recordPointers = (*(void***)&AsPtrArray8023(this)->data);
         memcpy(newPointers, recordPointers, recordCount * 4);
         memset(recordPointers, 0, recordCount * 4);
         void** oldPointers = recordPointers;
-        (*(void***)&AsPtrArray8023(self)->data) = newPointers;
-        (*(unsigned*)&AsPtrArray8023(self)->count) = recordCount + 1;
-        AsPtrArray8023(self)->capacity = newCapacity;
-        if (oldPointers != 0) appFreeUni__FPv(oldPointers);
+        (*(void***)&AsPtrArray8023(this)->data) = newPointers;
+        (*(unsigned*)&AsPtrArray8023(this)->count) = recordCount + 1;
+        AsPtrArray8023(this)->capacity = newCapacity;
+        if (oldPointers != 0)
+            appFreeUni__FPv(oldPointers);
     }
     return 1;
 }
 
 // This shop callback always reports false; the virtual operation is not established here.
-int CShopProductAvatar_ReturnFalse() { return 0; }
+int CShopProductAvatar::ReturnFalse() {
+    return 0;
+}
 
 // Return the number of products in the shop list.
-int CShopProductList_GetCount(void* self) { return AsCShopProductList(self)->productCount; }
+int CShopProductList::GetCount() {
+    return productCount;
+}
 
 // Copy the selected set-item common header, including its type ID, Pang price, and shop restrictions.
 // out must hold the common IFF header. Virtual slot 4 copies the selected record into
 // 0x2B8 bytes of scratch; this wrapper returns 0 for null output or failed record copy.
 // Only the common header is written, not the bundled-item payload; output remains caller-owned.
-int CShopProductSetItem_CopySelectedCommonHeader(void* self, void* out, unsigned int index) {
-    if (!out) return 0;
-    // The suffix vfunc_4 names this wrapper; the call below is slot 4 of
+int CShopProductSetItem::CopySelectedCommonHeader(void* out, unsigned int index) {
+    if (!out)
+        return 0;
+    // This wrapper is named for slot 4. The call below is slot 4 of
     // the runtime receiver, whose concrete dispatch table is not proved here.
     // Do not install this wrapper in that same slot: it would recurse.
     // Phase 1: fetch the runtime receiver's selected full record.
     unsigned char temp[0x2B8];
-    if (((int(*)(void*, void*, unsigned int))(*(void***)self)[4])(self, temp, index) == 0) return 0;
+    if (((int (*)(void*, void*, unsigned int))(*(void***)this)[4])(this, temp, index) == 0)
+        return 0;
     // Phase 2: copy opaque header bytes 0..87 verbatim. Expanded stores
     // preserve instruction order; the field meanings are not all established.
     unsigned char _a0 = temp[0], _b0 = temp[1];
@@ -402,7 +434,8 @@ int CShopProductSetItem_CopySelectedCommonHeader(void* self, void* out, unsigned
     ((unsigned char*)out)[87] = temp[87];
     // Phase 3: finish the typed type-ID/price/restriction fields and report success.
     ((IFF_STRUCT::sSetItem*)out)->common.typeId = ((IFF_STRUCT::sSetItem*)temp)->common.typeId;
-    (*(unsigned*)&((IFF_STRUCT::sSetItem*)out)->common.price) = (*(unsigned*)&((IFF_STRUCT::sSetItem*)temp)->common.price);
+    (*(unsigned*)&((IFF_STRUCT::sSetItem*)out)->common.price) =
+        (*(unsigned*)&((IFF_STRUCT::sSetItem*)temp)->common.price);
     ((IFF_STRUCT::sSetItem*)out)->common.levelFlags = temp[0x58];
     ((IFF_STRUCT::sSetItem*)out)->common.shopFlags = temp[0x59];
     ((IFF_STRUCT::sSetItem*)out)->common.commonFlagWord = ((IFF_STRUCT::sSetItem*)temp)->common.commonFlagWord;
@@ -410,13 +443,17 @@ int CShopProductSetItem_CopySelectedCommonHeader(void* self, void* out, unsigned
 }
 
 // This shop callback always reports false; the virtual operation is not established here.
-int CShopProductSetItem_ReturnFalse() { return 0; }
+int CShopProductSetItem::ReturnFalse() {
+    return 0;
+}
 
 extern char s_shopSetItemPointerArrayVtable[];
 extern char s_shopPartsPointerArrayVtable[];
 
 // Return the number of pointers currently in this shop record container.
-int PtrArray_GetCount(void* self) { return AsPtrArray8023(self)->count; }
+int PtrArray_GetCount(void* self) {
+    return AsPtrArray8023(self)->count;
+}
 
 // Initialize the set-item record pointer array and retain its caller-supplied filter parameter.
 void ShopSetItemPointerArray_Initialize(void* self, int param) {
@@ -439,12 +476,15 @@ void ShopPartsPointerArray_Initialize(void* self, int param) {
 // Copy a complete SetItem.iff record, including up to eight bundled item IDs and the item count.
 // dst is caller-owned storage for the complete record. Return 0 for null dst, an
 // out-of-range index or a null slot; otherwise copy the record and return 1.
-int CShopProductSetItem_CopyRecord(void* self, void* dst, unsigned idx) {
-    if (dst == 0) return 0;
-    if (AsCShopProductSetItem(self)->itemRecordCount <= idx) return 0;
-    int* arr = (*(int**)&AsCShopProductSetItem(self)->itemRecords);
+int CShopProductSetItem::CopyRecord(void* dst, unsigned idx) {
+    if (dst == 0)
+        return 0;
+    if (itemRecordCount <= idx)
+        return 0;
+    int* arr = (*(int**)&itemRecords);
     int val = arr[idx];
-    if (val == 0) return 0;
+    if (val == 0)
+        return 0;
     Memory_Copy(dst, (void*)val, sizeof(IFF_STRUCT::sSetItem));
     return 1;
 }
@@ -452,49 +492,50 @@ int CShopProductSetItem_CopyRecord(void* self, void* dst, unsigned idx) {
 // Copy a complete Part.iff record, including textures, stats, and the body-slot hide mask.
 // dst is caller-owned storage for the complete record. Return 0 for null dst, an
 // out-of-range index or a null slot; otherwise copy the record and return 1.
-int CShopProductParts_CopyRecord(void* self, void* dst, unsigned idx) {
-    if (dst == 0) return 0;
-    if ((*(unsigned*)&AsPtrArray8023(self)->count) <= idx) return 0;
-    int* arr = (*(int**)&AsPtrArray8023(self)->data);
+int CShopProductParts::CopyRecord(void* dst, unsigned idx) {
+    if (dst == 0)
+        return 0;
+    if ((*(unsigned*)&AsPtrArray8023(this)->count) <= idx)
+        return 0;
+    int* arr = (*(int**)&AsPtrArray8023(this)->data);
     int val = arr[idx];
-    if (val == 0) return 0;
+    if (val == 0)
+        return 0;
     Memory_Copy(dst, (void*)val, sizeof(IFF_STRUCT::sPart));
     return 1;
 }
 
 // Delete all owned product objects, reloading the list bounds after each deletion.
-int CShopProductList_DeleteAll(void* self) {
+int CShopProductList::DeleteAll() {
     int count = 0;
-    int* p = (*(int**)&AsCShopProductList(self)->products);
+    int* p = (*(int**)&products);
     int zero = 0;
     // 0x8023163C unit: reload the array bounds after each deletion.
-    while (!same_pos((*(int**)&AsCShopProductList(self)->products) +
-        (count = AsCShopProductList(self)->productCount), p)) {
+    while (!same_pos((*(int**)&products) + (count = productCount), p)) {
         if (*p != 0) {
             __dl__FPv((void*)*p);
             *p = zero;
         }
         p++;
     }
-    AsCShopProductList(self)->productCount = count - (*(unsigned int*)&AsCShopProductList(self)->productCount);
+    productCount = count - (*(unsigned int*)&productCount);
     return 1;
 }
 
 // Delete all owned part records and reset the count without shrinking pointer storage.
-int CShopProductParts_DeleteAll(void* self) {
+int CShopProductParts::DeleteAll() {
     int count = 0;
-    int* p = (*(int**)&AsPtrArray8023(self)->data);
+    int* p = (*(int**)&AsPtrArray8023(this)->data);
     int zero = 0;
     // 0x8023163C unit: reload the array bounds after each deletion.
-    while (!same_pos((*(int**)&AsPtrArray8023(self)->data) +
-        (count = AsPtrArray8023(self)->count), p)) {
+    while (!same_pos((*(int**)&AsPtrArray8023(this)->data) + (count = AsPtrArray8023(this)->count), p)) {
         if (*p != 0) {
             __dl__FPv((void*)*p);
             *p = zero;
         }
         ++p;
     }
-    AsPtrArray8023(self)->count = count - count;
+    AsPtrArray8023(this)->count = count - count;
     return 1;
 }
 
@@ -502,17 +543,19 @@ int CShopProductParts_DeleteAll(void* self) {
 void* ShopSetItemPointerArray_dtor(void* self, int flags) {
     if (self != 0) {
         *(void**)self = s_shopSetItemPointerArrayVtable;
-        ((void(*)(void*))((void**)s_shopSetItemPointerArrayVtable)[3])(self);
+        ((void (*)(void*))((void**)s_shopSetItemPointerArrayVtable)[3])(self);
         // Repeated +8 checks are expanded member-destructor guards. The
         // volatile subtraction preserves the observed count loads; allocation
         // release follows the virtual payload clear above.
-        if ((char*)self + 8 != 0 && (char*)self + 8 != 0 && (char*)self + 8 != 0 &&
-            (char*)self + 8 != 0 && (char*)self + 8 != 0 && AsPtrArray8023(self)->data != 0) {
-            (*(volatile int*)&AsPtrArray8023(self)->count) = (*(volatile int*)&AsPtrArray8023(self)->count) - (*(volatile int*)&AsPtrArray8023(self)->count);
+        if ((char*)self + 8 != 0 && (char*)self + 8 != 0 && (char*)self + 8 != 0 && (char*)self + 8 != 0 &&
+            (char*)self + 8 != 0 && AsPtrArray8023(self)->data != 0) {
+            (*(volatile int*)&AsPtrArray8023(self)->count) =
+                (*(volatile int*)&AsPtrArray8023(self)->count) - (*(volatile int*)&AsPtrArray8023(self)->count);
             appFreeUni__FPv(AsPtrArray8023(self)->data);
         }
-        CShopProductInterface_dtor(self, 0);
-        if (flags > 0) __dl__FPv(self);
+        ((CShopProductInterface*)self)->Destroy(0);
+        if (flags > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -521,35 +564,41 @@ void* ShopSetItemPointerArray_dtor(void* self, int flags) {
 void* ShopPartsPointerArray_dtor(void* self, int flags) {
     if (self != 0) {
         *(void**)self = s_shopPartsPointerArrayVtable;
-        ((void(*)(void*))((void**)s_shopPartsPointerArrayVtable)[3])(self);
+        ((void (*)(void*))((void**)s_shopPartsPointerArrayVtable)[3])(self);
         // Repeated +8 checks are expanded member-destructor guards. The
         // volatile subtraction preserves the observed count loads; allocation
         // release follows the virtual payload clear above.
-        if ((char*)self + 8 != 0 && (char*)self + 8 != 0 && (char*)self + 8 != 0 &&
-            (char*)self + 8 != 0 && (char*)self + 8 != 0 && AsPtrArray8023(self)->data != 0) {
-            (*(volatile int*)&AsPtrArray8023(self)->count) = (*(volatile int*)&AsPtrArray8023(self)->count) - (*(volatile int*)&AsPtrArray8023(self)->count);
+        if ((char*)self + 8 != 0 && (char*)self + 8 != 0 && (char*)self + 8 != 0 && (char*)self + 8 != 0 &&
+            (char*)self + 8 != 0 && AsPtrArray8023(self)->data != 0) {
+            (*(volatile int*)&AsPtrArray8023(self)->count) =
+                (*(volatile int*)&AsPtrArray8023(self)->count) - (*(volatile int*)&AsPtrArray8023(self)->count);
             appFreeUni__FPv(AsPtrArray8023(self)->data);
         }
-        CShopProductInterface_dtor(self, 0);
-        if (flags > 0) __dl__FPv(self);
+        ((CShopProductInterface*)self)->Destroy(0);
+        if (flags > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
 #pragma use_lmw_stmw on
 // Rebuild the filtered set-item list from SetItem.iff and own a copy of each accepted bundle.
-int CShopProductSetItem_RebuildFilteredRecords(void* self, void* filterContext) {
+int CShopProductSetItem::RebuildFilteredRecords(void* filterContext) {
     // Clear owned records via virtual slot 3 before scanning the borrowed inventory table.
-    if (!((int(*)(void*))(*(void***)self)[3])(self)) return 0;
+    if (!((int (*)(void*))(*(void***)this)[3])(this))
+        return 0;
     CSharedDoc* sharedDoc = g_sharedDoc;
     char* records = (char*)(&((SharedShopInventoryView*)sharedDoc)->itemInventory)->setItems.data;
-    for (; records != (char*)(&((SharedShopInventoryView*)sharedDoc)->itemInventory)->setItems.data +
-                        (&((SharedShopInventoryView*)sharedDoc)->itemInventory)->setItems.size * sizeof(SetItemTableEntry);
+    for (; records !=
+           (char*)(&((SharedShopInventoryView*)sharedDoc)->itemInventory)->setItems.data +
+               (&((SharedShopInventoryView*)sharedDoc)->itemInventory)->setItems.size * sizeof(SetItemTableEntry);
          records += sizeof(SetItemTableEntry)) {
         char* sourceRecord = records + 4;
-        if (!((int(*)(void*, void*, void*))(*(void***)self)[8])(self, sourceRecord, filterContext)) continue;
+        if (!((int (*)(void*, void*, void*))(*(void***)this)[8])(this, sourceRecord, filterContext))
+            continue;
         void* recordCopy = __nw__FUl(sizeof(IFF_STRUCT::sSetItem));
-        if (!recordCopy) return 0;
+        if (!recordCopy)
+            return 0;
         // Preserve the compiler's original double/word/byte record-copy representation.
         struct Rec {
             double d[11];
@@ -562,19 +611,19 @@ int CShopProductSetItem_RebuildFilteredRecords(void* self, void* filterContext) 
         *(Rec*)recordCopy = *(Rec*)sourceRecord;
         // Append phase: publish the owned copy; growth below moves pointer
         // words only and retains already accepted records on later failure.
-        unsigned recordCount = AsCShopProductSetItem(self)->itemRecordCount;
-        unsigned pointerCapacity = AsCShopProductSetItem(self)->itemRecordCapacity;
+        unsigned recordCount = itemRecordCount;
+        unsigned pointerCapacity = itemRecordCapacity;
         if (pointerCapacity > recordCount) {
             unsigned newSize = recordCount + 1;
-            AsCShopProductSetItem(self)->itemRecordCount = newSize;
-            ((void**)AsCShopProductSetItem(self)->itemRecords)[newSize - 1] = recordCopy;
+            itemRecordCount = newSize;
+            ((void**)itemRecords)[newSize - 1] = recordCopy;
             continue;
         }
         // Pointer storage is full: compute bounded growth before allocating a replacement array.
         if (kMaxPointerElements - pointerCapacity < 1) {
             THROW_VECTOR_LENGTH_ERROR();
         }
-        unsigned additionalCapacity = AsCShopProductSetItem(self)->itemRecordCount + 1 - AsCShopProductSetItem(self)->itemRecordCapacity;
+        unsigned additionalCapacity = itemRecordCount + 1 - itemRecordCapacity;
         struct ReallocGuard {
             void** start;
             unsigned added;
@@ -587,8 +636,8 @@ int CShopProductSetItem_RebuildFilteredRecords(void* self, void* filterContext) 
         guard.added = 0;
         guard.pointerCapacity = 0;
         guard.oldsize = 0;
-        unsigned cap2 = AsCShopProductSetItem(self)->itemRecordCapacity;
-        guard.pcap = (&AsCShopProductSetItem(self)->itemRecordCapacity);
+        unsigned cap2 = itemRecordCapacity;
+        guard.pcap = (&itemRecordCapacity);
         if (additionalCapacity > kMaxPointerElements - cap2) {
             THROW_VECTOR_LENGTH_ERROR();
         }
@@ -610,31 +659,31 @@ int CShopProductSetItem_RebuildFilteredRecords(void* self, void* filterContext) 
         // Allocate, append the new record, move existing pointers, and publish the new storage.
         void** newPointers = (void**)appMallocDummy__FUl(newCapacity * 4);
         unsigned pos = guard.added;
-        unsigned count = AsCShopProductSetItem(self)->itemRecordCount;
+        unsigned count = itemRecordCount;
         guard.oldsize = count;
         guard.pointerCapacity = newCapacity;
         *(void**)((char*)(newPointers + count) + pos * 4) = recordCopy;
         guard.start = newPointers;
         guard.added = pos + 1;
-        void** recordPointers = (*(void***)&AsCShopProductSetItem(self)->itemRecords);
-        int total = (int)((char*)(recordPointers + AsCShopProductSetItem(self)->itemRecordCount) - (char*)recordPointers) / 4;
+        void** recordPointers = (*(void***)&itemRecords);
+        int total = (int)((char*)(recordPointers + itemRecordCount) - (char*)recordPointers) / 4;
         unsigned after = count - total;
         guard.oldsize = after;
         memcpy((char*)newPointers + after * 4, recordPointers, total * 4);
         memset(recordPointers, 0, total * 4);
         unsigned added = guard.added;
-        void** oldBegin = (*(void***)&AsCShopProductSetItem(self)->itemRecords);
+        void** oldBegin = (*(void***)&itemRecords);
         unsigned newSize = added + total;
         void** newBegin = guard.start;
         guard.added = newSize;
-        unsigned oldCap = AsCShopProductSetItem(self)->itemRecordCapacity;
+        unsigned oldCap = itemRecordCapacity;
         unsigned newCap2 = guard.pointerCapacity;
-        AsCShopProductSetItem(self)->itemRecordCount = 0;
+        itemRecordCount = 0;
         guard.start = oldBegin;
-        AsCShopProductSetItem(self)->itemRecordCapacity = newCap2;
+        itemRecordCapacity = newCap2;
         guard.pointerCapacity = oldCap;
-        (*(void***)&AsCShopProductSetItem(self)->itemRecords) = newBegin;
-        AsCShopProductSetItem(self)->itemRecordCount = newSize;
+        (*(void***)&itemRecords) = newBegin;
+        itemRecordCount = newSize;
         guard.added = 0;
         if (oldBegin != 0) {
             guard.added = 0;
@@ -649,4 +698,3 @@ int CShopProductSetItem_RebuildFilteredRecords(void* self, void* filterContext) 
 #undef THROW_VECTOR_LENGTH_ERROR
 
 } // extern "C"
-

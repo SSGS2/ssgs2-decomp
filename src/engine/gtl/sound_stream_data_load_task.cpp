@@ -1,19 +1,20 @@
-// Translation unit 0x80404D8C-0x80404DCC (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// The stream-data load task of CSoundStreamSource and its Destroy function, which frees the
+// task's storage when asked to delete it.
+
+#include "classes/SoundStreamSource.h"
 
 extern "C" {
 
 void gtl_Audio_Free(void*);
 
+} // extern "C"
+
 // Destroy the stream-data load task, optionally releasing its object storage.
-// self may be null; only a positive deleteFlag calls the audio allocator's free hook.
 // No members are cleaned up here. Return the original address even after freeing it;
 // that return value does not grant ownership or make freed storage usable.
-void* CSoundStreamSource_StrmDataLoadTask_dtor(void* self, int deleteFlag) {
-    if (self != 0 && deleteFlag > 0) {
-        gtl_Audio_Free(self);
+void* gtl::CSoundStreamSource::StrmDataLoadTask::Destroy(int deleteFlag) {
+    if (this != 0 && deleteFlag > 0) {
+        gtl_Audio_Free(this);
     }
-    return self;
+    return this;
 }
-
-} // extern "C"

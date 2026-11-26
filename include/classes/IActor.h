@@ -4,12 +4,12 @@
 #define CLASSES_IACTOR_H
 class IActor {
 public:
-    void* vtbl; // 0x00: IActor_Create / __ct__18NativeBase80201D18Fv
-    unsigned int unk_4; // 0x04: constructor sets zero
+    void* vtbl;                   // 0x00: IActor_Create / __ct__18NativeBase80201D18Fv
+    unsigned int unk_4;           // 0x04: constructor sets zero
     unsigned int displayPriority; // 0x08: constructor sets two
-    unsigned int skipMask; // 0x0c: IActor_Skipped tests against *g_actorSkipMask
+    unsigned int skipMask;        // 0x0c: IActor_Skipped tests against *g_actorSkipMask
     void* dispatchObject; // 0x10: IActor_FindDispatchTargetByName lookup; IActor_DispatchMessage virtual dispatch
-    unsigned int unk_14; // 0x14: constructor sets zero
+    unsigned int unk_14;  // 0x14: constructor sets zero
 };
 #define OFF(f, o) typedef char IActor_off_##f[((int)&((IActor*)0)->f == (o)) ? 1 : -1]
 OFF(vtbl, 0x00);

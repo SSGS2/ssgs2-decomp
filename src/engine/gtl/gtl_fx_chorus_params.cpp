@@ -1,6 +1,3 @@
-// Translation unit 0x80409FEC-0x8040A124 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 // Public parameter order: delay in milliseconds, depth as a fraction of delay,
 // modulation rate in hertz. SetParams stores these RAW floats before SDK clamping.
 // The SDK receives integer delay/depth in milliseconds and period in milliseconds.
@@ -58,18 +55,23 @@ int gtl_nw4r_FxChorus_SetParams(GtlFxChorus* self, const ChorusParameters* param
     delay = Runtime_ConvertDoubleToUnsigned(param->delayMilliseconds);
     depth = Runtime_ConvertDoubleToUnsigned(param->delayMilliseconds * param->depthRatio);
     period = Runtime_ConvertDoubleToUnsigned(kFloat_1000_FxChorus / param->rateHertz);
-    self->clampedDelay = delay > kMaximumChorusDelay ? kMaximumChorusDelay : (delay < kMinimumChorusDelay ? kMinimumChorusDelay : delay);
+    self->clampedDelay =
+        delay > kMaximumChorusDelay ? kMaximumChorusDelay : (delay < kMinimumChorusDelay ? kMinimumChorusDelay : delay);
     self->clampedDepth = depth > kMaximumChorusDepth ? kMaximumChorusDepth : depth;
-    self->clampedPeriod = period > kMaximumChorusPeriod ? kMaximumChorusPeriod : (period < kMinimumChorusPeriod ? kMinimumChorusPeriod : period);
+    self->clampedPeriod = period > kMaximumChorusPeriod
+                              ? kMaximumChorusPeriod
+                              : (period < kMinimumChorusPeriod ? kMinimumChorusPeriod : period);
     // A stopped effect only caches settings. A running one uses temporary allocator hooks.
     if (!self->initializationAttempted)
         return 1;
     unsigned long savedAllocateHook;
     unsigned long savedFreeHook;
     // Keep a byte-address expression here: direct member addressing changes register allocation.
-    gtl_AudioEffects_InstallAllocatorHooks((char*)self + kChorusAllocatorContextOffset, &savedAllocateHook, &savedFreeHook);
+    gtl_AudioEffects_InstallAllocatorHooks((char*)self + kChorusAllocatorContextOffset, &savedAllocateHook,
+                                           &savedFreeHook);
     int state = Chorus_ReconfigureAxfxState(self->chorusState);
-    gtl_AudioEffects_RestoreAllocatorHooks((char*)self + kChorusAllocatorContextOffset, savedAllocateHook, savedFreeHook);
+    gtl_AudioEffects_RestoreAllocatorHooks((char*)self + kChorusAllocatorContextOffset, savedAllocateHook,
+                                           savedFreeHook);
     return state != 0;
 }
 #pragma opt_lifetimes reset

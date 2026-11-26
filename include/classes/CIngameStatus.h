@@ -7,15 +7,28 @@
 
 class CIngameStatus {
 public:
-    void* shotCountInfo; // 0x0: CIngameStatus_Ctor/80328EF8: shot-count object pointer
-    int state; // 0x4: CIngameStatus_Update/803289EC: state machine and reset
+    void* shotCountInfo;           // 0x0: CIngameStatus::Init/80328EF8: shot-count object pointer
+    int state;                     // 0x4: CIngameStatus_Update/803289EC: state machine and reset
     unsigned int savedPlayerFlags; // 0x8: CIngameStatus_Update: cached comparison with player +0x358
-    int bpEntryId; // 0xC: CIngameStatus_Dtor: CBpCtrl entry ID
-    void* bpObject; // 0x10: CIngameStatus_Update: BpObject_PollLoad/Draw
-    int animationState; // 0x14: CIngameStatus_ResetState: cleared on reset
-    int initialized; // 0x18: CIngameStatus_Update: one-time UI initialization guard
-    void* textTable; // 0x1C: CIngameStatus_Update: CFontNumDraw_RegisterEntries receiver
-    void* layout; // 0x20: CIngameStatus_Update: layout/status receiver
+    int bpEntryId;                 // 0xC: ~CIngameStatus: CBpCtrl entry ID
+    void* bpObject;                // 0x10: CIngameStatus_Update: BpObject_PollLoad/Draw
+    int animationState;            // 0x14: CIngameStatus_ResetState: cleared on reset
+    int initialized;               // 0x18: CIngameStatus_Update: one-time UI initialization guard
+    void* textTable;               // 0x1C: CIngameStatus_Update: CFontNumDraw_RegisterEntries receiver
+    void* layout;                  // 0x20: CIngameStatus_Update: layout/status receiver
+
+    static void Update(void* statusObject, float delta);
+    void UpdateAndDraw();
+    void BeginHide();
+    void ResetState();
+    void BeginShow();
+    void ResetShotCounterFade();
+    int IsShownOrShowing();
+    void RefreshPlayer();
+    // Constructor body: fields, owned layout and shot counter. Not a real constructor.
+    CIngameStatus* Init();
+
+    ~CIngameStatus();
 };
 
 #define CINGAMESTATUS_OFF(f, o) typedef char CIngameStatus_off_##f[((int)&((CIngameStatus*)0)->f == (o)) ? 1 : -1]

@@ -1,3 +1,6 @@
+// Render-to-texture capture and textured mesh layers: the capture queue draws puppet items into
+// capture textures, the texture item list feeds it, and mesh layers scroll their UV coordinates.
+
 #include <decomp/static_init.h>
 typedef unsigned long new_size_t;
 extern "C" {
@@ -16,13 +19,19 @@ extern unsigned char kProjectedShadowProjectionRenderStates[];
 #include "game/wvector.h"
 #include "classes/WPuppet.h"
 #include <decomp/cw_bitfields.h>
-// Translation unit 0x801EDA60-0x801EEF2C (21 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 // Render-state suffix not represented by the shared queue header.
-struct CaptureViewport { int x, y, width, height; float nearDepth, farDepth; };
-struct CaptureScissor { int x, y, width, height; };
-struct CaptureVertex { float x, y, z; unsigned char red, green, blue, alpha; };
+struct CaptureViewport {
+    int x, y, width, height;
+    float nearDepth, farDepth;
+};
+struct CaptureScissor {
+    int x, y, width, height;
+};
+struct CaptureVertex {
+    float x, y, z;
+    unsigned char red, green, blue, alpha;
+};
 struct CaptureRenderView {
     void* savedRenderTarget;
     int captureCount;
@@ -42,28 +51,57 @@ struct TextureItemQueueView {
     char padding0C[0x170];
     unsigned int bindFlags;
 };
-struct RenderCameraMatrices { char padding[0x20]; float view[16]; float projection[16]; };
-struct TextureMeshLayer { float scrollVelocity[2]; unsigned int color; char* texcoords; void* texture; };
+struct RenderCameraMatrices {
+    char padding[0x20];
+    float view[16];
+    float projection[16];
+};
+struct TextureMeshLayer {
+    float scrollVelocity[2];
+    unsigned int color;
+    char* texcoords;
+    void* texture;
+};
 // Layers are 20-byte records; each references vertexCount UV pairs (8-byte
 // stride). Shared position records are XYZ floats (12-byte stride). Draw replaces
 // each position's Y with vertexY, so positions feed an XZ plane in world space;
 // camera view/projection are applied separately. UVs are texture coordinates,
 // not pixel offsets; ScrollTexcoords adds scrollVelocity * caller scale.
-enum TextureMeshStrides { kMeshLayerBytes = 0x14, kMeshPositionBytes = 12, kMeshUVBytes = 8 };
+enum TextureMeshStrides {
+    kMeshLayerBytes = 0x14,
+    kMeshPositionBytes = 12,
+    kMeshUVBytes = 8
+};
 struct TextureMeshView {
-    char padding00[0x10]; float vertexY; char padding14[4];
-    char* positions; int vertexCount; char* layers;
-    unsigned char vertexCapacity; char renderBufferRest[11]; int layerCount;
+    char padding00[0x10];
+    float vertexY;
+    char padding14[4];
+    char* positions;
+    int vertexCount;
+    char* layers;
+    unsigned char vertexCapacity;
+    char renderBufferRest[11];
+    int layerCount;
 };
 // Keep byte-strided expressions where direct subobject pointers change scheduling.
-enum { kTextureMeshRendererOffset = (int)&((TextureMeshView*)0)->vertexCapacity,
-       kTextureMeshTexcoordsOffset = (int)&((TextureMeshLayer*)0)->texcoords };
-struct BonePositionView { char padding[0x9C]; WVector position; };
+enum {
+    kTextureMeshRendererOffset = (int)&((TextureMeshView*)0)->vertexCapacity,
+    kTextureMeshTexcoordsOffset = (int)&((TextureMeshLayer*)0)->texcoords
+};
+struct BonePositionView {
+    char padding[0x9C];
+    WVector position;
+};
 enum TextureRenderConstants {
-    kShadowBindFlag = 0x100, kCaptureTextureFormat = 0x80000006,
-    kDefaultCaptureSize = 256, kCaptureBorder = 2, kCaptureBorderWidth = 4,
-    kCapturePrimitive = 0x98, kCaptureVertexFormat = 0xF005,
-    kTextureMeshPrimitive = 0xA0, kCaptureSurfaceFormat = 0x2C,
+    kShadowBindFlag = 0x100,
+    kCaptureTextureFormat = 0x80000006,
+    kDefaultCaptureSize = 256,
+    kCaptureBorder = 2,
+    kCaptureBorderWidth = 4,
+    kCapturePrimitive = 0x98,
+    kCaptureVertexFormat = 0xF005,
+    kTextureMeshPrimitive = 0xA0,
+    kCaptureSurfaceFormat = 0x2C,
     kTextureNodeBytes = sizeof(TextureListNode)
 };
 
@@ -89,7 +127,7 @@ void CubeResourceStorage_dtor(void*, int);
 void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
 void* g_textureCaptureRenderTarget;
-void* s_textureCaptureTargetWidth; // Numeric pixel width carried as a Wii word in this ABI; never dereference.
+void* s_textureCaptureTargetWidth;  // Numeric pixel width carried as a Wii word in this ABI; never dereference.
 void* s_textureCaptureTargetHeight; // Numeric pixel height carried as a Wii word in this ABI; never dereference.
 extern const float kFloat_0_Shadow;
 extern const double kUnsignedIntToDoubleBias_TextureCapture;
@@ -101,7 +139,9 @@ void Engine_SetType7Resource(int); // Engine_SetType7Resource.
 void SetTransform(int, void*);
 void Engine_SetRenderStateList(void*, int);
 void DrawPrimitiveUP(int, int, void*, int);
-void Engine_CopyFramebufferToTexture(int, int, void*, int, int, int, int, int, int, int, int); // 11 integer args: the original stores 0 to sp+0x8, 0xc and 0x10 (0x801EE6D8-0x801EE6F8)
+void Engine_CopyFramebufferToTexture(
+    int, int, void*, int, int, int, int, int, int, int,
+    int); // 11 integer args: the original stores 0 to sp+0x8, 0xc and 0x10 (0x801EE6D8-0x801EE6F8)
 int Texture_Create2D(void*, void*, int, int, int, int, void**, int);
 void* appMallocDummy__FUl(int);
 void ShadowModel_BindPuppetAndChildren(void*, void*, unsigned int);
@@ -122,51 +162,97 @@ struct Elem8 {
     unsigned int w0;
     unsigned int w1;
 };
-struct Decl15 { Elem8 e[15]; };
-struct Decl6 { Elem8 e[6]; };
-struct Decl5 { Elem8 e[5]; };
-struct Decls { Decl15 a; Decl6 b; Decl5 c; };
+struct Decl15 {
+    Elem8 e[15];
+};
+struct Decl6 {
+    Elem8 e[6];
+};
+struct Decl5 {
+    Elem8 e[5];
+};
+struct Decls {
+    Decl15 a;
+    Decl6 b;
+    Decl5 c;
+};
 extern Decls textureMeshRenderStateDefaults; // Mesh render, texture-stage, and texture-parameter defaults.
 typedef struct {
     int x;
-    union { int i; float f; } y;
+    union {
+        int i;
+        float f;
+    } y;
     int z;
 } V801F;
 
-struct Pad801x4 { char pad[4]; };
-struct TextureMeshVertexWriter_u801EDA60 : Pad801x4 {
+struct Pad801x4 {
+    char pad[4];
+};
+struct CTextureMeshVertexWriter : Pad801x4 {
     virtual void vf0();
     // Prepare the embedded vertex renderer before setting indexed attributes.
-    virtual void vf1();
+    virtual void PrepareVertices();
     virtual void vf2();
     // Store the four color bytes for vertex i (byte order is retained as loaded).
-    virtual void vf3(unsigned char i, unsigned char c0, unsigned char c1, unsigned char c2, unsigned char c3);
+    virtual void SetColor(unsigned char i, unsigned char c0, unsigned char c1, unsigned char c2, unsigned char c3);
     // Store XYZ float bits for vertex i; V801F's integer view is a bit copy.
-    virtual void vf4(unsigned char i, V801F v);
+    virtual void SetPosition(unsigned char i, V801F v);
     // Store the floating-point UV pair for vertex i.
-    virtual void vf5(unsigned char i, float f1, float f2);
+    virtual void SetUV(unsigned char i, float f1, float f2);
     // Submit the selected primitive and primitive count using the stored attributes.
-    virtual void vf6(int a, int b);
+    virtual void SubmitVertices(int primitive, int primitiveCount);
 };
 // Prepare the borrowed embedded vertex writer before setting indexed attributes.
-static inline void PrepareTextureMeshVertices(TextureMeshVertexWriter_u801EDA60* writer) { writer->vf1(); }
+static inline void PrepareTextureMeshVertices(CTextureMeshVertexWriter* writer) {
+    writer->PrepareVertices();
+}
 // Set XYZ float bits for one byte-indexed vertex; capacity was checked by the caller.
-static inline void WriteTextureMeshPosition(TextureMeshVertexWriter_u801EDA60* writer, unsigned char vertex, const V801F& position) { writer->vf4(vertex, position); }
+static inline void WriteTextureMeshPosition(CTextureMeshVertexWriter* writer, unsigned char vertex,
+                                            const V801F& position) {
+    writer->SetPosition(vertex, position);
+}
 // Set the UV pair for one byte-indexed vertex; capacity was checked by the caller.
-static inline void WriteTextureMeshUV(TextureMeshVertexWriter_u801EDA60* writer, unsigned char vertex, float u, float v) { writer->vf5(vertex, u, v); }
+static inline void WriteTextureMeshUV(CTextureMeshVertexWriter* writer, unsigned char vertex, float u, float v) {
+    writer->SetUV(vertex, u, v);
+}
 // Set packed color bytes in their existing byte order for one indexed vertex.
-static inline void WriteTextureMeshColor(TextureMeshVertexWriter_u801EDA60* writer, unsigned char vertex, unsigned char c0, unsigned char c1, unsigned char c2, unsigned char c3) { writer->vf3(vertex, c0, c1, c2, c3); }
+static inline void WriteTextureMeshColor(CTextureMeshVertexWriter* writer, unsigned char vertex, unsigned char c0,
+                                         unsigned char c1, unsigned char c2, unsigned char c3) {
+    writer->SetColor(vertex, c0, c1, c2, c3);
+}
 // Submit the filled mesh writer using the supplied primitive and count contract.
-static inline void SubmitTextureMeshVertices(TextureMeshVertexWriter_u801EDA60* writer, int primitive, int count) { writer->vf6(primitive, count); }
+static inline void SubmitTextureMeshVertices(CTextureMeshVertexWriter* writer, int primitive, int count) {
+    writer->SubmitVertices(primitive, count);
+}
 
 struct TextureDevice801 {
-    virtual void vf0(); virtual void vf1(); virtual void vf2(); virtual void vf3();
-    virtual void vf4(); virtual void vf5(); virtual void vf6(); virtual void vf7();
-    virtual void vf8(); virtual void vf9(); virtual void vf10(); virtual void vf11();
-    virtual void vf12(); virtual void vf13(); virtual void vf14(); virtual void vf15();
-    virtual void vf16(); virtual void vf17(); virtual void vf18(); virtual void vf19();
-    virtual void vf20(); virtual void vf21(); virtual void vf22(); virtual void vf23();
-    virtual void vf24(); virtual void vf25();
+    virtual void vf0();
+    virtual void vf1();
+    virtual void vf2();
+    virtual void vf3();
+    virtual void vf4();
+    virtual void vf5();
+    virtual void vf6();
+    virtual void vf7();
+    virtual void vf8();
+    virtual void vf9();
+    virtual void vf10();
+    virtual void vf11();
+    virtual void vf12();
+    virtual void vf13();
+    virtual void vf14();
+    virtual void vf15();
+    virtual void vf16();
+    virtual void vf17();
+    virtual void vf18();
+    virtual void vf19();
+    virtual void vf20();
+    virtual void vf21();
+    virtual void vf22();
+    virtual void vf23();
+    virtual void vf24();
+    virtual void vf25();
     // Resolve the texture ID into the stage-resource handle used by Engine_SetTextureStageResource.
     virtual int vf26(void*);
     // Resolve the same ID into the texture handle used by Engine_SetTexturePalette.
@@ -193,11 +279,14 @@ extern char puppetBoneExceptionStrings[];
 // Drop one packed high-half resource reference; destroy only after the packed-word reload.
 // Caller clears its own pointer slot after this synchronous release operation.
 static inline void ReleaseTextureReferenceWithReload(void* resource) {
-    typedef struct { CW_BITS2( unsigned int hi:16, unsigned int lo:16) } U32HL;
+    typedef struct {
+        CW_BITS2(unsigned int hi : 16, unsigned int lo : 16)
+    } U32HL;
     U32HL* bits = (U32HL*)resource;
     bits->hi = bits->hi - 1;
     unsigned int value = *(unsigned int*)resource;
-    if ((value >> 16) == 0) CubeResourceStorage_dtor(resource, 1);
+    if ((value >> 16) == 0)
+        CubeResourceStorage_dtor(resource, 1);
 }
 
 // Restore viewport/target, release the saved target reference, then restore scissor state.
@@ -232,11 +321,16 @@ struct Guard3 {
     // Leave guard scratch for the insertion path to initialize.
     Guard3() {}
     // Free an allocated node unless insertion disarmed the guard.
-    ~Guard3() { if (node) appFreeUni__FPv(node); }
+    ~Guard3() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 extern "C++" {
 // Construct into caller-provided storage without allocating.
-inline void* operator new(new_size_t, void* p) { return p; }
+inline void* operator new(new_size_t, void* p) {
+    return p;
+}
 // Placement-delete cleanup leaves caller-owned storage intact.
 inline void operator delete(void*, void*) {}
 }
@@ -249,54 +343,64 @@ struct Link801F {
 #pragma push
 #pragma opt_propagation off
 // Create a capture texture and insert it into the owned capture list.
-int TextureCaptureQueue_AddTexture(void* arg) {
+int TextureCaptureQueue_AddTexture(void* captureQueue) {
     void* volatile temporary = 0;
     volatile unsigned char flag;
     void* volatile f10;
     void* volatile f0c;
 
-    if (Texture_Create2D(((TextureCaptureQueue*)arg)->captureWidth, ((TextureCaptureQueue*)arg)->captureHeight, 1, 0, kCaptureTextureFormat, 0, (void**)&temporary, 0) == 0) {
+    if (Texture_Create2D(((TextureCaptureQueue*)captureQueue)->captureWidth,
+                         ((TextureCaptureQueue*)captureQueue)->captureHeight, 1, 0, kCaptureTextureFormat, 0,
+                         (void**)&temporary, 0) == 0) {
         void* obj = temporary;
         if (obj != 0) {
-            typedef struct { CW_BITS2( unsigned int hi:16, unsigned int lo:16) } U32HL;
+            typedef struct {
+                CW_BITS2(unsigned int hi : 16, unsigned int lo : 16)
+            } U32HL;
             U32HL* bits = (U32HL*)obj;
             bits->hi = bits->hi - 1;
             unsigned int value = *(unsigned int*)obj;
-            if ((value >> 16) == 0) { int one = 1; CubeResourceStorage_dtor(obj, (short)one); }
+            if ((value >> 16) == 0) {
+                int one = 1;
+                CubeResourceStorage_dtor(obj, (short)one);
+            }
             temporary = 0;
         }
         return 0;
     }
     flag = 0;
-    Iterator3 list(&((TextureCaptureQueue*)arg)->headPrevious);
+    Iterator3 list(&((TextureCaptureQueue*)captureQueue)->headPrevious);
     void* node = appMallocDummy__FUl(kTextureNodeBytes);
     void** link = &((TextureListNode*)node)->value;
     {
-    Guard3 guard;
-    f10 = node;
-    f0c = node;
-    guard.list = list;
-    guard.node = node;
-    new (link) Link801F(temporary);
-    void* first = *(void**)list.value;
-    guard.node = 0;
-    ((TextureListNode*)first)->next = node;
-    *(void**)node = *(void**)list.value;
-    *(void**)list.value = node;
-    ((TextureListNode*)node)->next = list.value;
-    ++((TextureCaptureQueue*)arg)->captureCount;
+        Guard3 guard;
+        f10 = node;
+        f0c = node;
+        guard.list = list;
+        guard.node = node;
+        new (link) Link801F(temporary);
+        void* first = *(void**)list.value;
+        guard.node = 0;
+        ((TextureListNode*)first)->next = node;
+        *(void**)node = *(void**)list.value;
+        *(void**)list.value = node;
+        ((TextureListNode*)node)->next = list.value;
+        ++((TextureCaptureQueue*)captureQueue)->captureCount;
     }
-    return ((TextureCaptureQueue*)arg)->captureCount;
+    return ((TextureCaptureQueue*)captureQueue)->captureCount;
 }
 #pragma pop
 
 // Draw the capture quad, copy the framebuffer into its texture, and advance the cursor.
-void TextureCaptureQueue_DrawNextCapture(void* arg) {
+void TextureCaptureQueue_DrawNextCapture(void* captureQueue) {
     Engine_SetTextureStageResource(0, 0);
     Engine_SetFlexibleVertexFormat(kCaptureVertexFormat);
     Engine_SetType7Resource(0);
     SetTransform(0xB, (char*)&kIdentityMatrix4x4);
-    struct { int pad[2]; unsigned int matrix[18]; } buf;
+    struct {
+        int pad[2];
+        unsigned int matrix[18];
+    } buf;
     unsigned int* src = (unsigned int*)&textureCaptureRenderStates;
     unsigned int* dst = buf.matrix;
     unsigned int* end = src + 18;
@@ -305,11 +409,13 @@ void TextureCaptureQueue_DrawNextCapture(void* arg) {
         *dst++ = *src++;
     }
     Engine_SetRenderStateList(buf.matrix, 9);
-    DrawPrimitiveUP(kCapturePrimitive, 2, ((CaptureRenderView*)arg)->quad, sizeof(CaptureVertex));
-    void* tex = ((TextureListNode*)((TextureCaptureQueue*)arg)->drawCursor)->value;
-// The callee reads eleven integer arguments; the original call also loads an ignored f1.
-    ((void (*)(int, int, void*, float, int, int, int, int, int, int, int, int))Engine_CopyFramebufferToTexture)(0x100, 0, tex, kFloat_0_Shadow, 0, 0, 0, 0, 0, 0, 0, 0);
-    ((TextureCaptureQueue*)arg)->drawCursor = ((TextureListNode*)((TextureCaptureQueue*)arg)->drawCursor)->next;
+    DrawPrimitiveUP(kCapturePrimitive, 2, ((CaptureRenderView*)captureQueue)->quad, sizeof(CaptureVertex));
+    void* tex = ((TextureListNode*)((TextureCaptureQueue*)captureQueue)->drawCursor)->value;
+    // The callee reads eleven integer arguments; the original call also loads an ignored f1.
+    ((void (*)(int, int, void*, float, int, int, int, int, int, int, int, int))Engine_CopyFramebufferToTexture)(
+        0x100, 0, tex, kFloat_0_Shadow, 0, 0, 0, 0, 0, 0, 0, 0);
+    ((TextureCaptureQueue*)captureQueue)->drawCursor =
+        ((TextureListNode*)((TextureCaptureQueue*)captureQueue)->drawCursor)->next;
 }
 
 struct NewItem97C {
@@ -317,7 +423,8 @@ struct NewItem97C {
     void* fields[6];
     // Initialize empty resource arrays and bind the puppet/children into this item.
     NewItem97C(void* item, unsigned int flags) {
-        for (int i = 0; i < 6; ++i) fields[i] = 0;
+        for (int i = 0; i < 6; ++i)
+            fields[i] = 0;
         ShadowModel_BindPuppetAndChildren(this, item, flags);
     }
 };
@@ -341,14 +448,17 @@ struct Guard97C {
     // Leave insertion-guard scratch for the caller to initialize.
     Guard97C() {}
     // Free the node only if insertion did not commit it to the list.
-    ~Guard97C() { if (node) appFreeUni__FPv(node); }
+    ~Guard97C() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 
 // Bind a puppet item and insert it at the front of the texture-item list.
-void TextureItemQueue_PushFront(void* arg, void* item) {
-    NewItem97C* object = new NewItem97C(item, ((TextureItemQueueView*)arg)->bindFlags & kShadowBindFlag);
+void TextureItemQueue_PushFront(void* itemQueue, void* item) {
+    NewItem97C* object = new NewItem97C(item, ((TextureItemQueueView*)itemQueue)->bindFlags & kShadowBindFlag);
     volatile unsigned char flag = 0;
-    Iterator97C list(&((TextureItemQueueView*)arg)->headPrevious);
+    Iterator97C list(&((TextureItemQueueView*)itemQueue)->headPrevious);
     void* node = appMallocDummy__FUl(kTextureNodeBytes);
     void** link = &((TextureListNode*)node)->value;
     Guard97C guard;
@@ -365,7 +475,7 @@ void TextureItemQueue_PushFront(void* arg, void* item) {
     *(void**)node = *(void**)list.value;
     *(void**)list.value = node;
     ((TextureListNode*)node)->next = list.value;
-    ++*(int*)arg;
+    ++*(int*)itemQueue;
 }
 
 struct GuardA78 {
@@ -374,7 +484,10 @@ struct GuardA78 {
     // Leave guard scratch for the replacement path to initialize.
     GuardA78() {}
     // Release the unlinked node on an incomplete insertion.
-    ~GuardA78() { if (node) appFreeUni__FPv(node); }
+    ~GuardA78() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 struct NewItemA78 {
     int reservedWord0;
@@ -405,7 +518,7 @@ inline void** endA78(void* object, void* volatile& end1, void* volatile& end2) {
 // is a borrowed puppet binding argument. Old ownership is gone before replacement
 // allocation, so failure cannot restore the previous front. Volatile scratch below
 // records compiler cleanup state; it is not queue state and must not be tuned.
-void TextureItemQueue_ReplaceFront(void* arg, void* item) {
+void TextureItemQueue_ReplaceFront(void* itemQueue, void* item) {
     void* volatile frameHead;
     void* volatile headCopy;
     void* volatile node1b;
@@ -421,11 +534,11 @@ void TextureItemQueue_ReplaceFront(void* arg, void* item) {
     __declspec(align(4)) volatile unsigned char flagItems;
     __declspec(align(4)) volatile unsigned char flag2;
     register void* insertion;
-    if (*(int*)arg == 0) {
+    if (*(int*)itemQueue == 0) {
         // Empty queue: bind and insert without trying to release a front item.
-        NewItemA78* object = new NewItemA78(item, ((TextureItemQueueView*)arg)->bindFlags & kShadowBindFlag);
+        NewItemA78* object = new NewItemA78(item, ((TextureItemQueueView*)itemQueue)->bindFlags & kShadowBindFlag);
         flag1 = 0;
-        insertion = &((TextureItemQueueView*)arg)->headPrevious;
+        insertion = &((TextureItemQueueView*)itemQueue)->headPrevious;
         void* node = appMallocDummy__FUl(kTextureNodeBytes);
         void** link = &((TextureListNode*)node)->value;
         GuardA78 guard;
@@ -440,80 +553,87 @@ void TextureItemQueue_ReplaceFront(void* arg, void* item) {
         *(unsigned int*)node = *(unsigned int*)insertion;
         *(void**)insertion = node;
         ((TextureListNode*)node)->next = insertion;
-        ++*(unsigned int*)arg;
+        ++*(unsigned int*)itemQueue;
     } else {
-    // Existing queue: release resource references and both buffers before unlinking.
-    void* head = ((TextureItemQueueView*)arg)->headNext;
-    void* object = ((TextureListNode*)head)->value;
-    headCopy = head;
-    frameHead = head;
-    if (object != 0) {
-      if (object != 0) {
-        *(int*)object = 0;
-        if (((TextureItem801F*)object)->resourceCount != 0) {
-        void** iter = ((TextureItem801F*)object)->resources;
-        begin1 = iter;
-        begin2 = iter;
-        for (; iter != endA78(object, end1, end2); ++iter) {
-            void* current = *iter;
-            if (current != 0) {
-                typedef struct { CW_BITS2( unsigned int hi:16, unsigned int lo:16) } U32HL;
-                U32HL* bits = (U32HL*)current;
-                bits->hi = bits->hi - 1;
-                if (bits->hi == 0) { int deleting = 1; CubeResourceStorage_dtor(current, (short)deleting); }
-                *iter = 0;
+        // Existing queue: release resource references and both buffers before unlinking.
+        void* head = ((TextureItemQueueView*)itemQueue)->headNext;
+        void* object = ((TextureListNode*)head)->value;
+        headCopy = head;
+        frameHead = head;
+        if (object != 0) {
+            if (object != 0) {
+                *(int*)object = 0;
+                if (((TextureItem801F*)object)->resourceCount != 0) {
+                    void** iter = ((TextureItem801F*)object)->resources;
+                    begin1 = iter;
+                    begin2 = iter;
+                    for (; iter != endA78(object, end1, end2); ++iter) {
+                        void* current = *iter;
+                        if (current != 0) {
+                            typedef struct {
+                                CW_BITS2(unsigned int hi : 16, unsigned int lo : 16)
+                            } U32HL;
+                            U32HL* bits = (U32HL*)current;
+                            bits->hi = bits->hi - 1;
+                            if (bits->hi == 0) {
+                                int deleting = 1;
+                                CubeResourceStorage_dtor(current, (short)deleting);
+                            }
+                            *iter = 0;
+                        }
+                    }
+                }
+                void* member = ((char*)&AsTextureItem801F(object)->resources);
+                if (member != 0 && member != 0 && member != 0 && member != 0 && member != 0 &&
+                    (*(void**)&((TextureItem801F*)object)->resources) != 0) {
+                    int count = ((TextureItem801F*)object)->resourceCount;
+                    int countCopy = count;
+                    flagItems = 0;
+                    ((TextureItem801F*)object)->resourceCount = count - countCopy;
+                    appFreeUni__FPv((*(void**)&((TextureItem801F*)object)->resources));
+                }
+                member = &((TextureItem801F*)object)->data;
+                if (member != 0 && member != 0 && member != 0 && member != 0 && member != 0 &&
+                    ((TextureItem801F*)object)->data != 0) {
+                    int count = ((TextureItem801F*)object)->dataCount;
+                    int countCopy = count;
+                    flagData = 0;
+                    ((TextureItem801F*)object)->dataCount = count - countCopy;
+                    appFreeUni__FPv(((TextureItem801F*)object)->data);
+                }
+                __dl__FPv(object);
             }
+            ((TextureListNode*)frameHead)->value = 0;
         }
-        }
-        void* member = ((char*)&AsTextureItem801F(object)->resources);
-        if (member != 0 && member != 0 && member != 0 && member != 0 && member != 0 && (*(void**)&((TextureItem801F*)object)->resources) != 0) {
-            int count = ((TextureItem801F*)object)->resourceCount;
-            int countCopy = count;
-            flagItems = 0;
-            ((TextureItem801F*)object)->resourceCount = count - countCopy;
-            appFreeUni__FPv((*(void**)&((TextureItem801F*)object)->resources));
-        }
-        member = &((TextureItem801F*)object)->data;
-        if (member != 0 && member != 0 && member != 0 && member != 0 && member != 0 && ((TextureItem801F*)object)->data != 0) {
-            int count = ((TextureItem801F*)object)->dataCount;
-            int countCopy = count;
-            flagData = 0;
-            ((TextureItem801F*)object)->dataCount = count - countCopy;
-            appFreeUni__FPv(((TextureItem801F*)object)->data);
-        }
-        __dl__FPv(object);
-      }
-        ((TextureListNode*)frameHead)->value = 0;
-    }
-    head = frameHead;
-    unsigned int previous = (*(unsigned int*)&((TextureListNode*)head)->next);
-    void* first = *(void**)head;
-    (*(unsigned int*)&((TextureListNode*)first)->next) = previous;
-    unsigned int next = *(unsigned int*)head;
-    void* last = ((TextureListNode*)head)->next;
-    *(unsigned int*)last = next;
-    appFreeUni__FPv(head);
-    --*(int*)arg;
+        head = frameHead;
+        unsigned int previous = (*(unsigned int*)&((TextureListNode*)head)->next);
+        void* first = *(void**)head;
+        (*(unsigned int*)&((TextureListNode*)first)->next) = previous;
+        unsigned int next = *(unsigned int*)head;
+        void* last = ((TextureListNode*)head)->next;
+        *(unsigned int*)last = next;
+        appFreeUni__FPv(head);
+        --*(int*)itemQueue;
 
-    // Construct and link the replacement only after old ownership is gone.
-    NewItemA78* replacement = new NewItemA78(item, ((TextureItemQueueView*)arg)->bindFlags & kShadowBindFlag);
-    flag2 = 0;
-    insertion = ((TextureItemQueueView*)arg)->headNext;
-    void* node = appMallocDummy__FUl(kTextureNodeBytes);
-    void** link = &((TextureListNode*)node)->value;
-    GuardA78 guard;
-    node2b = node;
-    node2a = node;
-    guard.list = &((TextureItemQueueView*)arg)->headPrevious;
-    guard.node = node;
-    new (link) NewItemA78*(replacement);
-    first = *(void**)insertion;
-    guard.node = 0;
-    ((TextureListNode*)first)->next = node;
-    *(unsigned int*)node = *(unsigned int*)insertion;
-    *(void**)insertion = node;
-    ((TextureListNode*)node)->next = insertion;
-    ++*(unsigned int*)arg;
+        // Construct and link the replacement only after old ownership is gone.
+        NewItemA78* replacement = new NewItemA78(item, ((TextureItemQueueView*)itemQueue)->bindFlags & kShadowBindFlag);
+        flag2 = 0;
+        insertion = ((TextureItemQueueView*)itemQueue)->headNext;
+        void* node = appMallocDummy__FUl(kTextureNodeBytes);
+        void** link = &((TextureListNode*)node)->value;
+        GuardA78 guard;
+        node2b = node;
+        node2a = node;
+        guard.list = &((TextureItemQueueView*)itemQueue)->headPrevious;
+        guard.node = node;
+        new (link) NewItemA78*(replacement);
+        first = *(void**)insertion;
+        guard.node = 0;
+        ((TextureListNode*)first)->next = node;
+        *(unsigned int*)node = *(unsigned int*)insertion;
+        *(void**)insertion = node;
+        ((TextureListNode*)node)->next = insertion;
+        ++*(unsigned int*)itemQueue;
     }
 }
 #pragma pop
@@ -526,23 +646,24 @@ void TextureItemQueue_ReplaceFront(void* arg, void* item) {
 // Indexed writes are guarded by the embedded renderer's byte-sized capacity.
 void TextureMesh_DrawLayers(char* mesh) {
     Decls* src = &textureMeshRenderStateDefaults;
-    if (((TextureMeshView*)mesh)->vertexCount == 0) return;
+    if (((TextureMeshView*)mesh)->vertexCount == 0)
+        return;
     V801F v;
     // Apply mesh defaults and camera matrices, then prepare the embedded renderer.
-    Decl5 c;
-    Decl6 b;
-    Decl15 a = src->a;
-    b = src->b;
-    c = src->c;
-    Engine_SetRenderStateList(&a, 15);
-    Engine_SetTextureStageStateList(0, &b, 6);
-    Engine_SetTextureStageParameterList(0, &c, 5);
+    Decl5 textureStageParameters;
+    Decl6 textureStageStates;
+    Decl15 renderStates = src->a;
+    textureStageStates = src->b;
+    textureStageParameters = src->c;
+    Engine_SetRenderStateList(&renderStates, 15);
+    Engine_SetTextureStageStateList(0, &textureStageStates, 6);
+    Engine_SetTextureStageParameterList(0, &textureStageParameters, 5);
 
     void* dev = Camera_GetRenderState(g_view);
     SetTransform(0, ((RenderCameraMatrices*)dev)->view);
     SetTransform(1, ((RenderCameraMatrices*)dev)->projection);
     Engine_SetType7Resource(0);
-    PrepareTextureMeshVertices(((TextureMeshVertexWriter_u801EDA60*)(mesh + kTextureMeshRendererOffset)));
+    PrepareTextureMeshVertices(((CTextureMeshVertexWriter*)(mesh + kTextureMeshRendererOffset)));
     SetTransform(2, kIdentityMatrix4x4);
     SetTransform(0xB, kIdentityMatrix4x4);
     Engine_SetTextureStageParameter(0, 0, 1);
@@ -569,22 +690,28 @@ void TextureMesh_DrawLayers(char* mesh) {
             v.z = *(int*)(p + 8);
             v.y.f = ((TextureMeshView*)mesh)->vertexY;
             if (((TextureMeshView*)mesh)->vertexCapacity > (unsigned char)i)
-                WriteTextureMeshPosition(((TextureMeshVertexWriter_u801EDA60*)(mesh + kTextureMeshRendererOffset)), (unsigned char)i, v);
+                WriteTextureMeshPosition(((CTextureMeshVertexWriter*)(mesh + kTextureMeshRendererOffset)),
+                                         (unsigned char)i, v);
 
             char* q = ((TextureMeshLayer*)layer)->texcoords + texcoordByteOffset;
             float f2 = *(float*)(4 + q);
             float f1 = *(float*)(q + 0);
 
             if (((TextureMeshView*)mesh)->vertexCapacity > (unsigned char)i)
-                WriteTextureMeshUV(((TextureMeshVertexWriter_u801EDA60*)(mesh + kTextureMeshRendererOffset)), (unsigned char)i, f1, f2);
+                WriteTextureMeshUV(((CTextureMeshVertexWriter*)(mesh + kTextureMeshRendererOffset)), (unsigned char)i,
+                                   f1, f2);
 
-            union { unsigned int i; unsigned char c[4]; } col;
+            union {
+                unsigned int i;
+                unsigned char c[4];
+            } col;
             col.i = ((TextureMeshLayer*)layer)->color;
             unsigned char c3 = (col.c[3]);
             unsigned char c2 = (col.c[2]);
             unsigned char c1 = (col.c[1]);
             if (((TextureMeshView*)mesh)->vertexCapacity > (unsigned char)i)
-                WriteTextureMeshColor(((TextureMeshVertexWriter_u801EDA60*)(mesh + kTextureMeshRendererOffset)), (unsigned char)i, (col.c[0]), c1, c2, c3);
+                WriteTextureMeshColor(((CTextureMeshVertexWriter*)(mesh + kTextureMeshRendererOffset)),
+                                      (unsigned char)i, (col.c[0]), c1, c2, c3);
             positionByteOffset += kMeshPositionBytes;
             texcoordByteOffset += kMeshUVBytes;
         }
@@ -592,7 +719,8 @@ void TextureMesh_DrawLayers(char* mesh) {
         // The device exposes distinct stage-resource and texture handles for one ID.
         Engine_SetTextureStageResource(0, (((TextureDevice801*)((WView*)g_view)->renderTarget))->vf26(id));
         Engine_SetTexturePalette(0, (((TextureDevice801*)((WView*)g_view)->renderTarget))->vf27(id));
-        SubmitTextureMeshVertices(((TextureMeshVertexWriter_u801EDA60*)(mesh + kTextureMeshRendererOffset)), kTextureMeshPrimitive, ((TextureMeshView*)mesh)->vertexCount - 2);
+        SubmitTextureMeshVertices(((CTextureMeshVertexWriter*)(mesh + kTextureMeshRendererOffset)),
+                                  kTextureMeshPrimitive, ((TextureMeshView*)mesh)->vertexCount - 2);
         layerByteOffset += kMeshLayerBytes;
         layerIndex = layerIndex + 1;
     }
@@ -618,8 +746,12 @@ void TextureMesh_ScrollTexcoords(char* mesh, float scale) {
             // Address = layers base + layerIndex*20. Its first 8 bytes are the
             // velocity pair; the pointer at +12 selects vertexIndex*8 UV bytes.
             // Integer/byte views preserve the original instruction scheduling.
-            long long scaledScrollUV = CursorVec2_Scale((void*)((int)((TextureMeshView*)mesh)->layers + layerByteOffset), scale);
-            Vec2_AddAssign(*(char**)((char*)layerByteOffset + (int)((TextureMeshView*)mesh)->layers + kTextureMeshTexcoordsOffset) + texcoordByteOffset, &scaledScrollUV);
+            long long scaledScrollUV =
+                CursorVec2_Scale((void*)((int)((TextureMeshView*)mesh)->layers + layerByteOffset), scale);
+            Vec2_AddAssign(*(char**)((char*)layerByteOffset + (int)((TextureMeshView*)mesh)->layers +
+                                     kTextureMeshTexcoordsOffset) +
+                               texcoordByteOffset,
+                           &scaledScrollUV);
             texcoordByteOffset += kMeshUVBytes;
             vertexIndex++;
         }
@@ -637,28 +769,32 @@ int TextureCapture_SetSharedRenderTargetSize(void* width, void* height) {
     if (obj != 0) {
         unsigned int value = *(unsigned int*)obj;
         unsigned int count = (value >> 16) - 1;
-        typedef struct { CW_BITS2( unsigned int hi:16, unsigned int lo:16) } U32HL;
+        typedef struct {
+            CW_BITS2(unsigned int hi : 16, unsigned int lo : 16)
+        } U32HL;
         U32HL* p = (U32HL*)obj;
         p->hi = count;
         value = *(unsigned int*)obj;
-        if ((value >> 16) == 0) CubeResourceStorage_dtor(obj, 1);
+        if ((value >> 16) == 0)
+            CubeResourceStorage_dtor(obj, 1);
         g_textureCaptureRenderTarget = 0;
     }
-    if (!RenderSurface_CreateAdapter(width, height, kCaptureSurfaceFormat, 0, 0, 0, &g_textureCaptureRenderTarget, 0)) return 0;
+    if (!RenderSurface_CreateAdapter(width, height, kCaptureSurfaceFormat, 0, 0, 0, &g_textureCaptureRenderTarget, 0))
+        return 0;
     s_textureCaptureTargetWidth = width;
     s_textureCaptureTargetHeight = height;
     return 1;
 }
 
 // Initialize an empty capture list and a default 256-by-256 render region.
-void* TextureCaptureQueue_Init(void* arg) {
-    (*(int*)&((TextureCaptureQueue*)arg)->resource) = 0;
-    ((TextureCaptureQueue*)arg)->captureCount = 0;
-    ((TextureCaptureQueue*)arg)->headNext = &((TextureCaptureQueue*)arg)->headPrevious;
-    ((TextureCaptureQueue*)arg)->headPrevious = &((TextureCaptureQueue*)arg)->headPrevious;
-    Memory_Clear(&((CaptureRenderView*)arg)->captureViewport, sizeof(CaptureViewport));
-    TextureCaptureQueue_SetSize((char*)arg, kDefaultCaptureSize, kDefaultCaptureSize);
-    return arg;
+void* TextureCaptureQueue_Init(void* captureQueue) {
+    (*(int*)&((TextureCaptureQueue*)captureQueue)->resource) = 0;
+    ((TextureCaptureQueue*)captureQueue)->captureCount = 0;
+    ((TextureCaptureQueue*)captureQueue)->headNext = &((TextureCaptureQueue*)captureQueue)->headPrevious;
+    ((TextureCaptureQueue*)captureQueue)->headPrevious = &((TextureCaptureQueue*)captureQueue)->headPrevious;
+    Memory_Clear(&((CaptureRenderView*)captureQueue)->captureViewport, sizeof(CaptureViewport));
+    TextureCaptureQueue_SetSize((char*)captureQueue, kDefaultCaptureSize, kDefaultCaptureSize);
+    return captureQueue;
 }
 
 // Clear the loading framebuffer with the original depth/color flags.
@@ -669,7 +805,8 @@ int Render_ClearLoadingFramebuffer() {
 
 // Save render state and switch to the capture target; reject nested capture draws.
 int TextureCaptureQueue_BeginDraw(char* arg) {
-    if (*(int*)arg != 0) return 0;
+    if (*(int*)arg != 0)
+        return 0;
     Engine_AcquireCurrentRenderTarget(0, arg);
     Engine_GetViewport(&((CaptureRenderView*)arg)->savedViewport);
     Engine_SetViewport(&((CaptureRenderView*)arg)->captureViewport);
@@ -717,17 +854,18 @@ void* dtor_801EDED0(void* arg, int deleting) {
                 }
             }
         }
-        if (deleting > 0) __dl__FPv(arg);
+        if (deleting > 0)
+            __dl__FPv(arg);
     }
     return arg;
 }
 
 // Unlink and free texture-item list nodes, then optionally delete the wrapper.
-void* TextureItemList_dtor(void* arg, int deleting) {
-    if (arg != 0) {
-        if (arg != 0 && arg != 0 && arg != 0) {
-            void* sentinel = &((TextureItemQueueView*)arg)->headPrevious;
-            void* end = ((TextureItemQueueView*)arg)->headNext;
+void* TextureItemList_dtor(void* itemQueue, int deleting) {
+    if (itemQueue != 0) {
+        if (itemQueue != 0 && itemQueue != 0 && itemQueue != 0) {
+            void* sentinel = &((TextureItemQueueView*)itemQueue)->headPrevious;
+            void* end = ((TextureItemQueueView*)itemQueue)->headNext;
             if (end != sentinel) {
                 void* node = *(void**)sentinel;
                 void* last = *(void**)end;
@@ -740,13 +878,14 @@ void* TextureItemList_dtor(void* arg, int deleting) {
                     void* current = end;
                     end = ((TextureListNode*)end)->next;
                     appFreeUni__FPv(current);
-                    --*(int*)arg;
+                    --*(int*)itemQueue;
                 }
             }
         }
-        if (deleting > 0) __dl__FPv(arg);
+        if (deleting > 0)
+            __dl__FPv(itemQueue);
     }
-    return arg;
+    return itemQueue;
 }
 
 #pragma push
@@ -830,23 +969,23 @@ void* TextureCaptureQueue_Dtor(void* arg, int deleting) {
                 end = end->next;
             }
             {
-            RefNode801* sentinel2 = &list->head;
-            RefNode801* end2 = list->head.next;
-            if (end2 != sentinel2) {
-                RefNode801* node = sentinel2->prev;
-                RefNode801* last = end2->prev;
-                RefNode801* next = node->next;
-                last->next = next;
-                RefNode801* first = end2->prev;
-                next = node->next;
-                next->prev = first;
-                while (end2 != sentinel2) {
-                    RefNode801* current = end2;
-                    end2 = end2->next;
-                    appFreeUni__FPv(current);
-                    --list->count;
+                RefNode801* sentinel2 = &list->head;
+                RefNode801* end2 = list->head.next;
+                if (end2 != sentinel2) {
+                    RefNode801* node = sentinel2->prev;
+                    RefNode801* last = end2->prev;
+                    RefNode801* next = node->next;
+                    last->next = next;
+                    RefNode801* first = end2->prev;
+                    next = node->next;
+                    next->prev = first;
+                    while (end2 != sentinel2) {
+                        RefNode801* current = end2;
+                        end2 = end2->next;
+                        appFreeUni__FPv(current);
+                        --list->count;
+                    }
                 }
-            }
             }
         }
         if (&list->count != 0 && &list->count != 0 && &list->count != 0 && &list->count != 0) {
@@ -868,7 +1007,8 @@ void* TextureCaptureQueue_Dtor(void* arg, int deleting) {
                 }
             }
         }
-        if (deleting > 0) __dl__FPv(arg);
+        if (deleting > 0)
+            __dl__FPv(arg);
     }
     return arg;
 }
@@ -878,15 +1018,18 @@ void* TextureCaptureQueue_Dtor(void* arg, int deleting) {
 // were released. Repeated subobject guards and count reloads retain binary shape.
 static inline void FreeTextureItemOwnedArrays(void* obj) {
     void* member = ((char*)&AsTextureItem801F(obj)->resources);
-    if (member != 0 && member != 0 && member != 0 && member != 0 && member != 0 && (*(void**)&((TextureItem801F*)obj)->resources) != 0) {
+    if (member != 0 && member != 0 && member != 0 && member != 0 && member != 0 &&
+        (*(void**)&((TextureItem801F*)obj)->resources) != 0) {
         unsigned int count = (*(unsigned int*)&((TextureItem801F*)obj)->resourceCount);
-        (*(unsigned int*)&((TextureItem801F*)obj)->resourceCount) = count - (unsigned int)((TextureItem801F*)obj)->resourceCount;
+        (*(unsigned int*)&((TextureItem801F*)obj)->resourceCount) =
+            count - (unsigned int)((TextureItem801F*)obj)->resourceCount;
         appFreeUni__FPv((*(void**)&((TextureItem801F*)obj)->resources));
     }
     member = &((TextureItem801F*)obj)->data;
     if (member != 0 && member != 0 && member != 0 && member != 0 && member != 0 && ((TextureItem801F*)obj)->data != 0) {
         unsigned int count = (*(unsigned int*)&((TextureItem801F*)obj)->dataCount);
-        (*(unsigned int*)&((TextureItem801F*)obj)->dataCount) = count - (unsigned int)((TextureItem801F*)obj)->dataCount;
+        (*(unsigned int*)&((TextureItem801F*)obj)->dataCount) =
+            count - (unsigned int)((TextureItem801F*)obj)->dataCount;
         appFreeUni__FPv(((TextureItem801F*)obj)->data);
     }
 }
@@ -910,22 +1053,22 @@ void TextureItemList_ClearAndRelease(void* node) {
     while (node != sentinel) {
         obj = ((TextureListNode*)node)->value;
         if (obj != 0) {
-          if (obj != 0) {
-            *(void**)obj = zero;
-            if (((TextureItem801F*)obj)->resourceCount != 0) {
-                p = ((TextureItem801F*)obj)->resources;
-                while (p != ((TextureItem801F*)obj)->resources + ((TextureItem801F*)obj)->resourceCount) {
-                    void* item = *p;
-                    if (item != 0) {
-                        ReleaseTextureReferenceWithReload(item);
-                        *p = zero;
+            if (obj != 0) {
+                *(void**)obj = zero;
+                if (((TextureItem801F*)obj)->resourceCount != 0) {
+                    p = ((TextureItem801F*)obj)->resources;
+                    while (p != ((TextureItem801F*)obj)->resources + ((TextureItem801F*)obj)->resourceCount) {
+                        void* item = *p;
+                        if (item != 0) {
+                            ReleaseTextureReferenceWithReload(item);
+                            *p = zero;
+                        }
+                        p++;
                     }
-                    p++;
                 }
+                FreeTextureItemOwnedArrays(obj);
+                __dl__FPv(obj);
             }
-            FreeTextureItemOwnedArrays(obj);
-            __dl__FPv(obj);
-          }
             ((TextureListNode*)node)->value = zero;
         }
         node = ((TextureListNode*)node)->next;
@@ -952,22 +1095,25 @@ void TextureItemList_ClearAndRelease(void* node) {
 #pragma pop
 
 // Release all capture texture references and clear the intrusive list.
-void TextureCaptureQueue_Clear(void* arg) {
-    if (((TextureCaptureQueue*)arg)->captureCount != 0) {
-        void* node = ((TextureCaptureQueue*)arg)->headNext;
+void TextureCaptureQueue_Clear(void* captureQueue) {
+    if (((TextureCaptureQueue*)captureQueue)->captureCount != 0) {
+        void* node = ((TextureCaptureQueue*)captureQueue)->headNext;
         void* sentinel;
-        sentinel = &((TextureCaptureQueue*)arg)->headPrevious;
+        sentinel = &((TextureCaptureQueue*)captureQueue)->headPrevious;
         while (sentinel != node) {
             void* obj = ((TextureListNode*)node)->value;
             unsigned int value = *(unsigned int*)obj;
-            typedef struct { CW_BITS2( unsigned int hi:16, unsigned int lo:16) } U32HL;
+            typedef struct {
+                CW_BITS2(unsigned int hi : 16, unsigned int lo : 16)
+            } U32HL;
             ((U32HL*)obj)->hi = (value >> 16) - 1;
             value = *(unsigned int*)obj;
-            if ((value >> 16) == 0) CubeResourceStorage_dtor(obj, 1);
+            if ((value >> 16) == 0)
+                CubeResourceStorage_dtor(obj, 1);
             node = ((TextureListNode*)node)->next;
         }
-        void* begin = ((TextureCaptureQueue*)arg)->headNext;
-        void* clearSentinel = &((TextureCaptureQueue*)arg)->headPrevious;
+        void* begin = ((TextureCaptureQueue*)captureQueue)->headNext;
+        void* clearSentinel = &((TextureCaptureQueue*)captureQueue)->headPrevious;
         node = begin;
         sentinel = clearSentinel;
         if (sentinel != node) {
@@ -982,7 +1128,7 @@ void TextureCaptureQueue_Clear(void* arg) {
                 void* current = node;
                 node = ((TextureListNode*)node)->next;
                 appFreeUni__FPv(current);
-                --((TextureCaptureQueue*)arg)->captureCount;
+                --((TextureCaptureQueue*)captureQueue)->captureCount;
             }
         }
     }
@@ -996,7 +1142,8 @@ void TextureCaptureQueue_Clear(void* arg) {
 // first payload returns the shared fallback vector. The list count must agree
 // with its sentinel-terminated links; later successful bone finds require a
 // non-null bone payload (only the first lookup checks that payload explicitly).
-void PuppetList_GetRepeatedFirstAnchorPosition(void* result, void* puppetList) { unsigned char accumulatedPosition[12]; // PuppetList_GetRepeatedFirstAnchorPosition.
+void PuppetList_GetRepeatedFirstAnchorPosition(void* result, void* puppetList) {
+    unsigned char accumulatedPosition[12]; // PuppetList_GetRepeatedFirstAnchorPosition.
     void* firstNode;
     const char* firstPuppet;
     void* anchorBoneEntry;
@@ -1026,7 +1173,8 @@ void PuppetList_GetRepeatedFirstAnchorPosition(void* result, void* puppetList) {
     // Select the first firstPuppet's preferred/fallback bone, else matrix translation.
     firstPuppet = *(const char**)(*((void**)firstNode + 2));
     anchorBoneEntry = (void*)WPuppet_FindNamedBoneEntry(firstPuppet, puppetBoneExceptionStrings);
-    if (0 == anchorBoneEntry) anchorBoneEntry = (void*)WPuppet_FindNamedBoneEntry(firstPuppet, 6 + puppetBoneExceptionStrings);
+    if (0 == anchorBoneEntry)
+        anchorBoneEntry = (void*)WPuppet_FindNamedBoneEntry(firstPuppet, 6 + puppetBoneExceptionStrings);
 
     if (0 != anchorBoneEntry && *(void**)anchorBoneEntry != 0)
         *(WVector*)accumulatedPosition = ((BonePositionView*)*(void**)anchorBoneEntry)->position;
@@ -1039,9 +1187,12 @@ void PuppetList_GetRepeatedFirstAnchorPosition(void* result, void* puppetList) {
         listSentinel = &((TextureItemQueueView*)puppetList)->headPrevious;
         while (listSentinel != remainingNode) {
             anchorBoneEntry = (void*)WPuppet_FindNamedBoneEntry(firstPuppet, puppetBoneExceptionStrings);
-            if (anchorBoneEntry == 0) anchorBoneEntry = (void*)WPuppet_FindNamedBoneEntry(firstPuppet, 6 + puppetBoneExceptionStrings);
+            if (anchorBoneEntry == 0)
+                anchorBoneEntry = (void*)WPuppet_FindNamedBoneEntry(firstPuppet, 6 + puppetBoneExceptionStrings);
             WVector next;
-            const void* source = (anchorBoneEntry != 0) ? (const void*)&((BonePositionView*)*(void**)anchorBoneEntry)->position : (const void*)&((WPuppet*)firstPuppet)->worldMatrix[9];
+            const void* source = (anchorBoneEntry != 0)
+                                     ? (const void*)&((BonePositionView*)*(void**)anchorBoneEntry)->position
+                                     : (const void*)&((WPuppet*)firstPuppet)->worldMatrix[9];
             next = *(WVector*)source;
             *(WVector*)accumulatedPosition += next;
             remainingNode = ((TextureListNode*)remainingNode)->next;

@@ -14,38 +14,38 @@ public:
     char pad_040[0x4];
     float unk_44; // 0x44
     float unk_48; // 0x48
-    int unk_4C; // 0x4C
+    int unk_4C;   // 0x4C
     char pad_050[0x4];
     float unk_54; // 0x54
     float unk_58; // 0x58
-    int unk_5C; // 0x5C
+    int unk_5C;   // 0x5C
     char pad_060[0x4];
     float unk_64; // 0x64
     float unk_68; // 0x68
-    int unk_6C; // 0x6C
+    int unk_6C;   // 0x6C
     char pad_070[0x4];
-    float unk_74; // 0x74
-    float unk_78; // 0x78
-    int unk_7C; // 0x7C
+    float unk_74;     // 0x74
+    float unk_78;     // 0x78
+    int unk_7C;       // 0x7C
     void* sharedFile; // 0x80
     char pad_084[0x30];
-    int homeMenuState; // 0xB4
-    unsigned char unk_B8; // 0xB8
-    unsigned char homeMenuDisabled; // 0xB9
+    int homeMenuState;                   // 0xB4
+    unsigned char unk_B8;                // 0xB8
+    unsigned char homeMenuDisabled;      // 0xB9
     unsigned char savedHomeMenuDisabled; // 0xBA
-    unsigned char unk_BB; // 0xBB
-    int unk_BC; // 0xBC
-    unsigned char unk_C0; // 0xC0
+    unsigned char unk_BB;                // 0xBB
+    int unk_BC;                          // 0xBC
+    unsigned char unk_C0;                // 0xC0
     char pad_0C1[0x3];
-    int bpEntryId; // 0xC4
-    float savedStreamVolume; // 0xC8
-    float savedBufferVolume; // 0xCC
-    float unk_D0; // 0xD0
+    int bpEntryId;                       // 0xC4
+    float savedStreamVolume;             // 0xC8
+    float savedBufferVolume;             // 0xCC
+    float unk_D0;                        // 0xD0
     unsigned char homeMenuAdjustEnabled; // 0xD4
     char pad_0D5[0x3];
-    int soundStopDelayFrames; // 0xD8
+    int soundStopDelayFrames;                      // 0xD8
     unsigned char blockedNotificationOutroStarted; // 0xDC
-    unsigned char blockedNotificationSuppressed; // 0xDD
+    unsigned char blockedNotificationSuppressed;   // 0xDD
 };
 
 #define OFF(f, o) typedef char ResourceState8028A270_off_##f[((int)&((ResourceState8028A270*)0)->f == (o)) ? 1 : -1]

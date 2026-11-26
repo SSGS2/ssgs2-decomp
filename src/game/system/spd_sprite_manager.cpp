@@ -1,9 +1,22 @@
+// SPD sprite manager: the sprite controllers (CSpdCtrl) that hold square and sprite item lists, and the
+// sprite and solid-color square objects (CSpdSprite, CSpdSqar) with their geometry.
+//
+// Sprite setters and getters (position, rotation, color, scale, origin) and the cloning of sprites.
+
 #include <decomp/ct_member.h>
 #include "MSL/error_message.h"
 #include "MSL/vector.h"
 typedef std::vector<void*, app::app_allocator<void*> > SpdPointerVector;
-enum { kFlipVertical = 1, kFlipHorizontal = 2, kFlipBoth = 3 };
-enum { kMaxPointerElements = 0x3FFFFFFF, kThreeFifthsGrowthLimit = 0x15555555, kHalfGrowthLimit = 0x2AAAAAAA };
+enum {
+    kFlipVertical = 1,
+    kFlipHorizontal = 2,
+    kFlipBoth = 3
+};
+enum {
+    kMaxPointerElements = 0x3FFFFFFF,
+    kThreeFifthsGrowthLimit = 0x15555555,
+    kHalfGrowthLimit = 0x2AAAAAAA
+};
 namespace exception_runtime {
 extern "C" {
 void __throw(const char*, void*, void*) __attribute__((noreturn));
@@ -15,14 +28,39 @@ extern const char vectorLengthExceptionStrings[];
 #include "sdk_protos.h"
 #include "game/types.h"
 #include "game/exception.h"
+#include "classes/CBpSprite.h"
+#include "classes/CSpdSprite.h"
+#include "classes/CSpdSqar.h"
+#include "classes/CSpdCtrl.h"
+#include "classes/CBpSpriteCtrl.h"
 
 // Return caller-supplied placement storage without allocation.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
+
+// Declarations used by the member functions below. The namespace block that
+// follows declares the same objects and functions.
+extern "C" {
+extern char __vt__8CSpdSqar[];
+extern char __vt__10CSpdSprite[];
+extern char __vt__8CSpdCtrl[];
+extern void __ct__13CBpSpriteCtrlFv(void*);
+extern void ObjectArray_DeleteAllAndClear(void*);
+extern void __dl__FPv(void*);
+extern float kFloat_0_Layout;
+extern const float kFloat_1_Layout;
+extern void PSMTX44Identity(void*);
+extern void Mtx44_SetTranslation(void*, float, float, float);
+extern void Mtx44_SetScale(void*, float, float, float);
+extern void PSMTX44Concat(void*, void*, void*);
+extern void Mtx44_SetRotationZ(void*, float);
+extern void Mtx44_TransformPointPerspective(void*, void*, void*);
+extern void BpSprite_ApplyRenderModeFlags(int, void*); // CBpSprite_SetFlipMode.
+}
 
 // ---- merged from spd_sprite_manager.cpp ----
 namespace ns0 {
-// Translation unit 0x800C850C-0x800C9780 (28 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -30,7 +68,6 @@ extern char __vt__8CSpdSqar[];
 extern char __vt__10CSpdSprite[];
 extern char __vt__8CSpdCtrl[];
 
-extern void CBpSprite_Draw(void*);
 extern void __ct__13CBpSpriteCtrlFv(void*);
 extern void BpSprite_GetTextureDescriptor(void*, unsigned int*);
 extern void ObjectArray_DeleteAllAndClear(void*);
@@ -62,7 +99,8 @@ struct SpdSquareList {
     void* source;
 };
 
-extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[], vectorLengthExceptionStrings[];
+extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[],
+    vectorLengthExceptionStrings[];
 extern size_t strlen(const char*);
 extern char* strcpy(char*, const char*);
 extern void* memcpy(void*, const void*, unsigned long);
@@ -72,15 +110,22 @@ extern void __throw(void*, void*, void*);
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 struct VecAllocation : ::std::detail::__message_buffer_guard {
     VecAllocation(char* p, char* a) : ::std::detail::__message_buffer_guard(p, a) {}
-    ~VecAllocation() { if (pointer) delete[] pointer; }
+    ~VecAllocation() {
+        if (pointer)
+            delete[] pointer;
+    }
 };
 typedef ::std::detail::__message_control VecControl;
 struct VecErrorBase {
     void* table;
     // Install the logic_error base vtable.
-    VecErrorBase() { table = __vt__Q23std11logic_error; }
+    VecErrorBase() {
+        table = __vt__Q23std11logic_error;
+    }
     // Destroy the standard exception base without freeing this stack wrapper.
-    ~VecErrorBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~VecErrorBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 namespace std {
 struct length_error : VecErrorBase {
@@ -95,26 +140,42 @@ struct length_error : VecErrorBase {
 };
 }
 struct VecBuffer {
-    void** data; volatile unsigned size; unsigned capacity; unsigned* owner; volatile unsigned offset;
+    void** data;
+    volatile unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    volatile unsigned offset;
     // Initialize an empty temporary pointer-buffer owner associated with capacity p.
     VecBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free the allocation currently held by this temporary owner.
-    ~VecBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~VecBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 // Return the larger unsigned capacity candidate by reference.
-inline const unsigned& VecMax(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+inline const unsigned& VecMax(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 // Construct and throw the vector length_error with runtime cleanup metadata.
-inline void VecThrow() { {
-    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-    std::length_error* error = (std::length_error*)storage.bytes;
-    error->__ct();
-    exception_runtime::__throw(exception_runtime::vectorLengthExceptionStrings + 0x14, error,
-        (void*)exception_runtime::__dt__Q23std12length_errorFv);
-} }
+inline void VecThrow() {
+    {
+        union {
+            double alignment;
+            unsigned char bytes[sizeof(std::length_error)];
+        } storage;
+        std::length_error* error = (std::length_error*)storage.bytes;
+        error->__ct();
+        exception_runtime::__throw(exception_runtime::vectorLengthExceptionStrings + 0x14, error,
+                                   (void*)exception_runtime::__dt__Q23std12length_errorFv);
+    }
+}
 
 // Clone square geometry into a newly acquired sprite and append it; index must select an existing square.
 int SpdSquareList_CloneEntry(SpdSquareList* self, unsigned int index) {
-        SpdSquare* item = (index >= self->size) ? 0 : (SpdSquare*)self->data[index];
+    SpdSquare* item = (index >= self->size) ? 0 : (SpdSquare*)self->data[index];
     // Phase 1: allocate square geometry, acquire its backing sprite and copy source geometry.
     SpdSquare* copy = (SpdSquare*)__nw__FUl(0x34);
     if (copy) {
@@ -123,15 +184,26 @@ int SpdSquareList_CloneEntry(SpdSquareList* self, unsigned int index) {
         copy->vtable = (void**)__vt__8CSpdSqar;
     }
     void* resource = BpSpritePool_Acquire(self->source);
-    if (&copy->rotation) copy->rotation = item->rotation;
-    if (&copy->color) copy->color = item->color;
-    if (&copy->scaleX) { copy->scaleX = item->scaleX; copy->scaleY = item->scaleY; }
-    if (&copy->originX) { copy->originX = item->originX; copy->originY = item->originY; }
-        if (&copy->positionX) {
-            copy->positionX = item->positionX;
-            copy->positionY = item->positionY;
-        }
-    if (&copy->sourceWidth) { copy->sourceWidth = item->sourceWidth; copy->sourceHeight = item->sourceHeight; }
+    if (&copy->rotation)
+        copy->rotation = item->rotation;
+    if (&copy->color)
+        copy->color = item->color;
+    if (&copy->scaleX) {
+        copy->scaleX = item->scaleX;
+        copy->scaleY = item->scaleY;
+    }
+    if (&copy->originX) {
+        copy->originX = item->originX;
+        copy->originY = item->originY;
+    }
+    if (&copy->positionX) {
+        copy->positionX = item->positionX;
+        copy->positionY = item->positionY;
+    }
+    if (&copy->sourceWidth) {
+        copy->sourceWidth = item->sourceWidth;
+        copy->sourceHeight = item->sourceHeight;
+    }
     copy->sprite = resource;
     ((void (*)(SpdSquare*))copy->vtable[3])(copy);
     // Phase 2: append the owned geometry pointer; reallocation transfers pointer slots,
@@ -139,61 +211,72 @@ int SpdSquareList_CloneEntry(SpdSquareList* self, unsigned int index) {
     unsigned int size = self->size;
     if (size < self->capacity) {
 
-            int next = (size + 1);
-            *(volatile unsigned*)&self->size = next;
-            void** data = self->data;
+        int next = (size + 1);
+        *(volatile unsigned*)&self->size = next;
+        void** data = self->data;
         data[next - 1] = copy;
     } else {
-        if ((unsigned int)kMaxPointerElements - self->capacity < 1) VecThrow();
+        if ((unsigned int)kMaxPointerElements - self->capacity < 1)
+            VecThrow();
         unsigned int needed = self->size + 1 - self->capacity;
-        __typeof__(self->capacity) capacityBeforeGrowth = self->capacity; __typeof__(self->capacity) previousCapacity = self->capacity;
-            VecBuffer temp(&self->capacity);
-            unsigned int capacity = previousCapacity;
+        __typeof__(self->capacity) capacityBeforeGrowth = self->capacity;
+        __typeof__(self->capacity) previousCapacity = self->capacity;
+        VecBuffer temp(&self->capacity);
+        unsigned int capacity = previousCapacity;
         if (needed > (unsigned int)kMaxPointerElements - capacity) {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct();
             exception_runtime::__throw(exception_runtime::vectorLengthExceptionStrings + 0x14, error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                       (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
         if (capacity < (unsigned int)kThreeFifthsGrowthLimit) {
-                capacity += VecMax((3 * ((capacity + 1))) / 5, needed);
+            capacity += VecMax((3 * ((capacity + 1))) / 5, needed);
         } else if (capacity < (unsigned int)kHalfGrowthLimit) {
-                capacity += VecMax(((capacity + 1)) / 2, needed);
-        } else capacity = (unsigned int)kMaxPointerElements;
+            capacity += VecMax(((capacity + 1)) / 2, needed);
+        } else
+            capacity = (unsigned int)kMaxPointerElements;
         if (capacity > (unsigned int)kMaxPointerElements) {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct();
             exception_runtime::__throw(exception_runtime::vectorLengthExceptionStrings + 0x14, error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                       (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
-            void** data = (void**)appMallocDummy__FUl((4 * capacity));
+        void** data = (void**)appMallocDummy__FUl((4 * capacity));
         unsigned int oldSize = self->size;
-            temp.offset = oldSize;
-            ((oldSize + data))[temp.size++] = copy;
+        temp.offset = oldSize;
+        ((oldSize + data))[temp.size++] = copy;
         void** oldData = self->data;
 
-            temp.capacity = capacity;
-            temp.data = data;
-            int count = ((char*)(self->size + oldData) - (char*)oldData) / 4;
-            unsigned int offset = oldSize - count;
+        temp.capacity = capacity;
+        temp.data = data;
+        int count = ((char*)(self->size + oldData) - (char*)oldData) / 4;
+        unsigned int offset = oldSize - count;
         temp.offset = offset;
-            int bytes = (4 * count);
-            memcpy((offset + data), oldData, bytes);
-            memset(oldData, 0, bytes);
-            int newSize = (temp.size + count);
+        int bytes = (4 * count);
+        memcpy((offset + data), oldData, bytes);
+        memset(oldData, 0, bytes);
+        int newSize = (temp.size + count);
         data = temp.data;
         __typeof__(self->capacity) capacityBeforeSwap = self->capacity;
-        temp.size = newSize; oldData = self->data; temp.data = oldData;
+        temp.size = newSize;
+        oldData = self->data;
+        temp.data = oldData;
 
         __typeof__(capacityBeforeSwap) oldCapacity = self->capacity;
         self->capacity = (temp.capacity);
         self->size = 0;
 
         temp.capacity = (oldCapacity);
-            self->data = data;
-            self->size = newSize;
+        self->data = data;
+        self->size = newSize;
         temp.size = 0;
     }
     return self->size - 1;
@@ -202,93 +285,61 @@ int SpdSquareList_CloneEntry(SpdSquareList* self, unsigned int index) {
 // Draw the borrowed backing BP sprite and return success.
 int SimpleSpd_DrawBpSprite(SpdDrawItem* self) {
     if (self->ptr)
-        CBpSprite_Draw(self->ptr);
+        ((CBpSprite*)(self->ptr))->Draw();
     return 1;
 }
 
-// Delete a sprite geometry wrapper only for a positive deleting flag; return its address.
-void* CSpdSprite_dtor(void* ptr, int deletingFlag) {
-    if (ptr && deletingFlag > 0)
-        __dl__FPv(ptr);
-    return ptr;
-}
-
-// Delete a square geometry wrapper only for a positive deleting flag; return its address.
-void* CSpdSqar_dtor(void* ptr, int deletingFlag) {
-    if (ptr && deletingFlag > 0)
-        __dl__FPv(ptr);
-    return ptr;
-}
-
-struct SpdControllerFields {
-    void* vtable;
-    int spriteData;
-    int spriteCount;
-    int spriteCapacity;
-    int squareData;
-    int squareCount;
-    int squareCapacity;
-    void* spritePool;
-    int context;
-    char buildCounts[8];
-    int resourceFlags;
-};
-
 } // C linkage
-struct SpdListA { int data[3]; ~SpdListA(); };
-struct SpdListB { int data[3]; ~SpdListB(); };
-struct CSpdCtrl {
-    void* vtable;
-    SpdListA first;
-    SpdListB second;
-    char rest[0x14];
-    CSpdCtrl();
-};
-// Initialize two empty geometry lists and acquire an owned BP sprite-controller pool.
+} // namespace ns0
+
+// The bodies are empty: the deleting destructor frees the object.
+CSpdSprite::~CSpdSprite() {}
+CSpdSqar::~CSpdSqar() {}
+
+// Initialize two empty item lists and acquire an owned BP sprite-controller pool.
 CSpdCtrl::CSpdCtrl() {
-    SpdControllerFields* self = (SpdControllerFields*)this;
-    self->spriteData = 0;
-    self->vtable = __vt__8CSpdCtrl;
-    self->spriteCount = 0;
-    self->spriteCapacity = 0;
-    self->squareData = 0;
-    self->squareCount = 0;
-    self->squareCapacity = 0;
-    self->context = 0;
-    self->resourceFlags = 0;
+    sprites.data = 0;
+    vtbl = __vt__8CSpdCtrl;
+    sprites.count = 0;
+    sprites.capacity = 0;
+    squares.data = 0;
+    squares.count = 0;
+    squares.capacity = 0;
+    context = 0;
+    resourceFlags = 0;
     struct AllocatedSpriteCtrl {
         char data[0x28];
         // Construct the separately owned BP sprite-controller pool.
-        AllocatedSpriteCtrl() { __ct__13CBpSpriteCtrlFv(this); }
+        AllocatedSpriteCtrl() {
+            ((CBpSpriteCtrl*)this)->__ct();
+        }
     };
     void* ptr = new AllocatedSpriteCtrl;
-    self->spritePool = ptr;
+    spritePool = ptr;
 }
 extern "C" {
 
-// ns0::SpdListA is a pointer vector; destroy it and free the object too when deletingFlag > 0.
-void* __dt__Q23ns08SpdListAFv(SpdPointerVector* self, int deletingFlag) {
-    return ::std::__vector_deleting_dtor(self, deletingFlag);  // ::std: this unit nests its own std inside ns0
+// SpdListA is a pointer vector; destroy it and free the object too when deletingFlag > 0.
+void* __dt__8SpdListAFv(SpdPointerVector* self, int deletingFlag) {
+    return ::std::__vector_deleting_dtor(self, deletingFlag); // ::std: this unit nests its own std inside ns0
 }
 
-// ns0::SpdListB is a pointer vector; destroy it and free the object too when deletingFlag > 0.
-void* __dt__Q23ns08SpdListBFv(SpdPointerVector* self, int deletingFlag) {
-    return ::std::__vector_deleting_dtor(self, deletingFlag);  // ::std: this unit nests its own std inside ns0
+// SpdListB is a pointer vector; destroy it and free the object too when deletingFlag > 0.
+void* __dt__8SpdListBFv(SpdPointerVector* self, int deletingFlag) {
+    return ::std::__vector_deleting_dtor(self, deletingFlag); // ::std: this unit nests its own std inside ns0
 }
 
-struct SpdSquareConstructorFields {
-    void* vtable;
-    char geometry[0x28];
-    int sprite;
-    int dirty;
-};
+} // C linkage
 
-// Initialize an unbound square wrapper with its vtable and cleared sprite/dirty state.
-void CSpdSqar_ctor(SpdSquareConstructorFields* self) {
-    self->sprite = 0;
-    self->dirty = 0;
-    self->vtable = __vt__8CSpdSqar;
+// Initialize an unbound square with its vtable and cleared sprite/dirty state.
+CSpdSqar::CSpdSqar() {
+    sprite = 0;
+    dirty = 0;
+    vtbl = __vt__8CSpdSqar;
 }
+
+namespace ns0 {
+extern "C" {
 
 struct SpdPositionFields {
     char padding00[0x14];
@@ -390,9 +441,9 @@ extern const float kFloat_1_Layout;
 extern double kSpriteUnsignedFloatConversionBias; // kSpriteUnsignedFloatConversionBias.
 extern float kFloat_0_Layout;
 
-    // Borrow the texture source and normalize pixel bounds by its dimensions (or 1 if null).
+// Borrow the texture source and normalize pixel bounds by its dimensions (or 1 if null).
 int TextureRegion_SetSourceAndNormalizeBounds(SpriteTextureRegionFields* self, void* value) {
-        float width = kFloat_1_Layout;
+    float width = kFloat_1_Layout;
     float height = kFloat_1_Layout;
 
     self->source = (int)value;
@@ -402,8 +453,8 @@ int TextureRegion_SetSourceAndNormalizeBounds(SpriteTextureRegionFields* self, v
         width = (float)dimensions[0];
         height = (float)dimensions[1];
     }
-        self->scaleX = self->width / width;
-        self->scaleY = self->height / height;
+    self->scaleX = self->width / width;
+    self->scaleY = self->height / height;
     self->right = self->scaleX + self->left / width;
     self->bottom = self->scaleY + self->top / height;
     return 1;
@@ -577,14 +628,6 @@ int Sprite_GetSourceSize2D(SpdSourceSizeFields* self, Vec2f* out) {
     return 1;
 }
 
-struct SpdSpriteConstructorFields {
-    void* vtable;
-    char geometry[0x28];
-    int sprite;
-    int dirty;
-    int texture;
-};
-
 struct SpdSpriteResource {
     float x, y;
     unsigned short w0, h0, w1, h1;
@@ -609,7 +652,8 @@ struct SpdSpriteGeometry {
 };
 
 // Populate sprite geometry and UV bounds from a resource entry, then rebuild its vertices.
-int SpdItem_InitializeFromResourceEntry(SpdSpriteGeometry* self, int sprite, const SpdSpriteResource* in, void* source) {
+int SpdItem_InitializeFromResourceEntry(SpdSpriteGeometry* self, int sprite, const SpdSpriteResource* in,
+                                        void* source) {
     float texY;
     float texX;
     self->sprite = sprite;
@@ -644,66 +688,36 @@ int SpdItem_InitializeFromResourceEntry(SpdSpriteGeometry* self, int sprite, con
     return 1;
 }
 
-extern void CBpSprite_BeginVertices(void*, int); // CBpSprite_BeginVertices.
-extern void CBpSprite_AppendVertex(void*, void*);
-extern void CBpSprite_ActivateAndClearVertexCount(void*); // CBpSprite_ActivateAndClearVertexCount.
-extern void PSMTX44Identity(void*);
-extern void Mtx44_SetTranslation(void*, float, float, float);
-extern void Mtx44_SetScale(void*, float, float, float);
-extern void PSMTX44Concat(void*, void*, void*);
-extern void Mtx44_SetRotationZ(void*, float);
-extern void Mtx44_TransformPointPerspective(void*, void*, void*);
-extern void BpSprite_ApplyRenderModeFlags(int, void*); // CBpSprite_SetFlipMode.
-
-struct SpdSquareDrawFields {
-    char padding00[4];
-    float rotation;
-    unsigned int color;
-    float scaleX, scaleY, positionX, positionY, width, height, originX, originY;
-    void* sprite;
-    int dirty;
-};
-
 typedef Vec3f SpdVertexPosition;
-struct SpdVertexColor { unsigned char c0, c1, c2, c3; float x, y; };
-
-struct SpdSpriteDrawFields {
-    char padding00[4];
-    float rotation;
-    volatile unsigned int color;
-    float scaleX, scaleY;
-    float positionX, positionY;
-    float vertexX, vertexY;
-    float originX;
-    float originY;
-    void* sprite;
-    int dirty;
-    void* source;
-    float u0, v0, u1, v1;
-    char textureSize[8];
-    int flipMode;
+struct SpdVertexColor {
+    unsigned char c0, c1, c2, c3;
+    float x, y;
 };
+
+} // C linkage
+} // namespace ns0
 
 // Rebuild four transformed textured vertices, applying the requested UV flip, and clear the dirty flag.
-int CSpdSprite_RebuildVertices(SpdSpriteDrawFields* self) {
-    CBpSprite_BeginVertices(self->sprite, (int)self->source);
-    if (self->flipMode == kFlipHorizontal) {
-        float temp = self->u0;
-        self->u0 = self->u1;
-        self->u1 = temp;
-    } else if (self->flipMode == kFlipVertical) {
-        float temp = self->v0;
-        self->v0 = self->v1;
-        self->v1 = temp;
-    } else if (self->flipMode == kFlipBoth) {
-        float temp = self->u0;
-        __typeof__(self->v0) savedV0 = self->v0; self->u0 = self->u1;
-        self->u1 = temp;
+int CSpdSprite::RebuildVertices() {
+    sprite->BeginVertices((int)source);
+    if (flipMode == kFlipHorizontal) {
+        float temp = u0;
+        u0 = u1;
+        u1 = temp;
+    } else if (flipMode == kFlipVertical) {
+        float temp = v0;
+        v0 = v1;
+        v1 = temp;
+    } else if (flipMode == kFlipBoth) {
+        float temp = u0;
+        __typeof__(v0) savedV0 = v0;
+        u0 = u1;
+        u1 = temp;
         temp = savedV0;
-        self->v0 = self->v1;
-        self->v1 = temp;
+        v0 = v1;
+        v1 = temp;
     }
-    BpSprite_ApplyRenderModeFlags(self->flipMode, self->sprite);
+    BpSprite_ApplyRenderModeFlags(flipMode, sprite);
 
     char transform[0x40], translationMatrix[0x40], rotationMatrix[0x40], scaleMatrix[0x40];
     struct Vertex {
@@ -711,48 +725,58 @@ int CSpdSprite_RebuildVertices(SpdSpriteDrawFields* self) {
         unsigned char color[4];
         float u, v;
     } vertex;
-    vertex.color[0] = (unsigned char)(self->color >> 24);
-    vertex.color[1] = (unsigned char)(self->color >> 16);
-    vertex.color[2] = (unsigned char)(self->color >> 8);
-    vertex.color[3] = (unsigned char)self->color;
+    vertex.color[0] = (unsigned char)(color >> 24);
+    vertex.color[1] = (unsigned char)(color >> 16);
+    vertex.color[2] = (unsigned char)(color >> 8);
+    vertex.color[3] = (unsigned char)color;
     // Sprite-local XY corners -> pivot-relative -> scaled -> Z-rotated -> positioned.
     // Keep the concat calls in this order; the engine wrapper writes its FIRST argument.
     // Byte buffers are 16-float matrix storage; their declaration order preserves stack layout.
     PSMTX44Identity(transform);
-    Mtx44_SetTranslation(transform, -self->originX, -self->originY, kFloat_0_Layout);
-    Mtx44_SetScale(scaleMatrix, self->scaleX, self->scaleY, kFloat_1_Layout);
+    Mtx44_SetTranslation(transform, -originX, -originY, kFloat_0_Layout);
+    Mtx44_SetScale(scaleMatrix, scaleX, scaleY, kFloat_1_Layout);
     PSMTX44Concat(transform, transform, scaleMatrix);
-    Mtx44_SetRotationZ(rotationMatrix, self->rotation);
+    Mtx44_SetRotationZ(rotationMatrix, rotation);
     PSMTX44Concat(transform, transform, rotationMatrix);
-    Mtx44_SetTranslation(translationMatrix, self->positionX, self->positionY, kFloat_0_Layout);
+    Mtx44_SetTranslation(translationMatrix, positionX, positionY, kFloat_0_Layout);
     PSMTX44Concat(transform, transform, translationMatrix);
 
-    vertex.u = self->u0; vertex.v = self->v0;
+    vertex.u = u0;
+    vertex.v = v0;
     vertex.x = kFloat_0_Layout;
     vertex.y = kFloat_0_Layout;
     vertex.z = kFloat_0_Layout;
     Mtx44_TransformPointPerspective(&vertex, &vertex, transform);
-    CBpSprite_AppendVertex(self->sprite, &vertex);
-    vertex.u = self->u1; vertex.v = self->v0;
-    vertex.x = self->vertexX; vertex.y = kFloat_0_Layout;
+    sprite->AppendVertex(&vertex);
+    vertex.u = u1;
+    vertex.v = v0;
+    vertex.x = vertexX;
+    vertex.y = kFloat_0_Layout;
     vertex.z = kFloat_0_Layout;
-    Mtx44_TransformPointPerspective(&vertex, &vertex, transform); CBpSprite_AppendVertex(self->sprite, &vertex);
-    vertex.u = self->u0; vertex.v = self->v1;
-    vertex.x = kFloat_0_Layout; vertex.y = self->vertexY;
+    Mtx44_TransformPointPerspective(&vertex, &vertex, transform);
+    sprite->AppendVertex(&vertex);
+    vertex.u = u0;
+    vertex.v = v1;
+    vertex.x = kFloat_0_Layout;
+    vertex.y = vertexY;
     vertex.z = kFloat_0_Layout;
-    Mtx44_TransformPointPerspective(&vertex, &vertex, transform); CBpSprite_AppendVertex(self->sprite, &vertex);
-    vertex.u = self->u1; vertex.v = self->v1;
-    vertex.x = self->vertexX; vertex.y = self->vertexY;
+    Mtx44_TransformPointPerspective(&vertex, &vertex, transform);
+    sprite->AppendVertex(&vertex);
+    vertex.u = u1;
+    vertex.v = v1;
+    vertex.x = vertexX;
+    vertex.y = vertexY;
     vertex.z = kFloat_0_Layout;
-    Mtx44_TransformPointPerspective(&vertex, &vertex, transform); CBpSprite_AppendVertex(self->sprite, &vertex);
-    CBpSprite_ActivateAndClearVertexCount(self->sprite);
-    self->dirty = 0; // 0x800C8790: clear +0x30 after drawing
+    Mtx44_TransformPointPerspective(&vertex, &vertex, transform);
+    sprite->AppendVertex(&vertex);
+    sprite->ActivateAndClearVertexCount();
+    dirty = 0;
     return 1;
 }
 
-// Rebuild four transformed solid-color square vertices and clear the dirty flag.
-int CSpdSqar_DrawSquare(SpdSquareDrawFields* self) {
-    CBpSprite_BeginVertices(self->sprite, 0);
+// Rebuild four transformed solid-colour square vertices and clear the dirty flag.
+int CSpdSqar::DrawSquare() {
+    sprite->BeginVertices(0);
     char transform[0x40];
     char translationMatrix[0x40];
     char rotationMatrix[0x40];
@@ -761,95 +785,90 @@ int CSpdSqar_DrawSquare(SpdSquareDrawFields* self) {
     // Keep the concat calls in this order; the engine wrapper writes its FIRST argument.
     // Byte buffers are 16-float matrix storage; their declaration order preserves stack layout.
     PSMTX44Identity(transform);
-    Mtx44_SetTranslation(transform, -self->originX, -self->originY, kFloat_0_Layout);
-    Mtx44_SetScale(scaleMatrix, self->scaleX, self->scaleY, kFloat_1_Layout);
+    Mtx44_SetTranslation(transform, -originX, -originY, kFloat_0_Layout);
+    Mtx44_SetScale(scaleMatrix, scaleX, scaleY, kFloat_1_Layout);
     PSMTX44Concat(transform, transform, scaleMatrix);
-    Mtx44_SetRotationZ(rotationMatrix, self->rotation);
+    Mtx44_SetRotationZ(rotationMatrix, rotation);
     PSMTX44Concat(transform, transform, rotationMatrix);
-    Mtx44_SetTranslation(translationMatrix, self->positionX, self->positionY, kFloat_0_Layout);
+    Mtx44_SetTranslation(translationMatrix, positionX, positionY, kFloat_0_Layout);
     PSMTX44Concat(transform, transform, translationMatrix);
-    struct VertexColor { float x, y, z; unsigned char c0,c1,c2,c3; float u,v; } vertex;
-    vertex.c0 = (unsigned char)(self->color >> 24);
-    vertex.c1 = (unsigned char)(self->color >> 16);
-    vertex.c2 = (unsigned char)(self->color >> 8);
-    vertex.c3 = (unsigned char)self->color;
+    struct VertexColor {
+        float x, y, z;
+        unsigned char c0, c1, c2, c3;
+        float u, v;
+    } vertex;
+    vertex.c0 = (unsigned char)(color >> 24);
+    vertex.c1 = (unsigned char)(color >> 16);
+    vertex.c2 = (unsigned char)(color >> 8);
+    vertex.c3 = (unsigned char)color;
     vertex.u = kFloat_0_Layout;
     vertex.v = kFloat_0_Layout;
     vertex.x = kFloat_0_Layout;
     vertex.y = kFloat_0_Layout;
     vertex.z = kFloat_0_Layout;
     Mtx44_TransformPointPerspective(&vertex, &vertex, transform);
-    CBpSprite_AppendVertex(self->sprite, &vertex);
+    sprite->AppendVertex(&vertex);
     vertex.u = kFloat_0_Layout;
     vertex.v = kFloat_0_Layout;
-    vertex.x = self->width;
+    vertex.x = width;
     vertex.y = kFloat_0_Layout;
     vertex.z = kFloat_0_Layout;
-    Mtx44_TransformPointPerspective(&vertex, &vertex, transform); CBpSprite_AppendVertex(self->sprite, &vertex);
+    Mtx44_TransformPointPerspective(&vertex, &vertex, transform);
+    sprite->AppendVertex(&vertex);
     vertex.u = kFloat_0_Layout;
     vertex.v = kFloat_0_Layout;
     vertex.x = kFloat_0_Layout;
-    vertex.y = self->height;
+    vertex.y = height;
     vertex.z = kFloat_0_Layout;
-    Mtx44_TransformPointPerspective(&vertex, &vertex, transform); CBpSprite_AppendVertex(self->sprite, &vertex);
+    Mtx44_TransformPointPerspective(&vertex, &vertex, transform);
+    sprite->AppendVertex(&vertex);
     vertex.u = kFloat_0_Layout;
     vertex.v = kFloat_0_Layout;
-    vertex.x = self->width;
-    vertex.y = self->height;
+    vertex.x = width;
+    vertex.y = height;
     vertex.z = kFloat_0_Layout;
-    Mtx44_TransformPointPerspective(&vertex, &vertex, transform); CBpSprite_AppendVertex(self->sprite, &vertex);
-    CBpSprite_ActivateAndClearVertexCount(self->sprite);
-    self->dirty = 0;
+    Mtx44_TransformPointPerspective(&vertex, &vertex, transform);
+    sprite->AppendVertex(&vertex);
+    sprite->ActivateAndClearVertexCount();
+    dirty = 0;
     return 1;
 }
 
-// Initialize an unbound textured sprite wrapper and clear its source/UV state.
-void CSpdSprite_ctor(SpdSpriteConstructorFields* self) {
-    self->sprite = 0;
-    self->dirty = 0;
-    self->vtable = __vt__10CSpdSprite;
-    self->texture = 0;
+// Initialize an unbound textured sprite with its vtable and cleared sprite, dirty and source state.
+CSpdSprite::CSpdSprite() {
+    sprite = 0;
+    dirty = 0;
+    vtbl = __vt__10CSpdSprite;
+    source = 0;
 }
 
-struct SpdControllerOwnedFields {
-    void* vtable;
-    void** arr2;
-    volatile int count2;
-    unsigned int cap2;
-    void** arr1;
-    volatile int count1;
-    char squareCapacity[4];
-    void* spritePool;
-};
 struct SpdOwnedItem {
     virtual ~SpdOwnedItem();
 };
 
 // Delete both item lists and their sprite pool, release list storage, and optionally free the controller.
-void* CSpdCtrl_dtor(SpdControllerOwnedFields* self, int deletingFlag) {
-    if (self) {
-        self->vtable = __vt__8CSpdCtrl;
-        void** p = self->arr1;
-        for (; p != self->arr1 + self->count1; ++p) delete (SpdOwnedItem*)*p;
-        p = self->arr2;
-        for (; p != self->arr2 + self->count2; ++p) delete (SpdOwnedItem*)*p;
-        if (self->spritePool) ObjectArray_DeleteAllAndClear(self->spritePool);
-        delete (SpdOwnedItem*)self->spritePool;
-        ((SpdPointerVector*)&self->arr1)->~SpdPointerVector();
-        ((SpdPointerVector*)&self->arr2)->~SpdPointerVector();
-        if (deletingFlag > 0) __dl__FPv(self);
+void* CSpdCtrl::Destroy(int deletingFlag) {
+    if (this) {
+        vtbl = __vt__8CSpdCtrl;
+        void** p = squares.data;
+        for (; p != squares.data + *(volatile int*)&squares.count; ++p)
+            delete (SpdOwnedItem*)*p;
+        p = sprites.data;
+        for (; p != sprites.data + *(volatile int*)&sprites.count; ++p)
+            delete (SpdOwnedItem*)*p;
+        if (spritePool)
+            ObjectArray_DeleteAllAndClear(spritePool);
+        delete (SpdOwnedItem*)spritePool;
+        ((SpdPointerVector*)&squares)->~SpdPointerVector();
+        ((SpdPointerVector*)&sprites)->~SpdPointerVector();
+        if (deletingFlag > 0)
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
-
-} // extern "C"
-
-} // namespace ns0
 
 // ---- merged from spd_sprite_manager.cpp ----
 namespace ns1 {
-// Translation unit 0x800C9780-0x800CA914 (9 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #pragma dont_inline on
 extern "C" {
@@ -886,17 +905,36 @@ unsigned int SpdManager_GetSquareAt(Object* self, unsigned int index) {
 #pragma dont_inline on
 extern "C" {
 struct Item;
-struct ItemVTable { void (*pad0)(); void (*pad1)(); void (*destroy)(Item*, int); };
-struct Item { 
-virtual ~Item();
+struct ItemVTable {
+    void (*pad0)();
+    void (*pad1)();
+    void (*destroy)(Item*, int);
 };
-struct Array { Item** data; unsigned int count; unsigned int capacity; };
-struct Manager { unsigned int vtable; Array first; Array second; void* resource; void* context; unsigned int field24; unsigned int field28; unsigned int field2C; };
-struct Input { char padding00[0x18]; unsigned short countFirst; unsigned short countSecond; };
+struct Item {
+    virtual ~Item();
+};
+struct Array {
+    Item** data;
+    unsigned int count;
+    unsigned int capacity;
+};
+struct Manager {
+    unsigned int vtable;
+    Array first;
+    Array second;
+    void* resource;
+    void* context;
+    unsigned int field24;
+    unsigned int field28;
+    unsigned int field2C;
+};
+struct Input {
+    char padding00[0x18];
+    unsigned short countFirst;
+    unsigned short countSecond;
+};
 void ObjectArray_DeleteAllAndClear(void*);
 void* __nw__FUl(unsigned long);
-void CSpdSqar_ctor(void*);
-void CSpdSprite_ctor(void*);
 void* SpdResource_GetSquareEntry(Input*, unsigned int);
 void* SpdResource_GetSpriteEntry(Input*, unsigned int);
 void* BpSpritePool_Acquire(void*);
@@ -905,10 +943,12 @@ void SpdItem_InitializeFromResourceEntry(void*, void*, void*, void*);
 void SpdSquareVector_Append(Array*, void**);
 void SpdSpriteVector_Append(Array*, void**);
 unsigned int SpdResource_GetOptionalSection(Input*);
+// Constructors, called by symbol: a placement new here would call the operator out of line.
 
 // Return a borrowed sprite pointer, or null when index is out of range.
 Item* SpdManager_GetSpriteAt(Manager* self, unsigned int index) {
-    if (index >= self->first.count) return 0;
+    if (index >= self->first.count)
+        return 0;
     return self->first.data[index];
 }
 // Delete every square and sprite and clear the pooled sprite resources.
@@ -919,20 +959,24 @@ int Manager_DeleteAllItems(Manager* self) {
     for (Item** p = self->first.data; p != self->first.data + self->first.count; ++p) {
         delete *p;
     }
-    if (self->resource) ObjectArray_DeleteAllAndClear(self->resource);
+    if (self->resource)
+        ObjectArray_DeleteAllAndClear(self->resource);
     return 1;
 }
 // Replace both item lists from the resource, preserving their counts and resource flags.
 int SpdManager_BuildItemsFromResource(Manager* self, Input* input, void* context) {
-    if (!input) return 0;
-// The .spd is big-endian on disc.
-    if (!self->resource) return 0;
+    if (!input)
+        return 0;
+    // The .spd is big-endian on disc.
+    if (!self->resource)
+        return 0;
     Manager_DeleteAllItems(self);
     self->context = context;
     void* allocated;
     for (unsigned int i = 0; i < input->countSecond; ++i) {
         allocated = __nw__FUl(0x34);
-        if (allocated) CSpdSqar_ctor(allocated);
+        if (allocated)
+            ((CSpdSqar*)allocated)->__ct();
         void* item = allocated;
         void* data = SpdResource_GetSquareEntry(input, i);
         SpdItem_InitializeScaledGeometry(item, BpSpritePool_Acquire(self->resource), data);
@@ -941,7 +985,8 @@ int SpdManager_BuildItemsFromResource(Manager* self, Input* input, void* context
     self->field24 = Vector_GetCount((Object*)&self->second); // Vector_GetCount.
     for (unsigned int i = 0; i < input->countFirst; ++i) {
         allocated = __nw__FUl(0x54);
-        if (allocated) CSpdSprite_ctor(allocated);
+        if (allocated)
+            ((CSpdSprite*)allocated)->__ct();
         void* item = allocated;
         void* data = SpdResource_GetSpriteEntry(input, i);
         SpdItem_InitializeFromResourceEntry(item, BpSpritePool_Acquire(self->resource), data, self->context);
@@ -974,7 +1019,9 @@ void __throw(void*, void*, void (*)()) __attribute__((noreturn));
 #pragma dont_inline off
 struct ErrorBase : std::exception {
     // Install the exception object vtable at its ABI address.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
 
     char* text;
     void* control;
@@ -983,35 +1030,45 @@ struct BufferGuard {
     char* data;
     char* dirty;
     // Run the retained array-cleanup call when the guard data is non-null.
-    ~BufferGuard() { if (data) __dla__FPv(this, -1); }
+    ~BufferGuard() {
+        if (data)
+            __dla__FPv(this, -1);
+    }
 };
 struct Control {
     void* vtable;
     unsigned int refs, weak;
     char* text;
     // Initialize shared diagnostic text ownership and reference counters.
-    Control(char* p) : refs(1), weak(1) { vtable=s_sharedCharDeleterVtable; text=p; }
+    Control(char* p) : refs(1), weak(1) {
+        vtable = s_sharedCharDeleterVtable;
+        text = p;
+    }
 };
 namespace std {
 struct length_error : ErrorBase {
     // Copy a borrowed diagnostic into shared storage and install the length_error vtable.
     length_error(const char* str) {
-        *(void**)this=__vt__Q23std11logic_error;
+        *(void**)this = __vt__Q23std11logic_error;
 
-        struct Flag { char value; char pad[3]; };
-        Flag dirty; dirty.value=0;
-        unsigned long n = strlen(str)+1;
-        char* allocated=(char*)__nwa__FUl(2*n-n);
-        text=allocated;
+        struct Flag {
+            char value;
+            char pad[3];
+        };
+        Flag dirty;
+        dirty.value = 0;
+        unsigned long n = strlen(str) + 1;
+        char* allocated = (char*)__nwa__FUl(2 * n - n);
+        text = allocated;
         {
-        BufferGuard guard;
-        guard.data=allocated;
-        guard.dirty=&dirty.value;
-        control=new Control(allocated);
-        guard.data=0;
+            BufferGuard guard;
+            guard.data = allocated;
+            guard.dirty = &dirty.value;
+            control = new Control(allocated);
+            guard.data = 0;
         }
-        strcpy(text,str);
-        *(void**)this=__vt__Q23std12length_error;
+        strcpy(text, str);
+        *(void**)this = __vt__Q23std12length_error;
     }
     DECOMP_CT_MEMBER(length_error)
 };
@@ -1026,206 +1083,202 @@ struct Storage {
     unsigned int* owner;
     unsigned int offset;
     // Initialize an empty temporary pointer-buffer owner tied to capacity p.
-    Storage(unsigned int* p) : data(0),count(0),capacity(0),owner(p),offset(0) {}
+    Storage(unsigned int* p) : data(0), count(0), capacity(0), owner(p), offset(0) {}
     // Free this owner's current buffer (old buffer after commit, new buffer on unwind).
-    ~Storage() { if(data) {count=0; appFreeUni__FPv(data);} }
+    ~Storage() {
+        if (data) {
+            count = 0;
+            appFreeUni__FPv(data);
+        }
+    }
     // Prepend [first,last) into the temporary, zero old slots and extend constructed count.
     void transfer(Item** first, Item** last) {
-        int n=last-first;
-        unsigned long bytes=n*4;
-        offset-=n;
-        memcpy(data+offset,first,bytes);
-        memset(first,0,bytes);
-        *(volatile unsigned int*)&count=count+n;
+        int n = last - first;
+        unsigned long bytes = n * 4;
+        offset -= n;
+        memcpy(data + offset, first, bytes);
+        memset(first, 0, bytes);
+        *(volatile unsigned int*)&count = count + n;
     }
 };
 // Select the larger capacity candidate by reference.
-inline const unsigned int& maximum(const unsigned int& a,const unsigned int& b) { return a<b?b:a; }
+inline const unsigned int& maximum(const unsigned int& a, const unsigned int& b) {
+    return a < b ? b : a;
+}
 // Construct and throw length_error for the supplied borrowed diagnostic string.
-inline void capacityError(const char* message) { {
-    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-    std::length_error* error = (std::length_error*)storage.bytes;
-    error->__ct(message);
-    exception_runtime::__throw(exception_runtime::vectorLengthExceptionStrings + 0x14, error,
-        (void*)exception_runtime::__dt__Q23std12length_errorFv);
-} }
+inline void capacityError(const char* message) {
+    {
+        union {
+            int alignment;
+            unsigned char bytes[sizeof(std::length_error)];
+        } storage;
+        std::length_error* error = (std::length_error*)storage.bytes;
+        error->__ct(message);
+        exception_runtime::__throw(exception_runtime::vectorLengthExceptionStrings + 0x14, error,
+                                   (void*)exception_runtime::__dt__Q23std12length_errorFv);
+    }
+}
 #pragma use_lmw_stmw on
 // Append a square, growing and transferring the pointer buffer with exception cleanup if necessary.
 extern "C" void SpdSquareVector_Append(Array* self, void** item) {
-    int count=self->count;
+    int count = self->count;
 
     // Fast path: capacity already covers the new pointer slot.
-    if(count<(self->capacity)) {
-        unsigned int index=++self->count;
-        Item* value=(Item*)*item;
-        self->data[index-1]=value;
-        } else { unsigned int need;
-        if((unsigned int)kMaxPointerElements-self->capacity<1) {
-            const char* message=vectorLengthExceptionStrings;
+    if (count < (self->capacity)) {
+        unsigned int index = ++self->count;
+        Item* value = (Item*)*item;
+        self->data[index - 1] = value;
+    } else {
+        unsigned int need;
+        if ((unsigned int)kMaxPointerElements - self->capacity < 1) {
+            const char* message = vectorLengthExceptionStrings;
             capacityError(message);
         }
 
         unsigned int growth2;
 
         // Reserve phase: checked growth, with Storage owning any uncommitted allocation.
-        Storage storage(&self->capacity); __typeof__(self->capacity) capacityBeforeAppend = self->capacity;
-            __typeof__(capacityBeforeAppend) existingCapacity = self->capacity;
-            need=(1+self->count)-existingCapacity;
-        unsigned int cap=*storage.owner;
-        if(need>(unsigned int)kMaxPointerElements-cap) {
-            const char* message=vectorLengthExceptionStrings;
+        Storage storage(&self->capacity);
+        __typeof__(self->capacity) capacityBeforeAppend = self->capacity;
+        __typeof__(capacityBeforeAppend) existingCapacity = self->capacity;
+        need = (1 + self->count) - existingCapacity;
+        unsigned int cap = *storage.owner;
+        if (need > (unsigned int)kMaxPointerElements - cap) {
+            const char* message = vectorLengthExceptionStrings;
             capacityError(message);
         }
-            if(cap<(unsigned int)kThreeFifthsGrowthLimit) {
-                unsigned int growth1;
-                growth1=3*(1+cap)/5;
-                cap+=maximum(growth1,need);
-            }
-            else if(cap<(unsigned int)kHalfGrowthLimit) {
-                growth2=((1+cap))/2;
-                cap+=maximum(growth2,need);
-            }
-        else cap=(unsigned int)kMaxPointerElements;
-        if(cap>(unsigned int)kMaxPointerElements) {
-            const char* message=vectorLengthExceptionStrings;
+        if (cap < (unsigned int)kThreeFifthsGrowthLimit) {
+            unsigned int growth1;
+            growth1 = 3 * (1 + cap) / 5;
+            cap += maximum(growth1, need);
+        } else if (cap < (unsigned int)kHalfGrowthLimit) {
+            growth2 = ((1 + cap)) / 2;
+            cap += maximum(growth2, need);
+        } else
+            cap = (unsigned int)kMaxPointerElements;
+        if (cap > (unsigned int)kMaxPointerElements) {
+            const char* message = vectorLengthExceptionStrings;
             capacityError(message);
         }
-            // Construct the appended slot first, then prepend/transfer the old pointer range.
-            Item** allocated=(Item**)appMallocDummy__FUl((cap*4));
-            *(volatile unsigned int*)&storage.offset=self->count;
-        storage.data=allocated;
-        storage.capacity=cap;
-        (allocated+storage.offset)[storage.count]=(Item*)*item;
+        // Construct the appended slot first, then prepend/transfer the old pointer range.
+        Item** allocated = (Item**)appMallocDummy__FUl((cap * 4));
+        *(volatile unsigned int*)&storage.offset = self->count;
+        storage.data = allocated;
+        storage.capacity = cap;
+        (allocated + storage.offset)[storage.count] = (Item*)*item;
         storage.count++;
-            storage.transfer(self->data,(self->data+self->count));
+        storage.transfer(self->data, (self->data + self->count));
 
-            *(volatile unsigned int*)&self->count=0;
-            Item** old=self->data;
-            __typeof__(self->capacity) oldCapacity = self->capacity;
+        *(volatile unsigned int*)&self->count = 0;
+        Item** old = self->data;
+        __typeof__(self->capacity) oldCapacity = self->capacity;
         // Commit phase: exchange allocation ownership; Storage frees only the old buffer.
-        self->capacity=storage.capacity;
-            storage.capacity=(oldCapacity);
-        self->data=storage.data;
-        storage.data=old;
-        self->count=storage.count;
-        storage.count=0;
+        self->capacity = storage.capacity;
+        storage.capacity = (oldCapacity);
+        self->data = storage.data;
+        storage.data = old;
+        self->count = storage.count;
+        storage.count = 0;
     }
 }
 
 // Append a sprite, growing and transferring the pointer buffer with exception cleanup if necessary.
 extern "C" void SpdSpriteVector_Append(Array* self, void** item) {
-        unsigned int count=self->count;
+    unsigned int count = self->count;
 
     // Fast path: capacity already covers the new pointer slot.
-    if(count<(self->capacity)) {
-        unsigned int index=++self->count;
+    if (count < (self->capacity)) {
+        unsigned int index = ++self->count;
 
-            Item* value=(Item*)*item;
-            self->data[index-1]=value;
-        } else { unsigned int need;  int growth1;
-        if((unsigned int)kMaxPointerElements-self->capacity<1) {
-            const char* message=vectorLengthExceptionStrings;
+        Item* value = (Item*)*item;
+        self->data[index - 1] = value;
+    } else {
+        unsigned int need;
+        int growth1;
+        if ((unsigned int)kMaxPointerElements - self->capacity < 1) {
+            const char* message = vectorLengthExceptionStrings;
             capacityError(message);
         }
 
         // Reserve phase: checked growth, with Storage owning any uncommitted allocation.
         Storage storage(&self->capacity);
-         need=self->count+1-self->capacity;
-        unsigned int cap=*storage.owner;
-        if(need>(unsigned int)kMaxPointerElements-cap) {
-            const char* message=vectorLengthExceptionStrings;
+        need = self->count + 1 - self->capacity;
+        unsigned int cap = *storage.owner;
+        if (need > (unsigned int)kMaxPointerElements - cap) {
+            const char* message = vectorLengthExceptionStrings;
             capacityError(message);
         }
-            if(cap<(unsigned int)kThreeFifthsGrowthLimit) {
-                growth1=3*((cap+1))/5;
-                cap+=maximum(growth1,need);
-            }
-            else if(cap<(unsigned int)kHalfGrowthLimit) {
-                unsigned int growth2;
-                growth2=(1+cap)/2;
-                cap+=maximum(growth2,need);
-            }
-        else cap=(unsigned int)kMaxPointerElements;
-        if(cap>(unsigned int)kMaxPointerElements) {
-            const char* message=vectorLengthExceptionStrings;
+        if (cap < (unsigned int)kThreeFifthsGrowthLimit) {
+            growth1 = 3 * ((cap + 1)) / 5;
+            cap += maximum(growth1, need);
+        } else if (cap < (unsigned int)kHalfGrowthLimit) {
+            unsigned int growth2;
+            growth2 = (1 + cap) / 2;
+            cap += maximum(growth2, need);
+        } else
+            cap = (unsigned int)kMaxPointerElements;
+        if (cap > (unsigned int)kMaxPointerElements) {
+            const char* message = vectorLengthExceptionStrings;
             capacityError(message);
         }
-            // Construct the appended slot first, then prepend/transfer the old pointer range.
-            Item** allocated=(Item**)appMallocDummy__FUl((cap*4));
-            *(volatile unsigned int*)&storage.offset=self->count;
+        // Construct the appended slot first, then prepend/transfer the old pointer range.
+        Item** allocated = (Item**)appMallocDummy__FUl((cap * 4));
+        *(volatile unsigned int*)&storage.offset = self->count;
 
-            (storage.offset+allocated)[storage.count]=(Item*)*item;
-            storage.data=allocated;
-            storage.capacity=cap;
+        (storage.offset + allocated)[storage.count] = (Item*)*item;
+        storage.data = allocated;
+        storage.capacity = cap;
 
-            storage.count += 1;
-            storage.transfer(self->data,(self->count+self->data));
-        __typeof__(storage.data) newData = storage.data; Item** old=self->data;
-        *(volatile unsigned int*)&self->count=0;
+        storage.count += 1;
+        storage.transfer(self->data, (self->count + self->data));
+        __typeof__(storage.data) newData = storage.data;
+        Item** old = self->data;
+        *(volatile unsigned int*)&self->count = 0;
         __typeof__(newData) newDataBeforeSwap = storage.data;
-        __typeof__(self->capacity) oldCapacityBeforeSwap = self->capacity; int oldCap=oldCapacityBeforeSwap;
+        __typeof__(self->capacity) oldCapacityBeforeSwap = self->capacity;
+        int oldCap = oldCapacityBeforeSwap;
 
-            // Commit phase: exchange allocation ownership; Storage frees only the old buffer.
-        self->capacity=storage.capacity;
-            storage.capacity=oldCap;
-            storage.data=old;
-        self->count=storage.count;
-        self->data=newDataBeforeSwap;
-        storage.count=0;
+        // Commit phase: exchange allocation ownership; Storage frees only the old buffer.
+        self->capacity = storage.capacity;
+        storage.capacity = oldCap;
+        storage.data = old;
+        self->count = storage.count;
+        self->data = newDataBeforeSwap;
+        storage.count = 0;
     }
 }
 
 #pragma opt_propagation off
-struct CloneFloat {
-    float x;
-    // Leave storage uninitialized, matching default geometry construction.
-    CloneFloat() {}
-    // Copy this geometry value with the original component order.
-    CloneFloat(const CloneFloat& p) { x=p.x; }
-};
-struct CloneWord {
-    unsigned int x;
-    // Leave storage uninitialized, matching default geometry construction.
-    CloneWord() {}
-    // Copy this geometry value with the original component order.
-    CloneWord(const CloneWord& p) { x=p.x; }
-};
-struct ClonePair {
-    float x,y;
-    // Leave storage uninitialized, matching default geometry construction.
-    ClonePair() {}
-    // Copy this geometry value with the original component order.
-    ClonePair(const ClonePair& p) { x=p.x; y=p.y; }
-};
-struct CloneRect {
-    float x,y,z,w;
-    // Leave storage uninitialized, matching default geometry construction.
-    CloneRect() {}
-    // Copy this geometry value with the original component order.
-    CloneRect(const CloneRect& p) { x=p.x; y=p.y; z=p.z; w=p.w; }
-};
 extern "C" {
 extern char __vt__10CSpdSprite[];
 void BpSprite_GetTextureDescriptor(void*, unsigned int*);
 }
-struct CloneDispatch { 
-virtual ~CloneDispatch(); virtual void update();
+struct CloneDispatch {
+    virtual ~CloneDispatch();
+    virtual void update();
 };
 struct Clone {
     void* vtable;
     // Dispatch geometry rebuild through the installed clone vtable.
-    void update() { ((CloneDispatch*)this)->update(); }
-    CloneFloat rotation;
-    CloneWord color;
-    ClonePair scale, position, sourceOrigin, origin;
+    void update() {
+        ((CloneDispatch*)this)->update();
+    }
+    float rotation;
+    unsigned int color;
+    float scaleX, scaleY, positionX, positionY, sourceOriginX, sourceOriginY, originX, originY;
     void* resource;
     unsigned int dirty;
     void* context;
-    CloneRect rect;
-    ClonePair sourceSize;
+    float rectX, rectY, rectZ, rectW;
+    float sourceSizeX, sourceSizeY;
     unsigned int flipMode;
     // Initialize the clone wrapper with no backing sprite or context; geometry remains uninitialized.
-    Clone() { resource=0; dirty=0; *(void**)this=__vt__10CSpdSprite; context=0; }
+    Clone() {
+        resource = 0;
+        dirty = 0;
+        *(void**)this = __vt__10CSpdSprite;
+        context = 0;
+    }
 };
 struct CloneStorage {
     Item** data;
@@ -1233,102 +1286,137 @@ struct CloneStorage {
     unsigned int* owner;
     unsigned int offset;
     // Initialize an empty clone pointer-buffer owner tied to capacity p.
-    CloneStorage(unsigned int* p) : data(0),count(0),capacity(0),owner(p),offset(0) {}
+    CloneStorage(unsigned int* p) : data(0), count(0), capacity(0), owner(p), offset(0) {}
     // Free the allocation currently owned by the clone reallocation temporary.
-    ~CloneStorage() { if(data) {count=0; appFreeUni__FPv(data);} }
+    ~CloneStorage() {
+        if (data) {
+            count = 0;
+            appFreeUni__FPv(data);
+        }
+    }
     // Prepend [first,last) into the temporary, zero old slots and extend constructed count.
     void transfer(Item** first, Item** last) {
         unsigned long bytes;
-        int n=last-first;
-        bytes=n*4;
-        offset-=n;
-        memcpy(data+offset,first,bytes);
-        memset(first,0,bytes);
-        *(volatile unsigned int*)&count=count+n;
+        int n = last - first;
+        bytes = n * 4;
+        offset -= n;
+        memcpy(data + offset, first, bytes);
+        memset(first, 0, bytes);
+        *(volatile unsigned int*)&count = count + n;
     }
 };
-// Append a clone pointer, transferring buffer ownership on growth as in the sprite vector.
-inline void appendClone(Array* self, Clone** item) {
-    unsigned int count=self->count;
-    unsigned int capacity=self->capacity;
-    if(count<capacity) {
-        unsigned int index=++self->count;
-        Item* value=(Item*)*item;
-        self->data[index-1]=value;
-    } else {
-        if((unsigned int)kMaxPointerElements-self->capacity<1) {
-            const char* message=vectorLengthExceptionStrings;
-            capacityError(message);
-        }
-        unsigned int need;
-        unsigned int growth2;
-        unsigned int growth1;
-        CloneStorage storage(&self->capacity);
-        need=self->count+1-self->capacity;
-        unsigned int cap=*storage.owner;
-        if(need>(unsigned int)kMaxPointerElements-cap) {
-            const char* message=vectorLengthExceptionStrings;
-            capacityError(message);
-        }
-        if(cap<(unsigned int)kThreeFifthsGrowthLimit) { growth1=3*(cap+1)/5; cap+=maximum(growth1,need); }
-        else if(cap<(unsigned int)kHalfGrowthLimit) { growth2=(cap+1)/2; cap+=maximum(growth2,need); }
-        else cap=(unsigned int)kMaxPointerElements;
-        if(cap>(unsigned int)kMaxPointerElements) {
-            const char* message=vectorLengthExceptionStrings;
-            capacityError(message);
-        }
-        Item** allocated=(Item**)appMallocDummy__FUl(cap*4);
-        *(volatile unsigned int*)&storage.offset=self->count;
-        (allocated+storage.offset)[storage.count]=(Item*)*item;
-        storage.data=allocated;
-        storage.capacity=cap;
-        ++storage.count;
-        storage.transfer(self->data,self->data+self->count);
-        *(volatile unsigned int*)&self->count=0;
-        Item** old=self->data;
-        unsigned int oldCap=self->capacity;
-        // Commit phase: exchange allocation ownership; Storage frees only the old buffer.
-        self->capacity=storage.capacity;
-        storage.capacity=oldCap;
-        self->data=storage.data;
-        storage.data=old;
-        self->count=storage.count;
-        storage.count=0;
-    }
-}
-// Clone indexed sprite geometry, acquire a backing sprite, and register the owned clone.
-extern "C" unsigned int CSpdSprite_CloneAndRegister(Manager* manager, unsigned int index) {
-    void* context;
-    Clone* original;
-    if(index>=manager->first.count) original=0;
-    else original=(Clone*)manager->first.data[index];
-    Clone* cloned=new Clone;
-    context=manager->context;
-    cloned->resource=BpSpritePool_Acquire(manager->resource);
-    cloned->context=context;
-    if (&cloned->rotation) { cloned->rotation.x=original->rotation.x; }
-    if (&cloned->color) { cloned->color.x=original->color.x; }
-    if (&cloned->scale) { cloned->scale.x=original->scale.x; cloned->scale.y=original->scale.y; }
-    if (&cloned->origin) { cloned->origin.x=original->origin.x; cloned->origin.y=original->origin.y; }
-    if (&cloned->position) { cloned->position.x=original->position.x; cloned->position.y=original->position.y; }
-    if (&cloned->sourceOrigin) { cloned->sourceOrigin.x=original->sourceOrigin.x; cloned->sourceOrigin.y=original->sourceOrigin.y; }
-    if (&cloned->sourceSize) { cloned->sourceSize.x=original->sourceSize.x; cloned->sourceSize.y=original->sourceSize.y; }
-    if (&cloned->rect) { cloned->rect.x=original->rect.x; cloned->rect.y=original->rect.y; cloned->rect.z=original->rect.z; cloned->rect.w=original->rect.w; }
-    cloned->flipMode=original->flipMode;
-    float width=1.0f, height=1.0f;
-    if(cloned->context) {
-        unsigned int dimensions[8];
-        BpSprite_GetTextureDescriptor(cloned->context,dimensions);
-        width=dimensions[0]; height=dimensions[1];
-    }
-    cloned->rect.x=cloned->sourceSize.x/width;
-    cloned->rect.y=cloned->sourceSize.y/height;
-    cloned->rect.z=cloned->rect.x+cloned->sourceOrigin.x/width;
-    cloned->rect.w=cloned->rect.y+cloned->sourceOrigin.y/height;
-    cloned->update();
-    Array* self=&manager->first;
-    appendClone(self, &cloned);
-    return self->count-1;
-}
-
 } // namespace ns1
+
+// Clone indexed sprite geometry, acquire a backing sprite, and register the owned clone.
+unsigned int CSpdCtrl::CloneAndRegister(unsigned int index) {
+    using namespace ns1;
+    void* textureSource;
+    Clone* original;
+    if (index >= sprites.count)
+        original = 0;
+    else
+        original = (Clone*)sprites.data[index];
+    Clone* cloned = new Clone;
+    textureSource = context;
+    cloned->resource = BpSpritePool_Acquire(spritePool);
+    cloned->context = textureSource;
+    if (&cloned->rotation)
+        cloned->rotation = original->rotation;
+    if (&cloned->color)
+        cloned->color = original->color;
+    if (&cloned->scaleX) {
+        cloned->scaleX = original->scaleX;
+        cloned->scaleY = original->scaleY;
+    }
+    if (&cloned->originX) {
+        cloned->originX = original->originX;
+        cloned->originY = original->originY;
+    }
+    if (&cloned->positionX) {
+        cloned->positionX = original->positionX;
+        cloned->positionY = original->positionY;
+    }
+    if (&cloned->sourceOriginX) {
+        cloned->sourceOriginX = original->sourceOriginX;
+        cloned->sourceOriginY = original->sourceOriginY;
+    }
+    if (&cloned->sourceSizeX) {
+        cloned->sourceSizeX = original->sourceSizeX;
+        cloned->sourceSizeY = original->sourceSizeY;
+    }
+    if (&cloned->rectX) {
+        cloned->rectX = original->rectX;
+        cloned->rectY = original->rectY;
+        cloned->rectZ = original->rectZ;
+        cloned->rectW = original->rectW;
+    }
+    cloned->flipMode = original->flipMode;
+    float width = kFloat_1_Layout, height = kFloat_1_Layout;
+    if (cloned->context) {
+        unsigned int dimensions[8];
+        BpSprite_GetTextureDescriptor(cloned->context, dimensions);
+        width = (float)dimensions[0];
+        height = (float)dimensions[1];
+    }
+    cloned->rectX = cloned->sourceSizeX / width;
+    cloned->rectY = cloned->sourceSizeY / height;
+    cloned->rectZ = cloned->rectX + cloned->sourceOriginX / width;
+    cloned->rectW = cloned->rectY + cloned->sourceOriginY / height;
+    cloned->update();
+    Array* self = (Array*)&sprites;
+    {
+        Item* const item = (Item*)cloned;
+        unsigned int count = self->count;
+        unsigned int capacity = self->capacity;
+        if (count < capacity) {
+            unsigned int index = ++self->count;
+            Item* value = item;
+            self->data[index - 1] = value;
+        } else {
+            if ((unsigned int)kMaxPointerElements - self->capacity < 1) {
+                const char* message = vectorLengthExceptionStrings;
+                capacityError(message);
+            }
+            unsigned int growth1;
+            unsigned int growth2;
+            unsigned int need;
+            CloneStorage storage(&self->capacity);
+            need = self->count + 1 - self->capacity;
+            unsigned int cap = *storage.owner;
+            if (need > (unsigned int)kMaxPointerElements - cap) {
+                const char* message = vectorLengthExceptionStrings;
+                capacityError(message);
+            }
+            if (cap < (unsigned int)kThreeFifthsGrowthLimit) {
+                growth1 = 3 * (cap + 1) / 5;
+                cap += maximum(growth1, need);
+            } else if (cap < (unsigned int)kHalfGrowthLimit) {
+                growth2 = (cap + 1) / 2;
+                cap += maximum(growth2, need);
+            } else
+                cap = (unsigned int)kMaxPointerElements;
+            if (cap > (unsigned int)kMaxPointerElements) {
+                const char* message = vectorLengthExceptionStrings;
+                capacityError(message);
+            }
+            Item** allocated = (Item**)appMallocDummy__FUl(cap * 4);
+            *(volatile unsigned int*)&storage.offset = self->count;
+            (allocated + storage.offset)[storage.count] = item;
+            storage.data = allocated;
+            storage.capacity = cap;
+            ++storage.count;
+            storage.transfer(self->data, self->data + self->count);
+            *(volatile unsigned int*)&self->count = 0;
+            Item** old = self->data;
+            unsigned int oldCap = self->capacity;
+            // Commit phase: exchange allocation ownership; Storage frees only the old buffer.
+            self->capacity = storage.capacity;
+            storage.capacity = oldCap;
+            self->data = storage.data;
+            storage.data = old;
+            self->count = storage.count;
+            storage.count = 0;
+        }
+    }
+    return self->count - 1;
+}

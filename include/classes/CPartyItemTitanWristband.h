@@ -1,26 +1,30 @@
-// CPartyItemTitanWristband: field view inferred from accesses in the cited functions.
-// No virtual declarations or inheritance; this header emits no code or RTTI.
+// CPartyItemTitanWristband: the party item that grows the ball while it is in
+// the first few or the last few steps of its flight.
 #ifndef CLASSES_CPARTYITEMTITANWRISTBAND_H
 #define CLASSES_CPARTYITEMTITANWRISTBAND_H
 
 class CPartyItemTitanWristband {
 public:
-    void* vtbl; // 0x0: CPartyItemTitanWristband_Ctor, party_CPartyItemTitanWristband_dtor
-    char pad_004[0x8];
-    int ownerIndex; // 0xc: party_CPartyItemTitanWristband_vfunc_3, party_CPartyItemTitanWristband_vfunc_4
-    float baseValue; // 0x10: CPartyItemTitanWristband_Ctor, party_CPartyItemTitanWristband_vfunc_3, party_CPartyItemTitanWristband_vfunc_4
-    float maximumRampModifier; // 0x14: CPartyItemTitanWristband_Ctor, party_CPartyItemTitanWristband_vfunc_4
-    float collisionRadiusIncreaseRatio; // 0x18: CPartyItemTitanWristband_Ctor, party_CPartyItemTitanWristband_vfunc_4
-    int rampLength; // 0x1c: CPartyItemTitanWristband_Ctor, party_CPartyItemTitanWristband_vfunc_4
+    CPartyItemTitanWristband(void* arg);
+
+    void* vtbl;                         // 0x00
+    char pad_004[0x8];                  // 0x04
+    int ownerIndex;                     // 0x0C
+    float baseValue;                    // 0x10  ball collision radius before the ramp
+    float maximumRampModifier;          // 0x14
+    float collisionRadiusIncreaseRatio; // 0x18
+    int rampLength;                     // 0x1C  steps at each end of the flight
 };
 
-#define OFF(f, o) typedef char CPartyItemTitanWristband_off_##f[((int)&((CPartyItemTitanWristband*)0)->f == (o)) ? 1 : -1]
-OFF(vtbl, 0x0);
-OFF(ownerIndex, 0xc);
-OFF(baseValue, 0x10);
-OFF(maximumRampModifier, 0x14);
-OFF(collisionRadiusIncreaseRatio, 0x18);
-OFF(rampLength, 0x1c);
-#undef OFF
+#define CPARTYITEMTITANWRISTBAND_OFF(f, o) \
+    typedef char CPartyItemTitanWristband_off_##f[((int)&((CPartyItemTitanWristband*)0)->f == (o)) ? 1 : -1]
+CPARTYITEMTITANWRISTBAND_OFF(vtbl, 0x00);
+CPARTYITEMTITANWRISTBAND_OFF(ownerIndex, 0x0C);
+CPARTYITEMTITANWRISTBAND_OFF(baseValue, 0x10);
+CPARTYITEMTITANWRISTBAND_OFF(maximumRampModifier, 0x14);
+CPARTYITEMTITANWRISTBAND_OFF(collisionRadiusIncreaseRatio, 0x18);
+CPARTYITEMTITANWRISTBAND_OFF(rampLength, 0x1C);
+#undef CPARTYITEMTITANWRISTBAND_OFF
+typedef char CPartyItemTitanWristband_size[(sizeof(CPartyItemTitanWristband) == 0x20) ? 1 : -1];
 
 #endif

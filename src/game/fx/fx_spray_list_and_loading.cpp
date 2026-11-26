@@ -1,11 +1,12 @@
+// Spray name lookup, loading a spray from its script, resetting a spray, and freeing its particle
+// and configuration lists.
+
 #define GAME_NSTRING_TEXT_CONSTRUCTOR
 #include "game/string.h"
+#include "classes/CFxBox.h"
 #include "classes/CFxSpray.h"
 
 #define AsCFxSpray(p) ((CFxSpray*)(p))
-
-// Translation unit 0x80110A50-0x80111E8C (14 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -49,16 +50,38 @@ int FxSprayIterator_NotEquals(unsigned int* left, unsigned int* right) {
 int memcmp(const char*, const char*, unsigned int);
 
 // Non-owning views of the name tree and the particle-list sentinels.
-struct SprayNameNode { void* left; void* right; void* parent; NString name; };
-struct SprayCacheRecord { NString name; void* object; };
-struct SprayListView { unsigned int count; char* previous; char* next; };
-struct SprayTextureBufferView { char pad_000[0x36C]; char textureBuffer[12]; };
-struct SprayOwnerView { char pad_000[0x140]; void* resourceManager; };
-struct SprayScriptStringPool { char trimCharacters[6]; char scanLine[3]; };
+struct SprayNameNode {
+    void* left;
+    void* right;
+    void* parent;
+    NString name;
+};
+struct SprayCacheRecord {
+    NString name;
+    void* object;
+};
+struct SprayListView {
+    unsigned int count;
+    char* previous;
+    char* next;
+};
+struct SprayTextureBufferView {
+    char pad_000[0x36C];
+    char textureBuffer[12];
+};
+struct SprayOwnerView {
+    char pad_000[0x140];
+    void* resourceManager;
+};
+struct SprayScriptStringPool {
+    char trimCharacters[6];
+    char scanLine[3];
+};
 static const int kSprayScanLineOffset = (int)&((SprayScriptStringPool*)0)->scanLine;
-enum SprayScriptLimits { kSprayScriptLineBytes = 0x400, kSprayScriptOpenFlags = 0x2000 };
-
-enum SprayOwnerOffsets { kSprayOwnerNameCache = 0x128, kSprayOwnerResourceManager = 0x140 };
+enum SprayScriptLimits {
+    kSprayScriptLineBytes = 0x400,
+    kSprayScriptOpenFlags = 0x2000
+};
 
 // Every list header is {u32 count, node* previous, node* next}; its sentinel
 // aliases &previous and has no payload. Nodes are {previous,next,payload...}.
@@ -74,9 +97,12 @@ struct StdMapTreeHead {
 #pragma dont_inline off
 // Break equal-prefix byte comparisons by length to obtain a three-way string order.
 static inline int fn_cmp3(int r, unsigned int a, unsigned int b) {
-    if (r != 0) return r;
-    if (a < b) return -1;
-    if (a == b) return 0;
+    if (r != 0)
+        return r;
+    if (a < b)
+        return -1;
+    if (a == b)
+        return 0;
     return 1;
 }
 
@@ -93,7 +119,8 @@ static inline void ReadSprayString(const NString* text, const char*& bytes, unsi
 
 // Read a string length without touching its borrowed character buffer.
 static inline unsigned int SprayStringLength(const NString* text) {
-    if ((text->flags >> 31) == 0) return *(const unsigned char*)text & 0x7f;
+    if ((text->flags >> 31) == 0)
+        return *(const unsigned char*)text & 0x7f;
     return text->length;
 }
 
@@ -139,8 +166,10 @@ void FxSprayCache_FindNameIterator(void** resultIn, void* treeIn, const void* ke
             cmpLenPtr = &keyLengthSlot;
         int cmp = memcmp(valueData, keyData, *cmpLenPtr);
         if (cmp == 0) {
-            if (valueMinSlot < keyLength) cmp = -1;
-            else if (valueMinSlot != keyLength) cmp = 1;
+            if (valueMinSlot < keyLength)
+                cmp = -1;
+            else if (valueMinSlot != keyLength)
+                cmp = 1;
         }
         if (cmp >= 0) {
             parent = node;
@@ -179,10 +208,13 @@ void FxSprayCache_FindNameIterator(void** resultIn, void* treeIn, const void* ke
                 cmpLenPtr = &valueLengthSlot;
             int cmp = memcmp(keyData2, valueData, *cmpLenPtr);
             if (cmp == 0) {
-                if (keyMinSlot < valueLength) cmp = -1;
-                else if (keyMinSlot != valueLength) cmp = 1;
+                if (keyMinSlot < valueLength)
+                    cmp = -1;
+                else if (keyMinSlot != valueLength)
+                    cmp = 1;
             }
-            if (cmp >= 0) break;
+            if (cmp >= 0)
+                break;
         }
         parent = (char*)&head->root;
     } while (0);
@@ -203,15 +235,18 @@ int Stream_ScanFormat(void*, const char*, ...);
 void Resource_Release(void*);
 void ResourceHandle_dtor(void*, int);
 
-void* CFxSpray_Ctor(void*, void*);
-struct LoadObject { char data[0x378]; LoadObject(void*); };
+struct LoadObject {
+    char data[0x378];
+    LoadObject(void*);
+};
 #pragma dont_inline off
 // Construct a full spray object owned/associated with the supplied effect owner.
-LoadObject::LoadObject(void* parent) { CFxSpray_Ctor(this, parent); }
+LoadObject::LoadObject(void* parent) {
+    ((CFxSpray*)this)->__ct(parent);
+}
 #pragma dont_inline on
 void* FxSprayNameIterator_GetRecord(void*);
 void* FxSprayNameTree_GetOrInsertValue(void*, const char*);
-int CFxSpray_ParseScriptLine(void*, const char*);
 char* String_TrimCharacterSet(void*, const char*);
 extern const char fxSprayScriptStrings[];
 
@@ -222,70 +257,83 @@ struct LoadStream {
     void* stream;
     void* file;
     // Bind holder cleanup to this local file slot; explicit releases clear the slot.
-    LoadStream(void* p) : file(p) { ResourceHolder_SetResourceAddress(&stream, &file); }
+    LoadStream(void* p) : file(p) {
+        ResourceHolder_SetResourceAddress(&stream, &file);
+    }
     // Destroy the holder on normal return or parse failure.
-    ~LoadStream() { ResourceHandle_dtor(&stream, -1); }
+    ~LoadStream() {
+        ResourceHandle_dtor(&stream, -1);
+    }
 };
 // Trim script syntax before applying one configuration command to the spray.
-static inline int ApplySprayScriptLine(void* self, char* line) {
-    return CFxSpray_ParseScriptLine(self, String_TrimCharacterSet(line, fxSprayScriptStrings));
+static inline int ApplySprayScriptLine(CFxSpray* spray, char* line) {
+    return spray->ParseScriptLine(String_TrimCharacterSet(line, fxSprayScriptStrings));
 }
 
 // Release the open resource and clear the slot also watched by the stream holder.
 static inline void ReleaseSprayScriptFile(void*& file) {
-    if (file) { Resource_Release(file); file = 0; }
+    if (file) {
+        Resource_Release(file);
+        file = 0;
+    }
 }
 
 // Load and parse a spray script; useCachedConfig copies a cache hit unless replacement is requested.
 // Return 0 on open/parse failure, 1 on completion. Mode policy:
-// cache miss OR replace: parse into self, create a configuration object, attach it;
-// publish in owner cache only when replace==0. Cache hit + useCachedConfig: copy
-// cached configuration. Cache hit without that flag: parse directly, without publishing.
+// a cache miss or replace: parse into this spray, create a configuration object, attach it;
+// publish in the owner's cache only when replace==0. A cache hit with useCachedConfig: copy
+// the cached configuration. A cache hit without that flag: parse directly, without publishing.
 // Resources returned by OpenResolvedPath are released here; cached objects are borrowed.
-// Parse failure can leave self partially modified; this is not a transactional loader.
-int CFxSpray_LoadByName(void* self, const char* name, int useCachedConfig, int replace) {
-    // Phase 1: look up the owner cache; end denotes a cache miss.
+// A parse failure can leave this spray partially modified; this is not a transactional loader.
+int CFxSpray::LoadByName(const char* name, int useCachedConfig, int replace) {
+    // Phase 1: look up the owner's template cache; end denotes a cache miss.
     char found[4];
     {
         LoadKey key(name);
-        FxSprayCache_FindNameIterator((void**)found, (char*)AsCFxSpray(self)->effectOwner + kSprayOwnerNameCache, &key);
+        FxSprayCache_FindNameIterator((void**)found, (char*)&((CFxBox*)effectOwner)->sprayTemplateCacheCount, &key);
     }
-    char previous[4]; FxSprayConfigList_GetEndIterator((char**)previous, (char*)AsCFxSpray(self)->effectOwner + kSprayOwnerNameCache);
+    char previous[4];
+    FxSprayConfigList_GetEndIterator((char**)previous, (char*)&((CFxBox*)effectOwner)->sprayTemplateCacheCount);
     int equal = FxSprayIterator_Equals((unsigned int*)found, (unsigned int*)previous);
-    // Phase 2: miss/replacement builds an attached configuration after parsing.
+    // Phase 2: a miss or a replacement builds an attached configuration after parsing.
     if (equal || replace) {
-        LoadStream input(Resource_OpenResolvedPath(*(void**)((char*)AsCFxSpray(self)->effectOwner + kSprayOwnerResourceManager), name, kSprayScriptOpenFlags, 0, replace, 0));
+        LoadStream input(Resource_OpenResolvedPath(((CFxBox*)effectOwner)->resourceManager, name, kSprayScriptOpenFlags,
+                                                   0, replace, 0));
         void*& file = input.file;
-        if (!file) return 0;
+        if (!file)
+            return 0;
         char scriptLine[kSprayScriptLineBytes];
         while (Stream_ScanFormat(file, fxSprayScriptStrings + kSprayScanLineOffset, scriptLine)) {
-            if (!ApplySprayScriptLine(self, scriptLine)) {
+            if (!ApplySprayScriptLine(this, scriptLine)) {
                 ReleaseSprayScriptFile(file);
                 return 0;
             }
         }
         ReleaseSprayScriptFile(file);
-        void* object = new LoadObject(AsCFxSpray(self)->effectOwner);
-        FxSprayConfig_Assign((char*)&AsCFxSpray(object)->particlesFollowEmitter, (char*)&AsCFxSpray(self)->particlesFollowEmitter);
-        FxSpray_AcquireReferencedObject(self, object);
+        void* object = new LoadObject(effectOwner);
+        FxSprayConfig_Assign((char*)&((CFxSpray*)object)->particlesFollowEmitter, (char*)&particlesFollowEmitter);
+        FxSpray_AcquireReferencedObject(this, object);
         if (!replace) {
             LoadKey temp(name);
-            void** slot = (void**)FxSprayNameTree_GetOrInsertValue((char*)AsCFxSpray(self)->effectOwner + kSprayOwnerNameCache, (const char*)&temp);
+            void** slot = (void**)FxSprayNameTree_GetOrInsertValue(
+                (char*)&((CFxBox*)effectOwner)->sprayTemplateCacheCount, (const char*)&temp);
             *slot = object;
         }
-    // A cache hit either copies configuration or parses privately without publishing.
+        // A cache hit either copies configuration or parses privately without publishing.
     } else if (useCachedConfig) {
         void* node = FxSprayNameIterator_GetRecord(found);
         void* object = ((SprayCacheRecord*)node)->object;
-        FxSprayConfig_Assign((char*)&AsCFxSpray(self)->particlesFollowEmitter, (char*)&AsCFxSpray(object)->particlesFollowEmitter);
-        FxSpray_AcquireReferencedObject(self, self);
+        FxSprayConfig_Assign((char*)&particlesFollowEmitter, (char*)&((CFxSpray*)object)->particlesFollowEmitter);
+        FxSpray_AcquireReferencedObject(this, this);
     } else {
-        LoadStream input(Resource_OpenResolvedPath(*(void**)((char*)AsCFxSpray(self)->effectOwner + kSprayOwnerResourceManager), name, kSprayScriptOpenFlags, 0, replace, 0));
+        LoadStream input(Resource_OpenResolvedPath(((CFxBox*)effectOwner)->resourceManager, name, kSprayScriptOpenFlags,
+                                                   0, replace, 0));
         void*& file = input.file;
-        if (!file) return 0;
+        if (!file)
+            return 0;
         char scriptLine[kSprayScriptLineBytes];
         while (Stream_ScanFormat(file, fxSprayScriptStrings + kSprayScanLineOffset, scriptLine)) {
-            if (!ApplySprayScriptLine(self, scriptLine)) {
+            if (!ApplySprayScriptLine(this, scriptLine)) {
                 ReleaseSprayScriptFile(file);
                 return 0;
             }
@@ -313,40 +361,36 @@ struct FxVObj {
 #pragma opt_common_subs off
 #pragma opt_loop_invariants off
 // Destroy live particles, release the script resource and texture buffer, then free track lists.
-void* CFxSpray_dtor(void* self, int shouldFree) {
-    if (self) {
-        *(void**)self = __vt__8CFxSpray;
-        char* it;
-        FxSprayList_GetBeginIterator((unsigned int*)&it, (char*)&AsCFxSpray(self)->particleCount);
-        // Original 0x801111A0: release each pointed-to object before advancing.
-        char* end;
-        while ((FxSprayList_GetEndIterator(&end, (char*)&AsCFxSpray(self)->particleCount),
+CFxSpray::~CFxSpray() {
+    *(void**)this = __vt__8CFxSpray;
+    char* it;
+    FxSprayList_GetBeginIterator((unsigned int*)&it, (char*)&particleCount);
+    // Original 0x801111A0: release each pointed-to object before advancing.
+    char* end;
+    while ((FxSprayList_GetEndIterator(&end, (char*)&particleCount),
             FxSprayIterator_NotEquals((unsigned int*)&it, (unsigned int*)&end))) {
-            {
-                char* p = FxSprayListIterator_GetValueAddress(&it);
-                void* obj = *(void**)p;
-                if (obj) {
-                    ((FxVObj*)obj)->v0(1);
-                }
-            }
-            FxSprayListIterator_Advance(&it);
-        }
-        FxSprayList_ClearNodes((char*)&AsCFxSpray(self)->particleCount);
-        void* resourceId = AsCFxSpray(self)->resourceId;
-        if (resourceId) {
-            void* a = AsCFxSpray(self)->effectOwner;
-            void* b = ((SprayOwnerView*)a)->resourceManager;
-            if (b) {
-                ResourceManager_ReleaseId(b, resourceId);
-                AsCFxSpray(self)->resourceId = 0;
+        {
+            char* p = FxSprayListIterator_GetValueAddress(&it);
+            void* obj = *(void**)p;
+            if (obj) {
+                ((FxVObj*)obj)->v0(1);
             }
         }
-        __dt__13GeneTexBufferFv(((SprayTextureBufferView*)self)->textureBuffer, -1);
-        FxSprayConfig_dtor((char*)&AsCFxSpray(self)->particlesFollowEmitter, -1);
-        ParticleList_dtor((char*)&AsCFxSpray(self)->particleCount, -1);
-        if (shouldFree > 0) __dl__FPv(self);
+        FxSprayListIterator_Advance(&it);
     }
-    return self;
+    FxSprayList_ClearNodes((char*)&particleCount);
+    void* resourceId = this->resourceId;
+    if (resourceId) {
+        void* owner = effectOwner;
+        void* resourceManager = ((SprayOwnerView*)owner)->resourceManager;
+        if (resourceManager) {
+            ResourceManager_ReleaseId(resourceManager, resourceId);
+            this->resourceId = 0;
+        }
+    }
+    __dt__13GeneTexBufferFv(((SprayTextureBufferView*)this)->textureBuffer, -1);
+    FxSprayConfig_dtor((char*)&particlesFollowEmitter, -1);
+    ParticleList_dtor((char*)&particleCount, -1);
 }
 #pragma opt_loop_invariants reset
 #pragma opt_common_subs reset
@@ -383,13 +427,24 @@ static inline void ClearSprayTrackNodes(char*& sentinel, char*& node, unsigned i
 // emission. Matrix direction and world-unit scale are not established here.
 // The 268..28c vectors and opaque word at +8 remain unresolved.
 enum SprayResetStorageOffset {
-    kResetOpaqueWord = 8, kResetShakeOffset = 0x94, kResetShakeCenter = 0xa0,
-    kResetPosition = 0xb8, kResetVelocity = 0xd0,
-    kResetParentRotation = 0xe0, kResetModelRotation = 0x110, kResetVelocityRotation = 0x140,
-    kResetVolumeMinimumOrCenter = 0x1a8, kResetVolumeMaximumOrRadii = 0x1b4, kResetAcceleration = 0x1e4,
-    kResetMinimumVelocity = 0x22c, kResetMaximumVelocity = 0x238, kResetWindVector = 0x24c,
-    kResetVector268 = 0x268, kResetVector274 = 0x274,
-    kResetVector280 = 0x280, kResetVector28C = 0x28c,
+    kResetOpaqueWord = 8,
+    kResetShakeOffset = 0x94,
+    kResetShakeCenter = 0xa0,
+    kResetPosition = 0xb8,
+    kResetVelocity = 0xd0,
+    kResetParentRotation = 0xe0,
+    kResetModelRotation = 0x110,
+    kResetVelocityRotation = 0x140,
+    kResetVolumeMinimumOrCenter = 0x1a8,
+    kResetVolumeMaximumOrRadii = 0x1b4,
+    kResetAcceleration = 0x1e4,
+    kResetMinimumVelocity = 0x22c,
+    kResetMaximumVelocity = 0x238,
+    kResetWindVector = 0x24c,
+    kResetVector268 = 0x268,
+    kResetVector274 = 0x274,
+    kResetVector280 = 0x280,
+    kResetVector28C = 0x28c,
     kParticleRingSentinel = (int)&((CFxSpray*)0)->particleCount + 4,
     kAngularSpeedRingSentinel = (int)&((CFxSpray*)0)->angularSpeedTrackCount + 4,
     kVelocityRotationRingSentinel = (int)&((CFxSpray*)0)->velocityRotationTrackCount + 4,
@@ -403,17 +458,20 @@ enum SprayResetStorageOffset {
 };
 
 // Reset-only defaults: lifetime's tick scale and blend encoding remain unresolved.
-enum SprayResetDefaults { kDefaultSprayLifetime = 1000, kDefaultSprayBlend = 0x00800000,
-                          kWhiteSprayLighting = 0x00ffffff };
+enum SprayResetDefaults {
+    kDefaultSprayLifetime = 1000,
+    kDefaultSprayBlend = 0x00800000,
+    kWhiteSprayLighting = 0x00ffffff
+};
 
 // Restore emitter defaults, clear live particles and reset selected parameter tracks.
 // Requires constructed list sentinels. Particle objects are destroyed before their
 // nodes; parameter tracks own only node allocations. Some track lists are left
 // untouched by this reset: do not infer that this clears every configuration list.
 // The old resourceId is zeroed without release here; this is existing reset behavior.
-void CFxSpray_Reset(void* self) {
+void CFxSpray::Reset() {
     float zeroPosition[3];
-    char* p = (char*)self;
+    char* p = (char*)this;
     float zeroVelocity[3];
     float zeroEmissionVolume[3];
     float zeroAcceleration[3];
@@ -421,14 +479,18 @@ void CFxSpray_Reset(void* self) {
     float zeroVector268And274[3];
 
     // Phase 1: playback flags, elapsed time, transforms and spatial state.
-    AsCFxSpray(p)->unk_4 = 1;
+    AsCFxSpray(p)->clearOnPartialClear = 1;
     AsCFxSpray(p)->drawEnabled = 1;
     *(unsigned int*)(kResetOpaqueWord + p) = 0;
     AsCFxSpray(p)->parentSequence = 0;
     AsCFxSpray(p)->elapsedTime = kFloat_0_FxSpray;
-    zeroPosition[0] = kFloat_0_FxSpray; zeroPosition[1] = kFloat_0_FxSpray; zeroPosition[2] = kFloat_0_FxSpray;
+    zeroPosition[0] = kFloat_0_FxSpray;
+    zeroPosition[1] = kFloat_0_FxSpray;
+    zeroPosition[2] = kFloat_0_FxSpray;
     __as__7WVectorFRC7WVector(p + kResetPosition, zeroPosition);
-    zeroVelocity[0] = kFloat_0_FxSpray; zeroVelocity[1] = kFloat_0_FxSpray; zeroVelocity[2] = kFloat_0_FxSpray;
+    zeroVelocity[0] = kFloat_0_FxSpray;
+    zeroVelocity[1] = kFloat_0_FxSpray;
+    zeroVelocity[2] = kFloat_0_FxSpray;
     __as__7WVectorFRC7WVector(p + kResetVelocity, zeroVelocity);
     Matrix_SetIdentityAffine(p + kResetParentRotation);
     Matrix_SetIdentityAffine(p + kResetModelRotation);
@@ -444,7 +506,9 @@ void CFxSpray_Reset(void* self) {
         char* node = AsCFxSpray(p)->particleListHead;
         while (node != sentinel) {
             void* obj = *(void**)(node + 8);
-            if (obj) { ((FxVObj*)obj)->v0(1); }
+            if (obj) {
+                ((FxVObj*)obj)->v0(1);
+            }
             node = *(char**)((node + 4));
         }
     }
@@ -467,7 +531,9 @@ void CFxSpray_Reset(void* self) {
     }
     // Phase 3: emission volume, lifetime, collision and appearance defaults.
     AsCFxSpray(p)->sphericalEmission = 0;
-    zeroEmissionVolume[0] = kFloat_0_FxSpray; zeroEmissionVolume[1] = kFloat_0_FxSpray; zeroEmissionVolume[2] = kFloat_0_FxSpray;
+    zeroEmissionVolume[0] = kFloat_0_FxSpray;
+    zeroEmissionVolume[1] = kFloat_0_FxSpray;
+    zeroEmissionVolume[2] = kFloat_0_FxSpray;
     {
         void* t = __as__7WVectorFRC7WVector(p + kResetVolumeMaximumOrRadii, zeroEmissionVolume);
         __as__7WVectorFRC7WVector(p + kResetVolumeMinimumOrCenter, t);
@@ -488,7 +554,9 @@ void CFxSpray_Reset(void* self) {
     AsCFxSpray(p)->volumeCoreScaleX = kFloat_1_FxSpray;
     AsCFxSpray(p)->friction = kFloat_0_FxSpray;
     AsCFxSpray(p)->groundFriction = kFloat_0_FxSpray;
-    zeroAcceleration[0] = kFloat_0_FxSpray; zeroAcceleration[1] = kFloat_0_FxSpray; zeroAcceleration[2] = kFloat_0_FxSpray;
+    zeroAcceleration[0] = kFloat_0_FxSpray;
+    zeroAcceleration[1] = kFloat_0_FxSpray;
+    zeroAcceleration[2] = kFloat_0_FxSpray;
     __as__7WVectorFRC7WVector(p + kResetAcceleration, zeroAcceleration);
     AsCFxSpray(p)->groundHeightOffset = kFloat_neg1000_FxSpray;
     AsCFxSpray(p)->groundRestitution = kFloat_0_FxSpray;
@@ -497,7 +565,9 @@ void CFxSpray_Reset(void* self) {
     AsCFxSpray(p)->trailBlendMode = kDefaultSprayBlend;
     AsCFxSpray(p)->colorModulationEnabled = 0;
     AsCFxSpray(p)->lightingColor = kWhiteSprayLighting;
-    zeroVelocityRange[0] = kFloat_0_FxSpray; zeroVelocityRange[1] = kFloat_0_FxSpray; zeroVelocityRange[2] = kFloat_0_FxSpray;
+    zeroVelocityRange[0] = kFloat_0_FxSpray;
+    zeroVelocityRange[1] = kFloat_0_FxSpray;
+    zeroVelocityRange[2] = kFloat_0_FxSpray;
     {
         void* t = __as__7WVectorFRC7WVector(p + kResetMaximumVelocity, zeroVelocityRange);
         __as__7WVectorFRC7WVector(p + kResetMinimumVelocity, t);
@@ -506,12 +576,17 @@ void CFxSpray_Reset(void* self) {
     AsCFxSpray(p)->minWindScale = kFloat_0_FxSpray;
     Vec3_Zero(p + kResetWindVector);
     AsCFxSpray(p)->externalOrientationAxisMask = 0;
-    zeroVector268And274[0] = kFloat_0_FxSpray; zeroVector268And274[1] = kFloat_0_FxSpray; zeroVector268And274[2] = kFloat_0_FxSpray;
+    zeroVector268And274[0] = kFloat_0_FxSpray;
+    zeroVector268And274[1] = kFloat_0_FxSpray;
+    zeroVector268And274[2] = kFloat_0_FxSpray;
     {
         void* t = __as__7WVectorFRC7WVector(p + kResetVector274, zeroVector268And274);
         __as__7WVectorFRC7WVector(p + kResetVector268, t);
     }
-    float zeroVector280And28C[3]; zeroVector280And28C[0] = kFloat_0_FxSpray; zeroVector280And28C[1] = kFloat_0_FxSpray; zeroVector280And28C[2] = kFloat_0_FxSpray;
+    float zeroVector280And28C[3];
+    zeroVector280And28C[0] = kFloat_0_FxSpray;
+    zeroVector280And28C[1] = kFloat_0_FxSpray;
+    zeroVector280And28C[2] = kFloat_0_FxSpray;
     {
         void* t = __as__7WVectorFRC7WVector(p + kResetVector28C, zeroVector280And28C);
         __as__7WVectorFRC7WVector(p + kResetVector280, t);
@@ -667,11 +742,17 @@ struct CleanupList {
     }
 };
 // Preserve each destructor layer's exception-cleanup boundary, with no additional work.
-struct CleanupBase : CleanupList { ~CleanupBase() {} };
+struct CleanupBase : CleanupList {
+    ~CleanupBase() {}
+};
 // Forward destruction to the list base.
-struct CleanupMember : CleanupBase { ~CleanupMember() {} };
+struct CleanupMember : CleanupBase {
+    ~CleanupMember() {}
+};
 // Forward destruction through the original outer wrapper.
-struct CleanupOuter : CleanupMember { ~CleanupOuter() {} };
+struct CleanupOuter : CleanupMember {
+    ~CleanupOuter() {}
+};
 // Destroy one configuration list selected by its count-word offset from the config base.
 static inline void destroyConfigTrack(char* config, int countOffset) {
     ((CleanupOuter*)(config + countOffset))->~CleanupOuter();
@@ -722,7 +803,8 @@ void* FxSprayConfig_dtor(void* self, int shouldFree) {
         destroyConfigTrack(p, kConfigVelocityRotationTrack);
         destroyConfigTrack(p, kConfigAngularSpeedTrack);
         destroyConfigTrack(p, kConfigInitialSpeedPercentTrack);
-        if (shouldFree > 0) __dl__FPv(self);
+        if (shouldFree > 0)
+            __dl__FPv(self);
     }
     return self;
 }

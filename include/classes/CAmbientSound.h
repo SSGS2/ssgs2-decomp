@@ -1,19 +1,33 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CAMBIENTSOUND_H
 #define CLASSES_CAMBIENTSOUND_H
 
 #include "game/types.h"
 
+struct ActorMessage;
+struct AmbientBoxAxes;
+
+// Plays the repeating sounds of the course's ambient source lists. The lists
+// themselves belong to the course data; this actor only starts and mixes them.
 class CAmbientSound {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    int messageType;                          // 0x4: 1 use in CAmbientSound_HandleMsg
+    void OnInit();
+    void OnProcess(float delta);
+    void HandleMsg(const ActorMessage* message);
+    unsigned char* GetRTTI();
+
+    // Attenuation of one box source at the listener, 1 inside the box and 0 at
+    // fadeDistance or further outside it.
+    static float GetVolume(AmbientBoxAxes* box, float fadeDistance);
+
+    // Factory used by the actor registry: allocates and constructs one ambient-sound actor.
+    static void* Create();
+
+    // Registers the ambient-sound type and its factory with the actor system.
+    static void RegisterType();
+
+    ~CAmbientSound();
+
+    void* vtbl; // 0x0: original vtable pointer
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define CAMBIENTSOUND_OFF(f, o) typedef char CAmbientSound_off_##f[((int)&((CAmbientSound*)0)->f == (o)) ? 1 : -1]
-CAMBIENTSOUND_OFF(messageType, 0x4);
-#undef CAMBIENTSOUND_OFF
-
-#endif  // CLASSES_CAMBIENTSOUND_H
+#endif // CLASSES_CAMBIENTSOUND_H

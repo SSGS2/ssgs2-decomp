@@ -1,3 +1,6 @@
+// Pet mesh and fixed font: loading and scaling mesh groups and vertex data, building mesh geometry,
+// and the fixed font's message resources, font cache, cloning and draw objects.
+
 #include <decomp/static_init.h>
 typedef unsigned long new_size_t;
 #include "classes/PetMeshDescriptor.h"
@@ -7,6 +10,7 @@ typedef unsigned long new_size_t;
 #include "classes/IPetMesh.h"
 #include "classes/FontCacheNode.h"
 #include "classes/CSerifuEcb.h"
+#include "classes/GtlIGenericModelingResource.h"
 
 #define GAME_NSTRING_INLINE
 #include "game/string.h"
@@ -22,7 +26,9 @@ public:
     LocalNString_u8021C59C() : flags(0), length(0), data(0) {}
 #if defined(GAME_NSTRING_TEXT_CONSTRUCTOR)
     // Initialize local engine-string storage using this constructor variant.
-    LocalNString_u8021C59C(const char* text) { MWString_ConstructCString(this, text); }
+    LocalNString_u8021C59C(const char* text) {
+        MWString_ConstructCString(this, text);
+    }
 #endif
 #if defined(GAME_NSTRING_RANGE_CONSTRUCTOR)
     // Initialize local engine-string storage using this constructor variant.
@@ -41,7 +47,10 @@ public:
     }
 #endif
     // Free the string buffer only when the representation owns heap storage.
-    ~LocalNString_u8021C59C() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~LocalNString_u8021C59C() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
     // Decode the inline or heap string length without modifying storage.
     unsigned int size() const {
         return (flags >> 31) == 0 ? (*(const unsigned char*)this & 0x7f) : length;
@@ -52,14 +61,19 @@ public:
     }
 };
 
-// Translation unit 0x8021C59C-0x8021DA94 (21 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include <decomp/cw_bitfields.h>
-extern "C" { void* __nw__FUl(unsigned long); void __dl__FPv(void*); }
+#include "classes/CMsgDraw.h"
+#include "classes/CMsgEcbResource.h"
+#include "classes/WOverlay.h"
+extern "C" {
+void* __nw__FUl(unsigned long);
+void __dl__FPv(void*);
+}
 /* Allocate wrapper storage through the existing engine allocator. */
-inline void* operator new(new_size_t size) { return __nw__FUl(size); }
+inline void* operator new(new_size_t size) {
+    return __nw__FUl(size);
+}
 void operator delete(void*) throw();
 
 extern "C" {
@@ -72,9 +86,14 @@ class InstanceLock_u8021C59C {
 public:
     void* mLock;
     // Acquire the supplied OS mutex for this scope.
-    explicit InstanceLock_u8021C59C(void* lock) { mLock = lock; OSLockMutex(lock); }
+    explicit InstanceLock_u8021C59C(void* lock) {
+        mLock = lock;
+        OSLockMutex(lock);
+    }
     // Release the OS mutex when this scope ends.
-    ~InstanceLock_u8021C59C() { OSUnlockMutex(mLock); }
+    ~InstanceLock_u8021C59C() {
+        OSUnlockMutex(mLock);
+    }
 };
 
 class WDeletable {
@@ -82,7 +101,9 @@ public:
     virtual ~WDeletable();
 };
 
-struct RCBase { int count; };
+struct RCBase {
+    int count;
+};
 class RCObj : public RCBase {
 public:
     virtual ~RCObj();
@@ -90,14 +111,22 @@ public:
 
 // Packed modeling chunks use numeric identifiers through the legacy pointer-typed API.
 enum PetMeshChunk {
-    kModelChunk = 0x6C646D, kFileNamesChunk = 0x646273,
-    kMeshGroupsChunk = 0x68736D, kPrimitivesChunk = 0x6D7270,
-    kMaterialChunk = 0x6C72746D, kTextureNamesChunk = 0x6E786574,
-    kVertexComponentsChunk = 0x766366, kComponentDataChunk = 0x646B,
-    kVertexHeadersChunk = 0x686276, kVertexDataChunk = 0x646276,
-    kRigidBoundsChunk = 0x76646272, kMeshBoundsChunk = 0x6D707662,
-    kTransformChunk = 0x6674, kTransformNodesChunk = 0x736E7274,
-    kOmatrixChunk = 0x78746D6F, kLightDataChunk = 0x646C
+    kModelChunk = 0x6C646D,
+    kFileNamesChunk = 0x646273,
+    kMeshGroupsChunk = 0x68736D,
+    kPrimitivesChunk = 0x6D7270,
+    kMaterialChunk = 0x6C72746D,
+    kTextureNamesChunk = 0x6E786574,
+    kVertexComponentsChunk = 0x766366,
+    kComponentDataChunk = 0x646B,
+    kVertexHeadersChunk = 0x686276,
+    kVertexDataChunk = 0x646276,
+    kRigidBoundsChunk = 0x76646272,
+    kMeshBoundsChunk = 0x6D707662,
+    kTransformChunk = 0x6674,
+    kTransformNodesChunk = 0x736E7274,
+    kOmatrixChunk = 0x78746D6F,
+    kLightDataChunk = 0x646C
 };
 // Serialized record legend (byte offsets, not native pointer layouts):
 // model u16[0]=group count, u16[1]=first group; mesh-group 12 bytes:
@@ -111,12 +140,20 @@ enum PetMeshChunk {
 // texcoords aliases that allocation and must not be freed separately. Texture handles
 // are resolved through the resource manager. The destructor below visits only group 0.
 enum PetMeshRecordSizes {
-    kMeshGroupRecordBytes = 12, kPrimitiveRecordBytes = 32,
-    kRuntimeGroupBytes = 8, kRuntimeGeometryBytes = 16,
-    kGroupFirstPrimitiveWord = 0, kGroupPrimitiveCountWord = 1,
-    kPrimitiveMaterialHalfword = 2, kComponentTypeWord = 1, kComponentOffsetWord = 3
+    kMeshGroupRecordBytes = 12,
+    kPrimitiveRecordBytes = 32,
+    kRuntimeGroupBytes = 8,
+    kRuntimeGeometryBytes = 16,
+    kGroupFirstPrimitiveWord = 0,
+    kGroupPrimitiveCountWord = 1,
+    kPrimitiveMaterialHalfword = 2,
+    kComponentTypeWord = 1,
+    kComponentOffsetWord = 3
 };
-struct PetMeshGroup { unsigned int count; void* items; };
+struct PetMeshGroup {
+    unsigned int count;
+    void* items;
+};
 struct PetMeshComponentChunk {
     unsigned char header[2];
     unsigned char kind;
@@ -129,19 +166,32 @@ struct PetMeshComponentChunk {
 struct PetMeshBoundsFrame {
     float axisX[4], axisY[4], axisZ[4], translation[4];
 };
-struct PetMeshTextureName { unsigned int header; unsigned int fileNameOffset; };
-struct PetMeshMaterial { char prefix[0xC]; unsigned char textureNameIndex; };
-struct ResourceByteSpan { void* vtable; unsigned int byteSize; };
-struct ResourceModelHandle { char prefix[0x14]; unsigned int handle; };
-struct FontMarkupPool { char markupAndErrors[0x83]; char messageArchive[12]; };
+struct PetMeshTextureName {
+    unsigned int header;
+    unsigned int fileNameOffset;
+};
+struct PetMeshMaterial {
+    char prefix[0xC];
+    unsigned char textureNameIndex;
+};
+struct ResourceByteSpan {
+    void* vtable;
+    unsigned int byteSize;
+};
+struct ResourceModelHandle {
+    char prefix[0x14];
+    unsigned int handle;
+};
+struct FontMarkupPool {
+    char markupAndErrors[0x83];
+    char messageArchive[12];
+};
 
 extern "C" {
 
 void* __nw__FUl(unsigned long);
 void __dl__FPv(void*);
-void CMsgEcbResource_ctor(void*);
 void MessageContext_SetTablesAndFormat(void*, void*, void*, void*);
-void CMsgDraw_Ctor(void*, void*);
 void PairVector_InitReserved(void*);
 void PointerPairList_RemoveByKey(void*, void*);
 void MessageDrawPairList_Dtor();
@@ -158,13 +208,12 @@ void* Resource_OpenResolvedPath(void*, void*, int, int, int, int);
 unsigned int __nwa__FUl(void*);
 void FontAtlas_LoadFromMemory(void*, void*, void*, void*);
 void NString_AssignCString(void*, const char*);
-void __ct__8WOverlayFv(void*);
 void WOverlay_dtor(void*, int);
 void OSInitMutex(void*);
 void OSLockMutex(void*);
 void OSUnlockMutex(void*);
-void gtl_IGenericResourceFile_GetChunkElementCount(void*, const char*);
-void* gtl_IGenericResourceFile_GetChunkElement(void*, const char*, unsigned int);
+extern "C" void GetChunkElementCount__Q23gtl20IGenericResourceFileFi(void*, const char*);
+extern "C" void* GetChunkElement__Q23gtl20IGenericResourceFileFii(void*, const char*, unsigned int);
 void* ResourceManager_FindByNormalizedBasename(void*, void*);
 extern void* g_resourceManager;
 void IPetMesh_BuildGeometry(void*, void*, const void*, void*);
@@ -174,8 +223,6 @@ void Vec3_Scale(void*, void*, float);
 extern float kFloat_4_PetMesh;
 void* memcpy(void*, const void*, unsigned long);
 void* appMallocUni__FUl(unsigned long);
-void gtl_IGenericModelingResource_GetResource(void*, int, unsigned short, unsigned int*);
-void gtl_IGenericModelingResource_GetDescription(void*, void*);
 void VertexBuffer_GetDescription(void*, void*);
 void Resource_GetOffsetPtr(void*, int, void*, void*, int);
 void IndexBuffer_GetDescription(void*, void*);
@@ -215,7 +262,8 @@ void* WFixedFont_dtor(void* fontObject, int deleting) {
             if (0 == ((volatile int&)Sing_805DC650())) {
                 if (!s_pointerPairListInitialized) {
                     PairVector_InitReserved(s_messageDrawPairList);
-                    __register_global_object(s_messageDrawPairList, (void*)MessageDrawPairList_Dtor, s_messageDrawListDtorRegistration);
+                    __register_global_object(s_messageDrawPairList, (void*)MessageDrawPairList_Dtor,
+                                             s_messageDrawListDtorRegistration);
                     s_pointerPairListInitialized = 1;
                 }
                 ((volatile int&)Sing_805DC650()) = (int)s_messageDrawPairList;
@@ -255,7 +303,8 @@ void* WFixedFont_dtor(void* fontObject, int deleting) {
                         next = AsFontCacheNode(node)->object;
                         void* t = AsFontCacheNode(node)->next;
                         void* h = AsWFixedFont(self)->activeHead;
-                        if (t == h) t = 0;
+                        if (t == h)
+                            t = 0;
                         AsWFixedFont(self)->activeIterator = t;
                         OSUnlockMutex(p);
                     } else {
@@ -277,7 +326,8 @@ void* WFixedFont_dtor(void* fontObject, int deleting) {
                         void* h = AsWFixedFont(self)->activeHead;
                         next = AsFontCacheNode(node)->object;
                         void* t = AsFontCacheNode(node)->next;
-                        if (t == h) t = 0;
+                        if (t == h)
+                            t = 0;
                         AsWFixedFont(self)->activeIterator = t;
                         OSUnlockMutex(p);
                     } else {
@@ -305,12 +355,11 @@ void* WFixedFont_dtor(void* fontObject, int deleting) {
                     while (AsWFixedFont(self)->activeHead) {
                         node = AsWFixedFont(self)->activeHead;
                         OSLockMutex(p);
-                        AsFontCacheNode(AsFontCacheNode(node)->next)->previous =
-                            AsFontCacheNode(node)->previous;
-                        AsFontCacheNode(AsFontCacheNode(node)->previous)->next =
-                            AsFontCacheNode(node)->next;
+                        AsFontCacheNode(AsFontCacheNode(node)->next)->previous = AsFontCacheNode(node)->previous;
+                        AsFontCacheNode(AsFontCacheNode(node)->previous)->next = AsFontCacheNode(node)->next;
                         nextNode = AsFontCacheNode(node)->next;
-                        if (nextNode == node) nextNode = 0;
+                        if (nextNode == node)
+                            nextNode = 0;
                         OSUnlockMutex(p);
                         {
                             void* m = AsWFixedFont(self)->activeHead;
@@ -339,7 +388,8 @@ void* WFixedFont_dtor(void* fontObject, int deleting) {
                     while (i < AsWFixedFont(self)->slotCount) {
 
                         i = (i + 1);
-                        *(void**)((char*)AsWFixedFont(self)->slots + off) = 0; off = (off + 4);
+                        *(void**)((char*)AsWFixedFont(self)->slots + off) = 0;
+                        off = (off + 4);
                     }
                 }
             }
@@ -350,12 +400,11 @@ void* WFixedFont_dtor(void* fontObject, int deleting) {
                     p = self + (int)&((WFixedFont*)0)->mutex;
                     while ((node = AsWFixedFont(self)->allocationHead) != 0) {
                         OSLockMutex(p);
-                        AsFontCacheNode(AsFontCacheNode(node)->next)->previous =
-                            AsFontCacheNode(node)->previous;
-                        AsFontCacheNode(AsFontCacheNode(node)->previous)->next =
-                            AsFontCacheNode(node)->next;
+                        AsFontCacheNode(AsFontCacheNode(node)->next)->previous = AsFontCacheNode(node)->previous;
+                        AsFontCacheNode(AsFontCacheNode(node)->previous)->next = AsFontCacheNode(node)->next;
                         nextNode = AsFontCacheNode(node)->next;
-                        if (nextNode == node) nextNode = 0;
+                        if (nextNode == node)
+                            nextNode = 0;
                         OSUnlockMutex(p);
                         AsWFixedFont(self)->allocationHead = nextNode;
                         appFreeUni__FPv(node);
@@ -371,7 +420,8 @@ void* WFixedFont_dtor(void* fontObject, int deleting) {
             }
             WOverlay_dtor(self, 0);
         }
-        if (deleting > 0) __dl__FPv(fontObject);
+        if (deleting > 0)
+            __dl__FPv(fontObject);
     }
     return fontObject;
 }
@@ -388,8 +438,10 @@ public:
 };
 // Construct a borrowed-resource font with a four-slot cache and its own mutex.
 enum FontCloneDefaults {
-    kFontCloneCacheSlots = 4, kFontCloneOverlayFlags = 0x2200,
-    kFontRedChannelMask = 0x00FF0000, kFontGreenChannelMask = 0x0000FF00,
+    kFontCloneCacheSlots = 4,
+    kFontCloneOverlayFlags = 0x2200,
+    kFontRedChannelMask = 0x00FF0000,
+    kFontGreenChannelMask = 0x0000FF00,
     kFontBlueChannelMask = 0x000000FF
 };
 struct CloneOverlay {
@@ -397,7 +449,7 @@ struct CloneOverlay {
     // Construct a borrowed-resource font with its own four-slot cache and mutex.
     CloneOverlay(void* resource) {
         void* self = this;
-        __ct__8WOverlayFv(self);
+        ((WOverlay*)self)->__ct();
         void* vtablePtr = __vt__5WFont;
         *(void**)self = vtablePtr;
         unsigned int zero = 0;
@@ -407,30 +459,30 @@ struct CloneOverlay {
         (*(unsigned int*)&AsWFixedFont(self)->slots) = zero;
         OSInitMutex(AsWFixedFont(self)->mutex);
         {
-        InstanceLock_u8021C59C local(AsWFixedFont(self)->mutex);
-        (*(unsigned int*)&AsWFixedFont(self)->activeHead) = zero;
-        int count = kFontCloneCacheSlots;
-        (*(unsigned int*)&AsWFixedFont(self)->recycledHead) = 0;
-        (*(unsigned int*)&AsWFixedFont(self)->allocationHead) = 0;
-        // +78 receives the initial cache slot count; resizing semantics are unknown.
-        AsWFixedFont(self)->unk_78 = count;
-        (*(unsigned int*)&AsWFixedFont(self)->activeIterator) = 0;
-        (*(unsigned int*)&AsWFixedFont(self)->slotCount) = count;
-        if (count > 0) {
-            void* array = appMallocUni__FUl(0x10);
-            AsWFixedFont(self)->slots = array;
-            AsWFixedFont(self)->slotMask = AsWFixedFont(self)->slotCount - 1;
-            int off, i;
-            i = 0;
-            off = 0;
-            while (i < AsWFixedFont(self)->slotCount) {
-                ++i;
-                *(unsigned int*)((char*)AsWFixedFont(self)->slots + off) = 0;
-                off += 4;
+            InstanceLock_u8021C59C local(AsWFixedFont(self)->mutex);
+            (*(unsigned int*)&AsWFixedFont(self)->activeHead) = zero;
+            int count = kFontCloneCacheSlots;
+            (*(unsigned int*)&AsWFixedFont(self)->recycledHead) = 0;
+            (*(unsigned int*)&AsWFixedFont(self)->allocationHead) = 0;
+            // +78 receives the initial cache slot count; resizing semantics are unknown.
+            AsWFixedFont(self)->unk_78 = count;
+            (*(unsigned int*)&AsWFixedFont(self)->activeIterator) = 0;
+            (*(unsigned int*)&AsWFixedFont(self)->slotCount) = count;
+            if (count > 0) {
+                void* array = appMallocUni__FUl(0x10);
+                AsWFixedFont(self)->slots = array;
+                AsWFixedFont(self)->slotMask = AsWFixedFont(self)->slotCount - 1;
+                int off, i;
+                i = 0;
+                off = 0;
+                while (i < AsWFixedFont(self)->slotCount) {
+                    ++i;
+                    *(unsigned int*)((char*)AsWFixedFont(self)->slots + off) = 0;
+                    off += 4;
+                }
+            } else {
+                (*(unsigned int*)&AsWFixedFont(self)->slots) = 0;
             }
-        } else {
-            (*(unsigned int*)&AsWFixedFont(self)->slots) = 0;
-        }
         }
         ((OverlayCall*)self)->Set(kFontCloneOverlayFlags);
         AsWFixedFont(self)->glyphScale = kFloat_1_FixedFont;
@@ -477,35 +529,55 @@ void* WFixedFont_CloneFont(void* sourceFont) {
 // Returns 0 with no resource, otherwise 1; requires valid model/material/texture chunks.
 // Call on an empty mesh: replacing groups here does not release any previous allocation.
 int IPetMesh_LoadGroups(void* meshObject, unsigned int modelIndex) {
-    struct Grp { unsigned int count; char* items; };
-    struct Self { unsigned char pad[0xC]; void* res; Grp* groups; int ngroups; };
+    struct Grp {
+        unsigned int count;
+        char* items;
+    };
+    struct Self {
+        unsigned char pad[0xC];
+        void* res;
+        Grp* groups;
+        int ngroups;
+    };
     Self* self = (Self*)meshObject;
-    if (!self->res) return 0;
-    gtl_IGenericResourceFile_GetChunkElementCount(self->res, (const char*)kModelChunk);
-    char* fileNames = (char*)gtl_IGenericResourceFile_GetChunkElement(self->res, (const char*)kFileNamesChunk, 0);
-    unsigned short* modelGroups = (unsigned short*)gtl_IGenericResourceFile_GetChunkElement(self->res, (const char*)kModelChunk, modelIndex);
+    if (!self->res)
+        return 0;
+    GetChunkElementCount__Q23gtl20IGenericResourceFileFi(self->res, (const char*)kModelChunk);
+    char* fileNames =
+        (char*)GetChunkElement__Q23gtl20IGenericResourceFileFii(self->res, (const char*)kFileNamesChunk, 0);
+    unsigned short* modelGroups = (unsigned short*)GetChunkElement__Q23gtl20IGenericResourceFileFii(
+        self->res, (const char*)kModelChunk, modelIndex);
     int groupCount = modelGroups[0];
     self->ngroups = groupCount;
-    if (!groupCount) return 1;
+    if (!groupCount)
+        return 1;
     // Resolve the model's contiguous group-descriptor range and allocate the group table.
     unsigned short firstGroup = modelGroups[1];
-    char* groupDescriptors = (char*)gtl_IGenericResourceFile_GetChunkElement(self->res, (const char*)kMeshGroupsChunk, 0);
+    char* groupDescriptors =
+        (char*)GetChunkElement__Q23gtl20IGenericResourceFileFii(self->res, (const char*)kMeshGroupsChunk, 0);
     self->groups = (Grp*)__nwa__FUl((void*)(kRuntimeGroupBytes * self->ngroups));
     unsigned int* groupDescriptor = (unsigned int*)(groupDescriptors + firstGroup * kMeshGroupRecordBytes);
-    for (unsigned int i = 0; i < self->ngroups; ++i) { int primitiveCount = groupDescriptor[kGroupPrimitiveCountWord];
+    for (unsigned int i = 0; i < self->ngroups; ++i) {
+        int primitiveCount = groupDescriptor[kGroupPrimitiveCountWord];
         Grp* g = &self->groups[i];
 
-         g->count = primitiveCount;
+        g->count = primitiveCount;
         g->items = (char*)__nwa__FUl((void*)(primitiveCount * kRuntimeGeometryBytes));
-        char* primitiveDescriptors = (char*)gtl_IGenericResourceFile_GetChunkElement(self->res, (const char*)kPrimitivesChunk, 0);
+        char* primitiveDescriptors =
+            (char*)GetChunkElement__Q23gtl20IGenericResourceFileFii(self->res, (const char*)kPrimitivesChunk, 0);
         // Each primitive resolves its texture handle before allocating expanded geometry.
         for (unsigned int j = 0; j < g->count; ++j) {
             unsigned int* it;
             it = (unsigned int*)(g->items + j * kRuntimeGeometryBytes);
-            char* primitiveDescriptor = (kPrimitiveRecordBytes * groupDescriptor[kGroupFirstPrimitiveWord]) + (primitiveDescriptors + j * kPrimitiveRecordBytes);
-            void* material = gtl_IGenericResourceFile_GetChunkElement(self->res, (const char*)kMaterialChunk, ((unsigned short*)primitiveDescriptor)[kPrimitiveMaterialHalfword]);
-            void* textureName = gtl_IGenericResourceFile_GetChunkElement(self->res, (const char*)kTextureNamesChunk, ((PetMeshMaterial*)material)->textureNameIndex);
-            void* textureResource = ResourceManager_FindByNormalizedBasename(g_resourceManager, fileNames + ((PetMeshTextureName*)textureName)->fileNameOffset);
+            char* primitiveDescriptor = (kPrimitiveRecordBytes * groupDescriptor[kGroupFirstPrimitiveWord]) +
+                                        (primitiveDescriptors + j * kPrimitiveRecordBytes);
+            void* material = GetChunkElement__Q23gtl20IGenericResourceFileFii(
+                self->res, (const char*)kMaterialChunk,
+                ((unsigned short*)primitiveDescriptor)[kPrimitiveMaterialHalfword]);
+            void* textureName = GetChunkElement__Q23gtl20IGenericResourceFileFii(
+                self->res, (const char*)kTextureNamesChunk, ((PetMeshMaterial*)material)->textureNameIndex);
+            void* textureResource = ResourceManager_FindByNormalizedBasename(
+                g_resourceManager, fileNames + ((PetMeshTextureName*)textureName)->fileNameOffset);
             *it = ((ResourceModelHandle*)textureResource)->handle;
             IPetMesh_BuildGeometry(meshObject, it, primitiveDescriptor, self->res);
         }
@@ -520,40 +592,60 @@ int IPetMesh_LoadGroups(void* meshObject, unsigned int modelIndex) {
 void WFixedFont_vfunc_7() {}
 
 // Return zero for vtable metric slot 9; the metric identity/units are unconfirmed.
-float WFixedFont_PrintInside() { return kFloat_0_Font; }
+float WFixedFont_PrintInside() {
+    return kFloat_0_Font;
+}
 
 // This font interface hook requires no work.
 void WFixedFont_vfunc_8() {}
 
 // Return zero for vtable metric slot 10; the metric identity/units are unconfirmed.
-float WFixedFont_GetTextWidthInside() { return kFloat_0_Font; }
+float WFixedFont_GetTextWidthInside() {
+    return kFloat_0_Font;
+}
 
 // Initialize the font full-turn angle cache.
-void FixedFont_InitFullTurnConstant() { s_fixedFontFullTurn = kFloat_6_2831855; }
+void FixedFont_InitFullTurnConstant() {
+    s_fixedFontFullTurn = kFloat_6_2831855;
+}
 
 #pragma push
 #pragma use_lmw_stmw on
 
 // Scale position-bearing component streams according to each encoded data type.
 int IPetMesh_ScaleVertexChunks(const void* meshObject, float scale) {
-    unsigned int chunkCount = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kVertexComponentsChunk);
-    char* componentData = (char*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kComponentDataChunk, 0);
+    unsigned int chunkCount = (unsigned int)gtl_ResourceFile_GetChunkElementCount(
+        meshObject, AsIPetMesh(meshObject)->resource, (const char*)kVertexComponentsChunk);
+    char* componentData = (char*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource,
+                                                                  (const char*)kComponentDataChunk, 0);
     char* chunkData;
     for (unsigned int i = 0; i < chunkCount; ++i) {
-        unsigned int* componentDescriptor = (unsigned int*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kVertexComponentsChunk, i);
+        unsigned int* componentDescriptor = (unsigned int*)gtl_ResourceFile_GetChunkElement(
+            meshObject, AsIPetMesh(meshObject)->resource, (const char*)kVertexComponentsChunk, i);
         int j;
         chunkData = componentData + componentDescriptor[kComponentOffsetWord];
         for (j = 0; j < ((PetMeshComponentChunk*)componentDescriptor)->elementCount; ++j) {
             switch (((PetMeshComponentChunk*)componentDescriptor)->kind) {
             // Observed scalable kind families: 0..3, 7..10 and 26..29.
             // Individual kind semantics are unconfirmed; all other streams stay unchanged.
-            case 0: case 1: case 2: case 3:
-            case 7: case 8: case 9: case 10:
-            case 26: case 27: case 28: case 29: {
+            case 0:
+            case 1:
+            case 2:
+            case 3:
+            case 7:
+            case 8:
+            case 9:
+            case 10:
+            case 26:
+            case 27:
+            case 28:
+            case 29: {
                 // The resource type size is a byte stride: every caller advances bytes.
                 // Do not divide this stride by eight.
-                unsigned int stride = gtl_Resource_GetDataTypeByteStride((void*)componentDescriptor[kComponentTypeWord]);
-                PetMesh_ScaleVertexChunkByKind((char*)chunkData + j * stride, (void*)componentDescriptor[kComponentTypeWord], scale);
+                unsigned int stride =
+                    gtl_Resource_GetDataTypeByteStride((void*)componentDescriptor[kComponentTypeWord]);
+                PetMesh_ScaleVertexChunkByKind((char*)chunkData + j * stride,
+                                               (void*)componentDescriptor[kComponentTypeWord], scale);
                 break;
             }
             }
@@ -573,9 +665,11 @@ int IPetMesh_ScaleVertexChunks(const void* meshObject, float scale) {
 // vertices; the strip must provide two more indices than that triangle count.
 // Positions stay in resource/model space; this step changes topology and winding only.
 int IPetMesh_ExpandTriangleStrip(void* meshObject, void* outputPositions, void* outputTexcoords, int outputCapacity,
-                unsigned int vertexBuffer, unsigned int indexBuffer, void* primitiveDescriptor) {
+                                 unsigned int vertexBuffer, unsigned int indexBuffer, void* primitiveDescriptor) {
     unsigned int outputTriangle;
-    struct Keys { int k[2][3]; };
+    struct Keys {
+        int k[2][3];
+    };
     Keys keys;
     unsigned int vertexDescription[4];
     unsigned int indexDescription[4];
@@ -600,23 +694,26 @@ int IPetMesh_ExpandTriangleStrip(void* meshObject, void* outputPositions, void* 
     int emittedVertexCount = 0;
     int sourceTriangle;
     // Parity flips for every source triple, including degenerate ones; output is compacted.
-    for (sourceTriangle = 0, outputTriangle = 0; sourceTriangle < AsPetMeshDescriptor(primitiveDescriptor)->triangleCount; ++sourceTriangle) {
+    for (sourceTriangle = 0, outputTriangle = 0;
+         sourceTriangle < AsPetMeshDescriptor(primitiveDescriptor)->triangleCount; ++sourceTriangle) {
         unsigned short* v = stripIndices + sourceTriangle;
         windingParity ^= 1;
         if (v[0] != v[1] && v[0] != v[2] && v[1] != v[2]) {
             int* windingOrder = keys.k[windingParity];
             for (int j = 0; j < 3; ++j) {
                 int at = outputTriangle * 3 + windingOrder[j];
-                PetMesh_ExtractVertexPositionAndTexCoords((char*)outputPositions + at * 12,
-                            (char*)outputTexcoords + at * 8,
-                            vertexData + AsPetMeshDescriptor(primitiveDescriptor)->vertexStride * stripIndices[sourceTriangle + j],
-                            (void*)vertexDescription[3]);
+                PetMesh_ExtractVertexPositionAndTexCoords(
+                    (char*)outputPositions + at * 12, (char*)outputTexcoords + at * 8,
+                    vertexData +
+                        AsPetMeshDescriptor(primitiveDescriptor)->vertexStride * stripIndices[sourceTriangle + j],
+                    (void*)vertexDescription[3]);
                 ++emittedVertexCount;
             }
             ++outputTriangle;
         }
     }
-    if (stripIndices) __dla__FPv(stripIndices);
+    if (stripIndices)
+        __dla__FPv(stripIndices);
     IndexBuffer_Flush((void*)indexBuffer);
     GraphicsBuffer_Flush((void*)vertexBuffer);
     return emittedVertexCount;
@@ -628,10 +725,13 @@ int IPetMesh_ExpandTriangleStrip(void* meshObject, void* outputPositions, void* 
 #pragma opt_strength_reduction off
 // Scale every position vector in each flexible-format vertex block.
 int IPetMesh_ScaleVertexPositions(void* meshObject, float scale) {
-    unsigned int count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kVertexHeadersChunk);
-    void* vertexData = gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kVertexDataChunk, 0);
+    unsigned int count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(
+        meshObject, AsIPetMesh(meshObject)->resource, (const char*)kVertexHeadersChunk);
+    void* vertexData = gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource,
+                                                        (const char*)kVertexDataChunk, 0);
     for (unsigned int i = 0; i < count; ++i) {
-        void* vertexBlock = gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kVertexHeadersChunk, i);
+        void* vertexBlock = gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource,
+                                                             (const char*)kVertexHeadersChunk, i);
         char* base = (char*)vertexData + AsPetMeshVertexBlock(vertexBlock)->dataOffset;
         unsigned int stride = FlexibleVertexFormat_GetStride(*(void**)vertexBlock);
         unsigned int vertexCount = AsPetMeshVertexBlock(vertexBlock)->byteSize / stride;
@@ -640,7 +740,9 @@ int IPetMesh_ScaleVertexPositions(void* meshObject, float scale) {
             void* vector = FlexibleVertexFormat_GetPositionAddress(base + byteOffset, *(void**)vertexBlock);
             float position[3];
             memcpy(position, vector, 12);
-            position[0] *= scale; position[1] *= scale; position[2] *= scale;
+            position[0] *= scale;
+            position[1] *= scale;
+            position[2] *= scale;
             memcpy(vector, position, 12);
         }
     }
@@ -649,7 +751,9 @@ int IPetMesh_ScaleVertexPositions(void* meshObject, float scale) {
 #pragma pop
 
 // Initialize the pet-mesh full-turn angle cache.
-void PetMesh_InitFullTurnConstant() { s_petMeshFullTurn = kFloat_6_2831855; }
+void PetMesh_InitFullTurnConstant() {
+    s_petMeshFullTurn = kFloat_6_2831855;
+}
 
 // Scale vertex positions, bounds axes/translations, and resource transform translations.
 // Mutates retained resource storage, including any other mesh sharing it. scale is unitless;
@@ -663,46 +767,66 @@ int IPetMesh_ScaleResource(void* meshObject, float scale) {
     IPetMesh_ScaleVertexPositions(meshObject, scale);
     void* entry;
     unsigned int i;
-    unsigned int count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kRigidBoundsChunk);
+    unsigned int count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(
+        meshObject, AsIPetMesh(meshObject)->resource, (const char*)kRigidBoundsChunk);
     float axisScaleFactor = kFloat_4_PetMesh;
     for (i = 0; i < count; ++i) {
-        entry = gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kRigidBoundsChunk, i);
+        entry = gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource,
+                                                 (const char*)kRigidBoundsChunk, i);
         Vec3_Scale(entry, entry, axisScaleFactor * scale);
         Vec3_Scale(((PetMeshBoundsFrame*)entry)->axisY, ((PetMeshBoundsFrame*)entry)->axisY, axisScaleFactor * scale);
         Vec3_Scale(((PetMeshBoundsFrame*)entry)->axisZ, ((PetMeshBoundsFrame*)entry)->axisZ, axisScaleFactor * scale);
         Vec3_Scale(((PetMeshBoundsFrame*)entry)->translation, ((PetMeshBoundsFrame*)entry)->translation, scale);
     }
-    count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kMeshBoundsChunk);
+    count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource,
+                                                                (const char*)kMeshBoundsChunk);
     axisScaleFactor = kFloat_4_PetMesh;
     for (unsigned int i = 0; i < count; ++i) {
-        void* entry = gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kMeshBoundsChunk, i);
+        void* entry = gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource,
+                                                       (const char*)kMeshBoundsChunk, i);
         Vec3_Scale(entry, entry, axisScaleFactor * scale);
         Vec3_Scale(((PetMeshBoundsFrame*)entry)->axisY, ((PetMeshBoundsFrame*)entry)->axisY, axisScaleFactor * scale);
         Vec3_Scale(((PetMeshBoundsFrame*)entry)->axisZ, ((PetMeshBoundsFrame*)entry)->axisZ, axisScaleFactor * scale);
         Vec3_Scale(((PetMeshBoundsFrame*)entry)->translation, ((PetMeshBoundsFrame*)entry)->translation, scale);
     }
     // Phase 2: scale translation slots in each serialized transform format.
-    count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kTransformChunk);
+    count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource,
+                                                                (const char*)kTransformChunk);
     for (unsigned int i = 0; i < count; ++i) {
-        float* v = (float*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kTransformChunk, i);
-        v[8] *= scale; v[9] *= scale; v[10] *= scale;
+        float* v = (float*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource,
+                                                            (const char*)kTransformChunk, i);
+        v[8] *= scale;
+        v[9] *= scale;
+        v[10] *= scale;
     }
-    count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kTransformNodesChunk);
+    count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource,
+                                                                (const char*)kTransformNodesChunk);
     for (unsigned int i = 0; i < count; ++i) {
-        float* v = (float*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kTransformNodesChunk, i);
-        v[12] *= scale; v[13] *= scale; v[14] *= scale;
+        float* v = (float*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource,
+                                                            (const char*)kTransformNodesChunk, i);
+        v[12] *= scale;
+        v[13] *= scale;
+        v[14] *= scale;
     }
-    count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kOmatrixChunk);
+    count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource,
+                                                                (const char*)kOmatrixChunk);
     for (unsigned int i = 0; i < count; ++i) {
-        float* v = (float*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kOmatrixChunk, i);
-        v[12] *= scale; v[13] *= scale; v[14] *= scale;
+        float* v = (float*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource,
+                                                            (const char*)kOmatrixChunk, i);
+        v[12] *= scale;
+        v[13] *= scale;
+        v[14] *= scale;
     }
     // Phase 3: scale component streams and the three light-data coordinates.
     IPetMesh_ScaleVertexChunks(meshObject, scale);
-    count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kLightDataChunk);
+    count = (unsigned int)gtl_ResourceFile_GetChunkElementCount(meshObject, AsIPetMesh(meshObject)->resource,
+                                                                (const char*)kLightDataChunk);
     for (unsigned int i = 0; i < count; ++i) {
-        float* v = (float*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource, (const char*)kLightDataChunk, i);
-        v[13] *= scale; v[14] *= scale; v[15] *= scale;
+        float* v = (float*)gtl_ResourceFile_GetChunkElement(meshObject, AsIPetMesh(meshObject)->resource,
+                                                            (const char*)kLightDataChunk, i);
+        v[13] *= scale;
+        v[14] *= scale;
+        v[15] *= scale;
     }
     return 1;
 }
@@ -718,27 +842,37 @@ void IPetMesh_BuildGeometry(void* meshObject, void* result, const void* descript
     void* trianglePositions = (void*)__nwa__FUl((void*)(maxVertexCount * 12));
     void* triangleTexcoords = (void*)__nwa__FUl((void*)(maxVertexCount * 8));
     unsigned int vertexBuffer = 0;
-    gtl_IGenericModelingResource_GetResource(context, 0, AsPetMeshDescriptor(descriptor)->vertexResource, &vertexBuffer);
+    ((gtl::IGenericModelingResource*)context)
+        ->GetResource(0, AsPetMeshDescriptor(descriptor)->vertexResource, (GtlRefHeader**)&vertexBuffer);
     unsigned char resourceDescription[0x20];
-    gtl_IGenericModelingResource_GetDescription(context, resourceDescription);
+    ((gtl::IGenericModelingResource*)context)->GetDescription((unsigned int*)resourceDescription);
     unsigned int indexBuffer = 0;
-    gtl_IGenericModelingResource_GetResource(context, 1, AsPetMeshDescriptor(descriptor)->indexResource, &indexBuffer);
-    AsPetMeshGeometry(result)->vertexCount = IPetMesh_ExpandTriangleStrip(meshObject, trianglePositions, triangleTexcoords, maxVertexCount, vertexBuffer, indexBuffer, (void*)descriptor);
+    ((gtl::IGenericModelingResource*)context)
+        ->GetResource(1, AsPetMeshDescriptor(descriptor)->indexResource, (GtlRefHeader**)&indexBuffer);
+    AsPetMeshGeometry(result)->vertexCount = IPetMesh_ExpandTriangleStrip(
+        meshObject, trianglePositions, triangleTexcoords, maxVertexCount, vertexBuffer, indexBuffer, (void*)descriptor);
     if (indexBuffer) {
-        struct Ref { CW_BITS2( unsigned int count:16, unsigned int other:16) };
+        struct Ref {
+            CW_BITS2(unsigned int count : 16, unsigned int other : 16)
+        };
         Ref* ref = (Ref*)indexBuffer;
-        if (--ref->count == 0) CubeResourceStorage_dtor(ref, 1);
+        if (--ref->count == 0)
+            CubeResourceStorage_dtor(ref, 1);
         indexBuffer = 0;
     }
     // Pack only emitted vertices: contiguous XYZ data, followed by contiguous UV data.
     AsPetMeshGeometry(result)->positions = appMallocUni__FUl(AsPetMeshGeometry(result)->vertexCount * 0x14);
     memcpy(AsPetMeshGeometry(result)->positions, trianglePositions, AsPetMeshGeometry(result)->vertexCount * 12);
-    AsPetMeshGeometry(result)->texcoords = (char*)AsPetMeshGeometry(result)->positions + AsPetMeshGeometry(result)->vertexCount * 12;
+    AsPetMeshGeometry(result)->texcoords =
+        (char*)AsPetMeshGeometry(result)->positions + AsPetMeshGeometry(result)->vertexCount * 12;
     memcpy(AsPetMeshGeometry(result)->texcoords, triangleTexcoords, AsPetMeshGeometry(result)->vertexCount * 8);
     if (vertexBuffer) {
-        struct Ref { CW_BITS2( unsigned int count:16, unsigned int other:16) };
+        struct Ref {
+            CW_BITS2(unsigned int count : 16, unsigned int other : 16)
+        };
         Ref* ref = (Ref*)vertexBuffer;
-        if (--ref->count == 0) CubeResourceStorage_dtor(ref, 1);
+        if (--ref->count == 0)
+            CubeResourceStorage_dtor(ref, 1);
         vertexBuffer = 0;
     }
     __dla__FPv(trianglePositions);
@@ -766,7 +900,7 @@ int WFixedFont_LoadMessageResources(void* fontObject, void* atlasPath) {
     unsigned int buffer = 0;
     void* resource;
     unsigned int length = 0;
-    resource =Resource_OpenResolvedPath(AsWFixedFont(fontObject)->resourceOwner, atlasPath, 0xFFFF, 0, 0, 0);
+    resource = Resource_OpenResolvedPath(AsWFixedFont(fontObject)->resourceOwner, atlasPath, 0xFFFF, 0, 0, 0);
     if (resource) {
         length = ((ResourceByteSpan*)resource)->byteSize;
         buffer = (unsigned int)__nwa__FUl((void*)length);
@@ -784,7 +918,7 @@ int WFixedFont_LoadMessageResources(void* fontObject, void* atlasPath) {
         buffer = (unsigned int)__nwa__FUl((void*)length);
         AsWFixedFont(fontObject)->messageBuffer = (void*)buffer;
         ((CBRes*)resource)->Read((void*)buffer, length);
-// The message tables (AcLabel.eap) are big-endian on disc.
+        // The message tables (AcLabel.eap) are big-endian on disc.
     }
     return 0;
 }
@@ -793,7 +927,8 @@ int WFixedFont_LoadMessageResources(void* fontObject, void* atlasPath) {
 
 // Return the requested group, or null when its index is out of range.
 void* IPetMesh_GetGroupByIndex(void* meshObject, unsigned short index) {
-    if (index >= AsIPetMesh(meshObject)->groupCount) return 0;
+    if (index >= AsIPetMesh(meshObject)->groupCount)
+        return 0;
     return (char*)AsIPetMesh(meshObject)->groups + index * 8;
 }
 
@@ -817,7 +952,9 @@ void* IPetMesh_Ctor(void* meshObject, unsigned int* resource, unsigned int meshF
 struct AF800Obj {
     CSerifuEcb context;
     // Construct a message context in the allocation wrapper.
-    AF800Obj() { CMsgEcbResource_ctor(this); }
+    AF800Obj() {
+        ((CMsgEcbResource*)this)->__ct();
+    }
 };
 
 // Create a message context using this font's loaded archive and supplied formatting tables.
@@ -835,7 +972,7 @@ struct MessageItemCCC4 {
     char data[0x4BC];
     // Construct a message draw object from the source font atlas.
     explicit MessageItemCCC4(void* source) {
-        CMsgDraw_Ctor(this, AsWFixedFont(source)->messageResource);
+        ((CMsgDraw*)this)->__ct(AsWFixedFont(source)->messageResource);
     }
 };
 
@@ -847,7 +984,8 @@ int WFixedFont_CreateAndRegisterMsgDraw(void* fontObject, void** outMessageDraw,
     if (!((volatile int&)Sing_805DC650())) {
         if (!s_pointerPairListInitialized) {
             PairVector_InitReserved(s_messageDrawPairList);
-            __register_global_object(s_messageDrawPairList, (void*)MessageDrawPairList_Dtor, s_messageDrawListDtorRegistration);
+            __register_global_object(s_messageDrawPairList, (void*)MessageDrawPairList_Dtor,
+                                     s_messageDrawListDtorRegistration);
             s_pointerPairListInitialized = 1;
         }
         ((volatile int&)Sing_805DC650()) = (int)s_messageDrawPairList;
@@ -865,7 +1003,9 @@ void* IPetMesh_dtor(void* meshObject, int deleting) {
         unsigned int i = 0;
         unsigned int geometryByteOffset = 0;
         while (i < ((PetMeshGroup*)AsIPetMesh(meshObject)->groups)->count) {
-            appFreeUni__FPv(AsPetMeshGeometry((char*)((PetMeshGroup*)AsIPetMesh(meshObject)->groups)->items + geometryByteOffset)->positions);
+            appFreeUni__FPv(
+                AsPetMeshGeometry((char*)((PetMeshGroup*)AsIPetMesh(meshObject)->groups)->items + geometryByteOffset)
+                    ->positions);
             geometryByteOffset += 0x10;
             ++i;
         }
@@ -882,13 +1022,17 @@ void* IPetMesh_dtor(void* meshObject, int deleting) {
         if (ref && --ref->count == 0) {
             delete ref;
         }
-        if (deleting > 0) __dl__FPv(meshObject);
+        if (deleting > 0)
+            __dl__FPv(meshObject);
     }
     return meshObject;
 }
 
 // Return the mesh group count truncated to the interface's 16-bit result.
-unsigned short IPetMesh_GetGroupCount(void* meshObject) { unsigned int value = AsIPetMesh(meshObject)->groupCount; return (unsigned short)value; }
+unsigned short IPetMesh_GetGroupCount(void* meshObject) {
+    unsigned int value = AsIPetMesh(meshObject)->groupCount;
+    return (unsigned short)value;
+}
 
 // Compile-time guards for private ABI views used above.
 #define LOCAL_FIELD(t, f, o) typedef char local_##t##_##f[((int)&((t*)0)->f == (o)) ? 1 : -1]

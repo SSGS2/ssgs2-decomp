@@ -1,38 +1,48 @@
-// Translation unit 0x803D980C-0x803D9DB8 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 // Model resource clone policy: selectively duplicate graphics payloads while
 // retaining other handles. Mod flags below together with destination ownership;
 // vector implementations are separate units, buffer/texture layouts are in gtl_graphics_texture_buffer_resources.cpp.
+#include "classes/GtlIGenericModelingResource.h"
+
 enum ModelingClonePolicy {
-    kCopyVertexBuffers = 1, kCopyIndexBuffers = 2, kCopyTextures = 4,
-    kOmitNonNullPalettes = 8, kCopySecondaryGeometry = 0x10
+    kCopyVertexBuffers = 1,
+    kCopyIndexBuffers = 2,
+    kCopyTextures = 4,
+    kOmitNonNullPalettes = 8,
+    kCopySecondaryGeometry = 0x10
 };
 
-struct GenericResourceVec { char unk0[0xC]; };
-
-struct GenericModelingResource {
-    char unk0[8];
-    void* backingResource;
-    GenericResourceVec textures;      // 0x0C
-    GenericResourceVec palettes;      // 0x18
-    GenericResourceVec vertexBuffers; // 0x24
-    GenericResourceVec vertexDecls;   // 0x30
-    GenericResourceVec indexBuffers;  // 0x3C
-    GenericResourceVec vertexBuffers2;// 0x48
+struct GtlVBDesc {
+    unsigned int unk0;
+    unsigned int unk4;
+    unsigned int size;
+    unsigned int vertexFormat;
 };
-
-struct GtlVBDesc { unsigned int unk0; unsigned int unk4; unsigned int size; unsigned int vertexFormat; };
 
 // Native four-word description outputs (gtl_graphics_texture_buffer_resources.cpp): VB +0 is a sentinel,
 // +4 is resource kind, +8 is byte count, +C is vertex format flags.
 // IB +0 is index format, +4 kind, +8 source size/count word, +C index stride.
 // RepeatHalfwords interprets +8 as SOURCE BYTES and +C as repetitions per
 // halfword; do not turn either format into a count or a byte-copy stride.
-struct GtlIBDesc { unsigned int indexFormat; unsigned int unk4; unsigned int size; unsigned int indexStride; };
+struct GtlIBDesc {
+    unsigned int indexFormat;
+    unsigned int unk4;
+    unsigned int size;
+    unsigned int indexStride;
+};
 
-struct GtlTexLevelDesc { unsigned int format; char unk4[0xC]; unsigned int size; char unk14[8]; unsigned int width; unsigned int height; };
+struct GtlTexLevelDesc {
+    unsigned int format;
+    char unk4[0xC];
+    unsigned int size;
+    char unk14[8];
+    unsigned int width;
+    unsigned int height;
+};
 
-struct GtlLock { unsigned int pitch; void* ptr; };
+struct GtlLock {
+    unsigned int pitch;
+    void* ptr;
+};
 
 // Legacy scratch is 16 bytes, NOT an array of 16 declaration elements.
 // A declaration element is 12 bytes (gtl_texture_vertex_formats.cpp); GetElements writes all real
@@ -42,51 +52,57 @@ struct GtlLock { unsigned int pitch; void* ptr; };
 // declaration overruns this function's scratch; sharing avoids that copy path.
 // A future corrective change must size this for (realCount+1)*12 bytes; this
 // code deliberately preserves storage and the unchecked copy.
-struct GtlDeclElems { char unk0[0x10]; };
+struct GtlDeclElems {
+    char unk0[0x10];
+};
 
 extern "C" {
 
 void* gtl_GenericResource_AllocateModel(unsigned int size);
-void gtl_IGenericModelingResource_CtorEmpty(GenericModelingResource* self);
-unsigned int gtl_GenericResourceVector_GetSize(GenericResourceVec* v);
-void gtl_VertexBufferVector_Resize(GenericResourceVec* v, unsigned int n);
-void** gtl_VertexBufferVector_GetSourceSlot(GenericResourceVec* v, unsigned int i);
-void** gtl_VertexBufferVector_GetDestinationSlot(GenericResourceVec* v, unsigned int i);
-void gtl_IndexBufferVector_Resize(GenericResourceVec* v, unsigned int n);
-void** gtl_IndexBufferVector_GetSourceSlot(GenericResourceVec* v, unsigned int i);
-void** gtl_IndexBufferVector_GetDestinationSlot(GenericResourceVec* v, unsigned int i);
-void gtl_TextureVector_Resize(GenericResourceVec* v, unsigned int n);
-void** gtl_TextureVector_GetSourceSlot(GenericResourceVec* v, unsigned int i);
-void** gtl_TextureVector_GetDestinationSlot(GenericResourceVec* v, unsigned int i);
-void gtl_TexturePaletteVector_Resize(GenericResourceVec* v, unsigned int n);
-void** gtl_TexturePaletteVector_GetSourceSlot(GenericResourceVec* v, unsigned int i);
-void** gtl_TexturePaletteVector_GetDestinationSlot(GenericResourceVec* v, unsigned int i);
-void gtl_VertexDeclarationVector_Resize(GenericResourceVec* v, unsigned int n);
-void** gtl_VertexDeclarationVector_GetSourceSlot(GenericResourceVec* v, unsigned int i);
-void** gtl_VertexDeclarationVector_GetDestinationSlot(GenericResourceVec* v, unsigned int i);
+unsigned int gtl_GenericResourceVector_GetSize(GenericResourceVector* v);
+void gtl_VertexBufferVector_Resize(GenericResourceVector* v, unsigned int n);
+void** gtl_VertexBufferVector_GetSourceSlot(GenericResourceVector* v, unsigned int i);
+void** gtl_VertexBufferVector_GetDestinationSlot(GenericResourceVector* v, unsigned int i);
+void gtl_IndexBufferVector_Resize(GenericResourceVector* v, unsigned int n);
+void** gtl_IndexBufferVector_GetSourceSlot(GenericResourceVector* v, unsigned int i);
+void** gtl_IndexBufferVector_GetDestinationSlot(GenericResourceVector* v, unsigned int i);
+void gtl_TextureVector_Resize(GenericResourceVector* v, unsigned int n);
+void** gtl_TextureVector_GetSourceSlot(GenericResourceVector* v, unsigned int i);
+void** gtl_TextureVector_GetDestinationSlot(GenericResourceVector* v, unsigned int i);
+void gtl_TexturePaletteVector_Resize(GenericResourceVector* v, unsigned int n);
+void** gtl_TexturePaletteVector_GetSourceSlot(GenericResourceVector* v, unsigned int i);
+void** gtl_TexturePaletteVector_GetDestinationSlot(GenericResourceVector* v, unsigned int i);
+void gtl_VertexDeclarationVector_Resize(GenericResourceVector* v, unsigned int n);
+void** gtl_VertexDeclarationVector_GetSourceSlot(GenericResourceVector* v, unsigned int i);
+void** gtl_VertexDeclarationVector_GetDestinationSlot(GenericResourceVector* v, unsigned int i);
 void gtl_GraphicsResource_AddRefToHandle(void* src, void** dst);
-void gtl_IGenericModelingResource_AddRef(void* src, void** dst);
 void VertexBuffer_GetDescription(void* vb, GtlVBDesc* desc);
-void VertexBuffer_Create(unsigned int size, unsigned int a, unsigned int vertexFormat, unsigned int b, void** out, unsigned int c);
+void VertexBuffer_Create(unsigned int size, unsigned int a, unsigned int vertexFormat, unsigned int b, void** out,
+                         unsigned int c);
 void Resource_GetOffsetPtr(void* res, unsigned int a, unsigned int b, void** out, unsigned int c);
 void Memory_Copy(void* dst, void* src, unsigned int size);
 void GraphicsBuffer_Flush(void* res);
 void IndexBuffer_GetDescription(void* ib, GtlIBDesc* desc);
-void IndexBuffer_Create(unsigned int size, unsigned int a, unsigned int indexFormat, unsigned int b, void** out, unsigned int c, unsigned int indexStride);
+void IndexBuffer_Create(unsigned int size, unsigned int a, unsigned int indexFormat, unsigned int b, void** out,
+                        unsigned int c, unsigned int indexStride);
 void IndexBuffer_GetOffsetPtr(void* res, unsigned int a, unsigned int b, void** out, unsigned int c);
-void RepeatHalfwords(void* dst, void* src, unsigned int sourceBytes, unsigned int unusedFormat, unsigned int repetitions);
+void RepeatHalfwords(void* dst, void* src, unsigned int sourceBytes, unsigned int unusedFormat,
+                     unsigned int repetitions);
 void IndexBuffer_Flush(void* res);
 void Texture_GetLevelDescription(void* tex, unsigned int level, GtlTexLevelDesc* desc);
 unsigned int GraphicsResource_GetHeaderWord0C(void* tex);
-void Texture_Create2D(unsigned int w, unsigned int h, unsigned int levels, unsigned int a, unsigned int format, unsigned int b, void** out, unsigned int c);
+void Texture_Create2D(unsigned int w, unsigned int h, unsigned int levels, unsigned int a, unsigned int format,
+                      unsigned int b, void** out, unsigned int c);
 unsigned int TextureFormat_GetC4IndexBitCount(unsigned int format);
 void Texture_LockLevel(void* tex, unsigned int level, GtlLock* lock, unsigned int a, unsigned int b);
 void Texture_UnlockLevel(void* tex, unsigned int level);
 void VertexDeclaration_GetElements(void* decl, GtlDeclElems* elems, unsigned int* count);
 void VertexDeclaration_CreateCopy(GtlDeclElems* elems, void** out);
+}
+
 #pragma push
 #pragma use_lmw_stmw on
-// self/out are required; out must not alias self or one of its slots. Source
+// out is required and must not alias this object or one of its slots. Source
 // handles are borrowed during copying. Publish the newly allocated 0x54-byte
 // owner immediately, then fill its vectors in the order below. Shared slots
 // acquire references; deep slots own newly created resources released with the
@@ -96,20 +112,20 @@ void VertexDeclaration_CreateCopy(GtlDeclElems* elems, void** out);
 // where no deep-copy implementation exists: see palette and associated-owner
 // branches. Unknown flag bits have no effect. No source payload is modified,
 // but deep-copy paths flush BOTH source and destination and lock texture levels.
-// Release model ownership through gtl_IGenericModelingResource_dtor
+// Release model ownership through gtl::IGenericModelingResource::Destroy
 // (gtl_generic_modeling_resource_dtor.cpp): graphics handles first, vector storage next, associated parent
 // last; its positive deleting flag also frees model storage via resource allocator.
-int gtl_IGenericModelingResource_Clone(GenericModelingResource* self, unsigned int flags, GenericModelingResource** out)
-{
-    GenericModelingResource* m = (GenericModelingResource*)gtl_GenericResource_AllocateModel(0x54);
-    if (m != 0) gtl_IGenericModelingResource_CtorEmpty(m);
+int gtl::IGenericModelingResource::Clone(unsigned int flags, IGenericModelingResource** out) {
+    IGenericModelingResource* m = (IGenericModelingResource*)gtl_GenericResource_AllocateModel(0x54);
+    if (m != 0)
+        m->InitEmpty();
     *out = m;
 
     {
-        unsigned int n = gtl_GenericResourceVector_GetSize(&self->vertexBuffers);
+        unsigned int n = gtl_GenericResourceVector_GetSize(&this->vertexBuffers);
         gtl_VertexBufferVector_Resize(&(*out)->vertexBuffers, n);
         for (unsigned int i = 0; i < n; i++) {
-            void* src = *gtl_VertexBufferVector_GetSourceSlot(&self->vertexBuffers, i);
+            void* src = *gtl_VertexBufferVector_GetSourceSlot(&this->vertexBuffers, i);
             void** dst = gtl_VertexBufferVector_GetDestinationSlot(&(*out)->vertexBuffers, i);
             if (src == 0) {
                 *dst = src;
@@ -130,10 +146,10 @@ int gtl_IGenericModelingResource_Clone(GenericModelingResource* self, unsigned i
         }
     }
     {
-        unsigned int n = gtl_GenericResourceVector_GetSize(&self->indexBuffers);
+        unsigned int n = gtl_GenericResourceVector_GetSize(&this->indexBuffers);
         gtl_IndexBufferVector_Resize(&(*out)->indexBuffers, n);
         for (unsigned int i = 0; i < n; i++) {
-            void* src = *gtl_IndexBufferVector_GetSourceSlot(&self->indexBuffers, i);
+            void* src = *gtl_IndexBufferVector_GetSourceSlot(&this->indexBuffers, i);
             void** dst = gtl_IndexBufferVector_GetDestinationSlot(&(*out)->indexBuffers, i);
             if (src == 0) {
                 *dst = src;
@@ -156,10 +172,10 @@ int gtl_IGenericModelingResource_Clone(GenericModelingResource* self, unsigned i
         }
     }
     {
-        unsigned int n = gtl_GenericResourceVector_GetSize(&self->textures);
+        unsigned int n = gtl_GenericResourceVector_GetSize(&this->textures);
         gtl_TextureVector_Resize(&(*out)->textures, n);
         for (unsigned int i = 0; i < n; i++) {
-            void* src = *gtl_TextureVector_GetSourceSlot(&self->textures, i);
+            void* src = *gtl_TextureVector_GetSourceSlot(&this->textures, i);
             void** dst = gtl_TextureVector_GetDestinationSlot(&(*out)->textures, i);
             if (src == 0) {
                 *dst = src;
@@ -191,10 +207,10 @@ int gtl_IGenericModelingResource_Clone(GenericModelingResource* self, unsigned i
         }
     }
     {
-        unsigned int n = gtl_GenericResourceVector_GetSize(&self->palettes);
+        unsigned int n = gtl_GenericResourceVector_GetSize(&this->palettes);
         gtl_TexturePaletteVector_Resize(&(*out)->palettes, n);
         for (unsigned int i = 0; i < n; i++) {
-            void* src = *gtl_TexturePaletteVector_GetSourceSlot(&self->palettes, i);
+            void* src = *gtl_TexturePaletteVector_GetSourceSlot(&this->palettes, i);
             void** dst = gtl_TexturePaletteVector_GetDestinationSlot(&(*out)->palettes, i);
             if (src == 0) {
                 *dst = src;
@@ -207,13 +223,13 @@ int gtl_IGenericModelingResource_Clone(GenericModelingResource* self, unsigned i
         }
     }
     if (!(flags & kCopySecondaryGeometry)) {
-        gtl_IGenericModelingResource_AddRef(self->backingResource, &(*out)->backingResource);
+        ((IGenericModelingResource*)backingResource)->AddRef(&(*out)->backingResource);
     }
     {
-        unsigned int n = gtl_GenericResourceVector_GetSize(&self->vertexBuffers2);
+        unsigned int n = gtl_GenericResourceVector_GetSize(&this->vertexBuffers2);
         gtl_VertexBufferVector_Resize(&(*out)->vertexBuffers2, n);
         for (unsigned int i = 0; i < n; i++) {
-            void* src = *gtl_VertexBufferVector_GetSourceSlot(&self->vertexBuffers2, i);
+            void* src = *gtl_VertexBufferVector_GetSourceSlot(&this->vertexBuffers2, i);
             void** dst = gtl_VertexBufferVector_GetDestinationSlot(&(*out)->vertexBuffers2, i);
             if (src == 0) {
                 *dst = src;
@@ -234,10 +250,10 @@ int gtl_IGenericModelingResource_Clone(GenericModelingResource* self, unsigned i
         }
     }
     {
-        unsigned int n = gtl_GenericResourceVector_GetSize(&self->vertexDecls);
+        unsigned int n = gtl_GenericResourceVector_GetSize(&this->vertexDecls);
         gtl_VertexDeclarationVector_Resize(&(*out)->vertexDecls, n);
         for (unsigned int i = 0; i < n; i++) {
-            void* src = *gtl_VertexDeclarationVector_GetSourceSlot(&self->vertexDecls, i);
+            void* src = *gtl_VertexDeclarationVector_GetSourceSlot(&this->vertexDecls, i);
             void** dst = gtl_VertexDeclarationVector_GetDestinationSlot(&(*out)->vertexDecls, i);
             if (src == 0) {
                 *dst = src;
@@ -257,4 +273,4 @@ int gtl_IGenericModelingResource_Clone(GenericModelingResource* self, unsigned i
 }
 #pragma pop
 
-} // extern "C"
+extern "C" {} // extern "C"

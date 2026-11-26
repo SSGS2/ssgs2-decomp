@@ -16,62 +16,62 @@ OFF(last, 0x8);
 
 class GtlAudioControllerState {
 public:
-    unsigned int mode; // 0x0
-    unsigned int outputBuffer; // 0x4
-    unsigned int callbackCount; // 0x8
-    unsigned int callbackFirst; // 0xC
-    unsigned int callbackLast; // 0x10
-    void* previousCallback; // 0x14
-    unsigned char initialized; // 0x18
-    unsigned char unk_19; // 0x19
+    unsigned int mode;                // 0x0
+    unsigned int outputBuffer;        // 0x4
+    unsigned int callbackCount;       // 0x8
+    unsigned int callbackFirst;       // 0xC
+    unsigned int callbackLast;        // 0x10
+    void* previousCallback;           // 0x14
+    unsigned char initialized;        // 0x18
+    unsigned char unk_19;             // 0x19
     unsigned char driveStatusChanged; // 0x1A
     char pad_01B[0x1];
-    float masterStart; // 0x1C
-    float masterEnd; // 0x20
-    int masterDuration; // 0x24
-    int masterFrame; // 0x28
-    float masterFadeStart; // 0x2C
-    float masterFadeEnd; // 0x30
-    int masterFadeDuration; // 0x34
-    int masterFadeFrame; // 0x38
-    float masterScaleStart; // 0x3C
-    float masterScaleEnd; // 0x40
-    int masterScaleDuration; // 0x44
-    int masterScaleFrame; // 0x48
-    unsigned int updateCallback; // 0x4C
-    unsigned int stopCountdown; // 0x50
-    float channelFade0Start; // 0x54
-    float channelFade0End; // 0x58
-    int channelFade0Duration; // 0x5C
-    int channelFade0Frame; // 0x60
-    float channelFade1Start; // 0x64
-    float channelFade1End; // 0x68
-    int channelFade1Duration; // 0x6C
-    int channelFade1Frame; // 0x70
-    float channelFade2Start; // 0x74
-    float channelFade2End; // 0x78
-    int channelFade2Duration; // 0x7C
-    int channelFade2Frame; // 0x80
-    float channelScale0Start; // 0x84
-    float channelScale0End; // 0x88
-    int channelScale0Duration; // 0x8C
-    int channelScale0Frame; // 0x90
-    float channelScale1Start; // 0x94
-    float channelScale1End; // 0x98
-    int channelScale1Duration; // 0x9C
-    int channelScale1Frame; // 0xA0
-    float channelScale2Start; // 0xA4
-    float channelScale2End; // 0xA8
-    int channelScale2Duration; // 0xAC
-    int channelScale2Frame; // 0xB0
+    float masterStart;                    // 0x1C
+    float masterEnd;                      // 0x20
+    int masterDuration;                   // 0x24
+    int masterFrame;                      // 0x28
+    float masterFadeStart;                // 0x2C
+    float masterFadeEnd;                  // 0x30
+    int masterFadeDuration;               // 0x34
+    int masterFadeFrame;                  // 0x38
+    float masterScaleStart;               // 0x3C
+    float masterScaleEnd;                 // 0x40
+    int masterScaleDuration;              // 0x44
+    int masterScaleFrame;                 // 0x48
+    unsigned int updateCallback;          // 0x4C
+    unsigned int stopCountdown;           // 0x50
+    float channelFade0Start;              // 0x54
+    float channelFade0End;                // 0x58
+    int channelFade0Duration;             // 0x5C
+    int channelFade0Frame;                // 0x60
+    float channelFade1Start;              // 0x64
+    float channelFade1End;                // 0x68
+    int channelFade1Duration;             // 0x6C
+    int channelFade1Frame;                // 0x70
+    float channelFade2Start;              // 0x74
+    float channelFade2End;                // 0x78
+    int channelFade2Duration;             // 0x7C
+    int channelFade2Frame;                // 0x80
+    float channelScale0Start;             // 0x84
+    float channelScale0End;               // 0x88
+    int channelScale0Duration;            // 0x8C
+    int channelScale0Frame;               // 0x90
+    float channelScale1Start;             // 0x94
+    float channelScale1End;               // 0x98
+    int channelScale1Duration;            // 0x9C
+    int channelScale1Frame;               // 0xA0
+    float channelScale2Start;             // 0xA4
+    float channelScale2End;               // 0xA8
+    int channelScale2Duration;            // 0xAC
+    int channelScale2Frame;               // 0xB0
     GtlAudioCallbackList channelLists[3]; // 0xB4: gtl_AudioChannelList_InitEmpty initializes each list
-    unsigned int savedEffectCallback0; // 0xD8
-    unsigned int savedEffectCallback1; // 0xDC
-    unsigned int savedEffectCallback2; // 0xE0
-    unsigned int savedEffectContext0; // 0xE4
-    unsigned int savedEffectContext1; // 0xE8
-    unsigned int savedEffectContext2; // 0xEC
-    unsigned char silentCallbacks[3]; // 0xF0: gtl_AudioController_AttachEffect primes two silent callbacks
+    unsigned int savedEffectCallback0;    // 0xD8
+    unsigned int savedEffectCallback1;    // 0xDC
+    unsigned int savedEffectCallback2;    // 0xE0
+    unsigned int savedEffectContext0;     // 0xE4
+    unsigned int savedEffectContext1;     // 0xE8
+    unsigned int savedEffectContext2;     // 0xEC
+    unsigned char silentCallbacks[3];     // 0xF0: gtl_AudioController_AttachEffect primes two silent callbacks
 };
 
 #define OFF(f, o) typedef char AudioController80404E94_off_##f[((int)&((GtlAudioControllerState*)0)->f == (o)) ? 1 : -1]

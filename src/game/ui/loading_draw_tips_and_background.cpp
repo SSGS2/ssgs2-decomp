@@ -1,10 +1,14 @@
+// The loading screen: tip pages with a continue prompt, the background behind them, and
+// the message file each tip is read from. CLoadingDraw is the main class; CMsgDraw draws the text.
+// The end of the file holds the flash-based file move, CFileIoAccessMoveFlash.
+
 #include <decomp/local_class.h>
 // Loading / tip pages, confirmation controls and viewport-sized background drawing.
 // CLoadingDraw owns its CMsgDraw and resource wrappers; CBpCtrl owns registered
 // BP entries. WFixedFont/message resources supply text; FadeState owns the capture.
-// Shared layouts: CLoadingDraw, CMsgDraw, WFixedFont; pool: u802877E8_data.cpp.
+// Shared layouts: CLoadingDraw, CMsgDraw, WFixedFont; pool: the data section.
 // Modder lookup:
-// - Widescreen background: CLoadingDraw_DrawBackgroundBpAndMessage sizes a four-vertex quad from
+// - Widescreen background: CLoadingDraw::DrawBackgroundBpAndMessage sizes a four-vertex quad from
 //   Engine_GetViewport, in viewport-local pixels (top left, +X right,+Y down).
 //   It does not add viewport x/y. kFloat_0_0009765625_LoadingDraw=1/1024 and
 //   kLoadingBackgroundVPerPixel=1/512 convert pixel width/height to U/V;
@@ -14,7 +18,7 @@
 //   Edit the layout group and text bounds together when moving the tip box.
 // - Frame rate: kLoadingFadeUpdateCount=30 is a FadeState update-call count;
 //   kLoadingPulseAlphaStepPerUpdate=12 moves the prompt's triangular alpha phase
-//   on each vfunc_5 call. CMsgDraw_UpdateReveal and BP callbacks run in vfunc_4,
+//   on each UpdateMessagePagingAndContinue call. CMsgDraw::UpdateReveal and BP callbacks run in DrawBackgroundBpAndMessage,
 //   so render-call frequency can affect text reveal separately from input updates.
 // - Controller: action IDs 0/1/4 mean previous/next/confirm in Input_IsActionPressed;
 //   -1 requests its existing controller-selection policy, not a hardware button ID.
@@ -22,9 +26,9 @@
 // singleton registration, RNG consumption (one rand only for built-in tip choice),
 // background/BP/text draw order and temporary-string cleanup on exceptions.
 // Unified transition map (input/update and draw are separate clocks):
-// vfunc_3 creates message resources, selects text, sets page index=0, configures
+// BeginLoadingScreen creates message resources, selects text, sets page index=0, configures
 // arrows/prompts and suspends cursor drawing. The owner supplies readyToContinue.
-// vfunc_5: fade state 3 -> return 0 before input, paging or pulse changes.
+// UpdateMessagePagingAndContinue: fade state 3 -> return 0 before input, paging or pulse changes.
 // Otherwise previous (when index>0) has priority over next (when a next line
 // exists); each move resets formatting, updates arrows and plays one page sound.
 // Paging is processed even while readyToContinue==0. Then:
@@ -33,13 +37,17 @@
 //   decreasing fade, resume cursor drawing, return 1 (close accepted).
 // Pulse adds 12, wraps values>255 to -255, publishes abs(phase), requests the
 // pending fade transition and returns 0. It does not run on the accepted-close path.
-// vfunc_4 draws background, invokes/draws BP, then advances CMsgDraw reveal and
-// draws glyphs whenever messageDraw exists, including while vfunc_5 is fade-gated.
+// DrawBackgroundBpAndMessage draws background, invokes/draws BP, then advances CMsgDraw reveal and
+// draws glyphs whenever messageDraw exists, including while the update is fade-gated.
 // Thus return 1 means acceptance, state 3 means fading, and neither proves reveal
 // or fade completion. Page navigation and draw-driven reveal must stay separate.
 #include "classes/WFixedFont.h"
 #define LOADING_MEMBER_OFFSET(type, member) ((int)&((type*)0)->member)
-enum LoadingAction { kLoadingPreviousPage = 0, kLoadingNextPage = 1, kLoadingConfirm = 4 };
+enum LoadingAction {
+    kLoadingPreviousPage = 0,
+    kLoadingNextPage = 1,
+    kLoadingConfirm = 4
+};
 // Constants for the loading screen. kLoadingPageGroupId is the layout group id of the tip-page UI group;
 // kLoadingTextColor is the message text colour (packed 0xRRGGBBAA). kUiQuadFormat / kUiTriangleStrip /
 // kUiVertexStride are the vertex-format flags, primitive type and per-vertex byte size passed to the
@@ -54,11 +62,22 @@ enum LoadingAction { kLoadingPreviousPage = 0, kLoadingNextPage = 1, kLoadingCon
 // Keep format, BackgroundVertex layout, template and stride together. 0x98 is
 // GX_TRIANGLESTRIP; GX_GetPrimitiveCount converts four vertices to two triangles
 // for DrawPrimitiveUP. The immediate draw borrows the stack quad for submission.
-enum { kLoadingFadeDecreasing = 3, kLoadingFadeUpdateCount = 30, kLoadingTipCount = 50,
-       kLoadingOpacityMax = 255, kLoadingPulseAlphaStepPerUpdate = 12, kLoadingPageGroupId = 0x3f5,
-       kLoadingTextColor = 0x32326eff, kUiQuadFormat = 0x11f005,
-       kUiTriangleStrip = 0x98, kUiVertexStride = 0x18 };
-struct LoadingTextFactoryView { char prefix[0x10]; WFixedFont* font; };
+enum {
+    kLoadingFadeDecreasing = 3,
+    kLoadingFadeUpdateCount = 30,
+    kLoadingTipCount = 50,
+    kLoadingOpacityMax = 255,
+    kLoadingPulseAlphaStepPerUpdate = 12,
+    kLoadingPageGroupId = 0x3f5,
+    kLoadingTextColor = 0x32326eff,
+    kUiQuadFormat = 0x11f005,
+    kUiTriangleStrip = 0x98,
+    kUiVertexStride = 0x18
+};
+struct LoadingTextFactoryView {
+    char prefix[0x10];
+    WFixedFont* font;
+};
 struct LoadingStrings {
     char courseArchive[11];
     char layout[12];
@@ -75,7 +94,9 @@ struct LoadingStrings {
 };
 #include "classes/CMsgDraw.h"
 // Borrow message-draw fields; CLoadingDraw keeps the renderer alive through drawing.
-static inline CMsgDraw* AsCMsgDraw(void* p) { return (CMsgDraw*)p; }
+static inline CMsgDraw* AsCMsgDraw(void* p) {
+    return (CMsgDraw*)p;
+}
 extern "C" void appFreeUni__FPv(void*);
 
 // Own a completed string only while its enclosing operation can unwind.
@@ -85,10 +106,13 @@ struct EH5StringCleanup {
     // Arm cleanup for a fully constructed temporary string.
     explicit EH5StringCleanup(const void* p) : words((const unsigned int*)p), active(true) {}
     // Disarm after explicit freeing or transfer of the allocation.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Release heap storage on unwinding; inline storage belongs to the string itself.
     ~EH5StringCleanup() {
-        if (active && (words[0] & 0x80000000u)) appFreeUni__FPv((void*)words[2]);
+        if (active && (words[0] & 0x80000000u))
+            appFreeUni__FPv((void*)words[2]);
     }
 };
 
@@ -99,8 +123,7 @@ extern "C" int String_ReserveCapacity(void*, int);
 extern "C" int String_ReplaceRange(void*, int, int, const char*, const char*, void*);
 }
 namespace std {
-template <>
-class basic_string<char, char_traits<char>, app::app_allocator<char> > {
+template <> class basic_string<char, char_traits<char>, app::app_allocator<char> > {
 public:
     unsigned int flags;
     unsigned int length;
@@ -109,36 +132,51 @@ public:
     basic_string() : flags(0), length(0), data(0) {}
     // Copy the borrowed C string; count receives its byte length for ABI-compatible scratch use.
     basic_string(unsigned int text, int& count) {
-        struct Slot { volatile char value; char pad[3]; } allocator, copy;
+        struct Slot {
+            volatile char value;
+            char pad[3];
+        } allocator, copy;
         const char* source = (const char*)text;
-        flags = 0; length = 0; data = 0;
+        flags = 0;
+        length = 0;
+        data = 0;
         count = loading_string_detail::strlen(source);
         loading_string_detail::String_ReserveCapacity(this, count);
         copy.value = allocator.value;
         loading_string_detail::String_ReplaceRange(this, 0, 0, source, source + count, &copy);
     }
     // Release an owned heap buffer; inline bytes need no separate free.
-    ~basic_string() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~basic_string() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
     // Return the active representation's byte length.
     unsigned int size() const {
         return (flags >> 31) == 0 ? (*(const unsigned char*)this & 0x7f) : length;
     }
     // Borrow a null-terminated pointer valid until this string is modified or destroyed.
-    const char* c_str() const { return (flags >> 31) == 0 ? (const char*)this + 1 : data; }
+    const char* c_str() const {
+        return (flags >> 31) == 0 ? (const char*)this + 1 : data;
+    }
 };
 }
 typedef std::basic_string<char, std::char_traits<char>, app::app_allocator<char> > NString;
-
-// Translation unit 0x802877E8-0x80288F50 (10 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CLoadingDraw.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CPackTextureResource.h"
+#include "classes/CMouseCursor.h"
+#include "classes/CFileIoAccessMove.h"
+#include "classes/CFileIoAccessMoveFlash.h"
+#include "classes/CSharedFileHandle.h"
+#include "classes/CBpCtrl.h"
 
 // Borrow the loading-screen layout without changing its resource ownership.
-static inline CLoadingDraw* AsCLoadingDraw(void* p) { return (CLoadingDraw*)p; }
+static inline CLoadingDraw* AsCLoadingDraw(void* p) {
+    return (CLoadingDraw*)p;
+}
 
 extern "C" {
 void appFreeUni__FPv(void*);
@@ -148,10 +186,11 @@ struct StringUnwindCleanup_u802877E8 {
     const unsigned int* words;
     bool active;
     // Arm the common heap-string guard for a completed narrow or wide string.
-    explicit StringUnwindCleanup_u802877E8(const void* string)
-        : words((const unsigned int*)string), active(true) {}
+    explicit StringUnwindCleanup_u802877E8(const void* string) : words((const unsigned int*)string), active(true) {}
     // Hand cleanup back to the explicit normal-return path.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Free only an armed heap-backed string during exceptional scope exit.
     ~StringUnwindCleanup_u802877E8() {
         if (active && (words[0] & 0x80000000u)) {
@@ -159,7 +198,6 @@ struct StringUnwindCleanup_u802877E8 {
         }
     }
 };
-
 
 extern float kFloat_6_2831855;
 extern float s_loadingDrawTwoPi;
@@ -177,16 +215,9 @@ extern int s_loadingDrawRequiresConfirmation;
 extern int s_loadingMessageEntryIndex;
 extern char s_fadeOverlay[];
 
-
-void CSharedFileHandle_Destroy(void*, int);
 int CSharedFilePtr_GetLoadedBuffer(void*);
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor(void*);
-int CBpCtrl_PollAllEntriesLoaded(void*);
-void CPackTextureResource_PollLoad(void*);
-int CPackTextureResource_IsLoadFinished(void*);
 void __dl__FPv(void*);
-void CBpCtrl_DeleteEntryById(void*, int);
 void* IdMap_Lookup(void*, int);
 void UIGroup_SetEnabled(void*, int);
 void FadeOverlay_Init(void*);
@@ -197,11 +228,7 @@ void* BpObject_GetOrCreateNamedGroup(void*, void*);
 void UIGroup_GetPosition(void*, void*);
 void UIGroup_GetSourceSize(void*, void*);
 void Text_SetPosition(void*, void*);
-void CMsgDraw_SetLayoutSize(void*, void*);
-void CMsgDraw_SetColor(void*, int);
-void CMsgDraw_ResetTextState(void*);
 void Text_SetContent(void*, void*);
-void CMsgDraw_ClearFormattingAndRevealAll(void*);
 void appFreeUni__FPv(void*);
 void MessageTable_ExpandEntryText(void*, void*, int, int);
 int rand();
@@ -212,23 +239,16 @@ void* GX_GetPrimitiveCount(int, int);
 void DrawPrimitiveUP(int, void*, void*, int);
 void BpObject_TryInvokeCurrentCallback(void*, int);
 void BpObject_Draw(void*);
-void CMsgDraw_UpdateReveal(void*);
 void Text_DrawGlyphs(void*);
 int String_ReserveCapacity(void*, int);
 int String_ReplaceRange(void*, int, int, const char*, const char*, void*);
-void CFileIoAccessMove_Ctor(void*);
-int CFileIoAccessMove_SetPathsAndStart(void*, const char*, const char*);
 void* __nw__FUl(unsigned int);
 void BpObject_StartScriptByName(void*, const char*, int);
 void* UIGroup_GetOrCreateById(void*, int);
-void CMsgDraw_Ctor(void*, void*);
-int CMsgDraw_HasNoNextLine(void*);
 void WFixedFont_CreateMsgEcbResource(void*, void*, void*, int);
-void CMouseCursor_SetPointerInputEnabled(void*, int);
 void InputManager_Init(void*);
 void InputManager_Dtor(void*);
 void InputManager_SuspendCursorDrawing(void*);
-void CLoadingDraw_SelectAndShowMessage(void*);
 extern void* g_chatMsg;
 extern signed char s_inputManagerInitialized;
 extern void* g_mouseCursor;
@@ -240,20 +260,18 @@ extern int g_soundManager;
 extern float kFloat_0_5_LoadingSound, kFloat_200_LoadingDraw, kFloat_1_LoadingDraw;
 int FadeState_GetState(void*);
 int Input_IsActionPressed(void*, int, int);
-void CMsgDraw_PreviousLine(void*);
-int CMsgDraw_NextLine(void*);
 void Sound_PlayByName(void*, const char*, int, int, int, int, float, float, float);
 void UIGroup_SetOpacity(void*, const char*);
 void InputManager_ResumeCursorDrawing(void*);
 void FadeState_RequestFramebufferCapture(void*);
 
 // Page/confirm a ready loading screen and pulse its prompt; preserve fade and input ordering.
-// self is required with resources created by vfunc_3. Returns 1 only on the
+// self is required with resources created by BeginLoadingScreen. Returns 1 only on the
 // accepted close request (starts a decreasing-alpha fade and restores cursor
 // drawing); returns 0 while waiting OR while phase 3 is already decreasing.
 // This phase-3 test does not mean the fade has completed. All group/font pointers
 // are borrowed for the call. The prompt uses alpha units per update, not seconds.
-int CLoadingDraw_UpdateMessagePagingAndContinue(void* self) {
+int CLoadingDraw::UpdateMessagePagingAndContinue() {
     // Phase 1: obtain fade/input state; an active decreasing fade returns 0 immediately.
     // Action IDs are previous=0, next=1, confirm=4. messageLineIndex is zero-based.
     struct Registration {
@@ -270,168 +288,189 @@ int CLoadingDraw_UpdateMessagePagingAndContinue(void* self) {
         }
         Sing_805DC608() = s_fadeOverlay;
     }
-    if (FadeState_GetState(Sing_805DC608()) == kLoadingFadeDecreasing) return 0;
-    if (!Sing_805DC5C8()) {
+    if (FadeState_GetState(Sing_805DC608()) == kLoadingFadeDecreasing)
+        return 0;
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, base->input);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
 
     // Phase 2: previous takes priority over next; each successful move clears cached
     // formatting and recomputes BOTH arrow visibilities before playing the page sound.
-    if (Input_IsActionPressed(Sing_805DC5C8(),kLoadingPreviousPage, -1) && AsCLoadingDraw(self)->messageLineIndex) {
-        --AsCLoadingDraw(self)->messageLineIndex;
-        CMsgDraw_PreviousLine(AsCLoadingDraw(self)->messageDraw);
-        CMsgDraw_ClearFormattingAndRevealAll(AsCLoadingDraw(self)->messageDraw);
+    if (Input_IsActionPressed(GetInputManagerSlot(), kLoadingPreviousPage, -1) && messageLineIndex) {
+        --messageLineIndex;
+        ((CMsgDraw*)messageDraw)->PreviousLine();
+        ((CMsgDraw*)messageDraw)->ClearFormattingAndRevealAll();
         if (!Sing_805DC5F0()) {
             if (!s_bpCtrlInitialized) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
-                __register_global_object(s_bpCtrl,(void*)CBpCtrl_dtor,(base->bp));
-                s_bpCtrlInitialized=1;
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (base->bp));
+                s_bpCtrlInitialized = 1;
             }
-            Sing_805DC5F0()=s_bpCtrl;
+            Sing_805DC5F0() = s_bpCtrl;
         }
-        void* pageOrPromptGroup = BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(),AsCLoadingDraw(self)->bpEntryId),(loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, previousPage)));
-        UIGroup_SetEnabled(pageOrPromptGroup, AsCLoadingDraw(self)->messageLineIndex != 0);
+        void* pageOrPromptGroup =
+            BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+                                           (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, previousPage)));
+        UIGroup_SetEnabled(pageOrPromptGroup, messageLineIndex != 0);
         if (!Sing_805DC5F0()) {
             if (!s_bpCtrlInitialized) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
-                __register_global_object(s_bpCtrl,(void*)CBpCtrl_dtor,(base->bp));
-                s_bpCtrlInitialized=1;
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (base->bp));
+                s_bpCtrlInitialized = 1;
             }
-            Sing_805DC5F0()=s_bpCtrl;
+            Sing_805DC5F0() = s_bpCtrl;
         }
-        pageOrPromptGroup = BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(),AsCLoadingDraw(self)->bpEntryId),(loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, nextPage)));
-        UIGroup_SetEnabled(pageOrPromptGroup, !CMsgDraw_HasNoNextLine(AsCLoadingDraw(self)->messageDraw));
-        Sound_PlayByName((void*)g_soundManager,(loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, pageChangeSound)),0,0,0,0,kFloat_0_5_LoadingSound,kFloat_200_LoadingDraw,kFloat_1_LoadingDraw);
-    }
-    else {
-        if (!Sing_805DC5C8()) {
+        pageOrPromptGroup =
+            BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+                                           (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, nextPage)));
+        UIGroup_SetEnabled(pageOrPromptGroup, !((CMsgDraw*)messageDraw)->HasNoNextLine());
+        Sound_PlayByName((void*)g_soundManager,
+                         (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, pageChangeSound)), 0, 0, 0, 0,
+                         kFloat_0_5_LoadingSound, kFloat_200_LoadingDraw, kFloat_1_LoadingDraw);
+    } else {
+        if (!GetInputManagerSlot()) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
                 __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, base->input);
                 s_inputManagerInitialized = 1;
             }
-            Sing_805DC5C8() = s_gameInputManager;
+            GetInputManagerSlot() = s_gameInputManager;
         }
-        if (Input_IsActionPressed(Sing_805DC5C8(),kLoadingNextPage,-1) && !CMsgDraw_HasNoNextLine(AsCLoadingDraw(self)->messageDraw)) {
-            ++AsCLoadingDraw(self)->messageLineIndex;
-            CMsgDraw_NextLine(AsCLoadingDraw(self)->messageDraw);
-            CMsgDraw_ClearFormattingAndRevealAll(AsCLoadingDraw(self)->messageDraw);
+        if (Input_IsActionPressed(GetInputManagerSlot(), kLoadingNextPage, -1) &&
+            !((CMsgDraw*)messageDraw)->HasNoNextLine()) {
+            ++messageLineIndex;
+            ((CMsgDraw*)messageDraw)->NextLine();
+            ((CMsgDraw*)messageDraw)->ClearFormattingAndRevealAll();
             if (!Sing_805DC5F0()) {
                 if (!s_bpCtrlInitialized) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl,(void*)CBpCtrl_dtor,(base->bp));
-                    s_bpCtrlInitialized=1;
+                    ((CBpCtrl*)s_bpCtrl)->__ct();
+                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (base->bp));
+                    s_bpCtrlInitialized = 1;
                 }
-                Sing_805DC5F0()=s_bpCtrl;
+                Sing_805DC5F0() = s_bpCtrl;
             }
-            void* pageOrPromptGroup=BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(),AsCLoadingDraw(self)->bpEntryId),(loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, previousPage)));
-            UIGroup_SetEnabled(pageOrPromptGroup,AsCLoadingDraw(self)->messageLineIndex!=0);
+            void* pageOrPromptGroup = BpObject_GetOrCreateNamedGroup(
+                IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+                (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, previousPage)));
+            UIGroup_SetEnabled(pageOrPromptGroup, messageLineIndex != 0);
             if (!Sing_805DC5F0()) {
                 if (!s_bpCtrlInitialized) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl,(void*)CBpCtrl_dtor,(base->bp));
-                    s_bpCtrlInitialized=1;
+                    ((CBpCtrl*)s_bpCtrl)->__ct();
+                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (base->bp));
+                    s_bpCtrlInitialized = 1;
                 }
-                Sing_805DC5F0()=s_bpCtrl;
+                Sing_805DC5F0() = s_bpCtrl;
             }
-            pageOrPromptGroup=BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(),AsCLoadingDraw(self)->bpEntryId),(loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, nextPage)));
-            UIGroup_SetEnabled(pageOrPromptGroup,!CMsgDraw_HasNoNextLine(AsCLoadingDraw(self)->messageDraw));
-            Sound_PlayByName((void*)g_soundManager,(loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, pageChangeSound)),0,0,0,0,kFloat_0_5_LoadingSound,kFloat_200_LoadingDraw,kFloat_1_LoadingDraw);
+            pageOrPromptGroup =
+                BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+                                               (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, nextPage)));
+            UIGroup_SetEnabled(pageOrPromptGroup, !((CMsgDraw*)messageDraw)->HasNoNextLine());
+            Sound_PlayByName((void*)g_soundManager,
+                             (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, pageChangeSound)), 0, 0, 0, 0,
+                             kFloat_0_5_LoadingSound, kFloat_200_LoadingDraw, kFloat_1_LoadingDraw);
         }
     }
 
     // Phase 3: readyToContinue gates completion; confirmation mode waits for action 4.
     // Unconfirmed input falls through to prompt animation (0x80288148).
     do {
-        if (AsCLoadingDraw(self)->readyToContinue) {
+        if (readyToContinue) {
             if (s_loadingDrawRequiresConfirmation) {
-                if (!Sing_805DC5C8()) {
+                if (!GetInputManagerSlot()) {
                     if (!s_inputManagerInitialized) {
                         InputManager_Init(s_gameInputManager);
-                        __register_global_object(s_gameInputManager,(void*)InputManager_Dtor,base->input);
-                        s_inputManagerInitialized=1;
+                        __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, base->input);
+                        s_inputManagerInitialized = 1;
                     }
-                    Sing_805DC5C8()=s_gameInputManager;
+                    GetInputManagerSlot() = s_gameInputManager;
                 }
-                if (!Input_IsActionPressed(Sing_805DC5C8(),kLoadingConfirm,-1)) break;
+                if (!Input_IsActionPressed(GetInputManagerSlot(), kLoadingConfirm, -1))
+                    break;
             }
             {
-                if (s_loadingDrawRequiresConfirmation) Sound_PlayByName((void*)g_soundManager,(loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, confirmSound)),0,0,0,0,kFloat_0_5_LoadingSound,kFloat_200_LoadingDraw,kFloat_1_LoadingDraw);
+                if (s_loadingDrawRequiresConfirmation)
+                    Sound_PlayByName((void*)g_soundManager,
+                                     (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, confirmSound)), 0, 0,
+                                     0, 0, kFloat_0_5_LoadingSound, kFloat_200_LoadingDraw, kFloat_1_LoadingDraw);
                 if (!Sing_805DC608()) {
                     if (!s_fadeOverlayInitialized) {
                         FadeOverlay_Init(s_fadeOverlay);
-                        __register_global_object(s_fadeOverlay,(void*)ResourceState_Dtor,(base->fade));
-                        s_fadeOverlayInitialized=1;
+                        __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, (base->fade));
+                        s_fadeOverlayInitialized = 1;
                     }
-                    Sing_805DC608()=s_fadeOverlay;
+                    Sing_805DC608() = s_fadeOverlay;
                 }
-                FadeState_StartFadeIn(Sing_805DC608(),0);
+                FadeState_StartFadeIn(Sing_805DC608(), 0);
                 if (!Sing_805DC608()) {
                     if (!s_fadeOverlayInitialized) {
                         FadeOverlay_Init(s_fadeOverlay);
-                        __register_global_object(s_fadeOverlay,(void*)ResourceState_Dtor,(base->fade));
-                        s_fadeOverlayInitialized=1;
+                        __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, (base->fade));
+                        s_fadeOverlayInitialized = 1;
                     }
-                    Sing_805DC608()=s_fadeOverlay;
+                    Sing_805DC608() = s_fadeOverlay;
                 }
-                FadeState_StartFadeOut(Sing_805DC608(),kLoadingFadeUpdateCount);
-                if (!Sing_805DC5C8()) {
+                FadeState_StartFadeOut(Sing_805DC608(), kLoadingFadeUpdateCount);
+                if (!GetInputManagerSlot()) {
                     if (!s_inputManagerInitialized) {
                         InputManager_Init(s_gameInputManager);
-                        __register_global_object(s_gameInputManager,(void*)InputManager_Dtor,base->input);
-                        s_inputManagerInitialized=1;
+                        __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, base->input);
+                        s_inputManagerInitialized = 1;
                     }
-                    Sing_805DC5C8()=s_gameInputManager;
+                    GetInputManagerSlot() = s_gameInputManager;
                 }
-                InputManager_ResumeCursorDrawing(Sing_805DC5C8());
+                InputManager_ResumeCursorDrawing(GetInputManagerSlot());
                 return 1;
             }
         }
-    }
-    while (0);
+    } while (0);
 
     // Phase 4: pulse the green prompt with abs(phase), wrapping +255 back to -255.
-    int nextAlphaPhase=AsCLoadingDraw(self)->promptAlphaPhase+kLoadingPulseAlphaStepPerUpdate;
-    AsCLoadingDraw(self)->promptAlphaPhase=nextAlphaPhase;
-    if(nextAlphaPhase>kLoadingOpacityMax) AsCLoadingDraw(self)->promptAlphaPhase=-kLoadingOpacityMax;
+    int nextAlphaPhase = promptAlphaPhase + kLoadingPulseAlphaStepPerUpdate;
+    promptAlphaPhase = nextAlphaPhase;
+    if (nextAlphaPhase > kLoadingOpacityMax)
+        promptAlphaPhase = -kLoadingOpacityMax;
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
-            __register_global_object(s_bpCtrl,(void*)CBpCtrl_dtor,(base->bp));
-            s_bpCtrlInitialized=1;
+            ((CBpCtrl*)s_bpCtrl)->__ct();
+            __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (base->bp));
+            s_bpCtrlInitialized = 1;
         }
-        Sing_805DC5F0()=s_bpCtrl;
+        Sing_805DC5F0() = s_bpCtrl;
     }
-    void* pageOrPromptGroup=BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(),AsCLoadingDraw(self)->bpEntryId),(loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, greenLoadingIndicator)));
-    UIGroup_SetOpacity(pageOrPromptGroup,(const char*)abs(AsCLoadingDraw(self)->promptAlphaPhase));
+    void* pageOrPromptGroup = BpObject_GetOrCreateNamedGroup(
+        IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+        (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, greenLoadingIndicator)));
+    UIGroup_SetOpacity(pageOrPromptGroup, (const char*)abs(promptAlphaPhase));
     if (!Sing_805DC608()) {
         if (!s_fadeOverlayInitialized) {
             FadeOverlay_Init(s_fadeOverlay);
-            __register_global_object(s_fadeOverlay,(void*)ResourceState_Dtor,(base->fade));
-            s_fadeOverlayInitialized=1;
+            __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, (base->fade));
+            s_fadeOverlayInitialized = 1;
         }
-        Sing_805DC608()=s_fadeOverlay;
+        Sing_805DC608() = s_fadeOverlay;
     }
     FadeState_RequestFramebufferCapture(Sing_805DC608());
     return 0;
 }
 // Construct the owned loading-message renderer for the supplied text factory.
-struct AllocObj80287A08 {
+struct CMsgDrawStorage {
     char pad[0x4bc];
     // Initialize the owned message renderer with the borrowed font/resource factory.
-    AllocObj80287A08(void* p) { CMsgDraw_Ctor(this, p); }
+    CMsgDrawStorage(void* p) {
+        ((CMsgDraw*)this)->__ct(p);
+    }
 };
-struct Base80287A08 { 
-virtual void v1(int);
+struct Base80287A08 {
+    virtual void v1(int);
 };
 
 // Create the tip renderer, initialize page controls, hide the cursor, and start the loading fade.
-// Admission: ctor completed, vfunc_2 returned ready, BP entry/font factory valid;
+// Admission: ctor completed, the readiness poll returned ready, BP entry/font factory valid;
 // call ONCE. The message-file bytes (external mode) and font message archive are
 // borrowed by the new ECB context and must outlive it. WFixedFont_CreateMsgEcbResource
 // (pet_mesh_and_fixed_font.cpp) allocates/publishes the owned context then initializes borrowed tables;
@@ -440,7 +479,7 @@ virtual void v1(int);
 // A throw after ECB publication leaves that member owned by self; a throw inside
 // renderer construction does not publish messageDraw. The destructor releases
 // whichever nonnull members were published: renderer, background, ECB, BP entry,
-// pack; vfunc_8 releases messageFile first. This is valid for the constructed
+// pack; ResetMessage releases messageFile first. This is valid for the constructed
 // CMsgEcbResource: its vtable (phase1_class_tables.cpp) selects
 // CMsgEcbResource_dtor (mw_string_stream_and_text_tags.cpp), which ONLY conditionally frees the context
 // allocation. It neither reads nor releases table/grouped-table pointers.
@@ -451,116 +490,127 @@ virtual void v1(int);
 // overwrites members and leaks them; no partial-initialization success is reported.
 // Cursor suspension occurs only after text/control setup; exceptions before it
 // have not acquired a suspension. The normal accepted-close path resumes it.
-void CLoadingDraw_BeginLoadingScreen(void* self) {
+void CLoadingDraw::BeginLoadingScreen() {
     void* r = 0;
     unsigned int base = (unsigned int)s_inputManagerDtorRegistration_LoadingDraw;
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)(((void*)(base + 0x18))));
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    void* a = IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId);
+    void* a = IdMap_Lookup(Sing_805DC5F0(), bpEntryId);
     BpObject_StartScriptByName(a, (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, loadingScript)), 1);
-    void* p = AsCLoadingDraw(self)->messageFile;
+    void* p = messageFile;
     void* manager = ((LoadingTextFactoryView*)g_chatMsg)->font;
-    if (p) WFixedFont_CreateMsgEcbResource(manager, &AsCLoadingDraw(self)->messageEcbResource, (void*)(long)CSharedFilePtr_GetLoadedBuffer(p), 0);
-    else WFixedFont_CreateMsgEcbResource(manager, &AsCLoadingDraw(self)->messageEcbResource, 0, 0);
-    AllocObj80287A08* obj = new AllocObj80287A08(AsWFixedFont(manager)->messageResource);
-    AsCLoadingDraw(self)->messageDraw = obj;
-    CLoadingDraw_SelectAndShowMessage(self);
+    if (p)
+        WFixedFont_CreateMsgEcbResource(manager, &messageEcbResource, (void*)(long)CSharedFilePtr_GetLoadedBuffer(p),
+                                        0);
+    else
+        WFixedFont_CreateMsgEcbResource(manager, &messageEcbResource, 0, 0);
+    CMsgDrawStorage* obj = new CMsgDrawStorage(AsWFixedFont(manager)->messageResource);
+    messageDraw = obj;
+    SelectAndShowMessage();
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, ((void*)(base + 0x18)));
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId), (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, continuePrompt))), 0);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+                                       (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, continuePrompt))),
+        0);
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, ((void*)(base + 0x18)));
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId), (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, previousPage))), 0);
+    UIGroup_SetEnabled(
+        BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+                                       (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, previousPage))),
+        0);
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, ((void*)(base + 0x18)));
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    r = BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId), (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, nextPage)));
-    UIGroup_SetEnabled(r, CMsgDraw_HasNoNextLine(AsCLoadingDraw(self)->messageDraw) == 0);
+    r = BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+                                       (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, nextPage)));
+    UIGroup_SetEnabled(r, ((CMsgDraw*)messageDraw)->HasNoNextLine() == 0);
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, ((void*)(base + 0x18)));
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    r = BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId), (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, pageChangeHint)));
-    UIGroup_SetEnabled(r, CMsgDraw_HasNoNextLine(AsCLoadingDraw(self)->messageDraw) == 0);
+    r = BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+                                       (loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, pageChangeHint)));
+    UIGroup_SetEnabled(r, ((CMsgDraw*)messageDraw)->HasNoNextLine() == 0);
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, ((void*)(base + 0x18)));
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    r = UIGroup_GetOrCreateById(IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId), kLoadingPageGroupId);
-    UIGroup_SetEnabled(r, CMsgDraw_HasNoNextLine(AsCLoadingDraw(self)->messageDraw) == 0);
-    AsCLoadingDraw(self)->messageLineIndex = 0;
-    AsCLoadingDraw(self)->promptAlphaPhase = kLoadingOpacityMax;
-    AsCLoadingDraw(self)->readyToContinue = 0;
-    AsCLoadingDraw(self)->unk_38 = 0;
+    r = UIGroup_GetOrCreateById(IdMap_Lookup(Sing_805DC5F0(), bpEntryId), kLoadingPageGroupId);
+    UIGroup_SetEnabled(r, ((CMsgDraw*)messageDraw)->HasNoNextLine() == 0);
+    messageLineIndex = 0;
+    promptAlphaPhase = kLoadingOpacityMax;
+    readyToContinue = 0;
+    unk_38 = 0;
     // Reserved loading state; only its reset is established here.
-    CMouseCursor_SetPointerInputEnabled(g_mouseCursor, 0);
-    if (!Sing_805DC5C8()) {
+    CMouseCursor::SetPointerInputEnabled(g_mouseCursor, 0);
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, (void*)(base + 0));
-            s_inputManagerInitialized=1;
+            s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8()=s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    InputManager_SuspendCursorDrawing(Sing_805DC5C8());
+    InputManager_SuspendCursorDrawing(GetInputManagerSlot());
     if (!Sing_805DC608()) {
         if (!s_fadeOverlayInitialized) {
             FadeOverlay_Init(s_fadeOverlay);
-            __register_global_object(s_fadeOverlay,(void*)ResourceState_Dtor,((void*)(base + 0xc)));
-            s_fadeOverlayInitialized=1;
+            __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, ((void*)(base + 0xc)));
+            s_fadeOverlayInitialized = 1;
         }
-        Sing_805DC608()=s_fadeOverlay;
+        Sing_805DC608() = s_fadeOverlay;
     }
-    FadeState_StartFadeIn(Sing_805DC608(),0);
+    FadeState_StartFadeIn(Sing_805DC608(), 0);
     if (!Sing_805DC608()) {
         if (!s_fadeOverlayInitialized) {
             FadeOverlay_Init(s_fadeOverlay);
-            __register_global_object(s_fadeOverlay,(void*)ResourceState_Dtor,((void*)(base + 0xc)));
-            s_fadeOverlayInitialized=1;
+            __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, ((void*)(base + 0xc)));
+            s_fadeOverlayInitialized = 1;
         }
-        Sing_805DC608()=s_fadeOverlay;
+        Sing_805DC608() = s_fadeOverlay;
     }
-    FadeState_StartFadeOut(Sing_805DC608(),kLoadingFadeUpdateCount);
-    p = AsCLoadingDraw(self)->texturePack;
+    FadeState_StartFadeOut(Sing_805DC608(), kLoadingFadeUpdateCount);
+    p = texturePack;
     if (p) {
         if (p) {
             ((Base80287A08*)p)->v1(1);
         }
-        AsCLoadingDraw(self)->texturePack=0;
+        texturePack = 0;
     }
 }
-struct Freeable802877E8 {
+struct FreeableView {
     virtual void free(int);
 };
 struct VTable10 {
@@ -575,98 +625,100 @@ struct VTable10 {
     virtual void v8();
 };
 // Release the message renderer, background, ECB resource, script entry, and texture pack.
-void* CLoadingDraw_dtor(void* self, int flag) {
-    if (self != 0) {
+CLoadingDraw::~CLoadingDraw() {
     // Plain C: reset the vtable, run vfunc 8 of the base, then free each owned object
     // (message renderer, background pane, ECB resource, texture pack) and null its field,
     // and delete the bp-controller entry. The repeated "p != 0" tests are compiler-matching noise.
-    *(void**)self = (void*)__vt__12CLoadingDraw;
-    ((VTable10*)self)->v8();
-    void* p = AsCLoadingDraw(self)->messageDraw;
+    *(void**)this = (void*)__vt__12CLoadingDraw;
+    ((VTable10*)this)->v8();
+    void* p = messageDraw;
     if (p != 0) {
         if (p != 0) {
-            ((Freeable802877E8*)p)->free(1);
+            ((FreeableView*)p)->free(1);
         }
-        AsCLoadingDraw(self)->messageDraw = 0;
+        messageDraw = 0;
     }
-    p = AsCLoadingDraw(self)->backgroundPane;
+    p = backgroundPane;
     if (p != 0) {
         if (p != 0) {
-            ((Freeable802877E8*)p)->free(1);
+            ((FreeableView*)p)->free(1);
         }
-        AsCLoadingDraw(self)->backgroundPane = 0;
+        backgroundPane = 0;
     }
-    p = AsCLoadingDraw(self)->messageEcbResource;
+    p = messageEcbResource;
     if (p != 0) {
         if (p != 0) {
-            ((Freeable802877E8*)p)->free(1);
+            ((FreeableView*)p)->free(1);
         }
-        AsCLoadingDraw(self)->messageEcbResource = 0;
+        messageEcbResource = 0;
     }
-    if (AsCLoadingDraw(self)->bpEntryId != -1) {
+    if (bpEntryId != -1) {
         // Lazily create the global CBpCtrl singleton (Sing_805DC5F0 = its instance pointer), then drop our entry.
         if (Sing_805DC5F0() == 0) {
             if (s_bpCtrlInitialized == 0) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_LoadingDraw);
                 s_bpCtrlInitialized = 1;
             }
             Sing_805DC5F0() = s_bpCtrl;
         }
-        CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId);
-        AsCLoadingDraw(self)->bpEntryId = -1;
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(bpEntryId);
+        bpEntryId = -1;
     }
-    p = AsCLoadingDraw(self)->texturePack;
+    p = texturePack;
     if (p != 0) {
         if (p != 0) {
-            ((Freeable802877E8*)p)->free(1);
+            ((FreeableView*)p)->free(1);
         }
-        AsCLoadingDraw(self)->texturePack = 0;
+        texturePack = 0;
     }
-    if (flag > 0) {
-        __dl__FPv(self);
-    }
-    }
-    return self;
 }
 
 // Mark loading complete and switch loading indicators to the confirmation prompt when required.
-void CLoadingDraw_MarkReadyAndShowContinuePrompt(void* self) {
-    if (AsCLoadingDraw(self)->readyToContinue != 0) return;
-    AsCLoadingDraw(self)->readyToContinue = 1;
-    if (s_loadingDrawRequiresConfirmation == 0) return;
+void CLoadingDraw::MarkReadyAndShowContinuePrompt() {
+    if (readyToContinue != 0)
+        return;
+    readyToContinue = 1;
+    if (s_loadingDrawRequiresConfirmation == 0)
+        return;
 
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_LoadingDraw);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    void* r = BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId), (void*)((loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, continuePrompt))));
+    void* r = BpObject_GetOrCreateNamedGroup(
+        IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+        (void*)((loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, continuePrompt))));
     UIGroup_SetEnabled(r, 1);
 
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_LoadingDraw);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    r = BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId), (void*)((loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, greenLoadingIndicator))));
+    r = BpObject_GetOrCreateNamedGroup(
+        IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+        (void*)((loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, greenLoadingIndicator))));
     UIGroup_SetEnabled(r, 0);
 
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_LoadingDraw);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    r = BpObject_GetOrCreateNamedGroup(IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId), (void*)((loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, blueLoadingIndicator))));
+    r = BpObject_GetOrCreateNamedGroup(
+        IdMap_Lookup(Sing_805DC5F0(), bpEntryId),
+        (void*)((loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, blueLoadingIndicator))));
     UIGroup_SetEnabled(r, 0);
 
     if (Sing_805DC608() == 0) {
@@ -687,27 +739,29 @@ void CLoadingDraw_MarkReadyAndShowContinuePrompt(void* self) {
         }
         Sing_805DC608() = s_fadeOverlay;
     }
-    FadeState_StartFadeOut(Sing_805DC608(),kLoadingFadeUpdateCount);
+    FadeState_StartFadeOut(Sing_805DC608(), kLoadingFadeUpdateCount);
 }
 
 // Release the external message file and reset shared loading-message selection.
-// Called through vfunc_8 at the START of CLoadingDraw_dtor. This ends table use,
+// Called as a virtual function at the START of CLoadingDraw::~CLoadingDraw. This ends table use,
 // not ECB allocation lifetime: the later CMsgEcbResource_dtor only frees self
 // (mw_string_stream_and_text_tags.cpp), so it never dereferences the now-invalid borrowed table address.
 // Caller must quiesce ECB consumers first; do not reuse messageEcbResource for a
 // lookup after reset, and do not infer that another registry reference keeps
 // file bytes alive. Reset does not null the ECB pointer or synchronize readers.
-void CLoadingDraw_ResetMessage(void* self) {
-    void* p = AsCLoadingDraw(self)->messageFile;
+void CLoadingDraw::ResetMessage() {
+    void* p = messageFile;
     if (p != 0) {
-        CSharedFileHandle_Destroy(p, 1);
-        AsCLoadingDraw(self)->messageFile = 0;
+        CSharedFileHandle::Destroy(p, 1);
+        messageFile = 0;
     }
     unsigned int v = s_loadingDrawStringStorage.flags;
     s_loadingDrawRequiresConfirmation = 0;
     if (!(v >> 31)) {
         ((unsigned char*)&s_loadingDrawStringStorage)[1] = 0;
-        struct Flag { CW_BITS2( unsigned char hi : 1, unsigned char lo : 7) };
+        struct Flag {
+            CW_BITS2(unsigned char hi : 1, unsigned char lo : 7)
+        };
         ((Flag*)&s_loadingDrawStringStorage)->lo = 0;
     } else {
         unsigned char* q = (unsigned char*)s_loadingDrawStringStorage.data;
@@ -729,18 +783,22 @@ void CLoadingDraw_ResetMessage(void* self) {
 // ran even once, result remains 0 and the caller must poll again after completion.
 // Message/background/BP pending states merely clear result; they do not skip this
 // pack drain. No allocations transfer to the caller and no output arg is written.
-int CLoadingDraw_PollResourcesLoaded(void* self) {
+int CLoadingDraw::PollResourcesLoaded() {
     int result = 1;
     if (s_loadingDrawRequiresConfirmation != 0) {
-        void* p = AsCLoadingDraw(self)->messageFile;
+        void* p = messageFile;
         if (CSharedFilePtr_GetLoadedBuffer(p) == 0) {
             result = 0;
         }
     }
-    void* p24 = AsCLoadingDraw(self)->backgroundPane;
+    void* p24 = backgroundPane;
     if (p24 != 0) {
-        struct V6 { 
-        virtual int a() DECOMP_LOCAL_VIRTUAL; virtual int b() DECOMP_LOCAL_VIRTUAL; virtual int c() DECOMP_LOCAL_VIRTUAL; virtual int d() DECOMP_LOCAL_VIRTUAL; virtual int e() DECOMP_LOCAL_VIRTUAL;
+        struct V6 {
+            virtual int a() DECOMP_LOCAL_VIRTUAL;
+            virtual int b() DECOMP_LOCAL_VIRTUAL;
+            virtual int c() DECOMP_LOCAL_VIRTUAL;
+            virtual int d() DECOMP_LOCAL_VIRTUAL;
+            virtual int e() DECOMP_LOCAL_VIRTUAL;
         };
         if (!((V6*)p24)->e()) {
             result = 0;
@@ -748,19 +806,18 @@ int CLoadingDraw_PollResourcesLoaded(void* self) {
     }
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_LoadingDraw);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    if (CBpCtrl_PollAllEntriesLoaded(Sing_805DC5F0()) == 0) {
+    if (((CBpCtrl*)Sing_805DC5F0())->PollAllEntriesLoaded() == 0) {
         result = 0;
     }
     // 0x80287AE8-0x80287B00: keep the original branch order for CodeWarrior matching.
-    while (AsCLoadingDraw(self)->texturePack != 0 &&
-    CPackTextureResource_IsLoadFinished(AsCLoadingDraw(self)->texturePack) == 0) {
-        CPackTextureResource_PollLoad(AsCLoadingDraw(self)->texturePack);
+    while (texturePack != 0 && ((CPackTextureResource*)(texturePack))->IsLoadFinished() == 0) {
+        ((CPackTextureResource*)texturePack)->PollLoad();
         result = 0;
     }
     return result;
@@ -773,7 +830,7 @@ int CLoadingDraw_PollResourcesLoaded(void* self) {
 // before its heap buffer is freed; no ownership of that temporary escapes.
 // External-index contract: 0 <= s_loadingMessageEntryIndex < the active ECB's
 // MessageContext_GetResourceData count. It is a signed word at 805DB6F8 (initial
-// -1 in u802877E8_data); vfunc_8 restores -1. A source/include search finds no
+// -1 in the data section); ResetMessage restores -1. A source/include search finds no
 // producer of a valid index or nonzero confirmation flag in this revision: the
 // implemented external-mode producer is absent. The only other named path writer
 // found is CTask warmup's String_ReserveCapacity (game_main_loop_and_startup.cpp), which reserves storage
@@ -785,8 +842,8 @@ int CLoadingDraw_PollResourcesLoaded(void* self) {
 // compatible ECB table bytes and a valid entry index, then publish nonzero
 // confirmation BEFORE CLoadingDraw_Ctor (pop_item_dialog_and_loading_draw.cpp). It snapshots the path into
 // SharedFile_Create only when the flag is set. PollResourcesLoaded must see a
-// nonnull handle and loaded bytes before vfunc_3 creates the ECB/expands text.
-// Keep path/index/flag coherent until vfunc_8 resets all three; do not overlap
+// nonnull handle and loaded bytes before BeginLoadingScreen creates the ECB/expands text.
+// Keep path/index/flag coherent until ResetMessage resets all three; do not overlap
 // loading instances, since these settings are process globals, not per-screen.
 // No lock, input validation, failed-open recovery or runtime reconfiguration
 // protocol is supplied. Setting only the flag with default index -1 is invalid.
@@ -795,48 +852,51 @@ int CLoadingDraw_PollResourcesLoaded(void* self) {
 // dereferences that entry and resolves its text offset. Negative/out-of-range
 // indices can read outside the table. Unsupported table format alone returns a
 // null text pointer; neither this call nor the expansion return is checked here.
-void CLoadingDraw_SelectAndShowMessage(void* self) {
+void CLoadingDraw::SelectAndShowMessage() {
     // UIGroup_GetPosition/GetSourceSize write float XY/width-height pairs.
     // Keep word initialization/copies: these int fields carry IEEE-754 bits,
     // not integer coordinates. Text_SetPosition/SetLayoutSize read the floats.
-    struct Pair { int firstFloatBits; int secondFloatBits; } position = {0, 0}, size = {0, 0};
+    struct Pair {
+        int firstFloatBits;
+        int secondFloatBits;
+    } position = {0, 0}, size = {0, 0};
 
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_LoadingDraw);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    void* tmp = IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId);
-    void* messageGroup = BpObject_GetOrCreateNamedGroup(tmp, (void*)((loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, messageGroup))));
+    void* tmp = IdMap_Lookup(Sing_805DC5F0(), bpEntryId);
+    void* messageGroup = BpObject_GetOrCreateNamedGroup(
+        tmp, (void*)((loadingDrawStrings + LOADING_MEMBER_OFFSET(LoadingStrings, messageGroup))));
     UIGroup_GetPosition(messageGroup, &position);
     UIGroup_GetSourceSize(messageGroup, &size);
-    Text_SetPosition(AsCLoadingDraw(self)->messageDraw, &position);
-    CMsgDraw_SetLayoutSize(AsCLoadingDraw(self)->messageDraw, &size);
-    CMsgDraw_SetColor(AsCLoadingDraw(self)->messageDraw, kLoadingTextColor);
+    Text_SetPosition(messageDraw, &position);
+    ((CMsgDraw*)messageDraw)->SetLayoutSize((float*)&size);
+    ((CMsgDraw*)messageDraw)->SetColor(kLoadingTextColor);
 
     WString text;
     if (s_loadingDrawRequiresConfirmation != 0) {
-        MessageTable_ExpandEntryText(AsCLoadingDraw(self)->messageEcbResource, &text, s_loadingMessageEntryIndex, 0);
+        MessageTable_ExpandEntryText(messageEcbResource, &text, s_loadingMessageEntryIndex, 0);
     } else {
         int tipIndex = rand() % kLoadingTipCount;
-        Text_ExpandTaggedText(AsCLoadingDraw(self)->messageEcbResource, &text, (void*)(long)kLoadingTipMessageTags[tipIndex], 0);
+        Text_ExpandTaggedText(messageEcbResource, &text, (void*)(long)kLoadingTipMessageTags[tipIndex], 0);
     }
 
-    CMsgDraw_ResetTextState(AsCLoadingDraw(self)->messageDraw);
+    ((CMsgDraw*)messageDraw)->ResetTextState();
 
     void* expandedText = ((text.flags >> 31) == 0) ? (void*)((char*)&text + 2) : (void*)text.data;
-    Text_SetContent(AsCLoadingDraw(self)->messageDraw, expandedText);
-    CMsgDraw_ClearFormattingAndRevealAll(AsCLoadingDraw(self)->messageDraw);
-
+    Text_SetContent(messageDraw, expandedText);
+    ((CMsgDraw*)messageDraw)->ClearFormattingAndRevealAll();
 }
 
 float s_loadingDrawTwoPi = kFloat_6_2831855;
 NString s_loadingDrawStringStorage;
 
-// Pool u802877E8_data.cpp: normalized U per pixel = 1/1024; V per pixel = 1/512.
+// Pool the data section: normalized U per pixel = 1/1024; V per pixel = 1/512.
 // Larger scales tile/sample more of the texture at the same viewport size.
 // These are texture-coordinate controls, not output-resolution controls.
 extern float kFloat_0_0009765625_LoadingDraw;
@@ -852,10 +912,10 @@ extern char flashMovePathAndExceptionStrings[];
 // be null; those stages are skipped. The background's bind virtual method supplies
 // its texture; this function changes vertex format and does not restore prior state.
 // Keep the two UV scales independent of aspect/projection changes; see lookup above.
-void CLoadingDraw_DrawBackgroundBpAndMessage(void* self) {
+void CLoadingDraw::DrawBackgroundBpAndMessage() {
     // Phase 1: size the screen-space background in pixels; UV repeats use
     // width/1024 and height/512 from the original texture scale constants.
-    if (AsCLoadingDraw(self)->backgroundPane) {
+    if (backgroundPane) {
         unsigned int viewport[6];
         // Four XYZ/RGBA/UV vertices; bit-preserving template assignment fills all fields.
         struct BackgroundVertex {
@@ -886,40 +946,40 @@ void CLoadingDraw_DrawBackgroundBpAndMessage(void* self) {
         quad.vertices[3].y = (float)viewportHeight;
         quad.vertices[3].u = (float)viewportWidth * kFloat_0_0009765625_LoadingDraw;
         quad.vertices[3].v = (float)viewportHeight * kLoadingBackgroundVPerPixel;
-        ((V5*)AsCLoadingDraw(self)->backgroundPane)->f();
+        ((V5*)backgroundPane)->f();
         Engine_SetFlexibleVertexFormat(kUiQuadFormat);
         void* verts = GX_GetPrimitiveCount(4, kUiTriangleStrip);
         DrawPrimitiveUP(kUiTriangleStrip, verts, quad.vertices, kUiVertexStride);
     }
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_LoadingDraw);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    void* r = IdMap_Lookup(Sing_805DC5F0(), AsCLoadingDraw(self)->bpEntryId);
+    void* r = IdMap_Lookup(Sing_805DC5F0(), bpEntryId);
     BpObject_TryInvokeCurrentCallback(r, 0);
     BpObject_Draw(r);
-    if (AsCLoadingDraw(self)->messageDraw) {
-        CMsgDraw_UpdateReveal(AsCLoadingDraw(self)->messageDraw);
-        AsCMsgDraw(AsCLoadingDraw(self)->messageDraw)->drawSuppressed = 0;
-        Text_DrawGlyphs(AsCLoadingDraw(self)->messageDraw);
+    if (messageDraw) {
+        ((CMsgDraw*)messageDraw)->UpdateReveal();
+        AsCMsgDraw(messageDraw)->drawSuppressed = 0;
+        Text_DrawGlyphs(messageDraw);
     }
 }
 #pragma push
 #pragma use_lmw_stmw on
-struct CFileIoAccessMoveFlash {
-    char pad[0x28];
-    // Construct the base move operation and install its flash-specific interface.
-    CFileIoAccessMoveFlash() { CFileIoAccessMove_Ctor(this); *(void**)this = (void*)__vt__22CFileIoAccessMoveFlash; }
-};
+// Construct the base move operation and install its flash-specific interface.
+inline CFileIoAccessMoveFlash::CFileIoAccessMoveFlash() {
+    ((CFileIoAccessMove*)this)->__ct();
+    vtbl = (void*)__vt__22CFileIoAccessMoveFlash;
+}
 
 // Prefix destination and source paths, create move access, and discard it on setup failure.
 // Argument order is DESTINATION, SOURCE: CommitSaveFile/CommitBannerFile in
 // flash_memory_menu_save.cpp pass the permanent filename first and the temporary filename second.
-// The backing CFileIoFlash_MoveQualifiedPath (cfileio_flash_file_operations.cpp) calls FileIO_MoveFile
+// The backing CFileIoFlash::MoveQualifiedPath (cfileio_flash_file_operations.cpp) calls FileIO_MoveFile
 // with source,destination, reversing these accessor arguments at that boundary.
 // Both are borrowed NUL-terminated relative flash paths; null is rejected.
 // No normalization/prefix detection occurs: "fmem:" is prepended to BOTH paths
@@ -932,15 +992,15 @@ struct CFileIoAccessMoveFlash {
 // Nonnull means accepted setup, not completed move: poll IsFinished and the
 // failure latch. Null input/allocation/rejected setup returns null and destroys
 // any allocated access. A later move failure has no rollback guarantee here.
-void* CFileIoAccessMoveFlash_Create(void* destinationPath, void* sourcePath) {
+void* CFileIoAccessMoveFlash::Create(void* destinationPath, void* sourcePath) {
     CFileIoAccessMoveFlash* obj = new CFileIoAccessMoveFlash();
-    if (!obj) return 0;
+    if (!obj)
+        return 0;
     unsigned int moveStarted;
     int textLength;
     if (!sourcePath || !destinationPath) {
         moveStarted = 0;
-    }
-    else {
+    } else {
         struct Slot {
             volatile char v;
             char pad[3];
@@ -952,14 +1012,16 @@ void* CFileIoAccessMoveFlash_Create(void* destinationPath, void* sourcePath) {
         textLength = prefixedSource.size();
         c3.v = c2.v;
         unsigned int len = strlen((const char*)sourcePath);
-        String_ReplaceRange(&prefixedSource, textLength, 0, (const char*)sourcePath, (const char*)sourcePath + len, &c3);
+        String_ReplaceRange(&prefixedSource, textLength, 0, (const char*)sourcePath, (const char*)sourcePath + len,
+                            &c3);
         NString prefixedDestination((unsigned int)flashMovePathAndExceptionStrings, textLength);
         textLength = prefixedDestination.size();
         c7.v = c6.v;
-        String_ReplaceRange(&prefixedDestination, textLength, 0, (const char*)destinationPath, (const char*)destinationPath + strlen((const char*)destinationPath), &c7);
+        String_ReplaceRange(&prefixedDestination, textLength, 0, (const char*)destinationPath,
+                            (const char*)destinationPath + strlen((const char*)destinationPath), &c7);
         const char* sourceText = prefixedSource.c_str();
         const char* destinationText = prefixedDestination.c_str();
-        moveStarted = CFileIoAccessMove_SetPathsAndStart(obj, destinationText, sourceText);
+        moveStarted = ((CFileIoAccessMove*)obj)->SetPathsAndStart(destinationText, sourceText);
     }
     if (!moveStarted) {
         struct VF {
@@ -968,7 +1030,8 @@ void* CFileIoAccessMoveFlash_Create(void* destinationPath, void* sourcePath) {
             virtual void capability() DECOMP_LOCAL_VIRTUAL;
             virtual void destroy(int) DECOMP_LOCAL_VIRTUAL;
         };
-        if (obj) ((VF*)obj)->destroy(1);
+        if (obj)
+            ((VF*)obj)->destroy(1);
         return 0;
     }
     return obj;

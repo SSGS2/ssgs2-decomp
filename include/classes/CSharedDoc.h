@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CSHAREDDOC_H
 #define CLASSES_CSHAREDDOC_H
 
@@ -7,67 +5,68 @@
 
 class CSharedDoc {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x3c]; // 0x4
-    short unk_40; // 0x40: GolfRule_UpdateRoundRewards
-    char pad_042[0x722]; // 0x42
-    void* strokePlayName;                      // 0x764: 1 use in CSharedDoc_Ctor
-    unsigned char unk_768;              // 0x768: 1 use in CSharedDoc_Ctor
-    unsigned char unk_769;              // 0x769: 1 use in CSharedDoc_Ctor
-    unsigned char unk_76A;              // 0x76a: 1 use in CSharedDoc_Ctor
-    char pad_76B[0x1];                  // 0x76b
-    void* matchPlayName;                      // 0x76c: 1 use in CSharedDoc_Ctor
-    unsigned char unk_770;              // 0x770: 1 use in CSharedDoc_Ctor
-    unsigned char unk_771;              // 0x771: 1 use in CSharedDoc_Ctor
-    unsigned char unk_772;              // 0x772: 1 use in CSharedDoc_Ctor
-    char pad_773[0x1];                  // 0x773
-    void* caddiePracticeName;                      // 0x774: 1 use in CSharedDoc_Ctor
-    unsigned char unk_778;              // 0x778: 1 use in CSharedDoc_Ctor
-    unsigned char unk_779;              // 0x779: 1 use in CSharedDoc_Ctor
-    unsigned char unk_77A;              // 0x77a: 1 use in CSharedDoc_Ctor
-    char pad_77B[0xd];                  // 0x77b
-    void* firstOwnedTreeRoot;                      // 0x788: 1 use in CSharedDoc_dtor
-    char pad_78C[0xc];                  // 0x78c
-    void* secondOwnedTreeRoot;                      // 0x798: 1 use in CSharedDoc_dtor
-    char pad_79C[0x8];                  // 0x79c
-    int unk_7A4;                        // 0x7a4: 1 use in CSharedDoc_dtor
-    char pad_7A8[0x4];                  // 0x7a8
-    void* unk_7AC;                      // 0x7ac: 1 use in CSharedDoc_dtor
-    int unk_7B0;                        // 0x7b0: 1 use in CSharedDoc_dtor
-    char pad_7B4[0x4];                  // 0x7b4
-    void* unk_7B8;                      // 0x7b8: 1 use in CSharedDoc_dtor
-    int unk_7BC;                        // 0x7bc: 1 use in CSharedDoc_dtor
-    char pad_7C0[0x4];                  // 0x7c0
-    void* unk_7C4;                      // 0x7c4: 1 use in CSharedDoc_dtor
-    int unk_7C8;                        // 0x7c8: 1 use in CSharedDoc_dtor
-    char pad_7CC[0x4];                  // 0x7cc
-    void* unk_7D0;                      // 0x7d0: 1 use in CSharedDoc_dtor
-    int unk_7D4;                        // 0x7d4: 1 use in CSharedDoc_dtor
-    char pad_7D8[0x4];                  // 0x7d8
-    void* unk_7DC;                      // 0x7dc: 1 use in CSharedDoc_dtor
-    int unk_7E0;                        // 0x7e0: 1 use in CSharedDoc_dtor
-    char pad_7E4[0x4];                  // 0x7e4
-    void* unk_7E8;                      // 0x7e8: 1 use in CSharedDoc_dtor
-    int unk_7EC;                        // 0x7ec: 1 use in CSharedDoc_dtor
-    char pad_7F0[0x4];                  // 0x7f0
-    void* unk_7F4;                      // 0x7f4: 1 use in CSharedDoc_dtor
-    void* bonusItemIds;                      // 0x7f8: 1 use in CSharedDoc_dtor
-    unsigned int bonusItemCount;               // 0x7fc: 2 uses in CSharedDoc_dtor
-    char pad_800[0x4];                  // 0x800
-    unsigned char courseRecordUpdatesEnabled;              // 0x804: 1 use in CSharedDoc_Ctor
-    char pad_805[0x3];                  // 0x805
-    unsigned int gameMode;               // 0x808: 1 use in CSharedDoc_Ctor
-    unsigned int unk_80C;               // 0x80c: 1 use in CSharedDoc_Ctor
-    unsigned char roundHoleOrder;              // 0x810: 1 use in CSharedDoc_Ctor
-    char pad_811[0x3];                  // 0x811
-    unsigned int unk_814;               // 0x814: 1 use in CSharedDoc_Ctor
-    char pad_818[0x84];                 // 0x818
-    float pangRewardMultiplier;                      // 0x89c: 1 use in CSharedDoc_Ctor
-    unsigned int pangRewardPercent;               // 0x8a0: 1 use in CSharedDoc_Ctor
-    char pad_8A4[0x18]; // 0x8a4
-    void* selectedCourseData; // 0x8bc: CGolfRule_OnInit, CGolfRule_PreloadShotAndPartySequences
-    unsigned char golfRuleType; // 0x8c0: CGolfRule_ResetHoleBallAndWind, CGolfRule_OnReload, CGolfRule_ProcessDelayedStateTransition, fn_80168898_old
-    char pad_8C1[0x104]; // 0x8c1
+    void* vtbl;                               // 0x0: original vtable pointer
+    char pad_004[0x3c];                       // 0x4
+    short unk_40;                             // 0x40: GolfRule_UpdateRoundRewards
+    char pad_042[0x722];                      // 0x42
+    void* strokePlayName;                     // 0x764
+    unsigned char unk_768;                    // 0x768
+    unsigned char unk_769;                    // 0x769
+    unsigned char unk_76A;                    // 0x76a
+    char pad_76B[0x1];                        // 0x76b
+    void* matchPlayName;                      // 0x76c
+    unsigned char unk_770;                    // 0x770
+    unsigned char unk_771;                    // 0x771
+    unsigned char unk_772;                    // 0x772
+    char pad_773[0x1];                        // 0x773
+    void* caddiePracticeName;                 // 0x774
+    unsigned char unk_778;                    // 0x778
+    unsigned char unk_779;                    // 0x779
+    unsigned char unk_77A;                    // 0x77a
+    char pad_77B[0xd];                        // 0x77b
+    void* firstOwnedTreeRoot;                 // 0x788
+    char pad_78C[0xc];                        // 0x78c
+    void* secondOwnedTreeRoot;                // 0x798
+    char pad_79C[0x8];                        // 0x79c
+    int unk_7A4;                              // 0x7a4
+    char pad_7A8[0x4];                        // 0x7a8
+    void* unk_7AC;                            // 0x7ac
+    int unk_7B0;                              // 0x7b0
+    char pad_7B4[0x4];                        // 0x7b4
+    void* unk_7B8;                            // 0x7b8
+    int unk_7BC;                              // 0x7bc
+    char pad_7C0[0x4];                        // 0x7c0
+    void* unk_7C4;                            // 0x7c4
+    int unk_7C8;                              // 0x7c8
+    char pad_7CC[0x4];                        // 0x7cc
+    void* unk_7D0;                            // 0x7d0
+    int unk_7D4;                              // 0x7d4
+    char pad_7D8[0x4];                        // 0x7d8
+    void* unk_7DC;                            // 0x7dc
+    int unk_7E0;                              // 0x7e0
+    char pad_7E4[0x4];                        // 0x7e4
+    void* unk_7E8;                            // 0x7e8
+    int unk_7EC;                              // 0x7ec
+    char pad_7F0[0x4];                        // 0x7f0
+    void* unk_7F4;                            // 0x7f4
+    void* bonusItemIds;                       // 0x7f8
+    unsigned int bonusItemCount;              // 0x7fc
+    char pad_800[0x4];                        // 0x800
+    unsigned char courseRecordUpdatesEnabled; // 0x804
+    char pad_805[0x3];                        // 0x805
+    unsigned int gameMode;                    // 0x808
+    unsigned int unk_80C;                     // 0x80c
+    unsigned char roundHoleOrder;             // 0x810
+    char pad_811[0x3];                        // 0x811
+    unsigned int unk_814;                     // 0x814
+    char pad_818[0x84];                       // 0x818
+    float pangRewardMultiplier;               // 0x89c
+    unsigned int pangRewardPercent;           // 0x8a0
+    char pad_8A4[0x18];                       // 0x8a4
+    void* selectedCourseData;                 // 0x8bc: CGolfRule_OnInit, CGolfRule_PreloadShotAndPartySequences
+    unsigned char
+        golfRuleType; // 0x8c0: CGolfRule_ResetHoleBallAndWind, CGolfRule_OnReload, CGolfRule_ProcessDelayedStateTransition, fn_80168898_old
+    char playNameBuffer[0x104];   // 0x8c1
     unsigned char roundHoleCount; // 0x9c5: CGolfRule_OnReload
     union {
         char pad_9C6[2]; // legacy byte-address spelling used by lighting consumers
@@ -77,32 +76,45 @@ public:
         };
     };
     unsigned int turnTimeLimitMs; // 0x9c8: CClock_OnProcess, CClock_HandleMsg
-    int unk_9CC; // 0x9cc: CTourMain_PrepareSelectedEncounter
-    char pad_9D0[0x34]; // 0x9d0
-    char itemInventory[0xbc]; // 0xa04: CBuildProductChara_FindSetContainingItem, CPangya2Shop_RefreshProductLists: inventory lookup subobject; extent ends at existing 0xac0
-    unsigned int randomizePlayerStats;               // 0xac0: 1 use in CSharedDoc_Ctor
-    unsigned int unk_AC4;               // 0xac4: 1 use in CSharedDoc_Ctor
-    unsigned char unk_AC8;              // 0xac8: 1 use in CSharedDoc_Ctor
-    unsigned char unk_AC9;              // 0xac9: 1 use in CSharedDoc_Ctor
-    char pad_ACA[0x2];                  // 0xaca
-    unsigned int unk_ACC;               // 0xacc: 1 use in CSharedDoc_Ctor
-    unsigned int unk_AD0;               // 0xad0: 1 use in CSharedDoc_Ctor
-    unsigned int unk_AD4;               // 0xad4: 1 use in CSharedDoc_Ctor
-    unsigned int partyGameMode;               // 0xad8: 1 use in CSharedDoc_Ctor
-    char pad_ADC[0x14];                 // 0xadc
-    unsigned int partyResultTier;               // 0xaf0: 1 use in CSharedDoc_Ctor
-    char pad_AF4[0x8c];                 // 0xaf4
-    unsigned int courseRecordIndex;               // 0xb80: 1 use in CSharedDoc_Ctor
-    unsigned int enemyLevelIndex;               // 0xb84: 1 use in CSharedDoc_Ctor
-    unsigned int partyCourseTableIndex;               // 0xb88: 1 use in CSharedDoc_Ctor
-    unsigned int pendingCourseClearNotification;               // 0xb8c: 1 use in CSharedDoc_Ctor
-    unsigned int golfDoc;               // 0xb90: 1 use in CSharedDoc_Ctor
-    unsigned int menuTextureIndex;               // 0xb94: 1 use in CSharedDoc_Ctor
+    int unk_9CC;                  // 0x9cc: CTourMain_PrepareSelectedEncounter
+    char pad_9D0[0x34];           // 0x9d0
+    char itemInventory
+        [0xbc]; // 0xa04: CBuildProductChara_FindSetContainingItem, CPangya2Shop_RefreshProductLists: inventory lookup subobject; extent ends at existing 0xac0
+    unsigned int randomizePlayerStats;           // 0xac0
+    unsigned int unk_AC4;                        // 0xac4
+    unsigned char unk_AC8;                       // 0xac8
+    unsigned char unk_AC9;                       // 0xac9
+    char pad_ACA[0x2];                           // 0xaca
+    unsigned int unk_ACC;                        // 0xacc
+    unsigned int unk_AD0;                        // 0xad0
+    unsigned int unk_AD4;                        // 0xad4
+    unsigned int partyGameMode;                  // 0xad8
+    char partyTiers[0x14];                       // 0xadc
+    unsigned int partyResultTier;                // 0xaf0
+    char pad_AF4[0x8c];                          // 0xaf4
+    unsigned int courseRecordIndex;              // 0xb80
+    unsigned int enemyLevelIndex;                // 0xb84
+    unsigned int partyCourseTableIndex;          // 0xb88
+    unsigned int pendingCourseClearNotification; // 0xb8c
+    unsigned int golfDoc;                        // 0xb90
+    unsigned int menuTextureIndex;               // 0xb94
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x10, 0x760, 0x784, 0x794, 0x7a4, 0x7a8, 0x7b0, 0x7b4, 0x7bc, 0x7c0, 0x7c8, 0x7cc, 0x7d4, 0x7d8, 0x7e0, 0x7e4, 0x7ec, 0x7f0, 0x7f8, 0x850, 0x8a6, 0x8b8, 0x9e4, 0xa04
+    void BindItemSelectionInventory();
+    void ClearPlayerStateStorage();
+
+    // Round setup setters. They write the shared document's current round state.
+    static void SetCourseRecordUpdatesEnabled(unsigned char value);
+    static void SetTurnTimeLimitMs(int value);
+    static void SetRoundHoleOrder(unsigned char value);
+    static void SetRoundHoleCount(unsigned char value);
+    static void SetRoundOptionByte(unsigned char value);
+
+    // Install the round defaults. Constructing the singleton base publishes
+    // g_sharedDoc before the rest of the body runs.
+    CSharedDoc();
+    ~CSharedDoc();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CSHAREDDOC_OFF(f, o) typedef char CSharedDoc_off_##f[((int)&((CSharedDoc*)0)->f == (o)) ? 1 : -1]
 CSHAREDDOC_OFF(strokePlayName, 0x764);
 CSHAREDDOC_OFF(unk_768, 0x768);
@@ -166,4 +178,6 @@ CSHAREDDOC_OFF(unk_9CC, 0x9cc);
 CSHAREDDOC_OFF(itemInventory, 0xa04);
 #undef CSHAREDDOC_OFF
 
-#endif  // CLASSES_CSHAREDDOC_H
+typedef char CSharedDoc_size[(sizeof(CSharedDoc) == 0xb98) ? 1 : -1];
+
+#endif // CLASSES_CSHAREDDOC_H

@@ -1,3 +1,7 @@
+// Character select screen: construction and teardown of its layout, scripts and player entries,
+// and the shared render context with the player save records and enemy render records.
+// Also the layout vector growth helpers and the BP entry handles.
+
 #include <decomp/ct_member.h>
 #include <decomp/offset_of.h>
 extern "C" char s_renderContextRegistrations_805041E8[];
@@ -9,6 +13,7 @@ extern "C" char s_renderContextRegistrations_805041E8[];
 typedef std::vector<void*, app::app_allocator<void*> > MSLPointerVector;
 #include "classes/CEnemyRenderRecord.h"
 #include "classes/CEnemyRenderTable.h"
+#include "classes/CCharacterPreviewRecord.h"
 #define AsCEnemyRenderTable(p) ((CEnemyRenderTable*)(p))
 #include "classes/CSharedDoc.h"
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
@@ -22,13 +27,16 @@ extern const char charaSelectStrings[];
 
 #include "game/vector.h"
 extern "C" void __construct_array(void*, void*, void*, unsigned int, unsigned int);
-// Translation unit 0x80241CEC-0x80243434 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "game/exception.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CPangyaEnemyData.h"
+#include "classes/CBpCtrlHandle.h"
+#include "classes/CCharaSelect.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CPackTextureResource.h"
 extern "C" {
 
 enum CharaSelectConstants {
@@ -45,8 +53,14 @@ enum CharaSelectConstants {
 // their effects (6 leaves the layout inactive; 7 removes the caddie). The actual
 // game/dialog names are unresolved; these local constants do not name game modes.
 // Views of the shared context: four saves, four ID vectors, then enemy records.
-struct PlayerSaveStorage { char bytes[0x828]; };
-struct SlotEntryVector { int* data; unsigned int count; unsigned int capacity; };
+struct PlayerSaveStorage {
+    char bytes[0x828];
+};
+struct SlotEntryVector {
+    int* data;
+    unsigned int count;
+    unsigned int capacity;
+};
 struct CharaRenderContext {
     PlayerSaveStorage saves[kPlayerSlots];
     SlotEntryVector slotEntries[kPlayerSlots];
@@ -55,7 +69,6 @@ struct CharaRenderContext {
 };
 typedef char RenderContext_entries_offset[((int)DECOMP_OFFSETOF(CharaRenderContext, slotEntries) == 0x20A0) ? 1 : -1];
 typedef char RenderContext_records_offset[((int)DECOMP_OFFSETOF(CharaRenderContext, enemyRecords) == 0x20D0) ? 1 : -1];
-
 
 // Byte address order is intentional in the slot updater (CodeWarrior scheduling).
 enum RenderContextOffsets {
@@ -66,7 +79,7 @@ enum RenderContextOffsets {
     kEnemyRecordsOffset = (int)DECOMP_OFFSETOF(CharaRenderContext, enemyRecords[0]),
     kEnemyFlagsOffset = (int)DECOMP_OFFSETOF(CharaRenderContext, enemyRecords[0].flags),
     kEnemyCaddieInventoryIndexOffset = (int)DECOMP_OFFSETOF(CharaRenderContext, enemyRecords[0].caddieInventoryIndex),
-    kEnemyPlayerSlotOffset = (int)DECOMP_OFFSETOF(CharaRenderContext, enemyRecords[0].pad_18)
+    kEnemyPlayerSlotOffset = (int)DECOMP_OFFSETOF(CharaRenderContext, enemyRecords[0].playerSlot)
 };
 enum CharaSelectStringOffset {
     kLayoutName = 0x11,
@@ -84,8 +97,7 @@ struct RenderContextConstructionCleanup_u80241CEC {
     char* base;
     bool active;
     // Arm cleanup after construction of the context's records and vectors.
-    explicit RenderContextConstructionCleanup_u80241CEC(void* object)
-        : base((char*)object), active(true) {}
+    explicit RenderContextConstructionCleanup_u80241CEC(void* object) : base((char*)object), active(true) {}
     // Roll back owned subobjects if the context reset throws.
     ~RenderContextConstructionCleanup_u80241CEC() {
         if (active) {
@@ -108,7 +120,6 @@ static void InitializeNewRenderContext(void* base) {
     cleanup.active = false;
 }
 
-
 static char s_inputManagerDtorRegistration_CharaSelect[12];
 extern char s_inputManagerDtorRegistration_CharaSelect[];
 static char s_bpCtrlDtorRegistration_805041C4[12];
@@ -121,28 +132,44 @@ extern char __vt__12CCharaSelect[], s_gameInputManager[], s_bpCtrl[];
 extern int s_resourceTableStorage;
 extern CSharedDoc* g_sharedDoc;
 extern signed char s_inputManagerInitialized, s_bpCtrlInitialized, s_resourceTableInitialized;
-void InputManager_Init(void*); void InputManager_Dtor(); void InputManager_SetSelectedPlayer(void*, int);
-void __ct__7CBpCtrlFv(void*); void CBpCtrl_dtor();
+void InputManager_Init(void*);
+void InputManager_Dtor();
+void InputManager_SetSelectedPlayer(void*, int);
+void __ct__7CBpCtrlFv(void*);
+void CBpCtrl_dtor();
 
 extern int s_resourceTableStorage;
 extern signed char s_resourceTableInitialized;
 extern CSharedDoc* g_sharedDoc;
 extern int s_charaSelectInvalidEntryId;
 // The remaining data label is the 82-entry character-selection layout descriptor table.
-extern char charaSelectStrings[], charaSelectLayoutDescriptors[], __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23std12length_error[];
-void MPBase1_Ctor(void* self); int ResourceTable_FindEntryByName(void*, const char*, int*);
-void* __nw__FUl(unsigned int); void* __nwa__FUl(unsigned int);
-void CPackTextureResource_Init(void*, const char*, int, int);
-void Layout_Init(void*, int); void Layout_InitStandard(void*, int, const char*, int, const char*);
-void Layout_SetActive(void*, int); void Allocation_Dtor(); void CBpCtrl_CreateEntry(void*, const char*, int*, int);
-void* appMallocDummy__FUl(unsigned int); void appFreeUni__FPv(void*);
+extern char charaSelectStrings[], charaSelectLayoutDescriptors[], __vt__Q23std11logic_error[],
+    s_sharedCharDeleterVtable[], __vt__Q23std12length_error[];
+void MPBase1_Ctor(void* self);
+int ResourceTable_FindEntryByName(void*, const char*, int*);
+void* __nw__FUl(unsigned int);
+void* __nwa__FUl(unsigned int);
+void Layout_Init(void*, int);
+void Layout_InitStandard(void*, int, const char*, int, const char*);
+void Layout_SetActive(void*, int);
+void Allocation_Dtor();
+void* appMallocDummy__FUl(unsigned int);
+void appFreeUni__FPv(void*);
 void* memcpy(void*, const void*, unsigned int);
 void* memset(void*, int, unsigned int);
 
 struct CharaSelectConstructionView {
-    void* vtable; char baseStorage[0x14]; int playerState0, playerState1, playerState2, playerState3, selectionConfirmed;
-    void* layout; void* packTextureResource; void* playerTransitions; int primaryBpEntryId, secondaryBpEntryId, inputReady;
-    void* selectionResource; int* playerEntryIds; unsigned int playerEntryCount, playerEntryCapacity; int loadDataMenu, selectedSlot, slotStorage;
+    void* vtable;
+    char baseStorage[0x14];
+    int playerState0, playerState1, playerState2, playerState3, selectionConfirmed;
+    void* layout;
+    void* packTextureResource;
+    void* playerTransitions;
+    int primaryBpEntryId, secondaryBpEntryId, inputReady;
+    void* selectionResource;
+    int* playerEntryIds;
+    unsigned int playerEntryCount, playerEntryCapacity;
+    int loadDataMenu, selectedSlot, slotStorage;
 };
 
 extern char charaSelectStrings[];
@@ -151,15 +178,21 @@ extern char __vt__Q23std11logic_error[], s_sharedCharDeleterVtable[], __vt__Q23s
 extern void __dla__FPv(void*);
 struct LayoutVectorAllocation : std::detail::__message_buffer_guard {
     LayoutVectorAllocation(char* p, char* a) : std::detail::__message_buffer_guard(p, a) {}
-    ~LayoutVectorAllocation() { dispose(); }
+    ~LayoutVectorAllocation() {
+        dispose();
+    }
 };
 typedef std::detail::__message_control LayoutVectorControl;
 struct LayoutVectorErrorBase_u80241CEC : std::exception {
     // Install the requested exception vtable without changing the object layout.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
 
     // Initialize the logic-error base used by vector length exceptions.
-    LayoutVectorErrorBase_u80241CEC() { SetTable(__vt__Q23std11logic_error); }
+    LayoutVectorErrorBase_u80241CEC() {
+        SetTable(__vt__Q23std11logic_error);
+    }
 };
 namespace std {
 struct length_error : LayoutVectorErrorBase_u80241CEC {
@@ -177,22 +210,37 @@ struct length_error : LayoutVectorErrorBase_u80241CEC {
 }
 extern void __dt__Q23std12length_errorFv();
 // Construct and throw the vector length exception using aligned stack storage.
-inline void LayoutVectorThrow() { {
-    std::__throw_exception<std::length_error>( exception_runtime::charaSelectStrings + kLengthErrorType, (void*)exception_runtime::__dt__Q23std12length_errorFv);
-} }
+inline void LayoutVectorThrow() {
+    {
+        std::__throw_exception<std::length_error>(exception_runtime::charaSelectStrings + kLengthErrorType,
+                                                  (void*)exception_runtime::__dt__Q23std12length_errorFv);
+    }
+}
 struct LayoutVectorBuffer {
-    int* data; volatile unsigned size; unsigned capacity; unsigned* owner; unsigned offset;
+    int* data;
+    volatile unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    unsigned offset;
     // Initialize an empty replacement buffer tied to the destination capacity field.
     LayoutVectorBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free whichever vector allocation the replacement buffer currently owns.
-    ~LayoutVectorBuffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~LayoutVectorBuffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 // Return the larger growth bound by reference.
-inline const unsigned& LayoutVectorMax(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+inline const unsigned& LayoutVectorMax(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 // Compute bounded 3/5 or 1/2 vector growth, throwing on overflow.
 inline unsigned LayoutVectorGrowth(const unsigned& initialCapacity, unsigned needed) {
     unsigned capacity = initialCapacity;
-    if (needed > 0x3FFFFFFFu - capacity) LayoutVectorThrow();
+    if (needed > 0x3FFFFFFFu - capacity)
+        LayoutVectorThrow();
     if (capacity < 0x15555555u)
         return capacity + LayoutVectorMax((3 * (capacity + 1)) / 5, needed);
     if (capacity < 0x2AAAAAAAu)
@@ -202,36 +250,47 @@ inline unsigned LayoutVectorGrowth(const unsigned& initialCapacity, unsigned nee
 struct CharaPackResource {
     char bytes[0x20];
     // Construct the texture pack from a borrowed texture-name table.
-    CharaPackResource(const char* name, int textureNamesAddress, int textureCount) { CPackTextureResource_Init(this, name, textureNamesAddress, textureCount); }
+    CharaPackResource(const char* name, int textureNamesAddress, int textureCount) {
+        ((CPackTextureResource*)this)->Init((const char*)name, (void**)textureNamesAddress, (unsigned int)textureCount);
+    }
 };
 struct CharaLayoutResource {
     char bytes[0x5C];
     // Initialize the owned character-selection layout wrapper.
-    CharaLayoutResource(int type) { Layout_Init(this, type); }
+    CharaLayoutResource(int type) {
+        Layout_Init(this, type);
+    }
 };
 
 #pragma push
 #pragma use_lmw_stmw on
 // Create character selection resources, BP scripts and four initially invalid player entry IDs.
-CharaSelectConstructionView* CCharaSelect_Ctor(CharaSelectConstructionView* self) {
+CCharaSelect::CCharaSelect() {
+    CharaSelectConstructionView* self = (CharaSelectConstructionView*)this;
     // Phase 1: initialize ownership fields, acquire input, and select player zero.
     char* destructorRegistrations = s_inputManagerDtorRegistration_CharaSelect;
     MPBase1_Ctor(self);
-    int inputManager = ((int&)Sing_805DC5C8());
+    int inputManager = ((int&)GetInputManagerSlot());
     self->selectionConfirmed = 0;
     self->vtable = __vt__12CCharaSelect;
-    self->layout = 0; self->packTextureResource = 0;
-    self->selectionResource = 0; self->playerEntryIds = 0; self->playerEntryCount = 0; self->playerEntryCapacity = 0;
-    self->loadDataMenu = 0; self->selectedSlot = 0; self->slotStorage = 0;
+    self->layout = 0;
+    self->packTextureResource = 0;
+    self->selectionResource = 0;
+    self->playerEntryIds = 0;
+    self->playerEntryCount = 0;
+    self->playerEntryCapacity = 0;
+    self->loadDataMenu = 0;
+    self->selectedSlot = 0;
+    self->slotStorage = 0;
     if (inputManager == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, destructorRegistrations + 0);
             s_inputManagerInitialized = 1;
         }
-        ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+        ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
     }
-    InputManager_SetSelectedPlayer((void*)((int&)Sing_805DC5C8()), 0);
+    InputManager_SetSelectedPlayer((void*)((int&)GetInputManagerSlot()), 0);
     // Phase 2: load the texture-name table, then create the owned pack and layout.
     int resourceTable = ((int&)Sing_805DC620());
     int textureNamesAddress = 0;
@@ -243,15 +302,18 @@ CharaSelectConstructionView* CCharaSelect_Ctor(CharaSelectConstructionView* self
         }
         ((int&)Sing_805DC620()) = (int)&s_resourceTableStorage;
     }
-    int textureCount = ResourceTable_FindEntryByName((void*)((int&)Sing_805DC620()), charaSelectStrings, &textureNamesAddress);
+    int textureCount =
+        ResourceTable_FindEntryByName((void*)((int&)Sing_805DC620()), charaSelectStrings, &textureNamesAddress);
     self->packTextureResource = new CharaPackResource(charaSelectStrings, textureNamesAddress, textureCount);
     self->playerState0 = 0;
     self->playerState1 = 0;
     self->playerState2 = 0;
     self->playerState3 = 0;
     self->layout = new CharaLayoutResource(kLayoutType);
-    Layout_InitStandard(self->layout, 0, charaSelectLayoutDescriptors, kLayoutDescriptorCount, charaSelectStrings + kLayoutName);
-    if (AsCSharedDoc(g_sharedDoc)->gameMode != kInactiveLayoutGameMode) Layout_SetActive(self->layout, 1);
+    Layout_InitStandard(self->layout, 0, charaSelectLayoutDescriptors, kLayoutDescriptorCount,
+                        charaSelectStrings + kLayoutName);
+    if (AsCSharedDoc(g_sharedDoc)->gameMode != kInactiveLayoutGameMode)
+        Layout_SetActive(self->layout, 1);
     int invalid = -1;
     // Phase 3: create two BP entries and allocate the per-player transition block.
     // Singleton checks are repeated at each use; keep their acquisition order.
@@ -262,18 +324,24 @@ CharaSelectConstructionView* CCharaSelect_Ctor(CharaSelectConstructionView* self
     self->inputReady = cleared;
     if (bpController == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (destructorRegistrations + 0x0C));
             s_bpCtrlInitialized = 1;
         }
         ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
     }
-    CBpCtrl_CreateEntry((void*)((int&)Sing_805DC5F0()), charaSelectStrings + kPrimaryScriptName, &self->primaryBpEntryId, 0);
+    ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+        ->CreateEntry(charaSelectStrings + kPrimaryScriptName, &self->primaryBpEntryId, 0);
     if (((int&)Sing_805DC5F0()) == 0) {
-        if (s_bpCtrlInitialized == 0) { __ct__7CBpCtrlFv(s_bpCtrl); __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (destructorRegistrations + 0x0C)); s_bpCtrlInitialized = 1; }
+        if (s_bpCtrlInitialized == 0) {
+            ((CBpCtrl*)s_bpCtrl)->__ct();
+            __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (destructorRegistrations + 0x0C));
+            s_bpCtrlInitialized = 1;
+        }
         ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
     }
-    CBpCtrl_CreateEntry((void*)((int&)Sing_805DC5F0()), charaSelectStrings + kSecondaryScriptName, &self->secondaryBpEntryId, 0);
+    ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+        ->CreateEntry(charaSelectStrings + kSecondaryScriptName, &self->secondaryBpEntryId, 0);
     self->playerTransitions = __nwa__FUl(0x30);
     unsigned int size = self->playerEntryCount;
     // Phase 4: resize the ID vector to exactly four invalid entries.
@@ -285,10 +353,13 @@ CharaSelectConstructionView* CCharaSelect_Ctor(CharaSelectConstructionView* self
         if (size < 4) {
             unsigned int add = 4 - size;
             if (add > self->playerEntryCapacity || size > self->playerEntryCapacity - add) {
-                LayoutVectorGrowth(self->playerEntryCapacity, ((volatile CharaSelectConstructionView*)self)->playerEntryCount + add - self->playerEntryCapacity);
+                LayoutVectorGrowth(self->playerEntryCapacity,
+                                   ((volatile CharaSelectConstructionView*)self)->playerEntryCount + add -
+                                       self->playerEntryCapacity);
             } else {
                 int* appendPosition = self->playerEntryIds + size;
-                for (unsigned int i = add; i != 0; --i) *appendPosition++ = s_charaSelectInvalidEntryId;
+                for (unsigned int i = add; i != 0; --i)
+                    *appendPosition++ = s_charaSelectInvalidEntryId;
                 self->playerEntryCount += add;
                 break;
             }
@@ -297,7 +368,8 @@ CharaSelectConstructionView* CCharaSelect_Ctor(CharaSelectConstructionView* self
                 unsigned int needed = self->playerEntryCount + add - self->playerEntryCapacity;
                 unsigned int capacity = self->playerEntryCapacity;
                 if (needed > 0x3FFFFFFFu - capacity) {
-                    std::__throw_exception<std::length_error>( exception_runtime::charaSelectStrings + kLengthErrorType, (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    std::__throw_exception<std::length_error>(exception_runtime::charaSelectStrings + kLengthErrorType,
+                                                              (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
                 unsigned secondGrowth;
                 unsigned firstGrowth;
@@ -307,9 +379,11 @@ CharaSelectConstructionView* CCharaSelect_Ctor(CharaSelectConstructionView* self
                 } else if (capacity < 0x2AAAAAAAu) {
                     secondGrowth = (capacity + 1) / 2;
                     capacity += LayoutVectorMax(secondGrowth, needed);
-                } else capacity = 0x3FFFFFFF;
+                } else
+                    capacity = 0x3FFFFFFF;
                 if (capacity > 0x3FFFFFFFu) {
-                    std::__throw_exception<std::length_error>( exception_runtime::charaSelectStrings + kLengthErrorType, (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    std::__throw_exception<std::length_error>(exception_runtime::charaSelectStrings + kLengthErrorType,
+                                                              (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
                 int* data = (int*)appMallocDummy__FUl(capacity * 4);
                 // Reserve replacement storage; construct the appended suffix first.
@@ -318,7 +392,8 @@ CharaSelectConstructionView* CCharaSelect_Ctor(CharaSelectConstructionView* self
                 temp.capacity = capacity;
                 int* newEntries = data + oldSize + temp.size;
                 temp.offset = oldSize;
-                for (unsigned int i = add; i != 0; --i) *newEntries++ = s_charaSelectInvalidEntryId;
+                for (unsigned int i = add; i != 0; --i)
+                    *newEntries++ = s_charaSelectInvalidEntryId;
                 unsigned int count;
                 int* oldData = self->playerEntryIds;
                 int* oldEnd = oldData + self->playerEntryCount;
@@ -347,8 +422,7 @@ CharaSelectConstructionView* CCharaSelect_Ctor(CharaSelectConstructionView* self
         } else if (size > 4) {
             self->playerEntryCount = self->playerEntryCount - (size - 4);
         }
-        } while (0);
-    return self;
+    } while (0);
 }
 #pragma pop
 
@@ -364,11 +438,9 @@ void CBpCtrlHandle_Dtor();
 void Layout_Destroy(void*, int);
 void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor();
-void CBpCtrl_DeleteEntryById(void*, int);
 void InputManager_Init(void*);
 void InputManager_Dtor();
 void InputManager_SetSelectedPlayer(void*, int);
-void CBpCtrlHandle_ReleaseEntry(void*);
 void __dla__FPv(void*);
 void __dl__FPv(void*);
 void appFreeUni__FPv(void*);
@@ -393,96 +465,93 @@ struct SelectionOwnedObject {
 };
 
 // Release selection UI resources and BP entries, then free the per-player entry vector.
-CharaSelectDestructionView* CCharaSelect_dtor(CharaSelectDestructionView* self, int deleting) {
-    if (self != 0) {
-        self->vtable = __vt__12CCharaSelect;
-        if (self->layout != 0) {
-            Layout_Destroy(self->layout, 1);
-            self->layout = 0;
-        }
-        if (self->primaryBpEntryId != -1) {
-            if (((int&)Sing_805DC5F0()) == 0) {
-                if (s_bpCtrlInitialized == 0) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_805041C4);
-                    s_bpCtrlInitialized = 1;
-                }
-                ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
+CCharaSelect::~CCharaSelect() {
+    CharaSelectDestructionView* self = (CharaSelectDestructionView*)this;
+    self->vtable = __vt__12CCharaSelect;
+    if (self->layout != 0) {
+        Layout_Destroy(self->layout, 1);
+        self->layout = 0;
+    }
+    if (self->primaryBpEntryId != -1) {
+        if (((int&)Sing_805DC5F0()) == 0) {
+            if (s_bpCtrlInitialized == 0) {
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_805041C4);
+                s_bpCtrlInitialized = 1;
             }
-            CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), self->primaryBpEntryId);
-            self->primaryBpEntryId = -1;
+            ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
         }
-        if (self->secondaryBpEntryId != -1) {
-            if (((int&)Sing_805DC5F0()) == 0) {
-                if (s_bpCtrlInitialized == 0) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_805041C4);
-                    s_bpCtrlInitialized = 1;
-                }
-                ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
+        ((CBpCtrl*)(((int&)Sing_805DC5F0())))->DeleteEntryById(self->primaryBpEntryId);
+        self->primaryBpEntryId = -1;
+    }
+    if (self->secondaryBpEntryId != -1) {
+        if (((int&)Sing_805DC5F0()) == 0) {
+            if (s_bpCtrlInitialized == 0) {
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_805041C4);
+                s_bpCtrlInitialized = 1;
             }
-            CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), self->secondaryBpEntryId);
-            self->secondaryBpEntryId = -1;
+            ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
         }
-        if (self->playerTransitions != 0) {
-            __dla__FPv(self->playerTransitions);
-            self->playerTransitions = 0;
-        }
+        ((CBpCtrl*)(((int&)Sing_805DC5F0())))->DeleteEntryById(self->secondaryBpEntryId);
+        self->secondaryBpEntryId = -1;
+    }
+    if (self->playerTransitions != 0) {
+        __dla__FPv(self->playerTransitions);
+        self->playerTransitions = 0;
+    }
+    if (self->selectionResource != 0) {
         if (self->selectionResource != 0) {
-            if (self->selectionResource != 0) {
-                ((SelectionOwnedObject*)self->selectionResource)->destroy(1);
-            }
-            self->selectionResource = 0;
+            ((SelectionOwnedObject*)self->selectionResource)->destroy(1);
         }
-        if (((int&)Sing_805DC5C8()) == 0) {
-            if (s_inputManagerInitialized == 0) {
-                InputManager_Init(s_gameInputManager);
-           
-           
-           
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_CharaSelect);
-                s_inputManagerInitialized = 1;
-            }
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+        self->selectionResource = 0;
+    }
+    if (((int&)GetInputManagerSlot()) == 0) {
+        if (s_inputManagerInitialized == 0) {
+            InputManager_Init(s_gameInputManager);
+
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_CharaSelect);
+            s_inputManagerInitialized = 1;
         }
-        InputManager_SetSelectedPlayer((void*)((int&)Sing_805DC5C8()), 0);
+        ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
+    }
+    InputManager_SetSelectedPlayer((void*)((int&)GetInputManagerSlot()), 0);
+    if (self->packTextureResource != 0) {
         if (self->packTextureResource != 0) {
-            if (self->packTextureResource != 0) {
-                ((SelectionOwnedObject*)self->packTextureResource)->destroy(1);
-            }
-            self->packTextureResource = 0;
+            ((SelectionOwnedObject*)self->packTextureResource)->destroy(1);
         }
-        if (((int&)Sing_805DC5F8()) == 0) {
-            if (s_bpCtrlHandleInitialized == 0) {
-                s_bpCtrlHandle[0] = -1;
-                s_bpCtrlHandle[1] = -1;
-                __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, s_bpCtrlHandleDtorRegistration_80241CEC);
-                s_bpCtrlHandleInitialized = 1;
-            }
-            ((int&)Sing_805DC5F8()) = (int)s_bpCtrlHandle;
+        self->packTextureResource = 0;
+    }
+    if (((int&)Sing_805DC5F8()) == 0) {
+        if (s_bpCtrlHandleInitialized == 0) {
+            s_bpCtrlHandle[0] = -1;
+            s_bpCtrlHandle[1] = -1;
+            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor,
+                                     s_bpCtrlHandleDtorRegistration_80241CEC);
+            s_bpCtrlHandleInitialized = 1;
         }
-        CBpCtrlHandle_ReleaseEntry((void*)((int&)Sing_805DC5F8()));
-        if (self->slotStorage != 0) {
-            __dl__FPv(self->slotStorage);
-            self->slotStorage = 0;
-        }
+        ((int&)Sing_805DC5F8()) = (int)s_bpCtrlHandle;
+    }
+    ((CBpCtrlHandle*)(((int&)Sing_805DC5F8())))->ReleaseEntry();
+    if (self->slotStorage != 0) {
+        __dl__FPv(self->slotStorage);
+        self->slotStorage = 0;
+    }
+    if (&self->playerEntryIds != 0) {
         if (&self->playerEntryIds != 0) {
             if (&self->playerEntryIds != 0) {
                 if (&self->playerEntryIds != 0) {
                     if (&self->playerEntryIds != 0) {
-                        if (&self->playerEntryIds != 0) {
-                            if (self->playerEntryIds != 0) {
-                                self->playerEntryCount = self->playerEntryCount - (int)self->playerEntryCount;
-                                appFreeUni__FPv((void*)self->playerEntryIds);
-                            }
+                        if (self->playerEntryIds != 0) {
+                            self->playerEntryCount = self->playerEntryCount - (int)self->playerEntryCount;
+                            appFreeUni__FPv((void*)self->playerEntryIds);
                         }
                     }
                 }
             }
         }
-        if (deleting > 0) __dl__FPv(self);
     }
-    return self;
 }
 
 extern signed char s_bpCtrlHandleInitialized;
@@ -491,12 +560,13 @@ extern char s_bpCtrlHandleDtorRegistration_80241CEC[];
 void CBpCtrlHandle_Dtor();
 
 // Lazily initialize the pair of BP entry handles and register its destructor.
-int* CBpCtrlHandle_GetInstance() {
+int* CBpCtrlHandle::GetInstance() {
     if (((int&)Sing_805DC5F8()) == 0) {
         if (s_bpCtrlHandleInitialized == 0) {
             s_bpCtrlHandle[0] = -1;
             s_bpCtrlHandle[1] = -1;
-            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, s_bpCtrlHandleDtorRegistration_80241CEC);
+            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor,
+                                     s_bpCtrlHandleDtorRegistration_80241CEC);
             s_bpCtrlHandleInitialized = 1;
         }
         ((int&)Sing_805DC5F8()) = (int)s_bpCtrlHandle;
@@ -506,7 +576,10 @@ int* CBpCtrlHandle_GetInstance() {
 
 void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
-struct Dtor80242548 { void* ptr; unsigned int count; };
+struct Dtor80242548 {
+    void* ptr;
+    unsigned int count;
+};
 // Free the pointer-vector allocation, optionally deleting its owning header.
 MSLPointerVector* CharaSelectEntryVector_dtor(MSLPointerVector* self, int deleting) {
     return ::std::__vector_deleting_dtor(self, deleting);
@@ -517,7 +590,6 @@ extern char s_renderContext[];
 extern char s_renderContextRegistrations_805041E8[];
 void SaveData_InitPlayerRecord(void*);
 
-
 void PartyItemRecord_InitDefaults(void*);
 void PlayerRenderRecord_dtor(void*);
 void RenderContext_ResetPlayerRecords(void*);
@@ -526,10 +598,8 @@ extern CSharedDoc* g_sharedDoc;
 extern signed char s_pangyaEnemyDataInitialized;
 extern char s_pangyaEnemyData[];
 extern char s_pangyaEnemyDataDtorRegistration[];
-void CPangyaEnemyData_Init(void*);
-void CPangyaEnemyData_dtor();
+void __dt__16CPangyaEnemyDataFv();
 void EnemyData_SelectRandomMatchingRecord(void*, void*, int, int, int);
-void CCharacterPreviewRecord_FillFromSaveData(void*, int, void*);
 char* RenderContext_GetInstance();
 
 // Ensure the shared render context exists; retained inline to preserve initialization at each use.
@@ -540,13 +610,17 @@ static inline char* base_8024290C() {
             char* base = s_renderContext;
             end = base + 0x20A0;
             char* p = base;
-            do { SaveData_InitPlayerRecord(p); p += 0x828; } while ((unsigned)p < (unsigned)end);
+            do {
+                SaveData_InitPlayerRecord(p);
+                p += 0x828;
+            } while ((unsigned)p < (unsigned)end);
             ((IntVectorArray*)(end))->__ct();
             end = base + 0x20D0;
             __construct_array(end, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor, 0xA4, 4);
             AsCEnemyRenderTable(end)->count = 0;
             InitializeNewRenderContext(base);
-            __register_global_object(s_renderContext, (void*)__dt__13RenderContextFv, s_renderContextRegistrations_805041E8);
+            __register_global_object(s_renderContext, (void*)__dt__13RenderContextFv,
+                                     s_renderContextRegistrations_805041E8);
             s_renderContextInitialized = 1;
         }
         ((int&)Sing_805DC648()) = (int)s_renderContext;
@@ -558,8 +632,9 @@ static inline char* base_8024290C() {
 static inline void EnsureEnemyData() {
     if (((int&)Sing_805DC678()) == 0) {
         if (s_pangyaEnemyDataInitialized == 0) {
-            CPangyaEnemyData_Init(s_pangyaEnemyData);
-            __register_global_object(s_pangyaEnemyData, (void*)CPangyaEnemyData_dtor, s_pangyaEnemyDataDtorRegistration);
+            ((CPangyaEnemyData*)s_pangyaEnemyData)->Init();
+            __register_global_object(s_pangyaEnemyData, (void*)__dt__16CPangyaEnemyDataFv,
+                                     s_pangyaEnemyDataDtorRegistration);
             s_pangyaEnemyDataInitialized = 1;
         }
         ((int&)Sing_805DC678()) = (int)s_pangyaEnemyData;
@@ -578,23 +653,30 @@ static inline void EnsureEnemyData() {
 // otherwise an equal cached ID is retained and marked with bit 0x8000.
 // Returns nothing; an empty playerSlot leaves all destination state unchanged.
 // All singleton/save storage is borrowed; no input pointer is retained or freed.
-void CharaSelect_UpdateSlotRenderRecord(void*, int playerSlot, int recordId, void* useEnemyData, int renderSlot, int randomizeEnemy) {
-    if (*(int*)(base_8024290C() + kSlotEntryCountOffset + playerSlot * kSlotEntryStride) == 0) return;
+void CharaSelect_UpdateSlotRenderRecord(void*, int playerSlot, int recordId, void* useEnemyData, int renderSlot,
+                                        int randomizeEnemy) {
+    if (*(int*)(base_8024290C() + kSlotEntryCountOffset + playerSlot * kSlotEntryStride) == 0)
+        return;
     if (useEnemyData != 0) {
         if (randomizeEnemy != 0) {
             void* obj;
             EnsureEnemyData();
             obj = (void*)((int&)Sing_805DC678());
-            EnemyData_SelectRandomMatchingRecord(obj, base_8024290C() + renderSlot * kEnemyRecordStride + kEnemyRecordsOffset, kEnemySelectionCategory, recordId, playerSlot);
+            EnemyData_SelectRandomMatchingRecord(
+                obj, base_8024290C() + renderSlot * kEnemyRecordStride + kEnemyRecordsOffset, kEnemySelectionCategory,
+                recordId, playerSlot);
         } else {
             int* item = (int*)(base_8024290C() + renderSlot * kEnemyRecordStride + kEnemyRecordsOffset);
             if (recordId != item[0]) {
                 void* obj;
                 EnsureEnemyData();
                 obj = (void*)((int&)Sing_805DC678());
-                EnemyData_SelectRandomMatchingRecord(obj, base_8024290C() + renderSlot * kEnemyRecordStride + kEnemyRecordsOffset, kEnemySelectionCategory, recordId, playerSlot);
+                EnemyData_SelectRandomMatchingRecord(
+                    obj, base_8024290C() + renderSlot * kEnemyRecordStride + kEnemyRecordsOffset,
+                    kEnemySelectionCategory, recordId, playerSlot);
             } else {
-                *(unsigned short*)(base_8024290C() + renderSlot * kEnemyRecordStride + kEnemyFlagsOffset) |= kRandomEnemyRecord;
+                *(unsigned short*)(base_8024290C() + renderSlot * kEnemyRecordStride + kEnemyFlagsOffset) |=
+                    kRandomEnemyRecord;
             }
         }
         if (AsCSharedDoc(g_sharedDoc)->gameMode == kHideCaddieGameMode) {
@@ -602,11 +684,14 @@ void CharaSelect_UpdateSlotRenderRecord(void*, int playerSlot, int recordId, voi
         }
     } else {
         *(int*)(base_8024290C() + renderSlot * kEnemyRecordStride + kEnemyPlayerSlotOffset) = playerSlot;
-        struct Flags { CW_BITS2( unsigned short high : 1, unsigned short low : 15) };
+        struct Flags {
+            CW_BITS2(unsigned short high : 1, unsigned short low : 15)
+        };
         ((Flags*)(base_8024290C() + renderSlot * kEnemyRecordStride + kEnemyFlagsOffset))->high = 0;
         char* base = base_8024290C();
         char* save = base_8024290C();
-        CCharacterPreviewRecord_FillFromSaveData(base + renderSlot * kEnemyRecordStride + kEnemyRecordsOffset, recordId, save + renderSlot * kPlayerSaveStride);
+        ((CCharacterPreviewRecord*)(base + renderSlot * kEnemyRecordStride + kEnemyRecordsOffset))
+            ->FillFromSaveData(recordId, save + renderSlot * kPlayerSaveStride);
         if (AsCSharedDoc(g_sharedDoc)->gameMode == kHideCaddieGameMode) {
             *(int*)(base_8024290C() + renderSlot * kEnemyRecordStride + kEnemyCaddieInventoryIndexOffset) = -1;
         }
@@ -623,13 +708,17 @@ char* RenderContext_GetInstance() {
             char* base = s_renderContext;
             end = base + 0x20A0;
             char* p = base;
-            do { SaveData_InitPlayerRecord(p); p += 0x828; } while ((unsigned)p < (unsigned)end);
+            do {
+                SaveData_InitPlayerRecord(p);
+                p += 0x828;
+            } while ((unsigned)p < (unsigned)end);
             ((IntVectorArray*)(end))->__ct();
             end = base + 0x20D0;
             __construct_array(end, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor, 0xA4, 4);
             AsCEnemyRenderTable(end)->count = 0;
             InitializeNewRenderContext(base);
-__register_global_object(s_renderContext, (void*)__dt__13RenderContextFv, s_renderContextRegistrations_805041E8);
+            __register_global_object(s_renderContext, (void*)__dt__13RenderContextFv,
+                                     s_renderContextRegistrations_805041E8);
             s_renderContextInitialized = 1;
         }
         ((int&)Sing_805DC648()) = (int)s_renderContext;

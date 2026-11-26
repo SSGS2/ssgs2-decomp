@@ -5,9 +5,9 @@
 
 class ResourceEntryVector {
 public:
-    void* vtable; // 0x0: ResourceEntryVector_FindByName/ResourceCache_RetainOrAppend start entries at +4
-    void* entries; // 0x4: ResourceEntryVector_FindByName scans 16-byte entries
-    unsigned count; // 0x8: ResourceCache_RetainOrAppend increments after insertion
+    void* vtable;      // 0x0: ResourceEntryVector_FindByName/ResourceCache_RetainOrAppend start entries at +4
+    void* entries;     // 0x4: ResourceEntryVector_FindByName scans 16-byte entries
+    unsigned count;    // 0x8: ResourceCache_RetainOrAppend increments after insertion
     unsigned capacity; // 0xC: ResourceCache_RetainOrAppend checks/grows allocation
 };
 

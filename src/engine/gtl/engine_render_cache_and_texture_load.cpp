@@ -21,8 +21,6 @@
 #pragma ipa file
 #pragma auto_inline off
 #include "classes/EngineState.h"
-// Translation unit 0x80429E5C-0x8042B0A4 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
@@ -39,18 +37,23 @@
 struct CachedRenderLight {
     int type;
     float diffuse[4], specular[4], ambient[4];
-    float worldPosition[3];              // +34, world distance
-    float worldDirection[3];             // +40, normalized at submission
-    float attenuationRange;              // +4C, world distance
-    float reserved50;                    // +50, no established GX consumer
-    float constantAttenuation;           // +54, a0
-    float linearAttenuation;             // +58, a1
-    float quadraticAttenuation;          // +5C, a2
-    float spotStartAngleRadians;         // +60, DrawLight::start
-    float spotEndAngleRadians;           // +64, DrawLight::end
+    float worldPosition[3];      // +34, world distance
+    float worldDirection[3];     // +40, normalized at submission
+    float attenuationRange;      // +4C, world distance
+    float reserved50;            // +50, no established GX consumer
+    float constantAttenuation;   // +54, a0
+    float linearAttenuation;     // +58, a1
+    float quadraticAttenuation;  // +5C, a2
+    float spotStartAngleRadians; // +60, DrawLight::start
+    float spotEndAngleRadians;   // +64, DrawLight::end
 };
-struct CachedRenderMaterial { float diffuse[4], ambient[4], specular[4], emissive[4]; float power; };
-struct PackedLightColors { unsigned char diffuse[4], ambient[4], specular[4]; };
+struct CachedRenderMaterial {
+    float diffuse[4], ambient[4], specular[4], emissive[4];
+    float power;
+};
+struct PackedLightColors {
+    unsigned char diffuse[4], ambient[4], specular[4];
+};
 struct EngineLightingView {
     char prefix[0x1100];
     CachedRenderLight lights[8];
@@ -66,8 +69,15 @@ struct EngineLightingView {
     unsigned char materialDiffuse[4], materialAmbient[4], materialSpecular[4], materialEmissive[4];
     PackedLightColors lightColors[8];
 };
-struct EngineCopyFilterView { char prefix[0x16be]; unsigned char samplePattern[24]; unsigned char verticalFilter[7]; };
-struct EngineSystemOptionsView { char prefix[0x5c4]; int options[9]; };
+struct EngineCopyFilterView {
+    char prefix[0x16be];
+    unsigned char samplePattern[24];
+    unsigned char verticalFilter[7];
+};
+struct EngineSystemOptionsView {
+    char prefix[0x5c4];
+    int options[9];
+};
 // The upload receiver (gx_render_state_and_texture_upload.cpp) consumes format, texel width/height and mip count.
 // +10 is the SOURCE platform layout, not mip bytes or a texture pointer.
 // gtl_ImageGSR_GetDescription in gtl_image_decode_and_tiling.cpp maps GSR fileType 1/2/3/4/5 to
@@ -85,15 +95,26 @@ struct DecodedTextureDescription {
     unsigned int widthTexels, heightTexels, mipLevelCount;
     unsigned int sourcePlatformLayout;
 };
-struct DecodedPaletteDescription { int swizzledFormat, entryCount; };
-enum ImageDecodeConstants { kNoImagePalette = -1, kImagePlatformWii = 7 };
+struct DecodedPaletteDescription {
+    int swizzledFormat, entryCount;
+};
+enum ImageDecodeConstants {
+    kNoImagePalette = -1,
+    kImagePlatformWii = 7
+};
 typedef char DecodedTextureDescriptionSize[sizeof(DecodedTextureDescription) == 20 ? 1 : -1];
 typedef char DecodedPaletteDescriptionSize[sizeof(DecodedPaletteDescription) == 8 ? 1 : -1];
 
-struct TextureCreationOptions { char prefix[0x10]; int paletteOptions; };
+struct TextureCreationOptions {
+    char prefix[0x10];
+    int paletteOptions;
+};
 enum SystemOption {
-    kSystemReservedOption = 2, kSystemVerticalFilter = 3, kSystemAsyncFifo = 4,
-    kSystemResetGX = 7, kSystemMiscToken1 = 8
+    kSystemReservedOption = 2,
+    kSystemVerticalFilter = 3,
+    kSystemAsyncFifo = 4,
+    kSystemResetGX = 7,
+    kSystemMiscToken1 = 8
 };
 // Shared getter/setter schema: nine native 32-bit words at engine+0x5C4.
 // Engine_SaveRenderState (gtl_render_state_and_primitive.cpp) reads all indices 0..8 into its snapshot;
@@ -107,10 +128,16 @@ enum SystemOption {
 // passed to vertical-filter weight generation; 4: zero/nonzero FIFO mode;
 // 7: nonzero requests GX defaults immediately; 8: zero/nonzero selects GX misc 0/8.
 // Other indices are retained verbatim. Boolean side effects do not normalize storage.
-enum { kDrawCompletionToken = 0xbeef, kLightCount = 8, kImageFileAlignment = 0x20,
-       kScissorWordCount = 4, kScissorBytes = 0x10,
-       kOutputRectangleCacheOffset = 0x4C,
-       kFileOpenDisposition3 = 3, kFileOpenAttribute80 = 0x80 };
+enum {
+    kDrawCompletionToken = 0xbeef,
+    kLightCount = 8,
+    kImageFileAlignment = 0x20,
+    kScissorWordCount = 4,
+    kScissorBytes = 0x10,
+    kOutputRectangleCacheOffset = 0x4C,
+    kFileOpenDisposition3 = 3,
+    kFileOpenAttribute80 = 0x80
+};
 // FileIO numeric disposition/attribute values retain their encoded ABI meaning;
 static const unsigned int kFileReadAccess = 0x80000000u;
 typedef char RenderLightSizeCheck[sizeof(CachedRenderLight) == 0x68 ? 1 : -1];
@@ -120,7 +147,6 @@ typedef char RenderLightSpotCheck[(int)&((CachedRenderLight*)0)->spotEndAngleRad
 typedef char RenderMaterialSizeCheck[sizeof(CachedRenderMaterial) == 0x44 ? 1 : -1];
 typedef char LightingScissorOffsetCheck[(int)&((EngineLightingView*)0)->scissor == 0x14ac ? 1 : -1];
 typedef char LightingColorOffsetCheck[(int)&((EngineLightingView*)0)->materialDiffuse == 0x21f8 ? 1 : -1];
-
 
 extern "C" {
 
@@ -153,12 +179,17 @@ extern int Texture_CreateAndUploadMipChain(void*, void*, void*, void*);
 extern void ScissorRect_Copy(unsigned int*, const unsigned int*);
 extern void* ByteBuffer_DestroyBase(void*, short);
 // FileIO_OpenFile takes 10 arguments: it loads the 9th/10th from the caller's 0x8/0xC(r1) (0x8041582C, 0x8041583C).
-extern int FileIO_OpenFile(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
+extern int FileIO_OpenFile(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+                           unsigned int, unsigned int, unsigned int, unsigned int);
 extern int FileIO_GetFileSize(int, int*, int, int);
 extern void FileIO_CloseFile(int);
 extern int FileIO_ReadFile(void*, void*, int, int, int, int, int, int);
 extern int Math_RoundUpToMultiple(int, int);
-struct ByteBufferStorage { char* data; unsigned int size; unsigned int cap; };
+struct ByteBufferStorage {
+    char* data;
+    unsigned int size;
+    unsigned int cap;
+};
 extern void ByteBuffer_ResizeZeroFilled(ByteBufferStorage*, unsigned int);
 extern void std_ThrowLengthError();
 extern void* dtor_8042AE7C(void*, short);
@@ -223,9 +254,12 @@ int Engine_SetLight(int index, const void* data) {
         return 1;
     AsEngineState(g_engineState)->lightStateDirty[index] = 1;
     RenderLight_Copy(&((EngineLightingView*)g_engineState)->lights[index], (void*)data);
-    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->lightColors[index].diffuse, ((const CachedRenderLight*)data)->diffuse);
-    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->lightColors[index].specular, ((const CachedRenderLight*)data)->specular);
-    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->lightColors[index].ambient, ((const CachedRenderLight*)data)->ambient);
+    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->lightColors[index].diffuse,
+                                   ((const CachedRenderLight*)data)->diffuse);
+    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->lightColors[index].specular,
+                                   ((const CachedRenderLight*)data)->specular);
+    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->lightColors[index].ambient,
+                                   ((const CachedRenderLight*)data)->ambient);
     return 1;
 }
 #pragma optimization_level reset
@@ -237,18 +271,59 @@ void RenderLight_Copy(void* dst, void* src) {
     d[0] = s[0];
     // Keep each two-read/two-write pair explicit; an out-of-line copy helper
     // changes this unit's code under its file-wide compiler settings.
-    { unsigned int first = s[1]; unsigned int second = s[2]; d[1] = first; d[2] = second; }
-    { unsigned int first = s[3]; unsigned int second = s[4]; d[3] = first; d[4] = second; }
-    { unsigned int first = s[5]; unsigned int second = s[6]; d[5] = first; d[6] = second; }
-    { unsigned int first = s[7]; unsigned int second = s[8]; d[7] = first; d[8] = second; }
-    { unsigned int first = s[9]; unsigned int second = s[10]; d[9] = first; d[10] = second; }
-    { unsigned int first = s[11]; unsigned int second = s[12]; d[11] = first; d[12] = second; }
-    { unsigned int first = s[13]; unsigned int second = s[14]; d[13] = first; d[14] = second; }
+    {
+        unsigned int first = s[1];
+        unsigned int second = s[2];
+        d[1] = first;
+        d[2] = second;
+    }
+    {
+        unsigned int first = s[3];
+        unsigned int second = s[4];
+        d[3] = first;
+        d[4] = second;
+    }
+    {
+        unsigned int first = s[5];
+        unsigned int second = s[6];
+        d[5] = first;
+        d[6] = second;
+    }
+    {
+        unsigned int first = s[7];
+        unsigned int second = s[8];
+        d[7] = first;
+        d[8] = second;
+    }
+    {
+        unsigned int first = s[9];
+        unsigned int second = s[10];
+        d[9] = first;
+        d[10] = second;
+    }
+    {
+        unsigned int first = s[11];
+        unsigned int second = s[12];
+        d[11] = first;
+        d[12] = second;
+    }
+    {
+        unsigned int first = s[13];
+        unsigned int second = s[14];
+        d[13] = first;
+        d[14] = second;
+    }
     d[15] = s[15];
-    { unsigned int first = s[16]; unsigned int second = s[17]; d[16] = first; d[17] = second; }
+    {
+        unsigned int first = s[16];
+        unsigned int second = s[17];
+        d[16] = first;
+        d[17] = second;
+    }
 
     d[18] = s[18];
-    for (int i=19;i<26;i++) ((volatile float*)dst)[i] = ((const volatile float*)src)[i];
+    for (int i = 19; i < 26; i++)
+        ((volatile float*)dst)[i] = ((const volatile float*)src)[i];
 }
 
 // Cache material colors and shininess, convert colors, and invalidate all eight lights.
@@ -260,10 +335,14 @@ int Engine_SetMaterial(const void* data) {
     ((EngineLightingView*)g_engineState)->materialDirty = 1;
     RenderMaterial_Copy(&((EngineLightingView*)g_engineState)->material, data);
     gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->materialDiffuse, data);
-    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->materialSpecular, ((const CachedRenderMaterial*)data)->specular);
-    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->materialAmbient, ((const CachedRenderMaterial*)data)->ambient);
-    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->materialEmissive, ((const CachedRenderMaterial*)data)->emissive);
-    for (volatile int i=0; i<8; ++i) AsEngineState(g_engineState)->lightStateDirty[i] = 1;
+    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->materialSpecular,
+                                   ((const CachedRenderMaterial*)data)->specular);
+    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->materialAmbient,
+                                   ((const CachedRenderMaterial*)data)->ambient);
+    gtl_PixelConvert_Float4ToRGBA8(((EngineLightingView*)g_engineState)->materialEmissive,
+                                   ((const CachedRenderMaterial*)data)->emissive);
+    for (volatile int i = 0; i < 8; ++i)
+        AsEngineState(g_engineState)->lightStateDirty[i] = 1;
     return 1;
 }
 
@@ -274,10 +353,10 @@ struct QueueState {
 };
 
 // Copy one cached light into the caller buffer.
-// index must be 0..7, arg must hold 0x68 writable bytes; always returns 1.
-int Engine_GetLight(int index, void* arg) {
+// index must be 0..7, lightOut must hold 0x68 writable bytes; always returns 1.
+int Engine_GetLight(int index, void* lightOut) {
     int idx = index;
-    void* a = arg;
+    void* a = lightOut;
     char* base = (char*)g_engineState;
     RenderLight_Copy(a, &((EngineLightingView*)base)->lights[idx]);
     return 1;
@@ -337,15 +416,18 @@ int Render_SetSystemOption(register int mode, int value) {
     case kSystemReservedOption:
         break;
     case kSystemVerticalFilter:
-        Render_BuildVerticalFilterWeights(((EngineCopyFilterView*)g_engineState)->verticalFilter, *(volatile float*)&stored);
+        Render_BuildVerticalFilterWeights(((EngineCopyFilterView*)g_engineState)->verticalFilter,
+                                          *(volatile float*)&stored);
         GXSetCopyFilter(0, ((EngineCopyFilterView*)*(void* volatile*)&g_engineState)->samplePattern, 1,
-                    ((EngineCopyFilterView*)g_engineState)->verticalFilter);
+                        ((EngineCopyFilterView*)g_engineState)->verticalFilter);
         break;
     case kSystemAsyncFifo:
         if (s_gxRendererInitialized != 0) {
             if ((stored != 0) ^ (((EngineSystemOptionsView*)g_engineState)->options[kSystemAsyncFifo] != 0)) {
                 Render_WaitForDrawCompletion();
-                Render_InitializeAndBindGXFifo((bool)*(unsigned int*)&((EngineSystemOptionsView*)g_engineState)->options[kSystemAsyncFifo], (bool)stored, 0);
+                Render_InitializeAndBindGXFifo(
+                    (bool)*(unsigned int*)&((EngineSystemOptionsView*)g_engineState)->options[kSystemAsyncFifo],
+                    (bool)stored, 0);
                 GXDraw_SetSyncCallback(Render_OnDrawSyncToken);
                 GXDraw_SetDoneCallback(Render_OnDrawDone);
             }
@@ -394,8 +476,8 @@ int Engine_FlushRenderState() {
 }
 
 // Copy the cached 68-byte material into the caller buffer.
-int Engine_GetMaterial(void* arg) {
-    volatile void* saved = arg;
+int Engine_GetMaterial(void* materialOut) {
+    volatile void* saved = materialOut;
     RenderMaterial_Copy((void*)saved, &((EngineLightingView*)g_engineState)->material);
     (void)saved;
     return 1;
@@ -434,7 +516,11 @@ void ByteBuffer_InitEmpty(void* p) {
     volatile void* f = &((ByteBufferStorage*)d)->cap;
     volatile void* g = &((ByteBufferStorage*)d)->cap;
     volatile void* slots[5];
-    slots[0] = a; slots[1] = b; slots[2] = c; slots[3] = d; slots[4] = e;
+    slots[0] = a;
+    slots[1] = b;
+    slots[2] = c;
+    slots[3] = d;
+    slots[4] = e;
     *(int*)p = 0;
     *((int*)p + 1) = 0;
     *((int*)p + 2) = 0;
@@ -456,16 +542,17 @@ void* ByteBuffer_DestroyBase(void* p, short deletingFlag) {
 
 #pragma optimization_level 0
 // Copy the cached scissor rectangle into the caller buffer.
-int Engine_GetScissorRect(void* arg) {
-    ScissorRect_Copy((unsigned int*)arg, (const unsigned int*)(((EngineLightingView*)g_engineState)->scissor));
+int Engine_GetScissorRect(void* scissorRectOut) {
+    ScissorRect_Copy((unsigned int*)scissorRectOut,
+                     (const unsigned int*)(((EngineLightingView*)g_engineState)->scissor));
     return 1;
 }
 #pragma optimization_level reset
 
 #pragma optimization_level 0
 // Bind a vertex stream with a byte offset of zero.
-void Engine_SetVertexStreamZeroOffset(void* arg0, void* arg1, int arg2) {
-    Engine_SetVertexStream(arg0, arg1, 0, arg2);
+void Engine_SetVertexStreamZeroOffset(void* stream, void* vertexBuffer, int stride) {
+    Engine_SetVertexStream(stream, vertexBuffer, 0, stride);
 }
 #pragma optimization_level reset
 
@@ -478,11 +565,11 @@ void Engine_SetVertexStreamZeroOffset(void* arg0, void* arg1, int arg2) {
 void Engine_SetOutputRectangle(const int* src) {
     int* base = (int*)g_engineState;
     int* dst = base + (kOutputRectangleCacheOffset / 4);
-    base[kOutputRectangleCacheOffset/4] = src[0];
-    base[kOutputRectangleCacheOffset/4 + 1] = src[1];
-    base[kOutputRectangleCacheOffset/4 + 2] = src[2];
-    base[kOutputRectangleCacheOffset/4 + 3] = src[3];
-    base[kOutputRectangleCacheOffset/4 + 4] = src[4];
+    base[kOutputRectangleCacheOffset / 4] = src[0];
+    base[kOutputRectangleCacheOffset / 4 + 1] = src[1];
+    base[kOutputRectangleCacheOffset / 4 + 2] = src[2];
+    base[kOutputRectangleCacheOffset / 4 + 3] = src[3];
+    base[kOutputRectangleCacheOffset / 4 + 4] = src[4];
     (void)dst;
 }
 
@@ -500,7 +587,8 @@ void Engine_SetOutputRectangle(const int* src) {
 // texture or release the palette allocated before the failed data lookup.
 // The mip-upload return is ignored. Thus 1 reports this control path completed,
 // not independent validation of both graphics allocations. Preserve that behavior.
-int Texture_LoadResourceWithOptionalPalette(void* imageSource, void* imageByteCount, unsigned int* textureHandleOut, unsigned int* paletteHandleOut, void* /*unused*/, void* creationOptions) {
+int Texture_LoadResourceWithOptionalPalette(void* imageSource, void* imageByteCount, unsigned int* textureHandleOut,
+                                            unsigned int* paletteHandleOut, void* /*unused*/, void* creationOptions) {
     volatile char pad[0x1c];
     int paletteDestinationAddress, paletteSourceAddress;
     DecodedTextureDescription textureDescription;
@@ -524,10 +612,12 @@ int Texture_LoadResourceWithOptionalPalette(void* imageSource, void* imageByteCo
     // halfword planes; packed RGBA8 copies entries (gtl_graphics_texture_buffer_resources.cpp). A format edit
     // must keep encoded bytes, mip description and palette representation together.
     ImageFormatAbiWord decodedPaletteFormat = gtl_ImageFormat_FromSwizzled(paletteDescription.swizzledFormat);
-    ImageFormatAbiWord platformPaletteFormat = gtl_ImageFormat_ToPlatformFormat(decodedPaletteFormat, kImagePlatformWii);
+    ImageFormatAbiWord platformPaletteFormat =
+        gtl_ImageFormat_ToPlatformFormat(decodedPaletteFormat, kImagePlatformWii);
     int paletteType = TexturePalette_GetTypeForEntryCount(paletteDescription.entryCount);
     int paletteOptions = ((TextureCreationOptions*)creationOptions)->paletteOptions;
-    TexturePalette_Create((void*)paletteType, (void*)0, platformPaletteFormat, (void*)paletteOptions, (void*)paletteHandleOut, 0);
+    TexturePalette_Create((void*)paletteType, (void*)0, platformPaletteFormat, (void*)paletteOptions,
+                          (void*)paletteHandleOut, 0);
     decoded = gtl_Image_GetPaletteData(&paletteSourceAddress, imageSource, imageByteCount);
     if (decoded == 0) {
         *paletteHandleOut = 0;
@@ -537,7 +627,8 @@ int Texture_LoadResourceWithOptionalPalette(void* imageSource, void* imageByteCo
     TexturePalette_GetData((void*)paletteHandle, &paletteDestinationAddress, 0);
     unsigned int destinationAddress = paletteDestinationAddress;
     unsigned int sourceAddress = paletteSourceAddress;
-    TexturePalette_CopyOrDeinterleaveEntries(destinationAddress, sourceAddress, (void*)paletteType, platformPaletteFormat);
+    TexturePalette_CopyOrDeinterleaveEntries(destinationAddress, sourceAddress, (void*)paletteType,
+                                             platformPaletteFormat);
     TexturePalette_Flush((void*)paletteHandle);
     return 1;
 }
@@ -547,8 +638,6 @@ int ByteBuffer_CalculateGrowthCapacity(void* obj, int amount);
 extern char s_byteBufferLengthErrorStrings[];
 extern void* memset(void*, int, unsigned int);
 extern void* memcpy(void*, const void*, unsigned int);
-
-
 
 struct TemporaryByteBufferStorage {
     char* volatile buf;
@@ -563,7 +652,9 @@ struct TemporaryByteBufferStorage {
 // ResizeTmp keeps its linker-visible destructor name; it owns the temporary allocation.
 struct ResizeTmp : TemporaryByteBufferStorage {
     // Release whichever allocation remains owned by the temporary after the swap.
-    ~ResizeTmp() { dtor_8042AE7C(this, -1); }
+    ~ResizeTmp() {
+        dtor_8042AE7C(this, -1);
+    }
 };
 #pragma pop
 
@@ -577,8 +668,8 @@ struct ResizeTmp : TemporaryByteBufferStorage {
 // Refresh capacity before size and publish the allocator address after both reads.
 // Keep this ordering: the buffer view is volatile and the second bounds check
 // intentionally reloads fields after the first (delta > capacity) check.
-static inline unsigned int ReloadSizeForCapacityCheck(volatile ByteBufferStorage* buffer,
-        unsigned int& capacity, void* volatile& allocatorAddress, ByteBufferStorage* owner) {
+static inline unsigned int ReloadSizeForCapacityCheck(volatile ByteBufferStorage* buffer, unsigned int& capacity,
+                                                      void* volatile& allocatorAddress, ByteBufferStorage* owner) {
     capacity = buffer->cap;
     unsigned int size = buffer->size;
     allocatorAddress = &owner->cap;
@@ -598,12 +689,9 @@ struct ByteBufferCommitAbi {
 // Logical inputs are owner/live/storage; output is the published owner and retired
 // storage.buf. All remaining references are caller-frame ABI scratch, not resources.
 // Publish replacement storage; the temporary adopts the retired allocation.
-static inline void CommitByteBufferGrowth(
-    ByteBufferStorage* owner,
-    volatile ByteBufferStorage* live,
-    ResizeTmp& storage,
-    ResizeTmp* temporaryOwner,
-    const ByteBufferCommitAbi& abi) {
+static inline void CommitByteBufferGrowth(ByteBufferStorage* owner, volatile ByteBufferStorage* live,
+                                          ResizeTmp& storage, ResizeTmp* temporaryOwner,
+                                          const ByteBufferCommitAbi& abi) {
     abi.scratchCommitTempCapacity = (void*)&storage.cap;
     abi.scratchCommitOwnerCapacity = &owner->cap;
     abi.emptySwapTag = 0;
@@ -638,10 +726,8 @@ struct ByteBufferPrefixAbi {
 };
 
 // Copy and zero the old prefix, updating temporary counts through the borrowed ABI view.
-static inline void MoveByteBufferPrefix(TemporaryByteBufferStorage& storage,
-    volatile ByteBufferStorage* live,
-    unsigned int addedBytes,
-    const ByteBufferPrefixAbi& abi) {
+static inline void MoveByteBufferPrefix(TemporaryByteBufferStorage& storage, volatile ByteBufferStorage* live,
+                                        unsigned int addedBytes, const ByteBufferPrefixAbi& abi) {
     unsigned int copiedPrefixBytes;
     unsigned int initializedBytes;
     char* prefixDestination;
@@ -694,11 +780,9 @@ struct ByteBufferSuffixAbi {
 };
 
 // Zero the newly exposed suffix before copying the old prefix into its reserved gap.
-static inline void ZeroByteBufferGrowthSuffix(TemporaryByteBufferStorage& storage,
-    volatile ByteBufferStorage* live,
-    char* allocated,
-    unsigned int addedBytes,
-    const ByteBufferSuffixAbi& abi) {
+static inline void ZeroByteBufferGrowthSuffix(TemporaryByteBufferStorage& storage, volatile ByteBufferStorage* live,
+                                              char* allocated, unsigned int addedBytes,
+                                              const ByteBufferSuffixAbi& abi) {
     unsigned int initializedSuffixBytes;
     char* freshBase;
     char* suffixStart;
@@ -745,12 +829,9 @@ struct ByteBufferAllocationAbi {
 };
 
 // Allocate replacement bytes under the temporary guard; return their base address.
-static inline char* AllocateByteBufferGrowth(ByteBufferStorage* owner,
-    volatile ByteBufferStorage* live,
-    ResizeTmp& storage,
-    ResizeTmp*& temporaryOwner,
-    unsigned int addedBytes,
-    const ByteBufferAllocationAbi& abi) {
+static inline char* AllocateByteBufferGrowth(ByteBufferStorage* owner, volatile ByteBufferStorage* live,
+                                             ResizeTmp& storage, ResizeTmp*& temporaryOwner, unsigned int addedBytes,
+                                             const ByteBufferAllocationAbi& abi) {
     unsigned int allocationSize;
     char* allocated;
     unsigned int maximumAllocationBytes;
@@ -837,9 +918,9 @@ void ByteBuffer_ResizeZeroFilled(ByteBufferStorage* buffer, register unsigned in
     register ByteBufferStorage* owner = buffer;
     register ResizeTmp* temporaryOwner;
     // ABI tags: write-only allocator and cleanup markers; no size/ownership policy.
-    volatile char emptyShortfallTag, emptyGrowthTag, emptySwapTag, emptyCommitCountTag, emptyMoveTag,
-            emptyAppendTag, emptySuffixTag2, emptySuffixTag1, emptyLimitTag, emptyAllocationTag,
-            emptyAllocatorTag, emptyResizeTag, emptyCapacityTag, emptyShrinkTag1, emptyShrinkTag2;
+    volatile char emptyShortfallTag, emptyGrowthTag, emptySwapTag, emptyCommitCountTag, emptyMoveTag, emptyAppendTag,
+        emptySuffixTag2, emptySuffixTag1, emptyLimitTag, emptyAllocationTag, emptyAllocatorTag, emptyResizeTag,
+        emptyCapacityTag, emptyShrinkTag1, emptyShrinkTag2;
     // Bounds/swap state: the volatile reload order is part of this reconstruction.
     volatile unsigned int scratchCapacityShortfall, scratchGrowthCapacity;
     char* volatile oldAllocationForSwap;
@@ -885,8 +966,7 @@ void ByteBuffer_ResizeZeroFilled(ByteBufferStorage* buffer, register unsigned in
         // Refresh capacity/size only after the first bound check. Keep these sequenced reads:
         // a boolean temporary changes branch generation in this compiler.
         if (addedBytes > capacity ||
-            ReloadSizeForCapacityCheck(live, capacity, scratchReloadCapacityAddress,
-            owner) > capacity - addedBytes) {
+            ReloadSizeForCapacityCheck(live, capacity, scratchReloadCapacityAddress, owner) > capacity - addedBytes) {
             scratchGrowthCapacityAddress = &owner->cap;
             unsigned int requested = live->size + addedBytes;
             unsigned int oldCap = live->cap;
@@ -905,27 +985,33 @@ void ByteBuffer_ResizeZeroFilled(ByteBufferStorage* buffer, register unsigned in
         }
         // Growth phase 1: the temporary owns fresh storage; owner still owns its old data.
         ResizeTmp storage;
-        ByteBufferAllocationAbi allocationAbi = {
-            allocatorContextAddress, scratchOwnerCapacityAddress, ownerCapacityAddress,
-            scratchTempCapacityAddress1, scratchTempCapacityAddress2, scratchTemporaryBase,
-            scratchTemporaryOwner, emptyAllocationTag, allocationLimit, emptyLimitTag,
-            requestedAllocationBytes, emptyAllocatorTag, scratchAllocatorContext, allocationLimitCopy,
-            scratchLimitCopy1, scratchLimitCopy2, scratchAllocationContext};
-        char* allocated = AllocateByteBufferGrowth(owner, live, storage, temporaryOwner, addedBytes,
-            allocationAbi);
-        ByteBufferSuffixAbi suffixAbi = {
-            emptySuffixTag1, emptySuffixTag2, scratchFreshBase1, scratchFreshBase2, scratchFreshBase3,
-            scratchSuffixCapacityAddress};
+        ByteBufferAllocationAbi allocationAbi = {allocatorContextAddress,
+                                                 scratchOwnerCapacityAddress,
+                                                 ownerCapacityAddress,
+                                                 scratchTempCapacityAddress1,
+                                                 scratchTempCapacityAddress2,
+                                                 scratchTemporaryBase,
+                                                 scratchTemporaryOwner,
+                                                 emptyAllocationTag,
+                                                 allocationLimit,
+                                                 emptyLimitTag,
+                                                 requestedAllocationBytes,
+                                                 emptyAllocatorTag,
+                                                 scratchAllocatorContext,
+                                                 allocationLimitCopy,
+                                                 scratchLimitCopy1,
+                                                 scratchLimitCopy2,
+                                                 scratchAllocationContext};
+        char* allocated = AllocateByteBufferGrowth(owner, live, storage, temporaryOwner, addedBytes, allocationAbi);
+        ByteBufferSuffixAbi suffixAbi = {emptySuffixTag1,   emptySuffixTag2,   scratchFreshBase1,
+                                         scratchFreshBase2, scratchFreshBase3, scratchSuffixCapacityAddress};
         ZeroByteBufferGrowthSuffix(storage, live, allocated, addedBytes, suffixAbi);
-        ByteBufferPrefixAbi prefixAbi = {
-            emptyAppendTag, emptyMoveTag, emptyCommitCountTag, scratchPrefixEnd, scratchPrefixBegin,
-            scratchOldEnd, movedSource, movedByteCount};
+        ByteBufferPrefixAbi prefixAbi = {emptyAppendTag,     emptyMoveTag,  emptyCommitCountTag, scratchPrefixEnd,
+                                         scratchPrefixBegin, scratchOldEnd, movedSource,         movedByteCount};
         MoveByteBufferPrefix(storage, live, addedBytes, prefixAbi);
-        ByteBufferCommitAbi commitAbi = {oldAllocationForSwap, scratchCommitTempCapacity,
-            scratchCommitOwnerCapacity, emptySwapTag, scratchSwapOwner, scratchSwapTemporary};
-        CommitByteBufferGrowth(
-            owner, live, storage,
-            temporaryOwner, commitAbi);
+        ByteBufferCommitAbi commitAbi = {oldAllocationForSwap, scratchCommitTempCapacity, scratchCommitOwnerCapacity,
+                                         emptySwapTag,         scratchSwapOwner,          scratchSwapTemporary};
+        CommitByteBufferGrowth(owner, live, storage, temporaryOwner, commitAbi);
         return;
     }
     if (requestedBytes < live->size) {
@@ -1008,7 +1094,8 @@ struct LengthErrorBuildSlots {
 #pragma always_inline on
 // Adopt message bytes into an initialized shared deleter, retaining ABI tag stores.
 static inline void InitializeLengthErrorMessageOwner(LengthErrorBuildSlots& state,
-    ExceptionMessageControlBlock* controlBlockUnderConstruction, char* adoptedMessage) {
+                                                     ExceptionMessageControlBlock* controlBlockUnderConstruction,
+                                                     char* adoptedMessage) {
     unsigned char allocatorTag = state.copy;
     state.scratchControlBase = controlBlockUnderConstruction;
     state.ca = allocatorTag;
@@ -1106,9 +1193,13 @@ void std_ThrowLengthError() {
 #pragma opt_common_subs off
 struct LoadBuf : ByteBufferStorage {
     // Begin with no owned file-buffer allocation.
-    LoadBuf() { ByteBuffer_InitEmpty(this); }
+    LoadBuf() {
+        ByteBuffer_InitEmpty(this);
+    }
     // Release the temporary encoded-file bytes on normal return or unwinding.
-    ~LoadBuf() { ByteBuffer_DeletingDtor(this, -1); }
+    ~LoadBuf() {
+        ByteBuffer_DeletingDtor(this, -1);
+    }
 };
 
 #pragma opt_strength_reduction off
@@ -1120,7 +1211,9 @@ struct LoadBuf : ByteBufferStorage {
 // Open failure clears both required outputs; read failure leaves them untouched.
 // Decode receives the rounded buffer SIZE, not bytesRead or fileByteCount; tail
 // bytes remain zero. Preserve that distinction for replacement GSR assets.
-int ImageResource_LoadFileAndDecode(register void* filenameWord, register unsigned int* textureHandleOut, register unsigned int* paletteHandleOut, register int unusedDecodeOptionWord, register int creationOptionsWord) {
+int ImageResource_LoadFileAndDecode(register void* filenameWord, register unsigned int* textureHandleOut,
+                                    register unsigned int* paletteHandleOut, register int unusedDecodeOptionWord,
+                                    register int creationOptionsWord) {
     unsigned int initialZero;
     int fileSizeAuxiliaryWord;
     int bytesRead;
@@ -1145,7 +1238,8 @@ int ImageResource_LoadFileAndDecode(register void* filenameWord, register unsign
     stackArgumentZero8 = initialZero;
     stackArgumentZeroC = initialZero;
     // The final two zero arguments are explicit ABI stack words for FileIO_OpenFile.
-    fileHandle = FileIO_OpenFile((unsigned int)savedFilenameWord, kFileReadAccess, 0, 0, kFileOpenDisposition3, kFileOpenAttribute80, 0, -1, initialZero, initialZero);
+    fileHandle = FileIO_OpenFile((unsigned int)savedFilenameWord, kFileReadAccess, 0, 0, kFileOpenDisposition3,
+                                 kFileOpenAttribute80, 0, -1, initialZero, initialZero);
     invalidFileHandle = -1;
     if (fileHandle == invalidFileHandle) {
         *textureOutput = 0;
@@ -1162,7 +1256,9 @@ int ImageResource_LoadFileAndDecode(register void* filenameWord, register unsign
     FileIO_CloseFile((int)fileHandle);
     void* encodedBytes = encodedFile.data;
     void* encodedByteCountWord = (void*)encodedFile.size;
-    result = Texture_LoadResourceWithOptionalPalette(encodedBytes, encodedByteCountWord, textureOutput, paletteOutput, (void*)savedUnusedDecodeOptionWord, (void*)savedCreationOptionsWord);
+    result =
+        Texture_LoadResourceWithOptionalPalette(encodedBytes, encodedByteCountWord, textureOutput, paletteOutput,
+                                                (void*)savedUnusedDecodeOptionWord, (void*)savedCreationOptionsWord);
     return result;
 }
 #pragma optimization_level reset
@@ -1247,7 +1343,8 @@ extern "C" void* dtor_8042AE7C(void* p, short flags) {
     volatile short savedFlags = flags;
     if (p != 0) {
         volatile unsigned char* base = (volatile unsigned char*)p;
-        volatile unsigned char* end = base + *(volatile unsigned int*)(base + 0x10) + *(volatile unsigned int*)(base + 4);
+        volatile unsigned char* end =
+            base + *(volatile unsigned int*)(base + 0x10) + *(volatile unsigned int*)(base + 4);
         volatile unsigned char* begin = base + *(volatile unsigned int*)base + *(volatile unsigned int*)(base + 0x10);
         while (end > begin) {
             --end;
@@ -1255,7 +1352,9 @@ extern "C" void* dtor_8042AE7C(void* p, short flags) {
         }
         *(unsigned int*)(base + 4) = 0;
         CallbackByteBuffer_Destroy(p, 0);
-        (void)base; (void)end; (void)begin;
+        (void)base;
+        (void)end;
+        (void)begin;
         if (savedFlags > 0)
             __dl__FPv(p);
     }
@@ -1277,7 +1376,8 @@ extern "C" void* ByteBuffer_ReleaseAllocation(void* p, short flags) {
             unsigned int* p8a = (unsigned int*)(&((ByteBufferStorage*)p)->cap);
             unsigned char zero = 0;
             unsigned int* p8b = (unsigned int*)(&((ByteBufferStorage*)p)->cap);
-            (void)p8a; (void)p8b;
+            (void)p8a;
+            (void)p8b;
             fields[1] = fields[1] - oldCount;
             volatile unsigned char z = zero;
             (void)z;

@@ -1,77 +1,107 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CCREATURE_H
 #define CLASSES_CCREATURE_H
 
 #include "game/types.h"
 
+struct CreaturePointRange;
 class CCreature {
 public:
-    void* vtable;                        // 0x0: 4 uses in ntNpc_PolaShip_Ctor, ntPenguin_Duck_Ctor, ntNpc_PolaPenguin2_Ctor
-    void* secondaryVtable;                        // 0x4: 7 uses in ntNpc_PolaShip_Ctor, CDisposable_Ctor, CDuck_Ctor...
-    int flags;                          // 0x8: 10 uses in CDisposable_Ctor, CDuck_Ctor, CUfo_Ctor...
+    void* vtable;                  // 0x0
+    void* secondaryVtable;         // 0x4
+    int flags;                     // 0x8
     float movementBoundsOrigin[3]; // 0xC: ntNpc_BlackSparrow_UpdateGridTargetAndMove: used as target-position origin
-    float movementBoundsMax[3]; // 0x18: ntNpc_PolaShip_Ctor: Vec3_Zero
-    int puppet;                         // 0x24: 10 uses in ntNpc_PolaPenguin2_Ctor, CDisposable_Ctor, CDuck_Ctor...
+    float movementBoundsMax[3];    // 0x18: ntNpc_PolaShip_Ctor: Vec3_Zero
+    int puppet;                    // 0x24
     float transform[12]; // 0x28: ntNpc_BlackSparrow_UpdateGridTargetAndMove: Matrix_CopyAffine; translation at +0x4C
-    float animationTime;                       // 0x58: 10 uses in ntNpc_PolaPenguin2_Ctor, CDuck_Ctor, CUfo_Ctor...
-    char pad_05C[0x4];                  // 0x5c
-    int animationRange;                         // 0x60: 10 uses in ntNpc_PolaPenguin2_Ctor, CDuck_Ctor, CUfo_Ctor...
-    float targetPosition[3]; // 0x64: ntNpc_BlackSparrow_UpdateGridTargetAndMove: target minus translation, normalized movement
-    float turnRate;                       // 0x70: 4 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    float movementSpeed;                       // 0x74: 6 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    float bankAngle; // 0x78: ntNpc_BlackSparrow_Draw: Matrix_SetAxisRotation axis 2
-    float maxBankAngle;                       // 0x7c: 4 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    char pad_080[0x4];                  // 0x80
-    float heading;                       // 0x84: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    float cellSize;                       // 0x88: 4 uses in CDuck_Ctor, ntPenguin_Duck_Ctor, ntNpc_PolaPenguin1_Ctor...
-    int gridXCount; // 0x8C: ntNpc_BlackSparrow_UpdateGridTargetAndMove: grid index modulo and X bounds
-    int gridYCount; // 0x90: ntNpc_BlackSparrow_UpdateGridTargetAndMove: Y bounds
-    int gridZCount; // 0x94: ntNpc_BlackSparrow_UpdateGridTargetAndMove: grid stride and Z bounds
-    float gridStepX; // 0x98: ntNpc_BlackSparrow_UpdateGridTargetAndMove: X cell spacing and Random_RangeFloat bound
-    float gridStepY; // 0x9C: ntNpc_BlackSparrow_UpdateGridTargetAndMove: Y cell spacing and Random_RangeFloat bound
-    float gridStepZ; // 0xA0: ntNpc_BlackSparrow_UpdateGridTargetAndMove: Z cell spacing and Random_RangeFloat bound
+    float animationTime; // 0x58
+    char pad_05C[0x4];   // 0x5c
+    int animationRange;  // 0x60
+    float targetPosition
+        [3];        // 0x64: ntNpc_BlackSparrow_UpdateGridTargetAndMove: target minus translation, normalized movement
+    float turnRate; // 0x70
+    float movementSpeed;            // 0x74
+    float bankAngle;                // 0x78: ntNpc_BlackSparrow_Draw: Matrix_SetAxisRotation axis 2
+    float maxBankAngle;             // 0x7c
+    char headingBankParameter[0x4]; // 0x80
+    float heading;                  // 0x84
+    float cellSize;                 // 0x88
+    int gridXCount;                 // 0x8C: ntNpc_BlackSparrow_UpdateGridTargetAndMove: grid index modulo and X bounds
+    int gridYCount;                 // 0x90: ntNpc_BlackSparrow_UpdateGridTargetAndMove: Y bounds
+    int gridZCount;                 // 0x94: ntNpc_BlackSparrow_UpdateGridTargetAndMove: grid stride and Z bounds
+    float gridStepX;  // 0x98: ntNpc_BlackSparrow_UpdateGridTargetAndMove: X cell spacing and Random_RangeFloat bound
+    float gridStepY;  // 0x9C: ntNpc_BlackSparrow_UpdateGridTargetAndMove: Y cell spacing and Random_RangeFloat bound
+    float gridStepZ;  // 0xA0: ntNpc_BlackSparrow_UpdateGridTargetAndMove: Z cell spacing and Random_RangeFloat bound
     int historyCount; // 0xA4: ntNpc_BlackSparrow_UpdateGridTargetAndMove: history search and shift bound
-    int history;                         // 0xa8: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    unsigned char opacity; // 0xAC: ntNpc_BlackSparrow_UpdateAnimationAndMovement: interpolated keyframe value
+    int history;      // 0xa8
+    unsigned char opacity;         // 0xAC: ntNpc_BlackSparrow_UpdateAnimationAndMovement: interpolated keyframe value
     unsigned char animationActive; // 0xAD: ntNpc_BlackSparrow_UpdateAnimationAndMovement: gates animation update
     char pad_0AE[0x2];
-    float ballSpawnOffsetDistance;                       // 0xb0: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    int opacityKeyframeCount;                         // 0xb4: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    void* opacityKeyframeNext;                       // 0xb8: 8 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    void* opacityKeyframePrevious;                       // 0xbc: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    int targetPoints;                         // 0xc0: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    int targetPointCount;                         // 0xc4: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    int targetPointCapacity;                         // 0xc8: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    unsigned char unk_CC;               // 0xcc: 2 uses in CUfo_Ctor, ntPenguin_Ctor
-    char pad_0CD[0x3];                  // 0xcd
-    int pathPoints;                         // 0xd0: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    int pathPointCount;                         // 0xd4: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    int pathPointCapacity;                         // 0xd8: 9 uses in CDuck_Ctor, CUfo_Ctor, ntPenguin_Ctor...
-    unsigned char pathCursor; // 0xDC: ntNpc_BlackSparrow_UpdateGridTargetAndMove: indexes 12-byte path positions
+    float ballSpawnOffsetDistance; // 0xb0
+    int opacityKeyframeCount;      // 0xb4
+    void* opacityKeyframeNext;     // 0xb8
+    void* opacityKeyframePrevious; // 0xbc
+    int targetPoints;              // 0xc0
+    int targetPointCount;          // 0xc4
+    int targetPointCapacity;       // 0xc8
+    unsigned char unk_CC;          // 0xcc
+    char pad_0CD[0x3];             // 0xcd
+    int pathPoints;                // 0xd0
+    int pathPointCount;            // 0xd4
+    int pathPointCapacity;         // 0xd8
+    unsigned char pathCursor;      // 0xDC: ntNpc_BlackSparrow_UpdateGridTargetAndMove: indexes 12-byte path positions
     char pad_0DD[0x3c];
     unsigned char recordPath; // 0x119: ntNpc_BlackSparrow_UpdateGridTargetAndMove: appends target position when set
-    unsigned char movementEnabled;              // 0x11a: 3 uses in ntPenguin_Duck_Ctor, ntNpc_BlackSparrow_Ctor, ntNpc_PolaPenguin2_Ctor
-    char pad_11B[0x1];                  // 0x11b
-    int unk_11C;                        // 0x11c: 9 uses in ntPenguin_Duck_Ctor, CDisposable_Ctor, CDuck_Ctor...
-    int unk_120;                        // 0x120: 9 uses in CDuck_Ctor, ntPenguin_Duck_Ctor, CUfo_Ctor... (CONFLICT sizes [1, 4])
-    float unk_124;                      // 0x124: 6 uses in CDuck_Ctor, ntPenguin_Duck_Ctor, ntNpc_Dragon_Ctor...
-    float unk_128;                      // 0x128: 7 uses in ntPenguin_Duck_Ctor, CDisposable_Ctor, CDuck_Ctor...
-    void* sequenceEffectHandles;                      // 0x12c: 7 uses in CDuck_Ctor, ntPenguin_Duck_Ctor, ntNpc_Dragon_Ctor...
-    void* sequenceEffectCount;                      // 0x130: 6 uses in ntPenguin_Duck_Ctor, CDisposable_Ctor, ntNpc_Dragon_Ctor...
-    unsigned int sequenceEffectCapacity;               // 0x134: 2 uses in ntNpc_Dragon_Ctor, ntNpc_PolaShip_Ctor
-    unsigned char unk_138;              // 0x138: 2 uses in ntNpc_Dragon_Ctor, ntNpc_PolaShip_Ctor (CONFLICT sizes [1, 4])
-    char pad_139[0x3];                  // 0x139
-    unsigned int unk_13C;               // 0x13c: 2 uses in ntNpc_Dragon_Ctor, ntNpc_PolaShip_Ctor
-    unsigned int unk_140;               // 0x140: 1 use in ntNpc_PolaShip_Ctor
-    unsigned int unk_144;               // 0x144: 1 use in ntNpc_PolaShip_Ctor
-    float unk_148;                      // 0x148: 1 use in ntNpc_PolaShip_Ctor
-    unsigned int unk_14C;               // 0x14c: 1 use in ntNpc_PolaShip_Ctor
+    unsigned char movementEnabled;       // 0x11a
+    char pad_11B[0x1];                   // 0x11b
+    int unk_11C;                         // 0x11c
+    int unk_120;                         // 0x120
+    float unk_124;                       // 0x124
+    float unk_128;                       // 0x128
+    void* sequenceEffectHandles;         // 0x12c
+    void* sequenceEffectCount;           // 0x130
+    unsigned int sequenceEffectCapacity; // 0x134
+    unsigned char unk_138;               // 0x138
+    char pad_139[0x3];                   // 0x139
+    unsigned int unk_13C;                // 0x13c
+    unsigned int unk_140;                // 0x140
+    unsigned int unk_144;                // 0x144
+    float unk_148;                       // 0x148
+    unsigned int unk_14C;                // 0x14c
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x0, 0x4, 0xc, 0x18, 0x24, 0x58, 0x60, 0xb8, 0x120, 0x124, 0x128, 0x12c
+    int vfunc_26();
+
+    void SetPathPointsAndOrient(CreaturePointRange* range, float value);
+    void UpdateAnimationTimeAndOpacity(float delta);
+    void UpdateWanderMovement(float dt);
+    void Draw();
+
+    // Whether a point lies outside the camera-facing dot threshold.
+    int IsOutsideCameraFacingThreshold(void* src, float threshold);
+
+    void* LoadPuppet(int arg);
+    void* LoadPuppetResource(int resourceId, int queuePreload);
+    void InitRandomGridCell(const void* worldBounds, unsigned int flags);
+    // Randomize heading and place the creature on the ground at its ball-relative offset.
+    void SpawnAtBallOffset();
+    void AttachBoneMetadataEffect(void* boneEntry);
+
+    int ParseBoneReferences(int parser, int argument);
+    void PlaySoundFromParsedToken(int parser);
+
+    void vfunc_36Thunk4(int forwarded1, int forwarded2);
+    void vfunc_37Thunk4(int forwarded1);
+    void DtorThunk4(int deleteFlag);
+
+    void SetKind(unsigned int value);
+    void SetAnimationActive(unsigned char value);
+    void SetBallSpawnOffsetDistance(float value);
+
+    void vfunc_25();
+    void vfunc_4();
+
+    ~CCreature();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CCREATURE_OFF(f, o) typedef char CCreature_off_##f[((int)&((CCreature*)0)->f == (o)) ? 1 : -1]
 CCREATURE_OFF(vtable, 0x0);
 CCREATURE_OFF(secondaryVtable, 0x4);
@@ -128,4 +158,4 @@ CCREATURE_OFF(pathCursor, 0xDC);
 CCREATURE_OFF(recordPath, 0x119);
 #undef CCREATURE_OFF
 
-#endif  // CLASSES_CCREATURE_H
+#endif // CLASSES_CCREATURE_H

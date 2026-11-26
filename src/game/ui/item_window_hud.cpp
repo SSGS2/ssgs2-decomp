@@ -1,9 +1,14 @@
+// The item panel HUD (CItemWindow): the panel that shows the player's eight equipped item slots,
+// plays the item-use animation, and consumes an item when one is selected.
+//
+// Also holds the storage helpers and the item-message handling for the window.
+
 #include <decomp/static_init.h>
 // In-round item panel / HUD consumer (0x80190474): CItemWindow loads the BP
 // animation/layout, shows eight equipped consumable slots, consumes an item,
 // and animates its icon toward the current player's projected head bone.
-// Mod lookup (all float definitions are in u80190474_data.cpp):
-// - Widescreen placement: CItemWindow_OnLoad uses COption::hudBaselineY - 25,
+// Mod lookup (all float definitions are in the data section):
+// - Widescreen placement: CItemWindow::OnLoad uses COption::hudBaselineY - 25,
 //   overlay X=74 (kItemOverlayLeft74), hidden panel X=-384 (kItemPanelHiddenX).
 //   OnProcess adds panelOffsetX; OnInit caches layout position minus ORIGIN.
 //   OnDisplay writes screen/layout-pixel rectangles from slotOrigins[count-1].
@@ -24,7 +29,7 @@
 //   position vector's distance units (SoundManager_CreateSoundInstance,
 //   sound_manager.cpp). All four local calls use null position/type 0, so attenuation
 //   is bypassed: editing 200 does not change these nonspatial sounds' volume.
-//   ResetSelection also writes 200 to +70/+74 (pad_70 in itemwindow.h), but
+//   ResetSelection also writes 200 to +70/+74 (the eight bytes at +70 in itemwindow.h), but
 //   no source reader of either word is established. They are initialization
 //   storage, not the drawn animationX/Y (+7C/+80) or an opacity/resolution knob.
 //   Reset units/effect remain unknown; isolate roles before a future tuning mod.
@@ -54,26 +59,44 @@ extern unsigned char s_itemIconNamesAndQuads[]; // Item icon names and quad temp
 #include "game/types.h"
 #include "game/singletons.h"
 #include "game/wvector.h"
+#include "classes/CBpCtrl.h"
 
-enum ItemPanelState { kPanelOpen = 0, kPanelOpening = 1, kPanelClosing = 2, kPanelClosed = 3 };
+enum ItemPanelState {
+    kPanelOpen = 0,
+    kPanelOpening = 1,
+    kPanelClosing = 2,
+    kPanelClosed = 3
+};
 // These constituent bits mirror GolfRuleState, not ItemPanelState (0..3).
 enum ItemPanelVisibleGolfState {
-    kPanelDuringAim = 0x8, kPanelDuringCameraView = 0x100,
-    kPanelDuringCameraTransition = 0x200, kPanelDuringBeginPlayerTurn = 0x4000,
+    kPanelDuringAim = 0x8,
+    kPanelDuringCameraView = 0x100,
+    kPanelDuringCameraTransition = 0x200,
+    kPanelDuringBeginPlayerTurn = 0x4000,
     kPanelDuringCameraReturn = 0x40000
 };
 enum ItemWindowConstants {
-    kItemSlotCount = 8, kItemTextureCount = 11, kIffConsumableKind = 6,
-    kIffKindShift = 26, kGreenGroundType = 2,
-    kPercentRange = 100, kFailedItemReplacementIndex = 14,
-    kFirstItemTutorialStage = 6, kItemAnimationState = 8,
+    kItemSlotCount = 8,
+    kItemTextureCount = 11,
+    kIffConsumableKind = 6,
+    kIffKindShift = 26,
+    kGreenGroundType = 2,
+    kPercentRange = 100,
+    kFailedItemReplacementIndex = 14,
+    kFirstItemTutorialStage = 6,
+    kItemAnimationState = 8,
     kAlternateItemEndFrame = 8,
-    kItemLayoutAllocationBytes = 0x5C, kItemLayoutMode = 5,
-    kItemTextureArrayBytes = 0x1C8, kItemTextureObjectBytes = 0x28,
-    kItemSlotFlagSelector = 5, kItemQuadVertexCount = 4,
-    kItemQuadPrimitive = 0x98, kItemQuadVertexFormat = 0x11F005, kItemQuadStride = 0x18,
-    kPanelVisibilityStateMask = kPanelDuringAim | kPanelDuringCameraView |
-        kPanelDuringCameraTransition | kPanelDuringBeginPlayerTurn | kPanelDuringCameraReturn
+    kItemLayoutAllocationBytes = 0x5C,
+    kItemLayoutMode = 5,
+    kItemTextureArrayBytes = 0x1C8,
+    kItemTextureObjectBytes = 0x28,
+    kItemSlotFlagSelector = 5,
+    kItemQuadVertexCount = 4,
+    kItemQuadPrimitive = 0x98,
+    kItemQuadVertexFormat = 0x11F005,
+    kItemQuadStride = 0x18,
+    kPanelVisibilityStateMask = kPanelDuringAim | kPanelDuringCameraView | kPanelDuringCameraTransition |
+        kPanelDuringBeginPlayerTurn | kPanelDuringCameraReturn
 };
 // Item actor message IDs. Query messages write through caller-owned int pointers;
 // activation/use messages carry immediate slot/owner/ID/random words instead.
@@ -93,18 +116,30 @@ enum ItemWindowMessage {
     kItemMsgQueryNoActiveSelection = 12,
     kItemMsgQueryPanelTransitionState = 13
 };
-enum ItemWindowScreenQuery { kScreenQueryHudPhase = 0x30, kScreenQueryItemPanelReady = 0x43 };
+enum ItemWindowScreenQuery {
+    kScreenQueryHudPhase = 0x30,
+    kScreenQueryItemPanelReady = 0x43
+};
 // UI map: layout elements 0..7 are the eight slot controls. Selector 5 is used
 // both to publish slot availability and to collect hovered slots. Named count
 // groups use 1..8 in kItemCountGroupFormat; exactly the current count is enabled.
 enum ItemWindowStringOffset {
-    kItemWindowScript = 0x0E, kItemWindowLayout = 0x21,
-    kPlayerActor = 0x34, kHeadBone = 0x3B, kScreenActor = 0x46,
-    kItemCountGroupFormat = 0x4D, kPanelInScript = 0x59, kPanelOpenSound = 0x65,
-    kPanelOutScript = 0x74, kPanelCloseSound = 0x81,
-    kVectorIndexError = 0x91, kVectorIndexErrorType = 0xAF,
-    kGolfRuleActor = 0xE6, kGuideLineActor = 0xEF,
-    kItemFailureSound = 0xF9, kItemUseSound = 0x108
+    kItemWindowScript = 0x0E,
+    kItemWindowLayout = 0x21,
+    kPlayerActor = 0x34,
+    kHeadBone = 0x3B,
+    kScreenActor = 0x46,
+    kItemCountGroupFormat = 0x4D,
+    kPanelInScript = 0x59,
+    kPanelOpenSound = 0x65,
+    kPanelOutScript = 0x74,
+    kPanelCloseSound = 0x81,
+    kVectorIndexError = 0x91,
+    kVectorIndexErrorType = 0xAF,
+    kGolfRuleActor = 0xE6,
+    kGuideLineActor = 0xEF,
+    kItemFailureSound = 0xF9,
+    kItemUseSound = 0x108
 };
 // Each view begins at the shared-document base plus a player stride; it is not a CGolfPlayer actor.
 struct SharedPlayerItemSlotsView {
@@ -135,11 +170,9 @@ void appFreeUni__FPv(void*);
 void* __nw__FUl(unsigned int);
 void __dl__FPv(void*);
 
-void* CItemWindow_Ctor(void*);
-
 struct Obj_80190474 {
-	void* ptr;
-	void* clearedStorageWord;
+    void* ptr;
+    void* clearedStorageWord;
 };
 
 // Release a raw container allocation after clearing its used-storage word.
@@ -186,35 +219,30 @@ void* WOverlay_Create(void*, const char*, int);
 int WOverlay_GetWidth(void*);
 int WOverlay_GetHeight(void*);
 void Sprite_NoOpHook(void*, float*);
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor();
-void CBpCtrl_CreateEntry(void*, const char*, void*, int);
 void* Layout_Init(void*, int);
 void* Layout_LoadExtended(void*, int, const char*);
 void* __nwa__FUl(unsigned int);
-void CBpTex_Init();
-void CBpTex_dtor();
+extern "C" void __ct__6CBpTexFv();
+extern "C" void __dt__6CBpTexFv();
 void Layout_Update(void*);
 void* IdMap_Lookup(void*, void*);
-void CBpCtrl_DeleteEntryById(void*, int);
 int BpObject_PollLoad(void*);
 void Object_DeleteVirtual(void*, void*);
 void OverlayMapTree_FreeSubtree(void*, void*);
 void Layout_Destroy(void*, int);
 void __destroy_new_array(void*, void*);
 
-
 extern void* g_view;
 extern void* g_inputPointer;
 extern void* g_helpMsg;
-extern const float kItemAnimationFramesPerSecond, kItemAnimationHomingDelay, kItemAnimationGravity6, kItemAnimationHeadOffsetY;
+extern const float kItemAnimationFramesPerSecond, kItemAnimationHomingDelay, kItemAnimationGravity6,
+    kItemAnimationHeadOffsetY;
 extern const float kFloat_0_5_ItemWindow;
 extern void Layout_SetElementPlayerFlagsAndState(void*, int, int);
 extern void IActor_DispatchMessage(void*, void*, const char*, int, void*, const char*, int, int);
-extern void Matrix_TransformPoint(void*, void*, void*);
+extern void* Matrix_TransformPoint(void*, void*, void*);
 extern void WView_ProjectViewPoint(void*, void*, void*, int);
-extern void CItemWindow_UpdatePanelVisibility(CItemWindow*);
-extern void CItemWindow_HandleItemSelection(CItemWindow*);
 
 extern unsigned char s_itemWindowTypeDescriptor;
 extern void* g_soundManager;
@@ -228,14 +256,15 @@ extern unsigned int ItemInventory_GetItemIdAt(void*, int);
 extern void* InstanceTable_Get();
 extern int BpObject_IsCurrentScriptComplete(void*);
 extern int GolfTask_NoOpStatus(void*);
-extern int CItemWindow_UseItem(CItemWindow*, unsigned char, void*, int, void*);
 extern unsigned int ItemInventory_FindItemIndex(void*, unsigned int);
 extern unsigned int* GolfBall__Fv();
 extern unsigned int CQuadTree_GetInstance();
 extern unsigned int GetGroundType__9CQuadTreeF7WVector(void*);
 extern void* NoticeQueue_ShowById(void*, int, int);
 extern void* g_mouseCursor;
-  extern const float kItemIconUvExtent, kFloat_1_ItemWindow, kItemIconSpacing49, kItemIconNormalScale, kItemIconHoveredScale, kItemAnimationIconSize, kItemAnimationInitialVelocityY, kItemPowerGaugeIncrease33, kItemPowerGaugeMaximum99;
+extern const float kItemIconUvExtent, kFloat_1_ItemWindow, kItemIconSpacing49, kItemIconNormalScale,
+    kItemIconHoveredScale, kItemAnimationIconSize, kItemAnimationInitialVelocityY, kItemPowerGaugeIncrease33,
+    kItemPowerGaugeMaximum99;
 extern char itemWindowDrawData[];
 extern char s_gameInputManager[];
 extern void BpObject_TryInvokeCurrentCallback(void*, int);
@@ -273,30 +302,48 @@ struct Message {
 };
 typedef char ItemMessage_value_offset[IFF_OFFSET(Message, value) == 8 ? 1 : -1];
 typedef char ItemMessage_random_offset[IFF_OFFSET(Message, randomValue) == 0x10 ? 1 : -1];
-extern char s_inputManagerDtorRegistration_ItemWindow[]; // Destructor-registration record for this unit's input manager.
+extern char
+    s_inputManagerDtorRegistration_ItemWindow[]; // Destructor-registration record for this unit's input manager.
 extern signed char s_inputManagerInitialized;
-struct ItemNames { void* name[11]; };
-struct ItemVertex { float x,y,z; unsigned int color; float u,v; };
-struct ItemQuad { ItemVertex v[kItemQuadVertexCount]; };
+struct ItemNames {
+    void* name[11];
+};
+struct ItemVertex {
+    float x, y, z;
+    unsigned int color;
+    float u, v;
+};
+struct ItemQuad {
+    ItemVertex v[kItemQuadVertexCount];
+};
 typedef char ItemVertex_stride[sizeof(ItemVertex) == kItemQuadStride ? 1 : -1];
 struct ItemTexture {
     // CBpTex ABI view; only the called slots promise these signatures.
-// CBpTex slots: +08 uncalled destructor, +0C borrowed C-string address word, +10 uncalled by this unit, +14 bind
-// the loaded icon for quad drawing.
-    virtual void a(); // +08: uncalled destructor slot, do not invoke as void()
+    // CBpTex slots: +08 uncalled destructor, +0C borrowed C-string address word, +10 uncalled by this unit, +14 bind
+    // the loaded icon for quad drawing.
+    virtual void a();                        // +08: uncalled destructor slot, do not invoke as void()
     virtual void setTexturePathAddress(int); // +0C: borrowed C-string address word
-    virtual void c(); // +10: uncalled by this unit
-    virtual void bind(); // +14: bind loaded icon for subsequent quad drawing
+    virtual void c();                        // +10: uncalled by this unit
+    virtual void bind();                     // +14: bind loaded icon for subsequent quad drawing
     virtual int ready();
     // +18: nonzero when texture loading has completed
     char pad[0x24];
 };
 
-struct Arr3u { unsigned int v[3]; };
+struct Arr3u {
+    unsigned int v[3];
+};
 struct IntVec {
-    int* data; unsigned int size; int capacity;
+    int* data;
+    unsigned int size;
+    int capacity;
     // Free the owned layout-ID array after clearing its logical size.
-    ~IntVec() { if (data) { size -= size; appFreeUni__FPv(data); } }
+    ~IntVec() {
+        if (data) {
+            size -= size;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 extern int Layout_CollectHovered(void*, IntVec*, int);
 extern int Layout_CollectActivated(void*, IntVec*, void*);
@@ -306,28 +353,47 @@ extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12out_of_range[];
 
-struct ErrRef { void* vt; int c1; int c2; char* s; };
+struct ErrRef {
+    void* vt;
+    int c1;
+    int c2;
+    char* s;
+};
 struct ErrHolder {
-    char* p; char* flag;
+    char* p;
+    char* flag;
     // Guard raw exception-message bytes until their deleter is installed.
-    ErrHolder(char* b, char* f) { p = b; flag = f; }
+    ErrHolder(char* b, char* f) {
+        p = b;
+        flag = f;
+    }
     // Delete message bytes if construction failed before ownership transfer.
-    ~ErrHolder() { if (p) __dla__FPv(p); }
+    ~ErrHolder() {
+        if (p)
+            __dla__FPv(p);
+    }
 };
 struct ErrBase {
-    void* vt; char* buf; ErrRef* ref;
+    void* vt;
+    char* buf;
+    ErrRef* ref;
     // Copy exception text and attach a reference-counted deleter.
     ErrBase(const char* msg0) {
         const char* msg = msg0;
         vt = __vt__Q23std11logic_error;
         char done __attribute__((aligned(4))) = 0;
         unsigned int n = strlen(msg) + 1;
-        char* b = (char*)__nwa__FUl(n * 2 - n);
-        buf = b;
+        char* buffer = (char*)__nwa__FUl(n * 2 - n);
+        buf = buffer;
         {
-            ErrHolder h(b, &done);
+            ErrHolder h(buffer, &done);
             ErrRef* r = (ErrRef*)__nw__FUl(16);
-            if (r) { r->c1 = 1; r->c2 = 1; r->vt = s_sharedCharDeleterVtable; r->s = b; }
+            if (r) {
+                r->c1 = 1;
+                r->c2 = 1;
+                r->vt = s_sharedCharDeleterVtable;
+                r->s = buffer;
+            }
             ref = r;
             h.p = 0;
         }
@@ -338,7 +404,10 @@ struct ErrBase {
 };
 struct OutOfRange : ErrBase {
     // Construct and throw the vector-index exception using the original ABI.
-    OutOfRange(const char* msg) : ErrBase(msg) { vt = __vt__Q23std12out_of_range; __throw(itemWindowStrings + kVectorIndexErrorType, this, (void*)__dt__Q23std12out_of_rangeFv); }
+    OutOfRange(const char* msg) : ErrBase(msg) {
+        vt = __vt__Q23std12out_of_range;
+        __throw(itemWindowStrings + kVectorIndexErrorType, this, (void*)__dt__Q23std12out_of_rangeFv);
+    }
     // No derived-owned storage requires additional cleanup.
     ~OutOfRange() {}
 };
@@ -347,159 +416,161 @@ struct OutOfRange : ErrBase {
 
 // Clear and release this raw storage specialization, then optionally delete it.
 Obj_80190474* dtor_80190474(Obj_80190474* self, int flag) {
-	if (self != 0) {
-		self->clearedStorageWord = 0;
-		ReleaseStorage(self);
-		if (flag > 0) {
-			__dl__FPv(self);
-		}
-	}
-	return self;
+    if (self != 0) {
+        self->clearedStorageWord = 0;
+        ReleaseStorage(self);
+        if (flag > 0) {
+            __dl__FPv(self);
+        }
+    }
+    return self;
 }
 
 // Clear and release this raw storage specialization, then optionally delete it.
 Obj_80190474* dtor_801904E8(Obj_80190474* self, int flag) {
-	if (self != 0) {
-		self->clearedStorageWord = 0;
-		ReleaseStorage(self);
-		if (flag > 0) {
-			__dl__FPv(self);
-		}
-	}
-	return self;
+    if (self != 0) {
+        self->clearedStorageWord = 0;
+        ReleaseStorage(self);
+        if (flag > 0) {
+            __dl__FPv(self);
+        }
+    }
+    return self;
 }
 
 // Clear and release this raw storage specialization, then optionally delete it.
 Obj_80190474* dtor_8019055C(Obj_80190474* self, int flag) {
-	if (self != 0) {
-		self->clearedStorageWord = 0;
-		ReleaseStorage(self);
-		if (flag > 0) {
-			__dl__FPv(self);
-		}
-	}
-	return self;
+    if (self != 0) {
+        self->clearedStorageWord = 0;
+        ReleaseStorage(self);
+        if (flag > 0) {
+            __dl__FPv(self);
+        }
+    }
+    return self;
 }
 
 // Clear and release this raw storage specialization, then optionally delete it.
 Obj_80190474* dtor_801905D0(Obj_80190474* self, int flag) {
-	if (self != 0) {
-		self->clearedStorageWord = 0;
-		ReleaseStorage(self);
-		if (flag > 0) {
-			__dl__FPv(self);
-		}
-	}
-	return self;
+    if (self != 0) {
+        self->clearedStorageWord = 0;
+        ReleaseStorage(self);
+        if (flag > 0) {
+            __dl__FPv(self);
+        }
+    }
+    return self;
 }
 
 // Clear and release this raw storage specialization, then optionally delete it.
 Obj_80190474* dtor_80190644(Obj_80190474* self, int flag) {
-	if (self != 0) {
-		self->clearedStorageWord = 0;
-		ReleaseStorage(self);
-		if (flag > 0) {
-			__dl__FPv(self);
-		}
-	}
-	return self;
+    if (self != 0) {
+        self->clearedStorageWord = 0;
+        ReleaseStorage(self);
+        if (flag > 0) {
+            __dl__FPv(self);
+        }
+    }
+    return self;
 }
 
 // Clear and release this raw storage specialization, then optionally delete it.
 Obj_80190474* dtor_801906B8(Obj_80190474* self, int flag) {
-	if (self != 0) {
-		self->clearedStorageWord = 0;
-		ReleaseStorage(self);
-		if (flag > 0) {
-			__dl__FPv(self);
-		}
-	}
-	return self;
+    if (self != 0) {
+        self->clearedStorageWord = 0;
+        ReleaseStorage(self);
+        if (flag > 0) {
+            __dl__FPv(self);
+        }
+    }
+    return self;
 }
 
 // Clear and release this raw storage specialization, then optionally delete it.
 Obj_80190474* dtor_8019072C(Obj_80190474* self, int flag) {
-	if (self != 0) {
-		self->clearedStorageWord = 0;
-		ReleaseStorage(self);
-		if (flag > 0) {
-			__dl__FPv(self);
-		}
-	}
-	return self;
+    if (self != 0) {
+        self->clearedStorageWord = 0;
+        ReleaseStorage(self);
+        if (flag > 0) {
+            __dl__FPv(self);
+        }
+    }
+    return self;
 }
 
 // Clear and release this raw storage specialization, then optionally delete it.
 Obj_80190474* dtor_801907A0(Obj_80190474* self, int flag) {
-	if (self != 0) {
-		self->clearedStorageWord = 0;
-		ReleaseStorage(self);
-		if (flag > 0) {
-			__dl__FPv(self);
-		}
-	}
-	return self;
+    if (self != 0) {
+        self->clearedStorageWord = 0;
+        ReleaseStorage(self);
+        if (flag > 0) {
+            __dl__FPv(self);
+        }
+    }
+    return self;
 }
 
 // Initialize the item window's cached full-turn angle.
 void InitItemWindowFullTurnAngle() {
-	s_itemWindowFullTurnAngle = kFloat_6_2831855;
+    s_itemWindowFullTurnAngle = kFloat_6_2831855;
 }
 
 // Allocate and construct an item-window actor.
 // Registered as the ItemWindow factory by CItemWindow_RegisterType
 // (sun_rays_lens_flare_effects.cpp); the caller/actor registry owns the returned allocation, not this
 // factory. Construction creates empty handles; OnLoad acquires resources and
-// OnInit establishes selection state. Call CItemWindow_OnDestroy before the
+// OnInit establishes selection state. Call CItemWindow::OnDestroy before the
 // actor's deleting destructor CItemWindow_dtor(self,1) (sun_rays_lens_flare_effects.cpp): that destructor
 // frees remaining overlay-tree nodes, delegates to the base and frees self;
 // it does not release the load-time handles. OnDestroy releases overlay/tree, BP entry,
 // texture array and layout. Do not free the raw pointer or its handles separately.
 // Uses ordinary new; allocation/constructor failure follows that API, with no
 // factory status, fallback actor or resource-load readiness guarantee.
-CItemWindow* CItemWindow_Create() { return new CItemWindow; }
+CItemWindow* CItemWindow_Create() {
+    return new CItemWindow;
+}
 
 // Initialize the item-window actor, overlay tree, layout handle, and slot origins.
-void* CItemWindow_Ctor(void* selfv) {
-	CItemWindow* self = (CItemWindow*)selfv;
-	__ct__18NativeBase80201D18Fv(selfv);
-	float zero = kFloat_0_itemWindow;
-	void* z = 0;
+CItemWindow::CItemWindow() {
+    __ct__18NativeBase80201D18Fv(this);
+    float zero = kFloat_0_itemWindow;
+    void* z = 0;
 
-	self->vtable = (void*)__vt__11CItemWindow;
-	*(void**)self->pad_18 = z;
-	self->overlayRoot = z;
-	self->overlayFirst = &self->overlayRoot;
-	self->overlay = z;
-	self->active = 1;
-	self->displayPriority = 4;
-	self->itemTextures = z;
-	self->itemLayout = z;
-	self->controllerId = -1;
-	self->slotOrigins[0][1] = zero;
-	self->slotOrigins[0][0] = zero;
-	self->slotOrigins[1][1] = zero;
-	self->slotOrigins[1][0] = zero;
-	self->slotOrigins[2][1] = zero;
-	self->slotOrigins[2][0] = zero;
-	self->slotOrigins[3][1] = zero;
-	 self->slotOrigins[3][0] = zero;
-	self->slotOrigins[4][1] = zero;
-	self->slotOrigins[4][0] = zero;
-	self->slotOrigins[5][1] = zero;
-	self->slotOrigins[5][0] = zero;
-	self->slotOrigins[6][1] = zero;
-	self->slotOrigins[6][0] = zero;
-	self->slotOrigins[7][1] = zero;
-	self->slotOrigins[7][0] = zero;
-	return selfv;
+    vtable = (void*)__vt__11CItemWindow;
+    *(void**)pad_18 = z;
+    overlayRoot = z;
+    overlayFirst = &overlayRoot;
+    overlay = z;
+    active = 1;
+    displayPriority = 4;
+    itemTextures = z;
+    itemLayout = z;
+    controllerId = -1;
+    slotOrigins[0][1] = zero;
+    slotOrigins[0][0] = zero;
+    slotOrigins[1][1] = zero;
+    slotOrigins[1][0] = zero;
+    slotOrigins[2][1] = zero;
+    slotOrigins[2][0] = zero;
+    slotOrigins[3][1] = zero;
+    slotOrigins[3][0] = zero;
+    slotOrigins[4][1] = zero;
+    slotOrigins[4][0] = zero;
+    slotOrigins[5][1] = zero;
+    slotOrigins[5][0] = zero;
+    slotOrigins[6][1] = zero;
+    slotOrigins[6][0] = zero;
+    slotOrigins[7][1] = zero;
+    slotOrigins[7][0] = zero;
 }
 
 // Free deeper overlay nodes before this node; overlay payloads were released in phase 1.
 static inline void ReleaseItemOverlayLeaf(CItemWindow* self, void* node) {
     if (node) {
-        if (*(void**)node) OverlayMapTree_FreeSubtree(&self->pad_18, *(void**)node);
-        if (((ItemOverlayTreeNode*)node)->right) OverlayMapTree_FreeSubtree(&self->pad_18, ((ItemOverlayTreeNode*)node)->right);
+        if (*(void**)node)
+            OverlayMapTree_FreeSubtree(&self->pad_18, *(void**)node);
+        if (((ItemOverlayTreeNode*)node)->right)
+            OverlayMapTree_FreeSubtree(&self->pad_18, ((ItemOverlayTreeNode*)node)->right);
         appFreeUni__FPv(node);
     }
 }
@@ -509,18 +580,18 @@ static inline void ReleaseItemOverlayLeaf(CItemWindow* self, void* node) {
 // the window's own overlay -> controller script entry (controllerId) -> icon texture array
 // (itemTextures) -> layout (itemLayout). Each owner pointer is zeroed after release, so the
 // function is safe to call when some parts were never loaded.
-void CItemWindow_OnDestroy(CItemWindow* self) {
-	void* treeSentinel;
-	void* node;
-	void* ownedOverlay;
-	void* successor;
-	void* packedParent;
-	void* parentNode;
-	void* parentLeftChild;
-	void* depth3Node;
-	void* depth2Node;
-	void* depth1Node;
-	void* rootNode;
+void CItemWindow::OnDestroy() {
+    void* treeSentinel;
+    void* node;
+    void* ownedOverlay;
+    void* successor;
+    void* packedParent;
+    void* parentNode;
+    void* parentLeftChild;
+    void* depth3Node;
+    void* depth2Node;
+    void* depth1Node;
+    void* rootNode;
     // Unused declarators retain CodeWarrior's anonymous constant/EH symbol
     // numbering. Removing them leaves code bytes equal but changes relocation
     // symbol spellings; keep the original eight slots for a strict object check.
@@ -532,206 +603,216 @@ void CItemWindow_OnDestroy(CItemWindow* self) {
     void* unusedTreeScratch5;
     void* unusedTreeScratch6;
     void* unusedTreeScratch7;
-	void* ownedTextures;
-	void* ownedLayout;
-	void* emptySentinel;
+    void* ownedTextures;
+    void* ownedLayout;
+    void* emptySentinel;
 
-	// Phase 1: visit every overlay payload and release through the resource manager.
-	// Tree nodes remain allocated during this traversal; parent low bit is color.
-	treeSentinel = &self->overlayRoot;
-	node = self->overlayFirst;
-	while (node != treeSentinel) {
-		if (g_resourceManager) {
-			ownedOverlay = ((ItemOverlayTreeNode*)node)->overlay;
-			if (ownedOverlay) {
-				Object_DeleteVirtual(g_resourceManager, ownedOverlay);
-				((ItemOverlayTreeNode*)node)->overlay = 0;
-			}
-		}
-		successor = ((ItemOverlayTreeNode*)node)->right;
-		if (successor) {
-			while (*(void**)successor) successor = *(void**)successor;
-			node = successor;
-			continue;
-		}
-		while (1) {
-			packedParent = (*(void**)&((ItemOverlayTreeNode*)node)->parentAndColor);
-			parentNode = (void*)((unsigned long)packedParent & ~(unsigned long)1);
-			parentLeftChild = *(void**)parentNode;
-			if (node == parentLeftChild) { node = parentNode; break; }
-			node = parentNode;
-		}
-	}
-	// Phase 2: free tree nodes, then restore the empty-tree sentinel at overlayRoot.
-	// The nested if-blocks below are an unrolled post-order free of a binary tree (left successor
-	// at +0, right successor at +4 of each node) to a fixed depth of four levels from `rootNode`;
-	// anything deeper is handed to OverlayMapTree_FreeSubtree. It is equivalent to one call
-	// OverlayMapTree_FreeSubtree(&pad_18, overlayRoot) followed by freeing the root.
-	rootNode = self->overlayRoot;
-	if (rootNode) {
-		depth1Node = *(void**)rootNode;
-		if (depth1Node) {
-			depth2Node = *(void**)depth1Node;
-			if (depth2Node) {
-				depth3Node = *(void**)depth2Node;
-				ReleaseItemOverlayLeaf(self, depth3Node);
-				depth3Node = ((ItemOverlayTreeNode*)depth2Node)->right;
-				ReleaseItemOverlayLeaf(self, depth3Node);
-				appFreeUni__FPv(depth2Node);
-			}
-			depth2Node = ((ItemOverlayTreeNode*)depth1Node)->right;
-			if (depth2Node) {
-				depth3Node = *(void**)depth2Node;
-				ReleaseItemOverlayLeaf(self, depth3Node);
-				depth3Node = ((ItemOverlayTreeNode*)depth2Node)->right;
-				ReleaseItemOverlayLeaf(self, depth3Node);
-				appFreeUni__FPv(depth2Node);
-			}
-			appFreeUni__FPv(depth1Node);
-		}
-		depth1Node = ((ItemOverlayTreeNode*)rootNode)->right;
-		if (depth1Node) {
-			depth2Node = *(void**)depth1Node;
-			if (depth2Node) {
-				depth3Node = *(void**)depth2Node;
-				ReleaseItemOverlayLeaf(self, depth3Node);
-				depth3Node = ((ItemOverlayTreeNode*)depth2Node)->right;
-				ReleaseItemOverlayLeaf(self, depth3Node);
-				appFreeUni__FPv(depth2Node);
-			}
-			depth2Node = ((ItemOverlayTreeNode*)depth1Node)->right;
-			if (depth2Node) {
-				depth3Node = *(void**)depth2Node;
-				ReleaseItemOverlayLeaf(self, depth3Node);
-				depth3Node = ((ItemOverlayTreeNode*)depth2Node)->right;
-				ReleaseItemOverlayLeaf(self, depth3Node);
-				appFreeUni__FPv(depth2Node);
-			}
-			appFreeUni__FPv(depth1Node);
-		}
-		appFreeUni__FPv(rootNode);
-		(*(void**)&self->pad_18) = 0;
-		self->overlayRoot = 0;
-		emptySentinel = &self->overlayRoot;
-		self->overlayFirst = emptySentinel;
-	}
-	if (g_resourceManager) {
-		ownedOverlay = self->overlay;
-		if (ownedOverlay) {
-			Object_DeleteVirtual(g_resourceManager, ownedOverlay);
-			self->overlay = 0;
-		}
-	}
-	// Phase 3: delete the script entry, constructed texture array, and owned layout.
-	if (self->controllerId != -1) {
-		if (!Sing_805DC5F0()) {
-			if (!s_bpCtrlInitialized) {
-				__ct__7CBpCtrlFv(s_bpCtrl);
-				__register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
-				s_bpCtrlInitialized = 1;
-			}
-			Sing_805DC5F0() = s_bpCtrl;
-		}
-		CBpCtrl_DeleteEntryById(Sing_805DC5F0(), self->controllerId);
-		self->controllerId = -1;
-	}
-	ownedTextures = self->itemTextures;
-	if (ownedTextures) {
-		__destroy_new_array(ownedTextures, (void*)CBpTex_dtor);
-		self->itemTextures = 0;
-	}
-	ownedLayout = self->itemLayout;
-	if (ownedLayout) {
-		Layout_Destroy(ownedLayout, 1);
-		self->itemLayout = 0;
-	}
+    // Phase 1: visit every overlay payload and release through the resource manager.
+    // Tree nodes remain allocated during this traversal; parent low bit is color.
+    treeSentinel = &overlayRoot;
+    node = overlayFirst;
+    while (node != treeSentinel) {
+        if (g_resourceManager) {
+            ownedOverlay = ((ItemOverlayTreeNode*)node)->overlay;
+            if (ownedOverlay) {
+                Object_DeleteVirtual(g_resourceManager, ownedOverlay);
+                ((ItemOverlayTreeNode*)node)->overlay = 0;
+            }
+        }
+        successor = ((ItemOverlayTreeNode*)node)->right;
+        if (successor) {
+            while (*(void**)successor)
+                successor = *(void**)successor;
+            node = successor;
+            continue;
+        }
+        while (1) {
+            packedParent = (*(void**)&((ItemOverlayTreeNode*)node)->parentAndColor);
+            parentNode = (void*)((unsigned long)packedParent & ~(unsigned long)1);
+            parentLeftChild = *(void**)parentNode;
+            if (node == parentLeftChild) {
+                node = parentNode;
+                break;
+            }
+            node = parentNode;
+        }
+    }
+    // Phase 2: free tree nodes, then restore the empty-tree sentinel at overlayRoot.
+    // The nested if-blocks below are an unrolled post-order free of a binary tree (left successor
+    // at +0, right successor at +4 of each node) to a fixed depth of four levels from `rootNode`;
+    // anything deeper is handed to OverlayMapTree_FreeSubtree. It is equivalent to one call
+    // OverlayMapTree_FreeSubtree(&pad_18, overlayRoot) followed by freeing the root.
+    rootNode = overlayRoot;
+    if (rootNode) {
+        depth1Node = *(void**)rootNode;
+        if (depth1Node) {
+            depth2Node = *(void**)depth1Node;
+            if (depth2Node) {
+                depth3Node = *(void**)depth2Node;
+                ReleaseItemOverlayLeaf(this, depth3Node);
+                depth3Node = ((ItemOverlayTreeNode*)depth2Node)->right;
+                ReleaseItemOverlayLeaf(this, depth3Node);
+                appFreeUni__FPv(depth2Node);
+            }
+            depth2Node = ((ItemOverlayTreeNode*)depth1Node)->right;
+            if (depth2Node) {
+                depth3Node = *(void**)depth2Node;
+                ReleaseItemOverlayLeaf(this, depth3Node);
+                depth3Node = ((ItemOverlayTreeNode*)depth2Node)->right;
+                ReleaseItemOverlayLeaf(this, depth3Node);
+                appFreeUni__FPv(depth2Node);
+            }
+            appFreeUni__FPv(depth1Node);
+        }
+        depth1Node = ((ItemOverlayTreeNode*)rootNode)->right;
+        if (depth1Node) {
+            depth2Node = *(void**)depth1Node;
+            if (depth2Node) {
+                depth3Node = *(void**)depth2Node;
+                ReleaseItemOverlayLeaf(this, depth3Node);
+                depth3Node = ((ItemOverlayTreeNode*)depth2Node)->right;
+                ReleaseItemOverlayLeaf(this, depth3Node);
+                appFreeUni__FPv(depth2Node);
+            }
+            depth2Node = ((ItemOverlayTreeNode*)depth1Node)->right;
+            if (depth2Node) {
+                depth3Node = *(void**)depth2Node;
+                ReleaseItemOverlayLeaf(this, depth3Node);
+                depth3Node = ((ItemOverlayTreeNode*)depth2Node)->right;
+                ReleaseItemOverlayLeaf(this, depth3Node);
+                appFreeUni__FPv(depth2Node);
+            }
+            appFreeUni__FPv(depth1Node);
+        }
+        appFreeUni__FPv(rootNode);
+        (*(void**)&pad_18) = 0;
+        overlayRoot = 0;
+        emptySentinel = &overlayRoot;
+        overlayFirst = emptySentinel;
+    }
+    if (g_resourceManager) {
+        ownedOverlay = overlay;
+        if (ownedOverlay) {
+            Object_DeleteVirtual(g_resourceManager, ownedOverlay);
+            overlay = 0;
+        }
+    }
+    // Phase 3: delete the script entry, constructed texture array, and owned layout.
+    if (controllerId != -1) {
+        if (!Sing_805DC5F0()) {
+            if (!s_bpCtrlInitialized) {
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
+                s_bpCtrlInitialized = 1;
+            }
+            Sing_805DC5F0() = s_bpCtrl;
+        }
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(controllerId);
+        controllerId = -1;
+    }
+    ownedTextures = itemTextures;
+    if (ownedTextures) {
+        __destroy_new_array(ownedTextures, (void*)__dt__6CBpTexFv);
+        itemTextures = 0;
+    }
+    ownedLayout = itemLayout;
+    if (ownedLayout) {
+        Layout_Destroy(ownedLayout, 1);
+        itemLayout = 0;
+    }
 }
 
 // Load the item panel and its icon textures once the tutorial enables items.
 // Controls HUD placement (pixels from top-left, Y downward); preserve baseline,
 // hidden-X/script offset and slot-origin relationships when changing aspect ratio.
-void CItemWindow_OnLoad(CItemWindow* self) {
-	if (AsCGolfDoc((*(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc))->tutorialStage < kFirstItemTutorialStage) return;
-	self->overlay = WOverlay_Create(g_resourceManager, itemWindowStrings, 0);
-	float hudBaselineY = AsCOption(g_option)->hudBaselineY;
-	if (self->overlay) {
+void CItemWindow::OnLoad() {
+    if (AsCGolfDoc((*(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc))->tutorialStage < kFirstItemTutorialStage)
+        return;
+    overlay = WOverlay_Create(g_resourceManager, itemWindowStrings, 0);
+    float hudBaselineY = AsCOption(g_option)->hudBaselineY;
+    if (overlay) {
         float overlayY = kItemPanelBaselineInset25;
         float overlayX = kItemOverlayLeft74;
         overlayY = hudBaselineY - overlayY;
-        self->overlayBounds[0] = overlayX;
-        self->overlayBounds[1] = overlayY;
-		self->overlayBounds[2] = (float)WOverlay_GetWidth(self->overlay);
-		self->overlayBounds[3] = (float)WOverlay_GetHeight(self->overlay);
-		Sprite_NoOpHook(self->overlay, self->overlayBounds);
-	}
-	self->bounds[0] = kItemPanelHiddenX;
-	self->bounds[1] = hudBaselineY - kItemPanelBaselineInset25;
-	self->bounds[2] = self->overlayBounds[2];
-	self->bounds[3] = self->overlayBounds[3];
-	if (!Sing_805DC5F0()) {
-		if (!s_bpCtrlInitialized) {
-			__ct__7CBpCtrlFv(s_bpCtrl);
-			__register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
-			s_bpCtrlInitialized = 1;
-		}
-		Sing_805DC5F0() = s_bpCtrl;
-	}
-	CBpCtrl_CreateEntry(Sing_805DC5F0(), itemWindowStrings + kItemWindowScript, &self->controllerId, 0);
+        overlayBounds[0] = overlayX;
+        overlayBounds[1] = overlayY;
+        overlayBounds[2] = (float)WOverlay_GetWidth(overlay);
+        overlayBounds[3] = (float)WOverlay_GetHeight(overlay);
+        Sprite_NoOpHook(overlay, overlayBounds);
+    }
+    bounds[0] = kItemPanelHiddenX;
+    bounds[1] = hudBaselineY - kItemPanelBaselineInset25;
+    bounds[2] = overlayBounds[2];
+    bounds[3] = overlayBounds[3];
+    if (!Sing_805DC5F0()) {
+        if (!s_bpCtrlInitialized) {
+            ((CBpCtrl*)s_bpCtrl)->__ct();
+            __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
+            s_bpCtrlInitialized = 1;
+        }
+        Sing_805DC5F0() = s_bpCtrl;
+    }
+    ((CBpCtrl*)Sing_805DC5F0())->CreateEntry(itemWindowStrings + kItemWindowScript, &controllerId, 0);
     void* obj = __nw__FUl(kItemLayoutAllocationBytes);
-    if (obj) Layout_Init(obj, kItemLayoutMode);
-	self->itemLayout = obj;
-	Layout_LoadExtended(obj, 0, itemWindowStrings + kItemWindowLayout);
-	int* garr = (int*)kItemWindowIconNames;
-	int arr[11] = { garr[0], garr[1], garr[2], garr[3], garr[4], garr[5], garr[6], garr[7], garr[8], garr[9], garr[10] };
+    if (obj)
+        Layout_Init(obj, kItemLayoutMode);
+    itemLayout = obj;
+    Layout_LoadExtended(obj, 0, itemWindowStrings + kItemWindowLayout);
+    int* garr = (int*)kItemWindowIconNames;
+    int arr[11] = {garr[0], garr[1], garr[2], garr[3], garr[4], garr[5], garr[6], garr[7], garr[8], garr[9], garr[10]};
     void* mem = __nwa__FUl(kItemTextureArrayBytes);
-    if (mem) mem = __construct_new_array(mem, (void*)CBpTex_Init, (void*)CBpTex_dtor, kItemTextureObjectBytes, kItemTextureCount);
-	self->itemTextures = mem;
-	int* sp = arr;
-	for (int i = 0; i < kItemTextureCount; ++i, ++sp) {
-        ((ItemTexture*)self->itemTextures)[i].setTexturePathAddress(*sp);
-	}
-	for (;;) {
-		Layout_Update(self->itemLayout);
-		int ok = 1;
-		for (int i = 0; i < kItemTextureCount; ++i) {
-			ok &= ((ItemTexture*)self->itemTextures)[i].ready();
-		}
-		void* layout = self->itemLayout;
-		ok &= Layout_PollLoadComplete(layout);
-		if (!Sing_805DC5F0()) {
-			if (!s_bpCtrlInitialized) {
-				__ct__7CBpCtrlFv(s_bpCtrl);
-				__register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
-				s_bpCtrlInitialized = 1;
-			}
-			Sing_805DC5F0() = s_bpCtrl;
-		}
-		void* object = IdMap_Lookup(Sing_805DC5F0(), *(void**)(&self->controllerId));
-		ok &= BpObject_PollLoad(object);
-		if (ok) break;
-	}
+    if (mem)
+        mem = __construct_new_array(mem, (void*)__ct__6CBpTexFv, (void*)__dt__6CBpTexFv, kItemTextureObjectBytes,
+                                    kItemTextureCount);
+    itemTextures = mem;
+    int* sp = arr;
+    for (int i = 0; i < kItemTextureCount; ++i, ++sp) {
+        ((ItemTexture*)itemTextures)[i].setTexturePathAddress(*sp);
+    }
+    for (;;) {
+        Layout_Update(itemLayout);
+        int ok = 1;
+        for (int i = 0; i < kItemTextureCount; ++i) {
+            ok &= ((ItemTexture*)itemTextures)[i].ready();
+        }
+        void* layout = itemLayout;
+        ok &= Layout_PollLoadComplete(layout);
+        if (!Sing_805DC5F0()) {
+            if (!s_bpCtrlInitialized) {
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
+                s_bpCtrlInitialized = 1;
+            }
+            Sing_805DC5F0() = s_bpCtrl;
+        }
+        void* object = IdMap_Lookup(Sing_805DC5F0(), *(void**)(&controllerId));
+        ok &= BpObject_PollLoad(object);
+        if (ok)
+            break;
+    }
 }
 
 // Cache slot origins and reset panel selection and item-use animation.
 // Each of eight origins is layout position minus layout origin, in layout pixels;
 // a nonzero cached pair is retained. Preserve count 1..8 -> slotOrigins[count-1].
-void CItemWindow_OnInit(CItemWindow* self) {
+void CItemWindow::OnInit() {
     void* scene = (*(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc);
-    if (AsCGolfDoc(scene)->tutorialStage < kFirstItemTutorialStage) return;
-    void* layout = self->itemLayout;
+    if (AsCGolfDoc(scene)->tutorialStage < kFirstItemTutorialStage)
+        return;
+    void* layout = itemLayout;
     if (Layout_PollLoadComplete(layout)) {
         float zero = kFloat_0_itemWindow;
-        void* position = self;
-        float* offset = (float*)(&self->slotOrigins[0][0]);
+        void* position = this;
+        float* offset = (float*)(&slotOrigins[0][0]);
         for (int i = 0; i < kItemSlotCount; ++i) {
             float value = ((CItemWindow*)position)->slotOrigins[0][0];
             if (zero == value) {
                 value = ((CItemWindow*)position)->slotOrigins[0][1];
                 if (zero == value) {
                     float originOffset[2];
-                    layout = self->itemLayout;
+                    layout = itemLayout;
                     Layout_GetElementPosition(layout, i, offset);
-                    layout = self->itemLayout;
+                    layout = itemLayout;
                     Layout_GetElementOrigin(layout, i, originOffset);
                     float coordinate = ((CItemWindow*)position)->slotOrigins[0][0];
                     value = originOffset[0];
@@ -748,70 +829,75 @@ void CItemWindow_OnInit(CItemWindow* self) {
         }
     }
     float full = kFloat_200_ItemWindowShared;
-    self->itemCount = 0;
-    self->panelOpen = 0;
-    self->layoutInitialized = 0;
+    itemCount = 0;
+    panelOpen = 0;
+    layoutInitialized = 0;
     float zero = kFloat_0_itemWindow;
-    self->ResetSelection(zero, full);
+    ResetSelection(zero, full);
 }
 
 // Update panel loading, item-use animation, slot availability, and selection input.
 // dt is elapsed seconds for animationTime, frame conversion and acceleration.
 // Position integrates stored velocity once per call (without another dt factor).
 // This mixed update rule is existing behavior; changing the call frequency changes motion.
-void CItemWindow_OnProcess(CItemWindow* self, float dt) {
-    if (AsCGolfDoc((*(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc))->tutorialStage < kFirstItemTutorialStage) return;
-    if (!self->itemLayout) return;
-    if (self->controllerId == -1) return;
+void CItemWindow::OnProcess(float dt) {
+    if (AsCGolfDoc((*(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc))->tutorialStage < kFirstItemTutorialStage)
+        return;
+    if (!itemLayout)
+        return;
+    if (controllerId == -1)
+        return;
     // Phase 1: tick layout loading first; script readiness then gates every later update.
-    Layout_Update(self->itemLayout);
-    if (!Layout_PollLoadComplete(self->itemLayout)) return;
+    Layout_Update(itemLayout);
+    if (!Layout_PollLoadComplete(itemLayout))
+        return;
     if (0 == Sing_805DC5F0()) {
         if (0 == s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    void* object = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&self->controllerId));
-    if (!BpObject_PollLoad(object)) return;
+    void* object = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&controllerId));
+    if (!BpObject_PollLoad(object))
+        return;
     // Phase 2: initialize slot states once both resources are ready.
-    if (self->layoutInitialized == 0) {
+    if (layoutInitialized == 0) {
         for (int i = 0; i < kItemSlotCount; ++i) {
-            Layout_SetElementPlayerFlagsAndState(self->itemLayout, i, 0);
+            Layout_SetElementPlayerFlagsAndState(itemLayout, i, 0);
         }
-        self->layoutInitialized = 1;
+        layoutInitialized = 1;
     }
     // Phase 3: advance an animation that was active on entry to this block. Clearing
     // animationActive at the game-state check still permits this call's time/motion update.
-    if (self->animationActive) {
+    if (animationActive) {
         if (!(AsCGolfDoc((*(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc))->gameStateFlags & kItemAnimationState)) {
-            self->animationActive = 0;
+            animationActive = 0;
         }
 
-        float elapsedSeconds = (self->animationTime) + dt;
-        self->animationTime = elapsedSeconds;
-        if ((self->useAlternateItem)) {
+        float elapsedSeconds = (animationTime) + dt;
+        animationTime = elapsedSeconds;
+        if ((useAlternateItem)) {
             float elapsedFrames = kItemAnimationFramesPerSecond * elapsedSeconds;
             int truncatedFrame = (int)elapsedFrames;
-            self->alternateIconFrame = (unsigned char)truncatedFrame;
+            alternateIconFrame = (unsigned char)truncatedFrame;
             // Completion is equality on the truncated byte frame. A large dt may skip it;
             // do not change to >= without intentionally changing animation behavior.
             if ((unsigned char)truncatedFrame == kAlternateItemEndFrame) {
-                self->alternateIconFrame = 0;
-                self->animationActive = 0;
+                alternateIconFrame = 0;
+                animationActive = 0;
             }
         } else {
             // Arc: vY += gravity*dt, x += vX, y += vY. Positions advance once per
             // call, so velocity is a stored per-call displacement in this integrator.
             if (elapsedSeconds < kItemAnimationHomingDelay) {
-                float nextVelocityY = kItemAnimationGravity6 * dt + self->animationVelocityY;
+                float nextVelocityY = kItemAnimationGravity6 * dt + animationVelocityY;
 
-                self->animationX = (self->animationX + self->animationVelocityX);
+                animationX = (animationX + animationVelocityX);
 
-                self->animationVelocityY = nextVelocityY;
-                self->animationY = (self->animationY + nextVelocityY);
+                animationVelocityY = nextVelocityY;
+                animationY = (animationY + nextVelocityY);
             } else {
                 // Homing: borrow the actor's head bone, offset its world position,
                 // then project world -> view -> screen before updating velocity.
@@ -820,7 +906,8 @@ void CItemWindow_OnProcess(CItemWindow* self, float dt) {
 
                 float headOffset[3];
 
-                IActor_DispatchMessage(self, self, itemWindowStrings + kPlayerActor, 7, &headBone, itemWindowStrings + kHeadBone, 0, 0);
+                IActor_DispatchMessage(this, this, itemWindowStrings + kPlayerActor, 7, &headBone,
+                                       itemWindowStrings + kHeadBone, 0, 0);
                 headOffset[0] = kFloat_0_itemWindow;
                 headOffset[1] = kItemAnimationHeadOffsetY;
 
@@ -832,58 +919,60 @@ void CItemWindow_OnProcess(CItemWindow* self, float dt) {
                 WView_ProjectViewPoint(g_view, projectedHead, viewHeadPosition, 0);
                 float targetHeadX = projectedHead[0];
 
-                float previousY = self->animationY;
+                float previousY = animationY;
                 float homingGain = kFloat_0_5_ItemWindow;
-                float previousVelocityX = self->animationVelocityX;
+                float previousVelocityX = animationVelocityX;
 
-                float previousX = self->animationX;
+                float previousX = animationX;
                 float nextVelocityX = (dt * (targetHeadX - previousX)) * homingGain + previousVelocityX;
 
-                self->animationVelocityX = nextVelocityX;
+                animationVelocityX = nextVelocityX;
 
                 float nextX = (previousX + nextVelocityX);
                 float verticalErrorStep = dt * ((projectedHead[1]) - previousY);
-                float nextVelocityY = homingGain * verticalErrorStep + (self->animationVelocityY);
-                self->animationVelocityY = nextVelocityY;
+                float nextVelocityY = homingGain * verticalErrorStep + (animationVelocityY);
+                animationVelocityY = nextVelocityY;
                 float targetX = projectedHead[0];
                 float nextY = previousY + nextVelocityY;
 
                 // Only horizontal target crossing completes this animation.
                 // The current call still publishes both final coordinates.
                 if (((targetX - nextX) * (targetX - previousX)) < 0.0f) {
-                    self->animationActive = 0;
+                    animationActive = 0;
                 }
-                self->animationX = nextX;
-                self->animationY = nextY;
+                animationX = nextX;
+                animationY = nextY;
             }
         }
     }
     // Phase 4: refresh usable slots, copy pointer input, update visibility, then handle
     // selection only if the resulting panel state is fully open.
-    if (self->active) {
+    if (active) {
         if (s_itemWindowState == kPanelOpen) {
             for (int i = 0; kItemSlotCount > i; ++i) {
-                void* p = GolfPlayer_GetEntryByIndex((*(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc), AsCGolfDoc((*(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc))->currentPlayer);
+                void* p = GolfPlayer_GetEntryByIndex(
+                    (*(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc),
+                    AsCGolfDoc((*(void**)&((CSharedDoc*)g_sharedDoc)->golfDoc))->currentPlayer);
 
                 if (i < (((RoundPlayerItemState*)p)->itemCount)) {
-                    Layout_SetElementPlayerFlag(self->itemLayout, i, 1, kItemSlotFlagSelector);
+                    Layout_SetElementPlayerFlag(itemLayout, i, 1, kItemSlotFlagSelector);
                 } else {
-                    Layout_SetElementPlayerFlag(self->itemLayout, i, 0, kItemSlotFlagSelector);
+                    Layout_SetElementPlayerFlag(itemLayout, i, 0, kItemSlotFlagSelector);
                 }
             }
         }
-        self->pointerX = ((InputPointerState*)g_inputPointer)->position[0];
-        self->pointerY = ((InputPointerState*)g_inputPointer)->position[1];
-        CItemWindow_UpdatePanelVisibility(self);
+        pointerX = ((InputPointerState*)g_inputPointer)->position[0];
+        pointerY = ((InputPointerState*)g_inputPointer)->position[1];
+        UpdatePanelVisibility();
         if (kPanelClosed == s_itemWindowState) {
             if (g_helpMsg) {
                 NoticeQueue_ShowItemNotice(g_helpMsg, 0);
             }
         } else if (s_itemWindowState == kPanelOpen) {
-            CItemWindow_HandleItemSelection(self);
+            HandleItemSelection();
         }
         if (kPanelClosed != s_itemWindowState) {
-            self->bounds[0] = kItemPanelHiddenX + self->panelOffsetX;
+            bounds[0] = kItemPanelHiddenX + panelOffsetX;
         }
     }
 }
@@ -904,20 +993,22 @@ void CItemWindow_OnProcess(CItemWindow* self, float dt) {
 // icon. Keep that IFF/icon-name record alive through the animation's last draw.
 // Texture lookup defaults to index0 when no icon name matches; no resource ownership
 // is transferred. Render state changes are left to the surrounding draw context.
-void CItemWindow_OnDisplay(CItemWindow* self) {
+void CItemWindow::OnDisplay() {
     char* data = itemWindowDrawData;
-    if (AsCGolfDoc((void*)g_sharedDoc->golfDoc)->tutorialStage < kFirstItemTutorialStage || !(*(int*)&self->itemLayout) || self->controllerId == -1 ||
-        !self->layoutInitialized) return;
-    if (!self->drawRequested) return;
+    if (AsCGolfDoc((void*)g_sharedDoc->golfDoc)->tutorialStage < kFirstItemTutorialStage || !(*(int*)&itemLayout) ||
+        controllerId == -1 || !layoutInitialized)
+        return;
+    if (!drawRequested)
+        return;
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    void* doc = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&self->controllerId));
+    void* doc = IdMap_Lookup(Sing_805DC5F0(), (*(void**)&controllerId));
     BpObject_TryInvokeCurrentCallback(doc, 0);
     BpObject_Draw(doc);
     // Phase 1: draw the BP background. Open-panel icons use screen-space XY,
@@ -928,95 +1019,135 @@ void CItemWindow_OnDisplay(CItemWindow* self) {
     rect[2] = rect[3] = kItemIconUvExtent;
     if (!s_itemWindowState) {
         unsigned char player = AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer;
-        int* equippedItemIds = (int*)((char*)g_sharedDoc + kSharedItemIdsOffset + player*0x1d4);
+        int* equippedItemIds = (int*)((char*)g_sharedDoc + kSharedItemIdsOffset + player * 0x1d4);
         int itemCount = GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)g_sharedDoc->golfDoc), player)->itemCount;
         int visibleItemCount = 0;
-        Layout_DrawWithOpacity(self->itemLayout, kFloat_1_ItemWindow);
+        Layout_DrawWithOpacity(itemLayout, kFloat_1_ItemWindow);
         float size[2];
-        Layout_GetElementSize(self->itemLayout, 0, size);
+        Layout_GetElementSize(itemLayout, 0, size);
         // Count-to-origin map: itemCount 1 uses slotOrigins[0], count 2 uses [1],
         // through count 8 -> [7]. Index 0 overlaps drawRequested and the following
         // word; retain that ABI behavior rather than treating it as a ninth origin.
         // Screen coordinates and icon pitch are pixels; UVs stay normalized.
-        float* countLayoutOrigin = (float*)((char*)self + itemCount*8 + kItemOriginTableOffset);
-        const ItemQuad* templateQuad=(const ItemQuad*)(((char*)(data+0x1b8)));
-        for (int inventorySlot=0; inventorySlot<kItemSlotCount; ++inventorySlot) {
+        float* countLayoutOrigin = (float*)((char*)this + itemCount * 8 + kItemOriginTableOffset);
+        const ItemQuad* templateQuad = (const ItemQuad*)(((char*)(data + 0x1b8)));
+        for (int inventorySlot = 0; inventorySlot < kItemSlotCount; ++inventorySlot) {
             int itemId = equippedItemIds[inventorySlot];
-            if (!itemId) continue;
-            if (!((char*)ItemInventory_FindItemData(((CSharedDoc*)g_sharedDoc)->itemInventory, (void*)itemId)+0x28)) continue;
-            int textureIndex=0;
+            if (!itemId)
+                continue;
+            if (!((char*)ItemInventory_FindItemData(((CSharedDoc*)g_sharedDoc)->itemInventory, (void*)itemId) + 0x28))
+                continue;
+            int textureIndex = 0;
             ++visibleItemCount;
-            for (int candidateTexture=0; candidateTexture<kItemTextureCount; ++candidateTexture) {
-                IFF_STRUCT::sItem* candidate = (IFF_STRUCT::sItem*)ItemInventory_FindItemData(((CSharedDoc*)g_sharedDoc)->itemInventory,(void*)equippedItemIds[inventorySlot]);
-                if (!strcmp((const char*)quads.name[candidateTexture],candidate->common.icon)) { textureIndex=candidateTexture; break; }
+            for (int candidateTexture = 0; candidateTexture < kItemTextureCount; ++candidateTexture) {
+                IFF_STRUCT::sItem* candidate = (IFF_STRUCT::sItem*)ItemInventory_FindItemData(
+                    ((CSharedDoc*)g_sharedDoc)->itemInventory, (void*)equippedItemIds[inventorySlot]);
+                if (!strcmp((const char*)quads.name[candidateTexture], candidate->common.icon)) {
+                    textureIndex = candidateTexture;
+                    break;
+                }
             }
-            int visibleSlot = visibleItemCount-1;
+            int visibleSlot = visibleItemCount - 1;
             int pixelRect[4];
             float pixelPosition[2];
-            pixelRect[0]=(int)(countLayoutOrigin[0]+kItemIconSpacing49*visibleSlot);
-            pixelRect[2]=(int)(pixelRect[0]+size[0]);
-            pixelRect[1]=(int)countLayoutOrigin[1];
-            pixelRect[3]=(int)(pixelRect[1]+size[1]);
-            pixelPosition[0]=pixelRect[0];
-            pixelPosition[1]=pixelRect[1];
-            Layout_SetElementPosition(self->itemLayout, visibleSlot, pixelPosition);
-            Layout_WriteElementRect(self->itemLayout, visibleSlot, pixelRect);
-            if (!Sing_805DC5C8()) {
+            pixelRect[0] = (int)(countLayoutOrigin[0] + kItemIconSpacing49 * visibleSlot);
+            pixelRect[2] = (int)(pixelRect[0] + size[0]);
+            pixelRect[1] = (int)countLayoutOrigin[1];
+            pixelRect[3] = (int)(pixelRect[1] + size[1]);
+            pixelPosition[0] = pixelRect[0];
+            pixelPosition[1] = pixelRect[1];
+            Layout_SetElementPosition(itemLayout, visibleSlot, pixelPosition);
+            Layout_WriteElementRect(itemLayout, visibleSlot, pixelRect);
+            if (!GetInputManagerSlot()) {
                 if (!s_inputManagerInitialized) {
                     InputManager_Init(s_gameInputManager);
-                    __register_global_object(s_gameInputManager,(void*)InputManager_Dtor,s_inputManagerDtorRegistration_ItemWindow);
-                    s_inputManagerInitialized=1;
+                    __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                             s_inputManagerDtorRegistration_ItemWindow);
+                    s_inputManagerInitialized = 1;
                 }
-                Sing_805DC5C8()=s_gameInputManager;
+                GetInputManagerSlot() = s_gameInputManager;
             }
             float mouse[2];
-            InputManager_GetPointerPosition(Sing_805DC5C8(), mouse, -1);
+            InputManager_GetPointerPosition(GetInputManagerSlot(), mouse, -1);
             float width;
-            if (pixelRect[0]<mouse[0] && pixelRect[1]<mouse[1] && pixelRect[2]>mouse[0] && pixelRect[3]>mouse[1]) width=kItemIconHoveredScale*size[0];
-            else width=kItemIconNormalScale*size[0];
+            if (pixelRect[0] < mouse[0] && pixelRect[1] < mouse[1] && pixelRect[2] > mouse[0] &&
+                pixelRect[3] > mouse[1])
+                width = kItemIconHoveredScale * size[0];
+            else
+                width = kItemIconNormalScale * size[0];
             float bounds[4];
-            float delta=(width-size[0])*kFloat_0_5_ItemWindow;
-            bounds[0]=pixelRect[0]-delta;
-            bounds[2]=bounds[0]+width;
-            bounds[1]=pixelRect[1]-delta;
-            bounds[3]=bounds[1]+width;
-            ItemQuad verts=*templateQuad;
-            verts.v[0].x=bounds[0]; verts.v[0].y=bounds[1]; verts.v[0].u=rect[0]; verts.v[0].v=rect[1];
-            verts.v[1].x=bounds[2]; verts.v[1].y=bounds[1]; verts.v[1].u=rect[2]; verts.v[1].v=rect[1];
-            verts.v[2].x=bounds[0]; verts.v[2].y=bounds[3]; verts.v[2].u=rect[0]; verts.v[2].v=rect[3];
-            verts.v[3].x=bounds[2]; verts.v[3].y=bounds[3]; verts.v[3].u=rect[2]; verts.v[3].v=rect[3];
+            float delta = (width - size[0]) * kFloat_0_5_ItemWindow;
+            bounds[0] = pixelRect[0] - delta;
+            bounds[2] = bounds[0] + width;
+            bounds[1] = pixelRect[1] - delta;
+            bounds[3] = bounds[1] + width;
+            ItemQuad verts = *templateQuad;
+            verts.v[0].x = bounds[0];
+            verts.v[0].y = bounds[1];
+            verts.v[0].u = rect[0];
+            verts.v[0].v = rect[1];
+            verts.v[1].x = bounds[2];
+            verts.v[1].y = bounds[1];
+            verts.v[1].u = rect[2];
+            verts.v[1].v = rect[1];
+            verts.v[2].x = bounds[0];
+            verts.v[2].y = bounds[3];
+            verts.v[2].u = rect[0];
+            verts.v[2].v = rect[3];
+            verts.v[3].x = bounds[2];
+            verts.v[3].y = bounds[3];
+            verts.v[3].u = rect[2];
+            verts.v[3].v = rect[3];
             Engine_SetFlexibleVertexFormat(kItemQuadVertexFormat);
-            ((ItemTexture*)self->itemTextures)[textureIndex].bind();
-            DrawPrimitiveUP(kItemQuadPrimitive, GX_GetPrimitiveCount(kItemQuadVertexCount, kItemQuadPrimitive), &verts, kItemQuadStride);
+            ((ItemTexture*)itemTextures)[textureIndex].bind();
+            DrawPrimitiveUP(kItemQuadPrimitive, GX_GetPrimitiveCount(kItemQuadVertexCount, kItemQuadPrimitive), &verts,
+                            kItemQuadStride);
         }
     }
     // Phase 2: draw the non-alternate traveling icon at its current screen position.
-    if (self->animationActive && !self->useAlternateItem) {
+    if (animationActive && !useAlternateItem) {
         float bounds[4];
-        bounds[0]=(int)self->animationX;
-        bounds[1]=(int)self->animationY;
-        bounds[3]=bounds[2]=kItemAnimationIconSize;
-        ItemQuad verts=*(ItemQuad*)(((char*)(data+0x218)));
-        verts.v[0].x=bounds[0]; verts.v[0].y=bounds[1]; verts.v[0].u=rect[0]; verts.v[0].v=rect[1];
-        verts.v[1].x=bounds[0]+bounds[2]; verts.v[1].y=bounds[1]; verts.v[1].u=rect[2]; verts.v[1].v=rect[1];
-        verts.v[2].x=bounds[0]; verts.v[2].y=bounds[1]+bounds[3]; verts.v[2].u=rect[0]; verts.v[2].v=rect[3];
-        verts.v[3].x=bounds[0]+bounds[2]; verts.v[3].y=bounds[1]+bounds[3]; verts.v[3].u=rect[2]; verts.v[3].v=rect[3];
+        bounds[0] = (int)animationX;
+        bounds[1] = (int)animationY;
+        bounds[3] = bounds[2] = kItemAnimationIconSize;
+        ItemQuad verts = *(ItemQuad*)(((char*)(data + 0x218)));
+        verts.v[0].x = bounds[0];
+        verts.v[0].y = bounds[1];
+        verts.v[0].u = rect[0];
+        verts.v[0].v = rect[1];
+        verts.v[1].x = bounds[0] + bounds[2];
+        verts.v[1].y = bounds[1];
+        verts.v[1].u = rect[2];
+        verts.v[1].v = rect[1];
+        verts.v[2].x = bounds[0];
+        verts.v[2].y = bounds[1] + bounds[3];
+        verts.v[2].u = rect[0];
+        verts.v[2].v = rect[3];
+        verts.v[3].x = bounds[0] + bounds[2];
+        verts.v[3].y = bounds[1] + bounds[3];
+        verts.v[3].u = rect[2];
+        verts.v[3].v = rect[3];
         Engine_SetFlexibleVertexFormat(kItemQuadVertexFormat);
-        int textureIndex=0;
-        for (int candidateTexture=0; candidateTexture<kItemTextureCount; ++candidateTexture) {
-            IFF_STRUCT::sItem* candidate = (IFF_STRUCT::sItem*)ItemInventory_FindItemData(((CSharedDoc*)g_sharedDoc)->itemInventory,(*(void**)&self->usedItemCode));
-            if (!strcmp((const char*)quads.name[candidateTexture],candidate->common.icon)) { textureIndex=candidateTexture; break; }
+        int textureIndex = 0;
+        for (int candidateTexture = 0; candidateTexture < kItemTextureCount; ++candidateTexture) {
+            IFF_STRUCT::sItem* candidate = (IFF_STRUCT::sItem*)ItemInventory_FindItemData(
+                ((CSharedDoc*)g_sharedDoc)->itemInventory, (*(void**)&usedItemCode));
+            if (!strcmp((const char*)quads.name[candidateTexture], candidate->common.icon)) {
+                textureIndex = candidateTexture;
+                break;
+            }
         }
-        ((ItemTexture*)self->itemTextures)[textureIndex].bind();
-        DrawPrimitiveUP(kItemQuadPrimitive, GX_GetPrimitiveCount(kItemQuadVertexCount, kItemQuadPrimitive), &verts, kItemQuadStride);
+        ((ItemTexture*)itemTextures)[textureIndex].bind();
+        DrawPrimitiveUP(kItemQuadPrimitive, GX_GetPrimitiveCount(kItemQuadVertexCount, kItemQuadPrimitive), &verts,
+                        kItemQuadStride);
     }
-    self->drawRequested=0;
+    drawRequested = 0;
 }
 
 #pragma push
 #pragma use_lmw_stmw on
 // Open or close the panel from screen permissions and available items; finish script transitions.
-void CItemWindow_UpdatePanelVisibility(CItemWindow* self) {
+void CItemWindow::UpdatePanelVisibility() {
     // Screen 0x30 writes HUD phase, which this routine does not read. Screen
     // 0x43 writes itemPanelReady; only that result gates entrance/exit below.
     int unusedHudPhase;
@@ -1031,66 +1162,74 @@ void CItemWindow_UpdatePanelVisibility(CItemWindow* self) {
     void* g0;
     RoundPlayerItemState* item;
     if ((AsCGolfDoc((void*)g_sharedDoc->golfDoc)->gameStateFlags & kPanelVisibilityStateMask) != 0) {
-        IActor_DispatchMessage(self, self, itemWindowStrings + kScreenActor, kScreenQueryHudPhase, &unusedHudPhase, 0, 0, 0);
-        IActor_DispatchMessage(self, self, itemWindowStrings + kScreenActor, kScreenQueryItemPanelReady, &itemPanelReady, 0, 0, 0);
+        IActor_DispatchMessage(this, this, itemWindowStrings + kScreenActor, kScreenQueryHudPhase, &unusedHudPhase, 0,
+                               0, 0);
+        IActor_DispatchMessage(this, this, itemWindowStrings + kScreenActor, kScreenQueryItemPanelReady,
+                               &itemPanelReady, 0, 0, 0);
         if (Sing_805DC5F0() == 0) {
             if (!s_bpCtrlInitialized) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
                 s_bpCtrlInitialized = 1;
             }
             Sing_805DC5F0() = s_bpCtrl;
         }
-        doc = (void*)IdMap_Lookup(Sing_805DC5F0(), (*(void**)&self->controllerId));
-        item = GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)g_sharedDoc->golfDoc), AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer);
+        doc = (void*)IdMap_Lookup(Sing_805DC5F0(), (*(void**)&controllerId));
+        item = GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)g_sharedDoc->golfDoc),
+                                          AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer);
         // Phase 1: start entrance only when item-panel readiness, stock and request agree.
         // panelOpen is the script target; s_itemWindowState also records in-flight motion.
         if (item->itemCount && itemPanelReady) {
-          if (s_itemWindowState == kPanelClosed || s_itemWindowState == kPanelOpening) {
-           if (!self->panelOpen) {
-            item = GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)g_sharedDoc->golfDoc), AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer);
-            g0 = Sing_805DC5F0();
-            selByte = item->itemCount;
-            self->itemCount = selByte;
-            if (g0 == 0) {
-                if (!s_bpCtrlInitialized) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
-                    s_bpCtrlInitialized = 1;
+            if (s_itemWindowState == kPanelClosed || s_itemWindowState == kPanelOpening) {
+                if (!panelOpen) {
+                    item = GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)g_sharedDoc->golfDoc),
+                                                      AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer);
+                    g0 = Sing_805DC5F0();
+                    selByte = item->itemCount;
+                    itemCount = selByte;
+                    if (g0 == 0) {
+                        if (!s_bpCtrlInitialized) {
+                            ((CBpCtrl*)s_bpCtrl)->__ct();
+                            __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80190474);
+                            s_bpCtrlInitialized = 1;
+                        }
+                        Sing_805DC5F0() = s_bpCtrl;
+                    }
+                    doc2 = (void*)IdMap_Lookup(Sing_805DC5F0(), (*(void**)&controllerId));
+                    threshold = selByte - 1;
+                    for (i = 0; i < kItemSlotCount; ++i) {
+                        sprintf(name, itemWindowStrings + kItemCountGroupFormat, i + 1);
+                        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(doc2, name), i == threshold);
+                    }
+                    BpObject_StartScriptByName(doc, itemWindowStrings + kPanelInScript, 1);
+                    panelOpen = 1;
+                    Sound_PlayByName(g_soundManager, itemWindowStrings + kPanelOpenSound, 0, 0, 0, 0,
+                                     kFloat_0_5_ItemWindow, kFloat_200_ItemWindowShared, kFloat_1_ItemWindow);
+                    *(unsigned char*)((char*)InstanceTable_Get() + 0x64) = 1;
+                    s_itemWindowState = kPanelOpening;
                 }
-                Sing_805DC5F0() = s_bpCtrl;
             }
-            doc2 = (void*)IdMap_Lookup(Sing_805DC5F0(), (*(void**)&self->controllerId));
-            threshold = selByte - 1;
-            for (i = 0; i < kItemSlotCount; ++i) {
-                sprintf(name, itemWindowStrings + kItemCountGroupFormat, i + 1);
-                UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(doc2, name), i == threshold);
-            }
-            BpObject_StartScriptByName(doc, itemWindowStrings + kPanelInScript, 1);
-            self->panelOpen = 1;
-            Sound_PlayByName(g_soundManager, itemWindowStrings + kPanelOpenSound, 0, 0, 0, 0, kFloat_0_5_ItemWindow, kFloat_200_ItemWindowShared, kFloat_1_ItemWindow);
-            *(unsigned char*)((char*)InstanceTable_Get() + 0x64) = 1;
-            s_itemWindowState = kPanelOpening;
-           }
-          }
         }
         // Phase 2: revoked item-panel readiness starts exit and disables all slot input.
-        if (!itemPanelReady && (s_itemWindowState == kPanelOpen || s_itemWindowState == kPanelClosing) && self->panelOpen) {
+        if (!itemPanelReady && (s_itemWindowState == kPanelOpen || s_itemWindowState == kPanelClosing) && panelOpen) {
             BpObject_StartScriptByName(doc, itemWindowStrings + kPanelOutScript, 1);
-            self->panelOpen = 0;
-            Sound_PlayByName(g_soundManager, itemWindowStrings + kPanelCloseSound, 0, 0, 0, 0, kFloat_0_5_ItemWindow, kFloat_200_ItemWindowShared, kFloat_1_ItemWindow);
+            panelOpen = 0;
+            Sound_PlayByName(g_soundManager, itemWindowStrings + kPanelCloseSound, 0, 0, 0, 0, kFloat_0_5_ItemWindow,
+                             kFloat_200_ItemWindowShared, kFloat_1_ItemWindow);
             for (j = 0; j < 8; ++j)
-                Layout_SetElementPlayerFlag(self->itemLayout, j, 0, kItemSlotFlagSelector);
+                Layout_SetElementPlayerFlag(itemLayout, j, 0, kItemSlotFlagSelector);
             s_itemWindowState = kPanelClosing;
         }
         // Phase 3: only script completion promotes opening/closing to a stable state.
         if (BpObject_IsCurrentScriptComplete(doc)) {
             switch (s_itemWindowState) {
             case kPanelClosing:
-                if (!self->panelOpen) s_itemWindowState = kPanelClosed;
+                if (!panelOpen)
+                    s_itemWindowState = kPanelClosed;
                 break;
             case kPanelOpening:
-                if (self->panelOpen) s_itemWindowState = kPanelOpen;
+                if (panelOpen)
+                    s_itemWindowState = kPanelOpen;
                 break;
             }
         }
@@ -1102,11 +1241,17 @@ void CItemWindow_UpdatePanelVisibility(CItemWindow* self) {
 #pragma use_lmw_stmw on
 // Inventory indexes, not full IFF IDs. Labels state only the verified use policy.
 enum ItemUsePolicyIndex {
-    kOffGreenItem0 = 0, kOffGreenItem1 = 1, kOffGreenItem2 = 2,
-    kGreenOnlyItem3 = 3, kOffGreenModeRestrictedItem4 = 4,
-    kUnrestrictedItem5 = 5, kRecoveryFlagRequiredItem6 = 6,
-    kOffGreenModeRestrictedItem7 = 7, kOffGreenItem8 = 8,
-    kOffGreenItem9 = 9, kOffGreenModeRestrictedItem10 = 10
+    kOffGreenItem0 = 0,
+    kOffGreenItem1 = 1,
+    kOffGreenItem2 = 2,
+    kGreenOnlyItem3 = 3,
+    kOffGreenModeRestrictedItem4 = 4,
+    kUnrestrictedItem5 = 5,
+    kRecoveryFlagRequiredItem6 = 6,
+    kOffGreenModeRestrictedItem7 = 7,
+    kOffGreenItem8 = 8,
+    kOffGreenItem9 = 9,
+    kOffGreenModeRestrictedItem10 = 10
 };
 
 // Show hovered-item help and activate usable items according to ground and ball state.
@@ -1124,78 +1269,103 @@ enum ItemUsePolicyIndex {
 // the status can defer consumption, leaving that selection latched. The loop
 // does not break/retest admission after a success, so preserve multiple-activation
 // order, synchronous rule dispatch, one rand() per dispatched use, and RAII vectors.
-void CItemWindow_HandleItemSelection(CItemWindow* self) {
+void CItemWindow::HandleItemSelection() {
     unsigned int i;
-    if (self->selectedSlot < 0 && self->selectionEnabled) {
-    CSharedDoc* mgr = g_sharedDoc;
-    SharedPlayerItemSlotsView* row = (SharedPlayerItemSlotsView*)((char*)mgr + AsCGolfDoc((void*)mgr->golfDoc)->currentPlayer * 0x1D4);
-    int* slots = (int*)row->itemIds;
-    self->activatedSlot = -1;
-    (*(int*)&self->usedItemCode) = 0;
-    // Phase 1: collect hovered controls for help, then collect activated controls.
-    IntVec hovered = {0, 0, 0};
-    unsigned int picked = 0;
-    if (Layout_CollectHovered(self->itemLayout, &hovered, kItemSlotFlagSelector))
-        picked = slots[hovered.data[hovered.size - 1]];
-    if (g_helpMsg) NoticeQueue_ShowItemNotice(g_helpMsg, picked);
-    IntVec activated = {0, 0, 0};
-    if (Layout_CollectActivated(self->itemLayout, &activated, 0)) {
-        for (i = 0; i < activated.size; ++i) {
-            if (i >= activated.size) OutOfRange e(itemWindowStrings + kVectorIndexError);
-            unsigned int index = activated.data[i];
-            self->activatedSlot = index;
-            unsigned int code = ((SharedPlayerItemSlotsView*)g_sharedDoc)[AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer].itemIds[index];
-            int valid;
-            if (code == 0 || (code >> kIffKindShift) != kIffConsumableKind) {
-                valid = 0;
-            } else {
-                unsigned int kind = ItemInventory_FindItemIndex(((CSharedDoc*)g_sharedDoc)->itemInventory, code);
-                switch (kind) {
-                // Inventory indices in this group are usable only off the green.
-                case kOffGreenItem0: case kOffGreenItem1: case kOffGreenItem2: case kOffGreenItem8: case kOffGreenItem9: {
-                    Arr3u val = *(Arr3u*)GolfBall__Fv();
-                    unsigned int result = ((unsigned int(*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)((void*)CQuadTree_GetInstance(), &val) & 0xFF;
-                    valid = result != kGreenGroundType;
-                    break;
-                }
-                // These indices also require the current context mode to differ from 3.
-                case kOffGreenModeRestrictedItem4: case kOffGreenModeRestrictedItem7: case kOffGreenModeRestrictedItem10: {
+    if (selectedSlot < 0 && selectionEnabled) {
+        CSharedDoc* mgr = g_sharedDoc;
+        SharedPlayerItemSlotsView* row =
+            (SharedPlayerItemSlotsView*)((char*)mgr + AsCGolfDoc((void*)mgr->golfDoc)->currentPlayer * 0x1D4);
+        int* slots = (int*)row->itemIds;
+        activatedSlot = -1;
+        (*(int*)&usedItemCode) = 0;
+        // Phase 1: collect hovered controls for help, then collect activated controls.
+        IntVec hovered = {0, 0, 0};
+        unsigned int picked = 0;
+        if (Layout_CollectHovered(itemLayout, &hovered, kItemSlotFlagSelector))
+            picked = slots[hovered.data[hovered.size - 1]];
+        if (g_helpMsg)
+            NoticeQueue_ShowItemNotice(g_helpMsg, picked);
+        IntVec activated = {0, 0, 0};
+        if (Layout_CollectActivated(itemLayout, &activated, 0)) {
+            for (i = 0; i < activated.size; ++i) {
+                if (i >= activated.size)
+                    OutOfRange e(itemWindowStrings + kVectorIndexError);
+                unsigned int index = activated.data[i];
+                activatedSlot = index;
+                unsigned int code =
+                    ((SharedPlayerItemSlotsView*)g_sharedDoc)[AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer]
+                        .itemIds[index];
+                int valid;
+                if (code == 0 || (code >> kIffKindShift) != kIffConsumableKind) {
                     valid = 0;
-                    Arr3u val = *(Arr3u*)GolfBall__Fv();
-                    unsigned int result = ((unsigned int(*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)((void*)CQuadTree_GetInstance(), &val) & 0xFF;
-                    if (result != kGreenGroundType && *((unsigned char*)*(void**)((char*)InstanceTable_Get() + 4) + 0xA) != 3)
+                } else {
+                    unsigned int kind = ItemInventory_FindItemIndex(((CSharedDoc*)g_sharedDoc)->itemInventory, code);
+                    switch (kind) {
+                    // Inventory indices in this group are usable only off the green.
+                    case kOffGreenItem0:
+                    case kOffGreenItem1:
+                    case kOffGreenItem2:
+                    case kOffGreenItem8:
+                    case kOffGreenItem9: {
+                        Arr3u val = *(Arr3u*)GolfBall__Fv();
+                        unsigned int result = ((unsigned int (*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)(
+                                                  (void*)CQuadTree_GetInstance(), &val) &
+                                              0xFF;
+                        valid = result != kGreenGroundType;
+                        break;
+                    }
+                    // These indices also require the current context mode to differ from 3.
+                    case kOffGreenModeRestrictedItem4:
+                    case kOffGreenModeRestrictedItem7:
+                    case kOffGreenModeRestrictedItem10: {
+                        valid = 0;
+                        Arr3u val = *(Arr3u*)GolfBall__Fv();
+                        unsigned int result = ((unsigned int (*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)(
+                                                  (void*)CQuadTree_GetInstance(), &val) &
+                                              0xFF;
+                        if (result != kGreenGroundType &&
+                            *((unsigned char*)*(void**)((char*)InstanceTable_Get() + 4) + 0xA) != 3)
+                            valid = 1;
+                        break;
+                    }
+                    // Inventory index 3 is usable only on the green.
+                    case kGreenOnlyItem3: {
+                        Arr3u val = *(Arr3u*)GolfBall__Fv();
+                        valid = (((unsigned int (*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)(
+                                     (void*)CQuadTree_GetInstance(), &val) &
+                                 0xFF) == kGreenGroundType;
+                        break;
+                    }
+                    case kUnrestrictedItem5:
                         valid = 1;
-                    break;
+                        break;
+                    case kRecoveryFlagRequiredItem6:
+                        valid = *((unsigned char*)GolfBall__Fv() + 0x58);
+                        break;
+                    default:
+                        valid = 0;
+                        break;
+                    }
                 }
-                // Inventory index 3 is usable only on the green.
-                case kGreenOnlyItem3: {
-                    Arr3u val = *(Arr3u*)GolfBall__Fv();
-                    valid = (((unsigned int(*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)((void*)CQuadTree_GetInstance(), &val) & 0xFF) == kGreenGroundType;
-                    break;
-                }
-                case kUnrestrictedItem5: valid = 1; break;
-                case kRecoveryFlagRequiredItem6: valid = *((unsigned char*)GolfBall__Fv() + 0x58); break;
-                default: valid = 0; break;
-                }
-            }
-            // Phase 2: invalid items only notify; valid selection closes the panel
-            // and synchronously dispatches consumption if the task permits it.
-            if (!valid) {
-                if (g_helpMsg) NoticeQueue_ShowById(g_helpMsg, 6, 0);
-            } else {
-                void* d4 = g_mouseCursor;
-                ((CMouseCursor*)d4)->alternateHudMode = 0;
-                self->selectedSlot = index;
-                s_itemWindowState = kPanelClosing;
-                if (!GolfTask_NoOpStatus(d4)) {
-                    IActor_DispatchMessage(self, self, itemWindowStrings + kGolfRuleActor, 0x15, 0, 0, 0, 0);
-                    CGolfDoc* sub = AsCGolfDoc((void*)g_sharedDoc->golfDoc);
-                    void* roll = (void*)rand();
-                    CItemWindow_UseItem(self, sub->currentPlayer, (void*)code, 1, roll);
+                // Phase 2: invalid items only notify; valid selection closes the panel
+                // and synchronously dispatches consumption if the task permits it.
+                if (!valid) {
+                    if (g_helpMsg)
+                        NoticeQueue_ShowById(g_helpMsg, 6, 0);
+                } else {
+                    void* d4 = g_mouseCursor;
+                    ((CMouseCursor*)d4)->alternateHudMode = 0;
+                    selectedSlot = index;
+                    s_itemWindowState = kPanelClosing;
+                    if (!GolfTask_NoOpStatus(d4)) {
+                        IActor_DispatchMessage(this, this, itemWindowStrings + kGolfRuleActor, 0x15, 0, 0, 0, 0);
+                        CGolfDoc* sub = AsCGolfDoc((void*)g_sharedDoc->golfDoc);
+                        void* roll = (void*)rand();
+                        UseItem(sub->currentPlayer, (void*)code, 1, roll);
+                    }
                 }
             }
         }
-    }
     }
 }
 #pragma pop
@@ -1221,9 +1391,11 @@ void CItemWindow_HandleItemSelection(CItemWindow* self) {
 // itemCount. Neither the selected-slot upper bound nor nonempty count is checked.
 // Return 1 after consumption/effects, 0 if player/selection validation fails.
 // A 0 return can still change useAlternateItem because the roll precedes validation.
-int CItemWindow_UseItem(CItemWindow* self, unsigned char playerIndex, void* itemIdArgument, int slotOrConsumeSelection, void* randomValue) {
+int CItemWindow::UseItem(unsigned char playerIndex, void* itemIdArgument, int slotOrConsumeSelection,
+                         void* randomValue) {
     // On entry this argument chooses selected-slot consumption; afterward it holds the removed slot index.
-    if (playerIndex >= AsCGolfDoc((void*)g_sharedDoc->golfDoc)->playerCount) return 0;
+    if (playerIndex >= AsCGolfDoc((void*)g_sharedDoc->golfDoc)->playerCount)
+        return 0;
     RoundPlayerItemState* entry = GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)g_sharedDoc->golfDoc), playerIndex);
     // Player rows are 0x1D4 bytes; itemIds begins at shared-doc+0x8C for row zero
     // (not at CSharedDoc's round-player actor pointer array).
@@ -1231,20 +1403,24 @@ int CItemWindow_UseItem(CItemWindow* self, unsigned char playerIndex, void* item
     CSharedDoc* sharedDocument = g_sharedDoc;
     char* playerRecord = (char*)sharedDocument + playerRecordOffset;
     char* itemSlots = (char*)((SharedPlayerItemSlotsView*)playerRecord)->itemIds;
-    void* itemRecord = ((void*(*)(void*, void*, void*))ItemInventory_FindItemData)(((CSharedDoc*)sharedDocument)->itemInventory, itemIdArgument, playerRecord);
+    void* itemRecord = ((void* (*)(void*, void*, void*))ItemInventory_FindItemData)(
+        ((CSharedDoc*)sharedDocument)->itemInventory, itemIdArgument, playerRecord);
     // Phase 1: compute failure before validating/removing the selected inventory slot.
     short percentRoll = (unsigned int)randomValue % kPercentRange;
     int failureChancePercent;
-    if (itemRecord != 0) failureChancePercent = *(short*)&((IFF_STRUCT::sItem*)itemRecord)->failureChancePercent;
-    else failureChancePercent = kPercentRange;
+    if (itemRecord != 0)
+        failureChancePercent = *(short*)&((IFF_STRUCT::sItem*)itemRecord)->failureChancePercent;
+    else
+        failureChancePercent = kPercentRange;
     // Missing item data forces the failure replacement; the record's halfword is read signed.
-    self->useAlternateItem = percentRoll < failureChancePercent;
+    useAlternateItem = percentRoll < failureChancePercent;
     // Phase 2: current-player inventory compaction precedes animation/effect dispatch.
     if (playerIndex == AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer) {
         unsigned char* remainingItemCount = &entry->itemCount;
-        int* selectedSlot = (int*)(&self->selectedSlot);
+        int* selectedSlot = (int*)(&this->selectedSlot);
         if (slotOrConsumeSelection != 0) {
-            if (*selectedSlot < 0 || (unsigned int)itemIdArgument != *(unsigned int*)(itemSlots + *selectedSlot * 4)) return 0;
+            if (*selectedSlot < 0 || (unsigned int)itemIdArgument != *(unsigned int*)(itemSlots + *selectedSlot * 4))
+                return 0;
             *remainingItemCount = *remainingItemCount - 1;
             int k = *selectedSlot;
             if (k < (int)*remainingItemCount) {
@@ -1256,12 +1432,15 @@ int CItemWindow_UseItem(CItemWindow* self, unsigned char playerIndex, void* item
         } else {
             int n = *(volatile unsigned char*)remainingItemCount;
             for (slotOrConsumeSelection = 0; slotOrConsumeSelection < n; slotOrConsumeSelection++) {
-                if ((unsigned int)itemIdArgument == ((unsigned int*)itemSlots)[slotOrConsumeSelection]) break;
+                if ((unsigned int)itemIdArgument == ((unsigned int*)itemSlots)[slotOrConsumeSelection])
+                    break;
             }
-            if (slotOrConsumeSelection >= n) return 0;
+            if (slotOrConsumeSelection >= n)
+                return 0;
             *remainingItemCount = *remainingItemCount - 1;
             if (slotOrConsumeSelection < (int)*remainingItemCount) {
-                memcpy(itemSlots + slotOrConsumeSelection * 4, itemSlots + slotOrConsumeSelection * 4 + 4, (*remainingItemCount - slotOrConsumeSelection) * 4);
+                memcpy(itemSlots + slotOrConsumeSelection * 4, itemSlots + slotOrConsumeSelection * 4 + 4,
+                       (*remainingItemCount - slotOrConsumeSelection) * 4);
             }
             *(unsigned int*)(itemSlots + *remainingItemCount * 4) = 0;
         }
@@ -1271,32 +1450,35 @@ int CItemWindow_UseItem(CItemWindow* self, unsigned char playerIndex, void* item
         if ((*(unsigned int*)&AsCGolfDoc((void*)g_sharedDoc->golfDoc)->gameStateFlags) == kItemAnimationState) {
             float tmp[2];
             float zero = kFloat_0_itemWindow;
-            (*(volatile unsigned char*)&self->alternateIconFrame) = 0;
-            self->animationTime = zero;
-            void* p94 = self->itemLayout;
+            (*(volatile unsigned char*)&alternateIconFrame) = 0;
+            animationTime = zero;
+            void* p94 = itemLayout;
             Layout_GetElementPosition(p94, slotOrConsumeSelection, tmp);
             float x = tmp[0];
             float zero2 = kFloat_0_itemWindow;
-            self->animationX = x;
+            animationX = x;
             float speed = kItemAnimationInitialVelocityY;
             float y = tmp[1];
-            self->animationY = y;
-            self->animationVelocityX = zero2;
-            self->animationVelocityY = speed;
-            self->animationActive = 1;
+            animationY = y;
+            animationVelocityX = zero2;
+            animationVelocityY = speed;
+            animationActive = 1;
         }
 
         // Keep usedItemCode as the requested ID; activeItemId receives the effective
         // ID after failure substitution. Effects and sound use that failure decision.
-        unsigned char useFailureItem = self->useAlternateItem;
-        self->usedItemCode = (unsigned int)itemIdArgument;
+        unsigned char useFailureItem = useAlternateItem;
+        usedItemCode = (unsigned int)itemIdArgument;
         if (useFailureItem != 0) {
-            itemIdArgument = (void*)ItemInventory_GetItemIdAt(((CSharedDoc*)g_sharedDoc)->itemInventory, kFailedItemReplacementIndex);
+            itemIdArgument = (void*)ItemInventory_GetItemIdAt(((CSharedDoc*)g_sharedDoc)->itemInventory,
+                                                              kFailedItemReplacementIndex);
         }
-        int itemIndex = (int)ItemInventory_FindItemIndex(((CSharedDoc*)g_sharedDoc)->itemInventory, (unsigned int)itemIdArgument);
-        switch(itemIndex) {
+        int itemIndex =
+            (int)ItemInventory_FindItemIndex(((CSharedDoc*)g_sharedDoc)->itemInventory, (unsigned int)itemIdArgument);
+        switch (itemIndex) {
         // These two inventory indices add 33 percentage points, capped at 99.
-        case 7: case 10: {
+        case 7:
+        case 10: {
             float gaugeIncrease = entry->powerGauge;
             float requestedGauge = kItemPowerGaugeIncrease33 + entry->powerGauge;
             float clampedGauge = kFloat_0_itemWindow;
@@ -1309,13 +1491,14 @@ int CItemWindow_UseItem(CItemWindow* self, unsigned char playerIndex, void* item
             }
             entry->powerGauge = clampedGauge;
             gaugeIncrease = entry->powerGauge - gaugeIncrease;
-            IActor_DispatchMessage(self, self, itemWindowStrings + kGolfRuleActor, 0x2E, &gaugeIncrease, 0, 0, 0);
+            IActor_DispatchMessage(this, this, itemWindowStrings + kGolfRuleActor, 0x2E, &gaugeIncrease, 0, 0, 0);
             break;
         }
         case 3:
-            IActor_DispatchMessage(self, self, itemWindowStrings + kGuideLineActor, 1, (void*)1, 0, 0, 0);
+            IActor_DispatchMessage(this, this, itemWindowStrings + kGuideLineActor, 1, (void*)1, 0, 0, 0);
             break;
-        case -100: break;
+        case -100:
+            break;
         }
         entry->activeItemId = (unsigned int)itemIdArgument;
     } else {
@@ -1323,16 +1506,18 @@ int CItemWindow_UseItem(CItemWindow* self, unsigned char playerIndex, void* item
     }
 
     // Phase 3: inventory/effects are committed; play result sound and clear transient items.
-    if (self->useAlternateItem != 0) {
-        Sound_PlayByName(g_soundManager, itemWindowStrings + kItemFailureSound, 0, 0, 0, 0, kFloat_0_5_ItemWindow, kFloat_200_ItemWindowShared, kFloat_1_ItemWindow);
+    if (useAlternateItem != 0) {
+        Sound_PlayByName(g_soundManager, itemWindowStrings + kItemFailureSound, 0, 0, 0, 0, kFloat_0_5_ItemWindow,
+                         kFloat_200_ItemWindowShared, kFloat_1_ItemWindow);
     } else {
-        Sound_PlayByName(g_soundManager, itemWindowStrings + kItemUseSound, 0, 0, 0, 0, kFloat_0_5_ItemWindow, kFloat_200_ItemWindowShared, kFloat_1_ItemWindow);
+        Sound_PlayByName(g_soundManager, itemWindowStrings + kItemUseSound, 0, 0, 0, 0, kFloat_0_5_ItemWindow,
+                         kFloat_200_ItemWindowShared, kFloat_1_ItemWindow);
     }
 
     if (playerIndex == AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer) {
         unsigned int clearedAfterUseItemId = ItemInventory_GetItemIdAt(((CSharedDoc*)g_sharedDoc)->itemInventory, 6);
-        if (self->usedItemCode == clearedAfterUseItemId) {
-            IActor_DispatchMessage(self, self, itemWindowStrings + kGolfRuleActor, 0x19, 0, 0, 0, 0);
+        if (usedItemCode == clearedAfterUseItemId) {
+            IActor_DispatchMessage(this, this, itemWindowStrings + kGolfRuleActor, 0x19, 0, 0, 0, 0);
             entry->activeItemId = 0;
         }
     }
@@ -1347,20 +1532,22 @@ int CItemWindow_UseItem(CItemWindow* self, unsigned char playerIndex, void* item
 // Route item consumption to the matching player owner or the current local player.
 // owner is borrowed; itemIdArgument/randomValue retain the integer-in-pointer ABI
 // of UseItem. Finding an owner does not guarantee success for a non-current player.
-void CItemWindow_UseItemForOwner(CItemWindow* window, void* owner, void* itemIdArgument, void* randomValue) {
-    if (GolfTask_NoOpStatus(window)) {
+void CItemWindow::UseItemForOwner(void* owner, void* itemIdArgument, void* randomValue) {
+    if (GolfTask_NoOpStatus(this)) {
         for (unsigned char i = 0; i < AsCGolfDoc((void*)g_sharedDoc->golfDoc)->playerCount; i++) {
             RoundPlayerItemState* playerState = GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)g_sharedDoc->golfDoc), i);
             if (playerState->state != 3) {
-                RoundPlayerItemState* candidate = GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)g_sharedDoc->golfDoc), (unsigned char)i);
+                RoundPlayerItemState* candidate =
+                    GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)g_sharedDoc->golfDoc), (unsigned char)i);
                 if (owner == candidate->owner) {
-                    if (CItemWindow_UseItem(window, i, itemIdArgument, owner == 0, randomValue)) return;
+                    if (UseItem(i, itemIdArgument, owner == 0, randomValue))
+                        return;
                     return;
                 }
             }
         }
     } else {
-        CItemWindow_UseItem(window, AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer, itemIdArgument, 1, randomValue);
+        UseItem(AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer, itemIdArgument, 1, randomValue);
     }
 }
 #pragma pop
@@ -1370,94 +1557,127 @@ void CItemWindow_UseItemForOwner(CItemWindow* window, void* owner, void* itemIdA
 // index 0..7 as an immediate word (must also fit the current stock). UseForOwner
 // carries borrowed owner plus integer item ID/random words. Unknown types do
 // nothing; queries preserve all outputs other than their specified int result.
-void CItemWindow_HandleMsg(CItemWindow* self, Message* msg) {
+void CItemWindow::HandleMsg(Message* msg) {
     switch (msg->type) {
     case kItemMsgRefreshVisibility:
-        CItemWindow_UpdatePanelVisibility(self);
+        UpdatePanelVisibility();
         break;
     case kItemMsgBeginOpen:
         s_itemWindowState = kPanelOpening;
-        self->selectionEnabled = 1;
+        selectionEnabled = 1;
         break;
     case kItemMsgBeginClose:
         s_itemWindowState = kPanelClosing;
-        self->selectionEnabled = 0;
+        selectionEnabled = 0;
         break;
     case kItemMsgQueryPanelState:
         *(int*)msg->value = s_itemWindowState;
         break;
     case kItemMsgQueryVisible:
-        if (s_itemWindowState != kPanelClosed) *(int*)msg->value = 1;
-        else *(int*)msg->value = 0;
+        if (s_itemWindowState != kPanelClosed)
+            *(int*)msg->value = 1;
+        else
+            *(int*)msg->value = 0;
         break;
-    case kItemMsgRequestDraw: self->drawRequested = 1; break;
-    case kItemMsgEnableProcess: self->active = 1; break;
-    case kItemMsgDisableProcess: self->active = 0; break;
+    case kItemMsgRequestDraw:
+        drawRequested = 1;
+        break;
+    case kItemMsgEnableProcess:
+        active = 1;
+        break;
+    case kItemMsgDisableProcess:
+        active = 0;
+        break;
     case kItemMsgActivateSlot: {
         unsigned int index = msg->value;
-        unsigned int code = *(unsigned int*)((char*)g_sharedDoc + kSharedItemIdsOffset + AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer * 0x1D4 + index * 4);
+        unsigned int code =
+            *(unsigned int*)((char*)g_sharedDoc + kSharedItemIdsOffset +
+                             AsCGolfDoc((void*)g_sharedDoc->golfDoc)->currentPlayer * 0x1D4 + index * 4);
         int valid;
         if (code == 0 || (code >> kIffKindShift) != kIffConsumableKind) {
             valid = 0;
         } else {
             unsigned int kind = ItemInventory_FindItemIndex(((CSharedDoc*)g_sharedDoc)->itemInventory, code);
-            switch(kind) {
-            // Inventory indices in this group are usable only off the green.
-                case kOffGreenItem0: case kOffGreenItem1: case kOffGreenItem2: case kOffGreenItem8: case kOffGreenItem9: {
+            switch (kind) {
+                // Inventory indices in this group are usable only off the green.
+            case kOffGreenItem0:
+            case kOffGreenItem1:
+            case kOffGreenItem2:
+            case kOffGreenItem8:
+            case kOffGreenItem9: {
                 Arr3u val = *(Arr3u*)GolfBall__Fv();
-                unsigned int result = ((unsigned int(*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)((void*)CQuadTree_GetInstance(), &val) & 0xFF;
+                unsigned int result = ((unsigned int (*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)(
+                                          (void*)CQuadTree_GetInstance(), &val) &
+                                      0xFF;
                 valid = result != kGreenGroundType;
                 break;
             }
-            // These indices also require the current context mode to differ from 3.
-                case kOffGreenModeRestrictedItem4: case kOffGreenModeRestrictedItem7: case kOffGreenModeRestrictedItem10: {
+                // These indices also require the current context mode to differ from 3.
+            case kOffGreenModeRestrictedItem4:
+            case kOffGreenModeRestrictedItem7:
+            case kOffGreenModeRestrictedItem10: {
                 valid = 0;
                 Arr3u val = *(Arr3u*)GolfBall__Fv();
-                unsigned int result = ((unsigned int(*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)((void*)CQuadTree_GetInstance(), &val) & 0xFF;
-                if (result != kGreenGroundType && *((unsigned char*)*(void**)((char*)InstanceTable_Get()+4)+0xA) != 3)
+                unsigned int result = ((unsigned int (*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)(
+                                          (void*)CQuadTree_GetInstance(), &val) &
+                                      0xFF;
+                if (result != kGreenGroundType &&
+                    *((unsigned char*)*(void**)((char*)InstanceTable_Get() + 4) + 0xA) != 3)
                     valid = 1;
                 break;
             }
-            // Inventory index 3 is usable only on the green.
-                case kGreenOnlyItem3: {
+                // Inventory index 3 is usable only on the green.
+            case kGreenOnlyItem3: {
                 Arr3u val = *(Arr3u*)GolfBall__Fv();
-                valid = (((unsigned int(*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)((void*)CQuadTree_GetInstance(), &val) & 0xFF) == kGreenGroundType;
+                valid = (((unsigned int (*)(void*, void*))GetGroundType__9CQuadTreeF7WVector)(
+                             (void*)CQuadTree_GetInstance(), &val) &
+                         0xFF) == kGreenGroundType;
                 break;
             }
-            case kUnrestrictedItem5: valid = 1; break;
-            case kRecoveryFlagRequiredItem6: valid = *((unsigned char*)GolfBall__Fv()+0x58); break;
-            default: valid = 0; break;
+            case kUnrestrictedItem5:
+                valid = 1;
+                break;
+            case kRecoveryFlagRequiredItem6:
+                valid = *((unsigned char*)GolfBall__Fv() + 0x58);
+                break;
+            default:
+                valid = 0;
+                break;
             }
         }
         if (!valid) {
-            if (g_helpMsg) NoticeQueue_ShowById(g_helpMsg, 6, 0);
+            if (g_helpMsg)
+                NoticeQueue_ShowById(g_helpMsg, 6, 0);
             break;
         }
         void* d4 = g_mouseCursor;
         ((CMouseCursor*)d4)->alternateHudMode = 0;
-        (*(unsigned int*)&self->selectedSlot) = index;
+        (*(unsigned int*)&selectedSlot) = index;
         s_itemWindowState = kPanelClosing;
-        if (GolfTask_NoOpStatus(d4)) break;
-        IActor_DispatchMessage(self, self, itemWindowStrings + kGolfRuleActor, 0x15, 0, 0, 0, 0);
+        if (GolfTask_NoOpStatus(d4))
+            break;
+        IActor_DispatchMessage(this, this, itemWindowStrings + kGolfRuleActor, 0x15, 0, 0, 0, 0);
         CGolfDoc* sub = AsCGolfDoc((void*)g_sharedDoc->golfDoc);
         void* randomValueToken = (void*)rand();
-        CItemWindow_UseItem(self, sub->currentPlayer, (void*)code, 1, randomValueToken);
+        UseItem(sub->currentPlayer, (void*)code, 1, randomValueToken);
         break;
     }
     case kItemMsgUseForOwner:
-        CItemWindow_UseItemForOwner(self, (void*)msg->value, msg->itemId, msg->randomValue);
+        UseItemForOwner((void*)msg->value, msg->itemId, msg->randomValue);
         break;
     case kItemMsgResetSelection: {
         float full = kFloat_200_ItemWindowShared;
         float zero = kFloat_0_itemWindow;
-        self->ResetSelection(zero, full);
+        ResetSelection(zero, full);
         break;
     }
     case kItemMsgQueryNoActiveSelection: {
         CGolfDoc* sub = AsCGolfDoc((void*)g_sharedDoc->golfDoc);
         RoundPlayerItemState* item = GolfPlayer_GetEntryByIndex(sub, sub->currentPlayer);
-        if (!(int)item->activeItemId && self->selectedSlot==-1) *(int*)msg->value = 1;
-        else *(int*)msg->value = 0;
+        if (!(int)item->activeItemId && selectedSlot == -1)
+            *(int*)msg->value = 1;
+        else
+            *(int*)msg->value = 0;
         break;
     }
     case kItemMsgQueryPanelTransitionState:
@@ -1469,12 +1689,12 @@ void CItemWindow_HandleMsg(CItemWindow* self, Message* msg) {
 }
 
 // Report whether the item panel is fully closed.
-int CItemWindow_IsClosed() {
+int CItemWindow::IsClosed() {
     return s_itemWindowState == kPanelClosed;
 }
 
 // Return the item-window runtime type descriptor.
-void* CItemWindow_GetRTTI() {
+void* CItemWindow::GetRTTI() {
     return &s_itemWindowTypeDescriptor;
 }
 
@@ -1485,4 +1705,3 @@ void* CItemWindow_GetRTTI() {
 #pragma force_active on
 STATIC_INIT_ENTRY(".CRT$XCU80462154", _ctors_u80190474_0, InitItemWindowFullTurnAngle);
 #pragma pop
-

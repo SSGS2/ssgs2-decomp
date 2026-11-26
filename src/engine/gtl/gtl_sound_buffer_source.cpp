@@ -1,11 +1,15 @@
-// Translation unit 0x80403A8C-0x80403C14 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Sound buffer source (gtl::CSoundBufferSource): binds the per-channel decoder state of a
+// source to a playback buffer, using the channel layout defined in this file.
 
 #include "sdk_protos.h"
+#include "classes/GtlSoundBuffer.h"
+#include "classes/gtl_CSoundBufferSource.h"
 #pragma use_lmw_stmw on
 #pragma scheduling on
 
-enum { kDspDecoderStateHalfwords = 23 };
+enum {
+    kDspDecoderStateHalfwords = 23
+};
 
 // Playback channels are 0x44 bytes apart. The state-only view below advances
 // by the same stride from the first channel's decoder state at +0x14.
@@ -30,19 +34,6 @@ struct Data {
     char padBase[8];
     char* base;
 };
-namespace gtl {
-struct CSoundBufferSource {
-    char padBase[8];
-    unsigned int size; // Aggregate source bytes, divided by the output channel count for cache flush.
-    char padBeforeFormat[4];
-    unsigned int format;
-    unsigned short formatAuxiliary, channels;
-    unsigned int rate, length;
-    Data* data;
-    unsigned int offsets[1]; // Variable tail: byte offsets from data->base to each DSP header.
-};
-}
-
 // DSP channel data has a 0x60-byte header; 23 halfwords beginning at 0x1c
 // supply the decoder coefficients/history used by the playback channel.
 struct DspChannelData {
@@ -53,15 +44,12 @@ struct DspChannelData {
 };
 static const unsigned int kDspSampleOffset = (unsigned int)&((DspChannelData*)0)->samples;
 
-extern "C" {
-Buffer* gtl_ISoundBuffer_GetPlaybackHeader(void*);
-
 // Fill a playback header and flush/copy each source channel before audio DMA reads it.
-// Returns 0 for a null soundBuffer, otherwise 1. self/data/header and all channel tails must be valid.
+// Returns 0 for a null soundBuffer, otherwise 1. this and all channel tails must be valid.
 // Output sample pointers borrow the source allocation; no samples are copied or ownership transferred.
-// Each DSP header is 0x60 bytes; channel ordering follows offsets[], without a lane permutation.
+// Each DSP header is 0x60 bytes; channel ordering follows the offset table, without a lane permutation.
 // Source offsets/header storage must fit all declared channels; no format or bounds validation occurs here.
-int CSoundBufferSource_BindToPlaybackBuffer(gtl::CSoundBufferSource* __restrict self, void* soundBuffer) {
+int gtl::CSoundBufferSource::BindToPlaybackBuffer(gtl::CSoundBufferSource* __restrict self, void* soundBuffer) {
     char* channelData;
     gtl::CSoundBufferSource* offsetTableCursor;
     Buffer* playbackChannelCursor;
@@ -70,24 +58,25 @@ int CSoundBufferSource_BindToPlaybackBuffer(gtl::CSoundBufferSource* __restrict 
     char* base;
     int channelIndex;
     unsigned char zero;
-    if (!soundBuffer) return 0;
+    if (!soundBuffer)
+        return 0;
     // Publish the common playback format and reset both playback flag bytes.
-    buffer = gtl_ISoundBuffer_GetPlaybackHeader(soundBuffer);
+    buffer = (Buffer*)((gtl::ISoundBuffer*)soundBuffer)->GetPlaybackHeader();
     zero = 0;
     buffer->playbackFlag0 = zero;
     buffer->playbackFlag1 = zero;
-    buffer->channels = self->channels;
-    buffer->format = (unsigned short)self->format;
-    buffer->rate = self->rate;
-    buffer->length = self->length;
-    base = self->data->base;
+    buffer->channels = self->channelCount;
+    buffer->format = (unsigned short)self->playbackFormat;
+    buffer->rate = self->playbackRate;
+    buffer->length = self->playbackLength;
+    base = ((Data*)self->dataBlock)->base;
     state = (ChannelState*)buffer->channel[0].state;
     offsetTableCursor = self;
     playbackChannelCursor = buffer;
     // Walk the offset tail (4-byte stride) and playback channels (0x44-byte stride) together.
     for (channelIndex = 0; channelIndex < buffer->channels; ++channelIndex) {
-        channelData = base + offsetTableCursor->offsets[0];
-        DCFlushRange(channelData, self->size / buffer->channels);
+        channelData = base + (unsigned int)offsetTableCursor->sampleData;
+        DCFlushRange(channelData, self->byteTotal / buffer->channels);
         playbackChannelCursor->channel[0].samples = channelData + kDspSampleOffset;
         // Copy all 46 decoder-state bytes verbatim; preserve the explicit load/store order.
         state->state[0] = ((DspChannelData*)channelData)->decoderState[0];
@@ -114,10 +103,8 @@ int CSoundBufferSource_BindToPlaybackBuffer(gtl::CSoundBufferSource* __restrict 
         state->state[21] = ((DspChannelData*)channelData)->decoderState[21];
         state->state[22] = ((DspChannelData*)channelData)->decoderState[22];
         ++state;
-        offsetTableCursor = (gtl::CSoundBufferSource*)((char*)offsetTableCursor + sizeof(self->offsets[0]));
+        offsetTableCursor = (gtl::CSoundBufferSource*)((char*)offsetTableCursor + sizeof(unsigned int));
         playbackChannelCursor = (Buffer*)((char*)playbackChannelCursor + sizeof(Channel));
     }
     return 1;
 }
-
-} // extern "C"

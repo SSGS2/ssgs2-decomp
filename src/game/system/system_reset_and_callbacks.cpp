@@ -1,15 +1,33 @@
+// System reset and power button handling, the callback object that runs a registered function,
+// and the prize gallery lookups.
+// Also the reset controller's pending-request state and the prize gallery functions.
+
 #include <decomp/static_init.h>
-// Translation unit 0x80293248-0x80293A54 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "classes/CCallback.h"
+#include "classes/CPrize.h"
+#include "classes/CTask.h"
+#include "classes/CCheckDriveStatus.h"
 
-#define AsCCallback(p) ((CCallback*)(p))
-
-enum SystemResetMode { kResetNone = -1, kResetRestart = 0, kResetPowerOff = 1, kResetReturnToMenu = 2 };
-enum SystemResetPhase { kResetIdle = 0, kResetRequested = 1, kResetBlackout = 2 };
-enum { kResetDelayFrames = 30, kDvdBusy = 1, kDvdNoDisc = 4, kDvdWrongDiskId = 6, kDvdDiskError = 11 };
+enum SystemResetMode {
+    kResetNone = -1,
+    kResetRestart = 0,
+    kResetPowerOff = 1,
+    kResetReturnToMenu = 2
+};
+enum SystemResetPhase {
+    kResetIdle = 0,
+    kResetRequested = 1,
+    kResetBlackout = 2
+};
+enum {
+    kResetDelayFrames = 30,
+    kDvdBusy = 1,
+    kDvdNoDisc = 4,
+    kDvdWrongDiskId = 6,
+    kDvdDiskError = 11
+};
 
 // Prefix of s_systemResetStorage and the system-reset singleton.
 struct SystemResetState {
@@ -51,12 +69,10 @@ extern unsigned char s_systemResetStorage[];
 extern unsigned char s_systemResetDtorRegistration[];
 extern signed char s_systemResetStateInitialized;
 extern void* g_taskManager;
-extern int CTask_CancelChildThread(void*);
 extern void Engine_ClearFramebuffer(float, int, int, int, int, int);
 extern void VISetBlack(int);
 extern void VIFlush();
 extern void VIWaitForRetrace();
-extern void CCheckDriveStatus_SetErrorDialogsEnabled(int);
 extern void FileRegistry_ClearOwnedDevices();
 extern void InputDriver_InitStub();
 extern void Projection_ResetDepthConvention();
@@ -78,27 +94,44 @@ void SystemReset_OnResetButton() {
         if (!s_systemResetStateInitialized) {
             ((SystemResetState*)s_systemResetStorage)->mode = kResetNone;
             SystemResetState* reset = (SystemResetState*)s_systemResetStorage;
-            reset->phase = kResetIdle; reset->framesRemaining = kResetDelayFrames;
-            reset->buttonsEnabled = 1; reset->deferred = 0;
+            reset->phase = kResetIdle;
+            reset->framesRemaining = kResetDelayFrames;
+            reset->buttonsEnabled = 1;
+            reset->deferred = 0;
             __register_global_object(reset, (void*)SystemResetState_Dtor, s_systemResetDtorRegistration);
             s_systemResetStateInitialized = 1;
         }
         ((int&)Sing_805DC948()) = (int)s_systemResetStorage;
     }
     SystemResetState* reset = (SystemResetState*)((int&)Sing_805DC948());
-    if (!reset->buttonsEnabled) return;
-    reset->mode = kResetRestart; reset->phase = kResetRequested; reset->framesRemaining = kResetDelayFrames;
-    if (!s_cursorResourcesLoadAttempted) return;
-    if (!Sing_805DC5C8()) {
-        if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_80293248); s_inputManagerInitialized=1; }
-        Sing_805DC5C8()=s_gameInputManager;
+    if (!reset->buttonsEnabled)
+        return;
+    reset->mode = kResetRestart;
+    reset->phase = kResetRequested;
+    reset->framesRemaining = kResetDelayFrames;
+    if (!s_cursorResourcesLoadAttempted)
+        return;
+    if (!GetInputManagerSlot()) {
+        if (!s_inputManagerInitialized) {
+            InputManager_Init(s_gameInputManager);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_80293248);
+            s_inputManagerInitialized = 1;
+        }
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    InputManager_StopAllRumble(Sing_805DC5C8());
-    if (!Sing_805DC5C8()) {
-        if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_80293248); s_inputManagerInitialized=1; }
-        Sing_805DC5C8()=s_gameInputManager;
+    InputManager_StopAllRumble(GetInputManagerSlot());
+    if (!GetInputManagerSlot()) {
+        if (!s_inputManagerInitialized) {
+            InputManager_Init(s_gameInputManager);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_80293248);
+            s_inputManagerInitialized = 1;
+        }
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    InputManager_Update(Sing_805DC5C8()); gtl_InputEx_Update();
+    InputManager_Update(GetInputManagerSlot());
+    gtl_InputEx_Update();
 }
 
 // Queue power-off when system buttons are enabled, then stop rumble and poll input.
@@ -107,37 +140,60 @@ void SystemReset_OnPowerButton() {
         if (!s_systemResetStateInitialized) {
             ((SystemResetState*)s_systemResetStorage)->mode = kResetNone;
             SystemResetState* reset = (SystemResetState*)s_systemResetStorage;
-            reset->phase = kResetIdle; reset->framesRemaining = kResetDelayFrames; reset->buttonsEnabled = 1; reset->deferred = 0;
-            __register_global_object(reset,(void*)SystemResetState_Dtor,s_systemResetDtorRegistration); s_systemResetStateInitialized=1;
+            reset->phase = kResetIdle;
+            reset->framesRemaining = kResetDelayFrames;
+            reset->buttonsEnabled = 1;
+            reset->deferred = 0;
+            __register_global_object(reset, (void*)SystemResetState_Dtor, s_systemResetDtorRegistration);
+            s_systemResetStateInitialized = 1;
         }
-        ((int&)Sing_805DC948())=(int)s_systemResetStorage;
+        ((int&)Sing_805DC948()) = (int)s_systemResetStorage;
     }
     SystemResetState* reset = (SystemResetState*)((int&)Sing_805DC948());
-    if (!reset->buttonsEnabled) return;
-    reset->mode=kResetPowerOff; reset->phase=kResetRequested; reset->framesRemaining=kResetDelayFrames;
-    if (!s_cursorResourcesLoadAttempted) return;
-    if (!Sing_805DC5C8()) {
-        if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager,(void*)InputManager_Dtor,s_inputManagerDtorRegistration_80293248); s_inputManagerInitialized=1; }
-        Sing_805DC5C8()=s_gameInputManager;
+    if (!reset->buttonsEnabled)
+        return;
+    reset->mode = kResetPowerOff;
+    reset->phase = kResetRequested;
+    reset->framesRemaining = kResetDelayFrames;
+    if (!s_cursorResourcesLoadAttempted)
+        return;
+    if (!GetInputManagerSlot()) {
+        if (!s_inputManagerInitialized) {
+            InputManager_Init(s_gameInputManager);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_80293248);
+            s_inputManagerInitialized = 1;
+        }
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    InputManager_StopAllRumble(Sing_805DC5C8());
-    if (!Sing_805DC5C8()) {
-        if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager,(void*)InputManager_Dtor,s_inputManagerDtorRegistration_80293248); s_inputManagerInitialized=1; }
-        Sing_805DC5C8()=s_gameInputManager;
+    InputManager_StopAllRumble(GetInputManagerSlot());
+    if (!GetInputManagerSlot()) {
+        if (!s_inputManagerInitialized) {
+            InputManager_Init(s_gameInputManager);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_80293248);
+            s_inputManagerInitialized = 1;
+        }
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    InputManager_Update(Sing_805DC5C8()); gtl_InputEx_Update();
+    InputManager_Update(GetInputManagerSlot());
+    gtl_InputEx_Update();
 }
 
 // Black out the display, wait the reset delay, release I/O/audio, and perform the requested system action.
 int SystemReset_ProcessPendingReset(void* self) {
     int phase = ((SystemResetState*)self)->phase;
     int canProcess;
-    if (phase == kResetIdle) canProcess = 0;
-    else canProcess = (((SystemResetState*)self)->deferred == 0);
-    if (canProcess == 0) return 0;
+    if (phase == kResetIdle)
+        canProcess = 0;
+    else
+        canProcess = (((SystemResetState*)self)->deferred == 0);
+    if (canProcess == 0)
+        return 0;
 
     if (phase == kResetRequested) {
-        if (g_taskManager) CTask_CancelChildThread(g_taskManager);
+        if (g_taskManager)
+            ((CTask*)g_taskManager)->CancelChildThread();
         Engine_ClearFramebuffer(kSystemResetFramebufferClearValue, 0, 0, 7, 0, 0);
         VISetBlack(1);
         VIFlush();
@@ -149,13 +205,14 @@ int SystemReset_ProcessPendingReset(void* self) {
         return 1;
     }
 
-    CCheckDriveStatus_SetErrorDialogsEnabled(0);
+    CCheckDriveStatus::SetErrorDialogsEnabled(0);
     FileRegistry_ClearOwnedDevices();
     InputDriver_InitStub();
     Projection_ResetDepthConvention();
     MediaRegistry_ResetGlobalPointer();
     fn_8034EB78();
-    while (DVDGetDriveStatus() == kDvdBusy) {}
+    while (DVDGetDriveStatus() == kDvdBusy) {
+    }
 
     gtl_Audio_Shutdown();
     GXDrawDone();
@@ -185,19 +242,28 @@ int SystemReset_ProcessPendingReset(void* self) {
 }
 
 // Initialize this translation-unit helper's two-pi cache.
-void CallbackUnit_InitTwoPiCache0() { s_twoPi_CallbackUnit0 = kFloat_6_2831855; }
+void CallbackUnit_InitTwoPiCache0() {
+    s_twoPi_CallbackUnit0 = kFloat_6_2831855;
+}
 // Initialize the callback helper's separate two-pi cache.
-void CallbackUnit_InitTwoPiCache1() { s_twoPi_CallbackUnit1 = kFloat_6_2831855; }
+void CallbackUnit_InitTwoPiCache1() {
+    s_twoPi_CallbackUnit1 = kFloat_6_2831855;
+}
 // Initialize the reset helper's separate two-pi cache.
-void SystemReset_InitTwoPiCache() { s_twoPi_SystemReset = kFloat_6_2831855; }
+void SystemReset_InitTwoPiCache() {
+    s_twoPi_SystemReset = kFloat_6_2831855;
+}
 // Initialize the trailing helper's separate two-pi cache.
-void PrizeGallery_InitTwoPiCache() { s_twoPi_PrizeGallery = kFloat_6_2831855; }
+void PrizeGallery_InitTwoPiCache() {
+    s_twoPi_PrizeGallery = kFloat_6_2831855;
+}
 
 // Invoke the registered callback with this object, its context, and the event argument; return zero if unset.
-int CCallback_InvokeCallback(void* self, int arg) {
-    int (*callback)(void*, void*, int) = AsCCallback(self)->callback;
-    if (!callback) return 0;
-    return callback(self, AsCCallback(self)->callbackContext, arg);
+int CCallback::InvokeCallback(int arg) {
+    int (*callback)(void*, void*, int) = this->callback;
+    if (!callback)
+        return 0;
+    return callback(this, callbackContext, arg);
 }
 
 // Initialize an enabled reset controller with no pending request and a 30-frame delay.
@@ -232,30 +298,34 @@ void FileIo_SetSystemButtonCallbacksEnabled(void* self, int enabled) {
 
 // Queue the requested system action and stop controller rumble before shutdown begins.
 void SystemReset_RequestDeferredMode(void* self, int value) {
-    if (!((SystemResetState*)self)->buttonsEnabled) return;
+    if (!((SystemResetState*)self)->buttonsEnabled)
+        return;
     SystemResetState* reset = (SystemResetState*)self;
     reset->mode = value;
     reset->phase = kResetRequested;
     reset->framesRemaining = kResetDelayFrames;
-    if (!s_cursorResourcesLoadAttempted) return;
-    if (!Sing_805DC5C8()) {
+    if (!s_cursorResourcesLoadAttempted)
+        return;
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_80293248);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_80293248);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    InputManager_StopAllRumble(Sing_805DC5C8());
-    if (!Sing_805DC5C8()) {
+    InputManager_StopAllRumble(GetInputManagerSlot());
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_80293248);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_80293248);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    InputManager_Update(Sing_805DC5C8());
+    InputManager_Update(GetInputManagerSlot());
     gtl_InputEx_Update();
 }
 
@@ -274,44 +344,70 @@ int PrizeGallery_GetImageId(const void* self, int index) {
 
 // Delete the callback allocation only when the destructor's deleting flag is positive.
 void* dtor_80293270(void* self, int deleting) {
-    if (self && deleting > 0) __dl__FPv(self);
+    if (self && deleting > 0)
+        __dl__FPv(self);
     return self;
 }
 
 // Delete reset-controller storage only for a deleting destructor call.
 void* SystemResetState_Dtor(void* self, int deleting) {
-    if (self && deleting > 0) __dl__FPv(self);
+    if (self && deleting > 0)
+        __dl__FPv(self);
     return self;
 }
 
 // Store the callback and context supplied as ABI-sized words.
-int CCallback_SetCallbackAndContext(void* self, int a, int b) {
-    AsCCallback(self)->callback = (int (*)(void*, void*, int))a;
-    AsCCallback(self)->callbackContext = (void*)b;
+int CCallback::SetCallbackAndContext(int a, int b) {
+    callback = (int (*)(void*, void*, int))a;
+    callbackContext = (void*)b;
     return 1;
 }
 
 // Install the callback vtable and clear the function/context pair.
-void CCallback_Ctor(void* self) {
+CCallback::CCallback() {
     int zero = 0;
-    void* ptr = &__vt__9CCallback;
-    AsCCallback(self)->callback = (int (*)(void*, void*, int))zero;
-    AsCCallback(self)->vtbl = ptr;
-    AsCCallback(self)->callbackContext = (void*)zero;
+    void* vtablePtr = &__vt__9CCallback;
+    callback = (int (*)(void*, void*, int))zero;
+    vtbl = vtablePtr;
+    callbackContext = (void*)zero;
 }
 
-int CPrize_gallery_vfunc_1() { return 1; }
-int CPrize_gallery_vfunc_2() { return 1; }
-int CPrize_gallery_vfunc_3() { return 1; }
-int CPrize_gallery_vfunc_4() { return 1; }
-int CPrize_gallery_vfunc_5() { return 1; }
-int CPrize_gallery_vfunc_6() { return 1; }
-int CPrize_gallery_vfunc_7() { return 1; }
-int CPrize_gallery_vfunc_8() { return 1; }
-int CPrize_gallery_vfunc_9() { return 1; }
-int CPrize_gallery_vfunc_10() { return 1; }
-int CPrize_gallery_vfunc_11() { return 1; }
-int CPrize_gallery_vfunc_12() { return 1; }
+int CPrize::gallery_vfunc_1() {
+    return 1;
+}
+int CPrize::gallery_vfunc_2() {
+    return 1;
+}
+int CPrize::gallery_vfunc_3() {
+    return 1;
+}
+int CPrize::gallery_vfunc_4() {
+    return 1;
+}
+int CPrize::gallery_vfunc_5() {
+    return 1;
+}
+int CPrize::gallery_vfunc_6() {
+    return 1;
+}
+int CPrize::gallery_vfunc_7() {
+    return 1;
+}
+int CPrize::gallery_vfunc_8() {
+    return 1;
+}
+int CPrize::gallery_vfunc_9() {
+    return 1;
+}
+int CPrize::gallery_vfunc_10() {
+    return 1;
+}
+int CPrize::gallery_vfunc_11() {
+    return 1;
+}
+int CPrize::gallery_vfunc_12() {
+    return 1;
+}
 
 } // extern "C"
 

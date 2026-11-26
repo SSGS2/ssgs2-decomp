@@ -17,9 +17,9 @@ void __dl__FPv(void*);
 }
 
 class CDrawDriveLine;
-template<class T> struct WSingleton;
+template <class T> struct WSingleton;
 
-template<> struct WSingleton<CDrawDriveLine> {
+template <> struct WSingleton<CDrawDriveLine> {
     void* vtable;
     char unk04[12];
     WSingleton() {
@@ -39,7 +39,9 @@ struct DriveLineStorage {
     ~DriveLineStorage();
 };
 
-struct ChildStatus { unsigned char state; };
+struct ChildStatus {
+    unsigned char state;
+};
 struct DriveLineChild : ChildStatus {
     virtual void destroy(int);
     virtual void unused1();
@@ -55,6 +57,9 @@ struct CDrawDriveLine : WSingleton<CDrawDriveLine> {
     int predictionDirty;
     CDrawDriveLine();
     ~CDrawDriveLine();
+
+    void UpdateShotPrediction();
+    void DrawRibbon();
 };
 
 #endif

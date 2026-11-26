@@ -1,26 +1,30 @@
-// GtlHeapObject: layout view owned by gtl_heap_allocators.cpp.
-// Evidence: gtl_IHeapObject_dtor; gtl_IHeapObject_Create. No virtual declarations or runtime objects.
+// gtl::IHeapObject: reference-counted heap object holding an allocator and two memory notices.
 #ifndef CLASSES_GTLHEAPOBJECT_H
 #define CLASSES_GTLHEAPOBJECT_H
 
-class GtlHeapObject {
+namespace gtl {
+class IHeapObject {
 public:
-    int references; // 0x0; gtl_IHeapObject_dtor
-    void* vtable; // 0x4; gtl_IHeapObject_dtor
-    void* allocator; // 0x8; gtl_IHeapObject_dtor
-    void* mainNotice; // 0xC; gtl_IHeapObject_dtor
-    void* localNotice; // 0x10; gtl_IHeapObject_dtor
-    void* mainMemory; // 0x14; gtl_IHeapObject_dtor
-    void* mainArgument; // 0x18; gtl_IHeapObject_dtor
-    void* localMemory; // 0x1C; gtl_IHeapObject_dtor
-    void* localArgument; // 0x20; gtl_IHeapObject_dtor
-    int unk_24; // 0x24; gtl_IHeapObject_dtor
-    int flags; // 0x28; gtl_IHeapObject_dtor
-};
+    static int Create(void* descriptor, void* out);
+    void* Destroy(int deleting);
 
-#define OFF(f, o) typedef char GtlHeapObject_off_##f[((int)&((GtlHeapObject*)0)->f == (o)) ? 1 : -1]
+    int references;      // 0x0
+    void* vtbl;          // 0x4
+    void* allocator;     // 0x8
+    void* mainNotice;    // 0xC
+    void* localNotice;   // 0x10
+    void* mainMemory;    // 0x14
+    void* mainArgument;  // 0x18
+    void* localMemory;   // 0x1C
+    void* localArgument; // 0x20
+    int unk_24;          // 0x24
+    int flags;           // 0x28
+};
+} // namespace gtl
+
+#define OFF(f, o) typedef char IHeapObject_off_##f[((int)&((gtl::IHeapObject*)0)->f == (o)) ? 1 : -1]
 OFF(references, 0x0);
-OFF(vtable, 0x4);
+OFF(vtbl, 0x4);
 OFF(allocator, 0x8);
 OFF(mainNotice, 0xC);
 OFF(localNotice, 0x10);

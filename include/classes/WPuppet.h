@@ -6,20 +6,20 @@
 
 #include "game/wvector.h"
 
-// Intrusive instance bookkeeping: fn_800516C4_next and WPuppetOwnedInstances_dtor/B030.
+// Intrusive instance bookkeeping: GetNextInstancePayload and WPuppetOwnedInstances_dtor/B030.
 struct WPuppetInstanceList {
-    void* first; // 0x00
-    void* cursor; // 0x04
+    void* first;     // 0x00
+    void* cursor;    // 0x04
     void* ownedHead; // 0x08
     char pad_0C[0x10];
-    void* storage; // 0x1C
+    void* storage;    // 0x1C
     char mutex[0x18]; // 0x20: passed to OS mutex lock/unlock
 };
 
 // Circular-list links used by child and cached-bone lists in this unit.
 struct WPuppetListNode {
-    void* prev; // 0x00
-    void* next; // 0x04
+    void* prev;  // 0x00
+    void* next;  // 0x04
     void* value; // 0x08
 };
 
@@ -35,8 +35,8 @@ public:
     char pad_004[0xC];
     void* resourceManager; // 0x10: WPuppet_LoadPET calls Resource_OpenResolvedPath
     char pad_014[4];
-    WPuppetInstanceList ownedInstances; // 0x18: WPuppet_dtor frees this list
-    float worldMatrix[12]; // 0x50: Model_SetMatrixRecursive copies an affine matrix
+    WPuppetInstanceList ownedInstances;     // 0x18: WPuppet_dtor frees this list
+    float worldMatrix[12];                  // 0x50: Model_SetMatrixRecursive copies an affine matrix
     WPuppetInstanceList animationInstances; // 0x80: WPuppet_GetInverseRootMotionOffset iterates this list
     // 0xB8: WPuppet_SetHierarchyContextRecursive propagates this pointer to children; purpose unknown
     void* hierarchyContext;
@@ -50,8 +50,9 @@ public:
     char resourceName[0x40]; // 0xC8: WPuppet_LoadPET copies the model basename here
     // 0x108: WPuppet_LoadModelFromArchive counts index triples with three distinct vertices
     unsigned int triangleCount;
-    WVector boundsMin; // 0x10C: WPuppet_AccumulateAnimationBounds accumulates bounds; WPuppet_UpdateBound computes their extent
-    WVector boundsMax; // 0x118: WPuppet_AccumulateAnimationBounds accumulates the other bounds endpoint
+    WVector
+        boundsMin; // 0x10C: WPuppet_AccumulateAnimationBounds accumulates bounds; WPuppet_UpdateBound computes their extent
+    WVector boundsMax;    // 0x118: WPuppet_AccumulateAnimationBounds accumulates the other bounds endpoint
     WVector boundsCenter; // 0x124: WPuppet_UpdateBoundsFromBone averages the transformed endpoints
     // 0x130: WPuppet_UpdateBoundsFromBone computes distance from the center to an endpoint
     float boundsRadius;

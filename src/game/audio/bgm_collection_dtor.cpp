@@ -1,142 +1,159 @@
-extern "C" unsigned char s_bpCtrlDtorRegistration_80316848[];
-extern "C" unsigned char s_bpCtrlHandleDtorRegistration_BgmCollection[];
-extern "C" unsigned char s_inputManagerDtorRegistration_BgmCollection[];
-// Translation unit 0x80318428-0x80318714 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
+// BGM Collection teardown: unregister the collection's BP and message-draw
+// registrations, destroy the UI, track, layout and texture objects it owns,
+// stop the background music, and release the shared file and its text.
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CBgmCollection.h"
+#include "classes/CSharedFileHandle.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CBpCtrlHandle.h"
 
-struct Virtual80318428 {
+// Objects the collection owns and deletes through their second vtable slot.
+// The slot's name is inferred from the calls below.
+struct DestroyableObject {
     virtual void destroy(int);
 };
-struct Prefix80318428 { int padding; };
-struct VirtualOffset80318428 : Prefix80318428 {
+// trackTable keeps its vtable pointer in its second word.
+struct OffsetObject {
+    int padding;
+};
+struct OffsetDestroyableObject : OffsetObject {
     virtual void destroy(int);
 };
-// These adapters express two existing vtable locations: at object +0, or +4
-// after Prefix80318428 for trackTable. They do not construct replacement objects.
+
 extern "C" {
 
 extern signed char s_bpCtrlInitialized;
 extern signed char s_pointerPairListInitialized;
 extern signed char s_bpCtrlHandleInitialized;
-struct Handle80318428 { int first; int second; };
-extern Handle80318428 s_bpCtrlHandle;
+struct BpCtrlHandle {
+    int first;
+    int second;
+};
+extern BpCtrlHandle s_bpCtrlHandle;
 extern void* g_soundManager;
+// Registration slots for the destructors of the globals created on demand here.
 extern unsigned char s_inputManagerDtorRegistration_BgmCollection[];
 extern unsigned char __vt__14CBgmCollection[];
 extern unsigned char s_bpCtrl[];
 extern unsigned char s_messageDrawPairList[];
 
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor();
-void CBpCtrl_DeleteEntryById(void*, int);
 void PairVector_InitReserved(void*);
 void MessageDrawPairList_Dtor();
 void PointerPairList_RemoveByKey(void*, void*);
 void Layout_Destroy(void*, int);
-void CSharedFileHandle_Destroy(void*, int);
 void SoundManager_RequestBgmStop(void*, int);
 void CBpCtrlHandle_Dtor();
-void CBpCtrlHandle_ReleaseEntry(void*);
 void String_ReplaceRange(void*, int, int, int, int, void*);
 void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
 
-enum BgmCleanupConstants { kNoBpEntry = -1, kBpRegistrationOffset = 0xC,
-                          kDrawListRegistrationOffset = 0x18,
-                          kBpHandleRegistrationOffset = 0x24 };
+enum BgmCleanupConstants {
+    kNoBpEntry = -1,
+    kBpRegistrationOffset = 0xC,
+    kDrawListRegistrationOffset = 0x18,
+    kBpHandleRegistrationOffset = 0x24
+};
 
-// Unregister the collection and release its UI, music, shared file, and owned text.
-// All released members are owned; the global sound/controller/list singletons are borrowed.
-// deleteStorage > 0 also frees self. Returns the original address, possibly freed.
-void* CBgmCollection_dtor(CBgmCollection* self, int deleteStorage) {
+} // extern "C"
+
+// Destroy the collection and every object it owns. A deleteStorage above zero
+// also frees the object; either way the address is returned, freed or not.
+// Named Destroy rather than a destructor: the destructor form changes the prologue.
+void* CBgmCollection::Destroy(int deleteStorage) {
     unsigned char* destructorRegistrationRecords = s_inputManagerDtorRegistration_BgmCollection;
-    if (self != 0) {
-        self->vtbl = __vt__14CBgmCollection;
+    // The null guard is part of the original teardown.
+    if (this != 0) {
+        this->vtbl = __vt__14CBgmCollection;
         // Unregister the BP entry first; lazily create its global owner if necessary.
-        if (self->bpEntryId != kNoBpEntry) {
-            if (((int&)Sing_805DC5F0()) == 0) {
+        if (this->bpEntryId != kNoBpEntry) {
+            if (Sing_805DC5F0() == 0) {
                 if (!s_bpCtrlInitialized) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (destructorRegistrationRecords + kBpRegistrationOffset));
+                    ((CBpCtrl*)s_bpCtrl)->__ct();
+                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor,
+                                             destructorRegistrationRecords + kBpRegistrationOffset);
                     s_bpCtrlInitialized = 1;
                 }
-                ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
+                Sing_805DC5F0() = s_bpCtrl;
             }
-            CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), self->bpEntryId);
-            self->bpEntryId = kNoBpEntry;
+            ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(this->bpEntryId);
+            this->bpEntryId = kNoBpEntry;
         }
         // Remove the draw registration before destroying the resource and draw objects.
-        // alternateTextTree is actually passed to CMsgDraw operations by the menu code.
-        if (((int&)Sing_805DC650()) == 0) {
+        if (Sing_805DC650() == 0) {
             if (!s_pointerPairListInitialized) {
                 PairVector_InitReserved(s_messageDrawPairList);
-                __register_global_object(s_messageDrawPairList, (void*)MessageDrawPairList_Dtor, (destructorRegistrationRecords + kDrawListRegistrationOffset));
+                __register_global_object(s_messageDrawPairList, (void*)MessageDrawPairList_Dtor,
+                                         destructorRegistrationRecords + kDrawListRegistrationOffset);
                 s_pointerPairListInitialized = 1;
             }
-            ((int&)Sing_805DC650()) = (int)s_messageDrawPairList;
+            Sing_805DC650() = s_messageDrawPairList;
         }
-        PointerPairList_RemoveByKey((void*)((int&)Sing_805DC650()), self->messageDraw);
-        // Keep the repeated null tests: only expand formatting, not cleanup structure.
-        if (self->messageResource) {
-            if (self->messageResource) ((Virtual80318428*)self->messageResource)->destroy(1);
-            self->messageResource = 0;
+        PointerPairList_RemoveByKey(Sing_805DC650(), this->messageDraw);
+        // The doubled guard is how a deleting-destructor call expands here.
+        if (this->messageResource) {
+            if (this->messageResource)
+                ((DestroyableObject*)this->messageResource)->destroy(1);
+            this->messageResource = 0;
         }
-        if (self->messageDraw) {
-            if (self->messageDraw) ((Virtual80318428*)self->messageDraw)->destroy(1);
-            self->messageDraw = 0;
+        if (this->messageDraw) {
+            if (this->messageDraw)
+                ((DestroyableObject*)this->messageDraw)->destroy(1);
+            this->messageDraw = 0;
         }
-        if (self->trackTable) {
-            if (self->trackTable) ((VirtualOffset80318428*)self->trackTable)->destroy(1);
-            self->trackTable = 0;
+        if (this->trackTable) {
+            if (this->trackTable)
+                ((OffsetDestroyableObject*)this->trackTable)->destroy(1);
+            this->trackTable = 0;
         }
-        if (self->textureState) {
-            if (self->textureState) ((Virtual80318428*)self->textureState)->destroy(1);
-            self->textureState = 0;
+        if (this->textureState) {
+            if (this->textureState)
+                ((DestroyableObject*)this->textureState)->destroy(1);
+            this->textureState = 0;
         }
-        if (self->layout) {
-            Layout_Destroy(self->layout, 1);
-            self->layout = 0;
+        if (this->layout) {
+            Layout_Destroy(this->layout, 1);
+            this->layout = 0;
         }
-        if (self->sharedFile) {
-            CSharedFileHandle_Destroy(self->sharedFile, 1);
-            self->sharedFile = 0;
+        if (this->sharedFile) {
+            CSharedFileHandle::Destroy(this->sharedFile, 1);
+            this->sharedFile = 0;
         }
-        // UI/resource pointers are now null; stop music and release the global BP handle.
+        // The UI and resources are gone; stop the music and release the BP handle.
         SoundManager_RequestBgmStop(g_soundManager, 1);
-        if (((int&)Sing_805DC5F8()) == 0) {
+        if (Sing_805DC5F8() == 0) {
             if (!s_bpCtrlHandleInitialized) {
                 s_bpCtrlHandle.second = kNoBpEntry;
                 s_bpCtrlHandle.first = kNoBpEntry;
-                __register_global_object(&s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, (destructorRegistrationRecords + kBpHandleRegistrationOffset));
+                __register_global_object(&s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor,
+                                         destructorRegistrationRecords + kBpHandleRegistrationOffset);
                 s_bpCtrlHandleInitialized = 1;
             }
-            ((int&)Sing_805DC5F8()) = (int)&s_bpCtrlHandle;
+            Sing_805DC5F8() = &s_bpCtrlHandle;
         }
-        CBpCtrlHandle_ReleaseEntry((void*)((int&)Sing_805DC5F8()));
-        // Clear the current text using the original opaque allocator-byte argument.
-        // Retain this volatile stack-byte copy; it is not a meaningful menu state value.
-        union ByteStorage { unsigned char byte; unsigned int alignment; } value;
+        ((CBpCtrlHandle*)Sing_805DC5F8())->ReleaseEntry();
+        // Clear the text; the byte argument is copied from the stack, as the call site does.
+        union ByteStorage {
+            unsigned char byte;
+            unsigned int alignment;
+        } value;
         volatile unsigned char result;
         value.byte = result;
-        {
-            String_ReplaceRange(&self->stringFlags, 0, -1, 0, 0, &value);
+        String_ReplaceRange(&this->stringFlags, 0, -1, 0, 0, &value);
+        // Release the texture pack, then the heap-backed text.
+        if (this->textureResource) {
+            if (this->textureResource)
+                ((DestroyableObject*)this->textureResource)->destroy(1);
+            this->textureResource = 0;
         }
-        // Finally release the texture pack and any heap string, then optional self storage.
-        if (self->textureResource) {
-            if (self->textureResource) ((Virtual80318428*)self->textureResource)->destroy(1);
-            self->textureResource = 0;
+        // The member address guard is how the inline string destructor expands here.
+        if (&this->stringFlags) {
+            if ((this->stringFlags >> 31) != 0)
+                appFreeUni__FPv(this->stringData);
         }
-        // Preserve the original member-address guard before freeing heap-backed text.
-        if (&self->stringFlags) {
-            if ((self->stringFlags >> 31) != 0) appFreeUni__FPv(self->stringData);
-        }
-        if (deleteStorage > 0) __dl__FPv(self);
+        if (deleteStorage > 0)
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
-
-} // extern "C"

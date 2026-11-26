@@ -32,19 +32,33 @@
 #include "classes/EngineState.h"
 #include "sdk_protos.h"
 #include <decomp/cw_bitfields.h>
-// Translation unit 0x804287D0-0x80429E5C (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 // Partial views of renderer resources; only the fields read below are described.
 struct RenderBufferFields {
-    char padding00[0x0C]; unsigned int byteSize; char padding10[4]; int displayListCopies;
+    char padding00[0x0C];
+    unsigned int byteSize;
+    char padding10[4];
+    int displayListCopies;
 };
 // The display-list allocator reads the same size word as a signed multiplication operand.
-struct SignedRenderBufferFields { char prefix[0x0C]; int byteSize; };
-struct RenderSurfaceFields { char padding00[0x1C]; int copyMode; };
-struct VertexStreamFields { char padding00[0xA4]; int buffers[2]; int strides[2]; };
+struct SignedRenderBufferFields {
+    char prefix[0x0C];
+    int byteSize;
+};
+struct RenderSurfaceFields {
+    char padding00[0x1C];
+    int copyMode;
+};
+struct VertexStreamFields {
+    char padding00[0xA4];
+    int buffers[2];
+    int strides[2];
+};
 // +153C is consumed/cleared by Engine_ApplyStateBeforeDraw before updating GX arrays.
-struct VertexArrayInvalidationView { char prefix[0x153C]; int vertexArraysDirty; };
+struct VertexArrayInvalidationView {
+    char prefix[0x153C];
+    int vertexArraysDirty;
+};
 // Cast-only accessors remain macros because some draw paths require inline_depth(0).
 #define AsRenderBuffer(resource) ((RenderBufferFields*)(resource))
 #define AsRenderSurface(resource) ((RenderSurfaceFields*)(resource))
@@ -52,26 +66,37 @@ struct VertexArrayInvalidationView { char prefix[0x153C]; int vertexArraysDirty;
 // Palette API view of the SAME EngineState palettes/paletteDirty storage;
 // image bindings are separate at +0x64.
 struct PaletteBindingsView {
-    char prefix[0x84]; int palettes[8];
-    char between[0x1594 - 0xA4]; int paletteDirty[8];
+    char prefix[0x84];
+    int palettes[8];
+    char between[0x1594 - 0xA4];
+    int paletteDirty[8];
 };
 typedef char PaletteBindingOffset[((int)&((PaletteBindingsView*)0)->palettes == 0x84) ? 1 : -1];
 typedef char PaletteDirtyOffset[((int)&((PaletteBindingsView*)0)->paletteDirty == 0x1594) ? 1 : -1];
 // ABI words encode a void (*)(void*) callback and its borrowed argument.
 // Consumer: gx_renderer_state_and_resources.cpp::CallbackManager, Render_OnDrawSyncToken(0xDEAD).
 struct TextureCopyCompletionWords {
-    char prefix[0x14CC]; unsigned int callbackWord, argumentWord;
+    char prefix[0x14CC];
+    unsigned int callbackWord, argumentWord;
 };
 enum {
-    kTextureStageCount = 8, kCachedResourceTypeCount = 7,
-    kVertexDeclarationCapacity = 16, kVertexElementEnd = 0xFF,
-    kVertexElementUnusedType = 0x11, kDisplayListAlignment = 32,
-    kModelTransformFirst = 0x0B, kModelTransformEnd = 0x2B,
-    kViewTransform = 0, kProjectionTransform = 1,
+    kTextureStageCount = 8,
+    kCachedResourceTypeCount = 7,
+    kVertexDeclarationCapacity = 16,
+    kVertexElementEnd = 0xFF,
+    kVertexElementUnusedType = 0x11,
+    kDisplayListAlignment = 32,
+    kModelTransformFirst = 0x0B,
+    kModelTransformEnd = 0x2B,
+    kViewTransform = 0,
+    kProjectionTransform = 1,
     kFramebufferCopySyncToken = 0xDEAD, // synchronization marker, not a wait duration
     kBufferCommandPrefixBytes = 4,
-    kBaseMipLevel = 0, kCopyClearFlagShift = 8,
-    kLevelFormatWord = 0, kLevelWidthWord = 7, kLevelHeightWord = 8,
+    kBaseMipLevel = 0,
+    kCopyClearFlagShift = 8,
+    kLevelFormatWord = 0,
+    kLevelWidthWord = 7,
+    kLevelHeightWord = 8,
     kLockedLevelDataWord = 1
 };
 // Level description's high format bit is stripped before GXSetTexCopyDst.
@@ -84,25 +109,42 @@ static const unsigned int kGxTextureFormatBits = 0x7FFFFFFFu;
 // Sampler filter/operation values are translated by those consumers; float values
 // such as fog distances and LOD bias travel as raw IEEE-754 words.
 enum TextureStateId {
-    kTextureColorOperation = 0, kTextureColorArgument1 = 1, kTextureColorArgument2 = 2,
-    kTextureAlphaOperation = 3, kTextureAlphaArgument1 = 4, kTextureAlphaArgument2 = 5,
-    kTextureColorArgument0 = 14, kTextureAlphaAddendArgument = 15,
-    kTextureWrapS = 18, kTextureWrapT = 19, kTextureMinFilter = 20,
-    kTextureMagFilter = 21, kTextureMipFilter = 22, kTextureLodBias = 23,
+    kTextureColorOperation = 0,
+    kTextureColorArgument1 = 1,
+    kTextureColorArgument2 = 2,
+    kTextureAlphaOperation = 3,
+    kTextureAlphaArgument1 = 4,
+    kTextureAlphaArgument2 = 5,
+    kTextureColorArgument0 = 14,
+    kTextureAlphaAddendArgument = 15,
+    kTextureWrapS = 18,
+    kTextureWrapT = 19,
+    kTextureMinFilter = 20,
+    kTextureMagFilter = 21,
+    kTextureMipFilter = 22,
+    kTextureLodBias = 23,
     kTextureAnisotropy = 24
 };
 
 // Value domains verified in gtl_texture_stage_tev_setup.cpp/gx_fifo_vertex_and_tev_helpers.cpp; these are engine operations,
 // distinct from GXTevOp. Only the listed operations have established equations.
 enum TextureCombineValue {
-    kCombineMultiply = 0, kCombineAdd = 2, kCombineDisable = 16,
-    kCombineSelectFirst = 17, kCombineSelectSecond = 18,
-    kCombineBlendConstant = 19, kCombineAlphaMultiplyAdd = 20,
-    kCombineColorBlendTextureAlpha = 21, kCombineColorInterpolate = 22
+    kCombineMultiply = 0,
+    kCombineAdd = 2,
+    kCombineDisable = 16,
+    kCombineSelectFirst = 17,
+    kCombineSelectSecond = 18,
+    kCombineBlendConstant = 19,
+    kCombineAlphaMultiplyAdd = 20,
+    kCombineColorBlendTextureAlpha = 21,
+    kCombineColorInterpolate = 22
 };
 enum TextureArgumentValue {
-    kArgumentPrevious0 = 0, kArgumentPrevious1 = 1, kArgumentTexture = 2,
-    kArgumentStageConstant = 3, kColorArgumentTextureAlpha = 0x22
+    kArgumentPrevious0 = 0,
+    kArgumentPrevious1 = 1,
+    kArgumentTexture = 2,
+    kArgumentStageConstant = 3,
+    kColorArgumentTextureAlpha = 0x22
 };
 // Arguments 0/1 both consume the previous TEV result in these translators.
 // Argument 3 is operation-dependent: alpha uses it only for multiply-add's
@@ -124,22 +166,41 @@ enum TextureArgumentValue {
 // 4 source-alpha, 5 inverse-source-alpha, 6 destination-alpha, 7 its inverse.
 // Other blend-operation values leave the consumer's mode undefined; avoid them.
 enum CachedRenderStateId {
-    kRenderCullMode = 0, kRenderFogEnabled = 1, kRenderLightingEnabled = 2,
-    kRenderDepthCompare = 3, kRenderAlphaCompare = 4, kRenderDepthWrite = 5,
-    kRenderDepthTest = 6, kRenderAlphaTestEnabled = 7,
-    kRenderAmbientColor = 8, // the environment ambient colour reaches GX only through this id (gtl_GenericEnvironment_Apply: pair {8, colour})
-    kRenderBlendEnabled = 10, kRenderAlphaReference = 11,
-    kRenderBlendOperation = 12, kRenderSourceBlend = 13, kRenderDestinationBlend = 14,
-    kRenderLogicOperation = 15, kRenderSpecularColorSource = 17,
-    kRenderMaterialColorSource = 18, kRenderAmbientColorSource = 19,
+    kRenderCullMode = 0,
+    kRenderFogEnabled = 1,
+    kRenderLightingEnabled = 2,
+    kRenderDepthCompare = 3,
+    kRenderAlphaCompare = 4,
+    kRenderDepthWrite = 5,
+    kRenderDepthTest = 6,
+    kRenderAlphaTestEnabled = 7,
+    kRenderAmbientColor =
+        8, // the environment ambient colour reaches GX only through this id (gtl_GenericEnvironment_Apply: pair {8, colour})
+    kRenderBlendEnabled = 10,
+    kRenderAlphaReference = 11,
+    kRenderBlendOperation = 12,
+    kRenderSourceBlend = 13,
+    kRenderDestinationBlend = 14,
+    kRenderLogicOperation = 15,
+    kRenderSpecularColorSource = 17,
+    kRenderMaterialColorSource = 18,
+    kRenderAmbientColorSource = 19,
     kRenderLightingProperty20 = 20, // consumer not established
-    kRenderFogType = 21, kRenderFogColor = 22, kRenderFogStart = 23, kRenderFogEnd = 24,
+    kRenderFogType = 21,
+    kRenderFogColor = 22,
+    kRenderFogStart = 23,
+    kRenderFogEnd = 24,
     kRenderLightingChannels = 31,
     kRenderNormalizedPointSize = 35, // GX point-size consumer, invalidates pointSizeStateDirty
-    kRenderPointGroup36 = 36, kRenderPointGroup37 = 37, kRenderPointGroup38 = 38,
-    kRenderPointGroup39 = 39, kRenderPointGroup40 = 40, kRenderPointGroup41 = 41,
+    kRenderPointGroup36 = 36,
+    kRenderPointGroup37 = 37,
+    kRenderPointGroup38 = 38,
+    kRenderPointGroup39 = 39,
+    kRenderPointGroup40 = 40,
+    kRenderPointGroup41 = 41,
     kRenderColorAndAlphaWrite = 30,
-    kRenderDepthScale = 32, kRenderDepthOffset = 33
+    kRenderDepthScale = 32,
+    kRenderDepthOffset = 33
 };
 // Unknown lighting ID 20 and point-group IDs 36..41 keep their numeric identity.
 // Only ID 35 is consumed by Render_ApplyPointSize, which sets GX point size.
@@ -194,9 +255,7 @@ int GraphicsResource_FindCachedType6Index(void*);
 int GraphicsResource_FindCachedType7Index(void*);
 
 struct RefCountWord {
-    CW_BITS2(
-        unsigned int count : 16,
-        unsigned int rest : 16)
+    CW_BITS2(unsigned int count : 16, unsigned int rest : 16)
 };
 
 // Retain the type-6 resource, release the old one and invalidate its cached binding flags.
@@ -207,17 +266,21 @@ int Engine_SetType6Resource(void* object) {
     unsigned int count;
     int index;
     void* g = g_engineState;
-    if (object == (*(void**)&AsEngineState(g)->type6Resource)) return 1;
+    if (object == (*(void**)&AsEngineState(g)->type6Resource))
+        return 1;
     if (object) {
         count = ++((volatile RefCountWord*)object)->count;
     }
     if ((*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->type6Resource))
-        GraphicsResource_Release((volatile unsigned int*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->type6Resource));
+        GraphicsResource_Release((
+            volatile unsigned int*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->type6Resource));
     (*(void**)&AsEngineState(g_engineState)->type6Resource) = object;
     volatile int i = 0;
-    for (; i < kCachedResourceTypeCount; ++i) AsEngineState(g_engineState)->activeType6ResourceTypes[i] = 0;
+    for (; i < kCachedResourceTypeCount; ++i)
+        AsEngineState(g_engineState)->activeType6ResourceTypes[i] = 0;
     index = GraphicsResource_FindCachedType6Index(object);
-    if (index) AsEngineState(g_engineState)->activeType6ResourceTypes[index] = 1;
+    if (index)
+        AsEngineState(g_engineState)->activeType6ResourceTypes[index] = 1;
     return 1;
 }
 
@@ -228,18 +291,23 @@ int Engine_SetType7Resource(void* object) {
     unsigned int count;
     int index;
     void* g = g_engineState;
-    if (object == (*(void**)&AsEngineState(g)->type7Resource)) return 1;
+    if (object == (*(void**)&AsEngineState(g)->type7Resource))
+        return 1;
     if (object) {
         count = ++((volatile RefCountWord*)object)->count;
     }
     if ((*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->type7Resource))
-        GraphicsResource_Release((volatile unsigned int*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->type7Resource));
+        GraphicsResource_Release((
+            volatile unsigned int*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->type7Resource));
     (*(void**)&AsEngineState(g_engineState)->type7Resource) = object;
     volatile int i = 0;
-    for (; i < kCachedResourceTypeCount; ++i) AsEngineState(g_engineState)->activeType7ResourceTypes[i] = 0;
+    for (; i < kCachedResourceTypeCount; ++i)
+        AsEngineState(g_engineState)->activeType7ResourceTypes[i] = 0;
     index = GraphicsResource_FindCachedType7Index(object);
-    if (index == 0) s_defaultTevStateDirty = 1;
-    else AsEngineState(g_engineState)->activeType7ResourceTypes[index] = 1;
+    if (index == 0)
+        s_defaultTevStateDirty = 1;
+    else
+        AsEngineState(g_engineState)->activeType7ResourceTypes[index] = 1;
     return 1;
 }
 
@@ -260,24 +328,38 @@ int Engine_SetTextureStageState(void* stageArgument, unsigned int stateId, unsig
     void* engineState = g_engineState;
     // Address = engine + 0x184 + stage*100 + stateId*4: 25 words per stage.
     // The shifted whole-engine cast is address arithmetic, not another EngineState object.
-    int* slot = &AsEngineState((char*)engineState + stageIndex * 100 + stateId * 4)->textureStageStates[0][0]; // original cache +0x184; retain byte-index evaluation order
-    if (value == (unsigned int)*slot) return 1;
+    int* slot = &AsEngineState((char*)engineState + stageIndex * 100 + stateId * 4)
+                     ->textureStageStates[0][0]; // original cache +0x184; retain byte-index evaluation order
+    if (value == (unsigned int)*slot)
+        return 1;
     *slot = value;
     // Color-combine, alpha-combine and sampler changes invalidate separate cache groups.
     switch (stateId) {
-    case kTextureColorOperation: case kTextureColorArgument1: case kTextureColorArgument2: case kTextureColorArgument0:
+    case kTextureColorOperation:
+    case kTextureColorArgument1:
+    case kTextureColorArgument2:
+    case kTextureColorArgument0:
         AsEngineState(engineState)->textureStageComponentDirty[stageIndex][0] = 1; // original +0x14FC
         AsEngineState(engineState)->textureStateDirty = 1;
         break;
-    case kTextureAlphaOperation: case kTextureAlphaArgument1: case kTextureAlphaArgument2: case kTextureAlphaAddendArgument:
+    case kTextureAlphaOperation:
+    case kTextureAlphaArgument1:
+    case kTextureAlphaArgument2:
+    case kTextureAlphaAddendArgument:
         AsEngineState(engineState)->textureStageComponentDirty[stageIndex][1] = 1; // original +0x1500
         AsEngineState(engineState)->textureStateDirty = 1;
         break;
-    case kTextureWrapS: case kTextureWrapT: case kTextureMinFilter: case kTextureMagFilter: case kTextureMipFilter: case kTextureLodBias:
+    case kTextureWrapS:
+    case kTextureWrapT:
+    case kTextureMinFilter:
+    case kTextureMagFilter:
+    case kTextureMipFilter:
+    case kTextureLodBias:
         AsEngineState(engineState)->textureStageDirty[stageIndex] = 1;
         break;
-    case kTextureAnisotropy: break;
-}
+    case kTextureAnisotropy:
+        break;
+    }
     return 1;
 }
 
@@ -285,27 +367,27 @@ int Engine_SetTextureStageState(void* stageArgument, unsigned int stateId, unsig
 // borrowed float-array address encoded as int, c counts FOUR-float groups.
 // The callee reads source[a..a+4*c); both arrays must contain that range.
 // No range/overlap validation; preserve the ABI spill frame and forward copy order.
-void TextureProjection_CopySettingsFloatRangeThunk(void* a, int b, int c) {
-    volatile int savedA = (int)a;
-    volatile int savedB = b;
-    volatile int savedC = c;
+void TextureProjection_CopySettingsFloatRangeThunk(void* startIndex, int source, int vectorCount) {
+    volatile int savedA = (int)startIndex;
+    volatile int savedB = source;
+    volatile int savedC = vectorCount;
     volatile int frame[5];
-    TextureProjection_CopySettingsFloatRange(a, b, c);
+    TextureProjection_CopySettingsFloatRange(startIndex, source, vectorCount);
     (void)frame;
 }
 
 #pragma scheduling off
 // Copy built-in projection settings with the same encoded index/source/group-count
 // contract as the texture thunk; preserve spills and source/destination float indices.
-void BuiltinEffect_CopyProjectionFloatRangeThunk(void* a, int b, int c) {
+void BuiltinEffect_CopyProjectionFloatRangeThunk(void* startIndex, int source, int vectorCount) {
     volatile int savedC;
     volatile int savedB;
     volatile int savedA;
-    savedA = (int)a;
-    savedB = b;
-    savedC = c;
+    savedA = (int)startIndex;
+    savedB = source;
+    savedC = vectorCount;
     volatile int frame[5];
-    BuiltinEffect_CopyProjectionFloatRange(a, b, c);
+    BuiltinEffect_CopyProjectionFloatRange(startIndex, source, vectorCount);
     (void)frame;
 }
 #pragma scheduling reset
@@ -382,7 +464,8 @@ int Engine_GetRenderState(int index, int* out) {
 // Build a declaration for format flags and replace the retained declaration resource.
 int Engine_SetFlexibleVertexFormat(void* formatFlags) {
     void* g = g_engineState;
-    if ((*(void**)&AsEngineState(g)->vertexFormat) == formatFlags) return 1;
+    if ((*(void**)&AsEngineState(g)->vertexFormat) == formatFlags)
+        return 1;
     Render_SetFlexibleVertexFormatState(formatFlags);
     g = g_engineState;
     AsEngineState(g)->usesVertexDeclaration = 0;
@@ -396,7 +479,8 @@ int Engine_SetFlexibleVertexFormat(void* formatFlags) {
     // Incrementing the high half retains this resource before releasing the old
     // binding. It does not track a declaration version or detect changed elements.
     for (int i = 0; i < kVertexDeclarationCapacity; ++i) {
-        VertexDeclarationElement* dst = (VertexDeclarationElement*)((char*)AsEngineState(g_engineState)->scratchVertexDeclaration + i * 12 + 12);
+        VertexDeclarationElement* dst =
+            (VertexDeclarationElement*)((char*)AsEngineState(g_engineState)->scratchVertexDeclaration + i * 12 + 12);
         VertexElement_Copy(dst, &copies[i]);
     }
     unsigned int* resourceHeader = (unsigned int*)AsEngineState(g_engineState)->scratchVertexDeclaration;
@@ -405,7 +489,8 @@ int Engine_SetFlexibleVertexFormat(void* formatFlags) {
     unsigned int retainedReferenceCount = *resourceHeader >> 16;
     (void)retainedReferenceCount;
     g = g_engineState;
-    if ((*(void**)&AsEngineState(g)->vertexDeclaration)) GraphicsResource_Release((volatile unsigned int*)(*(void**)&AsEngineState(g)->vertexDeclaration));
+    if ((*(void**)&AsEngineState(g)->vertexDeclaration))
+        GraphicsResource_Release((volatile unsigned int*)(*(void**)&AsEngineState(g)->vertexDeclaration));
     g = g_engineState;
     (*(void**)&AsEngineState(g)->vertexDeclaration) = AsEngineState(g)->scratchVertexDeclaration;
     return 1;
@@ -416,9 +501,7 @@ int Engine_SetFlexibleVertexFormat(void* formatFlags) {
 // reference count incremented on retain (and, by GraphicsResource_Release, decremented on release); `rest`
 // holds the other 16 bits unchanged.
 struct RefWord80429820 {
-    CW_BITS2(
-        unsigned int count : 16,
-        unsigned int rest : 16)
+    CW_BITS2(unsigned int count : 16, unsigned int rest : 16)
 };
 
 // Replace the active display/offscreen target and update offscreen-copy requirements.
@@ -436,18 +519,23 @@ int Engine_SetRenderTarget(int unused, void* object) {
             ++((volatile RefWord80429820*)savedObject)->count;
         }
         if ((*(void* volatile*)&AsEngineState(g_engineState)->displayRenderTarget))
-            GraphicsResource_Release((volatile unsigned int*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->displayRenderTarget));
+            GraphicsResource_Release(
+                (volatile unsigned int*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)
+                                              ->displayRenderTarget));
         (*(void**)&AsEngineState(g_engineState)->displayRenderTarget) = (void*)savedObject;
     } else {
         if (savedObject) {
             ++((volatile RefWord80429820*)savedObject)->count;
         }
         if ((*(void* volatile*)&AsEngineState(g_engineState)->offscreenRenderTarget))
-            GraphicsResource_Release((volatile unsigned int*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->offscreenRenderTarget));
+            GraphicsResource_Release(
+                (volatile unsigned int*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)
+                                              ->offscreenRenderTarget));
         AsEngineState(g_engineState)->offscreenRenderTarget = (void*)savedObject;
         RenderSurface_DrawFullscreen((*(void* volatile*)&AsEngineState(g_engineState)->offscreenRenderTarget));
         AsEngineState(g_engineState)->renderTargetRequiresCopy =
-            (AsRenderSurface(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->offscreenRenderTarget)->copyMode == 0);
+            (AsRenderSurface(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->offscreenRenderTarget)
+                 ->copyMode == 0);
     }
     return 1;
 }
@@ -461,7 +549,8 @@ int Engine_SetTexturePalette(int index, void* object) {
     volatile int savedIndex = index;
     volatile void* savedObject = object;
     void* g;
-    if (!savedObject && (*(void**)&((PaletteBindingsView*)g_engineState)->palettes[savedIndex]) == 0) return 1;
+    if (!savedObject && (*(void**)&((PaletteBindingsView*)g_engineState)->palettes[savedIndex]) == 0)
+        return 1;
     g = g_engineState;
     ((PaletteBindingsView*)g)->paletteDirty[savedIndex] = 1;
     if (savedObject) {
@@ -528,14 +617,14 @@ struct Pair80429918 {
     int b;
 };
 
-struct Frame80429918 {
+struct RenderStateListFrame {
     void* entries;
     unsigned int count;
 };
 
 // Apply an array of render-state ID/value pairs.
 int Engine_SetRenderStateList(int* entries, unsigned int count) {
-    volatile Frame80429918 frame;
+    volatile RenderStateListFrame frame;
     frame.entries = entries;
     frame.count = count;
     for (unsigned int i = 0; i < frame.count; ++i) {
@@ -552,7 +641,7 @@ int Engine_GetTextureStageState(int stageIndex, int stateId, int* out) {
     return 1;
 }
 
-struct Mtx80429460 {
+struct CachedTransform {
     float m[16];
 };
 #pragma inline_depth(8)
@@ -572,8 +661,10 @@ static inline float Abs80429460(float x) {
 
 // Recognize the perspective marker used by the fog-plane calculation.
 static inline int IsPerspective80429460(float absolutePerspectiveTerm, float* matrix) {
-    if (kFloat_1_Renderer == absolutePerspectiveTerm && kFloat_0_GXRenderer == matrix[15]) return 1;
-    if (kFloat_0_GXRenderer == matrix[11] && kFloat_1_Renderer == matrix[15]) return 0;
+    if (kFloat_1_Renderer == absolutePerspectiveTerm && kFloat_0_GXRenderer == matrix[15])
+        return 1;
+    if (kFloat_0_GXRenderer == matrix[11] && kFloat_1_Renderer == matrix[15])
+        return 0;
     return 0;
 }
 
@@ -590,13 +681,14 @@ static inline int IsPerspective80429460(float absolutePerspectiveTerm, float* ma
 // and evaluation order: algebraic simplification can change floating-point bytes.
 int SetTransform(int state, float* matrix) {
     unsigned int i;
-    Mtx80429460* cache;
-    Mtx80429460* dst;
+    CachedTransform* cache;
+    CachedTransform* dst;
     volatile float recoveredPlanes[6]; // slots 4/5 are near/far; 0..3 preserve ABI scratch space
-    if (memcmp(matrix, AsEngineState(g_engineState)->transforms[state], 0x40) == 0) return 1;
+    if (memcmp(matrix, AsEngineState(g_engineState)->transforms[state], 0x40) == 0)
+        return 1;
     AsEngineState(g_engineState)->transformDirty[state] = 1; // original +0x15B4
-    cache = &((Mtx80429460*)AsEngineState(g_engineState)->transforms)[state];
-    *cache = *(Mtx80429460*)matrix;
+    cache = &((CachedTransform*)AsEngineState(g_engineState)->transforms)[state];
+    *cache = *(CachedTransform*)matrix;
     if (state == kProjectionTransform) {
         float perspectiveTerm = matrix[11];
         double d = __fabs((double)perspectiveTerm);
@@ -628,9 +720,12 @@ int SetTransform(int state, float* matrix) {
         AsEngineState(g_engineState)->fogNearPlane = recoveredPlanes[4];
     }
     if (state == kViewTransform) {
-        for (i = 0; i < kTextureStageCount; ++i) AsEngineState(g_engineState)->lightStateDirty[i] = 1;
+        for (i = 0; i < kTextureStageCount; ++i)
+            AsEngineState(g_engineState)->lightStateDirty[i] = 1;
     }
-    if (state >= kModelTransformFirst && state < kModelTransformEnd) PSMTX44Transpose(AsEngineState(g_engineState)->transposedTransforms[state - kModelTransformFirst], matrix); // original +0x19F8
+    if (state >= kModelTransformFirst && state < kModelTransformEnd)
+        PSMTX44Transpose(AsEngineState(g_engineState)->transposedTransforms[state - kModelTransformFirst],
+                         matrix); // original +0x19F8
     return 1;
 }
 struct Pad80429460 {
@@ -657,7 +752,7 @@ int Engine_GetVertexStream(int index, int* outBuffer, int* outByteOffset, int* o
     return 1;
 }
 
-struct Triple80429984 {
+struct TextureStageStateListFrame {
     void* stageArgument;
     unsigned int* entries;
     unsigned int count;
@@ -665,7 +760,7 @@ struct Triple80429984 {
 
 // Apply an array of state ID/value pairs to one texture stage.
 int Engine_SetTextureStageStateList(void* stageArgument, unsigned int* entries, unsigned int count) {
-    volatile Triple80429984 saved;
+    volatile TextureStageStateListFrame saved;
     saved.stageArgument = stageArgument;
     saved.entries = entries;
     saved.count = count;
@@ -767,7 +862,7 @@ int Engine_SetVertexStream(int index, void* buffer, int /*unused*/, int stride) 
     return 1;
 }
 
-struct Frame804287D0 {
+struct TextureCopyFrame {
     unsigned int w10[2];
     unsigned int bounds[4];
     unsigned int info[13];
@@ -804,9 +899,12 @@ struct Frame804287D0 {
 // draw-sync marker and pixel-mode sync; it does not wait for a CPU-readable image.
 // The caller must keep destination texture storage alive until the GPU completes
 // the queued copy; unlocking level0 here does not transfer or release ownership.
-void Engine_CopyFramebufferToTexture(volatile unsigned int copyFlags, void* sourceBounds, void* volatile destinationTexture, int unused3, int unused4, int unused5, int unused6, int unused7, int unused8, unsigned int copyCompletionCallbackWord, unsigned int copyCompletionArgumentWord) {
+void Engine_CopyFramebufferToTexture(volatile unsigned int copyFlags, void* sourceBounds,
+                                     void* volatile destinationTexture, int unused3, int unused4, int unused5,
+                                     int unused6, int unused7, int unused8, unsigned int copyCompletionCallbackWord,
+                                     unsigned int copyCompletionArgumentWord) {
     volatile int spill[3];
-    Frame804287D0 f;
+    TextureCopyFrame f;
     register void* bounds = sourceBounds;
     ((TextureCopyCompletionWords*)g_engineState)->callbackWord = copyCompletionCallbackWord;
     ((TextureCopyCompletionWords*)g_engineState)->argumentWord = copyCompletionArgumentWord;
@@ -827,8 +925,10 @@ void Engine_CopyFramebufferToTexture(volatile unsigned int copyFlags, void* sour
     unsigned int formatWord = f.info[kLevelFormatWord];
     register int clearAfterCopy = (savedCopyFlags >> kCopyClearFlagShift) & 1;
     register unsigned int textureFormat = formatWord & kGxTextureFormatBits;
-    GXSetTexCopySrc((unsigned short)f.bounds[0], (unsigned short)f.bounds[1], (unsigned short)f.bounds[2], (unsigned short)f.bounds[3], savedCopyFlags);
-    GXSetTexCopyDst((unsigned short)f.info[kLevelWidthWord], (unsigned short)f.info[kLevelHeightWord], textureFormat, 0);
+    GXSetTexCopySrc((unsigned short)f.bounds[0], (unsigned short)f.bounds[1], (unsigned short)f.bounds[2],
+                    (unsigned short)f.bounds[3], savedCopyFlags);
+    GXSetTexCopyDst((unsigned short)f.info[kLevelWidthWord], (unsigned short)f.info[kLevelHeightWord], textureFormat,
+                    0);
     GXCopyTex(f.w10[kLockedLevelDataWord], (unsigned char)clearAfterCopy);
     Texture_UnlockLevel(texture, kBaseMipLevel);
     unsigned int token = kFramebufferCopySyncToken;
@@ -854,25 +954,70 @@ void Engine_CopyFramebufferToTexture(volatile unsigned int copyFlags, void* sour
 // Mode immediateStateUpdates==1 applies state even when the cached word is unchanged.
 int Engine_SetCachedRenderState(int indexArg, void* value) {
     if (value == (*(void**)&AsEngineState(*(void* volatile*)&g_engineState)->renderStates[(unsigned int)indexArg]) &&
-        AsEngineState(*(void* volatile*)&g_engineState)->immediateStateUpdates != 1u) return 1;
+        AsEngineState(*(void* volatile*)&g_engineState)->immediateStateUpdates != 1u)
+        return 1;
     (*(void**)&AsEngineState(*(void* volatile*)&g_engineState)->renderStates[(unsigned int)indexArg]) = value;
     // Each state ID invalidates the GX group that consumes it; culling applies immediately.
     switch ((unsigned int)indexArg) {
-    case kRenderCullMode: GXSetCullMode(value); break;
-    case kRenderFogEnabled: case kRenderFogType: case kRenderFogColor: case kRenderFogStart: case kRenderFogEnd: AsEngineState(*(void* volatile*)&g_engineState)->fogStateDirty = 1; break;
-    case kRenderLightingEnabled: case kRenderSpecularColorSource: case kRenderMaterialColorSource: case kRenderAmbientColorSource: case kRenderLightingProperty20: AsEngineState(*(void* volatile*)&g_engineState)->lightingStateDirty = 1; break;
-    case kRenderDepthCompare: case kRenderDepthWrite: case kRenderDepthTest: AsEngineState(*(void* volatile*)&g_engineState)->depthStateDirty = 1; break;
-    case kRenderBlendEnabled: case kRenderBlendOperation: case kRenderSourceBlend: case kRenderDestinationBlend: case kRenderLogicOperation: AsEngineState(*(void* volatile*)&g_engineState)->blendStateDirty = 1; break;
-    case kRenderAlphaCompare: case kRenderAlphaTestEnabled: case kRenderAlphaReference: AsEngineState(*(void* volatile*)&g_engineState)->alphaCompareStateDirty = 1; break;
-    case kRenderLightingChannels: AsEngineState(*(void* volatile*)&g_engineState)->lightingChannelStateDirty = 1; break;
+    case kRenderCullMode:
+        GXSetCullMode(value);
+        break;
+    case kRenderFogEnabled:
+    case kRenderFogType:
+    case kRenderFogColor:
+    case kRenderFogStart:
+    case kRenderFogEnd:
+        AsEngineState(*(void* volatile*)&g_engineState)->fogStateDirty = 1;
+        break;
+    case kRenderLightingEnabled:
+    case kRenderSpecularColorSource:
+    case kRenderMaterialColorSource:
+    case kRenderAmbientColorSource:
+    case kRenderLightingProperty20:
+        AsEngineState(*(void* volatile*)&g_engineState)->lightingStateDirty = 1;
+        break;
+    case kRenderDepthCompare:
+    case kRenderDepthWrite:
+    case kRenderDepthTest:
+        AsEngineState(*(void* volatile*)&g_engineState)->depthStateDirty = 1;
+        break;
+    case kRenderBlendEnabled:
+    case kRenderBlendOperation:
+    case kRenderSourceBlend:
+    case kRenderDestinationBlend:
+    case kRenderLogicOperation:
+        AsEngineState(*(void* volatile*)&g_engineState)->blendStateDirty = 1;
+        break;
+    case kRenderAlphaCompare:
+    case kRenderAlphaTestEnabled:
+    case kRenderAlphaReference:
+        AsEngineState(*(void* volatile*)&g_engineState)->alphaCompareStateDirty = 1;
+        break;
+    case kRenderLightingChannels:
+        AsEngineState(*(void* volatile*)&g_engineState)->lightingChannelStateDirty = 1;
+        break;
     case kRenderColorAndAlphaWrite:
         AsEngineState(*(void* volatile*)&g_engineState)->alphaWriteStateDirty =
-        AsEngineState(*(void* volatile*)&g_engineState)->colorWriteStateDirty = 1; break;
-    case kRenderDepthScale: case kRenderDepthOffset: AsEngineState(*(void* volatile*)&g_engineState)->depthScaleOffsetStateDirty = 1; break;
-    case kRenderNormalizedPointSize: case kRenderPointGroup36: case kRenderPointGroup37: case kRenderPointGroup38: case kRenderPointGroup39: case kRenderPointGroup40: case kRenderPointGroup41: AsEngineState(*(void* volatile*)&g_engineState)->pointSizeStateDirty = 1; break;
-    default: break;
+            AsEngineState(*(void* volatile*)&g_engineState)->colorWriteStateDirty = 1;
+        break;
+    case kRenderDepthScale:
+    case kRenderDepthOffset:
+        AsEngineState(*(void* volatile*)&g_engineState)->depthScaleOffsetStateDirty = 1;
+        break;
+    case kRenderNormalizedPointSize:
+    case kRenderPointGroup36:
+    case kRenderPointGroup37:
+    case kRenderPointGroup38:
+    case kRenderPointGroup39:
+    case kRenderPointGroup40:
+    case kRenderPointGroup41:
+        AsEngineState(*(void* volatile*)&g_engineState)->pointSizeStateDirty = 1;
+        break;
+    default:
+        break;
     }
-    if (AsEngineState(*(void* volatile*)&g_engineState)->immediateStateUpdates == 1u) Engine_ApplyStateBeforeDraw();
+    if (AsEngineState(*(void* volatile*)&g_engineState)->immediateStateUpdates == 1u)
+        Engine_ApplyStateBeforeDraw();
     return 1;
 }
 #pragma opt_lifetimes reset
@@ -883,7 +1028,7 @@ int Engine_SetCachedRenderState(int indexArg, void* value) {
 
 int Engine_DrawPrimitiveWithCallback(void*, unsigned int, void*);
 
-struct Ctx80429AB4 {
+struct IndexedDrawFrame {
     int displayListAddressCopy;
     int displayListAddress;
     int displayListCopyCount;
@@ -916,7 +1061,7 @@ int Engine_DrawIndexedPrimitive(void* primitiveType, void*, void*, void*, void* 
     int argVal = primitiveCount;
     // Volatile scratch copies preserve the draw ABI; names distinguish addresses,
     // unaligned payload lengths, and lengths rounded for GX (no allocation here).
-    volatile Ctx80429AB4 ctx;
+    volatile IndexedDrawFrame ctx;
     ctx.indexCount = Primitive_GetIndexCount(argVal, primitiveType);
     void* state = AsEngineState(g_engineState)->indexBuffer;
     if (AsRenderBuffer(state)->displayListCopies == 0) {
@@ -1036,7 +1181,8 @@ int DrawPrimitiveFromBoundBuffers(int prim, volatile int firstVertex, void* prim
     // bytes before alignment. The unsigned subtraction tests ANY stride mismatch,
     // including underflow, so do not replace it with a greater-than comparison.
     // Phase 1: compare selected input stride with the bound declaration's stride/count.
-    VertexInput_FindAndCopyFormatDescriptor(s_vertexFormatDescriptor, (*(void**)&AsEngineState(g_engineState)->vertexFormat));
+    VertexInput_FindAndCopyFormatDescriptor(s_vertexFormatDescriptor,
+                                            (*(void**)&AsEngineState(g_engineState)->vertexFormat));
     unsigned int stride = FlexibleVertexFormat_GetStride((*(void**)&AsEngineState(g_engineState)->vertexFormat));
     unsigned int formatStride = (unsigned int)s_vertexFormatDescriptor[6];
     void* state = AsEngineState(g_engineState)->vertexBuffer;
@@ -1044,7 +1190,8 @@ int DrawPrimitiveFromBoundBuffers(int prim, volatile int firstVertex, void* prim
     unsigned int differs = (formatStride - stride) > 0u;
     ctx.requiresConversion = differs;
     if (differs) {
-        ctx.convertedRegionOffset = (unsigned int)Render_AlignSizeToMultiple(AsRenderBuffer(state)->byteSize + kBufferCommandPrefixBytes, kDisplayListAlignment);
+        ctx.convertedRegionOffset = (unsigned int)Render_AlignSizeToMultiple(
+            AsRenderBuffer(state)->byteSize + kBufferCommandPrefixBytes, kDisplayListAlignment);
     }
     void* data = (*(void**)&AsEngineState(g_engineState)->vertexDeclaration);
     ctx.declarationAddress = (unsigned int)data;
@@ -1154,15 +1301,22 @@ int Engine_SetVertexDeclaration(void* object) {
     unsigned int output;
     // Phase 1: compare declaration elements; otherwise retain new before releasing old.
     if ((*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->vertexDeclaration) &&
-        memcmp(((DeclarationResource*)object)->elements, ((DeclarationResource*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->vertexDeclaration))->elements, sizeof(((DeclarationResource*)0)->elements)) == 0)
+        memcmp(((DeclarationResource*)object)->elements,
+               ((DeclarationResource*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)
+                                            ->vertexDeclaration))
+                   ->elements,
+               sizeof(((DeclarationResource*)0)->elements)) == 0)
         return 1;
     if (object) {
         frame.retainedReferenceCount = ++((volatile RefCountWord*)object)->count;
     }
     if ((*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->vertexDeclaration))
-        GraphicsResource_Release((volatile unsigned int*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)->vertexDeclaration));
+        GraphicsResource_Release(
+            (volatile unsigned int*)(*(void* volatile*)&AsEngineState(*(void* volatile*)&g_engineState)
+                                          ->vertexDeclaration));
     (*(void**)&AsEngineState(g_engineState)->vertexDeclaration) = object;
-    if (!object) return 1;
+    if (!object)
+        return 1;
     VertexDeclaration_GetElements(object, frame.descriptors, &frame.count);
     status = VertexDeclaration_TryConvertToFormatFlags(frame.descriptors, &frame.flags);
     // Phase 2: if direct format conversion fails, retain supported usage IDs and retry.
@@ -1190,10 +1344,19 @@ int Engine_SetVertexDeclaration(void* object) {
             // Omit these usage IDs from the FVF fallback; retain original records
             // only for the supported cases below. This filters descriptors, not
             // the retained resource or its ownership.
-            case 1: case 2: case 4: case 6: case 7: case 8: case 9:
+            case 1:
+            case 2:
+            case 4:
+            case 6:
+            case 7:
+            case 8:
+            case 9:
                 break;
             // Retain position (0), normal (3), texture coordinates (5), color (10).
-            case 0: case 3: case 5: case 10:
+            case 0:
+            case 3:
+            case 5:
+            case 10:
                 VertexElement_Copy(&frame.records[output], &frame.descriptors[i]);
                 ++output;
                 break;

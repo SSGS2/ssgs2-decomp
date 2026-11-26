@@ -1,9 +1,10 @@
+// ZIP entry reader: opens an archive entry (with an optional ZipCrypto password), reads and
+// inflates its data, checks the CRC when the entry closes, and reads buffered integers.
+
 #include "classes/ArchiveStream.h"
-// Translation unit 0x802D36D4-0x802D4A1C (5 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
-extern "C" unsigned int strlen(const char *s);
+extern "C" unsigned int strlen(const char* s);
 extern "C" void* malloc(unsigned int);
 extern "C" void free(void*);
 extern "C" int ArchiveContext_CheckLocalFileHeader(void*, unsigned int*, unsigned int*, unsigned int*);
@@ -19,13 +20,21 @@ extern "C" unsigned int crc32TableAndUnzipVersion[];
 extern "C" int __cntlzw(unsigned int);
 
 enum ZipReadConstants {
-    kZipInvalidParameter = -0x66, kZipBadArchive = -0x67,
-    kZipOutOfMemory = -0x68, kZipCrcMismatch = -0x69,
-    kZipBadPassword = -0x6a, kZipInvalidReader = -0x64,
-    kZipInputBufferBytes = 0x4000, kZipLocalHeaderBytes = 0x1e,
-    kZipEncryptedFlag = 1, kZipDataDescriptorFlag = 8,
-    kZipStored = 0, kZipDeflated = 8, kInflateSyncFlush = 2,
-    kInflateStreamEnd = 1, kZipEncryptionHeaderBytes = 12
+    kZipInvalidParameter = -0x66,
+    kZipBadArchive = -0x67,
+    kZipOutOfMemory = -0x68,
+    kZipCrcMismatch = -0x69,
+    kZipBadPassword = -0x6a,
+    kZipInvalidReader = -0x64,
+    kZipInputBufferBytes = 0x4000,
+    kZipLocalHeaderBytes = 0x1e,
+    kZipEncryptedFlag = 1,
+    kZipDataDescriptorFlag = 8,
+    kZipStored = 0,
+    kZipDeflated = 8,
+    kInflateSyncFlush = 2,
+    kInflateStreamEnd = 1,
+    kZipEncryptionHeaderBytes = 12
 };
 
 // Directory metadata and the currently opened entry; sizes are bytes.
@@ -88,21 +97,28 @@ struct ZipEntryReader {
 
 // Open an entry, allocate its input buffer, and seed optional ZipCrypto password keys.
 int ArchiveContext_OpenCurrentEntryWithPassword(ZipArchiveContext* archive, const signed char* password) {
-    if (archive == 0) return kZipInvalidParameter;
-    if (archive->currentFileValid == 0) return kZipInvalidParameter;
-    if (archive->currentEntry != 0) ArchiveContext_CloseCurrentEntry(archive);
+    if (archive == 0)
+        return kZipInvalidParameter;
+    if (archive->currentFileValid == 0)
+        return kZipInvalidParameter;
+    if (archive->currentEntry != 0)
+        ArchiveContext_CloseCurrentEntry(archive);
     unsigned int localHeaderVariableBytes;
     unsigned int extraFieldOffset;
     unsigned int extraFieldBytes;
-    if (ArchiveContext_CheckLocalFileHeader(archive, &localHeaderVariableBytes, &extraFieldOffset, &extraFieldBytes) != 0) return kZipBadArchive;
+    if (ArchiveContext_CheckLocalFileHeader(archive, &localHeaderVariableBytes, &extraFieldOffset, &extraFieldBytes) !=
+        0)
+        return kZipBadArchive;
     ZipEntryReader* entry = (ZipEntryReader*)malloc(0x84);
-    if (entry == 0) return kZipOutOfMemory;
+    if (entry == 0)
+        return kZipOutOfMemory;
     entry->inputBuffer = (unsigned int)malloc(kZipInputBufferBytes);
     entry->localExtraFieldOffset = extraFieldOffset;
     entry->localExtraFieldSize = extraFieldBytes;
     entry->localExtraFieldPosition = 0;
     if (entry->inputBuffer == 0) {
-        if (entry != 0) free(entry);
+        if (entry != 0)
+            free(entry);
         return kZipOutOfMemory;
     }
     entry->inflateInitialized = 0;
@@ -119,7 +135,8 @@ int ArchiveContext_OpenCurrentEntryWithPassword(ZipArchiveContext* archive, cons
         entry->allocateCallback = 0;
         entry->freeCallback = 0;
         entry->allocatorContext = 0;
-        if (Zlib_InitRawInflate(&entry->nextInput) == 0) entry->inflateInitialized = 1;
+        if (Zlib_InitRawInflate(&entry->nextInput) == 0)
+            entry->inflateInitialized = 1;
     }
     entry->compressedBytesRemaining = archive->compressedSize;
     entry->outputBytesRemaining = archive->uncompressedSize;
@@ -313,90 +330,119 @@ int ArchiveEntry_ReadAndInflate(void* archive, void* output, unsigned int reques
     int result = 0;
     unsigned int total = 0;
     ZipEntryReader* entry;
-    if (done) *done = 0;
-    if (!archive) return kZipInvalidParameter;
+    if (done)
+        *done = 0;
+    if (!archive)
+        return kZipInvalidParameter;
     entry = (ZipEntryReader*)((ZipArchiveContext*)archive)->currentEntry;
-    if (!entry) return kZipInvalidParameter;
-    if (!entry->inputBuffer) return kZipInvalidReader;
-    if (!requested) return 0;
+    if (!entry)
+        return kZipInvalidParameter;
+    if (!entry->inputBuffer)
+        return kZipInvalidReader;
+    if (!requested)
+        return 0;
     entry->nextOutput = (unsigned int)output;
     entry->availableOutput = requested;
-    if (requested > entry->outputBytesRemaining) entry->availableOutput = entry->outputBytesRemaining;
+    if (requested > entry->outputBytesRemaining)
+        entry->availableOutput = entry->outputBytesRemaining;
     while (entry->availableOutput) {
         // Phase 1: refill the input buffer (up to 16 KiB) from the archive stream when it is empty.
         if (!entry->availableInput && entry->compressedBytesRemaining) {
-        unsigned int availableBytes;
-        unsigned int chunkBytes = entry->compressedBytesRemaining < kZipInputBufferBytes ? entry->compressedBytesRemaining : kZipInputBufferBytes;
-        if (!chunkBytes) { if (done) *done = 1; return 0; }
-        AsArchiveStream(entry->archiveStream)->position = entry->compressedDataOffset + entry->archivePrefixBytes;
-        availableBytes = chunkBytes;
-        unsigned int position = AsArchiveStream(entry->archiveStream)->position;
-        unsigned int bufferBytes = AsArchiveStream(entry->archiveStream)->bufferSize;
-        if (position + chunkBytes > bufferBytes) availableBytes = bufferBytes - position;
-        void* base = AsArchiveStream(entry->archiveStream)->buffer;
-        memcpy((void*)entry->inputBuffer, (char*)base + position, availableBytes);
-        AsArchiveStream(entry->archiveStream)->position = position + availableBytes;
-        if (availableBytes / chunkBytes != 1) return -1;
-        entry->compressedDataOffset += chunkBytes;
-        entry->compressedBytesRemaining -= chunkBytes;
-        entry->nextInput = entry->inputBuffer;
-        entry->availableInput = chunkBytes;
-        // Phase 1b: ZipCrypto-decrypt the new chunk in place, updating the three keys per byte.
-        if (entry->encrypted) {
-            unsigned char* buf = (unsigned char*)entry->nextInput;
-            unsigned int i;
-            for (i = 0; i < chunkBytes; i++) {
-                unsigned int keyLow = entry->cryptoKey2 & 0xffff;
-                signed char keyStreamByte = (signed char)(((keyLow | 2) * ((keyLow | 2) ^ 1)) >> 8);
-                signed char plainByte = (signed char)buf[i] ^ keyStreamByte;
-                unsigned int key0 = entry->cryptoKey0;
-                entry->cryptoKey0 = (key0 >> 8) ^ crc32TableAndUnzipVersion[(key0 ^ plainByte) & 0xff];
-                entry->cryptoKey1 = (entry->cryptoKey1 + (entry->cryptoKey0 & 0xff)) * 0x08088405 + 1;
-                entry->cryptoKey2 = (entry->cryptoKey2 >> 8) ^ crc32TableAndUnzipVersion[(entry->cryptoKey2 ^ (entry->cryptoKey1 >> 24)) & 0xff];
-                buf[i] = (unsigned char)plainByte;
+            unsigned int availableBytes;
+            unsigned int chunkBytes = entry->compressedBytesRemaining < kZipInputBufferBytes
+                                          ? entry->compressedBytesRemaining
+                                          : kZipInputBufferBytes;
+            if (!chunkBytes) {
+                if (done)
+                    *done = 1;
+                return 0;
             }
-        }
+            AsArchiveStream(entry->archiveStream)->position = entry->compressedDataOffset + entry->archivePrefixBytes;
+            availableBytes = chunkBytes;
+            unsigned int position = AsArchiveStream(entry->archiveStream)->position;
+            unsigned int bufferBytes = AsArchiveStream(entry->archiveStream)->bufferSize;
+            if (position + chunkBytes > bufferBytes)
+                availableBytes = bufferBytes - position;
+            void* base = AsArchiveStream(entry->archiveStream)->buffer;
+            memcpy((void*)entry->inputBuffer, (char*)base + position, availableBytes);
+            AsArchiveStream(entry->archiveStream)->position = position + availableBytes;
+            if (availableBytes / chunkBytes != 1)
+                return -1;
+            entry->compressedDataOffset += chunkBytes;
+            entry->compressedBytesRemaining -= chunkBytes;
+            entry->nextInput = entry->inputBuffer;
+            entry->availableInput = chunkBytes;
+            // Phase 1b: ZipCrypto-decrypt the new chunk in place, updating the three keys per byte.
+            if (entry->encrypted) {
+                unsigned char* buf = (unsigned char*)entry->nextInput;
+                unsigned int i;
+                for (i = 0; i < chunkBytes; i++) {
+                    unsigned int keyLow = entry->cryptoKey2 & 0xffff;
+                    signed char keyStreamByte = (signed char)(((keyLow | 2) * ((keyLow | 2) ^ 1)) >> 8);
+                    signed char plainByte = (signed char)buf[i] ^ keyStreamByte;
+                    unsigned int key0 = entry->cryptoKey0;
+                    entry->cryptoKey0 = (key0 >> 8) ^ crc32TableAndUnzipVersion[(key0 ^ plainByte) & 0xff];
+                    entry->cryptoKey1 = (entry->cryptoKey1 + (entry->cryptoKey0 & 0xff)) * 0x08088405 + 1;
+                    entry->cryptoKey2 =
+                        (entry->cryptoKey2 >> 8) ^
+                        crc32TableAndUnzipVersion[(entry->cryptoKey2 ^ (entry->cryptoKey1 >> 24)) & 0xff];
+                    buf[i] = (unsigned char)plainByte;
+                }
+            }
         }
         // Phase 2: consume the 12-byte ZipCrypto header (possibly spread over several chunks).
         // The header counts against outputBytesRemaining (it is part of the entry's data size);
         // its last byte must equal passwordCheckByte once the whole header is consumed.
-        unsigned int headerBytesToSkip=entry->availableInput > entry->encryptionHeaderRemaining ? entry->encryptionHeaderRemaining : entry->availableInput;
+        unsigned int headerBytesToSkip = entry->availableInput > entry->encryptionHeaderRemaining
+                                             ? entry->encryptionHeaderRemaining
+                                             : entry->availableInput;
         if (headerBytesToSkip) {
-            signed char ch=((signed char*)entry->nextInput)[headerBytesToSkip-1];
-            entry->outputBytesRemaining-=headerBytesToSkip;
-            entry->availableInput-=headerBytesToSkip;
-            entry->nextInput+=headerBytesToSkip;
-            entry->encryptionHeaderRemaining-=headerBytesToSkip;
-            if (!entry->encryptionHeaderRemaining && ch != (signed char)entry->passwordCheckByte) return kZipBadPassword;
+            signed char ch = ((signed char*)entry->nextInput)[headerBytesToSkip - 1];
+            entry->outputBytesRemaining -= headerBytesToSkip;
+            entry->availableInput -= headerBytesToSkip;
+            entry->nextInput += headerBytesToSkip;
+            entry->encryptionHeaderRemaining -= headerBytesToSkip;
+            if (!entry->encryptionHeaderRemaining && ch != (signed char)entry->passwordCheckByte)
+                return kZipBadPassword;
         }
         // Phase 3a: stored entry - copy min(input, output space) bytes and update the CRC.
         if (!entry->compressionMethod) {
-            unsigned int count=entry->availableInput < entry->availableOutput ? entry->availableInput : entry->availableOutput;
+            unsigned int count =
+                entry->availableInput < entry->availableOutput ? entry->availableInput : entry->availableOutput;
             if (count) {
                 unsigned int copyIndex;
-                for (copyIndex=0; copyIndex<count; copyIndex++) ((unsigned char*)entry->nextOutput)[copyIndex]=((unsigned char*)entry->nextInput)[copyIndex];
+                for (copyIndex = 0; copyIndex < count; copyIndex++)
+                    ((unsigned char*)entry->nextOutput)[copyIndex] = ((unsigned char*)entry->nextInput)[copyIndex];
             }
-            entry->runningCrc32=Zlib_Crc32(entry->runningCrc32,(void*)entry->nextOutput,count);
-            total+=count;
-            entry->outputBytesRemaining-=count;
-            entry->availableInput-=count;
-            entry->availableOutput-=count;
-            entry->nextOutput+=count;
-            entry->nextInput+=count;
-            entry->totalOutput+=count;
-            if (!entry->outputBytesRemaining && done) *done=1;
+            entry->runningCrc32 = Zlib_Crc32(entry->runningCrc32, (void*)entry->nextOutput, count);
+            total += count;
+            entry->outputBytesRemaining -= count;
+            entry->availableInput -= count;
+            entry->availableOutput -= count;
+            entry->nextOutput += count;
+            entry->nextInput += count;
+            entry->totalOutput += count;
+            if (!entry->outputBytesRemaining && done)
+                *done = 1;
         } else {
             // Phase 3b: deflated entry - inflate; bytes produced = growth of totalOutput.
-            unsigned int previousOutputBytes=entry->totalOutput;
-            unsigned int outputStart=entry->nextOutput;
-            result=Zlib_Inflate(&entry->nextInput,kInflateSyncFlush);
-            unsigned int count=entry->totalOutput-previousOutputBytes;
-            entry->runningCrc32=Zlib_Crc32(entry->runningCrc32,(void*)outputStart,count);
-            total+=count; entry->outputBytesRemaining-=count;
-            if (result==kInflateStreamEnd || !entry->outputBytesRemaining) { if(done)*done=1; return total; }
-            if (result) break;
+            unsigned int previousOutputBytes = entry->totalOutput;
+            unsigned int outputStart = entry->nextOutput;
+            result = Zlib_Inflate(&entry->nextInput, kInflateSyncFlush);
+            unsigned int count = entry->totalOutput - previousOutputBytes;
+            entry->runningCrc32 = Zlib_Crc32(entry->runningCrc32, (void*)outputStart, count);
+            total += count;
+            entry->outputBytesRemaining -= count;
+            if (result == kInflateStreamEnd || !entry->outputBytesRemaining) {
+                if (done)
+                    *done = 1;
+                return total;
+            }
+            if (result)
+                break;
         }
-        if (!entry->availableOutput) break;
+        if (!entry->availableOutput)
+            break;
     }
     return result ? result : total;
 }
@@ -421,11 +467,11 @@ static inline int ReadU8(ZipBufferedStream* s, unsigned char* value) {
     if (pos + 1 > s->bufferSize) {
         n = s->bufferSize - pos;
     }
-    unsigned char b;
-    memcpy(&b, s->buffer + pos, n);
+    unsigned char byteValue;
+    memcpy(&byteValue, s->buffer + pos, n);
     s->position += n;
     if (n == 1) {
-        *value = b;
+        *value = byteValue;
         return 0;
     }
     return -StreamBad(s);
@@ -444,7 +490,8 @@ static inline int ReadU16(ZipBufferedStream* s, unsigned int* out) {
 }
 
 // Validate the local ZIP header against directory metadata and locate its extra field.
-int ArchiveContext_CheckLocalFileHeader(void* mgrArg, unsigned int* outVariableBytes, unsigned int* outExtraFieldOffset, unsigned int* outExtraFieldBytes) {
+int ArchiveContext_CheckLocalFileHeader(void* mgrArg, unsigned int* outVariableBytes, unsigned int* outExtraFieldOffset,
+                                        unsigned int* outExtraFieldBytes) {
     ZipArchiveContext* mgr = (ZipArchiveContext*)mgrArg;
     int status = 0;
     unsigned int magic;
@@ -463,16 +510,20 @@ int ArchiveContext_CheckLocalFileHeader(void* mgrArg, unsigned int* outVariableB
         status = kZipBadArchive;
     }
 
-    if (ReadU16((ZipBufferedStream*)mgr->archiveStream, &local) != 0) status = -1;
-    if (ReadU16((ZipBufferedStream*)mgr->archiveStream, &flags) != 0) status = -1;
+    if (ReadU16((ZipBufferedStream*)mgr->archiveStream, &local) != 0)
+        status = -1;
+    if (ReadU16((ZipBufferedStream*)mgr->archiveStream, &flags) != 0)
+        status = -1;
     if (ReadU16((ZipBufferedStream*)mgr->archiveStream, &local) != 0) {
         status = -1;
     } else if (status == 0 && local != mgr->compressionMethod) {
         status = kZipBadArchive;
     }
-    if (status == 0 && mgr->compressionMethod != kZipStored && mgr->compressionMethod != kZipDeflated) status = kZipBadArchive;
+    if (status == 0 && mgr->compressionMethod != kZipStored && mgr->compressionMethod != kZipDeflated)
+        status = kZipBadArchive;
 
-    if (ZipStream_ReadU32LE((ZipBufferedStream*)mgr->archiveStream, &local) != 0) status = -1;
+    if (ZipStream_ReadU32LE((ZipBufferedStream*)mgr->archiveStream, &local) != 0)
+        status = -1;
     if (ZipStream_ReadU32LE((ZipBufferedStream*)mgr->archiveStream, &local) != 0) {
         status = -1;
     } else if (status == 0 && local != mgr->expectedCrc32 && !(flags & kZipDataDescriptorFlag)) {
@@ -498,7 +549,8 @@ int ArchiveContext_CheckLocalFileHeader(void* mgrArg, unsigned int* outVariableB
     }
     *outVariableBytes = *outVariableBytes + fileNameBytes;
 
-    if (ReadU16((ZipBufferedStream*)mgr->archiveStream, &extraFieldBytes) != 0) status = -1;
+    if (ReadU16((ZipBufferedStream*)mgr->archiveStream, &extraFieldBytes) != 0)
+        status = -1;
 
     *outExtraFieldOffset = fileNameBytes + mgr->localHeaderOffset + kZipLocalHeaderBytes;
     *outExtraFieldBytes = extraFieldBytes;

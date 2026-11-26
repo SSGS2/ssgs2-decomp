@@ -1,47 +1,39 @@
-// Translation unit 0x802D95DC-0x802D9CC4 (13 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Shop model preview: a 3D item model shown in a screen viewport, with optional pointer rotation
+// and fixed camera presets. Updates and draws the asynchronous exhibition it owns.
 
 #include "game/types.h"
+#include "classes/CAsyncExhibition.h"
+#include "classes/CExhibition.h"
+#include "classes/CExhibition_model_pos.h"
 
 extern "C" {
 
-extern int CAsyncExhibition_UpdatePointerRotation(void* p);
-extern int CAsyncExhibition_OffsetRotation(void* p, void* offset);
-extern int CAsyncExhibition_PollReady(void* p);
 extern void __dl__FPv(void* p, int n);
-extern float CExhibition_model_pos_GetCameraDistanceLimit1(void* p, int id);
-extern float CExhibition_model_pos_GetCameraDistanceLimit2(void* p, int id);
-extern float CExhibition_model_pos_GetCameraDistance(void* p, int id);
-extern float CExhibition_model_pos_GetViewportCenterX(void* p, int id);
-extern float CExhibition_model_pos_GetViewportBottom(void* p, int id);
 extern float ExhibitionModelPosition_GetViewportBottomLimit1(void* p, int id);
 extern float ExhibitionModelPosition_GetViewportBottomLimit2(void* p, int id);
-extern float CExhibition_model_pos_GetRotationX(void* p, int id);
-extern float CExhibition_model_pos_GetRotationLimit1(void* p, int id);
-extern float CExhibition_model_pos_GetRotationLimit2(void* p, int id);
-extern float CExhibition_model_pos_GetRotationY(void* p, int id);
-extern void CAsyncExhibition_SetViewport(void* p, void* rect, float v);
-extern void CAsyncExhibition_SetCameraDistanceLimits(void* p, float a, float b);
-extern void CAsyncExhibition_SetRotationLimits(void* p, float a, float b);
-extern void CAsyncExhibition_SetRotation(void* p, void* vec);
-extern void CAsyncExhibition_SetViewportYLimits(void* p, int a, int b);
 extern unsigned long Runtime_ConvertDoubleToUnsigned(double v);
 extern float kFloat_1_ModelOperationCamera;
 extern float kModelOperationPresetRotationZ;
 extern float kFloat_0_5_ExhibitionViewport;
 
-enum { kDefaultPreviewLeft = 300, kDefaultPreviewTop = 100,
-       kDefaultPreviewRight = 400, kDefaultPreviewBottom = 350,
-       kPresetViewportHeight = 250, kInvalidCameraPreset = -1,
-       kPreviewVertexFormat = 0xF005, kTriangleStrip = 0x98 };
+enum {
+    kDefaultPreviewLeft = 300,
+    kDefaultPreviewTop = 100,
+    kDefaultPreviewRight = 400,
+    kDefaultPreviewBottom = 350,
+    kPresetViewportHeight = 250,
+    kInvalidCameraPreset = -1,
+    kPreviewVertexFormat = 0xF005,
+    kTriangleStrip = 0x98
+};
 
 typedef struct ModelOperationState ModelOperationState;
 
 struct ModelOperationState {
-// Model-operation vtable: 0x08 exhibition deletion, 0x0C exhibition update, 0x10 exhibition draw / operation gate.
-    virtual void vfn08(int); // virtual slot 0x08: exhibition deletion
+    // Model-operation vtable: 0x08 exhibition deletion, 0x0C exhibition update, 0x10 exhibition draw / operation gate.
+    virtual void vfn08(int);   // virtual slot 0x08: exhibition deletion
     virtual void vfn0C(float); // virtual slot 0x0C: exhibition update
-    virtual int vfn10(); // virtual slot 0x10: exhibition draw / operation gate
+    virtual int vfn10();       // virtual slot 0x10: exhibition draw / operation gate
     virtual void vfn14(int);
     char reserved04[0x4];
     void* cameraPresets;
@@ -64,7 +56,7 @@ extern int ModelOperationBase_ApplyCameraPreset(ModelOperationState* self, int i
 // Apply pointer-driven rotation when the asynchronous preview exists.
 int ModelOperationBase_UpdatePointerRotation(ModelOperationState* self) {
     if (self->exhibition != 0) {
-        return CAsyncExhibition_UpdatePointerRotation(self->exhibition);
+        return ((CAsyncExhibition*)(self->exhibition))->UpdatePointerRotation();
     }
     return 0;
 }
@@ -72,7 +64,7 @@ int ModelOperationBase_UpdatePointerRotation(ModelOperationState* self) {
 // Offset the current preview rotation by the supplied vector.
 int ModelOperationBase_OffsetRotation(ModelOperationState* self, void* offset) {
     if (self->exhibition != 0) {
-        return CAsyncExhibition_OffsetRotation(self->exhibition, offset);
+        return ((CAsyncExhibition*)self->exhibition)->OffsetRotation((Vec3f*)offset);
     }
     return 0;
 }
@@ -108,7 +100,7 @@ int ModelOperationBase_Update(ModelOperationState* self, float deltaTime) {
     } else {
         if (self->interactiveRotation != 0) {
             if (self->exhibition != 0) {
-                CAsyncExhibition_UpdatePointerRotation(self->exhibition);
+                ((CAsyncExhibition*)(self->exhibition))->UpdatePointerRotation();
             }
         }
         ((ModelOperationState*)self->exhibition)->vfn0C(deltaTime);
@@ -157,7 +149,8 @@ int ModelOperationBase_Draw(ModelOperationState* self) {
 
             Quad q = s_modelOperationOverlayVertices;
             q.v[0].x = (float)rect.x0;
-            q.v[0].y = (float)rect.y0; q.v[1].x = (float)rect.x1;
+            q.v[0].y = (float)rect.y0;
+            q.v[1].x = (float)rect.x1;
             q.v[1].y = (float)rect.y0;
             q.v[2].x = (float)rect.x0;
             q.v[2].y = (float)rect.y1;
@@ -185,15 +178,15 @@ int ModelOperationBase_ApplyCameraPreset(ModelOperationState* self, int presetId
     if (presetId == kInvalidCameraPreset) {
         return 0;
     }
-    float minimumDistance = CExhibition_model_pos_GetCameraDistanceLimit1(self->cameraPresets, presetId);
-    float maximumDistance = CExhibition_model_pos_GetCameraDistanceLimit2(self->cameraPresets, presetId);
-    float minimumRotation = CExhibition_model_pos_GetRotationLimit1(self->cameraPresets, presetId);
-    float maximumRotation = CExhibition_model_pos_GetRotationLimit2(self->cameraPresets, presetId);
-    float rotationX = CExhibition_model_pos_GetRotationX(self->cameraPresets, presetId);
-    float rotationY = CExhibition_model_pos_GetRotationY(self->cameraPresets, presetId);
-    float cameraDistance = CExhibition_model_pos_GetCameraDistance(self->cameraPresets, presetId);
-    float viewportCenterX = CExhibition_model_pos_GetViewportCenterX(self->cameraPresets, presetId);
-    float viewportBottom = CExhibition_model_pos_GetViewportBottom(self->cameraPresets, presetId);
+    float minimumDistance = CExhibition::model_pos_GetCameraDistanceLimit1(self->cameraPresets, presetId);
+    float maximumDistance = CExhibition::model_pos_GetCameraDistanceLimit2(self->cameraPresets, presetId);
+    float minimumRotation = CExhibition::model_pos_GetRotationLimit1(self->cameraPresets, presetId);
+    float maximumRotation = CExhibition::model_pos_GetRotationLimit2(self->cameraPresets, presetId);
+    float rotationX = CExhibition::model_pos_GetRotationX(self->cameraPresets, presetId);
+    float rotationY = CExhibition::model_pos_GetRotationY(self->cameraPresets, presetId);
+    float cameraDistance = CExhibition::model_pos_GetCameraDistance(self->cameraPresets, presetId);
+    float viewportCenterX = CExhibition::model_pos_GetViewportCenterX(self->cameraPresets, presetId);
+    float viewportBottom = CExhibition::model_pos_GetViewportBottom(self->cameraPresets, presetId);
     float maximumViewportBottom = ExhibitionModelPosition_GetViewportBottomLimit2(self->cameraPresets, presetId);
     float minimumViewportBottom = ExhibitionModelPosition_GetViewportBottomLimit1(self->cameraPresets, presetId);
 
@@ -209,13 +202,15 @@ int ModelOperationBase_ApplyCameraPreset(ModelOperationState* self, int presetId
     rotation.y = rotationY;
     rotation.z = kModelOperationPresetRotationZ;
 
-    CAsyncExhibition_SetCameraDistanceLimits(self->exhibition, minimumDistance, maximumDistance);
-    CAsyncExhibition_SetRotationLimits(self->exhibition, minimumRotation, maximumRotation);
-    CAsyncExhibition_SetRotation(self->exhibition, &rotation);
-    CAsyncExhibition_SetViewport(self->exhibition, &viewport, cameraDistance);
+    ((CAsyncExhibition*)(self->exhibition))->SetCameraDistanceLimits(minimumDistance, maximumDistance);
+    ((CAsyncExhibition*)(self->exhibition))->SetRotationLimits(minimumRotation, maximumRotation);
+    ((CAsyncExhibition*)(self->exhibition))->SetRotation(&rotation);
+    ((CAsyncExhibition*)(self->exhibition))->SetViewport(&viewport, cameraDistance);
     maximumViewportBottom -= viewportHeightFloat * kFloat_0_5_ExhibitionViewport;
     minimumViewportBottom -= viewportHeightFloat * kFloat_0_5_ExhibitionViewport;
-    CAsyncExhibition_SetViewportYLimits(self->exhibition, Runtime_ConvertDoubleToUnsigned(minimumViewportBottom), Runtime_ConvertDoubleToUnsigned(maximumViewportBottom));
+    ((CAsyncExhibition*)(self->exhibition))
+        ->SetViewportYLimits(Runtime_ConvertDoubleToUnsigned(minimumViewportBottom),
+                             Runtime_ConvertDoubleToUnsigned(maximumViewportBottom));
     return 1;
 }
 
@@ -223,20 +218,19 @@ int ModelOperationBase_ApplyCameraPreset(ModelOperationState* self, int presetId
 int ShopPreview_PollReady(ModelOperationState* self) {
     int result = 1;
     if (self->exhibition != 0) {
-        if (CAsyncExhibition_PollReady(self->exhibition) == 0) {
+        if (((CAsyncExhibition*)(self->exhibition))->PollReady() == 0) {
             result = 0;
         }
     }
     return result;
 }
 
-// Delete the camera-preset object when called as a deleting destructor.
-ModelOperationState* CExhibition_model_pos_dtor(ModelOperationState* self, int deleting) {
-    if (self != 0 && deleting > 0) {
-        __dl__FPv(self, deleting);
-    }
-    return self;
-}
+} // extern "C"
+
+// Destructor of the camera-preset object. The compiler adds the null check and the delete.
+CExhibition_model_pos::~CExhibition_model_pos() {}
+
+extern "C" {
 
 // Invoke virtual slot 0x10 and forward the argument only when it succeeds.
 int ModelOperationBase_TryApplyArgument(ModelOperationState* self, int arg) {
@@ -257,7 +251,6 @@ int ModelOperationBase_ReleaseExhibition(ModelOperationState* self) {
     }
     return 1;
 }
-
 
 // Guard the local views used by this unit against accidental layout changes.
 #define POLISH_OFFSET(T, F, O) typedef char polish_##T##_##F[((int)&((T*)0)->F == (O)) ? 1 : -1]

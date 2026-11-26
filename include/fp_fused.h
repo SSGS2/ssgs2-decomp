@@ -4,10 +4,10 @@
 #ifndef FP_FUSED_H
 #define FP_FUSED_H
 
-#define FP_FMADDS(a, c, b)       ((a) * (c) + (b))
-#define FP_FMSUBS(a, c, b)       ((a) * (c) - (b))
-#define FP_FNMADDS(a, c, b)      (-((a) * (c) + (b)))
-#define FP_FNMSUBS(a, c, b)      (-((a) * (c) - (b)))
+#define FP_FMADDS(a, c, b) ((a) * (c) + (b))
+#define FP_FMSUBS(a, c, b) ((a) * (c) - (b))
+#define FP_FNMADDS(a, c, b) (-((a) * (c) + (b)))
+#define FP_FNMSUBS(a, c, b) (-((a) * (c) - (b)))
 #define FP_FNMSUBS_SUB_FIRST(b, a, c) ((b) - (a) * (c))
 #define FP_FMADDS_ADD_FIRST(b, a, c) ((b) + (a) * (c))
 #define FP_FMADDS_ACCUM(b, a, c) ((b) += (a) * (c))

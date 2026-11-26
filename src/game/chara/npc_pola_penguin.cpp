@@ -1,3 +1,7 @@
+// Polar penguin creatures: the walking penguin NPC with its animation, wander movement and draw.
+// Also the one-shot disposable creature, its attached spray and sequence effects, and the spline
+// storage that holds its path points.
+
 #include <decomp/offset_of.h>
 #include "MSL/list.h"
 // Containers whose deleting destructors this unit keeps out of line under plain names. The element
@@ -8,10 +12,11 @@ typedef std::list<void*, app::app_allocator<void*> > MSLPointerList;
 #define AsCCreature(p) ((CCreature*)(p))
 #include "classes/CDisposable.h"
 // View the existing storage as CDisposable without transferring ownership.
-static inline CDisposable* AsCDisposable(const volatile void* p) { return (CDisposable*)p; }
+static inline CDisposable* AsCDisposable(const volatile void* p) {
+    return (CDisposable*)p;
+}
 #include "game/wvector.h"
-// Translation unit 0x801A51D0-0x801A6854 (14 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CFx.h"
 
 // Sparse view of the existing byte pool; resource bytes and storage are unchanged.
 struct NpcResourcePool {
@@ -37,7 +42,10 @@ struct CreatureAnimationRange {
     char reserved[0x10];
     void* name;
 };
-struct PenguinShadowView { char prefix[0x11C]; void* bitmap; };
+struct PenguinShadowView {
+    char prefix[0x11C];
+    void* bitmap;
+};
 struct CreatureEffectModel {
     char prefix[0x74];
     unsigned int flags;
@@ -48,19 +56,38 @@ struct CreatureEffectResource {
     char attachmentContext[0x10];
     void* text;
 };
-struct CreatureEffectEvent { CreatureEffectModel* model; CreatureEffectResource* resource; };
+struct CreatureEffectEvent {
+    CreatureEffectModel* model;
+    CreatureEffectResource* resource;
+};
 struct CreatureEffectAttachment {
-    char prefix[8]; void* transform;
-    char reserved[0xC]; void* context;
+    char prefix[8];
+    void* transform;
+    char reserved[0xC];
+    void* context;
 };
 struct CreatureSplineStorage {
-    void* points; float* parameters; float* segmentLengths;
-    float totalLength; int pointCount;
+    void* points;
+    float* parameters;
+    float* segmentLengths;
+    float totalLength;
+    int pointCount;
 };
-enum CreatureVtableLayout { kSecondaryCreatureVtable = 3 * sizeof(void*) };
-enum CreatureFlags { kCreatureDisposable = 1, kCreatureYAxis = 1, kEffectModelDisabled = 0x40000 };
-enum CreatureDrawing { kDebugCircleGreen = 0xFF00FF00, kDebugHeadingYellow = 0xFFFFFF00,
-    kDebugTargetRed = 0xFFFF0000, kDebugCircleSegments = 20, kOpacityOpaque = 255 };
+enum CreatureVtableLayout {
+    kSecondaryCreatureVtable = 3 * sizeof(void*)
+};
+enum CreatureFlags {
+    kCreatureDisposable = 1,
+    kCreatureYAxis = 1,
+    kEffectModelDisabled = 0x40000
+};
+enum CreatureDrawing {
+    kDebugCircleGreen = 0xFF00FF00,
+    kDebugHeadingYellow = 0xFFFFFF00,
+    kDebugTargetRed = 0xFFFF0000,
+    kDebugCircleSegments = 20,
+    kOpacityOpaque = 255
+};
 
 // Keep byte-pointer address expressions where typed array addresses extend register lifetimes.
 // Every address is derived from the checked shared layout instead of a numeric offset.
@@ -72,23 +99,19 @@ enum CreatureMemberAddresses {
     kCreatureForwardAxis = (int)DECOMP_OFFSETOF(CCreature, transform[6]),
     kCreatureTranslation = (int)DECOMP_OFFSETOF(CCreature, transform[9]),
     kCreatureTargetPosition = (int)DECOMP_OFFSETOF(CCreature, targetPosition),
-    kSequenceHandleCount = (int)DECOMP_OFFSETOF(CDisposable, sequenceHandleCount),
-    kSprayHandleCount = (int)DECOMP_OFFSETOF(CDisposable, sprayHandleCount),
 };
 
 extern "C" {
 
 // Report that disposable creatures do not provide the optional capability.
-int CDisposable_vfunc_35() {
+int CDisposable::vfunc_35() {
     return 0;
 }
 
-void CCreature_dtor(void*, int);
+void __dt__9CCreatureFv(void*, int);
 void __dl__FPv(void*);
 void __dla__FPv(void*);
 void appFreeUni__FPv(void*);
-void CFx_RemoveSequence(void*, void*, int);
-void CFx_RemoveSpray(void*, void*);
 extern void* g_fx;
 extern const float kFloat_0_Creature;
 extern const float kFloat_2_805DF2B0;
@@ -114,7 +137,7 @@ char* strchr(const char*, int);
 unsigned int strlen(const char*);
 int String_CompareCString(const char*, const char*);
 void FxAttachment_Init(void*);
-void* CFx_CreateAttachedEffect(void*, void*, void*, int, int, int, void*);
+extern "C" void* CreateAttachedEffect__3CFxFP9Vec2_8010PCcUcii(void*, void*, void*, int, int, int, void*);
 void* appMallocDummy__FUl(unsigned int);
 void* ResourceManager_LoadBitmap(void*, const char*, int, int, int);
 void* WPuppet_FindAnimationRangeByName(void*, const char*);
@@ -157,15 +180,42 @@ struct ConstructorObj {
 };
 
 struct ConstructorVirtual {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3();
-    virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7();
-    virtual void v8(); virtual void v9(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15();
-    virtual void v16(); virtual void v17(); virtual void v18(); virtual void v19();
-    virtual void v20(); virtual void v21(); virtual void v22(); virtual void v23();
-    virtual void v24(); virtual void v25(); virtual void v26(); virtual void v27();
-    virtual void v28(); virtual void v29(); virtual void v30(); virtual void v31();
-    virtual void v32(); virtual void v33(); virtual void v34(); virtual void v35();
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
+    virtual void v26();
+    virtual void v27();
+    virtual void v28();
+    virtual void v29();
+    virtual void v30();
+    virtual void v31();
+    virtual void v32();
+    virtual void v33();
+    virtual void v34();
+    virtual void v35();
     virtual void v36(void*);
 };
 
@@ -197,31 +247,32 @@ void* ntNpc_PolaPenguin2_Ctor(void* self, void* definition) {
     AsCCreature(p)->secondaryVtable = (char*)__vt__18ntNpc_PolaPenguin2 + kSecondaryCreatureVtable;
     AsCCreature(p)->movementSpeed = kFloat_2_805DF2B0;
     try {
-    ((ConstructorVirtual*)self)->v36(definition);
-    (*(char*)&AsCCreature(p)->movementEnabled) = 1;
-    AsCCreature(p)->cellSize = kFloat_48_Creature;
-    ((PenguinShadowView*)p)->bitmap = ResourceManager_LoadBitmap(g_resourceManager, ((const NpcResourcePool*)(char*)npcResourceStrings)->shadowBitmap, 0, 0, 0);
-    void* puppet = (*(void**)&AsCCreature(p)->puppet);
-    const char* name = ((const NpcResourcePool*)(char*)npcResourceStrings)->walkAnimation;
-    if (puppet != 0) {
-        void* currentRange = (*(void**)&AsCCreature(p)->animationRange);
-        if (currentRange == 0 || CString_Compare(((CreatureAnimationRange*)currentRange)->name, name) != 0) {
-            void* requestedRange = WPuppet_FindAnimationRangeByName(puppet, name);
-            if (requestedRange != 0) {
-                (*(void**)&AsCCreature(p)->animationRange) = requestedRange;
-                float timeOffset = kFloat_0_Creature;
-                float rangeStartTime = ((CreatureAnimationRange*)requestedRange)->startTime;
-                float initialTime = rangeStartTime + timeOffset;
-                float rangeEndTime = ((CreatureAnimationRange*)requestedRange)->endTime;
-                AsCCreature(p)->animationTime = initialTime > rangeEndTime ? rangeEndTime : initialTime;
-            } else {
-                AsCCreature(p)->animationTime = kFloat_0_Creature;
+        ((ConstructorVirtual*)self)->v36(definition);
+        (*(char*)&AsCCreature(p)->movementEnabled) = 1;
+        AsCCreature(p)->cellSize = kFloat_48_Creature;
+        ((PenguinShadowView*)p)->bitmap = ResourceManager_LoadBitmap(
+            g_resourceManager, ((const NpcResourcePool*)(char*)npcResourceStrings)->shadowBitmap, 0, 0, 0);
+        void* puppet = (*(void**)&AsCCreature(p)->puppet);
+        const char* name = ((const NpcResourcePool*)(char*)npcResourceStrings)->walkAnimation;
+        if (puppet != 0) {
+            void* currentRange = (*(void**)&AsCCreature(p)->animationRange);
+            if (currentRange == 0 || CString_Compare(((CreatureAnimationRange*)currentRange)->name, name) != 0) {
+                void* requestedRange = WPuppet_FindAnimationRangeByName(puppet, name);
+                if (requestedRange != 0) {
+                    (*(void**)&AsCCreature(p)->animationRange) = requestedRange;
+                    float timeOffset = kFloat_0_Creature;
+                    float rangeStartTime = ((CreatureAnimationRange*)requestedRange)->startTime;
+                    float initialTime = rangeStartTime + timeOffset;
+                    float rangeEndTime = ((CreatureAnimationRange*)requestedRange)->endTime;
+                    AsCCreature(p)->animationTime = initialTime > rangeEndTime ? rangeEndTime : initialTime;
+                } else {
+                    AsCCreature(p)->animationTime = kFloat_0_Creature;
+                }
             }
         }
-    }
-    return self;
+        return self;
     } catch (...) {
-        CCreature_dtor(self, -1);
+        __dt__9CCreatureFv(self, -1);
         throw;
     }
 }
@@ -230,8 +281,11 @@ void* ntNpc_PolaPenguin2_Ctor(void* self, void* definition) {
 // Requires at least two targetPoints. The ball-relative candidate is computed first,
 // but the final translation is the terrain projection of targetPoints[0].
 // transform holds right/up/forward axes followed by world translation (floats 9..11).
-void CDisposable_InitAtPathStart(void* self) {
-    union RotationBuffer { double alignment; float matrix[12]; } rotation;
+void CDisposable::InitAtPathStart() {
+    union RotationBuffer {
+        double alignment;
+        float matrix[12];
+    } rotation;
     char forwardDirection[0x0C];
     char pathDifference[0x0C];
     char worldUp[0x0C];
@@ -241,7 +295,7 @@ void CDisposable_InitAtPathStart(void* self) {
     char reverseForward[0x0C];
     char ballOffset[0x0C];
     char spawnCandidate[0x0C];
-    char* p = (char*)self;
+    char* p = (char*)this;
     char spawnCoordinates[0x0C];
     char spawnGroundPoint[0x0C];
     float zeroAnimationTime = kFloat_0_Creature;
@@ -266,7 +320,8 @@ void CDisposable_InitAtPathStart(void* self) {
     GetGroundPoint__9CQuadTreeF7WVectorbPib(spawnGroundPoint, terrain, spawnCoordinates, 0, 0, 1);
     __as__7WVectorFRC7WVector((p + kCreatureTranslation), spawnGroundPoint);
     // Rebuild orientation from the first path segment in world XZ, then place at its start.
-    __mi__FRC7WVectorRC7WVector(pathDifference, (*(void**)&AsCCreature(p)->targetPoints), ((WVector*)AsCCreature(p)->targetPoints) + 1);
+    __mi__FRC7WVectorRC7WVector(pathDifference, (*(void**)&AsCCreature(p)->targetPoints),
+                                ((WVector*)AsCCreature(p)->targetPoints) + 1);
     __ml__FfRC7WVector(forwardDirection, pathDifference, kFloat_neg1_CreatureDirection);
     __as__7WVectorFRC7WVector((p + kCreatureForwardAxis), forwardDirection);
     AsCCreature(p)->transform[7] = kFloat_0_Creature;
@@ -292,21 +347,56 @@ void CDisposable_InitAtPathStart(void* self) {
 
 // Handle lists have an embedded sentinel after count; real nodes add a handle at +8.
 // Empty next/prev point to the sentinel. Nodes are owned here; effect lifetimes belong
-// to g_fx and require CFx_RemoveSequence/CFx_RemoveSpray before node-only destruction.
-struct ListNode { ListNode* next; ListNode* prev; };
-struct EffectHandleNode { ListNode links; void* handle; };
-struct EffectHandleList { int count; ListNode sentinel; };
+// to g_fx and require CFx::RemoveSequence/CFx::RemoveSpray before node-only destruction.
+struct ListNode {
+    ListNode* next;
+    ListNode* prev;
+};
+struct EffectHandleNode {
+    ListNode links;
+    void* handle;
+};
+struct EffectHandleList {
+    int count;
+    ListNode sentinel;
+};
 
 struct UpdateVirtual {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3();
-    virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7();
-    virtual void v8(); virtual void v9(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15();
-    virtual void v16(); virtual void v17(); virtual void v18(); virtual void v19();
-    virtual void v20(); virtual void v21(); virtual void v22(); virtual void v23();
-    virtual void v24(); virtual void v25(); virtual void v26(); virtual void v27();
-    virtual void v28(); virtual void v29(); virtual void v30(); virtual void v31();
-    virtual void v32(); virtual void v33(); virtual void update(float);
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
+    virtual void v26();
+    virtual void v27();
+    virtual void v28();
+    virtual void v29();
+    virtual void v30();
+    virtual void v31();
+    virtual void v32();
+    virtual void v33();
+    virtual void update(float);
 };
 
 // Advance animation events, choose the default/walk range, and apply completed root motion.
@@ -330,12 +420,15 @@ void ntNpc_PolaPenguin2_UpdateAnimationAndMovement(void* self, float dt) {
     // Range selection retains an already-selected range/time; a missing range only zeros time.
     // Phase 1: advance the range cursor and dispatch events over the elapsed interval.
     void* puppet = (*(void**)&AsCCreature(p)->puppet);
-    if (puppet == 0 || AsCCreature(p)->animationActive == 0) return;
+    if (puppet == 0 || AsCCreature(p)->animationActive == 0)
+        return;
     float time = AsCCreature(p)->animationTime + dt;
     AsCCreature(p)->animationTime = time;
-    if (time < kFloat_0_Creature) return;
+    if (time < kFloat_0_Creature)
+        return;
     {
-        AnimationEventParser_ProcessFrameRange(((char*)&AsCCreature(p)->secondaryVtable), puppet, time - dt, time, (*(void**)&AsCCreature(p)->animationRange), -1, 0);
+        AnimationEventParser_ProcessFrameRange(((char*)&AsCCreature(p)->secondaryVtable), puppet, time - dt, time,
+                                               (*(void**)&AsCCreature(p)->animationRange), -1, 0);
         void* animation = (*(void**)&AsCCreature(p)->animationRange);
         float end = ((CreatureAnimationRange*)animation)->endTime;
         float current = AsCCreature(p)->animationTime;
@@ -349,7 +442,8 @@ void ntNpc_PolaPenguin2_UpdateAnimationAndMovement(void* self, float dt) {
                 do {
                     AsCCreature(p)->animationTime = current - (end - ((CreatureAnimationRange*)animation)->startTime);
                     if (AsCCreature(p)->movementEnabled == 1) {
-                        __mi__FRC7WVectorRC7WVector(targetDirection, (p + kCreatureTargetPosition), (p + kCreatureTranslation));
+                        __mi__FRC7WVectorRC7WVector(targetDirection, (p + kCreatureTargetPosition),
+                                                    (p + kCreatureTranslation));
                         float angle = Vector_SignedAngleXZ(targetDirection, (p + kCreatureForwardAxis));
                         angle = angle > kFloat_0_Creature ? angle : -angle;
                         unsigned int canUseDefaultRange;
@@ -357,13 +451,18 @@ void ntNpc_PolaPenguin2_UpdateAnimationAndMovement(void* self, float dt) {
                             canUseDefaultRange = 0;
                         } else {
                             const char* base = npcResourceStrings;
-                            void* defaultRange = WPuppet_FindAnimationRangeByName((*(void**)&AsCCreature(p)->puppet), ((const NpcResourcePool*)base)->defaultAnimation);
+                            void* defaultRange = WPuppet_FindAnimationRangeByName(
+                                (*(void**)&AsCCreature(p)->puppet), ((const NpcResourcePool*)base)->defaultAnimation);
                             if (defaultRange == 0) {
                                 canUseDefaultRange = 0;
                             } else {
-                                __mi__FRC7WVectorRC7WVector(targetDelta, (p + kCreatureTargetPosition), (p + kCreatureTranslation));
+                                __mi__FRC7WVectorRC7WVector(targetDelta, (p + kCreatureTargetPosition),
+                                                            (p + kCreatureTranslation));
                                 float distance = WVectorLen__FRC7WVector(targetDelta);
-                                WPuppet_GetInverseRootMotionOffsetForRange(defaultRangeMotion, (*(void**)&AsCCreature(p)->puppet), ((CreatureAnimationRange*)defaultRange)->endTime, (void*)(((const NpcResourcePool*)base)->defaultAnimation));
+                                WPuppet_GetInverseRootMotionOffsetForRange(
+                                    defaultRangeMotion, (*(void**)&AsCCreature(p)->puppet),
+                                    ((CreatureAnimationRange*)defaultRange)->endTime,
+                                    (void*)(((const NpcResourcePool*)base)->defaultAnimation));
                                 __as__7WVectorFRC7WVector(defaultRangeStep, defaultRangeMotion);
                                 canUseDefaultRange = !(distance < Magnitude__7WVectorCFv(defaultRangeStep));
                             }
@@ -373,7 +472,8 @@ void ntNpc_PolaPenguin2_UpdateAnimationAndMovement(void* self, float dt) {
                             const char* name = ((const NpcResourcePool*)npcResourceStrings)->defaultAnimation;
                             if (puppetForRange != 0) {
                                 void* currentRange = (*(void**)&AsCCreature(p)->animationRange);
-                                if (currentRange == 0 || CString_Compare(((CreatureAnimationRange*)currentRange)->name, name) != 0) {
+                                if (currentRange == 0 ||
+                                    CString_Compare(((CreatureAnimationRange*)currentRange)->name, name) != 0) {
                                     void* nextRange = WPuppet_FindAnimationRangeByName(puppetForRange, name);
                                     if (nextRange != 0) {
                                         (*(void**)&AsCCreature(p)->animationRange) = nextRange;
@@ -394,7 +494,12 @@ void ntNpc_PolaPenguin2_UpdateAnimationAndMovement(void* self, float dt) {
                     {
                         void* completedRange = (*(void**)&AsCCreature(p)->animationRange);
                         // Convert completed local root motion to world space before terrain projection.
-                        WPuppet_GetRootMotionDelta(rangeMotion, kCreatureAnimationFramesPerSecond * ((CreatureAnimationRange*)completedRange)->endTime, (*(void**)&AsCCreature(p)->puppet), kCreatureAnimationFramesPerSecond * ((CreatureAnimationRange*)completedRange)->startTime, ((CreatureAnimationRange*)completedRange)->name);
+                        WPuppet_GetRootMotionDelta(
+                            rangeMotion,
+                            kCreatureAnimationFramesPerSecond * ((CreatureAnimationRange*)completedRange)->endTime,
+                            (*(void**)&AsCCreature(p)->puppet),
+                            kCreatureAnimationFramesPerSecond * ((CreatureAnimationRange*)completedRange)->startTime,
+                            ((CreatureAnimationRange*)completedRange)->name);
                         __as__7WVectorFRC7WVector(motionDelta, rangeMotion);
                         Matrix_TransformDirection(worldMotion, motionDelta, (p + kCreatureTransform));
                         __as__7WVectorFRC7WVector(motionDelta, worldMotion);
@@ -407,7 +512,8 @@ void ntNpc_PolaPenguin2_UpdateAnimationAndMovement(void* self, float dt) {
                         const char* name = ((const NpcResourcePool*)npcResourceStrings)->walkAnimation;
                         if (puppetForRange != 0) {
                             void* currentRange = (*(void**)&AsCCreature(p)->animationRange);
-                            if (currentRange == 0 || CString_Compare(((CreatureAnimationRange*)currentRange)->name, name) != 0) {
+                            if (currentRange == 0 ||
+                                CString_Compare(((CreatureAnimationRange*)currentRange)->name, name) != 0) {
                                 void* nextRange = WPuppet_FindAnimationRangeByName(puppetForRange, name);
                                 if (nextRange != 0) {
                                     (*(void**)&AsCCreature(p)->animationRange) = nextRange;
@@ -432,25 +538,55 @@ void ntNpc_PolaPenguin2_UpdateAnimationAndMovement(void* self, float dt) {
 }
 
 struct CreatureVirtual {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virtual void v4();
-    virtual void v5(); virtual void v6(); virtual void v7(); virtual void v8(); virtual void v9();
-    virtual void v10(); virtual void v11(); virtual void v12(); virtual void v13(); virtual void v14();
-    virtual void v15(); virtual void v16(); virtual void v17(); virtual void v18(); virtual void v19();
-    virtual void v20(); virtual void v21(); virtual void v22(); virtual void v23(); virtual void v24();
-    virtual void v25(); virtual void v26(); virtual void v27(); virtual void v28(); virtual void v29();
-    virtual void v30(); virtual void v31(); virtual void v32(); virtual void v33(); virtual void v34();
-    virtual void v35(); virtual void v36(void*); virtual void v37();
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
+    virtual void v26();
+    virtual void v27();
+    virtual void v28();
+    virtual void v29();
+    virtual void v30();
+    virtual void v31();
+    virtual void v32();
+    virtual void v33();
+    virtual void v34();
+    virtual void v35();
+    virtual void v36(void*);
+    virtual void v37();
 };
 
 #pragma use_lmw_stmw on
 #pragma opt_common_subs off
 // Initialize a one-shot creature and its owned spray/sequence handle lists, then parse its definition.
-void* CDisposable_Ctor(void* self, void* definition) {
+CDisposable::CDisposable(void* definition) {
     unsigned long head;
     void* tail;
     ListNode* end;
     ListNode* node;
-    char* p = (char*)self;
+    char* p = (char*)this;
     int zero = 0;
     AsCCreature(p)->flags = zero;
     *(void**)p = __vt__9CCreature;
@@ -510,9 +646,8 @@ void* CDisposable_Ctor(void* self, void* definition) {
         }
     }
     AsCCreature(p)->flags |= kCreatureDisposable;
-    ((CreatureVirtual*)self)->v36(definition);
+    ((CreatureVirtual*)this)->v36(definition);
     WPuppet_SetRendererOption(AsCDisposable(p)->puppet, 0);
-    return self;
 }
 #pragma use_lmw_stmw reset
 #pragma opt_common_subs reset
@@ -520,26 +655,36 @@ void* CDisposable_Ctor(void* self, void* definition) {
 struct GuardFlag {
     char flag;
     // Initialize the effect-handle construction flag to its uncommitted state.
-    GuardFlag(): flag(0) {}
+    GuardFlag() : flag(0) {}
 };
 struct GuardAlloc {
-    ListNode* allocation; ListNode* copy;
+    ListNode* allocation;
+    ListNode* copy;
     // Preserve the empty cleanup hook used by this expanded allocation path.
     ~GuardAlloc() {}
 };
 struct GuardTail {
-    ListNode* head; ListNode* n;
+    ListNode* head;
+    ListNode* n;
     // Initialize an uncommitted node-allocation guard.
     GuardTail() : n(0) {}
     // Free a node allocation that was not committed to its list.
-    ~GuardTail() { if (n) appFreeUni__FPv(n); }
+    ~GuardTail() {
+        if (n)
+            appFreeUni__FPv(n);
+    }
 };
 
 // Store an effect handle in its node, releasing the allocation if initialization throws.
 static inline void storeHandle(ListNode* node, void* handle) {
     void** p = &((EffectHandleNode*)node)->handle;
     if (p) {
-        try { *p = handle; } catch (...) { appFreeUni__FPv(node); throw; }
+        try {
+            *p = handle;
+        } catch (...) {
+            appFreeUni__FPv(node);
+            throw;
+        }
     }
 }
 
@@ -548,7 +693,7 @@ static inline void storeHandle(ListNode* node, void* handle) {
 // Parse an animation effect event, create its spray or sequence, and retain the effect handle.
 // A non-null event must supply resource/text with the expected directive/scan fields.
 // Parsing is unchecked: the existing fixed buffers and sscanf format are a caller contract.
-void CDisposable_CreateAndStoreAttachedEffect(void* self, void* event) {
+void CDisposable::CreateAndStoreAttachedEffect(void* event) {
     char* extension;
     char* resourceStrings;
     int defaultArgument;
@@ -561,44 +706,68 @@ void CDisposable_CreateAndStoreAttachedEffect(void* self, void* event) {
         char local[0x30];
     } scratch;
     char effectToken[8];
-    if (event == 0) return;
+    if (event == 0)
+        return;
     eventText = ((CreatureEffectEvent*)event)->resource->text;
-    if (eventText == 0) return;
+    if (eventText == 0)
+        return;
     resourceStrings = (char*)npcResourceStrings;
     defaultArgument = 0;
-    sscanf(strstr((char*)eventText, ((const NpcResourcePool*)resourceStrings)->effectDirective), ((const NpcResourcePool*)resourceStrings)->effectScanFormat, effectToken, scratch.filename, scratch.extra);
+    sscanf(strstr((char*)eventText, ((const NpcResourcePool*)resourceStrings)->effectDirective),
+           ((const NpcResourcePool*)resourceStrings)->effectScanFormat, effectToken, scratch.filename, scratch.extra);
     model = *(void**)event;
-    if (model == 0) return;
-    if (((CreatureEffectModel*)model)->flags & kEffectModelDisabled) return;
+    if (model == 0)
+        return;
+    if (((CreatureEffectModel*)model)->flags & kEffectModelDisabled)
+        return;
     extension = strchr(scratch.filename, '.');
-    if (extension == 0) return;
-    if (strlen(extension) < 4) return;
-    if (String_CompareCString(extension + 1, ((const NpcResourcePool*)resourceStrings)->sprayExtension) != defaultArgument && String_CompareCString(extension + 1, ((const NpcResourcePool*)resourceStrings)->sequenceExtension) != defaultArgument) return;
+    if (extension == 0)
+        return;
+    if (strlen(extension) < 4)
+        return;
+    if (String_CompareCString(extension + 1, ((const NpcResourcePool*)resourceStrings)->sprayExtension) !=
+            defaultArgument &&
+        String_CompareCString(extension + 1, ((const NpcResourcePool*)resourceStrings)->sequenceExtension) !=
+            defaultArgument)
+        return;
     // The attachment borrows model transform/resource context; retain only the returned handle.
     FxAttachment_Init(scratch.local);
     ((CreatureEffectAttachment*)scratch.local)->transform = ((CreatureEffectEvent*)event)->model->attachmentTransform;
     ((CreatureEffectAttachment*)scratch.local)->context = ((CreatureEffectEvent*)event)->resource->attachmentContext;
-    handle = CFx_CreateAttachedEffect(g_fx, scratch.local, scratch.filename, defaultArgument, 0, defaultArgument, ((CreatureEffectEvent*)event)->resource);
-    if (String_CompareCString(extension + 1, ((const NpcResourcePool*)(char*)npcResourceStrings)->sprayExtension) == defaultArgument) {
-        GuardFlag gf; GuardTail gt; GuardAlloc ga;
-        ListNode* sentinel = (ListNode*)(((char*)&AsCDisposable(self)->sprayHandleNext));
+    handle = CreateAttachedEffect__3CFxFP9Vec2_8010PCcUcii(g_fx, scratch.local, scratch.filename, defaultArgument, 0,
+                                                           defaultArgument, ((CreatureEffectEvent*)event)->resource);
+    if (String_CompareCString(extension + 1, ((const NpcResourcePool*)(char*)npcResourceStrings)->sprayExtension) ==
+        defaultArgument) {
+        GuardFlag gf;
+        GuardTail gt;
+        GuardAlloc ga;
+        ListNode* sentinel = (ListNode*)(((char*)&sprayHandleNext));
         ListNode* node = (ListNode*)appMallocDummy__FUl(0xc);
-        ga.allocation = node; ga.copy = node; gt.head = sentinel; gt.n = node;
+        ga.allocation = node;
+        ga.copy = node;
+        gt.head = sentinel;
+        gt.n = node;
         storeHandle(node, handle);
         ListNode* first = sentinel->next;
         first->prev = node;
         node->next = sentinel->next;
         sentinel->next = node;
         node->prev = sentinel;
-        ++AsCDisposable(self)->sprayHandleCount;
+        ++sprayHandleCount;
         gt.n = 0;
         return;
     }
-    if (String_CompareCString(extension + 1, ((const NpcResourcePool*)(char*)npcResourceStrings)->sequenceExtension) == defaultArgument) {
-        GuardFlag gf; GuardTail gt; GuardAlloc ga;
-        ListNode* sentinel = (ListNode*)(((char*)&AsCDisposable(self)->sequenceHandleNext));
+    if (String_CompareCString(extension + 1, ((const NpcResourcePool*)(char*)npcResourceStrings)->sequenceExtension) ==
+        defaultArgument) {
+        GuardFlag gf;
+        GuardTail gt;
+        GuardAlloc ga;
+        ListNode* sentinel = (ListNode*)(((char*)&sequenceHandleNext));
         ListNode* node = (ListNode*)appMallocDummy__FUl(0xc);
-        ga.allocation = node; ga.copy = node; gt.head = sentinel; gt.n = node;
+        ga.allocation = node;
+        ga.copy = node;
+        gt.head = sentinel;
+        gt.n = node;
         storeHandle(node, handle);
         gt.n = 0;
         ListNode* first = sentinel->next;
@@ -606,7 +775,7 @@ void CDisposable_CreateAndStoreAttachedEffect(void* self, void* event) {
         node->next = sentinel->next;
         sentinel->next = node;
         node->prev = sentinel;
-        ++AsCDisposable(self)->sequenceHandleCount;
+        ++sequenceHandleCount;
     }
 }
 #pragma opt_propagation reset
@@ -641,7 +810,7 @@ void* dtor_801A5FB0(MSLPointerList* self, int deleting) {
 #pragma opt_common_subs off
 // Set animation enablement; disabling removes and frees attached sequences and sprays.
 // Only the low byte of enable is stored/tested. Removing effects precedes freeing list nodes.
-void CDisposable_SetAnimationEnabled(void* ptr, int enable) {
+void CDisposable::SetAnimationEnabled(void* ptr, int enable) {
     ListNode* end;
     ListNode* node;
     char* p = (char*)ptr;
@@ -650,7 +819,7 @@ void CDisposable_SetAnimationEnabled(void* ptr, int enable) {
         node = ((ListNode*)AsCDisposable(p)->sequenceHandlePrevious);
         end = (ListNode*)(((char*)&AsCDisposable(p)->sequenceHandleNext));
         while (node != end) {
-            CFx_RemoveSequence(g_fx, ((EffectHandleNode*)node)->handle, 0);
+            ((CFx*)g_fx)->RemoveSequence((unsigned int)(((EffectHandleNode*)node)->handle), 0);
             node = node->prev;
         }
         node = ((ListNode*)AsCDisposable(p)->sequenceHandlePrevious);
@@ -670,7 +839,7 @@ void CDisposable_SetAnimationEnabled(void* ptr, int enable) {
         node = ((ListNode*)AsCDisposable(p)->sprayHandlePrevious);
         end = (ListNode*)(((char*)&AsCDisposable(p)->sprayHandleNext));
         while (node != end) {
-            CFx_RemoveSpray(g_fx, ((EffectHandleNode*)node)->handle);
+            ((CFx*)g_fx)->RemoveSpray((unsigned int)(((EffectHandleNode*)node)->handle));
             node = node->prev;
         }
         node = ((ListNode*)AsCDisposable(p)->sprayHandlePrevious);
@@ -691,120 +860,146 @@ void CDisposable_SetAnimationEnabled(void* ptr, int enable) {
 #pragma opt_common_subs reset
 
 #pragma opt_common_subs off
-// Remove owned effects, free both handle lists, destroy the creature base, and optionally delete.
-void* CDisposable_Dtor(void* ptr, int deleting) {
-    // Phase 1: remove live FX handles before releasing their owned list nodes.
+// Remove owned effects, free both handle lists, and destroy the creature base.
+// The compiler adds the null check and the delete when this is a deleting call.
+CDisposable::~CDisposable() {
+    // Remove live FX handles before releasing their owned list nodes.
     ListNode* end;
     ListNode* node;
-    if (ptr) {
-        char* p = (char*)ptr;
-        node = ((ListNode*)AsCDisposable(p)->sequenceHandlePrevious);
-        end = (ListNode*)(((char*)&AsCDisposable(p)->sequenceHandleNext));
-        *(void**)p = __vt__11CDisposable;
-        AsCDisposable(p)->secondaryVtable = (char*)__vt__11CDisposable + kSecondaryCreatureVtable;
-        while (node != end) {
-            CFx_RemoveSequence(g_fx, ((EffectHandleNode*)node)->handle, 0);
-            node = node->prev;
-        }
-        node = ((ListNode*)AsCDisposable(p)->sequenceHandlePrevious);
-        end = (ListNode*)(((char*)&AsCDisposable(p)->sequenceHandleNext));
-        if (node != end) {
-            ListNode* first = *(ListNode**)end;
-            node->next->prev = first->prev;
-            first->prev->next = node->next;
-            while (node != end) {
-                ListNode* old = node;
-                node = node->prev;
-                appFreeUni__FPv(old);
-                --AsCDisposable(p)->sequenceHandleCount;
-            }
-        }
-        end = (ListNode*)(((char*)&AsCDisposable(p)->sprayHandleNext));
-        node = ((ListNode*)AsCDisposable(p)->sprayHandlePrevious);
-        while (node != end) {
-            CFx_RemoveSpray(g_fx, ((EffectHandleNode*)node)->handle);
-            node = node->prev;
-        }
-        node = ((ListNode*)AsCDisposable(p)->sprayHandlePrevious);
-        end = (ListNode*)(((char*)&AsCDisposable(p)->sprayHandleNext));
-        if (node != end) {
-            ListNode* first = *(ListNode**)end;
-            node->next->prev = first->prev;
-            first->prev->next = node->next;
-            while (node != end) {
-                ListNode* old = node;
-                node = node->prev;
-                appFreeUni__FPv(old);
-                --AsCDisposable(p)->sprayHandleCount;
-            }
-        }
-        // Phase 2: member cleanup frees nodes only. Address tests are ABI scaffolding,
-        // not ownership/count tests; retain their evaluation order for identical code.
-        if (((((char*)&AsCDisposable(p)->sprayHandleCount)) &&
-             (((char*)&AsCDisposable(p)->sprayHandleCount))) &&
-            ((((char*)&AsCDisposable(p)->sprayHandleCount)) &&
-             (((char*)&AsCDisposable(p)->sprayHandleCount)))) {
-            end = (ListNode*)(((char*)&AsCDisposable(p)->sprayHandleNext));
-            node = ((ListNode*)AsCDisposable(p)->sprayHandlePrevious);
-            if (node != end) {
-                ListNode* first = *(ListNode**)end;
-                node->next->prev = first->prev;
-                first->prev->next = node->next;
-                while (node != end) {
-                    ListNode* old = node;
-                    node = node->prev;
-                    appFreeUni__FPv(old);
-                    --*(int*)(p + kSprayHandleCount);
-                }
-            }
-        }
-
-        if (((((char*)&AsCDisposable(p)->sequenceHandleCount)) &&
-             (((char*)&AsCDisposable(p)->sequenceHandleCount))) &&
-            ((((char*)&AsCDisposable(p)->sequenceHandleCount)) &&
-             (((char*)&AsCDisposable(p)->sequenceHandleCount)))) {
-            end = (ListNode*)(((char*)&AsCDisposable(p)->sequenceHandleNext));
-            node = ((ListNode*)AsCDisposable(p)->sequenceHandlePrevious);
-            if (node != end) {
-                ListNode* first = *(ListNode**)end;
-                node->next->prev = first->prev;
-                first->prev->next = node->next;
-                while (node != end) {
-                    ListNode* old = node;
-                    node = node->prev;
-                    appFreeUni__FPv(old);
-                    --*(int*)(p + kSequenceHandleCount);
-                }
-            }
-        }
-
-        CCreature_dtor(ptr, 0);
-        if (deleting > 0) __dl__FPv(ptr);
+    node = (ListNode*)sequenceHandlePrevious;
+    end = (ListNode*)&sequenceHandleNext;
+    *(void**)this = __vt__11CDisposable;
+    secondaryVtable = (char*)__vt__11CDisposable + kSecondaryCreatureVtable;
+    while (node != end) {
+        ((CFx*)g_fx)->RemoveSequence((unsigned int)(((EffectHandleNode*)node)->handle), 0);
+        node = node->prev;
     }
-    return ptr;
+    node = (ListNode*)sequenceHandlePrevious;
+    end = (ListNode*)&sequenceHandleNext;
+    if (node != end) {
+        ListNode* first = *(ListNode**)end;
+        node->next->prev = first->prev;
+        first->prev->next = node->next;
+        while (node != end) {
+            ListNode* old = node;
+            node = node->prev;
+            appFreeUni__FPv(old);
+            --sequenceHandleCount;
+        }
+    }
+    end = (ListNode*)&sprayHandleNext;
+    node = (ListNode*)sprayHandlePrevious;
+    while (node != end) {
+        ((CFx*)g_fx)->RemoveSpray((unsigned int)(((EffectHandleNode*)node)->handle));
+        node = node->prev;
+    }
+    node = (ListNode*)sprayHandlePrevious;
+    end = (ListNode*)&sprayHandleNext;
+    if (node != end) {
+        ListNode* first = *(ListNode**)end;
+        node->next->prev = first->prev;
+        first->prev->next = node->next;
+        while (node != end) {
+            ListNode* old = node;
+            node = node->prev;
+            appFreeUni__FPv(old);
+            --sprayHandleCount;
+        }
+    }
+    // The handle lists are cleared again on destruction; the original repeats
+    // the member address test before each clear.
+    if (((((char*)&sprayHandleCount)) && (((char*)&sprayHandleCount))) &&
+        ((((char*)&sprayHandleCount)) && (((char*)&sprayHandleCount)))) {
+        end = (ListNode*)&sprayHandleNext;
+        node = (ListNode*)sprayHandlePrevious;
+        if (node != end) {
+            ListNode* first = *(ListNode**)end;
+            node->next->prev = first->prev;
+            first->prev->next = node->next;
+            while (node != end) {
+                ListNode* old = node;
+                node = node->prev;
+                appFreeUni__FPv(old);
+                --sprayHandleCount;
+            }
+        }
+    }
+
+    if (((((char*)&sequenceHandleCount)) && (((char*)&sequenceHandleCount))) &&
+        ((((char*)&sequenceHandleCount)) && (((char*)&sequenceHandleCount)))) {
+        end = (ListNode*)&sequenceHandleNext;
+        node = (ListNode*)sequenceHandlePrevious;
+        if (node != end) {
+            ListNode* first = *(ListNode**)end;
+            node->next->prev = first->prev;
+            first->prev->next = node->next;
+            while (node != end) {
+                ListNode* old = node;
+                node = node->prev;
+                appFreeUni__FPv(old);
+                --sequenceHandleCount;
+            }
+        }
+    }
+
+    __dt__9CCreatureFv(this, 0);
 }
 #pragma opt_common_subs reset
 
-void WPuppet_SetOpacityRecursive(void*, unsigned char); void WView_DrawFacingCircleVec4(void*,void*,int,int,int);
-void WView_DrawLine(void*,void*,int,void*,int,int); void WPuppet_GetInverseRootMotionOffsetForRange(void*,void*,float,void*);
-void Matrix_TransformDirection(void*,void*,void*); void __ami__7WVectorFRC7WVector(void*,void*); void WPuppet_SetAnimationTimeFromRanges(void*,int,float,int,int);
-void Model_SetMatrixRecursive(void*,void*,void*); void WPuppet_UpdateBoneWorldMatrices(void*,void*,int,float); void WPuppet_UpdateBoundsFromBone(void*);
-void __apl__7WVectorFRC7WVector(void*,void*);
+void WPuppet_SetOpacityRecursive(void*, unsigned char);
+void WView_DrawFacingCircleVec4(void*, void*, int, int, int);
+void WView_DrawLine(void*, void*, int, void*, int, int);
+void WPuppet_GetInverseRootMotionOffsetForRange(void*, void*, float, void*);
+void Matrix_TransformDirection(void*, void*, void*);
+void __ami__7WVectorFRC7WVector(void*, void*);
+void WPuppet_SetAnimationTimeFromRanges(void*, int, float, int, int);
+void Model_SetMatrixRecursive(void*, void*, void*);
+void WPuppet_UpdateBoneWorldMatrices(void*, void*, int, float);
+void WPuppet_UpdateBoundsFromBone(void*);
+void __apl__7WVectorFRC7WVector(void*, void*);
 extern char s_sceneLighting[];
 // ABI view: declarations start at byte +0x08 after RTTI/null words.
 // Legacy labels v5/v6 are slots +0x14/+0x18, while v40 is +0xA0.
 // They are used on puppet/creature objects respectively; not one semantic class.
 struct PolaVirtual {
-    virtual void v0(); virtual void v1(); virtual void v2();
-    virtual void v5(const char*, int, int); // Likely role: lightingHookSlot14 (base WPuppet hook is empty).
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v5(const char*, int, int);            // Likely role: lightingHookSlot14 (base WPuppet hook is empty).
     virtual void v6(void*, int, int, int, float, int); // Likely role: renderWithCamera; byte slot +0x18.
-    virtual void v7(); virtual void v8(); virtual void v9(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15(); virtual void v16();
-    virtual void v17(); virtual void v18(); virtual void v19(); virtual void v20(); virtual void v21();
-    virtual void v22(); virtual void v23(); virtual void v24(); virtual void v25(); virtual void v26();
-    virtual void v27(); virtual void v28(); virtual void v29(); virtual void v30(); virtual void v31();
-    virtual void v32(); virtual void v33(); virtual void v34(); virtual void v35(); virtual void v36();
-    virtual void v37(); virtual void v38(); virtual void v39();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
+    virtual void v26();
+    virtual void v27();
+    virtual void v28();
+    virtual void v29();
+    virtual void v30();
+    virtual void v31();
+    virtual void v32();
+    virtual void v33();
+    virtual void v34();
+    virtual void v35();
+    virtual void v36();
+    virtual void v37();
+    virtual void v38();
+    virtual void v39();
     virtual int v40(void*, float);
     // Likely role: isOutsideCameraFacingThreshold; byte slot +0xA0.
 };
@@ -812,33 +1007,48 @@ struct PolaVirtual {
 void ntNpc_PolaPenguin2_Draw(void* self) {
     WVector rootMotion, worldRootMotion;
     char* p = (char*)self;
-    if ((*(void**)&AsCCreature(p)->puppet) == 0) return;
-    if (!AsCCreature(p)->animationActive) return;
-    if (AsCCreature(p)->animationTime < kFloat_0_Creature) return;
-    if ((*(unsigned int*)&AsCCreature(p)->flags) & 1) WPuppet_SetOpacityRecursive((*(void**)&AsCCreature(p)->puppet), AsCCreature(p)->opacity);
-    extern int g_drawSceneDebugGeometry; extern void* g_view;
+    if ((*(void**)&AsCCreature(p)->puppet) == 0)
+        return;
+    if (!AsCCreature(p)->animationActive)
+        return;
+    if (AsCCreature(p)->animationTime < kFloat_0_Creature)
+        return;
+    if ((*(unsigned int*)&AsCCreature(p)->flags) & 1)
+        WPuppet_SetOpacityRecursive((*(void**)&AsCCreature(p)->puppet), AsCCreature(p)->opacity);
+    extern int g_drawSceneDebugGeometry;
+    extern void* g_view;
     if (g_drawSceneDebugGeometry) {
-        WView_DrawFacingCircleVec4(g_view, (char*)(*(void**)&AsCCreature(p)->puppet)+0x124, kDebugCircleGreen, kDebugCircleSegments, 0);
+        WView_DrawFacingCircleVec4(g_view, (char*)(*(void**)&AsCCreature(p)->puppet) + 0x124, kDebugCircleGreen,
+                                   kDebugCircleSegments, 0);
         if (!((*(unsigned int*)&AsCCreature(p)->flags) & 1)) {
             WVector headingLine = kFloat_5_creature * *(WVector*)((p + kCreatureForwardAxis));
             WVector headingEnd = *(WVector*)((p + kCreatureTranslation)) - headingLine;
-            WView_DrawLine(g_view, (p + kCreatureTranslation), kDebugHeadingYellow, &headingEnd, kDebugHeadingYellow, 0);
-            WView_DrawLine(g_view, (p + kCreatureTranslation), kDebugTargetRed, (p + kCreatureTargetPosition), kDebugTargetRed, 0);
+            WView_DrawLine(g_view, (p + kCreatureTranslation), kDebugHeadingYellow, &headingEnd, kDebugHeadingYellow,
+                           0);
+            WView_DrawLine(g_view, (p + kCreatureTranslation), kDebugTargetRed, (p + kCreatureTargetPosition),
+                           kDebugTargetRed, 0);
         }
     }
     // Compensate the model's local root motion in world space while updating its bones.
-    ((void (*)(void*, void*, void*, float))WPuppet_GetInverseRootMotionOffsetForRange)(&rootMotion, (*(void**)&AsCCreature(p)->puppet), ((CreatureAnimationRange*)AsCCreature(p)->animationRange)->name, AsCCreature(p)->animationTime);
+    ((void (*)(void*, void*, void*, float))WPuppet_GetInverseRootMotionOffsetForRange)(
+        &rootMotion, (*(void**)&AsCCreature(p)->puppet),
+        ((CreatureAnimationRange*)AsCCreature(p)->animationRange)->name, AsCCreature(p)->animationTime);
     Matrix_TransformDirection(&worldRootMotion, &rootMotion, (p + kCreatureTransform));
     rootMotion = worldRootMotion;
     *(WVector*)((p + kCreatureTranslation)) -= rootMotion;
     WPuppet_SetAnimationTimeFromRanges((*(void**)&AsCCreature(p)->puppet), 0, AsCCreature(p)->animationTime, 0, 0);
     int culled = ((PolaVirtual*)self)->v40((p + kCreatureTranslation), kFloat_0_8_805DF2D8);
     // Existing early-return behavior leaves the compensated translation in place when culled.
-    if (culled != 0) return;
-    if (AsCCreature(p)->transform[0] > kFloat_1_Creature) AsCCreature(p)->transform[0] = kFloat_1_Creature;
-    if (AsCCreature(p)->transform[4] > kFloat_1_Creature) AsCCreature(p)->transform[4] = kFloat_1_Creature;
-    if (AsCCreature(p)->transform[8] > kFloat_1_Creature) AsCCreature(p)->transform[8] = kFloat_1_Creature;
-    Model_SetMatrixRecursive((*(void**)&AsCCreature(p)->puppet), (*(void**)&AsCCreature(p)->puppet), (p + kCreatureTransform));
+    if (culled != 0)
+        return;
+    if (AsCCreature(p)->transform[0] > kFloat_1_Creature)
+        AsCCreature(p)->transform[0] = kFloat_1_Creature;
+    if (AsCCreature(p)->transform[4] > kFloat_1_Creature)
+        AsCCreature(p)->transform[4] = kFloat_1_Creature;
+    if (AsCCreature(p)->transform[8] > kFloat_1_Creature)
+        AsCCreature(p)->transform[8] = kFloat_1_Creature;
+    Model_SetMatrixRecursive((*(void**)&AsCCreature(p)->puppet), (*(void**)&AsCCreature(p)->puppet),
+                             (p + kCreatureTransform));
     WPuppet_UpdateBoneWorldMatrices((*(void**)&AsCCreature(p)->puppet), g_view, 0, kFloat_1_Creature);
     WPuppet_UpdateBoundsFromBone((*(void**)&AsCCreature(p)->puppet));
     *(WVector*)((p + kCreatureTranslation)) += rootMotion;
@@ -855,7 +1065,7 @@ void ntNpc_PolaPenguin2_Draw(void* self) {
 // Destroy the polar penguin base and optionally release its object storage.
 void* ntNpc_PolaPenguin2_Dtor(void* ptr, int deleting) {
     if (ptr != 0) {
-        CCreature_dtor(ptr, 0);
+        __dt__9CCreatureFv(ptr, 0);
         if (deleting > 0) {
             __dl__FPv(ptr);
         }
@@ -903,19 +1113,24 @@ static inline int PenguinTargetInsideBounds(char* p) {
     aboveMinimumY = 0;
     withinX = 0;
     if (AsCCreature(p)->movementBoundsOrigin[0] <= AsCCreature(p)->targetPosition[0]) {
-        if (AsCCreature(p)->targetPosition[0] <= AsCCreature(p)->movementBoundsMax[0]) withinX = 1;
+        if (AsCCreature(p)->targetPosition[0] <= AsCCreature(p)->movementBoundsMax[0])
+            withinX = 1;
     }
     if (withinX) {
-        if (AsCCreature(p)->movementBoundsOrigin[1] <= AsCCreature(p)->targetPosition[1]) aboveMinimumY = 1;
+        if (AsCCreature(p)->movementBoundsOrigin[1] <= AsCCreature(p)->targetPosition[1])
+            aboveMinimumY = 1;
     }
     if (aboveMinimumY) {
-        if (AsCCreature(p)->targetPosition[1] <= AsCCreature(p)->movementBoundsMax[1]) withinY = 1;
+        if (AsCCreature(p)->targetPosition[1] <= AsCCreature(p)->movementBoundsMax[1])
+            withinY = 1;
     }
     if (withinY) {
-        if (AsCCreature(p)->movementBoundsOrigin[2] <= AsCCreature(p)->targetPosition[2]) aboveMinimumZ = 1;
+        if (AsCCreature(p)->movementBoundsOrigin[2] <= AsCCreature(p)->targetPosition[2])
+            aboveMinimumZ = 1;
     }
     if (aboveMinimumZ) {
-        if (AsCCreature(p)->targetPosition[2] <= AsCCreature(p)->movementBoundsMax[2]) insideBounds = 1;
+        if (AsCCreature(p)->targetPosition[2] <= AsCCreature(p)->movementBoundsMax[2])
+            insideBounds = 1;
     }
     return insideBounds;
 }
@@ -955,7 +1170,8 @@ void ntNpc_PolaPenguin2_UpdateWanderMovement(void* self, float dt) {
         for (i = 0; i < 3; ++i) {
             float minimumWeight = Random_RangeFloat(-1, kFloat_0_Creature, kFloat_1_Creature);
             float maximumWeight = one - minimumWeight;
-            *(float*)(axisCursor + 0x64) = minimumWeight * *(float*)(axisCursor + 0x0C) + maximumWeight * *(float*)(axisCursor + 0x18);
+            *(float*)(axisCursor + 0x64) =
+                minimumWeight * *(float*)(axisCursor + 0x0C) + maximumWeight * *(float*)(axisCursor + 0x18);
             axisCursor += 4;
         }
         // The loop condition is intentional: step outward until any axis leaves the box.
@@ -985,8 +1201,10 @@ void ntNpc_PolaPenguin2_UpdateWanderMovement(void* self, float dt) {
                 turnAngle = minimumTurn;
             } else {
                 float clampedTurn;
-                if (delta > maximumTurn) clampedTurn = maximumTurn;
-                else clampedTurn = delta;
+                if (delta > maximumTurn)
+                    clampedTurn = maximumTurn;
+                else
+                    clampedTurn = delta;
                 turnAngle = clampedTurn;
             }
             // Gekko passes the axis in a GPR and angle in an FPR; the two source
@@ -1006,8 +1224,11 @@ void ntNpc_PolaPenguin2_UpdateWanderMovement(void* self, float dt) {
     // Phase 3: default-range motion is provisional; use projected Y without committing X/Z.
     {
         void* animationRange = (*(void**)&AsCCreature(p)->animationRange);
-        WPuppet_GetRootMotionDelta(localRootMotion, kCreatureAnimationFramesPerSecond * AsCCreature(p)->animationTime, (*(void**)&AsCCreature(p)->puppet),
-                    kCreatureAnimationFramesPerSecond * ((CreatureAnimationRange*)animationRange)->startTime, ((CreatureAnimationRange*)animationRange)->name);
+        WPuppet_GetRootMotionDelta(localRootMotion, kCreatureAnimationFramesPerSecond * AsCCreature(p)->animationTime,
+                                   (*(void**)&AsCCreature(p)->puppet),
+                                   kCreatureAnimationFramesPerSecond *
+                                       ((CreatureAnimationRange*)animationRange)->startTime,
+                                   ((CreatureAnimationRange*)animationRange)->name);
         __as__7WVectorFRC7WVector(rootMotion, localRootMotion);
         Matrix_TransformDirection(worldRootMotion, rootMotion, (p + kCreatureTransform));
         __as__7WVectorFRC7WVector(rootMotion, worldRootMotion);
@@ -1015,7 +1236,8 @@ void ntNpc_PolaPenguin2_UpdateWanderMovement(void* self, float dt) {
         *(unsigned int*)projectedPosition = *(unsigned int*)rootMotion;
         *((unsigned int*)projectedPosition + 1) = *((unsigned int*)rootMotion + 1);
         *((unsigned int*)projectedPosition + 2) = *((unsigned int*)rootMotion + 2);
-        GetGroundPoint__9CQuadTreeF7WVectorbPib(projectedGroundPoint, CQuadTree_GetInstance(), projectedPosition, 1, 0, 0);
+        GetGroundPoint__9CQuadTreeF7WVectorbPib(projectedGroundPoint, CQuadTree_GetInstance(), projectedPosition, 1, 0,
+                                                0);
         AsCCreature(p)->transform[10] = *(float*)(projectedGroundPoint + 4);
     }
 }

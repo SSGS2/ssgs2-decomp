@@ -1,11 +1,11 @@
 // GTL animation-resource teardown: relinquish the wrapper's one retained backing
 // file reference, then optionally return wrapper storage to the GTL allocator.
-// API: gtl_IGenericAnimationResource_dtor is the deleting destructor;
+// API: gtl::IGenericResourceFile::Destroy is the deleting destructor;
 // gtl_IGenericResourceFile_release tears down only its resource-file base.
 // Related lookup: gtl_generic_resource_file_chunk.cpp returns borrowed elements from that backing file.
 // No gameplay settings, time units or coordinate conversion in this unit.
-// Translation unit 0x803DB94C-0x803DB9F8 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+
+#include "classes/GtlIGenericResourceFile.h"
 
 extern "C" {
 
@@ -50,19 +50,19 @@ static inline void gtl_IGenericResourceFile_release(GenericAnimRes* self) {
     }
 }
 
+} // extern "C"
+
 // flags <= 0 destroys the base without freeing wrapper storage; flags > 0 also
 // invokes allocator callback s_genericResourceAllocatorFunctions[1] with the complete wrapper address.
 // Callback table belongs to the GTL memory operator, not the backing vtable.
 // Null is a no-op. Returns the original address, dangling after a freeing call;
 // this is destructor ABI bookkeeping, never a live returned resource/status.
-GenericAnimRes* gtl_IGenericAnimationResource_dtor(GenericAnimRes* self, int flags) {
-    if (self != 0) {
-        gtl_IGenericResourceFile_release(self);
+void* gtl::IGenericAnimationResource::Destroy(int flags) {
+    if (this != 0) {
+        gtl_IGenericResourceFile_release((GenericAnimRes*)this);
         if (flags > 0) {
-            ((void (*)(void*))s_genericResourceAllocatorFunctions[1])(self);
+            ((void (*)(void*))s_genericResourceAllocatorFunctions[1])(this);
         }
     }
-    return self;
+    return this;
 }
-
-} // extern "C"

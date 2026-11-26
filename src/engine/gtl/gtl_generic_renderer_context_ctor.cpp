@@ -5,27 +5,25 @@
 // draw records and resets the DISTINCT active count at +0x190.
 // This constructor exposes no rendering/frame-rate knob and does not allocate.
 // Buffer sizing belongs in ResizeScratchBuffers, not these zero initializers.
-// Translation unit 0x803DD064-0x803DD09C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 struct GtlGenericRenderer {
     // Wii 32-bit layout. Each named descriptor group
     // is {allocation address, constructed element count, allocation capacity}.
     // +000..183 contains culling state, matrices and mode; left untouched.
     char unk0[0x184];
-    int drawRecordStorage; // draw-record allocation (0x50 bytes per element)
-    int drawRecordCount; // constructed draw-record count; not the active draw count
-    int drawRecordCapacity; // draw-record capacity, in elements
-    char activeDrawCount[4]; // active draw count; initialized by the higher layer
-    int firstScratchStorage; // first u32 scratch-array allocation
-    int firstScratchCount; // first array element count
-    int firstScratchCapacity; // first array capacity, in u32 elements
-    int secondScratchStorage; // second u32 scratch-array allocation
-    int secondScratchCount; // second array element count
+    int drawRecordStorage;     // draw-record allocation (0x50 bytes per element)
+    int drawRecordCount;       // constructed draw-record count; not the active draw count
+    int drawRecordCapacity;    // draw-record capacity, in elements
+    char activeDrawCount[4];   // active draw count; initialized by the higher layer
+    int firstScratchStorage;   // first u32 scratch-array allocation
+    int firstScratchCount;     // first array element count
+    int firstScratchCapacity;  // first array capacity, in u32 elements
+    int secondScratchStorage;  // second u32 scratch-array allocation
+    int secondScratchCount;    // second array element count
     int secondScratchCapacity; // second array capacity, in u32 elements
-    int thirdScratchStorage; // third u32 scratch-array allocation
-    int thirdScratchCount; // third array element count
-    int thirdScratchCapacity; // third array capacity, in u32 elements
+    int thirdScratchStorage;   // third u32 scratch-array allocation
+    int thirdScratchCount;     // third array element count
+    int thirdScratchCapacity;  // third array capacity, in u32 elements
 };
 
 extern "C" {

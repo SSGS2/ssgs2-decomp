@@ -1,73 +1,101 @@
-enum TomahawkState { kTomahawkWaitingForMotion = 0, kTomahawkRising = 1, kTomahawkFalling = 2, kTomahawkImpact = 3 };
-enum SpikeState { kSpikeLaunch = 0, kSpikeWaitingForAscent = 1, kSpikeWaitingForBeam = 2, kSpikeBeamActive = 3, kSpikeImpact = 4 };
-enum { kSpikeBeamDelayFrames = 60, kTrajectoryImpactMessage = 9, kBallSpikeFlightFlag = 0x40 };
+// Shot effects for the Tomahawk, Spike, PowerSpin, shot impact and booster warp: their per-frame
+// updates, particle orientation and the sequence each one chooses from the course.
+// Also the red-black tree insert for effect-tree payloads.
+
+enum TomahawkState {
+    kTomahawkWaitingForMotion = 0,
+    kTomahawkRising = 1,
+    kTomahawkFalling = 2,
+    kTomahawkImpact = 3
+};
+enum SpikeState {
+    kSpikeLaunch = 0,
+    kSpikeWaitingForAscent = 1,
+    kSpikeWaitingForBeam = 2,
+    kSpikeBeamActive = 3,
+    kSpikeImpact = 4
+};
+enum {
+    kSpikeBeamDelayFrames = 60,
+    kTrajectoryImpactMessage = 9,
+    kBallSpikeFlightFlag = 0x40
+};
 // Ball event entries hold PreData sample indices, not positions or event IDs.
 // Slot 0 is the current sample; slot 2 gates Spike's ascent/beam timing; positive
 // slots 11/14 terminate Tomahawk/Spike. Exact event names for 2/11/14 are unresolved.
 enum ShotEffectEventSlot {
-    kCurrentShotSample = 0, kSpikeTimingSample = 2,
-    kTomahawkEndSample = 11, kSpikeEndSample = 14
+    kCurrentShotSample = 0,
+    kSpikeTimingSample = 2,
+    kTomahawkEndSample = 11,
+    kSpikeEndSample = 14
 };
 // Surface names below describe the resource family selected HERE, not a complete
 // global ground-type taxonomy. Codes 3/6 select sand, 5/7 path, 8 water; impact
 // additionally handles 0 tee, 4 grass, 10 default-sand and 12 water-bunker.
 enum ShotEffectSurface {
-    kEffectTee = 0, kEffectSand3 = 3, kEffectGrass4 = 4,
-    kEffectPath5 = 5, kEffectSand6 = 6, kEffectPath7 = 7,
-    kEffectWater8 = 8, kEffectDefaultSand10 = 10, kEffectWaterBunker12 = 12
+    kEffectTee = 0,
+    kEffectSand3 = 3,
+    kEffectGrass4 = 4,
+    kEffectPath5 = 5,
+    kEffectSand6 = 6,
+    kEffectPath7 = 7,
+    kEffectWater8 = 8,
+    kEffectDefaultSand10 = 10,
+    kEffectWaterBunker12 = 12
 };
-enum EffectTreeTag { kTreeParentTag = 1 };
+enum EffectTreeTag {
+    kTreeParentTag = 1
+};
 
 // Address-preserving view of the existing resource string pool.
 struct ShotEffectResourceStrings {
-    char spr[4]; // +0x0
-    char GroundRun_seq[14]; // +0x4
-    char WaterRun_seq[13]; // +0x12
-    char Spike_C_seq[12]; // +0x1F
-    char Spike_ball_seq[15]; // +0x2B
-    char Twist_seq[10]; // +0x3A
-    char party_bln_bom03_seq[20]; // +0x44
-    char Cobra_BG_seq[13]; // +0x58
-    char Cobra_BW_seq[13]; // +0x65
-    char Cobra_BR_seq[13]; // +0x72
-    char Cobra_C_seq[12]; // +0x7F
-    char Cobra_A_seq[12]; // +0x8B
-    char Tomahawk_A_seq[15]; // +0x97
-    char Tomahawk_B_seq[15]; // +0xA6
-    char Tomahawk_C_seq[15]; // +0xB5
-    char Tomahawk_D_seq[15]; // +0xC4
-    char tomahawkImpactSound[18]; // +0xD3
-    char trajectoryActor[11]; // +0xE5
-    char powerSpinSandFormat[19]; // +0xF0
-    char powerSpinPathFormat[19]; // +0x103
-    char powerSpinWaterFormat[19]; // +0x116
-    char powerSpinGrassFormat[19]; // +0x129
-    char powerSpinFallback[21]; // +0x13C
-    char impactDefaultSand[22]; // +0x151
-    char impactSandFormat[20]; // +0x167
-    char impactPath[17]; // +0x17B
-    char impactGrassFormat[20]; // +0x18C
-    char impactTee[17]; // +0x1A0
-    char impactWater[17]; // +0x1B1
+    char spr[4];                      // +0x0
+    char GroundRun_seq[14];           // +0x4
+    char WaterRun_seq[13];            // +0x12
+    char Spike_C_seq[12];             // +0x1F
+    char Spike_ball_seq[15];          // +0x2B
+    char Twist_seq[10];               // +0x3A
+    char party_bln_bom03_seq[20];     // +0x44
+    char Cobra_BG_seq[13];            // +0x58
+    char Cobra_BW_seq[13];            // +0x65
+    char Cobra_BR_seq[13];            // +0x72
+    char Cobra_C_seq[12];             // +0x7F
+    char Cobra_A_seq[12];             // +0x8B
+    char Tomahawk_A_seq[15];          // +0x97
+    char Tomahawk_B_seq[15];          // +0xA6
+    char Tomahawk_C_seq[15];          // +0xB5
+    char Tomahawk_D_seq[15];          // +0xC4
+    char tomahawkImpactSound[18];     // +0xD3
+    char trajectoryActor[11];         // +0xE5
+    char powerSpinSandFormat[19];     // +0xF0
+    char powerSpinPathFormat[19];     // +0x103
+    char powerSpinWaterFormat[19];    // +0x116
+    char powerSpinGrassFormat[19];    // +0x129
+    char powerSpinFallback[21];       // +0x13C
+    char impactDefaultSand[22];       // +0x151
+    char impactSandFormat[20];        // +0x167
+    char impactPath[17];              // +0x17B
+    char impactGrassFormat[20];       // +0x18C
+    char impactTee[17];               // +0x1A0
+    char impactWater[17];             // +0x1B1
     char impactWaterBunkerFormat[21]; // +0x1C2
-    char Spike_A_seq[12]; // +0x1D7
-    char spike_shot_01_seq[18]; // +0x1E3
-    char spike_ball_duration[20]; // +0x1F5
-    char Spike_shot_seq[15]; // +0x209
-    char spike_beam[11]; // +0x218
-    char woodwave2_seq[14]; // +0x223
-    char powerShotLoadError[31]; // +0x231
-    char errorTitle[6]; // +0x250
-    char boostergate[12]; // +0x256
-    char treeLengthError[26]; // +0x262
-    char lengthErrorTypeName[55]; // +0x27C
-    char padding[5]; // +0x2B3
+    char Spike_A_seq[12];             // +0x1D7
+    char spike_shot_01_seq[18];       // +0x1E3
+    char spike_ball_duration[20];     // +0x1F5
+    char Spike_shot_seq[15];          // +0x209
+    char spike_beam[11];              // +0x218
+    char woodwave2_seq[14];           // +0x223
+    char powerShotLoadError[31];      // +0x231
+    char errorTitle[6];               // +0x250
+    char boostergate[12];             // +0x256
+    char treeLengthError[26];         // +0x262
+    char lengthErrorTypeName[55];     // +0x27C
+    char padding[5];                  // +0x2B3
 };
 #include "game/golfball.h"
 #include <decomp/record_sizes.h>
 #include "iff/IffStruct.h"
 #include "classes/CSharedDoc.h"
-#define AsCSharedDoc(p) ((CSharedDoc*)(p))
 #include "game/types.h"
 #include "game/wvector.h"
 #include "sdk_protos.h"
@@ -78,25 +106,16 @@ struct ShotEffectResourceStrings {
 #include "classes/CFxBoosterWarp.h"
 #include "classes/CFxPowerSpin.h"
 #include "classes/CFxPowerShot2.h"
+#include "classes/CFxBox.h"
 
 #define AsCFxPowerShot2(p) ((CFxPowerShot2*)(p))
-
-#define AsCFxPowerSpin(p) ((CFxPowerSpin*)(p))
-
-#define AsCFxBoosterWarp(p) ((CFxBoosterWarp*)(p))
-
-#define AsCFxShotImpact(p) ((CFxShotImpact*)(p))
-
-#define AsCFxTomahawk(p) ((CFxTomahawk*)(p))
-
-#define AsCFxSpike(p) ((CFxSpike*)(p))
-// Translation unit 0x80105A48-0x80107180 (14 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #pragma use_lmw_stmw on
 
 // Construct a tree payload in its already allocated node.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 extern "C" {
 
@@ -107,7 +126,9 @@ extern char __vt__8CFxSpike[];
 extern char __vt__13CFxShotImpact[];
 extern char __vt__12CFxPowerSpin[];
 extern ShotEffectResourceStrings shotEffectResourceStrings;
-struct EffectCameraTransform { float right[3], up[3], forward[3], position[3]; };
+struct EffectCameraTransform {
+    float right[3], up[3], forward[3], position[3];
+};
 extern EffectCameraTransform s_cameraTransform;
 extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
@@ -127,9 +148,7 @@ extern void* g_legacyWindowContext;
 extern void* g_soundManager;
 extern void* g_taskManager;
 
-void* CFxBox_RemoveSequence(void*, void*, int);
 void* CFxSequence_Create(void*, const char*, int, int, int);
-void* CFxBox_RegisterSequence(void*, void*);
 void* GetGroundPoint__9CQuadTreeF7WVectorbPib(void*, void*, void*, int, int, int);
 void Sound_PlayByName(void*, const char*, int, int, int, int, float, float, float);
 void* TaskActorTable_FindByName(void*, const char*, int*);
@@ -140,7 +159,7 @@ void* Normalize__7WVectorFv(void*);
 float Vec3_DotProduct(void*, void*);
 double acos(double);
 void Matrix_SetNegativeAxisAngleRotation(void*, void*, float);
-void Matrix_TransformPoint(void*, void*, void*);
+void* Matrix_TransformPoint(void*, void*, void*);
 void* appMallocDummy__FUl(unsigned int);
 void RBTree_RebalanceAfterInsert(void*, void*);
 void appFreeUni__FPv(void*);
@@ -161,16 +180,10 @@ void __mi__FRC7WVectorRC7WVector(void*, const char*, const char*);
 void Sound_PlayByName(void*, const char*, int, int, int, int, float, float, float);
 
 // Position components are copied as integer words to preserve their float bit patterns.
-struct EffectBallPositionWords { void* x; void* y; void* z; };
-
-// Shared destructor view: the two child slots begin at +0x10.
-struct ObjectWithChildren {
-    void* vtable;
-    void* instanceIdBits;
-    void* owner;
-    void* golfBall;
-    void* child0;
-    void* child1;
+struct EffectBallPositionWords {
+    void* x;
+    void* y;
+    void* z;
 };
 
 typedef Vec3f Vec3;
@@ -178,36 +191,41 @@ typedef Vec3f Vec3;
 // Advance Tomahawk launch, ascent, descent, and impact effects and optionally notify the trajectory actor.
 // Return 1 to keep updating, 0 after impact or sequence creation failure. Ball
 // positions, velocity and terrain query results use world space; owner/ball are borrowed.
-int CFxTomahawk_AdvancePhase(void* self) {
-    CFxTomahawk* effect = (CFxTomahawk*)self; 
+int CFxTomahawk::AdvancePhase() {
+    CFxTomahawk* effect = this;
     Vec3 bounds;
 
-    void* b = ((EffectBallPositionWords*)effect->ball)->y;
-    void* a = ((EffectBallPositionWords*)effect->ball)->x;
-    void* c = ((EffectBallPositionWords*)effect->ball)->z;
-    void* vals[3] = { a, b, c };
+    void* posY = ((EffectBallPositionWords*)effect->ball)->y;
+    void* posX = ((EffectBallPositionWords*)effect->ball)->x;
+    void* posZ = ((EffectBallPositionWords*)effect->ball)->z;
+    void* vals[3] = {posX, posY, posZ};
 
-    volatile void* vals2[3] = { a, b, c };
-    if (0 != vals2[0]) { (void)vals2[1]; }
-    void* manager = CQuadTree_GetInstance(c);
+    volatile void* vals2[3] = {posX, posY, posZ};
+    if (0 != vals2[0]) {
+        (void)vals2[1];
+    }
+    void* manager = CQuadTree_GetInstance(posZ);
     GetGroundPoint__9CQuadTreeF7WVectorbPib(&bounds, manager, vals, 1, 0, 1);
     volatile float frameY;
     frameY = bounds.y;
     int limit = ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kTomahawkEndSample];
     (void)frameY;
-    if (limit > 0 && ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kCurrentShotSample] >= limit) effect->state = kTomahawkImpact;
+    if (limit > 0 && ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kCurrentShotSample] >= limit)
+        effect->state = kTomahawkImpact;
     switch (effect->state) {
     case kTomahawkWaitingForMotion: {
         if ((((CGolfBall*)effect->ball)->m_velocity).Magnitude() > kFloat_1_FxShot) {
             effect->state = kTomahawkRising;
             void* child = CFxSequence_Create(effect->sequenceOwner, shotEffectResourceStrings.Tomahawk_A_seq, 1, 0, 0);
-            if (!child) return 0;
-            CFxBox_RegisterSequence(effect->sequenceOwner, child);
+            if (!child)
+                return 0;
+            ((CFxBox*)(effect->sequenceOwner))->RegisterSequence(((CFxSequence*)(child)));
             ((CFxSequence*)child)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
             child = CFxSequence_Create(effect->sequenceOwner, shotEffectResourceStrings.Tomahawk_B_seq, 0, 0, 0);
             effect->sequence = child;
-            if (!child) return 0;
-            CFxBox_RegisterSequence(effect->sequenceOwner, child);
+            if (!child)
+                return 0;
+            ((CFxBox*)(effect->sequenceOwner))->RegisterSequence(((CFxSequence*)(child)));
         }
         break;
     }
@@ -216,38 +234,52 @@ int CFxTomahawk_AdvancePhase(void* self) {
             effect->state = kTomahawkFalling;
             void* child = effect->sequence;
             if (child) {
-                CFxBox_RemoveSequence(effect->sequenceOwner, child, 0);
+                ((CFxBox*)(effect->sequenceOwner))->RemoveSequence(((CFxSequence*)(child)), 0);
                 child = effect->sequence;
-                if (child) ((void (**)(void*, int))(*(void**)child))[2](child, 1);
+                if (child)
+                    ((void (**)(void*, int))(*(void**)child))[2](child, 1);
                 effect->sequence = 0;
             }
             child = CFxSequence_Create(effect->sequenceOwner, shotEffectResourceStrings.Tomahawk_C_seq, 0, 0, 0);
             effect->sequence = child;
-            if (!child) return 0;
-            CFxBox_RegisterSequence(effect->sequenceOwner, child);
+            if (!child)
+                return 0;
+            ((CFxBox*)(effect->sequenceOwner))->RegisterSequence(((CFxSequence*)(child)));
         }
         break;
     }
     case kTomahawkImpact: {
         void* child = effect->sequence;
         if (child) {
-            CFxBox_RemoveSequence(effect->sequenceOwner, child, 0);
+            ((CFxBox*)(effect->sequenceOwner))->RemoveSequence(((CFxSequence*)(child)), 0);
             child = effect->sequence;
-            if (child) ((void (**)(void*, int))(*(void**)child))[2](child, 1);
+            if (child)
+                ((void (**)(void*, int))(*(void**)child))[2](child, 1);
             effect->sequence = 0;
         }
         child = CFxSequence_Create(effect->sequenceOwner, shotEffectResourceStrings.Tomahawk_D_seq, 1, 0, 0);
-        if (child == 0) return 0;
-        CFxBox_RegisterSequence(effect->sequenceOwner, child);
+        if (child == 0)
+            return 0;
+        ((CFxBox*)(effect->sequenceOwner))->RegisterSequence(((CFxSequence*)(child)));
         ((CFxSequence*)child)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
-        Sound_PlayByName(g_soundManager, shotEffectResourceStrings.tomahawkImpactSound, 0, 0, 0, 0, kFloat_0_5_FxShot, kFloat_200_FxShot, kFloat_1_FxShot);
-        if (effect->notifyTrajectoryOnImpact) { 
+        Sound_PlayByName(g_soundManager, shotEffectResourceStrings.tomahawkImpactSound, 0, 0, 0, 0, kFloat_0_5_FxShot,
+                         kFloat_200_FxShot, kFloat_1_FxShot);
+        if (effect->notifyTrajectoryOnImpact) {
             void* mgr = g_taskManager;
             void* arg = mgr ? Object_GetChild(mgr) : 0;
 
-            int p[8]; p[0] = 0; p[1] = kTrajectoryImpactMessage; p[2] = 0; p[3] = 0; p[4] = 0; p[5] = 0; p[6] = 0; p[7] = 0;
+            int p[8];
+            p[0] = 0;
+            p[1] = kTrajectoryImpactMessage;
+            p[2] = 0;
+            p[3] = 0;
+            p[4] = 0;
+            p[5] = 0;
+            p[6] = 0;
+            p[7] = 0;
             void* obj = TaskActorTable_FindByName(arg, shotEffectResourceStrings.trajectoryActor, 0);
-            if (obj) ((void (**)(void*, int*))(*(void**)obj))[11](obj, p);
+            if (obj)
+                ((void (**)(void*, int*))(*(void**)obj))[11](obj, p);
         }
         return 0;
     }
@@ -256,7 +288,8 @@ int CFxTomahawk_AdvancePhase(void* self) {
     }
     {
         void* child = effect->sequence;
-        if (child) ((CFxSequence*)child)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
+        if (child)
+            ((CFxSequence*)child)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
     }
     return 1;
 }
@@ -264,14 +297,25 @@ int CFxTomahawk_AdvancePhase(void* self) {
 #pragma opt_common_subs off
 #pragma opt_propagation off
 #pragma opt_lifetimes off
-struct Vt11 { 
-virtual void _0(); virtual void _1(); virtual void _2(); virtual void _3(); virtual void _4(); virtual void _5(); virtual void _6(); virtual void _7(); virtual void _8(); virtual void _9(); virtual void _10(); virtual void m(int*);
+struct Vt11 {
+    virtual void _0();
+    virtual void _1();
+    virtual void _2();
+    virtual void _3();
+    virtual void _4();
+    virtual void _5();
+    virtual void _6();
+    virtual void _7();
+    virtual void _8();
+    virtual void _9();
+    virtual void _10();
+    virtual void m(int*);
 };
 // Advance Spike launch and beam timing, follow the ball, and create the final impact effect.
 // Return 1 while active; 0 on impact, missing flight flag, or a checked creation
 // failure. Delay 60 is in trajectory sample/frame indices, not elapsed seconds.
-int CFxSpike_UpdateAndAdvanceState(void* self) {
-    CFxSpike* effect = (CFxSpike*)self;
+int CFxSpike::UpdateAndAdvanceState() {
+    CFxSpike* effect = this;
     void* values[3];
     values[2] = ((EffectBallPositionWords*)effect->ball)->z;
     values[0] = ((EffectBallPositionWords*)effect->ball)->x;
@@ -281,43 +325,55 @@ int CFxSpike_UpdateAndAdvanceState(void* self) {
     GetGroundPoint__9CQuadTreeF7WVectorbPib(&bounds, CQuadTree_GetInstance(values[2]), values, 1, 0, 1);
     frameY = bounds.y;
     (void)frameY;
-    if (0 < ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kSpikeEndSample] && ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kCurrentShotSample] >= ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kSpikeEndSample]) effect->state = kSpikeImpact;
+    if (0 < ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kSpikeEndSample] &&
+        ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kCurrentShotSample] >=
+            ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kSpikeEndSample])
+        effect->state = kSpikeImpact;
 
     switch (effect->state) {
     case kSpikeLaunch: {
-        CFxBox_RegisterSequence(effect->effectManager, effect->initialSequence);
+        ((CFxBox*)(effect->effectManager))->RegisterSequence(((CFxSequence*)(effect->initialSequence)));
         ((CFxSequence*)effect->initialSequence)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
         void* child = CFxSequence_Create(effect->effectManager, shotEffectResourceStrings.Spike_A_seq, 1, 0, 0);
-        if (!child) return 0;
-        CFxBox_RegisterSequence(effect->effectManager, child);
+        if (!child)
+            return 0;
+        ((CFxBox*)(effect->effectManager))->RegisterSequence(((CFxSequence*)(child)));
         ((CFxSequence*)child)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
         effect->state = kSpikeWaitingForAscent;
         break;
     }
     case kSpikeWaitingForAscent: {
-        if (((CGolfBall*)effect->ball)->m_eventPreDataIndex[kSpikeTimingSample] < ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kCurrentShotSample]) {
-            void* child = CFxSequence_Create(effect->effectManager, shotEffectResourceStrings.spike_shot_01_seq, 1, 0, 0);
-            if (!child) return 0;
-            CFxBox_RegisterSequence(effect->effectManager, child);
+        if (((CGolfBall*)effect->ball)->m_eventPreDataIndex[kSpikeTimingSample] <
+            ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kCurrentShotSample]) {
+            void* child =
+                CFxSequence_Create(effect->effectManager, shotEffectResourceStrings.spike_shot_01_seq, 1, 0, 0);
+            if (!child)
+                return 0;
+            ((CFxBox*)(effect->effectManager))->RegisterSequence(((CFxSequence*)(child)));
             ((CFxSequence*)child)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
-            Sound_PlayByName(g_soundManager, shotEffectResourceStrings.spike_ball_duration, 0, 0, 0, 0, kFloat_0_5_FxShot, kFloat_200_FxShot, kFloat_1_FxShot);
+            Sound_PlayByName(g_soundManager, shotEffectResourceStrings.spike_ball_duration, 0, 0, 0, 0,
+                             kFloat_0_5_FxShot, kFloat_200_FxShot, kFloat_1_FxShot);
             effect->state = kSpikeWaitingForBeam;
         } else {
             ((CFxSequence*)effect->initialSequence)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
         }
-        if (!((*(unsigned int*)&((CGolfBall*)effect->ball)->m_flags) & kBallSpikeFlightFlag)) return 0;
+        if (!((*(unsigned int*)&((CGolfBall*)effect->ball)->m_flags) & kBallSpikeFlightFlag))
+            return 0;
         break;
     }
     case kSpikeWaitingForBeam: {
-        if (((CGolfBall*)effect->ball)->m_eventPreDataIndex[kSpikeTimingSample] + kSpikeBeamDelayFrames < ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kCurrentShotSample]) {
+        if (((CGolfBall*)effect->ball)->m_eventPreDataIndex[kSpikeTimingSample] + kSpikeBeamDelayFrames <
+            ((CGolfBall*)effect->ball)->m_eventPreDataIndex[kCurrentShotSample]) {
             void* child = CFxSequence_Create(effect->effectManager, shotEffectResourceStrings.Spike_shot_seq, 1, 0, 0);
-            CFxBox_RegisterSequence(effect->effectManager, child);
+            ((CFxBox*)(effect->effectManager))->RegisterSequence(((CFxSequence*)(child)));
             ((CFxSequence*)child)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
-            CFxBox_RegisterSequence(effect->effectManager, effect->delayedSequence);
+            ((CFxBox*)(effect->effectManager))->RegisterSequence(((CFxSequence*)(effect->delayedSequence)));
             ((CFxSequence*)effect->delayedSequence)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
             void* obj = effect->initialSequence;
-            if ((*(unsigned char*)&((CFxSequence*)obj)->playbackEnabled)) (*(unsigned char*)&((CFxSequence*)obj)->playbackEnabled) = 0;
-            Sound_PlayByName(g_soundManager, shotEffectResourceStrings.spike_beam, 0, 0, 0, 0, kFloat_0_5_FxShot, kFloat_200_FxShot, kFloat_1_FxShot);
+            if ((*(unsigned char*)&((CFxSequence*)obj)->playbackEnabled))
+                (*(unsigned char*)&((CFxSequence*)obj)->playbackEnabled) = 0;
+            Sound_PlayByName(g_soundManager, shotEffectResourceStrings.spike_beam, 0, 0, 0, 0, kFloat_0_5_FxShot,
+                             kFloat_200_FxShot, kFloat_1_FxShot);
             effect->state = kSpikeBeamActive;
         }
         break;
@@ -327,21 +383,31 @@ int CFxSpike_UpdateAndAdvanceState(void* self) {
         break;
     case kSpikeImpact: {
         void* child = CFxSequence_Create(effect->effectManager, shotEffectResourceStrings.Tomahawk_D_seq, 1, 0, 0);
-        if (0 == child) return 0;
-        CFxBox_RegisterSequence(effect->effectManager, child);
+        if (0 == child)
+            return 0;
+        ((CFxBox*)(effect->effectManager))->RegisterSequence(((CFxSequence*)(child)));
         ((CFxSequence*)child)->worldPosition = ((CGolfBall*)effect->ball)->m_pos;
         void* obj = effect->delayedSequence;
-        if ((*(unsigned char*)&((CFxSequence*)obj)->playbackEnabled)) (*(unsigned char*)&((CFxSequence*)obj)->playbackEnabled) = 0;
-        Sound_PlayByName(g_soundManager, shotEffectResourceStrings.tomahawkImpactSound, 0, 0, 0, 0, kFloat_0_5_FxShot, kFloat_200_FxShot, kFloat_1_FxShot);
+        if ((*(unsigned char*)&((CFxSequence*)obj)->playbackEnabled))
+            (*(unsigned char*)&((CFxSequence*)obj)->playbackEnabled) = 0;
+        Sound_PlayByName(g_soundManager, shotEffectResourceStrings.tomahawkImpactSound, 0, 0, 0, 0, kFloat_0_5_FxShot,
+                         kFloat_200_FxShot, kFloat_1_FxShot);
         if (effect->notifyTrajectoryOnImpact) {
             void* mgr = g_taskManager;
             void* arg = mgr ? Object_GetChild(mgr) : 0;
             int p[8];
-            p[0] = 0; p[1] = kTrajectoryImpactMessage; p[2] = 0; p[3] = 0; p[4] = 0; p[5] = 0; p[6] = 0; p[7] = 0;
+            p[0] = 0;
+            p[1] = kTrajectoryImpactMessage;
+            p[2] = 0;
+            p[3] = 0;
+            p[4] = 0;
+            p[5] = 0;
+            p[6] = 0;
+            p[7] = 0;
             void* obj2 = TaskActorTable_FindByName(arg, shotEffectResourceStrings.trajectoryActor, 0);
             if (obj2) {
                 void** vt = *(void***)obj2;
-                ((void(*)(void*, int*))vt[11])(obj2, p);
+                ((void (*)(void*, int*))vt[11])(obj2, p);
             }
         }
         return 0;
@@ -354,45 +420,81 @@ int CFxSpike_UpdateAndAdvanceState(void* self) {
 #pragma opt_common_subs reset
 #pragma opt_propagation reset
 #pragma opt_lifetimes reset
-struct TreeNode { TreeNode* left; TreeNode* right; TreeNode* parentColor; unsigned int key; };
-struct TreeHead { TreeNode* root; };
+struct TreeNode {
+    TreeNode* left;
+    TreeNode* right;
+    TreeNode* parentColor;
+    unsigned int key;
+};
+struct TreeHead {
+    TreeNode* root;
+};
 
-// Choose a course/surface-specific Power Spin sequence, register it, and assign an instance serial.
-void* CFxPowerSpin_Ctor(void* self, void* owner, void* input) { AsCFxPowerSpin(self)->owner = owner; AsCFxPowerSpin(self)->vtable = __vt__12CFxPowerSpin;  AsCFxPowerSpin(self)->golfBall = input;  char text[32]; 
-    AsCFxPowerSpin(self)->particlesOriented = 0;
+// Choose a course/surface-specific Power Spin sequence and register it.
+CFxPowerSpin::CFxPowerSpin(void* owner, void* ball) {
+    // The owner is read back from the field for each call, as the original does.
+    CFxPowerSpin* control = this;
+    this->owner = owner;
+    vtbl = __vt__12CFxPowerSpin;
+    golfBall = ball;
+    char text[32];
+    particlesOriented = 0;
 
-    struct Values { void* p[3]; } values = *(Values*)input;
+    struct Values {
+        void* p[3];
+    } values = *(Values*)ball;
     void* manager = CQuadTree_GetInstance(values.p[0]);
 
     switch ((GetGroundType__9CQuadTreeF7WVector(manager, &values))) {
-    case kEffectSand3: case kEffectSand6:
+    case kEffectSand3:
+    case kEffectSand6:
         sprintf(text, shotEffectResourceStrings.powerSpinSandFormat,
-            AsCSharedDoc(g_sharedDoc)->selectedCourseData ? ((IFF_STRUCT::sCourse*)AsCSharedDoc(g_sharedDoc)->selectedCourseData)->mapName : 0); break;
-    case kEffectPath5: case kEffectPath7:
+                ((CSharedDoc*)g_sharedDoc)->selectedCourseData
+                    ? ((IFF_STRUCT::sCourse*)((CSharedDoc*)g_sharedDoc)->selectedCourseData)->mapName
+                    : 0);
+        break;
+    case kEffectPath5:
+    case kEffectPath7:
         sprintf(text, shotEffectResourceStrings.powerSpinPathFormat,
-            AsCSharedDoc(g_sharedDoc)->selectedCourseData ? ((IFF_STRUCT::sCourse*)AsCSharedDoc(g_sharedDoc)->selectedCourseData)->mapName : 0); break;
+                ((CSharedDoc*)g_sharedDoc)->selectedCourseData
+                    ? ((IFF_STRUCT::sCourse*)((CSharedDoc*)g_sharedDoc)->selectedCourseData)->mapName
+                    : 0);
+        break;
     case kEffectWater8:
         sprintf(text, shotEffectResourceStrings.powerSpinWaterFormat,
-            AsCSharedDoc(g_sharedDoc)->selectedCourseData ? ((IFF_STRUCT::sCourse*)AsCSharedDoc(g_sharedDoc)->selectedCourseData)->mapName : 0); break;
+                ((CSharedDoc*)g_sharedDoc)->selectedCourseData
+                    ? ((IFF_STRUCT::sCourse*)((CSharedDoc*)g_sharedDoc)->selectedCourseData)->mapName
+                    : 0);
+        break;
     default:
         sprintf(text, shotEffectResourceStrings.powerSpinGrassFormat,
-            AsCSharedDoc(g_sharedDoc)->selectedCourseData ? ((IFF_STRUCT::sCourse*)AsCSharedDoc(g_sharedDoc)->selectedCourseData)->mapName : 0); break;
+                ((CSharedDoc*)g_sharedDoc)->selectedCourseData
+                    ? ((IFF_STRUCT::sCourse*)((CSharedDoc*)g_sharedDoc)->selectedCourseData)->mapName
+                    : 0);
+        break;
     }
-    void* child = CFxSequence_Create(AsCFxPowerSpin(self)->owner, text, 1, 0, 0);
-    AsCFxPowerSpin(self)->sequence = child;
-    if (!child) AsCFxPowerSpin(self)->sequence = CFxSequence_Create(AsCFxPowerSpin(self)->owner, shotEffectResourceStrings.powerSpinFallback, 1, 0, 0);
-    if (AsCFxPowerSpin(self)->sequence) CFxBox_RegisterSequence(AsCFxPowerSpin(self)->owner, AsCFxPowerSpin(self)->sequence);
+    void* child = CFxSequence_Create(control->owner, text, 1, 0, 0);
+    sequence = child;
+    if (!child)
+        sequence = CFxSequence_Create(control->owner, shotEffectResourceStrings.powerSpinFallback, 1, 0, 0);
+    if (sequence)
+        ((CFxBox*)(control->owner))->RegisterSequence(((CFxSequence*)(sequence)));
     int nextInstanceId = s_fxInstanceSerial + 1;
-    AsCFxPowerSpin(self)->instanceId = s_fxInstanceSerial;
+    instanceId = s_fxInstanceSerial;
     s_fxInstanceSerial = nextInstanceId;
-    return self;
 }
 
-struct ShotTrajectorySample { Vec3 position; Vec3 velocity; };
+struct ShotTrajectorySample {
+    Vec3 position;
+    Vec3 velocity;
+};
 
 struct SpinParticle {
-    char pad0[0xB8]; Vec3 position;
-    char padC4[0x168]; Vec3 direction; Vec3 velocity;
+    char pad0[0xB8];
+    Vec3 position;
+    char padC4[0x168];
+    Vec3 direction;
+    Vec3 velocity;
 };
 struct SpinNode {
     SpinNode* left;
@@ -406,22 +508,38 @@ struct SpinNode {
 // addresses mask out bit 0 before dereference. Manager membership is keyed by the
 // sequence pointer's 32-bit value; a missing key means the sequence has expired.
 struct SpinSequence {
-    char pad0[0x20]; unsigned int count;
+    char pad0[0x20];
+    unsigned int count;
     SpinNode sentinel;
 };
-struct SpinOwner { char pad0[0x164]; SpinNode sentinel; };
-struct SpinBall { char pad0[0x48]; unsigned int flags; char pad4C[0x1C]; int frame; };
+struct SpinOwner {
+    char pad0[0x164];
+    SpinNode sentinel;
+};
+struct SpinBall {
+    char pad0[0x48];
+    unsigned int flags;
+    char pad4C[0x1C];
+    int frame;
+};
 struct SpinControl {
-    void* vtable; int serial; SpinOwner* owner; SpinBall* ball;
-    SpinSequence* sequence; unsigned char orientationApplied;
+    void* vtable;
+    int serial;
+    SpinOwner* owner;
+    SpinBall* ball;
+    SpinSequence* sequence;
+    unsigned char orientationApplied;
 };
 // SpinControl.orientationApplied aliases the controllers' one-time orientation byte. It is
 // set only after a nonempty particle set is rotated; empty sets retry later.
 // Power Spin subsequently follows ball position, while ShotImpact only rotates.
-struct SpinKey { unsigned int value; };
+struct SpinKey {
+    unsigned int value;
+};
 
 // Orient spin particles once along the shot direction, then keep their positions attached to the ball.
-int CFxPowerSpin_OrientAndAttachParticles(SpinControl* self) {
+int CFxPowerSpin::OrientAndAttachParticles() {
+    SpinControl* self = (SpinControl*)this;
     // Phase 1: confirm manager membership before dereferencing the sequence.
     SpinSequence* data;
     SpinNode* cur;
@@ -431,16 +549,22 @@ int CFxPowerSpin_OrientAndAttachParticles(SpinControl* self) {
     SpinNode* node = manager->sentinel.left;
     SpinNode* found = &manager->sentinel;
     while (node) {
-        if (node->key >= key.value) { found = node; node = node->left; }
-        else node = node->right;
+        if (node->key >= key.value) {
+            found = node;
+            node = node->left;
+        } else
+            node = node->right;
     }
-    if (found == &manager->sentinel || key.value < found->key) found = &manager->sentinel;
-    if (found == &manager->sentinel) return 0;
+    if (found == &manager->sentinel || key.value < found->key)
+        found = &manager->sentinel;
+    if (found == &manager->sentinel)
+        return 0;
     data = self->sequence;
     if (!self->orientationApplied) {
         // Phase 2: derive horizontal world-space yaw from initial/current samples,
         // rotating local -Z onto the shot direction about world +Y (radians).
-        if (!data->count) return 1;
+        if (!data->count)
+            return 1;
         SpinBall* context = self->ball;
         cur = (SpinNode*)PreData__9CGolfBallFi(context, 0);
         Vec3* v2 = (Vec3*)PreData__9CGolfBallFi(context, context->frame);
@@ -462,27 +586,29 @@ int CFxPowerSpin_OrientAndAttachParticles(SpinControl* self) {
         dir.y = kFloat_0_shotEffects;
         dir.z = kFloat_Neg1_0;
         float dot = Vec3_DotProduct(&p, &dir);
-        float a = (float)acos(dot);
-        if (p.x < kFloat_0_shotEffects) a = kFloat_6_2831855_ShotEffects_805DE5CC - a;
+        float angle = (float)acos(dot);
+        if (p.x < kFloat_0_shotEffects)
+            angle = kFloat_6_2831855_ShotEffects_805DE5CC - angle;
         Vec3 scale;
         scale.x = kFloat_0_shotEffects;
         scale.y = kFloat_1_FxShot;
         scale.z = kFloat_0_shotEffects;
         char matrix[36];
-        Matrix_SetNegativeAxisAngleRotation(matrix, &scale, a);
+        Matrix_SetNegativeAxisAngleRotation(matrix, &scale, angle);
         // Rotate velocity and direction once; tree traversal never owns particles.
         cur = data->sentinel.right;
         end = &data->sentinel;
         while (cur != end) {
             SpinParticle* item = cur->item;
-            char t1[12], t2[12];
-            Matrix_TransformPoint(t1, &item->velocity, matrix);
-            __as__7WVectorFRC7WVector(&item->velocity, t1);
-            Matrix_TransformPoint(t2, &item->direction, matrix);
-            __as__7WVectorFRC7WVector(&item->direction, t2);
+            char rotatedVelocity[12], rotatedDirection[12];
+            Matrix_TransformPoint(rotatedVelocity, &item->velocity, matrix);
+            __as__7WVectorFRC7WVector(&item->velocity, rotatedVelocity);
+            Matrix_TransformPoint(rotatedDirection, &item->direction, matrix);
+            __as__7WVectorFRC7WVector(&item->direction, rotatedDirection);
             SpinNode* r = cur->right;
             if (r) {
-                while (r->left) r = r->left;
+                while (r->left)
+                    r = r->left;
                 cur = r;
             } else {
                 SpinNode* p;
@@ -501,7 +627,8 @@ int CFxPowerSpin_OrientAndAttachParticles(SpinControl* self) {
             __as__7WVectorFRC7WVector(&cur->item->position, self->ball);
             SpinNode* r = cur->right;
             if (r) {
-                while (r->left) r = r->left;
+                while (r->left)
+                    r = r->left;
                 cur = r;
             } else {
                 SpinNode* p;
@@ -515,17 +642,32 @@ int CFxPowerSpin_OrientAndAttachParticles(SpinControl* self) {
     return 1;
 }
 
+struct SearchObject {
+    char pad[8];
+    void* manager;
+    void* context;
+    unsigned int key;
+    unsigned char unk_14;
+};
 
-struct SearchObject { char pad[8]; void* manager; void* context; unsigned int key; unsigned char unk_14; };
-
-struct InsertHead { unsigned int count; void* sentinelParent; void* sentinelChild; };
+struct InsertHead {
+    unsigned int count;
+    void* sentinelParent;
+    void* sentinelChild;
+};
 // Copy the final payload word while retaining the original exception boundary.
 inline void InsertCopyLast(unsigned int* destination, unsigned int value) {
-    try { *destination = value; } catch (...) { throw; }
+    try {
+        *destination = value;
+    } catch (...) {
+        throw;
+    }
 }
 // The 44-byte tree payload has no established semantic layout; retain its original copy widths.
 struct InsertInput {
-    unsigned int word; float x, y; unsigned int fields[8];
+    unsigned int word;
+    float x, y;
+    unsigned int fields[8];
     // Preserve ordered payload loads/stores and the final-word exception boundary.
     InsertInput(const InsertInput& other) {
         unsigned int f0;
@@ -555,12 +697,21 @@ struct InsertInput {
         InsertCopyLast(&fields[7], f7);
     }
 };
-struct InsertNode { InsertNode* left; InsertNode* right; InsertNode* parent; InsertInput input; };
+struct InsertNode {
+    InsertNode* left;
+    InsertNode* right;
+    InsertNode* parent;
+    InsertInput input;
+};
 struct InsertParent {
     InsertNode* value;
     // Construct the parent subobject with the original exception boundary.
     InsertParent(InsertNode* parent) {
-        try { value = parent; } catch (...) { throw; }
+        try {
+            value = parent;
+        } catch (...) {
+            throw;
+        }
     }
 };
 
@@ -568,15 +719,21 @@ struct InsertBufferGuard {
     char* buffer;
     unsigned char* allocator;
     // Delete the exception message unless its control block took ownership.
-    ~InsertBufferGuard() { if (buffer) __dla__FPv(buffer); }
+    ~InsertBufferGuard() {
+        if (buffer)
+            __dla__FPv(buffer);
+    }
 };
-struct InsertAllocator { unsigned char value; char padding[3]; };
+struct InsertAllocator {
+    unsigned char value;
+    char padding[3];
+};
 struct InsertErrorBase {
     void* vtable;
     char* text;
     void* reference;
-    static void initialize(void*& vtable, char*& text, void*& reference,
-        const char* message, InsertAllocator* original, InsertAllocator* copy);
+    static void initialize(void*& vtable, char*& text, void*& reference, const char* message, InsertAllocator* original,
+                           InsertAllocator* copy);
 };
 struct InsertErrorReference {
     void* vtable;
@@ -592,8 +749,8 @@ struct InsertErrorReference {
     }
 };
 // Allocate and copy an exception message, guarded until its reference block owns it.
-inline void InsertErrorBase::initialize(void*& vtable, char*& text, void*& reference,
-    const char* message, InsertAllocator* original, InsertAllocator* copy) {
+inline void InsertErrorBase::initialize(void*& vtable, char*& text, void*& reference, const char* message,
+                                        InsertAllocator* original, InsertAllocator* copy) {
     vtable = &__vt__Q23std11logic_error;
     *(volatile unsigned char*)&original->value = 0;
     copy->value = 0;
@@ -613,7 +770,11 @@ struct InsertAllocationGuard {
     void* allocator;
     void* volatile node;
     // Free a tree node if payload construction exits through an exception.
-    ~InsertAllocationGuard() { void* p = node; if (p) appFreeUni__FPv(p); }
+    ~InsertAllocationGuard() {
+        void* p = node;
+        if (p)
+            appFreeUni__FPv(p);
+    }
 };
 
 // Allocate and copy one effect-tree payload, link its node, and rebalance the red-black tree.
@@ -629,8 +790,8 @@ InsertNode* RBTree_InsertNode_Large(InsertHead* self, InsertNode* slot, int left
         const char* message = shotEffectResourceStrings.treeLengthError;
         InsertErrorBase error;
         InsertErrorBase* errorPointer = &error;
-        InsertErrorBase::initialize(errorPointer->vtable, error.text, error.reference,
-            message, &originalAllocator, &copyAllocator);
+        InsertErrorBase::initialize(errorPointer->vtable, error.text, error.reference, message, &originalAllocator,
+                                    &copyAllocator);
         errorPointer->vtable = &__vt__Q23std12length_error;
         __throw(shotEffectResourceStrings.lengthErrorTypeName, errorPointer, (void*)__dt__Q23std12length_errorFv);
     }
@@ -648,17 +809,21 @@ InsertNode* RBTree_InsertNode_Large(InsertHead* self, InsertNode* slot, int left
     guard.node = 0;
     node->left = 0;
     new (&node->parent) InsertParent(slot);
-    if (left) slot->left = node;
-    else slot->right = node;
+    if (left)
+        slot->left = node;
+    else
+        slot->right = node;
     unsigned int count = self->count;
     self->count = count + 1;
     RBTree_RebalanceAfterInsert(node, self->sentinelParent);
-    if (setRoot) self->sentinelChild = node;
+    if (setRoot)
+        self->sentinelChild = node;
     return node;
 }
 
 // Orient all impact particles once to the initial horizontal shot direction.
-int CFxShotImpact_OrientParticlesToShotDirection(SpinControl* self) {
+int CFxShotImpact::OrientParticlesToShotDirection() {
+    SpinControl* self = (SpinControl*)this;
     // Membership and orientation-byte contracts are shared with Power Spin above.
     // Return 0 when the manager no longer contains the sequence, else 1.
     SpinNode* cur;
@@ -669,191 +834,211 @@ int CFxShotImpact_OrientParticlesToShotDirection(SpinControl* self) {
     SpinNode* node = manager->sentinel.left;
     SpinNode* found = &manager->sentinel;
     while (node) {
-        if (node->key >= key.value) { found = node; node = node->left; }
-        else node = node->right;
+        if (node->key >= key.value) {
+            found = node;
+            node = node->left;
+        } else
+            node = node->right;
     }
-    if (found == &manager->sentinel || key.value < found->key) found = &manager->sentinel;
-    if (found == &manager->sentinel) return 0;
+    if (found == &manager->sentinel || key.value < found->key)
+        found = &manager->sentinel;
+    if (found == &manager->sentinel)
+        return 0;
     data = self->sequence;
     if (!self->orientationApplied) {
-    if (!data->count) return 1;
-    Vec3* source = &((ShotTrajectorySample*)PreData__9CGolfBallFi(self->ball, 0))->velocity;
-    Vec3 pos = *source;
-    pos.y = kFloat_0_shotEffects;
-    (*(WVector*)&pos).Normalize();
-    Vec3 dir;
-    dir.x = kFloat_0_shotEffects;
-    dir.y = kFloat_0_shotEffects;
-    dir.z = kFloat_Neg1_0;
-    float dot = Vec3_DotProduct(&pos, &dir);
-    float angle = (float)acos(dot);
-    if (pos.x < kFloat_0_shotEffects) angle = kFloat_6_2831855_ShotEffects_805DE5CC - angle;
-    double matrix[6];
-    Vec3 scale;
-    scale.x = kFloat_0_shotEffects;
-    scale.y = kFloat_1_FxShot;
-    scale.z = kFloat_0_shotEffects;
-    Matrix_SetNegativeAxisAngleRotation(matrix, &scale, angle);
-    cur = data->sentinel.right;
-    end = &data->sentinel;
-    while (cur != end) {
-        SpinParticle* item = cur->item;
-        WVector tmp1;
-        WVector tmp2;
-        Matrix_TransformPoint(&tmp1, &item->velocity, matrix);
-        *(WVector*)(&item->velocity) = tmp1;
-        Matrix_TransformPoint(&tmp2, &item->direction, matrix);
-        *(WVector*)(&item->direction) = tmp2;
-        SpinNode* right = cur->right;
-        if (right) {
-            while (right->left) right = right->left;
-            cur = right;
-        } else {
-            SpinNode* p;
-            while (cur != (p = (SpinNode*)(cur->parentColor & ~kTreeParentTag))->left) {
+        if (!data->count)
+            return 1;
+        Vec3* source = &((ShotTrajectorySample*)PreData__9CGolfBallFi(self->ball, 0))->velocity;
+        Vec3 pos = *source;
+        pos.y = kFloat_0_shotEffects;
+        (*(WVector*)&pos).Normalize();
+        Vec3 dir;
+        dir.x = kFloat_0_shotEffects;
+        dir.y = kFloat_0_shotEffects;
+        dir.z = kFloat_Neg1_0;
+        float dot = Vec3_DotProduct(&pos, &dir);
+        float angle = (float)acos(dot);
+        if (pos.x < kFloat_0_shotEffects)
+            angle = kFloat_6_2831855_ShotEffects_805DE5CC - angle;
+        double matrix[6];
+        Vec3 scale;
+        scale.x = kFloat_0_shotEffects;
+        scale.y = kFloat_1_FxShot;
+        scale.z = kFloat_0_shotEffects;
+        Matrix_SetNegativeAxisAngleRotation(matrix, &scale, angle);
+        cur = data->sentinel.right;
+        end = &data->sentinel;
+        while (cur != end) {
+            SpinParticle* item = cur->item;
+            WVector tmp1;
+            WVector tmp2;
+            Matrix_TransformPoint(&tmp1, &item->velocity, matrix);
+            *(WVector*)(&item->velocity) = tmp1;
+            Matrix_TransformPoint(&tmp2, &item->direction, matrix);
+            *(WVector*)(&item->direction) = tmp2;
+            SpinNode* right = cur->right;
+            if (right) {
+                while (right->left)
+                    right = right->left;
+                cur = right;
+            } else {
+                SpinNode* p;
+                while (cur != (p = (SpinNode*)(cur->parentColor & ~kTreeParentTag))->left) {
+                    cur = p;
+                }
                 cur = p;
             }
-            cur = p;
         }
-    }
-    self->orientationApplied = 1;
+        self->orientationApplied = 1;
     }
     return 1;
 }
 
 #pragma opt_common_subs off
 // Choose and register an impact sequence from the ground type and course map name.
-void* CFxShotImpact_Ctor(void* self, int arg1, void* input) {
-    (*(int*)&AsCFxShotImpact(self)->sequenceOwner) = arg1;
-    AsCFxShotImpact(self)->vtbl = (void*)__vt__13CFxShotImpact;
-    AsCFxShotImpact(self)->ball = input;
-    AsCFxShotImpact(self)->particlesAlignedToShot = 0;
-    struct Values { void* p[3]; } values = *(Values*)input;
+CFxShotImpact::CFxShotImpact(void* owner, void* ball) {
+    // The ball pointer is read back from the field for the position copy.
+    CFxShotImpact* control = this;
+    sequenceOwner = owner;
+    vtbl = (void*)__vt__13CFxShotImpact;
+    this->ball = ball;
+    particlesAlignedToShot = 0;
+    struct Values {
+        void* p[3];
+    } values = *(Values*)ball;
     unsigned char kind = GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(values.p[0]), &values);
     char text[32];
     switch (kind) {
     case kEffectDefaultSand10: {
-        void* filename = AsCSharedDoc(g_sharedDoc)->selectedCourseData;
-        sprintf(text, shotEffectResourceStrings.impactDefaultSand, filename ? ((IFF_STRUCT::sCourse*)filename)->mapName : 0);
-        AsCFxShotImpact(self)->sequence = CFxSequence_Create(AsCFxShotImpact(self)->sequenceOwner, text, 1, 0, 0);
+        void* filename = ((CSharedDoc*)g_sharedDoc)->selectedCourseData;
+        sprintf(text, shotEffectResourceStrings.impactDefaultSand,
+                filename ? ((IFF_STRUCT::sCourse*)filename)->mapName : 0);
+        sequence = CFxSequence_Create(sequenceOwner, text, 1, 0, 0);
         break;
     }
     case kEffectSand3: {
-        void* filename = AsCSharedDoc(g_sharedDoc)->selectedCourseData;
-        sprintf(text, shotEffectResourceStrings.impactSandFormat, filename ? ((IFF_STRUCT::sCourse*)filename)->mapName : 0);
-        AsCFxShotImpact(self)->sequence = CFxSequence_Create(AsCFxShotImpact(self)->sequenceOwner, text, 1, 0, 0);
+        void* filename = ((CSharedDoc*)g_sharedDoc)->selectedCourseData;
+        sprintf(text, shotEffectResourceStrings.impactSandFormat,
+                filename ? ((IFF_STRUCT::sCourse*)filename)->mapName : 0);
+        sequence = CFxSequence_Create(sequenceOwner, text, 1, 0, 0);
         break;
     }
     case kEffectPath5:
     case kEffectPath7:
-        AsCFxShotImpact(self)->sequence = CFxSequence_Create(AsCFxShotImpact(self)->sequenceOwner, shotEffectResourceStrings.impactPath, 1, 0, 0);
+        sequence = CFxSequence_Create(sequenceOwner, shotEffectResourceStrings.impactPath, 1, 0, 0);
         break;
     case kEffectGrass4: {
-        void* filename = AsCSharedDoc(g_sharedDoc)->selectedCourseData;
-        sprintf(text, shotEffectResourceStrings.impactGrassFormat, filename ? ((IFF_STRUCT::sCourse*)filename)->mapName : 0);
-        AsCFxShotImpact(self)->sequence = CFxSequence_Create(AsCFxShotImpact(self)->sequenceOwner, text, 1, 0, 0);
+        void* filename = ((CSharedDoc*)g_sharedDoc)->selectedCourseData;
+        sprintf(text, shotEffectResourceStrings.impactGrassFormat,
+                filename ? ((IFF_STRUCT::sCourse*)filename)->mapName : 0);
+        sequence = CFxSequence_Create(sequenceOwner, text, 1, 0, 0);
         break;
     }
     case kEffectTee:
-        AsCFxShotImpact(self)->sequence = CFxSequence_Create(AsCFxShotImpact(self)->sequenceOwner, shotEffectResourceStrings.impactTee, 1, 0, 0);
+        sequence = CFxSequence_Create(sequenceOwner, shotEffectResourceStrings.impactTee, 1, 0, 0);
         break;
     case kEffectWater8:
-        AsCFxShotImpact(self)->sequence = CFxSequence_Create(AsCFxShotImpact(self)->sequenceOwner, shotEffectResourceStrings.impactWater, 1, 0, 0);
+        sequence = CFxSequence_Create(sequenceOwner, shotEffectResourceStrings.impactWater, 1, 0, 0);
         break;
     case kEffectWaterBunker12: {
-        void* filename = AsCSharedDoc(g_sharedDoc)->selectedCourseData;
-        sprintf(text, shotEffectResourceStrings.impactWaterBunkerFormat, filename ? ((IFF_STRUCT::sCourse*)filename)->mapName : 0);
-        AsCFxShotImpact(self)->sequence = CFxSequence_Create(AsCFxShotImpact(self)->sequenceOwner, text, 1, 0, 0);
+        void* filename = ((CSharedDoc*)g_sharedDoc)->selectedCourseData;
+        sprintf(text, shotEffectResourceStrings.impactWaterBunkerFormat,
+                filename ? ((IFF_STRUCT::sCourse*)filename)->mapName : 0);
+        sequence = CFxSequence_Create(sequenceOwner, text, 1, 0, 0);
         break;
     }
     default:
-        AsCFxShotImpact(self)->sequence = 0;
+        sequence = 0;
         break;
     }
-    if (AsCFxShotImpact(self)->sequence) {
-        CFxBox_RegisterSequence(AsCFxShotImpact(self)->sequenceOwner, AsCFxShotImpact(self)->sequence);
-        void* destination = &((CFxSequence*)AsCFxShotImpact(self)->sequence)->worldPosition;
-        void* pos = PreData__9CGolfBallFi(AsCFxShotImpact(self)->ball, 0);
+    if (sequence) {
+        ((CFxBox*)sequenceOwner)->RegisterSequence(((CFxSequence*)(sequence)));
+        void* destination = &((CFxSequence*)sequence)->worldPosition;
+        void* pos = PreData__9CGolfBallFi(control->ball, 0);
         *(WVector*)destination = *(WVector*)pos;
     }
     int serial = s_fxInstanceSerial;
-    AsCFxShotImpact(self)->serialNumber = serial;
+    serialNumber = serial;
     s_fxInstanceSerial = serial + 1;
-    return self;
 }
 #pragma opt_common_subs reset
 #pragma opt_propagation reset
 
 #pragma opt_propagation off
 // Start the warp sound and launch effects, then follow the ball until it slows down.
-int CFxBoosterWarp_Update(void* self) {
-    if (AsCFxBoosterWarp(self)->initialSetupComplete) {
-        float t = (((CGolfBall*)AsCFxBoosterWarp(self)->ball)->m_velocity).Magnitude();
-        if (t < kFloat_0_5_FxShot) {
-            if ((*(unsigned char*)&((CFxSequence*)AsCFxBoosterWarp(self)->ballFollowSequence)->playbackEnabled)) (*(unsigned char*)&((CFxSequence*)AsCFxBoosterWarp(self)->ballFollowSequence)->playbackEnabled) = 0;
-            if ((*(unsigned char*)&((CFxSequence*)AsCFxBoosterWarp(self)->launchSequence)->playbackEnabled)) (*(unsigned char*)&((CFxSequence*)AsCFxBoosterWarp(self)->launchSequence)->playbackEnabled) = 0;
-        } else ((CFxSequence*)AsCFxBoosterWarp(self)->ballFollowSequence)->worldPosition = ((CGolfBall*)AsCFxBoosterWarp(self)->ball)->m_pos;
+int CFxBoosterWarp::Update() {
+    if (initialSetupComplete) {
+        float ballSpeed = (((CGolfBall*)ball)->m_velocity).Magnitude();
+        if (ballSpeed < kFloat_0_5_FxShot) {
+            if ((*(unsigned char*)&((CFxSequence*)ballFollowSequence)->playbackEnabled))
+                (*(unsigned char*)&((CFxSequence*)ballFollowSequence)->playbackEnabled) = 0;
+            if ((*(unsigned char*)&((CFxSequence*)launchSequence)->playbackEnabled))
+                (*(unsigned char*)&((CFxSequence*)launchSequence)->playbackEnabled) = 0;
+        } else
+            ((CFxSequence*)ballFollowSequence)->worldPosition = ((CGolfBall*)ball)->m_pos;
     } else {
-        ((CFxSequence*)AsCFxBoosterWarp(self)->ballFollowSequence)->worldPosition = ((CGolfBall*)AsCFxBoosterWarp(self)->ball)->m_pos;
-        if ((*(unsigned char*)&((CFxSequence*)AsCFxBoosterWarp(self)->launchSequence)->playbackEnabled) != 1) (*(unsigned char*)&((CFxSequence*)AsCFxBoosterWarp(self)->launchSequence)->playbackEnabled) = 1;
-        ((CFxSequence*)AsCFxBoosterWarp(self)->launchSequence)->worldPosition = ((CGolfBall*)AsCFxBoosterWarp(self)->ball)->m_pos;
-        if ((*(unsigned char*)&((CFxSequence*)AsCFxBoosterWarp(self)->launchSequence)->playbackEnabled) != 1) (*(unsigned char*)&((CFxSequence*)AsCFxBoosterWarp(self)->launchSequence)->playbackEnabled) = 1;
+        ((CFxSequence*)ballFollowSequence)->worldPosition = ((CGolfBall*)ball)->m_pos;
+        if ((*(unsigned char*)&((CFxSequence*)launchSequence)->playbackEnabled) != 1)
+            (*(unsigned char*)&((CFxSequence*)launchSequence)->playbackEnabled) = 1;
+        ((CFxSequence*)launchSequence)->worldPosition = ((CGolfBall*)ball)->m_pos;
+        if ((*(unsigned char*)&((CFxSequence*)launchSequence)->playbackEnabled) != 1)
+            (*(unsigned char*)&((CFxSequence*)launchSequence)->playbackEnabled) = 1;
         char text[8];
         void* name = shotEffectResourceStrings.boostergate;
-        __mi__FRC7WVectorRC7WVector((void*)text, (const char*)AsCFxBoosterWarp(self)->ball, (char*)s_cameraTransform.position);
-        ((void (*)(void*, const char*, void*, int, int, int, float, float, float))Sound_PlayByName)(g_soundManager, (char*)name, (void*)text, 5, 0, 0, kFloat_0_shotEffects, kFloat_10000_ShotEffects, kFloat_1_FxShot);
-        AsCFxBoosterWarp(self)->initialSetupComplete = 1;
+        __mi__FRC7WVectorRC7WVector((void*)text, (const char*)ball, (char*)s_cameraTransform.position);
+        ((void (*)(void*, const char*, void*, int, int, int, float, float, float))Sound_PlayByName)(
+            g_soundManager, (char*)name, (void*)text, 5, 0, 0, kFloat_0_shotEffects, kFloat_10000_ShotEffects,
+            kFloat_1_FxShot);
+        initialSetupComplete = 1;
     }
     return 1;
 }
 #pragma opt_propagation reset
 
-class Dt0 { public: 
-virtual void v08(int);
+class Dt0 {
+public:
+    virtual void v08(int);
 };
-// Unregister and destroy both warp sequences, clear their slots, and optionally free the controller.
-void* CFxBoosterWarp_dtor(ObjectWithChildren* self, int shouldDelete) {
-    if (self != 0) {
-        self->vtable = (void*)__vt__14CFxBoosterWarp;
-        for (unsigned int i = 0; i < 2; ++i) {
-            void* child = (&self->child0)[i];
-            if (child != 0) {
-                CFxBox_RemoveSequence(self->owner, child, 0);
-                child = (&self->child0)[i];
-                if (child != 0) ((Dt0*)child)->v08(1);
-                (&self->child0)[i] = 0;
-            }
+// Unregister and destroy both warp sequences and clear their slots.
+CFxBoosterWarp::~CFxBoosterWarp() {
+    vtbl = (void*)__vt__14CFxBoosterWarp;
+    // The two sequence slots are adjacent and cleaned up the same way.
+    for (unsigned int i = 0; i < 2; ++i) {
+        void* child = (&ballFollowSequence)[i];
+        if (child != 0) {
+            ((CFxBox*)owner)->RemoveSequence(((CFxSequence*)(child)), 0);
+            child = (&ballFollowSequence)[i];
+            if (child != 0)
+                ((Dt0*)child)->v08(1);
+            (&ballFollowSequence)[i] = 0;
         }
-        if (shouldDelete > 0) __dl__FPv(self);
     }
-    return self;
 }
 
-// Unregister and destroy the Spike sequences and optionally free the controller.
-void* CFxSpike_dtor(ObjectWithChildren* self, int shouldDelete) {
-    if (self != 0) {
-        self->vtable = (void*)__vt__8CFxSpike;
-        for (unsigned int i = 0; i < 2; ++i) {
-            void* child = (&self->child0)[i];
-            if (child != 0) {
-                CFxBox_RemoveSequence(self->owner, child, 0);
-                child = (&self->child0)[i];
-                if (child != 0) ((Dt0*)child)->v08(1);
-            }
+// Unregister and destroy the Spike sequences.
+CFxSpike::~CFxSpike() {
+    vtbl = (void*)__vt__8CFxSpike;
+    // The two sequence slots are adjacent and cleaned up the same way.
+    for (unsigned int i = 0; i < 2; ++i) {
+        void* child = (&initialSequence)[i];
+        if (child != 0) {
+            ((CFxBox*)effectManager)->RemoveSequence(((CFxSequence*)(child)), 0);
+            child = (&initialSequence)[i];
+            if (child != 0)
+                ((Dt0*)child)->v08(1);
         }
-        if (shouldDelete > 0) __dl__FPv(self);
     }
-    return self;
 }
 
 // Attempt the wood-wave effect once at the launch position; latch the attempt even on failure.
-int CFxPowerShot2_TryCreateWoodWaveSequence(void* self) {
-    unsigned char* bytes = (unsigned char*)self;
-    if (AsCFxPowerShot2(bytes)->sequenceCreationAttempted) return 1;
+int CFxPowerShot2::TryCreateWoodWaveSequence() {
+    unsigned char* bytes = (unsigned char*)this;
+    if (AsCFxPowerShot2(bytes)->sequenceCreationAttempted)
+        return 1;
     const ShotEffectResourceStrings& resources = shotEffectResourceStrings;
     void* child = CFxSequence_Create(AsCFxPowerShot2(bytes)->sequenceOwner, resources.woodwave2_seq, 1, 0, 0);
     if (child != 0) {
-        CFxBox_RegisterSequence(AsCFxPowerShot2(bytes)->sequenceOwner, child);
+        ((CFxBox*)(AsCFxPowerShot2(bytes)->sequenceOwner))->RegisterSequence(((CFxSequence*)(child)));
         Vec3* source = (Vec3*)PreData__9CGolfBallFi(AsCFxPowerShot2(bytes)->golfBall, 0);
         Vec3 pos = *source;
         pos.y += kPowerShot2HeightOffset;
@@ -866,27 +1051,17 @@ int CFxPowerShot2_TryCreateWoodWaveSequence(void* self) {
 }
 
 // Optionally free a Power Spin controller; the sequence is owned by the effect manager.
-void* CFxPowerSpin_vfunc_0(void* ptr, int shouldDelete) {
+void* CFxPowerSpin::vfunc_0(void* ptr, int shouldDelete) {
     if (ptr != 0 && shouldDelete > 0) {
         __dl__FPv(ptr);
     }
     return ptr;
 }
 
-// Optionally free an impact controller; the sequence is owned by the effect manager.
-void* CFxShotImpact_dtor(void* ptr, int shouldDelete) {
-    if (ptr != 0 && shouldDelete > 0) {
-        __dl__FPv(ptr);
-    }
-    return ptr;
-}
+// The sequence is owned by the effect manager, so there is nothing to release.
+CFxShotImpact::~CFxShotImpact() {}
 
-// Optionally free a power-shot controller; the sequence is owned by the effect manager.
-void* CFxPowerShot2_dtor(void* ptr, int shouldDelete) {
-    if (ptr != 0 && shouldDelete > 0) {
-        __dl__FPv(ptr);
-    }
-    return ptr;
-}
+// The sequence is owned by the effect manager, so there is nothing to release.
+CFxPowerShot2::~CFxPowerShot2() {}
 
 } // extern "C"

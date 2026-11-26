@@ -4,8 +4,8 @@
 struct GolfCupFields {
     void* vtbl; // 0x0: GolfCupMatrices installs __vt__8CGolfCup.
     char pad_004[0xC];
-    int model; // 0x10: GolfCupMatrices clears; meaning unresolved.
-    int captureQueue; // 0x14: GolfCupMatrices clears.
+    int model;         // 0x10: GolfCupMatrices clears; meaning unresolved.
+    int captureQueue;  // 0x14: GolfCupMatrices clears.
     char captureReady; // 0x18: GolfCupMatrices clears.
     char pad_019[3];
     float positionX; // 0x1C: CGolfCup::CGolfCup initializes the three scalar components alike.
@@ -13,8 +13,8 @@ struct GolfCupFields {
     float positionZ;
     int shadowMesh; // 0x28: passed to GolfCupMesh_CreateScaledTriangles; role unresolved.
     int captureTexture;
-    float matrix0[16]; // 0x30: GolfCupMatrices calls PSMTX44Identity.
-    float matrix1[16]; // 0x70: GolfCupMatrices calls PSMTX44Identity.
+    float matrix0[16];          // 0x30: GolfCupMatrices calls PSMTX44Identity.
+    float matrix1[16];          // 0x70: GolfCupMatrices calls PSMTX44Identity.
     int savedMaterialResources; // 0xB0: constructor clears three words of the GolfCupList subobject; roles unresolved.
     int savedMaterialResourceCount;
     int savedMaterialResourceCapacity;

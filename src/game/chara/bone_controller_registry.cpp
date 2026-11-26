@@ -1,6 +1,8 @@
-// Translation unit 0x8025E8F8-0x8025F0BC (8 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Rotation registry operations on bone-controller and texture-coordinate maps: key lookup, insert,
+// erase, clearing values, and the texture-coordinate registry's init and destruction.
+// Keys stay in order in each tree.
 
+#include "classes/CRotateRegistry.h"
 extern "C" {
 
 // Registry base: slots 0 and 1 are not used in this unit (purpose unknown); slot 2 releases the owned values.
@@ -8,11 +10,11 @@ class RegistryVirtual {
 public:
     virtual void v0();
     virtual void v1();
-    virtual void clearValues();
+    virtual int clearValues();
 };
 // Dispatch the registry cleanup hook through its original virtual slot.
-void Registry_InvokeClearValuesHook(void* self) {
-    ((RegistryVirtual*)self)->clearValues();
+int Registry_InvokeClearValuesHook(void* self) {
+    return ((RegistryVirtual*)self)->clearValues();
 }
 
 struct RegistryNode {
@@ -31,7 +33,10 @@ struct RegistryTreeView {
     RegistryNode* root;
     RegistryNode* first;
 };
-enum { kTreeColorBit = 1, kDefaultVectorComponentCount = 3 };
+enum {
+    kTreeColorBit = 1,
+    kDefaultVectorComponentCount = 3
+};
 
 // Search the ordered tree for an exact key; return zero when lower_bound is the sentinel.
 int BoneControllerTree_ContainsKey(void* tree, unsigned int* key) {
@@ -48,12 +53,13 @@ int BoneControllerTree_ContainsKey(void* tree, unsigned int* key) {
     if (last != (RegistryNode*)&((RegistryTreeView*)tree)->root) {
         last = (*key >= last->key) ? last : (RegistryNode*)&((RegistryTreeView*)tree)->root;
     }
-    if ((RegistryNode*)&((RegistryTreeView*)tree)->root == last) return 0;
+    if ((RegistryNode*)&((RegistryTreeView*)tree)->root == last)
+        return 0;
     return 1;
 }
 
 // Delete each owned payload in key order while retaining the tree nodes.
-int CRotateRegistry_DeleteAllValues(void* tree) {
+int CRotateRegistry::DeleteAllValues(void* tree) {
     void* zero = 0;
     RegistryNode* node = ((RegistryTreeView*)tree)->first;
     RegistryNode* nil = (RegistryNode*)&((RegistryTreeView*)tree)->root;
@@ -73,7 +79,8 @@ int CRotateRegistry_DeleteAllValues(void* tree) {
             RegistryNode* parent;
             do {
                 parent = (RegistryNode*)(node->parentAndColor & ~((unsigned int)kTreeColorBit));
-                if (node == parent->left) break;
+                if (node == parent->left)
+                    break;
                 node = parent;
             } while (node != nil);
             node = parent;
@@ -103,7 +110,8 @@ int BoneControllerMap_EraseByIndex(void* tree, unsigned int* key) {
     }
     if (position == (RegistryNode*)&((RegistryTreeView*)tree)->root || *key < position->key)
         position = (RegistryNode*)&((RegistryTreeView*)tree)->root;
-    if ((RegistryNode*)&((RegistryTreeView*)tree)->root == position) return 0;
+    if ((RegistryNode*)&((RegistryTreeView*)tree)->root == position)
+        return 0;
     void* payload = position->payload;
     if (payload != 0) {
         __dl__FPv(payload);
@@ -116,7 +124,8 @@ int BoneControllerMap_EraseByIndex(void* tree, unsigned int* key) {
         if (scan->key >= *key) {
             found = scan;
             scan = scan->left;
-        } else scan = scan->right;
+        } else
+            scan = scan->right;
     }
     if (found == (RegistryNode*)&((RegistryTreeView*)tree)->root || *key < found->key)
         found = (RegistryNode*)&((RegistryTreeView*)tree)->root;
@@ -127,11 +136,13 @@ int BoneControllerMap_EraseByIndex(void* tree, unsigned int* key) {
             RegistryNode* child = found->right;
             if (child != 0) {
                 RegistryNode* next;
-                while ((next = child->left) != 0) child = next;
+                while ((next = child->left) != 0)
+                    child = next;
                 found = child;
             } else {
                 RegistryNode* parent;
-                while (found != (parent = (RegistryNode*)(found->parentAndColor & ~((unsigned int)kTreeColorBit)))->left) {
+                while (found !=
+                       (parent = (RegistryNode*)(found->parentAndColor & ~((unsigned int)kTreeColorBit)))->left) {
                     found = parent;
                 }
                 found = parent;
@@ -153,8 +164,14 @@ struct BoneVectorEntry {
     unsigned int xBits, yBits, zBits, componentCount;
     float value;
 };
-void* BoneControllerVectorTree_FindInsertionPosition(void*, unsigned int*, RegistryNode**, unsigned char*, unsigned char*);
-struct BoneVectorMapView { unsigned int reservedHeaderWord; unsigned int size; unsigned int nodeCount; RegistryNode* root; };
+void* BoneControllerVectorTree_FindInsertionPosition(void*, unsigned int*, RegistryNode**, unsigned char*,
+                                                     unsigned char*);
+struct BoneVectorMapView {
+    unsigned int reservedHeaderWord;
+    unsigned int size;
+    unsigned int nodeCount;
+    RegistryNode* root;
+};
 extern void* __nw__FUl(unsigned int);
 extern RegistryNode* BoneControllerMap_InsertNode(void*, RegistryNode*, unsigned char, unsigned char, unsigned int*);
 extern unsigned int s_boneControllerNullMappedValue;
@@ -166,7 +183,8 @@ extern const float kBoneVectorEntryDefaultValue;
 // Copy a vector entry into the key map, allocating its payload when absent.
 int BoneControllerMap_SetVectorEntry(BoneVectorMapView* self, unsigned int* key, const BoneVectorEntry* value) {
     unsigned int sz = self->size;
-    if (sz <= *key) return 0;
+    if (sz <= *key)
+        return 0;
     BoneVectorEntry* entry;
     RegistryNode* node = self->root;
     RegistryNode* where = (RegistryNode*)&self->root;
@@ -178,7 +196,8 @@ int BoneControllerMap_SetVectorEntry(BoneVectorMapView* self, unsigned int* key,
             node = node->right;
         }
     }
-    if (where == (RegistryNode*)&self->root || *key < where->key) where = (RegistryNode*)&self->root;
+    if (where == (RegistryNode*)&self->root || *key < where->key)
+        where = (RegistryNode*)&self->root;
     if ((RegistryNode*)&self->root == where) {
         BoneVectorEntry* allocated = (BoneVectorEntry*)__nw__FUl(sizeof(BoneVectorEntry));
         if (allocated != 0) {
@@ -189,12 +208,17 @@ int BoneControllerMap_SetVectorEntry(BoneVectorMapView* self, unsigned int* key,
     } else {
         entry = (BoneVectorEntry*)where->payload;
     }
-    if (entry == 0) return 0;
+    if (entry == 0)
+        return 0;
     *entry = *value;
     unsigned char flagB, flagA;
     RegistryNode* result;
-    RegistryNode* parent = (RegistryNode*)BoneControllerVectorTree_FindInsertionPosition((void*)&self->nodeCount, key, &result, &flagA, &flagB);
-    struct Pair { unsigned int key; BoneVectorEntry* value; };
+    RegistryNode* parent = (RegistryNode*)BoneControllerVectorTree_FindInsertionPosition((void*)&self->nodeCount, key,
+                                                                                         &result, &flagA, &flagB);
+    struct Pair {
+        unsigned int key;
+        BoneVectorEntry* value;
+    };
     Pair* target;
     if (result == 0 || (target = (Pair*)&result->key)->key < *key) {
         unsigned int kv[2];
@@ -211,7 +235,7 @@ int BoneControllerMap_SetVectorEntry(BoneVectorMapView* self, unsigned int* key,
 
 // Find the insertion parent and predecessor, returning the left/unique insertion flags.
 void* BoneControllerVectorTree_FindInsertionPosition(void* tree, unsigned int* key, RegistryNode** result,
-                  unsigned char* flagA, unsigned char* flagB) {
+                                                     unsigned char* flagA, unsigned char* flagB) {
     unsigned int zero = 0;
     unsigned int one = 1;
     *result = (RegistryNode*)zero;
@@ -269,7 +293,8 @@ void* TextureCoordinateRegistry_Dtor(TextureRegistryView* self, int freeSelf) {
         extern char s_textureCoordinateRegistryVtable[];
         self->vtable = s_textureCoordinateRegistryVtable;
         ((RegistryVirtual*)self)->clearValues();
-        if ((void*)&self->nodeCount != 0 && (void*)&self->nodeCount != 0 && (void*)&self->nodeCount != 0 && (void*)&self->nodeCount != 0 && (void*)&self->nodeCount != 0 && (void*)&self->nodeCount != 0) {
+        if ((void*)&self->nodeCount != 0 && (void*)&self->nodeCount != 0 && (void*)&self->nodeCount != 0 &&
+            (void*)&self->nodeCount != 0 && (void*)&self->nodeCount != 0 && (void*)&self->nodeCount != 0) {
             root = (RegistryNode*)self->root;
             if (root != 0) {
                 a = root->left;
@@ -278,14 +303,18 @@ void* TextureCoordinateRegistry_Dtor(TextureRegistryView* self, int freeSelf) {
                     if (aa != 0) {
                         aaa = aa->left;
                         if (aaa != 0) {
-                            if (aaa->left) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aaa->left);
-                            if (aaa->right) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aaa->right);
+                            if (aaa->left)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aaa->left);
+                            if (aaa->right)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aaa->right);
                             appFreeUni__FPv(aaa);
                         }
                         aab = aa->right;
                         if (aab != 0) {
-                            if (aab->left) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aab->left);
-                            if (aab->right) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aab->right);
+                            if (aab->left)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aab->left);
+                            if (aab->right)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aab->right);
                             appFreeUni__FPv(aab);
                         }
                         appFreeUni__FPv(aa);
@@ -294,14 +323,18 @@ void* TextureCoordinateRegistry_Dtor(TextureRegistryView* self, int freeSelf) {
                     if (ab != 0) {
                         aba = ab->left;
                         if (aba != 0) {
-                            if (aba->left) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aba->left);
-                            if (aba->right) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aba->right);
+                            if (aba->left)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aba->left);
+                            if (aba->right)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)aba->right);
                             appFreeUni__FPv(aba);
                         }
                         abb = ab->right;
                         if (abb != 0) {
-                            if (abb->left) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)abb->left);
-                            if (abb->right) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)abb->right);
+                            if (abb->left)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)abb->left);
+                            if (abb->right)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)abb->right);
                             appFreeUni__FPv(abb);
                         }
                         appFreeUni__FPv(ab);
@@ -314,14 +347,18 @@ void* TextureCoordinateRegistry_Dtor(TextureRegistryView* self, int freeSelf) {
                     if (ba != 0) {
                         baa = ba->left;
                         if (baa != 0) {
-                            if (baa->left) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)baa->left);
-                            if (baa->right) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)baa->right);
+                            if (baa->left)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)baa->left);
+                            if (baa->right)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)baa->right);
                             appFreeUni__FPv(baa);
                         }
                         bab = ba->right;
                         if (bab != 0) {
-                            if (bab->left) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bab->left);
-                            if (bab->right) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bab->right);
+                            if (bab->left)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bab->left);
+                            if (bab->right)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bab->right);
                             appFreeUni__FPv(bab);
                         }
                         appFreeUni__FPv(ba);
@@ -330,14 +367,18 @@ void* TextureCoordinateRegistry_Dtor(TextureRegistryView* self, int freeSelf) {
                     if (bb != 0) {
                         bba = bb->left;
                         if (bba != 0) {
-                            if (bba->left) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bba->left);
-                            if (bba->right) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bba->right);
+                            if (bba->left)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bba->left);
+                            if (bba->right)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bba->right);
                             appFreeUni__FPv(bba);
                         }
                         bbb = bb->right;
                         if (bbb != 0) {
-                            if (bbb->left) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bbb->left);
-                            if (bbb->right) RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bbb->right);
+                            if (bbb->left)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bbb->left);
+                            if (bbb->right)
+                                RBTree_DestroySubtree((void*)&self->nodeCount, (void*)bbb->right);
                             appFreeUni__FPv(bbb);
                         }
                         appFreeUni__FPv(bb);
@@ -347,7 +388,8 @@ void* TextureCoordinateRegistry_Dtor(TextureRegistryView* self, int freeSelf) {
                 appFreeUni__FPv(root);
             }
         }
-        if (freeSelf > 0) __dl__FPv(self);
+        if (freeSelf > 0)
+            __dl__FPv(self);
     }
     return self;
 }

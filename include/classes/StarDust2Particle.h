@@ -5,13 +5,14 @@
 
 class StarDust2Particle {
 public:
-    unsigned char active; // 0x0: CStarDust2_EmitOrbitingParticles activates; CStarDust2_UpdateGlowAndParticles clears on expiry
+    unsigned char
+        active; // 0x0: CStarDust2::EmitOrbitingParticles activates; CStarDust2::UpdateGlowAndParticles clears on expiry
     char pad_001[0x3];
-    float radialScale; // 0x4: CStarDust2_UpdateGlowAndParticles scales the orbit vector by this value
+    float radialScale; // 0x4: CStarDust2::UpdateGlowAndParticles scales the orbit vector by this value
     char pad_008[0x3C];
-    float angle; // 0x44: CStarDust2_UpdateGlowAndParticles passes this value to sine and cosine
-    float angularVelocity; // 0x48: CStarDust2_UpdateGlowAndParticles integrates into angle
-    float opacity; // 0x4C: CStarDust2_DrawGlowAndParticles shifts this value into the alpha byte
+    float angle;           // 0x44: CStarDust2::UpdateGlowAndParticles passes this value to sine and cosine
+    float angularVelocity; // 0x48: CStarDust2::UpdateGlowAndParticles integrates into angle
+    float opacity;         // 0x4C: CStarDust2::DrawGlowAndParticles shifts this value into the alpha byte
 };
 
 #define OFF(f, o) typedef char StarDust2Particle_off_##f[((int)&((StarDust2Particle*)0)->f == (o)) ? 1 : -1]

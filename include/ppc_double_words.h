@@ -4,5 +4,7 @@
 #define PPC_DOUBLE_WORDS_H
 #define PPC_DW_HI 0
 #define PPC_DW_LO 1
-struct PpcDoubleWords { unsigned int hi, lo; };
+struct PpcDoubleWords {
+    unsigned int hi, lo;
+};
 #endif

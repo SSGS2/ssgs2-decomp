@@ -42,5 +42,5 @@ The headers keep ogws's layout and `#include <...>` paths, so they work with the
 
 `#include "sdk_protos.h"` is the entry point for source files. It reads these headers with every enum typedef renamed,
 then gives each enum name back as `typedef int X;` (the project models enums as int, and the existing sources pass
-ints), and declares each function under the symbol name the build still uses (`fn_8033E314`) with the real parameter
-types.
+ints), and declares each function under the symbol name the build uses (now the SDK's own name, such as `DVDOpen`) with the
+real parameter types.

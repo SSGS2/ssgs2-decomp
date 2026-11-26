@@ -6,10 +6,11 @@
 class ScriptOwnedBuffer80092804 {
 public:
     void* data; // 0x0
-    int count; // 0x4
+    int count;  // 0x4
 };
 
-#define OFF(f, o) typedef char ScriptOwnedBuffer80092804_off_##f[((int)&((ScriptOwnedBuffer80092804*)0)->f == (o)) ? 1 : -1]
+#define OFF(f, o) \
+    typedef char ScriptOwnedBuffer80092804_off_##f[((int)&((ScriptOwnedBuffer80092804*)0)->f == (o)) ? 1 : -1]
 OFF(data, 0x0);
 OFF(count, 0x4);
 #undef OFF

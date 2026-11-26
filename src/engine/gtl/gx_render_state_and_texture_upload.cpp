@@ -1,3 +1,9 @@
+// GX render state and texture upload: the texture mip-chain upload and the functions that
+// apply cached render state to GX, such as depth, blend, alpha test, fog, vertex input and TEV.
+//
+// Each Render_Apply* function writes one group of cached state to the GX hardware. The texture
+// upload copies consecutive mip levels into a new texture.
+
 #include <decomp/offset_of.h>
 // GX renderer: image mip uploads, texture/TEV stage allocation and cached draw state.
 // Texture mod lookup: Texture_CreateAndUploadMipChain receives dimensions in
@@ -10,7 +16,7 @@
 // Resolution/filter lookup: BuildVerticalFilterWeights programs seven vertical
 // taps totaling 64; ApplyPointSize converts a normalized value to a GX byte.
 // No viewport, scissor, aspect-ratio or presentation interval is set in this unit.
-// Scalar pool: u80422F10_data.cpp plus shared kFloat_1_Renderer/.5_Light.
+// Scalar pool: the data section plus shared kFloat_1_Renderer/.5_Light.
 // RenderState80422F10.h owns the ABI schema; local stage/color views add fields
 // at documented offsets in that same state. All Apply calls require initialized
 // g_engineState on the render thread, write GX/cache state, return no status
@@ -20,56 +26,95 @@
 // the original call/register/stack shape; do not remove them as dead work.
 #define FIELD_OFFSET(type, field) ((int)DECOMP_OFFSETOF(type, field))
 #include "classes/RenderState80422F10.h"
-// Translation unit 0x80422F10-0x80424508 (19 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
 enum {
-    kVertexColorMask = 0xF000, kTextureStageCount = 8, kLightSlotCount = 8,
-    kColorWriteRgbMask = 0x00010101, kColorWriteAlphaShift = 24,
-    kVertexInputDirect = 1, kVertexInputIndex16 = 3,
-    kCompareAlways = 7, kAlphaByteMask = 255, kTevOperationDisabled = 0x10, kFilterWeightTotal = 64,
-    kVertexTexCoordCountShift = 16, kVertexTexCoordCountMask = 0xF,
-    kVertexTexCoordCountBits = 0x000F0000, kTextureStageBytes = 0x64,
-    kTextureDescriptionWords = 11, kTextureMipLevelCountForSizeQuery = 1
+    kVertexColorMask = 0xF000,
+    kTextureStageCount = 8,
+    kLightSlotCount = 8,
+    kColorWriteRgbMask = 0x00010101,
+    kColorWriteAlphaShift = 24,
+    kVertexInputDirect = 1,
+    kVertexInputIndex16 = 3,
+    kCompareAlways = 7,
+    kAlphaByteMask = 255,
+    kTevOperationDisabled = 0x10,
+    kFilterWeightTotal = 64,
+    kVertexTexCoordCountShift = 16,
+    kVertexTexCoordCountMask = 0xF,
+    kVertexTexCoordCountBits = 0x000F0000,
+    kTextureStageBytes = 0x64,
+    kTextureDescriptionWords = 11,
+    kTextureMipLevelCountForSizeQuery = 1
 };
-enum RenderBlendOperation { kBlendOperationAdd = 1, kBlendOperationSubtract = 3 };
-enum RenderStageSentinel { kNoLogicOperation = 0x80000000u, kNoGeneratedTexCoord = 0x80000000u };
+enum RenderBlendOperation {
+    kBlendOperationAdd = 1,
+    kBlendOperationSubtract = 3
+};
+enum RenderStageSentinel {
+    kNoLogicOperation = 0x80000000u,
+    kNoGeneratedTexCoord = 0x80000000u
+};
 // The engine format encodes a family in the high bits and an ID in the low
 // bits. Keep the original unsigned bias tests (addition wraps modulo 2^32).
 enum TextureFormatEncoding {
-    kPlatformFormatBias = 0x80000000u, kSplitCompressedFormatBias = 0x40000000u,
-    kIndexed8FormatCode = 9, kRgba8PaletteFormatCode = 6,
-    kSplitCompressedFormat30 = 0x30, kSplitCompressedFormat32 = 0x32,
+    kPlatformFormatBias = 0x80000000u,
+    kSplitCompressedFormatBias = 0x40000000u,
+    kIndexed8FormatCode = 9,
+    kRgba8PaletteFormatCode = 6,
+    kSplitCompressedFormat30 = 0x30,
+    kSplitCompressedFormat32 = 0x32,
     kImagePlatformWii = 7
 };
-enum TevEffectSlot { kIndirectBumpEffect = 1, kProjectionTintEffect = 4, kFourStageEffect = 6 };
+enum TevEffectSlot {
+    kIndirectBumpEffect = 1,
+    kProjectionTintEffect = 4,
+    kFourStageEffect = 6
+};
 
 // Borrowed four-word image metadata; the format occupies a pointer-sized word
 // in the image API, while dimensions are texels and mipCount counts stored levels.
-struct UploadImageDescription { void* format; unsigned int width, height, mipCount; };
+struct UploadImageDescription {
+    void* format;
+    unsigned int width, height, mipCount;
+};
 // Texture query writes nine words into an eleven-word ABI scratch area here;
 // only the first word (encoded format) is consumed in this unit.
-struct TextureFormatQuery { unsigned int format; unsigned int remainingWords[kTextureDescriptionWords - 1]; };
-struct PaletteFormatQuery { unsigned int format; unsigned int remainingWords[4]; };
+struct TextureFormatQuery {
+    unsigned int format;
+    unsigned int remainingWords[kTextureDescriptionWords - 1];
+};
+struct PaletteFormatQuery {
+    unsigned int format;
+    unsigned int remainingWords[4];
+};
 
 // Only fields consumed here are named; all other stage state stays opaque.
 struct TextureStageView {
-    char reserved00[0xC]; unsigned int colorOperation;
-    char reserved10[8]; unsigned int alphaOperation;
-    char reserved1C[0x18]; unsigned int texCoordSource;
+    char reserved00[0xC];
+    unsigned int colorOperation;
+    char reserved10[8];
+    unsigned int alphaOperation;
+    char reserved1C[0x18];
+    unsigned int texCoordSource;
     char reserved38[0x2C];
 };
 struct RenderStageOwnerView {
-    char reserved000[0x178]; TextureStageView stages[8];
-    char reserved498[0x1064]; int combinerDirty[8][2];
-    char reserved153C[0x14C]; int specialEffects[7];
+    char reserved000[0x178];
+    TextureStageView stages[8];
+    char reserved498[0x1064];
+    int combinerDirty[8][2];
+    char reserved153C[0x14C];
+    int specialEffects[7];
 };
 struct RenderMaterialColorView {
-    char reserved000[0xFC]; unsigned char ambient[4];
-    char reserved100[0x20FC]; unsigned char material[4];
-    char reserved2200[4]; unsigned char emissive[4];
+    char reserved000[0xFC];
+    unsigned char ambient[4];
+    char reserved100[0x20FC];
+    unsigned char material[4];
+    char reserved2200[4];
+    unsigned char emissive[4];
 };
 // Cast-only ABI overlays borrow the same state; no allocation occurs. Retain
 // macros here: inline calls are emitted in the optimization-level-zero regions.
@@ -100,7 +145,8 @@ void VertexInput_FindAndCopyFormatDescriptor(void*, unsigned int);
 void GXClearVtxDesc();
 int gtl_Image_GetImageData(void*, void*, int);
 unsigned int gtl_ImageFormat_ToPlatformFormat(void*, int);
-void Texture_Create2D(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
+void Texture_Create2D(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+                      unsigned int);
 void Texture_LockLevel(unsigned int, unsigned int, void*, int, int);
 unsigned int gtl_Image_GetMipChainSize(unsigned int, unsigned int, int, unsigned int, int);
 void Texture_SplitCompressedColorAndAlphaMipData(void*, void*, unsigned int, unsigned int, unsigned int, unsigned int);
@@ -147,7 +193,8 @@ void GXSetBlendMode(GXBlendMode, GXBlendFactor, GXBlendFactor, GXLogicOp);
 // arbitrary-size replacement guarantee from the integer parameter widths.
 // After success the caller owns *out's initial graphics reference and releases
 // it with GraphicsResource_Release. Existing *out must not own a prior texture.
-int Texture_CreateAndUploadMipChain(void* arg, void* unused, unsigned int* out, UploadImageDescription* imageDescription) {
+int Texture_CreateAndUploadMipChain(void* arg, void* unused, unsigned int* out,
+                                    UploadImageDescription* imageDescription) {
     // Phase 1: obtain borrowed image bytes and create the output texture (0 on image lookup failure).
     __alloca(0);
     unsigned int header[3];
@@ -162,16 +209,20 @@ int Texture_CreateAndUploadMipChain(void* arg, void* unused, unsigned int* out, 
         return 0;
     }
     platformFormat = gtl_ImageFormat_ToPlatformFormat(imageDescription->format, kImagePlatformWii);
-    Texture_Create2D(imageDescription->width, imageDescription->height, imageDescription->mipCount, 0, platformFormat, 0, (unsigned int)out, 0);
+    Texture_Create2D(imageDescription->width, imageDescription->height, imageDescription->mipCount, 0, platformFormat,
+                     0, (unsigned int)out, 0);
     dataPtr = header[0];
     width = imageDescription->width;
     height = imageDescription->height;
     // Phase 2: upload each mip level; split compressed formats delegate the remaining chain and exit.
     for (i = 0; i < imageDescription->mipCount; ++i) {
         Texture_LockLevel(*out, i, &header[1], 0, 0);
-        size = gtl_Image_GetMipChainSize(width, height, kTextureMipLevelCountForSizeQuery, (unsigned int)imageDescription->format, kImagePlatformWii);
-        if (platformFormat + kSplitCompressedFormatBias == kSplitCompressedFormat30 || platformFormat + kSplitCompressedFormatBias == kSplitCompressedFormat32) {
-            Texture_SplitCompressedColorAndAlphaMipData((void*)header[2], (void*)dataPtr, width, height, platformFormat, imageDescription->mipCount);
+        size = gtl_Image_GetMipChainSize(width, height, kTextureMipLevelCountForSizeQuery,
+                                         (unsigned int)imageDescription->format, kImagePlatformWii);
+        if (platformFormat + kSplitCompressedFormatBias == kSplitCompressedFormat30 ||
+            platformFormat + kSplitCompressedFormatBias == kSplitCompressedFormat32) {
+            Texture_SplitCompressedColorAndAlphaMipData((void*)header[2], (void*)dataPtr, width, height, platformFormat,
+                                                        imageDescription->mipCount);
             break;
         }
         Memory_Copy((void*)header[2], (void*)dataPtr, size);
@@ -220,11 +271,14 @@ void Render_ApplyLightingChannels() {
     materialSource = AsRenderState80422F10(g_engineState)->materialColorSource;
     if (AsRenderState80422F10(g_engineState)->lightingEnabled == 0) {
         lightingEnabled = 0;
-        if (AsRenderState80422F10(g_engineState)->flexibleVertexFormat & kVertexColorMask) materialSource = 1;
-        else materialSource = 0;
+        if (AsRenderState80422F10(g_engineState)->flexibleVertexFormat & kVertexColorMask)
+            materialSource = 1;
+        else
+            materialSource = 0;
     } else {
         lightSlotStride = 1;
-        if (AsRenderState80422F10(g_engineState)->specularLightingEnabled != 0) lightSlotStride = 2;
+        if (AsRenderState80422F10(g_engineState)->specularLightingEnabled != 0)
+            lightSlotStride = 2;
         for (lightIndex = 0; lightIndex < kLightSlotCount; ++lightIndex) {
             if ((*(int*)&AsRenderState80422F10(g_engineState)->lights[lightIndex]) != 0) {
                 diffuseLightMask |= 1 << (lightIndex * lightSlotStride);
@@ -235,8 +289,10 @@ void Render_ApplyLightingChannels() {
         ambientSource = 0;
         materialSource = 0;
     }
-    GXSetChanCtrl(GX_COLOR0, (GXBool)lightingEnabled, (GXColorSrc)ambientSource, (GXColorSrc)materialSource, (GXLightID)diffuseLightMask, GX_DF_CLAMP, GX_AF_SPOT);
-    GXSetChanCtrl(GX_ALPHA0, (GXBool)lightingEnabled, (GXColorSrc)ambientSource, (GXColorSrc)materialSource, (GXLightID)diffuseLightMask, GX_DF_CLAMP, GX_AF_SPOT);
+    GXSetChanCtrl(GX_COLOR0, (GXBool)lightingEnabled, (GXColorSrc)ambientSource, (GXColorSrc)materialSource,
+                  (GXLightID)diffuseLightMask, GX_DF_CLAMP, GX_AF_SPOT);
+    GXSetChanCtrl(GX_ALPHA0, (GXBool)lightingEnabled, (GXColorSrc)ambientSource, (GXColorSrc)materialSource,
+                  (GXLightID)diffuseLightMask, GX_DF_CLAMP, GX_AF_SPOT);
     // Phase 2: specular lights use alternating slots when enabled, beside the diffuse slots.
     if (AsRenderState80422F10(g_engineState)->specularLightingEnabled != 0) {
         specularLightMask = 0;
@@ -245,7 +301,8 @@ void Render_ApplyLightingChannels() {
                 specularLightMask |= 2 << (specularIndex * lightSlotStride);
             }
         }
-        GXSetChanCtrl(GX_COLOR1, (GXBool)lightingEnabled, (GXColorSrc)ambientSource, (GXColorSrc)materialSource, (GXLightID)specularLightMask, GX_DF_NONE, GX_AF_SPEC);
+        GXSetChanCtrl(GX_COLOR1, (GXBool)lightingEnabled, (GXColorSrc)ambientSource, (GXColorSrc)materialSource,
+                      (GXLightID)specularLightMask, GX_DF_NONE, GX_AF_SPEC);
     }
 }
 #pragma pop
@@ -260,7 +317,10 @@ void Render_ApplyLightingChannels() {
 // validation or saturation occurs. Preserve truncation, remainder distribution
 // and tap order; the resulting bytes feed the EFB-to-display copy filter.
 void Render_BuildVerticalFilterWeights(unsigned char* out, float filterBias) {
-    struct { unsigned char center[3]; unsigned char outer[4]; } weights;
+    struct {
+        unsigned char center[3];
+        unsigned char outer[4];
+    } weights;
     float centerFraction = (kFloat_1_Renderer + filterBias) * kFloat_0_5_Light;
     int centerWeight = (int)(kFloat_64_VerticalFilterWeightTotal * centerFraction);
     int outerWeight = kFilterWeightTotal - centerWeight;
@@ -277,14 +337,19 @@ void Render_BuildVerticalFilterWeights(unsigned char* out, float filterBias) {
         else
             weights.center[i] = (unsigned char)((float)centerWeight / kFloat_3_Renderer);
     }
-    out[0] = weights.outer[0]; out[1] = weights.outer[2]; out[2] = weights.center[0];
-    out[3] = weights.center[1]; out[4] = weights.center[2]; out[5] = weights.outer[1]; out[6] = weights.outer[3];
+    out[0] = weights.outer[0];
+    out[1] = weights.outer[2];
+    out[2] = weights.center[0];
+    out[3] = weights.center[1];
+    out[4] = weights.center[2];
+    out[5] = weights.outer[1];
+    out[6] = weights.outer[3];
 }
 #pragma pop
 struct VertexDescList {
-    unsigned int* recs;      // 0x0
+    unsigned int* recs; // 0x0
     char reserved04[0x10];
-    unsigned int count;      // 0x14
+    unsigned int count; // 0x14
 };
 extern VertexDescList s_vertexFormatDescriptor;
 extern unsigned int g_useIndexedVertexInput;
@@ -298,20 +363,26 @@ extern unsigned int g_useIndexedVertexInput;
 // also adds three generators in VertexInput_CountTextureCoordinateGenerators.
 // Code 3 is a normal element (gx_renderer_state_and_efb_copy.cpp's declaration filter). Codes 6/7 retain
 // their numeric identity until their attribute meaning is independently established.
-// arg is a borrowed declaration handle with at most sixteen 12-byte elements;
+// declaration is a borrowed declaration handle with at most sixteen 12-byte elements;
 // returns a Boolean, writes no caller storage. Element byte +9 is a type code.
-int VertexDeclaration_UsesSpecialTexCoordMapping(unsigned int arg) {
+int VertexDeclaration_UsesSpecialTexCoordMapping(unsigned int declaration) {
     unsigned int count;
     unsigned char desc[16][12];
-    VertexDeclaration_GetElements(arg, desc, (unsigned int*)&count);
+    VertexDeclaration_GetElements(declaration, desc, (unsigned int*)&count);
     int has3 = 0;
     int has6 = 0;
     int has7 = 0;
     for (unsigned int i = 0; i < count; ++i) {
         switch (desc[i][9]) {
-        case 3: has3 = 1; break;
-        case 6: has6 = 1; break;
-        case 7: has7 = 1; break;
+        case 3:
+            has3 = 1;
+            break;
+        case 6:
+            has6 = 1;
+            break;
+        case 7:
+            has7 = 1;
+            break;
         }
     }
     return has3 && has6 && has7;
@@ -353,8 +424,14 @@ void Render_ApplyFogState() {
     unsigned char g = AsRenderState80422F10(renderState)->fogGreen;
     unsigned char b = AsRenderState80422F10(renderState)->fogBlue;
     unsigned char a = AsRenderState80422F10(renderState)->fogAlpha;
-    color[0] = r; color[1] = g; color[2] = b; color[3] = a;
-    color[4] = r; color[5] = g; color[6] = b; color[7] = a;
+    color[0] = r;
+    color[1] = g;
+    color[2] = b;
+    color[3] = a;
+    color[4] = r;
+    color[5] = g;
+    color[6] = b;
+    color[7] = a;
     float startDistance = AsRenderState80422F10(renderState)->fogStart;
     float endDistance = AsRenderState80422F10(renderState)->fogEnd;
     float nearPlane = AsRenderState80422F10(renderState)->fogNearPlane;
@@ -366,9 +443,11 @@ void Render_ApplyFogState() {
 // Select direct/indexed vertex descriptors and program the corresponding GX attribute formats.
 void Render_ApplyVertexInputState() {
     if (AsRenderState80422F10(g_engineState)->useVertexDeclaration)
-        VertexInput_CopyDescriptorForDeclaration(&s_vertexFormatDescriptor, AsRenderState80422F10(g_engineState)->vertexDeclaration);
+        VertexInput_CopyDescriptorForDeclaration(&s_vertexFormatDescriptor,
+                                                 AsRenderState80422F10(g_engineState)->vertexDeclaration);
     else
-        VertexInput_FindAndCopyFormatDescriptor(&s_vertexFormatDescriptor, (*(unsigned int*)&AsRenderState80422F10(g_engineState)->flexibleVertexFormat));
+        VertexInput_FindAndCopyFormatDescriptor(
+            &s_vertexFormatDescriptor, (*(unsigned int*)&AsRenderState80422F10(g_engineState)->flexibleVertexFormat));
     GXClearVtxDesc();
     int mode = g_useIndexedVertexInput ? kVertexInputIndex16 : kVertexInputDirect;
     unsigned int i = 0;
@@ -383,8 +462,8 @@ void Render_ApplyVertexInputState() {
     while (i < s_vertexFormatDescriptor.count) {
         unsigned int* rec = s_vertexFormatDescriptor.recs + i * 4;
         if (rec[0])
-            GXSetVtxAttrFmt((GXVtxFmt)0, (GXAttr)rec[0], (GXCompCnt)rec[1],
-                        (GXCompType)rec[2], *(unsigned char*)((char*)rec + 12));
+            GXSetVtxAttrFmt((GXVtxFmt)0, (GXAttr)rec[0], (GXCompCnt)rec[1], (GXCompType)rec[2],
+                            *(unsigned char*)((char*)rec + 12));
         ++i;
     }
 }
@@ -410,8 +489,7 @@ void Render_ApplyDepthState() {
             return AsRenderState80422F10(p)->depthCompare;
         }
     };
-    GXSetZMode((GXBool)Access::compare(), (GXCompare)Access::func(),
-                (GXBool)Access::update());
+    GXSetZMode((GXBool)Access::compare(), (GXCompare)Access::func(), (GXBool)Access::update());
 }
 #pragma pop
 
@@ -439,13 +517,15 @@ void Render_ApplyDepthScaleOffset() {
 // Configure texture-stage state using the current texture-handle array.
 void Render_ConfigureTextureStagesFromBoundTextures(void* p) {
     void* volatile saved = p;
-    TextureStage_ConfigureTevColorCombiner(AsRenderState80422F10(g_engineState)->textures, p); // 0x80423998: texture handle array
+    TextureStage_ConfigureTevColorCombiner(AsRenderState80422F10(g_engineState)->textures,
+                                           p); // 0x80423998: texture handle array
 }
 
 // Configure the alpha combiner using the current texture-handle array.
 void Engine_ApplyTextureStageAlphaCombiner(void* p) {
     void* volatile saved = p;
-    Engine_ConfigureTextureStageAlphaCombiner(AsRenderState80422F10(g_engineState)->textures, p); // 0x804239C8: texture handle array
+    Engine_ConfigureTextureStageAlphaCombiner(AsRenderState80422F10(g_engineState)->textures,
+                                              p); // 0x804239C8: texture handle array
 }
 
 // Enable alpha writes from the high-byte write-mask bit.
@@ -459,14 +539,14 @@ void Render_ApplyAlphaWriteState() {
 #pragma dont_inline on
 #pragma optimization_level 0
 // Multiply two RGBA byte colors componentwise, dividing by 255.
-// Each pointer requires four bytes. Exact in-place dst==a or dst==b is valid;
+// Each pointer requires four bytes. Exact in-place dst==firstColor or dst==secondColor is valid;
 // partial overlap changes later inputs and is not a supported copy operation.
-void Color_MultiplyRGBA8(unsigned char* dst, const unsigned char* a, const unsigned char* b) {
+void Color_MultiplyRGBA8(unsigned char* dst, const unsigned char* firstColor, const unsigned char* secondColor) {
     int d = 255;
-    dst[0] = (unsigned char)(((int)a[0] * (int)b[0]) / d);
-    dst[1] = (unsigned char)(((int)a[1] * (int)b[1]) / d);
-    dst[2] = (unsigned char)(((int)a[2] * (int)b[2]) / d);
-    dst[3] = (unsigned char)(((int)a[3] * (int)b[3]) / d);
+    dst[0] = (unsigned char)(((int)firstColor[0] * (int)secondColor[0]) / d);
+    dst[1] = (unsigned char)(((int)firstColor[1] * (int)secondColor[1]) / d);
+    dst[2] = (unsigned char)(((int)firstColor[2] * (int)secondColor[2]) / d);
+    dst[3] = (unsigned char)(((int)firstColor[3] * (int)secondColor[3]) / d);
 }
 #pragma pop
 
@@ -528,8 +608,8 @@ void Render_ApplyAlphaTestState() {
         firstCompare = AsRenderState80422F10(g_engineState)->alphaCompare;
         firstReference = AsRenderState80422F10(g_engineState)->alphaReference & 0xFF;
     }
-    GXSetAlphaCompare((GXCompare)firstCompare, (u8)firstReference, (GXAlphaOp)alphaOperation,
-                (GXCompare)secondCompare, (u8)secondReference);
+    GXSetAlphaCompare((GXCompare)firstCompare, (u8)firstReference, (GXAlphaOp)alphaOperation, (GXCompare)secondCompare,
+                      (u8)secondReference);
     GXSetZCompLoc(0);
 }
 #pragma pop
@@ -544,21 +624,23 @@ int VertexInput_CountTextureCoordinateGenerators() {
     (void)dead;
     int count = base;
     int i = base;
-    if (i < 8) do {
-        void* p = g_engineState;
-        // Equivalent to AsRenderStages(p)->stages[i].texCoordSource; keep the
-        // combined member offset because typed indexing changes registers at -O0.
-        unsigned int ptr = *(unsigned int*)((char*)p + i * kTextureStageBytes + FIELD_OFFSET(RenderStageOwnerView, stages[0].texCoordSource));
-        if (ptr == kNoGeneratedTexCoord)
-            break;
-        ++count;
-        ++i;
-    } while (i < 8);
+    if (i < 8)
+        do {
+            void* p = g_engineState;
+            // Equivalent to AsRenderStages(p)->stages[i].texCoordSource; keep the
+            // combined member offset because typed indexing changes registers at -O0.
+            unsigned int ptr = *(unsigned int*)((char*)p + i * kTextureStageBytes +
+                                                FIELD_OFFSET(RenderStageOwnerView, stages[0].texCoordSource));
+            if (ptr == kNoGeneratedTexCoord)
+                break;
+            ++count;
+            ++i;
+        } while (i < 8);
     void* p = g_engineState;
     if (AsRenderState80422F10(p)->useVertexDeclaration != 0) {
         int extra = 0;
-        unsigned int arg = AsRenderState80422F10(g_engineState)->vertexDeclaration;
-        if (VertexDeclaration_UsesSpecialTexCoordMapping(arg) != 0)
+        unsigned int declaration = AsRenderState80422F10(g_engineState)->vertexDeclaration;
+        if (VertexDeclaration_UsesSpecialTexCoordMapping(declaration) != 0)
             extra = 3;
         count += extra;
     }
@@ -580,16 +662,19 @@ void Render_ApplyBlendState() {
     if (AsRenderState80422F10(g_engineState)->blendEnabled == 0) {
         type = GX_BM_NONE;
     } else if (AsRenderState80422F10(g_engineState)->logicOperation + kNoLogicOperation == 0) {
-            switch (AsRenderState80422F10(g_engineState)->blendOperation) {
-            case kBlendOperationAdd: type = GX_BM_BLEND; break;
-            case kBlendOperationSubtract: type = GX_BM_SUBTRACT; break;
-            }
-        } else {
-            type = GX_BM_LOGIC;
-            logic = (*(int*)&AsRenderState80422F10(g_engineState)->logicOperation);
+        switch (AsRenderState80422F10(g_engineState)->blendOperation) {
+        case kBlendOperationAdd:
+            type = GX_BM_BLEND;
+            break;
+        case kBlendOperationSubtract:
+            type = GX_BM_SUBTRACT;
+            break;
         }
-    GXSetBlendMode((GXBlendMode)type, (GXBlendFactor)blend_src,
-                (GXBlendFactor)blend_dst, (GXLogicOp)logic);
+    } else {
+        type = GX_BM_LOGIC;
+        logic = (*(int*)&AsRenderState80422F10(g_engineState)->logicOperation);
+    }
+    GXSetBlendMode((GXBlendMode)type, (GXBlendFactor)blend_src, (GXBlendFactor)blend_dst, (GXLogicOp)logic);
 }
 #pragma pop
 
@@ -643,16 +728,23 @@ void GXSetTevSwapMode(int, int, int);
 void Render_ApplyTevState() {
     // Phase 1: inspect active texture formats/palettes and flag split color/alpha representations.
     int i;
-    for (i = 0; i < 8; ++i) s_textureNeedsExtraTevStages[i] = 0;
+    for (i = 0; i < 8; ++i)
+        s_textureNeedsExtraTevStages[i] = 0;
     unsigned int availableTexCoords = (unsigned int)VertexInput_CountTextureCoordinateGenerators();
     int j;
     for (j = 0; j < 8; ++j) {
-        if (AsRenderState80422F10(g_engineState)->textures[j] == 0) continue;
+        if (AsRenderState80422F10(g_engineState)->textures[j] == 0)
+            continue;
         // Equivalent typed fields: stages[j].colorOperation/alphaOperation.
         // Keep the folded offset in these -O0 reads (direct [] changes registers).
-        if (*(unsigned int*)((char*)g_engineState + j * kTextureStageBytes + FIELD_OFFSET(RenderStageOwnerView, stages[0].colorOperation)) == kTevOperationDisabled) break;
-        if (*(unsigned int*)((char*)g_engineState + j * kTextureStageBytes + FIELD_OFFSET(RenderStageOwnerView, stages[0].alphaOperation)) == kTevOperationDisabled) break;
-        if ((unsigned int)j == availableTexCoords) break;
+        if (*(unsigned int*)((char*)g_engineState + j * kTextureStageBytes +
+                             FIELD_OFFSET(RenderStageOwnerView, stages[0].colorOperation)) == kTevOperationDisabled)
+            break;
+        if (*(unsigned int*)((char*)g_engineState + j * kTextureStageBytes +
+                             FIELD_OFFSET(RenderStageOwnerView, stages[0].alphaOperation)) == kTevOperationDisabled)
+            break;
+        if ((unsigned int)j == availableTexCoords)
+            break;
         unsigned int obj = AsRenderState80422F10(g_engineState)->textures[j];
         TextureFormatQuery textureDescription;
         Texture_GetLevelDescription(obj, 0, &textureDescription);
@@ -661,8 +753,10 @@ void Render_ApplyTevState() {
         if (textureDescription.format + kPlatformFormatBias == kIndexed8FormatCode) {
             PaletteFormatQuery paletteDescription;
             TexturePalette_GetDescription(AsRenderState80422F10(g_engineState)->palettes[j], &paletteDescription);
-            if (paletteDescription.format + kPlatformFormatBias == kRgba8PaletteFormatCode) s_textureNeedsExtraTevStages[j] = 1;
-        } else if (textureDescription.format + kSplitCompressedFormatBias == kSplitCompressedFormat30 || textureDescription.format + kSplitCompressedFormatBias == kSplitCompressedFormat32) {
+            if (paletteDescription.format + kPlatformFormatBias == kRgba8PaletteFormatCode)
+                s_textureNeedsExtraTevStages[j] = 1;
+        } else if (textureDescription.format + kSplitCompressedFormatBias == kSplitCompressedFormat30 ||
+                   textureDescription.format + kSplitCompressedFormatBias == kSplitCompressedFormat32) {
             s_textureNeedsExtraTevStages[j] = 1;
         }
     }
@@ -671,37 +765,48 @@ void Render_ApplyTevState() {
     int alphaStageCount = 0;
     int colorStage;
     for (colorStage = 0; colorStage < 8; ++colorStage) {
-        if (*(unsigned int*)((char*)g_engineState + colorStage * kTextureStageBytes + FIELD_OFFSET(RenderStageOwnerView, stages[0].colorOperation)) == kTevOperationDisabled) break;
+        if (*(unsigned int*)((char*)g_engineState + colorStage * kTextureStageBytes +
+                             FIELD_OFFSET(RenderStageOwnerView, stages[0].colorOperation)) == kTevOperationDisabled)
+            break;
         ++colorStageCount;
     }
     int alphaStage;
     for (alphaStage = 0; alphaStage < 8; ++alphaStage) {
-        if (*(unsigned int*)((char*)g_engineState + alphaStage * kTextureStageBytes + FIELD_OFFSET(RenderStageOwnerView, stages[0].alphaOperation)) == kTevOperationDisabled) break;
+        if (*(unsigned int*)((char*)g_engineState + alphaStage * kTextureStageBytes +
+                             FIELD_OFFSET(RenderStageOwnerView, stages[0].alphaOperation)) == kTevOperationDisabled)
+            break;
         ++alphaStageCount;
     }
     int boundTextureCount = 0;
     int boundStage;
     for (boundStage = 0; boundStage < 8; ++boundStage) {
-        if (AsRenderState80422F10(g_engineState)->textures[boundStage] != 0) boundTextureCount = boundStage + 1;
+        if (AsRenderState80422F10(g_engineState)->textures[boundStage] != 0)
+            boundTextureCount = boundStage + 1;
     }
     unsigned int* maxStagePointer;
-    if ((unsigned int)colorStageCount < (unsigned int)alphaStageCount) maxStagePointer = (unsigned int*)&alphaStageCount;
-    else maxStagePointer = (unsigned int*)&colorStageCount;
+    if ((unsigned int)colorStageCount < (unsigned int)alphaStageCount)
+        maxStagePointer = (unsigned int*)&alphaStageCount;
+    else
+        maxStagePointer = (unsigned int*)&colorStageCount;
     unsigned int* savedMaxStagePointer = maxStagePointer;
     unsigned int maxOperationStages = *maxStagePointer;
     unsigned int* minStagePointer;
-    if ((unsigned int)boundTextureCount < maxOperationStages) minStagePointer = (unsigned int*)&boundTextureCount;
-    else minStagePointer = (unsigned int*)&maxOperationStages;
+    if ((unsigned int)boundTextureCount < maxOperationStages)
+        minStagePointer = (unsigned int*)&boundTextureCount;
+    else
+        minStagePointer = (unsigned int*)&maxOperationStages;
     unsigned int* savedMinStagePointer = minStagePointer;
     unsigned int w = *minStagePointer;
     unsigned int textureStageLimit = w;
     unsigned int totalStageCount = w;
     unsigned int texCoordCount = (unsigned int)VertexInput_CountTextureCoordinateGenerators();
-    if (totalStageCount > texCoordCount) totalStageCount = texCoordCount;
+    if (totalStageCount > texCoordCount)
+        totalStageCount = texCoordCount;
     int extraTextureStages = 0;
     int extraStage;
     for (extraStage = 0; extraStage < 8; ++extraStage) {
-        if (s_textureNeedsExtraTevStages[extraStage] != 0) extraTextureStages += 2;
+        if (s_textureNeedsExtraTevStages[extraStage] != 0)
+            extraTextureStages += 2;
     }
     int extraStageCount = extraTextureStages;
     totalStageCount += (unsigned int)extraTextureStages;
@@ -711,11 +816,13 @@ void Render_ApplyTevState() {
         lightingStageCount = 0;
     } else {
         lightingChannels = 1;
-        if (AsRenderState80422F10(g_engineState)->specularLightingEnabled != 0) ++lightingChannels;
+        if (AsRenderState80422F10(g_engineState)->specularLightingEnabled != 0)
+            ++lightingChannels;
         lightingStageCount = lightingChannels;
     }
     totalStageCount += (unsigned int)lightingStageCount;
-    if (AsRenderState80422F10(g_engineState)->replaceLightingTevStage != 0) ++totalStageCount;
+    if (AsRenderState80422F10(g_engineState)->replaceLightingTevStage != 0)
+        ++totalStageCount;
     int computedStageCount = (int)totalStageCount;
     int nextTevStage = 0;
     unsigned int tevStageCount = totalStageCount;
@@ -752,7 +859,8 @@ void Render_ApplyTevState() {
         unsigned char* emissiveColor = AsRenderColors(g_engineState)->emissive;
         // K0 starts at the shared default; register ambient selects ambient*material.
         // Emissive is then added per byte (wrapping here before GX's later clamp).
-        if (AsRenderState80422F10(g_engineState)->ambientColorSource == 0) Color_MultiplyRGBA8(color, ambientColor, materialColor);
+        if (AsRenderState80422F10(g_engineState)->ambientColorSource == 0)
+            Color_MultiplyRGBA8(color, ambientColor, materialColor);
         if (AsRenderState80422F10(g_engineState)->ambientColorSource == 0 ||
             ((*(unsigned int*)&AsRenderState80422F10(g_engineState)->flexibleVertexFormat) & kVertexColorMask) == 0) {
             color[0] = (unsigned char)(color[0] + emissiveColor[0]);
@@ -800,7 +908,8 @@ void Render_ApplyTevState() {
         if (s_textureNeedsExtraTevStages[textureIndex] != 0) {
             ++tevStage;
             ++textureMapIndex;
-            GXSetTevOrder((GXTevStageID)tevStage, (GXTexCoordID)coordId, (GXTexMapID)textureMapIndex, (GXChannelID)channelId);
+            GXSetTevOrder((GXTevStageID)tevStage, (GXTexCoordID)coordId, (GXTexMapID)textureMapIndex,
+                          (GXChannelID)channelId);
             ++tevStage;
             GXSetTevOrder((GXTevStageID)tevStage, (GXTexCoordID)coordId, (GXTexMapID)0xff, (GXChannelID)channelId);
         }
@@ -814,7 +923,8 @@ void Render_ApplyTevState() {
     for (effectIndex = 0; effectIndex < 7; ++effectIndex) {
         // Typed equivalent: specialEffects[effectIndex]. Raw offset keeps the
         // original base-plus-index evaluation order under optimization level 0.
-        if (*(int*)((char*)g_engineState + effectIndex * 4 + FIELD_OFFSET(RenderStageOwnerView, specialEffects)) == 0) continue;
+        if (*(int*)((char*)g_engineState + effectIndex * 4 + FIELD_OFFSET(RenderStageOwnerView, specialEffects)) == 0)
+            continue;
         switch (effectIndex) {
         case kIndirectBumpEffect:
             Render_SetupIndirectBumpXYZTev();
@@ -826,8 +936,9 @@ void Render_ApplyTevState() {
             Render_ConfigureFourStageTevCombiner(AsRenderState80422F10(g_engineState)->lights[0]);
             AsRenderState80422F10(g_engineState)->textureStateDirty = 0;
             return;
-        case 2: break;
-}
+        case 2:
+            break;
+        }
     }
     // Phase 6: apply remaining per-texture color/alpha dirty callbacks, then clear their latches.
     if (AsRenderState80422F10(g_engineState)->textureStateDirty != 0) {
@@ -837,9 +948,11 @@ void Render_ApplyTevState() {
             for (combinerIndex = 0; combinerIndex < 2; ++combinerIndex) {
                 // combinerDirty[logicalTexture][0=color,1=alpha], same owner;
                 // retain address arithmetic because typed indexing changes -O0 code.
-                if (*(int*)((char*)g_engineState + dirtyTexture * 8 + combinerIndex * 4 + FIELD_OFFSET(RenderStageOwnerView, combinerDirty)) != 0) {
+                if (*(int*)((char*)g_engineState + dirtyTexture * 8 + combinerIndex * 4 +
+                            FIELD_OFFSET(RenderStageOwnerView, combinerDirty)) != 0) {
                     s_textureStageCombinerApplyCallbacks[combinerIndex](dirtyTexture);
-                    *(int*)((char*)g_engineState + dirtyTexture * 8 + combinerIndex * 4 + FIELD_OFFSET(RenderStageOwnerView, combinerDirty)) = 0;
+                    *(int*)((char*)g_engineState + dirtyTexture * 8 + combinerIndex * 4 +
+                            FIELD_OFFSET(RenderStageOwnerView, combinerDirty)) = 0;
                 }
             }
         }

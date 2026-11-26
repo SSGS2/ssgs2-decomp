@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CWIIPAUSESCORE_H
 #define CLASSES_CWIIPAUSESCORE_H
 
@@ -7,60 +5,78 @@
 
 class CWiiPauseScore {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x14];                 // 0x4
-    int activationPending;                         // 0x18: 3 uses in CWiiPauseScore_UpdateAndPollExit, CWiiPauseScore_InitializeScoreScreen
-    int scorecardSuppressed;                         // 0x1c: 2 uses in CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_UpdateAndPollExit
-    int blackSpriteEntryId;                         // 0x20: 3 uses in CWiiPauseScore_dtor
-    void* blackSprite;                       // 0x24: 7 uses in CWiiPauseScore_Draw, CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_PollLoadComplete
-    int scoreEntryId;                         // 0x28: 3 uses in CWiiPauseScore_dtor
-    void* scoreObject;                       // 0x2c: 14 uses in CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_Draw, CWiiPauseScore_PollLoadComplete
-    void* menuLayout;                       // 0x30: 44 uses in CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_UpdateAndPollExit, CWiiPauseScore_dtor...
-    void* optionsLayout;                       // 0x34: 22 uses in CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_dtor, CWiiPauseScore_UpdateAndPollExit...
-    void* alternatePlayerLabelLayout;                       // 0x38: 12 uses in CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_dtor, CWiiPauseScore_UpdateAndPollExit...
-    void* playerLabelLayout;                       // 0x3c: 12 uses in CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_dtor, CWiiPauseScore_UpdateAndPollExit...
-    void* tieMarkerLayout;                       // 0x40: 7 uses in CWiiPauseScore_dtor, CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_UpdateAndPollExit...
-    void* lossMarkerLayout;                       // 0x44: 7 uses in CWiiPauseScore_dtor, CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_UpdateAndPollExit...
-    void* textTable;                       // 0x48: 8 uses in CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_dtor, CWiiPauseScore_Draw...
-    void* optionDialog;                       // 0x4c: 4 uses in CWiiPauseScore_UpdateAndPollExit, CWiiPauseScore_Draw
-    void* confirmationDialog;                       // 0x50: 9 uses in CWiiPauseScore_UpdateAndPollExit, CWiiPauseScore_Draw
-    int displayMode;                         // 0x54: 21 uses in CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_UpdateAndPollExit, CWiiPauseScore_PollLoadComplete...
-    unsigned char playerCount;               // 0x58: 16 uses in CWiiPauseScore_InitializeScoreScreen
-    unsigned char holeCount;               // 0x59: 2 uses in CWiiPauseScore_InitializeScoreScreen
-    char pad_05A[0x2];                  // 0x5a
-    int postHoleMode;                         // 0x5c: 8 uses in CWiiPauseScore_UpdateAndPollExit, CWiiPauseScore_InitializeScoreScreen
-    int interactionState;                         // 0x60: 6 uses in CWiiPauseScore_UpdateAndPollExit, CWiiPauseScore_InitializeScoreScreen
-    char pad_064[0x50];                 // 0x64
-    int graphOrigin0X;                         // 0xb4: 4 uses in CWiiPauseScore_Ctor
-    int graphOrigin0Y;                         // 0xb8: 4 uses in CWiiPauseScore_Ctor
-    int graphOrigin1X;                         // 0xbc: 3 uses in CWiiPauseScore_Ctor
-    int graphOrigin1Y;                         // 0xc0: 3 uses in CWiiPauseScore_Ctor
-    int graphOrigin2X;                         // 0xc4: 2 uses in CWiiPauseScore_Ctor
-    int graphOrigin2Y;                         // 0xc8: 2 uses in CWiiPauseScore_Ctor
-    int graphOrigin3X;                         // 0xcc: 1 use in CWiiPauseScore_Ctor
-    int graphOrigin3Y;                         // 0xd0: 1 use in CWiiPauseScore_Ctor
-    unsigned char displayedHoleCount;               // 0xd4: 2 uses in CWiiPauseScore_InitializeScoreScreen
-    char pad_0D5[0x3];                  // 0xd5
-    void* holeInfo;                       // 0xd8: 1 use in CWiiPauseScore_dtor
-    int holeInfoCount;                         // 0xdc: 5 uses in CWiiPauseScore_dtor, CWiiPauseScore_InitializeScoreScreen
-    char pad_0E0[0x4];                  // 0xe0
-    void* playerHoleScores;                       // 0xe4: 1 use in CWiiPauseScore_dtor
-    int playerHoleScoreCount;                         // 0xe8: 4 uses in CWiiPauseScore_dtor
-    char pad_0EC[0x4];                  // 0xec
-    int menuButtonAvailable0;                         // 0xf0: 2 uses in CWiiPauseScore_InitializeScoreScreen
-    char pad_0F4[0x24];                 // 0xf4
-    unsigned char selectedView;              // 0x118: 2 uses in CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_Draw
-    char pad_119[0x3];                  // 0x119
-    int showFrontNine;                        // 0x11c: 2 uses in CWiiPauseScore_InitializeScoreScreen
-    char pad_120[0x24];                 // 0x120
-    int actionDelayPending;                        // 0x144: 2 uses in CWiiPauseScore_InitializeScoreScreen, CWiiPauseScore_UpdateAndPollExit
-    int activationDelayFrames;                        // 0x148: 1 use in CWiiPauseScore_InitializeScoreScreen
-    int selectedAction;                        // 0x14c: 3 uses in CWiiPauseScore_UpdateAndPollExit
+    void* vtbl;                       // 0x0: original vtable pointer
+    char pad_004[0x14];               // 0x4
+    int activationPending;            // 0x18
+    int scorecardSuppressed;          // 0x1c
+    int blackSpriteEntryId;           // 0x20
+    void* blackSprite;                // 0x24
+    int scoreEntryId;                 // 0x28
+    void* scoreObject;                // 0x2c
+    void* menuLayout;                 // 0x30
+    void* optionsLayout;              // 0x34
+    void* alternatePlayerLabelLayout; // 0x38
+    void* playerLabelLayout;          // 0x3c
+    void* tieMarkerLayout;            // 0x40
+    void* lossMarkerLayout;           // 0x44
+    void* textTable;                  // 0x48
+    void* optionDialog;               // 0x4c
+    void* confirmationDialog;         // 0x50
+    int displayMode;                  // 0x54
+    unsigned char playerCount;        // 0x58
+    unsigned char holeCount;          // 0x59
+    char pad_05A[0x2];                // 0x5a
+    int postHoleMode;                 // 0x5c
+    int interactionState;             // 0x60
+    char pad_064[0x50];               // 0x64
+    int graphOrigin0X;                // 0xb4
+    int graphOrigin0Y;                // 0xb8
+    int graphOrigin1X;                // 0xbc
+    int graphOrigin1Y;                // 0xc0
+    int graphOrigin2X;                // 0xc4
+    int graphOrigin2Y;                // 0xc8
+    int graphOrigin3X;                // 0xcc
+    int graphOrigin3Y;                // 0xd0
+    unsigned char displayedHoleCount; // 0xd4
+    char pad_0D5[0x3];                // 0xd5
+    void* holeInfo;                   // 0xd8
+    int holeInfoCount;                // 0xdc
+    char pad_0E0[0x4];                // 0xe0
+    void* playerHoleScores;           // 0xe4
+    int playerHoleScoreCount;         // 0xe8
+    char pad_0EC[0x4];                // 0xec
+    int menuButtonAvailable0;         // 0xf0
+    char pad_0F4[0x24];               // 0xf4
+    unsigned char selectedView;       // 0x118
+    char pad_119[0x3];                // 0x119
+    int showFrontNine;                // 0x11c
+    char pad_120[0x24];               // 0x120
+    int actionDelayPending;           // 0x144
+    int activationDelayFrames;        // 0x148
+    int selectedAction;               // 0x14c
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x14, 0x50, 0xd8, 0xe4, 0x124
+    void DrawScoreGraph();
+    void InitializeScoreScreen();
+    int UpdateAndPollExit(float delta);
+    int PollLoadComplete();
+    void Draw();
+    int ProcessOptionActions();
+    int ProcessMenuActions();
+    void UpdateLayouts();
+    void RefreshScorecard();
+    void RankPartyHoleResults(int* soleWinCounts, int* updateIndicators);
+    void SetHoleInfo(int holeIndex, unsigned char holeNumber, int par);
+    void SetPlayerHoleScore(int playerIndex, int holeIndex, int strokes, int competitionValue, int pang);
+    void HideBpObjects();
+    void HideInactiveScore();
+    void SetMenuButtonAvailable(int index, int value);
+    void SetMenuButton3Available(int value);
+
+    CWiiPauseScore(int type, unsigned char playerCount, unsigned char holeCount, void* arg);
+
+    ~CWiiPauseScore();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CWIIPAUSESCORE_OFF(f, o) typedef char CWiiPauseScore_off_##f[((int)&((CWiiPauseScore*)0)->f == (o)) ? 1 : -1]
 CWIIPAUSESCORE_OFF(activationPending, 0x18);
 CWIIPAUSESCORE_OFF(scorecardSuppressed, 0x1c);
@@ -103,4 +119,4 @@ CWIIPAUSESCORE_OFF(activationDelayFrames, 0x148);
 CWIIPAUSESCORE_OFF(selectedAction, 0x14c);
 #undef CWIIPAUSESCORE_OFF
 
-#endif  // CLASSES_CWIIPAUSESCORE_H
+#endif // CLASSES_CWIIPAUSESCORE_H

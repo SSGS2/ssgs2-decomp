@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CTRAININGMAIN_H
 #define CLASSES_CTRAININGMAIN_H
 
@@ -7,18 +5,28 @@
 
 class CTrainingMain {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x14];                 // 0x4
-    void* taskMainVtable;                       // 0x18: 1 use in CTrainingMain_dtor
-    void* courseSelect;                       // 0x1c: 7 uses in CTrainingMain_dtor, CTrainingMain_OnDisplay, CTrainingMain_OnProcess...
-    void* backgroundEntryId;                       // 0x20: 3 uses in CTrainingMain_OnDisplay, CTrainingMain_OnProcess
-    void* captionEntryId;                       // 0x24: 3 uses in CTrainingMain_OnDisplay, CTrainingMain_OnProcess
-    int scriptsStarted;                         // 0x28: 2 uses in CTrainingMain_OnProcess
+    void* vtbl;              // 0x0: original vtable pointer
+    char pad_004[0x14];      // 0x4
+    void* taskMainVtable;    // 0x18
+    void* courseSelect;      // 0x1c
+    void* backgroundEntryId; // 0x20
+    void* captionEntryId;    // 0x24
+    int scriptsStarted;      // 0x28
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x20, 0x24
+    static void OnDestroy();
+    void OnLoad();
+
+    static void* GetRTTI();
+    void OnDisplay();
+    void OnProcess(float dt);
+
+    // The task-main secondary interface forwards destruction to the owner.
+    void* DestroyThunkMinus24(int deleting);
+
+    CTrainingMain();
+    ~CTrainingMain();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CTRAININGMAIN_OFF(f, o) typedef char CTrainingMain_off_##f[((int)&((CTrainingMain*)0)->f == (o)) ? 1 : -1]
 CTRAININGMAIN_OFF(taskMainVtable, 0x18);
 CTRAININGMAIN_OFF(courseSelect, 0x1c);
@@ -27,4 +35,4 @@ CTRAININGMAIN_OFF(captionEntryId, 0x24);
 CTRAININGMAIN_OFF(scriptsStarted, 0x28);
 #undef CTRAININGMAIN_OFF
 
-#endif  // CLASSES_CTRAININGMAIN_H
+#endif // CLASSES_CTRAININGMAIN_H

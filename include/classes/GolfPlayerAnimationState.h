@@ -11,13 +11,15 @@ public:
     char pendingAnimationName; // 0x39: CGolfPlayer_PlayAnimationIfPartPresent: cleared after selecting animation
     char pad_03A[0x22];
     unsigned int flags; // 0x5C: CGolfPlayer_LockClubAttachment ORs 0x100
-    int animationMode; // 0x60: CGolfPlayer_UpdatePowerShotPreparation: toggles between 0 and 3
+    int animationMode;  // 0x60: CGolfPlayer_UpdatePowerShotPreparation: toggles between 0 and 3
     char pad_064[0x48];
     float interpolationStart; // 0xAC: CGolfPlayer_ParseInterpolationCommand: parsed first value b
-    float interpolationRatePerSecond; // 0xB0: CGolfPlayer_ParseInterpolationCommand: (c-b)/(a/kAnimationFramesPerSecond_GolfPlayer), or zero
+    float
+        interpolationRatePerSecond; // 0xB0: CGolfPlayer_ParseInterpolationCommand: (c-b)/(a/kAnimationFramesPerSecond_GolfPlayer), or zero
 };
 
-#define OFF(f, o) typedef char GolfPlayerAnimationState_off_##f[((int)&((GolfPlayerAnimationState*)0)->f == (o)) ? 1 : -1]
+#define OFF(f, o) \
+    typedef char GolfPlayerAnimationState_off_##f[((int)&((GolfPlayerAnimationState*)0)->f == (o)) ? 1 : -1]
 OFF(animationObject, 0x4);
 OFF(pendingAnimationName, 0x39);
 OFF(flags, 0x5C);

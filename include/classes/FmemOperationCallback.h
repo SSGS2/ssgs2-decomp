@@ -4,8 +4,8 @@
 #define CLASSES_FMEMOPERATIONCALLBACK_H
 
 struct FmemOperationCallback {
-    void* vtable; // 0x0
-    int argument; // 0x4
+    void* vtable;        // 0x0
+    int argument;        // 0x4
     int callbackPayload; // 0x8
 };
 

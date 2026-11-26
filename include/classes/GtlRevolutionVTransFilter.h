@@ -1,48 +1,51 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// gtl::CRevolutionVTransFilter: decodes THP video into planar YUV 4:2:0 frames held in one owned allocation.
 #ifndef CLASSES_GTLREVOLUTIONVTRANSFILTER_H
 #define CLASSES_GTLREVOLUTIONVTRANSFILTER_H
 
-#include "game/types.h"
+#include "classes/gtl_CTransformFilter.h"
 
-class GtlRevolutionVTransFilter {
+namespace gtl {
+
+class CRevolutionVTransFilter : public CTransformFilter {
 public:
-    char pad_000[0x4];                  // 0x0: uninterpreted prefix
-    void* vtbl;                         // 0x4: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C), gtl_CRevolutionVTransFilter_dtor (0x803FA0D8)
-    char pad_008[0x14];                 // 0x8
-    int frameHeaderSize;                         // 0x1c: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C)
-    char pad_020[0x4];                  // 0x20
-    unsigned short yPlaneWidth;              // 0x24: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C)
-    unsigned short yPlaneHeight;              // 0x26: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C)
-    char pad_028[0x4];                  // 0x28
-    unsigned short uPlaneWidth;              // 0x2c: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C)
-    unsigned short uPlaneHeight;              // 0x2e: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C)
-    char pad_030[0x4];                  // 0x30
-    unsigned short vPlaneWidth;              // 0x34: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C)
-    unsigned short vPlaneHeight;              // 0x36: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C)
-    char pad_038[0x4];                  // 0x38
-    int yPlane;                         // 0x3c: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C)
-    int uPlane;                         // 0x40: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C)
-    int vPlane;                         // 0x44: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C)
-    void* decoderWorkBuffer;                 // 0x48: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C), gtl_CRevolutionVTransFilter_dtor (0x803FA0D8)
-    void* frameBuffer;                 // 0x4c: gtl_CRevolutionVTransFilter_Ctor (0x803FA01C), gtl_CRevolutionVTransFilter_dtor (0x803FA0D8)
+    // Set up the THP video transform for a borrowed output sample; returns this.
+    CRevolutionVTransFilter* Init(void* outputSample);
+    // Free the decoder and frame allocations and the base; frees this when deleting is positive. Returns this.
+    void* Destroy(int deleting);
+
+    // Allocate decoder scratch and one frame holding the header and the Y, U, V planes.
+    int AllocateFrameBuffers(unsigned char** outFrameBuffer, unsigned char** outFrameSize);
+    // Decode one compressed sample into the planes.
+    int DecodeInputSample(void* input, int inputArgumentPresent);
+
+    unsigned int frameHeaderSize; // 0x1C
+    unsigned int yPlaneOffset;    // 0x20
+    unsigned short yPlaneWidth;   // 0x24
+    unsigned short yPlaneHeight;  // 0x26
+    unsigned int uPlaneOffset;    // 0x28
+    unsigned short uPlaneWidth;   // 0x2C
+    unsigned short uPlaneHeight;  // 0x2E
+    unsigned int vPlaneOffset;    // 0x30
+    unsigned short vPlaneWidth;   // 0x34
+    unsigned short vPlaneHeight;  // 0x36
+    char pad_038[0x4];            // 0x38
+    unsigned char* yPlane;        // 0x3C: inside frameBuffer
+    unsigned char* uPlane;        // 0x40: inside frameBuffer
+    unsigned char* vPlane;        // 0x44: inside frameBuffer
+    void* decoderWorkBuffer;      // 0x48
+    void* frameBuffer;            // 0x4C
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define GTLREVOLUTIONVTRANSFILTER_OFF(f, o) typedef char GtlRevolutionVTransFilter_off_##f[((int)&((GtlRevolutionVTransFilter*)0)->f == (o)) ? 1 : -1]
-GTLREVOLUTIONVTRANSFILTER_OFF(vtbl, 0x4);
-GTLREVOLUTIONVTRANSFILTER_OFF(frameHeaderSize, 0x1c);
+#define GTLREVOLUTIONVTRANSFILTER_OFF(f, o) \
+    typedef char GtlRevolutionVTransFilter_off_##f[((int)&((CRevolutionVTransFilter*)0)->f == (o)) ? 1 : -1]
+GTLREVOLUTIONVTRANSFILTER_OFF(frameHeaderSize, 0x1C);
 GTLREVOLUTIONVTRANSFILTER_OFF(yPlaneWidth, 0x24);
-GTLREVOLUTIONVTRANSFILTER_OFF(yPlaneHeight, 0x26);
-GTLREVOLUTIONVTRANSFILTER_OFF(uPlaneWidth, 0x2c);
-GTLREVOLUTIONVTRANSFILTER_OFF(uPlaneHeight, 0x2e);
-GTLREVOLUTIONVTRANSFILTER_OFF(vPlaneWidth, 0x34);
-GTLREVOLUTIONVTRANSFILTER_OFF(vPlaneHeight, 0x36);
-GTLREVOLUTIONVTRANSFILTER_OFF(yPlane, 0x3c);
-GTLREVOLUTIONVTRANSFILTER_OFF(uPlane, 0x40);
-GTLREVOLUTIONVTRANSFILTER_OFF(vPlane, 0x44);
-GTLREVOLUTIONVTRANSFILTER_OFF(decoderWorkBuffer, 0x48);
-GTLREVOLUTIONVTRANSFILTER_OFF(frameBuffer, 0x4c);
+GTLREVOLUTIONVTRANSFILTER_OFF(uPlaneOffset, 0x28);
+GTLREVOLUTIONVTRANSFILTER_OFF(yPlane, 0x3C);
+GTLREVOLUTIONVTRANSFILTER_OFF(frameBuffer, 0x4C);
 #undef GTLREVOLUTIONVTRANSFILTER_OFF
+typedef char GtlRevolutionVTransFilter_size[(sizeof(CRevolutionVTransFilter) == 0x50) ? 1 : -1];
 
-#endif  // CLASSES_GTLREVOLUTIONVTRANSFILTER_H
+} // namespace gtl
+
+#endif // CLASSES_GTLREVOLUTIONVTRANSFILTER_H

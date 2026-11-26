@@ -1,16 +1,21 @@
-// Translation unit 0x8040B02C-0x8040B08C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Standard reverb shutdown: releases the buffers of an active reverb effect while the effect's
+// allocator hooks are installed.
+//
+// gtl_nw4r_FxReverbStd_Shutdown clears the active flag, releases the buffers, then restores the
+// previous hooks. The effect object itself stays allocated.
 
 #include "sdk_protos.h"
 
-namespace gtl { namespace nw4r {
+namespace gtl {
+namespace nw4r {
 struct FxReverbStd {
     char effectBase[12];
     unsigned char active; // +0x0C: first byte of the allocator/effect context passed below.
     char effectParameters[31];
     char reverb[1]; // +0x2C: opaque reverb state; this view does not describe its extent.
 };
-} }
+}
+}
 
 extern "C" {
 void gtl_AudioEffects_InstallAllocatorHooks(void*, unsigned int*, unsigned int*);

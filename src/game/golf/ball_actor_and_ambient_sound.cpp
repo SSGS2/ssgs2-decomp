@@ -1,30 +1,20 @@
+// Golf ball actor, ambient sound actor, and the aim path and callback thread helpers.
+//
+// CBall draws the ball, its ground shadow and its equipment puppet, and runs its effects.
+// CAmbientSound plays a course's looping and positional ambient sounds from sorted name trees.
+
 #include <decomp/static_init.h>
 #include "MSL/error_message.h"
 struct SoundPositionVector;
 struct SoundPlaybackScale2;
-// Unit guide (the four namespaces were formerly ns0..ns3): ActorRegistryViews owns actor registration and ambient name aggregation; CallbackThreadViews owns
-// callback threads, attenuation and recovery-point search; AimAndBallModelViews owns aiming and the
-// visible ball model; ShadowAndEffectViews owns ground shadows, beach waves and ball effects/messages.
-// Namespaces separate the original local ABI views. Keep their type spellings: the
-// compiler uses some in exception-cleanup relocations.
-// Spatial positions are world XYZ with Y up unless a projection/board space is stated.
-// Mod question -> operation / data / related consumers:
-// - Which ambient sounds play, and how far? CAmbientSound_OnInit/OnProcess,
-//   AmbientBoxSourceData (box + fadeDistance) and CAmbientSound_GetVolume;
-//   source gain and spatial attenuation multiply, so tune them together.
-// - Where does an out-of-play ball recover? GolfAim_FindPlayableRecoveryPoint,
-//   retained path points and terrain policy constants beside that operation.
-// - Which ball model/texture/effect is shown? CBall_OnPreLoadInit/OnLoad,
-//   BallPuppetCacheEntry, IFF sBall and BallStrings; OnDestroy releases the cache.
-// - How do beach waves move/fade? CBeach_LoadWaveParameters -> BeachParameterPayload in the
-//   golf document tree (loaded by golf_doc_turns_and_parameter_xml.cpp), then CBeach_UpdateWaves/BeachWave;
-//   CBeach_Draw in token_parser_and_bubble.cpp consumes x/alpha to build the rendered strips.
-// - Actor callback/thread lifecycle? ActorRegistryViews and CallbackThreadViews;
-//   these expose registration/dispatch, not a frame-rate or aspect-ratio knob.
-// Scalar definitions are in u800CBF34_data.cpp; the wave height/duration defaults
-// and fractions are shared literals. Isolate a new setting in a later mod rather
-// than changing a shared constant under the assumption it has only one consumer.
-// Packed string-pool view; byte extents come from the globals research.
+// The golf ball actor, the course's ambient loop sounds, the shot-path recovery
+// helpers and the beach waves.
+//
+// The ball caches one loaded puppet per equipped ball, draws the puppet and its
+// ground shadow, and follows the simulated ball. Ambient box sources are mixed by
+// name. The file-local views below name fields of classes that have no header.
+// Their type spellings are used by exception-cleanup relocations, so keep them.
+
 struct BallStrings {
     char shadowScript[17];
     char ballObject[7];
@@ -78,11 +68,28 @@ enum ActorStringOffsets {
 #include "classes/CAnotherHand.h"
 #include "classes/CThread.h"
 #include "classes/CAmbientSound.h"
+#include "classes/CDummy.h"
+#include "classes/CQuadTree.h"
+#include "classes/CFx.h"
 
 // Layout views for subobjects not yet represented in the shared class headers.
-struct CallbackThreadMutex { char ownerState[0x330]; char mutex[0x18]; };
-struct AmbientBoxAxes { float center[3]; float axis[3][3]; };
-struct BallBoneTransform { char boneState[0x78]; float attachmentMatrix[12]; };
+// The common message every actor receives; only the action word is read here.
+struct ActorMessage {
+    char pad_00[4];
+    int type;
+};
+struct CallbackThreadMutex {
+    char ownerState[0x330];
+    char mutex[0x18];
+};
+struct AmbientBoxAxes {
+    float center[3];
+    float axis[3][3];
+};
+struct BallBoneTransform {
+    char boneState[0x78];
+    float attachmentMatrix[12];
+};
 // Cache payload is separate from its 12-byte circular-list node (prev,next,payload).
 // CBall embeds the sentinel at +0x20, first at +0x24, count at +0x1C.
 // IFF record is borrowed, puppet is retained through the resource manager, and
@@ -101,8 +108,8 @@ struct BallCacheLink {
     BallCacheLink* next;
     BallPuppetCacheEntry* payload;
 };
-typedef char BallCacheLinkSize[(sizeof(BallCacheLink)==0xC) ? 1 : -1];
-typedef char BallCachePayloadOffset[((int)&((BallCacheLink*)0)->payload==8) ? 1 : -1];
+typedef char BallCacheLinkSize[(sizeof(BallCacheLink) == 0xC) ? 1 : -1];
+typedef char BallCachePayloadOffset[((int)&((BallCacheLink*)0)->payload == 8) ? 1 : -1];
 struct BallShadowCameraMatrices {
     char cameraState[0x20];
     float transform0[16];
@@ -123,28 +130,57 @@ struct BallPlayerEquipmentSlot {
 typedef char BallEquipmentSlotSize[(sizeof(BallPlayerEquipmentSlot) == 0x1D4) ? 1 : -1];
 typedef char BallEquipmentIdOffset[((int)&((BallPlayerEquipmentSlot*)0)->ballItemId == 0x88) ? 1 : -1];
 // Event identity is unresolved; this retained-sample index bounds sink playback's lead-in.
-enum BallSinkPlaybackContract { kBallSinkAnchorEventSlot = 8 };
+enum BallSinkPlaybackContract {
+    kBallSinkAnchorEventSlot = 8
+};
 
 enum BallMessageAction {
-    kBallShow = 0, kBallHide = 1, kBallRefreshLighting = 2,
-    kBallPrepareSinkPlayback = 3, kBallRefreshGroundSink = 4,
-    kBallSelectEquipment = 5, kBallRefreshEquipment = 6,
-    kBallRebuildIdleEffects = 7, kBallCreateFlightEffects = 8,
+    kBallShow = 0,
+    kBallHide = 1,
+    kBallRefreshLighting = 2,
+    kBallPrepareSinkPlayback = 3,
+    kBallRefreshGroundSink = 4,
+    kBallSelectEquipment = 5,
+    kBallRefreshEquipment = 6,
+    kBallRebuildIdleEffects = 7,
+    kBallCreateFlightEffects = 8,
     kBallStoreMessageValue = 9
 };
-enum BallShadowDraw { kBallShadowVertexFormat = 0x110001, kBallShadowTriangleStrip = 0x98 };
-enum BallStorageConstants { kBallEffectKindCount = 7, kBallCachedEffectSlots = 4,
-    kBallPlayerRecordStride = 0x1D4, kBallSinkLeadFrames = 60, kBallJitterFrames = 30 };
-
-#define AsCAmbientSound(p) ((CAmbientSound*)(p))
-
-#define AsCThread(p) ((CThread*)(p))
+enum BallShadowDraw {
+    kBallShadowVertexFormat = 0x110001,
+    kBallShadowTriangleStrip = 0x98
+};
+enum BallStorageConstants {
+    kBallEffectKindCount = 7,
+    kBallCachedEffectSlots = 4,
+    kBallPlayerRecordStride = 0x1D4,
+    kBallSinkLeadFrames = 60,
+    kBallJitterFrames = 30
+};
 
 #define AsCAnotherHand(p) ((CAnotherHand*)(p))
 
 #define AsCBall(p) ((CBall*)(p))
+
+// Declarations the member definitions below need at namespace scope. They are
+// the same C functions and data the class bodies use, declared once here so the
+// out-of-class definitions can name them directly.
+extern "C" {
+extern void* s_dummyRttiDescriptor;
+extern void dtor_8029EA18(void*, int);
+extern void __dla__FPv(void*);
+extern void* __nwa__FUl(unsigned int);
+extern int OSIsThreadTerminated(void*);
+extern unsigned char __vt__12CAnotherHand[];
+extern int g_anotherHandThreadStackPointer;
+extern unsigned char s_ambientSoundTypeInfo;
+extern unsigned char s_ballTypeInfo;
+}
+
 // Return caller-provided storage for placement construction.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 struct NativeBase80201D18 {
     char data[0x18];
@@ -153,11 +189,11 @@ struct NativeBase80201D18 {
 };
 
 // ---- merged from ball_actor_and_ambient_sound.cpp ----
-enum AmbientSourceOffsets { kAmbientSourceSpatialTailOffset = 0x2C };
+enum AmbientSourceOffsets {
+    kAmbientSourceSpatialTailOffset = 0x2C
+};
 
 namespace ActorRegistryViews {
-// Translation unit 0x800CBF34-0x800CD324 (17 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -178,8 +214,8 @@ extern const float kFloat_0_5_805DDCE4;
 extern const float kFloat_200_CourseHelpers;
 extern double kAmbientSoundDistanceRange;
 extern int SoundManager_IsAliasPrefixOrStreamStemActive(void*, void*);
-extern void Sound_PlayByName(unsigned char*, const char*, const SoundPositionVector*, unsigned int,
-                             const char*, const SoundPlaybackScale2*, float, float, float);
+extern void Sound_PlayByName(unsigned char*, const char*, const SoundPositionVector*, unsigned int, const char*,
+                             const SoundPlaybackScale2*, float, float, float);
 extern void StringMap_DestroyStringPair(void*, void*);
 extern void AmbientSoundNameTree_Clear(void*);
 extern float CAmbientSound_GetVolume(void*, float);
@@ -204,7 +240,7 @@ extern const char s_taskRegistryDtorRegistration[];
 extern const char s_actorTaskRegistryKey[7];
 extern const char s_dummyActorFactoryKey[7];
 extern const char s_actorFactoryKey[7];
-extern int IntPair_Set(void*, const char*, void*);
+extern void* IntPair_Set(void*, const char*, void*);
 extern void* ActorFactoryRegistry_GetInstance();
 extern void StringMap_SetByName(void*, void*, const char*);
 extern void IActor_Create();
@@ -223,28 +259,43 @@ extern void* memset(void*, int, unsigned int);
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 // Keep these local type spellings: generated cleanup relocations include their names.
 struct fn_800CC390_Allocation {
-    char* pointer; char* allocator;
+    char* pointer;
+    char* allocator;
     // Guard a newly allocated error-message buffer until ownership transfers.
     fn_800CC390_Allocation(char* p, char* a) : pointer(p), allocator(a) {}
     // Release the message buffer if construction did not transfer ownership.
-    ~fn_800CC390_Allocation() { if (pointer) __dla__FPv(pointer); }
+    ~fn_800CC390_Allocation() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct fn_800CC390_ControlBase {
-    void* table; unsigned strong, weak;
+    void* table;
+    unsigned strong, weak;
     // Initialize reference counts and the shared-character deleter vtable.
-    fn_800CC390_ControlBase() { strong = 1; weak = 1; table = (void*)s_sharedCharDeleterVtable; }
+    fn_800CC390_ControlBase() {
+        strong = 1;
+        weak = 1;
+        table = (void*)s_sharedCharDeleterVtable;
+    }
 };
 struct fn_800CC390_Control : fn_800CC390_ControlBase {
     char* pointer;
     // Retain the message buffer in its reference-counted control object.
-    fn_800CC390_Control(char* p) { pointer = p; }
+    fn_800CC390_Control(char* p) {
+        pointer = p;
+    }
 };
 struct fn_800CC390_ErrorBase {
     void* table;
     // Install the standard logic-error base vtable.
-    fn_800CC390_ErrorBase() { table = (void*)__vt__Q23std11logic_error; }
+    fn_800CC390_ErrorBase() {
+        table = (void*)__vt__Q23std11logic_error;
+    }
     // Delegate standard exception-base cleanup to the runtime.
-    ~fn_800CC390_ErrorBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~fn_800CC390_ErrorBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 namespace std {
 struct length_error : fn_800CC390_ErrorBase {
@@ -260,20 +311,42 @@ struct length_error : fn_800CC390_ErrorBase {
 // Construct and throw the standard vector-length exception with the original cleanup ABI.
 static void fn_800CC390_ThrowLengthError() {
     std::length_error error;
-    __throw((void*)(actorAndBallErrorStrings + kActorStringsLengthErrorTypeOffset), &error, (void*)__dt__Q23std12length_errorFv);
+    __throw((void*)(actorAndBallErrorStrings + kActorStringsLengthErrorTypeOffset), &error,
+            (void*)__dt__Q23std12length_errorFv);
 }
 
 struct fn_800CC390_Buffer {
-    const char** data; volatile unsigned size; unsigned capacity; unsigned* owner; volatile unsigned offset;
+    const char** data;
+    volatile unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    volatile unsigned offset;
     // Start an empty temporary pointer array for vector growth.
     fn_800CC390_Buffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Release the pointer array still held by this growth guard.
-    ~fn_800CC390_Buffer() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~fn_800CC390_Buffer() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 // Return the larger vector growth increment by reference.
-inline const unsigned& fn_800CC390_Max(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
-struct fn_800CC390_Vector { const char** volatile data; unsigned size; unsigned capacity; };
-struct fn_800CC390_Global { void* a; void* b; void* c; void* d; fn_800CC390_Vector vector; };
+inline const unsigned& fn_800CC390_Max(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
+struct fn_800CC390_Vector {
+    const char** volatile data;
+    unsigned size;
+    unsigned capacity;
+};
+struct fn_800CC390_Global {
+    void* a;
+    void* b;
+    void* c;
+    void* d;
+    fn_800CC390_Vector vector;
+};
 extern fn_800CC390_Global s_taskRegistry;
 
 // Register actor/dummy RTTI and factories, lazily initializing the task registry.
@@ -306,20 +379,24 @@ void TaskRegistry_RegisterActorAndDummyTypes() {
         *(volatile unsigned*)&g->vector.size = next;
         items[next - 1] = value;
     } else {
-        if (0x3FFFFFFFu - g->vector.capacity < 1) fn_800CC390_ThrowLengthError();
+        if (0x3FFFFFFFu - g->vector.capacity < 1)
+            fn_800CC390_ThrowLengthError();
         unsigned grow1, grow2;
         unsigned needed = 1 + g->vector.size - g->vector.capacity;
         fn_800CC390_Buffer temp(&g->vector.capacity);
         unsigned capacity = g->vector.capacity;
-        if (needed > 0x3FFFFFFFu - capacity) fn_800CC390_ThrowLengthError();
+        if (needed > 0x3FFFFFFFu - capacity)
+            fn_800CC390_ThrowLengthError();
         if (capacity < 0x15555555u) {
             grow1 = (3 * (capacity + 1)) / 5;
             capacity += fn_800CC390_Max(grow1, needed);
         } else if (capacity < 0x2AAAAAAAu) {
             grow2 = (capacity + 1) / 2;
             capacity += fn_800CC390_Max(grow2, needed);
-        } else capacity = 0x3FFFFFFF;
-        if (capacity > 0x3FFFFFFFu) fn_800CC390_ThrowLengthError();
+        } else
+            capacity = 0x3FFFFFFF;
+        if (capacity > 0x3FFFFFFFu)
+            fn_800CC390_ThrowLengthError();
         const char** data = (const char**)appMallocDummy__FUl(capacity * 4);
         unsigned int oldSize = g->vector.size;
         temp.offset = oldSize;
@@ -360,21 +437,20 @@ void IActor_OnLoad() {}
 // Default actor preload hook; subclasses supply work when needed.
 void IActor_OnPreLoadInit() {}
 // Dummy actors intentionally ignore messages.
-void CDummy_HandleMsg() {}
+void CDummy::HandleMsg(void*) {}
 // Return the dummy actor's runtime type descriptor.
-void** CDummy_GetRTTI() { return &s_dummyRttiDescriptor; }
+void** CDummy::GetRTTI() {
+    return &s_dummyRttiDescriptor;
+}
 // Return the base actor's runtime type descriptor.
-void** IActor_GetRTTI() { return &s_actorTypeInfo; }
+void** IActor_GetRTTI() {
+    return &s_actorTypeInfo;
+}
 
 // Destroy the native actor base and optionally release the dummy actor allocation.
-void* CDummy_dtor(void* ptr, int flags) {
-    if (ptr != 0) {
-        if (ptr != 0)
-            dtor_8029EA18(ptr, 0);
-        if (flags > 0)
-            __dl__FPv(ptr);
-    }
-    return ptr;
+CDummy::~CDummy() {
+    if (this != 0)
+        dtor_8029EA18(this, 0);
 }
 
 // Construction view of CAmbientSound; canonical members: classes/CAmbientSound.h.
@@ -387,10 +463,19 @@ struct CAmbientSoundConstructorView : NativeBase80201D18 {
     }
 };
 
+} // extern "C"
+
+} // namespace ActorRegistryViews
+
 // Allocate and construct the ambient-sound actor.
-CAmbientSoundConstructorView* CAmbientSound_Create() {
+void* CAmbientSound::Create() {
+    using namespace ActorRegistryViews;
     return new CAmbientSoundConstructorView;
 }
+
+namespace ActorRegistryViews {
+
+extern "C" {
 
 // Two inline/owned string objects; only the long-string ownership bit permits freeing data.
 struct fn_800CC328_First {
@@ -444,15 +529,19 @@ void StringPairMap_DestroySubtree(void* forwardedContext, fn_800CBFB8_Node* node
         if (grandchild) {
             greatGrandchild = grandchild->left;
             if (greatGrandchild) {
-                if (greatGrandchild->left) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
-                if (greatGrandchild->right) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
+                if (greatGrandchild->left)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
+                if (greatGrandchild->right)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
                 StringMap_DestroyStringPair(forwardedContext, &greatGrandchild->data);
                 appFreeUni__FPv(greatGrandchild);
             }
             greatGrandchild = grandchild->right;
             if (greatGrandchild) {
-                if (greatGrandchild->left) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
-                if (greatGrandchild->right) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
+                if (greatGrandchild->left)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
+                if (greatGrandchild->right)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
                 StringMap_DestroyStringPair(forwardedContext, &greatGrandchild->data);
                 appFreeUni__FPv(greatGrandchild);
             }
@@ -463,15 +552,19 @@ void StringPairMap_DestroySubtree(void* forwardedContext, fn_800CBFB8_Node* node
         if (grandchild) {
             greatGrandchild = grandchild->left;
             if (greatGrandchild) {
-                if (greatGrandchild->left) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
-                if (greatGrandchild->right) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
+                if (greatGrandchild->left)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
+                if (greatGrandchild->right)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
                 StringMap_DestroyStringPair(forwardedContext, &greatGrandchild->data);
                 appFreeUni__FPv(greatGrandchild);
             }
             greatGrandchild = grandchild->right;
             if (greatGrandchild) {
-                if (greatGrandchild->left) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
-                if (greatGrandchild->right) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
+                if (greatGrandchild->left)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
+                if (greatGrandchild->right)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
                 StringMap_DestroyStringPair(forwardedContext, &greatGrandchild->data);
                 appFreeUni__FPv(greatGrandchild);
             }
@@ -487,15 +580,19 @@ void StringPairMap_DestroySubtree(void* forwardedContext, fn_800CBFB8_Node* node
         if (grandchild) {
             greatGrandchild = grandchild->left;
             if (greatGrandchild) {
-                if (greatGrandchild->left) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
-                if (greatGrandchild->right) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
+                if (greatGrandchild->left)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
+                if (greatGrandchild->right)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
                 StringMap_DestroyStringPair(forwardedContext, &greatGrandchild->data);
                 appFreeUni__FPv(greatGrandchild);
             }
             greatGrandchild = grandchild->right;
             if (greatGrandchild) {
-                if (greatGrandchild->left) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
-                if (greatGrandchild->right) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
+                if (greatGrandchild->left)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
+                if (greatGrandchild->right)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
                 StringMap_DestroyStringPair(forwardedContext, &greatGrandchild->data);
                 appFreeUni__FPv(greatGrandchild);
             }
@@ -506,15 +603,19 @@ void StringPairMap_DestroySubtree(void* forwardedContext, fn_800CBFB8_Node* node
         if (grandchild) {
             greatGrandchild = grandchild->left;
             if (greatGrandchild) {
-                if (greatGrandchild->left) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
-                if (greatGrandchild->right) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
+                if (greatGrandchild->left)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
+                if (greatGrandchild->right)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
                 StringMap_DestroyStringPair(forwardedContext, &greatGrandchild->data);
                 appFreeUni__FPv(greatGrandchild);
             }
             greatGrandchild = grandchild->right;
             if (greatGrandchild) {
-                if (greatGrandchild->left) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
-                if (greatGrandchild->right) StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
+                if (greatGrandchild->left)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->left);
+                if (greatGrandchild->right)
+                    StringPairMap_DestroySubtree(forwardedContext, greatGrandchild->right);
                 StringMap_DestroyStringPair(forwardedContext, &greatGrandchild->data);
                 appFreeUni__FPv(greatGrandchild);
             }
@@ -527,10 +628,12 @@ void StringPairMap_DestroySubtree(void* forwardedContext, fn_800CBFB8_Node* node
     // Keep the original value-before-key cleanup and its interior-address guards.
     if (&node->data != 0) {
         if (&node->data.second != 0) {
-            if (node->data.second.flags >> 31) appFreeUni__FPv(node->data.second.pointer);
+            if (node->data.second.flags >> 31)
+                appFreeUni__FPv(node->data.second.pointer);
         }
         if (&node->data.first != 0) {
-            if (node->data.first.flags >> 31) appFreeUni__FPv(node->data.first.pointer);
+            if (node->data.first.flags >> 31)
+                appFreeUni__FPv(node->data.first.pointer);
         }
     }
     appFreeUni__FPv(node);
@@ -538,11 +641,31 @@ void StringPairMap_DestroySubtree(void* forwardedContext, fn_800CBFB8_Node* node
 
 // Start view: nameWord00 is the first word of an inline name;
 // taking its address passes characters. repeatInterval is at +0x2C.
-struct AmbientStartEntry { AmbientStartEntry* prev; AmbientStartEntry* next; void* nameWord00; unsigned char unkC[0x20]; float repeatInterval; };
-struct AmbientStartList { AmbientStartEntry* prev; AmbientStartEntry* next; unsigned size; };
-struct AmbientStartCourseLists { unsigned char pad[0x4904]; AmbientStartList boxSources; AmbientStartList positionalSources; };
-struct AmbientStartCourseOwner { unsigned char pad[8]; AmbientStartCourseLists* context; };
-struct AmbientStartSharedDocument { unsigned char pad[0xB90]; AmbientStartCourseOwner* root; };
+struct AmbientStartEntry {
+    AmbientStartEntry* prev;
+    AmbientStartEntry* next;
+    void* nameWord00;
+    unsigned char unkC[0x20];
+    float repeatInterval;
+};
+struct AmbientStartList {
+    AmbientStartEntry* prev;
+    AmbientStartEntry* next;
+    unsigned size;
+};
+struct AmbientStartCourseLists {
+    unsigned char pad[0x4904];
+    AmbientStartList boxSources;
+    AmbientStartList positionalSources;
+};
+struct AmbientStartCourseOwner {
+    unsigned char pad[8];
+    AmbientStartCourseLists* context;
+};
+struct AmbientStartSharedDocument {
+    unsigned char pad[0xB90];
+    AmbientStartCourseOwner* root;
+};
 extern float s_actorRenderScaleTween[3];
 
 // Course data owns both circular lists; this actor borrows their names as playback
@@ -550,22 +673,28 @@ extern float s_actorRenderScaleTween[3];
 // (handled by OnProcess); zero is not started here. boxSources uses box attenuation,
 // positionalSources passes a world-position pointer at name +0x2C to the sound system.
 // Start eligible repeating ambient sounds in the box and positional source lists.
-void CAmbientSound_OnInit(void* self) {
-    // CodeWarrior numbers later function-local cleanup types with a parser
-    // declaration counter. Removing the old tree/initializer scratch aliases
-    // otherwise renames WorkCleanup$2152 and StringCleanup$2155 and their EH
-    // references. Reserve those 59 declaration identities here: these bytes are
-    // never read/written and generate no instructions or stack allocation.
-    // This is compiler identity bookkeeping, not ambient playback state.
-    char cleanupIdentity00, cleanupIdentity01, cleanupIdentity02, cleanupIdentity03, cleanupIdentity04, cleanupIdentity05, cleanupIdentity06, cleanupIdentity07;
-    char cleanupIdentity08, cleanupIdentity09, cleanupIdentity10, cleanupIdentity11, cleanupIdentity12, cleanupIdentity13, cleanupIdentity14, cleanupIdentity15;
-    char cleanupIdentity16, cleanupIdentity17, cleanupIdentity18, cleanupIdentity19, cleanupIdentity20, cleanupIdentity21, cleanupIdentity22, cleanupIdentity23;
-    char cleanupIdentity24, cleanupIdentity25, cleanupIdentity26, cleanupIdentity27, cleanupIdentity28, cleanupIdentity29, cleanupIdentity30, cleanupIdentity31;
-    char cleanupIdentity32, cleanupIdentity33, cleanupIdentity34, cleanupIdentity35, cleanupIdentity36, cleanupIdentity37, cleanupIdentity38, cleanupIdentity39;
-    char cleanupIdentity40, cleanupIdentity41, cleanupIdentity42, cleanupIdentity43, cleanupIdentity44, cleanupIdentity45, cleanupIdentity46, cleanupIdentity47;
-    char cleanupIdentity48, cleanupIdentity49, cleanupIdentity50, cleanupIdentity51, cleanupIdentity52, cleanupIdentity53, cleanupIdentity54, cleanupIdentity55;
+void CAmbientSound::OnInit() {
+    using namespace ActorRegistryViews;
+    // The parser numbers function-local cleanup types for the whole translation
+    // unit, so the declarations in this function shift the numbers of the ones in
+    // OnProcess. These 59 unused declarations hold that numbering where the
+    // exception tables expect it. They produce no code or stack and are never read.
+    char cleanupIdentity00, cleanupIdentity01, cleanupIdentity02, cleanupIdentity03, cleanupIdentity04,
+        cleanupIdentity05, cleanupIdentity06, cleanupIdentity07;
+    char cleanupIdentity08, cleanupIdentity09, cleanupIdentity10, cleanupIdentity11, cleanupIdentity12,
+        cleanupIdentity13, cleanupIdentity14, cleanupIdentity15;
+    char cleanupIdentity16, cleanupIdentity17, cleanupIdentity18, cleanupIdentity19, cleanupIdentity20,
+        cleanupIdentity21, cleanupIdentity22, cleanupIdentity23;
+    char cleanupIdentity24, cleanupIdentity25, cleanupIdentity26, cleanupIdentity27, cleanupIdentity28,
+        cleanupIdentity29, cleanupIdentity30, cleanupIdentity31;
+    char cleanupIdentity32, cleanupIdentity33, cleanupIdentity34, cleanupIdentity35, cleanupIdentity36,
+        cleanupIdentity37, cleanupIdentity38, cleanupIdentity39;
+    char cleanupIdentity40, cleanupIdentity41, cleanupIdentity42, cleanupIdentity43, cleanupIdentity44,
+        cleanupIdentity45, cleanupIdentity46, cleanupIdentity47;
+    char cleanupIdentity48, cleanupIdentity49, cleanupIdentity50, cleanupIdentity51, cleanupIdentity52,
+        cleanupIdentity53, cleanupIdentity54, cleanupIdentity55;
     char cleanupIdentity56, cleanupIdentity57, cleanupIdentity58;
-    // self is an unused ABI receiver; course lists are borrowed from g_sharedDoc.
+    // The course lists are borrowed from g_sharedDoc.
     // Each list is circular with its header as end, and stays intact during calls.
     {
         float zero;
@@ -576,12 +705,14 @@ void CAmbientSound_OnInit(void* self) {
         AmbientStartEntry* entry;
         end = (AmbientStartEntry*)&context->boxSources;
         entry = context->boxSources.next;
-        zero = 0.0f;
+        zero = kFloat_0_Actor;
         float scale = s_actorRenderScaleTween[1];
         while (entry != end) {
             name = &entry->nameWord00;
             if (entry->repeatInterval < zero && SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager, name) == 0)
-                ((void(*)(void*,void*,void*,int,void*,double*,float,float,float))Sound_PlayByName)(g_soundManager, name, (void*)0, 1, name, &kAmbientSoundDistanceRange, kFloat_0_5_805DDCE4, kFloat_200_CourseHelpers, scale);
+                ((void (*)(void*, void*, void*, int, void*, double*, float, float, float))Sound_PlayByName)(
+                    g_soundManager, name, (void*)0, 1, name, &kAmbientSoundDistanceRange, kFloat_0_5_805DDCE4,
+                    kFloat_200_CourseHelpers, scale);
             entry = entry->next;
         }
     }
@@ -589,20 +720,21 @@ void CAmbientSound_OnInit(void* self) {
         AmbientStartEntry* entry;
         void* name;
         AmbientStartCourseLists* context;
-        // An earlier version contained unused nonvolatile loads of positionalSources.next before
-        // assigning context. CodeWarrior discarded them; they are not a runtime
-        // dependency or a valid context source. Initialize before every read.
+        // The positional list's first entry is read before the end sentinel is
+        // formed; the list is circular and intact for the whole loop.
         AmbientStartEntry* end;
         context = ((AmbientStartSharedDocument*)g_sharedDoc)->root->context;
         AmbientStartEntry* first = context->positionalSources.next;
         float scale = s_actorRenderScaleTween[1];
         entry = first;
-        float zero = 0.0f;
+        float zero = kFloat_0_Actor;
         end = (AmbientStartEntry*)&context->positionalSources;
         while (entry != end) {
             name = &entry->nameWord00;
             if (entry->repeatInterval < zero && SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager, name) == 0)
-                ((void(*)(void*,void*,void*,int,void*,double*,float,float,float))Sound_PlayByName)(g_soundManager, name, (void*)((char*)name + kAmbientSourceSpatialTailOffset), 1, name, &kAmbientSoundDistanceRange, kFloat_0_5_805DDCE4, kFloat_200_CourseHelpers, scale);
+                ((void (*)(void*, void*, void*, int, void*, double*, float, float, float))Sound_PlayByName)(
+                    g_soundManager, name, (void*)((char*)name + kAmbientSourceSpatialTailOffset), 1, name,
+                    &kAmbientSoundDistanceRange, kFloat_0_5_805DDCE4, kFloat_200_CourseHelpers, scale);
             entry = entry->next;
         }
     }
@@ -613,13 +745,17 @@ void StringMap_DestroyStringPair(void* unused, void* rawData) {
     fn_800CC328_Second* data;
     fn_800CC328_Second* p;
     data = (fn_800CC328_Second*)rawData;
-    if (data == 0) return;
+    if (data == 0)
+        return;
     if (&data->valueFlags != 0) {
-        if (data->valueFlags >> 31) appFreeUni__FPv(data->valueData);
+        if (data->valueFlags >> 31)
+            appFreeUni__FPv(data->valueData);
     }
     p = data;
-    if (p == 0) return;
-    if (p->keyFlags >> 31) appFreeUni__FPv((void*)p->keyData);
+    if (p == 0)
+        return;
+    if (p->keyFlags >> 31)
+        appFreeUni__FPv((void*)p->keyData);
 end:; // 0x800CC328: retain the label's effect on compiler-generated local type names.
 }
 
@@ -647,11 +783,14 @@ struct dtor_800CCE80_Node {
 
 // Destroy the two deeper subtrees, then the owned name and this node.
 static inline void destroySoundNameLeaf(void* object, dtor_800CCE80_Node* descendant) {
-    if (descendant->first) StringValueTree_DestroySubtree(object, descendant->first);
-    if (descendant->second) StringValueTree_DestroySubtree(object, descendant->second);
+    if (descendant->first)
+        StringValueTree_DestroySubtree(object, descendant->first);
+    if (descendant->second)
+        StringValueTree_DestroySubtree(object, descendant->second);
     if (&descendant->flags != 0) {
         if (&descendant->flags != 0) {
-            if ((descendant->flags >> 31) != 0) appFreeUni__FPv(descendant->owned);
+            if ((descendant->flags >> 31) != 0)
+                appFreeUni__FPv(descendant->owned);
         }
     }
     appFreeUni__FPv(descendant);
@@ -660,12 +799,15 @@ static inline void destroySoundNameLeaf(void* object, dtor_800CCE80_Node* descen
 // Destroy this child branch in postorder; the caller has checked the node.
 static inline void destroySoundNameChildBranch(void* object, dtor_800CCE80_Node*& childBranch) {
     dtor_800CCE80_Node* descendant = childBranch->first;
-    if (descendant) destroySoundNameLeaf(object, descendant);
+    if (descendant)
+        destroySoundNameLeaf(object, descendant);
     descendant = childBranch->second;
-    if (descendant) destroySoundNameLeaf(object, descendant);
+    if (descendant)
+        destroySoundNameLeaf(object, descendant);
     if (&childBranch->flags != 0) {
         if (&childBranch->flags != 0) {
-            if ((childBranch->flags >> 31) != 0) appFreeUni__FPv(childBranch->owned);
+            if ((childBranch->flags >> 31) != 0)
+                appFreeUni__FPv(childBranch->owned);
         }
     }
     appFreeUni__FPv(childBranch);
@@ -677,7 +819,8 @@ static inline void destroySoundNameChildBranch(void* object, dtor_800CCE80_Node*
 // node. The address guards preserve the original generated string cleanup.
 // Node layout: first/second = child nodes (+0/+4), flags (+0xC) = small-string tag, owned (+0x14) = heap text.
 void* SoundNameMap_dtor(void* object, int flags) {
-    if (object == 0) return object;
+    if (object == 0)
+        return object;
     {
         dtor_800CCE80_Node* root = *(dtor_800CCE80_Node**)((char*)object + 4);
         if (root) {
@@ -686,64 +829,102 @@ void* SoundNameMap_dtor(void* object, int flags) {
                 dtor_800CCE80_Node* childBranch = rootChild->first;
                 if (childBranch) {
                     dtor_800CCE80_Node* descendant = childBranch->first;
-                    if (descendant) destroySoundNameLeaf(object, descendant);
-                    __typeof__(childBranch->second) secondDescendant = childBranch->second; descendant = secondDescendant;
-                    if (descendant) destroySoundNameLeaf(object, descendant);
+                    if (descendant)
+                        destroySoundNameLeaf(object, descendant);
+                    __typeof__(childBranch->second) secondDescendant = childBranch->second;
+                    descendant = secondDescendant;
+                    if (descendant)
+                        destroySoundNameLeaf(object, descendant);
                     if (&childBranch->flags != 0) {
                         if (&childBranch->flags != 0) {
-                            if ((childBranch->flags >> 31) != 0) appFreeUni__FPv(childBranch->owned);
+                            if ((childBranch->flags >> 31) != 0)
+                                appFreeUni__FPv(childBranch->owned);
                         }
                     }
                     appFreeUni__FPv(childBranch);
                 }
-                __typeof__(rootChild->second) secondBranch = rootChild->second; childBranch = secondBranch;
-                if (childBranch) destroySoundNameChildBranch(object, childBranch);
+                __typeof__(rootChild->second) secondBranch = rootChild->second;
+                childBranch = secondBranch;
+                if (childBranch)
+                    destroySoundNameChildBranch(object, childBranch);
                 if (&rootChild->flags != 0) {
                     if (&rootChild->flags != 0) {
-                        if ((rootChild->flags >> 31) != 0) appFreeUni__FPv(rootChild->owned);
+                        if ((rootChild->flags >> 31) != 0)
+                            appFreeUni__FPv(rootChild->owned);
                     }
                 }
                 appFreeUni__FPv(rootChild);
             }
-            __typeof__(root->second) secondRootChild = root->second; rootChild = secondRootChild;
+            __typeof__(root->second) secondRootChild = root->second;
+            rootChild = secondRootChild;
             if (rootChild) {
-                __typeof__(rootChild->first) firstBranch = rootChild->first; dtor_800CCE80_Node* childBranch = firstBranch;
-                if (childBranch) destroySoundNameChildBranch(object, childBranch);
+                __typeof__(rootChild->first) firstBranch = rootChild->first;
+                dtor_800CCE80_Node* childBranch = firstBranch;
+                if (childBranch)
+                    destroySoundNameChildBranch(object, childBranch);
                 childBranch = rootChild->second;
-                if (childBranch) destroySoundNameChildBranch(object, childBranch);
+                if (childBranch)
+                    destroySoundNameChildBranch(object, childBranch);
                 if (&rootChild->flags != 0) {
                     if (&rootChild->flags != 0) {
-                        if ((rootChild->flags >> 31) != 0) appFreeUni__FPv(rootChild->owned);
+                        if ((rootChild->flags >> 31) != 0)
+                            appFreeUni__FPv(rootChild->owned);
                     }
                 }
                 appFreeUni__FPv(rootChild);
             }
             if (&root->flags != 0) {
                 if (&root->flags != 0) {
-                    if ((root->flags >> 31) != 0) appFreeUni__FPv(root->owned);
+                    if ((root->flags >> 31) != 0)
+                        appFreeUni__FPv(root->owned);
                 }
             }
             appFreeUni__FPv(root);
         }
-        if (flags > 0) __dl__FPv(object);
+        if (flags > 0)
+            __dl__FPv(object);
     }
     return object;
 }
 
-struct AmbientRawNode { AmbientRawNode* next; unsigned char pad[4]; unsigned char data[0x30]; };
-struct AmbientRawChain { unsigned char pad[0x4904]; AmbientRawNode* first; AmbientRawNode* sentinel; };
-struct AmbientRawOwner { unsigned char pad[0xB90]; AmbientRawChain* list; };
-struct AmbientRawDocument { unsigned char pad[8]; AmbientRawOwner* root; };
+struct AmbientRawNode {
+    AmbientRawNode* next;
+    unsigned char pad[4];
+    unsigned char data[0x30];
+};
+struct AmbientRawChain {
+    unsigned char pad[0x4904];
+    AmbientRawNode* first;
+    AmbientRawNode* sentinel;
+};
+struct AmbientRawOwner {
+    unsigned char pad[0xB90];
+    AmbientRawChain* list;
+};
+struct AmbientRawDocument {
+    unsigned char pad[8];
+    AmbientRawOwner* root;
+};
 // Ambient work map: count/root/first, with &root as end. Nodes are three links,
 // a 12-byte owned string key and float attenuation at +0x18. Input lists retain
 // their own fixed name[32], timer, interval, fadeDistance, then box/position data.
 // A positive interval accumulates delta; a negative interval is persistent.
 // delta and interval share the ambient update clock; its seconds scale is unresolved.
-struct AmbientNameStorage { unsigned int flags, size; void* data; };
-struct AmbientAllocatorTag { char value; char pad[3]; };
+struct AmbientNameStorage {
+    unsigned int flags, size;
+    void* data;
+};
+struct AmbientAllocatorTag {
+    char value;
+    char pad[3];
+};
 // The header stores count/root/first; &root is the end sentinel.
 // Node links are left/right followed by tagged parentAndColor.
-struct AmbientAttenuationMap { unsigned int count; unsigned int root; void* first; };
+struct AmbientAttenuationMap {
+    unsigned int count;
+    unsigned int root;
+    void* first;
+};
 struct AmbientAttenuationNode {
     void* left;
     void* right;
@@ -785,7 +966,10 @@ struct AmbientPositionalSourceData {
 };
 typedef char AmbientBoxTailOffset[(int)&((AmbientBoxSourceData*)0)->box == 0x2C ? 1 : -1];
 typedef char AmbientPositionTailOffset[(int)&((AmbientPositionalSourceData*)0)->position == 0x2C ? 1 : -1];
-struct AmbientSourceList { unsigned int prev; AmbientSourceEntry* next; };
+struct AmbientSourceList {
+    unsigned int prev;
+    AmbientSourceEntry* next;
+};
 struct AmbientCourseLists {
     unsigned char pad[0x4904];
     AmbientSourceList boxSources;
@@ -793,13 +977,13 @@ struct AmbientCourseLists {
     AmbientSourceList positionalSources;
 };
 
-
 #pragma opt_lifetimes off
 // Course lists are borrowed. The temporary map owns copied names and combines
 // overlapping box sources by MAX attenuation for each sound name, never by sum.
 // Positional sources bypass the map and use the global ambient scale directly.
 // Advance ambient timers, combine box attenuation by sound name, and update positional volumes.
-void CAmbientSound_OnProcess(void* /*self*/, float delta) {
+void CAmbientSound::OnProcess(float delta) {
+    using namespace ActorRegistryViews;
     AmbientNameStorage previousValueKey;
     AmbientNameStorage replacementKey;
     AmbientNameStorage newEntryKey;
@@ -832,17 +1016,21 @@ void CAmbientSound_OnProcess(void* /*self*/, float delta) {
 
     golfDocument = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
     courseLists = (AmbientCourseLists*)AsCGolfDoc(golfDocument)->courseData;
-    ((void(*)(void*, void*))AmbientSoundNameTree_Init)(&work, golfDocument);
+    ((void (*)(void*, void*))AmbientSoundNameTree_Init)(&work, golfDocument);
     struct WorkCleanup {
         AmbientAttenuationMap* work;
         // Destroy the temporary attenuation map if normal cleanup did not release it.
-        ~WorkCleanup() { if (work) SoundNameMap_dtor(work, -1); }
-    } workCleanup = { &work };
+        ~WorkCleanup() {
+            if (work)
+                SoundNameMap_dtor(work, -1);
+        }
+    } workCleanup = {&work};
     struct StringCleanup {
         AmbientNameStorage* string;
         // Release the temporary key text only when it uses heap storage.
         ~StringCleanup() {
-            if (string->flags >> 31) appFreeUni__FPv(string->data);
+            if (string->flags >> 31)
+                appFreeUni__FPv(string->data);
         }
     };
     // Phase 1: evaluate box sources and retain the largest attenuation for each name.
@@ -858,25 +1046,28 @@ void CAmbientSound_OnProcess(void* /*self*/, float delta) {
         sourceName = entry->name;
         if (entry->repeatInterval > zero) {
             ((AmbientBoxSourceData*)sourceName)->elapsedRepeatTime += delta;
-            if (((AmbientBoxSourceData*)sourceName)->elapsedRepeatTime > ((AmbientBoxSourceData*)sourceName)->repeatInterval) {
+            if (((AmbientBoxSourceData*)sourceName)->elapsedRepeatTime >
+                ((AmbientBoxSourceData*)sourceName)->repeatInterval) {
                 ((AmbientBoxSourceData*)sourceName)->elapsedRepeatTime = zero;
-                Sound_PlayByName((unsigned char*)g_soundManager, sourceName, 0, 0, sourceName, 0,
-                                 kFloat_0_5_805DDCE4, kFloat_200_CourseHelpers, scale);
+                Sound_PlayByName((unsigned char*)g_soundManager, sourceName, 0, 0, sourceName, 0, kFloat_0_5_805DDCE4,
+                                 kFloat_200_CourseHelpers, scale);
             }
             if (SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager, (void*)sourceName) != 0) {
-                sourceAttenuation = CAmbientSound_GetVolume(&((AmbientBoxSourceData*)sourceName)->box, ((AmbientBoxSourceData*)sourceName)->fadeDistance);
+                sourceAttenuation = CAmbientSound::GetVolume(&((AmbientBoxSourceData*)sourceName)->box,
+                                                             ((AmbientBoxSourceData*)sourceName)->fadeDistance);
             } else {
                 sourceAttenuation = kFloat_0_Actor;
             }
         } else {
-            sourceAttenuation = CAmbientSound_GetVolume(&((AmbientBoxSourceData*)sourceName)->box, ((AmbientBoxSourceData*)sourceName)->fadeDistance);
+            sourceAttenuation = CAmbientSound::GetVolume(&((AmbientBoxSourceData*)sourceName)->box,
+                                                         ((AmbientBoxSourceData*)sourceName)->fadeDistance);
         }
         {
             lookupKey.flags = zeroWord;
             lookupKey.size = zeroWord;
             lookupKey.data = (void*)zeroWord;
-            StringCleanup keyCleanup = { &lookupKey };
-            len = strlen(sourceName);
+            StringCleanup keyCleanup = {&lookupKey};
+            len = ::strlen(sourceName);
             String_ReserveCapacity(&lookupKey, len);
             lookupStringAllocator.value = lookupAllocatorByte;
             String_ReplaceRange(&lookupKey, 0, 0, sourceName, sourceName + len, (const char*)&lookupStringAllocator);
@@ -887,29 +1078,32 @@ void CAmbientSound_OnProcess(void* /*self*/, float delta) {
             newEntryKey.flags = zeroWord;
             newEntryKey.size = zeroWord;
             newEntryKey.data = (void*)zeroWord;
-            StringCleanup secondCleanup = { &newEntryKey };
-            len = strlen(sourceName);
+            StringCleanup secondCleanup = {&newEntryKey};
+            len = ::strlen(sourceName);
             String_ReserveCapacity(&newEntryKey, len);
             insertionStringAllocator.value = insertionAllocatorTag.value;
-            String_ReplaceRange(&newEntryKey, 0, 0, sourceName, sourceName + len, (const char*)&insertionStringAllocator);
+            String_ReplaceRange(&newEntryKey, 0, 0, sourceName, sourceName + len,
+                                (const char*)&insertionStringAllocator);
             *(float*)AmbientSoundNameTree_GetOrInsertValue(&work, &newEntryKey) = sourceAttenuation;
         } else {
             replacementKey.flags = zeroWord;
             replacementKey.size = zeroWord;
             replacementKey.data = (void*)zeroWord;
-            StringCleanup secondCleanup = { &replacementKey };
-            len = strlen(sourceName);
+            StringCleanup secondCleanup = {&replacementKey};
+            len = ::strlen(sourceName);
             String_ReserveCapacity(&replacementKey, len);
             replacementStringAllocator.value = replacementAllocatorTag.value;
-            String_ReplaceRange(&replacementKey, 0, 0, sourceName, sourceName + len, (const char*)&replacementStringAllocator);
+            String_ReplaceRange(&replacementKey, 0, 0, sourceName, sourceName + len,
+                                (const char*)&replacementStringAllocator);
             previousValueKey.flags = zeroWord;
             previousValueKey.size = zeroWord;
             previousValueKey.data = (void*)zeroWord;
-            StringCleanup thirdCleanup = { &previousValueKey };
-            len = strlen(sourceName);
+            StringCleanup thirdCleanup = {&previousValueKey};
+            len = ::strlen(sourceName);
             String_ReserveCapacity(&previousValueKey, len);
             previousValueStringAllocator.value = previousValueAllocatorTag.value;
-            String_ReplaceRange(&previousValueKey, 0, 0, sourceName, sourceName + len, (const char*)&previousValueStringAllocator);
+            String_ReplaceRange(&previousValueKey, 0, 0, sourceName, sourceName + len,
+                                (const char*)&previousValueStringAllocator);
             previousAttenuation = *(float*)AmbientSoundNameTree_GetOrInsertValue(&work, &previousValueKey);
             sourceAttenuation = previousAttenuation < sourceAttenuation ? sourceAttenuation : previousAttenuation;
             *(float*)AmbientSoundNameTree_GetOrInsertValue(&work, &replacementKey) = sourceAttenuation;
@@ -921,8 +1115,10 @@ void CAmbientSound_OnProcess(void* /*self*/, float delta) {
         AmbientSourceEntry* mapEnd2 = (AmbientSourceEntry*)&work.root;
         found = *(AmbientAttenuationNode**)((char*)&work + 8);
         while ((void*)found != (void*)mapEnd2) {
-            if ((found->key.flags >> 31) == 0) s = (char*)&found->key.flags + 1;
-            else s = (const char*)found->key.data;
+            if ((found->key.flags >> 31) == 0)
+                s = (char*)&found->key.flags + 1;
+            else
+                s = (const char*)found->key.data;
             SoundManager_SetNamedVolumeScale(g_soundManager, (void*)s, scale * found->value);
             AmbientSoundTree_AdvanceIterator(&found);
         }
@@ -933,7 +1129,8 @@ void CAmbientSound_OnProcess(void* /*self*/, float delta) {
     {
         zero = kFloat_0_Actor;
         scale = s_actorRenderScaleTween[1];
-        AmbientCourseLists* positionalLists = (AmbientCourseLists*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData;
+        AmbientCourseLists* positionalLists =
+            (AmbientCourseLists*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData;
         char* positionalName;
         AmbientSourceEntry* end2 = (AmbientSourceEntry*)&positionalLists->positionalSources;
         AmbientSourceEntry* entry2 = positionalLists->positionalSources.next;
@@ -941,12 +1138,14 @@ void CAmbientSound_OnProcess(void* /*self*/, float delta) {
             positionalName = entry2->name;
             if (entry2->repeatInterval > zero) {
                 ((AmbientPositionalSourceData*)positionalName)->elapsedRepeatTime += delta;
-                if (((AmbientPositionalSourceData*)positionalName)->elapsedRepeatTime > ((AmbientPositionalSourceData*)positionalName)->repeatInterval) {
+                if (((AmbientPositionalSourceData*)positionalName)->elapsedRepeatTime >
+                    ((AmbientPositionalSourceData*)positionalName)->repeatInterval) {
                     ((AmbientPositionalSourceData*)positionalName)->elapsedRepeatTime = zero;
-                    Sound_PlayByName((unsigned char*)g_soundManager, positionalName,
-                                     (const SoundPositionVector*)((AmbientPositionalSourceData*)positionalName)->position, 0,
-                                     positionalName, (const SoundPlaybackScale2*)&kAmbientSoundDistanceRange,
-                                     kFloat_0_5_805DDCE4, kFloat_200_CourseHelpers, scale);
+                    Sound_PlayByName(
+                        (unsigned char*)g_soundManager, positionalName,
+                        (const SoundPositionVector*)((AmbientPositionalSourceData*)positionalName)->position, 0,
+                        positionalName, (const SoundPlaybackScale2*)&kAmbientSoundDistanceRange, kFloat_0_5_805DDCE4,
+                        kFloat_200_CourseHelpers, scale);
                 }
             }
             SoundManager_SetNamedVolumeScale(g_soundManager, (void*)positionalName, scale);
@@ -963,21 +1162,38 @@ void CAmbientSound_OnProcess(void* /*self*/, float delta) {
 #include "game/golfball.h"
 // Ambient sources are held in two circular lists: box-volume and positional sounds.
 struct AmbientSourceLists {
-    char padding[0x4904]; void* boxSentinel; void* firstBox; unsigned int boxCount;
-    void* positionalSentinel; void* firstPositional; unsigned int positionalCount;
+    char padding[0x4904];
+    void* boxSentinel;
+    void* firstBox;
+    unsigned int boxCount;
+    void* positionalSentinel;
+    void* firstPositional;
+    unsigned int positionalCount;
 };
-struct AimPathStorage { void* points; unsigned int count, capacity; WVector closestPoint; };
-struct BallMessage { unsigned int sender, action, value; char padding[0x10]; unsigned int time; };
-enum ActorHelperConstants { kCallbackThreadStackBytes = 0x10000, kCallbackThreadPriority = 24,
-       kBeachWaveRising = 0, kBeachWaveFalling = 1, kBeachWaveWaiting = 2 };
-
+struct AimPathStorage {
+    void* points;
+    unsigned int count, capacity;
+    WVector closestPoint;
+};
+struct BallMessage {
+    unsigned int sender, action, value;
+    char padding[0x10];
+    unsigned int time;
+};
+enum ActorHelperConstants {
+    kCallbackThreadStackBytes = 0x10000,
+    kCallbackThreadPriority = 24,
+    kBeachWaveRising = 0,
+    kBeachWaveFalling = 1,
+    kBeachWaveWaiting = 2
+};
 
 // ---- merged from ball_actor_and_ambient_sound.cpp ----
 namespace CallbackThreadViews {
-// Translation unit 0x800CD324-0x800CE694 (24 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
-struct Vec { unsigned int x, y, z; };
+struct Vec {
+    unsigned int x, y, z;
+};
 
 extern "C" {
 
@@ -1003,7 +1219,8 @@ unsigned char GetGroundType__9CQuadTreeF7WVector(void*, Vec*);
 int CourseData_IsPointOutsidePlayableRegion(void*, void*);
 void GetGroundPoint__9CQuadTreeF7WVectorbPib(void*, void*, Vec*, int, int, int);
 extern CSharedDoc* g_sharedDoc;
-extern float kFloat_3200_CourseHelpers, kFloat_1_CourseGeometry, kRecoveryPointSearchEpsilon, kFloat_0_CourseHelpers, kFloat_32_CourseHelpers, kFloat_192_CourseHelpers;
+extern float kFloat_3200_CourseHelpers, kFloat_1_CourseGeometry, kRecoveryPointSearchEpsilon, kFloat_0_CourseHelpers,
+    kFloat_32_CourseHelpers, kFloat_192_CourseHelpers;
 float __ml__FRC7WVectorRC7WVector(void*, void*);
 float Math_SquareRootApprox(float);
 double ceil(double);
@@ -1014,7 +1231,6 @@ void __dl__FPv(void*);
 void IntPair_Set(unsigned char*, const char*, unsigned char*);
 void* ActorFactoryRegistry_GetInstance();
 void StringMap_SetByName(void*, void*, const char*);
-void CAmbientSound_Create(void*);
 void* TaskRegistry_GetInstance();
 void TaskRegistry_AppendFactory(void*, const char*);
 void OSCancelThread(void*);
@@ -1046,50 +1262,73 @@ extern volatile float s_ambientSoundTwoPi;
 // Sound-name trees use [count,root,first] headers; end is header+4. Nodes
 // contain left/right/tagged parent at +0/+4/+8, string at +0xC, float at +0x18.
 // Parent bit 0 is color. Clear/destroy own keys and nodes; Find/GetOrInsert borrow keys.
-struct TreeNode { TreeNode* left; TreeNode* right; TreeNode* parent; };
+struct TreeNode {
+    TreeNode* left;
+    TreeNode* right;
+    TreeNode* parent;
+};
 // Legacy 16-byte string overlay; these three static helpers are emitted even
 // though this unit has no call sites. Keep them separate from the 12-byte
 // TargetString below. The +8 word's capacity meaning is not established by a caller.
-struct String { unsigned char flags; unsigned char data[3]; unsigned int size; unsigned int heapWord08; unsigned char* ptr; };
+struct String {
+    unsigned char flags;
+    unsigned char data[3];
+    unsigned int size;
+    unsigned int heapWord08;
+    unsigned char* ptr;
+};
 extern unsigned int s_targetValueDefaultWord;
 
-
 // Read the legacy overlay's heap length at +4 or its inline length byte.
-static unsigned int str_size(String* s) { return (s->flags & 0x80) ? s->size : (s->flags & 0x7f); }
+static unsigned int str_size(String* s) {
+    return (s->flags & 0x80) ? s->size : (s->flags & 0x7f);
+}
 // str_capacity returns an unresolved heap word at +8, or the inline length.
 // No caller proves capacity semantics; the shared name is provisional.
 // Read the legacy overlay's heap word at +8 or inline length.
-static unsigned int str_capacity(String* s) { return (s->flags & 0x80) ? s->heapWord08 : (s->flags & 0x7f); }
+static unsigned int str_capacity(String* s) {
+    return (s->flags & 0x80) ? s->heapWord08 : (s->flags & 0x7f);
+}
 // Borrow the legacy overlay's +0xC heap pointer or inline bytes at +1.
-static unsigned char* str_data(String* s) { return (s->flags & 0x80) ? s->ptr : (unsigned char*)s + 1; }
+static unsigned char* str_data(String* s) {
+    return (s->flags & 0x80) ? s->ptr : (unsigned char*)s + 1;
+}
 
 struct TargetString {
- unsigned int flags, size;
- unsigned char* ptr;
- // Leave storage untouched for callers that immediately construct all string words.
- TargetString() {}
- TargetString(const TargetString* key);
- // Release owned heap text; inline bytes need no cleanup.
- ~TargetString() { if (flags >> 31) appFreeUni__FPv(ptr); }
+    unsigned int flags, size;
+    unsigned char* ptr;
+    // Leave storage untouched for callers that immediately construct all string words.
+    TargetString() {}
+    TargetString(const TargetString* key);
+    // Release owned heap text; inline bytes need no cleanup.
+    ~TargetString() {
+        if (flags >> 31)
+            appFreeUni__FPv(ptr);
+    }
 };
 // Read inline length or the heap-string length word.
 static unsigned int target_size(TargetString* s) {
- unsigned int size;
- if (!(s->flags >> 31)) size = *(unsigned char*)s & 0x7f;
- else size = s->size;
- return size;
+    unsigned int size;
+    if (!(s->flags >> 31))
+        size = *(unsigned char*)s & 0x7f;
+    else
+        size = s->size;
+    return size;
 }
 // Compare unsigned lengths and return -1, 0, or 1.
 static int target_order(unsigned int a, unsigned int b) {
- int r;
- if (a < b) r = -1;
- else if (a == b) r = 0;
- else r = 1;
- return r;
+    int r;
+    if (a < b)
+        r = -1;
+    else if (a == b)
+        r = 0;
+    else
+        r = 1;
+    return r;
 }
 // Return the smaller string comparison length by reference.
 static const unsigned int& target_min(const unsigned int& a, const unsigned int& b) {
- return a < b ? a : b;
+    return a < b ? a : b;
 }
 
 #pragma use_lmw_stmw on
@@ -1101,56 +1340,80 @@ static const unsigned int& target_min(const unsigned int& a, const unsigned int&
 // result/head/key must be valid; returned node is borrowed until tree mutation.
 // Find the lower-bound sound-name node, returning the sentinel when the name is absent.
 void AmbientSoundNameTree_Find(TreeNode** result, const TreeNode* head, const TargetString* key) {
- TreeNode* parent = (TreeNode*)((char*)head + 4);
- TreeNode* node = head->right;
- while (node != 0) {
-  unsigned int limit;
-  unsigned int len;
-  unsigned int keyLen;
-  unsigned int m;
-  unsigned int n;
-  unsigned int length;
-  unsigned char* data;
-  unsigned char* other;
-  if (!(key->flags >> 31)) { n = *(unsigned char*)key & 0x7f; data = (unsigned char*)key + 1; }
-  else { data = key->ptr; n = key->size; }
-  keyLen = n;
-  TargetString* value = (TargetString*)((char*)node + 12);
-  m = !(value->flags >> 31) ? *(unsigned char*)value & 0x7f : value->size;
-  if (!(value->flags >> 31)) { other = (unsigned char*)value + 1; length = *(unsigned char*)value & 0x7f; }
-  else { other = value->ptr; length = value->size; }
-  len = length;
-  limit = target_min(m, len);
-  int cmp = memcmp(other, data, target_min(keyLen, limit));
-  if (!cmp) {
-   cmp = limit < n ? -1 : limit == n ? 0 : 1;
-  }
-  if (cmp >= 0) { parent = node; node = node->left; }
-  else node = node->right;
- }
- if (parent != (TreeNode*)((char*)head + 4)) {
-  unsigned int n;
-  unsigned char* data;
-  TargetString* value;
-  unsigned int m;
-  value = (TargetString*)((char*)parent + 12);
-  if (!(value->flags >> 31)) { n = *(unsigned char*)value & 0x7f; data = (unsigned char*)value + 1; }
-  else { data = value->ptr; n = value->size; }
-  unsigned int keyLen = n;
-  m = !(key->flags >> 31) ? *(unsigned char*)key & 0x7f : key->size;
-  unsigned int length;
-  unsigned char* other;
-  if (!(key->flags >> 31)) { other = (unsigned char*)key + 1; length = *(unsigned char*)key & 0x7f; }
-  else { other = key->ptr; length = key->size; }
-  unsigned int len = length;
-  unsigned int limit = target_min(m, len);
-  int cmp = memcmp(other, data, target_min(keyLen, limit));
-  if (!cmp) {
-   cmp = limit < n ? -1 : limit == n ? 0 : 1;
-  }
-  if (cmp < 0) parent = (TreeNode*)((char*)head + 4);
- }
- *result = parent;
+    TreeNode* parent = (TreeNode*)((char*)head + 4);
+    TreeNode* node = head->right;
+    while (node != 0) {
+        unsigned int limit;
+        unsigned int len;
+        unsigned int keyLen;
+        unsigned int m;
+        unsigned int n;
+        unsigned int length;
+        unsigned char* data;
+        unsigned char* other;
+        if (!(key->flags >> 31)) {
+            n = *(unsigned char*)key & 0x7f;
+            data = (unsigned char*)key + 1;
+        } else {
+            data = key->ptr;
+            n = key->size;
+        }
+        keyLen = n;
+        TargetString* value = (TargetString*)((char*)node + 12);
+        m = !(value->flags >> 31) ? *(unsigned char*)value & 0x7f : value->size;
+        if (!(value->flags >> 31)) {
+            other = (unsigned char*)value + 1;
+            length = *(unsigned char*)value & 0x7f;
+        } else {
+            other = value->ptr;
+            length = value->size;
+        }
+        len = length;
+        limit = target_min(m, len);
+        int cmp = memcmp(other, data, target_min(keyLen, limit));
+        if (!cmp) {
+            cmp = limit < n ? -1 : limit == n ? 0 : 1;
+        }
+        if (cmp >= 0) {
+            parent = node;
+            node = node->left;
+        } else
+            node = node->right;
+    }
+    if (parent != (TreeNode*)((char*)head + 4)) {
+        unsigned int n;
+        unsigned char* data;
+        TargetString* value;
+        unsigned int m;
+        value = (TargetString*)((char*)parent + 12);
+        if (!(value->flags >> 31)) {
+            n = *(unsigned char*)value & 0x7f;
+            data = (unsigned char*)value + 1;
+        } else {
+            data = value->ptr;
+            n = value->size;
+        }
+        unsigned int keyLen = n;
+        m = !(key->flags >> 31) ? *(unsigned char*)key & 0x7f : key->size;
+        unsigned int length;
+        unsigned char* other;
+        if (!(key->flags >> 31)) {
+            other = (unsigned char*)key + 1;
+            length = *(unsigned char*)key & 0x7f;
+        } else {
+            other = key->ptr;
+            length = key->size;
+        }
+        unsigned int len = length;
+        unsigned int limit = target_min(m, len);
+        int cmp = memcmp(other, data, target_min(keyLen, limit));
+        if (!cmp) {
+            cmp = limit < n ? -1 : limit == n ? 0 : 1;
+        }
+        if (cmp < 0)
+            parent = (TreeNode*)((char*)head + 4);
+    }
+    *result = parent;
 }
 #pragma use_lmw_stmw reset
 #pragma opt_strength_reduction reset
@@ -1160,29 +1423,35 @@ void AmbientSoundNameTree_Find(TreeNode** result, const TreeNode* head, const Ta
 
 // Copy the key, allocating independent text for a heap-backed string.
 inline TargetString::TargetString(const TargetString* key) {
-  unsigned int flags = key->flags;
-  if (!(flags >> 31)) {
-   unsigned int size = key->size;
-   unsigned char* ptr = key->ptr;
-   this->flags = flags; this->size = size; this->ptr = ptr;
-  }
-  else {
-   this->flags = 0; this->size = 0; this->ptr = 0;
-   TargetString* out = this;
-   String_ReserveCapacity(out, key->size);
-   volatile unsigned char unused;
-   struct Alloc { unsigned char c; } copy;
-   unsigned char allocator = unused;
-   unsigned int begin = (unsigned int)key->ptr;
-   unsigned int end = begin + key->size;
-   copy.c = allocator;
-   String_ReplaceRange(out, 0, 0, begin, end, &copy.c);
-  }
- }
+    unsigned int flags = key->flags;
+    if (!(flags >> 31)) {
+        unsigned int size = key->size;
+        unsigned char* ptr = key->ptr;
+        this->flags = flags;
+        this->size = size;
+        this->ptr = ptr;
+    } else {
+        this->flags = 0;
+        this->size = 0;
+        this->ptr = 0;
+        TargetString* out = this;
+        String_ReserveCapacity(out, key->size);
+        volatile unsigned char unused;
+        struct Alloc {
+            unsigned char c;
+        } copy;
+        unsigned char allocator = unused;
+        unsigned int begin = (unsigned int)key->ptr;
+        unsigned int end = begin + key->size;
+        copy.c = allocator;
+        String_ReplaceRange(out, 0, 0, begin, end, &copy.c);
+    }
+}
 struct TargetValue {
- TargetString str; unsigned int g;
- // Construct an owned key and initialize the attenuation value word.
- TargetValue(const TargetString* key) : str(key), g(s_targetValueDefaultWord) {}
+    TargetString str;
+    unsigned int g;
+    // Construct an owned key and initialize the attenuation value word.
+    TargetValue(const TargetString* key) : str(key), g(s_targetValueDefaultWord) {}
 };
 #pragma use_lmw_stmw on
 #pragma opt_strength_reduction off
@@ -1201,22 +1470,33 @@ void* AmbientSoundNameTree_GetOrInsertValue(void* self, const TargetString* key)
             found = (TargetString*)((char*)candidate + 12);
             unsigned int n;
             unsigned char* data;
-            if (!(key->flags >> 31)) { n = *(unsigned char*)key & 0x7f; data = (unsigned char*)key + 1; }
-            else { data = key->ptr; n = key->size; }
+            if (!(key->flags >> 31)) {
+                n = *(unsigned char*)key & 0x7f;
+                data = (unsigned char*)key + 1;
+            } else {
+                data = key->ptr;
+                n = key->size;
+            }
             unsigned int m;
             unsigned int keyLen = n;
             m = !(found->flags >> 31) ? *(unsigned char*)found & 0x7f : found->size;
             unsigned int length;
             unsigned char* other;
-            if (!(found->flags >> 31)) { other = (unsigned char*)found + 1; length = *(unsigned char*)found & 0x7f; }
-            else { other = found->ptr; length = found->size; }
+            if (!(found->flags >> 31)) {
+                other = (unsigned char*)found + 1;
+                length = *(unsigned char*)found & 0x7f;
+            } else {
+                other = found->ptr;
+                length = found->size;
+            }
             unsigned int len = length;
             unsigned int limit = target_min(m, len);
             int cmp = memcmp(other, data, target_min(keyLen, limit));
             if (!cmp) {
                 cmp = limit < n ? -1 : limit == n ? 0 : 1;
             }
-            if (cmp >= 0) break;
+            if (cmp >= 0)
+                break;
         }
         {
             TargetValue value(key);
@@ -1231,241 +1511,274 @@ void* AmbientSoundNameTree_GetOrInsertValue(void* self, const TargetString* key)
 #pragma opt_lifetimes reset
 
 // Stop aliases in both ambient-source lists when the stop message arrives.
-void CAmbientSound_HandleMsg(void*, const void* arg) {
-	switch (AsCAmbientSound(arg)->messageType) {
-	case 1:
-		break;
-	case 2:
-		TreeNode* sentinel = (TreeNode*)(&((AmbientSourceLists*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData)->boxSentinel);
-		TreeNode* current = (TreeNode*)((AmbientSourceLists*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData)->firstBox;
-		while (current != sentinel) {
-			Sound_StopByAlias(g_soundManager, (char*)current + 8);
-			current = current->right;
-		}
-		TreeNode* cur2 = (TreeNode*)((AmbientSourceLists*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData)->firstPositional;
-		TreeNode* end2 = (TreeNode*)(&((AmbientSourceLists*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData)->positionalSentinel);
-		while (cur2 != end2) {
-			Sound_StopByAlias(g_soundManager, (char*)cur2 + 8);
-			cur2 = cur2->right;
-		}
-		break;
-	}
+void CAmbientSound::HandleMsg(const ActorMessage* message) {
+    using namespace CallbackThreadViews;
+    typedef CallbackThreadViews::TreeNode TreeNode;
+    switch (message->type) {
+    case 1:
+        break;
+    case 2:
+        TreeNode* sentinel =
+            (TreeNode*)(&((AmbientSourceLists*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData)
+                             ->boxSentinel);
+        TreeNode* current =
+            (TreeNode*)((AmbientSourceLists*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData)
+                ->firstBox;
+        while (current != sentinel) {
+            Sound_StopByAlias(g_soundManager, (char*)current + 8);
+            current = current->right;
+        }
+        TreeNode* cur2 =
+            (TreeNode*)((AmbientSourceLists*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData)
+                ->firstPositional;
+        TreeNode* end2 =
+            (TreeNode*)(&((AmbientSourceLists*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData)
+                             ->positionalSentinel);
+        while (cur2 != end2) {
+            Sound_StopByAlias(g_soundManager, (char*)cur2 + 8);
+            cur2 = cur2->right;
+        }
+        break;
+    }
 }
 
 // Cancel a live callback thread, release its stack, and optionally free the owner.
-void* CAnotherHand_dtor(void* self, int shouldDelete) {
-	if (self != 0) {
-		void* value = AsCAnotherHand(self)->thread;
-		*(void**)self = &__vt__12CAnotherHand;
-		if (value != 0) {
-            OSCancelThread(value);
-			AsCAnotherHand(self)->thread = 0;
-		}
-		void* array = AsCAnotherHand(self)->threadStack;
-		if (array != 0) {
-			__dla__FPv(array);
-			AsCAnotherHand(self)->threadStack = 0;
-		}
-		g_anotherHandThreadStackPointer = 0;
-		if (shouldDelete > 0)
-			__dl__FPv(self);
-	}
-	return self;
+CAnotherHand::~CAnotherHand() {
+    void* value = thread;
+    vtbl = __vt__12CAnotherHand;
+    if (value != 0) {
+        OSCancelThread((OSThread*)value);
+        thread = 0;
+    }
+    void* array = threadStack;
+    if (array != 0) {
+        __dla__FPv(array);
+        threadStack = 0;
+    }
+    g_anotherHandThreadStackPointer = 0;
 }
 
-struct CallbackObject { 
-virtual void slot2(void*, int);
+struct CallbackObject {
+    virtual void slot2(void*, int);
 };
+
+} // extern "C"
+
+} // namespace CallbackThreadViews
+
 // Run the configured callback under the mutex after seeding randomness and applying priority.
-int CAnotherHand_CallbackThreadEntry(void* self) {
-	char* s = (char*)self;
-	((void (*)(void*))OSLockMutex)(s + 0x330);
-	srand(time(0));
-	{
-		int r0;
-		if (AsCAnotherHand(s)->thread != 0)
-			r0 = (int)((char*)OSGetThreadPriority(AsCAnotherHand(s)->thread) - 0x18);
-		else
-			r0 = 0;
-		if ((*(int*)&AsCAnotherHand(s)->threadPriorityDelta) != r0 && AsCAnotherHand(s)->thread != 0)
-			OSSetThreadPriority(AsCAnotherHand(s)->thread, (*(int*)&AsCAnotherHand(s)->threadPriorityDelta) + 0x18);
-	}
-	CallbackObject* obj = (*(CallbackObject**)&AsCAnotherHand(s)->callbackReceiver);
-	obj->slot2(AsCAnotherHand(s)->callbackArgument, (*(int*)&AsCAnotherHand(s)->callbackValue));
-	AsCAnotherHand(s)->thread = 0;
-	((void (*)(void*))OSUnlockMutex)(s + 0x300 + 0x30);
-	return 0;
+int CAnotherHand::CallbackThreadEntry(void* self) {
+    using namespace CallbackThreadViews;
+    char* s = (char*)self;
+    ((void (*)(void*))OSLockMutex)(s + 0x330);
+    srand(time(0));
+    {
+        int r0;
+        if (AsCAnotherHand(s)->thread != 0)
+            r0 = (int)((char*)OSGetThreadPriority(AsCAnotherHand(s)->thread) - 0x18);
+        else
+            r0 = 0;
+        if ((*(int*)&AsCAnotherHand(s)->threadPriorityDelta) != r0 && AsCAnotherHand(s)->thread != 0)
+            OSSetThreadPriority(AsCAnotherHand(s)->thread, (*(int*)&AsCAnotherHand(s)->threadPriorityDelta) + 0x18);
+    }
+    CallbackObject* obj = (*(CallbackObject**)&AsCAnotherHand(s)->callbackReceiver);
+    obj->slot2(AsCAnotherHand(s)->callbackArgument, (*(int*)&AsCAnotherHand(s)->callbackValue));
+    AsCAnotherHand(s)->thread = 0;
+    ((void (*)(void*))OSUnlockMutex)(s + 0x300 + 0x30);
+    return 0;
 }
+
+namespace CallbackThreadViews {
+
+extern "C" {
 
 // Advance to the next ordered node, masking the color bit from parent links.
 void AmbientSoundTree_AdvanceIterator(TreeNode** node) {
-	TreeNode* current = *node;
-	TreeNode* child = current->right;
-	if (child != 0) {
-		while (child->left != 0)
-			child = child->left;
-		*node = child;
-		return;
-	}
-	TreeNode* parent;
-	while (*node != (parent = (TreeNode*)((unsigned int)(*node)->parent & ~1u))->left)
-		*node = parent;
-	*node = parent;
+    TreeNode* current = *node;
+    TreeNode* child = current->right;
+    if (child != 0) {
+        while (child->left != 0)
+            child = child->left;
+        *node = child;
+        return;
+    }
+    TreeNode* parent;
+    while (*node != (parent = (TreeNode*)((unsigned int)(*node)->parent & ~1u))->left)
+        *node = parent;
+    *node = parent;
 }
 
 // Destroy the native actor base and optionally free the ambient-sound object.
-void* CAmbientSound_dtor(void* self, int shouldDelete) {
-	if (self != 0) {
-		__dt__18NativeBase80201D18Fv(self, 0);
-		if (shouldDelete > 0)
-			__dl__FPv(self);
-	}
-	return self;
+CAmbientSound::~CAmbientSound() {
+    using namespace CallbackThreadViews;
+    __dt__18NativeBase80201D18Fv(this, 0);
 }
 
 // Initialize callback-thread ownership, mutex state, and its separate thread stack.
-void* CAnotherHand_Ctor(void* self) {
-	(*(int*)&AsCAnotherHand(self)->thread) = 0;
-	*(void**)self = &__vt__12CAnotherHand;
-	(*(int*)&AsCAnotherHand(self)->threadStack) = 0;
-	((void (*)(void*))OSInitMutex)(((CallbackThreadMutex*)self)->mutex);
-	void* value = __nwa__FUl(0x10000);
-	AsCAnotherHand(self)->threadStack = value;
-	g_anotherHandThreadStackPointer = (int)value;
-	return self;
+CAnotherHand::CAnotherHand() {
+    thread = 0;
+    vtbl = __vt__12CAnotherHand;
+    threadStack = 0;
+    ((void (*)(void*))OSInitMutex)(((CallbackThreadMutex*)this)->mutex);
+    void* value = __nwa__FUl(0x10000);
+    threadStack = value;
+    g_anotherHandThreadStackPointer = (int)value;
 }
 
 // Initialize the mutex passed by the caller.
 void Mutex_Init(void* receiver) {
-	OSInitMutex(receiver);
+    OSInitMutex(receiver);
 }
 
 // Lock the inventory mutex supplied by the caller.
 void ItemInventory_LockMutex(void* forwarded0) {
-	OSLockMutex(forwarded0);
+    OSLockMutex(forwarded0);
 }
 
 // Unlock the inventory mutex supplied by the caller.
 void ItemInventory_UnlockMutex(void* forwarded0) {
-	OSUnlockMutex(forwarded0);
+    OSUnlockMutex(forwarded0);
 }
 
 // Return the ambient-sound actor's runtime type descriptor.
-unsigned char* CAmbientSound_GetRTTI() {
-	return &s_ambientSoundTypeInfo;
+unsigned char* CAmbientSound::GetRTTI() {
+    return &s_ambientSoundTypeInfo;
 }
 
 // Lock this callback-thread owner's embedded mutex.
-void CAnotherHand_Lock(void* self) {
-	((void (*)(void*))OSLockMutex)(((CallbackThreadMutex*)self)->mutex);
+void CAnotherHand::Lock() {
+    ((void (*)(void*))OSLockMutex)(((CallbackThreadMutex*)this)->mutex);
 }
 
 // Unlock this callback-thread owner's embedded mutex.
-void CAnotherHand_Unlock(void* self) {
-	((void (*)(void*))OSUnlockMutex)(((CallbackThreadMutex*)self)->mutex);
+void CAnotherHand::Unlock() {
+    ((void (*)(void*))OSUnlockMutex)(((CallbackThreadMutex*)this)->mutex);
 }
 
 // Treat a missing thread as finished; otherwise query whether it has terminated.
-int CThread_IsFinished(void* self) {
-	int value = AsCThread(self)->thread;
-	if (value != 0)
-		return OSIsThreadTerminated((void*)value) != 0;
-	return 1;
+int CThread::IsFinished() {
+    int value = thread;
+    if (value != 0)
+        return OSIsThreadTerminated((void*)value) != 0;
+    return 1;
 }
 
 // Initialize the callback/path helper's cached two-pi value.
 void ActorThread_InitTwoPi() {
-	s_twoPi_800CBF34 = kFloat_6_2831855;
+    s_twoPi_800CBF34 = kFloat_6_2831855;
 }
+
+} // extern "C"
+
+} // namespace CallbackThreadViews
 
 // Register the ambient-sound RTTI and factory with the actor system.
-void CAmbientSound_RegisterType() {
-	float fullTurnRadians = 6.2831854820251465f;
-	const char* name = ambientActorTypeStrings;
-	s_ambientSoundTwoPi = fullTurnRadians;
-	IntPair_Set(&s_ambientSoundTypeInfo, name + 0xE1, &s_actorTypeInfo);
-	void* state = ActorFactoryRegistry_GetInstance();
-	StringMap_SetByName(state, (void*)CAmbientSound_Create, s_ambientSoundFactoryKey);
-	void* ambient = TaskRegistry_GetInstance();
-	TaskRegistry_AppendFactory(ambient, s_ambientSoundTaskRegistryKey);
+void CAmbientSound::RegisterType() {
+    using namespace CallbackThreadViews;
+    float fullTurnRadians = 6.2831854820251465f;
+    const char* name = ambientActorTypeStrings;
+    s_ambientSoundTwoPi = fullTurnRadians;
+    IntPair_Set(&CallbackThreadViews::s_ambientSoundTypeInfo, name + 0xE1, &s_actorTypeInfo);
+    void* state = ActorFactoryRegistry_GetInstance();
+    StringMap_SetByName(state, (void*)CAmbientSound::Create, s_ambientSoundFactoryKey);
+    void* ambient = TaskRegistry_GetInstance();
+    TaskRegistry_AppendFactory(ambient, s_ambientSoundTaskRegistryKey);
 }
 
+namespace CallbackThreadViews {
+
+extern "C" {
+
 // Cancel an existing nonterminated thread and clear its handle.
-void CThread_CancelIfRunning(void* self) {
-	int* field = (int*)((char*)self + 4);
-	int value = *field;
-	int terminated = value != 0 ? OSIsThreadTerminated((void*)value) != 0 : 1;
-	if (!terminated) {
-        OSCancelThread((void*)*field);
-		*field = 0;
-	}
+void CThread::CancelIfRunning() {
+    int value = thread;
+    int terminated = value != 0 ? OSIsThreadTerminated((void*)value) != 0 : 1;
+    if (!terminated) {
+        OSCancelThread((OSThread*)thread);
+        thread = 0;
+    }
 }
 
 // Clear and release the path point buffer, optionally freeing its owning object.
 void* GolfAimPath_dtor(void* self, int shouldDelete) {
-	if (self != 0) {
-		int* count = (int*)((char*)self + 4);
-		*count = *count - (int)*count;
-		if (self != 0 && self != 0 && self != 0 && self != 0) {
-			void* value = *(void**)self;
-			if (value != 0) {
-				int* count2 = (int*)((char*)self + 4);
-				*count2 = *count2 - (int)*count2;
-				appFreeUni__FPv(value);
-			}
-		}
-		if (shouldDelete > 0)
-			__dl__FPv(self);
-	}
-	return self;
+    if (self != 0) {
+        int* count = (int*)((char*)self + 4);
+        *count = *count - (int)*count;
+        if (self != 0 && self != 0 && self != 0 && self != 0) {
+            void* value = *(void**)self;
+            if (value != 0) {
+                int* count2 = (int*)((char*)self + 4);
+                *count2 = *count2 - (int)*count2;
+                appFreeUni__FPv(value);
+            }
+        }
+        if (shouldDelete > 0)
+            __dl__FPv(self);
+    }
+    return self;
 }
 
 // Clear the path's logical point count while retaining its allocated buffer.
 void GolfAimPath_Clear(void* self) {
-	int* value = (int*)((char*)self + 4);
-	*value = *value - (int)*value;
+    int* value = (int*)((char*)self + 4);
+    *value = *value - (int)*value;
 }
 
 extern float kFloat_0_Actor, kFloat_0_5_805DDCE4, kFloat_1_Actor, kFloat_neg1_Actor, kFloat_3_2_Actor;
 extern char s_cameraTransform[];
 
-#pragma use_lmw_stmw on
+} // extern "C"
+
+} // namespace CallbackThreadViews
+
+// Store callback inputs and start a suspended thread on the fixed-size stack, then resume it.
 // Callback pointers are borrowed through asynchronous completion. The owner must
 // have an allocated 64-KiB stack and no live callback thread. The callback executes
 // under the embedded mutex; priority is 24 + priorityDelta. Returns 1 if created,
 // 0 if OSCreateThread fails. This function publishes the handle before unlocking.
-// Store callback inputs and start a suspended thread on the fixed-size stack, then resume it.
-int CAnotherHand_StartCallbackThread(char* self, void* callbackReceiver, void* callbackArgument, void* callbackValue, void* unused, unsigned int priorityDelta) {
-	((void (*)(void*))OSLockMutex)(self + 0x330);
-	AsCAnotherHand(self)->callbackReceiver = callbackReceiver;
-	AsCAnotherHand(self)->callbackArgument = callbackArgument;
-	AsCAnotherHand(self)->callbackValue = callbackValue;
-	AsCAnotherHand(self)->threadPriorityDelta = priorityDelta;
-	Memory_Clear(AsCAnotherHand(self)->threadStack, (unsigned int)kCallbackThreadStackBytes);
-	int ok;
-	if (!OSCreateThread(self + 0x18, (void*)CAnotherHand_CallbackThreadEntry, self,
-		(void*)((char*)AsCAnotherHand(self)->threadStack + kCallbackThreadStackBytes), kCallbackThreadStackBytes, kCallbackThreadPriority, 1)) {
-		ok = 0;
-	}
-	else {
-		OSResumeThread(self + 0x18);
-		ok = 1;
-		AsCAnotherHand(self)->thread = self + 0x18;
-	}
-	if (!ok) {
-		((void (*)(void*))OSUnlockMutex)(self + 0x330);
-		return 0;
-	}
-	else {
-		((void (*)(void*))OSUnlockMutex)(self + 0x330);
-		return 1;
-	}
+#pragma use_lmw_stmw on
+int CAnotherHand::StartCallbackThread(void* receiver, void* argument, void* value, void* unused,
+                                      unsigned int priorityDelta) {
+    using namespace CallbackThreadViews;
+    // The lock takes the mutex by raw offset; the unlocks below go through the mutex view.
+    ((void (*)(void*))OSLockMutex)((char*)this + 0x330);
+    callbackReceiver = receiver;
+    callbackArgument = argument;
+    callbackValue = value;
+    threadPriorityDelta = priorityDelta;
+    Memory_Clear(threadStack, (unsigned int)kCallbackThreadStackBytes);
+    int ok;
+    if (!OSCreateThread(osThread, (void*)CAnotherHand::CallbackThreadEntry, this,
+                        (void*)((char*)threadStack + kCallbackThreadStackBytes), kCallbackThreadStackBytes,
+                        kCallbackThreadPriority, 1)) {
+        ok = 0;
+    } else {
+        OSResumeThread(osThread);
+        ok = 1;
+        thread = osThread;
+    }
+    if (!ok) {
+        ((void (*)(void*))OSUnlockMutex)(((CallbackThreadMutex*)this)->mutex);
+        return 0;
+    } else {
+        ((void (*)(void*))OSUnlockMutex)(((CallbackThreadMutex*)this)->mutex);
+        return 1;
+    }
 }
 #pragma use_lmw_stmw reset
 
+namespace CallbackThreadViews {
+
+extern "C" {
+
 // The shared camera transform stores three basis vectors before its world position.
-struct AmbientListenerTransform { float basis[9]; float worldPosition[3]; };
-enum { kAmbientListenerPositionOffset = (int)&((AmbientListenerTransform*)0)->worldPosition };
+struct AmbientListenerTransform {
+    float basis[9];
+    float worldPosition[3];
+};
+enum {
+    kAmbientListenerPositionOffset = (int)&((AmbientListenerTransform*)0)->worldPosition
+};
 // Subtract world-space vectors through the existing out-of-line WVector operator.
 static inline void AmbientDisplacement(void* out, void* to, void* from) {
     __mi__FRC7WVectorRC7WVector(out, to, from);
@@ -1498,273 +1811,374 @@ static inline float AmbientDot(void* left, void* right) {
 // 0; a zero-distance boundary can give NaN then 0 via !(0<volume). NaN volume is
 // likewise clamped to 0, not propagated; NaN inputs are outside the useful domain.
 // Infinity/NaN and nonorthogonal axes are not supported geometry contracts.
-float CAmbientSound_GetVolume(void* self, float fadeDistance) {
-	float negativeOne;
-	float oneHalf;
-	float squaredDistance;
-	float halfAxisLength;
-	float axisDistance;
-	float (*axis)[3];
-	int axisIndex;
-	if (OBB_ContainsPoint(self, s_cameraTransform + kAmbientListenerPositionOffset) || fadeDistance < (squaredDistance = kFloat_0_Actor))
-		return kFloat_1_Actor;
-	oneHalf = kFloat_0_5_805DDCE4;
-	negativeOne = kFloat_neg1_Actor;
-	axis = ((AmbientBoxAxes*)self)->axis;
-	// For each full-size box axis A: signed distance = dot((listener-center)/2,A)/(|A|/2).
-	// Accumulate only the excess beyond [-|A|/2,+|A|/2], then take one square root.
-	for (axisIndex = 0; axisIndex < 3; ++axisIndex, ++axis) {
-		halfAxisLength = oneHalf * Magnitude__7WVectorCFv(axis);
-		float halfListenerDisplacement[3];
-		float listenerFromBoxCenter[3];
-		AmbientDisplacement(listenerFromBoxCenter, s_cameraTransform + kAmbientListenerPositionOffset, self);
-		AmbientScale(halfListenerDisplacement, listenerFromBoxCenter, kFloat_0_5_805DDCE4);
-		axisDistance = AmbientDot(halfListenerDisplacement, axis) / halfAxisLength;
-		if (axisDistance < negativeOne * halfAxisLength) { float excessAlongAxis = axisDistance + halfAxisLength; squaredDistance = excessAlongAxis*excessAlongAxis + squaredDistance; }
-		else if (axisDistance > halfAxisLength) { float excessAlongAxis = axisDistance - halfAxisLength; squaredDistance = excessAlongAxis*excessAlongAxis + squaredDistance; }
-	}
-	float volume = kFloat_1_Actor - Math_SquareRootApprox(squaredDistance) / (kFloat_3_2_Actor * fadeDistance);
-	if (!(kFloat_0_Actor < volume))
-		return kFloat_0_Actor;
-	return volume;
+float CAmbientSound::GetVolume(AmbientBoxAxes* box, float fadeDistance) {
+    using namespace CallbackThreadViews;
+    float negativeOne;
+    float oneHalf;
+    float squaredDistance;
+    float halfAxisLength;
+    float axisDistance;
+    float (*axis)[3];
+    int axisIndex;
+    if (OBB_ContainsPoint(box, s_cameraTransform + kAmbientListenerPositionOffset) ||
+        fadeDistance < (squaredDistance = kFloat_0_Actor))
+        return kFloat_1_Actor;
+    oneHalf = kFloat_0_5_805DDCE4;
+    negativeOne = kFloat_neg1_Actor;
+    axis = box->axis;
+    // For each full-size box axis A: signed distance = dot((listener-center)/2,A)/(|A|/2).
+    // Accumulate only the excess beyond [-|A|/2,+|A|/2], then take one square root.
+    for (axisIndex = 0; axisIndex < 3; ++axisIndex, ++axis) {
+        halfAxisLength = oneHalf * Magnitude__7WVectorCFv(axis);
+        float halfListenerDisplacement[3];
+        float listenerFromBoxCenter[3];
+        AmbientDisplacement(listenerFromBoxCenter, s_cameraTransform + kAmbientListenerPositionOffset, box);
+        AmbientScale(halfListenerDisplacement, listenerFromBoxCenter, kFloat_0_5_805DDCE4);
+        axisDistance = AmbientDot(halfListenerDisplacement, axis) / halfAxisLength;
+        if (axisDistance < negativeOne * halfAxisLength) {
+            float excessAlongAxis = axisDistance + halfAxisLength;
+            squaredDistance = excessAlongAxis * excessAlongAxis + squaredDistance;
+        } else if (axisDistance > halfAxisLength) {
+            float excessAlongAxis = axisDistance - halfAxisLength;
+            squaredDistance = excessAlongAxis * excessAlongAxis + squaredDistance;
+        }
+    }
+    float volume = kFloat_1_Actor - Math_SquareRootApprox(squaredDistance) / (kFloat_3_2_Actor * fadeDistance);
+    if (!(kFloat_0_Actor < volume))
+        return kFloat_0_Actor;
+    return volume;
 }
 
 #pragma use_lmw_stmw on
-    // Requires at least two retained path points (count and segment loop fit a byte).
-    // pointArg is borrowed world XYZ. Writes closestPoint on every return: 1 is
-    // recovered ground plus ball radius; 0 no recovery; 2 terrain code 9 blocks
-    // the scan; 3 input terrain <3; 4 outside playable region. Codes 0/2/3/4 use
-    // pre-shot position as fallback. The two search phases use different metrics.
-    // Search path-adjacent playable ground and store a recovery point or the initial fallback.
-    enum RecoveryPointResult { kRecoveryNotFound = 0, kRecoveryFound = 1,
-        kRecoveryBlocked = 2, kRecoveryInputTerrainExcluded = 3, kRecoveryInputOutsideRegion = 4 };
-    enum RecoveryTerrainPolicy { kRecoveryAcceptedTerrain = 1, kRecoveryMinimumInputTerrain = 3, kRecoveryBlockingTerrain = 9 };
-    // Resolve playable terrain near the retained path; always publish recovery/fallback XYZ and return a RecoveryPointResult.
-    // A segment candidate must beat the existing 3200-unit bound before the horizontal direction is initialized.
-    int GolfAim_FindPlayableRecoveryPoint(void* self, void* pointArg) {
-        unsigned int segmentStartByteOffset;
-        void* pathPointBuffer;
-	Vec* point = (Vec*)pointArg;
-	// Vec is a three-u32 copy view, not integer geometry: WVector calls interpret its bits as XYZ.
-	// Each named temporary retains its original storage/lifetime and geometric role.
-	Vec preShotFallback, segmentCandidate, horizontalSearchDirection, initialGroundQuery, interpolatedSegmentCandidate, candidateFromInput, selectedCandidateFromInput, probeGroundQuery;
-	Vec probePosition; Vec probeDisplacement; Vec projectedGroundPoint; Vec acceptedGroundQuery; Vec acceptedProbePosition; Vec acceptedProbeDisplacement; Vec weightedBestSegmentEnd; Vec weightedBestSegmentStart;
-	void* liveBall = GolfBall__Fv();
-	Vec ballFromSample; Vec sampleGroundQuery; Vec weightedSegmentEnd; Vec weightedSegmentStart; Vec interpolatedSample; Vec segmentDisplacement; Vec samplePosition;
-	void* preShotSample = PreData__9CGolfBallFi(liveBall, 0);
+// Requires at least two retained path points (count and segment loop fit a byte).
+// pointArg is borrowed world XYZ. Writes closestPoint on every return: 1 is
+// recovered ground plus ball radius; 0 no recovery; 2 terrain code 9 blocks
+// the scan; 3 input terrain <3; 4 outside playable region. Codes 0/2/3/4 use
+// pre-shot position as fallback. The two search phases use different metrics.
+// Search path-adjacent playable ground and store a recovery point or the initial fallback.
+enum RecoveryPointResult {
+    kRecoveryNotFound = 0,
+    kRecoveryFound = 1,
+    kRecoveryBlocked = 2,
+    kRecoveryInputTerrainExcluded = 3,
+    kRecoveryInputOutsideRegion = 4
+};
+enum RecoveryTerrainPolicy {
+    kRecoveryAcceptedTerrain = 1,
+    kRecoveryMinimumInputTerrain = 3,
+    kRecoveryBlockingTerrain = 9
+};
+// Resolve playable terrain near the retained path; always publish recovery/fallback XYZ and return a RecoveryPointResult.
+// A segment candidate must beat the existing 3200-unit bound before the horizontal direction is initialized.
+int GolfAim_FindPlayableRecoveryPoint(void* self, void* pointArg) {
+    unsigned int segmentStartByteOffset;
+    void* pathPointBuffer;
+    Vec* point = (Vec*)pointArg;
+    // Vec is a three-u32 copy view, not integer geometry: WVector calls interpret its bits as XYZ.
+    // Each named temporary retains its original storage/lifetime and geometric role.
+    Vec preShotFallback, segmentCandidate, horizontalSearchDirection, initialGroundQuery, interpolatedSegmentCandidate,
+        candidateFromInput, selectedCandidateFromInput, probeGroundQuery;
+    Vec probePosition;
+    Vec probeDisplacement;
+    Vec projectedGroundPoint;
+    Vec acceptedGroundQuery;
+    Vec acceptedProbePosition;
+    Vec acceptedProbeDisplacement;
+    Vec weightedBestSegmentEnd;
+    Vec weightedBestSegmentStart;
+    void* liveBall = GolfBall__Fv();
+    Vec ballFromSample;
+    Vec sampleGroundQuery;
+    Vec weightedSegmentEnd;
+    Vec weightedSegmentStart;
+    Vec interpolatedSample;
+    Vec segmentDisplacement;
+    Vec samplePosition;
+    void* preShotSample = PreData__9CGolfBallFi(liveBall, 0);
 
-	enum VectorWord { kVectorWordZero = 0, kVectorWordAllBits = 0xFFFFFFFFu };
-	VectorWord inputZBits, preShotZBits, inputYBits, inputXBits, preShotYBits, preShotXBits;
-	preShotXBits = (VectorWord)((Vec*)preShotSample)->x;
-	preShotYBits = (VectorWord)((Vec*)preShotSample)->y;
-	inputXBits = (VectorWord)point->x;
-	preShotFallback.x = preShotXBits;
-	inputYBits = (VectorWord)point->y;
-	preShotFallback.y = preShotYBits;
-	inputZBits = (VectorWord)point->z;
-	preShotZBits = (VectorWord)((Vec*)preShotSample)->z;
-	preShotFallback.z = preShotZBits;
-	initialGroundQuery.x = inputXBits;
-	initialGroundQuery.y = inputYBits;
-	initialGroundQuery.z = inputZBits;
-	if (GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &initialGroundQuery) < kRecoveryMinimumInputTerrain) {
-		((AimPathStorage*)self)->closestPoint = *(WVector*)&preShotFallback;
-		return kRecoveryInputTerrainExcluded;
-	}
-	void* manager = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-	if (CourseData_IsPointOutsidePlayableRegion(AsCGolfDoc(manager)->courseData, point)) {
-		((AimPathStorage*)self)->closestPoint = *(WVector*)&preShotFallback;
-		return kRecoveryInputOutsideRegion;
-	}
-	float step, zero, epsilon, minDistance, increment, minT, t, bestDistance;
+    enum VectorWord {
+        kVectorWordZero = 0,
+        kVectorWordAllBits = 0xFFFFFFFFu
+    };
+    VectorWord inputZBits, preShotZBits, inputYBits, inputXBits, preShotYBits, preShotXBits;
+    preShotXBits = (VectorWord)((Vec*)preShotSample)->x;
+    preShotYBits = (VectorWord)((Vec*)preShotSample)->y;
+    inputXBits = (VectorWord)point->x;
+    preShotFallback.x = preShotXBits;
+    inputYBits = (VectorWord)point->y;
+    preShotFallback.y = preShotYBits;
+    inputZBits = (VectorWord)point->z;
+    preShotZBits = (VectorWord)((Vec*)preShotSample)->z;
+    preShotFallback.z = preShotZBits;
+    initialGroundQuery.x = inputXBits;
+    initialGroundQuery.y = inputYBits;
+    initialGroundQuery.z = inputZBits;
+    if (GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &initialGroundQuery) <
+        kRecoveryMinimumInputTerrain) {
+        ((AimPathStorage*)self)->closestPoint = *(WVector*)&preShotFallback;
+        return kRecoveryInputTerrainExcluded;
+    }
+    void* manager = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
+    if (CourseData_IsPointOutsidePlayableRegion(AsCGolfDoc(manager)->courseData, point)) {
+        ((AimPathStorage*)self)->closestPoint = *(WVector*)&preShotFallback;
+        return kRecoveryInputOutsideRegion;
+    }
+    float step, zero, epsilon, minDistance, increment, minT, t, bestDistance;
 
-	int segmentEndByteOffset;
-	bestDistance = kFloat_3200_CourseHelpers;
-	unsigned char i = 0;
-	step = kFloat_1_CourseGeometry;
-	epsilon = kRecoveryPointSearchEpsilon;
-	zero = kFloat_0_CourseHelpers;
-	// Phase 1: sample each path segment at ~16-world-unit spacing. Choose its nearest
-	// terrain-1 sample to the ball, then the segment candidate nearest pointArg.
-	for (; i < ((AimPathStorage*)self)->count - 1; ++i) {
-		t = kFloat_0_CourseHelpers;
-		minT = kFloat_1_CourseGeometry;
-		VectorWord segmentPoints;
-		VectorWord nextIndex;
-		segmentPoints = (VectorWord)(unsigned int)((AimPathStorage*)self)->points;
-		nextIndex = (VectorWord)(i + 1);
-		segmentStartByteOffset = i * 12;
-		segmentEndByteOffset = nextIndex * 12;
-		minDistance = kFloat_3200_CourseHelpers;
-            __mi__FRC7WVectorRC7WVector(&segmentDisplacement, (void*)(segmentPoints + segmentEndByteOffset), (void*)(segmentPoints + segmentStartByteOffset));
-		float len = WVectorLen(*(WVector*)&segmentDisplacement);
-            increment = step / (float)ceil((len * epsilon));
-		while (t < step) {
-			pathPointBuffer = ((AimPathStorage*)self)->points;
-			__ml__FfRC7WVector(&weightedSegmentEnd, (char*)pathPointBuffer + segmentEndByteOffset, t);
-			__ml__FfRC7WVector(&weightedSegmentStart, (char*)pathPointBuffer + segmentStartByteOffset, step - t);
-			__pl__FRC7WVectorRC7WVector(&interpolatedSample, &weightedSegmentStart, &weightedSegmentEnd);
-			*(WVector*)&samplePosition = *(WVector*)&interpolatedSample;
-			sampleGroundQuery = samplePosition;
-			if (GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &sampleGroundQuery) == kRecoveryAcceptedTerrain) {
-				__mi__FRC7WVectorRC7WVector(&ballFromSample, GolfBall__Fv(), &samplePosition);
-				float d = WVectorLen(*(WVector*)&ballFromSample);
-				if (d < minDistance) {
-					minDistance = d;
-					minT = t;
-				}
-			}
-			t += increment;
-		}
-		pathPointBuffer = ((AimPathStorage*)self)->points;
-		__ml__FfRC7WVector(&weightedBestSegmentEnd, (char*)pathPointBuffer + segmentEndByteOffset, minT);
-		__ml__FfRC7WVector(&weightedBestSegmentStart, (char*)pathPointBuffer + segmentStartByteOffset, step - minT);
-		__pl__FRC7WVectorRC7WVector(&interpolatedSegmentCandidate, &weightedBestSegmentStart, &weightedBestSegmentEnd);
-		*(WVector*)&segmentCandidate = *(WVector*)&interpolatedSegmentCandidate;
-		__mi__FRC7WVectorRC7WVector(&candidateFromInput, &segmentCandidate, point);
-		float dist = WVectorLen(*(WVector*)&candidateFromInput);
-		if (dist < bestDistance) {
-                float distValue = dist;
-                __mi__FRC7WVectorRC7WVector(&selectedCandidateFromInput, &segmentCandidate, point);
-                bestDistance = distValue;
-			*(WVector*)&horizontalSearchDirection = *(WVector*)&selectedCandidateFromInput;
-			*(float*)((char*)&horizontalSearchDirection + 4) = zero;
-		}
-	}
-	// Phase 2: flatten/normalize toward that selected segment candidate; probe 32..160 world units
-	// from pointArg in steps of 32, stopping at terrain 9 or accepting terrain 1.
-	t = kFloat_32_CourseHelpers;
-	(*(WVector*)&horizontalSearchDirection).Normalize();
-	zero = kFloat_32_CourseHelpers;
-	step = kFloat_192_CourseHelpers;
-	while (t < step) {
-		__ml__FfRC7WVector(&probeDisplacement, &horizontalSearchDirection, t);
-		__pl__FRC7WVectorRC7WVector(&probePosition, point, &probeDisplacement);
-		probeGroundQuery = probePosition;
-		unsigned char kind = GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &probeGroundQuery);
-		if (kRecoveryBlockingTerrain == kind) {
-			((AimPathStorage*)self)->closestPoint = *(WVector*)&preShotFallback;
-			return kRecoveryBlocked;
-		}
-		if (kind == kRecoveryAcceptedTerrain) {
-			__ml__FfRC7WVector(&acceptedProbeDisplacement, &horizontalSearchDirection, t);
-			__pl__FRC7WVectorRC7WVector(&acceptedProbePosition, point, &acceptedProbeDisplacement);
-			acceptedGroundQuery = acceptedProbePosition;
-			GetGroundPoint__9CQuadTreeF7WVectorbPib(&projectedGroundPoint, CQuadTree_GetInstance(), &acceptedGroundQuery, 0, 0, 0);
-			((AimPathStorage*)self)->closestPoint = *(WVector*)&projectedGroundPoint;
-			float f = ((CGolfBall*)GolfBall__Fv())->m_radius;
-			((AimPathStorage*)self)->closestPoint.y = ((AimPathStorage*)self)->closestPoint.y + f;
-			return kRecoveryFound;
-		}
-		t = t + zero;
-	}
-	((AimPathStorage*)self)->closestPoint = *(WVector*)&preShotFallback;
-	return kRecoveryNotFound;
+    int segmentEndByteOffset;
+    bestDistance = kFloat_3200_CourseHelpers;
+    unsigned char i = 0;
+    step = kFloat_1_CourseGeometry;
+    epsilon = kRecoveryPointSearchEpsilon;
+    zero = kFloat_0_CourseHelpers;
+    // Phase 1: sample each path segment at ~16-world-unit spacing. Choose its nearest
+    // terrain-1 sample to the ball, then the segment candidate nearest pointArg.
+    for (; i < ((AimPathStorage*)self)->count - 1; ++i) {
+        t = kFloat_0_CourseHelpers;
+        minT = kFloat_1_CourseGeometry;
+        VectorWord segmentPoints;
+        VectorWord nextIndex;
+        segmentPoints = (VectorWord)(unsigned int)((AimPathStorage*)self)->points;
+        nextIndex = (VectorWord)(i + 1);
+        segmentStartByteOffset = i * 12;
+        segmentEndByteOffset = nextIndex * 12;
+        minDistance = kFloat_3200_CourseHelpers;
+        __mi__FRC7WVectorRC7WVector(&segmentDisplacement, (void*)(segmentPoints + segmentEndByteOffset),
+                                    (void*)(segmentPoints + segmentStartByteOffset));
+        float len = WVectorLen(*(WVector*)&segmentDisplacement);
+        increment = step / (float)ceil((len * epsilon));
+        while (t < step) {
+            pathPointBuffer = ((AimPathStorage*)self)->points;
+            __ml__FfRC7WVector(&weightedSegmentEnd, (char*)pathPointBuffer + segmentEndByteOffset, t);
+            __ml__FfRC7WVector(&weightedSegmentStart, (char*)pathPointBuffer + segmentStartByteOffset, step - t);
+            __pl__FRC7WVectorRC7WVector(&interpolatedSample, &weightedSegmentStart, &weightedSegmentEnd);
+            *(WVector*)&samplePosition = *(WVector*)&interpolatedSample;
+            sampleGroundQuery = samplePosition;
+            if (GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &sampleGroundQuery) ==
+                kRecoveryAcceptedTerrain) {
+                __mi__FRC7WVectorRC7WVector(&ballFromSample, GolfBall__Fv(), &samplePosition);
+                float d = WVectorLen(*(WVector*)&ballFromSample);
+                if (d < minDistance) {
+                    minDistance = d;
+                    minT = t;
+                }
+            }
+            t += increment;
+        }
+        pathPointBuffer = ((AimPathStorage*)self)->points;
+        __ml__FfRC7WVector(&weightedBestSegmentEnd, (char*)pathPointBuffer + segmentEndByteOffset, minT);
+        __ml__FfRC7WVector(&weightedBestSegmentStart, (char*)pathPointBuffer + segmentStartByteOffset, step - minT);
+        __pl__FRC7WVectorRC7WVector(&interpolatedSegmentCandidate, &weightedBestSegmentStart, &weightedBestSegmentEnd);
+        *(WVector*)&segmentCandidate = *(WVector*)&interpolatedSegmentCandidate;
+        __mi__FRC7WVectorRC7WVector(&candidateFromInput, &segmentCandidate, point);
+        float dist = WVectorLen(*(WVector*)&candidateFromInput);
+        if (dist < bestDistance) {
+            float distValue = dist;
+            __mi__FRC7WVectorRC7WVector(&selectedCandidateFromInput, &segmentCandidate, point);
+            bestDistance = distValue;
+            *(WVector*)&horizontalSearchDirection = *(WVector*)&selectedCandidateFromInput;
+            *(float*)((char*)&horizontalSearchDirection + 4) = zero;
+        }
+    }
+    // Phase 2: flatten/normalize toward that selected segment candidate; probe 32..160 world units
+    // from pointArg in steps of 32, stopping at terrain 9 or accepting terrain 1.
+    t = kFloat_32_CourseHelpers;
+    (*(WVector*)&horizontalSearchDirection).Normalize();
+    zero = kFloat_32_CourseHelpers;
+    step = kFloat_192_CourseHelpers;
+    while (t < step) {
+        __ml__FfRC7WVector(&probeDisplacement, &horizontalSearchDirection, t);
+        __pl__FRC7WVectorRC7WVector(&probePosition, point, &probeDisplacement);
+        probeGroundQuery = probePosition;
+        unsigned char kind = GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &probeGroundQuery);
+        if (kRecoveryBlockingTerrain == kind) {
+            ((AimPathStorage*)self)->closestPoint = *(WVector*)&preShotFallback;
+            return kRecoveryBlocked;
+        }
+        if (kind == kRecoveryAcceptedTerrain) {
+            __ml__FfRC7WVector(&acceptedProbeDisplacement, &horizontalSearchDirection, t);
+            __pl__FRC7WVectorRC7WVector(&acceptedProbePosition, point, &acceptedProbeDisplacement);
+            acceptedGroundQuery = acceptedProbePosition;
+            GetGroundPoint__9CQuadTreeF7WVectorbPib(&projectedGroundPoint, CQuadTree_GetInstance(),
+                                                    &acceptedGroundQuery, 0, 0, 0);
+            ((AimPathStorage*)self)->closestPoint = *(WVector*)&projectedGroundPoint;
+            float f = ((CGolfBall*)GolfBall__Fv())->m_radius;
+            ((AimPathStorage*)self)->closestPoint.y = ((AimPathStorage*)self)->closestPoint.y + f;
+            return kRecoveryFound;
+        }
+        t = t + zero;
+    }
+    ((AimPathStorage*)self)->closestPoint = *(WVector*)&preShotFallback;
+    return kRecoveryNotFound;
 }
 #pragma use_lmw_stmw reset
 
 #pragma use_lmw_stmw on
-struct TreeState { int count; void* root; void* sentinel; };
+struct TreeState {
+    int count;
+    void* root;
+    void* sentinel;
+};
 // Free all sound-name nodes and reset the ordered-tree header to empty.
 // Same teardown as SoundNameMap_dtor with raw offsets: node +0/+4 = child nodes, +12 = small-string tag (bit 31 = heap text),
 // +20 = heap text pointer. The '(x + 0xC) && (x + 0xC)' tests are always true (compiler-matching residue).
 void AmbientSoundNameTree_Clear(TreeState* self) {
-        register void* root = self->root;
-	if (root) {
-		// The first three levels are unrolled; deeper children recurse through the helper.
-		void* a = *(void**)root;
-		if (a) {
-			void* b = *(void**)a;
-			if (b != 0) {
-				void* c = *(void**)b;
-				if (c) {
-					if (*(void**)c) StringValueTree_DestroySubtree(self, *(void**)c);
-					if (*(void**)((char*)c + 4)) StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
-					if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) && (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)c + 20));
-					appFreeUni__FPv(c); c = 0;
-				}
-				c = *(void**)((char*)b + 4);
-				if (c) {
-					if (*(void**)c) StringValueTree_DestroySubtree(self, *(void**)c);
-					if (*(void**)((char*)c + 4)) StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
-					if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) && (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)c + 20));
-					appFreeUni__FPv(c); c = 0;
-				}
-				if ((((unsigned int)b + 0xC) && ((unsigned int)b + 0xC)) && (((unsigned int)*(void**)((char*)b + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)b + 20));
-				appFreeUni__FPv(b); b = 0;
-			}
-			b = *(void**)((char*)a + 4);
-			if (b) {
-				void* c = *(void**)b;
-				if (0 != c) {
-					if (*(void**)c) StringValueTree_DestroySubtree(self, *(void**)c);
-					if (*(void**)((char*)c + 4)) StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
-					if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) && (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)c + 20));
-					appFreeUni__FPv(c); c = 0;
-				}
-				c = *(void**)((char*)b + 4);
-				if (c) {
-					if (*(void**)c) StringValueTree_DestroySubtree(self, *(void**)c);
-					if (*(void**)((char*)c + 4)) StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
-					if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) && (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)c + 20));
-					appFreeUni__FPv(c); c = 0;
-				}
-				if ((((unsigned int)b + 0xC) && ((unsigned int)b + 0xC)) && (((unsigned int)*(void**)((char*)b + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)b + 20));
-				appFreeUni__FPv(b); b = 0;
-			}
-			if ((((unsigned int)a + 0xC) && ((unsigned int)a + 0xC)) && (((unsigned int)*(void**)((char*)a + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)a + 20));
-			appFreeUni__FPv(a); a = 0;
-		}
-		a = *(void**)((char*)root + 4);
-		if (a) {
-			void* b = *(void**)a;
-			if (b) {
-				void* c = *(void**)b;
-				if (c) {
-					if (*(void**)c) StringValueTree_DestroySubtree(self, *(void**)c);
-					if (*(void**)((char*)c + 4)) StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
-					if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) && (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)c + 20));
-					appFreeUni__FPv(c); c = 0;
-				}
-				c = *(void**)((char*)b + 4);
-				if (c) {
-					if (*(void**)c) StringValueTree_DestroySubtree(self, *(void**)c);
-					if (*(void**)((char*)c + 4)) StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
-					if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) && (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)c + 20));
-					appFreeUni__FPv(c); c = 0;
-				}
-				if ((((unsigned int)b + 0xC) && ((unsigned int)b + 0xC)) && (((unsigned int)*(void**)((char*)b + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)b + 20));
-				appFreeUni__FPv(b); b = 0;
-			}
-			b = *(void**)((char*)a + 4);
-			if (b) {
-				void* c = *(void**)b;
-				if (c) {
-					if (*(void**)c) StringValueTree_DestroySubtree(self, *(void**)c);
-					if (*(void**)((char*)c + 4)) StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
-					if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) && (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)c + 20));
-					appFreeUni__FPv(c); c = 0;
-				}
-				c = *(void**)((char*)b + 4);
-				if (c) {
-					if (*(void**)c) StringValueTree_DestroySubtree(self, *(void**)c);
-					if (*(void**)((char*)c + 4)) StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
-					if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) && (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)c + 20));
-					appFreeUni__FPv(c); c = 0;
-				}
-				if ((((unsigned int)b + 0xC) && ((unsigned int)b + 0xC)) && (((unsigned int)*(void**)((char*)b + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)b + 20));
-				appFreeUni__FPv(b); b = 0;
-			}
-			if ((((unsigned int)a + 0xC) && ((unsigned int)a + 0xC)) && (((unsigned int)*(void**)((char*)a + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)a + 20));
-			appFreeUni__FPv(a); a = 0;
-		}
-		if ((((unsigned int)root + 0xC) && ((unsigned int)root + 0xC)) && (((unsigned int)*(void**)((char*)root + 12) >> 31) != 0)) appFreeUni__FPv(*(void**)((char*)root + 20));
-		appFreeUni__FPv(root);
-		self->count = 0;
-		self->root = 0;
-		self->sentinel = &self->root;
-		root = 0;
-	}
+    register void* root = self->root;
+    if (root) {
+        // The first three levels are unrolled; deeper children recurse through the helper.
+        void* a = *(void**)root;
+        if (a) {
+            void* b = *(void**)a;
+            if (b != 0) {
+                void* c = *(void**)b;
+                if (c) {
+                    if (*(void**)c)
+                        StringValueTree_DestroySubtree(self, *(void**)c);
+                    if (*(void**)((char*)c + 4))
+                        StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
+                    if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) &&
+                        (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0))
+                        appFreeUni__FPv(*(void**)((char*)c + 20));
+                    appFreeUni__FPv(c);
+                    c = 0;
+                }
+                c = *(void**)((char*)b + 4);
+                if (c) {
+                    if (*(void**)c)
+                        StringValueTree_DestroySubtree(self, *(void**)c);
+                    if (*(void**)((char*)c + 4))
+                        StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
+                    if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) &&
+                        (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0))
+                        appFreeUni__FPv(*(void**)((char*)c + 20));
+                    appFreeUni__FPv(c);
+                    c = 0;
+                }
+                if ((((unsigned int)b + 0xC) && ((unsigned int)b + 0xC)) &&
+                    (((unsigned int)*(void**)((char*)b + 12) >> 31) != 0))
+                    appFreeUni__FPv(*(void**)((char*)b + 20));
+                appFreeUni__FPv(b);
+                b = 0;
+            }
+            b = *(void**)((char*)a + 4);
+            if (b) {
+                void* c = *(void**)b;
+                if (0 != c) {
+                    if (*(void**)c)
+                        StringValueTree_DestroySubtree(self, *(void**)c);
+                    if (*(void**)((char*)c + 4))
+                        StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
+                    if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) &&
+                        (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0))
+                        appFreeUni__FPv(*(void**)((char*)c + 20));
+                    appFreeUni__FPv(c);
+                    c = 0;
+                }
+                c = *(void**)((char*)b + 4);
+                if (c) {
+                    if (*(void**)c)
+                        StringValueTree_DestroySubtree(self, *(void**)c);
+                    if (*(void**)((char*)c + 4))
+                        StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
+                    if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) &&
+                        (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0))
+                        appFreeUni__FPv(*(void**)((char*)c + 20));
+                    appFreeUni__FPv(c);
+                    c = 0;
+                }
+                if ((((unsigned int)b + 0xC) && ((unsigned int)b + 0xC)) &&
+                    (((unsigned int)*(void**)((char*)b + 12) >> 31) != 0))
+                    appFreeUni__FPv(*(void**)((char*)b + 20));
+                appFreeUni__FPv(b);
+                b = 0;
+            }
+            if ((((unsigned int)a + 0xC) && ((unsigned int)a + 0xC)) &&
+                (((unsigned int)*(void**)((char*)a + 12) >> 31) != 0))
+                appFreeUni__FPv(*(void**)((char*)a + 20));
+            appFreeUni__FPv(a);
+            a = 0;
+        }
+        a = *(void**)((char*)root + 4);
+        if (a) {
+            void* b = *(void**)a;
+            if (b) {
+                void* c = *(void**)b;
+                if (c) {
+                    if (*(void**)c)
+                        StringValueTree_DestroySubtree(self, *(void**)c);
+                    if (*(void**)((char*)c + 4))
+                        StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
+                    if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) &&
+                        (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0))
+                        appFreeUni__FPv(*(void**)((char*)c + 20));
+                    appFreeUni__FPv(c);
+                    c = 0;
+                }
+                c = *(void**)((char*)b + 4);
+                if (c) {
+                    if (*(void**)c)
+                        StringValueTree_DestroySubtree(self, *(void**)c);
+                    if (*(void**)((char*)c + 4))
+                        StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
+                    if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) &&
+                        (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0))
+                        appFreeUni__FPv(*(void**)((char*)c + 20));
+                    appFreeUni__FPv(c);
+                    c = 0;
+                }
+                if ((((unsigned int)b + 0xC) && ((unsigned int)b + 0xC)) &&
+                    (((unsigned int)*(void**)((char*)b + 12) >> 31) != 0))
+                    appFreeUni__FPv(*(void**)((char*)b + 20));
+                appFreeUni__FPv(b);
+                b = 0;
+            }
+            b = *(void**)((char*)a + 4);
+            if (b) {
+                void* c = *(void**)b;
+                if (c) {
+                    if (*(void**)c)
+                        StringValueTree_DestroySubtree(self, *(void**)c);
+                    if (*(void**)((char*)c + 4))
+                        StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
+                    if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) &&
+                        (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0))
+                        appFreeUni__FPv(*(void**)((char*)c + 20));
+                    appFreeUni__FPv(c);
+                    c = 0;
+                }
+                c = *(void**)((char*)b + 4);
+                if (c) {
+                    if (*(void**)c)
+                        StringValueTree_DestroySubtree(self, *(void**)c);
+                    if (*(void**)((char*)c + 4))
+                        StringValueTree_DestroySubtree(self, *(void**)((char*)c + 4));
+                    if ((((unsigned int)c + 0xC) && ((unsigned int)c + 0xC)) &&
+                        (((unsigned int)*(void**)((char*)c + 12) >> 31) != 0))
+                        appFreeUni__FPv(*(void**)((char*)c + 20));
+                    appFreeUni__FPv(c);
+                    c = 0;
+                }
+                if ((((unsigned int)b + 0xC) && ((unsigned int)b + 0xC)) &&
+                    (((unsigned int)*(void**)((char*)b + 12) >> 31) != 0))
+                    appFreeUni__FPv(*(void**)((char*)b + 20));
+                appFreeUni__FPv(b);
+                b = 0;
+            }
+            if ((((unsigned int)a + 0xC) && ((unsigned int)a + 0xC)) &&
+                (((unsigned int)*(void**)((char*)a + 12) >> 31) != 0))
+                appFreeUni__FPv(*(void**)((char*)a + 20));
+            appFreeUni__FPv(a);
+            a = 0;
+        }
+        if ((((unsigned int)root + 0xC) && ((unsigned int)root + 0xC)) &&
+            (((unsigned int)*(void**)((char*)root + 12) >> 31) != 0))
+            appFreeUni__FPv(*(void**)((char*)root + 20));
+        appFreeUni__FPv(root);
+        self->count = 0;
+        self->root = 0;
+        self->sentinel = &self->root;
+        root = 0;
+    }
 }
 
 } // extern "C"
@@ -1773,8 +2187,6 @@ void AmbientSoundNameTree_Clear(TreeState* self) {
 
 // ---- merged from ball_actor_and_ambient_sound.cpp ----
 namespace AimAndBallModelViews {
-// Translation unit 0x800CE694-0x800CFB38 (13 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -1803,7 +2215,6 @@ extern CSharedDoc* g_sharedDoc;
 void Matrix_SetIdentityAffine(void*);
 void __as__7WVectorFRC7WVector(void*, const float*);
 void __ct__18NativeBase80201D18Fv(void*);
-void CBall_TransformBall(void*);
 unsigned char WPuppet_GetBoneFlags(void*, int);
 void* GolfBall__Fv();
 void ResourceManager_ReleaseObject(void*, void*, int);
@@ -1812,7 +2223,7 @@ void ResourceManager_ReleaseId(void*, void*);
 void __ml__FfRC7WVector(void*, const void*, float);
 void __mi__FRC7WVectorRC7WVector(void*, void*, const void*);
 void __pl__FRC7WVectorRC7WVector(void*, void*, const void*);
-void Matrix_TransformPoint(void*, const void*, const void*);
+void* Matrix_TransformPoint(void*, const void*, const void*);
 void WView_ProjectViewPoint(void*, void*, const void*, int);
 void* ResourceManager_LoadBitmap(void*, const char*, int, int, int);
 void ResourcePreloadQueue_AddRequest(void*, int, int, float, void*, float, const char*, void*, int, int);
@@ -1838,7 +2249,8 @@ int GetGroundType__9CQuadTreeF7WVector(void*, const void*);
 float __ml__FRC7WVectorRC7WVector(void*, const void*);
 float Magnitude__7WVectorCFv(const void*);
 void GolfBall_IntersectPathSegmentWithRadiusXZ(void*, void*, int, float);
-extern const float kFloat_2_Ball, kBallEffectRemovalSpeedThreshold, kFloat_0_00001_CourseHelpers_805DDD38, kBallPlaybackPositionJitterStep;
+extern const float kFloat_2_Ball, kBallEffectRemovalSpeedThreshold, kFloat_0_00001_CourseHelpers_805DDD38,
+    kBallPlaybackPositionJitterStep;
 float Magnitude__7WVectorCFv(const void*);
 void Vector_CrossProduct(void*, const void*, const void*);
 int Vec3_NearlyEqualWithTolerance(void*, const void*, float);
@@ -1846,8 +2258,6 @@ void Matrix_SetNegativeAxisAngleRotation(void*, const void*, float);
 void Matrix_CopyAffine(void*, const void*);
 void __apl__7WVectorFRC7WVector(void*, const void*);
 int rand();
-void CBall_DetachFx(void*, int);
-void CBall_AttachFx(void*, int);
 
 // Initialize the ball/aim helper's cached two-pi value.
 void GolfAim_InitTwoPi() {
@@ -1855,27 +2265,40 @@ void GolfAim_InitTwoPi() {
 }
 
 typedef Vec3f Vec3;
-struct AimVectorCopyBits { int x, y, z; };
+struct AimVectorCopyBits {
+    int x, y, z;
+};
 // Hole entries are 32 bytes. XYZ at +0xC is the cup position in world units;
 // word copies intentionally preserve float bits and the original load order.
 // +0x18 is par, also read as par by CPangInfo_CalculateShotRewards and club selection.
-enum AimDirectCupPolicy { kAimLongDistanceTier=4, kAimTeeParLimit=5 };
-// CClub_SelectBestClub sets +0x48 to tiers <10/<15/<28/<58/>=58 yards.
-struct AimClubSelection { char reserved00[0x48]; unsigned char distanceTier; };
+enum AimDirectCupPolicy {
+    kAimLongDistanceTier = 4,
+    kAimTeeParLimit = 5
+};
+// CClub::SelectBestClub sets +0x48 to tiers <10/<15/<28/<58/>=58 yards.
+struct AimClubSelection {
+    char reserved00[0x48];
+    unsigned char distanceTier;
+};
 struct AimHoleRecord {
     char prefix[0xC];
-    union { Vec3 position; AimVectorCopyBits positionBits; };
-    unsigned char par; char suffix[7];
+    union {
+        Vec3 position;
+        AimVectorCopyBits positionBits;
+    };
+    unsigned char par;
+    char suffix[7];
 };
 typedef char AimHoleRecord_size[(sizeof(AimHoleRecord) == 0x20) ? 1 : -1];
 
 // Measure how far the cup exceeds club reach in the horizontal world plane; negative means within reach.
 // Inputs are borrowed world XYZ and a radius in world units; the caller selects the 96/32-unit tolerance.
 // dx/dz are caller-owned scratch to retain CW floating-point register assignments.
-static inline float Aim_ClubReachShortfallXZ(const float* ballWorld, const Vec3& cupWorld, float clubRadius, float& dx, float& dz) {
-    dx=ballWorld[0]-cupWorld.x;
-    dz=ballWorld[2]-cupWorld.z;
-    return Math_SquareRootApprox(dx*dx+dz*dz)-clubRadius;
+static inline float Aim_ClubReachShortfallXZ(const float* ballWorld, const Vec3& cupWorld, float clubRadius, float& dx,
+                                             float& dz) {
+    dx = ballWorld[0] - cupWorld.x;
+    dz = ballWorld[2] - cupWorld.z;
+    return Math_SquareRootApprox(dx * dx + dz * dz) - clubRadius;
 }
 
 // Geometric input map: path -> AimPathStorage.points/count (retained world-space polyline);
@@ -1916,20 +2339,24 @@ void GolfAim_FindTargetAlongPath(float* out, void* path, void* clubParameterQuer
         if (clubParameterQuery) {
             if (((AimClubSelection*)InstanceTable_Get())->distanceTier >= kAimLongDistanceTier) {
                 char* state = static_cast<char*>((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc));
-                AimHoleRecord* hole = (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
+                AimHoleRecord* hole =
+                    (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
                 *reinterpret_cast<AimVectorCopyBits*>(&directCupPosition) = hole->positionBits;
                 float* pos = static_cast<float*>(GolfBall__Fv());
                 float cupDeltaXWorld, cupDeltaZWorld;
-                if (!(Aim_ClubReachShortfallXZ(pos, directCupPosition, clubRadius, cupDeltaXWorld, cupDeltaZWorld) < kFloat_96_CourseHelpers)) break;
+                if (!(Aim_ClubReachShortfallXZ(pos, directCupPosition, clubRadius, cupDeltaXWorld, cupDeltaZWorld) <
+                      kFloat_96_CourseHelpers))
+                    break;
             }
             {
                 char* state = static_cast<char*>((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc));
-                AimHoleRecord* hole = (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
-                int cupYBits=hole->positionBits.y;
-                int cupXBits=hole->positionBits.x;
-                reinterpret_cast<int*>(out)[0]=cupXBits;
-                reinterpret_cast<int*>(out)[1]=cupYBits;
-                reinterpret_cast<int*>(out)[2]=hole->positionBits.z;
+                AimHoleRecord* hole =
+                    (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
+                int cupYBits = hole->positionBits.y;
+                int cupXBits = hole->positionBits.x;
+                reinterpret_cast<int*>(out)[0] = cupXBits;
+                reinterpret_cast<int*>(out)[1] = cupYBits;
+                reinterpret_cast<int*>(out)[2] = hole->positionBits.z;
             }
             return;
         }
@@ -1942,7 +2369,8 @@ void GolfAim_FindTargetAlongPath(float* out, void* path, void* clubParameterQuer
             initialTerrainPosition[0] = ballXBits;
             initialTerrainPosition[1] = ballYBits;
             initialTerrainPosition[2] = reinterpret_cast<int*>(pos)[2];
-            if (!static_cast<unsigned char>(GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), initialTerrainPosition))) {
+            if (!static_cast<unsigned char>(
+                    GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), initialTerrainPosition))) {
                 int ok = 0;
                 pos = static_cast<float*>(GolfBall__Fv());
                 int teeXBits = reinterpret_cast<int*>(pos)[0];
@@ -1950,34 +2378,44 @@ void GolfAim_FindTargetAlongPath(float* out, void* path, void* clubParameterQuer
                 teeConfirmationPosition[1] = teeYBits;
                 teeConfirmationPosition[0] = teeXBits;
                 teeConfirmationPosition[2] = reinterpret_cast<int*>(pos)[2];
-                if (!static_cast<unsigned char>(GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), teeConfirmationPosition))) {
+                if (!static_cast<unsigned char>(
+                        GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), teeConfirmationPosition))) {
                     char* state = static_cast<char*>((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc));
-                    AimHoleRecord* hole = (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
-                    if (hole->par < kAimTeeParLimit) ok = 1;
+                    AimHoleRecord* hole =
+                        (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
+                    if (hole->par < kAimTeeParLimit)
+                        ok = 1;
                 }
-                if (ok == 0) eligible = 0;
+                if (ok == 0)
+                    eligible = 0;
             }
             if (eligible) {
                 int ok = 1;
                 if (((AimClubSelection*)InstanceTable_Get())->distanceTier >= kAimLongDistanceTier) {
                     char* state = static_cast<char*>((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc));
-                    AimHoleRecord* hole = (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
+                    AimHoleRecord* hole =
+                        (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
                     *reinterpret_cast<AimVectorCopyBits*>(&candidateCupPosition) = hole->positionBits;
                     pos = static_cast<float*>(GolfBall__Fv());
                     float cupDeltaXWorld, cupDeltaZWorld;
-                    if (!(Aim_ClubReachShortfallXZ(pos, candidateCupPosition, clubRadius, cupDeltaXWorld, cupDeltaZWorld) < kFloat_32_CourseHelpers)) ok = 0;
+                    if (!(Aim_ClubReachShortfallXZ(pos, candidateCupPosition, clubRadius, cupDeltaXWorld,
+                                                   cupDeltaZWorld) < kFloat_32_CourseHelpers))
+                        ok = 0;
                 }
-                if (ok) found = 1;
+                if (ok)
+                    found = 1;
             }
-            if (!found) break;
+            if (!found)
+                break;
             {
                 char* state = static_cast<char*>((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc));
-                AimHoleRecord* hole = (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
-                int cupYBits=hole->positionBits.y;
-                int cupXBits=hole->positionBits.x;
-                reinterpret_cast<int*>(out)[0]=cupXBits;
-                reinterpret_cast<int*>(out)[1]=cupYBits;
-                reinterpret_cast<int*>(out)[2]=hole->positionBits.z;
+                AimHoleRecord* hole =
+                    (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
+                int cupYBits = hole->positionBits.y;
+                int cupXBits = hole->positionBits.x;
+                reinterpret_cast<int*>(out)[0] = cupXBits;
+                reinterpret_cast<int*>(out)[1] = cupYBits;
+                reinterpret_cast<int*>(out)[2] = hole->positionBits.z;
             }
             return;
         }
@@ -1991,19 +2429,26 @@ void GolfAim_FindTargetAlongPath(float* out, void* path, void* clubParameterQuer
             unsigned int m = (1 + segmentIndex);
             Vec3* segmentEnd = (Vec3*)pathStorage->points + m;
             float* cur = static_cast<float*>(GolfBall__Fv());
-            float endRadiusError = Math_SquareRootApprox((cur[0] - segmentEnd->x) * (cur[0] - segmentEnd->x) + (cur[2] - segmentEnd->z) * (cur[2] - segmentEnd->z)) - clubRadius;
+            float endRadiusError = Math_SquareRootApprox((cur[0] - segmentEnd->x) * (cur[0] - segmentEnd->x) +
+                                                         (cur[2] - segmentEnd->z) * (cur[2] - segmentEnd->z)) -
+                                   clubRadius;
             Vec3* segmentStart = (Vec3*)pathStorage->points + segmentIndex;
             cur = static_cast<float*>(GolfBall__Fv());
-            float startRadiusError = Math_SquareRootApprox((cur[0] - segmentStart->x) * (cur[0] - segmentStart->x) + (cur[2] - segmentStart->z) * (cur[2] - segmentStart->z)) - clubRadius;
+            float startRadiusError = Math_SquareRootApprox((cur[0] - segmentStart->x) * (cur[0] - segmentStart->x) +
+                                                           (cur[2] - segmentStart->z) * (cur[2] - segmentStart->z)) -
+                                     clubRadius;
             if (startRadiusError * endRadiusError < zero) {
                 cur = static_cast<float*>(GolfBall__Fv());
-                GolfBall_IntersectPathSegmentWithRadiusXZ(&intersection, path, static_cast<unsigned char>(segmentIndex), clubRadius);
+                GolfBall_IntersectPathSegmentWithRadiusXZ(&intersection, path, static_cast<unsigned char>(segmentIndex),
+                                                          clubRadius);
                 __pl__FRC7WVectorRC7WVector(&worldIntersection, &intersection, cur);
-                __mi__FRC7WVectorRC7WVector(&ballToIntersection, &worldIntersection, static_cast<float*>(GolfBall__Fv()));
+                __mi__FRC7WVectorRC7WVector(&ballToIntersection, &worldIntersection,
+                                            static_cast<float*>(GolfBall__Fv()));
                 __as__7WVectorFRC7WVector(&intersectionDirection, reinterpret_cast<const float*>(&ballToIntersection));
                 intersectionDirection.y = zero;
                 char* state = static_cast<char*>((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc));
-                AimHoleRecord* hole = (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
+                AimHoleRecord* hole =
+                    (AimHoleRecord*)AsCGolfDoc(state)->holeRecords + AsCGolfDoc(state)->currentHoleIndex;
                 int cupXBits = hole->positionBits.x;
                 int cupYBits = hole->positionBits.y;
                 *reinterpret_cast<int*>(&pathCupPosition) = cupXBits;
@@ -2050,7 +2495,10 @@ struct CF0Guard {
     // Guard an unlinked ball-list node until insertion transfers ownership.
     inline CF0Guard(char* p, char* s) : first(p), copy(p), sentinel(s), node(p) {}
     // Free the node only if insertion did not clear this guard.
-    inline ~CF0Guard() { if (node) appFreeUni__FPv(node); }
+    inline ~CF0Guard() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 #pragma use_lmw_stmw on
 #pragma opt_propagation off
@@ -2060,29 +2508,42 @@ struct CF0Guard {
 // entry. Player state 3 is skipped. Nodes and payloads are owned by this actor,
 // IFF records are borrowed, and loaded puppets must be released through their manager.
 // Load each player's equipped ball puppet and cache its resource and effect handles.
-void CBall_OnLoad(void* self) {
-    char* base = static_cast<char*>(self);
+void CBall::OnLoad() {
+    using namespace AimAndBallModelViews;
+    char* base = (char*)this;
     int offset = 0;
     int index = 0;
-    for (; index < AsCGolfDoc(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc)->playerCount; offset += 0x1D4, ++index) { // +0xB90, +0x2B9
-        if (*reinterpret_cast<int*>(static_cast<char*>(GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), static_cast<unsigned char>(index))) + 8) == 3) continue;
+    for (; index < AsCGolfDoc(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc)->playerCount;
+         offset += 0x1D4, ++index) { // +0xB90, +0x2B9
+        if (*reinterpret_cast<int*>(
+                static_cast<char*>(GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc),
+                                                              static_cast<unsigned char>(index))) +
+                8) == 3)
+            continue;
         void* manager = g_sharedDoc;
         char* sentinel = base + 0x20;
-        char* node = (*(char**)&AsCBall(base)->firstPuppetEntry);
+        char* node = (*(char**)&firstPuppetEntry);
         char* volatile found[2];
         void* volatile wanted[2];
         void* key = *reinterpret_cast<void**>(static_cast<char*>(manager) + offset + 0x88);
         wanted[0] = key;
         wanted[1] = key;
-        while (node != sentinel && wanted[1] != *reinterpret_cast<void**>(static_cast<char*>(*reinterpret_cast<void**>(*reinterpret_cast<void**>(node + 8))) + 0x50))
+        while (node != sentinel &&
+               wanted[1] !=
+                   *reinterpret_cast<void**>(
+                       static_cast<char*>(*reinterpret_cast<void**>(*reinterpret_cast<void**>(node + 8))) + 0x50))
             node = *reinterpret_cast<char**>(node + 4);
-        found[0] = node; found[1] = node;
+        found[0] = node;
+        found[1] = node;
         void* data;
-        if (node != base + 0x20) data = *reinterpret_cast<void**>(node + 8);
-        else data = 0;
+        if (node != base + 0x20)
+            data = *reinterpret_cast<void**>(node + 8);
+        else
+            data = 0;
         if (!data) {
             char* entry;
-            void* resource = ItemInventory_FindBallData(AsCSharedDoc(manager)->itemInventory, static_cast<const char*>(key)); // +0xA04
+            void* resource = ItemInventory_FindBallData(AsCSharedDoc(manager)->itemInventory,
+                                                        static_cast<const char*>(key)); // +0xA04
             if (resource) {
                 entry = static_cast<char*>(__nw__FUl(0x28));
                 if (entry) {
@@ -2093,7 +2554,9 @@ void CBall_OnLoad(void* self) {
                 }
                 *reinterpret_cast<void**>(entry) = resource;
                 char name[0x20];
-                sprintf(name, reinterpret_cast<const char*>(golfBallResourceStrings + kBallStringsPetModelFormatOffset), static_cast<char*>(resource) + 0x28C);
+                ::sprintf(name,
+                          reinterpret_cast<const char*>(golfBallResourceStrings + kBallStringsPetModelFormatOffset),
+                          static_cast<char*>(resource) + 0x28C);
                 resource = 0;
                 int zero = reinterpret_cast<int>(resource);
                 void* sub = ResourceManager_LoadByExtension(g_resourceManager, name, zero, 1, zero);
@@ -2115,15 +2578,15 @@ void CBall_OnLoad(void* self) {
                 *reinterpret_cast<char**>(list) = *reinterpret_cast<char**>(sentinel);
                 *reinterpret_cast<char**>(sentinel) = list;
                 *reinterpret_cast<char**>(list + 4) = sentinel;
-                ++AsCBall(base)->puppetEntryCount;
+                ++puppetEntryCount;
             }
         }
     }
     // All eligible IDs are cached; make the first cache entry the active puppet.
-    char* node = (*(char**)&AsCBall(base)->firstPuppetEntry);
+    char* node = (*(char**)&firstPuppetEntry);
     if (node != base + 0x20) {
         void* data = *reinterpret_cast<void**>(node + 8);
-        AsCBall(base)->puppet = *reinterpret_cast<void**>(static_cast<char*>(data) + 4);
+        puppet = *reinterpret_cast<void**>(static_cast<char*>(data) + 4);
     }
 }
 #pragma use_lmw_stmw reset
@@ -2187,46 +2650,50 @@ void GolfBall_IntersectPathSegmentWithRadiusXZ(void* out, void* array, int index
 
 // Optionally free the native member allocation; no additional teardown is required here.
 void* __dt__20NativeMember80201D18Fv(void* self, int deleting) {
-    if (self && deleting > 0) __dl__FPv(self);
+    if (self && deleting > 0)
+        __dl__FPv(self);
     return self;
 }
 
 // Reset the ball transform/sinking fields and copy the scene light direction.
-void CBall_OnInit(void* self) {
-    char* base = static_cast<char*>(self);
-    Matrix_SetIdentityAffine((char*)AsCBall(base)->matrixBasis);
-    AsCBall(base)->groundSinkFactor = kFloat_0_Ball;
-    AsCBall(base)->sinkStartFrame = -1;
-    (*(WVector*)&AsCBall(base)->lightDirection[0]) = *(WVector*)(s_sceneLighting + 1);
+void CBall::OnInit() {
+    using namespace AimAndBallModelViews;
+    Matrix_SetIdentityAffine((char*)matrixBasis);
+    groundSinkFactor = kFloat_0_Ball;
+    sinkStartFrame = -1;
+    (*(WVector*)&lightDirection[0]) = *(WVector*)(s_sceneLighting + 1);
 }
 
-    // Only visible actors update. Inactive simulation copies position and applies
-    // full sink depth, then returns. Active simulation derives rolling orientation,
-    // applies short post-event jitter and playback-interpolated sinking, and finally
-    // rescales the puppet when the active cache entry has retained effect handles.
-    // Follow simulated ball position/rotation, update sinking and effects, and refresh the puppet.
-    void CBall_OnProcess(void* self) {
-    char* base = static_cast<char*>(self);
-    if (!AsCBall(base)->visible) return; // CBall_OnProcess: +0x94
+// Only visible actors update. Inactive simulation copies position and applies
+// full sink depth, then returns. Active simulation derives rolling orientation,
+// applies short post-event jitter and playback-interpolated sinking, and finally
+// rescales the puppet when the active cache entry has retained effect handles.
+// Follow simulated ball position/rotation, update sinking and effects, and refresh the puppet.
+void CBall::OnProcess() {
+    using namespace AimAndBallModelViews;
+    char* base = (char*)this;
+    if (!visible)
+        return;
     char* ballPhysics = static_cast<char*>(GolfBall__Fv());
     if (!*reinterpret_cast<int*>(ballPhysics + 0x18)) {
-        *(WVector*)(base + 0x54) = *(WVector*)(reinterpret_cast<const float*>(ballPhysics));
-        float sink = AsCBall(base)->groundSinkFactor; // +0x70
+        *(WVector*)position = *(WVector*)(reinterpret_cast<const float*>(ballPhysics));
+        float sink = groundSinkFactor;
         if (sink > kFloat_0_Ball) {
             float ballRadius = *reinterpret_cast<float*>(ballPhysics + 0xC0);
-                *reinterpret_cast<float*>(base + 0x58) -= sink * ((kFloat_2_Ball * ballRadius));
+            position[1] -= sink * ((kFloat_2_Ball * ballRadius));
         }
-        char* state = *(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc; // +0xB90
+        char* state = *(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc;
         if ((*(unsigned int*)&AsCGolfDoc(state)->gameStateFlags) & 0x80) {
-            CBall_DetachFx(self, 3);
-            CBall_DetachFx(self, 5);
+            DetachFx(3);
+            DetachFx(5);
         }
         return;
     }
-    *(int*)&AsCBall(base)->lightColor = *reinterpret_cast<int*>(const_cast<char*>(reinterpret_cast<const char*>(s_sceneLighting)) + 0x10); // +0x88
+    *(int*)&lightColor =
+        *reinterpret_cast<int*>(const_cast<char*>(reinterpret_cast<const char*>(s_sceneLighting)) + 0x10);
     if ((((CGolfBall*)GolfBall__Fv())->m_velocity).Magnitude() < kBallEffectRemovalSpeedThreshold) {
-        CBall_DetachFx(self, 3);
-        CBall_DetachFx(self, 5);
+        DetachFx(3);
+        DetachFx(5);
     }
 
     // Build a world-space roll axis from world up crossed with simulation direction.
@@ -2239,105 +2706,138 @@ void CBall_OnInit(void* self) {
     axis[1] = kFloat_1_CourseHelpers;
     axis[2] = kFloat_0_Ball;
     Vector_CrossProduct(&cross, axis, ballPhysics + 0xC);
-    *(WVector*)(base + 0x60) = cross;
+    *(WVector*)rotationAxis = cross;
     zero[0] = kFloat_0_Ball;
     zero[1] = kFloat_0_Ball;
     zero[2] = kFloat_0_Ball;
-    if (Vec3_NearlyEqualWithTolerance(base + 0x60, zero, kFloat_0_00001_CourseHelpers_805DDD38) != 0) {
+    if (Vec3_NearlyEqualWithTolerance((char*)rotationAxis, zero, kFloat_0_00001_CourseHelpers_805DDD38) != 0) {
         one[0] = kFloat_0_Ball;
         one[1] = kFloat_1_CourseHelpers;
         one[2] = kFloat_0_Ball;
-        *(WVector*)(base + 0x60) = *(WVector*)one;
+        *(WVector*)rotationAxis = *(WVector*)one;
     }
-    float matrix[12]; Matrix_SetNegativeAxisAngleRotation(matrix, base + 0x60, *reinterpret_cast<float*>(ballPhysics + 0x30));
-    Matrix_CopyAffine(base + 0x30, matrix);
-    *(WVector*)(base + 0x54) = *(WVector*)(reinterpret_cast<const float*>(ballPhysics));
+    float matrix[12];
+    Matrix_SetNegativeAxisAngleRotation(matrix, (char*)rotationAxis, *reinterpret_cast<float*>(ballPhysics + 0x30));
+    Matrix_CopyAffine((char*)matrixBasis, matrix);
+    *(WVector*)position = *(WVector*)(reinterpret_cast<const float*>(ballPhysics));
     // During the 30-frame post-event window, add small random XZ-only visual jitter.
     int lim;
     int idx = *reinterpret_cast<int*>(ballPhysics + 0x68);
     if (idx > 0) {
         lim = *reinterpret_cast<int*>(ballPhysics + 0x84);
-        if (lim > 0) { if (idx >= lim) { if (idx < kBallJitterFrames + lim) {
-            float f = kBallPlaybackPositionJitterStep * static_cast<float>(rand() % 11 - 5);
+        if (lim > 0) {
+            if (idx >= lim) {
+                if (idx < kBallJitterFrames + lim) {
+                    float f = kBallPlaybackPositionJitterStep * static_cast<float>(::rand() % 11 - 5);
 
-            jitter[0] = static_cast<float>((rand() % 11 - 5)) * kBallPlaybackPositionJitterStep;
-            jitter[1] = kFloat_0_Ball;
-            jitter[2] = f;
-            *(WVector*)(base + 0x54) += *(WVector*)jitter;
-        } } }
+                    jitter[0] = static_cast<float>((::rand() % 11 - 5)) * kBallPlaybackPositionJitterStep;
+                    jitter[1] = kFloat_0_Ball;
+                    jitter[2] = f;
+                    *(WVector*)position += *(WVector*)jitter;
+                }
+            }
+        }
     }
     // Fade the visual sink depth over the recorded playback interval.
-    if (AsCBall(base)->groundSinkFactor > kFloat_0_Ball) {
+    if (groundSinkFactor > kFloat_0_Ball) {
         float ballRadius;
         float accel;
         float drop;
         float ratio;
-        if (AsCBall(base)->sinkStartFrame == ((CGolfBall*)GolfBall__Fv())->m_preDataCount) { // +0x74
+        if (sinkStartFrame == ((CGolfBall*)GolfBall__Fv())->m_preDataCount) {
             ratio = kFloat_1_CourseHelpers;
         } else {
-            float far = static_cast<float>(((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[0] - AsCBall(base)->sinkStartFrame);
+            float far = static_cast<float>(((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[0] - sinkStartFrame);
             far = kFloat_0_Ball < far ? far : kFloat_0_Ball;
-            ratio = far / static_cast<float>(((CGolfBall*)GolfBall__Fv())->m_preDataCount - AsCBall(base)->sinkStartFrame);
+            ratio = far / static_cast<float>(((CGolfBall*)GolfBall__Fv())->m_preDataCount - sinkStartFrame);
         }
         ballRadius = *reinterpret_cast<float*>(ballPhysics + 0xC0);
         accel = kFloat_2_Ball * ballRadius;
-        drop = AsCBall(base)->groundSinkFactor * accel;
-        *reinterpret_cast<float*>(base + 0x58) -= drop * ratio;
+        drop = groundSinkFactor * accel;
+        position[1] -= drop * ratio;
     }
-    if (AsCBall(base)->previousPlaybackFrame < ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[1]) { // +0x98
+    if (previousPlaybackFrame < ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[1]) {
 
-        if (((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[1] <= (((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[0])) CBall_AttachFx(self, 4);
+        if (((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[1] <=
+            (((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[0]))
+            AttachFx(4);
     }
-    AsCBall(base)->previousPlaybackFrame = ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[0];
+    previousPlaybackFrame = ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[0];
     char* global = reinterpret_cast<char*>(g_sharedDoc);
-    char* mgr = *(char**)&AsCSharedDoc(global)->golfDoc; // +0xB90
+    char* mgr = *(char**)&AsCSharedDoc(global)->golfDoc;
     unsigned char slot = AsCGolfDoc(mgr)->currentPlayer;
     char* sentinel = base + 0x20;
-        void* wanted = *reinterpret_cast<void**>(global + slot * 0x1D4 + 0x88);
-    char* node = (char*)AsCBall(base)->firstPuppetEntry; // +0x24
-    while (node != sentinel && *reinterpret_cast<void**>(static_cast<char*>(*reinterpret_cast<void**>(*reinterpret_cast<void**>(node + 8))) + 0x50) != wanted)
+    void* wanted = *reinterpret_cast<void**>(global + slot * 0x1D4 + 0x88);
+    char* node = (char*)firstPuppetEntry;
+    while (node != sentinel &&
+           *reinterpret_cast<void**>(
+               static_cast<char*>(*reinterpret_cast<void**>(*reinterpret_cast<void**>(node + 8))) + 0x50) != wanted)
         node = *reinterpret_cast<char**>(4 + node);
     char* data;
-    if (node != base + 0x20) data = *reinterpret_cast<char**>(node + 8);
-    else data = 0;
+    if (node != base + 0x20)
+        data = *reinterpret_cast<char**>(node + 8);
+    else
+        data = 0;
     if (data) {
         int* flags = reinterpret_cast<int*>(data + 8);
         int any = 0;
-        if (flags[0]) any = 1;
-        else if (flags[1]) any = 1;
-        else if (flags[2]) any = 1;
-        else if (flags[3]) any = 1;
+        if (flags[0])
+            any = 1;
+        else if (flags[1])
+            any = 1;
+        else if (flags[2])
+            any = 1;
+        else if (flags[3])
+            any = 1;
         if (!any) {
-            if (flags[4]) any = 1;
-            else if (flags[5]) any = 1;
-            else if (flags[6]) any = 1;
-            else if (flags[7]) any = 1;
+            if (flags[4])
+                any = 1;
+            else if (flags[5])
+                any = 1;
+            else if (flags[6])
+                any = 1;
+            else if (flags[7])
+                any = 1;
         }
-        if (any) CBall_TransformBall(self);
+        if (any)
+            TransformBall();
     }
 }
 
-struct CBallVertexInit { char pad00[16]; unsigned int diffuse; char pad14[4]; float tu, tv; char pad20[24]; };
+struct CBallVertexInit {
+    char pad00[16];
+    unsigned int diffuse;
+    char pad14[4];
+    float tu, tv;
+    char pad20[24];
+};
 // Prepare ball/shadow vertices and enqueue named scene-resource preload requests.
-void CBall_OnPreLoadInit(void* self) {
-    char* base = static_cast<char*>(self);
-    float vec[3] = { kFloat_1_CourseHelpers, kFloat_0_Ball, kFloat_0_Ball };
-    (*(WVector*)&AsCBall(base)->rotationAxis[0]) = *(WVector*)vec;
+void CBall::OnPreLoadInit() {
+    using namespace AimAndBallModelViews;
+    char* base = (char*)this;
+    float vec[3] = {kFloat_1_CourseHelpers, kFloat_0_Ball, kFloat_0_Ball};
+    (*(WVector*)&rotationAxis[0]) = *(WVector*)vec;
     for (int i = 0; i < 4; ++i) {
         reinterpret_cast<CBallVertexInit*>(base + 0xB0)[i].diffuse = 0x80FFFFFF;
-        reinterpret_cast<CBallVertexInit*>(base + 0xB0)[i].tu = (i & 2) ? 1.0f : 0.0f;
-        reinterpret_cast<CBallVertexInit*>(base + 0xB0)[i].tv = (i & 1) ? 0.0f : 1.0f;
+        reinterpret_cast<CBallVertexInit*>(base + 0xB0)[i].tu = (i & 2) ? kFloat_1_CourseHelpers : kFloat_0_Ball;
+        reinterpret_cast<CBallVertexInit*>(base + 0xB0)[i].tv = (i & 1) ? kFloat_0_Ball : kFloat_1_CourseHelpers;
     }
-    AsCBall(base)->vertexStreams[0] = base + 0xB0;
-    AsCBall(base)->vertexStreams[1] = base + 0xE8;
-    AsCBall(base)->vertexStreams[2] = base + 0x158;
-    AsCBall(base)->vertexStreams[3] = base + 0x120;
-    AsCBall(base)->unk_AC = 0;
-    AsCBall(base)->lightingMode = 2;
-    AsCBall(base)->bitmap = ResourceManager_LoadBitmap(g_resourceManager, reinterpret_cast<const char*>(golfBallResourceStrings), 0, 0, 0);
-    ResourcePreloadQueue_AddRequest(g_sceneManager, 4, 0, kFloat_1_CourseHelpers, 0, kFloat_0_Ball, reinterpret_cast<const char*>(golfBallResourceStrings + kBallStringsBallObjectOffset), base + 0x30, 8, 0);
-    if (base) base += 0x18;
-    ResourcePreloadQueue_AddRequest(g_sceneManager, 1, 0, kFloat_1_CourseHelpers, base, kFloat_0_Ball, reinterpret_cast<const char*>(golfBallResourceStrings + kBallStringsBallShadowObjectOffset), 0, 0, 0);
+    vertexStreams[0] = base + 0xB0;
+    vertexStreams[1] = base + 0xE8;
+    vertexStreams[2] = base + 0x158;
+    vertexStreams[3] = base + 0x120;
+    unk_AC = 0;
+    lightingMode = 2;
+    bitmap =
+        ResourceManager_LoadBitmap(g_resourceManager, reinterpret_cast<const char*>(golfBallResourceStrings), 0, 0, 0);
+    ResourcePreloadQueue_AddRequest(
+        g_sceneManager, 4, 0, kFloat_1_CourseHelpers, 0, kFloat_0_Ball,
+        reinterpret_cast<const char*>(golfBallResourceStrings + kBallStringsBallObjectOffset), base + 0x30, 8, 0);
+    if (base)
+        base += 0x18;
+    ResourcePreloadQueue_AddRequest(
+        g_sceneManager, 1, 0, kFloat_1_CourseHelpers, base, kFloat_0_Ball,
+        reinterpret_cast<const char*>(golfBallResourceStrings + kBallStringsBallShadowObjectOffset), 0, 0, 0);
 }
 #pragma opt_propagation reset
 #pragma opt_common_subs reset
@@ -2346,18 +2846,22 @@ void CBall_OnPreLoadInit(void* self) {
 #pragma opt_propagation off
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
-struct CBallVT_ { 
-virtual void s0(); virtual void s1(); virtual void s2(); virtual void s3();
+struct CBallVT_ {
+    virtual void s0();
+    virtual void s1();
+    virtual void s2();
+    virtual void s3();
 };
 // Rebuild the ball's active scene resources and puppet state after a reload.
-void CBall_OnReload(void* self) {
-    char* base = static_cast<char*>(self);
+void CBall::OnReload() {
+    using namespace AimAndBallModelViews;
+    char* base = (char*)this;
     char* node;
     void* zero;
     char* sentinel;
     zero = 0;
-    sentinel = (char*)&AsCBall(base)->puppetListSentinel;
-    node = (*(char**)&AsCBall(base)->firstPuppetEntry);
+    sentinel = (char*)&puppetListSentinel;
+    node = (*(char**)&firstPuppetEntry);
     while (node != sentinel) {
         void* data = *reinterpret_cast<void**>(node + 8);
         if (data) {
@@ -2377,8 +2881,8 @@ void CBall_OnReload(void* self) {
         node = *reinterpret_cast<char**>(node + 4);
     }
     // Puppet/payload release is finished; unlink and free the remaining list nodes.
-    char* sentinel2 = (char*)&AsCBall(base)->puppetListSentinel;
-    char* current = (*(char**)&AsCBall(base)->firstPuppetEntry);
+    char* sentinel2 = (char*)&puppetListSentinel;
+    char* current = (*(char**)&firstPuppetEntry);
     if (current != sentinel2) {
         char* head = *reinterpret_cast<char**>(sentinel2);
         *reinterpret_cast<void**>(*reinterpret_cast<char**>(current) + 4) = *reinterpret_cast<void**>(head + 4);
@@ -2387,11 +2891,12 @@ void CBall_OnReload(void* self) {
             char* old = current;
             current = *reinterpret_cast<char**>(current + 4);
             appFreeUni__FPv(old);
-            --AsCBall(base)->puppetEntryCount;
+            --puppetEntryCount;
         }
     }
-    DrawScene_SetNamedObjectPuppet(g_sceneManager, reinterpret_cast<const char*>(golfBallResourceStrings + kBallStringsBallObjectOffset), 0);
-    static_cast<CBallVT_*>(self)->s3();
+    DrawScene_SetNamedObjectPuppet(
+        g_sceneManager, reinterpret_cast<const char*>(golfBallResourceStrings + kBallStringsBallObjectOffset), 0);
+    ((CBallVT_*)this)->s3();
 }
 #pragma opt_propagation reset
 #pragma opt_common_subs reset
@@ -2402,13 +2907,20 @@ void CBall_OnReload(void* self) {
 // 1.5/diameter * 1.2 * (1 + accessibility setting). Negative playback index starts
 // from unit scale before the last two factors. Only the basis is scaled; translation stays.
 // Scale the displayed ball using camera projection, simulated radius, and the selected settings.
-void CBall_TransformBall(void* self) { float amount;
+void CBall::TransformBall() {
+    using namespace AimAndBallModelViews;
+    float amount;
     char* ballPhysics = static_cast<char*>(GolfBall__Fv());
-    char* base = static_cast<char*>(self);
-    char projectedTop[0x38]; char projectedBottom[0x38];
+    char* base = (char*)this;
+    char projectedTop[0x38];
+    char projectedBottom[0x38];
     char matrix[0x30];
-    float viewBottom[3]; float worldBottom[3]; float radiusOffsetBottom[3];
-    float viewTop[3]; float worldTop[3]; float radiusOffsetTop[3];
+    float viewBottom[3];
+    float worldBottom[3];
+    float radiusOffsetBottom[3];
+    float viewTop[3];
+    float worldTop[3];
+    float radiusOffsetTop[3];
 
     if (*reinterpret_cast<int*>(ballPhysics + 0x68) < 0) {
         amount = kFloat_1_CourseHelpers;
@@ -2425,19 +2937,22 @@ void CBall_TransformBall(void* self) { float amount;
         float delta = *reinterpret_cast<float*>(projectedBottom + 4) - *reinterpret_cast<float*>(projectedTop + 4);
         delta = delta > kFloat_0_Ball ? delta : -delta;
         float scale;
-        if (delta < kFloat_0_1_CourseHelpers) scale = kFloat_0_1_CourseHelpers;
-        else if (delta > kFloat_1_5_Scene) scale = kFloat_1_5_Scene;
-        else scale = delta;
+        if (delta < kFloat_0_1_CourseHelpers)
+            scale = kFloat_0_1_CourseHelpers;
+        else if (delta > kFloat_1_5_Scene)
+            scale = kFloat_1_5_Scene;
+        else
+            scale = delta;
         amount = kFloat_1_5_Scene / scale;
     }
     amount *= kFloat_1_2_CourseHelpers;
     void* accessibilitySettings = PartyItemSlots_GetInstance();
     amount *= kFloat_1_CourseHelpers + *reinterpret_cast<float*>(static_cast<char*>(accessibilitySettings) + 0x40);
-    if (AsCBall(base)->puppet) { // CBall_TransformBall: puppet at +0x28
+    if (puppet) { // CBall_TransformBall: puppet at +0x28
         Matrix_CopyScaledBasis(matrix, base + 0x30, amount);
-        Model_SetMatrixRecursive(AsCBall(base)->puppet, 0, matrix);
-        WPuppet_UpdateBoneWorldMatrices(AsCBall(base)->puppet, 0, 0, kFloat_1_CourseHelpers);
-        WPuppet_UpdateBoundsFromBone(AsCBall(base)->puppet);
+        Model_SetMatrixRecursive(puppet, 0, matrix);
+        WPuppet_UpdateBoneWorldMatrices(puppet, 0, 0, kFloat_1_CourseHelpers);
+        WPuppet_UpdateBoundsFromBone(puppet);
     }
 }
 
@@ -2470,29 +2985,30 @@ inline CBall::CBall() {
     AsCBall(self)->effectMessageValue = zero;
     AsCBall(self)->unk_8 = 1;
 }
-namespace AimAndBallModelViews {
-extern "C" {
 // Allocate and construct the visible ball actor.
-void* CBall_Create() {
+void* CBall::Create() {
     return new CBall;
 }
 
+namespace AimAndBallModelViews {
+extern "C" {
+
 // Draw the visible ball puppet using its current lighting and transform.
-void CBall_OnDisplay(void* self) {
+void CBall::OnDisplay() {
+    using namespace AimAndBallModelViews;
     struct Dispatch {
         virtual void f0() = 0;
         virtual void f1() = 0;
         virtual void f2() = 0;
         virtual void f5(void*, int, int) = 0;
     };
-    char* base = static_cast<char*>(self);
-    if (AsCBall(base)->visible) {
-        CBall_TransformBall(self);
-        if (AsCBall(base)->puppet && WPuppet_GetBoneFlags(AsCBall(base)->puppet, 0)) {
+    if (visible) {
+        TransformBall();
+        if (puppet && WPuppet_GetBoneFlags(puppet, 0)) {
             char* state = static_cast<char*>(GolfBall__Fv());
-            if (*reinterpret_cast<int*>(state + 0x18) || AsCBall(base)->lightUpdatePending) {
-                AsCBall(base)->lightUpdatePending = 0;
-                reinterpret_cast<Dispatch*>(AsCBall(base)->puppet)->f5((char*)&AsCBall(base)->lightingMode, 0, 0);
+            if (*reinterpret_cast<int*>(state + 0x18) || lightUpdatePending) {
+                lightUpdatePending = 0;
+                reinterpret_cast<Dispatch*>(puppet)->f5((char*)&lightingMode, 0, 0);
             }
         }
     }
@@ -2502,14 +3018,15 @@ void CBall_OnDisplay(void* self) {
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
 // Release cached ball puppets/payloads, unlink their nodes, and release the shadow bitmap.
-void CBall_OnDestroy(void* self) {
-    char* base = static_cast<char*>(self);
+void CBall::OnDestroy() {
+    using namespace AimAndBallModelViews;
+    char* base = (char*)this;
     char* node;
     void* zero;
     char* sentinel;
     zero = 0;
-    sentinel = (char*)&AsCBall(base)->puppetListSentinel;
-    node = (*(char**)&AsCBall(base)->firstPuppetEntry);
+    sentinel = (char*)&puppetListSentinel;
+    node = (*(char**)&firstPuppetEntry);
     while (node != sentinel) {
         void* data = *reinterpret_cast<void**>(node + 0x8);
         if (data) {
@@ -2529,8 +3046,8 @@ void CBall_OnDestroy(void* self) {
         node = *reinterpret_cast<char**>(node + 0x4);
     }
     // Payloads are released; splice the list back to its embedded sentinel and free nodes.
-    char* first = (*(char**)&AsCBall(base)->firstPuppetEntry);
-    sentinel = (char*)&AsCBall(base)->puppetListSentinel;
+    char* first = (*(char**)&firstPuppetEntry);
+    sentinel = (char*)&puppetListSentinel;
     if (first != sentinel) {
         char* last = *reinterpret_cast<char**>(first);
         char* head = *reinterpret_cast<char**>(sentinel);
@@ -2540,15 +3057,15 @@ void CBall_OnDestroy(void* self) {
             char* current = first;
             first = *reinterpret_cast<char**>(first + 0x4);
             appFreeUni__FPv(current);
-            --AsCBall(base)->puppetEntryCount;
+            --puppetEntryCount;
         }
     }
     void* manager = g_resourceManager;
     if (manager) {
-        void* resource = AsCBall(base)->bitmap;
+        void* resource = bitmap;
         if (resource) {
             ResourceManager_ReleaseId(manager, resource);
-            AsCBall(base)->bitmap = 0;
+            bitmap = 0;
         }
     }
 }
@@ -2562,14 +3079,13 @@ void CBall_OnDestroy(void* self) {
 
 // ---- merged from ball_actor_and_ambient_sound.cpp ----
 namespace ShadowAndEffectViews {
-// Translation unit 0x800CFB38-0x800D1108 (11 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
 extern void* g_view;
 extern CSharedDoc* g_sharedDoc;
-extern float kFloat_0_Ball, kFloat_1_CourseHelpers, kFloat_4_CourseHelpers, kFloat_1_2_CourseHelpers, kFloat_0_003_CourseHelpers, kFloat_neg1_CourseHelpers;
+extern float kFloat_0_Ball, kFloat_1_CourseHelpers, kFloat_4_CourseHelpers, kFloat_1_2_CourseHelpers,
+    kFloat_0_003_CourseHelpers, kFloat_neg1_CourseHelpers;
 extern const float kIdentityMatrix4x4[16];
 
 void* GolfBall__Fv();
@@ -2577,7 +3093,6 @@ void __mi__FRC7WVectorRC7WVector(void*, const void*, void*);
 float Magnitude__7WVectorCFv(void*);
 void* CQuadTree_GetInstance();
 void GetGroundPoint__9CQuadTreeF7WVectorbPib(void*, void*, const void*, int, int*, int);
-void CQuadTree_GetMeshNormal(void*, void*, int);
 void Vector_CrossProduct(void*, const void*, const void*);
 void Normalize__7WVectorFv(void*);
 void __pl__FRC7WVectorRC7WVector(void*, void*, const void*);
@@ -2597,31 +3112,71 @@ void* Camera_GetRenderState(void*);
 void* fn_801CFoo(void*);
 
 typedef Vec3f GroundVector;
-struct GroundPosition { unsigned int x, y, z; };
-struct GroundVertex { GroundVector position; float u, v; };
-struct GroundConfig { unsigned int words[30]; };
-struct GroundRegs { unsigned int words[12]; };
-struct GroundTex { unsigned int words[10]; };
-struct GroundDefaults { GroundConfig config; GroundRegs regs; GroundTex tex; };
+struct GroundPosition {
+    unsigned int x, y, z;
+};
+struct GroundVertex {
+    GroundVector position;
+    float u, v;
+};
+struct GroundConfig {
+    unsigned int words[30];
+};
+struct GroundRegs {
+    unsigned int words[12];
+};
+struct GroundTex {
+    unsigned int words[10];
+};
+struct GroundDefaults {
+    GroundConfig config;
+    GroundRegs regs;
+    GroundTex tex;
+};
 extern const GroundDefaults kBallGroundShadowRenderDefaults;
 struct GroundDispatch {
-	virtual void v0()=0; virtual void v1()=0; virtual void v2()=0;
-	virtual void v3()=0; virtual void v4()=0; virtual void v5()=0;
-	virtual void v6()=0; virtual void v7()=0; virtual void v8()=0;
-	virtual void v9()=0; virtual void v10()=0; virtual void v11()=0;
-	virtual int active()=0;
+    virtual void v0() = 0;
+    virtual void v1() = 0;
+    virtual void v2() = 0;
+    virtual void v3() = 0;
+    virtual void v4() = 0;
+    virtual void v5() = 0;
+    virtual void v6() = 0;
+    virtual void v7() = 0;
+    virtual void v8() = 0;
+    virtual void v9() = 0;
+    virtual void v10() = 0;
+    virtual void v11() = 0;
+    virtual int active() = 0;
 };
 struct GroundDevice {
-	virtual void v0()=0; virtual void v1()=0; virtual void v2()=0;
-	virtual void v3()=0; virtual void v4()=0; virtual void v5()=0;
-	virtual void v6()=0; virtual void v7()=0; virtual void v8()=0;
-	virtual void v9()=0; virtual void v10()=0; virtual void v11()=0;
-	virtual void v12()=0; virtual void v13()=0; virtual void v14()=0;
-	virtual void v15()=0; virtual void v16()=0; virtual void v17()=0;
-	virtual void v18()=0; virtual void v19()=0; virtual void v20()=0;
-	virtual void v21()=0; virtual void v22()=0; virtual void v23()=0;
-	virtual void v24()=0; virtual void v25()=0;
-	virtual void* state(void*)=0;
+    virtual void v0() = 0;
+    virtual void v1() = 0;
+    virtual void v2() = 0;
+    virtual void v3() = 0;
+    virtual void v4() = 0;
+    virtual void v5() = 0;
+    virtual void v6() = 0;
+    virtual void v7() = 0;
+    virtual void v8() = 0;
+    virtual void v9() = 0;
+    virtual void v10() = 0;
+    virtual void v11() = 0;
+    virtual void v12() = 0;
+    virtual void v13() = 0;
+    virtual void v14() = 0;
+    virtual void v15() = 0;
+    virtual void v16() = 0;
+    virtual void v17() = 0;
+    virtual void v18() = 0;
+    virtual void v19() = 0;
+    virtual void v20() = 0;
+    virtual void v21() = 0;
+    virtual void v22() = 0;
+    virtual void v23() = 0;
+    virtual void v24() = 0;
+    virtual void v25() = 0;
+    virtual void* state(void*) = 0;
 };
 
 // Suppress the shadow within four ball radii of the cup or without a ground face.
@@ -2630,73 +3185,89 @@ struct GroundDevice {
 // corner bits. Identity world transforms prevent a second object-space transform;
 // camera matrices supply the view/projection. The small offset reduces depth fighting.
 // Build and draw the ground-projected shadow quad beneath the simulated ball.
-void CBall_Display(void* self) {
-	GroundVertex vertices[4];
-	GroundConfig config;
-	GroundRegs regs;
-	GroundTex tex;
-	GroundVector rect, matrix, data, box, a, b;
-	GroundVertex* vertex;
-	unsigned int y, x, i;
-	float small, zero, maxDistance, half;
-	const GroundDefaults* defaults = &kBallGroundShadowRenderDefaults;
-	if (((GroundDispatch*)self)->active() || !AsCBall(self)->visible) return;
-	unsigned char* mgr = (unsigned char*)(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-	unsigned char index = AsCGolfDoc(mgr)->currentHoleIndex;
-	void* item = AsCGolfDoc(mgr)->holeRecords;
-	unsigned char* rec = (unsigned char*)item + index * 0x20;
-	GroundPosition keydata = *(GroundPosition*)(rec + 0xC);
-	void* layout = GolfBall__Fv();
-	__mi__FRC7WVectorRC7WVector(&rect, &keydata, layout);
-	rect.y = kFloat_0_Ball;
-	maxDistance = ((CGolfBall*)GolfBall__Fv())->m_radius;
-	float distance = (*(WVector*)&rect).Magnitude();
-	if (distance < kFloat_4_CourseHelpers * maxDistance) return;
-	half = kFloat_1_2_CourseHelpers * ((CGolfBall*)GolfBall__Fv())->m_radius;
-	layout = GolfBall__Fv();
-	GroundPosition pos = *(GroundPosition*)layout;
-	GroundVector one, transformed, local, t1, t2;
-	int found;
-	void* resource = CQuadTree_GetInstance();
-	GetGroundPoint__9CQuadTreeF7WVectorbPib(&data, resource, &pos, 1, &found, 0);
-	int face = found;
-	if (face == -1) return;
-	resource = CQuadTree_GetInstance();
-	CQuadTree_GetMeshNormal(&box, resource, face);
-	one.x = kFloat_0_Ball; one.y = kFloat_0_Ball; one.z = kFloat_1_CourseHelpers;
-	Vector_CrossProduct(&a, &box, &one);
-	Vector_CrossProduct(&b, &box, &a);
-	(*(WVector*)&a).Normalize(); (*(WVector*)&b).Normalize();
-	zero = kFloat_0_Ball; small = kFloat_0_003_CourseHelpers;
-	vertex = vertices;
-	for (i=0; i<4; ++i) {
-		local.x = zero; local.y = small; local.z = zero;
-		__pl__FRC7WVectorRC7WVector(&transformed, &data, &local);
-		*(WVector*)&matrix = *(WVector*)&transformed;
-		x = i & 1;
-		float sx = x ? kFloat_1_CourseHelpers : kFloat_neg1_CourseHelpers;
-		__ml__FfRC7WVector(&t1, &a, half * sx); *(WVector*)&matrix += *(WVector*)&t1;
-		y = i & 2;
-		float sy = y ? kFloat_1_CourseHelpers : kFloat_neg1_CourseHelpers;
-            __ml__FfRC7WVector(&t2, &b, half * sy);
-            *(WVector*)&matrix += *(WVector*)&t2;
-		Vec3_CopyToOutput(&matrix, vertex);
-		vertex->u = y ? kFloat_1_CourseHelpers : kFloat_0_Ball;
-		vertex->v = x ? kFloat_1_CourseHelpers : kFloat_0_Ball;
-		++vertex;
-	}
-	config = defaults->config;
-	regs = defaults->regs;
-	tex = defaults->tex;
-	Engine_SetRenderStateList(&config, 15); Engine_SetTextureStageStateList(0, &regs, 6); Engine_SetTextureStageParameterList(0, &tex, 5);
-	Engine_SetFlexibleVertexFormat(kBallShadowVertexFormat); Engine_SetType7Resource(0);
-	void* obj = AsWView(g_view)->renderTarget;
-	void* state = ((GroundDevice*)obj)->state(AsCBall(self)->bitmap);
-	Engine_SetTextureStageResource(0,state);
-	SetTransform(11,kIdentityMatrix4x4); SetTransform(3,kIdentityMatrix4x4);
-	obj=Camera_GetRenderState(g_view);
-	SetTransform(1,((BallShadowCameraMatrices*)obj)->transform1); SetTransform(0,((BallShadowCameraMatrices*)obj)->transform0);
-	DrawPrimitiveUP(kBallShadowTriangleStrip,2,vertices,sizeof(GroundVertex));
+void CBall::Display() {
+    using namespace ShadowAndEffectViews;
+    GroundVertex vertices[4];
+    GroundConfig config;
+    GroundRegs regs;
+    GroundTex tex;
+    GroundVector rect, matrix, data, box, a, b;
+    GroundVertex* vertex;
+    unsigned int y, x, i;
+    float small, zero, maxDistance, half;
+    const GroundDefaults* defaults = &kBallGroundShadowRenderDefaults;
+    if (((GroundDispatch*)this)->active() || !visible)
+        return;
+    unsigned char* mgr = (unsigned char*)(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
+    unsigned char index = AsCGolfDoc(mgr)->currentHoleIndex;
+    void* item = AsCGolfDoc(mgr)->holeRecords;
+    unsigned char* rec = (unsigned char*)item + index * 0x20;
+    GroundPosition keydata = *(GroundPosition*)(rec + 0xC);
+    void* layout = GolfBall__Fv();
+    __mi__FRC7WVectorRC7WVector(&rect, &keydata, layout);
+    rect.y = kFloat_0_Ball;
+    maxDistance = ((CGolfBall*)GolfBall__Fv())->m_radius;
+    float distance = (*(WVector*)&rect).Magnitude();
+    if (distance < kFloat_4_CourseHelpers * maxDistance)
+        return;
+    half = kFloat_1_2_CourseHelpers * ((CGolfBall*)GolfBall__Fv())->m_radius;
+    layout = GolfBall__Fv();
+    GroundPosition pos = *(GroundPosition*)layout;
+    GroundVector one, transformed, local, t1, t2;
+    int found;
+    void* resource = CQuadTree_GetInstance();
+    GetGroundPoint__9CQuadTreeF7WVectorbPib(&data, resource, &pos, 1, &found, 0);
+    int face = found;
+    if (face == -1)
+        return;
+    resource = CQuadTree_GetInstance();
+    CQuadTree::GetMeshNormal(&box, resource, face);
+    one.x = kFloat_0_Ball;
+    one.y = kFloat_0_Ball;
+    one.z = kFloat_1_CourseHelpers;
+    Vector_CrossProduct(&a, &box, &one);
+    Vector_CrossProduct(&b, &box, &a);
+    (*(WVector*)&a).Normalize();
+    (*(WVector*)&b).Normalize();
+    zero = kFloat_0_Ball;
+    small = kFloat_0_003_CourseHelpers;
+    vertex = vertices;
+    for (i = 0; i < 4; ++i) {
+        local.x = zero;
+        local.y = small;
+        local.z = zero;
+        __pl__FRC7WVectorRC7WVector(&transformed, &data, &local);
+        *(WVector*)&matrix = *(WVector*)&transformed;
+        x = i & 1;
+        float sx = x ? kFloat_1_CourseHelpers : kFloat_neg1_CourseHelpers;
+        __ml__FfRC7WVector(&t1, &a, half * sx);
+        *(WVector*)&matrix += *(WVector*)&t1;
+        y = i & 2;
+        float sy = y ? kFloat_1_CourseHelpers : kFloat_neg1_CourseHelpers;
+        __ml__FfRC7WVector(&t2, &b, half * sy);
+        *(WVector*)&matrix += *(WVector*)&t2;
+        Vec3_CopyToOutput(&matrix, vertex);
+        vertex->u = y ? kFloat_1_CourseHelpers : kFloat_0_Ball;
+        vertex->v = x ? kFloat_1_CourseHelpers : kFloat_0_Ball;
+        ++vertex;
+    }
+    config = defaults->config;
+    regs = defaults->regs;
+    tex = defaults->tex;
+    Engine_SetRenderStateList(&config, 15);
+    Engine_SetTextureStageStateList(0, &regs, 6);
+    Engine_SetTextureStageParameterList(0, &tex, 5);
+    Engine_SetFlexibleVertexFormat(kBallShadowVertexFormat);
+    Engine_SetType7Resource(0);
+    void* obj = AsWView(g_view)->renderTarget;
+    void* state = ((GroundDevice*)obj)->state(bitmap);
+    Engine_SetTextureStageResource(0, state);
+    SetTransform(11, kIdentityMatrix4x4);
+    SetTransform(3, kIdentityMatrix4x4);
+    obj = Camera_GetRenderState(g_view);
+    SetTransform(1, ((BallShadowCameraMatrices*)obj)->transform1);
+    SetTransform(0, ((BallShadowCameraMatrices*)obj)->transform0);
+    DrawPrimitiveUP(kBallShadowTriangleStrip, 2, vertices, sizeof(GroundVertex));
 }
 
 extern unsigned char s_ballTypeInfo;
@@ -2708,14 +3279,13 @@ extern const float kFloat_6_2831855;
 extern const char golfBallResourceStrings[];
 
 // Return the visible ball actor's runtime type descriptor.
-void* CBall_GetRTTI() {
-	return &s_ballTypeInfo;
+void* CBall::GetRTTI() {
+    return &s_ballTypeInfo;
 }
 
-void CBall_Display(void*);
 // Adjust the secondary-interface receiver before drawing the ball shadow.
-void CBall_DrawGroundShadowAdjustedThis(void* self) {
-	CBall_Display((char*)self - 0x18);
+void CBall::DrawGroundShadowAdjustedThis() {
+    ((CBall*)((char*)this - 0x18))->Display();
 }
 
 void* IntPair_Set(void*, const char*, void*);
@@ -2723,34 +3293,34 @@ void* ActorFactoryRegistry_GetInstance();
 void* StringMap_SetByName(void*, void*, const char*);
 void* TaskRegistry_GetInstance();
 void* TaskRegistry_AppendFactory(void*, const char*);
-void CBall_Create();
 void appFreeUni__FPv(void*);
 void __dt__18NativeBase80201D18Fv(void*, int);
 void __dl__FPv(void*);
-void CFx_RemoveSpray(void*, void*);
-void CFx_RemoveSequence(void*, void*, int);
 
 struct TreeNode {
-	TreeNode* left;
-	TreeNode* right;
-	TreeNode* parent;
-	int key;
+    TreeNode* left;
+    TreeNode* right;
+    TreeNode* parent;
+    int key;
 };
 struct TreeRoot {
-	char pad[4];
-	TreeNode* head;
+    char pad[4];
+    TreeNode* head;
 };
 
-struct BallCacheSentinel { BallCacheLink* previous; BallCacheLink* next; };
+struct BallCacheSentinel {
+    BallCacheLink* previous;
+    BallCacheLink* next;
+};
 struct BallCacheOwnerPrefix {
-	char pad[0x1c];
-	int count;
-	BallCacheSentinel sentinel;
+    char pad[0x1c];
+    int count;
+    BallCacheSentinel sentinel;
 };
 
 struct Entry {
-	char pad[0x50];
-	void* values[4][7];
+    char pad[0x50];
+    void* values[4][7];
 };
 
 extern CSharedDoc* g_sharedDoc;
@@ -2759,28 +3329,45 @@ extern const float kFloat_4_BeachWaves, kFloat_0_VectorMath, kFloat_255_BeachWav
 extern float kFloat_0_5_BallSound, kFloat_200_CourseHelpers_805DDD5C, kFloat_1_CourseHelpers;
 extern void* g_resourceManager;
 extern const char waterResourceParseStrings[];
-extern float kFloat_38_4_CourseHelpers, kFloat_76_8_CourseHelpers, kFloat_7_5_CourseHelpers, kFloat_0_26666668_CourseHelpers, kFloat_0_53333336_CourseHelpers, kFloat_0_2_CourseHelpers, kFloat_0_5_BeachWaves;
+extern float kFloat_38_4_CourseHelpers, kFloat_76_8_CourseHelpers, kFloat_7_5_CourseHelpers,
+    kFloat_0_26666668_CourseHelpers, kFloat_0_53333336_CourseHelpers, kFloat_0_2_CourseHelpers, kFloat_0_5_BeachWaves;
 extern void* BeachParameterTree_FindInsertionPosition(void*, int*, TreeNode**, unsigned char*, unsigned char*);
 extern void* ResourceManager_LoadBitmap(void*, const char*, int, int, int);
 extern int SharedDoc_GetCourseId();
 extern void* Payload44Tree_InsertAndRebalance(void*, int*, unsigned char, unsigned char, void*);
 
 struct BeachValue {
-	int a, b, c, d, e, f, g, h, i, j;
+    int a, b, c, d, e, f, g, h, i, j;
 };
 struct BeachPair {
-	BeachValue zero;
-	int key;
-	BeachValue value;
-	int padding;
-	// Build a zero-valued beach-parameter entry for insertion.
-	BeachPair(int k) {
-		zero.a = 0; zero.b = 0; zero.c = 0; zero.d = 0; zero.e = 0;
-		zero.f = 0; zero.g = 0; zero.h = 0; zero.i = 0; zero.j = 0;
-		key = k;
-		value.a = 0; value.b = 0; value.c = 0; value.d = 0; value.e = 0;
-		value.f = 0; value.g = 0; value.h = 0; value.i = 0; value.j = 0;
-	}
+    BeachValue zero;
+    int key;
+    BeachValue value;
+    int padding;
+    // Build a zero-valued beach-parameter entry for insertion.
+    BeachPair(int k) {
+        zero.a = 0;
+        zero.b = 0;
+        zero.c = 0;
+        zero.d = 0;
+        zero.e = 0;
+        zero.f = 0;
+        zero.g = 0;
+        zero.h = 0;
+        zero.i = 0;
+        zero.j = 0;
+        key = k;
+        value.a = 0;
+        value.b = 0;
+        value.c = 0;
+        value.d = 0;
+        value.e = 0;
+        value.f = 0;
+        value.g = 0;
+        value.h = 0;
+        value.i = 0;
+        value.j = 0;
+    }
 };
 // Tree payload: integer key, 32-byte bitmap name, wave height, then duration.
 struct BeachParameterPayload {
@@ -2810,15 +3397,18 @@ typedef char BeachPayload_duration_offset[((int)&((BeachParameterPayload*)0)->du
 // Missing keyed entries are zero-filled (including bitmap name/H/T), not replaced
 // with defaults: such entries violate the positive timing contract. Null name
 // returns without writing anything. No validation/rollback is added here.
-void CBeach_LoadWaveParameters(void* self, const char* name) {
-    if (!name) return;
-    float* out = (float*)((char*)&AsCBeach(self)->bitmap);
+void CBeach::LoadWaveParameters(const char* name) {
+    using namespace ShadowAndEffectViews;
+    if (!name)
+        return;
+    float* out = (float*)((char*)&bitmap);
     int pos;
     if (strchr(name, '_') && sscanf(strchr(name, '_') + 1, waterResourceParseStrings, &pos)) {
         // Resolve/load the bitmap from the keyed parameter record.
         {
             int key = pos;
-            void* root = &AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->beachParameterTreeCount; // keyed beach-wave parameters
+            void* root =
+                &AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->beachParameterTreeCount; // keyed beach-wave parameters
             TreeNode* node;
             unsigned char left, right;
             int* last = (int*)BeachParameterTree_FindInsertionPosition(root, &key, &node, &left, &right);
@@ -2828,12 +3418,14 @@ void CBeach_LoadWaveParameters(void* self, const char* name) {
                 void* result = Payload44Tree_InsertAndRebalance(root, last, left, right, &data.key);
                 payload = &((TreeNode*)result)->key;
             }
-            *(void**)out = ResourceManager_LoadBitmap(g_resourceManager, ((BeachParameterPayload*)payload)->bitmapName, 0, 0, 0);
+            *(void**)out =
+                ResourceManager_LoadBitmap(g_resourceManager, ((BeachParameterPayload*)payload)->bitmapName, 0, 0, 0);
         }
         // Resolve the same record's maximum displacement.
         {
             int key = pos;
-            void* root = &AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->beachParameterTreeCount; // keyed beach-wave parameters
+            void* root =
+                &AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->beachParameterTreeCount; // keyed beach-wave parameters
             TreeNode* node;
             unsigned char left, right;
             int* last = (int*)BeachParameterTree_FindInsertionPosition(root, &key, &node, &left, &right);
@@ -2848,7 +3440,8 @@ void CBeach_LoadWaveParameters(void* self, const char* name) {
         // Resolve the same record's total wave duration.
         {
             int key = pos;
-            void* root = &AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->beachParameterTreeCount; // keyed beach-wave parameters
+            void* root =
+                &AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->beachParameterTreeCount; // keyed beach-wave parameters
             TreeNode* node;
             unsigned char left, right;
             int* last = (int*)BeachParameterTree_FindInsertionPosition(root, &key, &node, &left, &right);
@@ -2863,11 +3456,11 @@ void CBeach_LoadWaveParameters(void* self, const char* name) {
     } else {
         *(void**)out = ResourceManager_LoadBitmap(g_resourceManager, (char*)waterResourceParseStrings + 3, 0, 0, 0);
         if (((unsigned char)SharedDoc_GetCourseId() == 0 &&
-            *(unsigned char*)((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc) + 0x3B7) == 2) ||
+             *(unsigned char*)((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc) + 0x3B7) == 2) ||
             ((unsigned char)SharedDoc_GetCourseId() == 1 &&
-            *(unsigned char*)((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc) + 0x3B7) == 2) ||
+             *(unsigned char*)((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc) + 0x3B7) == 2) ||
             ((unsigned char)SharedDoc_GetCourseId() == 6 &&
-            *(unsigned char*)((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc) + 0x3B7) == 10))
+             *(unsigned char*)((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc) + 0x3B7) == 10))
             out[1] = kFloat_38_4_CourseHelpers;
         else
             out[1] = kFloat_76_8_CourseHelpers;
@@ -2892,12 +3485,15 @@ void CBeach_LoadWaveParameters(void* self, const char* name) {
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
 #pragma opt_strength_reduction off
-struct BeachWave { float x, delay, alpha, time, velocity; int state; };
+struct BeachWave {
+    float x, delay, alpha, time, velocity;
+    int state;
+};
 struct BeachWaves {
-	char pad[0x1C];
-	float gravity, rise, fall, wait;
-	BeachWave* waves;
-	unsigned int count;
+    char pad[0x1C];
+    float gravity, rise, fall, wait;
+    BeachWave* waves;
+    unsigned int count;
 };
 // Wave alpha uses [0,255]; x/velocity are displacement and its rate in the wave
 // mesh's local motion axis. Durations must be positive, and count must fit the
@@ -2918,57 +3514,59 @@ struct BeachWaves {
 // array order can consume its newly assigned delay in this SAME update.
 // Falling may leave alpha negative; rendering skips waiting strips. Preserve
 // strict crossings and velocity-before-position integration when changing timing.
-void CBeach_UpdateWaves(BeachWaves* self, float dt) {
-	float value;
-	const float& four = kFloat_4_BeachWaves;
-	unsigned char i = 0;
-	const float& zero = kFloat_0_VectorMath;
-	const float& max = kFloat_255_BeachWaves;
-	for (; i < self->count; ++i) {
-		unsigned int index = i;
-		value = self->waves[index].time;
-		self->waves[index].time = value + dt;
-		switch (self->waves[i].state) {
-		case kBeachWaveRising: {
-			self->waves[i].alpha = (max / self->rise) * dt + self->waves[i].alpha;
-			self->waves[i].velocity -= self->gravity * dt;
-			BeachWave& moving = self->waves[i];
-			value = dt * moving.velocity + moving.x;
-			moving.x = value;
-			if (self->waves[i].alpha > max) {
-				self->waves[i].alpha = max;
-				self->waves[i].state = kBeachWaveFalling;
-				self->waves[(index + 1U) % self->count].delay = self->wait;
-			}
-			break;
-		}
-		case kBeachWaveFalling: {
-			self->waves[i].alpha -= (max / self->fall) * dt;
-			self->waves[i].velocity -= self->gravity * dt;
-			BeachWave& moving = self->waves[i];
-			value = dt * moving.velocity + moving.x;
-			moving.x = value;
-			if (self->waves[i].alpha < zero) self->waves[i].state = kBeachWaveWaiting;
-			break;
-		}
-		case kBeachWaveWaiting: {
-			if (self->waves[i].delay > zero) {
-				value = self->waves[i].delay - dt;
-				self->waves[i].delay = value;
-				if (self->waves[i].delay < zero) {
-					self->waves[i].state = kBeachWaveRising;
-					self->waves[i].alpha = zero;
-					self->waves[i].time = zero;
-					self->waves[i].x = zero;
-					self->waves[i].velocity = four * self->gravity;
-				}
-			}
-			break;
-		}
-		default:
-			break;
-		}
-	}
+void CBeach::UpdateWaves(float dt) {
+    using namespace ShadowAndEffectViews;
+    float value;
+    const float& four = kFloat_4_BeachWaves;
+    unsigned char i = 0;
+    const float& zero = kFloat_0_VectorMath;
+    const float& max = kFloat_255_BeachWaves;
+    for (; i < stripCount; ++i) {
+        unsigned int index = i;
+        value = ((BeachWave*)stripParameters)[index].time;
+        ((BeachWave*)stripParameters)[index].time = value + dt;
+        switch (((BeachWave*)stripParameters)[i].state) {
+        case kBeachWaveRising: {
+            ((BeachWave*)stripParameters)[i].alpha = (max / riseSeconds) * dt + ((BeachWave*)stripParameters)[i].alpha;
+            ((BeachWave*)stripParameters)[i].velocity -= gravity * dt;
+            BeachWave& moving = ((BeachWave*)stripParameters)[i];
+            value = dt * moving.velocity + moving.x;
+            moving.x = value;
+            if (((BeachWave*)stripParameters)[i].alpha > max) {
+                ((BeachWave*)stripParameters)[i].alpha = max;
+                ((BeachWave*)stripParameters)[i].state = kBeachWaveFalling;
+                ((BeachWave*)stripParameters)[(index + 1U) % stripCount].delay = waitSeconds;
+            }
+            break;
+        }
+        case kBeachWaveFalling: {
+            ((BeachWave*)stripParameters)[i].alpha -= (max / fallSeconds) * dt;
+            ((BeachWave*)stripParameters)[i].velocity -= gravity * dt;
+            BeachWave& moving = ((BeachWave*)stripParameters)[i];
+            value = dt * moving.velocity + moving.x;
+            moving.x = value;
+            if (((BeachWave*)stripParameters)[i].alpha < zero)
+                ((BeachWave*)stripParameters)[i].state = kBeachWaveWaiting;
+            break;
+        }
+        case kBeachWaveWaiting: {
+            if (((BeachWave*)stripParameters)[i].delay > zero) {
+                value = ((BeachWave*)stripParameters)[i].delay - dt;
+                ((BeachWave*)stripParameters)[i].delay = value;
+                if (((BeachWave*)stripParameters)[i].delay < zero) {
+                    ((BeachWave*)stripParameters)[i].state = kBeachWaveRising;
+                    ((BeachWave*)stripParameters)[i].alpha = zero;
+                    ((BeachWave*)stripParameters)[i].time = zero;
+                    ((BeachWave*)stripParameters)[i].x = zero;
+                    ((BeachWave*)stripParameters)[i].velocity = four * gravity;
+                }
+            }
+            break;
+        }
+        default:
+            break;
+        }
+    }
 }
 #pragma opt_strength_reduction reset
 #pragma opt_propagation reset
@@ -2978,7 +3576,6 @@ void CBeach_UpdateWaves(BeachWaves* self, float dt) {
 extern void FxAttachment_Init(void*);
 extern void* WPuppet_FindOrCacheBone(void*, const char*);
 extern void* WPuppet_FindNamedBoneEntry(void*, const char*);
-extern void* CFx_CreateAttachedEffect(void*, void*, const char*, int, int, int);
 extern int CString_Compare(const char*, const char*);
 extern void Sound_PlayByName(void*, const char*, int, int, int, int, float, float, float);
 extern void* g_soundManager;
@@ -2990,66 +3587,96 @@ extern void* g_soundManager;
 // without a cached removal handle. Spray/sequence type is determined by filename.
 // Bone lookup falls back to the center bone, which must exist for attachment.
 // Resolve an IFF ball effect and its attachment bone, then cache the spray/sequence handle.
-void CBall_AttachFx(void* self, int kind) {
-	if (kind < 0 || kind >= kBallEffectKindCount) return;
-	void* game = g_sharedDoc;
-	char* sentinel = (char*)&AsCBall(self)->puppetListSentinel;
-	char* node = (*(char**)&AsCBall(self)->firstPuppetEntry);
-	void* manager = (*(void**)&AsCSharedDoc(game)->golfDoc);
-	unsigned char index = AsCGolfDoc(manager)->currentPlayer;
-	char* slot = (char*)game + index * 0x1D4;
-	void* wanted = *(void**)(slot + 0x88);
-	for (; node != sentinel && *(void**)((char*)**(void***)(node + 8) + 0x50) != wanted; node = *(char**)(node + 4)) {}
-	void* entry;
-	if ((unsigned int)node != (unsigned int)self + 0x20) entry = *(void**)(node + 8);
-	else entry = 0;
-	if (!entry) return;
-	void* object = *(void**)entry;
-	if (!object) return;
-	int offset = kind * 0x28;
-	signed char* nameBase = (signed char*)((IFF_STRUCT::sBall*)object)->effectFiles;
-	if (!nameBase[offset]) return;
-	int nameLen = strlen((char*)(nameBase + offset));
-	if (nameLen < 5) return;
-	char local[0x28];
-	FxAttachment_Init(local);
-	void* found = 0;
-	signed char* anim = (signed char*)((IFF_STRUCT::sBall*)*(void**)entry)->effectBones;
-	if (anim[offset])
-		found = WPuppet_FindOrCacheBone(AsCBall(self)->puppet, (char*)(anim + offset));
-	if (found) *(void**)(local + 8) = ((BallBoneTransform*)found)->attachmentMatrix;
-	else {
-		signed char* anim2 = (signed char*)((IFF_STRUCT::sBall*)*(void**)entry)->effectBones;
-		if (anim2[offset])
-			found = WPuppet_FindNamedBoneEntry(AsCBall(self)->puppet, (char*)(anim2 + offset));
-		else found = WPuppet_FindNamedBoneEntry(AsCBall(self)->puppet, (char*)golfBallResourceStrings + kBallStringsCenterBoneOffset);
-		if (found) {
-			if (*(void**)found) *(void**)(local + 8) = (char*)*(void**)found + 0x78;
-			*(void**)(local + 0x18) = (char*)*(void**)((char*)found + 4) + 0x18;
-		} else {
-			found = WPuppet_FindNamedBoneEntry(AsCBall(self)->puppet, (char*)golfBallResourceStrings + kBallStringsCenterBoneOffset);
-			if (*(void**)found) *(void**)(local + 8) = (char*)*(void**)found + 0x78;
-			*(void**)(local + 0x18) = (char*)*(void**)((char*)found + 4) + 0x18;
-		}
-	}
-	// Compress persistent effect kinds to the four spray/sequence cache slots.
-	int pos;
-	switch (kind) {
-	case 0: pos = 0; break;
-	case 1: pos = 1; break;
-	case 3: pos = 2; break;
-	case 5: pos = 3; break;
-	default: pos = -1; break;
-	}
-	void* result = CFx_CreateAttachedEffect(g_fx, local, (char*)(*(int*)entry + offset + 0x5C), 1, 0, 0);
-	if (pos == -1) return;
-	if (!CString_Compare((char*)(*(int*)entry + offset + 0x5C), (char*)golfBallResourceStrings + kBallStringsSpecialEffectOffset))
-		Sound_PlayByName(g_soundManager, (char*)golfBallResourceStrings + kBallStringsSpecialEffectSoundOffset, 0, 0, 0, 0, kFloat_0_5_BallSound, kFloat_200_CourseHelpers_805DDD5C, kFloat_1_CourseHelpers);
-	int base = (int)*(void**)entry;
-	base += offset;
-	char* end = (char*)(base + nameLen);
-	if (!((int(*)(const char*, const char*, const char*))CString_Compare)(end + 0x59, (char*)golfBallResourceStrings + kBallStringsSprayExtensionOffset, end)) *(void**)((char*)entry + 8 + pos * 4) = (void*)result;
-	else ((BallPuppetCacheEntry*)entry)->sequences[pos] = (void*)result;
+void CBall::AttachFx(int kind) {
+    using namespace ShadowAndEffectViews;
+    if (kind < 0 || kind >= kBallEffectKindCount)
+        return;
+    void* game = g_sharedDoc;
+    char* sentinel = (char*)&puppetListSentinel;
+    char* node = (*(char**)&firstPuppetEntry);
+    void* manager = (*(void**)&AsCSharedDoc(game)->golfDoc);
+    unsigned char index = AsCGolfDoc(manager)->currentPlayer;
+    char* slot = (char*)game + index * 0x1D4;
+    void* wanted = *(void**)(slot + 0x88);
+    for (; node != sentinel && *(void**)((char*)**(void***)(node + 8) + 0x50) != wanted; node = *(char**)(node + 4)) {
+    }
+    void* entry;
+    if ((unsigned int)node != (unsigned int)this + 0x20)
+        entry = *(void**)(node + 8);
+    else
+        entry = 0;
+    if (!entry)
+        return;
+    void* object = *(void**)entry;
+    if (!object)
+        return;
+    int offset = kind * 0x28;
+    signed char* nameBase = (signed char*)((IFF_STRUCT::sBall*)object)->effectFiles;
+    if (!nameBase[offset])
+        return;
+    int nameLen = strlen((char*)(nameBase + offset));
+    if (nameLen < 5)
+        return;
+    char local[0x28];
+    FxAttachment_Init(local);
+    void* found = 0;
+    signed char* anim = (signed char*)((IFF_STRUCT::sBall*)*(void**)entry)->effectBones;
+    if (anim[offset])
+        found = WPuppet_FindOrCacheBone(puppet, (char*)(anim + offset));
+    if (found)
+        *(void**)(local + 8) = ((BallBoneTransform*)found)->attachmentMatrix;
+    else {
+        signed char* anim2 = (signed char*)((IFF_STRUCT::sBall*)*(void**)entry)->effectBones;
+        if (anim2[offset])
+            found = WPuppet_FindNamedBoneEntry(puppet, (char*)(anim2 + offset));
+        else
+            found = WPuppet_FindNamedBoneEntry(puppet, (char*)golfBallResourceStrings + kBallStringsCenterBoneOffset);
+        if (found) {
+            if (*(void**)found)
+                *(void**)(local + 8) = (char*)*(void**)found + 0x78;
+            *(void**)(local + 0x18) = (char*)*(void**)((char*)found + 4) + 0x18;
+        } else {
+            found = WPuppet_FindNamedBoneEntry(puppet, (char*)golfBallResourceStrings + kBallStringsCenterBoneOffset);
+            if (*(void**)found)
+                *(void**)(local + 8) = (char*)*(void**)found + 0x78;
+            *(void**)(local + 0x18) = (char*)*(void**)((char*)found + 4) + 0x18;
+        }
+    }
+    // Compress persistent effect kinds to the four spray/sequence cache slots.
+    int pos;
+    switch (kind) {
+    case 0:
+        pos = 0;
+        break;
+    case 1:
+        pos = 1;
+        break;
+    case 3:
+        pos = 2;
+        break;
+    case 5:
+        pos = 3;
+        break;
+    default:
+        pos = -1;
+        break;
+    }
+    void* result =
+        ((CFx*)g_fx)->CreateAttachedEffect((Vec2_8010*)(local), (char*)(*(int*)entry + offset + 0x5C), 1, 0, 0);
+    if (pos == -1)
+        return;
+    if (!CString_Compare((char*)(*(int*)entry + offset + 0x5C),
+                         (char*)golfBallResourceStrings + kBallStringsSpecialEffectOffset))
+        Sound_PlayByName(g_soundManager, (char*)golfBallResourceStrings + kBallStringsSpecialEffectSoundOffset, 0, 0, 0,
+                         0, kFloat_0_5_BallSound, kFloat_200_CourseHelpers_805DDD5C, kFloat_1_CourseHelpers);
+    int base = (int)*(void**)entry;
+    base += offset;
+    char* end = (char*)(base + nameLen);
+    if (!((int (*)(const char*, const char*, const char*))CString_Compare)(
+            end + 0x59, (char*)golfBallResourceStrings + kBallStringsSprayExtensionOffset, end))
+        *(void**)((char*)entry + 8 + pos * 4) = (void*)result;
+    else
+        ((BallPuppetCacheEntry*)entry)->sequences[pos] = (void*)result;
 }
 #pragma opt_common_subs reset
 
@@ -3057,67 +3684,73 @@ void CBall_AttachFx(void* self, int kind) {
 // chooses the insertion link; right is actually the no-predecessor flag, cleared
 // on right descent. All output pointers are borrowed and must be writable.
 // Find the integer-key tree insertion position used for beach parameter entries.
-void* BeachParameterTree_FindInsertionPosition(void* root, int* key, TreeNode** out, unsigned char* left, unsigned char* right) {
-	TreeRoot* r = (TreeRoot*)root;
-	*out = 0;
-	TreeNode* last = (TreeNode*)&r->head;
-	TreeNode* node = r->head;
-	*left = 1;
-	*right = 1;
-	while (node) {
-		int k = *key;
-		last = node;
-		if (k < node->key) {
-			node = node->left;
-			*left = 1;
-		} else {
-			*out = node;
-			node = node->right;
-			*left = 0;
-			*right = 0;
-		}
-	}
-	return last;
+void* BeachParameterTree_FindInsertionPosition(void* root, int* key, TreeNode** out, unsigned char* left,
+                                               unsigned char* right) {
+    TreeRoot* r = (TreeRoot*)root;
+    *out = 0;
+    TreeNode* last = (TreeNode*)&r->head;
+    TreeNode* node = r->head;
+    *left = 1;
+    *right = 1;
+    while (node) {
+        int k = *key;
+        last = node;
+        if (k < node->key) {
+            node = node->left;
+            *left = 1;
+        } else {
+            *out = node;
+            node = node->right;
+            *left = 0;
+            *right = 0;
+        }
+    }
+    return last;
 }
 
 // Lifecycle precondition: OnDestroy releases payloads/resources first. This final
 // destructor frees list-node allocations only; it does not walk effect handles.
 // Destroy the ball actor's cached-entry list and native base, optionally freeing the actor.
-void* CBall_dtor(BallCacheOwnerPrefix* self, int del) {
-	if (self) {
-		if (&self->count && &self->count && &self->count && &self->count) {
-		BallCacheLink* end = (BallCacheLink*)&self->sentinel;
-		BallCacheLink* it = (*(BallCacheLink**)&AsCBall(self)->firstPuppetEntry);
-		if (it != end) {
-			BallCacheLink* lastNode = end->previous;
-			BallCacheLink* firstLeft = it->previous;
-			firstLeft->next = lastNode->next;
-			BallCacheLink* tmp = it->previous;
-			BallCacheLink* y = lastNode->next;
-			y->previous = tmp;
-			while (it != end) {
-				BallCacheLink* cur = it;
-				it = it->next;
-				appFreeUni__FPv(cur);
-				--self->count;
-			}
-		}
-		}
-		__dt__18NativeBase80201D18Fv(self, 0);
-		if (del > 0) __dl__FPv(self);
-	}
-	return self;
+// Kept as a named member instead of ~CBall: a real destructor changes the generated code.
+void* CBall::Destroy(int del) {
+    using namespace ShadowAndEffectViews;
+    if (this) {
+        if (&puppetEntryCount && &puppetEntryCount && &puppetEntryCount && &puppetEntryCount) {
+            BallCacheLink* end = (BallCacheLink*)&puppetListSentinel;
+            BallCacheLink* it = (*(BallCacheLink**)&firstPuppetEntry);
+            if (it != end) {
+                BallCacheLink* lastNode = end->previous;
+                BallCacheLink* firstLeft = it->previous;
+                firstLeft->next = lastNode->next;
+                BallCacheLink* tmp = it->previous;
+                BallCacheLink* y = lastNode->next;
+                y->previous = tmp;
+                while (it != end) {
+                    BallCacheLink* cur = it;
+                    it = it->next;
+                    appFreeUni__FPv(cur);
+                    --puppetEntryCount;
+                }
+            }
+        }
+        __dt__18NativeBase80201D18Fv(this, 0);
+        if (del > 0)
+            __dl__FPv(this);
+    }
+    return this;
 }
 
 #pragma opt_lifetimes off
 #pragma opt_common_subs off
 #pragma opt_propagation off
 // Remove the requested effect from the active ball entry and clear its cached handle.
-void CBall_DetachFx(void* self, int kind) {
+void CBall::DetachFx(int kind) {
+    using namespace ShadowAndEffectViews;
     register void* entry;
     register int offset;
     register int pos;
-    if (kind != 0 && kind != 1 && kind != 3 && kind != 5) return;
+    if (kind != 0 && kind != 1 && kind != 3 && kind != 5)
+        return;
     void* manager;
     unsigned char* game;
     game = (unsigned char*)g_sharedDoc;
@@ -3125,37 +3758,52 @@ void CBall_DetachFx(void* self, int kind) {
     unsigned char index = AsCGolfDoc(manager)->currentPlayer;
     void* object;
     void* wanted = *(void**)(game + index * 0x1D4 + 0x88);
-    BallCacheLink* sentinel = (BallCacheLink*)((char*)&AsCBall(self)->puppetListSentinel);
-    BallCacheLink* it = (*(BallCacheLink**)&AsCBall(self)->firstPuppetEntry);
+    BallCacheLink* sentinel = (BallCacheLink*)((char*)&puppetListSentinel);
+    BallCacheLink* it = (*(BallCacheLink**)&firstPuppetEntry);
     // 0x800CBF34 unit: find the puppet associated with the wanted ball.
     void* inner;
-    while (it != sentinel &&
-        (object = (void*)it->payload, inner = ((BallPuppetCacheEntry*)object)->record,
-        (void*)((IFF_STRUCT::sBall*)inner)->common.typeId != wanted)) {
+    while (it != sentinel && (object = (void*)it->payload, inner = ((BallPuppetCacheEntry*)object)->record,
+                              (void*)((IFF_STRUCT::sBall*)inner)->common.typeId != wanted)) {
         it = it->next;
     }
-    if (it != (BallCacheLink*)((char*)&AsCBall(self)->puppetListSentinel)) entry = (void*)it->payload;
-    else entry = 0;
-    if (!entry) return;
+    if (it != (BallCacheLink*)((char*)&puppetListSentinel))
+        entry = (void*)it->payload;
+    else
+        entry = 0;
+    if (!entry)
+        return;
     switch (kind) {
-    case 0: pos = 0; break;
-    case 1: pos = 1; break;
-    case 3: pos = 2; break;
-    case 5: pos = 3; break;
-    default: pos = -1; break;
+    case 0:
+        pos = 0;
+        break;
+    case 1:
+        pos = 1;
+        break;
+    case 3:
+        pos = 2;
+        break;
+    case 5:
+        pos = 3;
+        break;
+    default:
+        pos = -1;
+        break;
     }
-    if (pos == -1) return;
+    if (pos == -1)
+        return;
     offset = pos << 2;
     register void* value = *(void**)((char*)entry + offset + 8);
     if (value) {
-        CFx_RemoveSpray(g_fx, value);
+        ((CFx*)g_fx)->RemoveSpray((unsigned int)(value));
         *(void**)((char*)entry + offset + 8) = 0;
     }
     entry = (char*)entry + offset;
     value = ((BallPuppetCacheEntry*)entry)->sequences[0];
     if (value) {
-        if (pos == 0) CFx_RemoveSequence(g_fx, value, 1);
-        else CFx_RemoveSequence(g_fx, value, 0);
+        if (pos == 0)
+            ((CFx*)g_fx)->RemoveSequence((unsigned int)(value), 1);
+        else
+            ((CFx*)g_fx)->RemoveSequence((unsigned int)(value), 0);
         ((BallPuppetCacheEntry*)entry)->sequences[0] = 0;
     }
 }
@@ -3166,15 +3814,24 @@ void CBall_DetachFx(void* self, int kind) {
 #pragma opt_propagation off
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
+
+} // extern "C"
+
+} // namespace ShadowAndEffectViews
+
 // Register the visible ball actor's RTTI and factory.
-void CBall_RegisterType() {
-	const char* base = golfBallResourceStrings;
-	volatile float angle = kFloat_6_2831855;
-	s_twoPi_800CBF34_805E2940 = angle;
-	IntPair_Set(&s_ballTypeInfo, base + 0x45, &s_actorTypeInfo);
-	StringMap_SetByName(ActorFactoryRegistry_GetInstance(), (void*)CBall_Create, &s_ballActorFactoryKey);
-	TaskRegistry_AppendFactory(TaskRegistry_GetInstance(), &s_ballTaskRegistryKey);
+void CBall::RegisterType() {
+    using namespace ShadowAndEffectViews;
+    const char* base = golfBallResourceStrings;
+    volatile float angle = kFloat_6_2831855;
+    s_twoPi_800CBF34_805E2940 = angle;
+    IntPair_Set(&ShadowAndEffectViews::s_ballTypeInfo, base + 0x45, &s_actorTypeInfo);
+    StringMap_SetByName(ActorFactoryRegistry_GetInstance(), (void*)CBall::Create, &s_ballActorFactoryKey);
+    TaskRegistry_AppendFactory(TaskRegistry_GetInstance(), &s_ballTaskRegistryKey);
 }
+
+namespace ShadowAndEffectViews {
+extern "C" {
 #pragma opt_propagation reset
 #pragma opt_common_subs reset
 #pragma opt_lifetimes reset
@@ -3183,10 +3840,7 @@ extern void* g_currentTimeMilliseconds;
 extern void* g_sceneManager;
 extern volatile const float s_ballAmbientLightScale;
 extern void DrawScene_SetNamedObjectEnabled(void*, const char*, unsigned char);
-extern void CBall_DetachFx(void*, int);
 extern void* GetGroundType__9CQuadTreeF7WVector(void*, const void*);
-extern float CQuadTree_GetMinPowerOnGroundAtPoint(void*, void*);
-extern float CQuadTree_DefaultLightingFactor(void*, void*);
 extern void* Color_ScaleRGB(void*, float);
 extern void* PreData__9CGolfBallFi(void*, void*);
 extern void* ItemInventory_FindBallData(void*, const char*);
@@ -3195,7 +3849,6 @@ extern void* memset(void*, int, unsigned int);
 extern void* ResourceManager_LoadByExtension(void*, const char*, int, int, int);
 extern void* appMallocDummy__FUl(unsigned int);
 extern void DrawScene_SetNamedObjectPuppet(void*, const char*, void*);
-extern void CBall_AttachFx(void*, int);
 extern void* g_resourceManager;
 extern void appFreeUni__FPv(void*);
 
@@ -3206,26 +3859,41 @@ struct BallNodeGuard {
     // Guard the newly allocated ball-cache node before linking it.
     BallNodeGuard(void* p, BallCacheLink* e) : end(e), node(p) {}
     // Free an unlinked node on exceptional exit.
-    ~BallNodeGuard() { if (node) appFreeUni__FPv(node); }
+    ~BallNodeGuard() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
-struct BallPosition { unsigned int x, y, z; };
+struct BallPosition {
+    unsigned int x, y, z;
+};
 struct BallDispatch {
-    virtual void v0()=0; virtual void v1()=0; virtual void v2()=0;
-    virtual void v3()=0; virtual void v4()=0; virtual void v5()=0;
-    virtual void v6()=0; virtual void v7()=0; virtual void v8()=0;
-    virtual void v9()=0;
-    virtual void reset()=0;
+    virtual void v0() = 0;
+    virtual void v1() = 0;
+    virtual void v2() = 0;
+    virtual void v3() = 0;
+    virtual void v4() = 0;
+    virtual void v5() = 0;
+    virtual void v6() = 0;
+    virtual void v7() = 0;
+    virtual void v8() = 0;
+    virtual void v9() = 0;
+    virtual void reset() = 0;
 };
 struct BallPuppet {
-    virtual void v0()=0; virtual void v1()=0; virtual void v2()=0;
-    virtual void setLight(void*, int, int)=0;
+    virtual void v0() = 0;
+    virtual void v1() = 0;
+    virtual void v2() = 0;
+    virtual void setLight(void*, int, int) = 0;
 };
 
 // Refresh ball diffuse/ambient lighting from its live terrain position.
 static inline void Ball_RefreshTerrainLighting(void* self, void*& liveBall) {
     AsCBall(self)->lightUpdatePending = 1;
-    liveBall = GolfBall__Fv(); void* terrain = CQuadTree_GetInstance(); extern void* volatile s_sceneLighting[];
-    float factor = CQuadTree_DefaultLightingFactor(terrain, liveBall);
+    liveBall = GolfBall__Fv();
+    void* terrain = CQuadTree_GetInstance();
+    extern void* volatile s_sceneLighting[];
+    float factor = ((CQuadTree*)terrain)->DefaultLightingFactor(liveBall);
     AsCBall(self)->lightColor = Color_ScaleRGB(s_sceneLighting[4], factor);
     AsCBall(self)->ambientLightColor = Color_ScaleRGB(s_sceneLighting[5], s_ballAmbientLightScale);
 }
@@ -3234,13 +3902,21 @@ static inline void Ball_RefreshTerrainLighting(void* self, void*& liveBall) {
 // Position/ball references are borrowed caller scratch, retained only to preserve CW allocation.
 static inline void Ball_RefreshLiveGroundSink(void* self, BallPosition& key, void*& liveBall) {
 
-    switch (((unsigned char)GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(),&key))) {
-    case 0: case 1: case 2: case 6: case 8:
-        AsCBall(self)->groundSinkFactor=kFloat_0_Ball;
+    switch (((unsigned char)GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &key))) {
+    case 0:
+    case 1:
+    case 2:
+    case 6:
+    case 8:
+        AsCBall(self)->groundSinkFactor = kFloat_0_Ball;
         break;
-    case 3: case 4: case 5: {
-        liveBall=GolfBall__Fv(); void* terrain=CQuadTree_GetInstance();
-        AsCBall(self)->groundSinkFactor=kFloat_1_CourseHelpers-CQuadTree_GetMinPowerOnGroundAtPoint(terrain,liveBall);
+    case 3:
+    case 4:
+    case 5: {
+        liveBall = GolfBall__Fv();
+        void* terrain = CQuadTree_GetInstance();
+        AsCBall(self)->groundSinkFactor =
+            kFloat_1_CourseHelpers - ((CQuadTree*)terrain)->GetMinPowerOnGroundAtPoint(liveBall);
         break;
     }
     }
@@ -3249,7 +3925,7 @@ static inline void Ball_RefreshLiveGroundSink(void* self, BallPosition& key, voi
 // Advance through the borrowed circular cache until its sentinel or an IFF-ID match.
 // The sentinel has no payload; the short-circuit test must remain in this order.
 static inline void findBallPuppetCacheEntry(BallCacheLink*& cursor, BallCacheLink* sentinel,
-    volatile unsigned int& wantedItemId) {
+                                            volatile unsigned int& wantedItemId) {
     while (cursor != sentinel && cursor->payload->record->common.typeId != wantedItemId)
         cursor = cursor->next;
 }
@@ -3257,11 +3933,13 @@ static inline void findBallPuppetCacheEntry(BallCacheLink*& cursor, BallCacheLin
 // Select the cached puppet, apply actor lighting, bind the scene entry and recreate idle effects.
 // Cache and resource ownership remain with the ball actor/resource manager.
 static inline void activateCachedBallPuppet(void* self, void*& entry) {
-    void* puppet=((BallPuppetCacheEntry*)entry)->puppet;
-    AsCBall(self)->puppet=puppet;
-    ((BallPuppet*)puppet)->setLight((char*)&AsCBall(self)->lightingMode,0,0);
-    DrawScene_SetNamedObjectPuppet(g_sceneManager,golfBallResourceStrings + kBallStringsBallObjectOffset,AsCBall(self)->puppet);
-    CBall_AttachFx(self,0); CBall_AttachFx(self,1);
+    void* puppet = ((BallPuppetCacheEntry*)entry)->puppet;
+    AsCBall(self)->puppet = puppet;
+    ((BallPuppet*)puppet)->setLight((char*)&AsCBall(self)->lightingMode, 0, 0);
+    DrawScene_SetNamedObjectPuppet(g_sceneManager, golfBallResourceStrings + kBallStringsBallObjectOffset,
+                                   AsCBall(self)->puppet);
+    ((CBall*)self)->AttachFx(0);
+    ((CBall*)self)->AttachFx(1);
 }
 
 // msg is borrowed; time is compared as an unsigned millisecond timestamp without
@@ -3273,86 +3951,102 @@ static inline void activateCachedBallPuppet(void* self, void*& entry) {
 // Transfer a constructed payload to the actor cache after guarding and linking its node.
 // The caller owns payload until this succeeds; allocation is assumed to succeed.
 // Resource-manager ownership of payload->puppet is released by CBall_OnDestroy.
-static inline void LinkBallPuppetCachePayload(void* self, void* newCachePayload,
-    void* volatile& allocatedNodeAlias, void* volatile& allocatedNodeAliasCopy) {
-                BallCacheLink* insertionSentinel=(BallCacheLink*)((unsigned int)self + (int)&((CBall*)0)->puppetListSentinel);
-                void* newLinkNode=appMallocDummy__FUl(sizeof(BallCacheLink));
-                allocatedNodeAlias=newLinkNode;
-                allocatedNodeAliasCopy=newLinkNode;
-                BallNodeGuard newLinkGuard(newLinkNode,insertionSentinel);
-                void** payloadStorage=(void**)((char*)newLinkNode+8);
-                if(payloadStorage) {
-                    try {
-                        *payloadStorage=newCachePayload;
-                    } catch (...) {
-                        throw;
-                    }
-                }
-                newLinkGuard.node=0;
-                BallCacheLink* previousTail=insertionSentinel->previous;
-                previousTail->next=(BallCacheLink*)newLinkNode;
-                ((BallCacheLink*)newLinkNode)->previous=insertionSentinel->previous;
-                insertionSentinel->previous=(BallCacheLink*)newLinkNode;
-                ((BallCacheLink*)newLinkNode)->next=insertionSentinel;
-                ++AsCBall(self)->puppetEntryCount;
+static inline void LinkBallPuppetCachePayload(void* self, void* newCachePayload, void* volatile& allocatedNodeAlias,
+                                              void* volatile& allocatedNodeAliasCopy) {
+    BallCacheLink* insertionSentinel = (BallCacheLink*)((unsigned int)self + (int)&((CBall*)0)->puppetListSentinel);
+    void* newLinkNode = appMallocDummy__FUl(sizeof(BallCacheLink));
+    allocatedNodeAlias = newLinkNode;
+    allocatedNodeAliasCopy = newLinkNode;
+    BallNodeGuard newLinkGuard(newLinkNode, insertionSentinel);
+    void** payloadStorage = (void**)((char*)newLinkNode + 8);
+    if (payloadStorage) {
+        try {
+            *payloadStorage = newCachePayload;
+        } catch (...) {
+            throw;
+        }
+    }
+    newLinkGuard.node = 0;
+    BallCacheLink* previousTail = insertionSentinel->previous;
+    previousTail->next = (BallCacheLink*)newLinkNode;
+    ((BallCacheLink*)newLinkNode)->previous = insertionSentinel->previous;
+    insertionSentinel->previous = (BallCacheLink*)newLinkNode;
+    ((BallCacheLink*)newLinkNode)->next = insertionSentinel;
+    ++AsCBall(self)->puppetEntryCount;
 }
 #pragma pop
 
 // Dispatch ball presentation/equipment messages, retaining actor ownership of cached puppets.
-void CBall_HandleMsg(void* self, void* msg) {
+void CBall::HandleMsg(void* msg) {
+    using namespace ShadowAndEffectViews;
     void* cachePayload;
     unsigned int requestedBallItemId;
     if (((BallMessage*)msg)->time > *(unsigned int*)&g_currentTimeMilliseconds) {
-        ((BallDispatch*)self)->reset();
+        ((BallDispatch*)this)->reset();
         return;
     }
     switch (((BallMessage*)msg)->action) {
     // Show the puppet and scene object.
     case kBallShow:
         unsigned char visible;
-        visible = AsCBall(self)->visible = 1;
-        DrawScene_SetNamedObjectEnabled(g_sceneManager, (char*)golfBallResourceStrings + kBallStringsBallObjectOffset, visible);
+        visible = this->visible = 1;
+        DrawScene_SetNamedObjectEnabled(g_sceneManager, (char*)golfBallResourceStrings + kBallStringsBallObjectOffset,
+                                        visible);
         break;
     // Hide the puppet and scene object.
     case kBallHide:
-        visible = AsCBall(self)->visible = 0;
-        DrawScene_SetNamedObjectEnabled(g_sceneManager, (char*)golfBallResourceStrings + kBallStringsBallObjectOffset, visible);
+        visible = this->visible = 0;
+        DrawScene_SetNamedObjectEnabled(g_sceneManager, (char*)golfBallResourceStrings + kBallStringsBallObjectOffset,
+                                        visible);
         break;
     // Refresh terrain-derived diffuse and ambient light.
     case kBallRefreshLighting: {
         void* liveBall;
-        Ball_RefreshTerrainLighting(self, liveBall);
+        Ball_RefreshTerrainLighting(this, liveBall);
         break;
     }
     // Update sinking from the live ball position.
     case kBallRefreshGroundSink: {
         void* ballForPosition = GolfBall__Fv();
-        BallPosition liveBallPosition=*(BallPosition*)ballForPosition;
+        BallPosition liveBallPosition = *(BallPosition*)ballForPosition;
         void* liveBall;
-        Ball_RefreshLiveGroundSink(self, liveBallPosition, liveBall);
+        Ball_RefreshLiveGroundSink(this, liveBallPosition, liveBall);
         break;
     }
     // Prepare sinking from the final retained trajectory sample.
     case kBallPrepareSinkPlayback: {
-        void* ballWithSampleCount=GolfBall__Fv(); void* finalHistorySample=GolfBall__Fv();
-        finalHistorySample=PreData__9CGolfBallFi(finalHistorySample, (void*)((CGolfBall*)ballWithSampleCount)->m_preDataCount);
-        BallPosition finalSamplePosition=*(BallPosition*)finalHistorySample;
+        void* ballWithSampleCount = GolfBall__Fv();
+        void* finalHistorySample = GolfBall__Fv();
+        finalHistorySample =
+            PreData__9CGolfBallFi(finalHistorySample, (void*)((CGolfBall*)ballWithSampleCount)->m_preDataCount);
+        BallPosition finalSamplePosition = *(BallPosition*)finalHistorySample;
 
-        switch (((unsigned char)GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(),&finalSamplePosition))) {
-        case 0: case 1: case 2: case 6: case 8:
-            float zeroGroundSinkFactor=kFloat_0_Ball;
+        switch (((unsigned char)GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), &finalSamplePosition))) {
+        case 0:
+        case 1:
+        case 2:
+        case 6:
+        case 8:
+            float zeroGroundSinkFactor = kFloat_0_Ball;
             float zeroGroundSinkFactorCopy = zeroGroundSinkFactor;
-            AsCBall(self)->sinkStartFrame=-1;
-            AsCBall(self)->groundSinkFactor=zeroGroundSinkFactorCopy;
+            this->sinkStartFrame = -1;
+            this->groundSinkFactor = zeroGroundSinkFactorCopy;
             break;
-        case 3: case 4: case 5: {
-            void* ballWithSampleCount=GolfBall__Fv(); void* ballForSampleLookup=GolfBall__Fv();
-            void* sinkHistorySample=PreData__9CGolfBallFi(ballForSampleLookup,(void*)((CGolfBall*)ballWithSampleCount)->m_preDataCount);
-            AsCBall(self)->groundSinkFactor=kFloat_1_CourseHelpers-CQuadTree_GetMinPowerOnGroundAtPoint(CQuadTree_GetInstance(),sinkHistorySample);
-            int anchorSampleIndex=((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[kBallSinkAnchorEventSlot];
-            int sinkStartSampleIndex=((CGolfBall*)GolfBall__Fv())->m_preDataCount-kBallSinkLeadFrames;
-            if (sinkStartSampleIndex<anchorSampleIndex) sinkStartSampleIndex=anchorSampleIndex;
-            AsCBall(self)->sinkStartFrame=sinkStartSampleIndex;
+        case 3:
+        case 4:
+        case 5: {
+            void* ballWithSampleCount = GolfBall__Fv();
+            void* ballForSampleLookup = GolfBall__Fv();
+            void* sinkHistorySample =
+                PreData__9CGolfBallFi(ballForSampleLookup, (void*)((CGolfBall*)ballWithSampleCount)->m_preDataCount);
+            this->groundSinkFactor =
+                kFloat_1_CourseHelpers -
+                ((CQuadTree*)CQuadTree_GetInstance())->GetMinPowerOnGroundAtPoint(sinkHistorySample);
+            int anchorSampleIndex = ((CGolfBall*)GolfBall__Fv())->m_eventPreDataIndex[kBallSinkAnchorEventSlot];
+            int sinkStartSampleIndex = ((CGolfBall*)GolfBall__Fv())->m_preDataCount - kBallSinkLeadFrames;
+            if (sinkStartSampleIndex < anchorSampleIndex)
+                sinkStartSampleIndex = anchorSampleIndex;
+            this->sinkStartFrame = sinkStartSampleIndex;
             break;
         }
         }
@@ -3368,102 +4062,118 @@ void CBall_HandleMsg(void* self, void* msg) {
         BallCacheLink* volatile lookupAliasResult;
         volatile unsigned int lookupBallItemId;
         volatile unsigned int savedBallItemId;
-        requestedBallItemId=((BallMessage*)msg)->value;
-        CBall_DetachFx(self,0); CBall_DetachFx(self,1);
-        savedBallItemId=requestedBallItemId;
-        lookupBallItemId=requestedBallItemId;
+        requestedBallItemId = ((BallMessage*)msg)->value;
+        ((CBall*)this)->DetachFx(0);
+        ((CBall*)this)->DetachFx(1);
+        savedBallItemId = requestedBallItemId;
+        lookupBallItemId = requestedBallItemId;
         // Phase 1: search the actor-owned cache before requesting a resource.
-        BallCacheLink* cacheSentinel=(BallCacheLink*)((char*)&AsCBall(self)->puppetListSentinel);
-        BallCacheLink* cacheCursor=(*(BallCacheLink**)&AsCBall(self)->firstPuppetEntry);
+        BallCacheLink* cacheSentinel = (BallCacheLink*)((char*)&this->puppetListSentinel);
+        BallCacheLink* cacheCursor = (*(BallCacheLink**)&this->firstPuppetEntry);
         findBallPuppetCacheEntry(cacheCursor, cacheSentinel, lookupBallItemId);
-        lookupAliasResult=cacheCursor;
-        lookupAliasCopy=cacheCursor;
-        cachePayload=cacheCursor!=(BallCacheLink*)((unsigned int)self + (int)&((CBall*)0)->puppetListSentinel)?(void*)cacheCursor->payload:0;
+        lookupAliasResult = cacheCursor;
+        lookupAliasCopy = cacheCursor;
+        cachePayload = cacheCursor != (BallCacheLink*)((unsigned int)this + (int)&((CBall*)0)->puppetListSentinel)
+                           ? (void*)cacheCursor->payload
+                           : 0;
         switch ((unsigned int)cachePayload) {
         case 0: {
             // Phase 2: construct the payload, borrowing its IFF record and loaded puppet.
-            IFF_STRUCT::sBall* ballItemRecord = (IFF_STRUCT::sBall*)ItemInventory_FindBallData((char*)&AsCSharedDoc(g_sharedDoc)->itemInventory,(const char*)requestedBallItemId);
-            if(ballItemRecord) {
-                const int zeroLoadOption=0;
-                void* newCachePayload=__nw__FUl(sizeof(BallPuppetCacheEntry));
-                if(newCachePayload) {
-                    ((BallPuppetCacheEntry*)newCachePayload)->record=0;
-                    ((BallPuppetCacheEntry*)newCachePayload)->puppet=0;
-                    memset(((BallPuppetCacheEntry*)newCachePayload)->sprays,0,sizeof(((BallPuppetCacheEntry*)newCachePayload)->sprays));
-                    memset(((BallPuppetCacheEntry*)newCachePayload)->sequences,0,sizeof(((BallPuppetCacheEntry*)newCachePayload)->sequences));
+            IFF_STRUCT::sBall* ballItemRecord = (IFF_STRUCT::sBall*)ItemInventory_FindBallData(
+                (char*)&AsCSharedDoc(g_sharedDoc)->itemInventory, (const char*)requestedBallItemId);
+            if (ballItemRecord) {
+                const int zeroLoadOption = 0;
+                void* newCachePayload = __nw__FUl(sizeof(BallPuppetCacheEntry));
+                if (newCachePayload) {
+                    ((BallPuppetCacheEntry*)newCachePayload)->record = 0;
+                    ((BallPuppetCacheEntry*)newCachePayload)->puppet = 0;
+                    memset(((BallPuppetCacheEntry*)newCachePayload)->sprays, 0,
+                           sizeof(((BallPuppetCacheEntry*)newCachePayload)->sprays));
+                    memset(((BallPuppetCacheEntry*)newCachePayload)->sequences, 0,
+                           sizeof(((BallPuppetCacheEntry*)newCachePayload)->sequences));
                 }
-                ((BallPuppetCacheEntry*)newCachePayload)->record=ballItemRecord;
+                ((BallPuppetCacheEntry*)newCachePayload)->record = ballItemRecord;
                 char puppetResourceName[0x20];
-                sprintf(puppetResourceName,(char*)golfBallResourceStrings + kBallStringsPetModelFormatOffset,ballItemRecord->model);
+                sprintf(puppetResourceName, (char*)golfBallResourceStrings + kBallStringsPetModelFormatOffset,
+                        ballItemRecord->model);
 
-                volatile unsigned char allocator=zeroLoadOption;
+                volatile unsigned char allocator = zeroLoadOption;
                 const int zeroLoadOptionCopy = zeroLoadOption;
-                ((BallPuppetCacheEntry*)newCachePayload)->puppet=ResourceManager_LoadByExtension(g_resourceManager,puppetResourceName,zeroLoadOptionCopy,1,zeroLoadOptionCopy);
+                ((BallPuppetCacheEntry*)newCachePayload)->puppet = ResourceManager_LoadByExtension(
+                    g_resourceManager, puppetResourceName, zeroLoadOptionCopy, 1, zeroLoadOptionCopy);
                 // Phase 3: guard the new list node until its payload is constructed, then link it.
-                LinkBallPuppetCachePayload(self, newCachePayload, allocatedNodeAlias, allocatedNodeAliasCopy);
-                cachePayload=newCachePayload;
+                LinkBallPuppetCachePayload(this, newCachePayload, allocatedNodeAlias, allocatedNodeAliasCopy);
+                cachePayload = newCachePayload;
             }
-        }
-        break;
+        } break;
         }
         // Phase 4: publish the equipped ID and activate the selected puppet/effects.
-        if(cachePayload) {
-            char* sharedDocumentBytes=(char*)g_sharedDoc;
+        if (cachePayload) {
+            char* sharedDocumentBytes = (char*)g_sharedDoc;
 
-            ((BallPlayerEquipmentSlot*)sharedDocumentBytes)[AsCGolfDoc((*(char**)&AsCSharedDoc(sharedDocumentBytes)->golfDoc))->currentPlayer].ballItemId=requestedBallItemId;
-            activateCachedBallPuppet(self, cachePayload);
+            ((BallPlayerEquipmentSlot*)
+                 sharedDocumentBytes)[AsCGolfDoc((*(char**)&AsCSharedDoc(sharedDocumentBytes)->golfDoc))->currentPlayer]
+                .ballItemId = requestedBallItemId;
+            activateCachedBallPuppet(this, cachePayload);
         }
         break;
     }
     // Activate the current player's cached equipment.
     case kBallRefreshEquipment: {
-        CBall_DetachFx(self,0); CBall_DetachFx(self,1);
-        AsCBall(self)->previousPlaybackFrame=-1;
-        BallCacheLink* cacheSentinel=(BallCacheLink*)((char*)&AsCBall(self)->puppetListSentinel);
-        BallCacheLink* cacheCursor=(*(BallCacheLink**)&AsCBall(self)->firstPuppetEntry);
-        char* sharedDocumentBytes=(char*)g_sharedDoc;
-        unsigned char playerSlot=AsCGolfDoc((*(char**)&AsCSharedDoc(sharedDocumentBytes)->golfDoc))->currentPlayer;
-        unsigned int equippedBallItemId=((BallPlayerEquipmentSlot*)sharedDocumentBytes)[playerSlot].ballItemId;
-        volatile unsigned int savedBallItemId=equippedBallItemId;
-        volatile unsigned int lookupBallItemId=equippedBallItemId;
+        ((CBall*)this)->DetachFx(0);
+        ((CBall*)this)->DetachFx(1);
+        this->previousPlaybackFrame = -1;
+        BallCacheLink* cacheSentinel = (BallCacheLink*)((char*)&this->puppetListSentinel);
+        BallCacheLink* cacheCursor = (*(BallCacheLink**)&this->firstPuppetEntry);
+        char* sharedDocumentBytes = (char*)g_sharedDoc;
+        unsigned char playerSlot = AsCGolfDoc((*(char**)&AsCSharedDoc(sharedDocumentBytes)->golfDoc))->currentPlayer;
+        unsigned int equippedBallItemId = ((BallPlayerEquipmentSlot*)sharedDocumentBytes)[playerSlot].ballItemId;
+        volatile unsigned int savedBallItemId = equippedBallItemId;
+        volatile unsigned int lookupBallItemId = equippedBallItemId;
         findBallPuppetCacheEntry(cacheCursor, cacheSentinel, lookupBallItemId);
-        BallCacheLink* volatile lookupAliasCopy=cacheCursor;
-        BallCacheLink* volatile lookupAliasResult=cacheCursor;
-        void* cachePayload=cacheCursor!=(BallCacheLink*)((unsigned int)self + (int)&((CBall*)0)->puppetListSentinel)?(void*)cacheCursor->payload:0;
-        if(cachePayload) {
-            activateCachedBallPuppet(self, cachePayload);
+        BallCacheLink* volatile lookupAliasCopy = cacheCursor;
+        BallCacheLink* volatile lookupAliasResult = cacheCursor;
+        void* cachePayload = cacheCursor != (BallCacheLink*)((unsigned int)this + (int)&((CBall*)0)->puppetListSentinel)
+                                 ? (void*)cacheCursor->payload
+                                 : 0;
+        if (cachePayload) {
+            activateCachedBallPuppet(this, cachePayload);
         }
         break;
     }
     // Recreate idle effects and clear flight-effect handles.
     case kBallRebuildIdleEffects: {
-        BallCacheLink* cacheSentinel=(BallCacheLink*)((char*)&AsCBall(self)->puppetListSentinel);
-        BallCacheLink* cacheCursor=(*(BallCacheLink**)&AsCBall(self)->firstPuppetEntry);
-        char* sharedDocumentBytes=(char*)g_sharedDoc;
-        unsigned char playerSlot=AsCGolfDoc((*(char**)&AsCSharedDoc(sharedDocumentBytes)->golfDoc))->currentPlayer;
-        unsigned int equippedBallItemId=((BallPlayerEquipmentSlot*)sharedDocumentBytes)[playerSlot].ballItemId;
-        volatile unsigned int savedBallItemId=equippedBallItemId;
-        volatile unsigned int lookupBallItemId=equippedBallItemId;
+        BallCacheLink* cacheSentinel = (BallCacheLink*)((char*)&this->puppetListSentinel);
+        BallCacheLink* cacheCursor = (*(BallCacheLink**)&this->firstPuppetEntry);
+        char* sharedDocumentBytes = (char*)g_sharedDoc;
+        unsigned char playerSlot = AsCGolfDoc((*(char**)&AsCSharedDoc(sharedDocumentBytes)->golfDoc))->currentPlayer;
+        unsigned int equippedBallItemId = ((BallPlayerEquipmentSlot*)sharedDocumentBytes)[playerSlot].ballItemId;
+        volatile unsigned int savedBallItemId = equippedBallItemId;
+        volatile unsigned int lookupBallItemId = equippedBallItemId;
         findBallPuppetCacheEntry(cacheCursor, cacheSentinel, lookupBallItemId);
-        BallCacheLink* volatile lookupAliasResult=cacheCursor;
-        BallCacheLink* volatile lookupAliasCopy=cacheCursor;
-        void* cachePayload=cacheCursor!=(BallCacheLink*)((unsigned int)self + (int)&((CBall*)0)->puppetListSentinel)?(void*)cacheCursor->payload:0;
-        if(cachePayload) {
-            CBall_AttachFx(self,0); CBall_AttachFx(self,1);
-            ((BallPuppetCacheEntry*)cachePayload)->sprays[3]=0;
-            ((BallPuppetCacheEntry*)cachePayload)->sprays[2]=0;
-            ((BallPuppetCacheEntry*)cachePayload)->sequences[3]=0;
-            ((BallPuppetCacheEntry*)cachePayload)->sequences[2]=0;
+        BallCacheLink* volatile lookupAliasResult = cacheCursor;
+        BallCacheLink* volatile lookupAliasCopy = cacheCursor;
+        void* cachePayload = cacheCursor != (BallCacheLink*)((unsigned int)this + (int)&((CBall*)0)->puppetListSentinel)
+                                 ? (void*)cacheCursor->payload
+                                 : 0;
+        if (cachePayload) {
+            ((CBall*)this)->AttachFx(0);
+            ((CBall*)this)->AttachFx(1);
+            ((BallPuppetCacheEntry*)cachePayload)->sprays[3] = 0;
+            ((BallPuppetCacheEntry*)cachePayload)->sprays[2] = 0;
+            ((BallPuppetCacheEntry*)cachePayload)->sequences[3] = 0;
+            ((BallPuppetCacheEntry*)cachePayload)->sequences[2] = 0;
         }
         break;
     }
     // Create both flight-effect kinds.
     case kBallCreateFlightEffects:
-        CBall_AttachFx(self,2); CBall_AttachFx(self,3);
+        ((CBall*)this)->AttachFx(2);
+        ((CBall*)this)->AttachFx(3);
         break;
     // Store the opaque message payload word.
     case kBallStoreMessageValue:
-        AsCBall(self)->effectMessageValue=(int)((BallMessage*)msg)->value;
+        this->effectMessageValue = (int)((BallMessage*)msg)->value;
         break;
     }
 }
@@ -3472,13 +4182,17 @@ void CBall_HandleMsg(void* self, void* msg) {
 
 } // namespace ShadowAndEffectViews
 
-extern "C" { void TaskRegistry_RegisterActorAndDummyTypes(); void CAmbientSound_RegisterType(); void ActorThread_InitTwoPi(); void GolfAim_InitTwoPi(); void CBall_RegisterType(); }
+extern "C" {
+void TaskRegistry_RegisterActorAndDummyTypes();
+void ActorThread_InitTwoPi();
+void GolfAim_InitTwoPi();
+}
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push
 #pragma force_active on
 STATIC_INIT_ENTRY(".CRT$XCU804620C4", _ctors_u800CBF34_0, TaskRegistry_RegisterActorAndDummyTypes);
-STATIC_INIT_ENTRY(".CRT$XCU804620C4", _ctors_u800CBF34_1, CAmbientSound_RegisterType);
+STATIC_INIT_ENTRY(".CRT$XCU804620C4", _ctors_u800CBF34_1, CAmbientSound::RegisterType);
 STATIC_INIT_ENTRY(".CRT$XCU804620C4", _ctors_u800CBF34_2, ActorThread_InitTwoPi);
 STATIC_INIT_ENTRY(".CRT$XCU804620C4", _ctors_u800CBF34_3, GolfAim_InitTwoPi);
-STATIC_INIT_ENTRY(".CRT$XCU804620C4", _ctors_u800CBF34_4, CBall_RegisterType);
+STATIC_INIT_ENTRY(".CRT$XCU804620C4", _ctors_u800CBF34_4, CBall::RegisterType);
 #pragma pop

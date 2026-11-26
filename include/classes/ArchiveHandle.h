@@ -5,7 +5,7 @@
 
 struct ArchiveHandle {
     unsigned int tag; // 0x0
-    void* context; // 0x4
+    void* context;    // 0x4
 };
 
 #define OFF(f, o) typedef char ArchiveHandle_off_##f[((int)&((ArchiveHandle*)0)->f == (o)) ? 1 : -1]

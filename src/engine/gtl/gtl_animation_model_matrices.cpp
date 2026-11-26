@@ -19,8 +19,6 @@
 // This entry initializes anim.tracks/keyData/time to zero and never installs
 // tracks. Thus its normal path uses supplied poses or stored matrices; the
 // inlined track evaluator documents the common format used by sibling APIs.
-// Translation unit 0x803E14D0-0x803E251C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "types.h"
 #include "sdk_protos.h"
@@ -66,23 +64,30 @@ struct GtlAnimNode {
 // 0x30-byte LOCAL transform; named fields agree with the matrix builder.
 // Evidence: GtlNodeTransform / gtl_Transform_BuildNodeMatrix in gtl_transform_frustum_stopwatch_input.cpp.
 struct GtlPose {
-    float scale[4];    // +00: XYZ scale (dimensionless); +C padding/lane
-    float rot[4];    // +10: XYZ Euler radians for mode 5; XYZW quaternion for 6
-    float translation[3];  // +20: XYZ translation in model-authoring units
-    u32 transformMode;      // +2C: transform mode, not an axis-order permutation
+    float scale[4];       // +00: XYZ scale (dimensionless); +C padding/lane
+    float rot[4];         // +10: XYZ Euler radians for mode 5; XYZW quaternion for 6
+    float translation[3]; // +20: XYZ translation in model-authoring units
+    u32 transformMode;    // +2C: transform mode, not an axis-order permutation
 };
 
 // Reverse component numbering is serialized format policy, not axis swapping.
 // ORIGINAL channel-kind numbering (proven by the six jump tables jumptable_804DA3A0/3D0/400/430/460/490): kinds
 // 0x12-0x14 scale X,Y,Z, 0x15 scale block, 0x16-0x18 rotation X,Y,Z, 0x19 rotation block, 0x1A-0x1C translation
-// X,Y,Z, 0x1D translation block. The Wii enum below keeps the decompiler's code-block order (translation first); its
+// X,Y,Z, 0x1D translation block. The enum below lists the translation block first; its
 // values must NOT be renumbered: the case labels build the switch while the table bytes are anchored data.
 enum GtlTrackTarget {
-    kTranslationZ = 0x12, kTranslationY = 0x13, kTranslationX = 0x14,
+    kTranslationZ = 0x12,
+    kTranslationY = 0x13,
+    kTranslationX = 0x14,
     kTranslationRecord = 0x15,
-    kRotationZ = 0x16, kRotationY = 0x17, kRotationX = 0x18,
+    kRotationZ = 0x16,
+    kRotationY = 0x17,
+    kRotationX = 0x18,
     kRotationRecord = 0x19,
-    kScaleZ = 0x1A, kScaleY = 0x1B, kScaleX = 0x1C, kScaleRecord = 0x1D
+    kScaleZ = 0x1A,
+    kScaleY = 0x1B,
+    kScaleX = 0x1C,
+    kScaleRecord = 0x1D
 };
 
 typedef void (*GtlInterpFn)(void* dst, void* a, void* b, float alpha);
@@ -172,7 +177,6 @@ extern float s_animationSegmentEndTime;
 extern float kFloat_0_GtlModel;
 extern float kAnimationWrapInterval;
 extern float kUnitYAxisVec4[4];
-
 }
 
 // Apply this node's tracks in array order to an existing local pose. All inputs
@@ -188,8 +192,8 @@ extern float kUnitYAxisVec4[4];
 // A 16-byte translation record overwrites order transiently; restore it after
 // all tracks. Mode 6 then converts sampled rot's XYZ radians to a quaternion
 // with argument order Z,X,Y. Do not normalize/reorder arithmetic.
-static inline void EvalNodeTracks(GtlAnimTables* tables, GtlPose* cur, GtlAnimTrack* tracks, u8* keyData, GtlAnimNode* node, float t)
-{
+static inline void EvalNodeTracks(GtlAnimTables* tables, GtlPose* cur, GtlAnimTrack* tracks, u8* keyData,
+                                  GtlAnimNode* node, float t) {
     s32 order = cur->transformMode;
     u32 j;
 
@@ -198,18 +202,54 @@ static inline void EvalNodeTracks(GtlAnimTables* tables, GtlPose* cur, GtlAnimTr
         void* dst = 0;
         u32 size = 0;
         switch (track->type) {
-        case kTranslationZ: dst = &cur->translation[2]; size = 4; break;
-        case kTranslationY: dst = &cur->translation[1]; size = 4; break;
-        case kTranslationX: dst = &cur->translation[0]; size = 4; break;
-        case kTranslationRecord: dst = cur->translation; size = 0x10; break;
-        case kRotationZ: dst = &cur->rot[2]; size = 4; break;
-        case kRotationY: dst = &cur->rot[1]; size = 4; break;
-        case kRotationX: dst = &cur->rot[0]; size = 4; break;
-        case kRotationRecord: dst = cur->rot; size = 0x10; break;
-        case kScaleZ: dst = &cur->scale[2]; size = 4; break;
-        case kScaleY: dst = &cur->scale[1]; size = 4; break;
-        case kScaleX: dst = &cur->scale[0]; size = 4; break;
-        case kScaleRecord: dst = cur->scale; size = 0x10; break;
+        case kTranslationZ:
+            dst = &cur->translation[2];
+            size = 4;
+            break;
+        case kTranslationY:
+            dst = &cur->translation[1];
+            size = 4;
+            break;
+        case kTranslationX:
+            dst = &cur->translation[0];
+            size = 4;
+            break;
+        case kTranslationRecord:
+            dst = cur->translation;
+            size = 0x10;
+            break;
+        case kRotationZ:
+            dst = &cur->rot[2];
+            size = 4;
+            break;
+        case kRotationY:
+            dst = &cur->rot[1];
+            size = 4;
+            break;
+        case kRotationX:
+            dst = &cur->rot[0];
+            size = 4;
+            break;
+        case kRotationRecord:
+            dst = cur->rot;
+            size = 0x10;
+            break;
+        case kScaleZ:
+            dst = &cur->scale[2];
+            size = 4;
+            break;
+        case kScaleY:
+            dst = &cur->scale[1];
+            size = 4;
+            break;
+        case kScaleX:
+            dst = &cur->scale[0];
+            size = 4;
+            break;
+        case kScaleRecord:
+            dst = cur->scale;
+            size = 0x10;
+            break;
         }
 
         u8* keys = keyData + track->keyOffset;
@@ -273,7 +313,8 @@ static inline void EvalNodeTracks(GtlAnimTables* tables, GtlPose* cur, GtlAnimTr
             cache = (u8*)s_animationKeySearchProbes[track->dataType];
             *(float*)(cache + tOff) = t;
 
-            found = s_animationKeySearchFunctions[track->dataType](keys + stride, keys + stride + stride * (track->keyCount - 1), cache);
+            found = s_animationKeySearchFunctions[track->dataType](
+                keys + stride, keys + stride + stride * (track->keyCount - 1), cache);
             if (found == 0) {
                 found = lastKey;
             }
@@ -325,8 +366,8 @@ extern "C" {
 // Matrices use basis vectors at +0/+10/+20, translation at +30; camera inverse
 // supplies position at +30 and forward at +20. Model/root/camera coordinates
 // must be compatible; this function performs no unit or handedness conversion.
-void gtl_Animation_EvaluateModelMatrices(void* file, void* out, void* root, GtlPose* poses, u32 poseCount, u32* flagsIn)
-{
+void gtl_Animation_EvaluateModelMatrices(void* file, void* out, void* root, GtlPose* poses, u32 poseCount,
+                                         u32* flagsIn) {
     GtlAnimTables* tables = (GtlAnimTables*)&s_animationSamplingTables;
     u32 i;
     GtlPose childBasePose;
@@ -466,7 +507,8 @@ void gtl_Animation_EvaluateModelMatrices(void* file, void* out, void* root, GtlP
                         break;
                     case 1:
                         gtl_Billboard_RotateDirection(parentBillboardDirection, rootToCameraDirection);
-                        Matrix_AlignForwardPreservingScaleAndTranslationWrapper(parentMatrix, parentMatrix, parentBillboardDirection, 1);
+                        Matrix_AlignForwardPreservingScaleAndTranslationWrapper(parentMatrix, parentMatrix,
+                                                                                parentBillboardDirection, 1);
                         break;
                     case 2:
                         gtl_Billboard_RotateDirection(parentBillboardDirection, cameraForward);
@@ -474,7 +516,8 @@ void gtl_Animation_EvaluateModelMatrices(void* file, void* out, void* root, GtlP
                         break;
                     case 3:
                         gtl_Billboard_RotateDirection(parentBillboardDirection, cameraForward);
-                        Matrix_AlignForwardPreservingScaleAndTranslationWrapper(parentMatrix, parentMatrix, parentBillboardDirection, 1);
+                        Matrix_AlignForwardPreservingScaleAndTranslationWrapper(parentMatrix, parentMatrix,
+                                                                                parentBillboardDirection, 1);
                         break;
                     }
                 }
@@ -524,7 +567,8 @@ void gtl_Animation_EvaluateModelMatrices(void* file, void* out, void* root, GtlP
                     break;
                 case 1:
                     gtl_Billboard_RotateDirection(nodeBillboardDirection, rootToCameraDirection);
-                    Matrix_AlignForwardPreservingScaleAndTranslationWrapper(nodeMatrixWords, nodeMatrixWords, nodeBillboardDirection, 1);
+                    Matrix_AlignForwardPreservingScaleAndTranslationWrapper(nodeMatrixWords, nodeMatrixWords,
+                                                                            nodeBillboardDirection, 1);
                     break;
                 case 2:
                     gtl_Billboard_RotateDirection(nodeBillboardDirection, cameraForward);
@@ -541,7 +585,8 @@ void gtl_Animation_EvaluateModelMatrices(void* file, void* out, void* root, GtlP
                     break;
                 case 3:
                     gtl_Billboard_RotateDirection(nodeBillboardDirection, cameraForward);
-                    Matrix_AlignForwardPreservingScaleAndTranslationWrapper(nodeMatrixWords, nodeMatrixWords, nodeBillboardDirection, 1);
+                    Matrix_AlignForwardPreservingScaleAndTranslationWrapper(nodeMatrixWords, nodeMatrixWords,
+                                                                            nodeBillboardDirection, 1);
                     break;
                 }
             }
@@ -549,5 +594,4 @@ void gtl_Animation_EvaluateModelMatrices(void* file, void* out, void* root, GtlP
         }
     }
 }
-
 }

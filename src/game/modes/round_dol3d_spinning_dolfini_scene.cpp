@@ -1,3 +1,8 @@
+// Spinning Dolfini scene (CRoundDol3D): the dolphin and capsule models and their bone poses,
+// the scripted camera and its animation ranges, the projected shadows, and the effect box.
+// Scene resource loading and the spray-attachment tree cleanup are also in this unit.
+
+#include "classes/GtlIGenericEnvironmentResource.h"
 #include <decomp/static_init.h>
 // Spinning Dolfini model scene: models, capsule, scripted camera, shadows and effects.
 // Internal asset/ABI spellings use dolphin/CRoundDol3D; the US game calls the
@@ -6,21 +11,21 @@
 // - Model/course loading: LoadSceneResources loads the four model paths selected
 //   by RoundSceneString from roundDol3DStrings (dolphin, stand, background,
 //   capsule); this is the lottery scene, not the golf course loader. All retained
-//   model resources are released in CRoundDol3D_dtor through g_resourceManager.
-// - Frame rate/model timeline: kRoundAnimationFrameStep in u80314290_data.cpp
+//   model resources are released in the scene destructor through g_resourceManager.
+// - Frame rate/model timeline: kRoundAnimationFrameStep in the data section
 //   is float bits 0x3d08882f (~0.033333 seconds) added per UpdateAnimationAndCamera.
 //   WPuppet_SetAnimationTimeFromRanges (wpuppet_model_bone_animation.cpp) multiplies range-local
-// - Camera timeline: CVCGPlayer_AdvancePlayback (vcg_motion_player_and_fade.cpp) separately adds
+// - Camera timeline: CVCGPlayer::AdvancePlayback (vcg_motion_player_and_fade.cpp) separately adds
 //   ONE camera-script tick per call; sample occurs before that advance. A model
 //   step change alone does not rescale the scripted camera or effect updates.
 // - Projection: sampled pose.fov is passed to Camera_SetFov; near 0.1 scene units
 //   and kRoundCameraFarClip=20000 come from the scalar pools. Main-camera aspect
-//   still comes from kViewPerspectiveAspectRatio in u80065F78_data.cpp; no resolution is set here.
-// - Shadow targets: CShadowManager_Ctor in shadow_manager.cpp sets its queue to 256x256
+//   still comes from kViewPerspectiveAspectRatio in the data section; no resolution is set here.
+// - Shadow targets: CShadowManager::CShadowManager in shadow_manager.cpp sets its queue to 256x256
 //   pixels. The local 0x100 passed to GetOrCreateEntry is kRoundShadowEntryFlags,
 //   an ENTRY FLAG, not texture size. Pair target-size edits with capture projection
 //   and queue allocation; do not change the entry flag to resize the capture.
-// - Effects: CFxBox_UpdateEffects receives kRoundEffectStepMilliseconds=34 milliseconds.
+// - Effects: CFxBox::UpdateEffects receives kRoundEffectStepMilliseconds=34 milliseconds.
 //   Constructor writes nominalStepMilliseconds=33.333332 at absolute scene+0x280
 //   (effectBox+4). The provider (fx_box_interpreter_resources.cpp) optionally clamps delta to 1.5 times
 //   this nominal step and multiplies by its own timeScale before ticking effects.
@@ -31,14 +36,21 @@
 #include "game/wvector.h"
 #include "classes/CPvsFxBox.h"
 #include "classes/CRoundDol3D.h"
+#include "classes/CFxBox.h"
+#include "classes/CVCGPlayer.h"
+#include "classes/CSharedFileHandle.h"
+#include "classes/CSharedFilePtr.h"
+#include "classes/CShadowManager.h"
 
 // View borrowed scene storage using the checked shared layout.
-inline CRoundDol3D* AsCRoundDol3D(void* p) { return (CRoundDol3D*)p; }
+inline CRoundDol3D* AsCRoundDol3D(void* p) {
+    return (CRoundDol3D*)p;
+}
 
 // Borrow the embedded effect-box layout; scene-base storage uses separate private views.
-inline CPvsFxBox* AsCPvsFxBox(void* p) { return (CPvsFxBox*)p; }
-// Translation unit 0x80314290-0x803156A4 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+inline CPvsFxBox* AsCPvsFxBox(void* p) {
+    return (CPvsFxBox*)p;
+}
 
 class CRoundDol3DObj {
 public:
@@ -60,7 +72,12 @@ struct CVec3 {
 struct CMtx34 {
     float m[12];
 };
-enum CameraAffineSlot { kCameraRight = 0, kCameraUp = 3, kCameraForward = 6, kCameraEye = 9 };
+enum CameraAffineSlot {
+    kCameraRight = 0,
+    kCameraUp = 3,
+    kCameraForward = 6,
+    kCameraEye = 9
+};
 struct RoundCameraBone {
     char hierarchyAndMatrix[0x9C];
     WVector worldPosition;
@@ -77,7 +94,7 @@ struct CCamPose {
     float fov;
 };
 struct CCamState {
-    // CVCGPlayer_GetPlaybackState writes {int group,float time,int stopped,int loop}.
+    // CVCGPlayer::GetPlaybackState writes {int group,float time,int stopped,int loop}.
     // Time is not read here: retain the word view instead of pretending it is an index.
     int groupIndex, playbackTimeBits, stopped, loopMode;
 };
@@ -87,18 +104,21 @@ struct CCamState {
 // diffuse/specular=(255,255,255,255), ambient=(128,128,128,255), position=0,
 // direction=(1,1,1) / (0,1,-.08), all remaining fields zero.
 struct RoundShadowLight {
-    unsigned int type;                  // +00: Engine_SetLight type 3=directional
+    unsigned int type;                         // +00: Engine_SetLight type 3=directional
     float diffuse[4], specular[4], ambient[4]; // +04/+14/+24, float color lanes
-    float worldPosition[3];             // +34
-    float worldDirection[3];            // +40, negated by GetOrCreateEntry
-    float range, reserved50;            // +4C/+50
-    float attenuation[3];               // +54: constant/linear/quadratic
-    float spotStartRadians, spotEndRadians; // +60/+64
+    float worldPosition[3];                    // +34
+    float worldDirection[3];                   // +40, negated by GetOrCreateEntry
+    float range, reserved50;                   // +4C/+50
+    float attenuation[3];                      // +54: constant/linear/quadratic
+    float spotStartRadians, spotEndRadians;    // +60/+64
 };
 // Keep the original two-word integer copy loop: a float-typed assignment changes
 // MWCC load/store selection. This union makes the editable field schema visible
 // while preserving the 26 bit words copied to CShadowManager entry+0x8C.
-union RoundShadowSnapshot { RoundShadowLight light; unsigned int words[26]; };
+union RoundShadowSnapshot {
+    RoundShadowLight light;
+    unsigned int words[26];
+};
 typedef char RoundShadowSnapshot_size[sizeof(RoundShadowSnapshot) == 0x68 ? 1 : -1];
 typedef char RoundShadowDirection_offset[(int)&((RoundShadowLight*)0)->worldDirection == 0x40 ? 1 : -1];
 // The schema agrees with Engine_SetLight/ApplyStateBeforeDraw's light record
@@ -119,8 +139,10 @@ typedef char RoundShadowDirection_offset[(int)&((RoundShadowLight*)0)->worldDire
 // Offsets into the packed roundDol3DStrings pool (verified by globals round 4).
 // Byte-address form preserves CodeWarrior common-subexpression and loop allocation.
 enum RoundSceneLayout {
-    kSprayAttachmentTreeOffset = (int)&((CRoundDol3D*)0)->effectBox + (int)&((CPvsFxBox*)0)->sprayAttachmentTreeRoot - 4,
-    kSequenceAttachmentTreeOffset = (int)&((CRoundDol3D*)0)->effectBox + (int)&((CPvsFxBox*)0)->sequenceAttachmentTreeRoot - 4,
+    kSprayAttachmentTreeOffset = (int)&((CRoundDol3D*)0)->effectBox + (int)&((CPvsFxBox*)0)->sprayAttachmentTreeRoot -
+        4,
+    kSequenceAttachmentTreeOffset = (int)&((CRoundDol3D*)0)->effectBox +
+        (int)&((CPvsFxBox*)0)->sequenceAttachmentTreeRoot - 4,
     kSceneEffectsOffset = (int)&((CRoundDol3D*)0)->effectBox,
     kMotionSamplesOffset = (int)&((CRoundDol3D*)0)->motionSamples
 };
@@ -160,7 +182,7 @@ enum RoundSceneString {
 };
 
 // Scene-base initialization inventory: six binary32 words +1C..+30 are written
-// {0,0,10,0,0,0} by Ctor. CRoundDol3D_UpdateAnimationAndCamera uses the separate
+// {0,0,10,0,0,0} by the constructor. CRoundDol3D::UpdateAnimationAndCamera uses the separate
 // cameraTarget at +9C, rotationAngle at +18 and animationTime at +268; companion
 // round_dol_gurudol_minigame.cpp's draw/rotation/target handlers do not name these six words either.
 // No downstream interpretation is established in src/ or include/. In particular
@@ -173,8 +195,15 @@ struct RoundSceneInitialScalars128 {
 };
 // Absolute +0x280 is effectBox+4, the CFxBox nominal update-step clamp input.
 // This is a private scene-relative view, not CPvsFxBox's conflicting wrapper layout.
-struct RoundSceneScalar280128 { char prefix[0x280]; float nominalStepMilliseconds; };
-struct RoundAttachmentHeader128 { int count; void* root; void* first; };
+struct RoundSceneScalar280128 {
+    char prefix[0x280];
+    float nominalStepMilliseconds;
+};
+struct RoundAttachmentHeader128 {
+    int count;
+    void* root;
+    void* first;
+};
 struct RoundEffectTreeHeaders128 {
     char prefix[0x37C];
     RoundAttachmentHeader128 spray;
@@ -187,9 +216,9 @@ extern "C" {
 
 // kFloat_1_805E13D8 is the 1.0f bone-update step in every call below; other global uses are not inferred here.
 // kRoundCameraFarClip and kRoundAnimationFrameStep are the camera far plane and per-update animation step.
-extern float kFloat_0_1_RoundScene, kRoundCameraFarClip, kRoundAnimationFrameStep, kFloat_1_805E13D8, kRoundEffectStepMilliseconds;
+extern float kFloat_0_1_RoundScene, kRoundCameraFarClip, kRoundAnimationFrameStep, kFloat_1_805E13D8,
+    kRoundEffectStepMilliseconds;
 extern void* g_view;
-void CVCGPlayer_SampleCurrentMotion(void*, CCamPose*);
 void Vec3_CopySourceToDestination(CVec3*, CVec3*);
 void Matrix_SetIdentityAffine(void*);
 void __mi__FRC7WVectorRC7WVector(CVec3*, CVec3*, CVec3*);
@@ -199,8 +228,6 @@ void Vector_CrossProduct(CVec3*, CVec3*, CVec3*);
 void WView_SetViewMatrix(void*, void*);
 void Camera_SetClip(void*, float, float, int);
 void Camera_SetFov(void*, float);
-void CVCGPlayer_GetPlaybackState(void*, CCamState*);
-void CVCGPlayer_AdvancePlayback(void*);
 void* WPuppet_FindAnimationRangeByName(void*, void*);
 void AnimationEventParser_ProcessFrameRange(void*, void*, float, float, void*, int, int);
 void Matrix_SetAxisRotation(void*, float, int);
@@ -209,7 +236,6 @@ void Model_SetMatrixRecursive(void*, void*, void*);
 void WPuppet_UpdateBoneWorldMatrices(void*, int, int, float);
 int WPuppet_FindOrCacheBone(void*, const char*);
 void Matrix_CopyAffine(void*, void*);
-void CFxBox_UpdateEffects(void*, float);
 
 extern float kFloat_6_2831855;
 extern float s_roundSceneTwoPiStorage;
@@ -230,29 +256,20 @@ extern const char __vt__11CRoundDol3D[];
 extern const char __vt__9CPvsFxBox[];
 extern const char s_cameraTransform[];
 
-void CFxBox_Ctor(void*);
 void Vec3_SetAll(void*, float);
 void* __nw__FUl(unsigned int);
-void CShadowManager_Ctor(void*, void*, int);
-void CFxBox_SetResourceManager(void*, void*);
-void CFxBox_SetCameraTransform(void*, const char*);
-void* CShadowManager_GetOrCreateEntry(void*, const char*, float, int, const char*, char*);
+void __dt__6CFxBoxFv(void*, int);
+extern "C" void* GetOrCreateEntry__14CShadowManagerFPCcfUiPCcPC8Src801EF(void*, const char*, float, int, const char*,
+                                                                         char*);
 void* TextureItemQueue_PushFront(void*, void*);
-void CShadowManager_ReplaceSelection(void*, const char*);
 void CShadowManager_SetSelectionValue(void*, float, const char*, void*);
 
 void* ResourceManager_LoadByExtension(void*, const char*, int, int, int);
 void* __nw__FUl(unsigned int);
-void CVCGPlayer_Ctor(void*);
 void CameraMotionGroupVector_Clear(void*);
 int CameraScript_LoadFileByPath(void*, const char*);
-void CVCGPlayer_StartGroupPlayback(void*, int, int);
-void CSharedFileHandle_Destroy(void*, int);
 void* SharedFile_Create(const char*, int);
 void* CSharedFilePtr_GetLoadedBuffer(void*);
-int CSharedFilePtr_GetSize(void*);
-int gtl_IGenericEnvironmentResource_CreateFromMemory(void*, int, void**);
-void gtl_IGenericEnvironmentResource_Apply(void*, int);
 void Sound_PlayByName(void*, const char*, int, int, const char*, int, float, float, float);
 void ResourceManager_ReleaseObject(void*, void*, int);
 void Sound_StopByAlias(void*, const char*);
@@ -260,7 +277,6 @@ void Engine_SetLight(int, void*);
 void Engine_SetLightEnabled(int, int);
 void FxBoxResourceTree_FreeSubtreeNodes(void*, void*);
 void appFreeUni__FPv(void*);
-void CFxBox_dtor(void*, int);
 void __dl__FPv(void*);
 
 // Initialize the round-scene angle constant at startup.
@@ -286,7 +302,8 @@ static inline void PoseRoundCapsule128(char* o, CMtx34* matrix) {
 static inline int PoseRoundRotationModels128(char* o, CMtx34* matrix) {
     WPuppet_SetAnimationTimeFromRanges(AsCRoundDol3D(o)->dolphinModel, 0, AsCRoundDol3D(o)->animationTime, 0, 0);
     Model_SetMatrixRecursive(AsCRoundDol3D(o)->dolphinModel, AsCRoundDol3D(o)->dolphinModel, matrix);
-    WPuppet_SetAnimationTimeFromRanges(((void*)AsCRoundDol3D(o)->activeModel), 0, AsCRoundDol3D(o)->animationTime, 0, 0);
+    WPuppet_SetAnimationTimeFromRanges(((void*)AsCRoundDol3D(o)->activeModel), 0, AsCRoundDol3D(o)->animationTime, 0,
+                                       0);
     Model_SetMatrixRecursive(((void*)AsCRoundDol3D(o)->activeModel), ((void*)AsCRoundDol3D(o)->activeModel), matrix);
     WPuppet_UpdateBoneWorldMatrices(((void*)AsCRoundDol3D(o)->activeModel), 0, 0, kFloat_1_805E13D8);
     WPuppet_UpdateBoneWorldMatrices(AsCRoundDol3D(o)->dolphinModel, 0, 0, kFloat_1_805E13D8);
@@ -295,7 +312,8 @@ static inline int PoseRoundRotationModels128(char* o, CMtx34* matrix) {
 
 // Pose the active event model and publish world bones before the caller samples its camera target.
 static inline void PoseRoundActiveModel128(char* o, CMtx34* matrix) {
-    WPuppet_SetAnimationTimeFromRanges(((void*)AsCRoundDol3D(o)->activeModel), 0, AsCRoundDol3D(o)->animationTime, 0, 0);
+    WPuppet_SetAnimationTimeFromRanges(((void*)AsCRoundDol3D(o)->activeModel), 0, AsCRoundDol3D(o)->animationTime, 0,
+                                       0);
     Model_SetMatrixRecursive(((void*)AsCRoundDol3D(o)->activeModel), ((void*)AsCRoundDol3D(o)->activeModel), matrix);
     WPuppet_UpdateBoneWorldMatrices(((void*)AsCRoundDol3D(o)->activeModel), 0, 0, kFloat_1_805E13D8);
 }
@@ -308,8 +326,8 @@ static inline void PoseRoundActiveModel128(char* o, CMtx34* matrix) {
 // Returns 1, mutates scene time/poses and global g_view/s_cameraTransform/effects.
 // Model times are seconds, camera time is script ticks, rotation is radians and
 // eye/target/bones are world-space scene distances. No framerate delta is supplied.
-int CRoundDol3D_UpdateAnimationAndCamera(void* self) {
-    char* o = (char*)self;
+int CRoundDol3D::UpdateAnimationAndCamera() {
+    char* o = (char*)this;
     CCamPose pose;
     CMtx34 rotationMatrix;
     CMtx34 capsuleLowRotation, capsuleMiddleRotation, capsuleHighRotation, capsuleSuperRotation;
@@ -320,7 +338,7 @@ int CRoundDol3D_UpdateAnimationAndCamera(void* self) {
     int cameraBoneAddress = 0;
 
     // Phase 1: sample this tick's world-space eye/target/up before advancing playback.
-    CVCGPlayer_SampleCurrentMotion(AsCRoundDol3D(o)->cameraMotionPlayer, &pose);
+    ((CVCGPlayer*)(AsCRoundDol3D(o)->cameraMotionPlayer))->SampleCurrentMotion(&pose);
     if (AsCRoundDol3D(o)->cameraTargetOverrideEnabled) {
         pose.target.x = AsCRoundDol3D(o)->cameraTarget.x;
         pose.target.y = AsCRoundDol3D(o)->cameraTarget.y;
@@ -350,28 +368,33 @@ int CRoundDol3D_UpdateAnimationAndCamera(void* self) {
     // Phase 3: retain the pre-advance completion state, then advance model time.
     // animationTime is the current time, converted to frames by the puppet backend. Range changes reset previous/current together so event
     // processing below cannot span the gap between unrelated ranges.
-    CVCGPlayer_GetPlaybackState(AsCRoundDol3D(o)->cameraMotionPlayer, &state);
-    CVCGPlayer_AdvancePlayback(AsCRoundDol3D(o)->cameraMotionPlayer);
-    if (!(AsCRoundDol3D(o)->state == 0 && (unsigned)(AsCRoundDol3D(o)->animationIndex - kRotateLow) > kRotateOver - kRotateLow)) {
+    ((CVCGPlayer*)(AsCRoundDol3D(o)->cameraMotionPlayer))->GetPlaybackState(&state);
+    ((CVCGPlayer*)(AsCRoundDol3D(o)->cameraMotionPlayer))->AdvancePlayback();
+    if (!(AsCRoundDol3D(o)->state == 0 &&
+          (unsigned)(AsCRoundDol3D(o)->animationIndex - kRotateLow) > kRotateOver - kRotateLow)) {
         float currentAnimationSeconds = AsCRoundDol3D(o)->animationTime;
         AsCRoundDol3D(o)->previousAnimationTime = currentAnimationSeconds;
-        if (((RoundAnimationRange*)AsCRoundDol3D(o)->animation)->lastSeconds != ((RoundAnimationRange*)AsCRoundDol3D(o)->animation)->firstSeconds) {
+        if (((RoundAnimationRange*)AsCRoundDol3D(o)->animation)->lastSeconds !=
+            ((RoundAnimationRange*)AsCRoundDol3D(o)->animation)->firstSeconds) {
             AsCRoundDol3D(o)->animationTime = currentAnimationSeconds + kRoundAnimationFrameStep;
         }
         if (AsCRoundDol3D(o)->animationTime >= AsCRoundDol3D(o)->animationEnd) {
             AsCRoundDol3D(o)->animation = (unsigned int)WPuppet_FindAnimationRangeByName(
-                ((void*)AsCRoundDol3D(o)->activeModel), ((RoundAnimationRange*)AsCRoundDol3D(o)->animation)->nextRangeName);
+                ((void*)AsCRoundDol3D(o)->activeModel),
+                ((RoundAnimationRange*)AsCRoundDol3D(o)->animation)->nextRangeName);
             RoundAnimationRange* animationRange = (RoundAnimationRange*)AsCRoundDol3D(o)->animation;
             AsCRoundDol3D(o)->animationTime = animationRange->firstSeconds;
             AsCRoundDol3D(o)->previousAnimationTime = animationRange->firstSeconds;
             AsCRoundDol3D(o)->animationEnd = animationRange->handoffSeconds;
         }
-        if (state.stopped == kPlaybackStopped) AsCRoundDol3D(o)->state = 0;
+        if (state.stopped == kPlaybackStopped)
+            AsCRoundDol3D(o)->state = 0;
         void* anim = ((void*)AsCRoundDol3D(o)->activeModel);
         float currentSeconds = AsCRoundDol3D(o)->animationTime;
         float previousSeconds = AsCRoundDol3D(o)->previousAnimationTime;
         void* animationRangeForEvents = ((void*)AsCRoundDol3D(o)->animation);
-        AnimationEventParser_ProcessFrameRange(o, anim ? anim : 0, previousSeconds, currentSeconds, animationRangeForEvents, -1, 1);
+        AnimationEventParser_ProcessFrameRange(o, anim ? anim : 0, previousSeconds, currentSeconds,
+                                               animationRangeForEvents, -1, 1);
     }
     // Phase 4: apply model-specific animation/matrices before querying world bones.
     // Rotation variants pose dolphin + active model; idle also poses the stand.
@@ -384,13 +407,16 @@ int CRoundDol3D_UpdateAnimationAndCamera(void* self) {
         break;
     case kDolphinIdle:
         WPuppet_SetAnimationTimeFromRanges(AsCRoundDol3D(o)->dolphinModel, 0, AsCRoundDol3D(o)->animationTime, 0, 0);
-        WPuppet_SetAnimationTimeFromRanges(AsCRoundDol3D(o)->dolphinStandModel, 0, AsCRoundDol3D(o)->animationTime, 0, 0);
+        WPuppet_SetAnimationTimeFromRanges(AsCRoundDol3D(o)->dolphinStandModel, 0, AsCRoundDol3D(o)->animationTime, 0,
+                                           0);
         Model_SetMatrixRecursive(AsCRoundDol3D(o)->dolphinModel, AsCRoundDol3D(o)->dolphinModel, &rotationMatrix);
-        Model_SetMatrixRecursive(AsCRoundDol3D(o)->dolphinStandModel, AsCRoundDol3D(o)->dolphinStandModel, &rotationMatrix);
+        Model_SetMatrixRecursive(AsCRoundDol3D(o)->dolphinStandModel, AsCRoundDol3D(o)->dolphinStandModel,
+                                 &rotationMatrix);
         PoseRoundActiveModel128(o, &rotationMatrix);
         WPuppet_UpdateBoneWorldMatrices(AsCRoundDol3D(o)->dolphinModel, 0, 0, kFloat_1_805E13D8);
         WPuppet_UpdateBoneWorldMatrices(AsCRoundDol3D(o)->dolphinStandModel, 0, 0, kFloat_1_805E13D8);
-        cameraBoneAddress = WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kDolphinCameraBone);
+        cameraBoneAddress =
+            WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kDolphinCameraBone);
         break;
     case kRotateLow:
         cameraBoneAddress = PoseRoundRotationModels128(o, &rotationMatrix);
@@ -412,14 +438,16 @@ int CRoundDol3D_UpdateAnimationAndCamera(void* self) {
         Matrix_CopyAffine(&rotationMatrix, &capsuleLowRotation);
         PoseRoundCapsule128(o, &rotationMatrix);
         PoseRoundActiveModel128(o, &rotationMatrix);
-        cameraBoneAddress = WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kCapsuleCameraBone);
+        cameraBoneAddress =
+            WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kCapsuleCameraBone);
         break;
     case kCapsuleMiddle:
         Matrix_SetAxisRotation(&capsuleMiddleRotation, kFloat_0_RoundScene, 0);
         Matrix_CopyAffine(&rotationMatrix, &capsuleMiddleRotation);
         PoseRoundCapsule128(o, &rotationMatrix);
         PoseRoundActiveModel128(o, &rotationMatrix);
-        cameraBoneAddress = WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kCapsuleCameraBone);
+        cameraBoneAddress =
+            WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kCapsuleCameraBone);
         break;
     case kCapsuleHigh:
         Matrix_SetAxisRotation(&capsuleHighRotation, kFloat_0_RoundScene, 0);
@@ -428,22 +456,25 @@ int CRoundDol3D_UpdateAnimationAndCamera(void* self) {
         // Retain this first lookup before posing: the original cache/call order is observable.
         WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kCapsuleCameraBone);
         PoseRoundActiveModel128(o, &rotationMatrix);
-        cameraBoneAddress = WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kCapsuleCameraBone);
+        cameraBoneAddress =
+            WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kCapsuleCameraBone);
         break;
     case kCapsuleSuper:
         Matrix_SetAxisRotation(&capsuleSuperRotation, kFloat_0_RoundScene, 0);
         Matrix_CopyAffine(&rotationMatrix, &capsuleSuperRotation);
         PoseRoundCapsule128(o, &rotationMatrix);
         PoseRoundActiveModel128(o, &rotationMatrix);
-        cameraBoneAddress = WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kCapsuleCameraBone);
+        cameraBoneAddress =
+            WPuppet_FindOrCacheBone(((void*)AsCRoundDol3D(o)->activeModel), roundDol3DStrings + kCapsuleCameraBone);
         break;
     }
     {
         ((CPvsFxBoxObj*)((o + kSceneEffectsOffset)))->v1(kRoundEffectStepMilliseconds);
     }
     // Phase 5: advance attached effects, then save the selected bone's world target.
-    CFxBox_UpdateEffects((o + kSceneEffectsOffset), kRoundEffectStepMilliseconds);
-    if (((void*)AsCRoundDol3D(o)->activeModel) && cameraBoneAddress) AsCRoundDol3D(o)->cameraTarget = ((RoundCameraBone*)cameraBoneAddress)->worldPosition;
+    ((CFxBox*)((o + kSceneEffectsOffset)))->UpdateEffects(kRoundEffectStepMilliseconds);
+    if (((void*)AsCRoundDol3D(o)->activeModel) && cameraBoneAddress)
+        AsCRoundDol3D(o)->cameraTarget = ((RoundCameraBone*)cameraBoneAddress)->worldPosition;
     return 1;
 }
 
@@ -473,7 +504,7 @@ int CRoundDol3D_UpdateAnimationAndCamera(void* self) {
 // ReplaceSelection first frees the old background selection; its null allocation
 // result is published and then dereferenced by SetSelectionValue. There is no
 // all-or-nothing registration status; callers must not treat return as success.
-void CRoundDol3D_SetupModelShadows(void* arg) {
+void CRoundDol3D::SetupModelShadows() {
     RoundShadowSnapshot dolphinSettings;
     RoundShadowSnapshot capsuleSettings;
     {
@@ -492,31 +523,40 @@ void CRoundDol3D_SetupModelShadows(void* arg) {
             *(d += 2) = *(s += 2);
         }
     }
-    void* obj = ((void* (*)(void*, const char*, int, const char*, char*, float))CShadowManager_GetOrCreateEntry)(g_shadowManager, roundDol3DStrings + kDolphinShadowName, kRoundShadowEntryFlags, roundDol3DStrings + kCeilingLightName, (char*)dolphinSettings.words, kFloat_0_05_RoundShadow);
-    TextureItemQueue_PushFront(obj, AsCRoundDol3D(arg)->dolphinModel);
-    TextureItemQueue_PushFront(obj, AsCRoundDol3D(arg)->dolphinStandModel);
-    obj = ((void* (*)(void*, const char*, int, const char*, char*, float))CShadowManager_GetOrCreateEntry)(g_shadowManager, roundDol3DStrings + kCapsuleShadowName, kRoundShadowEntryFlags, roundDol3DStrings + kCeilingLightName, (char*)capsuleSettings.words, kFloat_0_01_RoundShadow);
-    TextureItemQueue_PushFront(obj, AsCRoundDol3D(arg)->capsuleModel);
-    CShadowManager_ReplaceSelection(g_shadowManager, roundDol3DStrings + 0xA0);
-    ((void (*)(void*, const char*, void*, float))CShadowManager_SetSelectionValue)(g_shadowManager, roundDol3DStrings + 0xA0, AsCRoundDol3D(arg)->backgroundModel, kFloat_0_RoundScene);
+    void* obj = ((void* (*)(void*, const char*, int, const char*, char*,
+                            float))GetOrCreateEntry__14CShadowManagerFPCcfUiPCcPC8Src801EF)(
+        g_shadowManager, roundDol3DStrings + kDolphinShadowName, kRoundShadowEntryFlags,
+        roundDol3DStrings + kCeilingLightName, (char*)dolphinSettings.words, kFloat_0_05_RoundShadow);
+    TextureItemQueue_PushFront(obj, dolphinModel);
+    TextureItemQueue_PushFront(obj, dolphinStandModel);
+    obj = ((void* (*)(void*, const char*, int, const char*, char*,
+                      float))GetOrCreateEntry__14CShadowManagerFPCcfUiPCcPC8Src801EF)(
+        g_shadowManager, roundDol3DStrings + kCapsuleShadowName, kRoundShadowEntryFlags,
+        roundDol3DStrings + kCeilingLightName, (char*)capsuleSettings.words, kFloat_0_01_RoundShadow);
+    TextureItemQueue_PushFront(obj, capsuleModel);
+    ((CShadowManager*)g_shadowManager)->ReplaceSelection(roundDol3DStrings + 0xA0);
+    ((void (*)(void*, const char*, void*, float))CShadowManager_SetSelectionValue)(
+        g_shadowManager, roundDol3DStrings + 0xA0, backgroundModel, kFloat_0_RoundScene);
 }
 #pragma opt_unroll_loops reset
 
 class CShadowMgrObj {
 public:
     // Construct shadow storage using the borrowed resource manager and original mode.
-    CShadowMgrObj(void* a, int b) { CShadowManager_Ctor(this, a, b); }
+    CShadowMgrObj(void* resourceManager, int b) {
+        ((CShadowManager*)this)->__ct(resourceManager, b);
+    }
     char unk[0x30];
 };
 
 // Initialize scene models, camera samples, rotation state, and the embedded effect box.
-void* CRoundDol3D_Ctor(void* self) {
-    char* member = AsCRoundDol3D(self)->effectBox;
-    char* obj = (char*)self;
-    *(const char**)obj = __vt__11CRoundDol3D;
-    AsCRoundDol3D(obj)->dolphinModel = 0;
-    AsCRoundDol3D(obj)->rotationAngle = kFloat_0_RoundScene;
-    CFxBox_Ctor(member);
+CRoundDol3D::CRoundDol3D() {
+    char* member = effectBox;
+    char* obj = (char*)this;
+    vtbl = (void*)__vt__11CRoundDol3D;
+    dolphinModel = 0;
+    rotationAngle = kFloat_0_RoundScene;
+    ((CFxBox*)member)->__ct();
     *(const char**)member = __vt__9CPvsFxBox;
     // Each empty attachment tree caches &root as its first-node sentinel.
     ((RoundEffectTreeHeaders128*)member)->spray.count = 0;
@@ -524,49 +564,48 @@ void* CRoundDol3D_Ctor(void* self) {
     ((RoundEffectTreeHeaders128*)member)->spray.first = member + (int)&((RoundEffectTreeHeaders128*)0)->spray.root;
     ((RoundEffectTreeHeaders128*)member)->sequence.count = 0;
     ((RoundEffectTreeHeaders128*)member)->sequence.root = 0;
-    ((RoundEffectTreeHeaders128*)member)->sequence.first = member + (int)&((RoundEffectTreeHeaders128*)0)->sequence.root;
-    AsCRoundDol3D(obj)->sharedFile = 0;
-    // Scene-base writes +1c/+20/+24/+28/+2c/+30 initialize six floats to
-    // {0,0,10,0,0,0}; these are NOT offsets relative to member (the effect box).
-    // The private scene view deliberately leaves the six meanings unresolved.
+    ((RoundEffectTreeHeaders128*)member)->sequence.first =
+        member + (int)&((RoundEffectTreeHeaders128*)0)->sequence.root;
+    sharedFile = 0;
+    // The six floats at +0x1C..+0x30 start as {0,0,10,0,0,0}. They belong to the
+    // scene itself, not to the effect box, and nothing in the source reads them yet.
     ((RoundSceneInitialScalars128*)obj)->unk1C = kFloat_0_RoundScene;
     ((RoundSceneInitialScalars128*)obj)->unk20 = kFloat_0_RoundScene;
     ((RoundSceneInitialScalars128*)obj)->unk24 = kFloat_10_RoundScene;
     ((RoundSceneInitialScalars128*)obj)->unk28 = kFloat_0_RoundScene;
     ((RoundSceneInitialScalars128*)obj)->unk2C = kFloat_0_RoundScene;
     ((RoundSceneInitialScalars128*)obj)->unk30 = kFloat_0_RoundScene;
-    *(float*)AsCRoundDol3D(obj)->pad_0AC = kFloat_0_RoundScene;
-    (*(int*)&AsCRoundDol3D(obj)->unk_B4) = 0;
-    AsCRoundDol3D(obj)->rotationSpeed = kFloat_0_RoundScene;
-    AsCRoundDol3D(obj)->speedLevel = 0;
-    AsCRoundDol3D(obj)->cameraMotionPlayer = 0;
-    AsCRoundDol3D(obj)->motionSampleCount = 0;
-    Vec3_SetAll(AsCRoundDol3D(obj)->previousFirstMotionSample, kFloat_0_RoundScene);
+    *(float*)pad_0AC = kFloat_0_RoundScene;
+    unk_B4 = 0;
+    rotationSpeed = kFloat_0_RoundScene;
+    speedLevel = 0;
+    cameraMotionPlayer = 0;
+    motionSampleCount = 0;
+    Vec3_SetAll(previousFirstMotionSample, kFloat_0_RoundScene);
     int off;
     int n;
     n = 0;
     off = 0;
     do {
-        Vec3_SetAll(obj + off + kMotionSamplesOffset, kFloat_0_RoundScene);
+        Vec3_SetAll(motionSamples + off, kFloat_0_RoundScene);
         n += 1;
         off += 12;
     } while (n < kMotionSampleCount);
-    AsCRoundDol3D(obj)->state = 0;
-    AsCRoundDol3D(obj)->animationTime = kFloat_0_RoundScene;
-    AsCRoundDol3D(obj)->previousAnimationTime = kFloat_0_RoundScene;
-    AsCRoundDol3D(obj)->animationIndex = 0;
-    (*(int*)&AsCRoundDol3D(obj)->capsuleModel) = 0;
-    AsCRoundDol3D(obj)->dolphinModel = 0;
-    AsCRoundDol3D(obj)->dolphinStandModel = 0;
-    AsCRoundDol3D(obj)->backgroundModel = 0;
-    (*(int*)&AsCRoundDol3D(obj)->activeModel) = 0;
-    AsCRoundDol3D(obj)->cameraTargetOverrideEnabled = 0;
-    AsCRoundDol3D(obj)->animation = 0;
+    state = 0;
+    animationTime = kFloat_0_RoundScene;
+    previousAnimationTime = kFloat_0_RoundScene;
+    animationIndex = 0;
+    capsuleModel = 0;
+    dolphinModel = 0;
+    dolphinStandModel = 0;
+    backgroundModel = 0;
+    activeModel = 0;
+    cameraTargetOverrideEnabled = 0;
+    animation = 0;
     new CShadowMgrObj(g_resourceManager, 1);
-    CFxBox_SetResourceManager((obj + kSceneEffectsOffset), g_resourceManager);
-    CFxBox_SetCameraTransform((obj + kSceneEffectsOffset), s_cameraTransform);
+    ((CFxBox*)effectBox)->SetResourceManager(g_resourceManager);
+    ((CFxBox*)effectBox)->SetCameraTransform(s_cameraTransform);
     ((RoundSceneScalar280128*)obj)->nominalStepMilliseconds = kRoundEffectNominalStepMilliseconds;
-    return obj;
 }
 
 class CRefCountBase {
@@ -584,7 +623,9 @@ public:
 class CVCGPlayerObj {
 public:
     // Construct the owned camera-motion player with its original initializer.
-    CVCGPlayerObj() { CVCGPlayer_Ctor(this); }
+    CVCGPlayerObj() {
+        ((CVCGPlayer*)this)->__ct();
+    }
     char unk[0x30];
 };
 
@@ -611,50 +652,68 @@ public:
 // requires a constructed scene and the providers' normal pointer contracts;
 // this function does not promise recovery from arbitrary partial provider failure.
 // The owner in dolfini_round_main.cpp must finish loading before update/draw/shadow registration.
-void CRoundDol3D_LoadSceneResources(void* self) {
-    char* obj = (char*)self;
+void CRoundDol3D::LoadSceneResources() {
+    char* obj = (char*)this;
     void* r31base = (void*)roundDol3DStrings;
-    AsCRoundDol3D(obj)->dolphinModel = ResourceManager_LoadByExtension(g_resourceManager, (const char*)r31base + kDolphinModelPath, 0, 1, 0);
-    AsCRoundDol3D(obj)->dolphinStandModel = ResourceManager_LoadByExtension(g_resourceManager, (const char*)r31base + kDolphinStandModelPath, 0, 1, 0);
-    AsCRoundDol3D(obj)->backgroundModel = ResourceManager_LoadByExtension(g_resourceManager, (const char*)r31base + kBackgroundModelPath, 0, 1, 0);
-    AsCRoundDol3D(obj)->capsuleModel = ResourceManager_LoadByExtension(g_resourceManager, (const char*)r31base + kCapsuleModelPath, 0, 1, 0);
+    AsCRoundDol3D(obj)->dolphinModel =
+        ResourceManager_LoadByExtension(g_resourceManager, (const char*)r31base + kDolphinModelPath, 0, 1, 0);
+    AsCRoundDol3D(obj)->dolphinStandModel =
+        ResourceManager_LoadByExtension(g_resourceManager, (const char*)r31base + kDolphinStandModelPath, 0, 1, 0);
+    AsCRoundDol3D(obj)->backgroundModel =
+        ResourceManager_LoadByExtension(g_resourceManager, (const char*)r31base + kBackgroundModelPath, 0, 1, 0);
+    AsCRoundDol3D(obj)->capsuleModel =
+        ResourceManager_LoadByExtension(g_resourceManager, (const char*)r31base + kCapsuleModelPath, 0, 1, 0);
     void* r31 = new CVCGPlayerObj;
     AsCRoundDol3D(obj)->cameraMotionPlayer = r31;
     CameraMotionGroupVector_Clear(r31);
-    CameraScript_LoadFileByPath(AsCRoundDol3D(obj)->cameraMotionPlayer, (const char*)roundDol3DStrings + kCameraScriptPath);
-    CVCGPlayer_StartGroupPlayback(AsCRoundDol3D(obj)->cameraMotionPlayer, 0, 0);
+    CameraScript_LoadFileByPath(AsCRoundDol3D(obj)->cameraMotionPlayer,
+                                (const char*)roundDol3DStrings + kCameraScriptPath);
+    ((CVCGPlayer*)(AsCRoundDol3D(obj)->cameraMotionPlayer))->StartGroupPlayback(0, 0);
     void** lightingFile = &AsCRoundDol3D(obj)->sharedFile;
-    if (*lightingFile) { CSharedFileHandle_Destroy(*lightingFile, 1); *lightingFile = 0; }
+    if (*lightingFile) {
+        CSharedFileHandle::Destroy(*lightingFile, 1);
+        *lightingFile = 0;
+    }
     *lightingFile = SharedFile_Create((const char*)roundDol3DStrings + kLightingPath, 0);
-    while (CSharedFilePtr_GetLoadedBuffer(*lightingFile) == 0) { }
-    int lightingBytes = CSharedFilePtr_GetSize(*lightingFile);
+    while (CSharedFilePtr_GetLoadedBuffer(*lightingFile) == 0) {
+    }
+    int lightingBytes = CSharedFilePtr::GetSize(*lightingFile);
     void* lightingData = (void*)CSharedFilePtr_GetLoadedBuffer(*lightingFile);
     void* environmentResource;
-    gtl_IGenericEnvironmentResource_CreateFromMemory(lightingData, lightingBytes, &environmentResource);
-    gtl_IGenericEnvironmentResource_Apply(environmentResource, 0);
+    gtl::IGenericEnvironmentResource::CreateFromMemory(lightingData, lightingBytes, &environmentResource);
+    ((gtl::IGenericEnvironmentResource*)environmentResource)->Apply(0);
     {
         void* q = environmentResource;
         if (--*(int*)q == 0 && q != 0) {
             ((CRefObj*)q)->release(1);
         }
     }
-    Sound_PlayByName(g_soundManager, (const char*)roundDol3DStrings + kTurnSoundName, 0, 1, (const char*)roundDol3DStrings, 0, kFloat_0_5_RoundSound, kFloat_200_RoundSound, kFloat_0_RoundScene);
-    if (*lightingFile) { CSharedFileHandle_Destroy(*lightingFile, 1); *lightingFile = 0; }
+    Sound_PlayByName(g_soundManager, (const char*)roundDol3DStrings + kTurnSoundName, 0, 1,
+                     (const char*)roundDol3DStrings, 0, kFloat_0_5_RoundSound, kFloat_200_RoundSound,
+                     kFloat_0_RoundScene);
+    if (*lightingFile) {
+        CSharedFileHandle::Destroy(*lightingFile, 1);
+        *lightingFile = 0;
+    }
 }
 
 // Release 1 unrolled tree levels before delegating deeper subtrees to the shared free routine.
 static void tree_free_1(void* owner, void* node) {
-    if (!node) return;
-    void* a = *(void**)node;
-    if (a) FxBoxResourceTree_FreeSubtreeNodes(owner, a);
-    void* b = *((void**)node + 1);
-    if (b) FxBoxResourceTree_FreeSubtreeNodes(owner, b);
+    if (!node)
+        return;
+    void* firstChild = *(void**)node;
+    if (firstChild)
+        FxBoxResourceTree_FreeSubtreeNodes(owner, firstChild);
+    void* secondChild = *((void**)node + 1);
+    if (secondChild)
+        FxBoxResourceTree_FreeSubtreeNodes(owner, secondChild);
     appFreeUni__FPv(node);
 }
 
 // Release 2 unrolled tree levels before delegating deeper subtrees to the shared free routine.
 static void tree_free_2(void* owner, void* node) {
-    if (!node) return;
+    if (!node)
+        return;
     void* left;
     left = *(void**)node;
     tree_free_1(owner, left);
@@ -664,7 +723,8 @@ static void tree_free_2(void* owner, void* node) {
 
 // Release 3 unrolled tree levels before delegating deeper subtrees to the shared free routine.
 static void tree_free_3(void* owner, void* node) {
-    if (!node) return;
+    if (!node)
+        return;
     void* left;
     left = *(void**)node;
     tree_free_2(owner, left);
@@ -674,7 +734,8 @@ static void tree_free_3(void* owner, void* node) {
 
 // Release 4 unrolled tree levels before delegating deeper subtrees to the shared free routine.
 static void tree_free_4(void* owner, void* node) {
-    if (!node) return;
+    if (!node)
+        return;
     void* left;
     left = *(void**)node;
     tree_free_3(owner, left);
@@ -686,8 +747,10 @@ static void tree_free_4(void* owner, void* node) {
 // Free one tree level after its children; owner is borrowed, n is consumed.
 inline void FREE_LEAF(void* owner, void* n) {
     if (n) {
-        if (*(void**)n) FxBoxResourceTree_FreeSubtreeNodes(owner, *(void**)n);
-        if (*((void**)n + 1)) FxBoxResourceTree_FreeSubtreeNodes(owner, *((void**)n + 1));
+        if (*(void**)n)
+            FxBoxResourceTree_FreeSubtreeNodes(owner, *(void**)n);
+        if (*((void**)n + 1))
+            FxBoxResourceTree_FreeSubtreeNodes(owner, *((void**)n + 1));
         appFreeUni__FPv(n);
     }
 }
@@ -712,34 +775,36 @@ inline void FREE_QUAD(void* owner, void* n, void*& child, void*& leaf) {
     }
 }
 // Release scene resources, camera playback, shadows, lights, and effect attachment trees.
-// The long run of repeated 'if (obj + kXxxAttachmentTreeOffset)' tests below is always true (pointer arithmetic, never null);
-// they and the FREE_PAIR/FREE_QUAD sequences exist only to reproduce the original unrolled code. In plain C they do:
-//   free every node of the sequence-attachment tree, then every node of the spray-attachment tree, then destroy the CFxBox.
-void* CRoundDol3D_dtor(void* self, int destroy) {
+// The repeated 'if (obj + kXxxAttachmentTreeOffset)' tests are always true (pointer
+// arithmetic is never null); they and the FREE_PAIR/FREE_QUAD sequences reproduce the
+// original unrolled code. In plain terms they free every node of the sequence-attachment
+// tree, then every node of the spray-attachment tree, then destroy the CFxBox.
+CRoundDol3D::~CRoundDol3D() {
     // Phase 1: release model resources, playback, shadow ownership and lights.
     void* n26;
     void* n27;
     void* n28;
     void* n29;
-    if (self) {
-    char* obj = (char*)self;
-    *(const char**)obj = __vt__11CRoundDol3D;
-    ResourceManager_ReleaseObject(g_resourceManager, AsCRoundDol3D(obj)->dolphinModel, 0);
-    ResourceManager_ReleaseObject(g_resourceManager, AsCRoundDol3D(obj)->dolphinStandModel, 0);
-    ResourceManager_ReleaseObject(g_resourceManager, AsCRoundDol3D(obj)->backgroundModel, 0);
-    ResourceManager_ReleaseObject(g_resourceManager, AsCRoundDol3D(obj)->capsuleModel, 0);
+    char* obj = (char*)this;
+    vtbl = (void*)__vt__11CRoundDol3D;
+    ResourceManager_ReleaseObject(g_resourceManager, dolphinModel, 0);
+    ResourceManager_ReleaseObject(g_resourceManager, dolphinStandModel, 0);
+    ResourceManager_ReleaseObject(g_resourceManager, backgroundModel, 0);
+    ResourceManager_ReleaseObject(g_resourceManager, capsuleModel, 0);
     Sound_StopByAlias(g_soundManager, roundDol3DStrings);
     {
-        void* p = AsCRoundDol3D(obj)->cameraMotionPlayer;
+        void* p = cameraMotionPlayer;
         if (p) {
-            if (p) ((CRoundDol3DObj*)p)->vdtor(1);
-            AsCRoundDol3D(obj)->cameraMotionPlayer = 0;
+            if (p)
+                ((CRoundDol3DObj*)p)->vdtor(1);
+            cameraMotionPlayer = 0;
         }
     }
     {
         void* p = g_shadowManager;
         if (p) {
-            if (p) ((CRoundDol3DObj*)p)->vdtor(1);
+            if (p)
+                ((CRoundDol3DObj*)p)->vdtor(1);
         }
     }
     for (int i = 0; i < kSceneLightCount; ++i) {
@@ -747,65 +812,64 @@ void* CRoundDol3D_dtor(void* self, int destroy) {
         Engine_SetLightEnabled(i, 0);
     }
     {
-        void* p = AsCRoundDol3D(obj)->sharedFile;
-        if (p) { CSharedFileHandle_Destroy(p, 1); AsCRoundDol3D(obj)->sharedFile = 0; }
+        void* p = sharedFile;
+        if (p) {
+            CSharedFileHandle::Destroy(p, 1);
+            sharedFile = 0;
+        }
     }
     // Phase 2: retire sequence/spray attachment nodes before destroying the effect box.
     if ((obj + kSceneEffectsOffset)) {
-    if (obj + kSequenceAttachmentTreeOffset) {
-    if (obj + kSequenceAttachmentTreeOffset) {
-    if (obj + kSequenceAttachmentTreeOffset) {
-    if (obj + kSequenceAttachmentTreeOffset) {
-    if (obj + kSequenceAttachmentTreeOffset) {
-    if (obj + kSequenceAttachmentTreeOffset) {
-        n29 = AsCPvsFxBox(obj + kSceneEffectsOffset)->sequenceAttachmentTreeRoot;
-        if (n29) {
-            n28 = *(void**)n29;
-            if (n28) {
-                n27 = *(void**)n28;
-                FREE_PAIR(obj + kSequenceAttachmentTreeOffset, n27, n26);
-                n26 = *((void**)n28 + 1);
-                FREE_PAIR(obj + kSequenceAttachmentTreeOffset, n26, n27);
-                appFreeUni__FPv(n28);
+        if (obj + kSequenceAttachmentTreeOffset) {
+            if (obj + kSequenceAttachmentTreeOffset) {
+                if (obj + kSequenceAttachmentTreeOffset) {
+                    if (obj + kSequenceAttachmentTreeOffset) {
+                        if (obj + kSequenceAttachmentTreeOffset) {
+                            if (obj + kSequenceAttachmentTreeOffset) {
+                                n29 = AsCPvsFxBox(obj + kSceneEffectsOffset)->sequenceAttachmentTreeRoot;
+                                if (n29) {
+                                    n28 = *(void**)n29;
+                                    if (n28) {
+                                        n27 = *(void**)n28;
+                                        FREE_PAIR(obj + kSequenceAttachmentTreeOffset, n27, n26);
+                                        n26 = *((void**)n28 + 1);
+                                        FREE_PAIR(obj + kSequenceAttachmentTreeOffset, n26, n27);
+                                        appFreeUni__FPv(n28);
+                                    }
+                                    n26 = *((void**)n29 + 1);
+                                    FREE_QUAD(obj + kSequenceAttachmentTreeOffset, n26, n27, n28);
+                                    appFreeUni__FPv(n29);
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            n26 = *((void**)n29 + 1);
-            FREE_QUAD(obj + kSequenceAttachmentTreeOffset, n26, n27, n28);
-            appFreeUni__FPv(n29);
         }
-    }
-    }
-    }
-    }
-    }
-    }
-    if (obj + kSprayAttachmentTreeOffset) {
-    if (obj + kSprayAttachmentTreeOffset) {
-    if (obj + kSprayAttachmentTreeOffset) {
-    if (obj + kSprayAttachmentTreeOffset) {
-    if (obj + kSprayAttachmentTreeOffset) {
-    if (obj + kSprayAttachmentTreeOffset) {
-        n26 = AsCPvsFxBox(obj + kSceneEffectsOffset)->sprayAttachmentTreeRoot;
-        if (n26) {
-            n27 = *(void**)n26;
-            FREE_QUAD(obj + kSprayAttachmentTreeOffset, n27, n28, n29);
-            n27 = *((void**)n26 + 1);
-            FREE_QUAD(obj + kSprayAttachmentTreeOffset, n27, n28, n29);
-            appFreeUni__FPv(n26);
+        if (obj + kSprayAttachmentTreeOffset) {
+            if (obj + kSprayAttachmentTreeOffset) {
+                if (obj + kSprayAttachmentTreeOffset) {
+                    if (obj + kSprayAttachmentTreeOffset) {
+                        if (obj + kSprayAttachmentTreeOffset) {
+                            if (obj + kSprayAttachmentTreeOffset) {
+                                n26 = AsCPvsFxBox(obj + kSceneEffectsOffset)->sprayAttachmentTreeRoot;
+                                if (n26) {
+                                    n27 = *(void**)n26;
+                                    FREE_QUAD(obj + kSprayAttachmentTreeOffset, n27, n28, n29);
+                                    n27 = *((void**)n26 + 1);
+                                    FREE_QUAD(obj + kSprayAttachmentTreeOffset, n27, n28, n29);
+                                    appFreeUni__FPv(n26);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+        __dt__6CFxBoxFv((obj + kSceneEffectsOffset), 0);
     }
-    }
-    }
-    }
-    }
-    }
-    CFxBox_dtor((obj + kSceneEffectsOffset), 0);
-    }
-    if (destroy > 0) __dl__FPv(obj);
-    }
-    return self;
 }
 #pragma use_lmw_stmw off
-
 
 } // extern "C"
 

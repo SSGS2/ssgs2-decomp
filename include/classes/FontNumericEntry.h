@@ -5,12 +5,15 @@
 
 class FontNumericEntry {
 public:
-    char pad_0[0xC];
-    int resourceNameWord; // 0xC; NumericTextTable_ClearEntryText
-    unsigned int textFlags; // 0x10; NumericTextTable_ClearEntryText
+    char pad_0[0x8];
+    void* vtable;            // 0x8: FONT_NUM_DRAW_INFO vtable
+    int resourceNameWord;    // 0xC; NumericTextTable_ClearEntryText
+    unsigned int textFlags;  // 0x10; NumericTextTable_ClearEntryText
     unsigned int textLength; // 0x14; NumericTextTable_ClearEntryText
-    void* text; // 0x18; NumericTextTable_ClearEntryText
-    void* resource; // 0x1C; NumericTextTable_ClearEntryText
+    void* text;              // 0x18; NumericTextTable_ClearEntryText
+    void* resource;          // 0x1C; NumericTextTable_ClearEntryText
+
+    ~FontNumericEntry();
 };
 
 #define OFF(f, o) typedef char FontNumericEntry_off_##f[((int)&((FontNumericEntry*)0)->f == (o)) ? 1 : -1]

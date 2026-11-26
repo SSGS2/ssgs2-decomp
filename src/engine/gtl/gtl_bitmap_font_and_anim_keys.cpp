@@ -15,11 +15,10 @@
 // vertex buffer; s_bitmapFontState stores page handles/descriptions and copied header;
 // s_builtinFontMetadata is built-in metadata, s_builtinFontTexels texels, s_builtinFontPalette palette.
 // These are process-wide font resources: caller serializes setup and drawing.
-// Translation unit 0x803E4220-0x803E56D8 (10 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/stdexcept_local.h"
 #include "sdk_protos.h"
+#include "classes/CFile.h"
 
 struct CFileLocal {
     char data[0x18];
@@ -34,7 +33,9 @@ template <int Size, int TimeOffset> struct AnimationKey {
 };
 
 // Compare stored key times without converting precision or units.
-template <class Key> static inline bool AnimationKey_NotAfter(const Key& a, const Key& b) { return a.time <= b.time; }
+template <class Key> static inline bool AnimationKey_NotAfter(const Key& a, const Key& b) {
+    return a.time <= b.time;
+}
 
 // std::lower_bound over keys by time: the first key whose time is not before `key`'s.
 // Borrowed [first,last) is sorted ascending by finite stored float times; key is
@@ -66,10 +67,7 @@ typedef AnimationKey<0x8, 0x4> AnimationKey8;
 extern "C" {
 
 void __ct__9CFileCtorFPCcUi(void* self, const char* name, unsigned int mode);
-s32 gtl_CFile_GetFileSize(void* self);
-void gtl_CFile_Read(void* self, void* buffer, u32 length);
-void gtl_CFile_dtor(void* self, s32 flags);
-void gtl_IG3DXBuffer_Create(s32 size, void** out, s32 flags);
+extern "C" void Create__Q23gtl11IG3DXBufferFPvPPv(s32 size, void** out, s32 flags);
 void* Object_GetField8(void* obj);
 u32 Object_GetFieldC(void* obj);
 extern void* s_bitmapFontResourceBuffer;
@@ -109,10 +107,14 @@ extern s32 s_bitmapFontInitialized;
 extern char __vt__14filenamestring[];
 
 // Close the local file even when resource loading unwinds; leave stack storage.
-inline CFileLocal::~CFileLocal() { gtl_CFile_dtor(this, -1); }
+inline CFileLocal::~CFileLocal() {
+    ((gtl::CFile*)this)->Destroy(-1);
+}
 
 // Preserve the unsigned dimension-to-binary32 conversion used in UV division.
-static inline f32 gtl_U32ToF32(u32 v) { return (f32)v; }
+static inline f32 gtl_U32ToF32(u32 v) {
+    return (f32)v;
+}
 
 struct NameField {
     u32 flags;
@@ -128,10 +130,14 @@ static inline void NameField_Clear(NameField* f) {
 }
 
 // Read byte length from the inline tag or long-string length word.
-static inline u32 NameField_Len(NameField* f) { return (f->flags >> 31) == 0 ? (*(u8*)f & 0x7F) : f->heapLen; }
+static inline u32 NameField_Len(NameField* f) {
+    return (f->flags >> 31) == 0 ? (*(u8*)f & 0x7F) : f->heapLen;
+}
 
 // Borrow NUL-terminated narrow text; invalidated by mutation/destruction of f.
-static inline char* NameField_Data(NameField* f) { return (f->flags >> 31) == 0 ? (char*)f + 1 : f->heapPtr; }
+static inline char* NameField_Data(NameField* f) {
+    return (f->flags >> 31) == 0 ? (char*)f + 1 : f->heapPtr;
+}
 
 // Return borrowed byte range and length through d/l for either string form.
 static inline void NameField_Range(NameField* f, char*& d, u32& l) {
@@ -146,7 +152,8 @@ static inline void NameField_Range(NameField* f, char*& d, u32& l) {
 
 // Release heap text only; inline text is embedded and requires no free.
 static inline void NameField_Free(NameField* f) {
-    if (f->flags >> 31) __dl__FPv(f->heapPtr);
+    if (f->flags >> 31)
+        __dl__FPv(f->heapPtr);
 }
 
 struct NameStr {
@@ -180,7 +187,9 @@ struct FontDataLocal {
 };
 
 // Release the temporary font view's references; leave the shared font resource.
-inline FontDataLocal::~FontDataLocal() { FontDataView_dtor(this, -1); }
+inline FontDataLocal::~FontDataLocal() {
+    FontDataView_dtor(this, -1);
+}
 
 #pragma opt_propagation off
 // Find the first key >= key.time in the borrowed sorted range; see common contract.
@@ -229,13 +238,13 @@ void gtl_BitmapFont_LoadResourceBuffer(s32 pathAddress) {
     if (pathAddress != 0) {
         CFileLocal file;
         __ct__9CFileCtorFPCcUi(&file, (const char*)pathAddress, 2);
-        s32 size = gtl_CFile_GetFileSize(&file);
-        gtl_IG3DXBuffer_Create(size, &s_bitmapFontResourceBuffer, 0);
+        s32 size = ((gtl::CFile*)(&file))->GetFileSize();
+        Create__Q23gtl11IG3DXBufferFPvPPv(size, &s_bitmapFontResourceBuffer, 0);
         u32 len = Object_GetFieldC(s_bitmapFontResourceBuffer);
-        gtl_CFile_Read(&file, Object_GetField8(s_bitmapFontResourceBuffer), len);
+        ((gtl::CFile*)(&file))->Read(Object_GetField8(s_bitmapFontResourceBuffer), len);
         return;
     }
-    gtl_IG3DXBuffer_Create(0x5C8, &s_bitmapFontResourceBuffer, 0);
+    Create__Q23gtl11IG3DXBufferFPvPPv(0x5C8, &s_bitmapFontResourceBuffer, 0);
     u8* base = (u8*)Object_GetField8(s_bitmapFontResourceBuffer);
     Memory_Copy(base, s_builtinFontMetadata, 0x5C8);
     u16 t;
@@ -289,11 +298,21 @@ struct GlyphRect {
 };
 
 // Native vertex/descriptor schemas (four-byte alignment, not serialized pointers).
-struct GlyphVertexColorUv { f32 x, y, z; u32 color; f32 u, v; }; // 24 bytes
-struct GlyphVertexUv { f32 x, y, z, u, v; };                  // 20 bytes
-struct GlyphPageDimensions { char reserved[0x1C]; u32 width, height; };
+struct GlyphVertexColorUv {
+    f32 x, y, z;
+    u32 color;
+    f32 u, v;
+}; // 24 bytes
+struct GlyphVertexUv {
+    f32 x, y, z, u, v;
+}; // 20 bytes
+struct GlyphPageDimensions {
+    char reserved[0x1C];
+    u32 width, height;
+};
 enum GlyphOutputFormat {
-    kGlyphXyzColorUv = 0x11F005, kGlyphXyzUv = 0x110005,
+    kGlyphXyzColorUv = 0x11F005,
+    kGlyphXyzUv = 0x110005,
     kGlyphTriangleStrip = 0x98
 };
 // Write four strip vertices in (x0,y0), (x1,y0), (x0,y1), (x1,y1) order.
@@ -308,7 +327,8 @@ enum GlyphOutputFormat {
 // The float-word stores below implement these two schemas in the original order;
 // replacing them with whole-vertex assignments changes store scheduling. In the
 // colored format words 3/9/15/21 are color bits, never floating-point values.
-void gtl_BitmapFont_WriteGlyphQuad(void* vertices, s32 vertexFormat, s32 primitive, void* pageDescription, void* unusedMetadata, void* uvRect, void* positionRect, s32 packedColor, f32 z) {
+void gtl_BitmapFont_WriteGlyphQuad(void* vertices, s32 vertexFormat, s32 primitive, void* pageDescription,
+                                   void* unusedMetadata, void* uvRect, void* positionRect, s32 packedColor, f32 z) {
     s32 colorCopy = packedColor;
     f32* d = (f32*)vertices;
     GlyphPageDimensions* m = (GlyphPageDimensions*)pageDescription;
@@ -412,24 +432,24 @@ static inline void gtl_ZeroBuf104(char* buf) {
 // is checked. Initialized latch is set after texture/buffer calls, not proof that
 // every page load succeeded. Volatile tag-byte pairs model allocator ABI scratch,
 // not user settings; preserve their reads and order when editing path assembly.
-void gtl_BitmapFont_Initialize(const char* arg0) {
+void gtl_BitmapFont_Initialize(const char* fileName) {
     volatile u32 d1, s1, s2, d2, s3, d3, s4, d4, s5, d5, s6, d6, s7, d7, s8, d8, s9, d9;
     char bufE[0x104];
     FontDataLocal fd;
     char* name;
-    gtl_BitmapFont_LoadResourceBuffer((s32)arg0);
+    gtl_BitmapFont_LoadResourceBuffer((s32)fileName);
     gtl_FontData_InitView(&fd, s_bitmapFontResourceBuffer);
     gtl_FontData_CopyHeader(&fd, s_bitmapFontHeaderStorage);
     name = 0;
     gtl_ZeroBuf104(bufE);
-    if (arg0 != 0) {
+    if (fileName != 0) {
         NameStr str;
         NameField_Clear(&str.input);
-        u32 len = strlen(arg0);
+        u32 len = strlen(fileName);
         u32 n;
         StdString_ReserveCapacity(&str.input, len);
         *(u8*)&d1 = *(volatile u8*)&s1;
-        StdString_ReplaceRange(&str.input, 0, 0, arg0, arg0 + len, (u8*)&d1);
+        StdString_ReplaceRange(&str.input, 0, 0, fileName, fileName + len, (u8*)&d1);
         str.drive.flags = 0;
         str.vtable = __vt__14filenamestring;
         str.drive.heapLen = 0;
@@ -520,8 +540,8 @@ void gtl_BitmapFont_Initialize(const char* arg0) {
 
 struct FontRecord {
     char namePrefix[0x18]; // Prefix also used as page filename when fetched to recName.
-    s32 texWidth;    // +0x18: texels
-    s32 texHeight;   // +0x1C: texels
+    s32 texWidth;          // +0x18: texels
+    s32 texHeight;         // +0x1C: texels
 };
 
 struct TexLevelDesc {

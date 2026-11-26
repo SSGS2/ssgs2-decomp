@@ -1,5 +1,6 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CModelOperationCaddie: the caddie-preview operation used by the shops. It
+// opens the shared caddie preview resource, creates the pet preview, and maps
+// the selected caddie and its equipment to that preview.
 #ifndef CLASSES_CMODELOPERATIONCADDIE_H
 #define CLASSES_CMODELOPERATIONCADDIE_H
 
@@ -7,20 +8,30 @@
 
 class CModelOperationCaddie {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0xc];                  // 0x4
-    void* exhibition;                       // 0x10: 5 uses in ModelOperationBase_Update, CModelOperationCaddie_CreatePetPreview
-    void* saveRecord;                       // 0x14: 1 use in CModelOperationCaddie_SelectCaddie
-    void* asyncPet;                       // 0x18: 5 uses in CModelOperationCaddie_SelectCaddie, CModelOperationCaddie_Ctor, CModelOperationCaddie_dtor...
-    int inventoryIndex;                         // 0x1c: 2 uses in CModelOperationCaddie_Ctor, CModelOperationCaddie_SelectCaddie
+    int OpenResource();
+    int CreatePetPreview();
+    int SelectCaddie(unsigned int caddieTypeId);
+    int SetItem(int typeId);
+    int TryToggleItem(int itemTypeId);
+    int ToggleItem(unsigned int typeId);
+
+    CModelOperationCaddie();
+    ~CModelOperationCaddie();
+
+    void* vtbl;         // 0x0: original vtable pointer; the shared operation base starts here
+    char pad_004[0xc];  // 0x4
+    void* exhibition;   // 0x10
+    void* saveRecord;   // 0x14
+    void* asyncPet;     // 0x18
+    int inventoryIndex; // 0x1c
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define CMODELOPERATIONCADDIE_OFF(f, o) typedef char CModelOperationCaddie_off_##f[((int)&((CModelOperationCaddie*)0)->f == (o)) ? 1 : -1]
+#define CMODELOPERATIONCADDIE_OFF(f, o) \
+    typedef char CModelOperationCaddie_off_##f[((int)&((CModelOperationCaddie*)0)->f == (o)) ? 1 : -1]
 CMODELOPERATIONCADDIE_OFF(exhibition, 0x10);
 CMODELOPERATIONCADDIE_OFF(saveRecord, 0x14);
 CMODELOPERATIONCADDIE_OFF(asyncPet, 0x18);
 CMODELOPERATIONCADDIE_OFF(inventoryIndex, 0x1c);
 #undef CMODELOPERATIONCADDIE_OFF
 
-#endif  // CLASSES_CMODELOPERATIONCADDIE_H
+#endif // CLASSES_CMODELOPERATIONCADDIE_H

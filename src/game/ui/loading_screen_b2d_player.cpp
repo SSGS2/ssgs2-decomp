@@ -1,3 +1,7 @@
+// Loading indicator: plays the Now Loading animation, choosing its BP files, scripts and nodes
+// and pulsing the opacity of its sprites. Loads and releases the shared loading file and texture.
+// Also holds the pending node-name and item-ID vectors and their exception cleanup.
+
 #include <decomp/ct_member.h>
 // Loading / Now Loading BP animation player (0x8028FE2C). This is a menu/HUD
 // consumer of BP draw contexts: it chooses files, scripts and nodes, and pulses
@@ -21,7 +25,7 @@
 //   Repeating draw calls therefore changes pulse speed and script/callback cadence.
 // - Playback: ConfigurePlayback copies nullable script names and sets the state
 //   map below. repeatCount becomes signed short(count-1), not a frame duration.
-// Shared scalar/ID ownership definitions are in u8028FE2C_data.cpp. Packed pools
+// Shared scalar/ID ownership definitions are in the data section. Packed pools
 // and name tables retain original symbol identities/relocation addends.
 // API: live required player except dtor (null accepted); owning handle arguments
 // are writable void** slots, never raw players. No concurrent calls: callbacks,
@@ -45,13 +49,15 @@ extern const char loadingScreenStrings[];
 }
 }
 
-// Translation unit 0x8028FE2C-0x80293248 (20 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include "game/exception.h"
 #include "classes/CB2dPlayerSimple.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CNowReloading.h"
+#include "classes/CSharedFileHandle.h"
+#include "classes/CB2dPlayerHandle.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CBpTex.h"
 // Byte views below retain the packed-string access width; original storage +8/+0x14/+0x20/+0x2C.
 
 // Borrow the shared field schema. Retain a cast macro here: the low-optimization
@@ -72,8 +78,15 @@ struct LoadingScreenStringPool {
     unsigned char padding[1];
 };
 // The first byte of each 12-byte string packs heap ownership and inline length.
-struct PackedStringStorage { unsigned int flags; unsigned int length; void* heapData; };
-struct InlineStringBytes { unsigned char flags; char characters[11]; };
+struct PackedStringStorage {
+    unsigned int flags;
+    unsigned int length;
+    void* heapData;
+};
+struct InlineStringBytes {
+    unsigned char flags;
+    char characters[11];
+};
 // Container ownership: name vectors own packed strings and their heap buffers;
 // pendingItemIds owns raw words; resolvedNodes owns only its pointer allocation
 // (BP controller entries own the nodes). All vectors store data/count/capacity.
@@ -111,18 +124,29 @@ enum PlayerState {
 // Once repeats end, a missing request name still waits until pendingScript is
 // set. A named request waits for that flag, plays once, then finishes because
 // its name was consumed and the flag remains set. Out-of-range states only draw.
-enum PlayerPulse { kOpacityFull = 255, kPulsePeriod = 510, kInlineStringLengthMask = 0x7F };
+enum PlayerPulse {
+    kOpacityFull = 255,
+    kPulsePeriod = 510,
+    kInlineStringLengthMask = 0x7F
+};
 enum LoadingPlayerDefaults {
-    kPlayerAllocationBytes = 0x7C, kLoadingHiddenNodeCount = 13,
-    kLoadingHiddenItemCount = 2, kLoadingPulseNodeCount = 1,
+    kPlayerAllocationBytes = 0x7C,
+    kLoadingHiddenNodeCount = 13,
+    kLoadingHiddenItemCount = 2,
+    kLoadingPulseNodeCount = 1,
     kLoadingOpacityDivisor = 20
 };
 // The entry slot is used for name/ID lookup and as the controller removal key.
-struct BpEntrySlotView { char reserved[4]; void* slotKey; };
+struct BpEntrySlotView {
+    char reserved[4];
+    void* slotKey;
+};
 
-struct PadObj78 { char pad[0x78]; };
-struct DelObj78 : public PadObj78 { 
-virtual void destroy(int);
+struct PadObj78 {
+    char pad[0x78];
+};
+struct DelObj78 : public PadObj78 {
+    virtual void destroy(int);
 };
 
 // Texture virtual interface; preserve the slot order used by CBpTex.
@@ -147,29 +171,19 @@ void BpSprite_SetEnabled(void* object, void* y);
 void BpSprite_SetOpacity(void* object, void* y);
 int abs(int x);
 int CSharedFilePtr_GetLoadedBuffer(void* object);
-void CSharedFileHandle_Destroy(void* object, int y);
 void* SharedFile_Create(void* object, int y);
-void CBpTex_Init(void* object);
 void* __nw__FUl(unsigned int size);
 void* __nwa__FUl(int x);
 void* appMallocDummy__FUl(int x);
 void __dl__FPv(void* object);
-void CB2dPlayerSimple_ConfigurePlayback(void* player, const char* bpFileName, const char* initialScript, int requestedScriptAddress, int repeatScriptAddress, int repeatCount);
-void CB2dPlayerSimple_SetPendingNodeNames(void* object, const char** a, int b);
-void CB2dPlayerSimple_SetPendingItemIds(void* object, const float* a, unsigned int b);
-void CB2dPlayerSimple_SetPendingPulseNodeNames(void* player, const char** nodeNames, int nodeCount, int opacityDivisor);
 void BpObject_StartScriptByName(void* object, const void* y, int z);
 int BpObject_PollLoad(void* object);
 int BpObject_IsCurrentScriptComplete(void* object);
 void BpObject_TryInvokeCurrentCallback(void* object, int y);
 void BpObject_Draw(void* object);
-int CBpCtrl_CreateEntry(void* a, void* b, void* c, int d);
 void* IdMap_Lookup(void* a, int b);
-void CB2dPlayerSimple_ResolvePendingNodes(void* object);
-void __ct__7CBpCtrlFv(void* object);
 void CBpCtrl_dtor(void* object);
 void __register_global_object(void* object, void* y, void* z);
-void CBpCtrl_DeleteEntryById(void* object, void* y);
 void appFreeUni__FPv(void* object);
 void __dla__FPv(void* object);
 void String_ReserveCapacity(void* object, unsigned int y);
@@ -201,17 +215,19 @@ struct OpacityPulseView {
 struct InitObj80290424 {
     char data[0x28];
     // Initialize the texture wrapper before setting its resource path.
-    InitObj80290424() { CBpTex_Init(this); }
+    InitObj80290424() {
+        ((CBpTex*)this)->__ct();
+    }
 };
 
 // Report whether the loading indicator owns no animation player.
-int CNowReloading_IsPlayerAbsent(void* object) {
+int CNowReloading::IsPlayerAbsent(void* object) {
     int v = *(int*)object;
     return v == 0;
 }
 
 // Mark the owned animation player's queued script for playback.
-void CB2dPlayerHandle_RequestPendingScript(void* object) {
+void CB2dPlayerHandle::RequestPendingScript(void* object) {
     int* p = *(int**)object;
     if (p != 0) {
         AsCB2dPlayerSimple(p)->pendingScript = 1;
@@ -222,21 +238,22 @@ void CB2dPlayerHandle_RequestPendingScript(void* object) {
 int LoadingIndicator_IsAbsentOrState3(void* object) {
     int* p = *(int**)object;
     // 0x8028FF00: no player and an active player both satisfy this query.
-    if (!(p == 0 || AsCB2dPlayerSimple(p)->state == kPlayerPlaying)) return 0;
+    if (!(p == 0 || AsCB2dPlayerSimple(p)->state == kPlayerPlaying))
+        return 0;
     return 1;
 }
 
 // Apply the requested enabled value to every resolved sprite.
-void CB2dPlayerSimple_SetSpritesEnabled(void* object, void* enabledValue) {
-    void** p = (*(void***)&AsCB2dPlayerSimple(object)->resolvedNodes);
-    while (p != (*(void***)&AsCB2dPlayerSimple(object)->resolvedNodes) + AsCB2dPlayerSimple(object)->resolvedNodeCount) {
+void CB2dPlayerSimple::SetSpritesEnabled(void* enabledValue) {
+    void** p = (*(void***)&resolvedNodes);
+    while (p != (*(void***)&resolvedNodes) + resolvedNodeCount) {
         BpSprite_SetEnabled(*p, enabledValue);
         ++p;
     }
 }
 
 // Reset the triangle-wave phase and set all resolved sprites to full opacity.
-void CB2dPlayerSimple_ResetOpacityPulse(void* object) {
+void CB2dPlayerSimple::ResetOpacityPulse(void* object) {
     OpacityPulseView* obj = (OpacityPulseView*)object;
     obj->phase = kOpacityFull;
     void* value = (void*)abs(kOpacityFull);
@@ -248,41 +265,41 @@ void CB2dPlayerSimple_ResetOpacityPulse(void* object) {
 }
 
 // Initialize empty script strings, node/id vectors, playback state, and opacity pulse step.
-void CB2dPlayerSimple_Init(void* object) {
-    (*(int*)&AsCB2dPlayerSimple(object)->bpFileNameStorageFlags) = 0;
-    AsCB2dPlayerSimple(object)->vtable = __vt__16CB2dPlayerSimple;
-    AsCB2dPlayerSimple(object)->bpFileNameLength = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->bpFileNameHeap) = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->initialScriptStorageFlags) = 0;
-    AsCB2dPlayerSimple(object)->initialScriptLength = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->initialScriptHeap) = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->requestedScriptStorageFlags) = 0;
-    AsCB2dPlayerSimple(object)->requestedScriptLength = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->requestedScriptHeap) = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->repeatScriptStorageFlags) = 0;
-    AsCB2dPlayerSimple(object)->repeatScriptLength = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->repeatScriptHeap) = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->resolvedNodes) = 0;
-    AsCB2dPlayerSimple(object)->resolvedNodeCount = 0;
-    AsCB2dPlayerSimple(object)->resolvedNodeCapacity = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->pendingNodeNames) = 0;
-    AsCB2dPlayerSimple(object)->pendingNodeNameCount = 0;
-    AsCB2dPlayerSimple(object)->pendingNodeNameCapacity = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->pendingItemIds) = 0;
-    AsCB2dPlayerSimple(object)->pendingItemIdCount = 0;
-    AsCB2dPlayerSimple(object)->pendingItemIdCapacity = 0;
-    (*(int*)&AsCB2dPlayerSimple(object)->pendingPulseNodeNames) = 0;
-    AsCB2dPlayerSimple(object)->pendingPulseNodeNameCount = 0;
-    AsCB2dPlayerSimple(object)->pendingPulseNodeNameCapacity = 0;
-    AsCB2dPlayerSimple(object)->bpObject = 0;
-    AsCB2dPlayerSimple(object)->state = kPlayerIdle;
-    AsCB2dPlayerSimple(object)->pulseStep = 0;
+void CB2dPlayerSimple::Init() {
+    (*(int*)&bpFileNameStorageFlags) = 0;
+    vtable = __vt__16CB2dPlayerSimple;
+    bpFileNameLength = 0;
+    (*(int*)&bpFileNameHeap) = 0;
+    (*(int*)&initialScriptStorageFlags) = 0;
+    initialScriptLength = 0;
+    (*(int*)&initialScriptHeap) = 0;
+    (*(int*)&requestedScriptStorageFlags) = 0;
+    requestedScriptLength = 0;
+    (*(int*)&requestedScriptHeap) = 0;
+    (*(int*)&repeatScriptStorageFlags) = 0;
+    repeatScriptLength = 0;
+    (*(int*)&repeatScriptHeap) = 0;
+    (*(int*)&resolvedNodes) = 0;
+    resolvedNodeCount = 0;
+    resolvedNodeCapacity = 0;
+    (*(int*)&pendingNodeNames) = 0;
+    pendingNodeNameCount = 0;
+    pendingNodeNameCapacity = 0;
+    (*(int*)&pendingItemIds) = 0;
+    pendingItemIdCount = 0;
+    pendingItemIdCapacity = 0;
+    (*(int*)&pendingPulseNodeNames) = 0;
+    pendingPulseNodeNameCount = 0;
+    pendingPulseNodeNameCapacity = 0;
+    bpObject = 0;
+    state = kPlayerIdle;
+    pulseStep = 0;
 }
 
 // Replace the shared loading animation file and texture, then begin readiness polling.
 void LoadingScreen_LoadB2dResources(void) {
     if (g_loadingScreenSharedFile != 0) {
-        CSharedFileHandle_Destroy(g_loadingScreenSharedFile, 1);
+        CSharedFileHandle::Destroy(g_loadingScreenSharedFile, 1);
         g_loadingScreenSharedFile = 0;
     }
     g_loadingScreenSharedFile = SharedFile_Create(loadingScreenStrings, 0);
@@ -327,50 +344,56 @@ void LoadingIndicator_CreatePlayer(void* object) {
 
     void* obj = __nw__FUl(kPlayerAllocationBytes);
     if (obj != 0) {
-        CB2dPlayerSimple_Init(obj);
+        ((CB2dPlayerSimple*)obj)->Init();
     }
     *slot = obj;
     char* name = loadingScreenStrings;
-    CB2dPlayerSimple_ConfigurePlayback(obj, name, name + (int)&((LoadingScreenStringPool*)0)->initialScript, 0, 0, 1);
-    CB2dPlayerSimple_SetPendingNodeNames(*slot, s_loadingNodeNames, kLoadingHiddenNodeCount);
-    CB2dPlayerSimple_SetPendingItemIds(*slot, (const float*)&kLoadingHiddenItemIdWords, kLoadingHiddenItemCount);
-    CB2dPlayerSimple_SetPendingPulseNodeNames(*slot, (const char**)&s_loadingPulseNodeNames, kLoadingPulseNodeCount, kLoadingOpacityDivisor);
+    CB2dPlayerSimple::ConfigurePlayback(obj, name, name + (int)&((LoadingScreenStringPool*)0)->initialScript, 0, 0, 1);
+    CB2dPlayerSimple::SetPendingNodeNames(*slot, s_loadingNodeNames, kLoadingHiddenNodeCount);
+    CB2dPlayerSimple::SetPendingItemIds(*slot, (const float*)&kLoadingHiddenItemIdWords, kLoadingHiddenItemCount);
+    CB2dPlayerSimple::SetPendingPulseNodeNames(*slot, (const char**)&s_loadingPulseNodeNames, kLoadingPulseNodeCount,
+                                               kLoadingOpacityDivisor);
 }
 
 // Start the first available initial/repeat/requested script; a queued request is gated by pendingScript.
 // Return 1 also when a requested name exists but waits for its flag; only no
 // named script returns 0. Does not own or retain the BP entry separately.
-int CB2dPlayerSimple_StartPendingScript(void* object) {
+int CB2dPlayerSimple::StartPendingScript(void* object) {
     struct InlineHeader {
-        CW_BITS2(
-            unsigned char flag : 1,
-            unsigned char length : 7)
+        CW_BITS2(unsigned char flag : 1, unsigned char length : 7)
     };
     char* self = (char*)object;
     int inlineValue = ((unsigned int)__cntlzw((AsCB2dPlayerSimple(self)->initialScriptStorageFlags) >> 31)) >> 5;
-    int value = inlineValue ? ((*(unsigned char*)&AsCB2dPlayerSimple(self)->initialScriptStorageFlags) & kInlineStringLengthMask)
-                            : AsCB2dPlayerSimple(self)->initialScriptLength;
+    int value =
+        inlineValue
+            ? ((*(unsigned char*)&AsCB2dPlayerSimple(self)->initialScriptStorageFlags) & kInlineStringLengthMask)
+            : AsCB2dPlayerSimple(self)->initialScriptLength;
     if (value != 0) {
-        void* param = inlineValue ? (void*)PLAYER_STRING_BYTES(self, initialScriptStorageFlags)->characters : AsCB2dPlayerSimple(self)->initialScriptHeap;
+        void* param = inlineValue ? (void*)PLAYER_STRING_BYTES(self, initialScriptStorageFlags)->characters
+                                  : AsCB2dPlayerSimple(self)->initialScriptHeap;
         BpObject_StartScriptByName((*(void**)&AsCB2dPlayerSimple(self)->bpObject), param, 1);
         return 1;
     }
 
     inlineValue = ((unsigned int)__cntlzw((AsCB2dPlayerSimple(self)->repeatScriptStorageFlags) >> 31)) >> 5;
-    value = inlineValue ? ((*(unsigned char*)&AsCB2dPlayerSimple(self)->repeatScriptStorageFlags) & kInlineStringLengthMask)
-                        : AsCB2dPlayerSimple(self)->repeatScriptLength;
+    value = inlineValue
+                ? ((*(unsigned char*)&AsCB2dPlayerSimple(self)->repeatScriptStorageFlags) & kInlineStringLengthMask)
+                : AsCB2dPlayerSimple(self)->repeatScriptLength;
     if (value != 0) {
-        void* param = inlineValue ? (void*)PLAYER_STRING_BYTES(self, repeatScriptStorageFlags)->characters : AsCB2dPlayerSimple(self)->repeatScriptHeap;
+        void* param = inlineValue ? (void*)PLAYER_STRING_BYTES(self, repeatScriptStorageFlags)->characters
+                                  : AsCB2dPlayerSimple(self)->repeatScriptHeap;
         BpObject_StartScriptByName((*(void**)&AsCB2dPlayerSimple(self)->bpObject), param, 1);
         return 1;
     }
 
     inlineValue = ((unsigned int)__cntlzw((AsCB2dPlayerSimple(self)->requestedScriptStorageFlags) >> 31)) >> 5;
-    value = inlineValue ? ((*(unsigned char*)&AsCB2dPlayerSimple(self)->requestedScriptStorageFlags) & kInlineStringLengthMask)
-                        : AsCB2dPlayerSimple(self)->requestedScriptLength;
+    value = inlineValue
+                ? ((*(unsigned char*)&AsCB2dPlayerSimple(self)->requestedScriptStorageFlags) & kInlineStringLengthMask)
+                : AsCB2dPlayerSimple(self)->requestedScriptLength;
     if (value != 0) {
         if (AsCB2dPlayerSimple(self)->pendingScript != 0) {
-            void* param = inlineValue ? (void*)PLAYER_STRING_BYTES(self, requestedScriptStorageFlags)->characters : AsCB2dPlayerSimple(self)->requestedScriptHeap;
+            void* param = inlineValue ? (void*)PLAYER_STRING_BYTES(self, requestedScriptStorageFlags)->characters
+                                      : AsCB2dPlayerSimple(self)->requestedScriptHeap;
             BpObject_StartScriptByName((*(void**)&AsCB2dPlayerSimple(self)->bpObject), param, 1);
             if ((AsCB2dPlayerSimple(self)->requestedScriptStorageFlags >> 31) == 0) {
                 PLAYER_STRING_BYTES(self, requestedScriptStorageFlags)->characters[0] = 0;
@@ -385,54 +408,53 @@ int CB2dPlayerSimple_StartPendingScript(void* object) {
     return 0;
 }
 
-struct InlineHeader802909E0 {
-    CW_BITS2(
-        unsigned char flag : 1,
-        unsigned char length : 7)
+struct InlineStringHeaderView {
+    CW_BITS2(unsigned char flag : 1, unsigned char length : 7)
 };
 
 // Remove the BP entry, clear script strings, and discard queued node names and item IDs.
-void CB2dPlayerSimple_UnloadAndClearPendingState(void* object) {
+void CB2dPlayerSimple::UnloadAndClearPendingState(void* object) {
     // Phase 1: remove the controller entry before dropping borrowed node pointers.
     char* self = (char*)object;
     if ((*(void**)&AsCB2dPlayerSimple(self)->bpObject) != 0) {
         if (((int&)Sing_805DC5F0()) == 0) {
             if (!s_bpCtrlInitialized) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_Menu8028FE2C);
                 s_bpCtrlInitialized = 1;
             }
             ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
         }
-        CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), ((BpEntrySlotView*)(*(void**)&AsCB2dPlayerSimple(self)->bpObject))->slotKey);
+        ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+            ->DeleteEntryById((int)((BpEntrySlotView*)(*(void**)&AsCB2dPlayerSimple(self)->bpObject))->slotKey);
         (*(void**)&AsCB2dPlayerSimple(self)->bpObject) = 0;
     }
 
     // Phase 2: empty all four script strings, preserving any heap allocations.
     if ((AsCB2dPlayerSimple(self)->bpFileNameStorageFlags >> 31) == 0) {
         PLAYER_STRING_BYTES(self, bpFileNameStorageFlags)->characters[0] = 0;
-        ((InlineHeader802909E0*)((((&AsCB2dPlayerSimple(self)->bpFileNameStorageFlags)))))->length = 0;
+        ((InlineStringHeaderView*)((((&AsCB2dPlayerSimple(self)->bpFileNameStorageFlags)))))->length = 0;
     } else {
         *(*(unsigned char**)&AsCB2dPlayerSimple(self)->bpFileNameHeap) = 0;
         (*(void**)&AsCB2dPlayerSimple(self)->bpFileNameLength) = 0;
     }
     if ((AsCB2dPlayerSimple(self)->initialScriptStorageFlags >> 31) == 0) {
         PLAYER_STRING_BYTES(self, initialScriptStorageFlags)->characters[0] = 0;
-        ((InlineHeader802909E0*)(&AsCB2dPlayerSimple(self)->initialScriptStorageFlags))->length = 0;
+        ((InlineStringHeaderView*)(&AsCB2dPlayerSimple(self)->initialScriptStorageFlags))->length = 0;
     } else {
         *(*(unsigned char**)&AsCB2dPlayerSimple(self)->initialScriptHeap) = 0;
         (*(void**)&AsCB2dPlayerSimple(self)->initialScriptLength) = 0;
     }
     if ((AsCB2dPlayerSimple(self)->requestedScriptStorageFlags >> 31) == 0) {
         PLAYER_STRING_BYTES(self, requestedScriptStorageFlags)->characters[0] = 0;
-        ((InlineHeader802909E0*)(&AsCB2dPlayerSimple(self)->requestedScriptStorageFlags))->length = 0;
+        ((InlineStringHeaderView*)(&AsCB2dPlayerSimple(self)->requestedScriptStorageFlags))->length = 0;
     } else {
         *(*(unsigned char**)&AsCB2dPlayerSimple(self)->requestedScriptHeap) = 0;
         (*(void**)&AsCB2dPlayerSimple(self)->requestedScriptLength) = 0;
     }
     if ((AsCB2dPlayerSimple(self)->repeatScriptStorageFlags >> 31) == 0) {
         PLAYER_STRING_BYTES(self, repeatScriptStorageFlags)->characters[0] = 0;
-        ((InlineHeader802909E0*)(&AsCB2dPlayerSimple(self)->repeatScriptStorageFlags))->length = 0;
+        ((InlineStringHeaderView*)(&AsCB2dPlayerSimple(self)->repeatScriptStorageFlags))->length = 0;
     } else {
         *(*(unsigned char**)&AsCB2dPlayerSimple(self)->repeatScriptHeap) = 0;
         (*(void**)&AsCB2dPlayerSimple(self)->repeatScriptLength) = 0;
@@ -446,24 +468,29 @@ void CB2dPlayerSimple_UnloadAndClearPendingState(void* object) {
     AsCB2dPlayerSimple(self)->pendingNodeNameCount = count - AsCB2dPlayerSimple(self)->pendingNodeNameCount;
     while (count) {
         ptr -= 0xC;
-        if (ptr) { if ((((PackedStringStorage*)ptr)->flags >> 31) != 0) {
-            appFreeUni__FPv(((PackedStringStorage*)ptr)->heapData);
-        } }
+        if (ptr) {
+            if ((((PackedStringStorage*)ptr)->flags >> 31) != 0) {
+                appFreeUni__FPv(((PackedStringStorage*)ptr)->heapData);
+            }
+        }
         --count;
     }
 
     char* ptr2;
 
-    unsigned int count2 = AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount; unsigned int oldCount = AsCB2dPlayerSimple(self)->pendingItemIdCount;
-       unsigned int clearedCount2 = count2 - AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount;
+    unsigned int count2 = AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount;
+    unsigned int oldCount = AsCB2dPlayerSimple(self)->pendingItemIdCount;
+    unsigned int clearedCount2 = count2 - AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount;
     AsCB2dPlayerSimple(self)->pendingItemIdCount -= oldCount;
     ptr2 = (*(char**)&AsCB2dPlayerSimple(self)->pendingPulseNodeNames) + count2 * 0xC;
     AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount = clearedCount2;
     while (count2 != 0) {
         ptr2 -= 0xC;
-        if (ptr2 != 0) { if ((((PackedStringStorage*)ptr2)->flags >> 31) != 0) {
-            appFreeUni__FPv(*(void**)(8 + ptr2));
-        } }
+        if (ptr2 != 0) {
+            if ((((PackedStringStorage*)ptr2)->flags >> 31) != 0) {
+                appFreeUni__FPv(*(void**)(8 + ptr2));
+            }
+        }
         count2--;
     }
 
@@ -495,46 +522,56 @@ void CB2dPlayerSimple_UnloadAndClearPendingState(void* object) {
 // A pending request can stop finite or indefinite repetition at a completion
 // boundary; it never cuts the current script mid-play. See chooser table in
 // B2dPlayer_UpdateAndDraw for the initial-to-first-repeat priority exception.
-void CB2dPlayerSimple_ConfigurePlayback(void* object, const char* bpFileName, const char* initialScript, int requestedScriptAddress, int repeatScriptAddress, int repeatCount) {
+void CB2dPlayerSimple::ConfigurePlayback(void* object, const char* bpFileName, const char* initialScript,
+                                         int requestedScriptAddress, int repeatScriptAddress, int repeatCount) {
     // Phase 1: unregister the old BP object, then clear strings and queued nodes.
     char* self = (char*)object;
     if ((*(void**)&AsCB2dPlayerSimple(self)->bpObject) != 0) {
         if (((int&)Sing_805DC5F0()) == 0) {
             if (s_bpCtrlInitialized == 0) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_Menu8028FE2C);
                 s_bpCtrlInitialized = 1;
             }
             ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
         }
-        CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), ((BpEntrySlotView*)(*(void**)&AsCB2dPlayerSimple(self)->bpObject))->slotKey);
+        ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+            ->DeleteEntryById((int)((BpEntrySlotView*)(*(void**)&AsCB2dPlayerSimple(self)->bpObject))->slotKey);
         (*(void**)&AsCB2dPlayerSimple(self)->bpObject) = 0;
     }
 
     if ((AsCB2dPlayerSimple(self)->bpFileNameStorageFlags >> 31) == 0) {
         PLAYER_STRING_BYTES(self, bpFileNameStorageFlags)->characters[0] = 0;
-        (*(unsigned char*)&AsCB2dPlayerSimple(self)->bpFileNameStorageFlags) = (unsigned char)((*(unsigned char*)&AsCB2dPlayerSimple(self)->bpFileNameStorageFlags) & ~kInlineStringLengthMask);
+        (*(unsigned char*)&AsCB2dPlayerSimple(self)->bpFileNameStorageFlags) =
+            (unsigned char)((*(unsigned char*)&AsCB2dPlayerSimple(self)->bpFileNameStorageFlags) &
+                            ~kInlineStringLengthMask);
     } else {
         *(*(unsigned char**)&AsCB2dPlayerSimple(self)->bpFileNameHeap) = 0;
         (*(void**)&AsCB2dPlayerSimple(self)->bpFileNameLength) = 0;
     }
     if ((AsCB2dPlayerSimple(self)->initialScriptStorageFlags >> 31) == 0) {
         PLAYER_STRING_BYTES(self, initialScriptStorageFlags)->characters[0] = 0;
-        (*(unsigned char*)&AsCB2dPlayerSimple(self)->initialScriptStorageFlags) = (unsigned char)((*(unsigned char*)&AsCB2dPlayerSimple(self)->initialScriptStorageFlags) & ~kInlineStringLengthMask);
+        (*(unsigned char*)&AsCB2dPlayerSimple(self)->initialScriptStorageFlags) =
+            (unsigned char)((*(unsigned char*)&AsCB2dPlayerSimple(self)->initialScriptStorageFlags) &
+                            ~kInlineStringLengthMask);
     } else {
         *(*(unsigned char**)&AsCB2dPlayerSimple(self)->initialScriptHeap) = 0;
         (*(void**)&AsCB2dPlayerSimple(self)->initialScriptLength) = 0;
     }
-            if ((AsCB2dPlayerSimple(self)->requestedScriptStorageFlags >> 31) == 0) {
-                PLAYER_STRING_BYTES(self, requestedScriptStorageFlags)->characters[0] = 0;
-                (*(unsigned char*)&AsCB2dPlayerSimple(self)->requestedScriptStorageFlags) = (unsigned char)((*(unsigned char*)&AsCB2dPlayerSimple(self)->requestedScriptStorageFlags) & ~kInlineStringLengthMask);
+    if ((AsCB2dPlayerSimple(self)->requestedScriptStorageFlags >> 31) == 0) {
+        PLAYER_STRING_BYTES(self, requestedScriptStorageFlags)->characters[0] = 0;
+        (*(unsigned char*)&AsCB2dPlayerSimple(self)->requestedScriptStorageFlags) =
+            (unsigned char)((*(unsigned char*)&AsCB2dPlayerSimple(self)->requestedScriptStorageFlags) &
+                            ~kInlineStringLengthMask);
     } else {
         *(*(unsigned char**)&AsCB2dPlayerSimple(self)->requestedScriptHeap) = 0;
         (*(void**)&AsCB2dPlayerSimple(self)->requestedScriptLength) = 0;
     }
     if ((AsCB2dPlayerSimple(self)->repeatScriptStorageFlags >> 31) == 0) {
         PLAYER_STRING_BYTES(self, repeatScriptStorageFlags)->characters[0] = 0;
-        (*(unsigned char*)&AsCB2dPlayerSimple(self)->repeatScriptStorageFlags) = (unsigned char)((*(unsigned char*)&AsCB2dPlayerSimple(self)->repeatScriptStorageFlags) & ~kInlineStringLengthMask);
+        (*(unsigned char*)&AsCB2dPlayerSimple(self)->repeatScriptStorageFlags) =
+            (unsigned char)((*(unsigned char*)&AsCB2dPlayerSimple(self)->repeatScriptStorageFlags) &
+                            ~kInlineStringLengthMask);
     } else {
         *(*(unsigned char**)&AsCB2dPlayerSimple(self)->repeatScriptHeap) = 0;
         (*(void**)&AsCB2dPlayerSimple(self)->repeatScriptLength) = 0;
@@ -562,7 +599,8 @@ void CB2dPlayerSimple_ConfigurePlayback(void* object, const char* bpFileName, co
         }
         --count2;
     }
-    AsCB2dPlayerSimple(self)->resolvedNodeCount = AsCB2dPlayerSimple(self)->resolvedNodeCount - AsCB2dPlayerSimple(self)->resolvedNodeCount;
+    AsCB2dPlayerSimple(self)->resolvedNodeCount =
+        AsCB2dPlayerSimple(self)->resolvedNodeCount - AsCB2dPlayerSimple(self)->resolvedNodeCount;
 
     // Phase 2: copy each supplied name into the player's packed string storage.
     int fileNameLength;
@@ -575,43 +613,54 @@ void CB2dPlayerSimple_ConfigurePlayback(void* object, const char* bpFileName, co
     char buf0;
     buf0 = *(char*)((char*)&buf0 + 4);
     *(char*)((char*)&buf0) = buf0;
-    String_ReplaceRange(self + PLAYER_MEMBER_OFFSET(bpFileNameStorageFlags), 0, fileNameLength, bpFileName, (const char*)((const char*)bpFileName + strlen(bpFileName)), &buf0);
+    String_ReplaceRange(self + PLAYER_MEMBER_OFFSET(bpFileNameStorageFlags), 0, fileNameLength, bpFileName,
+                        (const char*)((const char*)bpFileName + strlen(bpFileName)), &buf0);
 
     if (initialScript != 0) {
         int initialScriptLength;
         if ((AsCB2dPlayerSimple(self)->initialScriptStorageFlags >> 31) == 0) {
-            initialScriptLength = (*(unsigned char*)&AsCB2dPlayerSimple(self)->initialScriptStorageFlags) & kInlineStringLengthMask;
+            initialScriptLength =
+                (*(unsigned char*)&AsCB2dPlayerSimple(self)->initialScriptStorageFlags) & kInlineStringLengthMask;
         } else {
             initialScriptLength = AsCB2dPlayerSimple(self)->initialScriptLength;
         }
         char buf1;
         buf1 = *(char*)((char*)&buf1 + 4);
         *(char*)((char*)&buf1) = buf1;
-        String_ReplaceRange(self + PLAYER_MEMBER_OFFSET(initialScriptStorageFlags), 0, initialScriptLength, initialScript, (const char*)((const char*)initialScript + strlen(initialScript)), &buf1);
+        String_ReplaceRange(self + PLAYER_MEMBER_OFFSET(initialScriptStorageFlags), 0, initialScriptLength,
+                            initialScript, (const char*)((const char*)initialScript + strlen(initialScript)), &buf1);
     }
     if (requestedScriptAddress != 0) {
         int requestedScriptLength;
         if ((AsCB2dPlayerSimple(self)->requestedScriptStorageFlags >> 31) == 0) {
-            requestedScriptLength = (*(unsigned char*)&AsCB2dPlayerSimple(self)->requestedScriptStorageFlags) & kInlineStringLengthMask;
+            requestedScriptLength =
+                (*(unsigned char*)&AsCB2dPlayerSimple(self)->requestedScriptStorageFlags) & kInlineStringLengthMask;
         } else {
             requestedScriptLength = AsCB2dPlayerSimple(self)->requestedScriptLength;
         }
         char buf2;
         buf2 = *(char*)((char*)&buf2 + 4);
         *(char*)((char*)&buf2) = buf2;
-        String_ReplaceRange(self + PLAYER_MEMBER_OFFSET(requestedScriptStorageFlags), 0, requestedScriptLength, (const char*)requestedScriptAddress, (const char*)((const char*)requestedScriptAddress + strlen((const char*)requestedScriptAddress)), &buf2);
+        String_ReplaceRange(
+            self + PLAYER_MEMBER_OFFSET(requestedScriptStorageFlags), 0, requestedScriptLength,
+            (const char*)requestedScriptAddress,
+            (const char*)((const char*)requestedScriptAddress + strlen((const char*)requestedScriptAddress)), &buf2);
     }
     if (repeatScriptAddress != 0) {
         int repeatScriptLength;
         if ((AsCB2dPlayerSimple(self)->repeatScriptStorageFlags >> 31) == 0) {
-            repeatScriptLength = (*(unsigned char*)&AsCB2dPlayerSimple(self)->repeatScriptStorageFlags) & kInlineStringLengthMask;
+            repeatScriptLength =
+                (*(unsigned char*)&AsCB2dPlayerSimple(self)->repeatScriptStorageFlags) & kInlineStringLengthMask;
         } else {
             repeatScriptLength = AsCB2dPlayerSimple(self)->repeatScriptLength;
         }
         char buf3;
         buf3 = *(char*)((char*)&buf3 + 4);
         *(char*)((char*)&buf3) = buf3;
-        String_ReplaceRange(self + PLAYER_MEMBER_OFFSET(repeatScriptStorageFlags), 0, repeatScriptLength, (const char*)repeatScriptAddress, (const char*)((const char*)repeatScriptAddress + strlen((const char*)repeatScriptAddress)), &buf3);
+        String_ReplaceRange(self + PLAYER_MEMBER_OFFSET(repeatScriptStorageFlags), 0, repeatScriptLength,
+                            (const char*)repeatScriptAddress,
+                            (const char*)((const char*)repeatScriptAddress + strlen((const char*)repeatScriptAddress)),
+                            &buf3);
     }
 
     // A negative remaining count repeats indefinitely; a positive count decrements after each play.
@@ -625,7 +674,7 @@ void CB2dPlayerSimple_ConfigurePlayback(void* object, const char* bpFileName, co
 void LoadingScreen_ReleaseSharedResources(void) {
     if (s_loadingScreenResourcesRequested != 0) {
         if (g_loadingScreenSharedFile != 0) {
-            CSharedFileHandle_Destroy(g_loadingScreenSharedFile, 1);
+            CSharedFileHandle::Destroy(g_loadingScreenSharedFile, 1);
             g_loadingScreenSharedFile = 0;
         }
         if (g_loadingScreenTexture != 0) {
@@ -743,47 +792,40 @@ struct DtorPlayer {
 
 // Unregister the BP entry, clear all owned strings/vectors, and optionally free the player.
 // flag > 0 frees self, so the returned original pointer may be dangling; null is safe.
-void* CB2dPlayerSimple_dtor(DtorPlayer* self, int flag) {
-    // Phase 1: unregister the BP entry; controller-owned nodes become unusable.
-    if (self != 0) {
-        self->vtable = __vt__16CB2dPlayerSimple;
-        if (self->bpEntry != 0) {
-            if (((int&)Sing_805DC5F0()) == 0) {
-                if (s_bpCtrlInitialized == 0) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_Menu8028FE2C);
-                    s_bpCtrlInitialized = 1;
-                }
-                ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
+CB2dPlayerSimple::~CB2dPlayerSimple() {
+    DtorPlayer* self = (DtorPlayer*)this;
+    self->vtable = __vt__16CB2dPlayerSimple;
+    if (self->bpEntry != 0) {
+        if (((int&)Sing_805DC5F0()) == 0) {
+            if (s_bpCtrlInitialized == 0) {
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_Menu8028FE2C);
+                s_bpCtrlInitialized = 1;
             }
-            CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), ((BpEntrySlotView*)self->bpEntry)->slotKey);
-            self->bpEntry = 0;
+            ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
         }
-        // Phase 2: clear logical contents, then run nested unwind-wrapper
-        // destructors to release each allocation in reverse member order.
-        self->bpFileName.clear();
-        self->initialScript.clear();
-        self->requestedScript.clear();
-        self->repeatScript.clear();
-        self->pendingNodeNames.clear();
-        self->pendingItemIds.clear();
-        self->pendingPulseNodeNames.clear();
-        self->resolvedNodes.clear();
-        ((DtorWrap<DtorWrap<DtorWrap<DtorStrVec> > >*)&self->pendingPulseNodeNames)->~DtorWrap();
-        ((DtorWrap<DtorWrap<DtorWrap<DtorWrap<DtorVec> > > >*)&self->pendingItemIds)->~DtorWrap();
-        ((DtorWrap<DtorWrap<DtorWrap<DtorStrVec> > >*)&self->pendingNodeNames)->~DtorWrap();
-        ((DtorWrap<DtorWrap<DtorWrap<DtorWrap<DtorVec> > > >*)&self->resolvedNodes)->~DtorWrap();
-        self->repeatScript.~DtorStr();
-        self->requestedScript.~DtorStr();
-        self->initialScript.~DtorStr();
-        self->bpFileName.~DtorStr();
-        if (flag > 0) {
-            __dl__FPv(self);
-        }
+        ((CBpCtrl*)(((int&)Sing_805DC5F0())))->DeleteEntryById((int)((BpEntrySlotView*)self->bpEntry)->slotKey);
+        self->bpEntry = 0;
     }
-    return self;
+    // Phase 2: clear logical contents, then run nested unwind-wrapper
+    // destructors to release each allocation in reverse member order.
+    self->bpFileName.clear();
+    self->initialScript.clear();
+    self->requestedScript.clear();
+    self->repeatScript.clear();
+    self->pendingNodeNames.clear();
+    self->pendingItemIds.clear();
+    self->pendingPulseNodeNames.clear();
+    self->resolvedNodes.clear();
+    ((DtorWrap<DtorWrap<DtorWrap<DtorStrVec> > >*)&self->pendingPulseNodeNames)->~DtorWrap();
+    ((DtorWrap<DtorWrap<DtorWrap<DtorWrap<DtorVec> > > >*)&self->pendingItemIds)->~DtorWrap();
+    ((DtorWrap<DtorWrap<DtorWrap<DtorStrVec> > >*)&self->pendingNodeNames)->~DtorWrap();
+    ((DtorWrap<DtorWrap<DtorWrap<DtorWrap<DtorVec> > > >*)&self->resolvedNodes)->~DtorWrap();
+    self->repeatScript.~DtorStr();
+    self->requestedScript.~DtorStr();
+    self->initialScript.~DtorStr();
+    self->bpFileName.~DtorStr();
 }
-
 
 extern void* __vt__Q23std11logic_error[];
 extern void* s_sharedCharDeleterVtable[];
@@ -791,34 +833,34 @@ extern void* __vt__Q23std12length_error[];
 extern void __dt__Q23std12length_errorFv(void*);
 extern void __throw(void*, void*, void*);
 
-struct StringItem80290FFC {
+struct QueuedNodeName {
     unsigned int flags;
     unsigned int length;
     char* data;
 
     // Free this queued name only when it uses heap string storage.
-    ~StringItem80290FFC() {
+    ~QueuedNodeName() {
         if ((flags >> 31) != 0) {
             appFreeUni__FPv(data);
         }
     }
 };
 
-struct StagingVector80290FFC {
-    StringItem80290FFC* begin;
+struct QueuedNodeNameVector {
+    QueuedNodeName* begin;
     unsigned int size;
     unsigned int capacity;
     unsigned int* sourceCapacity;
     unsigned int offset;
 
     // Start a guarded replacement vector for ordinary queued node names.
-    StagingVector80290FFC(unsigned int* p) : begin(0), size(0), capacity(0), sourceCapacity(p), offset(0) {}
+    QueuedNodeNameVector(unsigned int* p) : begin(0), size(0), capacity(0), sourceCapacity(p), offset(0) {}
 
     // Destroy staged name strings and release their allocation on unwind or after swap.
-    ~StagingVector80290FFC() {
+    ~QueuedNodeNameVector() {
         if (begin != 0) {
             unsigned int count = size;
-            StringItem80290FFC* item = begin + count;
+            QueuedNodeName* item = begin + count;
             size -= count;
             while (count != 0) {
                 --item;
@@ -841,14 +883,16 @@ struct LengthErrorObject80290FFC {
     char pad15[3];
 };
 
-
 struct ErrorCleanup91 {
     char* data;
     char* flag;
     // Guard a diagnostic allocation until its control block is constructed.
     ErrorCleanup91(char* p, char* f) : data(p), flag(f) {}
     // Free diagnostic text when control-block construction did not take ownership.
-    ~ErrorCleanup91() { if (data) __dla__FPv(data); }
+    ~ErrorCleanup91() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 // Empty allocator object: only its zeroed state byte is observable (it shapes the original unwind tables).
 struct EmptyAllocator {
@@ -863,7 +907,10 @@ struct ErrorOwner91 {
     int owners;
     char* data;
     // Own copied diagnostic text with one strong and one weak reference.
-    ErrorOwner91(char* p) : refs(1), owners(1) { vtable = s_sharedCharDeleterVtable; data = p; }
+    ErrorOwner91(char* p) : refs(1), owners(1) {
+        vtable = s_sharedCharDeleterVtable;
+        data = p;
+    }
 };
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 struct ErrorBase91 {
@@ -871,11 +918,16 @@ struct ErrorBase91 {
     char* data;
     ErrorOwner91* owner;
     // Invoke the exception base destructor without deallocating this local object.
-    ~ErrorBase91() { __dt__Q23std9exceptionFv(this, 0); }
+    ~ErrorBase91() {
+        __dt__Q23std9exceptionFv(this, 0);
+    }
     // Copy diagnostic text and attach it to a guarded reference-counted owner.
     ErrorBase91(const char* text) {
         vtable = __vt__Q23std11logic_error;
-        struct { char value; char pad[3]; } flag;
+        struct {
+            char value;
+            char pad[3];
+        } flag;
         flag.value = 0;
         int n = strlen(text) + 1;
         char* copy = (char*)__nwa__FUl((n << 1) - n);
@@ -891,7 +943,10 @@ struct ErrorBase91 {
     ErrorBase91(const char* text, int) {
         EmptyAllocator allocator;
         vtable = __vt__Q23std11logic_error;
-        struct { char value; char pad[3]; } flag;
+        struct {
+            char value;
+            char pad[3];
+        } flag;
         flag.value = 0;
         int n = strlen(text) + 1;
         char* copy = (char*)__nwa__FUl((n << 1) - n);
@@ -908,9 +963,13 @@ struct ErrorBase91 {
 namespace std {
 struct length_error : ErrorBase91 {
     // Build the matching length-error ABI variant and install its vtable.
-    length_error(const char* text) : ErrorBase91(text) { vtable = __vt__Q23std12length_error; }
+    length_error(const char* text) : ErrorBase91(text) {
+        vtable = __vt__Q23std12length_error;
+    }
     // Build the matching length-error ABI variant and install its vtable.
-    length_error(const char* text, int flag) : ErrorBase91(text, flag) { vtable = __vt__Q23std12length_error; }
+    length_error(const char* text, int flag) : ErrorBase91(text, flag) {
+        vtable = __vt__Q23std12length_error;
+    }
     ~length_error();
     DECOMP_CT_MEMBER(length_error)
 };
@@ -930,7 +989,7 @@ struct PendingNameString {
     }
 };
 
-struct StagingVector80291B6C {
+struct QueuedPulseNameVector {
     PendingNameString* begin;
     unsigned int size;
     unsigned int capacity;
@@ -938,10 +997,10 @@ struct StagingVector80291B6C {
     unsigned int offset;
 
     // Start a guarded replacement vector for queued pulse-node names.
-    StagingVector80291B6C(unsigned int* p) : begin(0), size(0), capacity(0), sourceCapacity(p), offset(0) {}
+    QueuedPulseNameVector(unsigned int* p) : begin(0), size(0), capacity(0), sourceCapacity(p), offset(0) {}
 
     // Destroy staged pulse names and free their vector allocation.
-    ~StagingVector80291B6C() {
+    ~QueuedPulseNameVector() {
         if (begin != 0) {
             unsigned int count = size;
             PendingNameString* item = begin + count;
@@ -959,11 +1018,10 @@ struct StagingVector80291B6C {
     }
 };
 
-
 // Copy inline words in store order; source data remains a reference until its final load.
-static inline void CopyQueuedInlineWords(unsigned int& destinationFlags,
-    unsigned int& destinationLength, char*& destinationData,
-    unsigned int flags, unsigned int length, char* const& sourceData) {
+static inline void CopyQueuedInlineWords(unsigned int& destinationFlags, unsigned int& destinationLength,
+                                         char*& destinationData, unsigned int flags, unsigned int length,
+                                         char* const& sourceData) {
     destinationFlags = flags;
     destinationLength = length;
     destinationData = sourceData;
@@ -985,8 +1043,8 @@ static inline void DestroyPendingNameContents(NameString*& cursor, unsigned int&
 extern "C" {
 
 // Initialize an empty destination and reserve for a heap-name copy; caller owns unwind cleanup.
-static inline void ReserveQueuedHeapName(void* destination, unsigned int& flags,
-    unsigned int& length, char*& data, const unsigned int& sourceLength) {
+static inline void ReserveQueuedHeapName(void* destination, unsigned int& flags, unsigned int& length, char*& data,
+                                         const unsigned int& sourceLength) {
     flags = 0;
     length = 0;
     data = 0;
@@ -1010,21 +1068,26 @@ static inline void ReserveQueuedHeapName(void* destination, unsigned int& flags,
 inline void ThrowPendingNameLengthError(std::length_error* error) {
     error->__ct(LOADING_STRING(loadingScreenStrings, vectorLengthError), 0);
     exception_runtime::__throw(LOADING_STRING(exception_runtime::loadingScreenStrings, lengthErrorType), error,
-        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                               (void*)exception_runtime::__dt__Q23std12length_errorFv);
 }
 // Storage must remain at the call site to preserve original stack/unwind layout.
-#define THROW_PENDING_NAME_LENGTH_ERROR() do { \
-    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage; \
-    std::length_error* error = (std::length_error*)storage.bytes; \
-    ThrowPendingNameLengthError(error); \
-} while (0)
+#define THROW_PENDING_NAME_LENGTH_ERROR()                             \
+    do {                                                              \
+        union {                                                       \
+            double alignment;                                         \
+            unsigned char bytes[sizeof(std::length_error)];           \
+        } storage;                                                    \
+        std::length_error* error = (std::length_error*)storage.bytes; \
+        ThrowPendingNameLengthError(error);                           \
+    } while (0)
 
 // Copy the pulse-node name array into the pending queue and set the opacity increment.
 // nodeCount and opacityDivisor are truncated to their LOW EIGHT BITS. Supply 0..255
 // names, each a valid borrowed C string; copies become player-owned. The caller's
 // array must not alias the old queue. The stored opacity increment is
 // low8(int(255.0 / low8(opacityDivisor))); a zero divisor disables pulsing.
-void CB2dPlayerSimple_SetPendingPulseNodeNames(void* object, const char** nodeNames, int nodeCount, int opacityDivisor) {
+void CB2dPlayerSimple::SetPendingPulseNodeNames(void* object, const char** nodeNames, int nodeCount,
+                                                int opacityDivisor) {
     // Phase 1: destroy old queued names while keeping vector capacity.
     char* self = (char*)object;
     EmptyAllocator clearAllocator;
@@ -1042,141 +1105,160 @@ void CB2dPlayerSimple_SetPendingPulseNodeNames(void* object, const char** nodeNa
             const char* text = nodeNames[nameIndex];
             char allocatorScratch[8];
             {
-            // OWN TEXT: temporary owns a copy until its destructor runs after append.
-            PendingNameString item;
-            item.flags = 0;
-            item.length = 0;
-            item.data = 0;
-            unsigned int length = strlen(text);
-            String_ReserveCapacity(&item, length);
-            allocatorScratch[0] = allocatorScratch[4];
-            String_ReplaceRange(&item, 0, 0, text, text + length, allocatorScratch);
+                // OWN TEXT: temporary owns a copy until its destructor runs after append.
+                PendingNameString item;
+                item.flags = 0;
+                item.length = 0;
+                item.data = 0;
+                unsigned int length = strlen(text);
+                String_ReserveCapacity(&item, length);
+                allocatorScratch[0] = allocatorScratch[4];
+                String_ReplaceRange(&item, 0, 0, text, text + length, allocatorScratch);
 
-            unsigned int count = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount);
-            unsigned int capacity = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCapacity);
-            EmptyAllocator appendAllocator;
-            // Append with spare capacity: copy one value, then publish its count.
-            if (count < capacity) {
-                PendingNameString* slot = (PendingNameString*)AsCB2dPlayerSimple(self)->pendingPulseNodeNames + count;
-                if (slot != 0) {
-                    try {
-                    unsigned int itemFlags = item.flags;
-                    if ((itemFlags >> 31) == 0) {
-                        unsigned int itemLength = item.length;
-                        CopyQueuedInlineWords(slot->flags, slot->length, slot->data, itemFlags, itemLength, item.data);
-                    } else {
-                        ReserveQueuedHeapName(slot, slot->flags, slot->length, slot->data, item.length);
-                        char appendStringAllocator[12];
-                        appendStringAllocator[0] = appendStringAllocator[4];
-                        String_ReplaceRange(slot, 0, 0, item.data, item.data + item.length, appendStringAllocator);
-                    }
-                    } catch (...) { throw; }
-                }
-                (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount) = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount) + 1;
-            } else {
-                EmptyAllocator growAllocator;
-                EmptyAllocator rangeAllocator;
-                unsigned int capacityForError = capacity;
-                if (kMaxStringVectorElements - capacityForError < 1) {
-                    THROW_PENDING_NAME_LENGTH_ERROR();
-                }
-
-                // Reserve: until swap, staging owns every newly constructed name.
-                unsigned int* capacityAddress = (unsigned int*)(self + PLAYER_MEMBER_OFFSET(pendingPulseNodeNameCapacity));
-                unsigned int required = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount) + 1 - *capacityAddress;
-                StagingVector80291B6C staging(capacityAddress);
-                unsigned int growthCapacity = *capacityAddress;
-                if (required > kMaxStringVectorElements - growthCapacity) {
-                    THROW_PENDING_NAME_LENGTH_ERROR();
-                }
-
-                unsigned int newCapacity;
-                if (growthCapacity < kStringVectorSmallGrowthLimit) {
-                    unsigned int growthThreeFifths = ((growthCapacity + 1) * 3) / 5;
-                    unsigned int* growthChoice;
-                    if (growthThreeFifths < required) {
-                        growthChoice = &required;
-                    } else {
-                        growthChoice = &growthThreeFifths;
-                    }
-                    newCapacity = growthCapacity + *growthChoice;
-                } else if (growthCapacity < kStringVectorHalfGrowthLimit) {
-                    unsigned int growthHalf = (growthCapacity + 1) >> 1;
-                    unsigned int* growthChoice;
-                    if (growthHalf < required) {
-                        growthChoice = &required;
-                    } else {
-                        growthChoice = &growthHalf;
-                    }
-                    newCapacity = growthCapacity + *growthChoice;
-                } else {
-                    newCapacity = kMaxStringVectorElements;
-                }
-                EmptyAllocator allocationAllocator;
-                if (newCapacity > kMaxStringVectorElements) {
-                    THROW_PENDING_NAME_LENGTH_ERROR();
-                }
-
-                staging.begin = (PendingNameString*)appMallocDummy__FUl(newCapacity * sizeof(PendingNameString));
-                staging.capacity = newCapacity;
-                staging.offset = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount);
-                PendingNameString* newSlot = staging.begin + staging.offset + staging.size;
-                unsigned int loopCount = 1;
-                EmptyAllocator copyAllocator;
-                while (loopCount != 0) {
-                    if (newSlot != 0) {
+                unsigned int count = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount);
+                unsigned int capacity = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCapacity);
+                EmptyAllocator appendAllocator;
+                // Append with spare capacity: copy one value, then publish its count.
+                if (count < capacity) {
+                    PendingNameString* slot =
+                        (PendingNameString*)AsCB2dPlayerSimple(self)->pendingPulseNodeNames + count;
+                    if (slot != 0) {
                         try {
-                        unsigned int itemFlags = item.flags;
-                        if ((itemFlags >> 31) == 0) {
-                            unsigned int itemLength = item.length;
-                        CopyQueuedInlineWords(newSlot->flags, newSlot->length, newSlot->data, itemFlags, itemLength, item.data);
-                        } else {
-                            ReserveQueuedHeapName(newSlot, newSlot->flags, newSlot->length, newSlot->data, item.length);
-                            char growthStringAllocator[12];
-                            growthStringAllocator[0] = growthStringAllocator[4];
-                            String_ReplaceRange(newSlot, 0, 0, item.data, item.data + item.length, growthStringAllocator);
+                            unsigned int itemFlags = item.flags;
+                            if ((itemFlags >> 31) == 0) {
+                                unsigned int itemLength = item.length;
+                                CopyQueuedInlineWords(slot->flags, slot->length, slot->data, itemFlags, itemLength,
+                                                      item.data);
+                            } else {
+                                ReserveQueuedHeapName(slot, slot->flags, slot->length, slot->data, item.length);
+                                char appendStringAllocator[12];
+                                appendStringAllocator[0] = appendStringAllocator[4];
+                                String_ReplaceRange(slot, 0, 0, item.data, item.data + item.length,
+                                                    appendStringAllocator);
+                            }
+                        } catch (...) {
+                            throw;
                         }
-                        } catch (...) { throw; }
                     }
-                    --loopCount;
-                    ++newSlot;
-                    ++staging.size;
-                }
-
-                PendingNameString* oldData = (PendingNameString*)AsCB2dPlayerSimple(self)->pendingPulseNodeNames;
-                EmptyAllocator moveAllocator;
-                int movedCount = (int)((char*)(oldData + (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount)) - (char*)oldData) / (int)sizeof(PendingNameString);
-                staging.offset -= movedCount;
-                // Move: raw copy transfers the old prefix's heap ownership;
-                // zeroing source tags prevents its later destruction from freeing it.
-                memcpy(staging.begin + staging.offset, oldData, movedCount * sizeof(PendingNameString));
-                memset(oldData, 0, movedCount * sizeof(PendingNameString));
-                staging.size += movedCount;
-
-                // Commit: player takes the new buffer; staging takes the old one.
-                unsigned int previousSize = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount);
-                PendingNameString* swapData = (*(PendingNameString**)&AsCB2dPlayerSimple(self)->pendingPulseNodeNames);
-                PendingNameString* newData = staging.begin;
-                unsigned int oldCapacity = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCapacity);
-                staging.begin = swapData;
-                (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCapacity) = staging.capacity;
-                staging.capacity = oldCapacity;
-                AsCB2dPlayerSimple(self)->pendingPulseNodeNames = newData;
-                (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount) = staging.size;
-                staging.size = previousSize;
-
-                // Retire: moved-from strings have zero tags; release old storage.
-                PendingNameString* oldStart = swapData + staging.offset;
-                EmptyAllocator destroyAllocator;
-                PendingNameString* p = oldStart + staging.size;
-                while (p > oldStart) {
-                    --p;
-                    if (p != 0 && (p->flags >> 31) != 0) {
-                        appFreeUni__FPv(p->data);
+                    (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount) =
+                        (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount) + 1;
+                } else {
+                    EmptyAllocator growAllocator;
+                    EmptyAllocator rangeAllocator;
+                    unsigned int capacityForError = capacity;
+                    if (kMaxStringVectorElements - capacityForError < 1) {
+                        THROW_PENDING_NAME_LENGTH_ERROR();
                     }
+
+                    // Reserve: until swap, staging owns every newly constructed name.
+                    unsigned int* capacityAddress =
+                        (unsigned int*)(self + PLAYER_MEMBER_OFFSET(pendingPulseNodeNameCapacity));
+                    unsigned int required =
+                        (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount) + 1 - *capacityAddress;
+                    QueuedPulseNameVector staging(capacityAddress);
+                    unsigned int growthCapacity = *capacityAddress;
+                    if (required > kMaxStringVectorElements - growthCapacity) {
+                        THROW_PENDING_NAME_LENGTH_ERROR();
+                    }
+
+                    unsigned int newCapacity;
+                    if (growthCapacity < kStringVectorSmallGrowthLimit) {
+                        unsigned int growthThreeFifths = ((growthCapacity + 1) * 3) / 5;
+                        unsigned int* growthChoice;
+                        if (growthThreeFifths < required) {
+                            growthChoice = &required;
+                        } else {
+                            growthChoice = &growthThreeFifths;
+                        }
+                        newCapacity = growthCapacity + *growthChoice;
+                    } else if (growthCapacity < kStringVectorHalfGrowthLimit) {
+                        unsigned int growthHalf = (growthCapacity + 1) >> 1;
+                        unsigned int* growthChoice;
+                        if (growthHalf < required) {
+                            growthChoice = &required;
+                        } else {
+                            growthChoice = &growthHalf;
+                        }
+                        newCapacity = growthCapacity + *growthChoice;
+                    } else {
+                        newCapacity = kMaxStringVectorElements;
+                    }
+                    EmptyAllocator allocationAllocator;
+                    if (newCapacity > kMaxStringVectorElements) {
+                        THROW_PENDING_NAME_LENGTH_ERROR();
+                    }
+
+                    staging.begin = (PendingNameString*)appMallocDummy__FUl(newCapacity * sizeof(PendingNameString));
+                    staging.capacity = newCapacity;
+                    staging.offset = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount);
+                    PendingNameString* newSlot = staging.begin + staging.offset + staging.size;
+                    unsigned int loopCount = 1;
+                    EmptyAllocator copyAllocator;
+                    while (loopCount != 0) {
+                        if (newSlot != 0) {
+                            try {
+                                unsigned int itemFlags = item.flags;
+                                if ((itemFlags >> 31) == 0) {
+                                    unsigned int itemLength = item.length;
+                                    CopyQueuedInlineWords(newSlot->flags, newSlot->length, newSlot->data, itemFlags,
+                                                          itemLength, item.data);
+                                } else {
+                                    ReserveQueuedHeapName(newSlot, newSlot->flags, newSlot->length, newSlot->data,
+                                                          item.length);
+                                    char growthStringAllocator[12];
+                                    growthStringAllocator[0] = growthStringAllocator[4];
+                                    String_ReplaceRange(newSlot, 0, 0, item.data, item.data + item.length,
+                                                        growthStringAllocator);
+                                }
+                            } catch (...) {
+                                throw;
+                            }
+                        }
+                        --loopCount;
+                        ++newSlot;
+                        ++staging.size;
+                    }
+
+                    PendingNameString* oldData = (PendingNameString*)AsCB2dPlayerSimple(self)->pendingPulseNodeNames;
+                    EmptyAllocator moveAllocator;
+                    int movedCount =
+                        (int)((char*)(oldData +
+                                      (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount)) -
+                              (char*)oldData) /
+                        (int)sizeof(PendingNameString);
+                    staging.offset -= movedCount;
+                    // Move: raw copy transfers the old prefix's heap ownership;
+                    // zeroing source tags prevents its later destruction from freeing it.
+                    memcpy(staging.begin + staging.offset, oldData, movedCount * sizeof(PendingNameString));
+                    memset(oldData, 0, movedCount * sizeof(PendingNameString));
+                    staging.size += movedCount;
+
+                    // Commit: player takes the new buffer; staging takes the old one.
+                    unsigned int previousSize = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount);
+                    PendingNameString* swapData =
+                        (*(PendingNameString**)&AsCB2dPlayerSimple(self)->pendingPulseNodeNames);
+                    PendingNameString* newData = staging.begin;
+                    unsigned int oldCapacity =
+                        (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCapacity);
+                    staging.begin = swapData;
+                    (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCapacity) = staging.capacity;
+                    staging.capacity = oldCapacity;
+                    AsCB2dPlayerSimple(self)->pendingPulseNodeNames = newData;
+                    (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingPulseNodeNameCount) = staging.size;
+                    staging.size = previousSize;
+
+                    // Retire: moved-from strings have zero tags; release old storage.
+                    PendingNameString* oldStart = swapData + staging.offset;
+                    EmptyAllocator destroyAllocator;
+                    PendingNameString* p = oldStart + staging.size;
+                    while (p > oldStart) {
+                        --p;
+                        if (p != 0 && (p->flags >> 31) != 0) {
+                            appFreeUni__FPv(p->data);
+                        }
+                    }
+                    staging.size = 0;
                 }
-                staging.size = 0;
-            }
             }
             ++nameIndex;
         }
@@ -1198,12 +1280,12 @@ void CB2dPlayerSimple_SetPendingPulseNodeNames(void* object, const char** nodeNa
 // nodeCount is truncated to eight bits (unlike unsigned itemCount's full-width
 // comparison). Valid calls supply 0..255 nonnull C strings in nonaliasing storage.
 // Strings are copied into owned storage; later resolution discards their contents.
-void CB2dPlayerSimple_SetPendingNodeNames(void* object, const char** nodeNames, int nodeCount) {
+void CB2dPlayerSimple::SetPendingNodeNames(void* object, const char** nodeNames, int nodeCount) {
     // Phase 1: destroy old name contents; the vector allocation stays reusable.
     char* self = (char*)object;
     EmptyAllocator clearAllocator;
     unsigned int oldCount = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount);
-    StringItem80290FFC* oldEnd = (StringItem80290FFC*)AsCB2dPlayerSimple(self)->pendingNodeNames + oldCount;
+    QueuedNodeName* oldEnd = (QueuedNodeName*)AsCB2dPlayerSimple(self)->pendingNodeNames + oldCount;
     (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount) -= oldCount;
     DestroyPendingNameContents(oldEnd, oldCount);
 
@@ -1215,141 +1297,156 @@ void CB2dPlayerSimple_SetPendingNodeNames(void* object, const char** nodeNames, 
             const char* text = ((const char**)nodeNames)[nameIndex];
             char allocatorScratch[8];
             {
-            // OWN TEXT: temporary owns a copy until its destructor runs after append.
-            StringItem80290FFC item;
-            item.flags = 0;
-            item.length = 0;
-            item.data = 0;
-            unsigned int length = strlen(text);
-            String_ReserveCapacity(&item, length);
-            allocatorScratch[0] = allocatorScratch[4];
-            String_ReplaceRange(&item, 0, 0, text, text + length, allocatorScratch);
+                // OWN TEXT: temporary owns a copy until its destructor runs after append.
+                QueuedNodeName item;
+                item.flags = 0;
+                item.length = 0;
+                item.data = 0;
+                unsigned int length = strlen(text);
+                String_ReserveCapacity(&item, length);
+                allocatorScratch[0] = allocatorScratch[4];
+                String_ReplaceRange(&item, 0, 0, text, text + length, allocatorScratch);
 
-            unsigned int count = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount);
-            unsigned int capacity = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCapacity);
-            EmptyAllocator appendAllocator;
-            // Append with spare capacity: copy one value, then publish its count.
-            if (count < capacity) {
-                StringItem80290FFC* slot = (StringItem80290FFC*)AsCB2dPlayerSimple(self)->pendingNodeNames + count;
-                if (slot != 0) {
-                    try {
-                    unsigned int itemFlags = item.flags;
-                    if ((itemFlags >> 31) == 0) {
-                        unsigned int itemLength = item.length;
-                        CopyQueuedInlineWords(slot->flags, slot->length, slot->data, itemFlags, itemLength, item.data);
-                    } else {
-                        ReserveQueuedHeapName(slot, slot->flags, slot->length, slot->data, item.length);
-                        char appendStringAllocator[12];
-                        appendStringAllocator[0] = appendStringAllocator[4];
-                        String_ReplaceRange(slot, 0, 0, item.data, item.data + item.length, appendStringAllocator);
-                    }
-                    } catch (...) { throw; }
-                }
-                (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount) = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount) + 1;
-            } else {
-                EmptyAllocator growAllocator;
-                EmptyAllocator rangeAllocator;
-                unsigned int capacityForError = capacity;
-                if (kMaxStringVectorElements - capacityForError < 1) {
-                    THROW_PENDING_NAME_LENGTH_ERROR();
-                }
-
-                // Reserve: until swap, staging owns every newly constructed name.
-                unsigned int* capacityAddress = (unsigned int*)(self + PLAYER_MEMBER_OFFSET(pendingNodeNameCapacity));
-                unsigned int required = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount) + 1 - *capacityAddress;
-                StagingVector80290FFC staging(capacityAddress);
-                unsigned int growthCapacity = *capacityAddress;
-                if (required > kMaxStringVectorElements - growthCapacity) {
-                    THROW_PENDING_NAME_LENGTH_ERROR();
-                }
-
-                unsigned int newCapacity;
-                if (growthCapacity < kStringVectorSmallGrowthLimit) {
-                    unsigned int growthThreeFifths = ((growthCapacity + 1) * 3) / 5;
-                    unsigned int* growthChoice;
-                    if (growthThreeFifths < required) {
-                        growthChoice = &required;
-                    } else {
-                        growthChoice = &growthThreeFifths;
-                    }
-                    newCapacity = growthCapacity + *growthChoice;
-                } else if (growthCapacity < kStringVectorHalfGrowthLimit) {
-                    unsigned int growthHalf = (growthCapacity + 1) >> 1;
-                    unsigned int* growthChoice;
-                    if (growthHalf < required) {
-                        growthChoice = &required;
-                    } else {
-                        growthChoice = &growthHalf;
-                    }
-                    newCapacity = growthCapacity + *growthChoice;
-                } else {
-                    newCapacity = kMaxStringVectorElements;
-                }
-                EmptyAllocator allocationAllocator;
-                if (newCapacity > kMaxStringVectorElements) {
-                    THROW_PENDING_NAME_LENGTH_ERROR();
-                }
-
-                staging.begin = (StringItem80290FFC*)appMallocDummy__FUl(newCapacity * sizeof(StringItem80290FFC));
-                staging.capacity = newCapacity;
-                staging.offset = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount);
-                StringItem80290FFC* newSlot = staging.begin + staging.offset + staging.size;
-                unsigned int loopCount = 1;
-                EmptyAllocator copyAllocator;
-                while (loopCount != 0) {
-                    if (newSlot != 0) {
+                unsigned int count = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount);
+                unsigned int capacity = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCapacity);
+                EmptyAllocator appendAllocator;
+                // Append with spare capacity: copy one value, then publish its count.
+                if (count < capacity) {
+                    QueuedNodeName* slot = (QueuedNodeName*)AsCB2dPlayerSimple(self)->pendingNodeNames + count;
+                    if (slot != 0) {
                         try {
-                        unsigned int itemFlags = item.flags;
-                        if ((itemFlags >> 31) == 0) {
-                            unsigned int itemLength = item.length;
-                        CopyQueuedInlineWords(newSlot->flags, newSlot->length, newSlot->data, itemFlags, itemLength, item.data);
-                        } else {
-                            ReserveQueuedHeapName(newSlot, newSlot->flags, newSlot->length, newSlot->data, item.length);
-                            char growthStringAllocator[12];
-                            growthStringAllocator[0] = growthStringAllocator[4];
-                            String_ReplaceRange(newSlot, 0, 0, item.data, item.data + item.length, growthStringAllocator);
+                            unsigned int itemFlags = item.flags;
+                            if ((itemFlags >> 31) == 0) {
+                                unsigned int itemLength = item.length;
+                                CopyQueuedInlineWords(slot->flags, slot->length, slot->data, itemFlags, itemLength,
+                                                      item.data);
+                            } else {
+                                ReserveQueuedHeapName(slot, slot->flags, slot->length, slot->data, item.length);
+                                char appendStringAllocator[12];
+                                appendStringAllocator[0] = appendStringAllocator[4];
+                                String_ReplaceRange(slot, 0, 0, item.data, item.data + item.length,
+                                                    appendStringAllocator);
+                            }
+                        } catch (...) {
+                            throw;
                         }
-                        } catch (...) { throw; }
                     }
-                    --loopCount;
-                    ++newSlot;
-                    ++staging.size;
-                }
-
-                StringItem80290FFC* oldData = (StringItem80290FFC*)AsCB2dPlayerSimple(self)->pendingNodeNames;
-                EmptyAllocator moveAllocator;
-                int movedCount = (int)((char*)(oldData + (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount)) - (char*)oldData) / (int)sizeof(StringItem80290FFC);
-                staging.offset -= movedCount;
-                // Move: raw copy transfers the old prefix's heap ownership;
-                // zeroing source tags prevents its later destruction from freeing it.
-                memcpy(staging.begin + staging.offset, oldData, movedCount * sizeof(StringItem80290FFC));
-                memset(oldData, 0, movedCount * sizeof(StringItem80290FFC));
-                staging.size += movedCount;
-
-                // Commit: player takes the new buffer; staging takes the old one.
-                unsigned int previousSize = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount);
-                StringItem80290FFC* swapData = (*(StringItem80290FFC**)&AsCB2dPlayerSimple(self)->pendingNodeNames);
-                StringItem80290FFC* newData = staging.begin;
-                unsigned int oldCapacity = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCapacity);
-                staging.begin = swapData;
-                (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCapacity) = staging.capacity;
-                staging.capacity = oldCapacity;
-                AsCB2dPlayerSimple(self)->pendingNodeNames = newData;
-                (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount) = staging.size;
-                staging.size = previousSize;
-
-                // Retire: moved-from strings have zero tags; release old storage.
-                StringItem80290FFC* oldStart = swapData + staging.offset;
-                EmptyAllocator destroyAllocator;
-                StringItem80290FFC* p = oldStart + staging.size;
-                while (p > oldStart) {
-                    --p;
-                    if (p != 0 && (p->flags >> 31) != 0) {
-                        appFreeUni__FPv(p->data);
+                    (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount) =
+                        (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount) + 1;
+                } else {
+                    EmptyAllocator growAllocator;
+                    EmptyAllocator rangeAllocator;
+                    unsigned int capacityForError = capacity;
+                    if (kMaxStringVectorElements - capacityForError < 1) {
+                        THROW_PENDING_NAME_LENGTH_ERROR();
                     }
+
+                    // Reserve: until swap, staging owns every newly constructed name.
+                    unsigned int* capacityAddress =
+                        (unsigned int*)(self + PLAYER_MEMBER_OFFSET(pendingNodeNameCapacity));
+                    unsigned int required =
+                        (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount) + 1 - *capacityAddress;
+                    QueuedNodeNameVector staging(capacityAddress);
+                    unsigned int growthCapacity = *capacityAddress;
+                    if (required > kMaxStringVectorElements - growthCapacity) {
+                        THROW_PENDING_NAME_LENGTH_ERROR();
+                    }
+
+                    unsigned int newCapacity;
+                    if (growthCapacity < kStringVectorSmallGrowthLimit) {
+                        unsigned int growthThreeFifths = ((growthCapacity + 1) * 3) / 5;
+                        unsigned int* growthChoice;
+                        if (growthThreeFifths < required) {
+                            growthChoice = &required;
+                        } else {
+                            growthChoice = &growthThreeFifths;
+                        }
+                        newCapacity = growthCapacity + *growthChoice;
+                    } else if (growthCapacity < kStringVectorHalfGrowthLimit) {
+                        unsigned int growthHalf = (growthCapacity + 1) >> 1;
+                        unsigned int* growthChoice;
+                        if (growthHalf < required) {
+                            growthChoice = &required;
+                        } else {
+                            growthChoice = &growthHalf;
+                        }
+                        newCapacity = growthCapacity + *growthChoice;
+                    } else {
+                        newCapacity = kMaxStringVectorElements;
+                    }
+                    EmptyAllocator allocationAllocator;
+                    if (newCapacity > kMaxStringVectorElements) {
+                        THROW_PENDING_NAME_LENGTH_ERROR();
+                    }
+
+                    staging.begin = (QueuedNodeName*)appMallocDummy__FUl(newCapacity * sizeof(QueuedNodeName));
+                    staging.capacity = newCapacity;
+                    staging.offset = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount);
+                    QueuedNodeName* newSlot = staging.begin + staging.offset + staging.size;
+                    unsigned int loopCount = 1;
+                    EmptyAllocator copyAllocator;
+                    while (loopCount != 0) {
+                        if (newSlot != 0) {
+                            try {
+                                unsigned int itemFlags = item.flags;
+                                if ((itemFlags >> 31) == 0) {
+                                    unsigned int itemLength = item.length;
+                                    CopyQueuedInlineWords(newSlot->flags, newSlot->length, newSlot->data, itemFlags,
+                                                          itemLength, item.data);
+                                } else {
+                                    ReserveQueuedHeapName(newSlot, newSlot->flags, newSlot->length, newSlot->data,
+                                                          item.length);
+                                    char growthStringAllocator[12];
+                                    growthStringAllocator[0] = growthStringAllocator[4];
+                                    String_ReplaceRange(newSlot, 0, 0, item.data, item.data + item.length,
+                                                        growthStringAllocator);
+                                }
+                            } catch (...) {
+                                throw;
+                            }
+                        }
+                        --loopCount;
+                        ++newSlot;
+                        ++staging.size;
+                    }
+
+                    QueuedNodeName* oldData = (QueuedNodeName*)AsCB2dPlayerSimple(self)->pendingNodeNames;
+                    EmptyAllocator moveAllocator;
+                    int movedCount =
+                        (int)((char*)(oldData + (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount)) -
+                              (char*)oldData) /
+                        (int)sizeof(QueuedNodeName);
+                    staging.offset -= movedCount;
+                    // Move: raw copy transfers the old prefix's heap ownership;
+                    // zeroing source tags prevents its later destruction from freeing it.
+                    memcpy(staging.begin + staging.offset, oldData, movedCount * sizeof(QueuedNodeName));
+                    memset(oldData, 0, movedCount * sizeof(QueuedNodeName));
+                    staging.size += movedCount;
+
+                    // Commit: player takes the new buffer; staging takes the old one.
+                    unsigned int previousSize = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount);
+                    QueuedNodeName* swapData = (*(QueuedNodeName**)&AsCB2dPlayerSimple(self)->pendingNodeNames);
+                    QueuedNodeName* newData = staging.begin;
+                    unsigned int oldCapacity = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCapacity);
+                    staging.begin = swapData;
+                    (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCapacity) = staging.capacity;
+                    staging.capacity = oldCapacity;
+                    AsCB2dPlayerSimple(self)->pendingNodeNames = newData;
+                    (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingNodeNameCount) = staging.size;
+                    staging.size = previousSize;
+
+                    // Retire: moved-from strings have zero tags; release old storage.
+                    QueuedNodeName* oldStart = swapData + staging.offset;
+                    EmptyAllocator destroyAllocator;
+                    QueuedNodeName* p = oldStart + staging.size;
+                    while (p > oldStart) {
+                        --p;
+                        if (p != 0 && (p->flags >> 31) != 0) {
+                            appFreeUni__FPv(p->data);
+                        }
+                    }
+                    staging.size = 0;
                 }
-                staging.size = 0;
-            }
             }
             ++nameIndex;
         }
@@ -1358,7 +1455,7 @@ void CB2dPlayerSimple_SetPendingNodeNames(void* object, const char** nodeNames, 
 #pragma pop
 #undef THROW_VECTOR_LENGTH_ERROR
 
-struct StagingVector8029173C {
+struct PendingItemIdVector {
     unsigned int* begin;
     unsigned int size;
     unsigned int capacity;
@@ -1366,10 +1463,10 @@ struct StagingVector8029173C {
     unsigned int offset;
 
     // Initialize an empty guarded word buffer for pending item-ID growth.
-    StagingVector8029173C(unsigned int* p) : begin(0), size(0), capacity(0), sourceCapacity(p), offset(0) {}
+    PendingItemIdVector(unsigned int* p) : begin(0), size(0), capacity(0), sourceCapacity(p), offset(0) {}
 
     // Clear staged word count and release the currently owned allocation.
-    ~StagingVector8029173C() {
+    ~PendingItemIdVector() {
         if (begin != 0) {
             unsigned int count = size;
             size -= count;
@@ -1396,16 +1493,18 @@ inline const unsigned int& MaxItemVectorGrowth(const unsigned int& a, const unsi
 // New caller example: unsigned int ids[]={1012u,1013u}; pass (const float*)ids
 // under this legacy ABI, NOT float values {1012.0f,1013.0f}. The latter encode
 // 0x447D0000/0x447D4000, entirely different lookup keys. LoadingIndicator_CreatePlayer
-// uses kLoadingHiddenItemIdWords from u8028FE2C_data.cpp; follow that bit-copy
+// uses kLoadingHiddenItemIdWords from the data section; follow that bit-copy
 // convention. The pointer-shaped BpSlot_FindItemById argument is an opaque 32-bit
 // integer key, never dereferenced here. No float arithmetic touches those words.
-void CB2dPlayerSimple_SetPendingItemIds(void* object, const float* itemIds, unsigned int itemCount) {
+void CB2dPlayerSimple::SetPendingItemIds(void* object, const float* itemIds, unsigned int itemCount) {
     // Phase 1: clear logical size. Existing allocation remains reusable.
     char* self = (char*)object;
     unsigned int growthSmall;
     unsigned int growthHalf;
     unsigned int required;
-    (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount) = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount) - (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount);
+    (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount) =
+        (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount) -
+        (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount);
 
     unsigned char itemIndex = 0;
     while (itemIndex < itemCount) {
@@ -1414,31 +1513,39 @@ void CB2dPlayerSimple_SetPendingItemIds(void* object, const float* itemIds, unsi
         if (capacity > count) {
             unsigned int next = count + 1;
             (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount) = next;
-            ((unsigned int*)AsCB2dPlayerSimple(self)->pendingItemIds)[next - 1] = ((const unsigned int*)itemIds)[itemIndex];
+            ((unsigned int*)AsCB2dPlayerSimple(self)->pendingItemIds)[next - 1] =
+                ((const unsigned int*)itemIds)[itemIndex];
         } else {
             // Phase 2 (growth): validate capacity, allocate a guarded buffer,
             // append the new word, move the old prefix, then swap ownership.
             if (kMaxWordVectorElements - capacity < 1) {
                 char* errorText = LOADING_STRING(loadingScreenStrings, vectorLengthError);
                 {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(std::length_error)];
+                    } storage;
                     std::length_error* error = (std::length_error*)storage.bytes;
                     error->__ct(errorText);
-                    exception_runtime::__throw(LOADING_STRING(exception_runtime::loadingScreenStrings, lengthErrorType), error,
-                        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    exception_runtime::__throw(LOADING_STRING(exception_runtime::loadingScreenStrings, lengthErrorType),
+                                               error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
             }
-            required = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount) + 1 - (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCapacity);
+            required = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount) + 1 -
+                       (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCapacity);
             unsigned int oldCapacity = (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCapacity);
-            StagingVector8029173C staging((unsigned int*)(self + PLAYER_MEMBER_OFFSET(pendingItemIdCapacity)));
+            PendingItemIdVector staging((unsigned int*)(self + PLAYER_MEMBER_OFFSET(pendingItemIdCapacity)));
             if (required > kMaxWordVectorElements - oldCapacity) {
                 char* errorText = LOADING_STRING(loadingScreenStrings, vectorLengthError);
                 {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(std::length_error)];
+                    } storage;
                     std::length_error* error = (std::length_error*)storage.bytes;
                     error->__ct(errorText);
-                    exception_runtime::__throw(LOADING_STRING(exception_runtime::loadingScreenStrings, lengthErrorType), error,
-                        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    exception_runtime::__throw(LOADING_STRING(exception_runtime::loadingScreenStrings, lengthErrorType),
+                                               error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
             }
             unsigned int newCapacity;
@@ -1454,11 +1561,14 @@ void CB2dPlayerSimple_SetPendingItemIds(void* object, const float* itemIds, unsi
             if (newCapacity > kMaxWordVectorElements) {
                 char* errorText = LOADING_STRING(loadingScreenStrings, vectorLengthError);
                 {
-                    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                    union {
+                        double alignment;
+                        unsigned char bytes[sizeof(std::length_error)];
+                    } storage;
                     std::length_error* error = (std::length_error*)storage.bytes;
                     error->__ct(errorText);
-                    exception_runtime::__throw(LOADING_STRING(exception_runtime::loadingScreenStrings, lengthErrorType), error,
-                        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                    exception_runtime::__throw(LOADING_STRING(exception_runtime::loadingScreenStrings, lengthErrorType),
+                                               error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
                 }
             }
             staging.begin = (unsigned int*)appMallocDummy__FUl(newCapacity * 4);
@@ -1469,7 +1579,10 @@ void CB2dPlayerSimple_SetPendingItemIds(void* object, const float* itemIds, unsi
 
             // Move: existing IDs are raw words; zero old words before freeing.
             unsigned int* oldData = (unsigned int*)AsCB2dPlayerSimple(self)->pendingItemIds;
-            unsigned int moved = (unsigned int)(((char*)(oldData + (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount)) - (char*)oldData) / 4);
+            unsigned int moved =
+                (unsigned int)(((char*)(oldData + (*(unsigned int*)&AsCB2dPlayerSimple(self)->pendingItemIdCount)) -
+                                (char*)oldData) /
+                               4);
             staging.offset -= moved;
             memcpy(staging.begin + staging.offset, oldData, moved * 4);
             memset(oldData, 0, moved * 4);
@@ -1498,7 +1611,10 @@ struct ErrorCleanup922FC {
     // Guard resolved-node vector diagnostic text before control-block construction.
     ErrorCleanup922FC(char* p, char* f) : data(p), flag(f) {}
     // Release diagnostic text if its shared owner was not installed.
-    ~ErrorCleanup922FC() { if (data) __dla__FPv(data); }
+    ~ErrorCleanup922FC() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 struct ErrorOwner922FC {
     void* vtable;
@@ -1506,19 +1622,27 @@ struct ErrorOwner922FC {
     int owners;
     char* data;
     // Attach diagnostic text to a control block with one strong and weak reference.
-    ErrorOwner922FC(char* p) : refs(1), owners(1) { vtable = s_sharedCharDeleterVtable; data = p; }
+    ErrorOwner922FC(char* p) : refs(1), owners(1) {
+        vtable = s_sharedCharDeleterVtable;
+        data = p;
+    }
 };
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
 struct ErrorBase922FC : std::exception {
     // Install the exception vtable expected by the CodeWarrior ABI.
-    void SetTable(const void* vtable) { *(const void**)this = vtable; }
+    void SetTable(const void* vtable) {
+        *(const void**)this = vtable;
+    }
 
     char* data;
     ErrorOwner922FC* owner;
     // Copy diagnostic text and transfer it to its shared control block.
     ErrorBase922FC(const char* text) {
         SetTable(__vt__Q23std11logic_error);
-        struct { char value; char pad[3]; } flag;
+        struct {
+            char value;
+            char pad[3];
+        } flag;
         flag.value = 0;
         int n = strlen(text) + 1;
         char* copy = (char*)__nwa__FUl((n << 1) - n);
@@ -1532,22 +1656,25 @@ struct ErrorBase922FC : std::exception {
     }
 };
 }
-namespace std {
-}
+namespace std {}
 extern "C" {
 // Construct and throw the resolved-node vector's length exception in local storage.
 inline void ThrowResolvedNodeLengthError(std::length_error* error) {
     error->__ct(LOADING_STRING(loadingScreenStrings, vectorLengthError));
     exception_runtime::__throw(LOADING_STRING(exception_runtime::loadingScreenStrings, lengthErrorType), error,
-        (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                               (void*)exception_runtime::__dt__Q23std12length_errorFv);
 }
 // Keep storage at the caller: moving it into the inline function changes stack
 // offsets in the generated code. The operation itself lives in the helper above.
-#define THROW_LENGTH_922FC() do { \
-    union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage; \
-    std::length_error* error = (std::length_error*)storage.bytes; \
-    ThrowResolvedNodeLengthError(error); \
-} while (0)
+#define THROW_LENGTH_922FC()                                          \
+    do {                                                              \
+        union {                                                       \
+            double alignment;                                         \
+            unsigned char bytes[sizeof(std::length_error)];           \
+        } storage;                                                    \
+        std::length_error* error = (std::length_error*)storage.bytes; \
+        ThrowResolvedNodeLengthError(error);                          \
+    } while (0)
 
 struct PointerStage922FC {
     void** data;
@@ -1583,7 +1710,8 @@ inline void AppendResolvedNode(char* self, void* result) {
         if (kMaxWordVectorElements - capacity < 1) {
             THROW_LENGTH_922FC();
         }
-        unsigned int required = (*(unsigned int*)&AsCB2dPlayerSimple(self)->resolvedNodeCount) + 1 - (*(unsigned int*)&AsCB2dPlayerSimple(self)->resolvedNodeCapacity);
+        unsigned int required = (*(unsigned int*)&AsCB2dPlayerSimple(self)->resolvedNodeCount) + 1 -
+                                (*(unsigned int*)&AsCB2dPlayerSimple(self)->resolvedNodeCapacity);
         PointerStage922FC staging((unsigned int*)(self + PLAYER_MEMBER_OFFSET(resolvedNodeCapacity)));
         unsigned int oldCapacity = (*(unsigned int*)&AsCB2dPlayerSimple(self)->resolvedNodeCapacity);
         if (required > kMaxWordVectorElements - oldCapacity) {
@@ -1596,7 +1724,8 @@ inline void AppendResolvedNode(char* self, void* result) {
         } else if (oldCapacity < kWordVectorHalfGrowthLimit) {
             const unsigned int halfGrowth = (oldCapacity + 1) / 2;
             newCapacity = oldCapacity + MaxResolvedNodeGrowth(halfGrowth, required);
-        } else newCapacity = kMaxWordVectorElements;
+        } else
+            newCapacity = kMaxWordVectorElements;
         if (newCapacity > kMaxWordVectorElements) {
             THROW_LENGTH_922FC();
         }
@@ -1605,7 +1734,9 @@ inline void AppendResolvedNode(char* self, void* result) {
         staging.capacity = newCapacity;
         (staging.data + staging.offset)[staging.size++] = result;
         void** oldData = (*(void***)&AsCB2dPlayerSimple(self)->resolvedNodes);
-        int moved = (int)((char*)(oldData + (*(unsigned int*)&AsCB2dPlayerSimple(self)->resolvedNodeCount)) - (char*)oldData) / 4;
+        int moved =
+            (int)((char*)(oldData + (*(unsigned int*)&AsCB2dPlayerSimple(self)->resolvedNodeCount)) - (char*)oldData) /
+            4;
         staging.offset -= moved;
         memcpy(staging.data + staging.offset, oldData, moved * 4);
         memset(oldData, 0, moved * 4);
@@ -1637,7 +1768,7 @@ inline void AppendResolvedNode(char* self, void* result) {
 //   R_page_up, R_page_down, R_win_lmiddown, R_win_rmiddown, R_win__base.
 //   (This list must agree with that source table when renaming assets.)
 // - SetPendingItemIds uses numeric IDs 1012/1013 from kLoadingHiddenItemIdWords
-//   (u8028FE2C_data.cpp); these are not ordinal positions in the sprite array.
+//   (the data section); these are not ordinal positions in the sprite array.
 // - ResolvePendingPulseNodes uses R_loading_green: s_loadingPulseNodeNames in
 // - phase1_program_strings.cpp loadingScreenStrings selects loading.b2d,
 //   initial label "loading" and loading.gsr. BpObject_PollLoad (bp_object_sprite_resources.cpp)
@@ -1650,34 +1781,39 @@ inline void AppendResolvedNode(char* self, void* result) {
 // with valid references to replacement texture/UV data. Reordering alone need
 // not change IDs; renaming/re-exporting with new IDs requires updating these
 // request tables too. Replacing only loading.gsr cannot supply missing B2D nodes.
-void CB2dPlayerSimple_ResolvePendingNodes(void* object) { unsigned int inputCount;
+void CB2dPlayerSimple::ResolvePendingNodes(void* object) {
+    unsigned int inputCount;
     // Phase 1: append lookups by name; nodes are borrowed from this BP slot.
     char* self = (char*)object;
     void* owner = ((BpEntrySlotView*)(*(void**)&AsCB2dPlayerSimple(self)->bpObject))->slotKey;
 
     char* input = (*(char**)&AsCB2dPlayerSimple(self)->pendingNodeNames);
 
-    for (char* p = input; p != (*(char**)&AsCB2dPlayerSimple(self)->pendingNodeNames) + AsCB2dPlayerSimple(self)->pendingNodeNameCount * 0xC; p += 0xC) {
+    for (char* p = input; p != (*(char**)&AsCB2dPlayerSimple(self)->pendingNodeNames) +
+                                   AsCB2dPlayerSimple(self)->pendingNodeNameCount * 0xC;
+         p += 0xC) {
         void* name;
         if (!((((PackedStringStorage*)p)->flags >> 31) == 0)) {
             name = ((PackedStringStorage*)p)->heapData;
         } else {
             name = (void*)((p + 1));
         }
-            void* result = BpSlot_FindNodeByName(owner, name);
+        void* result = BpSlot_FindNodeByName(owner, name);
 
         AppendResolvedNode(self, result);
     }
 
     // Phase 2: destroy consumed queued strings, leaving capacity for reuse.
-     inputCount = AsCB2dPlayerSimple(self)->pendingNodeNameCount;
+    inputCount = AsCB2dPlayerSimple(self)->pendingNodeNameCount;
     input = (*(char**)&AsCB2dPlayerSimple(self)->pendingNodeNames) + inputCount * 0xC;
     AsCB2dPlayerSimple(self)->pendingNodeNameCount = inputCount - inputCount;
     while (inputCount) {
         input -= 0xC;
-        if (0 != input) { if ((((PackedStringStorage*)input)->flags >> 31) != 0) {
-            appFreeUni__FPv(((PackedStringStorage*)input)->heapData);
-        } }
+        if (0 != input) {
+            if ((((PackedStringStorage*)input)->flags >> 31) != 0) {
+                appFreeUni__FPv(((PackedStringStorage*)input)->heapData);
+            }
+        }
         inputCount = inputCount - 1;
     }
 
@@ -1685,7 +1821,9 @@ void CB2dPlayerSimple_ResolvePendingNodes(void* object) { unsigned int inputCoun
     // not addresses of strings despite this legacy char** iteration view.
     char** itemIdCursor = (*(char***)&AsCB2dPlayerSimple(self)->pendingItemIds);
     unsigned int itemIdCount;
-    for (; itemIdCursor != (*(char***)&AsCB2dPlayerSimple(self)->pendingItemIds) + AsCB2dPlayerSimple(self)->pendingItemIdCount; ++itemIdCursor) {
+    for (; itemIdCursor !=
+           (*(char***)&AsCB2dPlayerSimple(self)->pendingItemIds) + AsCB2dPlayerSimple(self)->pendingItemIdCount;
+         ++itemIdCursor) {
         void* result = BpSlot_FindItemById(owner, *itemIdCursor);
 
         AppendResolvedNode(self, result);
@@ -1702,7 +1840,7 @@ void CB2dPlayerSimple_ResolvePendingNodes(void* object) { unsigned int inputCoun
 // Resolve pulse-node names into the sprite list and release the queued names.
 // Same loaded-entry/nonnull-result contract as ResolvePendingNodes. Appends to
 // the existing resolved vector; caller chooses whether to clear its size first.
-void CB2dPlayerSimple_ResolvePendingPulseNodes(void* object) {
+void CB2dPlayerSimple::ResolvePendingPulseNodes(void* object) {
     char* self = (char*)object;
     char* items = (*(char**)&AsCB2dPlayerSimple(self)->pendingPulseNodeNames);
     void* owner = ((BpEntrySlotView*)(*(void**)&AsCB2dPlayerSimple(self)->bpObject))->slotKey;
@@ -1752,7 +1890,7 @@ void CB2dPlayerSimple_ResolvePendingPulseNodes(void* object) {
 // on ENTRY deletes player. Same-call work is create -> poll -> initialize nodes
 // -> script/pulse chooser. Starting/repeating/waiting keeps playback active;
 // finishing resets to idle in this call (kPlayerFinished is transient on this path).
-// Creation failure contract (CBpCtrl_CreateEntry in bp_ctrl_entry_manager.cpp): null path or
+// Creation failure contract (CBpCtrl::CreateEntry in bp_ctrl_entry_manager.cpp): null path or
 // exhausted32 IDs returns0 without publishing an ID; path-setup failure may return0
 // AFTER registering an owned object and publishing its ID. This dispatcher
 // assigns bpObject ONLY on nonzero status, but moves to WaitForLoad either way.
@@ -1785,7 +1923,7 @@ void B2dPlayer_UpdateAndDraw(void* object) {
     // name stays pending while it plays; its name is gone, so its completion
     // takes the final row and finishes. With no request signal even a finite
     // repeat sequence waits indefinitely after its last play. Request is latched
-    // by CB2dPlayerHandle_RequestPendingScript, cleared only by configuration/
+    // by CB2dPlayerHandle::RequestPendingScript, cleared only by configuration/
     // reset paths, not by starting the requested script. Test both early and late
     // requests, absent initial/repeat/request names, count0/1/32768 and wrap inputs.
     // Exit table (entry state -> tail action):
@@ -1796,7 +1934,8 @@ void B2dPlayer_UpdateAndDraw(void* object) {
     // One-shot consumption empties strings but retains their heap capacity.
     char* owner = (char*)object; // owning slot; tail reads it before callback/draw or deletion.
     CB2dPlayerSimple* player = *(CB2dPlayerSimple**)owner;
-    if (player == 0) return;
+    if (player == 0)
+        return;
     int state = player->state;
     int shouldDeletePlayer; // 1 only for idle ON ENTRY; other states draw once.
     int phaseReady;         // Creation/load phase may advance this call.
@@ -1804,8 +1943,9 @@ void B2dPlayer_UpdateAndDraw(void* object) {
     int keepPlaybackActive; // Inner chooser: 1 starts a script OR waits for a request.
     // 0x8028FF28: creation, loading, and playback advance in one update.
     // Non-idle states retain their original comparison order and same-frame transitions.
-    if (kPlayerIdle == state) { shouldDeletePlayer = 1; }
-    else {
+    if (kPlayerIdle == state) {
+        shouldDeletePlayer = 1;
+    } else {
         {
             // Phase 1: creation/load. Labelled exits preserve same-frame
             // fallthrough while spelling out draw versus reset-to-idle.
@@ -1813,7 +1953,8 @@ void B2dPlayer_UpdateAndDraw(void* object) {
                 // Playback is already active; skip creation and loading.
             } else {
                 if (state >= kPlayerPlaying) {
-                    if (kPlayerStateLimit <= state) goto drawThisFrame;
+                    if (kPlayerStateLimit <= state)
+                        goto drawThisFrame;
                     goto resetToIdle;
                 }
                 if (state != kPlayerCreateEntry) {
@@ -1825,8 +1966,9 @@ void B2dPlayer_UpdateAndDraw(void* object) {
                 } else {
                     if (0 == ((int&)Sing_805DC5F0())) {
                         if (0 == s_bpCtrlInitialized) {
-                            __ct__7CBpCtrlFv(s_bpCtrl);
-                            __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_Menu8028FE2C);
+                            ((CBpCtrl*)s_bpCtrl)->__ct();
+                            __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor,
+                                                     s_bpCtrlDtorRegistration_Menu8028FE2C);
                             s_bpCtrlInitialized = 1;
                         }
                         ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
@@ -1837,47 +1979,67 @@ void B2dPlayer_UpdateAndDraw(void* object) {
 
                         int entryId = 0;
                         int fileNameIsHeap = (int)((unsigned int)fileNameFlags >> 31);
-                        int createResult = CBpCtrl_CreateEntry(controller, fileNameIsHeap ? player->bpFileNameHeap : (void*)PLAYER_STRING_BYTES(player, bpFileNameStorageFlags)->characters, &entryId, 0);
+                        int createResult =
+                            ((CBpCtrl*)controller)
+                                ->CreateEntry(
+                                    fileNameIsHeap
+                                        ? player->bpFileNameHeap
+                                        : (void*)PLAYER_STRING_BYTES(player, bpFileNameStorageFlags)->characters,
+                                    &entryId, 0);
                         // 0x8028FF28: entry creation shares the state transition below.
-                        if (createResult == 0) { phaseReady = 1; }
-                        else {
+                        if (createResult == 0) {
+                            phaseReady = 1;
+                        } else {
                             void* entry = IdMap_Lookup(controller, entryId);
                             (*(void**)&player->bpObject) = entry;
                             phaseReady = 1;
                         }
-                        if (!phaseReady) goto drawThisFrame;
+                        if (!phaseReady)
+                            goto drawThisFrame;
                         player->state = kPlayerWaitForLoad;
                     }
-
                 }
                 {
                     void* bpObject = (*(void**)&player->bpObject);
-                    if (bpObject == 0) { phaseReady = 1; }
-                    else if (0 == (BpObject_PollLoad(bpObject))) { phaseReady = 0; }
-                    else {
-                        { int _t = player->resolvedNodeCount; player->resolvedNodeCount = _t - _t; }
-                        CB2dPlayerSimple_ResolvePendingNodes(player);
-                        CB2dPlayerSimple_SetSpritesEnabled(player, 0);
-                        { int _t = player->resolvedNodeCount; player->resolvedNodeCount = _t - _t; }
-                        CB2dPlayerSimple_ResolvePendingPulseNodes(player);
-                        CB2dPlayerSimple_ResetOpacityPulse(player);
-                        int startedScript = CB2dPlayerSimple_StartPendingScript(player);
-                        if (startedScript == 0) CB2dPlayerSimple_UnloadAndClearPendingState(player);
+                    if (bpObject == 0) {
+                        phaseReady = 1;
+                    } else if (0 == (BpObject_PollLoad(bpObject))) {
+                        phaseReady = 0;
+                    } else {
+                        {
+                            int _t = player->resolvedNodeCount;
+                            player->resolvedNodeCount = _t - _t;
+                        }
+                        CB2dPlayerSimple::ResolvePendingNodes(player);
+                        ((CB2dPlayerSimple*)player)->SetSpritesEnabled(0);
+                        {
+                            int _t = player->resolvedNodeCount;
+                            player->resolvedNodeCount = _t - _t;
+                        }
+                        CB2dPlayerSimple::ResolvePendingPulseNodes(player);
+                        CB2dPlayerSimple::ResetOpacityPulse(player);
+                        int startedScript = CB2dPlayerSimple::StartPendingScript(player);
+                        if (startedScript == 0)
+                            CB2dPlayerSimple::UnloadAndClearPendingState(player);
                         phaseReady = 1;
                     }
-                    if (0 == phaseReady) goto drawThisFrame;
+                    if (0 == phaseReady)
+                        goto drawThisFrame;
                     player->state = kPlayerPlaying;
                 }
-
             }
             // Phase 2: pulse opacity and, at script completion, choose the
             // next initial/repeat/requested script. Inner breaks only finish
             // their local decision block; the labelled exits choose the tail.
-            { int initialScriptLength;
+            {
+                int initialScriptLength;
                 // 0x8028FF28: animation readiness shares the completion test.
                 do {
                     void* bpObject = (*(void**)&player->bpObject);
-                    if (bpObject == 0) { playbackDone = 1; break; }
+                    if (bpObject == 0) {
+                        playbackDone = 1;
+                        break;
+                    }
                     unsigned char pulseStep = player->pulseStep;
                     if (pulseStep != 0) {
                         int pulsePhase = player->pulsePhase /* 0x74 */;
@@ -1897,7 +2059,10 @@ void B2dPlayer_UpdateAndDraw(void* object) {
                     }
                     bpObject = (*(void**)&player->bpObject);
                     int scriptFinished = BpObject_IsCurrentScriptComplete(bpObject);
-                    if (scriptFinished == 0) { playbackDone = 0; break; }
+                    if (scriptFinished == 0) {
+                        playbackDone = 0;
+                        break;
+                    }
 
                     // Priority 1: an initial name marks the script just completed.
                     // Consume it once and prefer repeat before considering a request.
@@ -1905,23 +2070,28 @@ void B2dPlayer_UpdateAndDraw(void* object) {
                         int initialScriptFlags = (*(int*)&player->initialScriptStorageFlags);
                         unsigned int initialScriptIsHeap = (int)((unsigned int)initialScriptFlags >> 31);
 
-                        if (0 == initialScriptIsHeap) initialScriptLength = PLAYER_SCRIPT_INLINE_LENGTH(player, initialScriptStorageFlags);
-                        else initialScriptLength = player->initialScriptLength;
+                        if (0 == initialScriptIsHeap)
+                            initialScriptLength = PLAYER_SCRIPT_INLINE_LENGTH(player, initialScriptStorageFlags);
+                        else
+                            initialScriptLength = player->initialScriptLength;
                         if (initialScriptLength) {
 
                             if (!initialScriptIsHeap) {
                                 PLAYER_STRING_BYTES(player, initialScriptStorageFlags)->characters[0] = 0;
                                 {
 
-                                    PLAYER_STRING_BYTES(player, initialScriptStorageFlags)->flags = (unsigned char)((PLAYER_STRING_BYTES(player, initialScriptStorageFlags)->flags) & ~kInlineStringLengthMask);
+                                    PLAYER_STRING_BYTES(player, initialScriptStorageFlags)->flags =
+                                        (unsigned char)((PLAYER_STRING_BYTES(player, initialScriptStorageFlags)
+                                                             ->flags) &
+                                                        ~kInlineStringLengthMask);
                                 }
-                            } else
-                            {
+                            } else {
                                 void* initialScript = player->initialScriptHeap;
                                 *(unsigned char*)initialScript = 0;
                                 player->initialScriptLength = 0;
                             }
-                            { int repeatScriptLength;
+                            {
+                                int repeatScriptLength;
 
                                 int repeatScriptIsHeap = PLAYER_SCRIPT_IS_HEAP(player, repeatScriptStorageFlags);
                                 // cntlzw(0)>>5 == 1; cntlzw(1)>>5 == 0. Keep the
@@ -1929,20 +2099,25 @@ void B2dPlayer_UpdateAndDraw(void* object) {
                                 int cntl = __cntlzw(repeatScriptIsHeap);
                                 int repeatScriptIsInline = (int)((unsigned int)cntl >> 5);
 
-                                if (repeatScriptIsInline) repeatScriptLength = PLAYER_SCRIPT_INLINE_LENGTH(player, repeatScriptStorageFlags);
-                                else repeatScriptLength = player->repeatScriptLength;
+                                if (repeatScriptIsInline)
+                                    repeatScriptLength = PLAYER_SCRIPT_INLINE_LENGTH(player, repeatScriptStorageFlags);
+                                else
+                                    repeatScriptLength = player->repeatScriptLength;
                                 if (repeatScriptLength != 0) {
                                     void* scriptName;
                                     void* scriptObject = (*(void**)&player->bpObject);
-                                    if (!repeatScriptIsInline) scriptName = player->repeatScriptHeap;
-                                    else scriptName = (void*)PLAYER_STRING_BYTES(player, repeatScriptStorageFlags)->characters;
+                                    if (!repeatScriptIsInline)
+                                        scriptName = player->repeatScriptHeap;
+                                    else
+                                        scriptName =
+                                            (void*)PLAYER_STRING_BYTES(player, repeatScriptStorageFlags)->characters;
                                     BpObject_StartScriptByName(scriptObject, scriptName, 1);
                                     keepPlaybackActive = 1;
                                     break;
                                 }
                             }
-                        } else
-                        { int repeatScriptLength;
+                        } else {
+                            int repeatScriptLength;
                             // Priority 2: an already-running repeat consumes one positive
                             // repeat count; negative counts remain unlimited.
 
@@ -1950,30 +2125,34 @@ void B2dPlayer_UpdateAndDraw(void* object) {
                             int cntl = __cntlzw(repeatScriptIsHeap);
 
                             int repeatScriptIsInline = (int)((unsigned int)cntl >> 5);
-                            if (repeatScriptIsInline) repeatScriptLength = PLAYER_SCRIPT_INLINE_LENGTH(player, repeatScriptStorageFlags);
-                            else repeatScriptLength = player->repeatScriptLength;
+                            if (repeatScriptIsInline)
+                                repeatScriptLength = PLAYER_SCRIPT_INLINE_LENGTH(player, repeatScriptStorageFlags);
+                            else
+                                repeatScriptLength = player->repeatScriptLength;
                             if (0 != repeatScriptLength) {
 
-                                if (0 == (player->scriptRepeatsRemaining) ||
-                                (player->pendingScript) != 0) {
+                                if (0 == (player->scriptRepeatsRemaining) || (player->pendingScript) != 0) {
                                     if (repeatScriptIsHeap == 0) {
                                         PLAYER_STRING_BYTES(player, repeatScriptStorageFlags)->characters[0] = 0;
                                         {
-                                            unsigned char inlineFlags = PLAYER_STRING_BYTES(player, repeatScriptStorageFlags)->flags;
-                                            PLAYER_STRING_BYTES(player, repeatScriptStorageFlags)->flags = (unsigned char)(inlineFlags & ~kInlineStringLengthMask);
+                                            unsigned char inlineFlags =
+                                                PLAYER_STRING_BYTES(player, repeatScriptStorageFlags)->flags;
+                                            PLAYER_STRING_BYTES(player, repeatScriptStorageFlags)->flags =
+                                                (unsigned char)(inlineFlags & ~kInlineStringLengthMask);
                                         }
-                                    } else
-                                    {
+                                    } else {
                                         void* repeatScript = player->repeatScriptHeap;
                                         *(unsigned char*)repeatScript = 0;
                                         player->repeatScriptLength = 0;
                                     }
-                                } else
-                                {
+                                } else {
                                     void* scriptName;
                                     void* scriptObject = (*(void**)&player->bpObject);
-                                    if (!repeatScriptIsInline) scriptName = player->repeatScriptHeap;
-                                    else scriptName = (void*)PLAYER_STRING_BYTES(player, repeatScriptStorageFlags)->characters;
+                                    if (!repeatScriptIsInline)
+                                        scriptName = player->repeatScriptHeap;
+                                    else
+                                        scriptName =
+                                            (void*)PLAYER_STRING_BYTES(player, repeatScriptStorageFlags)->characters;
                                     BpObject_StartScriptByName(scriptObject, scriptName, 1);
                                     short repeatsRemaining = player->scriptRepeatsRemaining;
                                     if (repeatsRemaining > 0) {
@@ -1987,28 +2166,39 @@ void B2dPlayer_UpdateAndDraw(void* object) {
 
                         // Priority 3: keep waiting on a named requested script until
                         // pendingScript is set. Starting it clears its name, not its flag.
-                        { int requestedScriptFlags = (*(int*)&player->requestedScriptStorageFlags);
+                        {
+                            int requestedScriptFlags = (*(int*)&player->requestedScriptStorageFlags);
 
-                            unsigned int requestedScriptLength; int savedScriptFlags = requestedScriptFlags; int cntl = __cntlzw((int)((unsigned int)savedScriptFlags >> 31));
+                            unsigned int requestedScriptLength;
+                            int savedScriptFlags = requestedScriptFlags;
+                            int cntl = __cntlzw((int)((unsigned int)savedScriptFlags >> 31));
                             unsigned int requestedScriptIsInline = (int)((unsigned int)cntl >> 5);
 
-                            if (requestedScriptIsInline) requestedScriptLength = PLAYER_SCRIPT_INLINE_LENGTH(player, requestedScriptStorageFlags);
-                            else requestedScriptLength = player->requestedScriptLength;
+                            if (requestedScriptIsInline)
+                                requestedScriptLength =
+                                    PLAYER_SCRIPT_INLINE_LENGTH(player, requestedScriptStorageFlags);
+                            else
+                                requestedScriptLength = player->requestedScriptLength;
                             if (0 != requestedScriptLength) {
                                 int scriptPending = player->pendingScript;
                                 if (0 != scriptPending) {
                                     do {
                                         if (requestedScriptIsInline != 0) {
                                             {
-                                                void* scriptName = (void*)PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)->characters;
+                                                void* scriptName =
+                                                    (void*)PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)
+                                                        ->characters;
                                                 void* scriptObject = (*(void**)&player->bpObject);
                                                 BpObject_StartScriptByName(scriptObject, scriptName, 1);
                                             }
                                             if (!((int)((unsigned int)requestedScriptFlags >> 31))) {
-                                                PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)->characters[0] = 0;
+                                                PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)
+                                                    ->characters[0] = 0;
                                                 {
-                                                    unsigned char inlineFlags = PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)->flags;
-                                                    PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)->flags = (unsigned char)(inlineFlags & ~kInlineStringLengthMask);
+                                                    unsigned char inlineFlags =
+                                                        PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)->flags;
+                                                    PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)->flags =
+                                                        (unsigned char)(inlineFlags & ~kInlineStringLengthMask);
                                                 }
                                                 break;
                                             }
@@ -2019,10 +2209,15 @@ void B2dPlayer_UpdateAndDraw(void* object) {
                                                 BpObject_StartScriptByName(scriptObject, scriptName, 1);
                                             }
                                             if (!((int)((unsigned int)requestedScriptFlags >> 31))) {
-                                                PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)->characters[0] = 0;
+                                                PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)
+                                                    ->characters[0] = 0;
                                                 {
 
-                                                    PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)->flags = (unsigned char)((PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)->flags) & ~kInlineStringLengthMask);
+                                                    PLAYER_STRING_BYTES(player, requestedScriptStorageFlags)->flags =
+                                                        (unsigned char)((PLAYER_STRING_BYTES(
+                                                                             player, requestedScriptStorageFlags)
+                                                                             ->flags) &
+                                                                        ~kInlineStringLengthMask);
                                                 }
                                                 break;
                                             }
@@ -2035,8 +2230,7 @@ void B2dPlayer_UpdateAndDraw(void* object) {
                                     } while (0);
                                 }
                                 keepPlaybackActive = 1;
-                            } else
-                            {
+                            } else {
 
                                 int cntl = __cntlzw((player->pendingScript));
                                 keepPlaybackActive = (int)((unsigned int)cntl >> 5);
@@ -2050,19 +2244,19 @@ void B2dPlayer_UpdateAndDraw(void* object) {
                         playbackDone = (int)((unsigned int)(__cntlzw(keepPlaybackActive)) >> 5);
                     }
                 } while (0);
-                if (playbackDone == 0) goto drawThisFrame;
+                if (playbackDone == 0)
+                    goto drawThisFrame;
                 player->state = kPlayerFinished;
             }
         }
-resetToIdle:
+    resetToIdle:
         player->state = kPlayerIdle;
-drawThisFrame:
+    drawThisFrame:
         shouldDeletePlayer = 0;
     }
     // Phase 3: all non-idle entry states draw this frame, even after becoming
     // idle. Only idle ON ENTRY takes the deletion branch and clears owner.
-    if (shouldDeletePlayer == 0)
-    {
+    if (shouldDeletePlayer == 0) {
         void* obj2 = *(void**)owner;
         void* bpObject = (obj2 != 0) ? *(void**)obj2 : 0;
         if (bpObject != 0) {
@@ -2070,12 +2264,10 @@ drawThisFrame:
             bpObject = *(void**)obj2;
             BpObject_Draw(bpObject);
         }
-    }
-    else
-    {
+    } else {
         void* o = *(void**)owner;
         if (o != 0) {
-            ((void(*)(void*, int))(*(void***)((char*)&AsCB2dPlayerSimple(o)->vtable))[2])(o, 1);
+            ((void (*)(void*, int))(*(void***)((char*)&AsCB2dPlayerSimple(o)->vtable))[2])(o, 1);
         }
         *(void**)owner = 0;
     }

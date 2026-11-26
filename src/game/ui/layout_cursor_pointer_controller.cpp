@@ -1,7 +1,12 @@
+// Menu pointer cursor for layouts: reads the Wii Remote pointer, maps it to layout coordinates,
+// and gives the cursor position, bounds and depth to menus. Also sets up and tears down the
+// layout controller and its pangya icon object.
+
 #include <decomp/static_init.h>
+#include "game/gtl_input.h"
 // Layout controller ownership and native Wii Remote pointer-to-menu coordinates.
 // Modding lookup: Layout_CursorFromPointer maps device [-1,+1] X/Y to
-// [0,832]/[0,624] layout units using the 416/312 scalars in u800779EC_data.cpp.
+// [0,832]/[0,624] layout units using the 416/312 scalars in the data section.
 // These are input coordinates, not EFB resolution or an aspect-ratio setting.
 // LayoutCursor_InitBounds separately seeds (208,156); change mapping, bounds,
 // cursor drawing and hit-test rectangles together in a later widescreen mod.
@@ -13,14 +18,15 @@
 #include "classes/LayoutResourceOwnerView.h"
 #include "classes/LayoutPointerCursor.h"
 #include "classes/GameInputManager.h"
-// Translation unit 0x800779EC-0x80077F74 (11 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "classes/CSPDPangyaIcon.h"
+#include "classes/CSharedFileHandle.h"
 
 // View caller-supplied icon storage without changing ownership.
-inline CSPDPangyaIcon* AsCSPDPangyaIcon(void* storage) { return (CSPDPangyaIcon*)storage; }
+inline CSPDPangyaIcon* AsCSPDPangyaIcon(void* storage) {
+    return (CSPDPangyaIcon*)storage;
+}
 
 // Three independent layouts occur here: cursor bounds/position, controller resources,
 // and icon children. Their void* interfaces do not make them interchangeable.
@@ -28,15 +34,19 @@ inline CSPDPangyaIcon* AsCSPDPangyaIcon(void* storage) { return (CSPDPangyaIcon*
 // Repeated null checks preserve the matched destructor expansion.
 // +0x20 is compared as an ordered signed word in two pointer consumers. Its
 // producer's units are unresolved: do not call it a priority or a frame clock.
-enum { kMinimumPointerSelectionRank = 1 };
+enum {
+    kMinimumPointerSelectionRank = 1
+};
 extern "C" {
 
 extern float kFloat_6_2831855;
-extern float s_layoutCursorFullTurnAngle; // Module angle storage initialized to one full turn.
+extern float s_layoutCursorFullTurnAngle;     // Module angle storage initialized to one full turn.
 extern float s_layoutControllerFullTurnAngle; // Module angle storage initialized to one full turn.
-extern float kFloat_0_LayoutCursorDepth; // 0: kFloat_0_LayoutCursorDepth.
-extern float kFloat_416_LayoutPointerXScale; // 416 layout units: X half-span AND offset; larger expands/shifts X before clamping.
-extern float kFloat_312_LayoutPointerYScale; // 312 layout units: Y half-span AND offset; larger expands/shifts Y before clamping.
+extern float kFloat_0_LayoutCursorDepth;      // 0: kFloat_0_LayoutCursorDepth.
+extern float
+    kFloat_416_LayoutPointerXScale; // 416 layout units: X half-span AND offset; larger expands/shifts X before clamping.
+extern float
+    kFloat_312_LayoutPointerYScale; // 312 layout units: Y half-span AND offset; larger expands/shifts Y before clamping.
 extern float kFloat_208_LayoutCursorInitialX; // 208 layout units: reset X, independent of pointer mapping.
 extern float kFloat_156_LayoutCursorInitialY; // 156 layout units: reset Y; leading float in an eight-byte data slot.
 extern unsigned char __vt__Q214CSPDPangyaIcon22PANGYA_ICON_OBJECT_VAR[];
@@ -45,11 +55,8 @@ extern unsigned char s_gameInputManager[];
 extern unsigned char s_layoutInputManagerDtorRegistration[]; // Input-manager destructor registration record.
 
 extern void* gtl_InputEx_GetScreenPointer(void*);
-extern void gtl_CInputExDeviceBase_GetDeviceResult(void*, int*);
-extern int gtl_CScreenPointer_GetSample(void*, int, int*);
 extern int Layout_CursorFromPointer(void*, void*);
 extern void Memory_Clear(void*, int);
-extern void CSharedFileHandle_Destroy(void*, int);
 extern void __destroy_new_array(void*, void*);
 extern void InputManager_Init(void*);
 extern void InputManager_Dtor();
@@ -72,8 +79,8 @@ void LayoutController_InitAngleConstant() {
 
 // Update a layout cursor using its player screen-pointer device.
 // cursor is required; its player word is a device selector passed through the
-// pointer-shaped ABI, not an owned player allocation. Returns the pointer
-// conversion's Boolean result: 0 for absent device, 1 even when no sample wins.
+// pointer-shaped ABI, not an owned player allocation. Returns 0 for an absent
+// device and 1 even when no sample wins.
 int Layout_UpdateCursorFromPlayer(void** cursor) {
     void* pointer = gtl_InputEx_GetScreenPointer(AsLayoutCursor800779EC(cursor)->player);
     if (pointer == 0) {
@@ -172,10 +179,16 @@ int Layout_GetCursorPosition(void* cursor, float* positionOut) {
 // are unestablished. GetDeviceResult's status is ignored in the existing ABI;
 // the device must still supply a count. Preserve that call and backward traversal.
 int Layout_CursorFromPointer(void* cursor, void* pointer) {
-    if (pointer == 0) return 0;
+    if (pointer == 0)
+        return 0;
 
-    int sampleIndex; gtl_CInputExDeviceBase_GetDeviceResult(pointer, &sampleIndex);
-    struct Position { float x; float y; float z; } position = {};
+    int sampleIndex;
+    ((gtl::CInputExDeviceBase*)pointer)->GetDeviceResult(&sampleIndex);
+    struct Position {
+        float x;
+        float y;
+        float z;
+    } position = {};
     int selectionCount = 0;
     int bestSelectionRank = kMinimumPointerSelectionRank;
     float screenHalfHeight;
@@ -189,8 +202,15 @@ int Layout_CursorFromPointer(void* cursor, void* pointer) {
     // Hit payload: +0x0c/+0x10 normalized x/y, +0x1c depth, +0x20 ordering word;
     // the other five words have no established interpretation in this consumer.
     while (--sampleIndex >= 0) {
-        struct Hit { int a[3]; float x; float y; int b[2]; float depth; int selectionRank; } hit = {};
-        if (gtl_CScreenPointer_GetSample(pointer, sampleIndex, (int*)&hit)) {
+        struct Hit {
+            int a[3];
+            float x;
+            float y;
+            int b[2];
+            float depth;
+            int selectionRank;
+        } hit = {};
+        if (((gtl::CScreenPointer*)pointer)->GetSample(sampleIndex, (gtl::ScreenPointerSample*)&hit)) {
             if (hit.selectionRank >= bestSelectionRank) {
 
                 ++selectionCount;
@@ -208,10 +228,14 @@ int Layout_CursorFromPointer(void* cursor, void* pointer) {
         LayoutPointerCursor* cursorState = AsLayoutCursor800779EC(cursor);
         AsLayoutCursor800779EC(cursorState)->cursorX = position.x;
         AsLayoutCursor800779EC(cursorState)->cursorY = position.y;
-        if (AsLayoutCursor800779EC(cursorState)->minX > AsLayoutCursor800779EC(cursorState)->cursorX) AsLayoutCursor800779EC(cursorState)->cursorX = AsLayoutCursor800779EC(cursorState)->minX;
-        if (AsLayoutCursor800779EC(cursorState)->maxX < AsLayoutCursor800779EC(cursorState)->cursorX) AsLayoutCursor800779EC(cursorState)->cursorX = AsLayoutCursor800779EC(cursorState)->maxX;
-        if (AsLayoutCursor800779EC(cursorState)->minY > AsLayoutCursor800779EC(cursorState)->cursorY) AsLayoutCursor800779EC(cursorState)->cursorY = AsLayoutCursor800779EC(cursorState)->minY;
-        if (AsLayoutCursor800779EC(cursorState)->maxY < AsLayoutCursor800779EC(cursorState)->cursorY) AsLayoutCursor800779EC(cursorState)->cursorY = AsLayoutCursor800779EC(cursorState)->maxY;
+        if (AsLayoutCursor800779EC(cursorState)->minX > AsLayoutCursor800779EC(cursorState)->cursorX)
+            AsLayoutCursor800779EC(cursorState)->cursorX = AsLayoutCursor800779EC(cursorState)->minX;
+        if (AsLayoutCursor800779EC(cursorState)->maxX < AsLayoutCursor800779EC(cursorState)->cursorX)
+            AsLayoutCursor800779EC(cursorState)->cursorX = AsLayoutCursor800779EC(cursorState)->maxX;
+        if (AsLayoutCursor800779EC(cursorState)->minY > AsLayoutCursor800779EC(cursorState)->cursorY)
+            AsLayoutCursor800779EC(cursorState)->cursorY = AsLayoutCursor800779EC(cursorState)->minY;
+        if (AsLayoutCursor800779EC(cursorState)->maxY < AsLayoutCursor800779EC(cursorState)->cursorY)
+            AsLayoutCursor800779EC(cursorState)->cursorY = AsLayoutCursor800779EC(cursorState)->maxY;
         AsLayoutCursor800779EC(cursorState)->cursorDepth = depth;
     }
     return 1;
@@ -231,30 +255,33 @@ void* Layout_Destroy(void* controller, int deleting) {
             AsLayoutController800779EC(state)->ownedObject = 0;
         }
         if (AsLayoutController800779EC(state)->sharedFile != 0) {
-            CSharedFileHandle_Destroy(AsLayoutController800779EC(state)->sharedFile, 1);
+            CSharedFileHandle::Destroy(AsLayoutController800779EC(state)->sharedFile, 1);
             AsLayoutController800779EC(state)->sharedFile = 0;
         }
         if (AsLayoutController800779EC(state)->secondarySharedFile != 0) {
-            CSharedFileHandle_Destroy(AsLayoutController800779EC(state)->secondarySharedFile, 1);
+            CSharedFileHandle::Destroy(AsLayoutController800779EC(state)->secondarySharedFile, 1);
             AsLayoutController800779EC(state)->secondarySharedFile = 0;
         }
         if (AsLayoutController800779EC(state)->pangyaIcons != 0) {
-            __destroy_new_array(AsLayoutController800779EC(state)->pangyaIcons, (void*)CSPDPangyaIcon_PANGYA_ICON_OBJECT_VAR_dtor);
+            __destroy_new_array(AsLayoutController800779EC(state)->pangyaIcons,
+                                (void*)CSPDPangyaIcon_PANGYA_ICON_OBJECT_VAR_dtor);
             AsLayoutController800779EC(state)->pangyaIcons = 0;
         }
         // Lazily obtain the shared input manager, then relinquish this controller's cursor-mode request.
         if (AsLayoutController800779EC(state)->inputModeRegistered != 0) {
-            if (((int&)Sing_805DC5C8()) == 0) {
+            if (((int&)GetInputManagerSlot()) == 0) {
                 if (!s_inputManagerInitialized) {
                     InputManager_Init(s_gameInputManager);
-                    __register_global_object(s_gameInputManager, InputManager_Dtor, s_layoutInputManagerDtorRegistration);
+                    __register_global_object(s_gameInputManager, InputManager_Dtor,
+                                             s_layoutInputManagerDtorRegistration);
                     s_inputManagerInitialized = 1;
                 }
-                ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+                ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
             }
-            --((GameInputManager*)((int&)Sing_805DC5C8()))->cursorModeRequestCount;
+            --((GameInputManager*)((int&)GetInputManagerSlot()))->cursorModeRequestCount;
         }
-        if (deleting > 0) __dl__FPv(controller);
+        if (deleting > 0)
+            __dl__FPv(controller);
     }
     return controller;
 }
@@ -289,7 +316,8 @@ void LayoutCursor_InitBounds(void* cursor, void* bounds) {
     if (bounds == 0) {
         return;
     }
-    (*(unsigned int*)&AsLayoutCursor800779EC(cursor)->player) = (*(unsigned int*)&AsLayoutCursor800779EC(bounds)->player);
+    (*(unsigned int*)&AsLayoutCursor800779EC(cursor)->player) =
+        (*(unsigned int*)&AsLayoutCursor800779EC(bounds)->player);
     // Copy float representations as words to preserve the original non-FPU load/store sequence.
     unsigned int minYBits;
     unsigned int minXBits;

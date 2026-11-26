@@ -4,8 +4,8 @@
 #define CLASSES_PETMESHVERTEXBLOCK_H
 
 struct PetMeshVertexBlock {
-    void* format; // 0x0
-    unsigned int byteSize; // 0x4
+    void* format;            // 0x0
+    unsigned int byteSize;   // 0x4
     unsigned int dataOffset; // 0x8
 };
 

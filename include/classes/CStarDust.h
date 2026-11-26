@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CSTARDUST_H
 #define CLASSES_CSTARDUST_H
 
@@ -7,28 +5,48 @@
 
 class CStarDust {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x20];                 // 0x4
-    float spawnElapsed;                       // 0x24: 1 use in CStarDust_StartAndResetParticles
-    float spawnInterval;                       // 0x28: 1 use in CStarDust_Ctor
-    char pad_02C[0x4];                  // 0x2c
-    void* vertex0;                       // 0x30: 1 use in CStarDust_Ctor
-    void* vertex1;                       // 0x34: 1 use in CStarDust_Ctor
-    void* vertex2;                       // 0x38: 1 use in CStarDust_Ctor
-    void* vertex3;                       // 0x3c: 1 use in CStarDust_Ctor
-    void* vertexListTerminator;                       // 0x40: 1 use in CStarDust_Ctor
-    char pad_044[0xe0];                 // 0x44
-    void* particles;                      // 0x124: 7 uses in CStarDust_dtor, CStarDust_ResetParticle, CStarDust_DrawBallGlowAndParticles...
-    unsigned int particleCount;               // 0x128: 5 uses in CStarDust_Ctor, CStarDust_DrawBallGlowAndParticles, CStarDust_dtor...
-    int particleIndex;                        // 0x12c: 2 uses in CStarDust_ResetParticle, CStarDust_StartAndResetParticles
-    char pad_130[0x4];                  // 0x130
-    float alpha;                      // 0x134: 2 uses in CStarDust_DrawBallGlowAndParticles, CStarDust_StartAndResetParticles
+    // Initialize the next orbit particle from the ball and the camera basis.
+    void ResetParticle();
+    // Advance one orbit particle's angle, radius and fade.
+    void UpdateParticle(int index, float dt);
+    // Fade the dust with the ball's descent, restore the ball's opacity, and emit particles.
+    void Update(float dt);
+    // Recreate the dust sprite grid and reset the emission cursor, opacity, and live flags.
+    void StartAndResetParticles();
+    // Draw the ball glow and the active dust sprites.
+    void DrawBallGlowAndParticles();
+    // Release owned particles, sprites, and buffers; a delete flag above zero also frees the object.
+    void* Destroy(int flags);
+    // Allocate the orbit records and set the emission interval.
+    void* Init();
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x44, 0x7c, 0xb4, 0xec
+    void* vtbl;                 // 0x0: original vtable pointer
+    char pad_004[0x10];         // 0x4
+    void* bitmapResource;       // 0x14
+    unsigned char active;       // 0x18
+    char pad_019[0x3];          // 0x19
+    void* sprite;               // 0x1c
+    void* auxiliarySprite;      // 0x20
+    float spawnElapsed;         // 0x24
+    float spawnInterval;        // 0x28
+    char pad_02C[0x4];          // 0x2c
+    void* vertex0;              // 0x30
+    void* vertex1;              // 0x34
+    void* vertex2;              // 0x38
+    void* vertex3;              // 0x3c
+    void* vertexListTerminator; // 0x40
+    char pad_044[0xe0];         // 0x44
+    void* particles;            // 0x124
+    unsigned int particleCount; // 0x128
+    int particleIndex;          // 0x12c
+    float spriteFrame;          // 0x130
+    float alpha;                // 0x134
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CSTARDUST_OFF(f, o) typedef char CStarDust_off_##f[((int)&((CStarDust*)0)->f == (o)) ? 1 : -1]
+CSTARDUST_OFF(bitmapResource, 0x14);
+CSTARDUST_OFF(active, 0x18);
+CSTARDUST_OFF(sprite, 0x1c);
 CSTARDUST_OFF(spawnElapsed, 0x24);
 CSTARDUST_OFF(spawnInterval, 0x28);
 CSTARDUST_OFF(vertex0, 0x30);
@@ -42,4 +60,4 @@ CSTARDUST_OFF(particleIndex, 0x12c);
 CSTARDUST_OFF(alpha, 0x134);
 #undef CSTARDUST_OFF
 
-#endif  // CLASSES_CSTARDUST_H
+#endif // CLASSES_CSTARDUST_H

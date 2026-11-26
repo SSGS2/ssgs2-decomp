@@ -4,17 +4,17 @@
 #define CLASSES_ARCHIVEENTRYINFO_H
 
 struct ArchiveEntryInfo {
-    unsigned int index; // 0x0
-    char path[0x104]; // 0x4
-    unsigned int attributes; // 0x108
-    unsigned int accessTimeLow; // 0x10C
-    unsigned int accessTimeHigh; // 0x110
-    unsigned int creationTimeLow; // 0x114
-    unsigned int creationTimeHigh; // 0x118
-    unsigned int modificationTimeLow; // 0x11C
+    unsigned int index;                // 0x0
+    char path[0x104];                  // 0x4
+    unsigned int attributes;           // 0x108
+    unsigned int accessTimeLow;        // 0x10C
+    unsigned int accessTimeHigh;       // 0x110
+    unsigned int creationTimeLow;      // 0x114
+    unsigned int creationTimeHigh;     // 0x118
+    unsigned int modificationTimeLow;  // 0x11C
     unsigned int modificationTimeHigh; // 0x120
-    unsigned int compressedSize; // 0x124
-    unsigned int uncompressedSize; // 0x128
+    unsigned int compressedSize;       // 0x124
+    unsigned int uncompressedSize;     // 0x128
 };
 
 #define OFF(f, o) typedef char ArchiveEntryInfo_off_##f[((int)&((ArchiveEntryInfo*)0)->f == (o)) ? 1 : -1]

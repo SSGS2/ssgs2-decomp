@@ -24,16 +24,17 @@ typedef char BezierVec2TimeOffset[((int)&((BezierVec2Key*)0)->time == 0x28) ? 1 
 
 extern "C" {
 
-extern float s_animationSegmentStartTime; // Start key time, set by the evaluator before dispatch.
-extern float s_animationSampleTime; // Query time in that same coordinate.
-extern float s_animationSegmentEndTime; // End key time. Shared scratch: not reentrant/thread-safe.
-extern float kFloat_1_GtlModel; // 1.0: complement/linear weights.
+extern float s_animationSegmentStartTime;    // Start key time, set by the evaluator before dispatch.
+extern float s_animationSampleTime;          // Query time in that same coordinate.
+extern float s_animationSegmentEndTime;      // End key time. Shared scratch: not reentrant/thread-safe.
+extern float kFloat_1_GtlModel;              // 1.0: complement/linear weights.
 extern float kCurveRelativeSpacingTolerance; // 0.01: relative flatness tolerance, also inverse solver.
-extern float kCurveMinimumSpacingTolerance; // 0.0001: minimum absolute tolerance, also inverse solver.
-extern float kBezierCubicCoefficient; // 3.0: cubic handle coefficient, also inverse solver.
+extern float kCurveMinimumSpacingTolerance;  // 0.0001: minimum absolute tolerance, also inverse solver.
+extern float kBezierCubicCoefficient;        // 3.0: cubic handle coefficient, also inverse solver.
 
 extern float gtl_Curve_FindBezierParameter(float x0, float x1, float x2, float x3, float fraction);
-extern void Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1, float fraction);
+extern void Vec2_Hermite(void* dst, const void* p0, const void* startTangent, const void* endPoint, const void* t1,
+                         float fraction);
 
 // Require two complete BezierVec2Key records, out[2], and matching evaluator time
 // globals. Borrow all storage; out must not overlap either key. fraction is
@@ -86,7 +87,9 @@ int gtl_Animation_InterpolateBezierVec2(float* out, const float* startKey, const
             float endComponentValue = *endValue;
             float startHandleValue = *outgoingValueOffset;
             float startComponentValue = *startValue;
-            float bezierFraction = gtl_Curve_FindBezierParameter(s_animationSegmentStartTime, s_animationSegmentStartTime + *outgoingTimeOffset, s_animationSegmentEndTime + *incomingTimeOffset, s_animationSegmentEndTime, s_animationSampleTime);
+            float bezierFraction = gtl_Curve_FindBezierParameter(
+                s_animationSegmentStartTime, s_animationSegmentStartTime + *outgoingTimeOffset,
+                s_animationSegmentEndTime + *incomingTimeOffset, s_animationSegmentEndTime, s_animationSampleTime);
             float complement = one - bezierFraction;
             float fractionSquared = bezierFraction * bezierFraction;
             float complementSquared = complement * complement;
@@ -143,7 +146,8 @@ int gtl_Animation_InterpolateBezierVec2(float* out, const float* startKey, const
                 hermiteLanes[1].value = *endValue;
                 hermiteLanes[0].zeroBits = 0;
                 hermiteLanes[0].value = *incomingValueOffset;
-                Vec2_Hermite(&hermiteLanes[4], &hermiteLanes[3], &hermiteLanes[2], &hermiteLanes[1], &hermiteLanes[0], fraction);
+                Vec2_Hermite(&hermiteLanes[4], &hermiteLanes[3], &hermiteLanes[2], &hermiteLanes[1], &hermiteLanes[0],
+                             fraction);
                 *outputComponent = hermiteLanes[4].value;
             } else {
                 *outputComponent = (one - fraction) * *startValue + fraction * *endValue;

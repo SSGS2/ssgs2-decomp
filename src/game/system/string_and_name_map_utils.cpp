@@ -1,9 +1,12 @@
-// Translation unit 0x801169F4-0x801177B4 (4 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// String and record-list helpers: placement new, the assignment and iteration code for the
+// record lists, and the string length and comparison helpers.
+// Also the FxSprayName record iterator and the spray-name tree lookup that inserts a default value.
 
 #include "sdk_protos.h"
 
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 inline void operator delete(void*, void*) {}
 
 extern "C" {
@@ -59,8 +62,14 @@ struct ListRep {
 struct AssignIter {
     ListNode* p;
     ~AssignIter() {}
-    AssignIter& operator++() { p = p->next; return *this; }
-    AssignIter& operator--() { p = p->prev; return *this; }
+    AssignIter& operator++() {
+        p = p->next;
+        return *this;
+    }
+    AssignIter& operator--() {
+        p = p->prev;
+        return *this;
+    }
 };
 struct AssignAllocator {
     unsigned char tag;
@@ -68,8 +77,17 @@ struct AssignAllocator {
 };
 // Walk a circular list forward or backward by a signed node count.
 static inline ListNode* advanceAssign(int n, ListNode* p) {
-    if (n >= 0) { while (n > 0) { p = p->next; --n; } }
-    else { while (n < 0) { p = p->prev; ++n; } }
+    if (n >= 0) {
+        while (n > 0) {
+            p = p->next;
+            --n;
+        }
+    } else {
+        while (n < 0) {
+            p = p->prev;
+            ++n;
+        }
+    }
     return p;
 }
 #pragma push
@@ -96,7 +114,10 @@ static inline void eraseAssign(ListRep* l, AssignIter& first, AssignIter& last) 
     }
 }
 struct AssignTempBase : ListRep {
-    AssignTempBase() { size = 0; last = first = (ListNode*)&last; }
+    AssignTempBase() {
+        size = 0;
+        last = first = (ListNode*)&last;
+    }
     ~AssignTempBase() {
         ListNode* p = first;
         ListNode* end = (ListNode*)&last;
@@ -116,8 +137,15 @@ struct AssignTempBase : ListRep {
 struct AssignAllocation {
     ListNode* p;
     AssignAllocation(ListNode* n) : p(n) {}
-    ~AssignAllocation() { if (p) appFreeUni__FPv((const char*)p); }
-    ListNode* release() { ListNode* n = p; p = 0; return n; }
+    ~AssignAllocation() {
+        if (p)
+            appFreeUni__FPv((const char*)p);
+    }
+    ListNode* release() {
+        ListNode* n = p;
+        p = 0;
+        return n;
+    }
 };
 struct AssignTemp : AssignTempBase {
     AssignTemp(AssignIter& rangeMid, AssignIter& rangeEnd) {
@@ -145,7 +173,9 @@ struct AssignTemp : AssignTempBase {
 static inline const unsigned int& minAssign(const unsigned int& a, const unsigned int& b) {
     return b < a ? b : a;
 }
-static inline unsigned int sizeAssign(const ListRep* l) { return l->size; }
+static inline unsigned int sizeAssign(const ListRep* l) {
+    return l->size;
+}
 // Reach an index from the nearer end; the sentinel follows the last node.
 static inline ListNode* nthAssign(const ListRep* other, unsigned int count) {
     unsigned int total = other->size;
@@ -186,7 +216,8 @@ ListRep* IdRecordList_Assign(ListRep* self, const ListRep* other) {
                 self->size += extraRecords.size;
                 extraRecords.size = 0;
             }
-        } else { AssignIter finishCopy = mid; 
+        } else {
+            AssignIter finishCopy = mid;
             ListNode* destinationNode = self->first;
 
             for (AssignIter sourceIterator = begin; sourceIterator.p != finishCopy.p; ++sourceIterator) {
@@ -239,16 +270,24 @@ struct LList {
 
 struct LIter {
     LNode* p;
-    LIter& operator++() { p = p->next; return *this; }
-    LIter& operator--() { p = p->prev; return *this; }
+    LIter& operator++() {
+        p = p->next;
+        return *this;
+    }
+    LIter& operator--() {
+        p = p->prev;
+        return *this;
+    }
 };
 
 // Advance the second record-list iterator in either direction.
 static inline void adv(LIter& it, int n) {
     if (n > 0) {
-        for (; n > 0; --n) ++it;
+        for (; n > 0; --n)
+            ++it;
     } else {
-        for (; n < 0; ++n) --it;
+        for (; n < 0; ++n)
+            --it;
     }
 }
 
@@ -279,7 +318,8 @@ LList* RecordAmountList_Assign(LList* self, LList* other) {
         unsigned int destinationSize = self->size;
         unsigned int sourceSize = other->size;
         const unsigned int* minimumSize = &destinationSize;
-        if (sourceSize < destinationSize) minimumSize = &sourceSize;
+        if (sourceSize < destinationSize)
+            minimumSize = &sourceSize;
         unsigned int commonCount = *minimumSize;
         LIter middleIterator;
         LNode* sourceEnd = (LNode*)&other->last;
@@ -297,7 +337,8 @@ LList* RecordAmountList_Assign(LList* self, LList* other) {
             TmpList extraRecords;
             for (LNode* sourceNode = sourceMiddle; sourceNode != sourceEnd; sourceNode = sourceNode->next) {
                 LNode* newNode = (LNode*)appMallocDummy__FUl(sizeof(LNode));
-                if (newNode) newNode->record = sourceNode->record;
+                if (newNode)
+                    newNode->record = sourceNode->record;
                 LNode* temporarySentinel = (LNode*)&extraRecords.last;
                 LNode* temporaryTail = temporarySentinel->prev;
                 newNode->prev = temporaryTail;
@@ -347,11 +388,15 @@ LList* RecordAmountList_Assign(LList* self, LList* other) {
 #pragma push
 #pragma inline_depth(1024)
 // The high bit selects heap storage; short strings keep their length in the low seven header bits.
-static inline bool longString(const StringObj* s) { return (s->word >> kHeapStringBit) != 0; }
+static inline bool longString(const StringObj* s) {
+    return (s->word >> kHeapStringBit) != 0;
+}
 static inline unsigned int stringSize(const StringObj* s) {
     unsigned int n;
-    if (!longString(s)) n = *(const unsigned char*)s & kShortStringLengthMask;
-    else n = s->length;
+    if (!longString(s))
+        n = *(const unsigned char*)s & kShortStringLengthMask;
+    else
+        n = s->length;
     return n;
 }
 static inline const unsigned int& minString(const unsigned int& a, const unsigned int& b) {
@@ -362,20 +407,32 @@ static inline int compareString(const StringObj* key, const StringObj* b) {
     unsigned int count, lenCopy, ncopy, limit;
     unsigned int n;
     const char* data;
-    if (!longString(b)) { data = (const char*)b + kInlineStringDataOffset; n = *(const unsigned char*)b & kShortStringLengthMask; }
-    else { data = b->data; n = b->length; }
+    if (!longString(b)) {
+        data = (const char*)b + kInlineStringDataOffset;
+        n = *(const unsigned char*)b & kShortStringLengthMask;
+    } else {
+        data = b->data;
+        n = b->length;
+    }
     ncopy = n;
     limit = longString(key) ? key->length : (*(const unsigned char*)key & kShortStringLengthMask);
     unsigned int len;
     const char* keydata;
-    if (!longString(key)) { keydata = (const char*)key + kInlineStringDataOffset; len = *(const unsigned char*)key & kShortStringLengthMask; }
-    else { keydata = key->data; len = key->length; }
+    if (!longString(key)) {
+        keydata = (const char*)key + kInlineStringDataOffset;
+        len = *(const unsigned char*)key & kShortStringLengthMask;
+    } else {
+        keydata = key->data;
+        len = key->length;
+    }
     lenCopy = len;
     count = minString(limit, lenCopy);
     int cmp = memcmp(keydata, data, minString(ncopy, count));
     if (!cmp) {
-        if (count < n) return -1;
-        if (count == n) return 0;
+        if (count < n)
+            return -1;
+        if (count == n)
+            return 0;
         return 1;
     }
     return cmp;
@@ -391,28 +448,31 @@ static inline void copyStringRange(StringObj* s, const char* begin, const char* 
 }
 inline StringObj::StringObj(const StringObj& b) {
     StringObj& str = *this;
-        if (!longString(&b)) {
-            unsigned int header = b.word;
-            unsigned int size = b.length;
-            const char* data = b.data;
-            str.word = header;
-            str.length = size;
-            str.data = data;
-        }
-        else {
-            unsigned int size = b.length;
-            str.word = 0;
-            str.length = 0; str.data = 0;
-            String_ReserveCapacity(&str, size);
-            StringAllocator allocator;
-            copyStringRange(&str, b.data, b.data + b.length, allocator);
-        }
+    if (!longString(&b)) {
+        unsigned int header = b.word;
+        unsigned int size = b.length;
+        const char* data = b.data;
+        str.word = header;
+        str.length = size;
+        str.data = data;
+    } else {
+        unsigned int size = b.length;
+        str.word = 0;
+        str.length = 0;
+        str.data = 0;
+        String_ReserveCapacity(&str, size);
+        StringAllocator allocator;
+        copyStringRange(&str, b.data, b.data + b.length, allocator);
+    }
 }
 struct StringValue {
     StringObj str;
     unsigned int value;
     StringValue(const StringObj& b) : str(b), value(s_fxSprayNameDefaultValue) {}
-    ~StringValue() { if (longString(&str)) appFreeUni__FPv(str.data); }
+    ~StringValue() {
+        if (longString(&str))
+            appFreeUni__FPv(str.data);
+    }
 };
 // Look up a spray-name key, inserting its default value when absent, and return the value address.
 void* FxSprayNameTree_GetOrInsertValue(void* tree, StringObj* key) {
@@ -422,9 +482,11 @@ void* FxSprayNameTree_GetOrInsertValue(void* tree, StringObj* key) {
     StringObj* result;
     end = StringTree_FindInsertionPosition(tree, key, &found, &insertSide, &insertionFlags);
     // 0x801175DC: reuse the existing value or construct the missing entry.
-    if (!found || (result = (StringObj*)((char*)found + (int)&((FxSprayNameNodePrefix*)0)->record), compareString(result, key) < 0)) {
+    if (!found || (result = (StringObj*)((char*)found + (int)&((FxSprayNameNodePrefix*)0)->record),
+                   compareString(result, key) < 0)) {
         StringValue temp(*key);
-        result = (StringObj*)((char*)NamedObjectMap_InsertNode(tree, end, insertSide, insertionFlags, &temp.str) + (int)&((FxSprayNameNodePrefix*)0)->record);
+        result = (StringObj*)((char*)NamedObjectMap_InsertNode(tree, end, insertSide, insertionFlags, &temp.str) +
+                              (int)&((FxSprayNameNodePrefix*)0)->record);
     }
     return &((StringValue*)result)->value;
 }

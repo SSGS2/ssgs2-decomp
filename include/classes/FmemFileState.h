@@ -5,8 +5,8 @@
 
 struct FmemFileState {
     char pad_000[0x8C];
-    int operationState; // 0x8C
-    int operationResult; // 0x90
+    int operationState;   // 0x8C
+    int operationResult;  // 0x90
     int callbackArgument; // 0x94
 };
 

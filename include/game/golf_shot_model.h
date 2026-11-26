@@ -37,11 +37,13 @@ RULE_FRAME_OFF(courseReloadStage, 0x4D0);
 RULE_FRAME_OFF(holeSpawnPosition, 0x4E8);
 #undef RULE_FRAME_OFF
 
-
 // Live ball +A4 is float simulation time, overlapping the legacy event-array tail.
 // Golf document +2D8 is read as a byte in both launch pipelines; meaning unknown.
 typedef CGolfBall BallShotTimingView;
-struct GolfDocShotBytes { char prefix[0x2D8]; unsigned char unk_2D8; };
+struct GolfDocShotBytes {
+    char prefix[0x2D8];
+    unsigned char unk_2D8;
+};
 typedef char BallShotTimingOffset[(int)&((BallShotTimingView*)0)->simulationSeconds == 0xA4 ? 1 : -1];
 typedef char GolfDocShotByteOffset[(int)&((GolfDocShotBytes*)0)->unk_2D8 == 0x2D8 ? 1 : -1];
 // Button input tick fields: OS_GetTimeMilliseconds is stored in signed words;
@@ -56,39 +58,60 @@ typedef char GaugeMinimumFrameOffset[(int)&((RuleGaugeInputTiming*)0)->minimumPo
 // Account +1CC is passed to the club-set test; +1E0 is the motion-controller option.
 typedef CSharedDoc SharedEntryProtocol;
 struct AccountClubSelectionFields {
-    char prefix[0x1CC]; void* clubSetValue;
-    char pad_1D0[0x10]; int unk_1E0;
+    char prefix[0x1CC];
+    void* clubSetValue;
+    char pad_1D0[0x10];
+    int unk_1E0;
 };
 typedef char SharedEntryOffset[(int)&((SharedEntryProtocol*)0)->weatherType == 0x9C6 ? 1 : -1];
 typedef char AccountClubOffset[(int)&((AccountClubSelectionFields*)0)->clubSetValue == 0x1CC ? 1 : -1];
 typedef char AccountMotionOffset[(int)&((AccountClubSelectionFields*)0)->unk_1E0 == 0x1E0 ? 1 : -1];
 // Common shot model (all views borrow existing storage).
 // Account view is biased to SharedDoc + channel*0x1D4, NOT an asserted array base.
-struct ShotWorldClockView { char prefix[0x21A8]; float fractionalSeconds; int frame; };
+struct ShotWorldClockView {
+    char prefix[0x21A8];
+    float fractionalSeconds;
+    int frame;
+};
 typedef CGolfBall BallGroundTriangleView;
-struct BallHoleInWordsView { char prefix[0x1989C]; int encodedValue, addressMix, key; };
+struct BallHoleInWordsView {
+    char prefix[0x1989C];
+    int encodedValue, addressMix, key;
+};
 struct ShotAccountStatisticsView {
-    char prefix[0x4C]; int nonPutterShots, putterShots, manualSwings, assistedPangyas;
-    unsigned short holeInOnes, albatrosses;                       // +5C, +5E
-    unsigned int openingShots, openingShotsOnFairwayOrGreen;      // +60, +64
-    unsigned int madePutts, recoveryShots;                        // +68, +6C
-    float longestHoledOrBouncedShotYards;                         // +70
-    float longestMadePuttYards, longestNonPutterHoleOutYards;      // +74, +78
-    unsigned int totalNonRecoveryWholeYards;                      // +7C
-    float swingGaugeTotal;                                       // +80
-    char gap84[0x9C]; int characterId;
+    char prefix[0x4C];
+    int nonPutterShots, putterShots, manualSwings, assistedPangyas;
+    unsigned short holeInOnes, albatrosses;                   // +5C, +5E
+    unsigned int openingShots, openingShotsOnFairwayOrGreen;  // +60, +64
+    unsigned int madePutts, recoveryShots;                    // +68, +6C
+    float longestHoledOrBouncedShotYards;                     // +70
+    float longestMadePuttYards, longestNonPutterHoleOutYards; // +74, +78
+    unsigned int totalNonRecoveryWholeYards;                  // +7C
+    float swingGaugeTotal;                                    // +80
+    char gap84[0x9C];
+    int characterId;
 };
 typedef GolfDocSnapshot8013 ShotPlayerTotalsView;
 struct RuleShotCheckpointView {
-    char prefix[0x10C]; WVector playerPosition; float headingRadians;
-    unsigned char recoveryRequired, playerByteAE; char reserved11E[2];
-    float powerShotMeter; int pang, bonusPang, holePang;
-    char reserved130[0x20]; char clubName[4];
-    unsigned char holeStrokes, holeResult, playerByteBC; char reserved157;
+    char prefix[0x10C];
+    WVector playerPosition;
+    float headingRadians;
+    unsigned char recoveryRequired, playerByteAE;
+    char reserved11E[2];
+    float powerShotMeter;
+    int pang, bonusPang, holePang;
+    char reserved130[0x20];
+    char clubName[4];
+    unsigned char holeStrokes, holeResult, playerByteBC;
+    char reserved157;
     int partyResult, powerMeterCost;
 };
 // +0x10 counts occupied map slots; allocation capacity is the next word, +0x14.
-struct ShotHistoryHeaderView { int head, count; void* blockMap[2]; int blockMapCount; };
+struct ShotHistoryHeaderView {
+    int head, count;
+    void* blockMap[2];
+    int blockMapCount;
+};
 // Checkpoint, history storage and hole record: game/golf_shot_types.h.
 // Unknown bytes keep offset names: ProcessShotOutcome writes 92, tests/clears 90;
 // undo clears 91/92/94; playback tests 408 and shot completion clears it.
@@ -125,9 +148,13 @@ typedef char ShotCheckpointSize[(sizeof(ShotCheckpoint) == 0x54) ? 1 : -1];
 typedef char ShotHoleRecordSize[(sizeof(ShotHoleRecord) == 0x20) ? 1 : -1];
 // Event 2/4 and slots 3/4/5/9 remain numeric unknowns. Known event 1 carries
 // contactNormal; event 3 carries object-hit sound; event 5 starts booster warp.
-enum ShotSampleEventKind { kSampleContact = 1, kSampleUnknown2 = 2,
-    kSampleObjectHit = 3, kSampleUnknown4 = 4, kSampleBoosterWarp = 5 };
-
+enum ShotSampleEventKind {
+    kSampleContact = 1,
+    kSampleUnknown2 = 2,
+    kSampleObjectHit = 3,
+    kSampleUnknown4 = 4,
+    kSampleBoosterWarp = 5
+};
 
 // Runtime club records are distinct from the inventory's IFF sClub records.
 struct SelectedClubRuntime {
@@ -155,14 +182,28 @@ typedef char ClubShotCommandOffset[((int)&((ClubSelectionRuntime*)0)->shotComman
 // CSharedDoc contains four 0x1D4-byte player selections. This view is biased to
 // document base + channel*0x1D4; +1DC is the selected player's button-swing option
 // (0 motion / nonzero buttons), as consumed by ProcessAimInput. It owns no pointer.
-struct PlayerSwingInputView { char prefix[0x1DC]; int buttonSwingEnabled; };
+struct PlayerSwingInputView {
+    char prefix[0x1DC];
+    int buttonSwingEnabled;
+};
 // A member-array expression hoists an address in UpdateBallPlayback; keep this addend.
-enum ShotSampleOffset { kSimulationEventSoundOffset = 0x20 };
-enum ShotMode { kNormalShotMode = 0, kPowerShotMode = 1, kDoublePowerShotMode = 2 };
+enum ShotSampleOffset {
+    kSimulationEventSoundOffset = 0x20
+};
+enum ShotMode {
+    kNormalShotMode = 0,
+    kPowerShotMode = 1,
+    kDoublePowerShotMode = 2
+};
 
 // Four rule-owned shot histories are constructed and destroyed as 24-byte records.
-struct ShotHistoryContainer { unsigned int words[6]; };
-struct RuleShotHistories { char pad_000[0xAC]; ShotHistoryContainer players[4]; };
+struct ShotHistoryContainer {
+    unsigned int words[6];
+};
+struct RuleShotHistories {
+    char pad_000[0xAC];
+    ShotHistoryContainer players[4];
+};
 
 // Sparse shared-document fields used by computer-player resource loading.
 struct SharedComputerRoundFields {
@@ -180,18 +221,39 @@ struct RuleShotCompletionBytes {
 typedef char RuleCompletion94Offset[(int)&((RuleShotCompletionBytes*)0)->unresolved94 == 0x94 ? 1 : -1];
 // Actor IDs below are scoped to their recipients; all payload words here are zero.
 enum ShotCompletionActorMessage {
-    kScreenFinalizeShotMessage17 = 0x17, kScoreFinalizeShotMessage5 = 5,
-    kNpcFinalizeShotMessage0 = 0, kBallFinalizeShotMessage3 = 3,
-    kScreenFinalizeShotMessage7 = 7, kSpinFinalizeShotMessage4 = 4,
+    kScreenFinalizeShotMessage17 = 0x17,
+    kScoreFinalizeShotMessage5 = 5,
+    kNpcFinalizeShotMessage0 = 0,
+    kBallFinalizeShotMessage3 = 3,
+    kScreenFinalizeShotMessage7 = 7,
+    kSpinFinalizeShotMessage4 = 4,
     kGuidelineFinalizeShotMessage1 = 1
 };
 
-struct BallGroundContact { char pad_000[0x28]; void* triangle; };
-struct QuadTreeRecoveryPoint { char pad_000[0x2084]; WVector position; };
-struct AimRecoveryPoint { char pad_000[0xC]; WVector position; };
-struct CourseCameraAnchor { char pad_000[0x44]; WVector position; };
-struct PlayerSwingOptions { char pad_000[0x1DC]; int buttonSwingSelected; };
+struct BallGroundContact {
+    char pad_000[0x28];
+    void* triangle;
+};
+struct QuadTreeRecoveryPoint {
+    char pad_000[0x2084];
+    WVector position;
+};
+struct AimRecoveryPoint {
+    char pad_000[0xC];
+    WVector position;
+};
+struct CourseCameraAnchor {
+    char pad_000[0x44];
+    WVector position;
+};
+struct PlayerSwingOptions {
+    char pad_000[0x1DC];
+    int buttonSwingSelected;
+};
 // Camera action 10 asks the caddie for a shot camera only while this byte is set.
-struct CameraCaddieOption { char pad_000[0x1A2]; unsigned char caddieCameraEnabled; };
+struct CameraCaddieOption {
+    char pad_000[0x1A2];
+    unsigned char caddieCameraEnabled;
+};
 
 #endif

@@ -4,21 +4,21 @@
 #define CLASSES_ARCHIVECURSOR_H
 
 struct ArchiveCursor {
-    void* stream; // 0x0
+    void* stream;            // 0x0
     unsigned int entryCount; // 0x4
     char pad_008[0x8];
-    int entryIndex; // 0x10
+    int entryIndex;           // 0x10
     unsigned int entryOffset; // 0x14
-    int entryReady; // 0x18
+    int entryReady;           // 0x18
     char pad_01C[0x8];
-    int firstEntryOffset; // 0x24
+    int firstEntryOffset;   // 0x24
     char entryHeader[0x20]; // 0x28
-    int fileNameLength; // 0x48
-    int extraFieldLength; // 0x4C
-    int fileCommentLength; // 0x50
+    int fileNameLength;     // 0x48
+    int extraFieldLength;   // 0x4C
+    int fileCommentLength;  // 0x50
     char pad_054[0x24];
     char localHeaderOffset[4]; // 0x78
-    int entryReadState; // 0x7C
+    int entryReadState;        // 0x7C
 };
 
 #define OFF(f, o) typedef char ArchiveCursor_off_##f[((int)&((ArchiveCursor*)0)->f == (o)) ? 1 : -1]

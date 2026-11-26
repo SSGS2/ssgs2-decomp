@@ -1,3 +1,7 @@
+// Audio stream tasks and voice setup: the stream task manager with its three priority queues,
+// the audio message thread that drains them, and the voice playback parameters and teardown.
+// Also holds the intrusive lists and per-channel stream data used by streaming playback.
+
 #include <decomp/static_init.h>
 #include "classes/Voice8040E9BC.h"
 #include "classes/GtlAudioControllerState.h"
@@ -46,7 +50,9 @@ struct AxVoiceStateView {
     char reserved[0x38];
     unsigned short playbackState;
 };
-enum { kAudioMessageQueueOffset = (int)&((AudioMessageWorker*)0)->messageQueue };
+enum {
+    kAudioMessageQueueOffset = (int)&((AudioMessageWorker*)0)->messageQueue
+};
 static const int kStreamMessageRunTasks = 1;
 static const int kStreamMessageStop = 2;
 static const int kStreamMessageCapacity = 2;
@@ -67,8 +73,6 @@ static const int kVoiceBiquadDirty = 0x80;
 static const int kVoiceAfterStartMask = 0xFA;
 static const int kVoiceAfterPitchMask = 0xFB;
 static const int kVoiceAfterPauseMask = 0xFD;
-// Translation unit 0x8040E9BC-0x8040FD50 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
@@ -80,13 +84,16 @@ struct InterruptUnwindCleanup {
     // Retain the caller's interrupt level for exceptional exits.
     explicit InterruptUnwindCleanup(BOOL saved) : level(saved), active(true) {}
     // Transfer restoration responsibility to the normal exit path.
-    BOOL release() { active = false; return level; }
+    BOOL release() {
+        active = false;
+        return level;
+    }
     // Restore interrupts only when normal code has not taken responsibility.
     ~InterruptUnwindCleanup() {
-        if (active) OSRestoreInterrupts(level);
+        if (active)
+            OSRestoreInterrupts(level);
     }
 };
-
 
 extern float s_audioStreamFullTurnRadians;
 extern float s_gtlVoiceFullTurnRadians;
@@ -170,7 +177,8 @@ void AudioStreamPlayers_InitializeRegistry() {
     *(int*)&list->count = 0;
     *(void**)&node->next = node;
     node->prev = node;
-    __register_global_object(&s_activeStreamPlayers, (void*)AudioStreamPlayerList_Dtor, s_activeStreamPlayersDtorRegistration);
+    __register_global_object(&s_activeStreamPlayers, (void*)AudioStreamPlayerList_Dtor,
+                             s_activeStreamPlayersDtorRegistration);
 }
 
 typedef AudioMessageWorker Singleton;
@@ -234,7 +242,6 @@ void* dtor_8040F368(void* self, int flag) {
 
 extern char __vt__Q43gtl4nw4r6detail5Voice[];
 
-
 // Install the voice vtable and clear playback flags, callback state and AX voice handles.
 void gtl_nw4r_detail_Voice_Ctor(Voice* self) {
     self->eventCallback = 0;
@@ -290,10 +297,11 @@ int gtl_AudioMessageThread_Start(char* self, int priority, char* stack, unsigned
     if (((AudioMessageWorker*)self)->running)
         return true;
     ((AudioMessageWorker*)self)->running = 1;
-    OSInitMessageQueue((OSMessageQueue*)((AudioMessageWorker*)self)->messageQueue, (OSMessage*)((AudioMessageWorker*)self)->messages, kStreamMessageCapacity);
+    OSInitMessageQueue((OSMessageQueue*)((AudioMessageWorker*)self)->messageQueue,
+                       (OSMessage*)((AudioMessageWorker*)self)->messages, kStreamMessageCapacity);
     ((AudioMessageWorker*)self)->stack = stack;
-    int result = OSCreateThread((OSThread*)self, (OSThreadFunc)SoundStream_MessageThreadMain, self,
-                            stack + size, size, priority, 0);
+    int result = OSCreateThread((OSThread*)self, (OSThreadFunc)SoundStream_MessageThreadMain, self, stack + size, size,
+                                priority, 0);
     if (result)
         OSResumeThread((OSThread*)self);
     return result != 0;
@@ -337,7 +345,7 @@ void GtlVoice_InitializePlaybackParameters(char* self, int columns, int rows, in
     ((Voice*)self)->additionalOutputMix2 = kFloat_0_AudioVoice;
     ((Voice*)self)->remoteVolume3 = kFloat_1_0_AudioVoice;
     ((Voice*)self)->remoteSend3 = kFloat_1_0_AudioVoice;
-    ((Voice*)self)->unk_108 = kFloat_0_AudioVoice;
+    ((Voice*)self)->additionalOutputMix3 = kFloat_0_AudioVoice;
     ((Voice*)self)->pitchScale = kFloat_1_0_AudioVoice;
     self[0xAA] = 0;
     ((Voice*)self)->stereoPanMode = 1;
@@ -365,8 +373,6 @@ void* SoundStreamTaskManager_Dtor(void* self, int flag) {
 }
 
 } // extern "C"
-
-
 
 extern "C" {
 struct ManagerGlobals {
@@ -415,7 +421,6 @@ void gtl_AxVoice_SetPitch(void*, float, int);
 void gtl_AxVoice_SetLowPassFrequency(void*, unsigned short);
 void AudioVoice_SetBiquadFilter(void*, unsigned char);
 void gtl_nw4r_detail_Voice_ApplyVolume(void*);
-int gtl_Voice_ApplyOutputMixCoefficients(void*);
 int AudioVolume_NormalizedToExponentialGain32000(float);
 
 extern char GtlVoice_HandleAxVoiceRemoval[];
@@ -423,16 +428,26 @@ extern char GtlVoice_HandleAxVoiceRemoval[];
 #pragma push
 #pragma use_lmw_stmw on
 // Accessors for a voice-pool list entry given its intrusive link pointer (fields sit at negative offsets).
-static inline int PoolEntryPriority(void* link) { return *(int*)((char*)link - 0x78); }
+static inline int PoolEntryPriority(void* link) {
+    return *(int*)((char*)link - 0x78);
+}
 // The link is the Voice::poolLinkNext member, so the owning Voice sits kVoicePoolLinkOffset bytes before it.
-enum { kVoicePoolLinkOffset = (int)&((Voice*)0)->poolLinkNext };
-static inline Voice* PoolEntryVoice(void* link) { return (Voice*)((char*)link - kVoicePoolLinkOffset); }
+enum {
+    kVoicePoolLinkOffset = (int)&((Voice*)0)->poolLinkNext
+};
+static inline Voice* PoolEntryVoice(void* link) {
+    return (Voice*)((char*)link - kVoicePoolLinkOffset);
+}
 // Number of AX voices the pooled voice holds: columns (sourceChannelCount) times rows (outputVoiceCount).
-static inline int PoolEntryColumns(void* link) { return PoolEntryVoice(link)->sourceChannelCount; }
-static inline int PoolEntryRows(void* link) { return PoolEntryVoice(link)->outputVoiceCount; }
+static inline int PoolEntryColumns(void* link) {
+    return PoolEntryVoice(link)->sourceChannelCount;
+}
+static inline int PoolEntryRows(void* link) {
+    return PoolEntryVoice(link)->outputVoiceCount;
+}
 // Acquire a bounded grid of AX voices, attempting requestPriority-based stealing and releasing partial allocations on failure.
-extern "C" int gtl_Voice_AllocateAxVoiceGrid(void* self, int columns, int rows, int requestPriority,
-                            int eventCallback, int callbackArgument) {
+int gtl::nw4r::detail::Voice::AllocateAxVoiceGrid(int columns, int rows, int requestPriority, int eventCallback,
+                                                  int callbackArgument) {
     int columnCount = columns > kVoiceMaxColumns ? kVoiceMaxColumns : (columns < 1 ? 1 : columns);
     int rowCount = rows > kVoiceMaxRows ? kVoiceMaxRows : (rows < 1 ? 1 : rows);
     BOOL interruptLevel = OSDisableInterrupts();
@@ -440,11 +455,13 @@ extern "C" int gtl_Voice_AllocateAxVoiceGrid(void* self, int columns, int rows, 
     void* acquired[kVoiceMaxColumns * kVoiceMaxRows]; // AX voice handles acquired so far (column-major)
     // Phase 1: acquire every handle before publishing any of them into self.
     // requestPriority is the logical stealing requestPriority, not a third grid dimension.
-    int axVoicePriority = requestPriority == kVoiceHighestPriorityRequest ? kAxVoicePriorityHighest : kAxVoicePriorityNormal;
+    int axVoicePriority =
+        requestPriority == kVoiceHighestPriorityRequest ? kAxVoicePriorityHighest : kAxVoicePriorityNormal;
     int total = columnCount * rowCount;
     int acquiredCount = 0;
     for (; acquiredCount < total; ++acquiredCount) {
-        void* object = (void*)AudioVoicePool_AcquireAXVoice(GtlVoicePool_GetInstance(), axVoicePriority, &GtlVoice_HandleAxVoiceRemoval, self);
+        void* object = (void*)AudioVoicePool_AcquireAXVoice(GtlVoicePool_GetInstance(), axVoicePriority,
+                                                            &GtlVoice_HandleAxVoiceRemoval, this);
         if (!object) {
             // Check that eligible lower/equal-requestPriority voices can cover the shortfall.
             int shortfall = total - acquiredCount;
@@ -467,7 +484,8 @@ extern "C" int gtl_Voice_AllocateAxVoiceGrid(void* self, int columns, int rows, 
                 return 0;
             }
             int fallback = axVoicePriority == kAxVoicePriorityHighest ? kAxVoicePriorityHighest : kAxVoicePrioritySteal;
-            object = (void*)AudioVoicePool_AcquireAXVoice(GtlVoicePool_GetInstance(), fallback, &GtlVoice_HandleAxVoiceRemoval, self);
+            object = (void*)AudioVoicePool_AcquireAXVoice(GtlVoicePool_GetInstance(), fallback,
+                                                          &GtlVoice_HandleAxVoiceRemoval, this);
             if (!object) {
                 for (int i = 0; i < acquiredCount; ++i) {
                     gtl_AxVoicePool_ReleaseVoice(GtlVoicePool_GetInstance(), acquired[i]);
@@ -480,7 +498,7 @@ extern "C" int gtl_Voice_AllocateAxVoiceGrid(void* self, int columns, int rows, 
     }
     // Phase 2: publish the complete column-major grid and reset playback defaults.
     // Returns 1 with ownership transferred to self; 0 releases partial acquisition.
-    char* row = (char*)self;
+    char* row = (char*)this;
     int index = 0;
     for (int i = 0; i < columnCount; ++i) {
         char* cell = row;
@@ -492,8 +510,8 @@ extern "C" int gtl_Voice_AllocateAxVoiceGrid(void* self, int columns, int rows, 
         }
         row += 0x10;
     }
-    GtlVoice_InitializePlaybackParameters((char*)self, columnCount, rowCount, eventCallback, callbackArgument);
-    ((Voice*)self)->allocated = 1;
+    GtlVoice_InitializePlaybackParameters((char*)this, columnCount, rowCount, eventCallback, callbackArgument);
+    allocated = 1;
     OSRestoreInterrupts(interruptCleanup0.release());
     return 1;
 }
@@ -509,27 +527,37 @@ extern "C" void gtl_nw4r_detail_Voice_ApplyPendingParameters(Voice* self) {
         char* column = (char*)self;
         for (int i = 0; i < ((Voice*)self)->outputVoiceCount; ++i, column += 0x1C) {
             float amount = ((Voice*)column)->channels[0].channelPitchScale;
-            if (amount > one) amount = one;
-            else if (amount < zero) amount = zero;
+            if (amount > one)
+                amount = one;
+            else if (amount < zero)
+                amount = zero;
             float scaled = ((Voice*)self)->pitchScale * amount;
             char* cell = (char*)self + i * 4;
             for (int j = 0; j < ((Voice*)self)->sourceChannelCount; ++j, cell += 0x10) {
                 void* object = *(void**)(cell + 4);
-                if (object) gtl_AxVoice_SetPitch(object, scaled, 0);
+                if (object)
+                    gtl_AxVoice_SetPitch(object, scaled, 0);
             }
         }
         self->pendingChanges &= ~kVoicePitchDirty;
     }
-    if (self->pendingChanges & kVoiceVolumeDirty) { gtl_nw4r_detail_Voice_ApplyVolume(self); self->pendingChanges &= ~kVoiceVolumeDirty; }
-    if ((self->pendingChanges & kVoiceOutputMixDirty) && !gtl_Voice_ApplyOutputMixCoefficients(self)) self->pendingChanges &= ~kVoiceOutputMixDirty;
+    if (self->pendingChanges & kVoiceVolumeDirty) {
+        gtl_nw4r_detail_Voice_ApplyVolume(self);
+        self->pendingChanges &= ~kVoiceVolumeDirty;
+    }
+    if ((self->pendingChanges & kVoiceOutputMixDirty) &&
+        !((gtl::nw4r::detail::Voice*)self)->ApplyOutputMixCoefficients())
+        self->pendingChanges &= ~kVoiceOutputMixDirty;
     if (self->pendingChanges & kVoiceLowPassDirty) {
         char* row = (char*)self;
         for (int i = 0; i < ((Voice*)self)->outputVoiceCount; ++i, row += 0x1C) {
-            unsigned short value = (unsigned short)AudioVolume_NormalizedToExponentialGain32000(((Voice*)self)->lowPassFilter + ((Voice*)row)->channels[0].lowPassFilterOffset);
+            unsigned short value = (unsigned short)AudioVolume_NormalizedToExponentialGain32000(
+                ((Voice*)self)->lowPassFilter + ((Voice*)row)->channels[0].lowPassFilterOffset);
             char* cell = (char*)self + i * 4;
             for (int j = 0; j < ((Voice*)self)->sourceChannelCount; ++j, cell += 0x10) {
                 void* object = *(void**)(cell + 4);
-                if (object) gtl_AxVoice_SetLowPassFrequency(object, value);
+                if (object)
+                    gtl_AxVoice_SetLowPassFrequency(object, value);
             }
         }
         self->pendingChanges &= ~kVoiceLowPassDirty;
@@ -540,7 +568,8 @@ extern "C" void gtl_nw4r_detail_Voice_ApplyPendingParameters(Voice* self) {
             char* cell = row;
             for (int j = 0; j < ((Voice*)self)->sourceChannelCount; ++j, cell += 0x10) {
                 void* object = *(void**)(cell + 4);
-                if (object) AudioVoice_SetBiquadFilter(object, *(unsigned char*)((Voice*)self)->biquadFilterState);
+                if (object)
+                    AudioVoice_SetBiquadFilter(object, *(unsigned char*)((Voice*)self)->biquadFilterState);
             }
             row += 4;
         }
@@ -602,7 +631,9 @@ struct InterruptGuard : InterruptBase {
     // Save and disable interrupts for the guarded operation.
     InterruptGuard() : level(OSDisableInterrupts()) {}
     // Restore the incoming interrupt level, including during unwinding.
-    ~InterruptGuard() { OSRestoreInterrupts(level); }
+    ~InterruptGuard() {
+        OSRestoreInterrupts(level);
+    }
 };
 
 extern "C" void AXSetVoiceState(void*, int);
@@ -611,31 +642,38 @@ extern "C" void GtlVoice_UpdateVolumeRamp(void*);
 // Apply pending start/pause changes and update volume ramps while interrupts are disabled.
 extern "C" void GtlVoice_UpdatePlaybackState(char* self) {
     InterruptGuard guard;
-    if (!((Voice*)self)->allocated) return;
+    if (!((Voice*)self)->allocated)
+        return;
     // Phase 1: push pitch before starting all hardware handles; acknowledge start/pitch bits.
-    if ((((Voice*)self)->pendingChanges & kVoiceStartPending) && ((Voice*)self)->playbackRequested && !((Voice*)self)->hardwareStarted) {
+    if ((((Voice*)self)->pendingChanges & kVoiceStartPending) && ((Voice*)self)->playbackRequested &&
+        !((Voice*)self)->hardwareStarted) {
         float zero = kFloat_0_AudioVoice, one = kFloat_1_0_AudioVoice;
         char* row = self;
         int offset = 0;
         for (int i = 0; i < ((Voice*)self)->outputVoiceCount; ++i) {
             float amount = ((Voice*)row)->channels[0].channelPitchScale;
-            if (amount > one) amount = one;
-            else if (amount < zero) amount = zero;
+            if (amount > one)
+                amount = one;
+            else if (amount < zero)
+                amount = zero;
             float scaled = ((Voice*)self)->pitchScale * amount;
             char* cell = self + offset;
             for (int j = 0; j < ((Voice*)self)->sourceChannelCount; ++j) {
                 void* object = *(void**)(cell + 4);
-                if (object) gtl_AxVoice_SetPitch(object, scaled, 1);
+                if (object)
+                    gtl_AxVoice_SetPitch(object, scaled, 1);
                 cell += 0x10;
             }
-            row += 0x1C; offset += 4;
+            row += 0x1C;
+            offset += 4;
         }
         char* outer = self;
         for (int i = 0; i < ((Voice*)self)->sourceChannelCount; ++i) {
             char* cell = outer;
             for (int j = 0; j < ((Voice*)self)->outputVoiceCount; ++j) {
                 void* object = *(void**)(cell + 4);
-                if (object && *(void**)object) AXSetVoiceState(*(void**)object, 1);
+                if (object && *(void**)object)
+                    AXSetVoiceState(*(void**)object, 1);
                 cell += 4;
             }
             outer += 0x10;
@@ -648,44 +686,47 @@ extern "C" void GtlVoice_UpdatePlaybackState(char* self) {
     }
     // Phase 2: reconcile explicit pause and drive-status pause, then service ramps.
     if (((Voice*)self)->hardwareStarted) {
-    if ((((Voice*)self)->pendingChanges & kVoicePausePending) && ((Voice*)self)->playbackRequested) {
-        if (((Voice*)self)->pauseRequested || AsAudioController80404E94(gtl_AudioController_GetInstance())->driveStatusChanged) {
-            char* outer = self;
-            for (int i = 0; i < ((Voice*)self)->sourceChannelCount; ++i) {
-                char* cell = outer;
-                for (int j = 0; j < ((Voice*)self)->outputVoiceCount; ++j) {
-                    void* object = *(void**)(cell + 4);
-                    if (object) {
-                        void* child = *(void**)object;
-                        if (child && ((AxVoiceStateView*)child)->playbackState == 1)
-                            AXSetVoiceState(child, 0);
+        if ((((Voice*)self)->pendingChanges & kVoicePausePending) && ((Voice*)self)->playbackRequested) {
+            if (((Voice*)self)->pauseRequested ||
+                AsAudioController80404E94(gtl_AudioController_GetInstance())->driveStatusChanged) {
+                char* outer = self;
+                for (int i = 0; i < ((Voice*)self)->sourceChannelCount; ++i) {
+                    char* cell = outer;
+                    for (int j = 0; j < ((Voice*)self)->outputVoiceCount; ++j) {
+                        void* object = *(void**)(cell + 4);
+                        if (object) {
+                            void* child = *(void**)object;
+                            if (child && ((AxVoiceStateView*)child)->playbackState == 1)
+                                AXSetVoiceState(child, 0);
+                        }
+                        cell += 4;
                     }
-                    cell += 4;
+                    outer += 0x10;
                 }
-                outer += 0x10;
-            }
-            ((Voice*)self)->hardwarePaused = 1;
-        } else {
-            char* outer = self;
-            for (int i = 0; i < ((Voice*)self)->sourceChannelCount; ++i) {
-                char* cell = outer;
-                for (int j = 0; j < ((Voice*)self)->outputVoiceCount; ++j) {
-                    void* object = *(void**)(cell + 4);
-                    if (object && *(void**)object) AXSetVoiceState(*(void**)object, 1);
-                    cell += 4;
+                ((Voice*)self)->hardwarePaused = 1;
+            } else {
+                char* outer = self;
+                for (int i = 0; i < ((Voice*)self)->sourceChannelCount; ++i) {
+                    char* cell = outer;
+                    for (int j = 0; j < ((Voice*)self)->outputVoiceCount; ++j) {
+                        void* object = *(void**)(cell + 4);
+                        if (object && *(void**)object)
+                            AXSetVoiceState(*(void**)object, 1);
+                        cell += 4;
+                    }
+                    outer += 0x10;
                 }
-                outer += 0x10;
+                ((Voice*)self)->hardwarePaused = 0;
             }
-            ((Voice*)self)->hardwarePaused = 0;
+            ((Voice*)self)->pendingChanges &= kVoiceAfterPauseMask;
         }
-        ((Voice*)self)->pendingChanges &= kVoiceAfterPauseMask;
-    }
         char* outer = self;
         for (int i = 0; i < ((Voice*)self)->sourceChannelCount; ++i) {
             char* cell = outer;
             for (int j = 0; j < ((Voice*)self)->outputVoiceCount; ++j) {
                 void* object = *(void**)(cell + 4);
-                if (object) GtlVoice_UpdateVolumeRamp(object);
+                if (object)
+                    GtlVoice_UpdateVolumeRamp(object);
                 cell += 4;
             }
             outer += 0x10;
@@ -696,9 +737,13 @@ extern "C" void GtlVoice_UpdatePlaybackState(char* self) {
 struct MutexGuard : InterruptBase {
     OSMutex* mutex;
     // Lock the manager across task execution or bulk cancellation.
-    MutexGuard(void* p) : mutex((OSMutex*)p) { OSLockMutex(mutex); }
+    MutexGuard(void* p) : mutex((OSMutex*)p) {
+        OSLockMutex(mutex);
+    }
     // Unlock on normal return and on exceptions.
-    ~MutexGuard() { OSUnlockMutex(mutex); }
+    ~MutexGuard() {
+        OSUnlockMutex(mutex);
+    }
 };
 
 extern "C" void IntrusiveList_UnlinkNodeAndDecrementCount(void*, void*);

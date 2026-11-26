@@ -1,5 +1,7 @@
-// Translation unit 0x80412BC4-0x80412C6C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// DVD device: GetFileInfo, which fills a FileInfo record with the file size and a fixed status word.
+// The size comes from the device's own size query.
+
+#include "classes/GtlFileIoDeviceDVD.h"
 
 extern "C" {
 
@@ -8,8 +10,9 @@ void* memset(void*, int, unsigned int);
 
 void File_SetLastError(int);
 
-struct CFileIoDeviceDVD {
-    // Preserve virtual slot order: v8 below dispatches device vfunc_7 (size query).
+// Virtual-call view of the device, used only to make the size query's call through the vtable.
+// The unnamed slots are placeholders kept so the call dispatches at the original vtable entry.
+struct DvdDeviceVirtualView {
     virtual void v0();
     virtual void v1();
     virtual void v2();
@@ -30,14 +33,23 @@ struct FileInfo {
     char reservedTail[8];
 };
 
-enum { kInvalidHandleError = 6, kFileSuccess = 0, kHandleBias = 0x10000, kBiasedInvalidHandle = 0xFFFF, kStatWord28Value = 1 };
+enum {
+    kInvalidHandleError = 6,
+    kFileSuccess = 0,
+    kHandleBias = 0x10000,
+    kBiasedInvalidHandle = 0xFFFF,
+    kStatWord28Value = 1
+};
 typedef char FileInfo_size_check[(sizeof(FileInfo) == 0x34) ? 1 : -1];
+
+} // extern "C"
 
 // Clear the DVD status record, query size in bytes and write the fixed status word.
 // Return 0 for handle 0xFFFFFFFF (output untouched, last error 6), otherwise 1.
 // info is borrowed and must be nonnull for any other handle; size-query errors
 // are stored verbatim and do not change the success return. Success clears last error.
-int gtl_CFileIoDeviceDVD_GetFileInfo(CFileIoDeviceDVD* self, unsigned int fileHandle, FileInfo* info) {
+// The size comes from the device's own size query, called through the vtable (entry at 0x24).
+int gtl::CFileIoDeviceDVD::GetFileInfo(unsigned int fileHandle, FileInfo* info) {
     // The unsigned biased comparison is exactly the invalid-handle sentinel test.
     if ((fileHandle + kHandleBias) == kBiasedInvalidHandle) {
         File_SetLastError(kInvalidHandleError);
@@ -45,10 +57,8 @@ int gtl_CFileIoDeviceDVD_GetFileInfo(CFileIoDeviceDVD* self, unsigned int fileHa
     }
 
     memset(info, 0, sizeof(FileInfo));
-    info->size = self->v8(fileHandle, 0, 0, 0);
+    info->size = ((DvdDeviceVirtualView*)this)->v8(fileHandle, 0, 0, 0);
     info->statusWord28 = kStatWord28Value; // Legacy name; no reader here proves a validity bit.
     File_SetLastError(kFileSuccess);
     return 1;
 }
-
-} // extern "C"

@@ -1,5 +1,5 @@
-// Translation unit 0x804130C4-0x804130C8 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// File-layer storage release: frees an allocation through FileIO_Free. The wrapper runs no member
+// cleanup and adds no null check.
 
 extern "C" {
 
@@ -10,7 +10,7 @@ void FileIO_Free(void* allocatedStorage);
 // allocatedStorage must satisfy FileIO_Free's allocator contract; its ownership
 // is consumed. This wrapper adds no null check or deleting-destructor flag.
 void dtor_804130C4(void* allocatedStorage) {
-	FileIO_Free(allocatedStorage);
+    FileIO_Free(allocatedStorage);
 }
 
 } // extern "C"

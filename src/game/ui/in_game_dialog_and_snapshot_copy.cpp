@@ -1,13 +1,18 @@
+// In-game dialog base (CInGameDialog) and the saved player snapshot: the open and close transitions
+// of dialogs with their wide-text messages, and the copy of each player's stats, equipment and
+// caddie choice into the saved record.
+//
+// Also holds the byte-vector and allocation helpers used by the message and text code.
+
 #include <decomp/static_init.h>
 #include "classes/CSharedDoc.h"
 #include "classes/SavePlayerRecord.h"
 #include "classes/CPangyaMsgDrawObject.h"
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
-// Translation unit 0x80254BD4-0x802562A0 (25 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "classes/CInGameDialog.h"
+#include "classes/CGolfDoc.h"
 
 #define AsCInGameDialog(p) ((CInGameDialog*)(p))
 extern "C" {
@@ -20,9 +25,18 @@ extern float kFloat_200_805E0330;
 extern float kFloat_1_PartyBalloon;
 extern void* g_soundManager;
 extern CSharedDoc* g_sharedDoc;
-struct DialogSoundPool { char openSound[15]; char closeSound[16]; char otherStrings[169]; };
+struct DialogSoundPool {
+    char openSound[15];
+    char closeSound[16];
+    char otherStrings[169];
+};
 extern DialogSoundPool dialogSoundAndErrorStrings;
-struct ProfileStringPool { char defaultNameFormat[9]; char vectorLengthError[20]; char lengthErrorType[55]; char padding[4]; };
+struct ProfileStringPool {
+    char defaultNameFormat[9];
+    char vectorLengthError[20];
+    char lengthErrorType[55];
+    char padding[4];
+};
 extern ProfileStringPool playerProfileDefaultNameStrings;
 void* memcpy(void*, const void*, unsigned int);
 void* memset(void*, int, unsigned int);
@@ -31,7 +45,6 @@ char* strcpy(char*, const char*);
 void* appMallocDummy__FUl(unsigned int);
 void* __nwa__FUl(unsigned int);
 
-void CPangyaMsgDrawObject_Create(void*);
 void* Sound_PlayByName(void*, const char*, int, int, int, int, float, float, float);
 void WString_ReplaceRange(void*, int, int, int, int, unsigned char*);
 void appFreeUni__FPv(void*);
@@ -39,10 +52,25 @@ void __dl__FPv(void*);
 void IUnknownCustom_dtor(void*, int);
 extern int __vt__13CInGameDialog[];
 
-enum DialogState { Dialog_Reset = 1, Dialog_Inactive = 2, Dialog_Opening = 3, Dialog_Open = 4, Dialog_Closing = 5 };
-enum { SaveCounterMaximum = 99999999, SaveShortCounterMaximum = 9999, GameMode_Stroke = 0, GameMode_Party = 6 };
-enum SnapshotLayout { kSnapshotStride = 0x1D4, kSnapshotPlayerSlots = 4,
-    kSnapshotProfileBytes = 0x20, kSnapshotCourseRecordBytes = 0x70 };
+enum DialogState {
+    Dialog_Reset = 1,
+    Dialog_Inactive = 2,
+    Dialog_Opening = 3,
+    Dialog_Open = 4,
+    Dialog_Closing = 5
+};
+enum {
+    SaveCounterMaximum = 99999999,
+    SaveShortCounterMaximum = 9999,
+    GameMode_Stroke = 0,
+    GameMode_Party = 6
+};
+enum SnapshotLayout {
+    kSnapshotStride = 0x1D4,
+    kSnapshotPlayerSlots = 4,
+    kSnapshotProfileBytes = 0x20,
+    kSnapshotCourseRecordBytes = 0x70
+};
 
 struct InGameDialogView {
     int refcount;
@@ -52,21 +80,21 @@ struct InGameDialogView {
     int dialogState;
     float transitionDuration, elapsedTime, transitionProgress, autoCloseDelay;
     // Initial request state is closed (open=0, close=1); +34/+38 are constructor-only zeros here.
-    // vfunc_5 clears timers/text, but does not reset these four flags.
+    // ResetDialog clears timers/text, but does not reset these four flags.
     int openRequested, closeRequested, resetState34, blockRegistryClose;
     void* messageDraw;
     union {
         void* stringStorageWord;
-        struct { unsigned short storageTag; unsigned short inlineText[1]; } shortString;
+        struct {
+            unsigned short storageTag;
+            unsigned short inlineText[1];
+        } shortString;
     };
     int stringLength;
     void* stringData;
 };
 
-// Initialize dialog ownership, geometry and request flags, then create the message renderer.
-int CInGameDialog_Ctor(InGameDialogView*);
 // Reset transition state and erase all text from the inline or heap-backed wide string.
-int CInGameDialog_ResetDialog(InGameDialogView*);
 // Close the dialog, release its message renderer and wide string, and optionally delete it.
 int __dt__15SmallDialogBaseFv(InGameDialogView*, int);
 
@@ -88,7 +116,7 @@ int __dt__15SmallDialogBaseFv(InGameDialogView*, int);
 // changing a statistic formula. NaN floats pass the comparison-based clamp.
 struct SavedSnapshotFields {
     char profilePrefix[0x24];
-    int pangBits; // Numeric pang balance; never dereferenced as a pointer.
+    int pangBits;       // Numeric pang balance; never dereferenced as a pointer.
     int experienceBits; // Numeric experience value, copied with signed word loads/stores.
     char selectionPrefix[5];
     char equippedItemIndices[8];
@@ -124,7 +152,7 @@ struct SharedPlayerSnapshotView {
     int selectedCourseScore;
     short reservedItemCount;
     short lastItemCount;
-    int pangBits; // Numeric pang balance; never dereferenced as a pointer.
+    int pangBits;       // Numeric pang balance; never dereferenced as a pointer.
     int experienceBits; // Numeric experience value, copied with signed word loads/stores.
     int counters[4];
     short narrowedCounters[2];
@@ -142,9 +170,17 @@ struct SharedPlayerSnapshotView {
     int caddieValue;
     char tail[0xC];
 };
-struct SavedCaddieSnapshot { unsigned char flags; char padding[3]; int value; };
-struct SavedCaddieSnapshotView { char prefix[0x46C]; SavedCaddieSnapshot caddies[8]; };
-#define SNAPSHOT_OFFSET(f, o) typedef char Snapshot_offset_##f[((int)&((SharedPlayerSnapshotView*)0)->f == (o)) ? 1 : -1]
+struct SavedCaddieSnapshot {
+    unsigned char flags;
+    char padding[3];
+    int value;
+};
+struct SavedCaddieSnapshotView {
+    char prefix[0x46C];
+    SavedCaddieSnapshot caddies[8];
+};
+#define SNAPSHOT_OFFSET(f, o) \
+    typedef char Snapshot_offset_##f[((int)&((SharedPlayerSnapshotView*)0)->f == (o)) ? 1 : -1]
 SNAPSHOT_OFFSET(pangBits, 0x44);
 SNAPSHOT_OFFSET(counters, 0x4C);
 SNAPSHOT_OFFSET(equippedItemIds, 0x8C);
@@ -157,7 +193,6 @@ typedef char SavedSnapshot_counters[((int)&((SavedSnapshotFields*)0)->counters =
 
 int ItemInventory_FindCaddieIndex(void*, void*);
 int ItemInventory_FindItemIndex(void*, int);
-int CGolfDoc_SelectPlayerBySnapshotWords(void*);
 void* GolfPlayer_GetEntryByIndex(void*, unsigned char);
 void* SaveRecord_CopyCtor(void*, void*);
 void* SaveData_GetCurrentRecord(void*);
@@ -172,15 +207,18 @@ extern float kFloat_100000000_805E0324;
 #pragma use_lmw_stmw on
 #pragma opt_propagation off
 #pragma opt_common_subs off
-struct GolfPlayerEntryView { void* player; int entryKind; };
-
+struct GolfPlayerEntryView {
+    void* player;
+    int entryKind;
+};
 
 // Keep these expression macros: inline functions change this writer's machine code.
 // Inputs must be side-effect-free lvalues; each successful branch may read again.
 // Integer clamps use the persistence schema above; unordered floats pass through.
-#define CLAMP_INT(v) ((v)<0?0:((v)>SaveCounterMaximum?SaveCounterMaximum:(v)))
-#define CLAMP_SHORT(v) ((v)<0?0:((v)>SaveShortCounterMaximum?SaveShortCounterMaximum:(v)))
-#define CLAMP_FLOAT(f) ((f)<kFloat_0_805E0320?kFloat_0_805E0320:((f)>kFloat_100000000_805E0324?kFloat_100000000_805E0324:(f)))
+#define CLAMP_INT(v) ((v) < 0 ? 0 : ((v) > SaveCounterMaximum ? SaveCounterMaximum : (v)))
+#define CLAMP_SHORT(v) ((v) < 0 ? 0 : ((v) > SaveShortCounterMaximum ? SaveShortCounterMaximum : (v)))
+#define CLAMP_FLOAT(f) \
+    ((f) < kFloat_0_805E0320 ? kFloat_0_805E0320 : ((f) > kFloat_100000000_805E0324 ? kFloat_100000000_805E0324 : (f)))
 // Copy fixed statistic slots using the persistence clamps; leave other fields alone.
 // Both views are borrowed; slot identities/units remain as documented above.
 static inline void CopyClampedSnapshotStatistics(SavedSnapshotFields* saved, SharedPlayerSnapshotView* live) {
@@ -219,7 +257,8 @@ static inline void CopySnapshotEquipmentSelection(char* savedRecord, char*& equi
 // Copy the selected caddie's value only when a caddie is equipped.
 static inline void CopySnapshotCaddieValue(char* caddieRecords, char* liveSnapshot) {
     if (((SharedPlayerSnapshotView*)liveSnapshot)->caddieId != 0) {
-        int slot = ItemInventory_FindCaddieIndex(g_sharedDoc->itemInventory, (void*)((SharedPlayerSnapshotView*)liveSnapshot)->caddieId);
+        int slot = ItemInventory_FindCaddieIndex(g_sharedDoc->itemInventory,
+                                                 (void*)((SharedPlayerSnapshotView*)liveSnapshot)->caddieId);
         ((SavedCaddieSnapshot*)caddieRecords)[slot].value = ((SharedPlayerSnapshotView*)liveSnapshot)->caddieValue;
     }
 }
@@ -253,19 +292,25 @@ void SaveData_PersistLocalPlayerSnapshot() {
     int unusedScratch;
 
     // Phase 1: select a local (entryKind==0) player and copy the existing save.
-    if (!(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc)) return;
-    playerIndex = CGolfDoc_SelectPlayerBySnapshotWords((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc));
-    if (playerIndex < 0) return;
-    if (!GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)playerIndex)) return;
-    if (((GolfPlayerEntryView*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)playerIndex))->entryKind) return;
-    if (!Sing_805DC5E0()) {
+    if (!(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))
+        return;
+    playerIndex = ((CGolfDoc*)((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc)))->SelectPlayerBySnapshotWords();
+    if (playerIndex < 0)
+        return;
+    if (!GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)playerIndex))
+        return;
+    if (((GolfPlayerEntryView*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc),
+                                                          (unsigned char)playerIndex))
+            ->entryKind)
+        return;
+    if (!GetSaveDataSlot()) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        Sing_805DC5E0() = (void*)s_saveData;
+        GetSaveDataSlot() = (void*)s_saveData;
     }
-    void* source = SaveData_GetCurrentRecord(Sing_805DC5E0());
+    void* source = SaveData_GetCurrentRecord(GetSaveDataSlot());
     char buffer[0x828];
     SaveRecord_CopyCtor(buffer, source);
     savedRecord = buffer;
@@ -284,14 +329,16 @@ void SaveData_PersistLocalPlayerSnapshot() {
         int experienceValue = ((SharedPlayerSnapshotView*)liveSnapshot)->experienceBits;
         ((SavedSnapshotFields*)savedRecord)->pangBits = pangValue;
         ((SavedSnapshotFields*)savedRecord)->experienceBits = experienceValue;
-        memcpy(((SavedSnapshotFields*)savedRecord)->auxPartFlags, ((SharedPlayerSnapshotView*)liveSnapshot)->auxPartFlags, 7);
+        memcpy(((SavedSnapshotFields*)savedRecord)->auxPartFlags,
+               ((SharedPlayerSnapshotView*)liveSnapshot)->auxPartFlags, 7);
         CopySnapshotEquipmentSelection(savedRecord, equippedItemCursor, itemIndex);
         int countValue = ((SharedPlayerSnapshotView*)liveSnapshot)->reservedItemCount;
         ((SavedSnapshotFields*)savedRecord)->reservedItemCount = (short)countValue;
         countValue = ((SharedPlayerSnapshotView*)liveSnapshot)->lastItemCount;
         ((SavedSnapshotFields*)savedRecord)->lastItemCount = (short)countValue;
         int courseRecordIndex = (*(int*)&AsCSharedDoc(g_sharedDoc)->courseRecordIndex);
-        savedRecord[courseRecordIndex + SAVE_FIELD_OFFSET(courseScores)] = ((SharedPlayerSnapshotView*)liveSnapshot)->selectedCourseScore;
+        savedRecord[courseRecordIndex + SAVE_FIELD_OFFSET(courseScores)] =
+            ((SharedPlayerSnapshotView*)liveSnapshot)->selectedCourseScore;
         CopyClampedSnapshotStatistics((SavedSnapshotFields*)savedRecord, (SharedPlayerSnapshotView*)liveSnapshot);
         memcpy(savedCourseRecords, liveCourseRecords, kSnapshotCourseRecordBytes);
         CopySnapshotCaddieValue(caddieRecords, liveSnapshot);
@@ -304,7 +351,8 @@ void SaveData_PersistLocalPlayerSnapshot() {
             int experienceValue = ((SharedPlayerSnapshotView*)liveSnapshot)->experienceBits;
             ((SavedSnapshotFields*)savedRecord)->pangBits = pangValue;
             ((SavedSnapshotFields*)savedRecord)->experienceBits = experienceValue;
-            memcpy(((SavedSnapshotFields*)savedRecord)->auxPartFlags, ((SharedPlayerSnapshotView*)liveSnapshot)->auxPartFlags, 7);
+            memcpy(((SavedSnapshotFields*)savedRecord)->auxPartFlags,
+                   ((SharedPlayerSnapshotView*)liveSnapshot)->auxPartFlags, 7);
             CopySnapshotEquipmentSelection(savedRecord, equippedItemCursor, equipmentSlot);
             int countValue = ((SharedPlayerSnapshotView*)liveSnapshot)->lastItemCount;
             ((SavedSnapshotFields*)savedRecord)->lastItemCount = (short)countValue;
@@ -313,23 +361,25 @@ void SaveData_PersistLocalPlayerSnapshot() {
         } else {
             int experienceValue = ((SharedPlayerSnapshotView*)liveSnapshot)->experienceBits;
             ((SavedSnapshotFields*)savedRecord)->experienceBits = experienceValue;
-            memcpy(((SavedSnapshotFields*)savedRecord)->auxPartFlags, ((SharedPlayerSnapshotView*)liveSnapshot)->auxPartFlags, 7);
+            memcpy(((SavedSnapshotFields*)savedRecord)->auxPartFlags,
+                   ((SharedPlayerSnapshotView*)liveSnapshot)->auxPartFlags, 7);
             CopySnapshotEquipmentSelection(savedRecord, equippedItemCursor, equipmentSlot);
             int countValue = ((SharedPlayerSnapshotView*)liveSnapshot)->lastItemCount;
             ((SavedSnapshotFields*)savedRecord)->lastItemCount = (short)countValue;
-            ((SavedSnapshotFields*)savedRecord)->lastFloatStatistic = ((SharedPlayerSnapshotView*)liveSnapshot)->lastFloatStatistic;
+            ((SavedSnapshotFields*)savedRecord)->lastFloatStatistic =
+                ((SharedPlayerSnapshotView*)liveSnapshot)->lastFloatStatistic;
         }
     }
 
-    if (!Sing_805DC5E0()) {
+    if (!GetSaveDataSlot()) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        Sing_805DC5E0() = (void*)s_saveData;
+        GetSaveDataSlot() = (void*)s_saveData;
     }
     // Phase 3: publish only after every mode-specific update to the copy is complete.
-    SaveData_SetCurrentRecord(Sing_805DC5E0(), savedRecord);
+    SaveData_SetCurrentRecord(GetSaveDataSlot(), savedRecord);
 }
 #pragma use_lmw_stmw reset
 #pragma opt_propagation reset
@@ -359,13 +409,13 @@ struct LogicError80254 {
 // Shared exception-message control block, matching std::detail::message_control.
 // refs (+4) is the strong count; weakCount (+8) is the weak/control count, NOT
 // string capacity. Both start at one; data (+C) owns a separate char array.
-struct Rep80254 {
+struct MessageControlBlock {
     void* vt;
     int refs;
     int weakCount;
     char* data;
     // Retain the message array in a newly constructed shared deleter control block.
-    Rep80254(char* d) {
+    MessageControlBlock(char* d) {
         refs = 1;
         weakCount = 1;
         vt = (void*)s_sharedCharDeleterVtable;
@@ -378,29 +428,36 @@ struct StringTemp80254 {
     char* allocRef;
 };
 
-struct StrLocal802558EC {
+struct MessageArrayGuard {
     char* data;
     char* allocRef;
     // Free a message array until the exception's shared owner takes it.
-    ~StrLocal802558EC() { if (data) __dla__FPv(data); }
+    ~MessageArrayGuard() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 
-namespace std { struct exception {
+namespace std {
+struct exception {
     void* vt;
     char* msg;
     void* rep;
     ~exception();
-}; }
+};
+}
 typedef std::exception ErrLocal802558EC;
 
 struct AllocTemp802558EC {
     char c;
     // Initialize the allocator marker used by the insertion exception payload.
-    AllocTemp802558EC() { c = 0; }
+    AllocTemp802558EC() {
+        c = 0;
+    }
 };
 
 // Borrow the allocator marker for the message-array guard's lifetime.
-inline void setref802558EC(StrLocal802558EC& s, const AllocTemp802558EC& a) {
+inline void setref802558EC(MessageArrayGuard& s, const AllocTemp802558EC& a) {
     s.allocRef = (char*)&a.c;
 }
 
@@ -414,17 +471,28 @@ struct Guard80254 {
     void* capRef;
     unsigned int copyCursor;
     // Release the owned buffer, either uncommitted replacement or superseded storage.
-    ~Guard80254() { if (ptr) { count = 0; appFreeUni__FPv(ptr); } }
+    ~Guard80254() {
+        if (ptr) {
+            count = 0;
+            appFreeUni__FPv(ptr);
+        }
+    }
 };
 
 struct StrLocal80254BD4 {
     char* data;
     char* allocRef;
-    // Free an exception message unless construction transferred it to Rep80254.
-    ~StrLocal80254BD4() { if (data) __dla__FPv(data); }
+    // Free an exception message unless construction transferred it to MessageControlBlock.
+    ~StrLocal80254BD4() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 
-struct Alloc80254BD4 { char c; char pad[3]; };
+struct Alloc80254BD4 {
+    char c;
+    char pad[3];
+};
 
 // Select the larger capacity increment by reference, preserving caller temporary lifetimes.
 inline const unsigned int& max80254BD4(const unsigned int& a, const unsigned int& b) {
@@ -436,44 +504,48 @@ inline unsigned int distance80254BD4(unsigned char* first, unsigned char* last) 
     return (unsigned int)(last - first);
 }
 
-#define THROW_VECTOR_LENGTH_ERROR_80254BD4(N, Z) \
-    char* text##N; \
-    char* buf##N; \
-    volatile LogicError80254* ep##N; \
-    flag##N.c = Z; \
-    text##N = playerProfileDefaultNameStrings.vectorLengthError; \
-    ep##N = &error##N; \
-    error##N.vt = (void*)__vt__Q23std11logic_error; \
-    unsigned int n##N = strlen(text##N) + 1; \
-    buf##N = (char*)__nwa__FUl(n##N * 2 - n##N); \
-    error##N.msg = buf##N; \
-    { StrLocal80254BD4 str##N; \
-    str##N.data = buf##N; \
-    str##N.allocRef = &flag##N.c; \
-    Rep80254* rep##N = new Rep80254(buf##N); \
-    error##N.rep = rep##N; \
-    str##N.data = 0; } \
-    strcpy(error##N.msg, text##N); \
-    error##N.vt = (void*)__vt__Q23std12length_error; \
+#define THROW_VECTOR_LENGTH_ERROR_80254BD4(N, Z)                       \
+    char* text##N;                                                     \
+    char* buf##N;                                                      \
+    volatile LogicError80254* ep##N;                                   \
+    flag##N.c = Z;                                                     \
+    text##N = playerProfileDefaultNameStrings.vectorLengthError;       \
+    ep##N = &error##N;                                                 \
+    error##N.vt = (void*)__vt__Q23std11logic_error;                    \
+    unsigned int n##N = strlen(text##N) + 1;                           \
+    buf##N = (char*)__nwa__FUl(n##N * 2 - n##N);                       \
+    error##N.msg = buf##N;                                             \
+    {                                                                  \
+        StrLocal80254BD4 str##N;                                       \
+        str##N.data = buf##N;                                          \
+        str##N.allocRef = &flag##N.c;                                  \
+        MessageControlBlock* rep##N = new MessageControlBlock(buf##N); \
+        error##N.rep = rep##N;                                         \
+        str##N.data = 0;                                               \
+    }                                                                  \
+    strcpy(error##N.msg, text##N);                                     \
+    error##N.vt = (void*)__vt__Q23std12length_error;                   \
     __throw(playerProfileDefaultNameStrings.lengthErrorType, (void*)ep##N, (void*)__dt__Q23std12length_errorFv)
 
-#define THROW_LENGTH_ERROR_802558EC(N) \
-    AllocTemp802558EC alloc##N; \
-    ErrLocal802558EC error##N; \
-    ErrLocal802558EC* ep##N = &error##N; \
+#define THROW_LENGTH_ERROR_802558EC(N)                                 \
+    AllocTemp802558EC alloc##N;                                        \
+    ErrLocal802558EC error##N;                                         \
+    ErrLocal802558EC* ep##N = &error##N;                               \
     char* text##N = playerProfileDefaultNameStrings.vectorLengthError; \
-    ep##N->vt = (void*)__vt__Q23std11logic_error; \
-    unsigned int n##N = strlen(text##N) + 1; \
-    char* buf##N = (char*)__nwa__FUl(n##N * 2 - n##N); \
-    ep##N->msg = buf##N; \
-    { StrLocal802558EC str##N; \
-    str##N.data = buf##N; \
-    setref802558EC(str##N, alloc##N); \
-    Rep80254* rep##N = new Rep80254(buf##N); \
-    ep##N->rep = rep##N; \
-    str##N.data = 0; } \
-    strcpy(ep##N->msg, text##N); \
-    ep##N->vt = (void*)__vt__Q23std12length_error; \
+    ep##N->vt = (void*)__vt__Q23std11logic_error;                      \
+    unsigned int n##N = strlen(text##N) + 1;                           \
+    char* buf##N = (char*)__nwa__FUl(n##N * 2 - n##N);                 \
+    ep##N->msg = buf##N;                                               \
+    {                                                                  \
+        MessageArrayGuard str##N;                                      \
+        str##N.data = buf##N;                                          \
+        setref802558EC(str##N, alloc##N);                              \
+        MessageControlBlock* rep##N = new MessageControlBlock(buf##N); \
+        ep##N->rep = rep##N;                                           \
+        str##N.data = 0;                                               \
+    }                                                                  \
+    strcpy(ep##N->msg, text##N);                                       \
+    ep##N->vt = (void*)__vt__Q23std12length_error;                     \
     __throw(playerProfileDefaultNameStrings.lengthErrorType, (void*)ep##N, (void*)__dt__Q23std12length_errorFv)
 
 #pragma use_lmw_stmw on
@@ -623,7 +695,7 @@ int SharedDoc_CopyPlayerSnapshot(const SavedSnapshotFields* p, int index) {
         record->caddieValue = ((const SavedCaddieSnapshotView*)p)->caddies[slot].value;
     }
     memcpy(tail, &p->courseRecordsStart, kSnapshotCourseRecordBytes);
-// The original returns no value: its callers never read one.
+    // The original returns no value: its callers never read one.
 }
 
 // Dialog virtual contract (byte offsets from the vtable start):
@@ -632,12 +704,31 @@ int SharedDoc_CopyPlayerSnapshot(const SavedSnapshotFields* p, int index) {
 // +34 start-open; +38 start-close; +3C frame-hook; +40 ready -> bool.
 // DialogCloseInterface/DialogOpenInterface include the four-byte ownership prefix before the vptr; retain
 // their placeholder slots until the methods are identified.
-enum DialogVirtualSlot { kRequestCloseSlot = 4, kDialogSetupSlot = 7,
-    kCompleteCloseSlot = 8, kCompleteOpenSlot = 12,
-    kFrameHookSlot = 15, kReadySlot = 16 };
-struct DialogOpenOwnerPrefix { char pad[4]; };
-class DialogOpenInterface : public DialogOpenOwnerPrefix { public: 
-virtual void v08(); virtual void v0C(); virtual void v10(); virtual void v14(); virtual void v18(); virtual void v1C(); virtual void v20(); virtual int v24(); virtual void v28(); virtual void v2C(); virtual void v30(); virtual void v34();
+enum DialogVirtualSlot {
+    kRequestCloseSlot = 4,
+    kDialogSetupSlot = 7,
+    kCompleteCloseSlot = 8,
+    kCompleteOpenSlot = 12,
+    kFrameHookSlot = 15,
+    kReadySlot = 16
+};
+struct DialogOpenOwnerPrefix {
+    char pad[4];
+};
+class DialogOpenInterface : public DialogOpenOwnerPrefix {
+public:
+    virtual void v08();
+    virtual void v0C();
+    virtual void v10();
+    virtual void v14();
+    virtual void v18();
+    virtual void v1C();
+    virtual void v20();
+    virtual int v24();
+    virtual void v28();
+    virtual void v2C();
+    virtual void v30();
+    virtual void v34();
 };
 // Query the derived opening prerequisite (vtable +24); nonzero allows opening.
 static inline int DialogAllowsOpening(InGameDialogView* dialog) {
@@ -653,12 +744,13 @@ static inline void DialogCompleteOpening(InGameDialogView* dialog) {
 }
 // Request opening; return zero if already requested or vetoed by can-open.
 // animate!=0 starts opening; zero completes opening immediately.
-int CInGameDialog_RequestOpen(InGameDialogView* p, int animate) {
+int CInGameDialog::RequestOpen(InGameDialogView* p, int animate) {
     if (p->openRequested != 0)
         return 0;
     int result = DialogAllowsOpening(p);
     if (result != 0) {
-        Sound_PlayByName(g_soundManager, dialogSoundAndErrorStrings.openSound, 0, 0, 0, 0, kFloat_0_5_TextureDraw, kFloat_200_805E0330, kFloat_1_PartyBalloon);
+        Sound_PlayByName(g_soundManager, dialogSoundAndErrorStrings.openSound, 0, 0, 0, 0, kFloat_0_5_TextureDraw,
+                         kFloat_200_805E0330, kFloat_1_PartyBalloon);
         p->openRequested = 1;
         p->closeRequested = 0;
         if (animate)
@@ -669,9 +761,24 @@ int CInGameDialog_RequestOpen(InGameDialogView* p, int animate) {
     return result;
 }
 
-struct DialogCloseOwnerPrefix { char pad[4]; };
-class DialogCloseInterface : public DialogCloseOwnerPrefix { public: 
-virtual void v08(); virtual void v0C(); virtual void v10(); virtual void v14(); virtual void v18(); virtual void v1C(); virtual void v20(); virtual void v24(); virtual int v28(); virtual void v2C(); virtual void v30(); virtual void v34(); virtual void v38();
+struct DialogCloseOwnerPrefix {
+    char pad[4];
+};
+class DialogCloseInterface : public DialogCloseOwnerPrefix {
+public:
+    virtual void v08();
+    virtual void v0C();
+    virtual void v10();
+    virtual void v14();
+    virtual void v18();
+    virtual void v1C();
+    virtual void v20();
+    virtual void v24();
+    virtual int v28();
+    virtual void v2C();
+    virtual void v30();
+    virtual void v34();
+    virtual void v38();
 };
 // Query the derived closing prerequisite (vtable +28); nonzero allows closing.
 static inline int DialogAllowsClosing(InGameDialogView* dialog) {
@@ -687,12 +794,13 @@ static inline void DialogCompleteClosing(InGameDialogView* dialog) {
 }
 // Request closing; return zero if already requested or vetoed by can-close.
 // animate!=0 starts closing; zero completes closing immediately.
-int CInGameDialog_RequestClose(InGameDialogView* p, int animate) {
+int CInGameDialog::RequestClose(InGameDialogView* p, int animate) {
     if (p->closeRequested != 0)
         return 0;
     int result = DialogAllowsClosing(p);
     if (result != 0) {
-        Sound_PlayByName(g_soundManager, dialogSoundAndErrorStrings.closeSound, 0, 0, 0, 0, kFloat_0_5_TextureDraw, kFloat_200_805E0330, kFloat_1_PartyBalloon);
+        Sound_PlayByName(g_soundManager, dialogSoundAndErrorStrings.closeSound, 0, 0, 0, 0, kFloat_0_5_TextureDraw,
+                         kFloat_200_805E0330, kFloat_1_PartyBalloon);
         p->closeRequested = 1;
         p->openRequested = 0;
         if (animate)
@@ -706,7 +814,7 @@ int CInGameDialog_RequestClose(InGameDialogView* p, int animate) {
 // Advance progress and auto-close using dt in the same units as duration/delay.
 // No time-unit conversion occurs here. Return 0 for dt<=0 or not-ready,
 // otherwise 1. Hooks may change state; the state is read after both hooks.
-int CInGameDialog_UpdateTransition(InGameDialogView* p, float dt) {
+int CInGameDialog::UpdateTransition(InGameDialogView* p, float dt) {
     if (!(dt > kFloat_0_805E0328))
         return 0;
     ((void (*)(void*))p->vtable[kFrameHookSlot])(p);
@@ -739,7 +847,8 @@ int CInGameDialog_UpdateTransition(InGameDialogView* p, float dt) {
 }
 
 // Initialize empty dialog state, create the text renderer, and invoke the initial setup hook.
-int CInGameDialog_Ctor(InGameDialogView* p) {
+// A named static member, not a real constructor: callers run it on an already-allocated base object.
+int CInGameDialog::Init(InGameDialogView* p) {
     // Phase 1: establish sole ownership and constructor-only scalar defaults.
     p->refcount = 1;
     p->vtable = (void**)__vt__13CInGameDialog;
@@ -756,7 +865,7 @@ int CInGameDialog_Ctor(InGameDialogView* p) {
     p->stringLength = 0;
     p->stringData = 0;
     // Phase 2: create the owned message renderer, then dispatch setup only if it exists.
-    CPangyaMsgDrawObject_Create(&p->messageDraw);
+    ((CPangyaMsgDrawObject*)(&p->messageDraw))->Create();
     if (*(int*)&((CPangyaMsgDrawObject*)p->messageDraw)->messageDraw == 0)
         return (int)p;
     void** vt = p->vtable;
@@ -765,7 +874,8 @@ int CInGameDialog_Ctor(InGameDialogView* p) {
 }
 
 // Reset transition timers and erase the current inline or heap-backed wide-string text.
-int CInGameDialog_ResetDialog(InGameDialogView* p) {
+int CInGameDialog::ResetDialog() {
+    InGameDialogView* p = (InGameDialogView*)this;
     float zero = kFloat_0_805E0328;
     unsigned int tag = *(unsigned int*)&AsCInGameDialog(p)->stringStorageFlags;
     // Phase 1: choose inline or owned UTF-16 storage; the high bit selects heap storage.
@@ -812,13 +922,16 @@ int __dt__15SmallDialogBaseFv(InGameDialogView* p, int deleting) {
         ((void (*)(void*))p->vtable[kCompleteCloseSlot])(p);
         if (p->messageDraw) {
             int n = --*(int*)p->messageDraw;
-            if (!n) ((void (**)(void*, int))*(void***)((char*)p->messageDraw + 4))[2](p->messageDraw, 1);
+            if (!n)
+                ((void (**)(void*, int)) * (void***)((char*)p->messageDraw + 4))[2](p->messageDraw, 1);
             p->messageDraw = 0;
         }
         if (((char*)&AsCInGameDialog(p)->stringStorageFlags)) {
-            if (*(unsigned int*)&p->stringStorageWord >> 31) appFreeUni__FPv(p->stringData);
+            if (*(unsigned int*)&p->stringStorageWord >> 31)
+                appFreeUni__FPv(p->stringData);
         }
-        if (deleting > 0) __dl__FPv(p);
+        if (deleting > 0)
+            __dl__FPv(p);
     }
     return (int)p;
 }
@@ -883,40 +996,40 @@ unsigned char* ByteVector_InsertOne(void* object, void* pos, void* val, unsigned
             break;
         }
         {
-        unsigned char* old = self->data;
-        volatile unsigned int one = 1;
-        unsigned int offset = (unsigned int)(position - old);
-        capacity = self->capacity;
-        if ((unsigned int)(-1 - capacity) < 1U) {
-            THROW_LENGTH_ERROR_802558EC(2);
-        }
-        unsigned int newCapacity;
-        unsigned int half;
-        unsigned int grown;
-        if (capacity < 0x55555555u) {
-            unsigned int c = capacity + 1;
-            grown = (c * 4 - c) / 5;
-            newCapacity = capacity + max802558EC(grown, one);
-        } else if (capacity < 0xAAAAAAAAu) {
-            half = (capacity + 1) / 2;
-            newCapacity = capacity + max802558EC(half, one);
-        } else {
-            newCapacity = 0xFFFFFFFFu;
-        }
-        unsigned char* fresh = (unsigned char*)appMallocDummy__FUl(newCapacity);
-        self->data = fresh;
-        self->capacity = newCapacity;
-        fresh[offset] = *value;
-        if (old != 0) {
-            unsigned char* d = self->data;
-            memmove(d, old, offset);
-            unsigned char* end = old + self->size;
-            unsigned char* from = old + offset;
-            memmove(d + offset + 1, from, (unsigned int)(end - from));
-            appFreeUni__FPv(old);
-        }
-        ++self->size;
-        position = self->data + offset;
+            unsigned char* old = self->data;
+            volatile unsigned int one = 1;
+            unsigned int offset = (unsigned int)(position - old);
+            capacity = self->capacity;
+            if ((unsigned int)(-1 - capacity) < 1U) {
+                THROW_LENGTH_ERROR_802558EC(2);
+            }
+            unsigned int newCapacity;
+            unsigned int half;
+            unsigned int grown;
+            if (capacity < 0x55555555u) {
+                unsigned int c = capacity + 1;
+                grown = (c * 4 - c) / 5;
+                newCapacity = capacity + max802558EC(grown, one);
+            } else if (capacity < 0xAAAAAAAAu) {
+                half = (capacity + 1) / 2;
+                newCapacity = capacity + max802558EC(half, one);
+            } else {
+                newCapacity = 0xFFFFFFFFu;
+            }
+            unsigned char* fresh = (unsigned char*)appMallocDummy__FUl(newCapacity);
+            self->data = fresh;
+            self->capacity = newCapacity;
+            fresh[offset] = *value;
+            if (old != 0) {
+                unsigned char* d = self->data;
+                memmove(d, old, offset);
+                unsigned char* end = old + self->size;
+                unsigned char* from = old + offset;
+                memmove(d + offset + 1, from, (unsigned int)(end - from));
+                appFreeUni__FPv(old);
+            }
+            ++self->size;
+            position = self->data + offset;
         }
     } while (0);
     return position;
@@ -943,10 +1056,12 @@ struct DialogOpenStateView {
 };
 
 // Initialize the unit-local full-turn constant.
-void Dialog_InitializeFullTurnConstant() { s_dialogFullTurn = kFloat_6_2831855; }
+void Dialog_InitializeFullTurnConstant() {
+    s_dialogFullTurn = kFloat_6_2831855;
+}
 
 // Mark the dialog inactive and clear its transition progress.
-int CInGameDialog_CompleteClose(DialogInactiveStateView* arg) {
+int CInGameDialog::CompleteClose(DialogInactiveStateView* arg) {
     float z = kFloat_0_805E0328;
     arg->state = Dialog_Inactive;
     arg->value = z;
@@ -954,7 +1069,7 @@ int CInGameDialog_CompleteClose(DialogInactiveStateView* arg) {
 }
 
 // Mark the dialog fully open with zero elapsed time.
-void CInGameDialog_CompleteOpen(DialogOpenStateView* arg) {
+void CInGameDialog::CompleteOpen(DialogOpenStateView* arg) {
     float o;
     float z;
     z = kFloat_0_805E0328;
@@ -965,10 +1080,10 @@ void CInGameDialog_CompleteOpen(DialogOpenStateView* arg) {
 }
 
 // Insert one byte at the iterator read from the supplied pointer slot.
-void ByteVector_InsertAtIterator(void* arg0, void** arg1, void* arg2) {
+void ByteVector_InsertAtIterator(void* byteVector, void** arg1, void* arg2) {
     void* value = *(void* volatile*)arg1;
     unsigned char flag = 0;
-    ByteVector_InsertOne(arg0, value, arg2, &flag);
+    ByteVector_InsertOne(byteVector, value, arg2, &flag);
 }
 
 struct DialogCallbackTable {
@@ -989,50 +1104,64 @@ struct DialogTransitionStateView {
 };
 
 // Start the opening transition or invoke the immediate-open callback.
-void CInGameDialog_StartOpening(DialogTransitionStateView* arg) {
-    if (arg->timer > kFloat_0_805E0328) {
+void CInGameDialog::StartOpening() {
+    DialogTransitionStateView* dialog = (DialogTransitionStateView*)this;
+    if (dialog->timer > kFloat_0_805E0328) {
         float z = kFloat_0_805E0328;
-        arg->value0 = z;
-        arg->state = Dialog_Opening;
-        arg->value1 = z;
+        dialog->value0 = z;
+        dialog->state = Dialog_Opening;
+        dialog->value1 = z;
         return;
     }
-    void* vt = AsCInGameDialog(arg)->callbackVtable;
+    void* vt = AsCInGameDialog(dialog)->callbackVtable;
     void (*m30)(void*) = ((DialogCallbackTable*)vt)->method30;
-    m30(arg);
+    m30(dialog);
 }
 
 // Start the closing transition or invoke the immediate-close callback.
-void CInGameDialog_StartClosing(DialogTransitionStateView* arg) {
-    float t = arg->timer;
+void CInGameDialog::StartClosing() {
+    DialogTransitionStateView* dialog = (DialogTransitionStateView*)this;
+    float t = dialog->timer;
     float z = kFloat_0_805E0328;
     if (t > z) {
         float o = kFloat_1_PartyBalloon;
-        arg->state = Dialog_Closing;
-        arg->value0 = z;
-        arg->value1 = o;
+        dialog->state = Dialog_Closing;
+        dialog->value0 = z;
+        dialog->value1 = o;
         return;
     }
-    void* vt = AsCInGameDialog(arg)->callbackVtable;
+    void* vt = AsCInGameDialog(dialog)->callbackVtable;
     void (*m20)(void*) = ((DialogCallbackTable*)vt)->method20;
-    m20(arg);
+    m20(dialog);
 }
 
 // Read the byte-vector data/iterator pointer.
-void* ByteVector_GetDataPointer(void** arg) { return *arg; }
+void* ByteVector_GetDataPointer(void** arg) {
+    return *arg;
+}
 // Return a byte offset into the vector storage.
-void* ByteVector_GetOffsetPointer(void* arg, unsigned int offset) { return (char*)*(void**)arg + offset; }
+void* ByteVector_GetOffsetPointer(void* byteVector, unsigned int offset) {
+    return (char*)*(void**)byteVector + offset;
+}
 // Return the address of a byte-vector element.
-void* ByteVector_GetElementPtr(void* arg, unsigned int offset) { return (char*)*(void**)arg + offset; }
+void* ByteVector_GetElementPtr(void* byteVector, unsigned int offset) {
+    return (char*)*(void**)byteVector + offset;
+}
 // Default open prerequisite: always allow.
-int CInGameDialog_CanOpen() { return 1; }
+int CInGameDialog::CanOpen() {
+    return 1;
+}
 // Default close prerequisite: always allow.
-int CInGameDialog_CanClose() { return 1; }
+int CInGameDialog::CanClose() {
+    return 1;
+}
 
 // Default per-frame dialog hook: no action.
-void CInGameDialog_OnFrame() {}
+void CInGameDialog::OnFrame() {}
 // Default dialog readiness predicate: always ready.
-int CInGameDialog_IsReadyForUpdate() { return 1; }
+int CInGameDialog::IsReadyForUpdate() {
+    return 1;
+}
 // Empty dialog extension hook; its specific derived role is unresolved.
 void fn_80256260() {}
 // Empty dialog extension hook; its specific derived role is unresolved.

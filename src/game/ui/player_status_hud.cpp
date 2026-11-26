@@ -1,7 +1,13 @@
+// Player status panel: the equipment icons and names, the stat numbers, and the sprite and product-ring
+// helpers the panel is drawn with.
+
 #include <decomp/static_init.h>
 #include "ppc_double_words.h"
 // Shared ABI views for data not fully described by the class headers.
-struct PlayerStatusNameView { char reserved[0x6F]; char equipmentName[40]; };
+struct PlayerStatusNameView {
+    char reserved[0x6F];
+    char equipmentName[40];
+};
 // One character's 0x34-byte equipment selection block in the save payload.
 struct CharacterEquipmentSelections {
     short partIndices[24];
@@ -9,21 +15,41 @@ struct CharacterEquipmentSelections {
     signed char auxiliaryPartIndex;
     char reserved32[2];
 };
-struct SaveCharacterEquipmentView { char prefix[0x2CE]; CharacterEquipmentSelections equipped; };
-struct SaveClubUpgradeView { char prefix[0x4AD]; signed char upgradeLevel; };
+struct SaveCharacterEquipmentView {
+    char prefix[0x2CE];
+    CharacterEquipmentSelections equipped;
+};
+struct SaveClubUpgradeView {
+    char prefix[0x4AD];
+    signed char upgradeLevel;
+};
 enum SaveEquipmentOffsets {
     kCharacterEquipmentBytes = sizeof(CharacterEquipmentSelections),
     kCharacterPartIndicesOffset = (int)&((SaveCharacterEquipmentView*)0)->equipped.partIndices
 };
-struct ClubUpgradeStatsView { short level, power, control, spin; };
-struct NumberDrawEnableView { char reserved[0x28]; void* enabled; };
-struct QuadBufferView { void* buffer; int primitiveCount; };
+struct ClubUpgradeStatsView {
+    short level, power, control, spin;
+};
+struct NumberDrawEnableView {
+    char reserved[0x28];
+    void* enabled;
+};
+struct QuadBufferView {
+    void* buffer;
+    int primitiveCount;
+};
 enum PlayerStatusConstants {
     kStatusNameOffset = (int)&((PlayerStatusNameView*)0)->equipmentName,
-    kTextureEntryBytes = 0x28, kNoCaddieTextureOffset = 8 * kTextureEntryBytes,
-    kStatStorageLimit = 50, kControlSpinDisplayLimit = 30,
-    kStatPower = 0, kStatControl = 1, kStatSpin = 3,
-    kStatusPowerText = 0x10, kStatusControlText = 0x11, kStatusSpinText = 0x12
+    kTextureEntryBytes = 0x28,
+    kNoCaddieTextureOffset = 8 * kTextureEntryBytes,
+    kStatStorageLimit = 50,
+    kControlSpinDisplayLimit = 30,
+    kStatPower = 0,
+    kStatControl = 1,
+    kStatSpin = 3,
+    kStatusPowerText = 0x10,
+    kStatusControlText = 0x11,
+    kStatusSpinText = 0x12
 };
 enum PlayerStatusStringOffsets {
     kStatusRefreshScriptOffset = 0x1E,
@@ -32,13 +58,22 @@ enum PlayerStatusStringOffsets {
     kStatusNameGroupOffset = 0x39
 };
 enum StatusLayoutId {
-    kPowerBar = 0, kControlBar = 1, kSpinBar = 2,
-    kFirstEquipmentRect = 3, kEquipmentSlotCount = 4
+    kPowerBar = 0,
+    kControlBar = 1,
+    kSpinBar = 2,
+    kFirstEquipmentRect = 3,
+    kEquipmentSlotCount = 4
 };
-enum StatusNameMode { kCharacterName = 0, kLeaveNameUnchanged = 1, kCaddieName = 2 };
+enum StatusNameMode {
+    kCharacterName = 0,
+    kLeaveNameUnchanged = 1,
+    kCaddieName = 2
+};
 enum QuadRenderingConstants {
-    kQuadVertexBytes = 0x18, kQuadBufferBytes = 0x60,
-    kStatusQuadFormat = 0x11F005, kDartsQuadFormat = 0x11F001,
+    kQuadVertexBytes = 0x18,
+    kQuadBufferBytes = 0x60,
+    kStatusQuadFormat = 0x11F005,
+    kDartsQuadFormat = 0x11F001,
     kGxTriangleStrip = 0x98
 };
 // Format words above are opaque engine vertex-format codes, not GX primitive IDs.
@@ -54,25 +89,32 @@ enum QuadRenderingConstants {
 // These accessors preserve the byte representation; callers choose signed UI
 // interpretation or unsigned modulo-256 accumulation explicitly.
 // Borrow the mutable power byte in the status object.
-static inline char& StatusPowerByte(void* status) { return *(char*)&AsCPlayerStatus(status)->power; }
+static inline char& StatusPowerByte(void* status) {
+    return *(char*)&AsCPlayerStatus(status)->power;
+}
 // Borrow the mutable control byte in the status object.
-static inline char& StatusControlByte(void* status) { return *(char*)&AsCPlayerStatus(status)->control; }
+static inline char& StatusControlByte(void* status) {
+    return *(char*)&AsCPlayerStatus(status)->control;
+}
 // Borrow the mutable spin byte in the status object.
-static inline char& StatusSpinByte(void* status) { return *(char*)&AsCPlayerStatus(status)->spin; }
+static inline char& StatusSpinByte(void* status) {
+    return *(char*)&AsCPlayerStatus(status)->spin;
+}
 #include "classes/CSimpleSpd.h"
-#define AsCSimpleSpd(p) ((CSimpleSpd*)(p))
 
 #include "classes/CSharedDoc.h"
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
-// Translation unit 0x802E001C-0x802E1770 (22 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CBpCtrl.h"
 #include "classes/CShopProductRing.h"
-
-#define AsCShopProductRing(p) ((CShopProductRing*)(p))
+#include "classes/CSharedFileHandle.h"
+#include "classes/CClubCustomTbl.h"
+#include "classes/CClubHouseMsg.h"
+#include "classes/CFontNumDraw.h"
+#include "classes/CBpTex.h"
+#include "classes/CSpdCtrl.h"
 
 #define AsCBpCtrl(p) ((CBpCtrl*)(p))
 extern "C" {
@@ -83,11 +125,9 @@ extern float s_simpleSpdTwoPi;
 extern float s_dartsQuadTwoPi;
 
 extern void Layout_Update(void*);
-extern void CClubHouseMsg_UpdateReveal(void*);
 extern void* SpdManager_GetSpriteAt(void*, unsigned int);
 extern int Sprite_GetPosition2D(void*, void*);
 extern void BpObject_SetEnabled(void*, int);
-extern void CClubHouseMsg_SetDrawEnabled(void*, void*);
 extern void ShopRingRecordList_Initialize(void*, void*);
 extern void ShopRingRecordList_dtor(void*, int);
 extern void __dl__FPv(void*);
@@ -97,14 +137,10 @@ extern char s_bpCtrl[];
 extern char s_playerStatusBpCtrlDtorRegistration[];
 extern char __vt__10CSimpleSpd[];
 extern void* Layout_PollLoadComplete(void*);
-extern void __ct__7CBpCtrlFv(void*);
 extern void CBpCtrl_dtor(void);
-extern int CBpCtrl_PollAllEntriesLoaded(void*);
 extern void* Sprite_GetPackedColor(void*, void*);
 extern int Sprite_SetPackedColor(void*, unsigned int);
 extern void* SimpleSpd_DrawBpSprite(void*);
-extern void CSharedFileHandle_Destroy(void*, int);
-extern int CClubHouseMsg_IsResourceLoaded(void*);
 extern void* g_sharedDoc;
 extern int ItemInventory_GetCharacterIdAt(void*, int);
 extern void* ItemInventory_FindCharacterData(void*, void*);
@@ -112,8 +148,6 @@ extern int ItemInventory_GetCaddieIdAt(void*, int);
 extern void* ItemInventory_FindCaddieData(void*, void*);
 extern void* SharedFile_Create(void*, int);
 extern void* __nw__FUl(unsigned int);
-extern void CBpTex_Init(void*);
-extern void __ct__Q23ns08CSpdCtrlFv(void*);
 extern int CSharedFilePtr_GetLoadedBuffer(void*);
 extern void SpdManager_BuildItemsFromResource(void*, int, void*);
 extern int ItemInventory_GetPartIdAt(void*, int);
@@ -121,16 +155,11 @@ extern void* ItemInventory_FindPartData(void*, void*);
 extern int ItemInventory_GetAuxPartIdAt(void*, int);
 extern void* ItemInventory_FindAuxPartData(void*, void*);
 extern void UITextTable_SetInteger(void*, int, int);
-extern int CClubCustomTbl_FindUpgradeEntry(int, int);
-extern void* CClubHouseMsg_SetTextFromGroup(void*, void*, void*, int);
-extern void CClubHouseMsg_ResetTextState(void*);
 extern void* BpObject_GetOrCreateNamedGroup(void*, void*);
 extern void Layout_SetElementScale(void*, int, float*);
 extern void Layout_ReadElementRect(void*, int, void*);
 extern void Layout_SetModeByte(void*, int);
 extern void BpObject_StartScriptByName(void*, void*, int);
-extern void CFontNumDraw_RegisterEntries(void*, void*, int, void*, void*);
-extern void CClubHouseMsg_CreateTextFromResource(void*);
 extern char playerStatusResourceStrings[256];
 extern char s_playerStatusNumberEntries[];
 extern int s_playerStatusScaleXBits;
@@ -163,26 +192,25 @@ extern void Engine_SetFlexibleVertexFormat(int);
 extern int GX_GetPrimitiveCount(int, int);
 extern void DrawPrimitiveUP(int, int, void*, int);
 extern void UITextTable_Draw(void*);
-extern void CClubHouseMsg_DrawText(void*);
 extern unsigned int s_playerStatusQuadVertexTemplate[];
 extern float kPlayerStatusLayoutOpacity;
 
 // Local dispatch views retain the original virtual slot order.
-struct Fn802E1160Base {
+struct ShopProductRingView {
     virtual void reservedSlot1() {} // Preserve unresolved slot 1; local body is a placeholder.
     virtual void reservedSlot2() {} // Preserve unresolved slot 2; local body is a placeholder.
-    virtual void draw() {} // Describe the draw dispatch slot; local body performs no work.
+    virtual void draw() {}          // Describe the draw dispatch slot; local body performs no work.
     virtual void isReadyToDraw() {} // Preserve the readiness slot's position/signature.
     virtual void reservedSlot5() {} // Preserve unresolved slot 5; local body is a placeholder.
     virtual void setInitialSelection(void*) {}
     // Describe selection dispatch; actual object supplies implementation.
 };
-typedef Fn802E1160Base ShopRingVirtual;
+typedef ShopProductRingView ShopRingVirtual;
 
 // Update the status layout and reveal the current equipment-name message.
-int CPlayerStatus_Update(void* status) {
-    Layout_Update(AsCPlayerStatus(status)->layout);
-    CClubHouseMsg_UpdateReveal(AsCPlayerStatus(status)->clubHouseMessage);
+int CPlayerStatus::Update() {
+    Layout_Update(layout);
+    ((CClubHouseMsg*)clubHouseMessage)->UpdateReveal();
     return 1;
 }
 
@@ -191,8 +219,10 @@ struct Fn802E06ECBase {
     virtual void reservedSlot0() {} // Preserve unresolved slot 0 with a no-op placeholder.
     virtual void reservedSlot1() {} // Preserve unresolved slot 1 with a no-op placeholder.
     virtual void reservedSlot2() {} // Preserve unresolved slot 2 with a no-op placeholder.
-    virtual void draw() {} // Describe equipment-texture draw dispatch; actual object supplies the body.
-    virtual int isReadyToDraw() { return 0; }
+    virtual void draw() {}          // Describe equipment-texture draw dispatch; actual object supplies the body.
+    virtual int isReadyToDraw() {
+        return 0;
+    }
     // Describe readiness dispatch; placeholder returns false.
 };
 typedef Fn802E06ECBase EquipmentTextureVirtual;
@@ -208,23 +238,23 @@ struct StatusQuadWords {
 
 #pragma opt_strength_reduction off
 // Draw the script, four selected equipment textures, stat numbers and equipment-name text.
-int CPlayerStatus_Draw(void* status) {
+int CPlayerStatus::Draw() {
     float quadVertices[24];
     char* vertexTemplate;
     int i;
     char* textureCursor;
     char* rectCursor;
 
-    BpObject_TryInvokeCurrentCallback(*(void**)&AsCPlayerStatus(status)->scriptObject, 0);
-    BpObject_Draw(*(void**)&AsCPlayerStatus(status)->scriptObject);
-    Layout_DrawWithOpacity(AsCPlayerStatus(status)->layout, kPlayerStatusLayoutOpacity);
+    BpObject_TryInvokeCurrentCallback(*(void**)&scriptObject, 0);
+    BpObject_Draw(*(void**)&scriptObject);
+    Layout_DrawWithOpacity(layout, kPlayerStatusLayoutOpacity);
     vertexTemplate = (char*)s_playerStatusQuadVertexTemplate;
-    textureCursor = (char*)status;
-    rectCursor = (char*)status;
+    textureCursor = (char*)this;
+    rectCursor = (char*)this;
     for (i = 0; i < kEquipmentSlotCount; i++) {
         EquipmentTextureVirtual* obj = *(EquipmentTextureVirtual**)(textureCursor + 0x5C);
         if (obj != 0 && obj->isReadyToDraw()) {
-            ((EquipmentTextureVirtual*)*(void**)(textureCursor + 0x5C) )->draw();
+            ((EquipmentTextureVirtual*)*(void**)(textureCursor + 0x5C))->draw();
             *(StatusQuadWords*)quadVertices = *(StatusQuadWords*)vertexTemplate;
             quadVertices[0] = (float)*(int*)(rectCursor + 0xC);
             quadVertices[1] = (float)*(int*)(rectCursor + 0x10);
@@ -235,30 +265,31 @@ int CPlayerStatus_Draw(void* status) {
             quadVertices[18] = (float)*(int*)(rectCursor + 0x14);
             quadVertices[19] = (float)*(int*)(rectCursor + 0x18);
             Engine_SetFlexibleVertexFormat(kStatusQuadFormat);
-            DrawPrimitiveUP(kGxTriangleStrip, GX_GetPrimitiveCount(4, kGxTriangleStrip), quadVertices, kQuadVertexBytes);
+            DrawPrimitiveUP(kGxTriangleStrip, GX_GetPrimitiveCount(4, kGxTriangleStrip), quadVertices,
+                            kQuadVertexBytes);
         }
         textureCursor += 4;
         rectCursor += 0x10;
     }
-    UITextTable_Draw(AsCPlayerStatus(status)->numberDraw);
-    CClubHouseMsg_DrawText(AsCPlayerStatus(status)->clubHouseMessage);
+    UITextTable_Draw(numberDraw);
+    ((CClubHouseMsg*)clubHouseMessage)->DrawText();
     return 1;
 }
 #pragma opt_strength_reduction reset
 
 // Copy a loaded layout sprite's position; fail if that index has no sprite.
-int CSimpleSpd_GetSpritePosition2D(void* arg0, unsigned int index, void* arg2) {
-    void* obj = SpdManager_GetSpriteAt(AsCSimpleSpd(arg0)->layout, index);
+int CSimpleSpd::GetSpritePosition2D(unsigned int index, void* position) {
+    void* obj = SpdManager_GetSpriteAt(layout, index);
     if (obj)
-        return Sprite_GetPosition2D(obj, arg2);
+        return Sprite_GetPosition2D(obj, position);
     return 0;
 }
 
 // Set visibility for the script, numeric stats and message together.
-int CPlayerStatus_SetEnabled(void* status, void* enabled) {
-    BpObject_SetEnabled(*(void**)&AsCPlayerStatus(status)->scriptObject, (int)enabled);
-    ((NumberDrawEnableView*)AsCPlayerStatus(status)->numberDraw)->enabled = enabled;
-    CClubHouseMsg_SetDrawEnabled(AsCPlayerStatus(status)->clubHouseMessage, enabled);
+int CPlayerStatus::SetEnabled(int enabled) {
+    BpObject_SetEnabled((void*)scriptObject, enabled);
+    ((NumberDrawEnableView*)numberDraw)->enabled = (void*)enabled;
+    ((CClubHouseMsg*)clubHouseMessage)->SetDrawEnabled(enabled);
     return 1;
 }
 
@@ -273,47 +304,49 @@ void Math_InitTwoPiCache() {
 }
 
 // Advance only the status layout animation.
-int CPlayerStatus_UpdateLayout(void* status) {
-    Layout_Update(AsCPlayerStatus(status)->layout);
+int CPlayerStatus::UpdateLayout() {
+    Layout_Update(layout);
     return 1;
 }
 
 // Poll the layout, shared B2D entries and message resource before reporting readiness.
-int CPlayerStatus_PollResourcesLoaded(void* arg0) {
-    void* layout = AsCPlayerStatus(arg0)->layout;
+int CPlayerStatus::PollResourcesLoaded() {
+    void* layout = this->layout;
     if (!Layout_PollLoadComplete(layout))
         return 0;
     if (!((int&)Sing_805DC5F0())) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(&s_bpCtrl);
+            ((CBpCtrl*)&s_bpCtrl)->__ct();
             __register_global_object(&s_bpCtrl, CBpCtrl_dtor, &s_playerStatusBpCtrlDtorRegistration);
             s_bpCtrlInitialized = 1;
         }
         ((int&)Sing_805DC5F0()) = (int)&s_bpCtrl;
     }
-    if (!CBpCtrl_PollAllEntriesLoaded((void*)((int&)Sing_805DC5F0())))
+    if (!((CBpCtrl*)(((int&)Sing_805DC5F0())))->PollAllEntriesLoaded())
         return 0;
-    return CClubHouseMsg_IsResourceLoaded(AsCPlayerStatus(arg0)->clubHouseMessage);
+    return ((CClubHouseMsg*)clubHouseMessage)->IsResourceLoaded();
 }
 
 // Local dispatch views retain the original virtual slot order.
 struct Fn802E13F4Obj {
     virtual void u0() {} // Preserve unresolved slot 0 with a no-op placeholder.
-    virtual int method() { return 0; }
+    virtual int method() {
+        return 0;
+    }
     // Describe sprite readiness dispatch; placeholder returns false.
 };
 typedef Fn802E13F4Obj SpriteDrawableVirtual;
 
 // Replace only the packed alpha byte and draw the sprite when its virtual readiness check passes.
-int CSimpleSpd_ApplyElementOpacity(void* arg0, unsigned int index) {
-    void* obj = SpdManager_GetSpriteAt(AsCSimpleSpd(arg0)->layout, index);
+int CSimpleSpd::ApplyElementOpacity(unsigned int index) {
+    void* obj = SpdManager_GetSpriteAt(layout, index);
     if (!obj)
         return 0;
     unsigned int color;
     if (!Sprite_GetPackedColor(obj, &color))
         return 0;
     unsigned int oldColor = color;
-    color = (oldColor & 0xFFFFFF00) | AsCSimpleSpd(arg0)->opacity;
+    color = (oldColor & 0xFFFFFF00) | opacity;
     if (!Sprite_SetPackedColor(obj, color))
         return 0;
     if (((SpriteDrawableVirtual*)obj)->method())
@@ -330,30 +363,28 @@ struct Fn802E1318Obj {
 typedef Fn802E1318Obj OwnedObjectVirtual;
 
 // Destroy the owned sprite layout, texture and shared file, then optionally free this object.
-void* CSimpleSpd_dtor(SimpleSpdDestructionView* self, int freeFlag) {
-    if (self) {
-        self->vtbl = &__vt__10CSimpleSpd;
-        if (self->layout) {
-            if (self->layout) ((OwnedObjectVirtual*)self->layout)->destroy(1);
-            self->layout = 0;
-        }
-        if (self->texture) {
-            if (self->texture) ((OwnedObjectVirtual*)self->texture)->destroy(1);
-            self->texture = 0;
-        }
-        if (self->resource) {
-            CSharedFileHandle_Destroy(self->resource, 1);
-            self->resource = 0;
-        }
-        if (freeFlag > 0)
-            __dl__FPv(self);
+CSimpleSpd::~CSimpleSpd() {
+    SimpleSpdDestructionView* self = (SimpleSpdDestructionView*)this;
+    self->vtbl = &__vt__10CSimpleSpd;
+    if (self->layout) {
+        if (self->layout)
+            ((OwnedObjectVirtual*)self->layout)->destroy(1);
+        self->layout = 0;
     }
-    return self;
+    if (self->texture) {
+        if (self->texture)
+            ((OwnedObjectVirtual*)self->texture)->destroy(1);
+        self->texture = 0;
+    }
+    if (self->resource) {
+        CSharedFileHandle::Destroy(self->resource, 1);
+        self->resource = 0;
+    }
 }
 
 // Set the sprite wrapper's byte opacity for subsequent draws.
-void CSimpleSpd_SetOpacity(void* self, unsigned char opacity) {
-    AsCSimpleSpd(self)->opacity = opacity;
+void CSimpleSpd::SetOpacity(unsigned char opacity) {
+    this->opacity = opacity;
 }
 
 // Initialize the product-ring module's cached full-turn angle.
@@ -361,45 +392,40 @@ void InitTwoPiCache() {
     s_shopProductRingTwoPi = kFloat_6_2831855;
 }
 
-extern void SaveData_HasAuxPart(void*, void*);
+extern int SaveData_HasAuxPart(void*, void*);
 
 // Query whether the save data owns the auxiliary item identified by its IFF header.
-void CShopProductRing_IsOwned(void* arg0, void* arg1) {
-    SaveData_HasAuxPart(AsCShopProductRing(arg0)->saveData, (void*)((IffItemCommon*)arg1)->typeId);
+int CShopProductRing::IsOwned(void* itemHeader) {
+    return SaveData_HasAuxPart(saveData, (void*)((IffItemCommon*)itemHeader)->typeId);
 }
 
 // Destroy the product-ring base and optionally free its allocation.
-void* CShopProductRing_dtor(void* arg0, int arg1) {
-    if (arg0) {
-        ShopRingRecordList_dtor(arg0, 0);
-        if (arg1 > 0)
-            __dl__FPv(arg0);
-    }
-    return arg0;
+CShopProductRing::~CShopProductRing() {
+    ShopRingRecordList_dtor(this, 0);
 }
 
 // Initialize product records, install the ring vtable, and dispatch the initial selection.
-void* CShopProductRing_Ctor(void* arg0, void* value, void* arg2) {
-    ShopRingRecordList_Initialize(arg0, value);
-    AsCShopProductRing(arg0)->vtbl = &__vt__16CShopProductRing;
-    ((ShopRingVirtual*)arg0)->setInitialSelection(arg2);
-    return arg0;
+CShopProductRing::CShopProductRing(void* value, void* initialSelection) {
+    ShopRingRecordList_Initialize(this, value);
+    vtbl = &__vt__16CShopProductRing;
+    ((ShopRingVirtual*)this)->setInitialSelection(initialSelection);
 }
 
-
 // Select character, caddie, club-set and ball icons; absent caddies use the ninth icon.
-int CPlayerStatus_UpdateEquipmentTextures(void* status) {
-    void* data = AsCPlayerStatus(status)->playerRecord;
-    *(char**)&AsCPlayerStatus(status)->selectedEquipmentTexture = *(char**)&AsCPlayerStatus(status)->equipmentTextures + (AsSavePlayerRecord(data)->characterIndex) * kTextureEntryBytes;
+int CPlayerStatus::UpdateEquipmentTextures() {
+    void* data = playerRecord;
+    *(char**)&selectedEquipmentTexture =
+        *(char**)&equipmentTextures + (AsSavePlayerRecord(data)->characterIndex) * kTextureEntryBytes;
     signed char idx = AsSavePlayerRecord(data)->caddieIndex;
     if (idx != -1) {
-        *(char**)&AsCPlayerStatus(status)->selectedCaddieTexture = *(char**)&AsCPlayerStatus(status)->caddieTextures + idx * kTextureEntryBytes;
+        *(char**)&selectedCaddieTexture = *(char**)&caddieTextures + idx * kTextureEntryBytes;
     } else {
-        *(char**)&AsCPlayerStatus(status)->selectedCaddieTexture = *(char**)&AsCPlayerStatus(status)->caddieTextures + kNoCaddieTextureOffset;
+        *(char**)&selectedCaddieTexture = *(char**)&caddieTextures + kNoCaddieTextureOffset;
     }
-    data = AsCPlayerStatus(status)->playerRecord;
-    *(char**)&AsCPlayerStatus(status)->selectedClubSetTexture = *(char**)&AsCPlayerStatus(status)->clubSetTextures + (AsSavePlayerRecord(data)->clubSetIndex) * kTextureEntryBytes;
-    *(char**)&AsCPlayerStatus(status)->selectedBallTexture = *(char**)&AsCPlayerStatus(status)->ballTextures + (AsSavePlayerRecord(data)->ballIndex) * kTextureEntryBytes;
+    data = playerRecord;
+    *(char**)&selectedClubSetTexture =
+        *(char**)&clubSetTextures + (AsSavePlayerRecord(data)->clubSetIndex) * kTextureEntryBytes;
+    *(char**)&selectedBallTexture = *(char**)&ballTextures + (AsSavePlayerRecord(data)->ballIndex) * kTextureEntryBytes;
     return 1;
 }
 
@@ -430,25 +456,31 @@ int CPlayerStatus_CopyCharacterOrCaddieName(void* status, int mode) {
 }
 
 // Local dispatch views retain the original virtual slot order.
-struct Fn802E1230Child {
+struct BpTexView {
     virtual void reservedSlot1() {} // Preserve unresolved slot 0 with a no-op placeholder.
-    virtual void init(void*) {} // Describe texture initialization dispatch; actual object supplies the body.
+    virtual void init(void*) {}     // Describe texture initialization dispatch; actual object supplies the body.
     virtual void reservedSlot2() {} // Preserve unresolved slot 2 with a no-op placeholder.
-    virtual void draw() {} // Describe texture draw dispatch; actual object supplies the body.
-    virtual bool ready() { return true; }
+    virtual void draw() {}          // Describe texture draw dispatch; actual object supplies the body.
+    virtual bool ready() {
+        return true;
+    }
     // Describe readiness dispatch; local placeholder returns true.
 };
-typedef Fn802E1230Child TextureResourceVirtual;
+typedef BpTexView TextureResourceVirtual;
 
 struct TextureResourceStorage {
     // Construct a texture wrapper in its complete 0x28-byte storage.
-    TextureResourceStorage() { CBpTex_Init(this); }
+    TextureResourceStorage() {
+        ((CBpTex*)this)->__ct();
+    }
     char pad[0x28];
 };
 
 struct SpriteLayoutStorage {
     // Construct a sprite-layout controller in its complete 0x30-byte storage.
-    SpriteLayoutStorage() { __ct__Q23ns08CSpdCtrlFv(this); }
+    SpriteLayoutStorage() {
+        ((CSpdCtrl*)this)->__ct();
+    }
     char pad[0x30];
 };
 
@@ -465,18 +497,19 @@ struct SimpleSpdConstructionView {
 // resource/textureResource are borrowed load inputs; self owns the created file
 // handle, texture wrapper and layout controller. This constructor busy-waits for
 // texture readiness, as in the original. opacity is an unsigned 0..255 byte.
-void* CSimpleSpd_Ctor(SimpleSpdConstructionView* self, void* resource, void* textureResource) {
+CSimpleSpd::CSimpleSpd(void* resource, void* textureResource) {
+    SimpleSpdConstructionView* self = (SimpleSpdConstructionView*)this;
     self->resource = (void*)SharedFile_Create(resource, (self->vtable = &__vt__10CSimpleSpd, 1));
     TextureResourceVirtual* texture = (TextureResourceVirtual*)new TextureResourceStorage;
     self->texture = texture;
     texture->init(textureResource);
-    while (!self->texture->ready()) {}
+    while (!self->texture->ready()) {
+    }
     void* layout = new SpriteLayoutStorage;
     self->layout = layout;
     int value = CSharedFilePtr_GetLoadedBuffer(self->resource);
     SpdManager_BuildItemsFromResource(self->layout, value, self->texture);
     self->opacity = 0;
-    return self;
 }
 
 extern char s_playerStatusEquipmentTextureNames[];
@@ -484,17 +517,19 @@ extern char s_playerStatusEquipmentTextureNames[];
 // Local dispatch views retain the original virtual slot order.
 struct Fn802E0EECChild {
     virtual void reservedSlot0() {} // Preserve unresolved slot 0 with a no-op placeholder.
-    virtual void init(void*) {} // Describe equipment texture initialization dispatch.
+    virtual void init(void*) {}     // Describe equipment texture initialization dispatch.
     virtual void reservedSlot2() {} // Preserve unresolved slot 2 with a no-op placeholder.
-    virtual void draw() {} // Describe equipment texture draw dispatch.
-    virtual bool ready() { return true; }
+    virtual void draw() {}          // Describe equipment texture draw dispatch.
+    virtual bool ready() {
+        return true;
+    }
     // Describe readiness dispatch; local placeholder returns true.
 };
 typedef Fn802E0EECChild EquipmentTextureLoaderVirtual;
 
 #pragma use_lmw_stmw on
 // Initialize each character, caddie, club-set and ball texture from its resource-name table.
-int CPlayerStatus_InitEquipmentTextures(void* status) {
+int CPlayerStatus::InitEquipmentTextures(void* status) {
     char* self = (char*)status;
 
     char* base = (char*)s_playerStatusEquipmentTextureNames;
@@ -503,7 +538,8 @@ int CPlayerStatus_InitEquipmentTextures(void* status) {
         unsigned int idx = 0;
         unsigned int i = 0;
         for (; i < 8; ++i) {
-            ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->equipmentTextures + idx))->init(*(void**)labels);
+            ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->equipmentTextures + idx))
+                ->init(*(void**)labels);
             ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->equipmentTextures + idx))->ready();
             idx += kTextureEntryBytes;
             labels += 4;
@@ -514,7 +550,8 @@ int CPlayerStatus_InitEquipmentTextures(void* status) {
         unsigned int idx = 0;
         unsigned int i = 0;
         for (; i < 9; ++i) {
-            ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->caddieTextures + idx))->init(*(void**)labels);
+            ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->caddieTextures + idx))
+                ->init(*(void**)labels);
             ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->caddieTextures + idx))->ready();
             idx += kTextureEntryBytes;
             labels += 4;
@@ -525,7 +562,8 @@ int CPlayerStatus_InitEquipmentTextures(void* status) {
         unsigned int idx = 0;
         unsigned int i = 0;
         for (; i < 15; ++i) {
-            ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->clubSetTextures + idx))->init(*(void**)labels);
+            ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->clubSetTextures + idx))
+                ->init(*(void**)labels);
             ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->clubSetTextures + idx))->ready();
             idx += kTextureEntryBytes;
             labels += 4;
@@ -536,7 +574,8 @@ int CPlayerStatus_InitEquipmentTextures(void* status) {
         unsigned int idx = 0;
         unsigned int i = 0;
         for (; i < 11; ++i) {
-            ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->ballTextures + idx))->init(*(void**)labels);
+            ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->ballTextures + idx))
+                ->init(*(void**)labels);
             ((EquipmentTextureLoaderVirtual*)(*(char**)&AsCPlayerStatus(self)->ballTextures + idx))->ready();
             idx += kTextureEntryBytes;
             labels += 4;
@@ -560,7 +599,7 @@ int CPlayerStatus_InitEquipmentTextures(void* status) {
 // Refresh gates parts/aux on a valid character ID; Init below computes them even
 // without that ID. Preserve this difference when editing the duplicated arithmetic.
 // nameMode follows StatusNameMode. Missing lookups are skipped; return is always 1.
-int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
+int CPlayerStatus::RefreshEquipmentDisplay(void* status, int nameMode) {
     float barScale[2];
     struct {
         int reservedWord;
@@ -578,9 +617,11 @@ int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
 
     // Phase 1: seed character stats, then add this character's part/aux contributions.
     {
-        void* res = (void*)ItemInventory_GetCharacterIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, AsSavePlayerRecord(data)->characterIndex);
+        void* res = (void*)ItemInventory_GetCharacterIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                                          AsSavePlayerRecord(data)->characterIndex);
         if (res) {
-            IFF_STRUCT::sChar* text = (IFF_STRUCT::sChar*)ItemInventory_FindCharacterData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
+            IFF_STRUCT::sChar* text =
+                (IFF_STRUCT::sChar*)ItemInventory_FindCharacterData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
             if (text) {
                 StatusPowerByte(self) = (char)(int)text->stats[kStatPower];
                 StatusControlByte(self) = (char)(int)text->stats[kStatControl];
@@ -590,10 +631,13 @@ int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
             int partIndexBytes = 0;
             for (; partIndex < 24; ++partIndex) {
                 char* d = *(char**)&AsCPlayerStatus(self)->playerRecord;
-                void* res = (void*)ItemInventory_GetPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory,
-                    *(short*)((char*)d + (AsSavePlayerRecord(d)->characterIndex) * kCharacterEquipmentBytes + partIndexBytes + kCharacterPartIndicesOffset));
+                void* res = (void*)ItemInventory_GetPartIdAt(
+                    AsCSharedDoc(g_sharedDoc)->itemInventory,
+                    *(short*)((char*)d + (AsSavePlayerRecord(d)->characterIndex) * kCharacterEquipmentBytes +
+                              partIndexBytes + kCharacterPartIndicesOffset));
                 if (res) {
-                    IFF_STRUCT::sPart* text = (IFF_STRUCT::sPart*)ItemInventory_FindPartData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
+                    IFF_STRUCT::sPart* text =
+                        (IFF_STRUCT::sPart*)ItemInventory_FindPartData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
                     if (text) {
                         unsigned char powerByte = (unsigned char)StatusPowerByte(self);
                         unsigned char controlByte = (unsigned char)StatusControlByte(self);
@@ -615,9 +659,11 @@ int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
                 signed char idx = AsSavePlayerRecord(d)->characterIndex;
                 char* entry = d + idx * kCharacterEquipmentBytes;
                 signed char auxiliaryPartIndex = ((SaveCharacterEquipmentView*)entry)->equipped.auxiliaryPartIndex;
-                void* res = (void*)ItemInventory_GetAuxPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, auxiliaryPartIndex);
+                void* res =
+                    (void*)ItemInventory_GetAuxPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, auxiliaryPartIndex);
                 if (res) {
-                    IFF_STRUCT::sAuxPart* text = (IFF_STRUCT::sAuxPart*)ItemInventory_FindAuxPartData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
+                    IFF_STRUCT::sAuxPart* text = (IFF_STRUCT::sAuxPart*)ItemInventory_FindAuxPartData(
+                        AsCSharedDoc(g_sharedDoc)->itemInventory, res);
                     if (text) {
                         unsigned int auxiliaryPowerByte = *(volatile unsigned char*)&text->stats[kStatPower];
                         unsigned char powerByte = (unsigned char)StatusPowerByte(self);
@@ -634,7 +680,6 @@ int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
                     }
                 }
             }
-
         }
     }
 
@@ -645,7 +690,8 @@ int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
         if (idx != -1) {
             void* res = (void*)ItemInventory_GetCaddieIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, idx);
             if (res) {
-                IFF_STRUCT::sCaddie* text = (IFF_STRUCT::sCaddie*)ItemInventory_FindCaddieData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
+                IFF_STRUCT::sCaddie* text =
+                    (IFF_STRUCT::sCaddie*)ItemInventory_FindCaddieData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
                 if (text) {
                     unsigned char powerByte = (unsigned char)StatusPowerByte(self);
                     powerByte = (unsigned char)(powerByte + (short)text->stats[kStatPower]);
@@ -667,7 +713,7 @@ int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
         signed char clubSetIndex = AsSavePlayerRecord(d)->clubSetIndex;
         char* entry = d + clubSetIndex * 2;
         unsigned int upgradeLevel = (unsigned char)((SaveClubUpgradeView*)entry)->upgradeLevel;
-        void* res = (void*)CClubCustomTbl_FindUpgradeEntry(clubSetIndex, (signed char)upgradeLevel);
+        void* res = (void*)CClubCustomTbl::FindUpgradeEntry(clubSetIndex, (signed char)upgradeLevel);
         if (res) {
             unsigned char powerByte = (unsigned char)StatusPowerByte(self);
             powerByte = (unsigned char)(powerByte + ((ClubUpgradeStatsView*)res)->power);
@@ -691,27 +737,38 @@ int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
     // Phase 4: upper-cap the signed results; negative wrapped bytes remain negative.
     {
         signed char v = (signed char)StatusPowerByte(self);
-        if (v > kStatStorageLimit) StatusPowerByte(self) = kStatStorageLimit;
+        if (v > kStatStorageLimit)
+            StatusPowerByte(self) = kStatStorageLimit;
         v = (signed char)StatusControlByte(self);
-        if (v > kStatStorageLimit) StatusControlByte(self) = kStatStorageLimit;
+        if (v > kStatStorageLimit)
+            StatusControlByte(self) = kStatStorageLimit;
         v = (signed char)StatusSpinByte(self);
-        if (v > kStatStorageLimit) StatusSpinByte(self) = kStatStorageLimit;
+        if (v > kStatStorageLimit)
+            StatusSpinByte(self) = kStatStorageLimit;
     }
 
     // Phase 5: borrow the four selected icons; the ninth caddie texture means absent.
     {
         // Use the shared save-record selections at +0x2C..0x2F.
-        *(unsigned int*)&AsCPlayerStatus(self)->selectedEquipmentTexture = *(unsigned int*)&AsCPlayerStatus(self)->equipmentTextures + (*(SavePlayerRecord**)&AsCPlayerStatus(self)->playerRecord)->characterIndex * kTextureEntryBytes;
+        *(unsigned int*)&AsCPlayerStatus(self)->selectedEquipmentTexture =
+            *(unsigned int*)&AsCPlayerStatus(self)->equipmentTextures +
+            (*(SavePlayerRecord**)&AsCPlayerStatus(self)->playerRecord)->characterIndex * kTextureEntryBytes;
         signed char idx = (*(SavePlayerRecord**)&AsCPlayerStatus(self)->playerRecord)->caddieIndex;
         if (idx != -1)
-            *(char**)&AsCPlayerStatus(self)->selectedCaddieTexture = *(char**)&AsCPlayerStatus(self)->caddieTextures + idx * kTextureEntryBytes;
+            *(char**)&AsCPlayerStatus(self)->selectedCaddieTexture =
+                *(char**)&AsCPlayerStatus(self)->caddieTextures + idx * kTextureEntryBytes;
         else
-            *(char**)&AsCPlayerStatus(self)->selectedCaddieTexture = *(char**)&AsCPlayerStatus(self)->caddieTextures + kNoCaddieTextureOffset;
+            *(char**)&AsCPlayerStatus(self)->selectedCaddieTexture =
+                *(char**)&AsCPlayerStatus(self)->caddieTextures + kNoCaddieTextureOffset;
     }
     {
         // Use the shared save-record selections at +0x2C..0x2F.
-        *(unsigned int*)&AsCPlayerStatus(self)->selectedClubSetTexture = *(unsigned int*)&AsCPlayerStatus(self)->clubSetTextures + (*(SavePlayerRecord**)&AsCPlayerStatus(self)->playerRecord)->clubSetIndex * kTextureEntryBytes;
-        *(unsigned int*)&AsCPlayerStatus(self)->selectedBallTexture = *(unsigned int*)&AsCPlayerStatus(self)->ballTextures + (*(SavePlayerRecord**)&AsCPlayerStatus(self)->playerRecord)->ballIndex * kTextureEntryBytes;
+        *(unsigned int*)&AsCPlayerStatus(self)->selectedClubSetTexture =
+            *(unsigned int*)&AsCPlayerStatus(self)->clubSetTextures +
+            (*(SavePlayerRecord**)&AsCPlayerStatus(self)->playerRecord)->clubSetIndex * kTextureEntryBytes;
+        *(unsigned int*)&AsCPlayerStatus(self)->selectedBallTexture =
+            *(unsigned int*)&AsCPlayerStatus(self)->ballTextures +
+            (*(SavePlayerRecord**)&AsCPlayerStatus(self)->playerRecord)->ballIndex * kTextureEntryBytes;
     }
 
     // Phase 6: update bar scales. Y scale remains the cached constant; only X changes.
@@ -761,14 +818,18 @@ int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
     }
     {
         UITextTable_SetInteger(AsCPlayerStatus(self)->numberDraw, kStatusControlText,
-            (signed char)StatusControlByte(self) < kControlSpinDisplayLimit ? (signed char)StatusControlByte(self) : kControlSpinDisplayLimit);
+                               (signed char)StatusControlByte(self) < kControlSpinDisplayLimit
+                                   ? (signed char)StatusControlByte(self)
+                                   : kControlSpinDisplayLimit);
     }
     {
         UITextTable_SetInteger(AsCPlayerStatus(self)->numberDraw, kStatusSpinText,
-            (signed char)StatusSpinByte(self) < kControlSpinDisplayLimit ? (signed char)StatusSpinByte(self) : kControlSpinDisplayLimit);
+                               (signed char)StatusSpinByte(self) < kControlSpinDisplayLimit
+                                   ? (signed char)StatusSpinByte(self)
+                                   : kControlSpinDisplayLimit);
     }
 
-    CClubHouseMsg_ResetTextState(AsCPlayerStatus(self)->clubHouseMessage);
+    ((CClubHouseMsg*)(AsCPlayerStatus(self)->clubHouseMessage))->ResetTextState();
 
     // Compare one byte against the pooled empty-name marker before creating message text.
     {
@@ -782,8 +843,10 @@ int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
             Memory_Clear(name.equipmentName, 0x28);
             Memory_Clear(name.scratchSuffix, 0x28);
             strncpy(name.equipmentName, (self + kStatusNameOffset), 0x28);
-            void* nameGroup = BpObject_GetOrCreateNamedGroup(*(void**)&AsCPlayerStatus(self)->scriptObject, resourceStrings + kStatusNameGroupOffset);
-            CClubHouseMsg_SetTextFromGroup(AsCPlayerStatus(self)->clubHouseMessage, name.equipmentName, nameGroup, 1);
+            void* nameGroup = BpObject_GetOrCreateNamedGroup(*(void**)&AsCPlayerStatus(self)->scriptObject,
+                                                             resourceStrings + kStatusNameGroupOffset);
+            ((CClubHouseMsg*)(AsCPlayerStatus(self)->clubHouseMessage))
+                ->SetTextFromGroup(name.equipmentName, nameGroup, 1);
         }
     }
 
@@ -793,18 +856,21 @@ int CPlayerStatus_RefreshEquipmentDisplay(void* status, int nameMode) {
 // Initialize equipment stats and icons, then scale the three stat bars and populate the name message.
 // Uses the contribution/wraparound/UI contract documented on Refresh above, but parts
 // and auxiliary contributions are independent of character lookup success here.
-int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
+int CPlayerStatus::InitEquipmentDisplay(void* status, int nameMode) {
     char* self = (char*)status;
 
     // Phase 1: start script/layout mode 0, register the three numbers, load icons/message.
     Layout_SetModeByte(AsCPlayerStatus(self)->layout, 0);
 
     char* resourceStrings = (char*)&playerStatusResourceStrings;
-    BpObject_StartScriptByName(*(void**)&AsCPlayerStatus(self)->scriptObject, resourceStrings + kStatusRefreshScriptOffset, 1);
-    CFontNumDraw_RegisterEntries(AsCPlayerStatus(self)->numberDraw, (void*)s_playerStatusNumberEntries, 3, *(void**)&AsCPlayerStatus(self)->scriptObject, resourceStrings + kStatusNumberGroupOffset);
+    BpObject_StartScriptByName(*(void**)&AsCPlayerStatus(self)->scriptObject,
+                               resourceStrings + kStatusRefreshScriptOffset, 1);
+    ((CFontNumDraw*)(AsCPlayerStatus(self)->numberDraw))
+        ->RegisterEntries((void*)s_playerStatusNumberEntries, 3, *(void**)&AsCPlayerStatus(self)->scriptObject,
+                          resourceStrings + kStatusNumberGroupOffset);
 
-    CClubHouseMsg_CreateTextFromResource(AsCPlayerStatus(self)->clubHouseMessage);
-    CPlayerStatus_InitEquipmentTextures(status);
+    ((CClubHouseMsg*)(AsCPlayerStatus(self)->clubHouseMessage))->CreateTextFromResource();
+    CPlayerStatus::InitEquipmentTextures(status);
 
     int equipmentSlot = 0;
     char* equipmentRect = self + 0x0C;
@@ -814,14 +880,18 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
     }
 
     // Phase 2: accumulate base/parts/aux/caddie/upgrade into wrapping byte storage.
-    StatusPowerByte(self) = 0; StatusControlByte(self) = 0; StatusSpinByte(self) = 0;
+    StatusPowerByte(self) = 0;
+    StatusControlByte(self) = 0;
+    StatusSpinByte(self) = 0;
     Memory_Clear((self + kStatusNameOffset), 0x28);
 
     {
         char* data = *(char**)&AsCPlayerStatus(self)->playerRecord;
-        void* res = (void*)ItemInventory_GetCharacterIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, AsSavePlayerRecord(data)->characterIndex);
+        void* res = (void*)ItemInventory_GetCharacterIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                                          AsSavePlayerRecord(data)->characterIndex);
         if (res) {
-            IFF_STRUCT::sChar* text = (IFF_STRUCT::sChar*)ItemInventory_FindCharacterData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
+            IFF_STRUCT::sChar* text =
+                (IFF_STRUCT::sChar*)ItemInventory_FindCharacterData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
             if (text) {
                 StatusPowerByte(self) = (char)(int)text->stats[kStatPower];
                 StatusControlByte(self) = (char)(int)text->stats[kStatControl];
@@ -836,10 +906,13 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
         int partIndexBytes = 0;
         for (; partIndex < 24; ++partIndex) {
             char* d = *(char**)&AsCPlayerStatus(self)->playerRecord;
-            void* res = (void*)ItemInventory_GetPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory,
-                *(short*)((char*)d + (AsSavePlayerRecord(d)->characterIndex) * kCharacterEquipmentBytes + partIndexBytes + kCharacterPartIndicesOffset));
+            void* res = (void*)ItemInventory_GetPartIdAt(
+                AsCSharedDoc(g_sharedDoc)->itemInventory,
+                *(short*)((char*)d + (AsSavePlayerRecord(d)->characterIndex) * kCharacterEquipmentBytes +
+                          partIndexBytes + kCharacterPartIndicesOffset));
             if (res) {
-                IFF_STRUCT::sPart* text = (IFF_STRUCT::sPart*)ItemInventory_FindPartData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
+                IFF_STRUCT::sPart* text =
+                    (IFF_STRUCT::sPart*)ItemInventory_FindPartData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
                 if (text) {
                     unsigned char powerByte = (unsigned char)StatusPowerByte(self);
                     powerByte = (unsigned char)(powerByte + (short)text->stats[kStatPower]);
@@ -864,7 +937,8 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
         signed char auxiliaryPartIndex = ((SaveCharacterEquipmentView*)entry)->equipped.auxiliaryPartIndex;
         void* res = (void*)ItemInventory_GetAuxPartIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, auxiliaryPartIndex);
         if (res) {
-            IFF_STRUCT::sAuxPart* text = (IFF_STRUCT::sAuxPart*)ItemInventory_FindAuxPartData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
+            IFF_STRUCT::sAuxPart* text =
+                (IFF_STRUCT::sAuxPart*)ItemInventory_FindAuxPartData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
             if (text) {
                 unsigned char powerByte = (unsigned char)StatusPowerByte(self);
                 powerByte = (unsigned char)(powerByte + *(volatile signed char*)&text->stats[kStatPower]);
@@ -886,7 +960,8 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
         if (idx != -1) {
             void* res = (void*)ItemInventory_GetCaddieIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, idx);
             if (res) {
-                IFF_STRUCT::sCaddie* text = (IFF_STRUCT::sCaddie*)ItemInventory_FindCaddieData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
+                IFF_STRUCT::sCaddie* text =
+                    (IFF_STRUCT::sCaddie*)ItemInventory_FindCaddieData(AsCSharedDoc(g_sharedDoc)->itemInventory, res);
                 if (text) {
                     unsigned char powerByte = (unsigned char)StatusPowerByte(self);
                     powerByte = (unsigned char)(powerByte + (short)text->stats[kStatPower]);
@@ -908,7 +983,7 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
         signed char clubSetIndex = AsSavePlayerRecord(d)->clubSetIndex;
         char* entry = d + clubSetIndex * 2;
         signed char upgradeLevel = ((SaveClubUpgradeView*)entry)->upgradeLevel;
-        void* res = (void*)CClubCustomTbl_FindUpgradeEntry(clubSetIndex, upgradeLevel);
+        void* res = (void*)CClubCustomTbl::FindUpgradeEntry(clubSetIndex, upgradeLevel);
         if (res) {
             unsigned char powerByte = (unsigned char)StatusPowerByte(self);
             powerByte = (unsigned char)(powerByte + ((ClubUpgradeStatsView*)res)->power);
@@ -932,21 +1007,26 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
     // Phase 3: apply only the signed upper cap; byte wraparound/negative values persist.
     {
         signed char v = (signed char)StatusPowerByte(self);
-        if (v > kStatStorageLimit) StatusPowerByte(self) = kStatStorageLimit;
+        if (v > kStatStorageLimit)
+            StatusPowerByte(self) = kStatStorageLimit;
         v = (signed char)StatusControlByte(self);
-        if (v > kStatStorageLimit) StatusControlByte(self) = kStatStorageLimit;
+        if (v > kStatStorageLimit)
+            StatusControlByte(self) = kStatStorageLimit;
         v = (signed char)StatusSpinByte(self);
-        if (v > kStatStorageLimit) StatusSpinByte(self) = kStatStorageLimit;
+        if (v > kStatStorageLimit)
+            StatusSpinByte(self) = kStatStorageLimit;
     }
 
     // Phase 4: select borrowed icon pointers in character/caddie/club-set/ball order.
     {
         char* d = *(char**)&AsCPlayerStatus(self)->playerRecord;
         char* characterTextures = *(char**)&AsCPlayerStatus(self)->equipmentTextures;
-        *(char**)&AsCPlayerStatus(self)->selectedEquipmentTexture = characterTextures + (AsSavePlayerRecord(d)->characterIndex) * kTextureEntryBytes;
+        *(char**)&AsCPlayerStatus(self)->selectedEquipmentTexture =
+            characterTextures + (AsSavePlayerRecord(d)->characterIndex) * kTextureEntryBytes;
         char* caddieTextures = *(char**)&AsCPlayerStatus(self)->caddieTextures;
         signed char idx = AsSavePlayerRecord(d)->caddieIndex;
-        *(char**)&AsCPlayerStatus(self)->selectedCaddieTexture = (idx != -1) ? caddieTextures + idx * kTextureEntryBytes : caddieTextures + kNoCaddieTextureOffset;
+        *(char**)&AsCPlayerStatus(self)->selectedCaddieTexture =
+            (idx != -1) ? caddieTextures + idx * kTextureEntryBytes : caddieTextures + kNoCaddieTextureOffset;
         char* clubSetTextures = *(char**)&AsCPlayerStatus(self)->clubSetTextures;
         signed char clubSetIndex = AsSavePlayerRecord(d)->clubSetIndex;
         *(char**)&AsCPlayerStatus(self)->selectedClubSetTexture = clubSetTextures + clubSetIndex * kTextureEntryBytes;
@@ -966,7 +1046,10 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
 
         {
             signed char v = (signed char)StatusPowerByte(self);
-            union { unsigned int i[2]; double d; } u;
+            union {
+                unsigned int i[2];
+                double d;
+            } u;
             u.i[PPC_DW_HI] = 0x43300000u;
             u.i[PPC_DW_LO] = (unsigned int)v ^ 0x80000000u;
             float f = (float)(u.d - kPlayerStatusSignedStatConversionBias);
@@ -980,7 +1063,10 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
             if (v >= kControlSpinDisplayLimit) {
                 f = (float)kPlayerStatusControlSpinBarMaximum;
             } else {
-                union { unsigned int i[2]; double d; } u;
+                union {
+                    unsigned int i[2];
+                    double d;
+                } u;
                 u.i[PPC_DW_HI] = 0x43300000u;
                 u.i[PPC_DW_LO] = (unsigned int)v ^ 0x80000000u;
                 double d = u.d - kPlayerStatusSignedStatConversionBias;
@@ -996,7 +1082,10 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
             if (v >= kControlSpinDisplayLimit) {
                 f = (float)kPlayerStatusControlSpinBarMaximum;
             } else {
-                union { unsigned int i[2]; double d; } u;
+                union {
+                    unsigned int i[2];
+                    double d;
+                } u;
                 u.i[PPC_DW_HI] = 0x43300000u;
                 u.i[PPC_DW_LO] = (unsigned int)v ^ 0x80000000u;
                 double d = u.d - kPlayerStatusSignedStatConversionBias;
@@ -1025,7 +1114,7 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
         UITextTable_SetInteger(AsCPlayerStatus(self)->numberDraw, kStatusSpinText, vv);
     }
 
-    CClubHouseMsg_ResetTextState(AsCPlayerStatus(self)->clubHouseMessage);
+    ((CClubHouseMsg*)(AsCPlayerStatus(self)->clubHouseMessage))->ResetTextState();
 
     {
         char* selectedName = (self + kStatusNameOffset);
@@ -1042,8 +1131,9 @@ int CPlayerStatus_InitEquipmentDisplay(void* status, int nameMode) {
             Memory_Clear(equipmentName, 0x28);
             Memory_Clear(scratchSuffix, 0x28);
             strncpy(equipmentName, (self + kStatusNameOffset), 0x28);
-            void* nameGroup = BpObject_GetOrCreateNamedGroup(*(void**)&AsCPlayerStatus(self)->scriptObject, resourceStrings + kStatusNameGroupOffset);
-            CClubHouseMsg_SetTextFromGroup(AsCPlayerStatus(self)->clubHouseMessage, equipmentName, nameGroup, 1);
+            void* nameGroup = BpObject_GetOrCreateNamedGroup(*(void**)&AsCPlayerStatus(self)->scriptObject,
+                                                             resourceStrings + kStatusNameGroupOffset);
+            ((CClubHouseMsg*)(AsCPlayerStatus(self)->clubHouseMessage))->SetTextFromGroup(equipmentName, nameGroup, 1);
         }
     }
 
@@ -1069,7 +1159,8 @@ struct DartsQuadVertex {
 // Corner equation: worldOffset + RotateY(yaw)*(localOffset + (+/-X +/-Y)*halfExtent).
 // Thus localOffset rotates with the quad, while worldOffset remains in world space.
 // atlasQuarter 0..3 chooses U half by bit0 and V row by /2; other values use default UVs.
-void Darts_CreateRotatedTexturedQuad(void* output, int color, int atlasQuarter, void* worldOffset, void* localOffset, float halfExtent, float yaw) {
+void Darts_CreateRotatedTexturedQuad(void* output, int color, int atlasQuarter, void* worldOffset, void* localOffset,
+                                     float halfExtent, float yaw) {
     DartsQuadVertex vertices[4];
     float rotation[4][4];
     float halfWidth[3];

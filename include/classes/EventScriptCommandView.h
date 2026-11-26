@@ -1,13 +1,13 @@
-// EventScriptCommandView: layout view; methods in event_conte_script_interpreter.cpp (CEventConteProc_ProcessSealPointCommand and other bytecode handlers; operands are command-specific).
+// EventScriptCommandView: layout view; methods in event_conte_script_interpreter.cpp (CEventConteProc::ProcessSealPointCommand and other bytecode handlers; operands are command-specific).
 // No virtual methods, inheritance, or emitted runtime objects.
 #ifndef CLASSES_SCRIPTCOMMAND80092804_H
 #define CLASSES_SCRIPTCOMMAND80092804_H
 
 class EventScriptCommandView {
 public:
-    unsigned char opcode; // 0x0
+    unsigned char opcode;      // 0x0
     unsigned char operandByte; // 0x1
-    short operandShort; // 0x2
+    short operandShort;        // 0x2
     unsigned int operandWord0; // 0x4
     unsigned int operandWord1; // 0x8
 };
@@ -20,6 +20,6 @@ OFF(operandWord0, 0x4);
 OFF(operandWord1, 0x8);
 #undef OFF
 
-#define AsScriptCommand80092804(p) ((EventScriptCommandView*)(p))
+#define AsEventScriptCommandView(p) ((EventScriptCommandView*)(p))
 
 #endif

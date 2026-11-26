@@ -11,14 +11,16 @@ the C++ in `src/`; the rest are linked from the original code until they match.
 
 No game data and no compiler binaries are in this repository. You need your own copy of the game.
 
+AI disclosure: AI tools were used in making this project. Every match is checked against the original game code,
+but names and comments may contain mistakes.
+
 Status
 ------
 
 The game's own code is 10,001 functions:
 
-* 7,232 are **matched**: the C++ in `src/` compiles to exactly the original instructions.
-* 2,744 are written in C++ but don't compile to exactly the original yet.
-* 25 aren't written yet.
+* 7,285 are **matched**: the C++ in `src/` compiles to exactly the original instructions.
+* 2,716 are written in C++ but don't compile to exactly the original yet.
 
 The other 2,909 functions are Nintendo SDK, Metrowerks runtime and other library code, which isn't decompiled here.
 
@@ -58,6 +60,9 @@ python -m ninja
 Matching a function
 -------------------
 
+To find a target, `python tools/unmatched.py` lists unmatched functions, smallest first;
+[docs/getting_started.md](docs/getting_started.md) has a worked example.
+
 1. A source file needs a split in `config/R2PE9B/splits.txt` covering its whole translation unit and an
    `Object(...)` entry in `configure.py`.
 2. Write the function and build: `python -m ninja`.
@@ -78,6 +83,17 @@ Layout
 | `config/R2PE9B/` | decomp-toolkit config: splits, symbols, expected SHA-1 |
 | `configure.py`, `tools/` | the dtk-template build system |
 | `docs/` | dtk-template reference docs and game file formats |
+
+Reading the code
+----------------
+
+* Every source file starts with a short description of what it holds. `src/game/` is the game, by area (`golf/`,
+  `ui/`, `modes/`, `chara/`, `fx/`, `audio/`, `save/`, `system/`); `src/engine/gtl/` is the engine layer under it.
+* Class layouts are in `include/classes/`, one header per class.
+* Names come from the game's own text, its type names, or what the code plainly does. Without that evidence a name
+  stays a placeholder: `unk_<offset>` for a field, `vfunc_<n>` for a virtual function slot, `arg<n>` for a
+  parameter, a trailing address (`Foo8040C2C8`) for an unidentified type. A placeholder means "not known yet".
+* Unmatched functions are readable C++, but not proven identical to the original.
 
 Contributing
 ------------

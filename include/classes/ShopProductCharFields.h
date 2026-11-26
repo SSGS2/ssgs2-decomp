@@ -5,11 +5,11 @@
 
 class ShopProductCharFields {
 public:
-    void* vtable; // 0x0
+    void* vtable;  // 0x0
     void* context; // 0x4
-    int data; // 0x8
-    int size; // 0xC
-    int capacity; // 0x10
+    int data;      // 0x8
+    int size;      // 0xC
+    int capacity;  // 0x10
 };
 
 #define OFF(f, o) typedef char ShopProductCharFields_off_##f[((int)&((ShopProductCharFields*)0)->f == (o)) ? 1 : -1]

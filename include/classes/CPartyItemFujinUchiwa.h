@@ -1,40 +1,53 @@
-// CPartyItemFujinUchiwa: field view inferred from accesses in the cited functions.
-// No virtual declarations or inheritance; this header emits no code or RTTI.
+// CPartyItemFujinUchiwa: the fan party item. A gesture steers the wind it blows
+// at the opponents, within a limited heading from the owner's aim, and it
+// refreshes a wind effect and sound while the gesture is held.
 #ifndef CLASSES_CPARTYITEMFUJINUCHIWA_H
 #define CLASSES_CPARTYITEMFUJINUCHIWA_H
 
+#include "game/wvector.h"
+
 class CPartyItemFujinUchiwa {
 public:
-    void* vtbl; // 0x0: CPartyItemFujinUchiwa_Ctor, party_CPartyItemFujinUchiwa_dtor
-    char pad_004[0x8];
-    int ownerIndex; // 0xc: CPartyItemFujinUchiwa_UpdateOpponentWind
-    void* inputState; // 0x10: CPartyItemFujinUchiwa_UpdateOpponentWind
-    char pad_014[0x18];
-    float windHeading; // 0x2c: CPartyItemFujinUchiwa_InitWindAndHeading, CPartyItemFujinUchiwa_UpdateOpponentWind
-    char pad_030[0x8];
-    void* effectAttachmentMatrix; // 0x38: CPartyItemFujinUchiwa_UpdateOpponentWind
-    char pad_03C[0xc];
-    void* effectOffsetPointer; // 0x48: CPartyItemFujinUchiwa_UpdateOpponentWind
-    char pad_04C[0x48];
-    float effectOffset[3]; // 0x94: CPartyItemFujinUchiwa_UpdateOpponentWind zeros this vector and assigns its address to effectOffsetPointer
+    CPartyItemFujinUchiwa(void* arg);
+
+    int InitWindAndHeading();
+    int UpdateOpponentWind(void* unused, void* out, int index);
+
+    void* vtbl;                   // 0x00
+    char pad_004[0x8];            // 0x04
+    int ownerIndex;               // 0x0C
+    void* inputState;             // 0x10
+    WVector initialWind;          // 0x14  wind captured when the shot starts
+    WVector initialWindCopy;      // 0x20  starts as a copy of initialWind
+    float windHeading;            // 0x2C
+    char effectAttachment[0x8];   // 0x30  effect attachment initialized in place
+    void* effectAttachmentMatrix; // 0x38
+    char pad_03C[0xC];            // 0x3C
+    void* effectOffsetPointer;    // 0x48
+    char pad_04C[0x48];           // 0x4C
+    float effectOffset[3];        // 0x94
     union {
-        int effectHandleValue; // 0xa0: CPartyItemFujinUchiwa_Ctor, CPartyItemFujinUchiwa_InitWindAndHeading, CPartyItemFujinUchiwa_UpdateOpponentWind
-        void* effectHandle; // 0xa0: CPartyItemFujinUchiwa_UpdateOpponentWind
+        int effectHandleValue; // 0xA0
+        void* effectHandle;    // 0xA0
     };
-    int cooldown; // 0xa4: CPartyItemFujinUchiwa_Ctor, CPartyItemFujinUchiwa_UpdateOpponentWind
+    int cooldown; // 0xA4  ticks until the effect may be recreated
 };
 
-#define OFF(f, o) typedef char CPartyItemFujinUchiwa_off_##f[((int)&((CPartyItemFujinUchiwa*)0)->f == (o)) ? 1 : -1]
-OFF(vtbl, 0x0);
-OFF(ownerIndex, 0xc);
-OFF(inputState, 0x10);
-OFF(windHeading, 0x2c);
-OFF(effectAttachmentMatrix, 0x38);
-OFF(effectOffsetPointer, 0x48);
-OFF(effectOffset, 0x94);
-OFF(effectHandleValue, 0xa0);
-OFF(effectHandle, 0xa0);
-OFF(cooldown, 0xa4);
-#undef OFF
+#define CPARTYITEMFUJINUCHIWA_OFF(f, o) \
+    typedef char CPartyItemFujinUchiwa_off_##f[((int)&((CPartyItemFujinUchiwa*)0)->f == (o)) ? 1 : -1]
+CPARTYITEMFUJINUCHIWA_OFF(vtbl, 0x00);
+CPARTYITEMFUJINUCHIWA_OFF(ownerIndex, 0x0C);
+CPARTYITEMFUJINUCHIWA_OFF(inputState, 0x10);
+CPARTYITEMFUJINUCHIWA_OFF(initialWind, 0x14);
+CPARTYITEMFUJINUCHIWA_OFF(initialWindCopy, 0x20);
+CPARTYITEMFUJINUCHIWA_OFF(windHeading, 0x2C);
+CPARTYITEMFUJINUCHIWA_OFF(effectAttachmentMatrix, 0x38);
+CPARTYITEMFUJINUCHIWA_OFF(effectOffsetPointer, 0x48);
+CPARTYITEMFUJINUCHIWA_OFF(effectOffset, 0x94);
+CPARTYITEMFUJINUCHIWA_OFF(effectHandleValue, 0xA0);
+CPARTYITEMFUJINUCHIWA_OFF(effectHandle, 0xA0);
+CPARTYITEMFUJINUCHIWA_OFF(cooldown, 0xA4);
+#undef CPARTYITEMFUJINUCHIWA_OFF
+typedef char CPartyItemFujinUchiwa_size[(sizeof(CPartyItemFujinUchiwa) == 0xA8) ? 1 : -1];
 
 #endif

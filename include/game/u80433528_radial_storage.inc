@@ -17,7 +17,7 @@ if (vec.size < kRadialGridVertices) {
             unsigned int extra = vec.size + n - *growthCapacity;
             unsigned char growthTag = 0;
             unsigned char growthValue = growthTag;
-            void* unused = GtlRecordDeque_CalculateGrowthCapacity(&vec, extra);
+            void* unused = CalculateGrowthCapacity__14GtlRecordDequeFUi(&vec, extra);
             (void)unused;
         } else {
             RadialVertex* p = vec.begin + vec.size;
@@ -27,7 +27,7 @@ if (vec.size < kRadialGridVertices) {
             while (left != 0) {
                 unsigned int* allocator = &vec.cap.value;
                 RadialVertex t = {0, 0, 0, 0, 0, 0};
-                GtlRecordDeque_CopyConstructElement(allocator, p, &t);
+                CopyConstructElement__14GtlRecordDequeFPvPvPv(allocator, p, &t);
                 left--;
                 p++;
                 vec.size++;
@@ -37,9 +37,9 @@ if (vec.size < kRadialGridVertices) {
         {
             VertexReplacementBuffer nv;
             unsigned int* allocator = &vec.cap.value;
-            GtlRecordDeque_Initialize(&nv, allocator);
+            Initialize__14GtlRecordDequeFPv(&nv, allocator);
             unsigned int* growthCapacity = &vec.cap.value;
-            GtlRecordDeque_AllocateStorage(&nv, vec.size + n, GtlRecordDeque_CalculateGrowthCapacity(&vec, vec.size + n - *growthCapacity));
+            AllocateStorage__14GtlRecordDequeFPvUi(&nv, vec.size + n, CalculateGrowthCapacity__14GtlRecordDequeFUi(&vec, vec.size + n - *growthCapacity));
             nv.pos = vec.size;
             RadialVertex* p = nv.begin + nv.pos + nv.size;
             unsigned int left = n;
@@ -48,14 +48,14 @@ if (vec.size < kRadialGridVertices) {
             while (left != 0) {
                 void* allocator = nv.alloc;
                 RadialVertex t = {0, 0, 0, 0, 0, 0};
-                GtlRecordDeque_CopyConstructElement(allocator, p, &t);
+                CopyConstructElement__14GtlRecordDequeFPvPvPv(allocator, p, &t);
                 left--;
                 p++;
                 nv.size++;
             }
             RadialVertex* first = vec.begin;
             RadialVertex* last = vec.begin + vec.size;
-            GtlRecordDeque_PrependRange(&nv, first, last);
+            PrependRange__14GtlRecordDequeFPcPc(&nv, first, last);
             unsigned char swapTag = 0;
             unsigned char swapValue = swapTag;
             unsigned int* newCapacity = &nv.cap;

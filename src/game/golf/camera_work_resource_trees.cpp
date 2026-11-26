@@ -1,10 +1,11 @@
+// CCameraWork resource trees: the nested maps of camera groups and animation names, their
+// iterators, lookup by group and name, and the clearing and destruction of those trees.
+
 #include "classes/ResourceGroupNode.h"
 #include "classes/ResourceLookupTree.h"
 #include "classes/ResourceStringNode.h"
 #include "classes/ResourceTreeLinks.h"
 #include "classes/CCameraWork.h"
-// Translation unit 0x800E2A58-0x800E3DE8 (16 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -15,7 +16,10 @@ struct CameraGroupMap {
     void* last;
     void* first;
 };
-struct CameraGroupValue { unsigned int key; ResourceLookupTree strings; };
+struct CameraGroupValue {
+    unsigned int key;
+    ResourceLookupTree strings;
+};
 struct CleanupObject;
 struct CameraAnimationValue {
     unsigned int stringFlags;
@@ -30,7 +34,7 @@ struct CameraAnimationValue {
 // End iterators point INTO the owning header (at root), never to a node.
 // Outer GetFirst reads +0xC; nested GetFirst reads +8. The views are not
 // interchangeable merely because both GetEnd implementations use +4.
-// Tree cleanup frees keys/nodes only. CCameraWork_ClearResourceTrees explicitly
+// Tree cleanup frees keys/nodes only. CCameraWork::ClearResourceTrees explicitly
 // deletes resource payloads first; ordinary Clear/Assign do not delete them.
 static const unsigned int kParentTagMask = 1u;
 static const unsigned int kInlineStringLengthMask = 0x7Fu;
@@ -83,7 +87,8 @@ int CameraOwnedGroupIterator_NotEqual(void** a, void** b) {
 // *predecessor is the last node with key <= requested key, not necessarily the insertion parent returned.
 // *insertLeft is the final edge direction; *noPredecessor stays 1 only if no predecessor
 // was encountered. It is not a complementary 'right child' flag.
-void* CameraResourceGroupTree_FindInsertionPosition(void* tree, void** key, void** predecessor, unsigned char* insertLeft, unsigned char* noPredecessor) {
+void* CameraResourceGroupTree_FindInsertionPosition(void* tree, void** key, void** predecessor,
+                                                    unsigned char* insertLeft, unsigned char* noPredecessor) {
     unsigned char zero = 0;
     unsigned char one = 1;
     *predecessor = 0;
@@ -123,7 +128,7 @@ void CameraOwnedGroupIterator_PostIncrement(void** a, void** b, void* sentinel) 
     void* next;
     // Climb until the current node is a left child, then take that parent.
     while ((cur = *b, next = (void*)((unsigned int)((ResourceTreeLinks*)cur)->taggedParent & ~kParentTagMask),
-        cur != ((ResourceTreeLinks*)next)->left)) {
+            cur != ((ResourceTreeLinks*)next)->left)) {
         *b = next;
     }
     *b = next;
@@ -145,7 +150,7 @@ void CameraOwnedAnimationIterator_PostIncrement(void** dst, void** src, void* se
     void* parent;
     // Original 0x800E3874: the same parent-climbing iterator step.
     while ((cur = *src, parent = (void*)((unsigned int)((ResourceTreeLinks*)cur)->taggedParent & ~kParentTagMask),
-        cur != ((ResourceTreeLinks*)parent)->left)) {
+            cur != ((ResourceTreeLinks*)parent)->left)) {
         *src = parent;
     }
     *src = parent;
@@ -159,9 +164,11 @@ void __dl__FPv(void*);
 // Recursively dispose child subtrees, caching each link before its cleanup call.
 inline void DestroyStringNodeCached(void* node, void* owner) {
     void* leftChild = *(void**)node;
-    if (leftChild) StringValueTree_DestroySubtree(owner, leftChild);
+    if (leftChild)
+        StringValueTree_DestroySubtree(owner, leftChild);
     void* rightChild = ((ResourceStringNode*)node)->right;
-    if (rightChild) StringValueTree_DestroySubtree(owner, rightChild);
+    if (rightChild)
+        StringValueTree_DestroySubtree(owner, rightChild);
     if (&((ResourceStringNode*)node)->stringFlags) {
         if (&((ResourceStringNode*)node)->stringFlags) {
             if (((ResourceStringNode*)node)->stringFlags >> 31)
@@ -183,67 +190,76 @@ inline void FreeStringNode(void* node) {
     appFreeUni__FPv(node);
 }
 
-
 #pragma opt_common_subs off
 // Destroy the owned string tree and optionally free its containing object.
 // should_free > 0 deletes self; the returned address may then be dangling.
 void* ResourceLookupTree_dtor(void* self, int should_free) {
     if (self) {
-      // These six legacy subobject guards each correspond to an emitted branch.
-      // This destructor view starts at +8 (first), unlike Clear/Assign at +4.
-      // Do not replace one entry point with another based only on the tree type.
-      if (&((ResourceLookupTree*)self)->root && &((ResourceLookupTree*)self)->root &&
-          &((ResourceLookupTree*)self)->root && &((ResourceLookupTree*)self)->root &&
-          &((ResourceLookupTree*)self)->root && &((ResourceLookupTree*)self)->root) {
-        void* tree = ((ResourceLookupTree*)self)->first;
-        if (tree) {
-            if (*(void**)tree) do {
-                // Unrolled postorder: left descendants, right descendants, then this node.
-                void* subtreeRoot = *(void**)tree;
-                void* grandchild;
-                void* child = *(void**)subtreeRoot;
-                if (child) {
-                    grandchild = *(void**)child;
-                    if (grandchild) DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
-                    grandchild = ((ResourceTreeLinks*)child)->right;
-                    if (grandchild) DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
-                    FreeStringNode(child);
-                }
-                child = ((ResourceTreeLinks*)subtreeRoot)->right;
-                if (child) {
-                    grandchild = *(void**)child;
-                    if (grandchild) DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
-                    grandchild = ((ResourceTreeLinks*)child)->right;
-                    if (grandchild) DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
-                    FreeStringNode(child);
-                }
-                FreeStringNode(subtreeRoot);
-            } while (0);
-            if (((ResourceTreeLinks*)tree)->right) do {
-                // Unrolled postorder: left descendants, right descendants, then this node.
-                void* subtreeRoot = ((ResourceTreeLinks*)tree)->right;
-                void* grandchild;
-                void* child = *(void**)subtreeRoot;
-                if (child) {
-                    grandchild = *(void**)child;
-                    if (grandchild) DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
-                    grandchild = ((ResourceTreeLinks*)child)->right;
-                    if (grandchild) DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
-                    FreeStringNode(child);
-                }
-                child = ((ResourceTreeLinks*)subtreeRoot)->right;
-                if (child) {
-                    grandchild = *(void**)child;
-                    if (grandchild) DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
-                    grandchild = ((ResourceTreeLinks*)child)->right;
-                    if (grandchild) DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
-                    FreeStringNode(child);
-                }
-                FreeStringNode(subtreeRoot);
-            } while (0);
-            FreeStringNode(tree);
+        // These six legacy subobject guards each correspond to an emitted branch.
+        // This destructor view starts at +8 (first), unlike Clear/Assign at +4.
+        // Do not replace one entry point with another based only on the tree type.
+        if (&((ResourceLookupTree*)self)->root && &((ResourceLookupTree*)self)->root &&
+            &((ResourceLookupTree*)self)->root && &((ResourceLookupTree*)self)->root &&
+            &((ResourceLookupTree*)self)->root && &((ResourceLookupTree*)self)->root) {
+            void* tree = ((ResourceLookupTree*)self)->first;
+            if (tree) {
+                if (*(void**)tree)
+                    do {
+                        // Unrolled postorder: left descendants, right descendants, then this node.
+                        void* subtreeRoot = *(void**)tree;
+                        void* grandchild;
+                        void* child = *(void**)subtreeRoot;
+                        if (child) {
+                            grandchild = *(void**)child;
+                            if (grandchild)
+                                DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
+                            grandchild = ((ResourceTreeLinks*)child)->right;
+                            if (grandchild)
+                                DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
+                            FreeStringNode(child);
+                        }
+                        child = ((ResourceTreeLinks*)subtreeRoot)->right;
+                        if (child) {
+                            grandchild = *(void**)child;
+                            if (grandchild)
+                                DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
+                            grandchild = ((ResourceTreeLinks*)child)->right;
+                            if (grandchild)
+                                DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
+                            FreeStringNode(child);
+                        }
+                        FreeStringNode(subtreeRoot);
+                    } while (0);
+                if (((ResourceTreeLinks*)tree)->right)
+                    do {
+                        // Unrolled postorder: left descendants, right descendants, then this node.
+                        void* subtreeRoot = ((ResourceTreeLinks*)tree)->right;
+                        void* grandchild;
+                        void* child = *(void**)subtreeRoot;
+                        if (child) {
+                            grandchild = *(void**)child;
+                            if (grandchild)
+                                DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
+                            grandchild = ((ResourceTreeLinks*)child)->right;
+                            if (grandchild)
+                                DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
+                            FreeStringNode(child);
+                        }
+                        child = ((ResourceTreeLinks*)subtreeRoot)->right;
+                        if (child) {
+                            grandchild = *(void**)child;
+                            if (grandchild)
+                                DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
+                            grandchild = ((ResourceTreeLinks*)child)->right;
+                            if (grandchild)
+                                DestroyStringNodeCached(grandchild, &((ResourceLookupTree*)self)->root);
+                            FreeStringNode(child);
+                        }
+                        FreeStringNode(subtreeRoot);
+                    } while (0);
+                FreeStringNode(tree);
+            }
         }
-      }
         // All descendant keys/nodes are gone; only the containing object remains.
         if (should_free > 0)
             __dl__FPv(self);
@@ -252,11 +268,12 @@ void* ResourceLookupTree_dtor(void* self, int should_free) {
 }
 #pragma opt_common_subs reset
 
-
 // Dispose child subtrees while reloading each link for the recursive call.
 inline void DestroyStringNodeReloaded(void* node, void* owner) {
-    if (*(void**)node) StringValueTree_DestroySubtree(owner, *(void**)node);
-    if (((ResourceStringNode*)node)->right) StringValueTree_DestroySubtree(owner, ((ResourceStringNode*)node)->right);
+    if (*(void**)node)
+        StringValueTree_DestroySubtree(owner, *(void**)node);
+    if (((ResourceStringNode*)node)->right)
+        StringValueTree_DestroySubtree(owner, ((ResourceStringNode*)node)->right);
     if (&((ResourceStringNode*)node)->stringFlags) {
         if (&((ResourceStringNode*)node)->stringFlags) {
             if (((ResourceStringNode*)node)->stringFlags >> 31)
@@ -271,50 +288,60 @@ inline void DestroyStringNodeReloaded(void* node, void* owner) {
 void CameraResourceLookupTree_Clear(void* self) {
     void* top = ((ResourceLookupTree*)self)->root;
     if (top) {
-        if (*(void**)top) do {
-            // Unrolled postorder: left descendants, right descendants, then this node.
-            void* subtreeRoot = *(void**)top;
-            void* grandchild;
-            void* child = *(void**)subtreeRoot;
-            if (child) {
-                grandchild = *(void**)child;
-                if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                grandchild = ((ResourceTreeLinks*)child)->right;
-                if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                FreeStringNode(child);
-            }
-            child = ((ResourceTreeLinks*)subtreeRoot)->right;
-            if (child) {
-                grandchild = *(void**)child;
-                if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                grandchild = ((ResourceTreeLinks*)child)->right;
-                if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                FreeStringNode(child);
-            }
-            FreeStringNode(subtreeRoot);
-        } while (0);
-        if (((ResourceTreeLinks*)top)->right) do {
-            // Unrolled postorder: left descendants, right descendants, then this node.
-            void* subtreeRoot = ((ResourceTreeLinks*)top)->right;
-            void* grandchild;
-            void* child = *(void**)subtreeRoot;
-            if (child) {
-                grandchild = *(void**)child;
-                if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                grandchild = ((ResourceTreeLinks*)child)->right;
-                if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                FreeStringNode(child);
-            }
-            child = ((ResourceTreeLinks*)subtreeRoot)->right;
-            if (child) {
-                grandchild = *(void**)child;
-                if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                grandchild = ((ResourceTreeLinks*)child)->right;
-                if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                FreeStringNode(child);
-            }
-            FreeStringNode(subtreeRoot);
-        } while (0);
+        if (*(void**)top)
+            do {
+                // Unrolled postorder: left descendants, right descendants, then this node.
+                void* subtreeRoot = *(void**)top;
+                void* grandchild;
+                void* child = *(void**)subtreeRoot;
+                if (child) {
+                    grandchild = *(void**)child;
+                    if (grandchild)
+                        DestroyStringNodeReloaded(grandchild, self);
+                    grandchild = ((ResourceTreeLinks*)child)->right;
+                    if (grandchild)
+                        DestroyStringNodeReloaded(grandchild, self);
+                    FreeStringNode(child);
+                }
+                child = ((ResourceTreeLinks*)subtreeRoot)->right;
+                if (child) {
+                    grandchild = *(void**)child;
+                    if (grandchild)
+                        DestroyStringNodeReloaded(grandchild, self);
+                    grandchild = ((ResourceTreeLinks*)child)->right;
+                    if (grandchild)
+                        DestroyStringNodeReloaded(grandchild, self);
+                    FreeStringNode(child);
+                }
+                FreeStringNode(subtreeRoot);
+            } while (0);
+        if (((ResourceTreeLinks*)top)->right)
+            do {
+                // Unrolled postorder: left descendants, right descendants, then this node.
+                void* subtreeRoot = ((ResourceTreeLinks*)top)->right;
+                void* grandchild;
+                void* child = *(void**)subtreeRoot;
+                if (child) {
+                    grandchild = *(void**)child;
+                    if (grandchild)
+                        DestroyStringNodeReloaded(grandchild, self);
+                    grandchild = ((ResourceTreeLinks*)child)->right;
+                    if (grandchild)
+                        DestroyStringNodeReloaded(grandchild, self);
+                    FreeStringNode(child);
+                }
+                child = ((ResourceTreeLinks*)subtreeRoot)->right;
+                if (child) {
+                    grandchild = *(void**)child;
+                    if (grandchild)
+                        DestroyStringNodeReloaded(grandchild, self);
+                    grandchild = ((ResourceTreeLinks*)child)->right;
+                    if (grandchild)
+                        DestroyStringNodeReloaded(grandchild, self);
+                    FreeStringNode(child);
+                }
+                FreeStringNode(subtreeRoot);
+            } while (0);
         FreeStringNode(top);
         *(void**)self = 0;
         ((ResourceLookupTree*)self)->root = 0;
@@ -332,50 +359,60 @@ void* CameraResourceLookupTree_Assign(void* self, void* other) {
         // Phase 1: destroy destination keys/nodes; payload pointers are not deleted.
         void* tree = ((ResourceLookupTree*)self)->root;
         if (tree) {
-            if (*(void**)tree) do {
-                // Unrolled postorder: left descendants, right descendants, then this node.
-                void* subtreeRoot = *(void**)tree;
-                void* grandchild;
-                void* child = *(void**)subtreeRoot;
-                if (child) {
-                    grandchild = *(void**)child;
-                    if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                    grandchild = ((ResourceTreeLinks*)child)->right;
-                    if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                    FreeStringNode(child);
-                }
-                child = ((ResourceTreeLinks*)subtreeRoot)->right;
-                if (child) {
-                    grandchild = *(void**)child;
-                    if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                    grandchild = ((ResourceTreeLinks*)child)->right;
-                    if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                    FreeStringNode(child);
-                }
-                FreeStringNode(subtreeRoot);
-            } while (0);
-            if (((ResourceTreeLinks*)tree)->right) do {
-                // Unrolled postorder: left descendants, right descendants, then this node.
-                void* subtreeRoot = ((ResourceTreeLinks*)tree)->right;
-                void* grandchild;
-                void* child = *(void**)subtreeRoot;
-                if (child) {
-                    grandchild = *(void**)child;
-                    if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                    grandchild = ((ResourceTreeLinks*)child)->right;
-                    if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                    FreeStringNode(child);
-                }
-                child = ((ResourceTreeLinks*)subtreeRoot)->right;
-                if (child) {
-                    grandchild = *(void**)child;
-                    if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                    grandchild = ((ResourceTreeLinks*)child)->right;
-                    if (grandchild) DestroyStringNodeReloaded(grandchild, self);
-                    FreeStringNode(child);
-                }
-                FreeStringNode(subtreeRoot);
-            } while (0);
+            if (*(void**)tree)
+                do {
+                    // Unrolled postorder: left descendants, right descendants, then this node.
+                    void* subtreeRoot = *(void**)tree;
+                    void* grandchild;
+                    void* child = *(void**)subtreeRoot;
+                    if (child) {
+                        grandchild = *(void**)child;
+                        if (grandchild)
+                            DestroyStringNodeReloaded(grandchild, self);
+                        grandchild = ((ResourceTreeLinks*)child)->right;
+                        if (grandchild)
+                            DestroyStringNodeReloaded(grandchild, self);
+                        FreeStringNode(child);
+                    }
+                    child = ((ResourceTreeLinks*)subtreeRoot)->right;
+                    if (child) {
+                        grandchild = *(void**)child;
+                        if (grandchild)
+                            DestroyStringNodeReloaded(grandchild, self);
+                        grandchild = ((ResourceTreeLinks*)child)->right;
+                        if (grandchild)
+                            DestroyStringNodeReloaded(grandchild, self);
+                        FreeStringNode(child);
+                    }
+                    FreeStringNode(subtreeRoot);
+                } while (0);
+            if (((ResourceTreeLinks*)tree)->right)
+                do {
+                    // Unrolled postorder: left descendants, right descendants, then this node.
+                    void* subtreeRoot = ((ResourceTreeLinks*)tree)->right;
+                    void* grandchild;
+                    void* child = *(void**)subtreeRoot;
+                    if (child) {
+                        grandchild = *(void**)child;
+                        if (grandchild)
+                            DestroyStringNodeReloaded(grandchild, self);
+                        grandchild = ((ResourceTreeLinks*)child)->right;
+                        if (grandchild)
+                            DestroyStringNodeReloaded(grandchild, self);
+                        FreeStringNode(child);
+                    }
+                    child = ((ResourceTreeLinks*)subtreeRoot)->right;
+                    if (child) {
+                        grandchild = *(void**)child;
+                        if (grandchild)
+                            DestroyStringNodeReloaded(grandchild, self);
+                        grandchild = ((ResourceTreeLinks*)child)->right;
+                        if (grandchild)
+                            DestroyStringNodeReloaded(grandchild, self);
+                        FreeStringNode(child);
+                    }
+                    FreeStringNode(subtreeRoot);
+                } while (0);
             FreeStringNode(tree);
             *(void**)self = 0;
             ((ResourceLookupTree*)self)->root = 0;
@@ -397,10 +434,11 @@ struct CleanupObject {
 // Delete resources in every group, then clear the nested and outer maps.
 // self and its group-map storage are required; each non-null resource is owned
 // exclusively here. Null each resource after deletion before erasing its node.
-void CCameraWork_ClearResourceTrees(void* self) {
-    register void* camera = self;
+void CCameraWork::ClearResourceTrees() {
+    register void* camera = this;
     void* groupIterator;
-    CameraOwnedGroupIterator_GetFirst((void**)&groupIterator, (void**)(((CCameraWork*)camera)->loadedCharacterResourceGroups));
+    CameraOwnedGroupIterator_GetFirst((void**)&groupIterator,
+                                      (void**)(((CCameraWork*)camera)->loadedCharacterResourceGroups));
     int zero = 0;
     void* animationIterator;
     void* previousAnimation;
@@ -411,16 +449,23 @@ void CCameraWork_ClearResourceTrees(void* self) {
     // to that group's INNER string map. Entry results borrow node payloads.
     // Re-fetch payloads after virtual deletion; do not cache them across callbacks.
     // Delete resources, then erase the group's string nodes before advancing groups.
-    while ((CameraOwnedGroupIterator_GetEnd(&groupEnd, ((CCameraWork*)camera)->loadedCharacterResourceGroups), CameraOwnedGroupIterator_NotEqual(&groupIterator, &groupEnd))) {
-        CameraOwnedAnimationIterator_GetFirst(&animationIterator, (void**)(&((CameraGroupValue*)CameraOwnedGroupIterator_GetEntry(&groupIterator))->strings));
-        while ((CameraOwnedAnimationIterator_GetEnd(&animationEnd, &((CameraGroupValue*)CameraOwnedGroupIterator_GetEntry(&groupIterator))->strings), CameraOwnedAnimationIterator_NotEqual(&animationIterator, &animationEnd))) {
+    while ((CameraOwnedGroupIterator_GetEnd(&groupEnd, ((CCameraWork*)camera)->loadedCharacterResourceGroups),
+            CameraOwnedGroupIterator_NotEqual(&groupIterator, &groupEnd))) {
+        CameraOwnedAnimationIterator_GetFirst(
+            &animationIterator,
+            (void**)(&((CameraGroupValue*)CameraOwnedGroupIterator_GetEntry(&groupIterator))->strings));
+        while ((CameraOwnedAnimationIterator_GetEnd(
+                    &animationEnd, &((CameraGroupValue*)CameraOwnedGroupIterator_GetEntry(&groupIterator))->strings),
+                CameraOwnedAnimationIterator_NotEqual(&animationIterator, &animationEnd))) {
             if (((CameraAnimationValue*)CameraOwnedAnimationIterator_GetEntry(&animationIterator))->resource) {
                 delete ((CameraAnimationValue*)CameraOwnedAnimationIterator_GetEntry(&animationIterator))->resource;
-                (void*&) ((CameraAnimationValue*)CameraOwnedAnimationIterator_GetEntry(&animationIterator))->resource = (void*)zero;
+                (void*&)((CameraAnimationValue*)CameraOwnedAnimationIterator_GetEntry(&animationIterator))->resource =
+                    (void*)zero;
             }
             CameraOwnedAnimationIterator_PostIncrement(&previousAnimation, &animationIterator, 0);
         }
-        CameraResourceLookupTree_Clear(&((CameraGroupValue*)CameraOwnedGroupIterator_GetEntry(&groupIterator))->strings);
+        CameraResourceLookupTree_Clear(
+            &((CameraGroupValue*)CameraOwnedGroupIterator_GetEntry(&groupIterator))->strings);
         CameraOwnedGroupIterator_PostIncrement(&previousGroup, &groupIterator, 0);
     }
     // Phase 2: no nested resources/nodes remain; erase the outer group nodes.
@@ -510,7 +555,8 @@ void* ResourceGroups_FindNamedValue(void* self, unsigned int key, const char* te
             node = ((ResourceGroupNode*)node)->right;
         }
     }
-    if (groupPosition == &((CameraGroupMap*)((CCameraWork*)self)->loadedCharacterResourceGroups)->root || key < ((ResourceGroupNode*)groupPosition)->key) {
+    if (groupPosition == &((CameraGroupMap*)((CCameraWork*)self)->loadedCharacterResourceGroups)->root ||
+        key < ((ResourceGroupNode*)groupPosition)->key) {
         groupPosition = &((CameraGroupMap*)((CCameraWork*)self)->loadedCharacterResourceGroups)->root;
     }
     if (groupPosition == &((CameraGroupMap*)((CCameraWork*)self)->loadedCharacterResourceGroups)->root) {
@@ -577,7 +623,8 @@ void* ResourceGroups_FindNamedValue(void* self, unsigned int key, const char* te
         unsigned int bestLength;
         const char* bestData;
         if ((bestMarker >> 31) == 0) {
-            bestLength = (*(unsigned char*)&((ResourceStringNode*)candidateNode)->stringFlags) & kInlineStringLengthMask;
+            bestLength =
+                (*(unsigned char*)&((ResourceStringNode*)candidateNode)->stringFlags) & kInlineStringLengthMask;
             bestData = (const char*)&((ResourceStringNode*)candidateNode)->stringFlags + 1;
         } else {
             bestLength = ((ResourceStringNode*)candidateNode)->heapLength;
@@ -611,7 +658,9 @@ void* ResourceGroups_FindNamedValue(void* self, unsigned int key, const char* te
     if (queryOwnsHeap) {
         appFreeUni__FPv((void*)query[2]);
     }
-    return candidateNode == &((ResourceGroupNode*)groupPosition)->stringRoot ? 0 : ((ResourceStringNode*)candidateNode)->value;
+    return candidateNode == &((ResourceGroupNode*)groupPosition)->stringRoot
+               ? 0
+               : ((ResourceStringNode*)candidateNode)->value;
 }
 #pragma use_lmw_stmw reset
 #pragma opt_propagation reset

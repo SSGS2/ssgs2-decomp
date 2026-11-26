@@ -1,9 +1,11 @@
-// Translation unit 0x8040B210-0x8040B260 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Standard reverb effect, second part: processes the auxiliary sample buffers of the
+// reverb work object for its three channels.
 
 #include "classes/FxReverbStdWork.h"
 
-enum { kReverbChannelCount = 3 };
+enum {
+    kReverbChannelCount = 3
+};
 
 extern "C" {
 

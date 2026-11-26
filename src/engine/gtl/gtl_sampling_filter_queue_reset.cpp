@@ -1,8 +1,11 @@
-// Translation unit 0x803F5C5C-0x803F5F00 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Reset of the sampling-filter queue: releases the retained samples and surplus pages of the
+// streaming filter gtl::CSamplingFilter, keeping the pointer ring for reuse.
+// The queue's paged storage layout is described below.
+
+#include "classes/gtl_CSamplingFilter.h"
 // Sampling-filter queue reset (streaming infrastructure; no gameplay tuning).
 // API: gtl_CSamplingFilter_ResetQueue empties the retained-sample queue before
-// gtl_IFilter_SetState transitions the base to numeric state 0. Queue storage
+// gtl::IFilter::SetState transitions the base to numeric state 0. Queue storage
 // layout and reference-release policy are defined below; no sample bytes move.
 // Caller must stop concurrent producers/consumers before resetting or destroying.
 
@@ -13,15 +16,23 @@
 // counts live entries. Reset releases sample references and surplus pages, but
 // keeps the pointer ring and up to two slots (including the sentinel) for reuse.
 enum SamplingQueueLayout {
-    kEntriesPerPage = 128, kPageShift = 7, kEntryMask = 127,
-    kRetainedPageSlots = 2, kEmptyEntryOffset = 64
+    kEntriesPerPage = 128,
+    kPageShift = 7,
+    kEntryMask = 127,
+    kRetainedPageSlots = 2,
+    kEmptyEntryOffset = 64
 };
 
-struct RefBase { int refs; }; // Ref adds its virtual table after this reference count.
-struct Ref : RefBase { 
-virtual ~Ref();
+struct RefBase {
+    int refs;
+}; // Ref adds its virtual table after this reference count.
+struct Ref : RefBase {
+    virtual ~Ref();
 };
-struct Entry { Ref* object; unsigned consumedBytes; }; // Byte cursor within the retained sample.
+struct Entry {
+    Ref* object;
+    unsigned consumedBytes;
+}; // Byte cursor within the retained sample.
 
 struct Ring {
     Entry** node;
@@ -39,8 +50,10 @@ struct Ring {
     Ring& advance(int amount) {
         int slotCapacity = end - begin;
         int slotIndex = amount + (node - begin);
-        if (slotIndex < 0) slotIndex += slotCapacity;
-        else if (slotIndex >= slotCapacity) slotIndex -= slotCapacity;
+        if (slotIndex < 0)
+            slotIndex += slotCapacity;
+        else if (slotIndex >= slotCapacity)
+            slotIndex -= slotCapacity;
         node = begin + slotIndex;
         return *this;
     }
@@ -57,7 +70,8 @@ struct RingIterator {
         ++item;
         if (item == *node + kEntriesPerPage) {
             ++node;
-            if (node == end) node = begin;
+            if (node == end)
+                node = begin;
             item = *node;
         }
     }
@@ -65,20 +79,21 @@ struct RingIterator {
 
 struct Filter {
     char pad[0x14];
-    unsigned sourceWord;       // +0x14: upstream source address, despite this legacy name; cleared on reset.
+    unsigned sourceWord; // +0x14: upstream source address, despite this legacy name; cleared on reset.
     unsigned unknown18;
-    unsigned firstEntryIndex;      // +0x1C: entry origin within the logical page sequence.
-    unsigned entryCount;        // +0x20: live entry count.
+    unsigned firstEntryIndex;  // +0x1C: entry origin within the logical page sequence.
+    unsigned entryCount;       // +0x20: live entry count.
     Entry** pageSlots;         // +0x24: owned page-pointer ring allocation.
-    unsigned firstPageSlot;        // +0x28: first page-pointer slot index.
-    unsigned pageSlotCount;       // +0x2C: logical page-pointer slots, including the sentinel.
-    unsigned pageSlotCapacity;    // +0x30: ring capacity in pointer slots.
+    unsigned firstPageSlot;    // +0x28: first page-pointer slot index.
+    unsigned pageSlotCount;    // +0x2C: logical page-pointer slots, including the sentinel.
+    unsigned pageSlotCapacity; // +0x30: ring capacity in pointer slots.
     // Borrow an iterator at an absolute entry position (offset already included).
     RingIterator at(unsigned position) {
         Ring ring(pageSlots, firstPageSlot, pageSlotCapacity);
         Ring& selected = ring.advance(position >> kPageShift);
         Entry* block = pageSlotCount == 0 ? 0 : *selected.node;
-        RingIterator result = {selected.node, selected.begin, selected.originSlot, selected.end, block + (position & kEntryMask)};
+        RingIterator result = {selected.node, selected.begin, selected.originSlot, selected.end,
+                               block + (position & kEntryMask)};
         return result;
     }
     // Compute the one-past-last address from offset+size; do not dereference the result.
@@ -93,7 +108,7 @@ struct Filter {
 
 extern "C" {
 void gtl_Free(void*);
-void gtl_IFilter_SetState(void*, int);
+}
 #pragma opt_propagation off
 // Preserve the expanded ring/iterator expressions in this function: propagation
 // must not fold the iterator snapshots into subsequent mutable member reads.
@@ -119,34 +134,38 @@ void gtl_IFilter_SetState(void*, int);
 // It is written only AFTER queue cleanup, so state observers see an empty queue
 // at that initial state. It is not the entry count or a reset success code.
 // The setter is a plain void state-word write; there is no failure or rollback.
-int gtl_CSamplingFilter_ResetQueue(Filter* self) {
+int gtl::CSamplingFilter::ResetQueue() {
+    Filter* self = (Filter*)this;
     // Phase 1: release each live reference before discarding the logical entry range.
     self->sourceWord = 0;
     unsigned position = self->firstEntryIndex;
     Ring ring(self->pageSlots, self->firstPageSlot, self->pageSlotCapacity);
     Ring& selected = ring.advance(position >> kPageShift);
     Entry* block = self->pageSlotCount == 0 ? 0 : *selected.node;
-    RingIterator temporary = {selected.node, selected.begin, selected.originSlot, selected.end, block + (position & kEntryMask)};
+    RingIterator temporary = {selected.node, selected.begin, selected.originSlot, selected.end,
+                              block + (position & kEntryMask)};
     RingIterator iterator = temporary;
     while (iterator.item != self->endItem()) {
         Ref* object = iterator.item->object;
-        if (object && --object->refs == 0) delete object;
+        if (object && --object->refs == 0)
+            delete object;
         iterator.next();
     }
     self->entryCount = 0;
     // Phase 2: trim front page storage while retaining two pointer slots for reuse.
     while (self->pageSlotCount > kRetainedPageSlots) {
         gtl_Free(self->pageSlots[self->firstPageSlot]);
-        if (++self->firstPageSlot == self->pageSlotCapacity) self->firstPageSlot = 0;
+        if (++self->firstPageSlot == self->pageSlotCapacity)
+            self->firstPageSlot = 0;
         --self->pageSlotCount;
     }
-    if (self->pageSlotCount != 0) self->firstEntryIndex = kEmptyEntryOffset;
+    if (self->pageSlotCount != 0)
+        self->firstEntryIndex = kEmptyEntryOffset;
     // Phase 3: publish base state 0 only after releasing entries/trimming pages.
-    gtl_IFilter_SetState(self, 0);
+    SetState(0);
     return 1;
 }
 #pragma opt_propagation reset
 #pragma opt_common_subs reset
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
-} // extern "C"

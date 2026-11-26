@@ -18,12 +18,13 @@
 // borrowed. WTitleFont_ReleaseGlyphResources is the release API. The WFixedFont
 // message-resource path uses NewObj/its shared header, not the TitleFont atlas.
 #include "classes/WFixedFont.h"
-// Translation unit 0x8021B01C-0x8021C59C (7 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CAppFontResource.h"
+#include "classes/CMsgDraw.h"
+#include "classes/WOverlay.h"
 extern "C" {
 extern "C" void* __nwa__FUl(unsigned int);
 extern "C" void* CreateSharedTextureResource__FPCci(void*, int);
@@ -59,14 +60,12 @@ extern "C" FontMarkupStringPool fontMarkupStrings;
 extern "C" void __dla__FPv(void*);
 extern "C" void* __nw__FUl(unsigned int);
 extern "C" void __dl__FPv(void*);
-extern "C" void __ct__8WOverlayFv(void*);
 extern "C" void* appMallocUni__FUl(unsigned int);
-extern "C" void CAppFontResource_ctor(void*);
-extern "C" void CMsgDraw_Ctor(void*, void*);
 extern "C" void PairVector_InitReserved(void*);
 extern "C" void MessageDrawPairList_Dtor(void*);
 extern "C" void PointerIntVector_AppendPair(void*, void*, int);
-extern "C" void Sprite_DrawClippedTexturedQuad(void*, void*, void*, float*, float*, float, unsigned int, unsigned int, int, int);
+extern "C" void Sprite_DrawClippedTexturedQuad(void*, void*, void*, float*, float*, float, unsigned int, unsigned int,
+                                               int, int);
 extern "C" unsigned int __vt__5WFont[];
 extern "C" unsigned int __vt__10WFixedFont[];
 extern "C" unsigned int s_messageDrawPairList[];
@@ -88,19 +87,38 @@ extern "C" const float kFloat_0_5_FontSpacing;
 // glyphAdvances[1] uses measured rightmost ink offsets for every glyph.
 // advanceMode = (option == 0) selects measured table 1 when option is zero.
 // Owned arrays use new[]/delete[]; retained native interfaces use packed refs.
-enum FontOptions { kScaleToViewport = 0x100, kGlyphInkThreshold = 50, kDigitCount = 10,
-    kAdvanceTableCount = 2, kSpaceByte = 0x20 };
+enum FontOptions {
+    kScaleToViewport = 0x100,
+    kGlyphInkThreshold = 50,
+    kDigitCount = 10,
+    kAdvanceTableCount = 2,
+    kSpaceByte = 0x20
+};
 enum AtlasStorageProtocol {
-    kAtlasPlatform = 7, kAtlasLevelZero = 0, kAtlasMipLevelCount = 1,
-    kAtlasIndexBytes1 = 1, kAtlasIndexBytes2 = 2, kAtlasIndexBytes4 = 4,
+    kAtlasPlatform = 7,
+    kAtlasLevelZero = 0,
+    kAtlasMipLevelCount = 1,
+    kAtlasIndexBytes1 = 1,
+    kAtlasIndexBytes2 = 2,
+    kAtlasIndexBytes4 = 4,
     kAtlasTwoPlanePaletteFormatSuffix = 6
 };
 // These describe which bytes imageAverage samples, without guessing a platform format.
-enum InkByteOrder { kAverageFourBytes = 0, kSkipByteZero = 1, kUseFirstThreeBytes = 2 };
+enum InkByteOrder {
+    kAverageFourBytes = 0,
+    kSkipByteZero = 1,
+    kUseFirstThreeBytes = 2
+};
 // Observed image-format codes; no unverified platform/color names are assigned.
-enum AtlasInkFormatCode { kInkFormatBase = 0x3e, kInkCode3E = 0x3e,
-    kInkCode3F = 0x3f, kInkCode41 = 0x41, kInkCode4B = 0x4b,
-    kInkCode4C = 0x4c, kInkCode4E = 0x4e };
+enum AtlasInkFormatCode {
+    kInkFormatBase = 0x3e,
+    kInkCode3E = 0x3e,
+    kInkCode3F = 0x3f,
+    kInkCode41 = 0x41,
+    kInkCode4B = 0x4b,
+    kInkCode4C = 0x4c,
+    kInkCode4E = 0x4e
+};
 
 // WTitleFont atlas implementation: owns image interfaces and advance arrays.
 // This is independent of WFixedFont's message-resource layout (NewObj below).
@@ -110,22 +128,22 @@ struct Obj {
     char padding1[0x38 - 0x2C];
     float glyphScale; // 0x38
     char padding2[0xA0 - 0x3C];
-    void** imageNames; // 0xA0
-    int imageCount; // 0xA4
-    int glyphWidth; // 0xA8
-    int glyphHeight; // 0xAC
-    int atlasWidth; // 0xB0
-    int atlasHeight; // 0xB4
-    int configuredRows; // 0xB8
-    int characterTable; // 0xBC
-    void* imageResources; // 0xC0
+    void** imageNames;      // 0xA0
+    int imageCount;         // 0xA4
+    int glyphWidth;         // 0xA8
+    int glyphHeight;        // 0xAC
+    int atlasWidth;         // 0xB0
+    int atlasHeight;        // 0xB4
+    int configuredRows;     // 0xB8
+    int characterTable;     // 0xBC
+    void* imageResources;   // 0xC0
     void* glyphAdvances[2]; // 0xC4
-    int advanceMode; // 0xCC
-    void* characters; // 0xD0
-    int glyphCount; // 0xD4
-    int glyphsPerImage; // 0xD8
-    int glyphsPerRow; // 0xDC
-    int loadedImageCount; // 0xE0
+    int advanceMode;        // 0xCC
+    void* characters;       // 0xD0
+    int glyphCount;         // 0xD4
+    int glyphsPerImage;     // 0xD8
+    int glyphsPerRow;       // 0xDC
+    int loadedImageCount;   // 0xE0
 };
 
 // WFixedFont implementation: owns a CAppFontResource/CMsgDraw pair, not an atlas.
@@ -166,7 +184,16 @@ struct Arg {
 // width/height: glyph cell pixels; totalW/totalH: configured atlas pixels.
 // rows is retained metadata; characterLookupAddress is an address (not an index).
 // Initialization configuration for WTitleFont atlas images; all pointers borrowed.
-struct InitArg { void** images; int count; int width; int height; int totalW; int totalH; int rows; int characterLookupAddress; };
+struct InitArg {
+    void** images;
+    int count;
+    int width;
+    int height;
+    int totalW;
+    int totalH;
+    int rows;
+    int characterLookupAddress;
+};
 void WTitleFont_ReleaseGlyphResources(Obj*);
 
 extern "C" void __dt__Q23std12length_errorFv(void*);
@@ -180,13 +207,17 @@ extern "C" void* memset(void*, int, unsigned int);
 #pragma opt_strength_reduction off
 // Retain a texture resource using its packed 16-bit reference count.
 static inline void addRef(void* p) {
-    struct Ref { CW_BITS2( unsigned int count : 16, unsigned int flags : 16) };
+    struct Ref {
+        CW_BITS2(unsigned int count : 16, unsigned int flags : 16)
+    };
     ++((Ref*)p)->count;
 }
 
 // Release one reference and return the remaining packed reference count.
 static inline int releaseRef(void* p) {
-    struct Ref { CW_BITS2( unsigned int count : 16, unsigned int flags : 16) };
+    struct Ref {
+        CW_BITS2(unsigned int count : 16, unsigned int flags : 16)
+    };
     --((Ref*)p)->count;
     return ((Ref*)p)->count;
 }
@@ -227,26 +258,27 @@ struct ImgBuffer {
 // Per-image scan owner: retains texture/palette interfaces and owns both CPU
 // copies. data aliases buffer.begin after a successful level lock/conversion.
 struct ImgData {
-    void* texture; // 0x00
-    unsigned int pixelFormat; // 0x04
-    int w; // 0x08
-    int h; // 0x0C
-    int flag; // 0x10
-    int reserved14; // 0x14
-    unsigned char* data; // 0x18
-    ImgBuffer buffer; // 0x1C
+    void* texture;                  // 0x00
+    unsigned int pixelFormat;       // 0x04
+    int w;                          // 0x08
+    int h;                          // 0x0C
+    int flag;                       // 0x10
+    int reserved14;                 // 0x14
+    unsigned char* data;            // 0x18
+    ImgBuffer buffer;               // 0x1C
     unsigned int pixelElementBytes; // 0x28: BYTES PER PIXEL/INDEX, never row pitch
-    unsigned int requiredBytes; // 0x2C
-    void* palette; // 0x30
-    unsigned char* paletteBytes; // 0x34
-    unsigned int paletteFormat; // 0x38
-    unsigned int padding3c; // 0x3C
-    unsigned int paletteCount; // 0x40
-    unsigned int paletteEntryBytes;// 0x44: bytes per decoded palette entry
+    unsigned int requiredBytes;     // 0x2C
+    void* palette;                  // 0x30
+    unsigned char* paletteBytes;    // 0x34
+    unsigned int paletteFormat;     // 0x38
+    unsigned int padding3c;         // 0x3C
+    unsigned int paletteCount;      // 0x40
+    unsigned int paletteEntryBytes; // 0x44: bytes per decoded palette entry
 
     // Initialize owned buffer/palette and retained-interface handles to null.
-    ImgData() : texture(0), data(0), pixelElementBytes(0), requiredBytes(0),
-                palette(0), paletteBytes(0), paletteCount(0), paletteEntryBytes(0) {}
+    ImgData()
+        : texture(0), data(0), pixelElementBytes(0), requiredBytes(0), palette(0), paletteBytes(0), paletteCount(0),
+          paletteEntryBytes(0) {}
 
     // Release retained native interfaces and the copied palette bytes.
     ~ImgData() {
@@ -273,54 +305,65 @@ struct ImgData {
 // width/height of the top mip level at +0x1C/+0x20 (other words unused here).
 struct ImgInfo {
     int platformFormat; // 0x00
-    int v4; // 0x04
-    int v8; // 0x08
-    int vC; // 0x0C
-    int v10; // 0x10
-    int v14; // 0x14
-    int v18; // 0x18
-    int w; // 0x1C
-    int h; // 0x20
+    int v4;             // 0x04
+    int v8;             // 0x08
+    int vC;             // 0x0C
+    int v10;            // 0x10
+    int v14;            // 0x14
+    int v18;            // 0x18
+    int w;              // 0x1C
+    int h;              // 0x20
 };
 
 // Result of locking a texture level: pointer to the raw pixel data at +4.
 struct BufInfo {
-    int v0; // 0x00
+    int v0;       // 0x00
     void* pixels; // 0x04
 };
 
 // Palette description: platform entry-format code at +0, palette type code at +8 (used to look up the entry count).
 struct PalInfo {
     int platformFormat; // 0x00
-    int v4; // 0x04
-    int typeCode; // 0x08
+    int v4;             // 0x04
+    int typeCode;       // 0x08
     int vC;
     int v10;
 };
 
 struct LenErr {
-    void* vt; void* data; void* rep;
+    void* vt;
+    void* data;
+    void* rep;
 };
 struct StrObj {
-    void* buf; void* flag;
+    void* buf;
+    void* flag;
     // Guard a newly allocated exception message until the shared rep takes it.
     StrObj(void* b, void* f) : buf(b), flag(f) {}
     // Delete the message unless release() transferred ownership.
-    ~StrObj() { if (buf) __dla__FPv(buf); }
+    ~StrObj() {
+        if (buf)
+            __dla__FPv(buf);
+    }
     // Transfer message ownership to the exception representation.
-    void* release() { void* p = buf; buf = 0; return p; }
+    void* release() {
+        void* p = buf;
+        buf = 0;
+        return p;
+    }
 };
 
 // Construct and throw a length_error while guarding the temporary message buffer.
 static inline void ThrowImageLengthError() {
-        LenErr le;
-        char flag_ = 0;
-        void* msg_ = fontMarkupStrings.lengthError;
-        le.vt = __vt__Q23std11logic_error;
-        unsigned int len_ = strlen((char*)msg_) + 1;
-        void* buf_ = __nwa__FUl(len_ * 2 - len_);
-        le.data = buf_;
-        { StrObj guard_(buf_, &flag_);
+    LenErr le;
+    char flag_ = 0;
+    void* msg_ = fontMarkupStrings.lengthError;
+    le.vt = __vt__Q23std11logic_error;
+    unsigned int len_ = strlen((char*)msg_) + 1;
+    void* buf_ = __nwa__FUl(len_ * 2 - len_);
+    le.data = buf_;
+    {
+        StrObj guard_(buf_, &flag_);
         void* rep_ = __nw__FUl(0x10);
         if (rep_ != 0) {
             ((int*)rep_)[1] = 1;
@@ -329,12 +372,12 @@ static inline void ThrowImageLengthError() {
             ((void**)rep_)[3] = buf_;
         }
         le.rep = rep_;
-        guard_.release(); }
-        strcpy((char*)le.data, (char*)msg_);
-        le.vt = __vt__Q23std12length_error;
-        __throw(fontMarkupStrings.lengthErrorType, &le,
-                (void*)__dt__Q23std12length_errorFv);
+        guard_.release();
     }
+    strcpy((char*)le.data, (char*)msg_);
+    le.vt = __vt__Q23std12length_error;
+    __throw(fontMarkupStrings.lengthErrorType, &le, (void*)__dt__Q23std12length_errorFv);
+}
 
 // Return the NEW total allocation size (not a capacity increase request) when a byte vector of size `capacity`
 // must grow by `need` more bytes: grows by max(need, 60% / 50% of the old size by tier), throws length_error on overflow.
@@ -418,8 +461,8 @@ static inline unsigned int AtlasLinearRowPitchBytes(int widthPixels, unsigned in
 
 // Return total mip storage in bytes, using the platform format rather than the converted format.
 static inline unsigned int AtlasMipStorageBytes(int widthPixels, int heightPixels, int platformFormat) {
-    return (unsigned int)Texture_CalculateMipStorageSize((void*)widthPixels, (void*)heightPixels,
-        kAtlasMipLevelCount, (void*)platformFormat);
+    return (unsigned int)Texture_CalculateMipStorageSize((void*)widthPixels, (void*)heightPixels, kAtlasMipLevelCount,
+                                                         (void*)platformFormat);
 }
 
 // Load atlas images and scan glyph cells to build fixed and measured advance tables.
@@ -485,7 +528,8 @@ void FontAtlas_InitImagesAndGlyphWidths(TitleFontAtlasView* self, TitleFontAtlas
         for (; imageIndex < cfg->count; imageIndex++, imageOffset += 4) {
             void* imageResource = CreateSharedTextureResource__FPCci(*(void**)((char*)cfg->images + imageOffset), 0);
             *(void**)((char*)self->imageResources + imageOffset) = imageResource;
-            while (Get__15ISharedResourceFv(*(void**)((char*)self->imageResources + imageOffset)) == 0) {}
+            while (Get__15ISharedResourceFv(*(void**)((char*)self->imageResources + imageOffset)) == 0) {
+            }
             void* palette = ISharedResource_GetPaletteObject(*(void**)((char*)self->imageResources + imageOffset));
             void* texture = ISharedResource_GetLocked(*(void**)((char*)self->imageResources + imageOffset));
 
@@ -503,7 +547,8 @@ void FontAtlas_InitImagesAndGlyphWidths(TitleFontAtlasView* self, TitleFontAtlas
             // Phase 3: copy level zero to a linear CPU buffer. Native platform-7
             // layouts are converted before any per-pixel glyph queries.
             Texture_GetLevelDescription(texture, kAtlasLevelZero, &textureDescription);
-            unsigned int format = (unsigned int)gtl_ImageFormat_FromPlatformFormat((void*)textureDescription.platformFormat, kAtlasPlatform);
+            unsigned int format = (unsigned int)gtl_ImageFormat_FromPlatformFormat(
+                (void*)textureDescription.platformFormat, kAtlasPlatform);
             scanImage.h = textureDescription.h;
             scanImage.pixelFormat = format;
             scanImage.w = textureDescription.w;
@@ -511,7 +556,8 @@ void FontAtlas_InitImagesAndGlyphWidths(TitleFontAtlasView* self, TitleFontAtlas
             // These legacy void* parameters/returns carry integer units in the Wii ABI.
             // Keep row pitch (bytes per row) distinct from scanImage.pixelElementBytes (bytes per pixel).
             unsigned int linearRowPitchBytes = AtlasLinearRowPitchBytes(textureDescription.w, scanImage.pixelFormat);
-            scanImage.requiredBytes = AtlasMipStorageBytes(textureDescription.w, textureDescription.h, textureDescription.platformFormat);
+            scanImage.requiredBytes =
+                AtlasMipStorageBytes(textureDescription.w, textureDescription.h, textureDescription.platformFormat);
 
             BufInfo lockedLevel;
             if (Texture_LockLevel(texture, kAtlasLevelZero, &lockedLevel, 0, 0) != 0) {
@@ -520,8 +566,10 @@ void FontAtlas_InitImagesAndGlyphWidths(TitleFontAtlasView* self, TitleFontAtlas
                     unsigned int bytesToAppend = scanImage.requiredBytes - scanImage.buffer.size;
                     // 0x8021B01C unit: fill in place or replace the buffer, then join.
                     do {
-                        if (bytesToAppend > scanImage.buffer.cap || scanImage.buffer.size > scanImage.buffer.cap - bytesToAppend) {
-                            imageCapacity(scanImage.buffer.cap, (scanImage.buffer.size + bytesToAppend) - scanImage.buffer.cap);
+                        if (bytesToAppend > scanImage.buffer.cap ||
+                            scanImage.buffer.size > scanImage.buffer.cap - bytesToAppend) {
+                            imageCapacity(scanImage.buffer.cap,
+                                          (scanImage.buffer.size + bytesToAppend) - scanImage.buffer.cap);
                         } else {
                             memset(scanImage.buffer.begin + scanImage.buffer.size, 0, bytesToAppend);
                             scanImage.buffer.size = scanImage.buffer.size + bytesToAppend;
@@ -535,7 +583,8 @@ void FontAtlas_InitImagesAndGlyphWidths(TitleFontAtlasView* self, TitleFontAtlas
                             growth.capacity = 0;
                             growth.owner = &scanImage.buffer.cap;
                             growth.tailOffset = 0;
-                            unsigned int replacementCapacity = imageCapacity(scanImage.buffer.cap, (scanImage.buffer.size + bytesToAppend) - scanImage.buffer.cap);
+                            unsigned int replacementCapacity = imageCapacity(
+                                scanImage.buffer.cap, (scanImage.buffer.size + bytesToAppend) - scanImage.buffer.cap);
                             growth.block = (unsigned char*)appMallocDummy__FUl(replacementCapacity);
                             growth.capacity = replacementCapacity;
                             growth.tailOffset = scanImage.buffer.size;
@@ -563,7 +612,9 @@ void FontAtlas_InitImagesAndGlyphWidths(TitleFontAtlasView* self, TitleFontAtlas
                 }
                 scanImage.data = scanImage.buffer.begin;
                 if (TextureFormat_IsPlatformCMPR_C8OrRGBA8((void*)textureDescription.platformFormat) != 0) {
-                    gtl_Image_CopyFromPlatform7Layout(lockedLevel.pixels, (void*)textureDescription.w, (void*)textureDescription.h, 0, scanImage.data, (void*)linearRowPitchBytes, 0, (void*)textureDescription.platformFormat);
+                    gtl_Image_CopyFromPlatform7Layout(
+                        lockedLevel.pixels, (void*)textureDescription.w, (void*)textureDescription.h, 0, scanImage.data,
+                        (void*)linearRowPitchBytes, 0, (void*)textureDescription.platformFormat);
                     scanImage.pixelFormat = (unsigned int)gtl_ImageFormat_ToSwizzled((void*)scanImage.pixelFormat);
                 } else {
                     memcpy(scanImage.data, lockedLevel.pixels, scanImage.requiredBytes);
@@ -571,16 +622,20 @@ void FontAtlas_InitImagesAndGlyphWidths(TitleFontAtlasView* self, TitleFontAtlas
                 Texture_UnlockLevel(texture, kAtlasLevelZero);
             }
 
-            scanImage.pixelElementBytes = (unsigned int)gtl_ImageFormat_GetBytesPerElement((void*)scanImage.pixelFormat);
+            scanImage.pixelElementBytes =
+                (unsigned int)gtl_ImageFormat_GetBytesPerElement((void*)scanImage.pixelFormat);
             // Phase 3b: indexed images also need a linear palette with interleaved entry bytes.
             if (scanImage.palette != 0) {
                 PalInfo paletteDescription;
                 TexturePalette_GetDescription(scanImage.palette, &paletteDescription);
-                scanImage.paletteFormat = (unsigned int)gtl_ImageFormat_FromPlatformFormat((void*)paletteDescription.platformFormat, kAtlasPlatform);
+                scanImage.paletteFormat = (unsigned int)gtl_ImageFormat_FromPlatformFormat(
+                    (void*)paletteDescription.platformFormat, kAtlasPlatform);
                 if (TextureFormat_IsPlatformCMPR_C8OrRGBA8((void*)paletteDescription.platformFormat) != 0)
                     scanImage.paletteFormat = (unsigned int)gtl_ImageFormat_ToSwizzled((void*)scanImage.paletteFormat);
-                scanImage.paletteCount = (unsigned int)TexturePalette_GetEntryCountForType((void*)paletteDescription.typeCode);
-                scanImage.paletteEntryBytes = (unsigned int)gtl_ImageFormat_GetBytesPerElement((void*)scanImage.paletteFormat);
+                scanImage.paletteCount =
+                    (unsigned int)TexturePalette_GetEntryCountForType((void*)paletteDescription.typeCode);
+                scanImage.paletteEntryBytes =
+                    (unsigned int)gtl_ImageFormat_GetBytesPerElement((void*)scanImage.paletteFormat);
                 unsigned int paletteByteCount = scanImage.paletteEntryBytes * scanImage.paletteCount;
                 if (scanImage.paletteBytes != 0) {
                     __dla__FPv(scanImage.paletteBytes);
@@ -590,7 +645,8 @@ void FontAtlas_InitImagesAndGlyphWidths(TitleFontAtlasView* self, TitleFontAtlas
                 void* paletteSourceBytes; // borrowed palette data; scanImage owns only its copy
                 if (TexturePalette_GetData(scanImage.palette, &paletteSourceBytes, 0) != 0) {
                     if (TextureFormat_IsPlatformCMPR_C8OrRGBA8((void*)paletteDescription.platformFormat) != 0) {
-                        if ((unsigned int)(paletteDescription.platformFormat + 0x80000000u) == kAtlasTwoPlanePaletteFormatSuffix) {
+                        if ((unsigned int)(paletteDescription.platformFormat + 0x80000000u) ==
+                            kAtlasTwoPlanePaletteFormatSuffix) {
                             // Plane 0 supplies the first halfword of every entry;
                             // plane 1 supplies the second. Destination entries are interleaved.
                             unsigned short* firstPlane = (unsigned short*)paletteSourceBytes;
@@ -670,7 +726,8 @@ void FontAtlas_InitImagesAndGlyphWidths(TitleFontAtlasView* self, TitleFontAtlas
 // Return a glyph advance scaled for the font and optional viewport width.
 float WTitleFont_GetAtlasGlyphAdvance(Obj* self, Arg* arg, int idx) {
     int flag = 0;
-    if (arg != 0 && (self->flags & kScaleToViewport)) flag = 1;
+    if (arg != 0 && (self->flags & kScaleToViewport))
+        flag = 1;
     float f1;
     if (flag) {
         float t = arg->viewportWidth;
@@ -693,8 +750,11 @@ void WTitleFont_ReleaseGlyphResources(Obj* self) {
             void* p = ((void**)self->imageResources)[i];
             if (p != 0) {
                 if (p != 0) {
-                    struct VObj { 
-                    virtual void v0() = 0; virtual void v1() = 0; virtual void v2() = 0; virtual void v3() = 0;
+                    struct VObj {
+                        virtual void v0() = 0;
+                        virtual void v1() = 0;
+                        virtual void v2() = 0;
+                        virtual void v3() = 0;
                     };
                     ((VObj*)p)->v1();
                     ((void**)self->imageResources)[i] = 0;
@@ -740,7 +800,8 @@ float WTitleFont_MeasureStringWidth(Obj* self, Arg* arg, const char* str) {
         }
     }
     int flag = 0;
-    if (arg != 0 && (self->flags & kScaleToViewport)) flag = 1;
+    if (arg != 0 && (self->flags & kScaleToViewport))
+        flag = 1;
     float effectiveScale;
     if (flag) {
         float viewportWidth = arg->viewportWidth;
@@ -754,7 +815,7 @@ float WTitleFont_MeasureStringWidth(Obj* self, Arg* arg, const char* str) {
 
 // Initialize the fixed-font node pool, message resources, and shared draw registration.
 NewObj* WFixedFont_Ctor(NewObj* self) {
-    __ct__8WOverlayFv(self);
+    ((WOverlay*)self)->__ct();
 #pragma opt_propagation off
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
@@ -806,16 +867,19 @@ NewObj* WFixedFont_Ctor(NewObj* self) {
     AsWFixedFont(self)->unk_A0 = 0;
     (*(int*)&AsWFixedFont(self)->messageBuffer) = 0;
     void* p = __nw__FUl(0x1C);
-    if (p != 0) CAppFontResource_ctor(p);
+    if (p != 0)
+        ((CAppFontResource*)p)->__ct();
     self->messageResource = p;
     p = __nw__FUl(0x4BC);
-    if (p != 0) CMsgDraw_Ctor(p, self->messageResource);
+    if (p != 0)
+        ((CMsgDraw*)p)->__ct(self->messageResource);
     int lbl0 = ((int&)Sing_805DC650());
     self->messageDraw = p;
     if (lbl0 == 0) {
         if (!s_pointerPairListInitialized) {
             PairVector_InitReserved(s_messageDrawPairList);
-            __register_global_object(s_messageDrawPairList, (void*)MessageDrawPairList_Dtor, s_messageDrawListDtorRegistration);
+            __register_global_object(s_messageDrawPairList, (void*)MessageDrawPairList_Dtor,
+                                     s_messageDrawListDtorRegistration);
             s_pointerPairListInitialized = 1;
         }
         ((int&)Sing_805DC650()) = (int)s_messageDrawPairList;
@@ -845,7 +909,8 @@ float WFont_DrawAtlasGlyph(Obj* self, Arg* arg, int idx, float screenX, float sc
     uvOriginAndExtent[3] = (float)self->glyphHeight / (float)self->atlasHeight;
 
     unsigned int flag = 0;
-    if (arg != 0 && (self->flags & kScaleToViewport)) flag = 1;
+    if (arg != 0 && (self->flags & kScaleToViewport))
+        flag = 1;
 
     if (flag) {
         float viewportWidthForHeight = arg->viewportWidth;
@@ -856,7 +921,8 @@ float WFont_DrawAtlasGlyph(Obj* self, Arg* arg, int idx, float screenX, float sc
     flag = 0;
 
     float drawHeight = (float)self->glyphHeight * heightScale;
-    if (arg != 0 && (self->flags & kScaleToViewport)) flag = 1;
+    if (arg != 0 && (self->flags & kScaleToViewport))
+        flag = 1;
     float widthScale;
     if (flag) {
         float viewportWidthForWidth = arg->viewportWidth;
@@ -872,11 +938,13 @@ float WFont_DrawAtlasGlyph(Obj* self, Arg* arg, int idx, float screenX, float sc
     screenRect[1] = screenY;
     screenRect[3] = drawHeight;
 
-    Sprite_DrawClippedTexturedQuad(self, arg, ((void**)self->imageResources)[idx / self->glyphsPerImage], uvOriginAndExtent, screenRect,
-                 kFloat_0_Font, (unsigned int)c1, (unsigned int)c2, 0, 1);
+    Sprite_DrawClippedTexturedQuad(self, arg, ((void**)self->imageResources)[idx / self->glyphsPerImage],
+                                   uvOriginAndExtent, screenRect, kFloat_0_Font, (unsigned int)c1, (unsigned int)c2, 0,
+                                   1);
 
     flag = 0;
-    if (0 != arg && (self->flags & kScaleToViewport)) flag = 1;
+    if (0 != arg && (self->flags & kScaleToViewport))
+        flag = 1;
 
     if (!(!(flag))) {
         float viewportWidthForAdvance = arg->viewportWidth;
@@ -893,8 +961,8 @@ float WFont_DrawAtlasGlyph(Obj* self, Arg* arg, int idx, float screenX, float sc
 // the preceding character's advance (zero initially). Space uses half a cell
 // without glyph/viewport scaling here; the measurement routine scales its sum.
 // Draw each recognized atlas character and return the horizontal distance advanced.
-float WTitleFont_DrawString(Obj* self, Arg* arg, float screenX, float screenY,
-                  const char* chars, int p7, int p8, int p9) {
+float WTitleFont_DrawString(Obj* self, Arg* arg, float screenX, float screenY, const char* chars, int p7, int p8,
+                            int p9) {
     float initialX = screenX;
     float baselineY = screenY;
     float previousAdvance = kFloat_0_Font;
@@ -913,11 +981,10 @@ float WTitleFont_DrawString(Obj* self, Arg* arg, float screenX, float screenY,
             float uvOriginAndExtent[4] = {
                 (float)(self->glyphWidth * (cellIndex % self->glyphsPerRow)) / (float)self->atlasWidth,
                 (float)(self->glyphHeight * (cellIndex / self->glyphsPerRow)) / (float)self->atlasHeight,
-                (float)self->glyphWidth / (float)self->atlasWidth,
-                (float)self->glyphHeight / (float)self->atlasHeight
-            };
+                (float)self->glyphWidth / (float)self->atlasWidth, (float)self->glyphHeight / (float)self->atlasHeight};
             int flag = 0;
-            if (arg != 0 && (self->flags & kScaleToViewport)) flag = 1;
+            if (arg != 0 && (self->flags & kScaleToViewport))
+                flag = 1;
             float scale;
             if (flag) {
                 float t = arg->viewportWidth;
@@ -928,7 +995,8 @@ float WTitleFont_DrawString(Obj* self, Arg* arg, float screenX, float screenY,
             }
             float drawHeight = (float)self->glyphHeight * scale;
             flag = 0;
-            if (arg != 0 && (self->flags & kScaleToViewport)) flag = 1;
+            if (arg != 0 && (self->flags & kScaleToViewport))
+                flag = 1;
             if (flag) {
                 float t = arg->viewportWidth;
                 scale = self->glyphScale;
@@ -936,12 +1004,17 @@ float WTitleFont_DrawString(Obj* self, Arg* arg, float screenX, float screenY,
             } else {
                 scale = self->glyphScale;
             }
-            screenRect[0] = penX; screenRect[1] = baselineY; screenRect[2] = (float)self->glyphWidth * scale; screenRect[3] = drawHeight;
+            screenRect[0] = penX;
+            screenRect[1] = baselineY;
+            screenRect[2] = (float)self->glyphWidth * scale;
+            screenRect[3] = drawHeight;
             typedef void (*Fn9)(void*, void*, void*, float*, float*, unsigned int, unsigned int, int, int, float);
-            ((Fn9)Sprite_DrawClippedTexturedQuad)(self, arg, ((void**)self->imageResources)[idx / self->glyphsPerImage], uvOriginAndExtent, screenRect,
-                        (unsigned int)p7, (unsigned int)p8, 0, 1, kFloat_0_Font);
+            ((Fn9)Sprite_DrawClippedTexturedQuad)(self, arg, ((void**)self->imageResources)[idx / self->glyphsPerImage],
+                                                  uvOriginAndExtent, screenRect, (unsigned int)p7, (unsigned int)p8, 0,
+                                                  1, kFloat_0_Font);
             flag = 0;
-            if (arg != 0 && (self->flags & kScaleToViewport)) flag = 1;
+            if (arg != 0 && (self->flags & kScaleToViewport))
+                flag = 1;
             if (flag) {
                 float t = arg->viewportWidth;
                 scale = self->glyphScale;

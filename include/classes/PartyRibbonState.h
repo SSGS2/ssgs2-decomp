@@ -6,10 +6,10 @@
 class PartyRibbonState {
 public:
     char pad_000[0x18];
-    void* pointPositions; // 0x18: party_CPartyItemRakugakiCrayon_dtor
-    void* baseVertexTriplets; // 0x1c: party_CPartyItemRakugakiCrayon_dtor
+    void* pointPositions;      // 0x18: party_CPartyItemRakugakiCrayon_dtor
+    void* baseVertexTriplets;  // 0x1c: party_CPartyItemRakugakiCrayon_dtor
     void* fadedVertexTriplets; // 0x20: party_CPartyItemRakugakiCrayon_dtor
-    void* pointHeadings; // 0x24: party_CPartyItemRakugakiCrayon_dtor
+    void* pointHeadings;       // 0x24: party_CPartyItemRakugakiCrayon_dtor
     char pad_028[0x20];
     int bufferCount; // 0x48: party_CPartyItemRakugakiCrayon_dtor
 };

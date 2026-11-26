@@ -18,7 +18,6 @@
 // No allocation/retention in parsing/tiling. Outputs must not overlap source data.
 // Opaque header/description words retain their ABI names.
 // Original function range: 0x803D3044-0x803D4098 (merged decoder units).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 #include <types.h>
 #include "sdk_protos.h"
 
@@ -28,7 +27,7 @@ void* memset(void* dst, int c, u32 n);
 void* memcpy(void* dst, const void* src, u32 n);
 void __dl__FPv(void* p);
 
-s32 gtl_ImagePICT_IsValid(u8* arg0);
+s32 gtl_ImagePICT_IsValid(u8* fileBytes);
 s32 gtl_ImageDDS_IsValid(u8* arg0);
 
 #pragma dont_inline on
@@ -43,32 +42,55 @@ s32 gtl_ImageDDS_IsValid(u8* arg0);
 // The second argument selects a platform format table, NOT bits per pixel.
 s32 gtl_ImageFormat_FromPlatformFormat(u32 format, s32 platformLayout);
 enum ResourceImageConstants {
-    kResourceDirectoryOffset = 0x20, kResourceDirectoryEntryBytes = 0x10,
+    kResourceDirectoryOffset = 0x20,
+    kResourceDirectoryEntryBytes = 0x10,
     kResourceDirectoryEntryShift = 4, // index*16; keep shift arithmetic in resolver
     // Engine format IDs, distinct from the platform selector and GX format enum.
     // FromSwizzled (gtl_image_format_dispatch.cpp) maps the tiled member of each pair to linear.
-    kImageIndexed8Linear = 0x1E, kImageIndexed8Tiled = 0x58,
-    kImageIndexed4Linear = 0x1F, kImageIndexed4Tiled = 0x59,
-    kImageFourBitLinear = 0x21, kImageFourBitTiled = 0x5B,
-    kImageBlock4Linear = 0x2E, kImageBlock4Tiled = 0x62,
-    kImageBlock8LinearA = 0x2F, kImageBlock8TiledA = 0x63,
-    kImageBlock8LinearB = 0x30, kImageBlock8TiledB = 0x64,
-    kImageBlock8LinearC = 0x31, kImageBlock8TiledC = 0x65,
-    kImageBlock8LinearD = 0x32, kImageBlock8TiledD = 0x66,
-    kGsrTextureDescriptionTag = 0x00786574, kGsrPaletteDescriptionTag = 0x006C6170,
-    kGsrTextureDataTag = 0x64786574, kGsrPaletteDataTag = 0x646C6170,
-    kGsrSignature = 0x00727367, kNoImageFormat = -1,
-    kGimImageChunk = 4, kGimPaletteChunk = 5, kGimPlatformLayout = 8,
-    kGsrType2Layout = 4, kGsrType3Layout = 6, kGsrType5Layout = 7,
-    kGsrType1Layout = 5, kGsrType4Layout = 3,
-    kIndexed8PaletteEntries = 256, kIndexed4PaletteEntries = 16,
-    kCompressedBlockPixels = 4, kCompressedColorBlockBytes = 8,
+    kImageIndexed8Linear = 0x1E,
+    kImageIndexed8Tiled = 0x58,
+    kImageIndexed4Linear = 0x1F,
+    kImageIndexed4Tiled = 0x59,
+    kImageFourBitLinear = 0x21,
+    kImageFourBitTiled = 0x5B,
+    kImageBlock4Linear = 0x2E,
+    kImageBlock4Tiled = 0x62,
+    kImageBlock8LinearA = 0x2F,
+    kImageBlock8TiledA = 0x63,
+    kImageBlock8LinearB = 0x30,
+    kImageBlock8TiledB = 0x64,
+    kImageBlock8LinearC = 0x31,
+    kImageBlock8TiledC = 0x65,
+    kImageBlock8LinearD = 0x32,
+    kImageBlock8TiledD = 0x66,
+    kGsrTextureDescriptionTag = 0x00786574,
+    kGsrPaletteDescriptionTag = 0x006C6170,
+    kGsrTextureDataTag = 0x64786574,
+    kGsrPaletteDataTag = 0x646C6170,
+    kGsrSignature = 0x00727367,
+    kNoImageFormat = -1,
+    kGimImageChunk = 4,
+    kGimPaletteChunk = 5,
+    kGimPlatformLayout = 8,
+    kGsrType2Layout = 4,
+    kGsrType3Layout = 6,
+    kGsrType5Layout = 7,
+    kGsrType1Layout = 5,
+    kGsrType4Layout = 3,
+    kIndexed8PaletteEntries = 256,
+    kIndexed4PaletteEntries = 16,
+    kCompressedBlockPixels = 4,
+    kCompressedColorBlockBytes = 8,
     kCompressedExtendedBlockBytes = 16,
     kRgbaPlaneSeparationBytes = 0x20,
     kRgbaBlueByteOffset = kRgbaPlaneSeparationBytes + 1,
-    kPictSignature = 0x34F68053, kPictTag = 0x54434950,
-    kBmpSignature = 0x4D42, kTim2Signature = 0x324D4954,
-    kGimSignature = 0x2E47494D, kGimVersion = 0x312E3030, kGimPlatformTag = 0x00505350
+    kPictSignature = 0x34F68053,
+    kPictTag = 0x54434950,
+    kBmpSignature = 0x4D42,
+    kTim2Signature = 0x324D4954,
+    kGimSignature = 0x2E47494D,
+    kGimVersion = 0x312E3030,
+    kGimPlatformTag = 0x00505350
 };
 s32 gtl_ImageFormat_FromSwizzled(s32 format);
 s32 gtl_ImageFormat_IsPaletted(s32 format);
@@ -118,8 +140,8 @@ typedef struct GimPaletteDescription {
 #pragma pop
 
 s32 gtl_ImageFormat_GetBytesPerElement(s32 format);
-void gtl_Image_Tile4BitPixels(u8* arg0, u8* arg1, u32 arg2, u32 arg3, s32 arg4);
-void gtl_Image_Tile8Or16BitPixels(u8* arg0, u8* arg1, u32 arg2, u32 arg3, s32 arg4);
+void gtl_Image_Tile4BitPixels(u8* source, u8* destination, u32 widthPixels, u32 heightPixels, s32 bitsPerPixel);
+void gtl_Image_Tile8Or16BitPixels(u8* arg0, u8* arg1, u32 arg2, u32 arg3, s32 bytesPerPixel);
 
 // Classify the two engine compressed-format families; unknown IDs return false.
 static inline s32 IsCompressedFormat(s32 f) {
@@ -190,24 +212,21 @@ static inline u32 GetFormatBits(s32 f) {
 
 #pragma pop
 
-
 extern u32 s_resourceDataTypeByteStrides[];
-
 
 typedef struct DtorData {
     void* buffer;
     s32 count;
 } DtorData;
 
-
 typedef struct DtorData2 {
     void* entries;
     unsigned int volatile count;
 } DtorData2;
 
-
 void* gtl_ResourceFile_GetChunkElement(void* file, void* data, u32 tag, u32 index);
-void Memory_CopyAndReverseStridedBlocks(void* destination, void* source, unsigned int packedLayout, unsigned int rowStride, unsigned int rowCount);
+void Memory_CopyAndReverseStridedBlocks(void* destination, void* source, unsigned int packedLayout,
+                                        unsigned int rowStride, unsigned int rowCount);
 
 typedef struct PictDescription {
     s32 format;
@@ -221,17 +240,17 @@ typedef struct PictDescription {
 // These schemas describe record-kind-specific meanings; GsrEntry is the legacy
 // shared prefix view and its fields are kept as-is.
 struct GsrTextureRecordSchema {
-    u32 platformFormat;       // +00: interpreted using file type's platform table
-    u32 widthPixels;          // +04
-    u32 heightPixels;         // +08
-    u32 mipLevelCount;        // +0C: forwarded to the generic upload description
-    u32 unresolvedWord10;     // +10: not consumed by this unit
-    u32 imageDataByteOffset;  // +14: relative to the texd chunk's element 0
+    u32 platformFormat;      // +00: interpreted using file type's platform table
+    u32 widthPixels;         // +04
+    u32 heightPixels;        // +08
+    u32 mipLevelCount;       // +0C: forwarded to the generic upload description
+    u32 unresolvedWord10;    // +10: not consumed by this unit
+    u32 imageDataByteOffset; // +14: relative to the texd chunk's element 0
 };
 struct GsrPaletteRecordSchema {
-    u32 platformFormat;       // +00
-    u32 entryCount;           // +04: not a byte count
-    u32 paletteDataByteOffset;// +08: relative to pald element 0
+    u32 platformFormat;        // +00
+    u32 entryCount;            // +04: not a byte count
+    u32 paletteDataByteOffset; // +08: relative to pald element 0
 };
 typedef char GsrTextureSchemaSize[sizeof(GsrTextureRecordSchema) == 0x18 ? 1 : -1];
 typedef char GsrPaletteSchemaSize[sizeof(GsrPaletteRecordSchema) == 0x0C ? 1 : -1];
@@ -242,7 +261,6 @@ typedef struct GsrFile {
     u32 forwardedDataWord;
     s32 fileType;
 } GsrFile;
-
 
 typedef struct GsrEntry {
     u32 format;
@@ -267,7 +285,6 @@ typedef struct GsrDescription {
 
 #pragma pop
 
-
 #pragma push
 #pragma use_lmw_stmw on
 
@@ -278,21 +295,22 @@ typedef struct GsrDescription {
 
 #pragma pop
 
-s32 gtl_ImageGIM_GetDescription(GimDescription* arg0, GimPaletteDescription* arg1, u8* arg2);
+s32 gtl_ImageGIM_GetDescription(GimDescription* imageDescription, GimPaletteDescription* paletteDescription,
+                                u8* fileBytes);
 void* gtl_ResourceFile_GetChunkByIndex(void* arg0, s32 arg1, u32 arg2);
 void* gtl_ResourceFile_FindChunk(void* file, void* data, u32 tag);
 u32 gtl_ResourceFile_GetChunkElementCount(void* file, void* data, u32 tag);
 void* gtl_ResourceFile_GetChunkElement(void* file, void* data, u32 tag, u32 index);
 s32 gtl_ResourceFile_HasChunk(void* file, void* data, u32 tag);
-u32 gtl_Resource_GetDataTypeByteStride(s32 arg0);
+u32 gtl_Resource_GetDataTypeByteStride(s32 dataType);
 s32 gtl_ImageGSR_GetDescription(GsrDescription* out, GimPaletteDescription* paletteDesc, const GsrFile* file);
 s32 gtl_ImageGSR_GetImageData(u32* out, const GsrFile* file);
 s32 gtl_ImageGSR_GetPaletteData(u32* out, const GsrFile* file);
 void* dtor_803D35A0(DtorData2* self, int dealloc);
 void* dtor_803D361C(DtorData* this_, s32 arg1);
-s32 gtl_ImagePICT_IsValid(u8* arg0);
+s32 gtl_ImagePICT_IsValid(u8* fileBytes);
 s32 gtl_ImagePICT_GetDescription(PictDescription* desc, void* paletteDesc, u8* file);
-s32 gtl_Image_GetTiledOffset(u32 arg0, u32 arg1, u32 arg2, u32 arg3);
+s32 gtl_Image_GetTiledOffset(u32 x, u32 y, u32 rowWidth, u32 elementBytes);
 void gtl_Image_ReorderCompressedBlocks(u8* arg0, u8* arg1, u32 arg2, u32 arg3, s32 arg4, s32 arg5);
 s32 gtl_ImageTGA_IsValid(const u8* arg0);
 s32 gtl_ImageBMP_IsValid(u8* arg0);
@@ -305,8 +323,8 @@ s32 gtl_ImageGSR_IsType4(u8* arg0);
 s32 gtl_ImagePICT_Probe(u8* arg0);
 s32 gtl_ImageGIM_IsValid(u8* arg0);
 s32 gtl_ImageDDS_Probe(u8* arg0);
-void gtl_Image_Tile4BitPixels(u8* arg0, u8* arg1, u32 arg2, u32 arg3, s32 arg4);
-void gtl_Image_Tile8Or16BitPixels(u8* arg0, u8* arg1, u32 arg2, u32 arg3, s32 arg4);
+void gtl_Image_Tile4BitPixels(u8* source, u8* destination, u32 widthPixels, u32 heightPixels, s32 bitsPerPixel);
+void gtl_Image_Tile8Or16BitPixels(u8* arg0, u8* arg1, u32 arg2, u32 arg3, s32 bytesPerPixel);
 void gtl_Image_LinearToTiled(u8* arg0, u32 arg1, u32 arg2, u8* arg3, u32 arg4, u32 arg5, u32 arg6, s32 arg7);
 
 #pragma push
@@ -324,7 +342,8 @@ void gtl_Image_LinearToTiled(u8* arg0, u32 arg1, u32 arg2, u8* arg3, u32 arg4, u
 // without a minimum-one clamp. Require >=1 complete levels and nonzero dimensions
 // at every level. Changing this metadata alone cannot create the missing pixels.
 // GIM fills four words only; a caller's possible fifth description word is untouched.
-s32 gtl_ImageGIM_GetDescription(GimDescription* imageDescription, GimPaletteDescription* paletteDescription, u8* fileBytes) {
+s32 gtl_ImageGIM_GetDescription(GimDescription* imageDescription, GimPaletteDescription* paletteDescription,
+                                u8* fileBytes) {
     GimEntry* imageEntry = 0;
     GimEntry* paletteEntry = 0;
     GimChunk* chunk;
@@ -336,7 +355,8 @@ s32 gtl_ImageGIM_GetDescription(GimDescription* imageDescription, GimPaletteDesc
 loop_1:
     if (imageEntry == 0 && (s32)chunk->type == kGimImageChunk) {
         imageEntry = (GimEntry*)((u8*)chunk + chunk->child);
-        isPaletted = gtl_ImageFormat_IsPaletted(gtl_ImageFormat_FromPlatformFormat(imageEntry->format, kGimPlatformLayout));
+        isPaletted =
+            gtl_ImageFormat_IsPaletted(gtl_ImageFormat_FromPlatformFormat(imageEntry->format, kGimPlatformLayout));
     }
     if (paletteEntry == 0 && (s32)chunk->type == kGimPaletteChunk) {
         paletteEntry = (GimEntry*)((u8*)chunk + chunk->child);
@@ -497,8 +517,10 @@ u32 gtl_Resource_GetDataTypeByteStride(s32 dataType) {
 // Missing pal[0] clears palette format/count to {-1,0}. Unsupported file type
 // passes layout -1 to conversion; it does not return a validation failure.
 s32 gtl_ImageGSR_GetDescription(GsrDescription* out, GimPaletteDescription* paletteDesc, const GsrFile* file) {
-    GsrEntry* textureEntry = (GsrEntry*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord, kGsrTextureDescriptionTag, 0);
-    GsrEntry* paletteEntry = (GsrEntry*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord, kGsrPaletteDescriptionTag, 0);
+    GsrEntry* textureEntry = (GsrEntry*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord,
+                                                                         kGsrTextureDescriptionTag, 0);
+    GsrEntry* paletteEntry = (GsrEntry*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord,
+                                                                         kGsrPaletteDescriptionTag, 0);
     s32 platformLayout = kNoImageFormat;
     switch (file->fileType) {
     case 2:
@@ -541,8 +563,10 @@ s32 gtl_ImageGSR_GetDescription(GsrDescription* out, GimPaletteDescription* pale
 // word is a target address (u32 ABI), not a size, resource handle or owned buffer.
 // Even a missing texd is not reported as failure; validate the resource upstream.
 s32 gtl_ImageGSR_GetImageData(u32* out, const GsrFile* file) {
-    u8* textureData = (u8*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord, kGsrTextureDataTag, 0);
-    u8* textureEntry = (u8*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord, kGsrTextureDescriptionTag, 0);
+    u8* textureData =
+        (u8*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord, kGsrTextureDataTag, 0);
+    u8* textureEntry = (u8*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord,
+                                                             kGsrTextureDescriptionTag, 0);
     *out = (u32)textureData + *(u32*)(textureEntry + 0x14);
     return 1;
 }
@@ -552,8 +576,10 @@ s32 gtl_ImageGSR_GetImageData(u32* out, const GsrFile* file) {
 // Raw +8 equals GsrPaletteRecordSchema::paletteDataByteOffset, not heightPixels.
 // Palette upload/count/format and flush are handled by engine_render_cache_and_texture_load.cpp, not this parser.
 s32 gtl_ImageGSR_GetPaletteData(u32* out, const GsrFile* file) {
-    u8* paletteData = (u8*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord, kGsrPaletteDataTag, 0);
-    u8* paletteEntry = (u8*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord, kGsrPaletteDescriptionTag, 0);
+    u8* paletteData =
+        (u8*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord, kGsrPaletteDataTag, 0);
+    u8* paletteEntry = (u8*)gtl_ResourceFile_GetChunkElement((void*)file, (void*)file->forwardedDataWord,
+                                                             kGsrPaletteDescriptionTag, 0);
     if (paletteData == 0) {
         *out = 0;
         return 1;
@@ -658,7 +684,8 @@ s32 gtl_Image_GetTiledOffset(u32 x, u32 y, u32 rowWidth, u32 elementBytes) {
         u32 tileRow = linearPixel / fourRowsPixels;
         u32 rowWithinTile = (linearPixel % fourRowsPixels) / rowWidth;
         u32 fourRowsBytes = elementBytes * fourRowsPixels;
-        return ((pixelColumn * 2) & 6) + (rowWithinTile * 8) + ((tileRow * fourRowsBytes) + ((pixelColumn >> 2) * tileBytes));
+        return ((pixelColumn * 2) & 6) + (rowWithinTile * 8) +
+               ((tileRow * fourRowsBytes) + ((pixelColumn >> 2) * tileBytes));
     }
     }
 }
@@ -683,7 +710,8 @@ s32 gtl_Image_GetTiledOffset(u32 x, u32 y, u32 rowWidth, u32 elementBytes) {
 // bound, not a promise that all padding is initialized. In particular a 16x4
 // image needs 10*B, not the naive 8*B padded tile size: preserve these extra
 // single-row clears when changing allocation. Zero dimensions copy nothing.
-void gtl_Image_ReorderCompressedBlocks(u8* source, u8* destination, u32 widthPixels, u32 heightPixels, s32 format, s32 linearToTiled) {
+void gtl_Image_ReorderCompressedBlocks(u8* source, u8* destination, u32 widthPixels, u32 heightPixels, s32 format,
+                                       s32 linearToTiled) {
     u32 linearOffset;
     u32 linearRowBlock;
     u32 rowBytes;
@@ -959,7 +987,7 @@ static inline void Tile4PixelsBody(u8* source, u8* destination, u32 widthPixels,
     }
 }
 
-// Tile borrowed packed 4-bit pixels; arg4 must be 4, buffers distinct and padded as Tile4PixelsBody.
+// Tile borrowed packed 4-bit pixels; bitsPerPixel must be 4, buffers distinct and padded as Tile4PixelsBody.
 void gtl_Image_Tile4BitPixels(u8* source, u8* destination, u32 widthPixels, u32 heightPixels, s32 bitsPerPixel) {
     Tile4PixelsBody(source, destination, widthPixels, heightPixels, bitsPerPixel);
 }
@@ -1024,7 +1052,7 @@ static inline void Tile8Or16PixelsBody(u8* source, u8* destination, u32 width, u
     }
 }
 
-// Tile borrowed 8/16-bit pixels; arg4 is 1/2 bytes per pixel (see Tile8Or16PixelsBody).
+// Tile borrowed 8/16-bit pixels; bytesPerPixel is 1/2 bytes per pixel (see Tile8Or16PixelsBody).
 void gtl_Image_Tile8Or16BitPixels(u8* source, u8* destination, u32 widthPixels, u32 heightPixels, s32 bytesPerPixel) {
     Tile8Or16PixelsBody(source, destination, widthPixels, heightPixels, bytesPerPixel);
 }
@@ -1054,7 +1082,8 @@ void gtl_Image_Tile8Or16BitPixels(u8* source, u8* destination, u32 widthPixels, 
 // Unsupported/-1/three-byte/eight-byte formats reach this fallback unchecked;
 // they are NOT accepted: byte reads/plane writes can overrun or alias. No status
 // is returned. The size-query's zero result is not an empty-image fallback.
-void gtl_Image_LinearToTiled(u8* source, u32 unusedSourceWord1, u32 unusedSourceWord2, u8* destination, u32 widthPixels, u32 heightPixels, u32 unusedDestinationWord, s32 format) {
+void gtl_Image_LinearToTiled(u8* source, u32 unusedSourceWord1, u32 unusedSourceWord2, u8* destination, u32 widthPixels,
+                             u32 heightPixels, u32 unusedDestinationWord, s32 format) {
     u32 bitsPerPixel;
     u32 sourceRowPixels;
     s32 bytesPerPixel;

@@ -1,38 +1,39 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CBigBalloon: the largest party balloon. It holds four scale endpoints and
+// restores its scale sequence when recovered.
+//
+// All three balloon sizes share one object layout, declared in
+// BalloonState80069C.h; this class adds only the large balloon's behaviour.
 #ifndef CLASSES_CBIGBALLOON_H
 #define CLASSES_CBIGBALLOON_H
 
 #include "game/types.h"
+#include "classes/BalloonState80069C.h"
 
-class CBigBalloon {
+class CBigBalloon : public BalloonState80069C {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x24];                 // 0x4
-    unsigned int scaleCount;                // 0x28: 3 uses in CBigBalloon_ResetScaleSequence, CBigBalloon_dtor
-    char pad_02C[0x44];                 // 0x2c
-    float scale;                       // 0x70: 1 use in CBigBalloon_ResetScaleSequence
-    char pad_074[0x2c];                 // 0x74
-    int sizeClass;                         // 0xa0: 1 use in CBigBalloon_ctor
-    char pad_0A4[0x2c];                 // 0xa4
-    void* model;                       // 0xd0: 1 use in CBigBalloon_dtor
-    unsigned short baseScale;              // 0xd4: 2 uses in CBigBalloon_StartExplosionEffect
-    char pad_0D6[0x16];                 // 0xd6
-    unsigned short targetScale;              // 0xec: 1 use in CBigBalloon_ResetScaleSequence
-    unsigned short scaleDelta;              // 0xee: 1 use in CBigBalloon_ResetScaleSequence
+    // Construct in place from a borrowed spawn origin; returns the balloon.
+    CBigBalloon* Init(void* spawnPosition, int characterModel);
+    ~CBigBalloon();
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x24, 0x7c, 0xa4
+    void ResetScaleSequence();
+    void StartExplosionEffect();
+
+    // Large balloons have no extra per-frame update hook.
+    void vfunc_3();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CBIGBALLOON_OFF(f, o) typedef char CBigBalloon_off_##f[((int)&((CBigBalloon*)0)->f == (o)) ? 1 : -1]
-CBIGBALLOON_OFF(scaleCount, 0x28);
+CBIGBALLOON_OFF(vtbl, 0x0);
+CBIGBALLOON_OFF(scaleValues, 0x24);
 CBIGBALLOON_OFF(scale, 0x70);
-CBIGBALLOON_OFF(sizeClass, 0xa0);
-CBIGBALLOON_OFF(model, 0xd0);
-CBIGBALLOON_OFF(baseScale, 0xd4);
-CBIGBALLOON_OFF(targetScale, 0xec);
-CBIGBALLOON_OFF(scaleDelta, 0xee);
+CBIGBALLOON_OFF(position, 0x7C);
+CBIGBALLOON_OFF(sizeClass, 0xA0);
+CBIGBALLOON_OFF(effectPosition, 0xBC);
+CBIGBALLOON_OFF(model, 0xD0);
+CBIGBALLOON_OFF(baseScale, 0xD4);
+CBIGBALLOON_OFF(targetScale, 0xEC);
+CBIGBALLOON_OFF(scaleDelta, 0xEE);
 #undef CBIGBALLOON_OFF
+typedef char CBigBalloon_size[(sizeof(CBigBalloon) == 0xF0) ? 1 : -1];
 
-#endif  // CLASSES_CBIGBALLOON_H
+#endif // CLASSES_CBIGBALLOON_H

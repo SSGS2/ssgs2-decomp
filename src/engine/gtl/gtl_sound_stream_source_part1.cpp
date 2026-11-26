@@ -1,6 +1,9 @@
+// Construction and destruction entry points of a streamed sound source (gtl::CSoundStreamSource).
+// Init copies the source's metadata, and the destructor variants release its storage.
+//
+// The other source functions are in gtl_sound_stream_source_part2.cpp through part4.cpp.
+
 #include "classes/SoundStreamSource.h"
-// Translation unit 0x80404214-0x804043EC (4 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 #include "sdk_protos.h"
 
 extern "C" {
@@ -14,47 +17,34 @@ void gtl_String_ReplaceRange(void*, int, int, const char*, const char*, const ch
 extern void* __vt__Q23gtl18CSoundStreamSource[6];
 extern void* __vt__Q33gtl18CSoundStreamSource12StrmCallback[6];
 
-enum { kStreamConfigWordCount = 7, kAdpcmParameterCopyPairs = 24 };
-
-struct StreamCallback {
-    void* vtable;
-    unsigned int nameStorage[3]; // gtl string representation; initialized empty before assignment.
+enum {
+    kStreamConfigWordCount = 7,
+    kAdpcmParameterCopyPairs = 24
 };
 
-struct SoundStreamSourceInit {
-    // Metadata is copied verbatim. Pointer-typed slots describe 32-bit storage;
-    // they do not imply allocation, retention, or ownership of the pointed-to data.
-    void* name;
-    void* sourceData; // Copied to +0x0C; the owning format is unresolved.
-    void* sampleRate;
-    unsigned short format; // Copied to +0x14; encoding values are unresolved.
-    unsigned short channelCount;
-    void* sampleCount;
-    void* streamData; // Copied to +0x1C; the owning format is unresolved.
-};
-
+} // extern "C"
 
 // Copy stream metadata and ADPCM parameters, then construct an owned callback name.
-// init/config are borrowed; config is 7 words followed by 48 unsigned shorts.
+// init and config are borrowed; config is 7 words followed by 48 unsigned shorts.
 // config[0] holds a valid NUL-terminated name, copied into the callback string.
-// Return self; callback allocation may yield null. String exceptions free the new
-// callback allocation and propagate. Metadata pointers are shallow copies.
-void* gtl_CSoundStreamSource_Ctor(SoundStreamSource* self, const SoundStreamSourceInit* init, const unsigned int* config) {
-    // Phase 1: initialize the wrapper and copy the seven-word configuration prefix.
-    self->enabled = 1;
-    self->vtable = &__vt__Q23gtl18CSoundStreamSource;
-    self->callback = 0;
-    self->name = init->name;
-    self->sourceData = init->sourceData;
-    self->sampleRate = init->sampleRate;
-    self->format = init->format;
-    self->channelCount = init->channelCount;
-    self->sampleCount = init->sampleCount;
-    self->streamData = init->streamData;
-    for (int i = 0; i < kStreamConfigWordCount; ++i) self->config[i] = config[i];
-    // Phase 2: copy 48 parameter halfwords, two per iteration. These are not
-    // necessarily 24 ADPCM coefficient pairs; the individual word roles are unresolved.
-    unsigned short* parameterDest = self->adpcmChannelParameters - 1;
+// Returns this; callback allocation may yield null. String exceptions free the new
+// callback allocation and propagate.
+gtl::CSoundStreamSource* gtl::CSoundStreamSource::Init(const SoundStreamSourceInit* init, const unsigned int* config) {
+    // Phase 1: initialize the source and copy the seven-word configuration prefix.
+    enabled = 1;
+    vtbl = &__vt__Q23gtl18CSoundStreamSource;
+    callback = 0;
+    name = init->name;
+    sourceData = init->sourceData;
+    sampleRate = init->sampleRate;
+    format = init->format;
+    channelCount = init->channelCount;
+    sampleCount = init->sampleCount;
+    streamData = init->streamData;
+    for (int i = 0; i < kStreamConfigWordCount; ++i)
+        this->config[i] = config[i];
+    // Phase 2: copy 48 parameter halfwords, two per iteration.
+    unsigned short* parameterDest = adpcmChannelParameters - 1;
     // Begin one halfword before each payload because the copy accesses [1].
     const unsigned short* parameterSource = (const unsigned short*)config + kStreamConfigWordCount * 2 - 1;
     for (int i = 0; i < kAdpcmParameterCopyPairs; ++i) {
@@ -67,26 +57,30 @@ void* gtl_CSoundStreamSource_Ctor(SoundStreamSource* self, const SoundStreamSour
     }
 
     // Phase 3: allocate the owned callback, initialize its empty string, and copy the name.
-    void* callback = gtl_Audio_Alloc(sizeof(StreamCallback));
-    if (callback) {
-        ((StreamCallback*)callback)->vtable = &__vt__Q33gtl18CSoundStreamSource12StrmCallback;
-        ((StreamCallback*)callback)->nameStorage[0] = 0;
-        ((StreamCallback*)callback)->nameStorage[1] = 0;
-        ((StreamCallback*)callback)->nameStorage[2] = 0;
-        const char* name = (const char*)self->config[0];
-        size_t len = strlen(name);
+    gtl::CSoundStreamSource::StrmCallback* newCallback =
+        (gtl::CSoundStreamSource::StrmCallback*)gtl_Audio_Alloc(sizeof(gtl::CSoundStreamSource::StrmCallback));
+    if (newCallback) {
+        newCallback->vtbl = &__vt__Q33gtl18CSoundStreamSource12StrmCallback;
+        newCallback->flags = 0;
+        newCallback->size = 0;
+        newCallback->data = 0;
+        const char* text = (const char*)this->config[0];
+        size_t len = strlen(text);
         try {
-            gtl_String_ReserveCapacity(((StreamCallback*)callback)->nameStorage, len);
+            gtl_String_ReserveCapacity(&newCallback->flags, len);
             unsigned char allocatorToken;
-            gtl_String_ReplaceRange(((StreamCallback*)callback)->nameStorage, 0, 0, name, name + len, (char*)&allocatorToken, (char*)((char*)&allocatorToken + 1));
+            gtl_String_ReplaceRange(&newCallback->flags, 0, 0, text, text + len, (char*)&allocatorToken,
+                                    (char*)((char*)&allocatorToken + 1));
         } catch (...) {
-            gtl_Audio_Free(callback);
+            gtl_Audio_Free(newCallback);
             throw;
         }
     }
-    self->callback = callback;
-    return self;
+    callback = (StreamResource*)newCallback;
+    return this;
 }
+
+extern "C" {
 
 // Allocation cleanup used when callback construction unwinds.
 // flag is ignored; this entry always passes storage to the audio allocator.

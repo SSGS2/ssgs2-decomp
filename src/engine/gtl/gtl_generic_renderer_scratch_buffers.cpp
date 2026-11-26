@@ -5,8 +5,6 @@
 // that active count is +190, distinct from backing record count +188 here.
 // No gameplay tuning. Allocator/free: gtl_GenericResource_Allocate/Free;
 // context destruction frees all four backing allocations (gtl_generic_renderer_context.cpp).
-// Translation unit 0x803DC474-0x803DCF8C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/stdexcept_local.h"
 
@@ -60,7 +58,11 @@ struct TmpVec {
     u32 size;
     u32 cap;
     // Empty storage guard; it owns allocation bytes, never the stored word payloads.
-    TmpVec() { begin = 0; size = 0; cap = 0; }
+    TmpVec() {
+        begin = 0;
+        size = 0;
+        cap = 0;
+    }
     // Free replacement on unwind, or old allocation after ownership exchange.
     ~TmpVec() {
         if (begin) {
@@ -114,7 +116,7 @@ void gtl_GenericRenderer_ResizeScratchBuffers(const ResizeSizes* sizes) {
     if (requestedDrawRecords > r->drawRecordCount) {
         u32 excess = requestedDrawRecords - r->drawRecordCount;
         if (excess > r->drawRecordCapacity || r->drawRecordCount > r->drawRecordCapacity - excess) {
-            volatile ScratchRenderer *view = r;
+            volatile ScratchRenderer* view = r;
             u32 need0 = view->drawRecordCount + excess - r->drawRecordCapacity;
             u32 cap0 = view->drawRecordCapacity;
             u32 dead = cap0;
@@ -265,7 +267,8 @@ void gtl_GenericRenderer_ResizeScratchBuffers(const ResizeSizes* sizes) {
         }
         tmp.begin = gtl_GenericResource_Allocate(b * 4);
         tmp.cap = b;
-        u32 count = (u32)(((const char*)(r->secondScratch + r->secondScratchCount) - (const char*)r->secondScratch) / 4);
+        u32 count =
+            (u32)(((const char*)(r->secondScratch + r->secondScratchCount) - (const char*)r->secondScratch) / 4);
         u32* oldPtr = r->secondScratch;
         memcpy((u32*)tmp.begin + tmp.size, oldPtr, count * 4);
         memset(oldPtr, 0, count * 4);

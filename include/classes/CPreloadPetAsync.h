@@ -1,5 +1,7 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CPreloadPetAsync: the loader for one pet's model and shadow.
+//
+// It owns the queued child preloaders, tracks whether the pet is still loading,
+// and is initialized from the selected item's model path.
 #ifndef CLASSES_CPRELOADPETASYNC_H
 #define CLASSES_CPRELOADPETASYNC_H
 
@@ -7,18 +9,34 @@
 
 class CPreloadPetAsync {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char preloadRequests;                         // 0x4: 1 use in CPreloadPetAsync_QueueModelAndShadowFromItemId
-    char pad_005[0xb];                  // 0x5
-    int loadState;                         // 0x10: 1 use in CPreloadPetAsync_QueueModelAndShadowFromItemId
+    // The child preloaders, in request order.
+    struct RequestList {
+        void* data;            // 0x04
+        unsigned int count;    // 0x08
+        unsigned int capacity; // 0x0C
+    };
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x4
+    // Allocate a loader and initialize it for the given item, destroying it if
+    // initialization fails.
+    static CPreloadPetAsync* Create(void* itemId, int includeShadow);
+
+    int ClearAndRestart(void* itemId, int includeShadow);
+    int IsReady();
+    int UpdateAndMarkReady();
+    int QueueModelAndShadowFromItemId(unsigned itemId, int includeShadow);
+
+    ~CPreloadPetAsync();
+
+    void* vtbl;                  // 0x00
+    RequestList preloadRequests; // 0x04
+    int loadState;               // 0x10
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define CPRELOADPETASYNC_OFF(f, o) typedef char CPreloadPetAsync_off_##f[((int)&((CPreloadPetAsync*)0)->f == (o)) ? 1 : -1]
-CPRELOADPETASYNC_OFF(preloadRequests, 0x4);
+#define CPRELOADPETASYNC_OFF(f, o) \
+    typedef char CPreloadPetAsync_off_##f[((int)&((CPreloadPetAsync*)0)->f == (o)) ? 1 : -1]
+CPRELOADPETASYNC_OFF(preloadRequests, 0x04);
 CPRELOADPETASYNC_OFF(loadState, 0x10);
 #undef CPRELOADPETASYNC_OFF
+typedef char CPreloadPetAsync_size[(sizeof(CPreloadPetAsync) == 0x14) ? 1 : -1];
 
-#endif  // CLASSES_CPRELOADPETASYNC_H
+#endif // CLASSES_CPRELOADPETASYNC_H

@@ -1,3 +1,6 @@
+// DirectInput device factory: creates keyboard and mouse input providers by name, and the
+// string-map insertion and teardown helpers that its device registry uses.
+
 #include <decomp/static_init.h>
 #include <decomp/ct_member.h>
 // Legacy DirectInput provider/device factory plus string-map node storage.
@@ -11,7 +14,9 @@
 // supply directInputStrings/stringMapRuntimeStrings and type-name pools.
 #include "classes/WDirectInput.h"
 // Borrow a provider layout without changing pointer identity or ownership.
-static inline WDirectInput* AsWDirectInput(void* object) { return (WDirectInput*)object; }
+static inline WDirectInput* AsWDirectInput(void* object) {
+    return (WDirectInput*)object;
+}
 #include "classes/DirectInputKeyboard.h"
 #define AsDirectInputKeyboard(object) ((DirectInputKeyboard*)(object))
 // Kept as a cast macro because the constructor is compiled with dont_inline.
@@ -24,8 +29,6 @@ extern const char stringMapRuntimeStrings[];
 }
 }
 
-// Translation unit 0x8029FAC4-0x802A035C (18 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 #include "sdk_protos.h"
 #include "game/exception.h"
 
@@ -40,15 +43,19 @@ struct DirectInputStringPool {
 };
 typedef char DirectInputStringPool_size[(sizeof(DirectInputStringPool) == 44) ? 1 : -1];
 extern DirectInputStringPool directInputStrings;
-enum { kObjectTypeNameOffset = 0xE1, kLengthErrorTypeOffset = 0x1A,
-       kKeyboardProcVtableOffset = 0x48, kHeapStringFlagShift = 31 };
+enum {
+    kObjectTypeNameOffset = 0xE1,
+    kLengthErrorTypeOffset = 0x1A,
+    kKeyboardProcVtableOffset = 0x48,
+    kHeapStringFlagShift = 31
+};
 extern char stringMapRuntimeStrings[];
 extern int s_iObjectTypeInfo;
 extern float kFloat_6_2831855;
 extern float s_inputObjectTypeFullTurnRadians;
 extern float s_directInputModuleFullTurnRadians;
 extern char __vt__12WDirectInput[];
-extern void IntPair_Set(void*, const char*, void*);
+extern void* IntPair_Set(void*, const char*, void*);
 extern unsigned int OS_GetTimeMilliseconds();
 extern void __dl__FPv(void*);
 extern void appFreeUni__FPv(void*);
@@ -82,12 +89,10 @@ void WDirectInput_InitializeModuleAngle() {
 }
 
 // Optional input-provider hook; the Wii implementation has no work here.
-void WInputDev_SetAlphaNumericMode() {
-}
+void WInputDev_SetAlphaNumericMode() {}
 
 // Optional input-provider hook; the Wii implementation has no work here.
-void WInputDev_Reset() {
-}
+void WInputDev_Reset() {}
 
 // Return the most recent input poll timestamp in milliseconds.
 int WInputDev_GetLastInputTime(void* self) {
@@ -136,7 +141,10 @@ void* WDirectInput_dtor(void* self, int deleteStorage) {
     return self;
 }
 
-struct OwnedInputBuffer { void* vtable; void* allocation; };
+struct OwnedInputBuffer {
+    void* vtable;
+    void* allocation;
+};
 // Free the owned input buffer, then optionally its wrapper.
 void* OwnedInputBuffer_dtor(void* self, int deleteStorage) {
     if (self != 0) {
@@ -160,7 +168,7 @@ void* OwnedInputBuffer_dtor(void* self, int deleteStorage) {
 void* DirectInputKeyboard_Ctor(void* self, int factoryContext, void* deviceArgument) {
     *(unsigned char*)(AsDirectInputKeyboard(self)->inputBaseStateBytes) = 1;
     AsDirectInputKeyboard(self)->inputBaseStateBytes[1] = 0; // 0x5: WDirectInput base status byte
-    AsDirectInputKeyboard(self)->proc.registry = 0; // 0x10
+    AsDirectInputKeyboard(self)->proc.registry = 0;          // 0x10
     AsDirectInputKeyboard(self)->vtbl = (void*)__vt__19DirectInputKeyboard;
     AsDirectInputKeyboard(self)->proc.vtbl = (void*)(__vt__19DirectInputKeyboard + kKeyboardProcVtableOffset); // 0xc
     memset(((char*)&AsDirectInputKeyboard(self)->key32), 0, 3);
@@ -169,17 +177,25 @@ void* DirectInputKeyboard_Ctor(void* self, int factoryContext, void* deviceArgum
 #pragma dont_inline off
 
 // The factory returns the mouse interface at +8, after the original two-word base.
-struct LegacyMouseBaseStorage { int storage[2]; };
-struct LegacyMouseDeviceStorage { int storage[16]; };
+struct LegacyMouseBaseStorage {
+    int storage[2];
+};
+struct LegacyMouseDeviceStorage {
+    int storage[16];
+};
 struct LegacyMouseAllocation : LegacyMouseBaseStorage, LegacyMouseDeviceStorage {
     // Initialize the complete allocation before returning its secondary interface.
-    LegacyMouseAllocation() { DirectInputMouse_Ctor(this); }
+    LegacyMouseAllocation() {
+        DirectInputMouse_Ctor(this);
+    }
 };
 
 struct LegacyKeyboardAllocation {
     int a[6];
     // Forward factory ABI context to the keyboard constructor (currently ignored).
-    LegacyKeyboardAllocation(int context, void* argument) { DirectInputKeyboard_Ctor(this, context, argument); }
+    LegacyKeyboardAllocation(int context, void* argument) {
+        DirectInputKeyboard_Ctor(this, context, argument);
+    }
 };
 
 // Create a legacy keyboard or mouse by name; the mouse returns its secondary interface.
@@ -202,9 +218,19 @@ void* WDirectInput_MakeClone(void* self, const char* name, void* deviceArgument)
     return 0;
 }
 
-struct StringMapEntryStorage { unsigned int flags; unsigned int length; char* data; unsigned int local; };
+struct StringMapEntryStorage {
+    unsigned int flags;
+    unsigned int length;
+    char* data;
+    unsigned int local;
+};
 
-struct SharedStringBuffer { void* vtbl; unsigned int refs; unsigned int refs2; char* data; };
+struct SharedStringBuffer {
+    void* vtbl;
+    unsigned int refs;
+    unsigned int refs2;
+    char* data;
+};
 
 // Three tree links, then the key ownership word, heap length and data pointer.
 struct StringTreeNode {
@@ -226,21 +252,26 @@ void StringMap_DestroySubtree(void* owner, StringTreeNode* node) {
         if (sub != 0) {
             leaf = sub->first;
             if (leaf != 0) {
-                if (leaf->first != 0) StringMap_DestroySubtree(owner, leaf->first);
-                if (leaf->second != 0) StringMap_DestroySubtree(owner, leaf->second);
+                if (leaf->first != 0)
+                    StringMap_DestroySubtree(owner, leaf->first);
+                if (leaf->second != 0)
+                    StringMap_DestroySubtree(owner, leaf->second);
                 String_FreeHeapBuffer(owner, &leaf->owned);
                 appFreeUni__FPv(leaf);
             }
             leaf = sub->second;
             if (leaf != 0) {
-                if (leaf->first != 0) StringMap_DestroySubtree(owner, leaf->first);
-                if (leaf->second != 0) StringMap_DestroySubtree(owner, leaf->second);
+                if (leaf->first != 0)
+                    StringMap_DestroySubtree(owner, leaf->first);
+                if (leaf->second != 0)
+                    StringMap_DestroySubtree(owner, leaf->second);
                 String_FreeHeapBuffer(owner, &leaf->owned);
                 appFreeUni__FPv(leaf);
             }
             if (&sub->owned != 0) {
                 if (&sub->owned != 0) {
-                    if ((sub->owned >> kHeapStringFlagShift) != 0) appFreeUni__FPv(sub->ownedPtr);
+                    if ((sub->owned >> kHeapStringFlagShift) != 0)
+                        appFreeUni__FPv(sub->ownedPtr);
                 }
             }
             appFreeUni__FPv(sub);
@@ -249,28 +280,34 @@ void StringMap_DestroySubtree(void* owner, StringTreeNode* node) {
         if (sub != 0) {
             leaf = sub->first;
             if (leaf != 0) {
-                if (leaf->first != 0) StringMap_DestroySubtree(owner, leaf->first);
-                if (leaf->second != 0) StringMap_DestroySubtree(owner, leaf->second);
+                if (leaf->first != 0)
+                    StringMap_DestroySubtree(owner, leaf->first);
+                if (leaf->second != 0)
+                    StringMap_DestroySubtree(owner, leaf->second);
                 String_FreeHeapBuffer(owner, &leaf->owned);
                 appFreeUni__FPv(leaf);
             }
             leaf = sub->second;
             if (leaf != 0) {
-                if (leaf->first != 0) StringMap_DestroySubtree(owner, leaf->first);
-                if (leaf->second != 0) StringMap_DestroySubtree(owner, leaf->second);
+                if (leaf->first != 0)
+                    StringMap_DestroySubtree(owner, leaf->first);
+                if (leaf->second != 0)
+                    StringMap_DestroySubtree(owner, leaf->second);
                 String_FreeHeapBuffer(owner, &leaf->owned);
                 appFreeUni__FPv(leaf);
             }
             if (&sub->owned != 0) {
                 if (&sub->owned != 0) {
-                    if ((sub->owned >> kHeapStringFlagShift) != 0) appFreeUni__FPv(sub->ownedPtr);
+                    if ((sub->owned >> kHeapStringFlagShift) != 0)
+                        appFreeUni__FPv(sub->ownedPtr);
                 }
             }
             appFreeUni__FPv(sub);
         }
         if (&group->owned != 0) {
             if (&group->owned != 0) {
-                if ((group->owned >> kHeapStringFlagShift) != 0) appFreeUni__FPv(group->ownedPtr);
+                if ((group->owned >> kHeapStringFlagShift) != 0)
+                    appFreeUni__FPv(group->ownedPtr);
             }
         }
         appFreeUni__FPv(group);
@@ -281,21 +318,26 @@ void StringMap_DestroySubtree(void* owner, StringTreeNode* node) {
         if (sub != 0) {
             leaf = sub->first;
             if (leaf != 0) {
-                if (leaf->first != 0) StringMap_DestroySubtree(owner, leaf->first);
-                if (leaf->second != 0) StringMap_DestroySubtree(owner, leaf->second);
+                if (leaf->first != 0)
+                    StringMap_DestroySubtree(owner, leaf->first);
+                if (leaf->second != 0)
+                    StringMap_DestroySubtree(owner, leaf->second);
                 String_FreeHeapBuffer(owner, &leaf->owned);
                 appFreeUni__FPv(leaf);
             }
             leaf = sub->second;
             if (leaf != 0) {
-                if (leaf->first != 0) StringMap_DestroySubtree(owner, leaf->first);
-                if (leaf->second != 0) StringMap_DestroySubtree(owner, leaf->second);
+                if (leaf->first != 0)
+                    StringMap_DestroySubtree(owner, leaf->first);
+                if (leaf->second != 0)
+                    StringMap_DestroySubtree(owner, leaf->second);
                 String_FreeHeapBuffer(owner, &leaf->owned);
                 appFreeUni__FPv(leaf);
             }
             if (&sub->owned != 0) {
                 if (&sub->owned != 0) {
-                    if ((sub->owned >> kHeapStringFlagShift) != 0) appFreeUni__FPv(sub->ownedPtr);
+                    if ((sub->owned >> kHeapStringFlagShift) != 0)
+                        appFreeUni__FPv(sub->ownedPtr);
                 }
             }
             appFreeUni__FPv(sub);
@@ -304,35 +346,42 @@ void StringMap_DestroySubtree(void* owner, StringTreeNode* node) {
         if (sub != 0) {
             leaf = sub->first;
             if (leaf != 0) {
-                if (leaf->first != 0) StringMap_DestroySubtree(owner, leaf->first);
-                if (leaf->second != 0) StringMap_DestroySubtree(owner, leaf->second);
+                if (leaf->first != 0)
+                    StringMap_DestroySubtree(owner, leaf->first);
+                if (leaf->second != 0)
+                    StringMap_DestroySubtree(owner, leaf->second);
                 String_FreeHeapBuffer(owner, &leaf->owned);
                 appFreeUni__FPv(leaf);
             }
             leaf = sub->second;
             if (leaf != 0) {
-                if (leaf->first != 0) StringMap_DestroySubtree(owner, leaf->first);
-                if (leaf->second != 0) StringMap_DestroySubtree(owner, leaf->second);
+                if (leaf->first != 0)
+                    StringMap_DestroySubtree(owner, leaf->first);
+                if (leaf->second != 0)
+                    StringMap_DestroySubtree(owner, leaf->second);
                 String_FreeHeapBuffer(owner, &leaf->owned);
                 appFreeUni__FPv(leaf);
             }
             if (&sub->owned != 0) {
                 if (&sub->owned != 0) {
-                    if ((sub->owned >> kHeapStringFlagShift) != 0) appFreeUni__FPv(sub->ownedPtr);
+                    if ((sub->owned >> kHeapStringFlagShift) != 0)
+                        appFreeUni__FPv(sub->ownedPtr);
                 }
             }
             appFreeUni__FPv(sub);
         }
         if (&group->owned != 0) {
             if (&group->owned != 0) {
-                if ((group->owned >> kHeapStringFlagShift) != 0) appFreeUni__FPv(group->ownedPtr);
+                if ((group->owned >> kHeapStringFlagShift) != 0)
+                    appFreeUni__FPv(group->ownedPtr);
             }
         }
         appFreeUni__FPv(group);
     }
     if (&node->owned != 0) {
         if (&node->owned != 0) {
-            if ((node->owned >> kHeapStringFlagShift) != 0) appFreeUni__FPv(node->ownedPtr);
+            if ((node->owned >> kHeapStringFlagShift) != 0)
+                appFreeUni__FPv(node->ownedPtr);
         }
     }
     appFreeUni__FPv(node);
@@ -376,31 +425,38 @@ struct StringMapEntryCopy {
                 String_ReplaceRange(this, 0, 0, (const char*)s[2], (const char*)(s[2] + s[1]), &flag);
             }
             local = s[3];
-        } catch (...) { throw; }
+        } catch (...) {
+            throw;
+        }
     }
 };
 
-struct Fn8029FAC4Alloc {
+struct CStringMapNodeStorage {
     char state;
     void* begin;
     void* end;
     // Obtain 0x1C bytes for three links plus the 16-byte key/value entry.
-    Fn8029FAC4Alloc() : state(0), begin(appMallocDummy__FUl(0x1c)), end(begin) {}
+    CStringMapNodeStorage() : state(0), begin(appMallocDummy__FUl(0x1c)), end(begin) {}
     // Raw allocator tag owns nothing: StringNodeGuard controls the allocation.
-    ~Fn8029FAC4Alloc() {}
+    ~CStringMapNodeStorage() {}
 };
 
-typedef Fn8029FAC4Alloc StringNodeAllocation;
+typedef CStringMapNodeStorage StringNodeAllocation;
 
 struct StringGuard {
     char* data;
     char* allocator;
     // Release exception-message bytes unless ownership moved to the shared holder.
-    ~StringGuard() { if (data) __dla__FPv(data); }
+    ~StringGuard() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 struct ErrorBase_u8029FAC4 : std::exception {
     // Install the reconstructed exception dispatch in its ABI vptr word.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
 
     char* data;
     void* holder;
@@ -413,8 +469,12 @@ struct ErrorBase_u8029FAC4 : std::exception {
         data = (char*)__nwa__FUl(length * 2 - length);
         char* copy = data;
         {
-            StringGuard guard = { copy, (char*)&allocator };
-            struct Holder { void* vtable; int a, b; char* data; };
+            StringGuard guard = {copy, (char*)&allocator};
+            struct Holder {
+                void* vtable;
+                int a, b;
+                char* data;
+            };
             Holder* h = (Holder*)__nw__FUl(16);
             if (h) {
                 h->a = 1;
@@ -432,7 +492,9 @@ struct ErrorBase_u8029FAC4 : std::exception {
 namespace std {
 struct length_error : ErrorBase_u8029FAC4 {
     // Preserve the message-owning base and specialize its dispatch to length_error.
-    length_error(const char* message) : ErrorBase_u8029FAC4(message) { SetTable(__vt__Q23std12length_error); }
+    length_error(const char* message) : ErrorBase_u8029FAC4(message) {
+        SetTable(__vt__Q23std12length_error);
+    }
     ~length_error();
     DECOMP_CT_MEMBER(length_error)
 };
@@ -445,7 +507,10 @@ struct Fn8029FAC4NodeGuard {
     // Temporarily own raw node bytes; tree ownership begins when node is cleared.
     Fn8029FAC4NodeGuard(void* t, void* n) : allocator((char*)t + 4), node(n) {}
     // Free raw bytes if entry construction unwinds before publication.
-    ~Fn8029FAC4NodeGuard() { if (node) appFreeUni__FPv(node); }
+    ~Fn8029FAC4NodeGuard() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 
 typedef Fn8029FAC4NodeGuard StringNodeGuard;
@@ -454,13 +519,18 @@ struct StringParentLink {
     void* ptr;
     // Construct the parent word in place, retaining the original EH shape.
     StringParentLink(void* p) {
-        try { ptr = p; }
-        catch (...) { throw; }
+        try {
+            ptr = p;
+        } catch (...) {
+            throw;
+        }
     }
 };
 
 // Placement construction borrows already allocated node storage; no allocation.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -472,7 +542,11 @@ struct StringMapNode {
     void* parent;
     StringMapEntryCopy entry;
 };
-struct StringMapHeader { unsigned int count; void* root; void* first; };
+struct StringMapHeader {
+    unsigned int count;
+    void* root;
+    void* first;
+};
 // Copy a key/value into a new tree node, attach it and rebalance the string map.
 // self is a live header {u32 count, root pointer, first pointer}; slot is the
 // parent/sentinel with a writable left (+0) or right (+4) link chosen by insertLeft.
@@ -493,11 +567,14 @@ void* StringMap_InsertNode(void* self, void* slot, int insertLeft, int becomesFi
     if (((StringMapHeader*)self)->count + 0x10000 == 0xffff) {
         const char* msg = stringMapRuntimeStrings;
         {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct(msg);
             exception_runtime::__throw(exception_runtime::stringMapRuntimeStrings + kLengthErrorTypeOffset, error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                       (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
     }
     // Phase 2: allocate and construct an independent key with shallow mapped word.
@@ -512,11 +589,15 @@ void* StringMap_InsertNode(void* self, void* slot, int insertLeft, int becomesFi
     guard.node = 0;
     insertedNode->left = 0;
     new (&insertedNode->parent) StringParentLink(slot);
-    if (insertLeft) ((StringMapNode*)slot)->left = insertedNode; else ((StringMapNode*)slot)->right = insertedNode;
+    if (insertLeft)
+        ((StringMapNode*)slot)->left = insertedNode;
+    else
+        ((StringMapNode*)slot)->right = insertedNode;
     unsigned int oldCount = *(unsigned int*)self;
     *(unsigned int*)self = oldCount + 1;
     RBTree_RebalanceAfterInsert(insertedNode, ((StringMapHeader*)self)->root, oldCount);
-    if (becomesFirst) ((StringMapHeader*)self)->first = insertedNode;
+    if (becomesFirst)
+        ((StringMapHeader*)self)->first = insertedNode;
     return insertedNode;
 }
 #pragma pop

@@ -11,31 +11,32 @@ public:
     void* vtbl; // 0x0: meaning unknown; retained offset name
     char pad_004[0xC];
     int resourceManager; // 0x10: W3dAniSpr_LoadSpritesInOneTexture: ResourceManager_LoadBitmap first argument
-    int bitmapHead; // 0x14: W3dAniSpr_Ctor, CleanupList: Head
-    int bitmapCursor; // 0x18: W3dAniSpr_Ctor, CleanupList: Cursor
-    int bitmapBlocks; // 0x1C: W3dAniSpr_Ctor, CleanupList: Blocks
-    int bitmapFree; // 0x20: W3dAniSpr_Ctor, CleanupList: Free
+    int bitmapHead;      // 0x14: W3dAniSpr_Ctor, CleanupList: Head
+    int bitmapCursor;    // 0x18: W3dAniSpr_Ctor, CleanupList: Cursor
+    int bitmapBlocks;    // 0x1C: W3dAniSpr_Ctor, CleanupList: Blocks
+    int bitmapFree;      // 0x20: W3dAniSpr_Ctor, CleanupList: Free
     int bitmapBlockSize; // 0x24: W3dAniSpr_Ctor, CleanupList: BlockSize
     char pad_028[0x4];
-    int bitmapBucketCount; // 0x2C: W3dAniSpr_Ctor, CleanupList: BucketCount
-    int bitmapBuckets; // 0x30: W3dAniSpr_Ctor, CleanupList: Buckets
+    int bitmapBucketCount;  // 0x2C: W3dAniSpr_Ctor, CleanupList: BucketCount
+    int bitmapBuckets;      // 0x30: W3dAniSpr_Ctor, CleanupList: Buckets
     char bitmapMutex[0x18]; // 0x34: W3dAniSpr_Ctor (0x80217E9C) initializes; dtor locks bitmap list here
-    int frameHead; // 0x4C: W3dAniSpr_Ctor, CleanupList: Head
-    int frameCursor; // 0x50: W3dAniSpr_Ctor, CleanupList: Cursor
-    int frameBlocks; // 0x54: W3dAniSpr_Ctor, CleanupList: Blocks
-    int frameFree; // 0x58: W3dAniSpr_Ctor, CleanupList: Free
-    int frameBlockSize; // 0x5C: W3dAniSpr_Ctor, CleanupList: BlockSize
+    int frameHead;          // 0x4C: W3dAniSpr_Ctor, CleanupList: Head
+    int frameCursor;        // 0x50: W3dAniSpr_Ctor, CleanupList: Cursor
+    int frameBlocks;        // 0x54: W3dAniSpr_Ctor, CleanupList: Blocks
+    int frameFree;          // 0x58: W3dAniSpr_Ctor, CleanupList: Free
+    int frameBlockSize;     // 0x5C: W3dAniSpr_Ctor, CleanupList: BlockSize
     char pad_060[0x4];
-    int frameBucketCount; // 0x64: W3dAniSpr_Ctor, CleanupList: BucketCount
-    int frameBuckets; // 0x68: W3dAniSpr_Ctor, CleanupList: Buckets
+    int frameBucketCount;  // 0x64: W3dAniSpr_Ctor, CleanupList: BucketCount
+    int frameBuckets;      // 0x68: W3dAniSpr_Ctor, CleanupList: Buckets
     char frameMutex[0x18]; // 0x6C: W3dAniSpr_Ctor initializes; W3dAniSpr_DrawFrame locks frame list here
-    int bitmapCount; // 0x84: W3dAniSpr_LoadSpritesInOneTexture: incremented after appending a bitmap
-    int frameCount; // 0x88: W3dAniSpr_LoadSpritesInOneTexture/8021962C: incremented per grid cell
-    float left; // 0x8C: W3dAniSpr_SetSizeAndPivot: -horizontal pivot
-    float right; // 0x90: W3dAniSpr_SetSizeAndPivot: width minus horizontal pivot
-    float top; // 0x94: W3dAniSpr_SetSizeAndPivot: -vertical pivot
-    float bottom; // 0x98: W3dAniSpr_SetSizeAndPivot: height minus vertical pivot
-    WVector position; // 0x9C: W3dAniSpr_SetPosition: vector assignment; W3dAniSpr_DrawFrame: added to transformed corner
+    int bitmapCount;       // 0x84: W3dAniSpr_LoadSpritesInOneTexture: incremented after appending a bitmap
+    int frameCount;        // 0x88: W3dAniSpr_LoadSpritesInOneTexture/8021962C: incremented per grid cell
+    float left;            // 0x8C: W3dAniSpr_SetSizeAndPivot: -horizontal pivot
+    float right;           // 0x90: W3dAniSpr_SetSizeAndPivot: width minus horizontal pivot
+    float top;             // 0x94: W3dAniSpr_SetSizeAndPivot: -vertical pivot
+    float bottom;          // 0x98: W3dAniSpr_SetSizeAndPivot: height minus vertical pivot
+    WVector
+        position; // 0x9C: W3dAniSpr_SetPosition: vector assignment; W3dAniSpr_DrawFrame: added to transformed corner
     char pad_0A8[0x18];
     float vertex0U; // 0xC0: frame's left U coordinate
     float vertex0V; // 0xC4: frame's top V coordinate

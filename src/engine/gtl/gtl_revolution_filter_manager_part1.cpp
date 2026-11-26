@@ -1,27 +1,30 @@
-// Translation unit 0x803F94D0-0x803F9554 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Revolution filter manager and filter factory, part 1: the manager's Init and the factory's Destroy.
+// Init sets the manager's vtable and starts the THP decoder. Destroy accepts null.
+
+#include "classes/gtl_CRevolutionFilterFactory.h"
+#include "classes/gtl_CRevolutionFilterManager.h"
+#include "classes/GtlMediaPipeline.h"
 
 extern "C" {
 
-void gtl_CFilterManager_Ctor(void*, void*);
 void THPInit(void);
 void gtl_Free(void*);
 extern void* __vt__Q23gtl24CRevolutionFilterManager[];
+}
 
 #pragma opt_propagation off
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
 #pragma opt_strength_reduction off
-// Construct a Revolution media pipeline and initialize the THP decoder subsystem.
-// self is caller-provided storage; input is the required (sample bytes, sample count)
-// pair consumed by the base constructor. Returns self; neither argument is freed.
-void* gtl_CRevolutionFilterManager_Ctor(void* self, void* input) {
-    gtl_CFilterManager_Ctor(self, input);
+// Initialize the manager in caller-provided storage: base init from the config at input,
+// set the manager vtable and start the THP decoder. Returns this.
+void* gtl::CRevolutionFilterManager::Init(void* input) {
+    ((gtl::CFilterManager*)this)->Init((const gtl::CFilterManagerConfig*)input);
     void* vtable;
     vtable = __vt__Q23gtl24CRevolutionFilterManager;
-    *(void**)self = vtable;
+    vtbl = vtable;
     THPInit();
-    return self;
+    return this;
 }
 #pragma opt_strength_reduction reset
 #pragma opt_lifetimes reset
@@ -30,16 +33,14 @@ void* gtl_CRevolutionFilterManager_Ctor(void* self, void* input) {
 
 // Optionally free Revolution filter-factory storage through the GTL allocator.
 // This is the factory destructor slot (see its vtable), not the manager's destructor.
-// Null is accepted. deleting > 0 frees self; the returned address may therefore be stale.
-void* gtl_CRevolutionFilterFactory_dtor(void* self, int deleting) {
-    if (self != 0) {
+// Null is accepted. deleting > 0 frees this object; the returned address may therefore be stale.
+void* gtl::CRevolutionFilterFactory::Destroy(int deleting) {
+    if (this != 0) {
         if (deleting > 0) {
-            if (self != 0) {
-                gtl_Free(self);
+            if (this != 0) {
+                gtl_Free(this);
             }
         }
     }
-    return self;
+    return this;
 }
-
-} // extern "C"

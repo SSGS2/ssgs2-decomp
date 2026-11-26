@@ -3,19 +3,20 @@
 // Mod lookup: entry transform = Entry::a + kEntryTransformOffset (0x78);
 // position stream = SubMesh::verts, packed float XYZ, kPositionBytes (12) per vertex;
 // optional inclusion box = clip, inclusive in world space after bone transform.
-// Empty-result sentinels = kBoundsInitMin/Max (+/-100000) in u8005FA9C_data.cpp.
+// Empty-result sentinels = kBoundsInitMin/Max (+/-100000) in the data section.
 // Keep format offsets/strides and triangle counts together when changing a model
 // reader. Changing the clip box filters vertices, so this cannot establish bounds
 // of a geometrically clipped triangle or prove that course collision is absent.
 // The other operation destroys a mutex-protected owned list/buffer; it has no
 // resolution, aspect ratio, texture format, or frame rate setting.
-// Translation unit 0x8005FA9C-0x8005FE74 (2 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/types.h"
 
 // Target ABI: six consecutive floats, 24 bytes, min XYZ followed by max XYZ.
-struct Box { Vec3f min; Vec3f max; };
+struct Box {
+    Vec3f min;
+    Vec3f max;
+};
 // Expand one axis: dest points at min[axis], and max[axis] is three floats later.
 // Both pointers required and borrowed; changes only min[axis] and max[axis].
 // The repeated source load and comparison order preserve NaN/alias behavior.
@@ -29,15 +30,16 @@ inline void Expand(float* dest, float* value) {
 // Test inclusive bounds in the same space as the already-transformed vertex.
 inline bool Contains(Box* clip, Vec3f* p) {
     bool inside = false;
-    if (clip->min.x <= p->x && p->x <= clip->max.x &&
-        clip->min.y <= p->y && p->y <= clip->max.y &&
-        clip->min.z <= p->z && p->z <= clip->max.z) inside = true;
+    if (clip->min.x <= p->x && p->x <= clip->max.x && clip->min.y <= p->y && p->y <= clip->max.y &&
+        clip->min.z <= p->z && p->z <= clip->max.z)
+        inside = true;
     return inside;
 }
 struct RefObj;
 // CodeWarrior places the vptr after refs: f1(1) is the final-reference delete hook.
-struct RefObj { int refs; 
-virtual void f1(int);
+struct RefObj {
+    int refs;
+    virtual void f1(int);
 };
 
 // These are live 32-bit target views, not serialized GBIN records. Pointers are
@@ -47,10 +49,25 @@ virtual void f1(int);
 // (classes/WPuppet.h). Entry::a is the resolved bone, Entry::b its bounds metadata:
 // WPuppet_Share in wpuppet_model_bone_animation.cpp builds those two-pointer records.
 // Bone name is +8; bounds name is +0x2c. Both must be NUL-terminated and nonnull.
-struct SubMesh { int pad0; unsigned count; char* verts; int pad3; };
-struct MeshItem { unsigned count; SubMesh* subs; };
-struct Entry { char* a; char* b; };
-struct Owner { char pad[0x13c]; Entry* entries; unsigned count; };
+struct SubMesh {
+    int pad0;
+    unsigned count;
+    char* verts;
+    int pad3;
+};
+struct MeshItem {
+    unsigned count;
+    SubMesh* subs;
+};
+struct Entry {
+    char* a;
+    char* b;
+};
+struct Owner {
+    char pad[0x13c];
+    Entry* entries;
+    unsigned count;
+};
 
 // Entry::a supplies the name and transform; Entry::b supplies the comparison name.
 // SubMesh::count counts positions, stored as packed 12-byte XYZ float triples.
@@ -70,7 +87,7 @@ int WPuppet_CreateMeshByBoneName(void*, RefObj**, void*);
 unsigned short IPetMesh_GetGroupCount(RefObj*);
 MeshItem* IPetMesh_GetGroupByIndex(RefObj*, unsigned short);
 void* memcpy(void*, const void*, unsigned);
-void Matrix_TransformPoint(Vec3f*, Vec3f*, void*);
+void* Matrix_TransformPoint(Vec3f*, Vec3f*, void*);
 void __as__7WVectorFRC7WVector(Vec3f*, Vec3f*);
 void OSLockMutex(void*);
 void OSUnlockMutex(void*);
@@ -101,9 +118,16 @@ void WPuppet_ComputeMeshBounds(Box* out, Owner* owner, Box* clip) {
     out->min.z = kBoundsInitMin;
     out->max.z = kBoundsInitMax;
     RefObj* mesh = 0;
-    MeshItem* group; Entry* entry; int unusedOffset; Vec3f* vertex;
-    int groupIndex; unsigned submeshIndex; int corner; unsigned triangleStart;
-    char* entryData; unsigned entryIndex;
+    MeshItem* group;
+    Entry* entry;
+    int unusedOffset;
+    Vec3f* vertex;
+    int groupIndex;
+    unsigned submeshIndex;
+    int corner;
+    unsigned triangleStart;
+    char* entryData;
+    unsigned entryIndex;
     // Resolve only entries whose two stored names agree; acquire one mesh reference per entry.
     for (entryIndex = 0; entryIndex < owner->count; entryIndex++) {
         entry = &owner->entries[entryIndex];
@@ -116,12 +140,15 @@ void WPuppet_ComputeMeshBounds(Box* out, Owner* owner, Box* clip) {
                     for (groupIndex = 0; groupCount > groupIndex; groupIndex++) {
                         group = IPetMesh_GetGroupByIndex(mesh, (unsigned short)groupIndex);
                         for (submeshIndex = 0; submeshIndex < group->count; submeshIndex++) {
-                            for (triangleStart = 0; triangleStart < group->subs[submeshIndex].count; triangleStart += kVerticesPerTriangle) {
+                            for (triangleStart = 0; triangleStart < group->subs[submeshIndex].count;
+                                 triangleStart += kVerticesPerTriangle) {
                                 Vec3f triangle[kVerticesPerTriangle];
                                 vertex = triangle;
                                 for (corner = 0; corner < kVerticesPerTriangle; corner++, vertex++) {
                                     Vec3f transformed;
-                                    memcpy(vertex, group->subs[submeshIndex].verts + (triangleStart + corner) * kPositionBytes, kPositionBytes);
+                                    memcpy(vertex,
+                                           group->subs[submeshIndex].verts + (triangleStart + corner) * kPositionBytes,
+                                           kPositionBytes);
                                     Matrix_TransformPoint(&transformed, vertex, entryData + kEntryTransformOffset);
                                     __as__7WVectorFRC7WVector(vertex, &transformed);
                                     if (!clip || (clip && Contains(clip, vertex))) {
@@ -135,7 +162,10 @@ void WPuppet_ComputeMeshBounds(Box* out, Owner* owner, Box* clip) {
                     }
                     // Balance the mesh acquisition, deleting it only when the last reference drops.
                     RefObj* released = mesh;
-                    if (released && --released->refs == 0) { if (released) released->f1(1); }
+                    if (released && --released->refs == 0) {
+                        if (released)
+                            released->f1(1);
+                    }
                 }
             }
         }
@@ -146,16 +176,30 @@ void WPuppet_ComputeMeshBounds(Box* out, Owner* owner, Box* clip) {
 // Holder owns every node and buf; a null head denotes an empty list.
 // Target offsets: Node prev/next +0xc/+0x10; Holder head +8, buf +0x1c,
 // mutex +0x20. The guard and the unlink loop acquire the SAME recursive mutex.
-struct Node { char pad[0xc]; Node* prev; Node* next; };
+struct Node {
+    char pad[0xc];
+    Node* prev;
+    Node* next;
+};
 
 struct InstanceLock_u8005FA9C {
     void* p;
     // Hold the instance mutex for this scope, including exception unwinding.
-    InstanceLock_u8005FA9C(void* l) : p(l) { OSLockMutex(l); }
+    InstanceLock_u8005FA9C(void* l) : p(l) {
+        OSLockMutex(l);
+    }
     // Release the mutex acquired by the guard.
-    ~InstanceLock_u8005FA9C() { OSUnlockMutex(p); }
+    ~InstanceLock_u8005FA9C() {
+        OSUnlockMutex(p);
+    }
 };
-struct Holder { char pad0[8]; Node* head; char pad1[0x10]; void* buf; char lock[4]; };
+struct Holder {
+    char pad0[8];
+    Node* head;
+    char pad1[0x10];
+    void* buf;
+    char lock[4];
+};
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -180,7 +224,8 @@ Holder* LockedNodeList_dtor(Holder* self, short flag) {
                     Node* next = node->next;
                     node->prev->next = next;
                     nextHead = node->next;
-                    if (nextHead == node) nextHead = 0;
+                    if (nextHead == node)
+                        nextHead = 0;
                     OSUnlockMutex(mutex);
                     self->head = nextHead;
                     appFreeUni__FPv(node);
@@ -192,33 +237,11 @@ Holder* LockedNodeList_dtor(Holder* self, short flag) {
                 self->buf = 0;
             }
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 }
 
 #pragma pop
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

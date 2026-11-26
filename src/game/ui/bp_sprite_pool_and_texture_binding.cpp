@@ -1,3 +1,7 @@
+// Bp sprite pool and texture binding: sprites are acquired from a pool, given four vertices,
+// and drawn each frame. CBpTex binds a texture from a file path or a shared resource.
+// Also the vector growth helpers and object array teardown the pool uses.
+
 #include <decomp/static_init.h>
 #include <decomp/ct_member.h>
 // BP sprite pool and texture binding API (2D/menu graphics).
@@ -7,7 +11,7 @@
 // - Build a quad: Acquire -> BeginVertices -> ActivateAndClearVertexCount ->
 //   AppendVertex four times -> DrawActiveSprites. Acquire returns a borrowed,
 //   unclaimed entry; serialize the acquire/activate sequence with other users.
-// - Texture path/readiness: CBpTex_BindTexturePath -> CBpTex_IsLoaded -> Bind;
+// - Texture path/readiness: CBpTex::BindTexturePath -> CBpTex::IsLoaded -> Bind;
 //   request success does not mean load completion. ReleaseSources drops owners.
 // - Texture dimensions/format: GetTextureDescriptor and schema below; shared
 //   producer is shared_texture_resource.cpp -> gtl_Image_GetPlatform7Description (gtl_texture_vertex_formats.cpp).
@@ -26,12 +30,12 @@ extern const char vectorLengthErrorExceptionStrings[];
 }
 }
 
-// Translation unit 0x800C7630-0x800C850C (24 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "sdk_protos.h"
 #include "game/exception.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CBpSprite.h"
+#include "classes/CBpSpriteCtrl.h"
+#include "classes/CBpTex.h"
 extern "C" {
 
 extern float kFloat_6_2831855;
@@ -64,7 +68,6 @@ extern "C" void* GX_GetPrimitiveCount(int, int);
 extern "C" void DrawPrimitiveUP(int, void*, void*, int);
 extern "C" void __dl__FPv(void*);
 extern "C" void appFreeUni__FPv(void*);
-extern "C" int CBpSprite_Draw(void*);
 extern "C" void CubeResourceStorage_dtor(void*, int);
 extern "C" int Engine_SetTextureStageResource(int, int);
 extern "C" int Engine_SetTexturePalette(int, int);
@@ -82,7 +85,9 @@ extern char kBpSpriteTextureStageStates[];
 // texture binding; deleting the sprite does not release that binding.
 // Vertices carry caller-supplied XYZ float bits, RGBA bytes, and UV float bits;
 // this unit does not convert coordinate spaces or apply a transform itself.
-struct SpriteVertexStorage { unsigned int words[6]; };
+struct SpriteVertexStorage {
+    unsigned int words[6];
+};
 struct SpriteFields {
     void* vtable;
     void* textureBinding;
@@ -101,31 +106,37 @@ enum SpriteDrawConstants {
     kSpriteDefaultValue = 5
 };
 
-struct SpritePoolDtorView {
-    void* vtable;
-    void** entries;
-    unsigned int count;
-    int capacity;
-    char lock[0x10];
-};
-
 struct InstanceLock_u800C7630 {
     void* lock;
     // Acquire the pool's borrowed OS mutex for this scope.
-    InstanceLock_u800C7630(void* l) : lock(l) { OSLockMutex((OSMutex*)l); }
+    InstanceLock_u800C7630(void* l) : lock(l) {
+        OSLockMutex((OSMutex*)l);
+    }
     // Release the pool mutex after the operation or during exception unwind.
-    ~InstanceLock_u800C7630() { OSUnlockMutex((OSMutex*)lock); }
+    ~InstanceLock_u800C7630() {
+        OSUnlockMutex((OSMutex*)lock);
+    }
 };
 
 struct WInstanceLock {
     void* lock;
     // Hold the pool mutex across all active-sprite draw calls.
-    WInstanceLock(void* l) : lock(l) { OSLockMutex((OSMutex*)l); }
+    WInstanceLock(void* l) : lock(l) {
+        OSLockMutex((OSMutex*)l);
+    }
     // Release the borrowed mutex on normal return or exception unwind.
-    ~WInstanceLock() { OSUnlockMutex((OSMutex*)lock); }
+    ~WInstanceLock() {
+        OSUnlockMutex((OSMutex*)lock);
+    }
 };
 
-struct SpritePoolAcquireView { void* vtable; void** entries; unsigned int count; unsigned int capacity; char lock[0x10]; };
+struct SpritePoolAcquireView {
+    void* vtable;
+    void** entries;
+    unsigned int count;
+    unsigned int capacity;
+    char lock[0x10];
+};
 
 struct C7B78Buffer {
     void* data;
@@ -133,28 +144,41 @@ struct C7B78Buffer {
     // Temporarily own the exception text allocation during control-block construction.
     C7B78Buffer(void* p, char* a) : data(p), allocator(a) {}
     // Free text unless its ownership was transferred by clearing data.
-    ~C7B78Buffer() { if (data) __dla__FPv(data); }
+    ~C7B78Buffer() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 struct C7B78Ref {
     void* vtable;
     int refs, owners;
     void* data;
     // Retain a new shared-message allocation with initial reference counts of one.
-    C7B78Ref(void* p) { refs = 1; owners = 1; vtable = s_sharedCharDeleterVtable; data = p; }
+    C7B78Ref(void* p) {
+        refs = 1;
+        owners = 1;
+        vtable = s_sharedCharDeleterVtable;
+        data = p;
+    }
 };
 struct C7B78ErrorBase : std::exception {
     // Install the exception type's dispatch table in the reconstructed ABI storage.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
 
     char* message;
     C7B78Ref* ref;
     // Allocate a shared copy of the borrowed exception message.
     C7B78ErrorBase(const char* text) {
         SetTable(__vt__Q23std11logic_error);
-        struct Allocator { char value; char pad[3]; } alloc;
+        struct Allocator {
+            char value;
+            char pad[3];
+        } alloc;
         alloc.value = 0;
         unsigned int n = strlen(text) + 1;
-        char* p = static_cast<char*>(__nwa__FUl(2*n-n));
+        char* p = static_cast<char*>(__nwa__FUl(2 * n - n));
         message = p;
         {
             C7B78Buffer guard(p, reinterpret_cast<char*>(&alloc));
@@ -168,7 +192,9 @@ struct C7B78ErrorBase : std::exception {
 namespace std {
 struct length_error : C7B78ErrorBase {
     // Build the message-owning base then install length_error dispatch.
-    length_error(const char* text) : C7B78ErrorBase(text) { SetTable(__vt__Q23std12length_error); }
+    length_error(const char* text) : C7B78ErrorBase(text) {
+        SetTable(__vt__Q23std12length_error);
+    }
     ~length_error();
     DECOMP_CT_MEMBER(length_error)
 };
@@ -197,11 +223,14 @@ inline const unsigned int& C7B78Max(const unsigned int& a, const unsigned int& b
 // Construct and throw a vector length error while preserving exception cleanup.
 inline void C7B78Throw(const char* text) {
     {
-        union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+        union {
+            double alignment;
+            unsigned char bytes[sizeof(std::length_error)];
+        } storage;
         std::length_error* error = (std::length_error*)storage.bytes;
         error->__ct(text);
         exception_runtime::__throw(exception_runtime::vectorLengthErrorExceptionStrings + 0x14, error,
-            (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                   (void*)exception_runtime::__dt__Q23std12length_errorFv);
     }
 }
 
@@ -249,17 +278,21 @@ void* BpSpritePool_Acquire(SpritePoolAcquireView* self) {
         unsigned int need;
         if (0x3fffffffU - reserved < 1) {
             {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(std::length_error)];
+                } storage;
                 std::length_error* error = (std::length_error*)storage.bytes;
                 error->__ct("vector length error");
                 exception_runtime::__throw(exception_runtime::vectorLengthErrorExceptionStrings + 0x14, error,
-                    (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                           (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
         }
         C7B78Storage storage(&self->capacity);
         need = self->count + 1 - self->capacity;
         unsigned int cap = self->capacity;
-        if (need > 0x3fffffffU - cap) C7B78Throw("vector length error");
+        if (need > 0x3fffffffU - cap)
+            C7B78Throw("vector length error");
         if (cap < 0x15555555U) {
             growth1 = (3 * (cap + 1)) / 5;
             cap += C7B78Max(growth1, need);
@@ -271,11 +304,14 @@ void* BpSpritePool_Acquire(SpritePoolAcquireView* self) {
         }
         if (cap > 0x3fffffffU) {
             {
-                union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+                union {
+                    double alignment;
+                    unsigned char bytes[sizeof(std::length_error)];
+                } storage;
                 std::length_error* error = (std::length_error*)storage.bytes;
                 error->__ct("vector length error");
                 exception_runtime::__throw(exception_runtime::vectorLengthErrorExceptionStrings + 0x14, error,
-                    (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                           (void*)exception_runtime::__dt__Q23std12length_errorFv);
             }
         }
 
@@ -290,7 +326,8 @@ void* BpSpritePool_Acquire(SpritePoolAcquireView* self) {
         void** oldEnd = (self->count + oldData);
         count = (reinterpret_cast<char*>(oldEnd) - reinterpret_cast<char*>(oldData)) / 4;
         storage.position -= count;
-        bytes = count * 4; memcpy(storage.data + storage.position, oldData, bytes);
+        bytes = count * 4;
+        memcpy(storage.data + storage.position, oldData, bytes);
         memset(oldData, 0, bytes);
         storage.count += count;
         self->count = 0;
@@ -309,44 +346,57 @@ void* BpSpritePool_Acquire(SpritePoolAcquireView* self) {
 
 #pragma push
 #pragma use_lmw_stmw on
-struct VCall_767C { 
-virtual void s0(); virtual void s1(); virtual void s2(); virtual void s3();
+struct CBpTexView {
+    virtual void s0();
+    virtual void s1();
+    virtual void s2();
+    virtual void s3();
 };
 // Bind the sprite texture, draw its four-vertex strip, and restore the overridden render state.
-int CBpSprite_Draw(void* self) {
+int CBpSprite::Draw() {
     // Texture stage zero is explicitly cleared after drawing; the optional state
     // override restores value 5 rather than saving/restoring arbitrary prior state.
-    if (((SpriteFields*)self)->textureBinding != 0) {
+    if (((SpriteFields*)this)->textureBinding != 0) {
         unsigned int descriptorWord1, descriptorWord0;
         unsigned int* source;
         source = reinterpret_cast<unsigned int*>(kBpSpriteTextureStageStates);
         descriptorWord0 = *source++;
         descriptorWord1 = *source++;
         int words[12];
-        words[0] = descriptorWord0; words[1] = descriptorWord1; words[2] = source[0];
-        unsigned int descriptorWord3 = source[1]; words[3] = descriptorWord3;
-        unsigned int descriptorWord4 = source[2]; words[4] = descriptorWord4;
-        words[5] = source[3]; words[6] = source[4]; words[7] = source[5];
-        words[8] = source[6]; words[9] = source[7]; words[10] = source[8]; words[11] = source[9];
+        words[0] = descriptorWord0;
+        words[1] = descriptorWord1;
+        words[2] = source[0];
+        unsigned int descriptorWord3 = source[1];
+        words[3] = descriptorWord3;
+        unsigned int descriptorWord4 = source[2];
+        words[4] = descriptorWord4;
+        words[5] = source[3];
+        words[6] = source[4];
+        words[7] = source[5];
+        words[8] = source[6];
+        words[9] = source[7];
+        words[10] = source[8];
+        words[11] = source[9];
         Engine_SetTextureStageStateList(0, words, 6);
-        void* object = ((SpriteFields*)self)->textureBinding;
-        reinterpret_cast<VCall_767C*>(object)->s3();
+        void* object = ((SpriteFields*)this)->textureBinding;
+        reinterpret_cast<CBpTexView*>(object)->s3();
     } else {
         Engine_SetTextureStageResource(0, 0);
         Engine_SetTexturePalette(0, 0);
     }
     int enabled = 0;
-    if (((SpriteFields*)self)->drawStateOverride != 0) {
+    if (((SpriteFields*)this)->drawStateOverride != 0) {
         Engine_SetCachedRenderState(kSpriteDrawState, kSpriteOverrideValue);
         enabled = 1;
     }
     Engine_SetFlexibleVertexFormat(kSpriteVertexFormat);
     Engine_SetType7Resource(0);
     void* primitiveCount = GX_GetPrimitiveCount(kSpriteVertexCapacity, kTriangleStrip);
-    DrawPrimitiveUP(kTriangleStrip, primitiveCount, ((SpriteFields*)self)->vertices, kSpriteVertexStride);
+    DrawPrimitiveUP(kTriangleStrip, primitiveCount, ((SpriteFields*)this)->vertices, kSpriteVertexStride);
     Engine_SetTextureStageResource(0, 0);
     Engine_SetTexturePalette(0, 0);
-    if (enabled) Engine_SetCachedRenderState(kSpriteDrawState, kSpriteDefaultValue);
+    if (enabled)
+        Engine_SetCachedRenderState(kSpriteDrawState, kSpriteDefaultValue);
     return 1;
 }
 #pragma pop
@@ -354,55 +404,39 @@ int CBpSprite_Draw(void* self) {
 #pragma opt_common_subs on
 #pragma opt_propagation on
 #pragma opt_strength_reduction on
-struct C7958Virt { 
-virtual void s0(int); virtual void s1(); virtual void s2();
+struct CBpSpriteView {
+    virtual void s0(int);
+    virtual void s1();
+    virtual void s2();
 };
-// Delete pooled sprites under the mutex, free the pointer vector, and optionally free self.
-void* CBpSpriteCtrl_dtor(SpritePoolDtorView* self, int flag) {
-    if (self != 0) {
-        self->vtable = __vt__13CBpSpriteCtrl;
-        {
-            WInstanceLock guard(self->lock);
-            void** entry = self->entries;
-            while (entry != self->entries + self->count) {
-                void* object = *entry;
+// Delete pooled sprites under the mutex and free the pointer vector.
+CBpSpriteCtrl::~CBpSpriteCtrl() {
+    vtbl = __vt__13CBpSpriteCtrl;
+    {
+        WInstanceLock guard(mutex);
+        void** entry = buffer.entries;
+        while (entry != buffer.entries + buffer.count) {
+            void* object = *entry;
+            if (object != 0) {
                 if (object != 0) {
-                    if (object != 0) {
-                        reinterpret_cast<C7958Virt*>(object)->s0(1);
-                    }
-                    *entry = 0;
+                    reinterpret_cast<CBpSpriteView*>(object)->s0(1);
                 }
-                ++entry;
+                *entry = 0;
             }
-            void** allocation = self->entries;
-            self->capacity = 0;
-            self->entries = 0;
-            self->count = 0;
-            if (allocation != 0) appFreeUni__FPv(allocation);
+            ++entry;
         }
-        ((SpritePtrVector*)&self->entries)->~SpritePtrVector();
-        if (flag > 0) __dl__FPv(self);
+        void** allocation = buffer.entries;
+        buffer.capacity = 0;
+        buffer.entries = 0;
+        buffer.count = 0;
+        if (allocation != 0)
+            appFreeUni__FPv(allocation);
     }
-    return self;
+    ((SpritePtrVector*)&buffer.entries)->~SpritePtrVector();
 }
 #pragma opt_common_subs reset
 #pragma opt_propagation reset
 #pragma opt_strength_reduction reset
-
-// Descriptor schema: seven native 32-bit words (0x1C bytes), 4-byte aligned.
-// +00 width pixels; +04 height pixels; +08 producer writes zero (role unknown);
-// +0C mip-level count; +10 platform-7 format ID; +14 producer writes tag 3
-// (role unknown); +18 opaque trailing word. The shared producer in gtl_texture_vertex_formats.cpp
-// writes only the FIRST SIX words; this copier forwards word 6 unchanged, even
-// if the producer left it uninitialized. Never interpret it as a valid dimension
-// or initialize it as part of a readability edit. Direct sources copy all seven
-// stored words instead of consulting a shared object. No endian/float conversion.
-struct TextureBindingView {
-    void* vtable;
-    int sharedTextureResource; // ISharedResource address, kept as a word for this call ABI.
-    int descriptorWord0, descriptorWord1, descriptorWord2, descriptorWord3, descriptorWord4, descriptorWord5, descriptorWord6;
-    int directTextureResource; // Direct texture resource address, with packed shared refcount.
-};
 
 struct SpritePoolInitView {
     void* vtable;
@@ -428,22 +462,15 @@ struct SpritePoolDrawView {
     char mutex[0x10];
 };
 
-struct SpriteVertexBits {
-    int positionX, positionY, positionZ;
-    unsigned char color[4];
-    int texCoordU, texCoordV;
-};
-struct SpriteVertexBufferView { char spriteHeader[12]; int count; SpriteVertexBits items[1]; };
-
 // Initialize an empty texture binding with neither a shared file nor a direct resource.
-void CBpTex_Init(TextureBindingView* self) {
-    self->sharedTextureResource = 0;
-    self->vtable = __vt__6CBpTex;
-    self->directTextureResource = 0;
+CBpTex::CBpTex() {
+    sharedTextureResource = 0;
+    vtbl = __vt__6CBpTex;
+    directTextureResource = 0;
 }
 
 // Return shared-file texture metadata; a direct texture has no metadata pointer here.
-void* BpSprite_GetTextureDescription(TextureBindingView* self) {
+void* BpSprite_GetTextureDescription(CBpTex* self) {
     if (self->directTextureResource != 0) {
         return 0;
     }
@@ -451,12 +478,7 @@ void* BpSprite_GetTextureDescription(TextureBindingView* self) {
 }
 
 // Free a sprite when called as a deleting destructor.
-void* CBpSprite_dtor(void* self, int flag) {
-    if (self != 0 && flag > 0) {
-        __dl__FPv(self);
-    }
-    return self;
-}
+CBpSprite::~CBpSprite() {}
 
 // SpriteBuffer is the sprite pointer vector: destroy it and free the object too when flag > 0.
 void* __dt__12SpriteBufferFv(SpritePtrVector* self, int flag) {
@@ -464,7 +486,7 @@ void* __dt__12SpriteBufferFv(SpritePtrVector* self, int flag) {
 }
 
 // Return the texture interface's constant zero result.
-int CBpTex_vfunc_2() {
+int CBpTex::vfunc_2() {
     return 0;
 }
 
@@ -477,7 +499,7 @@ struct ObjectPoolView {
 };
 
 struct VirtualCallTrial_800C806C {
-virtual void invoke(int);
+    virtual void invoke(int);
 };
 // Delete every virtual object and release the pointer array while holding its mutex.
 int ObjectArray_DeleteAllAndClear(ObjectPoolView* self) {
@@ -497,7 +519,8 @@ int ObjectArray_DeleteAllAndClear(ObjectPoolView* self) {
     self->capacity = 0;
     self->entries = 0;
     self->count = 0;
-    if (entries != 0) appFreeUni__FPv(entries);
+    if (entries != 0)
+        appFreeUni__FPv(entries);
     return 1;
 }
 
@@ -506,36 +529,23 @@ struct D8154Virt {
     virtual void s1();
 };
 struct PackedResourceRefCount {
-    CW_BITS2(
-        unsigned int hi : 16,
-        unsigned int lo : 16)
+    CW_BITS2(unsigned int hi : 16, unsigned int lo : 16)
 };
-struct TextureBindingDtorView {
-    void* vtable;
-    D8154Virt* sharedTextureResource;
-    int w[7];
-    PackedResourceRefCount* directTextureResource;
-};
-
-// Release the shared texture and direct resource reference, then optionally free the binding.
-void* CBpTex_dtor(TextureBindingDtorView* self, int flag) {
-    if (self != 0) {
-        self->vtable = __vt__6CBpTex;
-        if (self->sharedTextureResource != 0) {
-            self->sharedTextureResource->s1();
-            self->sharedTextureResource = 0;
-        }
-        if (self->directTextureResource != 0) {
-            PackedResourceRefCount* p = self->directTextureResource;
-            p->hi = p->hi - 1;
-            if (p->hi == 0) {
-                CubeResourceStorage_dtor(p, 1);
-            }
-            self->directTextureResource = 0;
-        }
-        if (flag > 0) __dl__FPv(self);
+// Release the shared texture and direct resource reference.
+CBpTex::~CBpTex() {
+    vtbl = __vt__6CBpTex;
+    if (sharedTextureResource != 0) {
+        reinterpret_cast<D8154Virt*>(sharedTextureResource)->s1();
+        sharedTextureResource = 0;
     }
-    return self;
+    if (directTextureResource != 0) {
+        PackedResourceRefCount* p = reinterpret_cast<PackedResourceRefCount*>(directTextureResource);
+        p->hi = p->hi - 1;
+        if (p->hi == 0) {
+            CubeResourceStorage_dtor(p, 1);
+        }
+        directTextureResource = 0;
+    }
 }
 
 #pragma opt_propagation off
@@ -545,20 +555,37 @@ void* CBpTex_dtor(TextureBindingDtorView* self, int flag) {
 // readiness/null-description check here); return 1 means copied, not loaded.
 // No retained pointer is returned. Shared source/destination must not overlap;
 // direct reads are all staged before writes, a sequencing detail to preserve.
-int BpSprite_GetTextureDescriptor(TextureBindingView* self, int* out) {
-    if (out == 0) return 0;
+int BpSprite_GetTextureDescriptor(CBpTex* self, int* out) {
+    if (out == 0)
+        return 0;
     if (self->directTextureResource) {
         unsigned int trailingWord, producerTag, format, mipLevels, zeroWord, height, width;
         int* p = &self->descriptorWord0;
-        width = p[0]; height = p[1]; zeroWord = p[2]; mipLevels = p[3];
-        format = p[4]; producerTag = p[5]; trailingWord = p[6];
-        out[0] = width; out[1] = height; out[2] = zeroWord; out[3] = mipLevels;
-        out[4] = format; out[5] = producerTag; out[6] = trailingWord;
+        width = p[0];
+        height = p[1];
+        zeroWord = p[2];
+        mipLevels = p[3];
+        format = p[4];
+        producerTag = p[5];
+        trailingWord = p[6];
+        out[0] = width;
+        out[1] = height;
+        out[2] = zeroWord;
+        out[3] = mipLevels;
+        out[4] = format;
+        out[5] = producerTag;
+        out[6] = trailingWord;
         return 1;
     }
-    int* values = static_cast<int*>(ISharedResource_GetTextureDescription(reinterpret_cast<void*>(self->sharedTextureResource)));
-    out[0] = values[0]; out[1] = values[1]; out[2] = values[2];
-    out[3] = values[3]; out[4] = values[4]; out[5] = values[5]; out[6] = values[6];
+    int* values =
+        static_cast<int*>(ISharedResource_GetTextureDescription(reinterpret_cast<void*>(self->sharedTextureResource)));
+    out[0] = values[0];
+    out[1] = values[1];
+    out[2] = values[2];
+    out[3] = values[3];
+    out[4] = values[4];
+    out[5] = values[5];
+    out[6] = values[6];
     return 1;
 }
 
@@ -580,22 +607,23 @@ void BpSpritePool_InitializeConstants() {
 }
 
 // Store the texture-binding address used when this sprite is drawn.
-int CBpSprite_BeginVertices(void* self, int textureBindingAddress) {
-    (*(int*)&((SpriteFields*)self)->textureBinding) = textureBindingAddress;
+int CBpSprite::BeginVertices(int textureBindingAddress) {
+    (*(int*)&((SpriteFields*)this)->textureBinding) = textureBindingAddress;
     return 1;
 }
 
 #pragma opt_propagation off
 // Copy position/color/UV bit patterns into the next slot and clamp the resulting vertex count.
-int CBpSprite_AppendVertex(SpriteVertexBufferView* self, SpriteVertexBits* item) {
+int CBpSprite::AppendVertex(void* vertex) {
     // Precondition: count indexes writable storage BEFORE increment/clamp. The
     // post-write count clamp is not a bounds check for this store.
+    SpriteVertexBits* item = (SpriteVertexBits*)vertex;
     SpriteVertexBits* dest;
     int positionXBits, positionYBits, texCoordUBits, texCoordVBits;
     int next;
     int* result = &next;
     positionXBits = item->positionX;
-    dest = &self->items[self->count];
+    dest = &vertices[vertexCount];
     positionYBits = item->positionY;
     dest->positionX = positionXBits;
     dest->positionY = positionYBits;
@@ -608,9 +636,10 @@ int CBpSprite_AppendVertex(SpriteVertexBufferView* self, SpriteVertexBits* item)
     texCoordUBits = item->texCoordU;
     dest->texCoordU = texCoordUBits;
     dest->texCoordV = texCoordVBits;
-    next = self->count + 1;
-    if (s_bpSpriteVertexCountLimit < next) result = &s_bpSpriteVertexCountLimit;
-    self->count = *result;
+    next = vertexCount + 1;
+    if (s_bpSpriteVertexCountLimit < next)
+        result = &s_bpSpriteVertexCountLimit;
+    vertexCount = *result;
     return 0;
 }
 #pragma opt_propagation reset
@@ -623,7 +652,7 @@ int BpSpritePool_DrawActiveSprites(SpritePoolDrawView* self) {
     while (entry != self->entries + self->count) {
         void* obj = *entry;
         if (((SpriteFields*)obj)->active != 0) {
-            CBpSprite_Draw(obj);
+            ((CBpSprite*)obj)->Draw();
         }
         ++entry;
     }
@@ -631,26 +660,12 @@ int BpSpritePool_DrawActiveSprites(SpritePoolDrawView* self) {
 }
 
 // Clear the vertex count and mark the sprite active.
-int CBpSprite_ActivateAndClearVertexCount(void* self) {
-    ((SpriteFields*)self)->vertexCount = 0;
-    ((SpriteFields*)self)->active = 1;
+int CBpSprite::ActivateAndClearVertexCount() {
+    ((SpriteFields*)this)->vertexCount = 0;
+    ((SpriteFields*)this)->active = 1;
     return 1;
 }
-
 }
-struct SpriteBuffer {
-    void* member;
-    int count, capacity;
-    // Initialize the vector allocation; its enclosing constructor clears size/capacity.
-    SpriteBuffer() : member(0) {}
-    ~SpriteBuffer();
-};
-struct CBpSpriteCtrl {
-    void* vtable;
-    SpriteBuffer buffer;
-    char mutex[0x10];
-    CBpSpriteCtrl();
-};
 // Initialize an empty sprite pool and its instance mutex.
 CBpSpriteCtrl::CBpSpriteCtrl() {
     SpritePoolInitView* self = (SpritePoolInitView*)this;
@@ -681,39 +696,42 @@ int BpSpritePool_MarkAllInactive(SpritePoolResetView* self) {
 }
 
 // Report readiness of a direct texture or its shared texture resource.
-int CBpTex_IsLoaded(TextureBindingView* self) {
-    if (self->directTextureResource != 0) {
+int CBpTex::IsLoaded() {
+    if (directTextureResource != 0) {
         return 1;
     }
-    return Get__15ISharedResourceFv(reinterpret_cast<void*>(self->sharedTextureResource)) != 0;
+    return Get__15ISharedResourceFv(reinterpret_cast<void*>(sharedTextureResource)) != 0;
 }
 
 // Bind a direct texture, or resolve and bind the shared resource and hardware texture.
-int CBpTex_Bind(const TextureBindingView* self) {
+int CBpTex::Bind() const {
     // Only the direct-resource branch defines a return value. Existing callers
     // use this operation for binding side effects; do not interpret the shared path's result.
-    if (self->directTextureResource != 0) {
-        Engine_SetTextureStageResource(0, self->directTextureResource);
+    if (directTextureResource != 0) {
+        Engine_SetTextureStageResource(0, directTextureResource);
         return 1;
     }
-    int value = ISharedResource_GetLocked(reinterpret_cast<void*>(self->sharedTextureResource));
+    int value = ISharedResource_GetLocked(reinterpret_cast<void*>(sharedTextureResource));
     Engine_SetTextureStageResource(0, value);
-    int status = ISharedResource_GetPaletteObject(reinterpret_cast<void*>(self->sharedTextureResource));
+    int status = ISharedResource_GetPaletteObject(reinterpret_cast<void*>(sharedTextureResource));
     if (status != 0) {
-        status = ISharedResource_GetPaletteObject(reinterpret_cast<void*>(self->sharedTextureResource));
+        status = ISharedResource_GetPaletteObject(reinterpret_cast<void*>(sharedTextureResource));
         Engine_SetTexturePalette(0, status);
     } else {
         Engine_SetTexturePalette(0, 0);
     }
 }
 
-struct C82B8Virt { 
-virtual void s0(); virtual void s1(); virtual void s2(); virtual void s3();
+struct ISharedResourceView {
+    virtual void s0();
+    virtual void s1();
+    virtual void s2();
+    virtual void s3();
 };
 // Release both texture sources and clear their stored addresses.
-void BpTextureBinding_ReleaseSources(TextureBindingView* self) {
+void BpTextureBinding_ReleaseSources(CBpTex* self) {
     if (self->sharedTextureResource != 0) {
-        reinterpret_cast<C82B8Virt*>(self->sharedTextureResource)->s1();
+        reinterpret_cast<ISharedResourceView*>(self->sharedTextureResource)->s1();
         self->sharedTextureResource = 0;
     }
     PackedResourceRefCount* p = reinterpret_cast<PackedResourceRefCount*>(self->directTextureResource);
@@ -727,20 +745,21 @@ void BpTextureBinding_ReleaseSources(TextureBindingView* self) {
 }
 
 // Release existing texture sources and request a shared texture by path.
-int CBpTex_BindTexturePath(TextureBindingView* self, void* texturePath) {
+int CBpTex::BindTexturePath(void* texturePath) {
     // Return 1 means the request was issued, not that the texture is loaded;
-    // readiness is queried separately by CBpTex_IsLoaded.
-    if (self->sharedTextureResource != 0) {
-        reinterpret_cast<C82B8Virt*>(self->sharedTextureResource)->s1();
-        self->sharedTextureResource = 0;
+    // readiness is queried separately by IsLoaded.
+    if (sharedTextureResource != 0) {
+        reinterpret_cast<ISharedResourceView*>(sharedTextureResource)->s1();
+        sharedTextureResource = 0;
     }
-    PackedResourceRefCount* p = reinterpret_cast<PackedResourceRefCount*>(self->directTextureResource);
+    PackedResourceRefCount* p = reinterpret_cast<PackedResourceRefCount*>(directTextureResource);
     if (p != 0) {
         p->hi = p->hi - 1;
-        if (p->hi == 0) CubeResourceStorage_dtor(p, 1);
-        self->directTextureResource = 0;
+        if (p->hi == 0)
+            CubeResourceStorage_dtor(p, 1);
+        directTextureResource = 0;
     }
-    self->sharedTextureResource = reinterpret_cast<int>(CreateSharedTextureResource__FPCci(texturePath, 0));
+    sharedTextureResource = reinterpret_cast<int>(CreateSharedTextureResource__FPCci(texturePath, 0));
     return 1;
 }
 

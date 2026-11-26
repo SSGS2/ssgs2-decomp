@@ -1,3 +1,6 @@
+// Golf club selection and shot parameters: the club list and its name registry, club choice for
+// the player and the CPU, the shot's power, launch and impact values, and the golf clock actor.
+
 #include <decomp/static_init.h>
 // Field offsets are checked in the class headers; original function addresses stay below.
 #include "classes/CGolfDoc.h"
@@ -15,6 +18,8 @@
 #include "classes/GolfDocSnapshot8013.h"
 #include "iff/IffStruct.h"
 #include "game/golfball.h"
+#include "classes/CClub.h"
+#include "classes/CQuadTree.h"
 // GolfBall__Fv returns the physics CGolfBall; original ground type +0x59,
 // power flags +0x44 and shot-spin setting +0x38 (shared CGolfBall layout in golfball.h).
 
@@ -24,70 +29,179 @@
 // Distance tiers classify horizontal range in yards; these values also select
 // the green-putter policy and wedge launch-speed formula.
 enum ClubDistanceTier {
-    kDistanceBelow10Yards = 0, kDistance10To15Yards = 1,
-    kDistance15To28Yards = 2, kDistance28To58Yards = 3,
+    kDistanceBelow10Yards = 0,
+    kDistance10To15Yards = 1,
+    kDistance15To28Yards = 2,
+    kDistance28To58Yards = 3,
     kDistanceAtLeast58Yards = 4
 };
 // Unidentified terrain codes are named by this selector's observed score policy.
-enum ClubTerrainPenaltyCode { kPenalty100Ground4 = 4, kUnpenalizedGround5 = 5,
-    kPenalty100Ground6 = 6, kPenalty100Ground7 = 7, kUnpenalizedGround8 = 8,
-    kPenalty100Ground10 = 10 };
+enum ClubTerrainPenaltyCode {
+    kPenalty100Ground4 = 4,
+    kUnpenalizedGround5 = 5,
+    kPenalty100Ground6 = 6,
+    kPenalty100Ground7 = 7,
+    kUnpenalizedGround8 = 8,
+    kPenalty100Ground10 = 10
+};
 enum ClubConstants {
-    kClubWood = 0, kClubIron = 1, kClubWedge = 2, kClubPutter = 3,
-    kFirstWedgeIndex = 11, kSandWedgeIndex = 12, kPutterIndex = 13,
-    kClubNameCount = 17, kDistanceTierCount = 5,
-    kAnimationDelay = 0, kAnimationSlideOut = 1, kAnimationReady = 2, kAnimationFadeIn = 3,
-    kSelectionChanged = 1, kClubGroupChanged = 2, kSelectionChangeMask = 3,
-    kPartyMode = 3, kClubLockItem = 11,
-    kActionPreviousClub = 0, kActionNextClub = 1, kActionCameraModifier = 0x19,
-    kCameraDefault = 0, kCameraClubSelection = 4,
-    kClockStart = 0, kClockStop = 1, kClockReset = 0x2719,
-    kClockMessageUpdate = 8, kClockMessageTimeout = 7, kTimeoutFlag = 0x4000,
-    kWarningTimeMs = 10000, kClockBlueTimeMs = 20000, kClockYellowTimeMs = 15000,
-    kClockRedTimeMs = 5000, kClockBlendTimeMs = 5000,
-    kClockBlue = 0xFF147EFF, kClockYellow = 0xFFF014FF, kClockRed = 0xFFFF1450,
+    kClubWood = 0,
+    kClubIron = 1,
+    kClubWedge = 2,
+    kClubPutter = 3,
+    kFirstWedgeIndex = 11,
+    kSandWedgeIndex = 12,
+    kPutterIndex = 13,
+    kClubNameCount = 17,
+    kDistanceTierCount = 5,
+    kAnimationDelay = 0,
+    kAnimationSlideOut = 1,
+    kAnimationReady = 2,
+    kAnimationFadeIn = 3,
+    kSelectionChanged = 1,
+    kClubGroupChanged = 2,
+    kSelectionChangeMask = 3,
+    kPartyMode = 3,
+    kClubLockItem = 11,
+    kActionPreviousClub = 0,
+    kActionNextClub = 1,
+    kActionCameraModifier = 0x19,
+    kCameraDefault = 0,
+    kCameraClubSelection = 4,
+    kClockStart = 0,
+    kClockStop = 1,
+    kClockReset = 0x2719,
+    kClockMessageUpdate = 8,
+    kClockMessageTimeout = 7,
+    kTimeoutFlag = 0x4000,
+    kWarningTimeMs = 10000,
+    kClockBlueTimeMs = 20000,
+    kClockYellowTimeMs = 15000,
+    kClockRedTimeMs = 5000,
+    kClockBlendTimeMs = 5000,
+    kClockBlue = 0xFF147EFF,
+    kClockYellow = 0xFFF014FF,
+    kClockRed = 0xFFFF1450,
     kColorByteMask = 0xFF00FF00,
-    kGroundTee = 0, kGroundGreen = 2, kGroundBunker = 3, kGroundWater = 9,
-    kPlayerSlotBytes = 0x1D4, kPlayerSlotsOffset = 0x44, kInventoryPointerOffset = 0x1CC,
-    kPowerStatOffset = 0xD8, kControlStatOffset = 0xDC,
-    kHashFirstMask = 0x2A, kHashLastMask = 0x15, kHashLengthShift = 6
+    kGroundTee = 0,
+    kGroundGreen = 2,
+    kGroundBunker = 3,
+    kGroundWater = 9,
+    kPlayerSlotBytes = 0x1D4,
+    kPlayerSlotsOffset = 0x44,
+    kInventoryPointerOffset = 0x1CC,
+    kPowerStatOffset = 0xD8,
+    kControlStatOffset = 0xDC,
+    kHashFirstMask = 0x2A,
+    kHashLastMask = 0x15,
+    kHashLengthShift = 6
 };
 
 // Layout shared by the selection registry and its animation/shot-parameter views.
 struct ClubSelectionStorage {
-    void* vtable; void* selected; void* first; void* cursor;
-    void* blocks; void* freeNodes; int nodesPerBlock; unsigned int hashMask;
-    int bucketCount; void** buckets; char mutex[0x18];
-    unsigned char clubIndex, minimumClubIndex; char padding42[2]; int powerMode;
-    unsigned char distanceTier; char padding49[3]; unsigned int changeFlags;
-    unsigned char longPutt; char padding51[3]; float fadeSeconds;
-    float opacity; float slidePosition; int animationState;
-    unsigned char selectionFlag; unsigned char previousClubIndex; char padding66[2];
-    float controlValue; float controlLimit; float powerBonus;
-    unsigned char resourcesLoaded; char padding75[3]; int inputState;
-    int resourceCount; void* resourceNext; void* resourcePrevious;
+    void* vtable;
+    void* selected;
+    void* first;
+    void* cursor;
+    void* blocks;
+    void* freeNodes;
+    int nodesPerBlock;
+    unsigned int hashMask;
+    int bucketCount;
+    void** buckets;
+    char mutex[0x18];
+    unsigned char clubIndex, minimumClubIndex;
+    char padding42[2];
+    int powerMode;
+    unsigned char distanceTier;
+    char padding49[3];
+    unsigned int changeFlags;
+    unsigned char longPutt;
+    char padding51[3];
+    float fadeSeconds;
+    float opacity;
+    float slidePosition;
+    int animationState;
+    unsigned char selectionFlag;
+    unsigned char previousClubIndex;
+    char padding66[2];
+    float controlValue;
+    float controlLimit;
+    float powerBonus;
+    unsigned char resourcesLoaded;
+    char padding75[3];
+    int inputState;
+    int resourceCount;
+    void* resourceNext;
+    void* resourcePrevious;
 };
-struct ClubRegistryStorage { char prefix[8]; NameRegistry801C registry; };
-struct ClubRegistryNodeView { void* data; const char* name; char links[0xC]; void* bucketNext; };
+struct ClubRegistryStorage {
+    char prefix[8];
+    NameRegistry801C registry;
+};
+struct ClubRegistryNodeView {
+    void* data;
+    const char* name;
+    char links[0xC];
+    void* bucketNext;
+};
 struct ClubParameterView {
-    float distanceYards, launchAngle; unsigned char parameterKind, clubIndex, clubGroup, padding0B;
+    float distanceYards, launchAngle;
+    unsigned char parameterKind, clubIndex, clubGroup, padding0B;
     float launchSpeed, selectionScale, selectionBias;
-    char name[4]; float selectionWeight; float preferenceBias;
+    char name[4];
+    float selectionWeight;
+    float preferenceBias;
 };
 struct ShotAdjustmentState {
-    char prefix[0x10]; float powerBonusRate; float impactWidthBonus;
-    char padding18[0x24]; float impactWidthDivisor; char padding40[0x20]; int clockSuspended;
+    char prefix[0x10];
+    float powerBonusRate;
+    float impactWidthBonus;
+    char padding18[0x24];
+    float impactWidthDivisor;
+    char padding40[0x20];
+    int clockSuspended;
 };
-struct PlayerShotStats { char prefix[0xD8]; int power; int control; };
-struct PlayerInventorySlot { char prefix[kInventoryPointerOffset]; void* inventory; };
-struct PlayerRankSlot { void* rank; char rest[kPlayerSlotBytes - 4]; };
-struct SharedRankSlots { char prefix[kPlayerSlotsOffset]; PlayerRankSlot players[4]; };
-struct ClockMessage { int sender; int type; };
-struct ClubCachedResourceSet { char prefix[4]; void* resourcesA[4]; void* resourcesB[4]; };
-struct ClubCachedResourceNode { void* next; void* previous; void* resources; };
+struct PlayerShotStats {
+    char prefix[0xD8];
+    int power;
+    int control;
+};
+struct PlayerInventorySlot {
+    char prefix[kInventoryPointerOffset];
+    void* inventory;
+};
+struct PlayerRankSlot {
+    void* rank;
+    char rest[kPlayerSlotBytes - 4];
+};
+struct SharedRankSlots {
+    char prefix[kPlayerSlotsOffset];
+    PlayerRankSlot players[4];
+};
+struct ClockMessage {
+    int sender;
+    int type;
+};
+struct ClubCachedResourceSet {
+    char prefix[4];
+    void* resourcesA[4];
+    void* resourcesB[4];
+};
+struct ClubCachedResourceNode {
+    void* next;
+    void* previous;
+    void* resources;
+};
 
 // Original Shift-JIS string pools, described in place without new storage.
-struct ClockStrings { char screen[7]; char timeSound[7]; char golfRule[9]; char className[7]; char alignmentPadding[2]; };
+struct ClockStrings {
+    char screen[7];
+    char timeSound[7];
+    char golfRule[9];
+    char className[7];
+    char alignmentPadding[2];
+};
 struct ClubStrings {
     char wood1[3], wood2[3], wood3[3];
     char iron2[3], iron3[3], iron4[3], iron5[3], iron6[3], iron7[3], iron8[3], iron9[3];
@@ -229,7 +343,7 @@ extern const char clockMessageStrings[];
 
 void __dt__18NativeBase80201D18Fv(void*, int);
 void __dl__FPv(void*);
-void IntPair_Set(void*, const char*, void*);
+void* IntPair_Set(void*, const char*, void*);
 void* ActorFactoryRegistry_GetInstance();
 void StringMap_SetByName(void*, void*, const char*);
 void* TaskRegistry_GetInstance();
@@ -241,16 +355,21 @@ void IActor_DispatchMessage(void*, void*, const char*, int, unsigned int, void*,
 void Sound_StopByAlias(void*, const char*);
 void ResourceManager_ReleaseObject(void*, void*, int);
 void* appMallocUni__FUl(unsigned int);
-void CClub_Init(void*);
 struct HashManager;
-void CClub_AddClub(HashManager*, const char*, unsigned int, float, float, float, float, float);
-struct TreeLinks { TreeLinks* next; TreeLinks* prev; };
+struct TreeLinks {
+    TreeLinks* next;
+    TreeLinks* prev;
+};
 struct WInstanceLock {
     void* lock;
     // Acquire the registry mutex for this lexical scope.
-    WInstanceLock(void* p) : lock(p) { OSLockMutex((OSMutex*)p); }
+    WInstanceLock(void* p) : lock(p) {
+        OSLockMutex((OSMutex*)p);
+    }
     // Release the registry mutex on normal or exceptional scope exit.
-    ~WInstanceLock() { OSUnlockMutex((OSMutex*)lock); }
+    ~WInstanceLock() {
+        OSUnlockMutex((OSMutex*)lock);
+    }
 };
 
 // Hash a name under the registry mutex and mask it to the bucket count.
@@ -291,7 +410,12 @@ inline void* EA88CLookup(void* self, char* key) {
     return result;
 }
 
-struct EA420Node { void* data; char pad[8]; EA420Node* prev; EA420Node* next; };
+struct EA420Node {
+    void* data;
+    char pad[8];
+    EA420Node* prev;
+    EA420Node* next;
+};
 // Return the next registered club record and advance the circular-list cursor.
 inline void* EA420Read(void* mutex, char* base) {
     void* data;
@@ -300,7 +424,8 @@ inline void* EA420Read(void* mutex, char* base) {
     if (node != 0) {
         EA420Node* next = node->next;
         data = node->data;
-        if (next == *(EA420Node**)(base + CLUB_FIELD_OFFSET(first))) next = 0;
+        if (next == *(EA420Node**)(base + CLUB_FIELD_OFFSET(first)))
+            next = 0;
         *(EA420Node**)(base + CLUB_FIELD_OFFSET(cursor)) = next;
         return data;
     }
@@ -313,7 +438,8 @@ inline EA420Node* EA420Remove(void* mutex, EA420Node* node) {
     node->next->prev = node->prev;
     node->prev->next = node->next;
     next = node->next;
-    if (next == node) next = 0;
+    if (next == node)
+        next = 0;
     return next;
 }
 // Insert a recycled node before the circular list head, or create a one-node list.
@@ -337,27 +463,16 @@ void Sound_PlayByName(void*, const char*, int, int, const char*, int, float, flo
 
 extern const char s_cameraTransform[];
 struct ClubInputState;
-void CClub_ClubProcess(ClubInputState*);
 struct ClubAnimationState;
-void CClub_BarProcess(ClubAnimationState*, float);
-void CGolfDoc_BuildModeCameraTransform(void*, void*, int);
 void Matrix_CopyAffine(const char*, void*);
-
-void CClock_OnProcess(void* self, float delta);
 
 void InstanceTable_ClearCachedResources(void* self);
 
 void* InstanceTable_Get();
 
-void CClock_HandleMsg(void* self, const void* event);
-
-void* CClock_GetRTTI();
-
-void* CClock_dtor(void* self, int shouldDelete);
+void* __dt__6CClockFv(void* self, int shouldDelete);
 
 void CClock_RegisterType();
-
-void CClub_Process(void* self, float delta);
 
 int Pointer_IsActionActive(void*, const char*, int);
 int Input_IsActionButtonDown(void*, int, int);
@@ -376,50 +491,76 @@ void* __nw__FUl(unsigned int);
 
 int strcmp(const char*, const char*);
 char* strcpy(char*, const char*);
-struct ClubSelectionState;
-void CClub_SelectBestClub(ClubSelectionState*, void*);
 
-void CClub_SelectBestClubForHole(void* self);
-
-struct EANode { unsigned char* value; char pad[12]; EANode* next; };
+struct EANode {
+    unsigned char* value;
+    char pad[12];
+    EANode* next;
+};
 struct ClubInputState {
-    void* vtable; unsigned char* selected; EANode* first; EANode* cursor;
-    char pad10[0x18]; int mutex[6]; unsigned char clubIndex, minimumClubIndex; char pad42[2]; int powerMode;
-    char pad48[0x30]; int inputState;
+    void* vtable;
+    unsigned char* selected;
+    EANode* first;
+    EANode* cursor;
+    char pad10[0x18];
+    int mutex[6];
+    unsigned char clubIndex, minimumClubIndex;
+    char pad42[2];
+    int powerMode;
+    char pad48[0x30];
+    int inputState;
 };
 struct EAMessage {
-    int zero, code; int* result; int rest[5];
+    int zero, code;
+    int* result;
+    int rest[5];
     // Construct a zero-initialized message carrying a command and borrowed result pointer.
-    EAMessage(int c, int* r) { zero=0; code=c; result=r; rest[0]=0; rest[1]=0; rest[2]=0; rest[3]=0; rest[4]=0; }
+    EAMessage(int c, int* r) {
+        zero = 0;
+        code = c;
+        result = r;
+        rest[0] = 0;
+        rest[1] = 0;
+        rest[2] = 0;
+        rest[3] = 0;
+        rest[4] = 0;
+    }
 };
 struct EAReceiver {
-    virtual void f0(); virtual void f1(); virtual void f2(); virtual void f3();
-    virtual void f4(); virtual void f5(); virtual void f6(); virtual void f7();
+    virtual void f0();
+    virtual void f1();
+    virtual void f2();
+    virtual void f3();
+    virtual void f4();
+    virtual void f5();
+    virtual void f6();
+    virtual void f7();
     virtual void f8();
     virtual void send(EAMessage*);
 };
 // Initialize and register the input-manager singleton on first use.
 static void EAInput() {
-    if (!Sing_805DC5C8()) {
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, (char*)InputManager_Dtor, s_inputManagerDtorRegistration_Club);
-            s_inputManagerInitialized=1;
+            s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8()=s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
 }
 // Return the next club record and stop after one traversal of the circular list.
 static unsigned char* EANext(ClubInputState* self) {
     unsigned char* value;
-    int* mutex=self->mutex;
+    int* mutex = self->mutex;
     OSLockMutex((OSMutex*)mutex);
-    EANode* node=self->cursor;
+    EANode* node = self->cursor;
     if (node) {
-        EANode* next=node->next;
-        value=node->value;
-        if (next==self->first) next=0;
-        self->cursor=next;
+        EANode* next = node->next;
+        value = node->value;
+        if (next == self->first)
+            next = 0;
+        self->cursor = next;
         OSUnlockMutex((OSMutex*)mutex);
         return value;
     }
@@ -429,13 +570,16 @@ static unsigned char* EANext(ClubInputState* self) {
 // Reset the club-list cursor and return the first record.
 static unsigned char* EAFirst(ClubInputState* self) {
     WInstanceLock lock(self->mutex);
-    self->cursor=self->first;
+    self->cursor = self->first;
     return EANext(self);
 }
 // The byte-sized loop and caller-local result preserve CodeWarrior register allocation.
-#define SELECT_CLUB_AT_INDEX(result, position) \
-    unsigned char* result = EAFirst(self); \
-    for (unsigned char step=0; step < (unsigned int)(position); ) { ++step; result=EANext(self); }
+#define SELECT_CLUB_AT_INDEX(result, position)                       \
+    unsigned char* result = EAFirst(self);                           \
+    for (unsigned char step = 0; step < (unsigned int)(position);) { \
+        ++step;                                                      \
+        result = EANext(self);                                       \
+    }
 
 // Registry view map (all offsets are receiver-relative):
 // ClubSelectionStorage owns registry + selection/UI state. HashManager is its
@@ -449,40 +593,44 @@ static unsigned char* EAFirst(ClubInputState* self) {
 // Entry's union overlays name bytes and the weight/bias tail, preserving the
 // recovered short-name representation; do not extend its name independently.
 struct HashNode {
-    void* data;             // 0x00
-    const char* key;        // 0x04
-    unsigned char kind;     // 0x08
-    unsigned char count;    // 0x09
+    void* data;          // 0x00
+    const char* key;     // 0x04
+    unsigned char kind;  // 0x08
+    unsigned char count; // 0x09
     unsigned char pad0A[2];
-    HashNode* next;         // 0x0C
-    HashNode* prev;         // 0x10
-    HashNode* bucketNext;   // 0x14
+    HashNode* next;       // 0x0C
+    HashNode* prev;       // 0x10
+    HashNode* bucketNext; // 0x14
 };
 struct Entry {
-    float distanceYards;                // 0x00
-    float launchAngle;                // 0x04
-    unsigned char kind;     // 0x08
-    unsigned char listIndex;    // 0x09
-    unsigned char clubGroup;    // 0x0A: club GROUP, not listIndex
+    float distanceYards;     // 0x00
+    float launchAngle;       // 0x04
+    unsigned char kind;      // 0x08
+    unsigned char listIndex; // 0x09
+    unsigned char clubGroup; // 0x0A: club GROUP, not listIndex
     unsigned char pad0B;
-    float launchSpeed;                // 0x0C
-    float selectionScale;                // 0x10
-    float selectionBias;                // 0x14
+    float launchSpeed;    // 0x0C
+    float selectionScale; // 0x10
+    float selectionBias;  // 0x14
     union {
-        char name[12];      // 0x18
-        struct { char pad[4]; float scale; float preferenceBias; } tail;
+        char name[12]; // 0x18
+        struct {
+            char pad[4];
+            float scale;
+            float preferenceBias;
+        } tail;
     } u;
 };
 struct HashManager {
     unsigned char pad00[8];
-    HashNode* first;        // 0x08
+    HashNode* first; // 0x08
     unsigned char pad0C[4];
-    HashNode* freeFirst;    // 0x10
-    HashNode* freeNext;     // 0x14
-    int capacity;           // 0x18
-    unsigned int mask;      // 0x1C
+    HashNode* freeFirst; // 0x10
+    HashNode* freeNext;  // 0x14
+    int capacity;        // 0x18
+    unsigned int mask;   // 0x1C
     unsigned char pad20[4];
-    HashNode** buckets;     // 0x24
+    HashNode** buckets;       // 0x24
     unsigned char lock[0x28]; // 0x28
 };
 // Insert a hash node after the circular-list head while holding its mutex.
@@ -510,7 +658,8 @@ inline HashNode* HashDetach(void* lock, HashNode* n) {
     n->prev->next = n->next;
     n->next->prev = n->prev;
     nx = n->prev;
-    if (nx == n) nx = 0;
+    if (nx == n)
+        nx = 0;
     OSUnlockMutex((OSMutex*)lk);
     return nx;
 }
@@ -535,11 +684,13 @@ inline Entry* HashFind(HashManager* self, const char* name) {
     int hash;
     HashNode* node;
     WInstanceLock lock(&self->lock);
-    if (!name || !self->buckets) return 0;
+    if (!name || !self->buckets)
+        return 0;
     hash = HashKey(self, name);
     node = self->buckets[hash];
     while (node) {
-        if (!strcmp(node->key, name)) return (Entry*)node->data;
+        if (!strcmp(node->key, name))
+            return (Entry*)node->data;
         node = node->bucketNext;
     }
     return 0;
@@ -557,7 +708,7 @@ inline void HashInsert(HashManager* self, Entry* entry) {
         if (!self->freeNext) {
             HashNode* nodes = (HashNode*)appMallocUni__FUl(self->capacity * 0x18);
             self->freeFirst = HashPushAfter(&self->lock, self->freeFirst, nodes);
-            for (int i=1; self->capacity > i; ++i)
+            for (int i = 1; self->capacity > i; ++i)
                 self->freeNext = HashPushAfter(&self->lock, self->freeNext, &nodes[i]);
         }
         node = self->freeNext;
@@ -584,59 +735,75 @@ inline void HashInsert(HashManager* self, Entry* entry) {
     self->first = HashPushAfter(&self->lock, head, node);
 }
 
-struct ClubAnimationState { unsigned char pad[0x4C]; unsigned int flags; float unk_50; float fadeSeconds; float opacity; float slidePosition; int animationState; };
+struct ClubAnimationState {
+    unsigned char pad[0x4C];
+    unsigned int flags;
+    float unk_50;
+    float fadeSeconds;
+    float opacity;
+    float slidePosition;
+    int animationState;
+};
 
 typedef Vec3f Vec3;
-struct Vec3i { unsigned int x, y, z; };
+struct Vec3i {
+    unsigned int x, y, z;
+};
 
 struct ClubParameterPrefix;
 
 struct ItemEntry {
-    ClubParameterPrefix* child;              // 0x00
-    const char* name;         // 0x04
-    unsigned char pad08[8];   // 0x08
-    ItemEntry* next;              // 0x10
-    ItemEntry* hashNext;          // 0x14
+    ClubParameterPrefix* child; // 0x00
+    const char* name;           // 0x04
+    unsigned char pad08[8];     // 0x08
+    ItemEntry* next;            // 0x10
+    ItemEntry* hashNext;        // 0x14
 };
 
 struct ClubParameterPrefix {
     unsigned char pad00[4];
-    float launchAngle;                // 0x04
-    unsigned char pad08;      // 0x08
-    unsigned char clubIndex;       // 0x09
-    unsigned char pad0a[6];   // 0x0a
-    unsigned char pad10[8];   // 0x10
-    struct { char name[4]; float weight; float bias; } selection; // 0x18
+    float launchAngle;       // 0x04
+    unsigned char pad08;     // 0x08
+    unsigned char clubIndex; // 0x09
+    unsigned char pad0a[6];  // 0x0a
+    unsigned char pad10[8];  // 0x10
+    struct {
+        char name[4];
+        float weight;
+        float bias;
+    } selection; // 0x18
 };
 
 struct ClubSelectionState {
-    unsigned char pad00[4];   // 0x00
-    ClubParameterPrefix* selected;           // 0x04
-    ItemEntry* first;             // 0x08
-    ItemEntry* current;           // 0x0c
+    unsigned char pad00[4];        // 0x00
+    ClubParameterPrefix* selected; // 0x04
+    ItemEntry* first;              // 0x08
+    ItemEntry* current;            // 0x0c
     unsigned char pad10[0x0c];
-    unsigned int mask;        // 0x1c
+    unsigned int mask; // 0x1c
     unsigned char pad20[4];
-    ItemEntry** buckets;            // 0x24
-    unsigned char mutex[0x18];// 0x28
-    unsigned char clubIndex;      // 0x40
+    ItemEntry** buckets;       // 0x24
+    unsigned char mutex[0x18]; // 0x28
+    unsigned char clubIndex;   // 0x40
     // 0x41: mixed selection state: counts slope rejects off-green, forced to 13 on
     // green and floored at 7 for short approaches. Final consumer meaning unresolved.
     // The field name is provisional.
     unsigned char selectionPolicyValue;
     unsigned char pad42[6];
-    unsigned char distanceTier;       // 0x48
+    unsigned char distanceTier; // 0x48
     unsigned char pad49[7];
-    unsigned char longPutt;     // 0x50
+    unsigned char longPutt; // 0x50
     unsigned char pad51[0x14];
     unsigned char previousClubIndex; // 0x65
     unsigned char pad66[2];
-    float controlValue;              // 0x68
-    float controlLimit;              // 0x6c
+    float controlValue; // 0x68
+    float controlLimit; // 0x6c
 };
 
-struct PlayerControlStatsPrefix { char prefix[kControlStatOffset]; unsigned int control; };
-
+struct PlayerControlStatsPrefix {
+    char prefix[kControlStatOffset];
+    unsigned int control;
+};
 
 void __mi__FRC7WVectorRC7WVector(Vec3*, void*, void*);
 void __pl__FRC7WVectorRC7WVector(Vec3*, void*, Vec3*);
@@ -645,48 +812,48 @@ float Magnitude__7WVectorCFv(Vec3*);
 float Normalize__7WVectorFv(Vec3*);
 void* GolfPlayer_GetEntryByIndex(void*, unsigned char);
 void* CQuadTree_GetInstance();
-void* CQuadTree_GetMeshIndex(void*, void*, int);
-float CQuadTree_GetGroundSlope(void*, void*);
 unsigned char GetGroundType__9CQuadTreeF7WVector(void*, Vec3*);
 int CourseData_IsPointOutsidePlayableRegion(void*, Vec3*);
 int PlayerRank_FindTierForValue(void*);
 void GolfAim_FindTargetAlongPath(void*, void*, const char*);
 float GolfParameter_ResolveFloat(void*, void*);
 
-
 // Search the locked club-name hash; a single-pass block handles missing names and buckets.
 // Successful matches retain their separate mutex-cleanup join; inline-return helpers changed code.
 // A fresh output-reference inline-helper trial also changed .text/relocations.
-// Contract: implicitly uses s; keyexpr is evaluated once; found receives a borrowed
+// Contract: receiver is a ClubSelectionState*; keyexpr is evaluated once; found receives a borrowed
 // registry record (or null). n supplies a unique cleanup-join label, not a club ID.
 // The recursive registry mutex spans hash calculation AND bucket traversal; the
 // explicit inner lock protects the hash calculation too. Keep both lock levels.
-#define FIND_CLUB_BY_NAME(keyexpr, found, n) do { \
-    const char* clubName = (keyexpr); \
-    ClubParameterPrefix* foundClub; \
-    do { \
-    { \
-        WInstanceLock registryLock(&s->mutex[0]); \
-        if (!clubName || !s->buckets) break; \
-        OSLockMutex((OSMutex*)(s->mutex)); \
-        unsigned int nameLength = strlen(clubName); \
-        unsigned int lastIndex = (int)nameLength > 0 ? nameLength - 1 : 0; \
-        unsigned int bucketIndex = ((nameLength << 6) | (((unsigned char)clubName[0] & 0x2a) | ((unsigned char)clubName[lastIndex] & 0x15))) & s->mask; \
-        OSUnlockMutex((OSMutex*)(s->mutex)); \
-        ItemEntry* entry = s->buckets[bucketIndex]; \
-        while (entry) { \
-            if (!strcmp(entry->name, clubName)) { \
-                foundClub = entry->child; \
-                goto found_##n; \
-            } \
-            entry = entry->hashNext; \
-        } \
-    } \
-    } while (0); \
-    foundClub = 0; \
-    found_##n: (found) = foundClub; \
-} while (0)
-
+#define FIND_CLUB_BY_NAME(receiver, keyexpr, found, n)                                                           \
+    do {                                                                                                         \
+        const char* clubName = (keyexpr);                                                                        \
+        ClubParameterPrefix* foundClub;                                                                          \
+        do {                                                                                                     \
+            {                                                                                                    \
+                WInstanceLock registryLock(&(receiver)->mutex[0]);                                               \
+                if (!clubName || !(receiver)->buckets)                                                           \
+                    break;                                                                                       \
+                OSLockMutex((OSMutex*)((receiver)->mutex));                                                      \
+                unsigned int nameLength = strlen(clubName);                                                      \
+                unsigned int lastIndex = (int)nameLength > 0 ? nameLength - 1 : 0;                               \
+                unsigned int bucketIndex = ((nameLength << 6) | (((unsigned char)clubName[0] & 0x2a) |           \
+                                                                 ((unsigned char)clubName[lastIndex] & 0x15))) & \
+                                           (receiver)->mask;                                                     \
+                OSUnlockMutex((OSMutex*)((receiver)->mutex));                                                    \
+                ItemEntry* entry = (receiver)->buckets[bucketIndex];                                             \
+                while (entry) {                                                                                  \
+                    if (!strcmp(entry->name, clubName)) {                                                        \
+                        foundClub = entry->child;                                                                \
+                        goto found_##n;                                                                          \
+                    }                                                                                            \
+                    entry = entry->hashNext;                                                                     \
+                }                                                                                                \
+            }                                                                                                    \
+        } while (0);                                                                                             \
+        foundClub = 0;                                                                                           \
+        found_##n : (found) = foundClub;                                                                         \
+    } while (0)
 
 // Advance the selected-club list cursor while holding its mutex.
 inline ClubParameterPrefix* AdvanceTarget(ClubSelectionState* s) {
@@ -696,7 +863,8 @@ inline ClubParameterPrefix* AdvanceTarget(ClubSelectionState* s) {
     if (c) {
         ItemEntry* next = c->next;
         ClubParameterPrefix* child = c->child;
-        if (next == s->first) next = 0;
+        if (next == s->first)
+            next = 0;
         s->current = next;
         OSUnlockMutex((OSMutex*)mutex);
         return child;
@@ -705,35 +873,39 @@ inline ClubParameterPrefix* AdvanceTarget(ClubSelectionState* s) {
         return 0;
     }
 }
-#define ADVANCE(dst) ((dst) = AdvanceTarget(s))
+#define ADVANCE(receiver, dst) ((dst) = AdvanceTarget(receiver))
 
 // CPU lookup has the same search, with its own mutex temporary for the original instruction schedule.
-#define FIND_CPU_CLUB_BY_NAME(keyexpr, found, n) do { \
-    const char* clubName = (keyexpr); \
-    ClubParameterPrefix* foundClub; \
-    do { \
-    { \
-        WInstanceLock registryLock(&s->mutex[0]); \
-        if (!clubName || !s->buckets) break; \
-        OSMutex* registryMutex = (OSMutex*)(s->mutex); \
-        OSLockMutex((OSMutex*)registryMutex); \
-        unsigned int nameLength = strlen(clubName); \
-        unsigned int lastIndex = (int)nameLength > 0 ? nameLength - 1 : 0; \
-        unsigned int bucketIndex = ((nameLength << 6) | (((unsigned char)clubName[0] & 0x2a) | ((unsigned char)clubName[lastIndex] & 0x15))) & s->mask; \
-        OSUnlockMutex((OSMutex*)registryMutex); \
-        ItemEntry* entry = s->buckets[bucketIndex]; \
-        while (entry) { \
-            if (!strcmp(entry->name, clubName)) { \
-                foundClub = entry->child; \
-                goto found_##n; \
-            } \
-            entry = entry->hashNext; \
-        } \
-    } \
-    } while (0); \
-    foundClub = 0; \
-    found_##n: (found) = foundClub; \
-} while (0)
+#define FIND_CPU_CLUB_BY_NAME(keyexpr, found, n)                                                                 \
+    do {                                                                                                         \
+        const char* clubName = (keyexpr);                                                                        \
+        ClubParameterPrefix* foundClub;                                                                          \
+        do {                                                                                                     \
+            {                                                                                                    \
+                WInstanceLock registryLock(&s->mutex[0]);                                                        \
+                if (!clubName || !s->buckets)                                                                    \
+                    break;                                                                                       \
+                OSMutex* registryMutex = (OSMutex*)(s->mutex);                                                   \
+                OSLockMutex((OSMutex*)registryMutex);                                                            \
+                unsigned int nameLength = strlen(clubName);                                                      \
+                unsigned int lastIndex = (int)nameLength > 0 ? nameLength - 1 : 0;                               \
+                unsigned int bucketIndex = ((nameLength << 6) | (((unsigned char)clubName[0] & 0x2a) |           \
+                                                                 ((unsigned char)clubName[lastIndex] & 0x15))) & \
+                                           s->mask;                                                              \
+                OSUnlockMutex((OSMutex*)registryMutex);                                                          \
+                ItemEntry* entry = s->buckets[bucketIndex];                                                      \
+                while (entry) {                                                                                  \
+                    if (!strcmp(entry->name, clubName)) {                                                        \
+                        foundClub = entry->child;                                                                \
+                        goto found_##n;                                                                          \
+                    }                                                                                            \
+                    entry = entry->hashNext;                                                                     \
+                }                                                                                                \
+            }                                                                                                    \
+        } while (0);                                                                                             \
+        foundClub = 0;                                                                                           \
+        found_##n : (found) = foundClub;                                                                         \
+    } while (0)
 void ClubSelection_SelectForCpuTarget(ClubSelectionState* self, void* arg);
 
 float CSharedDoc_ComputeAuxPartModifier(void*, unsigned char, int);
@@ -744,8 +916,13 @@ unsigned int ItemInventory_GetItemIdAt(void*, int);
 } // extern "C"
 
 // The instance table @LOCAL@GetInstanceTable__Fv@s is a real class: its hash and list members are destroyed if the body's
-// CClub_Init throws (the game's exception table has both). ~TableHash is __dt__9TableHashFv, ~TableList __dt__9TableListFv.
-struct TableMutex { int data[0x24 / 4]; TableMutex() { OSInitMutex((OSMutex*)this); } };
+// CClub::Init throws (the game's exception table has both). ~TableHash is __dt__9TableHashFv, ~TableList __dt__9TableListFv.
+struct TableMutex {
+    int data[0x24 / 4];
+    TableMutex() {
+        OSInitMutex((OSMutex*)this);
+    }
+};
 struct TableHash {
     int f00, f04, f08, f0C, f10, mask, count;
     void** buckets;
@@ -765,7 +942,8 @@ inline TableHash::TableHash() : buckets(0) {
     if (count > 0) {
         buckets = (void**)appMallocUni__FUl(0x20);
         mask = count - 1;
-        for (int i = 0; i < count; ++i) buckets[i] = 0;
+        for (int i = 0; i < count; ++i)
+            buckets[i] = 0;
     } else {
         buckets = 0;
     }
@@ -775,7 +953,11 @@ struct TableList {
     void* next;
     void* prev;
     // Construct an empty circular list whose links point to its embedded sentinel.
-    TableList() : f00(0) { void* end = &next; prev = end; next = end; }
+    TableList() : f00(0) {
+        void* end = &next;
+        prev = end;
+        next = end;
+    }
     ~TableList();
 };
 struct InstanceTableReal {
@@ -787,7 +969,9 @@ struct InstanceTableReal {
     TableList list;
     ~InstanceTableReal();
     // Initialize the table members and register default club parameters.
-    InstanceTableReal() : f04(0), f4C(0) { CClub_Init(this); }
+    InstanceTableReal() : f04(0), f4C(0) {
+        ((CClub*)this)->Init();
+    }
 };
 
 // Construct the club parameter table once and return its process-lifetime instance.
@@ -813,9 +997,13 @@ struct TableLayout {
 struct LockRef {
     void* lock;
     // Acquire a mutex that this helper requires the caller to release explicitly.
-    LockRef(void* p) : lock(p) { OSLockMutex((OSMutex*)p); }
+    LockRef(void* p) : lock(p) {
+        OSLockMutex((OSMutex*)p);
+    }
     // Release the explicitly managed mutex once.
-    void release() { OSUnlockMutex((OSMutex*)lock); }
+    void release() {
+        OSUnlockMutex((OSMutex*)lock);
+    }
     // Leave unlocking to release(); this destructor intentionally performs no work.
     ~LockRef() {}
 };
@@ -962,7 +1150,7 @@ struct TargetLookup {
             return 0;
         } else {
             unsigned int index = hash(key);
-            void* node = ((void**) ((ClubSelectionStorage*)self)->buckets)[index];
+            void* node = ((void**)((ClubSelectionStorage*)self)->buckets)[index];
             while (node != 0) {
                 if (strcmp(((ClubRegistryNodeView*)node)->name, key) == 0) {
                     return *(void**)node;
@@ -991,20 +1179,24 @@ void ClubSelection_SetClubIndex(LookupState* self, unsigned int count);
 void ClubSelection_SelectByName(LookupState* self, const char* key);
 
 // Advance elapsed/countdown time, blend the clock color, play warnings and dispatch a timeout when time expires.
-void CClock_OnProcess(void* self, float delta) {
-    char* obj = (char*)self;
+void CClock::OnProcess(float delta) {
+    char* obj = (char*)this;
     {
         char* state = (char*)(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-        if (AsCGolfDoc(state)->unk_35D || AsCGolfDoc(state)->unk_3CB) return;
-        if (AsCGolfDoc(state)->tutorialStage < 6) return;
+        if (AsCGolfDoc(state)->unk_35D || AsCGolfDoc(state)->unk_3CB)
+            return;
+        if (AsCGolfDoc(state)->tutorialStage < 6)
+            return;
         AsCGolfDoc(state)->elapsedTimeMs += Runtime_ConvertDoubleToUnsigned(kFloat_1000_GolfDocHelpers * delta);
     }
-    if (!AsCClock(obj)->running) return;
+    if (!AsCClock(obj)->running)
+        return;
     if (((ShotAdjustmentState*)PartyItemSlots_GetInstance())->clockSuspended != 0) {
-        IActor_DispatchMessage(self, self, clockMessageStrings + CLOCK_STRING_OFFSET(golfRule), 8, 0, 0, 0, 0);
+        IActor_DispatchMessage(this, this, clockMessageStrings + CLOCK_STRING_OFFSET(golfRule), 8, 0, 0, 0, 0);
         return;
     }
-    if ((*(int*)&AsCSharedDoc(g_sharedDoc)->turnTimeLimitMs) == 0) return;
+    if ((*(int*)&AsCSharedDoc(g_sharedDoc)->turnTimeLimitMs) == 0)
+        return;
     {
         char* state = (char*)(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
         if (AsCGolfDoc(state)->remainingTimeMs > Runtime_ConvertDoubleToUnsigned(kFloat_1000_GolfDocHelpers * delta)) {
@@ -1016,94 +1208,105 @@ void CClock_OnProcess(void* self, float delta) {
     unsigned int limitMs = AsCSharedDoc(g_sharedDoc)->turnTimeLimitMs;
     unsigned int remainingMsForRatio = AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->remainingTimeMs;
     float remainingRatio = (float)remainingMsForRatio / (float)limitMs;
-    AsCClock(obj)->countdownDisplayValue = kFloat_0_017453292_Clock * (kFloat_12_Clock + kFloat_278_Clock * (kFloat_1_Clock - remainingRatio));
+    AsCClock(obj)->countdownDisplayValue =
+        kFloat_0_017453292_Clock * (kFloat_12_Clock + kFloat_278_Clock * (kFloat_1_Clock - remainingRatio));
 
-    if (AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->remainingTimeMs < kWarningTimeMs && !AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->shotPhase) {
-        if (SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager, clockMessageStrings + CLOCK_STRING_OFFSET(timeSound)) == 0)
-            Sound_PlayByName(g_soundManager, clockMessageStrings + CLOCK_STRING_OFFSET(timeSound), 0, 1, clockMessageStrings + CLOCK_STRING_OFFSET(timeSound), 0, kFloat_0_5_Clock, kFloat_200_Clock, kFloat_1_Clock);
+    if (AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->remainingTimeMs < kWarningTimeMs &&
+        !AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->shotPhase) {
+        if (SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager,
+                                                         clockMessageStrings + CLOCK_STRING_OFFSET(timeSound)) == 0)
+            Sound_PlayByName(g_soundManager, clockMessageStrings + CLOCK_STRING_OFFSET(timeSound), 0, 1,
+                             clockMessageStrings + CLOCK_STRING_OFFSET(timeSound), 0, kFloat_0_5_Clock,
+                             kFloat_200_Clock, kFloat_1_Clock);
     }
 
     unsigned int remainingMs = AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->remainingTimeMs;
-    if (remainingMs > kClockBlueTimeMs) AsCClock(obj)->displayColor = kClockBlue;
+    if (remainingMs > kClockBlueTimeMs)
+        AsCClock(obj)->displayColor = kClockBlue;
     else if (remainingMs > kClockYellowTimeMs) {
-        unsigned int a;
-        unsigned int v;
-        v = (unsigned char)(((kClockBlueTimeMs - remainingMs) * 255) / kClockBlendTimeMs);
-        a = 255 - v;
-        unsigned int c1 = a * 0x1400FF + v * 0xF000FF;
-        unsigned int c2 = a * 0xFF007E + v * 0xFF0014;
+        unsigned int complement;
+        unsigned int blendAmount;
+        blendAmount = (unsigned char)(((kClockBlueTimeMs - remainingMs) * 255) / kClockBlendTimeMs);
+        complement = 255 - blendAmount;
+        unsigned int c1 = complement * 0x1400FF + blendAmount * 0xF000FF;
+        unsigned int c2 = complement * 0xFF007E + blendAmount * 0xFF0014;
         AsCClock(obj)->displayColor = (((c1 & kColorByteMask) >> 8) | (c2 & kColorByteMask));
-    } else if (remainingMs > kWarningTimeMs) AsCClock(obj)->displayColor = kClockYellow;
+    } else if (remainingMs > kWarningTimeMs)
+        AsCClock(obj)->displayColor = kClockYellow;
     else if (remainingMs > kClockBlendTimeMs) {
-        unsigned int a;
-        unsigned int v;
-        v = (unsigned char)(((kWarningTimeMs - remainingMs) * 255) / kClockBlendTimeMs);
-        a = 255 - v;
-        unsigned int c1 = a * 0xF000FF + v * 0xFF0050;
-        unsigned int c2 = a * 0xFF0014 + v * 0xFF0014;
+        unsigned int complement;
+        unsigned int blendAmount;
+        blendAmount = (unsigned char)(((kWarningTimeMs - remainingMs) * 255) / kClockBlendTimeMs);
+        complement = 255 - blendAmount;
+        unsigned int c1 = complement * 0xF000FF + blendAmount * 0xFF0050;
+        unsigned int c2 = complement * 0xFF0014 + blendAmount * 0xFF0014;
         AsCClock(obj)->displayColor = (((c1 & kColorByteMask) >> 8) | (c2 & kColorByteMask));
-    } else AsCClock(obj)->displayColor = kClockRed;
-    IActor_DispatchMessage(self, self, clockMessageStrings, 8, *(unsigned int*)(obj + CLOCK_FIELD_OFFSET(displayColor)), obj + CLOCK_FIELD_OFFSET(countdownDisplayValue), 0, 0);
+    } else
+        AsCClock(obj)->displayColor = kClockRed;
+    IActor_DispatchMessage(this, this, clockMessageStrings, 8, *(unsigned int*)(obj + CLOCK_FIELD_OFFSET(displayColor)),
+                           obj + CLOCK_FIELD_OFFSET(countdownDisplayValue), 0, 0);
     {
         char* state = (char*)(*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-        if (AsCGolfDoc(state)->shotPhase) return;
-        if (AsCGolfDoc(state)->remainingTimeMs != 0) return;
+        if (AsCGolfDoc(state)->shotPhase)
+            return;
+        if (AsCGolfDoc(state)->remainingTimeMs != 0)
+            return;
         AsCClock(obj)->running = 0;
     }
-    if (GolfTask_NoOpStatus()) return;
+    if (GolfTask_NoOpStatus())
+        return;
     {
-        AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->remainingTimeMs = AsCSharedDoc(g_sharedDoc)->turnTimeLimitMs;
+        AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->remainingTimeMs =
+            AsCSharedDoc(g_sharedDoc)->turnTimeLimitMs;
         AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->elapsedTimeMs = 0;
     }
     AsCClock(obj)->countdownDisplayValue = kFloat_0_20943952_Clock;
     *(unsigned int*)(obj + CLOCK_FIELD_OFFSET(displayColor)) = kClockBlue;
     AsCClock(obj)->running = 0;
-    IActor_DispatchMessage(self, self, clockMessageStrings, 8, kClockBlue, obj + CLOCK_FIELD_OFFSET(countdownDisplayValue), 0, 0);
+    IActor_DispatchMessage(this, this, clockMessageStrings, 8, kClockBlue,
+                           obj + CLOCK_FIELD_OFFSET(countdownDisplayValue), 0, 0);
     Sound_StopByAlias(g_soundManager, clockMessageStrings + CLOCK_STRING_OFFSET(timeSound));
-    IActor_DispatchMessage(self, self, clockMessageStrings + CLOCK_STRING_OFFSET(golfRule), 7, 0x4000, 0, 0, 0);
+    IActor_DispatchMessage(this, this, clockMessageStrings + CLOCK_STRING_OFFSET(golfRule), 7, 0x4000, 0, 0, 0);
 }
 
 #pragma opt_common_subs off
 // Handle clock reset, start and stop messages while updating the displayed value and warning sound.
-void CClock_HandleMsg(void* self, const void* event) {
+void CClock::HandleMsg(const void* event) {
     int type = ((const ClockMessage*)event)->type;
     switch (type) {
     case kClockReset: {
         const char* base = clockMessageStrings;
-        AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->remainingTimeMs = AsCSharedDoc(g_sharedDoc)->turnTimeLimitMs;
+        AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->remainingTimeMs =
+            AsCSharedDoc(g_sharedDoc)->turnTimeLimitMs;
         AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->elapsedTimeMs = 0;
-        AsCClock(self)->countdownDisplayValue = kFloat_0_20943952_Clock;
+        countdownDisplayValue = kFloat_0_20943952_Clock;
         unsigned int color = kClockBlue;
-        AsCClock(self)->displayColor = color;
-        AsCClock(self)->running = 0;
-        IActor_DispatchMessage(self, self, base, 8, color, (char*)&AsCClock(self)->countdownDisplayValue, 0, 0);
+        displayColor = color;
+        running = 0;
+        IActor_DispatchMessage(this, this, base, 8, color, (char*)&countdownDisplayValue, 0, 0);
         Sound_StopByAlias(g_soundManager, base + CLOCK_STRING_OFFSET(timeSound));
         break;
     }
     case 0:
-        AsCClock(self)->running = 1;
-        if (GolfTask_NoOpStatus()) return;
+        running = 1;
+        if (GolfTask_NoOpStatus())
+            return;
         break;
     case 1:
-        AsCClock(self)->running = 0;
+        running = 0;
         break;
     }
 }
 #pragma opt_common_subs reset
 
 // Return the clock actor's type-information descriptor.
-void* CClock_GetRTTI() {
+void* CClock::GetRTTI() {
     return &s_clockTypeInfo;
 }
 
 // Destroy the clock's native actor base and optionally free the clock object.
-void* CClock_dtor(void* self, int shouldDelete) {
-    if (self != 0) {
-        __dt__18NativeBase80201D18Fv(self, 0);
-        if (shouldDelete > 0)
-            __dl__FPv(self);
-    }
-    return self;
+CClock::~CClock() {
+    __dt__18NativeBase80201D18Fv(this, 0);
 }
 
 // Initialize the unit constant and register the clock actor's type and factories.
@@ -1116,7 +1319,9 @@ void CClock_RegisterType() {
 }
 
 // Return the lazily constructed club parameter/resource table.
-void* InstanceTable_Get() { return GetInstanceTable(); }
+void* InstanceTable_Get() {
+    return GetInstanceTable();
+}
 
 } // extern "C"
 
@@ -1124,9 +1329,9 @@ void* InstanceTable_Get() { return GetInstanceTable(); }
 #pragma use_lmw_stmw on
 // Free pooled hash nodes and bucket storage while holding the registry mutex.
 inline TableHash::~TableHash() {
-        {
-            WInstanceLock wlock(&mutex);
-            if (f08 != 0) {
+    {
+        WInstanceLock wlock(&mutex);
+        if (f08 != 0) {
             EA420Node* head;
             EA420Node* node;
             while ((node = (EA420Node*)f08) != 0) {
@@ -1134,36 +1339,36 @@ inline TableHash::~TableHash() {
                 f08 = (int)head;
                 appFreeUni__FPv(node);
             }
-            }
-            if (buckets != 0) {
-                appFreeUni__FPv(buckets);
-                buckets = 0;
-            }
         }
+        if (buckets != 0) {
+            appFreeUni__FPv(buckets);
+            buckets = 0;
+        }
+    }
 }
 #pragma pop
 
 // Unlink and free list nodes without deleting their separately managed payloads.
 inline TableList::~TableList() {
+    if (this != 0) {
         if (this != 0) {
             if (this != 0) {
-                if (this != 0) {
-                    TreeLinks* sentinel = (TreeLinks*)&next;
-                    TreeLinks* node = (TreeLinks*)prev;
-                    if (node != sentinel) {
-                        TreeLinks* sentinelNext = *(TreeLinks**)sentinel;
-                        (*(TreeLinks**)node)->prev = sentinelNext->prev;
-                        *(TreeLinks**)(sentinelNext->prev) = *(TreeLinks**)node;
-                        while (node != sentinel) {
-                            TreeLinks* cur = node;
-                            node = node->prev;
-                            appFreeUni__FPv(cur);
-                            --f00;
-                        }
+                TreeLinks* sentinel = (TreeLinks*)&next;
+                TreeLinks* node = (TreeLinks*)prev;
+                if (node != sentinel) {
+                    TreeLinks* sentinelNext = *(TreeLinks**)sentinel;
+                    (*(TreeLinks**)node)->prev = sentinelNext->prev;
+                    *(TreeLinks**)(sentinelNext->prev) = *(TreeLinks**)node;
+                    while (node != sentinel) {
+                        TreeLinks* cur = node;
+                        node = node->prev;
+                        appFreeUni__FPv(cur);
+                        --f00;
                     }
                 }
             }
         }
+    }
 }
 
 #pragma push
@@ -1172,44 +1377,54 @@ inline TableList::~TableList() {
 InstanceTableReal::~InstanceTableReal() {
     void* self = this;
     typedef EA420Node Node;
-        char* base = (char*)self;
-        void* data;
+    char* base = (char*)self;
+    void* data;
+    {
+        WInstanceLock lock(base + CLUB_FIELD_OFFSET(mutex));
+        *(void**)(base + CLUB_FIELD_OFFSET(cursor)) = *(void**)(CLUB_FIELD_OFFSET(first) + base);
         {
-            WInstanceLock lock(base + CLUB_FIELD_OFFSET(mutex));
-            *(void**)(base + CLUB_FIELD_OFFSET(cursor)) = *(void**)(CLUB_FIELD_OFFSET(first) + base);
-            { void* m0 = base + CLUB_FIELD_OFFSET(mutex); data = EA420Read(m0, base); }
+            void* m0 = base + CLUB_FIELD_OFFSET(mutex);
+            data = EA420Read(m0, base);
         }
-        if (0 != data) { void* m = base + CLUB_FIELD_OFFSET(mutex); while (data) {
-            if (data) __dl__FPv(data);
+    }
+    if (0 != data) {
+        void* m = base + CLUB_FIELD_OFFSET(mutex);
+        while (data) {
+            if (data)
+                __dl__FPv(data);
             data = EA420Read(m, base);
-        } }
-        {
-            WInstanceLock lock(base + CLUB_FIELD_OFFSET(mutex));
-            if (*(Node**)(base + CLUB_FIELD_OFFSET(first)) != 0 && *(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)) != 0) {
-                (*(Node**)(CLUB_FIELD_OFFSET(first) + base))->prev->next = (*(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)))->next;
-                (*(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)))->next->prev = (*(Node**)(base + CLUB_FIELD_OFFSET(first)))->prev;
-                (*(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)))->next = *(Node**)(base + CLUB_FIELD_OFFSET(first));
-                (*(Node**)(base + CLUB_FIELD_OFFSET(first)))->prev = *(Node**)(base + CLUB_FIELD_OFFSET(freeNodes));
-                *(void**)(base + CLUB_FIELD_OFFSET(first)) = 0;
-            } else if (*(Node**)(base + CLUB_FIELD_OFFSET(first)) != 0) {
-                Node* head;
-                while ((head = *(Node**)(base + CLUB_FIELD_OFFSET(first))) != 0) {
-                    Node* next = EA420Remove(base + CLUB_FIELD_OFFSET(mutex), head);
-                    Node* current = EA420Insert(base + CLUB_FIELD_OFFSET(mutex), *(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)), *(Node**)(base + CLUB_FIELD_OFFSET(first)));
-                    *(Node**)(base + CLUB_FIELD_OFFSET(first)) = next;
-                    *(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)) = current;
-                }
-            }
-            int i = 0;
-            void* zero = 0;
-            int offset = 0;
-            while (i < *(int*)(base + CLUB_FIELD_OFFSET(bucketCount))) {
-            *(void**)((char*)*(void**)(base + CLUB_FIELD_OFFSET(buckets)) + offset) = zero;
-                i += 1;
-            offset = offset + 4;
+        }
+    }
+    {
+        WInstanceLock lock(base + CLUB_FIELD_OFFSET(mutex));
+        if (*(Node**)(base + CLUB_FIELD_OFFSET(first)) != 0 && *(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)) != 0) {
+            (*(Node**)(CLUB_FIELD_OFFSET(first) + base))->prev->next =
+                (*(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)))->next;
+            (*(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)))->next->prev =
+                (*(Node**)(base + CLUB_FIELD_OFFSET(first)))->prev;
+            (*(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)))->next = *(Node**)(base + CLUB_FIELD_OFFSET(first));
+            (*(Node**)(base + CLUB_FIELD_OFFSET(first)))->prev = *(Node**)(base + CLUB_FIELD_OFFSET(freeNodes));
+            *(void**)(base + CLUB_FIELD_OFFSET(first)) = 0;
+        } else if (*(Node**)(base + CLUB_FIELD_OFFSET(first)) != 0) {
+            Node* head;
+            while ((head = *(Node**)(base + CLUB_FIELD_OFFSET(first))) != 0) {
+                Node* next = EA420Remove(base + CLUB_FIELD_OFFSET(mutex), head);
+                Node* current =
+                    EA420Insert(base + CLUB_FIELD_OFFSET(mutex), *(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)),
+                                *(Node**)(base + CLUB_FIELD_OFFSET(first)));
+                *(Node**)(base + CLUB_FIELD_OFFSET(first)) = next;
+                *(Node**)(base + CLUB_FIELD_OFFSET(freeNodes)) = current;
             }
         }
-
+        int i = 0;
+        void* zero = 0;
+        int offset = 0;
+        while (i < *(int*)(base + CLUB_FIELD_OFFSET(bucketCount))) {
+            *(void**)((char*)*(void**)(base + CLUB_FIELD_OFFSET(buckets)) + offset) = zero;
+            i += 1;
+            offset = offset + 4;
+        }
+    }
 }
 #pragma pop
 
@@ -1238,11 +1453,13 @@ void InstanceTable_ClearCachedResources(void* self) {
         slot = (char*)data;
         for (; i < 4; ++i) {
             if (g_resourceManager != 0 && ((ClubCachedResourceSet*)slot)->resourcesB[0] != 0) {
-                ResourceManager_ReleaseObject((void*)g_resourceManager, ((ClubCachedResourceSet*)slot)->resourcesB[0], 0);
+                ResourceManager_ReleaseObject((void*)g_resourceManager, ((ClubCachedResourceSet*)slot)->resourcesB[0],
+                                              0);
                 ((ClubCachedResourceSet*)slot)->resourcesB[0] = zero;
             }
             if (g_resourceManager != 0 && ((ClubCachedResourceSet*)slot)->resourcesA[0] != 0) {
-                ResourceManager_ReleaseObject((void*)g_resourceManager, ((ClubCachedResourceSet*)slot)->resourcesA[0], 0);
+                ResourceManager_ReleaseObject((void*)g_resourceManager, ((ClubCachedResourceSet*)slot)->resourcesA[0],
+                                              0);
                 ((ClubCachedResourceSet*)slot)->resourcesA[0] = zero;
             }
             slot += 4;
@@ -1268,44 +1485,74 @@ void InstanceTable_ClearCachedResources(void* self) {
 #pragma pop
 
 // Register wood, iron, wedge and putter defaults, reset selection state and select the first wood.
-void CClub_Init(void* self) {
+void CClub::Init() {
     void* node;
-    float a = kFloat_230_Club;
-    float b = kFloat_10_GolfHud;
-    float c = kFloat_236_Club;
-    float d = kFloat_1_61_Club;
-    float e = kFloat_0_55_Club;
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings, kClubWood, a, b, c, d, e);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(wood2), kClubWood, kFloat_210_ClubSelection, kFloat_13_Club, kFloat_204_ClubSelection, kFloat_1_41_Club, kFloat_0_5_Camera);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(wood3), kClubWood, kFloat_190_Club, kFloat_16_Club, kFloat_176_Club, kFloat_1_26_Club, kFloat_0_45_Club);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron2), kClubIron, kFloat_180_ClubSelection, kFloat_20_Club, kFloat_161_Club, kFloat_1_07_ClubSelection, kFloat_0_45_Club);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron3), kClubIron, kFloat_170_Club, kFloat_24_Club, kFloat_149_Club, kFloat_0_95_Club, kFloat_0_45_Club);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron4), kClubIron, kFloat_160_Club, kFloat_28_GolfDocHelpers, kFloat_139_Club, kFloat_0_83_ClubSelection, kFloat_0_45_Club);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron5), kClubIron, kFloat_150_Club, kFloat_32_ClubSelection, kFloat_131_Club, kFloat_0_73_Club, kFloat_0_45_Club);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron6), kClubIron, kFloat_140_Club, kFloat_36_Club, kFloat_124_Club, kFloat_0_67_Club, kFloat_0_41_ClubSelection);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron7), kClubIron, kFloat_130_Club, kFloat_40_Club, kFloat_118_ClubSelection, kFloat_0_61_Club, kFloat_0_36_Club);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron8), kClubIron, kFloat_120_Club, kFloat_44_Club, kFloat_114_Club, kFloat_0_57_Club, kFloat_0_3_ClubSelection);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron9), kClubIron, kFloat_110_Club, kFloat_48_Club, kFloat_110_Club, kFloat_0_53_ClubSelection, kFloat_0_25_Club);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(pitchingWedge), kClubWedge, kFloat_100_Club, kFloat_52_Club, kFloat_107_Club, kFloat_0_49_Club, kFloat_0_18_Club);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(sandWedge), kClubWedge, kFloat_80_ClubSelection, kFloat_56_Club, kFloat_93_ClubSelection, kFloat_0_42_Club, kFloat_0_17_ClubSelection);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(shortPutter), kClubPutter, kFloat_20_Club, kFloat_0_Club, kFloat_30_Club, kFloat_0_Club, kFloat_0_Club);
-    CClub_AddClub((HashManager*)self, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(longPutter), kClubPutter, kFloat_10_GolfHud, kFloat_0_Club, kFloat_21_Club, kFloat_0_Club, kFloat_0_Club);
+    float distanceYards = kFloat_230_Club;
+    float launchDegrees = kFloat_10_GolfHud;
+    float launchSpeed = kFloat_236_Club;
+    float selectionScale = kFloat_1_61_Club;
+    float selectionBias = kFloat_0_55_Club;
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings, kClubWood, distanceYards, launchDegrees, launchSpeed, selectionScale,
+                  selectionBias);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(wood2), kClubWood, kFloat_210_ClubSelection,
+                  kFloat_13_Club, kFloat_204_ClubSelection, kFloat_1_41_Club, kFloat_0_5_Camera);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(wood3), kClubWood, kFloat_190_Club, kFloat_16_Club,
+                  kFloat_176_Club, kFloat_1_26_Club, kFloat_0_45_Club);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron2), kClubIron, kFloat_180_ClubSelection,
+                  kFloat_20_Club, kFloat_161_Club, kFloat_1_07_ClubSelection, kFloat_0_45_Club);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron3), kClubIron, kFloat_170_Club, kFloat_24_Club,
+                  kFloat_149_Club, kFloat_0_95_Club, kFloat_0_45_Club);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron4), kClubIron, kFloat_160_Club,
+                  kFloat_28_GolfDocHelpers, kFloat_139_Club, kFloat_0_83_ClubSelection, kFloat_0_45_Club);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron5), kClubIron, kFloat_150_Club,
+                  kFloat_32_ClubSelection, kFloat_131_Club, kFloat_0_73_Club, kFloat_0_45_Club);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron6), kClubIron, kFloat_140_Club, kFloat_36_Club,
+                  kFloat_124_Club, kFloat_0_67_Club, kFloat_0_41_ClubSelection);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron7), kClubIron, kFloat_130_Club, kFloat_40_Club,
+                  kFloat_118_ClubSelection, kFloat_0_61_Club, kFloat_0_36_Club);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron8), kClubIron, kFloat_120_Club, kFloat_44_Club,
+                  kFloat_114_Club, kFloat_0_57_Club, kFloat_0_3_ClubSelection);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(iron9), kClubIron, kFloat_110_Club, kFloat_48_Club,
+                  kFloat_110_Club, kFloat_0_53_ClubSelection, kFloat_0_25_Club);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(pitchingWedge), kClubWedge, kFloat_100_Club,
+                  kFloat_52_Club, kFloat_107_Club, kFloat_0_49_Club, kFloat_0_18_Club);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(sandWedge), kClubWedge, kFloat_80_ClubSelection,
+                  kFloat_56_Club, kFloat_93_ClubSelection, kFloat_0_42_Club, kFloat_0_17_ClubSelection);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(shortPutter), kClubPutter, kFloat_20_Club,
+                  kFloat_0_Club, kFloat_30_Club, kFloat_0_Club, kFloat_0_Club);
+    ((CClub*)((HashManager*)this))
+        ->AddClub((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(longPutter), kClubPutter, kFloat_10_GolfHud,
+                  kFloat_0_Club, kFloat_21_Club, kFloat_0_Club, kFloat_0_Club);
     float zero = kFloat_0_Club;
-    *(void**)self = 0;
-    *(void**)&((ClubSelectionStorage*)self)->powerMode = 0;
-    ((ClubSelectionStorage*)self)->distanceTier = kDistanceAtLeast58Yards;
-    ((ClubSelectionStorage*)self)->opacity = zero;
-    ((ClubSelectionStorage*)self)->slidePosition = zero;
-    ((ClubSelectionStorage*)self)->animationState = kAnimationReady;
-    ((ClubSelectionStorage*)self)->selectionFlag = 0;
-    ((ClubSelectionStorage*)self)->previousClubIndex = 0;
-    ((ClubSelectionStorage*)self)->powerBonus = zero;
-    ((ClubSelectionStorage*)self)->resourcesLoaded = 0;
+    *(void**)this = 0;
+    *(void**)&((ClubSelectionStorage*)this)->powerMode = 0;
+    ((ClubSelectionStorage*)this)->distanceTier = kDistanceAtLeast58Yards;
+    ((ClubSelectionStorage*)this)->opacity = zero;
+    ((ClubSelectionStorage*)this)->slidePosition = zero;
+    ((ClubSelectionStorage*)this)->animationState = kAnimationReady;
+    ((ClubSelectionStorage*)this)->selectionFlag = 0;
+    ((ClubSelectionStorage*)this)->previousClubIndex = 0;
+    ((ClubSelectionStorage*)this)->powerBonus = zero;
+    ((ClubSelectionStorage*)this)->resourcesLoaded = 0;
     char* key = (char*)&clubAndPlayerStrings;
-    node = EA88CLookup(self, key);
-    ((ClubSelectionStorage*)self)->selected = node;
-    ((ClubSelectionStorage*)self)->clubIndex = ((ClubParameterView*)node)->clubIndex;
-    *(void**)&((ClubSelectionStorage*)self)->inputState = 0;
+    node = EA88CLookup(this, key);
+    ((ClubSelectionStorage*)this)->selected = node;
+    ((ClubSelectionStorage*)this)->clubIndex = ((ClubParameterView*)node)->clubIndex;
+    *(void**)&((ClubSelectionStorage*)this)->inputState = 0;
 }
 
 #pragma push
@@ -1313,29 +1560,31 @@ void CClub_Init(void* self) {
 #pragma opt_common_subs off
 #pragma opt_propagation off
 // Process club input/animation, track index/group changes, and update the gauge and optional camera transform.
-void CClub_Process(void* self, float delta) {
+// The club is read through its selection view in place; naming the view in a local changes the register allocation.
+void CClub::Process(float delta) {
     void* manager = g_sharedDoc;
     void* state = (*(void**)&AsCSharedDoc(manager)->golfDoc);
     if (AsCGolfDoc(state)->tutorialStage >= 1) {
-        CClub_ClubProcess((ClubInputState*)self);
-        CClub_BarProcess((ClubAnimationState*)self, delta);
-        unsigned char current = ((ClubSelectionStorage*)self)->clubIndex;
-        if (((ClubSelectionStorage*)self)->previousClubIndex != current) {
-            ((ClubSelectionStorage*)self)->changeFlags |= kSelectionChanged;
+        ((CClub*)((ClubInputState*)this))->ClubProcess();
+        ((CClub*)((ClubAnimationState*)this))->BarProcess(delta);
+        unsigned char current = ((ClubSelectionStorage*)this)->clubIndex;
+        if (((ClubSelectionStorage*)this)->previousClubIndex != current) {
+            ((ClubSelectionStorage*)this)->changeFlags |= kSelectionChanged;
             void* first;
             {
-                WInstanceLock guard(((ClubSelectionStorage*)self)->mutex);
-                ((ClubSelectionStorage*)self)->cursor = ((ClubSelectionStorage*)self)->first;
-                OSLockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
-                void* item = ((ClubSelectionStorage*)self)->cursor;
+                WInstanceLock guard(((ClubSelectionStorage*)this)->mutex);
+                ((ClubSelectionStorage*)this)->cursor = ((ClubSelectionStorage*)this)->first;
+                OSLockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
+                void* item = ((ClubSelectionStorage*)this)->cursor;
                 if (item != 0) {
                     void* next = ((ItemEntry*)item)->next;
                     first = *(void**)item;
-                    if (next == ((ClubSelectionStorage*)self)->first) next = 0;
-                    ((ClubSelectionStorage*)self)->cursor = next;
-                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
+                    if (next == ((ClubSelectionStorage*)this)->first)
+                        next = 0;
+                    ((ClubSelectionStorage*)this)->cursor = next;
+                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
                 } else {
-                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
+                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
                     first = 0;
                 }
             }
@@ -1344,35 +1593,38 @@ void CClub_Process(void* self, float delta) {
                     current = ((ClubParameterView*)first)->clubGroup;
                     break;
                 }
-                OSLockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
-                void* item = ((ClubSelectionStorage*)self)->cursor;
+                OSLockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
+                void* item = ((ClubSelectionStorage*)this)->cursor;
                 if (item != 0) {
                     void* next = ((ItemEntry*)item)->next;
                     first = *(void**)item;
-                    if (next == ((ClubSelectionStorage*)self)->first) next = 0;
-                    ((ClubSelectionStorage*)self)->cursor = next;
-                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
+                    if (next == ((ClubSelectionStorage*)this)->first)
+                        next = 0;
+                    ((ClubSelectionStorage*)this)->cursor = next;
+                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
                 } else {
-                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
+                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
                     first = 0;
                 }
             }
-            if (first == 0) current = 0;
+            if (first == 0)
+                current = 0;
 
-            unsigned char old = ((ClubSelectionStorage*)self)->previousClubIndex;
+            unsigned char old = ((ClubSelectionStorage*)this)->previousClubIndex;
             {
-                WInstanceLock guard(((ClubSelectionStorage*)self)->mutex);
-                ((ClubSelectionStorage*)self)->cursor = ((ClubSelectionStorage*)self)->first;
-                OSLockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
-                void* item = ((ClubSelectionStorage*)self)->cursor;
+                WInstanceLock guard(((ClubSelectionStorage*)this)->mutex);
+                ((ClubSelectionStorage*)this)->cursor = ((ClubSelectionStorage*)this)->first;
+                OSLockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
+                void* item = ((ClubSelectionStorage*)this)->cursor;
                 if (item != 0) {
                     void* next = ((ItemEntry*)item)->next;
                     first = *(void**)item;
-                    if (next == ((ClubSelectionStorage*)self)->first) next = 0;
-                    ((ClubSelectionStorage*)self)->cursor = next;
-                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
+                    if (next == ((ClubSelectionStorage*)this)->first)
+                        next = 0;
+                    ((ClubSelectionStorage*)this)->cursor = next;
+                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
                 } else {
-                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
+                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
                     first = 0;
                 }
             }
@@ -1382,186 +1634,235 @@ void CClub_Process(void* self, float delta) {
                     value = ((ClubParameterView*)first)->clubGroup;
                     break;
                 }
-                OSLockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
-                void* item = ((ClubSelectionStorage*)self)->cursor;
+                OSLockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
+                void* item = ((ClubSelectionStorage*)this)->cursor;
                 if (item != 0) {
                     void* next = ((ItemEntry*)item)->next;
                     first = *(void**)item;
-                    if (next == ((ClubSelectionStorage*)self)->first) next = 0;
-                    ((ClubSelectionStorage*)self)->cursor = next;
-                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
+                    if (next == ((ClubSelectionStorage*)this)->first)
+                        next = 0;
+                    ((ClubSelectionStorage*)this)->cursor = next;
+                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
                 } else {
-                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)self)->mutex));
+                    OSUnlockMutex((OSMutex*)(((ClubSelectionStorage*)this)->mutex));
                     first = 0;
                 }
             }
-            if (current != value) ((ClubSelectionStorage*)self)->changeFlags |= kClubGroupChanged;
-            else ((ClubSelectionStorage*)self)->changeFlags &= ~(unsigned int)kClubGroupChanged;
+            if (current != value)
+                ((ClubSelectionStorage*)this)->changeFlags |= kClubGroupChanged;
+            else
+                ((ClubSelectionStorage*)this)->changeFlags &= ~(unsigned int)kClubGroupChanged;
 
-            void* mode = ((ClubSelectionStorage*)self)->selected;
-            float gaugeCursorX = ((ClubParameterView*)mode)->clubGroup == kClubPutter ? kFloat_149_Club : kFloat_114_Club;
+            void* mode = ((ClubSelectionStorage*)this)->selected;
+            float gaugeCursorX =
+                ((ClubParameterView*)mode)->clubGroup == kClubPutter ? kFloat_149_Club : kFloat_114_Club;
             state = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
             AsCGolfDoc(state)->shotGaugeCursorX = gaugeCursorX;
             state = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
             AsCGolfDoc(state)->roundedShotGaugeCursorX = AsCGolfDoc(state)->shotGaugeCursorX;
             state = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
             if (((*(unsigned int*)&AsCGolfDoc(state)->gameStateFlags) & 0x200) != 0 &&
-                ((ClubSelectionStorage*)self)->clubIndex < ((ClubSelectionStorage*)self)->previousClubIndex &&
-                ((ClubSelectionStorage*)self)->distanceTier == kDistanceAtLeast58Yards) {
+                ((ClubSelectionStorage*)this)->clubIndex < ((ClubSelectionStorage*)this)->previousClubIndex &&
+                ((ClubSelectionStorage*)this)->distanceTier == kDistanceAtLeast58Yards) {
                 char text[0x50];
-                CGolfDoc_BuildModeCameraTransform(text, state, 1);
+                CGolfDoc::BuildModeCameraTransform(text, state, 1);
                 Matrix_CopyAffine(s_cameraTransform, text);
             }
-            ((ClubSelectionStorage*)self)->previousClubIndex = ((ClubSelectionStorage*)self)->clubIndex;
+            ((ClubSelectionStorage*)this)->previousClubIndex = ((ClubSelectionStorage*)this)->clubIndex;
         } else {
-            ((ClubSelectionStorage*)self)->changeFlags &= ~(unsigned int)kSelectionChangeMask;
+            ((ClubSelectionStorage*)this)->changeFlags &= ~(unsigned int)kSelectionChangeMask;
         }
     }
 }
 #pragma pop
 
 // Gate previous/next club input by menus, camera state and party-item locks, then update selection and sounds.
-void CClub_ClubProcess(ClubInputState* self) {
-    if (!CItemWindow::IsClosed()) return;
+void CClub::ClubProcess() {
+    ClubInputState* self = (ClubInputState*)this;
+    if (!CItemWindow::IsClosed())
+        return;
     if (Pointer_IsActionActive(g_inputPointer, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(leftAlt), 1) ||
-        Pointer_IsActionActive(g_inputPointer, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(rightAlt), 1)) return;
-    if (self->inputState != kAnimationReady) return;
+        Pointer_IsActionActive(g_inputPointer, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(rightAlt), 1))
+        return;
+    if (self->inputState != kAnimationReady)
+        return;
     int flag = 0;
-    if (!Sing_805DC5C8()) {
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, (char*)InputManager_Dtor, s_inputManagerDtorRegistration_Club);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    if (!Input_IsActionButtonDown(Sing_805DC5C8(), kActionCameraModifier, -1)) {
+    if (!Input_IsActionButtonDown(GetInputManagerSlot(), kActionCameraModifier, -1)) {
         unsigned char* p = (unsigned char*)g_sharedDoc;
         int s = AsCGolfDoc((void*)AsCSharedDoc(p)->golfDoc)->cameraMode;
-        if (s && s != 4) flag = 1;
+        if (s && s != 4)
+            flag = 1;
     }
     int q = g_taskManager ? Object_GetChild(g_taskManager) : 0;
     int response;
     EAMessage args(0x15, &response);
-    EAReceiver* obj = (EAReceiver*)TaskActorTable_FindByName(q, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(player));
-    if (obj) obj->send(&args);
-    if (response == 3) return;
+    EAReceiver* obj =
+        (EAReceiver*)TaskActorTable_FindByName(q, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(player));
+    if (obj)
+        obj->send(&args);
+    if (response == 3)
+        return;
     unsigned char* root = (unsigned char*)g_sharedDoc;
     if ((*(int*)&AsCSharedDoc(root)->partyGameMode) == 3) {
         int count = (int)PartyItemSlots_GetInstance();
-        for (int i=0; i<AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->playerCount; ++i) if (PartyItemSlots_GetItemType(count, i)==11) {
-            if (!Sing_805DC5C8()) {
-                if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager,(char*)InputManager_Dtor,s_inputManagerDtorRegistration_Club); s_inputManagerInitialized=1; }
-                Sing_805DC5C8()=s_gameInputManager;
+        for (int i = 0; i < AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->playerCount; ++i)
+            if (PartyItemSlots_GetItemType(count, i) == 11) {
+                if (!GetInputManagerSlot()) {
+                    if (!s_inputManagerInitialized) {
+                        InputManager_Init(s_gameInputManager);
+                        __register_global_object(s_gameInputManager, (char*)InputManager_Dtor,
+                                                 s_inputManagerDtorRegistration_Club);
+                        s_inputManagerInitialized = 1;
+                    }
+                    GetInputManagerSlot() = s_gameInputManager;
+                }
+                if (!Input_IsActionPressed(GetInputManagerSlot(), kActionNextClub, -1)) {
+                    if (!GetInputManagerSlot()) {
+                        if (!s_inputManagerInitialized) {
+                            InputManager_Init(s_gameInputManager);
+                            __register_global_object(s_gameInputManager, (char*)InputManager_Dtor,
+                                                     s_inputManagerDtorRegistration_Club);
+                            s_inputManagerInitialized = 1;
+                        }
+                        GetInputManagerSlot() = s_gameInputManager;
+                    }
+                    if (!Input_IsActionPressed(GetInputManagerSlot(), kActionPreviousClub, -1))
+                        return;
+                }
+                if (flag)
+                    return;
+                Sound_PlayByName(g_soundManager, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(unplayableSound), 0,
+                                 0, 0, 0, kFloat_0_5_Camera, kFloat_200_Club, kFloat_1_golfParameters);
+                NoticeQueue_ShowById(g_helpMsg, 3, 0);
+                return;
             }
-            if (!Input_IsActionPressed(Sing_805DC5C8(),kActionNextClub,-1)) {
-                if (!Sing_805DC5C8()) { if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager,(char*)InputManager_Dtor,s_inputManagerDtorRegistration_Club); s_inputManagerInitialized=1; } Sing_805DC5C8()=s_gameInputManager; }
-                if (!Input_IsActionPressed(Sing_805DC5C8(),kActionPreviousClub,-1)) return;
-            }
-            if (flag) return;
-            Sound_PlayByName(g_soundManager,(char*)&clubAndPlayerStrings+CLUB_STRING_OFFSET(unplayableSound),0,0,0,0,kFloat_0_5_Camera,kFloat_200_Club,kFloat_1_golfParameters);
-            NoticeQueue_ShowById(g_helpMsg,3,0);
-            return;
-        }
     }
     int size;
     {
-    WInstanceLock lock(self->mutex);
-    EANode* first=self->first;
-    size=0;
-    EANode* node=first;
-    while (node) {
-        node=first!=node->next ? node->next : 0;
-        ++size;
+        WInstanceLock lock(self->mutex);
+        EANode* first = self->first;
+        size = 0;
+        EANode* node = first;
+        while (node) {
+            node = first != node->next ? node->next : 0;
+            ++size;
+        }
     }
-    }
-    if (self->clubIndex < size-1) {
+    if (self->clubIndex < size - 1) {
         EAInput();
-        if (Input_IsActionPressed(Sing_805DC5C8(),kActionNextClub,-1) && !flag) {
-            int q2=g_taskManager ? Object_GetChild(g_taskManager) : 0;
+        if (Input_IsActionPressed(GetInputManagerSlot(), kActionNextClub, -1) && !flag) {
+            int q2 = g_taskManager ? Object_GetChild(g_taskManager) : 0;
             int response2;
-            EAMessage args2(0x36,&response2);
-            EAReceiver* obj2=(EAReceiver*)TaskActorTable_FindByName(q2,(char*)&clubAndPlayerStrings+CLUB_STRING_OFFSET(screen));
-            if (obj2) obj2->send(&args2);
+            EAMessage args2(0x36, &response2);
+            EAReceiver* obj2 =
+                (EAReceiver*)TaskActorTable_FindByName(q2, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(screen));
+            if (obj2)
+                obj2->send(&args2);
             if (self->powerMode || response2) {
-                unsigned char position=(unsigned char)(self->clubIndex+1);
-                SELECT_CLUB_AT_INDEX(value,position);
-                self->selected=value;
-                if (!value || ((ClubParameterView*)value)->clubGroup==kClubPutter) {
-                    unsigned char position=self->clubIndex;
-                    SELECT_CLUB_AT_INDEX(old,position);
-                    self->selected=old;
-                    Sound_PlayByName(g_soundManager,(char*)&clubAndPlayerStrings+CLUB_STRING_OFFSET(unplayableSound),0,0,0,0,kFloat_0_5_Camera,kFloat_200_Club,kFloat_1_golfParameters);
-                    if (g_helpMsg) NoticeQueue_ShowById(g_helpMsg,1,0);
-                } else ++self->clubIndex;
+                unsigned char position = (unsigned char)(self->clubIndex + 1);
+                SELECT_CLUB_AT_INDEX(value, position);
+                self->selected = value;
+                if (!value || ((ClubParameterView*)value)->clubGroup == kClubPutter) {
+                    unsigned char position = self->clubIndex;
+                    SELECT_CLUB_AT_INDEX(old, position);
+                    self->selected = old;
+                    Sound_PlayByName(g_soundManager, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(unplayableSound),
+                                     0, 0, 0, 0, kFloat_0_5_Camera, kFloat_200_Club, kFloat_1_golfParameters);
+                    if (g_helpMsg)
+                        NoticeQueue_ShowById(g_helpMsg, 1, 0);
+                } else
+                    ++self->clubIndex;
             } else {
-                unsigned char position=(unsigned char)(self->clubIndex+1);
-                self->clubIndex=position;
-                SELECT_CLUB_AT_INDEX(value,position);
-                self->selected=value;
+                unsigned char position = (unsigned char)(self->clubIndex + 1);
+                self->clubIndex = position;
+                SELECT_CLUB_AT_INDEX(value, position);
+                self->selected = value;
             }
-            Sound_PlayByName(g_soundManager,(char*)&clubAndPlayerStrings+CLUB_STRING_OFFSET(changeSound),0,0,0,0,kFloat_0_5_Camera,kFloat_200_Club,kFloat_1_golfParameters);
+            Sound_PlayByName(g_soundManager, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(changeSound), 0, 0, 0, 0,
+                             kFloat_0_5_Camera, kFloat_200_Club, kFloat_1_golfParameters);
         }
     }
     EAInput();
-    if (!Input_IsActionPressed(Sing_805DC5C8(),kActionPreviousClub,-1)) return;
-    if (flag) return;
+    if (!Input_IsActionPressed(GetInputManagerSlot(), kActionPreviousClub, -1))
+        return;
+    if (flag)
+        return;
     if (self->clubIndex > self->minimumClubIndex) {
-        unsigned char position=(unsigned char)(self->clubIndex-1);
-        self->clubIndex=position;
-        SELECT_CLUB_AT_INDEX(value,position);
-        self->selected=value;
-        Sound_PlayByName(g_soundManager,(char*)&clubAndPlayerStrings+CLUB_STRING_OFFSET(changeSound),0,0,0,0,kFloat_0_5_Camera,kFloat_200_Club,kFloat_1_golfParameters);
+        unsigned char position = (unsigned char)(self->clubIndex - 1);
+        self->clubIndex = position;
+        SELECT_CLUB_AT_INDEX(value, position);
+        self->selected = value;
+        Sound_PlayByName(g_soundManager, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(changeSound), 0, 0, 0, 0,
+                         kFloat_0_5_Camera, kFloat_200_Club, kFloat_1_golfParameters);
     } else if (g_helpMsg && self->minimumClubIndex) {
-        Sound_PlayByName(g_soundManager,(char*)&clubAndPlayerStrings+CLUB_STRING_OFFSET(unplayableSound),0,0,0,0,kFloat_0_5_Camera,kFloat_200_Club,kFloat_1_golfParameters);
-        NoticeQueue_ShowById(g_helpMsg,2,0);
+        Sound_PlayByName(g_soundManager, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(unplayableSound), 0, 0, 0, 0,
+                         kFloat_0_5_Camera, kFloat_200_Club, kFloat_1_golfParameters);
+        NoticeQueue_ShowById(g_helpMsg, 2, 0);
     }
 }
 
 // Advance the delay, sliding and fade-in stages, restarting them when the selected club changes.
-void CClub_BarProcess(ClubAnimationState* self, float delta) {
-	switch (self->animationState) {
-	case kAnimationDelay:
-		if (self->flags & kSelectionChanged) self->fadeSeconds = kFloat_0_Club;
-		self->fadeSeconds += delta;
-		if (self->fadeSeconds > kFloat_0_7_Club) self->animationState = kAnimationSlideOut;
-		break;
-	case kAnimationSlideOut:
-		if (self->flags & kSelectionChanged) {
-			self->animationState = kAnimationFadeIn;
-			self->opacity = kFloat_0_Club;
-			self->slidePosition = kFloat_456_Club;
-		} else {
-			self->slidePosition = self->slidePosition - kFloat_1000_Club * delta;
-			if (self->slidePosition < kFloat_0_Club) {
-				self->slidePosition = kFloat_0_Club;
-				self->animationState = kAnimationReady;
-				GolfTask_NoOpStatus();
-			}
-		}
-		break;
-	case kAnimationFadeIn:
-		self->opacity = self->opacity + kFloat_765_ClubSelection * delta;
-		if (self->opacity > kFloat_255_Club) {
-			self->opacity = kFloat_255_Club;
-			self->fadeSeconds = kFloat_0_Club;
-			self->animationState = kAnimationDelay;
-		}
-		break;
-	case kAnimationReady:
-		if (self->flags & kSelectionChanged) {
-			unsigned char* p = (unsigned char*)GolfBall__Fv();
-			if (((CGolfBall*)p)->m_groundType == kGroundGreen) GolfTask_NoOpStatus();
-			else { self->animationState = kAnimationFadeIn; self->opacity = kFloat_0_Club; self->slidePosition = kFloat_456_Club; }
-		}
-		break;
-	}
+void CClub::BarProcess(float delta) {
+    ClubAnimationState* self = (ClubAnimationState*)this;
+    switch (self->animationState) {
+    case kAnimationDelay:
+        if (self->flags & kSelectionChanged)
+            self->fadeSeconds = kFloat_0_Club;
+        self->fadeSeconds += delta;
+        if (self->fadeSeconds > kFloat_0_7_Club)
+            self->animationState = kAnimationSlideOut;
+        break;
+    case kAnimationSlideOut:
+        if (self->flags & kSelectionChanged) {
+            self->animationState = kAnimationFadeIn;
+            self->opacity = kFloat_0_Club;
+            self->slidePosition = kFloat_456_Club;
+        } else {
+            self->slidePosition = self->slidePosition - kFloat_1000_Club * delta;
+            if (self->slidePosition < kFloat_0_Club) {
+                self->slidePosition = kFloat_0_Club;
+                self->animationState = kAnimationReady;
+                GolfTask_NoOpStatus();
+            }
+        }
+        break;
+    case kAnimationFadeIn:
+        self->opacity = self->opacity + kFloat_765_ClubSelection * delta;
+        if (self->opacity > kFloat_255_Club) {
+            self->opacity = kFloat_255_Club;
+            self->fadeSeconds = kFloat_0_Club;
+            self->animationState = kAnimationDelay;
+        }
+        break;
+    case kAnimationReady:
+        if (self->flags & kSelectionChanged) {
+            unsigned char* p = (unsigned char*)GolfBall__Fv();
+            if (((CGolfBall*)p)->m_groundType == kGroundGreen)
+                GolfTask_NoOpStatus();
+            else {
+                self->animationState = kAnimationFadeIn;
+                self->opacity = kFloat_0_Club;
+                self->slidePosition = kFloat_456_Club;
+            }
+        }
+        break;
+    }
 }
 
 // Update or allocate a named club record, assign its list index and look up its parameter-kind bias.
 // groupOrListCount starts as kClubWood/Iron/Wedge/Putter; after storing the group,
 // its storage is reused only to count the registry list. Records belong to self.
-void CClub_AddClub(HashManager* self, const char* name, unsigned int groupOrListCount, float distanceYards, float launchDegrees, float launchSpeed, float selectionScale, float selectionBias) {
+void CClub::AddClub(const char* name, unsigned int groupOrListCount, float distanceYards, float launchDegrees,
+                    float launchSpeed, float selectionScale, float selectionBias) {
+    HashManager* self = (HashManager*)this;
     Entry* entry;
 
     entry = HashFind(self, name);
@@ -1591,8 +1892,10 @@ void CClub_AddClub(HashManager* self, const char* name, unsigned int groupOrList
         groupOrListCount = 0;
         while (cur) {
             HashNode* next = cur->prev;
-            if (start != next) cur = next;
-            else cur = 0;
+            if (start != next)
+                cur = next;
+            else
+                cur = 0;
             groupOrListCount++;
         }
         OSUnlockMutex((OSMutex*)lk);
@@ -1612,11 +1915,16 @@ void CClub_AddClub(HashManager* self, const char* name, unsigned int groupOrList
 }
 
 // Choose a club for the current hole's target position.
-void CClub_SelectBestClubForHole(void* self) {
-	struct V3EBE70 { unsigned int a; unsigned int b; unsigned int c; };
-	unsigned char* mgr = (*(unsigned char**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-	V3EBE70 data = *(V3EBE70*)((*(unsigned char**)&AsCGolfDoc(mgr)->holeRecords) + (AsCGolfDoc(mgr)->currentHoleIndex << 5) + 0xC);
-	CClub_SelectBestClub((ClubSelectionState*)self, &data);
+void CClub::SelectBestClubForHole() {
+    struct V3EBE70 {
+        unsigned int a;
+        unsigned int b;
+        unsigned int c;
+    };
+    unsigned char* mgr = (*(unsigned char**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
+    V3EBE70 data =
+        *(V3EBE70*)((*(unsigned char**)&AsCGolfDoc(mgr)->holeRecords) + (AsCGolfDoc(mgr)->currentHoleIndex << 5) + 0xC);
+    SelectBestClub(&data);
 }
 
 #pragma push
@@ -1625,16 +1933,21 @@ void CClub_SelectBestClubForHole(void* self) {
 // Score is updated once per terrain sample; outside-course penalties are applied by the caller.
 static inline void PenalizeClubLandingTerrain(int terrainCode, float& candidateScore) {
     switch (terrainCode) {
-    case kGroundBunker: candidateScore -= kFloat_200_Club; break;
+    case kGroundBunker:
+        candidateScore -= kFloat_200_Club;
+        break;
     case kPenalty100Ground4:
     case kPenalty100Ground6:
     case kPenalty100Ground7:
-    case kPenalty100Ground10: candidateScore -= kFloat_100_Club; break;
-    case kGroundWater: candidateScore -= kFloat_1000_Club; break;
+    case kPenalty100Ground10:
+        candidateScore -= kFloat_100_Club;
+        break;
+    case kGroundWater:
+        candidateScore -= kFloat_1000_Club;
+        break;
     case kUnpenalizedGround5:
     case kUnpenalizedGround8:
         break;
-    
     }
 }
 
@@ -1646,75 +1959,86 @@ static inline void PenalizeClubLandingTerrain(int terrainCode, float& candidateS
 // Later overrides win. Registry initialization must provide all named/default clubs;
 // a missing record is not checked before dereference. Selection keeps borrowed records.
 // Select a borrowed club record using target range, sampled terrain and ordered overrides.
-void CClub_SelectBestClub(ClubSelectionState* s, void* targetPosition) {
+// The state is read through ClubSelectionState in place; naming the view in a local changes the register allocation.
+void CClub::SelectBestClub(void* targetPosition) {
     // Phase 1: choose the <10, <15, <28, <58, or >=58 distance tier and control window.
     Vec3 v;
     __mi__FRC7WVectorRC7WVector(&v, GolfBall__Fv(), targetPosition);
     v.y = kFloat_0_Club;
     float targetDistanceYards = Magnitude__7WVectorCFv(&v) / kFloat_3_2_Club;
-    s->selectionPolicyValue = 0;
+    ((ClubSelectionState*)this)->selectionPolicyValue = 0;
     if (targetDistanceYards < kFloat_10_GolfHud) {
-        s->distanceTier = kDistanceBelow10Yards;
+        ((ClubSelectionState*)this)->distanceTier = kDistanceBelow10Yards;
     } else if (targetDistanceYards < kFloat_15_Club) {
-        s->distanceTier = kDistance10To15Yards;
+        ((ClubSelectionState*)this)->distanceTier = kDistance10To15Yards;
     } else if (targetDistanceYards < kFloat_28_GolfDocHelpers) {
-        s->distanceTier = kDistance15To28Yards;
+        ((ClubSelectionState*)this)->distanceTier = kDistance15To28Yards;
     } else if (targetDistanceYards < kFloat_58_Club) {
-        s->distanceTier = kDistance28To58Yards;
+        ((ClubSelectionState*)this)->distanceTier = kDistance28To58Yards;
     } else {
-        s->distanceTier = kDistanceAtLeast58Yards;
+        ((ClubSelectionState*)this)->distanceTier = kDistanceAtLeast58Yards;
     }
 
-    PlayerControlStatsPrefix* inst = (PlayerControlStatsPrefix*)GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc), AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer);
+    PlayerControlStatsPrefix* inst = (PlayerControlStatsPrefix*)GolfPlayer_GetEntryByIndex(
+        AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc),
+        AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer);
 
-    s->controlValue = (float)(int)inst->control + s_clubGroundTypeScoreOffsets[((CGolfBall*)GolfBall__Fv())->m_groundType];
-    float controlLimit = (kFloat_10_GolfHud + s->controlValue);
-    s->controlLimit = controlLimit > kFloat_35_GolfHud ? kFloat_35_GolfHud : controlLimit;
+    ((ClubSelectionState*)this)->controlValue =
+        (float)(int)inst->control + s_clubGroundTypeScoreOffsets[((CGolfBall*)GolfBall__Fv())->m_groundType];
+    float controlLimit = (kFloat_10_GolfHud + ((ClubSelectionState*)this)->controlValue);
+    ((ClubSelectionState*)this)->controlLimit = controlLimit > kFloat_35_GolfHud ? kFloat_35_GolfHud : controlLimit;
 
     if (((CGolfBall*)GolfBall__Fv())->m_groundType == kGroundGreen) {
         // Phase 2a: fixed putter policy. Each FIND call searches the locked name
         // registry (not a direct array lookup); the last argument is a unique label.
         // longPutt and the chosen named putter are independent parts of this policy.
         ClubParameterPrefix* found;
-        switch (s->distanceTier) {
+        switch (((ClubSelectionState*)this)->distanceTier) {
         case kDistanceBelow10Yards:
-            s->longPutt = 0;
-            FIND_CLUB_BY_NAME((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(longPutter), found, 0);
-            s->selected = found;
+            ((ClubSelectionState*)this)->longPutt = 0;
+            FIND_CLUB_BY_NAME(((ClubSelectionState*)this),
+                              (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(longPutter), found, 0);
+            ((ClubSelectionState*)this)->selected = found;
             break;
         case kDistance10To15Yards:
-            s->longPutt = 0;
-            FIND_CLUB_BY_NAME((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(shortPutter), found, 1);
-            s->selected = found;
+            ((ClubSelectionState*)this)->longPutt = 0;
+            FIND_CLUB_BY_NAME(((ClubSelectionState*)this),
+                              (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(shortPutter), found, 1);
+            ((ClubSelectionState*)this)->selected = found;
             break;
         case kDistance15To28Yards:
-            s->longPutt = 1;
-            FIND_CLUB_BY_NAME((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(longPutter), found, 2);
-            s->selected = found;
+            ((ClubSelectionState*)this)->longPutt = 1;
+            FIND_CLUB_BY_NAME(((ClubSelectionState*)this),
+                              (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(longPutter), found, 2);
+            ((ClubSelectionState*)this)->selected = found;
             break;
         case kDistance28To58Yards:
         case kDistanceAtLeast58Yards:
-            s->longPutt = 1;
-            FIND_CLUB_BY_NAME((char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(shortPutter), found, 3);
-            s->selected = found;
+            ((ClubSelectionState*)this)->longPutt = 1;
+            FIND_CLUB_BY_NAME(((ClubSelectionState*)this),
+                              (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(shortPutter), found, 3);
+            ((ClubSelectionState*)this)->selected = found;
             break;
         }
-        s->clubIndex = s->selected->clubIndex;
+        ((ClubSelectionState*)this)->clubIndex = ((ClubSelectionState*)this)->selected->clubIndex;
         // Forced selection value, not thirteen measured slope rejections.
-        s->selectionPolicyValue = kPutterIndex;
+        ((ClubSelectionState*)this)->selectionPolicyValue = kPutterIndex;
         AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->shotGaugeCursorX = kFloat_149_Club;
-        AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->roundedShotGaugeCursorX = AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->shotGaugeCursorX;
-    } else { float bestScore = kFloat_neg10000_ClubSelection;
+        AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->roundedShotGaugeCursorX =
+            AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->shotGaugeCursorX;
+    } else {
+        float bestScore = kFloat_neg10000_ClubSelection;
         // Phase 2b: aim horizontally along the current aim path, not necessarily
         // toward targetPosition. All terrain samples use that same normalized ray.
         unsigned char lvl = 1;
 
-        s->longPutt = lvl;
+        ((ClubSelectionState*)this)->longPutt = lvl;
         void* cm = GolfBall__Fv();
-        void* p = CQuadTree_GetMeshIndex(CQuadTree_GetInstance(), cm, 0);
+        int p = ((CQuadTree*)CQuadTree_GetInstance())->GetMeshIndex(cm, 0);
         CGolfDoc* inst2 = AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc);
         void* cm2 = GolfBall__Fv();
-        Vec3 v3; Vec3 v2;
+        Vec3 v3;
+        Vec3 v2;
         GolfAim_FindTargetAlongPath(&v2, inst2->aimPath, (char*)&clubAndPlayerStrings);
         __mi__FRC7WVectorRC7WVector(&v3, &v2, cm2);
         v3.y = kFloat_0_Club;
@@ -1723,22 +2047,28 @@ void CClub_SelectBestClub(ClubSelectionState* s, void* targetPosition) {
         // Extra terrain policy applies only below rank tier 6 and course flag nibble 3.
         // First probe the default named club at 80%, 90%, 100% of its resolved range.
         // Type 9 or an outside-playable-region sample enables candidate penalties.
-        if (PlayerRank_FindTierForValue(((SharedRankSlots*)g_sharedDoc)->players[AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer].rank) < 6) {
+        if (PlayerRank_FindTierForValue(
+                ((SharedRankSlots*)g_sharedDoc)
+                    ->players[AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer]
+                    .rank) < 6) {
             void* q = AsCSharedDoc(g_sharedDoc)->selectedCourseData;
             lvl = !q ? lvl : ((((IFF_STRUCT::sCourse*)q)->courseFlags >> 4) & 0xf);
             if (3 > lvl) {
-                float clubDistance = GolfParameter_ResolveFloat(s, (char*)&clubAndPlayerStrings);
+                float clubDistance =
+                    GolfParameter_ResolveFloat((ClubSelectionState*)this, (char*)&clubAndPlayerStrings);
 
                 for (float t = kFloat_0_8_Club; t < kFloat_1_01_ClubSampling; t += kFloat_0_1_ClubTrajectory) {
                     int ok = 1;
                     Vec3i c;
-                    Vec3 b; Vec3 a;
+                    Vec3 samplePoint;
+                    Vec3 offset;
                     float range = kFloat_3_2_Club * clubDistance;
-                    __ml__FfRC7WVector(&a, &v3, t * range);
-                    __pl__FRC7WVectorRC7WVector(&b, GolfBall__Fv(), &a);
-                    c = *(Vec3i*)&b;
+                    __ml__FfRC7WVector(&offset, &v3, t * range);
+                    __pl__FRC7WVectorRC7WVector(&samplePoint, GolfBall__Fv(), &offset);
+                    c = *(Vec3i*)&samplePoint;
                     if (GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), (Vec3*)&c) != kGroundWater) {
-                        Vec3 d; CGolfDoc* in = AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc);
+                        Vec3 d;
+                        CGolfDoc* in = AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc);
                         Vec3 e;
                         __ml__FfRC7WVector(&d, &v3, t * ((kFloat_3_2_Club * clubDistance)));
                         __pl__FRC7WVectorRC7WVector(&e, GolfBall__Fv(), &d);
@@ -1756,21 +2086,23 @@ void CClub_SelectBestClub(ClubSelectionState* s, void* targetPosition) {
 
         ClubParameterPrefix* item;
         {
-            WInstanceLock l1(s->mutex);
-            s->current = s->first;
-            ADVANCE(item);
+            WInstanceLock l1(((ClubSelectionState*)this)->mutex);
+            ((ClubSelectionState*)this)->current = ((ClubSelectionState*)this)->first;
+            ADVANCE((ClubSelectionState*)this, item);
         }
         while (item) {
             // Phase 3: score non-putter indices 0..12. A launch below the current
             // triangle slope + 0.06981317 radians (4 degrees) is rejected outright.
             if (item->clubIndex < kPutterIndex) {
-                if (item->launchAngle < CQuadTree_GetGroundSlope(CQuadTree_GetInstance(), p) + kFloat_0_06981317_GolfDocHelpers) {
-                    s->selectionPolicyValue++;
+                if (item->launchAngle <
+                    ((CQuadTree*)CQuadTree_GetInstance())->GetGroundSlope(p) + kFloat_0_06981317_GolfDocHelpers) {
+                    ((ClubSelectionState*)this)->selectionPolicyValue++;
                 } else {
-                    float clubDistance = GolfParameter_ResolveFloat(s, &item->selection.name);
+                    float clubDistance = GolfParameter_ResolveFloat((ClubSelectionState*)this, &item->selection.name);
                     float distanceErrorYards = clubDistance - targetDistanceYards;
                     distanceErrorYards = distanceErrorYards > kFloat_0_Club ? distanceErrorYards : -distanceErrorYards;
-                    float candidateScore = FP_FMADDS(kFloat_0_5_Camera, item->selection.bias, (kFloat_neg1_ClubSelection * distanceErrorYards));
+                    float candidateScore = FP_FMADDS(kFloat_0_5_Camera, item->selection.bias,
+                                                     (kFloat_neg1_ClubSelection * distanceErrorYards));
                     // Score = half preference bias - absolute distance error;
                     // add 10 when range exceeds the target. Higher scores win.
                     if (clubDistance > targetDistanceYards) {
@@ -1783,20 +2115,24 @@ void CClub_SelectBestClub(ClubSelectionState* s, void* targetPosition) {
                         // Numeric terrain identities are retained where unresolved.
 
                         for (float t = kFloat_0_8_Club; t < kFloat_1_01_ClubSampling; t += kFloat_0_1_ClubTrajectory) {
-                            Vec3 b; Vec3 a;
+                            Vec3 samplePoint;
+                            Vec3 offset;
                             CGolfDoc* in = AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc);
-                            __ml__FfRC7WVector(&a, &v3, t * (kFloat_3_2_Club * clubDistance));
-                            __pl__FRC7WVectorRC7WVector(&b, GolfBall__Fv(), &a);
-                            if (CourseData_IsPointOutsidePlayableRegion(in->courseData, &b) != 0) {
+                            __ml__FfRC7WVector(&offset, &v3, t * (kFloat_3_2_Club * clubDistance));
+                            __pl__FRC7WVectorRC7WVector(&samplePoint, GolfBall__Fv(), &offset);
+                            if (CourseData_IsPointOutsidePlayableRegion(in->courseData, &samplePoint) != 0) {
                                 candidateScore -= kFloat_1000_Club;
                             } else {
                                 Vec3i c2;
-                                Vec3 e2; Vec3 d2;
+                                Vec3 e2;
+                                Vec3 d2;
                                 __ml__FfRC7WVector(&d2, &v3, t * (kFloat_3_2_Club * clubDistance));
                                 __pl__FRC7WVectorRC7WVector(&e2, GolfBall__Fv(), &d2);
                                 c2 = *(Vec3i*)&e2;
 
-                                PenalizeClubLandingTerrain(GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), (Vec3*)&c2), candidateScore);
+                                PenalizeClubLandingTerrain(
+                                    GetGroundType__9CQuadTreeF7WVector(CQuadTree_GetInstance(), (Vec3*)&c2),
+                                    candidateScore);
                             }
                         }
                     }
@@ -1805,62 +2141,69 @@ void CClub_SelectBestClub(ClubSelectionState* s, void* targetPosition) {
                     // preserves the first registered club when scores tie.
                     if (candidateScore > bestScore) {
                         bestScore = candidateScore;
-                        s->selected = item;
-                        s->clubIndex = item->clubIndex;
+                        ((ClubSelectionState*)this)->selected = item;
+                        ((ClubSelectionState*)this)->clubIndex = item->clubIndex;
                     }
                 }
             }
-            ADVANCE(item);
+            ADVANCE((ClubSelectionState*)this, item);
         }
 
-        if (s->distanceTier < kDistanceAtLeast58Yards) {
+        if (((ClubSelectionState*)this)->distanceTier < kDistanceAtLeast58Yards) {
             // Phase 4: short approaches replace the scored result with list entry
             // 11 (zero-based). The selection-state byte is floored at 7, not recounted.
-            s->selectionPolicyValue = s->selectionPolicyValue > 7 ? s->selectionPolicyValue : 7;
+            ((ClubSelectionState*)this)->selectionPolicyValue = ((ClubSelectionState*)this)->selectionPolicyValue > 7
+                                                                    ? ((ClubSelectionState*)this)->selectionPolicyValue
+                                                                    : 7;
             {
-                WInstanceLock l2(s->mutex);
-                s->current = s->first;
-                ADVANCE(item);
+                WInstanceLock l2(((ClubSelectionState*)this)->mutex);
+                ((ClubSelectionState*)this)->current = ((ClubSelectionState*)this)->first;
+                ADVANCE((ClubSelectionState*)this, item);
             }
             unsigned int i = 0;
             do {
                 i++;
-                ADVANCE(item);
+                ADVANCE((ClubSelectionState*)this, item);
             } while (kFirstWedgeIndex > i);
-            s->selected = item;
-            s->clubIndex = item->clubIndex;
+            ((ClubSelectionState*)this)->selected = item;
+            ((ClubSelectionState*)this)->clubIndex = item->clubIndex;
         }
-    if (((CGolfBall*)GolfBall__Fv())->m_groundType == kGroundBunker) {
-        // Bunker policy replaces even the short-approach choice with list entry 12.
-        ClubParameterPrefix* item;
-        {
-            WInstanceLock l3(s->mutex);
-            s->current = s->first;
-            ADVANCE(item);
+        if (((CGolfBall*)GolfBall__Fv())->m_groundType == kGroundBunker) {
+            // Bunker policy replaces even the short-approach choice with list entry 12.
+            ClubParameterPrefix* item;
+            {
+                WInstanceLock l3(((ClubSelectionState*)this)->mutex);
+                ((ClubSelectionState*)this)->current = ((ClubSelectionState*)this)->first;
+                ADVANCE((ClubSelectionState*)this, item);
+            }
+            unsigned int i = 0;
+            do {
+                i++;
+                ADVANCE((ClubSelectionState*)this, item);
+            } while (i < kSandWedgeIndex);
+            ((ClubSelectionState*)this)->selected = item;
+            ((ClubSelectionState*)this)->clubIndex = item->clubIndex;
         }
-        unsigned int i = 0;
-        do {
-            i++;
-            ADVANCE(item);
-        } while (i < kSandWedgeIndex);
-        s->selected = item;
-            s->clubIndex = item->clubIndex;
-    }
     }
 
     if (((CGolfBall*)GolfBall__Fv())->m_groundType == kGroundTee) {
         // Phase 5: on the opening tee stroke, cap indices above 2 to named wood3.
-        GolfDocSnapshot8013* inst3 = (GolfDocSnapshot8013*)GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc), AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer);
+        GolfDocSnapshot8013* inst3 = (GolfDocSnapshot8013*)GolfPlayer_GetEntryByIndex(
+            AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc),
+            AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer);
 
-        if (inst3->holeStrokeCounts[AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentHoleIndex] <= 1) { if (2 < s->clubIndex) {
-            ClubParameterPrefix* found3;
-                FIND_CLUB_BY_NAME((CLUB_STRING_OFFSET(wood3) + (char*)&clubAndPlayerStrings), found3, 4);
-            s->selected = found3;
-            s->clubIndex = found3->clubIndex;
-        } }
+        if (inst3->holeStrokeCounts[AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentHoleIndex] <= 1) {
+            if (2 < ((ClubSelectionState*)this)->clubIndex) {
+                ClubParameterPrefix* found3;
+                FIND_CLUB_BY_NAME(((ClubSelectionState*)this),
+                                  (CLUB_STRING_OFFSET(wood3) + (char*)&clubAndPlayerStrings), found3, 4);
+                ((ClubSelectionState*)this)->selected = found3;
+                ((ClubSelectionState*)this)->clubIndex = found3->clubIndex;
+            }
+        }
     }
 
-    s->previousClubIndex = s->clubIndex;
+    ((ClubSelectionState*)this)->previousClubIndex = ((ClubSelectionState*)this)->clubIndex;
 }
 #pragma pop
 
@@ -1872,7 +2215,7 @@ void CClub_SelectBestClub(ClubSelectionState* s, void* targetPosition) {
 // but does not run the human terrain-sampling penalty pass. Inspect the final
 // power/tee overrides before changing its otherwise similar candidate loop.
 void ClubSelection_SelectForCpuTarget(ClubSelectionState* self, void* targetPosition) {
-    void* p;
+    int p;
     ClubSelectionState* s;
     PlayerControlStatsPrefix* inst;
     float count;
@@ -1895,7 +2238,9 @@ void ClubSelection_SelectForCpuTarget(ClubSelectionState* self, void* targetPosi
         s->distanceTier = kDistanceAtLeast58Yards;
     }
 
-    inst = (PlayerControlStatsPrefix*)GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc), AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer);
+    inst = (PlayerControlStatsPrefix*)GolfPlayer_GetEntryByIndex(
+        AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc),
+        AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer);
     mode = ((CGolfBall*)GolfBall__Fv())->m_groundType;
     count = (float)(int)inst->control;
     s->controlValue = count + s_clubGroundTypeScoreOffsets[mode];
@@ -1931,10 +2276,13 @@ void ClubSelection_SelectForCpuTarget(ClubSelectionState* self, void* targetPosi
         s->clubIndex = s->selected->clubIndex;
         s->selectionPolicyValue = kPutterIndex;
         AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->shotGaugeCursorX = kFloat_149_Club;
-        AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->roundedShotGaugeCursorX = AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->shotGaugeCursorX;
+        AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->roundedShotGaugeCursorX =
+            AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->shotGaugeCursorX;
     } break;
     case kGroundTee: {
-        GolfDocSnapshot8013* inst3 = (GolfDocSnapshot8013*)GolfPlayer_GetEntryByIndex(AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc), AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer);
+        GolfDocSnapshot8013* inst3 = (GolfDocSnapshot8013*)GolfPlayer_GetEntryByIndex(
+            AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc),
+            AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer);
         unsigned char off = AsCGolfDoc(AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc))->currentHoleIndex;
         if (inst3->holeStrokeCounts[off] <= 1 && s->clubIndex > 2) {
             ClubParameterPrefix* found3;
@@ -1953,7 +2301,7 @@ void ClubSelection_SelectForCpuTarget(ClubSelectionState* self, void* targetPosi
         } else {
             float bestScore = kFloat_neg10000_ClubSelection;
             void* cm = GolfBall__Fv();
-            p = CQuadTree_GetMeshIndex(CQuadTree_GetInstance(), cm, 0);
+            p = ((CQuadTree*)CQuadTree_GetInstance())->GetMeshIndex(cm, 0);
             CGolfDoc* inst2 = AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc);
             void* cm2 = GolfBall__Fv();
             Vec3 v3, v2;
@@ -1966,17 +2314,20 @@ void ClubSelection_SelectForCpuTarget(ClubSelectionState* self, void* targetPosi
             {
                 WInstanceLock l1(s->mutex);
                 s->current = s->first;
-                ADVANCE(item);
+                ADVANCE(s, item);
             }
             while (item) {
                 if (item->clubIndex < kPutterIndex) {
-                    if (item->launchAngle < CQuadTree_GetGroundSlope(CQuadTree_GetInstance(), p) + kFloat_0_06981317_GolfDocHelpers) {
+                    if (item->launchAngle <
+                        ((CQuadTree*)CQuadTree_GetInstance())->GetGroundSlope(p) + kFloat_0_06981317_GolfDocHelpers) {
                         s->selectionPolicyValue++;
                     } else {
                         float clubDistance = GolfParameter_ResolveFloat(s, &item->selection.name);
                         float distanceErrorYards = clubDistance - targetDistanceYards;
-                        distanceErrorYards = distanceErrorYards > kFloat_0_Club ? distanceErrorYards : -distanceErrorYards;
-                        float candidateScore = kFloat_0_5_Camera * item->selection.bias + kFloat_neg1_ClubSelection * distanceErrorYards;
+                        distanceErrorYards =
+                            distanceErrorYards > kFloat_0_Club ? distanceErrorYards : -distanceErrorYards;
+                        float candidateScore =
+                            kFloat_0_5_Camera * item->selection.bias + kFloat_neg1_ClubSelection * distanceErrorYards;
                         if (clubDistance > targetDistanceYards) {
                             candidateScore += kFloat_10_GolfHud;
                         }
@@ -1988,7 +2339,7 @@ void ClubSelection_SelectForCpuTarget(ClubSelectionState* self, void* targetPosi
                         }
                     }
                 }
-                ADVANCE(item);
+                ADVANCE(s, item);
             }
         }
     } break;
@@ -2024,38 +2375,44 @@ float ShotParameters_GetGoodImpactHalfWidth(void* self) {
     float rate = ((ClubSelectionStorage*)table)->powerMode ? kFloat_0_6_Club : kFloat_1_golfParameters;
     float converted = (float)ceil(((ClubSelectionStorage*)self)->controlValue * rate);
     float value = converted < kFloat_2_golfParameters ? kFloat_2_golfParameters : converted;
-    void* a;
+    void* entry;
     int id;
     {
         void* m = g_sharedDoc;
         void* sub = (char*)&AsCSharedDoc(m)->itemInventory;
-        a = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc), AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
+        entry = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc),
+                                           AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
         id = ItemInventory_GetItemIdAt(sub, 2);
     }
     // 0x800ED6BC: skip the multiplier only if all four items differ.
     do {
-        if ((unsigned int)((GolfDocSnapshot8013*)a)->itemId != (unsigned int)id) {
+        if ((unsigned int)((GolfDocSnapshot8013*)entry)->itemId != (unsigned int)id) {
             {
                 void* m = g_sharedDoc;
                 void* sub = (char*)&AsCSharedDoc(m)->itemInventory;
-                a = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc), AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
+                entry = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc),
+                                                   AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
                 id = ItemInventory_GetItemIdAt(sub, 7);
             }
-            if ((unsigned int)((GolfDocSnapshot8013*)a)->itemId != (unsigned int)id) {
+            if ((unsigned int)((GolfDocSnapshot8013*)entry)->itemId != (unsigned int)id) {
                 {
                     void* m = g_sharedDoc;
                     void* sub = (char*)&AsCSharedDoc(m)->itemInventory;
-                    a = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc), AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
+                    entry = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc),
+                                                       AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
                     id = ItemInventory_GetItemIdAt(sub, 8);
                 }
-                if ((unsigned int)((GolfDocSnapshot8013*)a)->itemId != (unsigned int)id) {
+                if ((unsigned int)((GolfDocSnapshot8013*)entry)->itemId != (unsigned int)id) {
                     {
                         void* m = g_sharedDoc;
                         void* sub = (char*)&AsCSharedDoc(m)->itemInventory;
-                        a = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc), AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
+                        entry =
+                            GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc),
+                                                       AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
                         id = ItemInventory_GetItemIdAt(sub, 9);
                     }
-                    if ((unsigned int)((GolfDocSnapshot8013*)a)->itemId != (unsigned int)id) break;
+                    if ((unsigned int)((GolfDocSnapshot8013*)entry)->itemId != (unsigned int)id)
+                        break;
                 }
             }
         }
@@ -2080,38 +2437,44 @@ float ShotParameters_GetPoorImpactHalfWidth(void* self) {
     float value = converted < kFloat_2_golfParameters ? kFloat_2_golfParameters : converted;
     float cap = kFloat_10_GolfHud + value;
     float factor = cap > kFloat_35_GolfHud ? kFloat_35_GolfHud : cap;
-    void* a;
+    void* entry;
     int id;
     {
         void* m = g_sharedDoc;
         void* sub = (char*)&AsCSharedDoc(m)->itemInventory;
-        a = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc), AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
+        entry = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc),
+                                           AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
         id = ItemInventory_GetItemIdAt(sub, 2);
     }
     // 0x800ED944: skip the multiplier only if all four items differ.
     do {
-        if ((unsigned int)((GolfDocSnapshot8013*)a)->itemId != (unsigned int)id) {
+        if ((unsigned int)((GolfDocSnapshot8013*)entry)->itemId != (unsigned int)id) {
             {
                 void* m = g_sharedDoc;
                 void* sub = (char*)&AsCSharedDoc(m)->itemInventory;
-                a = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc), AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
+                entry = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc),
+                                                   AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
                 id = ItemInventory_GetItemIdAt(sub, 7);
             }
-            if ((unsigned int)((GolfDocSnapshot8013*)a)->itemId != (unsigned int)id) {
+            if ((unsigned int)((GolfDocSnapshot8013*)entry)->itemId != (unsigned int)id) {
                 {
                     void* m = g_sharedDoc;
                     void* sub = (char*)&AsCSharedDoc(m)->itemInventory;
-                    a = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc), AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
+                    entry = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc),
+                                                       AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
                     id = ItemInventory_GetItemIdAt(sub, 8);
                 }
-                if ((unsigned int)((GolfDocSnapshot8013*)a)->itemId != (unsigned int)id) {
+                if ((unsigned int)((GolfDocSnapshot8013*)entry)->itemId != (unsigned int)id) {
                     {
                         void* m = g_sharedDoc;
                         void* sub = (char*)&AsCSharedDoc(m)->itemInventory;
-                        a = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc), AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
+                        entry =
+                            GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(m)->golfDoc),
+                                                       AsCGolfDoc((*(void**)&AsCSharedDoc(m)->golfDoc))->currentPlayer);
                         id = ItemInventory_GetItemIdAt(sub, 9);
                     }
-                    if ((unsigned int)((GolfDocSnapshot8013*)a)->itemId != (unsigned int)id) break;
+                    if ((unsigned int)((GolfDocSnapshot8013*)entry)->itemId != (unsigned int)id)
+                        break;
                 }
             }
         }
@@ -2240,15 +2603,15 @@ float ClubSelection_GetLaunchAngle(ValueLookup* self, const char* key) {
                     break;
                 }
                 node = node->same;
-            }
-            ;
+            };
         }
     } else {
         node = self->fallback;
     }
     if (self->mode == 4)
         return ((ClubParameterView*)node)->launchAngle;
-    return FP_FMADDS_ADD_FIRST(((ClubParameterView*)node)->launchAngle, kFloat_0_06981317_GolfDocHelpers, ((CGolfBall*)GolfBall__Fv())->m_initSpin);
+    return FP_FMADDS_ADD_FIRST(((ClubParameterView*)node)->launchAngle, kFloat_0_06981317_GolfDocHelpers,
+                               ((CGolfBall*)GolfBall__Fv())->m_initSpin);
 }
 #pragma pop
 
@@ -2276,7 +2639,7 @@ float ShotParameters_GetBaseLaunchSpeed(void* self) {
         float indexed = offsets.v[*(unsigned int*)&((ClubSelectionStorage*)self)->powerMode];
         powerModeDistanceBonus = offset + indexed;
     }
-    ClubParameterView* clubParameters = (ClubParameterView*) ((ClubSelectionStorage*)self)->selected;
+    ClubParameterView* clubParameters = (ClubParameterView*)((ClubSelectionStorage*)self)->selected;
     unsigned char clubGroup = ((ClubParameterView*)clubParameters)->clubGroup;
     // Phase 3: apply the group formula in its original floating-point order.
     // Distance divides a distance bonus into a dimensionless speed multiplier.
@@ -2284,7 +2647,8 @@ float ShotParameters_GetBaseLaunchSpeed(void* self) {
     case kClubWood: {
         float add;
         if (partyPowerRate) {
-            float current = GolfParameter_ResolveFloat(self, 0) - ((ClubParameterView*)((ClubSelectionStorage*)self)->selected)->distanceYards;
+            float current = GolfParameter_ResolveFloat(self, 0) -
+                            ((ClubParameterView*)((ClubSelectionStorage*)self)->selected)->distanceYards;
             add = FP_FMADDS(kFloat_0_5_Camera, equipmentPowerModifier, current);
         } else {
             root = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
@@ -2292,7 +2656,9 @@ float ShotParameters_GetBaseLaunchSpeed(void* self) {
             int value = ((PlayerShotStats*)p)->power;
             add = kFloat_2_golfParameters * FP_FMADDS(kFloat_0_5_Camera, equipmentPowerModifier, (float)value);
         }
-        launchSpeed = launchSpeed * (kFloat_1_golfParameters + kFloat_1_5_GolfParameters * (powerModeDistanceBonus + add) / ((ClubParameterView*)((ClubSelectionStorage*)self)->selected)->distanceYards);
+        launchSpeed = launchSpeed * (kFloat_1_golfParameters +
+                                     kFloat_1_5_GolfParameters * (powerModeDistanceBonus + add) /
+                                         ((ClubParameterView*)((ClubSelectionStorage*)self)->selected)->distanceYards);
         break;
     }
     case kClubIron: {
@@ -2310,7 +2676,8 @@ float ShotParameters_GetBaseLaunchSpeed(void* self) {
             speedMultiplier = kFloat_1_golfParameters + speedMultiplier;
             launchSpeed = launchSpeed * speedMultiplier;
         }
-        launchSpeed += kFloat_1_3_GolfParameter * (launchSpeed * equipmentPowerModifier) / clubParameters->distanceYards;
+        launchSpeed +=
+            kFloat_1_3_GolfParameter * (launchSpeed * equipmentPowerModifier) / clubParameters->distanceYards;
         break;
     }
     case kClubWedge: {
@@ -2320,20 +2687,35 @@ float ShotParameters_GetBaseLaunchSpeed(void* self) {
         case kDistance10To15Yards:
         case kDistance15To28Yards: {
             float launchAngleRadians;
-            if (distanceTier == kDistanceAtLeast58Yards) launchAngleRadians = ((ClubParameterView*)clubParameters)->launchAngle;
-            else launchAngleRadians = FP_FMADDS_ADD_FIRST(((ClubParameterView*)clubParameters)->launchAngle, kFloat_0_06981317_GolfDocHelpers, ((CGolfBall*)GolfBall__Fv())->m_initSpin);
+            if (distanceTier == kDistanceAtLeast58Yards)
+                launchAngleRadians = ((ClubParameterView*)clubParameters)->launchAngle;
+            else
+                launchAngleRadians =
+                    FP_FMADDS_ADD_FIRST(((ClubParameterView*)clubParameters)->launchAngle,
+                                        kFloat_0_06981317_GolfDocHelpers, ((CGolfBall*)GolfBall__Fv())->m_initSpin);
             float specialAdd = ((ClubSelectionStorage*)self)->powerMode ? kFloat_28_GolfDocHelpers : kFloat_0_Club;
-            launchSpeed = (kFloat_52_Club + specialAdd) * (kFloat_0_5_Camera + (kFloat_0_5_Camera * launchAngleRadians) / kWedgeSpeedReferenceAngleRadians);
-            if (partyPowerRate) launchSpeed = FP_FMADDS_ADD_FIRST(launchSpeed, launchSpeed, *partyPowerRate);
+            launchSpeed =
+                (kFloat_52_Club + specialAdd) *
+                (kFloat_0_5_Camera + (kFloat_0_5_Camera * launchAngleRadians) / kWedgeSpeedReferenceAngleRadians);
+            if (partyPowerRate)
+                launchSpeed = FP_FMADDS_ADD_FIRST(launchSpeed, launchSpeed, *partyPowerRate);
             break;
         }
         case kDistance28To58Yards: {
             float launchAngleRadians;
-            if (distanceTier == kDistanceAtLeast58Yards) launchAngleRadians = ((ClubParameterView*)clubParameters)->launchAngle;
-            else launchAngleRadians = FP_FMADDS_ADD_FIRST(((ClubParameterView*)clubParameters)->launchAngle, kFloat_0_06981317_GolfDocHelpers, ((CGolfBall*)GolfBall__Fv())->m_initSpin);
-            float specialAdd = ((ClubSelectionStorage*)self)->powerMode ? kWedgeMidrangePowerSpeedAddition : kFloat_0_Club;
-            launchSpeed = (kFloat_80_ClubSelection + specialAdd) * (kFloat_0_5_Camera + (kFloat_0_5_Camera * launchAngleRadians) / kWedgeSpeedReferenceAngleRadians);
-            if (partyPowerRate) launchSpeed = FP_FMADDS_ADD_FIRST(launchSpeed, launchSpeed, *partyPowerRate);
+            if (distanceTier == kDistanceAtLeast58Yards)
+                launchAngleRadians = ((ClubParameterView*)clubParameters)->launchAngle;
+            else
+                launchAngleRadians =
+                    FP_FMADDS_ADD_FIRST(((ClubParameterView*)clubParameters)->launchAngle,
+                                        kFloat_0_06981317_GolfDocHelpers, ((CGolfBall*)GolfBall__Fv())->m_initSpin);
+            float specialAdd =
+                ((ClubSelectionStorage*)self)->powerMode ? kWedgeMidrangePowerSpeedAddition : kFloat_0_Club;
+            launchSpeed =
+                (kFloat_80_ClubSelection + specialAdd) *
+                (kFloat_0_5_Camera + (kFloat_0_5_Camera * launchAngleRadians) / kWedgeSpeedReferenceAngleRadians);
+            if (partyPowerRate)
+                launchSpeed = FP_FMADDS_ADD_FIRST(launchSpeed, launchSpeed, *partyPowerRate);
             break;
         }
         case kDistanceAtLeast58Yards: {
@@ -2355,13 +2737,18 @@ float ShotParameters_GetBaseLaunchSpeed(void* self) {
         }
         }
         clubParameters = (ClubParameterView*)((ClubSelectionStorage*)self)->selected;
-        launchSpeed += ((ClubParameterView*)clubParameters)->launchSpeed * equipmentPowerModifier / clubParameters->distanceYards;
+        launchSpeed +=
+            ((ClubParameterView*)clubParameters)->launchSpeed * equipmentPowerModifier / clubParameters->distanceYards;
         break;
     }
     case kClubPutter: {
         if (((ClubSelectionStorage*)self)->longPutt)
-            launchSpeed = strstr(((ClubParameterView*)clubParameters)->name, (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(shortPutter)) ? kFloat_42_Club : kFloat_36_Club;
-        else launchSpeed = ((ClubParameterView*)clubParameters)->launchSpeed;
+            launchSpeed = strstr(((ClubParameterView*)clubParameters)->name,
+                                 (char*)&clubAndPlayerStrings + CLUB_STRING_OFFSET(shortPutter))
+                              ? kFloat_42_Club
+                              : kFloat_36_Club;
+        else
+            launchSpeed = ((ClubParameterView*)clubParameters)->launchSpeed;
         break;
     }
     }
@@ -2415,7 +2802,7 @@ void ClubSelection_SelectByName(LookupState* self, const char* key) {
             index = (first | last | ((unsigned int)length << 6)) & s->hashMask;
             OSUnlockMutex((OSMutex*)m2);
         }
-        result = (LookupEntryNode*)((LookupEntryNode**) *(void**)&s->buckets)[index];
+        result = (LookupEntryNode*)((LookupEntryNode**)*(void**)&s->buckets)[index];
         while (result != 0 || (lock.release(), result = 0, false)) {
             if (strcmp(result->key, key) == 0) {
                 LookupEntryNode* nxt = result->payload;
@@ -2424,8 +2811,7 @@ void ClubSelection_SelectByName(LookupState* self, const char* key) {
                 break;
             }
             result = result->same;
-        }
-        ;
+        };
     }
     s->result = (EntryNode*)result;
     s->flag = *((unsigned char*)result + 9);

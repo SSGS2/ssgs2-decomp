@@ -1,5 +1,8 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CPowerShot: the ring that expands around the ball while a power shot charges.
+//
+// The ring is sixteen textured quads in one vertex buffer. The class is declared
+// without virtual functions on purpose: its vtable still comes from the original
+// game data, so `vtbl` is spelled out as a member.
 #ifndef CLASSES_CPOWERSHOT_H
 #define CLASSES_CPOWERSHOT_H
 
@@ -7,43 +10,51 @@
 
 class CPowerShot {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x10];                 // 0x4
-    int textureId;                         // 0x14: 3 uses in CPowerShot_BuildRingAndDraw, CPowerShot_Ctor
-    unsigned char active;               // 0x18: 2 uses in CPowerShot_BuildRingAndDraw, CPowerShot_Ctor
-    char pad_019[0x3];                  // 0x19
-    void* ownedObject1;                       // 0x1c: 3 uses in CPowerShot_dtor, CPowerShot_Ctor
-    void* ownedObject2;                       // 0x20: 3 uses in CPowerShot_dtor, CPowerShot_Ctor
-    char pad_024[0xc];                  // 0x24
-    void* vertex0;                       // 0x30: 1 use in CPowerShot_Ctor
-    void* vertex1;                       // 0x34: 1 use in CPowerShot_Ctor
-    void* vertex2;                       // 0x38: 1 use in CPowerShot_Ctor
-    void* vertex3;                       // 0x3c: 1 use in CPowerShot_Ctor
-    int vertexListTerminator;                         // 0x40: 1 use in CPowerShot_Ctor
-    char pad_044[0xe0];                 // 0x44
-    int alpha;                        // 0x124: 1 use in CPowerShot_BuildRingAndDraw
-    float elapsedTime;                 // 0x128: 0x801ACFEC adds delta and tests lifetime; 0x801ACF90 clears it
-    float radius;                      // 0x12c: 4 uses in CPowerShot_BuildRingAndDraw
-    void* vertexBuffer;                      // 0x130: 7 uses in CPowerShot_BuildRingAndDraw, CPowerShot_dtor, CPowerShot_Ctor
+    // Lifetime. The ring starts at the ball, grows and fades over 0.8 seconds.
+    void ResetRingAtBall();
+    void GrowRingFadeAlpha(float delta);
+    void BuildRingAndDraw();
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x8, 0x44, 0x7c, 0xb4, 0xec, 0x130
+    // Set up the ring buffer. Named Init rather than a constructor: the effect
+    // pool allocates raw storage and calls it like a plain function.
+    void* Init();
+
+    // Release the owned buffer and sprites. A delete flag above zero also frees
+    // the object; either way the address is returned.
+    void* Destroy(int flags);
+
+    void* vtbl;                  // 0x00
+    char pad_004[4];             // 0x04
+    Vec3f position;              // 0x08  ball position, raised when the ring starts
+    int textureId;               // 0x14
+    unsigned char active;        // 0x18
+    char pad_019[3];             // 0x19
+    void* ownedObject1;          // 0x1c
+    void* ownedObject2;          // 0x20
+    char pad_024[0xc];           // 0x24
+    void* vertexPointers[4];     // 0x30
+    int vertexListTerminator;    // 0x40
+    char vertexStorage[4][0x38]; // 0x44  quad data the four pointers above address
+    int alpha;                   // 0x124
+    float elapsedTime;           // 0x128
+    float radius;                // 0x12c
+    void* vertexBuffer;          // 0x130
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CPOWERSHOT_OFF(f, o) typedef char CPowerShot_off_##f[((int)&((CPowerShot*)0)->f == (o)) ? 1 : -1]
+CPOWERSHOT_OFF(position, 0x08);
 CPOWERSHOT_OFF(textureId, 0x14);
 CPOWERSHOT_OFF(active, 0x18);
 CPOWERSHOT_OFF(ownedObject1, 0x1c);
 CPOWERSHOT_OFF(ownedObject2, 0x20);
-CPOWERSHOT_OFF(vertex0, 0x30);
-CPOWERSHOT_OFF(vertex1, 0x34);
-CPOWERSHOT_OFF(vertex2, 0x38);
-CPOWERSHOT_OFF(vertex3, 0x3c);
+CPOWERSHOT_OFF(vertexPointers, 0x30);
 CPOWERSHOT_OFF(vertexListTerminator, 0x40);
+CPOWERSHOT_OFF(vertexStorage, 0x44);
 CPOWERSHOT_OFF(alpha, 0x124);
 CPOWERSHOT_OFF(elapsedTime, 0x128);
 CPOWERSHOT_OFF(radius, 0x12c);
 CPOWERSHOT_OFF(vertexBuffer, 0x130);
 #undef CPOWERSHOT_OFF
+typedef char CPowerShot_size[(sizeof(CPowerShot) == 0x134) ? 1 : -1];
 
-#endif  // CLASSES_CPOWERSHOT_H
+#endif // CLASSES_CPOWERSHOT_H

@@ -12,47 +12,16 @@
 // driver-reference release: CInputExDeviceBase in gtl_transform_frustum_stopwatch_input.cpp.
 // All globals/caches here require single-threaded, non-reentrant use. Initialize
 // once before Update. There is no shutdown/rollback operation in this unit.
-// Translation unit 0x803E9C40-0x803EAC48 (29 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "types.h"
 #include "game/gtl_input.h"
+#include "classes/GtlInputDevice.h"
 
 struct gtl_IInputExButton;
-
-struct gtl_CKeyboard {
-    char unk0[0x114];
-    gtl_IInputExButton* buttons[1];
-};
-
-struct GtlCMouseButtons {
-    char unk0[0x24];
-    void* buttons[1];
-};
-
-struct GtlCPadButtonsView {
-    char unk0[0xC94];
-    void* buttons[1];
-};
-
-struct GtlCScreenPointerVf3 {
-    char unk0[0xD54];
-    void* buttons[1];
-};
 
 struct GtlInputExScreenPointerDevice {
     char unk0[0xC];
     u8 connected;
-};
-
-struct GtlSamplingParameterPair {
-    f32 playRadius; // +0 KPAD play radius, NOT a minimum sample value.
-    f32 sensitivity; // +4 KPAD sensitivity, NOT a maximum sample value.
-};
-
-struct GtlCScreenPointerSampling {
-    char unk0[0xD94];
-    GtlSamplingParameterPair samplingParameters[4];
 };
 
 struct GtlInputExButtonSampleBase {
@@ -61,16 +30,12 @@ struct GtlInputExButtonSampleBase {
 
 // IInputExButton's virtuals as ProcessSample calls them: 0x8 the destructor, 0xC Sample, 0x10 Update
 struct GtlInputExButtonSample : GtlInputExButtonSampleBase {
-// The original leaves r4 (the driver sample the caller passed) untouched across the call.
+    // The original leaves r4 (the driver sample the caller passed) untouched across the call.
     virtual ~GtlInputExButtonSample();
     virtual s32 Sample();
     virtual void Update();
 };
 
-struct SamplingParameter {
-    f32 playRadius; // +0 KPAD play radius; same native pair as GtlSamplingParameterPair.
-    f32 sensitivity; // +4 KPAD sensitivity; passed unchanged to the SDK.
-};
 // Pair storage is binary32, 8 bytes; the four pairs at +D94 are cached requested
 // SDK filter settings, not min/max ranges and not returned sensor readings.
 // Channel must be 0..3. Index0=acceleration, 1=IR distance, 2=horizontal vector,
@@ -86,32 +51,6 @@ struct SamplingParameter {
 // Other three families have no established baseline/range here; changing them
 // safely requires recovering their SDK filter equations and testing real samples.
 
-struct GtlCScreenPointer {
-    char unk0[0x10];
-    s32 channel;
-    char unk14[0xD94 - 0x14];
-    SamplingParameter params[4];
-};
-
-struct GtlScreenPointerSample {
-    s32 unk0;
-    s32 unk4;
-    s32 unk8;
-    s32 unkC;
-    s32 unk10;
-    s32 unk14;
-    s32 unk18;
-    f32 unk1C;
-    s32 unk20;
-};
-
-struct GtlCScreenPointerSampleOwner {
-    char unk0[8];
-    void* device;
-    char unkC[0xB14 - 0xC];
-    GtlScreenPointerSample samples[1];
-};
-
 struct InputExInitDesc {
     u32 w[4];
 };
@@ -125,9 +64,9 @@ struct InputExGlobalState {
 };
 
 struct GtlButtonConfigEntry {
-    f32 threshold; // threshold, passed unchanged to SetThreshold
+    f32 threshold;      // threshold, passed unchanged to SetThreshold
     s32 repeatInterval; // repeatInterval, input update calls (not seconds)
-    s32 repeatDelay; // repeatDelay, input update calls (not seconds)
+    s32 repeatDelay;    // repeatDelay, input update calls (not seconds)
 };
 
 struct GtlButtonConfigRow {
@@ -138,7 +77,7 @@ struct GtlButtonConfigRow {
 struct InputExDeviceDesc {
     s32 unk0;
     s32 providerId;
-    s32 index;      // the slot it asks for; 5 = any free slot
+    s32 index; // the slot it asks for; 5 = any free slot
 };
 
 extern "C" {
@@ -173,49 +112,16 @@ s32 gtl_InputEx_EnumerateKeyboardCallback(InputExDeviceDesc* desc);
 s32 gtl_InputEx_EnumerateMouseCallback(InputExDeviceDesc* desc);
 s32 gtl_InputEx_EnumerateScreenPointerCallback(InputExDeviceDesc* desc);
 
-s32 gtl_IInputDevice_GetDeviceResult(void* device, s32* count);
-s32 gtl_CScreenPointer_GetSample(const GtlCScreenPointerSampleOwner* self, s32 index, GtlScreenPointerSample* out);
-
-s32 gtl_CScreenPointer_GetSamplingParameter(GtlCScreenPointerSampling* self, u32 index, GtlSamplingParameterPair* out);
-
 void KPADSetAccParam(s32 chan, f32 play_radius, f32 sensitivity);
 void KPADSetDistParam(s32 chan, f32 play_radius, f32 sensitivity);
 void KPADSetHoriParam(s32 chan, f32 play_radius, f32 sensitivity);
 void KPADSetPosParam(s32 chan, f32 play_radius, f32 sensitivity);
-s32 gtl_CScreenPointer_SetSamplingParameter(GtlCScreenPointer* self, s32 index, SamplingParameter* param);
 
-s32 gtl_CScreenPointer_GetButtonCount(void);
-
-void* gtl_CScreenPointer_vfunc_3(GtlCScreenPointerVf3* self, s32 index);
-
-s32 gtl_CScreenPointer_GetDriverStateSizeBytes(void);
-
-s32 gtl_CMouse_GetButtonCount(void);
-
-void* gtl_CMouse_vfunc_3(GtlCMouseButtons* self, s32 index);
-
-s32 gtl_CMouse_GetDriverStateSizeBytes(void);
-
-s32 gtl_CKeyboard_GetButtonCount(void);
-
-gtl_IInputExButton* gtl_CKeyboard_vfunc_3(gtl_CKeyboard* self, s32 index);
-
-s32 gtl_CKeyboard_GetDriverStateSizeBytes(void);
-
-s32 gtl_CPad_GetButtonCount(void);
-
-void* gtl_CPad_vfunc_3(GtlCPadButtonsView* self, s32 index);
-
-s32 gtl_CPad_GetDriverStateSizeBytes(void);
-
-void gtl_CInputExDeviceBase_GetProviderId(void* self, s32* out);
-void gtl_IInputDevice_Create(void* key, void** out);
-void gtl_CInputExDeviceBase_Initialize(void* self, void* params);
+extern "C" void GetProviderId__Q23gtl18CInputExDeviceBaseFv(void* self, s32* out);
 
 } // extern "C"
 
 extern "C" InputExInitDesc* s_activeInputExInitDescriptor;
-
 
 // what IInputDevice_Create opens, and what CInputExDeviceBase_Initialize gets
 struct InputExDeviceKey {
@@ -225,7 +131,7 @@ struct InputExDeviceKey {
 
 struct InputExDeviceInit {
     void* device;
-    s32 arg;  // per-kind driver descriptor address, passed to SetDescriptor
+    s32 arg;            // per-kind driver descriptor address, passed to SetDescriptor
     s32 requestedIndex; // original requested index, carried as config column ABI word
 };
 
@@ -254,7 +160,7 @@ static inline s32 InputEx_CreateDevice(gtl::CInputExDeviceBase** slot, s32 arg, 
     s32 id;
     gtl::CInputExDeviceBase* old = *slot;
     if (old != 0) {
-        gtl_CInputExDeviceBase_GetProviderId(old, &id);
+        GetProviderId__Q23gtl18CInputExDeviceBaseFv(old, &id);
         if (id == desc->providerId) {
             return 1;
         }
@@ -267,14 +173,15 @@ static inline s32 InputEx_CreateDevice(gtl::CInputExDeviceBase** slot, s32 arg, 
         key.providerId = desc->providerId;
         key.deviceIndex = desc->index;
         device = 0;
-        gtl_IInputDevice_Create(&key, &device);
+        gtl::IInputDevice::Create((const DriverEntry*)&key, &device);
         InputExDeviceInit init;
         init.device = device;
         init.arg = arg;
         init.requestedIndex = desc->index;
         Device* created = new Device;
         *slot = created;
-        gtl_CInputExDeviceBase_Initialize(created, &init);
+        // Same three words as GtlInputExInitParams (device, descriptor, button-table word).
+        ((gtl::CInputExDeviceBase*)created)->Initialize((const GtlInputExInitParams*)&init);
     }
     return 1;
 }
@@ -283,7 +190,10 @@ static inline s32 InputEx_CreateDevice(gtl::CInputExDeviceBase** slot, s32 arg, 
 static inline u32 InputEx_KindEnabled(u32 mask) {
     InputExGlobalState* st = (InputExGlobalState*)s_activeInputExInitDescriptor;
     u32 on;
-    if (st == 0) on = 0; else on = (st->desc.w[3] & mask) != 0;
+    if (st == 0)
+        on = 0;
+    else
+        on = (st->desc.w[3] & mask) != 0;
     return on;
 }
 
@@ -359,15 +269,15 @@ extern s32 kNunchukDriverCapabilityCode;
 extern s32 kInputProviderClassic;
 GtlButtonConfigEntry* gtl_InputEx_GetButtonConfiguration(s32 provider, s32 index, s32 button);
 
-s32 gtl_IInputExButton_ProcessSample(GtlInputExButtonSample* self);
+} // extern "C"
 
-// Copy one 0x24-byte sample, bounded by the driver's reported count. self/device
-// required; invalid index or null out returns 0 with output untouched; else 1.
+// Copy one 0x24-byte sample, bounded by the driver's reported count. The device
+// is required; invalid index or null out returns 0 with output untouched; else 1.
 // The driver count must fit the 16 decoded history entries at +B14..D54.
-s32 gtl_CScreenPointer_GetSample(const GtlCScreenPointerSampleOwner* self, s32 index, GtlScreenPointerSample* out) {
-    void* device = self->device;
+s32 gtl::CScreenPointer::GetSample(s32 index, ScreenPointerSample* out) const {
+    void* device = m_device;
     s32 count = 0;
-    gtl_IInputDevice_GetDeviceResult(device, &count);
+    ((gtl::IInputDevice*)device)->GetDeviceResult(&count);
     s32 n = count;
     if (index < 0 || index >= n) {
         return 0;
@@ -375,13 +285,13 @@ s32 gtl_CScreenPointer_GetSample(const GtlCScreenPointerSampleOwner* self, s32 i
     if (out == 0) {
         return 0;
     }
-    *out = self->samples[index];
+    *out = m_history[index];
     return 1;
 }
 
 // Copy stored pair for index 0..3; invalid index/null out returns 0 unchanged.
 // Same cached {playRadius,sensitivity} pair as the setter; not a sample range.
-s32 gtl_CScreenPointer_GetSamplingParameter(GtlCScreenPointerSampling* self, u32 index, GtlSamplingParameterPair* out) {
+s32 gtl::CScreenPointer::GetSamplingParameter(u32 index, ScreenPointerSamplingParameter* out) {
     if (index >= 4) {
         return 0;
     }
@@ -389,7 +299,7 @@ s32 gtl_CScreenPointer_GetSamplingParameter(GtlCScreenPointerSampling* self, u32
         return 0;
     }
     {
-        GtlSamplingParameterPair* r = &self->samplingParameters[index];
+        ScreenPointerSamplingParameter* r = &m_samplingParameters[index];
         f32 sensitivity;
         f32 playRadius;
         playRadius = r->playRadius;
@@ -400,95 +310,97 @@ s32 gtl_CScreenPointer_GetSamplingParameter(GtlCScreenPointerSampling* self, u32
     return 1;
 }
 
-// Store caller's {play_radius,sensitivity} floats, then update KPAD on self's
-// channel: 0 acceleration, 1 distance, 2 horizontal, 3 position. Required self;
-// invalid index/null param returns 0 unchanged. Returns 1 after SDK call; no
-// clamping or unit conversion. See SamplingParameter for baseline, unchecked
-// float domain and distinction between cached requests and effective SDK state.
-s32 gtl_CScreenPointer_SetSamplingParameter(GtlCScreenPointer* self, s32 index, SamplingParameter* param) {
+// Store caller's {play_radius,sensitivity} floats, then update KPAD on this object's
+// channel: 0 acceleration, 1 distance, 2 horizontal, 3 position. Invalid index/null
+// param returns 0 unchanged. Returns 1 after SDK call; no clamping or unit conversion.
+// The stored pair is the last request, not the SDK's effective state (InputManager_Init
+// also sets the position channel directly). The float domain is unchecked.
+s32 gtl::CScreenPointer::SetSamplingParameter(s32 index, ScreenPointerSamplingParameter* param) {
     if ((u32)index >= 4) {
         return 0;
     }
     if (param == 0) {
         return 0;
     }
-    self->params[index].playRadius = param->playRadius;
-    self->params[index].sensitivity = param->sensitivity;
+    m_samplingParameters[index].playRadius = param->playRadius;
+    m_samplingParameters[index].sensitivity = param->sensitivity;
     switch (index) {
     case 0:
-        KPADSetAccParam(self->channel, param->playRadius, param->sensitivity);
+        KPADSetAccParam(m_channel, param->playRadius, param->sensitivity);
         break;
     case 1:
-        KPADSetDistParam(self->channel, param->playRadius, param->sensitivity);
+        KPADSetDistParam(m_channel, param->playRadius, param->sensitivity);
         break;
     case 2:
-        KPADSetHoriParam(self->channel, param->playRadius, param->sensitivity);
+        KPADSetHoriParam(m_channel, param->playRadius, param->sensitivity);
         break;
     case 3:
-        KPADSetPosParam(self->channel, param->playRadius, param->sensitivity);
+        KPADSetPosParam(m_channel, param->playRadius, param->sensitivity);
         break;
     }
     return 1;
 }
 
 // Report screen-pointer button count (16); no receiver read.
-s32 gtl_CScreenPointer_GetButtonCount(void) {
+s32 gtl::CScreenPointer::GetButtonCount() {
     return 0x10;
 }
 
-// Borrow a screen-pointer button; required self, unchecked index in [0,16).
-void* gtl_CScreenPointer_vfunc_3(GtlCScreenPointerVf3* self, s32 index) {
-    return self->buttons[index];
+// Borrow a screen-pointer button; unchecked index in [0,16).
+void* gtl::CScreenPointer::GetButton(s32 index) {
+    return m_buttons[index];
 }
 
 // Report 0xB0 bytes per driver state record. Poll (gtl_inputex_device_poll.cpp) passes this to
 // IInputDevice_ReadState; this is a byte size, not a capability/provider code.
-s32 gtl_CScreenPointer_GetDriverStateSizeBytes(void) {
+s32 gtl::CScreenPointer::GetDriverStateSizeBytes() {
     return 0xB0;
 }
 
 // Report mouse button count (6, including analog wheel entries).
-s32 gtl_CMouse_GetButtonCount(void) {
+s32 gtl::CMouse::GetButtonCount() {
     return 6;
 }
 
 // Borrow a mouse button; required self, unchecked index in [0,6).
-void* gtl_CMouse_vfunc_3(GtlCMouseButtons* self, s32 index) {
-    return self->buttons[index];
+void* gtl::CMouse::GetButton(s32 index) {
+    return m_buttons[index];
 }
 
 // Report 0x10 driver-state bytes for mouse polling (gtl_inputex_device_poll.cpp).
-s32 gtl_CMouse_GetDriverStateSizeBytes(void) {
+s32 gtl::CMouse::GetDriverStateSizeBytes() {
     return 0x10;
 }
 
+extern "C" {
+
 // Report keyboard button count (256).
-s32 gtl_CKeyboard_GetButtonCount(void) {
+s32 gtl::CKeyboard::GetButtonCount() {
     return 0x100;
 }
 
-// Borrow a keyboard button; required self, unchecked index in [0,256).
-gtl_IInputExButton* gtl_CKeyboard_vfunc_3(gtl_CKeyboard* self, s32 index) {
-    return self->buttons[index];
+// Borrow a keyboard button; unchecked index in [0,256).
+gtl::IInputExButton* gtl::CKeyboard::GetButton(s32 index) {
+    return m_buttons[index];
 }
 
 // Report 0x100 driver-state bytes for keyboard polling (gtl_inputex_device_poll.cpp).
-s32 gtl_CKeyboard_GetDriverStateSizeBytes(void) {
+s32 gtl::CKeyboard::GetDriverStateSizeBytes() {
     return 0x100;
 }
 
 // Report pad button count (50: 20 digital, 30 analog; see gtl_input.h).
-s32 gtl_CPad_GetButtonCount(void) {
+s32 gtl::CPad::GetButtonCount() {
     return 0x32;
 }
 
-// Borrow a pad button; required self, unchecked index in [0,50).
-void* gtl_CPad_vfunc_3(GtlCPadButtonsView* self, s32 index) {
-    return self->buttons[index];
+// Borrow a pad button; unchecked index in [0,50).
+void* gtl::CPad::GetButton(s32 index) {
+    return m_buttons[index];
 }
 
 // Report 0xB0 bytes per pad driver-state record (gtl_inputex_device_poll.cpp polling ABI).
-s32 gtl_CPad_GetDriverStateSizeBytes(void) {
+s32 gtl::CPad::GetDriverStateSizeBytes() {
     return 0xB0;
 }
 
@@ -497,8 +409,10 @@ s32 gtl_CPad_GetDriverStateSizeBytes(void) {
 // Enabled pad entry -> selected slot and pad descriptor; disabled -> 1, no writes.
 // Required desc; all four callbacks require the ChooseSlot preconditions above.
 s32 gtl_InputEx_EnumeratePadCallback(InputExDeviceDesc* desc) {
-    if (!InputEx_KindEnabled(1)) return 1;
-    return gtl_InputEx_CreatePad(&s_padDeviceSlots[InputEx_ChooseSlot(s_padDeviceSlots, desc->index)], (s32)s_padAndScreenPointerInitParameters, desc);
+    if (!InputEx_KindEnabled(1))
+        return 1;
+    return gtl_InputEx_CreatePad(&s_padDeviceSlots[InputEx_ChooseSlot(s_padDeviceSlots, desc->index)],
+                                 (s32)s_padAndScreenPointerInitParameters, desc);
 }
 
 // Apply InputEx_CreateDevice's ownership/failure policy with a CPad wrapper.
@@ -508,8 +422,10 @@ s32 gtl_InputEx_CreatePad(gtl::CInputExDeviceBase** slot, s32 arg, const InputEx
 
 // Enabled keyboard entry -> keyboard slot/descriptor; disabled -> 1 unchanged.
 s32 gtl_InputEx_EnumerateKeyboardCallback(InputExDeviceDesc* desc) {
-    if (!InputEx_KindEnabled(4)) return 1;
-    return gtl_InputEx_CreateKeyboard(&s_keyboardDeviceSlots[InputEx_ChooseSlot(s_keyboardDeviceSlots, desc->index)], (s32)s_keyboardDeviceInitParameters, desc);
+    if (!InputEx_KindEnabled(4))
+        return 1;
+    return gtl_InputEx_CreateKeyboard(&s_keyboardDeviceSlots[InputEx_ChooseSlot(s_keyboardDeviceSlots, desc->index)],
+                                      (s32)s_keyboardDeviceInitParameters, desc);
 }
 
 // Apply InputEx_CreateDevice's ownership/failure policy with a CKeyboard wrapper.
@@ -519,8 +435,10 @@ s32 gtl_InputEx_CreateKeyboard(gtl::CInputExDeviceBase** slot, s32 arg, const In
 
 // Enabled mouse entry -> mouse slot/descriptor; disabled -> 1 unchanged.
 s32 gtl_InputEx_EnumerateMouseCallback(InputExDeviceDesc* desc) {
-    if (!InputEx_KindEnabled(2)) return 1;
-    return gtl_InputEx_CreateMouse(&s_mouseDeviceSlots[InputEx_ChooseSlot(s_mouseDeviceSlots, desc->index)], (s32)s_mouseDeviceInitParameters, desc);
+    if (!InputEx_KindEnabled(2))
+        return 1;
+    return gtl_InputEx_CreateMouse(&s_mouseDeviceSlots[InputEx_ChooseSlot(s_mouseDeviceSlots, desc->index)],
+                                   (s32)s_mouseDeviceInitParameters, desc);
 }
 
 // Apply InputEx_CreateDevice's ownership/failure policy with a CMouse wrapper.
@@ -530,8 +448,11 @@ s32 gtl_InputEx_CreateMouse(gtl::CInputExDeviceBase** slot, s32 arg, const Input
 
 // Enabled screen-pointer entry -> pointer slot/pad descriptor; disabled -> 1.
 s32 gtl_InputEx_EnumerateScreenPointerCallback(InputExDeviceDesc* desc) {
-    if (!InputEx_KindEnabled(8)) return 1;
-    return gtl_InputEx_CreateScreenPointer(&s_screenPointerDeviceSlots[InputEx_ChooseSlot(s_screenPointerDeviceSlots, desc->index)], (s32)s_padAndScreenPointerInitParameters, desc);
+    if (!InputEx_KindEnabled(8))
+        return 1;
+    return gtl_InputEx_CreateScreenPointer(
+        &s_screenPointerDeviceSlots[InputEx_ChooseSlot(s_screenPointerDeviceSlots, desc->index)],
+        (s32)s_padAndScreenPointerInitParameters, desc);
 }
 
 // Apply InputEx_CreateDevice's ownership/failure policy with CScreenPointer.
@@ -716,7 +637,7 @@ s32 gtl_InputEx_Initialize(const InputExInitDesc* desc) {
     dst->w[3] = w3;
     s_activeInputExInitDescriptor = dst;
 
-// The real signature takes the allocator callback pair (descriptor words 0 and 1).
+    // The real signature takes the allocator callback pair (descriptor words 0 and 1).
     InputDriver_InitializeSystem();
     gtl_InputEx_ResetButtonConfigurations();
     InputDriver_EnumerateDevices(4, gtl_InputEx_EnumeratePadCallback, 0, 0);
@@ -851,12 +772,12 @@ GtlButtonConfigEntry* gtl_InputEx_GetButtonConfiguration(s32 provider, s32 butto
 
 // Required button receiver: Sample first, Update only on a nonzero result.
 // Returns 0 in both cases; caller reads stored button state, not return status.
-s32 gtl_IInputExButton_ProcessSample(GtlInputExButtonSample* self) {
-    if (self->Sample() == 0) {
+} // extern "C"
+
+s32 gtl::IInputExButton::ProcessSample(void* sample) {
+    if (((GtlInputExButtonSample*)this)->Sample() == 0) {
         return 0;
     }
-    self->Update();
+    ((GtlInputExButtonSample*)this)->Update();
     return 0;
 }
-
-} // extern "C"

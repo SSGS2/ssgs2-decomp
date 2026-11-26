@@ -1,8 +1,11 @@
+// Engine startup and animated sprites: main and the startup sequence that sets up video, input,
+// audio, the loading indicator and the HOME menu, plus the W3dAniSpr animated texture sprite class.
+
 #include <decomp/static_init.h>
 // Engine startup presentation and animated texture sprites (original ABI names below).
 // main -> Game_InitializeEngineAndMedia -> video/render targets, input, audio,
 // loading UI and media; W3dAniSpr owns frame records and retained bitmap handles.
-// Shared layouts: WView, W3dAniSpr, W3dSprVertex. Scalar/UV pool: u80216D5C_data.cpp.
+// Shared layouts: WView, W3dAniSpr, W3dSprVertex. Scalar/UV pool: the data section.
 // Modder lookup:
 // - Resolution/output: s_engineStartupDefaults at 0x80473488, defined in
 //   VI rectangle, viewport and scissor are all 640x480; edit these as a set.
@@ -11,7 +14,7 @@
 //   retraces; Engine_PresentFrame/Engine_BuildRenderMode in gx_renderer_state_and_resources.cpp consume
 //   the presentation policy. This is separate from simulation seconds/update.
 // - Aspect ratio: the startup loading camera uses kStartupProjectionAspect below
-//   (4/3); the main camera uses kViewPerspectiveAspectRatio in u80065F78_data.cpp. Neither
+//   (4/3); the main camera uses kViewPerspectiveAspectRatio in the data section. Neither
 //   sets framebuffer resolution or automatically repositions HUD/layout groups.
 // - Viewport/scissor: startup-default word offsets 0x32/0x38; six words are
 //   x,y,width,height,nearDepth,farDepth; four scissor words are x,y,width,height
@@ -27,7 +30,9 @@
 #include "classes/CSceneManager.h"
 #include "classes/WView.h"
 // Borrow the view layout; callers retain both storage and lifetime.
-static inline WView* AsWView(void* p) { return (WView*)p; }
+static inline WView* AsWView(void* p) {
+    return (WView*)p;
+}
 // W3dAniSpr_DrawFrame / W3dAniSpr_DrawIndexedFrameWithMatrix: transform arguments are WView objects.
 #include "classes/W3dAniSpr.h"
 #include "classes/W3dSprVertex.h"
@@ -40,6 +45,9 @@ static inline WView* AsWView(void* p) { return (WView*)p; }
 #include "game/singletons.h"
 #include "game/wvector.h"
 #include <revolution/OS/OSFastCast.h>
+#include "classes/CCheckDriveStatus.h"
+#include "classes/CNowReloading.h"
+#include "classes/CBpCtrl.h"
 
 #define OSInitMutex(p) OSInitMutex((OSMutex*)(p))
 #define OSLockMutex(p) OSLockMutex((OSMutex*)(p))
@@ -48,9 +56,11 @@ static inline WView* AsWView(void* p) { return (WView*)p; }
 extern "C" {
 
 enum SpriteConstants {
-    kBitmapList = 0x14, kFrameList = 0x4C,
+    kBitmapList = 0x14,
+    kFrameList = 0x4C,
     kBitmapMutexOffset = (int)&((W3dAniSpr*)0)->bitmapMutex,
-    kDefaultNodeBatch = 16, kSpriteCorners = 4,
+    kDefaultNodeBatch = 16,
+    kSpriteCorners = 4,
     kOpaqueWhiteSprite = -1,
     kUntexturedRenderFlags = 0x06000000,
     kBitmapIdMask = 0x7FF,
@@ -75,7 +85,6 @@ struct ProjectedSpriteVertex {
 };
 typedef char SpriteVertexSize[(sizeof(ProjectedSpriteVertex) == 0x38) ? 1 : -1];
 
-
 void* appMallocUni__FUl(unsigned long);
 void appFreeUni__FPv(void*);
 void AppHeap_AllocateFromHeap0(int);
@@ -88,7 +97,6 @@ void Game_MainLoop(int);
 void Game_InitializeEngineAndMedia();
 
 void CommonDialogue_ReleaseSharedResources();
-void CCheckDriveStatus_StopThread();
 void GameDialogue_ReleaseSharedResources();
 void Language_InitializeFromSystemSettings();
 
@@ -120,26 +128,19 @@ void gtl_InputEx_Initialize(void*);
 void gtl_Audio_Initialize(void*);
 void SystemResetState_Ctor(void*);
 void SystemReset_InstallCallbacks(void*);
-void CCheckDriveStatus_StartThread();
 void Load_HashPathTable(void*);
 void InputManager_Init(void*);
 void InputManager_LoadCursorResources(void*, int);
 void HomeButtonMenu_InitializeState(void*);
 void HomeButton_InitializeSoundArchive(void*);
-void CNowReloading_Init(void*);
 void LoadingIndicator_CreatePlayer(void*);
 void LoadingScreen_LoadB2dResources();
 void CommonDialogue_LoadSharedResources();
 void GameDialogue_LoadSharedResources();
-void CCheckDriveStatus_SetSkipDialogDelay(int);
 void gtl_InputEx_Update();
 void InputManager_Update(void*);
 void Engine_ClearFramebuffer(float, int, int, int, int, int);
 void B2dPlayer_UpdateAndDraw(void*);
-void __ct__7CBpCtrlFv(void*);
-void CBpCtrl_InvokeEntryCallbacks(void*, int);
-void CBpCtrl_DrawEntries(void*);
-void CBpCtrl_ResetEntryFrameState(void*);
 void HomeButtonMenu_ProcessState(void*);
 void Engine_PresentFrame(int, int, int, int);
 int LoadingIndicator_IsAbsentOrState3(void*);
@@ -156,20 +157,34 @@ void Engine_ChangeDisplayMode(void*);
 void SystemResetState_Dtor();
 void InputManager_Dtor();
 void HomeButtonResources_dtor();
-void CNowReloading_dtor();
+void __dt__13CNowReloadingFv();
 void CBpCtrl_dtor();
-extern unsigned char s_engineStartupDefaults[], gameStartupDtorRegistrations[], s_systemResetStorage[], s_gameInputManager[], s_homeButtonResourceState[], s_bpCtrl[];
+extern unsigned char s_engineStartupDefaults[], gameStartupDtorRegistrations[], s_systemResetStorage[],
+    s_gameInputManager[], s_homeButtonResourceState[], s_bpCtrl[];
 extern unsigned char s_nowReloading[1], s_screenDimmingState;
-extern signed char s_systemResetStateInitialized, s_inputManagerInitialized, s_homeMenuInitialized, s_nowReloadingInitialized, s_bpCtrlInitialized, s_videoDimmingStateInitialized;
+extern signed char s_systemResetStateInitialized, s_inputManagerInitialized, s_homeMenuInitialized,
+    s_nowReloadingInitialized, s_bpCtrlInitialized, s_videoDimmingStateInitialized;
 extern int s_initialProjectionDepthConvention; // Initial projection depth convention.
-extern int s_initialGenericResourceConfigWord0, s_initialGenericResourceConfigWord1; // Initial generic-resource configuration words.
-extern int s_initialExtendedInputConfigWord0, s_initialExtendedInputConfigWord1; // Initial extended-input configuration words.
+extern int s_initialGenericResourceConfigWord0,
+    s_initialGenericResourceConfigWord1; // Initial generic-resource configuration words.
+extern int s_initialExtendedInputConfigWord0,
+    s_initialExtendedInputConfigWord1; // Initial extended-input configuration words.
 extern float kFloat_1_FramebufferClear;
-struct W3 { int w[3]; };
-struct W4 { int w[4]; };
-struct W5 { int w[5]; };
-struct W6 { int w[6]; };
-struct W14 { int w[14]; };
+struct W3 {
+    int w[3];
+};
+struct W4 {
+    int w[4];
+};
+struct W5 {
+    int w[5];
+};
+struct W6 {
+    int w[6];
+};
+struct W14 {
+    int w[14];
+};
 // Packet slots are grouped by their proven source, not by guessed option meanings.
 // The first 25 words are seeded from the engine template; all but word 24 in
 // the presentation/output-rectangle ranges are then replaced below. Mirror fields duplicate
@@ -201,37 +216,54 @@ struct StartupPresentation {
     int scanFlags, tvFormat, swapInterval;
 };
 // Despite the shared setter's name, these five words are EngineViRect, not vertex attributes.
-struct StartupOutputRectangle { int x, y, width, height, format; };
+struct StartupOutputRectangle {
+    int x, y, width, height, format;
+};
 
 struct EngineStartupPacket {
-    int engineOptions[5];       // packet 0..3 allocator ABI addresses; 4 opaque header word
-    StartupPresentation displayMode; // packet 5..18: EnginePresentParams
+    int engineOptions[5];              // packet 0..3 allocator ABI addresses; 4 opaque header word
+    StartupPresentation displayMode;   // packet 5..18: EnginePresentParams
     StartupOutputRectangle outputRect; // packet 19..23: EngineViRect
-    int templateWord24;         // packet 24: initial offscreenRenderingEnabled
-    int displayMirror[6];       // packet 25..30: display words 6,7,8,9,10,12
-    int outputRectMirror[5];    // packet 31..35: output rect words 4,1,2,3,3
+    int templateWord24;                // packet 24: initial offscreenRenderingEnabled
+    int displayMirror[6];              // packet 25..30: display words 6,7,8,9,10,12
+    int outputRectMirror[5];           // packet 31..35: output rect words 4,1,2,3,3
 };
 typedef char EngineStartupPacket_size[(sizeof(EngineStartupPacket) == 36 * 4) ? 1 : -1];
-struct W12 { int w[12]; };
-struct F16 { float f[16]; };
+struct W12 {
+    int w[12];
+};
+struct F16 {
+    float f[16];
+};
 // Wn types describe ABI word counts, not inferred C++ engine classes. The
 // startup locals below now name their destination subsystem; unknown packet
 // unknown words remain neutral rather than acquiring speculative semantic names.
 enum StartupDefaultsWord {
-    kInitialDisplayDefaults = 0, kInitialOutputRectDefaults = 0xE,
-    kFileIoCallbackDefaults = 0x14, kEnginePacketDefaults = 0x18,
-    kViewportDefaults = 0x32, kScissorDefaults = 0x38,
-    kCameraEyeDefaults = 0x3C, kCameraUpDefaults = 0x3F,
-    kAudioDefaults = 0x46, kMediaDefaults = 0x4B
+    kInitialDisplayDefaults = 0,
+    kInitialOutputRectDefaults = 0xE,
+    kFileIoCallbackDefaults = 0x14,
+    kEnginePacketDefaults = 0x18,
+    kViewportDefaults = 0x32,
+    kScissorDefaults = 0x38,
+    kCameraEyeDefaults = 0x3C,
+    kCameraUpDefaults = 0x3F,
+    kAudioDefaults = 0x46,
+    kMediaDefaults = 0x4B
 };
 
 // Proven option positions (VideoConfig_InitFromTvFormat and the TV override below).
 // Keep the copyable word packets: changing their aggregate type changes codegen.
 enum StartupOptionWord {
-    kTvWidthWord = 0, kTvHeightWord = 1, kTvInterlacedWord = 2,
-    kDisplayWidthWord = 0, kDisplayHeightWord = 1, kDisplayScanFlagsWord = 11,
-    kOutputRectWidthWord = 2, kOutputRectHeightWord = 3,
-    kInterlacedPresentation = 32, kProgressivePresentation = 64
+    kTvWidthWord = 0,
+    kTvHeightWord = 1,
+    kTvInterlacedWord = 2,
+    kDisplayWidthWord = 0,
+    kDisplayHeightWord = 1,
+    kDisplayScanFlagsWord = 11,
+    kOutputRectWidthWord = 2,
+    kOutputRectHeightWord = 3,
+    kInterlacedPresentation = 32,
+    kProgressivePresentation = 64
 };
 
 // Local literal aliases: these are not new linked settings or replacement pools.
@@ -243,9 +275,11 @@ const float kStartupNearClip = 3.0f;
 const float kStartupFarClip = 100000.0f;
 enum StartupRenderConstants {
     kStartupPacketTemplateBytes = 100,
-    kSharedCaptureWidthPixels = 256, kSharedCaptureHeightPixels = 256,
+    kSharedCaptureWidthPixels = 256,
+    kSharedCaptureHeightPixels = 256,
     kScanSwitchBlackPresentCalls = 100,
-    kTransformView = 0, kTransformProjection = 1,
+    kTransformView = 0,
+    kTransformProjection = 1,
     kStartupClearFlags = 7 // existing mask; renderer consumes color/depth bits
 };
 
@@ -259,30 +293,45 @@ extern const float kFloat_0_5_TextureCoordinates;
 extern const float kFloat_0_00390625_TextureCoords;
 extern const float kFloat_6_2831855;
 extern float s_engineTwoPi;
-extern unsigned char s_titleTaskRttiDescriptor[1], s_titleMainRttiDescriptor[1], s_shop2TaskRttiDescriptor[1], s_shop2MainTypeInfo[1];
+extern unsigned char s_titleTaskRttiDescriptor[1], s_titleMainRttiDescriptor[1], s_shop2TaskRttiDescriptor[1],
+    s_shop2MainTypeInfo[1];
 extern unsigned char s_gridTypeInfo[1], s_spinTypeInfo[1], s_letterTypeInfo[1], s_spotTypeInfo[1];
-extern unsigned char s_guideLineTypeInfo[1], s_tutorialRttiDescriptor[1], s_fightTaskTypeDescriptor[1], s_fightMainTypeDescriptor[1];
-extern unsigned char s_partyTaskTypeDescriptor[1], s_partyMainTypeDescriptor[1], s_balloonSystemTypeInfo[1], s_dartsSystemRttiDescriptor[1];
+extern unsigned char s_guideLineTypeInfo[1], s_tutorialRttiDescriptor[1], s_fightTaskTypeDescriptor[1],
+    s_fightMainTypeDescriptor[1];
+extern unsigned char s_partyTaskTypeDescriptor[1], s_partyMainTypeDescriptor[1], s_balloonSystemTypeInfo[1],
+    s_dartsSystemRttiDescriptor[1];
 extern unsigned char s_driveSystemTypeInfo[1], s_storyConteTypeInfo[1], s_tourTaskRuntimeType[1], s_tourMainTypeInfo[1];
-extern unsigned char s_screenRttiDescriptor[1], s_trainingTaskRttiDescriptor[1], s_trainingMainTypeInfo[1], s_singleTaskRevTypeDescriptor[1];
-extern unsigned char s_singleMainRevTypeDescriptor[1], s_trajectoryTypeInfo[1], s_saveProcessTaskRtti[1], s_saveProcessMainRtti[1];
-extern unsigned char s_roundDolTaskTypeInfo[1], s_roundDolMainTypeInfo[1], s_bgmCollectionTaskRttiDescriptor[1], s_bgmCollectionMainTypeInfo[1];
+extern unsigned char s_screenRttiDescriptor[1], s_trainingTaskRttiDescriptor[1], s_trainingMainTypeInfo[1],
+    s_singleTaskRevTypeDescriptor[1];
+extern unsigned char s_singleMainRevTypeDescriptor[1], s_trajectoryTypeInfo[1], s_saveProcessTaskRtti[1],
+    s_saveProcessMainRtti[1];
+extern unsigned char s_roundDolTaskTypeInfo[1], s_roundDolMainTypeInfo[1], s_bgmCollectionTaskRttiDescriptor[1],
+    s_bgmCollectionMainTypeInfo[1];
 extern unsigned char s_passwordTaskTypeDescriptor[1], s_passwordMainTypeDescriptor[1];
 extern unsigned char s_taskTypeInfo[1], s_taskMainTypeInfo[1], s_actorTypeInfo[1];
 extern unsigned char s_gridFactoryName[1], s_gridTaskRegistryName[1], s_spinFactoryName[1], s_spinTaskRegistryName[1];
-extern unsigned char s_letterFactoryName[1], s_letterTaskRegistryName[1], s_spotFactoryName[1], s_spotTaskRegistryName[1];
+extern unsigned char s_letterFactoryName[1], s_letterTaskRegistryName[1], s_spotFactoryName[1],
+    s_spotTaskRegistryName[1];
 extern unsigned char s_screenFactoryName[1], s_screenTaskRegistryName[1];
-extern unsigned char s_titleTaskFactoryName[], s_pangya2TitleMainFactoryName[], s_pangya2TitleMainTaskRegistryName[], s_shop2TaskFactoryName[], s_shop2MainFactoryName[], s_shop2MainTaskRegistryName[];
-extern unsigned char s_guideLineFactoryName[], s_guideLineTaskRegistryName[], s_tutorialFactoryName[], s_tutorialTaskRegistryName[];
-extern unsigned char s_fightTaskFactoryName[], s_fightMainFactoryName[], s_fightMainTaskRegistryName[], s_partyTaskFactoryName[], s_partyMainFactoryName[], s_partyMainTaskRegistryName[];
-extern unsigned char s_balloonSystemFactoryName[], s_balloonSystemTaskRegistryName[], s_dartsSystemFactoryName[], s_dartsSystemTaskRegistryName[], s_driveSystemFactoryName[], s_driveSystemTaskRegistryName[];
-extern unsigned char s_storyConteFactoryName[], s_storyConteTaskRegistryName[], s_tourTaskFactoryName[], s_tourMainFactoryName[], s_tourMainTaskRegistryName[];
-extern unsigned char s_trainingTaskFactoryName[], s_trainingMainFactoryName[], s_trainingMainTaskRegistryName[], s_singleTaskRevFactoryName[], s_singleMainRevFactoryName[], s_singleMainRevTaskRegistryName[];
-extern unsigned char s_trajectoryFactoryName[], s_trajectoryTaskRegistryName[], s_saveProcessTaskFactoryName[], s_saveProcessMainFactoryName[], s_saveProcessMainTaskRegistryName[];
-extern unsigned char s_roundDolTaskFactoryName[], s_roundDolMainFactoryName[], s_roundDolMainTaskRegistryName[], s_bgmCollectionTaskFactoryName[], s_bgmCollectionMainFactoryName[], s_bgmCollectionMainTaskRegistryName[];
+extern unsigned char s_titleTaskFactoryName[], s_pangya2TitleMainFactoryName[], s_pangya2TitleMainTaskRegistryName[],
+    s_shop2TaskFactoryName[], s_shop2MainFactoryName[], s_shop2MainTaskRegistryName[];
+extern unsigned char s_guideLineFactoryName[], s_guideLineTaskRegistryName[], s_tutorialFactoryName[],
+    s_tutorialTaskRegistryName[];
+extern unsigned char s_fightTaskFactoryName[], s_fightMainFactoryName[], s_fightMainTaskRegistryName[],
+    s_partyTaskFactoryName[], s_partyMainFactoryName[], s_partyMainTaskRegistryName[];
+extern unsigned char s_balloonSystemFactoryName[], s_balloonSystemTaskRegistryName[], s_dartsSystemFactoryName[],
+    s_dartsSystemTaskRegistryName[], s_driveSystemFactoryName[], s_driveSystemTaskRegistryName[];
+extern unsigned char s_storyConteFactoryName[], s_storyConteTaskRegistryName[], s_tourTaskFactoryName[],
+    s_tourMainFactoryName[], s_tourMainTaskRegistryName[];
+extern unsigned char s_trainingTaskFactoryName[], s_trainingMainFactoryName[], s_trainingMainTaskRegistryName[],
+    s_singleTaskRevFactoryName[], s_singleMainRevFactoryName[], s_singleMainRevTaskRegistryName[];
+extern unsigned char s_trajectoryFactoryName[], s_trajectoryTaskRegistryName[], s_saveProcessTaskFactoryName[],
+    s_saveProcessMainFactoryName[], s_saveProcessMainTaskRegistryName[];
+extern unsigned char s_roundDolTaskFactoryName[], s_roundDolMainFactoryName[], s_roundDolMainTaskRegistryName[],
+    s_bgmCollectionTaskFactoryName[], s_bgmCollectionMainFactoryName[], s_bgmCollectionMainTaskRegistryName[];
 extern unsigned char s_passwordTaskFactoryName[], s_passwordMainFactoryName[], s_passwordMainTaskRegistryName[];
 extern unsigned char s_engineStartupStrings[];
-void IntPair_Set(void*, const char*, void*);
+void* IntPair_Set(void*, const char*, void*);
 void* ActorFactoryRegistry_GetInstance();
 void StringMap_SetByName(void*, void*, const char*);
 void* TaskRegistry_GetInstance();
@@ -324,7 +373,7 @@ void CPasswordMain_Create();
 
 extern void __pl__FRC7WVectorRC7WVector(void*, const void*, const void*);
 extern void __ml__FRC7WVectorf(void*, const void*, float);
-extern void Matrix_TransformPoint(void*, const void*, const void*);
+extern void* Matrix_TransformPoint(void*, const void*, const void*);
 extern void WView_ProjectViewPoint(void*, void*, void*, int);
 extern void W3dAniSpr_DrawIndexedFrameWithMatrix(void*, void*, int, void*, int);
 extern float Math_CosApprox(float);
@@ -339,7 +388,10 @@ extern void W3dAniSpr_DrawIndexedFrame(void*, void*, int, int, int, float);
 extern const float kFloat_0_AniSprite;
 extern const float kFloat_1_AniSprite;
 
-struct Pair { int a; int b; };
+struct Pair {
+    int a;
+    int b;
+};
 extern Pair s_animatedSpriteCornerSelectors[4];
 
 extern void ResourceManager_ReleaseId(void*, int);
@@ -381,15 +433,25 @@ struct SpriteListOwner {
     SpriteHashList lists[2];
 };
 
-struct VecStore { unsigned char data[0x38]; };
-struct SpriteVertexStorageView { char objectHeader[0xA8]; VecStore vertices[4]; };
+struct VecStore {
+    unsigned char data[0x38];
+};
+struct SpriteVertexStorageView {
+    char objectHeader[0xA8];
+    VecStore vertices[4];
+};
 
 struct WInstanceLock {
     void* lock;
     // Lock a receiver's recursive OS mutex for this lexical scope.
-    WInstanceLock(void* l) { lock = l; OSLockMutex(l); }
+    WInstanceLock(void* l) {
+        lock = l;
+        OSLockMutex(l);
+    }
     // Release this scope's acquisition even during exception unwinding.
-    ~WInstanceLock() { OSUnlockMutex(lock); }
+    ~WInstanceLock() {
+        OSUnlockMutex(lock);
+    }
 };
 
 struct SpriteCamera {
@@ -401,17 +463,29 @@ struct SpriteCamera {
 };
 
 // Allocate memory from the uniform application heap.
-void* AppUniformAllocator_Allocate(unsigned long size) { return appMallocUni__FUl(size); }
+void* AppUniformAllocator_Allocate(unsigned long size) {
+    return appMallocUni__FUl(size);
+}
 // Free memory through the uniform application heap.
-void AppUniformAllocator_Free(void* p) { appFreeUni__FPv(p); }
+void AppUniformAllocator_Free(void* p) {
+    appFreeUni__FPv(p);
+}
 // Forward an allocation request to application heap zero.
-void AppHeap_AllocateFromHeap0Thunk(int forwarded0) { AppHeap_AllocateFromHeap0(forwarded0); }
+void AppHeap_AllocateFromHeap0Thunk(int forwarded0) {
+    AppHeap_AllocateFromHeap0(forwarded0);
+}
 // Forward an array release to application heap zero.
-void AppArrayHeap0_FreeThunk(void* forwarded0) { Memory_FreeFromArrayHeap0(forwarded0); }
+void AppArrayHeap0_FreeThunk(void* forwarded0) {
+    Memory_FreeFromArrayHeap0(forwarded0);
+}
 // Allocate memory from the uniform application heap (second allocator entry).
-void* AppUniformAllocator2_Allocate(unsigned long size) { return appMallocUni__FUl(size); }
+void* AppUniformAllocator2_Allocate(unsigned long size) {
+    return appMallocUni__FUl(size);
+}
 // Free memory through the uniform application heap (second allocator entry).
-void AppUniformAllocator2_Free(void* p) { appFreeUni__FPv(p); }
+void AppUniformAllocator2_Free(void* p) {
+    appFreeUni__FPv(p);
+}
 
 // Ensure reset callback storage exists; register its destructor before publishing it.
 static inline void EnsureStartupResetState(unsigned char* registrations) {
@@ -427,13 +501,13 @@ static inline void EnsureStartupResetState(unsigned char* registrations) {
 
 // Ensure input storage exists; registration +0x24 is a byte offset in the startup block.
 static inline void EnsureStartupInput(unsigned char* registrations) {
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, registrations + 0x24);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
 }
 
@@ -453,8 +527,8 @@ static inline void EnsureStartupHomeMenu(unsigned char* registrations) {
 static inline void EnsureStartupLoadingIndicator(unsigned char* registrations) {
     if (Sing_805DC610() == 0) {
         if (s_nowReloadingInitialized == 0) {
-            CNowReloading_Init(s_nowReloading);
-            __register_global_object(s_nowReloading, (void*)CNowReloading_dtor, registrations + 0x30);
+            ((CNowReloading*)s_nowReloading)->Init();
+            __register_global_object(s_nowReloading, (void*)__dt__13CNowReloadingFv, registrations + 0x30);
             s_nowReloadingInitialized = 1;
         }
         Sing_805DC610() = s_nowReloading;
@@ -465,7 +539,7 @@ static inline void EnsureStartupLoadingIndicator(unsigned char* registrations) {
 static inline void EnsureStartupBpController(unsigned char* registrations) {
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, registrations + 0x18);
             s_bpCtrlInitialized = 1;
         }
@@ -483,7 +557,8 @@ void Game_InitializeEngineAndMedia() {
     // Recheck each singleton at its original use: constructors/callbacks between
     // uses can change globals. Helpers borrow the 12-byte registration records;
     // construction guard and published pointer deliberately remain separate.
-    W12 tvFormatConfig;    EngineStartupPacket engineInitPacket;
+    W12 tvFormatConfig;
+    EngineStartupPacket engineInitPacket;
     F16 projectionMatrix;
     F16 viewMatrix;
     W14 displayModeConfig;
@@ -518,7 +593,8 @@ void Game_InitializeEngineAndMedia() {
     // its interlaced flag controls that branch. Preserve copy order.
     int presentationScanFlags = kInterlacedPresentation;
     VideoConfig_InitFromTvFormat(&tvFormatConfig);
-    if (tvFormatConfig.w[kTvInterlacedWord] == 0 && Video_GetDtvOutputCode() == 1) presentationScanFlags = kProgressivePresentation;
+    if (tvFormatConfig.w[kTvInterlacedWord] == 0 && Video_GetDtvOutputCode() == 1)
+        presentationScanFlags = kProgressivePresentation;
     __memcpy(&engineInitPacket, startupDefaults + kEnginePacketDefaults, kStartupPacketTemplateBytes);
     initialDisplayMode = *(W14*)startupDefaults;
     engineInitPacket.displayMirror[0] = startupDefaults[6];
@@ -561,31 +637,37 @@ void Game_InitializeEngineAndMedia() {
     scissorConfig = *(W4*)(startupDefaults + kScissorDefaults);
     Engine_SetScissorRect(&scissorConfig);
     gtl_BitmapFont_Initialize(0);
-    genericResourceConfig[0] = s_initialGenericResourceConfigWord0; genericResourceConfig[1] = s_initialGenericResourceConfigWord1;
+    genericResourceConfig[0] = s_initialGenericResourceConfigWord0;
+    genericResourceConfig[1] = s_initialGenericResourceConfigWord1;
     gtl_GenericResource_Initialize(genericResourceConfig);
     Render_SetSystemOption(8, 1);
-    MtxPerspectiveFovLH(projectionMatrix.f, kStartupVerticalFovRadians, kStartupProjectionAspect, kStartupNearClip, kStartupFarClip);
+    MtxPerspectiveFovLH(projectionMatrix.f, kStartupVerticalFovRadians, kStartupProjectionAspect, kStartupNearClip,
+                        kStartupFarClip);
     SetTransform(kTransformProjection, projectionMatrix.f);
     gtl_GenericRenderer_SetProjectionMatrix(projectionMatrix.f);
     cameraEye = *(W3*)(startupDefaults + kCameraEyeDefaults);
-    cameraTarget.w[0] = 0; cameraTarget.w[1] = 0; cameraTarget.w[2] = 0;
+    cameraTarget.w[0] = 0;
+    cameraTarget.w[1] = 0;
+    cameraTarget.w[2] = 0;
     cameraUp = *(W3*)(startupDefaults + kCameraUpDefaults);
     MTXLookAt(viewMatrix.f, &cameraEye, &cameraTarget, &cameraUp);
     SetTransform(kTransformView, viewMatrix.f);
     gtl_GenericRenderer_SetViewMatrix(viewMatrix.f);
     // Phase 4: configure input/audio, then reset callbacks, drive thread, cursor,
     // HOME-menu resources and shared loading/dialog UI in that dependency order.
-    extendedInputConfig.w[0] = s_initialExtendedInputConfigWord0; extendedInputConfig.w[1] = s_initialExtendedInputConfigWord1;
-    extendedInputConfig.w[2] = startupDefaults[0x44]; extendedInputConfig.w[3] = startupDefaults[0x45];
+    extendedInputConfig.w[0] = s_initialExtendedInputConfigWord0;
+    extendedInputConfig.w[1] = s_initialExtendedInputConfigWord1;
+    extendedInputConfig.w[2] = startupDefaults[0x44];
+    extendedInputConfig.w[3] = startupDefaults[0x45];
     gtl_InputEx_Initialize(&extendedInputConfig);
     audioConfig = *(W5*)(startupDefaults + kAudioDefaults);
     gtl_Audio_Initialize(&audioConfig);
     EnsureStartupResetState(dtorRegistrationBase);
     SystemReset_InstallCallbacks(Sing_805DC948());
-    CCheckDriveStatus_StartThread();
+    CCheckDriveStatus::StartThread();
     Load_HashPathTable(s_engineStartupStrings);
     EnsureStartupInput(dtorRegistrationBase);
-    InputManager_LoadCursorResources(Sing_805DC5C8(), 0);
+    InputManager_LoadCursorResources(GetInputManagerSlot(), 0);
     EnsureStartupHomeMenu(dtorRegistrationBase);
     HomeButton_InitializeSoundArchive(Sing_805DC820());
     EnsureStartupLoadingIndicator(dtorRegistrationBase);
@@ -607,22 +689,23 @@ void Game_InitializeEngineAndMedia() {
         } else {
             sharedUiReady = 0;
         }
-        if (sharedUiReady != 0) break;
-        CCheckDriveStatus_SetSkipDialogDelay(0);
+        if (sharedUiReady != 0)
+            break;
+        CCheckDriveStatus::SetSkipDialogDelay(0);
         gtl_InputEx_Update();
         EnsureStartupInput(dtorRegistrationBase);
-        InputManager_Update(Sing_805DC5C8());
+        InputManager_Update(GetInputManagerSlot());
         Engine_ClearFramebuffer(kFloat_1_FramebufferClear, 0, 0, kStartupClearFlags, 0, 0);
         EnsureStartupLoadingIndicator(dtorRegistrationBase);
         B2dPlayer_UpdateAndDraw(Sing_805DC610());
         EnsureStartupBpController(dtorRegistrationBase);
         bpController = Sing_805DC5F0();
-        CBpCtrl_InvokeEntryCallbacks(bpController, 0);
-        CBpCtrl_DrawEntries(bpController);
-        CBpCtrl_ResetEntryFrameState(bpController);
+        ((CBpCtrl*)bpController)->InvokeEntryCallbacks(0);
+        ((CBpCtrl*)bpController)->DrawEntries();
+        ((CBpCtrl*)bpController)->ResetEntryFrameState();
         EnsureStartupHomeMenu(dtorRegistrationBase);
         HomeButtonMenu_ProcessState(Sing_805DC820());
-        CCheckDriveStatus_SetSkipDialogDelay(1);
+        CCheckDriveStatus::SetSkipDialogDelay(1);
         Engine_PresentFrame(0, 0, 0, 0);
     }
     // Phase 6: initialize media duration scaling, enable dimming and capture size.
@@ -653,10 +736,13 @@ void Game_InitializeEngineAndMedia() {
     VideoConfig_InitFromTvFormat(&tvFormatConfig);
     if (tvFormatConfig.w[kTvInterlacedWord] == 0 && Video_GetDtvOutputCode() == 1) {
         modeChangeOrFrame = 1;
-        if (VIGetScanMode() != 2) blackFrameCount = kScanSwitchBlackPresentCalls;
+        if (VIGetScanMode() != 2)
+            blackFrameCount = kScanSwitchBlackPresentCalls;
         displayModeConfig.w[kDisplayScanFlagsWord] = kProgressivePresentation;
-        displayModeConfig.w[kDisplayWidthWord] = tvFormatConfig.w[kTvWidthWord]; displayModeConfig.w[kDisplayHeightWord] = tvFormatConfig.w[kTvHeightWord];
-        outputRectangleConfig.w[kOutputRectWidthWord] = tvFormatConfig.w[kTvWidthWord]; outputRectangleConfig.w[kOutputRectHeightWord] = tvFormatConfig.w[kTvHeightWord];
+        displayModeConfig.w[kDisplayWidthWord] = tvFormatConfig.w[kTvWidthWord];
+        displayModeConfig.w[kDisplayHeightWord] = tvFormatConfig.w[kTvHeightWord];
+        outputRectangleConfig.w[kOutputRectWidthWord] = tvFormatConfig.w[kTvWidthWord];
+        outputRectangleConfig.w[kOutputRectHeightWord] = tvFormatConfig.w[kTvHeightWord];
     }
     if (modeChangeOrFrame != 0) {
         Engine_SetOutputRectangle(&outputRectangleConfig);
@@ -677,7 +763,7 @@ void main() {
     }
     Game_Shutdown();
     HashPath_Shutdown();
-    CCheckDriveStatus_StopThread();
+    CCheckDriveStatus::StopThread();
     CommonDialogue_ReleaseSharedResources();
     GameDialogue_ReleaseSharedResources();
     FileRegistry_ClearOwnedDevices();
@@ -689,7 +775,7 @@ void main() {
 }
 
 // Retail logging entry point; messages are discarded.
-void OSReport(const char*, ...) { }
+void OSReport(const char*, ...) {}
 
 enum RuntimeTypeNameOffset {
     kTypeNameTitleTask = 12,
@@ -868,10 +954,12 @@ void TaskRegistry_RegisterFactories() {
     StringMap_SetByName(actorFactories, (void*)CRoundDolMain_Create, (const char*)s_roundDolMainFactoryName);
     taskFactories = TaskRegistry_GetInstance();
     TaskRegistry_AppendFactory(taskFactories, (const char*)s_roundDolMainTaskRegistryName);
-    IntPair_Set(s_bgmCollectionTaskRttiDescriptor, (const char*)typeNameStrings + kTypeNameBgmCollectionTask, s_taskTypeInfo);
+    IntPair_Set(s_bgmCollectionTaskRttiDescriptor, (const char*)typeNameStrings + kTypeNameBgmCollectionTask,
+                s_taskTypeInfo);
     actorFactories = ActorFactoryRegistry_GetInstance();
     StringMap_SetByName(actorFactories, (void*)CBgmCollectionTask_Create, (const char*)s_bgmCollectionTaskFactoryName);
-    IntPair_Set(s_bgmCollectionMainTypeInfo, (const char*)typeNameStrings + kTypeNameBgmCollectionMain, s_actorTypeInfo);
+    IntPair_Set(s_bgmCollectionMainTypeInfo, (const char*)typeNameStrings + kTypeNameBgmCollectionMain,
+                s_actorTypeInfo);
     actorFactories = ActorFactoryRegistry_GetInstance();
     StringMap_SetByName(actorFactories, (void*)CBgmCollectionMain_Create, (const char*)s_bgmCollectionMainFactoryName);
     taskFactories = TaskRegistry_GetInstance();
@@ -885,7 +973,6 @@ void TaskRegistry_RegisterFactories() {
     taskFactories = TaskRegistry_GetInstance();
     TaskRegistry_AppendFactory(taskFactories, (const char*)s_passwordMainTaskRegistryName);
 }
-
 
 #pragma push
 #pragma opt_propagation off
@@ -912,7 +999,8 @@ void* W3dAniSpr_Ctor(void* self) {
     if (first->bucketCount > 0) {
         first->buckets = (SpriteHashNode**)appMallocUni__FUl(first->bucketCount * 4);
         first->mask = first->bucketCount - 1;
-        for (int i = 0; i < first->bucketCount; ++i) first->buckets[i] = 0;
+        for (int i = 0; i < first->bucketCount; ++i)
+            first->buckets[i] = 0;
     } else {
         first->buckets = 0;
     }
@@ -932,7 +1020,8 @@ void* W3dAniSpr_Ctor(void* self) {
     if (second->bucketCount > 0) {
         second->buckets = (SpriteHashNode**)appMallocUni__FUl(second->bucketCount * 4);
         second->mask = second->bucketCount - 1;
-        for (int i = 0; i < second->bucketCount; ++i) second->buckets[i] = 0;
+        for (int i = 0; i < second->bucketCount; ++i)
+            second->buckets[i] = 0;
     } else {
         second->buckets = 0;
     }
@@ -954,12 +1043,20 @@ void* W3dAniSpr_Ctor(void* self) {
     int k;
     for (k = 0; k < 4; k += 2) {
         vertices[k] = vertex++;
-        ((ProjectedSpriteVertex*)vertices[k])->textureV = (kFloat_255_VertexTexCoord * (float)coords[0] + kFloat_0_5_TextureCoordinates) * kFloat_0_00390625_TextureCoords;
-        ((ProjectedSpriteVertex*)vertices[k])->textureU = (kFloat_255_VertexTexCoord * (float)coords[1] + kFloat_0_5_TextureCoordinates) * kFloat_0_00390625_TextureCoords;
+        ((ProjectedSpriteVertex*)vertices[k])->textureV =
+            (kFloat_255_VertexTexCoord * (float)coords[0] + kFloat_0_5_TextureCoordinates) *
+            kFloat_0_00390625_TextureCoords;
+        ((ProjectedSpriteVertex*)vertices[k])->textureU =
+            (kFloat_255_VertexTexCoord * (float)coords[1] + kFloat_0_5_TextureCoordinates) *
+            kFloat_0_00390625_TextureCoords;
         (*(int*)&AsW3dSprVertex(vertices[k]->data)->color) = -1;
         vertices[k + 1] = vertex++;
-        ((ProjectedSpriteVertex*)vertices[k + 1])->textureV = (kFloat_255_VertexTexCoord * (float)coords[2] + kFloat_0_5_TextureCoordinates) * kFloat_0_00390625_TextureCoords;
-        ((ProjectedSpriteVertex*)vertices[k + 1])->textureU = (kFloat_255_VertexTexCoord * (float)coords[3] + kFloat_0_5_TextureCoordinates) * kFloat_0_00390625_TextureCoords;
+        ((ProjectedSpriteVertex*)vertices[k + 1])->textureV =
+            (kFloat_255_VertexTexCoord * (float)coords[2] + kFloat_0_5_TextureCoordinates) *
+            kFloat_0_00390625_TextureCoords;
+        ((ProjectedSpriteVertex*)vertices[k + 1])->textureU =
+            (kFloat_255_VertexTexCoord * (float)coords[3] + kFloat_0_5_TextureCoordinates) *
+            kFloat_0_00390625_TextureCoords;
         (*(int*)&AsW3dSprVertex(vertices[k + 1]->data)->color) = -1;
         coords += 4;
     }
@@ -974,7 +1071,8 @@ void* W3dAniSpr_Ctor(void* self) {
 // Caller must already dispose active payloads/owned keys. This releases backing
 // allocations only. Mutex must be recursive: inner unlink takes it again.
 void* SpriteCleanupList_dtor(void* self, int shouldDelete) {
-    if (self == 0) return self;
+    if (self == 0)
+        return self;
     {
         WInstanceLock guard(((SpriteHashList*)self)->mutex);
         if ((*(void**)&((SpriteHashList*)self)->blocks) != 0) {
@@ -987,7 +1085,8 @@ void* SpriteCleanupList_dtor(void* self, int shouldDelete) {
                 void* newHead = prev;
                 (*(void**)&((SpriteHashNode*)prev)->back) = next;
                 (*(void**)&((SpriteHashNode*)next)->forward) = prev;
-                if (newHead == node) newHead = 0;
+                if (newHead == node)
+                    newHead = 0;
                 OSUnlockMutex(lockPtr);
                 (*(void**)&((SpriteHashList*)self)->blocks) = newHead;
                 appFreeUni__FPv(node);
@@ -999,7 +1098,8 @@ void* SpriteCleanupList_dtor(void* self, int shouldDelete) {
             (*(void**)&((SpriteHashList*)self)->buckets) = 0;
         }
     }
-    if (shouldDelete > 0) __dl__FPv(self);
+    if (shouldDelete > 0)
+        __dl__FPv(self);
     return self;
 }
 
@@ -1027,8 +1127,10 @@ static inline SpriteHashNode* cleanupUnlink(void* self, int offset, SpriteHashNo
     node->back->forward = node->forward;
     if (node != head) {
     } else {
-        if (node->forward == head) head = 0;
-        else head = node->forward;
+        if (node->forward == head)
+            head = 0;
+        else
+            head = node->forward;
     }
     OSUnlockMutex(SpriteCleanupList(self, offset).mutex);
     return head;
@@ -1040,7 +1142,8 @@ static inline SpriteHashNode* cleanupPop(void* self, int offset, SpriteHashNode*
     node->forward->back = node->back;
     node->back->forward = node->forward;
     SpriteHashNode* next = node->forward;
-    if (next == node) next = 0;
+    if (next == node)
+        next = 0;
     OSUnlockMutex(SpriteCleanupList(self, offset).mutex);
     return next;
 }
@@ -1067,7 +1170,8 @@ static inline void cleanupRemoveKey(void* self, int offset, SpriteHashNode* node
     WInstanceLock lock(SpriteCleanupList(self, offset).mutex);
     unsigned int hash = cleanupHash(self, offset, node->key);
     SpriteHashNode* cur = SpriteCleanupList(self, offset).buckets[hash];
-    if (cur == node) SpriteCleanupList(self, offset).buckets[hash] = node->hashNext;
+    if (cur == node)
+        SpriteCleanupList(self, offset).buckets[hash] = node->hashNext;
     else {
         while (cur) {
             if (cur->hashNext == node) {
@@ -1084,21 +1188,27 @@ static inline void cleanupRemove(void* self, int offset, unsigned int data) {
     WInstanceLock lock(SpriteCleanupList(self, offset).mutex);
     SpriteHashNode* head = SpriteCleanupList(self, offset).head;
     SpriteHashNode* node = head;
-    if (!head) return;
+    if (!head)
+        return;
     do {
         if (offset == kBitmapList ? (int)node->data == (int)data : node->data == data) {
             if (SpriteCleanupList(self, offset).cursor == node) {
                 SpriteHashNode* next = SpriteCleanupList(self, offset).cursor->forward;
-                if (next == head) next = 0;
+                if (next == head)
+                    next = 0;
                 SpriteCleanupList(self, offset).cursor = next;
             }
             if (node->key) {
                 cleanupRemoveKey(self, offset, node);
-                if (node->ownsKey) appFreeUni__FPv(node->key);
+                if (node->ownsKey)
+                    appFreeUni__FPv(node->key);
             }
-            SpriteCleanupList(self, offset).head = cleanupUnlink(self, offset, SpriteCleanupList(self, offset).head, node);
-            SpriteCleanupList(self, offset).free = cleanupInsert(self, offset, SpriteCleanupList(self, offset).free, node);
-            if (!SpriteCleanupList(self, offset).head) SpriteCleanupList(self, offset).cursor = 0;
+            SpriteCleanupList(self, offset).head =
+                cleanupUnlink(self, offset, SpriteCleanupList(self, offset).head, node);
+            SpriteCleanupList(self, offset).free =
+                cleanupInsert(self, offset, SpriteCleanupList(self, offset).free, node);
+            if (!SpriteCleanupList(self, offset).head)
+                SpriteCleanupList(self, offset).cursor = 0;
             return;
         }
         node = node->forward;
@@ -1115,7 +1225,8 @@ static inline unsigned int cleanupFirst(void* self, int offset) {
     if (node) {
         SpriteHashNode* next = node->forward;
         data = node->data;
-        if (next == SpriteCleanupList(self, offset).head) next = 0;
+        if (next == SpriteCleanupList(self, offset).head)
+            next = 0;
         SpriteCleanupList(self, offset).cursor = next;
         OSUnlockMutex(SpriteCleanupList(self, offset).mutex);
     } else {
@@ -1138,13 +1249,14 @@ static inline void cleanupClear(void* self, int offset) {
         SpriteHashNode* node;
         while ((node = SpriteCleanupList(self, offset).head) != 0) {
             SpriteHashNode* next = cleanupPop(self, offset, node);
-            SpriteCleanupList(self, offset).free = cleanupInsert(self, offset, SpriteCleanupList(self, offset).free, SpriteCleanupList(self, offset).head);
+            SpriteCleanupList(self, offset).free =
+                cleanupInsert(self, offset, SpriteCleanupList(self, offset).free, SpriteCleanupList(self, offset).head);
             SpriteCleanupList(self, offset).head = next;
         }
     }
-    for (int i = 0; i < SpriteCleanupList(self, offset).bucketCount; ++i) SpriteCleanupList(self, offset).buckets[i] = 0;
+    for (int i = 0; i < SpriteCleanupList(self, offset).bucketCount; ++i)
+        SpriteCleanupList(self, offset).buckets[i] = 0;
 }
-
 
 #pragma use_lmw_stmw on
 // Keep the byte address forms below: member-address forms change destructor register allocation.
@@ -1195,8 +1307,10 @@ void* W3dAniSpr_dtor(void* self, int doDelete) {
                 (*(void**)&AsW3dAniSpr(self)->bitmapBuckets) = 0;
             }
         }
-        if (self) BaseObject_dtor(self, 0);
-        if (doDelete > 0) __dl__FPv(self);
+        if (self)
+            BaseObject_dtor(self, 0);
+        if (doDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -1218,7 +1332,7 @@ void* W3dAniSpr_dtor(void* self, int doDelete) {
 // live: LoadBitmapGrid owns its retained id, AddBitmapGridFrames borrows the id
 // from its caller. Copying a descriptor does not retain that bitmap. Draws also
 // mutate shared vertex scratch, so disjoint frame indices do not allow parallel
-// draws on one sprite. CSnow_Ctor (pvsfxbox_sky_and_wind_particles.cpp) copies frame 0's values immediately;
+// draws on one sprite. CSnow::Init (pvsfxbox_sky_and_wind_particles.cpp) copies frame 0's values immediately;
 // it does not take ownership of the frame or extend the texture's lifetime.
 static inline void* spriteNext(SpriteHashList* L) {
     void* data;
@@ -1228,7 +1342,8 @@ static inline void* spriteNext(SpriteHashList* L) {
     if (node) {
         SpriteHashNode* next = node->forward;
         data = (void*)node->data;
-        if (next == L->head) next = 0;
+        if (next == L->head)
+            next = 0;
         L->cursor = next;
         OSUnlockMutex(m);
     } else {
@@ -1305,7 +1420,6 @@ static inline void ReconstructBillboardProjectedCorners(void* self) {
         void* destinationVertex = AsW3dAniSpr(self)->vertex3;
         ((ProjectedSpriteVertex*)destinationVertex)->clipFlags = ((ProjectedSpriteVertex*)sourceVertex)->clipFlags;
     }
-
 }
 #pragma pop
 
@@ -1329,7 +1443,8 @@ void W3dAniSpr_DrawFrame(void* self, void* view, float rotationRadiansOrIndexedS
     // With no scene manager, use the same indexed fallback for textured sprites.
     if (g_sceneManager == 0 || ((CSceneManager*)g_sceneManager)->effectRenderPassActive != 0) {
         if (!(flags & kUntexturedRenderFlags)) {
-            W3dAniSpr_DrawIndexedFrame(self, view, flags, kIndexedDrawOpacity, frameIndex, rotationRadiansOrIndexedScale);
+            W3dAniSpr_DrawIndexedFrame(self, view, flags, kIndexedDrawOpacity, frameIndex,
+                                       rotationRadiansOrIndexedScale);
             return;
         }
     }
@@ -1352,7 +1467,8 @@ void W3dAniSpr_DrawFrame(void* self, void* view, float rotationRadiansOrIndexedS
         if (node) {
             next = node->forward;
             frame = (void*)node->data;
-            if (next == frameList->head) next = 0;
+            if (next == frameList->head)
+                next = 0;
             frameList->cursor = next;
             OSUnlockMutex(frameMutex);
         } else {
@@ -1361,7 +1477,8 @@ void W3dAniSpr_DrawFrame(void* self, void* view, float rotationRadiansOrIndexedS
         }
         ++skippedFrames;
     }
-    if (!frame) return;
+    if (!frame)
+        return;
 
     // Phase 2: assign the frame rectangle's UVs independently of its projected geometry.
     AsW3dAniSpr(self)->vertex0U = ((SpriteFrame*)frame)->leftU;
@@ -1472,7 +1589,8 @@ void W3dAniSpr_DrawFrameWithMatrix(void* self, void* view, void* offsetTransform
             unsigned int nextNode = (unsigned int)((SpriteHashNode*)node)->forward;
             unsigned int firstNode = (*(unsigned int*)&AsW3dAniSpr(self)->frameHead);
             frameAddress = *(int*)node;
-            if (nextNode == firstNode) nextNode = 0;
+            if (nextNode == firstNode)
+                nextNode = 0;
             AsW3dAniSpr(self)->frameCursor = (int)nextNode;
             OSUnlockMutex(AsW3dAniSpr(self)->frameMutex);
         } else {
@@ -1490,7 +1608,8 @@ void W3dAniSpr_DrawFrameWithMatrix(void* self, void* view, void* offsetTransform
             unsigned int nextNode = (unsigned int)((SpriteHashNode*)node)->forward;
             unsigned int firstNode = (*(unsigned int*)&AsW3dAniSpr(self)->frameHead);
             frameAddress = *(int*)node;
-            if (nextNode == firstNode) nextNode = 0;
+            if (nextNode == firstNode)
+                nextNode = 0;
             AsW3dAniSpr(self)->frameCursor = (int)nextNode;
             OSUnlockMutex(frameMutex);
         } else {
@@ -1532,11 +1651,15 @@ void W3dAniSpr_DrawFrameWithMatrix(void* self, void* view, void* offsetTransform
 
         for (cornerIndex = 0; cornerIndex < kSpriteCorners; cornerIndex++) {
             float cornerY;
-            if (cornerSelectors->b == 1) cornerY = AsW3dAniSpr(self)->top;
-            else cornerY = AsW3dAniSpr(self)->bottom;
+            if (cornerSelectors->b == 1)
+                cornerY = AsW3dAniSpr(self)->top;
+            else
+                cornerY = AsW3dAniSpr(self)->bottom;
             float cornerX;
-            if (cornerSelectors->a == 1) cornerX = AsW3dAniSpr(self)->left;
-            else cornerX = AsW3dAniSpr(self)->right;
+            if (cornerSelectors->a == 1)
+                cornerX = AsW3dAniSpr(self)->left;
+            else
+                cornerX = AsW3dAniSpr(self)->right;
             localCorner[0] = cornerX;
             localCorner[1] = cornerY;
             localCorner[2] = zero;
@@ -1633,7 +1756,8 @@ static inline SpriteHashNode* listTake(SpriteHashList* L) {
     node->forward->back = node->back;
     node->back->forward = node->forward;
     SpriteHashNode* next = node->forward;
-    if (next == node) next = 0;
+    if (next == node)
+        next = 0;
     OSUnlockMutex(m);
     L->free = next;
     return node;
@@ -1678,7 +1802,7 @@ static inline void listPush(SpriteHashList* L, void* data) {
 // 40000000 selects type 3 instead of 1, 2000 selects filter1 instead of 0, and
 // 800 selects mode1 instead of 0 when descriptor format<32 (else mode2).
 // With a GSR resource these creation selectors are bypassed: slot40 binds it via
-// WGeneric3DR_LoadTextureSlot (wgeneric3dr_immediate_renderer.cpp). In recovered Wii tables descriptor
+// WGeneric3DR::LoadTextureSlot (wgeneric3dr_immediate_renderer.cpp). In recovered Wii tables descriptor
 // storage/data hooks are NO-OP, so arbitrary raw-pixel descriptors are not a
 // supported replacement upload path. 10000000/2000 also suppress manager's
 // initialize call; they are not independent image-quality controls.

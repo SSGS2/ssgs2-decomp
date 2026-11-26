@@ -1,3 +1,6 @@
+// File I/O facade: sends reads, writes, seeks, deletes, moves and directory changes to the device
+// registered for each path prefix, and manages file handles and the file-I/O lock.
+
 #include <decomp/local_class.h>
 // File I/O facade: handle/device dispatch, aligned read/write storage, asynchronous
 // completion cleanup, device-prefix routing, and path normalization. No gameplay
@@ -20,12 +23,18 @@
 
 extern "C" {
 enum {
-    kInvalidFileHandleError = 6, kPathCapacity = 0x104,
-    kInlineStringLengthMask = 0x7F, kRegistryParentColorBit = 1,
-    kDeviceQueryAlignmentSlot = 0x68 / 4, kDeviceDeletePathSlot = 0x38 / 4,
-    kDeviceMovePathSlot = 0x44 / 4, kDeviceMoveWithProgressSlot = 0x4C / 4,
-    kDeviceDiskFreeSpaceSlot = 0x50 / 4, kDeviceAsyncWriteSlot = 0x74 / 4,
-    kDeviceWriteSlot = 0x1C / 4, kDeviceSetPathSlot = 0x88 / 4
+    kInvalidFileHandleError = 6,
+    kPathCapacity = 0x104,
+    kInlineStringLengthMask = 0x7F,
+    kRegistryParentColorBit = 1,
+    kDeviceQueryAlignmentSlot = 0x68 / 4,
+    kDeviceDeletePathSlot = 0x38 / 4,
+    kDeviceMovePathSlot = 0x44 / 4,
+    kDeviceMoveWithProgressSlot = 0x4C / 4,
+    kDeviceDiskFreeSpaceSlot = 0x50 / 4,
+    kDeviceAsyncWriteSlot = 0x74 / 4,
+    kDeviceWriteSlot = 0x1C / 4,
+    kDeviceSetPathSlot = 0x88 / 4
 };
 static const unsigned int kFileAsync = 0x40000000u;
 static const unsigned int kFileDirectBuffer = 0x20000000u;
@@ -42,7 +51,10 @@ static const unsigned int kFileDirectBuffer = 0x20000000u;
 // Successor is right-child/leftmost, otherwise climb masked parent links until
 // the current node is its parent's left child. Bit 0 of parentAndColor is color.
 // The repeated searches below borrow registry nodes/devices and never free them.
-struct FileIoAutoLockLayout { OSMutex* mutex; void* vtable; };
+struct FileIoAutoLockLayout {
+    OSMutex* mutex;
+    void* vtable;
+};
 // The singleton's mutex prefix is followed by registry state and the shared default-device path.
 struct FileIoGlobalStorage {
     char mutex[0x18];
@@ -58,16 +70,23 @@ void* __dl__FPv(void*);
 inline void* __dt__14CAutoLockMutexFv(void* self, int flags) {
     ((FileIoAutoLockLayout*)self)->vtable = (void*)s_fileIoAutoLockMutexVTable;
     OSUnlockMutex(((FileIoAutoLockLayout*)self)->mutex);
-    if (flags > 0) __dl__FPv(self);
+    if (flags > 0)
+        __dl__FPv(self);
     return self;
 }
 struct CAutoLockMutex {
     OSMutex* mutex;
     void* vtable;
     // Acquire one mutex level for this guard's lifetime.
-    CAutoLockMutex(OSMutex* m) { vtable = (void*)s_fileIoAutoLockMutexVTable; mutex = m; OSLockMutex(m); }
+    CAutoLockMutex(OSMutex* m) {
+        vtable = (void*)s_fileIoAutoLockMutexVTable;
+        mutex = m;
+        OSLockMutex(m);
+    }
     // Release the guard's own mutex level without deleting stack storage.
-    ~CAutoLockMutex() { __dt__14CAutoLockMutexFv(this, 0); }
+    ~CAutoLockMutex() {
+        __dt__14CAutoLockMutexFv(this, 0);
+    }
 };
 extern FileRegistryTree s_fileRegistryTree;
 void File_SetLastError(int);
@@ -86,9 +105,16 @@ int FileIO_DispatchDeviceHandleOperation10(FileHandle* file) {
     }
     void* device = file->device;
     struct HandleOperation30Device {
-        virtual void v0() DECOMP_LOCAL_VIRTUAL;virtual void v1() DECOMP_LOCAL_VIRTUAL;virtual void v2() DECOMP_LOCAL_VIRTUAL;virtual void v3() DECOMP_LOCAL_VIRTUAL;
-        virtual void v4() DECOMP_LOCAL_VIRTUAL;virtual void v5() DECOMP_LOCAL_VIRTUAL;virtual void v6() DECOMP_LOCAL_VIRTUAL;virtual void v7() DECOMP_LOCAL_VIRTUAL;
-        virtual void v8() DECOMP_LOCAL_VIRTUAL;virtual void v9() DECOMP_LOCAL_VIRTUAL;
+        virtual void v0() DECOMP_LOCAL_VIRTUAL;
+        virtual void v1() DECOMP_LOCAL_VIRTUAL;
+        virtual void v2() DECOMP_LOCAL_VIRTUAL;
+        virtual void v3() DECOMP_LOCAL_VIRTUAL;
+        virtual void v4() DECOMP_LOCAL_VIRTUAL;
+        virtual void v5() DECOMP_LOCAL_VIRTUAL;
+        virtual void v6() DECOMP_LOCAL_VIRTUAL;
+        virtual void v7() DECOMP_LOCAL_VIRTUAL;
+        virtual void v8() DECOMP_LOCAL_VIRTUAL;
+        virtual void v9() DECOMP_LOCAL_VIRTUAL;
         virtual void* InvokeHandleOperation(void*) DECOMP_LOCAL_VIRTUAL;
     };
     void* result = ((HandleOperation30Device*)device)->InvokeHandleOperation(file->handle);
@@ -110,8 +136,13 @@ int FileIO_GetFileSize(FileHandle* file, void* sizeArg1, void* sizeArg2, void* s
     }
     void* device = file->device;
     struct FileSizeDevice {
-        virtual void v0() DECOMP_LOCAL_VIRTUAL;virtual void v1() DECOMP_LOCAL_VIRTUAL;virtual void v2() DECOMP_LOCAL_VIRTUAL;virtual void v3() DECOMP_LOCAL_VIRTUAL;
-        virtual void v4() DECOMP_LOCAL_VIRTUAL;virtual void v5() DECOMP_LOCAL_VIRTUAL;virtual void v6() DECOMP_LOCAL_VIRTUAL;
+        virtual void v0() DECOMP_LOCAL_VIRTUAL;
+        virtual void v1() DECOMP_LOCAL_VIRTUAL;
+        virtual void v2() DECOMP_LOCAL_VIRTUAL;
+        virtual void v3() DECOMP_LOCAL_VIRTUAL;
+        virtual void v4() DECOMP_LOCAL_VIRTUAL;
+        virtual void v5() DECOMP_LOCAL_VIRTUAL;
+        virtual void v6() DECOMP_LOCAL_VIRTUAL;
         virtual void* GetSize(void*, void*, void*, void*) DECOMP_LOCAL_VIRTUAL;
     };
     void* result = ((FileSizeDevice*)device)->GetSize(file->handle, sizeArg1, sizeArg2, sizeArg3);
@@ -128,11 +159,26 @@ void* File_CloseHandle(FileHandle* file) {
     }
     void* device = file->device;
     struct HandleReleaseDevice {
-        virtual void a0() DECOMP_LOCAL_VIRTUAL;virtual void a1() DECOMP_LOCAL_VIRTUAL;virtual void a2() DECOMP_LOCAL_VIRTUAL;virtual void a3() DECOMP_LOCAL_VIRTUAL;
-        virtual void a4() DECOMP_LOCAL_VIRTUAL;virtual void a5() DECOMP_LOCAL_VIRTUAL;virtual void a6() DECOMP_LOCAL_VIRTUAL;virtual void a7() DECOMP_LOCAL_VIRTUAL;
-        virtual void a8() DECOMP_LOCAL_VIRTUAL;virtual void a9() DECOMP_LOCAL_VIRTUAL;virtual void a10() DECOMP_LOCAL_VIRTUAL;virtual void a11() DECOMP_LOCAL_VIRTUAL;
-        virtual void a12() DECOMP_LOCAL_VIRTUAL;virtual void a13() DECOMP_LOCAL_VIRTUAL;virtual void a14() DECOMP_LOCAL_VIRTUAL;virtual void a15() DECOMP_LOCAL_VIRTUAL;
-        virtual void a16() DECOMP_LOCAL_VIRTUAL;virtual void a17() DECOMP_LOCAL_VIRTUAL;virtual void a18() DECOMP_LOCAL_VIRTUAL;virtual void a19() DECOMP_LOCAL_VIRTUAL;
+        virtual void a0() DECOMP_LOCAL_VIRTUAL;
+        virtual void a1() DECOMP_LOCAL_VIRTUAL;
+        virtual void a2() DECOMP_LOCAL_VIRTUAL;
+        virtual void a3() DECOMP_LOCAL_VIRTUAL;
+        virtual void a4() DECOMP_LOCAL_VIRTUAL;
+        virtual void a5() DECOMP_LOCAL_VIRTUAL;
+        virtual void a6() DECOMP_LOCAL_VIRTUAL;
+        virtual void a7() DECOMP_LOCAL_VIRTUAL;
+        virtual void a8() DECOMP_LOCAL_VIRTUAL;
+        virtual void a9() DECOMP_LOCAL_VIRTUAL;
+        virtual void a10() DECOMP_LOCAL_VIRTUAL;
+        virtual void a11() DECOMP_LOCAL_VIRTUAL;
+        virtual void a12() DECOMP_LOCAL_VIRTUAL;
+        virtual void a13() DECOMP_LOCAL_VIRTUAL;
+        virtual void a14() DECOMP_LOCAL_VIRTUAL;
+        virtual void a15() DECOMP_LOCAL_VIRTUAL;
+        virtual void a16() DECOMP_LOCAL_VIRTUAL;
+        virtual void a17() DECOMP_LOCAL_VIRTUAL;
+        virtual void a18() DECOMP_LOCAL_VIRTUAL;
+        virtual void a19() DECOMP_LOCAL_VIRTUAL;
         virtual void a20() DECOMP_LOCAL_VIRTUAL;
         virtual void* ReleaseHandle(void*) DECOMP_LOCAL_VIRTUAL;
     };
@@ -148,7 +194,7 @@ void* File_CloseHandle(FileHandle* file) {
 // Dispatch a seek through the synchronous or asynchronous device entry selected by the handle flags.
 // Required live file or -1. offset is the signed low 32-bit BYTE displacement.
 // Sync outHighResultWord is the high-result-word pointer (optional for the
-// DVD/HIO devices), not a guaranteed new-position output; gtl_CFile_Seek64
+// DVD/HIO devices), not a guaranteed new-position output; gtl::CFile::Seek64
 // combines it with this return word. Invalid file returns -1/error 6 unchanged.
 // origin domain for HIO/FMEM: 0=start, 1=current, 2=end (other values map to start).
 // DVD sync ignores origin and invokes its position callee with fixed mode 2;
@@ -161,7 +207,8 @@ void* File_CloseHandle(FileHandle* file) {
 // no common option enum exists across devices. HIO async is unsupported.
 // Async return is submission status, not completion: file/context/callback data
 // must stay live until that backend reports completion. No buffer is allocated here.
-int FileIO_SeekFile(FileHandle* file, int offset, int* outHighResultWord, int origin, int asyncOption1, int asyncOption2, int asyncOption3) {
+int FileIO_SeekFile(FileHandle* file, int offset, int* outHighResultWord, int origin, int asyncOption1,
+                    int asyncOption2, int asyncOption3) {
     CAutoLockMutex guard(&s_fileIoMutex);
     if (file == (FileHandle*)-1) {
         File_SetLastError(kInvalidFileHandleError);
@@ -170,22 +217,48 @@ int FileIO_SeekFile(FileHandle* file, int offset, int* outHighResultWord, int or
     if (file->flags & kFileAsync) {
         void* device = file->device;
         struct AsyncSeekDevice {
-            virtual void d0() DECOMP_LOCAL_VIRTUAL;virtual void d1() DECOMP_LOCAL_VIRTUAL;virtual void d2() DECOMP_LOCAL_VIRTUAL;virtual void d3() DECOMP_LOCAL_VIRTUAL;
-            virtual void d4() DECOMP_LOCAL_VIRTUAL;virtual void d5() DECOMP_LOCAL_VIRTUAL;virtual void d6() DECOMP_LOCAL_VIRTUAL;virtual void d7() DECOMP_LOCAL_VIRTUAL;
-            virtual void d8() DECOMP_LOCAL_VIRTUAL;virtual void d9() DECOMP_LOCAL_VIRTUAL;virtual void d10() DECOMP_LOCAL_VIRTUAL;virtual void d11() DECOMP_LOCAL_VIRTUAL;
-            virtual void d12() DECOMP_LOCAL_VIRTUAL;virtual void d13() DECOMP_LOCAL_VIRTUAL;virtual void d14() DECOMP_LOCAL_VIRTUAL;virtual void d15() DECOMP_LOCAL_VIRTUAL;
-            virtual void d16() DECOMP_LOCAL_VIRTUAL;virtual void d17() DECOMP_LOCAL_VIRTUAL;virtual void d18() DECOMP_LOCAL_VIRTUAL;virtual void d19() DECOMP_LOCAL_VIRTUAL;
-            virtual void d20() DECOMP_LOCAL_VIRTUAL;virtual void d21() DECOMP_LOCAL_VIRTUAL;virtual void d22() DECOMP_LOCAL_VIRTUAL;virtual void d23() DECOMP_LOCAL_VIRTUAL;
-            virtual void d24() DECOMP_LOCAL_VIRTUAL;virtual void d25() DECOMP_LOCAL_VIRTUAL;virtual void d26() DECOMP_LOCAL_VIRTUAL;virtual void d27() DECOMP_LOCAL_VIRTUAL;
+            virtual void d0() DECOMP_LOCAL_VIRTUAL;
+            virtual void d1() DECOMP_LOCAL_VIRTUAL;
+            virtual void d2() DECOMP_LOCAL_VIRTUAL;
+            virtual void d3() DECOMP_LOCAL_VIRTUAL;
+            virtual void d4() DECOMP_LOCAL_VIRTUAL;
+            virtual void d5() DECOMP_LOCAL_VIRTUAL;
+            virtual void d6() DECOMP_LOCAL_VIRTUAL;
+            virtual void d7() DECOMP_LOCAL_VIRTUAL;
+            virtual void d8() DECOMP_LOCAL_VIRTUAL;
+            virtual void d9() DECOMP_LOCAL_VIRTUAL;
+            virtual void d10() DECOMP_LOCAL_VIRTUAL;
+            virtual void d11() DECOMP_LOCAL_VIRTUAL;
+            virtual void d12() DECOMP_LOCAL_VIRTUAL;
+            virtual void d13() DECOMP_LOCAL_VIRTUAL;
+            virtual void d14() DECOMP_LOCAL_VIRTUAL;
+            virtual void d15() DECOMP_LOCAL_VIRTUAL;
+            virtual void d16() DECOMP_LOCAL_VIRTUAL;
+            virtual void d17() DECOMP_LOCAL_VIRTUAL;
+            virtual void d18() DECOMP_LOCAL_VIRTUAL;
+            virtual void d19() DECOMP_LOCAL_VIRTUAL;
+            virtual void d20() DECOMP_LOCAL_VIRTUAL;
+            virtual void d21() DECOMP_LOCAL_VIRTUAL;
+            virtual void d22() DECOMP_LOCAL_VIRTUAL;
+            virtual void d23() DECOMP_LOCAL_VIRTUAL;
+            virtual void d24() DECOMP_LOCAL_VIRTUAL;
+            virtual void d25() DECOMP_LOCAL_VIRTUAL;
+            virtual void d26() DECOMP_LOCAL_VIRTUAL;
+            virtual void d27() DECOMP_LOCAL_VIRTUAL;
             virtual int SeekAsync(int, int, int, int, int, int) DECOMP_LOCAL_VIRTUAL;
         };
-        int result = ((AsyncSeekDevice*)device)->SeekAsync((int)file->handle, offset, origin, asyncOption1, asyncOption2, asyncOption3);
+        int result = ((AsyncSeekDevice*)device)
+                         ->SeekAsync((int)file->handle, offset, origin, asyncOption1, asyncOption2, asyncOption3);
         return result;
     } else {
         void* device = file->device;
         struct SeekDevice {
-            virtual void d0() DECOMP_LOCAL_VIRTUAL;virtual void d1() DECOMP_LOCAL_VIRTUAL;virtual void d2() DECOMP_LOCAL_VIRTUAL;virtual void d3() DECOMP_LOCAL_VIRTUAL;
-            virtual void d4() DECOMP_LOCAL_VIRTUAL;virtual void d5() DECOMP_LOCAL_VIRTUAL;
+            virtual void d0() DECOMP_LOCAL_VIRTUAL;
+            virtual void d1() DECOMP_LOCAL_VIRTUAL;
+            virtual void d2() DECOMP_LOCAL_VIRTUAL;
+            virtual void d3() DECOMP_LOCAL_VIRTUAL;
+            virtual void d4() DECOMP_LOCAL_VIRTUAL;
+            virtual void d5() DECOMP_LOCAL_VIRTUAL;
             virtual int Seek(int, int, int*, int) DECOMP_LOCAL_VIRTUAL;
         };
         int result = ((SeekDevice*)device)->Seek((int)file->handle, offset, outHighResultWord, origin);
@@ -210,8 +283,14 @@ int FileIO_CloseFile(FileHandle* file) {
         } else {
             void* device = file->device;
             struct BeforeCloseDevice {
-                virtual void v0() DECOMP_LOCAL_VIRTUAL;virtual void v1() DECOMP_LOCAL_VIRTUAL;virtual void v2() DECOMP_LOCAL_VIRTUAL;virtual void v3() DECOMP_LOCAL_VIRTUAL;
-                virtual void v4() DECOMP_LOCAL_VIRTUAL;virtual void v5() DECOMP_LOCAL_VIRTUAL;virtual void v6() DECOMP_LOCAL_VIRTUAL;virtual void v7() DECOMP_LOCAL_VIRTUAL;
+                virtual void v0() DECOMP_LOCAL_VIRTUAL;
+                virtual void v1() DECOMP_LOCAL_VIRTUAL;
+                virtual void v2() DECOMP_LOCAL_VIRTUAL;
+                virtual void v3() DECOMP_LOCAL_VIRTUAL;
+                virtual void v4() DECOMP_LOCAL_VIRTUAL;
+                virtual void v5() DECOMP_LOCAL_VIRTUAL;
+                virtual void v6() DECOMP_LOCAL_VIRTUAL;
+                virtual void v7() DECOMP_LOCAL_VIRTUAL;
                 virtual void v8() DECOMP_LOCAL_VIRTUAL;
                 virtual void BeforeClose(int) DECOMP_LOCAL_VIRTUAL;
             };
@@ -220,7 +299,9 @@ int FileIO_CloseFile(FileHandle* file) {
     }
     void* device = file->device;
     struct CloseDevice {
-        virtual void v0() DECOMP_LOCAL_VIRTUAL;virtual void v1() DECOMP_LOCAL_VIRTUAL;virtual void v2() DECOMP_LOCAL_VIRTUAL;
+        virtual void v0() DECOMP_LOCAL_VIRTUAL;
+        virtual void v1() DECOMP_LOCAL_VIRTUAL;
+        virtual void v2() DECOMP_LOCAL_VIRTUAL;
         virtual int Close(int) DECOMP_LOCAL_VIRTUAL;
     };
     int result = ((CloseDevice*)device)->Close((int)file->handle);
@@ -256,14 +337,37 @@ int FileIO_PollAsyncTransferResult(FileHandle* file, int* completionState, int* 
     if (outDeviceResult != 0) {
         void* device = file->device;
         struct AsyncResultDevice {
-            virtual void d0() DECOMP_LOCAL_VIRTUAL;virtual void d1() DECOMP_LOCAL_VIRTUAL;virtual void d2() DECOMP_LOCAL_VIRTUAL;virtual void d3() DECOMP_LOCAL_VIRTUAL;
-            virtual void d4() DECOMP_LOCAL_VIRTUAL;virtual void d5() DECOMP_LOCAL_VIRTUAL;virtual void d6() DECOMP_LOCAL_VIRTUAL;virtual void d7() DECOMP_LOCAL_VIRTUAL;
-            virtual void d8() DECOMP_LOCAL_VIRTUAL;virtual void d9() DECOMP_LOCAL_VIRTUAL;virtual void d10() DECOMP_LOCAL_VIRTUAL;virtual void d11() DECOMP_LOCAL_VIRTUAL;
-            virtual void d12() DECOMP_LOCAL_VIRTUAL;virtual void d13() DECOMP_LOCAL_VIRTUAL;virtual void d14() DECOMP_LOCAL_VIRTUAL;virtual void d15() DECOMP_LOCAL_VIRTUAL;
-            virtual void d16() DECOMP_LOCAL_VIRTUAL;virtual void d17() DECOMP_LOCAL_VIRTUAL;virtual void d18() DECOMP_LOCAL_VIRTUAL;virtual void d19() DECOMP_LOCAL_VIRTUAL;
-            virtual void d20() DECOMP_LOCAL_VIRTUAL;virtual void d21() DECOMP_LOCAL_VIRTUAL;virtual void d22() DECOMP_LOCAL_VIRTUAL;virtual void d23() DECOMP_LOCAL_VIRTUAL;
-            virtual void d24() DECOMP_LOCAL_VIRTUAL;virtual void d25() DECOMP_LOCAL_VIRTUAL;virtual void d26() DECOMP_LOCAL_VIRTUAL;virtual void d27() DECOMP_LOCAL_VIRTUAL;
-            virtual void d28() DECOMP_LOCAL_VIRTUAL;virtual void d29() DECOMP_LOCAL_VIRTUAL;virtual void d30() DECOMP_LOCAL_VIRTUAL;
+            virtual void d0() DECOMP_LOCAL_VIRTUAL;
+            virtual void d1() DECOMP_LOCAL_VIRTUAL;
+            virtual void d2() DECOMP_LOCAL_VIRTUAL;
+            virtual void d3() DECOMP_LOCAL_VIRTUAL;
+            virtual void d4() DECOMP_LOCAL_VIRTUAL;
+            virtual void d5() DECOMP_LOCAL_VIRTUAL;
+            virtual void d6() DECOMP_LOCAL_VIRTUAL;
+            virtual void d7() DECOMP_LOCAL_VIRTUAL;
+            virtual void d8() DECOMP_LOCAL_VIRTUAL;
+            virtual void d9() DECOMP_LOCAL_VIRTUAL;
+            virtual void d10() DECOMP_LOCAL_VIRTUAL;
+            virtual void d11() DECOMP_LOCAL_VIRTUAL;
+            virtual void d12() DECOMP_LOCAL_VIRTUAL;
+            virtual void d13() DECOMP_LOCAL_VIRTUAL;
+            virtual void d14() DECOMP_LOCAL_VIRTUAL;
+            virtual void d15() DECOMP_LOCAL_VIRTUAL;
+            virtual void d16() DECOMP_LOCAL_VIRTUAL;
+            virtual void d17() DECOMP_LOCAL_VIRTUAL;
+            virtual void d18() DECOMP_LOCAL_VIRTUAL;
+            virtual void d19() DECOMP_LOCAL_VIRTUAL;
+            virtual void d20() DECOMP_LOCAL_VIRTUAL;
+            virtual void d21() DECOMP_LOCAL_VIRTUAL;
+            virtual void d22() DECOMP_LOCAL_VIRTUAL;
+            virtual void d23() DECOMP_LOCAL_VIRTUAL;
+            virtual void d24() DECOMP_LOCAL_VIRTUAL;
+            virtual void d25() DECOMP_LOCAL_VIRTUAL;
+            virtual void d26() DECOMP_LOCAL_VIRTUAL;
+            virtual void d27() DECOMP_LOCAL_VIRTUAL;
+            virtual void d28() DECOMP_LOCAL_VIRTUAL;
+            virtual void d29() DECOMP_LOCAL_VIRTUAL;
+            virtual void d30() DECOMP_LOCAL_VIRTUAL;
             virtual int GetAsyncResult(int) DECOMP_LOCAL_VIRTUAL;
         };
         result = ((AsyncResultDevice*)device)->GetAsyncResult((int)file->handle);
@@ -272,14 +376,36 @@ int FileIO_PollAsyncTransferResult(FileHandle* file, int* completionState, int* 
     {
         void* device = file->device;
         struct AsyncPollDevice {
-            virtual void d0() DECOMP_LOCAL_VIRTUAL;virtual void d1() DECOMP_LOCAL_VIRTUAL;virtual void d2() DECOMP_LOCAL_VIRTUAL;virtual void d3() DECOMP_LOCAL_VIRTUAL;
-            virtual void d4() DECOMP_LOCAL_VIRTUAL;virtual void d5() DECOMP_LOCAL_VIRTUAL;virtual void d6() DECOMP_LOCAL_VIRTUAL;virtual void d7() DECOMP_LOCAL_VIRTUAL;
-            virtual void d8() DECOMP_LOCAL_VIRTUAL;virtual void d9() DECOMP_LOCAL_VIRTUAL;virtual void d10() DECOMP_LOCAL_VIRTUAL;virtual void d11() DECOMP_LOCAL_VIRTUAL;
-            virtual void d12() DECOMP_LOCAL_VIRTUAL;virtual void d13() DECOMP_LOCAL_VIRTUAL;virtual void d14() DECOMP_LOCAL_VIRTUAL;virtual void d15() DECOMP_LOCAL_VIRTUAL;
-            virtual void d16() DECOMP_LOCAL_VIRTUAL;virtual void d17() DECOMP_LOCAL_VIRTUAL;virtual void d18() DECOMP_LOCAL_VIRTUAL;virtual void d19() DECOMP_LOCAL_VIRTUAL;
-            virtual void d20() DECOMP_LOCAL_VIRTUAL;virtual void d21() DECOMP_LOCAL_VIRTUAL;virtual void d22() DECOMP_LOCAL_VIRTUAL;virtual void d23() DECOMP_LOCAL_VIRTUAL;
-            virtual void d24() DECOMP_LOCAL_VIRTUAL;virtual void d25() DECOMP_LOCAL_VIRTUAL;virtual void d26() DECOMP_LOCAL_VIRTUAL;virtual void d27() DECOMP_LOCAL_VIRTUAL;
-            virtual void d28() DECOMP_LOCAL_VIRTUAL;virtual void d29() DECOMP_LOCAL_VIRTUAL;
+            virtual void d0() DECOMP_LOCAL_VIRTUAL;
+            virtual void d1() DECOMP_LOCAL_VIRTUAL;
+            virtual void d2() DECOMP_LOCAL_VIRTUAL;
+            virtual void d3() DECOMP_LOCAL_VIRTUAL;
+            virtual void d4() DECOMP_LOCAL_VIRTUAL;
+            virtual void d5() DECOMP_LOCAL_VIRTUAL;
+            virtual void d6() DECOMP_LOCAL_VIRTUAL;
+            virtual void d7() DECOMP_LOCAL_VIRTUAL;
+            virtual void d8() DECOMP_LOCAL_VIRTUAL;
+            virtual void d9() DECOMP_LOCAL_VIRTUAL;
+            virtual void d10() DECOMP_LOCAL_VIRTUAL;
+            virtual void d11() DECOMP_LOCAL_VIRTUAL;
+            virtual void d12() DECOMP_LOCAL_VIRTUAL;
+            virtual void d13() DECOMP_LOCAL_VIRTUAL;
+            virtual void d14() DECOMP_LOCAL_VIRTUAL;
+            virtual void d15() DECOMP_LOCAL_VIRTUAL;
+            virtual void d16() DECOMP_LOCAL_VIRTUAL;
+            virtual void d17() DECOMP_LOCAL_VIRTUAL;
+            virtual void d18() DECOMP_LOCAL_VIRTUAL;
+            virtual void d19() DECOMP_LOCAL_VIRTUAL;
+            virtual void d20() DECOMP_LOCAL_VIRTUAL;
+            virtual void d21() DECOMP_LOCAL_VIRTUAL;
+            virtual void d22() DECOMP_LOCAL_VIRTUAL;
+            virtual void d23() DECOMP_LOCAL_VIRTUAL;
+            virtual void d24() DECOMP_LOCAL_VIRTUAL;
+            virtual void d25() DECOMP_LOCAL_VIRTUAL;
+            virtual void d26() DECOMP_LOCAL_VIRTUAL;
+            virtual void d27() DECOMP_LOCAL_VIRTUAL;
+            virtual void d28() DECOMP_LOCAL_VIRTUAL;
+            virtual void d29() DECOMP_LOCAL_VIRTUAL;
             virtual int PollRead(int, int*) DECOMP_LOCAL_VIRTUAL;
         };
         result = ((AsyncPollDevice*)device)->PollRead((int)file->handle, completionState);
@@ -328,7 +454,8 @@ void* FileIO_GetDeviceTransferAlignment(void* path) {
         }
         void* child = ((FileRegistryNode*)node)->right;
         if (child != 0) {
-            while (((FileRegistryNode*)child)->left != 0) child = ((FileRegistryNode*)child)->left;
+            while (((FileRegistryNode*)child)->left != 0)
+                child = ((FileRegistryNode*)child)->left;
             node = child;
         } else {
             while (1) {
@@ -389,7 +516,8 @@ void* FileIO_DeleteFile(void* path, void* callback, void* callbackArgument) {
         }
         void* child = ((FileRegistryNode*)node)->right;
         if (child != 0) {
-            while (((FileRegistryNode*)child)->left != 0) child = ((FileRegistryNode*)child)->left;
+            while (((FileRegistryNode*)child)->left != 0)
+                child = ((FileRegistryNode*)child)->left;
             node = child;
         } else {
             while (1) {
@@ -420,7 +548,8 @@ void* FileIO_DeleteFile(void* path, void* callback, void* callbackArgument) {
 #pragma push
 #pragma use_lmw_stmw on
 // Query disk free-space values through the path's device, forwarding callback and user data.
-void* FileIO_QueryDiskFreeSpace(void* path, void* availableBytes, void* totalBytes, void* totalFreeBytes, void* callback, void* callbackArgument) {
+void* FileIO_QueryDiskFreeSpace(void* path, void* availableBytes, void* totalBytes, void* totalFreeBytes,
+                                void* callback, void* callbackArgument) {
     void* const mutex = (void*)&s_fileIoMutex;
     CAutoLockMutex guard((OSMutex*)mutex);
     void* const savedPath = path;
@@ -455,7 +584,8 @@ void* FileIO_QueryDiskFreeSpace(void* path, void* availableBytes, void* totalByt
         }
         void* child = ((FileRegistryNode*)node)->right;
         if (child != 0) {
-            while (((FileRegistryNode*)child)->left != 0) child = ((FileRegistryNode*)child)->left;
+            while (((FileRegistryNode*)child)->left != 0)
+                child = ((FileRegistryNode*)child)->left;
             node = child;
         } else {
             while (1) {
@@ -473,7 +603,9 @@ void* FileIO_QueryDiskFreeSpace(void* path, void* availableBytes, void* totalByt
     if (node != 0) {
         void* obj = node;
         typedef void* (*Fn)(void*, void*, void*, void*, void*, void*, void*);
-        void* r = ((Fn)(*(void***)obj)[kDeviceDiskFreeSpaceSlot])(obj, resolvedPath, savedAvailableBytes, savedTotalBytes, savedTotalFreeBytes, savedCallback, savedCallbackArgument);
+        void* r =
+            ((Fn)(*(void***)obj)[kDeviceDiskFreeSpaceSlot])(obj, resolvedPath, savedAvailableBytes, savedTotalBytes,
+                                                            savedTotalFreeBytes, savedCallback, savedCallbackArgument);
         return r;
     } else {
         return 0;
@@ -515,7 +647,8 @@ void* FileIO_MoveFile(void* sourcePath, void* destinationPath) {
         }
         void* child = ((FileRegistryNode*)node)->right;
         if (child != 0) {
-            while (((FileRegistryNode*)child)->left != 0) child = ((FileRegistryNode*)child)->left;
+            while (((FileRegistryNode*)child)->left != 0)
+                child = ((FileRegistryNode*)child)->left;
             node = child;
         } else {
             while (1) {
@@ -543,10 +676,12 @@ void* FileIO_MoveFile(void* sourcePath, void* destinationPath) {
 #pragma push
 #pragma use_lmw_stmw on
 // Move resolved paths through the destination device with progress data and backend-specific options.
-void* FileIO_MoveFileWithCallback(void* sourcePath, void* destinationPath, int progressArgument, int backendOption1, int backendOption2) {
+void* FileIO_MoveFileWithCallback(void* sourcePath, void* destinationPath, int progressArgument, int backendOption1,
+                                  int backendOption2) {
     volatile void* lockMutex = &s_fileIoMutex;
     volatile void* lockVtable = (void*)s_fileIoAutoLockMutexVTable;
-    (void)lockMutex; (void)lockVtable;
+    (void)lockMutex;
+    (void)lockVtable;
     OSLockMutex(&s_fileIoMutex);
     char resolvedSource[kPathCapacity];
     char resolvedDestination[kPathCapacity];
@@ -576,7 +711,8 @@ void* FileIO_MoveFileWithCallback(void* sourcePath, void* destinationPath, int p
         }
         void* child = ((FileRegistryNode*)node)->right;
         if (child != 0) {
-            while (((FileRegistryNode*)child)->left != 0) child = ((FileRegistryNode*)child)->left;
+            while (((FileRegistryNode*)child)->left != 0)
+                child = ((FileRegistryNode*)child)->left;
             node = child;
         } else {
             while (1) {
@@ -594,7 +730,8 @@ void* FileIO_MoveFileWithCallback(void* sourcePath, void* destinationPath, int p
     if (node != 0) {
         void* obj = node;
         typedef void* (*Fn)(void*, void*, void*, int, int, int);
-        void* r = ((Fn)(*(void***)obj)[kDeviceMoveWithProgressSlot])(obj, resolvedSource, resolvedDestination, progressArgument, backendOption1, backendOption2);
+        void* r = ((Fn)(*(void***)obj)[kDeviceMoveWithProgressSlot])(obj, resolvedSource, resolvedDestination,
+                                                                     progressArgument, backendOption1, backendOption2);
         OSUnlockMutex(&s_fileIoMutex);
         return r;
     } else {
@@ -623,11 +760,13 @@ void* FileIO_MoveFileWithCallback(void* sourcePath, void* destinationPath, int p
 // the backend reports completion, with no stale readCopyDestination installed.
 // CloseFile/CloseHandle free the wrapper, not this allocation: finish/release
 // the transfer before closing. outWrittenBytes is untouched on all async paths.
-void* FileIO_WriteFile(FileHandle* file, void* source, int byteCount, int* outWrittenBytes, void* context, void* asyncOption1, void* asyncOption2) {
+void* FileIO_WriteFile(FileHandle* file, void* source, int byteCount, int* outWrittenBytes, void* context,
+                       void* asyncOption1, void* asyncOption2) {
     // Phase 1: acquire the lock manually and prepare borrowed/owned transfer storage.
     volatile void* sp14 = (void*)s_fileIoAutoLockMutexVTable;
     volatile void* sp10 = &s_fileIoMutex;
-    (void)sp14; (void)sp10;
+    (void)sp14;
+    (void)sp10;
     OSLockMutex(&s_fileIoMutex);
     if (file == (FileHandle*)-1) {
         File_SetLastError(kInvalidFileHandleError);
@@ -653,7 +792,8 @@ void* FileIO_WriteFile(FileHandle* file, void* source, int byteCount, int* outWr
     if (file->flags & kFileAsync) {
         void* device = file->device;
         typedef void* (*AsyncWriteFunction)(void*, void*, void*, unsigned int, void*, void*, void*);
-        void* deviceResult = ((AsyncWriteFunction)(*(void***)device)[kDeviceAsyncWriteSlot])(device, file->handle, file->transferBuffer, transferBytes, context, asyncOption1, asyncOption2);
+        void* deviceResult = ((AsyncWriteFunction)(*(void***)device)[kDeviceAsyncWriteSlot])(
+            device, file->handle, file->transferBuffer, transferBytes, context, asyncOption1, asyncOption2);
         void* result = deviceResult;
         OSUnlockMutex(&s_fileIoMutex);
         return result;
@@ -661,7 +801,8 @@ void* FileIO_WriteFile(FileHandle* file, void* source, int byteCount, int* outWr
         int writtenBytes = 0;
         void* device = file->device;
         typedef void* (*WriteFunction)(void*, void*, void*, unsigned int, void*);
-        void* deviceResult = ((WriteFunction)(*(void***)device)[kDeviceWriteSlot])(device, file->handle, file->transferBuffer, transferBytes, &writtenBytes);
+        void* deviceResult = ((WriteFunction)(*(void***)device)[kDeviceWriteSlot])(
+            device, file->handle, file->transferBuffer, transferBytes, &writtenBytes);
         void* result = deviceResult;
         if (!(file->flags & kFileDirectBuffer)) {
             g_fileIoFreeCallback(file->transferBuffer);
@@ -698,7 +839,8 @@ typedef char FileIoPath_separatorOffset[((int)&((FileIoPathStrings*)0)->separato
 // leaves devicePrefix unchanged and relative paths append to normalizedPath.
 // At root, a slash-terminated '..' preserves the remaining suffix literally;
 // keep that branch when changing normalization rather than imposing new rules.
-int FileIO_SplitDeviceAndNormalizePath(const char* path, char* devicePrefix, int prefixCapacity, char* normalizedPath, int pathCapacity) {
+int FileIO_SplitDeviceAndNormalizePath(const char* path, char* devicePrefix, int prefixCapacity, char* normalizedPath,
+                                       int pathCapacity) {
     OSLockMutex(&s_fileIoMutex);
     const char* suffix = path;
     char* colon = strchr(suffix, ':');
@@ -754,7 +896,8 @@ int FileIO_SplitDeviceAndNormalizePath(const char* path, char* devicePrefix, int
             cursor += remainingBytes;
         }
         // .L_80416DE4
-        if (component[0] == 0) continue;
+        if (component[0] == 0)
+            continue;
         if (strcmp(component, fileIoPathStrings.currentDirectory) != 0) {
             if (strcmp(component, fileIoPathStrings.parentDirectory) == 0) {
                 char* lastSlash = strrchr(normalizedPath, '/');
@@ -797,7 +940,8 @@ void* FileIO_SetCurrentDirectory(const char* path) {
     CAutoLockMutex guard(&s_fileIoMutex);
     char normalizedPath[kPathCapacity];
     memset(normalizedPath, 0, kPathCapacity);
-    int normalized = FileIO_SplitDeviceAndNormalizePath(path, ((FileIoGlobalStorage*)&s_fileIoMutex)->defaultDevicePath, kPathCapacity, normalizedPath, kPathCapacity);
+    int normalized = FileIO_SplitDeviceAndNormalizePath(path, ((FileIoGlobalStorage*)&s_fileIoMutex)->defaultDevicePath,
+                                                        kPathCapacity, normalizedPath, kPathCapacity);
     if (normalized == 0) {
         return 0;
     }
@@ -832,7 +976,8 @@ void* FileIO_SetCurrentDirectory(const char* path) {
         }
         void* child = ((FileRegistryNode*)node)->right;
         if (child != 0) {
-            while (((FileRegistryNode*)child)->left != 0) child = ((FileRegistryNode*)child)->left;
+            while (((FileRegistryNode*)child)->left != 0)
+                child = ((FileRegistryNode*)child)->left;
             node = child;
         } else {
             while (1) {
@@ -869,7 +1014,8 @@ void* FileIO_SetCurrentDirectory(const char* path) {
 // Direct reads use caller storage; alignment/lifetime are the caller/backend contract.
 // Sync status 1 copies exactly byteCount, even if readBytes reports fewer bytes;
 // outReadBytes is optional. Async returns backend status without setting that output.
-void* FileIO_ReadFile(FileHandle* file, void* destination, int byteCount, int* outReadBytes, void* context, void* asyncOption1, void* asyncOption2, void* asyncOption3) {
+void* FileIO_ReadFile(FileHandle* file, void* destination, int byteCount, int* outReadBytes, void* context,
+                      void* asyncOption1, void* asyncOption2, void* asyncOption3) {
     // Phase 1: initialize transfer ownership. transferSizeWord is an integer byte
     // count in the legacy pointer representation; it never holds the result now.
     CAutoLockMutex guard(&s_fileIoMutex);
@@ -888,12 +1034,30 @@ void* FileIO_ReadFile(FileHandle* file, void* destination, int byteCount, int* o
         file->requestedBytes = (unsigned int)byteCount;
         void* device = file->device;
         struct TransferAlignmentDevice {
-            virtual void v0() DECOMP_LOCAL_VIRTUAL;virtual void v1() DECOMP_LOCAL_VIRTUAL;virtual void v2() DECOMP_LOCAL_VIRTUAL;virtual void v3() DECOMP_LOCAL_VIRTUAL;
-            virtual void v4() DECOMP_LOCAL_VIRTUAL;virtual void v5() DECOMP_LOCAL_VIRTUAL;virtual void v6() DECOMP_LOCAL_VIRTUAL;virtual void v7() DECOMP_LOCAL_VIRTUAL;
-            virtual void v8() DECOMP_LOCAL_VIRTUAL;virtual void v9() DECOMP_LOCAL_VIRTUAL;virtual void v10() DECOMP_LOCAL_VIRTUAL;virtual void v11() DECOMP_LOCAL_VIRTUAL;
-            virtual void v12() DECOMP_LOCAL_VIRTUAL;virtual void v13() DECOMP_LOCAL_VIRTUAL;virtual void v14() DECOMP_LOCAL_VIRTUAL;virtual void v15() DECOMP_LOCAL_VIRTUAL;
-            virtual void v16() DECOMP_LOCAL_VIRTUAL;virtual void v17() DECOMP_LOCAL_VIRTUAL;virtual void v18() DECOMP_LOCAL_VIRTUAL;virtual void v19() DECOMP_LOCAL_VIRTUAL;
-            virtual void v20() DECOMP_LOCAL_VIRTUAL;virtual void v21() DECOMP_LOCAL_VIRTUAL;virtual void v22() DECOMP_LOCAL_VIRTUAL;virtual void v23() DECOMP_LOCAL_VIRTUAL;
+            virtual void v0() DECOMP_LOCAL_VIRTUAL;
+            virtual void v1() DECOMP_LOCAL_VIRTUAL;
+            virtual void v2() DECOMP_LOCAL_VIRTUAL;
+            virtual void v3() DECOMP_LOCAL_VIRTUAL;
+            virtual void v4() DECOMP_LOCAL_VIRTUAL;
+            virtual void v5() DECOMP_LOCAL_VIRTUAL;
+            virtual void v6() DECOMP_LOCAL_VIRTUAL;
+            virtual void v7() DECOMP_LOCAL_VIRTUAL;
+            virtual void v8() DECOMP_LOCAL_VIRTUAL;
+            virtual void v9() DECOMP_LOCAL_VIRTUAL;
+            virtual void v10() DECOMP_LOCAL_VIRTUAL;
+            virtual void v11() DECOMP_LOCAL_VIRTUAL;
+            virtual void v12() DECOMP_LOCAL_VIRTUAL;
+            virtual void v13() DECOMP_LOCAL_VIRTUAL;
+            virtual void v14() DECOMP_LOCAL_VIRTUAL;
+            virtual void v15() DECOMP_LOCAL_VIRTUAL;
+            virtual void v16() DECOMP_LOCAL_VIRTUAL;
+            virtual void v17() DECOMP_LOCAL_VIRTUAL;
+            virtual void v18() DECOMP_LOCAL_VIRTUAL;
+            virtual void v19() DECOMP_LOCAL_VIRTUAL;
+            virtual void v20() DECOMP_LOCAL_VIRTUAL;
+            virtual void v21() DECOMP_LOCAL_VIRTUAL;
+            virtual void v22() DECOMP_LOCAL_VIRTUAL;
+            virtual void v23() DECOMP_LOCAL_VIRTUAL;
             virtual unsigned int GetTransferAlignment() DECOMP_LOCAL_VIRTUAL;
         };
         unsigned int alignment = ((TransferAlignmentDevice*)device)->GetTransferAlignment();
@@ -913,25 +1077,50 @@ void* FileIO_ReadFile(FileHandle* file, void* destination, int byteCount, int* o
         }
         void* device = file->device;
         struct AsyncReadDevice {
-            virtual void v0() DECOMP_LOCAL_VIRTUAL;virtual void v1() DECOMP_LOCAL_VIRTUAL;virtual void v2() DECOMP_LOCAL_VIRTUAL;virtual void v3() DECOMP_LOCAL_VIRTUAL;
-            virtual void v4() DECOMP_LOCAL_VIRTUAL;virtual void v5() DECOMP_LOCAL_VIRTUAL;virtual void v6() DECOMP_LOCAL_VIRTUAL;virtual void v7() DECOMP_LOCAL_VIRTUAL;
-            virtual void v8() DECOMP_LOCAL_VIRTUAL;virtual void v9() DECOMP_LOCAL_VIRTUAL;virtual void v10() DECOMP_LOCAL_VIRTUAL;virtual void v11() DECOMP_LOCAL_VIRTUAL;
-            virtual void v12() DECOMP_LOCAL_VIRTUAL;virtual void v13() DECOMP_LOCAL_VIRTUAL;virtual void v14() DECOMP_LOCAL_VIRTUAL;virtual void v15() DECOMP_LOCAL_VIRTUAL;
-            virtual void v16() DECOMP_LOCAL_VIRTUAL;virtual void v17() DECOMP_LOCAL_VIRTUAL;virtual void v18() DECOMP_LOCAL_VIRTUAL;virtual void v19() DECOMP_LOCAL_VIRTUAL;
-            virtual void v20() DECOMP_LOCAL_VIRTUAL;virtual void v21() DECOMP_LOCAL_VIRTUAL;virtual void v22() DECOMP_LOCAL_VIRTUAL;virtual void v23() DECOMP_LOCAL_VIRTUAL;
-            virtual void v24() DECOMP_LOCAL_VIRTUAL;virtual void v25() DECOMP_LOCAL_VIRTUAL;
+            virtual void v0() DECOMP_LOCAL_VIRTUAL;
+            virtual void v1() DECOMP_LOCAL_VIRTUAL;
+            virtual void v2() DECOMP_LOCAL_VIRTUAL;
+            virtual void v3() DECOMP_LOCAL_VIRTUAL;
+            virtual void v4() DECOMP_LOCAL_VIRTUAL;
+            virtual void v5() DECOMP_LOCAL_VIRTUAL;
+            virtual void v6() DECOMP_LOCAL_VIRTUAL;
+            virtual void v7() DECOMP_LOCAL_VIRTUAL;
+            virtual void v8() DECOMP_LOCAL_VIRTUAL;
+            virtual void v9() DECOMP_LOCAL_VIRTUAL;
+            virtual void v10() DECOMP_LOCAL_VIRTUAL;
+            virtual void v11() DECOMP_LOCAL_VIRTUAL;
+            virtual void v12() DECOMP_LOCAL_VIRTUAL;
+            virtual void v13() DECOMP_LOCAL_VIRTUAL;
+            virtual void v14() DECOMP_LOCAL_VIRTUAL;
+            virtual void v15() DECOMP_LOCAL_VIRTUAL;
+            virtual void v16() DECOMP_LOCAL_VIRTUAL;
+            virtual void v17() DECOMP_LOCAL_VIRTUAL;
+            virtual void v18() DECOMP_LOCAL_VIRTUAL;
+            virtual void v19() DECOMP_LOCAL_VIRTUAL;
+            virtual void v20() DECOMP_LOCAL_VIRTUAL;
+            virtual void v21() DECOMP_LOCAL_VIRTUAL;
+            virtual void v22() DECOMP_LOCAL_VIRTUAL;
+            virtual void v23() DECOMP_LOCAL_VIRTUAL;
+            virtual void v24() DECOMP_LOCAL_VIRTUAL;
+            virtual void v25() DECOMP_LOCAL_VIRTUAL;
             virtual void* ReadAsync(void*, void*, unsigned int, void*, void*, void*, void*) DECOMP_LOCAL_VIRTUAL;
         };
-        void* deviceResult = ((AsyncReadDevice*)device)->ReadAsync(file->handle, file->transferBuffer, transferBytes, context, asyncOption1, asyncOption2, asyncOption3);
+        void* deviceResult = ((AsyncReadDevice*)device)
+                                 ->ReadAsync(file->handle, file->transferBuffer, transferBytes, context, asyncOption1,
+                                             asyncOption2, asyncOption3);
         return deviceResult;
     } else {
         int readBytes = 0;
         void* device = file->device;
         struct ReadDevice {
-            virtual void v0() DECOMP_LOCAL_VIRTUAL;virtual void v1() DECOMP_LOCAL_VIRTUAL;virtual void v2() DECOMP_LOCAL_VIRTUAL;virtual void v3() DECOMP_LOCAL_VIRTUAL;
+            virtual void v0() DECOMP_LOCAL_VIRTUAL;
+            virtual void v1() DECOMP_LOCAL_VIRTUAL;
+            virtual void v2() DECOMP_LOCAL_VIRTUAL;
+            virtual void v3() DECOMP_LOCAL_VIRTUAL;
             virtual void* Read(void*, void*, unsigned int, int*, void*) DECOMP_LOCAL_VIRTUAL;
         };
-        void* deviceResult = ((ReadDevice*)device)->Read(file->handle, file->transferBuffer, transferBytes, &readBytes, context);
+        void* deviceResult =
+            ((ReadDevice*)device)->Read(file->handle, file->transferBuffer, transferBytes, &readBytes, context);
         // Phase 3 (sync only): copy successful data, release temporary storage
         // on either status, clear ownership fields and publish the count.
         // Async ownership instead remains in file for completion handling.

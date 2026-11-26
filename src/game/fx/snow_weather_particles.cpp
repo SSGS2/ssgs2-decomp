@@ -1,7 +1,11 @@
+// Snow weather particles (CSnow): the snow particle list, its motion and wrapping in the camera
+// volume, and the camera-facing textured quads that draw it.
+// The spin indicator's HUD setup, reset and cleanup also live in this file.
+
 #include <decomp/static_init.h>
-// Snow weather: allocation (CSnow_RebuildParticleBuffers), motion (CSnow_UpdateParticles), and
-// camera-facing textured quads (CSnow_Draw). CSnow.h/SnowParticle.h define storage;
-// CSnow_Ctor/dtor in pvsfxbox_sky_and_wind_particles.cpp own the lifetime. The CSnow vtable in
+// Snow weather: allocation (CSnow::RebuildParticleBuffers), motion (CSnow::UpdateParticles), and
+// camera-facing textured quads (CSnow::Draw). CSnow.h/SnowParticle.h define storage;
+// CSnow::Init/dtor in pvsfxbox_sky_and_wind_particles.cpp own the lifetime. The CSnow vtable in
 // phase1_class_tables.cpp selects these operations through the weather interface.
 // Mod map: density=requestedCount/2 below; size=quadBasisScaleA/B; fall speed=
 // kFloat_34_295296_Snow * fallSpeedMultiplier; sway=kFloat_1_5707964_Snow;
@@ -14,14 +18,11 @@
 #define AsWView(p) ((WView*)(p))
 #include "game/types.h"
 #include "game/spin.h"
-// Translation unit 0x801FA2D0-0x801FB14C (9 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
 #include "sdk_protos.h"
 #include "classes/CSnow.h"
 #include "classes/SnowParticle.h"
 #include <decomp/cw_bitfields.h>
-
-#define AsCSnow(p) ((CSnow*)(p))
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CWind.h"
 
 extern "C" {
 
@@ -29,7 +30,7 @@ extern "C" {
 //   kFloat_6_2831855 / kFloat_6_2831855_Snow = 2*pi; kFloat_67_Spin = spin display centre X; kFloat_4_Spin = offset added to the HUD baseline Y;
 //   kFloat_80_Snow / kFloat_neg80_Snow = half-extent of the snow volume (and particle spawn range); kFloat_160_Snow = volume depth and wrap step;
 //   kFloat_34_295296_Snow = base fall speed (world units/second); kFloat_1_5707964_Snow (pi/2) = sway radians/second; kFloat_99999_Snow = last argument of
-//   CWind_GetWindVectorAtPoint (meaning unresolved); kFloat_0_*/kFloat_1_CourseBox = plain 0.0 / 1.0.
+//   CWind::GetWindVectorAtPoint (meaning unresolved); kFloat_0_*/kFloat_1_CourseBox = plain 0.0 / 1.0.
 extern float kFloat_6_2831855;
 extern float s_twoPi_SpinSnow;
 extern float kFloat_4_Spin;
@@ -56,7 +57,6 @@ extern const float kFloat_0_05_ScreenOverlay;
 void* __ct__18NativeBase80201D18Fv(void*);
 void* IActor_AddSkipFlags(void*, int);
 void Sound_StopByAlias(int, char*);
-void __dt__18NativeBase80201D18Fv(void*, int);
 void Vec3_Scale(float*, char*, float);
 void Vec3_Add(float*, float*, float*);
 void Vector_CopyComponents(float*, float*);
@@ -75,7 +75,6 @@ void Engine_SetIndexBuffer(void*, int);
 void Engine_SetTextureStageResource(int, int);
 void Engine_SetTexturePalette(int, int);
 void Engine_DrawIndexedPrimitive(int, int, int, int, int, int);
-void __dl__FPv(void*);
 void __dla__FPv(void*);
 void* __nwa__FUl(int);
 float Random_RangeFloat(int, float, float);
@@ -87,13 +86,27 @@ void IndexBuffer_GetOffsetPtr(void*, int, int, void*, int);
 void IndexBuffer_Flush(void*);
 void CubeResourceStorage_dtor(void*, int);
 
-struct Fn801FAAF4Vertex { float v[5]; };
-struct Fn801FAAF4Pair { int a, b; };
-struct Fn801FAAF4Block15 { Fn801FAAF4Pair p[15]; };
-struct Fn801FAAF4Block6 { Fn801FAAF4Pair p[6]; };
-struct Fn801FAAF4Block5 { Fn801FAAF4Pair p[5]; };
-struct Fn801FAAF4Table { Fn801FAAF4Block15 a; Fn801FAAF4Block6 b; Fn801FAAF4Block5 c; };
-extern Fn801FAAF4Table snowRenderStateLists;
+struct SnowQuadVertexView {
+    float v[5];
+};
+struct StateValuePair {
+    int a, b;
+};
+struct Fn801FAAF4Block15 {
+    StateValuePair p[15];
+};
+struct TextureStageStateBlock {
+    StateValuePair p[6];
+};
+struct TextureStageParameterBlock {
+    StateValuePair p[5];
+};
+struct SnowRenderStateTable {
+    Fn801FAAF4Block15 a;
+    TextureStageStateBlock b;
+    TextureStageParameterBlock c;
+};
+extern SnowRenderStateTable snowRenderStateLists;
 
 extern COption* g_option;
 
@@ -101,23 +114,44 @@ typedef Vec3f Vec3;
 
 // Buffer handles are retained references: decrement the 16-bit count and destroy at zero.
 // particles is separately array-owned; mapping a buffer borrows its CPU write pointer.
-struct Fn801FA2D0Ref { CW_BITS2( unsigned int count : 16, unsigned int rest : 16) };
+struct BufferRef {
+    CW_BITS2(unsigned int count : 16, unsigned int rest : 16)
+};
 // Camera_GetRenderState starts 0x20 bytes before the saved view matrix.
-struct SnowCameraTransforms { char header[0x20]; float view[16]; float projection[16]; };
-struct SnowQuadVertex { float position[3]; float uv[2]; };
+struct SnowCameraTransforms {
+    char header[0x20];
+    float view[16];
+    float projection[16];
+};
+struct SnowQuadVertex {
+    float position[3];
+    float uv[2];
+};
 typedef char SnowQuadVertex_stride[(sizeof(SnowQuadVertex) == 0x14) ? 1 : -1];
 typedef char SnowCameraTransforms_view_offset[(IFF_OFFSET(SnowCameraTransforms, view) == 0x20) ? 1 : -1];
 typedef char SnowCameraTransforms_projection_offset[(IFF_OFFSET(SnowCameraTransforms, projection) == 0x60) ? 1 : -1];
-enum { kSnowQuadVertexCount = 4, kSnowQuadIndexBytes = 8,
-    kSnowVertexFormat = 0x110001, kSnowOverlayVertexFormat = 0xF005,
-    kSnowOverlayAlpha = 0x80, kSnowOverlayGray = 0x3C, kActorSkipSnowSpin = 0x400,
-    kSnowOverlayVertexCount = 4, kSnowOverlayVertexBytes = 0x10,
-    kSnowRenderStateCount = 15, kSnowStageStateCount = 6, kSnowStageParameterCount = 5,
-    kSnowQuadPrimitive = 0x80, kSnowViewTransform = 0, kSnowProjectionTransform = 1,
-    kSnowWorldTransform = 2, kSnowTextureTransform = 0xB };
+enum {
+    kSnowQuadVertexCount = 4,
+    kSnowQuadIndexBytes = 8,
+    kSnowVertexFormat = 0x110001,
+    kSnowOverlayVertexFormat = 0xF005,
+    kSnowOverlayAlpha = 0x80,
+    kSnowOverlayGray = 0x3C,
+    kActorSkipSnowSpin = 0x400,
+    kSnowOverlayVertexCount = 4,
+    kSnowOverlayVertexBytes = 0x10,
+    kSnowRenderStateCount = 15,
+    kSnowStageStateCount = 6,
+    kSnowStageParameterCount = 5,
+    kSnowQuadPrimitive = 0x80,
+    kSnowViewTransform = 0,
+    kSnowProjectionTransform = 1,
+    kSnowWorldTransform = 2,
+    kSnowTextureTransform = 0xB
+};
 // Borrow a particle at a byte offset; callers advance by sizeof(SnowParticle).
 // Keep this single-evaluation cast macro: the tested inline function changes MWCC's
-// instruction scheduling and exception tables in CSnow_UpdateParticles (byte identity required).
+// instruction scheduling and exception tables in CSnow::UpdateParticles (byte identity required).
 #define SnowParticleAt(particles, byteOffset) ((SnowParticle*)((char*)(particles) + (byteOffset)))
 
 struct SnowBufferFields {
@@ -126,9 +160,9 @@ struct SnowBufferFields {
     char particleRenderSetup[0x20];
     int count;
     char bufferPadding[4];
-    Fn801FA2D0Ref* vertices;
-    Fn801FA2D0Ref* indices;
-    Fn801FA2D0Ref* overlayVertexBuffer;
+    BufferRef* vertices;
+    BufferRef* indices;
+    BufferRef* overlayVertexBuffer;
 };
 
 // Allocate half the requested particle count, seed snow positions, and build quad/index/overlay buffers.
@@ -138,7 +172,8 @@ struct SnowBufferFields {
 // down. This is a representation bound, not a promise that memory/GPU allocation
 // succeeds at that density. No runtime clamp exists; negative values are invalid.
 // Replaces owned particles and retained buffers. No allocation-failure recovery is performed here.
-void CSnow_RebuildParticleBuffers(SnowBufferFields* self, int requestedCount) {
+void CSnow::RebuildParticleBuffers(int requestedCount) {
+    SnowBufferFields* self = (SnowBufferFields*)this;
     int particleByteOffset;
     int quadByteOffset;
     int i;
@@ -150,7 +185,7 @@ void CSnow_RebuildParticleBuffers(SnowBufferFields* self, int requestedCount) {
     int zeroUv;
     int oneUv;
     int vertexBytes;
-    Fn801FA2D0Ref* ref;
+    BufferRef* ref;
     int indexBytes;
     int indexByteOffset;
     int secondVertex;
@@ -174,28 +209,38 @@ void CSnow_RebuildParticleBuffers(SnowBufferFields* self, int requestedCount) {
         angle = Random_RangeFloat(-1, kFloat_0_Snow, kFloat_6_2831855_Snow);
         SnowParticleAt(self->particles, particleByteOffset)->directionSin = Math_SinApprox(angle);
         SnowParticleAt(self->particles, particleByteOffset)->directionCos = Math_CosApprox(angle);
-        SnowParticleAt(self->particles, particleByteOffset)->swayPhase = Random_RangeFloat(-1, kFloat_0_Snow, kFloat_6_2831855_Snow);
-        SnowParticleAt(self->particles, particleByteOffset)->center[0] = *(float*)(s_cameraTransform + IFF_OFFSET(CameraTransform800D, position)) + Random_RangeFloat(-1, kFloat_neg80_Snow, kFloat_80_Snow);
-        SnowParticleAt(self->particles, particleByteOffset)->center[1] = *(float*)(s_cameraTransform + IFF_OFFSET(CameraTransform800D, position) + sizeof(float)) + Random_RangeFloat(-1, kFloat_neg80_Snow, kFloat_80_Snow);
-        SnowParticleAt(self->particles, particleByteOffset)->center[2] = *(float*)(s_cameraTransform + IFF_OFFSET(CameraTransform800D, position) + 2 * sizeof(float)) + Random_RangeFloat(-1, kFloat_neg80_Snow, kFloat_80_Snow);
-        Vector_CopyComponents(SnowParticleAt(self->particles, particleByteOffset)->position, SnowParticleAt(self->particles, particleByteOffset)->center);
+        SnowParticleAt(self->particles, particleByteOffset)->swayPhase =
+            Random_RangeFloat(-1, kFloat_0_Snow, kFloat_6_2831855_Snow);
+        SnowParticleAt(self->particles, particleByteOffset)->center[0] =
+            *(float*)(s_cameraTransform + IFF_OFFSET(CameraTransform800D, position)) +
+            Random_RangeFloat(-1, kFloat_neg80_Snow, kFloat_80_Snow);
+        SnowParticleAt(self->particles, particleByteOffset)->center[1] =
+            *(float*)(s_cameraTransform + IFF_OFFSET(CameraTransform800D, position) + sizeof(float)) +
+            Random_RangeFloat(-1, kFloat_neg80_Snow, kFloat_80_Snow);
+        SnowParticleAt(self->particles, particleByteOffset)->center[2] =
+            *(float*)(s_cameraTransform + IFF_OFFSET(CameraTransform800D, position) + 2 * sizeof(float)) +
+            Random_RangeFloat(-1, kFloat_neg80_Snow, kFloat_80_Snow);
+        Vector_CopyComponents(SnowParticleAt(self->particles, particleByteOffset)->position,
+                              SnowParticleAt(self->particles, particleByteOffset)->center);
         // The trailing particle byte is initialized here but has no established consumer.
         SnowParticleAt(self->particles, particleByteOffset)->unk_24 = 1;
     }
 
     // Phase 2: allocate four XYZ/UV vertices per particle and seed their fixed UVs.
-    // Positions remain unwritten until CSnow_Draw expands the current particles.
+    // Positions remain unwritten until CSnow::Draw expands the current particles.
     vertexBytes = self->count * (kSnowQuadVertexCount * (int)sizeof(SnowQuadVertex));
     ref = self->vertices;
     if (ref) {
-        if (--ref->count == 0) CubeResourceStorage_dtor(ref, 1);
+        if (--ref->count == 0)
+            CubeResourceStorage_dtor(ref, 1);
         self->vertices = 0;
     }
     VertexBuffer_Create(vertexBytes, 0, kSnowVertexFormat, 0, &self->vertices, 0);
     Resource_GetOffsetPtr(self->vertices, 0, 0, &mappedVertices, 0);
     zeroUv = 0;
     oneUv = 1;
-    for (j = 0, quadByteOffset = 0; j < self->count; ++j, quadByteOffset += kSnowQuadVertexCount * (int)sizeof(SnowQuadVertex)) {
+    for (j = 0, quadByteOffset = 0; j < self->count;
+         ++j, quadByteOffset += kSnowQuadVertexCount * (int)sizeof(SnowQuadVertex)) {
         *(float*)(mappedVertices + quadByteOffset + 0xC) = (float)zeroUv;
         *(float*)(mappedVertices + quadByteOffset + 0x10) = kFloat_1_CourseBox - (float)zeroUv;
         *(float*)(mappedVertices + quadByteOffset + 0x20) = (float)oneUv;
@@ -211,14 +256,16 @@ void CSnow_RebuildParticleBuffers(SnowBufferFields* self, int requestedCount) {
     ref = self->indices;
     indexBytes = self->count * kSnowQuadIndexBytes;
     if (ref) {
-        if (--ref->count == 0) CubeResourceStorage_dtor(ref, 1);
+        if (--ref->count == 0)
+            CubeResourceStorage_dtor(ref, 1);
         self->indices = 0;
     }
     IndexBuffer_Create(indexBytes, 0, 3, 0, &self->indices, 0, 0);
     IndexBuffer_GetOffsetPtr(self->indices, 0, 0, &mappedIndices, 0);
     {
 
-        for (k = 0, firstVertex = 0, indexByteOffset = 0; k < self->count; ++k, firstVertex += kSnowQuadVertexCount, indexByteOffset += kSnowQuadIndexBytes) {
+        for (k = 0, firstVertex = 0, indexByteOffset = 0; k < self->count;
+             ++k, firstVertex += kSnowQuadVertexCount, indexByteOffset += kSnowQuadIndexBytes) {
             secondVertex = firstVertex + 1;
             thirdVertex = secondVertex + 1;
             *(unsigned short*)(mappedIndices + indexByteOffset) = firstVertex;
@@ -232,10 +279,12 @@ void CSnow_RebuildParticleBuffers(SnowBufferFields* self, int requestedCount) {
     // Phase 4: build a separate viewport-sized XY/depth/RGBA overlay, in pixel coordinates.
     ref = self->overlayVertexBuffer;
     if (ref) {
-        if (--ref->count == 0) CubeResourceStorage_dtor(ref, 1);
+        if (--ref->count == 0)
+            CubeResourceStorage_dtor(ref, 1);
         self->overlayVertexBuffer = 0;
     }
-    VertexBuffer_Create(kSnowOverlayVertexCount * kSnowOverlayVertexBytes, 0, kSnowOverlayVertexFormat, 0, &self->overlayVertexBuffer, 0);
+    VertexBuffer_Create(kSnowOverlayVertexCount * kSnowOverlayVertexBytes, 0, kSnowOverlayVertexFormat, 0,
+                        &self->overlayVertexBuffer, 0);
     Resource_GetOffsetPtr(self->overlayVertexBuffer, 0, 0, &mappedOverlay, 0);
 
     for (c = 0, overlayByteOffset = 0; c < kSnowOverlayVertexCount; ++c, overlayByteOffset += kSnowOverlayVertexBytes) {
@@ -268,21 +317,41 @@ struct SnowDrawFields {
 
 // View render-target interface: slots 26/27 look up a texture and texture palette;
 // v0..v25 are placeholders that put them at the right vtable index.
-struct Fn801FAAF4Manager {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3();
-    virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7();
-    virtual void v8(); virtual void v9(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15();
-    virtual void v16(); virtual void v17(); virtual void v18(); virtual void v19();
-    virtual void v20(); virtual void v21(); virtual void v22(); virtual void v23();
-    virtual void v24(); virtual void v25();
+struct RenderTargetInterface {
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
     virtual int texture(void*);
     virtual int texturePalette(void*);
 };
 
 // Expand each snow particle to a camera-facing quad and submit the snow draw.
 // Borrows particle positions and maps the retained vertex buffer; initialization must have run first.
-void CSnow_Draw(SnowDrawFields* self) {
+void CSnow::Draw() {
+    SnowDrawFields* self = (SnowDrawFields*)this;
     char* stateTable = (char*)&snowRenderStateLists;
     void* vertices;
     Resource_GetOffsetPtr(self->buffer, 0, 0, &vertices, 0);
@@ -294,19 +363,23 @@ void CSnow_Draw(SnowDrawFields* self) {
     Vec3_Add(&oppositeCornerOffset.x, &edgeA.x, &edgeB.x);
 
     for (int i = 0; i < self->count; ++i) {
-        Vector_CopyComponents((float*)((char*)vertices + i * (kSnowQuadVertexCount * (int)sizeof(SnowQuadVertex))), (float*)((char*)self->particles + i * (int)sizeof(SnowParticle)));
-        Vec3_Add((float*)((Fn801FAAF4Vertex*)vertices + (i * kSnowQuadVertexCount + 1)), (float*)((char*)self->particles + i * (int)sizeof(SnowParticle)), &edgeA.x);
-        Vec3_Add((float*)((Fn801FAAF4Vertex*)vertices + (i * kSnowQuadVertexCount + 2)), (float*)((char*)self->particles + i * (int)sizeof(SnowParticle)), &edgeB.x);
-        Vec3_Add((float*)((Fn801FAAF4Vertex*)vertices + (i * kSnowQuadVertexCount + 3)), (float*)((char*)self->particles + i * (int)sizeof(SnowParticle)), &oppositeCornerOffset.x);
+        Vector_CopyComponents((float*)((char*)vertices + i * (kSnowQuadVertexCount * (int)sizeof(SnowQuadVertex))),
+                              (float*)((char*)self->particles + i * (int)sizeof(SnowParticle)));
+        Vec3_Add((float*)((SnowQuadVertexView*)vertices + (i * kSnowQuadVertexCount + 1)),
+                 (float*)((char*)self->particles + i * (int)sizeof(SnowParticle)), &edgeA.x);
+        Vec3_Add((float*)((SnowQuadVertexView*)vertices + (i * kSnowQuadVertexCount + 2)),
+                 (float*)((char*)self->particles + i * (int)sizeof(SnowParticle)), &edgeB.x);
+        Vec3_Add((float*)((SnowQuadVertexView*)vertices + (i * kSnowQuadVertexCount + 3)),
+                 (float*)((char*)self->particles + i * (int)sizeof(SnowParticle)), &oppositeCornerOffset.x);
     }
     GraphicsBuffer_Flush(self->buffer);
 
     // Phase 2: copy state/value pairs (15 render, 6 stage, 5 stage-parameter entries).
     Fn801FAAF4Block15 renderStates = *(Fn801FAAF4Block15*)((unsigned int)stateTable + 0);
-    Fn801FAAF4Block5 stageParameters;
-    Fn801FAAF4Block6 stageStates;
-    stageStates = *(Fn801FAAF4Block6*)((unsigned int)stateTable + 0x78);
-    stageParameters = *(Fn801FAAF4Block5*)((unsigned int)stateTable + 0xA8);
+    TextureStageParameterBlock stageParameters;
+    TextureStageStateBlock stageStates;
+    stageStates = *(TextureStageStateBlock*)((unsigned int)stateTable + 0x78);
+    stageParameters = *(TextureStageParameterBlock*)((unsigned int)stateTable + 0xA8);
     Engine_SetRenderStateList(&renderStates, kSnowRenderStateCount);
     Engine_SetTextureStageStateList(0, &stageStates, kSnowStageStateCount);
     Engine_SetTextureStageParameterList(0, &stageParameters, kSnowStageParameterCount);
@@ -325,33 +398,33 @@ void CSnow_Draw(SnowDrawFields* self) {
     // Slot 27 supplies a texture-palette handle; it is independent of indexBuffer.
     Engine_SetVertexStream(0, self->buffer, 0, sizeof(SnowQuadVertex));
     Engine_SetIndexBuffer(self->indexBuffer, 0);
-    int stageResource = ((Fn801FAAF4Manager*)AsWView(g_view)->renderTarget)->texture(self->state);
+    int stageResource = ((RenderTargetInterface*)AsWView(g_view)->renderTarget)->texture(self->state);
     Engine_SetTextureStageResource(0, stageResource);
-    int texturePalette = ((Fn801FAAF4Manager*)AsWView(g_view)->renderTarget)->texturePalette(self->state);
+    int texturePalette = ((RenderTargetInterface*)AsWView(g_view)->renderTarget)->texturePalette(self->state);
     Engine_SetTexturePalette(0, texturePalette);
     Engine_DrawIndexedPrimitive(kSnowQuadPrimitive, 0, 0, self->count * kSnowQuadVertexCount, 0, self->count);
 }
 
-void* CWind_GetInstance();
-void CWind_GetWindVectorAtPoint(Vec3*, void*, Vec3*, float);
+extern "C" void GetWindVectorAtPoint__5CWindFRC7WVectorf(void* result, const void* self, const void* point,
+                                                         float maxBaseMagnitude);
 // Initialize the spin/snow angle constant to one full turn.
 void SpinSnow_InitializeAngleConstant() {
     s_twoPi_SpinSnow = kFloat_6_2831855;
 }
 
 // Position the spin display relative to the configured HUD baseline.
-void CSpin_OnPreLoadInit(CSpin* self) {
+void CSpin::OnPreLoadInit() {
     float baselineOffset = kFloat_4_Spin;
     float fixedCenterX = kFloat_67_Spin;
     float hudBaseline = g_option->hudBaselineY;
-    float centerY = baselineOffset + hudBaseline;
-    self->centerX = fixedCenterX;
-    self->centerY = centerY;
+    float center = baselineOffset + hudBaseline;
+    centerX = fixedCenterX;
+    centerY = center;
 }
 
 // Restart the spin-indicator animation through its shared reset routine.
-void CSpin_OnInit(CSpin* self) {
-    self->Reset();
+void CSpin::OnInit() {
+    Reset();
 }
 
 // Install the spin actor interface, display priority and update-skip bit.
@@ -363,18 +436,13 @@ CSpin::CSpin() {
 }
 
 // Stop the spin movement sound and release the actor base.
-void* CSpin_dtor(CSpin* self, int deleting) {
-    if (self) {
-        int soundWasPlaying = self->soundPlaying;
-        self->vtable = __vt__5CSpin;
-        if (soundWasPlaying) {
-            Sound_StopByAlias(g_soundManager, strokePointMoveStrings);
-            self->soundPlaying = 0;
-        }
-        __dt__18NativeBase80201D18Fv(self, 0);
-        if (deleting > 0) __dl__FPv(self);
+CSpin::~CSpin() {
+    int soundWasPlaying = soundPlaying;
+    vtable = __vt__5CSpin;
+    if (soundWasPlaying) {
+        Sound_StopByAlias(g_soundManager, strokePointMoveStrings);
+        soundPlaying = 0;
     }
-    return self;
 }
 
 // Bound the eight corners of the camera-oriented snow volume in world space.
@@ -391,10 +459,14 @@ void Snow_ComputeOrientedVolumeAABB(void* unused, Vec3* min, Vec3* max) {
         float width = kFloat_80_Snow;
 
         float x = width;
-        if (1 & i) x = width * sign;
-        if (2 & i) width = width * sign;
-        Vec3 a; Vec3_Scale(&a.x, s_cameraTransform, x);
-        Vec3 b; Vec3_Scale(&b.x, s_cameraTransform + IFF_OFFSET(CameraTransform800D, basis[3]), width);
+        if (1 & i)
+            x = width * sign;
+        if (2 & i)
+            width = width * sign;
+        Vec3 a;
+        Vec3_Scale(&a.x, s_cameraTransform, x);
+        Vec3 b;
+        Vec3_Scale(&b.x, s_cameraTransform + IFF_OFFSET(CameraTransform800D, basis[3]), width);
         Vec3_Add(&points[i].x, &a.x, &b.x);
         Vec3_Scale(&b.x, s_cameraTransform + IFF_OFFSET(CameraTransform800D, basis[6]), kFloat_160_Snow);
         // points[4 + i]: the original adds 0xC to the offset after this store (801FAEF0-801FAF0C); adding it first wrote
@@ -408,19 +480,25 @@ void Snow_ComputeOrientedVolumeAABB(void* unused, Vec3* min, Vec3* max) {
     Vector_CopyComponents(&max->x, &points[0].x);
     Vec3* p = points + 1;
     for (int k = 0; k < 7; ++k, ++p) {
-        if (min->x > p->x) min->x = p->x;
-        if (min->y > p->y) min->y = p->y;
-        if (min->z > p->z) min->z = p->z;
-        if (max->x < p->x) max->x = p->x;
-        if (max->y < p->y) max->y = p->y;
-        if (max->z < p->z) max->z = p->z;
+        if (min->x > p->x)
+            min->x = p->x;
+        if (min->y > p->y)
+            min->y = p->y;
+        if (min->z > p->z)
+            min->z = p->z;
+        if (max->x < p->x)
+            max->x = p->x;
+        if (max->y < p->y)
+            max->y = p->y;
+        if (max->z < p->z)
+            max->z = p->z;
     }
     Vec3_Add(&min->x, &min->x, (float*)(s_cameraTransform + IFF_OFFSET(CameraTransform800D, position)));
     Vec3_Add(&max->x, &max->x, (float*)(s_cameraTransform + IFF_OFFSET(CameraTransform800D, position)));
 }
 
 // Integrate wind and falling speed, wrap particles into the volume, and add sinusoidal sway.
-// deltaTime is scaled simulation seconds. Source chain: CMainFrame_UpdateVirtualHooks
+// deltaTime is scaled simulation seconds. Source chain: CMainFrame::UpdateVirtualHooks
 // (main_frame_letter_and_mouse_cursor.cpp, reciprocal 30/25 updates/s) -> CProjectG_Update (project_g_app_and_devices.cpp, timeScale)
 // -> CTask_UpdateCurrentTaskWithFadeGates (ctask_transition_command_queue.cpp) -> CTask_ProcessActors
 // (task_manager_and_actors.cpp) -> DrawScene_UpdateRegisteredObjects (draw_scene_named_effect_list.cpp, primaryUpdater +F8)
@@ -432,13 +510,15 @@ void Snow_ComputeOrientedVolumeAABB(void* unused, Vec3* min, Vec3* max) {
 // fall multiplier speeds descent only. Neither coefficient has a proven tuning
 // range; preserve single-precision order and the shared wind timebase.
 // center is integrated/wrapped world position; position adds horizontal unit-amplitude sway.
-void CSnow_UpdateParticles(void* self, float deltaTime) {
+void CSnow::UpdateParticles(float deltaTime) {
     float swayRate;
     Vec3 min, max;
     Vec3 windVelocity;
     // Phase 1: sample wind once at the camera and convert velocity to this update's displacement.
-    Snow_ComputeOrientedVolumeAABB(self, &min, &max);
-    CWind_GetWindVectorAtPoint(&windVelocity, CWind_GetInstance(), (Vec3*)(s_cameraTransform + IFF_OFFSET(CameraTransform800D, position)), kFloat_99999_Snow);
+    Snow_ComputeOrientedVolumeAABB(this, &min, &max);
+    GetWindVectorAtPoint__5CWindFRC7WVectorf(&windVelocity, CWind::GetInstance(),
+                                             (Vec3*)(s_cameraTransform + IFF_OFFSET(CameraTransform800D, position)),
+                                             kFloat_99999_Snow);
     Vec3 windDisplacement;
     windDisplacement.x = windVelocity.x;
     windDisplacement.y = windVelocity.y;
@@ -453,41 +533,50 @@ void CSnow_UpdateParticles(void* self, float deltaTime) {
     float wrapDistance;
     wrapDistance = kFloat_160_Snow;
     swayRate = kFloat_1_5707964_Snow;
-    fallDistance = kFloat_34_295296_Snow * AsCSnow(self)->fallSpeedMultiplier * deltaTime;
+    fallDistance = kFloat_34_295296_Snow * fallSpeedMultiplier * deltaTime;
     // Phase 2: integrate centers and phase independently from the visible sway offset.
-    for (; particleIndex < AsCSnow(self)->particleCount; byteOffset += (int)sizeof(SnowParticle), ++particleIndex) {
-        Vec3_Add(
-            SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center,
-            SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center,
-            &windDisplacement.x);
-        SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[1] -= fallDistance;
-        SnowParticleAt(AsCSnow(self)->particles, byteOffset)->swayPhase =
-            swayRate * deltaTime + SnowParticleAt(AsCSnow(self)->particles, byteOffset)->swayPhase;
+    for (; particleIndex < particleCount; byteOffset += (int)sizeof(SnowParticle), ++particleIndex) {
+        Vec3_Add(SnowParticleAt(particles, byteOffset)->center, SnowParticleAt(particles, byteOffset)->center,
+                 &windDisplacement.x);
+        SnowParticleAt(particles, byteOffset)->center[1] -= fallDistance;
+        SnowParticleAt(particles, byteOffset)->swayPhase =
+            swayRate * deltaTime + SnowParticleAt(particles, byteOffset)->swayPhase;
 
         Vec3 swayOffset = {0, 0, 0};
-        swayOffset.x = SnowParticleAt(AsCSnow(self)->particles, byteOffset)->directionCos;
-        swayOffset.z = SnowParticleAt(AsCSnow(self)->particles, byteOffset)->directionSin;
-        Vec3_Scale(&swayOffset.x, (char*)&swayOffset.x, Math_SinApprox(SnowParticleAt(AsCSnow(self)->particles, byteOffset)->swayPhase));
+        swayOffset.x = SnowParticleAt(particles, byteOffset)->directionCos;
+        swayOffset.z = SnowParticleAt(particles, byteOffset)->directionSin;
+        Vec3_Scale(&swayOffset.x, (char*)&swayOffset.x,
+                   Math_SinApprox(SnowParticleAt(particles, byteOffset)->swayPhase));
 
         // Phase 3: wrap each world axis in 160-unit steps, even when the AABB is wider.
         // Preserve the asymmetric below-min expression (max - center); this is existing behavior.
-        if (SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[0] > max.x)
-            SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[0] -= wrapDistance * (float)ceil((double)((SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[0] - max.x) / wrapDistance));
-        else if (SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[0] < min.x)
-            SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[0] += wrapDistance * (float)ceil((double)((max.x - SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[0]) / wrapDistance));
-        if (SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[1] > max.y)
-            SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[1] -= wrapDistance * (float)ceil((double)((SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[1] - max.y) / wrapDistance));
-        else if (SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[1] < min.y)
-            SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[1] += wrapDistance * (float)ceil((double)((max.y - SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[1]) / wrapDistance));
-        if (SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[2] > max.z)
-            SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[2] -= wrapDistance * (float)ceil((double)((SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[2] - max.z) / wrapDistance));
-        else if (SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[2] < min.z)
-            SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[2] += wrapDistance * (float)ceil((double)((max.z - SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center[2]) / wrapDistance));
+        if (SnowParticleAt(particles, byteOffset)->center[0] > max.x)
+            SnowParticleAt(particles, byteOffset)->center[0] -=
+                wrapDistance *
+                (float)ceil((double)((SnowParticleAt(particles, byteOffset)->center[0] - max.x) / wrapDistance));
+        else if (SnowParticleAt(particles, byteOffset)->center[0] < min.x)
+            SnowParticleAt(particles, byteOffset)->center[0] +=
+                wrapDistance *
+                (float)ceil((double)((max.x - SnowParticleAt(particles, byteOffset)->center[0]) / wrapDistance));
+        if (SnowParticleAt(particles, byteOffset)->center[1] > max.y)
+            SnowParticleAt(particles, byteOffset)->center[1] -=
+                wrapDistance *
+                (float)ceil((double)((SnowParticleAt(particles, byteOffset)->center[1] - max.y) / wrapDistance));
+        else if (SnowParticleAt(particles, byteOffset)->center[1] < min.y)
+            SnowParticleAt(particles, byteOffset)->center[1] +=
+                wrapDistance *
+                (float)ceil((double)((max.y - SnowParticleAt(particles, byteOffset)->center[1]) / wrapDistance));
+        if (SnowParticleAt(particles, byteOffset)->center[2] > max.z)
+            SnowParticleAt(particles, byteOffset)->center[2] -=
+                wrapDistance *
+                (float)ceil((double)((SnowParticleAt(particles, byteOffset)->center[2] - max.z) / wrapDistance));
+        else if (SnowParticleAt(particles, byteOffset)->center[2] < min.z)
+            SnowParticleAt(particles, byteOffset)->center[2] +=
+                wrapDistance *
+                (float)ceil((double)((max.z - SnowParticleAt(particles, byteOffset)->center[2]) / wrapDistance));
         // Phase 4: publish the visible world position after wrapping the unswayed center.
-        Vec3_Add(
-            SnowParticleAt(AsCSnow(self)->particles, byteOffset)->position,
-            SnowParticleAt(AsCSnow(self)->particles, byteOffset)->center,
-            &swayOffset.x);
+        Vec3_Add(SnowParticleAt(particles, byteOffset)->position, SnowParticleAt(particles, byteOffset)->center,
+                 &swayOffset.x);
     }
 }
 

@@ -14,4 +14,3 @@ OFF(resourceId, 0x20);
 #define AsCourseResource801C(p) ((CourseResource801C*)(p))
 
 #endif
-

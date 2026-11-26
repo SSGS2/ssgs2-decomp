@@ -11,16 +11,17 @@ public:
     volatile unsigned short extraFlags;
     unsigned char unk006[0x40e];
     volatile int lengthBase; // CEventConteProc_ProcessGotoCommand: base for the encoded jump target
-    volatile int cursor; // CEventConteProc_SkipCommand8 et al.: advances by command size
-    volatile int count; // CEventConteProc_ProcessCameraSetCommand: saturating source-update counter
+    volatile int cursor;     // CEventConteProc_SkipCommand8 et al.: advances by command size
+    volatile int count;      // CEventConteProc_ProcessCameraSetCommand: saturating source-update counter
     void* activeSource; // CEventConteProc_ProcessCameraSetCommand: new CEventCameraSC_CAM_SET, update, delete/transfer
     char pad_424[0x10];
-    void** queuedItems; // CEventConteProc_ProcessCameraSetCommand: array receiving new CEventConteProc nodes
-    unsigned int queuedCount; // incremented on append, restored after buffer growth
+    void** queuedItems;          // CEventConteProc_ProcessCameraSetCommand: array receiving new CEventConteProc nodes
+    unsigned int queuedCount;    // incremented on append, restored after buffer growth
     unsigned int queuedCapacity; // compared to count and used for buffer growth
 };
 
-#define EVENTSCRIPT80091824_OFF(f, o) typedef char EventScript80091824_off_##f[((int)&((EventScript80091824*)0)->f == (o)) ? 1 : -1]
+#define EVENTSCRIPT80091824_OFF(f, o) \
+    typedef char EventScript80091824_off_##f[((int)&((EventScript80091824*)0)->f == (o)) ? 1 : -1]
 EVENTSCRIPT80091824_OFF(conditionCombineMode, 0x0);
 EVENTSCRIPT80091824_OFF(counter, 0x1);
 EVENTSCRIPT80091824_OFF(flags, 0x2);

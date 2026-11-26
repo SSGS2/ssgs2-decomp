@@ -6,10 +6,10 @@
 class TiXmlAttributeLayout {
 public:
     char pad_0[0x8];
-    const char* name; // 0x8; TiXmlAttribute_PrintToStream
-    int nameLength; // 0xC; TiXmlAttribute_PrintToStream
+    const char* name;  // 0x8; TiXmlAttribute_PrintToStream
+    int nameLength;    // 0xC; TiXmlAttribute_PrintToStream
     const char* value; // 0x10; TiXmlAttribute_PrintToStream
-    int valueLength; // 0x14; TiXmlAttribute_PrintToStream
+    int valueLength;   // 0x14; TiXmlAttribute_PrintToStream
     char pad_18[0x4];
     void* next; // 0x1C; TiXmlAttribute_PrintToStream
 };

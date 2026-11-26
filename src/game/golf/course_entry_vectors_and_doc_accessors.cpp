@@ -1,22 +1,29 @@
+// Course entries and point vectors: the iterator over course entries, the growable point
+// vector that course entries use, and borrowed views of the golf and shared documents.
+// CGolfBg::OnPreLoadInit creates the golf cup and shadow manager before a course loads.
+
 #include "MSL/error_message.h"
 #include "classes/CSharedDoc.h"
 #include "classes/CGolfDoc.h"
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
-// Translation unit 0x801228E8-0x80123CCC (18 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 #include "game/wvector.h"
 #include "game/exception.h"
+#include "classes/CGolfBg.h"
+#include "classes/CGolfCup.h"
+#include "classes/CShadowManager.h"
 
 // Construct in caller-owned storage without allocating.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 extern "C" {
 
 // Return the stored player count as an unsigned byte.
-unsigned char CGolfDoc_GetPlayerCount(void* self) {
-    return ((CGolfDoc*)self)->playerCount; // 0x801228E8: byte at +0x2B9
+unsigned char CGolfDoc::GetPlayerCount() {
+    return playerCount; // 0x801228E8: byte at +0x2B9
 }
 
 void* g_sceneManager;
@@ -43,13 +50,21 @@ unsigned char SharedDoc_GetRoundHoleCount() {
 }
 
 // Course iteration advances over fixed-size entries; point vectors contain three raw float words.
-struct CoursePointWords { unsigned int xBits, yBits, zBits; };
-struct CoursePointVector { CoursePointWords* data; unsigned int size, capacity; };
+struct CoursePointWords {
+    unsigned int xBits, yBits, zBits;
+};
+struct CoursePointVector {
+    CoursePointWords* data;
+    unsigned int size, capacity;
+};
 struct CourseEntryView {
     char metadata[0x14];
     CoursePointVector points;
 };
-struct CourseEntryVectorView { CourseEntryView* data; unsigned int size, capacity; };
+struct CourseEntryVectorView {
+    CourseEntryView* data;
+    unsigned int size, capacity;
+};
 typedef char CourseEntryView_size[(sizeof(CourseEntryView) == 0x20) ? 1 : -1];
 
 // Returns dst (r3 untouched, 0x80123C1C); callers pass it on (0x801225F8, 0x801EADEC).
@@ -86,22 +101,24 @@ void* CourseEntryVector_End(void* self) {
 }
 
 extern void* __nw__FUl(unsigned int);
-extern void __ct__8CGolfCupFv(void*);
-extern void CShadowManager_Ctor(void*, void*, int);
 extern void* g_resourceManager;
 struct GolfCupConstruction {
     char data[0xBC];
     // Initialize the allocated cup through its original constructor.
-    GolfCupConstruction() { __ct__8CGolfCupFv(this); }
+    GolfCupConstruction() {
+        ((CGolfCup*)this)->__ct();
+    }
 };
 struct ShadowManagerConstruction {
     char data[0x30];
     // Initialize shadow-manager storage with its resource provider and mode.
-    ShadowManagerConstruction(void* a, int b) { CShadowManager_Ctor(this, a, b); }
+    ShadowManagerConstruction(void* resourceManager, int b) {
+        ((CShadowManager*)this)->__ct(resourceManager, b);
+    }
 };
 
 // Construct the golf cup and its resource-manager-backed shadow manager before course loading.
-void CGolfBg_OnPreLoadInit() {
+void CGolfBg::OnPreLoadInit() {
     new GolfCupConstruction;
     new ShadowManagerConstruction(g_resourceManager, 1);
 }
@@ -150,15 +167,18 @@ inline void LengthError8012369C();
 
 // Grow point storage without changing its contents; reject counts that overflow the allocation size.
 void Vec3Vector_ReservePointCapacity(PointVectorStorage* self, unsigned int requested) {
-    if (requested <= self->capacity) return;
-    if (requested > kMaxPointCount) LengthError8012369C();
+    if (requested <= self->capacity)
+        return;
+    if (requested > kMaxPointCount)
+        LengthError8012369C();
     CoursePointWords* replacement = (CoursePointWords*)appMallocDummy__FUl(requested * 12);
     unsigned int copied = 0;
     CoursePointWords* oldData = (CoursePointWords*)self->data;
     CoursePointWords* oldEnd = oldData + self->size;
     CoursePointWords* out = replacement;
     while (oldData < oldEnd) {
-        if (out) *out = *oldData;
+        if (out)
+            *out = *oldData;
         ++oldData;
         ++out;
         ++copied;
@@ -172,7 +192,8 @@ void Vec3Vector_ReservePointCapacity(PointVectorStorage* self, unsigned int requ
     self->data = replacement;
     self->size = copied;
     self->capacity = requested;
-    if (temporary.data) appFreeUni__FPv(temporary.data);
+    if (temporary.data)
+        appFreeUni__FPv(temporary.data);
 }
 
 // Borrow the embedded point-vector descriptor; its owner remains the course entry.
@@ -180,7 +201,10 @@ void* CourseEntry_GetPointVector(void* self) {
     return &((CourseEntryView*)self)->points;
 }
 
-struct PointVector { CoursePointWords* data; unsigned int size, capacity; };
+struct PointVector {
+    CoursePointWords* data;
+    unsigned int size, capacity;
+};
 extern void __as__7WVectorFRC7WVector(void*, void*);
 extern float kHoleSetupZero;
 
@@ -188,7 +212,10 @@ struct BufferGuard801228E8 {
     char* data;
     char* allocator;
     // Free exception text if construction of its shared owner throws.
-    ~BufferGuard801228E8() { if (data) __dla__FPv(data); }
+    ~BufferGuard801228E8() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 // Shared RTTI: std::tr1::detail::shared_ptr_deleter<char, std::detail::default_delete<char[]> >.
 // Use the common 16-byte ABI view in MSL/error_message.h; keep this local alias for callers.
@@ -203,7 +230,9 @@ struct Allocator801228E8 {
 namespace std {
 struct logic_error : exception {
     // Install the requested exception vtable during staged construction.
-    void SetTable(void* table) { *(void**)this = table; }
+    void SetTable(void* table) {
+        *(void**)this = table;
+    }
     char* text;
     SharedBuffer801228E8* shared;
     // Copy the message and transfer its allocation to a shared control block.
@@ -214,7 +243,7 @@ struct logic_error : exception {
         char* allocated = (char*)__nwa__FUl(length * 2 - length);
         text = allocated;
         {
-            BufferGuard801228E8 buffer = { allocated, &allocator };
+            BufferGuard801228E8 buffer = {allocated, &allocator};
             shared = new SharedBuffer801228E8(allocated);
             buffer.data = 0;
         }
@@ -228,7 +257,7 @@ struct logic_error : exception {
         char* allocated = (char*)__nwa__FUl(length * 2 - length);
         text = allocated;
         {
-            BufferGuard801228E8 buffer = { allocated, (char*)&allocator };
+            BufferGuard801228E8 buffer = {allocated, (char*)&allocator};
             shared = new SharedBuffer801228E8(allocated);
             buffer.data = 0;
         }
@@ -238,19 +267,23 @@ struct logic_error : exception {
 };
 struct length_error : logic_error {
     // Construct the shared-message base then specialize the exception vtable.
-    length_error(const char* message) : logic_error(message) { SetTable(&__vt__Q23std12length_error); }
+    length_error(const char* message) : logic_error(message) {
+        SetTable(&__vt__Q23std12length_error);
+    }
     // Construct length_error through its allocator-taking variant.
-    length_error(const char* message, Allocator801228E8& allocator) : logic_error(message, allocator) { SetTable(&__vt__Q23std12length_error); }
+    length_error(const char* message, Allocator801228E8& allocator) : logic_error(message, allocator) {
+        SetTable(&__vt__Q23std12length_error);
+    }
     ~length_error();
 };
 }
 #define LENGTH_ERROR_801228E8() throw std::length_error((const char*)&golfBackgroundStrings + kVectorLengthErrorOffset)
 
-struct Reserve801228E8 {
+struct PointReserveTemp {
     CoursePointWords* data;
     unsigned int size, capacity;
     // Release replacement storage on unwind, or old storage after a successful swap.
-    ~Reserve801228E8() {
+    ~PointReserveTemp() {
         if (data) {
             Allocator801228E8 allocator;
             size -= size;
@@ -258,7 +291,7 @@ struct Reserve801228E8 {
         }
     }
 };
-struct Insert801228E8 {
+struct PointAppendTemp {
     // During append, the constructed range begins at offset and contains size
     // points; copying backwards grows it toward zero. After commit, data owns
     // the old buffer and size is zero. Point words need no element destructor.
@@ -267,7 +300,7 @@ struct Insert801228E8 {
     unsigned int* sourceCapacity; // Borrowed &self->capacity; not an allocator.
     unsigned int offset;
     // Free the allocation still held by this temporary owner.
-    ~Insert801228E8() {
+    ~PointAppendTemp() {
         if (data) {
             Allocator801228E8 allocator;
             size -= size;
@@ -279,11 +312,11 @@ struct Insert801228E8 {
 // Copy-construct one point in caller-owned storage. Keep try/catch in the
 // caller: a typed inline helper changed relocations in isolated verification.
 // This macro only constructs/rethrows; it does not return or change vector size.
-#define CONSTRUCT_8012369C(dst, src) \
-    try { \
+#define CONSTRUCT_8012369C(dst, src)     \
+    try {                                \
         new (dst) CoursePointWords(src); \
-    } catch (...) { \
-        throw; \
+    } catch (...) {                      \
+        throw;                           \
     }
 
 struct CopyTemp8012369C {
@@ -295,7 +328,7 @@ struct InsertTmp8012369C {
     CoursePointWords* data;
     unsigned int size;
     unsigned int capacity;
-    unsigned int* sourceCapacity; // Same descriptor layout as Insert801228E8.
+    unsigned int* sourceCapacity; // Same descriptor layout as PointAppendTemp.
     unsigned int offset;
 };
 
@@ -316,17 +349,20 @@ inline void LengthError8012369C() {
 // Choose three-fifths or one-half growth while keeping the point allocation below the 32-bit size limit.
 inline unsigned int ComputePointVectorGrowth(unsigned int* capacityPointer, unsigned int additional) {
     unsigned int capacity = *capacityPointer;
-    if (additional > kMaxPointCount - capacity) LengthError8012369C();
+    if (additional > kMaxPointCount - capacity)
+        LengthError8012369C();
     unsigned int newCapacity;
     if (capacity < kPointGrowthThreeFifthsLimit) {
         unsigned int growth = ((capacity + 1) * 3) / 5;
         const unsigned int* amount = &growth;
-        if (growth < additional) amount = &additional;
+        if (growth < additional)
+            amount = &additional;
         newCapacity = capacity + *amount;
     } else if (capacity < kPointGrowthOneHalfLimit) {
         unsigned int growth = (capacity + 1) / 2;
         const unsigned int* amount = &growth;
-        if (growth < additional) amount = &additional;
+        if (growth < additional)
+            amount = &additional;
         newCapacity = capacity + *amount;
     } else {
         newCapacity = kMaxPointCount;
@@ -352,61 +388,61 @@ void Vec3Vector_AppendCopy(PointVector* self, const CoursePointWords* value) {
         ++self->size;
         return;
     } else {
-    Allocator801228E8 allocator1;
-    Allocator801228E8 allocator2;
-    if (kMaxPointCount - self->capacity < 1) {
-        Allocator801228E8 errorAllocator;
-        const char* message = (const char*)&golfBackgroundStrings + kVectorLengthErrorOffset;
-        throw std::length_error(message, errorAllocator);
-    }
-    additional = self->size + 1 - self->capacity;
-    Insert801228E8 temporary = { 0, 0, 0, &self->capacity, 0 };
-    newCapacity = ComputePointVectorGrowth(&self->capacity, additional);
-    Allocator801228E8 allocator3;
-    if (newCapacity > kMaxPointCount) {
-        Allocator801228E8 errorAllocator;
-        const char* message = (const char*)&golfBackgroundStrings + kVectorLengthErrorOffset;
-        throw std::length_error(message, errorAllocator);
-    }
-    // Phase 2: temporary owns replacement storage; build the appended point first.
-    temporary.data = (CoursePointWords*)appMallocDummy__FUl(newCapacity * 12);
-    temporary.capacity = newCapacity;
-    temporary.offset = self->size;
-    Allocator801228E8 allocator4;
-    out = temporary.data + self->size + temporary.size;
-    unsigned int remaining = 1;
-    while (remaining != 0) {
-        CONSTRUCT_8012369C(out, *value);
-        --remaining;
-        ++out;
-        ++temporary.size;
-    }
-    // Phase 3: prepend existing points backwards until temporary.offset reaches zero.
-    begin = self->data;
-    src = begin + self->size;
-    Allocator801228E8 allocator5;
-    out = temporary.data + temporary.offset;
-    while (src > begin) {
-        --out;
-        --src;
-        CONSTRUCT_8012369C(out, *src);
-        --temporary.offset;
-        ++temporary.size;
-    }
-    // Phase 4: descriptor swap is the ownership commit; temporary frees oldData on scope exit.
-    CoursePointWords* oldData = self->data;
-    CoursePointWords* newData = temporary.data;
-    unsigned int newSize = temporary.size;
-    self->size = 0;
-    unsigned int oldCapacity = self->capacity;
-    unsigned int newCapacity2 = temporary.capacity;
-    temporary.data = oldData;
-    Allocator801228E8 allocator6;
-    self->capacity = newCapacity2;
-    temporary.capacity = oldCapacity;
-    self->data = newData;
-    self->size = newSize;
-    temporary.size = 0;
+        Allocator801228E8 allocator1;
+        Allocator801228E8 allocator2;
+        if (kMaxPointCount - self->capacity < 1) {
+            Allocator801228E8 errorAllocator;
+            const char* message = (const char*)&golfBackgroundStrings + kVectorLengthErrorOffset;
+            throw std::length_error(message, errorAllocator);
+        }
+        additional = self->size + 1 - self->capacity;
+        PointAppendTemp temporary = {0, 0, 0, &self->capacity, 0};
+        newCapacity = ComputePointVectorGrowth(&self->capacity, additional);
+        Allocator801228E8 allocator3;
+        if (newCapacity > kMaxPointCount) {
+            Allocator801228E8 errorAllocator;
+            const char* message = (const char*)&golfBackgroundStrings + kVectorLengthErrorOffset;
+            throw std::length_error(message, errorAllocator);
+        }
+        // Phase 2: temporary owns replacement storage; build the appended point first.
+        temporary.data = (CoursePointWords*)appMallocDummy__FUl(newCapacity * 12);
+        temporary.capacity = newCapacity;
+        temporary.offset = self->size;
+        Allocator801228E8 allocator4;
+        out = temporary.data + self->size + temporary.size;
+        unsigned int remaining = 1;
+        while (remaining != 0) {
+            CONSTRUCT_8012369C(out, *value);
+            --remaining;
+            ++out;
+            ++temporary.size;
+        }
+        // Phase 3: prepend existing points backwards until temporary.offset reaches zero.
+        begin = self->data;
+        src = begin + self->size;
+        Allocator801228E8 allocator5;
+        out = temporary.data + temporary.offset;
+        while (src > begin) {
+            --out;
+            --src;
+            CONSTRUCT_8012369C(out, *src);
+            --temporary.offset;
+            ++temporary.size;
+        }
+        // Phase 4: descriptor swap is the ownership commit; temporary frees oldData on scope exit.
+        CoursePointWords* oldData = self->data;
+        CoursePointWords* newData = temporary.data;
+        unsigned int newSize = temporary.size;
+        self->size = 0;
+        unsigned int oldCapacity = self->capacity;
+        unsigned int newCapacity2 = temporary.capacity;
+        temporary.data = oldData;
+        Allocator801228E8 allocator6;
+        self->capacity = newCapacity2;
+        temporary.capacity = oldCapacity;
+        self->data = newData;
+        self->size = newSize;
+        temporary.size = 0;
     }
 }
 
@@ -426,7 +462,7 @@ void Vec3Vector_CopyAppendAndFlattenHeight(PointVector* self, PointVector* sourc
     // the destination's current contents until this first storage swap commits.
     unsigned int n = sourceVector->size;
     if (n + 1 > self->capacity) {
-        Reserve801228E8 temporary = { 0, 0, 0 };
+        PointReserveTemp temporary = {0, 0, 0};
         Allocator801228E8 allocator;
         if (n + 1 > kMaxPointCount) {
             const char* message = (const char*)&golfBackgroundStrings + kVectorLengthErrorOffset;
@@ -471,17 +507,20 @@ void Vec3Vector_CopyAppendAndFlattenHeight(PointVector* self, PointVector* sourc
             Allocator801228E8 allocator4;
             unsigned int additional = count - self->capacity;
             unsigned int capacity = self->capacity;
-            if (additional > kMaxPointCount - capacity) LENGTH_ERROR_801228E8();
+            if (additional > kMaxPointCount - capacity)
+                LENGTH_ERROR_801228E8();
             unsigned int newCapacity;
             if (capacity < kPointGrowthThreeFifthsLimit) {
                 unsigned int growth = ((capacity + 1) * 3) / 5;
                 const unsigned int* amount = &growth;
-                if (growth < additional) amount = &additional;
+                if (growth < additional)
+                    amount = &additional;
                 newCapacity = capacity + *amount;
             } else if (capacity < kPointGrowthOneHalfLimit) {
                 unsigned int growth = (capacity + 1) / 2;
                 const unsigned int* amount = &growth;
-                if (growth < additional) amount = &additional;
+                if (growth < additional)
+                    amount = &additional;
                 newCapacity = capacity + *amount;
             } else {
                 newCapacity = kMaxPointCount;
@@ -489,8 +528,10 @@ void Vec3Vector_CopyAppendAndFlattenHeight(PointVector* self, PointVector* sourc
             assignedCapacity = newCapacity;
         } else {
             const unsigned int* common;
-            if (self->size < count) common = &self->size;
-            else common = &count;
+            if (self->size < count)
+                common = &self->size;
+            else
+                common = &count;
             CoursePointWords* middle = first + *common;
             CoursePointWords* input = first;
             CoursePointWords* output = self->data;
@@ -524,7 +565,8 @@ void Vec3Vector_CopyAppendAndFlattenHeight(PointVector* self, PointVector* sourc
                 self->capacity = 0;
             }
             Allocator801228E8 allocator8;
-            if (assignedCapacity > kMaxPointCount) LENGTH_ERROR_801228E8();
+            if (assignedCapacity > kMaxPointCount)
+                LENGTH_ERROR_801228E8();
             self->data = (CoursePointWords*)appMallocDummy__FUl(assignedCapacity * 12);
             self->capacity = assignedCapacity;
             CoursePointWords* out = self->data + self->size;
@@ -546,27 +588,32 @@ void Vec3Vector_CopyAppendAndFlattenHeight(PointVector* self, PointVector* sourc
     } else {
         Allocator801228E8 allocator10;
         Allocator801228E8 allocator11;
-        if (kMaxPointCount - self->capacity < 1) LENGTH_ERROR_801228E8();
+        if (kMaxPointCount - self->capacity < 1)
+            LENGTH_ERROR_801228E8();
         unsigned int additional = self->size + 1 - self->capacity;
-        Insert801228E8 temporary = { 0, 0, 0, &self->capacity, 0 };
+        PointAppendTemp temporary = {0, 0, 0, &self->capacity, 0};
         unsigned int capacity = self->capacity;
-        if (additional > kMaxPointCount - capacity) LENGTH_ERROR_801228E8();
+        if (additional > kMaxPointCount - capacity)
+            LENGTH_ERROR_801228E8();
         unsigned int newCapacity;
         if (capacity < kPointGrowthThreeFifthsLimit) {
             unsigned int growth = ((capacity + 1) * 3) / 5;
             const unsigned int* amount = &growth;
-            if (growth < additional) amount = &additional;
+            if (growth < additional)
+                amount = &additional;
             newCapacity = capacity + *amount;
         } else if (capacity < kPointGrowthOneHalfLimit) {
             unsigned int growth = (capacity + 1) / 2;
             const unsigned int* amount = &growth;
-            if (growth < additional) amount = &additional;
+            if (growth < additional)
+                amount = &additional;
             newCapacity = capacity + *amount;
         } else {
             newCapacity = kMaxPointCount;
         }
         Allocator801228E8 allocator12;
-        if (newCapacity > kMaxPointCount) LENGTH_ERROR_801228E8();
+        if (newCapacity > kMaxPointCount)
+            LENGTH_ERROR_801228E8();
         temporary.data = (CoursePointWords*)appMallocDummy__FUl(newCapacity * 12);
         temporary.capacity = newCapacity;
         temporary.offset = self->size;
@@ -602,7 +649,8 @@ void Vec3Vector_CopyAppendAndFlattenHeight(PointVector* self, PointVector* sourc
         temporary.size = 0;
     }
     // Phase 4: commit the height policy to ALL points, including the appended point.
-    for (unsigned int i = 0; i < self->size; ++i) *(float*)&self->data[i].yBits = kHoleSetupZero;
+    for (unsigned int i = 0; i < self->size; ++i)
+        *(float*)&self->data[i].yBits = kHoleSetupZero;
 }
 
 } // extern "C"

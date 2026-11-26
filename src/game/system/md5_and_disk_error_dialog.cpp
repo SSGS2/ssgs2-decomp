@@ -1,3 +1,7 @@
+// The game's MD5 digest, a native-word variant used to check data, and the disk-error dialog
+// (CDiskErrorDialog_PAL), which shows one of three error images with a fade.
+// Also small byte-vector growth helpers and the language and timing setup for PAL builds.
+
 #include <decomp/static_init.h>
 #include <decomp/ct_member.h>
 #include "classes/MD5Context.h"
@@ -12,10 +16,9 @@ extern const char vectorLengthErrorStrings_8029D128[];
 
 #include "sdk_protos.h"
 #include "classes/CDiskErrorDialog_PAL.h"
+#include "classes/CDiskErrorDialog.h"
 
 #define AsCDiskErrorDialog_PAL(p) ((CDiskErrorDialog_PAL*)(p))
-// Translation unit 0x8029D128-0x8029E894 (19 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -36,15 +39,19 @@ static inline unsigned int MD5MixI(unsigned int x, unsigned int y, unsigned int 
 }
 // The game's MD5 reads 32-bit words of the buffer as big-endian words and stores its state words big-endian (as in
 // Wii saves).
-static inline void MD5Step(unsigned int& a, unsigned int b, unsigned int mixed,
-                           unsigned int word, unsigned int constant, int shift) {
+static inline void MD5Step(unsigned int& a, unsigned int b, unsigned int mixed, unsigned int word,
+                           unsigned int constant, int shift) {
     a += mixed + word + constant;
     a = (a << shift) | ((a & 0xffffffff) >> (32 - shift));
     a += b;
 }
-enum { kMd5BlockBytes = 64, kMd5LengthBytes = 8, kMd5DigestBytes = 16,
-       kDiskErrorImageCount = 3,
-       kMd5PaddingStartOffset = (int)&((MD5Context*)0)->blockWords + 1 };
+enum {
+    kMd5BlockBytes = 64,
+    kMd5LengthBytes = 8,
+    kMd5DigestBytes = 16,
+    kDiskErrorImageCount = 3,
+    kMd5PaddingStartOffset = (int)&((MD5Context*)0)->blockWords + 1
+};
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -129,8 +136,6 @@ void GameMD5_Transform(void* state, void* block) {
 }
 #pragma pop
 
-
-
 extern int s_pal50HzTimingEnabled;
 extern int s_languageIndex;
 extern const float kFloat_0_DiskErrorDialog;
@@ -190,14 +195,22 @@ extern void* __vt__Q23std12length_error[];
 struct ErrorStringOwner {
     char* data;
     void* allocator;
-    ~ErrorStringOwner() { if (data) __dla__FPv(data); }
+    ~ErrorStringOwner() {
+        if (data)
+            __dla__FPv(data);
+    }
 };
 struct ErrorReference {
     void* vtable;
     int strong;
     int weak;
     char* data;
-    ErrorReference(char* p) { strong = 1; weak = 1; vtable = s_sharedCharDeleterVtable; data = p; }
+    ErrorReference(char* p) {
+        strong = 1;
+        weak = 1;
+        vtable = s_sharedCharDeleterVtable;
+        data = p;
+    }
 };
 struct LengthErrorBase {
     void* vtable;
@@ -205,24 +218,31 @@ struct LengthErrorBase {
     ErrorReference* reference;
     LengthErrorBase(const char* const& message) {
         vtable = __vt__Q23std11logic_error;
-        struct Allocator { char value; char padding[3]; } allocator;
+        struct Allocator {
+            char value;
+            char padding[3];
+        } allocator;
         allocator.value = 0;
         unsigned int bufferedBytes = strlen(message) + 1;
         char* buffer = (char*)__nwa__FUl(bufferedBytes * 2 - bufferedBytes);
         data = buffer;
         {
-            ErrorStringOwner owner = { buffer, &allocator };
+            ErrorStringOwner owner = {buffer, &allocator};
             reference = new ErrorReference(buffer);
             owner.data = 0;
         }
         strcpy(data, message);
     }
-    ~LengthErrorBase() { __dt__Q23std9exceptionFv(this, 0); }
+    ~LengthErrorBase() {
+        __dt__Q23std9exceptionFv(this, 0);
+    }
 };
 namespace std {
 class length_error : public LengthErrorBase {
 public:
-    length_error(const char* const& message) : LengthErrorBase(message) { vtable = __vt__Q23std12length_error; }
+    length_error(const char* const& message) : LengthErrorBase(message) {
+        vtable = __vt__Q23std12length_error;
+    }
     ~length_error();
     DECOMP_CT_MEMBER(length_error)
 };
@@ -259,11 +279,14 @@ static inline const unsigned int& largerGrowth(const unsigned int& a, const unsi
 static inline unsigned int byteVectorGrowth(unsigned int capacity, const unsigned int& required) {
     if (required > 0xffffffffU - capacity) {
         {
-            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
+            union {
+                double alignment;
+                unsigned char bytes[sizeof(std::length_error)];
+            } storage;
             std::length_error* error = (std::length_error*)storage.bytes;
             error->__ct(vectorLengthErrorStrings_8029D128);
             exception_runtime::__throw(exception_runtime::vectorLengthErrorStrings_8029D128 + 0x14, error,
-                (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                                       (void*)exception_runtime::__dt__Q23std12length_errorFv);
         }
     }
     unsigned int result;
@@ -280,19 +303,26 @@ static inline void checkByteVectorGrowth(unsigned int capacity, const unsigned i
     byteVectorGrowth(capacity, required);
 }
 // Load the selected disk-error texture from its archive and cache its dimensions.
-extern "C" int CDiskErrorDialog_PAL_LoadImageTexture(void* self) {
-    AsCDiskErrorDialog_PAL(self)->unk_20 = kFloat_1_DiskErrorDialog; // initial scalar; no consumer is established in this unit
-    FloatTween_Start(AsCDiskErrorDialog_PAL(self)->opacityTweenPrefix, -1, kFloat_0_DiskErrorDialog, kFloat_0_DiskErrorDialog);
-    void* resource = Archive_Open(diskErrorDialogTextureArchiveBegin, (int)(diskErrorDialogTextureArchiveEnd-diskErrorDialogTextureArchiveBegin), 3);
-    if (!resource) return 0;
-    int index = (*(int*)&AsCDiskErrorDialog_PAL(self)->archiveEntryIndex);
-    if (!index) index += 5;
+int CDiskErrorDialog::PAL_LoadImageTexture() {
+    AsCDiskErrorDialog_PAL(this)->unk_20 =
+        kFloat_1_DiskErrorDialog; // initial scalar; no consumer is established in this unit
+    FloatTween_Start(AsCDiskErrorDialog_PAL(this)->opacityTweenPrefix, -1, kFloat_0_DiskErrorDialog,
+                     kFloat_0_DiskErrorDialog);
+    void* resource = Archive_Open(diskErrorDialogTextureArchiveBegin,
+                                  (int)(diskErrorDialogTextureArchiveEnd - diskErrorDialogTextureArchiveBegin), 3);
+    if (!resource)
+        return 0;
+    int index = (*(int*)&AsCDiskErrorDialog_PAL(this)->archiveEntryIndex);
+    if (!index)
+        index += 5;
     unsigned int entry[0x12c / 4];
     Archive_GetEntryInfo(resource, -1, entry);
-    if (index >= (int)entry[0]) return 0;
+    if (index >= (int)entry[0])
+        return 0;
     Archive_GetEntryInfo(resource, index, entry);
     unsigned int count = entry[0x128 / 4];
-    if (!count) return 0;
+    if (!count)
+        return 0;
     ByteVector bytes;
     // Original 0x8029D128 unit: grow in place or fall through to reallocation.
     if (count > bytes.size) {
@@ -340,15 +370,16 @@ extern "C" int CDiskErrorDialog_PAL_LoadImageTexture(void* self) {
         bytes.size -= remove;
     }
     Archive_ReadEntry(resource, index, bytes.begin, count, 3);
-    Texture_CreateFromImageDescription(bytes.begin, count, &AsCDiskErrorDialog_PAL(self)->texture);
-    AsCDiskErrorDialog_PAL(self)->textureHeight = kFloat_0_DiskErrorDialog;
-    AsCDiskErrorDialog_PAL(self)->textureWidth = kFloat_0_DiskErrorDialog;
+    Texture_CreateFromImageDescription(bytes.begin, count, &AsCDiskErrorDialog_PAL(this)->texture);
+    AsCDiskErrorDialog_PAL(this)->textureHeight = kFloat_0_DiskErrorDialog;
+    AsCDiskErrorDialog_PAL(this)->textureWidth = kFloat_0_DiskErrorDialog;
     unsigned int dims[9];
-    if (Texture_GetLevelDescription((*(void**)&AsCDiskErrorDialog_PAL(self)->texture), 0, dims)) {
-        AsCDiskErrorDialog_PAL(self)->textureWidth = (float)dims[7];
-        AsCDiskErrorDialog_PAL(self)->textureHeight = (float)dims[8];
+    if (Texture_GetLevelDescription((*(void**)&AsCDiskErrorDialog_PAL(this)->texture), 0, dims)) {
+        AsCDiskErrorDialog_PAL(this)->textureWidth = (float)dims[7];
+        AsCDiskErrorDialog_PAL(this)->textureHeight = (float)dims[8];
     }
-    if (!(AsCDiskErrorDialog_PAL(self)->textureWidth > kFloat_0_DiskErrorDialog && AsCDiskErrorDialog_PAL(self)->textureHeight > kFloat_0_DiskErrorDialog)) {
+    if (!(AsCDiskErrorDialog_PAL(this)->textureWidth > kFloat_0_DiskErrorDialog &&
+          AsCDiskErrorDialog_PAL(this)->textureHeight > kFloat_0_DiskErrorDialog)) {
         return 0;
     }
     Archive_Close(resource);
@@ -374,19 +405,22 @@ struct DiskErrorVirtualCalls {
 };
 
 // Run derived and base dialog teardown hooks, then optionally delete the dialog.
-void* CDiskErrorDialog_PAL_dtor(void* self, int flag) {
-    if (self != 0) {
-        *(void**)self = __vt__20CDiskErrorDialog_PAL;
-        ((DiskErrorVirtualCalls*)self)->slot8();
-        ((DiskErrorVirtualCalls*)self)->slot6();
-        if (self != 0) {
-            *(void**)self = __vt__16IDiskErrorDialog;
-            ((DiskErrorVirtualCalls*)self)->slot8();
-            ((DiskErrorVirtualCalls*)self)->slot6();
+// Kept as a named member rather than a destructor: the body is two vtable-stage teardowns, not a plain destructor,
+// and this function is also the vtable's deleting-destructor slot.
+void* CDiskErrorDialog_PAL::Destroy(int flag) {
+    if (this != 0) {
+        *(void**)this = __vt__20CDiskErrorDialog_PAL;
+        ((DiskErrorVirtualCalls*)this)->slot8();
+        ((DiskErrorVirtualCalls*)this)->slot6();
+        if (this != 0) {
+            *(void**)this = __vt__16IDiskErrorDialog;
+            ((DiskErrorVirtualCalls*)this)->slot8();
+            ((DiskErrorVirtualCalls*)this)->slot6();
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
 
 #pragma dont_inline on
@@ -423,7 +457,8 @@ void GameMD5_Update(void* obj, const char* input, unsigned int len) {
     unsigned int old = AsMD5Context(obj)->bitCountLow;
     unsigned int next = old + (len << 3);
     AsMD5Context(obj)->bitCountLow = next;
-    if (next < old) ++AsMD5Context(obj)->bitCountHigh;
+    if (next < old)
+        ++AsMD5Context(obj)->bitCountHigh;
     AsMD5Context(obj)->bitCountHigh += len >> 29;
     unsigned int used = (old >> 3) & 0x3f;
     if (used) {
@@ -448,44 +483,60 @@ void GameMD5_Update(void* obj, const char* input, unsigned int len) {
 }
 #pragma opt_loop_invariants reset
 
-int EventTiming_IsDurationScalingEnabled() { return s_pal50HzTimingEnabled; }
-int Language_GetIndex() { return s_languageIndex; }
+int EventTiming_IsDurationScalingEnabled() {
+    return s_pal50HzTimingEnabled;
+}
+int Language_GetIndex() {
+    return s_languageIndex;
+}
 // Initialize this module's first two-pi cache at static startup.
-void InitTwoPiCache_8029DA98() { s_twoPi_8029DA98 = kFloat_6_2831855; }
+void InitTwoPiCache_8029DA98() {
+    s_twoPi_8029DA98 = kFloat_6_2831855;
+}
 // Initialize this module's second two-pi cache at static startup.
-void InitTwoPiCache_8029DB44() { s_twoPi_8029DB44 = kFloat_6_2831855; }
-void IntPair_Set(int* values, int first, int second) {
+void InitTwoPiCache_8029DB44() {
+    s_twoPi_8029DB44 = kFloat_6_2831855;
+}
+void* IntPair_Set(int* values, int first, int second) {
     values[0] = first;
     values[1] = second;
+    return values;
 }
 // Initialize this module's third two-pi cache at static startup.
-void InitTwoPiCache_8029DB5C() { s_twoPi_8029DB5C = kFloat_6_2831855; }
+void InitTwoPiCache_8029DB5C() {
+    s_twoPi_8029DB5C = kFloat_6_2831855;
+}
 
 // Initialize this module's fourth two-pi cache at static startup.
-void InitTwoPiCache_8029E888() { s_twoPi_8029E888 = kFloat_6_2831855; }
+void InitTwoPiCache_8029E888() {
+    s_twoPi_8029E888 = kFloat_6_2831855;
+}
 
 // Select one of the three error images, ignoring out-of-range indices.
-void CDiskErrorDialog_PAL_SetImageIndex(void* obj, int value) {
-    if (value < 0) return;
-    if (value >= kDiskErrorImageCount) return;
+void CDiskErrorDialog::PAL_SetImageIndex(void* obj, int value) {
+    if (value < 0)
+        return;
+    if (value >= kDiskErrorImageCount)
+        return;
     AsCDiskErrorDialog_PAL(obj)->imageIndex = value;
 }
 
 // Advance the disk-error dialog's opacity tween.
 // Its FloatTween begins at +4; opacity is the embedded value at +8.
-int CDiskErrorDialog_PAL_UpdateOpacityTween(void* obj, float dt) {
+int CDiskErrorDialog::PAL_UpdateOpacityTween(void* obj, float dt) {
     FloatTween_Update(AsCDiskErrorDialog_PAL(obj)->opacityTweenPrefix, dt);
     return 1;
 }
 
 // Release the texture reference and reset the opacity tween.
-void CDiskErrorDialog_PAL_ReleaseTextureAndResetFade(void* obj) {
+void CDiskErrorDialog::PAL_ReleaseTextureAndResetFade(void* obj) {
     unsigned int* p = (*(unsigned int**)&AsCDiskErrorDialog_PAL(obj)->texture);
     if (p != 0) {
         unsigned int v = *p;
         v = (((v >> 16) - 1) << 16) | (v & 0x0000FFFFu);
         *p = v;
-        if ((v >> 16) == 0) CubeResourceStorage_dtor(p, 1);
+        if ((v >> 16) == 0)
+            CubeResourceStorage_dtor(p, 1);
         (*(unsigned int**)&AsCDiskErrorDialog_PAL(obj)->texture) = 0;
     }
     float f = kFloat_0_DiskErrorDialog;
@@ -512,13 +563,17 @@ int GameMD5_Compute(void* digest, const void* data, unsigned int inputLength) {
 #pragma opt_propagation off
 #pragma opt_common_subs off
 // Draw the selected atlas image centered in the viewport with tweened alpha.
-void CDiskErrorDialog_PAL_DrawImage(const void* obj) {
+void CDiskErrorDialog::PAL_DrawImage(const void* obj) {
     int active = AsCDiskErrorDialog_PAL(obj)->texture;
-    if (active == 0) return;
+    if (active == 0)
+        return;
     int valid;
-    if (AsCDiskErrorDialog_PAL(obj)->imageIndex >= 0 && AsCDiskErrorDialog_PAL(obj)->imageIndex < kDiskErrorImageCount) valid = 1;
-    else valid = 0;
-    if (valid == 0) return;
+    if (AsCDiskErrorDialog_PAL(obj)->imageIndex >= 0 && AsCDiskErrorDialog_PAL(obj)->imageIndex < kDiskErrorImageCount)
+        valid = 1;
+    else
+        valid = 0;
+    if (valid == 0)
+        return;
     float scale = AsCDiskErrorDialog_PAL(obj)->opacity;
     int alpha = (int)(kDiskErrorDialogAlphaScale * scale);
     UIRender_SetDefaultState();
@@ -538,33 +593,73 @@ void CDiskErrorDialog_PAL_DrawImage(const void* obj) {
     uv[3] = rect[3] / h;
     unsigned int scratch[6];
     Engine_GetViewport(scratch);
-    struct Pair { float x, y; };
-    struct PairWords { unsigned int x, y; };
+    struct Pair {
+        float x, y;
+    };
+    struct PairWords {
+        unsigned int x, y;
+    };
     struct Rect {
         Pair start, end;
         Rect(const Pair& p, const Pair& size) {
-            ((PairWords*)&end)->x = 0; ((PairWords*)&end)->y = 0;
+            ((PairWords*)&end)->x = 0;
+            ((PairWords*)&end)->y = 0;
             *(PairWords*)&start = *(const PairWords*)&p;
             end.x = p.x + size.x;
             end.y = p.y + size.y;
         }
     };
-    Pair size = { kDiskErrorDialogImageScale * (rect[2] - rect[0]), kDiskErrorDialogImageScale * (rect[3] - rect[1]) };
-    Pair pos = { ((float)scratch[2] - size.x) / 2.0f, ((float)scratch[3] - size.y) / 2.0f };
+    Pair size = {kDiskErrorDialogImageScale * (rect[2] - rect[0]), kDiskErrorDialogImageScale * (rect[3] - rect[1])};
+    Pair pos = {((float)scratch[2] - size.x) / 2.0f, ((float)scratch[3] - size.y) / 2.0f};
     Rect dst(pos, size);
     unsigned int color = 0xFFFFFF00u | (unsigned char)alpha;
-    if (&dst == 0) return;
-    if (uv == 0) return;
-    struct Vertex { float x, y; int zero; unsigned char color[4]; float u, v; };
+    if (&dst == 0)
+        return;
+    if (uv == 0)
+        return;
+    struct Vertex {
+        float x, y;
+        int zero;
+        unsigned char color[4];
+        float u, v;
+    };
     Vertex vertices[4] = {};
     unsigned char c0 = (unsigned char)(color >> 24);
     unsigned char c1 = (unsigned char)(color >> 16);
     unsigned char c2 = (unsigned char)(color >> 8);
     unsigned char c3 = (unsigned char)color;
-    vertices[0].x = dst.start.x; vertices[0].y = dst.start.y; vertices[0].color[0]=c0; vertices[0].color[1]=c1; vertices[0].color[2]=c2; vertices[0].color[3]=c3; vertices[0].u=uv[0]; vertices[0].v=uv[1];
-    vertices[1].x = dst.end.x; vertices[1].y = dst.start.y; vertices[1].color[0]=c0; vertices[1].color[1]=c1; vertices[1].color[2]=c2; vertices[1].color[3]=c3; vertices[1].u=uv[2]; vertices[1].v=uv[1];
-    vertices[2].x = dst.start.x; vertices[2].y = dst.end.y; vertices[2].color[0]=c0; vertices[2].color[1]=c1; vertices[2].color[2]=c2; vertices[2].color[3]=c3; vertices[2].u=uv[0]; vertices[2].v=uv[3];
-    vertices[3].x = dst.end.x; vertices[3].y = dst.end.y; vertices[3].color[0]=c0; vertices[3].color[1]=c1; vertices[3].color[2]=c2; vertices[3].color[3]=c3; vertices[3].u=uv[2]; vertices[3].v=uv[3];
+    vertices[0].x = dst.start.x;
+    vertices[0].y = dst.start.y;
+    vertices[0].color[0] = c0;
+    vertices[0].color[1] = c1;
+    vertices[0].color[2] = c2;
+    vertices[0].color[3] = c3;
+    vertices[0].u = uv[0];
+    vertices[0].v = uv[1];
+    vertices[1].x = dst.end.x;
+    vertices[1].y = dst.start.y;
+    vertices[1].color[0] = c0;
+    vertices[1].color[1] = c1;
+    vertices[1].color[2] = c2;
+    vertices[1].color[3] = c3;
+    vertices[1].u = uv[2];
+    vertices[1].v = uv[1];
+    vertices[2].x = dst.start.x;
+    vertices[2].y = dst.end.y;
+    vertices[2].color[0] = c0;
+    vertices[2].color[1] = c1;
+    vertices[2].color[2] = c2;
+    vertices[2].color[3] = c3;
+    vertices[2].u = uv[0];
+    vertices[2].v = uv[3];
+    vertices[3].x = dst.end.x;
+    vertices[3].y = dst.end.y;
+    vertices[3].color[0] = c0;
+    vertices[3].color[1] = c1;
+    vertices[3].color[2] = c2;
+    vertices[3].color[3] = c3;
+    vertices[3].u = uv[2];
+    vertices[3].v = uv[3];
     Engine_SetFlexibleVertexFormat((void*)0x0011F005);
     Engine_SetType7Resource(0);
     void* buf = GX_GetPrimitiveCount(4, 0x98);
@@ -584,7 +679,9 @@ int GameMD5_Verify(const void* data, unsigned int inputLength, const signed char
     context[5] = 0;
     GameMD5_Update(context, (const char*)data, inputLength);
     GameMD5_Final(digest, (void*)context);
-    for (int i = 0; i < kMd5DigestBytes; ++i) if (digest[i] != expectedDigest[i]) return 0;
+    for (int i = 0; i < kMd5DigestBytes; ++i)
+        if (digest[i] != expectedDigest[i])
+            return 0;
     return 1;
 }
 
@@ -592,12 +689,22 @@ int GameMD5_Verify(const void* data, unsigned int inputLength, const signed char
 void Language_InitializeFromSystemSettings() {
     int systemLanguage = SCGetLanguage();
     switch (systemLanguage) {
-        case 2: s_languageIndex = 1; break;
-        case 3: s_languageIndex = 2; break;
-        case 4: s_languageIndex = 3; break;
-        case 5: s_languageIndex = 4; break;
-        case 1:
-        default: s_languageIndex = 0; break;
+    case 2:
+        s_languageIndex = 1;
+        break;
+    case 3:
+        s_languageIndex = 2;
+        break;
+    case 4:
+        s_languageIndex = 3;
+        break;
+    case 5:
+        s_languageIndex = 4;
+        break;
+    case 1:
+    default:
+        s_languageIndex = 0;
+        break;
     }
     s_pal50HzTimingEnabled = 0;
 }

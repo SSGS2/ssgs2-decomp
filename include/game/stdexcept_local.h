@@ -1,7 +1,6 @@
 #ifndef GAME_STDEXCEPT_LOCAL_H
 #define GAME_STDEXCEPT_LOCAL_H
 
-
 // Local replacement for the exc2 change to exception.h: only the units that include this header get it.
 // Include before sdk_protos.h. Final path: include/game/stdexcept_local.h
 extern "C" {
@@ -24,29 +23,39 @@ void __throw(const char* typeName, void* object, void* destroy) __attribute__((n
 }
 extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std11logic_error[];
-extern char __vt__Q23std12out_of_range[];  // vtable of the shared_ptr_deleter control block
+extern char __vt__Q23std12out_of_range[]; // vtable of the shared_ptr_deleter control block
 
 namespace std {
 namespace detail {
-struct default_delete_chars {  // default_delete<char[]>
+struct default_delete_chars { // default_delete<char[]>
     char unused;
     default_delete_chars() : unused(0) {}
-    void operator()(char* p) const { delete[] p; }
+    void operator()(char* p) const {
+        delete[] p;
+    }
 };
 // unique_ptr<char, default_delete<char[]>&>: owns the buffer until release()
 struct char_array_guard {
     char* ptr;
     default_delete_chars& deleter;
     char_array_guard(char* p, default_delete_chars& d) : ptr(p), deleter(d) {}
-    ~char_array_guard() { if (ptr) deleter(ptr); }
-    void release() { ptr = 0; }
+    ~char_array_guard() {
+        if (ptr)
+            deleter(ptr);
+    }
+    void release() {
+        ptr = 0;
+    }
 };
-struct message_control {  // shared_ptr_deleter<char, default_delete<char[]> >
+struct message_control { // shared_ptr_deleter<char, default_delete<char[]> >
     const void* table;
     int useCount;
     int weakCount;
     char* ptr;
-    message_control(char* p) : useCount(1), weakCount(1) { table = s_sharedCharDeleterVtable; ptr = p; }
+    message_control(char* p) : useCount(1), weakCount(1) {
+        table = s_sharedCharDeleterVtable;
+        ptr = p;
+    }
 };
 }
 
@@ -65,6 +74,7 @@ public:
         strcpy(message, text);
     }
     virtual ~logic_error();
+
 private:
     char* message;
     detail::message_control* control;

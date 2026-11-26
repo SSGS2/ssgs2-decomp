@@ -2,7 +2,7 @@
 #ifndef CLASSES_RETRYMENUFIELDS802618B8_H
 #define CLASSES_RETRYMENUFIELDS802618B8_H
 
-struct RetryMenuFields802618B8 {
+struct RetryMenuView {
     char base[0x18];
     void* layout;
     int mode;
@@ -10,7 +10,7 @@ struct RetryMenuFields802618B8 {
     int selectionDelayUpdates;
 };
 
-#define OFF(f, o) typedef char RetryMenuFields802618B8_off_##f[((int)&((RetryMenuFields802618B8*)0)->f == (o)) ? 1 : -1]
+#define OFF(f, o) typedef char RetryMenuView_off_##f[((int)&((RetryMenuView*)0)->f == (o)) ? 1 : -1]
 OFF(base, 0x0);
 OFF(layout, 0x18);
 OFF(mode, 0x1c);

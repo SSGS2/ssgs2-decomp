@@ -1,26 +1,23 @@
-// Translation unit 0x8041A1F4-0x8041A20C (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// FMEM file I/O device: fixed-zero stubs for virtual slots 9, 10 and 11 of CFileIoDeviceFMEM.
+// Each does no work and returns zero.
 
-extern "C" {
+#include "classes/GtlFileIoDeviceFMEM.h"
 
-// These are distinct FMEM device vtable entries (phase1_class_tables.cpp).
-// Their operation identities and the meaning of zero are unresolved: do not
-// infer success or failure from these bodies. self is unused; no state, output,
-// last-error value or resource ownership is changed by any of these stubs.
+// These are distinct FMEM device vtable entries. Their operations are not
+// identified, so do not infer success or failure from the zero they return.
+// No state, output, last-error value or resource ownership is changed.
 
 // Return the fixed zero result for FMEM device virtual entry 9.
-int gtl_CFileIoDeviceFMEM_vfunc_9(void *self) {
+int gtl::CFileIoDeviceFMEM::vfunc_9() {
     return 0;
 }
 
 // Return the fixed zero result for FMEM device virtual entry 10.
-int gtl_CFileIoDeviceFMEM_vfunc_10(void *self) {
+int gtl::CFileIoDeviceFMEM::vfunc_10() {
     return 0;
 }
 
 // Return the fixed zero result for FMEM device virtual entry 11.
-int gtl_CFileIoDeviceFMEM_vfunc_11(void *self) {
+int gtl::CFileIoDeviceFMEM::vfunc_11() {
     return 0;
 }
-
-} // extern "C"

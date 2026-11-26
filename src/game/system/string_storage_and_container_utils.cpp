@@ -1,11 +1,12 @@
-// Translation unit 0x80065B4C-0x80065D10 (9 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Small string and container helpers: C string search forwarders, the string character accessor,
+// container destructors, and the renderable resource manager link.
 
 #include "classes/MWStringStorage.h"
+#include "classes/CString.h"
 
 extern "C" {
 
-char* strchr(const char*, int); // strchr
+char* strchr(const char*, int);  // strchr
 char* strrchr(const char*, int); // strrchr
 void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
@@ -14,10 +15,57 @@ typedef MWStringStorage StringLike;
 // Each 16-byte entry contains a string representation followed by an opaque value.
 // flags bit 31 selects an owned heap string at +8; otherwise bytes at +1 are inline.
 // Container owns the entry array and only the heap strings, never Entry::value.
-struct Entry { unsigned int flags; unsigned int length; void* data; unsigned int value; };
-struct Container { Entry* data; int count; };
-struct RenderableResourceLink { char baseState[0x10]; void* resourceManager; };
-enum { kHeapStringFlagShift = 31 };
+struct Entry {
+    unsigned int flags;
+    unsigned int length;
+    void* data;
+    unsigned int value;
+};
+struct Container {
+    Entry* data;
+    int count;
+};
+struct RenderableResourceLink {
+    char baseState[0x10];
+    void* resourceManager;
+};
+enum {
+    kHeapStringFlagShift = 31
+};
+
+// Attach the resource manager used by this renderable.
+// Store a borrowed pointer without retaining or releasing either manager.
+void Renderable_SetResourceManager(void* self, void* value) {
+    ((RenderableResourceLink*)self)->resourceManager = value;
+}
+
+// 0x80065B54: forward to strchr; the caller tests the returned pointer at 0x80060F3C.
+char* CString::FindCharForwarder(const char* text, int c) {
+    return strchr(text, c);
+}
+
+// Forward to strrchr: the last occurrence of c in text, or null.
+char* CString::FindLastCharForwarder(const char* text, int c) {
+    return strrchr(text, c);
+}
+
+// Return the pointer stored at the start of the wrapper.
+void* Pointer_GetFirstPointer(void** value) {
+    return *value;
+}
+
+// The base font has no resource to return.
+void* WFont_MakeClone() {
+    return 0;
+}
+
+// Clear three raw 32-bit words; this helper alone does not establish a vector or float type.
+void* Storage_ClearThreeWords(unsigned int* value) {
+    value[0] = 0;
+    value[1] = 0;
+    value[2] = 0;
+    return value;
+}
 
 // Select inline or heap string storage and return the requested byte position.
 // Borrowed result; offset is unchecked, in bytes (including a possible terminator).
@@ -82,39 +130,6 @@ Container* dtor_80065C58(Container* self, int deleting) {
             __dl__FPv(self);
     }
     return self;
-}
-
-// Return the pointer stored at the start of the wrapper.
-void* Pointer_GetFirstPointer(void** value) {
-    return *value;
-}
-
-// The base font has no resource to return.
-void* WFont_MakeClone() {
-    return 0;
-}
-
-// Clear three raw 32-bit words; this helper alone does not establish a vector or float type.
-void Storage_ClearThreeWords(unsigned int* value) {
-    value[0] = 0;
-    value[1] = 0;
-    value[2] = 0;
-}
-
-// 0x80065B54: forward to strchr; the caller tests the returned pointer at 0x80060F3C.
-char* CString_FindCharForwarder(const char* text, int c) {
-    return strchr(text, c);
-}
-
-// 0x80065B58: forward to strrchr; the caller keeps the pointer at 0x80060F70-0x80060F74.
-char* CString_FindLastCharForwarder(const char* text, int c) {
-    return strrchr(text, c);
-}
-
-// Attach the resource manager used by this renderable.
-// Store a borrowed pointer without retaining or releasing either manager.
-void Renderable_SetResourceManager(void* self, void* value) {
-    ((RenderableResourceLink*)self)->resourceManager = value;
 }
 
 } // extern "C"

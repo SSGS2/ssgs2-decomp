@@ -20,4 +20,3 @@ OFF(name, 0x44);
 #define AsCourseSurface801C(p) ((CourseSurface801C*)(p))
 
 #endif
-

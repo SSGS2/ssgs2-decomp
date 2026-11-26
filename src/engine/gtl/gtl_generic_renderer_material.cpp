@@ -7,8 +7,6 @@
 // xforms and optional matrixIndex/table148; TEV = combinerFlags and colorCombiner/alphaCombiner.
 // State templates s_defaultMaterialRenderStateTemplate/EF0 are shared read-only ID/value lists copied
 // before values are replaced. Keep their IDs and list lengths together.
-// Translation unit 0x803DDA9C-0x803DDE94 (1 function).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 struct GenericRendererEntry {
     char unk0[8];
@@ -25,9 +23,9 @@ struct GenericMaterialSlot {
     char unk64[0xC];
     float uv[4][2];
     unsigned int stageConstantWords[4]; // +90, per-stage constant, cached state IDs 25..28
-    unsigned int combinerFlags[4]; // +A0, bits 24/25 admit color/alpha combiner upload
-    unsigned char colorCombiner[4][4]; // +B0, {color op,arg0,arg1,arg2}, one row/stage
-    unsigned char alphaCombiner[4][4]; // +C0, {alpha op,arg0,arg1,arg2}, one row/stage
+    unsigned int combinerFlags[4];      // +A0, bits 24/25 admit color/alpha combiner upload
+    unsigned char colorCombiner[4][4];  // +B0, one row per stage: color op, then three operands
+    unsigned char alphaCombiner[4][4];  // +C0, one row per stage: alpha op, then three operands
     char unkD0[0x20];
 };
 
@@ -187,8 +185,8 @@ void gtl_GenericRenderer_ApplyMaterial(unsigned int index, GenericRenderer* self
 
             unsigned int stateA = *combinerFlags;
             if (((int)((stateA << 7) & 0xC0000000) >> 31) || ((int)((stateA << 6) & 0xC0000000) >> 31)) {
-                // IDs {0,14,1,2,3,15,4,5}: color op/arg0/arg1/arg2,
-                // then alpha op/arg0/arg1/arg2. Disabled flags leave old TEV
+                // IDs {0,14,1,2,3,15,4,5}: the color op and its three operands, then the alpha op
+                // and its three operands. Disabled flags leave old TEV
                 // state untouched. Values use ENGINE enums, not GX op codes.
                 stageList = *(Words16*)s_defaultTextureStageStateTemplate;
                 stageList.w[1] = colorCombiner[0];

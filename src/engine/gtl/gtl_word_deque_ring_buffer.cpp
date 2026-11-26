@@ -1,5 +1,5 @@
-// Translation unit 0x803F11C8-0x803F28F8 (29 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Ring buffers for words and pointers: the word deque and pointer ring storage, their iterators,
+// growth, insertion of word ranges, and the link-based ring used by the audio code.
 
 enum WordRingLimits {
     kMaxWordRingSize = 0x3FFFFFFE, // Leave one unused slot so begin == end means empty.
@@ -26,6 +26,7 @@ void PointerRing_InsertWordRange(void*, void*, void*, void*, unsigned char*);
 extern "C" unsigned char s_gtlWordContainerMaxSizeInitialized;
 extern "C" unsigned int s_gtlWordContainerMaxSize;
 #include "sdk_protos.h"
+#include "classes/PointerRing803F.h"
 
 // View selection: WordRingStorage = typed data/head/size/capacity for element access;
 // RingHeaderWords = the same four raw ABI words for swaps and capacity arithmetic.
@@ -35,12 +36,24 @@ extern "C" unsigned int s_gtlWordContainerMaxSize;
 // the optional fifth tag byte belongs to the iterator, not to the ring header.
 // Canonical typed ring storage and borrowed four-address cursor.
 // A cursor never owns data; logicalBegin determines its wrapped ordering.
-struct WordRingStorage { unsigned int* data; unsigned int head, size, capacity; };
-struct WordRingCursor { unsigned int* current; unsigned int* storageBegin; unsigned int* logicalBegin; unsigned int* storageEnd; };
+struct WordRingStorage {
+    unsigned int* data;
+    unsigned int head, size, capacity;
+};
+struct WordRingCursor {
+    unsigned int* current;
+    unsigned int* storageBegin;
+    unsigned int* logicalBegin;
+    unsigned int* storageEnd;
+};
 
 typedef WordRingStorage WordRingEndSource;
 typedef WordRingCursor WordRingEndIterator;
-struct OwnedWordBuffer { void* data; unsigned int head; volatile unsigned int size; };
+struct OwnedWordBuffer {
+    void* data;
+    unsigned int head;
+    volatile unsigned int size;
+};
 typedef WordRingCursor RingIteratorSource;
 typedef WordRingCursor RingIteratorResult;
 
@@ -55,7 +68,9 @@ struct RingFrontView {
     unsigned int head;
 };
 
-struct RingHeaderWords { unsigned int data, head, size, capacity; };
+struct RingHeaderWords {
+    unsigned int data, head, size, capacity;
+};
 typedef RingHeaderWords RingCapacityView;
 
 struct RingIteratorCopy {
@@ -110,15 +125,40 @@ typedef WordRingCursor RingDistanceIterator;
 
 typedef WordRingCursor MutableRingIterator;
 
-struct RingInsertionIterator { unsigned int current, storageBegin, logicalBegin, storageEnd; };
+struct RingInsertionIterator {
+    unsigned int current, storageBegin, logicalBegin, storageEnd;
+};
 typedef RingHeaderWords RingGrowthState;
-struct TaggedRingInputIterator { unsigned int* current, *storageBegin, *logicalBegin, *storageEnd; unsigned char tag; };
+struct TaggedRingInputIterator {
+    unsigned int *current, *storageBegin, *logicalBegin, *storageEnd;
+    unsigned char tag;
+};
 typedef WordRingCursor RingOutputIterator;
-struct RingForwardCopyIterator { unsigned int* cur; unsigned int* first; unsigned int* logicalBegin; unsigned int* end; };
-struct RingBackwardCopyIterator { unsigned int* cur; unsigned int* first; unsigned int* logicalBegin; unsigned int* end; };
-struct ReservableWordRing { unsigned int* first; unsigned int start; unsigned int size; unsigned int cap; };
+struct RingForwardCopyIterator {
+    unsigned int* cur;
+    unsigned int* first;
+    unsigned int* logicalBegin;
+    unsigned int* end;
+};
+struct RingBackwardCopyIterator {
+    unsigned int* cur;
+    unsigned int* first;
+    unsigned int* logicalBegin;
+    unsigned int* end;
+};
+struct ReservableWordRing {
+    unsigned int* first;
+    unsigned int start;
+    unsigned int size;
+    unsigned int cap;
+};
 
-struct AppendableWordRing { unsigned int* first; unsigned int start; unsigned int size; unsigned int cap; };
+struct AppendableWordRing {
+    unsigned int* first;
+    unsigned int start;
+    unsigned int size;
+    unsigned int cap;
+};
 
 extern "C" unsigned char s_gtlWordDequeMaxSizeInitialized;
 extern "C" unsigned int s_gtlWordDequeMaxSize;
@@ -135,7 +175,8 @@ void PointerRing_dtor(void*, int);
 void GtlWordDeque_Reserve(ReservableWordRing* self, unsigned int requestedUsableCapacity) {
     unsigned int cap = self->cap;
     unsigned int currentUsableCapacity = cap ? cap - 1 : 0;
-    if (requestedUsableCapacity <= currentUsableCapacity) return;
+    if (requestedUsableCapacity <= currentUsableCapacity)
+        return;
 
     if (!s_gtlWordDequeMaxSizeInitialized) {
         s_gtlWordDequeMaxSizeInitialized = 1;
@@ -147,16 +188,23 @@ void GtlWordDeque_Reserve(ReservableWordRing* self, unsigned int requestedUsable
         const char* message = (const char*)audioDequeErrorStrings + kDequeLengthErrorText;
         const char* exceptionMessage = (const char*)audioDequeErrorStrings + kLengthErrorTypeName;
         extern void* s_sharedCharDeleterVtable[];
-        struct Error { void* vtable; char* text; void* control; } error;
+        struct Error {
+            void* vtable;
+            char* text;
+            void* control;
+        } error;
         struct Guard {
             void* buffer;
             // Release diagnostic storage unless exception construction transferred ownership.
-            ~Guard() { if (buffer) __dla__FPv(buffer); }
+            ~Guard() {
+                if (buffer)
+                    __dla__FPv(buffer);
+            }
         };
         error.vtable = __vt__Q23std11logic_error;
         error.text = (char*)__nwa__FUl(strlen(message) + 1);
         {
-            Guard guard = { error.text };
+            Guard guard = {error.text};
             void* allocation = __nw__FUl(0x10);
             if (allocation) {
                 ((unsigned int*)allocation)[2] = 1;
@@ -197,7 +245,8 @@ void GtlWordDeque_Reserve(ReservableWordRing* self, unsigned int requestedUsable
     self->size = 0;
     ReservableWordRing old = *self;
     *self = temp;
-    if (old.first) gtl_Free(old.first);
+    if (old.first)
+        gtl_Free(old.first);
 }
 
 // Append one word, growing the ring and preserving wrapped contents when necessary.
@@ -208,7 +257,8 @@ void GtlWordDeque_PushBack(AppendableWordRing* self, unsigned int* value) {
     if (newSize < oldCap) {
         unsigned int index = self->start + oldSize;
         unsigned int* slot = self->first + index % oldCap;
-        if (slot) *slot = *value;
+        if (slot)
+            *slot = *value;
         self->size = newSize;
         return;
     }
@@ -225,16 +275,23 @@ void GtlWordDeque_PushBack(AppendableWordRing* self, unsigned int* value) {
         const char* message = (const char*)audioDequeErrorStrings + kDequeLengthErrorText;
         const char* exceptionMessage = (const char*)audioDequeErrorStrings + kLengthErrorTypeName;
         extern void* s_sharedCharDeleterVtable[];
-        struct Error { void* vtable; char* text; void* control; } error;
+        struct Error {
+            void* vtable;
+            char* text;
+            void* control;
+        } error;
         struct Guard {
             void* buffer;
             // Release diagnostic storage unless exception construction transferred ownership.
-            ~Guard() { if (buffer) __dla__FPv(buffer); }
+            ~Guard() {
+                if (buffer)
+                    __dla__FPv(buffer);
+            }
         };
         error.vtable = __vt__Q23std11logic_error;
         error.text = (char*)__nwa__FUl(strlen(message) + 1);
         {
-            Guard guard = { error.text };
+            Guard guard = {error.text};
             void* allocation = __nw__FUl(0x10);
             if (allocation) {
                 ((unsigned int*)allocation)[2] = 1;
@@ -268,16 +325,23 @@ void GtlWordDeque_PushBack(AppendableWordRing* self, unsigned int* value) {
         const char* message = (const char*)audioDequeErrorStrings + kDequeLengthErrorText;
         const char* exceptionMessage = (const char*)audioDequeErrorStrings + kLengthErrorTypeName;
         extern void* s_sharedCharDeleterVtable[];
-        struct Error { void* vtable; char* text; void* control; } error;
+        struct Error {
+            void* vtable;
+            char* text;
+            void* control;
+        } error;
         struct Guard {
             void* buffer;
             // Release diagnostic storage unless exception construction transferred ownership.
-            ~Guard() { if (buffer) __dla__FPv(buffer); }
+            ~Guard() {
+                if (buffer)
+                    __dla__FPv(buffer);
+            }
         };
         error.vtable = __vt__Q23std11logic_error;
         error.text = (char*)__nwa__FUl(strlen(message) + 1);
         {
-            Guard guard = { error.text };
+            Guard guard = {error.text};
             void* allocation = __nw__FUl(0x10);
             if (allocation) {
                 ((unsigned int*)allocation)[2] = 1;
@@ -299,7 +363,8 @@ void GtlWordDeque_PushBack(AppendableWordRing* self, unsigned int* value) {
     temp.start = oldSize;
     temp.size = 0;
     unsigned int* slot = temp.first + oldSize;
-    if (slot) *slot = *value;
+    if (slot)
+        *slot = *value;
     temp.size++;
     unsigned int endIndex = self->cap ? (self->start + self->size) % self->cap : 0;
     unsigned int* oldFirst = self->first;
@@ -324,23 +389,35 @@ void GtlWordDeque_PushBack(AppendableWordRing* self, unsigned int* value) {
     self->size = 0;
     AppendableWordRing old = *self;
     *self = temp;
-    if (old.first) gtl_Free(old.first);
+    if (old.first)
+        gtl_Free(old.first);
 }
 
 // Copy insertion iterators before forwarding a range-insertion request.
-void PointerRing_InsertRangeWithIteratorCopies(void* ring, RingInsertionIterator* position, RingInsertionIterator* first, RingInsertionIterator* last) {
+void PointerRing_InsertRangeWithIteratorCopies(void* ring, RingInsertionIterator* position,
+                                               RingInsertionIterator* first, RingInsertionIterator* last) {
     RingInsertionIterator positionCopy;
     RingInsertionIterator firstCopy;
     RingInsertionIterator lastCopy;
     unsigned char iteratorTag = 0;
-    positionCopy.current = position->current; positionCopy.storageBegin = position->storageBegin; positionCopy.logicalBegin = position->logicalBegin; positionCopy.storageEnd = position->storageEnd;
-    firstCopy.current = first->current; firstCopy.storageBegin = first->storageBegin; firstCopy.logicalBegin = first->logicalBegin; firstCopy.storageEnd = first->storageEnd;
-    lastCopy.current = last->current; lastCopy.storageBegin = last->storageBegin; lastCopy.logicalBegin = last->logicalBegin; lastCopy.storageEnd = last->storageEnd;
+    positionCopy.current = position->current;
+    positionCopy.storageBegin = position->storageBegin;
+    positionCopy.logicalBegin = position->logicalBegin;
+    positionCopy.storageEnd = position->storageEnd;
+    firstCopy.current = first->current;
+    firstCopy.storageBegin = first->storageBegin;
+    firstCopy.logicalBegin = first->logicalBegin;
+    firstCopy.storageEnd = first->storageEnd;
+    lastCopy.current = last->current;
+    lastCopy.storageBegin = last->storageBegin;
+    lastCopy.logicalBegin = last->logicalBegin;
+    lastCopy.storageEnd = last->storageEnd;
     PointerRing_InsertWordRange(ring, &positionCopy, &firstCopy, &lastCopy, &iteratorTag);
 }
 
 // Copy ring words forward in contiguous spans and return the advanced destination iterator.
-void RingBufferIterator_CopyForward(RingForwardCopyIterator* out, RingForwardCopyIterator* first, RingForwardCopyIterator* last, RingForwardCopyIterator* destination) {
+void RingBufferIterator_CopyForward(RingForwardCopyIterator* out, RingForwardCopyIterator* first,
+                                    RingForwardCopyIterator* last, RingForwardCopyIterator* destination) {
     while (first->cur != last->cur) {
         int destinationSpan = (int)((char*)destination->end - (char*)destination->cur) / 4;
         int sourceSpan;
@@ -349,31 +426,43 @@ void RingBufferIterator_CopyForward(RingForwardCopyIterator* out, RingForwardCop
         else
             sourceSpan = (int)((char*)first->end - (char*)first->cur) / 4;
         int count = destinationSpan;
-        if (sourceSpan < count) count = sourceSpan;
+        if (sourceSpan < count)
+            count = sourceSpan;
         memmove(destination->cur, first->cur, count * 4);
         first->cur += count;
-        if (first->cur == first->end) first->cur = first->first;
+        if (first->cur == first->end)
+            first->cur = first->first;
         destination->cur += count;
-        if (destination->cur == destination->end) destination->cur = destination->first;
+        if (destination->cur == destination->end)
+            destination->cur = destination->first;
     }
     *out = *destination;
 }
 
 // Copy ring words backward across wrap boundaries and return the destination iterator.
-void RingBufferIterator_CopyBackward(RingBackwardCopyIterator* out, RingBackwardCopyIterator* first, RingBackwardCopyIterator* last, RingBackwardCopyIterator* destination) {
+void RingBufferIterator_CopyBackward(RingBackwardCopyIterator* out, RingBackwardCopyIterator* first,
+                                     RingBackwardCopyIterator* last, RingBackwardCopyIterator* destination) {
     while (first->cur != last->cur) {
-        if (last->cur == last->first) last->cur = last->end;
+        if (last->cur == last->first)
+            last->cur = last->end;
         last->cur--;
-        if (destination->cur == destination->first) destination->cur = destination->end;
+        if (destination->cur == destination->first)
+            destination->cur = destination->end;
         destination->cur--;
-        int destinationSpan = (int)((char*)destination->cur - (char*)(destination->cur < destination->logicalBegin ? destination->first : destination->logicalBegin)) / 4;
+        int destinationSpan = (int)((char*)destination->cur - (char*)(destination->cur < destination->logicalBegin
+                                                                          ? destination->first
+                                                                          : destination->logicalBegin)) /
+                              4;
         int sourceSpan;
         if ((first->cur < first->logicalBegin) == (last->cur < last->logicalBegin))
             sourceSpan = (int)((char*)last->cur - (char*)first->cur) / 4;
         else
-            sourceSpan = (int)((char*)last->cur - (char*)(last->cur < last->logicalBegin ? last->first : last->logicalBegin)) / 4;
+            sourceSpan =
+                (int)((char*)last->cur - (char*)(last->cur < last->logicalBegin ? last->first : last->logicalBegin)) /
+                4;
         int count = destinationSpan;
-        if (sourceSpan < count) count = sourceSpan;
+        if (sourceSpan < count)
+            count = sourceSpan;
         unsigned int* src = last->cur - count;
         last->cur = src;
         memmove(destination->cur - count, src, (count + 1) * 4);
@@ -394,8 +483,10 @@ void WordRing_GetEndIterator(WordRingEndIterator* dst, WordRingEndSource* src) {
     unsigned int index;
     cap = src->capacity;
     base = src->data;
-    if (cap != 0) index = (src->head + src->size) % cap;
-    else index = 0;
+    if (cap != 0)
+        index = (src->head + src->size) % cap;
+    else
+        index = 0;
     dst->current = base + index;
     base = src->data;
     dst->storageBegin = base;
@@ -414,7 +505,8 @@ void* OwnedWordBuffer_dtor(OwnedWordBuffer* self, int shouldDelete) {
             self->size = zero;
             gtl_Free(owned);
         }
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -516,8 +608,10 @@ void RingBufferIterator_Subtract(RingIteratorResult* dst, RingIteratorSource* sr
     int size = (int)((char*)last - (char*)begin) / 4;
     int offset = (int)((char*)current - (char*)begin) / 4;
     int index = neg + offset;
-    if (index < 0) index += size;
-    else if (index >= size) index -= size;
+    if (index < 0)
+        index += size;
+    else if (index >= size)
+        index -= size;
     unsigned int* chosen = (unsigned int*)((char*)begin + index * 4);
     dst->current = chosen;
     dst->storageBegin = (unsigned int*)savedBegin;
@@ -603,10 +697,12 @@ int RingBufferIterator_Distance(RingDistanceIterator* a, RingDistanceIterator* b
     unsigned int* begin = b->storageBegin;
     unsigned int* end = b->storageEnd;
     if ((unsigned int)first < (unsigned int)last) {
-        if ((unsigned int)current < (unsigned int)last) return result;
+        if ((unsigned int)current < (unsigned int)last)
+            return result;
         return result + (int)((char*)end - (char*)begin) / 4;
     }
-    if ((unsigned int)current >= (unsigned int)last) return result;
+    if ((unsigned int)current >= (unsigned int)last)
+        return result;
     return result - (int)((char*)end - (char*)begin) / 4;
 }
 #pragma opt_lifetimes reset
@@ -619,8 +715,10 @@ void RingBufferIterator_SubtractAssign(MutableRingIterator* arg, int amount) {
     unsigned int* current = arg->current;
     int size = (int)((char*)last - (char*)begin) / 4;
     int index = negAmount + (int)((char*)current - (char*)begin) / 4;
-    if (index < 0) index += size;
-    else if (index >= size) index -= size;
+    if (index < 0)
+        index += size;
+    else if (index >= size)
+        index -= size;
     arg->current = begin + index;
 }
 
@@ -639,16 +737,23 @@ unsigned int PointerRing_ComputeGrowthCapacity(RingGrowthState* self, unsigned i
         const char* message = (const char*)audioDequeErrorStrings + kDequeLengthErrorText;
         const char* exceptionMessage = (const char*)audioDequeErrorStrings + kLengthErrorTypeName;
         extern void* s_sharedCharDeleterVtable[];
-        struct Error { void* vtable; char* text; void* control; } error;
+        struct Error {
+            void* vtable;
+            char* text;
+            void* control;
+        } error;
         struct Guard {
             void* buffer;
             // Release diagnostic storage unless exception construction transferred ownership.
-            ~Guard() { if (buffer) __dla__FPv(buffer); }
+            ~Guard() {
+                if (buffer)
+                    __dla__FPv(buffer);
+            }
         };
         error.vtable = __vt__Q23std11logic_error;
         error.text = (char*)__nwa__FUl(strlen(message) + 1);
         {
-            Guard guard = { error.text };
+            Guard guard = {error.text};
             void* allocation = __nw__FUl(0x10);
             if (allocation) {
                 ((unsigned int*)allocation)[2] = 1;
@@ -664,14 +769,19 @@ unsigned int PointerRing_ComputeGrowthCapacity(RingGrowthState* self, unsigned i
         __throw(exceptionMessage, &error, (void*)__dt__Q23std12length_errorFv);
     }
     // Unsigned reciprocal division: floor(maxSize / 3). These spellings preserve code generation.
-    enum { kDivideByThreeReciprocal = 0xaaaaaaab, kDivideByFiveReciprocal = 0xcccccccd };
-    unsigned int oneThirdMax = (unsigned int)(((unsigned long long)(unsigned int)kDivideByThreeReciprocal * maxSize) >> 33);
+    enum {
+        kDivideByThreeReciprocal = 0xaaaaaaab,
+        kDivideByFiveReciprocal = 0xcccccccd
+    };
+    unsigned int oneThirdMax =
+        (unsigned int)(((unsigned long long)(unsigned int)kDivideByThreeReciprocal * maxSize) >> 33);
     unsigned int result;
     if (usableCapacity < oneThirdMax) {
         unsigned int capacityWithSentinel = usableCapacity + 1;
         unsigned int tripleCapacity = capacityWithSentinel * 4 - capacityWithSentinel;
         // floor(3 * (usableCapacity + 1) / 5): same small-ring policy as PushBack.
-        unsigned int growth = (unsigned int)(((unsigned long long)(unsigned int)kDivideByFiveReciprocal * tripleCapacity) >> 34);
+        unsigned int growth =
+            (unsigned int)(((unsigned long long)(unsigned int)kDivideByFiveReciprocal * tripleCapacity) >> 34);
         unsigned int increment = (growth >= additionalCount) ? growth : additionalCount;
         result = usableCapacity + increment;
     } else if (usableCapacity < oneThirdMax * 2) {
@@ -685,14 +795,16 @@ unsigned int PointerRing_ComputeGrowthCapacity(RingGrowthState* self, unsigned i
 }
 
 // Copy words from a wrapped source range into successive destination spans.
-void RingBufferIterator_CopyRange(RingOutputIterator* dst, TaggedRingInputIterator* firstIterator, RingOutputIterator* lastIterator, RingOutputIterator* destinationIterator) {
+void RingBufferIterator_CopyRange(RingOutputIterator* dst, TaggedRingInputIterator* firstIterator,
+                                  RingOutputIterator* lastIterator, RingOutputIterator* destinationIterator) {
     unsigned int* first = firstIterator->current;
     unsigned int* last = lastIterator->current;
     if (first != last) {
         unsigned int* lastLogicalBegin = lastIterator->logicalBegin;
         int distance = (int)((char*)last - (char*)first) / 4;
         if (last >= lastLogicalBegin) {
-            if (first < lastLogicalBegin) distance -= (int)((char*)lastIterator->storageEnd - (char*)lastIterator->storageBegin) / 4;
+            if (first < lastLogicalBegin)
+                distance -= (int)((char*)lastIterator->storageEnd - (char*)lastIterator->storageBegin) / 4;
         } else if (first >= lastLogicalBegin) {
             distance += (int)((char*)lastIterator->storageEnd - (char*)lastIterator->storageBegin) / 4;
         }
@@ -704,34 +816,49 @@ void RingBufferIterator_CopyRange(RingOutputIterator* dst, TaggedRingInputIterat
             unsigned int* sourceStorageBegin = firstIterator->storageBegin;
             unsigned int sourceSpan = (unsigned int)((char*)sourceStorageEnd - (char*)sourceCurrent) / 4;
             int count = destinationSpan;
-            if (count >= distance) count = distance;
+            if (count >= distance)
+                count = distance;
             int index = count + (int)((char*)sourceCurrent - (char*)sourceStorageBegin) / 4;
             int capacity = (int)((char*)sourceStorageEnd - (char*)sourceStorageBegin) / 4;
-            if (index < 0) index += capacity;
-            else if (index >= capacity) index -= capacity;
+            if (index < 0)
+                index += capacity;
+            else if (index >= capacity)
+                index -= capacity;
             unsigned int* target = sourceStorageBegin + index;
             unsigned int* src = sourceCurrent;
             unsigned int* out = destinationIterator->current;
             while (src != target) {
                 *out++ = *src++;
-                if (src == sourceStorageEnd) src = sourceStorageBegin;
+                if (src == sourceStorageEnd)
+                    src = sourceStorageBegin;
             }
             first = target;
             distance -= count;
             destinationIterator->current += count;
-            if (destinationIterator->current == destinationIterator->storageEnd) destinationIterator->current = destinationIterator->storageBegin;
-            if (distance != 0) firstIterator->current = target;
+            if (destinationIterator->current == destinationIterator->storageEnd)
+                destinationIterator->current = destinationIterator->storageBegin;
+            if (distance != 0)
+                firstIterator->current = target;
             destinationSpan = (int)((char*)destinationIterator->storageEnd - (char*)destinationIterator->current) / 4;
         }
     }
-    dst->current = destinationIterator->current; dst->storageBegin = destinationIterator->storageBegin; dst->logicalBegin = destinationIterator->logicalBegin; dst->storageEnd = destinationIterator->storageEnd;
+    dst->current = destinationIterator->current;
+    dst->storageBegin = destinationIterator->storageBegin;
+    dst->logicalBegin = destinationIterator->logicalBegin;
+    dst->storageEnd = destinationIterator->storageEnd;
 }
 
 // The iterators carry four addresses and, for the input iterator, one tag byte.
 // Keep calls to the original iterator helpers; copying only the current pointer
 // would lose their circular-buffer boundary state.
-struct Link3Iterator { unsigned int word[4]; unsigned char tag; };
-struct Link3Ring { unsigned int* data; unsigned int head, size, capacity; };
+struct Link3Iterator {
+    unsigned int word[4];
+    unsigned char tag;
+};
+struct Link3Ring {
+    unsigned int* data;
+    unsigned int head, size, capacity;
+};
 // This cross-specialization accessor returns word +0xC: capacity for this ring,
 // head-page index for GtlSampleDeque.
 void* Container_GetWord0CAddress(void*);
@@ -740,25 +867,31 @@ void RingCursor_SubtractOffset(void*, void*, int);
 void RingCursor_CopyFourWords(void*, const void*);
 void* PointerRing_GetCapacityAddressForConstruction(void*);
 void* PointerRing_GetCapacityAddress(void*);
-void PointerRing803F_Init(void*, void*);
 void PointerRing_AllocateCapacity(void*, unsigned int, unsigned int);
 unsigned int RingCursor_Dereference(void*);
 void RingCursor_Increment(void*);
 void* PointerRing_GetAllocatorValue(void*);
 void Memory_CopyWordIfDestinationNonNull(void*, void*, const void*);
 void PointerRing_AppendCursorRange(void*, void*, void*);
-void PointerRing803F_PrependRange(void*, void*, void*);
 void Swap_Int32ForRingStorage(void*, void*);
 void Swap_Int32(void*, void*);
 void PointerRing_dtor(void*, int);
-enum RingStorageWordIndex { kRingDataWord = 0, kRingHeadWord = 1, kRingSizeWord = 2 };
+enum RingStorageWordIndex {
+    kRingDataWord = 0,
+    kRingHeadWord = 1,
+    kRingSizeWord = 2
+};
 // Five ABI words: the first four are the ring header; helpers manage the trailing allocator state.
 struct Link3RingStorage {
     unsigned int word[5];
     // Start an empty temporary ring using the borrowed allocator tag.
-    Link3RingStorage(void* allocator) { PointerRing803F_Init(this, allocator); }
+    Link3RingStorage(void* allocator) {
+        ((PointerRing803F*)this)->Init((int)allocator);
+    }
     // Release temporary slots, including old storage received by the final swap.
-    ~Link3RingStorage() { PointerRing_dtor(this, -1); }
+    ~Link3RingStorage() {
+        PointerRing_dtor(this, -1);
+    }
 };
 
 #pragma push
@@ -782,15 +915,18 @@ static inline void GetRingEndCursor(Link3Iterator* out, void* ring) {
     ((void (*)(void*, void*))WordRing_GetEndIterator)(out, ring);
 }
 // Copy a shifted prefix forward; destination must precede any overlapping source.
-static inline void CopyRingWordsForward(Link3Iterator* out, Link3Iterator* first, Link3Iterator* last, Link3Iterator* destination) {
+static inline void CopyRingWordsForward(Link3Iterator* out, Link3Iterator* first, Link3Iterator* last,
+                                        Link3Iterator* destination) {
     ((void (*)(void*, void*, void*, void*))RingBufferIterator_CopyForward)(out, first, last, destination);
 }
 // Copy a shifted suffix backward; destination must follow any overlapping source.
-static inline void CopyRingWordsBackward(Link3Iterator* out, Link3Iterator* first, Link3Iterator* last, Link3Iterator* destination) {
+static inline void CopyRingWordsBackward(Link3Iterator* out, Link3Iterator* first, Link3Iterator* last,
+                                         Link3Iterator* destination) {
     ((void (*)(void*, void*, void*, void*))RingBufferIterator_CopyBackward)(out, first, last, destination);
 }
 // Copy the tagged input range into the opened gap and return the advanced output cursor.
-static inline void CopyRingWordRange(Link3Iterator* out, Link3Iterator* first, Link3Iterator* last, Link3Iterator* destination) {
+static inline void CopyRingWordRange(Link3Iterator* out, Link3Iterator* first, Link3Iterator* last,
+                                     Link3Iterator* destination) {
     ((void (*)(void*, void*, void*, void*))RingBufferIterator_CopyRange)(out, first, last, destination);
 }
 #pragma pop
@@ -807,7 +943,8 @@ void PointerRing_InsertWordRange(void* object, void* position, void* first, void
     CopyTaggedRingCursor(&inputEnd, last);
     CopyTaggedRingCursor(&inputBegin, first);
     unsigned int count = ((int (*)(void*, void*))RingBufferIterator_Distance)(&inputBegin, &inputEnd);
-    if (!count) return;
+    if (!count)
+        return;
 
     unsigned int* begin = ring->data + ring->head;
     unsigned int* insertion = *(unsigned int**)position;
@@ -824,7 +961,8 @@ void PointerRing_InsertWordRange(void* object, void* position, void* first, void
             Link3Iterator oldBegin;
             CopyRingCursorBounds(&oldBegin, &cursor);
             ((void (*)(void*, int))RingBufferIterator_SubtractAssign)(&cursor, count);
-            unsigned int* newBegin = (unsigned int*)RingBufferIterator_GetCurrentSlot((RingIteratorCurrentView*)&cursor);
+            unsigned int* newBegin =
+                (unsigned int*)RingBufferIterator_GetCurrentSlot((RingIteratorCurrentView*)&cursor);
             ring->size += count;
             ring->head = (int)((char*)newBegin - (char*)ring->data) / 4;
             if (prefix) {
@@ -875,7 +1013,7 @@ void PointerRing_InsertWordRange(void* object, void* position, void* first, void
         GetRingEndCursor(&end, object);
         PointerRing_AppendCursorRange(&temporary, position, &end);
         GetRingBeginCursor(&begin, object);
-        PointerRing803F_PrependRange(&temporary, &begin, position);
+        ((PointerRing803F*)(&temporary))->PrependRange(&begin, position);
         // Phase 2b: transfer all four storage words; temporary now owns the old slots.
         RingBuffer_ClearSize((RingSizeState*)object);
         Swap_Int32ForRingStorage(object, &temporary);

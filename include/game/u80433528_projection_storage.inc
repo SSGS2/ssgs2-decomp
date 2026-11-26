@@ -1,4 +1,4 @@
-// Construct and resize projection bytes; requires local vb and bytes-per-texel n.
+// Construct and resize projection bytes; requires local vb and bytesPerTexel.
 // Private statement fragment, included at the original scope to preserve the O0 stack layout.
 
 ProjectionByteBuffer* construction = &vb;
@@ -17,8 +17,8 @@ ProjectionByteBuffer* dataOwner = construction;
 ProjectionByteBuffer* sizeOwner = &vb;
 ProjectionByteBuffer* capacityOwner = &vb;
 // Resize byte storage to bytes-per-texel * 256*256, zero filling.
-if ((n << 16) > vb.size) {
-    unsigned int d = (n << 16) - vb.size;
+if ((bytesPerTexel << 16) > vb.size) {
+    unsigned int d = (bytesPerTexel << 16) - vb.size;
     unsigned char allocatorTag = 0;
     unsigned char valueTag = allocatorTag;
     unsigned int* capacity = &vb.cap.value;
@@ -96,8 +96,8 @@ if ((n << 16) > vb.size) {
             dtor_8042AE7C(&nb, -1);
         }
     } while (0);
-} else if ((n << 16) < vb.size) {
-    unsigned int d = vb.size - (n << 16);
+} else if ((bytesPerTexel << 16) < vb.size) {
+    unsigned int d = vb.size - (bytesPerTexel << 16);
     unsigned char eraseTag = 0;
     unsigned char eraseValue = eraseTag;
     vb.size = vb.size - d;

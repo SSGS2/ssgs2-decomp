@@ -1,7 +1,12 @@
-// Translation unit 0x803FC7FC-0x803FDEC8 (7 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Audio manager singleton and sound factories: creates sound buffers, streams and sources,
+// and the queues that track them. Also covers audio shutdown and the per-frame update.
 
 #include "sdk_protos.h"
+#include "classes/GtlSoundStreamInterface.h"
+#include "classes/GtlSoundBuffer.h"
+#include "classes/gtl_CSoundBufferSource.h"
+#include "classes/SoundStreamSource.h"
+#include "classes/gtl_ISoundResource.h"
 
 extern "C" {
 
@@ -11,13 +16,16 @@ struct InterruptUnwindCleanup {
     // Save the interrupt level to restore if construction or queue work throws.
     explicit InterruptUnwindCleanup(BOOL saved) : level(saved), active(true) {}
     // Hand the saved level to explicit normal-path restoration and disarm this guard.
-    BOOL release() { active = false; return level; }
+    BOOL release() {
+        active = false;
+        return level;
+    }
     // Restore interrupts on exceptional exits only while this guard remains armed.
     ~InterruptUnwindCleanup() {
-        if (active) OSRestoreInterrupts(level);
+        if (active)
+            OSRestoreInterrupts(level);
     }
 };
-
 
 extern unsigned int g_gtlAudioManager;
 extern signed char s_audioStateInitialized;
@@ -30,11 +38,6 @@ extern unsigned int s_gtlEffectRegistryDtorRegistration[4];
 extern const float kFloat_1_GtlAudio;
 
 void gtl_Audio_UpdateChannels(void*);
-void gtl_ISoundResource_Ctor(void*, void*);
-void gtl_CSoundBufferSource_Ctor(void*, void*, void*);
-void gtl_CSoundStreamSource_Ctor(void*, void*, void*);
-void gtl_ISoundBuffer_Ctor(void*, void*);
-void gtl_ISoundStream_Ctor(void*, void*);
 void* memset(void*, int, unsigned int);
 
 // Runtime word map (s_gtlAudioRuntime is 24 32-bit words; these are not vtable slots):
@@ -49,9 +52,13 @@ void* memset(void*, int, unsigned int);
 typedef void (*AudioReleaseCallback)(void* allocation, void* manager);
 typedef void (*AudioDeletingDestructor)(void* object, int deleteStorage);
 enum AudioRuntimeWord {
-    kAudioAllocateWord = 1, kAudioReleaseWord = 2,
-    kAudioBufferLimitWord = 3, kAudioStreamLimitWord = 4,
-    kAudioBufferQueueWord = 21, kAudioStreamQueueWord = 22, kAudioRuntimeMemoryWord = 23
+    kAudioAllocateWord = 1,
+    kAudioReleaseWord = 2,
+    kAudioBufferLimitWord = 3,
+    kAudioStreamLimitWord = 4,
+    kAudioBufferQueueWord = 21,
+    kAudioStreamQueueWord = 22,
+    kAudioRuntimeMemoryWord = 23
 };
 // Queue allocation: count at +0; an embedded circular sentinel starts at +4.
 // QueueNode links are prev/next at +0/+4, value at +8. A queue retains an object
@@ -63,9 +70,19 @@ struct Allocator {
     void* (*allocate)(unsigned int);
 };
 
-struct RefObject { unsigned int refs; void* vtable; };
-struct QueueNode { QueueNode* prev; QueueNode* next; RefObject* value; };
-struct Queue { unsigned int count; QueueNode head; };
+struct RefObject {
+    unsigned int refs;
+    void* vtable;
+};
+struct QueueNode {
+    QueueNode* prev;
+    QueueNode* next;
+    RefObject* value;
+};
+struct Queue {
+    unsigned int count;
+    QueueNode head;
+};
 struct Manager {
     unsigned int active;
     char pad[0x50];
@@ -109,10 +126,21 @@ static inline void EnsureAudioManagerDefaults() {
             dst[6] = 2;
             dst[7] = 0;
             *(float*)&dst[8] = kFloat_1_GtlAudio;
-            dst[9] = v0; dst[10] = v1; dst[11] = v2; dst[12] = v3;
-            dst[13] = v4; dst[14] = v5; dst[15] = v6; dst[16] = v7;
-            dst[17] = v8; dst[18] = v9; dst[19] = v10; dst[20] = v11;
-            dst[21] = 0; dst[22] = 0; dst[23] = 0;
+            dst[9] = v0;
+            dst[10] = v1;
+            dst[11] = v2;
+            dst[12] = v3;
+            dst[13] = v4;
+            dst[14] = v5;
+            dst[15] = v6;
+            dst[16] = v7;
+            dst[17] = v8;
+            dst[18] = v9;
+            dst[19] = v10;
+            dst[20] = v11;
+            dst[21] = 0;
+            dst[22] = 0;
+            dst[23] = 0;
             memset(dst + 1, 0, 0x14);
             s_audioStateInitialized = 1;
         }
@@ -134,15 +162,26 @@ void gtl_Audio_Shutdown(void) {
     if (g_gtlAudioManager == 0) {
         if (s_audioStateInitialized == 0) {
             unsigned int* src = kAudioPropertyDefaults;
-            unsigned int a0=src[0], a1=src[1], a2=src[2], a3=src[3];
-            unsigned int a4=src[4], a5=src[5], a6=src[6], a7=src[7];
-            unsigned int a8=src[8], a9=src[9], a10=src[10], a11=src[11];
+            unsigned int a0 = src[0], a1 = src[1], a2 = src[2], a3 = src[3];
+            unsigned int a4 = src[4], a5 = src[5], a6 = src[6], a7 = src[7];
+            unsigned int a8 = src[8], a9 = src[9], a10 = src[10], a11 = src[11];
             unsigned int* dst = s_gtlAudioRuntime;
-            dst[0] = 0; dst[6] = 2; dst[7] = 0;
+            dst[0] = 0;
+            dst[6] = 2;
+            dst[7] = 0;
             *(float*)&dst[8] = kFloat_1_GtlAudio;
-            dst[9]=a0; dst[10]=a1; dst[11]=a2; dst[12]=a3;
-            dst[13]=a4; dst[14]=a5; dst[15]=a6; dst[16]=a7;
-            dst[17]=a8; dst[18]=a9; dst[19]=a10; dst[20]=a11;
+            dst[9] = a0;
+            dst[10] = a1;
+            dst[11] = a2;
+            dst[12] = a3;
+            dst[13] = a4;
+            dst[14] = a5;
+            dst[15] = a6;
+            dst[16] = a7;
+            dst[17] = a8;
+            dst[18] = a9;
+            dst[19] = a10;
+            dst[20] = a11;
             dst[21] = dst[22] = dst[23] = 0;
             memset(dst + 1, 0, 0x14);
             s_audioStateInitialized = 1;
@@ -157,7 +196,8 @@ void gtl_Audio_Shutdown(void) {
             // 0x803FC91C/0x803FC92C: both words of the 8-byte object are cleared
             s_gtlEffectRegistry[0] = 0;
             s_gtlEffectRegistry[1] = 0;
-            __register_global_object(s_gtlEffectRegistry, (void*)GtlEffectRegistry_DeleteWrapper, (void*)s_gtlEffectRegistryDtorRegistration);
+            __register_global_object(s_gtlEffectRegistry, (void*)GtlEffectRegistry_DeleteWrapper,
+                                     (void*)s_gtlEffectRegistryDtorRegistration);
             s_audioEffectRegistryInitialized = 1;
         }
         g_gtlEffectRegistry = (unsigned int)s_gtlEffectRegistry;
@@ -174,9 +214,11 @@ void gtl_Audio_Shutdown(void) {
             do {
                 refs = --value->refs;
                 if (refs == 0) {
-                    if (value) ((AudioDeletingDestructor)((void**)value->vtable)[2])(value, 1);
+                    if (value)
+                        ((AudioDeletingDestructor)((void**)value->vtable)[2])(value, 1);
                     refs = 0;
-                } else refs = value->refs;
+                } else
+                    refs = value->refs;
             } while (refs > 0);
         }
         n->value = 0;
@@ -207,9 +249,11 @@ void gtl_Audio_Shutdown(void) {
             do {
                 refs = --value->refs;
                 if (refs == 0) {
-                    if (value) ((AudioDeletingDestructor)((void**)value->vtable)[2])(value, 1);
+                    if (value)
+                        ((AudioDeletingDestructor)((void**)value->vtable)[2])(value, 1);
                     refs = 0;
-                } else refs = value->refs;
+                } else
+                    refs = value->refs;
             } while (refs > 0);
         }
         n->value = 0;
@@ -233,11 +277,14 @@ void gtl_Audio_Shutdown(void) {
     self->streamQueue = 0;
     OSRestoreInterrupts(interruptCleanup0.release());
     // Phase 4: interrupts are restored before fade/update synchronization and backend shutdown.
-    gtl_AudioController_BeginShutdownFade(gtl_AudioController_GetInstance()); gtl_Audio_WaitForPendingUpdates(); gtl_Audio_ShutdownRuntime();
+    gtl_AudioController_BeginShutdownFade(gtl_AudioController_GetInstance());
+    gtl_Audio_WaitForPendingUpdates();
+    gtl_Audio_ShutdownRuntime();
     void* runtimeMemory = self->runtimeMemory;
     if (runtimeMemory != 0) {
         EnsureAudioManagerDefaults();
-        ((AudioReleaseCallback)((unsigned int*)g_gtlAudioManager)[kAudioReleaseWord])(runtimeMemory, (void*)g_gtlAudioManager);
+        ((AudioReleaseCallback)((unsigned int*)g_gtlAudioManager)[kAudioReleaseWord])(runtimeMemory,
+                                                                                      (void*)g_gtlAudioManager);
         self->runtimeMemory = 0;
     }
     self->active = 0;
@@ -259,7 +306,7 @@ int gtl_Audio_CreateSoundResource(void* arg, void** out) {
     // Defaults are now available; allocate and construct the requested wrapper.
     void* p = ((Allocator*)g_gtlAudioManager)->allocate(16);
     if (p != 0)
-        gtl_ISoundResource_Ctor(p, arg);
+        ((gtl::ISoundResource*)p)->Init(arg);
     *out = p;
     return 1;
 }
@@ -275,7 +322,8 @@ int gtl_Audio_CreateSoundBufferSource(void* arg, void** out) {
     // Defaults are now available; allocate and construct the requested wrapper.
     void* p = ((Allocator*)g_gtlAudioManager)->allocate(0x2c);
     if (p != 0)
-        gtl_CSoundBufferSource_Ctor(p, *(void**)arg, *((void**)arg + 1));
+        ((gtl::CSoundBufferSource*)p)
+            ->Init((const SoundCopyData*)*(void**)arg, (const SoundRefData*)*((void**)arg + 1));
     *out = p;
     return 1;
 }
@@ -290,7 +338,8 @@ int gtl_Audio_CreateSoundStreamSource(void* arg, void** out) {
     // Defaults are now available; allocate and construct the requested wrapper.
     void* p = ((Allocator*)g_gtlAudioManager)->allocate(0xa0);
     if (p != 0)
-        gtl_CSoundStreamSource_Ctor(p, *(void**)arg, *((void**)arg + 1));
+        ((gtl::CSoundStreamSource*)p)
+            ->Init((const SoundStreamSourceInit*)*(void**)arg, (const unsigned int*)*((void**)arg + 1));
     *out = p;
     return 1;
 }
@@ -326,10 +375,21 @@ int gtl_Audio_CreateSoundBuffer(ListNode* list, void** out) {
             dst[6] = 2;
             dst[7] = 0;
             *(float*)&dst[8] = kFloat_1_GtlAudio;
-            dst[9] = v0; dst[10] = v1; dst[11] = v2; dst[12] = v3;
-            dst[13] = v4; dst[14] = v5; dst[15] = v6; dst[16] = v7;
-            dst[17] = v8; dst[18] = v9; dst[19] = v10; dst[20] = v11;
-            dst[21] = 0; dst[22] = 0; dst[23] = 0;
+            dst[9] = v0;
+            dst[10] = v1;
+            dst[11] = v2;
+            dst[12] = v3;
+            dst[13] = v4;
+            dst[14] = v5;
+            dst[15] = v6;
+            dst[16] = v7;
+            dst[17] = v8;
+            dst[18] = v9;
+            dst[19] = v10;
+            dst[20] = v11;
+            dst[21] = 0;
+            dst[22] = 0;
+            dst[23] = 0;
             memset(dst + 1, 0, 0x14);
             s_audioStateInitialized = 1;
         }
@@ -361,12 +421,25 @@ int gtl_Audio_CreateSoundBuffer(ListNode* list, void** out) {
             unsigned int v10 = kAudioPropertyDefaults[10];
             unsigned int v11 = kAudioPropertyDefaults[11];
             unsigned int* dst = s_gtlAudioRuntime;
-            dst[0] = 0; dst[6] = 2; dst[7] = 0;
+            dst[0] = 0;
+            dst[6] = 2;
+            dst[7] = 0;
             *(float*)&dst[8] = kFloat_1_GtlAudio;
-            dst[9] = v0; dst[10] = v1; dst[11] = v2; dst[12] = v3;
-            dst[13] = v4; dst[14] = v5; dst[15] = v6; dst[16] = v7;
-            dst[17] = v8; dst[18] = v9; dst[19] = v10; dst[20] = v11;
-            dst[21] = 0; dst[22] = 0; dst[23] = 0;
+            dst[9] = v0;
+            dst[10] = v1;
+            dst[11] = v2;
+            dst[12] = v3;
+            dst[13] = v4;
+            dst[14] = v5;
+            dst[15] = v6;
+            dst[16] = v7;
+            dst[17] = v8;
+            dst[18] = v9;
+            dst[19] = v10;
+            dst[20] = v11;
+            dst[21] = 0;
+            dst[22] = 0;
+            dst[23] = 0;
             memset(dst + 1, 0, 0x14);
             s_audioStateInitialized = 1;
         }
@@ -376,13 +449,14 @@ int gtl_Audio_CreateSoundBuffer(ListNode* list, void** out) {
     managerWords = (unsigned int*)g_gtlAudioManager;
     unsigned int* object = (unsigned int*)((Allocator*)managerWords)->allocate(12);
     if (object != 0)
-        gtl_ISoundBuffer_Ctor(object, list);
+        ((gtl::ISoundBuffer*)object)->Init((unsigned int*)list);
 
     unsigned int* queue = (unsigned int*)managerWords[kAudioBufferQueueWord];
     QueueNode* head = (QueueNode*)(queue + 1);
     EnsureAudioManagerDefaults();
     QueueNode* node = (QueueNode*)((Allocator*)g_gtlAudioManager)->allocate(12);
-    if (node != 0) node->value = (RefObject*)object;
+    if (node != 0)
+        node->value = (RefObject*)object;
     node->prev = head->prev;
     head->prev->next = node;
     head->prev = node;
@@ -416,12 +490,25 @@ int gtl_Audio_CreateSoundStream(ListNode* list, void** out) {
             unsigned int v10 = kAudioPropertyDefaults[10];
             unsigned int v11 = kAudioPropertyDefaults[11];
             unsigned int* dst = s_gtlAudioRuntime;
-            dst[0] = 0; dst[6] = 2; dst[7] = 0;
+            dst[0] = 0;
+            dst[6] = 2;
+            dst[7] = 0;
             *(float*)&dst[8] = kFloat_1_GtlAudio;
-            dst[9] = v0; dst[10] = v1; dst[11] = v2; dst[12] = v3;
-            dst[13] = v4; dst[14] = v5; dst[15] = v6; dst[16] = v7;
-            dst[17] = v8; dst[18] = v9; dst[19] = v10; dst[20] = v11;
-            dst[21] = 0; dst[22] = 0; dst[23] = 0;
+            dst[9] = v0;
+            dst[10] = v1;
+            dst[11] = v2;
+            dst[12] = v3;
+            dst[13] = v4;
+            dst[14] = v5;
+            dst[15] = v6;
+            dst[16] = v7;
+            dst[17] = v8;
+            dst[18] = v9;
+            dst[19] = v10;
+            dst[20] = v11;
+            dst[21] = 0;
+            dst[22] = 0;
+            dst[23] = 0;
             memset(dst + 1, 0, 0x14);
             s_audioStateInitialized = 1;
         }
@@ -440,18 +527,35 @@ int gtl_Audio_CreateSoundStream(ListNode* list, void** out) {
 
     if (g_gtlAudioManager == 0) {
         if (s_audioStateInitialized == 0) {
-            unsigned int v0 = kAudioPropertyDefaults[0]; unsigned int v1 = kAudioPropertyDefaults[1];
-            unsigned int v2 = kAudioPropertyDefaults[2]; unsigned int v3 = kAudioPropertyDefaults[3];
-            unsigned int v4 = kAudioPropertyDefaults[4]; unsigned int v5 = kAudioPropertyDefaults[5];
-            unsigned int v6 = kAudioPropertyDefaults[6]; unsigned int v7 = kAudioPropertyDefaults[7];
-            unsigned int v8 = kAudioPropertyDefaults[8]; unsigned int v9 = kAudioPropertyDefaults[9];
-            unsigned int v10 = kAudioPropertyDefaults[10]; unsigned int v11 = kAudioPropertyDefaults[11];
+            unsigned int v0 = kAudioPropertyDefaults[0];
+            unsigned int v1 = kAudioPropertyDefaults[1];
+            unsigned int v2 = kAudioPropertyDefaults[2];
+            unsigned int v3 = kAudioPropertyDefaults[3];
+            unsigned int v4 = kAudioPropertyDefaults[4];
+            unsigned int v5 = kAudioPropertyDefaults[5];
+            unsigned int v6 = kAudioPropertyDefaults[6];
+            unsigned int v7 = kAudioPropertyDefaults[7];
+            unsigned int v8 = kAudioPropertyDefaults[8];
+            unsigned int v9 = kAudioPropertyDefaults[9];
+            unsigned int v10 = kAudioPropertyDefaults[10];
+            unsigned int v11 = kAudioPropertyDefaults[11];
             unsigned int* dst = s_gtlAudioRuntime;
-            dst[0] = 0; dst[6] = 2; dst[7] = 0;
+            dst[0] = 0;
+            dst[6] = 2;
+            dst[7] = 0;
             *(float*)&dst[8] = kFloat_1_GtlAudio;
-            dst[9] = v0; dst[10] = v1; dst[11] = v2; dst[12] = v3;
-            dst[13] = v4; dst[14] = v5; dst[15] = v6; dst[16] = v7;
-            dst[17] = v8; dst[18] = v9; dst[19] = v10; dst[20] = v11;
+            dst[9] = v0;
+            dst[10] = v1;
+            dst[11] = v2;
+            dst[12] = v3;
+            dst[13] = v4;
+            dst[14] = v5;
+            dst[15] = v6;
+            dst[16] = v7;
+            dst[17] = v8;
+            dst[18] = v9;
+            dst[19] = v10;
+            dst[20] = v11;
             dst[21] = dst[22] = dst[23] = 0;
             memset(dst + 1, 0, 0x14);
             s_audioStateInitialized = 1;
@@ -462,22 +566,39 @@ int gtl_Audio_CreateSoundStream(ListNode* list, void** out) {
     managerWords = (unsigned int*)g_gtlAudioManager;
     void* object = ((Allocator*)managerWords)->allocate(12);
     if (object != 0)
-        gtl_ISoundStream_Ctor(object, list);
+        ((gtl::ISoundStream*)object)->Init(list);
 
     if (g_gtlAudioManager == 0) {
         if (s_audioStateInitialized == 0) {
-            unsigned int v0 = kAudioPropertyDefaults[0]; unsigned int v1 = kAudioPropertyDefaults[1];
-            unsigned int v2 = kAudioPropertyDefaults[2]; unsigned int v3 = kAudioPropertyDefaults[3];
-            unsigned int v4 = kAudioPropertyDefaults[4]; unsigned int v5 = kAudioPropertyDefaults[5];
-            unsigned int v6 = kAudioPropertyDefaults[6]; unsigned int v7 = kAudioPropertyDefaults[7];
-            unsigned int v8 = kAudioPropertyDefaults[8]; unsigned int v9 = kAudioPropertyDefaults[9];
-            unsigned int v10 = kAudioPropertyDefaults[10]; unsigned int v11 = kAudioPropertyDefaults[11];
+            unsigned int v0 = kAudioPropertyDefaults[0];
+            unsigned int v1 = kAudioPropertyDefaults[1];
+            unsigned int v2 = kAudioPropertyDefaults[2];
+            unsigned int v3 = kAudioPropertyDefaults[3];
+            unsigned int v4 = kAudioPropertyDefaults[4];
+            unsigned int v5 = kAudioPropertyDefaults[5];
+            unsigned int v6 = kAudioPropertyDefaults[6];
+            unsigned int v7 = kAudioPropertyDefaults[7];
+            unsigned int v8 = kAudioPropertyDefaults[8];
+            unsigned int v9 = kAudioPropertyDefaults[9];
+            unsigned int v10 = kAudioPropertyDefaults[10];
+            unsigned int v11 = kAudioPropertyDefaults[11];
             unsigned int* dst = s_gtlAudioRuntime;
-            dst[0] = 0; dst[6] = 2; dst[7] = 0;
+            dst[0] = 0;
+            dst[6] = 2;
+            dst[7] = 0;
             *(float*)&dst[8] = kFloat_1_GtlAudio;
-            dst[9] = v0; dst[10] = v1; dst[11] = v2; dst[12] = v3;
-            dst[13] = v4; dst[14] = v5; dst[15] = v6; dst[16] = v7;
-            dst[17] = v8; dst[18] = v9; dst[19] = v10; dst[20] = v11;
+            dst[9] = v0;
+            dst[10] = v1;
+            dst[11] = v2;
+            dst[12] = v3;
+            dst[13] = v4;
+            dst[14] = v5;
+            dst[15] = v6;
+            dst[16] = v7;
+            dst[17] = v8;
+            dst[18] = v9;
+            dst[19] = v10;
+            dst[20] = v11;
             dst[21] = dst[22] = dst[23] = 0;
             memset(dst + 1, 0, 0x14);
             s_audioStateInitialized = 1;
@@ -487,7 +608,8 @@ int gtl_Audio_CreateSoundStream(ListNode* list, void** out) {
     managerWords = (unsigned int*)g_gtlAudioManager;
     QueueNode* node = (QueueNode*)((Allocator*)managerWords)->allocate(12);
     QueueNode* head = (QueueNode*)((char*)count + 4);
-    if (node != 0) node->value = (RefObject*)object;
+    if (node != 0)
+        node->value = (RefObject*)object;
     node->prev = head->prev;
     head->prev->next = node;
     head->prev = node;

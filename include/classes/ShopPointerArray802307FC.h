@@ -6,11 +6,12 @@
 class ShopPointerArray802307FC {
 public:
     char pad_000[0x8];
-    void** data; // 0x8
+    void** data;        // 0x8
     unsigned int count; // 0xC
 };
 
-#define OFF(f, o) typedef char ShopPointerArray802307FC_off_##f[((int)&((ShopPointerArray802307FC*)0)->f == (o)) ? 1 : -1]
+#define OFF(f, o) \
+    typedef char ShopPointerArray802307FC_off_##f[((int)&((ShopPointerArray802307FC*)0)->f == (o)) ? 1 : -1]
 OFF(data, 0x8);
 OFF(count, 0xC);
 #undef OFF

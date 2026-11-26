@@ -1,5 +1,5 @@
-// Translation unit 0x803DD09C-0x803DD1BC (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Generic renderer context: its destructor, which releases the four resource handles the context holds
+// and frees the context when asked.
 
 extern "C" {
 

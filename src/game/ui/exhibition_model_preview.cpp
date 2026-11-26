@@ -1,22 +1,30 @@
+// The item preview (CExhibition): a model of an avatar, caddie, ball or club set, shown in its
+// own viewport with its own camera, lights, animation and attached effects.
+//
+// Also the model loading state, and the animation and sound commands in the preview's scripts.
+
+#include "classes/GtlIGenericEnvironmentResource.h"
 #include <decomp/static_init.h>
 #include <decomp/ct_member.h>
 #include "MSL/error_message.h"
 // Byte layout of the existing string pool; no new string storage.
 struct ExhibitionStringPool {
-    char text_0_pet[5]; // ".pet"
-    char text_5_ui_pet[8]; // "_ui.pet"
+    char text_0_pet[5];                  // ".pet"
+    char text_5_ui_pet[8];               // "_ui.pet"
     char text_d_vector_length_error[20]; // "vector length error"
-    char text_21_std_exception_std_logic_error_std_length_error[55]; // "!std::exception!!std::logic_error!!std::length_error!!"
+    char text_21_std_exception_std_logic_error_std_length_error
+        [55];               // "!std::exception!!std::logic_error!!std::length_error!!"
     char text_58_center[7]; // "center"
-    char text_5f_spr[4]; // "spr"
-    char text_63_seq[4]; // "seq"
-    char text_67_mpet[6]; // ".mpet"
+    char text_5f_spr[4];    // "spr"
+    char text_63_seq[4];    // "seq"
+    char text_67_mpet[6];   // ".mpet"
 };
 enum {
     kExhibitionStringPool_text_0_pet = (int)&((ExhibitionStringPool*)0)->text_0_pet,
     kExhibitionStringPool_text_5_ui_pet = (int)&((ExhibitionStringPool*)0)->text_5_ui_pet,
     kExhibitionStringPool_text_d_vector_length_error = (int)&((ExhibitionStringPool*)0)->text_d_vector_length_error,
-    kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error = (int)&((ExhibitionStringPool*)0)->text_21_std_exception_std_logic_error_std_length_error,
+    kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error = (int)&((ExhibitionStringPool*)0)
+        ->text_21_std_exception_std_logic_error_std_length_error,
     kExhibitionStringPool_text_58_center = (int)&((ExhibitionStringPool*)0)->text_58_center,
     kExhibitionStringPool_text_5f_spr = (int)&((ExhibitionStringPool*)0)->text_5f_spr,
     kExhibitionStringPool_text_63_seq = (int)&((ExhibitionStringPool*)0)->text_63_seq,
@@ -25,27 +33,47 @@ enum {
 
 // Constants retain the original integer types and encoded values.
 enum PreviewModelKind {
-    kPreviewAvatar = 0, kPreviewCaddie = 1, kPreviewBall = 2,
-    kPreviewClubSet = 3, kPreviewStaticModel = 4, kPreviewNoModel = 5
+    kPreviewAvatar = 0,
+    kPreviewCaddie = 1,
+    kPreviewBall = 2,
+    kPreviewClubSet = 3,
+    kPreviewStaticModel = 4,
+    kPreviewNoModel = 5
 };
 enum PreviewLoadState {
-    kPreviewUninitialized = 0, kPreviewLoadModel = 1, kPreviewReloadParts = 2,
-    kPreviewWaitFrames = 3, kPreviewReady = 4
+    kPreviewUninitialized = 0,
+    kPreviewLoadModel = 1,
+    kPreviewReloadParts = 2,
+    kPreviewWaitFrames = 3,
+    kPreviewReady = 4
 };
 // Load-state contract: 0 has no pending load; 1 replaces the whole model after
 // both preloaders are ready; 2 applies avatar parts; 3 waits a frame threshold;
 // 4 accepts new work. Readiness also depends on the optional file preloader.
 // All camera/model operations below use the shared g_view; setters can mutate
 // its projection, not just this preview's stored rectangle.
-enum IffItemKind { kItemKindShift = 26, kItemClubSet = 4, kItemBall = 5,
-                   kItemCaddie = 7, kItemCaddieEquipment = 8 };
-enum { kPreviewScreenWidth = 640, kPreviewScreenHeight = 480,
-       kHardwareLightCount = 8, kPreviewLightLimit = 3,
-       kPreviewCallbackOffset = 0x540, kPreviewAttachmentCount = 5, kPreviewResourceOptionsOffset = 0x640,
-       kPreviewTokenCapacity = 64, kMinimumEffectFilenameLength = 5,
-       kPreviewMinimumExtensionLength = 4,
-       kPreviewModelKindOffset = 0x468,
-       kBallEffectSlotTwelve = 12, kBallEffectSlotOneTwentyEight = 128 };
+enum IffItemKind {
+    kItemKindShift = 26,
+    kItemClubSet = 4,
+    kItemBall = 5,
+    kItemCaddie = 7,
+    kItemCaddieEquipment = 8
+};
+enum {
+    kPreviewScreenWidth = 640,
+    kPreviewScreenHeight = 480,
+    kHardwareLightCount = 8,
+    kPreviewLightLimit = 3,
+    kPreviewCallbackOffset = 0x540,
+    kPreviewAttachmentCount = 5,
+    kPreviewResourceOptionsOffset = 0x640,
+    kPreviewTokenCapacity = 64,
+    kMinimumEffectFilenameLength = 5,
+    kPreviewMinimumExtensionLength = 4,
+    kPreviewModelKindOffset = 0x468,
+    kBallEffectSlotTwelve = 12,
+    kBallEffectSlotOneTwentyEight = 128
+};
 static const unsigned kMaxPointerElements = 0x3FFFFFFFU;
 static const unsigned kPointerGrowthThreeFifthsLimit = 0x15555555U;
 static const unsigned kPointerGrowthHalfLimit = 0x2AAAAAAAU;
@@ -79,13 +107,28 @@ struct PreviewEffectTreeHeaders {
     char spraySentinel[0x0c];
     char sequenceSentinel[0x0c];
 };
-struct PreviewOwnedRecord { char recordState[0x80]; void* ownedData; };
-struct PreviewBoneTransform { char boneState[0x78]; float attachmentMatrix[12]; };
+struct PreviewOwnedRecord {
+    char recordState[0x80];
+    void* ownedData;
+};
+struct PreviewBoneTransform {
+    char boneState[0x78];
+    float attachmentMatrix[12];
+};
 // Named-bone entries contain a live bone plus metadata. Both are puppet-owned.
-struct PreviewBoneMetadata { char state[0x18]; float position[3]; char reserved24[4]; char* script; };
-struct PreviewNamedBone { PreviewBoneTransform* bone; PreviewBoneMetadata* metadata; };
+struct PreviewBoneMetadata {
+    char state[0x18];
+    float position[3];
+    char reserved24[4];
+    char* script;
+};
+struct PreviewNamedBone {
+    PreviewBoneTransform* bone;
+    PreviewBoneMetadata* metadata;
+};
 enum PreviewBoneOffsets {
-    kPreviewBoneMatrixOffset = 0x78, kPreviewBoneFlagsOffset = 0x74,
+    kPreviewBoneMatrixOffset = 0x78,
+    kPreviewBoneFlagsOffset = 0x74,
     kPreviewResolvedSelectionOffset = 0x1BC
 };
 // Four borrowed transform/point slots, preceded by a pixel center; FxAttachment_Init
@@ -96,7 +139,10 @@ struct PreviewAttachmentDescription {
     void* points[4];
 };
 typedef char PreviewAttachmentDescription_size[(sizeof(PreviewAttachmentDescription) == 0x28) ? 1 : -1];
-struct PreviewAnimationName { char rangeState[0x18]; char* name; };
+struct PreviewAnimationName {
+    char rangeState[0x18];
+    char* name;
+};
 typedef char PreviewSpray_screen_offset[((int)&((PreviewSprayAttachment*)0)->screenX == 0x0c) ? 1 : -1];
 typedef char PreviewSequence_screen_offset[((int)&((PreviewSequenceAttachment*)0)->screenX == 0x18) ? 1 : -1];
 typedef char PreviewTree_effect_offset[((int)&((PreviewEffectTreeNode*)0)->effect == 0x10) ? 1 : -1];
@@ -124,6 +170,11 @@ extern const char exhibitionResourceStrings[];
 #include "classes/CPvsFxBox.h"
 #include "classes/CExhibition.h"
 #include "MSL/vector.h"
+#include "classes/CFxBox.h"
+#include "classes/CSetScissorRect.h"
+#include "classes/CFxSpray.h"
+#include "classes/CPreloadFileAsync.h"
+#include "classes/CCallback.h"
 typedef std::vector<void*, app::app_allocator<void*> > ExhibitionPtrVector;
 
 #define AsCExhibition(p) ((CExhibition*)(p))
@@ -141,71 +192,37 @@ enum PreviewLayoutOffset {
 #define AsCPvsFxBox(p) ((CPvsFxBox*)(p))
 
 // Construct in caller-owned storage without allocating.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 extern "C" {
 
 // Complete preview storage passed to construction; CExhibition supplies the field view.
-struct ExhibitionConstructionStorage { unsigned char data[0x650]; };
+struct ExhibitionConstructionStorage {
+    unsigned char data[0x650];
+};
 
 void CExhibition_InitializeAngleCache();
-void* CExhibition_Ctor(ExhibitionConstructionStorage* self, int* rect, float cameraDistance);
-int CExhibition_SetViewport(void* self, int* rect, float cameraDistance);
-int CExhibition_OffsetViewport(void* self, int x, int y);
-int CExhibition_SetViewportYLimits(void* self, unsigned int minimumY, unsigned int maximumY);
-int CExhibition_SetAttachment(void* self, unsigned int index, void* value);
-void* CExhibition_dtor(void* self, int deleting);
-void CExhibition_UpdateLoadState(void* self, float dt);
-int CExhibition_PlayAnimationByName(void* self, void* name, int flag, float delta);
-void CExhibition_DrawScene(void* self);
-void CExhibition_ConfigureAvatarPreview(void* self, void* params, void* resource, const char* name, void* callback, float value);
-void CExhibition_SetItemType(void* self, unsigned int mode);
-int CExhibition_ClearControlFlag(void* self);
-int CExhibition_SetRotationLimits(void* self, float first, float second);
-int CExhibition_SetRotation(void* self, const float* arg2);
-int CExhibition_SetCameraDistance(void* self, float cameraDistance);
-int CExhibition_SetCameraDistanceLimits(void* self, float a, float b);
-void* CExhibition_GetRotation(void* self);
-float CExhibition_GetCameraDistance(void* self);
-int CExhibition_IsReady(void* self);
-int CExhibition_QueueModelUpdate(void* self, void* arg2, void* arg3, void* arg4);
-int CExhibition_ApplyTextureVariant(void* self, void* arg2, int arg3);
-int CExhibition_CopyResolvedAvatarSelection(void* self, void* out);
-int CExhibition_SetVisible(void* self, int value);
-int CExhibition_GetCallbackResult(void* self, int callbackAddress, void* callbackContext);
-int CExhibition_ClearModelPreloader(void* self);
-int CExhibition_SetModelPreloader(void* self, int value);
-void CExhibition_CreateBallEffects(void* self);
-int CExhibition_UpdateEffectScreenCenter(void* self);
-void CExhibition_UpdateModelPose(void* self);
-void CExhibition_RebuildAttachedEffects(void* self);
-int CExhibition_InitializeLoadedModel(void* self);
-int CExhibition_UpdateAnimationAndEffects(void* self, float dt);
-int CExhibition_LoadEnvironmentLights(void* self);
-int CExhibition_ParseMaterialLayerAnimationCommand(void* self, int arg2);
-void CExhibition_HideNamedPuppetBones(void* self, void* arg2);
-void CExhibition_ParseAnimationGatedCommand(void* self, void* arg2);
-void CExhibition_PlayAnimationIfPartPresent(void* self, void* arg2);
-void CExhibition_vfunc_21(void);
-int CExhibition_ParseConditionedQuotedTokenImpl(void* self, int arg2, int arg3, int arg4);
-int CExhibition_CreateAttachedEffectAtScreenCenter(void* self, float* output, int arg3);
-int CExhibition_ParseBoneReferences(void* self, int arg2, int arg3);
-void CExhibition_PlaySoundCommand(void* self, void* arg2);
+void* __ct__11CExhibitionFPif(ExhibitionConstructionStorage* self, int* rect, float cameraDistance);
+void* __dt__11CExhibitionFv(void* self, int deleting);
 void* dtor_802BA96C(void* self, int deleting);
 void* dtor_802BA9EC(void* self, int deleting);
-void* CSetScissorRect_dtor(void* self, int deleting);
+void* __dt__15CSetScissorRectFv(void* self, int deleting);
 
 extern float kFloat_6_2831855;
 extern float s_exhibitionFullCircleAngle;
 
-struct PreviewAffineCopy { float m[12]; };
-struct PreviewVectorCopy { float v[3]; };
+struct PreviewAffineCopy {
+    float m[12];
+};
+struct PreviewVectorCopy {
+    float v[3];
+};
 
 extern void Matrix_SetBasisElements(float*, float, float, float, float, float, float, float, float, float);
 extern void Matrix_SetIdentityAffine(void*);
-extern void CFxBox_Ctor(void*);
 extern void ItemSelection_Init(void*);
-extern void CCallback_Ctor(void*);
 extern void ResolvedItemSelection_Clear(void*);
 extern int Camera_SetFov(void*, float);
 extern int WView_SetViewMatrix(void*, void*);
@@ -217,10 +234,8 @@ extern int Mtx44_SetEulerRotationZXY(void*, float, float, float);
 extern int PSMTX44Concat(void*, void*, void*);
 extern int Mtx44_SetTranslation(void*, float, float, float);
 extern int Matrix_ExtractAffineFrom4x4(void*, void*);
-extern void CFxBox_SetResourceManager(void*, void*);
-extern void CFxBox_SetCameraTransform(void*, void*);
 extern void dtor_8013AA08(void*);
-extern void CPvsFxBox_dtor(void*);
+extern "C" int __dt__6CFxBoxFv(void*, int);
 extern void dtor_8013AA48(void*);
 extern void dtor_8013AAC8(void*);
 extern void ListWithCount_Clear(void*);
@@ -252,7 +267,8 @@ int FxBox_CreateAndAttachEffectByExtension(void* self, void* output, int arg3, v
 int Parse_NonemptyQuotedTokenUnder64Bytes(void* self, void* arg2, void* result);
 extern void* g_soundManager;
 extern const float kFloat_200_PreviewSound;
-int Sound_PlayByName(void* arg1, void* arg2, int arg4, int arg6, int arg8, int arg9, float arg3, float arg5, float arg7);
+int Sound_PlayByName(void* arg1, void* arg2, int arg4, int arg6, int arg8, int arg9, float arg3, float arg5,
+                     float arg7);
 
 struct Sub802B8AD8 {
     virtual void m0();
@@ -268,7 +284,8 @@ struct Sub802B87F4 {
     virtual int m4();
 };
 
-int AvatarModel_SetAttachment(void*, unsigned int, void*); /* defined (void*, unsigned char, void*); index passed through unmasked */
+int AvatarModel_SetAttachment(void*, unsigned int,
+                              void*); /* defined (void*, unsigned char, void*); index passed through unmasked */
 extern int PlayerModel_GetPuppet(void*);
 extern int ObjectList_GetSelected(void*);
 int WPuppet_ParseMaterialLayerAnimationCommand(void*, int, void*);
@@ -277,7 +294,8 @@ int WPuppet_ParseMaterialLayerAnimationCommand(void*, int, void*);
 static inline int ExhibitionIsReady(void* self) {
     void* ptr = (*(void**)&AsCExhibition(self)->preloadFile);
     int valid = 1;
-    if (ptr && !((Sub802B87F4*)ptr)->m2()) valid = 0;
+    if (ptr && !((Sub802B87F4*)ptr)->m2())
+        valid = 0;
     if (valid) {
         unsigned int value = (*(unsigned int*)&AsCExhibition(self)->loadState) - 1;
         unsigned int shift = __cntlzw(value ^ 2);
@@ -290,7 +308,8 @@ static inline int ExhibitionIsReady(void* self) {
 static inline void* fn_802BA4AC_a(void* self) {
     if (AsCExhibition(self)->modelKind == kPreviewAvatar) {
         void* ptr = AsCExhibition(self)->modelController;
-        if (ptr != 0) return (void*)PlayerModel_GetPuppet(ptr);
+        if (ptr != 0)
+            return (void*)PlayerModel_GetPuppet(ptr);
     } else {
         return AsCExhibition(self)->puppet;
     }
@@ -301,7 +320,8 @@ static inline void* fn_802BA4AC_a(void* self) {
 static inline void* fn_802BA4AC_b(void* self) {
     if (AsCExhibition(self)->modelKind == kPreviewAvatar) {
         void* ptr = AsCExhibition(self)->modelController;
-        if (ptr != 0) return (void*)ObjectList_GetSelected(ptr);
+        if (ptr != 0)
+            return (void*)ObjectList_GetSelected(ptr);
     } else {
         return AsCExhibition(self)->puppet;
     }
@@ -312,7 +332,8 @@ extern char __vt__15CSetScissorRect[];
 extern "C" int Engine_SetScissorRect(void*);
 extern void __dl__FPv(void*);
 extern void appFreeUni__FPv(void*);
-extern "C" int AvatarModel_ApplyTextureVariant(void*, void*, int); /* defined with an unsigned char mode; passed through unmasked */
+extern "C" int AvatarModel_ApplyTextureVariant(void*, void*,
+                                               int); /* defined with an unsigned char mode; passed through unmasked */
 extern "C" void ItemSelection_SetStateIfSameCharacter(void*, void*, int);
 extern "C" void* String_ParseQuotedToken(void*, void*);
 extern "C" int CString_Compare(void*, void*);
@@ -331,7 +352,8 @@ struct ResolvedAvatarSelectionCopy {
 // Return the avatar controller's puppet, or null when there is no controller.
 inline void* fn_802BA578_inner(void* self) {
     void* ptr = AsCExhibition(self)->modelController;
-    if (ptr != 0) return (void*)PlayerModel_GetPuppet(ptr);
+    if (ptr != 0)
+        return (void*)PlayerModel_GetPuppet(ptr);
     return 0;
 }
 
@@ -339,7 +361,8 @@ inline void* fn_802BA578_inner(void* self) {
 inline void* fn_802BA578_get(void* self) {
     if (AsCExhibition(self)->modelKind == kPreviewAvatar) {
         void* ptr = AsCExhibition(self)->modelController;
-        if (ptr != 0) return (void*)PlayerModel_GetPuppet(ptr);
+        if (ptr != 0)
+            return (void*)PlayerModel_GetPuppet(ptr);
     } else {
         return AsCExhibition(self)->puppet;
     }
@@ -347,8 +370,16 @@ inline void* fn_802BA578_get(void* self) {
 }
 
 // Copy records include the character id, four packed bytes, and opaque part words.
-struct ResolvedAvatarRecordCopy { int head; unsigned char b[4]; int rest[48]; };
-struct AvatarSelectionRecordCopy { int head; unsigned char b[4]; int rest[24]; };
+struct ResolvedAvatarRecordCopy {
+    int head;
+    unsigned char b[4];
+    int rest[48];
+};
+struct AvatarSelectionRecordCopy {
+    int head;
+    unsigned char b[4];
+    int rest[24];
+};
 
 int ResourceModel_SetMatrixRecursive(void*, void*, void*);
 int ResourceModel_UpdateBoneWorldMatrices(void*, int, float, int);
@@ -361,14 +392,6 @@ extern const float kClubPreviewAxisRotation;
 
 extern const float kPreviewRotationYWrapStep;
 
-struct Rotation802B {
-    char pad[0x14];
-    float x, y, z;
-    char pad20[0x5f8];
-    float low, high;
-};
-
-extern int CFxBox_ClearEffects(void*, int);
 int ObjectList_FindAnimationRangeByName(void*, void*, int, int);
 int PlayerModel_SetDefaultPuppetLayerEnabled(void*, int);
 int WPuppet_FindAnimationRangeByName(void*, void*);
@@ -387,9 +410,11 @@ struct Owner6888 {
 static inline void* target6888(Owner6888* owner) {
     switch (owner->kind) {
     case 0:
-        if (owner->controller) return (void*)ObjectList_GetSelected(owner->controller);
+        if (owner->controller)
+            return (void*)ObjectList_GetSelected(owner->controller);
         break;
-    default: return owner->object;
+    default:
+        return owner->object;
     }
     return 0;
 }
@@ -397,8 +422,6 @@ static inline void* target6888(Owner6888* owner) {
 extern void* s_previewEnvironmentResourceName;
 extern int Resource_OpenResolvedPath(void*, void*, unsigned int, int, int, int, int);
 extern int __nwa__FUl(unsigned int);
-extern int gtl_IGenericEnvironmentResource_CreateFromMemory(void*, int, void**);
-extern void gtl_IGenericEnvironmentResource_GetLightCount(void*, unsigned int*);
 extern void gtl_IGenericEnvironmentResource_CopyLights(void*, void*, unsigned int);
 extern void gtl_GenericLight_GetDescription(void*, void*);
 extern int appMallocDummy__FUl(unsigned int);
@@ -411,28 +434,43 @@ extern char __vt__Q23std12length_error[];
 extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 struct VecAllocation802B {
-    char* pointer; char* allocator;
+    char* pointer;
+    char* allocator;
     // Guard message-array storage until the shared owner is constructed.
     VecAllocation802B(char* p, char* a) : pointer(p), allocator(a) {}
     // Delete the array unless ownership was transferred by clearing pointer.
-    ~VecAllocation802B() { if (pointer) __dla__FPv(pointer); }
+    ~VecAllocation802B() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct VecControlBase802B {
-    void* table; unsigned strong, weak;
+    void* table;
+    unsigned strong, weak;
     // Initialize shared message ownership with one strong and one weak reference.
-    VecControlBase802B() { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; }
+    VecControlBase802B() {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+    }
 };
 struct VecControl802B : VecControlBase802B {
     char* pointer;
     // Store the message array in its shared control block.
-    VecControl802B(char* p) { pointer = p; }
+    VecControl802B(char* p) {
+        pointer = p;
+    }
 };
 struct VecErrorBase802B : std::exception {
     // Install the exception runtime table at the base object's first word.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
 
     // Initialize the logic-error portion of a vector length exception.
-    VecErrorBase802B() { SetTable(__vt__Q23std11logic_error); }
+    VecErrorBase802B() {
+        SetTable(__vt__Q23std11logic_error);
+    }
 };
 } // extern "C"
 namespace std {
@@ -451,23 +489,44 @@ struct length_error : VecErrorBase802B {
 }
 extern "C" {
 struct VecBuffer802B {
-    void** data; unsigned size; unsigned capacity; unsigned* owner; unsigned offset;
+    void** data;
+    unsigned size;
+    unsigned capacity;
+    unsigned* owner;
+    unsigned offset;
     // Begin an empty temporary pointer-array owner for vector growth.
     VecBuffer802B(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Free pointer storage only; the caller manages pointed-to objects separately.
-    ~VecBuffer802B() { if (data) { size = 0; appFreeUni__FPv(data); } }
+    ~VecBuffer802B() {
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
+    }
 };
-struct PtrVec802B { void** data; unsigned size; unsigned capacity; };
-struct RefObj802B { int ref; 
-virtual ~RefObj802B();
+struct PtrVec802B {
+    void** data;
+    unsigned size;
+    unsigned capacity;
 };
-struct File802B { 
-virtual void v0(); virtual void v1(); virtual void Read(void*, unsigned int);
-int size; };
+struct RefObj802B {
+    int ref;
+    virtual ~RefObj802B();
+};
+struct File802B {
+    virtual void v0();
+    virtual void v1();
+    virtual void Read(void*, unsigned int);
+    int size;
+};
 // Count pointer elements between two vector iterators.
-inline int VecDist802B(void** first, void** last) { return last - first; }
+inline int VecDist802B(void** first, void** last) {
+    return last - first;
+}
 // Choose the larger growth amount by reference, matching the original allocator expression.
-inline const unsigned& VecMax802B(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+inline const unsigned& VecMax802B(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 
 int WPuppet_UpdateBound(void*, int);
 float Random_RangeFloat(int, float, float);
@@ -478,13 +537,8 @@ int ItemInventory_FindBallData(void*, int);
 int FxAttachment_Init(void*);
 int WPuppet_FindOrCacheBone(void*, const char*);
 int WPuppet_FindNamedBoneEntry(void*, const char*);
-extern int CFxSpray_CreateFromScript(void*, const char*, int, int);
-extern int CFxBox_RegisterSpray(void*, void*);
 extern int CFxSequence_Create(void*, const char*, int, int, int);
-extern int CFxBox_RegisterSequence(void*, void*);
 
-int CFxBox_RemoveSpray(void*, void*);
-int CFxBox_RemoveSequence(void*, void*, int);
 int String_CompareCString(const char*, const char*);
 char* String_ParseSpaceDelimitedToken(void*, void*);
 int ResolvedItemSelection_ContainsPart(void*, const char*);
@@ -498,11 +552,10 @@ void __dt__Q23std12length_errorFv(void*, int);
 
 // Construct a length_error in caller-provided aligned storage.
 inline std::length_error* MakeError802B(void* storage, const char* message) {
-    return new(storage) std::length_error(message);
+    return new (storage) std::length_error(message);
 }
 
 int PuppetOwner_SetOpacityRecursive(void*, unsigned char);
-int CFxBox_UpdateEffects(void*, float);
 extern const float kPreviewMaximumOpacity;
 extern const float kPreviewFadeAndEffectStepScale;
 
@@ -515,14 +568,15 @@ struct Sub802B9CD4 {
 static inline void* fn_802B9CD4_target(char* base) {
     if (AsCExhibition(base)->modelKind == kPreviewAvatar) {
         void* controller = AsCExhibition(base)->modelController;
-        if (controller) return (void*)ObjectList_GetSelected(controller);
-    } else return AsCExhibition(base)->puppet;
+        if (controller)
+            return (void*)ObjectList_GetSelected(controller);
+    } else
+        return AsCExhibition(base)->puppet;
     return 0;
 }
 
 extern void* s_previewFallbackAnimationName;
 int ItemSelection_Equals(void*, void*);
-void* CPreloadFileAsync_Create(void*);
 int String_ReplaceRange(void*, int, int, const char*, const char*, const char*);
 
 void WView_InvalidateViewAndProjection(void*);
@@ -535,7 +589,6 @@ void Engine_GetScissorRect(void*);
 void WPuppet_SetRendererOption(void*, int);
 void Engine_SetLightEnabled(int, int);
 void Engine_SetLight(int, int);
-void CFxBox_DrawSprays(void*, void*);
 extern float s_previewNearClip;
 extern float s_previewFarClip;
 extern float kPreviewReferenceScreenCenterX;
@@ -570,13 +623,22 @@ static inline ViewObj6A1C* ExhibitionView(void* self) {
 // IDs verified against Engine_SetCachedRenderState (gx_renderer_state_and_efb_copy.cpp).
 // Values follow its GX depth/blend/cull consumers; guards restore state in reverse order.
 enum PreviewRenderState {
-    kPreviewCullMode = 0, kPreviewLightingEnabled = 2, kPreviewDepthCompare = 3,
-    kPreviewDepthWrite = 5, kPreviewDepthTest = 6, kPreviewBlendEnabled = 10,
-    kPreviewSourceBlend = 13, kPreviewDestinationBlend = 14
+    kPreviewCullMode = 0,
+    kPreviewLightingEnabled = 2,
+    kPreviewDepthCompare = 3,
+    kPreviewDepthWrite = 5,
+    kPreviewDepthTest = 6,
+    kPreviewBlendEnabled = 10,
+    kPreviewSourceBlend = 13,
+    kPreviewDestinationBlend = 14
 };
 enum PreviewRenderValue {
-    kPreviewDisabled = 0, kPreviewEnabled = 1, kPreviewCompareLessEqual = 3,
-    kPreviewSourceAlpha = 4, kPreviewInverseSourceAlpha = 5, kPreviewCullNone = 0
+    kPreviewDisabled = 0,
+    kPreviewEnabled = 1,
+    kPreviewCompareLessEqual = 3,
+    kPreviewSourceAlpha = 4,
+    kPreviewInverseSourceAlpha = 5,
+    kPreviewCullNone = 0
 };
 struct StateGuard6A1C {
     void* vt;
@@ -611,12 +673,16 @@ struct RectGuard6A1C {
     }
 };
 typedef Vec3f Vec6A1C;
-struct PreviewCameraBasis { Vec6A1C basisX, basisY, basisZ, origin; };
-struct PreviewAffineWordCopy { unsigned int w[12]; };
+struct PreviewCameraBasis {
+    Vec6A1C basisX, basisY, basisZ, origin;
+};
+struct PreviewAffineWordCopy {
+    unsigned int w[12];
+};
 typedef unsigned int (*Cvt6A1C)(double);
 
-struct Del802B734C { 
-virtual void m0(int);
+struct Del802B734C {
+    virtual void m0(int);
 };
 // Flip the camera X/Z basis vectors and install the resulting view matrix.
 static inline void setCam734C_c(PreviewCameraBasis m) {
@@ -625,12 +691,24 @@ static inline void setCam734C_c(PreviewCameraBasis m) {
     WView_SetViewMatrix(g_view, &m);
 }
 // Forward a camera matrix while retaining the original inline-copy shape.
-static inline void setCam734C_b(PreviewCameraBasis m) { setCam734C_c(m); }
+static inline void setCam734C_b(PreviewCameraBasis m) {
+    setCam734C_c(m);
+}
 // Pass the camera matrix through the original copy wrappers before applying it.
-static inline void setCam734C_a(PreviewCameraBasis m) { setCam734C_b(m); }
+static inline void setCam734C_a(PreviewCameraBasis m) {
+    setCam734C_b(m);
+}
 // Two padded allocator bytes; volatile copies retain the engine string ABI.
-struct PreviewStringAllocatorSlots { char a; char x[3]; char b; char y[3]; };
-struct AvatarSelectionPartCopy { unsigned char a, b, c, d; int rest[24]; };
+struct PreviewStringAllocatorSlots {
+    char a;
+    char x[3];
+    char b;
+    char y[3];
+};
+struct AvatarSelectionPartCopy {
+    unsigned char a, b, c, d;
+    int rest[24];
+};
 
 extern const char* s_previewCaddieAnimationName;
 extern const char* s_previewClubSetAnimationName;
@@ -638,13 +716,20 @@ extern const char* s_previewClubSetAnimationName;
 typedef Vec3f PreviewVector3;
 // Affine camera storage: three basis vectors followed by camera origin.
 // basisX/basisZ are inverted before installing WView's opposite-handed view convention.
-struct PreviewCameraMatrix { PreviewVector3 basisX, basisY, basisZ, origin; };
-struct PreviewCameraCopyOrder { PreviewVector3 basisX, origin, basisZ, basisY; };
+struct PreviewCameraMatrix {
+    PreviewVector3 basisX, basisY, basisZ, origin;
+};
+struct PreviewCameraCopyOrder {
+    PreviewVector3 basisX, origin, basisZ, basisY;
+};
 // Build the original reordered camera-copy temporary without changing its component values.
-inline PreviewCameraCopyOrder MakeCameraCopyInAbiOrder(const PreviewVector3& a, const PreviewCameraMatrix& c) { PreviewCameraCopyOrder s = {a, c.origin, c.basisZ, c.basisY}; return s; }
+inline PreviewCameraCopyOrder MakeCameraCopyInAbiOrder(const PreviewVector3& a, const PreviewCameraMatrix& c) {
+    PreviewCameraCopyOrder s = {a, c.origin, c.basisZ, c.basisY};
+    return s;
+}
 
-struct Del77E8 { 
-virtual ~Del77E8();
+struct Del77E8 {
+    virtual ~Del77E8();
 };
 IFF_STRUCT::sCadItem* ItemInventory_FindCaddieItemData(void*, void*);
 IFF_STRUCT::sCaddie* ItemInventory_FindCaddieData(void*, unsigned int);
@@ -652,58 +737,100 @@ IFF_STRUCT::sClubSet* ItemInventory_FindClubSetData(void*, unsigned int);
 
 // Replace the complete small/heap string with borrowed [start,end) text.
 // Keep this scope at the call site: the inline-function form changes .text.
-#define REPLACE_PREVIEW_STRING_RANGE(field, start, end) { \
-    int length = (*(unsigned int*)(base + field) >> 31) == 0 ? (*(unsigned char*)(base + field) & 0x7f) : *(int*)(base + field + 4); \
-    volatile PreviewStringAllocatorSlots sl; \
-    sl.b = sl.a; \
-    String_ReplaceRange(base + field, 0, length, start, end, (const char*)&sl.b); }
+#define REPLACE_PREVIEW_STRING_RANGE(field, start, end)                                                     \
+    {                                                                                                       \
+        int length = (*(unsigned int*)(base + field) >> 31) == 0 ? (*(unsigned char*)(base + field) & 0x7f) \
+                                                                 : *(int*)(base + field + 4);               \
+        volatile PreviewStringAllocatorSlots sl;                                                            \
+        sl.b = sl.a;                                                                                        \
+        String_ReplaceRange(base + field, 0, length, start, end, (const char*)&sl.b);                       \
+    }
 // Read the string length from small-string storage or its heap-backed representation.
 inline int PreviewStringLength(char* p) {
     return (*(unsigned int*)p >> 31) == 0 ? (*(unsigned char*)p & 0x7f) : *(int*)(p + 4);
 }
 // Assign a NUL-terminated animation name. Both string macros below use the
 // caller's base/s locals; inline alternatives changed the generated instructions.
-#define ASSIGN_PREVIEW_ANIMATION(field, init) { \
-    s = init; \
-    int length = PreviewStringLength(base + field); \
-    volatile PreviewStringAllocatorSlots sl; \
-    sl.b = sl.a; \
-    String_ReplaceRange(base + field, 0, length, s, s + strlen(s), (const char*)&sl.b); }
+#define ASSIGN_PREVIEW_ANIMATION(field, init)                                               \
+    {                                                                                       \
+        s = init;                                                                           \
+        int length = PreviewStringLength(base + field);                                     \
+        volatile PreviewStringAllocatorSlots sl;                                            \
+        sl.b = sl.a;                                                                        \
+        String_ReplaceRange(base + field, 0, length, s, s + strlen(s), (const char*)&sl.b); \
+    }
 // Append the borrowed suffix to the current model path; copy text into the string.
-#define APPEND_PREVIEW_MODEL_SUFFIX(field, init) { \
-    s = init; \
-    int length = PreviewStringLength(base + field); \
-    volatile PreviewStringAllocatorSlots sl; \
-    sl.a = sl.b; \
-    String_ReplaceRange(base + field, length, 0, s, s + strlen(s), (const char*)&sl.a); }
+#define APPEND_PREVIEW_MODEL_SUFFIX(field, init)                                            \
+    {                                                                                       \
+        s = init;                                                                           \
+        int length = PreviewStringLength(base + field);                                     \
+        volatile PreviewStringAllocatorSlots sl;                                            \
+        sl.a = sl.b;                                                                        \
+        String_ReplaceRange(base + field, length, 0, s, s + strlen(s), (const char*)&sl.a); \
+    }
 
 typedef unsigned int (*Round4BB0)(float);
 
-struct Box4BB0 { float hw, hh, cx, cy; };
-struct PreviewCameraWordCopy { unsigned w[12]; };
+struct Box4BB0 {
+    float hw, hh, cx, cy;
+};
+struct PreviewCameraWordCopy {
+    unsigned w[12];
+};
 
 typedef Vec3f V825C;
-struct DistanceCameraMatrix { V825C basisX, basisY, basisZ, origin; };
-struct DistanceCameraCopyOrder { V825C basisX, origin, basisZ, basisY; };
+struct DistanceCameraMatrix {
+    V825C basisX, basisY, basisZ, origin;
+};
+struct DistanceCameraCopyOrder {
+    V825C basisX, origin, basisZ, basisY;
+};
 // Build the camera-copy temporary used by distance changes.
-inline DistanceCameraCopyOrder MakeDistanceCameraCopyInAbiOrder(const V825C& a, const DistanceCameraMatrix& c) { DistanceCameraCopyOrder s = {a, c.origin, c.basisZ, c.basisY}; return s; }
+inline DistanceCameraCopyOrder MakeDistanceCameraCopyInAbiOrder(const V825C& a, const DistanceCameraMatrix& c) {
+    DistanceCameraCopyOrder s = {a, c.origin, c.basisZ, c.basisY};
+    return s;
+}
 
-struct Rect5048 { int x0, y0, x1, y1; };
+struct Rect5048 {
+    int x0, y0, x1, y1;
+};
 // Build the viewport rectangle temporary in the original member order.
-inline Rect5048 makeRect5048(int x0, int y0, int x1, int y1) { Rect5048 r = {x0, y0, x1, y1}; return r; }
-struct Box5048 { float cx, cy, hw, hh; };
+inline Rect5048 makeRect5048(int x0, int y0, int x1, int y1) {
+    Rect5048 r = {x0, y0, x1, y1};
+    return r;
+}
+struct Box5048 {
+    float cx, cy, hw, hh;
+};
 
-struct Rect5504 { int x0, y0, x1, y1; };
+struct Rect5504 {
+    int x0, y0, x1, y1;
+};
 // Build the rectangle temporary used by vertical viewport-limit changes.
-inline Rect5504 makeRect5504(int x0, int y0, int x1, int y1) { Rect5504 r = {x0, y0, x1, y1}; return r; }
-struct Box5504 { float cx, cy, hw, hh; };
+inline Rect5504 makeRect5504(int x0, int y0, int x1, int y1) {
+    Rect5504 r = {x0, y0, x1, y1};
+    return r;
+}
+struct Box5504 {
+    float cx, cy, hw, hh;
+};
 typedef Vec3f V3_5504;
-struct Cam5504 { V3_5504 basisX, basisY, basisZ, origin; };
-struct CamSw5504 { V3_5504 basisX, origin, basisZ, basisY; };
+struct Cam5504 {
+    V3_5504 basisX, basisY, basisZ, origin;
+};
+struct CamSw5504 {
+    V3_5504 basisX, origin, basisZ, basisY;
+};
 // Reorder the camera-copy temporary for the original inline copy sequence.
-inline CamSw5504 toSw5504(const Cam5504& c) { CamSw5504 s = {c.basisX, c.origin, c.basisZ, c.basisY}; return s; }
+inline CamSw5504 toSw5504(const Cam5504& c) {
+    CamSw5504 s = {c.basisX, c.origin, c.basisZ, c.basisY};
+    return s;
+}
 // Restore normal camera member order from the reordered temporary.
-inline Cam5504 fromSw5504(const CamSw5504& s) { Cam5504 c = {s.basisX, s.basisY, s.basisZ, s.origin}; return c; }
+inline Cam5504 fromSw5504(const CamSw5504& s) {
+    Cam5504 c = {s.basisX, s.basisY, s.basisZ, s.origin};
+    return c;
+}
 typedef unsigned int (*Round5504)(float);
 
 extern int PlayerModel_Dtor(void*, int);
@@ -723,7 +850,9 @@ extern int s_previewLoadWaitFrameLimit;
 struct AllocatedController {
     char storage[0x2a0];
     // Initialize the newly allocated preview avatar controller's state.
-    AllocatedController() { PlayerModel_ClearState(this); }
+    AllocatedController() {
+        PlayerModel_ClearState(this);
+    }
 };
 
 struct Controller6388 {
@@ -732,15 +861,25 @@ struct Controller6388 {
     virtual int ready();
 };
 // Resolved part bytes exclude the leading character id; contents remain opaque.
-struct ResolvedAvatarPartCopy { unsigned char a, b, c, d; int rest[48]; };
+struct ResolvedAvatarPartCopy {
+    unsigned char a, b, c, d;
+    int rest[48];
+};
 // Controller subview borrowed only while copying the resolved selection.
 struct PreviewControllerSelectionView {
     char prefix[0x1BC];
     unsigned int characterId;
     ResolvedAvatarPartCopy parts;
 };
-struct PreviewOwnedStringView { unsigned int flags, length; void* heapData; };
-struct PreviewOwnedNameVectorView { void* vtable; void** data; unsigned int size, capacity; };
+struct PreviewOwnedStringView {
+    unsigned int flags, length;
+    void* heapData;
+};
+struct PreviewOwnedNameVectorView {
+    void* vtable;
+    void** data;
+    unsigned int size, capacity;
+};
 // Keep raw aliasing at vector operations while deriving offsets from this schema.
 enum PreviewNameVectorOffset {
     kPreviewNamesData = (int)&((PreviewOwnedNameVectorView*)0)->data,
@@ -749,20 +888,30 @@ enum PreviewNameVectorOffset {
 // Treat an absent preloader as ready; otherwise ask its readiness interface.
 inline int Ready6388(Controller6388* p) {
     int valid = 1;
-    if (p && !p->ready()) valid = 0;
+    if (p && !p->ready())
+        valid = 0;
     return valid;
 }
 // Subtract an already processed count using the original reference expression.
-inline void Reduce6388(unsigned& size, unsigned count) { size -= count; }
+inline void Reduce6388(unsigned& size, unsigned count) {
+    size -= count;
+}
 // Compare iterator addresses as unsigned words, preserving the original loop form.
-inline bool Unequal6388(void* end, void* iter) { return (unsigned)end != (unsigned)iter; }
+inline bool Unequal6388(void* end, void* iter) {
+    return (unsigned)end != (unsigned)iter;
+}
 // Test whether the preview has waited longer than its configured frame limit.
-inline bool PreviewWaitLimitExceeded(int limit, char* base) { return limit < AsCExhibition(base)->loadWaitFrames; }
+inline bool PreviewWaitLimitExceeded(int limit, char* base) {
+    return limit < AsCExhibition(base)->loadWaitFrames;
+}
 // Release the previous model and owned name strings before a replacement load.
 inline void Clear6388(char* base) {
     if (AsCExhibition(base)->modelKind == kPreviewAvatar) {
         void* p = AsCExhibition(base)->modelController;
-        if (p) { PlayerModel_Dtor(p, 1); AsCExhibition(base)->modelController = 0; }
+        if (p) {
+            PlayerModel_Dtor(p, 1);
+            AsCExhibition(base)->modelController = 0;
+        }
         AsCExhibition(base)->puppet = 0;
     } else if (g_resourceManager && AsCExhibition(base)->puppet) {
         ResourceManager_ReleaseObject(g_resourceManager, AsCExhibition(base)->puppet, 0);
@@ -773,7 +922,8 @@ inline void Clear6388(char* base) {
         void* entry = *entries;
         if (entry) {
             if (entry) {
-                if (*(unsigned*)entry >> 31) appFreeUni__FPv(*(void**)((char*)entry + 8));
+                if (*(unsigned*)entry >> 31)
+                    appFreeUni__FPv(*(void**)((char*)entry + 8));
                 __dl__FPv(entry);
             }
             *entries = 0;
@@ -785,17 +935,22 @@ inline void Clear6388(char* base) {
 inline void StateTwo6388(char* base) {
     int ready = 1;
     Controller6388* p = (*(Controller6388**)&AsCExhibition(base)->modelPreloader);
-    if (p && !p->ready()) ready = 0;
+    if (p && !p->ready())
+        ready = 0;
     if (ready) {
         ready = 1;
         p = (*(Controller6388**)&AsCExhibition(base)->preloadFile);
-        if (p && !p->ready()) ready = 0;
+        if (p && !p->ready())
+            ready = 0;
         if (ready) {
             if (AsCExhibition(base)->modelController) {
-                AvatarModel_CopyAppearanceRecord(AsCExhibition(base)->modelController, ((char*)(&AsCExhibition(base)->resolvedCharacterId)));
-                AvatarModel_ApplyItemChanges(AsCExhibition(base)->modelController, ((char*)(base + kPreviewAvatarSelectionOffset)), AsCExhibition(base)->partReloadMask);
-                CExhibition_RebuildAttachedEffects(base);
-                CExhibition_UpdateModelPose(base);
+                AvatarModel_CopyAppearanceRecord(AsCExhibition(base)->modelController,
+                                                 ((char*)(&AsCExhibition(base)->resolvedCharacterId)));
+                AvatarModel_ApplyItemChanges(AsCExhibition(base)->modelController,
+                                             ((char*)(base + kPreviewAvatarSelectionOffset)),
+                                             AsCExhibition(base)->partReloadMask);
+                ((CExhibition*)base)->RebuildAttachedEffects();
+                ((CExhibition*)base)->UpdateModelPose();
             }
             AsCExhibition(base)->loadState = kPreviewReady;
             AsCExhibition(base)->loadWaitFrames = 0;
@@ -806,13 +961,18 @@ inline void StateTwo6388(char* base) {
 extern "C" void ResolvedItemSelection_Destroy(void*, int);
 extern "C" void dtor_80293270(void*, int);
 extern "C" int FxBoxResourceTree_FreeSubtreeNodes(void*, void*);
-extern "C" int CFxBox_dtor(void*, int);
 // Subtract the cleared element count without changing vector capacity.
-inline void ReduceCount5A88(unsigned& size, unsigned count) { size -= count; }
+inline void ReduceCount5A88(unsigned& size, unsigned count) {
+    size -= count;
+}
 // Reload a pointer-vector base and count to compute its current end iterator.
-inline void** ArrayEnd5A88(void*** data, unsigned* size) { return *data + *size; }
+inline void** ArrayEnd5A88(void*** data, unsigned* size) {
+    return *data + *size;
+}
 // Compare container iterator addresses in the original unsigned-word form.
-inline bool Unequal5A88(void* end, void* iter) { return (unsigned)end != (unsigned)iter; }
+inline bool Unequal5A88(void* end, void* iter) {
+    return (unsigned)end != (unsigned)iter;
+}
 // Detach and free the preview's circular list nodes, reducing its stored count.
 inline void ClearList5A88(char* member) {
     void* node = *(void**)(member + 8);
@@ -833,34 +993,51 @@ inline void ClearList5A88(char* member) {
 }
 
 // These expanded cleanup scopes preserve register allocation; inline helper alternatives change .text.
-#define CLEAN_TREE_LEAF(owner, value) \
-    { void* leaf = (value); if (leaf) { \
-        void* left = *(void**)leaf; \
-        if (left) FxBoxResourceTree_FreeSubtreeNodes(owner, left); \
-        void* right = *(void**)((char*)leaf + 4); \
-        if (right) FxBoxResourceTree_FreeSubtreeNodes(owner, right); \
-        appFreeUni__FPv(leaf); \
-    } }
-#define CLEAN_TREE_PAIR(owner, value) \
-    { void* pair = (value); if (pair) { \
-        CLEAN_TREE_LEAF(owner, *(void**)pair); \
-        CLEAN_TREE_LEAF(owner, *(void**)((char*)pair + 4)); \
-        appFreeUni__FPv(pair); \
-    } }
-#define CLEAN_TREE_BRANCH(owner, value) \
-    { void* branch = (value); if (branch) { \
-        CLEAN_TREE_PAIR(owner, *(void**)branch); \
-        CLEAN_TREE_PAIR(owner, *(void**)((char*)branch + 4)); \
-        appFreeUni__FPv(branch); \
-    } }
-#define CLEAN_TREE(owner) \
-    if (owner) if (owner) if (owner) if (owner) if (owner) if (owner) { \
-        void* root = *(void**)((char*)(owner) + 4); if (root) { \
-            CLEAN_TREE_BRANCH(owner, *(void**)root); \
-            CLEAN_TREE_BRANCH(owner, *(void**)((char*)root + 4)); \
-            appFreeUni__FPv(root); \
-        } \
+#define CLEAN_TREE_LEAF(owner, value)                             \
+    {                                                             \
+        void* leaf = (value);                                     \
+        if (leaf) {                                               \
+            void* left = *(void**)leaf;                           \
+            if (left)                                             \
+                FxBoxResourceTree_FreeSubtreeNodes(owner, left);  \
+            void* right = *(void**)((char*)leaf + 4);             \
+            if (right)                                            \
+                FxBoxResourceTree_FreeSubtreeNodes(owner, right); \
+            appFreeUni__FPv(leaf);                                \
+        }                                                         \
     }
+#define CLEAN_TREE_PAIR(owner, value)                           \
+    {                                                           \
+        void* pair = (value);                                   \
+        if (pair) {                                             \
+            CLEAN_TREE_LEAF(owner, *(void**)pair);              \
+            CLEAN_TREE_LEAF(owner, *(void**)((char*)pair + 4)); \
+            appFreeUni__FPv(pair);                              \
+        }                                                       \
+    }
+#define CLEAN_TREE_BRANCH(owner, value)                           \
+    {                                                             \
+        void* branch = (value);                                   \
+        if (branch) {                                             \
+            CLEAN_TREE_PAIR(owner, *(void**)branch);              \
+            CLEAN_TREE_PAIR(owner, *(void**)((char*)branch + 4)); \
+            appFreeUni__FPv(branch);                              \
+        }                                                         \
+    }
+#define CLEAN_TREE(owner)                                                             \
+    if (owner)                                                                        \
+        if (owner)                                                                    \
+            if (owner)                                                                \
+                if (owner)                                                            \
+                    if (owner)                                                        \
+                        if (owner) {                                                  \
+                            void* root = *(void**)((char*)(owner) + 4);               \
+                            if (root) {                                               \
+                                CLEAN_TREE_BRANCH(owner, *(void**)root);              \
+                                CLEAN_TREE_BRANCH(owner, *(void**)((char*)root + 4)); \
+                                appFreeUni__FPv(root);                                \
+                            }                                                         \
+                        }
 #pragma push
 #pragma always_inline on
 // Release pointer-array storage; pointed-to objects have separate destruction paths.
@@ -892,25 +1069,29 @@ void CExhibition_InitializeAngleCache() {
 // Compose the preview rotation and translation, publish its affine matrix and update the model.
 // Caller owns four disjoint 4x4 scratch matrices. Club previews compose yaw and X
 // rotation separately; other kinds use the ZXY Euler call including rotationZ.
-static inline void BuildAndApplyPreviewPose(void* self, void* clubRotation,
-    void* modelRotation, void* translationMatrix, void* modelTransform) {
+static inline void BuildAndApplyPreviewPose(void* self, void* clubRotation, void* modelRotation,
+                                            void* translationMatrix, void* modelTransform) {
     if (AsCExhibition(self)->modelKind == kPreviewClubSet) {
-        Mtx44_SetEulerRotationZXY(clubRotation, AsCExhibition(self)->rotationY, kFloat_0_exhibition, kFloat_0_exhibition);
-        Mtx44_SetEulerRotationZXY(modelRotation, kFloat_0_exhibition, AsCExhibition(self)->rotationX, kFloat_0_exhibition);
+        Mtx44_SetEulerRotationZXY(clubRotation, AsCExhibition(self)->rotationY, kFloat_0_exhibition,
+                                  kFloat_0_exhibition);
+        Mtx44_SetEulerRotationZXY(modelRotation, kFloat_0_exhibition, AsCExhibition(self)->rotationX,
+                                  kFloat_0_exhibition);
         PSMTX44Concat(modelRotation, clubRotation, modelRotation);
     } else {
-        Mtx44_SetEulerRotationZXY(modelRotation, AsCExhibition(self)->rotationY, AsCExhibition(self)->rotationX, AsCExhibition(self)->rotationZ);
+        Mtx44_SetEulerRotationZXY(modelRotation, AsCExhibition(self)->rotationY, AsCExhibition(self)->rotationX,
+                                  AsCExhibition(self)->rotationZ);
     }
-    Mtx44_SetTranslation(translationMatrix, AsCExhibition(self)->translationX, AsCExhibition(self)->translationY, kFloat_0_exhibition);
+    Mtx44_SetTranslation(translationMatrix, AsCExhibition(self)->translationX, AsCExhibition(self)->translationY,
+                         kFloat_0_exhibition);
     PSMTX44Concat(modelTransform, modelRotation, translationMatrix);
     Matrix_ExtractAffineFrom4x4(modelTransform, AsCExhibition(self)->modelTransform);
-    CExhibition_UpdateModelPose(self);
+    ((CExhibition*)self)->UpdateModelPose();
 }
 // Solve the documented pixel-bottom alignment equation for model Y translation.
 // Probe Y is in pixels; height is the shared view height in pixels; result is model units.
 static inline float PreviewBottomTranslation(int bottomPixel, float viewHeightPixels, const float& probePixelY) {
     return -((float)bottomPixel - viewHeightPixels * kFloat_0_5_exhibition) /
-        (viewHeightPixels * kFloat_0_5_exhibition - probePixelY);
+           (viewHeightPixels * kFloat_0_5_exhibition - probePixelY);
 }
 #pragma pop
 
@@ -918,7 +1099,7 @@ static inline float PreviewBottomTranslation(int bottomPixel, float viewHeightPi
 #pragma always_inline on
 // Construct the embedded preview effect box and its two empty list sentinels.
 static inline void InitializePreviewEffectBox(unsigned char* effectBoxBytes) {
-    CFxBox_Ctor(effectBoxBytes);
+    ((CFxBox*)effectBoxBytes)->__ct();
     *(void**)effectBoxBytes = __vt__9CPvsFxBox;
     *(int*)(effectBoxBytes + 0x37c) = 0;
     *(int*)(effectBoxBytes + 0x380) = 0;
@@ -946,12 +1127,14 @@ static inline void InitializePreviewOwnership(unsigned char* previewBytes, float
     AsCExhibition(previewBytes)->screenCenterX = 0.0f;
     AsCExhibition(previewBytes)->screenCenterY = 0.0f;
 
-    Matrix_SetBasisElements((float*)(previewBytes + kPreviewCameraMatrixOffset), 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    Matrix_SetBasisElements((float*)(previewBytes + kPreviewCameraMatrixOffset), 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+                            0.0f, 0.0f, 1.0f);
     AsCExhibition(previewBytes)->animationFrame = 0.0f;
     AsCExhibition(previewBytes)->animationRange = 0;
     AsCExhibition(previewBytes)->modelController = 0;
     AsCExhibition(previewBytes)->puppet = 0;
-    Matrix_SetBasisElements((float*)(previewBytes + kPreviewModelTransformOffset), 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    Matrix_SetBasisElements((float*)(previewBytes + kPreviewModelTransformOffset), 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+                            0.0f, 0.0f, 1.0f);
 
     AsCExhibition(previewBytes)->unk_A8 = 15.0f;
     AsCExhibition(previewBytes)->unk_AC = 25.0f;
@@ -971,7 +1154,6 @@ static inline void InitializePreviewOwnership(unsigned char* previewBytes, float
     AsCExhibition(previewBytes)->avatarResourceOptions = 0;
     ItemSelection_Init(previewBytes + kPreviewAvatarSelectionOffset);
     AsCExhibition(previewBytes)->partLoadPending = 0;
-
 }
 
 // Initialize playback strings, resource handles, callbacks and the resolved selection.
@@ -996,51 +1178,51 @@ static inline void InitializePreviewPlaybackAndResources(unsigned char* previewB
     (*(int*)&AsCExhibition(previewBytes)->lightCount) = 0;
     AsCExhibition(previewBytes)->lightCapacity = 0;
     AsCExhibition(previewBytes)->displaySuppressed = 0;
-    CCallback_Ctor(previewBytes + kPreviewCallbackOffset);
+    ((CCallback*)(previewBytes + kPreviewCallbackOffset))->__ct();
     AsCExhibition(previewBytes)->loadWaitFrames = 0;
     ResolvedItemSelection_Clear(previewBytes + kPreviewResolvedSelectionStorageOffset);
-
 }
 
 // Initialize the item preview, camera, effects, model selection, and viewport limits.
-void* CExhibition_Ctor(ExhibitionConstructionStorage* self, int* viewportRect, float cameraDistance) {
+CExhibition::CExhibition(int* viewportRect, float cameraDistance) {
+    ExhibitionConstructionStorage* self = (ExhibitionConstructionStorage*)this;
     // viewportRect borrows four pixel edges. The preview owns its controller,
     // effect box, name records, light descriptions and file preloader; a direct
     // puppet is a resource-manager handle released through that manager.
     unsigned char* previewBytes = (unsigned char*)self;
     // Repeated matrix copies/calculations retain CodeWarrior scheduling; stack declaration order is intentional.
-    float firstProjectedProbe[14]; // 0x4F8
-    float firstCameraMatrix[12]; // 0x4C8
-    float firstFlippedCameraMatrix[12]; // 0x498
-    float firstModelTransform[16]; // 0x458
-    float firstTranslation[16]; // 0x418
-    float firstClubRotation[16]; // 0x3D8
-    float firstModelRotation[16]; // 0x398
-    float secondModelRotation[16]; // 0x358
-    float secondClubRotation[16]; // 0x318
-    float secondTranslation[16]; // 0x2D8
-    float secondModelTransform[16]; // 0x298
+    float firstProjectedProbe[14];       // 0x4F8
+    float firstCameraMatrix[12];         // 0x4C8
+    float firstFlippedCameraMatrix[12];  // 0x498
+    float firstModelTransform[16];       // 0x458
+    float firstTranslation[16];          // 0x418
+    float firstClubRotation[16];         // 0x3D8
+    float firstModelRotation[16];        // 0x398
+    float secondModelRotation[16];       // 0x358
+    float secondClubRotation[16];        // 0x318
+    float secondTranslation[16];         // 0x2D8
+    float secondModelTransform[16];      // 0x298
     float secondFlippedCameraMatrix[12]; // 0x268
-    float secondCameraMatrix[12]; // 0x238
-    float secondProjectedProbe[14]; // 0x200
-    float finalModelTransform[16]; // 0x1C0
-    float finalTranslation[16]; // 0x180
-    float finalClubRotation[16]; // 0x140
-    float finalModelRotation[16]; // 0x100
-    float firstCameraWordCopy[12]; // 0xD0
-    float secondCameraWordCopy[12]; // 0xA0
-    float firstProjectionProbe[3]; // 0x94
-    float firstViewProbe[3]; // 0x88
-    float secondViewProbe[3]; // 0x7C
-    float secondProjectionProbe[3]; // 0x70
-    float firstCameraBasisY[3]; // 0x64
-    float firstCameraBasisZ[3]; // 0x58
-    float firstCameraOrigin[3]; // 0x4C
-    float secondCameraBasisY[3]; // 0x40
-    float secondCameraBasisZ[3]; // 0x34
-    float secondCameraOrigin[3]; // 0x28
-    float firstCameraBasisX[3]; // 0x1C
-    float secondCameraBasisX[3]; // 0x10
+    float secondCameraMatrix[12];        // 0x238
+    float secondProjectedProbe[14];      // 0x200
+    float finalModelTransform[16];       // 0x1C0
+    float finalTranslation[16];          // 0x180
+    float finalClubRotation[16];         // 0x140
+    float finalModelRotation[16];        // 0x100
+    float firstCameraWordCopy[12];       // 0xD0
+    float secondCameraWordCopy[12];      // 0xA0
+    float firstProjectionProbe[3];       // 0x94
+    float firstViewProbe[3];             // 0x88
+    float secondViewProbe[3];            // 0x7C
+    float secondProjectionProbe[3];      // 0x70
+    float firstCameraBasisY[3];          // 0x64
+    float firstCameraBasisZ[3];          // 0x58
+    float firstCameraOrigin[3];          // 0x4C
+    float secondCameraBasisY[3];         // 0x40
+    float secondCameraBasisZ[3];         // 0x34
+    float secondCameraOrigin[3];         // 0x28
+    float firstCameraBasisX[3];          // 0x1C
+    float secondCameraBasisX[3];         // 0x10
 
     // Phase 1: establish empty owned containers and identity camera/model bases.
     InitializePreviewOwnership(previewBytes, cameraDistance);
@@ -1076,7 +1258,9 @@ void* CExhibition_Ctor(ExhibitionConstructionStorage* self, int* viewportRect, f
 
     float minimumCameraDistance = AsCExhibition(previewBytes)->minCameraDistance;
     float maximumCameraDistance = AsCExhibition(previewBytes)->maxCameraDistance;
-    float clamped = (cameraDistance < minimumCameraDistance) ? minimumCameraDistance : ((cameraDistance > maximumCameraDistance) ? maximumCameraDistance : cameraDistance);
+    float clamped = (cameraDistance < minimumCameraDistance)
+                        ? minimumCameraDistance
+                        : ((cameraDistance > maximumCameraDistance) ? maximumCameraDistance : cameraDistance);
     AsCExhibition(previewBytes)->cameraOffsetZ = clamped;
     AsCExhibition(previewBytes)->cameraDistance = (float)(double)clamped;
 
@@ -1106,7 +1290,8 @@ void* CExhibition_Ctor(ExhibitionConstructionStorage* self, int* viewportRect, f
     {
         float viewportHeight = ((WView*)g_view)->viewportHeight;
         AsCExhibition(previewBytes)->translationY =
-            -((float)AsCExhibition(previewBytes)->viewportBottom - 0.5f * viewportHeight) / (0.5f * viewportHeight - firstProjectedProbe[1]);
+            -((float)AsCExhibition(previewBytes)->viewportBottom - 0.5f * viewportHeight) /
+            (0.5f * viewportHeight - firstProjectedProbe[1]);
     }
 
     if (AsCExhibition(previewBytes)->modelKind == kPreviewClubSet) {
@@ -1114,12 +1299,14 @@ void* CExhibition_Ctor(ExhibitionConstructionStorage* self, int* viewportRect, f
         Mtx44_SetEulerRotationZXY(firstModelRotation, 0.0f, AsCExhibition(previewBytes)->rotationX, 0.0f);
         PSMTX44Concat(firstModelRotation, firstClubRotation, firstModelRotation);
     } else {
-        Mtx44_SetEulerRotationZXY(firstModelRotation, AsCExhibition(previewBytes)->rotationY, AsCExhibition(previewBytes)->rotationX, AsCExhibition(previewBytes)->rotationZ);
+        Mtx44_SetEulerRotationZXY(firstModelRotation, AsCExhibition(previewBytes)->rotationY,
+                                  AsCExhibition(previewBytes)->rotationX, AsCExhibition(previewBytes)->rotationZ);
     }
-    Mtx44_SetTranslation(firstTranslation, AsCExhibition(previewBytes)->translationX, AsCExhibition(previewBytes)->translationY, 0.0f);
+    Mtx44_SetTranslation(firstTranslation, AsCExhibition(previewBytes)->translationX,
+                         AsCExhibition(previewBytes)->translationY, 0.0f);
     PSMTX44Concat(firstModelTransform, firstModelRotation, firstTranslation);
     Matrix_ExtractAffineFrom4x4(firstModelTransform, previewBytes + kPreviewModelTransformOffset);
-    CExhibition_UpdateModelPose(self);
+    ((CExhibition*)self)->UpdateModelPose();
 
     // Phase 4: repeat the original camera/probe alignment with the updated pose.
     // These repeated copies/calls are intentional parts of the compiled behavior.
@@ -1146,7 +1333,8 @@ void* CExhibition_Ctor(ExhibitionConstructionStorage* self, int* viewportRect, f
     {
         float viewportHeight = ((WView*)g_view)->viewportHeight;
         AsCExhibition(previewBytes)->translationY =
-            -((float)AsCExhibition(previewBytes)->viewportBottom - 0.5f * viewportHeight) / (0.5f * viewportHeight - secondProjectedProbe[1]);
+            -((float)AsCExhibition(previewBytes)->viewportBottom - 0.5f * viewportHeight) /
+            (0.5f * viewportHeight - secondProjectedProbe[1]);
     }
 
     if (AsCExhibition(previewBytes)->modelKind == kPreviewClubSet) {
@@ -1154,34 +1342,39 @@ void* CExhibition_Ctor(ExhibitionConstructionStorage* self, int* viewportRect, f
         Mtx44_SetEulerRotationZXY(secondModelRotation, 0.0f, AsCExhibition(previewBytes)->rotationX, 0.0f);
         PSMTX44Concat(secondModelRotation, secondClubRotation, secondModelRotation);
     } else {
-        Mtx44_SetEulerRotationZXY(secondModelRotation, AsCExhibition(previewBytes)->rotationY, AsCExhibition(previewBytes)->rotationX, AsCExhibition(previewBytes)->rotationZ);
+        Mtx44_SetEulerRotationZXY(secondModelRotation, AsCExhibition(previewBytes)->rotationY,
+                                  AsCExhibition(previewBytes)->rotationX, AsCExhibition(previewBytes)->rotationZ);
     }
-    Mtx44_SetTranslation(secondTranslation, AsCExhibition(previewBytes)->translationX, AsCExhibition(previewBytes)->translationY, 0.0f);
+    Mtx44_SetTranslation(secondTranslation, AsCExhibition(previewBytes)->translationX,
+                         AsCExhibition(previewBytes)->translationY, 0.0f);
     PSMTX44Concat(secondModelTransform, secondModelRotation, secondTranslation);
     Matrix_ExtractAffineFrom4x4(secondModelTransform, previewBytes + kPreviewModelTransformOffset);
-    CExhibition_UpdateModelPose(self);
+    ((CExhibition*)self)->UpdateModelPose();
 
     if (AsCExhibition(previewBytes)->modelKind == kPreviewClubSet) {
         Mtx44_SetEulerRotationZXY(finalClubRotation, AsCExhibition(previewBytes)->rotationY, 0.0f, 0.0f);
         Mtx44_SetEulerRotationZXY(finalModelRotation, 0.0f, AsCExhibition(previewBytes)->rotationX, 0.0f);
         PSMTX44Concat(finalModelRotation, finalClubRotation, finalModelRotation);
     } else {
-        Mtx44_SetEulerRotationZXY(finalModelRotation, AsCExhibition(previewBytes)->rotationY, AsCExhibition(previewBytes)->rotationX, AsCExhibition(previewBytes)->rotationZ);
+        Mtx44_SetEulerRotationZXY(finalModelRotation, AsCExhibition(previewBytes)->rotationY,
+                                  AsCExhibition(previewBytes)->rotationX, AsCExhibition(previewBytes)->rotationZ);
     }
-    Mtx44_SetTranslation(finalTranslation, AsCExhibition(previewBytes)->translationX, AsCExhibition(previewBytes)->translationY, 0.0f);
+    Mtx44_SetTranslation(finalTranslation, AsCExhibition(previewBytes)->translationX,
+                         AsCExhibition(previewBytes)->translationY, 0.0f);
     PSMTX44Concat(finalModelTransform, finalModelRotation, finalTranslation);
     Matrix_ExtractAffineFrom4x4(finalModelTransform, previewBytes + kPreviewModelTransformOffset);
-    CExhibition_UpdateModelPose(self);
+    ((CExhibition*)self)->UpdateModelPose();
 
     // Phase 5: bind effects and propagate the final pixel center to attachments.
-    CFxBox_SetResourceManager(previewBytes + 0xb0, g_resourceManager);
-    CFxBox_SetCameraTransform(previewBytes + 0xb0, s_cameraTransform);
+    ((CFxBox*)(previewBytes + 0xb0))->SetResourceManager(g_resourceManager);
+    ((CFxBox*)(previewBytes + 0xb0))->SetCameraTransform(s_cameraTransform);
     AsCExhibition(previewBytes)->unk_B4 = kFloat_33_333_PreviewEffect;
 
-    AsCExhibition(previewBytes)->screenCenterX = (float)((AsCExhibition(previewBytes)->viewportRight + AsCExhibition(previewBytes)->viewportLeft) / 2);
-    AsCExhibition(previewBytes)->screenCenterY = (float)((AsCExhibition(previewBytes)->viewportBottom + AsCExhibition(previewBytes)->viewportTop) / 2);
-    CExhibition_UpdateEffectScreenCenter(self);
-    return self;
+    AsCExhibition(previewBytes)->screenCenterX =
+        (float)((AsCExhibition(previewBytes)->viewportRight + AsCExhibition(previewBytes)->viewportLeft) / 2);
+    AsCExhibition(previewBytes)->screenCenterY =
+        (float)((AsCExhibition(previewBytes)->viewportBottom + AsCExhibition(previewBytes)->viewportTop) / 2);
+    ((CExhibition*)self)->UpdateEffectScreenCenter();
 }
 
 #pragma push
@@ -1191,7 +1384,7 @@ void* CExhibition_Ctor(ExhibitionConstructionStorage* self, int* viewportRect, f
 #pragma use_lmw_stmw on
 // Set the pixel rectangle [left, top, right, bottom] and clamped camera distance; return 1.
 // cameraOffsetZ at +0x2C is a distance; the lens FOV is kExhibitionCameraFovRadians.
-int CExhibition_SetViewport(void* self, int* rect, float cameraDistance) {
+int CExhibition::SetViewport(int* rect, float cameraDistance) {
     // Phase 1: clamp the rectangle center to configured screen limits while
     // retaining its integer half extents. Edges use screen pixels, Y downward.
     float projectedProbe[14];
@@ -1203,43 +1396,45 @@ int CExhibition_SetViewport(void* self, int* rect, float cameraDistance) {
     PreviewVector3 viewSpaceProbe;
     PreviewCameraCopyOrder cameraCopyInAbiOrder;
     Box4BB0 box;
-    char* base = (char*)self;
+    char* base = (char*)this;
     {
-    int y1, x1, y0, x0;
-    unsigned int hi;
-    x0 = rect[0];
-    hi = (*(unsigned int*)&AsCExhibition(base)->screenCenterMaxX);
-    AsCExhibition(base)->viewportLeft = x0;
-    y0 = rect[1];
-    AsCExhibition(base)->viewportTop = y0;
-    x1 = rect[2];
-    AsCExhibition(base)->viewportRight = x1;
-    y1 = rect[3];
-    AsCExhibition(base)->viewportBottom = y1;
-    box.cy = (float)((y1 + y0) >> 1);
-    box.cx = (float)((x1 + x0) >> 1);
-    unsigned int v = ((Round4BB0)Runtime_ConvertDoubleToUnsigned)(box.cx);
-    unsigned int lo = (*(unsigned int*)&AsCExhibition(base)->screenCenterMinX);
-    unsigned int w = v < lo ? lo : (v > hi ? hi : v);
-    box.cx = (float)w;
-    hi = (*(unsigned int*)&AsCExhibition(base)->screenCenterMaxY);
-    v = ((Round4BB0)Runtime_ConvertDoubleToUnsigned)(box.cy);
-    lo = (*(unsigned int*)&AsCExhibition(base)->screenCenterMinY);
-    w = v < lo ? lo : (v > hi ? hi : v);
-    box.cy = (float)w;
-    box.hh = (float)((y1 - y0) >> 1);
-    box.hw = (float)((x1 - x0) >> 1);
-    AsCExhibition(base)->viewportLeft = (int)(box.cx - box.hw);
-    AsCExhibition(base)->viewportRight = (int)(box.cx + box.hw);
-    AsCExhibition(base)->viewportTop = (int)(box.cy - box.hh);
-    AsCExhibition(base)->viewportBottom = (int)(box.cy + box.hh);
+        int y1, x1, y0, x0;
+        unsigned int hi;
+        x0 = rect[0];
+        hi = (*(unsigned int*)&AsCExhibition(base)->screenCenterMaxX);
+        AsCExhibition(base)->viewportLeft = x0;
+        y0 = rect[1];
+        AsCExhibition(base)->viewportTop = y0;
+        x1 = rect[2];
+        AsCExhibition(base)->viewportRight = x1;
+        y1 = rect[3];
+        AsCExhibition(base)->viewportBottom = y1;
+        box.cy = (float)((y1 + y0) >> 1);
+        box.cx = (float)((x1 + x0) >> 1);
+        unsigned int v = ((Round4BB0)Runtime_ConvertDoubleToUnsigned)(box.cx);
+        unsigned int lo = (*(unsigned int*)&AsCExhibition(base)->screenCenterMinX);
+        unsigned int w = v < lo ? lo : (v > hi ? hi : v);
+        box.cx = (float)w;
+        hi = (*(unsigned int*)&AsCExhibition(base)->screenCenterMaxY);
+        v = ((Round4BB0)Runtime_ConvertDoubleToUnsigned)(box.cy);
+        lo = (*(unsigned int*)&AsCExhibition(base)->screenCenterMinY);
+        w = v < lo ? lo : (v > hi ? hi : v);
+        box.cy = (float)w;
+        box.hh = (float)((y1 - y0) >> 1);
+        box.hw = (float)((x1 - x0) >> 1);
+        AsCExhibition(base)->viewportLeft = (int)(box.cx - box.hw);
+        AsCExhibition(base)->viewportRight = (int)(box.cx + box.hw);
+        AsCExhibition(base)->viewportTop = (int)(box.cy - box.hh);
+        AsCExhibition(base)->viewportBottom = (int)(box.cy + box.hh);
     }
     // Phase 2: install the clamped camera Z offset and fixed-radian lens FOV.
     float low = AsCExhibition(base)->minCameraDistance;
     float high = AsCExhibition(base)->maxCameraDistance;
     double current = cameraDistance < low ? low : (cameraDistance > high ? high : cameraDistance);
     AsCExhibition(base)->cameraOffsetZ = current;
-    modelSpaceProbe[0] = kFloat_1_Intro; modelSpaceProbe[1] = kFloat_1_Intro; modelSpaceProbe[2] = kFloat_0_exhibition;
+    modelSpaceProbe[0] = kFloat_1_Intro;
+    modelSpaceProbe[1] = kFloat_1_Intro;
+    modelSpaceProbe[2] = kFloat_0_exhibition;
     AsCExhibition(base)->cameraDistance = (float)current;
     Matrix_SetIdentityAffine(&cameraBasis);
     cameraBasis.origin.z = AsCExhibition(base)->cameraOffsetZ;
@@ -1258,19 +1453,20 @@ int CExhibition_SetViewport(void* self, int* rect, float cameraDistance) {
     // Phase 3: convert the desired pixel bottom into model translation using
     // the projected (1,1,0) probe; the denominator must be nonzero.
     float viewportHeight = ((WView*)g_view)->viewportHeight;
-    AsCExhibition(base)->translationY = PreviewBottomTranslation(AsCExhibition(base)->viewportBottom, viewportHeight, projectedProbe[1]);
-    BuildAndApplyPreviewPose(self, clubRotation, modelRotation, translationMatrix, modelTransform4x4);
+    AsCExhibition(base)->translationY =
+        PreviewBottomTranslation(AsCExhibition(base)->viewportBottom, viewportHeight, projectedProbe[1]);
+    BuildAndApplyPreviewPose(this, clubRotation, modelRotation, translationMatrix, modelTransform4x4);
     int sumX = AsCExhibition(base)->viewportRight + AsCExhibition(base)->viewportLeft;
     int sumY = AsCExhibition(base)->viewportBottom + AsCExhibition(base)->viewportTop;
     AsCExhibition(base)->screenCenterX = (float)(sumX / 2);
     AsCExhibition(base)->screenCenterY = (float)(sumY / 2);
-    CExhibition_UpdateEffectScreenCenter(self);
+    UpdateEffectScreenCenter();
     return 1;
 }
 #pragma pop
 
 // Translate the preview rectangle and rebuild its camera/model alignment.
-int CExhibition_OffsetViewport(void* self, int x, int y) {
+int CExhibition::OffsetViewport(int x, int y) {
     // Phase 1: add pixel offsets, then clamp the center without changing half extents.
     float matrix[16];
     float rotation[16];
@@ -1280,11 +1476,11 @@ int CExhibition_OffsetViewport(void* self, int x, int y) {
     PreviewCameraMatrix cam;
     float frustum[14];
     PreviewCameraMatrix copy;
-    Rect5048 rect = {AsCExhibition(self)->viewportLeft,0,0,0};
+    Rect5048 rect = {viewportLeft, 0, 0, 0};
     PreviewVector3 transformed;
     PreviewVector3 origin;
     Box5048 box;
-    char* base = (char*)self;
+    char* base = (char*)this;
     double current = AsCExhibition(base)->cameraOffsetZ;
     {
         int y0 = AsCExhibition(base)->viewportTop + y, y1 = AsCExhibition(base)->viewportBottom + y;
@@ -1292,7 +1488,10 @@ int CExhibition_OffsetViewport(void* self, int x, int y) {
         box.cy = (float)((y1 + y0) >> 1);
         box.cx = (float)((x1 + x0) >> 1);
         unsigned int hi = (*(unsigned int*)&AsCExhibition(base)->screenCenterMaxX);
-        rect.x0=x0; rect.x1=x1; rect.y0=y0; rect.y1=y1;
+        rect.x0 = x0;
+        rect.x1 = x1;
+        rect.y0 = y0;
+        rect.y1 = y1;
         (*(Rect5048*)&AsCExhibition(base)->viewportLeft) = rect;
         unsigned int v = ((Round4BB0)Runtime_ConvertDoubleToUnsigned)(box.cx);
         unsigned int lo = (*(unsigned int*)&AsCExhibition(base)->screenCenterMinX);
@@ -1334,12 +1533,15 @@ int CExhibition_OffsetViewport(void* self, int x, int y) {
     Matrix_TransformPoint(&transformed, &origin, ((WView*)g_view)->inputTransform);
     WView_ProjectViewPointWithoutClipTest(g_view, frustum, &transformed);
     float viewportHeight = ((WView*)g_view)->viewportHeight;
-    AsCExhibition(base)->translationY = PreviewBottomTranslation(AsCExhibition(base)->viewportBottom, viewportHeight, frustum[1]);
+    AsCExhibition(base)->translationY =
+        PreviewBottomTranslation(AsCExhibition(base)->viewportBottom, viewportHeight, frustum[1]);
     // Phase 3: rebuild the model transform, then publish the new attachment pixel center.
-    BuildAndApplyPreviewPose(self, rotation, matrix, translationMatrix, combined);
-    AsCExhibition(base)->screenCenterX = (float)((AsCExhibition(base)->viewportRight + AsCExhibition(base)->viewportLeft) / 2);
-    AsCExhibition(base)->screenCenterY = (float)((AsCExhibition(base)->viewportBottom + AsCExhibition(base)->viewportTop) / 2);
-    CExhibition_UpdateEffectScreenCenter(self);
+    BuildAndApplyPreviewPose(this, rotation, matrix, translationMatrix, combined);
+    AsCExhibition(base)->screenCenterX =
+        (float)((AsCExhibition(base)->viewportRight + AsCExhibition(base)->viewportLeft) / 2);
+    AsCExhibition(base)->screenCenterY =
+        (float)((AsCExhibition(base)->viewportBottom + AsCExhibition(base)->viewportTop) / 2);
+    UpdateEffectScreenCenter();
     return 1;
 }
 
@@ -1354,10 +1556,14 @@ static inline void InstallViewportLimitCameraView(Cam5504& view) {
 #pragma pop
 
 // Set vertical pixel-center limits, then align the camera and model to the clamped rectangle.
-int CExhibition_SetViewportYLimits(void* self, unsigned int minimumY, unsigned int maximumY) {
+int CExhibition::SetViewportYLimits(unsigned int minimumY, unsigned int maximumY) {
     // Phase 1: order/cap the pixel limits and clamp the existing rectangle's center.
-    char* base = (char*)self;
-    if (minimumY > maximumY) { unsigned int t = minimumY; minimumY = maximumY; maximumY = t; }
+    char* base = (char*)this;
+    if (minimumY > maximumY) {
+        unsigned int t = minimumY;
+        minimumY = maximumY;
+        maximumY = t;
+    }
     unsigned int clampedMinimumY = minimumY > kPreviewScreenHeight ? kPreviewScreenHeight : minimumY;
     unsigned int clampedMaximumY = maximumY > kPreviewScreenHeight ? kPreviewScreenHeight : maximumY;
     int y0 = AsCExhibition(base)->viewportTop, y1 = AsCExhibition(base)->viewportBottom;
@@ -1386,8 +1592,12 @@ int CExhibition_SetViewportYLimits(void* self, unsigned int minimumY, unsigned i
     AsCExhibition(base)->viewportTop = (int)(box.cy - box.hh);
     AsCExhibition(base)->viewportBottom = (int)(box.cy + box.hh);
     // Phase 2: repeat camera/probe alignment using the clamped rectangle's bottom.
-    float minimumCameraDistance = AsCExhibition(base)->minCameraDistance, maximumCameraDistance = AsCExhibition(base)->maxCameraDistance;
-    float clampedCameraDistance = cameraDistance < minimumCameraDistance ? minimumCameraDistance : (cameraDistance > maximumCameraDistance ? maximumCameraDistance : cameraDistance);
+    float minimumCameraDistance = AsCExhibition(base)->minCameraDistance,
+          maximumCameraDistance = AsCExhibition(base)->maxCameraDistance;
+    float clampedCameraDistance =
+        cameraDistance < minimumCameraDistance
+            ? minimumCameraDistance
+            : (cameraDistance > maximumCameraDistance ? maximumCameraDistance : cameraDistance);
     AsCExhibition(base)->cameraOffsetZ = clampedCameraDistance;
     AsCExhibition(base)->cameraDistance = (float)(double)clampedCameraDistance;
     // Model-space (1,1,0) probe -> view space -> projected screen result.
@@ -1412,10 +1622,12 @@ int CExhibition_SetViewportYLimits(void* self, unsigned int minimumY, unsigned i
     AsCExhibition(base)->translationY = PreviewBottomTranslation(AsCExhibition(base)->viewportBottom, h, frustum[1]);
     // Phase 3: publish the model transform and propagate its screen center to effects.
     float matrixA[16], matrixB[16], matrixC[16], matrixD[16];
-    BuildAndApplyPreviewPose(self, matrixA, matrixB, matrixC, matrixD);
-    AsCExhibition(base)->screenCenterX = (float)((AsCExhibition(base)->viewportRight + AsCExhibition(base)->viewportLeft) / 2);
-    AsCExhibition(base)->screenCenterY = (float)((AsCExhibition(base)->viewportBottom + AsCExhibition(base)->viewportTop) / 2);
-    CExhibition_UpdateEffectScreenCenter(self);
+    BuildAndApplyPreviewPose(this, matrixA, matrixB, matrixC, matrixD);
+    AsCExhibition(base)->screenCenterX =
+        (float)((AsCExhibition(base)->viewportRight + AsCExhibition(base)->viewportLeft) / 2);
+    AsCExhibition(base)->screenCenterY =
+        (float)((AsCExhibition(base)->viewportBottom + AsCExhibition(base)->viewportTop) / 2);
+    UpdateEffectScreenCenter();
     return 1;
 }
 
@@ -1424,119 +1636,135 @@ int CExhibition_SetViewportYLimits(void* self, unsigned int minimumY, unsigned i
 // ownership first; the five-slot preview mirror has a separate bound. A return of
 // 0 after controller success does NOT roll back that controller mutation. Preserve
 // this order when changing slot limits or callers that retry after failure.
-int CExhibition_SetAttachment(void* self, unsigned int index, void* value) {
-    void* ptr = AsCExhibition(self)->modelController;
-    if (ptr == 0) return 0;
-    if (!AvatarModel_SetAttachment(ptr, index, value)) return 0;
-    if (index >= kPreviewAttachmentCount) return 0;
-    if ((int)index >= kPreviewAttachmentCount) index = 0;
-    ((PreviewAttachmentSlots*)self)->attachments[index] = value;
-    CExhibition_RebuildAttachedEffects(self);
+int CExhibition::SetAttachment(unsigned int index, void* value) {
+    void* ptr = modelController;
+    if (ptr == 0)
+        return 0;
+    if (!AvatarModel_SetAttachment(ptr, index, value))
+        return 0;
+    if (index >= kPreviewAttachmentCount)
+        return 0;
+    if ((int)index >= kPreviewAttachmentCount)
+        index = 0;
+    ((PreviewAttachmentSlots*)this)->attachments[index] = value;
+    RebuildAttachedEffects();
     return 1;
 }
 
 #pragma push
 #pragma use_lmw_stmw on
 // Release preview models, effects, lights, preloaders, strings, and owned container storage.
-void* CExhibition_dtor(void* self, int deleting) {
-    // Phase 1: dispose of the model through its matching ownership path.
-    if (self) {
-        char* base = (char*)self;
-        int mode = AsCExhibition(base)->modelKind;
-        *(void**)base = __vt__11CExhibition;
-        if (mode == 0) {
-            void* p = AsCExhibition(base)->modelController;
-            if (p) { PlayerModel_Dtor(p, 1); AsCExhibition(base)->modelController = 0; }
-            AsCExhibition(base)->puppet = 0;
-        } else if (g_resourceManager && AsCExhibition(base)->puppet) {
-            ResourceManager_ReleaseObject(g_resourceManager, AsCExhibition(base)->puppet, 0);
-            AsCExhibition(base)->puppet = 0;
+CExhibition::~CExhibition() {
+    char* base = (char*)this;
+    int mode = AsCExhibition(base)->modelKind;
+    *(void**)base = __vt__11CExhibition;
+    if (mode == 0) {
+        void* p = AsCExhibition(base)->modelController;
+        if (p) {
+            PlayerModel_Dtor(p, 1);
+            AsCExhibition(base)->modelController = 0;
         }
-        {
-            void** entries = (*(void***)&AsCExhibition(base)->ownedNameStrings);
-            for (; Unequal5A88(ArrayEnd5A88((void***)(base + 4), (unsigned*)(base + 8)), entries); ++entries) {
-                void* entry = *entries;
-                if (entry) {
-                    if (entry) {
-                        if (*(unsigned int*)entry >> 31) appFreeUni__FPv(*(void**)((char*)entry + 8));
-                        __dl__FPv(entry);
-                    }
-                    *entries = 0;
-                }
-            }
-            ReduceCount5A88(AsCExhibition(base)->ownedNameStringCount, *(unsigned*)(base + 8));
-        }
-        // Phase 2: clear registered effects, then delete owned preview records.
-        CFxBox_ClearEffects(base + 0xb0, 0);
-        {
-            void* node = AsCExhibition(base)->ownedPreviewListSentinelPrev;
-            void* head = base + 0x460;
-            while (node != head) {
-                void* child = *(void**)((char*)node + 8);
-                if (child) {
-                    void* x = ((PreviewOwnedRecord*)child)->ownedData;
-                    if (x) { __dl__FPv(x); ((PreviewOwnedRecord*)child)->ownedData = 0; }
-                    __dl__FPv(child);
-                }
-                node = *(void**)((char*)node + 4);
-            }
-        }
-        ClearList5A88(base + 0x45c);
-        {
-            // Phase 3: release lighting/file resources and delete copied light descriptions.
-            RefObj802B* obj = (*(RefObj802B**)&AsCExhibition(base)->lightingResource);
-            if (obj) {
-                int rc = *(int*)obj;
-                --rc;
-                *(int*)obj = rc;
-                if (rc == 0) {
-                    delete obj;
-                }
-                (*(void**)&AsCExhibition(base)->lightingResource) = 0;
-            }
-        }
-        {
-            Del77E8* obj = (*(Del77E8**)&AsCExhibition(base)->preloadFile);
-            if (obj) {
-                delete obj;
-                (*(void**)&AsCExhibition(base)->preloadFile) = 0;
-            }
-        }
-        {
-            void** arr = (*(void***)&AsCExhibition(base)->lights);
-            for (; Unequal5A88(ArrayEnd5A88((void***)(base + 0x530), (unsigned*)(base + 0x534)), arr); ++arr) {
-                void* p = *arr;
-                if (p) { __dl__FPv(p); *arr = 0; }
-            }
-            ReduceCount5A88(AsCExhibition(base)->lightCount, *(unsigned*)(base + 0x534));
-            ResolvedItemSelection_Destroy(base + 0x550, -1);
-            dtor_80293270(base + kPreviewCallbackOffset, -1);
-            DestroyPreviewPointerArray(base + 0x530);
-        }
-        // Phase 4: free owned string/container storage and destroy the effect box.
-        if (base + 0x518) if (AsCExhibition(base)->modelPathFlags >> 31) appFreeUni__FPv((*(void**)&AsCExhibition(base)->modelPathData));
-        if (base + 0x4fc) if (AsCExhibition(base)->animationNameFlags >> 31) appFreeUni__FPv((*(void**)&AsCExhibition(base)->animationNameData));
-        if (base + 0x45c) if (base + 0x45c) if (base + 0x45c) if (base + 0x45c) {
-            ClearList5A88(base + 0x45c);
-        }
-        DestroyPreviewPointerArray(base + 0x450);
-        DestroyPreviewPointerArray(base + 0x444);
-        if (base + 0xb0) {
-            CLEAN_TREE(base + 0x438);
-            CLEAN_TREE(base + 0x42c);
-            CFxBox_dtor(base + 0xb0, 0);
-        }
-        DestroyPreviewPointerArray(base + 4);
-        if (deleting > 0) __dl__FPv(self);
+        AsCExhibition(base)->puppet = 0;
+    } else if (g_resourceManager && AsCExhibition(base)->puppet) {
+        ResourceManager_ReleaseObject(g_resourceManager, AsCExhibition(base)->puppet, 0);
+        AsCExhibition(base)->puppet = 0;
     }
-    return self;
+    {
+        void** entries = (*(void***)&AsCExhibition(base)->ownedNameStrings);
+        for (; Unequal5A88(ArrayEnd5A88((void***)(base + 4), (unsigned*)(base + 8)), entries); ++entries) {
+            void* entry = *entries;
+            if (entry) {
+                if (entry) {
+                    if (*(unsigned int*)entry >> 31)
+                        appFreeUni__FPv(*(void**)((char*)entry + 8));
+                    __dl__FPv(entry);
+                }
+                *entries = 0;
+            }
+        }
+        ReduceCount5A88(AsCExhibition(base)->ownedNameStringCount, *(unsigned*)(base + 8));
+    }
+    // Phase 2: clear registered effects, then delete owned preview records.
+    ((CFxBox*)(base + 0xb0))->ClearEffects(0);
+    {
+        void* node = AsCExhibition(base)->ownedPreviewListSentinelPrev;
+        void* head = base + 0x460;
+        while (node != head) {
+            void* child = *(void**)((char*)node + 8);
+            if (child) {
+                void* x = ((PreviewOwnedRecord*)child)->ownedData;
+                if (x) {
+                    __dl__FPv(x);
+                    ((PreviewOwnedRecord*)child)->ownedData = 0;
+                }
+                __dl__FPv(child);
+            }
+            node = *(void**)((char*)node + 4);
+        }
+    }
+    ClearList5A88(base + 0x45c);
+    {
+        // Phase 3: release lighting/file resources and delete copied light descriptions.
+        RefObj802B* obj = (*(RefObj802B**)&AsCExhibition(base)->lightingResource);
+        if (obj) {
+            int rc = *(int*)obj;
+            --rc;
+            *(int*)obj = rc;
+            if (rc == 0) {
+                delete obj;
+            }
+            (*(void**)&AsCExhibition(base)->lightingResource) = 0;
+        }
+    }
+    {
+        Del77E8* obj = (*(Del77E8**)&AsCExhibition(base)->preloadFile);
+        if (obj) {
+            delete obj;
+            (*(void**)&AsCExhibition(base)->preloadFile) = 0;
+        }
+    }
+    {
+        void** arr = (*(void***)&AsCExhibition(base)->lights);
+        for (; Unequal5A88(ArrayEnd5A88((void***)(base + 0x530), (unsigned*)(base + 0x534)), arr); ++arr) {
+            void* p = *arr;
+            if (p) {
+                __dl__FPv(p);
+                *arr = 0;
+            }
+        }
+        ReduceCount5A88(AsCExhibition(base)->lightCount, *(unsigned*)(base + 0x534));
+        ResolvedItemSelection_Destroy(base + 0x550, -1);
+        dtor_80293270(base + kPreviewCallbackOffset, -1);
+        DestroyPreviewPointerArray(base + 0x530);
+    }
+    // Phase 4: free owned string/container storage and destroy the effect box.
+    if (base + 0x518)
+        if (AsCExhibition(base)->modelPathFlags >> 31)
+            appFreeUni__FPv((*(void**)&AsCExhibition(base)->modelPathData));
+    if (base + 0x4fc)
+        if (AsCExhibition(base)->animationNameFlags >> 31)
+            appFreeUni__FPv((*(void**)&AsCExhibition(base)->animationNameData));
+    if (base + 0x45c)
+        if (base + 0x45c)
+            if (base + 0x45c)
+                if (base + 0x45c) {
+                    ClearList5A88(base + 0x45c);
+                }
+    DestroyPreviewPointerArray(base + 0x450);
+    DestroyPreviewPointerArray(base + 0x444);
+    if (base + 0xb0) {
+        CLEAN_TREE(base + 0x438);
+        CLEAN_TREE(base + 0x42c);
+        __dt__6CFxBoxFv(base + 0xb0, 0);
+    }
+    DestroyPreviewPointerArray(base + 4);
 }
 #pragma pop
 
 // Poll preview resources, load the requested item/model or parts, and advance animation/effects.
-void CExhibition_UpdateLoadState(void* self, float dt) {
+void CExhibition::UpdateLoadState(float dt, int) {
     // Phase 1: give both optional preloaders a chance to finish before dispatch.
-    char* base = (char*)self;
+    char* base = (char*)this;
     Controller6388* controller = (*(Controller6388**)&AsCExhibition(base)->modelPreloader);
     if (controller) {
         controller->update();
@@ -1553,55 +1781,75 @@ void CExhibition_UpdateLoadState(void* self, float dt) {
         // State 4 is published even when the resource load returns null.
         valid = Ready6388((*(Controller6388**)&AsCExhibition(base)->modelPreloader));
         if (valid) {
-          valid = Ready6388((*(Controller6388**)&AsCExhibition(base)->preloadFile));
-          if (valid) {
-            if (AsCExhibition(base)->modelKind == kPreviewAvatar) {
+            valid = Ready6388((*(Controller6388**)&AsCExhibition(base)->preloadFile));
+            if (valid) {
                 if (AsCExhibition(base)->modelKind == kPreviewAvatar) {
-                    void* p = AsCExhibition(base)->modelController;
-                    if (p) { PlayerModel_Dtor(p, 1); AsCExhibition(base)->modelController = 0; }
-                    AsCExhibition(base)->puppet = 0;
-                } else if (g_resourceManager && AsCExhibition(base)->puppet) {
-                    ResourceManager_ReleaseObject(g_resourceManager, AsCExhibition(base)->puppet, 0);
-                    AsCExhibition(base)->puppet = 0;
-                }
-                void** entries = *(void***)(base + kPreviewNamesData);
-                for (; Unequal6388(*(void***)(base + kPreviewNamesData) + *(unsigned*)(base + kPreviewNamesSize), entries); ++entries) {
-                    void* entry = *entries;
-                    if (entry) {
-                        if (entry) {
-                            if (((PreviewOwnedStringView*)entry)->flags >> 31) appFreeUni__FPv(((PreviewOwnedStringView*)entry)->heapData);
-                            __dl__FPv(entry);
+                    if (AsCExhibition(base)->modelKind == kPreviewAvatar) {
+                        void* p = AsCExhibition(base)->modelController;
+                        if (p) {
+                            PlayerModel_Dtor(p, 1);
+                            AsCExhibition(base)->modelController = 0;
                         }
-                        *entries = 0;
+                        AsCExhibition(base)->puppet = 0;
+                    } else if (g_resourceManager && AsCExhibition(base)->puppet) {
+                        ResourceManager_ReleaseObject(g_resourceManager, AsCExhibition(base)->puppet, 0);
+                        AsCExhibition(base)->puppet = 0;
+                    }
+                    void** entries = *(void***)(base + kPreviewNamesData);
+                    for (; Unequal6388(*(void***)(base + kPreviewNamesData) + *(unsigned*)(base + kPreviewNamesSize),
+                                       entries);
+                         ++entries) {
+                        void* entry = *entries;
+                        if (entry) {
+                            if (entry) {
+                                if (((PreviewOwnedStringView*)entry)->flags >> 31)
+                                    appFreeUni__FPv(((PreviewOwnedStringView*)entry)->heapData);
+                                __dl__FPv(entry);
+                            }
+                            *entries = 0;
+                        }
+                    }
+                    Reduce6388(*(unsigned*)(base + kPreviewNamesSize), *(unsigned*)(base + kPreviewNamesSize));
+                    AllocatedController* object = new AllocatedController;
+                    AsCExhibition(base)->modelController = object;
+                    if (AvatarModel_LoadCharacterResources(object, base + kPreviewAvatarSelectionOffset,
+                                                           base + kPreviewResourceOptionsOffset, 1, 0, 0,
+                                                           AsCExhibition(base)->textureVariantIndex, 0)) {
+                        AsCExhibition(base)->puppet =
+                            (void*)PlayerModel_GetPuppet(AsCExhibition(base)->modelController);
+                        PlayerModel_DefaultReady(AsCExhibition(base)->modelController,
+                                                 base + kPreviewAvatarSelectionOffset);
+                        char* object = (*(char**)&AsCExhibition(base)->modelController);
+                        if (object) {
+                            AsCExhibition(base)->resolvedCharacterId =
+                                ((PreviewControllerSelectionView*)object)->characterId;
+                            (*(ResolvedAvatarPartCopy*)&AsCExhibition(base)->resolvedPartData) =
+                                ((PreviewControllerSelectionView*)object)->parts;
+                        }
+                        InitializeLoadedModel();
+                    }
+                } else {
+                    Clear6388(base);
+                    int flag = AsCExhibition(base)->modelPathFlags >> 31;
+                    void* key = !flag ? (char*)&AsCExhibition(base)->modelPathFlags + 1
+                                      : (*(void**)&AsCExhibition(base)->modelPathData);
+                    void* result = (void*)ResourceManager_LoadByExtension(g_resourceManager, key, 0, 1, 0);
+                    AsCExhibition(base)->puppet = result;
+                    if (result) {
+                        if (AsCExhibition(base)->modelKind == kPreviewCaddie) {
+                            WPuppet_RebuildBoneController(result);
+                            WPuppet_InitializeTextureCoordinateAnimation(AsCExhibition(base)->puppet);
+                        }
+                        if ((*(unsigned*)&AsCExhibition(base)->itemTypeId) ==
+                                (unsigned)ItemInventory_GetBallIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, 12) ||
+                            (*(unsigned*)&AsCExhibition(base)->itemTypeId) ==
+                                (unsigned)ItemInventory_GetBallIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, 128))
+                            CreateBallEffects();
+                        InitializeLoadedModel();
                     }
                 }
-                Reduce6388(*(unsigned*)(base + kPreviewNamesSize), *(unsigned*)(base + kPreviewNamesSize));
-                AllocatedController* object = new AllocatedController;
-                AsCExhibition(base)->modelController = object;
-                if (AvatarModel_LoadCharacterResources(object, base + kPreviewAvatarSelectionOffset, base + kPreviewResourceOptionsOffset, 1, 0, 0, AsCExhibition(base)->textureVariantIndex, 0)) {
-                    AsCExhibition(base)->puppet = (void*)PlayerModel_GetPuppet(AsCExhibition(base)->modelController);
-                    PlayerModel_DefaultReady(AsCExhibition(base)->modelController, base + kPreviewAvatarSelectionOffset);
-                    char* object = (*(char**)&AsCExhibition(base)->modelController);
-                    if (object) {
-                        AsCExhibition(base)->resolvedCharacterId = ((PreviewControllerSelectionView*)object)->characterId;
-                        (*(ResolvedAvatarPartCopy*)&AsCExhibition(base)->resolvedPartData) = ((PreviewControllerSelectionView*)object)->parts;
-                    }
-                    CExhibition_InitializeLoadedModel(self);
-                }
-            } else {
-                Clear6388(base);
-                int flag = AsCExhibition(base)->modelPathFlags >> 31;
-                void* key = !flag ? (char*)&AsCExhibition(base)->modelPathFlags + 1 : (*(void**)&AsCExhibition(base)->modelPathData);
-                void* result = (void*)ResourceManager_LoadByExtension(g_resourceManager, key, 0, 1, 0);
-                AsCExhibition(base)->puppet = result;
-                if (result) {
-                    if (AsCExhibition(base)->modelKind == kPreviewCaddie) { WPuppet_RebuildBoneController(result); WPuppet_InitializeTextureCoordinateAnimation(AsCExhibition(base)->puppet); }
-                    if ((*(unsigned*)&AsCExhibition(base)->itemTypeId) == (unsigned)ItemInventory_GetBallIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, 12) || (*(unsigned*)&AsCExhibition(base)->itemTypeId) == (unsigned)ItemInventory_GetBallIdAt(AsCSharedDoc(g_sharedDoc)->itemInventory, 128)) CExhibition_CreateBallEffects(self);
-                    CExhibition_InitializeLoadedModel(self);
-                }
+                AsCExhibition(base)->loadState = kPreviewReady;
             }
-            AsCExhibition(base)->loadState = kPreviewReady;
-          }
         }
         break;
     }
@@ -1613,67 +1861,77 @@ void CExhibition_UpdateLoadState(void* self, float dt) {
     case kPreviewWaitFrames: {
         // Strict > test: the counter must exceed the limit before becoming ready.
         int limit = s_previewLoadWaitFrameLimit;
-        if (PreviewWaitLimitExceeded(limit, base)) AsCExhibition(base)->loadState = kPreviewReady;
-        else AsCExhibition(base)->loadWaitFrames = AsCExhibition(base)->loadWaitFrames + 1;
+        if (PreviewWaitLimitExceeded(limit, base))
+            AsCExhibition(base)->loadState = kPreviewReady;
+        else
+            AsCExhibition(base)->loadWaitFrames = AsCExhibition(base)->loadWaitFrames + 1;
         break;
     }
-    default: break;
+    default:
+        break;
     }
     // Phase 3: animation/effects run in every state; finish any pending part load.
-    CExhibition_UpdateAnimationAndEffects(self, dt);
-    if (AsCExhibition(base)->partLoadPending && AsCExhibition(base)->modelController && PuppetResourceList_PollLoadAndUpdateBounds(AsCExhibition(base)->modelController))
+    UpdateAnimationAndEffects(dt);
+    if (AsCExhibition(base)->partLoadPending && AsCExhibition(base)->modelController &&
+        PuppetResourceList_PollLoadAndUpdateBounds(AsCExhibition(base)->modelController))
         AsCExhibition(base)->partLoadPending = 0;
 }
 
 // Select a named animation, process its initial events, and clamp the starting frame to its end.
-int CExhibition_PlayAnimationByName(void* self, void* nameOrAnimationRange, int flag, float delta) {
-    Owner6888* owner = (Owner6888*)self;
-    if (0 == nameOrAnimationRange) return 0;
+int CExhibition::PlayAnimationByName(void* nameOrAnimationRange, int flag, float delta) {
+    Owner6888* owner = (Owner6888*)this;
+    if (0 == nameOrAnimationRange)
+        return 0;
     if (flag == 0) {
-        CFxBox_ClearEffects(((char*)(AsCExhibition(self)->pad_0B0)), 0);
-        CExhibition_RebuildAttachedEffects(self);
+        ((CFxBox*)(((char*)(fxBox))))->ClearEffects(0);
+        RebuildAttachedEffects();
     }
-    if (AsCExhibition(self)->modelKind == kPreviewAvatar) {
-        if (!AsCExhibition(self)->modelController) return 0;
-        owner->animation = (void*)ObjectList_FindAnimationRangeByName(AsCExhibition(self)->modelController, nameOrAnimationRange, 1, 0);
-        PlayerModel_SetDefaultPuppetLayerEnabled(AsCExhibition(self)->modelController, 0);
+    if (modelKind == kPreviewAvatar) {
+        if (!modelController)
+            return 0;
+        owner->animation = (void*)ObjectList_FindAnimationRangeByName(modelController, nameOrAnimationRange, 1, 0);
+        PlayerModel_SetDefaultPuppetLayerEnabled(modelController, 0);
     } else {
-        if (!AsCExhibition(self)->puppet) return 0;
-        owner->animation = (void*)WPuppet_FindAnimationRangeByName(AsCExhibition(self)->puppet, nameOrAnimationRange);
-        WPuppet_SetBoneVisibilityRecursive(AsCExhibition(self)->puppet, 1, 0, 0);
+        if (!puppet)
+            return 0;
+        owner->animation = (void*)WPuppet_FindAnimationRangeByName(puppet, nameOrAnimationRange);
+        WPuppet_SetBoneVisibilityRecursive(puppet, 1, 0, 0);
     }
     nameOrAnimationRange = owner->animation;
     if (nameOrAnimationRange) {
-    float startFrame = *(float*)nameOrAnimationRange;
-    void* resource = target6888(owner);
-    AnimationEventParser_ProcessFrameRange(self, resource, startFrame, startFrame, nameOrAnimationRange, -1, 1);
-    float current = *(float*)owner->animation + delta;
-    float end = *((float*)owner->animation + 1);
-    end = (current > end) ? end : current;
-    AsCExhibition(self)->animationFrame = end;
-    CExhibition_UpdateModelPose(self);
-    return 1;
+        float startFrame = *(float*)nameOrAnimationRange;
+        void* resource = target6888(owner);
+        AnimationEventParser_ProcessFrameRange(this, resource, startFrame, startFrame, nameOrAnimationRange, -1, 1);
+        float current = *(float*)owner->animation + delta;
+        float end = *((float*)owner->animation + 1);
+        end = (current > end) ? end : current;
+        animationFrame = end;
+        UpdateModelPose();
+        return 1;
     }
     return 0;
 }
 
 // Draw the preview with its own camera, clipping rectangle, lights, and temporarily overridden render state.
-void CExhibition_DrawScene(void* self) {
+void CExhibition::DrawScene() {
     // Phase 1: resolve the puppet and install this preview's camera/screen center.
     // The global camera/view and lights remain changed after drawing. The local
     // guards restore cached render states and scissor rectangle only; the GX
     // scissor-box offset is explicitly reset to zero at the end.
-    char* b = (char*)self;
+    char* b = (char*)this;
     volatile int vp[36];
     ViewObj6A1C* view;
-    if (AsCExhibition(b)->displaySuppressed) return;
-    view = ExhibitionView(self);
-    if (!view) return;
+    if (AsCExhibition(b)->displaySuppressed)
+        return;
+    view = ExhibitionView(this);
+    if (!view)
+        return;
     Camera_SetFov(g_view, kExhibitionCameraFovRadians);
     WView_InvalidateViewAndProjection(g_view);
     Camera_SetClip(g_view, s_previewNearClip, s_previewFarClip, 0);
 
-    PreviewCameraBasis m; m = *(PreviewCameraBasis*)(((char*)(AsCExhibition(b)->cameraMatrixPrefix)));
+    PreviewCameraBasis m;
+    m = *(PreviewCameraBasis*)(((char*)(AsCExhibition(b)->cameraMatrixPrefix)));
     m = *(PreviewCameraBasis*)(((char*)(AsCExhibition(b)->cameraMatrixPrefix)));
     *(PreviewAffineWordCopy*)&m = *(PreviewAffineWordCopy*)(((char*)(AsCExhibition(b)->cameraMatrixPrefix)));
     m = *(PreviewCameraBasis*)(((char*)(AsCExhibition(b)->cameraMatrixPrefix)));
@@ -1683,8 +1941,10 @@ void CExhibition_DrawScene(void* self) {
     *(WVector*)(&m.basisZ) *= kFloat_neg1_Exhibition;
     WView_SetViewMatrix(g_view, &m);
     Camera_BuildFrustumPlanes(g_view);
-    if (0 == g_view) return;
-     PreviewCameraBasis p; p = *(PreviewCameraBasis*)(((WView*)g_view)->viewMatrix);
+    if (0 == g_view)
+        return;
+    PreviewCameraBasis p;
+    p = *(PreviewCameraBasis*)(((WView*)g_view)->viewMatrix);
     p = *(PreviewCameraBasis*)(((WView*)g_view)->viewMatrix);
     *(PreviewAffineWordCopy*)&p = *(PreviewAffineWordCopy*)(((WView*)g_view)->viewMatrix);
     p = *(PreviewCameraBasis*)(((WView*)g_view)->viewMatrix);
@@ -1695,15 +1955,18 @@ void CExhibition_DrawScene(void* self) {
     Matrix_CopyAffine(s_cameraTransform, &p);
     WView_SetScreenCenter(g_view, AsCExhibition(b)->screenCenterX, AsCExhibition(b)->screenCenterY);
 
-     vp[35] = ((Cvt6A1C)Runtime_ConvertDoubleToUnsigned)(AsCExhibition(b)->screenCenterX - kPreviewReferenceScreenCenterX);
-    vp[0] = ((Cvt6A1C)Runtime_ConvertDoubleToUnsigned)(AsCExhibition(b)->screenCenterY - kPreviewReferenceScreenCenterY);
+    vp[35] =
+        ((Cvt6A1C)Runtime_ConvertDoubleToUnsigned)(AsCExhibition(b)->screenCenterX - kPreviewReferenceScreenCenterX);
+    vp[0] =
+        ((Cvt6A1C)Runtime_ConvertDoubleToUnsigned)(AsCExhibition(b)->screenCenterY - kPreviewReferenceScreenCenterY);
     vp[7] = kPreviewScreenWidth;
     *(volatile float*)&vp[21] = kFloat_0_exhibition;
     vp[14] = kPreviewScreenHeight;
     *(volatile float*)&vp[28] = kFloat_1_Intro;
 
     // Phase 2: save/override render states and clip the fixed 640x480 preview.
-    int off = (int)(kPreviewScissorOffsetScale * (kFloat_0_5_exhibition * -(AsCExhibition(b)->screenCenterX - kPreviewReferenceScreenCenterX)));
+    int off = (int)(kPreviewScissorOffsetScale *
+                    (kFloat_0_5_exhibition * -(AsCExhibition(b)->screenCenterX - kPreviewReferenceScreenCenterX)));
     GXSetScissorBoxOffset(off, 0);
     StateGuard6A1C g0(kPreviewDepthWrite, kPreviewEnabled);
     StateGuard6A1C g1(kPreviewDepthTest, kPreviewEnabled);
@@ -1716,25 +1979,30 @@ void CExhibition_DrawScene(void* self) {
     int sc[4];
     sc[0] = 0;
     sc[2] = 0x27f;
-    if (0 < off) sc[0] = off;
-    else if (0 > off) sc[2] = off + 0x27f;
+    if (0 < off)
+        sc[0] = off;
+    else if (0 > off)
+        sc[2] = off + 0x27f;
     sc[1] = 0;
     sc[3] = 0x1df;
     RectGuard6A1C saved;
     Engine_SetScissorRect(sc);
     // Phase 3: replace active lights, draw the puppet, then draw its effect pass.
     WPuppet_SetRendererOption(view, 0);
-    for (int i = 0; kHardwareLightCount > i; i++) Engine_SetLightEnabled(i, 0);
+    for (int i = 0; kHardwareLightCount > i; i++)
+        Engine_SetLightEnabled(i, 0);
     int count = AsCExhibition(b)->lightCount;
     for (unsigned int i = 0; count > i; i++) {
         Engine_SetLightEnabled(i, 1);
         Engine_SetLight(i, ((int*)(*(void**)&AsCExhibition(b)->lights))[i]);
     }
     view->m4(g_view, 1, 0, kFloat_1_Intro, 0, 1);
-    if (g_sceneManager) ((CSceneManager*)g_sceneManager)->effectRenderPassActive = 1;
-    CFxBox_DrawSprays(((char*)(AsCExhibition(b)->pad_0B0)), g_view);
+    if (g_sceneManager)
+        ((CSceneManager*)g_sceneManager)->effectRenderPassActive = 1;
+    ((CFxBox*)(((char*)(AsCExhibition(b)->fxBox))))->DrawSprays(g_view);
     ((CamObj6A1C*)g_view)->m2(4);
-    if (g_sceneManager) ((CSceneManager*)g_sceneManager)->effectRenderPassActive = 0;
+    if (g_sceneManager)
+        ((CSceneManager*)g_sceneManager)->effectRenderPassActive = 0;
     GXSetScissorBoxOffset(0, 0);
 }
 
@@ -1744,7 +2012,8 @@ void CExhibition_DrawScene(void* self) {
 #pragma opt_lifetimes off
 #pragma opt_strength_reduction off
 // Queue an avatar/equipment description and prepare its animation, resources, and model transform.
-void CExhibition_ConfigureAvatarPreview(void* self, void* selectedDescription, void* resourceOptions, const char* animationName, void* textureVariant, float maximumAnimationDelay) {
+void CExhibition::ConfigureAvatarPreview(void* selectedDescription, void* resourceOptions, const char* animationName,
+                                         void* textureVariant, float maximumAnimationDelay) {
     // Phase 1: reject an unchanged description or a busy preloader/load state.
     // selectedDescription must supply 0x68 readable bytes; resourceOptions is
     // optional (0x14 bytes copied). animationName is copied; textureVariant is
@@ -1754,23 +2023,28 @@ void CExhibition_ConfigureAvatarPreview(void* self, void* selectedDescription, v
     char result[0x38];
     PreviewCameraBasis camera;
     char translationMatrix[0x40], rotationMatrix[0x40], combined[0x40], clubRotation[0x40];
-    char* base = (char*)self;
-    if (ItemSelection_Equals(((char*)(base + kPreviewAvatarSelectionOffset)), selectedDescription)) return;
+    char* base = (char*)this;
+    if (ItemSelection_Equals(((char*)(base + kPreviewAvatarSelectionOffset)), selectedDescription))
+        return;
     void* old = (*(void**)&AsCExhibition(base)->preloadFile);
     int valid = 1;
-    if (old && !((Sub802B87F4*)old)->m2()) valid = 0;
+    if (old && !((Sub802B87F4*)old)->m2())
+        valid = 0;
     int ready;
     if (valid) {
         unsigned int _st = (*(unsigned int*)&AsCExhibition(base)->loadState) - 1;
         ready = _st > 2u;
-    } else ready = 0;
-    if (!ready) return;
+    } else
+        ready = 0;
+    if (!ready)
+        return;
     {
-        void* next = CPreloadFileAsync_Create(s_previewEnvironmentResourceName);
+        void* next = CPreloadFileAsync::Create(s_previewEnvironmentResourceName);
         if (next) {
             old = (*(void**)&AsCExhibition(base)->preloadFile);
             if (old) {
-                if (old) ((Del802B734C*)old)->m0(1);
+                if (old)
+                    ((Del802B734C*)old)->m0(1);
                 (*(void**)&AsCExhibition(base)->preloadFile) = 0;
             }
             (*(void**)&AsCExhibition(base)->preloadFile) = next;
@@ -1780,22 +2054,31 @@ void CExhibition_ConfigureAvatarPreview(void* self, void* selectedDescription, v
     AsCExhibition(base)->itemTypeId = *(int*)selectedDescription;
     (*(void**)&AsCExhibition(base)->avatarResourceOptions) = resourceOptions;
     if (resourceOptions) {
-        if (resourceOptions) Memory_Copy(base + kPreviewResourceOptionsOffset, resourceOptions, 0x14);
-    } else Memory_Clear(base + kPreviewResourceOptionsOffset, 0x14);
+        if (resourceOptions)
+            Memory_Copy(base + kPreviewResourceOptionsOffset, resourceOptions, 0x14);
+    } else
+        Memory_Clear(base + kPreviewResourceOptionsOffset, 0x14);
     AsCExhibition(base)->modelKind = kPreviewAvatar;
     (*(int*)&AsCExhibition(base)->avatarCharacterId) = *(int*)selectedDescription;
-    (*(AvatarSelectionPartCopy*)&AsCExhibition(base)->avatarSelectionData) = *(AvatarSelectionPartCopy*)((char*)selectedDescription + 4);
+    (*(AvatarSelectionPartCopy*)&AsCExhibition(base)->avatarSelectionData) =
+        *(AvatarSelectionPartCopy*)((char*)selectedDescription + 4);
     if (animationName) {
-        int previousAnimationNameLength = (AsCExhibition(base)->animationNameFlags >> 31) == 0 ? ((*(unsigned char*)&AsCExhibition(base)->animationNameFlags) & 0x7f) : AsCExhibition(base)->animationNameLength;
+        int previousAnimationNameLength = (AsCExhibition(base)->animationNameFlags >> 31) == 0
+                                              ? ((*(unsigned char*)&AsCExhibition(base)->animationNameFlags) & 0x7f)
+                                              : AsCExhibition(base)->animationNameLength;
         volatile PreviewStringAllocatorSlots sl;
         sl.b = sl.a;
-        String_ReplaceRange(((char*)(&AsCExhibition(base)->animationNameFlags)), 0, previousAnimationNameLength, animationName, animationName + strlen(animationName), (const char*)&sl.b);
+        String_ReplaceRange(((char*)(&AsCExhibition(base)->animationNameFlags)), 0, previousAnimationNameLength,
+                            animationName, animationName + strlen(animationName), (const char*)&sl.b);
     } else {
         const char* fallback = (const char*)s_previewFallbackAnimationName;
-        int previousAnimationNameLength = (AsCExhibition(base)->animationNameFlags >> 31) == 0 ? ((*(unsigned char*)&AsCExhibition(base)->animationNameFlags) & 0x7f) : AsCExhibition(base)->animationNameLength;
+        int previousAnimationNameLength = (AsCExhibition(base)->animationNameFlags >> 31) == 0
+                                              ? ((*(unsigned char*)&AsCExhibition(base)->animationNameFlags) & 0x7f)
+                                              : AsCExhibition(base)->animationNameLength;
         volatile PreviewStringAllocatorSlots sl;
         sl.b = sl.a;
-        String_ReplaceRange(((char*)(&AsCExhibition(base)->animationNameFlags)), 0, previousAnimationNameLength, fallback, fallback + strlen(fallback), (const char*)&sl.b);
+        String_ReplaceRange(((char*)(&AsCExhibition(base)->animationNameFlags)), 0, previousAnimationNameLength,
+                            fallback, fallback + strlen(fallback), (const char*)&sl.b);
     }
     AsCExhibition(base)->maxAnimationDelay = maximumAnimationDelay;
     AsCExhibition(base)->animationMode = 0;
@@ -1813,27 +2096,32 @@ void CExhibition_ConfigureAvatarPreview(void* self, void* selectedDescription, v
     Camera_Apply(g_view, kFloat_0_exhibition, kFloat_0_exhibition);
     Matrix_TransformPoint(transform, origin, ((WView*)g_view)->inputTransform);
     WView_ProjectViewPointWithoutClipTest(g_view, result, transform);
-    AsCExhibition(base)->translationY = -( (float)AsCExhibition(base)->viewportBottom - ((WView*)g_view)->viewportHeight * kFloat_0_5_exhibition ) / (((WView*)g_view)->viewportHeight * kFloat_0_5_exhibition - ((float*)result)[1]);
+    AsCExhibition(base)->translationY =
+        -((float)AsCExhibition(base)->viewportBottom - ((WView*)g_view)->viewportHeight * kFloat_0_5_exhibition) /
+        (((WView*)g_view)->viewportHeight * kFloat_0_5_exhibition - ((float*)result)[1]);
 
-    BuildAndApplyPreviewPose(self, clubRotation, rotationMatrix, translationMatrix, combined);
+    BuildAndApplyPreviewPose(this, clubRotation, rotationMatrix, translationMatrix, combined);
     AsCExhibition(base)->loadState = kPreviewLoadModel;
 }
 #pragma pop
 
 // Resolve a caddie, caddie item, ball, or club-set IFF ID into the appropriate preview model path.
-void CExhibition_SetItemType(void* self, unsigned int itemTypeId) {
+void CExhibition::SetItemType(unsigned int itemTypeId) {
     // Phase 1: on a changed ID, replace the optional preloader and clear avatar options.
     // The ID/model kind are written before lookup; missing item data can leave
     // those fields changed without scheduling a new load.
     float matrix[16];
     const char* s;
 
-      float rotation[16];
+    float rotation[16];
 
-    char* base = (char*)self;
-    if ((*(unsigned int*)&AsCExhibition(base)->itemTypeId) != itemTypeId) { float translationMatrix[16]; float combined[16]; PreviewVector3 transformed;
-        if (ExhibitionIsReady(self)) {
-            void* replacement = CPreloadFileAsync_Create(s_previewEnvironmentResourceName);
+    char* base = (char*)this;
+    if ((*(unsigned int*)&AsCExhibition(base)->itemTypeId) != itemTypeId) {
+        float translationMatrix[16];
+        float combined[16];
+        PreviewVector3 transformed;
+        if (ExhibitionIsReady(this)) {
+            void* replacement = CPreloadFileAsync::Create(s_previewEnvironmentResourceName);
             if (replacement) {
                 Del77E8* old = (*(Del77E8**)&AsCExhibition(base)->preloadFile);
                 if (old) {
@@ -1853,16 +2141,20 @@ void CExhibition_SetItemType(void* self, unsigned int itemTypeId) {
         switch (((*(unsigned int*)&AsCExhibition(base)->itemTypeId)) >> kItemKindShift) {
         case kItemCaddieEquipment: {
             AsCExhibition(base)->modelKind = kPreviewCaddie;
-            IFF_STRUCT::sCadItem* path = ItemInventory_FindCaddieItemData(AsCSharedDoc(g_sharedDoc)->itemInventory, (void*)(*(unsigned int*)&AsCExhibition(base)->itemTypeId));
-            if (0 == path) return;
+            IFF_STRUCT::sCadItem* path = ItemInventory_FindCaddieItemData(
+                AsCSharedDoc(g_sharedDoc)->itemInventory, (void*)(*(unsigned int*)&AsCExhibition(base)->itemTypeId));
+            if (0 == path)
+                return;
             REPLACE_PREVIEW_STRING_RANGE(0x518, path->model, path->model + strlen(path->model));
             ASSIGN_PREVIEW_ANIMATION(0x4fc, s_previewCaddieAnimationName);
             break;
         }
         case kItemCaddie: {
             AsCExhibition(base)->modelKind = kPreviewCaddie;
-            IFF_STRUCT::sCaddie* path = ItemInventory_FindCaddieData(AsCSharedDoc(g_sharedDoc)->itemInventory, (*(unsigned int*)&AsCExhibition(base)->itemTypeId));
-            if (path == 0) return;
+            IFF_STRUCT::sCaddie* path = ItemInventory_FindCaddieData(
+                AsCSharedDoc(g_sharedDoc)->itemInventory, (*(unsigned int*)&AsCExhibition(base)->itemTypeId));
+            if (path == 0)
+                return;
             REPLACE_PREVIEW_STRING_RANGE(0x518, path->model, path->model + strlen(path->model));
             APPEND_PREVIEW_MODEL_SUFFIX(0x518, exhibitionResourceStrings);
             ASSIGN_PREVIEW_ANIMATION(0x4fc, s_previewCaddieAnimationName);
@@ -1870,16 +2162,20 @@ void CExhibition_SetItemType(void* self, unsigned int itemTypeId) {
         }
         case kItemBall: {
             AsCExhibition(base)->modelKind = kPreviewBall;
-            IFF_STRUCT::sBall* path = (IFF_STRUCT::sBall*)ItemInventory_FindBallData(AsCSharedDoc(g_sharedDoc)->itemInventory, AsCExhibition(base)->itemTypeId);
-            if (0 == path) return;
+            IFF_STRUCT::sBall* path = (IFF_STRUCT::sBall*)ItemInventory_FindBallData(
+                AsCSharedDoc(g_sharedDoc)->itemInventory, AsCExhibition(base)->itemTypeId);
+            if (0 == path)
+                return;
             REPLACE_PREVIEW_STRING_RANGE(0x518, path->model, path->model + strlen(path->model));
             APPEND_PREVIEW_MODEL_SUFFIX(0x518, exhibitionResourceStrings);
             break;
         }
         case kItemClubSet: {
             AsCExhibition(base)->modelKind = kPreviewClubSet;
-            IFF_STRUCT::sClubSet* path = ItemInventory_FindClubSetData(AsCSharedDoc(g_sharedDoc)->itemInventory, (*(unsigned int*)&AsCExhibition(base)->itemTypeId));
-            if (!path) return;
+            IFF_STRUCT::sClubSet* path = ItemInventory_FindClubSetData(
+                AsCSharedDoc(g_sharedDoc)->itemInventory, (*(unsigned int*)&AsCExhibition(base)->itemTypeId));
+            if (!path)
+                return;
             REPLACE_PREVIEW_STRING_RANGE(0x518, path->common.icon, path->common.icon + strlen(path->common.icon));
             APPEND_PREVIEW_MODEL_SUFFIX(0x518, (exhibitionResourceStrings + kExhibitionStringPool_text_5_ui_pet));
             ASSIGN_PREVIEW_ANIMATION(0x4fc, s_previewClubSetAnimationName);
@@ -1891,7 +2187,8 @@ void CExhibition_SetItemType(void* self, unsigned int itemTypeId) {
         }
         // Phase 3: rebuild camera/probe alignment and the pose, then queue state 1.
         PreviewVector3 init = {kFloat_1_Intro, kFloat_1_Intro, kFloat_0_exhibition};
-        PreviewCameraMatrix cam; Matrix_SetIdentityAffine(&cam);
+        PreviewCameraMatrix cam;
+        Matrix_SetIdentityAffine(&cam);
         cam.origin.z = AsCExhibition(base)->cameraOffsetZ;
         Camera_SetFov(g_view, kExhibitionCameraFovRadians);
         PreviewCameraMatrix copy = cam;
@@ -1903,26 +2200,33 @@ void CExhibition_SetItemType(void* self, unsigned int itemTypeId) {
         WView_SetViewMatrix(g_view, &view);
         Camera_BuildFrustumPlanes(g_view);
 
-        Camera_Apply(g_view, kFloat_0_exhibition, kFloat_0_exhibition); Matrix_TransformPoint(&transformed, &init, ((WView*)g_view)->inputTransform);
-        float frustum[14]; WView_ProjectViewPointWithoutClipTest(g_view, frustum, &transformed);
+        Camera_Apply(g_view, kFloat_0_exhibition, kFloat_0_exhibition);
+        Matrix_TransformPoint(&transformed, &init, ((WView*)g_view)->inputTransform);
+        float frustum[14];
+        WView_ProjectViewPointWithoutClipTest(g_view, frustum, &transformed);
         float viewportHeight = ((WView*)g_view)->viewportHeight;
-        AsCExhibition(base)->translationY = PreviewBottomTranslation(AsCExhibition(base)->viewportBottom, viewportHeight, frustum[1]);
+        AsCExhibition(base)->translationY =
+            PreviewBottomTranslation(AsCExhibition(base)->viewportBottom, viewportHeight, frustum[1]);
         if (*(int*)(base + kPreviewModelKindOffset) == kPreviewClubSet) {
-            Mtx44_SetEulerRotationZXY(rotation, AsCExhibition(base)->rotationY, kFloat_0_exhibition, kFloat_0_exhibition);
+            Mtx44_SetEulerRotationZXY(rotation, AsCExhibition(base)->rotationY, kFloat_0_exhibition,
+                                      kFloat_0_exhibition);
             Mtx44_SetEulerRotationZXY(matrix, kFloat_0_exhibition, AsCExhibition(base)->rotationX, kFloat_0_exhibition);
             PSMTX44Concat(matrix, rotation, matrix);
-        } else Mtx44_SetEulerRotationZXY(matrix, AsCExhibition(base)->rotationY, AsCExhibition(base)->rotationX, AsCExhibition(base)->rotationZ);
-         Mtx44_SetTranslation(translationMatrix, AsCExhibition(base)->translationX, AsCExhibition(base)->translationY, kFloat_0_exhibition);
-         PSMTX44Concat(combined, matrix, translationMatrix);
-        Matrix_ExtractAffineFrom4x4(combined, base+0x78);
-        CExhibition_UpdateModelPose(self);
+        } else
+            Mtx44_SetEulerRotationZXY(matrix, AsCExhibition(base)->rotationY, AsCExhibition(base)->rotationX,
+                                      AsCExhibition(base)->rotationZ);
+        Mtx44_SetTranslation(translationMatrix, AsCExhibition(base)->translationX, AsCExhibition(base)->translationY,
+                             kFloat_0_exhibition);
+        PSMTX44Concat(combined, matrix, translationMatrix);
+        Matrix_ExtractAffineFrom4x4(combined, base + 0x78);
+        UpdateModelPose();
         AsCExhibition(base)->loadState = kPreviewLoadModel;
     }
 }
 
-// Clear the preview control flag at +0x10; its consumer is not established here.
-int CExhibition_ClearControlFlag(void* self) {
-    AsCExhibition(self)->unk_10 = 0;
+// Clear the control flag at +0x10.
+int CExhibition::ClearControlFlag(int) {
+    unk_10 = 0;
     return 1;
 }
 
@@ -1930,43 +2234,42 @@ int CExhibition_ClearControlFlag(void* self) {
 #pragma opt_common_subs off
 #pragma opt_propagation off
 // Set the permitted X rotation range, clamp the current angle, and update the model transform.
-int CExhibition_SetRotationLimits(void* self, float minimumAngle, float maximumAngle) {
+int CExhibition::SetRotationLimits(float minimumAngle, float maximumAngle) {
     // Phase 1: order limits, clamp X, and wrap Y using the original repeated steps.
-    // Angle units match Mtx44_SetEulerRotationZXY; no conversion occurs here.
+    // Angles use the units of Mtx44_SetEulerRotationZXY and are used as given.
     if (minimumAngle > maximumAngle) {
         float temp = minimumAngle;
         minimumAngle = maximumAngle;
         maximumAngle = temp;
     }
-    Rotation802B* obj = (Rotation802B*)self;
     float currentX;
     float currentY;
     float currentZ;
     float clampedX;
     float maximumX;
-    obj->low = minimumAngle;
-    obj->high = maximumAngle;
+    minRotationX = minimumAngle;
+    maxRotationX = maximumAngle;
     clampedX = (float)(double)minimumAngle;
     maximumX = (float)(double)maximumAngle;
-    currentX = obj->x;
-    currentZ = obj->z;
-    currentY = obj->y;
+    currentX = rotationX;
+    currentZ = rotationZ;
+    currentY = rotationY;
     clampedX = (currentX < clampedX) ? clampedX : (currentX > maximumX) ? maximumX : currentX;
-    AsCExhibition(self)->rotationX = clampedX;
-    AsCExhibition(self)->rotationY = currentY;
+    rotationX = clampedX;
+    rotationY = currentY;
     if (kPreviewRotationYUpperBound < currentY) {
         float zero, step;
         step = kPreviewRotationYWrapStep;
         zero = kFloat_0_exhibition;
-        while (zero < AsCExhibition(self)->rotationY) {
-            AsCExhibition(self)->rotationY = AsCExhibition(self)->rotationY - step;
+        while (zero < rotationY) {
+            rotationY = rotationY - step;
         }
     } else if (kPreviewRotationYLowerBound > currentY) {
         float zero, step;
         step = kPreviewRotationYWrapStep;
         zero = kFloat_0_exhibition;
-        while (zero > AsCExhibition(self)->rotationY) {
-            AsCExhibition(self)->rotationY = AsCExhibition(self)->rotationY + step;
+        while (zero > rotationY) {
+            rotationY = rotationY + step;
         }
     }
     float clampedZ;
@@ -1979,24 +2282,24 @@ int CExhibition_SetRotationLimits(void* self, float minimumAngle, float maximumA
             clampedZ = currentZ;
         }
     }
-    AsCExhibition(self)->rotationZ = clampedZ;
+    rotationZ = clampedZ;
     // Phase 2: compose rotation with translation and publish the puppet pose.
     // The Z comparisons above clamp every finite nonzero value to zero.
     char combinedTransform[0x40];
     char translationMatrix[0x40];
     char clubRotation[0x40];
     char rotationMatrix[0x40];
-    if (AsCExhibition(self)->modelKind == kPreviewClubSet) {
-        Mtx44_SetEulerRotationZXY(clubRotation, AsCExhibition(self)->rotationY, kFloat_0_exhibition, kFloat_0_exhibition);
-        Mtx44_SetEulerRotationZXY(rotationMatrix, kFloat_0_exhibition, AsCExhibition(self)->rotationX, kFloat_0_exhibition);
+    if (modelKind == kPreviewClubSet) {
+        Mtx44_SetEulerRotationZXY(clubRotation, rotationY, kFloat_0_exhibition, kFloat_0_exhibition);
+        Mtx44_SetEulerRotationZXY(rotationMatrix, kFloat_0_exhibition, rotationX, kFloat_0_exhibition);
         PSMTX44Concat(rotationMatrix, clubRotation, rotationMatrix);
     } else {
-        Mtx44_SetEulerRotationZXY(rotationMatrix, AsCExhibition(self)->rotationY, AsCExhibition(self)->rotationX, (float)(double)clampedZ);
+        Mtx44_SetEulerRotationZXY(rotationMatrix, rotationY, rotationX, (float)(double)clampedZ);
     }
-    Mtx44_SetTranslation(translationMatrix, AsCExhibition(self)->translationX, AsCExhibition(self)->translationY, kFloat_0_exhibition);
+    Mtx44_SetTranslation(translationMatrix, translationX, translationY, kFloat_0_exhibition);
     PSMTX44Concat(combinedTransform, rotationMatrix, translationMatrix);
-    Matrix_ExtractAffineFrom4x4(combinedTransform, ((char*)(AsCExhibition(self)->modelTransform)));
-    CExhibition_UpdateModelPose(self);
+    Matrix_ExtractAffineFrom4x4(combinedTransform, (char*)modelTransform);
+    UpdateModelPose();
     return 1;
 }
 #pragma pop
@@ -2005,40 +2308,42 @@ int CExhibition_SetRotationLimits(void* self, float minimumAngle, float maximumA
 #pragma opt_common_subs off
 #pragma opt_propagation off
 // Set preview Euler angles, clamp X to its limits, and update the model transform.
-int CExhibition_SetRotation(void* self, const float* rotationAngles) {
+int CExhibition::SetRotation(const float* rotationAngles) {
     // rotationAngles borrows X/Y/Z in the model rotation API's native units.
     // Phase 1: clamp X, wrap Y, and clamp finite nonzero Z to zero.
-    Rotation802B* obj = (Rotation802B*)self;
     float x, y, low, z, high;
     x = rotationAngles[0];
     z = rotationAngles[2];
     y = rotationAngles[1];
-    low = obj->low;
-    high = obj->high;
+    low = minRotationX;
+    high = maxRotationX;
     float clamped;
     clamped = (x < low) ? low : (x > high) ? high : x;
-    obj->x = clamped;
-    obj->y = y;
+    rotationX = clamped;
+    rotationY = y;
     if (kPreviewRotationYUpperBound < y) {
         float zero, step;
         step = kPreviewRotationYWrapStep;
         zero = kFloat_0_exhibition;
-        while (zero < obj->y) {
-            obj->y = obj->y - step;
+        while (zero < rotationY) {
+            rotationY = rotationY - step;
         }
     } else if (kPreviewRotationYLowerBound > y) {
         float zero, step;
         step = kPreviewRotationYWrapStep;
         zero = kFloat_0_exhibition;
-        while (zero > obj->y) {
-            obj->y = obj->y + step;
+        while (zero > rotationY) {
+            rotationY = rotationY + step;
         }
     }
     float zclamp;
-    if (z < kFloat_0_exhibition) zclamp = kFloat_0_exhibition;
-    else if (z > kFloat_0_exhibition) zclamp = kFloat_0_exhibition;
-    else zclamp = z;
-    AsCExhibition(self)->rotationZ = zclamp;
+    if (z < kFloat_0_exhibition)
+        zclamp = kFloat_0_exhibition;
+    else if (z > kFloat_0_exhibition)
+        zclamp = kFloat_0_exhibition;
+    else
+        zclamp = z;
+    rotationZ = zclamp;
 
     // Phase 2: compose the club's split rotation (or normal Euler rotation)
     // with translation, then copy the affine result and update the puppet.
@@ -2046,26 +2351,26 @@ int CExhibition_SetRotation(void* self, const float* rotationAngles) {
     char m2[0x40];
     char m1[0x40];
     char m0[0x40];
-    if (AsCExhibition(self)->modelKind == kPreviewClubSet) {
-        Mtx44_SetEulerRotationZXY(m2, AsCExhibition(self)->rotationY, kFloat_0_exhibition, kFloat_0_exhibition);
-        Mtx44_SetEulerRotationZXY(m3, kFloat_0_exhibition, AsCExhibition(self)->rotationX, kFloat_0_exhibition);
+    if (modelKind == kPreviewClubSet) {
+        Mtx44_SetEulerRotationZXY(m2, rotationY, kFloat_0_exhibition, kFloat_0_exhibition);
+        Mtx44_SetEulerRotationZXY(m3, kFloat_0_exhibition, rotationX, kFloat_0_exhibition);
         PSMTX44Concat(m3, m2, m3);
     } else {
-        Mtx44_SetEulerRotationZXY(m3, AsCExhibition(self)->rotationY, AsCExhibition(self)->rotationX, (float)(double)zclamp);
+        Mtx44_SetEulerRotationZXY(m3, rotationY, rotationX, (float)(double)zclamp);
     }
-    Mtx44_SetTranslation(m1, AsCExhibition(self)->translationX, AsCExhibition(self)->translationY, kFloat_0_exhibition);
+    Mtx44_SetTranslation(m1, translationX, translationY, kFloat_0_exhibition);
     PSMTX44Concat(m0, m3, m1);
-    Matrix_ExtractAffineFrom4x4(m0, ((char*)(AsCExhibition(self)->modelTransform)));
-    CExhibition_UpdateModelPose(self);
+    Matrix_ExtractAffineFrom4x4(m0, (char*)modelTransform);
+    UpdateModelPose();
     return 1;
 }
 #pragma pop
 
 // Clamp the requested preview camera distance and rebuild projection/model alignment.
-int CExhibition_SetCameraDistance(void* self, float cameraDistance) {
+int CExhibition::SetCameraDistance(float cameraDistance) {
     float matrix[16];
     float rotation[16];
-    char* base = (char*)self;
+    char* base = (char*)this;
     float low = AsCExhibition(base)->minCameraDistance;
     float high = AsCExhibition(base)->maxCameraDistance;
     double clamped = cameraDistance < low ? low : (cameraDistance > high ? high : cameraDistance);
@@ -2090,20 +2395,25 @@ int CExhibition_SetCameraDistance(void* self, float cameraDistance) {
     WView_ProjectViewPointWithoutClipTest(g_view, frustum, &transformed);
     float h = ((WView*)g_view)->viewportHeight;
     AsCExhibition(base)->translationY = PreviewBottomTranslation(AsCExhibition(base)->viewportBottom, h, frustum[1]);
-      float combined[16]; float translationMatrix[16];
-    BuildAndApplyPreviewPose(self, rotation, matrix, translationMatrix, combined);
+    float combined[16];
+    float translationMatrix[16];
+    BuildAndApplyPreviewPose(this, rotation, matrix, translationMatrix, combined);
     return 1;
 }
 
 // Set the camera distance range and clamp/reapply the current distance.
-int CExhibition_SetCameraDistanceLimits(void* self, float minimumDistance, float maximumDistance) {
+int CExhibition::SetCameraDistanceLimits(float minimumDistance, float maximumDistance) {
     float frustum[14];
     PreviewCameraMatrix cam;
     PreviewCameraMatrix view;
     float combined[16], translationMatrix[16], rotation[16], matrix[16];
     PreviewVector3 transformed;
-    char* base = (char*)self;
-    if (minimumDistance > maximumDistance) { float t = minimumDistance; minimumDistance = maximumDistance; maximumDistance = t; }
+    char* base = (char*)this;
+    if (minimumDistance > maximumDistance) {
+        float t = minimumDistance;
+        minimumDistance = maximumDistance;
+        maximumDistance = t;
+    }
     float x = AsCExhibition(base)->cameraOffsetZ;
     AsCExhibition(base)->minCameraDistance = minimumDistance;
     AsCExhibition(base)->maxCameraDistance = maximumDistance;
@@ -2127,24 +2437,25 @@ int CExhibition_SetCameraDistanceLimits(void* self, float minimumDistance, float
     Matrix_TransformPoint(&transformed, &init, ((WView*)g_view)->inputTransform);
     WView_ProjectViewPointWithoutClipTest(g_view, frustum, &transformed);
     float viewportHeight = ((WView*)g_view)->viewportHeight;
-    AsCExhibition(base)->translationY = PreviewBottomTranslation(AsCExhibition(base)->viewportBottom, viewportHeight, frustum[1]);
-    BuildAndApplyPreviewPose(self, rotation, matrix, translationMatrix, combined);
+    AsCExhibition(base)->translationY =
+        PreviewBottomTranslation(AsCExhibition(base)->viewportBottom, viewportHeight, frustum[1]);
+    BuildAndApplyPreviewPose(this, rotation, matrix, translationMatrix, combined);
     return 1;
 }
 
 // Return the writable three-float Euler rotation stored by the preview.
-void* CExhibition_GetRotation(void* self) {
-    return ((char*)(&AsCExhibition(self)->rotationX));
+void* CExhibition::GetRotation() {
+    return &rotationX;
 }
 
 // Return the preview camera's Z offset, in the same units as the distance limits.
-float CExhibition_GetCameraDistance(void* self) {
-    return AsCExhibition(self)->cameraOffsetZ;
+float CExhibition::GetCameraDistance() {
+    return cameraOffsetZ;
 }
 
 // Report whether the preview can accept another model-change request.
-int CExhibition_IsReady(void* self) {
-    return ExhibitionIsReady(self);
+int CExhibition::IsReady() {
+    return ExhibitionIsReady(this);
 }
 
 #pragma push
@@ -2154,25 +2465,29 @@ int CExhibition_IsReady(void* self) {
 // partReloadMask carries a nonzero word, copied without dereferencing it here.
 // Returns 0 without changes when busy, controller-less or given a zero mask;
 // returns 1 after scheduling state 2 (completion occurs in UpdateLoadState).
-int CExhibition_QueueModelUpdate(void* self, void* selectedDescription, void* resolvedDescription, void* partReloadMask) {
+int CExhibition::QueueModelUpdate(void* selectedDescription, void* resolvedDescription, int reloadMask) {
     int valid = 1;
-    void* controller = (*(void**)&AsCExhibition(self)->preloadFile);
-    if (controller && !((Sub802B87F4*)controller)->m2()) valid = 0;
+    void* controller = (*(void**)&preloadFile);
+    if (controller && !((Sub802B87F4*)controller)->m2())
+        valid = 0;
     if (valid) {
-        unsigned int value = (*(unsigned int*)&AsCExhibition(self)->loadState) - 1;
+        unsigned int value = (*(unsigned int*)&loadState) - 1;
         unsigned int shift = __cntlzw(value ^ 2);
         valid = (value << shift) >> 31;
     } else {
         valid = 0;
     }
-    if (!valid) return 0;
-    if (!AsCExhibition(self)->modelController) return 0;
-    if (!partReloadMask) return 0;
+    if (!valid)
+        return 0;
+    if (!modelController)
+        return 0;
+    if (!reloadMask)
+        return 0;
 
-    (*(ResolvedAvatarRecordCopy*)&AsCExhibition(self)->resolvedCharacterId) = *(ResolvedAvatarRecordCopy*)resolvedDescription;
-    (*(void**)&AsCExhibition(self)->partReloadMask) = partReloadMask;
-    (*(AvatarSelectionRecordCopy*)&AsCExhibition(self)->avatarCharacterId) = *(AvatarSelectionRecordCopy*)selectedDescription;
-    AsCExhibition(self)->loadState = kPreviewReloadParts;
+    (*(ResolvedAvatarRecordCopy*)&resolvedCharacterId) = *(ResolvedAvatarRecordCopy*)resolvedDescription;
+    partReloadMask = reloadMask;
+    (*(AvatarSelectionRecordCopy*)&avatarCharacterId) = *(AvatarSelectionRecordCopy*)selectedDescription;
+    loadState = kPreviewReloadParts;
     return 1;
 }
 #pragma pop
@@ -2180,46 +2495,54 @@ int CExhibition_QueueModelUpdate(void* self, void* selectedDescription, void* re
 // Apply an avatar texture variant and synchronize matching-character selection state on success.
 // Return 1 means the request was attempted, even if AvatarModel_ApplyTextureVariant
 // failed; return 0 means no texture/controller was supplied.
-int CExhibition_ApplyTextureVariant(void* self, void* textureVariant, int variantIndex) {
-    if (textureVariant == 0) return 0;
-    void* obj = AsCExhibition(self)->modelController;
-    if (obj == 0) return 0;
+int CExhibition::ApplyTextureVariant(void* textureVariant, int variantIndex) {
+    if (textureVariant == 0)
+        return 0;
+    void* obj = modelController;
+    if (obj == 0)
+        return 0;
     if (AvatarModel_ApplyTextureVariant(obj, textureVariant, variantIndex)) {
-        ItemSelection_SetStateIfSameCharacter(((char*)(&AsCExhibition(self)->resolvedCharacterId)), ((char*)(&AsCExhibition(self)->avatarCharacterId)), variantIndex);
+        ItemSelection_SetStateIfSameCharacter(((char*)(&resolvedCharacterId)), ((char*)(&avatarCharacterId)),
+                                              variantIndex);
     }
     return 1;
 }
 
 // Copy the avatar controller's resolved character/part description into caller storage.
-int CExhibition_CopyResolvedAvatarSelection(void* self, void* out) {
-    void* obj = AsCExhibition(self)->modelController;
-    if (obj == 0) return 0;
-    struct ResolvedAvatar { char controllerState[0x1bc]; ResolvedAvatarSelectionCopy selection; };
+int CExhibition::CopyResolvedAvatarSelection(void* out) {
+    void* obj = modelController;
+    if (obj == 0)
+        return 0;
+    struct ResolvedAvatar {
+        char controllerState[0x1bc];
+        ResolvedAvatarSelectionCopy selection;
+    };
     *(ResolvedAvatarSelectionCopy*)out = ((ResolvedAvatar*)obj)->selection;
     return 1;
 }
 
 // Store the inverse visibility flag used to suppress drawing and animation updates.
-int CExhibition_SetVisible(void* self, int value) {
+// The store goes through a signed char view; the original compiles this way.
+int CExhibition::SetVisible(int value) {
     unsigned int _c = __cntlzw(value);
-    (*(signed char*)&AsCExhibition(self)->displaySuppressed) = _c >> 5;
+    (*(signed char*)&displaySuppressed) = _c >> 5;
     return 1;
 }
 
-// Forward (callback, context) to the embedded preview callback's slot 0xC (CCallback_SetCallbackAndContext); the name is a
-int CExhibition_GetCallbackResult(void* self, int callbackAddress, void* callbackContext) {
-    return ((Sub802B8AD8*)((char*)self + kPreviewCallbackOffset))->m3(callbackAddress, callbackContext);
+// Forward (callback, context) to slot 0xC of the embedded preview callback object.
+int CExhibition::GetCallbackResult(int callbackAddress, void* callbackContext) {
+    return ((Sub802B8AD8*)((char*)this + kPreviewCallbackOffset))->m3(callbackAddress, callbackContext);
 }
 
 // Detach the model preloader without destroying it.
-int CExhibition_ClearModelPreloader(void* self) {
-    AsCExhibition(self)->modelPreloader = 0;
+int CExhibition::ClearModelPreloader() {
+    modelPreloader = 0;
     return 1;
 }
 
 // Install a caller-supplied model preloader handle.
-int CExhibition_SetModelPreloader(void* self, int value) {
-    AsCExhibition(self)->modelPreloader = value;
+int CExhibition::SetModelPreloader(int value) {
+    modelPreloader = value;
     return 1;
 }
 
@@ -2227,11 +2550,11 @@ int CExhibition_SetModelPreloader(void* self, int value) {
 #pragma opt_common_subs off
 #pragma opt_propagation off
 // Create the first Ball.iff effect and attach it to its named bone or the center fallback.
-void CExhibition_CreateBallEffects(void* self) {
+void CExhibition::CreateBallEffects() {
     // Phase 1: resolve the first effect filename and its live bone transform.
     // Only slot zero is used; there is no loop over the remaining Ball.iff effects.
     char* condptr;
-    char* base = (char*)self;
+    char* base = (char*)this;
     // Partial stack attachment view: +8/+24 begin the two four-pointer copy spans.
     // The declared view does not describe every copied stack word; preserve the
     // initializer/copy lengths until the complete attachment ABI is established.
@@ -2241,70 +2564,77 @@ void CExhibition_CreateBallEffects(void* self) {
         unsigned char pad1[0xc];
         void* second;
     } local;
-        IFF_STRUCT::sBall* data = (IFF_STRUCT::sBall*)ItemInventory_FindBallData(AsCSharedDoc(g_sharedDoc)->itemInventory, AsCExhibition(base)->itemTypeId);
-        if (!data) return;
-         int len; len = strlen(data->effectFiles[0]);
-        if (len < kMinimumEffectFilenameLength) return;
-        FxAttachment_Init(local.position);
-        void* candidate = 0;
+    IFF_STRUCT::sBall* data = (IFF_STRUCT::sBall*)ItemInventory_FindBallData(AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                                                             AsCExhibition(base)->itemTypeId);
+    if (!data)
+        return;
+    int len;
+    len = strlen(data->effectFiles[0]);
+    if (len < kMinimumEffectFilenameLength)
+        return;
+    FxAttachment_Init(local.position);
+    void* candidate = 0;
+    if (*(signed char*)(data->effectBones[0]))
+        candidate = (void*)WPuppet_FindOrCacheBone(AsCExhibition(base)->puppet, data->effectBones[0]);
+    if (candidate) {
+        local.first = ((PreviewBoneTransform*)candidate)->attachmentMatrix;
+    } else {
+        void* found;
         if (*(signed char*)(data->effectBones[0]))
-            candidate = (void*)WPuppet_FindOrCacheBone(AsCExhibition(base)->puppet, data->effectBones[0]);
-        if (candidate) {
-            local.first = ((PreviewBoneTransform*)candidate)->attachmentMatrix;
-        } else {
-            void* found;
-            if (*(signed char*)(data->effectBones[0]))
-                found = (void*)WPuppet_FindNamedBoneEntry(AsCExhibition(base)->puppet, data->effectBones[0]);
-            else
-                found = (void*)WPuppet_FindNamedBoneEntry(AsCExhibition(base)->puppet, exhibitionResourceStrings + kExhibitionStringPool_text_58_center);
-            if (found) {
-                void* first = *(void**)found;
-                if (first) local.first = ((PreviewBoneTransform*)first)->attachmentMatrix;
-                local.second = ((PreviewNamedBone*)found)->metadata->position;
-            }
+            found = (void*)WPuppet_FindNamedBoneEntry(AsCExhibition(base)->puppet, data->effectBones[0]);
+        else
+            found = (void*)WPuppet_FindNamedBoneEntry(AsCExhibition(base)->puppet,
+                                                      exhibitionResourceStrings + kExhibitionStringPool_text_58_center);
+        if (found) {
+            void* first = *(void**)found;
+            if (first)
+                local.first = ((PreviewBoneTransform*)first)->attachmentMatrix;
+            local.second = ((PreviewNamedBone*)found)->metadata->position;
         }
-        // Phase 2: copy the preview's pixel anchor into a spray or sequence and
-        // register it in CFxBox. Bone transform pointers remain borrowed.
-        // The effect receives copied screen coordinates and borrowed live bone pointers.
-        // sourceAttachment also receives this stack address. It expires on return:
-        // do not treat that stored field as an owned or persistent attachment object.
-        local.position[0] = AsCExhibition(base)->screenCenterX;
-        local.position[1] = AsCExhibition(base)->screenCenterY;
-        // Last three filename bytes identify the extension; preserve case-sensitive comparison.
-        condptr = data->effectFiles[0] + len - 3;
+    }
+    // Phase 2: copy the preview's pixel anchor into a spray or sequence and
+    // register it in CFxBox. Bone transform pointers remain borrowed.
+    // The effect receives copied screen coordinates and borrowed live bone pointers.
+    // sourceAttachment also receives this stack address. It expires on return:
+    // do not treat that stored field as an owned or persistent attachment object.
+    local.position[0] = AsCExhibition(base)->screenCenterX;
+    local.position[1] = AsCExhibition(base)->screenCenterY;
+    // Last three filename bytes identify the extension; preserve case-sensitive comparison.
+    condptr = data->effectFiles[0] + len - 3;
     if (CString_Compare(condptr, exhibitionResourceStrings + kExhibitionStringPool_text_5f_spr) == 0) {
-        void* item = (void*)CFxSpray_CreateFromScript(((char*)(AsCExhibition(base)->pad_0B0)), data->effectFiles[0], 0, 0);
+        void* item = (void*)CFxSpray::CreateFromScript((CFxBox*)(((char*)(AsCExhibition(base)->fxBox))),
+                                                       (const char*)(data->effectFiles[0]), 0, 0);
         if (item) {
             ((PreviewSprayAttachment*)item)->sourceAttachment = local.position;
             ((PreviewSprayAttachment*)item)->screenX = local.position[0];
             ((PreviewSprayAttachment*)item)->screenY = local.position[1];
             memcpy(((PreviewSprayAttachment*)item)->transforms, &local.first, 0x10);
             memcpy(((PreviewSprayAttachment*)item)->positions, &local.second, 0x10);
-            CFxBox_RegisterSpray(((char*)(AsCExhibition(base)->pad_0B0)), item);
+            ((CFxBox*)(((char*)(AsCExhibition(base)->fxBox))))->RegisterSpray(((CFxSpray*)(item)));
         }
     } else {
-        void* item = (void*)CFxSequence_Create(((char*)(AsCExhibition(base)->pad_0B0)), data->effectFiles[0], 1, 0, 0);
+        void* item = (void*)CFxSequence_Create(((char*)(AsCExhibition(base)->fxBox)), data->effectFiles[0], 1, 0, 0);
         if (item) {
             ((PreviewSequenceAttachment*)item)->sourceAttachment = local.position;
             ((PreviewSequenceAttachment*)item)->screenX = local.position[0];
             ((PreviewSequenceAttachment*)item)->screenY = local.position[1];
-            CFxBox_RegisterSequence(((char*)(AsCExhibition(base)->pad_0B0)), item);
+            ((CFxBox*)(((char*)(AsCExhibition(base)->fxBox))))->RegisterSequence(((CFxSequence*)(item)));
         }
     }
 }
 #pragma pop
 
 // Update all registered spray/sequence screen origins and rebuild bone-attached effects.
-int CExhibition_UpdateEffectScreenCenter(void* self) {
+int CExhibition::UpdateEffectScreenCenter() {
     // Phase 1: update registered sprays in tree order. Both trees embed their
     // sentinel at the owner; parent links carry a low color bit to mask off.
     register void* node;
     register void* next;
     register void* child;
-    node = AsCExhibition(self)->sprayTreeFirst;
-    register void* head = ((PreviewEffectTreeHeaders*)self)->spraySentinel;
-    int centerX = (int)AsCExhibition(self)->screenCenterX;
-    int centerY = (int)AsCExhibition(self)->screenCenterY;
+    node = sprayTreeFirst;
+    register void* head = ((PreviewEffectTreeHeaders*)this)->spraySentinel;
+    int centerX = (int)screenCenterX;
+    int centerY = (int)screenCenterY;
     while (node != head) {
         child = ((PreviewEffectTreeNode*)node)->effect;
         if (child) {
@@ -2314,17 +2644,19 @@ int CExhibition_UpdateEffectScreenCenter(void* self) {
         }
         next = *(void**)((char*)node + 4);
         if (next) {
-            while (*(void**)next) next = *(void**)next;
+            while (*(void**)next)
+                next = *(void**)next;
             node = next;
             continue;
         } else {
-            while (node != *(void**)(next = (void*)((unsigned int)*(void**)((char*)node + 8) & ~1u))) node = next;
+            while (node != *(void**)(next = (void*)((unsigned int)*(void**)((char*)node + 8) & ~1u)))
+                node = next;
             node = next;
         }
     }
     // Phase 2: update registered sequences using their different attachment offsets.
-    head = ((PreviewEffectTreeHeaders*)self)->sequenceSentinel;
-    node = AsCExhibition(self)->sequenceTreeFirst;
+    head = ((PreviewEffectTreeHeaders*)this)->sequenceSentinel;
+    node = sequenceTreeFirst;
     while (node != head) {
         child = ((PreviewEffectTreeNode*)node)->effect;
         if (child) {
@@ -2334,55 +2666,59 @@ int CExhibition_UpdateEffectScreenCenter(void* self) {
         }
         next = *(void**)((char*)node + 4);
         if (next) {
-            while (*(void**)next) next = *(void**)next;
+            while (*(void**)next)
+                next = *(void**)next;
             node = next;
             continue;
         } else {
-            while (node != *(void**)(next = (void*)((unsigned int)*(void**)((char*)node + 8) & ~1u))) node = next;
+            while (node != *(void**)(next = (void*)((unsigned int)*(void**)((char*)node + 8) & ~1u)))
+                node = next;
             node = next;
         }
     }
-    CExhibition_RebuildAttachedEffects(self);
+    RebuildAttachedEffects();
     return 1;
 }
 
 // Apply the current animation time and transform according to avatar, caddie, ball, or club-set kind.
-void CExhibition_UpdateModelPose(void* self) {
-    if (!AsCExhibition(self)->puppet) return;
-    int mode = AsCExhibition(self)->modelKind;
+void CExhibition::UpdateModelPose() {
+    if (!puppet)
+        return;
+    int mode = modelKind;
     switch (mode) {
     case kPreviewAvatar: {
-        void* obj = (void*)ObjectList_GetSelected(AsCExhibition(self)->modelController);
-        if (!obj) return;
-        WPuppet_SetAnimationTimeFromRanges(obj, 0, AsCExhibition(self)->animationFrame, 0, 0);
-        ResourceModel_SetMatrixRecursive(AsCExhibition(self)->modelController, obj, ((char*)(AsCExhibition(self)->modelTransform)));
-        ResourceModel_UpdateBoneWorldMatrices(AsCExhibition(self)->modelController, 0, kFloat_1_Intro, 0);
+        void* obj = (void*)ObjectList_GetSelected(modelController);
+        if (!obj)
+            return;
+        WPuppet_SetAnimationTimeFromRanges(obj, 0, animationFrame, 0, 0);
+        ResourceModel_SetMatrixRecursive(modelController, obj, ((char*)(modelTransform)));
+        ResourceModel_UpdateBoneWorldMatrices(modelController, 0, kFloat_1_Intro, 0);
         break;
     }
     case kPreviewCaddie: {
-        WPuppet_SetAnimationTimeFromRanges(AsCExhibition(self)->puppet, 0, AsCExhibition(self)->animationFrame, 0, 0);
-        Model_SetMatrixRecursive(AsCExhibition(self)->puppet, AsCExhibition(self)->puppet, ((char*)(AsCExhibition(self)->modelTransform)));
-        WPuppet_UpdateBoneWorldMatrices(AsCExhibition(self)->puppet, 0, 0, kFloat_1_Intro);
+        WPuppet_SetAnimationTimeFromRanges(puppet, 0, animationFrame, 0, 0);
+        Model_SetMatrixRecursive(puppet, puppet, ((char*)(modelTransform)));
+        WPuppet_UpdateBoneWorldMatrices(puppet, 0, 0, kFloat_1_Intro);
         break;
     }
     case kPreviewBall:
     case kPreviewStaticModel:
-        Model_SetMatrixRecursive(AsCExhibition(self)->puppet, 0, ((char*)(AsCExhibition(self)->modelTransform)));
+        Model_SetMatrixRecursive(puppet, 0, ((char*)(modelTransform)));
         break;
     case kPreviewClubSet: {
-        WPuppet_SetAnimationTimeFromRanges(AsCExhibition(self)->puppet, 0, AsCExhibition(self)->animationFrame, 0, 0);
-        void* p = AsCExhibition(self)->puppet;
+        WPuppet_SetAnimationTimeFromRanges(puppet, 0, animationFrame, 0, 0);
+        void* p = puppet;
         char matrix[0x30];
         char rotation[0x30];
         Matrix_SetAxisRotation(rotation, kClubPreviewAxisRotation, 2);
-        Matrix_ConcatAffine(matrix, ((char*)(AsCExhibition(self)->modelTransform)), rotation);
+        Matrix_ConcatAffine(matrix, ((char*)(modelTransform)), rotation);
         Model_SetMatrixRecursive(p, p, matrix);
         break;
     }
     default:
         break;
     }
-    WPuppet_UpdateBoneWorldMatrices(AsCExhibition(self)->puppet, 0, 0, kFloat_1_Intro);
+    WPuppet_UpdateBoneWorldMatrices(puppet, 0, 0, kFloat_1_Intro);
 }
 
 #pragma push
@@ -2404,22 +2740,34 @@ inline void AppendEffect802B(PtrVec802B* v, void* const& item) {
         return;
     }
     if (kMaxPointerElements - limit < 1) {
-        std::length_error* error = MakeError802B(errorStorage1, exhibitionResourceStrings + kExhibitionStringPool_text_d_vector_length_error);
-        __throw(exhibitionResourceStrings + kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error, error, (void*)__dt__Q23std12length_errorFv);
+        std::length_error* error =
+            MakeError802B(errorStorage1, exhibitionResourceStrings + kExhibitionStringPool_text_d_vector_length_error);
+        __throw(exhibitionResourceStrings +
+                    kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error,
+                error, (void*)__dt__Q23std12length_errorFv);
     }
     needed = v->size + 1 - v->capacity;
     VecBuffer802B temp(&v->capacity);
     unsigned capacity = v->capacity;
     if (needed > kMaxPointerElements - capacity) {
-        std::length_error* error = MakeError802B(errorStorage2, exhibitionResourceStrings + kExhibitionStringPool_text_d_vector_length_error);
-        __throw(exhibitionResourceStrings + kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error, error, (void*)__dt__Q23std12length_errorFv);
+        std::length_error* error =
+            MakeError802B(errorStorage2, exhibitionResourceStrings + kExhibitionStringPool_text_d_vector_length_error);
+        __throw(exhibitionResourceStrings +
+                    kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error,
+                error, (void*)__dt__Q23std12length_errorFv);
     }
-    if (capacity < kPointerGrowthThreeFifthsLimit) capacity += VecMax802B(largeGrowth = (3 * (capacity + 1)) / 5, needed);
-    else if (capacity < kPointerGrowthHalfLimit) capacity += VecMax802B(smallGrowth = (capacity + 1) / 2, needed);
-    else capacity = kMaxPointerElements;
+    if (capacity < kPointerGrowthThreeFifthsLimit)
+        capacity += VecMax802B(largeGrowth = (3 * (capacity + 1)) / 5, needed);
+    else if (capacity < kPointerGrowthHalfLimit)
+        capacity += VecMax802B(smallGrowth = (capacity + 1) / 2, needed);
+    else
+        capacity = kMaxPointerElements;
     if (capacity > kMaxPointerElements) {
-        std::length_error* error = MakeError802B(errorStorage3, exhibitionResourceStrings + kExhibitionStringPool_text_d_vector_length_error);
-        __throw(exhibitionResourceStrings + kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error, error, (void*)__dt__Q23std12length_errorFv);
+        std::length_error* error =
+            MakeError802B(errorStorage3, exhibitionResourceStrings + kExhibitionStringPool_text_d_vector_length_error);
+        __throw(exhibitionResourceStrings +
+                    kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error,
+                error, (void*)__dt__Q23std12length_errorFv);
     }
     // Phase 2: construct the new tail, copy existing pointers and clear old slots.
     void** buf = (void**)appMallocDummy__FUl(capacity * 4);
@@ -2474,7 +2822,7 @@ inline void AppendEffect802B(PtrVec802B* v, void* const& item) {
 // address of stack scratch exactly as before; it is not a retained valid owner.
 // Do not add consumers that dereference it after return without a lifetime fix.
 // Replace bone-script effects, respecting part conditions and tracking newly created sprays/sequences.
-void CExhibition_RebuildAttachedEffects(void* self) {
+void CExhibition::RebuildAttachedEffects() {
     // Phase 1: remove the prior bone-generated effects, retaining vector capacity.
     // CFxBox holds registered effects; attachedSprays/Sequences track the subset
     // rebuilt here. Their arrays own pointer storage, not separate effect copies.
@@ -2487,15 +2835,19 @@ void CExhibition_RebuildAttachedEffects(void* self) {
     int partConditionMatched;
     int requiredPartId;
     void* createdSpray;
-    base = (char*)self;
-    if (!AsCExhibition(base)->puppet) return;
+    base = (char*)this;
+    if (!AsCExhibition(base)->puppet)
+        return;
     char effectMarker[4];
-    effectMarker[0] = kPreviewBoneEffectMarkerByte0; effectMarker[1] = kPreviewBoneEffectMarkerByte1;
-    effectMarker[2] = kPreviewBoneEffectMarkerByte2; effectMarker[3] = kPreviewBoneEffectMarkerByte3;
+    effectMarker[0] = kPreviewBoneEffectMarkerByte0;
+    effectMarker[1] = kPreviewBoneEffectMarkerByte1;
+    effectMarker[2] = kPreviewBoneEffectMarkerByte2;
+    effectMarker[3] = kPreviewBoneEffectMarkerByte3;
     for (unsigned i = 0; i < (*(unsigned*)&AsCExhibition(base)->attachedSprayCount); ++i)
-        CFxBox_RemoveSpray(base + 0xb0, ((*(void***)&AsCExhibition(base)->attachedSprays))[i]);
+        ((CFxBox*)(base + 0xb0))->RemoveSpray(((CFxSpray*)(((*(void***)&AsCExhibition(base)->attachedSprays))[i])));
     for (unsigned i = 0; i < (*(unsigned*)&AsCExhibition(base)->attachedSequenceCount); ++i)
-        CFxBox_RemoveSequence(base + 0xb0, ((*(void***)&AsCExhibition(base)->attachedSequences))[i], 1);
+        ((CFxBox*)(base + 0xb0))
+            ->RemoveSequence(((CFxSequence*)(((*(void***)&AsCExhibition(base)->attachedSequences))[i])), 1);
     unsigned previousSprayCount = (*(volatile unsigned*)&AsCExhibition(base)->attachedSprayCount);
     unsigned previousSequenceCount = (*(volatile unsigned*)&AsCExhibition(base)->attachedSequenceCount);
     (*(unsigned*)&AsCExhibition(base)->attachedSequenceCount) -= previousSequenceCount;
@@ -2506,86 +2858,107 @@ void CExhibition_RebuildAttachedEffects(void* self) {
         char name[kPreviewTokenCapacity], condition[kPreviewTokenCapacity];
         PreviewAttachmentDescription description;
         namedBoneEntry = (PreviewNamedBone*)((WPuppet*)AsCExhibition(base)->puppet)->namedBones + i;
-        if (!namedBoneEntry) continue;
+        if (!namedBoneEntry)
+            continue;
         scriptCursor = ((PreviewNamedBone*)namedBoneEntry)->metadata->script;
-        if (!scriptCursor) continue;
-        if (!*(void**)namedBoneEntry || (*(unsigned*)((char*)*(void**)namedBoneEntry + 0x74) & kBoneSuppressAttachedEffects)) continue;
+        if (!scriptCursor)
+            continue;
+        if (!*(void**)namedBoneEntry ||
+            (*(unsigned*)((char*)*(void**)namedBoneEntry + 0x74) & kBoneSuppressAttachedEffects))
+            continue;
         for (;;) {
-        effectTokenOrExtension = strstr(scriptCursor, effectMarker);
-        if (!effectTokenOrExtension) break;
-        markerLength = strlen(effectMarker);
-        if ((signed char)effectTokenOrExtension[markerLength] == '(') ++markerLength;
-        if (markerLength > strlen(effectMarker)) scriptCursor = (char*)String_ParseQuotedToken(effectTokenOrExtension + markerLength, name);
-        else scriptCursor = String_ParseSpaceDelimitedToken(effectTokenOrExtension + markerLength, name);
-        int len = strlen(name);
-        if (len == 0 || len >= kPreviewTokenCapacity) continue;
-        effectTokenOrExtension = strrchr(name, '.');
-        if (!effectTokenOrExtension || strlen(effectTokenOrExtension) < kPreviewMinimumExtensionLength) continue;
-        if (AsCExhibition(base)->modelKind == kPreviewAvatar) {
-            scriptCursor = (char*)String_ParseQuotedToken(scriptCursor, condition);
-            len = strlen(condition);
-            if (len == 0 || len >= kPreviewTokenCapacity) continue;
-            hadPartCondition = 0;
-            partConditionMatched = 0;
-            while (!partConditionMatched && (unsigned char)condition[0] == '&') {
-                hadPartCondition = 1;
-                requiredPartId = String_ParseDecimalInt(condition + 1);
-                char* owner = (*(char**)&AsCExhibition(base)->modelController);
-                if (ResolvedItemSelection_ContainsPart(owner + kPreviewResolvedSelectionOffset, (const char*)requiredPartId)) { partConditionMatched = 1; break; }
-                else {
-                    if (AvatarModel_ContainsAttachment(AsCExhibition(base)->modelController, (const char*)requiredPartId)) partConditionMatched = 1;
-                    if (partConditionMatched) break;
-                    scriptCursor = (char*)String_ParseQuotedToken(scriptCursor, condition);
-                    len = strlen(condition);
-                    if (len == 0 || len >= kPreviewTokenCapacity) break;
+            effectTokenOrExtension = strstr(scriptCursor, effectMarker);
+            if (!effectTokenOrExtension)
+                break;
+            markerLength = strlen(effectMarker);
+            if ((signed char)effectTokenOrExtension[markerLength] == '(')
+                ++markerLength;
+            if (markerLength > strlen(effectMarker))
+                scriptCursor = (char*)String_ParseQuotedToken(effectTokenOrExtension + markerLength, name);
+            else
+                scriptCursor = String_ParseSpaceDelimitedToken(effectTokenOrExtension + markerLength, name);
+            int len = strlen(name);
+            if (len == 0 || len >= kPreviewTokenCapacity)
+                continue;
+            effectTokenOrExtension = strrchr(name, '.');
+            if (!effectTokenOrExtension || strlen(effectTokenOrExtension) < kPreviewMinimumExtensionLength)
+                continue;
+            if (AsCExhibition(base)->modelKind == kPreviewAvatar) {
+                scriptCursor = (char*)String_ParseQuotedToken(scriptCursor, condition);
+                len = strlen(condition);
+                if (len == 0 || len >= kPreviewTokenCapacity)
+                    continue;
+                hadPartCondition = 0;
+                partConditionMatched = 0;
+                while (!partConditionMatched && (unsigned char)condition[0] == '&') {
+                    hadPartCondition = 1;
+                    requiredPartId = String_ParseDecimalInt(condition + 1);
+                    char* owner = (*(char**)&AsCExhibition(base)->modelController);
+                    if (ResolvedItemSelection_ContainsPart(owner + kPreviewResolvedSelectionOffset,
+                                                           (const char*)requiredPartId)) {
+                        partConditionMatched = 1;
+                        break;
+                    } else {
+                        if (AvatarModel_ContainsAttachment(AsCExhibition(base)->modelController,
+                                                           (const char*)requiredPartId))
+                            partConditionMatched = 1;
+                        if (partConditionMatched)
+                            break;
+                        scriptCursor = (char*)String_ParseQuotedToken(scriptCursor, condition);
+                        len = strlen(condition);
+                        if (len == 0 || len >= kPreviewTokenCapacity)
+                            break;
+                    }
                 }
+                if (hadPartCondition && !partConditionMatched)
+                    continue;
             }
-            if (hadPartCondition && !partConditionMatched) continue;
-        }
-        // Phase 3: build the bone/screen attachment, register by extension, and
-        // retain its pointer in the matching tracking array for the next rebuild.
-        // description is stack scratch. Copied matrix/position entries borrow the
-        // puppet; sourceAttachment stores &description and is invalid after return.
-        // Retained-pointer consumers require a separate lifetime audit before use.
-        FxAttachment_Init(&description);
-        description.x = AsCExhibition(base)->screenCenterX;
-        description.y = AsCExhibition(base)->screenCenterY;
-        description.transforms[0] = ((PreviewNamedBone*)namedBoneEntry)->bone->attachmentMatrix;
-        description.points[0] = ((PreviewNamedBone*)namedBoneEntry)->metadata->position;
-        if (String_CompareCString(effectTokenOrExtension + 1, exhibitionResourceStrings + kExhibitionStringPool_text_5f_spr) == 0) {
-            createdSpray = (void*)CFxSpray_CreateFromScript(base + 0xb0, name, 0, 0);
-            if (createdSpray) {
-                ((PreviewSprayAttachment*)createdSpray)->sourceAttachment = &description;
-                ((PreviewSprayAttachment*)createdSpray)->screenX = description.x;
-                ((PreviewSprayAttachment*)createdSpray)->screenY = description.y;
-                memcpy(((PreviewSprayAttachment*)createdSpray)->transforms, &description.transforms[0], 0x10);
-                memcpy(((PreviewSprayAttachment*)createdSpray)->positions, &description.points[0], 0x10);
-                CFxBox_RegisterSpray(base + 0xb0, createdSpray);
-                AppendEffect802B((PtrVec802B*)(base + 0x444), createdSpray);
-            }
-        } else {
-            if (String_CompareCString(effectTokenOrExtension + 1, exhibitionResourceStrings + kExhibitionStringPool_text_63_seq) == 0) {
-                void* createdSpray = (void*)CFxSequence_Create(base + 0xb0, name, 1, 0, 0);
+            // Phase 3: build the bone/screen attachment, register by extension, and
+            // retain its pointer in the matching tracking array for the next rebuild.
+            // description is stack scratch. Copied matrix/position entries borrow the
+            // puppet; sourceAttachment stores &description and is invalid after return.
+            // Retained-pointer consumers require a separate lifetime audit before use.
+            FxAttachment_Init(&description);
+            description.x = AsCExhibition(base)->screenCenterX;
+            description.y = AsCExhibition(base)->screenCenterY;
+            description.transforms[0] = ((PreviewNamedBone*)namedBoneEntry)->bone->attachmentMatrix;
+            description.points[0] = ((PreviewNamedBone*)namedBoneEntry)->metadata->position;
+            if (String_CompareCString(effectTokenOrExtension + 1,
+                                      exhibitionResourceStrings + kExhibitionStringPool_text_5f_spr) == 0) {
+                createdSpray = (void*)CFxSpray::CreateFromScript((CFxBox*)(base + 0xb0), (const char*)(name), 0, 0);
                 if (createdSpray) {
-                    ((PreviewSequenceAttachment*)createdSpray)->sourceAttachment = &description;
-                    ((PreviewSequenceAttachment*)createdSpray)->screenX = description.x;
-                    ((PreviewSequenceAttachment*)createdSpray)->screenY = description.y;
-                    CFxBox_RegisterSequence(base + 0xb0, createdSpray);
-                    AppendEffect802B((PtrVec802B*)(base + 0x450), createdSpray);
+                    ((PreviewSprayAttachment*)createdSpray)->sourceAttachment = &description;
+                    ((PreviewSprayAttachment*)createdSpray)->screenX = description.x;
+                    ((PreviewSprayAttachment*)createdSpray)->screenY = description.y;
+                    memcpy(((PreviewSprayAttachment*)createdSpray)->transforms, &description.transforms[0], 0x10);
+                    memcpy(((PreviewSprayAttachment*)createdSpray)->positions, &description.points[0], 0x10);
+                    ((CFxBox*)(base + 0xb0))->RegisterSpray(((CFxSpray*)(createdSpray)));
+                    AppendEffect802B((PtrVec802B*)(base + 0x444), createdSpray);
+                }
+            } else {
+                if (String_CompareCString(effectTokenOrExtension + 1,
+                                          exhibitionResourceStrings + kExhibitionStringPool_text_63_seq) == 0) {
+                    void* createdSpray = (void*)CFxSequence_Create(base + 0xb0, name, 1, 0, 0);
+                    if (createdSpray) {
+                        ((PreviewSequenceAttachment*)createdSpray)->sourceAttachment = &description;
+                        ((PreviewSequenceAttachment*)createdSpray)->screenX = description.x;
+                        ((PreviewSequenceAttachment*)createdSpray)->screenY = description.y;
+                        ((CFxBox*)(base + 0xb0))->RegisterSequence(((CFxSequence*)(createdSpray)));
+                        AppendEffect802B((PtrVec802B*)(base + 0x450), createdSpray);
+                    }
                 }
             }
         }
-    }
     }
 }
 
 #pragma pop
 
 // Load lighting, initialize animation and fade-in, rebuild attachments, and apply the initial pose.
-int CExhibition_InitializeLoadedModel(void* self) {
+int CExhibition::InitializeLoadedModel() {
     // Requires a loaded puppet. Phase 1: install lighting and refresh identity-pose bounds.
-    char* base = (char*)self;
-    CExhibition_LoadEnvironmentLights(self);
+    char* base = (char*)this;
+    LoadEnvironmentLights();
     struct Matrices {
         char modelRotation[0x40];
         char clubRotation[0x40];
@@ -2599,10 +2972,11 @@ int CExhibition_InitializeLoadedModel(void* self) {
     WPuppet_UpdateBound(AsCExhibition(base)->puppet, 0);
     // Phase 2: select the copied animation and initialize its caller-time delay/cycle.
     unsigned int flag = (unsigned int)__cntlzw(AsCExhibition(base)->animationNameFlags >> 31) >> 5;
-    unsigned int value = flag ? ((*(unsigned char*)&AsCExhibition(base)->animationNameFlags) & 0x7f) : (*(unsigned int*)&AsCExhibition(base)->animationNameLength);
+    unsigned int value = flag ? ((*(unsigned char*)&AsCExhibition(base)->animationNameFlags) & 0x7f)
+                              : (*(unsigned int*)&AsCExhibition(base)->animationNameLength);
     if (value != 0) {
         void* name = flag ? (void*)(base + 0x4fd) : (*(void**)&AsCExhibition(base)->animationNameData);
-        CExhibition_PlayAnimationByName(self, name, AsCExhibition(base)->animationMode, kFloat_0_exhibition);
+        PlayAnimationByName(name, AsCExhibition(base)->animationMode, kFloat_0_exhibition);
     }
     float time = Random_RangeFloat(-1, kFloat_0_exhibition, AsCExhibition(base)->maxAnimationDelay);
     AsCExhibition(base)->animationDelay = time;
@@ -2610,13 +2984,14 @@ int CExhibition_InitializeLoadedModel(void* self) {
     if (range) {
         float difference = *(float*)((char*)range + 4) - *(float*)range;
         AsCExhibition(base)->animationCycleDuration = AsCExhibition(base)->animationDelay + difference;
-    }
-    else AsCExhibition(base)->animationCycleDuration = kFloat_0_exhibition;
+    } else
+        AsCExhibition(base)->animationCycleDuration = kFloat_0_exhibition;
     // Phase 3: begin transparent, rebuild bone effects and apply the preview pose.
     AsCExhibition(base)->opacity = kFloat_0_exhibition;
     WPuppet_SetOpacityRecursive(AsCExhibition(base)->puppet, 0);
-    CExhibition_RebuildAttachedEffects(self);
-    BuildAndApplyPreviewPose(self, matrices.clubRotation, matrices.modelRotation, matrices.translation, matrices.modelTransform4x4);
+    RebuildAttachedEffects();
+    BuildAndApplyPreviewPose(this, matrices.clubRotation, matrices.modelRotation, matrices.translation,
+                             matrices.modelTransform4x4);
     ((Sub802B8AD8*)(base + kPreviewCallbackOffset))->m4(0);
     return 1;
 }
@@ -2627,7 +3002,9 @@ struct PreviewAnimationTimingView {
     void* replayName; // Borrowed +0x1c argument to PlayAnimationByName; distinct from the +0x18 name view.
 };
 typedef char PreviewAnimationTiming_name_offset[((int)&((PreviewAnimationTimingView*)0)->replayName == 0x1c) ? 1 : -1];
-enum { kPreviewEffectsSubobjectOffset = 0xb0 };
+enum {
+    kPreviewEffectsSubobjectOffset = 0xb0
+};
 
 #pragma push
 #pragma always_inline on
@@ -2642,32 +3019,37 @@ static inline void* PreviewAnimationEventModel(char* preview) {
 // Advance the embedded effect box virtual hook, then its effects, using the same caller-time scale.
 static inline void AdvancePreviewEffectSimulation(char* preview, float dt) {
     ((Sub802B9CD4*)(preview + kPreviewEffectsSubobjectOffset))->m1(kPreviewFadeAndEffectStepScale * dt);
-    CFxBox_UpdateEffects(preview + kPreviewEffectsSubobjectOffset, kPreviewFadeAndEffectStepScale * dt);
+    ((CFxBox*)(preview + kPreviewEffectsSubobjectOffset))->UpdateEffects(kPreviewFadeAndEffectStepScale * dt);
 }
 #pragma pop
 
 // Advance preview opacity, animation delay/frame events, pose, and effect simulation.
-int CExhibition_UpdateAnimationAndEffects(void* self, float dt) {
+int CExhibition::UpdateAnimationAndEffects(float dt) {
     // Phase 1: fade opacity in the byte range [0,255]. dt also advances the
     // animation frame and delay below; it is in caller-supplied animation units.
-    char* base = (char*)self;
-    if (!AsCExhibition(base)->puppet) return 0;
-    if (AsCExhibition(base)->displaySuppressed) return 1;
+    char* base = (char*)this;
+    if (!AsCExhibition(base)->puppet)
+        return 0;
+    if (AsCExhibition(base)->displaySuppressed)
+        return 1;
     float maxProgress;
     float progress = AsCExhibition(base)->opacity;
     maxProgress = kPreviewMaximumOpacity;
     if (progress < maxProgress) {
         progress = kPreviewFadeAndEffectStepScale * dt + progress;
         AsCExhibition(base)->opacity = progress;
-        if (progress > maxProgress) AsCExhibition(base)->opacity = maxProgress;
+        if (progress > maxProgress)
+            AsCExhibition(base)->opacity = maxProgress;
         progress = AsCExhibition(base)->opacity;
         int opacityByte = (int)progress;
         if (AsCExhibition(base)->modelKind == kPreviewAvatar) {
             void* ptr = AsCExhibition(base)->modelController;
-            if (ptr) PuppetOwner_SetOpacityRecursive(ptr, (unsigned char)opacityByte);
+            if (ptr)
+                PuppetOwner_SetOpacityRecursive(ptr, (unsigned char)opacityByte);
         } else {
             void* ptr = AsCExhibition(base)->puppet;
-            if (ptr) WPuppet_SetOpacityRecursive(ptr, (unsigned char)opacityByte);
+            if (ptr)
+                WPuppet_SetOpacityRecursive(ptr, (unsigned char)opacityByte);
         }
     }
     // Phase 2: while the animation delay remains positive, effects also wait.
@@ -2675,19 +3057,23 @@ int CExhibition_UpdateAnimationAndEffects(void* self, float dt) {
     float remaining = AsCExhibition(base)->animationDelay;
     remaining -= dt;
     AsCExhibition(base)->animationDelay = remaining;
-    if (remaining > zero) return 1;
+    if (remaining > zero)
+        return 1;
     // Phase 3: process crossed frame events, loop animation and update pose/effects.
     void* animation = AsCExhibition(base)->animationRange;
     if (animation) {
         float current = AsCExhibition(base)->animationFrame;
         float next = current + dt;
-        AnimationEventParser_ProcessFrameRange(self, PreviewAnimationEventModel(base), current, next, animation, -1, 0);
+        AnimationEventParser_ProcessFrameRange(this, PreviewAnimationEventModel(base), current, next, animation, -1, 0);
         float elapsed = AsCExhibition(base)->animationFrame + dt;
         AsCExhibition(base)->animationFrame = elapsed;
         PreviewAnimationTimingView* currentAnimation = (PreviewAnimationTimingView*)AsCExhibition(base)->animationRange;
-        if (elapsed > currentAnimation->endFrame) CExhibition_PlayAnimationByName(self, currentAnimation->replayName, 1, elapsed - currentAnimation->endFrame);
-        else CExhibition_UpdateModelPose(self);
-    } else CExhibition_UpdateModelPose(self);
+        if (elapsed > currentAnimation->endFrame)
+            PlayAnimationByName(currentAnimation->replayName, 1, elapsed - currentAnimation->endFrame);
+        else
+            UpdateModelPose();
+    } else
+        UpdateModelPose();
     AdvancePreviewEffectSimulation(base, dt);
     return 1;
 }
@@ -2695,143 +3081,194 @@ int CExhibition_UpdateAnimationAndEffects(void* self, float dt) {
 #pragma push
 #pragma use_lmw_stmw on
 // Load environment lighting and retain at most three hardware-light descriptions for the preview.
-int CExhibition_LoadEnvironmentLights(void* self) {
+int CExhibition::LoadEnvironmentLights() {
     // Phase 1: read the environment file into temporary bytes, then replace the
     // retained parsed resource. Failure does not promise to preserve old lights.
-    char* base = (char*)self;
-    if (g_resourceManager == 0) return 0;
+    char* base = (char*)this;
+    if (g_resourceManager == 0)
+        return 0;
     File802B* file;
     void* data = 0;
     void* resource = 0;
     int ok = 0;
-    file = (File802B*)((int (*)(void*, void*, unsigned int, int, int, int))Resource_OpenResolvedPath)(g_resourceManager, s_previewEnvironmentResourceName, 0xffff, 0, 0, 0);
-    if (file) { if (file->size > 0) {
+    file = (File802B*)((int (*)(void*, void*, unsigned int, int, int, int))Resource_OpenResolvedPath)(
+        g_resourceManager, s_previewEnvironmentResourceName, 0xffff, 0, 0, 0);
+    if (file) {
+        if (file->size > 0) {
 
-        data = (void*)__nwa__FUl(file->size);
-        file->Read(data, file->size);
-        RefObj802B* p = (*(RefObj802B**)&AsCExhibition(base)->lightingResource);
-        if (p) {
-            if (--p->ref == 0) delete p;
-            (*(void**)&AsCExhibition(base)->lightingResource) = 0;
-        }
-        gtl_IGenericEnvironmentResource_CreateFromMemory(data, file->size, (void**)(base + 0x528));
-        unsigned int count; gtl_IGenericEnvironmentResource_GetLightCount((*(void**)&AsCExhibition(base)->lightingResource), &count);
-        if (count) {
-            resource = (void*)__nwa__FUl(count * 0x88);
-            if (resource) {
-            gtl_IGenericEnvironmentResource_CopyLights((*(void**)&AsCExhibition(base)->lightingResource), resource, count);
-                // Phase 2: replace owned light descriptions with at most three
-                // parsed lights. Temporary resource records are 0x88 bytes each.
-                PtrVec802B* v = (PtrVec802B*)(base + 0x530);
-                for (void** it = v->data; it != v->data + v->size; ++it) {
-                    if (*it) __dl__FPv(*it);
-                    *it = 0;
-                }
-                __typeof__(v->size) savedSize = v->size;
-                v->size = v->size - (savedSize);
-                if (count > kPreviewLightLimit) count = kPreviewLightLimit;
-                char* src = (char*)resource;
-                for (unsigned int i = 0; count > i; src += 0x88, ++i) {
-                    void* item = __nw__FUl(0x68);
-                    if (item == 0) continue;
-                    gtl_GenericLight_GetDescription(item, src);
-                    if (!(!(v->size < v->capacity))) {
-                        __typeof__(v->size + 1) _p522 = v->size + 1; __typeof__(1 + v->size) _p763 = _p522; __typeof__(v->size + 1) _p345 = _p763; int next = (1 + v->size);
-                        v->size = next;
-                        v->data[next - 1] = item;
-                    } else {
-                        if (kMaxPointerElements - v->capacity < 1) {
-                            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                            std::length_error* error = (std::length_error*)storage.bytes;
-                            error->__ct(exhibitionResourceStrings + kExhibitionStringPool_text_d_vector_length_error);
-                            exception_runtime::__throw(exception_runtime::exhibitionResourceStrings + kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error, error,
-                                (void*)exception_runtime::__dt__Q23std12length_errorFv);
-                        }
-
-                        VecBuffer802B temp(&v->capacity); unsigned needed = ((v->size + 1)) - v->capacity;
-                        unsigned capacity = v->capacity;
-                        if (needed > kMaxPointerElements - capacity) {
-                            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                            std::length_error* error = (std::length_error*)storage.bytes;
-                            error->__ct(exhibitionResourceStrings + kExhibitionStringPool_text_d_vector_length_error);
-                            exception_runtime::__throw(exception_runtime::exhibitionResourceStrings + kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error, error,
-                                (void*)exception_runtime::__dt__Q23std12length_errorFv);
-                        }
-                        if (capacity < kPointerGrowthThreeFifthsLimit) capacity += VecMax802B((3 * (capacity + 1)) / 5, needed);
-                        else if (capacity < kPointerGrowthHalfLimit) capacity += VecMax802B((capacity + 1) / 2, needed);
-                        else capacity = kMaxPointerElements;
-                        if (capacity > kMaxPointerElements) {
-                            union { double alignment; unsigned char bytes[sizeof(std::length_error)]; } storage;
-                            std::length_error* error = (std::length_error*)storage.bytes;
-                            error->__ct(exhibitionResourceStrings + kExhibitionStringPool_text_d_vector_length_error);
-                            exception_runtime::__throw(exception_runtime::exhibitionResourceStrings + kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error, error,
-                                (void*)exception_runtime::__dt__Q23std12length_errorFv);
-                        }
-                        void** buf = (void**)appMallocDummy__FUl((4 * capacity));
-                        int oldSize = v->size;
-
-                        temp.offset = oldSize; temp.capacity = capacity;
-                        temp.data = buf;
-                        ((buf + oldSize))[temp.size++] = item;
-                        void** old = v->data;
-
-                        int n = ((char*)(v->size + old) - (char*)old) / 4; temp.offset = oldSize - n;
-
-                        memcpy(temp.offset + buf, old, (4 * n));
-                        memset(old, 0, (4 * n)); temp.size = (n + temp.size);
-                        void** od = v->data;
-
-                        __typeof__(temp.capacity) savedCapacityCopy = temp.capacity; void** nd = temp.data;
-                        temp.data = od;
-
-                        __typeof__(v->capacity) savedCapacity = v->capacity;
-                        v->size = 0;
-                        v->capacity = (savedCapacityCopy);
-                        temp.capacity = (savedCapacity);
-                        v->size = (temp.size);
-                        v->data = nd;
-                        temp.size = 0;
+            data = (void*)__nwa__FUl(file->size);
+            file->Read(data, file->size);
+            RefObj802B* p = (*(RefObj802B**)&AsCExhibition(base)->lightingResource);
+            if (p) {
+                if (--p->ref == 0)
+                    delete p;
+                (*(void**)&AsCExhibition(base)->lightingResource) = 0;
+            }
+            gtl::IGenericEnvironmentResource::CreateFromMemory(data, file->size, (void**)(base + 0x528));
+            unsigned int count;
+            ((gtl::IGenericEnvironmentResource*)((*(void**)&AsCExhibition(base)->lightingResource)))
+                ->GetLightCount((int*)&count);
+            if (count) {
+                resource = (void*)__nwa__FUl(count * 0x88);
+                if (resource) {
+                    gtl_IGenericEnvironmentResource_CopyLights((*(void**)&AsCExhibition(base)->lightingResource),
+                                                               resource, count);
+                    // Phase 2: replace owned light descriptions with at most three
+                    // parsed lights. Temporary resource records are 0x88 bytes each.
+                    PtrVec802B* v = (PtrVec802B*)(base + 0x530);
+                    for (void** it = v->data; it != v->data + v->size; ++it) {
+                        if (*it)
+                            __dl__FPv(*it);
+                        *it = 0;
                     }
+                    __typeof__(v->size) savedSize = v->size;
+                    v->size = v->size - (savedSize);
+                    if (count > kPreviewLightLimit)
+                        count = kPreviewLightLimit;
+                    char* src = (char*)resource;
+                    for (unsigned int i = 0; count > i; src += 0x88, ++i) {
+                        void* item = __nw__FUl(0x68);
+                        if (item == 0)
+                            continue;
+                        gtl_GenericLight_GetDescription(item, src);
+                        if (!(!(v->size < v->capacity))) {
+                            __typeof__(v->size + 1) _p522 = v->size + 1;
+                            __typeof__(1 + v->size) _p763 = _p522;
+                            __typeof__(v->size + 1) _p345 = _p763;
+                            int next = (1 + v->size);
+                            v->size = next;
+                            v->data[next - 1] = item;
+                        } else {
+                            if (kMaxPointerElements - v->capacity < 1) {
+                                union {
+                                    double alignment;
+                                    unsigned char bytes[sizeof(std::length_error)];
+                                } storage;
+                                std::length_error* error = (std::length_error*)storage.bytes;
+                                error->__ct(exhibitionResourceStrings +
+                                            kExhibitionStringPool_text_d_vector_length_error);
+                                exception_runtime::__throw(
+                                    exception_runtime::exhibitionResourceStrings +
+                                        kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error,
+                                    error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                            }
+
+                            VecBuffer802B temp(&v->capacity);
+                            unsigned needed = ((v->size + 1)) - v->capacity;
+                            unsigned capacity = v->capacity;
+                            if (needed > kMaxPointerElements - capacity) {
+                                union {
+                                    double alignment;
+                                    unsigned char bytes[sizeof(std::length_error)];
+                                } storage;
+                                std::length_error* error = (std::length_error*)storage.bytes;
+                                error->__ct(exhibitionResourceStrings +
+                                            kExhibitionStringPool_text_d_vector_length_error);
+                                exception_runtime::__throw(
+                                    exception_runtime::exhibitionResourceStrings +
+                                        kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error,
+                                    error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                            }
+                            if (capacity < kPointerGrowthThreeFifthsLimit)
+                                capacity += VecMax802B((3 * (capacity + 1)) / 5, needed);
+                            else if (capacity < kPointerGrowthHalfLimit)
+                                capacity += VecMax802B((capacity + 1) / 2, needed);
+                            else
+                                capacity = kMaxPointerElements;
+                            if (capacity > kMaxPointerElements) {
+                                union {
+                                    double alignment;
+                                    unsigned char bytes[sizeof(std::length_error)];
+                                } storage;
+                                std::length_error* error = (std::length_error*)storage.bytes;
+                                error->__ct(exhibitionResourceStrings +
+                                            kExhibitionStringPool_text_d_vector_length_error);
+                                exception_runtime::__throw(
+                                    exception_runtime::exhibitionResourceStrings +
+                                        kExhibitionStringPool_text_21_std_exception_std_logic_error_std_length_error,
+                                    error, (void*)exception_runtime::__dt__Q23std12length_errorFv);
+                            }
+                            void** buf = (void**)appMallocDummy__FUl((4 * capacity));
+                            int oldSize = v->size;
+
+                            temp.offset = oldSize;
+                            temp.capacity = capacity;
+                            temp.data = buf;
+                            ((buf + oldSize))[temp.size++] = item;
+                            void** old = v->data;
+
+                            int n = ((char*)(v->size + old) - (char*)old) / 4;
+                            temp.offset = oldSize - n;
+
+                            memcpy(temp.offset + buf, old, (4 * n));
+                            memset(old, 0, (4 * n));
+                            temp.size = (n + temp.size);
+                            void** od = v->data;
+
+                            __typeof__(temp.capacity) savedCapacityCopy = temp.capacity;
+                            void** nd = temp.data;
+                            temp.data = od;
+
+                            __typeof__(v->capacity) savedCapacity = v->capacity;
+                            v->size = 0;
+                            v->capacity = (savedCapacityCopy);
+                            temp.capacity = (savedCapacity);
+                            v->size = (temp.size);
+                            v->data = nd;
+                            temp.size = 0;
+                        }
+                    }
+                    ok = 1;
                 }
-                ok = 1;
             }
         }
-    } }
+    }
     // Phase 3: release file/raw/copied-record storage; parsed resource and light
     // descriptions stay owned by the preview. ok=1 means the copy stage ran.
-    if (file) { if (file) Resource_Release(file); }
-    if (data) __dla__FPv(data);
-    if (resource) __dla__FPv(resource);
+    if (file) {
+        if (file)
+            Resource_Release(file);
+    }
+    if (data)
+        __dla__FPv(data);
+    if (resource)
+        __dla__FPv(resource);
     return ok;
 }
 #pragma pop
 
 // Dispatch the event to the drawable puppet and selected avatar object when both exist.
-int CExhibition_ParseMaterialLayerAnimationCommand(void* self, int arg2) {
-    void* first = fn_802BA4AC_a(self);
-    if (!first) return 0;
-    void* second = fn_802BA4AC_b(self);
-    if (second) return WPuppet_ParseMaterialLayerAnimationCommand(first, arg2, second);
+int CExhibition::ParseMaterialLayerAnimationCommand(int arg2) {
+    void* first = fn_802BA4AC_a(this);
+    if (!first)
+        return 0;
+    void* second = fn_802BA4AC_b(this);
+    if (second)
+        return WPuppet_ParseMaterialLayerAnimationCommand(first, arg2, second);
     return 0;
 }
 
 // Consume quoted bone names and hide each named bone in the resolved preview puppet.
-void CExhibition_HideNamedPuppetBones(void* self, void* scriptCursor) {
+void CExhibition::HideNamedPuppetBones(void* scriptCursor) {
     int boneNameToken[16] = {0};
     int tokenCount = 0;
     void** cursor = (void**)scriptCursor;
     while (1) {
         *cursor = String_ParseQuotedToken(*cursor, boneNameToken);
-        if (strlen((char*)boneNameToken) == 0) break;
-        if ((unsigned int)strlen((char*)boneNameToken) >= 0x40) break;
-        void* first = fn_802BA578_get(self);
+        if (strlen((char*)boneNameToken) == 0)
+            break;
+        if ((unsigned int)strlen((char*)boneNameToken) >= 0x40)
+            break;
+        void* first = fn_802BA578_get(this);
         if (first) {
             WPuppet_SetBoneVisibilityRecursive(first, 0, 1, boneNameToken);
         }
-        if (*cursor == 0) break;
+        if (*cursor == 0)
+            break;
         if (*(char*)*cursor != (char)0x29) {
             tokenCount++;
-            if (tokenCount >= 0x40) break;
+            if (tokenCount >= 0x40)
+                break;
         } else {
             break;
         }
@@ -2839,7 +3276,7 @@ void CExhibition_HideNamedPuppetBones(void* self, void* scriptCursor) {
 }
 
 // Consume an optional current-animation condition and two following quoted arguments; no further action is established.
-void CExhibition_ParseAnimationGatedCommand(void* self, void* scriptCursor) {
+void CExhibition::ParseAnimationGatedCommand(void* scriptCursor) {
     char conditionOrName[0x40];
     char eventName[0x40];
     char eventArgument[0x40];
@@ -2848,25 +3285,32 @@ void CExhibition_ParseAnimationGatedCommand(void* self, void* scriptCursor) {
     conditionOrName[0] = 0;
     *cursor = String_ParseQuotedToken(*cursor, conditionOrName);
     tokenLength = (unsigned int)strlen(conditionOrName);
-    if (tokenLength == 0) return;
+    if (tokenLength == 0)
+        return;
     tokenLength = (unsigned int)strlen(conditionOrName);
-    if (tokenLength >= kPreviewTokenCapacity) return;
+    if (tokenLength >= kPreviewTokenCapacity)
+        return;
     if (conditionOrName[0] == (char)0x40) {
-        void* obj = AsCExhibition(self)->animationRange;
-        if (obj == 0) return;
+        void* obj = animationRange;
+        if (obj == 0)
+            return;
         char* other = ((PreviewAnimationName*)obj)->name;
-        if (CString_Compare(conditionOrName + 1, other) != 0) return;
+        if (CString_Compare(conditionOrName + 1, other) != 0)
+            return;
         *cursor = String_ParseQuotedToken(*cursor, eventName);
         tokenLength = (unsigned int)strlen(eventName);
-        if (tokenLength == 0) return;
+        if (tokenLength == 0)
+            return;
         tokenLength = (unsigned int)strlen(eventName);
-        if (tokenLength >= kPreviewTokenCapacity) return;
+        if (tokenLength >= kPreviewTokenCapacity)
+            return;
     } else {
         strcpy(eventName, conditionOrName);
     }
     *cursor = String_ParseQuotedToken(*cursor, eventArgument);
     tokenLength = (unsigned int)strlen(eventArgument);
-    if (tokenLength == 0) return;
+    if (tokenLength == 0)
+        return;
     tokenLength = (unsigned int)strlen(eventArgument);
 }
 
@@ -2874,7 +3318,7 @@ void CExhibition_ParseAnimationGatedCommand(void* self, void* scriptCursor) {
 #pragma opt_common_subs off
 #pragma opt_propagation off
 // Play an animation when a listed .mpet part is present, preserving the original token-loop control flow.
-void CExhibition_PlayAnimationIfPartPresent(void* self, void* scriptCursor) {
+void CExhibition::PlayAnimationIfPartPresent(void* scriptCursor) {
     char partModelName[0x28];
     char animationName[0x100];
     char partNames[0x400];
@@ -2884,9 +3328,11 @@ void CExhibition_PlayAnimationIfPartPresent(void* self, void* scriptCursor) {
     *cursor = String_ParseQuotedToken(*cursor, partNames);
     *cursor = String_ParseQuotedToken(*cursor, animationName);
 
-    if (partNames[0] == 0) return;
+    if (partNames[0] == 0)
+        return;
 
-    if (!animationName[0]) return;
+    if (!animationName[0])
+        return;
     int partNameOffset = 0;
     int partNameLength = 0;
     while (1) {
@@ -2896,48 +3342,50 @@ void CExhibition_PlayAnimationIfPartPresent(void* self, void* scriptCursor) {
             partNameLength = (int)(found - partNames) - partNameOffset;
         } else {
             partNameLength = (int)strlen(partNames + partNameOffset);
-            if (partNameLength == 0) return;
+            if (partNameLength == 0)
+                return;
         }
         strncpy(partModelName, partNames + partNameOffset, partNameLength);
         partModelName[partNameLength] = 0;
         strcat(partModelName, exhibitionResourceStrings + kExhibitionStringPool_text_67_mpet);
-        void* obj = AsCExhibition(self)->modelController;
+        void* obj = modelController;
         if (obj != 0 && ResourceModel_HasPartModelNamed(obj, partModelName)) {
-            CExhibition_PlayAnimationByName(self, animationName, 0, kFloat_0_exhibition);
+            PlayAnimationByName(animationName, 0, kFloat_0_exhibition);
             return;
         }
-        if (!zero) return;
+        if (!zero)
+            return;
         partNameOffset = partNameOffset + partNameLength + 1;
     }
 }
 #pragma pop
 
 // This preview event callback intentionally performs no action.
-void CExhibition_vfunc_21(void) {
-}
+void CExhibition::vfunc_21() {}
 
 // Parse a conditioned quoted event token against the avatar model controller.
-int CExhibition_ParseConditionedQuotedTokenImpl(void* self, int arg2, int arg3, int arg4) {
-    return ParseConditionedQuotedToken(self, arg2, arg4, AsCExhibition(self)->modelController, 0);
+int CExhibition::ParseConditionedQuotedTokenImpl(int arg2, int arg3, int arg4) {
+    return ParseConditionedQuotedToken(this, arg2, arg4, modelController, 0);
 }
 
 // Seed the effect screen origin and create/attach the event's named effect.
-int CExhibition_CreateAttachedEffectAtScreenCenter(void* self, float* output, int arg3) {
-    output[0] = AsCExhibition(self)->screenCenterX;
-    output[1] = AsCExhibition(self)->screenCenterY;
-    return FxBox_CreateAndAttachEffectByExtension(self, output, arg3, ((char*)(AsCExhibition(self)->pad_0B0)));
+int CExhibition::CreateAttachedEffectAtScreenCenter(float* output, int arg3) {
+    output[0] = screenCenterX;
+    output[1] = screenCenterY;
+    return FxBox_CreateAndAttachEffectByExtension(this, output, arg3, ((char*)(fxBox)));
 }
 
 // Process animation event arguments using the current puppet and animation range.
-int CExhibition_ParseBoneReferences(void* self, int arg2, int arg3) {
-    return FxAttachment_ParseBoneReferences(self, arg2, arg3, AsCExhibition(self)->puppet, AsCExhibition(self)->animationRange, 1, 0);
+int CExhibition::ParseBoneReferences(int arg2, int arg3) {
+    return FxAttachment_ParseBoneReferences(this, arg2, arg3, puppet, animationRange, 1, 0);
 }
 
 // Parse a nonempty sound name and play it with the preview sound parameters.
-void CExhibition_PlaySoundCommand(void* self, void* scriptCursor) {
+void CExhibition::PlaySoundCommand(void* scriptCursor) {
     unsigned int soundName[18];
-    if (Parse_NonemptyQuotedTokenUnder64Bytes(self, scriptCursor, &soundName)) {
-        Sound_PlayByName(g_soundManager, soundName, 0, 0, 0, 0, kFloat_0_5_exhibition, kFloat_200_PreviewSound, kFloat_1_Intro);
+    if (Parse_NonemptyQuotedTokenUnder64Bytes(this, scriptCursor, &soundName)) {
+        Sound_PlayByName(g_soundManager, soundName, 0, 0, 0, 0, kFloat_0_5_exhibition, kFloat_200_PreviewSound,
+                         kFloat_1_Intro);
     }
 }
 
@@ -2945,7 +3393,9 @@ void CExhibition_PlaySoundCommand(void* self, void* scriptCursor) {
 #pragma opt_common_subs off
 #pragma opt_strength_reduction off
 // Read the pointer vector's current element count.
-static inline int size802BA96C(void* self) { return *(int*)((char*)self + 4); }
+static inline int size802BA96C(void* self) {
+    return *(int*)((char*)self + 4);
+}
 // Reset and free pointer-vector storage after its owned elements have been cleaned.
 static inline void free802BA96C_0(void* self) {
     if (self) {
@@ -2959,17 +3409,27 @@ static inline void free802BA96C_0(void* self) {
     }
 }
 // Preserve the first nullable subobject wrapper around vector cleanup.
-static inline void free802BA96C_1(void* self) { if (self) free802BA96C_0(self); }
+static inline void free802BA96C_1(void* self) {
+    if (self)
+        free802BA96C_0(self);
+}
 // Preserve the second nullable subobject wrapper around vector cleanup.
-static inline void free802BA96C_2(void* self) { if (self) free802BA96C_1(self); }
+static inline void free802BA96C_2(void* self) {
+    if (self)
+        free802BA96C_1(self);
+}
 // Preserve the outer nullable wrapper used by both vector specializations.
-static inline void free802BA96C_3(void* self) { if (self) free802BA96C_2(self); }
+static inline void free802BA96C_3(void* self) {
+    if (self)
+        free802BA96C_2(self);
+}
 
 // Free a pointer-vector allocation and optionally delete its owner; elements were cleaned by the caller.
 void* dtor_802BA96C(void* self, int deleting) {
     if (self) {
         free802BA96C_3(self);
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -2978,7 +3438,8 @@ void* dtor_802BA96C(void* self, int deleting) {
 void* dtor_802BA9EC(void* self, int deleting) {
     if (self) {
         free802BA96C_3(self);
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -2987,13 +3448,9 @@ void* dtor_802BA9EC(void* self, int deleting) {
 #pragma opt_strength_reduction reset
 
 // Restore the saved scissor rectangle and optionally delete its state guard.
-void* CSetScissorRect_dtor(void* self, int deleting) {
-    if (self) {
-        *(void**)self = (void*)__vt__15CSetScissorRect;
-        Engine_SetScissorRect((char*)self + 4);
-        if (deleting > 0) __dl__FPv(self);
-    }
-    return self;
+CSetScissorRect::~CSetScissorRect() {
+    *(void**)this = (void*)__vt__15CSetScissorRect;
+    Engine_SetScissorRect((char*)this + 4);
 }
 
 } // extern "C"

@@ -8,18 +8,18 @@
 class ViewRank {
 public:
     char pad_000[0x18];
-    void* layout; // 0x18: ViewRank_dtor/vfunc_7: Layout_Destroy/Update
-    void* numberDraw; // 0x1C: ViewRank_dtor: UITextTable_ClearEntries and PointerArray_DeleteValue
-    void* messageDraw; // 0x20: ViewRank_dtor: raw +0x20; meaning unknown
-    void* taggedText; // 0x24: ViewRank_dtor: raw +0x24; meaning unknown
-    int entryId; // 0x28: ViewRank_dtor: CBpCtrl_DeleteEntryById
-    int secondaryEntryId; // 0x2C: ViewRank_dtor: CBpCtrl_DeleteEntryById
-    int activationDelay; // 0x30: ViewRank_UpdateConfirmOrCancel decrements; sets 4 after activation
-    int numberEntriesDirty; // 0x34: ViewRank_Activate: raw +0x34; meaning unknown
-    int selectionResult; // 0x38: ViewRank_Activate: raw +0x38; meaning unknown
+    void* layout;              // 0x18: ViewRank_dtor/vfunc_7: Layout_Destroy/Update
+    void* numberDraw;          // 0x1C: ViewRank_dtor: UITextTable_ClearEntries and PointerArray_DeleteValue
+    void* messageDraw;         // 0x20: ViewRank_dtor: raw +0x20; meaning unknown
+    void* taggedText;          // 0x24: ViewRank_dtor: raw +0x24; meaning unknown
+    int entryId;               // 0x28: ViewRank_dtor: CBpCtrl_DeleteEntryById
+    int secondaryEntryId;      // 0x2C: ViewRank_dtor: CBpCtrl_DeleteEntryById
+    int activationDelay;       // 0x30: ViewRank_UpdateConfirmOrCancel decrements; sets 4 after activation
+    int numberEntriesDirty;    // 0x34: ViewRank_Activate: raw +0x34; meaning unknown
+    int selectionResult;       // 0x38: ViewRank_Activate: raw +0x38; meaning unknown
     int rankRowByCharacter[8]; // 0x3C: ViewRank_DrawEntryText/ViewRank_RefreshPlayerScores: eight indexed UI rank slots
-    void* sharedFile; // 0x5C: ViewRank_dtor/vfunc_2: shared-file destroy/load
-    void* textureResource; // 0x60: ViewRank_UpdateLayoutAndPollTexture: CPackTextureResource_PollLoad
+    void* sharedFile;          // 0x5C: ViewRank_dtor/vfunc_2: shared-file destroy/load
+    void* textureResource;     // 0x60: ViewRank_UpdateLayoutAndPollTexture: CPackTextureResource_PollLoad
 };
 
 #define VIEWRANK_OFF(f, o) typedef char ViewRank_off_##f[((int)&((ViewRank*)0)->f == (o)) ? 1 : -1]

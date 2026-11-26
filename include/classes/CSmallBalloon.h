@@ -1,22 +1,37 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CSmallBalloon: the smallest party balloon. It holds two scale endpoints for
+// its hit sequence and restores that sequence with a recovery sound.
+//
+// All three balloon sizes share one object layout, declared in
+// BalloonState80069C.h; this class adds only the small balloon's behaviour.
 #ifndef CLASSES_CSMALLBALLOON_H
 #define CLASSES_CSMALLBALLOON_H
 
 #include "game/types.h"
+#include "classes/BalloonState80069C.h"
 
-class CSmallBalloon {
+class CSmallBalloon : public BalloonState80069C {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0xb8];                 // 0x4
-    void* effectPosition;                       // 0xbc: 1 use in CSmallBalloon_StartExplosionEffect
+    // Construct in place from a borrowed spawn origin; returns the balloon.
+    CSmallBalloon* Init(void* spawnPosition, int characterModel);
+    ~CSmallBalloon();
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x24, 0x70, 0x7c, 0xa0, 0xa4, 0xec, 0xee
+    void RestoreScaleSequence();
+    void StartExplosionEffect();
+
+    // Small balloons have no extra per-frame update hook.
+    void vfunc_3();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CSMALLBALLOON_OFF(f, o) typedef char CSmallBalloon_off_##f[((int)&((CSmallBalloon*)0)->f == (o)) ? 1 : -1]
-CSMALLBALLOON_OFF(effectPosition, 0xbc);
+CSMALLBALLOON_OFF(vtbl, 0x0);
+CSMALLBALLOON_OFF(scaleValues, 0x24);
+CSMALLBALLOON_OFF(scale, 0x70);
+CSMALLBALLOON_OFF(position, 0x7C);
+CSMALLBALLOON_OFF(effectPosition, 0xBC);
+CSMALLBALLOON_OFF(sizeClass, 0xA0);
+CSMALLBALLOON_OFF(model, 0xD0);
+CSMALLBALLOON_OFF(baseScale, 0xD4);
 #undef CSMALLBALLOON_OFF
+typedef char CSmallBalloon_size[(sizeof(CSmallBalloon) == 0xF0) ? 1 : -1];
 
-#endif  // CLASSES_CSMALLBALLOON_H
+#endif // CLASSES_CSMALLBALLOON_H

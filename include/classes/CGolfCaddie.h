@@ -1,57 +1,103 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CGolfCaddie: the caddie that walks the course with a player.
+//
+// It keeps one entry per player, loads caddie and pet models asynchronously,
+// binds the loaded puppet to the scene and its shadow, reacts to the shot in
+// flight, and drives the caddie's walk, look-at and commentary. The class is
+// declared without virtual functions on purpose: its vtable is still taken
+// from the original game data, so `vtbl` is spelled out as a member.
 #ifndef CLASSES_CGOLFCADDIE_H
 #define CLASSES_CGOLFCADDIE_H
 
 #include "game/types.h"
 
+struct CaddieMessage;
+
 class CGolfCaddie {
 public:
     void* vtbl;                         // 0x0: original vtable pointer
     char pad_004[0x14];                 // 0x4
-    void* secondaryVtable;                       // 0x18: 2 uses in CGolfCaddie_Ctor, CGolfCaddie_dtor
-    void* activeCaddie;                       // 0x1c: 24 uses in CGolfCaddie_OnProcess, CGolfCaddie_OnInit
-    int caddieEntries;                         // 0x20: 4 uses in CGolfCaddie_Ctor, CGolfCaddie_dtor, CGolfCaddie_OnInit
-    unsigned int caddieEntryCount;                // 0x24: 4 uses in CGolfCaddie_dtor, CGolfCaddie_Ctor, CGolfCaddie_OnInit
-    int caddieEntryCapacity;                         // 0x28: 1 use in CGolfCaddie_Ctor
+    void* secondaryVtable;              // 0x18
+    void* activeCaddie;                 // 0x1c: the caddie entry currently in use
+    void** caddieEntries;               // 0x20: caddie entry slots, by player index
+    unsigned int caddieEntryCount;      // 0x24
+    int caddieEntryCapacity;            // 0x28
     char pad_02C[0x4];                  // 0x2c
-    int animationState;                         // 0x30: 14 uses in CGolfCaddie_OnProcess
-    void* runDustEffect;                       // 0x34: 1 use in CGolfCaddie_OnProcess
-    float position[3];                  // 0x38: 0x8012A730 adds texture offset; CGolfCaddie_OnProcess anchors run dust here
-    float movementDelay;                       // 0x44: 6 uses in CGolfCaddie_OnProcess, CGolfCaddie_OnInit
-    float yaw;                       // 0x48: 4 uses in CGolfCaddie_OnProcess, CGolfCaddie_OnInit
-    float movementTarget[3];            // 0x4c: CGolfCaddie_OnProcess subtracts position, then passes this vector to CPetBody_StartMovement
-    char pad_058[0x1];                  // 0x58
-    unsigned char caddieVisible;               // 0x59: 2 uses in CGolfCaddie_Ctor, CGolfCaddie_OnInit
+    int animationState;                 // 0x30
+    int runDustEffect;                  // 0x34: control key of the running caddie's dust
+    float position[3];                  // 0x38: world position
+    float movementDelay;                // 0x44
+    float yaw;                          // 0x48
+    float movementTarget[3];            // 0x4c: where the caddie is walking to
+    unsigned char movementBlocked;      // 0x58
+    unsigned char caddieVisible;        // 0x59
     char pad_05A[0x2];                  // 0x5a
-    float idleAnimationTimer;                       // 0x5c: 3 uses in CGolfCaddie_OnProcess
-    char pad_060[0x4];                  // 0x60
-    bool reactionModeOneEnabled;                        // 0x64: 2 uses in CGolfCaddie_OnInit, CGolfCaddie_HandleMsg
-    char pad_065[0xb];                  // 0x65
-    int effectEntryKey;                         // 0x70: 2 uses in CGolfCaddie_Ctor, CGolfCaddie_OnDestroy
-    float cachedPlacementPosition[3];   // +0x74: saved preview placement
-    float cachedPlacementYaw;          // +0x80: saved preview yaw (radians)
-    void* texture3D;                       // 0x84: 6 uses in CGolfCaddie_OnProcess, CGolfCaddie_OnDestroy, CGolfCaddie_Ctor
-    float affineMatrices[4][12];       // +0x88..+0x147: four affine matrices
-    char reserved148[0x28];            // +0x148..+0x16f: unresolved
-    unsigned int commentaryTimestampMs; // +0x170: commentary clock in milliseconds
-    void* soundBankNames;                      // 0x174: 1 use in CGolfCaddie_Ctor
-    void* soundBankNameCount;                      // 0x178: 1 use in CGolfCaddie_Ctor
-    void* soundBankNameCapacity;                      // 0x17c: 1 use in CGolfCaddie_Ctor
-    void* conteCaddies;                      // 0x180: 9 uses in CGolfCaddie_OnProcess, CGolfCaddie_dtor, CGolfCaddie_Ctor...
-    void* storyConteCaddieOverride;                      // 0x184: 4 uses in CGolfCaddie_Ctor, CGolfCaddie_dtor, CGolfCaddie_OnDestroy...
-    void* pendingModelLoadCount;                      // 0x188: 2 uses in CGolfCaddie_Ctor
-    void* pendingModelLoadTreeRoot;                      // 0x18c: 3 uses in CGolfCaddie_Ctor
+    float idleAnimationTimer;           // 0x5c
+    int reactionValue;                  // 0x60: absolute value above one picks a reaction comment
+    bool reactionModeOneEnabled;        // 0x64
+    char pad_065[0x3];                  // 0x65
+    float aimYaw;                       // 0x68: aim direction about the Y axis
+    float windCommentTimer;             // 0x6c: seconds spent in the camera's wind region
+    int effectEntryKey;                 // 0x70
+    float cachedPlacementPosition[3];   // 0x74: saved preview placement
+    float cachedPlacementYaw;           // 0x80: saved preview yaw in radians
+    void* texture3D;                    // 0x84
+    float affineMatrices[4][12];        // 0x88: four 3x4 affine matrices
+    unsigned char currentAction;        // 0x148: last comment action latched, 0 when free
+    unsigned char actionFlags[36];      // 0x149: one busy flag per comment action
+    unsigned char aimCommentIssued;     // 0x16d: one aim comment per aim
+    char pad_16E[0x2];                  // 0x16e
+    unsigned int commentaryTimestampMs; // 0x170: commentary clock in milliseconds
+    void* soundBankNames;               // 0x174
+    void* soundBankNameCount;           // 0x178
+    void* soundBankNameCapacity;        // 0x17c
+    void* conteCaddies;                 // 0x180
+    void* storyConteCaddieOverride;     // 0x184
+    void* pendingModelLoadCount;        // 0x188
+    void* pendingModelLoadTreeRoot;     // 0x18c
     char pad_190[0x4];                  // 0x190
-    void* pendingModelLoadIterator;                      // 0x194: 2 uses in CGolfCaddie_Ctor
-    void* petPreload;                      // 0x198: 4 uses in CGolfCaddie_dtor, CGolfCaddie_Ctor, CGolfCaddie_OnDestroy
-    int petPreloadPlayerIndex;                        // 0x19c: 1 use in CGolfCaddie_Ctor
-    void* petPreloadActive;                      // 0x1a0: 1 use in CGolfCaddie_Ctor
+    void* pendingModelLoadIterator;     // 0x194
+    void* petPreload;                   // 0x198
+    int petPreloadPlayerIndex;          // 0x19c
+    int petPreloadActive;               // 0x1a0: an asynchronous preload is running
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x18, 0x20, 0x44, 0x74, 0x88, 0x174, 0x184, 0x188, 0x18c
+    void SetLookAtTarget(void* target, unsigned char enabled);
+    void PlayShotReaction();
+    void UpdateMovement();
+    void ActivatePlayerModel(int playerIndex, float yawRadians, void* positionOrBone);
+
+    int PollPendingModelLoads();
+    void RebuildModelLoadQueue();
+    int UpdatePendingOperation();
+
+    void UpdateBoneRelativeRenderParams(void* puppet);
+
+    int ParseAnimationMetadata(void* caddieEntry);
+    int CanPlayAnimation(void* caddieEntry, const char* animationName);
+    void ApplyPendingPetState(float delta);
+    void OnProcess(float delta);
+    void UpdateSituationalCommentary(float delta);
+    void TriggerCommentary(int actionIndex, int force, unsigned char variantNumber);
+    void HandleMsg(const CaddieMessage* message);
+
+    void Draw();
+
+    void OnInit();
+    void OnReload();
+    void* FindExistingEntry(unsigned int key, unsigned int value);
+    void* CreateCaddieEntry(unsigned int caddieTypeId, unsigned int instanceId, int reuseExisting, int createPetBody);
+    void CreatePetBodyForEntry(void* entry, void* lookup);
+
+    static void* GetRTTI();
+    static void vfunc_1Thunk18(void* p);
+
+    static void OnPreLoadInit(void* ptr);
+    void OnDestroy();
+    void OnLoad();
+
+    CGolfCaddie();
+    ~CGolfCaddie();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CGOLFCADDIE_OFF(f, o) typedef char CGolfCaddie_off_##f[((int)&((CGolfCaddie*)0)->f == (o)) ? 1 : -1]
 typedef char CGolfCaddie_size_check[(sizeof(CGolfCaddie) == 0x1a4) ? 1 : -1];
 CGOLFCADDIE_OFF(secondaryVtable, 0x18);
@@ -65,15 +111,21 @@ CGOLFCADDIE_OFF(position, 0x38);
 CGOLFCADDIE_OFF(movementTarget, 0x4c);
 CGOLFCADDIE_OFF(movementDelay, 0x44);
 CGOLFCADDIE_OFF(yaw, 0x48);
+CGOLFCADDIE_OFF(movementBlocked, 0x58);
 CGOLFCADDIE_OFF(caddieVisible, 0x59);
 CGOLFCADDIE_OFF(idleAnimationTimer, 0x5c);
+CGOLFCADDIE_OFF(reactionValue, 0x60);
 CGOLFCADDIE_OFF(reactionModeOneEnabled, 0x64);
+CGOLFCADDIE_OFF(aimYaw, 0x68);
+CGOLFCADDIE_OFF(windCommentTimer, 0x6c);
 CGOLFCADDIE_OFF(effectEntryKey, 0x70);
 CGOLFCADDIE_OFF(cachedPlacementPosition, 0x74);
 CGOLFCADDIE_OFF(cachedPlacementYaw, 0x80);
 CGOLFCADDIE_OFF(texture3D, 0x84);
 CGOLFCADDIE_OFF(affineMatrices, 0x88);
-CGOLFCADDIE_OFF(reserved148, 0x148);
+CGOLFCADDIE_OFF(currentAction, 0x148);
+CGOLFCADDIE_OFF(actionFlags, 0x149);
+CGOLFCADDIE_OFF(aimCommentIssued, 0x16d);
 CGOLFCADDIE_OFF(commentaryTimestampMs, 0x170);
 CGOLFCADDIE_OFF(soundBankNames, 0x174);
 CGOLFCADDIE_OFF(soundBankNameCount, 0x178);
@@ -88,4 +140,4 @@ CGOLFCADDIE_OFF(petPreloadPlayerIndex, 0x19c);
 CGOLFCADDIE_OFF(petPreloadActive, 0x1a0);
 #undef CGOLFCADDIE_OFF
 
-#endif  // CLASSES_CGOLFCADDIE_H
+#endif // CLASSES_CGOLFCADDIE_H

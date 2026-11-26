@@ -1,14 +1,17 @@
+// Preload objects for files, sequences and sprays (CPreloadFile, CPreloadSeq, CPreloadSpr).
+// Each one reads a script stream, opens the named resources and queues them to load.
+// Also the puppet resource preloader and the container that owns a sequence's preloads.
+
 #include <decomp/static_init.h>
-// Translation unit 0x80271734-0x80272E70 (21 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 #include "classes/CPreloadFile.h"
 #include "classes/CPreloadSeq.h"
+#include "classes/CPreloadSpr.h"
+#include "classes/CPreloadWPuppet.h"
+#include "classes/CPreloadParent.h"
 
 #define AsCPreloadSeq(p) ((CPreloadSeq*)(p))
-
-#define AsCPreloadFile(p) ((CPreloadFile*)(p))
 
 // Offsets into the packed resource and spray-script string pools.
 enum PreloadStringOffset {
@@ -40,9 +43,8 @@ extern float s_sprayPreloadTwoPiStorage;
 extern int g_resourceManager;
 extern char __vt__12CPreloadFile[];
 int OwnedObjectList_DestroyAll(void*);
-void CPreloadParent_Ctor(void*);
 void* Stream_VScanFormat(void*, void*, void*);
-void CPreloadParent_dtor(void*, int);
+void __dt__14CPreloadParentFv(void*, int);
 void __dl__FPv(void*);
 extern char __vt__11CPreloadSeq[];
 extern char __vt__11CPreloadSpr[];
@@ -54,7 +56,6 @@ void Resource_Release(void*);
 void appFreeUni__FPv(void*);
 char* String_TrimCharacterSet(void*, char*);
 int FxSprayScript_ParseEntry(void*, const char*, unsigned char*);
-void* CPreloadFile_ScanFormat(void*, void*, ...);
 unsigned int String_ReserveCapacity(void*, unsigned int);
 void String_ReplaceRange(void*, unsigned int, unsigned int, const char*, const char*, char*);
 void* __nwa__FUl(unsigned int);
@@ -90,12 +91,6 @@ struct PreloadFileOpenView {
     virtual int query(void*);
     char filenameStorage[0x0C];
     int iface;
-};
-
-struct SprayPreloadView {
-    void* vtable;
-    char filenameStorage[0x0C];
-    int stream;
 };
 
 struct SprayScriptStream {
@@ -190,13 +185,19 @@ static inline void* ForwardPreloadRead(PreloadReadStream* stream, void* readArgu
 }
 
 // Return stream slot 6 unchanged; its position/status units remain unresolved.
-static inline void* QueryPreloadStreamWord(PreloadStreamPositionView* stream) { return stream->method(); }
+static inline void* QueryPreloadStreamWord(PreloadStreamPositionView* stream) {
+    return stream->method();
+}
 
 // Return stream slot 7 unchanged; callers must not assume an EOF polarity.
-static inline int QueryPreloadStreamPredicate(PreloadStreamSlot7View* stream) { return stream->method(); }
+static inline int QueryPreloadStreamPredicate(PreloadStreamSlot7View* stream) {
+    return stream->method();
+}
 
 // Query completion on the SOURCE wrapper interface, distinct from a read-stream method.
-static inline int QuerySequenceSourceCompletion(PreloadStreamReadyView* source) { return source->method(); }
+static inline int QuerySequenceSourceCompletion(PreloadStreamReadyView* source) {
+    return source->method();
+}
 
 struct SequencePreloadStorage {
     void* vtable;
@@ -209,13 +210,14 @@ struct SequencePreloadStorage {
 int SequencePreload_DestroyOwnedObjects(void* arg) {
     return OwnedObjectList_DestroyAll(arg);
 }
-
 }
 
-namespace app { template<class T> struct app_allocator {}; }
+namespace app {
+template <class T> struct app_allocator {};
+}
 namespace std {
-template<class T> struct char_traits {};
-template<class T, class Traits, class Allocator> struct LocalBasicString_u80271734 {
+template <class T> struct char_traits {};
+template <class T, class Traits, class Allocator> struct LocalBasicString_u80271734 {
     union {
         unsigned int flags;
         unsigned char labelText;
@@ -224,7 +226,8 @@ template<class T, class Traits, class Allocator> struct LocalBasicString_u802717
     char* data;
     // Free only the heap representation of this local path copy.
     ~LocalBasicString_u80271734() {
-        if (flags >> 31) appFreeUni__FPv(data);
+        if (flags >> 31)
+            appFreeUni__FPv(data);
     }
 };
 }
@@ -238,7 +241,12 @@ struct FnThrowObj {
     int ref2;
     void* buf;
     // Take the exception message buffer into its shared ownership block.
-    FnThrowObj(void* b) { ref1 = 1; ref2 = 1; vt = (void*)s_sharedCharDeleterVtable; buf = b; }
+    FnThrowObj(void* buffer) {
+        ref1 = 1;
+        ref2 = 1;
+        vt = (void*)s_sharedCharDeleterVtable;
+        buf = buffer;
+    }
 };
 
 struct FnVectorGuard {
@@ -249,7 +257,11 @@ struct FnVectorGuard {
     unsigned int offset;
     // Start with no temporary array while retaining the original capacity address.
     FnVectorGuard(unsigned int* a) {
-        data = 0; size = 0; capacity = 0; capacityAddress = a; offset = 0;
+        data = 0;
+        size = 0;
+        capacity = 0;
+        capacityAddress = a;
+        offset = 0;
     }
     // Free the current scratch array, never the pointed-to resource objects.
     ~FnVectorGuard() {
@@ -259,25 +271,28 @@ struct FnVectorGuard {
         }
     }
 };
-
 }
-namespace std { namespace detail {
+namespace std {
+namespace detail {
 struct CharArrayGuard_u80271734 {
     char* ptr;
     char* allocator;
     // Arm cleanup for an exception-message character array.
     CharArrayGuard_u80271734(char* p, char* a) : ptr(p), allocator(a) {}
     // Free the array unless its ownership was transferred.
-    ~CharArrayGuard_u80271734() { if (ptr) __dla__FPv(ptr); }
+    ~CharArrayGuard_u80271734() {
+        if (ptr)
+            __dla__FPv(ptr);
+    }
 };
-} }
+}
+}
 extern "C" {
 typedef std::detail::CharArrayGuard_u80271734 FnCharGuard;
 
 struct AllocatorScratchByte {
     char c;
 };
-
 }
 
 namespace std {
@@ -291,16 +306,18 @@ public:
 class logic_error : public exception {
     char* message;
     FnThrowObj* ref;
+
 public:
     // Copy the borrowed error text and create its shared owner.
     logic_error(const char* msg) {
-        AllocatorScratchByte alloc; alloc.c = 0;
+        AllocatorScratchByte alloc;
+        alloc.c = 0;
         unsigned int n = strlen(msg) + 1;
-        char* p = (char*)__nwa__FUl(n * 2 - n);
-        message = p;
+        char* buffer = (char*)__nwa__FUl(n * 2 - n);
+        message = buffer;
         {
-            FnCharGuard guard(p, &alloc.c);
-            ref = new FnThrowObj(p);
+            FnCharGuard guard(buffer, &alloc.c);
+            ref = new FnThrowObj(buffer);
             guard.ptr = 0;
         }
         strcpy(message, msg);
@@ -330,14 +347,16 @@ inline const unsigned int& PreloadMin(const unsigned int& a, const unsigned int&
 }
 
 // Return the larger preload capacity request by reference.
-inline const unsigned int& PreloadMax(const unsigned int& a, const unsigned int& b) {
-    return a < b ? b : a;
+inline const unsigned int& PreloadMax(const unsigned int& growthCandidate, const unsigned int& requiredSlots) {
+    return growthCandidate < requiredSlots ? requiredSlots : growthCandidate;
 }
 
 // Compare equal-prefix preload strings by length.
-inline int ComparePreloadLengths(unsigned int a, unsigned int b) {
-    if (a < b) return -1;
-    if (a > b) return 1;
+inline int ComparePreloadLengths(unsigned int leftLength, unsigned int rightLength) {
+    if (leftLength < rightLength)
+        return -1;
+    if (leftLength > rightLength)
+        return 1;
     return 0;
 }
 
@@ -345,12 +364,16 @@ inline int ComparePreloadLengths(unsigned int a, unsigned int b) {
 inline unsigned int FindLastExtensionDot(unsigned int size, unsigned int idx, char* data) {
     if (size != 0) {
         unsigned int cand = size - 1;
-        if (cand < idx) idx = cand;
+        if (cand < idx)
+            idx = cand;
         char* p = data + idx;
         for (;;) {
-            if (*p == '.') return (unsigned int)(p - data);
-            if (p > data) --p;
-            else break;
+            if (*p == '.')
+                return (unsigned int)(p - data);
+            if (p > data)
+                --p;
+            else
+                break;
         }
     }
     return (unsigned int)-1;
@@ -370,28 +393,33 @@ inline unsigned int FindLastExtensionDot(unsigned int size, unsigned int idx, ch
 //   comparison = memcmp(pathBytes + dotIndex, ext, min(n, strlen(ext)));
 //   if (comparison == 0) comparison = compare_lengths(n, strlen(ext));
 // i.e. a suffix matches a token when the compared bytes are equal and the lengths agree.
-#define COMPARE_PRELOAD_EXTENSION(path, dotIndex, extensionOffset, heapFlag, comparison) \
-    do { \
-        const char* extension = (char*)puppetChunkResourceStrings + (extensionOffset); \
-        unsigned int comparedLength; \
-        unsigned int remainingLength; \
-        unsigned int extensionLength; \
-        unsigned int maximumExtensionLength; \
-        extensionLength = strlen(extension); \
-        maximumExtensionLength = 4; \
-        char* pathBytes; \
-        unsigned int pathLength; \
-        if ((heapFlag) == 0) { pathBytes = (char*)&(path) + 1; pathLength = (path).labelText & 0x7f; } \
-        else { pathBytes = (path).data; pathLength = (path).size; } \
-        if ((dotIndex) > pathLength) { \
-            throw std::out_of_range((char*)puppetChunkResourceStrings + kExtensionCompareError); \
-        } \
-        remainingLength = pathLength - (dotIndex); \
-        comparedLength = PreloadMin(remainingLength, maximumExtensionLength); \
+#define COMPARE_PRELOAD_EXTENSION(path, dotIndex, extensionOffset, heapFlag, comparison)                       \
+    do {                                                                                                       \
+        const char* extension = (char*)puppetChunkResourceStrings + (extensionOffset);                         \
+        unsigned int comparedLength;                                                                           \
+        unsigned int remainingLength;                                                                          \
+        unsigned int extensionLength;                                                                          \
+        unsigned int maximumExtensionLength;                                                                   \
+        extensionLength = strlen(extension);                                                                   \
+        maximumExtensionLength = 4;                                                                            \
+        char* pathBytes;                                                                                       \
+        unsigned int pathLength;                                                                               \
+        if ((heapFlag) == 0) {                                                                                 \
+            pathBytes = (char*)&(path) + 1;                                                                    \
+            pathLength = (path).labelText & 0x7f;                                                              \
+        } else {                                                                                               \
+            pathBytes = (path).data;                                                                           \
+            pathLength = (path).size;                                                                          \
+        }                                                                                                      \
+        if ((dotIndex) > pathLength) {                                                                         \
+            throw std::out_of_range((char*)puppetChunkResourceStrings + kExtensionCompareError);               \
+        }                                                                                                      \
+        remainingLength = pathLength - (dotIndex);                                                             \
+        comparedLength = PreloadMin(remainingLength, maximumExtensionLength);                                  \
         (comparison) = memcmp(pathBytes + (dotIndex), extension, PreloadMin(comparedLength, extensionLength)); \
-        if ((comparison) == 0) { \
-            (comparison) = ComparePreloadLengths(comparedLength, extensionLength); \
-        } \
+        if ((comparison) == 0) {                                                                               \
+            (comparison) = ComparePreloadLengths(comparedLength, extensionLength);                             \
+        }                                                                                                      \
     } while (0)
 
 struct PuppetResourcePreloadSet {
@@ -407,11 +435,10 @@ struct PuppetResourcePreloadSet {
     unsigned int capacity;
 };
 
-
 #pragma push
 #pragma use_lmw_stmw on
 // Dispatch a puppet resource by extension and retain a successfully created preload item.
-int CPreloadWPuppet_QueueExternalResource(PuppetResourcePreloadSet* self, const char* input) {
+int CPreloadWPuppet::QueueExternalResource(const char* input) {
     // input is a borrowed NUL-terminated path, copied for dispatch. Return 0 only
     // when there is no dot; return 1 even if no resource was created/retained.
     // Phase 1: decode the ABI string and locate the LAST dot (including its '.').
@@ -444,6 +471,7 @@ int CPreloadWPuppet_QueueExternalResource(PuppetResourcePreloadSet* self, const 
     // extension token -> intentionally skip;
     // other dotted suffixes -> generic resource. Comparison is case-sensitive
     // and covers at most four bytes from the dot, including the dot itself.
+    PuppetResourcePreloadSet* self = (PuppetResourcePreloadSet*)this;
     int result = 0;
     int c;
     COMPARE_PRELOAD_EXTENSION(text, dot, kSprayExtension, large, c);
@@ -455,7 +483,8 @@ int CPreloadWPuppet_QueueExternalResource(PuppetResourcePreloadSet* self, const 
             result = self->createSequence((text.flags >> 31) == 0 ? (char*)&text + 1 : text.data);
         } else {
             COMPARE_PRELOAD_EXTENSION(text, dot, kArchiveExtension, text.flags >> 31, c);
-            if (c != 0) result = self->createResource((text.flags >> 31) == 0 ? (char*)&text + 1 : text.data);
+            if (c != 0)
+                result = self->createResource((text.flags >> 31) == 0 ? (char*)&text + 1 : text.data);
         }
     }
     // Phase 3 is a push_back of `result` into self->data (a std::vector<void*>-style growth,
@@ -532,25 +561,21 @@ int CPreloadWPuppet_QueueExternalResource(PuppetResourcePreloadSet* self, const 
 #pragma push
 #pragma opt_common_subs off
 // Release the file stream and any heap-backed filename, then optionally delete the wrapper.
-void* CPreloadFile_dtor(void* self, int should_delete) {
-    if (self != 0) {
-        void* iface = AsCPreloadFile(self)->fileStream;
-        *(void**)self = __vt__12CPreloadFile;
+CPreloadFile::~CPreloadFile() {
+    void* iface = fileStream;
+    *(void**)this = __vt__12CPreloadFile;
+    if (iface != 0) {
         if (iface != 0) {
-            if (iface != 0) {
-                Resource_Release(iface);
-                AsCPreloadFile(self)->fileStream = 0;
-            }
-            AsCPreloadFile(self)->fileStream = 0;
+            Resource_Release(iface);
+            fileStream = 0;
         }
-        if (&AsCPreloadFile(self)->filenameFlags != 0) { // CPreloadFile_dtor: string subobject +4
-            if (((AsCPreloadFile(self)->filenameFlags >> 31) != 0)) {
-                appFreeUni__FPv(AsCPreloadFile(self)->filenameBuffer);
-            }
-        }
-        if (should_delete > 0) __dl__FPv(self);
+        fileStream = 0;
     }
-    return self;
+    if (&filenameFlags != 0) { // CPreloadFile::~CPreloadFile: string subobject +4
+        if (((filenameFlags >> 31) != 0)) {
+            appFreeUni__FPv(filenameBuffer);
+        }
+    }
 }
 #pragma pop
 
@@ -565,7 +590,8 @@ void CPreloadSeq_InitTwoPiConstant() {
 }
 
 // Query stream virtual slot 7; an absent stream reports true.
-int CPreloadFile_QueryStreamSlot7(PreloadStatusView* self) {
+int CPreloadFile::QueryStreamSlot7() {
+    PreloadStatusView* self = (PreloadStatusView*)this;
     PreloadStreamSlot7View* iface = (PreloadStreamSlot7View*)self->iface;
     if (iface != 0) {
         return QueryPreloadStreamPredicate(iface);
@@ -574,11 +600,12 @@ int CPreloadFile_QueryStreamSlot7(PreloadStatusView* self) {
 }
 
 // Initialize a sequence preloader with an empty owned script stream.
-SequencePreloadStorage* CPreloadSeq_Ctor(SequencePreloadStorage* self) {
-    CPreloadParent_Ctor(self);
-    self->iface = 0;
-    self->vtable = __vt__11CPreloadSeq;
-    return self;
+// Initialize a sequence preloader with an empty owned script stream.
+CPreloadSeq* CPreloadSeq::Init() {
+    ((CPreloadParent*)this)->__ct();
+    scriptStream = 0;
+    vtbl = __vt__11CPreloadSeq;
+    return this;
 }
 
 // Query source-file preloader completion through virtual slot 2; an absent source reports true.
@@ -597,7 +624,8 @@ void CPreloadSpr_InitTwoPiConstant() {
 }
 
 // Return the loaded stream data pointer after the preload validity check succeeds.
-void* CPreloadFile_GetLoadedData(PreloadFileReadView* self) {
+void* CPreloadFile::GetLoadedData() {
+    PreloadFileReadView* self = (PreloadFileReadView*)this;
     int valid = self->valid();
     if (valid == 0) {
         return 0;
@@ -610,32 +638,35 @@ void* CPreloadFile_GetLoadedData(PreloadFileReadView* self) {
 }
 
 // Replace the current stream by opening the requested resource through the virtual loader.
-int CPreloadFile_OpenResource(PreloadFileOpenView* self, void* arg) {
-    if (arg == 0) return 0;
+int CPreloadFile::OpenResource(void* arg) {
+    if (arg == 0)
+        return 0;
     int result;
-    if (self->iface == 0) {
+    if (((PreloadFileOpenView*)this)->iface == 0) {
         result = 1;
     } else {
-        if (self->iface != 0) {
-            Resource_Release((void*)self->iface);
-            self->iface = 0;
+        if (((PreloadFileOpenView*)this)->iface != 0) {
+            Resource_Release((void*)((PreloadFileOpenView*)this)->iface);
+            ((PreloadFileOpenView*)this)->iface = 0;
         }
-        self->iface = 0;
+        ((PreloadFileOpenView*)this)->iface = 0;
         result = 1;
     }
-    if (result == 0) return 0;
-    if (g_resourceManager == 0) return 0;
-    self->iface = self->query(arg);
-    return self->iface != 0;
+    if (result == 0)
+        return 0;
+    if (g_resourceManager == 0)
+        return 0;
+    ((PreloadFileOpenView*)this)->iface = ((PreloadFileOpenView*)this)->query(arg);
+    return ((PreloadFileOpenView*)this)->iface != 0;
 }
 
 // Forward a read request to the stream after checking preload validity.
-void* CPreloadFile_Read(PreloadFileReadView* self, void* opaqueReadArgument1, void* opaqueReadArgument2) {
-    int valid = self->valid();
+void* CPreloadFile::Read(void* opaqueReadArgument1, void* opaqueReadArgument2) {
+    int valid = ((PreloadFileReadView*)this)->valid();
     if (valid == 0) {
         return 0;
     }
-    PreloadReadStream* iface = (PreloadReadStream*)self->iface;
+    PreloadReadStream* iface = (PreloadReadStream*)((PreloadFileReadView*)this)->iface;
     if (iface != 0) {
         return ForwardPreloadRead(iface, opaqueReadArgument1, opaqueReadArgument2);
     }
@@ -643,46 +674,48 @@ void* CPreloadFile_Read(PreloadFileReadView* self, void* opaqueReadArgument1, vo
 }
 
 // Initialize a spray preloader with an empty owned script stream.
-SprayPreloadView* CPreloadSpr_Ctor(SprayPreloadView* self) {
-    CPreloadParent_Ctor(self);
-    self->stream = 0;
-    self->vtable = __vt__11CPreloadSpr;
-    return self;
+CPreloadSpr::CPreloadSpr() {
+    stream = 0;
+    vtbl = __vt__11CPreloadSpr;
 }
 
 // Destroy the owned sequence script stream and the preload base.
-void* CPreloadSeq_dtor(void* self, int should_delete) {
-    if (self != 0) {
-        SequenceScriptStream* iface = (*(SequenceScriptStream**)&AsCPreloadSeq(self)->scriptStream);
-        *(void**)self = __vt__11CPreloadSeq;
+void* CPreloadSeq::Destroy(int should_delete) {
+    if (this != 0) {
+        SequenceScriptStream* iface = (*(SequenceScriptStream**)&scriptStream);
+        vtbl = __vt__11CPreloadSeq;
         if (iface != 0) {
             if (iface != 0) {
                 if (iface != 0) {
                     iface->method(1);
                 }
-                AsCPreloadSeq(self)->scriptStream = 0;
+                scriptStream = 0;
             }
         }
-        CPreloadParent_dtor(self, 0);
-        if (should_delete > 0) __dl__FPv(self);
+        __dt__14CPreloadParentFv(this, 0);
+        if (should_delete > 0)
+            __dl__FPv(this);
     }
-    return self;
+    return this;
 }
 
 // Scan script lines until a spray entry is queued or the stream is exhausted.
-int CPreloadSeq_ProcessScriptEntries(PreloadStreamWordView* self) {
+int CPreloadSeq::ProcessScriptEntries() {
+    PreloadStreamWordView* self = (PreloadStreamWordView*)this;
     // 0 means one spray entry was queued (yield and resume next poll); 1 means
     // no source or scan exhaustion. This is a work-completion result, not success
     // of every parsed line. temp is a trusted 0x400-byte scan destination.
-    if (self->streamHandle == 0) return 1;
+    if (self->streamHandle == 0)
+        return 1;
     unsigned char match;
     char temp[0x400];
     // Scan/trim each line; changed is independent of ParseEntry's return value.
-    while (CPreloadFile_ScanFormat((void*)self->streamHandle, fxSprayScriptTokens + kScriptLineFormat, temp)) {
+    while (((CPreloadFile*)self->streamHandle)->ScanFormat(fxSprayScriptTokens + kScriptLineFormat, temp)) {
         match = 0;
         char* name = String_TrimCharacterSet(temp, fxSprayScriptTokens);
         FxSprayScript_ParseEntry(self, name, &match);
-        if (match != 0) return 0;
+        if (match != 0)
+            return 0;
     }
     return 1;
 }
@@ -704,13 +737,16 @@ extern char __vt__Q23std11logic_error[];
 extern char __vt__Q23std12length_error[];
 void __dt__Q23std12length_errorFv();
 
-
 struct Fn27Token {
     char state[0x18];
     // Initialize an empty tokenizer over borrowed input bytes.
-    Fn27Token() { cTokenV_Init(this); }
+    Fn27Token() {
+        cTokenV_Init(this);
+    }
     // Destroy tokenizer state without deleting its stack storage.
-    ~Fn27Token() { cToken_dtor(this, 0); }
+    ~Fn27Token() {
+        cToken_dtor(this, 0);
+    }
 };
 
 struct SprayResourcePreloadSet {
@@ -753,8 +789,10 @@ int FxSprayScript_ParseEntry(void* object, const char* input, unsigned char* cha
     cToken_ReadUntilDelimiter(&text, labelText, fxSprayScriptTokens + kLabelDelimiter, 1);
     cToken_ReadUntilDelimiter(&text, statementText, fxSprayScriptTokens + kLineDelimiters, 2);
     String_TrimCharacterSet(statementText, fxSprayScriptTokens);
-    if (*statementText == ';') return 0;
-    if (*statementText == 0) return 0;
+    if (*statementText == ';')
+        return 0;
+    if (*statementText == 0)
+        return 0;
     cTokenV_SetInputBuffer(&text, statementText, strlen(statementText));
     cToken_ReadUntilDelimiter(&text, assignmentName, fxSprayScriptTokens + kAssignmentDelimiter, 1);
     String_TrimCharacterSet(assignmentName, fxSprayScriptTokens);
@@ -763,7 +801,8 @@ int FxSprayScript_ParseEntry(void* object, const char* input, unsigned char* cha
         cToken_ReadUntilDelimiter(&text, resourcePath, fxSprayScriptTokens + kArgumentDelimiter, 1);
         String_TrimCharacterSet(resourcePath, fxSprayScriptTokens + kArgumentTrimCharacters);
         void* item = self->createItem(resourcePath);
-        if (item == 0) return 0;
+        if (item == 0)
+            return 0;
         {
             // Phase 3: append or reserve/copy/swap exactly as the puppet queue.
             // The array guard frees storage only; created items transfer to self.
@@ -831,47 +870,49 @@ int FxSprayScript_ParseEntry(void* object, const char* input, unsigned char* cha
 #pragma pop
 
 // Close the prior script stream and replace it through the virtual stream factory.
-int CPreloadSeq_OpenStreamFromPath(PreloadStreamWordView* self, void* arg1) {
-    if (self->streamHandle != 0) {
-        if (self->streamHandle != 0) {
-            if (self->streamHandle != 0) {
-                ((PreloadScriptStream*)self->streamHandle)->method(1);
+int CPreloadSeq::OpenStreamFromPath(void* arg1) {
+    if (((PreloadStreamWordView*)this)->streamHandle != 0) {
+        if (((PreloadStreamWordView*)this)->streamHandle != 0) {
+            if (((PreloadStreamWordView*)this)->streamHandle != 0) {
+                ((PreloadScriptStream*)((PreloadStreamWordView*)this)->streamHandle)->method(1);
             }
-            self->streamHandle = 0;
+            ((PreloadStreamWordView*)this)->streamHandle = 0;
         }
     }
-    int result = ((SequencePreloadOpenView*)self)->method(arg1);
-    self->streamHandle = result;
+    int result = ((SequencePreloadOpenView*)this)->method(arg1);
+    ((PreloadStreamWordView*)this)->streamHandle = result;
     return result != 0;
 }
 
 // Forward formatted scanning and its varargs to the open preload stream.
-void* CPreloadFile_ScanFormat(void* self, void* fmt, ...) {
-    if (((PreloadStreamWordView*)self)->streamHandle == 0) return 0;
-    struct { unsigned int a; void* b; void* c; } ap = { 0, 0, 0 };
+void* CPreloadFile::ScanFormat(void* fmt, ...) {
+    PreloadStreamWordView* self = (PreloadStreamWordView*)this;
+    if (self->streamHandle == 0)
+        return 0;
+    struct {
+        unsigned int a;
+        void* b;
+        void* c;
+    } ap = {0, 0, 0};
     __va_setup(&ap);
-    return Stream_VScanFormat((void*)((PreloadStreamWordView*)self)->streamHandle, fmt, &ap);
+    return Stream_VScanFormat((void*)self->streamHandle, fmt, &ap);
 }
 
 // Destroy the owned spray script stream and the preload base.
-SprayPreloadView* CPreloadSpr_dtor(SprayPreloadView* self, int should_delete) {
-    if (self != 0) {
-        self->vtable = __vt__11CPreloadSpr;
-        if (self->stream != 0) {
-            if (self->stream != 0) {
-                SprayScriptStream* old = (SprayScriptStream*)self->stream;
-                old->method(1);
-            }
-            self->stream = 0;
+CPreloadSpr::~CPreloadSpr() {
+    vtbl = __vt__11CPreloadSpr;
+    if (stream != 0) {
+        if (stream != 0) {
+            SprayScriptStream* old = (SprayScriptStream*)stream;
+            old->method(1);
         }
-        CPreloadParent_dtor(self, 0);
-        if (should_delete > 0) __dl__FPv(self);
+        stream = 0;
     }
-    return self;
 }
 
 // Initialize the filename string and clear the stream handle.
-void CPreloadFile_Ctor(PreloadFileStorage* self) {
+CPreloadFile::CPreloadFile() {
+    PreloadFileStorage* self = (PreloadFileStorage*)this;
     self->filenameFlags = 0;
     self->vtable = &__vt__12CPreloadFile;
     self->filenameLength = 0;
@@ -880,7 +921,8 @@ void CPreloadFile_Ctor(PreloadFileStorage* self) {
 }
 
 // Return the stream position/status slot, or zero when no stream is open.
-void* CPreloadFile_QueryStreamSlot6(PreloadPositionView* self) {
+void* CPreloadFile::QueryStreamSlot6() {
+    PreloadPositionView* self = (PreloadPositionView*)this;
     PreloadStreamPositionView* iface = self->iface;
     if (iface != 0) {
         return QueryPreloadStreamWord(iface);

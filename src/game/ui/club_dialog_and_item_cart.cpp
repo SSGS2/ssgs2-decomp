@@ -1,16 +1,23 @@
+// The club dialog (CClubDialog) and the item cart (CItemCart), two clubhouse shop screens.
+// The dialog handles button input and reports a mode-specific result. The cart shows up to
+// eight equipped item slots and adds items, reporting when it is full.
+//
+// The AsC* helpers borrow shared shop objects without taking ownership of them.
+
 #include <decomp/static_init.h>
 #include "classes/CSharedDoc.h"
 #include "iff/IffStruct.h"
 // Borrow the shared-document layout of an opaque singleton pointer.
-static inline CSharedDoc* AsCSharedDoc(void* object) { return (CSharedDoc*)object; }
-// Translation unit 0x802DC0E8-0x802DD5C0 (22 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+static inline CSharedDoc* AsCSharedDoc(void* object) {
+    return (CSharedDoc*)object;
+}
 
 #include "game/singletons.h"
 #include "classes/CItemCart.h"
 #include "classes/CClubDialog.h"
 #include "classes/CShopSubMenuB.h"
 #include "classes/CShopMenu.h"
+#include "classes/CBpCtrl.h"
 
 // Club dialog: element 9 supplies message bounds; buttons 10/11 confirm/cancel,
 // 12/13 are the two alternatives, and 14 acknowledges. Decorations are button + 5.
@@ -20,16 +27,24 @@ static inline CSharedDoc* AsCSharedDoc(void* object) { return (CSharedDoc*)objec
 // icon rectangles. All positions/rectangles are in layout screen coordinates.
 
 // Borrow the shop-menu layout without changing ownership.
-static inline CShopMenu* AsCShopMenu(void* object) { return (CShopMenu*)object; }
+static inline CShopMenu* AsCShopMenu(void* object) {
+    return (CShopMenu*)object;
+}
 
 // Borrow the submenu layout without changing ownership.
-static inline CShopSubMenuB* AsCShopSubMenuB(void* object) { return (CShopSubMenuB*)object; }
+static inline CShopSubMenuB* AsCShopSubMenuB(void* object) {
+    return (CShopSubMenuB*)object;
+}
 
 // Borrow the club-dialog layout without changing ownership.
-static inline CClubDialog* AsCClubDialog(void* object) { return (CClubDialog*)object; }
+static inline CClubDialog* AsCClubDialog(void* object) {
+    return (CClubDialog*)object;
+}
 
 // Borrow the item-cart layout without changing ownership.
-static inline CItemCart* AsCItemCart(void* object) { return (CItemCart*)object; }
+static inline CItemCart* AsCItemCart(void* object) {
+    return (CItemCart*)object;
+}
 
 enum ClubDialogConstants {
     // Names describe the observable result codes; the callers' business meanings remain unproven.
@@ -71,11 +86,20 @@ enum ClubDialogConstants {
 };
 
 // Partial views for save fields not yet exposed by SavePlayerRecord.h.
-struct SavedItemSlots { char prefix[0x31]; signed char itemInventoryIndices[kItemSlotCount]; };
-struct SavedItemQuantities { char prefix[0x11C]; short quantities[1]; }; // Trailing inventory-indexed array.
+struct SavedItemSlots {
+    char prefix[0x31];
+    signed char itemInventoryIndices[kItemSlotCount];
+};
+struct SavedItemQuantities {
+    char prefix[0x11C];
+    short quantities[1];
+}; // Trailing inventory-indexed array.
 
 // The supplied cart records expose the common item header and a 0x2C0 stride; their remaining format is opaque.
-struct CartItemRecord { IffItemCommon common; char remainingData[0x2C0 - sizeof(IffItemCommon)]; };
+struct CartItemRecord {
+    IffItemCommon common;
+    char remainingData[0x2C0 - sizeof(IffItemCommon)];
+};
 typedef char CartItemRecord_size[(sizeof(CartItemRecord) == 0x2C0) ? 1 : -1];
 
 typedef char SavedItemSlots_offset[((int)&((SavedItemSlots*)0)->itemInventoryIndices == 0x31) ? 1 : -1];
@@ -115,7 +139,8 @@ extern void Layout_SetElementEnabled(void*, int, int);
 extern void Layout_SetElementPosition(void*, int, void*);
 extern void Layout_GetElementPosition(void*, int, void*);
 extern void Layout_SetElementPlayerFlag(void*, int, int, int);
-extern void Layout_SetElementValueState(void*, int, int); // Select element value state (0 = idle, 2 = pressed feedback).
+extern void Layout_SetElementValueState(void*, int,
+                                        int); // Select element value state (0 = idle, 2 = pressed feedback).
 extern int Input_IsActionPressed(void*, int, int);
 extern void InputManager_Init(void*);
 extern void InputManager_Dtor(void*);
@@ -125,9 +150,6 @@ extern void Layout_SetModeByte(void*, int); // Set layout byte +0x3C; initialize
 extern void MenuMessage_SetPosition(void*, void*);
 extern void MenuMessage_SetLayoutSize(void*, void*);
 extern void* memset(void*, int, unsigned long);
-extern int CClubDialog_ProcessInput(void*);
-extern int CClubDialog_UpdateSelectionDelay(void*);
-extern int CItemCart_DrawItems(void*);
 extern void __dl__FPv(void*);
 extern const float kFloat_1_805E09B8;
 extern const float kFloat_0_5_ClubDialog; // 0.5f: dialog sound parameter.
@@ -150,17 +172,13 @@ extern void Layout_LoadExtended(void*, int, char*);
 extern void Layout_SetElementPlayerFlagsAndState(void*, int, int);
 extern void MenuMessage_ResetTextState(void*);
 extern void MenuMessage_SetText(void*, int);
-extern void CBpCtrl_CreateEntry(void*, const char*, void*, int);
 extern int IdMap_Lookup(void*, int);
 extern void Sound_PlayByName(void*, const char*, int, int, int, int, float, float, float);
-extern void __ct__7CBpCtrlFv(void*);
 extern void CBpCtrl_dtor(void*);
 extern void* __register_global_object(void*, void*, void*);
-extern int CBpCtrl_PollAllEntriesLoaded(void*);
 extern void BpObject_StartScriptByName(void*, const char*, int);
 extern void* UIGroup_GetOrCreateById(void*, const char*);
 extern void UIGroup_SetEnabled(void*, int);
-extern void CBpCtrl_DeleteEntryById(void*, int);
 extern void Layout_SetElementEnabled(void*, int, int);
 extern void MenuMessage_SetPosition(void*, void*);
 extern int ItemInventory_FindItemIndex(void*, void*);
@@ -168,12 +186,12 @@ extern signed char s_bpCtrlInitialized;
 extern void* g_soundManager;
 extern char itemCartStrings[];
 extern char __vt__9CItemCart[];
-extern int clubDialogMessageIds[]; // Message ID indexed by dialog mode.
+extern int clubDialogMessageIds[];           // Message ID indexed by dialog mode.
 extern const char* itemCartIconGroupNames[]; // Eight script icon group names.
 extern const float kItemCartQuadTemplate[];
 extern const float kFloat_0_5_ItemCart; // 0.5f: item-cart sound parameter.
 extern const float kFloat_200_ItemCart; // 200.0f: item-cart sound parameter.
-extern const float kFloat_6_2831855; // One turn in radians (6.2831855f).
+extern const float kFloat_6_2831855;    // One turn in radians (6.2831855f).
 extern float s_itemCartFullTurnConstant;
 extern CSharedDoc* g_sharedDoc;
 extern void Engine_SetFlexibleVertexFormat(int);
@@ -181,7 +199,9 @@ extern void* GX_GetPrimitiveCount(int, int);
 extern void DrawPrimitiveUP(int, void*, void*, int);
 extern int Layout_HitTestPlayer(void*, int);
 
-struct ItemQuadVertices { float f[24]; };
+struct ItemQuadVertices {
+    float f[24];
+};
 struct DrawElem {
     virtual void slot0();
     virtual void slot1();
@@ -190,21 +210,33 @@ struct DrawElem {
     virtual int test();
     char data[0x24];
 };
-struct ClubDialogLayoutStorage { char data[0x5c];
+struct ClubDialogLayoutStorage {
+    char data[0x5c];
     // Initialize the dialog's owned layout storage.
-    ClubDialogLayoutStorage(int x) { Layout_Init(this, x); }
+    ClubDialogLayoutStorage(int x) {
+        Layout_Init(this, x);
+    }
 };
-struct ClubDialogMessageStorage { char data[0xc];
+struct ClubDialogMessageStorage {
+    char data[0xc];
     // Initialize the dialog's owned message storage.
-    ClubDialogMessageStorage() { MenuMessage_Ctor(this); }
+    ClubDialogMessageStorage() {
+        MenuMessage_Ctor(this);
+    }
 };
-struct ItemCartLayoutStorage { char data[0x5c];
+struct ItemCartLayoutStorage {
+    char data[0x5c];
     // Initialize the cart's owned layout storage.
-    ItemCartLayoutStorage(int x) { Layout_Init(this, x); }
+    ItemCartLayoutStorage(int x) {
+        Layout_Init(this, x);
+    }
 };
-struct ItemCartMessageStorage { char data[0xc];
+struct ItemCartMessageStorage {
+    char data[0xc];
     // Initialize the cart's owned message storage.
-    ItemCartMessageStorage() { MenuMessage_Ctor(this); }
+    ItemCartMessageStorage() {
+        MenuMessage_Ctor(this);
+    }
 };
 
 struct ActivatedList {
@@ -221,22 +253,23 @@ struct ActivatedList {
 };
 
 // Handle logical cancel or activated layout buttons, latch the mode-specific result, and start press feedback.
-int CClubDialog_ProcessInput(void* object) {
-    if (Sing_805DC5C8() == 0) {
+int CClubDialog::ProcessInput() {
+    if (GetInputManagerSlot() == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(&s_gameInputManager);
             __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_gameInputManagerDestructorRecord);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
     // Replace or bypass this logical-action query to customize cancellation independently of controller drivers.
-    if (Input_IsActionPressed(Sing_805DC5C8(), kInputActionCancel, kAnyInputPlayer)) {
-        AsCClubDialog(object)->result = kDialogResultCancel;
-        Sound_PlayByName(g_soundManager, ((ClubDialogStringPool*)clubDialogStrings)->cancelSound, 0, 0, 0, 0, kFloat_0_5_ClubDialog, kFloat_200_ClubDialog, kFloat_1_805E09B8);
+    if (Input_IsActionPressed(GetInputManagerSlot(), kInputActionCancel, kAnyInputPlayer)) {
+        result = kDialogResultCancel;
+        Sound_PlayByName(g_soundManager, ((ClubDialogStringPool*)clubDialogStrings)->cancelSound, 0, 0, 0, 0,
+                         kFloat_0_5_ClubDialog, kFloat_200_ClubDialog, kFloat_1_805E09B8);
         return 1;
     }
-    void* self = object;
+    void* self = this;
     int activatedByteOffset = 0; // Preserve the original four-byte induction variable.
     ActivatedList activated = {0, 0, 0};
     // Confirmation follows activated layout elements, rather than a second direct button query.
@@ -252,22 +285,50 @@ int CClubDialog_ProcessInput(void* object) {
         }
     }
     switch (AsCClubDialog(self)->mode) {
-    case kModeConfirmResult2: if (selected == kConfirmButton) AsCClubDialog(self)->result = kDialogResultMode0Accept; else AsCClubDialog(self)->result = kDialogResultCancel; break;
-    case kModeConfirmResult3: case kModeAlternateConfirmResult3: if (selected == kConfirmButton) AsCClubDialog(self)->result = kDialogResultMode1Or6Accept; else AsCClubDialog(self)->result = kDialogResultCancel; break;
-    case kModeChooseResults4Or5: if (selected == kFirstChoiceButton) AsCClubDialog(self)->result = kDialogResultMode2First; else AsCClubDialog(self)->result = kDialogResultMode2Second; break;
-    case kModeConfirmResult6: if (selected == kConfirmButton) AsCClubDialog(self)->result = kDialogResultMode4Accept; else AsCClubDialog(self)->result = kDialogResultCancel; break;
-    case kModeAcknowledge: if (selected == kAcknowledgeButton) AsCClubDialog(self)->result = kDialogResultCancel; break;
+    case kModeConfirmResult2:
+        if (selected == kConfirmButton)
+            AsCClubDialog(self)->result = kDialogResultMode0Accept;
+        else
+            AsCClubDialog(self)->result = kDialogResultCancel;
+        break;
+    case kModeConfirmResult3:
+    case kModeAlternateConfirmResult3:
+        if (selected == kConfirmButton)
+            AsCClubDialog(self)->result = kDialogResultMode1Or6Accept;
+        else
+            AsCClubDialog(self)->result = kDialogResultCancel;
+        break;
+    case kModeChooseResults4Or5:
+        if (selected == kFirstChoiceButton)
+            AsCClubDialog(self)->result = kDialogResultMode2First;
+        else
+            AsCClubDialog(self)->result = kDialogResultMode2Second;
+        break;
+    case kModeConfirmResult6:
+        if (selected == kConfirmButton)
+            AsCClubDialog(self)->result = kDialogResultMode4Accept;
+        else
+            AsCClubDialog(self)->result = kDialogResultCancel;
+        break;
+    case kModeAcknowledge:
+        if (selected == kAcknowledgeButton)
+            AsCClubDialog(self)->result = kDialogResultCancel;
+        break;
     }
     AsCClubDialog(self)->selectedElement = selected;
     Layout_SetElementValueState(AsCClubDialog(self)->layout, selected, kElementStatePressed);
-    Layout_SetElementPlayerFlag(AsCClubDialog(self)->layout, AsCClubDialog(self)->selectedElement, 0, kAllLayoutPlayers);
+    Layout_SetElementPlayerFlag(AsCClubDialog(self)->layout, AsCClubDialog(self)->selectedElement, 0,
+                                kAllLayoutPlayers);
     float decorationPosition[2] = {0.0f, 0.0f};
-    Layout_GetElementPosition(AsCClubDialog(self)->layout, AsCClubDialog(self)->selectedElement + kDialogButtonDecorationOffset, decorationPosition);
+    Layout_GetElementPosition(AsCClubDialog(self)->layout,
+                              AsCClubDialog(self)->selectedElement + kDialogButtonDecorationOffset, decorationPosition);
     decorationPosition[0] += kFloat_1_805E09B8;
     decorationPosition[1] += kFloat_1_805E09B8;
-    Layout_SetElementPosition(AsCClubDialog(self)->layout, AsCClubDialog(self)->selectedElement + kDialogButtonDecorationOffset, decorationPosition);
+    Layout_SetElementPosition(AsCClubDialog(self)->layout,
+                              AsCClubDialog(self)->selectedElement + kDialogButtonDecorationOffset, decorationPosition);
     AsCClubDialog(self)->selectionDelayFrames = kSelectionFeedbackFrames;
-    Sound_PlayByName(g_soundManager, ((ClubDialogStringPool*)clubDialogStrings)->selectSound, 0, 0, 0, 0, kFloat_0_5_ClubDialog, kFloat_200_ClubDialog, kFloat_1_805E09B8);
+    Sound_PlayByName(g_soundManager, ((ClubDialogStringPool*)clubDialogStrings)->selectSound, 0, 0, 0, 0,
+                     kFloat_0_5_ClubDialog, kFloat_200_ClubDialog, kFloat_1_805E09B8);
     return 1;
 }
 
@@ -275,220 +336,221 @@ int CClubDialog_ProcessInput(void* object) {
 // Allocate layout/message objects, load the item script, and clear the pending eight-slot selection.
 // playerRecord is borrowed writable save data; itemCount is a 32-bit count passed via void*.
 // Icon/record arrays are supplied separately and are not deleted by the cart destructor.
-void* CItemCart_Ctor(void* object, void* playerRecord, void* itemCount) {
-    void* self = object;
-    *(void**)self = __vt__9CItemCart;
+// Kept as a named member, not a constructor: the caller initialises it inside its own storage object.
+CItemCart* CItemCart::Init(void* playerRecord, void* itemCount) {
+    vtbl = __vt__9CItemCart;
     void* p = new ItemCartLayoutStorage(5);
-    AsCItemCart(self)->layout = p;
-    AsCItemCart(self)->itemIcons = 0;
-    AsCItemCart(self)->itemRecords = 0;
-    AsCItemCart(self)->playerData = playerRecord;
-    AsCItemCart(self)->itemCount = itemCount;
-    AsCItemCart(self)->refreshDelayFrames = kInactiveDelay;
-    AsCItemCart(self)->scriptObject = 0;
-    AsCItemCart(self)->scriptEntryId = -1;
+    layout = p;
+    itemIcons = 0;
+    itemRecords = 0;
+    playerData = playerRecord;
+    this->itemCount = itemCount;
+    refreshDelayFrames = kInactiveDelay;
+    scriptObject = 0;
+    scriptEntryId = -1;
     p = new ItemCartMessageStorage();
-    AsCItemCart(self)->message = p;
-    AsCItemCart(self)->selectedItemIndex = -1;
-    Layout_LoadExtended(AsCItemCart(self)->layout, 0, ((ItemCartStringPool*)itemCartStrings)->layoutFile);
+    message = p;
+    selectedItemIndex = -1;
+    Layout_LoadExtended(layout, 0, ((ItemCartStringPool*)itemCartStrings)->layoutFile);
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDestructorRecord);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    CBpCtrl_CreateEntry(Sing_805DC5F0(), ((ItemCartStringPool*)itemCartStrings)->scriptFile, &AsCItemCart(self)->scriptEntryId, 0);
+    ((CBpCtrl*)Sing_805DC5F0())->CreateEntry(((ItemCartStringPool*)itemCartStrings)->scriptFile, &scriptEntryId, 0);
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDestructorRecord);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    AsCItemCart(self)->scriptObject = IdMap_Lookup(Sing_805DC5F0(), AsCItemCart(self)->scriptEntryId);
-    memset(AsCItemCart(self)->pendingInventoryIndices, kEmptyInventorySlot, kItemSlotCount);
-    return self;
+    scriptObject = IdMap_Lookup(Sing_805DC5F0(), scriptEntryId);
+    memset(pendingInventoryIndices, kEmptyInventorySlot, kItemSlotCount);
+    return this;
 }
 #pragma opt_common_subs reset
 
 // Enable the mode-specific button pair or acknowledgement button, reset the message, and play the open sound.
 // mode must index clubDialogMessageIds; unsupported values still index that table.
-int CClubDialog_SetMode(void* object, int mode) {
-    AsCClubDialog(object)->result = kNoDialogResult;
-    AsCClubDialog(object)->mode = mode;
+int CClubDialog::SetMode(int mode) {
+    result = kNoDialogResult;
+    this->mode = mode;
     switch (mode) {
-    case kModeConfirmResult2: case kModeConfirmResult3: case kModeConfirmResult6: case kModeAlternateConfirmResult3:
+    case kModeConfirmResult2:
+    case kModeConfirmResult3:
+    case kModeConfirmResult6:
+    case kModeAlternateConfirmResult3:
         for (int i = kFirstDialogButton; i <= kLastDialogButton; ++i) {
             if ((unsigned)(i - kFirstDialogButton) <= 1) {
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i, 1);
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i + kDialogButtonDecorationOffset, 1);
+                Layout_SetElementPlayerFlagsAndState(layout, i, 1);
+                Layout_SetElementPlayerFlagsAndState(layout, i + kDialogButtonDecorationOffset, 1);
             } else {
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i, 0);
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i + kDialogButtonDecorationOffset, 0);
+                Layout_SetElementPlayerFlagsAndState(layout, i, 0);
+                Layout_SetElementPlayerFlagsAndState(layout, i + kDialogButtonDecorationOffset, 0);
             }
         }
         break;
     case kModeChooseResults4Or5:
         for (int i = kFirstDialogButton; i <= kLastDialogButton; ++i) {
             if ((unsigned)(i - kFirstChoiceButton) <= 1) {
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i, 1);
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i + kDialogButtonDecorationOffset, 1);
+                Layout_SetElementPlayerFlagsAndState(layout, i, 1);
+                Layout_SetElementPlayerFlagsAndState(layout, i + kDialogButtonDecorationOffset, 1);
             } else {
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i, 0);
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i + kDialogButtonDecorationOffset, 0);
+                Layout_SetElementPlayerFlagsAndState(layout, i, 0);
+                Layout_SetElementPlayerFlagsAndState(layout, i + kDialogButtonDecorationOffset, 0);
             }
         }
         break;
     case kModeAcknowledge:
         for (int i = kFirstDialogButton; i <= kLastDialogButton; ++i) {
             if (i == kAcknowledgeButton) {
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i, 1);
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i + kDialogButtonDecorationOffset, 1);
+                Layout_SetElementPlayerFlagsAndState(layout, i, 1);
+                Layout_SetElementPlayerFlagsAndState(layout, i + kDialogButtonDecorationOffset, 1);
             } else {
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i, 0);
-                Layout_SetElementPlayerFlagsAndState(AsCClubDialog(object)->layout, i + kDialogButtonDecorationOffset, 0);
+                Layout_SetElementPlayerFlagsAndState(layout, i, 0);
+                Layout_SetElementPlayerFlagsAndState(layout, i + kDialogButtonDecorationOffset, 0);
             }
         }
         break;
     }
-    MenuMessage_ResetTextState(AsCClubDialog(object)->message);
-    MenuMessage_SetText(AsCClubDialog(object)->message, clubDialogMessageIds[mode]);
-    Layout_Update(AsCClubDialog(object)->layout);
-    Sound_PlayByName(g_soundManager, ((ClubDialogStringPool*)clubDialogStrings)->openSound, 0, 0, 0, 0, kFloat_0_5_ClubDialog, kFloat_200_ClubDialog, kFloat_1_805E09B8);
+    MenuMessage_ResetTextState(message);
+    MenuMessage_SetText(message, clubDialogMessageIds[mode]);
+    Layout_Update(layout);
+    Sound_PlayByName(g_soundManager, ((ClubDialogStringPool*)clubDialogStrings)->openSound, 0, 0, 0, 0,
+                     kFloat_0_5_ClubDialog, kFloat_200_ClubDialog, kFloat_1_805E09B8);
     return 1;
 }
 
 // Advance the club dialog layout once.
-int CClubDialog_UpdateLayout(void* object) {
-    Layout_Update(AsCClubDialog(object)->layout);
+int CClubDialog::UpdateLayout() {
+    Layout_Update(layout);
     return 1;
 }
 
 // Advance the item cart layout once.
-int CItemCart_UpdateLayout(void* object) {
-    Layout_Update(AsCItemCart(object)->layout);
+int CItemCart::UpdateLayout() {
+    Layout_Update(layout);
     return 1;
 }
 
 // Report whether the shop menu layout has completed loading.
-int CShopMenu_IsLayoutLoaded(void* object) {
-    return Layout_PollLoadComplete(AsCShopMenu(object)->layout) != 0;
+int CShopMenu::IsLayoutLoaded() {
+    return Layout_PollLoadComplete(layout) != 0;
 }
 
 // Draw the dialog at full opacity and its revealed message.
-int CClubDialog_Draw(void* object) {
+int CClubDialog::Draw() {
     float t = kFloat_1_805E09B8;
-    Layout_DrawWithOpacity(AsCClubDialog(object)->layout, t);
-    MenuMessage_DrawText(AsCClubDialog(object)->message);
+    Layout_DrawWithOpacity(layout, t);
+    MenuMessage_DrawText(message);
     return 1;
 }
 
 // Advance layout/text and accept input only when press feedback is inactive.
-int CClubDialog_Update(void* object) {
-    Layout_Update(AsCClubDialog(object)->layout);
-    MenuMessage_UpdateReveal(AsCClubDialog(object)->message);
-    if (CClubDialog_UpdateSelectionDelay(object) == 0) {
-        CClubDialog_ProcessInput(object);
+int CClubDialog::Update() {
+    Layout_Update(layout);
+    MenuMessage_UpdateReveal(message);
+    if (CClubDialog::UpdateSelectionDelay(this) == 0) {
+        ProcessInput();
     }
     return 1;
 }
 
 // Destroy owned layout and message objects, then optionally release the dialog allocation.
-void* CClubDialog_dtor(void* object, int shouldDelete) {
-    if (object != 0) {
-        void* q = AsCClubDialog(object)->layout;
-        AsCClubDialog(object)->vtable = (void*)__vt__11CClubDialog;
-        if (q != 0) {
-            Layout_Destroy(q, 1);
-            AsCClubDialog(object)->layout = 0;
-        }
-        void* r = AsCClubDialog(object)->message;
-        if (r != 0) {
-            MenuMessage_Dtor(r, 1);
-            AsCClubDialog(object)->message = 0;
-        }
-        if (shouldDelete > 0) {
-            __dl__FPv(object);
-        }
+CClubDialog::~CClubDialog() {
+    void* q = layout;
+    vtable = (void*)__vt__11CClubDialog;
+    if (q != 0) {
+        Layout_Destroy(q, 1);
+        layout = 0;
     }
-    return object;
+    void* r = message;
+    if (r != 0) {
+        MenuMessage_Dtor(r, 1);
+        message = 0;
+    }
 }
 
 // Run the script draw callback, then draw the layout, item icons, and message.
-int CItemCart_Draw(void* object) {
-    BpObject_TryInvokeCurrentCallback((*(void**)&AsCItemCart(object)->scriptObject), 0);
-    BpObject_Draw((*(void**)&AsCItemCart(object)->scriptObject));
-    Layout_DrawWithOpacity(AsCItemCart(object)->layout, kFloat_1_ItemCart);
-    CItemCart_DrawItems(object);
-    MenuMessage_DrawText(AsCItemCart(object)->message);
+int CItemCart::Draw() {
+    BpObject_TryInvokeCurrentCallback((*(void**)&scriptObject), 0);
+    BpObject_Draw((*(void**)&scriptObject));
+    Layout_DrawWithOpacity(layout, kFloat_1_ItemCart);
+    CItemCart::DrawItems(this);
+    MenuMessage_DrawText(message);
     return 1;
 }
 
 // Publish a latched result after press feedback ends; play the cancel sound for closing results.
 // Return 0 without writing resultOut while pending; return 1 after writing an int result.
 // Reading does not consume the result; repeated successful calls repeat text/sound effects.
-int CClubDialog_TryGetResult(void* object, void* resultOut) {
-    int result = AsCClubDialog(object)->result;
-    if (result == kNoDialogResult || AsCClubDialog(object)->selectionDelayFrames != kInactiveDelay) {
+int CClubDialog::TryGetResult(void* resultOut) {
+    int result = this->result;
+    if (result == kNoDialogResult || selectionDelayFrames != kInactiveDelay) {
         return 0;
     }
     *(int*)resultOut = result;
-    MenuMessage_ResetTextState(AsCClubDialog(object)->message);
-    int r0 = AsCClubDialog(object)->result;
+    MenuMessage_ResetTextState(message);
+    int r0 = this->result;
     if (r0 == kDialogResultCancel || r0 == kDialogResultMode4Accept) {
-        Sound_PlayByName(g_soundManager, ((ClubDialogStringPool*)clubDialogStrings)->closeSound, 0, 0, 0, 0, kFloat_0_5_ClubDialog, kFloat_200_ClubDialog, kFloat_1_805E09B8);
+        Sound_PlayByName(g_soundManager, ((ClubDialogStringPool*)clubDialogStrings)->closeSound, 0, 0, 0, 0,
+                         kFloat_0_5_ClubDialog, kFloat_200_ClubDialog, kFloat_1_805E09B8);
     }
     return 1;
 }
 
 // Require both layout and shared script-controller resources to finish loading.
-int CShopSubMenuB_IsLoaded(void* object) {
-    void* q = AsCShopSubMenuB(object)->layout;
+int CShopSubMenuB::IsLoaded() {
+    void* q = layout;
     if (Layout_PollLoadComplete(q) == 0) {
         return 0;
     }
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDestructorRecord);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = (void*)s_bpCtrl;
     }
-    if (CBpCtrl_PollAllEntriesLoaded(Sing_805DC5F0()) == 0) {
+    if (((CBpCtrl*)Sing_805DC5F0())->PollAllEntriesLoaded() == 0) {
         return 0;
     }
     return 1;
 }
 
-// Create a dialog with no active mode/result and load its layout.
-void* CClubDialog_Ctor(void* object) {
-    void* self = object;
-    AsCClubDialog(object)->vtable = (void*)__vt__11CClubDialog;
+// Set up a dialog in caller-owned storage with no active mode/result, and load its layout.
+// Kept as a named member, not a constructor: the caller initialises it inside its own storage object.
+CClubDialog* CClubDialog::Init() {
+    vtable = (void*)__vt__11CClubDialog;
     ClubDialogLayoutStorage* q = new ClubDialogLayoutStorage(5);
     void* r31 = q;
-    AsCClubDialog(self)->layout = r31;
-    AsCClubDialog(self)->mode = -1;
-    AsCClubDialog(self)->result = kNoDialogResult;
+    layout = r31;
+    mode = -1;
+    result = kNoDialogResult;
     ClubDialogMessageStorage* r = new ClubDialogMessageStorage();
     void* r31b = r;
-    AsCClubDialog(self)->message = r31b;
-    AsCClubDialog(self)->selectionDelayFrames = kInactiveDelay;
-    AsCClubDialog(self)->selectedElement = -1;
-    Layout_LoadExtended(AsCClubDialog(self)->layout, 0, ((ClubDialogStringPool*)clubDialogStrings)->layoutFile);
-    return self;
+    message = r31b;
+    selectionDelayFrames = kInactiveDelay;
+    selectedElement = -1;
+    Layout_LoadExtended(layout, 0, ((ClubDialogStringPool*)clubDialogStrings)->layoutFile);
+    return this;
 }
 
 // Count down press feedback, restore the selected decoration position, and reset button states.
-int CClubDialog_UpdateSelectionDelay(void* object) {
+int CClubDialog::UpdateSelectionDelay(void* object) {
     void* self = object;
     int remainingFrames = AsCClubDialog(self)->selectionDelayFrames;
-    if (remainingFrames == kInactiveDelay) return 0;
+    if (remainingFrames == kInactiveDelay)
+        return 0;
     AsCClubDialog(self)->selectionDelayFrames = remainingFrames - 1;
-    if (remainingFrames > 0) return 1;
+    if (remainingFrames > 0)
+        return 1;
     float pressedOffset = kFloat_1_805E09B8;
     int buttonElement = kFirstDialogButton;
     int decorationPositionBits[2];
@@ -510,7 +572,7 @@ int CClubDialog_UpdateSelectionDelay(void* object) {
 }
 
 // Align button decorations and configure the message position and width from layout element nine.
-int CClubDialog_InitLayout(void* object) {
+int CClubDialog::InitLayout(void* object) {
     void* self = object;
     Layout_SetModeByte(AsCClubDialog(self)->layout, 0);
     int messageRect[4];
@@ -534,34 +596,45 @@ int CClubDialog_InitLayout(void* object) {
 // slotIndex is 0..7. Save/pending bytes hold inventory indices, not item type IDs.
 // Return an index into itemRecords/itemIcons, or -1 if no record matches.
 // The shared member pendingItemIds is an inventory-index array despite its name.
-static inline int fn_802DD09C_find(char* self, int slotIndex) {
+static inline int FindIconIndexForSlot(char* self, int slotIndex) {
     // Keep byte cursors: indexing the arrays directly changes induction registers in the caller.
     int recordByteOffset, iconIndex;
     iconIndex = 0;
     recordByteOffset = 0;
-    for (; iconIndex < (*(int*)&AsCItemCart(self)->itemCount); recordByteOffset += sizeof(CartItemRecord), ++iconIndex) {
+    for (; iconIndex < (*(int*)&AsCItemCart(self)->itemCount);
+         recordByteOffset += sizeof(CartItemRecord), ++iconIndex) {
         if (AsCItemCart(self)->selectedItemIndex == -1) {
-            int inventoryIndex = ItemInventory_FindItemIndex(AsCSharedDoc(g_sharedDoc)->itemInventory, (void*)((CartItemRecord*)((char*)(*(void**)&AsCItemCart(self)->itemRecords) + recordByteOffset))->common.typeId);
-            signed char equippedInventoryIndex = ((SavedItemSlots*)(slotIndex + (int)AsCItemCart(self)->playerData))->itemInventoryIndices[0];
-            if (equippedInventoryIndex == inventoryIndex) return iconIndex;
+            int inventoryIndex = ItemInventory_FindItemIndex(
+                AsCSharedDoc(g_sharedDoc)->itemInventory,
+                (void*)((CartItemRecord*)((char*)(*(void**)&AsCItemCart(self)->itemRecords) + recordByteOffset))
+                    ->common.typeId);
+            signed char equippedInventoryIndex =
+                ((SavedItemSlots*)(slotIndex + (int)AsCItemCart(self)->playerData))->itemInventoryIndices[0];
+            if (equippedInventoryIndex == inventoryIndex)
+                return iconIndex;
         }
         if (AsCItemCart(self)->selectedItemIndex != -1) {
-            int inventoryIndex = ItemInventory_FindItemIndex(AsCSharedDoc(g_sharedDoc)->itemInventory, (void*)((CartItemRecord*)((char*)(*(void**)&AsCItemCart(self)->itemRecords) + recordByteOffset))->common.typeId);
+            int inventoryIndex = ItemInventory_FindItemIndex(
+                AsCSharedDoc(g_sharedDoc)->itemInventory,
+                (void*)((CartItemRecord*)((char*)(*(void**)&AsCItemCart(self)->itemRecords) + recordByteOffset))
+                    ->common.typeId);
             signed char equippedInventoryIndex = ((CItemCart*)(self + slotIndex))->pendingInventoryIndices[0];
-            if (equippedInventoryIndex == inventoryIndex) return iconIndex;
+            if (equippedInventoryIndex == inventoryIndex)
+                return iconIndex;
         }
     }
     return -1;
 }
 
 // Draw up to eight equipped icons, expanding the selected or hovered icon rectangle.
-int CItemCart_DrawItems(void* object) {
+int CItemCart::DrawItems(void* object) {
     char* self = (char*)object;
     // Packed occupied slots form a prefix; the first unresolved icon ends the entire draw.
     int slotIndex = 0;
     do {
-        int iconIndex = fn_802DD09C_find(self, slotIndex);
-        if (iconIndex == -1) break;
+        int iconIndex = FindIconIndexForSlot(self, slotIndex);
+        if (iconIndex == -1)
+            break;
         {
             int iconByteOffset = iconIndex * sizeof(DrawElem);
             if (((DrawElem*)((char*)(*(void**)&AsCItemCart(self)->itemIcons) + iconByteOffset))->test()) {
@@ -582,13 +655,18 @@ int CItemCart_DrawItems(void* object) {
                 // Build four screen-space corners. Expansion deliberately uses the already
                 // modified left/top edge when computing right/bottom; it is not symmetric.
                 ItemQuadVertices vertices = *(ItemQuadVertices*)kItemCartQuadTemplate;
-                vertices.f[0] = (float)iconRect[0]; vertices.f[1] = (float)iconRect[1];
-                vertices.f[6] = (float)iconRect[2]; vertices.f[7] = (float)iconRect[1];
-                vertices.f[12] = (float)iconRect[0]; vertices.f[13] = (float)iconRect[3];
-                vertices.f[18] = (float)iconRect[2]; vertices.f[19] = (float)iconRect[3];
+                vertices.f[0] = (float)iconRect[0];
+                vertices.f[1] = (float)iconRect[1];
+                vertices.f[6] = (float)iconRect[2];
+                vertices.f[7] = (float)iconRect[1];
+                vertices.f[12] = (float)iconRect[0];
+                vertices.f[13] = (float)iconRect[3];
+                vertices.f[18] = (float)iconRect[2];
+                vertices.f[19] = (float)iconRect[3];
                 Engine_SetFlexibleVertexFormat(kTexturedQuadVertexFormat);
                 ((DrawElem*)((char*)(*(void**)&AsCItemCart(self)->itemIcons) + iconByteOffset))->draw();
-                DrawPrimitiveUP(kGxTriangleStrip, GX_GetPrimitiveCount(4, kGxTriangleStrip), vertices.f, kTexturedVertexStride);
+                DrawPrimitiveUP(kGxTriangleStrip, GX_GetPrimitiveCount(4, kGxTriangleStrip), vertices.f,
+                                kTexturedVertexStride);
             }
         }
         ++slotIndex;
@@ -597,7 +675,7 @@ int CItemCart_DrawItems(void* object) {
 }
 
 // Advance layout/text and refresh slot interaction flags after the pending feedback delay.
-int CItemCart_Update(void* object) {
+int CItemCart::Update(void* object) {
     void* self = object;
     Layout_Update(AsCItemCart(self)->layout);
     MenuMessage_UpdateReveal(AsCItemCart(self)->message);
@@ -630,42 +708,39 @@ int CItemCart_Update(void* object) {
 }
 
 // Destroy the owned layout, script-controller entry, and message, then optionally free the cart.
-void* CItemCart_dtor(void* object, int shouldDelete) {
-    if (object != 0) {
-        void* q = AsCItemCart(object)->layout;
-        *(void**)object = (void*)__vt__9CItemCart;
-        if (q != 0) {
-            Layout_Destroy(q, 1);
-            AsCItemCart(object)->layout = 0;
-        }
-        if (AsCItemCart(object)->scriptEntryId != -1) {
-            if (Sing_805DC5F0() == 0) {
-                if (s_bpCtrlInitialized == 0) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDestructorRecord);
-                    s_bpCtrlInitialized = 1;
-                }
-                Sing_805DC5F0() = s_bpCtrl;
-            }
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCItemCart(object)->scriptEntryId);
-            AsCItemCart(object)->scriptEntryId = -1;
-        }
-        void* r = AsCItemCart(object)->message;
-        if (r != 0) {
-            MenuMessage_Dtor(r, 1);
-            AsCItemCart(object)->message = 0;
-        }
-        if (shouldDelete > 0) __dl__FPv(object);
+CItemCart::~CItemCart() {
+    void* q = layout;
+    *(void**)this = (void*)__vt__9CItemCart;
+    if (q != 0) {
+        Layout_Destroy(q, 1);
+        layout = 0;
     }
-    return object;
+    if (scriptEntryId != -1) {
+        if (Sing_805DC5F0() == 0) {
+            if (s_bpCtrlInitialized == 0) {
+                ((CBpCtrl*)s_bpCtrl)->__ct();
+                __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDestructorRecord);
+                s_bpCtrlInitialized = 1;
+            }
+            Sing_805DC5F0() = s_bpCtrl;
+        }
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(scriptEntryId);
+        scriptEntryId = -1;
+    }
+    void* r = message;
+    if (r != 0) {
+        MenuMessage_Dtor(r, 1);
+        message = 0;
+    }
 }
 
 // Start the item script, enable occupied slots, position the message, and hide script icon groups.
-int CItemCart_InitLayout(void* object) {
+int CItemCart::InitLayout(void* object) {
     void* self = object;
     register int i, j;
     Layout_SetModeByte(AsCItemCart(self)->layout, 0);
-    BpObject_StartScriptByName((*(void**)&AsCItemCart(self)->scriptObject), ((ItemCartStringPool*)itemCartStrings)->scriptName, 1);
+    BpObject_StartScriptByName((*(void**)&AsCItemCart(self)->scriptObject),
+                               ((ItemCartStringPool*)itemCartStrings)->scriptName, 1);
     for (i = 0; i < kItemSlotCount; i++) {
         signed char c = ((SavedItemSlots*)AsCItemCart(self)->playerData)->itemInventoryIndices[i];
         if (c == -1) {
@@ -674,7 +749,8 @@ int CItemCart_InitLayout(void* object) {
             Layout_SetElementPlayerFlag(AsCItemCart(self)->layout, i, 1, kAllLayoutPlayers);
         }
     }
-    for (j = 8; j <= 16; j++) Layout_SetElementEnabled(AsCItemCart(self)->layout, j, 0);
+    for (j = 8; j <= 16; j++)
+        Layout_SetElementEnabled(AsCItemCart(self)->layout, j, 0);
     int buf[2] = {0, 0};
     Layout_GetElementPosition(AsCItemCart(self)->layout, kItemMessageElement, buf);
     MenuMessage_SetPosition(AsCItemCart(self)->message, buf);
@@ -689,11 +765,12 @@ int CItemCart_InitLayout(void* object) {
 // Fill the first empty equipped slot, decrement its inventory quantity, and refresh interaction flags.
 // itemId is an inventory type ID. Caller guarantees a valid inventory entry, positive
 // quantity, and packed occupied slots. Return 0 when full, otherwise 1; no validation here.
-int CItemCart_AddItem(void* object, int itemId) {
-    void* self = object;
-    register char* playerRecord = (*(char**)&AsCItemCart(object)->playerData);
+int CItemCart::AddItem(int itemId) {
+    void* self = this;
+    register char* playerRecord = (*(char**)&playerData);
     if (((SavedItemSlots*)playerRecord)->itemInventoryIndices[kItemSlotCount - 1] != -1) {
-        Sound_PlayByName(g_soundManager, ((ItemCartStringPool*)itemCartStrings)->errorSound, 0, 0, 0, 0, kFloat_0_5_ItemCart, kFloat_200_ItemCart, kFloat_1_ItemCart);
+        Sound_PlayByName(g_soundManager, ((ItemCartStringPool*)itemCartStrings)->errorSound, 0, 0, 0, 0,
+                         kFloat_0_5_ItemCart, kFloat_200_ItemCart, kFloat_1_ItemCart);
         return 0;
     }
     int i;
@@ -714,7 +791,8 @@ int CItemCart_AddItem(void* object, int itemId) {
             Layout_SetElementPlayerFlag(AsCItemCart(self)->layout, i, 1, kAllLayoutPlayers);
         }
     }
-    Sound_PlayByName(g_soundManager, ((ItemCartStringPool*)itemCartStrings)->itemClickSound, 0, 0, 0, 0, kFloat_0_5_ItemCart, kFloat_200_ItemCart, kFloat_1_ItemCart);
+    Sound_PlayByName(g_soundManager, ((ItemCartStringPool*)itemCartStrings)->itemClickSound, 0, 0, 0, 0,
+                     kFloat_0_5_ItemCart, kFloat_200_ItemCart, kFloat_1_ItemCart);
     return 1;
 }
 
@@ -725,8 +803,8 @@ void InitItemCartFullTurnConstant(void) {
 }
 
 // Return whether the final slot is occupied; equipped items are packed from the first slot.
-int CItemCart_IsFull(void* object) {
-    void* base = AsCItemCart(object)->playerData;
+int CItemCart::IsFull() {
+    void* base = playerData;
     signed char lastSlotInventoryIndex = ((SavedItemSlots*)base)->itemInventoryIndices[kItemSlotCount - 1];
     int nonEmptyBits = (-1 - lastSlotInventoryIndex) | (lastSlotInventoryIndex + 1);
     return (unsigned int)nonEmptyBits >> 31;

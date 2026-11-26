@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CEXHIBITION_H
 #define CLASSES_CEXHIBITION_H
 
@@ -7,97 +5,163 @@
 
 class CExhibition {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    int ownedNameStrings;                          // 0x4: 3 uses in CExhibition_Ctor, CExhibition_dtor, ModelOperationBase_IsResourceLoaded
-    unsigned int ownedNameStringCount;                 // 0x8: 3 uses in CExhibition_dtor, CExhibition_Ctor
-    int ownedNameStringCapacity;                          // 0xc: 1 use in CExhibition_Ctor
-    unsigned char unk_10;               // 0x10: 1 use in CExhibition_Ctor
-    char pad_011[0x3];                  // 0x11
-    float rotationX;                       // 0x14: 7 uses in CExhibition_Ctor
-    float rotationY;                       // 0x18: 7 uses in CExhibition_Ctor
-    float rotationZ;                       // 0x1c: 4 uses in CExhibition_Ctor
-    float animationDelay;                       // 0x20: 1 use in CExhibition_Ctor
-    float animationCycleDuration;                       // 0x24: 1 use in CExhibition_Ctor
-    float opacity;                       // 0x28: 1 use in CExhibition_Ctor
-    float cameraOffsetZ;                       // 0x2c: 4 uses in CExhibition_Ctor
-    float screenCenterX;                       // 0x30: 3 uses in CExhibition_Ctor, CExhibition_CreateAttachedEffectAtScreenCenter
-    float screenCenterY;                       // 0x34: 3 uses in CExhibition_Ctor, CExhibition_CreateAttachedEffectAtScreenCenter
-    char cameraMatrixPrefix[0x2c];                 // 0x38
-    float cameraDistance;                       // 0x64: 1 use in CExhibition_Ctor
-    float animationFrame;                       // 0x68: 1 use in CExhibition_Ctor
-    void* animationRange;                       // 0x6c: 3 uses in CExhibition_Ctor, CExhibition_ParseAnimationGatedCommand, CExhibition_ParseBoneReferences
-    void* modelController;                       // 0x70: 5 uses in CExhibition_dtor, CExhibition_Ctor, CExhibition_PlayAnimationIfPartPresent...
-    void* puppet;                       // 0x74: 6 uses in CExhibition_dtor, CExhibition_Ctor, CExhibition_ParseBoneReferences
-    char modelTransform[0x30];                 // 0x78
-    float unk_A8;                       // 0xa8: 1 use in CExhibition_Ctor
-    float unk_AC;                       // 0xac: 1 use in CExhibition_Ctor
-    char pad_0B0[0x4];                  // 0xb0
-    float unk_B4;                       // 0xb4: 1 use in CExhibition_Ctor
+    void* vtbl;                        // 0x0: original vtable pointer
+    int ownedNameStrings;              // 0x4
+    unsigned int ownedNameStringCount; // 0x8
+    int ownedNameStringCapacity;       // 0xc
+    unsigned char unk_10;              // 0x10
+    char pad_011[0x3];                 // 0x11
+    float rotationX;                   // 0x14
+    float rotationY;                   // 0x18
+    float rotationZ;                   // 0x1c
+    float animationDelay;              // 0x20
+    float animationCycleDuration;      // 0x24
+    float opacity;                     // 0x28
+    float cameraOffsetZ;               // 0x2c
+    float screenCenterX;               // 0x30
+    float screenCenterY;               // 0x34
+    char cameraMatrixPrefix[0x2c];     // 0x38
+    float cameraDistance;              // 0x64
+    float animationFrame;              // 0x68
+    void* animationRange;              // 0x6c
+    void* modelController;             // 0x70
+    void* puppet;                      // 0x74
+    char modelTransform[0x30];         // 0x78
+    float unk_A8;                      // 0xa8
+    float unk_AC;                      // 0xac
+    char fxBox[0x4];                   // 0xb0
+    float unk_B4;                      // 0xb4
     char pad_0B8[0x154];
-    void* sprayTreeFirst;                     // 0x20c: CExhibition_UpdateEffectScreenCenter iterates a child tree from this node.
+    void* sprayTreeFirst; // 0x20c: CExhibition_UpdateEffectScreenCenter iterates a child tree from this node.
     char pad_210[8];
-    void* sequenceTreeFirst;                     // 0x218: CExhibition_UpdateEffectScreenCenter iterates a second child tree.
+    void* sequenceTreeFirst; // 0x218: CExhibition_UpdateEffectScreenCenter iterates a second child tree.
     char pad_21C[0x228];
-    int attachedSprays;                        // 0x444: 1 use in CExhibition_Ctor
-    int attachedSprayCount;                        // 0x448: 1 use in CExhibition_Ctor
-    int attachedSprayCapacity;                        // 0x44c: 1 use in CExhibition_Ctor
-    int attachedSequences;                        // 0x450: 1 use in CExhibition_Ctor
-    int attachedSequenceCount;                        // 0x454: 1 use in CExhibition_Ctor
-    int attachedSequenceCapacity;                        // 0x458: 1 use in CExhibition_Ctor
-    int ownedPreviewListCount;                        // 0x45c: 1 use in CExhibition_Ctor
-    void* ownedPreviewListSentinelNext;                      // 0x460: 1 use in CExhibition_Ctor
-    void* ownedPreviewListSentinelPrev;                      // 0x464: 2 uses in CExhibition_Ctor, CExhibition_dtor
-    int modelKind;                        // 0x468: 5 uses in CExhibition_Ctor, CExhibition_dtor
-    int itemTypeId;                        // 0x46c: 1 use in CExhibition_Ctor
-    int avatarResourceOptions;                        // 0x470: 1 use in CExhibition_Ctor
-    unsigned int avatarCharacterId;            // 0x474: CExhibition_ConfigureAvatarPreview stores the header preceding avatarSelectionData.
-    char avatarSelectionData[0x64];               // 0x478: CExhibition_ConfigureAvatarPreview copies the supplied description here.
-    unsigned char partLoadPending;              // 0x4dc: 1 use in CExhibition_Ctor
-    char pad_4DD[0x3];                  // 0x4dd
-    int viewportLeft;                        // 0x4e0: 2 uses in CExhibition_Ctor
-    int viewportTop;                        // 0x4e4: 2 uses in CExhibition_Ctor
-    int viewportRight;                        // 0x4e8: 2 uses in CExhibition_Ctor
-    int viewportBottom;                        // 0x4ec: 4 uses in CExhibition_Ctor
-    float translationX;                      // 0x4f0: 4 uses in CExhibition_Ctor
-    float translationY;                      // 0x4f4: 6 uses in CExhibition_Ctor
-    int loadState;                        // 0x4f8: 1 use in CExhibition_Ctor
-    unsigned int animationNameFlags;               // 0x4fc: 2 uses in CExhibition_Ctor, CExhibition_dtor
-    int animationNameLength;                        // 0x500: 1 use in CExhibition_Ctor
-    int animationNameData;                        // 0x504: 2 uses in CExhibition_Ctor, CExhibition_dtor
-    float maxAnimationDelay;                      // 0x508: 1 use in CExhibition_Ctor
-    int textureVariantIndex;                        // 0x50c: 1 use in CExhibition_Ctor
-    int modelPreloader;                        // 0x510: 1 use in CExhibition_Ctor
-    unsigned char animationMode;              // 0x514: 1 use in CExhibition_Ctor
-    char pad_515[0x3];                  // 0x515
-    unsigned int modelPathFlags;               // 0x518: 2 uses in CExhibition_Ctor, CExhibition_dtor
-    int modelPathLength;                        // 0x51c: 1 use in CExhibition_Ctor
-    int modelPathData;                        // 0x520: 2 uses in CExhibition_Ctor, CExhibition_dtor
-    int partReloadMask;                        // 0x524: 1 use in CExhibition_Ctor
-    int lightingResource;                        // 0x528: 3 uses in CExhibition_dtor, CExhibition_Ctor
-    int preloadFile;                        // 0x52c: 3 uses in CExhibition_dtor, CExhibition_Ctor
-    int lights;                        // 0x530: 2 uses in CExhibition_Ctor, CExhibition_dtor
-    unsigned int lightCount;               // 0x534: 3 uses in CExhibition_dtor, CExhibition_Ctor
-    int lightCapacity;                        // 0x538: 1 use in CExhibition_Ctor
-    unsigned char displaySuppressed;              // 0x53c: 1 use in CExhibition_Ctor
-    char pad_53D[0xf];                  // 0x53d
-    int loadWaitFrames;                        // 0x54c: 1 use in CExhibition_Ctor
-    unsigned int resolvedCharacterId;           // 0x550: CExhibition_UpdateLoadState copies the selected description header.
-    char resolvedPartData[0xc4];              // 0x554: CExhibition_UpdateLoadState copies the remaining description here.
-    float minRotationX;                      // 0x618: 1 use in CExhibition_Ctor
-    float maxRotationX;                      // 0x61c: 1 use in CExhibition_Ctor
-    float minRotationY;                      // 0x620: 1 use in CExhibition_Ctor
-    float maxRotationY;                      // 0x624: 1 use in CExhibition_Ctor
-    float minCameraDistance;                      // 0x628: 2 uses in CExhibition_Ctor
-    float maxCameraDistance;                      // 0x62c: 2 uses in CExhibition_Ctor
-    int screenCenterMinX;                        // 0x630: 1 use in CExhibition_Ctor
-    int screenCenterMaxX;                        // 0x634: 1 use in CExhibition_Ctor
-    int screenCenterMinY;                        // 0x638: 1 use in CExhibition_Ctor
-    int screenCenterMaxY;                        // 0x63c: 1 use in CExhibition_Ctor
+    int attachedSprays;                 // 0x444
+    int attachedSprayCount;             // 0x448
+    int attachedSprayCapacity;          // 0x44c
+    int attachedSequences;              // 0x450
+    int attachedSequenceCount;          // 0x454
+    int attachedSequenceCapacity;       // 0x458
+    int ownedPreviewListCount;          // 0x45c
+    void* ownedPreviewListSentinelNext; // 0x460
+    void* ownedPreviewListSentinelPrev; // 0x464
+    int modelKind;                      // 0x468
+    int itemTypeId;                     // 0x46c
+    int avatarResourceOptions;          // 0x470
+    unsigned int
+        avatarCharacterId; // 0x474: CExhibition::ConfigureAvatarPreview stores the header preceding avatarSelectionData.
+    char avatarSelectionData[0x64];  // 0x478: CExhibition::ConfigureAvatarPreview copies the supplied description here.
+    unsigned char partLoadPending;   // 0x4dc
+    char pad_4DD[0x3];               // 0x4dd
+    int viewportLeft;                // 0x4e0
+    int viewportTop;                 // 0x4e4
+    int viewportRight;               // 0x4e8
+    int viewportBottom;              // 0x4ec
+    float translationX;              // 0x4f0
+    float translationY;              // 0x4f4
+    int loadState;                   // 0x4f8
+    unsigned int animationNameFlags; // 0x4fc
+    int animationNameLength;         // 0x500
+    int animationNameData;           // 0x504
+    float maxAnimationDelay;         // 0x508
+    int textureVariantIndex;         // 0x50c
+    int modelPreloader;              // 0x510
+    unsigned char animationMode;     // 0x514
+    char pad_515[0x3];               // 0x515
+    unsigned int modelPathFlags;     // 0x518
+    int modelPathLength;             // 0x51c
+    int modelPathData;               // 0x520
+    int partReloadMask;              // 0x524
+    int lightingResource;            // 0x528
+    int preloadFile;                 // 0x52c
+    int lights;                      // 0x530
+    unsigned int lightCount;         // 0x534
+    int lightCapacity;               // 0x538
+    unsigned char displaySuppressed; // 0x53c
+    char pad_53D[0xf];               // 0x53d
+    int loadWaitFrames;              // 0x54c
+    unsigned int resolvedCharacterId; // 0x550: CExhibition::UpdateLoadState copies the selected description header.
+    char resolvedPartData[0xc4];      // 0x554: CExhibition::UpdateLoadState copies the remaining description here.
+    float minRotationX;               // 0x618
+    float maxRotationX;               // 0x61c
+    float minRotationY;               // 0x620
+    float maxRotationY;               // 0x624
+    float minCameraDistance;          // 0x628
+    float maxCameraDistance;          // 0x62c
+    int screenCenterMinX;             // 0x630
+    int screenCenterMaxX;             // 0x634
+    int screenCenterMinY;             // 0x638
+    int screenCenterMaxY;             // 0x63c
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x4, 0x8, 0x38, 0x78, 0xb0, 0x42c, 0x438, 0x444, 0x450, 0x45c, 0x460, 0x474, 0x4fc, 0x518, 0x530, 0x534, 0x540, 0x550, 0x640
+    static int model_pos_vfunc_1();
+    static int model_pos_vfunc_2();
+    static int model_pos_vfunc_3();
+    static int model_pos_vfunc_4();
+    static int model_pos_vfunc_5();
+    static int model_pos_vfunc_6();
+    static int model_pos_vfunc_7();
+    static int model_pos_vfunc_8();
+    static int model_pos_vfunc_9();
+    static int model_pos_vfunc_10();
+    static int model_pos_vfunc_11();
+    static int model_pos_vfunc_12();
+    static int model_pos_vfunc_13();
+    static float model_pos_GetCameraDistance(void* __restrict p, int index);
+    static float model_pos_GetCameraDistanceLimit1(void* __restrict p, int index);
+    static float model_pos_GetCameraDistanceLimit2(void* __restrict p, int index);
+    static float model_pos_GetViewportCenterX(void* __restrict p, int index);
+    static float model_pos_GetViewportBottom(void* __restrict p, int index);
+    static float model_pos_GetRotationX(void* __restrict p, int index);
+    static float model_pos_GetRotationLimit1(const void* p, int index);
+    static float model_pos_GetRotationLimit2(const void* p, int index);
+    static float model_pos_GetRotationY(const void* p, int index);
+
+    int OffsetViewport(int x, int y);
+    void SetItemType(unsigned int itemTypeId);
+    int SetCameraDistance(float cameraDistance);
+    float GetCameraDistance();
+    int SetRotationLimits(float minimumAngle, float maximumAngle);
+    int SetViewportYLimits(unsigned int minimumY, unsigned int maximumY);
+    int SetViewport(int* rect, float cameraDistance);
+    void ConfigureAvatarPreview(void* selectedDescription, void* resourceOptions, const char* animationName,
+                                void* textureVariant, float maximumAnimationDelay);
+    int SetRotation(const float* rotationAngles);
+    void* GetRotation();
+    int SetAttachment(unsigned int index, void* value);
+    int PlayAnimationByName(void* nameOrAnimationRange, int flag, float delta);
+    void UpdateLoadState(float dt, int); // callers pass a second int that the body does not read
+    void DrawScene();
+    int ClearControlFlag(int); // callers pass a second int that the body does not read
+    int SetCameraDistanceLimits(float minimumDistance, float maximumDistance);
+    int ApplyTextureVariant(void* textureVariant, int variantIndex);
+    int CopyResolvedAvatarSelection(void* out);
+    int SetVisible(int value);
+    int GetCallbackResult(int callbackAddress, void* callbackContext);
+    int ClearModelPreloader();
+    int SetModelPreloader(int value);
+    int QueueModelUpdate(void* selectedDescription, void* resolvedDescription, int reloadMask);
+    int IsReady();
+    void CreateBallEffects();
+    int UpdateEffectScreenCenter();
+    void UpdateModelPose();
+    void RebuildAttachedEffects();
+    int InitializeLoadedModel();
+    int UpdateAnimationAndEffects(float dt);
+    int LoadEnvironmentLights();
+    int ParseMaterialLayerAnimationCommand(int arg2);
+    void HideNamedPuppetBones(void* scriptCursor);
+    void ParseAnimationGatedCommand(void* scriptCursor);
+    void PlayAnimationIfPartPresent(void* scriptCursor);
+    void vfunc_21();
+    int ParseConditionedQuotedTokenImpl(int arg2, int arg3, int arg4);
+    int CreateAttachedEffectAtScreenCenter(float* output, int arg3);
+    int ParseBoneReferences(int arg2, int arg3);
+    void PlaySoundCommand(void* scriptCursor);
+
+    CExhibition(int* viewportRect, float cameraDistance);
+    ~CExhibition();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CEXHIBITION_OFF(f, o) typedef char CExhibition_off_##f[((int)&((CExhibition*)0)->f == (o)) ? 1 : -1]
 CEXHIBITION_OFF(vtbl, 0x0);
 CEXHIBITION_OFF(ownedNameStrings, 0x4);
@@ -177,4 +241,4 @@ CEXHIBITION_OFF(resolvedCharacterId, 0x550);
 CEXHIBITION_OFF(resolvedPartData, 0x554);
 #undef CEXHIBITION_OFF
 
-#endif  // CLASSES_CEXHIBITION_H
+#endif // CLASSES_CEXHIBITION_H

@@ -1,6 +1,10 @@
+// Wii Remote audio: the four remote speaker channels, their sample streaming and timeouts,
+// and the audio runtime startup and shutdown.
+//
+// Each speaker is enabled or disabled through command completion callbacks, with retries
+// when the remote is busy.
+
 #include <decomp/static_init.h>
-// Translation unit 0x8040B260-0x8040C2C8 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 #include "sdk_protos.h"
 #include "classes/GtlRemoteAudioState.h"
 // Channel layout: gtl_RemoteAudioChannel_InitState (0x8040B280), audio pump gtl_RemoteAudioChannel_SendSamples.
@@ -8,27 +12,50 @@
 #define REMOTE_FIELD_OFFSET(field) ((int)&((GtlRemoteAudioState*)0)->field)
 
 struct RemoteAudioSingletonView {
-    unsigned char timerRunning; char padding[7]; OSAlarm timer;
+    unsigned char timerRunning;
+    char padding[7];
+    OSAlarm timer;
     GtlRemoteAudioState channels[4];
 };
 typedef char RemoteAudioSingletonView_size[(sizeof(RemoteAudioSingletonView) == 0x2D8) ? 1 : -1];
-enum { kRemoteChannelsOffset = (int)&((RemoteAudioSingletonView*)0)->channels,
-       kRemoteChannelBytes = sizeof(GtlRemoteAudioState),
-       kRemoteSingletonBytes = sizeof(RemoteAudioSingletonView) };
+enum {
+    kRemoteChannelsOffset = (int)&((RemoteAudioSingletonView*)0)->channels,
+    kRemoteChannelBytes = sizeof(GtlRemoteAudioState),
+    kRemoteSingletonBytes = sizeof(RemoteAudioSingletonView)
+};
 enum RemoteAudioConstants {
-    kRemoteChannelCount = 4, kPcmSamplesPerPacket = 40,
-    kPcmWordsPerPacket = 20, kAdpcmBytesPerPacket = 20,
-    kWpadSuccess = 0, kWpadDisconnected = -1, kWpadBusy = -2,
-    kWpadTransferError = -3, kWpadReady = 3,
-    kEnableRetryMilliseconds = 5, kSendTimeoutSeconds = 480
+    kRemoteChannelCount = 4,
+    kPcmSamplesPerPacket = 40,
+    kPcmWordsPerPacket = 20,
+    kAdpcmBytesPerPacket = 20,
+    kWpadSuccess = 0,
+    kWpadDisconnected = -1,
+    kWpadBusy = -2,
+    kWpadTransferError = -3,
+    kWpadReady = 3,
+    kEnableRetryMilliseconds = 5,
+    kSendTimeoutSeconds = 480
 };
 enum RemoteAudioPhase {
-    kPhaseIdle = 0, kPhaseEnabling = 1, kPhaseEnabled = 2,
-    kPhaseStartingStream = 3, kPhaseStreaming = 4,
-    kPhaseDisabling = 5, kPhaseDisabled = 6
+    kPhaseIdle = 0,
+    kPhaseEnabling = 1,
+    kPhaseEnabled = 2,
+    kPhaseStartingStream = 3,
+    kPhaseStreaming = 4,
+    kPhaseDisabling = 5,
+    kPhaseDisabled = 6
 };
-enum RemoteAudioAction { kActionNone = 0, kActionEnable = 1, kActionStartStream = 2, kActionDisable = 3 };
-enum SpeakerCommand { kSpeakerDisable = 0, kSpeakerEnable = 1, kSpeakerStartStream = 4 };
+enum RemoteAudioAction {
+    kActionNone = 0,
+    kActionEnable = 1,
+    kActionStartStream = 2,
+    kActionDisable = 3
+};
+enum SpeakerCommand {
+    kSpeakerDisable = 0,
+    kSpeakerEnable = 1,
+    kSpeakerStartStream = 4
+};
 
 namespace gtl {
 namespace nw4r {
@@ -59,7 +86,10 @@ void* gtl_VoicePool_GetInstance();
 void gtl_VoicePool_Shutdown(void*);
 void* GtlVoicePool_GetInstance();
 void AudioVoicePool_Shutdown(void*);
-struct PollState { char pad[0x50]; unsigned int pending; };
+struct PollState {
+    char pad[0x50];
+    unsigned int pending;
+};
 PollState* gtl_AudioController_GetInstance();
 void gtl_AudioController_Shutdown(void*);
 extern OSAlarm s_remoteAudioEnableRetryAlarms[4];
@@ -76,8 +106,8 @@ void* gtl_RemoteAudioChannel_InitState(char*);
 void gtl_RemoteAudio_OnEnableResult(int index, int status) {
     if (status == kWpadBusy) {
         OSSetAlarm(&s_remoteAudioEnableRetryAlarms[index],
-            ((*(unsigned int*)0x800000F8 / 4) / 1000) * kEnableRetryMilliseconds,
-            gtl_RemoteAudio_RetryEnableAlarm);
+                   ((*(unsigned int*)0x800000F8 / 4) / 1000) * kEnableRetryMilliseconds,
+                   gtl_RemoteAudio_RetryEnableAlarm);
     }
 }
 
@@ -117,7 +147,8 @@ bool gtl_nw4r_FxReverbStd_vfunc_1(gtl::nw4r::FxReverbStd* self) {
 // Recover the channel index from alarm user data and retry enabling its speaker.
 void gtl_RemoteAudio_RetryEnableAlarm(OSAlarm* alarm, OSContext*) {
     int index = (int)fn_8033E838(alarm);
-    gtl_RemoteAudioChannel_RequestEnable(gtl_RemoteAudio_GetChannel(gtl_RemoteAudio_GetInstance(), index), gtl_RemoteAudio_OnEnableResult);
+    gtl_RemoteAudioChannel_RequestEnable(gtl_RemoteAudio_GetChannel(gtl_RemoteAudio_GetInstance(), index),
+                                         gtl_RemoteAudio_OnEnableResult);
 }
 
 void gtl_RemoteAudio_RequestDisableAll() {
@@ -128,27 +159,35 @@ void gtl_RemoteAudio_RequestDisableAll() {
 
 void gtl_RemoteAudio_RequestEnableAll() {
     for (int index = 0; index < kRemoteChannelCount; ++index) {
-        gtl_RemoteAudioChannel_RequestEnable(gtl_RemoteAudio_GetChannel(gtl_RemoteAudio_GetInstance(), index), gtl_RemoteAudio_OnEnableResult);
+        gtl_RemoteAudioChannel_RequestEnable(gtl_RemoteAudio_GetChannel(gtl_RemoteAudio_GetInstance(), index),
+                                             gtl_RemoteAudio_OnEnableResult);
     }
 }
 
 // Enable a connected remote's speaker or request disable after disconnection.
 void gtl_RemoteAudio_OnChannelStatus(int index, int status) {
     if (status == kWpadSuccess) {
-        gtl_RemoteAudioChannel_RequestEnable(gtl_RemoteAudio_GetChannel(gtl_RemoteAudio_GetInstance(), index), gtl_RemoteAudio_OnEnableResult);
+        gtl_RemoteAudioChannel_RequestEnable(gtl_RemoteAudio_GetChannel(gtl_RemoteAudio_GetInstance(), index),
+                                             gtl_RemoteAudio_OnEnableResult);
     } else if (status == kWpadDisconnected) {
         gtl_RemoteAudioChannel_RequestDisable(gtl_RemoteAudio_GetChannel(gtl_RemoteAudio_GetInstance(), index), 0);
     }
 }
 
 struct InterruptBase {
-    ~InterruptBase() { dtor_8040B3C4(this, -1); }
+    ~InterruptBase() {
+        dtor_8040B3C4(this, -1);
+    }
 };
 
 struct InterruptGuard_u8040B260 : InterruptBase {
     BOOL level;
-    InterruptGuard_u8040B260() { level = OSDisableInterrupts(); }
-    ~InterruptGuard_u8040B260() { OSRestoreInterrupts(level); }
+    InterruptGuard_u8040B260() {
+        level = OSDisableInterrupts();
+    }
+    ~InterruptGuard_u8040B260() {
+        OSRestoreInterrupts(level);
+    }
 };
 
 int WPADCanSendStreamData(int);
@@ -170,7 +209,8 @@ inline void ResetAlarms(unsigned char* state) {
 #pragma use_lmw_stmw on
 // Encode one PCM packet, send it to the Wii Remote, and maintain silence/timeout alarms.
 void gtl_RemoteAudioChannel_SendSamples(unsigned char* state, void* samples) {
-    if (AsRemoteAudio(state)->phase != kPhaseStreaming) return;
+    if (AsRemoteAudio(state)->phase != kPhaseStreaming)
+        return;
     bool stop;
     bool active = true;
     int i;
@@ -187,14 +227,18 @@ void gtl_RemoteAudioChannel_SendSamples(unsigned char* state, void* samples) {
     } else {
         silent = true;
     }
-    if (silent || AsRemoteAudio(state)->sendTimedOut) active = false;
+    if (silent || AsRemoteAudio(state)->sendTimedOut)
+        active = false;
     bool start = false;
-    if (!AsRemoteAudio(state)->sendingAudio && active) start = true;
+    if (!AsRemoteAudio(state)->sendingAudio && active)
+        start = true;
     stop = false;
-    if (AsRemoteAudio(state)->sendingAudio && !active) stop = true;
+    if (AsRemoteAudio(state)->sendingAudio && !active)
+        stop = true;
     if (active) {
         InterruptGuard_u8040B260 guard;
-        if (!WPADCanSendStreamData(AsRemoteAudio(state)->channel)) return;
+        if (!WPADCanSendStreamData(AsRemoteAudio(state)->channel))
+            return;
         bool reset = !AsRemoteAudio(state)->firstPacket;
         AsRemoteAudio(state)->firstPacket = 0;
         char output[kAdpcmBytesPerPacket];
@@ -215,8 +259,8 @@ void gtl_RemoteAudioChannel_SendSamples(unsigned char* state, void* samples) {
         InterruptGuard_u8040B260 guard;
         if (!AsRemoteAudio(state)->sendAlarmArmed) {
             OSSetAlarm((OSAlarm*)(state + REMOTE_FIELD_OFFSET(sendAlarm)),
-                (OSTime)(*(unsigned int*)0x800000F8 >> 2) * kSendTimeoutSeconds,
-                (OSAlarmHandler)gtl_RemoteAudioChannel_OnSendTimeout);
+                       (OSTime)(*(unsigned int*)0x800000F8 >> 2) * kSendTimeoutSeconds,
+                       (OSAlarmHandler)gtl_RemoteAudioChannel_OnSendTimeout);
             AsRemoteAudio(state)->sendStartTime = OSGetTime();
             AsRemoteAudio(state)->sendAlarmArmed = 1;
         }
@@ -227,9 +271,8 @@ void gtl_RemoteAudioChannel_SendSamples(unsigned char* state, void* samples) {
         InterruptGuard_u8040B260 guard;
         AsRemoteAudio(state)->stopAlarmArmed = 1;
         OSCancelAlarm((OSAlarm*)(state + REMOTE_FIELD_OFFSET(stopAlarm)));
-        OSSetAlarm((OSAlarm*)(state + REMOTE_FIELD_OFFSET(stopAlarm)),
-            (OSTime)(*(unsigned int*)0x800000F8 >> 2),
-            (OSAlarmHandler)gtl_RemoteAudioChannel_OnStopAlarm);
+        OSSetAlarm((OSAlarm*)(state + REMOTE_FIELD_OFFSET(stopAlarm)), (OSTime)(*(unsigned int*)0x800000F8 >> 2),
+                   (OSAlarmHandler)gtl_RemoteAudioChannel_OnStopAlarm);
     }
     AsRemoteAudio(state)->sendingAudio = active;
 }
@@ -305,12 +348,21 @@ void gtl_RemoteAudioChannel_OnCommandCompletePhase2(int index, int status) {
         AsRemoteAudio(state)->phase = kPhaseEnabled;
         AsRemoteAudio(state)->retryAction = kActionStartStream;
         break;
-    case kWpadBusy: AsRemoteAudio(state)->retryAction = kActionEnable; break;
-    case kWpadTransferError: AsRemoteAudio(state)->phase = kPhaseIdle; break;
-    case kWpadDisconnected: AsRemoteAudio(state)->phase = kPhaseIdle; break;
-    default: AsRemoteAudio(state)->phase = kPhaseIdle; break;
+    case kWpadBusy:
+        AsRemoteAudio(state)->retryAction = kActionEnable;
+        break;
+    case kWpadTransferError:
+        AsRemoteAudio(state)->phase = kPhaseIdle;
+        break;
+    case kWpadDisconnected:
+        AsRemoteAudio(state)->phase = kPhaseIdle;
+        break;
+    default:
+        AsRemoteAudio(state)->phase = kPhaseIdle;
+        break;
     }
-    if (status != kWpadSuccess && status != kWpadBusy && AsRemoteAudio(state)->callbackPending && AsRemoteAudio(state)->callback) {
+    if (status != kWpadSuccess && status != kWpadBusy && AsRemoteAudio(state)->callbackPending &&
+        AsRemoteAudio(state)->callback) {
         (AsRemoteAudio(state)->callback)(index, status);
         AsRemoteAudio(state)->callback = 0;
     }
@@ -332,7 +384,8 @@ void gtl_AudioWorker_Start(void*, int, void*, int);
 void gtl_Audio_InitializeRuntime(int* config, char* memory) {
     if (!s_audioRuntimeInitialized) {
         s_audioRuntimeInitialized = 1;
-        while (WPADGetStatus() != kWpadReady) {}
+        while (WPADGetStatus() != kWpadReady) {
+        }
         OSAlarm* alarm = s_remoteAudioEnableRetryAlarms;
         for (int index = 0; index < kRemoteChannelCount; ++index, ++alarm) {
             WPADSetConnectCallback(index, gtl_RemoteAudio_OnChannelStatus);
@@ -362,11 +415,21 @@ void gtl_Audio_InitializeRuntime(int* config, char* memory) {
 void RemoteAudio_HandleCommandCompletion(int index, int status) {
     unsigned char* state = (unsigned char*)gtl_RemoteAudio_GetChannel(gtl_RemoteAudio_GetInstance(), index);
     switch (status) {
-    case kWpadSuccess: AsRemoteAudio(state)->phase = kPhaseStreaming; break;
-    case kWpadBusy: AsRemoteAudio(state)->retryAction = kActionStartStream; break;
-    case kWpadTransferError: AsRemoteAudio(state)->phase = kPhaseIdle; break;
-    case kWpadDisconnected: AsRemoteAudio(state)->phase = kPhaseIdle; break;
-    default: AsRemoteAudio(state)->phase = kPhaseIdle; break;
+    case kWpadSuccess:
+        AsRemoteAudio(state)->phase = kPhaseStreaming;
+        break;
+    case kWpadBusy:
+        AsRemoteAudio(state)->retryAction = kActionStartStream;
+        break;
+    case kWpadTransferError:
+        AsRemoteAudio(state)->phase = kPhaseIdle;
+        break;
+    case kWpadDisconnected:
+        AsRemoteAudio(state)->phase = kPhaseIdle;
+        break;
+    default:
+        AsRemoteAudio(state)->phase = kPhaseIdle;
+        break;
     }
     if (status != kWpadBusy && AsRemoteAudio(state)->callbackPending && AsRemoteAudio(state)->callback) {
         (AsRemoteAudio(state)->callback)(index, status);
@@ -379,11 +442,21 @@ void RemoteAudio_HandleCommandCompletion(int index, int status) {
 void gtl_RemoteAudioChannel_OnPhase6CommandComplete(int index, int status) {
     unsigned char* state = (unsigned char*)gtl_RemoteAudio_GetChannel(gtl_RemoteAudio_GetInstance(), index);
     switch (status) {
-    case kWpadSuccess: AsRemoteAudio(state)->phase = kPhaseDisabled; break;
-    case kWpadBusy: AsRemoteAudio(state)->retryAction = kActionDisable; break;
-    case kWpadTransferError: AsRemoteAudio(state)->phase = kPhaseIdle; break;
-    case kWpadDisconnected: AsRemoteAudio(state)->phase = kPhaseIdle; break;
-    default: AsRemoteAudio(state)->phase = kPhaseIdle; break;
+    case kWpadSuccess:
+        AsRemoteAudio(state)->phase = kPhaseDisabled;
+        break;
+    case kWpadBusy:
+        AsRemoteAudio(state)->retryAction = kActionDisable;
+        break;
+    case kWpadTransferError:
+        AsRemoteAudio(state)->phase = kPhaseIdle;
+        break;
+    case kWpadDisconnected:
+        AsRemoteAudio(state)->phase = kPhaseIdle;
+        break;
+    default:
+        AsRemoteAudio(state)->phase = kPhaseIdle;
+        break;
     }
     if (status != kWpadBusy && AsRemoteAudio(state)->callbackPending && AsRemoteAudio(state)->callback) {
         (AsRemoteAudio(state)->callback)(index, status);
@@ -422,8 +495,7 @@ void gtl_RemoteAudio_StartTimer(unsigned char* self) {
     if (*self == 0) {
         fn_8033E0B4((OSAlarm*)(self + (int)&((RemoteAudioSingletonView*)0)->timer));
         OSSetPeriodicAlarm((OSAlarm*)(self + (int)&((RemoteAudioSingletonView*)0)->timer), OSGetTime(),
-            ((*(unsigned int*)0x800000F8 / 4) / 125000) * 6666667 / 8000,
-            gtl_RemoteAudio_TimerCallback);
+                           ((*(unsigned int*)0x800000F8 / 4) / 125000) * 6666667 / 8000, gtl_RemoteAudio_TimerCallback);
         *self = 1;
     }
 }
@@ -541,19 +613,24 @@ void WPADControlSpeaker(int, int, void (*)(int, int));
 
 // Submit one requested (or retried) speaker command when the previous command has completed.
 void gtl_RemoteAudioChannel_DispatchCommand(unsigned char* state) {
-    if (AsRemoteAudio(state)->commandBusy) return;
+    if (AsRemoteAudio(state)->commandBusy)
+        return;
     int action;
-    if (AsRemoteAudio(state)->requestedAction) action = AsRemoteAudio(state)->requestedAction;
-    else action = AsRemoteAudio(state)->retryAction;
+    if (AsRemoteAudio(state)->requestedAction)
+        action = AsRemoteAudio(state)->requestedAction;
+    else
+        action = AsRemoteAudio(state)->retryAction;
     AsRemoteAudio(state)->requestedAction = kActionNone;
     AsRemoteAudio(state)->retryAction = kActionNone;
     switch (action) {
-    case kActionNone: break;
+    case kActionNone:
+        break;
     case kActionEnable:
         AsRemoteAudio(state)->callbackPending = 1;
         AsRemoteAudio(state)->commandBusy = 1;
         AsRemoteAudio(state)->phase = kPhaseEnabling;
-        WPADControlSpeaker(AsRemoteAudio(state)->channel, kSpeakerEnable, gtl_RemoteAudioChannel_OnCommandCompletePhase2);
+        WPADControlSpeaker(AsRemoteAudio(state)->channel, kSpeakerEnable,
+                           gtl_RemoteAudioChannel_OnCommandCompletePhase2);
         break;
     case kActionStartStream:
         AsRemoteAudio(state)->callbackPending = 1;
@@ -565,7 +642,8 @@ void gtl_RemoteAudioChannel_DispatchCommand(unsigned char* state) {
         AsRemoteAudio(state)->callbackPending = 1;
         AsRemoteAudio(state)->commandBusy = 1;
         AsRemoteAudio(state)->phase = kPhaseDisabling;
-        WPADControlSpeaker(AsRemoteAudio(state)->channel, kSpeakerDisable, gtl_RemoteAudioChannel_OnPhase6CommandComplete);
+        WPADControlSpeaker(AsRemoteAudio(state)->channel, kSpeakerDisable,
+                           gtl_RemoteAudioChannel_OnPhase6CommandComplete);
         break;
     }
 }

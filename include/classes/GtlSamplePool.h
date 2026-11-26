@@ -7,12 +7,12 @@
 
 class GtlSamplePool {
 public:
-    char* storage; // 0x0
-    unsigned int sampleSize; // 0x4
+    char* storage;            // 0x0
+    unsigned int sampleSize;  // 0x4
     unsigned int sampleCount; // 0x8
     GtlSampleDeque available; // 0xC
-    GtlSampleDeque queued; // 0x24
-    GtlSampleDeque returned; // 0x3C
+    GtlSampleDeque queued;    // 0x24
+    GtlSampleDeque returned;  // 0x3C
 };
 
 #define OFF(f, o) typedef char GtlSamplePool_off_##f[((int)&((GtlSamplePool*)0)->f == (o)) ? 1 : -1]

@@ -1,24 +1,35 @@
+// Task transitions and the task command queue: saves a requested change of the active task,
+// optionally starts a loading display and fade, and applies it, plus the queue of pending commands.
+
 #pragma ipa file
 #pragma auto_inline off
 #pragma use_lmw_stmw on
 #include "classes/CTask.h"
+#include "classes/CThread.h"
 #include "classes/MWStringStorage.h"
 #include "classes/SoundManagerState.h"
 #include "classes/NameRegistry801C.h"
 #define AsCTask(p) ((CTask*)(p))
-// Translation unit 0x801FFA9C-0x80200A14 (23 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
+#include "classes/CTaskDoc.h"
 // A command page contains 23 records; its pointer ring tracks allocated pages.
 enum TaskCommandConstants {
-    kRecordsPerPage = 23, kCommandRecordBytes = 0x2C,
-    kRetiredPageThreshold = 2 * kRecordsPerPage, kEmptyFrontOffset = 11,
-    kFadeIncreasingAlpha = 1, kFadeTransitionReady = 2, kResumeFadeFrames = 10,
-    kRingStateOffset = 8, kTaskCommandQueueOffset = 0x24,
-    kNameRegistryOffset = 0x10, kActorThreadOffset = 0x50,
-    kLengthErrorTypeOffset = 6, kLoadingFinishNotifiedByte = 4,
-    kSecondaryLoadingStatusByte = 5, kCommandPayloadOffset = 0x0C,
+    kRecordsPerPage = 23,
+    kCommandRecordBytes = 0x2C,
+    kRetiredPageThreshold = 2 * kRecordsPerPage,
+    kEmptyFrontOffset = 11,
+    kFadeIncreasingAlpha = 1,
+    kFadeTransitionReady = 2,
+    kResumeFadeFrames = 10,
+    kRingStateOffset = 8,
+    kTaskCommandQueueOffset = 0x24,
+    kNameRegistryOffset = 0x10,
+    kActorThreadOffset = 0x50,
+    kLengthErrorTypeOffset = 6,
+    kLoadingFinishNotifiedByte = 4,
+    kSecondaryLoadingStatusByte = 5,
+    kCommandPayloadOffset = 0x0C,
     kInlineNameLengthMask = 0x7F
 };
 // Command records are 0x2C bytes: a 12-byte MW string key, then an opaque
@@ -77,8 +88,7 @@ struct Poly {
 extern "C" {
 
 // Default task hook: perform no work.
-void CTask_OnCreateActorsDefault() {
-}
+void CTask::OnCreateActorsDefault() {}
 
 // Return the page-pointer ring embedded in a task command deque.
 void* TaskCommandDeque_GetPageRing(void* p) {
@@ -101,10 +111,7 @@ extern "C" void* g_soundManager;
 extern "C" char s_fadeOverlay[];
 extern "C" char s_fadeOverlayDtorRegistration_801FFA9C[];
 
-extern "C" void CThread_CancelIfRunning(void*);
-extern "C" void CTask_ReplaceActiveTaskByName(void*, void*, void*);
 extern "C" void ActorFactoryInterface_InitVtable(void*);
-extern "C" void CTask_RequestTransition(void*, void*, void*);
 extern "C" void dtor_8029EA18(void*, int);
 extern "C" void __dl__FPv(void*);
 extern "C" char __vt__8CTaskDoc[];
@@ -233,8 +240,8 @@ static inline void* FindSlot(void* device, unsigned char* key) {
 // Loading byte 4 latches finishLoading once and consumes that update. The fade
 // gate suppresses loading updates in state 1, starts a 10-frame fade from state 2,
 // and permits processWhileLoading in the remaining states.
-void CTask_UpdateCurrentTaskWithFadeGates(void* task, float deltaSeconds) {
-    Dev* actor = (Dev*)AsCTask(task)->child;
+void CTask::UpdateCurrentTaskWithFadeGates(float deltaSeconds) {
+    Dev* actor = (Dev*)child;
     if (actor->isReady() == 0) {
         // Phase 1: obtain the overlay, then decide whether loading may advance.
         // Repeated lazy access is intentional: do not cache across external calls.
@@ -259,48 +266,50 @@ void CTask_UpdateCurrentTaskWithFadeGates(void* task, float deltaSeconds) {
                 if (((unsigned int&)Sing_805DC608()) == 0) {
                     if (s_fadeOverlayInitialized == 0) {
                         FadeOverlay_Init(s_fadeOverlay);
-                        __register_global_object(s_fadeOverlay, ResourceState_Dtor, s_fadeOverlayDtorRegistration_801FFA9C);
+                        __register_global_object(s_fadeOverlay, ResourceState_Dtor,
+                                                 s_fadeOverlayDtorRegistration_801FFA9C);
                         s_fadeOverlayInitialized = 1;
                     }
                     ((unsigned int&)Sing_805DC608()) = (unsigned int)s_fadeOverlay;
                 }
                 FadeState_StartFadeOut((void*)((unsigned int&)Sing_805DC608()), kResumeFadeFrames);
             }
-            actor = (Dev*)AsCTask(task)->child;
+            actor = (Dev*)child;
             actor->processWhileLoading(deltaSeconds);
         }
     } else {
         // Phase 2: publish readiness once; command dispatch starts next update.
         unsigned char* loadingState = (unsigned char*)&s_actorLoadingContext;
         if (loadingState[kLoadingFinishNotifiedByte] == 0) {
-            actor = (Dev*)AsCTask(task)->child;
+            actor = (Dev*)child;
             actor->finishLoading();
             loadingState[kLoadingFinishNotifiedByte] = 1;
             return;
         }
         // Phase 3: map logical front to page/record, dispatch a borrowed payload,
         // then destroy the consumed key even if no handler matched.
-        if (((TaskCommandOwner*)task)->commands.recordCount != 0) while (((TaskCommandOwner*)task)->commands.recordCount != 0) {
-            unsigned int firstPage = ((TaskCommandOwner*)task)->commands.pageRing.firstPage;
-            unsigned int frontOffset = ((TaskCommandOwner*)task)->commands.frontOffset;
-            unsigned int pageCapacity = ((TaskCommandOwner*)task)->commands.pageRing.pageCapacity;
-            unsigned char** pages = (unsigned char**)((TaskCommandOwner*)task)->commands.pageRing.pages;
-            unsigned int pageOffset = frontOffset / kRecordsPerPage;
-            unsigned int pageIndex = (firstPage + pageOffset) % pageCapacity;
-            unsigned int recordIndex = frontOffset - pageOffset * kRecordsPerPage;
-            unsigned char* record = pages[pageIndex] + recordIndex * kCommandRecordBytes;
-            unsigned char* key;
-            key = ((*(unsigned int*)record >> 31) == 0) ? record + 1 : *(unsigned char**)(record + 8);
-            void* slot = FindSlot((Dev*)AsCTask(task)->child, key);
-            void* handler = slot != 0 ? *(void**)slot : 0;
-            if (handler != 0) {
-                ((Handler*)handler)->handleCommand(record + kCommandPayloadOffset);
+        if (((TaskCommandOwner*)this)->commands.recordCount != 0)
+            while (((TaskCommandOwner*)this)->commands.recordCount != 0) {
+                unsigned int firstPage = ((TaskCommandOwner*)this)->commands.pageRing.firstPage;
+                unsigned int frontOffset = ((TaskCommandOwner*)this)->commands.frontOffset;
+                unsigned int pageCapacity = ((TaskCommandOwner*)this)->commands.pageRing.pageCapacity;
+                unsigned char** pages = (unsigned char**)((TaskCommandOwner*)this)->commands.pageRing.pages;
+                unsigned int pageOffset = frontOffset / kRecordsPerPage;
+                unsigned int pageIndex = (firstPage + pageOffset) % pageCapacity;
+                unsigned int recordIndex = frontOffset - pageOffset * kRecordsPerPage;
+                unsigned char* record = pages[pageIndex] + recordIndex * kCommandRecordBytes;
+                unsigned char* key;
+                key = ((*(unsigned int*)record >> 31) == 0) ? record + 1 : *(unsigned char**)(record + 8);
+                void* slot = FindSlot((Dev*)child, key);
+                void* handler = slot != 0 ? *(void**)slot : 0;
+                if (handler != 0) {
+                    ((Handler*)handler)->handleCommand(record + kCommandPayloadOffset);
+                }
+                unsigned char zero = 0;
+                TaskCommandDeque_DiscardFront(&((TaskCommandOwner*)this)->commands, 1, &zero);
             }
-            unsigned char zero = 0;
-            TaskCommandDeque_DiscardFront(&((TaskCommandOwner*)task)->commands, 1, &zero);
-        }
         // Phase 4: refresh child after handlers, which may have changed task state.
-        actor = (Dev*)AsCTask(task)->child;
+        actor = (Dev*)child;
         actor->process(deltaSeconds);
     }
 }
@@ -310,8 +319,10 @@ void CTask_UpdateCurrentTaskWithFadeGates(void* task, float deltaSeconds) {
 // Release heap-backed command-name storage and optionally delete the record.
 void* StringStorage_dtor(void* p, int flag) {
     if (p != 0) {
-        if (p != 0 && (*(unsigned int*)p >> 31) != 0) appFreeUni__FPv(AsMWStringStorage(p)->data);
-        if (flag > 0) __dl__FPv(p);
+        if (p != 0 && (*(unsigned int*)p >> 31) != 0)
+            appFreeUni__FPv(AsMWStringStorage(p)->data);
+        if (flag > 0)
+            __dl__FPv(p);
     }
     return p;
 }
@@ -322,7 +333,7 @@ void* StringStorage_dtor(void* p, int flag) {
 // Do not assign universal meanings: title/shop/party/save handlers interpret them.
 // Example: shop callers pass word1=1 and all other supplied words=0.
 // The queue copies words, not pointees; only the name receives a deep copy.
-struct Entry801FFFF8 {
+struct TaskCommandRequest {
     unsigned char requestFlag;
     char pad1[3];
     unsigned char nameAllocatorTag;
@@ -337,8 +348,10 @@ struct Entry801FFFF8 {
     void* payloadWord7;
 };
 // Build a named request, append it to the task command deque, then release the temporary name.
-void* TaskCommandQueue_AppendNamedRequest(void* task, void* payloadWord0, const char* handlerName, void* payloadWord1, void* payloadWord2, void* payloadWord3, void* payloadWord4, void* payloadWord7) {
-    Entry801FFFF8 entry;
+void* TaskCommandQueue_AppendNamedRequest(void* task, void* payloadWord0, const char* handlerName, void* payloadWord1,
+                                          void* payloadWord2, void* payloadWord3, void* payloadWord4,
+                                          void* payloadWord7) {
+    TaskCommandRequest entry;
     entry.name[0] = 0;
     entry.name[1] = 0;
     entry.name[2] = 0;
@@ -349,12 +362,14 @@ void* TaskCommandQueue_AppendNamedRequest(void* task, void* payloadWord0, const 
     entry.payloadWord3 = payloadWord3;
     entry.payloadWord4 = payloadWord4;
     entry.payloadWord7 = payloadWord7;
-    String_ReplaceRange(entry.name, 0, inlineNameLength, handlerName, handlerName + strlen(handlerName), &entry.nameAllocatorTag);
+    String_ReplaceRange(entry.name, 0, inlineNameLength, handlerName, handlerName + strlen(handlerName),
+                        &entry.nameAllocatorTag);
     struct StringCleanup {
         unsigned int* words;
         // Destroy only the temporary request's heap-backed key after append copies it.
         ~StringCleanup() {
-            if (words[0] >> 31) appFreeUni__FPv((void*)words[2]);
+            if (words[0] >> 31)
+                appFreeUni__FPv((void*)words[2]);
         }
     } cleanup = {entry.name};
     entry.requestFlag = 0;
@@ -384,9 +399,11 @@ void* TaskCommandDeque_Dtor(void* p, int flag) {
             void** wrap = base + cap;
             void** it = base + begin;
             while (end != it) {
-                if (*it != 0) appFreeUni__FPv(*it);
+                if (*it != 0)
+                    appFreeUni__FPv(*it);
                 ++it;
-                if (wrap == it) it = base;
+                if (wrap == it)
+                    it = base;
             }
         }
         if (p != 0) {
@@ -406,33 +423,36 @@ void* TaskCommandDeque_Dtor(void* p, int flag) {
                 }
             }
         }
-        if (flag > 0) __dl__FPv(p);
+        if (flag > 0)
+            __dl__FPv(p);
     }
     return p;
 }
 
 // Replace the active task now, or save its transition arguments when transitions are deferred.
-void CTask_RequestTransition(void* task, void* taskName, void* transitionData) {
+void CTask::RequestTransition(const char* taskName, const char* transitionData) {
     if (s_taskTransitionsDeferred != 0) {
-        if (AsCTask(task)->transitionPending != 0) return;
+        if (transitionPending != 0)
+            return;
         unsigned char pending = 1;
-        AsCTask(task)->transitionArg0 = taskName;
+        transitionArg0 = (void*)taskName;
         float duration = kFloat_1_TaskTransition;
-        AsCTask(task)->transitionArg1 = transitionData;
-        AsCTask(task)->transitionPending = pending;
+        transitionArg1 = (void*)transitionData;
+        transitionPending = pending;
         AsSoundManagerState(g_soundManager)->transitionDuration = duration;
         return;
     }
-    CTask_ReplaceActiveTaskByName(task, taskName, transitionData);
+    ReplaceActiveTaskByName(taskName, transitionData);
 }
 
 // Save transition arguments and optionally start the loading display and fade-in sequence.
-void CTask_RequestTransitionWithFade(void* task, void* taskName, void* transitionData, int startFade) {
+void CTask::RequestTransitionWithFade(const char* taskName, const char* transitionData, int startFade) {
     unsigned char pending = 1;
-    if (AsCTask(task)->transitionPending != 0) return;
+    if (transitionPending != 0)
+        return;
     if (startFade != 0) {
-        Poly* child = (Poly*)AsCTask(task)->child;
-        child->drawLoading();
+        Poly* loadingChild = (Poly*)child;
+        loadingChild->drawLoading();
         if (((unsigned int&)Sing_805DC608()) == 0) {
             if (s_fadeOverlayInitialized == 0) {
                 FadeOverlay_Init(s_fadeOverlay);
@@ -452,36 +472,33 @@ void CTask_RequestTransitionWithFade(void* task, void* taskName, void* transitio
         }
         FadeState_StartFadeIn((void*)((unsigned int&)Sing_805DC608()), 0);
     }
-    AsCTask(task)->transitionArg0 = taskName;
+    transitionArg0 = (void*)taskName;
     float duration = kFloat_1_TaskTransition;
-    AsCTask(task)->transitionArg1 = transitionData;
-    AsCTask(task)->transitionPending = pending;
+    transitionArg1 = (void*)transitionData;
+    transitionPending = pending;
     AsSoundManagerState(g_soundManager)->transitionDuration = duration;
 }
 
 // Draw the task before loading starts, or draw its loading view when no transition is pending.
-void CTask_DrawCurrentTaskOrLoading(void* p) {
+void CTask::DrawCurrentTaskOrLoading() {
     if (s_actorLoadingContext[kLoadingFinishNotifiedByte] == 0) {
-        Poly* q = (Poly*)AsCTask(p)->child;
+        Poly* q = (Poly*)child;
         q->drawTask();
         return;
     }
-    if (AsCTask(p)->transitionPending != 0) return;
-    Poly* q = (Poly*)AsCTask(p)->child;
+    if (transitionPending != 0)
+        return;
+    Poly* q = (Poly*)child;
     q->drawLoading();
 }
 
 // Destroy the string-tree base and optionally free the derived task document.
-void* CTaskDoc_dtor(void* p, int flag) {
-    if (p != 0) {
-        dtor_8029EA18(p, 0);
-        if (flag > 0) __dl__FPv(p);
-    }
-    return p;
+CTaskDoc::~CTaskDoc() {
+    dtor_8029EA18(this, 0);
 }
 
 // Return the task type-information descriptor.
-void* CTask_GetRTTI() {
+void* CTask::GetRTTI() {
     return &s_taskTypeInfo;
 }
 
@@ -491,17 +508,17 @@ unsigned char ActorLoading_GetSecondaryStatus() {
 }
 
 // Cancel the child actor's embedded worker thread when a child exists.
-void CTask_CancelChildThread(void* p) {
-    void* q = AsCTask(p)->child;
+void CTask::CancelChildThread() {
+    void* q = child;
     if (q != 0) {
-        CThread_CancelIfRunning((char*)q + kActorThreadOffset);
+        ((CThread*)((char*)q + kActorThreadOffset))->CancelIfRunning();
     }
 }
 
 // Apply the previously saved task transition when one is pending.
-void CTask_ProcessPendingTransition(void* p) {
-    if (AsCTask(p)->transitionPending != 0) {
-        CTask_ReplaceActiveTaskByName(p, AsCTask(p)->transitionArg0, AsCTask(p)->transitionArg1);
+void CTask::ProcessPendingTransition() {
+    if (transitionPending != 0) {
+        ReplaceActiveTaskByName((const char*)transitionArg0, (const char*)transitionArg1);
     }
 }
 
@@ -518,7 +535,8 @@ unsigned int TaskCommandDeque_GetFrontOffset(void* p) {
 // Return record capacity supplied by all pages except the reserved page.
 int TaskCommandDeque_GetRecordCapacity(void* p) {
     unsigned int n = ((TaskCommandQueue*)p)->pageRing.pageCount;
-    if (n == 0) return 0;
+    if (n == 0)
+        return 0;
     return (n - 1) * kRecordsPerPage;
 }
 
@@ -544,13 +562,13 @@ struct ClearIterator {
     ClearRecord** end;
     // Build a page-pointer iterator; begin retains the logical ring origin.
     ClearIterator(unsigned int* obj) {
-        ClearRecord** b = (ClearRecord**)obj[2];
-        ClearRecord** e = b + obj[5];
-        ClearRecord** c = b + obj[3];
-        base = b;
-        end = e;
-        current = c;
-        begin = c;
+        ClearRecord** pagesBase = (ClearRecord**)obj[2];
+        ClearRecord** pagesEnd = pagesBase + obj[5];
+        ClearRecord** firstPageSlot = pagesBase + obj[3];
+        base = pagesBase;
+        end = pagesEnd;
+        current = firstPageSlot;
+        begin = firstPageSlot;
     }
 };
 
@@ -559,8 +577,10 @@ inline void clearAdvance(ClearIterator& iter, int amount) {
     int span = iter.end - iter.base;
     int offset = iter.current - iter.base;
     int index = amount + offset;
-    if (index < 0) index += span;
-    else if (index >= span) index -= span;
+    if (index < 0)
+        index += span;
+    else if (index >= span)
+        index -= span;
     ((volatile ClearIterator*)&iter)->current = ((volatile ClearIterator*)&iter)->base + index;
 }
 
@@ -573,7 +593,8 @@ void TaskCommandDeque_DiscardFront(void* queue, unsigned int amount, const void*
     // of logical page 1 (25 / 23, 25 % 23), then wrap firstPage + 1 in the
     // page-pointer ring. Names own heap buffers; payload pointers are borrowed.
     // Phase 1: locate the first record and destroy the requested prefix page by page.
-    if (amount == 0) return;
+    if (amount == 0)
+        return;
     TaskCommandQueue* commands;
     ClearRecord** pageSlot;
     ClearRecord** pageSlotsBegin;
@@ -601,17 +622,21 @@ void TaskCommandDeque_DiscardFront(void* queue, unsigned int amount, const void*
     for (;;) {
         for (recordIndex = 0; recordIndex < recordsThisPage; ++recordIndex, ++record) {
             if (record != 0) {
-                if (record != 0 && (record->flags >> 31) != 0) appFreeUni__FPv(record->data);
+                if (record != 0 && (record->flags >> 31) != 0)
+                    appFreeUni__FPv(record->data);
             }
         }
         commands->recordCount -= recordsThisPage;
         commands->frontOffset += recordsThisPage;
         amount -= recordsThisPage;
-        if (amount == 0) break;
-        if (++pageSlot == pageSlotsEnd) pageSlot = pageSlotsBegin;
+        if (amount == 0)
+            break;
+        if (++pageSlot == pageSlotsEnd)
+            pageSlot = pageSlotsBegin;
         record = *pageSlot;
         countSource = &kClearRecordPageCapacity;
-        if (amount < kRecordsPerPage) countSource = &amount;
+        if (amount < kRecordsPerPage)
+            countSource = &amount;
         recordsThisPage = *countSource;
     }
     // Phase 2: retire a front page only after two full pages have been passed;
@@ -620,12 +645,14 @@ void TaskCommandDeque_DiscardFront(void* queue, unsigned int amount, const void*
         appFreeUni__FPv((void*)((unsigned int*)commands->pageRing.pages)[commands->pageRing.firstPage]);
         nextFirstPage = commands->pageRing.firstPage + 1;
         commands->pageRing.firstPage = nextFirstPage;
-        if (nextFirstPage == commands->pageRing.pageCapacity) commands->pageRing.firstPage = (unsigned int)pageSlotsEnd;
+        if (nextFirstPage == commands->pageRing.pageCapacity)
+            commands->pageRing.firstPage = (unsigned int)pageSlotsEnd;
         --commands->pageRing.pageCount;
         commands->frontOffset -= kRecordsPerPage;
     }
     // Phase 3: an empty deque restarts at the midpoint (11) of its retained page.
-    if (commands->recordCount == 0) commands->frontOffset = kEmptyFrontOffset;
+    if (commands->recordCount == 0)
+        commands->frontOffset = kEmptyFrontOffset;
 }
 #pragma opt_strength_reduction reset
 #pragma opt_common_subs reset
@@ -636,7 +663,8 @@ void TaskCommandDeque_DiscardFront(void* queue, unsigned int amount, const void*
 // Destroy all command names across wrapped pages while reducing the record count to zero.
 void TaskCommandDeque_ClearRecordNames(void* p, unsigned char*) {
     TaskCommandQueue* obj = (TaskCommandQueue*)p;
-    if (obj->recordCount == 0) return;
+    if (obj->recordCount == 0)
+        return;
     ClearIterator iter((unsigned int*)obj);
     clearAdvance(iter, obj->frontOffset / kRecordsPerPage);
     ClearRecord** slot = iter.current;
@@ -657,8 +685,10 @@ void TaskCommandDeque_ClearRecordNames(void* p, unsigned char*) {
             }
             ++record;
         }
-        if (obj->recordCount == 0) break;
-        if (++slot == limit) slot = base;
+        if (obj->recordCount == 0)
+            break;
+        if (++slot == limit)
+            slot = base;
         record = *slot;
         n = obj->recordCount > kRecordsPerPage ? &kClearRecordPageCapacity : &obj->recordCount;
         stop = record + *n;
@@ -669,10 +699,9 @@ void TaskCommandDeque_ClearRecordNames(void* p, unsigned char*) {
 #pragma opt_common_subs reset
 
 // Construct the document's string-tree base and install its vtable.
-void* CTaskDoc_Ctor(void* p) {
-    ActorFactoryInterface_InitVtable(p);
-    *(void**)p = (void*)__vt__8CTaskDoc;
-    return p;
+CTaskDoc::CTaskDoc() {
+    ActorFactoryInterface_InitVtable(this);
+    *(void**)this = (void*)__vt__8CTaskDoc;
 }
 
 // Append a command, reusing a front page or growing the page-pointer ring when necessary.
@@ -685,7 +714,8 @@ void TaskCommandDeque_AppendRecord(void* queue, void* sourceRecord, void*) {
     // Iterator arrays are four-word ring cursors, not record payloads.
     unsigned char grownQueueStorage[0x18];
     unsigned char freeSlotIterator[0x18];
-    unsigned int recycledPageIterator[4], recycledRingEnd[4], sparePageIterator[4], spareRingEnd[4], grownPageIterator[4], grownRingEnd[4];
+    unsigned int recycledPageIterator[4], recycledRingEnd[4], sparePageIterator[4], spareRingEnd[4],
+        grownPageIterator[4], grownRingEnd[4];
     unsigned int insertionBegin[4], oldPagesBegin[4], oldPagesEnd[4], oldRingEnd[4];
     void* pageRing;
     unsigned int pageAddressOrCapacityLimit, allocatedPage;
@@ -704,10 +734,12 @@ void TaskCommandDeque_AppendRecord(void* queue, void* sourceRecord, void*) {
             *(unsigned int*)queue -= kRecordsPerPage;
             RingBuffer32_BuildEndWordIterator(recycledRingEnd, pageRing);
             RingIterator32_SubtractSignedOffset(recycledPageIterator, recycledRingEnd, 2);
-            TaskCommandRecord_CopyConstruct(recordAllocator, *(void**)RingBuffer32_GetAllocation(recycledPageIterator), sourceRecord);
+            TaskCommandRecord_CopyConstruct(recordAllocator, *(void**)RingBuffer32_GetAllocation(recycledPageIterator),
+                                            sourceRecord);
         } else {
             pageAddressOrCapacityLimit = TaskCommandDeque_GetMaxSize(queue) - kRecordsPerPage;
-            if (TaskCommandDeque_GetRecordCapacity(queue) > pageAddressOrCapacityLimit) RingBuffer_ThrowLengthError(taskScoreExceptionStrings + kLengthErrorTypeOffset);
+            if (TaskCommandDeque_GetRecordCapacity(queue) > pageAddressOrCapacityLimit)
+                RingBuffer_ThrowLengthError(taskScoreExceptionStrings + kLengthErrorTypeOffset);
             pageAddressOrCapacityLimit = RingBuffer32_GetUsableCapacity(pageRing);
             if (RingBuffer32_GetCountWord(pageRing) < pageAddressOrCapacityLimit) {
                 allocatedPage = TaskCommandRecord_AllocateArray(recordAllocator, kRecordsPerPage);
@@ -716,7 +748,8 @@ void TaskCommandDeque_AppendRecord(void* queue, void* sourceRecord, void*) {
                 RingBuffer32_AppendWordThunk(pageRing, &zero);
                 RingBuffer32_BuildEndWordIterator(spareRingEnd, pageRing);
                 RingIterator32_SubtractSignedOffset(sparePageIterator, spareRingEnd, 2);
-                TaskCommandRecord_CopyConstruct(recordAllocator, *(void**)RingBuffer32_GetAllocation(sparePageIterator), sourceRecord);
+                TaskCommandRecord_CopyConstruct(recordAllocator, *(void**)RingBuffer32_GetAllocation(sparePageIterator),
+                                                sourceRecord);
             } else {
                 // Phase 2: stage a larger page ring; transfer existing page pointers
                 // without copying their records, then swap and destroy old storage.
@@ -724,7 +757,8 @@ void TaskCommandDeque_AppendRecord(void* queue, void* sourceRecord, void*) {
                 grownPageRing = TaskCommandDeque_GetPageRing(grownQueueStorage);
                 unsigned int size = RingBuffer32_GetUsableCapacity(pageRing) * 2;
                 unsigned int requestedCapacity[1] = {size};
-                RingBuffer32_ReallocateStorage(grownPageRing, *(void**)UnsignedWord_SelectMaxPointer(requestedCapacity, &s_taskRingBufferMinimumCapacity));
+                RingBuffer32_ReallocateStorage(grownPageRing, *(void**)UnsignedWord_SelectMaxPointer(
+                                                                  requestedCapacity, &s_taskRingBufferMinimumCapacity));
                 unsigned int zero = 0;
                 RingBuffer32_AppendWordThunk(grownPageRing, &zero);
                 allocatedPage = TaskCommandRecord_AllocateArray(recordAllocator, kRecordsPerPage);
@@ -733,13 +767,15 @@ void TaskCommandDeque_AppendRecord(void* queue, void* sourceRecord, void*) {
                 RingBuffer32_AppendWordThunk(grownPageRing, &zero2);
                 RingBuffer32_BuildEndWordIterator(grownRingEnd, grownPageRing);
                 RingIterator32_SubtractSignedOffset(grownPageIterator, grownRingEnd, 2);
-                TaskCommandRecord_CopyConstruct(recordAllocator, *(void**)RingBuffer32_GetAllocation(grownPageIterator), sourceRecord);
+                TaskCommandRecord_CopyConstruct(recordAllocator, *(void**)RingBuffer32_GetAllocation(grownPageIterator),
+                                                sourceRecord);
                 if (RingBuffer_IsEmpty(pageRing) == 0) {
                     RingBuffer32_BuildEndWordIterator(oldRingEnd, pageRing);
                     RingIterator32_SubtractSignedOffset(oldPagesEnd, oldRingEnd, 1);
                     RingBuffer32_BuildBeginByteIterator(oldPagesBegin, pageRing);
                     RingBuffer32_BuildBeginByteIterator(insertionBegin, grownPageRing);
-                    RingBuffer32_InsertRangeFromWordIterators(grownPageRing, insertionBegin, oldPagesBegin, oldPagesEnd, 0);
+                    RingBuffer32_InsertRangeFromWordIterators(grownPageRing, insertionBegin, oldPagesBegin, oldPagesEnd,
+                                                              0);
                 }
                 RingBuffer32_SwapHeaderWords(pageRing, grownPageRing);
                 RingBuffer32_ResetCount(grownPageRing);
@@ -748,7 +784,8 @@ void TaskCommandDeque_AppendRecord(void* queue, void* sourceRecord, void*) {
         }
     } else {
         TaskCommandDeque_BuildEndRecordIterator(freeSlotIterator, queue);
-        TaskCommandRecord_CopyConstruct(recordAllocator, RingStorage_GetTrailingPayload(freeSlotIterator), sourceRecord);
+        TaskCommandRecord_CopyConstruct(recordAllocator, RingStorage_GetTrailingPayload(freeSlotIterator),
+                                        sourceRecord);
     }
     // Publish the new record only after its key and payload have been constructed.
     ++((TaskCommandQueue*)queue)->recordCount;

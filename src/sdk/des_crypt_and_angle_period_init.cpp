@@ -1,6 +1,4 @@
 #include <decomp/static_init.h>
-// Translation unit 0x8028CB84-0x8028DFB0 (4 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -24,69 +22,76 @@ typedef unsigned long DES_LONG;
 // Exchange masked bit groups between two halves; mask/shift define the DES permutation.
 // Permutations keep one scratch lifetime across exchanges. Replacing these
 // macros with reference-parameter inline functions changes the matched object.
-#define PERM_OP(a,b,t,n,m) ((t)=((((a)>>(n))^(b))&(m)),(b)^=(t),(a)^=((t)<<(n)))
+#define PERM_OP(a, b, t, n, m) ((t) = ((((a) >> (n)) ^ (b)) & (m)), (b) ^= (t), (a) ^= ((t) << (n)))
 
 // Rotate one 32-bit DES word right; callers use nonzero shifts strictly below 32.
 // The inline-function form also changes register allocation in this unrolled round body.
-#define RotateRight(word,shift) (((word)>>(shift))+((word)<<(32-(shift))))
+#define RotateRight(word, shift) (((word) >> (shift)) + ((word) << (32 - (shift))))
 
 // Apply DES's initial bit permutation in five masked exchanges.
-#define IP(l,r) { \
-    register DES_LONG tt; \
-    PERM_OP(r,l,tt, 4,0x0f0f0f0f); \
-    PERM_OP(l,r,tt,16,0x0000ffff); \
-    PERM_OP(r,l,tt, 2,0x33333333); \
-    PERM_OP(l,r,tt, 8,0x00ff00ff); \
-    PERM_OP(r,l,tt, 1,0x55555555); \
-}
+#define IP(l, r)                           \
+    {                                      \
+        register DES_LONG tt;              \
+        PERM_OP(r, l, tt, 4, 0x0f0f0f0f);  \
+        PERM_OP(l, r, tt, 16, 0x0000ffff); \
+        PERM_OP(r, l, tt, 2, 0x33333333);  \
+        PERM_OP(l, r, tt, 8, 0x00ff00ff);  \
+        PERM_OP(r, l, tt, 1, 0x55555555);  \
+    }
 
 // Undo the initial bit permutation using the exchanges in reverse order.
-#define FP(l,r) { \
-    register DES_LONG tt; \
-    PERM_OP(l,r,tt, 1,0x55555555); \
-    PERM_OP(r,l,tt, 8,0x00ff00ff); \
-    PERM_OP(l,r,tt, 2,0x33333333); \
-    PERM_OP(r,l,tt,16,0x0000ffff); \
-    PERM_OP(l,r,tt, 4,0x0f0f0f0f); \
-}
+#define FP(l, r)                           \
+    {                                      \
+        register DES_LONG tt;              \
+        PERM_OP(l, r, tt, 1, 0x55555555);  \
+        PERM_OP(r, l, tt, 8, 0x00ff00ff);  \
+        PERM_OP(l, r, tt, 2, 0x33333333);  \
+        PERM_OP(r, l, tt, 16, 0x0000ffff); \
+        PERM_OP(l, r, tt, 4, 0x0f0f0f0f);  \
+    }
 
 // Indices are signed byte offsets: keeping this representation preserves the DES table loads.
 static inline unsigned int Substitution(const unsigned int* row, int byteOffset) {
     return *(const unsigned int*)((const char*)row + byteOffset);
 }
-enum DesTableLayout { kTableRowWords = 64, kSubstitutionByteMask = 0xFC };
+enum DesTableLayout {
+    kTableRowWords = 64,
+    kSubstitutionByteMask = 0xFC
+};
 // Keep the round expansion local: an inline-function form changes register allocation.
 // One Feistel round: XOR the right half with TWO pre-expanded key words, then
 // XOR eight combined S-box/permutation lookups into the left half. sp0/2/4/6
 // use u's bytes, sp1/3/5/7 use t rotated right four bits. The 0xFC mask selects
 // a six-bit index scaled by four bytes; it is not a 256-entry table index.
-#define D_ENCRYPT(LL,R,S) { \
-    int u1,u2,u3; \
-    u=(R)^schedule[S]; t=(R)^schedule[(S)+1]; \
-    u2=(int)u>>8; \
-    u1=(int)u&kSubstitutionByteMask; \
-    u2&=kSubstitutionByteMask; \
-    t=RotateRight(t,4); \
-    u>>=16; \
-    LL^=Substitution(sp0,u1); \
-    LL^=Substitution(sp2,u2); \
-    u3=(int)(u>>8); \
-    u1=(int)u&kSubstitutionByteMask; \
-    u3&=kSubstitutionByteMask; \
-    LL^=Substitution(sp4,u1); \
-    LL^=Substitution(sp6,u3); \
-    u2=(int)t>>8; \
-    u1=(int)t&kSubstitutionByteMask; \
-    u2&=kSubstitutionByteMask; \
-    t>>=16; \
-    LL^=Substitution(sp1,u1); \
-    LL^=Substitution(sp3,u2); \
-    u3=(int)t>>8; \
-    u1=(int)t&kSubstitutionByteMask; \
-    u3&=kSubstitutionByteMask; \
-    LL^=Substitution(sp5,u1); \
-    LL^=Substitution(sp7,u3); \
-}
+#define D_ENCRYPT(LL, R, S)                  \
+    {                                        \
+        int u1, u2, u3;                      \
+        u = (R) ^ schedule[S];               \
+        t = (R) ^ schedule[(S) + 1];         \
+        u2 = (int)u >> 8;                    \
+        u1 = (int)u & kSubstitutionByteMask; \
+        u2 &= kSubstitutionByteMask;         \
+        t = RotateRight(t, 4);               \
+        u >>= 16;                            \
+        LL ^= Substitution(sp0, u1);         \
+        LL ^= Substitution(sp2, u2);         \
+        u3 = (int)(u >> 8);                  \
+        u1 = (int)u & kSubstitutionByteMask; \
+        u3 &= kSubstitutionByteMask;         \
+        LL ^= Substitution(sp4, u1);         \
+        LL ^= Substitution(sp6, u3);         \
+        u2 = (int)t >> 8;                    \
+        u1 = (int)t & kSubstitutionByteMask; \
+        u2 &= kSubstitutionByteMask;         \
+        t >>= 16;                            \
+        LL ^= Substitution(sp1, u1);         \
+        LL ^= Substitution(sp3, u2);         \
+        u3 = (int)t >> 8;                    \
+        u1 = (int)t & kSubstitutionByteMask; \
+        u3 &= kSubstitutionByteMask;         \
+        LL ^= Substitution(sp5, u1);         \
+        LL ^= Substitution(sp7, u3);         \
+    }
 
 #pragma use_lmw_stmw on
 // Apply 16 DES rounds to one block; nonzero direction uses forward keys, zero uses reverse keys.
@@ -95,22 +100,22 @@ enum DesTableLayout { kTableRowWords = 64, kSubstitutionByteMask = 0xFC };
 // This is one in-place block: no mode, padding, IV, or key expansion is performed.
 void DES_CryptBlock(unsigned int* data, int keyAddress, int direction) {
     DES_LONG left, right, t, u;
-    DES_LONG *schedule;
-    const unsigned int *sp0;
+    DES_LONG* schedule;
+    const unsigned int* sp0;
     const unsigned int *sp2, *sp4, *sp6, *sp1, *sp3, *sp5, *sp7;
 
     sp0 = desSpTrans;
 
-    schedule = (DES_LONG *)keyAddress;
+    schedule = (DES_LONG*)keyAddress;
 
     right = data[0];
     left = data[1];
 
     // Permute the input halves, then rotate into the combined lookup-table representation.
-    IP(right,left);
+    IP(right, left);
 
-    right = RotateRight(right,29);
-    left = RotateRight(left,29);
+    right = RotateRight(right, 29);
+    left = RotateRight(left, 29);
 
     if (direction) {
         sp2 = desSpTrans + 2 * kTableRowWords;
@@ -121,22 +126,22 @@ void DES_CryptBlock(unsigned int* data, int keyAddress, int direction) {
         sp5 = desSpTrans + 5 * kTableRowWords;
         sp7 = desSpTrans + 7 * kTableRowWords;
         // Forward schedule: alternating updates incorporate sixteen round-key pairs (words 0..31).
-        D_ENCRYPT(left,right,0);
-        D_ENCRYPT(right,left,2);
-        D_ENCRYPT(left,right,4);
-        D_ENCRYPT(right,left,6);
-        D_ENCRYPT(left,right,8);
-        D_ENCRYPT(right,left,10);
-        D_ENCRYPT(left,right,12);
-        D_ENCRYPT(right,left,14);
-        D_ENCRYPT(left,right,16);
-        D_ENCRYPT(right,left,18);
-        D_ENCRYPT(left,right,20);
-        D_ENCRYPT(right,left,22);
-        D_ENCRYPT(left,right,24);
-        D_ENCRYPT(right,left,26);
-        D_ENCRYPT(left,right,28);
-        D_ENCRYPT(right,left,30);
+        D_ENCRYPT(left, right, 0);
+        D_ENCRYPT(right, left, 2);
+        D_ENCRYPT(left, right, 4);
+        D_ENCRYPT(right, left, 6);
+        D_ENCRYPT(left, right, 8);
+        D_ENCRYPT(right, left, 10);
+        D_ENCRYPT(left, right, 12);
+        D_ENCRYPT(right, left, 14);
+        D_ENCRYPT(left, right, 16);
+        D_ENCRYPT(right, left, 18);
+        D_ENCRYPT(left, right, 20);
+        D_ENCRYPT(right, left, 22);
+        D_ENCRYPT(left, right, 24);
+        D_ENCRYPT(right, left, 26);
+        D_ENCRYPT(left, right, 28);
+        D_ENCRYPT(right, left, 30);
     } else {
         sp2 = desSpTrans + 2 * kTableRowWords;
         sp4 = desSpTrans + 4 * kTableRowWords;
@@ -146,33 +151,33 @@ void DES_CryptBlock(unsigned int* data, int keyAddress, int direction) {
         sp5 = desSpTrans + 5 * kTableRowWords;
         sp7 = desSpTrans + 7 * kTableRowWords;
         // Reverse schedule decrypts with the same lookup operation and reversed key pairs.
-        D_ENCRYPT(left,right,30);
-        D_ENCRYPT(right,left,28);
-        D_ENCRYPT(left,right,26);
-        D_ENCRYPT(right,left,24);
-        D_ENCRYPT(left,right,22);
-        D_ENCRYPT(right,left,20);
-        D_ENCRYPT(left,right,18);
-        D_ENCRYPT(right,left,16);
-        D_ENCRYPT(left,right,14);
-        D_ENCRYPT(right,left,12);
-        D_ENCRYPT(left,right,10);
-        D_ENCRYPT(right,left,8);
-        D_ENCRYPT(left,right,6);
-        D_ENCRYPT(right,left,4);
-        D_ENCRYPT(left,right,2);
-        D_ENCRYPT(right,left,0);
+        D_ENCRYPT(left, right, 30);
+        D_ENCRYPT(right, left, 28);
+        D_ENCRYPT(left, right, 26);
+        D_ENCRYPT(right, left, 24);
+        D_ENCRYPT(left, right, 22);
+        D_ENCRYPT(right, left, 20);
+        D_ENCRYPT(left, right, 18);
+        D_ENCRYPT(right, left, 16);
+        D_ENCRYPT(left, right, 14);
+        D_ENCRYPT(right, left, 12);
+        D_ENCRYPT(left, right, 10);
+        D_ENCRYPT(right, left, 8);
+        D_ENCRYPT(left, right, 6);
+        D_ENCRYPT(right, left, 4);
+        D_ENCRYPT(left, right, 2);
+        D_ENCRYPT(right, left, 0);
     }
 
     // Leave the lookup representation, undo the bit permutation and store swapped halves.
-    left = RotateRight(left,3);
-    right = RotateRight(right,3);
+    left = RotateRight(left, 3);
+    right = RotateRight(right, 3);
 
-    FP(right,left);
+    FP(right, left);
 
     data[0] = left;
     data[1] = right;
-    left=right=t=u=0;
+    left = right = t = u = 0;
 }
 
 #pragma use_lmw_stmw reset

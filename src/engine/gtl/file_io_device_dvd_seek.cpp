@@ -1,7 +1,8 @@
-// Translation unit 0x8041385C-0x80413924 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// GtlFileIoDeviceDVD::SubmitSeekWithCallback: submits a DVD seek and records the caller's completion
+// callback once the seek has been accepted.
 
 #include "classes/DvdDeviceFileState.h"
+#include "classes/GtlFileIoDeviceDVD.h"
 extern "C" {
 
 struct DVDContext {
@@ -15,22 +16,27 @@ struct DVDContext {
 
 void File_SetLastError(int);
 int DVDSeek(void*, int, void*, int);
-int gtl_CFileIoDeviceDVD_OnSeekComplete(int, void*);
 
 enum DvdSeekConstants {
-    kInvalidFileHandle = -1, kDefaultSeekPriorityArgument = -1,
-    kDefaultSeekPriorityValue = 0xA0, kSeekPriorityShift = 6,
-    kFileInvalidHandle = 6, kFileSeekSubmissionFailed = 0x19, kFileOk = 0
+    kInvalidFileHandle = -1,
+    kDefaultSeekPriorityArgument = -1,
+    kDefaultSeekPriorityValue = 0xA0,
+    kSeekPriorityShift = 6,
+    kFileInvalidHandle = 6,
+    kFileSeekSubmissionFailed = 0x19,
+    kFileOk = 0
 };
+
+} // extern "C"
 
 // Submit a DVD seek, recording its completion callback only after successful submission.
 // file is a live DVD context address or the invalid sentinel; offset is bytes.
 // priorityArgument uses its upper bits (>>6); -1 selects 0xA0, hence SDK priority 2.
 // Return 1 means accepted, not completed; 0 sets last error to 6 or 0x19.
 // callback receives (fileError, resultOrZero, context, userData). The caller keeps
-// the file context alive until completion. device and unused are ignored.
-int gtl_CFileIoDeviceDVD_SubmitSeekWithCallback(void* device, unsigned int file, int offset, int unused,
-                                  unsigned int priorityArgument, int callback, int userData) {
+// the file context alive until completion. unused is ignored.
+int gtl::CFileIoDeviceDVD::SubmitSeekWithCallback(unsigned int file, int offset, int unused,
+                                                  unsigned int priorityArgument, int callback, int userData) {
     if (file == (unsigned int)kInvalidFileHandle) {
         File_SetLastError(kFileInvalidHandle);
         return 0;
@@ -44,7 +50,8 @@ int gtl_CFileIoDeviceDVD_SubmitSeekWithCallback(void* device, unsigned int file,
     context->callback = 0;
     context->userData = 0;
     AsDvdDeviceFileState(file)->callbackContext = (void*)file;
-    if (!DVDSeek((void*)file, offset, (void*)gtl_CFileIoDeviceDVD_OnSeekComplete, priorityArgument >> kSeekPriorityShift)) {
+    if (!DVDSeek((void*)file, offset, (void*)&gtl::CFileIoDeviceDVD::OnSeekComplete,
+                 priorityArgument >> kSeekPriorityShift)) {
         File_SetLastError(kFileSeekSubmissionFailed);
         return 0;
     }
@@ -53,5 +60,3 @@ int gtl_CFileIoDeviceDVD_SubmitSeekWithCallback(void* device, unsigned int file,
     File_SetLastError(kFileOk);
     return 1;
 }
-
-} // extern "C"

@@ -1,5 +1,8 @@
+// Pointer rings and paged queues: iterator advance and distance, the ring's cursor copy,
+// and page-entry allocation for the paged queue.
 
 #include "classes/PointerRing803F.h"
+#include "classes/GtlPagedQueue803F.h"
 // Borrow the ring's fixed ABI header; no ownership is transferred.
 #define AsPointerRing(p) ((PointerRing803F*)(p))
 
@@ -11,13 +14,15 @@ struct EH5Cleanup {
     // Arm cleanup for an initialized temporary whose allocation has not been committed.
     EH5Cleanup(void* p, void (*d)(void*, int)) : object(p), destroy(d), active(true) {}
     // Transfer responsibility to the explicit normal-path destructor call.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Destroy the temporary on unwind, without deleting its stack header.
-    ~EH5Cleanup() { if (active) destroy(object, -1); }
+    ~EH5Cleanup() {
+        if (active)
+            destroy(object, -1);
+    }
 };
-
-// Translation unit 0x803F74E4-0x803F7B14 (8 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -55,10 +60,12 @@ struct Ring803F7A2C {
 int PointerRing_IteratorDistance(Ring803F7A2C* position, Ring803F7A2C* range) {
     int n = ((int)range->current - (int)position->current) / 4;
     if (range->current < range->logicalOrigin) {
-        if (position->current < range->logicalOrigin) return n;
+        if (position->current < range->logicalOrigin)
+            return n;
         return n + ((int)range->allocationEnd - (int)range->allocationBegin) / 4;
     }
-    if (position->current >= range->logicalOrigin) return n;
+    if (position->current >= range->logicalOrigin)
+        return n;
     return n - ((int)range->allocationEnd - (int)range->allocationBegin) / 4;
 }
 
@@ -67,17 +74,23 @@ int PointerRing_IteratorDistance(Ring803F7A2C* position, Ring803F7A2C* range) {
 void* PointerRing_CopyIteratorWithStatus(void* dst, const void* src) {
     unsigned int* d = (unsigned int*)dst;
     const unsigned int* s = (const unsigned int*)src;
-    d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+    d[0] = s[0];
+    d[1] = s[1];
+    d[2] = s[2];
+    d[3] = s[3];
     ((unsigned char*)dst)[16] = ((const unsigned char*)src)[16];
     return dst;
 }
 
+} // extern "C"
+
+extern "C" {
 extern signed char s_pagedQueueMaxCountInitialized;
 extern int s_gtlPagedQueueMaxSize;
-// Cache limit bits 0xFFFFFF00 (4294967040 unsigned), represented here as int -256.
-// Queue callers in gtl_sampling_filter_queues.cpp declare an unsigned return and compare unsigned
-// entry counts against it. This signed declaration does not return a positive count.
-int GtlPagedQueue803F_GetMaxSize() {
+}
+
+// Cache limit bits 0xFFFFFF00 (4294967040 unsigned), shared by every paged queue.
+unsigned int GtlPagedQueue803F::GetMaxSize() {
     if (!s_pagedQueueMaxCountInitialized) {
         s_gtlPagedQueueMaxSize = -256;
         s_pagedQueueMaxCountInitialized = 1;
@@ -86,10 +99,11 @@ int GtlPagedQueue803F_GetMaxSize() {
 }
 
 // Allocate a page-entry array with eight bytes per entry.
-// 0x803F7B0C: slwi r3,r4,3; b gtl_Alloc, so the allocation is returned; callers store it (0x803F6948).
-void* GtlPagedQueue803F_AllocatePageEntries(void*, unsigned int pageEntryCount) {
+void* GtlPagedQueue803F::AllocatePageEntries(void*, unsigned int pageEntryCount) {
     return gtl_Alloc(pageEntryCount * 8);
 }
+
+extern "C" {
 
 struct RingIterator803F7834 {
     unsigned int current;
@@ -109,7 +123,7 @@ struct RingIterator803F7834 {
 // the last chunk it still marks that chunk's start (or is unchanged for an empty range).
 // result receives range's four cursor words; its status byte is deliberately untouched.
 void PointerRing_CopyWrappedIteratorRange(RingIterator803F7834* result, RingIterator803F7834* position,
-                 RingIterator803F7834* end, RingIterator803F7834* range) {
+                                          RingIterator803F7834* end, RingIterator803F7834* range) {
     int index;
     if (position->current != end->current) {
         index = ((int)end->current - (int)position->current) / 4;
@@ -125,8 +139,10 @@ void PointerRing_CopyWrappedIteratorRange(RingIterator803F7834* result, RingIter
             int count = rangeCount < index ? rangeCount : index;
             int size = ((int)position->end - (int)position->begin) / 4;
             int slot = ((int)position->current - (int)position->begin) / 4 + count;
-            if (slot < 0) slot += size;
-            else if (slot >= size) slot -= size;
+            if (slot < 0)
+                slot += size;
+            else if (slot >= size)
+                slot -= size;
             unsigned int newCurrent = position->begin + slot * 4;
             unsigned int* src = (unsigned int*)position->current;
             unsigned int* dst = (unsigned int*)range->current;
@@ -134,13 +150,16 @@ void PointerRing_CopyWrappedIteratorRange(RingIterator803F7834* result, RingIter
             unsigned int* wrap = (unsigned int*)position->begin;
             while ((unsigned int)src != newCurrent) {
                 unsigned int v = *src++;
-                if (src == stop) src = wrap;
+                if (src == stop)
+                    src = wrap;
                 *dst++ = v;
             }
             range->current += count * 4;
             index -= count;
-            if (range->current == range->end) range->current = range->begin;
-            if (index == 0) break;
+            if (range->current == range->end)
+                range->current = range->begin;
+            if (index == 0)
+                break;
             position->current = newCurrent;
         }
     }
@@ -155,15 +174,23 @@ void PointerRing_CopyWrappedIteratorRange(RingIterator803F7834* result, RingIter
 // storage: a=dataAddress, b=firstIndex, c=size, d=capacity, e=allocator.
 // Storage owns only the slot allocation; pointer payloads remain borrowed. Physical
 // capacity includes one sentinel slot; PointerRing_GetUsableCapacity excludes it.
-struct Temp803F74E4 { unsigned int a, b, c, d, e; };
+struct Temp803F74E4 {
+    unsigned int a, b, c, d, e;
+};
 typedef Temp803F74E4 RingCursorScratch;
 typedef Temp803F74E4 RingStorageScratch;
 // Borrow the storage header's allocation word without treating it as an iterator.
-static inline unsigned int& RingStorageDataAddress(RingStorageScratch& storage) { return storage.a; }
+static inline unsigned int& RingStorageDataAddress(RingStorageScratch& storage) {
+    return storage.a;
+}
 // Borrow the storage header's logical first-slot index.
-static inline unsigned int& RingStorageFirstIndex(RingStorageScratch& storage) { return storage.b; }
+static inline unsigned int& RingStorageFirstIndex(RingStorageScratch& storage) {
+    return storage.b;
+}
 // Borrow the storage header's occupied-slot count.
-static inline unsigned int& RingStorageSize(RingStorageScratch& storage) { return storage.c; }
+static inline unsigned int& RingStorageSize(RingStorageScratch& storage) {
+    return storage.c;
+}
 // The shared +0x0C accessor exposes capacity in this pointer-ring specialization.
 extern void* Container_GetWord0CAddress(void*);
 extern unsigned int PointerRing_GetUsableCapacity(void*);
@@ -178,13 +205,11 @@ extern void RingCursor_CopyFourWords(Temp803F74E4*, Temp803F74E4*);
 extern void RingCursor_SubtractOffset(Temp803F74E4*, Temp803F74E4*, unsigned int);
 extern void RingBufferIterator_CopyBackward(Temp803F74E4*, Temp803F74E4*, Temp803F74E4*, unsigned int);
 extern void* PointerRing_GetCapacityAddressForConstruction(void*);
-extern void PointerRing803F_Init(Temp803F74E4*, void*);
 extern unsigned int PointerRing_ComputeGrowthCapacity(void*, unsigned int);
 extern void PointerRing_AllocateCapacity(Temp803F74E4*, unsigned int, unsigned int);
 extern void* PointerRing_GetAllocatorValue(Temp803F74E4*);
 extern void Memory_CopyWordIfDestinationNonNull(void*, unsigned int*, unsigned int*);
 extern void PointerRing_AppendCursorRange(Temp803F74E4*, RingIterator803F7834*, Temp803F74E4*);
-extern void PointerRing803F_PrependRange(Temp803F74E4*, Temp803F74E4*, RingIterator803F7834*);
 extern unsigned int RingBuffer_ClearSize(void*);
 extern unsigned int* PointerRing_GetCapacityAddress(Temp803F74E4*);
 extern void Swap_Int32ForRingStorage(void*, void*);
@@ -197,14 +222,15 @@ extern void PointerRing_dtor(Temp803F74E4*, int);
 // The source must survive opening the gap (self-aliasing is not staged or validated).
 // No pointee is allocated/deleted. In-place header changes precede the copy; growth
 // owns its replacement until the final swaps and cleanup then releases the old slots.
-void PointerRing_InsertRingIteratorRange(void* self, RingIterator803F7834* position,
-                 RingIterator803F7834* first, RingIterator803F7834* last) {
+void PointerRing_InsertRingIteratorRange(void* self, RingIterator803F7834* position, RingIterator803F7834* first,
+                                         RingIterator803F7834* last) {
     RingCursorScratch lastCopy, firstCopy, current, scratch;
     RingCursorScratch boundaryCursor, destinationCursor, sourceEndCursor, sourceBeginCursor, copiedEndCursor;
     PointerRing_CopyIteratorWithStatus(&lastCopy, last);
     PointerRing_CopyIteratorWithStatus(&firstCopy, first);
     unsigned int n = PointerRing_IteratorDistance((Ring803F7A2C*)&firstCopy, (Ring803F7A2C*)&lastCopy);
-    if (!n) return;
+    if (!n)
+        return;
     unsigned int* start = (unsigned int*)AsPointerRing(self)->dataAddress + AsPointerRing(self)->firstIndex;
     unsigned int index = ((int)position->current - (int)start) / 4;
     if (position->current < (unsigned int)start)
@@ -226,7 +252,8 @@ void PointerRing_InsertRingIteratorRange(void* self, RingIterator803F7834* posit
                 RingBufferIterator_CopyBounds(&destinationCursor, &current);
                 RingCursor_AddOffset(&sourceEndCursor, &boundaryCursor, index);
                 RingBufferIterator_CopyBounds(&sourceBeginCursor, &boundaryCursor);
-                RingBufferIterator_CopyForward(&copiedEndCursor, &sourceBeginCursor, &sourceEndCursor, (unsigned int)&destinationCursor);
+                RingBufferIterator_CopyForward(&copiedEndCursor, &sourceBeginCursor, &sourceEndCursor,
+                                               (unsigned int)&destinationCursor);
                 RingCursor_CopyFourWords(&current, &copiedEndCursor);
             }
         } else {
@@ -239,7 +266,8 @@ void PointerRing_InsertRingIteratorRange(void* self, RingIterator803F7834* posit
                 RingBufferIterator_CopyBounds(&destinationCursor, &current);
                 RingCursor_SubtractOffset(&sourceEndCursor, &current, n);
                 RingCursor_SubtractOffset(&sourceBeginCursor, &current, n + tail);
-                RingBufferIterator_CopyBackward(&copiedEndCursor, &sourceBeginCursor, &sourceEndCursor, (unsigned int)&destinationCursor);
+                RingBufferIterator_CopyBackward(&copiedEndCursor, &sourceBeginCursor, &sourceEndCursor,
+                                                (unsigned int)&destinationCursor);
                 RingCursor_CopyFourWords(&current, &copiedEndCursor);
             }
             RingBufferIterator_SubtractAssign(&current, n);
@@ -249,12 +277,12 @@ void PointerRing_InsertRingIteratorRange(void* self, RingIterator803F7834* posit
         PointerRing_CopyIteratorWithStatus(&lastCopy, last);
         PointerRing_CopyIteratorWithStatus(&firstCopy, first);
         PointerRing_CopyWrappedIteratorRange((RingIterator803F7834*)&scratch, (RingIterator803F7834*)&firstCopy,
-                    (RingIterator803F7834*)&lastCopy, (RingIterator803F7834*)&boundaryCursor);
+                                             (RingIterator803F7834*)&lastCopy, (RingIterator803F7834*)&boundaryCursor);
     } else {
         // No room: build a larger queue with the new entries at index, add the old ones
         // after and before them, then swap it in.
         RingStorageScratch grown;
-        PointerRing803F_Init(&grown, PointerRing_GetCapacityAddressForConstruction(self));
+        ((PointerRing803F*)(&grown))->Init((int)PointerRing_GetCapacityAddressForConstruction(self));
         EH5Cleanup eh5Cleanup32(&grown, (void (*)(void*, int))PointerRing_dtor);
         unsigned int capacity = PointerRing_ComputeGrowthCapacity(self, n);
         PointerRing_AllocateCapacity(&grown, AsPointerRing(self)->size + n, capacity);
@@ -273,7 +301,7 @@ void PointerRing_InsertRingIteratorRange(void* self, RingIterator803F7834* posit
         WordRing_GetEndIterator(&boundaryCursor, self);
         PointerRing_AppendCursorRange(&grown, position, &boundaryCursor);
         WordRing_GetBeginIterator(&destinationCursor, self);
-        PointerRing803F_PrependRange(&grown, &destinationCursor, position);
+        ((PointerRing803F*)(&grown))->PrependRange(&destinationCursor, position);
         // Commit all four storage words. grown then owns the old allocation for cleanup.
         RingBuffer_ClearSize(self);
         Swap_Int32ForRingStorage(self, &grown);
@@ -281,7 +309,10 @@ void PointerRing_InsertRingIteratorRange(void* self, RingIterator803F7834* posit
         Swap_Int32(&AsPointerRing(self)->size, &RingStorageSize(grown));
         unsigned int* grownCap = PointerRing_GetCapacityAddress(&grown);
         Swap_Int32((unsigned int*)Container_GetWord0CAddress(self), grownCap);
-        { eh5Cleanup32.release(); PointerRing_dtor(&grown, -1); }
+        {
+            eh5Cleanup32.release();
+            PointerRing_dtor(&grown, -1);
+        }
     }
 }
 

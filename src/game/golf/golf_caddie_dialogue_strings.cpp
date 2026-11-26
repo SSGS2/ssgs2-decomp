@@ -1,3 +1,7 @@
+// Golf caddie dialogue and pet bodies: the trees of dialogue strings and their cleanup,
+// the caddie actor's type registration, and building each caddie's pet body and animations.
+// The caddie actor is CGolfCaddie (golf_caddie_messages.cpp, golf_caddie_animation_process.cpp).
+
 #include <decomp/cw_string_guard.h>
 #include <decomp/static_init.h>
 typedef unsigned long new_size_t;
@@ -43,10 +47,16 @@ struct ExceptionCharReference {
 
 // Verified packed golfCaddieStrings entries (globals round 1).
 enum CaddieStringOffset {
-    kShadowGroupName = 0x20, kSunLightName = 0x27, kLengthErrorType = 0x3F,
-    kStoryPetFormat = 0x1BF, kItemPetFormat = 0x1DB, kDefaultPetFormat = 0x1ED,
-    kPetCenterName = 0x203, kTreeInsertLengthError = 0x20A,
-    kStringReserveLengthError = 0x224, kCaddieClassName = 0x2B4
+    kShadowGroupName = 0x20,
+    kSunLightName = 0x27,
+    kLengthErrorType = 0x3F,
+    kStoryPetFormat = 0x1BF,
+    kItemPetFormat = 0x1DB,
+    kDefaultPetFormat = 0x1ED,
+    kPetCenterName = 0x203,
+    kTreeInsertLengthError = 0x20A,
+    kStringReserveLengthError = 0x224,
+    kCaddieClassName = 0x2B4
 };
 enum CaddieTreeLayout {
     kTreePayloadOffset = sizeof(CaddieTreeLinks),
@@ -64,58 +74,70 @@ enum CaddieStringCapacity {
 #define AsErrorBuffer80132240(p) ((ErrorBuffer80132240*)(p))
 #include "classes/IntStringTreeNode8013.h"
 #define AsIntStringTreeNode8013(p) ((IntStringTreeNode8013*)(p))
-// Translation unit 0x80130F58-0x8013246C (16 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CPetBody.h"
+#include "classes/CConteCaddie.h"
+#include "classes/CGolfDoc.h"
+#include "classes/CShadowManager.h"
 // Use caller-provided storage for a node payload without allocating another block.
-inline void* operator new(new_size_t, void* p) { return p; }
+inline void* operator new(new_size_t, void* p) {
+    return p;
+}
 extern "C" {
 
 extern unsigned char s_golfCaddieTypeInfo;
 // Return the caddie actor type descriptor.
-void* CGolfCaddie_GetRTTI() { return &s_golfCaddieTypeInfo; }
+void* CGolfCaddie::GetRTTI() {
+    return &s_golfCaddieTypeInfo;
+}
 
-void CGolfCaddie_Draw(void*);
 // Adjust the secondary-base pointer by 0x18 before drawing the caddie.
-void CGolfCaddie_vfunc_1Thunk18(void* p) { CGolfCaddie_Draw((char*)p - kSecondaryCaddieBaseOffset); }
+void CGolfCaddie::vfunc_1Thunk18(void* p) {
+    ((CGolfCaddie*)((char*)p - kSecondaryCaddieBaseOffset))->Draw();
+}
 
 void appFreeUni__FPv(void*);
 void IntStringTree_DestroyValue(void*, void*);
 void __dl__FPv(void*);
 // Free an owned error buffer and optionally delete its wrapper.
-void* dtor_80132240(void* p, int deleting) {
-    if (p != 0) {
-        void* object = AsErrorBuffer80132240(p)->buffer;
-        if (object != 0) appFreeUni__FPv(object);
-        if (deleting > 0) __dl__FPv(p);
+void* dtor_80132240(void* errorBuffer, int deleting) {
+    if (errorBuffer != 0) {
+        void* object = AsErrorBuffer80132240(errorBuffer)->buffer;
+        if (object != 0)
+            appFreeUni__FPv(object);
+        if (deleting > 0)
+            __dl__FPv(errorBuffer);
     }
-    return p;
+    return errorBuffer;
 }
 // Free an owned error buffer and optionally delete its wrapper.
-void* dtor_801322A0(void* p, int deleting) {
-    if (p != 0) {
-        void* object = AsErrorBuffer80132240(p)->buffer;
-        if (object != 0) appFreeUni__FPv(object);
-        if (deleting > 0) __dl__FPv(p);
+void* dtor_801322A0(void* errorBuffer, int deleting) {
+    if (errorBuffer != 0) {
+        void* object = AsErrorBuffer80132240(errorBuffer)->buffer;
+        if (object != 0)
+            appFreeUni__FPv(object);
+        if (deleting > 0)
+            __dl__FPv(errorBuffer);
     }
-    return p;
+    return errorBuffer;
 }
 
 // Release heap-backed key and value strings in a dialogue map payload.
-void CaddieDialogueStringPair_Destroy(void*, void* p) {
-    if (p == 0) return;
-    if ((int)p + 0xC != 0) {
-        if ((int)p + 0x10 != 0) {
-            if ((((DialogueStringPair*)p)->value.flags >> 31) != 0) {
-                appFreeUni__FPv(((DialogueStringPair*)p)->value.buffer);
+void CaddieDialogueStringPair_Destroy(void*, void* pair) {
+    if (pair == 0)
+        return;
+    if ((int)pair + 0xC != 0) {
+        if ((int)pair + 0x10 != 0) {
+            if ((((DialogueStringPair*)pair)->value.flags >> 31) != 0) {
+                appFreeUni__FPv(((DialogueStringPair*)pair)->value.buffer);
             }
         }
     }
-    if (p != 0) {
-        if ((((DialogueStringPair*)p)->key.flags >> 31) != 0) {
-            appFreeUni__FPv(((DialogueStringPair*)p)->key.buffer);
+    if (pair != 0) {
+        if ((((DialogueStringPair*)pair)->key.flags >> 31) != 0) {
+            appFreeUni__FPv(((DialogueStringPair*)pair)->key.buffer);
         }
     }
 }
@@ -140,20 +162,26 @@ void IntStringTree_DestroySubtree(void* self, void* p) {
             // Visit root.left.left.left; free descendants before this node's payload/allocation.
             walkSlotC = AsIntStringTreeNode8013(walkSlotB)->left;
             if (walkSlotC != 0) {
-                if (AsIntStringTreeNode8013(walkSlotC)->left != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotC)->left);
-                if (AsIntStringTreeNode8013(walkSlotC)->right != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotC)->right);
+                if (AsIntStringTreeNode8013(walkSlotC)->left != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotC)->left);
+                if (AsIntStringTreeNode8013(walkSlotC)->right != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotC)->right);
                 IntStringTree_DestroyValue(owner, &AsIntStringTreeNode8013(walkSlotC)->key);
                 appFreeUni__FPv(walkSlotC);
             }
             // Visit root.left.left.right; free descendants before this node's payload/allocation.
             walkSlotC = AsIntStringTreeNode8013(walkSlotB)->right;
             if (walkSlotC != 0) {
-                if (AsIntStringTreeNode8013(walkSlotC)->left != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotC)->left);
-                if (AsIntStringTreeNode8013(walkSlotC)->right != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotC)->right);
+                if (AsIntStringTreeNode8013(walkSlotC)->left != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotC)->left);
+                if (AsIntStringTreeNode8013(walkSlotC)->right != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotC)->right);
                 IntStringTree_DestroyValue(owner, &AsIntStringTreeNode8013(walkSlotC)->key);
                 appFreeUni__FPv(walkSlotC);
             }
-            if ((int)walkSlotB + 0xC != 0 && (int)walkSlotB + 0x10 != 0 && (AsIntStringTreeNode8013(walkSlotB)->stringFlags >> 31)) appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotB)->stringBuffer);
+            if ((int)walkSlotB + 0xC != 0 && (int)walkSlotB + 0x10 != 0 &&
+                (AsIntStringTreeNode8013(walkSlotB)->stringFlags >> 31))
+                appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotB)->stringBuffer);
             appFreeUni__FPv(walkSlotB);
         }
         // Visit root.left.right; free descendants before this node's payload/allocation.
@@ -162,23 +190,31 @@ void IntStringTree_DestroySubtree(void* self, void* p) {
             // Visit root.left.right.left; free descendants before this node's payload/allocation.
             walkSlotB = AsIntStringTreeNode8013(walkSlotC)->left;
             if (walkSlotB != 0) {
-                if (AsIntStringTreeNode8013(walkSlotB)->left != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotB)->left);
-                if (AsIntStringTreeNode8013(walkSlotB)->right != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotB)->right);
+                if (AsIntStringTreeNode8013(walkSlotB)->left != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotB)->left);
+                if (AsIntStringTreeNode8013(walkSlotB)->right != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotB)->right);
                 IntStringTree_DestroyValue(owner, &AsIntStringTreeNode8013(walkSlotB)->key);
                 appFreeUni__FPv(walkSlotB);
             }
             // Visit root.left.right.right; free descendants before this node's payload/allocation.
             walkSlotB = AsIntStringTreeNode8013(walkSlotC)->right;
             if (walkSlotB != 0) {
-                if (AsIntStringTreeNode8013(walkSlotB)->left != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotB)->left);
-                if (AsIntStringTreeNode8013(walkSlotB)->right != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotB)->right);
+                if (AsIntStringTreeNode8013(walkSlotB)->left != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotB)->left);
+                if (AsIntStringTreeNode8013(walkSlotB)->right != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotB)->right);
                 IntStringTree_DestroyValue(owner, &AsIntStringTreeNode8013(walkSlotB)->key);
                 appFreeUni__FPv(walkSlotB);
             }
-            if ((int)walkSlotC + 0xC != 0 && (int)walkSlotC + 0x10 != 0 && (AsIntStringTreeNode8013(walkSlotC)->stringFlags >> 31)) appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotC)->stringBuffer);
+            if ((int)walkSlotC + 0xC != 0 && (int)walkSlotC + 0x10 != 0 &&
+                (AsIntStringTreeNode8013(walkSlotC)->stringFlags >> 31))
+                appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotC)->stringBuffer);
             appFreeUni__FPv(walkSlotC);
         }
-        if ((int)walkSlotA + 0xC != 0 && (int)walkSlotA + 0x10 != 0 && (AsIntStringTreeNode8013(walkSlotA)->stringFlags >> 31)) appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotA)->stringBuffer);
+        if ((int)walkSlotA + 0xC != 0 && (int)walkSlotA + 0x10 != 0 &&
+            (AsIntStringTreeNode8013(walkSlotA)->stringFlags >> 31))
+            appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotA)->stringBuffer);
         appFreeUni__FPv(walkSlotA);
     }
 
@@ -191,20 +227,26 @@ void IntStringTree_DestroySubtree(void* self, void* p) {
             // Visit root.right.left.left; free descendants before this node's payload/allocation.
             walkSlotA = AsIntStringTreeNode8013(walkSlotB)->left;
             if (walkSlotA != 0) {
-                if (AsIntStringTreeNode8013(walkSlotA)->left != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->left);
-                if (AsIntStringTreeNode8013(walkSlotA)->right != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->right);
+                if (AsIntStringTreeNode8013(walkSlotA)->left != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->left);
+                if (AsIntStringTreeNode8013(walkSlotA)->right != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->right);
                 IntStringTree_DestroyValue(owner, &AsIntStringTreeNode8013(walkSlotA)->key);
                 appFreeUni__FPv(walkSlotA);
             }
             // Visit root.right.left.right; free descendants before this node's payload/allocation.
             walkSlotA = AsIntStringTreeNode8013(walkSlotB)->right;
             if (walkSlotA != 0) {
-                if (AsIntStringTreeNode8013(walkSlotA)->left != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->left);
-                if (AsIntStringTreeNode8013(walkSlotA)->right != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->right);
+                if (AsIntStringTreeNode8013(walkSlotA)->left != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->left);
+                if (AsIntStringTreeNode8013(walkSlotA)->right != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->right);
                 IntStringTree_DestroyValue(owner, &AsIntStringTreeNode8013(walkSlotA)->key);
                 appFreeUni__FPv(walkSlotA);
             }
-            if ((int)walkSlotB + 0xC != 0 && (int)walkSlotB + 0x10 != 0 && (AsIntStringTreeNode8013(walkSlotB)->stringFlags >> 31)) appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotB)->stringBuffer);
+            if ((int)walkSlotB + 0xC != 0 && (int)walkSlotB + 0x10 != 0 &&
+                (AsIntStringTreeNode8013(walkSlotB)->stringFlags >> 31))
+                appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotB)->stringBuffer);
             appFreeUni__FPv(walkSlotB);
         }
         // Visit root.right.right; free descendants before this node's payload/allocation.
@@ -213,27 +255,36 @@ void IntStringTree_DestroySubtree(void* self, void* p) {
             // Visit root.right.right.left; free descendants before this node's payload/allocation.
             walkSlotA = AsIntStringTreeNode8013(walkSlotB)->left;
             if (walkSlotA != 0) {
-                if (AsIntStringTreeNode8013(walkSlotA)->left != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->left);
-                if (AsIntStringTreeNode8013(walkSlotA)->right != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->right);
+                if (AsIntStringTreeNode8013(walkSlotA)->left != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->left);
+                if (AsIntStringTreeNode8013(walkSlotA)->right != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->right);
                 IntStringTree_DestroyValue(owner, &AsIntStringTreeNode8013(walkSlotA)->key);
                 appFreeUni__FPv(walkSlotA);
             }
             // Visit root.right.right.right; free descendants before this node's payload/allocation.
             walkSlotA = AsIntStringTreeNode8013(walkSlotB)->right;
             if (walkSlotA != 0) {
-                if (AsIntStringTreeNode8013(walkSlotA)->left != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->left);
-                if (AsIntStringTreeNode8013(walkSlotA)->right != 0) IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->right);
+                if (AsIntStringTreeNode8013(walkSlotA)->left != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->left);
+                if (AsIntStringTreeNode8013(walkSlotA)->right != 0)
+                    IntStringTree_DestroySubtree(owner, AsIntStringTreeNode8013(walkSlotA)->right);
                 IntStringTree_DestroyValue(owner, &AsIntStringTreeNode8013(walkSlotA)->key);
                 appFreeUni__FPv(walkSlotA);
             }
-            if ((int)walkSlotB + 0xC != 0 && (int)walkSlotB + 0x10 != 0 && (AsIntStringTreeNode8013(walkSlotB)->stringFlags >> 31)) appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotB)->stringBuffer);
+            if ((int)walkSlotB + 0xC != 0 && (int)walkSlotB + 0x10 != 0 &&
+                (AsIntStringTreeNode8013(walkSlotB)->stringFlags >> 31))
+                appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotB)->stringBuffer);
             appFreeUni__FPv(walkSlotB);
         }
-        if ((int)walkSlotC + 0xC != 0 && (int)walkSlotC + 0x10 != 0 && (AsIntStringTreeNode8013(walkSlotC)->stringFlags >> 31)) appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotC)->stringBuffer);
+        if ((int)walkSlotC + 0xC != 0 && (int)walkSlotC + 0x10 != 0 &&
+            (AsIntStringTreeNode8013(walkSlotC)->stringFlags >> 31))
+            appFreeUni__FPv(AsIntStringTreeNode8013(walkSlotC)->stringBuffer);
         appFreeUni__FPv(walkSlotC);
     }
 
-    if ((int)root + 0xC != 0 && (int)root + 0x10 != 0 && (AsIntStringTreeNode8013(root)->stringFlags >> 31)) appFreeUni__FPv(AsIntStringTreeNode8013(root)->stringBuffer);
+    if ((int)root + 0xC != 0 && (int)root + 0x10 != 0 && (AsIntStringTreeNode8013(root)->stringFlags >> 31))
+        appFreeUni__FPv(AsIntStringTreeNode8013(root)->stringBuffer);
     appFreeUni__FPv(root);
 }
 #pragma pop
@@ -249,10 +300,12 @@ struct TreeNode {
 #pragma inline_depth(0)
 // Destroy child subtrees, then this node's owned pair and allocation (not just a leaf).
 // Keep expansion under inline_depth(0): an ordinary helper would add an out-of-line call.
-#define DESTROY_DIALOGUE_SUBTREE_ROOT(n) \
-    if ((n)->left) CaddieDialogueStringMap_DestroySubtree(self, (n)->left); \
-    if ((n)->right) CaddieDialogueStringMap_DestroySubtree(self, (n)->right); \
-    CaddieDialogueStringPair_Destroy(self, &(n)->payload); \
+#define DESTROY_DIALOGUE_SUBTREE_ROOT(n)                          \
+    if ((n)->left)                                                \
+        CaddieDialogueStringMap_DestroySubtree(self, (n)->left);  \
+    if ((n)->right)                                               \
+        CaddieDialogueStringMap_DestroySubtree(self, (n)->right); \
+    CaddieDialogueStringPair_Destroy(self, &(n)->payload);        \
     appFreeUni__FPv(n)
 // Destroy dialogue pairs and free a subtree in postorder; retain the unrolled cleanup shape.
 void CaddieDialogueStringMap_DestroySubtree(void* self, TreeNode* link) {
@@ -267,10 +320,14 @@ void CaddieDialogueStringMap_DestroySubtree(void* self, TreeNode* link) {
         if (walkSlotB) {
             // Visit root.left.left.left; free descendants before this node's payload/allocation.
             walkSlotC = walkSlotB->left;
-            if (walkSlotC) { DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotC); }
+            if (walkSlotC) {
+                DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotC);
+            }
             // Visit root.left.left.right; free descendants before this node's payload/allocation.
             walkSlotC = walkSlotB->right;
-            if (walkSlotC) { DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotC); }
+            if (walkSlotC) {
+                DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotC);
+            }
             CaddieDialogueStringPair_Destroy(self, &walkSlotB->payload);
             appFreeUni__FPv(walkSlotB);
         }
@@ -279,10 +336,14 @@ void CaddieDialogueStringMap_DestroySubtree(void* self, TreeNode* link) {
         if (walkSlotC) {
             // Visit root.left.right.left; free descendants before this node's payload/allocation.
             walkSlotB = walkSlotC->left;
-            if (walkSlotB) { DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotB); }
+            if (walkSlotB) {
+                DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotB);
+            }
             // Visit root.left.right.right; free descendants before this node's payload/allocation.
             walkSlotB = walkSlotC->right;
-            if (walkSlotB) { DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotB); }
+            if (walkSlotB) {
+                DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotB);
+            }
             CaddieDialogueStringPair_Destroy(self, &walkSlotC->payload);
             appFreeUni__FPv(walkSlotC);
         }
@@ -297,10 +358,14 @@ void CaddieDialogueStringMap_DestroySubtree(void* self, TreeNode* link) {
         if (walkSlotB) {
             // Visit root.right.left.left; free descendants before this node's payload/allocation.
             walkSlotA = walkSlotB->left;
-            if (walkSlotA) { DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotA); }
+            if (walkSlotA) {
+                DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotA);
+            }
             // Visit root.right.left.right; free descendants before this node's payload/allocation.
             walkSlotA = walkSlotB->right;
-            if (walkSlotA) { DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotA); }
+            if (walkSlotA) {
+                DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotA);
+            }
             CaddieDialogueStringPair_Destroy(self, &walkSlotB->payload);
             appFreeUni__FPv(walkSlotB);
         }
@@ -309,10 +374,14 @@ void CaddieDialogueStringMap_DestroySubtree(void* self, TreeNode* link) {
         if (walkSlotB) {
             // Visit root.right.right.left; free descendants before this node's payload/allocation.
             walkSlotA = walkSlotB->left;
-            if (walkSlotA) { DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotA); }
+            if (walkSlotA) {
+                DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotA);
+            }
             // Visit root.right.right.right; free descendants before this node's payload/allocation.
             walkSlotA = walkSlotB->right;
-            if (walkSlotA) { DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotA); }
+            if (walkSlotA) {
+                DESTROY_DIALOGUE_SUBTREE_ROOT(walkSlotA);
+            }
             CaddieDialogueStringPair_Destroy(self, &walkSlotB->payload);
             appFreeUni__FPv(walkSlotB);
         }
@@ -337,21 +406,43 @@ void CaddieDialogueStringMap_DestroySubtree(void* self, TreeNode* link) {
 #pragma pop
 
 // Release the heap-backed string in an integer/string map payload.
-void IntStringTree_DestroyValue(void*, void* p) {
-    if (p == 0) return;
-    if ((int)p + 4 == 0) return;
-    if (!(((IntStringPayload*)p)->text.flags >> 31)) return;
-    appFreeUni__FPv(((IntStringPayload*)p)->text.buffer);
+void IntStringTree_DestroyValue(void*, void* payload) {
+    if (payload == 0)
+        return;
+    if ((int)payload + 4 == 0)
+        return;
+    if (!(((IntStringPayload*)payload)->text.flags >> 31))
+        return;
+    appFreeUni__FPv(((IntStringPayload*)payload)->text.buffer);
 }
 
 struct RefObject {
-    virtual void unused00(); virtual void unused01(); virtual void unused02(); virtual void unused03();
-    virtual void unused04(); virtual void unused05(); virtual void unused06(); virtual void unused07();
-    virtual void unused08(); virtual void unused09(); virtual void unused10(); virtual void unused11();
-    virtual void unused12(); virtual void unused13(); virtual void unused14(); virtual void unused15();
-    virtual void unused16(); virtual void unused17(); virtual void unused18(); virtual void unused19();
-    virtual void unused20(); virtual void unused21(); virtual void unused22(); virtual void unused23();
-    virtual void unused24(); virtual void unused25();
+    virtual void unused00();
+    virtual void unused01();
+    virtual void unused02();
+    virtual void unused03();
+    virtual void unused04();
+    virtual void unused05();
+    virtual void unused06();
+    virtual void unused07();
+    virtual void unused08();
+    virtual void unused09();
+    virtual void unused10();
+    virtual void unused11();
+    virtual void unused12();
+    virtual void unused13();
+    virtual void unused14();
+    virtual void unused15();
+    virtual void unused16();
+    virtual void unused17();
+    virtual void unused18();
+    virtual void unused19();
+    virtual void unused20();
+    virtual void unused21();
+    virtual void unused22();
+    virtual void unused23();
+    virtual void unused24();
+    virtual void unused25();
     virtual void destroy(unsigned int, unsigned int);
 };
 struct RefObject8 {
@@ -365,10 +456,12 @@ struct RefHolder {
 };
 
 // Destroy the referenced actor when this holder owns it.
-void CConteCaddie_DestroyOwnedActor(RefHolder* p) {
-    if (p->ownsObject == 0) return;
-    RefObject** q = p->object;
-    if (q == 0) return;
+void CConteCaddie::DestroyOwnedActor(RefHolder* holder) {
+    if (holder->ownsObject == 0)
+        return;
+    RefObject** q = holder->object;
+    if (q == 0)
+        return;
     {
         RefObject* obj = *q;
         obj->destroy(1, 1);
@@ -376,26 +469,30 @@ void CConteCaddie_DestroyOwnedActor(RefHolder* p) {
 }
 
 // Destroy and clear an owned polymorphic object pointer.
-void CaddieOwnedObject_DestroyAndClear(void*, void* p) {
-    if (p == 0) return;
-    RefObject8* obj = *(RefObject8**)p;
-    if (obj == 0) return;
-    if (obj != 0) obj->destroy(1);
-    *(void**)p = 0;
+void CaddieOwnedObject_DestroyAndClear(void*, void* objectSlot) {
+    if (objectSlot == 0)
+        return;
+    RefObject8* obj = *(RefObject8**)objectSlot;
+    if (obj == 0)
+        return;
+    if (obj != 0)
+        obj->destroy(1);
+    *(void**)objectSlot = 0;
 }
 
-void CGolfDoc_Ctor(void*);
 struct AllocatedObject {
     char padding[0x6DC];
     // Construct the allocated golf-document storage.
-    AllocatedObject() { CGolfDoc_Ctor(this); }
+    AllocatedObject() {
+        ((CGolfDoc*)this)->Init();
+    }
 };
 // Allocate and construct the golf document.
 void* CGolfDoc_Create() {
     return new AllocatedObject();
 }
 
-void IntPair_Set(void*, void*, void*);
+void* IntPair_Set(void*, void*, void*);
 void* ActorFactoryRegistry_GetInstance();
 void StringMap_SetByName(void*, void*, const char*);
 void CGolfCaddie_Create();
@@ -418,8 +515,10 @@ void CGolfCaddie_RegisterType() {
     StringMap_SetByName(state, (void*)CGolfCaddie_Create, s_golfCaddieFactoryName);
     state = TaskRegistry_GetInstance();
     TaskRegistry_AppendFactory(state, s_golfCaddieTaskName);
-    if ((signed char)s_bpSharedStartupGuard == 0) s_bpSharedStartupGuard = 1;
-    if ((signed char)s_bpSecondaryStartupGuard == 0) s_bpSecondaryStartupGuard = 1;
+    if ((signed char)s_bpSharedStartupGuard == 0)
+        s_bpSharedStartupGuard = 1;
+    if ((signed char)s_bpSecondaryStartupGuard == 0)
+        s_bpSecondaryStartupGuard = 1;
 }
 
 void* __nwa__FUl(unsigned int);
@@ -444,7 +543,8 @@ extern const char __vt__Q23std12length_error[];
 // Copy an integer/string pair into a new tree node and rebalance the insertion.
 // sourcePair is borrowed; heap text is copied. Return the tree-owned node, not its payload.
 // parentNode is the insertion parent (or root slot); updateFirstNode updates the cached minimum.
-void* IntStringTree_InsertAtPosition(void* self, void* parentNode, int insertLeft, int updateFirstNode, const void* sourcePair) {
+void* IntStringTree_InsertAtPosition(void* self, void* parentNode, int insertLeft, int updateFirstNode,
+                                     const void* sourcePair) {
     // Phase 1: reject count overflow before allocating any node storage.
     volatile unsigned char zero __attribute__((aligned(4)));
     volatile char extra __attribute__((aligned(4)));
@@ -454,16 +554,27 @@ void* IntStringTree_InsertAtPosition(void* self, void* parentNode, int insertLef
     if (*(unsigned int*)self == 0xFFFFFFFFu) {
         const char* msg = (const char*)golfCaddieStrings + kTreeInsertLengthError;
         struct __Holder {
-            char* p; char* flag;
+            char* p;
+            char* flag;
             // Guard the exception message while its reference-counted owner is allocated.
-            __Holder(char* b, char* f) { p = b; flag = f; }
+            __Holder(char* b, char* f) {
+                p = b;
+                flag = f;
+            }
             // Free the message unless ownership has been transferred to the control block.
-            ~__Holder() { if (p) __dla__FPv(p); }
+            ~__Holder() {
+                if (p)
+                    __dla__FPv(p);
+            }
         };
         struct __ErrBase {
-            void* vt; char* buf; void* ref;
+            void* vt;
+            char* buf;
+            void* ref;
             // Install the logic-error base table for exception construction.
-            __ErrBase() { vt = (void*)__vt__Q23std11logic_error; }
+            __ErrBase() {
+                vt = (void*)__vt__Q23std11logic_error;
+            }
             // Empty base cleanup hook; message ownership is handled separately.
             ~__ErrBase() {}
         };
@@ -478,13 +589,19 @@ void* IntStringTree_InsertAtPosition(void* self, void* parentNode, int insertLef
                 {
                     __Holder h(b, done);
                     void* r = __nw__FUl(0x10);
-                    if (r) { ((ExceptionCharReference*)r)->strongRefs = 1; ((ExceptionCharReference*)r)->weakRefs = 1; *(void**)r = (void*)s_sharedCharDeleterVtable; ((ExceptionCharReference*)r)->buffer = b; }
+                    if (r) {
+                        ((ExceptionCharReference*)r)->strongRefs = 1;
+                        ((ExceptionCharReference*)r)->weakRefs = 1;
+                        *(void**)r = (void*)s_sharedCharDeleterVtable;
+                        ((ExceptionCharReference*)r)->buffer = b;
+                    }
                     ref = r;
                     h.p = 0;
                 }
                 strcpy(buf, msg);
                 vt = (void*)__vt__Q23std12length_error;
-                __throw((char*)golfCaddieStrings + kLengthErrorType, this, (void (*)(void*))__dt__Q23std12length_errorFv);
+                __throw((char*)golfCaddieStrings + kLengthErrorType, this,
+                        (void (*)(void*))__dt__Q23std12length_errorFv);
             }
             // Empty cleanup hook retained for the thrown exception construction path.
             ~__Err2() {}
@@ -492,11 +609,18 @@ void* IntStringTree_InsertAtPosition(void* self, void* parentNode, int insertLef
         __Err2 e(&extra, &done, msg);
     }
     struct NodeHolder {
-        void* owner; void* ptr;
+        void* owner;
+        void* ptr;
         // Guard an unlinked tree node until insertion takes ownership.
-        NodeHolder(void* o, void* p) { owner = o; ptr = p; }
+        NodeHolder(void* o, void* p) {
+            owner = o;
+            ptr = p;
+        }
         // Free an unlinked node if payload construction fails.
-        ~NodeHolder() { if (ptr) appFreeUni__FPv(ptr); }
+        ~NodeHolder() {
+            if (ptr)
+                appFreeUni__FPv(ptr);
+        }
     };
     // Phase 2: guard unlinked storage while copying inline bytes or duplicating heap text.
     zero = 0;
@@ -509,26 +633,33 @@ void* IntStringTree_InsertAtPosition(void* self, void* parentNode, int insertLef
     struct Payload {
         unsigned int first, header, length, data;
         // Copy the integer key and narrow text, duplicating sourceIsHeap storage when needed.
-        static void construct(Payload* node, unsigned int sourceFlags, unsigned int sourceKey, unsigned int sourceIsHeap, const void* sourcePair, volatile unsigned char* noUnit, unsigned char* unit) {
-        try {
-        node->first = sourceKey;
-        if (!sourceIsHeap) {
-            node->header = sourceFlags;
-            node->length = *(const unsigned int*)((const char*)sourcePair + 8);
-            node->data = *(const unsigned int*)((const char*)sourcePair + 0xC);
-        } else {
-            node->header = 0;
-            node->length = 0;
-            node->data = 0;
-            String_ReserveCapacity(&node->header, *(const unsigned int*)((const char*)sourcePair + 8));
-                *unit = *noUnit;
-                ((void (*)(void*, int, int, unsigned int, unsigned int, unsigned char*))String_ReplaceRange)(&node->header, 0, 0, *(const unsigned int*)((const char*)sourcePair + 0xC),
-                            *(const unsigned int*)((const char*)sourcePair + 0xC) + *(const unsigned int*)((const char*)sourcePair + 8), unit);
-        }
-        } catch (...) {
-            // Runtime rethrow does not return; this catch has no normal exit.
-            for (;;) { throw; }
-        }
+        static void construct(Payload* node, unsigned int sourceFlags, unsigned int sourceKey,
+                              unsigned int sourceIsHeap, const void* sourcePair, volatile unsigned char* noUnit,
+                              unsigned char* unit) {
+            try {
+                node->first = sourceKey;
+                if (!sourceIsHeap) {
+                    node->header = sourceFlags;
+                    node->length = *(const unsigned int*)((const char*)sourcePair + 8);
+                    node->data = *(const unsigned int*)((const char*)sourcePair + 0xC);
+                } else {
+                    node->header = 0;
+                    node->length = 0;
+                    node->data = 0;
+                    String_ReserveCapacity(&node->header, *(const unsigned int*)((const char*)sourcePair + 8));
+                    *unit = *noUnit;
+                    ((void (*)(void*, int, int, unsigned int, unsigned int, unsigned char*))String_ReplaceRange)(
+                        &node->header, 0, 0, *(const unsigned int*)((const char*)sourcePair + 0xC),
+                        *(const unsigned int*)((const char*)sourcePair + 0xC) +
+                            *(const unsigned int*)((const char*)sourcePair + 8),
+                        unit);
+                }
+            } catch (...) {
+                // Runtime rethrow does not return; this catch has no normal exit.
+                for (;;) {
+                    throw;
+                }
+            }
         }
     };
     Payload* node = (Payload*)((char*)p + kTreePayloadOffset);
@@ -548,12 +679,23 @@ void* IntStringTree_InsertAtPosition(void* self, void* parentNode, int insertLef
     holder.ptr = 0;
     alloc[0] = 0;
     unsigned int* slot = alloc + 2;
-    if (slot != 0) { try { *slot = (unsigned int)parentNode; } catch (...) { __throw(0, 0, 0); } }
-    if (insertLeft != 0) *(unsigned int*)parentNode = (unsigned int)alloc; else (*(unsigned int*)&AsIntStringTreeNode8013(parentNode)->right) = (unsigned int)alloc;
+    if (slot != 0) {
+        try {
+            *slot = (unsigned int)parentNode;
+        } catch (...) {
+            __throw(0, 0, 0);
+        }
+    }
+    if (insertLeft != 0)
+        *(unsigned int*)parentNode = (unsigned int)alloc;
+    else
+        (*(unsigned int*)&AsIntStringTreeNode8013(parentNode)->right) = (unsigned int)alloc;
     unsigned int oldSize = *(unsigned int*)self;
     *(unsigned int*)self = oldSize + 1;
-    ((void (*)(void*, void*, unsigned int))RBTree_RebalanceAfterInsert)(alloc, ((CaddieStringTree*)self)->root, oldSize);
-    if (updateFirstNode != 0) (*(unsigned int*)&((CaddieStringTree*)self)->firstNode) = (unsigned int)alloc;
+    ((void (*)(void*, void*, unsigned int))RBTree_RebalanceAfterInsert)(alloc, ((CaddieStringTree*)self)->root,
+                                                                        oldSize);
+    if (updateFirstNode != 0)
+        (*(unsigned int*)&((CaddieStringTree*)self)->firstNode) = (unsigned int)alloc;
     return alloc;
 }
 #pragma pop
@@ -576,19 +718,14 @@ void WString_ReserveCapacity(void*, unsigned int);
 char* String_FormatTemporary(const char*, ...);
 unsigned int ItemInventory_FindCaddieItemData(void*, void*);
 void* g_sharedDoc;
-void* CPetBody_Ctor(void*, const char*, int);
-void CPetBody_SetPosition(void*, float*);
-void CPetBody_SetNameString(void*, const char*);
-void* CPetBody_SetupLighting(void*);
-void* CPetBody_GetPuppet(void*);
 void WPuppet_RebuildBoneController(void*);
 void WPuppet_InitializeTextureCoordinateAnimation(void*);
-void CGolfCaddie_ParseAnimationMetadata(void*, void*);
 void WPuppet_SetRendererOption(void*, int);
 void* GfxObjList_FindByName(void*, const char*);
 void RenderPacket_Init(void*);
 void __register_global_object(void*, void*, void*);
-void CShadowManager_GetOrCreateEntry(void*, const char*, float, int, const char*, const char*);
+extern "C" void GetOrCreateEntry__14CShadowManagerFPCcfUiPCcPC8Src801EF(void*, const char*, float, int, const char*,
+                                                                        const char*);
 void* g_shadowManager;
 signed char s_renderPacketInitialized;
 void* RenderPacket_Destroy();
@@ -612,42 +749,64 @@ struct FormatArg {
 struct LocalString {
     unsigned int header, length, heapDataOrInlineBytes;
     // Initialize an empty inline model-command string.
-    LocalString() { header = 0; length = 0; heapDataOrInlineBytes = 0; }
+    LocalString() {
+        header = 0;
+        length = 0;
+        heapDataOrInlineBytes = 0;
+    }
     // Release a heap-backed model-command string.
-    ~LocalString() { if (header >> 31) appFreeUni__FPv((void*)heapDataOrInlineBytes); }
+    ~LocalString() {
+        if (header >> 31)
+            appFreeUni__FPv((void*)heapDataOrInlineBytes);
+    }
     // Borrow the current inline or heap string contents.
-    const char* value() const { if ((header >> 31) == 0) return (const char*)this + 1; else return (const char*)heapDataOrInlineBytes; }
+    const char* value() const {
+        if ((header >> 31) == 0)
+            return (const char*)this + 1;
+        else
+            return (const char*)heapDataOrInlineBytes;
+    }
 };
 struct PetBodyAllocation {
     char bytes[0x1B4];
     // Construct a pet body from borrowed model-command text.
     PetBodyAllocation(const LocalString& text, int flag) {
         const char* value;
-        if ((text.header >> 31) == 0) value = (const char*)&text + 1;
-        else value = (const char*)text.heapDataOrInlineBytes;
-        CPetBody_Ctor(this, value, flag);
+        if ((text.header >> 31) == 0)
+            value = (const char*)&text + 1;
+        else
+            value = (const char*)text.heapDataOrInlineBytes;
+        ((CPetBody*)this)->__ct(value, flag);
     }
 };
 
 // Keep these expansions at the call site: allocator-byte lifetimes also control EH code.
 // Each expansion replaces the entire model command; result is borrowed only during the copy.
-#define ASSIGN_TEXT_BODY \
-    if ((text.header >> 31) == 0) textLength = *(unsigned char*)&text.header & 0x7f; else textLength = text.length; \
-    volatile unsigned char unused __attribute__((aligned(4))); \
-    unsigned char unit __attribute__((aligned(4))) = unused; \
-    ((void (*)(void*, int, unsigned int, const char*, const char*, unsigned char*))String_ReplaceRange)(&text, 0, textLength, result, result + strlen(result), &unit)
-#define ASSIGN_TEXT(resultExpr) \
-    unsigned int textLength; \
+#define ASSIGN_TEXT_BODY                                                                                 \
+    if ((text.header >> 31) == 0)                                                                        \
+        textLength = *(unsigned char*)&text.header & 0x7f;                                               \
+    else                                                                                                 \
+        textLength = text.length;                                                                        \
+    volatile unsigned char unused __attribute__((aligned(4)));                                           \
+    unsigned char unit __attribute__((aligned(4))) = unused;                                             \
+    ((void (*)(void*, int, unsigned int, const char*, const char*, unsigned char*))String_ReplaceRange)( \
+        &text, 0, textLength, result, result + strlen(result), &unit)
+#define ASSIGN_TEXT(resultExpr)        \
+    unsigned int textLength;           \
     const char* result = (resultExpr); \
     ASSIGN_TEXT_BODY
 
 // Build the entry model command, create its pet body, and initialize animation and shadows.
-void CGolfCaddie_CreatePetBodyForEntry(void* self, CaddieBodyEntryView* arg, FormatArg* lookup) {
-    if (arg->bodyAddress != 0) return;
+void CGolfCaddie::CreatePetBodyForEntry(void* entry, void* lookupData) {
+    CaddieBodyEntryView* entryView = (CaddieBodyEntryView*)entry;
+    FormatArg* lookup = (FormatArg*)lookupData;
+    if (entryView->bodyAddress != 0)
+        return;
     LocalString text;
     // A story-pet context selects the story model format and skips ordinary animation metadata.
-    if (((CGolfCaddie*)self)->storyConteCaddieOverride != 0) {
-        const char* result = String_FormatTemporary(golfCaddieStrings + kStoryPetFormat, ((IFF_STRUCT::sCaddie*)arg->value)->model);
+    if (storyConteCaddieOverride != 0) {
+        const char* result = String_FormatTemporary(golfCaddieStrings + kStoryPetFormat,
+                                                    ((IFF_STRUCT::sCaddie*)entryView->value)->model);
         unsigned int textLength;
         ASSIGN_TEXT_BODY;
     } else {
@@ -655,40 +814,50 @@ void CGolfCaddie_CreatePetBodyForEntry(void* self, CaddieBodyEntryView* arg, For
         if (lookup != 0) {
             found = (void*)ItemInventory_FindCaddieItemData(AsCSharedDoc(g_sharedDoc)->itemInventory, lookup);
             if (found != 0) {
-                ASSIGN_TEXT(String_FormatTemporary(golfCaddieStrings + kItemPetFormat, ((IFF_STRUCT::sCadItem*)found)->model));
+                ASSIGN_TEXT(
+                    String_FormatTemporary(golfCaddieStrings + kItemPetFormat, ((IFF_STRUCT::sCadItem*)found)->model));
             } else {
-                ASSIGN_TEXT(String_FormatTemporary(golfCaddieStrings + kDefaultPetFormat, ((IFF_STRUCT::sCaddie*)arg->value)->model));
+                ASSIGN_TEXT(String_FormatTemporary(golfCaddieStrings + kDefaultPetFormat,
+                                                   ((IFF_STRUCT::sCaddie*)entryView->value)->model));
             }
         } else {
-            ASSIGN_TEXT(String_FormatTemporary(golfCaddieStrings + kDefaultPetFormat, ((IFF_STRUCT::sCaddie*)arg->value)->model));
+            ASSIGN_TEXT(String_FormatTemporary(golfCaddieStrings + kDefaultPetFormat,
+                                               ((IFF_STRUCT::sCaddie*)entryView->value)->model));
         }
     }
     // Phase 2: construct the chosen model and transfer the new body into the entry.
     void* object = new PetBodyAllocation(text, 0);
-    *(void**)arg = object;
+    *(void**)entryView = object;
     if (object != 0) {
-        float pos[3] = { kFloat_0_GolfCaddie, kFloat_0_GolfCaddie, kFloat_0_GolfCaddie };
-        CPetBody_SetPosition(*(void**)arg, pos);
-        CPetBody_SetNameString(*(void**)arg, golfCaddieStrings + kPetCenterName);
-        CPetBody_SetupLighting(*(void**)arg);
+        float pos[3] = {kFloat_0_GolfCaddie, kFloat_0_GolfCaddie, kFloat_0_GolfCaddie};
+        ((CPetBody*)(*(void**)entryView))->SetPosition(pos);
+        ((CPetBody*)(*(void**)entryView))->SetNameString(golfCaddieStrings + kPetCenterName);
+        ((CPetBody*)(*(void**)entryView))->SetupLighting();
     }
     // Phase 3: prepare puppet animation/controllers; story overrides skip metadata parsing.
-    void* child = CPetBody_GetPuppet(*(void**)arg);
-    if (child != 0) { WPuppet_RebuildBoneController(CPetBody_GetPuppet(*(void**)arg)); WPuppet_InitializeTextureCoordinateAnimation(CPetBody_GetPuppet(*(void**)arg)); }
-    if (((CGolfCaddie*)self)->storyConteCaddieOverride == 0) CGolfCaddie_ParseAnimationMetadata(self, arg);
-    WPuppet_SetRendererOption(CPetBody_GetPuppet(*(void**)arg), 2);
+    void* child = ((CPetBody*)(*(void**)entryView))->GetPuppet();
+    if (child != 0) {
+        WPuppet_RebuildBoneController(((CPetBody*)(*(void**)entryView))->GetPuppet());
+        WPuppet_InitializeTextureCoordinateAnimation(((CPetBody*)(*(void**)entryView))->GetPuppet());
+    }
+    if (storyConteCaddieOverride == 0)
+        ParseAnimationMetadata(entryView);
+    WPuppet_SetRendererOption(((CPetBody*)(*(void**)entryView))->GetPuppet(), 2);
     // Phase 4: lazily install the shared shadow group; it is not owned by this entry.
-    if (arg != 0 && *(void**)arg != 0 && GfxObjList_FindByName(g_shadowManager, golfCaddieStrings + kShadowGroupName) == 0) {
+    if (entryView != 0 && *(void**)entryView != 0 &&
+        GfxObjList_FindByName(g_shadowManager, golfCaddieStrings + kShadowGroupName) == 0) {
         if (Sing_805DC7B0() == 0) {
             if (s_renderPacketInitialized == 0) {
                 RenderPacket_Init((void*)s_renderPacket);
-                __register_global_object((void*)s_renderPacket, (void*)RenderPacket_Destroy, (void*)s_renderPacketDtorRegistration_804F68E8);
+                __register_global_object((void*)s_renderPacket, (void*)RenderPacket_Destroy,
+                                         (void*)s_renderPacketDtorRegistration_804F68E8);
                 s_renderPacketInitialized = 1;
             }
             Sing_805DC7B0() = (char*)s_renderPacket;
         }
-        CShadowManager_GetOrCreateEntry(g_shadowManager, golfCaddieStrings + kShadowGroupName, kFloat_0_09_CaddieShadow, 0x10,
-                    golfCaddieStrings + kSunLightName, (char*)Sing_805DC7B0() + 0x4C);
+        GetOrCreateEntry__14CShadowManagerFPCcfUiPCcPC8Src801EF(
+            g_shadowManager, golfCaddieStrings + kShadowGroupName, kFloat_0_09_CaddieShadow, 0x10,
+            golfCaddieStrings + kSunLightName, (char*)Sing_805DC7B0() + 0x4C);
     }
 }
 #undef ASSIGN_TEXT
@@ -702,7 +871,7 @@ struct Pair {
 // Copy narrow/wide strings into an owned tree node and rebalance its insertion.
 // first is borrowed; both strings are copied. link is an insertion parent/root slot.
 void* StringWStringMap_InsertNode(StringTreeContainerWords* self, void** link, int insertLeft, int updateFirstNode,
-                  const StringPairSource* first) {
+                                  const StringPairSource* first) {
     volatile unsigned char zero __attribute__((aligned(4)));
     volatile char extra __attribute__((aligned(4)));
     char done __attribute__((aligned(4)));
@@ -712,16 +881,27 @@ void* StringWStringMap_InsertNode(StringTreeContainerWords* self, void** link, i
     volatile unsigned char noUnit1 __attribute__((aligned(4)));
     if (self->count + 0x10000 == 0xFFFF) {
         struct __Holder {
-            char* p; char* flag;
+            char* p;
+            char* flag;
             // Guard the exception message while its reference-counted owner is allocated.
-            __Holder(char* b, char* f) { p = b; flag = f; }
+            __Holder(char* b, char* f) {
+                p = b;
+                flag = f;
+            }
             // Free the message unless ownership has been transferred to the control block.
-            ~__Holder() { if (p) __dla__FPv(p); }
+            ~__Holder() {
+                if (p)
+                    __dla__FPv(p);
+            }
         };
         struct __ErrBase {
-            void* vt; char* buf; void* ref;
+            void* vt;
+            char* buf;
+            void* ref;
             // Install the logic-error base table for exception construction.
-            __ErrBase() { vt = (void*)__vt__Q23std11logic_error; }
+            __ErrBase() {
+                vt = (void*)__vt__Q23std11logic_error;
+            }
             // Empty base cleanup hook; message ownership is handled separately.
             ~__ErrBase() {}
         };
@@ -737,13 +917,19 @@ void* StringWStringMap_InsertNode(StringTreeContainerWords* self, void** link, i
                 {
                     __Holder h(b, done);
                     void* r = __nw__FUl(0x10);
-                    if (r) { ((ExceptionCharReference*)r)->strongRefs = 1; ((ExceptionCharReference*)r)->weakRefs = 1; *(void**)r = (void*)s_sharedCharDeleterVtable; ((ExceptionCharReference*)r)->buffer = b; }
+                    if (r) {
+                        ((ExceptionCharReference*)r)->strongRefs = 1;
+                        ((ExceptionCharReference*)r)->weakRefs = 1;
+                        *(void**)r = (void*)s_sharedCharDeleterVtable;
+                        ((ExceptionCharReference*)r)->buffer = b;
+                    }
                     ref = r;
                     h.p = 0;
                 }
                 strcpy(buf, msg);
                 vt = (void*)__vt__Q23std12length_error;
-                __throw((char*)golfCaddieStrings + kLengthErrorType, this, (void (*)(void*))__dt__Q23std12length_errorFv);
+                __throw((char*)golfCaddieStrings + kLengthErrorType, this,
+                        (void (*)(void*))__dt__Q23std12length_errorFv);
             }
             // Empty cleanup hook retained for the thrown exception construction path.
             ~__Err2() {}
@@ -753,11 +939,18 @@ void* StringWStringMap_InsertNode(StringTreeContainerWords* self, void** link, i
         __Err2 e(&extra, &done, msg);
     }
     struct NodeHolder {
-        void* owner; void* ptr;
+        void* owner;
+        void* ptr;
         // Guard an unlinked tree node until insertion takes ownership.
-        NodeHolder(void* o, void* p) { owner = o; ptr = p; }
+        NodeHolder(void* o, void* p) {
+            owner = o;
+            ptr = p;
+        }
         // Free an unlinked node if payload construction fails.
-        ~NodeHolder() { if (ptr) appFreeUni__FPv(ptr); }
+        ~NodeHolder() {
+            if (ptr)
+                appFreeUni__FPv(ptr);
+        }
     };
     zero = 0;
     void* volatile t2;
@@ -769,59 +962,72 @@ void* StringWStringMap_InsertNode(StringTreeContainerWords* self, void** link, i
     NodeHolder holder((char*)self + 4, p);
     char* node = (char*)p + kTreePayloadOffset;
     {
-            struct Narrow {
-                unsigned int header, length, data;
-                // Copy the narrow map key, duplicating its heap buffer if present.
-                Narrow(const StringPairSource* first, volatile unsigned char* unused, unsigned char* unit) {
-                    unsigned int a = first->narrowFlags;
-                    if (!(a >> 31)) {
-                        header = a;
-                        length = first->narrowLength;
-                        data = first->narrowBufferBits;
-                    } else {
-                        header = 0;
-                        unsigned int e = first->narrowLength;
-                        length = 0; data = 0;
-                        String_ReserveCapacity(this, e);
-                        *unit = *unused;
-                        ((void (*)(void*, int, int, unsigned int, unsigned int, unsigned char*))String_ReplaceRange)(this, 0, 0, first->narrowBufferBits, first->narrowBufferBits + first->narrowLength, unit);
-                    }
+        struct Narrow {
+            unsigned int header, length, data;
+            // Copy the narrow map key, duplicating its heap buffer if present.
+            Narrow(const StringPairSource* first, volatile unsigned char* unused, unsigned char* unit) {
+                unsigned int sourceFlags = first->narrowFlags;
+                if (!(sourceFlags >> 31)) {
+                    header = sourceFlags;
+                    length = first->narrowLength;
+                    data = first->narrowBufferBits;
+                } else {
+                    header = 0;
+                    unsigned int e = first->narrowLength;
+                    length = 0;
+                    data = 0;
+                    String_ReserveCapacity(this, e);
+                    *unit = *unused;
+                    ((void (*)(void*, int, int, unsigned int, unsigned int, unsigned char*))String_ReplaceRange)(
+                        this, 0, 0, first->narrowBufferBits, first->narrowBufferBits + first->narrowLength, unit);
                 }
-                // Release the copied narrow key when its payload is destroyed.
-                ~Narrow() { if (header >> 31) appFreeUni__FPv((void*)data); }
-            };
-            struct Payload {
-                Narrow narrow;
-                unsigned char flag; char pad[3];
-                unsigned int header, length, data;
-                // Construct the narrow key, then copy the value tag and wide text.
-                Payload(const StringPairSource* first, volatile unsigned char* unused0, unsigned char* unit0,
-                        volatile unsigned char* unused1, unsigned char* unit1) try : narrow(first, unused0, unit0) {
-                    unsigned int copiedFlag;
-                    unsigned int b;
-                    b = first->wideFlags;
-                    copiedFlag = first->valueTag;
-                    assign(b, copiedFlag, this, first, unused1, unit1);
-                } catch (...) { for (;;) { throw; } }
-                // Copy the value tag and wide string into the payload with independent ownership.
-                static void assign(unsigned int b, unsigned int copiedFlag, Payload* dest, const StringPairSource* first,
-                                   volatile unsigned char* unused1, unsigned char* unit1) {
-                    dest->flag = copiedFlag;
-                    if (!(b >> 31)) {
-                        dest->header = b;
-                        dest->length = first->wideLength;
-                        dest->data = first->wideBufferBits;
-                    } else {
-                        unsigned int req = first->wideLength;
-                        dest->header = 0; dest->length = 0; dest->data = 0;
-                        WString_ReserveCapacity(&dest->header, req);
-                        *unit1 = *unused1;
-                        WString_ReplaceRange(&dest->header, 0, 0, ((void*)first->wideBufferBits),
-                            first->wideBufferBits + 2 * first->wideLength, unit1);
-                    }
+            }
+            // Release the copied narrow key when its payload is destroyed.
+            ~Narrow() {
+                if (header >> 31)
+                    appFreeUni__FPv((void*)data);
+            }
+        };
+        struct Payload {
+            Narrow narrow;
+            unsigned char flag;
+            char pad[3];
+            unsigned int header, length, data;
+            // Construct the narrow key, then copy the value tag and wide text.
+            Payload(const StringPairSource* first, volatile unsigned char* unused0, unsigned char* unit0,
+                    volatile unsigned char* unused1, unsigned char* unit1) try
+                : narrow(first, unused0, unit0) {
+                unsigned int copiedFlag;
+                unsigned int b;
+                b = first->wideFlags;
+                copiedFlag = first->valueTag;
+                assign(b, copiedFlag, this, first, unused1, unit1);
+            } catch (...) {
+                for (;;) {
+                    throw;
                 }
-            };
-            new(node) Payload(first, &noUnit0, &unit0, &noUnit1, &unit1);
+            }
+            // Copy the value tag and wide string into the payload with independent ownership.
+            static void assign(unsigned int wideFlags, unsigned int copiedFlag, Payload* dest,
+                               const StringPairSource* first, volatile unsigned char* unused1, unsigned char* unit1) {
+                dest->flag = copiedFlag;
+                if (!(wideFlags >> 31)) {
+                    dest->header = wideFlags;
+                    dest->length = first->wideLength;
+                    dest->data = first->wideBufferBits;
+                } else {
+                    unsigned int req = first->wideLength;
+                    dest->header = 0;
+                    dest->length = 0;
+                    dest->data = 0;
+                    WString_ReserveCapacity(&dest->header, req);
+                    *unit1 = *unused1;
+                    WString_ReplaceRange(&dest->header, 0, 0, ((void*)first->wideBufferBits),
+                                         first->wideBufferBits + 2 * first->wideLength, unit1);
+                }
+            }
+        };
+        new (node) Payload(first, &noUnit0, &unit0, &noUnit1, &unit1);
     }
     // Publish: clear child links, store the insertion parent, then attach
     // left/right and rebalance. The cached minimum changes only when requested.
@@ -830,13 +1036,23 @@ void* StringWStringMap_InsertNode(StringTreeContainerWords* self, void** link, i
     holder.ptr = 0;
     alloc[0] = 0;
     unsigned int* slot = alloc + 2;
-    if (slot != 0) { try { *slot = (unsigned int)link; } catch (...) { __throw(0, 0, 0); } }
+    if (slot != 0) {
+        try {
+            *slot = (unsigned int)link;
+        } catch (...) {
+            __throw(0, 0, 0);
+        }
+    }
     // Ownership now belongs to the container; rebalance only after both strings exist.
-    if (insertLeft) *link = alloc; else link[1] = alloc;
+    if (insertLeft)
+        *link = alloc;
+    else
+        link[1] = alloc;
     unsigned int oldSize = self->count;
     self->count = oldSize + 1;
     ((void (*)(void*, void*, unsigned int))RBTree_RebalanceAfterInsert)(alloc, (void*)self->rootBits, oldSize);
-    if (updateFirstNode) ((StringTreeContainerWords*)self)->firstNodeCache = alloc;
+    if (updateFirstNode)
+        ((StringTreeContainerWords*)self)->firstNodeCache = alloc;
     return alloc;
 }
 #pragma pop
@@ -849,14 +1065,23 @@ void* StringWStringMap_InsertNode(StringTreeContainerWords* self, void** link, i
 void WString_ReserveCapacity(void* object, unsigned int requested) {
     if (requested > kMaxWideStringLength) {
         struct __Holder {
-            char* p; char* flag;
+            char* p;
+            char* flag;
             // Guard the exception message while its reference-counted owner is allocated.
-            __Holder(char* b, char* f) { p = b; flag = f; }
+            __Holder(char* b, char* f) {
+                p = b;
+                flag = f;
+            }
             // Free the message unless ownership has been transferred to the control block.
-            ~__Holder() { if (p) __dla__FPv(p); }
+            ~__Holder() {
+                if (p)
+                    __dla__FPv(p);
+            }
         };
         struct __ErrBase {
-            void* vt; char* buf; void* ref;
+            void* vt;
+            char* buf;
+            void* ref;
             // Allocate and share an exception message before throwing its derived error.
             __ErrBase(const char* msg0) {
                 char done __attribute__((aligned(4))) = 0;
@@ -868,7 +1093,12 @@ void WString_ReserveCapacity(void* object, unsigned int requested) {
                 {
                     __Holder h(b, &done);
                     void* r = __nw__FUl(0x10);
-                    if (r) { ((ExceptionCharReference*)r)->strongRefs = 1; ((ExceptionCharReference*)r)->weakRefs = 1; *(void**)r = (void*)s_sharedCharDeleterVtable; ((ExceptionCharReference*)r)->buffer = b; }
+                    if (r) {
+                        ((ExceptionCharReference*)r)->strongRefs = 1;
+                        ((ExceptionCharReference*)r)->weakRefs = 1;
+                        *(void**)r = (void*)s_sharedCharDeleterVtable;
+                        ((ExceptionCharReference*)r)->buffer = b;
+                    }
                     ref = r;
                     h.p = 0;
                 }
@@ -879,14 +1109,22 @@ void WString_ReserveCapacity(void* object, unsigned int requested) {
         };
         struct __Err2 : __ErrBase {
             // Install the length-error table and transfer the exception to the runtime.
-            __Err2(const char* msg) : __ErrBase(msg) { vt = (void*)__vt__Q23std12length_error; __throw((char*)golfCaddieStrings + kLengthErrorType, this, (void (*)(void*))__dt__Q23std12length_errorFv); }
+            __Err2(const char* msg) : __ErrBase(msg) {
+                vt = (void*)__vt__Q23std12length_error;
+                __throw((char*)golfCaddieStrings + kLengthErrorType, this,
+                        (void (*)(void*))__dt__Q23std12length_errorFv);
+            }
             // Empty cleanup hook retained for the thrown exception construction path.
             ~__Err2() {}
         };
         __Err2 e(golfCaddieStrings + kStringReserveLengthError);
     }
-    struct WordHdr { CW_BITS2( unsigned int heap : 1, unsigned int cap : 31) };
-    struct ByteHdr { CW_BITS2( unsigned char heap : 1, unsigned char len : 7) };
+    struct WordHdr {
+        CW_BITS2(unsigned int heap : 1, unsigned int cap : 31)
+    };
+    struct ByteHdr {
+        CW_BITS2(unsigned char heap : 1, unsigned char len : 7)
+    };
     WordHdr* w = (WordHdr*)object;
     ByteHdr* b = (ByteHdr*)object;
     unsigned int isHeap = w->heap;
@@ -899,11 +1137,14 @@ void WString_ReserveCapacity(void* object, unsigned int requested) {
         length = ((CaddieStringStorage*)object)->length;
         capacity = w->cap;
     }
-    if (requested < length) requested = length;
+    if (requested < length)
+        requested = length;
     // Phase 2: choose inline storage or an eight-character-aligned allocation including NUL.
     unsigned int newCapacity = kWideInlineCapacity;
-    if (requested + 1 > kWideInlineCapacity) newCapacity = (requested + 8) & ~7u;
-    if (newCapacity == capacity) return;
+    if (requested + 1 > kWideInlineCapacity)
+        newCapacity = (requested + 8) & ~7u;
+    if (newCapacity == capacity)
+        return;
 
     char* dest;
     char* source;
@@ -923,14 +1164,17 @@ void WString_ReserveCapacity(void* object, unsigned int requested) {
             }
         }
         isHeapNew = 1;
-        if (isHeap) source = (*(char**)&((CaddieStringStorage*)object)->buffer);
-        else source = (char*)object + 2;
+        if (isHeap)
+            source = (*(char**)&((CaddieStringStorage*)object)->buffer);
+        else
+            source = (char*)object + 2;
     }
     // Phase 3: copy text and terminator before releasing the old heap allocation.
     unsigned int bytes = (((length >> 30) & 1) + (length * 2)) & ~1u;
     memmove(dest, source, bytes);
     *(unsigned short*)(dest + bytes) = 0;
-    if (isHeap) appFreeUni__FPv(source);
+    if (isHeap)
+        appFreeUni__FPv(source);
     w->heap = isHeapNew;
     if (!isHeapNew) {
         b->len = length;

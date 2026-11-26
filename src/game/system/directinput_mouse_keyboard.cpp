@@ -1,6 +1,8 @@
+// DirectInput mouse: polls pointer position and button state and reports button and axis values.
+// Also holds the interface-pointer forwarding functions for its input object and small XML
+// name and entity parsing helpers.
+
 #include <decomp/static_init.h>
-// Translation unit 0x802A0698-0x802A0FF0 (22 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "classes/DirectInputMouseState.h"
 #include "classes/WProc.h"
@@ -31,19 +33,49 @@ struct LocaleCharacterTables {
     char reserved[4];
     unsigned char* lowercase;
 };
-struct LocaleData { char prefix[0x38]; LocaleCharacterTables* characters; };
+struct LocaleData {
+    char prefix[0x38];
+    LocaleCharacterTables* characters;
+};
 extern LocaleData s_cLocaleData;
-struct XmlEntity { const char* text; int length; unsigned char value; char padding[3]; };
-enum XmlParsing { kXmlEntityCount = 5, kAlphabeticMask = 1, kNameCharacterMask = 9 };
-enum MouseInput { kButtonCount = 4, kRelativeAxis = 0, kButtonAxis = 1, kAbsoluteAxis = 3 };
-enum MouseCoordinate { kMouseX = 1, kMouseY = 2, kMouseWheel = 3 };
+struct XmlEntity {
+    const char* text;
+    int length;
+    unsigned char value;
+    char padding[3];
+};
+enum XmlParsing {
+    kXmlEntityCount = 5,
+    kAlphabeticMask = 1,
+    kNameCharacterMask = 9
+};
+enum MouseInput {
+    kButtonCount = 4,
+    kRelativeAxis = 0,
+    kButtonAxis = 1,
+    kAbsoluteAxis = 3
+};
+enum MouseCoordinate {
+    kMouseX = 1,
+    kMouseY = 2,
+    kMouseWheel = 3
+};
 // ABI map: mouse input interface = owner+8; keyboard WProc interface = owner+12.
 // Thunks receive those embedded interfaces and must subtract the offset exactly
 // once. Numbered vfunc names are shared ABI symbols; their bodies document behavior.
 // GetEventTime exposes the first bank; button-axis queries expose the second bank.
-struct MouseButtonArrays { int queryStates[kButtonCount]; int buttonStates[kButtonCount]; };
-struct MouseButtonView { char prefix[0x14]; MouseButtonArrays buttons; };
-struct KeyboardWindowProcView { char prefix[0xC]; WProc windowProcedure; };
+struct MouseButtonArrays {
+    int queryStates[kButtonCount];
+    int buttonStates[kButtonCount];
+};
+struct MouseButtonView {
+    char prefix[0x14];
+    MouseButtonArrays buttons;
+};
+struct KeyboardWindowProcView {
+    char prefix[0xC];
+    WProc windowProcedure;
+};
 extern const float kFloat_0_DirectInputMouse;
 extern void InputManager_Dtor();
 extern void __register_global_object(void*, void*, void*);
@@ -97,8 +129,8 @@ int DirectInputMouse_GetEventTimeThunk8(void* p, int x) {
 }
 
 // Adjust the interface pointer to its owning input object and forward the call.
-int DirectInputMouse_GetAxisValueThunk8(void* p, int a, int b) {
-    return DirectInputMouse_GetAxisValue((void*)((char*)p - 0x8), a, b);
+int DirectInputMouse_GetAxisValueThunk8(void* p, int queryKind, int coordinate) {
+    return DirectInputMouse_GetAxisValue((void*)((char*)p - 0x8), queryKind, coordinate);
 }
 
 // Adjust the interface pointer to its owning input object and forward the call.
@@ -108,7 +140,8 @@ void DirectInputMouse_PollPositionThunk8(void* p) {
 
 // Return the embedded WProc interface, preserving a null owner as null.
 void* DirectInputKeyboard_GetWProc(void* p) {
-    if (p == 0) return p;
+    if (p == 0)
+        return p;
     return &((KeyboardWindowProcView*)p)->windowProcedure;
 }
 
@@ -118,15 +151,16 @@ void DirectInputMouse_PollPosition(void* p) {
     int changed = 0;
     float values[2];
     AsDirectInputMouseState(self)->changed = 0;
-    if (((unsigned int&)Sing_805DC5C8()) == 0) {
+    if (((unsigned int&)GetInputManagerSlot()) == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_mouse);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_mouse);
             s_inputManagerInitialized = 1;
         }
-        ((unsigned int&)Sing_805DC5C8()) = (unsigned int)s_gameInputManager;
+        ((unsigned int&)GetInputManagerSlot()) = (unsigned int)s_gameInputManager;
     }
-    if (InputManager_GetPointerPosition((void*)((unsigned int&)Sing_805DC5C8()), values, -1)) {
+    if (InputManager_GetPointerPosition((void*)((unsigned int&)GetInputManagerSlot()), values, -1)) {
         if (AsDirectInputMouseState(self)->positionX != values[0]) {
             AsDirectInputMouseState(self)->deltaX = (int)(values[0] - AsDirectInputMouseState(self)->positionX);
             changed = 1;
@@ -145,25 +179,30 @@ void DirectInputMouse_PollPosition(void* p) {
 }
 
 // Read an XML name with locale-aware letter/digit tests and XML punctuation.
-void* TiXmlBase_ReadName(signed char* cur, const char* s) {
-    TiXmlString_AssignCStr(s, tinyXmlParserStrings);
+void* TiXmlBase_ReadName(signed char* cur, const char* nameString) {
+    TiXmlString_AssignCStr(nameString, tinyXmlParserStrings);
     // Original 0x802A0698 unit: invalid starts share the null result.
     do {
-        if (cur == 0) break;
-        int c = (unsigned char)*cur;
-        if ((signed char)c == 0) break;
-        if (((c < 0 || c >= 0x100) ? 0 :
-             (s_cLocaleData.characters->classification[c] & kAlphabeticMask)) == 0) {
-            if ((signed char)c != '_') break;
+        if (cur == 0)
+            break;
+        int character = (unsigned char)*cur;
+        if ((signed char)character == 0)
+            break;
+        if (((character < 0 || character >= 0x100)
+                 ? 0
+                 : (s_cLocaleData.characters->classification[character] & kAlphabeticMask)) == 0) {
+            if ((signed char)character != '_')
+                break;
         }
         char pair[2];
-        while (cur != 0 && (signed char)(c = (unsigned char)*cur) != 0 &&
-               (((c < 0 || c >= 0x100) ? 0 :
-                 (s_cLocaleData.characters->classification[c] & kNameCharacterMask)) != 0 ||
-                (signed char)c == '_' || (signed char)c == '-' || (signed char)c == ':')) {
-            pair[0] = (char)c;
+        while (cur != 0 && (signed char)(character = (unsigned char)*cur) != 0 &&
+               (((character < 0 || character >= 0x100)
+                     ? 0
+                     : (s_cLocaleData.characters->classification[character] & kNameCharacterMask)) != 0 ||
+                (signed char)character == '_' || (signed char)character == '-' || (signed char)character == ':')) {
+            pair[0] = (char)character;
             pair[1] = 0;
-            TiXmlString_Append(s, pair);
+            TiXmlString_Append(nameString, pair);
             ++cur;
         }
         return (void*)cur;
@@ -176,40 +215,49 @@ inline int FoldLocaleCharacter(int character) {
     return (character < 0 || character >= 0x100) ? character : (int)s_cLocaleData.characters->lowercase[character];
 }
 // Preserve repeated signed-byte loads: value/reference inline forms change the comparison loop.
-#define FoldLocaleByte(tables, character) \
+#define FoldLocaleByte(tables, character)                                                 \
     (((signed char)(unsigned char)(character) < 0 || (unsigned char)(character) >= 0x100) \
-        ? (int)(signed char)(unsigned char)(character) : (int)(tables)->lowercase[(unsigned char)(character)])
+         ? (int)(signed char)(unsigned char)(character)                                   \
+         : (int)(tables)->lowercase[(unsigned char)(character)])
 
 // Compare the prefix using the original mode convention: nonzero selects exact case.
-// a is the input, b is the prefix (both NUL-terminated); b must be non-null.
-// Return 1 only after the initial folded gate matches and b is exhausted; else 0.
+// input is the input, prefix is the prefix (both NUL-terminated); prefix must be non-null.
+// Return 1 only after the initial folded gate matches and prefix is exhausted; else 0.
 // Empty input fails; an empty prefix does not bypass the initial gate. That gate
 // also runs in exact-case mode; nonzero caseSensitive then requires byte-exact case.
-int TiXml_MatchesPrefix(const signed char* a, const signed char* b, int caseSensitive) {
-    if (a == 0 || *a == 0) return 0;
-    signed char sa_signed = *a;
-    signed char sb_signed = *b;
-    int sa = (unsigned char)*a;
-    int sb = (unsigned char)*b;
-    int badb = (sb_signed < 0) || (sb >= 0x100);
-    int cb = badb ? sb_signed
-        : (int)s_cLocaleData.characters->lowercase[sb];
-    int bada = (sa_signed < 0) || (sa >= 0x100);
-    int ca = bada ? sa_signed
-        : (int)s_cLocaleData.characters->lowercase[sa];
+int TiXml_MatchesPrefix(const signed char* input, const signed char* prefix, int caseSensitive) {
+    if (input == 0 || *input == 0)
+        return 0;
+    signed char sa_signed = *input;
+    signed char sb_signed = *prefix;
+    int inputByte = (unsigned char)*input;
+    int prefixByte = (unsigned char)*prefix;
+    int prefixOutOfRange = (sb_signed < 0) || (prefixByte >= 0x100);
+    int foldedPrefix = prefixOutOfRange ? sb_signed : (int)s_cLocaleData.characters->lowercase[prefixByte];
+    int inputOutOfRange = (sa_signed < 0) || (inputByte >= 0x100);
+    int foldedInput = inputOutOfRange ? sa_signed : (int)s_cLocaleData.characters->lowercase[inputByte];
     // Original 0x802A0E68: both comparison modes share the failure return.
     do {
-        if (ca != cb) break;
+        if (foldedInput != foldedPrefix)
+            break;
         if (caseSensitive) {
-            while (*a != 0 && *b != 0 && *a == *b) { ++a; ++b; }
-            if (*b != 0) break;
+            while (*input != 0 && *prefix != 0 && *input == *prefix) {
+                ++input;
+                ++prefix;
+            }
+            if (*prefix != 0)
+                break;
             return 1;
         }
         {
             LocaleCharacterTables* base = s_cLocaleData.characters;
-            while (*a != 0 && *b != 0 && FoldLocaleByte(base, *a) == FoldLocaleByte(base, *b)) { ++a; ++b; }
+            while (*input != 0 && *prefix != 0 && FoldLocaleByte(base, *input) == FoldLocaleByte(base, *prefix)) {
+                ++input;
+                ++prefix;
+            }
         }
-        if (*b != 0) break;
+        if (*prefix != 0)
+            break;
         return 1;
     } while (0);
     return 0;
@@ -234,12 +282,12 @@ void* DirectInputMouse_DtorThunk8(void* p, int flag) {
 }
 
 // Read one of the four query-state slots, or zero for an invalid button index.
-int DirectInputMouse_GetEventTime(void* p, int x) {
-    int r0 = 0;
-    if (x >= 0 && x < kButtonCount) {
-        r0 = ((MouseButtonView*)p)->buttons.queryStates[x];
+int DirectInputMouse_GetEventTime(void* p, int buttonIndex) {
+    int queryState = 0;
+    if (buttonIndex >= 0 && buttonIndex < kButtonCount) {
+        queryState = ((MouseButtonView*)p)->buttons.queryStates[buttonIndex];
     }
-    return r0;
+    return queryState;
 }
 
 // Decode a two-digit hexadecimal entity or one of the five named XML entities.
@@ -250,20 +298,18 @@ void* TiXmlBase_ReadEntity(char* cur, unsigned char* out) {
             if (cur[4] != 0) {
                 *out = 0;
                 {
-                    int bad = (first < 0) || (first >= 0x100);
-                    unsigned int hf = bad ? 0
-                        : (s_cLocaleData.characters->classification[first] & 1);
-                    if (hf)
+                    int outOfRange = (first < 0) || (first >= 0x100);
+                    unsigned int isAlphabetic = outOfRange ? 0 : (s_cLocaleData.characters->classification[first] & 1);
+                    if (isAlphabetic)
                         *out += (FoldLocaleCharacter(first) - 0x57) << 4;
                     else
                         *out += (first - 0x30) << 4;
                 }
                 signed char second = cur[4];
                 {
-                    int bad = (second < 0) || (second >= 0x100);
-                    unsigned int hf = bad ? 0
-                        : (s_cLocaleData.characters->classification[second] & 1);
-                    if (hf)
+                    int outOfRange = (second < 0) || (second >= 0x100);
+                    unsigned int isAlphabetic = outOfRange ? 0 : (s_cLocaleData.characters->classification[second] & 1);
+                    if (isAlphabetic)
                         *out += FoldLocaleCharacter(second) - 0x57;
                     else
                         *out += second - 0x30;
@@ -305,8 +351,8 @@ void* DirectInputMouse_Ctor(void* p) {
     AsDirectInputMouseState(self)->wheel = zero;
     AsDirectInputMouseState(self)->enabled = 1;
     AsDirectInputMouseState(self)->changed = 0;
-    unsigned int r = OS_GetTimeMilliseconds();
-    AsDirectInputMouseState(self)->lastChangeTime = r;
+    unsigned int timestamp = OS_GetTimeMilliseconds();
+    AsDirectInputMouseState(self)->lastChangeTime = timestamp;
     AsDirectInputMouseState(self)->button0QueryState = zero;
     AsDirectInputMouseState(self)->button0State = zero;
     AsDirectInputMouseState(self)->button1QueryState = zero;
@@ -330,9 +376,12 @@ int DirectInputMouse_GetAxisValue(void* p, int queryKind, int coordinate) {
     switch (queryKind) {
     case kRelativeAxis:
         switch (coordinate) {
-        case kMouseX: return AsDirectInputMouseState(self)->deltaX;
-        case kMouseY: return AsDirectInputMouseState(self)->deltaY;
-        case kMouseWheel: return AsDirectInputMouseState(self)->wheel;
+        case kMouseX:
+            return AsDirectInputMouseState(self)->deltaX;
+        case kMouseY:
+            return AsDirectInputMouseState(self)->deltaY;
+        case kMouseWheel:
+            return AsDirectInputMouseState(self)->wheel;
         }
         break;
     case kButtonAxis:
@@ -341,9 +390,12 @@ int DirectInputMouse_GetAxisValue(void* p, int queryKind, int coordinate) {
         break;
     case kAbsoluteAxis:
         switch (coordinate) {
-        case kMouseX: return (int)AsDirectInputMouseState(self)->positionX;
-        case kMouseY: return (int)AsDirectInputMouseState(self)->positionY;
-        case kMouseWheel: return AsDirectInputMouseState(self)->wheel;
+        case kMouseX:
+            return (int)AsDirectInputMouseState(self)->positionX;
+        case kMouseY:
+            return (int)AsDirectInputMouseState(self)->positionY;
+        case kMouseWheel:
+            return AsDirectInputMouseState(self)->wheel;
         }
         break;
     }

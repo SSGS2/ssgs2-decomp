@@ -12,8 +12,6 @@
 // and serialized UI access. Lock 3 covers mutation/draw; stream/locale/string
 // guards unwind on exceptions. Setters require an existing key, not a new ID.
 // Preserve stream construction, float/truncation order and cleanup ABI.
-// Translation unit 0x80251FDC-0x802534D8 (8 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 #include "classes/UITextTable.h"
@@ -21,9 +19,16 @@
 // Text descriptor word (+8): low bits enable formatting/alignment; variant uses bit 10.
 // Width, precision and digit-limit fields each occupy five bits.
 enum TextDescriptorFormat {
-    kTrimPositiveDecimalOverflow = 1, kSetDecimalPrecision = 2, kZeroPadToWidth = 4,
-    kAlignTextRight = 8, kAlignTextCenter = 0x20, kFontVariantShift = 10,
-    kWidthShift = 16, kPrecisionShift = 21, kDigitLimitShift = 26, kFormatFieldMask = 31
+    kTrimPositiveDecimalOverflow = 1,
+    kSetDecimalPrecision = 2,
+    kZeroPadToWidth = 4,
+    kAlignTextRight = 8,
+    kAlignTextCenter = 0x20,
+    kFontVariantShift = 10,
+    kWidthShift = 16,
+    kPrecisionShift = 21,
+    kDigitLimitShift = 26,
+    kFormatFieldMask = 31
 };
 // MSL stream constants below are representation values, not descriptor bits.
 // openmode 0x10 enables the put area; 0x08 enables the get area.
@@ -38,22 +43,41 @@ enum TextDescriptorFormat {
 // Both OR existing flags. Precision is decimal places in fixed mode; width is
 // minimum field width, not truncation. Pane alignment is independent of padding.
 // Preserve this MSL halfword representation on big-endian Wii.
-enum TextStreamSettings { kOpenForOutput = 0x10, kOpenForInput = 8,
-    kIosFixedDecimal = 4, kIosShowPositiveSign = 0x800,
-    kSpaceCharacter = 0x20, kZeroCharacter = 0x30,
-    kDecimalRadix = 10, kTextAlignLeft = 0, kTextAlignCenter = 1, kTextAlignRight = 2 };
+enum TextStreamSettings {
+    kOpenForOutput = 0x10,
+    kOpenForInput = 8,
+    kIosFixedDecimal = 4,
+    kIosShowPositiveSign = 0x800,
+    kSpaceCharacter = 0x20,
+    kZeroCharacter = 0x30,
+    kDecimalRadix = 10,
+    kTextAlignLeft = 0,
+    kTextAlignCenter = 1,
+    kTextAlignRight = 2
+};
 // Offsets relative to basic_ios, reached through a virtual-base pointer (not stream.bytes).
 enum TextIosOffset {
-    kIosPrecision = 0x28, kIosWidth = 0x2C, kIosFormatFlags = 0x30,
-    kIosState = 0x34, kIosFillCharacter = 0x38, kIosVirtualBaseAdjustment = 0x3C
+    kIosPrecision = 0x28,
+    kIosWidth = 0x2C,
+    kIosFormatFlags = 0x30,
+    kIosState = 0x34,
+    kIosFillCharacter = 0x38,
+    kIosVirtualBaseAdjustment = 0x3C
 };
 // Offsets relative to Stream5262C::bytes. Buffer get/put triples borrow its string data.
 enum TextStreamOffset {
     kStreamStringBuffer = 0x14,
-    kStreamGetBegin = 0x18, kStreamGetCurrent = 0x1C, kStreamGetEnd = 0x20,
-    kStreamPutBegin = 0x24, kStreamPutCurrent = 0x28, kStreamPutEnd = 0x2C,
-    kStreamOpenMode = 0x38, kStreamData = 0x3C,
-    kStreamStringTag = 0x40, kStreamStringLength = 0x44, kStreamHeapString = 0x48,
+    kStreamGetBegin = 0x18,
+    kStreamGetCurrent = 0x1C,
+    kStreamGetEnd = 0x20,
+    kStreamPutBegin = 0x24,
+    kStreamPutCurrent = 0x28,
+    kStreamPutEnd = 0x2C,
+    kStreamOpenMode = 0x38,
+    kStreamData = 0x3C,
+    kStreamStringTag = 0x40,
+    kStreamStringLength = 0x44,
+    kStreamHeapString = 0x48,
     kStreamVirtualIos = 0x4C
 };
 
@@ -85,23 +109,44 @@ extern int s_localeFacetIdCounter;
 extern int s_ctypeFacetId;
 extern float kFloat_0_FontRenderer;
 
-struct TableLock80251FDC {
+struct TableLockGuard {
     char bytes[8];
     // Release the table lock on normal return and exception unwinding.
-    ~TableLock80251FDC() { __dt__9TableLockFv(this, -1); }
+    ~TableLockGuard() {
+        __dt__9TableLockFv(this, -1);
+    }
 };
-struct TextTreeNodeView { char* left; char* right; unsigned int parentColor; int key; char* entry; };
-struct Obj80251FDC { unsigned char pad[0x10]; int a; int b; int c; };
-struct Meta80251FDC { int x; int y; unsigned int flags; };
+struct TextTreeNodeView {
+    char* left;
+    char* right;
+    unsigned int parentColor;
+    int key;
+    char* entry;
+};
+struct Obj80251FDC {
+    unsigned char pad[0x10];
+    int a;
+    int b;
+    int c;
+};
+struct Meta80251FDC {
+    int x;
+    int y;
+    unsigned int flags;
+};
 // Numeric setters borrow this entry; only textTag/textLength/textData are replaced.
 // With bit 31 clear the 12 bytes at textTag hold an inline MSL string (length in
 // the first byte, bytes at +1); with bit 31 set textData owns heap storage.
 struct NumericTextEntryView {
-    Meta80251FDC* descriptor; void* group; void* vtable; int hasLayout;
-    unsigned int textTag; int textLength; char* textData;
+    Meta80251FDC* descriptor;
+    void* group;
+    void* vtable;
+    int hasLayout;
+    unsigned int textTag;
+    int textLength;
+    char* textData;
 };
-typedef char NumericTextEntryView_textOffset[
-    (int)&((NumericTextEntryView*)0)->textTag == 0x10 ? 1 : -1];
+typedef char NumericTextEntryView_textOffset[(int)&((NumericTextEntryView*)0)->textTag == 0x10 ? 1 : -1];
 // Preserve byte-address aliasing in the setters; these offsets come from the
 // typed schema above, rather than duplicating numeric entry-layout assumptions.
 enum NumericTextEntryOffsets {
@@ -123,7 +168,9 @@ extern char stringStreamBufferVtable[], s_appStringbufVTable[];
 struct Facet51FDC {
     char bytes[0x18];
     // Construct a locale ctype facet using the runtime's existing three-argument ABI.
-    Facet51FDC(int a, int b, int c) { MWCtypeFacet_Construct(this, a, b, c); }
+    Facet51FDC(int a, int b, int c) {
+        MWCtypeFacet_Construct(this, a, b, c);
+    }
 };
 struct CType51FDC {
     virtual void v0();
@@ -137,47 +184,60 @@ struct Locale51FDC {
     char* table;
     void* ref;
     // Release the retained locale implementation, if present.
-    ~Locale51FDC() throw() { if (ref) MWSharedOwner_ReleaseReference(ref); }
+    ~Locale51FDC() throw() {
+        if (ref)
+            MWSharedOwner_ReleaseReference(ref);
+    }
 };
 struct String51FDC {
     unsigned int tag;
     int length;
     char* data;
     // Release heap storage only; strings with bit 31 clear store their bytes inline.
-    ~String51FDC() { if (tag >> 31) appFreeUni__FPv(data); }
+    ~String51FDC() {
+        if (tag >> 31)
+            appFreeUni__FPv(data);
+    }
 };
 struct Lock51FDC {
     char bytes[8];
     // Unlock using the runtime's short deleting-destructor argument.
-    ~Lock51FDC() { ((void(*)(void*, short))__dt__9TableLockFv)(this, (short)-1); }
+    ~Lock51FDC() {
+        ((void (*)(void*, short))__dt__9TableLockFv)(this, (short)-1);
+    }
     // Encode the entry-format sign selector: positive=0, negative=1, zero=2.
     static int sign(int count) {
-        if (count == 0) return 2;
+        if (count == 0)
+            return 2;
         int result = 1;
-        if (count > 0) result = 0;
+        if (count > 0)
+            result = 0;
         return result;
     }
 };
-struct S51Byte4 { unsigned char value; char pad[3]; };
+struct S51Byte4 {
+    unsigned char value;
+    char pad[3];
+};
 struct S51Stream {
-    char* volatile base;   // 0x00
-    void* vtable;          // 0x04
-    void* bufVtable;       // 0x08
-    void* getBegin;        // 0x0c: borrowed readable range
-    void* getCurrent;      // 0x10: read cursor
-    void* getEnd;          // 0x14: one past readable range
-    void* putBegin;        // 0x18: borrowed writable range
-    void* putCurrent;      // 0x1c: write cursor
-    void* putEnd;          // 0x20: one past writable range
-    void* locale;          // 0x24
-    void* ref;             // 0x28
-    unsigned char mode;    // 0x2c
+    char* volatile base; // 0x00
+    void* vtable;        // 0x04
+    void* bufVtable;     // 0x08
+    void* getBegin;      // 0x0c: borrowed readable range
+    void* getCurrent;    // 0x10: read cursor
+    void* getEnd;        // 0x14: one past readable range
+    void* putBegin;      // 0x18: borrowed writable range
+    void* putCurrent;    // 0x1c: write cursor
+    void* putEnd;        // 0x20: one past writable range
+    void* locale;        // 0x24
+    void* ref;           // 0x28
+    unsigned char mode;  // 0x2c
     char pad2d[3];
-    char* data;            // 0x30
-    unsigned int flags;    // 0x34
-    unsigned int length;   // 0x38
-    char* string;          // 0x3c
-    char ios[0x40];        // 0x40
+    char* data;          // 0x30
+    unsigned int flags;  // 0x34
+    unsigned int length; // 0x38
+    char* string;        // 0x3c
+    char ios[0x40];      // 0x40
 };
 // Set the virtual-base displacement used by this stage of stream construction/destruction.
 inline void S51Relocate(char* base, char* target) {
@@ -185,7 +245,8 @@ inline void S51Relocate(char* base, char* target) {
 }
 // Release a locale handle's retained reference, if present.
 inline void S51Release(void* ptr) throw() {
-    if (ptr) MWSharedOwner_ReleaseReference(ptr);
+    if (ptr)
+        MWSharedOwner_ReleaseReference(ptr);
 }
 // Copy the default locale handle and retain its reference-counted implementation.
 inline void S51CopyLocale(void** dst) throw() {
@@ -193,16 +254,17 @@ inline void S51CopyLocale(void** dst) throw() {
     dst[0] = src[0];
     void* r = src[1];
     dst[1] = r;
-    if (r) ++((int*)r)[1];
+    if (r)
+        ++((int*)r)[1];
 }
 
 // Resolve or install the integer stream's ctype facet without changing locale ownership.
 static inline void EnsureIntegerCtypeFacet(Locale51FDC& handle, int index, void*& obj) {
-    if ((unsigned)index >= *(unsigned int*)(handle.table + 4) ||
-        !(obj = (*(void***)handle.table)[index])) {
+    if ((unsigned)index >= *(unsigned int*)(handle.table + 4) || !(obj = (*(void***)handle.table)[index])) {
         Facet51FDC* created = new Facet51FDC(0, 0, 0);
         char* table = handle.table;
-        if (!s_ctypeFacetId) s_ctypeFacetId = ++s_localeFacetIdCounter;
+        if (!s_ctypeFacetId)
+            s_ctypeFacetId = ++s_localeFacetIdCounter;
         MWLocale_InstallFacet(table, created, s_ctypeFacetId);
         obj = (*(void***)handle.table)[index];
     }
@@ -242,7 +304,8 @@ static inline void AttachIntegerInlineString(S51Stream* sp) {
     sp->length = 0;
     sp->string = 0;
     char* data = sp->string;
-    if (!(sp->flags >> 31)) data = (char*)&sp->flags + 1;
+    if (!(sp->flags >> 31))
+        data = (char*)&sp->flags + 1;
     sp->data = data;
     if (sp->mode & kOpenForOutput) {
         sp->putCurrent = data;
@@ -273,10 +336,14 @@ int UITextTable_SetInteger(char* self, int key, int count) {
     char* found = self + 0x1c;
     while (node) {
         int value = ((TextTreeNodeView*)node)->key;
-        if (value >= key) { found = node; node = ((TextTreeNodeView*)node)->left; }
-        else node = ((TextTreeNodeView*)node)->right;
+        if (value >= key) {
+            found = node;
+            node = ((TextTreeNodeView*)node)->left;
+        } else
+            node = ((TextTreeNodeView*)node)->right;
     }
-    if (found == self + 0x1c || key < ((TextTreeNodeView*)found)->key) found = self + 0x1c;
+    if (found == self + 0x1c || key < ((TextTreeNodeView*)found)->key)
+        found = self + 0x1c;
     char* entry = ((TextTreeNodeView*)found)->entry;
     char* descriptor = *(char**)(entry + kNumericDescriptorOffset);
     int formattedInteger = count;
@@ -287,16 +354,17 @@ int UITextTable_SetInteger(char* self, int key, int count) {
     InitializeIntegerStreamBase(outputStream, ios);
     signed char result;
     {
-    Locale51FDC handle;
-    MWStream_CopyLocale(&handle, ios);
-    volatile S51Byte4 unused;
-    unused.value = 0;
-    if (!s_ctypeFacetId) s_ctypeFacetId = ++s_localeFacetIdCounter;
-    int index = s_ctypeFacetId;
-    void* obj;
-    EnsureIntegerCtypeFacet(handle, index, obj);
-    signed char arg = kSpaceCharacter;
-    result = ((CType51FDC*)obj)->widen(arg);
+        Locale51FDC handle;
+        MWStream_CopyLocale(&handle, ios);
+        volatile S51Byte4 unused;
+        unused.value = 0;
+        if (!s_ctypeFacetId)
+            s_ctypeFacetId = ++s_localeFacetIdCounter;
+        int index = s_ctypeFacetId;
+        void* obj;
+        EnsureIntegerCtypeFacet(handle, index, obj);
+        signed char arg = kSpaceCharacter;
+        result = ((CType51FDC*)obj)->widen(arg);
     }
     ios[kIosFillCharacter] = result;
     InitializeIntegerStringBuffer(outputStream);
@@ -307,46 +375,59 @@ int UITextTable_SetInteger(char* self, int key, int count) {
     if (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) & kTrimPositiveDecimalOverflow) {
         int digits = (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) >> kDigitLimitShift) & kFormatFieldMask;
         int scale = 1;
-        for (int i=0; i<digits; ++i) scale *= kDecimalRadix;
+        for (int i = 0; i < digits; ++i)
+            scale *= kDecimalRadix;
         int quotient = count / scale;
-        if (quotient > 0) formattedInteger = count - quotient * scale;
+        if (quotient > 0)
+            formattedInteger = count - quotient * scale;
     }
     if (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) & kZeroPadToWidth) {
-        *(int*)(outputStream->base + kIosWidth) = (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) >> kWidthShift) & kFormatFieldMask;
+        *(int*)(outputStream->base + kIosWidth) =
+            (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) >> kWidthShift) & kFormatFieldMask;
         outputStream->base[kIosFillCharacter] = kZeroCharacter;
     }
-    if (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) & kSetDecimalPrecision) *(int*)(outputStream->base + kIosPrecision) = (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) >> kPrecisionShift) & kFormatFieldMask;
-    if (!(*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) & kZeroPadToWidth)) *(unsigned short*)(outputStream->base + kIosFormatFlags) |= kIosShowPositiveSign;
+    if (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) & kSetDecimalPrecision)
+        *(int*)(outputStream->base + kIosPrecision) =
+            (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) >> kPrecisionShift) & kFormatFieldMask;
+    if (!(*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) & kZeroPadToWidth))
+        *(unsigned short*)(outputStream->base + kIosFormatFlags) |= kIosShowPositiveSign;
     // Phase 3: format and copy the result into the entry (inline or owned-heap string).
     MWOStream_InsertSigned32(&stream, formattedInteger);
     {
-    String51FDC formattedText;
-    OutputStringStream_CopyBufferString(&formattedText, (char*)&stream);
-    if (!(*(unsigned*)(entry + kNumericTextOffset) >> 31) && !(formattedText.tag >> 31)) {
-        *(unsigned*)(entry + kNumericTextOffset) = formattedText.tag;
-        *(int*)(entry + kNumericTextLengthOffset) = formattedText.length;
-        *(char**)(entry + kNumericTextDataOffset) = formattedText.data;
-    } else {
-        int oldTextLength;
-        if (*(unsigned*)(entry + kNumericTextOffset) >> 31) oldTextLength = *(int*)(entry + kNumericTextLengthOffset);
-        else oldTextLength = *(unsigned char*)(entry + kNumericTextOffset) & 0x7f;
-        int newTextLength;
-        char* textBegin;
-        if (!(formattedText.tag >> 31)) {
-            newTextLength = *(unsigned char*)&formattedText & 0x7f;
-            textBegin = (char*)&formattedText + 1;
-        } else { textBegin = formattedText.data; newTextLength = formattedText.length; }
-        volatile S51Byte4 allocator;
-        S51Byte4 copy;
-        copy.value = allocator.value;
-        String_ReplaceRange(entry + kNumericTextOffset, 0, oldTextLength, (int)textBegin, (int)(textBegin + newTextLength), &copy);
-    }
+        String51FDC formattedText;
+        OutputStringStream_CopyBufferString(&formattedText, (char*)&stream);
+        if (!(*(unsigned*)(entry + kNumericTextOffset) >> 31) && !(formattedText.tag >> 31)) {
+            *(unsigned*)(entry + kNumericTextOffset) = formattedText.tag;
+            *(int*)(entry + kNumericTextLengthOffset) = formattedText.length;
+            *(char**)(entry + kNumericTextDataOffset) = formattedText.data;
+        } else {
+            int oldTextLength;
+            if (*(unsigned*)(entry + kNumericTextOffset) >> 31)
+                oldTextLength = *(int*)(entry + kNumericTextLengthOffset);
+            else
+                oldTextLength = *(unsigned char*)(entry + kNumericTextOffset) & 0x7f;
+            int newTextLength;
+            char* textBegin;
+            if (!(formattedText.tag >> 31)) {
+                newTextLength = *(unsigned char*)&formattedText & 0x7f;
+                textBegin = (char*)&formattedText + 1;
+            } else {
+                textBegin = formattedText.data;
+                newTextLength = formattedText.length;
+            }
+            volatile S51Byte4 allocator;
+            S51Byte4 copy;
+            copy.value = allocator.value;
+            String_ReplaceRange(entry + kNumericTextOffset, 0, oldTextLength, (int)textBegin,
+                                (int)(textBegin + newTextLength), &copy);
+        }
     }
     // Phase 4: apply sign-dependent entry formatting, then release stream/string/locale owners.
     int status = Lock51FDC::sign(count);
     UITextTable_ApplyNumericTextFormatFlags(self, entry, status);
     S51Relocate(outputStream->base, outputStream->ios);
-    if (outputStream->flags >> 31) appFreeUni__FPv(outputStream->string);
+    if (outputStream->flags >> 31)
+        appFreeUni__FPv(outputStream->string);
     S51Release(outputStream->ref);
     S51Relocate(outputStream->base, (char*)&outputStream->bufVtable);
     std_ios_base_dtor(outputStream->ios, (short)0);
@@ -361,7 +442,7 @@ struct Facet5262C {
     char bytes[0x18];
     // Construct the ctype facet through the float-stream specialization's runtime prototype.
     Facet5262C(const unsigned short* a, bool b, unsigned long c) {
-        ((void(*)(void*, const unsigned short*, bool, unsigned long))MWCtypeFacet_Construct)(this, a, b, c);
+        ((void (*)(void*, const unsigned short*, bool, unsigned long))MWCtypeFacet_Construct)(this, a, b, c);
     }
 };
 
@@ -378,13 +459,15 @@ struct Lock5262C {
     char bytes[8];
     // Unlock on scope exit using the existing short destructor flag.
     ~Lock5262C() {
-        ((void(*)(void*, short))__dt__9TableLockFv)(this, (short)-1);
+        ((void (*)(void*, short))__dt__9TableLockFv)(this, (short)-1);
     }
     // Encode float sign for entry styling: positive=0, negative=1, zero=2.
     static int sign(float value) {
-        if (kFloat_0_FontRenderer == value) return 2;
+        if (kFloat_0_FontRenderer == value)
+            return 2;
         int result = 1;
-        if (value > kFloat_0_FontRenderer) result = 0;
+        if (value > kFloat_0_FontRenderer)
+            result = 0;
         return result;
     }
 };
@@ -393,7 +476,10 @@ struct Locale5262C {
     char* table;
     void* ref;
     // Release the retained locale implementation, if present.
-    ~Locale5262C() throw() { if (ref) MWSharedOwner_ReleaseReference(ref); }
+    ~Locale5262C() throw() {
+        if (ref)
+            MWSharedOwner_ReleaseReference(ref);
+    }
 };
 
 struct String5262C {
@@ -401,10 +487,15 @@ struct String5262C {
     int length;
     char* data;
     // Free heap text only when the ownership tag's high bit is set.
-    ~String5262C() { if (tag >> 31) appFreeUni__FPv(data); }
+    ~String5262C() {
+        if (tag >> 31)
+            appFreeUni__FPv(data);
+    }
 };
 
-struct Byte5262C { unsigned char value; };
+struct Byte5262C {
+    unsigned char value;
+};
 
 struct Stream5262C {
     // Iostream prefix, embedded stringbuf at 0x14, and virtual basic_ios at 0x4c.
@@ -428,7 +519,8 @@ struct Stream5262C {
     }
     // Release the stringbuf locale implementation's reference.
     void release() throw() {
-        if (*(void**)(bytes + 0x34)) MWSharedOwner_ReleaseReference(*(void**)(bytes + 0x34));
+        if (*(void**)(bytes + 0x34))
+            MWSharedOwner_ReleaseReference(*(void**)(bytes + 0x34));
     }
     // Copy/retain the default locale into the stringbuf locale subobject.
     void copyLocale() throw() {
@@ -437,7 +529,8 @@ struct Stream5262C {
         *(int*)dest = *(int*)loc;
         char* ref = *(char**)(loc + 4);
         *(char**)(dest + 4) = ref;
-        if (ref) ++*(int*)(ref + 4);
+        if (ref)
+            ++*(int*)(ref + 4);
     }
     // Free owned string/locale state, restore base adjustments and destroy the virtual ios base.
     ~Stream5262C() {
@@ -465,23 +558,24 @@ inline Stream5262C::Stream5262C() {
     char* base;
     base = init(bytes + 0x4c);
     {
-    Locale5262C handle;
-    MWStream_CopyLocale(&handle, base);
-    volatile Byte5262C unused;
-    unused.value = 0;
-    if (!s_ctypeFacetId) s_ctypeFacetId = ++s_localeFacetIdCounter;
-    index = s_ctypeFacetId;
-    void* obj;
-    if ((unsigned)index >= *(unsigned int*)(handle.table + 4) ||
-        !(obj = (*(void***)handle.table)[index])) {
-        created = new Facet5262C(0, 0, 0);
-        char* table = handle.table;
-        if (!s_ctypeFacetId) s_ctypeFacetId = ++s_localeFacetIdCounter;
-        MWLocale_InstallFacet(table, created, s_ctypeFacetId);
-        obj = (*(void***)handle.table)[index];
-    }
-    signed char arg = 0x20;
-    ret = ((CType5262C*)obj)->widen(arg);
+        Locale5262C handle;
+        MWStream_CopyLocale(&handle, base);
+        volatile Byte5262C unused;
+        unused.value = 0;
+        if (!s_ctypeFacetId)
+            s_ctypeFacetId = ++s_localeFacetIdCounter;
+        index = s_ctypeFacetId;
+        void* obj;
+        if ((unsigned)index >= *(unsigned int*)(handle.table + 4) || !(obj = (*(void***)handle.table)[index])) {
+            created = new Facet5262C(0, 0, 0);
+            char* table = handle.table;
+            if (!s_ctypeFacetId)
+                s_ctypeFacetId = ++s_localeFacetIdCounter;
+            MWLocale_InstallFacet(table, created, s_ctypeFacetId);
+            obj = (*(void***)handle.table)[index];
+        }
+        signed char arg = 0x20;
+        ret = ((CType5262C*)obj)->widen(arg);
     }
     base[0x38] = (char)ret;
 }
@@ -515,7 +609,8 @@ static inline void AttachFloatInlineString(char* small) {
     *(int*)(small + kStreamStringLength) = 0;
     *(int*)(small + kStreamHeapString) = 0;
     data = *(char**)(small + kStreamHeapString);
-    if (!(*(unsigned int*)(small + kStreamStringTag) >> 31)) data = small + 0x41;
+    if (!(*(unsigned int*)(small + kStreamStringTag) >> 31))
+        data = small + 0x41;
     *(char**)(small + kStreamData) = data;
     if (small[kStreamOpenMode] & kOpenForOutput) {
         *(char**)(small + kStreamPutCurrent) = data;
@@ -542,14 +637,19 @@ int UITextTable_SetFloat(char* self, int key, float value) {
     Lock5262C lock;
     TableLock_ctor(&lock, 3, 1);
     int floatClass = __fpclassifyf(value);
-    if (floatClass == 1 || __fpclassifyf(value) == 2) value = kFloat_0_FontRenderer;
+    if (floatClass == 1 || __fpclassifyf(value) == 2)
+        value = kFloat_0_FontRenderer;
     char* node = *(char**)(self + 0x1c);
     char* found = self + 0x1c;
     while (node) {
-        if (((TextTreeNodeView*)node)->key >= key) { found = node; node = ((TextTreeNodeView*)node)->left; }
-        else node = ((TextTreeNodeView*)node)->right;
+        if (((TextTreeNodeView*)node)->key >= key) {
+            found = node;
+            node = ((TextTreeNodeView*)node)->left;
+        } else
+            node = ((TextTreeNodeView*)node)->right;
     }
-    if (found == self + 0x1c || key < ((TextTreeNodeView*)found)->key) found = self + 0x1c;
+    if (found == self + 0x1c || key < ((TextTreeNodeView*)found)->key)
+        found = self + 0x1c;
     char* entry = ((TextTreeNodeView*)found)->entry;
     char* descriptor = *(char**)(entry + kNumericDescriptorOffset);
     float formattedValue = value;
@@ -572,41 +672,52 @@ int UITextTable_SetFloat(char* self, int key, float value) {
     if (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) & kTrimPositiveDecimalOverflow) {
         int digits = (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) >> kDigitLimitShift) & kFormatFieldMask;
         int scale = 1;
-        for (int i=0; i<digits; ++i) scale *= 10;
+        for (int i = 0; i < digits; ++i)
+            scale *= 10;
         int quotient = (int)value / scale;
-        if (quotient > 0) formattedValue = value - quotient * scale;
+        if (quotient > 0)
+            formattedValue = value - quotient * scale;
     }
     if (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) & kZeroPadToWidth) {
-        *(int*)(*(char**)streamBytes + kIosWidth) = (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) >> kWidthShift) & kFormatFieldMask;
+        *(int*)(*(char**)streamBytes + kIosWidth) =
+            (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) >> kWidthShift) & kFormatFieldMask;
         (*(char**)streamBytes)[kIosFillCharacter] = 0x30;
     }
-    if (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) & kSetDecimalPrecision) *(int*)(*(char**)streamBytes + kIosPrecision) = (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) >> kPrecisionShift) & kFormatFieldMask;
+    if (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) & kSetDecimalPrecision)
+        *(int*)(*(char**)streamBytes + kIosPrecision) =
+            (*(unsigned*)(descriptor + kNumericDescriptorFlagsOffset) >> kPrecisionShift) & kFormatFieldMask;
     *(unsigned short*)(*(char**)streamBytes + kIosFormatFlags) |= kIosShowPositiveSign;
     // Phase 3: emit the formatted value, then copy it into the entry's own string storage.
     OStream_InsertFloat(streamBytes + 0xc, formattedValue);
     {
-    String5262C formattedText;
-    MWStringStream_CopyBufferString(&formattedText, streamBytes);
-    unsigned int stringTag;
-    unsigned int hadHeapText = *(unsigned*)(entry + kNumericTextOffset) >> 31;
-    if (!hadHeapText && !((stringTag = formattedText.tag) >> 31)) {
-        int newTextLength = formattedText.length;
-        *(unsigned*)(entry + kNumericTextOffset) = stringTag;
-        *(int*)(entry + kNumericTextLengthOffset) = newTextLength;
-        *(char**)(entry + kNumericTextDataOffset) = formattedText.data;
-    } else {
-        int oldTextLength;
-        if (hadHeapText) oldTextLength = *(int*)(entry + kNumericTextLengthOffset);
-        else oldTextLength = *(unsigned char*)(entry + kNumericTextOffset) & 0x7f;
-        int newTextLength;
-        char* textBegin;
-        if (!(formattedText.tag >> 31)) {
-            newTextLength = *(unsigned char*)&formattedText & 0x7f;
-            textBegin = (char*)&formattedText + 1;
-        } else { textBegin = formattedText.data; newTextLength = formattedText.length; }
-        copy.value = allocator.value;
-        String_ReplaceRange(entry + kNumericTextOffset, 0, oldTextLength, (int)textBegin, (int)(textBegin + newTextLength), &copy);
-    }
+        String5262C formattedText;
+        MWStringStream_CopyBufferString(&formattedText, streamBytes);
+        unsigned int stringTag;
+        unsigned int hadHeapText = *(unsigned*)(entry + kNumericTextOffset) >> 31;
+        if (!hadHeapText && !((stringTag = formattedText.tag) >> 31)) {
+            int newTextLength = formattedText.length;
+            *(unsigned*)(entry + kNumericTextOffset) = stringTag;
+            *(int*)(entry + kNumericTextLengthOffset) = newTextLength;
+            *(char**)(entry + kNumericTextDataOffset) = formattedText.data;
+        } else {
+            int oldTextLength;
+            if (hadHeapText)
+                oldTextLength = *(int*)(entry + kNumericTextLengthOffset);
+            else
+                oldTextLength = *(unsigned char*)(entry + kNumericTextOffset) & 0x7f;
+            int newTextLength;
+            char* textBegin;
+            if (!(formattedText.tag >> 31)) {
+                newTextLength = *(unsigned char*)&formattedText & 0x7f;
+                textBegin = (char*)&formattedText + 1;
+            } else {
+                textBegin = formattedText.data;
+                newTextLength = formattedText.length;
+            }
+            copy.value = allocator.value;
+            String_ReplaceRange(entry + kNumericTextOffset, 0, oldTextLength, (int)textBegin,
+                                (int)(textBegin + newTextLength), &copy);
+        }
     }
     // Phase 4: select sign formatting; automatic cleanup destroys the stream and unlocks the table.
     int status = Lock5262C::sign(value);
@@ -625,31 +736,43 @@ struct Temp80253360 {
     int last;
     int limit;
     // Release the temporary pointer-array allocation, without destroying pointees.
-    ~Temp80253360() { appFreeUni__FPv(first); }
+    ~Temp80253360() {
+        appFreeUni__FPv(first);
+    }
 };
 
 // Copy the output stream buffer contents into the destination string.
-void OutputStringStream_CopyBufferString(void* a, char* b) {
-    MWStringBuf_GetString(a, b + 8);
+void OutputStringStream_CopyBufferString(void* dest, char* stream) {
+    MWStringBuf_GetString(dest, stream + 8);
 }
 
 // Tree owner at table+0x18: count, root, first. Sentinel is &root (table+0x1C).
 // Parent bit 0 is colour. Node+0x10 owns an entry; clearing deletes entries before node storage.
-struct Node80252C78 { Node80252C78* left; Node80252C78* right; unsigned int parent;
-    int key; void* payload; };
-struct Entry80252C78 { void* first; void* second; };
+struct Node80252C78 {
+    Node80252C78* left;
+    Node80252C78* right;
+    unsigned int parent;
+    int key;
+    void* payload;
+};
+struct Entry80252C78 {
+    void* first;
+    void* second;
+};
 
 // Release the two child subtrees and node storage after entry destruction.
 static inline void ReleaseTextNodeStorage(char* table, Node80252C78* node) {
     Entry80252C78* links = (Entry80252C78*)node;
-    if (links->first) RBTree_FreeTrivialSubtree(table + 0x18, links->first);
-    if (links->second) RBTree_FreeTrivialSubtree(table + 0x18, links->second);
+    if (links->first)
+        RBTree_FreeTrivialSubtree(table + 0x18, links->first);
+    if (links->second)
+        RBTree_FreeTrivialSubtree(table + 0x18, links->second);
     appFreeUni__FPv(node);
 }
 
 // Destroy entry objects and release every node of the text-entry tree.
 void UITextTable_ClearEntries(char* self) {
-    TableLock80251FDC lock;
+    TableLockGuard lock;
     TableLock_ctor(&lock, 3, 1);
     Node80252C78* node = *(Node80252C78**)(self + 0x20);
     Node80252C78* sentinel = (Node80252C78*)(self + 0x1c);
@@ -662,12 +785,14 @@ void UITextTable_ClearEntries(char* self) {
         }
         Node80252C78* child = node->right;
         if (child != 0) {
-            while (child->left != 0) child = child->left;
+            while (child->left != 0)
+                child = child->left;
             node = child;
         } else {
             do {
                 child = (Node80252C78*)(node->parent & ~1u);
-                if (node == child->left) break;
+                if (node == child->left)
+                    break;
                 node = child;
             } while (1);
             node = child;
@@ -733,7 +858,9 @@ void UITextTable_ClearEntries(char* self) {
             appFreeUni__FPv(branch);
         }
         appFreeUni__FPv(root);
-        *(void**)&AsUITextTable(self)->entries.count=0; AsUITextTable(self)->entries.root=0; AsUITextTable(self)->entries.first=self+0x1c;
+        *(void**)&AsUITextTable(self)->entries.count = 0;
+        AsUITextTable(self)->entries.root = 0;
+        AsUITextTable(self)->entries.first = self + 0x1c;
     }
 }
 
@@ -771,7 +898,8 @@ void* PointerVector_InitReserved(Buffer80253360* self) {
         self->limit = temp.limit;
         temp.first = 0;
         temp.last = 0;
-        if (old.first) appFreeUni__FPv(old.first);
+        if (old.first)
+            appFreeUni__FPv(old.first);
     }
     return self;
 }
@@ -822,15 +950,36 @@ void UIGroup_GetSourceSize(void*, void*);
 int UIGroup_GetCombinedOpacity(void*);
 void HudFont_DrawAlignedTextWithVariant(void*, void*, int, int, void*, float, float, float, float);
 
-struct NodeFB8 { NodeFB8* left; NodeFB8* right; unsigned int parentColor; char padC[4]; void* entry; };
-struct TextDescriptorView { int rangeStart, rangeEnd; unsigned int flags; };
-struct TextMetricsView { char prefix[0xAC]; int height; };
-struct EntryFB8 { TextDescriptorView* descriptor; void* group; void** vtable; int hasLayout;
-    unsigned int textFlags; int textLength; char* textData; void* fontMetrics; };
+struct NodeFB8 {
+    NodeFB8* left;
+    NodeFB8* right;
+    unsigned int parentColor;
+    char padC[4];
+    void* entry;
+};
+struct TextDescriptorView {
+    int rangeStart, rangeEnd;
+    unsigned int flags;
+};
+struct TextMetricsView {
+    char prefix[0xAC];
+    int height;
+};
+struct EntryFB8 {
+    TextDescriptorView* descriptor;
+    void* group;
+    void** vtable;
+    int hasLayout;
+    unsigned int textFlags;
+    int textLength;
+    char* textData;
+    void* fontMetrics;
+};
 
 // Read a borrowed entry's byte length from the MSL inline/heap string representation.
 static inline int TextEntryByteLength(EntryFB8* entry, unsigned int textFlags) {
-    if (textFlags & 0x80000000u) return entry->textLength;
+    if (textFlags & 0x80000000u)
+        return entry->textLength;
     unsigned char inlineLength = *(unsigned char*)&entry->textFlags;
     return inlineLength & 0x7F;
 }
@@ -867,8 +1016,10 @@ int UITextTable_Draw(void* textTable) {
     struct Unlock {
         void* lock;
         // Release the external lock storage on every return, including early draw exits.
-        ~Unlock() { __dt__9TableLockFv(lock, -1); }
-    } unlock = { lock };
+        ~Unlock() {
+            __dt__9TableLockFv(lock, -1);
+        }
+    } unlock = {lock};
     // Phase 1: enter the table lock and consume this frame's once-only draw latch.
     if (AsUITextTable(self)->drawProcessed != 0) { // original +0x24
         return 1;
@@ -892,20 +1043,25 @@ int UITextTable_Draw(void* textTable) {
                 NodeFB8* nxt;
                 if (right != 0) {
                     NodeFB8* c = right;
-                    while (c->left != 0) c = c->left;
+                    while (c->left != 0)
+                        c = c->left;
                     nxt = c;
                 } else {
                     NodeFB8* c2 = node;
                     while (1) {
                         NodeFB8* parent = (NodeFB8*)(c2->parentColor & ~1u);
-                        if (c2 == parent->left) { nxt = parent; break; }
+                        if (c2 == parent->left) {
+                            nxt = parent;
+                            break;
+                        }
                         c2 = parent;
                     }
                 }
                 node = nxt;
                 AsUITextTable(self)->entries.first = node;
             }
-            NodeFB8* nextNode = (NodeFB8*)RBTree_RebalanceAfterErase(old, *(void**)(self + 0x1c)); // retain raw form: field access reused sentinel register
+            NodeFB8* nextNode = (NodeFB8*)RBTree_RebalanceAfterErase(
+                old, *(void**)(self + 0x1c)); // retain raw form: field access reused sentinel register
             appFreeUni__FPv(old);
             AsUITextTable(self)->entries.count = AsUITextTable(self)->entries.count - 1;
             if (sentinel == nextNode) {
@@ -926,7 +1082,7 @@ int UITextTable_Draw(void* textTable) {
                 int textLength = TextEntryByteLength(entry, textFlags);
                 if (textLength != 0 && entry->fontMetrics != 0) {
                     void** entryVtable = entry->vtable;
-                    int (*isReady)(void*) = (int(*)(void*))entryVtable[2];
+                    int (*isReady)(void*) = (int (*)(void*))entryVtable[2];
                     int entryReady = isReady(entry);
                     if (entryReady != 0 && entry->hasLayout != 0) {
                         void* metrics = entry->fontMetrics;
@@ -964,9 +1120,13 @@ int UITextTable_Draw(void* textTable) {
                         unsigned int descriptorFlags = entry->descriptor->flags;
                         int fontVariant = (descriptorFlags >> kFontVariantShift) & 1;
                         void* textBytes;
-                        if (hasHeapString) textBytes = entry->textData;
-                        else textBytes = (char*)&entry->textFlags + 1;
-                        HudFont_DrawAlignedTextWithVariant(self, textBytes, fontVariant, 0, &entry->fontMetrics, textX + AsUITextTable(self)->offsetX, textY + AsUITextTable(self)->offsetY, 0.0f, scaleX); // original +0x2C/+0x30
+                        if (hasHeapString)
+                            textBytes = entry->textData;
+                        else
+                            textBytes = (char*)&entry->textFlags + 1;
+                        HudFont_DrawAlignedTextWithVariant(
+                            self, textBytes, fontVariant, 0, &entry->fontMetrics, textX + AsUITextTable(self)->offsetX,
+                            textY + AsUITextTable(self)->offsetY, 0.0f, scaleX); // original +0x2C/+0x30
                     }
                 }
             }
@@ -976,13 +1136,17 @@ int UITextTable_Draw(void* textTable) {
         NodeFB8* right = cur->right;
         if (right != 0) {
             NodeFB8* c = right;
-            while (c->left != 0) c = c->left;
+            while (c->left != 0)
+                c = c->left;
             node = c;
         } else {
             NodeFB8* c2 = cur;
             while (1) {
                 NodeFB8* parent = (NodeFB8*)(c2->parentColor & ~1u);
-                if (c2 == parent->left) { node = parent; break; }
+                if (c2 == parent->left) {
+                    node = parent;
+                    break;
+                }
                 c2 = parent;
             }
         }

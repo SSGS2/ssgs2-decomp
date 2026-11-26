@@ -4,8 +4,6 @@
 // queries. SetThreshold controls the analog comparison in gtl_input_ex_button_part2.cpp, not this
 // digital update. Layout/ownership: game/gtl_input.h, driver allocator teardown
 // below. No controller mapping or hardware polling occurs here.
-// Translation unit 0x803EAC48-0x803EB544 (8 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/stdexcept_local.h"
 #include "sdk_protos.h"
@@ -18,15 +16,18 @@ extern char s_bitsetSetOutOfRangeMessage[];
 extern char s_outOfRangeTypeNames[];
 extern char __vt__Q23gtl14IInputExButton[];
 extern const float kInputExButtonDefaultThreshold;
-
 }
 
 // Use the constructor's shared schema instead of a second offset-only view:
 // +00 refcount, +04 vptr, +08 threshold, +0C interval, +10 delay,
 // +14 state word, +18 previous-down byte, +1C countdown, +20 held-call count.
 typedef gtl::IInputExButton IInputExButton;
-enum ButtonStateBit { kButtonDown = 0, kButtonPressed = 1,
-    kButtonRepeat = 2, kButtonReleased = 3 };
+enum ButtonStateBit {
+    kButtonDown = 0,
+    kButtonPressed = 1,
+    kButtonRepeat = 2,
+    kButtonReleased = 3
+};
 
 struct BitRef4 {
     unsigned int* words;
@@ -73,21 +74,17 @@ inline BitRef4 bitRef4(unsigned int* p, unsigned int i) {
     return bitRef4Unchecked(p, i);
 }
 
-extern "C" {
-
 #pragma push
 #pragma use_lmw_stmw on
 // Base sample-admission hook: unsupported (0); receiver is unused, unchanged.
-int gtl_IInputExButton_vfunc_1(IInputExButton* self) {
+int gtl::IInputExButton::vfunc_1() {
     return 0;
 }
 
 // Base poll/update hook: unsupported (0); receiver is unused, unchanged.
-int gtl_IInputExButton_vfunc_2(IInputExButton* self) {
+int gtl::IInputExButton::vfunc_2() {
     return 0;
 }
-
-} // extern "C"
 
 // Start released, with no held calls or pending repeat. Interval=2, delay=15
 // count UpdateDigitalState calls, not milliseconds or video frames. Repetition
@@ -118,22 +115,24 @@ void* __dt__Q23gtl14IInputExObjectFv(void* self, int count) {
     return self;
 }
 
+} // extern "C"
+
 // Store an analog activation threshold unchanged; required live receiver.
 // No validation/clamp: a useful threshold depends on the device sample range.
-void gtl_IInputExButton_SetThreshold(IInputExButton* self, float threshold) {
-    self->m_threshold = threshold;
+void gtl::IInputExButton::SetThreshold(float threshold) {
+    m_threshold = threshold;
 }
 
 // Store calls-between-repeat countdown reset; nonnegative values avoid signed
 // underflow. Does not reset an already running countdown. No validation occurs.
-void gtl_IInputExButton_SetRepeatInterval(IInputExButton* self, int interval) {
-    self->m_repeatInterval = interval;
+void gtl::IInputExButton::SetRepeatInterval(int interval) {
+    m_repeatInterval = interval;
 }
 
 // Store initial repeat countdown, in update calls; same constraints as interval.
 // Takes effect on the next rising edge, without altering current state/counters.
-void gtl_IInputExButton_SetRepeatDelay(IInputExButton* self, int delay) {
-    self->m_repeatDelay = delay;
+void gtl::IInputExButton::SetRepeatDelay(int delay) {
+    m_repeatDelay = delay;
 }
 
 // Required writable receiver, canonical pressed=0 or 1 (callers normalize in
@@ -143,45 +142,41 @@ void gtl_IInputExButton_SetRepeatDelay(IInputExButton* self, int delay) {
 // Updates previous-down, saturating held-call count, and repeat countdown;
 // release clears both counters. Poll once per intended input tick, serialized
 // with readers/setters. No allocation, retention or normal failure path.
-int gtl_IInputExButton_UpdateDigitalState(IInputExButton* self, int pressed) {
-    self->m_wasDown = bitRef4(&self->m_state, kButtonDown).test();
-    bitRef4(&self->m_state, kButtonDown).set(pressed);
+int gtl::IInputExButton::UpdateDigitalState(int pressed) {
+    m_wasDown = bitRef4(&m_state, kButtonDown).test();
+    bitRef4(&m_state, kButtonDown).set(pressed);
     if (pressed != 0) {
-        if (self->m_heldFrames < 0x7FFFFFFF) {
-            self->m_heldFrames = self->m_heldFrames + 1;
+        if (m_heldFrames < 0x7FFFFFFF) {
+            m_heldFrames = m_heldFrames + 1;
         }
     } else {
-        self->m_heldFrames = 0;
+        m_heldFrames = 0;
     }
     int rising = 0;
-    if ((unsigned int)pressed != self->m_wasDown && pressed != 0) {
+    if ((unsigned int)pressed != m_wasDown && pressed != 0) {
         rising = 1;
     }
-    bitRef4(&self->m_state, kButtonPressed).set(rising);
+    bitRef4(&m_state, kButtonPressed).set(rising);
     int falling = 0;
-    if ((unsigned int)pressed != self->m_wasDown && pressed == 0) {
+    if ((unsigned int)pressed != m_wasDown && pressed == 0) {
         falling = 1;
     }
-    bitRef4(&self->m_state, kButtonReleased).set(falling);
-    int repeatPulse = bitRef4(&self->m_state, kButtonPressed).test();
+    bitRef4(&m_state, kButtonReleased).set(falling);
+    int repeatPulse = bitRef4(&m_state, kButtonPressed).test();
     if (pressed != 0) {
-        self->m_repeatCounter = self->m_repeatCounter - 1;
-        if (bitRef4(&self->m_state, kButtonPressed).test()) {
-            self->m_repeatCounter = self->m_repeatDelay;
-        } else if (self->m_repeatCounter < 0) {
-            int reset = self->m_repeatInterval;
+        m_repeatCounter = m_repeatCounter - 1;
+        if (bitRef4(&m_state, kButtonPressed).test()) {
+            m_repeatCounter = m_repeatDelay;
+        } else if (m_repeatCounter < 0) {
+            int reset = m_repeatInterval;
             repeatPulse = !repeatPulse;
-            self->m_repeatCounter = reset;
+            m_repeatCounter = reset;
         }
     } else {
-        self->m_repeatCounter = 0;
+        m_repeatCounter = 0;
     }
-    bitRef4(&self->m_state, kButtonRepeat).set(repeatPulse);
+    bitRef4(&m_state, kButtonRepeat).set(repeatPulse);
     return 1;
 }
 
-
-
 #pragma pop
-
-} // extern "C"

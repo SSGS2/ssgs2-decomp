@@ -5,8 +5,8 @@
 
 struct PointerCollectionState {
     char pad_000[0x8];
-    void** data; // 0x8
-    unsigned size; // 0xC
+    void** data;       // 0x8
+    unsigned size;     // 0xC
     unsigned capacity; // 0x10
 };
 

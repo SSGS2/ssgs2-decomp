@@ -13,8 +13,6 @@
 //   this evaluator shares scratch with gtl_animation_model_matrices.cpp/gtl_animation_node_evaluation.cpp/gtl_animation_transform_channels.cpp/gtl_texture_animation_matrices.cpp.
 // - matrix layout/mode: gtl_Transform_BuildNodeMatrix (gtl_transform_frustum_stopwatch_input.cpp), pose below.
 //   Keep sample mode, channel tags and interpolation record width together.
-// Translation unit 0x803E0F30-0x803E14D0 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "types.h"
 #include "sdk_protos.h"
@@ -47,16 +45,24 @@ struct GtlPose {
     float scale[4]; // +00
     float rot[4];
     float translation[3]; // +20
-    u32 transformMode; // +2C; mode 5 builds scale/Euler/translation, 6 quaternion transform.
+    u32 transformMode;    // +2C; mode 5 builds scale/Euler/translation, 6 quaternion transform.
 };
 
 // Tags are resource ordinals, not byte offsets or dataType ordinals. The 16-byte
 // translation copy includes order; the evaluator saves/restores order afterwards.
 enum NodeTrackTag {
-    kTranslationZ = 0x12, kTranslationY = 0x13, kTranslationX = 0x14,
+    kTranslationZ = 0x12,
+    kTranslationY = 0x13,
+    kTranslationX = 0x14,
     kTranslationAndOrder = 0x15,
-    kRotationZ = 0x16, kRotationY = 0x17, kRotationX = 0x18, kRotationXYZW = 0x19,
-    kScaleZ = 0x1A, kScaleY = 0x1B, kScaleX = 0x1C, kScaleXYZW = 0x1D
+    kRotationZ = 0x16,
+    kRotationY = 0x17,
+    kRotationX = 0x18,
+    kRotationXYZW = 0x19,
+    kScaleZ = 0x1A,
+    kScaleY = 0x1B,
+    kScaleX = 0x1C,
+    kScaleXYZW = 0x1D
 };
 
 typedef void (*GtlInterpFn)(void* dst, void* a, void* b, float alpha);
@@ -106,11 +112,11 @@ extern u8 s_animationKeyScratchType6[0x20];
 extern u8 s_animationKeyScratchType7[0x30];
 extern u8 s_animationKeyScratchType8[0x40];
 extern u8 s_animationKeyScratchType0[8];
-extern s32 s_animationEndpointMode; // endpoint mode: 0 clamp, 1 synthetic last-to-first blend.
+extern s32 s_animationEndpointMode;              // endpoint mode: 0 clamp, 1 synthetic last-to-first blend.
 extern s8 s_animationKeySearchProbesInitialized; // cache-pointer table initialized, published without locking.
-extern float s_animationSegmentDuration; // interval duration t1-t0.
-extern float s_animationSegmentStartTime; // left-key time t0.
-extern float s_animationSampleTime; // requested time t (Bezier consumers, gtl_animation_bezier_interpolate.cpp).
+extern float s_animationSegmentDuration;         // interval duration t1-t0.
+extern float s_animationSegmentStartTime;        // left-key time t0.
+extern float s_animationSampleTime;     // requested time t (Bezier consumers, gtl_animation_bezier_interpolate.cpp).
 extern float s_animationSegmentEndTime; // right-key time t1 (same consumers).
 extern float kFloat_0_GtlModel;
 extern float kAnimationWrapInterval;
@@ -168,8 +174,7 @@ s32 gtl_Animation_EvaluateNodeLocalMatrix(GtlAnimation* self, u32 nodeIndex, voi
         Memory_Copy(&base, self->samples + self->nodes[nodeIndex].sampleIndex, sizeof(GtlPose));
 
         if (self->nodes != 0 && (tracks = self->tracks) != 0 && (keyData = self->keyData) != 0 &&
-            (samples = self->samples) != 0 && nodeIndex < self->nodeCount)
-        {
+            (samples = self->samples) != 0 && nodeIndex < self->nodeCount) {
             node = self->nodes + nodeIndex;
             float t = self->time;
             GtlPose* src = samples + node->sampleIndex;
@@ -187,18 +192,54 @@ s32 gtl_Animation_EvaluateNodeLocalMatrix(GtlAnimation* self, u32 nodeIndex, voi
                     void* dst = 0;
                     u32 size = 0;
                     switch (track->type) {
-                    case kTranslationZ: dst = &cur.translation[2]; size = 4; break;
-                    case kTranslationY: dst = &cur.translation[1]; size = 4; break;
-                    case kTranslationX: dst = &cur.translation[0]; size = 4; break;
-                    case kTranslationAndOrder: dst = cur.translation; size = 0x10; break;
-                    case kRotationZ: dst = &cur.rot[2]; size = 4; break;
-                    case kRotationY: dst = &cur.rot[1]; size = 4; break;
-                    case kRotationX: dst = &cur.rot[0]; size = 4; break;
-                    case kRotationXYZW: dst = cur.rot; size = 0x10; break;
-                    case kScaleZ: dst = &cur.scale[2]; size = 4; break;
-                    case kScaleY: dst = &cur.scale[1]; size = 4; break;
-                    case kScaleX: dst = &cur.scale[0]; size = 4; break;
-                    case kScaleXYZW: dst = cur.scale; size = 0x10; break;
+                    case kTranslationZ:
+                        dst = &cur.translation[2];
+                        size = 4;
+                        break;
+                    case kTranslationY:
+                        dst = &cur.translation[1];
+                        size = 4;
+                        break;
+                    case kTranslationX:
+                        dst = &cur.translation[0];
+                        size = 4;
+                        break;
+                    case kTranslationAndOrder:
+                        dst = cur.translation;
+                        size = 0x10;
+                        break;
+                    case kRotationZ:
+                        dst = &cur.rot[2];
+                        size = 4;
+                        break;
+                    case kRotationY:
+                        dst = &cur.rot[1];
+                        size = 4;
+                        break;
+                    case kRotationX:
+                        dst = &cur.rot[0];
+                        size = 4;
+                        break;
+                    case kRotationXYZW:
+                        dst = cur.rot;
+                        size = 0x10;
+                        break;
+                    case kScaleZ:
+                        dst = &cur.scale[2];
+                        size = 4;
+                        break;
+                    case kScaleY:
+                        dst = &cur.scale[1];
+                        size = 4;
+                        break;
+                    case kScaleX:
+                        dst = &cur.scale[0];
+                        size = 4;
+                        break;
+                    case kScaleXYZW:
+                        dst = cur.scale;
+                        size = 0x10;
+                        break;
                     }
 
                     u8* keys = keyData + track->keyOffset;
@@ -259,7 +300,8 @@ s32 gtl_Animation_EvaluateNodeLocalMatrix(GtlAnimation* self, u32 nodeIndex, voi
                         u8* cache = (u8*)s_animationKeySearchProbes[track->dataType];
                         *(float*)(cache + tOff) = t;
 
-                        u8* found = s_animationKeySearchFunctions[track->dataType](keys + stride, keys + stride + stride * (track->keyCount - 1), cache);
+                        u8* found = s_animationKeySearchFunctions[track->dataType](
+                            keys + stride, keys + stride + stride * (track->keyCount - 1), cache);
                         if (found == 0) {
                             found = keys + stride * (track->keyCount - 1);
                         }
@@ -309,7 +351,5 @@ s32 gtl_Animation_EvaluateNodeLocalMatrix(GtlAnimation* self, u32 nodeIndex, voi
     gtl_Transform_BuildNodeMatrix(out, &base);
     return 1;
 }
-
-
 
 } // extern "C"

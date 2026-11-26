@@ -1,11 +1,14 @@
+// Map trees keyed by packed strings: key comparison, setting and reading values by name,
+// and destruction of a map's owned values, nodes and keys.
+
 #include <decomp/cw_bitfields.h>
-// Translation unit 0x8029F418-0x8029FAC4 (4 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #pragma use_lmw_stmw on
 
 // Borrow the smaller operand (the second one on equality).
-template <class T> static inline const T& Min(const T& a, const T& b) { return a < b ? a : b; }
+template <class T> static inline const T& Min(const T& a, const T& b) {
+    return a < b ? a : b;
+}
 
 extern "C" {
 
@@ -27,22 +30,34 @@ Node* StringMap_InsertNode(Tree*, Node*, bool, bool, const void*);
 
 extern void* s_stringMapDefaultValue;
 
-struct Alloc { char c __attribute__((aligned(4))); };
+struct Alloc {
+    char c __attribute__((aligned(4)));
+};
 
 struct Str {
     union {
         unsigned int flag;
-        struct { CW_BITS2( unsigned int heapbit:1, unsigned int capacity:31) };
-        struct { CW_BITS2( unsigned char byteheap:1, unsigned char smallsize:7) };
+        struct {
+            CW_BITS2(unsigned int heapbit : 1, unsigned int capacity : 31)
+        };
+        struct {
+            CW_BITS2(unsigned char byteheap : 1, unsigned char smallsize : 7)
+        };
     };
     unsigned int size;
     char* ptr;
 
     // Initialize the packed inline representation to an empty string.
-    Str() { flag = 0; size = 0; ptr = 0; }
+    Str() {
+        flag = 0;
+        size = 0;
+        ptr = 0;
+    }
     // Copy a terminated name into this string's own storage.
     Str(const char* s) {
-        flag = 0; size = 0; ptr = 0;
+        flag = 0;
+        size = 0;
+        ptr = 0;
         unsigned int n = strlen(s);
         String_ReserveCapacity(this, n);
         Alloc a;
@@ -53,9 +68,13 @@ struct Str {
     Str(const Str& s) {
         unsigned int f = s.flag;
         if (!(f >> 31)) {
-            flag = f; size = s.size; ptr = s.ptr;
+            flag = f;
+            size = s.size;
+            ptr = s.ptr;
         } else {
-            flag = 0; size = 0; ptr = 0;
+            flag = 0;
+            size = 0;
+            ptr = 0;
             String_ReserveCapacity(this, s.size);
             Alloc a;
             Alloc copy = a;
@@ -63,18 +82,24 @@ struct Str {
         }
     }
 
-
     // Decode logical byte length from the active inline/heap view.
-    unsigned int length() const { return !heapbit ? smallsize : size; }
+    unsigned int length() const {
+        return !heapbit ? smallsize : size;
+    }
     // Borrow character storage; inline bytes start one byte past the tag.
-    const char* data() const { return heapbit ? ptr : (const char*)this + 1; }
+    const char* data() const {
+        return heapbit ? ptr : (const char*)this + 1;
+    }
 };
 
 struct LocalStr : Str {
     // Own a temporary copy of the lookup key.
     LocalStr(const char* s) : Str(s) {}
     // Release the temporary's heap characters, if any.
-    ~LocalStr() { if (flag >> 31) appFreeUni__FPv(ptr); }
+    ~LocalStr() {
+        if (flag >> 31)
+            appFreeUni__FPv(ptr);
+    }
 };
 struct Pair_u8029F418 {
     Str key;
@@ -82,7 +107,10 @@ struct Pair_u8029F418 {
     // Copy the owned key and borrow the supplied value pointer.
     Pair_u8029F418(const Str& k, void* const& v) : key(k), value(v) {}
     // Destroy only key storage; value ownership is handled by the map's first-tree pass.
-    ~Pair_u8029F418() { if (key.flag >> 31) appFreeUni__FPv(key.ptr); }
+    ~Pair_u8029F418() {
+        if (key.flag >> 31)
+            appFreeUni__FPv(key.ptr);
+    }
 };
 
 struct Node {
@@ -104,8 +132,13 @@ struct Map {
 
 // Decode a packed key into borrowed bytes and logical byte length.
 static inline void GetStr(const Str* s, const char*& bytes, unsigned int& length) {
-    if (!s->heapbit) { bytes = (const char*)s + 1; length = s->smallsize; }
-    else { bytes = s->ptr; length = s->size; }
+    if (!s->heapbit) {
+        bytes = (const char*)s + 1;
+        length = s->smallsize;
+    } else {
+        bytes = s->ptr;
+        length = s->size;
+    }
 }
 
 // Compare lengths alone (unused by the lexical-comparison chains below).
@@ -114,21 +147,27 @@ static inline int CompareLengths(unsigned int leftLength, unsigned int rightLeng
 }
 // Compare common-prefix bytes, then order equal prefixes by their full lengths.
 // rightPrefixLength aliases rightLength through the call chain; both describe the right key length.
-static inline int CompareRaw(const char* leftData, unsigned int leftLength, const char* rightData, const unsigned int& rightPrefixLength, unsigned int rightLength) {
+static inline int CompareRaw(const char* leftData, unsigned int leftLength, const char* rightData,
+                             const unsigned int& rightPrefixLength, unsigned int rightLength) {
     int comparison = memcmp(leftData, rightData, Min(rightPrefixLength, leftLength));
     if (comparison == 0) {
-        if (leftLength < rightLength) comparison = -1;
-        else if (leftLength == rightLength) comparison = 0;
-        else comparison = 1;
+        if (leftLength < rightLength)
+            comparison = -1;
+        else if (leftLength == rightLength)
+            comparison = 0;
+        else
+            comparison = 1;
     }
     return comparison;
 }
 // Bound the left comparison to min(requested prefix leftPrefixLimit, stored length leftStoredLength).
-static inline int CompareSub(const char* leftData, unsigned int leftStoredLength, const unsigned int& leftPrefixLimit, const char* rightData, const unsigned int& rightPrefixLength, unsigned int rightLength) {
+static inline int CompareSub(const char* leftData, unsigned int leftStoredLength, const unsigned int& leftPrefixLimit,
+                             const char* rightData, const unsigned int& rightPrefixLength, unsigned int rightLength) {
     return CompareRaw(leftData, Min(leftPrefixLimit, leftStoredLength), rightData, rightPrefixLength, rightLength);
 }
 // Decode the left key and compare a bounded prefix against right-hand bytes.
-static inline int ComparePart(const Str* a, unsigned int leftPrefixLimit, const char* rightData, unsigned int rightLength) {
+static inline int ComparePart(const Str* a, unsigned int leftPrefixLimit, const char* rightData,
+                              unsigned int rightLength) {
     const char* leftData;
     unsigned int leftStoredLength;
     GetStr(a, leftData, leftStoredLength);
@@ -151,30 +190,37 @@ void* GMap_Dtor(Map* self, int deleting) {
         GMap_ClearOwnedEntries(self);
         StringTree_DestroyStorage(&self->tree, -1);
         GMapBase_DestroyStorage(self, -1);
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
 // Search uses the same lexical order as CompareKeys. The parallel helper chain
 // preserves the original return paths under this distinct optimization pragma.
- #pragma opt_loop_invariants off
+#pragma opt_loop_invariants off
 // Compare raw search-key bytes, breaking equal-prefix ties by length.
-static inline int TargetRaw(const char* leftData, unsigned int leftLength, const char* rightData, const unsigned int& rightPrefixLength, unsigned int rightLength) {
+static inline int TargetRaw(const char* leftData, unsigned int leftLength, const char* rightData,
+                            const unsigned int& rightPrefixLength, unsigned int rightLength) {
     int comparison = memcmp(leftData, rightData, Min(rightPrefixLength, leftLength));
     if (comparison == 0) {
-        if (leftLength < rightLength) comparison = -1;
-        else if (leftLength == rightLength) return 0;
-        else return 1;
+        if (leftLength < rightLength)
+            comparison = -1;
+        else if (leftLength == rightLength)
+            return 0;
+        else
+            return 1;
     }
     return comparison;
 }
 // Clamp the search-key prefix before its byte comparison.
-static inline int TargetSub(const char* leftData, unsigned int leftStoredLength, const unsigned int& leftPrefixLimit, const char* rightData, const unsigned int& rightPrefixLength, unsigned int rightLength) {
+static inline int TargetSub(const char* leftData, unsigned int leftStoredLength, const unsigned int& leftPrefixLimit,
+                            const char* rightData, const unsigned int& rightPrefixLength, unsigned int rightLength) {
     return TargetRaw(leftData, Min(leftPrefixLimit, leftStoredLength), rightData, rightPrefixLength, rightLength);
 }
 // Decode the search key before comparing its requested prefix.
-static inline int TargetPart(const Str* a, unsigned int leftPrefixLimit, const char* rightData, unsigned int rightLength) {
+static inline int TargetPart(const Str* a, unsigned int leftPrefixLimit, const char* rightData,
+                             unsigned int rightLength) {
     const char* leftData;
     unsigned int leftStoredLength;
     GetStr(a, leftData, leftStoredLength);
@@ -192,7 +238,8 @@ static inline int TargetKeys(const Str* a, const Str* b) {
     return CompareSearchKeyToBytes(a, rightData, rightLength);
 }
 // Find the insertion parent and nearest key candidate in the string-keyed tree.
-Node* StringMap_FindInsertionPosition(Tree* tree, const Str* key, Node** found, bool* insertLeft, bool* beforeFirstCandidate) {
+Node* StringMap_FindInsertionPosition(Tree* tree, const Str* key, Node** found, bool* insertLeft,
+                                      bool* beforeFirstCandidate) {
     Node* last = (Node*)&tree->header;
     *found = 0;
     Node* node = tree->header.left;
@@ -221,10 +268,14 @@ Node* StringMap_FindInsertionPosition(Tree* tree, const Str* key, Node** found, 
 // the second tree, whose cleanup frees only keys/nodes. Its value ownership must
 // be managed elsewhere; the visible setter does not establish an alias relation.
 void StringMap_SetByName(Map* self, void* value, const char* name) {
-    struct { bool insertLeft; bool beforeFirstCandidate; } flags;
+    struct {
+        bool insertLeft;
+        bool beforeFirstCandidate;
+    } flags;
     Node* found;
     LocalStr key(name);
-    Node* last = StringMap_FindInsertionPosition(&self->tree, &key, &found, &flags.insertLeft, &flags.beforeFirstCandidate);
+    Node* last =
+        StringMap_FindInsertionPosition(&self->tree, &key, &found, &flags.insertLeft, &flags.beforeFirstCandidate);
     Pair_u8029F418* payload;
     // Insertion copies the temporary pair before it leaves scope. After either
     // branch, payload points into the tree, never at the expired temporary.
@@ -271,14 +322,17 @@ void RBTree_RebalanceAfterErase(void*, void*);
 // Kept as a macro because inline forms change this unit's register allocation.
 // Argument must be a side-effect-free pointer lvalue. Expansion declares r_ in
 // the caller scope and therefore must appear in its own enclosing block.
-#define ADVANCE_OWNED_MAP_NODE(n) GNode* r_ = (n)->right; \
-    if (r_ != 0) { \
-        while (r_->left != 0) r_ = r_->left; \
-        (n) = r_; \
-    } else { \
-        GNode* p_; \
-        while (p_ = (GNode*)((n)->parent & ~1u), (n) != p_->left) (n) = p_; \
-        (n) = p_; \
+#define ADVANCE_OWNED_MAP_NODE(n)                                 \
+    GNode* r_ = (n)->right;                                       \
+    if (r_ != 0) {                                                \
+        while (r_->left != 0)                                     \
+            r_ = r_->left;                                        \
+        (n) = r_;                                                 \
+    } else {                                                      \
+        GNode* p_;                                                \
+        while (p_ = (GNode*)((n)->parent & ~1u), (n) != p_->left) \
+            (n) = p_;                                             \
+        (n) = p_;                                                 \
     }
 
 // Free only a node's heap key, leaving its value and node allocation untouched.
@@ -342,7 +396,5 @@ void GMap_ClearOwnedEntries(void* mapStorage) {
 #undef S
 }
 
-
 #pragma opt_lifetimes on
 } // extern "C"
-

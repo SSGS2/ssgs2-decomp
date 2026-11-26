@@ -1,5 +1,6 @@
-// Translation unit 0x802A0FF0-0x802A3004 (14 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// TinyXML parser: reads text, comments, declarations, attributes and elements, and checks
+// whitespace against the locale table.
+// Also the error message strings and the destructors for parser-owned pairs and text nodes.
 
 #include "classes/TiXmlNodeLayout.h"
 #include "classes/TiXmlAttributeLayout.h"
@@ -22,7 +23,8 @@ void __dla__FPv(void*);
 // Release an otherwise trivial node wrapper when called as a deleting destructor.
 void* TiXmlAttributeBase_dtor(void* self, int flag) {
     if (self) {
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -31,7 +33,8 @@ void* TiXmlAttributeBase_dtor(void* self, int flag) {
 void* TiXmlText_dtor(void* self, int flag) {
     if (self) {
         TiXmlNode_dtor(self, 0);
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -64,18 +67,37 @@ struct XmlParserStringPool {
     char trailingPadding[7];
 };
 enum XmlError {
-    kXmlErrorOutOfMemory = 3, kXmlErrorElement = 4, kXmlErrorElementName = 5,
-    kXmlErrorElementValue = 6, kXmlErrorAttributes = 7, kXmlErrorEmptyTag = 8,
-    kXmlErrorEndTag = 9, kXmlErrorUnknown = 10, kXmlErrorComment = 11,
-    kXmlErrorDeclaration = 12, kXmlErrorEmptyDocument = 13
+    kXmlErrorOutOfMemory = 3,
+    kXmlErrorElement = 4,
+    kXmlErrorElementName = 5,
+    kXmlErrorElementValue = 6,
+    kXmlErrorAttributes = 7,
+    kXmlErrorEmptyTag = 8,
+    kXmlErrorEndTag = 9,
+    kXmlErrorUnknown = 10,
+    kXmlErrorComment = 11,
+    kXmlErrorDeclaration = 12,
+    kXmlErrorEmptyDocument = 13
 };
-enum XmlNodeType { kXmlElement = 1, kXmlComment = 2, kXmlUnknown = 3, kXmlText = 4, kXmlDeclaration = 5 };
-enum { kCharacterCount = 0x100, kLocaleSpaceFlag = 0x100, kLocaleAlphaFlag = 1 };
+enum XmlNodeType {
+    kXmlElement = 1,
+    kXmlComment = 2,
+    kXmlUnknown = 3,
+    kXmlText = 4,
+    kXmlDeclaration = 5
+};
+enum {
+    kCharacterCount = 0x100,
+    kLocaleSpaceFlag = 0x100,
+    kLocaleAlphaFlag = 1
+};
 
 extern XmlParserStringPool tinyXmlParserStrings;
 void TiXmlString_AssignCStr(void*, const char*);
 char* TiXmlBase_ReadText(const char*, void*, int, const char*, int);
-struct Parser { char pad[0x14]; };
+struct Parser {
+    char pad[0x14];
+};
 // Read normalized text up to the next opening bracket and leave the bracket for the caller.
 char* TiXmlText_ReadText(Parser* self, const char* text) {
     TiXmlString_AssignCStr(&AsTiXmlNode(self)->value, tinyXmlParserStrings.empty);
@@ -85,36 +107,60 @@ char* TiXmlText_ReadText(Parser* self, const char* text) {
     return result ? result - 1 : 0;
 }
 
-struct PairObject { char pad[8]; Container first; Container second; };
+struct PairObject {
+    char pad[8];
+    Container first;
+    Container second;
+};
 // Destroy the two owned strings, then optionally release the attribute storage.
 PairObject* PairObject_dtor(PairObject* self, int flag) {
     if (self) {
         if (&self->second) {
-            if (self->second.data) __dla__FPv(self->second.data);
+            if (self->second.data)
+                __dla__FPv(self->second.data);
             self->second.data = 0;
             self->second.count = 0;
         }
         if (&self->first) {
-            if (self->first.data) __dla__FPv(self->first.data);
+            if (self->first.data)
+                __dla__FPv(self->first.data);
             self->first.data = 0;
             self->first.count = 0;
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
 // Document error fields start after the common node prefix.
-struct ErrorState { char pad[0x28]; unsigned char error; char pad29[3]; int code; char message[8]; };
-struct AttributeOwnerView { void* vtable; ErrorState* document; };
+struct ErrorState {
+    char pad[0x28];
+    unsigned char error;
+    char pad29[3];
+    int code;
+    char message[8];
+};
+struct AttributeOwnerView {
+    void* vtable;
+    ErrorState* document;
+};
 ErrorState* TiXmlNode_GetDocumentAncestor(void*);
 int TiXml_MatchesPrefix(const char*, const char*, int);
 char* TiXmlBase_ReadName(const char*, void*);
 unsigned long strlen(const char*);
-struct LocaleTable { char pad[8]; unsigned short* flags; };
-struct LocaleGlobal { char pad[0x38]; LocaleTable* table; };
+struct LocaleTable {
+    char pad[8];
+    unsigned short* flags;
+};
+struct LocaleGlobal {
+    char pad[0x38];
+    LocaleTable* table;
+};
 extern LocaleGlobal s_cLocaleData;
-struct ErrorStrings { const char* entries[14]; };
+struct ErrorStrings {
+    const char* entries[14];
+};
 extern ErrorStrings tinyXmlErrorMessages;
 #pragma opt_strength_reduction on
 #pragma opt_propagation on
@@ -130,17 +176,20 @@ extern ErrorStrings tinyXmlErrorMessages;
 // Test one byte against the current locale's space class, returning zero outside [0,255].
 inline int spaceFlag(int c) {
     int invalid = 0;
-    if (c < 0 || c >= kCharacterCount) invalid = 1;
+    if (c < 0 || c >= kCharacterCount)
+        invalid = 1;
     return invalid ? 0 : s_cLocaleData.table->flags[c] & kLocaleSpaceFlag;
 }
 // Skip leading spaces using the current locale and leave the first non-space byte unconsumed.
 inline const char* skipSpace(const char* text) {
-    if (!text || !*text) text = 0;
+    if (!text || !*text)
+        text = 0;
     else {
         while (text && *text) {
             int c = (unsigned char)*text;
             int space = spaceFlag(c);
-            if (!space && (signed char)c != 10 && (signed char)c != 13) break;
+            if (!space && (signed char)c != 10 && (signed char)c != 13)
+                break;
             ++text;
         }
     }
@@ -154,12 +203,14 @@ inline const char* skipSpace(const char* text) {
 #pragma peephole on
 // Skip comment-parser spaces while retaining its signed-byte termination tests.
 inline const char* skipJobSpace(const char* text) {
-    if (!text || !(signed char)*text) text = 0;
+    if (!text || !(signed char)*text)
+        text = 0;
     else {
         int c;
         while (text && (c = (unsigned char)*text, (signed char)c != 0)) {
             int space = spaceFlag(c);
-            if (!space && (signed char)c != 10 && (signed char)c != 13) break;
+            if (!space && (signed char)c != 10 && (signed char)c != 13)
+                break;
             ++text;
         }
     }
@@ -196,7 +247,8 @@ struct TiXmlString {
 };
 // Release the owned character buffer and reset the empty-string state.
 TiXmlString::~TiXmlString() {
-    if (str) delete[] str;
+    if (str)
+        delete[] str;
     str = 0;
     length = 0;
 }
@@ -217,7 +269,9 @@ void TiXmlNode_LinkEndChild(void*, ParseNode*);
 int String_ComparePrefixIgnoreCase(const char*, const char*, unsigned long);
 void TiXmlString_Append(void*, const char*);
 // Borrow the static error message for a valid XmlError index; no range validation is performed.
-inline const char* errorString(int index) { return tinyXmlErrorMessages.entries[index]; }
+inline const char* errorString(int index) {
+    return tinyXmlErrorMessages.entries[index];
+}
 // Parse and link top-level nodes, recording an error for empty input.
 const char* TiXmlDocument_ParseTopLevelNodes(ErrorState* self, const char* text) {
     if (!text || !*text) {
@@ -235,7 +289,8 @@ const char* TiXmlDocument_ParseTopLevelNodes(ErrorState* self, const char* text)
     }
     while (text && *text) {
         ParseNode* node = TiXmlNode_Identify(self, text);
-        if (!node) break;
+        if (!node)
+            break;
         text = node->parse(text);
         TiXmlNode_LinkEndChild(self, node);
         text = skipSpace(text);
@@ -249,18 +304,21 @@ const char* TiXmlDocument_ParseTopLevelNodes(ErrorState* self, const char* text)
 // Test a byte against a caller-supplied locale snapshot, rejecting out-of-range values.
 inline int spaceFlagCached(int c, LocaleTable* table) {
     int invalid = 0;
-    if (c < 0 || c >= kCharacterCount) invalid = 1;
+    if (c < 0 || c >= kCharacterCount)
+        invalid = 1;
     return invalid ? 0 : table->flags[c] & kLocaleSpaceFlag;
 }
 // Skip leading spaces with one locale-table snapshot for this complete scan.
 inline const char* skipSpaceCached(const char* text) {
-    if (!text || !*text) text = 0;
+    if (!text || !*text)
+        text = 0;
     else {
         int c;
         LocaleTable* table = s_cLocaleData.table;
         while (text && (c = (unsigned char)*text, (signed char)c != 0)) {
             int space = spaceFlagCached(c, table);
-            if (!space && (signed char)c != 10 && (signed char)c != 13) break;
+            if (!space && (signed char)c != 10 && (signed char)c != 13)
+                break;
             ++text;
         }
     }
@@ -313,7 +371,8 @@ const char* TiXmlUnknown_Read(Parser* inputSelf, const char* inputText) {
         state->code = kXmlErrorUnknown;
         TiXmlString_AssignCStr(state->message, errorString(kXmlErrorUnknown));
     }
-    if ((unsigned char)*text == '>') return text + 1;
+    if ((unsigned char)*text == '>')
+        return text + 1;
     return text;
 }
 extern unsigned char s_tinyXmlCondenseWhitespace;
@@ -321,7 +380,8 @@ const char* TiXmlBase_ReadEntity(const char*, char*);
 #pragma opt_common_subs on
 // Decode an entity or copy one byte to out, returning the first byte after that character/entity.
 inline const char* decodeChar(int c, const char* text, char* out) {
-    if (c == '&') text = TiXmlBase_ReadEntity(text, out);
+    if (c == '&')
+        text = TiXmlBase_ReadEntity(text, out);
     else {
         *out = c;
         text = text + 1;
@@ -331,18 +391,21 @@ inline const char* decodeChar(int c, const char* text, char* out) {
 // Test a byte against the text-reader's locale snapshot, rejecting out-of-range values.
 inline int targetSpaceFlag(LocaleTable* table, int c) {
     int invalid = 0;
-    if (c < 0 || c >= kCharacterCount) invalid = 1;
+    if (c < 0 || c >= kCharacterCount)
+        invalid = 1;
     return invalid ? 0 : table->flags[c] & kLocaleSpaceFlag;
 }
 // Skip text-reader leading spaces using one captured locale table.
 inline const char* skipTargetSpace(const char* text) {
-    if (!text || !*text) text = 0;
+    if (!text || !*text)
+        text = 0;
     else {
         LocaleTable* table = s_cLocaleData.table;
         int c;
         while (text && (c = (unsigned char)*text, (signed char)c != 0)) {
             int space = targetSpaceFlag(table, c);
-            if (!space && (signed char)c != 10 && (signed char)c != 13) break;
+            if (!space && (signed char)c != 10 && (signed char)c != 13)
+                break;
             ++text;
         }
     }
@@ -402,31 +465,46 @@ extern char __vt__16TiXmlDeclaration[];
 extern char __vt__12TiXmlComment[];
 extern char __vt__12TiXmlUnknown[];
 struct Node40 {
-    void* vtable; void* owner; char pad[0x20];
+    void* vtable;
+    void* owner;
+    char pad[0x20];
     Container a, b, c;
     // Construct a declaration node with three empty owned declaration strings.
     Node40() {
         TiXmlNode_Ctor(this, kXmlDeclaration);
         vtable = __vt__16TiXmlDeclaration;
-        a.count = 0; a.data = 0;
-        b.count = 0; b.data = 0;
-        c.count = 0; c.data = 0;
+        a.count = 0;
+        a.data = 0;
+        b.count = 0;
+        b.data = 0;
+        c.count = 0;
+        c.data = 0;
     }
 };
 struct Node48 {
     char pad[0x48];
     // Construct an element node using a copied initial name.
-    Node48(const char* s) { TiXmlElement_Ctor(this, s); }
+    Node48(const char* s) {
+        TiXmlElement_Ctor(this, s);
+    }
 };
 struct Node28A {
-    void* vtable; char pad[0x24];
+    void* vtable;
+    char pad[0x24];
     // Construct the common node state and install the comment-node vtable.
-    Node28A() { TiXmlNode_Ctor(this, kXmlComment); vtable = __vt__12TiXmlComment; }
+    Node28A() {
+        TiXmlNode_Ctor(this, kXmlComment);
+        vtable = __vt__12TiXmlComment;
+    }
 };
 struct Node28B {
-    void* vtable; char pad[0x24];
+    void* vtable;
+    char pad[0x24];
     // Construct the common node state and install the unknown-node vtable.
-    Node28B() { TiXmlNode_Ctor(this, kXmlUnknown); vtable = __vt__12TiXmlUnknown; }
+    Node28B() {
+        TiXmlNode_Ctor(this, kXmlUnknown);
+        vtable = __vt__12TiXmlUnknown;
+    }
 };
 #pragma opt_common_subs on
 #pragma opt_propagation on
@@ -435,7 +513,8 @@ struct Node28B {
 // Test a byte for locale alphabetic class, returning zero outside the byte range.
 inline int alphaFlag(int c) {
     int invalid = 0;
-    if (c < 0 || c >= kCharacterCount) invalid = 1;
+    if (c < 0 || c >= kCharacterCount)
+        invalid = 1;
     return invalid ? 0 : s_cLocaleData.table->flags[c] & kLocaleAlphaFlag;
 }
 #pragma opt_common_subs on
@@ -445,40 +524,46 @@ inline int alphaFlag(int c) {
 ParseNode* TiXmlNode_Identify(void* self, const char* input) {
     register ParseNode* node;
     const char* text;
-    if (!input || !*input) text = 0;
+    if (!input || !*input)
+        text = 0;
     else {
         while (input && *input) {
             int c = (unsigned char)*input;
             int space = spaceFlag(c);
-            if (!space && (signed char)c != 10 && (signed char)c != 13) break;
+            if (!space && (signed char)c != 10 && (signed char)c != 13)
+                break;
             ++input;
         }
         text = input;
     }
-    if (!text || !*text || *text != '<') return 0;
+    if (!text || !*text || *text != '<')
+        return 0;
     ErrorState* state = TiXmlNode_GetDocumentAncestor(self);
     text = skipSpace(text);
-    if (!text || !*text) return 0;
+    if (!text || !*text)
+        return 0;
     const char* base = tinyXmlParserStrings.empty;
     const char* prefix = (base + XML_OFFSET(XmlParserStringPool, declarationOpen));
     const char* suffix = (base + XML_OFFSET(XmlParserStringPool, commentOpen));
     if (TiXml_MatchesPrefix(text, prefix, 1)) {
         node = (ParseNode*)new Node40;
     } else {
-      unsigned char c = text[1];
-      int invalid = 0;
-      int ch = (signed char)c;
-      if (ch < 0 || ch >= kCharacterCount) invalid = 1;
-      int alpha = invalid ? 0 : s_cLocaleData.table->flags[ch] & kLocaleAlphaFlag;
-      if (alpha || (signed char)c == '_') {
-        node = (ParseNode*)new Node48(tinyXmlParserStrings.empty);
-    } else if (TiXml_MatchesPrefix(text, suffix, 0)) {
-        node = (ParseNode*)new Node28A;
-    } else {
-        node = (ParseNode*)new Node28B;
-      }
+        unsigned char c = text[1];
+        int invalid = 0;
+        int ch = (signed char)c;
+        if (ch < 0 || ch >= kCharacterCount)
+            invalid = 1;
+        int alpha = invalid ? 0 : s_cLocaleData.table->flags[ch] & kLocaleAlphaFlag;
+        if (alpha || (signed char)c == '_') {
+            node = (ParseNode*)new Node48(tinyXmlParserStrings.empty);
+        } else if (TiXml_MatchesPrefix(text, suffix, 0)) {
+            node = (ParseNode*)new Node28A;
+        } else {
+            node = (ParseNode*)new Node28B;
+        }
     }
-    if (node) AsTiXmlNode(node)->parent = self;
+    if (node)
+        AsTiXmlNode(node)->parent = self;
     else if (state) {
         state->error = 1;
         state->code = kXmlErrorOutOfMemory;
@@ -489,16 +574,24 @@ ParseNode* TiXmlNode_Identify(void* self, const char* input) {
 extern char __vt__9TiXmlText[];
 unsigned int TiXmlString_Length(void*);
 struct TextBase {
-    void* vtable; char pad[0x10];
+    void* vtable;
+    char pad[0x10];
     // Initialize the shared node prefix as an XML text node.
-    TextBase() { TiXmlNode_Ctor(this, kXmlText); }
+    TextBase() {
+        TiXmlNode_Ctor(this, kXmlText);
+    }
     // Destroy shared node state without freeing this enclosing text-node allocation.
-    ~TextBase() { TiXmlNode_dtor(this, 0); }
+    ~TextBase() {
+        TiXmlNode_dtor(this, 0);
+    }
 };
 struct TextNode : TextBase {
     char string[0x14];
     // Install text parsing behavior and copy the initial owned text string.
-    TextNode(const char* base) { vtable = __vt__9TiXmlText; TiXmlString_AssignCStr(string, base); }
+    TextNode(const char* base) {
+        vtable = __vt__9TiXmlText;
+        TiXmlString_AssignCStr(string, base);
+    }
 };
 #pragma opt_propagation on
 #pragma opt_common_subs off
@@ -507,9 +600,11 @@ inline int textAllSpace(TextNode* node) {
     for (unsigned int i = 0; i < TiXmlString_Length(node->string); ++i) {
         int c = ((unsigned char*)*(char**)node->string)[i];
         int invalid = 0;
-        if (c < 0 || c >= kCharacterCount) invalid = 1;
+        if (c < 0 || c >= kCharacterCount)
+            invalid = 1;
         int space = invalid ? 0 : s_cLocaleData.table->flags[c] & kLocaleSpaceFlag;
-        if (!space) return 0;
+        if (!space)
+            return 0;
     }
     return 1;
 }
@@ -539,15 +634,19 @@ const char* TiXmlElement_ReadValue(void* self, const char* text) {
                 return 0;
             }
             text = ((ParseNode*)node)->parse(text);
-            if (!textAllSpace(node)) TiXmlNode_LinkEndChild(self, (ParseNode*)node);
-            else if (node) ((ParseNode*)node)->slot0(1);
+            if (!textAllSpace(node))
+                TiXmlNode_LinkEndChild(self, (ParseNode*)node);
+            else if (node)
+                ((ParseNode*)node)->slot0(1);
         } else {
-            if (TiXml_MatchesPrefix(text, (base + XML_OFFSET(XmlParserStringPool, closingTagOpen)), 0)) return text;
+            if (TiXml_MatchesPrefix(text, (base + XML_OFFSET(XmlParserStringPool, closingTagOpen)), 0))
+                return text;
             ParseNode* node = TiXmlNode_Identify(self, text);
             if (node) {
                 text = node->parse(text);
                 TiXmlNode_LinkEndChild(self, node);
-            } else return 0;
+            } else
+                return 0;
         }
         text = skipSpace(text);
     }
@@ -568,16 +667,19 @@ const char* TiXmlElement_ReadValue(void* self, const char* text) {
 char* TiXmlAttribute_Parse(void* selfIn, const char* inputText) {
     char* self = (char*)selfIn;
     const char* text = inputText;
-    if (!text || !*text) text = 0;
+    if (!text || !*text)
+        text = 0;
     else {
         while (text && *text) {
             int ch = (unsigned char)*text;
             int space = spaceFlag(ch);
-            if (!space && (signed char)ch != 10 && (signed char)ch != 13) break;
+            if (!space && (signed char)ch != 10 && (signed char)ch != 13)
+                break;
             ++text;
         }
     }
-    if (text == 0 || !*text) return 0;
+    if (text == 0 || !*text)
+        return 0;
 
     // Phase 1: read the attribute name after the leading whitespace already skipped above.
     text = TiXmlBase_ReadName(text, &AsTiXmlAttribute(self)->name);
@@ -586,39 +688,47 @@ char* TiXmlAttribute_Parse(void* selfIn, const char* inputText) {
         if (state) {
             state[XML_OFFSET(ErrorState, error)] = 1;
             *(int*)(state + XML_OFFSET(ErrorState, code)) = kXmlErrorAttributes;
-            TiXmlString_AssignCStr((state + XML_OFFSET(ErrorState, message)), tinyXmlErrorMessages.entries[kXmlErrorAttributes]);
+            TiXmlString_AssignCStr((state + XML_OFFSET(ErrorState, message)),
+                                   tinyXmlErrorMessages.entries[kXmlErrorAttributes]);
         }
         return 0;
     }
 
     // Phase 2: skip inter-token space and require exactly the equals delimiter.
-    if (!text || !*text) text = 0;
-    else while (text && *text) {
-        int ch = (unsigned char)*text;
-        int invalid = 0;
-        if (ch < 0 || ch >= kCharacterCount) invalid = 1;
-        int space = invalid ? 0 : s_cLocaleData.table->flags[ch] & kLocaleSpaceFlag;
-        if (!space && (signed char)ch != 10 && (signed char)ch != 13) break;
-        ++text;
-    }
+    if (!text || !*text)
+        text = 0;
+    else
+        while (text && *text) {
+            int ch = (unsigned char)*text;
+            int invalid = 0;
+            if (ch < 0 || ch >= kCharacterCount)
+                invalid = 1;
+            int space = invalid ? 0 : s_cLocaleData.table->flags[ch] & kLocaleSpaceFlag;
+            if (!space && (signed char)ch != 10 && (signed char)ch != 13)
+                break;
+            ++text;
+        }
     if (text == 0 || !*text || *text != '=') {
         char* state = *(char**)(self + XML_OFFSET(AttributeOwnerView, document));
         if (state) {
             state[XML_OFFSET(ErrorState, error)] = 1;
             *(int*)(state + XML_OFFSET(ErrorState, code)) = kXmlErrorAttributes;
-            TiXmlString_AssignCStr((state + XML_OFFSET(ErrorState, message)), tinyXmlErrorMessages.entries[kXmlErrorAttributes]);
+            TiXmlString_AssignCStr((state + XML_OFFSET(ErrorState, message)),
+                                   tinyXmlErrorMessages.entries[kXmlErrorAttributes]);
         }
         return 0;
     }
 
     // Phase 3: find the value; each failure writes the same three document-error fields.
     char* value = (char*)(text + 1);
-    if (value == 0 || !text[1]) value = 0;
+    if (value == 0 || !text[1])
+        value = 0;
     else {
         while (value && *value) {
             int ch = (unsigned char)*value;
             int space = spaceFlag(ch);
-            if (!space && (signed char)ch != 10 && (signed char)ch != 13) break;
+            if (!space && (signed char)ch != 10 && (signed char)ch != 13)
+                break;
             ++value;
         }
     }
@@ -627,7 +737,8 @@ char* TiXmlAttribute_Parse(void* selfIn, const char* inputText) {
         if (state) {
             state[XML_OFFSET(ErrorState, error)] = 1;
             *(int*)(state + XML_OFFSET(ErrorState, code)) = kXmlErrorAttributes;
-            TiXmlString_AssignCStr((state + XML_OFFSET(ErrorState, message)), tinyXmlErrorMessages.entries[kXmlErrorAttributes]);
+            TiXmlString_AssignCStr((state + XML_OFFSET(ErrorState, message)),
+                                   tinyXmlErrorMessages.entries[kXmlErrorAttributes]);
         }
         return 0;
     }
@@ -635,23 +746,25 @@ char* TiXmlAttribute_Parse(void* selfIn, const char* inputText) {
     // Phase 4: parse the chosen value form and leave the caller at the next grammar token.
     int ch = (signed char)*value;
     if (ch == '\'') {
-        value = (char*)TiXmlBase_ReadText(value + 1, (self + XML_OFFSET(TiXmlAttributeLayout, value)), 0, tinyXmlParserStrings.singleQuote, 0);
+        value = (char*)TiXmlBase_ReadText(value + 1, (self + XML_OFFSET(TiXmlAttributeLayout, value)), 0,
+                                          tinyXmlParserStrings.singleQuote, 0);
     } else if (ch == '"') {
-        value = (char*)TiXmlBase_ReadText(value + 1, (self + XML_OFFSET(TiXmlAttributeLayout, value)), 0, tinyXmlParserStrings.doubleQuote, 0);
+        value = (char*)TiXmlBase_ReadText(value + 1, (self + XML_OFFSET(TiXmlAttributeLayout, value)), 0,
+                                          tinyXmlParserStrings.doubleQuote, 0);
     } else {
         TiXmlString_AssignCStr((self + XML_OFFSET(TiXmlAttributeLayout, value)), tinyXmlParserStrings.empty);
         LocaleGlobal* globals = &s_cLocaleData;
         int zero = 0;
         int byte;
-        while (value && (byte = (unsigned char)*value, (signed char)byte != 0)
-            && !(byte < 0 || byte >= kCharacterCount ? 0 : globals->table->flags[byte] & kLocaleSpaceFlag)
-            && (signed char)byte != 10 && (signed char)byte != 13
-            && (signed char)byte != '/' && (signed char)byte != '>') {
-                char buf[2];
-                buf[0] = byte;
-                buf[1] = (char)zero;
-                TiXmlString_Append((self + XML_OFFSET(TiXmlAttributeLayout, value)), buf);
-                ++value;
+        while (value && (byte = (unsigned char)*value, (signed char)byte != 0) &&
+               !(byte < 0 || byte >= kCharacterCount ? 0 : globals->table->flags[byte] & kLocaleSpaceFlag) &&
+               (signed char)byte != 10 && (signed char)byte != 13 && (signed char)byte != '/' &&
+               (signed char)byte != '>') {
+            char buf[2];
+            buf[0] = byte;
+            buf[1] = (char)zero;
+            TiXmlString_Append((self + XML_OFFSET(TiXmlAttributeLayout, value)), buf);
+            ++value;
         }
     }
     return (char*)value;
@@ -668,7 +781,9 @@ struct LocalPair : PairObject {
         second.count = 0;
     }
     // Destroy the temporary's two owned strings without deleting its stack storage.
-    ~LocalPair() { PairObject_dtor(this, 0); }
+    ~LocalPair() {
+        PairObject_dtor(this, 0);
+    }
 };
 
 struct AttrLocal2 : PairObject {
@@ -697,10 +812,12 @@ struct DeclLocal {
     }
     // Release value/name string arrays after a declaration field has copied the desired bytes.
     ~DeclLocal() {
-        if (second.data) __dla__FPv(second.data);
+        if (second.data)
+            __dla__FPv(second.data);
         second.data = 0;
         second.count = 0;
-        if (first.data) __dla__FPv(first.data);
+        if (first.data)
+            __dla__FPv(first.data);
         first.data = 0;
         first.count = 0;
     }
@@ -730,12 +847,14 @@ char* TiXmlDeclaration_Parse(void* selfIn, const char* inputText) {
     const char* cur;
     DeclNode* self = (DeclNode*)selfIn;
     const char* text;
-    if (!inputText || !*inputText) text = 0;
+    if (!inputText || !*inputText)
+        text = 0;
     else {
         const char* p = inputText;
         while (p && *p) {
             int ch = (unsigned char)*p;
-            if (!spaceFlag(ch) && (signed char)ch != 10 && (signed char)ch != 13) break;
+            if (!spaceFlag(ch) && (signed char)ch != 10 && (signed char)ch != 13)
+                break;
             ++p;
         }
         text = p;
@@ -759,7 +878,8 @@ char* TiXmlDeclaration_Parse(void* selfIn, const char* inputText) {
 
     // Phase 2: consume recognized attributes using temporary owners and copy their values.
     while (cur && *cur) {
-        if ((signed char)*cur == '>') return (char*)cur + 1;
+        if ((signed char)*cur == '>')
+            return (char*)cur + 1;
 
         cur = skipSpace(cur);
         if (TiXml_MatchesPrefix(cur, tinyXmlParserStrings.version, 1)) {
@@ -775,7 +895,8 @@ char* TiXmlDeclaration_Parse(void* selfIn, const char* inputText) {
             cur = TiXmlAttribute_Parse(&local, cur);
             self->standalone = local.second.count ? (const char*)local.second.data : (const char*)&s_tinyXmlEmptyString;
         } else {
-            while (cur && *cur && (signed char)*cur != '>' && !spaceFlag((unsigned char)*cur)) ++cur;
+            while (cur && *cur && (signed char)*cur != '>' && !spaceFlag((unsigned char)*cur))
+                ++cur;
         }
     }
     return 0;
@@ -792,7 +913,8 @@ struct TagData {
 struct TagString : TagData {
     // Free the generated closing-tag buffer on every exit from element parsing.
     ~TagString() {
-        if (data) __dla__FPv(data);
+        if (data)
+            __dla__FPv(data);
         data = 0;
         count = 0;
     }
@@ -816,10 +938,12 @@ struct AttrLocal {
     }
     // Free temporary attribute value/name arrays after SetAttribute has copied their contents.
     ~AttrLocal() {
-        if (second.data) __dla__FPv(second.data);
+        if (second.data)
+            __dla__FPv(second.data);
         second.data = 0;
         second.count = 0;
-        if (first.data) __dla__FPv(first.data);
+        if (first.data)
+            __dla__FPv(first.data);
         first.data = 0;
         first.count = 0;
     }
@@ -834,12 +958,14 @@ char* TiXmlElement_Parse(void* selfIn, const char* inputText) {
     char* cur;
     char* self = (char*)selfIn;
     const char* text;
-    if (!inputText || !*inputText) text = 0;
+    if (!inputText || !*inputText)
+        text = 0;
     else {
         const char* p = inputText;
         while (p && *p) {
             int ch = (unsigned char)*p;
-            if (!spaceFlag(ch) && (signed char)ch != 10 && (signed char)ch != 13) break;
+            if (!spaceFlag(ch) && (signed char)ch != 10 && (signed char)ch != 13)
+                break;
             ++p;
         }
         text = p;
@@ -871,11 +997,13 @@ char* TiXmlElement_Parse(void* selfIn, const char* inputText) {
     // Phase 2: scan opening-tag attributes until '/>' or '>'; cur always names the next token.
     int lead;
     while (cur && (lead = (unsigned char)*cur, (signed char)lead != 0)) {
-        if (!cur || !(signed char)lead) cur = 0;
+        if (!cur || !(signed char)lead)
+            cur = 0;
         else {
             while (cur && *cur) {
                 int ch = (unsigned char)*cur;
-                if (!spaceFlag(ch) && (signed char)ch != 10 && (signed char)ch != 13) break;
+                if (!spaceFlag(ch) && (signed char)ch != 10 && (signed char)ch != 13)
+                    break;
                 ++cur;
             }
         }
@@ -902,8 +1030,10 @@ char* TiXmlElement_Parse(void* selfIn, const char* inputText) {
         // Phase 3: parse nested content, then match and consume this element's exact closer.
         if (c == '>') {
             char* body = (char*)TiXmlElement_ReadValue(self, cur + 1);
-            if (!body || !*body) return 0;
-            if (TiXml_MatchesPrefix(body, closer.count ? closer.data : &s_tinyXmlEmptyString, 0)) return body + TiXmlString_Length(&closer);
+            if (!body || !*body)
+                return 0;
+            if (TiXml_MatchesPrefix(body, closer.count ? closer.data : &s_tinyXmlEmptyString, 0))
+                return body + TiXmlString_Length(&closer);
             if (state) {
                 state->error = 1;
                 state->code = kXmlErrorEndTag;

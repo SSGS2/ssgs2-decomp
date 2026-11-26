@@ -1,16 +1,21 @@
-// Translation unit 0x8040A7F0-0x8040A850 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// High-quality reverb shutdown: releases the SDK buffers of an active effect while the
+// effect's allocator hooks are installed.
+//
+// gtl_nw4r_FxReverbHi_ShutdownReverb marks the effect inactive, then tears down the SDK reverb
+// and restores the previous hooks. The effect object itself stays allocated.
 
 #include "sdk_protos.h"
 
-namespace gtl { namespace nw4r {
+namespace gtl {
+namespace nw4r {
 struct FxReverbHi {
     char effectBase[0xC];
     unsigned char active;
     char reservedAfterActive[0x23];
     char reverb[1]; // +0x30: address-only view of AXFX work state, not its allocation size.
 };
-} }
+}
+}
 
 extern "C" {
 void gtl_AudioEffects_InstallAllocatorHooks(void*, unsigned int*, unsigned int*);

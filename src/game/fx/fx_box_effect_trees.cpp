@@ -1,9 +1,11 @@
-#include <decomp/static_init.h>
-// Translation unit 0x80107180-0x80108870 (11 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-#include "sdk_protos.h"
-#include "classes/CFxBox.h"
+// Effect box trees: the string-keyed tree maps that hold the spray and sequence templates and
+// the resource names of an effect box, and the node code that builds and frees them.
 
+#include <decomp/static_init.h>
+#include "sdk_protos.h"
+#include "classes/CFx.h"
+#include "classes/CFxBox.h"
+#include "classes/CFxEffectTree.h"
 
 extern "C" {
 
@@ -15,32 +17,36 @@ void FxBox_InitTwoPiCache() {
     s_twoPi_80107180 = kFloat_6_2831855;
 }
 
-void* CFx_Dtor(void*, int);
+void* __dt__3CFxFv(void*, int);
 extern const float kFxBoxDefaultFrameLimitMilliseconds;
 extern float kFloat_1_FxBox;
 extern float kFloat_0_FxBox;
 extern unsigned char s_fxBoxVtable[];
 
-// Node of the signed-key effect tree (red-black style: parentAndColor packs the parent pointer and color bit).
-struct EffectKeyNode { EffectKeyNode* left; EffectKeyNode* right; unsigned int parentAndColor; int value; };
-// The root slot at +4 is distinct from the cached in-order first at +8.
-struct EffectKeyTreeHeader { unsigned int count; EffectKeyNode* root; };
+// Node of the effect-control tree: child links, the parent pointer with its
+// colour bit packed into the low bit, the signed serial key, and the control.
+struct FxControlTreeNode {
+    FxControlTreeNode* left;     // 0x00
+    FxControlTreeNode* right;    // 0x04
+    unsigned int parentAndColor; // 0x08
+    int key;                     // 0x0C
+    void* control;               // 0x10  owned control, destroyed before the node
+};
 
-// Find a signed effect key's insertion parent and left/right insertion flags.
-void* CFxEffectTree_FindInsertionPosition(EffectKeyTreeHeader* root, int* key, EffectKeyNode** parent, unsigned char* insertLeft, unsigned char* beforeFirst) {
-    EffectKeyNode* result = (EffectKeyNode*)&root->root; // +4: tree sentinel
-    EffectKeyNode* node;
+// Find the node to insert a signed control key under and which of its sides to
+// use. The address of the root slot is the end sentinel, so an empty tree
+// returns that address.
+FxControlTreeNode* CFxEffectTree::FindInsertionPosition(int* key, FxControlTreeNode** parent, unsigned char* insertLeft,
+                                                        unsigned char* beforeFirst) {
+    FxControlTreeNode* result = (FxControlTreeNode*)&root;
+    FxControlTreeNode* node;
     *parent = 0;
-    EffectKeyNode* rootNode = root->root;
+    node = root;
     *insertLeft = 1;
-    // Retain these copies to preserve generated local-type names in exception relocations.
-    EffectKeyNode* initialNode = rootNode;
-    EffectKeyNode* searchNode = initialNode;
     *beforeFirst = 1;
-    node = searchNode;
     while (node) {
         result = node;
-        if (*key < node->value) {
+        if (*key < node->key) {
             node = node->left;
             *insertLeft = 1;
         } else {
@@ -71,19 +77,40 @@ extern void appFreeUni__FPv(void*);
 // Copy the spray key/value pair into a new node, attach it, and rebalance the tree.
 void* FxSprayTree_InsertNode(void* list, void* parent, int insertLeft, int updateCachedFirst, const void* source) {
     // Shared exception-message owner: vtable, strong/weak counts, owned character array.
-    struct Ref { int vt; int c1; int c2; char* s; };
+    struct Ref {
+        int vt;
+        int c1;
+        int c2;
+        char* s;
+    };
     // Compiler-expanded insertion frame: a/b retain the new allocation; c is the
     // root-slot sentinel; d owns the node until attachment commits. flag is initialized only.
-    struct Tmp { char flag; void* a; void* b; void* pad[3]; void* c; void* d; };
+    struct Tmp {
+        char flag;
+        void* a;
+        void* b;
+        void* pad[3];
+        void* c;
+        void* d;
+    };
     struct Holder {
-        char* p; char* flag;
+        char* p;
+        char* flag;
         // Guard the copied message allocation during control-block construction.
-        Holder(char* b, char* f) { p = b; flag = f; }
+        Holder(char* b, char* f) {
+            p = b;
+            flag = f;
+        }
         // Delete message bytes if ownership has not been transferred.
-        ~Holder() { if (p) __dla__FPv(p); }
+        ~Holder() {
+            if (p)
+                __dla__FPv(p);
+        }
     };
     struct ErrBase {
-        void* vt; char* buf; Ref* ref;
+        void* vt;
+        char* buf;
+        Ref* ref;
         // Copy the exception message and establish shared ownership of its bytes.
         ErrBase(const char* msg0) {
             vt = (void*)__vt__Q23std11logic_error;
@@ -91,31 +118,58 @@ void* FxSprayTree_InsertNode(void* list, void* parent, int insertLeft, int updat
             struct Guard {
                 char flag;
                 // Initialize the compiler-expanded allocator state byte.
-                Guard() { flag = 0; }
+                Guard() {
+                    flag = 0;
+                }
             } guard;
             const char* msg = msg0;
             unsigned n = strlen(msg) + 1;
-            char* b = (char*)__nwa__FUl(n * 2 - n);
-            buf = b;
-            { Holder h(b, &done); Ref* r = (Ref*)__nw__FUl(16); if (r) { r->c1 = 1; r->c2 = 1; r->vt = (int)s_sharedCharDeleterVtable; r->s = b; } ref = r; h.p = 0; }
+            char* buffer = (char*)__nwa__FUl(n * 2 - n);
+            buf = buffer;
+            {
+                Holder h(buffer, &done);
+                Ref* r = (Ref*)__nw__FUl(16);
+                if (r) {
+                    r->c1 = 1;
+                    r->c2 = 1;
+                    r->vt = (int)s_sharedCharDeleterVtable;
+                    r->s = buffer;
+                }
+                ref = r;
+                h.p = 0;
+            }
             strcpy(buf, msg);
         }
         // Destroy the standard exception base and its message state.
-        ~ErrBase() { __dt__Q23std9exceptionFv(this); }
+        ~ErrBase() {
+            __dt__Q23std9exceptionFv(this);
+        }
     };
     struct ErrThrow : ErrBase {
         // Install the length-error vtable and throw the constructed exception.
-        ErrThrow(const char* msg) : ErrBase(msg) { vt = (void*)__vt__Q23std12length_error; __throw(shotEffectResourceStrings + 0x27c, this, (void (*)())__dt__Q23std12length_errorFv); }
+        ErrThrow(const char* msg) : ErrBase(msg) {
+            vt = (void*)__vt__Q23std12length_error;
+            __throw(shotEffectResourceStrings + 0x27c, this, (void (*)())__dt__Q23std12length_errorFv);
+        }
         // Preserve the empty derived exception cleanup hook.
         ~ErrThrow() {}
     };
     struct Failure {
         // Throw the spray-tree length error before its count can overflow.
-        static void run() { ErrThrow err(shotEffectResourceStrings + 0x262); }
+        static void run() {
+            ErrThrow err(shotEffectResourceStrings + 0x262);
+        }
     };
     // Phase 1: reject count overflow before allocating a node.
-    if (*reinterpret_cast<unsigned int*>(list) == 0xFFFFFFFFu) Failure::run();
-    struct Node { void* left; void* right; void* parent; unsigned int data0; unsigned int data1; };
+    if (*reinterpret_cast<unsigned int*>(list) == 0xFFFFFFFFu)
+        Failure::run();
+    struct Node {
+        void* left;
+        void* right;
+        void* parent;
+        unsigned int data0;
+        unsigned int data1;
+    };
     Tmp insertionCleanup;
     insertionCleanup.flag = 0;
     // Phase 2: copy the borrowed key/value payload under the insertion cleanup frame.
@@ -129,22 +183,32 @@ void* FxSprayTree_InsertNode(void* list, void* parent, int insertLeft, int updat
         try {
             ((unsigned int*)payloadStorage)[0] = ((const unsigned int*)source)[0];
             ((unsigned int*)payloadStorage)[1] = ((const unsigned int*)source)[1];
-        } catch (...) { throw; }
+        } catch (...) {
+            throw;
+        }
     }
     node->right = 0;
     insertionCleanup.d = 0;
     node->left = 0;
     if (&node->parent != 0) { // +8
-        try { node->parent = parent; } catch (...) { throw; }
+        try {
+            node->parent = parent;
+        } catch (...) {
+            throw;
+        }
     }
     // Phase 3: attach to the selected parent side, update counts, and rebalance.
-    if (insertLeft) *(void**)parent = node;
-    else *((void**)parent + 1) = node;
+    if (insertLeft)
+        *(void**)parent = node;
+    else
+        *((void**)parent + 1) = node;
     unsigned int count = *(unsigned int*)list;
     *(unsigned int*)list = count + 1;
     RBTree_RebalanceAfterInsert(node, *((void**)list + 1), count);
-    if (updateCachedFirst) *((void**)list + 2) = node;
-    if (insertionCleanup.d) appFreeUni__FPv(insertionCleanup.d);
+    if (updateCachedFirst)
+        *((void**)list + 2) = node;
+    if (insertionCleanup.d)
+        appFreeUni__FPv(insertionCleanup.d);
     return node;
 }
 #pragma use_lmw_stmw reset
@@ -165,15 +229,21 @@ struct BoxParameterStorage {
     int unresolvedState;
     BoxParameterRecord physicalRecords[4];
 };
-typedef char BoxParameterRecord_size[(sizeof(BoxParameterRecord)==0x38)?1:-1];
-typedef char BoxParameterStorage_offset[((int)&((BoxParameterStorage*)0)->physicalRecords==0x184)?1:-1];
+typedef char BoxParameterRecord_size[(sizeof(BoxParameterRecord) == 0x38) ? 1 : -1];
+typedef char BoxParameterStorage_offset[((int)&((BoxParameterStorage*)0)->physicalRecords == 0x184) ? 1 : -1];
 // Borrow the embedded records; this view owns no allocations.
-static inline BoxParameterStorage* BoxParameters(void* box) { return (BoxParameterStorage*)box; }
+static inline BoxParameterStorage* BoxParameters(void* box) {
+    return (BoxParameterStorage*)box;
+}
 
 // Borrow effect-box fields without changing pointer or ownership.
-static inline CFxBox* AsCFxBox(void* p) { return (CFxBox*)p; }
+static inline CFxBox* AsCFxBox(void* p) {
+    return (CFxBox*)p;
+}
 
-struct Init80107930 { char data[0x24C]; };
+struct Init80107930 {
+    char data[0x24C];
+};
 // Initialize empty effect caches, playback controls, and embedded effect-state records.
 // Timing contract: callers convert seconds to milliseconds before UpdateEffects
 // (cfx_shot_effects.cpp/screen_ball_preview.cpp). pause=0 allows updates; timeScale=1 preserves speed;
@@ -183,7 +253,8 @@ struct Init80107930 { char data[0x24C]; };
 // defaultStepMilliseconds makes the unit explicit. These are simulation steps.
 // Each full CFxBox tree stores count/root/cached-first; an empty cached-first points to the root slot
 // inside this object. Resource manager and camera transform start unbound.
-void CFxBox_Ctor(Init80107930* self) {
+CFxBox::CFxBox() {
+    Init80107930* self = (Init80107930*)this;
     // Phase 1: form embedded sentinels; no heap allocations are owned yet.
     char* boxBytes = (char*)self;
     register float defaultValue = 1.0f;
@@ -220,7 +291,7 @@ void CFxBox_Ctor(Init80107930* self) {
     AsCFxBox(boxBytes)->sequenceTreeRoot = zero;
     AsCFxBox(boxBytes)->sequenceTreeFirst = sequenceSentinel;
     // Phase 2: set playback gates and timing defaults shared by every effect.
-    AsCFxBox(boxBytes)->resourceManager = zero;
+    AsCFxBox(boxBytes)->resourceManager = 0;
     AsCFxBox(boxBytes)->pause = (char)zero;
     AsCFxBox(boxBytes)->renderFlags = zero;
     AsCFxBox(boxBytes)->nominalStepMilliseconds = defaultStepMilliseconds;
@@ -234,7 +305,7 @@ void CFxBox_Ctor(Init80107930* self) {
     AsCFxBox(boxBytes)->unk_11C = zero;
     AsCFxBox(boxBytes)->unk_120 = zero;
     AsCFxBox(boxBytes)->debugBoundsEnabled = (char)zero;
-    AsCFxBox(boxBytes)->cameraTransformAddress = zero;
+    AsCFxBox(boxBytes)->cameraTransformAddress = 0;
     // Phase 3: four 0x38-byte records at 184/1BC/1F4/22C. Pointer slots
     // 170/174/178/17C refer to records in order 0/1/3/2, not address order.
     // Relative +10 is initialized to -1; +18/+1C float defaults are respectively
@@ -271,8 +342,9 @@ void CFxBox_Ctor(Init80107930* self) {
 }
 
 // Adjust an interface pointer back to the owning effect before destruction.
-void* CFx_DtorThunk4(void* p, int forwarded1) {
-    return CFx_Dtor((char*)p - 4, forwarded1);
+// This is a vtable adjustor, not a destructor body, so it stays a named member.
+void* CFx::DtorThunk4(int forwarded1) {
+    return __dt__3CFxFv((char*)this - 4, forwarded1);
 }
 
 // Node of the unsigned-key resource tree (same layout family as EffectKeyNode).
@@ -290,7 +362,8 @@ struct ResourceKeyTreeHeader {
 };
 
 // Find an unsigned resource key's insertion parent and insertion-side flags.
-void* FxBoxTree_FindInsertHint(ResourceKeyTreeHeader* root, unsigned int* key, ResourceKeyNode** parent, unsigned char* insertLeft, unsigned char* beforeFirst) {
+void* FxBoxTree_FindInsertHint(ResourceKeyTreeHeader* root, unsigned int* key, ResourceKeyNode** parent,
+                               unsigned char* insertLeft, unsigned char* beforeFirst) {
     ResourceKeyNode* result = (ResourceKeyNode*)&root->root; // +4: tree sentinel
     ResourceKeyNode* node;
     *parent = 0;
@@ -314,7 +387,10 @@ void* FxBoxTree_FindInsertHint(ResourceKeyTreeHeader* root, unsigned int* key, R
 }
 
 // Bare binary-tree node view (left/right only) used by the postorder free routines; payload is not touched.
-struct TwoChildNode { TwoChildNode* left; TwoChildNode* right; };
+struct TwoChildNode {
+    TwoChildNode* left;
+    TwoChildNode* right;
+};
 // Both node-only traversals below implement the same ownership rule:
 //   destroy(left), destroy(right), free(node), with three levels expanded.
 // root must be a real non-null heap node, never the embedded tree sentinel.
@@ -335,14 +411,18 @@ void FxBoxResourceTree_FreeSubtreeNodes(void* context, TwoChildNode* root) {
         if (child) {
             grandchild = child->left;
             if (grandchild) {
-                if (grandchild->left) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
-                if (grandchild->right) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
+                if (grandchild->left)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
+                if (grandchild->right)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
                 appFreeUni__FPv(grandchild);
             }
             grandchild = child->right;
             if (grandchild) {
-                if (grandchild->left) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
-                if (grandchild->right) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
+                if (grandchild->left)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
+                if (grandchild->right)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
                 appFreeUni__FPv(grandchild);
             }
             appFreeUni__FPv(child);
@@ -351,14 +431,18 @@ void FxBoxResourceTree_FreeSubtreeNodes(void* context, TwoChildNode* root) {
         if (child) {
             grandchild = child->left;
             if (grandchild) {
-                if (grandchild->left) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
-                if (grandchild->right) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
+                if (grandchild->left)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
+                if (grandchild->right)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
                 appFreeUni__FPv(grandchild);
             }
             grandchild = child->right;
             if (grandchild) {
-                if (grandchild->left) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
-                if (grandchild->right) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
+                if (grandchild->left)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
+                if (grandchild->right)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
                 appFreeUni__FPv(grandchild);
             }
             appFreeUni__FPv(child);
@@ -379,14 +463,18 @@ void FxBoxResourceTree_FreeSubtreeNodes(void* context, TwoChildNode* root) {
             TwoChildNode* finalLeft = leftReadForResult;
             grandchild = finalLeft;
             if (grandchild) {
-                if (grandchild->left) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
-                if (grandchild->right) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
+                if (grandchild->left)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
+                if (grandchild->right)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
                 appFreeUni__FPv(grandchild);
             }
             grandchild = node->right;
             if (grandchild) {
-                if (grandchild->left) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
-                if (grandchild->right) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
+                if (grandchild->left)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
+                if (grandchild->right)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
                 appFreeUni__FPv(grandchild);
             }
             appFreeUni__FPv(node);
@@ -402,15 +490,19 @@ void FxBoxResourceTree_FreeSubtreeNodes(void* context, TwoChildNode* root) {
             TwoChildNode* finalLeft = leftReadForResult;
             grandchild = finalLeft;
             if (grandchild) {
-                if (grandchild->left) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
-                if (grandchild->right) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
+                if (grandchild->left)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
+                if (grandchild->right)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
                 appFreeUni__FPv(grandchild);
             }
             TwoChildNode* savedRight = node->right;
             grandchild = savedRight;
             if (grandchild) {
-                if (grandchild->left) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
-                if (grandchild->right) FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
+                if (grandchild->left)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->left);
+                if (grandchild->right)
+                    FxBoxResourceTree_FreeSubtreeNodes(context, grandchild->right);
                 appFreeUni__FPv(grandchild);
             }
             appFreeUni__FPv(node);
@@ -420,12 +512,17 @@ void FxBoxResourceTree_FreeSubtreeNodes(void* context, TwoChildNode* root) {
     appFreeUni__FPv(root);
 }
 #pragma use_lmw_stmw reset
-struct TwoChildRoot { TwoChildNode* left; TwoChildNode* right; };
+struct TwoChildRoot {
+    TwoChildNode* left;
+    TwoChildNode* right;
+};
 void FxTree_DestroySubtreeNodes(void*, TwoChildRoot*);
 // Complete the deepest expanded effect branch while retaining its distinct recursion entry.
 static inline void FinishEffectTreeBranch(void* context, TwoChildNode* node) {
-    if (node->left) FxTree_DestroySubtreeNodes(context, (TwoChildRoot*)node->left);
-    if (node->right) FxTree_DestroySubtreeNodes(context, (TwoChildRoot*)node->right);
+    if (node->left)
+        FxTree_DestroySubtreeNodes(context, (TwoChildRoot*)node->left);
+    if (node->right)
+        FxTree_DestroySubtreeNodes(context, (TwoChildRoot*)node->right);
     appFreeUni__FPv(node);
 }
 #pragma use_lmw_stmw on
@@ -527,7 +624,10 @@ struct StringMapNode {
     void* heapStringData;
 };
 // The +4 root starts subtree destruction; cached-first storage is outside this prefix.
-struct StringMapHeader { char nodeCount[4]; StringMapNode* root; };
+struct StringMapHeader {
+    char nodeCount[4];
+    StringMapNode* root;
+};
 void StringValueTree_DestroySubtree(void*, void*);
 void __dl__FPv(void*);
 
@@ -535,7 +635,8 @@ void __dl__FPv(void*);
 inline void FreeOwnedStringNode(StringMapNode* node) {
     if (&node->stringFlagsAndInlinePrefix) {
         if (&node->stringFlagsAndInlinePrefix) {
-            if (node->stringFlagsAndInlinePrefix >> 31) appFreeUni__FPv(node->heapStringData);
+            if (node->stringFlagsAndInlinePrefix >> 31)
+                appFreeUni__FPv(node->heapStringData);
         }
     }
     appFreeUni__FPv(node);
@@ -543,8 +644,10 @@ inline void FreeOwnedStringNode(StringMapNode* node) {
 
 // Finish a non-null expanded leaf: recurse into deeper nodes, then release key/node.
 static inline void DestroySprayStringLeaf(StringMapNode* node, void* context) {
-    if (node->left) StringValueTree_DestroySubtree(context, node->left);
-    if (node->right) StringValueTree_DestroySubtree(context, node->right);
+    if (node->left)
+        StringValueTree_DestroySubtree(context, node->left);
+    if (node->right)
+        StringValueTree_DestroySubtree(context, node->right);
     FreeOwnedStringNode(node);
 }
 
@@ -554,83 +657,84 @@ void* FxSprayTemplateMap_dtor(void* context, int deleteFlag) {
     if (context) {
         // Repeated wrapper guards preserve the original destructor expansion.
         if (context) {
-        if (context) {
-        if (context) {
-        if (context) {
-        if (context) {
-        // Phase 1: destroy the left branch in expanded postorder; descendants
-        // release flagged heap strings before their own node storage.
-        StringMapNode* root = ((StringMapHeader*)context)->root; // +4
-        if (root) {
-            StringMapNode* child = root->left;
-            if (child) {
-                StringMapNode* savedLeft6 = child->left;
-                StringMapNode* grandchild = savedLeft6;
-                if (grandchild) {
-                    StringMapNode* savedLeft7 = grandchild->left;
-                    StringMapNode* leaf = savedLeft7;
-                    if (leaf) {
-                        DestroySprayStringLeaf(leaf, context);
+            if (context) {
+                if (context) {
+                    if (context) {
+                        if (context) {
+                            // Phase 1: destroy the left branch in expanded postorder; descendants
+                            // release flagged heap strings before their own node storage.
+                            StringMapNode* root = ((StringMapHeader*)context)->root; // +4
+                            if (root) {
+                                StringMapNode* child = root->left;
+                                if (child) {
+                                    StringMapNode* savedLeft6 = child->left;
+                                    StringMapNode* grandchild = savedLeft6;
+                                    if (grandchild) {
+                                        StringMapNode* savedLeft7 = grandchild->left;
+                                        StringMapNode* leaf = savedLeft7;
+                                        if (leaf) {
+                                            DestroySprayStringLeaf(leaf, context);
+                                        }
+                                        leaf = grandchild->right;
+                                        if (leaf) {
+                                            DestroySprayStringLeaf(leaf, context);
+                                        }
+                                        FreeOwnedStringNode(grandchild);
+                                    }
+                                    grandchild = child->right;
+                                    if (grandchild) {
+                                        StringMapNode* leaf = grandchild->left;
+                                        if (leaf) {
+                                            DestroySprayStringLeaf(leaf, context);
+                                        }
+                                        leaf = grandchild->right;
+                                        if (leaf) {
+                                            DestroySprayStringLeaf(leaf, context);
+                                        }
+                                        FreeOwnedStringNode(grandchild);
+                                    }
+                                    FreeOwnedStringNode(child);
+                                }
+                                // Phase 2: destroy the right branch, then this root and the optional wrapper.
+                                StringMapNode* savedRight5 = root->right;
+                                child = savedRight5;
+                                if (child) {
+                                    StringMapNode* grandchild = child->left;
+                                    if (grandchild) {
+                                        StringMapNode* leaf = grandchild->left;
+                                        if (leaf) {
+                                            DestroySprayStringLeaf(leaf, context);
+                                        }
+                                        leaf = grandchild->right;
+                                        if (leaf) {
+                                            DestroySprayStringLeaf(leaf, context);
+                                        }
+                                        FreeOwnedStringNode(grandchild);
+                                    }
+                                    StringMapNode* savedRight6 = child->right;
+                                    grandchild = savedRight6;
+                                    if (grandchild) {
+                                        StringMapNode* leaf = grandchild->left;
+                                        if (leaf) {
+                                            DestroySprayStringLeaf(leaf, context);
+                                        }
+                                        leaf = grandchild->right;
+                                        if (leaf) {
+                                            DestroySprayStringLeaf(leaf, context);
+                                        }
+                                        FreeOwnedStringNode(grandchild);
+                                    }
+                                    FreeOwnedStringNode(child);
+                                }
+                                FreeOwnedStringNode(root);
+                            }
+                        }
                     }
-                    leaf = grandchild->right;
-                    if (leaf) {
-                        DestroySprayStringLeaf(leaf, context);
-                    }
-                    FreeOwnedStringNode(grandchild);
                 }
-                grandchild = child->right;
-                if (grandchild) {
-                    StringMapNode* leaf = grandchild->left;
-                    if (leaf) {
-                        DestroySprayStringLeaf(leaf, context);
-                    }
-                    leaf = grandchild->right;
-                    if (leaf) {
-                        DestroySprayStringLeaf(leaf, context);
-                    }
-                    FreeOwnedStringNode(grandchild);
-                }
-                FreeOwnedStringNode(child);
             }
-            // Phase 2: destroy the right branch, then this root and the optional wrapper.
-            StringMapNode* savedRight5 = root->right;
-            child = savedRight5;
-            if (child) {
-                StringMapNode* grandchild = child->left;
-                if (grandchild) {
-                    StringMapNode* leaf = grandchild->left;
-                    if (leaf) {
-                        DestroySprayStringLeaf(leaf, context);
-                    }
-                    leaf = grandchild->right;
-                    if (leaf) {
-                        DestroySprayStringLeaf(leaf, context);
-                    }
-                    FreeOwnedStringNode(grandchild);
-                }
-                StringMapNode* savedRight6 = child->right;
-                grandchild = savedRight6;
-                if (grandchild) {
-                    StringMapNode* leaf = grandchild->left;
-                    if (leaf) {
-                        DestroySprayStringLeaf(leaf, context);
-                    }
-                    leaf = grandchild->right;
-                    if (leaf) {
-                        DestroySprayStringLeaf(leaf, context);
-                    }
-                    FreeOwnedStringNode(grandchild);
-                }
-                FreeOwnedStringNode(child);
-            }
-            FreeOwnedStringNode(root);
         }
-        }
-        }
-        }
-        }
-        }
-        if (deleteFlag > 0) __dl__FPv(context);
+        if (deleteFlag > 0)
+            __dl__FPv(context);
     }
     return context;
 }
@@ -640,8 +744,10 @@ void FxBoxResourceMap_DestroySubtree(void*, void*);
 
 // Destroy a resource-map node's descendants and owned string before freeing the node.
 inline void DestroyResourceStringNode(StringMapNode* node, void* context) {
-    if (node->left) FxBoxResourceMap_DestroySubtree(context, node->left);
-    if (node->right) FxBoxResourceMap_DestroySubtree(context, node->right);
+    if (node->left)
+        FxBoxResourceMap_DestroySubtree(context, node->left);
+    if (node->right)
+        FxBoxResourceMap_DestroySubtree(context, node->right);
     FreeOwnedStringNode(node);
 }
 
@@ -651,64 +757,73 @@ void* FxBoxResourceMap_dtor(void* context, int deleteFlag) {
     if (context) {
         // Repeated wrapper guards preserve the original destructor expansion.
         if (context) {
-        if (context) {
-        if (context) {
-        if (context) {
-        if (context) {
-        StringMapNode* root = ((StringMapHeader*)context)->root; // +4
-        if (root) {
-            StringMapNode* child = root->left;
-            if (child) {
-                StringMapNode* savedLeft8 = child->left;
-                StringMapNode* grandchild = savedLeft8;
-                if (grandchild) {
-                    StringMapNode* savedLeft9 = grandchild->left;
-                    StringMapNode* leaf = savedLeft9;
-                    if (leaf) DestroyResourceStringNode(leaf, context);
-                    leaf = grandchild->right;
-                    if (leaf) DestroyResourceStringNode(leaf, context);
-                    FreeOwnedStringNode(grandchild);
+            if (context) {
+                if (context) {
+                    if (context) {
+                        if (context) {
+                            StringMapNode* root = ((StringMapHeader*)context)->root; // +4
+                            if (root) {
+                                StringMapNode* child = root->left;
+                                if (child) {
+                                    StringMapNode* savedLeft8 = child->left;
+                                    StringMapNode* grandchild = savedLeft8;
+                                    if (grandchild) {
+                                        StringMapNode* savedLeft9 = grandchild->left;
+                                        StringMapNode* leaf = savedLeft9;
+                                        if (leaf)
+                                            DestroyResourceStringNode(leaf, context);
+                                        leaf = grandchild->right;
+                                        if (leaf)
+                                            DestroyResourceStringNode(leaf, context);
+                                        FreeOwnedStringNode(grandchild);
+                                    }
+                                    grandchild = child->right;
+                                    if (grandchild) {
+                                        StringMapNode* leaf = grandchild->left;
+                                        if (leaf)
+                                            DestroyResourceStringNode(leaf, context);
+                                        leaf = grandchild->right;
+                                        if (leaf)
+                                            DestroyResourceStringNode(leaf, context);
+                                        FreeOwnedStringNode(grandchild);
+                                    }
+                                    FreeOwnedStringNode(child);
+                                }
+                                StringMapNode* savedRight7 = root->right;
+                                child = savedRight7;
+                                if (child) {
+                                    StringMapNode* grandchild = child->left;
+                                    if (grandchild) {
+                                        StringMapNode* leaf = grandchild->left;
+                                        if (leaf)
+                                            DestroyResourceStringNode(leaf, context);
+                                        leaf = grandchild->right;
+                                        if (leaf)
+                                            DestroyResourceStringNode(leaf, context);
+                                        FreeOwnedStringNode(grandchild);
+                                    }
+                                    StringMapNode* savedRight8 = child->right;
+                                    grandchild = savedRight8;
+                                    if (grandchild) {
+                                        StringMapNode* leaf = grandchild->left;
+                                        if (leaf)
+                                            DestroyResourceStringNode(leaf, context);
+                                        leaf = grandchild->right;
+                                        if (leaf)
+                                            DestroyResourceStringNode(leaf, context);
+                                        FreeOwnedStringNode(grandchild);
+                                    }
+                                    FreeOwnedStringNode(child);
+                                }
+                                FreeOwnedStringNode(root);
+                            }
+                        }
+                    }
                 }
-                grandchild = child->right;
-                if (grandchild) {
-                    StringMapNode* leaf = grandchild->left;
-                    if (leaf) DestroyResourceStringNode(leaf, context);
-                    leaf = grandchild->right;
-                    if (leaf) DestroyResourceStringNode(leaf, context);
-                    FreeOwnedStringNode(grandchild);
-                }
-                FreeOwnedStringNode(child);
             }
-            StringMapNode* savedRight7 = root->right;
-            child = savedRight7;
-            if (child) {
-                StringMapNode* grandchild = child->left;
-                if (grandchild) {
-                    StringMapNode* leaf = grandchild->left;
-                    if (leaf) DestroyResourceStringNode(leaf, context);
-                    leaf = grandchild->right;
-                    if (leaf) DestroyResourceStringNode(leaf, context);
-                    FreeOwnedStringNode(grandchild);
-                }
-                StringMapNode* savedRight8 = child->right;
-                grandchild = savedRight8;
-                if (grandchild) {
-                    StringMapNode* leaf = grandchild->left;
-                    if (leaf) DestroyResourceStringNode(leaf, context);
-                    leaf = grandchild->right;
-                    if (leaf) DestroyResourceStringNode(leaf, context);
-                    FreeOwnedStringNode(grandchild);
-                }
-                FreeOwnedStringNode(child);
-            }
-            FreeOwnedStringNode(root);
         }
-        }
-        }
-        }
-        }
-        }
-        if (deleteFlag > 0) __dl__FPv(context);
+        if (deleteFlag > 0)
+            __dl__FPv(context);
     }
     return context;
 }
@@ -717,10 +832,13 @@ void* FxBoxResourceMap_dtor(void* context, int deleteFlag) {
 #pragma use_lmw_stmw on
 // Destroy a value-tree node's descendants and owned string before freeing the node.
 inline void DestroyValueStringNode(StringMapNode* node, void* context) {
-    if (node->left) StringValueTree_DestroySubtree(context, node->left);
-    if (node->right) StringValueTree_DestroySubtree(context, node->right);
+    if (node->left)
+        StringValueTree_DestroySubtree(context, node->left);
+    if (node->right)
+        StringValueTree_DestroySubtree(context, node->right);
     if (&node->stringFlagsAndInlinePrefix) {
-        if (&node->stringFlagsAndInlinePrefix && (node->stringFlagsAndInlinePrefix >> 31)) appFreeUni__FPv(node->heapStringData);
+        if (&node->stringFlagsAndInlinePrefix && (node->stringFlagsAndInlinePrefix >> 31))
+            appFreeUni__FPv(node->heapStringData);
     }
     appFreeUni__FPv(node);
 }
@@ -730,88 +848,108 @@ void* FxSequenceTemplateMap_dtor(void* context, int deleteFlag) {
     if (context) {
         // Repeated wrapper guards preserve the original destructor expansion.
         if (context) {
-        if (context) {
-        if (context) {
-        if (context) {
-        if (context) {
-        StringMapNode* root = ((StringMapHeader*)context)->root; // +4
-        if (root) {
-            StringMapNode* savedLeft10 = root->left;
-            StringMapNode* child = savedLeft10;
-            if (child) {
-                StringMapNode* savedLeft11 = child->left;
-                StringMapNode* grandchild = savedLeft11;
-                if (grandchild) {
-                    StringMapNode* savedLeft12 = grandchild->left;
-                    StringMapNode* leaf = savedLeft12;
-                    if (leaf) DestroyValueStringNode(leaf, context);
-                    StringMapNode* savedRight9 = grandchild->right;
-                    leaf = savedRight9;
-                    if (leaf) DestroyValueStringNode(leaf, context);
-                    if ((char*)(grandchild) + 0xC) {
-                        if (((char*)(grandchild) + 0xC) && (((grandchild)->stringFlagsAndInlinePrefix) >> 31)) appFreeUni__FPv((grandchild)->heapStringData);
+            if (context) {
+                if (context) {
+                    if (context) {
+                        if (context) {
+                            StringMapNode* root = ((StringMapHeader*)context)->root; // +4
+                            if (root) {
+                                StringMapNode* savedLeft10 = root->left;
+                                StringMapNode* child = savedLeft10;
+                                if (child) {
+                                    StringMapNode* savedLeft11 = child->left;
+                                    StringMapNode* grandchild = savedLeft11;
+                                    if (grandchild) {
+                                        StringMapNode* savedLeft12 = grandchild->left;
+                                        StringMapNode* leaf = savedLeft12;
+                                        if (leaf)
+                                            DestroyValueStringNode(leaf, context);
+                                        StringMapNode* savedRight9 = grandchild->right;
+                                        leaf = savedRight9;
+                                        if (leaf)
+                                            DestroyValueStringNode(leaf, context);
+                                        if ((char*)(grandchild) + 0xC) {
+                                            if (((char*)(grandchild) + 0xC) &&
+                                                (((grandchild)->stringFlagsAndInlinePrefix) >> 31))
+                                                appFreeUni__FPv((grandchild)->heapStringData);
+                                        }
+                                        appFreeUni__FPv(grandchild);
+                                    }
+                                    StringMapNode* savedRight10 = child->right;
+                                    grandchild = savedRight10;
+                                    if (grandchild) {
+                                        StringMapNode* leaf = grandchild->left;
+                                        if (leaf)
+                                            DestroyValueStringNode(leaf, context);
+                                        leaf = grandchild->right;
+                                        if (leaf)
+                                            DestroyValueStringNode(leaf, context);
+                                        if ((char*)(grandchild) + 0xC) {
+                                            if (((char*)(grandchild) + 0xC) &&
+                                                (((grandchild)->stringFlagsAndInlinePrefix) >> 31))
+                                                appFreeUni__FPv((grandchild)->heapStringData);
+                                        }
+                                        appFreeUni__FPv(grandchild);
+                                    }
+                                    if ((char*)(child) + 0xC) {
+                                        if (((char*)(child) + 0xC) && (((child)->stringFlagsAndInlinePrefix) >> 31))
+                                            appFreeUni__FPv((child)->heapStringData);
+                                    }
+                                    appFreeUni__FPv(child);
+                                }
+                                child = root->right;
+                                if (child) {
+                                    StringMapNode* grandchild = child->left;
+                                    if (grandchild) {
+                                        StringMapNode* leaf = grandchild->left;
+                                        if (leaf)
+                                            DestroyValueStringNode(leaf, context);
+                                        leaf = grandchild->right;
+                                        if (leaf)
+                                            DestroyValueStringNode(leaf, context);
+                                        if ((char*)(grandchild) + 0xC) {
+                                            if (((char*)(grandchild) + 0xC) &&
+                                                (((grandchild)->stringFlagsAndInlinePrefix) >> 31))
+                                                appFreeUni__FPv((grandchild)->heapStringData);
+                                        }
+                                        appFreeUni__FPv(grandchild);
+                                    }
+                                    StringMapNode* savedRight11 = child->right;
+                                    grandchild = savedRight11;
+                                    if (grandchild) {
+                                        StringMapNode* savedLeft13 = grandchild->left;
+                                        StringMapNode* leaf = savedLeft13;
+                                        if (leaf)
+                                            DestroyValueStringNode(leaf, context);
+                                        leaf = grandchild->right;
+                                        if (leaf)
+                                            DestroyValueStringNode(leaf, context);
+                                        if ((char*)(grandchild) + 0xC) {
+                                            if (((char*)(grandchild) + 0xC) &&
+                                                (((grandchild)->stringFlagsAndInlinePrefix) >> 31))
+                                                appFreeUni__FPv((grandchild)->heapStringData);
+                                        }
+                                        appFreeUni__FPv(grandchild);
+                                    }
+                                    if ((char*)(child) + 0xC) {
+                                        if (((char*)(child) + 0xC) && (((child)->stringFlagsAndInlinePrefix) >> 31))
+                                            appFreeUni__FPv((child)->heapStringData);
+                                    }
+                                    appFreeUni__FPv(child);
+                                }
+                                if ((char*)(root) + 0xC) {
+                                    if (((char*)(root) + 0xC) && (((root)->stringFlagsAndInlinePrefix) >> 31))
+                                        appFreeUni__FPv((root)->heapStringData);
+                                }
+                                appFreeUni__FPv(root);
+                            }
+                        }
                     }
-                    appFreeUni__FPv(grandchild);
                 }
-                StringMapNode* savedRight10 = child->right;
-                grandchild = savedRight10;
-                if (grandchild) {
-                    StringMapNode* leaf = grandchild->left;
-                    if (leaf) DestroyValueStringNode(leaf, context);
-                    leaf = grandchild->right;
-                    if (leaf) DestroyValueStringNode(leaf, context);
-                    if ((char*)(grandchild) + 0xC) {
-                        if (((char*)(grandchild) + 0xC) && (((grandchild)->stringFlagsAndInlinePrefix) >> 31)) appFreeUni__FPv((grandchild)->heapStringData);
-                    }
-                    appFreeUni__FPv(grandchild);
-                }
-                if ((char*)(child) + 0xC) {
-                    if (((char*)(child) + 0xC) && (((child)->stringFlagsAndInlinePrefix) >> 31)) appFreeUni__FPv((child)->heapStringData);
-                }
-                appFreeUni__FPv(child);
             }
-            child = root->right;
-            if (child) {
-                StringMapNode* grandchild = child->left;
-                if (grandchild) {
-                    StringMapNode* leaf = grandchild->left;
-                    if (leaf) DestroyValueStringNode(leaf, context);
-                    leaf = grandchild->right;
-                    if (leaf) DestroyValueStringNode(leaf, context);
-                    if ((char*)(grandchild) + 0xC) {
-                        if (((char*)(grandchild) + 0xC) && (((grandchild)->stringFlagsAndInlinePrefix) >> 31)) appFreeUni__FPv((grandchild)->heapStringData);
-                    }
-                    appFreeUni__FPv(grandchild);
-                }
-                StringMapNode* savedRight11 = child->right;
-                grandchild = savedRight11;
-                if (grandchild) {
-                    StringMapNode* savedLeft13 = grandchild->left;
-                    StringMapNode* leaf = savedLeft13;
-                    if (leaf) DestroyValueStringNode(leaf, context);
-                    leaf = grandchild->right;
-                    if (leaf) DestroyValueStringNode(leaf, context);
-                    if ((char*)(grandchild) + 0xC) {
-                        if (((char*)(grandchild) + 0xC) && (((grandchild)->stringFlagsAndInlinePrefix) >> 31)) appFreeUni__FPv((grandchild)->heapStringData);
-                    }
-                    appFreeUni__FPv(grandchild);
-                }
-                if ((char*)(child) + 0xC) {
-                    if (((char*)(child) + 0xC) && (((child)->stringFlagsAndInlinePrefix) >> 31)) appFreeUni__FPv((child)->heapStringData);
-                }
-                appFreeUni__FPv(child);
-            }
-            if ((char*)(root) + 0xC) {
-                if (((char*)(root) + 0xC) && (((root)->stringFlagsAndInlinePrefix) >> 31)) appFreeUni__FPv((root)->heapStringData);
-            }
-            appFreeUni__FPv(root);
         }
-        }
-        }
-        }
-        }
-        }
-        if (0 < deleteFlag) __dl__FPv(context);
+        if (0 < deleteFlag)
+            __dl__FPv(context);
     }
     return context;
 }

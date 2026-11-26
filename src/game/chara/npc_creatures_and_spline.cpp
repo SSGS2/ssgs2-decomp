@@ -1,3 +1,6 @@
+// NPC creatures and their spline path: NPC type registration, creature bone references and sound
+// tokens, spline evaluation and setup, and the destructors for crab, dolphin, mole and sparrow creatures.
+
 #include <decomp/static_init.h>
 typedef unsigned long new_size_t;
 #include "game/types.h"
@@ -5,10 +8,12 @@ typedef unsigned long new_size_t;
 #include "classes/CSparrow.h"
 #include "classes/CCreature.h"
 #include "classes/WPuppet.h"
+#include "classes/CNPC.h"
+#include "classes/CCrab.h"
+#include "classes/CDolphin.h"
+#include "classes/CMole.h"
 
 #define AsCSparrow(p) ((CSparrow*)(p))
-// Translation unit 0x801A6854-0x801A7580 (12 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 // Sparse view of the existing byte pool; resource bytes and storage are unchanged.
 struct NpcResourcePool {
@@ -27,7 +32,10 @@ struct NpcResourcePool {
     char npcClassName[5];
 };
 
-enum SplineConstants { kSplineQuadratureSamples = 5, kSplineMinimumPoints = 4 };
+enum SplineConstants {
+    kSplineQuadratureSamples = 5,
+    kSplineMinimumPoints = 4
+};
 extern "C" {
 
 extern char s_npcRttiDescriptor;
@@ -44,7 +52,7 @@ extern char s_npcFactoryClassName;
 extern char s_npcTaskClassName;
 extern char npcResourceStrings[];
 extern char __vt__8CSparrow[];
-extern void IntPair_Set(void*, void*, void*);
+extern void* IntPair_Set(void*, void*, void*);
 extern void* ActorFactoryRegistry_GetInstance();
 extern void StringMap_SetByName(void*, void*, const char*);
 extern void* TaskRegistry_GetInstance();
@@ -54,8 +62,7 @@ extern int Parse_NonemptyQuotedTokenUnder64Bytes(void*, int, void*);
 extern void Sound_PlayByName(void*, void*, void*, int, void*, void*, float, float, float);
 extern void __dla__FPv(void*);
 extern int FxAttachment_ParseBoneReferences(void*, int, int, int, int, int, int);
-extern void CCreature_dtor(void*, int);
-extern void __dl__FPv(void*);
+extern void __dt__9CCreatureFv(void*, int);
 extern void appFreeUni__FPv(void*);
 extern void __dt__18NativeBase80201D18Fv(void*, int);
 extern void* __nwa__FUl(unsigned int);
@@ -76,44 +83,31 @@ extern const float kSplineGaussLegendreNodes5[];
 extern const float kSplineGaussLegendreWeights5[];
 
 // Return the registered NPC runtime type descriptor.
-char* CNPC_GetRTTI() { return &s_npcRttiDescriptor; }
+char* CNPC::GetRTTI() {
+    return &s_npcRttiDescriptor;
+}
 
 // Parse creature bone references using the current puppet and animation range.
-int CCreature_ParseBoneReferences(void* self, int parser, int argument) {
-    // CCreature_ParseBoneReferences: original puppet +0x24 and animation range +0x60.
-    int puppet = ((CCreature*)self)->puppet;
-    int animationRange = ((CCreature*)self)->animationRange;
-    return FxAttachment_ParseBoneReferences(&((CCreature*)self)->secondaryVtable, parser, argument, puppet, animationRange, 0, 0);
+int CCreature::ParseBoneReferences(int parser, int argument) {
+    // CCreature::ParseBoneReferences: original puppet +0x24 and animation range +0x60.
+    int puppet = this->puppet;
+    int animationRange = this->animationRange;
+    return FxAttachment_ParseBoneReferences(&secondaryVtable, parser, argument, puppet, animationRange, 0, 0);
 }
 
 // Destroy the crab creature base and optionally release object storage.
-void* CCrab_Dtor(void* self, int flag) {
-    if (self != 0) {
-        CCreature_dtor(self, 0);
-        if (flag > 0)
-            __dl__FPv(self);
-    }
-    return self;
+CCrab::~CCrab() {
+    __dt__9CCreatureFv(this, 0);
 }
 
 // Destroy the dolphin creature base and optionally release object storage.
-void* CDolphin_Dtor(void* self, int flag) {
-    if (self != 0) {
-        CCreature_dtor(self, 0);
-        if (flag > 0)
-            __dl__FPv(self);
-    }
-    return self;
+CDolphin::~CDolphin() {
+    __dt__9CCreatureFv(this, 0);
 }
 
 // Destroy the mole creature base and optionally release object storage.
-void* CMole_Dtor(void* self, int flag) {
-    if (self != 0) {
-        CCreature_dtor(self, 0);
-        if (flag > 0)
-            __dl__FPv(self);
-    }
-    return self;
+CMole::~CMole() {
+    __dt__9CCreatureFv(this, 0);
 }
 
 // Initialize the NPC angle constant and register its actor factory and task name.
@@ -125,32 +119,25 @@ void CNPC_RegisterType() {
     TaskRegistry_AppendFactory(TaskRegistry_GetInstance(), &s_npcTaskClassName);
 }
 
-struct ListNodeLink { ListNodeLink* prev; ListNodeLink* next; };
-struct ListAt18 { char pad[0x18]; int size; ListNodeLink head; };
-
-// Unlink and free owned NPC list nodes, destroy the native base, and optionally delete.
-void* CNPC_dtor(ListAt18* self, int flag) {
-    if (self) {
-        if (&self->size != 0 && &self->size != 0 && &self->size != 0 && &self->size != 0) {
-            ListNodeLink* end = &self->head;
-            ListNodeLink* node = self->head.next;
-            if (node != end) {
-                ListNodeLink* tail = end->prev;
-                node->prev->next = tail->next;
-                tail->next->prev = node->prev;
-                while (node != end) {
-                    ListNodeLink* current = node;
-                    node = node->next;
-                    appFreeUni__FPv(current);
-                    self->size = self->size - 1;
-                }
+// Unlink and free the owned actor links, then destroy the native actor base.
+// The repeated field-address tests are how the inlined list cleanup compiles.
+CNPC::~CNPC() {
+    if (&childCount != 0 && &childCount != 0 && &childCount != 0 && &childCount != 0) {
+        NpcChildLink* end = (NpcChildLink*)&childList;
+        NpcChildLink* node = end->next;
+        if (node != end) {
+            NpcChildLink* tail = end->previous;
+            node->previous->next = tail->next;
+            tail->next->previous = node->previous;
+            while (node != end) {
+                NpcChildLink* current = node;
+                node = node->next;
+                appFreeUni__FPv(current);
+                childCount = childCount - 1;
             }
         }
-        __dt__18NativeBase80201D18Fv(self, 0);
-        if (0 < flag)
-            __dl__FPv(self);
     }
-    return self;
+    __dt__18NativeBase80201D18Fv(this, 0);
 }
 
 // One packed xyz control point (three floats); construction deliberately leaves it uninitialized.
@@ -161,17 +148,27 @@ struct Entry {
     char data[0x0c];
 };
 // Allocate control-point array storage through the game's array allocator.
-inline void* Entry::operator new[](new_size_t size) { return __nwa__FUl(size); }
+inline void* Entry::operator new[](new_size_t size) {
+    return __nwa__FUl(size);
+}
 // Control points, their parameter knots, cached segment lengths, total length and point count.
 // entries/values/sums are owned allocations, not aliases of the initialization inputs.
 // values has count strictly increasing knots; sums has count-1 individual lengths
 // (not prefix sums). total is their sum in the control points' distance units.
 // Successful initialization supplies at least four points. Evaluation's short-count
 // fallback does not make arbitrary partially initialized containers safe to use.
-struct Container { Entry* entries; float* values; float* sums; float total; int count; };
+struct Container {
+    Entry* entries;
+    float* values;
+    float* sums;
+    float total;
+    int count;
+};
 
 typedef Vec3f Vec3;
-struct IntVec { int a, b, c; };
+struct IntVec {
+    int x, y, z;
+};
 // Estimate a spline segment arc length over a clamped interval using five-point Gaussian quadrature.
 // index selects the span [P[index],P[index+1]]; start/end are normalized span
 // coordinates, not global knots. Callers supply a valid nonnegative index and
@@ -183,15 +180,19 @@ extern "C" float Spline_IntegrateSegmentLength(Container* self, int index, float
     Vec3 firstL, firstFourP1MinusThreeP0, firstFourP1, firstThreeP0;
     Vec3 lastQ, lastPreviousMinusTwiceCurrent, lastTwiceCurrent;
     Vec3 lastL;
-    Vec3 interiorQ, interiorQWithoutFarPoint, interiorThreeCurrentMinusPrevious, interiorThreeCurrent, interiorThreeNext;
-    Vec3 interiorL, interiorLWithoutFarPoint, interiorTwicePreviousMinusFiveCurrent, interiorTwicePrevious, interiorFiveCurrent, interiorFourNext;
+    Vec3 interiorQ, interiorQWithoutFarPoint, interiorThreeCurrentMinusPrevious, interiorThreeCurrent,
+        interiorThreeNext;
+    Vec3 interiorL, interiorLWithoutFarPoint, interiorTwicePreviousMinusFiveCurrent, interiorTwicePrevious,
+        interiorFiveCurrent, interiorFourNext;
     Vec3 interiorT;
     Vec3 endpointDerivative, endpointHalfL, endpointQu;
     Vec3 interiorDerivative, interiorHalfT, interiorDerivativeTimesU, interiorDerivativeInner, interiorThreeHalvesQu;
     if (end <= start)
         return kFloat_0_Creature;
-    if (start < kFloat_0_Creature) start = kFloat_0_Creature;
-    if (end > kFloat_1_Creature) end = kFloat_1_Creature;
+    if (start < kFloat_0_Creature)
+        start = kFloat_0_Creature;
+    if (end > kFloat_1_Creature)
+        end = kFloat_1_Creature;
     float threeHalves, half, span;
     float weightedLength = kFloat_0_Creature;
     // Derive coefficients from points in their original coordinate space.
@@ -224,11 +225,13 @@ extern "C" float Spline_IntegrateSegmentLength(Container* self, int index, float
             previousByteOffset = (i - 1) * 0xC;
             pointBytes = (char*)self->entries;
             __ml__FfRC7WVector(&lastTwiceCurrent, pointBytes + i * 0xC, kFloat_2_805DF2B0);
-            __mi__FRC7WVectorRC7WVector(&lastPreviousMinusTwiceCurrent, (char*)self->entries + previousByteOffset, &lastTwiceCurrent);
+            __mi__FRC7WVectorRC7WVector(&lastPreviousMinusTwiceCurrent, (char*)self->entries + previousByteOffset,
+                                        &lastTwiceCurrent);
             __pl__FRC7WVectorRC7WVector(&lastQ, &lastPreviousMinusTwiceCurrent, pointBytes + nextByteOffset);
             __as__7WVectorFRC7WVector(&quadraticCoefficient, &lastQ);
             char* reloadedPointBytes = (char*)self->entries;
-            __mi__FRC7WVectorRC7WVector(&lastL, reloadedPointBytes + nextByteOffset, reloadedPointBytes + previousByteOffset);
+            __mi__FRC7WVectorRC7WVector(&lastL, reloadedPointBytes + nextByteOffset,
+                                        reloadedPointBytes + previousByteOffset);
             __as__7WVectorFRC7WVector(&linearCoefficient, &lastL);
         } else {
             int farByteOffset, nextByteOffset;
@@ -241,20 +244,25 @@ extern "C" float Spline_IntegrateSegmentLength(Container* self, int index, float
             previousByteOffset = (index - 1) * 0xC;
             __ml__FfRC7WVector(&interiorThreeNext, pointBytes + nextByteOffset, kFloat_3_CreatureSpline);
             __ml__FfRC7WVector(&interiorThreeCurrent, pointBytes + currentByteOffset, kFloat_3_CreatureSpline);
-            __mi__FRC7WVectorRC7WVector(&interiorThreeCurrentMinusPrevious, &interiorThreeCurrent, pointBytes + previousByteOffset);
-            __mi__FRC7WVectorRC7WVector(&interiorQWithoutFarPoint, &interiorThreeCurrentMinusPrevious, &interiorThreeNext);
+            __mi__FRC7WVectorRC7WVector(&interiorThreeCurrentMinusPrevious, &interiorThreeCurrent,
+                                        pointBytes + previousByteOffset);
+            __mi__FRC7WVectorRC7WVector(&interiorQWithoutFarPoint, &interiorThreeCurrentMinusPrevious,
+                                        &interiorThreeNext);
             __pl__FRC7WVectorRC7WVector(&interiorQ, &interiorQWithoutFarPoint, pointBytes + farByteOffset);
             __as__7WVectorFRC7WVector(&quadraticCoefficient, &interiorQ);
             char* reloadedPointBytes = (char*)self->entries;
             __ml__FfRC7WVector(&interiorFourNext, reloadedPointBytes + nextByteOffset, kFloat_4_Spline);
             __ml__FfRC7WVector(&interiorFiveCurrent, (char*)self->entries + currentByteOffset, kFloat_5_creature);
             __ml__FfRC7WVector(&interiorTwicePrevious, (char*)self->entries + previousByteOffset, kFloat_2_805DF2B0);
-            __mi__FRC7WVectorRC7WVector(&interiorTwicePreviousMinusFiveCurrent, &interiorTwicePrevious, &interiorFiveCurrent);
-            __pl__FRC7WVectorRC7WVector(&interiorLWithoutFarPoint, &interiorTwicePreviousMinusFiveCurrent, &interiorFourNext);
+            __mi__FRC7WVectorRC7WVector(&interiorTwicePreviousMinusFiveCurrent, &interiorTwicePrevious,
+                                        &interiorFiveCurrent);
+            __pl__FRC7WVectorRC7WVector(&interiorLWithoutFarPoint, &interiorTwicePreviousMinusFiveCurrent,
+                                        &interiorFourNext);
             __mi__FRC7WVectorRC7WVector(&interiorL, &interiorLWithoutFarPoint, reloadedPointBytes + farByteOffset);
             __as__7WVectorFRC7WVector(&linearCoefficient, &interiorL);
             char* tangentPointBytes = (char*)self->entries;
-            __mi__FRC7WVectorRC7WVector(&interiorT, tangentPointBytes + nextByteOffset, tangentPointBytes + previousByteOffset);
+            __mi__FRC7WVectorRC7WVector(&interiorT, tangentPointBytes + nextByteOffset,
+                                        tangentPointBytes + previousByteOffset);
             __as__7WVectorFRC7WVector(&tangentCoefficient, &interiorT);
         }
     }
@@ -308,12 +316,20 @@ void Spline_EvaluatePosition(Vec3* out, Container* self, float t) {
     }
     knots = self->values;
     if (t <= knots[0]) {
-        { IntVec* src = (IntVec*)self->entries; *(unsigned long long*)out = *(unsigned long long*)src; ((IntVec*)out)->c = src->c; }
+        {
+            IntVec* src = (IntVec*)self->entries;
+            *(unsigned long long*)out = *(unsigned long long*)src;
+            ((IntVec*)out)->z = src->z;
+        }
         return;
     }
     last = count - 1;
     if (t >= knots[last]) {
-        { IntVec* src = (IntVec*)&self->entries[last]; *(unsigned long long*)out = *(unsigned long long*)src; ((IntVec*)out)->c = src->c; }
+        {
+            IntVec* src = (IntVec*)&self->entries[last];
+            *(unsigned long long*)out = *(unsigned long long*)src;
+            ((IntVec*)out)->z = src->z;
+        }
         return;
     }
     // Find the first knot interval whose right endpoint contains t.
@@ -321,7 +337,8 @@ void Spline_EvaluatePosition(Vec3* out, Container* self, float t) {
     segmentIndex = 0;
     knotByteOffset = 0;
     for (; last > segmentIndex; knotByteOffset += 4, ++segmentIndex) {
-        if (t <= *(float*)((char*)knots + knotByteOffset + 4)) break;
+        if (t <= *(float*)((char*)knots + knotByteOffset + 4))
+            break;
     }
     float start = knots[segmentIndex];
     float end = knots[segmentIndex + 1];
@@ -381,60 +398,66 @@ void Spline_EvaluatePosition(Vec3* out, Container* self, float t) {
         __ml__FfRC7WVector(&firstDisplacement, &firstInner, kFloat_0_5_Creature * savedU);
         __pl__FRC7WVectorRC7WVector(out, &self->entries[0], &firstDisplacement);
     } else {
-      count -= 2;
-      if (segmentIndex >= count) {
-        Entry* en;
-        int previousByteOffset, nextByteOffset;
-        int currentByteOffset;
-        currentByteOffset = count * 0xc;
-        nextByteOffset = (count + 1) * 0xc;
-        previousByteOffset = (count - 1) * 0xc;
-        en = self->entries;
-        __ml__FfRC7WVector(&lastTwiceCurrent, (char*)en + currentByteOffset, kFloat_2_805DF2B0);
-        __mi__FRC7WVectorRC7WVector(&lastPreviousMinusTwiceCurrent, (char*)self->entries + previousByteOffset, &lastTwiceCurrent);
-        __pl__FRC7WVectorRC7WVector(&lastQ, &lastPreviousMinusTwiceCurrent, (char*)en + nextByteOffset);
-        Entry* en2 = self->entries;
-        __mi__FRC7WVectorRC7WVector(&lastL, (char*)en2 + nextByteOffset, (char*)en2 + previousByteOffset);
-        __ml__FfRC7WVector(&lastQu, &lastQ, u);
-        __pl__FRC7WVectorRC7WVector(&lastInner, &lastL, &lastQu);
-        float savedU2 = u;
-        float savedValue = kFloat_0_5_Creature * savedU2;
-        __ml__FfRC7WVector(&lastDisplacement, &lastInner, savedValue);
-        __pl__FRC7WVectorRC7WVector(out, (char*)self->entries + currentByteOffset, &lastDisplacement);
-    } else {
-        int farByteOffset, nextByteOffset;
-        Entry* en;
-        int currentByteOffset, previousByteOffset;
-        farByteOffset = (segmentIndex + 2) * 0xc;
-        previousByteOffset = (segmentIndex - 1) * 0xc;
-        nextByteOffset = (segmentIndex + 1) * 0xc;
-        en = self->entries;
-        currentByteOffset = segmentIndex * 0xc;
-        __ml__FfRC7WVector(&interiorThreeNext, (char*)en + nextByteOffset, kFloat_3_CreatureSpline);
-        __ml__FfRC7WVector(&interiorThreeCurrent, (char*)en + currentByteOffset, kFloat_3_CreatureSpline);
-        __mi__FRC7WVectorRC7WVector(&interiorThreeCurrentMinusPrevious, &interiorThreeCurrent, (char*)en + previousByteOffset);
-        __mi__FRC7WVectorRC7WVector(&interiorQWithoutFarPoint, &interiorThreeCurrentMinusPrevious, &interiorThreeNext);
-        int savedI = farByteOffset;
-        __pl__FRC7WVectorRC7WVector(&interiorQ, &interiorQWithoutFarPoint, (char*)en + savedI);
-        Entry* savedEntries = self->entries;
-        en = savedEntries;
-        __ml__FfRC7WVector(&interiorFourNext, (char*)en + nextByteOffset, kFloat_4_Spline);
-        Entry* savedEntries2 = self->entries;
-        __ml__FfRC7WVector(&interiorFiveCurrent, (char*)savedEntries2 + currentByteOffset, kFloat_5_creature);
-        __ml__FfRC7WVector(&interiorTwicePrevious, (char*)self->entries + previousByteOffset, kFloat_2_805DF2B0);
-        __mi__FRC7WVectorRC7WVector(&interiorTwicePreviousMinusFiveCurrent, &interiorTwicePrevious, &interiorFiveCurrent);
-        __pl__FRC7WVectorRC7WVector(&interiorLWithoutFarPoint, &interiorTwicePreviousMinusFiveCurrent, &interiorFourNext);
-        __mi__FRC7WVectorRC7WVector(&interiorL, &interiorLWithoutFarPoint, (char*)en + farByteOffset);
-        __mi__FRC7WVectorRC7WVector(&interiorT, (char*)self->entries + nextByteOffset, (char*)self->entries + previousByteOffset);
-        __ml__FfRC7WVector(&interiorQu, &interiorQ, u);
-        __pl__FRC7WVectorRC7WVector(&interiorQuadraticInner, &interiorL, &interiorQu);
+        count -= 2;
+        if (segmentIndex >= count) {
+            Entry* en;
+            int previousByteOffset, nextByteOffset;
+            int currentByteOffset;
+            currentByteOffset = count * 0xc;
+            nextByteOffset = (count + 1) * 0xc;
+            previousByteOffset = (count - 1) * 0xc;
+            en = self->entries;
+            __ml__FfRC7WVector(&lastTwiceCurrent, (char*)en + currentByteOffset, kFloat_2_805DF2B0);
+            __mi__FRC7WVectorRC7WVector(&lastPreviousMinusTwiceCurrent, (char*)self->entries + previousByteOffset,
+                                        &lastTwiceCurrent);
+            __pl__FRC7WVectorRC7WVector(&lastQ, &lastPreviousMinusTwiceCurrent, (char*)en + nextByteOffset);
+            Entry* en2 = self->entries;
+            __mi__FRC7WVectorRC7WVector(&lastL, (char*)en2 + nextByteOffset, (char*)en2 + previousByteOffset);
+            __ml__FfRC7WVector(&lastQu, &lastQ, u);
+            __pl__FRC7WVectorRC7WVector(&lastInner, &lastL, &lastQu);
+            float savedU2 = u;
+            float savedValue = kFloat_0_5_Creature * savedU2;
+            __ml__FfRC7WVector(&lastDisplacement, &lastInner, savedValue);
+            __pl__FRC7WVectorRC7WVector(out, (char*)self->entries + currentByteOffset, &lastDisplacement);
+        } else {
+            int farByteOffset, nextByteOffset;
+            Entry* en;
+            int currentByteOffset, previousByteOffset;
+            farByteOffset = (segmentIndex + 2) * 0xc;
+            previousByteOffset = (segmentIndex - 1) * 0xc;
+            nextByteOffset = (segmentIndex + 1) * 0xc;
+            en = self->entries;
+            currentByteOffset = segmentIndex * 0xc;
+            __ml__FfRC7WVector(&interiorThreeNext, (char*)en + nextByteOffset, kFloat_3_CreatureSpline);
+            __ml__FfRC7WVector(&interiorThreeCurrent, (char*)en + currentByteOffset, kFloat_3_CreatureSpline);
+            __mi__FRC7WVectorRC7WVector(&interiorThreeCurrentMinusPrevious, &interiorThreeCurrent,
+                                        (char*)en + previousByteOffset);
+            __mi__FRC7WVectorRC7WVector(&interiorQWithoutFarPoint, &interiorThreeCurrentMinusPrevious,
+                                        &interiorThreeNext);
+            int savedI = farByteOffset;
+            __pl__FRC7WVectorRC7WVector(&interiorQ, &interiorQWithoutFarPoint, (char*)en + savedI);
+            Entry* savedEntries = self->entries;
+            en = savedEntries;
+            __ml__FfRC7WVector(&interiorFourNext, (char*)en + nextByteOffset, kFloat_4_Spline);
+            Entry* savedEntries2 = self->entries;
+            __ml__FfRC7WVector(&interiorFiveCurrent, (char*)savedEntries2 + currentByteOffset, kFloat_5_creature);
+            __ml__FfRC7WVector(&interiorTwicePrevious, (char*)self->entries + previousByteOffset, kFloat_2_805DF2B0);
+            __mi__FRC7WVectorRC7WVector(&interiorTwicePreviousMinusFiveCurrent, &interiorTwicePrevious,
+                                        &interiorFiveCurrent);
+            __pl__FRC7WVectorRC7WVector(&interiorLWithoutFarPoint, &interiorTwicePreviousMinusFiveCurrent,
+                                        &interiorFourNext);
+            __mi__FRC7WVectorRC7WVector(&interiorL, &interiorLWithoutFarPoint, (char*)en + farByteOffset);
+            __mi__FRC7WVectorRC7WVector(&interiorT, (char*)self->entries + nextByteOffset,
+                                        (char*)self->entries + previousByteOffset);
+            __ml__FfRC7WVector(&interiorQu, &interiorQ, u);
+            __pl__FRC7WVectorRC7WVector(&interiorQuadraticInner, &interiorL, &interiorQu);
 
-        __ml__FfRC7WVector(&interiorQuadraticTimesU, &interiorQuadraticInner, u);
-        __pl__FRC7WVectorRC7WVector(&interiorTangentInner, &interiorT, &interiorQuadraticTimesU);
-        float savedU3 = kFloat_0_5_Creature * u;
-        __ml__FfRC7WVector(&interiorDisplacement, &interiorTangentInner, savedU3);
-        __pl__FRC7WVectorRC7WVector(out, (char*)self->entries + currentByteOffset, &interiorDisplacement);
-    }
+            __ml__FfRC7WVector(&interiorQuadraticTimesU, &interiorQuadraticInner, u);
+            __pl__FRC7WVectorRC7WVector(&interiorTangentInner, &interiorT, &interiorQuadraticTimesU);
+            float savedU3 = kFloat_0_5_Creature * u;
+            __ml__FfRC7WVector(&interiorDisplacement, &interiorTangentInner, savedU3);
+            __pl__FRC7WVectorRC7WVector(out, (char*)self->entries + currentByteOffset, &interiorDisplacement);
+        }
     }
 }
 #pragma opt_strength_reduction reset
@@ -462,7 +485,7 @@ int Spline_Init(Container* self, void* controlPoints, float* parameterKnots, int
     i = 0;
     pointOffset = 0;
     knotOffset = 0;
-    for (; i < pointCount; ) {
+    for (; i < pointCount;) {
         *(WVector*)((char*)self->entries + pointOffset) = *(WVector*)pointCursor;
         float knot = *knotCursor;
         pointCursor += 0xc;
@@ -484,7 +507,7 @@ int Spline_Init(Container* self, void* controlPoints, float* parameterKnots, int
     segmentIndex = 0;
     segmentOffset = 0;
     self->total = zero;
-    for (; segmentIndex < segmentCount; ) {
+    for (; segmentIndex < segmentCount;) {
         float segmentLength = Spline_IntegrateSegmentLength(self, segmentIndex, kFloat_0_Creature, kFloat_1_Creature);
         segmentIndex += 1;
         *(float*)((char*)self->sums + segmentOffset) = segmentLength;
@@ -496,40 +519,43 @@ int Spline_Init(Container* self, void* controlPoints, float* parameterKnots, int
 
 #pragma opt_propagation off
 // Parse a sound token and play it at the model translation with creature sound limits.
-void CCreature_PlaySoundFromParsedToken(void* self, int parser) {
+void CCreature::PlaySoundFromParsedToken(int parser) {
     char soundName[0x40];
-    if (Parse_NonemptyQuotedTokenUnder64Bytes((char*)self + 4, parser, soundName)) {
+    if (Parse_NonemptyQuotedTokenUnder64Bytes((char*)this + 4, parser, soundName)) {
         int soundLimits[2];
         int position[3];
         unsigned int positionY;
         void* model;
-        model = AsCSparrow(self)->model;
-        { IntVec* src = (IntVec*)&((WPuppet*)model)->worldMatrix[9]; int positionX; positionX = src->a; positionY = src->b; position[0] = positionX; position[1] = positionY; position[2] = src->c; }
+        model = AsCSparrow(this)->model;
+        {
+            IntVec* src = (IntVec*)&((WPuppet*)model)->worldMatrix[9];
+            int positionX;
+            positionX = src->x;
+            positionY = src->y;
+            position[0] = positionX;
+            position[1] = positionY;
+            position[2] = src->z;
+        }
         soundLimits[0] = kFloat_400_CreatureSound;
         soundLimits[1] = kSparrowSoundLimit1000Bits;
-        Sound_PlayByName((void*)g_soundManager, soundName, position, 0, soundName, soundLimits,
-                    kFloat_0_1_Creature, kFloat_1000_Creature, kFloat_1_Creature);
+        Sound_PlayByName((void*)g_soundManager, soundName, position, 0, soundName, soundLimits, kFloat_0_1_Creature,
+                         kFloat_1000_Creature, kFloat_1_Creature);
     }
 }
 #pragma opt_propagation reset
 
 // Free sparrow instance matrices, destroy the creature base, and optionally delete.
-void* CSparrow_Dtor(void* self, int flag) {
-    if (self != 0) {
-        void* array = AsCSparrow(self)->instanceMatrices;
-        *(void**)self = __vt__8CSparrow;
-        AsCSparrow(self)->secondaryVtable = __vt__8CSparrow + 0x0c;
+CSparrow::~CSparrow() {
+    void* array = instanceMatrices;
+    *(void**)this = __vt__8CSparrow;
+    secondaryVtable = __vt__8CSparrow + 0x0c;
+    if (array != 0) {
         if (array != 0) {
-            if (array != 0) {
-                __dla__FPv((char*)array - 0x10);
-            }
-            AsCSparrow(self)->instanceMatrices = 0;
+            __dla__FPv((char*)array - 0x10);
         }
-        CCreature_dtor(self, 0);
-        if (flag > 0)
-            __dl__FPv(self);
+        instanceMatrices = 0;
     }
-    return self;
+    __dt__9CCreatureFv(this, 0);
 }
 
 } // extern "C"

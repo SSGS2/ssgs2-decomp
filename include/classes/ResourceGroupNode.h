@@ -5,12 +5,12 @@
 
 class ResourceGroupNode {
 public:
-    void* left; // 0x0: ResourceGroups_FindNamedValue follows for smaller group keys
-    void* right; // 0x4: ResourceGroups_FindNamedValue follows for larger group keys
+    void* left;         // 0x0: ResourceGroups_FindNamedValue follows for smaller group keys
+    void* right;        // 0x4: ResourceGroups_FindNamedValue follows for larger group keys
     void* taggedParent; // 0x8: tree iterator linkage
-    unsigned int key; // 0xC: ResourceGroups_FindNamedValue compares with its key argument
+    unsigned int key;   // 0xC: ResourceGroups_FindNamedValue compares with its key argument
     char pad_010[0x4];
-    void* stringRoot; // 0x14: ResourceGroups_FindNamedValue begins the nested string search
+    void* stringRoot;  // 0x14: ResourceGroups_FindNamedValue begins the nested string search
     void* firstString; // 0x18: ResourceGroups_FindNamedValue uses when text is null
 };
 

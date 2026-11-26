@@ -1,14 +1,10 @@
 // NW4R chorus lifecycle: release SDK work allocated by an initialization attempt.
-// API map: gtl_voice_pool_basic_player_chorus.cpp vfunc_4 attempts AXFXChorusInit and sets the latch even
-// on failure; gtl_fx_chorus_process_buffer.cpp vfunc_6 processes borrowed audio buffers while latched;
-// this vfunc_5 consumes the latch. GtlFxChorus.h defines the embedded SDK state.
+// API map: gtl_nw4r_FxChorus_Initialize (gtl_voice_pool_basic_player_chorus.cpp) attempts AXFXChorusInit
+// and sets the latch even on failure; gtl_nw4r_FxChorus_ProcessBuffer (gtl_fx_chorus_process_buffer.cpp)
+// processes borrowed buffers while latched; this function consumes the latch. GtlFxChorus.h: SDK state.
 // Allocator map: gtl_audio_controller_effects.cpp installs/restores AXFX hooks and a global allocator
 // context. Delay/depth/rate tuning belongs to the init/settings methods, not here.
 #include "classes/GtlFxChorus.h"
-// Translation unit 0x80409F8C-0x80409FEC (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
-
 
 extern "C" {
 

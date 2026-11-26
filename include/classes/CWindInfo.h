@@ -1,20 +1,32 @@
-// CWindInfo: partial layout used by the methods that reference it.
-// Non-virtual layout view; unknown meanings retain their offset names.
+// CWindInfo: the wind readout in the HUD.
+//
+// It owns a font resource and the text buffer it formats each frame. The class
+// is not declared with virtual functions: its vtable comes from the original
+// data, so `vtbl` is spelled out as a member.
 #ifndef CLASSES_CWINDINFO_H
 #define CLASSES_CWINDINFO_H
 
 #include "game/types.h"
+#include "classes/CInfoBase.h"
+#include "classes/HudTextPanel.h"
 
-class CWindInfo {
+class CWindInfo : public CInfoBase {
 public:
-    char pad_000[0x10]; // 0x0
-    int state; // 0x10: CWindInfo_Ctor
-    void* textBuffer; // 0x14: CWindInfo_Ctor
+    CWindInfo();
+
+    void DrawWindHudText();
+
+    // Release the font and the text buffer, then optionally delete the object.
+    void* Destroy(int deleting);
+
+    // Load the panel's font through the HUD text panel vtable.
+    void SetFont(const char* path) {
+        ((HudTextPanelVTable*)this)->loadFont(path, 0, 0);
+    }
 };
 
 #define CWINDINFO_OFF(f, o) typedef char CWindInfo_off_##f[((int)&((CWindInfo*)0)->f == (o)) ? 1 : -1]
-CWINDINFO_OFF(state, 0x10);
-CWINDINFO_OFF(textBuffer, 0x14);
 #undef CWINDINFO_OFF
+typedef char CWindInfo_size[(sizeof(CWindInfo) == 0x18) ? 1 : -1];
 
 #endif // CLASSES_CWINDINFO_H

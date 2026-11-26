@@ -1,3 +1,7 @@
+// Graphics resource slot tables: resizing and slot access for the vertex buffer, index buffer, texture
+// and palette tables, plus the shared handle that adds a reference to a resource.
+// Each table is a vector of pointer slots; the objects those slots name are not owned here.
+
 #include <decomp/ct_member.h>
 // gtl graphics-resource tables: resize pointer-slot arrays for vertex buffers,
 // index buffers, textures and palettes. This unit manages table STORAGE, not
@@ -6,15 +10,15 @@
 // and *_GetDestinationSlot borrow the same unchecked slot; AddRefToHandle below
 // retains a separate packed handle. Allocator callbacks are s_genericResourceAllocatorFunctions;
 // exception message/type pool is s_lengthErrorInfo. gtl_vertex_declaration_vector.cpp has the sibling resize.
-// Translation unit 0x803D9DB8-0x803DB238 (13 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "types.h"
 #include "game/stdexcept_local.h"
 #include "sdk_protos.h"
 #include <decomp/cw_bitfields.h>
 // Construct into reserved slot storage; storage remains owned by its vector.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 #pragma use_lmw_stmw on
 
@@ -51,15 +55,24 @@ struct GtlVertexBuffer {
     GtlVertexBuffer(unsigned* p) : data(0), size(0), capacity(0), owner(p), offset(0) {}
     // Roll back replacement storage, or free old storage after commit swaps it in.
     // Never dispose pointees: this temporary owns only the pointer-slot allocation.
-    ~GtlVertexBuffer() { if (data) { size = 0; s_genericResourceAllocatorFunctions.deallocate(data); } }
+    ~GtlVertexBuffer() {
+        if (data) {
+            size = 0;
+            s_genericResourceAllocatorFunctions.deallocate(data);
+        }
+    }
 };
 
 struct GtlVertexErrorBase {
     void* table;
     // Establish the base exception before shared-message construction.
-    GtlVertexErrorBase() { table = __vt__Q23std11logic_error; }
+    GtlVertexErrorBase() {
+        table = __vt__Q23std11logic_error;
+    }
     // Run runtime base cleanup during normal destruction/unwinding.
-    ~GtlVertexErrorBase() { __dt__Q23std9exceptionFv(this, 0); }
+    ~GtlVertexErrorBase() {
+        __dt__Q23std9exceptionFv(this, 0);
+    }
 };
 
 struct GtlVertexAllocation {
@@ -68,7 +81,10 @@ struct GtlVertexAllocation {
     // Guard new[] message bytes until the shared-control block takes ownership.
     GtlVertexAllocation(char* p, char* a) : pointer(p), allocator(a) {}
     // Free untransferred message bytes if control-block construction throws.
-    ~GtlVertexAllocation() { if (pointer) __dla__FPv(pointer); }
+    ~GtlVertexAllocation() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 
 struct GtlVertexControl {
@@ -77,10 +93,18 @@ struct GtlVertexControl {
     unsigned weak;
     char* pointer;
     // Own message bytes with one strong and one weak shared-control reference.
-    GtlVertexControl(char* p) { strong = 1; weak = 1; table = s_sharedCharDeleterVtable; pointer = p; }
+    GtlVertexControl(char* p) {
+        strong = 1;
+        weak = 1;
+        table = s_sharedCharDeleterVtable;
+        pointer = p;
+    }
 };
 
-struct GtlFlag { char value; char pad[3]; };
+struct GtlFlag {
+    char value;
+    char pad[3];
+};
 
 struct GtlLengthError : GtlVertexErrorBase {
     char* text;
@@ -103,12 +127,21 @@ struct GtlLengthError : GtlVertexErrorBase {
 };
 
 // Select geometric slack or minimum additional capacity without copying operands.
-static inline const unsigned& GtlVertexMax(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+static inline const unsigned& GtlVertexMax(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 
 // Exchange vector ownership words during the nonthrowing publication phase.
-template <class T> static inline void GtlVertexSwap(T& a, T& b) { T t = a; a = b; b = t; }
+template <class T> static inline void GtlVertexSwap(T& a, T& b) {
+    T t = a;
+    a = b;
+    b = t;
+}
 
-union GtlLengthStorage { int alignment; unsigned char bytes[sizeof(GtlLengthError)]; };
+union GtlLengthStorage {
+    int alignment;
+    unsigned char bytes[sizeof(GtlLengthError)];
+};
 
 // Construct in aligned stack storage and transfer the exception to __throw.
 static inline void GtlVertexThrowLengthAt(GtlLengthStorage& storage, GtlFlag& flag, const char* message) {
@@ -130,7 +163,8 @@ static inline void GtlVertexThrowLength1(GtlLengthStorage& storage, GtlFlag& fla
 
 // Bound additional slots so the four-byte allocation cannot overflow u32 bytes.
 static inline void GtlVertexCheckLength(unsigned need, unsigned cap, GtlLengthStorage& storage, GtlFlag& flag) {
-    if (need > 0x3FFFFFFFu - cap) GtlVertexThrowLength(storage, flag);
+    if (need > 0x3FFFFFFFu - cap)
+        GtlVertexThrowLength(storage, flag);
 }
 
 // Repeat the bound check inside the replacement guard's cleanup scope.
@@ -140,20 +174,17 @@ static inline void GtlVertexCheckLength2(unsigned need, unsigned cap, GtlLengthS
 
 // Allocate cap pointer slots through the installed allocator; no null check follows.
 static inline void** GtlVertexAllocate(unsigned cap, GtlLengthStorage& storage, GtlFlag& flag) {
-    if (cap > 0x3FFFFFFFu) GtlVertexThrowLength(storage, flag);
+    if (cap > 0x3FFFFFFFu)
+        GtlVertexThrowLength(storage, flag);
     return (void**)s_genericResourceAllocatorFunctions.allocate(cap * 4);
 }
-
-
 
 extern char s_lengthErrorInfo[];
 void* memset(void*, int, unsigned long);
 void* memcpy(void*, const void*, unsigned long);
 
 struct GraphicsResourceHandle {
-    CW_BITS2(
-        unsigned int refCount : 16,
-        unsigned int index : 16)
+    CW_BITS2(unsigned int refCount : 16, unsigned int index : 16)
 };
 
 // Write borrowed self to required out, then retain it by incrementing the high
@@ -161,7 +192,7 @@ struct GraphicsResourceHandle {
 // overlap its four-byte packed word. index occupies the low 16 bits (Wii layout).
 // No allocation/locking/overflow check: 65535 wraps to zero. Caller must ensure
 // a retain cannot overflow and balance it through the resource owner's release
-// path; e.g. gtl_IGenericModelingResource_SetResource (gtl_generic_modeling_resource_part2.cpp) releases replaced
+// path; e.g. gtl::IGenericModelingResource::SetResource (gtl_generic_modeling_resource_part2.cpp) releases replaced
 // type-3/5 entries by decrementing this high halfword and invoking the concrete
 // destructor at zero. Replacing vector slots directly bypasses that release.
 // This routine supplies no destructor and does not extend backing storage
@@ -209,7 +240,8 @@ void gtl_VertexBufferVector_Resize(GtlVertexDeclVector* self, unsigned n) {
             unsigned need0 = v->size + add - self->capacity;
             unsigned cap0 = v->capacity;
             unsigned dead = cap0;
-            if (need0 > 0x3FFFFFFFu - cap0) GtlVertexThrowLength1(storage1, flag1);
+            if (need0 > 0x3FFFFFFFu - cap0)
+                GtlVertexThrowLength1(storage1, flag1);
             if (cap0 < 0x15555555u) {
                 unsigned grow = (cap0 + 1) * 3 / 5;
                 dead += GtlVertexMax(grow, need0);
@@ -313,7 +345,8 @@ void gtl_IndexBufferVector_Resize(GtlVertexDeclVector* self, unsigned n) {
             unsigned need0 = v->size + add - self->capacity;
             unsigned cap0 = v->capacity;
             unsigned dead = cap0;
-            if (need0 > 0x3FFFFFFFu - cap0) GtlVertexThrowLength1(storage1, flag1);
+            if (need0 > 0x3FFFFFFFu - cap0)
+                GtlVertexThrowLength1(storage1, flag1);
             if (cap0 < 0x15555555u) {
                 unsigned grow = (cap0 + 1) * 3 / 5;
                 dead += GtlVertexMax(grow, need0);
@@ -417,7 +450,8 @@ void gtl_TextureVector_Resize(GtlVertexDeclVector* self, unsigned n) {
             unsigned need0 = v->size + add - self->capacity;
             unsigned cap0 = v->capacity;
             unsigned dead = cap0;
-            if (need0 > 0x3FFFFFFFu - cap0) GtlVertexThrowLength1(storage1, flag1);
+            if (need0 > 0x3FFFFFFFu - cap0)
+                GtlVertexThrowLength1(storage1, flag1);
             if (cap0 < 0x15555555u) {
                 unsigned grow = (cap0 + 1) * 3 / 5;
                 dead += GtlVertexMax(grow, need0);
@@ -521,7 +555,8 @@ void gtl_TexturePaletteVector_Resize(GtlVertexDeclVector* self, unsigned n) {
             unsigned need0 = v->size + add - self->capacity;
             unsigned cap0 = v->capacity;
             unsigned dead = cap0;
-            if (need0 > 0x3FFFFFFFu - cap0) GtlVertexThrowLength1(storage1, flag1);
+            if (need0 > 0x3FFFFFFFu - cap0)
+                GtlVertexThrowLength1(storage1, flag1);
             if (cap0 < 0x15555555u) {
                 unsigned grow = (cap0 + 1) * 3 / 5;
                 dead += GtlVertexMax(grow, need0);

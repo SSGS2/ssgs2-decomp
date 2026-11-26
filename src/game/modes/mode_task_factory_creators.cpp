@@ -1,53 +1,58 @@
+// Task factories for the game modes: each CXxx_Create() function builds one mode's task or
+// main object into caller storage, and Game_DrawReloadingFrame draws the reload screen.
+
 #include "classes/CPartyMain.h"
+#include "classes/CPartyTask.h"
+#include "classes/CTourTask.h"
 #include "classes/CTutorial.h"
+#include "classes/CBalloonSystem.h"
 #define AsCTutorial(p) ((CTutorial*)(p))
-// Translation unit 0x80216460-0x80216D5C (28 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
+#include "classes/CGuideLine.h"
+#include "classes/CFightMain.h"
+#include "classes/CFightTask.h"
+#include "classes/CNowReloading.h"
+#include "classes/CScreen.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CCheckDriveStatus.h"
+#include "classes/CBgmCollectionMain.h"
+#include "classes/CBgmCollectionTask.h"
+#include "classes/CDartsSystem.h"
+#include "classes/CDriveSystem.h"
+#include "classes/CPasswordMain.h"
+#include "classes/CPasswordTask.h"
+#include "classes/CRoundDolMain.h"
+#include "classes/CRoundDolTask.h"
+#include "classes/CSaveProcessMain.h"
+#include "classes/CSaveProcessTask.h"
+#include "classes/CSingleMainRev.h"
+#include "classes/CSingleTaskRev.h"
+#include "classes/CSpot.h"
+#include "classes/CStoryConte.h"
+#include "classes/CTourMain.h"
+#include "classes/CTrainingMain.h"
+#include "classes/CTrainingTask.h"
+#include "classes/CVSMain.h"
+
+#pragma use_simple_stdpnew on
+inline void* operator new(unsigned long, void* storage) {
+    return storage;
+}
+
 extern "C" {
-void CSpot_Ctor(void*);
-void CGuideLine_Ctor(void*);
-void CFightTask_Ctor(void*);
-void CFightMain_Ctor(void*);
-void CPartyTask_Ctor(void*);
-void CBalloonSystem_ctor(void*);
-void CDartsSystem_Ctor(void*);
-void CDriveSystem_Ctor(void*);
-void CStoryConte_ctor(void*);
-void CTourTask_Ctor(void*);
-void CTourMain_Ctor(void*);
-void CScreen_Ctor(void*);
-void CTrainingTask_Ctor(void*);
-void CTrainingMain_Ctor(void*);
-void CSingleTaskRev_Ctor(void*);
-void CSingleMainRev_Ctor(void*);
+
 void __ct__19NativeOwner80201D18Fv(void*);
-void CSaveProcessTask_Ctor(void*);
-void CSaveProcessMain_Ctor(void*);
-void CRoundDolTask_Ctor(void*);
-void CRoundDolMain_Ctor(void*);
-void CBgmCollectionTask_Ctor(void*);
-void CBgmCollectionMain_Ctor(void*);
-void CPasswordTask_Ctor(void*);
-void CPasswordMain_Ctor(void*);
-void CVSMain_Ctor(void*);
 void __ct__18NativeBase80201D18Fv(void*);
-void CCheckDriveStatus_SetSkipDialogDelay(int);
 void gtl_InputEx_Update();
 void* InputManager_Init(void*);
 void InputManager_Dtor(void*);
 void __register_global_object(void*, void (*)(void*), const char*);
 void InputManager_Update(void*);
 void Engine_ClearFramebuffer(int, int, int, float, int, int);
-void CNowReloading_Init(void*);
-void CNowReloading_dtor(void*);
+void __dt__13CNowReloadingFv(void*);
 void B2dPlayer_UpdateAndDraw(void*);
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor(void*);
-void CBpCtrl_InvokeEntryCallbacks(void*, int);
-void CBpCtrl_DrawEntries(void*);
-void CBpCtrl_ResetEntryFrameState(void*);
 void HomeButtonMenu_InitializeState(void*);
 void HomeButtonResources_dtor(void*);
 void HomeButtonMenu_ProcessState(void*);
@@ -67,129 +72,179 @@ extern char __vt__9CTutorial[];
 
 } // extern "C"
 
-struct Obj80216460 {
+struct CSpotStorage {
     char storage[0x348];
-    Obj80216460() { CSpot_Ctor(this); }
+    CSpotStorage() {
+        ((CSpot*)this)->__ct();
+    }
 };
 
-struct Obj802164A0 {
+struct CGuideLineStorage {
     char storage[0xDAC];
-    Obj802164A0() { CGuideLine_Ctor(this); }
+    CGuideLineStorage() {
+        new (this) CGuideLine;
+    }
 };
 
-struct Obj80216570 {
+struct CFightTaskStorage {
     char storage[0x3A8];
-    Obj80216570() { CFightTask_Ctor(this); }
+    CFightTaskStorage() {
+        new (this) CFightTask;
+    }
 };
 
-struct Obj802165B0 {
+struct CFightMainStorage {
     char storage[0x4C];
-    Obj802165B0() { CFightMain_Ctor(this); }
+    CFightMainStorage() {
+        new (this) CFightMain;
+    }
 };
 
-struct Obj802165F0 {
+struct CPartyTaskStorage {
     char storage[0x3A8];
-    Obj802165F0() { CPartyTask_Ctor(this); }
+    CPartyTaskStorage() {
+        new (this) CPartyTask;
+    }
 };
 
-struct Obj80216684 {
+struct CBalloonSystemStorage {
     char storage[0x2C];
-    Obj80216684() { CBalloonSystem_ctor(this); }
+    CBalloonSystemStorage() {
+        ((CBalloonSystem*)this)->Init();
+    }
 };
 
-struct Obj802166C4 {
+struct CDartsSystemStorage {
     char storage[0x94];
-    Obj802166C4() { CDartsSystem_Ctor(this); }
+    CDartsSystemStorage() {
+        ((CDartsSystem*)this)->__ct();
+    }
 };
 
-struct Obj80216704 {
+struct CDriveSystemStorage {
     char storage[0x24];
-    Obj80216704() { CDriveSystem_Ctor(this); }
+    CDriveSystemStorage() {
+        ((CDriveSystem*)this)->__ct();
+    }
 };
 
-struct Obj80216744 {
+struct CStoryConteStorage {
     char storage[0xA0];
-    Obj80216744() { CStoryConte_ctor(this); }
+    CStoryConteStorage() {
+        ((CStoryConte*)this)->__ct();
+    }
 };
 
-struct Obj80216784 {
+struct CTourTaskStorage {
     char storage[0x3A8];
-    Obj80216784() { CTourTask_Ctor(this); }
+    CTourTaskStorage() {
+        new (this) CTourTask;
+    }
 };
 
-struct Obj802167C4 {
+struct CTourMainStorage {
     char storage[0x860];
-    Obj802167C4() { CTourMain_Ctor(this); }
+    CTourMainStorage() {
+        ((CTourMain*)this)->__ct();
+    }
 };
 
-struct Obj80216804 {
+struct CScreenStorage {
     char storage[0x3C0];
-    Obj80216804() { CScreen_Ctor(this); }
+    CScreenStorage() {
+        new (this) CScreen;
+    }
 };
 
-struct Obj80216844 {
+struct CTrainingTaskStorage {
     char storage[0x3A8];
-    Obj80216844() { CTrainingTask_Ctor(this); }
+    CTrainingTaskStorage() {
+        ((CTrainingTask*)this)->__ct();
+    }
 };
 
-struct Obj80216884 {
+struct CTrainingMainStorage {
     char storage[0x2C];
-    Obj80216884() { CTrainingMain_Ctor(this); }
+    CTrainingMainStorage() {
+        ((CTrainingMain*)this)->__ct();
+    }
 };
 
-struct Obj802168C4 {
+struct CSingleTaskRevStorage {
     char storage[0x3A8];
-    Obj802168C4() { CSingleTaskRev_Ctor(this); }
+    CSingleTaskRevStorage() {
+        ((CSingleTaskRev*)this)->__ct();
+    }
 };
 
-struct Obj80216904 {
+struct CSingleMainRevStorage {
     char storage[0x24];
-    Obj80216904() { CSingleMainRev_Ctor(this); }
+    CSingleMainRevStorage() {
+        ((CSingleMainRev*)this)->__ct();
+    }
 };
 
 struct Obj80216944 {
     char storage[0x50];
-    Obj80216944() { __ct__19NativeOwner80201D18Fv(this); }
+    Obj80216944() {
+        __ct__19NativeOwner80201D18Fv(this);
+    }
 };
 
-struct Obj80216984 {
+struct CSaveProcessTaskStorage {
     char storage[0x3A8];
-    Obj80216984() { CSaveProcessTask_Ctor(this); }
+    CSaveProcessTaskStorage() {
+        ((CSaveProcessTask*)this)->__ct();
+    }
 };
 
-struct Obj802169C4 {
+struct CSaveProcessMainStorage {
     char storage[0x40];
-    Obj802169C4() { CSaveProcessMain_Ctor(this); }
+    CSaveProcessMainStorage() {
+        ((CSaveProcessMain*)this)->__ct();
+    }
 };
 
-struct Obj80216A04 {
+struct CRoundDolTaskStorage {
     char storage[0x3A8];
-    Obj80216A04() { CRoundDolTask_Ctor(this); }
+    CRoundDolTaskStorage() {
+        ((CRoundDolTask*)this)->__ct();
+    }
 };
 
-struct Obj80216A44 {
+struct CRoundDolMainStorage {
     char storage[0x20];
-    Obj80216A44() { CRoundDolMain_Ctor(this); }
+    CRoundDolMainStorage() {
+        ((CRoundDolMain*)this)->__ct();
+    }
 };
 
-struct Obj80216A84 {
+struct CBgmCollectionTaskStorage {
     char storage[0x3A8];
-    Obj80216A84() { CBgmCollectionTask_Ctor(this); }
+    CBgmCollectionTaskStorage() {
+        ((CBgmCollectionTask*)this)->__ct();
+    }
 };
 
-struct Obj80216AC4 {
+struct CBgmCollectionMainStorage {
     char storage[0x20];
-    Obj80216AC4() { CBgmCollectionMain_Ctor(this); }
+    CBgmCollectionMainStorage() {
+        ((CBgmCollectionMain*)this)->__ct();
+    }
 };
 
-struct Obj80216B04 {
+struct CPasswordTaskStorage {
     char storage[0x3A8];
-    Obj80216B04() { CPasswordTask_Ctor(this); }
+    CPasswordTaskStorage() {
+        ((CPasswordTask*)this)->__ct();
+    }
 };
 
-struct Obj80216B44 {
+struct CPasswordMainStorage {
     char storage[0x30];
-    Obj80216B44() { CPasswordMain_Ctor(this); }
+    CPasswordMainStorage() {
+        ((CPasswordMain*)this)->__ct();
+    }
 };
 
 // Construction view of CPartyMain; canonical members: classes/CPartyMain.h.
@@ -197,7 +252,7 @@ struct Obj80216B44 {
 struct CPartyMainConstructorView {
     char storage[0x4C];
     CPartyMainConstructorView() {
-        CVSMain_Ctor(this);
+        ((CVSMain*)this)->__ct();
         *(void**)storage = __vt__10CPartyMain;
         *(void**)(storage + 0x18) = __vt__10CPartyMain + 0x3C;
     }
@@ -222,53 +277,107 @@ inline CTutorial::CTutorial() {
 }
 
 extern "C" {
-Obj80216460* CSpot_Create() { return new Obj80216460; }
-Obj802164A0* CGuideLine_Create() { return new Obj802164A0; }
-Obj80216570* CFightTask_Create() { return new Obj80216570; }
-Obj802165B0* CFightMain_Create() { return new Obj802165B0; }
-Obj802165F0* CPartyTask_Create() { return new Obj802165F0; }
-Obj80216684* CBalloonSystem_Create() { return new Obj80216684; }
-Obj802166C4* CDartsSystem_Create() { return new Obj802166C4; }
-Obj80216704* CDriveSystem_Create() { return new Obj80216704; }
-Obj80216744* CStoryConte_Create() { return new Obj80216744; }
-Obj80216784* CTourTask_Create() { return new Obj80216784; }
-Obj802167C4* CTourMain_Create() { return new Obj802167C4; }
-Obj80216804* CScreen_Create() { return new Obj80216804; }
-Obj80216844* CTrainingTask_Create() { return new Obj80216844; }
-Obj80216884* CTrainingMain_Create() { return new Obj80216884; }
-Obj802168C4* CSingleTaskRev_Create() { return new Obj802168C4; }
-Obj80216904* CSingleMainRev_Create() { return new Obj80216904; }
-Obj80216944* CTrajectory_Create() { return new Obj80216944; }
-Obj80216984* CSaveProcessTask_Create() { return new Obj80216984; }
-Obj802169C4* CSaveProcessMain_Create() { return new Obj802169C4; }
-Obj80216A04* CRoundDolTask_Create() { return new Obj80216A04; }
-Obj80216A44* CRoundDolMain_Create() { return new Obj80216A44; }
-Obj80216A84* CBgmCollectionTask_Create() { return new Obj80216A84; }
-Obj80216AC4* CBgmCollectionMain_Create() { return new Obj80216AC4; }
-Obj80216B04* CPasswordTask_Create() { return new Obj80216B04; }
-Obj80216B44* CPasswordMain_Create() { return new Obj80216B44; }
-CPartyMainConstructorView* CPartyMain_Create() { return new CPartyMainConstructorView; }
-CTutorial* CTutorial_Create() { return new CTutorial; }
+CSpotStorage* CSpot_Create() {
+    return new CSpotStorage;
+}
+CGuideLineStorage* CGuideLine_Create() {
+    return new CGuideLineStorage;
+}
+CFightTaskStorage* CFightTask_Create() {
+    return new CFightTaskStorage;
+}
+CFightMainStorage* CFightMain_Create() {
+    return new CFightMainStorage;
+}
+CPartyTaskStorage* CPartyTask_Create() {
+    return new CPartyTaskStorage;
+}
+CBalloonSystemStorage* CBalloonSystem_Create() {
+    return new CBalloonSystemStorage;
+}
+CDartsSystemStorage* CDartsSystem_Create() {
+    return new CDartsSystemStorage;
+}
+CDriveSystemStorage* CDriveSystem_Create() {
+    return new CDriveSystemStorage;
+}
+CStoryConteStorage* CStoryConte_Create() {
+    return new CStoryConteStorage;
+}
+CTourTaskStorage* CTourTask_Create() {
+    return new CTourTaskStorage;
+}
+CTourMainStorage* CTourMain_Create() {
+    return new CTourMainStorage;
+}
+CScreenStorage* CScreen_Create() {
+    return new CScreenStorage;
+}
+CTrainingTaskStorage* CTrainingTask_Create() {
+    return new CTrainingTaskStorage;
+}
+CTrainingMainStorage* CTrainingMain_Create() {
+    return new CTrainingMainStorage;
+}
+CSingleTaskRevStorage* CSingleTaskRev_Create() {
+    return new CSingleTaskRevStorage;
+}
+CSingleMainRevStorage* CSingleMainRev_Create() {
+    return new CSingleMainRevStorage;
+}
+Obj80216944* CTrajectory_Create() {
+    return new Obj80216944;
+}
+CSaveProcessTaskStorage* CSaveProcessTask_Create() {
+    return new CSaveProcessTaskStorage;
+}
+CSaveProcessMainStorage* CSaveProcessMain_Create() {
+    return new CSaveProcessMainStorage;
+}
+CRoundDolTaskStorage* CRoundDolTask_Create() {
+    return new CRoundDolTaskStorage;
+}
+CRoundDolMainStorage* CRoundDolMain_Create() {
+    return new CRoundDolMainStorage;
+}
+CBgmCollectionTaskStorage* CBgmCollectionTask_Create() {
+    return new CBgmCollectionTaskStorage;
+}
+CBgmCollectionMainStorage* CBgmCollectionMain_Create() {
+    return new CBgmCollectionMainStorage;
+}
+CPasswordTaskStorage* CPasswordTask_Create() {
+    return new CPasswordTaskStorage;
+}
+CPasswordMainStorage* CPasswordMain_Create() {
+    return new CPasswordMainStorage;
+}
+CPartyMainConstructorView* CPartyMain_Create() {
+    return new CPartyMainConstructorView;
+}
+CTutorial* CTutorial_Create() {
+    return new CTutorial;
+}
 
 void Game_DrawReloadingFrame() {
     char* _g = gameStartupDtorRegistrations;
-    CCheckDriveStatus_SetSkipDialogDelay(0);
+    CCheckDriveStatus::SetSkipDialogDelay(0);
     gtl_InputEx_Update();
-    if (!Sing_805DC5C8()) {
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             char* p = s_gameInputManager;
             InputManager_Init(p);
             __register_global_object(p, InputManager_Dtor, _g + 0x24);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    InputManager_Update(Sing_805DC5C8());
+    InputManager_Update(GetInputManagerSlot());
     Engine_ClearFramebuffer(0, 0, 7, kFloat_1_FramebufferClear, 0, 0);
     if (!Sing_805DC610()) {
         if (!s_nowReloadingInitialized) {
-            CNowReloading_Init(&s_nowReloading);
-            __register_global_object(&s_nowReloading, CNowReloading_dtor, _g + 0x30);
+            ((CNowReloading*)(&s_nowReloading))->Init();
+            __register_global_object(&s_nowReloading, __dt__13CNowReloadingFv, _g + 0x30);
             s_nowReloadingInitialized = 1;
         }
         Sing_805DC610() = &s_nowReloading;
@@ -277,16 +386,16 @@ void Game_DrawReloadingFrame() {
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
             char* p = s_bpCtrl;
-            __ct__7CBpCtrlFv(p);
+            ((CBpCtrl*)p)->__ct();
             __register_global_object(p, CBpCtrl_dtor, _g + 0x18);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    void* r30 = Sing_805DC5F0();
-    CBpCtrl_InvokeEntryCallbacks(r30, 0);
-    CBpCtrl_DrawEntries(r30);
-    CBpCtrl_ResetEntryFrameState(r30);
+    void* bpCtrl = Sing_805DC5F0();
+    ((CBpCtrl*)bpCtrl)->InvokeEntryCallbacks(0);
+    ((CBpCtrl*)bpCtrl)->DrawEntries();
+    ((CBpCtrl*)bpCtrl)->ResetEntryFrameState();
     if (!Sing_805DC820()) {
         if (!s_homeMenuInitialized) {
             char* p = s_homeButtonResourceState;
@@ -297,7 +406,7 @@ void Game_DrawReloadingFrame() {
         Sing_805DC820() = s_homeButtonResourceState;
     }
     HomeButtonMenu_ProcessState(Sing_805DC820());
-    CCheckDriveStatus_SetSkipDialogDelay(1);
+    CCheckDriveStatus::SetSkipDialogDelay(1);
     Engine_PresentFrame(0, 0, 0, 0);
 }
 }

@@ -1,14 +1,22 @@
-// CSwapEndianFormat: non-virtual view; ctor 0x80068998, SetContext 0x800698CC,
-// CopyAndSwap 0x800693F0 and format insertion 0x80068B98 in endian_format_and_binary_table.cpp.
+// CSwapEndianFormat: a formatter that swaps byte order in place, using a list of
+// registered format strings. It has no virtual functions; the vtable is the
+// original game data, so vtbl is an explicit member.
 #ifndef CLASSES_CSWAPENDIANFORMAT_H
 #define CLASSES_CSWAPENDIANFORMAT_H
 
 struct CSwapEndianFormat {
-    void* vtbl; // CSwapEndianFormat_ctor stores __vt__17CSwapEndianFormat.
-    void* formatStrings; // 0x4: CSwapEndianFormat_RegisterFormat appends 12-byte strings; CopyAndSwap iterates them.
-    unsigned int formatCount; // 0x8: CSwapEndianFormat_RegisterFormat increments after insertion.
-    unsigned int formatCapacity; // 0xC: CSwapEndianFormat_RegisterFormat compares count and grows storage.
-    unsigned int context; // 0x10: SetContext; ctor defaults to 4; forwarded to format descriptors.
+    void* vtbl;                  // 0x00
+    void* formatStrings;         // 0x04  12-byte format strings, appended by RegisterFormat
+    unsigned int formatCount;    // 0x08
+    unsigned int formatCapacity; // 0x0C
+    unsigned int context;        // 0x10  set by SetContext; 4 by default
+
+    int RegisterFormat(const char* pattern, int outputSize, int iterations);
+    int CopyAndSwap(void* output, void* input, int outputSize);
+    int SetContext(unsigned int value);
+    void* Destroy(int shouldDelete);
+
+    CSwapEndianFormat();
 };
 
 #define OFF(f, o) typedef char CSwapEndianFormat_off_##f[((int)&((CSwapEndianFormat*)0)->f == (o)) ? 1 : -1]
@@ -18,6 +26,5 @@ OFF(formatCount, 0x8);
 OFF(formatCapacity, 0xC);
 OFF(context, 0x10);
 #undef OFF
-#define AsCSwapEndianFormat(p) ((CSwapEndianFormat*)(p))
 
 #endif

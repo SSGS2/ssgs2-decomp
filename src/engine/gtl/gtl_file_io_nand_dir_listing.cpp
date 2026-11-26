@@ -1,7 +1,10 @@
-extern "C" void* FileIOCallback_dtor(void*, int);
-// Translation unit 0x8041E2C8-0x8041E85C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// File-memory directory listing: continues a NAND directory listing after its first query. It resizes
+// the name buffer for the entries found, then queues the next read with a completion callback.
 
+extern "C" void* FileIOCallback_dtor(void*, int);
+
+#include "classes/GtlFileIoDeviceFMEM.h"
+#include "classes/gtl_CCallBackFindFirstFile.h"
 #include "types.h"
 #define char_array_guard CharArrayGuard_u8041E2C8
 #include "game/stdexcept_local.h"
@@ -9,26 +12,25 @@ extern "C" void* FileIOCallback_dtor(void*, int);
 #include "sdk_protos.h"
 
 extern "C" {
-void *FileIO_Alloc(unsigned int n);
-void FileIO_Free(void *p);
-void *FileIO_InvokeAllocatorCallback2(unsigned int n);
-void FileIO_InvokeAllocatorCallback3(void *p);
+void* FileIO_Alloc(unsigned int n);
+void FileIO_Free(void* p);
+void* FileIO_InvokeAllocatorCallback2(unsigned int n);
+void FileIO_InvokeAllocatorCallback3(void* p);
 // This unit uses FileIO_InvokeAllocatorCallback2 for a fresh allocation and FileIO_InvokeAllocatorCallback3
 // for disposal. Their declarations elsewhere conflict, so shared renames
 // identify the callback slots without asserting a universal signature.
-void FileIOString_ReplaceRange(void *errorBuffer, int a, int b, const char *c, const char *d, void *e);
-void NANDSetUserData(void *a, void *b);
-void NANDReadDirAsync(const char *a, void *b, void *c, void *d, void *e);
-void gtl_CFileIoDeviceFMEM_DispatchNandCallback(void);
+void FileIOString_ReplaceRange(void* errorBuffer, int a, int b, const char* c, const char* d, void* e);
+void NANDSetUserData(void* a, void* b);
+void NANDReadDirAsync(const char* a, void* b, void* c, void* d, void* e);
 extern char filePathUtilityStrings[];
 extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12length_error[];
 extern char __vt__Q23gtl17CCallBackFileList[];
 void __dt__Q23std12length_errorFv(void*);
-void *memset(void*, int, size_t);
-void *memcpy(void*, const void*, size_t);
-char *strcpy(char*, const char*);
+void* memset(void*, int, size_t);
+void* memcpy(void*, const void*, size_t);
+char* strcpy(char*, const char*);
 size_t strlen(const char*);
 
 // Directory names occupy 13-byte NAND slots; DMA buffers use 32-byte alignment.
@@ -64,18 +66,13 @@ struct DirectoryListCallback {
     void* (*completion)(void*, void*, void*, void*);
     void* userArgument;
 };
-struct InlineDirectoryPath { unsigned char flags; char data[11]; };
+struct InlineDirectoryPath {
+    unsigned char flags;
+    char data[11];
+};
 typedef char DirectoryListCallbackSize[sizeof(DirectoryListCallback) == 0x1C ? 1 : -1];
 
-struct gtl_CCallBackFindFirstFile {
-    virtual void vfunc_0(int);
-    void *directory;   // 0x04
-    unsigned int pathFlags; // 0x08
-    int pathLength;
-    void *heapPath;  // 0x10
-    void *(*completion)(void*, void*, void*, void*); // 0x14
-    void *userArgument;  // 0x18
-};
+} // extern "C"
 
 #pragma use_lmw_stmw on
 // Deliver a failed directory query, or allocate an aligned name buffer and queue the listing callback.
@@ -84,21 +81,21 @@ struct gtl_CCallBackFindFirstFile {
 // operation and self are then destroyed/freed. On success, operation survives
 // into NANDReadDirAsync with a newly allocated continuation; self is retired.
 // Completion/path copies belong to the continuation; directory/userArgument stay borrowed.
-void gtl_CCallBackFindFirstFile_ContinueListing(gtl_CCallBackFindFirstFile *self, void *error, void *operation, int resultBytes) {
+void gtl::CCallBackFindFirstFile::ContinueListing(void* error, void* operation, int resultBytes) {
     // Phase 1: failure consumes the operation immediately; no async read is queued.
     if (error != 0) {
         char errorBuffer[0x140];
         (void)errorBuffer;
-        self->completion(error, errorBuffer, self->directory, self->userArgument);
+        this->completion(error, errorBuffer, this->directory, this->userArgument);
         if (operation != 0) {
             FileIO_InvokeAllocatorCallback3(operation);
         }
-        ((void (*)(gtl_CCallBackFindFirstFile*, int))(*(void***)self)[2])(self, -1);
-        FileIO_InvokeAllocatorCallback3(self);
+        ((void (*)(gtl::CCallBackFindFirstFile*, int))(*(void***)this)[2])(this, -1);
+        FileIO_InvokeAllocatorCallback3(this);
         return;
     }
 
-    void *directory = self->directory;
+    void* directory = this->directory;
     unsigned int entryCount = ((DirectoryListBuffer*)directory)->entryCount;
     // Phase 2: grow/shrink the name buffer for entryCount 13-byte slots.
     // The rotate sequence emulates SIGNED remainder by 32 in unsigned words:
@@ -134,33 +131,38 @@ void gtl_CCallBackFindFirstFile_ContinueListing(gtl_CCallBackFindFirstFile *self
                 if (previousCapacity < 0x55555555u) {
                     unsigned int growthBase = previousCapacity + 1;
                     unsigned int growth = (growthBase * 4 - growthBase) / 5;
-                    if (growth < capacityShortfall) growth = capacityShortfall;
+                    if (growth < capacityShortfall)
+                        growth = capacityShortfall;
                     newCapacity = previousCapacity + growth;
                 } else if (previousCapacity < 0xAAAAAAAAu) { // 0xAAAAAAAA
                     unsigned int halfGrowth = (previousCapacity + 1) >> 1;
-                    if (halfGrowth < capacityShortfall) halfGrowth = capacityShortfall;
+                    if (halfGrowth < capacityShortfall)
+                        halfGrowth = capacityShortfall;
                     newCapacity = previousCapacity + halfGrowth;
                 } else {
                     newCapacity = (unsigned int)-1;
                 }
-                void *newBuffer = FileIO_InvokeAllocatorCallback2(newCapacity);
+                void* newBuffer = FileIO_InvokeAllocatorCallback2(newCapacity);
                 unsigned int previousSize = ((DirectoryListBuffer*)directory)->size;
                 // Zero the added range before moving the previous names into the new buffer.
                 memset((char*)newBuffer + previousSize, 0, additionalBytes);
-                void *oldData = ((DirectoryListBuffer*)directory)->data;
+                void* oldData = ((DirectoryListBuffer*)directory)->data;
                 unsigned int oldSize = ((DirectoryListBuffer*)directory)->size;
                 unsigned int bytesToCopy = oldData ? oldSize : 0;
                 memcpy(newBuffer, oldData, bytesToCopy);
-                if (oldData) memset(oldData, 0, bytesToCopy);
+                if (oldData)
+                    memset(oldData, 0, bytesToCopy);
                 ((DirectoryListBuffer*)directory)->size = 0;
                 unsigned int newSize = previousSize + additionalBytes;
                 ((DirectoryListBuffer*)directory)->capacity = newCapacity;
-                void *oldBuffer = ((DirectoryListBuffer*)directory)->data;
+                void* oldBuffer = ((DirectoryListBuffer*)directory)->data;
                 ((DirectoryListBuffer*)directory)->data = newBuffer;
                 ((DirectoryListBuffer*)directory)->size = newSize;
-                if (oldBuffer) FileIO_InvokeAllocatorCallback3(oldBuffer);
+                if (oldBuffer)
+                    FileIO_InvokeAllocatorCallback3(oldBuffer);
             } else {
-                memset((char*)((DirectoryListBuffer*)directory)->data + ((DirectoryListBuffer*)directory)->size, 0, additionalBytes);
+                memset((char*)((DirectoryListBuffer*)directory)->data + ((DirectoryListBuffer*)directory)->size, 0,
+                       additionalBytes);
                 ((DirectoryListBuffer*)directory)->size += additionalBytes;
             }
         } else if (alignedBytes < size) {
@@ -171,36 +173,38 @@ void gtl_CCallBackFindFirstFile_ContinueListing(gtl_CCallBackFindFirstFile *self
     // Phase 3: borrow the existing path, then deep-copy it into a fresh listing
     // continuation before the current callback is destroyed. Bit 31 selects heap
     // bytes; otherwise the inline bytes begin one byte after pathFlags.
-    unsigned int pathFlags = self->pathFlags;
-    void *userArgument = self->userArgument;
-    void *pathData;
+    unsigned int pathFlags = this->pathFlags;
+    void* userArgument = this->userArgument;
+    void* pathData;
     if ((pathFlags >> 31) == 0) {
-        pathData = ((InlineDirectoryPath*)&self->pathFlags)->data;
+        pathData = ((InlineDirectoryPath*)&this->pathFlags)->data;
     } else {
-        pathData = self->heapPath;
+        pathData = this->heapPath;
     }
-    void *directoryArgument = self->directory;
-    void *nextCallback = FileIO_Alloc(sizeof(DirectoryListCallback));
+    void* directoryArgument = this->directory;
+    void* nextCallback = FileIO_Alloc(sizeof(DirectoryListCallback));
     if (nextCallback != 0) {
         ((DirectoryListCallback*)nextCallback)->vtable = (void*)__vt__Q23gtl17CCallBackFileList;
         ((DirectoryListCallback*)nextCallback)->directory = directoryArgument;
         ((DirectoryListCallback*)nextCallback)->pathFlags = 0;
         ((DirectoryListCallback*)nextCallback)->pathLength = 0;
         ((DirectoryListCallback*)nextCallback)->heapPath = 0;
-        ((DirectoryListCallback*)nextCallback)->completion = self->completion;
+        ((DirectoryListCallback*)nextCallback)->completion = this->completion;
         ((DirectoryListCallback*)nextCallback)->userArgument = userArgument;
         unsigned int previousPathLength;
         // The new pathFlags is zero: the generic string decoder's inline branch
         // is always selected here. Retain its expression for matching codegen.
         if ((0 >> 31) == 0) {
-            previousPathLength = ((unsigned char)*(unsigned char*)&((DirectoryListCallback*)nextCallback)->pathFlags) & kInlinePathLengthMask;
+            previousPathLength = ((unsigned char)*(unsigned char*)&((DirectoryListCallback*)nextCallback)->pathFlags) &
+                                 kInlinePathLengthMask;
         } else {
             previousPathLength = ((DirectoryListCallback*)nextCallback)->pathLength;
         }
         size_t pathLength = strlen((const char*)pathData);
         char allocatorTag;
         try {
-            FileIOString_ReplaceRange(&((DirectoryListCallback*)nextCallback)->pathFlags, 0, previousPathLength, (const char*)pathData, (const char*)pathData + pathLength, &allocatorTag);
+            FileIOString_ReplaceRange(&((DirectoryListCallback*)nextCallback)->pathFlags, 0, previousPathLength,
+                                      (const char*)pathData, (const char*)pathData + pathLength, &allocatorTag);
         } catch (...) {
             FileIOCallback_dtor(nextCallback, -1);
             FileIO_InvokeAllocatorCallback3(nextCallback);
@@ -211,22 +215,23 @@ void gtl_CCallBackFindFirstFile_ContinueListing(gtl_CCallBackFindFirstFile *self
     // command block with that operation, and submit the second directory query.
     // Success requires a live operation; this routine adds no allocation checks.
     ((DirectoryListOperation*)operation)->callback = nextCallback;
-    void *commandBlock = ((DirectoryListOperation*)operation)->commandBlock;
+    void* commandBlock = ((DirectoryListOperation*)operation)->commandBlock;
     ((DirectoryListOperation*)operation)->owner = operation;
     ((DirectoryListOperation*)operation)->resultBytes = resultBytes;
     NANDSetUserData(commandBlock, operation);
-    void *directoryForRead = self->directory;
-    void *path;
+    void* directoryForRead = this->directory;
+    void* path;
     if ((pathFlags >> 31) == 0) {
-        path = ((InlineDirectoryPath*)&self->pathFlags)->data;
+        path = ((InlineDirectoryPath*)&this->pathFlags)->data;
     } else {
-        path = self->heapPath;
+        path = this->heapPath;
     }
-    NANDReadDirAsync((const char*)path, ((DirectoryListBuffer*)directoryForRead)->data, &((DirectoryListBuffer*)directoryForRead)->entryCount, (void*)gtl_CFileIoDeviceFMEM_DispatchNandCallback, commandBlock);
+    NANDReadDirAsync((const char*)path, ((DirectoryListBuffer*)directoryForRead)->data,
+                     &((DirectoryListBuffer*)directoryForRead)->entryCount,
+                     (void*)gtl::CFileIoDeviceFMEM::DispatchNandCallback, commandBlock);
     // Virtual destructor slot 2 receives -1 (nondeleting cleanup), followed by
     // the allocator's explicit free. Async completion uses nextCallback, not self.
-    ((void (*)(gtl_CCallBackFindFirstFile*, int))(*(void***)self)[2])(self, -1);
-    FileIO_InvokeAllocatorCallback3(self);
+    ((void (*)(gtl::CCallBackFindFirstFile*, int))(*(void***)this)[2])(this, -1);
+    FileIO_InvokeAllocatorCallback3(this);
 }
 #pragma use_lmw_stmw reset
-} // extern "C"

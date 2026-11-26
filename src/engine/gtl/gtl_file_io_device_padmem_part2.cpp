@@ -1,5 +1,7 @@
+// PADMEM file I/O device: the QueryHandleFileInfo method, which fills a file-info record
+// with the stored last-write metadata words.
+
 #include "classes/GtlFileIoDevicePADMEM.h"
-#define AsGtlFileIoDevicePADMEM(p) ((GtlFileIoDevicePADMEM*)(p))
 #include "sdk_protos.h"
 
 extern "C" void File_SetLastError(int x);
@@ -30,8 +32,6 @@ enum PadMemoryFileError {
     kPadMemoryError7 = 0xC73F
 };
 
-extern "C" {
-
 #pragma opt_lifetimes off
 #pragma opt_common_subs off
 #pragma opt_propagation off
@@ -41,7 +41,7 @@ extern "C" {
 // output borrows a writable 0x34-byte record. Invalid output/handle returns 0;
 // any attempted query returns 1, including failures (record then remains zeroed).
 // The handle is checked only for the invalid sentinel; the device field selects the query target.
-int gtl_CFileIoDevicePADMEM_QueryHandleFileInfo(void* self, int handle, void* output) {
+int gtl::CFileIoDevicePADMEM::QueryHandleFileInfo(int handle, void* output) {
     unsigned int metadataWords[2];
     int queryResult;
     unsigned int dispatchIndex;
@@ -60,18 +60,36 @@ int gtl_CFileIoDevicePADMEM_QueryHandleFileInfo(void* self, int handle, void* ou
     }
     // Start with a fully zeroed result, then translate PAD status 0/-1..-7 to file errors.
     memset(output, 0, sizeof(PadMemoryFileStat));
-    queryResult = PadMemory_QueryStoredMetadata(AsGtlFileIoDevicePADMEM(self)->controllerIndex, metadataWords);
+    queryResult = PadMemory_QueryStoredMetadata(controllerIndex, metadataWords);
     dispatchIndex = (unsigned int)queryResult + kPadResultBias;
     switch (dispatchIndex) {
-        case 7: fileError = kFileSuccess; break;
-        case 6: fileError = kPadMemoryError1; break;
-        case 5: fileError = kPadMemoryError2; break;
-        case 4: fileError = kPadMemoryError3; break;
-        case 3: fileError = kPadMemoryError4; break;
-        case 2: fileError = kPadMemoryError5; break;
-        case 1: fileError = kPadMemoryError6; break;
-        case 0: fileError = kPadMemoryError7; break;
-        default: fileError = kPadMemoryError2; break;
+    case 7:
+        fileError = kFileSuccess;
+        break;
+    case 6:
+        fileError = kPadMemoryError1;
+        break;
+    case 5:
+        fileError = kPadMemoryError2;
+        break;
+    case 4:
+        fileError = kPadMemoryError3;
+        break;
+    case 3:
+        fileError = kPadMemoryError4;
+        break;
+    case 2:
+        fileError = kPadMemoryError5;
+        break;
+    case 1:
+        fileError = kPadMemoryError6;
+        break;
+    case 0:
+        fileError = kPadMemoryError7;
+        break;
+    default:
+        fileError = kPadMemoryError2;
+        break;
     }
     File_SetLastError(fileError);
     // Reverse the two metadata words into file-info order only when the query succeeds.
@@ -99,5 +117,3 @@ int gtl_CFileIoDevicePADMEM_QueryHandleFileInfo(void* self, int handle, void* ou
 #pragma opt_common_subs reset
 #pragma opt_propagation reset
 #pragma opt_strength_reduction reset
-
-} // extern "C"

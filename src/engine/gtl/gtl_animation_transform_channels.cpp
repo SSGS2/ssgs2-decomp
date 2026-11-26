@@ -1,12 +1,11 @@
 // Gtl skeletal/model transform animation: sample resource keyframes into local
 // poses, then gtl_transform_frustum_stopwatch_input.cpp builds matrices. Resource adapter: gtl_animation_resource_evaluate.cpp; consumers:
-// CPetAnimation_EvaluateNamedTransforms and WPuppet bone sampling (wpuppet_model_bone_animation.cpp).
+// CPetAnimation::EvaluateNamedTransforms and WPuppet bone sampling (wpuppet_model_bone_animation.cpp).
 // Mod map: channel target = TransformChannelKind; stored key representation =
 // Channel::keyDataType and gtl_Resource_GetDataTypeByteStride (gtl_image_decode_and_tiling.cpp); interpolation
 // = s_animationSamplingTables tables, endpoint policy = s_animationEndpointMode. Time is absolute animation
 // key time (WPuppet frame), not seconds or a delta. No playback-rate knob here.
 // Original ABI/address: gtl_Animation_EvaluateModelTransformChannels, 0x803E33A8.
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "types.h"
 #include "sdk_protos.h"
@@ -45,7 +44,7 @@ struct Channel {
 struct TempRec {
     f32 scale[4];       // +00, xyz plus fourth lane
     f32 rotation[4];    // +10, Euler xyz or quaternion xyzw per mode
-    f32 translation[3];// +20, local/model xyz, NOT world-space coordinates
+    f32 translation[3]; // +20, local/model xyz, NOT world-space coordinates
     u32 mode;
 };
 typedef char TransformSample_size[(sizeof(TempRec) == 0x30) ? 1 : -1];
@@ -60,16 +59,27 @@ typedef char TransformSample_size[(sizeof(TempRec) == 0x30) ? 1 : -1];
 // Do not infer a C++ float-vector type from stride alone: tangents/key metadata
 // share records. Key times must be sorted; selected adjacent times must differ.
 enum TransformChannelKind {
-    kTranslationZ = 0x12, kTranslationY, kTranslationX, kTranslationBlock,
-    kRotationZ, kRotationY, kRotationX, kRotationBlock,
-    kScaleZ, kScaleY, kScaleX, kScaleBlock
+    kTranslationZ = 0x12,
+    kTranslationY,
+    kTranslationX,
+    kTranslationBlock,
+    kRotationZ,
+    kRotationY,
+    kRotationX,
+    kRotationBlock,
+    kScaleZ,
+    kScaleY,
+    kScaleX,
+    kScaleBlock
 };
 // Matching requires these five literal address words on the stack. They identify
 // global query-key scratch for resource tags 6..9, then the search dispatch table;
 // named enum values explain the literals without introducing new relocations.
 enum TransformSearchAddress {
-    kQueryKeyTag6Address = 0x805B1890, kQueryKeyTag7Address = 0x805B1860,
-    kQueryKeyTag8Address = 0x805B1820, kQueryKeyTag9Address = 0x805B17C0,
+    kQueryKeyTag6Address = 0x805B1890,
+    kQueryKeyTag7Address = 0x805B1860,
+    kQueryKeyTag8Address = 0x805B1820,
+    kQueryKeyTag9Address = 0x805B17C0,
     kKeySearchDispatchAddress = 0x804DA378
 };
 
@@ -124,8 +134,7 @@ void gtl_Transform_QuaternionFromEuler(void* out, f32 x, f32 y, f32 z);
 // s_animationKeySearchProbes holds per-type query-key pointers, s_animationKeySearchProbesInitialized is lazy-init latch;
 // s_animationSegmentStartTime/318/310/31C publish start/sample/duration/end for interpolators.
 // All animation evaluators sharing these globals must run serialized, non-reentrant.
-int gtl_Animation_EvaluateModelTransformChannels(void* self, f32 t, void* out, u32 count, ResourceFile* res)
-{
+int gtl_Animation_EvaluateModelTransformChannels(void* self, f32 t, void* out, u32 count, ResourceFile* res) {
     // Byte-based view of TransformDispatchTables: direct typed field access
     // changes MWCC's indirect-call instruction count and cannot be proven by
     // the gate. Offsets +00/+28/+50 are the three arrays in the schema above.
@@ -168,7 +177,8 @@ int gtl_Animation_EvaluateModelTransformChannels(void* self, f32 t, void* out, u
     sink[11] = ftData;
     ftCount = ft->count;
     sink[12] = (void*)ftCount;
-    u32 volatile searchAddresses[5] = {kQueryKeyTag6Address, kQueryKeyTag7Address, kQueryKeyTag8Address, kQueryKeyTag9Address, kKeySearchDispatchAddress};
+    u32 volatile searchAddresses[5] = {kQueryKeyTag6Address, kQueryKeyTag7Address, kQueryKeyTag8Address,
+                                       kQueryKeyTag9Address, kKeySearchDispatchAddress};
     ldmData = (u8*)sink[0];
     ldmCount = (u32)sink[1];
     channels = (Channel*)sink[9];
@@ -273,7 +283,8 @@ int gtl_Animation_EvaluateModelTransformChannels(void* self, f32 t, void* out, u
                         if (ch->keyCount == 1 || firstGe) {
                             if (s_animationEndpointMode == 0) {
                                 Memory_Copy(dst, keys + ((u32*)(dispatchBytes + 0x28))[ch->keyDataType], size);
-                                do { } while (0);
+                                do {
+                                } while (0);
                                 continue;
                             }
                         }
@@ -284,7 +295,8 @@ int gtl_Animation_EvaluateModelTransformChannels(void* self, f32 t, void* out, u
                         if (lastGe) {
                             if (s_animationEndpointMode == 0) {
                                 Memory_Copy(dst, lastKey + ((u32*)(dispatchBytes + 0x28))[ch->keyDataType], size);
-                                do { } while (0);
+                                do {
+                                } while (0);
                                 continue;
                             }
                         }
@@ -326,7 +338,8 @@ int gtl_Animation_EvaluateModelTransformChannels(void* self, f32 t, void* out, u
 
                             begin = keys + stride;
                             *(f32*)(s_animationKeySearchProbes[ch->keyDataType] + timeOff) = t;
-                            found = ((SearchFn*)searchAddresses[4])[ch->keyDataType](begin, begin + stride * (ch->keyCount - 1));
+                            found = ((SearchFn*)searchAddresses[4])[ch->keyDataType](
+                                begin, begin + stride * (ch->keyCount - 1));
                             seg = (u8*)found;
                             if (found == 0) {
                                 seg = lastKey;
@@ -334,7 +347,8 @@ int gtl_Animation_EvaluateModelTransformChannels(void* self, f32 t, void* out, u
                             upperTime = *(f32*)(seg + timeOff);
                             if (t == upperTime) {
                                 Memory_Copy(dst, seg + ((u32*)(dispatchBytes + 0x28))[ch->keyDataType], size);
-                                do { } while (0);
+                                do {
+                                } while (0);
                                 continue;
                             }
                             {
@@ -360,7 +374,8 @@ int gtl_Animation_EvaluateModelTransformChannels(void* self, f32 t, void* out, u
                     if (mode == 6) {
                         // Euler input is radians, argument order z,x,y; conversion
                         // writes quaternion xyzw into the same four rotation lanes.
-                        gtl_Transform_QuaternionFromEuler(&tmp.rotation[0], tmp.rotation[2], tmp.rotation[0], tmp.rotation[1]);
+                        gtl_Transform_QuaternionFromEuler(&tmp.rotation[0], tmp.rotation[2], tmp.rotation[0],
+                                                          tmp.rotation[1]);
                     }
                     Memory_Copy(outRec, &tmp, 0x30);
                 }

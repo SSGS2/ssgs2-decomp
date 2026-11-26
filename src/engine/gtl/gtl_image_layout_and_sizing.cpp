@@ -1,5 +1,5 @@
-// Translation unit 0x803D4098-0x803D4E18 (7 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Texture and image memory layout: reorders pixel bytes between linear, Morton and tiled order.
+// It also sizes images: bytes and bits per element, row pitch and mip chain size for each format.
 
 #include "sdk_protos.h"
 
@@ -20,7 +20,8 @@
 
 extern "C" {
 
-void gtl_Image_ReorderCompressedBlocks(unsigned char* src, unsigned char* dst, unsigned int w, unsigned int h, int fmt, int flags);
+void gtl_Image_ReorderCompressedBlocks(unsigned char* src, unsigned char* dst, unsigned int w, unsigned int h, int fmt,
+                                       int flags);
 unsigned int gtl_Image_GetTiledOffset(unsigned int x, unsigned int y, unsigned int w, unsigned int bpe);
 unsigned int gtl_ImageFormat_GetBytesPerElement(unsigned int fmt);
 void gtl_Image_Untile8BitPixels(unsigned char* src, unsigned char* dst, unsigned int w, unsigned int h);
@@ -33,8 +34,8 @@ unsigned int gtl_Image_GetMipLevelCount(unsigned int w, unsigned int h, int fmt,
 // A square power-of-two image with known nonzero bytes/element is sufficient for
 // dense w*h*bpe storage. Other shapes require storage covering all computed
 // Morton offsets; do not assume row-major size alone bounds those accesses.
-static inline void CopyMortonRows(unsigned char* src, unsigned char* dst, unsigned int w,
-    unsigned int h, int fmt, unsigned char reverse) {
+static inline void CopyMortonRows(unsigned char* src, unsigned char* dst, unsigned int w, unsigned int h, int fmt,
+                                  unsigned char reverse) {
     unsigned int x;
     unsigned int y;
     unsigned int bpe;
@@ -82,7 +83,6 @@ static inline void CopyMortonRows(unsigned char* src, unsigned char* dst, unsign
     }
 }
 
-
 #pragma use_lmw_stmw reset
 #pragma opt_propagation reset
 
@@ -94,7 +94,6 @@ struct Px {
 
 #pragma use_lmw_stmw reset
 #pragma opt_common_subs reset
-
 
 // Round a byte quantity up to a positive alignment; unused by the current paths.
 static inline void mip_align(unsigned int& v, int a) {
@@ -116,9 +115,11 @@ static inline void mip_align(unsigned int& v, int a) {
 #pragma use_lmw_stmw reset
 #pragma opt_propagation reset
 
-void gtl_Image_ConvertMortonLayout(unsigned char* src, int unused1, int unused2, unsigned char* dst, unsigned int w, unsigned int h, int unused6, int fmt, unsigned char reverse);
+void gtl_Image_ConvertMortonLayout(unsigned char* src, int unused1, int unused2, unsigned char* dst, unsigned int w,
+                                   unsigned int h, int unused6, int fmt, unsigned char reverse);
 void gtl_Image_Untile8BitPixels(unsigned char* src, unsigned char* dst, unsigned int w, unsigned int h);
-void gtl_Image_TiledToLinear(unsigned char* src, int unused1, int unused2, unsigned char* dst, unsigned int w, unsigned int h, int unused6, int fmt);
+void gtl_Image_TiledToLinear(unsigned char* src, int unused1, int unused2, unsigned char* dst, unsigned int w,
+                             unsigned int h, int unused6, int fmt);
 unsigned int gtl_ImageFormat_GetBytesPerElement(unsigned int fmt);
 unsigned int gtl_ImageFormat_GetBitsPerPixel(int fmt);
 unsigned int gtl_Image_GetRowPitch(unsigned int w, int fmt, unsigned int mode);
@@ -133,7 +134,8 @@ unsigned int gtl_Image_GetMipChainSize(unsigned int w, unsigned int h, int level
 // for formats [0x2E,0x32] and [0x62,0x66]: those copy (w*h*bits)>>3 bytes unchanged,
 // with 4 bits for 0x2E/0x62 and 8 for the rest. Preserve floor-to-byte behavior.
 // Required buffer sizes and aliasing follow the file contract; no return value.
-void gtl_Image_ConvertMortonLayout(unsigned char* src, int unused1, int unused2, unsigned char* dst, unsigned int w, unsigned int h, int unused6, int fmt, unsigned char reverse) {
+void gtl_Image_ConvertMortonLayout(unsigned char* src, int unused1, int unused2, unsigned char* dst, unsigned int w,
+                                   unsigned int h, int unused6, int fmt, unsigned char reverse) {
     int flag;
     unsigned int area;
     int bits;
@@ -222,7 +224,8 @@ void gtl_Image_Untile8BitPixels(unsigned char* src, unsigned char* dst, unsigned
 // tiled bytes {off,off+1,off+0x20,off+0x21} become dst channels {3,0,1,2}.
 // Every other bpe still takes that four-byte path; it is not a general 2/3/8-byte
 // converter. Caller must select a compatible format and provide tile padding.
-void gtl_Image_TiledToLinear(unsigned char* src, int unused1, int unused2, unsigned char* dst, unsigned int w, unsigned int h, int unused6, int fmt) {
+void gtl_Image_TiledToLinear(unsigned char* src, int unused1, int unused2, unsigned char* dst, unsigned int w,
+                             unsigned int h, int unused6, int fmt) {
     int flag;
     unsigned int rowBase;
     unsigned int bpe;
@@ -295,81 +298,81 @@ done:
 // This is not enough to size sub-byte/compressed formats: use GetBitsPerPixel.
 unsigned int gtl_ImageFormat_GetBytesPerElement(unsigned int fmt) {
     switch (fmt) {
-        case 1:
-        case 63:
-            return 4;
-        case 8:
-            return 2;
-        case 30:
-        case 88:
-            return 1;
-        case 31:
-        case 89:
-            return 1;
-        case 37:
-        case 95:
-            return 1;
-        case 34:
-        case 92:
-            return 1;
-        case 28:
-        case 72:
-            return 1;
-        case 36:
-            return 2;
-        case 14:
-        case 76:
-            return 4;
-        case 15:
-        case 77:
-            return 4;
-        case 21:
-        case 83:
-            return 2;
-        case 20:
-            return 2;
-        case 5:
-            return 2;
-        case 80:
-            return 2;
-        case 82:
-            return 2;
-        case 55:
-        case 107:
-            return 2;
-        case 52:
-        case 104:
-            return 4;
-        case 2:
-        case 64:
-            return 4;
-        case 0:
-        case 62:
-            return 3;
-        case 13:
-        case 75:
-            return 3;
-        case 70:
-            return 2;
-        case 56:
-        case 108:
-            return 4;
-        case 16:
-        case 78:
-            return 4;
-        case 17:
-        case 79:
-            return 4;
-        case 54:
-        case 106:
-            return 4;
-        case 44:
-        case 96:
-            return 2;
-        case 25:
-            return 8;
-        default:
-            return 0;
+    case 1:
+    case 63:
+        return 4;
+    case 8:
+        return 2;
+    case 30:
+    case 88:
+        return 1;
+    case 31:
+    case 89:
+        return 1;
+    case 37:
+    case 95:
+        return 1;
+    case 34:
+    case 92:
+        return 1;
+    case 28:
+    case 72:
+        return 1;
+    case 36:
+        return 2;
+    case 14:
+    case 76:
+        return 4;
+    case 15:
+    case 77:
+        return 4;
+    case 21:
+    case 83:
+        return 2;
+    case 20:
+        return 2;
+    case 5:
+        return 2;
+    case 80:
+        return 2;
+    case 82:
+        return 2;
+    case 55:
+    case 107:
+        return 2;
+    case 52:
+    case 104:
+        return 4;
+    case 2:
+    case 64:
+        return 4;
+    case 0:
+    case 62:
+        return 3;
+    case 13:
+    case 75:
+        return 3;
+    case 70:
+        return 2;
+    case 56:
+    case 108:
+        return 4;
+    case 16:
+    case 78:
+        return 4;
+    case 17:
+    case 79:
+        return 4;
+    case 54:
+    case 106:
+        return 4;
+    case 44:
+    case 96:
+        return 2;
+    case 25:
+        return 8;
+    default:
+        return 0;
     }
 }
 
@@ -523,7 +526,6 @@ finishFormatBits:
 }
 
 #pragma pop
-
 
 // Mode 3 keeps the original width through mip levels for these format ranges:
 // [0x3E,0x40], [0x43,0x4E], [0x50,0x59], [0x62,0x66]. Other formats

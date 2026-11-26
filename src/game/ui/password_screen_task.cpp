@@ -1,3 +1,6 @@
+// Password screen: the task and main actor that show three generated passwords with a help message.
+// Loads the UI, builds the text labels, and returns to the title screen when confirm or cancel is pressed.
+
 #include <decomp/static_init.h>
 extern "C" char s_fadeOverlayRegistration_805346CC[];
 #include "classes/MWStringStorage.h"
@@ -11,13 +14,15 @@ struct EH5StringCleanup {
     // Arm cleanup for a completed string until ownership is explicitly released.
     explicit EH5StringCleanup(const void* p) : words((const unsigned int*)p), active(true) {}
     // Disarm cleanup after explicit ownership transfer or manual destruction.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Free heap text only while this unwind cleanup remains armed.
     ~EH5StringCleanup() {
-        if (active && (words[0] & 0x80000000u)) appFreeUni__FPv((void*)words[2]);
+        if (active && (words[0] & 0x80000000u))
+            appFreeUni__FPv((void*)words[2]);
     }
 };
-
 
 #include "game/string.h"
 
@@ -32,7 +37,9 @@ public:
     LocalNString_u80335C0C() : flags(0), length(0), data(0) {}
 #if defined(GAME_NSTRING_TEXT_CONSTRUCTOR)
     // Construct an empty narrow string or copy the supplied NUL-terminated text.
-    LocalNString_u80335C0C(const char* text) { MWString_ConstructCString(this, text); }
+    LocalNString_u80335C0C(const char* text) {
+        MWString_ConstructCString(this, text);
+    }
 #endif
 #if defined(GAME_NSTRING_RANGE_CONSTRUCTOR)
     // Construct an empty narrow string or copy the supplied NUL-terminated text.
@@ -51,7 +58,10 @@ public:
     }
 #endif
     // Release narrow-string storage only when the heap tag is set.
-    ~LocalNString_u80335C0C() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~LocalNString_u80335C0C() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
     // Return the logical character count for inline or heap storage.
     unsigned int size() const {
         return (flags >> 31) == 0 ? (*(const unsigned char*)this & 0x7f) : length;
@@ -62,9 +72,6 @@ public:
     }
 };
 
-// Translation unit 0x80335C0C-0x803371A0 (22 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #define char_array_guard CharArrayGuard_u80335C0C
 #include "game/stdexcept_local.h"
@@ -74,8 +81,9 @@ public:
 #include "classes/CMsgDraw.h"
 #include "classes/WFixedFont.h"
 #include <decomp/cw_bitfields.h>
-
-#define AsCPasswordMain(p) ((CPasswordMain*)(p))
+#include "classes/CPasswordTask.h"
+#include "classes/CTask.h"
+#include "classes/CBpCtrl.h"
 
 // Offsets in the packed password menu string pool; the empty string is CTitleTask's NUL.
 enum PasswordMenuString {
@@ -97,12 +105,20 @@ enum PasswordMenuString {
 // Three labels use s_passwordLabelGroupNames; help uses kPasswordHelpGroup. Nine caption
 // groups from s_passwordInitiallyHiddenGroupNames stay hidden. Confirm=4/cancel=6 both leave
 // for the title task after the fade permits input; transitionRequested schedules that exit.
-enum { kPasswordCount = 3, kPasswordKeyBytes = 8, kPasswordIdentityBytes = 6,
-       kPasswordHiddenCaptionGroupCount = 9,
-       kPasswordPayloadTag = 0x4D, kPasswordSelectorTag = 0x40,
-       kPasswordFadeFrames = 30, kPasswordCancelAction = 6, kPasswordConfirmAction = 4,
-       kFadeRegistrationOffset = 12, kInputRegistrationOffset = 24,
-       kPasswordUnavailableTextOffset = 0x3A };
+enum {
+    kPasswordCount = 3,
+    kPasswordKeyBytes = 8,
+    kPasswordIdentityBytes = 6,
+    kPasswordHiddenCaptionGroupCount = 9,
+    kPasswordPayloadTag = 0x4D,
+    kPasswordSelectorTag = 0x40,
+    kPasswordFadeFrames = 30,
+    kPasswordCancelAction = 6,
+    kPasswordConfirmAction = 4,
+    kFadeRegistrationOffset = 12,
+    kInputRegistrationOffset = 24,
+    kPasswordUnavailableTextOffset = 0x3A
+};
 // SavePlayerRecord does not yet expose these fields; preserve the record's on-disk offsets.
 struct PasswordSaveRecordView {
     char reserved[0x1D8];
@@ -120,16 +136,11 @@ typedef char PasswordIdentityOffset[((int)&((PasswordSaveRecordView*)0)->passwor
 
 extern "C" {
 
-void CTask_StartActorLoading(void*);
-void CTask_ProcessActors(void*, float);
-void CTask_DisplayActorsByPriority(void*);
-void CTask_Ctor(void*);
-void CTask_dtor(void*, int);
+void __dt__5CTaskFv(void*, int);
 void __ct__18NativeBase80201D18Fv(void*);
 void String_ReserveCapacity(void*, unsigned int);
 void String_ReplaceRange(void*, int, int, const char*, const char*, char*);
-int TaskActorTable_CreateNamedActor(void*, const char*, const char*, int, void*);
-void CTask_SetMainActor(void*, int);
+void* TaskActorTable_CreateNamedActor(void*, const char*, const char*, int, void*);
 void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
 extern float kFloat_6_2831855;
@@ -142,13 +153,10 @@ extern unsigned int g_actorSkipMask;
 extern signed char s_bpCtrlInitialized;
 extern char s_bpCtrl[];
 extern char s_bpCtrlRegistration_805346C0[];
-void __ct__7CBpCtrlFv(void*);
 void* __register_global_object(void*, void*, void*);
 void CBpCtrl_dtor();
 void InputManager_Dtor();
 void BpObject_TryInvokeCurrentCallback(void*, int);
-void CMsgDraw_UpdateReveal(void*);
-void CTask_RequestTransitionWithFade(void*, const char*, const char*, int);
 void TaskCommandQueue_AppendNamedRequest(void*, int, const char*, int, int, int, int, int);
 void FadeOverlay_Init(void*);
 void ResourceState_Dtor();
@@ -168,11 +176,10 @@ void __dt__18NativeBase80201D18Fv(void*, int);
 void* IdMap_Lookup(void*, int);
 void BpObject_Draw(void*);
 void Text_DrawGlyphs(void*);
-void CBpCtrl_DeleteEntryById(void*, int);
 extern char s_passwordTaskTypeDescriptor;
 extern char s_passwordMainTypeDescriptor;
-void* CPasswordMain_dtor(void*, int);
-void* CPasswordTask_dtor(void*, int);
+void* __dt__13CPasswordMainFv(void*, int);
+void* __dt__13CPasswordTaskFv(void*, int);
 void* SaveData_AcquireInitializedInstance();
 void* SaveData_GetCurrentRecord(void*);
 void* __nwa__FUl(unsigned int);
@@ -208,26 +215,20 @@ void* BpObject_GetOrCreateNamedGroup(void*, const char*);
 void UIGroup_GetPosition(void*, void*);
 void UIGroup_GetSourceSize(void*, void*);
 unsigned int UIGroup_GetTintColor(void*);
-void CMsgDraw_SetColor(void*, unsigned int);
 void Text_SetPosition(void*, void*);
-void CMsgDraw_SetLayoutSize(void*, void*);
-void CMsgDraw_SetGlyphScale(void*, void*);
 void Text_ExpandTaggedText(void*, void*, void*, int);
 void Text_SetContent(void*, void*);
-void CMsgDraw_ClearFormattingAndRevealAll(void*);
-void CMsgDraw_ResetTextState(void*);
 extern unsigned int kPasswordGlyphScaleXBits;
 extern unsigned int kPasswordGlyphScaleYBits;
-struct Words804967D4 { unsigned int firstPassword, secondPassword, thirdPassword; };
-extern Words804967D4 s_passwordLabelGroupNames;
+struct PasswordLabelGroupNames {
+    unsigned int firstPassword, secondPassword, thirdPassword;
+};
+extern PasswordLabelGroupNames s_passwordLabelGroupNames;
 extern char s_bpCtrl[];
 extern char s_bpCtrlRegistration_805346C0[];
 extern void* g_chatMsg;
 extern float kFloat_1_PasswordMain;
-void CBpCtrl_CreateEntry(void*, const char*, int*, int);
-int CBpCtrl_PollAllEntriesLoaded(void*);
 void BpObject_StartScriptByName(void*, const char*, int);
-void* CMsgDraw_Ctor(void*, void*);
 void UIGroup_SetEnabled(void*, int);
 void FadeState_StartFadeOut(void*, int);
 extern void* g_chatMsg;
@@ -237,51 +238,83 @@ extern char s_fadeOverlay[];
 extern char s_passwordInitiallyHiddenGroupNames[];
 
 // Forward task actor-loading startup to the base implementation.
-void CPasswordTask_StartActorLoading(void* forwarded0) { CTask_StartActorLoading(forwarded0); }
+void CPasswordTask::StartActorLoading(void* forwarded0) {
+    ((CTask*)forwarded0)->StartActorLoading();
+}
 // Forward the frame delta to base actor processing.
-void CPasswordTask_ProcessActors(void* forwarded0, float forwarded1) { CTask_ProcessActors(forwarded0, forwarded1); }
+void CPasswordTask::ProcessActors(void* forwarded0, float forwarded1) {
+    ((CTask*)forwarded0)->ProcessActors(forwarded1);
+}
 // Draw task actors through the base priority-ordered display path.
-void CPasswordTask_DisplayActorsByPriority(void* forwarded0) { CTask_DisplayActorsByPriority(forwarded0); }
+void CPasswordTask::DisplayActorsByPriority(void* forwarded0) {
+    ((CTask*)forwarded0)->DisplayActorsByPriority();
+}
 // Provide the empty password actor preload hook.
-void CPasswordMain_OnPreLoadInit() {}
+void CPasswordMain::OnPreLoadInit() {}
 // Provide the empty password actor initialization hook.
-void CPasswordMain_OnInit() {}
+void CPasswordMain::OnInit() {}
 // Borrow the password task runtime-type descriptor.
-void* CPasswordTask_GetRTTI() { return &s_passwordTaskTypeDescriptor; }
+void* CPasswordTask::GetRTTI() {
+    return &s_passwordTaskTypeDescriptor;
+}
 // Borrow the password actor runtime-type descriptor.
-void* CPasswordMain_GetRTTI() { return &s_passwordMainTypeDescriptor; }
+void* CPasswordMain::GetRTTI() {
+    return &s_passwordMainTypeDescriptor;
+}
 // Adjust the task-main interface pointer back to the owning actor before destruction.
-void CPasswordMain_DtorThunk18(void* self, int arg) { CPasswordMain_dtor((char*)self - 0x18, arg); }
+void CPasswordMain::DtorThunk18(int deleteFlag) {
+    __dt__13CPasswordMainFv((char*)this - 0x18, deleteFlag);
+}
 // Adjust the task interface pointer back to the owning task before destruction.
-void CPasswordTask_DtorThunk8(void* self, int arg) { CPasswordTask_dtor((char*)self - 8, arg); }
+void CPasswordTask::DtorThunk8(int deleteFlag) {
+    __dt__13CPasswordTaskFv((char*)this - 8, deleteFlag);
+}
 // Initialize the password task's cached full-circle angle.
-void PasswordTask_InitializeAngleCache() { s_passwordTaskAngleCache = kFloat_6_2831855; }
+void PasswordTask_InitializeAngleCache() {
+    s_passwordTaskAngleCache = kFloat_6_2831855;
+}
 struct PasswordMessageDrawAllocation {
     char data[0x4bc];
     // Construct the owned message renderer from the borrowed font resource.
-    PasswordMessageDrawAllocation(void* a) { CMsgDraw_Ctor(this, a); } };
+    PasswordMessageDrawAllocation(void* messageResource) {
+        ((CMsgDraw*)this)->__ct(messageResource);
+    }
+};
 
 extern char s_fadeOverlayRegistration_805346CC[];
 
 struct PasswordLoadView {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3();
-    virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7();
-    virtual void v8(); virtual void v9(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15();
-    virtual void v16(); virtual void v17();
-    char inheritedState[0x18];    // 0x04
-    int passwordPanelEntryId;             // 0x1c
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void BuildTextLabels();
+    char inheritedState[0x18];         // 0x04
+    int passwordPanelEntryId;          // 0x1c
     int backgroundEntryId;             // 0x20
-    int titleCaptionEntryId;             // 0x24
-    void* textRenderer;           // 0x28
-    unsigned char transitionRequested;   // 0x2c
+    int titleCaptionEntryId;           // 0x24
+    void* textRenderer;                // 0x28
+    unsigned char transitionRequested; // 0x2c
 };
 
 // Ensure the borrowed BP controller exists; construction and global destructor registration occur once.
 static inline void EnsurePasswordBpController() {
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_bpCtrlRegistration_805346C0);
             s_bpCtrlInitialized = 1;
         }
@@ -302,35 +335,40 @@ static inline void EnsurePasswordFade(char* registration) {
 }
 // Ensure the borrowed input singleton exists before querying actions; it is globally owned.
 static inline void EnsurePasswordInput(char* registration) {
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, InputManager_Dtor, registration);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
 }
 
 // Load the three UI resources, hide unused groups, build labels and start the entrance fade.
-void CPasswordMain_OnLoad(PasswordLoadView* self) {
+void CPasswordMain::OnLoad() {
+    PasswordLoadView* self = (PasswordLoadView*)this;
     EnsurePasswordBpController();
-    CBpCtrl_CreateEntry(Sing_805DC5F0(), passwordMenuStrings + kPasswordPanelPath, &self->passwordPanelEntryId, 0);
+    ((CBpCtrl*)Sing_805DC5F0())->CreateEntry(passwordMenuStrings + kPasswordPanelPath, &self->passwordPanelEntryId, 0);
     EnsurePasswordBpController();
-    CBpCtrl_CreateEntry(Sing_805DC5F0(), passwordMenuStrings + kPasswordBackgroundPath, &self->backgroundEntryId, 0);
+    ((CBpCtrl*)Sing_805DC5F0())
+        ->CreateEntry(passwordMenuStrings + kPasswordBackgroundPath, &self->backgroundEntryId, 0);
     EnsurePasswordBpController();
-    CBpCtrl_CreateEntry(Sing_805DC5F0(), passwordMenuStrings + kPasswordCaptionPath, &self->titleCaptionEntryId, 0);
+    ((CBpCtrl*)Sing_805DC5F0())->CreateEntry(passwordMenuStrings + kPasswordCaptionPath, &self->titleCaptionEntryId, 0);
     // All three BP requests are issued: allocate the owned text renderer and wait for loading.
     void* mgr = ((CChatMsg*)g_chatMsg)->defaultFixedFont;
     self->textRenderer = new PasswordMessageDrawAllocation(AsWFixedFont(mgr)->messageResource);
     while (1) {
         EnsurePasswordBpController();
-        if (CBpCtrl_PollAllEntriesLoaded(Sing_805DC5F0())) break;
+        if (((CBpCtrl*)Sing_805DC5F0())->PollAllEntriesLoaded())
+            break;
     }
     EnsurePasswordBpController();
-    BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), self->backgroundEntryId), passwordMenuStrings + kPasswordBackgroundScript, 1);
+    BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), self->backgroundEntryId),
+                               passwordMenuStrings + kPasswordBackgroundScript, 1);
     EnsurePasswordBpController();
-    BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), self->passwordPanelEntryId), passwordMenuStrings + kPasswordPanelScript, 1);
+    BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), self->passwordPanelEntryId),
+                               passwordMenuStrings + kPasswordPanelScript, 1);
     // Initialize caption groups only after the panel/background scripts have started.
     unsigned int words[kPasswordHiddenCaptionGroupCount];
     const unsigned int* tbl = (const unsigned int*)s_passwordInitiallyHiddenGroupNames;
@@ -350,25 +388,28 @@ void CPasswordMain_OnLoad(PasswordLoadView* self) {
         UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(node, (const char*)words[i]), 0);
     }
     // Build labels through the actor hook, then start the 30-frame entrance fade.
-    self->v17(); // Virtual slot 17 builds the labels (CPasswordMain_BuildTextLabels).
+    self->BuildTextLabels(); // Virtual slot 17 builds the labels (CPasswordMain_BuildTextLabels).
     EnsurePasswordFade(s_fadeOverlayRegistration_805346CC);
     FadeState_StartFadeOut(Sing_805DC608(), kPasswordFadeFrames);
 }
 // Update UI callbacks and text, then request the title screen when confirm/cancel is pressed.
-void CPasswordMain_OnProcess(void* self) {
+void CPasswordMain::OnProcess() {
     char* dso = s_bpCtrlRegistration_805346C0;
     EnsurePasswordBpController();
-    BpObject_TryInvokeCurrentCallback(IdMap_Lookup(Sing_805DC5F0(), AsCPasswordMain(self)->backgroundEntryId), 0);
+    BpObject_TryInvokeCurrentCallback(IdMap_Lookup(Sing_805DC5F0(), backgroundEntryId), 0);
     EnsurePasswordBpController();
-    BpObject_TryInvokeCurrentCallback(IdMap_Lookup(Sing_805DC5F0(), AsCPasswordMain(self)->passwordPanelEntryId), 0);
+    BpObject_TryInvokeCurrentCallback(IdMap_Lookup(Sing_805DC5F0(), passwordPanelEntryId), 0);
     EnsurePasswordBpController();
-    BpObject_TryInvokeCurrentCallback(IdMap_Lookup(Sing_805DC5F0(), AsCPasswordMain(self)->titleCaptionEntryId), 0);
-    CMsgDraw_UpdateReveal(AsCPasswordMain(self)->textRenderer);
-    ((CMsgDraw*)AsCPasswordMain(self)->textRenderer)->drawSuppressed = 0;
+    BpObject_TryInvokeCurrentCallback(IdMap_Lookup(Sing_805DC5F0(), titleCaptionEntryId), 0);
+    ((CMsgDraw*)textRenderer)->UpdateReveal();
+    ((CMsgDraw*)textRenderer)->drawSuppressed = 0;
     // A previous accepted action now issues the title transition and clears the fade immediately.
-    if (AsCPasswordMain(self)->transitionRequested) {
-        CTask_RequestTransitionWithFade(g_taskManager, passwordMenuStrings + kPasswordReturnTask, passwordMenuStrings + kPasswordEmptyArgument, 0);
-        TaskCommandQueue_AppendNamedRequest(g_taskManager, 0, passwordMenuStrings + kPasswordReturnActor, 7, 0, 0, 0, 0);
+    if (transitionRequested) {
+        ((CTask*)g_taskManager)
+            ->RequestTransitionWithFade(passwordMenuStrings + kPasswordReturnTask,
+                                        passwordMenuStrings + kPasswordEmptyArgument, 0);
+        TaskCommandQueue_AppendNamedRequest(g_taskManager, 0, passwordMenuStrings + kPasswordReturnActor, 7, 0, 0, 0,
+                                            0);
         EnsurePasswordFade((dso + kFadeRegistrationOffset));
         FadeState_StartFadeIn(Sing_805DC608(), 0);
     }
@@ -376,19 +417,18 @@ void CPasswordMain_OnProcess(void* self) {
     // Only fade state zero accepts confirm/cancel; latch the exit for the next process tick.
     if (FadeState_GetState(Sing_805DC608()) == 0) {
         EnsurePasswordInput((dso + kInputRegistrationOffset));
-        if (!Input_IsActionPressed(Sing_805DC5C8(), kPasswordCancelAction, -1)) {
+        if (!Input_IsActionPressed(GetInputManagerSlot(), kPasswordCancelAction, -1)) {
             EnsurePasswordInput((dso + kInputRegistrationOffset));
-            if (!Input_IsActionPressed(Sing_805DC5C8(), kPasswordConfirmAction, -1)) return;
+            if (!Input_IsActionPressed(GetInputManagerSlot(), kPasswordConfirmAction, -1))
+                return;
         }
         EnsurePasswordFade((dso + kFadeRegistrationOffset));
         FadeState_RequestFramebufferCapture(Sing_805DC608());
-        AsCPasswordMain(self)->transitionRequested = 1;
+        transitionRequested = 1;
     }
 }
 struct PasswordInlineLength {
-    CW_BITS2(
-        unsigned char isLong : 1,
-        unsigned char size : 7)
+    CW_BITS2(unsigned char isLong : 1, unsigned char size : 7)
 };
 
 // 12-byte small/heap UTF-16 string; retain the type name used in exception-table relocations.
@@ -399,15 +439,28 @@ struct WStr36940 {
     unsigned short hdr;
     unsigned short buf[5];
     // Borrow the wide string's tag/capacity word, which overlays inline storage.
-    unsigned int& flags() { return *(unsigned int*)this; }
+    unsigned int& flags() {
+        return *(unsigned int*)this;
+    }
     // Borrow the heap-length word; inline strings encode length in the first tag byte.
-    unsigned int& size() { return *((unsigned int*)this + 1); }
+    unsigned int& size() {
+        return *((unsigned int*)this + 1);
+    }
     // Borrow the wide string's heap-pointer word, valid as a pointer only for heap strings.
-    unsigned short*& data() { return *(unsigned short**)((unsigned int*)this + 2); }
+    unsigned short*& data() {
+        return *(unsigned short**)((unsigned int*)this + 2);
+    }
     // Initialize an empty wide string in the packed inline/heap representation.
-    WStr36940() { flags() = 0; size() = 0; data() = 0; }
+    WStr36940() {
+        flags() = 0;
+        size() = 0;
+        data() = 0;
+    }
     // Release the wide string's heap buffer when its heap tag is set.
-    ~WStr36940() { if ((flags() >> 31) != 0) appFreeUni__FPv(data()); }
+    ~WStr36940() {
+        if ((flags() >> 31) != 0)
+            appFreeUni__FPv(data());
+    }
     // Make the string empty while preserving its inline/heap allocation mode.
     void clear() {
         if ((flags() >> 31) == 0) {
@@ -420,22 +473,36 @@ struct WStr36940 {
     }
     // Borrow the current NUL-terminated wide-character storage.
     void* chars() {
-        if ((flags() >> 31) == 0) return buf;
+        if ((flags() >> 31) == 0)
+            return buf;
         return data();
     }
 };
 
-struct PasswordTextExpander { 
-virtual void m0(int);
+struct PasswordTextExpander {
+    virtual void m0(int);
 };
 
 struct PasswordLabelView {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3();
-    virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7();
-    virtual void v8(); virtual void v9(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15();
-    virtual void v16(); virtual void v17();
-    virtual void v18(WStr36940*, int);
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void GetPasswordText(WStr36940*, int);
     char inheritedState[0x18];
     int passwordPanelEntryId;
     int backgroundEntryId;
@@ -450,56 +517,61 @@ static inline unsigned int PasswordColorToRgba(unsigned int c) {
 
 #pragma opt_propagation off
 // Expand three generated passwords and the help message into the UI text renderer.
-void CPasswordMain_BuildTextLabels(PasswordLabelView* self) {
+void CPasswordMain::BuildTextLabels() {
     const unsigned int* groupNameSource = (const unsigned int*)&s_passwordLabelGroupNames;
-    unsigned int labelGroups[3] = { groupNameSource[0], groupNameSource[1], groupNameSource[2] };
+    unsigned int labelGroups[3] = {groupNameSource[0], groupNameSource[1], groupNameSource[2]};
     PasswordTextExpander* root;
     void* node;
-    float position[2] = { 0, 0 };
-    float layoutSize[2] = { 0, 0 };
-    union { unsigned int u[2]; float f[2]; } scale;
+    float position[2] = {0, 0};
+    float layoutSize[2] = {0, 0};
+    union {
+        unsigned int u[2];
+        float f[2];
+    } scale;
     scale.u[0] = kPasswordGlyphScaleXBits;
     scale.u[1] = kPasswordGlyphScaleYBits;
     WStr36940 expandedText;
     WStr36940 labelTemplate;
     WFixedFont_CreateMsgEcbResource(((CChatMsg*)g_chatMsg)->defaultFixedFont, &root, 0, 0);
     EnsurePasswordBpController();
-    void* bp = IdMap_Lookup(Sing_805DC5F0(), self->passwordPanelEntryId);
-    CMsgDraw_ResetTextState(self->textRenderer);
+    void* bp = IdMap_Lookup(Sing_805DC5F0(), passwordPanelEntryId);
+    ((CMsgDraw*)textRenderer)->ResetTextState();
     // Populate each label from its group position, dimensions, tint and generated password.
     for (int i = 0; i < 3; ++i) {
         void* node = BpObject_GetOrCreateNamedGroup(bp, (const char*)labelGroups[i]);
         UIGroup_GetPosition(node, position);
         UIGroup_GetSourceSize(node, layoutSize);
         unsigned int labelColor = PasswordColorToRgba(UIGroup_GetTintColor(node));
-        void* renderer = self->textRenderer;
-        CMsgDraw_SetColor(renderer, labelColor);
-        Text_SetPosition(self->textRenderer, position);
-        CMsgDraw_SetLayoutSize(self->textRenderer, layoutSize);
+        void* renderer = textRenderer;
+        ((CMsgDraw*)renderer)->SetColor(labelColor);
+        Text_SetPosition(textRenderer, position);
+        ((CMsgDraw*)textRenderer)->SetLayoutSize((float*)layoutSize);
         expandedText.clear();
         labelTemplate.clear();
-        self->v18(&labelTemplate, i); // Slot 18 generates password i into caller-owned text.
+        ((PasswordLabelView*)this)
+            ->GetPasswordText(&labelTemplate, i); // Slot 18 generates password i into caller-owned text.
         Text_ExpandTaggedText(root, &expandedText, (void*)labelTemplate.chars(), 0);
-        CMsgDraw_SetGlyphScale(self->textRenderer, scale.f);
-        Text_SetContent(self->textRenderer, (void*)expandedText.chars());
+        ((CMsgDraw*)textRenderer)->SetGlyphScale((float*)scale.f);
+        Text_SetContent(textRenderer, (void*)expandedText.chars());
     }
     // Append the help message using its own layout and unit glyph scale, then reveal all text.
     node = BpObject_GetOrCreateNamedGroup(bp, passwordMenuStrings + kPasswordHelpGroup);
     unsigned int helpColor = PasswordColorToRgba(UIGroup_GetTintColor(node));
-    CMsgDraw_SetColor(self->textRenderer, helpColor);
+    ((CMsgDraw*)textRenderer)->SetColor(helpColor);
     UIGroup_GetPosition(node, position);
     UIGroup_GetSourceSize(node, layoutSize);
-    Text_SetPosition(self->textRenderer, position);
-    CMsgDraw_SetLayoutSize(self->textRenderer, layoutSize);
+    Text_SetPosition(textRenderer, position);
+    ((CMsgDraw*)textRenderer)->SetLayoutSize((float*)layoutSize);
     scale.f[0] = kFloat_1_PasswordMain;
     scale.f[1] = kFloat_1_PasswordMain;
-    CMsgDraw_SetGlyphScale(self->textRenderer, scale.f);
+    ((CMsgDraw*)textRenderer)->SetGlyphScale((float*)scale.f);
     expandedText.clear();
     Text_ExpandTaggedText(root, &expandedText, s_passwordWideMessageTemplates, 0);
-    Text_SetContent(self->textRenderer, (void*)expandedText.chars());
-    CMsgDraw_ClearFormattingAndRevealAll(self->textRenderer);
+    Text_SetContent(textRenderer, (void*)expandedText.chars());
+    ((CMsgDraw*)textRenderer)->ClearFormattingAndRevealAll();
     if (root != 0) {
-        if (root != 0) root->m0(1); // Owning destructor dispatch; 1 requests storage release.
+        if (root != 0)
+            root->m0(1); // Owning destructor dispatch; 1 requests storage release.
         root = 0;
     }
 }
@@ -515,8 +587,9 @@ void CPasswordMain_BuildTextLabels(PasswordLabelView* self) {
 // there is no throw/return in that branch, so it does not validate or reject the index.
 // Payload order: 0x4D, (index | 0x40), six save-identity bytes; the eight-byte key
 // belongs to the encoder, not the payload. The result replaces the output string.
-void CPasswordMain_GetPasswordText(void* selfUnused, void* outputText, unsigned int index) {
-    if (outputText == 0) return;
+void CPasswordMain::GetPasswordText(void* selfUnused, void* outputText, unsigned int index) {
+    if (outputText == 0)
+        return;
     void* saveRecord = SaveData_GetCurrentRecord(SaveData_AcquireInitializedInstance());
     if (index >= kPasswordCount) {
         std::out_of_range error(bitsetTestRangeErrorText_804B8178, passwordMenuStrings + kPasswordRangeErrorType);
@@ -539,16 +612,20 @@ void CPasswordMain_GetPasswordText(void* selfUnused, void* outputText, unsigned 
         // Inline characters start at byte 1; bit 31 of word 0 selects heap storage.
         unsigned int encodedText[3] = {};
         EH5StringCleanup eh5Cleanup4(encodedText);
-        if (((unsigned int&)Sing_805DC5E0()) == 0) {
-            if (s_saveDataInitialized == 0) { SaveData_Ctor(s_saveData); s_saveDataInitialized = 1; }
-            ((unsigned int&)Sing_805DC5E0()) = (unsigned int)s_saveData;
+        if (((unsigned int&)GetSaveDataSlot()) == 0) {
+            if (s_saveDataInitialized == 0) {
+                SaveData_Ctor(s_saveData);
+                s_saveDataInitialized = 1;
+            }
+            ((unsigned int&)GetSaveDataSlot()) = (unsigned int)s_saveData;
         }
-        void* currentSaveRecord = SaveData_GetCurrentRecord((void*)((unsigned int&)Sing_805DC5E0()));
+        void* currentSaveRecord = SaveData_GetCurrentRecord((void*)((unsigned int&)GetSaveDataSlot()));
         // Build the eight-byte identity payload, then encode into a temporary narrow string.
         char selector[kPasswordKeyBytes] = {};
         selector[0] = kPasswordPayloadTag;
         selector[1] = (char)(index | kPasswordSelectorTag);
-        Memory_Copy((void*)(selector + 2), (const void*)((PasswordSaveRecordView*)currentSaveRecord)->passwordIdentity, (size_t)kPasswordIdentityBytes);
+        Memory_Copy((void*)(selector + 2), (const void*)((PasswordSaveRecordView*)currentSaveRecord)->passwordIdentity,
+                    (size_t)kPasswordIdentityBytes);
         Password_EncodeEightBytePayload(passwordEncoder, selector, kPasswordKeyBytes, encodedText);
         // Convert at most three source bytes per 16-bit character, including NUL.
         // widePassword holds 64 UTF-16 code units (128 bytes). The encoder must fit it:
@@ -562,31 +639,46 @@ void CPasswordMain_GetPasswordText(void* selfUnused, void* outputText, unsigned 
         do {
             sourceBytesUsed += convertedBytes;
             const char* src;
-            if (((unsigned int)encodedText[0] >> 31) == 0) src = (const char*)encodedText + 1;
-            else src = (const char*)encodedText[2];
+            if (((unsigned int)encodedText[0] >> 31) == 0)
+                src = (const char*)encodedText + 1;
+            else
+                src = (const char*)encodedText[2];
             void* wideCharacter = widePassword + destinationByteOffset;
             destinationByteOffset += 2;
             convertedBytes = mbtowc(wideCharacter, (const void*)(src + sourceBytesUsed), 3);
         } while (convertedBytes > 0);
         unsigned int length;
-        if (*(unsigned int*)outputText >> 31 == 0) length = *(unsigned char*)outputText & 0x7f;
-        else length = AsMWStringStorage(outputText)->length;
+        if (*(unsigned int*)outputText >> 31 == 0)
+            length = *(unsigned char*)outputText & 0x7f;
+        else
+            length = AsMWStringStorage(outputText)->length;
         // The string ABI takes an address to a stateless allocator byte. Its value
         // is immaterial; the volatile read preserves the original allocator-token setup.
-        struct { volatile char a; char pad[3]; } w;
+        struct {
+            volatile char a;
+            char pad[3];
+        } w;
         char ch;
         ch = w.a;
         unsigned int wideLength = wcslen((const wchar_t*)widePassword);
         WString_ReplaceRange(outputText, 0, length, widePassword, widePassword + wideLength * 2, &ch);
-        if ((unsigned int)encodedText[0] >> 31) { eh5Cleanup4.release(); appFreeUni__FPv((void*)encodedText[2]); }
+        if ((unsigned int)encodedText[0] >> 31) {
+            eh5Cleanup4.release();
+            appFreeUni__FPv((void*)encodedText[2]);
+        }
     } else {
         char* src = s_passwordWideMessageTemplates + kPasswordUnavailableTextOffset;
         unsigned int length;
-        if (*(unsigned int*)outputText >> 31 == 0) length = *(unsigned char*)outputText & 0x7f;
-        else length = AsMWStringStorage(outputText)->length;
+        if (*(unsigned int*)outputText >> 31 == 0)
+            length = *(unsigned char*)outputText & 0x7f;
+        else
+            length = AsMWStringStorage(outputText)->length;
         // The string ABI takes an address to a stateless allocator byte. Its value
         // is immaterial; the volatile read preserves the original allocator-token setup.
-        struct { volatile char a; char pad[3]; } w;
+        struct {
+            volatile char a;
+            char pad[3];
+        } w;
         char ch;
         ch = w.a;
         unsigned int wideLength = wcslen((const wchar_t*)src);
@@ -598,125 +690,121 @@ void CPasswordMain_GetPasswordText(void* selfUnused, void* outputText, unsigned 
 #pragma opt_propagation reset
 #pragma use_lmw_stmw reset
 // Initialize the password actor's cached full-circle angle.
-void PasswordMain_InitializeAngleCache() { s_passwordMainAngleCache = kFloat_6_2831855; }
+void PasswordMain_InitializeAngleCache() {
+    s_passwordMainAngleCache = kFloat_6_2831855;
+}
 // Destroy the task base and optionally free the password task.
-void* CPasswordTask_dtor(void* self, int destroy) {
-    if (self != 0) {
-        CTask_dtor(self, 0);
-        if (destroy > 0) __dl__FPv(self);
-    }
-    return self;
+CPasswordTask::~CPasswordTask() {
+    __dt__5CTaskFv(this, 0);
 }
 // Initialize the actor interfaces and mark all UI resources as unloaded.
-void* CPasswordMain_Ctor(void* self) {
-    __ct__18NativeBase80201D18Fv(self);
-    *(void**)self = __vt__13CPasswordMain;
-    (*(char**)&AsCPasswordMain(self)->taskMainVtable) = __vt__13CPasswordMain + 0x3c;
-    AsCPasswordMain(self)->passwordPanelEntryId = -1;
-    AsCPasswordMain(self)->backgroundEntryId = -1;
-    AsCPasswordMain(self)->titleCaptionEntryId = -1;
-    (*(int*)&AsCPasswordMain(self)->textRenderer) = 0;
-    (*(char*)&AsCPasswordMain(self)->transitionRequested) = 0;
-    return self;
+CPasswordMain::CPasswordMain() {
+    __ct__18NativeBase80201D18Fv(this);
+    *(void**)this = __vt__13CPasswordMain;
+    (*(char**)&taskMainVtable) = __vt__13CPasswordMain + 0x3c;
+    passwordPanelEntryId = -1;
+    backgroundEntryId = -1;
+    titleCaptionEntryId = -1;
+    (*(int*)&textRenderer) = 0;
+    (*(char*)&transitionRequested) = 0;
 }
 typedef LocalNString_u80335C0C LocalString;
 // Create the named password actor with an empty argument and make it the main actor.
-void CPasswordTask_CreateActors(void* self) {
+void CPasswordTask::CreateActors() {
     char ch;
-    struct { volatile char a; char pad[3]; } w;
+    struct {
+        volatile char a;
+        char pad[3];
+    } w;
     LocalString local;
     const char* base = passwordMenuStrings + kPasswordEmptyArgument;
     unsigned int len = strlen(base);
     String_ReserveCapacity(&local, len);
     ch = w.a;
     String_ReplaceRange(&local, 0, 0, base, base + len, &ch);
-    int result = TaskActorTable_CreateNamedActor(self, passwordMenuStrings + kPasswordActorClass, passwordMenuStrings + kPasswordActorName, 0, &local);
-    CTask_SetMainActor(self, result);
+    void* result = TaskActorTable_CreateNamedActor(this, passwordMenuStrings + kPasswordActorClass,
+                                                   passwordMenuStrings + kPasswordActorName, 0, &local);
+    ((CTask*)this)->SetMainActor(result);
 }
 // Initialize the task interfaces and clear both actor-skip masks.
-void* CPasswordTask_Ctor(void* self) {
-    CTask_Ctor(self);
-    *(void**)self = &__vt__13CPasswordTask;
-    ((PasswordTaskInterfaces*)self)->processVtable = (char*)&__vt__13CPasswordTask + 0x10;
-    ((PasswordTaskInterfaces*)self)->taskVtable = (char*)&__vt__13CPasswordTask + 0x1c;
+CPasswordTask::CPasswordTask() {
+    ((CTask*)this)->Init();
+    *(void**)this = &__vt__13CPasswordTask;
+    ((PasswordTaskInterfaces*)this)->processVtable = (char*)&__vt__13CPasswordTask + 0x10;
+    ((PasswordTaskInterfaces*)this)->taskVtable = (char*)&__vt__13CPasswordTask + 0x1c;
     g_defaultActorSkipMask = 0;
     g_actorSkipMask = 0;
-    return self;
 }
 
 // Draw the background, password panel, caption and generated text in order.
-void CPasswordMain_OnDisplay(void* self) {
+void CPasswordMain::OnDisplay() {
     EnsurePasswordBpController();
-    BpObject_Draw(IdMap_Lookup(Sing_805DC5F0(), AsCPasswordMain(self)->backgroundEntryId));
+    BpObject_Draw(IdMap_Lookup(Sing_805DC5F0(), backgroundEntryId));
     EnsurePasswordBpController();
-    BpObject_Draw(IdMap_Lookup(Sing_805DC5F0(), AsCPasswordMain(self)->passwordPanelEntryId));
+    BpObject_Draw(IdMap_Lookup(Sing_805DC5F0(), passwordPanelEntryId));
     EnsurePasswordBpController();
-    BpObject_Draw(IdMap_Lookup(Sing_805DC5F0(), AsCPasswordMain(self)->titleCaptionEntryId));
-    Text_DrawGlyphs(AsCPasswordMain(self)->textRenderer);
+    BpObject_Draw(IdMap_Lookup(Sing_805DC5F0(), titleCaptionEntryId));
+    Text_DrawGlyphs(textRenderer);
 }
 
-struct PasswordRendererOwner { 
-virtual void m1(int);
+struct PasswordRendererOwner {
+    virtual void m1(int);
 };
 // Delete the text renderer and release each loaded UI entry.
-void CPasswordMain_OnDestroy(void* self) {
-    if (AsCPasswordMain(self)->textRenderer != 0) {
-        if (AsCPasswordMain(self)->textRenderer != 0) {
-            PasswordRendererOwner* obj = (PasswordRendererOwner*)AsCPasswordMain(self)->textRenderer;
+void CPasswordMain::OnDestroy() {
+    if (textRenderer != 0) {
+        if (textRenderer != 0) {
+            PasswordRendererOwner* obj = (PasswordRendererOwner*)textRenderer;
             obj->m1(1); // Destroy the owned renderer and release its storage.
         }
-        AsCPasswordMain(self)->textRenderer = 0;
+        textRenderer = 0;
     }
-    if (AsCPasswordMain(self)->passwordPanelEntryId != -1) {
+    if (passwordPanelEntryId != -1) {
         EnsurePasswordBpController();
-        CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCPasswordMain(self)->passwordPanelEntryId);
-        AsCPasswordMain(self)->passwordPanelEntryId = -1;
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(passwordPanelEntryId);
+        passwordPanelEntryId = -1;
     }
-    if (AsCPasswordMain(self)->backgroundEntryId != -1) {
+    if (backgroundEntryId != -1) {
         EnsurePasswordBpController();
-        CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCPasswordMain(self)->backgroundEntryId);
-        AsCPasswordMain(self)->backgroundEntryId = -1;
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(backgroundEntryId);
+        backgroundEntryId = -1;
     }
-    if (AsCPasswordMain(self)->titleCaptionEntryId != -1) {
+    if (titleCaptionEntryId != -1) {
         EnsurePasswordBpController();
-        CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCPasswordMain(self)->titleCaptionEntryId);
-        AsCPasswordMain(self)->titleCaptionEntryId = -1;
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(titleCaptionEntryId);
+        titleCaptionEntryId = -1;
     }
 }
 
 // Restore the actor interfaces, release UI ownership and optionally free the actor.
-void* CPasswordMain_dtor(void* self, int destroy) {
-    if (self != 0) {
-        PasswordRendererOwner* obj = (PasswordRendererOwner*)AsCPasswordMain(self)->textRenderer;
-        *(void**)self = __vt__13CPasswordMain;
-        (*(char**)&AsCPasswordMain(self)->taskMainVtable) = __vt__13CPasswordMain + 0x3c;
+CPasswordMain::~CPasswordMain() {
+    PasswordRendererOwner* obj = (PasswordRendererOwner*)textRenderer;
+    *(void**)this = __vt__13CPasswordMain;
+    (*(char**)&taskMainVtable) = __vt__13CPasswordMain + 0x3c;
+    if (obj != 0) {
         if (obj != 0) {
-            if (obj != 0) {
-                obj->m1(1); // Destroy the owned renderer and release its storage.
-            }
-            AsCPasswordMain(self)->textRenderer = 0;
+            obj->m1(1); // Destroy the owned renderer and release its storage.
         }
-        if (AsCPasswordMain(self)->passwordPanelEntryId != -1) {
-            EnsurePasswordBpController();
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCPasswordMain(self)->passwordPanelEntryId);
-            AsCPasswordMain(self)->passwordPanelEntryId = -1;
-        }
-        if (AsCPasswordMain(self)->backgroundEntryId != -1) {
-            EnsurePasswordBpController();
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCPasswordMain(self)->backgroundEntryId);
-            AsCPasswordMain(self)->backgroundEntryId = -1;
-        }
-        if (AsCPasswordMain(self)->titleCaptionEntryId != -1) {
-            EnsurePasswordBpController();
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsCPasswordMain(self)->titleCaptionEntryId);
-            AsCPasswordMain(self)->titleCaptionEntryId = -1;
-        }
-        if (self != 0) {
-            __dt__18NativeBase80201D18Fv(self, 0);
-        }
-        if (destroy > 0) __dl__FPv(self);
+        textRenderer = 0;
     }
-    return self;
+    if (passwordPanelEntryId != -1) {
+        EnsurePasswordBpController();
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(passwordPanelEntryId);
+        passwordPanelEntryId = -1;
+    }
+    if (backgroundEntryId != -1) {
+        EnsurePasswordBpController();
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(backgroundEntryId);
+        backgroundEntryId = -1;
+    }
+    if (titleCaptionEntryId != -1) {
+        EnsurePasswordBpController();
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(titleCaptionEntryId);
+        titleCaptionEntryId = -1;
+    }
+    if (this != 0) {
+        __dt__18NativeBase80201D18Fv(this, 0);
+    }
 }
 
 } // extern "C"

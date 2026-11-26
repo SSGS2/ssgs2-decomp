@@ -11,9 +11,10 @@ public:
     void* device; // 0x4: FileIO_DispatchDeviceHandleOperation10: receiver for virtual file operations
     char pad_008[0xc];
     unsigned int flags; // 0x14: FileIO_ReadFile: 0x40000000 async, 0x20000000 direct buffer
-    void* transferBuffer; // 0x18: FileIO_ReadFile/FileIO_WriteFile/FileIO_PollAsyncTransferResult: device transfer buffer
+    void*
+        transferBuffer; // 0x18: FileIO_ReadFile/FileIO_WriteFile/FileIO_PollAsyncTransferResult: device transfer buffer
     unsigned int allocatedBytes; // 0x1C: FileIO_ReadFile: aligned allocation size; nonzero means free buffer
-    void* readCopyDestination; // 0x20: FileIO_PollAsyncTransferResult: memcpy destination after buffered read
+    void* readCopyDestination;   // 0x20: FileIO_PollAsyncTransferResult: memcpy destination after buffered read
     unsigned int requestedBytes; // 0x24: FileIO_PollAsyncTransferResult: memcpy byte count
 };
 

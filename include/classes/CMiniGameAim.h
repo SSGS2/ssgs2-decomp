@@ -4,10 +4,22 @@
 
 class CMiniGameAim {
 public:
-    void* table; // 0x0: CMiniGameAim_ResolveEntries loads file buffer; CMiniGameAim_GetEntry calls Table_GetEntry
-    void* vtable; // 0x4: CMiniGameAim_Ctor and CMiniGameAim_dtor
-    void* sharedFile; // 0x8: CMiniGameAim_PollLoad creates; dtor calls CSharedFileHandle_Destroy
-    void* fallbackEntry; // 0xC: CMiniGameAim_ResolveEntries allocates three ints; CMiniGameAim_GetEntry returns it
+    void* table;         // 0x0: ResolveEntries loads the file buffer; GetEntry calls Table_GetEntry
+    void* vtable;        // 0x4: constructor and destructor
+    void* sharedFile;    // 0x8: PollLoad creates; destructor calls CSharedFileHandle_Destroy
+    void* fallbackEntry; // 0xC: ResolveEntries allocates three ints; GetEntry returns it
+
+    int vfunc_1();
+    int vfunc_2();
+    int vfunc_3();
+    int vfunc_4();
+    void* GetEntry(int index);
+    int GetEntryCount();
+    void ResolveEntries();
+    int PollLoad(int fileName);
+
+    CMiniGameAim();
+    ~CMiniGameAim();
 };
 
 #define OFF(f, o) typedef char CMiniGameAim_off_##f[((int)&((CMiniGameAim*)0)->f == (o)) ? 1 : -1]

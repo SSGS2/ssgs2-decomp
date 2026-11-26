@@ -1,3 +1,7 @@
+// Blocked word rings: growable circular queues of 32-bit words stored in 256-word blocks,
+// with iterators and wrap-aware copy and insert helpers. It also holds the weighted random
+// club effect for party goods and the stereo mixer for queued movie audio.
+
 #include <decomp/static_init.h>
 #include "game/golfball.h"
 #include "classes/CSharedDoc.h"
@@ -10,15 +14,18 @@ struct EH5Cleanup {
     // Adopt cleanup responsibility without owning the enclosing object's storage.
     EH5Cleanup(void* p, void (*d)(void*, int)) : object(p), destroy(d), active(true) {}
     // Hand destruction back to the explicit normal-exit path.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Destroy the temporary's contents on exceptional exit.
-    ~EH5Cleanup() { if (active) destroy(object, -1); }
+    ~EH5Cleanup() {
+        if (active)
+            destroy(object, -1);
+    }
 };
 
 extern "C" char s_movieSampleFreeQueue[];
 extern "C" char s_movieSampleReadyQueue[];
-// Translation unit 0x8025BBD0-0x8025D2A4 (26 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -39,79 +46,84 @@ enum PartyEffectStringOffset {
     kLengthErrorType = 0x93,
     kVectorLengthError = 0xCA
 };
-struct RandomClubEffectView { char baseStorage[0x10]; unsigned int applied; };
-struct ClubSelectionView { char baseStorage[0x41]; unsigned char clubIndex; };
+struct RandomClubEffectView {
+    char baseStorage[0x10];
+    unsigned int applied;
+};
+struct ClubSelectionView {
+    char baseStorage[0x41];
+    unsigned char clubIndex;
+};
 struct MovieSampleBuffer {
     unsigned int producerState;
     short* samples;
     unsigned int remainingFrames;
 };
 
-
 struct BlockedRingSizeView;
 struct RingDistanceIterator;
 
 void RingBuffer32_AppendWord(void*, const unsigned int&);
-void *Container_GetMember8(void *);
-void *BlockedWordRing_Init(void *, void *);
-int BlockedWordRing_GetMaxWords(void *);
-void *BlockedWordRing_GetConsumedWords(void **);
-unsigned int BlockedWordRing_GetUsableWordCapacity(BlockedRingSizeView *);
-unsigned int RingBuffer32_GetUsableCapacity(void *);
-unsigned int RingBuffer32_GetCountWord(void *);
-int RingBuffer_IsEmpty(void *);
-void RingBuffer32_ReallocateStorage(void *, unsigned int);
-void *UnsignedWord_SelectMaxPointer(unsigned int *, unsigned int *);
-void RingBuffer_ThrowLengthError(const char *);
-void RingBuffer32_ResetCount(void *);
+void* Container_GetMember8(void*);
+void* BlockedWordRing_Init(void*, void*);
+int BlockedWordRing_GetMaxWords(void*);
+void* BlockedWordRing_GetConsumedWords(void**);
+unsigned int BlockedWordRing_GetUsableWordCapacity(BlockedRingSizeView*);
+unsigned int RingBuffer32_GetUsableCapacity(void*);
+unsigned int RingBuffer32_GetCountWord(void*);
+int RingBuffer_IsEmpty(void*);
+void RingBuffer32_ReallocateStorage(void*, unsigned int);
+void* UnsignedWord_SelectMaxPointer(unsigned int*, unsigned int*);
+void RingBuffer_ThrowLengthError(const char*);
+void RingBuffer32_ResetCount(void*);
 extern char partyGoodsEffectStrings[];
-void RingBuffer32_InsertRangeImpl(void *, void *, void *, void *, void *);
-void *RingIterator32_CopyWithAllocatorTag(void *, const void *);
-int RingIterator32_GetDistanceFromCurrentWord(unsigned int *, const RingDistanceIterator *);
-void *RingBuffer32_MakeBeginIterator(void *, void *);
-void *RingBuffer32_MakeEndIteratorVolatile(void *, void *);
-void *RingIterator32_Copy(void *, void *);
-void *RingIterator32_RetreatInPlace(void *, unsigned int);
-void *RingIterator32_GetCurrentPointer(void *);
-void *RingIterator32_AddOffset(void *, void *, unsigned int);
-void *RingIterator32_CopyForward(void *, void *, void *, void *);
-void *RingIterator32_CopyWords(void *, void *);
-void *RingIterator32_SubtractOffset(void *, void *, unsigned int);
-void *RingIterator32_CopyBackward(void *, void *, void *, void *);
-void *RingBuffer32_GetCapacityAddressForAllocation(void *);
-void *RingBuffer32_InitializeHeader(void *, void *);
-void *RingBuffer32_CalculateGrowth(void *, unsigned int);
-void *RingBuffer32_AllocateWords(void *, unsigned int, void *);
-void *RingBuffer32_GetAllocationWord(void *);
-void *RingBuffer32_ConstructWord(void *, void *, void *);
-void *RingBuffer32_AppendIteratorRange(void *, unsigned int, void *);
-void *RingBuffer32_CopyWrappedRangeToTail(void *, void *, unsigned int);
-void *RingBuffer32_ClearCount(void *);
-void *Swap_Int32ForRingStorage(void *, void *);
-void *Swap_Int32(void *, void *);
-void *RingBuffer32_GetCapacityAddress(void *);
-void RingBuffer32_Release(void *, int);
-void *RingBuffer32_GetCapacityAddressForInsert(void *);
-void appFreeUni__FPv(void *);
-void __dl__FPv(void *);
-void *__nwa__FUl(unsigned int);
-void *__nw__FUl(unsigned int);
-void __dla__FPv(void *);
-void __throw(const char *, void *, void *);
-unsigned int strlen(const char *);
-char *strcpy(char *, const char *);
+void RingBuffer32_InsertRangeImpl(void*, void*, void*, void*, void*);
+void* RingIterator32_CopyWithAllocatorTag(void*, const void*);
+int RingIterator32_GetDistanceFromCurrentWord(unsigned int*, const RingDistanceIterator*);
+void* RingBuffer32_MakeBeginIterator(void*, void*);
+void* RingBuffer32_MakeEndIteratorVolatile(void*, void*);
+void* RingIterator32_Copy(void*, void*);
+void* RingIterator32_RetreatInPlace(void*, unsigned int);
+void* RingIterator32_GetCurrentPointer(void*);
+void* RingIterator32_AddOffset(void*, void*, unsigned int);
+void* RingIterator32_CopyForward(void*, void*, void*, void*);
+void* RingIterator32_CopyWords(void*, void*);
+void* RingIterator32_SubtractOffset(void*, void*, unsigned int);
+void* RingIterator32_CopyBackward(void*, void*, void*, void*);
+void* RingBuffer32_GetCapacityAddressForAllocation(void*);
+void* RingBuffer32_InitializeHeader(void*, void*);
+void* RingBuffer32_CalculateGrowth(void*, unsigned int);
+void* RingBuffer32_AllocateWords(void*, unsigned int, void*);
+void* RingBuffer32_GetAllocationWord(void*);
+void* RingBuffer32_ConstructWord(void*, void*, void*);
+void* RingBuffer32_AppendIteratorRange(void*, unsigned int, void*);
+void* RingBuffer32_CopyWrappedRangeToTail(void*, void*, unsigned int);
+void* RingBuffer32_ClearCount(void*);
+void* Swap_Int32ForRingStorage(void*, void*);
+void* Swap_Int32(void*, void*);
+void* RingBuffer32_GetCapacityAddress(void*);
+void RingBuffer32_Release(void*, int);
+void* RingBuffer32_GetCapacityAddressForInsert(void*);
+void appFreeUni__FPv(void*);
+void __dl__FPv(void*);
+void* __nwa__FUl(unsigned int);
+void* __nw__FUl(unsigned int);
+void __dla__FPv(void*);
+void __throw(const char*, void*, void*);
+unsigned int strlen(const char*);
+char* strcpy(char*, const char*);
 extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std11logic_error[];
 extern char __vt__Q23std12length_error[];
 void __dt__Q23std12length_errorFv();
 extern signed char s_uintVectorMaxSizeInitialized;
 extern unsigned int s_fourByteVectorMaxElements;
-int OSReceiveMessage(const char *, unsigned int *, int);
-void OSSendMessage(const char *, int, int);
-void *memcpy(void *, const void *, unsigned int);
-void *memmove(void *, const void *, unsigned int);
-void *memset(void *, int, unsigned int);
-void *appMallocDummy__FUl(int);
+int OSReceiveMessage(const char*, unsigned int*, int);
+void OSSendMessage(const char*, int, int);
+void* memcpy(void*, const void*, unsigned int);
+void* memmove(void*, const void*, unsigned int);
+void* memset(void*, int, unsigned int);
+void* appMallocDummy__FUl(int);
 int GolfBall__Fv();
 int InstanceTable_Get();
 int rand();
@@ -127,7 +139,7 @@ extern unsigned int s_audioVolumeQ15;
 extern int s_audioMixPreserveStereo;
 
 struct RingCurrentWordView {
-    unsigned int *values;
+    unsigned int* values;
     unsigned int index;
 };
 
@@ -143,31 +155,31 @@ struct RingCurrentWordView {
 // survive reallocation. Single-wrap advances require offsets within one ring span.
 
 struct RingBeginSource {
-    unsigned int *values;
+    unsigned int* values;
     unsigned int begin;
     unsigned int wrapOrigin;
     unsigned int end;
 };
 
 struct RingBeginIterator {
-    unsigned int *current;
-    unsigned int *begin;
-    unsigned int *wrapOrigin;
-    unsigned int *end;
+    unsigned int* current;
+    unsigned int* begin;
+    unsigned int* wrapOrigin;
+    unsigned int* end;
 };
 
 struct RingLastWordView {
-    unsigned int *values;
+    unsigned int* values;
     unsigned int begin;
     unsigned int current;
     unsigned int size;
 };
 
 struct RingMutableIterator {
-    unsigned int *current;
-    unsigned int *begin;
-    unsigned int *wrapOrigin;
-    unsigned int *end;
+    unsigned int* current;
+    unsigned int* begin;
+    unsigned int* wrapOrigin;
+    unsigned int* end;
 };
 
 struct BlockedRingSizeView {
@@ -179,93 +191,111 @@ struct BlockedRingSizeView {
 };
 
 struct RingDistanceIterator {
-    unsigned int *current;
-    unsigned int *begin;
-    unsigned int *wrapOrigin;
-    unsigned int *end;
+    unsigned int* current;
+    unsigned int* begin;
+    unsigned int* wrapOrigin;
+    unsigned int* end;
 };
 
 struct RingEndIterator {
-    unsigned int *current;
-    unsigned int *begin;
-    unsigned int *wrapOrigin;
-    unsigned int *end;
+    unsigned int* current;
+    unsigned int* begin;
+    unsigned int* wrapOrigin;
+    unsigned int* end;
 };
 
 struct RingEndSource {
-    unsigned int *values;
+    unsigned int* values;
     unsigned int begin;
     unsigned int index;
     unsigned int size;
 };
 
 struct RingRetreatIterator {
-    unsigned int *current;
-    unsigned int *begin;
-    unsigned int *wrapOrigin;
-    unsigned int *end;
+    unsigned int* current;
+    unsigned int* begin;
+    unsigned int* wrapOrigin;
+    unsigned int* end;
 };
 
-struct BlockedRingOwner { unsigned int consumedWords, logicalWordCount; void **items; unsigned int begin, count, capacity; };
+struct BlockedRingOwner {
+    unsigned int consumedWords, logicalWordCount;
+    void** items;
+    unsigned int begin, count, capacity;
+};
 
-struct ClubChoiceWeights { int v[13]; };
+struct ClubChoiceWeights {
+    int v[13];
+};
 
-struct RingCopySourceIterator { unsigned int *current, *begin, *wrapOrigin, *end; unsigned char allocatorTag; };
-struct RingCopyDestinationIterator { unsigned int *current, *begin, *wrapOrigin, *end; };
+struct RingCopySourceIterator {
+    unsigned int *current, *begin, *wrapOrigin, *end;
+    unsigned char allocatorTag;
+};
+struct RingCopyDestinationIterator {
+    unsigned int *current, *begin, *wrapOrigin, *end;
+};
 
-void RingIterator32_CopyRangeWrapped(RingCopyDestinationIterator *out, RingCopySourceIterator *a, RingCopySourceIterator *b, RingCopyDestinationIterator *queue);
+void RingIterator32_CopyRangeWrapped(RingCopyDestinationIterator* out, RingCopySourceIterator* a,
+                                     RingCopySourceIterator* b, RingCopyDestinationIterator* queue);
 
-struct RingIteratorWords { unsigned int *current, *begin, *wrapOrigin, *end; };
-struct RingPopFrontView { unsigned int storageAddress, current, remaining, end; };
-void RingBuffer32_PushBackWord(void *, const unsigned int &);
-unsigned int *RingBuffer_GetCurrentPtr(RingCurrentWordView *);
-unsigned int *RingBuffer_GetLastElementPtr(RingLastWordView *);
-void RingBuffer32_AdvanceFrontAndDecrementCount(RingPopFrontView *);
-void *BlockedWordRing_dtor(BlockedRingOwner *, int);
-void RingBuffer32_BuildEndIterator(RingEndIterator *, const RingEndSource *);
-void RingIterator32_CopyAndRetreat(RingRetreatIterator *, const RingRetreatIterator *, int);
-void RingBuffer32_BuildBeginIterator(RingBeginIterator *, const RingBeginSource *);
-void RingBuffer32_InsertRangeUsingLocalTag(void *, unsigned int *, unsigned int *, unsigned int *, unsigned int *);
-void RingBuffer32_SwapHeader(RingBeginIterator *, RingBeginIterator *);
-void *BlockedWordRing_GetBlockRing(void *);
-void *AllocateWordArray(void *, int);
-unsigned int RingBuffer32_GetUsableCapacity(void *);
-unsigned int RingBuffer32_GetCountWord(void *);
-int RingBuffer_IsEmpty(void *);
-void RingBuffer32_ReallocateStorage(void *, unsigned int);
-void *UnsignedWord_SelectMaxPointer(unsigned int *, unsigned int *);
-void RingBuffer_ThrowLengthError(const char *);
-void RingBuffer32_ResetCount(void *);
-void *BlockedWordRing_Init(void *, void *);
+struct RingIteratorWords {
+    unsigned int *current, *begin, *wrapOrigin, *end;
+};
+struct RingPopFrontView {
+    unsigned int storageAddress, current, remaining, end;
+};
+void RingBuffer32_PushBackWord(void*, const unsigned int&);
+unsigned int* RingBuffer_GetCurrentPtr(RingCurrentWordView*);
+unsigned int* RingBuffer_GetLastElementPtr(RingLastWordView*);
+void RingBuffer32_AdvanceFrontAndDecrementCount(RingPopFrontView*);
+void* BlockedWordRing_dtor(BlockedRingOwner*, int);
+void RingBuffer32_BuildEndIterator(RingEndIterator*, const RingEndSource*);
+void RingIterator32_CopyAndRetreat(RingRetreatIterator*, const RingRetreatIterator*, int);
+void RingBuffer32_BuildBeginIterator(RingBeginIterator*, const RingBeginSource*);
+void RingBuffer32_InsertRangeUsingLocalTag(void*, unsigned int*, unsigned int*, unsigned int*, unsigned int*);
+void RingBuffer32_SwapHeader(RingBeginIterator*, RingBeginIterator*);
+void* BlockedWordRing_GetBlockRing(void*);
+void* AllocateWordArray(void*, int);
+unsigned int RingBuffer32_GetUsableCapacity(void*);
+unsigned int RingBuffer32_GetCountWord(void*);
+int RingBuffer_IsEmpty(void*);
+void RingBuffer32_ReallocateStorage(void*, unsigned int);
+void* UnsignedWord_SelectMaxPointer(unsigned int*, unsigned int*);
+void RingBuffer_ThrowLengthError(const char*);
+void RingBuffer32_ResetCount(void*);
+void* BlockedWordRing_Init(void*, void*);
 
 #pragma push
 #pragma use_lmw_stmw on
 // Ensure enough 256-word blocks, recycling consumed blocks or growing the owning block ring.
-void BlockedWordRing_EnsureAdditionalCapacity(void *self, unsigned int additionalWords) {
-    RingPopFrontView *blockRing = (RingPopFrontView *)Container_GetMember8(self);
-    unsigned int *allocator = (unsigned int *)BlockedWordRing_GetBlockRing(self);
+void BlockedWordRing_EnsureAdditionalCapacity(void* self, unsigned int additionalWords) {
+    RingPopFrontView* blockRing = (RingPopFrontView*)Container_GetMember8(self);
+    unsigned int* allocator = (unsigned int*)BlockedWordRing_GetBlockRing(self);
     unsigned int blocksNeeded = (additionalWords >> kBlockWordShift) + ((additionalWords & kBlockWordMask) != 0);
     // Phase 1: move wholly consumed front blocks to the tail without reallocating them.
-    while (blocksNeeded != 0 && (unsigned int)BlockedWordRing_GetConsumedWords((void **)self) >= kWordsPerBlock) {
-        unsigned int value = *RingBuffer_GetCurrentPtr((RingCurrentWordView *)blockRing);
+    while (blocksNeeded != 0 && (unsigned int)BlockedWordRing_GetConsumedWords((void**)self) >= kWordsPerBlock) {
+        unsigned int value = *RingBuffer_GetCurrentPtr((RingCurrentWordView*)blockRing);
         RingBuffer32_AdvanceFrontAndDecrementCount(blockRing);
-        *RingBuffer_GetLastElementPtr((RingLastWordView *)blockRing) = value;
+        *RingBuffer_GetLastElementPtr((RingLastWordView*)blockRing) = value;
         unsigned int reservedTailSlot = 0;
         RingBuffer32_PushBackWord(blockRing, reservedTailSlot);
         --blocksNeeded;
-        *(unsigned int *)self -= kWordsPerBlock;
+        *(unsigned int*)self -= kWordsPerBlock;
     }
     // Phase 2: allocate missing blocks, growing the pointer ring only when necessary.
     if (blocksNeeded != 0) {
         unsigned int wordsNeeded = blocksNeeded << kBlockWordShift;
         if (wordsNeeded > BlockedWordRing_GetMaxWords(self) ||
-            BlockedWordRing_GetUsableWordCapacity((BlockedRingSizeView *)self) > BlockedWordRing_GetMaxWords(self) - wordsNeeded)
+            BlockedWordRing_GetUsableWordCapacity((BlockedRingSizeView*)self) >
+                BlockedWordRing_GetMaxWords(self) - wordsNeeded)
             RingBuffer_ThrowLengthError(partyGoodsEffectStrings + kBlockLengthError);
         unsigned int capacity = RingBuffer32_GetUsableCapacity(blockRing);
         unsigned int used = RingBuffer32_GetCountWord(blockRing);
         if (blocksNeeded + used <= capacity) {
             while (blocksNeeded != 0) {
-                *RingBuffer_GetLastElementPtr((RingLastWordView *)blockRing) = (unsigned int)AllocateWordArray(allocator, kWordsPerBlock);
+                *RingBuffer_GetLastElementPtr((RingLastWordView*)blockRing) =
+                    (unsigned int)AllocateWordArray(allocator, kWordsPerBlock);
                 unsigned int reservedTailSlot = 0;
                 RingBuffer32_PushBackWord(blockRing, reservedTailSlot);
                 --blocksNeeded;
@@ -274,19 +304,20 @@ void BlockedWordRing_EnsureAdditionalCapacity(void *self, unsigned int additiona
             BlockedRingOwner replacement;
             BlockedWordRing_Init(&replacement, allocator);
             EH5Cleanup eh5Cleanup21(&replacement, (void (*)(void*, int))BlockedWordRing_dtor);
-            RingPopFrontView *newBlockRing = (RingPopFrontView *)Container_GetMember8(&replacement);
+            RingPopFrontView* newBlockRing = (RingPopFrontView*)Container_GetMember8(&replacement);
             unsigned int used2 = RingBuffer32_GetCountWord(blockRing);
             unsigned int size;
             unsigned int total = blocksNeeded + used2 + 1;
             size = RingBuffer32_GetUsableCapacity(blockRing) * 2;
-            void *memory = UnsignedWord_SelectMaxPointer(&size, &total);
-            RingBuffer32_ReallocateStorage(newBlockRing, *(unsigned int *)memory);
+            void* memory = UnsignedWord_SelectMaxPointer(&size, &total);
+            RingBuffer32_ReallocateStorage(newBlockRing, *(unsigned int*)memory);
             {
                 unsigned int reservedTailSlot = 0;
                 RingBuffer32_PushBackWord(newBlockRing, reservedTailSlot);
             }
             while (blocksNeeded != 0) {
-                *RingBuffer_GetLastElementPtr((RingLastWordView *)newBlockRing) = (unsigned int)AllocateWordArray(allocator, kWordsPerBlock);
+                *RingBuffer_GetLastElementPtr((RingLastWordView*)newBlockRing) =
+                    (unsigned int)AllocateWordArray(allocator, kWordsPerBlock);
                 unsigned int reservedTailSlot = 0;
                 RingBuffer32_PushBackWord(newBlockRing, reservedTailSlot);
                 --blocksNeeded;
@@ -296,16 +327,20 @@ void BlockedWordRing_EnsureAdditionalCapacity(void *self, unsigned int additiona
                 RingBeginIterator srcIter;
                 RingRetreatIterator other;
                 RingEndIterator range;
-                RingBuffer32_BuildEndIterator(&range, (RingEndSource *)blockRing);
-                RingIterator32_CopyAndRetreat((RingRetreatIterator *)&other, (RingRetreatIterator *)&range, 1);
-                RingBuffer32_BuildBeginIterator(&srcIter, (RingBeginSource *)blockRing);
-                RingBuffer32_BuildBeginIterator(&copyIter, (RingBeginSource *)newBlockRing);
-                RingBuffer32_InsertRangeUsingLocalTag(newBlockRing, (unsigned int *)&copyIter, (unsigned int *)&srcIter, (unsigned int *)&other, 0);
+                RingBuffer32_BuildEndIterator(&range, (RingEndSource*)blockRing);
+                RingIterator32_CopyAndRetreat((RingRetreatIterator*)&other, (RingRetreatIterator*)&range, 1);
+                RingBuffer32_BuildBeginIterator(&srcIter, (RingBeginSource*)blockRing);
+                RingBuffer32_BuildBeginIterator(&copyIter, (RingBeginSource*)newBlockRing);
+                RingBuffer32_InsertRangeUsingLocalTag(newBlockRing, (unsigned int*)&copyIter, (unsigned int*)&srcIter,
+                                                      (unsigned int*)&other, 0);
             }
             // Commit: pointers now belong to self; reset the old ring to avoid freeing moved blocks.
-            RingBuffer32_SwapHeader((RingBeginIterator *)blockRing, (RingBeginIterator *)newBlockRing);
+            RingBuffer32_SwapHeader((RingBeginIterator*)blockRing, (RingBeginIterator*)newBlockRing);
             RingBuffer32_ResetCount(newBlockRing);
-            { eh5Cleanup21.release(); BlockedWordRing_dtor(&replacement, -1); }
+            {
+                eh5Cleanup21.release();
+                BlockedWordRing_dtor(&replacement, -1);
+            }
         }
     }
 }
@@ -316,22 +351,26 @@ void BlockedWordRing_EnsureAdditionalCapacity(void *self, unsigned int additiona
 // Apply the random-club effect once when permitted, choosing among allowed clubs by their weights.
 // Eligible clubs are currentClub..12, not all clubs. Their total weight must be
 // positive (rand() % total has no zero check). Always returns 1, even when deferred.
-int PartyGoods_ApplyWeightedRandomClub(void *effect) {
+int PartyGoods_ApplyWeightedRandomClub(void* effect) {
     if (((RandomClubEffectView*)effect)->applied == 0) {
-        void *sharedDoc = (void *)g_sharedDoc;
-        void *golfDoc = (void *)((CSharedDoc *)sharedDoc)->golfDoc; // 0x8025BBD0.
-        if (((unsigned int)((CGolfDoc *)golfDoc)->gameStateFlags & kApplyPartyEffectState) != 0) {
-            int *ball = (int *)GolfBall__Fv();
+        void* sharedDoc = (void*)g_sharedDoc;
+        void* golfDoc = (void*)((CSharedDoc*)sharedDoc)->golfDoc; // 0x8025BBD0.
+        if (((unsigned int)((CGolfDoc*)golfDoc)->gameStateFlags & kApplyPartyEffectState) != 0) {
+            int* ball = (int*)GolfBall__Fv();
             if (((CGolfBall*)ball)->m_groundType != kRandomClubExcludedGroundType) {
                 int clubIndex = ((ClubSelectionView*)InstanceTable_Get())->clubIndex;
                 int total = 0;
-                ClubChoiceWeights weights = *(const ClubChoiceWeights *)s_randomClubEffectWeights;
+                ClubChoiceWeights weights = *(const ClubChoiceWeights*)s_randomClubEffectWeights;
                 int i = clubIndex;
-                for (; i < kClubCount; ++i) total += weights.v[i];
+                for (; i < kClubCount; ++i)
+                    total += weights.v[i];
                 int weightedRoll = rand() % total + 1;
                 for (i = clubIndex; i < kClubCount; ++i) {
                     weightedRoll -= weights.v[i];
-                    if (weightedRoll <= 0) { clubIndex = i; break; }
+                    if (weightedRoll <= 0) {
+                        clubIndex = i;
+                        break;
+                    }
                 }
                 ClubSelection_SetClubIndex(InstanceTable_Get(), clubIndex);
                 ((RandomClubEffectView*)effect)->applied = 1;
@@ -345,20 +384,22 @@ int PartyGoods_ApplyWeightedRandomClub(void *effect) {
 // Copy a wrapped iterator range into a wrapped destination and return the advanced destination iterator.
 // Source/destination ranges must be valid and non-overlapping for the forward copy.
 // result receives the final destination; first is also advanced between chunks.
-void RingIterator32_CopyRangeWrapped(RingCopyDestinationIterator *result, RingCopySourceIterator *first, RingCopySourceIterator *last, RingCopyDestinationIterator *destination) {
+void RingIterator32_CopyRangeWrapped(RingCopyDestinationIterator* result, RingCopySourceIterator* first,
+                                     RingCopySourceIterator* last, RingCopyDestinationIterator* destination) {
     if (first->current != last->current) {
         int offset = last->current - first->current;
         if (last->current >= last->wrapOrigin) {
-            if (last->wrapOrigin > first->current) offset -= last->end - last->begin;
+            if (last->wrapOrigin > first->current)
+                offset -= last->end - last->begin;
         } else if (last->wrapOrigin <= first->current) {
             offset += last->end - last->begin;
         }
         // Chunk at destination end; the inner loop handles source wrap independently.
         int wordsLeft = offset;
         for (;;) {
-            unsigned int *destinationPointer = destination->current;
+            unsigned int* destinationPointer = destination->current;
             int destinationContiguous = (int)(destination->end - destinationPointer);
-            int *pn = (destinationContiguous < wordsLeft) ? &destinationContiguous : &wordsLeft;
+            int* pn = (destinationContiguous < wordsLeft) ? &destinationContiguous : &wordsLeft;
             int copyCount = *pn;
 
             RingCopySourceIterator tmp = *first;
@@ -374,21 +415,24 @@ void RingIterator32_CopyRangeWrapped(RingCopyDestinationIterator *result, RingCo
 
             RingCopySourceIterator cur = tmp;
 
-            unsigned int *sourcePointer = first->current;
-            unsigned int *writePointer = destination->current;
-            unsigned int *sourceEnd = first->end;
-            unsigned int *sourceBegin = first->begin;
-            unsigned int *chunkEnd = tmp.current;
+            unsigned int* sourcePointer = first->current;
+            unsigned int* writePointer = destination->current;
+            unsigned int* sourceEnd = first->end;
+            unsigned int* sourceBegin = first->begin;
+            unsigned int* chunkEnd = tmp.current;
             while (sourcePointer != chunkEnd) {
                 *writePointer = *sourcePointer;
                 ++sourcePointer;
                 ++writePointer;
-                if (sourcePointer == sourceEnd) sourcePointer = sourceBegin;
+                if (sourcePointer == sourceEnd)
+                    sourcePointer = sourceBegin;
             }
             destination->current = writePointer;
-            if (destination->current == destination->end) destination->current = destination->begin;
+            if (destination->current == destination->end)
+                destination->current = destination->begin;
             wordsLeft -= copyCount;
-            if (wordsLeft == 0) break;
+            if (wordsLeft == 0)
+                break;
             *first = cur;
         }
     }
@@ -402,25 +446,27 @@ void RingIterator32_CopyRangeWrapped(RingCopyDestinationIterator *result, RingCo
 // address. Both iterators must borrow the same ring and logical wrapOrigin.
 // Physical segments in logical order: [wrapOrigin,end), then [begin,wrapOrigin).
 // Opposite segments need +/- (end-begin); within one segment subtraction suffices.
-int RingIterator32_GetDistanceFromCurrentWord(unsigned int *currentPtr, const RingDistanceIterator *endIterator) {
-    unsigned int *endPointer = endIterator->current;
-    unsigned int *storageBegin = endIterator->begin;
-    unsigned int *startPointer = (unsigned int *)*currentPtr;
+int RingIterator32_GetDistanceFromCurrentWord(unsigned int* currentPtr, const RingDistanceIterator* endIterator) {
+    unsigned int* endPointer = endIterator->current;
+    unsigned int* storageBegin = endIterator->begin;
+    unsigned int* startPointer = (unsigned int*)*currentPtr;
     int distance = endPointer - startPointer;
-    unsigned int *storageEnd = endIterator->end;
+    unsigned int* storageEnd = endIterator->end;
     if (endPointer >= endIterator->wrapOrigin) {
-        if (startPointer >= endIterator->wrapOrigin) return distance;
+        if (startPointer >= endIterator->wrapOrigin)
+            return distance;
         return distance - (storageEnd - storageBegin);
     }
-    if (startPointer < endIterator->wrapOrigin) return distance;
+    if (startPointer < endIterator->wrapOrigin)
+        return distance;
     return distance + (storageEnd - storageBegin);
 }
 
 // Build an iterator at the logical end of a ring, wrapping its physical index.
-void RingBuffer32_BuildEndIterator(RingEndIterator *out, const RingEndSource *in) {
+void RingBuffer32_BuildEndIterator(RingEndIterator* out, const RingEndSource* in) {
     unsigned int size = in->size;
     unsigned int index = size ? (in->begin + in->index) % size : 0;
-    unsigned int *base = in->values;
+    unsigned int* base = in->values;
     unsigned int begin = in->begin;
     out->current = base + index;
     out->begin = base;
@@ -429,7 +475,7 @@ void RingBuffer32_BuildEndIterator(RingEndIterator *out, const RingEndSource *in
 }
 
 // Copy an iterator and move it backward by the requested word count, wrapping once.
-void RingIterator32_CopyAndRetreat(RingRetreatIterator *result, const RingRetreatIterator *source, int retreatWords) {
+void RingIterator32_CopyAndRetreat(RingRetreatIterator* result, const RingRetreatIterator* source, int retreatWords) {
     int negativeOffset = -retreatWords;
     RingRetreatIterator iterator = *source;
     int size = (int)(iterator.end - iterator.begin);
@@ -448,8 +494,8 @@ void RingBuffer32_PushBackWord(void* self, const unsigned int& value) {
 }
 
 // Swap the four ring storage/header words between two owners.
-void RingBuffer32_SwapHeader(RingBeginIterator *left, RingBeginIterator *right) {
-    unsigned int *savedWord = left->current;
+void RingBuffer32_SwapHeader(RingBeginIterator* left, RingBeginIterator* right) {
+    unsigned int* savedWord = left->current;
     left->current = right->current;
     right->current = savedWord;
     savedWord = left->begin;
@@ -464,9 +510,9 @@ void RingBuffer32_SwapHeader(RingBeginIterator *left, RingBeginIterator *right) 
 }
 
 // Build an iterator whose current position and wrap origin are the ring's first element.
-void RingBuffer32_BuildBeginIterator(RingBeginIterator *out, const RingBeginSource *in) {
-    unsigned int *endp = in->values + in->end;
-    unsigned int *cur = in->values + in->begin;
+void RingBuffer32_BuildBeginIterator(RingBeginIterator* out, const RingBeginSource* in) {
+    unsigned int* endp = in->values + in->end;
+    unsigned int* cur = in->values + in->begin;
     out->begin = in->values;
     out->current = cur;
     out->wrapOrigin = cur;
@@ -474,51 +520,51 @@ void RingBuffer32_BuildBeginIterator(RingBeginIterator *out, const RingBeginSour
 }
 
 struct VolatileRingHeader {
-    unsigned int *volatile values;
+    unsigned int* volatile values;
     volatile unsigned int start;
     volatile unsigned int used;
     volatile unsigned int cap;
 };
 
 struct RingConstructionIterator {
-    unsigned int *cur;
-    unsigned int *base;
-    unsigned int *wrapOrigin;
-    unsigned int *end;
+    unsigned int* cur;
+    unsigned int* base;
+    unsigned int* wrapOrigin;
+    unsigned int* end;
 };
 
 struct VolatileRingTemporary {
-    unsigned int *volatile values;
+    unsigned int* volatile values;
     volatile unsigned int a;
     volatile unsigned int b;
     volatile unsigned int c;
 };
 
 struct LengthErrorStringControl {
-    void *vt;
+    void* vt;
     unsigned int rc;
     unsigned int controlWord08; // Historical name: initialized to 1, not the diagnostic byte length.
-    char *data;
+    char* data;
 };
 
 struct LengthErrorStringOwner {
-    char *ptr;
-    char *flag;
+    char* ptr;
+    char* flag;
 };
 
 struct RingLengthError {
-    void *vt;
-    char *msg;
-    void *rep;
+    void* vt;
+    char* msg;
+    void* rep;
 };
 
 // Compute the distance between construction iterators using the shared wrap rule.
-inline int fn_8025CA88Dist(RingConstructionIterator a, RingConstructionIterator b) {
-    return RingIterator32_GetDistanceFromCurrentWord((unsigned int *)&a.cur, (const RingDistanceIterator *)&b);
+inline int GetIteratorDistance(RingConstructionIterator a, RingConstructionIterator b) {
+    return RingIterator32_GetDistanceFromCurrentWord((unsigned int*)&a.cur, (const RingDistanceIterator*)&b);
 }
 
 // Advance a construction iterator with a single wrap at either storage boundary.
-inline RingConstructionIterator fn_8025CA88Adv(RingConstructionIterator it, int offset) {
+inline RingConstructionIterator AdvanceIterator(RingConstructionIterator it, int offset) {
     int size = (int)(it.end - it.base);
     int index = offset + (int)(it.cur - it.base);
     if (index < 0)
@@ -530,12 +576,12 @@ inline RingConstructionIterator fn_8025CA88Adv(RingConstructionIterator it, int 
 }
 
 // Return a reference to the smaller unsigned count.
-inline const unsigned int &fn_8025CA88Min(const unsigned int &a, const unsigned int &b) {
+inline const unsigned int& SelectSmallerCount(const unsigned int& a, const unsigned int& b) {
     return a < b ? a : b;
 }
 
 // Copy a wrapped iterator range into consecutive destination bytes using memmove.
-inline void fn_8025CA88Copy(char *dst, RingConstructionIterator first, RingConstructionIterator last) {
+inline void CopyRangeToBytes(char* dst, RingConstructionIterator first, RingConstructionIterator last) {
     unsigned int flag = (unsigned int)((unsigned int)last.cur < (unsigned int)last.wrapOrigin);
     while (first.cur != last.cur) {
         unsigned int n;
@@ -543,7 +589,7 @@ inline void fn_8025CA88Copy(char *dst, RingConstructionIterator first, RingConst
             n = (unsigned int)(last.cur - first.cur);
         else
             n = (unsigned int)(first.end - first.cur);
-        unsigned int *mid = first.cur + n;
+        unsigned int* mid = first.cur + n;
         unsigned int bytes = (unsigned int)(mid - first.cur) * 4;
         memmove(dst, first.cur, bytes);
         dst += bytes;
@@ -556,25 +602,25 @@ inline void fn_8025CA88Copy(char *dst, RingConstructionIterator first, RingConst
 #pragma push
 #pragma use_lmw_stmw on
 // Initialize an empty blocked-ring owner, retaining the original volatile range-construction path.
-void *BlockedWordRing_Init(void *arg, void *unusedArg) {
+void* BlockedWordRing_Init(void* owner, void* unusedArg) {
     // Result for this empty-source construction:
     //   owner {consumedWords=0, logicalWordCount=0,
     //          blockRing={values=0, start=0, used=0, cap=0}}.
     // The remaining machinery is the generic range constructor: measure source,
     // validate length, allocate n+1 pointer words, copy up to two wrapped spans.
     // Its volatile source fields prevent erasing those paths in the matching C++.
-    // arg is caller-owned header storage; unusedArg is never dereferenced.
+    // owner is caller-owned header storage; unusedArg is never dereferenced.
     // Phase 1: create empty source/target headers. Volatile reloads preserve the
     // original range-construction path even though the source starts empty.
     VolatileRingTemporary tmp;
-    VolatileRingHeader *self = (VolatileRingHeader *)((char *)arg + 8);
-    unsigned int *hdr = (unsigned int *)arg;
+    VolatileRingHeader* self = (VolatileRingHeader*)((char*)owner + 8);
+    unsigned int* hdr = (unsigned int*)owner;
     RingConstructionIterator first;
     RingConstructionIterator last;
 
     int n;
     int d;
-    unsigned int *dst;
+    unsigned int* dst;
     unsigned int cnt;
     unsigned int space;
 
@@ -591,7 +637,7 @@ void *BlockedWordRing_Init(void *arg, void *unusedArg) {
     self->used = 0;
     self->cap = 0;
 
-    unsigned int *v = tmp.values;
+    unsigned int* v = tmp.values;
     unsigned int begin = tmp.a;
     unsigned int cap = tmp.c;
     unsigned int idx = 0;
@@ -607,26 +653,27 @@ void *BlockedWordRing_Init(void *arg, void *unusedArg) {
     last.end = v + cap;
 
     // Phase 2: check the source range length before allocating replacement storage.
-    n = fn_8025CA88Dist(last, first);
+    n = GetIteratorDistance(last, first);
 
     if (n != 0) {
-        if (s_uintVectorMaxSizeInitialized == 0) {            s_uintVectorMaxSizeInitialized = 1;
+        if (s_uintVectorMaxSizeInitialized == 0) {
+            s_uintVectorMaxSizeInitialized = 1;
             s_fourByteVectorMaxElements = 0x3FFFFFFEu;
         }
         if ((unsigned int)n > s_fourByteVectorMaxElements) {
             unsigned char flag = 0;
-            const char *msg = partyGoodsEffectStrings + kVectorLengthError;
+            const char* msg = partyGoodsEffectStrings + kVectorLengthError;
             RingLengthError err;
             LengthErrorStringOwner str;
-            LengthErrorStringControl *rep;
-            char *buf;
+            LengthErrorStringControl* rep;
+            char* buf;
 
             err.vt = __vt__Q23std11logic_error;
-            buf = (char *)__nwa__FUl(strlen(msg) + 1);
+            buf = (char*)__nwa__FUl(strlen(msg) + 1);
             err.msg = buf;
             str.ptr = buf;
-            str.flag = (char *)&flag;
-            rep = (LengthErrorStringControl *)__nw__FUl(0x10);
+            str.flag = (char*)&flag;
+            rep = (LengthErrorStringControl*)__nw__FUl(0x10);
             if (rep != 0) {
                 rep->rc = 1;
                 rep->controlWord08 = 1;
@@ -637,27 +684,27 @@ void *BlockedWordRing_Init(void *arg, void *unusedArg) {
             str.ptr = 0;
             strcpy(buf, msg);
             err.vt = __vt__Q23std12length_error;
-            __throw(partyGoodsEffectStrings + kLengthErrorType, &err, (void *)&__dt__Q23std12length_errorFv);
+            __throw(partyGoodsEffectStrings + kLengthErrorType, &err, (void*)&__dt__Q23std12length_errorFv);
         }
     }
 
     // Phase 3: reserve one sentinel word, then copy chunks across physical wrap.
     if (n != 0) {
-        self->values = (unsigned int *)appMallocDummy__FUl((n + 1) * 4);
+        self->values = (unsigned int*)appMallocDummy__FUl((n + 1) * 4);
         self->cap = (unsigned int)(n + 1);
 
         if (self->values != 0) {
             dst = self->values + ((self->start + self->used) % (unsigned int)(n + 1));
-            d = fn_8025CA88Dist(last, first);
+            d = GetIteratorDistance(last, first);
             space = (unsigned int)((self->values + (unsigned int)(n + 1)) - dst);
-            cnt = fn_8025CA88Min((const unsigned int &)d, space);
+            cnt = SelectSmallerCount((const unsigned int&)d, space);
             self->used = self->used + (unsigned int)d;
 
-            RingConstructionIterator target = fn_8025CA88Adv(last, (int)cnt);
-            fn_8025CA88Copy((char *)dst, last, target);
+            RingConstructionIterator target = AdvanceIterator(last, (int)cnt);
+            CopyRangeToBytes((char*)dst, last, target);
 
             if (d - (int)cnt != 0)
-                fn_8025CA88Copy((char *)self->values, fn_8025CA88Adv(last, (int)cnt), first);
+                CopyRangeToBytes((char*)self->values, AdvanceIterator(last, (int)cnt), first);
         }
     }
 
@@ -666,33 +713,33 @@ void *BlockedWordRing_Init(void *arg, void *unusedArg) {
         tmp.b = 0;
         appFreeUni__FPv(tmp.values);
     }
-    return arg;
+    return owner;
 }
 #pragma pop
 
 // Return the physical address of the ring's final logical element.
-unsigned int *RingBuffer_GetLastElementPtr(RingLastWordView *arg) {
-    unsigned int index = (arg->begin + arg->current - 1) % arg->size;
-    return arg->values + index;
+unsigned int* RingBuffer_GetLastElementPtr(RingLastWordView* ring) {
+    unsigned int index = (ring->begin + ring->current - 1) % ring->size;
+    return ring->values + index;
 }
 
 // Return the embedded block-ring header after the two leading owner words.
-void *BlockedWordRing_GetBlockRing(void *arg) {
-    return (char *)arg + 8;
+void* BlockedWordRing_GetBlockRing(void* owner) {
+    return (char*)owner + 8;
 }
 
 // Load the first pointer-sized word from the supplied header.
-void *BlockedWordRing_GetConsumedWords(void **arg) {
+void* BlockedWordRing_GetConsumedWords(void** arg) {
     return *arg;
 }
 
 // Dereference the word pointer stored at an iterator's current position.
-void *RingIterator32_Dereference(void ***arg) {
-    return **arg;
+void* RingIterator32_Dereference(void*** iterator) {
+    return **iterator;
 }
 
 // Allocate the requested number of four-byte words from the dummy application heap.
-void *AllocateWordArray(void *arg, int wordCount) {
+void* AllocateWordArray(void* arg, int wordCount) {
     return appMallocDummy__FUl(wordCount * 4);
 }
 
@@ -702,17 +749,17 @@ void PartyGoods_InitStaticTwoPi() {
 }
 
 // Copy four iterator words and its allocator tag, preserving the destination address.
-void *RingIterator32_CopyWithAllocatorTag(void *dst, const void *src) {
-    ((unsigned int *)dst)[0] = ((const unsigned int *)src)[0];
-    ((unsigned int *)dst)[1] = ((const unsigned int *)src)[1];
-    ((unsigned int *)dst)[2] = ((const unsigned int *)src)[2];
-    ((unsigned int *)dst)[3] = ((const unsigned int *)src)[3];
-    ((unsigned char *)dst)[16] = ((const unsigned char *)src)[16];
+void* RingIterator32_CopyWithAllocatorTag(void* dst, const void* src) {
+    ((unsigned int*)dst)[0] = ((const unsigned int*)src)[0];
+    ((unsigned int*)dst)[1] = ((const unsigned int*)src)[1];
+    ((unsigned int*)dst)[2] = ((const unsigned int*)src)[2];
+    ((unsigned int*)dst)[3] = ((const unsigned int*)src)[3];
+    ((unsigned char*)dst)[16] = ((const unsigned char*)src)[16];
     return dst;
 }
 
 // Lazily initialize and return the maximum blocked-ring word count.
-int BlockedWordRing_GetMaxWords(void *) {
+int BlockedWordRing_GetMaxWords(void*) {
     if (!s_ringBufferMaxSizeInitialized) {
         s_blockedWordRingMaxWords = -512;
         s_ringBufferMaxSizeInitialized = 1;
@@ -721,21 +768,21 @@ int BlockedWordRing_GetMaxWords(void *) {
 }
 
 // Pop the logical front by advancing its index with wrap and decrementing the element count.
-void RingBuffer32_AdvanceFrontAndDecrementCount(RingPopFrontView *arg) {
-    unsigned int current = arg->current + 1;
-    arg->current = current;
-    if (current == arg->end)
-        arg->current = 0;
-    arg->remaining = arg->remaining - 1;
+void RingBuffer32_AdvanceFrontAndDecrementCount(RingPopFrontView* ring) {
+    unsigned int current = ring->current + 1;
+    ring->current = current;
+    if (current == ring->end)
+        ring->current = 0;
+    ring->remaining = ring->remaining - 1;
 }
 
 // Return the address at the ring's current logical index.
-unsigned int *RingBuffer_GetCurrentPtr(RingCurrentWordView *arg) {
-    return arg->values + arg->index;
+unsigned int* RingBuffer_GetCurrentPtr(RingCurrentWordView* ring) {
+    return ring->values + ring->index;
 }
 
 // Return the word capacity of all blocks except the ring's reserved block, or zero when empty.
-unsigned int BlockedWordRing_GetUsableWordCapacity(BlockedRingSizeView *arg) {
+unsigned int BlockedWordRing_GetUsableWordCapacity(BlockedRingSizeView* arg) {
     unsigned int value = arg->blockCount;
     unsigned int mask = 0u - (value == 0);
     unsigned int result = (value - 1) << 8;
@@ -743,16 +790,17 @@ unsigned int BlockedWordRing_GetUsableWordCapacity(BlockedRingSizeView *arg) {
 }
 
 // Advance a mutable word iterator and wrap at the storage end.
-void RingIterator32_AdvanceOne(RingMutableIterator *arg) {
-    ++arg->current;
-    if (arg->current == arg->end)
-        arg->current = arg->begin;
+void RingIterator32_AdvanceOne(RingMutableIterator* iterator) {
+    ++iterator->current;
+    if (iterator->current == iterator->end)
+        iterator->current = iterator->begin;
 }
 
 #pragma push
 #pragma use_lmw_stmw on
 // Copy insertion iterators to local storage and dispatch the range-insertion implementation.
-void RingBuffer32_InsertRangeUsingLocalTag(void *ring, unsigned int *position, unsigned int *rangeFirst, unsigned int *rangeLast, unsigned int *unusedAllocator) {
+void RingBuffer32_InsertRangeUsingLocalTag(void* ring, unsigned int* position, unsigned int* rangeFirst,
+                                           unsigned int* rangeLast, unsigned int* unusedAllocator) {
     unsigned int positionCopy[4] = {position[0], position[1], position[2], position[3]};
     unsigned int firstCopy[4] = {rangeFirst[0], rangeFirst[1], rangeFirst[2], rangeFirst[3]};
     unsigned int lastCopy[4] = {rangeLast[0], rangeLast[1], rangeLast[2], rangeLast[3]};
@@ -766,7 +814,11 @@ void RingBuffer32_InsertRangeUsingLocalTag(void *ring, unsigned int *position, u
 #pragma dont_inline on
 #pragma use_lmw_stmw on
 
-struct RingInsertHeader { unsigned int *begin; unsigned int pos; unsigned int size; };
+struct RingInsertHeader {
+    unsigned int* begin;
+    unsigned int pos;
+    unsigned int size;
+};
 
 // Each byte-array slot is an iterator/header passed to the existing ring helpers.
 // Byte alignment and slot order are retained for the original stack allocation.
@@ -800,20 +852,20 @@ typedef char RingInsertScratchSize[(sizeof(RingInsertScratch) == 0x160) ? 1 : -1
 // Both paths leave destination at the gap start, ready for CopyRangeWrapped.
 // Growth constructs N at replacement offset P, appends S, prepends P, then
 // swaps all four header words. The cleanup guard finally owns the old array.
-void RingBuffer32_InsertRangeImpl(void *self, void *insertPosition, void *first, void *last, void *allocatorArgument) {
+void RingBuffer32_InsertRangeImpl(void* self, void* insertPosition, void* first, void* last, void* allocatorArgument) {
     RingInsertScratch frame;
-    RingInsertHeader *ring = (RingInsertHeader *)self;
+    RingInsertHeader* ring = (RingInsertHeader*)self;
 
     // Phase 1: count inserted words and locate the insertion point in logical order.
-    void *pd = RingIterator32_CopyWithAllocatorTag(frame.inputEnd, last);
-    void *pc = RingIterator32_CopyWithAllocatorTag(frame.inputBegin, first);
-    int insertCount = RingIterator32_GetDistanceFromCurrentWord((unsigned int *)pc, (RingDistanceIterator *)pd);
+    void* pd = RingIterator32_CopyWithAllocatorTag(frame.inputEnd, last);
+    void* pc = RingIterator32_CopyWithAllocatorTag(frame.inputBegin, first);
+    int insertCount = RingIterator32_GetDistanceFromCurrentWord((unsigned int*)pc, (RingDistanceIterator*)pd);
     if (insertCount) {
-        unsigned int *base = ring->begin + ring->pos;
-        unsigned int *position = *(unsigned int **)insertPosition;
+        unsigned int* base = ring->begin + ring->pos;
+        unsigned int* position = *(unsigned int**)insertPosition;
         unsigned int prefixCount = (unsigned int)(position - base);
         if (position < base)
-            prefixCount += *(unsigned int *)RingBuffer32_GetCapacityAddressForInsert(self);
+            prefixCount += *(unsigned int*)RingBuffer32_GetCapacityAddressForInsert(self);
         unsigned int capacity = RingBuffer32_GetUsableCapacity(self);
         if ((unsigned int)insertCount <= capacity && ring->size <= capacity - (unsigned int)insertCount) {
             RingBuffer32_MakeBeginIterator(frame.destination, self);
@@ -822,15 +874,15 @@ void RingBuffer32_InsertRangeImpl(void *self, void *insertPosition, void *first,
             if (prefixCount < suffixCount) {
                 RingIterator32_Copy(frame.savedBegin, frame.destination);
                 RingIterator32_RetreatInPlace(frame.destination, (unsigned int)insertCount);
-                void *np = RingIterator32_GetCurrentPointer(frame.destination);
+                void* np = RingIterator32_GetCurrentPointer(frame.destination);
                 unsigned int nsize = ring->size + (unsigned int)insertCount;
-                unsigned int npos = (unsigned int)((unsigned int *)np - ring->begin);
+                unsigned int npos = (unsigned int)((unsigned int*)np - ring->begin);
                 ring->size = nsize;
                 ring->pos = npos;
                 if (prefixCount != 0) {
-                    void *prefixDestination = RingIterator32_Copy(frame.forwardDestination, frame.destination);
+                    void* prefixDestination = RingIterator32_Copy(frame.forwardDestination, frame.destination);
                     RingIterator32_AddOffset(frame.forwardEnd, frame.savedBegin, prefixCount);
-                    void *prefixSource = RingIterator32_Copy(frame.forwardBegin, frame.savedBegin);
+                    void* prefixSource = RingIterator32_Copy(frame.forwardBegin, frame.savedBegin);
                     RingIterator32_CopyForward(frame.forwardResult, prefixSource, frame.forwardEnd, prefixDestination);
                     RingIterator32_CopyWords(frame.destination, frame.forwardResult);
                 }
@@ -839,37 +891,42 @@ void RingBuffer32_InsertRangeImpl(void *self, void *insertPosition, void *first,
                 RingBuffer32_MakeEndIteratorVolatile(frame.newEnd, self);
                 RingIterator32_CopyWords(frame.destination, frame.newEnd);
                 if (suffixCount != 0) {
-                    void *suffixDestinationEnd = RingIterator32_Copy(frame.backwardDestination, frame.destination);
+                    void* suffixDestinationEnd = RingIterator32_Copy(frame.backwardDestination, frame.destination);
                     RingIterator32_SubtractOffset(frame.backwardEnd, frame.destination, (unsigned int)insertCount);
-                    RingIterator32_SubtractOffset(frame.backwardBegin, frame.destination, (unsigned int)insertCount + suffixCount);
-                    RingIterator32_CopyBackward(frame.backwardResult, frame.backwardBegin, frame.backwardEnd, suffixDestinationEnd);
+                    RingIterator32_SubtractOffset(frame.backwardBegin, frame.destination,
+                                                  (unsigned int)insertCount + suffixCount);
+                    RingIterator32_CopyBackward(frame.backwardResult, frame.backwardBegin, frame.backwardEnd,
+                                                suffixDestinationEnd);
                     RingIterator32_CopyWords(frame.destination, frame.backwardResult);
                 }
                 RingIterator32_RetreatInPlace(frame.destination, (unsigned int)insertCount);
             }
             // The gap is now open; copy the caller's range into it with wrap handling.
-            void *sourceEnd;
-            void *gapBegin = RingIterator32_Copy(frame.destinationCopy, frame.destination);
+            void* sourceEnd;
+            void* gapBegin = RingIterator32_Copy(frame.destinationCopy, frame.destination);
             sourceEnd = RingIterator32_CopyWithAllocatorTag(frame.inputEndCopy, last);
-            void *sourceBegin = RingIterator32_CopyWithAllocatorTag(frame.inputBeginCopy, first);
-            RingIterator32_CopyRangeWrapped((RingCopyDestinationIterator *)frame.copyResult, (RingCopySourceIterator *)sourceBegin, (RingCopySourceIterator *)sourceEnd, (RingCopyDestinationIterator *)gapBegin);
+            void* sourceBegin = RingIterator32_CopyWithAllocatorTag(frame.inputBeginCopy, first);
+            RingIterator32_CopyRangeWrapped((RingCopyDestinationIterator*)frame.copyResult,
+                                            (RingCopySourceIterator*)sourceBegin, (RingCopySourceIterator*)sourceEnd,
+                                            (RingCopyDestinationIterator*)gapBegin);
         } else {
             // Phase 2b: build replacement storage as [prefix, inserted range, suffix].
             // The guard owns replacement storage until the final header swaps.
-            void *pc1 = RingBuffer32_GetCapacityAddressForAllocation(self);
+            void* pc1 = RingBuffer32_GetCapacityAddressForAllocation(self);
             RingBuffer32_InitializeHeader(frame.replacementStorage, pc1);
             EH5Cleanup eh5Cleanup6(frame.replacementStorage, (void (*)(void*, int))RingBuffer32_Release);
-            void *pc2 = RingBuffer32_CalculateGrowth(self, (unsigned int)insertCount);
+            void* pc2 = RingBuffer32_CalculateGrowth(self, (unsigned int)insertCount);
             RingBuffer32_AllocateWords(frame.replacementStorage, ring->size + (unsigned int)insertCount, pc2);
-            unsigned int *ptr = *(unsigned int **)frame.replacementStorage + prefixCount;
-            *(unsigned int *)(frame.replacementStorage + 4) = prefixCount;
+            unsigned int* ptr = *(unsigned int**)frame.replacementStorage + prefixCount;
+            *(unsigned int*)(frame.replacementStorage + 4) = prefixCount;
             while (insertCount != 0) {
-                *(void **)frame.valueWord = RingIterator32_Dereference((void ***)first);
-                RingBuffer32_ConstructWord(RingBuffer32_GetAllocationWord(frame.replacementStorage), ptr, frame.valueWord);
-                ++*(unsigned int *)(frame.replacementStorage + 8);
+                *(void**)frame.valueWord = RingIterator32_Dereference((void***)first);
+                RingBuffer32_ConstructWord(RingBuffer32_GetAllocationWord(frame.replacementStorage), ptr,
+                                           frame.valueWord);
+                ++*(unsigned int*)(frame.replacementStorage + 8);
                 --insertCount;
                 ++ptr;
-                RingIterator32_AdvanceOne((RingMutableIterator *)first);
+                RingIterator32_AdvanceOne((RingMutableIterator*)first);
             }
             RingBuffer32_MakeEndIteratorVolatile(frame.oldEnd, self);
             RingBuffer32_AppendIteratorRange(frame.replacementStorage, (unsigned int)insertPosition, frame.oldEnd);
@@ -880,9 +937,12 @@ void RingBuffer32_InsertRangeImpl(void *self, void *insertPosition, void *first,
             Swap_Int32ForRingStorage(self, frame.replacementStorage);
             Swap_Int32(&ring->pos, frame.replacementStorage + 4);
             Swap_Int32(&ring->size, frame.replacementStorage + 8);
-            void *r = RingBuffer32_GetCapacityAddress(frame.replacementStorage);
+            void* r = RingBuffer32_GetCapacityAddress(frame.replacementStorage);
             Swap_Int32(RingBuffer32_GetCapacityAddressForInsert(self), r);
-            { eh5Cleanup6.release(); RingBuffer32_Release(frame.replacementStorage, -1); }
+            {
+                eh5Cleanup6.release();
+                RingBuffer32_Release(frame.replacementStorage, -1);
+            }
         }
     }
 }
@@ -892,37 +952,40 @@ void RingBuffer32_InsertRangeImpl(void *self, void *insertPosition, void *first,
 #pragma push
 #pragma use_lmw_stmw on
 // Free every owned block and its pointer ring, optionally deleting the blocked-ring owner.
-void *BlockedWordRing_dtor(BlockedRingOwner *arg, int deleting) {
-    if (arg) {
-        void **items;
+void* BlockedWordRing_dtor(BlockedRingOwner* owner, int deleting) {
+    if (owner) {
+        void** items;
         unsigned int begin;
         unsigned int capacity;
         unsigned int end;
-        void **p;
-        void **limit;
-        void **e;
-        arg->logicalWordCount = 0;
-        if (arg->count) {
-            items = arg->items;
-            begin = arg->begin;
-            capacity = arg->capacity;
-            end = capacity ? (begin + arg->count) % capacity : 0;
+        void** p;
+        void** limit;
+        void** e;
+        owner->logicalWordCount = 0;
+        if (owner->count) {
+            items = owner->items;
+            begin = owner->begin;
+            capacity = owner->capacity;
+            end = capacity ? (begin + owner->count) % capacity : 0;
             p = items + begin;
             limit = items + capacity;
             e = items + end;
             while (p != e) {
-                if (*p) appFreeUni__FPv(*p);
+                if (*p)
+                    appFreeUni__FPv(*p);
                 ++p;
-                if (p == limit) p = items;
+                if (p == limit)
+                    p = items;
             }
         }
-        if (arg->items) {
-            arg->count = 0;
-            appFreeUni__FPv(arg->items);
+        if (owner->items) {
+            owner->count = 0;
+            appFreeUni__FPv(owner->items);
         }
-        if (deleting > 0) __dl__FPv(arg);
+        if (deleting > 0)
+            __dl__FPv(owner);
     }
-    return arg;
+    return owner;
 }
 #pragma pop
 
@@ -931,9 +994,9 @@ void *BlockedWordRing_dtor(BlockedRingOwner *arg, int deleting) {
 // bytes. input may be null (silence) or the same buffer as output. Q15 gain uses
 // 32768 as unity. Only the queued/movie contribution is folded to mono, before
 // adding input. Queue messages transfer MovieSampleBuffer ownership, never PCM copies.
-void Audio_MixQueuedStereoSamples(short *output, const short *input, unsigned int frameCount) {
-    const char *readyQueue = (const char *)((char*)&s_movieSampleReadyQueue);
-    const char *freeQueue = (const char *)((char*)&s_movieSampleFreeQueue);
+void Audio_MixQueuedStereoSamples(short* output, const short* input, unsigned int frameCount) {
+    const char* readyQueue = (const char*)((char*)&s_movieSampleReadyQueue);
+    const char* freeQueue = (const char*)((char*)&s_movieSampleFreeQueue);
     unsigned int remaining = frameCount;
     int mixToMono = !s_audioMixPreserveStereo;
     /* The original reads the volumeQ15 once before the loop (0x8025D0F0 lwz r27, s_audioVolumeQ15)
@@ -944,27 +1007,39 @@ void Audio_MixQueuedStereoSamples(short *output, const short *input, unsigned in
         unsigned int bufferAddress = g_audioMixCurrentBuffer;
         if (!bufferAddress) {
             unsigned int found = 0;
-            if (OSReceiveMessage(readyQueue, &found, 0) == 1) bufferAddress = found;
+            if (OSReceiveMessage(readyQueue, &found, 0) == 1)
+                bufferAddress = found;
             g_audioMixCurrentBuffer = bufferAddress;
         }
         if (!bufferAddress || !((MovieSampleBuffer*)bufferAddress)->remainingFrames) {
-            if (input) memcpy(output, input, remaining * 4);
-            else memset(output, 0, remaining * 4);
+            if (input)
+                memcpy(output, input, remaining * 4);
+            else
+                memset(output, 0, remaining * 4);
             return;
         }
         unsigned int framesToMix = ((MovieSampleBuffer*)bufferAddress)->remainingFrames;
         framesToMix = (framesToMix >= remaining) ? remaining : framesToMix;
-        short *samples = (short *)((MovieSampleBuffer*)bufferAddress)->samples;
+        short* samples = (short*)((MovieSampleBuffer*)bufferAddress)->samples;
         for (unsigned int i = 0; i < framesToMix; ++i) {
             int leftSample = volumeQ15 * samples[0] >> kQ15FractionBits;
             int rightSample = volumeQ15 * samples[1] >> kQ15FractionBits;
             samples += 2;
-            if (mixToMono) leftSample = rightSample = (leftSample + rightSample) >> 1;
+            if (mixToMono)
+                leftSample = rightSample = (leftSample + rightSample) >> 1;
             int inputSample = input ? *input++ : 0;
-            int mixedSample = leftSample + inputSample; if (mixedSample < kSampleMinimum) mixedSample = kSampleMinimum; if (mixedSample > kSampleMaximum) mixedSample = kSampleMaximum;
+            int mixedSample = leftSample + inputSample;
+            if (mixedSample < kSampleMinimum)
+                mixedSample = kSampleMinimum;
+            if (mixedSample > kSampleMaximum)
+                mixedSample = kSampleMaximum;
             output[0] = (short)mixedSample;
             inputSample = input ? *input++ : 0;
-            mixedSample = rightSample + inputSample; if (mixedSample < kSampleMinimum) mixedSample = kSampleMinimum; if (mixedSample > kSampleMaximum) mixedSample = kSampleMaximum;
+            mixedSample = rightSample + inputSample;
+            if (mixedSample < kSampleMinimum)
+                mixedSample = kSampleMinimum;
+            if (mixedSample > kSampleMaximum)
+                mixedSample = kSampleMaximum;
             output[1] = (short)mixedSample;
             output += 2;
         }

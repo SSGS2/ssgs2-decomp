@@ -1,3 +1,6 @@
+// Tour versus window: the VS banner shown before a tour match, with its staggered panel expansion,
+// player name colors and fade-out. Also the tour task's actor hooks (create, load, process, draw, destroy).
+
 #include <decomp/static_init.h>
 // Tour versus window: staggered panel expansion/settling, player banners and BP
 // scripts. Modding lookup (settings are shared, preserve coupled relationships):
@@ -12,18 +15,38 @@
 //   trail offsets 64/32 and kTourVsBrightnessEaseDivisor affect name layers.
 // - SetEntryIndices / InitLayout: selected banner indices also choose name-strip
 //   frames (30 layout units per entry). Strings/group names and initial geometry
-//   live in u802F61E4_data and the related Tour-map constant pools; search each
+//   live in the data section and the related Tour-map constant pools; search each
 //   extern symbol below before editing a shared scalar.
 // ABI/layout: TourVSWindowData.h; BP controller entry lifetime belongs to window.
 extern "C" {
 extern unsigned char s_tourVsDrawDefaults[]; // VS banner geometry, clipping and state presets.
 }
-enum TourVsTransitionState { kVsHidden = 0, kVsExpanding = 1, kVsSettling = 2, kVsAnimating = 3, kVsReady = 4 };
-enum TourTaskActorStringOffset { kTourActorClassName = 1, kTourActorInstanceName = 0xB };
-enum TourVsConstants { kVsHiddenStatus = 3, kVsNameFrameHeight = 30, kVsBannerCount = 5, kVsFadingGroupCount = 9 };
-enum TourVsDrawConstants { kVsQuadPrimitive = 0x98, kVsTexturedVertexFormat = 0x11F005,
-    kVsTexturedVertexBytes = 0x18, kVsViewportWidth = 640, kVsPanelMaxAlpha = 0xA0,
-    kVsNameDimBrightness = 80, kVsFullByte = 255 };
+enum TourVsTransitionState {
+    kVsHidden = 0,
+    kVsExpanding = 1,
+    kVsSettling = 2,
+    kVsAnimating = 3,
+    kVsReady = 4
+};
+enum TourTaskActorStringOffset {
+    kTourActorClassName = 1,
+    kTourActorInstanceName = 0xB
+};
+enum TourVsConstants {
+    kVsHiddenStatus = 3,
+    kVsNameFrameHeight = 30,
+    kVsBannerCount = 5,
+    kVsFadingGroupCount = 9
+};
+enum TourVsDrawConstants {
+    kVsQuadPrimitive = 0x98,
+    kVsTexturedVertexFormat = 0x11F005,
+    kVsTexturedVertexBytes = 0x18,
+    kVsViewportWidth = 640,
+    kVsPanelMaxAlpha = 0xA0,
+    kVsNameDimBrightness = 80,
+    kVsFullByte = 255
+};
 // Byte offsets into the existing packed string pool; no new string storage.
 enum TourVsStringOffset {
     kVsDefaultScript = 0xC,
@@ -44,7 +67,6 @@ enum TourVsStringOffset {
 #include "sdk_protos.h"
 #include "game/types.h"
 
-
 #define GAME_NSTRING_RANGE_CONSTRUCTOR
 #include "game/string.h"
 
@@ -59,7 +81,9 @@ public:
     LocalNString_u802F61E4() : flags(0), length(0), data(0) {}
 #if defined(GAME_NSTRING_TEXT_CONSTRUCTOR)
     // Copy a borrowed C string into owned inline or heap storage.
-    LocalNString_u802F61E4(const char* text) { MWString_ConstructCString(this, text); }
+    LocalNString_u802F61E4(const char* text) {
+        MWString_ConstructCString(this, text);
+    }
 #endif
 #if defined(GAME_NSTRING_RANGE_CONSTRUCTOR)
     // Copy a borrowed C string into owned inline or heap storage.
@@ -78,7 +102,10 @@ public:
     }
 #endif
     // Free heap-backed character storage; inline characters need no cleanup.
-    ~LocalNString_u802F61E4() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~LocalNString_u802F61E4() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
     // Return the logical length for either string-storage representation.
     unsigned int size() const {
         return (flags >> 31) == 0 ? (*(const unsigned char*)this & 0x7f) : length;
@@ -90,9 +117,14 @@ public:
 };
 
 // Tour task and VS window, 0x802F61E4-0x802F85E0.
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
+#include "classes/CTourTask.h"
+#include "classes/CTask.h"
+#include "classes/CTourVSWindow.h"
+#include "classes/CFade.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CTourMessage.h"
 
 extern "C" {
 
@@ -102,17 +134,13 @@ extern char __vt__13CTourVSWindow[];
 extern char s_bpCtrlDtorRecord_TourMap[];
 extern char tourVsWindowStrings[];
 extern char tourTaskActorStrings[]; // Packed empty string, CTourMain class name, and TourMain instance name.
-extern char s_tourTaskRuntimeType; // Tour-task runtime type descriptor address.
+extern char s_tourTaskRuntimeType;  // Tour-task runtime type descriptor address.
 extern const float kFloat_0_0_TourMap;
 extern const float kFloat_neg30_TourVsInitialMiddle; // -30: kFloat_neg30_TourVsInitialMiddle.
-extern const float kFloat_neg55_TourVsInitialEdge; // -55: kFloat_neg55_TourVsInitialEdge.
+extern const float kFloat_neg55_TourVsInitialEdge;   // -55: kFloat_neg55_TourVsInitialEdge.
 extern float kFloat_6_2831855;
 extern float s_tourVsFullTurnAngle; // Module angle storage initialized to one full turn.
 
-void CTourMessage_Ctor(void*);
-void CFade_Init(void*);
-
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor(void*, int);
 void* IdMap_Lookup(void*, unsigned int);
 void BpObject_SetEnabled(void*, int);
@@ -122,22 +150,19 @@ void UIGroup_SetEnabled(void*, int);
 void UIGroup_SetSourcePosition(void*, void*, int);
 int BpObject_IsCurrentScriptComplete(void*);
 
-void CTask_dtor(void*, int);
+void __dt__5CTaskFv(void*, int);
 void __dl__FPv(void*);
 void Sound_PlayByName(void*, const char*, int, int, const char*, int, float, float, float);
 extern void* g_soundManager;
 extern const float kFloat_0_5_TourVSWindow;
-extern const float kFloat_200_TourVsSound; // 200: kFloat_200_TourVsSound.
-extern const float kFloat_1_TourVsSound; // 1: kFloat_1_TourVsSound.
+extern const float kFloat_200_TourVsSound;   // 200: kFloat_200_TourVsSound.
+extern const float kFloat_1_TourVsSound;     // 1: kFloat_1_TourVsSound.
 extern const float kTourVsPanelAcceleration; // 3.299999952316284: kTourVsPanelAcceleration.
 extern const float kTourVsExpansionDuration; // 20: kTourVsExpansionDuration.
 extern const float kFloat_660_TourMap;
 extern const float kTourVsSettleDistanceFactor; // 680: kTourVsSettleDistanceFactor.
-extern const float kTourVsSettledPanelX; // 320: kTourVsSettledPanelX.
+extern const float kTourVsSettledPanelX;        // 320: kTourVsSettledPanelX.
 
-void CTask_StartActorLoading(void*);
-void CTask_ProcessActors(void*, float);
-void CTask_DisplayActorsByPriority(void*);
 struct BpIdSet20 {
     unsigned int id[5];
 };
@@ -146,19 +171,17 @@ struct BpIdSet36 {
     unsigned int id[9];
 };
 
-extern BpIdSet20 tourVsIconGroupNames; // Club, VS-letter, and flash group names (five pointers).
+extern BpIdSet20 tourVsIconGroupNames;              // Club, VS-letter, and flash group names (five pointers).
 extern BpIdSet36 tourVsMessageWindowHideGroupNames; // Nine message-window group names, copied before hiding.
-extern BpIdSet36 tourVsMessageWindowOpacityGroupNames; // Nine message-window group names, copied before changing opacity.
+extern BpIdSet36
+    tourVsMessageWindowOpacityGroupNames; // Nine message-window group names, copied before changing opacity.
 
 extern Arr3 tourVsPanelStartDelays; // Three staggered panel start delays.
 
-void CTask_SetMainActor(void*, void*); // CTask_SetMainActor.
 void* TaskActorTable_CreateNamedActor(void*, const char*, const char*, int, void*);
-void CBpCtrl_DeleteEntryById(void*, int);
 void* __destroy_new_array(void*, void*);
-void CBpTex_dtor(void*, int);
+extern "C" void __dt__6CBpTexFv(void*, int);
 void UIGroup_SetOpacity(void*, void*);
-void CFade_Dtor(void*, int); // CFade_Dtor.
 void* __dt__15TourMessageBaseFv(void*, int);
 
 struct CtlValue {
@@ -168,9 +191,9 @@ struct CtlValue {
 
 // Resolve the lazily constructed BP controller at each original call site.
 static inline void EnsureTourVsBpController() {
-if (Sing_805DC5F0() == 0) {
+    if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRecord_TourMap);
             s_bpCtrlInitialized = 1;
         }
@@ -178,35 +201,35 @@ if (Sing_805DC5F0() == 0) {
     }
 }
 
-// Keep the destructor out of its address-adjusting thunk below.
-void* CTourTask_dtor(void*, int) __attribute__((noinline));
-
-
-struct TourMessageBase {
-    char storage[0x18];
-    // Initialize the tour-message base subobject.
-    TourMessageBase() { CTourMessage_Ctor(this); }
-    ~TourMessageBase();
+struct FmtBlock {
+    unsigned int w[12];
 };
-struct CTourVSWindow : TourMessageBase {
-    char rest[0x4C];
-    CTourVSWindow();
+struct ScissorRect {
+    int x, y, w, h;
 };
-
-struct FmtBlock { unsigned int w[12]; };
-struct ScissorRect { int x, y, w, h; };
-struct Region { float x, y, w, h; };
-struct Vtx16 { float x, y, z; unsigned char r, g, b, a; float u, v; };
-struct Vtx16Quad { Vtx16 v[4]; };
-struct Vtx12 { float x, y, z; unsigned char r, g, b, a; };
+struct Region {
+    float x, y, w, h;
+};
+struct Vtx16 {
+    float x, y, z;
+    unsigned char r, g, b, a;
+    float u, v;
+};
+struct Vtx16Quad {
+    Vtx16 v[4];
+};
+struct Vtx12 {
+    float x, y, z;
+    unsigned char r, g, b, a;
+};
 struct VsLayout {
     char pad0[0x1B0];
-    Region region;      // 0x1B0
-    FmtBlock fmt2;      // 0x1C0
-    FmtBlock fmt1;      // 0x1F0
-    ScissorRect rectA;  // 0x220
-    ScissorRect rectB;  // 0x230
-    Vtx16Quad quad;     // 0x240
+    Region region;     // 0x1B0
+    FmtBlock fmt2;     // 0x1C0
+    FmtBlock fmt1;     // 0x1F0
+    ScissorRect rectA; // 0x220
+    ScissorRect rectB; // 0x230
+    Vtx16Quad quad;    // 0x240
 };
 
 struct BannerEntry {
@@ -226,8 +249,8 @@ OFF(rectA, 0x220);
 OFF(rectB, 0x230);
 OFF(quad, 0x240);
 #undef OFF
-extern VsLayout tourVsDrawDefaults; // Default VS geometry, scissor rectangles, and render-state blocks.
-extern float kFloat_256_TourVsTextureWidth; // 256: kFloat_256_TourVsTextureWidth.
+extern VsLayout tourVsDrawDefaults;          // Default VS geometry, scissor rectangles, and render-state blocks.
+extern float kFloat_256_TourVsTextureWidth;  // 256: kFloat_256_TourVsTextureWidth.
 extern float kFloat_242_TourVsTextureHeight; // 242: kFloat_242_TourVsTextureHeight.
 extern const float kFloat_OneOver256_TourVsTexcoord; // 0.00390625: kFloat_OneOver256_TourVsTexcoord.
 extern const float kTourVsQuadTopY;
@@ -235,14 +258,14 @@ extern const float kTourVsQuadBottomY;
 extern const float kTourVsBannerOffsetX64;
 extern const float kTourVsBannerOffsetX32;
 extern const float kTourVsOuterTopY;
-extern const float kFloat_51_TourVsInnerTopY; // 51: kFloat_51_TourVsInnerTopY.
+extern const float kFloat_51_TourVsInnerTopY;     // 51: kFloat_51_TourVsInnerTopY.
 extern const float kFloat_289_TourVsInnerBottomY; // 289: kFloat_289_TourVsInnerBottomY.
 extern const float kTourVsOuterBottomY;
 extern const float kTourVsBorderHalfWidth;
 extern const float kTourVsQuadRightEdgeX;
 extern const float kTourVsBrightnessEaseDivisor;
 
-void Render_SetColoredQuadState(); // Render_SetColoredQuadState.
+void Render_SetColoredQuadState();                 // Render_SetColoredQuadState.
 void Render_DrawColoredPrimitive(int, void*, int); // Render_DrawColoredPrimitive.
 void Engine_SetTextureStageStateList(int, void*, int);
 void Engine_SetFlexibleVertexFormat(int);
@@ -252,45 +275,60 @@ void Engine_SetScissorRect(void*);
 void BpObject_Draw(void*);
 
 // Create and attach the tour task actor from the task actor-name pool.
-void CTourTask_CreateActors(void* task) {
+void CTourTask::CreateActors(void* task) {
     char* actorNames = tourTaskActorStrings;
     LocalNString_u802F61E4 text(actorNames);
-    void* actor = TaskActorTable_CreateNamedActor(task, actorNames + kTourActorClassName, actorNames + kTourActorInstanceName, 0, &text);
-    CTask_SetMainActor(task, actor);
+    void* actor = TaskActorTable_CreateNamedActor(task, actorNames + kTourActorClassName,
+                                                  actorNames + kTourActorInstanceName, 0, &text);
+    ((CTask*)task)->SetMainActor(actor);
 }
 
 // Start loading all actors owned by this tour task.
-void CTourTask_StartActorLoading(void* forwarded0) { CTask_StartActorLoading(forwarded0); }
+void CTourTask::StartActorLoading(void* forwarded0) {
+    ((CTask*)forwarded0)->StartActorLoading();
+}
 
 // Advance the tour task actors by the supplied frame time.
-void CTourTask_ProcessActors(void* forwarded0, float forwarded1) { CTask_ProcessActors(forwarded0, forwarded1); }
+void CTourTask::ProcessActors(void* forwarded0, float forwarded1) {
+    ((CTask*)forwarded0)->ProcessActors(forwarded1);
+}
 
 // Draw the tour task actors in priority order.
-void CTourTask_DisplayActorsByPriority(void* forwarded0) { CTask_DisplayActorsByPriority(forwarded0); }
+void CTourTask::DisplayActorsByPriority(void* forwarded0) {
+    ((CTask*)forwarded0)->DisplayActorsByPriority();
+}
 
 // Destroy the task base and optionally release its allocation.
-void* CTourTask_dtor(void* task, int deleting) {
-    if (task) {
-        CTask_dtor(task, 0);
-        if (0 < deleting) __dl__FPv(task);
+void* CTourTask::Destroy(int deleting) {
+    if (this) {
+        __dt__5CTaskFv(this, 0);
+        if (0 < deleting)
+            __dl__FPv(this);
     }
-    return task;
+    return this;
 }
 
 // Return the tour task runtime type descriptor.
-void* CTourTask_GetRTTI() { return &s_tourTaskRuntimeType; }
+void* CTourTask::GetRTTI() {
+    return &s_tourTaskRuntimeType;
+}
 
 // Initialize the tour/VS module full-turn angle constant.
-void TourVsWindow_InitAngleConstant() { s_tourVsFullTurnAngle = kFloat_6_2831855; }
+void TourVsWindow_InitAngleConstant() {
+    s_tourVsFullTurnAngle = kFloat_6_2831855;
+}
 
-// Adjust the task subobject pointer before invoking the deleting destructor.
-void CTourTask_DtorThunk8(void* taskSubobject, int deleting) { CTourTask_dtor((char*)taskSubobject - 8, deleting); }
+// Adjust the +8 interface pointer back to the task before destroying it.
+void CTourTask::DtorThunk8(int deleting) {
+    ((CTourTask*)((char*)this - 8))->Destroy(deleting);
+}
 
 // Initialize VS-window interfaces, banner storage, fade state and hidden geometry.
 CTourVSWindow::CTourVSWindow() {
+    ((CTourMessage*)this)->__ct();
     TourVSWindowData* p = (TourVSWindowData*)this;
     float v40, v3C, v38;
-    CFade_Init(p->fadeControl);
+    ((CFade*)(p->fadeControl))->Init();
     v38 = kFloat_0_0_TourMap;
     v3C = kFloat_neg30_TourVsInitialMiddle;
     v40 = kFloat_neg55_TourVsInitialEdge;
@@ -313,56 +351,57 @@ CTourVSWindow::CTourVSWindow() {
 #pragma push
 #pragma opt_propagation off
 // Hide the VS layout and release banners, BP entry, fade state, and base storage.
-void* CTourVSWindow_dtor(void* window, int deleting) {
-    if (window != 0) {
+void* CTourVSWindow::Destroy(int deleting) {
+    if (this != 0) {
         void* vt = __vt__13CTourVSWindow;
 
-        *(void**)window = vt;
-        ((TourVSWindowData*)window)->status = kVsHiddenStatus;
-        ((TourVSWindowData*)window)->state = kVsHidden;
+        *(void**)this = vt;
+        status = kVsHiddenStatus;
+        state = kVsHidden;
         if (Sing_805DC5F0() == 0) {
             if (s_bpCtrlInitialized == 0) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRecord_TourMap);
                 s_bpCtrlInitialized = 1;
             }
             Sing_805DC5F0() = s_bpCtrl;
         }
-        BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), ((TourVSWindowData*)window)->layoutId), 0);
-        if (((TourVSWindowData*)window)->entries != 0) {
-            __destroy_new_array(((TourVSWindowData*)window)->entries, (void*)CBpTex_dtor);
-            ((TourVSWindowData*)window)->entries = 0;
+        BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), layoutId), 0);
+        if (entries != 0) {
+            __destroy_new_array(entries, (void*)__dt__6CBpTexFv);
+            entries = 0;
         }
-        if ((*(int*)&((TourVSWindowData*)window)->layoutId) != -1) {
+        if ((*(int*)&layoutId) != -1) {
             EnsureTourVsBpController();
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), ((TourVSWindowData*)window)->layoutId);
-            ((TourVSWindowData*)window)->layoutId = -1;
+            ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(layoutId);
+            layoutId = -1;
         }
-        CFade_Dtor(((TourVSWindowData*)window)->fadeControl, 0);
-        __dt__15TourMessageBaseFv(window, 0);
-        if (deleting > 0) __dl__FPv(window);
+        ((CFade*)fadeControl)->Dtor(0);
+        __dt__15TourMessageBaseFv(this, 0);
+        if (deleting > 0)
+            __dl__FPv(this);
     }
-    return window;
+    return this;
 }
 #pragma pop
 
 #pragma push
 #pragma opt_propagation off
 // Reset the VS transition and disable its BP layout.
-void CTourVSWindow_ResetAndHide(TourVSWindowData* window) {
+void CTourVSWindow::ResetAndHide() {
     int hiddenStatus;
     hiddenStatus = kVsHiddenStatus;
-    window->status = hiddenStatus;
-    window->state = kVsHidden;
+    status = hiddenStatus;
+    state = kVsHidden;
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRecord_TourMap);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), window->layoutId), 0);
+    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), layoutId), 0);
 }
 #pragma pop
 
@@ -373,9 +412,9 @@ void CTourVSWindow_ResetAndHide(TourVSWindowData* window) {
 // destructor; indices remain cached until overwritten. Caller must install an
 // array covering both nonnegative indices before InitLayout/Draw: neither this
 // setter nor Draw checks bounds. The allocated count is not stored in this view.
-void CTourVSWindow_SetEntryIndices(void* window, int playerOneIndex, int playerTwoIndex) {
-    ((TourVSWindowData*)window)->entryA = playerOneIndex;
-    ((TourVSWindowData*)window)->entryB = playerTwoIndex;
+void CTourVSWindow::SetEntryIndices(int playerOneIndex, int playerTwoIndex) {
+    entryA = playerOneIndex;
+    entryB = playerTwoIndex;
 }
 
 // Hide a named BP group; the caller retains its name temporary and borrowed window.
@@ -387,31 +426,32 @@ static inline void HideVsLayoutGroup128(void* window, char* name) {
     } else {
         h = BpObject_GetOrCreateNamedGroup(h, name);
     }
-    if (h) UIGroup_SetEnabled(h, 0);
+    if (h)
+        UIGroup_SetEnabled(h, 0);
 }
 
 // Reset transition geometry, configure player-name frames, and hide the VS groups.
-void CTourVSWindow_InitLayout(void* window, short mode) {
+void CTourVSWindow::InitLayout(short mode) {
     // Phase 1: activate the BP layout and start its default script.
     unsigned int i;
     float v40, v3C, v38;
 
     {
         void* cbp = Sing_805DC5F0();
-        ((TourVSWindowData*)window)->mode = mode;
+        this->mode = mode;
         if (cbp == 0) {
             if (s_bpCtrlInitialized == 0) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRecord_TourMap);
                 s_bpCtrlInitialized = 1;
             }
             Sing_805DC5F0() = s_bpCtrl;
         }
     }
-    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), ((TourVSWindowData*)window)->layoutId), 1);
+    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), layoutId), 1);
 
     EnsureTourVsBpController();
-    BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), ((TourVSWindowData*)window)->layoutId), tourVsWindowStrings + kVsDefaultScript, 1);
+    BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), layoutId), tourVsWindowStrings + kVsDefaultScript, 1);
 
     {
         // Phase 2: hide banners and character groups.
@@ -419,24 +459,25 @@ void CTourVSWindow_InitLayout(void* window, short mode) {
         for (i = 0; i < kVsBannerCount; i++) {
             unsigned int id = ids.id[i];
             EnsureTourVsBpController();
-            void* h = IdMap_Lookup(Sing_805DC5F0(), ((TourVSWindowData*)window)->layoutId);
+            void* h = IdMap_Lookup(Sing_805DC5F0(), layoutId);
             if (h == 0) {
                 h = 0;
             } else {
                 h = BpObject_GetOrCreateNamedGroup(h, (void*)id);
             }
-            if (h) UIGroup_SetEnabled(h, 0);
+            if (h)
+                UIGroup_SetEnabled(h, 0);
         }
     }
 
     {
         char* name = tourVsWindowStrings + kVsPlayerOneCharacterGroup;
-        HideVsLayoutGroup128(window, name);
+        HideVsLayoutGroup128(this, name);
     }
 
     {
         char* name = tourVsWindowStrings + kVsPlayerTwoCharacterGroup;
-        HideVsLayoutGroup128(window, name);
+        HideVsLayoutGroup128(this, name);
     }
 
     {
@@ -444,7 +485,7 @@ void CTourVSWindow_InitLayout(void* window, short mode) {
         // Phase 3: select player name-strip frames before hiding both name/base groups.
         void* name = tourVsWindowStrings + kVsPlayerOneNameGroup;
         EnsureTourVsBpController();
-        h = IdMap_Lookup(Sing_805DC5F0(), ((TourVSWindowData*)window)->layoutId);
+        h = IdMap_Lookup(Sing_805DC5F0(), layoutId);
         if (h == 0) {
             h = 0;
         } else {
@@ -452,7 +493,7 @@ void CTourVSWindow_InitLayout(void* window, short mode) {
         }
         if (h) {
             CtlValue value = {0, 0.0f};
-            int amount = ((TourVSWindowData*)window)->entryA;
+            int amount = entryA;
             value.value = (float)(amount * kVsNameFrameHeight);
             UIGroup_SetSourcePosition(h, &value, amount);
             UIGroup_SetEnabled(h, 0);
@@ -461,14 +502,14 @@ void CTourVSWindow_InitLayout(void* window, short mode) {
 
     {
         char* name = tourVsWindowStrings + kVsPlayerOneNameBaseGroup;
-        HideVsLayoutGroup128(window, name);
+        HideVsLayoutGroup128(this, name);
     }
 
     {
         void* h;
         void* name = tourVsWindowStrings + kVsPlayerTwoNameGroup;
         EnsureTourVsBpController();
-        h = IdMap_Lookup(Sing_805DC5F0(), ((TourVSWindowData*)window)->layoutId);
+        h = IdMap_Lookup(Sing_805DC5F0(), layoutId);
         if (h == 0) {
             h = 0;
         } else {
@@ -476,7 +517,7 @@ void CTourVSWindow_InitLayout(void* window, short mode) {
         }
         if (h) {
             CtlValue value = {0, 0.0f};
-            int amount = ((TourVSWindowData*)window)->entryB;
+            int amount = entryB;
             value.value = (float)(amount * kVsNameFrameHeight);
             UIGroup_SetSourcePosition(h, &value, amount);
             UIGroup_SetEnabled(h, 0);
@@ -485,12 +526,12 @@ void CTourVSWindow_InitLayout(void* window, short mode) {
 
     {
         char* name = tourVsWindowStrings + kVsPlayerTwoNameBaseGroup;
-        HideVsLayoutGroup128(window, name);
+        HideVsLayoutGroup128(this, name);
     }
 
     {
         char* name = tourVsWindowStrings + kVsScrollGroup;
-        HideVsLayoutGroup128(window, name);
+        HideVsLayoutGroup128(this, name);
     }
 
     {
@@ -500,35 +541,37 @@ void CTourVSWindow_InitLayout(void* window, short mode) {
         for (i = 0; i < kVsFadingGroupCount; i++, cursor++) {
             unsigned int id = *cursor;
             EnsureTourVsBpController();
-            void* h = IdMap_Lookup(Sing_805DC5F0(), ((TourVSWindowData*)window)->layoutId);
+            void* h = IdMap_Lookup(Sing_805DC5F0(), layoutId);
             if (h == 0) {
                 h = 0;
             } else {
                 h = BpObject_GetOrCreateNamedGroup(h, (void*)id);
             }
-            if (h) UIGroup_SetEnabled(h, 0);
+            if (h)
+                UIGroup_SetEnabled(h, 0);
         }
     }
 
     v38 = kFloat_0_0_TourMap;
     v3C = kFloat_neg30_TourVsInitialMiddle;
     v40 = kFloat_neg55_TourVsInitialEdge;
-    ((TourVSWindowData*)window)->panelSplitX = v38;
-    ((TourVSWindowData*)window)->middle = v3C;
-    ((TourVSWindowData*)window)->edge = v40;
-    ((TourVSWindowData*)window)->time = v38;
-    ((TourVSWindowData*)window)->alphaA = 0xFF;
-    ((TourVSWindowData*)window)->alphaB = 0xFF;
-    (*(unsigned int*)&((TourVSWindowData*)window)->playerOneNameEnabled) = 1;
-    (*(unsigned int*)&((TourVSWindowData*)window)->playerTwoNameEnabled) = 1;
-    (*(unsigned int*)&((TourVSWindowData*)window)->scrollGroupEnabled) = 0;
-    (*(unsigned int*)&((TourVSWindowData*)window)->state) = 0;
+    panelSplitX = v38;
+    middle = v3C;
+    edge = v40;
+    time = v38;
+    alphaA = 0xFF;
+    alphaB = 0xFF;
+    (*(unsigned int*)&playerOneNameEnabled) = 1;
+    (*(unsigned int*)&playerTwoNameEnabled) = 1;
+    (*(unsigned int*)&scrollGroupEnabled) = 0;
+    (*(unsigned int*)&state) = 0;
 }
 
 // Play the entrance sound and start expanding the VS panels.
-void CTourVSWindow_BeginTransition(void* window) {
-    Sound_PlayByName(g_soundManager, tourVsWindowStrings + kVsEntranceSound, 0, 0, 0, 0, kFloat_0_5_TourVSWindow, kFloat_200_TourVsSound, kFloat_1_TourVsSound);
-    ((TourVSWindowData*)window)->state = kVsExpanding;
+void CTourVSWindow::BeginTransition() {
+    Sound_PlayByName(g_soundManager, tourVsWindowStrings + kVsEntranceSound, 0, 0, 0, 0, kFloat_0_5_TourVSWindow,
+                     kFloat_200_TourVsSound, kFloat_1_TourVsSound);
+    state = kVsExpanding;
 }
 
 // Expand and settle three panel edges, then wait for the VS script to finish.
@@ -537,28 +580,29 @@ void CTourVSWindow_BeginTransition(void* window) {
 // deltaTime and window->time are animation-frame units (the observed caller in
 // event_conte_script_interpreter.cpp supplies 1 per update), not seconds. Return 1 only on the update that
 // completes the script and changes Animating -> Ready; an already Ready window returns 0.
-int CTourVSWindow_UpdateTransition(TourVSWindowData* window, float deltaTime) {
+int CTourVSWindow::UpdateTransition(float deltaTime) {
     unsigned int* cursor;
     int completed = 0;
     Arr3 startDelays = tourVsPanelStartDelays;
     unsigned int i;
     float panelX, halfAcceleration, delay, elapsed, time, acceleration;
     float limit, timePastLastDelay, transitionDelay, transitionNow, transitionSpeed;
-    float twiceSettleDistance, speedSquared, halfFactor, settledX, offscreenX, settlingX, halfDeceleration, stopTime, speed, panelDelay, settleTime, settleDeceleration, panelElapsed;
+    float twiceSettleDistance, speedSquared, halfFactor, settledX, offscreenX, settlingX, halfDeceleration, stopTime,
+        speed, panelDelay, settleTime, settleDeceleration, panelElapsed;
 
-    switch (window->state) {
+    switch (this->state) {
     case kVsExpanding: {
         // Phase 1: x_i = 0.5*expansionAcceleration*max(time-delay_i,0)^2, evaluated BEFORE this tick's
         // time increment. After the third delay + expansion stopTime, snap all X
         // coordinates to 660 (off the right edge), retain expansionAcceleration*updatedTime as settling speed.
-        float* out = &window->panelSplitX;
+        float* out = &this->panelSplitX;
 
         acceleration = kTourVsPanelAcceleration;
         // panelX temporarily carries the half coefficient before receiving each panel position.
         panelX = kFloat_0_5_TourVSWindow;
         halfAcceleration = panelX * acceleration;
         for (i = 0; i < 3; i++) {
-            time = window->time;
+            time = this->time;
             delay = startDelays.v[i];
             elapsed = time - delay;
             panelX = (time >= delay) ? elapsed * (halfAcceleration * elapsed) : kFloat_0_0_TourMap;
@@ -567,21 +611,21 @@ int CTourVSWindow_UpdateTransition(TourVSWindowData* window, float deltaTime) {
 
         {
             transitionDelay = startDelays.v[2];
-            transitionNow = window->time;
+            transitionNow = this->time;
             transitionNow += deltaTime;
             limit = kTourVsExpansionDuration;
             timePastLastDelay = transitionNow - transitionDelay;
-            window->time = transitionNow;
+            this->time = transitionNow;
             if (timePastLastDelay >= limit) {
                 transitionSpeed = acceleration * transitionNow;
                 limit = kFloat_660_TourMap;
                 timePastLastDelay = kFloat_0_0_TourMap;
-                window->edge = limit;
-                window->speed = transitionSpeed;
-                window->time = timePastLastDelay;
-                window->middle = limit;
-                window->panelSplitX = limit;
-                window->state = kVsSettling;
+                this->edge = limit;
+                this->speed = transitionSpeed;
+                this->time = timePastLastDelay;
+                this->middle = limit;
+                this->panelSplitX = limit;
+                this->state = kVsSettling;
             }
         }
         break;
@@ -591,7 +635,7 @@ int CTourVSWindow_UpdateTransition(TourVSWindowData* window, float deltaTime) {
         // speed*t - 0.5*deceleration*t^2 then clamps to 320 (screen center).
         // 680 = 2*(660-320), so that speed and deceleration stop exactly at center.
         // All three edges must finish before the BP animation is started.
-        speed = window->speed;
+        speed = this->speed;
         twiceSettleDistance = kTourVsSettleDistanceFactor;
         speedSquared = speed * speed;
         settleDeceleration = speedSquared / twiceSettleDistance;
@@ -599,28 +643,29 @@ int CTourVSWindow_UpdateTransition(TourVSWindowData* window, float deltaTime) {
         halfDeceleration = halfFactor * settleDeceleration;
         offscreenX = kFloat_660_TourMap;
         settledX = kTourVsSettledPanelX;
-        float* out = &window->panelSplitX;
+        float* out = &this->panelSplitX;
         for (i = 0; i < 3; i++) {
-            speed = window->speed;
-            settleTime = window->time;
+            speed = this->speed;
+            settleTime = this->time;
             panelDelay = startDelays.v[i];
             stopTime = speed / settleDeceleration;
             panelElapsed = settleTime - panelDelay;
             if (panelElapsed < stopTime) {
                 settlingX = (settleTime >= panelDelay)
-                    ? offscreenX - (speed * panelElapsed - panelElapsed * (halfDeceleration * panelElapsed)) : kFloat_660_TourMap;
+                                ? offscreenX - (speed * panelElapsed - panelElapsed * (halfDeceleration * panelElapsed))
+                                : kFloat_660_TourMap;
                 out[i] = settlingX;
             } else {
                 out[i] = settledX;
             }
         }
 
-        if (window->time - startDelays.v[2] >= window->speed / settleDeceleration) {
-            short mode = window->mode;
+        if (this->time - startDelays.v[2] >= this->speed / settleDeceleration) {
+            short mode = this->mode;
             settledX = kTourVsSettledPanelX;
-            window->edge = settledX;
-            window->middle = settledX;
-            window->panelSplitX = settledX;
+            this->edge = settledX;
+            this->middle = settledX;
+            this->panelSplitX = settledX;
             if (mode != 1) {
                 BpIdSet20 ids = tourVsIconGroupNames;
                 cursor = ids.id;
@@ -628,24 +673,26 @@ int CTourVSWindow_UpdateTransition(TourVSWindowData* window, float deltaTime) {
                     unsigned int id = *cursor;
                     void* layoutGroup;
                     EnsureTourVsBpController();
-                    layoutGroup = IdMap_Lookup(Sing_805DC5F0(), window->layoutId);
+                    layoutGroup = IdMap_Lookup(Sing_805DC5F0(), this->layoutId);
                     if (layoutGroup == 0) {
                         layoutGroup = 0;
                     } else {
                         layoutGroup = BpObject_GetOrCreateNamedGroup(layoutGroup, (void*)id);
                     }
-                    if (layoutGroup) UIGroup_SetEnabled(layoutGroup, 1);
+                    if (layoutGroup)
+                        UIGroup_SetEnabled(layoutGroup, 1);
                 }
 
                 EnsureTourVsBpController();
-                BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), window->layoutId), tourVsWindowStrings + kVsAnimationScript, 1);
-                Sound_PlayByName(g_soundManager, tourVsWindowStrings + kVsIconSound, 0, 0, 0,
-                            0, kFloat_0_5_TourVSWindow, kFloat_200_TourVsSound, kFloat_1_TourVsSound);
+                BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), this->layoutId),
+                                           tourVsWindowStrings + kVsAnimationScript, 1);
+                Sound_PlayByName(g_soundManager, tourVsWindowStrings + kVsIconSound, 0, 0, 0, 0,
+                                 kFloat_0_5_TourVSWindow, kFloat_200_TourVsSound, kFloat_1_TourVsSound);
             }
-            window->state = kVsAnimating;
+            this->state = kVsAnimating;
         }
 
-        window->time += deltaTime;
+        this->time += deltaTime;
         break;
     }
     case kVsAnimating: {
@@ -654,11 +701,12 @@ int CTourVSWindow_UpdateTransition(TourVSWindowData* window, float deltaTime) {
         void* bpObject;
 
         EnsureTourVsBpController();
-        bpObject = IdMap_Lookup(Sing_805DC5F0(), window->layoutId);
+        bpObject = IdMap_Lookup(Sing_805DC5F0(), this->layoutId);
         if (BpObject_IsCurrentScriptComplete(bpObject) != 0) {
             EnsureTourVsBpController();
-            BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), window->layoutId), tourVsWindowStrings + kVsDefaultScript, 1);
-            window->state = kVsReady;
+            BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), this->layoutId),
+                                       tourVsWindowStrings + kVsDefaultScript, 1);
+            this->state = kVsReady;
             completed = 1;
         }
         break;
@@ -675,20 +723,21 @@ int CTourVSWindow_UpdateTransition(TourVSWindowData* window, float deltaTime) {
 // pointer-sized argument register; it is NOT dereferenced. The caller in
 // event_conte_script_interpreter.cpp declares unsigned char; UIGroup_SetOpacity stores the word as-is.
 // Keep this local void* declaration for the matching ABI; no ownership transfers.
-void CTourVSWindow_SetGroupOpacity(void* window, void* opacity) {
+void CTourVSWindow::SetGroupOpacity(void* opacity) {
     unsigned int i;
     BpIdSet36 ids = tourVsMessageWindowOpacityGroupNames;
 
     for (i = 0; i < kVsFadingGroupCount; i++) {
         unsigned int id = ids.id[i];
         EnsureTourVsBpController();
-        void* h = IdMap_Lookup(Sing_805DC5F0(), ((TourVSWindowData*)window)->layoutId);
+        void* h = IdMap_Lookup(Sing_805DC5F0(), layoutId);
         if (h == 0) {
             h = 0;
         } else {
             h = BpObject_GetOrCreateNamedGroup(h, (void*)id);
         }
-        if (h) UIGroup_SetOpacity(h, opacity);
+        if (h)
+            UIGroup_SetOpacity(h, opacity);
     }
 }
 #pragma pop
@@ -698,7 +747,7 @@ void TourVSWindow_StartFadeOut(TourVSWindowData* window) {
     void* cbp = Sing_805DC5F0();
     if (cbp == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRecord_TourMap);
             s_bpCtrlInitialized = 1;
         }
@@ -762,7 +811,7 @@ static inline void SetVsNameRgb128(Vtx16* quad, unsigned int rgb) {
 // Volatile float/int bit copies preserve the original loads and must not be folded
 // into literals without comparing generated code. All banner pointers are borrowed.
 // Draw clipped player panels, name layers, borders and the final BP overlay.
-void CTourVSWindow_Draw(TourVSWindowData* window) {
+void CTourVSWindow::Draw() {
     // Phase 0: copy immutable defaults into mutable scratch geometry/state tables.
     volatile float textureWidth;
     volatile float textureHeight;
@@ -783,8 +832,8 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
     texturedQuad.v[3].u = u;
     texturedQuad.v[3].v = v;
 
-    int state = window->state;
-    unsigned char windowAlpha = window->opacity;
+    int state = this->state;
+    unsigned char windowAlpha = this->opacity;
 
     switch (state) {
     case kVsExpanding: {
@@ -797,7 +846,7 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         coloredQuad[2].a = panelAlpha;
         coloredQuad[3].a = panelAlpha;
         coloredQuad[2].x = coloredQuad[0].x = kFloat_0_0_TourMap;
-        coloredQuad[3].x = coloredQuad[1].x = window->panelSplitX;
+        coloredQuad[3].x = coloredQuad[1].x = this->panelSplitX;
         coloredQuad[1].y = coloredQuad[0].y = kTourVsQuadTopY;
         coloredQuad[3].y = coloredQuad[2].y = kTourVsQuadBottomY;
         coloredQuad[3].z = coloredQuad[2].z = kFloat_0_0_TourMap;
@@ -805,10 +854,10 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         Render_DrawColoredPrimitive(kVsQuadPrimitive, coloredQuad, 4);
 
         bannerClip.x = 0;
-        bannerClip.w = (int)window->panelSplitX;
+        bannerClip.w = (int)this->panelSplitX;
         Engine_SetScissorRect(&bannerClip);
 
-        BannerEntry* banner = &((BannerEntry*)window->entries)[window->entryA];
+        BannerEntry* banner = &((BannerEntry*)this->entries)[this->entryA];
         banner->Draw();
 
         Engine_SetFlexibleVertexFormat(kVsTexturedVertexFormat);
@@ -861,7 +910,7 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         coloredQuad[2].a = windowAlpha;
         coloredQuad[3].a = windowAlpha;
         coloredQuad[2].x = coloredQuad[0].x = kFloat_0_0_TourMap;
-        coloredQuad[3].x = coloredQuad[1].x = window->panelSplitX;
+        coloredQuad[3].x = coloredQuad[1].x = this->panelSplitX;
         coloredQuad[1].y = coloredQuad[0].y = kTourVsOuterTopY;
         coloredQuad[3].y = coloredQuad[2].y = kFloat_51_TourVsInnerTopY;
         coloredQuad[3].z = coloredQuad[2].z = kFloat_0_0_TourMap;
@@ -869,7 +918,7 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         Render_DrawColoredPrimitive(kVsQuadPrimitive, coloredQuad, 4);
 
         coloredQuad[2].x = coloredQuad[0].x = kFloat_0_0_TourMap;
-        coloredQuad[3].x = coloredQuad[1].x = window->panelSplitX;
+        coloredQuad[3].x = coloredQuad[1].x = this->panelSplitX;
         coloredQuad[1].y = coloredQuad[0].y = kFloat_289_TourVsInnerBottomY;
         coloredQuad[3].y = coloredQuad[2].y = kTourVsOuterBottomY;
         coloredQuad[3].z = coloredQuad[2].z = kFloat_0_0_TourMap;
@@ -877,8 +926,8 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         Render_DrawColoredPrimitive(kVsQuadPrimitive, coloredQuad, 4);
 
         coloredQuad[1].y = kTourVsOuterTopY;
-        coloredQuad[2].x = coloredQuad[0].x = window->panelSplitX - kTourVsBorderHalfWidth;
-        coloredQuad[3].x = coloredQuad[1].x = window->panelSplitX + kTourVsBorderHalfWidth;
+        coloredQuad[2].x = coloredQuad[0].x = this->panelSplitX - kTourVsBorderHalfWidth;
+        coloredQuad[3].x = coloredQuad[1].x = this->panelSplitX + kTourVsBorderHalfWidth;
         coloredQuad[0].y = kTourVsOuterTopY;
         coloredQuad[3].y = coloredQuad[2].y = kTourVsOuterBottomY;
         coloredQuad[3].z = coloredQuad[2].z = kFloat_0_0_TourMap;
@@ -889,8 +938,8 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         coloredQuad[0].a = 0;
         coloredQuad[3].a = windowAlpha;
         coloredQuad[1].a = windowAlpha;
-        coloredQuad[2].x = coloredQuad[0].x = window->edge;
-        coloredQuad[3].x = coloredQuad[1].x = window->panelSplitX - kTourVsBorderHalfWidth;
+        coloredQuad[2].x = coloredQuad[0].x = this->edge;
+        coloredQuad[3].x = coloredQuad[1].x = this->panelSplitX - kTourVsBorderHalfWidth;
         coloredQuad[1].y = coloredQuad[0].y = kTourVsOuterTopY;
         coloredQuad[3].y = coloredQuad[2].y = kTourVsOuterBottomY;
         coloredQuad[3].z = coloredQuad[2].z = kFloat_0_0_TourMap;
@@ -901,7 +950,7 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
     case kVsSettling:
     case kVsAnimating:
     case kVsReady: {
-        // Phase 1b: blue left and pink right panels, split at window->panelSplitX.
+        // Phase 1b: blue left and pink right panels, split at this->panelSplitX.
         Render_SetColoredQuadState();
         int panelAlpha = (windowAlpha * kVsPanelMaxAlpha) / 255;
         SetVsPanelRgb128(coloredQuad, kVsPlayerOnePanelRgb128);
@@ -910,7 +959,7 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         coloredQuad[2].a = panelAlpha;
         coloredQuad[3].a = panelAlpha;
         coloredQuad[2].x = coloredQuad[0].x = kFloat_0_0_TourMap;
-        coloredQuad[3].x = coloredQuad[1].x = window->panelSplitX;
+        coloredQuad[3].x = coloredQuad[1].x = this->panelSplitX;
         coloredQuad[1].y = coloredQuad[0].y = kTourVsQuadTopY;
         coloredQuad[3].y = coloredQuad[2].y = kTourVsQuadBottomY;
         coloredQuad[3].z = coloredQuad[2].z = kFloat_0_0_TourMap;
@@ -922,7 +971,7 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         coloredQuad[1].a = panelAlpha;
         coloredQuad[2].a = panelAlpha;
         coloredQuad[3].a = panelAlpha;
-        coloredQuad[2].x = coloredQuad[0].x = window->panelSplitX;
+        coloredQuad[2].x = coloredQuad[0].x = this->panelSplitX;
         coloredQuad[3].x = coloredQuad[1].x = kTourVsQuadRightEdgeX;
         coloredQuad[1].y = coloredQuad[0].y = kTourVsQuadTopY;
         coloredQuad[3].y = coloredQuad[2].y = kTourVsQuadBottomY;
@@ -931,10 +980,10 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         Render_DrawColoredPrimitive(kVsQuadPrimitive, coloredQuad, 4);
 
         bannerClip.x = 0;
-        bannerClip.w = (int)window->panelSplitX;
+        bannerClip.w = (int)this->panelSplitX;
         Engine_SetScissorRect(&bannerClip);
 
-        BannerEntry* banner = &((BannerEntry*)window->entries)[window->entryA];
+        BannerEntry* banner = &((BannerEntry*)this->entries)[this->entryA];
         banner->Draw();
 
         Engine_SetFlexibleVertexFormat(kVsTexturedVertexFormat);
@@ -968,10 +1017,11 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         // Phase 2a: A's main name brightness eases once each draw. It modulates
         // RGB while all four vertex alpha values retain the window opacity.
         unsigned char playerOneBrightness;
-        if (window->playerOneNameEnabled) {
-            playerOneBrightness = window->alphaA;
-            playerOneBrightness = (unsigned char)((float)(unsigned int)playerOneBrightness + (float)(255 - playerOneBrightness) / kTourVsBrightnessEaseDivisor);
-            window->alphaA = playerOneBrightness;
+        if (this->playerOneNameEnabled) {
+            playerOneBrightness = this->alphaA;
+            playerOneBrightness = (unsigned char)((float)(unsigned int)playerOneBrightness +
+                                                  (float)(255 - playerOneBrightness) / kTourVsBrightnessEaseDivisor);
+            this->alphaA = playerOneBrightness;
             texturedQuad.v[0].r = playerOneBrightness;
             texturedQuad.v[0].g = playerOneBrightness;
             texturedQuad.v[0].b = playerOneBrightness;
@@ -985,9 +1035,10 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
             texturedQuad.v[3].g = playerOneBrightness;
             texturedQuad.v[3].b = playerOneBrightness;
         } else {
-            playerOneBrightness = window->alphaA;
-            playerOneBrightness = (unsigned char)((float)(unsigned int)playerOneBrightness + (float)(80 - playerOneBrightness) / kTourVsBrightnessEaseDivisor);
-            window->alphaA = playerOneBrightness;
+            playerOneBrightness = this->alphaA;
+            playerOneBrightness = (unsigned char)((float)(unsigned int)playerOneBrightness +
+                                                  (float)(80 - playerOneBrightness) / kTourVsBrightnessEaseDivisor);
+            this->alphaA = playerOneBrightness;
             texturedQuad.v[0].r = playerOneBrightness;
             texturedQuad.v[0].g = playerOneBrightness;
             texturedQuad.v[0].b = playerOneBrightness;
@@ -1011,11 +1062,11 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
 
         // Phase 2b: mirror the banner/name sequence for B in the right-hand clip;
         // its two backdrop layers lead the main layer by +64 and +32 units.
-        bannerClip.x = (int)window->panelSplitX;
+        bannerClip.x = (int)this->panelSplitX;
         bannerClip.w = kVsViewportWidth;
         Engine_SetScissorRect(&bannerClip);
 
-        banner = &((BannerEntry*)window->entries)[window->entryB];
+        banner = &((BannerEntry*)this->entries)[this->entryB];
         banner->Draw();
 
         Engine_SetFlexibleVertexFormat(kVsTexturedVertexFormat);
@@ -1048,10 +1099,11 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
 
         // Independent per-draw brightness cache for B's main name layer.
         unsigned char playerTwoBrightness;
-        if (window->playerTwoNameEnabled) {
-            playerTwoBrightness = window->alphaB;
-            playerTwoBrightness = (unsigned char)((float)(unsigned int)playerTwoBrightness + (float)(255 - playerTwoBrightness) / kTourVsBrightnessEaseDivisor);
-            window->alphaB = playerTwoBrightness;
+        if (this->playerTwoNameEnabled) {
+            playerTwoBrightness = this->alphaB;
+            playerTwoBrightness = (unsigned char)((float)(unsigned int)playerTwoBrightness +
+                                                  (float)(255 - playerTwoBrightness) / kTourVsBrightnessEaseDivisor);
+            this->alphaB = playerTwoBrightness;
             texturedQuad.v[0].r = playerTwoBrightness;
             texturedQuad.v[0].g = playerTwoBrightness;
             texturedQuad.v[0].b = playerTwoBrightness;
@@ -1065,9 +1117,10 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
             texturedQuad.v[3].g = playerTwoBrightness;
             texturedQuad.v[3].b = playerTwoBrightness;
         } else {
-            playerTwoBrightness = window->alphaB;
-            playerTwoBrightness = (unsigned char)((float)(unsigned int)playerTwoBrightness + (float)(80 - playerTwoBrightness) / kTourVsBrightnessEaseDivisor);
-            window->alphaB = playerTwoBrightness;
+            playerTwoBrightness = this->alphaB;
+            playerTwoBrightness = (unsigned char)((float)(unsigned int)playerTwoBrightness +
+                                                  (float)(80 - playerTwoBrightness) / kTourVsBrightnessEaseDivisor);
+            this->alphaB = playerTwoBrightness;
             texturedQuad.v[0].r = playerTwoBrightness;
             texturedQuad.v[0].g = playerTwoBrightness;
             texturedQuad.v[0].b = playerTwoBrightness;
@@ -1115,8 +1168,8 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         Render_DrawColoredPrimitive(kVsQuadPrimitive, coloredQuad, 4);
 
         coloredQuad[1].y = kTourVsOuterTopY;
-        coloredQuad[2].x = coloredQuad[0].x = window->panelSplitX - kTourVsBorderHalfWidth;
-        coloredQuad[3].x = coloredQuad[1].x = window->panelSplitX + kTourVsBorderHalfWidth;
+        coloredQuad[2].x = coloredQuad[0].x = this->panelSplitX - kTourVsBorderHalfWidth;
+        coloredQuad[3].x = coloredQuad[1].x = this->panelSplitX + kTourVsBorderHalfWidth;
         coloredQuad[0].y = kTourVsOuterTopY;
         coloredQuad[3].y = coloredQuad[2].y = kTourVsOuterBottomY;
         coloredQuad[3].z = coloredQuad[2].z = kFloat_0_0_TourMap;
@@ -1128,9 +1181,9 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
         coloredQuad[3].a = 0;
         coloredQuad[1].a = 0;
         // Phase 3: edge gradient between the settled divider and animated edge.
-        coloredQuad[3].x = window->edge;
-        coloredQuad[2].x = coloredQuad[0].x = window->panelSplitX + kTourVsBorderHalfWidth;
-        coloredQuad[1].x = window->edge;
+        coloredQuad[3].x = this->edge;
+        coloredQuad[2].x = coloredQuad[0].x = this->panelSplitX + kTourVsBorderHalfWidth;
+        coloredQuad[1].x = this->edge;
         coloredQuad[1].y = coloredQuad[0].y = kTourVsOuterTopY;
         coloredQuad[3].y = coloredQuad[2].y = kTourVsOuterBottomY;
         coloredQuad[3].z = coloredQuad[2].z = kFloat_0_0_TourMap;
@@ -1145,14 +1198,14 @@ void CTourVSWindow_Draw(TourVSWindowData* window) {
 
     if (Sing_805DC5F0() == 0) {
         if (s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(&s_bpCtrl[0]);
+            ((CBpCtrl*)&s_bpCtrl[0])->__ct();
             __register_global_object(&s_bpCtrl[0], (void*)CBpCtrl_dtor, s_bpCtrlDtorRecord_TourMap);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = &s_bpCtrl[0];
     }
     // Phase 4: scripted BP icons/characters/flash draw over the manual geometry.
-    void* item = (void*)IdMap_Lookup(Sing_805DC5F0(), window->layoutId);
+    void* item = (void*)IdMap_Lookup(Sing_805DC5F0(), this->layoutId);
     BpObject_Draw(item);
 }
 

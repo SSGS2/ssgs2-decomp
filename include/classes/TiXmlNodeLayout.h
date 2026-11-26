@@ -5,16 +5,16 @@
 
 class TiXmlNodeLayout {
 public:
-    void* vtable; // 0x0; TiXmlDocument_Clone
-    void* parent; // 0x4; TiXmlDocument_Clone
-    int nodeType; // 0x8; TiXmlDocument_Clone
-    void* firstChild; // 0xC; TiXmlDocument_Clone
-    void* lastChild; // 0x10; TiXmlDocument_Clone
-    const char* value; // 0x14; TiXmlDocument_Clone
-    int valueCapacity; // 0x18; TiXmlDocument_Clone
-    void* previousSibling; // 0x1C; TiXmlDocument_Clone
-    void* nextSibling; // 0x20; TiXmlDocument_Clone
-    int userData; // 0x24; TiXmlDocument_Clone
+    void* vtable;                // 0x0; TiXmlDocument_Clone
+    void* parent;                // 0x4; TiXmlDocument_Clone
+    int nodeType;                // 0x8; TiXmlDocument_Clone
+    void* firstChild;            // 0xC; TiXmlDocument_Clone
+    void* lastChild;             // 0x10; TiXmlDocument_Clone
+    const char* value;           // 0x14; TiXmlDocument_Clone
+    int valueCapacity;           // 0x18; TiXmlDocument_Clone
+    void* previousSibling;       // 0x1C; TiXmlDocument_Clone
+    void* nextSibling;           // 0x20; TiXmlDocument_Clone
+    int userData;                // 0x24; TiXmlDocument_Clone
     unsigned char documentError; // 0x28; TiXmlDocument_Clone
     char pad_29[0x3];
     int documentErrorId; // 0x2C; TiXmlDocument_Clone

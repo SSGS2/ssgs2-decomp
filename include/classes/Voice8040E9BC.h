@@ -7,11 +7,13 @@
 // gtl_nw4r_detail_Voice_ApplyVolume (0x8041086C). Unknown controls keep offset names.
 struct VoiceChannelParameters {
     float volumeScale; // +0x00: ApplyVolume multiplies master and voice gain by this
-    float channelPitchScale; // gtl_nw4r_detail_Voice_ApplyPendingParameters: clamped to [0,1], multiplied by Voice::pitchScale
+    float
+        channelPitchScale; // gtl_nw4r_detail_Voice_ApplyPendingParameters: clamped to [0,1], multiplied by Voice::pitchScale
     float panOffset;
     float surroundPanOffset;
     float auxASendOffset;
-    float lowPassFilterOffset; // gtl_nw4r_detail_Voice_ApplyPendingParameters: added to Voice::lowPassFilter before AudioVolume_NormalizedToExponentialGain32000
+    float
+        lowPassFilterOffset; // gtl_nw4r_detail_Voice_ApplyPendingParameters: added to Voice::lowPassFilter before AudioVolume_NormalizedToExponentialGain32000
     int unk_18;
 };
 #define OFF(f, o) typedef char VoiceChannelParameters_off_##f[((int)&((VoiceChannelParameters*)0)->f == (o)) ? 1 : -1]
@@ -25,12 +27,26 @@ OFF(unk_18, 0x18);
 #undef OFF
 typedef char VoiceChannelParameters_size[(sizeof(VoiceChannelParameters) == 0x1C) ? 1 : -1];
 
+namespace gtl {
+namespace nw4r {
+namespace detail {
+
 struct Voice {
+    // Grid setup and output mix. The grid of AX voices is owned by the Voice.
+    int AllocateAxVoiceGrid(int columns, int rows, int requestPriority, int eventCallback, int callbackArgument);
+    int ApplyOutputMixCoefficients();
+    void ComputeOutputMixCoefficients(int sourceChannel, int channelIndex, unsigned char* outBytes, void** auxPtr);
+    void StopAllAxVoiceRamps();
+    void SetChannelLoopSampleAddress(int rowIndex, int sampleBase, int loopAddress);
+    // Queue a pause update when the requested pause flag changes.
+    void SetPauseFlag(unsigned int value);
+
     void* vtable;
     int hardwareVoices[8];
     union {
         char channelParameterStorage[0x70];
-        VoiceChannelParameters channels[4]; // 0x24: GtlVoice_ConfigureSamplePlayback initializes rowCount 0x1C-byte parameter blocks
+        VoiceChannelParameters
+            channels[4]; // 0x24: GtlVoice_ConfigureSamplePlayback initializes rowCount 0x1C-byte parameter blocks
     };
     int sourceChannelCount;
     int outputVoiceCount;
@@ -41,7 +57,8 @@ struct Voice {
     };
     unsigned char allocated, playbackRequested, hardwareStarted, pauseRequested, hardwarePaused, pendingChanges;
     char biquadFilterState[0x6];
-    float pan, surroundPan, panOffset, surroundPanOffset; // GtlVoice_InitializePlaybackParameters (0x8040F444): initialized float parameters
+    float pan, surroundPan, panOffset,
+        surroundPanOffset; // GtlVoice_InitializePlaybackParameters (0x8040F444): initialized float parameters
     float lowPassFilter;
     union {
         char pad_C4[4];
@@ -50,7 +67,7 @@ struct Voice {
     float mainVolume, mainSend, auxASend, auxBSend, auxCSend;
     float remoteVolume0, remoteVolume1, remoteVolume2, remoteVolume3;
     float remoteSend0, remoteSend1, remoteSend2, remoteSend3;
-    float additionalOutputMix0, additionalOutputMix1, additionalOutputMix2, unk_108;
+    float additionalOutputMix0, additionalOutputMix1, additionalOutputMix2, additionalOutputMix3;
     float pitchScale;
     union {
         char pad_110[4];
@@ -61,6 +78,13 @@ struct Voice {
     int poolLinkNext;
     int poolLinkPrevious;
 };
+
+} // namespace detail
+} // namespace nw4r
+} // namespace gtl
+
+// Callers outside the engine voice code use the short name.
+using gtl::nw4r::detail::Voice;
 
 #define OFF(f, o) typedef char Voice_off_##f[((int)&((Voice*)0)->f == (o)) ? 1 : -1]
 OFF(vtable, 0x0);
@@ -102,7 +126,7 @@ OFF(remoteSend3, 0xf8);
 OFF(additionalOutputMix0, 0xfc);
 OFF(additionalOutputMix1, 0x100);
 OFF(additionalOutputMix2, 0x104);
-OFF(unk_108, 0x108);
+OFF(additionalOutputMix3, 0x108);
 OFF(pitchScale, 0x10c);
 OFF(pad_110, 0x110);
 OFF(volumeScale, 0x110);

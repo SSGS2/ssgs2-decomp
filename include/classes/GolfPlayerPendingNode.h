@@ -5,13 +5,20 @@
 
 class GolfPlayerPendingNode {
 public:
-    void* left; // 0x0: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
-    void* right; // 0x4: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
-    unsigned int parentFlags; // 0x8: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
-    unsigned int playerIndex; // 0xC: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
-    unsigned int stringFlags; // 0x10: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
-    unsigned int stringLength; // 0x14: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
-    char* stringData; // 0x18: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
+    void*
+        left; // 0x0: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
+    void*
+        right; // 0x4: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
+    unsigned int
+        parentFlags; // 0x8: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
+    unsigned int
+        playerIndex; // 0xC: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
+    unsigned int
+        stringFlags; // 0x10: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
+    unsigned int
+        stringLength; // 0x14: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
+    char*
+        stringData; // 0x18: CGolfPlayer_PollPendingModelLoads, CGolfPlayer_RebuildPendingModelLoads tree traversal and string cleanup
 };
 
 #define OFF(f, o) typedef char GolfPlayerPendingNode_off_##f[((int)&((GolfPlayerPendingNode*)0)->f == (o)) ? 1 : -1]

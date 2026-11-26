@@ -1,5 +1,6 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// A character or model preview: owns the exhibition that renders the model, the
+// selection it last resolved to, the attachment slots, and the state of the
+// loading indicator and pointer-driven input.
 #ifndef CLASSES_CASYNCEXHIBITION_H
 #define CLASSES_CASYNCEXHIBITION_H
 
@@ -7,35 +8,65 @@
 
 class CAsyncExhibition {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    int viewportLeft;                          // 0x4: 1 use in CAsyncExhibition_ReplaceExhibition
-    int viewportTop;                          // 0x8: 1 use in CAsyncExhibition_ReplaceExhibition
-    int viewportRight;                          // 0xc: 1 use in CAsyncExhibition_ReplaceExhibition
-    int viewportBottom;                         // 0x10: 1 use in CAsyncExhibition_ReplaceExhibition
-    float cameraDistance;                       // 0x14: 3 uses in CAsyncExhibition_ReplaceExhibition, CAsyncExhibition_Ctor
-    unsigned char previewMode;               // 0x18: 3 uses in CAsyncExhibition_ReplaceExhibition, CAsyncExhibition_Ctor
-    char pad_019[0x3];                  // 0x19
-    void* preloadObject;                       // 0x1c: 6 uses in CAsyncExhibition_UpdateLoadingStateAndIndicator, CAsyncExhibition_dtor, CAsyncExhibition_Draw...
-    unsigned char preloaderExternallyOwned;               // 0x20: 2 uses in CAsyncExhibition_dtor, CAsyncExhibition_Ctor
-    char pad_021[0x3];                  // 0x21
-    char displayDescriptor[0xc8];       // 0x24: CAsyncExhibition_Ctor calls ResolvedItemSelection_Clear; CAsyncExhibition_InstallResolvedSelectionCallback supplies it to CExhibition_CopyResolvedAvatarSelection
-    void* attachments[5];              // 0xec: CAsyncExhibition_ToggleAttachment checks/updates one of five slots after CExhibition_SetAttachment; ctor clears 0x14 bytes
-    float previousPointerX;                      // 0x100: 1 use in CAsyncExhibition_ReplaceExhibition
-    float previousPointerY;                      // 0x104: 1 use in CAsyncExhibition_ReplaceExhibition
-    float dragStartDepth;                      // 0x108: 1 use in CAsyncExhibition_Ctor
-    unsigned char pointerDragActive;              // 0x10c: 1 use in CAsyncExhibition_Ctor
-    char pad_10D[0x3];                  // 0x10d
-    void* exhibition;                      // 0x110: 10 uses in CAsyncExhibition_dtor, CAsyncExhibition_ReplaceExhibition, CAsyncExhibition_Draw...
-    float loadingIndicatorX;                      // 0x114: 1 use in CAsyncExhibition_Ctor
-    float loadingIndicatorY;                      // 0x118: 1 use in CAsyncExhibition_Ctor
-    int bpEntryId;                        // 0x11c: 5 uses in CAsyncExhibition_dtor, CAsyncExhibition_Draw, CAsyncExhibition_Ctor
-    unsigned char loadingIndicatorShown;              // 0x120: 1 use in CAsyncExhibition_Ctor
+    void* vtbl;                             // 0x0: original vtable pointer
+    int viewportLeft;                       // 0x4
+    int viewportTop;                        // 0x8
+    int viewportRight;                      // 0xc
+    int viewportBottom;                     // 0x10
+    float cameraDistance;                   // 0x14
+    unsigned char previewMode;              // 0x18
+    char pad_019[0x3];                      // 0x19
+    void* preloadObject;                    // 0x1c
+    unsigned char preloaderExternallyOwned; // 0x20
+    char pad_021[0x3];                      // 0x21
+    char displayDescriptor
+        [0xc8]; // 0x24: CAsyncExhibition_Ctor calls ResolvedItemSelection_Clear; CAsyncExhibition_InstallResolvedSelectionCallback supplies it to CExhibition::CopyResolvedAvatarSelection
+    void* attachments
+        [5]; // 0xec: ToggleAttachment checks/updates one of five slots after CExhibition::SetAttachment; ctor clears 0x14 bytes
+    float previousPointerX;              // 0x100
+    float previousPointerY;              // 0x104
+    float dragStartDepth;                // 0x108
+    unsigned char pointerDragActive;     // 0x10c
+    char pad_10D[0x3];                   // 0x10d
+    void* exhibition;                    // 0x110
+    float loadingIndicatorX;             // 0x114
+    float loadingIndicatorY;             // 0x118
+    int bpEntryId;                       // 0x11c
+    unsigned char loadingIndicatorShown; // 0x120
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x4, 0x24, 0xec, 0x114, 0x11c
+    void* CopyValidatedItemChanges(void* other, unsigned int key);
+    int UpdateLoadingStateAndIndicator(float delta);
+    int PollReady();
+    void SetScriptEnabled(int value);
+    int Draw();
+    int HandleCameraInput();
+    int UpdatePointerRotation();
+    void SetLoadingIndicatorPosition(const float* position);
+
+    // Attachments, texture variants and rotation of the model being shown.
+    int ToggleAttachment(unsigned int index, void* value);
+    int ApplyTextureVariant(void* source, void* arg);
+    int OffsetRotation(Vec3f* offset);
+
+    void* vfunc_9();
+    void* SetViewport(void* rectangle, float amount);
+    int SetCameraDistanceLimits(float minimumDistance, float maximumDistance);
+    int SetRotationLimits(float minimumRotation, float maximumRotation);
+    int SetRotation(void* vec);
+    int SetViewportYLimits(unsigned int minimumYBits, unsigned int maximumYBits);
+    static int PlayFixedNameAnimation(void* preview, void* q);
+    void* GetExhibition();
+    static int ReplaceExhibition(void* preview, void* viewportRectangle, float cameraDistance,
+                                 unsigned char previewMode);
+    static int TryInstallPreloadedObject(void* preview);
+
+    ~CAsyncExhibition();
+
+    CAsyncExhibition();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define CASYNCEXHIBITION_OFF(f, o) typedef char CAsyncExhibition_off_##f[((int)&((CAsyncExhibition*)0)->f == (o)) ? 1 : -1]
+#define CASYNCEXHIBITION_OFF(f, o) \
+    typedef char CAsyncExhibition_off_##f[((int)&((CAsyncExhibition*)0)->f == (o)) ? 1 : -1]
 CASYNCEXHIBITION_OFF(viewportLeft, 0x4);
 CASYNCEXHIBITION_OFF(viewportTop, 0x8);
 CASYNCEXHIBITION_OFF(viewportRight, 0xc);
@@ -56,5 +87,6 @@ CASYNCEXHIBITION_OFF(loadingIndicatorY, 0x118);
 CASYNCEXHIBITION_OFF(bpEntryId, 0x11c);
 CASYNCEXHIBITION_OFF(loadingIndicatorShown, 0x120);
 #undef CASYNCEXHIBITION_OFF
+typedef char CAsyncExhibition_size[(sizeof(CAsyncExhibition) == 0x124) ? 1 : -1];
 
-#endif  // CLASSES_CASYNCEXHIBITION_H
+#endif // CLASSES_CASYNCEXHIBITION_H

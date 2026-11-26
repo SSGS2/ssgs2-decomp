@@ -5,10 +5,10 @@
 
 class ComShotPositionTreeValue {
 public:
-    unsigned int key; // 0x0
-    unsigned int stringFlags; // 0x4
+    unsigned int key;          // 0x0
+    unsigned int stringFlags;  // 0x4
     unsigned int stringLength; // 0x8
-    unsigned int stringData; // 0xC
+    unsigned int stringData;   // 0xC
 };
 
 #define OFF(f, o) typedef char ShopTreeValue802307FC_off_##f[((int)&((ComShotPositionTreeValue*)0)->f == (o)) ? 1 : -1]

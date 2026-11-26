@@ -1,8 +1,11 @@
+// Round result screens: the stroke/match result menu (CResultMenu) with Pang totals and rank progress,
+// and the fight result menu (CResultFightMenu) with its scripted reveal of each result row.
+
 #include <decomp/static_init.h>
 // Stroke / Match result screens: scripted reveal, Pang totals, rank-progress
 // animation, optional placing texture, and dismissal input. Separate Fight/Match
 // views below describe their own objects, not aliases of the common result menu.
-// Mod lookup (scalar storage: u8032AE10_data.cpp; ABI layout: CResultMenu.h):
+// Mod lookup (scalar storage: the data section; ABI layout: CResultMenu.h):
 // - Frame rate: CResultMenu_UpdateUntilDismissed counts kAutomaticDismissUpdateCalls = 150
 //   AFTER UpdateProgressAndTotals reports complete. Baseline 30 calls/s would
 //   give 5 seconds; doubling calls halves that delay unless handled separately.
@@ -14,7 +17,7 @@
 //   progress starts 6, final total after 7 AND progressComplete. Absent double
 //   Pang/mode-2 progress skip their respective seconds. Long deltas can skip
 //   earlier reveal branches: this ladder does not queue all crossed events.
-// - Match/Fight reveals: CResultFightMenu_AdvanceRowRevealStages has FOUR equal 1-second
+// - Match/Fight reveals: CResultFightMenu::AdvanceRowRevealStages has FOUR equal 1-second
 //   thresholds (not delays 1/2/3/4); UpdateRevealSequence resets each score clock.
 // - Rank endpoints: constructor's 11 cumulative kRankProgressEnd* values, in
 //   progress units; preserve increasing nonzero interval lengths and element IDs
@@ -31,10 +34,13 @@
 #include "classes/CGolfDoc.h"
 #include "classes/CSharedDoc.h"
 #include "classes/CResultMenu.h"
-#define AsCResultMenu(p) ((class_layout::CResultMenu*)(p))
 #include "sdk_protos.h"
 #include "game/types.h"
 #include "game/singletons.h"
+#include "classes/CResultFightMenu.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CFontNumDraw.h"
+#include "classes/CBpTex.h"
 
 enum ResultMenuConstants {
     kStrokeResultMode = 0,
@@ -58,25 +64,40 @@ enum ResultMenuConstants {
     kResultVertexFormat = 0x11F005,
     kTriangleStrip = 0x98,
     kResultVertexBytes = 0x18,
-    kLoseResultElement = 0x0F, kWinResultElement = 0x10,
+    kLoseResultElement = 0x0F,
+    kWinResultElement = 0x10,
     kMatchMessageIndexBase = 0x20
 };
 // Cumulative progress units, not seconds, Pang, or verified player-facing ranks.
 enum ResultRankProgressEndpoints {
-    kRankProgressEnd0 = 200, kRankProgressEnd1 = 550,
-    kRankProgressEnd2 = 1050, kRankProgressEnd3 = 1800,
-    kRankProgressEnd4 = 2800, kRankProgressEnd5 = 4050,
-    kRankProgressEnd6 = 5650, kRankProgressEnd7 = 7650,
-    kRankProgressEnd8 = 10150, kRankProgressEnd9 = 13150,
+    kRankProgressEnd0 = 200,
+    kRankProgressEnd1 = 550,
+    kRankProgressEnd2 = 1050,
+    kRankProgressEnd3 = 1800,
+    kRankProgressEnd4 = 2800,
+    kRankProgressEnd5 = 4050,
+    kRankProgressEnd6 = 5650,
+    kRankProgressEnd7 = 7650,
+    kRankProgressEnd8 = 10150,
+    kRankProgressEnd9 = 13150,
     kRankProgressEnd10 = 16650
 };
 enum ResultTotalElements {
-    kResultLabelElement0 = 0, kResultLabelElement1 = 1, kResultLabelElement2 = 2,
-    kNormalProgressElementA = 3, kCommonProgressElement = 4,
-    kDoublePangElement = 5, kNormalProgressElementB = 6,
-    kTotalPangElement = 7, kBonusPangElement = 8, kEarnedPangElement = 9,
-    kTotalPangPartnerElement = 11, kBonusPangPartnerElement = 12, kEarnedPangPartnerElement = 13,
-    kSpecialProgressElementA = 0x33, kSpecialProgressElementB = 0x34
+    kResultLabelElement0 = 0,
+    kResultLabelElement1 = 1,
+    kResultLabelElement2 = 2,
+    kNormalProgressElementA = 3,
+    kCommonProgressElement = 4,
+    kDoublePangElement = 5,
+    kNormalProgressElementB = 6,
+    kTotalPangElement = 7,
+    kBonusPangElement = 8,
+    kEarnedPangElement = 9,
+    kTotalPangPartnerElement = 11,
+    kBonusPangPartnerElement = 12,
+    kEarnedPangPartnerElement = 13,
+    kSpecialProgressElementA = 0x33,
+    kSpecialProgressElementB = 0x34
 };
 // Main result layout map (elements and numeric-text entries are separate namespaces):
 // 0/1/2 labels; 3/6 normal progress, 4 shared progress; 5 double-Pang stage;
@@ -95,10 +116,11 @@ struct StringUnwindCleanup_u8032AE10 {
     const unsigned int* words;
     bool active;
     // Guard a string's heap allocation until explicit normal-path release.
-    explicit StringUnwindCleanup_u8032AE10(const void* string)
-        : words((const unsigned int*)string), active(true) {}
+    explicit StringUnwindCleanup_u8032AE10(const void* string) : words((const unsigned int*)string), active(true) {}
     // Disarm cleanup when the caller frees or transfers the buffer itself.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Release the heap-backed string during unwinding, unless disarmed.
     ~StringUnwindCleanup_u8032AE10() {
         if (active && (words[0] & 0x80000000u)) {
@@ -107,16 +129,11 @@ struct StringUnwindCleanup_u8032AE10 {
     }
 };
 
-
-struct ResultMenuConfigView;
 void InputManager_Init(void*);
 void InputManager_Dtor(void*);
 int InputManager_IsAnyMenuAdvanceActionActive(void*);
 void SoundManager_SetStreamVolume(void*, float, float);
 void Sound_PlayByName(void*, const char*, int, int, int, int, float, float, float);
-void CResultMenu_SelectStateScript(ResultMenuConfigView*);
-void CResultMenu_UpdateTaggedResultText(void*);
-int CResultMenu_UpdateProgressAndTotals(void*, float);
 extern const float kFloat_0_ResultMenu; // 0.0: result-menu zero
 extern const float kFloat_0_6_ResultMenu;
 extern const float kFloat_0_5_ResultScreen;
@@ -156,8 +173,6 @@ void UITextTable_ClearEntries(void*);
 void PointerVector_InitReserved(void*);
 void PointerVector_DestroyStorage(void*);
 void PointerArray_DeleteValue(void*, void*);
-void __ct__7CBpCtrlFv(void*);
-void CBpCtrl_DeleteEntryById(void*, int);
 void Layout_Destroy(void*, int);
 void __dl__FPv(void*);
 extern signed char s_pointerPairListInitialized;
@@ -167,17 +182,17 @@ extern char s_messageDrawPairList[];
 extern char s_fontNumDrawRegistry[];
 extern char __vt__11CResultMenu[];
 extern char s_inputManagerDtorRegistration_ResultMenu[];
-int CBpCtrl_PollAllEntriesLoaded(void*);
 void MPBase1_Ctor(void*);
 void* __nw__FUl(unsigned int);
 void Layout_Init(void*, int);
 void Layout_LoadExtended(void*, int, const char*);
 void* IdMap_Lookup(void*, int);
-void CBpCtrl_CreateEntry(void*, const char*, void*, int);
-void* CFontNumDraw_CreateInVector(void*);
 void WFixedFont_CreateMsgEcbResource(void*, void*, int, int);
 void WFixedFont_CreateAndRegisterMsgDraw(void*, void*, int);
-struct ChatMessageFactoryView { char managerStorage[0x10]; void* textFactory; };
+struct ChatMessageFactoryView {
+    char managerStorage[0x10];
+    void* textFactory;
+};
 extern ChatMessageFactoryView* g_chatMsg;
 extern char s_fontNumRegistryDtorRegistration_ResultMenu[];
 extern float kFloat_6_2831855;
@@ -194,11 +209,9 @@ extern char s_resultNumberEntryDescriptors[];
 void* GolfPlayer_GetEntryByIndex(void*, unsigned char);
 int SharedDoc_IsPlayerFlag0Set(int);
 void InputManager_SetSelectedPlayer(void*, int);
-void CFontNumDraw_RegisterEntries(void*, const char*, int, void*, void*);
 void BpObject_SetEnabled(void*, int);
 void BpObject_StartScriptByName(void*, const char*, int);
 float SoundManager_GetVolumeByMode(void*, int);
-int CGolfDoc_SelectPlayerBySnapshotWords(void*);
 extern int s_fightResultTextureElementIds[4];
 extern int s_fightResultTextureQuadTemplate[24];
 extern int s_resultPreviewQuadTemplate[];
@@ -236,9 +249,9 @@ extern const unsigned int kFloatBits_1_ResultProgressScale;
 extern const float kFloat_7_ResultMenu;
 extern const float kFloat_6_ResultProgressStartSeconds; // 6.0: start progress animation
 extern const float kFloat_3_ResultMenu;
-extern const float kFloat_10_ResultProgressMaskScale; // 10.0: progress-mask scale range
+extern const float kFloat_10_ResultProgressMaskScale;     // 10.0: progress-mask scale range
 extern const float kFloat_5_ResultTotalPangRevealSeconds; // 5.0: reveal total Pang
-extern const float kFloat_4_ResultLabelRevealSeconds; // 4.0: reveal result labels
+extern const float kFloat_4_ResultLabelRevealSeconds;     // 4.0: reveal result labels
 extern const float kFloat_2_ResultBonusPangRevealSeconds; // 2.0: reveal bonus Pang
 extern unsigned int s_resultModePlacingTextureNames[6];
 void WString_ReserveCapacity(void*, int);
@@ -246,27 +259,32 @@ void WString_ReplaceRange(void*, int, int, const char*, const char*, const char*
 void Text_ExpandTaggedText(void*, void*, void*, int);
 void Layout_GetElementPosition(void*, int, void*);
 void Text_SetPosition(void*, void*);
-void CMsgDraw_SetLayoutSize(void*, void*);
 unsigned int UIGroup_GetTintColor(void*);
 int UIGroup_GetCombinedOpacity(void*);
 void Text_SetContent(void*, const void*);
 void appFreeUni__FPv(void*);
 void* BpObject_GetOrCreateNamedGroup(void*, unsigned int);
 void UIGroup_SetEnabled(void*, int);
-void CBpTex_Init(void*);
 void UIGroup_SetOpacity(void*, int);
 void Sound_StopByAlias(void*, const char*);
 void UIGroup_SetScale(void*, void*);
 
-struct ResultLayoutView { char padding_00[0x1C]; void* layout; };
-
-/* original 0x8032AEAC-0x8032AEF0: the calls go through vtable slots 0x18 (int) and 0x14 (ours used 0x20 / 0x1C) */
-struct RenderCallback { 
-virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virtual int v4();
+struct ResultLayoutView {
+    char padding_00[0x1C];
+    void* layout;
 };
 
-struct DtorCallback { 
-virtual void f0(int);
+/* original 0x8032AEAC-0x8032AEF0: the calls go through vtable slots 0x18 (int) and 0x14 (ours used 0x20 / 0x1C) */
+struct RenderCallback {
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual int v4();
+};
+
+struct DtorCallback {
+    virtual void f0(int);
 };
 
 // Layout contracts (all byte offsets; views borrow the same allocation):
@@ -276,8 +294,7 @@ virtual void f0(int);
 // eleven progress boundaries; +70 current units, +74 initial units, +78 length,
 // +7C segment, +80 initialized, +84 header shown, +88 elapsed seconds,
 // +8C progress complete, +90 totals shown, +94 dismissal update calls, +98 saved volume.
-// ResultMenuProcessView::resultTextureWord is the +30 texture-presence word.
-// It gates audio ducking/trophy sound.
+// The +30 result texture pointer gates audio ducking and the trophy sound.
 // MatchResultRevealView and FightResultRevealView are two partial views of the
 // SAME CResultFightMenu (see its constructor/SetEntries in view_rank_and_fight_result_menu.cpp); neither
 // overlays the common CResultMenu. Preserve their different ABI load types.
@@ -293,45 +310,8 @@ struct MatchResultRevealView {
     float revealSeconds;
 };
 
-struct ResultMenuOwnedResources {
-    void* vtable;
-    char padding_04[0x18];
-    void* layout;
-    int mainBpEntryId;
-    void* mainBpObject;
-    int progressBpEntryId;
-    char padding_2c[4];
-    void* resultTexture;
-    void* uiTextTable;
-    char padding_38[4];
-    void* taggedText;
-    void* text;
-};
-
-struct Table24 { int v[24]; };
-
-// The expanded-text pointer precedes eleven rank-interval end thresholds.
-struct ResultMenuTextAndThresholds { void* text; int segmentThresholds[11]; };
-struct ResultMenuProgressSetup {
-    char padding_00[0x24];
-    void* mainBpObject;
-    char padding_28[4];
-    void* progressBpObject;
-    char padding_30[4];
-    void* uiTextTable;
-    char padding_38[8];
-    union {
-        ResultMenuTextAndThresholds textAndThresholds;
-        int textAndThresholdWords[12]; // Raw indexing preserves the original window addressing.
-    };
-    char padding_70[4];
-    float initialSegmentProgress;
-    int segmentLength;
-    int segmentIndex;
-    char padding_80[0x18];
-    float savedStreamVolume;
-    char padding_9c[0x18];
-    int remainingProgress;
+struct Table24 {
+    int v[24];
 };
 
 // Used after adding segmentIndex * 4 to the menu address: both words are thresholds.
@@ -340,11 +320,18 @@ struct ResultMenuShiftedProgressWindow {
     unsigned int segmentBegin, segmentEnd;
 };
 
-struct Callback { 
-virtual void f0(); virtual void f1(); virtual void f2(); virtual void f3(); virtual int invoke();
+struct Callback {
+    virtual void f0();
+    virtual void f1();
+    virtual void f2();
+    virtual void f3();
+    virtual int invoke();
 };
 
-struct CallbackOwner { char padding_00[0x30]; Callback* resultTexture; };
+struct CallbackOwner {
+    char padding_00[0x30];
+    Callback* resultTexture;
+};
 
 struct ResultMenuConstructionView {
     void* vtable;
@@ -387,15 +374,26 @@ struct ResultMenuDrawView {
     int initialized;
 };
 
-struct Vtx24 { float x, y; int rest[4]; };
-
-struct Quad24 { Vtx24 v[4]; };
-
-struct VObjQuad { 
-virtual void p0(); virtual void p1(); virtual void p2(); virtual void v5(); virtual int v6();
+struct Vtx24 {
+    float x, y;
+    int rest[4];
 };
 
-struct Table15 { int v[15]; };
+struct Quad24 {
+    Vtx24 v[4];
+};
+
+struct VObjQuad {
+    virtual void p0();
+    virtual void p1();
+    virtual void p2();
+    virtual void v5();
+    virtual int v6();
+};
+
+struct Table15 {
+    int v[15];
+};
 
 struct FightResultRevealView {
     char padding_00[0x18];
@@ -410,16 +408,8 @@ struct FightResultRevealView {
     float revealSeconds;
 };
 
-struct ResultMenuProcessView {
-    char padding_00[8]; int active; char padding_0c[0x0c]; int mode;
-    void* layout; char padding_20[4]; void* menu; char padding_28[8];
-    int resultTextureWord; // +30: resultTexture address word, not a general enable flag
-    char padding_34[0x4c]; int init; int headerDisplayed; char padding_88[0x0c];
-    int counter; char padding_98[4]; int selection; char padding_a0[0x2c]; int special;
-};
-
 struct ResultMenuData {
-    // Producer: CGolfRule_CreateResultMenu (golf_rule_round_flow_and_shot_sim.cpp). It takes the last eligible
+    // Producer: CGolfRule::CreateResultMenu (golf_rule_round_flow_and_shot_sim.cpp). It takes the last eligible
     // non-CPU player (or player 0 for special mode), not necessarily currentPlayer.
     // +00 placement = player+C4 high nibble; party overrides from shared+AF0.
     // +08 score = signed score-to-par player+C8, or party+1C4 (mode 2 float is
@@ -452,25 +442,13 @@ struct ResultMenuData {
     int specialMode; // +30 in payload: specialMode, copied to menu +CC
 };
 
-struct ResultMenuConfigView {
-    char pad00[0x18];
-    int resultMode;
-    char pad1c[8];
-    void* resource;
-    char pad28[8];
-    void* resultTexture;
-    char pad34[0x68];
-    int placing;
-    int textureIndex;
-    char padA4[0x28];
-    int specialMode;
-};
-
 struct ResultTextureStorage {
     void* vtable;
     char pad04[0x24];
     // Initialize the result texture wrapper before a placing-specific image is selected.
-    ResultTextureStorage() { CBpTex_Init(this); }
+    ResultTextureStorage() {
+        ((CBpTex*)this)->__ct();
+    }
 };
 
 struct ChildInterface {
@@ -512,7 +490,8 @@ struct AllocatorByteHigh {
 // within [0,1], layout width<=textureWidth-1 and height<=textureHeight-1; no
 // clamping is done. Rectangle L<=R,T<=B and dimensions must describe that same
 // layout element; this is a caller/resource invariant, not a validated fallback.
-void CResultFightMenu_DrawLayoutTextureQuad(ResultLayoutView* self, int index) {
+void CResultFightMenu::DrawLayoutTextureQuad(int index) {
+    ResultLayoutView* self = (ResultLayoutView*)this;
     // index must be 0..3. Texture descriptor words 0/1 supply pixel width/height.
     unsigned int rect[4];
     int* dp = s_fightResultTextureElementIds;
@@ -527,13 +506,16 @@ void CResultFightMenu_DrawLayoutTextureQuad(ResultLayoutView* self, int index) {
     float one[4];
     int id = dims[index];
     Layout_GetElementEnabled(self->layout, id, &state);
-    if (state == 0) return;
+    if (state == 0)
+        return;
 
     char* item = (char*)self + index * 0x0C;
     int childIndex = *(int*)(item + 0x3C);
     RenderCallback* cb = (RenderCallback*)((char*)self + childIndex * 0x28 + 0x6C);
-    if (cb == 0 || cb->v4() == 0) return;
-    if (BpSprite_GetTextureDescriptor(cb, rect) == 0) return;
+    if (cb == 0 || cb->v4() == 0)
+        return;
+    if (BpSprite_GetTextureDescriptor(cb, rect) == 0)
+        return;
     cb->v3();
 
     Layout_ReadElementRect(self->layout, id, viewport);
@@ -573,40 +555,49 @@ void CResultFightMenu_DrawLayoutTextureQuad(ResultLayoutView* self, int index) {
 
 #pragma opt_common_subs off
 // CResultFightMenu_SetEntries (view_rank_and_fight_result_menu.cpp) copies rows {playerIndex,score,totalPang}
-// at +3C; CGolfRule_CreateFightResultOrRetryMenu (golf_rule_round_flow_and_shot_sim.cpp) orders them by place.
+// at +3C; CGolfRule::CreateFightResultOrRetryMenu (golf_rule_round_flow_and_shot_sim.cpp) orders them by place.
 // This shifted view starts +34 so one-based resultIndex reads score at +40 and
 // Pang at +44 for row 0. Index 0 is decoration only, never a numeric record.
 // roundScore is signed player+C8 score-to-par, replaced by party+1C4 for party
 // modes 1/3, or truncated float +1C4 for mode 2. totalPang = player+CC + player+D0
 // (base+bonus), with no additional multiplier here. The third shifted word is
 // the NEXT row's player index (or texture prefix after row 3); never read it here.
-struct MatchRevealValueRecord { int roundScore, totalPang, unusedNextWord; };
-struct MatchRevealPayloadView { char prefix[0x34]; MatchRevealValueRecord values[5]; };
+struct MatchRevealValueRecord {
+    int roundScore, totalPang, unusedNextWord;
+};
+struct MatchRevealPayloadView {
+    char prefix[0x34];
+    MatchRevealValueRecord values[5];
+};
 
 // Reveal each newly reached match-result stage and publish its numeric values.
-// arg/layout/textTable required; resultIndex [0,5), resultMode [0,3),
+// revealView/layout/textTable required; resultIndex [0,5), resultMode [0,3),
 // revealedStages [0,4]. Mutates enabled elements/numbers and revealedStages only;
 // clock advancement belongs to UpdateRevealSequence. No allocation or ownership.
-int CResultFightMenu_AdvanceRowRevealStages(void* arg) {
+int CResultFightMenu::AdvanceRowRevealStages(void* revealView) {
     // All four thresholds are one second; a delayed call may reveal several stages together.
     // Reaching the final stage returns 0 on this call, then 1 on the next call.
-    unsigned int revealedStageCount = ((MatchResultRevealView*)arg)->revealedStages;
-    MatchResultRevealView* self = (MatchResultRevealView*)arg;
-    float thresholds[4] = {kMatchRevealThresholdSeconds, kMatchRevealThresholdSeconds,
-                           kMatchRevealThresholdSeconds, kMatchRevealThresholdSeconds};
-    if (revealedStageCount == kMatchRevealStageCount) return 1;
+    unsigned int revealedStageCount = ((MatchResultRevealView*)revealView)->revealedStages;
+    MatchResultRevealView* self = (MatchResultRevealView*)revealView;
+    float thresholds[4] = {kMatchRevealThresholdSeconds, kMatchRevealThresholdSeconds, kMatchRevealThresholdSeconds,
+                           kMatchRevealThresholdSeconds};
+    if (revealedStageCount == kMatchRevealStageCount)
+        return 1;
     unsigned int revealableStageCount;
     float revealSeconds = self->revealSeconds;
     for (revealableStageCount = 0; revealableStageCount < kMatchRevealStageCount; ++revealableStageCount) {
-        if (revealSeconds < thresholds[revealableStageCount]) break;
+        if (revealSeconds < thresholds[revealableStageCount])
+            break;
     }
-    if (revealedStageCount == revealableStageCount) return 0;
+    if (revealedStageCount == revealableStageCount)
+        return 0;
     for (unsigned int i = revealedStageCount; i < revealableStageCount; ++i) {
         switch ((int)i) {
         // Decoration first, then its label; resultIndex zero uses dedicated elements 1..3.
         case 0: {
             int resultIndex = self->resultIndex;
-            if (resultIndex == 0) Layout_SetElementEnabled(self->layout, 1, 1);
+            if (resultIndex == 0)
+                Layout_SetElementEnabled(self->layout, 1, 1);
             else {
                 int decorationElementByResult[4] = {4, 5, 6, 7};
                 Layout_SetElementEnabled(self->layout, decorationElementByResult[resultIndex - 1], 1);
@@ -625,22 +616,25 @@ int CResultFightMenu_AdvanceRowRevealStages(void* arg) {
         // Score text style is MODE-dependent: stroke, match, party groups of four.
         case 2: {
             int resultIndex = self->resultIndex;
-            if (resultIndex == 0) Layout_SetElementEnabled(self->layout, 2, 1);
+            if (resultIndex == 0)
+                Layout_SetElementEnabled(self->layout, 2, 1);
             else {
                 int scoreTextByModeAndResult[12] = {30, 31, 32, 33, 38, 39, 40, 41, 26, 27, 28, 29};
-                UITextTable_SetInteger(self->uiTextTable, (scoreTextByModeAndResult + self->resultMode * 4)[resultIndex - 1],
-                            ((MatchRevealPayloadView*)self)->values[resultIndex].roundScore);
+                UITextTable_SetInteger(self->uiTextTable,
+                                       (scoreTextByModeAndResult + self->resultMode * 4)[resultIndex - 1],
+                                       ((MatchRevealPayloadView*)self)->values[resultIndex].roundScore);
             }
             break;
         }
         // Total Pang uses one shared group of four text-table entries.
         case 3: {
             int resultIndex = self->resultIndex;
-            if (resultIndex == 0) Layout_SetElementEnabled(self->layout, 3, 1);
+            if (resultIndex == 0)
+                Layout_SetElementEnabled(self->layout, 3, 1);
             else {
                 int pangTextByResult[4] = {34, 35, 36, 37};
                 UITextTable_SetInteger(self->uiTextTable, pangTextByResult[resultIndex - 1],
-                            ((MatchRevealPayloadView*)self)->values[resultIndex].totalPang);
+                                       ((MatchRevealPayloadView*)self)->values[resultIndex].totalPang);
             }
             break;
         }
@@ -653,7 +647,8 @@ int CResultFightMenu_AdvanceRowRevealStages(void* arg) {
 
 // Reveal the first fight-result element once its one-second delay expires.
 inline int ResultMenu_RevealFirst(FightResultRevealView* self) {
-    if (self->revealSeconds < kFloat_1_ResultFightMenu) return 0;
+    if (self->revealSeconds < kFloat_1_ResultFightMenu)
+        return 0;
     Layout_SetElementEnabled(self->layout, 0, 1);
     return 1;
 }
@@ -662,7 +657,8 @@ inline int ResultMenu_RevealFirst(FightResultRevealView* self) {
 // nextResult [0,5), required self/layout; the 15-int table is five triples.
 // Negative timer leaves state unchanged; success increments nextResult once.
 inline int ResultMenu_RevealScore(FightResultRevealView* self) {
-    if (self->revealSeconds < kFloat_0_FightResultReveal) return 0;
+    if (self->revealSeconds < kFloat_0_FightResultReveal)
+        return 0;
     int* p = s_fightResultScoreElementIds;
     Table15 st = *(Table15*)p;
     int off;
@@ -684,11 +680,14 @@ inline int ResultMenu_RevealScore(FightResultRevealView* self) {
 // uses resultCount < nextResult, so equality still processes that final score.
 // Return 1 only on the later call observing completion. State transitions can
 // fall through within a call; do not replace them with independent frame delays.
-int CResultFightMenu_UpdateRevealSequence(FightResultRevealView* self, float dt) {
-    if (self->resultCount < self->nextResult) return 1;
+int CResultFightMenu::UpdateRevealSequence(float dt) {
+    FightResultRevealView* self = (FightResultRevealView*)this;
+    if (self->resultCount < self->nextResult)
+        return 1;
     switch (self->revealState) {
     case kResultRevealInitial:
-        if (ResultMenu_RevealFirst(self) == 0) break;
+        if (ResultMenu_RevealFirst(self) == 0)
+            break;
         {
             float zero = kFloat_0_FightResultReveal;
             self->revealState = kResultRevealStages;
@@ -696,7 +695,8 @@ int CResultFightMenu_UpdateRevealSequence(FightResultRevealView* self, float dt)
         }
         // Fall through to advance the first stage immediately.
     case kResultRevealStages:
-        if (CResultFightMenu_AdvanceRowRevealStages(self) == 0) break;
+        if (CResultFightMenu::AdvanceRowRevealStages(self) == 0)
+            break;
         {
             float zero = kFloat_0_FightResultReveal;
             self->revealState = kResultRevealScore;
@@ -704,7 +704,8 @@ int CResultFightMenu_UpdateRevealSequence(FightResultRevealView* self, float dt)
         }
         // Fall through to reveal the completed score.
     case kResultRevealScore:
-        if (ResultMenu_RevealScore(self) == 0) break;
+        if (ResultMenu_RevealScore(self) == 0)
+            break;
         {
             float zero = kFloat_0_FightResultReveal;
             self->revealState = kResultRevealStages;
@@ -718,19 +719,11 @@ int CResultFightMenu_UpdateRevealSequence(FightResultRevealView* self, float dt)
 }
 
 // Initialize this module's stored two-pi constant from the shared scalar pool.
-void ResultFightMenu_InitTauConstant() { s_resultFightMenuTau = kFloat_6_2831855; }
+void ResultFightMenu_InitTauConstant() {
+    s_resultFightMenuTau = kFloat_6_2831855;
+}
 
 } // C linkage
-struct CWarningLogoBase {
-    char storage[0x18];
-    // Initialize the shared menu base storage.
-    CWarningLogoBase() { MPBase1_Ctor(this); }
-    ~CWarningLogoBase();
-};
-struct CResultMenu : CWarningLogoBase {
-    char rest[0x84];
-    CResultMenu(void*);
-};
 // Play a named result-screen sound, borrowing name for this synchronous request.
 // Sound_PlayByName -> SoundManager_CreateSoundInstance (sound_manager.cpp) takes three
 // floats in FPRs independently of its four GPR optional arguments. Here the
@@ -744,15 +737,20 @@ struct CResultMenu : CWarningLogoBase {
 // argument ordering in this legacy declaration; changing its signature needs
 // coordinated ABI work. The manager owns/reuses the resulting sound instance.
 static inline void PlayResultSound(const char* name) {
-    Sound_PlayByName((void*)g_soundManager, name, 0, 0, 0, 0, kFloat_0_5_ResultScreen, kFloat_200_ResultMenu, kFloat_1_Menu8032AE10);
+    Sound_PlayByName((void*)g_soundManager, name, 0, 0, 0, 0, kFloat_0_5_ResultScreen, kFloat_200_ResultMenu,
+                     kFloat_1_Menu8032AE10);
 }
 
 // Lazy singleton: construct the BP controller (CBpCtrl) on first use, register its destructor and publish it
 // through Sing_805DC5F0.
 static inline void EnsureBpCtrl() {
     if (((int&)Sing_805DC5F0()) == 0) {
-        if (!s_bpCtrlInitialized) { __ct__7CBpCtrlFv(s_bpCtrl); __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_ResultMenu); s_bpCtrlInitialized=1; }
-        ((int&)Sing_805DC5F0())=(int)s_bpCtrl;
+        if (!s_bpCtrlInitialized) {
+            ((CBpCtrl*)s_bpCtrl)->__ct();
+            __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_ResultMenu);
+            s_bpCtrlInitialized = 1;
+        }
+        ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
     }
 }
 // Create owning layout/BP/text resources; arg carries the result-mode integer through void*.
@@ -788,33 +786,38 @@ CResultMenu::CResultMenu(void* arg) {
     struct MenuLayout {
         char storage[0x5c];
         // Initialize the owning layout object with the requested layout parameter.
-        MenuLayout(int count) { Layout_Init(this, count); }
+        MenuLayout(int count) {
+            Layout_Init(this, count);
+        }
     };
     MenuLayout* p = new MenuLayout(5);
     self->layout = p;
     Layout_LoadExtended(p, 0, ((ResultScreenStringPool*)resultScreenStrings)->layoutFile);
     EnsureBpCtrl();
-    CBpCtrl_CreateEntry((void*)((int&)Sing_805DC5F0()), ((ResultScreenStringPool*)resultScreenStrings)->resultBpFile, &self->mainBpEntryId, 0);
+    ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+        ->CreateEntry(((ResultScreenStringPool*)resultScreenStrings)->resultBpFile, &self->mainBpEntryId, 0);
     EnsureBpCtrl();
-    self->mainBpObject = IdMap_Lookup((void*)((int&)Sing_805DC5F0()),self->mainBpEntryId);
+    self->mainBpObject = IdMap_Lookup((void*)((int&)Sing_805DC5F0()), self->mainBpEntryId);
     EnsureBpCtrl();
-    CBpCtrl_CreateEntry((void*)((int&)Sing_805DC5F0()),((ResultScreenStringPool*)resultScreenStrings)->rankUpBpFile,&self->progressBpEntryId,0);
+    ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+        ->CreateEntry(((ResultScreenStringPool*)resultScreenStrings)->rankUpBpFile, &self->progressBpEntryId, 0);
     EnsureBpCtrl();
-    self->progressBpObject = IdMap_Lookup((void*)((int&)Sing_805DC5F0()),self->progressBpEntryId);
+    self->progressBpObject = IdMap_Lookup((void*)((int&)Sing_805DC5F0()), self->progressBpEntryId);
     // Lazy singleton: construct the font-number draw registry on first use and publish it through Sing_805DC830.
     if (!((int&)Sing_805DC830())) {
         if (!s_pointerVectorInitialized) {
             PointerVector_InitReserved(s_fontNumDrawRegistry);
-            __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage,s_fontNumRegistryDtorRegistration_ResultMenu);
-            s_pointerVectorInitialized=1;
+            __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage,
+                                     s_fontNumRegistryDtorRegistration_ResultMenu);
+            s_pointerVectorInitialized = 1;
         }
-        ((int&)Sing_805DC830())=(int)s_fontNumDrawRegistry;
+        ((int&)Sing_805DC830()) = (int)s_fontNumDrawRegistry;
     }
     // Phase 2: register numeric/text renderers in shared registries; retain their handles.
-    self->uiTextTable=CFontNumDraw_CreateInVector((void*)((int&)Sing_805DC830()));
-    self->textFactory=g_chatMsg->textFactory;
-    WFixedFont_CreateMsgEcbResource(self->textFactory,&self->taggedText,0,0);
-    WFixedFont_CreateAndRegisterMsgDraw(self->textFactory,&self->text,1);
+    self->uiTextTable = CFontNumDraw::CreateInVector((PtrVector*)((int&)Sing_805DC830()));
+    self->textFactory = g_chatMsg->textFactory;
+    WFixedFont_CreateMsgEcbResource(self->textFactory, &self->taggedText, 0, 0);
+    WFixedFont_CreateAndRegisterMsgDraw(self->textFactory, &self->text, 1);
     // Phase 3: cumulative rank endpoints: 200,550,1050,1800,2800,4050,5650,7650,10150,13150,16650.
     // Cumulative endpoints of the 11 rank-progress segments.
     self->segmentThresholds[0] = kRankProgressEnd0;
@@ -835,15 +838,16 @@ extern "C" {
 // Null accepted; shouldDelete > 0 also frees self, so return is then dangling.
 // Unregister text/numeric entries before deleting referenced objects; BP object
 // handles are released via entry IDs, not independently through their pointers.
-ResultMenuOwnedResources* CResultMenu_dtor(ResultMenuOwnedResources* self, int shouldDelete) {
+void* CResultMenu::Destroy(int shouldDelete) {
     char* g = s_inputManagerDtorRegistration_ResultMenu;
+    void* self = this;
     if (self != 0) {
-        self->vtable = __vt__11CResultMenu;
-        if (self->resultTexture != 0) {
-            if (self->resultTexture != 0) {
-                ((DtorCallback*)self->resultTexture)->f0(1);
+        *(void**)self = __vt__11CResultMenu;
+        if (resultTexture != 0) {
+            if (resultTexture != 0) {
+                ((DtorCallback*)resultTexture)->f0(1);
             }
-            self->resultTexture = 0;
+            resultTexture = 0;
         }
         if (((int&)Sing_805DC650()) == 0) {
             if (s_pointerPairListInitialized == 0) {
@@ -853,21 +857,21 @@ ResultMenuOwnedResources* CResultMenu_dtor(ResultMenuOwnedResources* self, int s
             }
             ((int&)Sing_805DC650()) = (int)s_messageDrawPairList;
         }
-        PointerPairList_RemoveByKey((void*)((int&)Sing_805DC650()), self->text);
-        if (self->text != 0) {
-            if (self->text != 0) {
-                ((DtorCallback*)self->text)->f0(1);
+        PointerPairList_RemoveByKey((void*)((int&)Sing_805DC650()), text);
+        if (text != 0) {
+            if (text != 0) {
+                ((DtorCallback*)text)->f0(1);
             }
-            self->text = 0;
+            text = 0;
         }
-        if (self->taggedText != 0) {
-            if (self->taggedText != 0) {
-                ((DtorCallback*)self->taggedText)->f0(1);
+        if (taggedText != 0) {
+            if (taggedText != 0) {
+                ((DtorCallback*)taggedText)->f0(1);
             }
-            self->taggedText = 0;
+            taggedText = 0;
         }
-        UITextTable_ClearEntries(self->uiTextTable);
-        if (self->uiTextTable != 0) {
+        UITextTable_ClearEntries(uiTextTable);
+        if (uiTextTable != 0) {
             if (((int&)Sing_805DC830()) == 0) {
                 if (s_pointerVectorInitialized == 0) {
                     PointerVector_InitReserved(s_fontNumDrawRegistry);
@@ -876,50 +880,57 @@ ResultMenuOwnedResources* CResultMenu_dtor(ResultMenuOwnedResources* self, int s
                 }
                 ((int&)Sing_805DC830()) = (int)s_fontNumDrawRegistry;
             }
-            PointerArray_DeleteValue((void*)((int&)Sing_805DC830()), self->uiTextTable);
+            PointerArray_DeleteValue((void*)((int&)Sing_805DC830()), uiTextTable);
         }
-        if (self->progressBpEntryId != -1) {
+        if (progressBpEntryId != -1) {
             if (((int&)Sing_805DC5F0()) == 0) {
                 if (s_bpCtrlInitialized == 0) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
+                    ((CBpCtrl*)s_bpCtrl)->__ct();
                     __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (g + 0x0C));
                     s_bpCtrlInitialized = 1;
                 }
                 ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
             }
-            CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), self->progressBpEntryId);
-            self->progressBpEntryId = -1;
+            ((CBpCtrl*)(((int&)Sing_805DC5F0())))->DeleteEntryById(progressBpEntryId);
+            progressBpEntryId = -1;
         }
-        if (self->mainBpEntryId != -1) {
+        if (mainBpEntryId != -1) {
             if (((int&)Sing_805DC5F0()) == 0) {
                 if (s_bpCtrlInitialized == 0) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
+                    ((CBpCtrl*)s_bpCtrl)->__ct();
                     __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (g + 0x0C));
                     s_bpCtrlInitialized = 1;
                 }
                 ((int&)Sing_805DC5F0()) = (int)s_bpCtrl;
             }
-            CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), self->mainBpEntryId);
-            self->mainBpEntryId = -1;
+            ((CBpCtrl*)(((int&)Sing_805DC5F0())))->DeleteEntryById(mainBpEntryId);
+            mainBpEntryId = -1;
         }
-        if (self->layout != 0) { Layout_Destroy((void*)self->layout, 1); self->layout = 0; }
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (layout != 0) {
+            Layout_Destroy((void*)layout, 1);
+            layout = 0;
+        }
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
 // Update the result layout while resources are loading.
-void CResultMenu_UpdateLayout(ResultLayoutView* self) { Layout_Update(self->layout); }
+void CResultMenu::UpdateLayout() {
+    Layout_Update(layout);
+}
 
 // Wait for the layout, all BP resources, and the optional result texture to become ready.
-int CResultMenu_PollLoadComplete(CallbackOwner* self) {
+int CResultMenu::PollLoadComplete() {
     // Original result-menu readiness path: success follows the shared failure return.
     do {
-        if (Layout_PollLoadComplete(AsCResultMenu(self)->layout) != 0) {
-        EnsureBpCtrl();
-        if (CBpCtrl_PollAllEntriesLoaded((void*)((int&)Sing_805DC5F0())) != 0) {
-            if (self->resultTexture == 0 || self->resultTexture->invoke() != 0) break;
-        }
+        if (Layout_PollLoadComplete(layout) != 0) {
+            EnsureBpCtrl();
+            if (((CBpCtrl*)(((int&)Sing_805DC5F0())))->PollAllEntriesLoaded() != 0) {
+                if (resultTexture == 0 || ((Callback*)resultTexture)->invoke() != 0)
+                    break;
+            }
         }
         return 0;
     } while (0);
@@ -931,7 +942,7 @@ int CResultMenu_PollLoadComplete(CallbackOwner* self) {
 // input player, registers five numeric entries, saves stream volume, and picks
 // interval 0..10. Award must not exceed the stored total; intervals must be
 // increasing/nonzero. Snapshot player selection is clamped to [0,3].
-void CResultMenu_InitRankProgress(ResultMenuProgressSetup* self) {
+void CResultMenu::InitRankProgress() {
     // Phase 1: choose the lowest input-player value, preferring players without flag 0.
     int i;
     int selectedInputPlayer = 3;
@@ -939,47 +950,54 @@ void CResultMenu_InitRankProgress(ResultMenuProgressSetup* self) {
     for (i = 0; i < ((CGolfDoc*)((CSharedDoc*)g_sharedDoc)->golfDoc)->playerCount; i++) {
         int* entry = (int*)GolfPlayer_GetEntryByIndex((void*)((CSharedDoc*)g_sharedDoc)->golfDoc, (unsigned char)i);
         if (selectedInputPlayer > *entry && SharedDoc_IsPlayerFlag0Set(i) == 0) {
-            selectedInputPlayer = *(int*)GolfPlayer_GetEntryByIndex((void*)((CSharedDoc*)g_sharedDoc)->golfDoc, (unsigned char)i);
+            selectedInputPlayer =
+                *(int*)GolfPlayer_GetEntryByIndex((void*)((CSharedDoc*)g_sharedDoc)->golfDoc, (unsigned char)i);
             candidateIndex = i;
         }
     }
     if (candidateIndex < 0) {
         for (i = 0; i < ((CGolfDoc*)((CSharedDoc*)g_sharedDoc)->golfDoc)->playerCount; i++) {
             int* entry = (int*)GolfPlayer_GetEntryByIndex((void*)((CSharedDoc*)g_sharedDoc)->golfDoc, (unsigned char)i);
-            if (selectedInputPlayer > *entry) selectedInputPlayer = *(int*)GolfPlayer_GetEntryByIndex((void*)((CSharedDoc*)g_sharedDoc)->golfDoc, (unsigned char)i);
+            if (selectedInputPlayer > *entry)
+                selectedInputPlayer =
+                    *(int*)GolfPlayer_GetEntryByIndex((void*)((CSharedDoc*)g_sharedDoc)->golfDoc, (unsigned char)i);
         }
     }
-    if (((int&)Sing_805DC5C8()) == 0) {
+    if (((int&)GetInputManagerSlot()) == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_ResultMenu);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_ResultMenu);
             s_inputManagerInitialized = 1;
         }
-        ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+        ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
     }
-    InputManager_SetSelectedPlayer((void*)((int&)Sing_805DC5C8()), selectedInputPlayer);
-    CFontNumDraw_RegisterEntries(self->uiTextTable, s_resultNumberEntryDescriptors, 5, self->mainBpObject, ((ResultScreenStringPool*)resultScreenStrings)->numberFont);
-    AsUITextTable(self->uiTextTable)->drawEnabled = 1;
-    BpObject_SetEnabled(self->progressBpObject, 0);
-    BpObject_StartScriptByName(self->progressBpObject, ((ResultScreenStringPool*)resultScreenStrings)->defaultScript, 1);
-    self->savedStreamVolume = SoundManager_GetVolumeByMode((void*)g_soundManager, 0);
+    InputManager_SetSelectedPlayer((void*)((int&)GetInputManagerSlot()), selectedInputPlayer);
+    ((CFontNumDraw*)uiTextTable)
+        ->RegisterEntries(s_resultNumberEntryDescriptors, 5, mainBpObject,
+                          ((ResultScreenStringPool*)resultScreenStrings)->numberFont);
+    AsUITextTable(uiTextTable)->drawEnabled = 1;
+    BpObject_SetEnabled(progressBpObject, 0);
+    BpObject_StartScriptByName(progressBpObject, ((ResultScreenStringPool*)resultScreenStrings)->defaultScript, 1);
+    savedStreamVolume = SoundManager_GetVolumeByMode((void*)g_soundManager, 0);
     // Phase 2: select the rank interval containing the player's total before this reward.
-    int progressPlayer = CGolfDoc_SelectPlayerBySnapshotWords((void*)((CSharedDoc*)g_sharedDoc)->golfDoc);
+    int progressPlayer = ((CGolfDoc*)(((CSharedDoc*)g_sharedDoc)->golfDoc))->SelectPlayerBySnapshotWords();
     int clampedPlayerIndex = progressPlayer < 0 ? 0 : (progressPlayer > 3 ? 3 : progressPlayer);
-    int remainingProgress = self->remainingProgress;
-    int initialTotalProgress = *(int*)((char*)g_sharedDoc + clampedPlayerIndex * 0x1D4 + 0x44) - remainingProgress;
+    int remainingProgressValue = remainingProgress;
+    int initialTotalProgress = *(int*)((char*)g_sharedDoc + clampedPlayerIndex * 0x1D4 + 0x44) - remainingProgressValue;
     for (int j = 0; j < 11; j++) {
-        if (initialTotalProgress >= self->textAndThresholdWords[j+1] && j != 10) continue;
+        if (initialTotalProgress >= textAndThresholdWords[j + 1] && j != 10)
+            continue;
         if (j == 0) {
-            int* q = &self->textAndThresholdWords[j];
-            self->segmentLength = q[1];
-            self->initialSegmentProgress = (float)initialTotalProgress;
+            int* q = &textAndThresholdWords[j];
+            segmentLength = q[1];
+            initialSegmentProgress = (float)initialTotalProgress;
         } else {
-            int* q = &self->textAndThresholdWords[j];
-            self->segmentLength = q[1] - q[0];
-            self->initialSegmentProgress = (float)(initialTotalProgress - q[0]);
+            int* q = &textAndThresholdWords[j];
+            segmentLength = q[1] - q[0];
+            initialSegmentProgress = (float)(initialTotalProgress - q[0]);
         }
-        self->segmentIndex = j;
+        segmentIndex = j;
         break;
     }
 }
@@ -991,57 +1009,67 @@ void CResultMenu_InitRankProgress(ResultMenuProgressSetup* self) {
 // Counter advances only after totals were complete at entry to their updater;
 // it is update calls, not elapsed dt. Normal placing must be [1,8] for the two
 // eight-entry decoration tables; do not remove lower-bound caller validation.
-int CResultMenu_UpdateUntilDismissed(ResultMenuProcessView* self, float dt) {
+int CResultMenu::UpdateUntilDismissed(float dt) {
     // Phase 1: initialize visuals once, then wait for the introductory BP script to finish.
-    Layout_Update(self->layout);
-    if (!self->active) return 0;
-    if (!self->init) {
-        self->init = 1;
-        for (int i = 0; i < kResultLayoutElementCount; i++) Layout_SetElementEnabled(self->layout, i, 0);
-        CResultMenu_SelectStateScript((ResultMenuConfigView*)self);
-        CResultMenu_UpdateTaggedResultText(self);
-        if (self->resultTextureWord) SoundManager_SetStreamVolume((void*)g_soundManager, kFloat_0_ResultMenu, kFloat_0_6_ResultMenu);
+    Layout_Update(layout);
+    if (!active)
+        return 0;
+    if (!initialized) {
+        initialized = 1;
+        for (int i = 0; i < kResultLayoutElementCount; i++)
+            Layout_SetElementEnabled(layout, i, 0);
+        SelectStateScript();
+        UpdateTaggedResultText();
+        if (resultTexture)
+            SoundManager_SetStreamVolume((void*)g_soundManager, kFloat_0_ResultMenu, kFloat_0_6_ResultMenu);
     }
-    if (!BpObject_IsCurrentScriptComplete(self->menu)) return 0;
-    if (!self->headerDisplayed) {
-        self->headerDisplayed = 1;
-        if (self->mode != 2) {
-            if (self->mode == 1 || self->special) {
-                if (self->selection == 1) {
-                    Layout_SetElementEnabled(self->layout, kWinResultElement, 1);
-                    if (self->resultTextureWord)
+    if (!BpObject_IsCurrentScriptComplete(mainBpObject))
+        return 0;
+    if (!headerDisplayed) {
+        headerDisplayed = 1;
+        if (resultMode != 2) {
+            if (resultMode == 1 || specialMode) {
+                if (placing == 1) {
+                    Layout_SetElementEnabled(layout, kWinResultElement, 1);
+                    if (resultTexture)
                         PlayResultSound(((ResultScreenStringPool*)resultScreenStrings)->trophySound);
-                } else Layout_SetElementEnabled(self->layout, kLoseResultElement, 1);
+                } else
+                    Layout_SetElementEnabled(layout, kLoseResultElement, 1);
             } else {
-                struct Eight { int v[8]; };
-                Eight a = *(Eight*)s_resultPlacingDecorationElementIds;
-                Eight b = *(Eight*)s_resultPlacingLabelElementIds;
-                int n = self->selection - 1;
+                struct Eight {
+                    int v[8];
+                };
+                Eight decorationElementIds = *(Eight*)s_resultPlacingDecorationElementIds;
+                Eight labelElementIds = *(Eight*)s_resultPlacingLabelElementIds;
+                int n = placing - 1;
                 int play = 1;
                 if (n < 3) {
-                    if (self->resultTextureWord) {
+                    if (resultTexture) {
                         PlayResultSound(((ResultScreenStringPool*)resultScreenStrings)->trophySound);
                     }
                     play = 0;
                 }
-                if (play) Layout_SetElementEnabled(self->layout, a.v[n], 1);
-                Layout_SetElementEnabled(self->layout, b.v[n], 1);
+                if (play)
+                    Layout_SetElementEnabled(layout, decorationElementIds.v[n], 1);
+                Layout_SetElementEnabled(layout, labelElementIds.v[n], 1);
             }
         }
     }
     // Phase 2: after totals finish, accept advance input or dismiss after 150 update calls.
     do {
-        if (CResultMenu_UpdateProgressAndTotals(self, dt)) {
-            if (++self->counter < kAutomaticDismissUpdateCalls) {
-                if (!((int&)Sing_805DC5C8())) {
+        if (UpdateProgressAndTotals(dt)) {
+            if (++completionFrames < kAutomaticDismissUpdateCalls) {
+                if (!((int&)GetInputManagerSlot())) {
                     if (!s_inputManagerInitialized) {
                         InputManager_Init(s_gameInputManager);
-                        __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_ResultMenu);
+                        __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                                 s_inputManagerDtorRegistration_ResultMenu);
                         s_inputManagerInitialized = 1;
                     }
-                    ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+                    ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
                 }
-                if (InputManager_IsAnyMenuAdvanceActionActive((void*)((int&)Sing_805DC5C8())) == 0) break;
+                if (InputManager_IsAnyMenuAdvanceActionActive((void*)((int&)GetInputManagerSlot())) == 0)
+                    break;
             }
             PlayResultSound(((ResultScreenStringPool*)resultScreenStrings)->clickSound);
             return 1;
@@ -1055,29 +1083,34 @@ int CResultMenu_UpdateUntilDismissed(ResultMenuProcessView* self, float dt) {
 // self required. Uninitialized returns without rendering. Loaded callbacks may
 // alter global render state; no caller-state restore. Rectangles are UI LTRB,
 // vertex ABI is XYZ/color/UV (24 bytes), triangle strip emits two primitives.
-void CResultMenu_Draw(ResultMenuDrawView* self) {
-    if (self->initialized == 0) return;
-    ResultMenu_DrawSharedQuad(self);
-    BpObject_TryInvokeCurrentCallback(self->mainBpObject, 0);
-    BpObject_Draw(self->mainBpObject);
-    if (BpObject_IsCurrentScriptComplete(self->mainBpObject) != 0) {
-        Layout_DrawWithOpacity(self->layout, kFloat_1_Menu8032AE10);
-        if (self->resultTexture != 0 && ((VObjQuad*)self->resultTexture)->v6() != 0) {
+void CResultMenu::Draw() {
+    if (initialized == 0)
+        return;
+    ResultMenu_DrawSharedQuad(this);
+    BpObject_TryInvokeCurrentCallback(mainBpObject, 0);
+    BpObject_Draw(mainBpObject);
+    if (BpObject_IsCurrentScriptComplete(mainBpObject) != 0) {
+        Layout_DrawWithOpacity(layout, kFloat_1_Menu8032AE10);
+        if (resultTexture != 0 && ((VObjQuad*)resultTexture)->v6() != 0) {
             int rect[4];
-            Layout_ReadElementRect(self->layout, kTexturePreviewElement, rect);
+            Layout_ReadElementRect(layout, kTexturePreviewElement, rect);
             Quad24 q = *(Quad24*)s_resultPreviewQuadTemplate;
-            q.v[0].x = (float)rect[0]; q.v[0].y = (float)rect[1];
-            q.v[1].x = (float)rect[2]; q.v[1].y = (float)rect[1];
-            q.v[2].x = (float)rect[0]; q.v[2].y = (float)rect[3];
-            q.v[3].x = (float)rect[2]; q.v[3].y = (float)rect[3];
+            q.v[0].x = (float)rect[0];
+            q.v[0].y = (float)rect[1];
+            q.v[1].x = (float)rect[2];
+            q.v[1].y = (float)rect[1];
+            q.v[2].x = (float)rect[0];
+            q.v[2].y = (float)rect[3];
+            q.v[3].x = (float)rect[2];
+            q.v[3].y = (float)rect[3];
             Engine_SetFlexibleVertexFormat(kResultVertexFormat);
-            ((VObjQuad*)self->resultTexture)->v5();
+            ((VObjQuad*)resultTexture)->v5();
             DrawPrimitiveUP(kTriangleStrip, 2, q.v, kResultVertexBytes);
         }
-        UITextTable_Draw(self->uiTextTable);
+        UITextTable_Draw(uiTextTable);
     }
-    BpObject_TryInvokeCurrentCallback(self->progressBpObject, 0);
-    BpObject_Draw(self->progressBpObject);
+    BpObject_TryInvokeCurrentCallback(progressBpObject, 0);
+    BpObject_Draw(progressBpObject);
 }
 
 // Copy the result payload and create its placing-specific texture when normal-mode rules require it.
@@ -1107,43 +1140,46 @@ void CResultMenu_Draw(ResultMenuDrawView* self) {
 // These are caller invariants, not checks performed here. No reward is awarded
 // or recomputed by copying the payload. A texture load failure leaves the new
 // owned object installed; readiness polling decides whether drawing can begin.
-void CResultMenu_SetResultData(ResultMenuConfigView* self, ResultMenuData* config) {
-    int specialMode;
-    unsigned short specialTotal;
-    unsigned int messageIndex, currentHoleIndex, roundHoleCount, totalProgress, remainingProgress, hasDoublePang, bonusPang, earnedPang, score;
-    int textureIndex;
-    void* child = self->resultTexture;
+// Held at its original score: only the register choice for the payload pointer differs in every form tried.
+void CResultMenu::SetResultData(ResultMenuData* config) {
+    int newSpecialMode;
+    unsigned short newSpecialTotal;
+    unsigned int newMessageIndex, newCurrentHoleIndex, newRoundHoleCount, newTotalProgress, newRemainingProgress,
+        newHasDoublePang, newBonusPang, newEarnedPang, newScore;
+    int newTextureIndex;
+    unsigned int newPlacing;
+    void* child = resultTexture;
     if (child) {
         delete (ChildInterface*)child;
-        self->resultTexture = 0;
+        resultTexture = 0;
     }
-    specialMode = config->specialMode; // payload +30 selects special-mode result rules
-    unsigned int placing = config->placing;
-    textureIndex = config->textureIndex;
-    score = config->score;
-    earnedPang = config->earnedPang;
-    bonusPang = config->bonusPang;
-    hasDoublePang = config->hasDoublePang;
-    remainingProgress = config->remainingProgress;
-    totalProgress = config->totalProgress;
-    roundHoleCount = config->roundHoleCount;
-    currentHoleIndex = config->currentHoleIndex;
-    messageIndex = config->messageIndex;
-    specialTotal = config->specialTotal;
-    self->placing = placing;
-    self->textureIndex = textureIndex;
-    AsCResultMenu(self)->score = score;
-    AsCResultMenu(self)->earnedPang = earnedPang;
-    AsCResultMenu(self)->earnedBonusPang = bonusPang;
-    AsCResultMenu(self)->doublePangEnabled = hasDoublePang;
-    AsCResultMenu(self)->remainingProgress = remainingProgress;
-    AsCResultMenu(self)->normalTotalProgress = totalProgress; // total progress displayed for normal results
-    AsCResultMenu(self)->roundHoleCount = roundHoleCount;
-    AsCResultMenu(self)->currentHoleIndex = currentHoleIndex;
-    AsCResultMenu(self)->resultMessageIndex = messageIndex; // suffix of MSG_SINGLE_STROKE_CMN / MATCH_CMN
-    AsCResultMenu(self)->specialTotalProgress = specialTotal; // total displayed in special mode
-    self->specialMode = specialMode;
-    if (!specialMode && (int)placing - 1 < 3 && textureIndex < 3) {
+    newSpecialMode = config->specialMode; // payload +30 selects special-mode result rules
+    newPlacing = config->placing;
+    newTextureIndex = config->textureIndex;
+    newScore = config->score;
+    newEarnedPang = config->earnedPang;
+    newBonusPang = config->bonusPang;
+    newHasDoublePang = config->hasDoublePang;
+    newRemainingProgress = config->remainingProgress;
+    newTotalProgress = config->totalProgress;
+    newRoundHoleCount = config->roundHoleCount;
+    newCurrentHoleIndex = config->currentHoleIndex;
+    newMessageIndex = config->messageIndex;
+    newSpecialTotal = config->specialTotal;
+    placing = newPlacing;
+    textureIndex = newTextureIndex;
+    score = newScore;
+    earnedPang = newEarnedPang;
+    earnedBonusPang = newBonusPang;
+    doublePangEnabled = newHasDoublePang;
+    remainingProgress = newRemainingProgress;
+    normalTotalProgress = newTotalProgress; // total progress displayed for normal results
+    roundHoleCount = newRoundHoleCount;
+    currentHoleIndex = newCurrentHoleIndex;
+    resultMessageIndex = newMessageIndex;   // suffix of MSG_SINGLE_STROKE_CMN / MATCH_CMN
+    specialTotalProgress = newSpecialTotal; // total displayed in special mode
+    specialMode = newSpecialMode;
+    if (!newSpecialMode && (int)newPlacing - 1 < 3 && newTextureIndex < 3) {
         const char* names[2][3];
         unsigned int* pp = s_resultModePlacingTextureNames;
         names[0][0] = (const char*)*pp++;
@@ -1152,47 +1188,48 @@ void CResultMenu_SetResultData(ResultMenuConfigView* self, ResultMenuData* confi
         names[1][0] = (const char*)*pp++;
         names[1][1] = (const char*)*pp++;
         names[1][2] = (const char*)*pp;
-        placing = (self->resultMode == 0);
+        newPlacing = (resultMode == 0);
         ResultTextureStorage* obj = new ResultTextureStorage;
-        self->resultTexture = obj;
-        ((ChildInterface*)obj)->initialize(names[placing][textureIndex]);
+        resultTexture = obj;
+        ((ChildInterface*)obj)->initialize(names[newPlacing][newTextureIndex]);
     }
 }
 
 // Choose the result script by mode and placing; suppress two groups for special results.
 // Mode 2 requires placing 0..3. Normal stroke requires placing >=1 and caps only the upper
 // index at 3; match/special use placing==1 as win. No lower-bound validation is added here.
-void CResultMenu_SelectStateScript(ResultMenuConfigView* self) {
-    if (self->resultMode == kSkipProgressResultMode) {
+void CResultMenu::SelectStateScript() {
+    if (resultMode == kSkipProgressResultMode) {
         unsigned int* p = s_skipProgressResultScriptNames;
         const char* names[4];
         names[0] = (const char*)*p++;
         names[1] = (const char*)*p++;
         names[2] = (const char*)*p++;
         names[3] = (const char*)*p;
-        BpObject_StartScriptByName(self->resource, names[self->placing], 1);
-    } else if (self->resultMode == kMatchResultMode || self->specialMode) {
-        if (self->placing == 1)
-            BpObject_StartScriptByName(self->resource, ((ResultScreenStringPool*)resultScreenStrings)->winScript, 1);
+        BpObject_StartScriptByName(mainBpObject, names[placing], 1);
+    } else if (resultMode == kMatchResultMode || specialMode) {
+        if (placing == 1)
+            BpObject_StartScriptByName(mainBpObject, ((ResultScreenStringPool*)resultScreenStrings)->winScript, 1);
         else
-            BpObject_StartScriptByName(self->resource, ((ResultScreenStringPool*)resultScreenStrings)->loseScript, 1);
+            BpObject_StartScriptByName(mainBpObject, ((ResultScreenStringPool*)resultScreenStrings)->loseScript, 1);
     } else {
-        int index = self->placing - 1;
-        if (index > 3) index = 3;
+        int index = placing - 1;
+        if (index > 3)
+            index = 3;
         unsigned int* p2 = s_strokeResultPlacingScriptNames;
         const char* names[4];
         names[0] = (const char*)*p2++;
         names[1] = (const char*)*p2++;
         names[2] = (const char*)*p2++;
         names[3] = (const char*)*p2;
-        BpObject_StartScriptByName(self->resource, names[index], 1);
+        BpObject_StartScriptByName(mainBpObject, names[index], 1);
     }
-    if (self->specialMode) {
+    if (specialMode) {
         unsigned int ids[2];
         ids[0] = s_specialResultHiddenGroupName0;
         ids[1] = s_specialResultHiddenGroupName1;
         for (unsigned char i = 0; i < 2; ++i) {
-            void* obj = BpObject_GetOrCreateNamedGroup(self->resource, ids[i]);
+            void* obj = BpObject_GetOrCreateNamedGroup(mainBpObject, ids[i]);
             UIGroup_SetEnabled(obj, 0);
         }
     }
@@ -1204,7 +1241,7 @@ void CResultMenu_SelectStateScript(ResultMenuConfigView* self) {
 // heap bytes and unwind guards balance them. Text receives expanded content while
 // buffers are alive. Layout element 45 supplies position/size, caption group tint
 // supplies color/opacity; preserve expansion before clearing/freeing temporaries.
-void CResultMenu_UpdateTaggedResultText(void* self) {
+void CResultMenu::UpdateTaggedResultText() {
     // Phase 1: start with centered alignment; normal results append and expand a message tag.
     WideStringStorage expandedText;
     WideStringStorage messageTag;
@@ -1232,8 +1269,8 @@ void CResultMenu_UpdateTaggedResultText(void* self) {
     s38.val = s38.junk;
     WString_ReplaceRange(&expandedText, 0, 0, base, base + len * 2, &s38.val);
     StringUnwindCleanup_u8032AE10 stringCleanup0(&expandedText);
-    if (AsCResultMenu(self)->specialMode == 0) {
-        int v = (*(int*)&AsCResultMenu(self)->resultMessageIndex);
+    if (specialMode == 0) {
+        int v = (*(int*)&resultMessageIndex);
         const char* p1a = base + (int)&((ResultMessageTagPool*)0)->messagePrefix;
         messageTag.flags = 0;
         messageTag.size = 0;
@@ -1243,7 +1280,7 @@ void CResultMenu_UpdateTaggedResultText(void* self) {
         s30.val = s30.junk;
         WString_ReplaceRange(&messageTag, 0, 0, p1a, p1a + len2 * 2, &s30.val);
         StringUnwindCleanup_u8032AE10 stringCleanup1(&messageTag);
-        if (AsCResultMenu(self)->resultMode == kStrokeResultMode) {
+        if (resultMode == kStrokeResultMode) {
             const char* p3c = base + (int)&((ResultMessageTagPool*)0)->strokePrefix;
             sz = (messageTag.flags >> 31) == 0 ? (*(unsigned char*)&messageTag & 0x7F) : messageTag.size;
             s28.val = s28.junk;
@@ -1277,27 +1314,36 @@ void CResultMenu_UpdateTaggedResultText(void* self) {
         s10.val = s10.junk;
         int len5 = wcslen((const wchar_t*)p10);
         WString_ReplaceRange(&messageTag, sz3, 0, p10, p10 + len5 * 2, &s10.val);
-        Text_ExpandTaggedText(AsCResultMenu(self)->taggedText, &expandedText, (messageTag.flags >> 31) == 0 ? (char*)&messageTag + 2 : messageTag.data, 0);
-        if (messageTag.flags >> 31) { stringCleanup1.release(); appFreeUni__FPv(messageTag.data); }
+        Text_ExpandTaggedText(taggedText, &expandedText,
+                              (messageTag.flags >> 31) == 0 ? (char*)&messageTag + 2 : messageTag.data, 0);
+        if (messageTag.flags >> 31) {
+            stringCleanup1.release();
+            appFreeUni__FPv(messageTag.data);
+        }
     }
     // Phase 2: apply screen-space bounds and the animated caption group's color/opacity.
-    Layout_GetElementPosition(AsCResultMenu(self)->layout, kResultMessageElement, messagePosition);
-    Text_SetPosition(AsCResultMenu(self)->text, messagePosition);
-    Layout_GetElementSize(AsCResultMenu(self)->layout, kResultMessageElement, messageSize);
-    CMsgDraw_SetLayoutSize(AsCResultMenu(self)->text, messageSize);
-    void* captionGroup = BpObject_GetOrCreateNamedGroup(AsCResultMenu(self)->resource, (unsigned int)(((ResultScreenStringPool*)resultScreenStrings)->captionGroup));
+    Layout_GetElementPosition(layout, kResultMessageElement, messagePosition);
+    Text_SetPosition(text, messagePosition);
+    Layout_GetElementSize(layout, kResultMessageElement, messageSize);
+    ((CMsgDraw*)text)->SetLayoutSize((float*)messageSize);
+    void* captionGroup = BpObject_GetOrCreateNamedGroup(
+        mainBpObject, (unsigned int)(((ResultScreenStringPool*)resultScreenStrings)->captionGroup));
     unsigned int groupTint = UIGroup_GetTintColor(captionGroup);
     int low;
     int groupOpacity = UIGroup_GetCombinedOpacity(captionGroup);
     // Alpha = 0 for zero opacity, otherwise (2*opacity-1)&255; RGB bytes are reordered
     // from the group's packed tint. Preserve this integer mapping, including its wrapping.
     low = ((-groupOpacity | groupOpacity) >> 31) & (groupOpacity * 2 - 1);
-    unsigned int packed = (groupTint << 24) | ((groupTint << 8) & 0xFF0000) | ((groupTint >> 8) & 0xFF00) | (low & 0xFF);
-    (*(unsigned int*)&((CMsgDraw*)AsCResultMenu(self)->text)->colorMultiplier) = packed;
-    Text_SetContent(AsCResultMenu(self)->text, (expandedText.flags >> 31) == 0 ? (char*)&expandedText + 2 : expandedText.data);
+    unsigned int packed =
+        (groupTint << 24) | ((groupTint << 8) & 0xFF0000) | ((groupTint >> 8) & 0xFF00) | (low & 0xFF);
+    (*(unsigned int*)&((CMsgDraw*)text)->colorMultiplier) = packed;
+    Text_SetContent(text, (expandedText.flags >> 31) == 0 ? (char*)&expandedText + 2 : expandedText.data);
     s8.val = s8.junk;
     WString_ReplaceRange(&expandedText, 0, -1, 0, 0, &s8.val);
-    if (expandedText.flags >> 31) { stringCleanup0.release(); appFreeUni__FPv(expandedText.data); }
+    if (expandedText.flags >> 31) {
+        stringCleanup0.release();
+        appFreeUni__FPv(expandedText.data);
+    }
 }
 #pragma use_lmw_stmw reset
 
@@ -1319,89 +1365,100 @@ void CResultMenu_UpdateTaggedResultText(void* self) {
 // resets both float counters and converts (remaining-current) back to int.
 // Keep those steps and the +1.0f operation; using a wider accumulator would
 // silently change the admitted rounding behavior rather than document it.
-int CResultMenu_UpdateProgressAndTotals(void* self, float deltaSeconds) {
-    if (AsCResultMenu(self)->totalsDisplayed != 0) {
+int CResultMenu::UpdateProgressAndTotals(float deltaSeconds) {
+    if (totalsDisplayed != 0) {
         return 1;
     }
     // Seconds drive reveal stages; progress units advance once per eligible update call.
-    float displaySeconds = AsCResultMenu(self)->displayElapsedTime;
+    float displaySeconds = displayElapsedTime;
     // Phase 1: reveal the final progress total once both timeline and rank animation finish.
-    if (displaySeconds >= kFloat_7_ResultMenu && AsCResultMenu(self)->progressComplete != 0) {
-        if (AsCResultMenu(self)->specialMode != 0) {
-            Layout_SetElementEnabled(AsCResultMenu(self)->layout, kSpecialProgressElementA, 1);
-            Layout_SetElementEnabled(AsCResultMenu(self)->layout, kSpecialProgressElementB, 1);
-            Layout_SetElementEnabled(AsCResultMenu(self)->layout, kCommonProgressElement, 1);
-            UITextTable_SetInteger(AsCResultMenu(self)->uiTextTable, kTotalProgressTextEntry, AsCResultMenu(self)->specialTotalProgress);
+    if (displaySeconds >= kFloat_7_ResultMenu && progressComplete != 0) {
+        if (specialMode != 0) {
+            Layout_SetElementEnabled(layout, kSpecialProgressElementA, 1);
+            Layout_SetElementEnabled(layout, kSpecialProgressElementB, 1);
+            Layout_SetElementEnabled(layout, kCommonProgressElement, 1);
+            UITextTable_SetInteger(uiTextTable, kTotalProgressTextEntry, specialTotalProgress);
         } else {
-            Layout_SetElementEnabled(AsCResultMenu(self)->layout, kNormalProgressElementB, 1);
-            Layout_SetElementEnabled(AsCResultMenu(self)->layout, kNormalProgressElementA, 1);
-            Layout_SetElementEnabled(AsCResultMenu(self)->layout, kCommonProgressElement, 1);
-            UITextTable_SetInteger(AsCResultMenu(self)->uiTextTable, kTotalProgressTextEntry, (*(int*)&AsCResultMenu(self)->normalTotalProgress));
+            Layout_SetElementEnabled(layout, kNormalProgressElementB, 1);
+            Layout_SetElementEnabled(layout, kNormalProgressElementA, 1);
+            Layout_SetElementEnabled(layout, kCommonProgressElement, 1);
+            UITextTable_SetInteger(uiTextTable, kTotalProgressTextEntry, (*(int*)&normalTotalProgress));
         }
-        AsCResultMenu(self)->totalsDisplayed = 1;
+        totalsDisplayed = 1;
     } else {
         // Phase 2: advance one progress unit if the rank script is idle; otherwise reveal totals.
-        displaySeconds = AsCResultMenu(self)->displayElapsedTime;
-        if (displaySeconds >= kFloat_6_ResultProgressStartSeconds && AsCResultMenu(self)->progressComplete == 0 && BpObject_IsCurrentScriptComplete(AsCResultMenu(self)->progressBpObject) != 0) {
-            Layout_SetElementEnabled(AsCResultMenu(self)->layout, AsCResultMenu(self)->segmentIndex + kProgressSegmentElementBase, 1);
-            BpObject_SetEnabled(AsCResultMenu(self)->progressBpObject, 1);
-            void* obj = BpObject_GetOrCreateNamedGroup(AsCResultMenu(self)->progressBpObject, (unsigned int)(((ResultScreenStringPool*)resultScreenStrings)->rankUpGroup));
+        displaySeconds = displayElapsedTime;
+        if (displaySeconds >= kFloat_6_ResultProgressStartSeconds && progressComplete == 0 &&
+            BpObject_IsCurrentScriptComplete(progressBpObject) != 0) {
+            Layout_SetElementEnabled(layout, segmentIndex + kProgressSegmentElementBase, 1);
+            BpObject_SetEnabled(progressBpObject, 1);
+            void* obj = BpObject_GetOrCreateNamedGroup(
+                progressBpObject, (unsigned int)(((ResultScreenStringPool*)resultScreenStrings)->rankUpGroup));
             UIGroup_SetOpacity(obj, 0);
-            int remaining = (*(int*)&AsCResultMenu(self)->remainingProgress);
-            float current = AsCResultMenu(self)->currentProgress;
+            int remaining = (*(int*)&remainingProgress);
+            float current = currentProgress;
             float limit = (float)remaining;
             float increment = kFloat_1_Menu8032AE10;
             float advancedProgressUnits = current + increment;
-            AsCResultMenu(self)->currentProgress = advancedProgressUnits;
+            currentProgress = advancedProgressUnits;
             if (advancedProgressUnits >= limit) {
                 // Award exhausted: clamp units, stop the loop and restore stream volume.
-                AsCResultMenu(self)->currentProgress = (float)remaining;
+                currentProgress = (float)remaining;
                 Sound_StopByAlias(g_soundManager, ((ResultScreenStringPool*)resultScreenStrings)->experienceSound);
-                AsCResultMenu(self)->progressComplete = 1;
-                if (AsCResultMenu(self)->resultTexture != 0) {
+                progressComplete = 1;
+                if (resultTexture != 0) {
                     float f2;
-                    if (AsCResultMenu(self)->resultMode == kStrokeResultMode) f2 = kFloat_0_6_ResultMenu; else f2 = kFloat_3_ResultMenu;
-                    SoundManager_SetStreamVolume(g_soundManager, AsCResultMenu(self)->savedStreamVolume, f2);
+                    if (resultMode == kStrokeResultMode)
+                        f2 = kFloat_0_6_ResultMenu;
+                    else
+                        f2 = kFloat_3_ResultMenu;
+                    SoundManager_SetStreamVolume(g_soundManager, savedStreamVolume, f2);
                 }
             } else {
-                int segmentLength = AsCResultMenu(self)->segmentLength;
-                float previous = AsCResultMenu(self)->initialSegmentProgress;
-                float segmentLimit = (float)segmentLength;
+                int segmentSize = segmentLength;
+                float previous = initialSegmentProgress;
+                float segmentLimit = (float)segmentSize;
                 // Include units earned before this result in the current segment.
                 advancedProgressUnits = advancedProgressUnits + previous;
                 if (advancedProgressUnits >= segmentLimit) {
-                    if (AsCResultMenu(self)->segmentIndex == kLastProgressSegment) {
-                        Sound_StopByAlias(g_soundManager, ((ResultScreenStringPool*)resultScreenStrings)->experienceSound);
-                        int length = AsCResultMenu(self)->segmentLength;
+                    if (segmentIndex == kLastProgressSegment) {
+                        Sound_StopByAlias(g_soundManager,
+                                          ((ResultScreenStringPool*)resultScreenStrings)->experienceSound);
+                        int length = segmentLength;
                         float completed = (float)length;
-                        AsCResultMenu(self)->progressComplete = 1;
-                        AsCResultMenu(self)->currentProgress = completed;
-                        if (AsCResultMenu(self)->resultTexture != 0) {
+                        progressComplete = 1;
+                        currentProgress = completed;
+                        if (resultTexture != 0) {
                             float f2;
-                            if (AsCResultMenu(self)->resultMode == kStrokeResultMode) f2 = kFloat_0_6_ResultMenu; else f2 = kFloat_3_ResultMenu;
-                            SoundManager_SetStreamVolume(g_soundManager, AsCResultMenu(self)->savedStreamVolume, f2);
+                            if (resultMode == kStrokeResultMode)
+                                f2 = kFloat_0_6_ResultMenu;
+                            else
+                                f2 = kFloat_3_ResultMenu;
+                            SoundManager_SetStreamVolume(g_soundManager, savedStreamVolume, f2);
                         }
                     } else {
                         PlayResultSound(((ResultScreenStringPool*)resultScreenStrings)->levelUpSound);
                         UIGroup_SetOpacity(obj, 0xff);
-                        BpObject_StartScriptByName(AsCResultMenu(self)->progressBpObject, ((ResultScreenStringPool*)resultScreenStrings)->rankUpScript, 1);
-                        int remainingBefore = (*(int*)&AsCResultMenu(self)->remainingProgress);
-                        float currentBefore = AsCResultMenu(self)->currentProgress;
-                        AsCResultMenu(self)->currentProgress = kFloat_0_ResultMenu;
-                        AsCResultMenu(self)->initialSegmentProgress = kFloat_0_ResultMenu;
+                        BpObject_StartScriptByName(progressBpObject,
+                                                   ((ResultScreenStringPool*)resultScreenStrings)->rankUpScript, 1);
+                        int remainingBefore = (*(int*)&remainingProgress);
+                        float currentBefore = currentProgress;
+                        currentProgress = kFloat_0_ResultMenu;
+                        initialSegmentProgress = kFloat_0_ResultMenu;
                         float difference = (float)remainingBefore;
                         difference = difference - currentBefore;
                         int remainingAfter = (int)difference;
-                        AsCResultMenu(self)->remainingProgress = remainingAfter;
-                        Layout_SetElementEnabled(AsCResultMenu(self)->layout, (*(unsigned int*)&AsCResultMenu(self)->segmentIndex) + kProgressSegmentElementBase, 0);
-                        unsigned int nextSegment = (*(unsigned int*)&AsCResultMenu(self)->segmentIndex) + 1;
-                        (*(unsigned int*)&AsCResultMenu(self)->segmentIndex) = nextSegment;
+                        remainingProgress = remainingAfter;
+                        Layout_SetElementEnabled(layout, (*(unsigned int*)&segmentIndex) + kProgressSegmentElementBase,
+                                                 0);
+                        unsigned int nextSegment = (*(unsigned int*)&segmentIndex) + 1;
+                        (*(unsigned int*)&segmentIndex) = nextSegment;
                         int off = nextSegment << 2;
-                        char* p = (char*)self + off;
+                        char* p = (char*)this + off;
                         unsigned int segmentBegin = ((ResultMenuShiftedProgressWindow*)p)->segmentBegin;
                         unsigned int segmentEnd = ((ResultMenuShiftedProgressWindow*)p)->segmentEnd;
-                        (*(unsigned int*)&AsCResultMenu(self)->segmentLength) = segmentEnd - segmentBegin;
-                        Layout_SetElementEnabled(AsCResultMenu(self)->layout, nextSegment + kProgressSegmentElementBase, 1);
+                        (*(unsigned int*)&segmentLength) = segmentEnd - segmentBegin;
+                        Layout_SetElementEnabled(layout, nextSegment + kProgressSegmentElementBase, 1);
                     }
                 } else {
                     PlayResultSound(((ResultScreenStringPool*)resultScreenStrings)->experienceSound);
@@ -1410,69 +1467,71 @@ int CResultMenu_UpdateProgressAndTotals(void* self, float deltaSeconds) {
 
             // Mask X scale = 10*(1 - (current + initial)/segmentLength); Y stays at one.
             unsigned int progress[2] = {kFloatBits_0_ResultProgressScale, kFloatBits_1_ResultProgressScale};
-            int length = AsCResultMenu(self)->segmentLength;
-            float currentProgress = AsCResultMenu(self)->currentProgress;
-            float previousProgress = AsCResultMenu(self)->initialSegmentProgress;
+            int length = segmentLength;
+            float currentValue = currentProgress;
+            float previousProgress = initialSegmentProgress;
             float progressLength = (float)length;
             float denominator = (float)progressLength;
-            float numerator = currentProgress + previousProgress;
+            float numerator = currentValue + previousProgress;
             float fraction = numerator / denominator;
             float scale = kFloat_10_ResultProgressMaskScale;
             float progressValue = scale * fraction;
             progressValue = scale - progressValue;
             *(float*)progress = progressValue;
-            void* o = BpObject_GetOrCreateNamedGroup(AsCResultMenu(self)->progressBpObject, (unsigned int)(((ResultScreenStringPool*)resultScreenStrings)->progressMaskGroup));
+            void* o = BpObject_GetOrCreateNamedGroup(
+                progressBpObject, (unsigned int)(((ResultScreenStringPool*)resultScreenStrings)->progressMaskGroup));
             UIGroup_SetScale(o, progress);
         } else {
-            displaySeconds = AsCResultMenu(self)->displayElapsedTime;
+            displaySeconds = displayElapsedTime;
             // Reveal the latest applicable stage; this ladder does not replay skipped stages.
             if (displaySeconds >= kFloat_5_ResultTotalPangRevealSeconds) {
-                Layout_SetElementEnabled(AsCResultMenu(self)->layout, kTotalPangElement, 1);
-                Layout_SetElementEnabled(AsCResultMenu(self)->layout, kTotalPangPartnerElement, 1);
-                unsigned int a = AsCResultMenu(self)->doublePangEnabled;
-                unsigned int b = AsCResultMenu(self)->earnedPang;
-                unsigned int c = AsCResultMenu(self)->earnedBonusPang;
+                Layout_SetElementEnabled(layout, kTotalPangElement, 1);
+                Layout_SetElementEnabled(layout, kTotalPangPartnerElement, 1);
+                unsigned int a = doublePangEnabled;
+                unsigned int b = earnedPang;
+                unsigned int c = earnedBonusPang;
                 unsigned int sum = b + c;
-                if (a != 0) sum = sum << 1;
-                UITextTable_SetInteger(AsCResultMenu(self)->uiTextTable, kTotalPangTextEntry, sum);
+                if (a != 0)
+                    sum = sum << 1;
+                UITextTable_SetInteger(uiTextTable, kTotalPangTextEntry, sum);
             } else if (displaySeconds >= kFloat_4_ResultLabelRevealSeconds) {
-                Layout_SetElementEnabled(AsCResultMenu(self)->layout, kResultLabelElement0, 1);
-                Layout_SetElementEnabled(AsCResultMenu(self)->layout, kResultLabelElement1, 1);
-                Layout_SetElementEnabled(AsCResultMenu(self)->layout, kResultLabelElement2, 1);
+                Layout_SetElementEnabled(layout, kResultLabelElement0, 1);
+                Layout_SetElementEnabled(layout, kResultLabelElement1, 1);
+                Layout_SetElementEnabled(layout, kResultLabelElement2, 1);
             } else if (displaySeconds >= kFloat_3_ResultMenu) {
-                Layout_SetElementEnabled(AsCResultMenu(self)->layout, kDoublePangElement, 1);
+                Layout_SetElementEnabled(layout, kDoublePangElement, 1);
             } else if (displaySeconds >= kFloat_2_ResultBonusPangRevealSeconds) {
-                Layout_SetElementEnabled(AsCResultMenu(self)->layout, kBonusPangElement, 1);
-                Layout_SetElementEnabled(AsCResultMenu(self)->layout, kBonusPangPartnerElement, 1);
-                UITextTable_SetInteger(AsCResultMenu(self)->uiTextTable, kBonusPangTextEntry, AsCResultMenu(self)->earnedBonusPang);
+                Layout_SetElementEnabled(layout, kBonusPangElement, 1);
+                Layout_SetElementEnabled(layout, kBonusPangPartnerElement, 1);
+                UITextTable_SetInteger(uiTextTable, kBonusPangTextEntry, earnedBonusPang);
             } else if (displaySeconds >= kFloat_1_Menu8032AE10) {
-                Layout_SetElementEnabled(AsCResultMenu(self)->layout, kEarnedPangElement, 1);
-                Layout_SetElementEnabled(AsCResultMenu(self)->layout, kEarnedPangPartnerElement, 1);
-                UITextTable_SetInteger(AsCResultMenu(self)->uiTextTable, kEarnedPangTextEntry, AsCResultMenu(self)->earnedPang);
+                Layout_SetElementEnabled(layout, kEarnedPangElement, 1);
+                Layout_SetElementEnabled(layout, kEarnedPangPartnerElement, 1);
+                UITextTable_SetInteger(uiTextTable, kEarnedPangTextEntry, earnedPang);
             }
         }
     }
     // Phase 3: advance the reveal clock and skip stages absent in this result mode.
-    displaySeconds = AsCResultMenu(self)->displayElapsedTime;
+    displaySeconds = displayElapsedTime;
     if (displaySeconds < kFloat_7_ResultMenu) {
         displaySeconds = displaySeconds + deltaSeconds;
-        int hasDoublePang = (*(int*)&AsCResultMenu(self)->doublePangEnabled);
-        AsCResultMenu(self)->displayElapsedTime = displaySeconds;
+        int hasDoublePang = (*(int*)&doublePangEnabled);
+        displayElapsedTime = displaySeconds;
         if (hasDoublePang == 0) {
             if (displaySeconds >= kFloat_3_ResultMenu) {
                 if (displaySeconds < kFloat_4_ResultLabelRevealSeconds) {
                     displaySeconds = displaySeconds + kFloat_1_Menu8032AE10;
-                    AsCResultMenu(self)->displayElapsedTime = displaySeconds;
+                    displayElapsedTime = displaySeconds;
                 }
             }
         }
-        if (AsCResultMenu(self)->resultMode == kSkipProgressResultMode) {
-            displaySeconds = AsCResultMenu(self)->displayElapsedTime;
+        if (resultMode == kSkipProgressResultMode) {
+            displaySeconds = displayElapsedTime;
             if (displaySeconds >= kFloat_6_ResultProgressStartSeconds) {
                 if (displaySeconds < kFloat_7_ResultMenu) {
-                    AsCResultMenu(self)->progressComplete = 1;
+                    progressComplete = 1;
                     displaySeconds = displaySeconds + kFloat_1_Menu8032AE10;
-                    AsCResultMenu(self)->displayElapsedTime = displaySeconds;
+                    displayElapsedTime = displaySeconds;
                 }
             }
         }

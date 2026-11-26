@@ -1,3 +1,8 @@
+// Course wind: speed and direction, the Silvia Cannon that replaces the wind on
+// some holes, and the wind the HUD arrow shows.
+//
+// The rest of CWind (construction, the singleton, and the local wind regions) is
+// in wind_regions_and_vectors.cpp.
 #include <decomp/local_class.h>
 #include "classes/CSceneManager.h"
 #include "fp_fused.h"
@@ -5,575 +10,603 @@
 #include "classes/CourseData801C.h"
 #include "classes/CourseBounds801C.h"
 #include "classes/CWind.h"
-#define AsCWind(p) ((CWind*)(p))
 #include "classes/CQuadTree.h"
-#define AsCQuadTree(p) ((CQuadTree*)(p))
 #include "classes/CSharedDoc.h"
-#define AsCSharedDoc(p) ((CSharedDoc*)(p))
 #include "classes/CGolfDoc.h"
-#define AsCGolfDoc(p) ((CGolfDoc*)(p))
 #include "game/wvector.h"
-// Translation unit 0x80212950-0x80213768 (13 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CFxSequence.h"
+#include "classes/CFx.h"
 
-// Narrow views for fields absent from the shared class headers.
-struct WindAssistState {
-    char reserved0[0x28];
-    float forcedSpeed;
-    char reserved2C[0x24];
-    void* unitWindOverride;
-    void* forcedSpeedEnabled;
+// Fields of other classes that this file reads. They belong in those classes'
+// headers once those exist.
+struct PartyItemSlots {
+    char pad_00[0x28];
+    float forcedWindSpeed; // 0x28
+    char pad_2C[0x24];
+    void* unitWindOverride;       // 0x50
+    void* forcedWindSpeedEnabled; // 0x54
 };
-struct WindPlayerItemState {
-    char reserved[0xA0];
-    unsigned int windItemId;
+struct GolfPlayerEntry {
+    char pad_00[0xA0];
+    unsigned int windItemId; // 0xA0
+};
+struct GolfDocWindReference {
+    char pad_000[0x33C];
+    WVector direction; // 0x33C
 };
 struct SharedHoleWindSettings {
-    char reserved[0x850];
-    unsigned int perHole[18];
+    char pad_000[0x850];
+    unsigned int perHole[18]; // 0x850
 };
-struct WindRegion {
-    char boundsAndFlags[0x1C];
-    WVector wind;
-    unsigned char strengthMode;
-    char reserved29[3];
-    float strength;
-    char reserved30[0xC];
+struct FxAttachment {
+    char pad_00[8];
+    void* rotation; // 0x08
+    char pad_0C[0xC];
+    void* offset; // 0x18
+    char pad_1C[0xC];
 };
-struct WindVectorWords {
+// A 3x4 transform: three axes, then a position.
+struct AffineMatrix {
+    WVector right;
+    WVector up;
+    WVector forward;
+    WVector position;
+};
+// A vector copied as three raw words, as the original does in a few places.
+struct VectorWords {
     unsigned int x, y, z;
 };
-struct DocumentWindReference {
-    char reserved[0x33C];
-    float direction[3];
+// The scene's weather effect. Only the virtual call made here is named.
+struct WeatherEffect {
+    virtual void Slot0() DECOMP_LOCAL_VIRTUAL;
+    virtual void Slot1() DECOMP_LOCAL_VIRTUAL;
+    virtual void Slot2() DECOMP_LOCAL_VIRTUAL;
+    virtual void OnWindChanged() DECOMP_LOCAL_VIRTUAL; // name inferred from the one call below
 };
-struct CameraAffineAxes {
-    float right[3], up[3], forward[3], position[3];
-};
-typedef char WindRegion_size_check[(sizeof(WindRegion) == 0x3C) ? 1 : -1];
-typedef char WindAssist_speed_flag_check[((int)&((WindAssistState*)0)->forcedSpeedEnabled == 0x54) ? 1 : -1];
-enum WindRegionLayout {
-    kRegionWindOffset = (int)&((WindRegion*)0)->wind,
-    kDocumentWindDirectionOffset = (int)&((DocumentWindReference*)0)->direction,
-};
-enum WindRules {
+
+enum {
     kWindItemSlot = 4,
-    kRelativeRegionStrength = 1,
-    kRandomWindByte = 255,
+    kRandomWindByte = 255, // passed for strength or direction: pick one at random
     kRandomSpeedCount = 9,
     kTutorialWindEndStage = 6,
     kMinimumCannonSpeed = 6,
     kCannonSpeedMask = 3,
-    kUseDocumentWindReference = 0x200,
+    kUseDocumentWindReference = 0x200, // CGolfDoc::gameStateFlags
     kWindBoundsType = 4,
+    kCourseBoundsSize = 0x5C,
+    kCourseBoundsCommandOffset = 0x44
 };
-enum WindStringOffset {
-    kCannonEndSound = 0xD,
-    kCannonChargeSound = 0x1C,
-    kCannonSequence = 0x2D,
-    kCannonGatherSound = 0x3E,
-    kCannonBoundsName = 0x4D,
-    kFxCommand = 0x5A,
-    kFxCommandFormat = 0x5E,
+
+// Offsets into courseEnvironmentStrings. The text is in the game's data; the
+// sound names are Japanese and translated here.
+enum {
+    kCannonFireSound = 0x00,    // "laser fire"
+    kCannonEndSound = 0x0D,     // "laser fire end"
+    kCannonChargeSound = 0x1C,  // "energy builds up"
+    kCannonSequenceName = 0x2D, // "SilviaCannon.seq"
+    kCannonGatherSound = 0x3E,  // "energy gathers"
+    kCannonBoundsName = 0x4D,   // "silviacannon"
+    kFxCommand = 0x5A,          // "*fx"
+    kFxCommandFormat = 0x5E     // "%s %f %f %f"
 };
 
 extern "C" {
 
-struct WindOverrideView {
-    char baseStorage[0x2C];
-    float directionAngle;
-    char indicatorStorage[0x88];
-    float overrideDirection;
-    unsigned char overrideEnabled;
-    char effectBasisStorage[0xE4 - 0xBD];
-    char effectPositionAnchor[1];
-};
-
 extern const char courseEnvironmentStrings[];
-extern unsigned int kFloat_400_SceneEffectsSound;
-extern unsigned int kFloatBits_1500_SceneEffects;
-extern void* g_soundManager;
-extern float kFloat_0_5_SceneEffects;
-extern float kFloat_200_SceneEffects;
-extern const float kFloat_1_SceneEffects;
-extern const float kFloat_0_SceneEffects;
-extern float kFloat_neg1_SceneWind;
-extern const float kFloat_6_2831855_wind, kFloat_255_WindAndTrajectory, kFloat_0_34906584_Wind, kWindDirectionByteScale;
-extern float kAdditiveWindSpeedThreshold;
-extern float s_windIndicatorSmoothingFactor;
-extern float kFloat_9_SceneEffects;
-extern void* g_sceneManager;
-extern void* g_sharedDoc;
 extern const char s_sceneLighting[];
 extern const char s_cameraTransform[];
 extern void* g_fx;
-struct WindIndicatorView {
-    char p0[4];
-    char targetVector[12];
-    char smoothedVector[12];
-    char sampledWind[20];
-    float phase;
-    char p34[0x4c];
-    float displayDirection;
-};
-extern float kFloat_99999_SceneEffects, kFloat_0_1_Trajectory, kFloat_0_47123894_WindPhase, kFloat_2_Trajectory, kFloat_3_1415927_Wind, kNegativePi_Wind, kFloat_0_017453292_Wind;
-extern double floor(double);
-extern void CFx_RemoveSequence(void*, void*, int);
-extern void FxAttachment_Init(void*);
-extern void* CFx_CreateAttachedEffect(void*, void*, const char*, int, int, int);
-extern void CFxSequence_InvokeSprayLifecycleHooks(void*, const char*);
-extern unsigned int ItemInventory_GetItemIdAt(void*, int);
-extern void* GolfPlayer_GetEntryByIndex(void*, unsigned char);
-extern void* PartyItemSlots_GetInstance(void);
-extern float Vector_SignedAngleXZ(void*, void*);
-extern float Magnitude__7WVectorCFv(void*);
-extern void __ml__FfRC7WVector(void*, void*, float);
-extern void __pl__FRC7WVectorRC7WVector(void*, void*, void*);
-extern void Sound_PlayByName(void*, const char*, void*, int, const char*, unsigned int*, float, float, float);
-extern void Matrix_SetAxisRotation(void*, float, int);
-extern void __ml__FfRC7WVector(void*, void*, float);
-extern void __as__7WVectorFRC7WVector(void*, void*);
-extern void __apl__7WVectorFRC7WVector(void*, void*);
-extern void __mi__FRC7WVectorRC7WVector(void*, void*, void*);
-extern void Normalize__7WVectorFv(void*);
-extern void __amu__7WVectorFf(void*, float);
-extern void Matrix_SetIdentityAffine(void*);
-extern void Matrix_AppendEulerRotation(void*, void*);
-extern void __ml__FRC7WVectorf(void*, void*, float);
-extern void Vec3_Zero(void*);
-extern int CourseData_FindBoundsByNameSubstring(void*, const char*);
-extern void String_ScanTokensAfterSubstring(void*, const char*, const char*, ...);
-extern void CFx_SetWindVector(void*, void*);
-extern int GolfTask_NoOpStatus(void);
-extern void CWind_Ctor(void*);
-extern void CWind_dtor(void);
-extern void __register_global_object(void*, void*, void*);
-extern void CWind_SetWindParams(void*, unsigned char, unsigned char, int, int);
-extern void CWind_AddRegionFromCommand(void*, void*, void*);
-extern int rand(void);
-extern void* CQuadTree_GetInstance(void);
-extern void CourseData_UpdateWindActors(void*);
-extern float kFloat_99999_SceneEffects, kFloat_0_1_Trajectory, kFloat_0_47123894_WindPhase, kFloat_2_Trajectory, kFloat_3_1415927_Wind, kNegativePi_Wind, kFloat_0_017453292_Wind;
-extern double floor(double);
-extern void* GolfBall__Fv(void);
-extern void CWind_GetWindVectorAtPoint(void*, void*, void*, float);
-extern void* g_fx;
+extern void* g_sceneManager;
 extern void* g_sharedDoc;
+extern void* g_soundManager;
+
+// CWind::GetInstance's storage. LoadCourseRegions contains an inlined copy of it.
 extern signed char s_windInitialized;
 extern const char s_windInstance[];
 extern const char s_windDtorRegistration[];
 
-struct WindRegionOwner {
-    char pad0[0x28]; float speed; float directionAngle;
-    char pad30[4]; char pad34[0x5c]; void* entries; int count;
-};
+// Float constants. Their values are still linked from the original data
+// section, so they are referenced by symbol and given readable names below.
+extern const float kFloat_0_SceneEffects;
+extern const float kFloat_1_SceneEffects;
+extern float kFloat_0_5_SceneEffects;
+extern float kFloat_9_SceneEffects;
+extern float kFloat_200_SceneEffects;
+extern float kFloat_99999_SceneEffects;
+extern float kFloat_neg1_SceneWind;
+extern float kFloat_0_1_Trajectory;
+extern float kFloat_2_Trajectory;
+extern float kFloat_0_47123894_WindPhase;
+extern float kFloat_3_1415927_Wind;
+extern float kNegativePi_Wind;
+extern float kFloat_0_017453292_Wind;
+extern const float kFloat_6_2831855_wind;
+extern const float kFloat_255_WindAndTrajectory;
+extern const float kFloat_0_34906584_Wind;
+extern const float kWindDirectionByteScale;
+extern float kAdditiveWindSpeedThreshold;
+extern float s_windIndicatorSmoothingFactor;
+// 400.0f and 1500.0f, copied as raw words into a sound's distance range.
+extern unsigned int kFloat_400_SceneEffectsSound;
+extern unsigned int kFloatBits_1500_SceneEffects;
 
-struct WindParametersView {
-    char pad00[0x28];
-    float speed;
-    float directionAngle;
-    char pad30[0x84];
-    float overrideSpeed;
-    float overrideDirection;
-    unsigned char overrideEnabled;
-    char padBD[3];
-    char matrixC0[0x3C];
-    char padFC[4];
-};
+extern double floor(double);
+extern int rand(void);
+extern void __register_global_object(void*, void*, void*);
 
-// Create or remove the Silvia Cannon effect and reset its one-shot sound guards.
-void CWind_SetEffectEnabled(WindParametersView* self, int enable) {
-    if (enable == 0) {
-        void* old = AsCWind(self)->attachedEffect;
-        if (old != 0) {
-            CFx_RemoveSequence(g_fx, old, 0);
-            AsCWind(self)->attachedEffect = 0;
-        }
-    } else if (AsCWind(self)->attachedEffect == 0) {
-        char args[0x28];
-        FxAttachment_Init(args);
-        *(void**)(args + 8) = ((char*)AsCWind(self)->effectMatrix);
-        *(void**)(args + 0x18) = ((char*)AsCWind(self)->effectOffset);
-        void* result = CFx_CreateAttachedEffect(g_fx, args, courseEnvironmentStrings + kCannonSequence, 0, 0, 0);
-        AsCWind(self)->attachedEffect = result;
-        if (result) CFxSequence_InvokeSprayLifecycleHooks(result, s_sceneLighting);
-        if (courseEnvironmentStrings + kCannonGatherSound) {
-            unsigned int xy[2] = {kFloat_400_SceneEffectsSound, kFloatBits_1500_SceneEffects};
-            Sound_PlayByName(g_soundManager, courseEnvironmentStrings + kCannonGatherSound, ((char*)AsCWind(self)->effectPosition), 0, courseEnvironmentStrings + kCannonGatherSound, xy,
-                        kFloat_0_5_SceneEffects, kFloat_200_SceneEffects, kFloat_1_SceneEffects);
-        }
-        AsCWind(self)->cannonEndSoundPlayed = 0;
-        AsCWind(self)->cannonChargeSoundPlayed = 0;
-    }
+extern void FxAttachment_Init(void*);
+extern void Sound_PlayByName(void*, const char*, void*, int, const char*, unsigned int*, float, float, float);
+extern void Matrix_SetAxisRotation(void*, float, int);
+extern void Matrix_SetIdentityAffine(void*);
+extern void Matrix_AppendEulerRotation(void*, void*);
+extern void Vec3_Zero(void*);
+extern float Vector_SignedAngleXZ(const void*, const void*);
+extern int CourseData_FindBoundsByNameSubstring(void*, const char*);
+extern void CourseData_UpdateWindActors(void*);
+extern void String_ScanTokensAfterSubstring(void*, const char*, const char*, ...);
+extern unsigned int ItemInventory_GetItemIdAt(void*, int);
+extern void* GolfPlayer_GetEntryByIndex(void*, unsigned char);
+extern void* PartyItemSlots_GetInstance(void);
+extern void* CQuadTree_GetInstance(void);
+extern void* GolfBall__Fv(void);
+extern int GolfTask_NoOpStatus(void);
+extern "C" void* __dt__5CWindFv(void*, int);
+// GetWindVectorAtPoint called as a C function, writing its result straight into the caller's buffer.
+extern void GetWindVectorAtPoint__5CWindFRC7WVectorf(void* result, const void* self, const void* point,
+                                                     float maxBaseMagnitude);
+
+} // extern "C"
+
+#define kZero kFloat_0_SceneEffects
+#define kOne kFloat_1_SceneEffects
+#define kHalf kFloat_0_5_SceneEffects
+#define kMaxWindSpeed kFloat_9_SceneEffects
+#define kTwoPi kFloat_6_2831855_wind
+#define kPi kFloat_3_1415927_Wind
+#define kNegativePi kNegativePi_Wind
+#define kOneDegree kFloat_0_017453292_Wind
+#define kWholeCourseRadius kFloat_99999_SceneEffects
+#define kCannonSoundVolume kFloat_0_5_SceneEffects
+#define kCannonSoundDistance kFloat_200_SceneEffects
+
+static inline CSharedDoc* SharedDoc() {
+    return (CSharedDoc*)g_sharedDoc;
 }
 
-// Combine base or cannon wind with additive wind and apply item/assist normalization.
-void CWind_GetWindVector(float* out, WindParametersView* self) {
-    if (!AsCWind(self)->enabled) {
-        float zero = kFloat_0_SceneEffects;
-        out[0] = zero;
-        out[1] = zero;
-        out[2] = zero;
+static inline CGolfDoc* GolfDoc() {
+    return (CGolfDoc*)SharedDoc()->golfDoc;
+}
+
+// Switch between the cannon's wind and the normal wind, and play the firing sound.
+void CWind::SetOverrideEnabled(unsigned int enable) {
+    if (overrideActive == enable) {
         return;
     }
-    void* assistState = PartyItemSlots_GetInstance();
-    char baseWindStorage[12];
-    if (AsCWind(self)->overrideActive) {
-        __as__7WVectorFRC7WVector(baseWindStorage, ((char*)AsCWind(self)->overrideVector));
+    overrideActive = enable;
+    if (enable & 0xFF) {
+        VectorWords wind = *(VectorWords*)&overrideVector;
+        ((CFx*)g_fx)->SetWindVector(&wind);
+        if (courseEnvironmentStrings + kCannonFireSound) {
+            unsigned int range[2] = {kFloat_400_SceneEffectsSound, kFloatBits_1500_SceneEffects};
+            Sound_PlayByName(g_soundManager, courseEnvironmentStrings + kCannonFireSound, &effectPosition, 0,
+                             courseEnvironmentStrings + kCannonFireSound, range, kCannonSoundVolume,
+                             kCannonSoundDistance, kOne);
+        }
     } else {
-        if (((WindAssistState*)assistState)->forcedSpeedEnabled) {
-            __as__7WVectorFRC7WVector(baseWindStorage, ((char*)AsCWind(self)->windVector));
-            Normalize__7WVectorFv(baseWindStorage);
-            __amu__7WVectorFf(baseWindStorage, ((WindAssistState*)assistState)->forcedSpeed);
-        } else __as__7WVectorFRC7WVector(baseWindStorage, ((char*)AsCWind(self)->windVector));
+        VectorWords wind = *(VectorWords*)&windVector;
+        ((CFx*)g_fx)->SetWindVector(&wind);
     }
-    char combinedWindStorage[12];
-    __pl__FRC7WVectorRC7WVector(combinedWindStorage, baseWindStorage, ((char*)&AsCWind(self)->additiveWindXBits));
-    __as__7WVectorFRC7WVector(baseWindStorage, combinedWindStorage);
-    void* golfDocument = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-    void* itemInventory = ((char*)&AsCSharedDoc(g_sharedDoc)->itemInventory);
-    void* playerState = GolfPlayer_GetEntryByIndex(golfDocument, AsCGolfDoc(golfDocument)->currentPlayer);
-    unsigned int windItemId = ItemInventory_GetItemIdAt(itemInventory, kWindItemSlot);
-    if (((WindPlayerItemState*)playerState)->windItemId == windItemId || ((WindAssistState*)assistState)->unitWindOverride) Normalize__7WVectorFv(baseWindStorage);
-    *(unsigned int*)out = *(unsigned int*)baseWindStorage;
-    *(unsigned int*)((char*)out + 4) = *(unsigned int*)(baseWindStorage + 4);
-    *(unsigned int*)((char*)out + 8) = *(unsigned int*)(baseWindStorage + 8);
 }
 
-// Fx command supplies an effect-name token and three rotation components.
-// Heading is negated for the wind convention; matrix calls consume radians.
-// Bounds min/max and their midpoint are world XYZ. Vector helper scratch is
-// raw 12-byte storage so copies retain the engine vector ABI and instruction order.
-// Read the cannon region command, position its effect, and calculate override speed and direction.
+// Play the sound that ends the cannon's blast, once per effect.
+// SetEffectEnabled clears the flag when it creates a new effect.
+void CWind::PlayCannonEndSoundOnce() {
+    if (!cannonEndSoundPlayed) {
+        const char* strings = courseEnvironmentStrings;
+        cannonEndSoundPlayed = 1;
+        if (strings + kCannonEndSound) {
+            unsigned int range[2];
+            range[0] = kFloat_400_SceneEffectsSound;
+            range[1] = kFloatBits_1500_SceneEffects;
+            Sound_PlayByName(g_soundManager, strings + kCannonEndSound, &effectPosition, 0, strings + kCannonEndSound,
+                             range, kCannonSoundVolume, kCannonSoundDistance, kOne);
+        }
+    }
+}
+
+// Play the cannon's charging sound, once per effect.
+void CWind::PlayCannonChargeSoundOnce() {
+    if (!cannonChargeSoundPlayed) {
+        const char* strings = courseEnvironmentStrings;
+        cannonChargeSoundPlayed = 1;
+        if (strings + kCannonChargeSound) {
+            unsigned int range[2];
+            range[0] = kFloat_400_SceneEffectsSound;
+            range[1] = kFloatBits_1500_SceneEffects;
+            Sound_PlayByName(g_soundManager, strings + kCannonChargeSound, &effectPosition, 0,
+                             strings + kCannonChargeSound, range, kCannonSoundVolume, kCannonSoundDistance, kOne);
+        }
+    }
+}
+
+// Create or remove the cannon's visual effect.
+void CWind::SetEffectEnabled(int enable) {
+    if (enable == 0) {
+        void* effect = attachedEffect;
+        if (effect != 0) {
+            ((CFx*)g_fx)->RemoveSequence((unsigned int)(effect), 0);
+            attachedEffect = 0;
+        }
+    } else if (attachedEffect == 0) {
+        FxAttachment attachment;
+        FxAttachment_Init(&attachment);
+        attachment.rotation = effectRotation;
+        attachment.offset = &effectOffset;
+        void* effect = ((CFx*)g_fx)
+                           ->CreateAttachedEffect((Vec2_8010*)(&attachment),
+                                                  courseEnvironmentStrings + kCannonSequenceName, 0, 0, 0);
+        attachedEffect = effect;
+        if (effect) {
+            ((CFxSequence*)effect)->InvokeSprayLifecycleHooks(s_sceneLighting);
+        }
+        if (courseEnvironmentStrings + kCannonGatherSound) {
+            unsigned int range[2] = {kFloat_400_SceneEffectsSound, kFloatBits_1500_SceneEffects};
+            Sound_PlayByName(g_soundManager, courseEnvironmentStrings + kCannonGatherSound, &effectPosition, 0,
+                             courseEnvironmentStrings + kCannonGatherSound, range, kCannonSoundVolume,
+                             kCannonSoundDistance, kOne);
+        }
+        cannonEndSoundPlayed = 0;
+        cannonChargeSoundPlayed = 0;
+    }
+}
+
+// Find the hole's "silviacannon" bounds and set up the cannon from them.
+//
+// The bounds carry a command of the form "*fx <effect> <x> <y> <z>", where the
+// three numbers are rotation angles. The cannon blows along the Y angle, and its
+// speed is 6 to 9 depending on the hole's wind setting. A hole without the
+// bounds gets a negative speed, which callers read as "no cannon".
 #pragma push
 #pragma opt_common_subs off
-void CWind_InitOverrideFromCourse(WindParametersView* self) {
-    void* game = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-    const char* base = courseEnvironmentStrings;
-    int boundsAddress = CourseData_FindBoundsByNameSubstring(AsCGolfDoc(game)->courseData, base + kCannonBoundsName);
-    if (boundsAddress) { float angles[3];
-        char parsedEffectName[0x40];
+void CWind::InitOverrideFromCourse() {
+    CGolfDoc* golfDoc = GolfDoc();
+    const char* strings = courseEnvironmentStrings;
+    int bounds = CourseData_FindBoundsByNameSubstring(golfDoc->courseData, strings + kCannonBoundsName);
+    if (bounds) {
+        float angles[3];
+        char effectName[0x40];
 
-        int commandAddress = boundsAddress + 1; String_ScanTokensAfterSubstring(&commandAddress, base + kFxCommand, base + kFxCommandFormat, parsedEffectName, angles, angles + 1, angles + 2);
-        float negatedHeading = (angles[1] * kFloat_neg1_SceneWind);
-        angles[1] = negatedHeading;
-        self->overrideDirection = negatedHeading;
-        void* data = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-        unsigned char holeIndex = AsCGolfDoc(data)->currentHoleIndex;
+        int command = bounds + 1;
+        String_ScanTokensAfterSubstring(&command, strings + kFxCommand, strings + kFxCommandFormat, effectName, angles,
+                                        angles + 1, angles + 2);
+        float direction = angles[1] * kFloat_neg1_SceneWind;
+        angles[1] = direction;
+        overrideDirection = direction;
+        unsigned char holeIndex = GolfDoc()->currentHoleIndex;
         unsigned int speedVariant = ((SharedHoleWindSettings*)g_sharedDoc)->perHole[holeIndex] & kCannonSpeedMask;
 
-        AsCWind(self)->overrideSpeed = (float)(kMinimumCannonSpeed + speedVariant);
-        Matrix_SetIdentityAffine(((char*)AsCWind(self)->effectMatrix));
-        Matrix_AppendEulerRotation(((char*)AsCWind(self)->effectMatrix), angles);
-        char boundsCenter[12];
-        char boundsCornerSum[12]; __pl__FRC7WVectorRC7WVector(boundsCornerSum, ((char*)&AsCourseBounds801C(boundsAddress)->minX), ((char*)&AsCourseBounds801C(boundsAddress)->maxX));
-        __ml__FRC7WVectorf(boundsCenter, boundsCornerSum, kFloat_0_5_SceneEffects);
-        char overrideVectorStorage[12];
-        __as__7WVectorFRC7WVector(((char*)AsCWind(self)->effectPosition), boundsCenter);
-         Vec3_Zero(((char*)AsCWind(self)->effectOffset));
-        char headingRotationMatrix[0x30]; Matrix_SetAxisRotation(headingRotationMatrix, angles[1], 1);
-        __ml__FfRC7WVector(overrideVectorStorage, headingRotationMatrix, AsCWind(self)->overrideSpeed);
-        __as__7WVectorFRC7WVector(((char*)AsCWind(self)->overrideVector), overrideVectorStorage);
-    } else AsCWind(self)->overrideSpeed = kFloat_neg1_SceneWind;
-    AsCWind(self)->overrideActive = 0;
-    void* old = AsCWind(self)->attachedEffect;
-    if (old) {
-        CFx_RemoveSequence(g_fx, old, 0);
-        AsCWind(self)->attachedEffect = 0;
-    }
-}
-#pragma pop
-
-// Derive speed and heading from the supplied vector and rescale every local wind region.
-void CWind_SetWindVector(WindRegionOwner* self, void* source) {
-    // The two adjacent 24-byte arrays are one affine rotation matrix.
-    // Its forward basis occupies the second half; scaling it reconstructs wind XYZ.
-    struct Locals { char y[12]; float vec[3]; char x[24]; char z[24]; } buf;
-    buf.vec[0] = kFloat_0_SceneEffects;
-    buf.vec[1] = kFloat_0_SceneEffects;
-    buf.vec[2] = kFloat_1_SceneEffects;
-    float a = Vector_SignedAngleXZ(source, buf.vec);
-    self->directionAngle = a;
-    float b = (*(WVector*)source).Magnitude();
-    self->speed = b;
-    Matrix_SetAxisRotation(buf.x, self->directionAngle, 1);
-    __ml__FfRC7WVector(buf.y, buf.z, self->speed);
-    *(WVector*)(((char*)AsCWind(self)->windVector)) = *(WVector*)buf.y;
-    char* p = (char*)self->entries;
-    while (p != (char*)self->entries + self->count * sizeof(WindRegion)) {
-        (*(WVector*)(p + kRegionWindOffset)).Normalize();
-        *(WVector*)(p + kRegionWindOffset) *= ((WindRegion*)p)->strengthMode == kRelativeRegionStrength
-            ? self->speed * ((WindRegion*)p)->strength
-            : self->speed + ((WindRegion*)p)->strength;
-        p += sizeof(WindRegion);
-    }
-    struct VirtualObject {
-        virtual void v0() DECOMP_LOCAL_VIRTUAL; virtual void v4() DECOMP_LOCAL_VIRTUAL; virtual void v8() DECOMP_LOCAL_VIRTUAL;
-        virtual void v14() DECOMP_LOCAL_VIRTUAL;
-    };
-    VirtualObject* obj = ((VirtualObject*)((CSceneManager*)g_sceneManager)->weatherEffect);
-    if (obj) {
-        obj->v14();
-    }
-}
-
-// Return disabled, item-adjusted, cannon, or capped combined wind strength.
-#pragma push
-#pragma opt_common_subs off
-float CWind_GetWindSpeed(const CWind* wind) {
-    const WindParametersView* self = (const WindParametersView*)wind;
-    if (!wind->enabled) return kFloat_0_SceneEffects;
-    void* manager = PartyItemSlots_GetInstance();
-    void* game = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-    void* base = ((char*)&AsCSharedDoc(g_sharedDoc)->itemInventory);
-    unsigned char mode = AsCGolfDoc(game)->currentPlayer;
-    void* state = GolfPlayer_GetEntryByIndex(game, mode);
-    unsigned int resource = ItemInventory_GetItemIdAt(base, kWindItemSlot);
-    if (((WindPlayerItemState*)state)->windItemId == resource || ((WindAssistState*)manager)->unitWindOverride) return kFloat_1_SceneEffects;
-    if (AsCWind(self)->overrideActive) return AsCWind(self)->overrideSpeed;
-    float speed = ((const WVector*)&wind->additiveWindXBits)->Magnitude();
-    if (speed >= kAdditiveWindSpeedThreshold) {
-        WVector a;
-
-        a = *(WVector*)(((char*)AsCWind(self)->windVector));
-        WVector b = a + *(const WVector*)&wind->additiveWindXBits;
-        a = b;
-        float d = a.Magnitude();
-        float capped = d;
-        capped = (capped > kFloat_9_SceneEffects) ? kFloat_9_SceneEffects : capped;
-        return capped;
-    }
-    return self->speed;
-}
-#pragma pop
-
-// Update the global wind strength and rescale every local wind region.
-void CWind_SetStrength(WindRegionOwner* self, float speed) {
-    self->speed = speed;
-    char buf[0x40];
-    Matrix_SetAxisRotation(buf + 0x10, self->directionAngle, 1);
-    __ml__FfRC7WVector(buf, buf + 0x28, self->speed);
-    *(WVector*)(((char*)AsCWind(self)->windVector)) = *(WVector*)buf;
-    char* p = (char*)self->entries;
-    while (p != (char*)self->entries + self->count * sizeof(WindRegion)) {
-        (*(WVector*)(p + kRegionWindOffset)).Normalize();
-        *(WVector*)(p + kRegionWindOffset) *= ((WindRegion*)p)->strengthMode == kRelativeRegionStrength
-            ? self->speed * ((WindRegion*)p)->strength
-            : self->speed + ((WindRegion*)p)->strength;
-        p += sizeof(WindRegion);
-    }
-}
-
-// Switch the effect system to cannon or ordinary wind and play the cannon firing sound.
-void CWind_SetOverrideEnabled(WindOverrideView* self, unsigned int enable) {
-    if (self->overrideEnabled == enable) return;
-    self->overrideEnabled = enable;
-    struct VectorCopy { unsigned int x, y, z; };
-    if (enable & 0xFF) {
-        VectorCopy a = *(VectorCopy*)(((char*)AsCWind(self)->overrideVector));
-        CFx_SetWindVector(g_fx, &a);
-        if (courseEnvironmentStrings) {
-            unsigned int args[2] = {kFloat_400_SceneEffectsSound, kFloatBits_1500_SceneEffects};
-            Sound_PlayByName(g_soundManager, courseEnvironmentStrings, ((char*)AsCWind(self)->effectPosition), 0,
-                courseEnvironmentStrings, args, kFloat_0_5_SceneEffects, kFloat_200_SceneEffects, kFloat_1_SceneEffects);
-        }
+        overrideSpeed = (float)(kMinimumCannonSpeed + speedVariant);
+        Matrix_SetIdentityAffine(effectRotation);
+        Matrix_AppendEulerRotation(effectRotation, angles);
+        effectPosition =
+            (*(WVector*)&((CourseBounds801C*)bounds)->minX + *(WVector*)&((CourseBounds801C*)bounds)->maxX) * kHalf;
+        Vec3_Zero(&effectOffset);
+        AffineMatrix rotation;
+        Matrix_SetAxisRotation(&rotation, angles[1], 1);
+        overrideVector = overrideSpeed * rotation.right;
     } else {
-        VectorCopy a = *(VectorCopy*)(((char*)AsCWind(self)->windVector));
-        CFx_SetWindVector(g_fx, &a);
+        overrideSpeed = kFloat_neg1_SceneWind;
+    }
+    overrideActive = 0;
+    void* effect = attachedEffect;
+    if (effect) {
+        ((CFx*)g_fx)->RemoveSequence((unsigned int)(effect), 0);
+        attachedEffect = 0;
     }
 }
+#pragma pop
 
-// Reset wind-region storage and load type-4 bounds from the current course.
-void CWind_LoadCourseRegions(WindRegionOwner* self) {
-    if (!GolfTask_NoOpStatus()) {
-        if (!s_windInitialized) {
-            CWind_Ctor((void*)s_windInstance);
-            __register_global_object((void*)s_windInstance, (void*)CWind_dtor, (void*)s_windDtorRegistration);
-            s_windInitialized = 1;
-        }
-        CWind_SetWindParams((void*)s_windInstance, 255, 255, 0, 1);
-    }
-    int c = self->count;
-    int offset, index;
-    index = 0;
-    offset = 0;
-    self->count = c - *(volatile int*)&c;
-    for (; index < AsCourseData801C(AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData)->boundsCount; offset += 0x5c, ++index) {
-        char* item = ((char*)AsCourseData801C(AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData)->bounds) + offset;
-        if ((unsigned char)*item == kWindBoundsType) CWind_AddRegionFromCommand(self, item + 0x44, item + 1);
-    }
-}
-
-// Return the cannon heading while override is active, otherwise the ordinary wind heading.
-float CWind_GetDirectionAngle(WindOverrideView* self) {
-    if (self->overrideEnabled) {
-        return self->overrideDirection;
-    }
-    return self->directionAngle;
-}
-
-struct WindStrengthView {
-    char pad00[0x28];
-    float speed;
-    float directionAngle;
-    float phase;
-    char pad34[0x4C];
-    float displayDirection;
-};
-
-// Initialize or perturb wind speed and direction, then rebuild the wind vector.
-void CWind_SetWindParams(void* self, unsigned char strengthByte, unsigned char directionByte, int unused, int resetWind) {
-    float twopi;
-    float adjustedDirection;
-    float direction;
+// Set the global wind from two bytes.
+//
+// With resetWind, the bytes are a speed step (0 to 8, giving speed 1 to 9) and a
+// direction in 1/255ths of a turn. Without it they are changes relative to the
+// current wind. kRandomWindByte in either picks a random value.
+void CWind::SetWindParams(unsigned char strengthByte, unsigned char directionByte, int unused, int resetWind) {
+    float twoPi;
+    float newDirection;
+    float directionStep;
     float angleScale;
     float byteScale;
-    WindStrengthView* s = (WindStrengthView*)self;
-    if (strengthByte == kRandomWindByte) strengthByte = (unsigned char)(rand() % kRandomSpeedCount);
-    if (directionByte == kRandomWindByte) directionByte = (unsigned char)(rand() % kRandomWindByte);
-    if (AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialStage < kTutorialWindEndStage) strengthByte = 0;
+    if (strengthByte == kRandomWindByte) {
+        strengthByte = (unsigned char)(rand() % kRandomSpeedCount);
+    }
+    if (directionByte == kRandomWindByte) {
+        directionByte = (unsigned char)(rand() % kRandomWindByte);
+    }
+    if (GolfDoc()->tutorialStage < kTutorialWindEndStage) {
+        strengthByte = 0;
+    }
     if (resetWind) {
-        void* game = CQuadTree_GetInstance();
-        float speed = kFloat_1_SceneEffects + (float)strengthByte;
-        float initialDirection = (kFloat_6_2831855_wind * (float)directionByte) / kFloat_255_WindAndTrajectory;
-        AsCQuadTree(game)->effectRandomState = directionByte;
-        s->phase = kFloat_0_SceneEffects;
-        s->displayDirection = kFloat_0_SceneEffects;
-        s->directionAngle = initialDirection;
-        s->speed = speed;
+        CQuadTree* quadTree = (CQuadTree*)CQuadTree_GetInstance();
+        float newSpeed = kOne + (float)strengthByte;
+        float initialDirection = (kTwoPi * (float)directionByte) / kFloat_255_WindAndTrajectory;
+        quadTree->effectRandomState = directionByte;
+        indicatorPhase = kZero;
+        modelSetup.indicatorDirection = kZero;
+        directionAngle = initialDirection;
+        speed = newSpeed;
     } else {
-        float clampedSpeed = kFloat_1_SceneEffects;
-        float adjustedSpeed = s->speed + (float)(((strengthByte >> 1) & 0x7f) - 2);
-        s->speed = adjustedSpeed;
+        float clampedSpeed = kOne;
+        float adjustedSpeed = speed + (float)(((strengthByte >> 1) & 0x7F) - 2);
+        speed = adjustedSpeed;
         if (adjustedSpeed < clampedSpeed) {
-            clampedSpeed = kFloat_1_SceneEffects;
+            clampedSpeed = kOne;
         } else {
-            if (adjustedSpeed > kFloat_9_SceneEffects) {
-                clampedSpeed = kFloat_9_SceneEffects;
+            if (adjustedSpeed > kMaxWindSpeed) {
+                clampedSpeed = kMaxWindSpeed;
             } else {
                 clampedSpeed = adjustedSpeed;
             }
         }
-        direction = (float)(directionByte - 0x80);
+        directionStep = (float)(directionByte - 0x80);
         byteScale = kWindDirectionByteScale;
-        angleScale = kFloat_0_34906584_Wind;
-        angleScale *= direction;
-        adjustedDirection = FP_FMADDS(angleScale, byteScale, s->directionAngle);
-        twopi = kFloat_6_2831855_wind;
-        s->speed = clampedSpeed;
-        s->directionAngle = adjustedDirection;
-        if (adjustedDirection > twopi) {
-            s->directionAngle = adjustedDirection - twopi;
-        } else if (adjustedDirection < kFloat_0_SceneEffects) {
-            s->directionAngle = adjustedDirection + twopi;
+        angleScale = kFloat_0_34906584_Wind; // 20 degrees
+        angleScale *= directionStep;
+        newDirection = FP_FMADDS(angleScale, byteScale, directionAngle);
+        twoPi = kTwoPi;
+        speed = clampedSpeed;
+        directionAngle = newDirection;
+        if (newDirection > twoPi) {
+            directionAngle = newDirection - twoPi;
+        } else if (newDirection < kZero) {
+            directionAngle = newDirection + twoPi;
         }
-        void* effects = AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData;
-        if (effects != 0) {
-            CourseData_UpdateWindActors(effects);
+        void* courseData = GolfDoc()->courseData;
+        if (courseData != 0) {
+            CourseData_UpdateWindActors(courseData);
         }
     }
-    float matrix[12];
-    char bufB[16];
-    Matrix_SetAxisRotation(matrix, s->directionAngle, 1);
-    __ml__FfRC7WVector(bufB, matrix + 6, s->speed);
-    *(WVector*)(((char*)AsCWind(s)->windVector)) = *(WVector*)bufB;
+    AffineMatrix rotation;
+    Matrix_SetAxisRotation(&rotation, directionAngle, 1);
+    WVector wind = speed * rotation.forward;
+    windVector = wind;
 }
 
-// Smooth the indicator vector, sample local wind, and ease its phase and heading toward the reference.
-void WindIndicator_UpdateDirectionAndPhase(WindIndicatorView* s, float amount) {
-    void* self = s;
-    float saved = amount;
-    float scale = s_windIndicatorSmoothingFactor;
-    char cameraWind[12], ballWind[12], tmp[12], out[12];
-    __mi__FRC7WVectorRC7WVector(tmp, s->targetVector, s->smoothedVector);
-    __ml__FfRC7WVector(out, tmp, scale);
-    __apl__7WVectorFRC7WVector(s->smoothedVector, out);
-    void* state = GolfBall__Fv();
-    if (((CGolfBall*)state)->m_eventPreDataIndex[0] < 0) {
-
-        CWind_GetWindVectorAtPoint(cameraWind, self, (void*)((CameraAffineAxes*)s_cameraTransform)->position, kFloat_99999_SceneEffects);
-        __as__7WVectorFRC7WVector(s->sampledWind, cameraWind);
+// Per-frame update for the HUD wind arrow.
+//
+// Eases the additive wind toward its target, samples the wind at the ball (or at
+// the camera while the ball's first event index is negative), advances the
+// arrow's animation faster in stronger wind, and turns the arrow toward the
+// wind's direction relative to the view by at most pi radians per second.
+void CWind::UpdateIndicator(float deltaSeconds) {
+    float delta = deltaSeconds;
+    float smoothing = s_windIndicatorSmoothingFactor;
+    WVector windAtCamera;
+    WVector windAtBall;
+    WVector difference = additiveWindTarget - additiveWind;
+    WVector step = smoothing * difference;
+    additiveWind += step;
+    CGolfBall* ball = (CGolfBall*)GolfBall__Fv();
+    if (ball->m_eventPreDataIndex[0] < 0) {
+        GetWindVectorAtPoint__5CWindFRC7WVectorf(&windAtCamera, this, &((AffineMatrix*)s_cameraTransform)->position,
+                                                 kWholeCourseRadius);
+        indicatorWind = windAtCamera;
     } else {
-        state = GolfBall__Fv();
-
-        CWind_GetWindVectorAtPoint(ballWind, self, state, kFloat_99999_SceneEffects);
-        __as__7WVectorFRC7WVector(s->sampledWind, ballWind);
+        ball = (CGolfBall*)GolfBall__Fv();
+        GetWindVectorAtPoint__5CWindFRC7WVectorf(&windAtBall, this, ball, kWholeCourseRadius);
+        indicatorWind = windAtBall;
     }
-    float windSpeed = Magnitude__7WVectorCFv(s->sampledWind);
+    float windSpeed = indicatorWind.Magnitude();
     if (!(windSpeed < kFloat_0_1_Trajectory)) {
-        windSpeed = Magnitude__7WVectorCFv(s->sampledWind);
-        float twopi = kFloat_6_2831855_wind;
-        float nextPhase = s->phase + saved * (kFloat_0_47123894_WindPhase * (kFloat_2_Trajectory * windSpeed + kFloat_neg1_SceneWind));
-        s->phase = nextPhase;
-        if (nextPhase > twopi) s->phase = nextPhase - twopi;
-        void* game = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
-        void* manager = (char*)game;
-        unsigned int flags = (*(unsigned int*)&AsCGolfDoc(manager)->gameStateFlags);
-        float reference;
-        if (flags & kUseDocumentWindReference) reference = Vector_SignedAngleXZ(s->sampledWind, (char*)manager + kDocumentWindDirectionOffset);
-        else reference = Vector_SignedAngleXZ(s->sampledWind, (void*)((CameraAffineAxes*)s_cameraTransform)->forward);
-        float diff = reference - s->displayDirection;
-        float absoluteAngle;
-        if (diff > kFloat_0_SceneEffects) absoluteAngle = diff;
-        else absoluteAngle = -diff;
-        if (absoluteAngle > kFloat_6_2831855_wind) {
-            diff = diff - kFloat_6_2831855_wind * (float)floor(diff / kFloat_6_2831855_wind);
+        windSpeed = indicatorWind.Magnitude();
+        float twoPi = kTwoPi;
+        float nextPhase = indicatorPhase + delta * (kFloat_0_47123894_WindPhase *
+                                                    (kFloat_2_Trajectory * windSpeed + kFloat_neg1_SceneWind));
+        indicatorPhase = nextPhase;
+        if (nextPhase > twoPi) {
+            indicatorPhase = nextPhase - twoPi;
         }
-        if (diff > kFloat_3_1415927_Wind) diff -= kFloat_6_2831855_wind;
-        else if (diff < kNegativePi_Wind) diff += kFloat_6_2831855_wind;
-        absoluteAngle = diff > kFloat_0_SceneEffects ? diff : -diff;
-        if (absoluteAngle > kFloat_0_017453292_Wind) {
-            float lo = kNegativePi_Wind * saved;
-            float step;
-            if (diff < lo) step = lo;
-            else {
-                float hi = kFloat_3_1415927_Wind * saved;
-                if (!(diff > hi)) step = diff;
-                else step = hi;
+        CGolfDoc* golfDoc = GolfDoc();
+        unsigned int flags = golfDoc->gameStateFlags;
+        float target;
+        if (flags & kUseDocumentWindReference) {
+            target = Vector_SignedAngleXZ(&indicatorWind, &((GolfDocWindReference*)golfDoc)->direction);
+        } else {
+            target = Vector_SignedAngleXZ(&indicatorWind, &((AffineMatrix*)s_cameraTransform)->forward);
+        }
+        float turn = target - modelSetup.indicatorDirection;
+        float magnitude;
+        if (turn > kZero) {
+            magnitude = turn;
+        } else {
+            magnitude = -turn;
+        }
+        if (magnitude > kTwoPi) {
+            turn = turn - kTwoPi * (float)floor(turn / kTwoPi);
+        }
+        if (turn > kPi) {
+            turn -= kTwoPi;
+        } else if (turn < kNegativePi) {
+            turn += kTwoPi;
+        }
+        magnitude = turn > kZero ? turn : -turn;
+        if (magnitude > kOneDegree) {
+            float lowest = kNegativePi * delta;
+            float limited;
+            if (turn < lowest) {
+                limited = lowest;
+            } else {
+                float highest = kPi * delta;
+                if (!(turn > highest)) {
+                    limited = turn;
+                } else {
+                    limited = highest;
+                }
             }
-            float next = s->displayDirection + step;
-            absoluteAngle = next > kFloat_0_SceneEffects ? next : -next;
-            if (absoluteAngle > kFloat_6_2831855_wind) {
-                next = next - kFloat_6_2831855_wind * (float)floor(next / kFloat_6_2831855_wind);
+            float next = modelSetup.indicatorDirection + limited;
+            magnitude = next > kZero ? next : -next;
+            if (magnitude > kTwoPi) {
+                next = next - kTwoPi * (float)floor(next / kTwoPi);
             }
-            if (next > kFloat_3_1415927_Wind) next -= kFloat_6_2831855_wind;
-            else if (next < kNegativePi_Wind) next += kFloat_6_2831855_wind;
-            s->displayDirection = next;
+            if (next > kPi) {
+                next -= kTwoPi;
+            } else if (next < kNegativePi) {
+                next += kTwoPi;
+            }
+            modelSetup.indicatorDirection = next;
         }
     }
 }
 
-// The two sound guards are independent; no required call order is established.
-// This guard is reset by CWind_SetEffectEnabled when a new effect is created.
-// Play the cannon end sound once per enabled effect cycle.
-void CWind_PlayCannonEndSoundOnce(WindOverrideView* self) {
-    if (!AsCWind(self)->cannonEndSoundPlayed) {
-        const char* base = courseEnvironmentStrings;
-        AsCWind(self)->cannonEndSoundPlayed = 1;
-        if (base + kCannonEndSound) {
-            unsigned int args[2];
-            args[0] = kFloat_400_SceneEffectsSound;
-            args[1] = kFloatBits_1500_SceneEffects;
-            Sound_PlayByName(g_soundManager, base + kCannonEndSound, ((char*)AsCWind(self)->effectPosition), 0, base + kCannonEndSound,
-                        args, kFloat_0_5_SceneEffects, kFloat_200_SceneEffects, kFloat_1_SceneEffects);
-        }
+// Give every local region its wind for the current global speed. A region's
+// strength either scales the global speed or is added to it.
+inline void CWind::RescaleRegions() {
+    WindRegion* region = regions;
+    while (region != regions + regionCount) {
+        region->wind.Normalize();
+        region->wind *=
+            region->strengthMode == WindRegion::kScaleGlobalSpeed ? speed * region->strength : speed + region->strength;
+        ++region;
     }
 }
 
-// Independently guarded charge sound; reset when a new cannon effect is created.
-// Play the cannon charge sound once per enabled effect cycle.
-void CWind_PlayCannonChargeSoundOnce(WindOverrideView* self) {
-    if (!AsCWind(self)->cannonChargeSoundPlayed) {
-        const char* base = courseEnvironmentStrings;
-        AsCWind(self)->cannonChargeSoundPlayed = 1;
-        if (base + kCannonChargeSound) {
-            unsigned int args[2];
-            args[0] = kFloat_400_SceneEffectsSound;
-            args[1] = kFloatBits_1500_SceneEffects;
-            Sound_PlayByName(g_soundManager, base + kCannonChargeSound, ((char*)AsCWind(self)->effectPosition), 0, base + kCannonChargeSound,
-                        args, kFloat_0_5_SceneEffects, kFloat_200_SceneEffects, kFloat_1_SceneEffects);
-        }
+// Set the global wind from a vector.
+void CWind::SetWindVector(const WVector& wind) {
+    WVector zAxis;
+    AffineMatrix rotation;
+    zAxis.x = kZero;
+    zAxis.y = kZero;
+    zAxis.z = kOne;
+    float angle = Vector_SignedAngleXZ(&wind, &zAxis);
+    directionAngle = angle;
+    float magnitude = wind.Magnitude();
+    speed = magnitude;
+    Matrix_SetAxisRotation(&rotation, directionAngle, 1);
+    windVector = speed * rotation.forward;
+    RescaleRegions();
+    WeatherEffect* weather = (WeatherEffect*)((CSceneManager*)g_sceneManager)->weatherEffect;
+    if (weather) {
+        weather->OnWindChanged();
     }
 }
 
-} // extern "C"
+// The wind that acts on the ball: the global wind or the cannon's, plus the
+// additive wind. Party items can force its speed or reduce it to a unit vector.
+//
+// This is CWind::GetWindVector(), which returns a WVector by value. It is
+// defined here with the result pointer written out because the original copies
+// the result as three raw words, and the member form does not compile to that.
+extern "C" void GetWindVector__5CWindFv(VectorWords* result, CWind* self) {
+    if (!self->enabled) {
+        float zero = kZero;
+        float* components = (float*)result;
+        components[0] = zero;
+        components[1] = zero;
+        components[2] = zero;
+        return;
+    }
+    PartyItemSlots* items = (PartyItemSlots*)PartyItemSlots_GetInstance();
+    WVector wind;
+    if (self->overrideActive) {
+        wind = self->overrideVector;
+    } else {
+        if (items->forcedWindSpeedEnabled) {
+            wind = self->windVector;
+            wind.Normalize();
+            wind *= items->forcedWindSpeed;
+        } else {
+            wind = self->windVector;
+        }
+    }
+    WVector combined = wind + self->additiveWind;
+    wind = combined;
+    CGolfDoc* golfDoc = GolfDoc();
+    void* inventory = SharedDoc()->itemInventory;
+    GolfPlayerEntry* player = (GolfPlayerEntry*)GolfPlayer_GetEntryByIndex(golfDoc, golfDoc->currentPlayer);
+    unsigned int windItemId = ItemInventory_GetItemIdAt(inventory, kWindItemSlot);
+    if (player->windItemId == windItemId || items->unitWindOverride) {
+        wind.Normalize();
+    }
+    result->x = *(unsigned int*)&wind.x;
+    result->y = *(unsigned int*)&wind.y;
+    result->z = *(unsigned int*)&wind.z;
+}
+
+// The wind speed as one number. Capped at 9 when additive wind is in effect.
+#pragma push
+#pragma opt_common_subs off
+float CWind::GetWindSpeed() const {
+    if (!enabled) {
+        return kZero;
+    }
+    PartyItemSlots* items = (PartyItemSlots*)PartyItemSlots_GetInstance();
+    CGolfDoc* golfDoc = GolfDoc();
+    void* inventory = SharedDoc()->itemInventory;
+    unsigned char currentPlayer = golfDoc->currentPlayer;
+    GolfPlayerEntry* player = (GolfPlayerEntry*)GolfPlayer_GetEntryByIndex(golfDoc, currentPlayer);
+    unsigned int windItemId = ItemInventory_GetItemIdAt(inventory, kWindItemSlot);
+    if (player->windItemId == windItemId || items->unitWindOverride) {
+        return kOne;
+    }
+    if (overrideActive) {
+        return overrideSpeed;
+    }
+    float additiveSpeed = additiveWind.Magnitude();
+    if (additiveSpeed >= kAdditiveWindSpeedThreshold) {
+        WVector wind;
+
+        wind = windVector;
+        WVector combined = wind + additiveWind;
+        wind = combined;
+        float combinedSpeed = wind.Magnitude();
+        float capped = combinedSpeed;
+        capped = (capped > kMaxWindSpeed) ? kMaxWindSpeed : capped;
+        return capped;
+    }
+    return speed;
+}
+#pragma pop
+
+// The cannon's direction while it fires, otherwise the global wind's.
+float CWind::GetDirectionAngle() {
+    if (overrideActive) {
+        return overrideDirection;
+    }
+    return directionAngle;
+}
+
+// Change the global wind speed, keeping its direction.
+void CWind::SetStrength(float newSpeed) {
+    speed = newSpeed;
+    AffineMatrix rotation;
+    Matrix_SetAxisRotation(&rotation, directionAngle, 1);
+    windVector = speed * rotation.forward;
+    RescaleRegions();
+}
+
+// Start a hole: pick a random global wind and rebuild the region list from the
+// course's wind bounds.
+void CWind::LoadCourseRegions() {
+    if (!GolfTask_NoOpStatus()) {
+        // CWind::GetInstance(), inlined: the singleton is built on first use.
+        if (!s_windInitialized) {
+            ((CWind*)((void*)s_windInstance))->__ct();
+            __register_global_object((void*)s_windInstance, (void*)__dt__5CWindFv, (void*)s_windDtorRegistration);
+            s_windInitialized = 1;
+        }
+        ((CWind*)s_windInstance)->SetWindParams(kRandomWindByte, kRandomWindByte, 0, 1);
+    }
+    // Empty the region list. The count is read back through a volatile pointer
+    // because the original stores it to the stack and reloads it here.
+    int count = regionCount;
+    int offset, index;
+    index = 0;
+    offset = 0;
+    regionCount = count - *(volatile int*)&count;
+    for (; index < ((CourseData801C*)GolfDoc()->courseData)->boundsCount; offset += kCourseBoundsSize, ++index) {
+        char* bounds = (char*)((CourseData801C*)GolfDoc()->courseData)->bounds + offset;
+        if ((unsigned char)*bounds == kWindBoundsType) {
+            AddRegionFromCommand(bounds + kCourseBoundsCommandOffset, bounds + 1);
+        }
+    }
+}

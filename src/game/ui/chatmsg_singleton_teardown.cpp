@@ -1,9 +1,13 @@
+// Chat message singleton teardown: clearing the global chat-message pointer on destruction,
+// and releasing the default fixed-font resource that CChatMsg acquired.
+// The constructor is in chat_msg_interface.cpp.
+
 #include "game/chatmsg_match.h"
 
 // Unpublish the chat singleton, then run non-deleting base teardown.
 // Teardown clears g_chatMsg unconditionally; this is not an identity-checked release.
 // BaseObject_dtor receives deleteFlag=0; any deleting-destructor deallocation is compiler-generated.
-template<> WSingleton<CChatMsg>::~WSingleton() {
+template <> WSingleton<CChatMsg>::~WSingleton() {
     g_chatMsg = 0;
     BaseObject_dtor(this, 0);
 }

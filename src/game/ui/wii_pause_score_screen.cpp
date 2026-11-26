@@ -1,10 +1,13 @@
+// The pause score screen (CWiiPauseScore) shown on the Wii: the per-player stroke graph, the scorecard
+// views, the menu buttons, and the owned score storage with its integer vector helper.
+
 #include <decomp/local_class.h>
 // Pause / post-hole golf scorecard: score tables, party rankings, graphs,
 // training actions, confirmation/options menus and input publication.
 // Mod lookup:
-// - Winner/tie policy: CWiiPauseScore_RankPartyHoleResults, PartyScoreRule and
+// - Winner/tie policy: CWiiPauseScore::RankPartyHoleResults, PartyScoreRule and
 //   PausePlayerHoleScore below; keep score representation and save mode together.
-// - Scorecard/page/column: CWiiPauseScore_RefreshScorecard, ScoreDisplayMode,
+// - Scorecard/page/column: CWiiPauseScore::RefreshScorecard, ScoreDisplayMode,
 //   ScoreView and the refresh map below. Overall gameMode is a separate protocol.
 // - Graph layout: kGraphWidth/kHolesPerPage, PauseGraphPoint and the graph draw
 //   hook; colours/layout presets are s_pauseScoreGraphLayoutPresets/s_scorecardPlayerCountTables in the companion.
@@ -13,63 +16,108 @@
 // Caller CGolfTask_BeginLoadingAndBuildPauseMenu (golf_task_loading_and_pause.cpp) constructs/selects this menu and feeds
 // hole-major scores; MPBase1 drives its load/process/draw lifecycle. Shared
 // schemas: CWiiPauseScore, CGolfDoc, CSharedDoc and UITextTable headers. Numeric
-// data and strings: u8032E804_data.cpp and pooled wiiPauseScoreStrings. Layout
+// data and strings: the data section and pooled wiiPauseScoreStrings. Layout
 // coordinates are pixels; no local video resolution or presentation-rate knob.
 extern "C" char s_pauseBpHandleRegistration[];
 extern "C" {
 extern unsigned char s_pauseScoreGraphLayoutPresets[]; // Score-graph colour tables.
-extern unsigned char s_scorecardPlayerCountTables[]; // Player-count layout tables and graph presets.
+extern unsigned char s_scorecardPlayerCountTables[];   // Player-count layout tables and graph presets.
 }
 // Party variants are named by the scoring algorithm observed here, rather than unverified UI titles.
 enum PartyScoreRule {
-    kPartyLowerAdjustedValueWins = 1, kPartyHigherCompetitionValueWins = 2,
+    kPartyLowerAdjustedValueWins = 1,
+    kPartyHigherCompetitionValueWins = 2,
     kPartySumStrokeValues = 3
 };
-enum ScoreInteraction { kScoreInactive = 0, kScoreInteractive = 1, kScoreExiting = 4, kScoreOptionsOpen = 5, kScoreConfirmOpen = 6 };
+enum ScoreInteraction {
+    kScoreInactive = 0,
+    kScoreInteractive = 1,
+    kScoreExiting = 4,
+    kScoreOptionsOpen = 5,
+    kScoreConfirmOpen = 6
+};
 // s_pauseScoreGraphLayoutPresets (0x430 bytes) = 36 layout presets of 28 bytes (0x3F0), then a 16-word score-graph colour table;
 // the second reader starts 8 words (0x20 bytes) into that table.
-enum { kScoreGraphColourOffset = 0x3F0, kScoreGraphColourSecondHalfOffset = 0x410 };
-enum { kPauseMatchTextOffset = 0x42, kPauseRoundTextOffset = 0x7e, kPauseTrainingTextOffset = 0xba };
+enum {
+    kScoreGraphColourOffset = 0x3F0,
+    kScoreGraphColourSecondHalfOffset = 0x410
+};
+enum {
+    kPauseMatchTextOffset = 0x42,
+    kPauseRoundTextOffset = 0x7e,
+    kPauseTrainingTextOffset = 0xba
+};
 
-enum { kDrawLines = 0xb0, kDrawTriangleStrip = 0x98, kScoreVertexFormat = 0xf005, kPlayerHoleScoreBytes = 12 };
+enum {
+    kDrawLines = 0xb0,
+    kDrawTriangleStrip = 0x98,
+    kScoreVertexFormat = 0xf005,
+    kPlayerHoleScoreBytes = 12
+};
 
 // Byte offsets into the existing string pool; keep its storage and encoding.
 enum {
     kWiiPauseScoreStrings_vector_length_error = 0x96, // vector length error
-    kWiiPauseScoreStrings_std_exception_std_logic_error_std_length_error = 0xaa, // !std::exception!!std::logic_error!!std::length_error!!
-    kWiiPauseScoreStrings_Black_sprite = 0xe1, // Black_sprite
-    kWiiPauseScoreStrings_score_training = 0xee, // score_training
-    kWiiPauseScoreStrings_score_match = 0xfd, // score_match
-    kWiiPauseScoreStrings_score_dstroke = 0x109, // score_%dstroke
-    kWiiPauseScoreStrings_score_dparty = 0x118, // score_%dparty
-    kWiiPauseScoreStrings_btn_select = 0x126, // btn_select
-    kWiiPauseScoreStrings_player_num = 0x131, // player_num
-    kWiiPauseScoreStrings_score_num11_20_gsr = 0x13c, // score_num11_20.gsr
-    kWiiPauseScoreStrings_R_score_record_d_d = 0x14f, // R_score_record%d_%d
-    kWiiPauseScoreStrings_R_NUM_hole_d_K2_LC = 0x163, // R_NUM_hole%d_K2_LC
-    kWiiPauseScoreStrings_R_score_subtotal = 0x176, // R_score_subtotal
+    kWiiPauseScoreStrings_std_exception_std_logic_error_std_length_error =
+        0xaa,                                              // !std::exception!!std::logic_error!!std::length_error!!
+    kWiiPauseScoreStrings_Black_sprite = 0xe1,             // Black_sprite
+    kWiiPauseScoreStrings_score_training = 0xee,           // score_training
+    kWiiPauseScoreStrings_score_match = 0xfd,              // score_match
+    kWiiPauseScoreStrings_score_dstroke = 0x109,           // score_%dstroke
+    kWiiPauseScoreStrings_score_dparty = 0x118,            // score_%dparty
+    kWiiPauseScoreStrings_btn_select = 0x126,              // btn_select
+    kWiiPauseScoreStrings_player_num = 0x131,              // player_num
+    kWiiPauseScoreStrings_score_num11_20_gsr = 0x13c,      // score_num11_20.gsr
+    kWiiPauseScoreStrings_R_score_record_d_d = 0x14f,      // R_score_record%d_%d
+    kWiiPauseScoreStrings_R_NUM_hole_d_K2_LC = 0x163,      // R_NUM_hole%d_K2_LC
+    kWiiPauseScoreStrings_R_score_subtotal = 0x176,        // R_score_subtotal
     kWiiPauseScoreStrings_R_NUM_result_d_K4_LC_FM = 0x187, // R_NUM_result%d_K4_LC_FM
     kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM = 0x19f, // R_NUM_rtotal%d_K5_LC_FM
     kWiiPauseScoreStrings_R_NUM_scr_d_K3_LC_FM_FP = 0x1b7, // R_NUM_scr%d_K3_LC_FM_FP
     kWiiPauseScoreStrings_R_NUM_rscore_d_K3_LC_FM = 0x1cf, // R_NUM_rscore%d_K3_LC_FM
-    kWiiPauseScoreStrings_R_score_record1_d = 0x1e7, // R_score_record1_%d
-    kWiiPauseScoreStrings_R_score_record2_d = 0x1fa, // R_score_record2_%d
+    kWiiPauseScoreStrings_R_score_record1_d = 0x1e7,       // R_score_record1_%d
+    kWiiPauseScoreStrings_R_score_record2_d = 0x1fa,       // R_score_record2_%d
 };
 
 // Score data are hole-major: scores[hole * playerCount + player].
 #define PAUSE_FIELD_OFFSET(field) ((int)&((CWiiPauseScore*)0)->field)
-struct PauseHoleInfo { char holeNumber; char padding[3]; int par; };
-struct PausePlayerHoleScore { int strokes; int competitionValue; int pang; };
-enum { kHolesPerPage = 9, kGraphWidth = 440, kScoreVertexStride = 16 };
+struct PauseHoleInfo {
+    char holeNumber;
+    char padding[3];
+    int par;
+};
+struct PausePlayerHoleScore {
+    int strokes;
+    int competitionValue;
+    int pang;
+};
+enum {
+    kHolesPerPage = 9,
+    kGraphWidth = 440,
+    kScoreVertexStride = 16
+};
 enum ScoreDisplayMode {
-    kScoreStroke = 0, kScoreStrokeAlternate = 1, kScoreMatch = 2,
-    kScoreParty = 3, kScoreTraining = 4, kScoreMatchAlternate = 5,
+    kScoreStroke = 0,
+    kScoreStrokeAlternate = 1,
+    kScoreMatch = 2,
+    kScoreParty = 3,
+    kScoreTraining = 4,
+    kScoreMatchAlternate = 5,
     kScoreConfirmationOnly = 6
 };
-enum ScoreCellField { kCellStrokes = 0, kCellCompetition = 4, kCellPang = 8 };
+enum ScoreCellField {
+    kCellStrokes = 0,
+    kCellCompetition = 4,
+    kCellPang = 8
+};
 // View numbers are shared by several display modes; the secondary view's column
 // is selected by displayMode/partyGameMode, so it must not be called "Pang view".
-enum ScoreView { kPrimaryView = 0, kSecondaryView = 1, kCompetitionView = 2, kGraphView = 3 };
+enum ScoreView {
+    kPrimaryView = 0,
+    kSecondaryView = 1,
+    kCompetitionView = 2,
+    kGraphView = 3
+};
 enum ScoreControllerScript {
     kPauseControllerScript = 0x10,
     kStrokePostHoleControllerScript = 0x12,
@@ -86,13 +134,23 @@ enum ScoreControllerScript {
 // Here mode 0 gates post-hole single-player recording/actions and mode 6 the
 // persistent-party controls; the alternate overall values share display layouts
 // without automatically gaining those controls. Keep the two enums distinct.
-enum { kSinglePlayerRecordMode = 0, kPartyRecordMode = 6 };
+enum {
+    kSinglePlayerRecordMode = 0,
+    kPartyRecordMode = 6
+};
 enum ScoreOptionControl {
-    kOptionStrokeView = 0, kOptionTrainingView = 1, kOptionMatchView = 2,
-    kOptionNineHolePage = 3, kOptionPartyStrokeView = 4,
-    kOptionPartyAdjustedView = 5, kOptionPartyCompetitionView = 6,
-    kOptionFrontNine = 7, kOptionBackNine = 8, kOptionPageIndicatorBase = 7,
-    kOptionViewIndicatorBase = 9, kOptionPressedIndicatorOffset = 13,
+    kOptionStrokeView = 0,
+    kOptionTrainingView = 1,
+    kOptionMatchView = 2,
+    kOptionNineHolePage = 3,
+    kOptionPartyStrokeView = 4,
+    kOptionPartyAdjustedView = 5,
+    kOptionPartyCompetitionView = 6,
+    kOptionFrontNine = 7,
+    kOptionBackNine = 8,
+    kOptionPageIndicatorBase = 7,
+    kOptionViewIndicatorBase = 9,
+    kOptionPressedIndicatorOffset = 13,
     kOptionTrainingViewPressed = kOptionTrainingView + kOptionPressedIndicatorOffset,
     kOptionNineHolePagePressed = kOptionNineHolePage + kOptionPressedIndicatorOffset
 };
@@ -109,7 +167,7 @@ enum ScoreOptionControl {
 // adjusted-party strokes, or Pang; 2 shows competition values; 3 only totals.
 // playerRows maps logical players to visual rows, so cell IDs use that mapping.
 // Score storage is owned by self; layouts and dialogs have explicit cleanup in
-// dtor/vfunc_5. Callers retain no ownership of buffers passed to the setter APIs.
+// the destructor. Callers retain no ownership of buffers passed to the setter APIs.
 //
 // RefreshScorecard view map (header totals are computed BEFORE the view branch):
 // view  display/rule                 cells                    row footer
@@ -126,14 +184,27 @@ enum ScoreOptionControl {
 // other modes=completed strokes minus completed par. They are not footer totals.
 // All score arrays use LOGICAL player order; text/marker positions use
 // playerRows[player]. Never apply that permutation to playerHoleScores itself.
-enum { kResumeInputAction = 0x11, kAlternateResumeInputAction = 0x12 };
-// Input protocol numbers are retained until the physical buttons are verified.
-enum { kPostHoleInput2 = 2, kPostHoleInput3 = 3, kPostHoleDismissAction = 10 };
-enum ScorePaletteIndex {
-    kTripleBogeyOrWorseColour = 0, kHoleInOneColour = 1,
-    kAlbatrossOrBetterColour = 2, kParColour = 5
+enum {
+    kResumeInputAction = 0x11,
+    kAlternateResumeInputAction = 0x12
 };
-enum { kHoleInOneStrokes = 1, kAlbatrossDelta = -3, kTripleBogeyDelta = 3 };
+// Input protocol numbers are retained until the physical buttons are verified.
+enum {
+    kPostHoleInput2 = 2,
+    kPostHoleInput3 = 3,
+    kPostHoleDismissAction = 10
+};
+enum ScorePaletteIndex {
+    kTripleBogeyOrWorseColour = 0,
+    kHoleInOneColour = 1,
+    kAlbatrossOrBetterColour = 2,
+    kParColour = 5
+};
+enum {
+    kHoleInOneStrokes = 1,
+    kAlbatrossDelta = -3,
+    kTripleBogeyDelta = 3
+};
 
 #include "classes/CGolfDoc.h"
 #define AsCGolfDoc(p) ((CGolfDoc*)(p))
@@ -170,18 +241,24 @@ struct LocalIntVector_u8032E804 {
     int& operator[](int);
 };
 
-// Translation unit 0x8032E804-0x80333CE8 (20 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include "classes/CWiiPauseScore.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CWiiPauseScore.h"
+#include "classes/CWiiPauseScore.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CSmallCommonDialog.h"
+#include "classes/CBpCtrlHandle.h"
+#include "classes/CFontNumDraw.h"
+#include "classes/COptionDialog.h"
 
 #define AsCWiiPauseScore(p) ((CWiiPauseScore*)(p))
 
 #define PAUSE_INDEXED_OFFSET(field) ((int)&((PauseIndexedFields*)0)->field)
 // Indexed score-screen fields; scalar fields continue to use CWiiPauseScore.h.
-struct PauseGraphPoint { int x, y; };
+struct PauseGraphPoint {
+    int x, y;
+};
 struct PauseIndexedFields {
     char padding000[0x64];
     int holeNumberTextId, parTextId, parTotalTextId, cellTextId;
@@ -200,7 +277,8 @@ typedef char PauseIndexedFields_size[(sizeof(PauseIndexedFields) == 0x144) ? 1 :
 
 // Locate a mapped player row in screen pixels; no ownership or bounds check.
 static inline PauseGraphPoint* PauseScoreGraphRow(unsigned char* scoreBytes, int playerIndex) {
-    return (PauseGraphPoint*)(scoreBytes + (((int)scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex]) << 3) + PAUSE_INDEXED_OFFSET(graphOrigins));
+    return (PauseGraphPoint*)(scoreBytes + (((int)scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex]) << 3) +
+                              PAUSE_INDEXED_OFFSET(graphOrigins));
 }
 
 // Read one hole-major score column without changing the stored signed value.
@@ -214,18 +292,16 @@ void BpObject_SetEnabled(void* self, int value);
 void Layout_Update(void* self);
 void appFreeUni__FPv(void* self);
 void __dl__FPv(void* self);
-void Layout_SetElementPlayerFlag(void* self, int a, int b, int c);
-void Layout_SetElementColor(void* self, int a, int b);
+void Layout_SetElementPlayerFlag(void* self, int element, int visible, int c);
+void Layout_SetElementColor(void* self, int element, int colour);
 int BpObject_PollLoad(void* self);
 int Layout_PollLoadComplete(void* self);
 void Layout_DrawWithOpacity(void* self, float value);
 void BpObject_TryInvokeCurrentCallback(void* self, int value);
 void BpObject_Draw(void* self);
 void Layout_Destroy(void* self, int deleting);
-void __ct__7CBpCtrlFv(void* self);
 void CBpCtrl_dtor(void);
 void __register_global_object(void* object, void* destructor, void* dso);
-void CBpCtrl_DeleteEntryById(void* self, int value);
 void UITextTable_ClearEntries(void* self);
 void PointerVector_InitReserved(void* self);
 void PointerVector_DestroyStorage(void);
@@ -239,17 +315,31 @@ void Engine_SetFlexibleVertexFormat(int value);
 void Engine_SetType7Resource(int value);
 void DrawPrimitiveUP(int primitive, int count, void* vertices, int stride);
 void Vec3_Add(void* dest, void* source, float* xy);
-struct ScoreRenderState { unsigned int a, b; };
-struct ScoreRenderStateList { ScoreRenderState p[7]; };
-struct ScoreGraphVertex { float x, y, z; unsigned char r, g, b, a; };
-struct ScoreGraphLine { ScoreGraphVertex v[2]; };
-struct ScoreGraphLineOffsets { float v[6]; };
-struct ScoreGraphMarkerOffsets { float v[12]; };
-struct ScoreGraphScales { float v[5]; };
-
+struct ScoreRenderState {
+    unsigned int a, b;
+};
+struct ScoreRenderStateList {
+    ScoreRenderState p[7];
+};
+struct ScoreGraphVertex {
+    float x, y, z;
+    unsigned char r, g, b, a;
+};
+struct ScoreGraphLine {
+    ScoreGraphVertex v[2];
+};
+struct ScoreGraphLineOffsets {
+    float v[6];
+};
+struct ScoreGraphMarkerOffsets {
+    float v[12];
+};
+struct ScoreGraphScales {
+    float v[5];
+};
 
 // Draw per-player stroke graphs, coloured by strokes relative to each hole par.
-void CWiiPauseScore_DrawScoreGraph(void* self) {
+void CWiiPauseScore::DrawScoreGraph() {
     // Phase 1: choose the nine-hole range and install graph render state.
     int showFrontNine;
     int displayedHoles;
@@ -258,15 +348,17 @@ void CWiiPauseScore_DrawScoreGraph(void* self) {
     int threshold;
     float* scales;
     unsigned int cr, cg, cb, ca;
-    int holeIndex; int playerIndex; int nextHoleIndex;
+    int holeIndex;
+    int playerIndex;
+    int nextHoleIndex;
     float currentHoleX, nextHoleX, holeSpacing, halfHoleSpacing;
     int end = kHolesPerPage;
-    showFrontNine = AsCWiiPauseScore(self)->showFrontNine;
+    showFrontNine = this->showFrontNine;
     unsigned char* scoreConfig = (unsigned char*)pauseScorePartTotalGroupName;
-    displayedHoles = AsCWiiPauseScore(self)->displayedHoleCount;
+    displayedHoles = displayedHoleCount;
     int start = (showFrontNine != 0) ? 0 : kHolesPerPage;
     end = ((int)displayedHoles - start <= kHolesPerPage) ? displayedHoles : end;
-    unsigned char* scoreBytes = (unsigned char*)self;
+    unsigned char* scoreBytes = (unsigned char*)this;
 
     ScoreGraphScales playerScales = *(ScoreGraphScales*)(((char*)(scoreConfig + 0x2838)));
     ScoreRenderStateList pairs = *(ScoreRenderStateList*)(((char*)(scoreConfig + 0x2850)));
@@ -276,7 +368,7 @@ void CWiiPauseScore_DrawScoreGraph(void* self) {
 
     ScoreGraphLine line = *(ScoreGraphLine*)(((char*)(scoreConfig + 0x2888)));
     unsigned char* lp = scoreBytes;
-    for (int i = 0; i < (int)AsCWiiPauseScore(self)->playerCount; lp += 8, ++i) {
+    for (int i = 0; i < (int)playerCount; lp += 8, ++i) {
         line.v[0].x = (float)AsCWiiPauseScore(lp)->graphOrigin0X;
         line.v[1].x = (float)(AsCWiiPauseScore(lp)->graphOrigin0X + kGraphWidth);
         line.v[0].y = line.v[1].y = (float)AsCWiiPauseScore(lp)->graphOrigin0Y;
@@ -292,8 +384,8 @@ void CWiiPauseScore_DrawScoreGraph(void* self) {
     scales = playerScales.v;
     ScoreGraphLineOffsets lineOffsets = *(ScoreGraphLineOffsets*)(((char*)(scoreConfig + 0x28a8)));
     ScoreGraphMarkerOffsets markerOffsets = *(ScoreGraphMarkerOffsets*)(((char*)(scoreConfig + 0x28c0)));
-    float pointA[3] = { 0.0f, 0.0f, 0.0f };
-    float pointB[3] = { 0.0f, 0.0f, 0.0f };
+    float pointA[3] = {0.0f, 0.0f, 0.0f};
+    float pointB[3] = {0.0f, 0.0f, 0.0f};
 
     // Phase 2: for each player/hole, screen x = rowOrigin.x + holeSpacing*pageHole
     // + halfSpacing; screen y = rowOrigin.y + playerScale*(strokes-par). The
@@ -303,20 +395,24 @@ void CWiiPauseScore_DrawScoreGraph(void* self) {
         nextHoleIndex = (1 + holeIndex);
         currentHoleX = holeSpacing * (float)(holeIndex - start) + halfHoleSpacing;
         nextHoleX = holeSpacing * (float)(nextHoleIndex - start) + halfHoleSpacing;
-        for (playerIndex = 0; playerIndex < (int)AsCWiiPauseScore(self)->playerCount; ++playerIndex) {
+        for (playerIndex = 0; playerIndex < (int)playerCount; ++playerIndex) {
             pointA[0] = currentHoleX + (float)PauseScoreGraphRow(scoreBytes, playerIndex)->x;
-            int par = ((PauseHoleInfo*)AsCWiiPauseScore(self)->holeInfo)[holeIndex].par;
-            int strokes = ((PausePlayerHoleScore*)AsCWiiPauseScore(self)->playerHoleScores)[holeIndex * (int)AsCWiiPauseScore(self)->playerCount + playerIndex].strokes;
-            pointA[1] = scales[AsCWiiPauseScore(self)->playerCount] * (float)(strokes - par) + (float)PauseScoreGraphRow(scoreBytes, playerIndex)->y;
+            int par = ((PauseHoleInfo*)holeInfo)[holeIndex].par;
+            int strokes =
+                ((PausePlayerHoleScore*)this->playerHoleScores)[holeIndex * (int)playerCount + playerIndex].strokes;
+            pointA[1] =
+                scales[playerCount] * (float)(strokes - par) + (float)PauseScoreGraphRow(scoreBytes, playerIndex)->y;
 
             // Colour queries retain the original byte-width player/hole projections.
-            int strokesForColour = ((PausePlayerHoleScore*)AsCWiiPauseScore(self)->playerHoleScores)[(int)AsCWiiPauseScore(self)->playerCount * (unsigned char)holeIndex + (unsigned char)playerIndex].strokes;
+            int strokesForColour =
+                ((PausePlayerHoleScore*)this
+                     ->playerHoleScores)[(int)playerCount * (unsigned char)holeIndex + (unsigned char)playerIndex]
+                    .strokes;
             int colour;
             if (strokesForColour == kHoleInOneStrokes) {
                 colour = kHoleInOneColour;
             } else {
-                int delta = strokesForColour -
-                    ((PauseHoleInfo*)AsCWiiPauseScore(self)->holeInfo)[(unsigned char)holeIndex].par;
+                int delta = strokesForColour - ((PauseHoleInfo*)holeInfo)[(unsigned char)holeIndex].par;
                 if (delta <= kAlbatrossDelta) {
                     colour = kAlbatrossOrBetterColour;
                 } else {
@@ -335,15 +431,23 @@ void CWiiPauseScore_DrawScoreGraph(void* self) {
 
             if (holeIndex < lastCompletedHole) {
                 pointB[0] = nextHoleX + (float)PauseScoreGraphRow(scoreBytes, playerIndex)->x;
-                int nextPar = ((PauseHoleInfo*)AsCWiiPauseScore(self)->holeInfo)[nextHoleIndex].par;
+                int nextPar = ((PauseHoleInfo*)holeInfo)[nextHoleIndex].par;
 
-                pointB[1] = scales[AsCWiiPauseScore(self)->playerCount] * (float)((((PausePlayerHoleScore*)AsCWiiPauseScore(self)->playerHoleScores)[nextHoleIndex * (int)AsCWiiPauseScore(self)->playerCount + playerIndex].strokes) - nextPar) + (float)PauseScoreGraphRow(scoreBytes, playerIndex)->y;
-                int nextStrokesForColour = ((PausePlayerHoleScore*)AsCWiiPauseScore(self)->playerHoleScores)[(unsigned char)nextHoleIndex * (int)AsCWiiPauseScore(self)->playerCount + (unsigned char)playerIndex].strokes; int colour2;
+                pointB[1] = scales[playerCount] *
+                                (float)((((PausePlayerHoleScore*)
+                                              playerHoleScores)[nextHoleIndex * (int)playerCount + playerIndex]
+                                             .strokes) -
+                                        nextPar) +
+                            (float)PauseScoreGraphRow(scoreBytes, playerIndex)->y;
+                int nextStrokesForColour =
+                    ((PausePlayerHoleScore*)this->playerHoleScores)[(unsigned char)nextHoleIndex * (int)playerCount +
+                                                                    (unsigned char)playerIndex]
+                        .strokes;
+                int colour2;
                 if (nextStrokesForColour == kHoleInOneStrokes) {
                     colour2 = kHoleInOneColour;
                 } else {
-                    int delta = nextStrokesForColour -
-                        ((PauseHoleInfo*)AsCWiiPauseScore(self)->holeInfo)[(unsigned char)nextHoleIndex].par;
+                    int delta = nextStrokesForColour - ((PauseHoleInfo*)holeInfo)[(unsigned char)nextHoleIndex].par;
                     if (delta <= kAlbatrossDelta) {
                         colour2 = kAlbatrossOrBetterColour;
                     } else {
@@ -387,9 +491,6 @@ int Layout_CollectActivated(void* layout, void* results, int player);
 int Layout_SetElementPlayerFlagsAndState(void* layout, int element, int visible);
 void Layout_SetElementEnabled(void* layout, int element, int visible);
 void Layout_SetElementPlayerFlag(void* layout, int element, int visible, int colour);
-void* COptionDialog_Ctor(void* self, int value);
-void CSmallCommonDialog_Create(int index, void* output, int count);
-void CBpCtrlHandle_ReleaseEntry(void* self);
 void CBpCtrlHandle_Dtor(void* self);
 void __register_global_object(void* object, void* destructor, void* dso);
 extern void* g_sharedDoc;
@@ -399,7 +500,6 @@ extern char s_pauseBpHandleRegistration[0x100];
 extern char pauseConfirmationText[0x100];
 extern char jumptable_804BA3B8[0x100];
 
-void CWiiPauseScore_RefreshScorecard(void* self);
 void Layout_SetElementPosition(void* layout, int element, void* value);
 void Layout_GetElementPosition(void* layout, int element, void* value);
 void Layout_SetElementEnabled(void* layout, int element, int visible);
@@ -409,17 +509,18 @@ void BpObject_StartScriptByName(void* self, const char* name, int value);
 void UIGroup_SetEnabled(void* self, int value);
 void sprintf(char* dest, const char* format, ...);
 void* BpObject_GetOrCreateNamedGroup(void* self, const char* name);
-void CFontNumDraw_RegisterEntries(void* self, int a, int b, void* layout, const char* name);
 extern char wiiPauseScoreStrings[];
 
 #pragma push
 #pragma use_lmw_stmw on
 // Activate the score screen, configure mode-specific controls and select the initial nine-hole page.
-void CWiiPauseScore_InitializeScoreScreen(void* self) {
+void CWiiPauseScore::InitializeScoreScreen() {
     // Phase 1: restore available controls and select the mode's post-hole buttons.
-    unsigned char* o = (unsigned char*)self;
+    unsigned char* o = (unsigned char*)this;
     unsigned char* cfg = (unsigned char*)pauseScorePartTotalGroupName;
-    struct I5 { int v[5]; };
+    struct I5 {
+        int v[5];
+    };
     switch (AsCWiiPauseScore(o)->displayMode) {
     case kScoreStroke:
     case kScoreStrokeAlternate:
@@ -429,20 +530,27 @@ void CWiiPauseScore_InitializeScoreScreen(void* self) {
         unsigned char* p = o;
         for (int i = 0; i <= 3; ++i, p += 4) {
             int s = AsCWiiPauseScore(o)->displayMode;
-            if (s == 6) continue;
+            if (s == 6)
+                continue;
             if (i < 4) {
-                if (i >= 0) {} else continue; // Keep the positive test's original branch polarity.
-                } else if (!(i < 6 && s == 4)) continue;
+                if (i >= 0) {
+                } else
+                    continue; // Keep the positive test's original branch polarity.
+            } else if (!(i < 6 && s == 4))
+                continue;
             Layout_SetElementPlayerFlag(AsCWiiPauseScore(o)->menuLayout, i, 1, 5);
             Layout_SetElementColor(AsCWiiPauseScore(o)->menuLayout, i, -1);
             AsCWiiPauseScore(p)->menuButtonAvailable0 = 1;
         }
         if (AsCWiiPauseScore(o)->postHoleMode != 0) {
-            for (int i = 0; i <= 10; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, i, 0);
+            for (int i = 0; i <= 10; ++i)
+                Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, i, 0);
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, 4, 1);
         } else {
-            for (int i = 0; i <= 10; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, i, 0);
-            for (int i = 0; i <= 3; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, i, 1);
+            for (int i = 0; i <= 10; ++i)
+                Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, i, 0);
+            for (int i = 0; i <= 3; ++i)
+                Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, i, 1);
         }
         break;
     }
@@ -450,15 +558,20 @@ void CWiiPauseScore_InitializeScoreScreen(void* self) {
         unsigned char* p = o;
         for (int i = 0; i <= 5; ++i, p += 4) {
             int s = AsCWiiPauseScore(o)->displayMode;
-            if (s == 6) continue;
+            if (s == 6)
+                continue;
             if (i < 4) {
-                if (i >= 0) {} else continue; // Keep the positive test's original branch polarity.
-                } else if (!(i < 6 && s == 4)) continue;
+                if (i >= 0) {
+                } else
+                    continue; // Keep the positive test's original branch polarity.
+            } else if (!(i < 6 && s == 4))
+                continue;
             Layout_SetElementPlayerFlag(AsCWiiPauseScore(o)->menuLayout, i, 1, 5);
             Layout_SetElementColor(AsCWiiPauseScore(o)->menuLayout, i, -1);
             AsCWiiPauseScore(p)->menuButtonAvailable0 = 1;
         }
-        for (int i = 0; i <= 0x1c; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, i, 0);
+        for (int i = 0; i <= 0x1c; ++i)
+            Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, i, 0);
         if (AsCWiiPauseScore(o)->postHoleMode != 0) {
             if (AsCWiiPauseScore(o)->holeCount == AsCWiiPauseScore(o)->displayedHoleCount) {
                 Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, 9, 1);
@@ -474,7 +587,8 @@ void CWiiPauseScore_InitializeScoreScreen(void* self) {
                 Layout_SetElementEnabled(AsCWiiPauseScore(o)->menuLayout, 0x17, 1);
             }
         } else {
-            for (int i = 0; i <= 5; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, i, 1);
+            for (int i = 0; i <= 5; ++i)
+                Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->menuLayout, i, 1);
         }
         break;
     }
@@ -483,27 +597,36 @@ void CWiiPauseScore_InitializeScoreScreen(void* self) {
     }
 
     // Phase 2: reset presentation layers, choose the score script and option controls.
-    if (AsCWiiPauseScore(o)->scorecardSuppressed != 0) return;
-    BpObject_StartScriptByName(AsCWiiPauseScore(o)->blackSprite, wiiPauseScoreStrings + kWiiPauseScoreStrings_Black_sprite, 1);
+    if (AsCWiiPauseScore(o)->scorecardSuppressed != 0)
+        return;
+    BpObject_StartScriptByName(AsCWiiPauseScore(o)->blackSprite,
+                               wiiPauseScoreStrings + kWiiPauseScoreStrings_Black_sprite, 1);
     I5 limA = *(I5*)(((char*)(cfg + 0x27ac)));
     I5 limB = *(I5*)(((char*)(cfg + 0x27c0)));
     I5 limC = *(I5*)(((char*)(cfg + 0x27d4)));
-    for (int i = 0; i <= 0x13; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, i, 0);
-    if (AsCWiiPauseScore(o)->alternatePlayerLabelLayout != 0) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->alternatePlayerLabelLayout, 0, 0);
-    for (int i = 0; i <= limA.v[AsCWiiPauseScore(o)->playerCount]; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->playerLabelLayout, i, 0);
-    for (int i = 0; i <= limB.v[AsCWiiPauseScore(o)->playerCount]; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->tieMarkerLayout, i, 0);
-    for (int i = 0; i <= limC.v[AsCWiiPauseScore(o)->playerCount]; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->lossMarkerLayout, i, 0);
+    for (int i = 0; i <= 0x13; ++i)
+        Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, i, 0);
+    if (AsCWiiPauseScore(o)->alternatePlayerLabelLayout != 0)
+        Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->alternatePlayerLabelLayout, 0, 0);
+    for (int i = 0; i <= limA.v[AsCWiiPauseScore(o)->playerCount]; ++i)
+        Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->playerLabelLayout, i, 0);
+    for (int i = 0; i <= limB.v[AsCWiiPauseScore(o)->playerCount]; ++i)
+        Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->tieMarkerLayout, i, 0);
+    for (int i = 0; i <= limC.v[AsCWiiPauseScore(o)->playerCount]; ++i)
+        Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->lossMarkerLayout, i, 0);
     AsCWiiPauseScore(o)->selectedView = 0;
     char buf[0x40];
     switch (AsCWiiPauseScore(o)->displayMode) {
     case kScoreTraining:
-        BpObject_StartScriptByName(AsCWiiPauseScore(o)->scoreObject, wiiPauseScoreStrings + kWiiPauseScoreStrings_score_training, 1);
+        BpObject_StartScriptByName(AsCWiiPauseScore(o)->scoreObject,
+                                   wiiPauseScoreStrings + kWiiPauseScoreStrings_score_training, 1);
         Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, kOptionTrainingView, 1);
         break;
     case kScoreMatch:
     case kScoreMatchAlternate:
         if (AsCWiiPauseScore(o)->playerCount <= 2) {
-            BpObject_StartScriptByName(AsCWiiPauseScore(o)->scoreObject, wiiPauseScoreStrings + kWiiPauseScoreStrings_score_match, 1);
+            BpObject_StartScriptByName(AsCWiiPauseScore(o)->scoreObject,
+                                       wiiPauseScoreStrings + kWiiPauseScoreStrings_score_match, 1);
         } else {
             sprintf(buf, wiiPauseScoreStrings + kWiiPauseScoreStrings_score_dstroke, AsCWiiPauseScore(o)->playerCount);
             BpObject_StartScriptByName(AsCWiiPauseScore(o)->scoreObject, buf, 1);
@@ -511,9 +634,12 @@ void CWiiPauseScore_InitializeScoreScreen(void* self) {
         Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, kOptionMatchView, 1);
         break;
     case kScoreParty:
-        if ((*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartySumStrokeValues) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, kOptionPartyStrokeView, 1);
-        if ((*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartyLowerAdjustedValueWins) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, kOptionPartyAdjustedView, 1);
-        if ((*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartyHigherCompetitionValueWins) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, kOptionPartyCompetitionView, 1);
+        if ((*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartySumStrokeValues)
+            Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, kOptionPartyStrokeView, 1);
+        if ((*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartyLowerAdjustedValueWins)
+            Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, kOptionPartyAdjustedView, 1);
+        if ((*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartyHigherCompetitionValueWins)
+            Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, kOptionPartyCompetitionView, 1);
         sprintf(buf, wiiPauseScoreStrings + kWiiPauseScoreStrings_score_dparty, AsCWiiPauseScore(o)->playerCount);
         BpObject_StartScriptByName(AsCWiiPauseScore(o)->scoreObject, buf, 1);
         break;
@@ -526,16 +652,23 @@ void CWiiPauseScore_InitializeScoreScreen(void* self) {
     Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, kOptionNineHolePage, 1);
     Layout_SetElementEnabled(AsCWiiPauseScore(o)->optionsLayout, kOptionFrontNine, 1);
     Layout_SetElementEnabled(AsCWiiPauseScore(o)->optionsLayout, 9, 1);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(o + PAUSE_FIELD_OFFSET(scoreObject)), wiiPauseScoreStrings + kWiiPauseScoreStrings_btn_select), 0);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(o + PAUSE_FIELD_OFFSET(scoreObject)),
+                                                      wiiPauseScoreStrings + kWiiPauseScoreStrings_btn_select),
+                       0);
     if (AsCWiiPauseScore(o)->playerCount != 1) {
-        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(o + PAUSE_FIELD_OFFSET(scoreObject)), wiiPauseScoreStrings + kWiiPauseScoreStrings_player_num), 0);
+        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(o + PAUSE_FIELD_OFFSET(scoreObject)),
+                                                          wiiPauseScoreStrings + kWiiPauseScoreStrings_player_num),
+                           0);
     }
     if (AsCWiiPauseScore(o)->interactionState == 0) {
         int* pd = (int*)(((char*)(cfg + 0x27e8)));
         int* pe = (int*)(((char*)(cfg + 0x27fc)));
         I5 limD = *(I5*)pd;
         I5 limE = *(I5*)pe;
-        CFontNumDraw_RegisterEntries(AsCWiiPauseScore(o)->textTable, limD.v[AsCWiiPauseScore(o)->playerCount], limE.v[AsCWiiPauseScore(o)->playerCount], *(void**)(o + PAUSE_FIELD_OFFSET(scoreObject)), wiiPauseScoreStrings + kWiiPauseScoreStrings_score_num11_20_gsr);
+        ((CFontNumDraw*)(AsCWiiPauseScore(o)->textTable))
+            ->RegisterEntries((const void*)limD.v[AsCWiiPauseScore(o)->playerCount],
+                              limE.v[AsCWiiPauseScore(o)->playerCount], *(void**)(o + PAUSE_FIELD_OFFSET(scoreObject)),
+                              wiiPauseScoreStrings + kWiiPauseScoreStrings_score_num11_20_gsr);
         if (AsCWiiPauseScore(o)->playerCount > 1) {
             unsigned char* q = o + 0x124;
             for (int i = 0, j = 0; i < AsCWiiPauseScore(o)->playerCount; q += 8, j += 2, ++i) {
@@ -548,7 +681,8 @@ void CWiiPauseScore_InitializeScoreScreen(void* self) {
     if ((*(unsigned int*)&AsCWiiPauseScore(o)->holeInfoCount) < 10) {
         Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(o)->optionsLayout, kOptionNineHolePage, 0);
         Layout_SetElementEnabled(AsCWiiPauseScore(o)->optionsLayout, kOptionFrontNine, 0);
-    } else if (AsCWiiPauseScore(o)->holeCount > 9 && (int)AsCWiiPauseScore(o)->displayedHoleCount >= AsCWiiPauseScore(o)->postHoleMode + 9) {
+    } else if (AsCWiiPauseScore(o)->holeCount > 9 &&
+               (int)AsCWiiPauseScore(o)->displayedHoleCount >= AsCWiiPauseScore(o)->postHoleMode + 9) {
         AsCWiiPauseScore(o)->showFrontNine = 0;
         Layout_SetElementEnabled(AsCWiiPauseScore(o)->optionsLayout, kOptionFrontNine, 0);
         Layout_SetElementEnabled(AsCWiiPauseScore(o)->optionsLayout, kOptionBackNine, 1);
@@ -558,19 +692,29 @@ void CWiiPauseScore_InitializeScoreScreen(void* self) {
     }
     BpObject_SetEnabled(*(void**)(o + PAUSE_FIELD_OFFSET(scoreObject)), 0);
     BpObject_SetEnabled(AsCWiiPauseScore(o)->blackSprite, 0);
-    if (AsCWiiPauseScore(o)->textTable != 0) *(int*)((char*)AsCWiiPauseScore(o)->textTable + 0x28) = 0;
+    if (AsCWiiPauseScore(o)->textTable != 0)
+        *(int*)((char*)AsCWiiPauseScore(o)->textTable + 0x28) = 0;
     AsCWiiPauseScore(o)->interactionState = kScoreInteractive;
     AsCWiiPauseScore(o)->activationDelayFrames = 0;
     AsCWiiPauseScore(o)->actionDelayPending = 0;
     AsCWiiPauseScore(o)->activationPending = 1;
     unsigned int mode = AsCSharedDoc(g_sharedDoc)->gameMode;
     // Phase 4: map logical players to visual rows and position labels before refresh.
-    if ((mode != kPartyRecordMode && AsCWiiPauseScore(o)->displayMode == kScoreParty) || (mode != kSinglePlayerRecordMode && AsCWiiPauseScore(o)->displayMode == kScoreStrokeAlternate)) {
+    if ((mode != kPartyRecordMode && AsCWiiPauseScore(o)->displayMode == kScoreParty) ||
+        (mode != kSinglePlayerRecordMode && AsCWiiPauseScore(o)->displayMode == kScoreStrokeAlternate)) {
         for (int i = 0; i < AsCWiiPauseScore(o)->playerCount; ++i) {
-            o[PAUSE_INDEXED_OFFSET(playerRows) + i] = (unsigned char)((*(unsigned char*)((char*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)i) + 0xc4) >> 4) & 0xf) - 1;
+            o[PAUSE_INDEXED_OFFSET(playerRows) + i] =
+                (unsigned char)((*(unsigned char*)((char*)GolfPlayer_GetEntryByIndex(
+                                                       (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc),
+                                                       (unsigned char)i) +
+                                                   0xc4) >>
+                                 4) &
+                                0xf) -
+                1;
         }
     } else {
-        for (int i = 0; i < AsCWiiPauseScore(o)->playerCount; ++i) o[PAUSE_INDEXED_OFFSET(playerRows) + i] = (unsigned char)i;
+        for (int i = 0; i < AsCWiiPauseScore(o)->playerCount; ++i)
+            o[PAUSE_INDEXED_OFFSET(playerRows) + i] = (unsigned char)i;
     }
     if (AsCWiiPauseScore(o)->playerCount > 1) {
         int i = 0;
@@ -578,22 +722,27 @@ void CWiiPauseScore_InitializeScoreScreen(void* self) {
             int jj = j + 1;
             if (SharedDoc_IsPlayerFlag0Set(i) != 0) {
                 unsigned int m = AsCSharedDoc(g_sharedDoc)->gameMode;
-                if ((m == 0 && AsCWiiPauseScore(o)->displayMode == kScoreMatch) || (m == 6 && AsCWiiPauseScore(o)->displayMode == kScoreMatchAlternate)) {
-                    if (AsCWiiPauseScore(o)->alternatePlayerLabelLayout != 0) Layout_SetElementEnabled(AsCWiiPauseScore(o)->alternatePlayerLabelLayout, 0, 1);
+                if ((m == 0 && AsCWiiPauseScore(o)->displayMode == kScoreMatch) ||
+                    (m == 6 && AsCWiiPauseScore(o)->displayMode == kScoreMatchAlternate)) {
+                    if (AsCWiiPauseScore(o)->alternatePlayerLabelLayout != 0)
+                        Layout_SetElementEnabled(AsCWiiPauseScore(o)->alternatePlayerLabelLayout, 0, 1);
                 } else if (m == 6 && AsCWiiPauseScore(o)->displayMode == kScoreStrokeAlternate) {
-                    Layout_SetElementPosition(AsCWiiPauseScore(o)->alternatePlayerLabelLayout, 0, o + 0x124 + o[PAUSE_INDEXED_OFFSET(playerRows) + i] * 8);
+                    Layout_SetElementPosition(AsCWiiPauseScore(o)->alternatePlayerLabelLayout, 0,
+                                              o + 0x124 + o[PAUSE_INDEXED_OFFSET(playerRows) + i] * 8);
                     Layout_SetElementEnabled(AsCWiiPauseScore(o)->alternatePlayerLabelLayout, 0, 1);
                 } else {
-                    Layout_SetElementPosition(AsCWiiPauseScore(o)->playerLabelLayout, jj, o + 0x124 + o[PAUSE_INDEXED_OFFSET(playerRows) + i] * 8);
+                    Layout_SetElementPosition(AsCWiiPauseScore(o)->playerLabelLayout, jj,
+                                              o + 0x124 + o[PAUSE_INDEXED_OFFSET(playerRows) + i] * 8);
                     Layout_SetElementEnabled(AsCWiiPauseScore(o)->playerLabelLayout, jj, 1);
                 }
             } else {
-                Layout_SetElementPosition(AsCWiiPauseScore(o)->playerLabelLayout, j, o + 0x124 + o[PAUSE_INDEXED_OFFSET(playerRows) + i] * 8);
+                Layout_SetElementPosition(AsCWiiPauseScore(o)->playerLabelLayout, j,
+                                          o + 0x124 + o[PAUSE_INDEXED_OFFSET(playerRows) + i] * 8);
                 Layout_SetElementEnabled(AsCWiiPauseScore(o)->playerLabelLayout, j, 1);
             }
         }
     }
-    CWiiPauseScore_RefreshScorecard(self);
+    RefreshScorecard();
 }
 #pragma pop
 void InputManager_Init(void* self);
@@ -605,10 +754,12 @@ extern char s_pauseInputManagerRegistration[0x100];
 
 typedef LocalIntVector_u8032E804 ActivationList80330C54;
 
-struct Object80330C54 {
+struct COptionDialogStorage {
     char data[0x860];
     // Construct the options dialog in its fixed-size allocation.
-    Object80330C54() { COptionDialog_Ctor(this, 0); }
+    COptionDialogStorage() {
+        ((COptionDialog*)this)->__ct(0);
+    }
 };
 extern float kPauseScoreLayoutOpacity;
 extern char pauseScorePartTotalGroupName[];
@@ -624,13 +775,10 @@ extern char __vt__14CWiiPauseScore[0x100];
 void FadeOverlay_Init(void* self);
 void ResourceState_Dtor(void* self);
 void FadeState_StartFadeOut(void* self, int value);
-void CBpCtrlHandle_SetScriptIndex(void* self, int value);
 int MPBase1_Process(void* self);
 int Layout_SetElementPlayerFlagsAndState(void* layout, int element, int visible);
 extern signed char s_fadeOverlayInitialized;
 extern char s_fadeOverlay[0x100];
-int CWiiPauseScore_ProcessOptionActions(void* self);
-int CWiiPauseScore_ProcessMenuActions(void* self);
 extern char s_gameInputManager[0x100];
 
 struct VObj8032F954 {
@@ -669,44 +817,47 @@ struct VObj50_8032F954 : VBase8032F954 {
 // Original 0x8032E804 unit: keep lazy manager creation before each input query.
 // Lazily initialize and return the shared input manager.
 static inline void* PauseScoreInputManager(char* registry) {
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, registry + 0);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    return (void*)Sing_805DC5C8();
+    return (void*)GetInputManagerSlot();
 }
 
 // Refresh the activated score screen and select its initial controller script.
 static inline void ActivatePauseScorePresentation(void* self, char* obj, char* reg) {
-        AsCWiiPauseScore(obj)->activationPending = 0;
-        CWiiPauseScore_RefreshScorecard(self);
-        if ((*(int*)&AsCSharedDoc(g_sharedDoc)->gameMode) == kSinglePlayerRecordMode && AsCWiiPauseScore(obj)->displayMode == kScoreStrokeAlternate && AsCWiiPauseScore(obj)->postHoleMode != 0) {
-            if (Sing_805DC5F8() == 0) {
-                if (s_bpCtrlHandleInitialized == 0) {
-                    s_bpCtrlHandle[1] = -1;
-                    s_bpCtrlHandle[0] = -1;
-                    __register_global_object(&s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, (reg + 0x18));
-                    s_bpCtrlHandleInitialized = 1;
-                }
-                Sing_805DC5F8() = s_bpCtrlHandle;
+    AsCWiiPauseScore(obj)->activationPending = 0;
+    ((CWiiPauseScore*)self)->RefreshScorecard();
+    if ((*(int*)&AsCSharedDoc(g_sharedDoc)->gameMode) == kSinglePlayerRecordMode &&
+        AsCWiiPauseScore(obj)->displayMode == kScoreStrokeAlternate && AsCWiiPauseScore(obj)->postHoleMode != 0) {
+        if (Sing_805DC5F8() == 0) {
+            if (s_bpCtrlHandleInitialized == 0) {
+                s_bpCtrlHandle[1] = -1;
+                s_bpCtrlHandle[0] = -1;
+                __register_global_object(&s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, (reg + 0x18));
+                s_bpCtrlHandleInitialized = 1;
             }
-            CBpCtrlHandle_SetScriptIndex((void*)Sing_805DC5F8(), kStrokePostHoleControllerScript);
-        } else if (AsCWiiPauseScore(obj)->scorecardSuppressed == 0) {
-            if (!Sing_805DC5F8()) {
-                if (s_bpCtrlHandleInitialized == 0) {
-                    s_bpCtrlHandle[1] = -1;
-                    s_bpCtrlHandle[0] = -1;
-                    __register_global_object(&s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, (reg + 0x18));
-                    s_bpCtrlHandleInitialized = 1;
-                }
-                Sing_805DC5F8() = s_bpCtrlHandle;
-            }
-            CBpCtrlHandle_SetScriptIndex((void*)Sing_805DC5F8(), AsCWiiPauseScore(obj)->postHoleMode != 0 ? kPostHoleControllerScript : kPauseControllerScript);
+            Sing_805DC5F8() = s_bpCtrlHandle;
         }
+        ((CBpCtrlHandle*)Sing_805DC5F8())->SetScriptIndex(kStrokePostHoleControllerScript);
+    } else if (AsCWiiPauseScore(obj)->scorecardSuppressed == 0) {
+        if (!Sing_805DC5F8()) {
+            if (s_bpCtrlHandleInitialized == 0) {
+                s_bpCtrlHandle[1] = -1;
+                s_bpCtrlHandle[0] = -1;
+                __register_global_object(&s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, (reg + 0x18));
+                s_bpCtrlHandleInitialized = 1;
+            }
+            Sing_805DC5F8() = s_bpCtrlHandle;
+        }
+        ((CBpCtrlHandle*)Sing_805DC5F8())
+            ->SetScriptIndex(AsCWiiPauseScore(obj)->postHoleMode != 0 ? kPostHoleControllerScript
+                                                                      : kPauseControllerScript);
+    }
 }
 
 // Process score-screen activation, dialogs and menu input; return when an exit action completes.
@@ -717,12 +868,12 @@ static inline void ActivatePauseScorePresentation(void* self, char* obj, char* r
 // interactionState records presentation state; live dialog pointers decide
 // which modal branch owns the tick. Repeated singleton blocks preserve the
 // original construction/registration order and all refer to the same storage.
-int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
+int CWiiPauseScore::UpdateAndPollExit(float delta) {
     // Phase 1: defer presentation setup to the first tick after activation.
     char* reg = s_pauseInputManagerRegistration;
-    char* obj = (char*)self;
+    char* obj = (char*)this;
     if (AsCWiiPauseScore(obj)->activationPending != 0) {
-        ActivatePauseScorePresentation(self, obj, reg);
+        ActivatePauseScorePresentation(this, obj, reg);
         return 0;
     }
 
@@ -730,7 +881,8 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
     // remembered button's availability and the normal score presentation.
     void* old = AsCWiiPauseScore(obj)->optionDialog;
     if (old != 0) {
-        if (MPBase1_Process(old) == 0) return 0;
+        if (MPBase1_Process(old) == 0)
+            return 0;
         old = AsCWiiPauseScore(obj)->optionDialog;
         if (old != 0) {
             if (old) {
@@ -758,19 +910,27 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
             char* src;
             char* dst;
             int i;
-            for (int k = 0; 4 > k; ++k) Layout_SetElementPlayerFlag(AsCWiiPauseScore(obj)->menuLayout, k, 1, 5);
+            for (int k = 0; 4 > k; ++k)
+                Layout_SetElementPlayerFlag(AsCWiiPauseScore(obj)->menuLayout, k, 1, 5);
             dst = obj;
             src = obj;
             for (i = 0; i <= 3; ++i, dst += 4, src += 4) {
                 int state = AsCWiiPauseScore(obj)->displayMode;
                 saved = AsCWiiPauseScore(src)->menuButtonAvailable0;
-                if (state == kScoreConfirmationOnly) continue;
+                if (state == kScoreConfirmationOnly)
+                    continue;
                 switch (i) {
-                case 4: case 5:
-                    if (state != kScoreTraining) continue;
-                case 0: case 1: case 2: case 3:
+                case 4:
+                case 5:
+                    if (state != kScoreTraining)
+                        continue;
+                case 0:
+                case 1:
+                case 2:
+                case 3:
                     break;
-                default: continue;
+                default:
+                    continue;
                 }
                 if (saved) {
                     Layout_SetElementPlayerFlag(AsCWiiPauseScore(obj)->menuLayout, i, 1, 5);
@@ -783,24 +943,34 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
             }
             break;
         }
-        case kScoreTraining: { int i;
+        case kScoreTraining: {
+            int i;
             char* src;
 
             char* dst;
 
-            for (int k = 0; k < 5; ++k) Layout_SetElementPlayerFlag(AsCWiiPauseScore(obj)->menuLayout, k, 1, 5);
+            for (int k = 0; k < 5; ++k)
+                Layout_SetElementPlayerFlag(AsCWiiPauseScore(obj)->menuLayout, k, 1, 5);
             dst = obj;
             src = obj;
             for (i = 0; 5 >= i; ++i, dst += 4, src += 4) {
                 int state = AsCWiiPauseScore(obj)->displayMode;
-                unsigned int saved; saved = AsCWiiPauseScore(src)->menuButtonAvailable0;
-                if (kScoreConfirmationOnly == state) continue;
+                unsigned int saved;
+                saved = AsCWiiPauseScore(src)->menuButtonAvailable0;
+                if (kScoreConfirmationOnly == state)
+                    continue;
                 switch (i) {
-                case 4: case 5:
-                    if (state != kScoreTraining) continue;
-                case 0: case 1: case 2: case 3:
+                case 4:
+                case 5:
+                    if (state != kScoreTraining)
+                        continue;
+                case 0:
+                case 1:
+                case 2:
+                case 3:
                     break;
-                default: continue;
+                default:
+                    continue;
                 }
                 if (0 != saved) {
                     Layout_SetElementPlayerFlag(AsCWiiPauseScore(obj)->menuLayout, i, 1, 5);
@@ -832,7 +1002,9 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
             }
             Sing_805DC5F8() = s_bpCtrlHandle;
         }
-        CBpCtrlHandle_SetScriptIndex((void*)Sing_805DC5F8(), AsCWiiPauseScore(obj)->postHoleMode != 0 ? kPostHoleControllerScript : kPauseControllerScript);
+        ((CBpCtrlHandle*)Sing_805DC5F8())
+            ->SetScriptIndex(AsCWiiPauseScore(obj)->postHoleMode != 0 ? kPostHoleControllerScript
+                                                                      : kPauseControllerScript);
         return 0;
     }
 
@@ -849,9 +1021,10 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
             }
             Sing_805DC5F8() = s_bpCtrlHandle;
         }
-        CBpCtrlHandle_ReleaseEntry((void*)Sing_805DC5F8());
+        ((CBpCtrlHandle*)Sing_805DC5F8())->ReleaseEntry();
         p50 = *(void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog));
-        if (((VObj50_8032F954*)p50)->f19(delta) == 0) return 0;
+        if (((VObj50_8032F954*)p50)->f19(delta) == 0)
+            return 0;
         p50 = *(void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog));
         int enabled = ((VObj50_8032F954*)p50)->f20() == 1;
         AsCWiiPauseScore(obj)->selectedAction = (enabled != 0);
@@ -864,7 +1037,8 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
             }
             *(void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog)) = 0;
         }
-        if (AsCWiiPauseScore(obj)->displayMode == kScoreConfirmationOnly) return 1;
+        if (AsCWiiPauseScore(obj)->displayMode == kScoreConfirmationOnly)
+            return 1;
         if (AsCWiiPauseScore(obj)->displayMode != kScoreTraining) {
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->menuLayout, 1, 1);
             Layout_SetElementEnabled(AsCWiiPauseScore(obj)->menuLayout, 6, 0);
@@ -883,7 +1057,9 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
                 }
                 Sing_805DC5F8() = s_bpCtrlHandle;
             }
-            CBpCtrlHandle_SetScriptIndex((void*)Sing_805DC5F8(), AsCWiiPauseScore(obj)->postHoleMode != 0 ? kPostHoleControllerScript : kPauseControllerScript);
+            ((CBpCtrlHandle*)Sing_805DC5F8())
+                ->SetScriptIndex(AsCWiiPauseScore(obj)->postHoleMode != 0 ? kPostHoleControllerScript
+                                                                          : kPauseControllerScript);
         }
         return enabled;
     }
@@ -894,15 +1070,15 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
         AsCWiiPauseScore(obj)->interactionState = kScoreConfirmOpen;
 
         if (6 > (AsCGolfDoc((void*)AsCSharedDoc(g_sharedDoc)->golfDoc)->tutorialStage)) {
-            CSmallCommonDialog_Create(0, obj + PAUSE_FIELD_OFFSET(confirmationDialog), 0x18);
+            CSmallCommonDialog::Create(0, (void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog)), 0x18);
             void* item = *(void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog));
             ((VObj50_8032F954*)item)->f18(pauseConfirmationText);
         } else if (category == kScoreMatchAlternate) {
-            CSmallCommonDialog_Create(0, obj + PAUSE_FIELD_OFFSET(confirmationDialog), 5);
+            CSmallCommonDialog::Create(0, (void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog)), 5);
             void* item = *(void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog));
             ((VObj50_8032F954*)item)->f18(pauseConfirmationText + kPauseMatchTextOffset);
         } else {
-            CSmallCommonDialog_Create(0, obj + PAUSE_FIELD_OFFSET(confirmationDialog), 5);
+            CSmallCommonDialog::Create(0, (void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog)), 5);
             void* item = *(void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog));
             ((VObj50_8032F954*)item)->f18(pauseConfirmationText + kPauseRoundTextOffset);
         }
@@ -915,25 +1091,27 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
             }
             Sing_805DC5F8() = s_bpCtrlHandle;
         }
-        CBpCtrlHandle_ReleaseEntry((void*)Sing_805DC5F8());
+        ((CBpCtrlHandle*)Sing_805DC5F8())->ReleaseEntry();
         return 0;
     }
 
     // Phase 5: process normal input/layout actions and latch the exit interaction state.
     void* target = AsCWiiPauseScore(obj)->textTable;
-    if (0 != target) AsUITextTable(target)->drawEnabled = 0;
+    if (0 != target)
+        AsUITextTable(target)->drawEnabled = 0;
     unsigned int result = 0;
     // Both activation keys share the state transition; otherwise update layouts.
     if (AsCWiiPauseScore(obj)->postHoleMode == 0 && AsCWiiPauseScore(obj)->actionDelayPending == 0 &&
         (Input_IsActionPressed(PauseScoreInputManager(reg), kResumeInputAction, -1) != 0 ||
-        Input_IsActionPressed(PauseScoreInputManager(reg), kAlternateResumeInputAction, -1) != 0)) {
+         Input_IsActionPressed(PauseScoreInputManager(reg), kAlternateResumeInputAction, -1) != 0)) {
         AsCWiiPauseScore(obj)->selectedAction = 0;
         result = 1;
     } else {
         Layout_Update(AsCWiiPauseScore(obj)->menuLayout);
         Layout_Update(AsCWiiPauseScore(obj)->optionsLayout);
         old = AsCWiiPauseScore(obj)->alternatePlayerLabelLayout;
-        if (old != 0) Layout_Update(old);
+        if (old != 0)
+            Layout_Update(old);
         Layout_Update(AsCWiiPauseScore(obj)->playerLabelLayout);
         Layout_Update(AsCWiiPauseScore(obj)->tieMarkerLayout);
         Layout_Update(AsCWiiPauseScore(obj)->lossMarkerLayout);
@@ -943,11 +1121,12 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
         case kScoreMatch:
         case kScoreParty:
         case kScoreMatchAlternate:
-            result = CWiiPauseScore_ProcessOptionActions(self);
-            if (0 != result && AsCWiiPauseScore(obj)->selectedAction == 10) return 1;
+            result = ProcessOptionActions();
+            if (0 != result && AsCWiiPauseScore(obj)->selectedAction == 10)
+                return 1;
             break;
         case kScoreTraining:
-            result = CWiiPauseScore_ProcessMenuActions(self);
+            result = ProcessMenuActions();
             break;
         default:
             break;
@@ -963,7 +1142,7 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
             }
             Sing_805DC5F8() = s_bpCtrlHandle;
         }
-        CBpCtrlHandle_ReleaseEntry((void*)Sing_805DC5F8());
+        ((CBpCtrlHandle*)Sing_805DC5F8())->ReleaseEntry();
         AsCWiiPauseScore(obj)->interactionState = kScoreExiting;
     }
     return result;
@@ -971,116 +1150,110 @@ int CWiiPauseScore_UpdateAndPollExit(void* self, float delta) {
 
 #pragma pop
 // Release score layouts, controller entries and owned hole/player score storage.
-void* CWiiPauseScore_dtor(void* self, int deleting) {
-    // Phase 1: delete each owned layout and clear its pointer.
-    if (self != 0) {
-        void* value = AsCWiiPauseScore(self)->menuLayout;
-        *(void**)self = &__vt__14CWiiPauseScore;
-        if (value != 0) {
-            Layout_Destroy(value, 1);
-            AsCWiiPauseScore(self)->menuLayout = 0;
-        }
-        value = AsCWiiPauseScore(self)->optionsLayout;
-        if (value != 0) {
-            Layout_Destroy(value, 1);
-            AsCWiiPauseScore(self)->optionsLayout = 0;
-        }
-        value = AsCWiiPauseScore(self)->alternatePlayerLabelLayout;
-        if (value != 0) {
-            Layout_Destroy(value, 1);
-            AsCWiiPauseScore(self)->alternatePlayerLabelLayout = 0;
-        }
-        value = AsCWiiPauseScore(self)->playerLabelLayout;
-        if (0 != value) {
-            Layout_Destroy(value, 1);
-            AsCWiiPauseScore(self)->playerLabelLayout = 0;
-        }
-        value = AsCWiiPauseScore(self)->tieMarkerLayout;
-        if (value != 0) {
-            Layout_Destroy(value, 1);
-            AsCWiiPauseScore(self)->tieMarkerLayout = 0;
-        }
-        value = AsCWiiPauseScore(self)->lossMarkerLayout;
-        if (value != 0) {
-            Layout_Destroy(value, 1);
-            AsCWiiPauseScore(self)->lossMarkerLayout = 0;
-        }
-        // Phase 2: remove the two presentation entries through their registry owner.
-        if (AsCWiiPauseScore(self)->scoreEntryId != -1) {
-            if (((int&)Sing_805DC5F0()) == 0) {
-                if (s_bpCtrlInitialized == 0) {
-                    __ct__7CBpCtrlFv(&s_bpCtrl);
-                    __register_global_object(&s_bpCtrl, (void*)CBpCtrl_dtor, &s_pauseBpCtrlRegistration);
-                    s_bpCtrlInitialized = 1;
-                }
-                ((int&)Sing_805DC5F0()) = (int)&s_bpCtrl;
+CWiiPauseScore::~CWiiPauseScore() {
+    void* value = menuLayout;
+    *(void**)this = &__vt__14CWiiPauseScore;
+    if (value != 0) {
+        Layout_Destroy(value, 1);
+        menuLayout = 0;
+    }
+    value = optionsLayout;
+    if (value != 0) {
+        Layout_Destroy(value, 1);
+        optionsLayout = 0;
+    }
+    value = alternatePlayerLabelLayout;
+    if (value != 0) {
+        Layout_Destroy(value, 1);
+        alternatePlayerLabelLayout = 0;
+    }
+    value = playerLabelLayout;
+    if (0 != value) {
+        Layout_Destroy(value, 1);
+        playerLabelLayout = 0;
+    }
+    value = tieMarkerLayout;
+    if (value != 0) {
+        Layout_Destroy(value, 1);
+        tieMarkerLayout = 0;
+    }
+    value = lossMarkerLayout;
+    if (value != 0) {
+        Layout_Destroy(value, 1);
+        lossMarkerLayout = 0;
+    }
+    // Phase 2: remove the two presentation entries through their registry owner.
+    if (scoreEntryId != -1) {
+        if (((int&)Sing_805DC5F0()) == 0) {
+            if (s_bpCtrlInitialized == 0) {
+                ((CBpCtrl*)&s_bpCtrl)->__ct();
+                __register_global_object(&s_bpCtrl, (void*)CBpCtrl_dtor, &s_pauseBpCtrlRegistration);
+                s_bpCtrlInitialized = 1;
             }
-            CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), AsCWiiPauseScore(self)->scoreEntryId);
-            AsCWiiPauseScore(self)->scoreEntryId = -1;
+            ((int&)Sing_805DC5F0()) = (int)&s_bpCtrl;
         }
-        if (AsCWiiPauseScore(self)->blackSpriteEntryId != -1) {
-            if (((int&)Sing_805DC5F0()) == 0) {
-                if (!s_bpCtrlInitialized) {
-                    __ct__7CBpCtrlFv(&s_bpCtrl);
-                    __register_global_object(&s_bpCtrl, (void*)CBpCtrl_dtor, &s_pauseBpCtrlRegistration);
-                    s_bpCtrlInitialized = 1;
-                }
-                ((int&)Sing_805DC5F0()) = (int)&s_bpCtrl;
+        ((CBpCtrl*)(((int&)Sing_805DC5F0())))->DeleteEntryById(scoreEntryId);
+        scoreEntryId = -1;
+    }
+    if (blackSpriteEntryId != -1) {
+        if (((int&)Sing_805DC5F0()) == 0) {
+            if (!s_bpCtrlInitialized) {
+                ((CBpCtrl*)&s_bpCtrl)->__ct();
+                __register_global_object(&s_bpCtrl, (void*)CBpCtrl_dtor, &s_pauseBpCtrlRegistration);
+                s_bpCtrlInitialized = 1;
             }
-            CBpCtrl_DeleteEntryById((void*)((int&)Sing_805DC5F0()), AsCWiiPauseScore(self)->blackSpriteEntryId);
-            AsCWiiPauseScore(self)->blackSpriteEntryId = -1;
+            ((int&)Sing_805DC5F0()) = (int)&s_bpCtrl;
         }
-        // Phase 3: deregister numeric text, release score arrays, then optionally self.
-        unsigned int clear = *(volatile int*)&AsCWiiPauseScore(self)->holeInfoCount;
-        AsCWiiPauseScore(self)->holeInfoCount = clear - clear;
-        AsCWiiPauseScore(self)->playerHoleScoreCount = clear - clear;
-        clear = *(volatile int*)&AsCWiiPauseScore(self)->playerHoleScoreCount;
-        value = AsCWiiPauseScore(self)->textTable;
-        if (value != 0) {
-            UITextTable_ClearEntries(value);
-            if (((int&)Sing_805DC830()) == 0) {
-                if (s_pointerVectorInitialized == 0) {
-                    PointerVector_InitReserved(&s_fontNumDrawRegistry);
-                    __register_global_object(&s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage, &s_pauseFontRegistryRegistration);
-                    s_pointerVectorInitialized = 1;
-                }
-                ((int&)Sing_805DC830()) = (int)&s_fontNumDrawRegistry;
+        ((CBpCtrl*)(((int&)Sing_805DC5F0())))->DeleteEntryById(blackSpriteEntryId);
+        blackSpriteEntryId = -1;
+    }
+    // Phase 3: deregister numeric text, release score arrays, then optionally self.
+    unsigned int clear = *(volatile int*)&holeInfoCount;
+    holeInfoCount = clear - clear;
+    playerHoleScoreCount = clear - clear;
+    clear = *(volatile int*)&playerHoleScoreCount;
+    value = textTable;
+    if (value != 0) {
+        UITextTable_ClearEntries(value);
+        if (((int&)Sing_805DC830()) == 0) {
+            if (s_pointerVectorInitialized == 0) {
+                PointerVector_InitReserved(&s_fontNumDrawRegistry);
+                __register_global_object(&s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage,
+                                         &s_pauseFontRegistryRegistration);
+                s_pointerVectorInitialized = 1;
             }
-            PointerArray_DeleteValue((void*)((int&)Sing_805DC830()), (*(int*)&AsCWiiPauseScore(self)->textTable));
+            ((int&)Sing_805DC830()) = (int)&s_fontNumDrawRegistry;
         }
-        if (&AsCWiiPauseScore(self)->playerHoleScores != 0) {
-            if (&AsCWiiPauseScore(self)->playerHoleScores != 0) {
-                if (&AsCWiiPauseScore(self)->playerHoleScores != 0) {
-                    if (&AsCWiiPauseScore(self)->playerHoleScores != 0) {
-                        value = AsCWiiPauseScore(self)->playerHoleScores;
-                        if (value != 0) {
-                            clear = *(volatile int*)&AsCWiiPauseScore(self)->playerHoleScoreCount;
-                            AsCWiiPauseScore(self)->playerHoleScoreCount = clear - clear;
-                            appFreeUni__FPv(value);
-                        }
+        PointerArray_DeleteValue((void*)((int&)Sing_805DC830()), (*(int*)&textTable));
+    }
+    if (&playerHoleScores != 0) {
+        if (&playerHoleScores != 0) {
+            if (&playerHoleScores != 0) {
+                if (&playerHoleScores != 0) {
+                    value = playerHoleScores;
+                    if (value != 0) {
+                        clear = *(volatile int*)&playerHoleScoreCount;
+                        playerHoleScoreCount = clear - clear;
+                        appFreeUni__FPv(value);
                     }
                 }
             }
-        }
-        if (&AsCWiiPauseScore(self)->holeInfo != 0) {
-            if (&AsCWiiPauseScore(self)->holeInfo != 0) {
-                if (&AsCWiiPauseScore(self)->holeInfo != 0) {
-                    if (&AsCWiiPauseScore(self)->holeInfo != 0) {
-                        value = AsCWiiPauseScore(self)->holeInfo;
-                        if (value != 0) {
-                            clear = *(volatile int*)&AsCWiiPauseScore(self)->holeInfoCount;
-                            AsCWiiPauseScore(self)->holeInfoCount = clear - clear;
-                            appFreeUni__FPv(value);
-                        }
-                    }
-                }
-            }
-        }
-        if (deleting > 0) {
-            __dl__FPv(self);
         }
     }
-    return self;
+    if (&holeInfo != 0) {
+        if (&holeInfo != 0) {
+            if (&holeInfo != 0) {
+                if (&holeInfo != 0) {
+                    value = holeInfo;
+                    if (value != 0) {
+                        clear = *(volatile int*)&holeInfoCount;
+                        holeInfoCount = clear - clear;
+                        appFreeUni__FPv(value);
+                    }
+                }
+            }
+        }
+    }
 }
 
 // Return the selected score-screen action through the output pointer.
@@ -1092,37 +1265,37 @@ int Object_GetField14C(void* self, int* out) {
 // Store the displayed hole number and par at an eight-bit hole index.
 // holeIndex is truncated to 8 bits and must address allocated holeInfo. holeNumber
 // is the display label, not the storage index. No resize or range check occurs.
-void CWiiPauseScore_SetHoleInfo(void* self, int holeIndex, char holeNumber, int par) {
-    ((PauseHoleInfo*)AsCWiiPauseScore(self)->holeInfo)[holeIndex & 0xff].holeNumber = holeNumber;
-    ((PauseHoleInfo*)AsCWiiPauseScore(self)->holeInfo)[holeIndex & 0xff].par = par;
+void CWiiPauseScore::SetHoleInfo(int holeIndex, unsigned char holeNumber, int par) {
+    ((PauseHoleInfo*)holeInfo)[holeIndex & 0xff].holeNumber = holeNumber;
+    ((PauseHoleInfo*)holeInfo)[holeIndex & 0xff].par = par;
 }
 
 // Store strokes, the mode-specific competition value and Pang for one player on one hole.
 // Indices are zero-based and must already fit the owned hole-major score array.
 // competitionValue is mode-dependent (e.g. drive distance times 100 in party rule 2).
-void CWiiPauseScore_SetPlayerHoleScore(void* self, int playerIndex, int holeIndex, int strokes, int competitionValue, int pang) {
-    unsigned char c = AsCWiiPauseScore(self)->playerCount;
+void CWiiPauseScore::SetPlayerHoleScore(int playerIndex, int holeIndex, int strokes, int competitionValue, int pang) {
+    unsigned char c = playerCount;
     int off = (playerIndex + holeIndex * (int)c) * sizeof(PausePlayerHoleScore);
-    ((PausePlayerHoleScore*)((char*)AsCWiiPauseScore(self)->playerHoleScores + off))->strokes = strokes;
-    ((PausePlayerHoleScore*)((char*)AsCWiiPauseScore(self)->playerHoleScores + off))->competitionValue = competitionValue;
-    ((PausePlayerHoleScore*)((char*)AsCWiiPauseScore(self)->playerHoleScores + off))->pang = pang;
+    ((PausePlayerHoleScore*)((char*)playerHoleScores + off))->strokes = strokes;
+    ((PausePlayerHoleScore*)((char*)playerHoleScores + off))->competitionValue = competitionValue;
+    ((PausePlayerHoleScore*)((char*)playerHoleScores + off))->pang = pang;
 }
 
 // Hide the score and black-sprite presentation objects when present.
-void CWiiPauseScore_HideBpObjects(void* self) {
-    void* value = AsCWiiPauseScore(self)->scoreObject;
+void CWiiPauseScore::HideBpObjects() {
+    void* value = scoreObject;
     if (value != 0) {
         BpObject_SetEnabled(value, 0);
     }
-    value = AsCWiiPauseScore(self)->blackSprite;
+    value = blackSprite;
     if (value != 0) {
         BpObject_SetEnabled(value, 0);
     }
 }
 
 // Update a valid mode-specific menu button and remember its availability.
-void CWiiPauseScore_SetMenuButtonAvailable(void* self, int index, int value) {
-    int state = AsCWiiPauseScore(self)->displayMode;
+void CWiiPauseScore::SetMenuButtonAvailable(int index, int value) {
+    int state = displayMode;
     if (state == kScoreConfirmationOnly) {
         return;
     }
@@ -1140,36 +1313,34 @@ void CWiiPauseScore_SetMenuButtonAvailable(void* self, int index, int value) {
         }
     }
     if (value != 0) {
-        Layout_SetElementPlayerFlag(AsCWiiPauseScore(self)->menuLayout, index, 1, 5);
-        Layout_SetElementColor(AsCWiiPauseScore(self)->menuLayout, index, -1);
+        Layout_SetElementPlayerFlag(menuLayout, index, 1, 5);
+        Layout_SetElementColor(menuLayout, index, -1);
     } else {
-        Layout_SetElementPlayerFlag(AsCWiiPauseScore(self)->menuLayout, index, 0, 5);
-        Layout_SetElementColor(AsCWiiPauseScore(self)->menuLayout, index, (int)0xB090B0B0);
+        Layout_SetElementPlayerFlag(menuLayout, index, 0, 5);
+        Layout_SetElementColor(menuLayout, index, (int)0xB090B0B0);
     }
-    ((PauseIndexedFields*)self)->menuButtonAvailable[index] = value;
+    ((PauseIndexedFields*)this)->menuButtonAvailable[index] = value;
 }
 
 // Poll the score presentation and layouts until all required resources finish loading.
-int CWiiPauseScore_PollLoadComplete(void* self) {
-    if (!BpObject_PollLoad(AsCWiiPauseScore(self)->scoreObject)) {
+int CWiiPauseScore::PollLoadComplete() {
+    if (!BpObject_PollLoad(scoreObject)) {
         return 0;
     }
-    BpObject_SetEnabled(AsCWiiPauseScore(self)->scoreObject, 0);
-    if (!BpObject_PollLoad(AsCWiiPauseScore(self)->blackSprite)) {
+    BpObject_SetEnabled(scoreObject, 0);
+    if (!BpObject_PollLoad(blackSprite)) {
         return 0;
     }
-    BpObject_SetEnabled(AsCWiiPauseScore(self)->blackSprite, 0);
-    if (AsCWiiPauseScore(self)->displayMode == kScoreConfirmationOnly) {
+    BpObject_SetEnabled(blackSprite, 0);
+    if (displayMode == kScoreConfirmationOnly) {
         return 1;
     }
-    if (!Layout_PollLoadComplete(AsCWiiPauseScore(self)->menuLayout) ||
-        !Layout_PollLoadComplete(AsCWiiPauseScore(self)->optionsLayout) ||
-        !Layout_PollLoadComplete(AsCWiiPauseScore(self)->playerLabelLayout) ||
-        !Layout_PollLoadComplete(AsCWiiPauseScore(self)->tieMarkerLayout) ||
-        !Layout_PollLoadComplete(AsCWiiPauseScore(self)->lossMarkerLayout)) {
+    if (!Layout_PollLoadComplete(menuLayout) || !Layout_PollLoadComplete(optionsLayout) ||
+        !Layout_PollLoadComplete(playerLabelLayout) || !Layout_PollLoadComplete(tieMarkerLayout) ||
+        !Layout_PollLoadComplete(lossMarkerLayout)) {
         return 0;
     }
-    void* layout = AsCWiiPauseScore(self)->alternatePlayerLabelLayout;
+    void* layout = alternatePlayerLabelLayout;
     if (layout != 0 && !Layout_PollLoadComplete(layout)) {
         return 0;
     }
@@ -1177,33 +1348,33 @@ int CWiiPauseScore_PollLoadComplete(void* self) {
 }
 
 // Draw the visible score presentation, layouts, numeric entries and any active dialog.
-void CWiiPauseScore_Draw(void* self) {
-    int state = AsCWiiPauseScore(self)->displayMode;
+void CWiiPauseScore::Draw() {
+    int state = displayMode;
     if (state != kScoreConfirmationOnly) {
         if (state != kScoreStroke) {
-            BpObject_SetEnabled(AsCWiiPauseScore(self)->blackSprite, 1);
-            BpObject_TryInvokeCurrentCallback(AsCWiiPauseScore(self)->blackSprite, 0);
-            BpObject_Draw(AsCWiiPauseScore(self)->blackSprite);
-            BpObject_SetEnabled(AsCWiiPauseScore(self)->scoreObject, 1);
-            BpObject_TryInvokeCurrentCallback(AsCWiiPauseScore(self)->scoreObject, 0);
-            BpObject_Draw(AsCWiiPauseScore(self)->scoreObject);
-            *(int*)((*(char**)&AsCWiiPauseScore(self)->textTable) + 0x28) = 1;
-            UITextTable_Draw(AsCWiiPauseScore(self)->textTable);
-            if ((*(signed char*)&AsCWiiPauseScore(self)->selectedView) == kGraphView) {
-                CWiiPauseScore_DrawScoreGraph(self);
+            BpObject_SetEnabled(blackSprite, 1);
+            BpObject_TryInvokeCurrentCallback(blackSprite, 0);
+            BpObject_Draw(blackSprite);
+            BpObject_SetEnabled(scoreObject, 1);
+            BpObject_TryInvokeCurrentCallback(scoreObject, 0);
+            BpObject_Draw(scoreObject);
+            *(int*)((*(char**)&textTable) + 0x28) = 1;
+            UITextTable_Draw(textTable);
+            if ((*(signed char*)&selectedView) == kGraphView) {
+                DrawScoreGraph();
             }
         }
-        Layout_DrawWithOpacity(AsCWiiPauseScore(self)->menuLayout, kPauseScoreLayoutOpacity);
-        Layout_DrawWithOpacity(AsCWiiPauseScore(self)->optionsLayout, kPauseScoreLayoutOpacity);
-        void* layout = AsCWiiPauseScore(self)->alternatePlayerLabelLayout;
+        Layout_DrawWithOpacity(menuLayout, kPauseScoreLayoutOpacity);
+        Layout_DrawWithOpacity(optionsLayout, kPauseScoreLayoutOpacity);
+        void* layout = alternatePlayerLabelLayout;
         if (layout != 0) {
             Layout_DrawWithOpacity(layout, kPauseScoreLayoutOpacity);
         }
-        Layout_DrawWithOpacity(AsCWiiPauseScore(self)->playerLabelLayout, kPauseScoreLayoutOpacity);
-        Layout_DrawWithOpacity(AsCWiiPauseScore(self)->tieMarkerLayout, kPauseScoreLayoutOpacity);
-        Layout_DrawWithOpacity(AsCWiiPauseScore(self)->lossMarkerLayout, kPauseScoreLayoutOpacity);
+        Layout_DrawWithOpacity(playerLabelLayout, kPauseScoreLayoutOpacity);
+        Layout_DrawWithOpacity(tieMarkerLayout, kPauseScoreLayoutOpacity);
+        Layout_DrawWithOpacity(lossMarkerLayout, kPauseScoreLayoutOpacity);
     }
-    void* object = AsCWiiPauseScore(self)->confirmationDialog;
+    void* object = confirmationDialog;
     if (object != 0) {
         struct VirtualObject {
             int field00;
@@ -1215,7 +1386,7 @@ void CWiiPauseScore_Draw(void* self) {
         };
         ((VirtualObject*)object)->update();
     } else {
-        object = AsCWiiPauseScore(self)->optionDialog;
+        object = optionDialog;
         if (object != 0) {
             MPBase1_DrawIfInitialized(object);
         }
@@ -1223,18 +1394,18 @@ void CWiiPauseScore_Draw(void* self) {
 }
 
 // Hide the score presentation while it is inactive.
-void CWiiPauseScore_HideInactiveScore(void* self) {
-    if (AsCWiiPauseScore(self)->scorecardSuppressed == 0) {
-        BpObject_SetEnabled(AsCWiiPauseScore(self)->scoreObject, 0);
-        BpObject_SetEnabled(AsCWiiPauseScore(self)->blackSprite, 0);
-        *(int*)((*(char**)&AsCWiiPauseScore(self)->textTable) + 0x28) = 0;
+void CWiiPauseScore::HideInactiveScore() {
+    if (scorecardSuppressed == 0) {
+        BpObject_SetEnabled(scoreObject, 0);
+        BpObject_SetEnabled(blackSprite, 0);
+        *(int*)((*(char**)&textTable) + 0x28) = 0;
     }
 }
 
 // Process score-view/page changes and regular pause-menu actions, including delayed exits.
-int CWiiPauseScore_ProcessOptionActions(void* self) {
+int CWiiPauseScore::ProcessOptionActions() {
     // Phase 1: finish the two-frame pressed-button delay before returning an action.
-    char* obj = (char*)self;
+    char* obj = (char*)this;
     if (AsCWiiPauseScore(obj)->actionDelayPending != 0) {
         int frame = AsCWiiPauseScore(obj)->activationDelayFrames;
         if (frame < 2) {
@@ -1247,7 +1418,7 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
     }
 
     // Phase 2: consume option controls and refresh the score/page presentation.
-    ActivationList80330C54 activated = { 0, 0, 0 };
+    ActivationList80330C54 activated = {0, 0, 0};
     if (Layout_CollectActivated(AsCWiiPauseScore(obj)->optionsLayout, &activated, 0)) {
         int update = 1;
         switch (*(int*)activated.items) {
@@ -1272,22 +1443,26 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
             break;
         }
         if (update) {
-            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + 9, 0);
+            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout,
+                                     *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + 9, 0);
             int old = *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView);
             int mask = ~((old - 1) | (1 - old));
             *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) = (old + 1) & ~(mask >> 31);
-            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + 9, 1);
+            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout,
+                                     *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + 9, 1);
         }
 
         switch (*(int*)activated.items) {
         case 0:
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionStrokeView, 0);
             Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, 13, 1);
-            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + 9, 0);
+            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout,
+                                     *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + 9, 0);
             int old = *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView);
             int mask = ~((old - 3) | (3 - old));
             *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) = (old + 1) & ~(mask >> 31);
-            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + 9, 1);
+            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout,
+                                     *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + 9, 1);
             break;
         case 3:
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionNineHolePage, 0);
@@ -1304,7 +1479,7 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
         default:
             break;
         }
-        CWiiPauseScore_RefreshScorecard(self);
+        RefreshScorecard();
     } else {
         if (*(unsigned int*)((char*)&AsCWiiPauseScore(obj)->holeInfoCount) > 9) {
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionNineHolePage, 1);
@@ -1313,7 +1488,8 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
         if (AsCWiiPauseScore(obj)->displayMode == kScoreTraining) {
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionTrainingView, 1);
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, 14, 0);
-        } else if (AsCWiiPauseScore(obj)->displayMode == kScoreMatch || AsCWiiPauseScore(obj)->displayMode == kScoreMatchAlternate) {
+        } else if (AsCWiiPauseScore(obj)->displayMode == kScoreMatch ||
+                   AsCWiiPauseScore(obj)->displayMode == kScoreMatchAlternate) {
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionMatchView, 1);
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, 15, 0);
         } else if (AsCWiiPauseScore(obj)->displayMode == kScoreParty) {
@@ -1326,7 +1502,8 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
                 Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, 18, 0);
             }
             if ((*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartyHigherCompetitionValueWins) {
-                Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionPartyCompetitionView, 1);
+                Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionPartyCompetitionView,
+                                                     1);
                 Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, 19, 0);
             }
         } else {
@@ -1344,17 +1521,19 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
             AsCWiiPauseScore(obj)->interactionState = kScoreConfirmOpen;
             int state = (*(int*)&AsCSharedDoc(g_sharedDoc)->golfDoc);
             if (AsCGolfDoc(state)->tutorialStage < 6) {
-                CSmallCommonDialog_Create(0, obj + PAUSE_FIELD_OFFSET(confirmationDialog), 0x18);
+                CSmallCommonDialog::Create(0, (void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog)), 0x18);
                 void* object = AsCWiiPauseScore(obj)->confirmationDialog;
                 (*(void (**)(void*, const char*))(*(char**)((char*)object + 4) + 0x50))(object, pauseConfirmationText);
             } else if (AsCWiiPauseScore(obj)->displayMode == kScoreMatchAlternate) {
-                CSmallCommonDialog_Create(0, obj + PAUSE_FIELD_OFFSET(confirmationDialog), 5);
+                CSmallCommonDialog::Create(0, (void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog)), 5);
                 void* object = AsCWiiPauseScore(obj)->confirmationDialog;
-                (*(void (**)(void*, const char*))(*(char**)((char*)object + 4) + 0x50))(object, pauseConfirmationText + kPauseMatchTextOffset);
+                (*(void (**)(void*, const char*))(*(char**)((char*)object + 4) + 0x50))(
+                    object, pauseConfirmationText + kPauseMatchTextOffset);
             } else {
-                CSmallCommonDialog_Create(0, obj + PAUSE_FIELD_OFFSET(confirmationDialog), 5);
+                CSmallCommonDialog::Create(0, (void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog)), 5);
                 void* object = AsCWiiPauseScore(obj)->confirmationDialog;
-                (*(void (**)(void*, const char*))(*(char**)((char*)object + 4) + 0x50))(object, pauseConfirmationText + kPauseRoundTextOffset);
+                (*(void (**)(void*, const char*))(*(char**)((char*)object + 4) + 0x50))(
+                    object, pauseConfirmationText + kPauseRoundTextOffset);
             }
             if (Sing_805DC5F8() == 0) {
                 if (s_bpCtrlHandleInitialized == 0) {
@@ -1365,7 +1544,7 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
                 }
                 Sing_805DC5F8() = s_bpCtrlHandle;
             }
-            CBpCtrlHandle_ReleaseEntry(Sing_805DC5F8());
+            ((CBpCtrlHandle*)Sing_805DC5F8())->ReleaseEntry();
             break;
         case 2:
             void* old = AsCWiiPauseScore(obj)->optionDialog;
@@ -1376,7 +1555,7 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
                     AsCWiiPauseScore(obj)->optionDialog = 0;
                 }
             }
-            Object80330C54* object = new Object80330C54;
+            COptionDialogStorage* object = new COptionDialogStorage;
             AsCWiiPauseScore(obj)->optionDialog = object;
             if (Sing_805DC5F8() == 0) {
                 if (s_bpCtrlHandleInitialized == 0) {
@@ -1387,7 +1566,7 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
                 }
                 Sing_805DC5F8() = s_bpCtrlHandle;
             }
-            CBpCtrlHandle_ReleaseEntry(Sing_805DC5F8());
+            ((CBpCtrlHandle*)Sing_805DC5F8())->ReleaseEntry();
             for (int i = 0; i < 4; ++i) {
                 Layout_SetElementPlayerFlag(AsCWiiPauseScore(obj)->menuLayout, i, 0, 5);
             }
@@ -1407,16 +1586,19 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
             control = 1;
             break;
         case 4:
-            if (AsCWiiPauseScore(obj)->postHoleMode != 0 && AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled != 0 &&
+            if (AsCWiiPauseScore(obj)->postHoleMode != 0 &&
+                AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled != 0 &&
                 *(int*)(obj + 0x94) == *(int*)(obj + 0x98) &&
-                (AsCWiiPauseScore(obj)->displayMode == kScoreMatch || AsCWiiPauseScore(obj)->displayMode == kScoreMatchAlternate) &&
+                (AsCWiiPauseScore(obj)->displayMode == kScoreMatch ||
+                 AsCWiiPauseScore(obj)->displayMode == kScoreMatchAlternate) &&
                 *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) == 0) {
                 Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionMatchView, 0);
                 Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, 15, 1);
-                Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + 9, 0);
+                Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout,
+                                         *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + 9, 0);
                 *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) = 1;
                 Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, 10, 1);
-                CWiiPauseScore_RefreshScorecard(self);
+                RefreshScorecard();
             } else {
                 AsCWiiPauseScore(obj)->selectedAction = 6;
                 control = 1;
@@ -1439,24 +1621,26 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
 
     if (AsCWiiPauseScore(obj)->postHoleMode != 0 && AsCWiiPauseScore(obj)->displayMode == kScoreStrokeAlternate &&
         (*(int*)&AsCSharedDoc(g_sharedDoc)->gameMode) == 0) {
-        if (Sing_805DC5C8() == 0) {
+        if (GetInputManagerSlot() == 0) {
             if (s_inputManagerInitialized == 0) {
                 InputManager_Init(&s_gameInputManager);
-                __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_pauseInputManagerRegistration);
+                __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_pauseInputManagerRegistration);
                 s_inputManagerInitialized = 1;
             }
-            Sing_805DC5C8() = &s_gameInputManager;
+            GetInputManagerSlot() = &s_gameInputManager;
         }
-        if (Input_IsActionPressed(Sing_805DC5C8(), kPostHoleInput3, -1) == 0) {
-            if (Sing_805DC5C8() == 0) {
+        if (Input_IsActionPressed(GetInputManagerSlot(), kPostHoleInput3, -1) == 0) {
+            if (GetInputManagerSlot() == 0) {
                 if (s_inputManagerInitialized == 0) {
                     InputManager_Init(&s_gameInputManager);
-                    __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, s_pauseInputManagerRegistration);
+                    __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                             s_pauseInputManagerRegistration);
                     s_inputManagerInitialized = 1;
                 }
-                Sing_805DC5C8() = &s_gameInputManager;
+                GetInputManagerSlot() = &s_gameInputManager;
             }
-            if (Input_IsActionPressed(Sing_805DC5C8(), kPostHoleInput2, -1) != 0) {
+            if (Input_IsActionPressed(GetInputManagerSlot(), kPostHoleInput2, -1) != 0) {
                 AsCWiiPauseScore(obj)->selectedAction = kPostHoleDismissAction;
 
                 return 1;
@@ -1474,19 +1658,33 @@ int CWiiPauseScore_ProcessOptionActions(void* self) {
 }
 
 // Process training menu selections and their confirmation/options dialogs.
-int CWiiPauseScore_ProcessMenuActions(void* self) {
+int CWiiPauseScore::ProcessMenuActions() {
     // Phase 1: return an action only after its two-frame pressed-button delay.
     struct TextObject {
         unsigned int field00;
-        virtual void slot0C() DECOMP_LOCAL_VIRTUAL; virtual void slot08() DECOMP_LOCAL_VIRTUAL;
-        virtual void slot18() DECOMP_LOCAL_VIRTUAL; virtual void slot1C() DECOMP_LOCAL_VIRTUAL; virtual void slot20() DECOMP_LOCAL_VIRTUAL; virtual void slot24() DECOMP_LOCAL_VIRTUAL;
-        virtual void slot28() DECOMP_LOCAL_VIRTUAL; virtual void slot2C() DECOMP_LOCAL_VIRTUAL; virtual void slot30() DECOMP_LOCAL_VIRTUAL; virtual void slot34() DECOMP_LOCAL_VIRTUAL;
-        virtual void slot38() DECOMP_LOCAL_VIRTUAL; virtual void slot3C() DECOMP_LOCAL_VIRTUAL; virtual void slot40() DECOMP_LOCAL_VIRTUAL; virtual void slot44() DECOMP_LOCAL_VIRTUAL;
-        virtual void slot48() DECOMP_LOCAL_VIRTUAL; virtual void slot4C() DECOMP_LOCAL_VIRTUAL; virtual void slot50() DECOMP_LOCAL_VIRTUAL; virtual void slot54() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot0C() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot08() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot18() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot1C() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot20() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot24() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot28() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot2C() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot30() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot34() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot38() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot3C() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot40() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot44() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot48() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot4C() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot50() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot54() DECOMP_LOCAL_VIRTUAL;
         virtual void setText(const char*) DECOMP_LOCAL_VIRTUAL;
-        virtual void slot14() DECOMP_LOCAL_VIRTUAL; virtual void slot10() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot14() DECOMP_LOCAL_VIRTUAL;
+        virtual void slot10() DECOMP_LOCAL_VIRTUAL;
     };
-    char* obj = (char*)self;
+    char* obj = (char*)this;
     if (AsCWiiPauseScore(obj)->actionDelayPending != 0) {
         int frame = AsCWiiPauseScore(obj)->activationDelayFrames;
         if (2 > frame) {
@@ -1499,30 +1697,37 @@ int CWiiPauseScore_ProcessMenuActions(void* self) {
     }
 
     // Phase 2: handle view/page options before collecting training-menu actions.
-    ActivationList80330C54 activated = { 0, 0, 0 };
+    ActivationList80330C54 activated = {0, 0, 0};
     if (Layout_CollectActivated(AsCWiiPauseScore(obj)->optionsLayout, &activated, 0)) {
         switch (*(int*)activated.items) {
         case kOptionTrainingView: {
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionTrainingView, 0);
             Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, kOptionTrainingViewPressed, 1);
-            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + kOptionViewIndicatorBase, 0);
+            Layout_SetElementEnabled(
+                AsCWiiPauseScore(obj)->optionsLayout,
+                *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + kOptionViewIndicatorBase, 0);
 
-            *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) = (*(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView)) == 1 ? 0 : 1;
-            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + kOptionViewIndicatorBase, 1);
+            *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) =
+                (*(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView)) == 1 ? 0 : 1;
+            Layout_SetElementEnabled(
+                AsCWiiPauseScore(obj)->optionsLayout,
+                *(signed char*)((char*)&AsCWiiPauseScore(obj)->selectedView) + kOptionViewIndicatorBase, 1);
             break;
         }
         case kOptionNineHolePage: {
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionNineHolePage, 0);
             Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, kOptionNineHolePagePressed, 1);
-            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, AsCWiiPauseScore(obj)->showFrontNine + kOptionPageIndicatorBase, 1);
+            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout,
+                                     AsCWiiPauseScore(obj)->showFrontNine + kOptionPageIndicatorBase, 1);
             AsCWiiPauseScore(obj)->showFrontNine = !AsCWiiPauseScore(obj)->showFrontNine;
-            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout, AsCWiiPauseScore(obj)->showFrontNine + kOptionPageIndicatorBase, 0);
+            Layout_SetElementEnabled(AsCWiiPauseScore(obj)->optionsLayout,
+                                     AsCWiiPauseScore(obj)->showFrontNine + kOptionPageIndicatorBase, 0);
             break;
         }
         default:
             break;
         }
-        CWiiPauseScore_RefreshScorecard(self);
+        RefreshScorecard();
     } else {
         if (*(unsigned int*)((char*)&AsCWiiPauseScore(obj)->holeInfoCount) > 9) {
             Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->optionsLayout, kOptionNineHolePage, 1);
@@ -1543,7 +1748,7 @@ int CWiiPauseScore_ProcessMenuActions(void* self) {
         Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->menuLayout, *(int*)activated.items, 0);
         Layout_SetElementEnabled(AsCWiiPauseScore(obj)->menuLayout, *(int*)activated.items + 10, 1);
         if (*(int*)activated.items >= 6) {
-        Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->menuLayout, *(int*)activated.items + 14, 0);
+            Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(obj)->menuLayout, *(int*)activated.items + 14, 0);
             Layout_SetElementEnabled(AsCWiiPauseScore(obj)->menuLayout, *(int*)activated.items + 18, 1);
         }
 
@@ -1553,14 +1758,16 @@ int CWiiPauseScore_ProcessMenuActions(void* self) {
             AsCWiiPauseScore(obj)->interactionState = kScoreConfirmOpen;
             void* state = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
             if (AsCGolfDoc(state)->tutorialStage < 6) {
-                CSmallCommonDialog_Create(0, obj + PAUSE_FIELD_OFFSET(confirmationDialog), 0x18);
+                CSmallCommonDialog::Create(0, (void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog)), 0x18);
                 ((TextObject*)AsCWiiPauseScore(obj)->confirmationDialog)->setText(pauseConfirmationText);
             } else if (AsCWiiPauseScore(obj)->displayMode == kScoreMatchAlternate) {
-                CSmallCommonDialog_Create(0, obj + PAUSE_FIELD_OFFSET(confirmationDialog), 5);
-                ((TextObject*)AsCWiiPauseScore(obj)->confirmationDialog)->setText(pauseConfirmationText + kPauseMatchTextOffset);
+                CSmallCommonDialog::Create(0, (void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog)), 5);
+                ((TextObject*)AsCWiiPauseScore(obj)->confirmationDialog)
+                    ->setText(pauseConfirmationText + kPauseMatchTextOffset);
             } else {
-                CSmallCommonDialog_Create(0, obj + PAUSE_FIELD_OFFSET(confirmationDialog), 5);
-                ((TextObject*)AsCWiiPauseScore(obj)->confirmationDialog)->setText(pauseConfirmationText + kPauseTrainingTextOffset);
+                CSmallCommonDialog::Create(0, (void**)(obj + PAUSE_FIELD_OFFSET(confirmationDialog)), 5);
+                ((TextObject*)AsCWiiPauseScore(obj)->confirmationDialog)
+                    ->setText(pauseConfirmationText + kPauseTrainingTextOffset);
             }
             if (0 == Sing_805DC5F8()) {
                 if (0 == s_bpCtrlHandleInitialized) {
@@ -1571,20 +1778,20 @@ int CWiiPauseScore_ProcessMenuActions(void* self) {
                 }
                 Sing_805DC5F8() = s_bpCtrlHandle;
             }
-            CBpCtrlHandle_ReleaseEntry(Sing_805DC5F8());
+            ((CBpCtrlHandle*)Sing_805DC5F8())->ReleaseEntry();
             break;
         }
         case 2: {
             void* old = AsCWiiPauseScore(obj)->optionDialog;
             AsCWiiPauseScore(obj)->interactionState = kScoreOptionsOpen;
             if (old) {
-                struct Disposable { 
-                virtual ~Disposable() DECOMP_LOCAL_VIRTUAL;
+                struct Disposable {
+                    virtual ~Disposable() DECOMP_LOCAL_VIRTUAL;
                 };
                 delete (Disposable*)old;
                 AsCWiiPauseScore(obj)->optionDialog = 0;
             }
-            Object80330C54* item = new Object80330C54;
+            COptionDialogStorage* item = new COptionDialogStorage;
             AsCWiiPauseScore(obj)->optionDialog = item;
             for (int i = 0; i < 5; ++i) {
                 Layout_SetElementPlayerFlag(AsCWiiPauseScore(obj)->menuLayout, i, 0, 5);
@@ -1598,7 +1805,7 @@ int CWiiPauseScore_ProcessMenuActions(void* self) {
                 }
                 Sing_805DC5F8() = s_bpCtrlHandle;
             }
-            CBpCtrlHandle_ReleaseEntry(Sing_805DC5F8());
+            ((CBpCtrlHandle*)Sing_805DC5F8())->ReleaseEntry();
             break;
         }
         default:
@@ -1607,15 +1814,33 @@ int CWiiPauseScore_ProcessMenuActions(void* self) {
 
         unsigned int result = 1;
         switch (*(int*)activated.items) {
-        case 0: AsCWiiPauseScore(obj)->selectedAction = 0; break;
-        case 3: AsCWiiPauseScore(obj)->selectedAction = 3; break;
-        case 4: AsCWiiPauseScore(obj)->selectedAction = 4; break;
-        case 5: AsCWiiPauseScore(obj)->selectedAction = 5; break;
-        case 6: AsCWiiPauseScore(obj)->selectedAction = 7; break;
-        case 7: AsCWiiPauseScore(obj)->selectedAction = 8; break;
-        case 8: AsCWiiPauseScore(obj)->selectedAction = 6; break;
-        case 9: AsCWiiPauseScore(obj)->selectedAction = 9; break;
-        default: result = 0; break;
+        case 0:
+            AsCWiiPauseScore(obj)->selectedAction = 0;
+            break;
+        case 3:
+            AsCWiiPauseScore(obj)->selectedAction = 3;
+            break;
+        case 4:
+            AsCWiiPauseScore(obj)->selectedAction = 4;
+            break;
+        case 5:
+            AsCWiiPauseScore(obj)->selectedAction = 5;
+            break;
+        case 6:
+            AsCWiiPauseScore(obj)->selectedAction = 7;
+            break;
+        case 7:
+            AsCWiiPauseScore(obj)->selectedAction = 8;
+            break;
+        case 8:
+            AsCWiiPauseScore(obj)->selectedAction = 6;
+            break;
+        case 9:
+            AsCWiiPauseScore(obj)->selectedAction = 9;
+            break;
+        default:
+            result = 0;
+            break;
         }
         if (result) {
             AsCWiiPauseScore(obj)->activationDelayFrames = 0;
@@ -1630,17 +1855,17 @@ int CWiiPauseScore_ProcessMenuActions(void* self) {
 }
 
 // Update all score-screen layouts unless this is a confirmation-only screen.
-void CWiiPauseScore_UpdateLayouts(void* self) {
-    if (AsCWiiPauseScore(self)->displayMode != kScoreConfirmationOnly) {
-        Layout_Update(AsCWiiPauseScore(self)->menuLayout);
-        Layout_Update(AsCWiiPauseScore(self)->optionsLayout);
-        void* value = AsCWiiPauseScore(self)->alternatePlayerLabelLayout;
+void CWiiPauseScore::UpdateLayouts() {
+    if (displayMode != kScoreConfirmationOnly) {
+        Layout_Update(menuLayout);
+        Layout_Update(optionsLayout);
+        void* value = alternatePlayerLabelLayout;
         if (value != 0) {
             Layout_Update(value);
         }
-        Layout_Update(AsCWiiPauseScore(self)->playerLabelLayout);
-        Layout_Update(AsCWiiPauseScore(self)->tieMarkerLayout);
-        Layout_Update(AsCWiiPauseScore(self)->lossMarkerLayout);
+        Layout_Update(playerLabelLayout);
+        Layout_Update(tieMarkerLayout);
+        Layout_Update(lossMarkerLayout);
     }
 }
 
@@ -1652,8 +1877,8 @@ void* dtor_80333BF0(void* self, int deleting) {
                 if (self != 0) {
                     void* value = *(void**)self;
                     if (value != 0) {
-                    int count = *(volatile int*)((char*)self + 4);
-                    *(volatile int*)((char*)self + 4) = count - count;
+                        int count = *(volatile int*)((char*)self + 4);
+                        *(volatile int*)((char*)self + 4) = count - count;
                         appFreeUni__FPv(value);
                     }
                 }
@@ -1674,8 +1899,8 @@ void* dtor_80333C6C(void* self, int deleting) {
                 if (self != 0) {
                     void* value = *(void**)self;
                     if (value != 0) {
-                    int count = *(volatile int*)((char*)self + 4);
-                    *(volatile int*)((char*)self + 4) = count - count;
+                        int count = *(volatile int*)((char*)self + 4);
+                        *(volatile int*)((char*)self + 4) = count - count;
                         appFreeUni__FPv(value);
                     }
                 }
@@ -1689,21 +1914,22 @@ void* dtor_80333C6C(void* self, int deleting) {
 }
 
 // Set availability and colour of the fourth regular pause-menu button.
-void CWiiPauseScore_SetMenuButton3Available(void* self, int value) {
-    if (AsCWiiPauseScore(self)->displayMode == kScoreConfirmationOnly) {
+// The guard is repeated: the original compiles it twice and one copy lowers the score.
+void CWiiPauseScore::SetMenuButton3Available(int value) {
+    if (displayMode == kScoreConfirmationOnly) {
         return;
     }
-    if (AsCWiiPauseScore(self)->displayMode == kScoreConfirmationOnly) {
+    if (displayMode == kScoreConfirmationOnly) {
         return;
     }
     if (value != 0) {
-        Layout_SetElementPlayerFlag(AsCWiiPauseScore(self)->menuLayout, 3, 1, 5);
-        Layout_SetElementColor(AsCWiiPauseScore(self)->menuLayout, 3, -1);
+        Layout_SetElementPlayerFlag(menuLayout, 3, 1, 5);
+        Layout_SetElementColor(menuLayout, 3, -1);
     } else {
-        Layout_SetElementPlayerFlag(AsCWiiPauseScore(self)->menuLayout, 3, 0, 5);
-        Layout_SetElementColor(AsCWiiPauseScore(self)->menuLayout, 3, (int)0xB090B0B0);
+        Layout_SetElementPlayerFlag(menuLayout, 3, 0, 5);
+        Layout_SetElementColor(menuLayout, 3, (int)0xB090B0B0);
     }
-    ((PauseIndexedFields*)self)->menuButtonAvailable[3] = value;
+    ((PauseIndexedFields*)this)->menuButtonAvailable[3] = value;
 }
 
 void UIGroup_SetTintColor(void* self, int value);
@@ -1718,11 +1944,12 @@ extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 extern char __vt__Q23std12length_error[];
 extern char pauseScorePartTotalGroupName[];
-struct I4 { int v[4]; };
+struct I4 {
+    int v[4];
+};
 extern I4 s_pauseScoreTieMarkerBases;
 extern I4 s_pauseScoreLossMarkerBases;
 
-void CWiiPauseScore_RankPartyHoleResults(void* self, int* result, int* selection);
 void NumericTextTable_ClearEntryText(void* self, int value);
 int PartyCourseTable_FindCourseHolePosition(int a, int b);
 #pragma push
@@ -1732,116 +1959,179 @@ int PartyCourseTable_FindCourseHolePosition(int a, int b);
 #pragma inline_max_total_size(20000)
 // Read the four-bit player type from the borrowed round-player entry.
 static inline unsigned int PauseScorePlayerType(int playerIndex) {
-    struct PlayerInfo { char pad[0xc4]; CW_BITS2( unsigned char type : 4, unsigned char other : 4) };
-    return ((PlayerInfo*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), (unsigned char)playerIndex))->type;
+    struct PlayerInfo {
+        char pad[0xc4];
+        CW_BITS2(unsigned char type : 4, unsigned char other : 4)
+    };
+    return ((PlayerInfo*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc),
+                                                    (unsigned char)playerIndex))
+        ->type;
 }
 
 // Format a one-based visual cell name into caller-provided name storage.
-static inline void PauseScoreFormatCellName(char* name, char* strings, unsigned char* scoreBytes, int firstHole, int holeIndex, int playerIndex) {
+static inline void PauseScoreFormatCellName(char* name, char* strings, unsigned char* scoreBytes, int firstHole,
+                                            int holeIndex, int playerIndex) {
     sprintf(name, strings + kWiiPauseScoreStrings_R_NUM_result_d_K4_LC_FM,
             (holeIndex - firstHole) + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] * kHolesPerPage + 1);
 }
 
 // Publish one score column using descending numeric IDs and mapped visual rows.
-static inline void PauseScorePutCell(unsigned char* scoreBytes, int firstHole, int holeIndex, int playerIndex, int fieldOffset) {
+static inline void PauseScorePutCell(unsigned char* scoreBytes, int firstHole, int holeIndex, int playerIndex,
+                                     int fieldOffset) {
     UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable,
-        (*(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(cellTextId)) - (holeIndex - firstHole)) - scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] * kHolesPerPage,
-        PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores, AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, playerIndex, fieldOffset));
+                           (*(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(cellTextId)) - (holeIndex - firstHole)) -
+                               scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] * kHolesPerPage,
+                           PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores,
+                                          AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, playerIndex,
+                                          fieldOffset));
 }
 
 #pragma pop
 
 // Populate stroke, match, party, training and Pang views for the selected nine-hole page.
-void CWiiPauseScore_RefreshScorecard(void* self) {
+void CWiiPauseScore::RefreshScorecard() {
     // Phase 1: select the page, clear prior cells/markers, and publish hole/par labels.
-    unsigned char* scoreBytes = (unsigned char*)self;
+    unsigned char* scoreBytes = (unsigned char*)this;
     char* cfg = pauseScorePartTotalGroupName;
-    if (AsCWiiPauseScore(scoreBytes)->scorecardSuppressed) return;
+    if (AsCWiiPauseScore(scoreBytes)->scorecardSuppressed)
+        return;
     // These are the original absolute loop limits, not counts to add to firstPageHole.
     // The back-nine branch caps at 9 in the original; preserve that legacy bound.
     int firstPageHole = AsCWiiPauseScore(scoreBytes)->showFrontNine ? 0 : kHolesPerPage;
-    int completedCellLimit = (int)AsCWiiPauseScore(scoreBytes)->displayedHoleCount - firstPageHole <= kHolesPerPage ? (int)AsCWiiPauseScore(scoreBytes)->displayedHoleCount : kHolesPerPage;
-    int labelCellLimit = (int)AsCWiiPauseScore(scoreBytes)->holeCount - firstPageHole <= kHolesPerPage ? (int)AsCWiiPauseScore(scoreBytes)->holeCount : kHolesPerPage;
+    int completedCellLimit = (int)AsCWiiPauseScore(scoreBytes)->displayedHoleCount - firstPageHole <= kHolesPerPage
+                                 ? (int)AsCWiiPauseScore(scoreBytes)->displayedHoleCount
+                                 : kHolesPerPage;
+    int labelCellLimit = (int)AsCWiiPauseScore(scoreBytes)->holeCount - firstPageHole <= kHolesPerPage
+                             ? (int)AsCWiiPauseScore(scoreBytes)->holeCount
+                             : kHolesPerPage;
     int limitsA[5];
     int limitsB[5];
-    struct Limits { int v[5]; };
+    struct Limits {
+        int v[5];
+    };
     *(Limits*)limitsA = *(Limits*)(((char*)(cfg + 0x2810)));
     *(Limits*)limitsB = *(Limits*)(((char*)(cfg + 0x2824)));
     int parTotal = 0;
-    for (int i = 0; i <= limitsA[AsCWiiPauseScore(scoreBytes)->playerCount]; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(scoreBytes)->tieMarkerLayout, i, 0);
-    for (int i = 0; i <= limitsB[AsCWiiPauseScore(scoreBytes)->playerCount]; ++i) Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(scoreBytes)->lossMarkerLayout, i, 0);
+    for (int i = 0; i <= limitsA[AsCWiiPauseScore(scoreBytes)->playerCount]; ++i)
+        Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(scoreBytes)->tieMarkerLayout, i, 0);
+    for (int i = 0; i <= limitsB[AsCWiiPauseScore(scoreBytes)->playerCount]; ++i)
+        Layout_SetElementPlayerFlagsAndState(AsCWiiPauseScore(scoreBytes)->lossMarkerLayout, i, 0);
     char name[72];
     char* s = (char*)wiiPauseScoreStrings;
-    for (int holeIndex = 1; holeIndex <= kHolesPerPage; ++holeIndex) for (int playerIndex = 1; playerIndex <= AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
-        sprintf(name, s + kWiiPauseScoreStrings_R_score_record_d_d, playerIndex, holeIndex);
-        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0);
-    }
+    for (int holeIndex = 1; holeIndex <= kHolesPerPage; ++holeIndex)
+        for (int playerIndex = 1; playerIndex <= AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
+            sprintf(name, s + kWiiPauseScoreStrings_R_score_record_d_d, playerIndex, holeIndex);
+            UIGroup_SetEnabled(
+                BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0);
+        }
     for (int i = 0; i < kHolesPerPage; ++i) {
         sprintf(name, s + kWiiPauseScoreStrings_R_NUM_hole_d_K2_LC, i + 1);
-        UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
-        NumericTextTable_ClearEntryText(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(holeNumberTextId)) - i);
-        NumericTextTable_ClearEntryText(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(parTextId)) - i);
+        UIGroup_SetTintColor(
+            BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
+        NumericTextTable_ClearEntryText(AsCWiiPauseScore(scoreBytes)->textTable,
+                                        *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(holeNumberTextId)) - i);
+        NumericTextTable_ClearEntryText(AsCWiiPauseScore(scoreBytes)->textTable,
+                                        *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(parTextId)) - i);
     }
-    if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreParty && (*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartySumStrokeValues) {
+    if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreParty &&
+        (*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartySumStrokeValues) {
         for (int i = 0; i < AsCWiiPauseScore(scoreBytes)->holeCount; ++i) {
             int x = *((unsigned char*)*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(holeInfo)) + i * 8);
-            UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(holeNumberTextId)) - i,
-                        PartyCourseTable_FindCourseHolePosition(((PartyRoundCourseView*)g_sharedDoc)->courseIndices[i], x));
+            UITextTable_SetInteger(
+                AsCWiiPauseScore(scoreBytes)->textTable,
+                *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(holeNumberTextId)) - i,
+                PartyCourseTable_FindCourseHolePosition(((PartyRoundCourseView*)g_sharedDoc)->courseIndices[i], x));
         }
-    } else for (int i = firstPageHole; i < labelCellLimit; ++i)
-        UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(holeNumberTextId)) - (i - firstPageHole),
-                    *((unsigned char*)*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(holeInfo)) + i * 8));
+    } else
+        for (int i = firstPageHole; i < labelCellLimit; ++i)
+            UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable,
+                                   *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(holeNumberTextId)) - (i - firstPageHole),
+                                   *((unsigned char*)*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(holeInfo)) + i * 8));
     for (int i = firstPageHole; i < labelCellLimit; ++i) {
-        UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(parTextId)) - (i - firstPageHole),
-                    *(int*)((char*)*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(holeInfo)) + i * 8 + 4));
+        UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable,
+                               *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(parTextId)) - (i - firstPageHole),
+                               *(int*)((char*)*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(holeInfo)) + i * 8 + 4));
         parTotal += *(int*)((char*)*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(holeInfo)) + i * 8 + 4);
     }
-    if (AsCWiiPauseScore(scoreBytes)->displayMode != kScoreMatch && AsCWiiPauseScore(scoreBytes)->displayMode != kScoreMatchAlternate && AsCWiiPauseScore(scoreBytes)->displayMode != kScoreParty)
-        UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(parTotalTextId)), parTotal);
-    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), s + kWiiPauseScoreStrings_R_score_subtotal), 1);
+    if (AsCWiiPauseScore(scoreBytes)->displayMode != kScoreMatch &&
+        AsCWiiPauseScore(scoreBytes)->displayMode != kScoreMatchAlternate &&
+        AsCWiiPauseScore(scoreBytes)->displayMode != kScoreParty)
+        UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable,
+                               *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(parTotalTextId)), parTotal);
+    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)),
+                                                      s + kWiiPauseScoreStrings_R_score_subtotal),
+                       1);
     for (int i = 0; i < AsCWiiPauseScore(scoreBytes)->playerCount * kHolesPerPage; ++i) {
         sprintf(name, s + kWiiPauseScoreStrings_R_NUM_result_d_K4_LC_FM, i + 1);
-        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0);
+        UIGroup_SetEnabled(
+            BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0);
     }
     for (int i = 0; i < AsCWiiPauseScore(scoreBytes)->playerCount; ++i) {
         sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM, i + 1);
-        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0);
+        UIGroup_SetEnabled(
+            BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0);
     }
     // Phase 2: compute completed-hole totals: match wins, party sole wins/sums,
     // or strokes relative to cumulative par. Then publish each player's header.
     // Accumulate in logical player order; apply playerRows only during UI publication.
     int totals[4] = {};
-    if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreMatch || AsCWiiPauseScore(scoreBytes)->displayMode == kScoreMatchAlternate) {
+    if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreMatch ||
+        AsCWiiPauseScore(scoreBytes)->displayMode == kScoreMatchAlternate) {
         for (int i = 0; i < AsCWiiPauseScore(scoreBytes)->displayedHoleCount; ++i) {
             int ix = i * AsCWiiPauseScore(scoreBytes)->playerCount;
             int player1Strokes = *(int*)((char*)AsCWiiPauseScore(scoreBytes)->playerHoleScores + (ix + 1) * 12);
             int player0Strokes = *(int*)((char*)AsCWiiPauseScore(scoreBytes)->playerHoleScores + ix * 12);
-            if (player0Strokes < player1Strokes) ++totals[0]; else if (player0Strokes != player1Strokes) ++totals[1];
+            if (player0Strokes < player1Strokes)
+                ++totals[0];
+            else if (player0Strokes != player1Strokes)
+                ++totals[1];
         }
     } else if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreParty) {
         if ((*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartySumStrokeValues) {
             int span = completedCellLimit + 1 - firstPageHole;
-            for (int holeIndex = 0; holeIndex < AsCWiiPauseScore(scoreBytes)->displayedHoleCount + (AsCWiiPauseScore(scoreBytes)->postHoleMode == 0 && span <= kHolesPerPage); ++holeIndex)
+            for (int holeIndex = 0;
+                 holeIndex < AsCWiiPauseScore(scoreBytes)->displayedHoleCount +
+                                 (AsCWiiPauseScore(scoreBytes)->postHoleMode == 0 && span <= kHolesPerPage);
+                 ++holeIndex)
                 for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex)
-                    totals[playerIndex] += *(int*)((char*)AsCWiiPauseScore(scoreBytes)->playerHoleScores + (holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount + playerIndex) * 12);
-        } else CWiiPauseScore_RankPartyHoleResults(self, totals, 0);
+                    totals[playerIndex] +=
+                        *(int*)((char*)AsCWiiPauseScore(scoreBytes)->playerHoleScores +
+                                (holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount + playerIndex) * 12);
+        } else
+            RankPartyHoleResults(totals, 0);
     } else {
-    for (int holeIndex = 0; holeIndex < AsCWiiPauseScore(scoreBytes)->displayedHoleCount; ++holeIndex) for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex)
-        totals[playerIndex] += *(int*)((char*)AsCWiiPauseScore(scoreBytes)->playerHoleScores + (holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount + playerIndex) * 12);
-    int total = 0;
-    for (int i = 0, off = 0; i < AsCWiiPauseScore(scoreBytes)->displayedHoleCount; ++i, off += 8) total += *(int*)((char*)*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(holeInfo)) + off + 4);
-    for (int i = 0; i < AsCWiiPauseScore(scoreBytes)->playerCount; ++i) totals[i] -= total;
+        for (int holeIndex = 0; holeIndex < AsCWiiPauseScore(scoreBytes)->displayedHoleCount; ++holeIndex)
+            for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex)
+                totals[playerIndex] +=
+                    *(int*)((char*)AsCWiiPauseScore(scoreBytes)->playerHoleScores +
+                            (holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount + playerIndex) * 12);
+        int total = 0;
+        for (int i = 0, off = 0; i < AsCWiiPauseScore(scoreBytes)->displayedHoleCount; ++i, off += 8)
+            total += *(int*)((char*)*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(holeInfo)) + off + 4);
+        for (int i = 0; i < AsCWiiPauseScore(scoreBytes)->playerCount; ++i)
+            totals[i] -= total;
     }
     int usesFixedPointScoreLabel = 0;
-    if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreStrokeAlternate || AsCWiiPauseScore(scoreBytes)->displayMode == kScoreTraining) usesFixedPointScoreLabel = 1;
+    if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreStrokeAlternate ||
+        AsCWiiPauseScore(scoreBytes)->displayMode == kScoreTraining)
+        usesFixedPointScoreLabel = 1;
     for (int i = 0; i < AsCWiiPauseScore(scoreBytes)->playerCount; ++i) {
-        if (usesFixedPointScoreLabel) sprintf(name, s + kWiiPauseScoreStrings_R_NUM_scr_d_K3_LC_FM_FP, scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + i] + 1);
-        else sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rscore_d_K3_LC_FM, scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + i] + 1);
-        if (AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled &&
-            PauseScorePlayerType(i) == 1)
-            UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0xfffdce73);
-        else UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
-        UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + 0x84 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + i] * 4), totals[i]);
+        if (usesFixedPointScoreLabel)
+            sprintf(name, s + kWiiPauseScoreStrings_R_NUM_scr_d_K3_LC_FM_FP,
+                    scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + i] + 1);
+        else
+            sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rscore_d_K3_LC_FM,
+                    scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + i] + 1);
+        if (AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled && PauseScorePlayerType(i) == 1)
+            UIGroup_SetTintColor(
+                BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                0xfffdce73);
+        else
+            UIGroup_SetTintColor(
+                BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
+        UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable,
+                               *(int*)(scoreBytes + 0x84 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + i] * 4),
+                               totals[i]);
         totals[i] = 0; // Header publication is complete; reuse totals for view footers.
     }
     // Phase 3: fill the selected view. Cell names count upward from 1, while
@@ -1851,165 +2141,278 @@ void CWiiPauseScore_RefreshScorecard(void* self) {
         if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreParty) {
             if ((*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartySumStrokeValues) {
                 int span = completedCellLimit + 1 - firstPageHole;
-                for (int holeIndex = firstPageHole; holeIndex < completedCellLimit + (AsCWiiPauseScore(scoreBytes)->postHoleMode == 0 && span <= kHolesPerPage); ++holeIndex)
+                for (int holeIndex = firstPageHole;
+                     holeIndex <
+                     completedCellLimit + (AsCWiiPauseScore(scoreBytes)->postHoleMode == 0 && span <= kHolesPerPage);
+                     ++holeIndex)
                     for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
                         PauseScoreFormatCellName(name, s, scoreBytes, firstPageHole, holeIndex, playerIndex);
-                        UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
+                        UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(
+                                                 *(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                                             -1);
                         PauseScorePutCell(scoreBytes, firstPageHole, holeIndex, playerIndex, kCellStrokes);
                     }
-            } else CWiiPauseScore_RankPartyHoleResults(self, 0, (int*)1);
-            UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), s + kWiiPauseScoreStrings_R_score_subtotal), 0);
+            } else
+                RankPartyHoleResults(0, (int*)1);
+            UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)),
+                                                              s + kWiiPauseScoreStrings_R_score_subtotal),
+                               0);
             return;
-        } else if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreMatch || AsCWiiPauseScore(scoreBytes)->displayMode == kScoreMatchAlternate) {
-            if (AsCWiiPauseScore(scoreBytes)->playerCount != 2) return;
+        } else if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreMatch ||
+                   AsCWiiPauseScore(scoreBytes)->displayMode == kScoreMatchAlternate) {
+            if (AsCWiiPauseScore(scoreBytes)->playerCount != 2)
+                return;
             for (int holeIndex = firstPageHole; holeIndex < completedCellLimit; ++holeIndex) {
-                int y = PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores, AsCWiiPauseScore(scoreBytes)->playerCount,holeIndex,1,0);
-                int x = PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores, AsCWiiPauseScore(scoreBytes)->playerCount,holeIndex,0,0);
+                int y = PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores,
+                                       AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, 1, 0);
+                int x = PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores,
+                                       AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, 0, 0);
                 if (x < y) {
                     sprintf(name, s + kWiiPauseScoreStrings_R_score_record1_d, holeIndex - firstPageHole + 1);
-                    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 1);
-                    Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->lossMarkerLayout, holeIndex - firstPageHole + kHolesPerPage, 1);
+                    UIGroup_SetEnabled(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        1);
+                    Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->lossMarkerLayout,
+                                             holeIndex - firstPageHole + kHolesPerPage, 1);
                 } else if (x == y) {
-                    Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->tieMarkerLayout, holeIndex - firstPageHole, 1);
-                    Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->tieMarkerLayout, holeIndex - firstPageHole + kHolesPerPage, 1);
+                    Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->tieMarkerLayout, holeIndex - firstPageHole,
+                                             1);
+                    Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->tieMarkerLayout,
+                                             holeIndex - firstPageHole + kHolesPerPage, 1);
                 } else {
                     sprintf(name, s + kWiiPauseScoreStrings_R_score_record2_d, holeIndex - firstPageHole + 1);
-                    UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 1);
-                    Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->lossMarkerLayout, holeIndex - firstPageHole, 1);
+                    UIGroup_SetEnabled(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        1);
+                    Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->lossMarkerLayout, holeIndex - firstPageHole,
+                                             1);
                 }
             }
             if (AsCWiiPauseScore(scoreBytes)->postHoleMode == 0 &&
-                (AsCWiiPauseScore(scoreBytes)->showFrontNine != 0 || AsCWiiPauseScore(scoreBytes)->displayedHoleCount >= kHolesPerPage) &&
-                (AsCWiiPauseScore(scoreBytes)->showFrontNine == 0 || AsCWiiPauseScore(scoreBytes)->displayedHoleCount < kHolesPerPage)) {
+                (AsCWiiPauseScore(scoreBytes)->showFrontNine != 0 ||
+                 AsCWiiPauseScore(scoreBytes)->displayedHoleCount >= kHolesPerPage) &&
+                (AsCWiiPauseScore(scoreBytes)->showFrontNine == 0 ||
+                 AsCWiiPauseScore(scoreBytes)->displayedHoleCount < kHolesPerPage)) {
                 for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
-                    sprintf(name, s + kWiiPauseScoreStrings_R_NUM_result_d_K4_LC_FM, AsCWiiPauseScore(scoreBytes)->displayedHoleCount - firstPageHole + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] * kHolesPerPage + 1);
-                    UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
+                    sprintf(name, s + kWiiPauseScoreStrings_R_NUM_result_d_K4_LC_FM,
+                            AsCWiiPauseScore(scoreBytes)->displayedHoleCount - firstPageHole +
+                                scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] * kHolesPerPage + 1);
+                    UIGroup_SetTintColor(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        -1);
                     PauseScorePutCell(scoreBytes, firstPageHole, completedCellLimit, playerIndex, 0);
                 }
             }
-            UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), s + kWiiPauseScoreStrings_R_score_subtotal), 0);
+            UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)),
+                                                              s + kWiiPauseScoreStrings_R_score_subtotal),
+                               0);
             return;
         } else {
             int* colors = (int*)(((char*)(cfg + 0x2698)));
             int colorMax = kTripleBogeyDelta;
-            for (int holeIndex = firstPageHole; holeIndex < completedCellLimit; ++holeIndex) for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
-                int score = *(int*)((char*)AsCWiiPauseScore(scoreBytes)->playerHoleScores + ((unsigned char)holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount + (unsigned char)playerIndex) * 12);
-                int color;
-                if (score == kHoleInOneStrokes) color = kHoleInOneColour;
-                else {
-                    int delta = score - *(int*)((char*)*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(holeInfo)) + (unsigned char)holeIndex * 8 + 4);
-                    if (delta <= kAlbatrossDelta) color = kAlbatrossOrBetterColour;
-                    else color = colorMax <= delta ? kTripleBogeyOrWorseColour : delta + kParColour;
+            for (int holeIndex = firstPageHole; holeIndex < completedCellLimit; ++holeIndex)
+                for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
+                    int score = *(int*)((char*)AsCWiiPauseScore(scoreBytes)->playerHoleScores +
+                                        ((unsigned char)holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount +
+                                         (unsigned char)playerIndex) *
+                                            12);
+                    int color;
+                    if (score == kHoleInOneStrokes)
+                        color = kHoleInOneColour;
+                    else {
+                        int delta = score - *(int*)((char*)*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(holeInfo)) +
+                                                    (unsigned char)holeIndex * 8 + 4);
+                        if (delta <= kAlbatrossDelta)
+                            color = kAlbatrossOrBetterColour;
+                        else
+                            color = colorMax <= delta ? kTripleBogeyOrWorseColour : delta + kParColour;
+                    }
+                    PauseScoreFormatCellName(name, s, scoreBytes, firstPageHole, holeIndex, playerIndex);
+                    UIGroup_SetTintColor(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        colors[color]);
+                    PauseScorePutCell(scoreBytes, firstPageHole, holeIndex, playerIndex, kCellStrokes);
                 }
-                PauseScoreFormatCellName(name, s, scoreBytes, firstPageHole, holeIndex, playerIndex);
-                UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), colors[color]);
-                PauseScorePutCell(scoreBytes, firstPageHole, holeIndex, playerIndex, kCellStrokes);
-            }
             // Accumulate this column across completed holes.
             for (int holeIndex = 0; holeIndex < AsCWiiPauseScore(scoreBytes)->displayedHoleCount; ++holeIndex)
                 for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex)
-                    totals[playerIndex] += PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores, AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, playerIndex, kCellStrokes);
+                    totals[playerIndex] +=
+                        PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores,
+                                       AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, playerIndex, kCellStrokes);
             // Publish row totals; only the requested player type receives record tint.
             for (int ii = 0; ii < AsCWiiPauseScore(scoreBytes)->playerCount; ++ii) {
-                sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM, scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] + 1);
+                sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM,
+                        scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] + 1);
                 if ((1) && AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled && PauseScorePlayerType(ii) == 1)
-                    UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0xfffdce73);
-                else UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
-                UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + 0x74 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] * 4), totals[ii]);
+                    UIGroup_SetTintColor(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        0xfffdce73);
+                else
+                    UIGroup_SetTintColor(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        -1);
+                UITextTable_SetInteger(
+                    AsCWiiPauseScore(scoreBytes)->textTable,
+                    *(int*)(scoreBytes + 0x74 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] * 4), totals[ii]);
             }
             return;
         }
-        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), s + kWiiPauseScoreStrings_R_score_subtotal), 0);
+        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)),
+                                                          s + kWiiPauseScoreStrings_R_score_subtotal),
+                           0);
     } else if ((signed char)AsCWiiPauseScore(scoreBytes)->selectedView == kSecondaryView) {
         if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreTraining) {
-            for (int holeIndex = firstPageHole; holeIndex < completedCellLimit; ++holeIndex) for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
-                PauseScoreFormatCellName(name, s, scoreBytes, firstPageHole, holeIndex, playerIndex);
-                UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0xff55c355);
-                PauseScorePutCell(scoreBytes, firstPageHole, holeIndex, playerIndex, kCellCompetition);
-            }
+            for (int holeIndex = firstPageHole; holeIndex < completedCellLimit; ++holeIndex)
+                for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
+                    PauseScoreFormatCellName(name, s, scoreBytes, firstPageHole, holeIndex, playerIndex);
+                    UIGroup_SetTintColor(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        0xff55c355);
+                    PauseScorePutCell(scoreBytes, firstPageHole, holeIndex, playerIndex, kCellCompetition);
+                }
             // Accumulate this column across completed holes.
             for (int holeIndex = 0; holeIndex < AsCWiiPauseScore(scoreBytes)->displayedHoleCount; ++holeIndex)
                 for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex)
-                    totals[playerIndex] += PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores, AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, playerIndex, kCellCompetition);
+                    totals[playerIndex] += PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores,
+                                                          AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex,
+                                                          playerIndex, kCellCompetition);
             // Publish row totals; only the requested player type receives record tint.
             for (int ii = 0; ii < AsCWiiPauseScore(scoreBytes)->playerCount; ++ii) {
-                sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM, scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] + 1);
+                sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM,
+                        scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] + 1);
                 if ((0) && AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled && PauseScorePlayerType(ii) == 1)
-                    UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0xfffdce73);
-                else UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
-                UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + 0x74 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] * 4), totals[ii]);
+                    UIGroup_SetTintColor(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        0xfffdce73);
+                else
+                    UIGroup_SetTintColor(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        -1);
+                UITextTable_SetInteger(
+                    AsCWiiPauseScore(scoreBytes)->textTable,
+                    *(int*)(scoreBytes + 0x74 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] * 4), totals[ii]);
             }
             return;
         }
-        if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreParty && (*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartyLowerAdjustedValueWins) {
+        if (AsCWiiPauseScore(scoreBytes)->displayMode == kScoreParty &&
+            (*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartyLowerAdjustedValueWins) {
             int span = completedCellLimit + 1 - firstPageHole;
             for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex)
-                for (int holeIndex = firstPageHole; holeIndex < completedCellLimit + (AsCWiiPauseScore(scoreBytes)->postHoleMode == 0 && span <= kHolesPerPage); ++holeIndex) {
+                for (int holeIndex = firstPageHole;
+                     holeIndex <
+                     completedCellLimit + (AsCWiiPauseScore(scoreBytes)->postHoleMode == 0 && span <= kHolesPerPage);
+                     ++holeIndex) {
                     PauseScoreFormatCellName(name, s, scoreBytes, firstPageHole, holeIndex, playerIndex);
-                    UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
+                    UIGroup_SetTintColor(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        -1);
                     // Keep the scalar stroke load here; a typed array changes the loop induction code.
-                    int score = *(int*)((char*)AsCWiiPauseScore(scoreBytes)->playerHoleScores + (holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount + playerIndex) * kPlayerHoleScoreBytes + kCellStrokes);
-                    UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, (*(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(cellTextId)) - (holeIndex-firstPageHole)) - scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex]*kHolesPerPage, score);
+                    int score = *(int*)((char*)AsCWiiPauseScore(scoreBytes)->playerHoleScores +
+                                        (holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount + playerIndex) *
+                                            kPlayerHoleScoreBytes +
+                                        kCellStrokes);
+                    UITextTable_SetInteger(
+                        AsCWiiPauseScore(scoreBytes)->textTable,
+                        (*(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(cellTextId)) - (holeIndex - firstPageHole)) -
+                            scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] * kHolesPerPage,
+                        score);
                     totals[playerIndex] += score;
                 }
-            UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), s + kWiiPauseScoreStrings_R_score_subtotal), 0);
+            UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)),
+                                                              s + kWiiPauseScoreStrings_R_score_subtotal),
+                               0);
             return;
         }
         int span = completedCellLimit + 1 - firstPageHole;
-        for (int holeIndex = firstPageHole; holeIndex < completedCellLimit + (AsCWiiPauseScore(scoreBytes)->postHoleMode == 0 && span <= kHolesPerPage); ++holeIndex)
+        for (int holeIndex = firstPageHole;
+             holeIndex <
+             completedCellLimit + (AsCWiiPauseScore(scoreBytes)->postHoleMode == 0 && span <= kHolesPerPage);
+             ++holeIndex)
             for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
                 PauseScoreFormatCellName(name, s, scoreBytes, firstPageHole, holeIndex, playerIndex);
-                if (AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled &&
-                    PauseScorePlayerType(playerIndex) == 1)
-                    UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0xfffdce73);
-                else UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0xff4991f3);
+                if (AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled && PauseScorePlayerType(playerIndex) == 1)
+                    UIGroup_SetTintColor(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        0xfffdce73);
+                else
+                    UIGroup_SetTintColor(
+                        BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                        0xff4991f3);
                 PauseScorePutCell(scoreBytes, firstPageHole, holeIndex, playerIndex, kCellPang);
             }
         unsigned char* from = scoreBytes;
-        for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex, from += 4) totals[playerIndex] = *(int*)(from + 0xa4);
+        for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex, from += 4)
+            totals[playerIndex] = *(int*)(from + 0xa4);
         // Publish row totals; only the requested player type receives record tint.
         for (int ii = 0; ii < AsCWiiPauseScore(scoreBytes)->playerCount; ++ii) {
-            sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM, scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] + 1);
+            sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM,
+                    scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] + 1);
             if ((1) && AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled && PauseScorePlayerType(ii) == 1)
-                UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0xfffdce73);
-            else UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
-            UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + 0x74 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] * 4), totals[ii]);
+                UIGroup_SetTintColor(
+                    BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                    0xfffdce73);
+            else
+                UIGroup_SetTintColor(
+                    BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
+            UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable,
+                                   *(int*)(scoreBytes + 0x74 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] * 4),
+                                   totals[ii]);
         }
     } else if ((signed char)AsCWiiPauseScore(scoreBytes)->selectedView == kCompetitionView) {
-        for (int holeIndex = firstPageHole; holeIndex < completedCellLimit; ++holeIndex) for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
-            PauseScoreFormatCellName(name, s, scoreBytes, firstPageHole, holeIndex, playerIndex);
-            UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0xff55c355);
-            PauseScorePutCell(scoreBytes, firstPageHole, holeIndex, playerIndex, kCellCompetition);
-        }
+        for (int holeIndex = firstPageHole; holeIndex < completedCellLimit; ++holeIndex)
+            for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
+                PauseScoreFormatCellName(name, s, scoreBytes, firstPageHole, holeIndex, playerIndex);
+                UIGroup_SetTintColor(
+                    BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                    0xff55c355);
+                PauseScorePutCell(scoreBytes, firstPageHole, holeIndex, playerIndex, kCellCompetition);
+            }
         // Accumulate this column across completed holes.
         for (int holeIndex = 0; holeIndex < AsCWiiPauseScore(scoreBytes)->displayedHoleCount; ++holeIndex)
             for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex)
-                totals[playerIndex] += PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores, AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, playerIndex, kCellCompetition);
+                totals[playerIndex] +=
+                    PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores,
+                                   AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, playerIndex, kCellCompetition);
         // Publish row totals; only the requested player type receives record tint.
         for (int ii = 0; ii < AsCWiiPauseScore(scoreBytes)->playerCount; ++ii) {
-            sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM, scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] + 1);
+            sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM,
+                    scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] + 1);
             if ((0) && AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled && PauseScorePlayerType(ii) == 1)
-                UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0xfffdce73);
-            else UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
-            UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + 0x74 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] * 4), totals[ii]);
+                UIGroup_SetTintColor(
+                    BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                    0xfffdce73);
+            else
+                UIGroup_SetTintColor(
+                    BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
+            UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable,
+                                   *(int*)(scoreBytes + 0x74 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] * 4),
+                                   totals[ii]);
         }
     } else if ((signed char)AsCWiiPauseScore(scoreBytes)->selectedView == kGraphView) {
         // Accumulate this column across completed holes.
         for (int holeIndex = 0; holeIndex < AsCWiiPauseScore(scoreBytes)->displayedHoleCount; ++holeIndex)
             for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex)
-                totals[playerIndex] += PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores, AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, playerIndex, kCellStrokes);
+                totals[playerIndex] +=
+                    PauseScoreCell(AsCWiiPauseScore(scoreBytes)->playerHoleScores,
+                                   AsCWiiPauseScore(scoreBytes)->playerCount, holeIndex, playerIndex, kCellStrokes);
         // Publish row totals; only the requested player type receives record tint.
         for (int ii = 0; ii < AsCWiiPauseScore(scoreBytes)->playerCount; ++ii) {
-            sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM, scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] + 1);
+            sprintf(name, s + kWiiPauseScoreStrings_R_NUM_rtotal_d_K5_LC_FM,
+                    scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] + 1);
             if ((0) && AsCSharedDoc(g_sharedDoc)->courseRecordUpdatesEnabled && PauseScorePlayerType(ii) == 1)
-                UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 0xfffdce73);
-            else UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
-            UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + 0x74 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] * 4), totals[ii]);
+                UIGroup_SetTintColor(
+                    BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                    0xfffdce73);
+            else
+                UIGroup_SetTintColor(
+                    BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
+            UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable,
+                                   *(int*)(scoreBytes + 0x74 + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + ii] * 4),
+                                   totals[ii]);
         }
     }
 }
 #pragma pop
-
 
 void* memset(void*, int, unsigned int);
 void* memcpy(void*, const void*, unsigned int);
@@ -2041,9 +2444,16 @@ struct CharArrayGuard_u8032E804 {
     // Own temporary character storage until a shared control block adopts it.
     inline CharArrayGuard_u8032E804(char* p, char* a) : pointer(p), allocator(a) {}
     // Free the temporary character array unless ownership was released.
-    inline ~CharArrayGuard_u8032E804() { if (pointer) __dla__FPv(pointer); }
+    inline ~CharArrayGuard_u8032E804() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
     // Transfer temporary character storage to its shared owner.
-    inline char* release() { char* p = pointer; pointer = 0; return p; }
+    inline char* release() {
+        char* p = pointer;
+        pointer = 0;
+        return p;
+    }
 };
 }
 }
@@ -2054,7 +2464,7 @@ struct ScoreLengthError {
         void* vtable;
         unsigned int owners, references;
         char* text;
-    } *shared;
+    }* shared;
     // Copy the length-error text into shared owned character storage.
     inline ScoreLengthError(const char* message) {
         char allocator[4];
@@ -2114,125 +2524,140 @@ struct ScoreBuffer {
         : data(0), size(0), capacity(0), originalCapacity(&original), before(0) {}
     // Release whichever integer allocation remains owned after vector exchange.
     inline ~ScoreBuffer() {
-        if (data) { size = 0; appFreeUni__FPv(data); }
+        if (data) {
+            size = 0;
+            appFreeUni__FPv(data);
+        }
     }
     // Allocate guarded integer storage for the requested element capacity.
     inline void allocate(unsigned int count) {
-        if (count > 0x3fffffffu) scoreLengthError();
+        if (count > 0x3fffffffu)
+            scoreLengthError();
         data = (int*)appMallocDummy__FUl(count * 4);
         capacity = count;
     }
 };
 
 namespace std {
-    // Choose the new capacity while enforcing the integer-vector limit.
-    inline unsigned int vector<int, app::app_allocator<int> >::grow(unsigned int count) {
-        unsigned int current = *(volatile unsigned int*)&capacity;
-        if (count > 0x3fffffffu - current) scoreLengthError();
-        if (current < 0x15555555u)
-            return current + scoreMax((current + 1) * 3 / 5, count);
-        if (current < 0x2aaaaaaau)
-            return current + scoreMax((current + 1) / 2, count);
-        return 0x3fffffffu;
+// Choose the new capacity while enforcing the integer-vector limit.
+inline unsigned int vector<int, app::app_allocator<int> >::grow(unsigned int count) {
+    unsigned int current = *(volatile unsigned int*)&capacity;
+    if (count > 0x3fffffffu - current)
+        scoreLengthError();
+    if (current < 0x15555555u)
+        return current + scoreMax((current + 1) * 3 / 5, count);
+    if (current < 0x2aaaaaaau)
+        return current + scoreMax((current + 1) / 2, count);
+    return 0x3fffffffu;
+}
+// Allocate the owned integer array for the requested element capacity.
+inline void vector<int, app::app_allocator<int> >::allocate(unsigned int count) {
+    if (count > 0x3fffffffu)
+        scoreLengthError();
+    items = (int*)appMallocDummy__FUl(count * 4);
+    capacity = count;
+}
+// Append zero-valued integers, growing and exchanging storage if necessary.
+inline void vector<int, app::app_allocator<int> >::append(unsigned int count) {
+    // Validate the requested insertion before constructing its temporary
+    // buffer; allocation also validates its independently chosen capacity.
+    if (count > capacity || (*(unsigned int*)&size) > capacity - count)
+        (void)grow(size + count);
+    if (count <= capacity - (*(unsigned int*)&size)) {
+        memset(items + (*(unsigned int*)&size), 0, count * 4);
+        (*(unsigned int*)&size) += count;
+    } else {
+        ScoreBuffer buffer(capacity);
+        buffer.allocate(grow((*(unsigned int*)&size) + count - *buffer.originalCapacity));
+        buffer.before = (*(unsigned int*)&size);
+        memset(buffer.data + buffer.before + buffer.size, 0, count * 4);
+        buffer.size += count;
+        int* old = items;
+        int copied = scoreDistance(old, items + (*(unsigned int*)&size));
+        buffer.before -= copied;
+        memcpy(buffer.data + buffer.before, old, copied * 4);
+        memset(old, 0, copied * 4);
+        unsigned int newSize = buffer.size + copied;
+        int* previous = items;
+        items = buffer.data;
+        scoreSwap(capacity, buffer.capacity);
+        buffer.data = previous;
+        (*(unsigned int*)&size) = newSize;
+        buffer.size = 0;
     }
-    // Allocate the owned integer array for the requested element capacity.
-    inline void vector<int, app::app_allocator<int> >::allocate(unsigned int count) {
-        if (count > 0x3fffffffu) scoreLengthError();
-        items = (int*)appMallocDummy__FUl(count * 4);
-        capacity = count;
-    }
-    // Append zero-valued integers, growing and exchanging storage if necessary.
-    inline void vector<int, app::app_allocator<int> >::append(unsigned int count) {
-        // Validate the requested insertion before constructing its temporary
-        // buffer; allocation also validates its independently chosen capacity.
-        if (count > capacity || (*(unsigned int*)&size) > capacity - count)
-            (void)grow(size + count);
-        if (count <= capacity - (*(unsigned int*)&size)) {
-            memset(items + (*(unsigned int*)&size), 0, count * 4);
-            (*(unsigned int*)&size) += count;
-        } else {
-            ScoreBuffer buffer(capacity);
-            buffer.allocate(grow((*(unsigned int*)&size) + count - *buffer.originalCapacity));
-            buffer.before = (*(unsigned int*)&size);
-            memset(buffer.data + buffer.before + buffer.size, 0, count * 4);
-            buffer.size += count;
-            int* old = items;
-            int copied = scoreDistance(old, items + (*(unsigned int*)&size));
-            buffer.before -= copied;
-            memcpy(buffer.data + buffer.before, old, copied * 4);
-            memset(old, 0, copied * 4);
-            unsigned int newSize = buffer.size + copied;
-            int* previous = items;
-            items = buffer.data;
-            scoreSwap(capacity, buffer.capacity);
-            buffer.data = previous;
-            (*(unsigned int*)&size) = newSize;
-            buffer.size = 0;
-        }
-    }
-    // Grow with zero-valued entries or reduce the logical element count.
-    inline void vector<int, app::app_allocator<int> >::resize(unsigned int count) {
-        if (count > (*(unsigned int*)&size)) vector<int, app::app_allocator<int> >::append(count - (*(unsigned int*)&size));
-        else if (count < (*(unsigned int*)&size)) (*(unsigned int*)&size) -= (*(unsigned int*)&size) - count;
-    }
-    // Borrow one integer entry; the caller supplies an in-range index.
-    inline int& vector<int, app::app_allocator<int> >::operator[](int index) { return items[index]; }
+}
+// Grow with zero-valued entries or reduce the logical element count.
+inline void vector<int, app::app_allocator<int> >::resize(unsigned int count) {
+    if (count > (*(unsigned int*)&size))
+        vector<int, app::app_allocator<int> >::append(count - (*(unsigned int*)&size));
+    else if (count < (*(unsigned int*)&size))
+        (*(unsigned int*)&size) -= (*(unsigned int*)&size) - count;
+}
+// Borrow one integer entry; the caller supplies an in-range index.
+inline int& vector<int, app::app_allocator<int> >::operator[](int index) {
+    return items[index];
+}
 }
 // Matching operations on the stack-local view.
 
-    // Choose the ranking scratch capacity with the same integer-vector limit.
-    inline unsigned int LocalIntVector_u8032E804::grow(unsigned int count) {
-        unsigned int current = *(volatile unsigned int*)&capacity;
-        if (count > 0x3fffffffu - current) scoreLengthError();
-        if (current < 0x15555555u)
-            return current + scoreMax((current + 1) * 3 / 5, count);
-        if (current < 0x2aaaaaaau)
-            return current + scoreMax((current + 1) / 2, count);
-        return 0x3fffffffu;
+// Choose the ranking scratch capacity with the same integer-vector limit.
+inline unsigned int LocalIntVector_u8032E804::grow(unsigned int count) {
+    unsigned int current = *(volatile unsigned int*)&capacity;
+    if (count > 0x3fffffffu - current)
+        scoreLengthError();
+    if (current < 0x15555555u)
+        return current + scoreMax((current + 1) * 3 / 5, count);
+    if (current < 0x2aaaaaaau)
+        return current + scoreMax((current + 1) / 2, count);
+    return 0x3fffffffu;
+}
+// Allocate the owned integer array for the requested element capacity.
+inline void LocalIntVector_u8032E804::allocate(unsigned int count) {
+    if (count > 0x3fffffffu)
+        scoreLengthError();
+    items = (int*)appMallocDummy__FUl(count * 4);
+    capacity = count;
+}
+// Append zero-valued integers, growing and exchanging storage if necessary.
+inline void LocalIntVector_u8032E804::append(unsigned int count) {
+    // Validate the requested insertion before constructing its temporary
+    // buffer; allocation also validates its independently chosen capacity.
+    if (count > capacity || (*(unsigned int*)&size) > capacity - count)
+        (void)grow(size + count);
+    if (count <= capacity - (*(unsigned int*)&size)) {
+        memset(items + (*(unsigned int*)&size), 0, count * 4);
+        (*(unsigned int*)&size) += count;
+    } else {
+        ScoreBuffer buffer(capacity);
+        buffer.allocate(grow((*(unsigned int*)&size) + count - *buffer.originalCapacity));
+        buffer.before = (*(unsigned int*)&size);
+        memset(buffer.data + buffer.before + buffer.size, 0, count * 4);
+        buffer.size += count;
+        int* old = items;
+        int copied = scoreDistance(old, items + (*(unsigned int*)&size));
+        buffer.before -= copied;
+        memcpy(buffer.data + buffer.before, old, copied * 4);
+        memset(old, 0, copied * 4);
+        unsigned int newSize = buffer.size + copied;
+        int* previous = items;
+        items = buffer.data;
+        scoreSwap(capacity, buffer.capacity);
+        buffer.data = previous;
+        (*(unsigned int*)&size) = newSize;
+        buffer.size = 0;
     }
-    // Allocate the owned integer array for the requested element capacity.
-    inline void LocalIntVector_u8032E804::allocate(unsigned int count) {
-        if (count > 0x3fffffffu) scoreLengthError();
-        items = (int*)appMallocDummy__FUl(count * 4);
-        capacity = count;
-    }
-    // Append zero-valued integers, growing and exchanging storage if necessary.
-    inline void LocalIntVector_u8032E804::append(unsigned int count) {
-        // Validate the requested insertion before constructing its temporary
-        // buffer; allocation also validates its independently chosen capacity.
-        if (count > capacity || (*(unsigned int*)&size) > capacity - count)
-            (void)grow(size + count);
-        if (count <= capacity - (*(unsigned int*)&size)) {
-            memset(items + (*(unsigned int*)&size), 0, count * 4);
-            (*(unsigned int*)&size) += count;
-        } else {
-            ScoreBuffer buffer(capacity);
-            buffer.allocate(grow((*(unsigned int*)&size) + count - *buffer.originalCapacity));
-            buffer.before = (*(unsigned int*)&size);
-            memset(buffer.data + buffer.before + buffer.size, 0, count * 4);
-            buffer.size += count;
-            int* old = items;
-            int copied = scoreDistance(old, items + (*(unsigned int*)&size));
-            buffer.before -= copied;
-            memcpy(buffer.data + buffer.before, old, copied * 4);
-            memset(old, 0, copied * 4);
-            unsigned int newSize = buffer.size + copied;
-            int* previous = items;
-            items = buffer.data;
-            scoreSwap(capacity, buffer.capacity);
-            buffer.data = previous;
-            (*(unsigned int*)&size) = newSize;
-            buffer.size = 0;
-        }
-    }
-    // Grow with zero-valued entries or reduce the logical element count.
-    inline void LocalIntVector_u8032E804::resize(unsigned int count) {
-        if (count > (*(unsigned int*)&size)) LocalIntVector_u8032E804::append(count - (*(unsigned int*)&size));
-        else if (count < (*(unsigned int*)&size)) (*(unsigned int*)&size) -= (*(unsigned int*)&size) - count;
-    }
-    // Borrow one integer entry; the caller supplies an in-range index.
-    inline int& LocalIntVector_u8032E804::operator[](int index) { return items[index]; }
-
+}
+// Grow with zero-valued entries or reduce the logical element count.
+inline void LocalIntVector_u8032E804::resize(unsigned int count) {
+    if (count > (*(unsigned int*)&size))
+        LocalIntVector_u8032E804::append(count - (*(unsigned int*)&size));
+    else if (count < (*(unsigned int*)&size))
+        (*(unsigned int*)&size) -= (*(unsigned int*)&size) - count;
+}
+// Borrow one integer entry; the caller supplies an in-range index.
+inline int& LocalIntVector_u8032E804::operator[](int index) {
+    return items[index];
+}
 
 extern "C" {
 #pragma push
@@ -2259,24 +2684,29 @@ extern "C" {
 // This documents the existing front/back end calculation exactly: end starts
 // at 9; only displayedHoleCount-first<=9 replaces it with displayedHoleCount.
 // A caller changing pagination must preserve/validate that boundary separately.
-void CWiiPauseScore_RankPartyHoleResults(void* self, int* soleWinCounts, int* updateIndicators) {
+void CWiiPauseScore::RankPartyHoleResults(int* soleWinCounts, int* updateIndicators) {
     // updateIndicators is a boolean ABI flag; callers may pass (int*)1, and it is never dereferenced.
-    unsigned char* scoreBytes = (unsigned char*)self;
+    unsigned char* scoreBytes = (unsigned char*)this;
     I4 tieMarkerBases = s_pauseScoreTieMarkerBases;
     I4 lossMarkerBases = s_pauseScoreLossMarkerBases;
     char name[0x40];
 
     if (AsCWiiPauseScore(scoreBytes)->postHoleMode != 0 && AsCWiiPauseScore(scoreBytes)->playerCount == 1) {
-        unsigned char* player = (unsigned char*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), 0);
+        unsigned char* player =
+            (unsigned char*)GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), 0);
         if ((unsigned int)((player[0xc4] >> 4) & 0xF) < 3u) {
-            if (soleWinCounts) *soleWinCounts = 1;
+            if (soleWinCounts)
+                *soleWinCounts = 1;
             if (updateIndicators) {
                 sprintf(name, wiiPauseScoreStrings + kWiiPauseScoreStrings_R_score_record_d_d, 1, 1);
-                UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 1);
+                UIGroup_SetEnabled(
+                    BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 1);
             }
         } else {
-            if (soleWinCounts) *soleWinCounts = 0;
-            if (updateIndicators) Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->lossMarkerLayout, lossMarkerBases.v[0], 1);
+            if (soleWinCounts)
+                *soleWinCounts = 0;
+            if (updateIndicators)
+                Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->lossMarkerLayout, lossMarkerBases.v[0], 1);
         }
         return;
     }
@@ -2286,10 +2716,12 @@ void CWiiPauseScore_RankPartyHoleResults(void* self, int* soleWinCounts, int* up
     // receive rank -1 and do not compete; rank 0 is a best valid value.
     int end = kHolesPerPage;
     int first = AsCWiiPauseScore(scoreBytes)->showFrontNine != 0 ? 0 : kHolesPerPage;
-    if ((int)AsCWiiPauseScore(scoreBytes)->displayedHoleCount - first <= kHolesPerPage) end = AsCWiiPauseScore(scoreBytes)->displayedHoleCount;
+    if ((int)AsCWiiPauseScore(scoreBytes)->displayedHoleCount - first <= kHolesPerPage)
+        end = AsCWiiPauseScore(scoreBytes)->displayedHoleCount;
 
     LocalIntVector_u8032E804 holeValues = {0, 0, 0};
-    unsigned int total = (unsigned int)AsCWiiPauseScore(scoreBytes)->holeCount * AsCWiiPauseScore(scoreBytes)->playerCount;
+    unsigned int total =
+        (unsigned int)AsCWiiPauseScore(scoreBytes)->holeCount * AsCWiiPauseScore(scoreBytes)->playerCount;
     holeValues.resize(total);
 
     int isSpecialPartyRule = (*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode) == kPartyLowerAdjustedValueWins;
@@ -2297,7 +2729,8 @@ void CWiiPauseScore_RankPartyHoleResults(void* self, int* soleWinCounts, int* up
     if (isSpecialPartyRule) {
         for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
             for (int holeIndex = first; holeIndex < end; ++holeIndex) {
-                int* rec = (int*)(*(unsigned char**)(scoreBytes + 0xe4) + (playerIndex + holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount) * 12);
+                int* rec = (int*)(*(unsigned char**)(scoreBytes + 0xe4) +
+                                  (playerIndex + holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount) * 12);
                 holeValues[playerIndex + holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount] = rec[1] - rec[0];
             }
         }
@@ -2305,7 +2738,8 @@ void CWiiPauseScore_RankPartyHoleResults(void* self, int* soleWinCounts, int* up
         preferHigherValue = 1;
         for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
             for (int holeIndex = first; holeIndex < end; ++holeIndex) {
-                int* rec = (int*)(*(unsigned char**)(scoreBytes + 0xe4) + (playerIndex + holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount) * 12);
+                int* rec = (int*)(*(unsigned char**)(scoreBytes + 0xe4) +
+                                  (playerIndex + holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount) * 12);
                 holeValues[playerIndex + holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount] = rec[1];
             }
         }
@@ -2319,26 +2753,31 @@ void CWiiPauseScore_RankPartyHoleResults(void* self, int* soleWinCounts, int* up
         for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
             ranks[playerIndex] = -1;
             int playerValue = holeValues[playerIndex + holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount];
-            if (playerValue < 0) continue;
+            if (playerValue < 0)
+                continue;
             ++ranks[playerIndex];
             for (int other = 0; other < AsCWiiPauseScore(scoreBytes)->playerCount; ++other) {
                 int otherValue = holeValues[other + holeIndex * AsCWiiPauseScore(scoreBytes)->playerCount];
                 if (playerIndex != other && otherValue >= 0) {
                     if (preferHigherValue) {
-                        if (playerValue < otherValue) ++ranks[playerIndex];
+                        if (playerValue < otherValue)
+                            ++ranks[playerIndex];
                     } else {
-                        if (playerValue > otherValue) ++ranks[playerIndex];
+                        if (playerValue > otherValue)
+                            ++ranks[playerIndex];
                     }
                 }
             }
         }
         winnerCountMinusOne = -1;
         for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
-            if (ranks[playerIndex] == 0) ++winnerCountMinusOne;
+            if (ranks[playerIndex] == 0)
+                ++winnerCountMinusOne;
         }
         if (soleWinCounts) {
             for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
-                if (ranks[playerIndex] == 0 && winnerCountMinusOne == 0) ++soleWinCounts[playerIndex];
+                if (ranks[playerIndex] == 0 && winnerCountMinusOne == 0)
+                    ++soleWinCounts[playerIndex];
             }
         }
         if (updateIndicators && isSpecialPartyRule) {
@@ -2346,15 +2785,24 @@ void CWiiPauseScore_RankPartyHoleResults(void* self, int* soleWinCounts, int* up
             for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
                 if (ranks[playerIndex] == 0) {
                     if (winnerCountMinusOne == 0) {
-                        sprintf(name, wiiPauseScoreStrings + kWiiPauseScoreStrings_R_score_record_d_d, scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] + 1, rowIndex + 1);
-                        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), 1);
+                        sprintf(name, wiiPauseScoreStrings + kWiiPauseScoreStrings_R_score_record_d_d,
+                                scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] + 1, rowIndex + 1);
+                        UIGroup_SetEnabled(BpObject_GetOrCreateNamedGroup(
+                                               *(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name),
+                                           1);
                     } else {
-                        Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->tieMarkerLayout, rowIndex + tieMarkerBases.v[scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex]], 1);
+                        Layout_SetElementEnabled(
+                            AsCWiiPauseScore(scoreBytes)->tieMarkerLayout,
+                            rowIndex + tieMarkerBases.v[scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex]], 1);
                     }
                 } else if (winnerCountMinusOne < 0) {
-                    Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->tieMarkerLayout, rowIndex + tieMarkerBases.v[scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex]], 1);
+                    Layout_SetElementEnabled(
+                        AsCWiiPauseScore(scoreBytes)->tieMarkerLayout,
+                        rowIndex + tieMarkerBases.v[scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex]], 1);
                 } else {
-                    Layout_SetElementEnabled(AsCWiiPauseScore(scoreBytes)->lossMarkerLayout, rowIndex + lossMarkerBases.v[scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex]], 1);
+                    Layout_SetElementEnabled(
+                        AsCWiiPauseScore(scoreBytes)->lossMarkerLayout,
+                        rowIndex + lossMarkerBases.v[scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex]], 1);
                 }
             }
         }
@@ -2363,17 +2811,25 @@ void CWiiPauseScore_RankPartyHoleResults(void* self, int* soleWinCounts, int* up
     // Phase 3: optionally display the current unfinished hole's stroke values.
     // soleWinCounts is an accumulator (not reset here), except the single-player
     // post-hole special case above which assigns its first word directly.
-    if (!updateIndicators) return;
-    if (AsCWiiPauseScore(scoreBytes)->postHoleMode != 0 && isSpecialPartyRule) return;
-    if (AsCWiiPauseScore(scoreBytes)->postHoleMode != 0) end = first;
+    if (!updateIndicators)
+        return;
+    if (AsCWiiPauseScore(scoreBytes)->postHoleMode != 0 && isSpecialPartyRule)
+        return;
+    if (AsCWiiPauseScore(scoreBytes)->postHoleMode != 0)
+        end = first;
     int count = end - first;
-            for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
-                int idx = playerIndex + end * AsCWiiPauseScore(scoreBytes)->playerCount;
-                holeValues[idx] = *(int*)(*(unsigned char**)(scoreBytes + 0xe4) + idx * 12);
-                sprintf(name, wiiPauseScoreStrings + kWiiPauseScoreStrings_R_NUM_result_d_K4_LC_FM, count + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] * kHolesPerPage + 1);
-                UIGroup_SetTintColor(BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
-                UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable, *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(cellTextId)) - count - scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] * kHolesPerPage, holeValues[idx]);
-            }
+    for (int playerIndex = 0; playerIndex < AsCWiiPauseScore(scoreBytes)->playerCount; ++playerIndex) {
+        int idx = playerIndex + end * AsCWiiPauseScore(scoreBytes)->playerCount;
+        holeValues[idx] = *(int*)(*(unsigned char**)(scoreBytes + 0xe4) + idx * 12);
+        sprintf(name, wiiPauseScoreStrings + kWiiPauseScoreStrings_R_NUM_result_d_K4_LC_FM,
+                count + scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] * kHolesPerPage + 1);
+        UIGroup_SetTintColor(
+            BpObject_GetOrCreateNamedGroup(*(void**)(scoreBytes + PAUSE_FIELD_OFFSET(scoreObject)), name), -1);
+        UITextTable_SetInteger(AsCWiiPauseScore(scoreBytes)->textTable,
+                               *(int*)(scoreBytes + PAUSE_INDEXED_OFFSET(cellTextId)) - count -
+                                   scoreBytes[PAUSE_INDEXED_OFFSET(playerRows) + playerIndex] * kHolesPerPage,
+                               holeValues[idx]);
+    }
 }
 #pragma pop
 #pragma pop

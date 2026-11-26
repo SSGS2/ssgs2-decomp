@@ -1,5 +1,11 @@
+// Sound playback state: the two-slot groups that each track one playing sound, with a file
+// handle and three owned strings per slot, and the playback table of hashed nodes that
+// finds them. Covers construction, teardown and recycling of these objects.
+
 #include "classes/SoundPlaybackState.h"
+#include "classes/GtlSoundStreamInterface.h"
 #include "classes/MWStringStorage.h"
+#include "classes/CSharedFileHandle.h"
 
 // Derive ABI displacements from the shared slot model while retaining byte-address
 // access types: direct field replacements change alias/reload behavior in teardown.
@@ -14,15 +20,15 @@ struct EH5StringCleanup {
     // Arm cleanup only after all three words of a string are initialized.
     explicit EH5StringCleanup(const void* p) : words((const unsigned int*)p), active(true) {}
     // Transfer string-buffer ownership to the completed enclosing object.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Free only heap-backed strings when construction unwinds.
     ~EH5StringCleanup() {
-        if (active && (words[0] & 0x80000000u)) appFreeUni__FPv((void*)words[2]);
+        if (active && (words[0] & 0x80000000u))
+            appFreeUni__FPv((void*)words[2]);
     }
 };
-
-// Translation unit 0x802A6E98-0x802A83F4 (4 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -40,8 +46,6 @@ void* SoundPlaybackSlot_Ctor(void*);
 void* SoundPlaybackSlot_dtor(void*, int);
 extern int strlen(const char*);
 
-extern void gtl_ISoundStream_Stop(void*, int);
-extern void CSharedFileHandle_Destroy(void*, int);
 extern void appFreeUni__FPv(void*);
 extern void __destroy_arr(void*, void*, int, int);
 extern void __dl__FPv(void*);
@@ -52,26 +56,53 @@ extern void OSUnlockMutex(void*);
 extern void* appMallocUni__FUl(int);
 extern void String_ReserveCapacity(void*, int);
 
-struct OneByte { char c; };
+struct OneByte {
+    char c;
+};
 enum PlaybackStorageConstants {
     // Offsets from the group-relative row (actual slot minus four).
-    kRowStream = 0x04, kRowVolume = 0x08, kRowPitch = 0x0C,
-    kRowPlayState = 0x10, kRowName = 0x14, kRowLoop = 0x20,
-    kRowFadeIn = 0x21, kRowDolbyBank = 0x22, kRowTransitionDuration = 0x24,
-    kRowTween = 0x28, kRowFilePath = 0x44, kRowResourcePath = 0x50,
-    kRowBaseVolume = 0x60, kRowBasePitch = 0x64, kRowSharedFile = 0x5C,
-    kNameReserveBytes = 0x40, kPathReserveBytes = 0x10,
-    kPlaybackSlotBytes = 0x64, kPlaybackSlotsPerGroup = 2,
-    kPlaybackInitialBucketCount = 16, kPlaybackBucketBytes = 16 * 4,
-    kPlaybackGroupBOffset = 0xCC, kPlaybackTableAOffset = 0x198, kPlaybackTableBOffset = 0x1D0,
-    kHeapStringTagShift = 31, kInlineStringLengthMask = 0x7F
+    kRowStream = 0x04,
+    kRowVolume = 0x08,
+    kRowPitch = 0x0C,
+    kRowPlayState = 0x10,
+    kRowName = 0x14,
+    kRowLoop = 0x20,
+    kRowFadeIn = 0x21,
+    kRowDolbyBank = 0x22,
+    kRowTransitionDuration = 0x24,
+    kRowTween = 0x28,
+    kRowFilePath = 0x44,
+    kRowResourcePath = 0x50,
+    kRowBaseVolume = 0x60,
+    kRowBasePitch = 0x64,
+    kRowSharedFile = 0x5C,
+    kNameReserveBytes = 0x40,
+    kPathReserveBytes = 0x10,
+    kPlaybackSlotBytes = 0x64,
+    kPlaybackSlotsPerGroup = 2,
+    kPlaybackInitialBucketCount = 16,
+    kPlaybackBucketBytes = 16 * 4,
+    kPlaybackGroupBOffset = 0xCC,
+    kPlaybackTableAOffset = 0x198,
+    kPlaybackTableBOffset = 0x1D0,
+    kHeapStringTagShift = 31,
+    kInlineStringLengthMask = 0x7F
 };
-struct RcPad4 { char pad[4]; };
-struct RcObj4 : public RcPad4 { 
-virtual void d0(int);
+struct RcPad4 {
+    char pad[4];
 };
-union Slot4 { unsigned char c; unsigned int pad; };
-struct PlaybackRingNode { char unk0[0xC]; PlaybackRingNode* next; PlaybackRingNode* prev; };
+struct RcObj4 : public RcPad4 {
+    virtual void d0(int);
+};
+union Slot4 {
+    unsigned char c;
+    unsigned int pad;
+};
+struct PlaybackRingNode {
+    char unk0[0xC];
+    PlaybackRingNode* next;
+    PlaybackRingNode* prev;
+};
 // Table offsets: +00 active ring, +04 iterator, +0C recycled ring,
 // +10 initial bucket count, +14 bucket mask, +18 slot count, +1C owned
 // bucket-pointer array, +20 recursive OS mutex. +08 is unresolved bookkeeping.
@@ -79,15 +110,15 @@ struct PlaybackRingNode { char unk0[0xC]; PlaybackRingNode* next; PlaybackRingNo
 // in nodes. Clear splices rings and zeros buckets; it frees neither nodes nor
 // their payloads. The two table instances live at owner +198 and +1D0.
 struct PlaybackTableView {
-    void* activeHead; // Active circular ring head; null when empty.
-    void* f04; // Active iterator; reset when initializing the table.
-    void* f08; // Unresolved bookkeeping; initialized to null.
+    void* activeHead;   // Active circular ring head; null when empty.
+    void* f04;          // Active iterator; reset when initializing the table.
+    void* f08;          // Unresolved bookkeeping; initialized to null.
     void* recycledHead; // Recycled circular ring head; nodes remain allocated.
-    int f10; // Initial bucket count; subsequent resizing is outside this unit.
-    int bucketMask; // Bucket mask = allocated bucket count - 1.
-    int bucketCount; // Number of bucket pointers cleared by RecyclePlaybackNodes.
-    void* buckets; // Owned array of bucket pointers.
-    char lock[0x18]; // Recursive OS mutex; nested operations require recursion.
+    int f10;            // Initial bucket count; subsequent resizing is outside this unit.
+    int bucketMask;     // Bucket mask = allocated bucket count - 1.
+    int bucketCount;    // Number of bucket pointers cleared by RecyclePlaybackNodes.
+    void* buckets;      // Owned array of bucket pointers.
+    char lock[0x18];    // Recursive OS mutex; nested operations require recursion.
 };
 
 // Read byte length from the Metrowerks inline/heap string tag.
@@ -107,49 +138,53 @@ struct PlaybackTableView {
 // This reset only clears the stream pointer; it does not stop/release a live
 // stream or shared file. Callers must dispose those owners before resetting live slots.
 // Keep the reset macro's expression lifetimes: the inline replacement changed .text.
-#define SLOT_INIT(row, s1, d1, s2, d2, s3, d3, one, zero) { \
-    /* A: detach stream and restore volume, pitch and idle state. */ \
-    *(int*)((char*)(row) + kRowStream) = 0; \
-    *(float*)((char*)(row) + kRowVolume) = one; \
-    *(float*)((char*)(row) + kRowPitch) = one; \
-    *(int*)((char*)(row) + kRowPlayState) = 0; \
-    /* B: empty all owned strings using the original allocator-tag copies. */ \
-    { \
-        char* q_ = (char*)(row) + kRowName; \
-        unsigned int n_ = STR_LEN(q_); \
-        (d1).c = (s1); \
-        int l_ = strlen(s_soundPlaybackEmptyName); \
-        String_ReplaceRange(q_, 0, n_, s_soundPlaybackEmptyName, s_soundPlaybackEmptyName + l_, (unsigned char*)&(d1)); \
-    } \
-    *(char*)((char*)(row) + kRowLoop) = 0; \
-    *(char*)((char*)(row) + kRowFadeIn) = 0; \
-    *(char*)((char*)(row) + kRowDolbyBank) = 0; \
-    *(float*)((char*)(row) + kRowTransitionDuration) = zero; \
-    { \
-        char* q_ = (char*)(row) + kRowFilePath; \
-        unsigned int n_ = STR_LEN(q_); \
-        (d2).c = (s2); \
-        int l_ = strlen(s_soundPlaybackEmptyFilePath); \
-        String_ReplaceRange(q_, 0, n_, s_soundPlaybackEmptyFilePath, s_soundPlaybackEmptyFilePath + l_, (unsigned char*)&(d2)); \
-    } \
-    { \
-        char* q_ = (char*)(row) + kRowResourcePath; \
-        unsigned int n_ = STR_LEN(q_); \
-        (d3).c = (s3); \
-        int l_ = strlen(s_soundPlaybackEmptyResourcePath); \
-        String_ReplaceRange(q_, 0, n_, s_soundPlaybackEmptyResourcePath, s_soundPlaybackEmptyResourcePath + l_, (unsigned char*)&(d3)); \
-    } \
-    /* C: reset fade tween/base multipliers and retain string capacities. */ \
-    { \
-        char* t_ = (char*)(row) + kRowTween; \
-        FloatTween_Start(t_, -1, kFloat_0_soundPlayback, kFloat_0_soundPlayback); \
-    } \
-    *(float*)((char*)(row) + kRowBaseVolume) = one; \
-    *(float*)((char*)(row) + kRowBasePitch) = one; \
-    String_ReserveCapacity((char*)(row) + kRowName, kNameReserveBytes); \
-    String_ReserveCapacity((char*)(row) + kRowFilePath, kPathReserveBytes); \
-    String_ReserveCapacity((char*)(row) + kRowResourcePath, kPathReserveBytes); \
-}
+#define SLOT_INIT(row, s1, d1, s2, d2, s3, d3, one, zero)                                                           \
+    {                                                                                                               \
+        /* A: detach stream and restore volume, pitch and idle state. */                                            \
+        *(int*)((char*)(row) + kRowStream) = 0;                                                                     \
+        *(float*)((char*)(row) + kRowVolume) = one;                                                                 \
+        *(float*)((char*)(row) + kRowPitch) = one;                                                                  \
+        *(int*)((char*)(row) + kRowPlayState) = 0;                                                                  \
+        /* B: empty all owned strings using the original allocator-tag copies. */                                   \
+        {                                                                                                           \
+            char* q_ = (char*)(row) + kRowName;                                                                     \
+            unsigned int n_ = STR_LEN(q_);                                                                          \
+            (d1).c = (s1);                                                                                          \
+            int l_ = strlen(s_soundPlaybackEmptyName);                                                              \
+            String_ReplaceRange(q_, 0, n_, s_soundPlaybackEmptyName, s_soundPlaybackEmptyName + l_,                 \
+                                (unsigned char*)&(d1));                                                             \
+        }                                                                                                           \
+        *(char*)((char*)(row) + kRowLoop) = 0;                                                                      \
+        *(char*)((char*)(row) + kRowFadeIn) = 0;                                                                    \
+        *(char*)((char*)(row) + kRowDolbyBank) = 0;                                                                 \
+        *(float*)((char*)(row) + kRowTransitionDuration) = zero;                                                    \
+        {                                                                                                           \
+            char* q_ = (char*)(row) + kRowFilePath;                                                                 \
+            unsigned int n_ = STR_LEN(q_);                                                                          \
+            (d2).c = (s2);                                                                                          \
+            int l_ = strlen(s_soundPlaybackEmptyFilePath);                                                          \
+            String_ReplaceRange(q_, 0, n_, s_soundPlaybackEmptyFilePath, s_soundPlaybackEmptyFilePath + l_,         \
+                                (unsigned char*)&(d2));                                                             \
+        }                                                                                                           \
+        {                                                                                                           \
+            char* q_ = (char*)(row) + kRowResourcePath;                                                             \
+            unsigned int n_ = STR_LEN(q_);                                                                          \
+            (d3).c = (s3);                                                                                          \
+            int l_ = strlen(s_soundPlaybackEmptyResourcePath);                                                      \
+            String_ReplaceRange(q_, 0, n_, s_soundPlaybackEmptyResourcePath, s_soundPlaybackEmptyResourcePath + l_, \
+                                (unsigned char*)&(d3));                                                             \
+        }                                                                                                           \
+        /* C: reset fade tween/base multipliers and retain string capacities. */                                    \
+        {                                                                                                           \
+            char* t_ = (char*)(row) + kRowTween;                                                                    \
+            FloatTween_Start(t_, -1, kFloat_0_soundPlayback, kFloat_0_soundPlayback);                               \
+        }                                                                                                           \
+        *(float*)((char*)(row) + kRowBaseVolume) = one;                                                             \
+        *(float*)((char*)(row) + kRowBasePitch) = one;                                                              \
+        String_ReserveCapacity((char*)(row) + kRowName, kNameReserveBytes);                                         \
+        String_ReserveCapacity((char*)(row) + kRowFilePath, kPathReserveBytes);                                     \
+        String_ReserveCapacity((char*)(row) + kRowResourcePath, kPathReserveBytes);                                 \
+    }
 
 // Recycle active nodes and clear bucket pointers; caller already holds the recursive mutex.
 static inline void RecyclePlaybackNodes(PlaybackTableView* c, void* mutex) {
@@ -166,7 +201,8 @@ static inline void RecyclePlaybackNodes(PlaybackTableView* c, void* mutex) {
             removed->prev->next = removed->next;
             removed->next->prev = removed->prev;
             PlaybackRingNode* remainingHead = removed->prev;
-            if (remainingHead == removed) remainingHead = 0;
+            if (remainingHead == removed)
+                remainingHead = 0;
             OSUnlockMutex(mutex);
             PlaybackRingNode* recycled = (PlaybackRingNode*)(c)->activeHead;
             PlaybackRingNode* recycledHead = (PlaybackRingNode*)(c)->recycledHead;
@@ -187,7 +223,8 @@ static inline void RecyclePlaybackNodes(PlaybackTableView* c, void* mutex) {
             (c)->activeHead = remainingHead;
         }
     }
-    for (int slot = 0; slot < (c)->bucketCount; ++slot) ((int*)(c)->buckets)[slot] = 0;
+    for (int slot = 0; slot < (c)->bucketCount; ++slot)
+        ((int*)(c)->buckets)[slot] = 0;
 }
 
 // Allocate sixteen empty buckets and initialize both circular node rings under the mutex.
@@ -205,7 +242,8 @@ static inline void InitializePlaybackTable(PlaybackTableView* c) {
     if ((c)->bucketCount > 0) {
         (c)->buckets = appMallocUni__FUl(kPlaybackBucketBytes);
         (c)->bucketMask = (c)->bucketCount - 1;
-        for (int slot = 0; slot < (c)->bucketCount; ++slot) ((int*)(c)->buckets)[slot] = 0;
+        for (int slot = 0; slot < (c)->bucketCount; ++slot)
+            ((int*)(c)->buckets)[slot] = 0;
     } else {
         (c)->buckets = 0;
     }
@@ -224,9 +262,13 @@ static inline void ClearPlaybackTable(PlaybackTableView* c) {
 }
 
 // Forward initialization without altering the original inlining boundary.
-static inline void InitializePlaybackTableAtOriginalBoundary(PlaybackTableView* c) { InitializePlaybackTable(c); }
+static inline void InitializePlaybackTableAtOriginalBoundary(PlaybackTableView* c) {
+    InitializePlaybackTable(c);
+}
 // Forward clearing without altering the original inlining boundary.
-static inline void ClearPlaybackTableAtOriginalBoundary(PlaybackTableView* c) { ClearPlaybackTable(c); }
+static inline void ClearPlaybackTableAtOriginalBoundary(PlaybackTableView* c) {
+    ClearPlaybackTable(c);
+}
 
 #pragma opt_common_subs off
 #pragma opt_propagation off
@@ -236,45 +278,67 @@ static inline void ClearPlaybackTableAtOriginalBoundary(PlaybackTableView* c) { 
 void* SoundPlaybackState_Ctor(void* self) {
     char* stateBytes = (char*)self;
     // Stack-order group 1: first initialization of group A (name/file/resource tags).
-    OneByte groupAInitialResourcePathTagCopy; volatile OneByte groupAInitialResourcePathTagSource;
-    OneByte groupAInitialFilePathTagCopy; volatile OneByte groupAInitialFilePathTagSource;
-    OneByte groupAInitialNameTagCopy; volatile OneByte groupAInitialNameTagSource;
+    OneByte groupAInitialResourcePathTagCopy;
+    volatile OneByte groupAInitialResourcePathTagSource;
+    OneByte groupAInitialFilePathTagCopy;
+    volatile OneByte groupAInitialFilePathTagSource;
+    OneByte groupAInitialNameTagCopy;
+    volatile OneByte groupAInitialNameTagSource;
     // Stack-order group 2: first initialization of group B.
-    OneByte groupBInitialResourcePathTagCopy; volatile OneByte groupBInitialResourcePathTagSource;
-    OneByte groupBInitialFilePathTagCopy; volatile OneByte groupBInitialFilePathTagSource;
-    OneByte groupBInitialNameTagCopy; volatile OneByte groupBInitialNameTagSource;
+    OneByte groupBInitialResourcePathTagCopy;
+    volatile OneByte groupBInitialResourcePathTagSource;
+    OneByte groupBInitialFilePathTagCopy;
+    volatile OneByte groupBInitialFilePathTagSource;
+    OneByte groupBInitialNameTagCopy;
+    volatile OneByte groupBInitialNameTagSource;
     // Stack-order group 3: repeated reset of group B (used after the A reset below).
-    OneByte groupBResetResourcePathTagCopy; volatile OneByte groupBResetResourcePathTagSource;
-    OneByte groupBResetFilePathTagCopy; volatile OneByte groupBResetFilePathTagSource;
-    OneByte groupBResetNameTagCopy; volatile OneByte groupBResetNameTagSource;
+    OneByte groupBResetResourcePathTagCopy;
+    volatile OneByte groupBResetResourcePathTagSource;
+    OneByte groupBResetFilePathTagCopy;
+    volatile OneByte groupBResetFilePathTagSource;
+    OneByte groupBResetNameTagCopy;
+    volatile OneByte groupBResetNameTagSource;
     // Stack-order group 4: repeated reset of group A.
-    OneByte groupAResetResourcePathTagCopy; volatile OneByte groupAResetResourcePathTagSource;
-    OneByte groupAResetFilePathTagCopy; volatile OneByte groupAResetFilePathTagSource;
-    OneByte groupAResetNameTagCopy; volatile OneByte groupAResetNameTagSource;
+    OneByte groupAResetResourcePathTagCopy;
+    volatile OneByte groupAResetResourcePathTagSource;
+    OneByte groupAResetFilePathTagCopy;
+    volatile OneByte groupAResetFilePathTagSource;
+    OneByte groupAResetNameTagCopy;
+    volatile OneByte groupAResetNameTagSource;
 
     // Phase 1: construct group A at +004/+068 and group B at +0D0/+134.
     // Each group has a leading word (+000/+0CC) outside the 0x64-byte slots.
-    __construct_array(stateBytes + 4, (void*)SoundPlaybackSlot_Ctor, (void*)SoundPlaybackSlot_dtor, kPlaybackSlotBytes, kPlaybackSlotsPerGroup);
+    __construct_array(stateBytes + 4, (void*)SoundPlaybackSlot_Ctor, (void*)SoundPlaybackSlot_dtor, kPlaybackSlotBytes,
+                      kPlaybackSlotsPerGroup);
     *(int*)stateBytes = 0;
     {
         float one = kFloat_1_SoundPlayback;
         float zero = kFloat_0_soundPlayback;
-        unsigned char groupAInitialNameTagByte = groupAInitialNameTagSource.c, groupAInitialFilePathTagByte = groupAInitialFilePathTagSource.c, groupAInitialResourcePathTagByte = groupAInitialResourcePathTagSource.c;
+        unsigned char groupAInitialNameTagByte = groupAInitialNameTagSource.c,
+                      groupAInitialFilePathTagByte = groupAInitialFilePathTagSource.c,
+                      groupAInitialResourcePathTagByte = groupAInitialResourcePathTagSource.c;
         unsigned int i = 0;
         int off = 0;
         for (; i < kPlaybackSlotsPerGroup; ++i, off += kPlaybackSlotBytes) {
-            SLOT_INIT(stateBytes + off, groupAInitialNameTagByte, groupAInitialNameTagCopy, groupAInitialFilePathTagByte, groupAInitialFilePathTagCopy, groupAInitialResourcePathTagByte, groupAInitialResourcePathTagCopy, one, zero)
+            SLOT_INIT(stateBytes + off, groupAInitialNameTagByte, groupAInitialNameTagCopy,
+                      groupAInitialFilePathTagByte, groupAInitialFilePathTagCopy, groupAInitialResourcePathTagByte,
+                      groupAInitialResourcePathTagCopy, one, zero)
         }
     }
     char* groupBBytes = stateBytes + kPlaybackGroupBOffset;
-    __construct_array(groupBBytes + 4, (void*)SoundPlaybackSlot_Ctor, (void*)SoundPlaybackSlot_dtor, kPlaybackSlotBytes, kPlaybackSlotsPerGroup);
+    __construct_array(groupBBytes + 4, (void*)SoundPlaybackSlot_Ctor, (void*)SoundPlaybackSlot_dtor, kPlaybackSlotBytes,
+                      kPlaybackSlotsPerGroup);
     *(int*)groupBBytes = 0;
     {
         float zero = kFloat_0_soundPlayback;
         float one = kFloat_1_SoundPlayback;
-        unsigned char groupBInitialNameTagByte = groupBInitialNameTagSource.c, groupBInitialFilePathTagByte = groupBInitialFilePathTagSource.c, groupBInitialResourcePathTagByte = groupBInitialResourcePathTagSource.c;
+        unsigned char groupBInitialNameTagByte = groupBInitialNameTagSource.c,
+                      groupBInitialFilePathTagByte = groupBInitialFilePathTagSource.c,
+                      groupBInitialResourcePathTagByte = groupBInitialResourcePathTagSource.c;
         for (unsigned int i = 0; i < kPlaybackSlotsPerGroup; ++i) {
-            SLOT_INIT(groupBBytes + i * kPlaybackSlotBytes, groupBInitialNameTagByte, groupBInitialNameTagCopy, groupBInitialFilePathTagByte, groupBInitialFilePathTagCopy, groupBInitialResourcePathTagByte, groupBInitialResourcePathTagCopy, one, zero)
+            SLOT_INIT(groupBBytes + i * kPlaybackSlotBytes, groupBInitialNameTagByte, groupBInitialNameTagCopy,
+                      groupBInitialFilePathTagByte, groupBInitialFilePathTagCopy, groupBInitialResourcePathTagByte,
+                      groupBInitialResourcePathTagCopy, one, zero)
         }
     }
 
@@ -294,18 +358,26 @@ void* SoundPlaybackState_Ctor(void* self) {
     {
         float zero = kFloat_0_soundPlayback;
         float one = kFloat_1_SoundPlayback;
-        unsigned char groupAResetNameTagByte = groupAResetNameTagSource.c, groupAResetFilePathTagByte = groupAResetFilePathTagSource.c, groupAResetResourcePathTagByte = groupAResetResourcePathTagSource.c;
+        unsigned char groupAResetNameTagByte = groupAResetNameTagSource.c,
+                      groupAResetFilePathTagByte = groupAResetFilePathTagSource.c,
+                      groupAResetResourcePathTagByte = groupAResetResourcePathTagSource.c;
         for (unsigned int i = 0; i < kPlaybackSlotsPerGroup; ++i) {
-            SLOT_INIT(stateBytes + i * kPlaybackSlotBytes, groupAResetNameTagByte, groupAResetNameTagCopy, groupAResetFilePathTagByte, groupAResetFilePathTagCopy, groupAResetResourcePathTagByte, groupAResetResourcePathTagCopy, one, zero)
+            SLOT_INIT(stateBytes + i * kPlaybackSlotBytes, groupAResetNameTagByte, groupAResetNameTagCopy,
+                      groupAResetFilePathTagByte, groupAResetFilePathTagCopy, groupAResetResourcePathTagByte,
+                      groupAResetResourcePathTagCopy, one, zero)
         }
     }
     *(int*)(stateBytes + kPlaybackGroupBOffset) = 0;
     {
         float one = kFloat_1_SoundPlayback;
         float zero = kFloat_0_soundPlayback;
-        unsigned char groupBResetNameTagByte = groupBResetNameTagSource.c, groupBResetFilePathTagByte = groupBResetFilePathTagSource.c, groupBResetResourcePathTagByte = groupBResetResourcePathTagSource.c;
+        unsigned char groupBResetNameTagByte = groupBResetNameTagSource.c,
+                      groupBResetFilePathTagByte = groupBResetFilePathTagSource.c,
+                      groupBResetResourcePathTagByte = groupBResetResourcePathTagSource.c;
         for (unsigned int i = 0; i < kPlaybackSlotsPerGroup; ++i) {
-            SLOT_INIT(stateBytes + kPlaybackGroupBOffset + i * kPlaybackSlotBytes, groupBResetNameTagByte, groupBResetNameTagCopy, groupBResetFilePathTagByte, groupBResetFilePathTagCopy, groupBResetResourcePathTagByte, groupBResetResourcePathTagCopy, one, zero)
+            SLOT_INIT(stateBytes + kPlaybackGroupBOffset + i * kPlaybackSlotBytes, groupBResetNameTagByte,
+                      groupBResetNameTagCopy, groupBResetFilePathTagByte, groupBResetFilePathTagCopy,
+                      groupBResetResourcePathTagByte, groupBResetResourcePathTagCopy, one, zero)
         }
     }
 
@@ -328,9 +400,12 @@ void* SoundPlaybackState_Ctor(void* self) {
 // Construct one slot, retaining three owned string buffers with unwind guards and an idle tween.
 void* SoundPlaybackSlot_Ctor(void* self) {
     char* p = (char*)self;
-    Slot4 d3; volatile Slot4 s3;
-    Slot4 d2; volatile Slot4 s2;
-    Slot4 d1; volatile Slot4 s1;
+    Slot4 d3;
+    volatile Slot4 s3;
+    Slot4 d2;
+    volatile Slot4 s2;
+    Slot4 d1;
+    volatile Slot4 s1;
     int stringLength = 0;
     *(int*)(p + 0x10) = 0;
     *(int*)(p + 0x14) = 0;
@@ -357,7 +432,8 @@ void* SoundPlaybackSlot_Ctor(void* self) {
     }
     d1.c = s1.c;
     int len1 = strlen(s_soundPlaybackEmptyName);
-    String_ReplaceRange(p + 0x10, 0, (unsigned int)stringLength, s_soundPlaybackEmptyName, s_soundPlaybackEmptyName + len1, &d1.c);
+    String_ReplaceRange(p + 0x10, 0, (unsigned int)stringLength, s_soundPlaybackEmptyName,
+                        s_soundPlaybackEmptyName + len1, &d1.c);
 
     *(unsigned char*)(p + 0x1C) = 0;
     *(unsigned char*)(p + 0x1D) = 0;
@@ -370,7 +446,8 @@ void* SoundPlaybackSlot_Ctor(void* self) {
     }
     d2.c = s2.c;
     int len2 = strlen(s_soundPlaybackEmptyFilePath);
-    String_ReplaceRange(p + 0x40, 0, (unsigned int)stringLength, s_soundPlaybackEmptyFilePath, s_soundPlaybackEmptyFilePath + len2, &d2.c);
+    String_ReplaceRange(p + 0x40, 0, (unsigned int)stringLength, s_soundPlaybackEmptyFilePath,
+                        s_soundPlaybackEmptyFilePath + len2, &d2.c);
 
     if ((*(unsigned int*)(p + 0x4C) >> 31) == 0) {
         stringLength = *(unsigned char*)(p + 0x4C) & 0x7F;
@@ -379,7 +456,8 @@ void* SoundPlaybackSlot_Ctor(void* self) {
     }
     d3.c = s3.c;
     int len3 = strlen(s_soundPlaybackEmptyResourcePath);
-    String_ReplaceRange(p + 0x4C, 0, (unsigned int)stringLength, s_soundPlaybackEmptyResourcePath, s_soundPlaybackEmptyResourcePath + len3, &d3.c);
+    String_ReplaceRange(p + 0x4C, 0, (unsigned int)stringLength, s_soundPlaybackEmptyResourcePath,
+                        s_soundPlaybackEmptyResourcePath + len3, &d3.c);
 
     FloatTween_Start(p + 0x24, -1, kFloat_0_soundPlayback, kFloat_0_soundPlayback);
     *(float*)(p + 0x5C) = kFloat_1_SoundPlayback;
@@ -387,20 +465,26 @@ void* SoundPlaybackSlot_Ctor(void* self) {
     String_ReserveCapacity(p + 0x10, 0x40);
     String_ReserveCapacity(p + 0x40, 0x10);
     String_ReserveCapacity(p + 0x4C, 0x10);
-    eh5Cleanup23.release(); eh5Cleanup24.release(); eh5Cleanup25.release(); return self;
+    eh5Cleanup23.release();
+    eh5Cleanup24.release();
+    eh5Cleanup25.release();
+    return self;
 }
 
 // Stop/drop the stream reference, delete the file handle, reset/free strings, and optionally free self.
 void* SoundPlaybackSlot_dtor(void* self, int shouldDelete) {
     if (self != 0) {
         char* slotBytes = (char*)self;
-        volatile Slot4 nameAllocatorSource; Slot4 nameAllocatorCopy;
-        volatile Slot4 filePathAllocatorSource; Slot4 filePathAllocatorCopy;
-        volatile Slot4 resourcePathAllocatorSource; Slot4 resourcePathAllocatorCopy;
+        volatile Slot4 nameAllocatorSource;
+        Slot4 nameAllocatorCopy;
+        volatile Slot4 filePathAllocatorSource;
+        Slot4 filePathAllocatorCopy;
+        volatile Slot4 resourcePathAllocatorSource;
+        Slot4 resourcePathAllocatorCopy;
         // Phase 1: release external playback/file ownership before resetting slot data.
         void* stream = *(void**)slotBytes;
         if (stream != 0) {
-            gtl_ISoundStream_Stop(stream, 0);
+            ((gtl::ISoundStream*)stream)->Stop(0);
             void* retainedStream = *(void**)slotBytes;
             int referenceCount = *(int*)retainedStream;
             referenceCount = referenceCount - 1;
@@ -411,7 +495,7 @@ void* SoundPlaybackSlot_dtor(void* self, int shouldDelete) {
         }
         void* sharedFile = *(void**)(slotBytes + PLAYBACK_SLOT_OFFSET(sharedFile));
         if (sharedFile != 0) {
-            CSharedFileHandle_Destroy(sharedFile, 1);
+            CSharedFileHandle::Destroy(sharedFile, 1);
             *(void**)(slotBytes + PLAYBACK_SLOT_OFFSET(sharedFile)) = 0;
         }
         // Phase 2: restore defaults and empty strings, preserving the reserve calls
@@ -429,7 +513,8 @@ void* SoundPlaybackSlot_dtor(void* self, int shouldDelete) {
         }
         nameAllocatorCopy.c = nameAllocatorSource.c;
         int emptyNameLength = strlen(s_soundPlaybackEmptyName);
-        String_ReplaceRange(slotBytes + PLAYBACK_SLOT_OFFSET(nameFlags), 0, (unsigned int)stringLength, s_soundPlaybackEmptyName, s_soundPlaybackEmptyName + emptyNameLength, &nameAllocatorCopy.c);
+        String_ReplaceRange(slotBytes + PLAYBACK_SLOT_OFFSET(nameFlags), 0, (unsigned int)stringLength,
+                            s_soundPlaybackEmptyName, s_soundPlaybackEmptyName + emptyNameLength, &nameAllocatorCopy.c);
 
         unsigned int filePathTag = *(unsigned int*)(slotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags));
         *(unsigned char*)(slotBytes + PLAYBACK_SLOT_OFFSET(loopEnabled)) = 0;
@@ -443,7 +528,9 @@ void* SoundPlaybackSlot_dtor(void* self, int shouldDelete) {
         }
         filePathAllocatorCopy.c = filePathAllocatorSource.c;
         int emptyFilePathLength = strlen(s_soundPlaybackEmptyFilePath);
-        String_ReplaceRange(slotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags), 0, (unsigned int)stringLength, s_soundPlaybackEmptyFilePath, s_soundPlaybackEmptyFilePath + emptyFilePathLength, &filePathAllocatorCopy.c);
+        String_ReplaceRange(slotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags), 0, (unsigned int)stringLength,
+                            s_soundPlaybackEmptyFilePath, s_soundPlaybackEmptyFilePath + emptyFilePathLength,
+                            &filePathAllocatorCopy.c);
 
         unsigned int resourcePathTag = *(unsigned int*)(slotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags));
         if ((resourcePathTag >> 31) == 0) {
@@ -453,9 +540,12 @@ void* SoundPlaybackSlot_dtor(void* self, int shouldDelete) {
         }
         resourcePathAllocatorCopy.c = resourcePathAllocatorSource.c;
         int emptyResourcePathLength = strlen(s_soundPlaybackEmptyResourcePath);
-        String_ReplaceRange(slotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags), 0, (unsigned int)stringLength, s_soundPlaybackEmptyResourcePath, s_soundPlaybackEmptyResourcePath + emptyResourcePathLength, &resourcePathAllocatorCopy.c);
+        String_ReplaceRange(slotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags), 0, (unsigned int)stringLength,
+                            s_soundPlaybackEmptyResourcePath,
+                            s_soundPlaybackEmptyResourcePath + emptyResourcePathLength, &resourcePathAllocatorCopy.c);
 
-        FloatTween_Start(slotBytes + PLAYBACK_SLOT_OFFSET(fadeMode), -1, kFloat_0_soundPlayback, kFloat_0_soundPlayback);
+        FloatTween_Start(slotBytes + PLAYBACK_SLOT_OFFSET(fadeMode), -1, kFloat_0_soundPlayback,
+                         kFloat_0_soundPlayback);
         *(float*)(slotBytes + PLAYBACK_SLOT_OFFSET(baseVolume)) = kFloat_1_SoundPlayback;
         *(float*)(slotBytes + PLAYBACK_SLOT_OFFSET(basePitch)) = kFloat_1_SoundPlayback;
         String_ReserveCapacity(slotBytes + PLAYBACK_SLOT_OFFSET(nameFlags), 0x40);
@@ -509,7 +599,7 @@ void* SoundPlaybackGroup_dtor(void* self, int shouldDelete) {
         for (releaseSlotIndex = 0; releaseSlotIndex < kPlaybackSlotsPerGroup; ++releaseSlotIndex) {
             void* stream = *(void**)(releaseRowOrigin + kRowStream);
             if (stream != 0) {
-                gtl_ISoundStream_Stop(stream, 0);
+                ((gtl::ISoundStream*)stream)->Stop(0);
                 int* streamReferenceCount = *(int**)(releaseRowOrigin + kRowStream);
                 if (--*streamReferenceCount == 0) {
                     if (streamReferenceCount != 0) {
@@ -520,29 +610,44 @@ void* SoundPlaybackGroup_dtor(void* self, int shouldDelete) {
             }
             void* sharedFile = *(void**)(releaseRowOrigin + kRowSharedFile);
             if (sharedFile != 0) {
-                CSharedFileHandle_Destroy(sharedFile, 1);
+                CSharedFileHandle::Destroy(sharedFile, 1);
                 *(void**)(releaseRowOrigin + kRowSharedFile) = 0;
             }
             *(void**)(releaseRowOrigin + kRowStream) = 0;
             *(float*)(releaseRowOrigin + kRowVolume) = defaultMultiplierThenZero;
             *(float*)(releaseRowOrigin + kRowPitch) = defaultMultiplierThenZero;
             *(int*)(releaseRowOrigin + kRowPlayState) = 0;
-            unsigned int nameLength = ((*(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags)) >> 31) == 0) ? (*(unsigned char*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags)) & 0x7F) : *(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(nameLength));
+            unsigned int nameLength =
+                ((*(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags)) >> 31) == 0)
+                    ? (*(unsigned char*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags)) & 0x7F)
+                    : *(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(nameLength));
             allocatorTagBytes[4] = releaseNameAllocatorByte;
             int emptyStringLength = strlen(s_soundPlaybackEmptyName);
-            String_ReplaceRange(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags), 0, nameLength, s_soundPlaybackEmptyName, s_soundPlaybackEmptyName + emptyStringLength, &allocatorTagBytes[4]);
+            String_ReplaceRange(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags), 0, nameLength,
+                                s_soundPlaybackEmptyName, s_soundPlaybackEmptyName + emptyStringLength,
+                                &allocatorTagBytes[4]);
             *(char*)(releaseRowOrigin + kRowLoop) = zero;
             *(char*)(releaseRowOrigin + kRowFadeIn) = zero;
             *(char*)(releaseRowOrigin + kRowDolbyBank) = zero;
             *(float*)(releaseRowOrigin + kRowTransitionDuration) = zeroThenDefaultMultiplier;
-            unsigned int filePathLength = ((*(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags)) >> 31) == 0) ? (*(unsigned char*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags)) & 0x7F) : *(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(filePathLength));
+            unsigned int filePathLength =
+                ((*(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags)) >> 31) == 0)
+                    ? (*(unsigned char*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags)) & 0x7F)
+                    : *(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(filePathLength));
             allocatorTagBytes[12] = releaseFileAllocatorByte;
             emptyStringLength = strlen(s_soundPlaybackEmptyFilePath);
-            String_ReplaceRange(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags), 0, filePathLength, s_soundPlaybackEmptyFilePath, s_soundPlaybackEmptyFilePath + emptyStringLength, &allocatorTagBytes[12]);
-            unsigned int resourcePathLength = ((*(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags)) >> 31) == 0) ? (*(unsigned char*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags)) & 0x7F) : *(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathLength));
+            String_ReplaceRange(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags), 0, filePathLength,
+                                s_soundPlaybackEmptyFilePath, s_soundPlaybackEmptyFilePath + emptyStringLength,
+                                &allocatorTagBytes[12]);
+            unsigned int resourcePathLength =
+                ((*(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags)) >> 31) == 0)
+                    ? (*(unsigned char*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags)) & 0x7F)
+                    : *(unsigned int*)(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathLength));
             allocatorTagBytes[20] = releaseResourceAllocatorByte;
             emptyStringLength = strlen(s_soundPlaybackEmptyResourcePath);
-            String_ReplaceRange(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags), 0, resourcePathLength, s_soundPlaybackEmptyResourcePath, s_soundPlaybackEmptyResourcePath + emptyStringLength, &allocatorTagBytes[20]);
+            String_ReplaceRange(releaseSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags), 0, resourcePathLength,
+                                s_soundPlaybackEmptyResourcePath, s_soundPlaybackEmptyResourcePath + emptyStringLength,
+                                &allocatorTagBytes[20]);
             FloatTween_Start(releaseRowOrigin + 0x28, -1, kFloat_0_soundPlayback, kFloat_0_soundPlayback);
             *(float*)(releaseRowOrigin + kRowBaseVolume) = defaultMultiplierThenZero;
             *(float*)(releaseRowOrigin + kRowBasePitch) = defaultMultiplierThenZero;
@@ -569,22 +674,37 @@ void* SoundPlaybackGroup_dtor(void* self, int shouldDelete) {
             *(float*)(resetRowOrigin + kRowVolume) = zeroThenDefaultMultiplier;
             *(float*)(resetRowOrigin + kRowPitch) = zeroThenDefaultMultiplier;
             *(int*)(resetRowOrigin + kRowPlayState) = 0;
-            unsigned int resetNameLength = ((*(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags)) >> 31) == 0) ? (*(unsigned char*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags)) & 0x7F) : *(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(nameLength));
+            unsigned int resetNameLength =
+                ((*(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags)) >> 31) == 0)
+                    ? (*(unsigned char*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags)) & 0x7F)
+                    : *(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(nameLength));
             allocatorTagBytes[0x1C] = resetNameAllocatorByte;
             int resetEmptyStringLength = strlen(s_soundPlaybackEmptyName);
-            String_ReplaceRange(resetSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags), 0, resetNameLength, s_soundPlaybackEmptyName, s_soundPlaybackEmptyName + resetEmptyStringLength, &allocatorTagBytes[0x1C]);
+            String_ReplaceRange(resetSlotBytes + PLAYBACK_SLOT_OFFSET(nameFlags), 0, resetNameLength,
+                                s_soundPlaybackEmptyName, s_soundPlaybackEmptyName + resetEmptyStringLength,
+                                &allocatorTagBytes[0x1C]);
             *(char*)(resetRowOrigin + kRowLoop) = zero2;
             *(char*)(resetRowOrigin + kRowFadeIn) = zero2;
             *(char*)(resetRowOrigin + kRowDolbyBank) = zero2;
             *(float*)(resetRowOrigin + kRowTransitionDuration) = defaultMultiplierThenZero;
-            unsigned int resetFilePathLength = ((*(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags)) >> 31) == 0) ? (*(unsigned char*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags)) & 0x7F) : *(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(filePathLength));
+            unsigned int resetFilePathLength =
+                ((*(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags)) >> 31) == 0)
+                    ? (*(unsigned char*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags)) & 0x7F)
+                    : *(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(filePathLength));
             allocatorTagBytes[0x24] = resetFileAllocatorByte;
             resetEmptyStringLength = strlen(s_soundPlaybackEmptyFilePath);
-            String_ReplaceRange(resetSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags), 0, resetFilePathLength, s_soundPlaybackEmptyFilePath, s_soundPlaybackEmptyFilePath + resetEmptyStringLength, &allocatorTagBytes[0x24]);
-            unsigned int resetResourcePathLength = ((*(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags)) >> 31) == 0) ? (*(unsigned char*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags)) & 0x7F) : *(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathLength));
+            String_ReplaceRange(resetSlotBytes + PLAYBACK_SLOT_OFFSET(filePathFlags), 0, resetFilePathLength,
+                                s_soundPlaybackEmptyFilePath, s_soundPlaybackEmptyFilePath + resetEmptyStringLength,
+                                &allocatorTagBytes[0x24]);
+            unsigned int resetResourcePathLength =
+                ((*(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags)) >> 31) == 0)
+                    ? (*(unsigned char*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags)) & 0x7F)
+                    : *(unsigned int*)(resetSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathLength));
             allocatorTagBytes[0x2C] = resetResourceAllocatorByte;
             resetEmptyStringLength = strlen(s_soundPlaybackEmptyResourcePath);
-            String_ReplaceRange(resetSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags), 0, resetResourcePathLength, s_soundPlaybackEmptyResourcePath, s_soundPlaybackEmptyResourcePath + resetEmptyStringLength, &allocatorTagBytes[0x2C]);
+            String_ReplaceRange(resetSlotBytes + PLAYBACK_SLOT_OFFSET(resourcePathFlags), 0, resetResourcePathLength,
+                                s_soundPlaybackEmptyResourcePath,
+                                s_soundPlaybackEmptyResourcePath + resetEmptyStringLength, &allocatorTagBytes[0x2C]);
             FloatTween_Start(resetRowOrigin + 0x28, -1, kFloat_0_soundPlayback, kFloat_0_soundPlayback);
             *(float*)(resetRowOrigin + kRowBaseVolume) = zeroThenDefaultMultiplier;
             *(float*)(resetRowOrigin + kRowBasePitch) = zeroThenDefaultMultiplier;
@@ -596,10 +716,10 @@ void* SoundPlaybackGroup_dtor(void* self, int shouldDelete) {
         }
         // Phase 3: run both element destructors; those release the string allocations.
         __destroy_arr(groupBytes + 4, (void*)SoundPlaybackSlot_dtor, kPlaybackSlotBytes, kPlaybackSlotsPerGroup);
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
 
 } // extern "C"
-

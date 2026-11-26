@@ -1,7 +1,10 @@
+// Resource group tables: a tree keyed by byte group and then by resource name, with its iterator,
+// lookup, insertion and destruction.
+//
+// The animation resources in the owner's third group table are found and released through these functions.
+
 #pragma ipa file
 #pragma auto_inline off
-// Translation unit 0x800E4CD4-0x800E5FFC (10 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "classes/ResourceLookupTree.h"
 #include "classes/ResourceGroupNode.h"
@@ -20,19 +23,37 @@ struct ResourceThirdTableView {
     char reserved[0x2E8];
     ResourceLookupTree groups;
 };
-struct AnimationValueView { unsigned char key; char alignment[3]; ResourceLookupTree animations; };
-struct NamedResourceValueView { char stringStorage[12]; void* resource; };
+struct AnimationValueView {
+    unsigned char key;
+    char alignment[3];
+    ResourceLookupTree animations;
+};
+struct NamedResourceValueView {
+    char stringStorage[12];
+    void* resource;
+};
 // The owner's third group table (+0x2E8): byte group key -> nested string-key map.
-static inline ResourceLookupTree& ThirdTable(void* owner) { return ((ResourceThirdTableView*)owner)->groups; }
+static inline ResourceLookupTree& ThirdTable(void* owner) {
+    return ((ResourceThirdTableView*)owner)->groups;
+}
 #pragma push
 #pragma always_inline on
 // Borrow the outer byte-group node; callers must exclude the end sentinel.
-static inline ResourceGroupNode* GroupNode(void* p) { return (ResourceGroupNode*)p; }
+static inline ResourceGroupNode* GroupNode(void* p) {
+    return (ResourceGroupNode*)p;
+}
 // Borrow the inner string-key node; resource pointers remain owned by the resource table.
-static inline ResourceStringNode* StringNode(void* p) { return (ResourceStringNode*)p; }
+static inline ResourceStringNode* StringNode(void* p) {
+    return (ResourceStringNode*)p;
+}
 #pragma pop
 
-enum { kU32SignBit = 31, kTaggedParentColorBit = 1, kStringHeapFlagBit = 31, kInlineStringLengthMask = 0x7F };
+enum {
+    kU32SignBit = 31,
+    kTaggedParentColorBit = 1,
+    kStringHeapFlagBit = 31,
+    kInlineStringLengthMask = 0x7F
+};
 
 extern "C" {
 
@@ -62,14 +83,16 @@ void CameraWorkTableIterator_PostIncrement(void** anchor, void** node) {
     ByteKeyTreeNode* cur = (ByteKeyTreeNode*)*node;
     cur = cur->right;
     if (cur != 0) {
-        while (cur->left != 0) cur = cur->left;
+        while (cur->left != 0)
+            cur = cur->left;
         *node = cur;
     } else {
         for (;;) {
             cur = (ByteKeyTreeNode*)*node;
             ByteKeyTreeNode* parent = (ByteKeyTreeNode*)((u32)cur->parent & ~(u32)kTaggedParentColorBit);
             *node = parent;
-            if (cur == parent->left) break;
+            if (cur == parent->left)
+                break;
         }
     }
 }
@@ -78,7 +101,8 @@ void CameraWorkTableIterator_PostIncrement(void** anchor, void** node) {
 // selects the parent's link; noPredecessorOut stays 1 until a right descent.
 // No node is inserted here, and all output pointers must be writable.
 // Find the insertion parent and side for a byte-key animation-map entry.
-void* CameraWorkTable_FindInsertionPoint(void* tree, unsigned char* key, void** predecessorOut, unsigned char* leftOut, unsigned char* noPredecessorOut) {
+void* CameraWorkTable_FindInsertionPoint(void* tree, unsigned char* key, void** predecessorOut, unsigned char* leftOut,
+                                         unsigned char* noPredecessorOut) {
     *predecessorOut = 0;
     *leftOut = 1;
     *noPredecessorOut = 1;
@@ -144,7 +168,10 @@ struct TreeTemp {
 };
 
 // This deleting receiver adds a leading word before the count/root/first header.
-struct ShiftedResourceTreeReceiver { void* leadingWord; ResourceLookupTree tree; };
+struct ShiftedResourceTreeReceiver {
+    void* leadingWord;
+    ResourceLookupTree tree;
+};
 
 struct DtorNode {
     void* left;
@@ -155,34 +182,36 @@ struct DtorNode {
     void* data;
 };
 
-
-
 #pragma push
 #pragma always_inline on
 // Free one owned string key and its node after the caller has destroyed descendants.
 static inline void FreeResourceNameAndNode(DtorNode* node) {
     if (&node->stringFlags != 0) {
-        if (&node->stringFlags != 0 && (node->stringFlags >> kStringHeapFlagBit)) appFreeUni__FPv(node->data);
+        if (&node->stringFlags != 0 && (node->stringFlags >> kStringHeapFlagBit))
+            appFreeUni__FPv(node->data);
     }
     appFreeUni__FPv(node);
 }
 // Destroy a non-null fringe node; left/right owners may be distinct aliases of one header.
 static inline void DestroyResourceFringe(void* leftOwner, void* rightOwner, DtorNode* node) {
-    if (node->left != 0) StringValueTree_DestroySubtree(leftOwner, node->left);
-    if (node->right != 0) StringValueTree_DestroySubtree(rightOwner, node->right);
+    if (node->left != 0)
+        StringValueTree_DestroySubtree(leftOwner, node->left);
+    if (node->right != 0)
+        StringValueTree_DestroySubtree(rightOwner, node->right);
     FreeResourceNameAndNode(node);
 }
 // Release explicit left/right fringes then this branch; cursors remain caller-owned ABI temporaries.
-static inline void DestroyResourceBranch(void* firstLeftOwner, void* owner, DtorNode* branch,
-        DtorNode*& leftFringe, DtorNode*& rightFringe) {
+static inline void DestroyResourceBranch(void* firstLeftOwner, void* owner, DtorNode* branch, DtorNode*& leftFringe,
+                                         DtorNode*& rightFringe) {
     leftFringe = (DtorNode*)branch->left;
-    if (leftFringe != 0) DestroyResourceFringe(firstLeftOwner, owner, leftFringe);
+    if (leftFringe != 0)
+        DestroyResourceFringe(firstLeftOwner, owner, leftFringe);
     rightFringe = (DtorNode*)branch->right;
-    if (rightFringe != 0) DestroyResourceFringe(owner, owner, rightFringe);
+    if (rightFringe != 0)
+        DestroyResourceFringe(owner, owner, rightFringe);
     FreeResourceNameAndNode(branch);
 }
 #pragma pop
-
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -202,7 +231,10 @@ void* CameraWorkTable_GetOrCreateAnimationMap(void* self, unsigned char* key) {
     head = CameraWorkTable_FindInsertionPoint(self, key, &predecessor, &left, &becomesFirst);
     if (predecessor == 0 || (result = (char*)&((ByteKeyTreeNode*)predecessor)->key, *(unsigned char*)result < *key)) {
         TreeTemp second;
-        struct Pair { unsigned char value; TreeTemp tree; } first;
+        struct Pair {
+            unsigned char value;
+            TreeTemp tree;
+        } first;
         base = (char*)&first.tree;
         unsigned char value = *key;
         result = base;
@@ -215,7 +247,8 @@ void* CameraWorkTable_GetOrCreateAnimationMap(void* self, unsigned char* key) {
         first.tree.first = &((TreeTemp*)base)->root;
         CameraStringValueTree_Copy(result, &second, value, &second.root, 0);
         // Phase 2: insert a copy into the owner; result now identifies the owned node.
-        result = (char*)&((ByteKeyTreeNode*)CameraByteKeyTree_InsertValueAtLink(self, head, left, becomesFirst, &first))->key;
+        result = (char*)&((ByteKeyTreeNode*)CameraByteKeyTree_InsertValueAtLink(self, head, left, becomesFirst, &first))
+                     ->key;
         {
             // Phase 3a: dispose the first temporary map in postorder (strings, then nodes).
             DtorNode* root = (DtorNode*)first.tree.root;
@@ -330,7 +363,8 @@ void* CameraWorkTable_GetOrCreateAnimationMap(void* self, unsigned char* key) {
 // Visit left/right descendants, free each owned string key, then free its node.
 // Stored resource pointers are borrowed here; this operation never destroys them.
 void ShiftedResourceTreeReceiver_dtor(void* self, int deleting) {
-    if (!self) return;
+    if (!self)
+        return;
     if (self != 0) {
         DtorNode* outer = (DtorNode*)((ShiftedResourceTreeReceiver*)self)->tree.root;
         if (outer) {
@@ -344,19 +378,30 @@ void ShiftedResourceTreeReceiver_dtor(void* self, int deleting) {
                         if (pair) {
                             DtorNode* val = (DtorNode*)pair->left;
                             if (val) {
-                                if (val->left) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->left);
-                                if (val->right) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->right);
-                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit)) appFreeUni__FPv(val->data);
+                                if (val->left)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->left);
+                                if (val->right)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->right);
+                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit))
+                                    appFreeUni__FPv(val->data);
                                 appFreeUni__FPv(val);
                             }
                             val = (DtorNode*)pair->right;
                             if (val) {
-                                if (val->left) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->left);
-                                if (val->right) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->right);
-                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit)) appFreeUni__FPv(val->data);
+                                if (val->left)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->left);
+                                if (val->right)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->right);
+                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit))
+                                    appFreeUni__FPv(val->data);
                                 appFreeUni__FPv(val);
                             }
-                            if (pair->stringFlags >> kStringHeapFlagBit) appFreeUni__FPv(pair->data);
+                            if (pair->stringFlags >> kStringHeapFlagBit)
+                                appFreeUni__FPv(pair->data);
                             appFreeUni__FPv(pair);
                         }
                     }
@@ -366,23 +411,35 @@ void ShiftedResourceTreeReceiver_dtor(void* self, int deleting) {
                         if (pair) {
                             DtorNode* val = (DtorNode*)pair->left;
                             if (val) {
-                                if (val->left) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->left);
-                                if (val->right) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->right);
-                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit)) appFreeUni__FPv(val->data);
+                                if (val->left)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->left);
+                                if (val->right)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->right);
+                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit))
+                                    appFreeUni__FPv(val->data);
                                 appFreeUni__FPv(val);
                             }
                             val = (DtorNode*)pair->right;
                             if (val) {
-                                if (val->left) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->left);
-                                if (val->right) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->right);
-                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit)) appFreeUni__FPv(val->data);
+                                if (val->left)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->left);
+                                if (val->right)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->right);
+                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit))
+                                    appFreeUni__FPv(val->data);
                                 appFreeUni__FPv(val);
                             }
-                            if (pair->stringFlags >> kStringHeapFlagBit) appFreeUni__FPv(pair->data);
+                            if (pair->stringFlags >> kStringHeapFlagBit)
+                                appFreeUni__FPv(pair->data);
                             appFreeUni__FPv(pair);
                         }
                     }
-                    if (sec->stringFlags >> kStringHeapFlagBit) appFreeUni__FPv(sec->data);
+                    if (sec->stringFlags >> kStringHeapFlagBit)
+                        appFreeUni__FPv(sec->data);
                     appFreeUni__FPv(sec);
                 }
             }
@@ -396,19 +453,30 @@ void ShiftedResourceTreeReceiver_dtor(void* self, int deleting) {
                         if (pair) {
                             DtorNode* val = (DtorNode*)pair->left;
                             if (val) {
-                                if (val->left) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->left);
-                                if (val->right) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->right);
-                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit)) appFreeUni__FPv(val->data);
+                                if (val->left)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->left);
+                                if (val->right)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->right);
+                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit))
+                                    appFreeUni__FPv(val->data);
                                 appFreeUni__FPv(val);
                             }
                             val = (DtorNode*)pair->right;
                             if (val) {
-                                if (val->left) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->left);
-                                if (val->right) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->right);
-                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit)) appFreeUni__FPv(val->data);
+                                if (val->left)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->left);
+                                if (val->right)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->right);
+                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit))
+                                    appFreeUni__FPv(val->data);
                                 appFreeUni__FPv(val);
                             }
-                            if (pair->stringFlags >> kStringHeapFlagBit) appFreeUni__FPv(pair->data);
+                            if (pair->stringFlags >> kStringHeapFlagBit)
+                                appFreeUni__FPv(pair->data);
                             appFreeUni__FPv(pair);
                         }
                     }
@@ -418,30 +486,44 @@ void ShiftedResourceTreeReceiver_dtor(void* self, int deleting) {
                         if (pair) {
                             DtorNode* val = (DtorNode*)pair->left;
                             if (val) {
-                                if (val->left) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->left);
-                                if (val->right) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->right);
-                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit)) appFreeUni__FPv(val->data);
+                                if (val->left)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->left);
+                                if (val->right)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->right);
+                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit))
+                                    appFreeUni__FPv(val->data);
                                 appFreeUni__FPv(val);
                             }
                             val = (DtorNode*)pair->right;
                             if (val) {
-                                if (val->left) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->left);
-                                if (val->right) StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree, val->right);
-                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit)) appFreeUni__FPv(val->data);
+                                if (val->left)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->left);
+                                if (val->right)
+                                    StringValueTree_DestroySubtree(&((ShiftedResourceTreeReceiver*)self)->tree,
+                                                                   val->right);
+                                if (&val->stringFlags != 0 && (val->stringFlags >> kStringHeapFlagBit))
+                                    appFreeUni__FPv(val->data);
                                 appFreeUni__FPv(val);
                             }
-                            if (pair->stringFlags >> kStringHeapFlagBit) appFreeUni__FPv(pair->data);
+                            if (pair->stringFlags >> kStringHeapFlagBit)
+                                appFreeUni__FPv(pair->data);
                             appFreeUni__FPv(pair);
                         }
                     }
-                    if (sec->stringFlags >> kStringHeapFlagBit) appFreeUni__FPv(sec->data);
+                    if (sec->stringFlags >> kStringHeapFlagBit)
+                        appFreeUni__FPv(sec->data);
                     appFreeUni__FPv(sec);
                 }
             }
-            if (outer->stringFlags >> kStringHeapFlagBit) appFreeUni__FPv(outer->data);
+            if (outer->stringFlags >> kStringHeapFlagBit)
+                appFreeUni__FPv(outer->data);
             appFreeUni__FPv(outer);
         }
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return;
 }
@@ -466,9 +548,11 @@ void ResourceGroups_ClearThirdTable(void* self) {
     // destructor, slot 2 with delete flag 1) and null the pointer, then empty the nested map.
     // Release resources before any iterator/node becomes invalid.
     // Original 0x800E5E4C: traverse and clear the nested resource maps.
-    while ((CameraWorkTableIterator_GetEnd(&begin, (char*)&ThirdTable(self)), CameraWorkTableIterator_NotEqualWords((u32*)&current, (u32*)&begin))) {
+    while ((CameraWorkTableIterator_GetEnd(&begin, (char*)&ThirdTable(self)),
+            CameraWorkTableIterator_NotEqualWords((u32*)&current, (u32*)&begin))) {
         CameraOwnedAnimationIterator_GetFirst(&item, CameraWorkTableIterator_GetPayload(&current) + 4);
-        while ((CameraOwnedAnimationIterator_GetEnd(&innerEnd, CameraWorkTableIterator_GetPayload(&current) + 4), CameraOwnedAnimationIterator_NotEqual(&item, &innerEnd))) {
+        while ((CameraOwnedAnimationIterator_GetEnd(&innerEnd, CameraWorkTableIterator_GetPayload(&current) + 4),
+                CameraOwnedAnimationIterator_NotEqual(&item, &innerEnd))) {
             if (((NamedResourceValueView*)CameraOwnedAnimationIterator_GetEntry(&item))->resource != 0) {
                 void* obj = ((NamedResourceValueView*)CameraOwnedAnimationIterator_GetEntry(&item))->resource;
                 if (obj != 0) {
@@ -486,46 +570,64 @@ void ResourceGroups_ClearThirdTable(void* self) {
     MapTree_FreeNodes((char*)&ThirdTable(self));
 }
 
-struct TreeAllocatorStorage { char pad[0x14]; };
+struct TreeAllocatorStorage {
+    char pad[0x14];
+};
 // Return the smaller length by reference, preserving the string comparison ABI.
 static inline const u32& string_min(const u32& a, const u32& b) {
     return a < b ? a : b;
 }
 // Break an equal byte-prefix tie by length, retaining zero when lengths match.
 static inline void CompareResourceNameLengths(int& result, u32 leftLength, u32 rightLength) {
-    if (leftLength < rightLength) result = -1;
-    else if (leftLength != rightLength) result = 1;
+    if (leftLength < rightLength)
+        result = -1;
+    else if (leftLength != rightLength)
+        result = 1;
 }
 // Compare borrowed name ranges and break an equal byte-prefix tie by length.
 // Length references keep the caller's clipped-count temporaries; result receives signed order.
-static inline void CompareResourceNameRanges(int& result, const char* left, const char* right,
-        const u32& rightCount, const u32& clippedLeft, u32 rightLength) {
+static inline void CompareResourceNameRanges(int& result, const char* left, const char* right, const u32& rightCount,
+                                             const u32& clippedLeft, u32 rightLength) {
     result = memcmp(left, right, string_min(rightCount, clippedLeft));
-    if (result == 0) CompareResourceNameLengths(result, clippedLeft, rightLength);
+    if (result == 0)
+        CompareResourceNameLengths(result, clippedLeft, rightLength);
 }
 struct LookupString {
     u32 flag;
     u32 length;
     char* ptr;
     // Test whether the string stores its bytes inside its three-word object.
-    bool is_short() const { return (flag >> kStringHeapFlagBit) == 0; }
+    bool is_short() const {
+        return (flag >> kStringHeapFlagBit) == 0;
+    }
     // Test whether the string owns separately allocated text.
-    bool is_long() const { return !is_short(); }
+    bool is_long() const {
+        return !is_short();
+    }
     // Read the active inline-length or heap-length representation.
-    u32 size() const { return is_short() ? (*(const unsigned char*)this & 127) : length; }
+    u32 size() const {
+        return is_short() ? (*(const unsigned char*)this & 127) : length;
+    }
     // Borrow the active inline or heap character storage.
-    const char* data() const { return is_short() ? (const char*)this + 1 : ptr; }
-    // Compare a clipped string slice with other[0..n), returning signed lexical order.
-    int compare(u32 pos, u32 count, const char* other, u32 n) const {
-        u32 nCopy = n;
+    const char* data() const {
+        return is_short() ? (const char*)this + 1 : ptr;
+    }
+    // Compare a clipped string slice with other[0..otherLength), returning signed lexical order.
+    int compare(u32 pos, u32 count, const char* other, u32 otherLength) const {
+        u32 nCopy = otherLength;
         u32 countCopy = count;
-        u32 actual;
-        const char* a;
-        if (is_short()) { actual = *(const unsigned char*)this & 127; a = (const char*)this + 1; }
-        else { a = ptr; actual = length; }
-        u32 clipped = string_min(countCopy, actual - pos);
+        u32 storedLength;
+        const char* chars;
+        if (is_short()) {
+            storedLength = *(const unsigned char*)this & 127;
+            chars = (const char*)this + 1;
+        } else {
+            chars = ptr;
+            storedLength = length;
+        }
+        u32 clipped = string_min(countCopy, storedLength - pos);
         int result;
-        CompareResourceNameRanges(result, a + pos, other, nCopy, clipped, n);
+        CompareResourceNameRanges(result, chars + pos, other, nCopy, clipped, otherLength);
         return result;
     }
 };
@@ -537,7 +639,8 @@ static inline ByteKeyTreeNode* lookup_outer(void* self, u32 key) {
         if (candidate->key >= key) {
             sentinel = candidate;
             candidate = candidate->left;
-        } else candidate = candidate->right;
+        } else
+            candidate = candidate->right;
     }
     if (sentinel == (ByteKeyTreeNode*)&ThirdTable(self).root || key < sentinel->key)
         sentinel = (ByteKeyTreeNode*)&ThirdTable(self).root;
@@ -549,8 +652,10 @@ static inline ByteKeyTreeNode* lookup_outer(void* self, u32 key) {
 // Find a resource by byte group key and optional name; null text selects the first value.
 void* ResourceGroups_FindNamedValueInThirdTable(void* self, u32 key, const char* text) {
     ByteKeyTreeNode* sentinel = lookup_outer(self, key);
-    if (sentinel == (ByteKeyTreeNode*)&ThirdTable(self).root) return 0;
-    if (text == 0) return StringNode(GroupNode(sentinel)->firstString)->value;
+    if (sentinel == (ByteKeyTreeNode*)&ThirdTable(self).root)
+        return 0;
+    if (text == 0)
+        return StringNode(GroupNode(sentinel)->firstString)->value;
 
     // Phases: (1) copy `text` into a temporary string; (2) lower-bound search of the group's string map;
     // (3) reject the candidate if its key sorts after the query; (4) free the temporary, return the value.
@@ -561,10 +666,10 @@ void* ResourceGroups_FindNamedValueInThirdTable(void* self, u32 key, const char*
     String_ReserveCapacity(&storage, length);
     unsigned char terminator = *(volatile unsigned char*)&allocator;
     String_ReplaceRange(&storage, 0, 0, text, text + length, &terminator);
-    unsigned char* p = (unsigned char*)&storage;
-    u32 flag = *(u32*)p;
+    unsigned char* keyBytes = (unsigned char*)&storage;
+    u32 flag = *(u32*)keyBytes;
     int allocated = flag >> kStringHeapFlagBit;
-    unsigned int small = p[0] & kInlineStringLengthMask;
+    unsigned int small = keyBytes[0] & kInlineStringLengthMask;
     int large = (unsigned char)(allocated == 0) == 0;
     u32 longLength = storage.length;
     const char* longData = storage.ptr;
@@ -573,12 +678,20 @@ void* ResourceGroups_FindNamedValueInThirdTable(void* self, u32 key, const char*
     while (node != 0) {
         const char* data;
         u32 n;
-        if (!large) { n = small; data = (const char*)p + 1; }
-        else { data = longData; n = longLength; }
+        if (!large) {
+            n = small;
+            data = (const char*)keyBytes + 1;
+        } else {
+            data = longData;
+            n = longLength;
+        }
         LookupString* other = (LookupString*)&StringNode(node)->stringFlags;
         int cmp = other->compare(0, other->size(), data, n);
-        if (cmp >= 0) { found = node; node = node->left; }
-        else node = node->right;
+        if (cmp >= 0) {
+            found = node;
+            node = node->left;
+        } else
+            node = node->right;
     }
     if (found != (ByteKeyTreeNode*)&GroupNode(sentinel)->stringRoot) {
         const char* data;
@@ -591,19 +704,27 @@ void* ResourceGroups_FindNamedValueInThirdTable(void* self, u32 key, const char*
             n = StringNode(found)->heapLength;
         }
         u32 count = !large ? small : storage.length;
-        const char* a;
-        u32 actual;
-        if (!large) { a = (const char*)&storage + 1; actual = small; }
-        else { a = storage.ptr; actual = storage.length; }
+        const char* keyChars;
+        u32 keyLength;
+        if (!large) {
+            keyChars = (const char*)&storage + 1;
+            keyLength = small;
+        } else {
+            keyChars = storage.ptr;
+            keyLength = storage.length;
+        }
         u32 nCopy = n;
-        u32 clipped = string_min(count, actual);
+        u32 clipped = string_min(count, keyLength);
         int cmp;
-        CompareResourceNameRanges(cmp, a, data, nCopy, clipped, n);
-        if (cmp < 0) found = (ByteKeyTreeNode*)&GroupNode(sentinel)->stringRoot;
+        CompareResourceNameRanges(cmp, keyChars, data, nCopy, clipped, n);
+        if (cmp < 0)
+            found = (ByteKeyTreeNode*)&GroupNode(sentinel)->stringRoot;
     }
     // Release only the temporary key; the found resource remains owned by the table.
-    if (allocated) appFreeUni__FPv(storage.ptr);
-    if (found == (ByteKeyTreeNode*)&GroupNode(sentinel)->stringRoot) return 0;
+    if (allocated)
+        appFreeUni__FPv(storage.ptr);
+    if (found == (ByteKeyTreeNode*)&GroupNode(sentinel)->stringRoot)
+        return 0;
     return StringNode(found)->value;
 }
 

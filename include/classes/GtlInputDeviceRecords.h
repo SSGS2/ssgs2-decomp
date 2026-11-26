@@ -5,7 +5,7 @@
 
 struct GtlInputDescriptorItem {
     unsigned int unk_0;
-    unsigned int key; // +4: ResolveItemIndex compares against a type-1 query
+    unsigned int key;      // +4: ResolveItemIndex compares against a type-1 query
     unsigned int typeMask; // +8: low byte intersects a type-2 query's mask
     unsigned int unk_C;
 };
@@ -13,17 +13,18 @@ struct GtlInputDescriptorItem {
 struct GtlInputDescriptor {
     char pad_000[0xC];
     unsigned int stateSizeBytes; // +C: ReadState validates size before clearing the caller's buffer
-    unsigned int itemCount; // +10: ResolveItemIndex loop bound
-    unsigned int* items; // +14: ResolveItemIndex walks four words per descriptor item
+    unsigned int itemCount;      // +10: ResolveItemIndex loop bound
+    unsigned int* items;         // +14: ResolveItemIndex walks four words per descriptor item
 };
 
 struct GtlInputItemQuery {
     char pad_000[8];
     unsigned int keyOrMaskIndex; // +8: type 1 = key; type 2 = mask[7:0], match ordinal[23:8]
-    int type; // +C: ResolveItemIndex selects key (1) or masked ordinal (2) lookup
+    int type;                    // +C: ResolveItemIndex selects key (1) or masked ordinal (2) lookup
 };
 
-#define ITEM_OFF(f, o) typedef char GtlInputDescriptorItem_off_##f[((int)&((GtlInputDescriptorItem*)0)->f == (o)) ? 1 : -1]
+#define ITEM_OFF(f, o) \
+    typedef char GtlInputDescriptorItem_off_##f[((int)&((GtlInputDescriptorItem*)0)->f == (o)) ? 1 : -1]
 ITEM_OFF(unk_0, 0x0);
 ITEM_OFF(key, 0x4);
 ITEM_OFF(typeMask, 0x8);

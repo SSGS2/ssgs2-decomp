@@ -3,7 +3,7 @@
 // - selectionLayout: partygoods_select.spd at partyItemSelectStrings+0, with
 //   57 records in s_partyItemSelectionLayoutElements;
 //   item n [0,12) uses button 8+n, image 20+n, highlight 32+n, image 44+n;
-//   continue is 56. Keep these indices together with vfunc_5 in party_item_select.cpp.
+//   continue is 56. Keep these indices together with UpdateSelectionAndDetail in party_item_select.cpp.
 // - selectionBpObject: partygoods_select.b2d at partyItemSelectStrings+0x16;
 //   playerCountBpObject: partygoods_noentry.b2d at +0x2c. These animate the UI;
 //   layouts describe element placement, and BP entry IDs own script registrations.
@@ -12,7 +12,7 @@
 //   detailBpObject uses common_info.b2d at +0x53; open/close script selection and
 //   text styles are in party_item_select.cpp's PartyItemSelectStringPool/RefreshDetailText.
 // - feedback duration: PartyItemActivation::feedbackFramesRemaining counts UI
-//   updates; its initial value here is zero, its four-frame trigger is in vfunc_5.
+//   updates; its initial value here is zero, its four-frame trigger is in UpdateSelectionAndDetail.
 // Shared layouts/strings are external data; this unit does not edit those assets.
 #include "classes/CPartyItemSelect.h"
 #include "classes/PartyItemSelection.h"
@@ -21,13 +21,18 @@
 extern "C" void CharacterPreviewTable_dtor(void*, int);
 #define GAME_VECTOR_IMPLEMENTATION
 #include "game/vector.h"
-// Translation unit 0x80088DE0-0x800893A0 (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
+#include "classes/CBpCtrl.h"
 // This font slot lies in the existing class view padding at 0x3c.
-struct SelectorFontSlot { char padBeforeFont[0x3c]; void* font; };
-struct ChatFontSlot { char padBeforeFont[0x10]; void* font; };
+struct SelectorFontSlot {
+    char padBeforeFont[0x3c];
+    void* font;
+};
+struct ChatFontSlot {
+    char padBeforeFont[0x10];
+    void* font;
+};
 static const unsigned int kRenderVectorsOffset = (unsigned int)&((RenderContext*)0)->vectors;
 static const unsigned int kRenderSelectionsOffset = (unsigned int)&((RenderContext*)0)->players;
 static const int kMaxPlayers = 4;
@@ -35,14 +40,12 @@ static const unsigned int kLayoutObjectBytes = 0x5c;
 static const int kLayoutInitMode = 5;
 static const int kSelectionElementCount = 0x39;
 static const int kDetailElementCount = 3;
-static const unsigned int kSelectionScriptOffset = 0x16; // partygoods_select.b2d
+static const unsigned int kSelectionScriptOffset = 0x16;   // partygoods_select.b2d
 static const unsigned int kPlayerCountScriptOffset = 0x2c; // partygoods_noentry.b2d
-static const unsigned int kDetailLayoutOffset = 0x43; // common_info.spd
-static const unsigned int kDetailScriptOffset = 0x53; // common_info.b2d
+static const unsigned int kDetailLayoutOffset = 0x43;      // common_info.spd
+static const unsigned int kDetailScriptOffset = 0x53;      // common_info.b2d
 
 extern "C" {
-
-
 
 void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
@@ -54,9 +57,7 @@ void SaveData_InitPlayerRecord(void*);
 void __construct_array(void*, void*, void*, int, int);
 void RenderContext_ResetPlayerRecords(void*);
 void __register_global_object(void*, void*, void*);
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor(void*);
-void CBpCtrl_CreateEntry(void*, const char*, int*, int);
 void* IdMap_Lookup(void*, int);
 void* __nwa__FUl(int);
 void WFixedFont_CreateAndRegisterMsgDraw(void*, void*, int);
@@ -80,7 +81,7 @@ extern void* g_chatMsg;
 // Construct/register the shared BP controller once; the selector borrows it.
 static inline void PartySelector_RegisterBpController() {
     if (s_bpCtrlInitialized == 0) {
-        __ct__7CBpCtrlFv(s_bpCtrl);
+        ((CBpCtrl*)s_bpCtrl)->__ct();
         __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlRegistration_804EC728);
         s_bpCtrlInitialized = 1;
     }
@@ -98,13 +99,13 @@ static inline void PartySelector_RegisterBpController() {
 // Rollback is local: if RenderContext_ResetPlayerRecords throws, destroy its
 // player table then integer vectors and rethrow, before publishing registration.
 // There is no enclosing transaction for selector layouts/arrays/BP entries.
-// Normal teardown is CPartyItemSelect_dtor in party_item_select.cpp: release displays,
+// Normal teardown is CPartyItemSelect::Destroy in party_item_select.cpp: release displays,
 // layouts, entries, activation array and text resources; flag>0 also frees self.
 // Shared controller/render context remain globally registered until shutdown.
 // Singleton first-use publication is unsynchronized; use on the UI thread.
-void* CPartyItemSelect_ctor(void* self) {
-    CPartyItemSelect* selector = (CPartyItemSelect*)self;
-    MPBase1_Ctor(self);
+CPartyItemSelect::CPartyItemSelect() {
+    CPartyItemSelect* selector = this;
+    MPBase1_Ctor(this);
     selector->selectionComplete = 0;
     selector->vtbl = __vt__16CPartyItemSelect;
     selector->selectionLayout = 0;
@@ -126,9 +127,11 @@ void* CPartyItemSelect_ctor(void* self) {
     selector->detailItemDisplay = 0;
     selector->textRenderer = 0;
     void* selectionLayout = __nw__FUl(kLayoutObjectBytes);
-    if (selectionLayout) Layout_Init(selectionLayout, kLayoutInitMode);
+    if (selectionLayout)
+        Layout_Init(selectionLayout, kLayoutInitMode);
     selector->selectionLayout = selectionLayout;
-    Layout_InitStandard(selectionLayout, 0, s_partyItemSelectionLayoutElements, kSelectionElementCount, partyItemSelectStrings);
+    Layout_InitStandard(selectionLayout, 0, s_partyItemSelectionLayoutElements, kSelectionElementCount,
+                        partyItemSelectStrings);
     Layout_SetActive((void*)selector->selectionLayout, 1);
 
     // Build the shared render context on first use. Record destruction is shared
@@ -145,7 +148,8 @@ void* CPartyItemSelect_ctor(void* self) {
             }
             ((IntVectorArray*)(playerEnd))->__ct();
             playerCursor = base + kRenderSelectionsOffset;
-            __construct_array(playerCursor, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor, sizeof(PartyItemRecord), kMaxPlayers);
+            __construct_array(playerCursor, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor,
+                              sizeof(PartyItemRecord), kMaxPlayers);
             ((PartyItemSelection*)playerCursor)->count = 0;
             try {
                 RenderContext_ResetPlayerRecords(base);
@@ -167,12 +171,15 @@ void* CPartyItemSelect_ctor(void* self) {
     if (((int&)Sing_805DC5F0()) == 0) {
         PartySelector_RegisterBpController();
     }
-    CBpCtrl_CreateEntry((void*)((int&)Sing_805DC5F0()), (const char*)partyItemSelectStrings + kSelectionScriptOffset, &selector->selectionBpEntryId, 0);
+    ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+        ->CreateEntry((const char*)partyItemSelectStrings + kSelectionScriptOffset, &selector->selectionBpEntryId, 0);
 
     if (((int&)Sing_805DC5F0()) == 0) {
         PartySelector_RegisterBpController();
     }
-    CBpCtrl_CreateEntry((void*)((int&)Sing_805DC5F0()), (const char*)partyItemSelectStrings + kPlayerCountScriptOffset, &selector->playerCountBpEntryId, 0);
+    ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+        ->CreateEntry((const char*)partyItemSelectStrings + kPlayerCountScriptOffset, &selector->playerCountBpEntryId,
+                      0);
 
     if (((int&)Sing_805DC5F0()) == 0) {
         PartySelector_RegisterBpController();
@@ -222,30 +229,30 @@ void* CPartyItemSelect_ctor(void* self) {
     {
         void* chatMessage = (void*)g_chatMsg;
         ChatFontSlot* chat = (ChatFontSlot*)chatMessage;
-        ((SelectorFontSlot*)self)->font = chat->font;
-        WFixedFont_CreateAndRegisterMsgDraw(((SelectorFontSlot*)self)->font, &selector->textRenderer, 1);
-        WFixedFont_CreateMsgEcbResource(((SelectorFontSlot*)self)->font, &selector->textTemplates, 0, 0);
+        ((SelectorFontSlot*)this)->font = chat->font;
+        WFixedFont_CreateAndRegisterMsgDraw(((SelectorFontSlot*)this)->font, &selector->textRenderer, 1);
+        WFixedFont_CreateMsgEcbResource(((SelectorFontSlot*)this)->font, &selector->textTemplates, 0, 0);
     }
 
     // Build the common item-details layout.
     void* detailLayout = __nw__FUl(kLayoutObjectBytes);
-    if (detailLayout) Layout_Init(detailLayout, kLayoutInitMode);
+    if (detailLayout)
+        Layout_Init(detailLayout, kLayoutInitMode);
     selector->detailLayout = detailLayout;
-    Layout_InitStandard(detailLayout, 0, s_partyItemDetailLayoutElements, kDetailElementCount, (const char*)partyItemSelectStrings + kDetailLayoutOffset);
+    Layout_InitStandard(detailLayout, 0, s_partyItemDetailLayoutElements, kDetailElementCount,
+                        (const char*)partyItemSelectStrings + kDetailLayoutOffset);
 
     if (((int&)Sing_805DC5F0()) == 0) {
         PartySelector_RegisterBpController();
     }
-    CBpCtrl_CreateEntry((void*)((int&)Sing_805DC5F0()), (const char*)partyItemSelectStrings + kDetailScriptOffset, &selector->detailBpEntryId, 0);
+    ((CBpCtrl*)(((int&)Sing_805DC5F0())))
+        ->CreateEntry((const char*)partyItemSelectStrings + kDetailScriptOffset, &selector->detailBpEntryId, 0);
 
     if (((int&)Sing_805DC5F0()) == 0) {
         PartySelector_RegisterBpController();
     }
     selector->detailBpObject = IdMap_Lookup((void*)((int&)Sing_805DC5F0()), selector->detailBpEntryId);
-
-    return self;
 }
-
 
 } // extern "C"
 namespace std {

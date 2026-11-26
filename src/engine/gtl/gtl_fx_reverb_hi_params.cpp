@@ -1,5 +1,7 @@
-// Translation unit 0x8040A850-0x8040A858 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// High-quality reverb parameters: the accessor that gives a borrowed view of the six
+// reverb settings held in the effect.
+//
+// The layout is classes/FxReverbHiFlags.h.
 
 #include "classes/FxReverbHiFlags.h"
 

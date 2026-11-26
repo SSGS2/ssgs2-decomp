@@ -1,3 +1,8 @@
+// Shop product lists for rings and equipment items.
+//
+// The ring list is rebuilt from AuxPart.iff and the equipment item list from Item.iff, each
+// keeping an owned copy of every accepted record. Both also copy the common IFF header.
+
 #include <decomp/static_init.h>
 #include "classes/CSharedDoc.h"
 #include "classes/CItemManager.h"
@@ -22,12 +27,11 @@ static const unsigned kPointerGrowthThreeFifthsLimit = 0x15555555U;
 static const unsigned kPointerGrowthHalfLimit = 0x2AAAAAAAU;
 static const unsigned kLengthErrorTypeNameOffset = 0x14;
 
-// Translation unit 0x80236BF4-0x80237E24 (13 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "classes/PointerCollectionState.h"
 #include "sdk_protos.h"
 #include "game/shop_product.h"
+#include "classes/CShopProductRing.h"
+#include "classes/CShopProductInterface.h"
 
 extern "C" {
 
@@ -47,7 +51,7 @@ struct ShopRecordCountView {
 };
 
 // Return the number of ring records currently in the product list.
-int CShopProductRing_GetCount(ShopRecordCountView* arg) {
+int CShopProductRing::GetCount(ShopRecordCountView* arg) {
     return arg->value;
 }
 
@@ -71,12 +75,12 @@ struct RingProductListState {
 // A failed rebuild can leave a partially populated list; there is no rollback.
 
 // Initialize a ring product list with its filter/context and empty pointer storage.
-void ShopRingRecordList_Initialize(RingProductListState* arg, void* value) {
-    arg->records = 0;
-    arg->vtable = s_shopRingRecordListVtable;
-    arg->recordCount = 0;
-    arg->recordCapacity = 0;
-    arg->value = value;
+void ShopRingRecordList_Initialize(RingProductListState* list, void* value) {
+    list->records = 0;
+    list->vtable = s_shopRingRecordListVtable;
+    list->recordCount = 0;
+    list->recordCapacity = 0;
+    list->value = value;
 }
 
 // Initialize the shop unit's cached full-circle angle.
@@ -87,7 +91,6 @@ void ShopRing_InitializeAngleCache() {
 void __dl__FPv(void*);
 void __dla__FPv(void*);
 void appFreeUni__FPv(void*);
-void CShopProductInterface_dtor(void*, int);
 void* __nw__FUl(unsigned long);
 void* appMallocDummy__FUl(unsigned long);
 void* __nwa__FUl(unsigned long);
@@ -111,7 +114,9 @@ struct ShopBytePair {
     unsigned char b;
 };
 
-struct ShopCommonTextBytes { unsigned char name[40], icon[40]; };
+struct ShopCommonTextBytes {
+    unsigned char name[40], icon[40];
+};
 struct ShopCommonRecordBuffer {
     union {
         IffItemCommon common;
@@ -122,7 +127,7 @@ struct ShopCommonRecordBuffer {
 };
 
 // get() fills caller-owned scratch with the selected concrete record. These two
-// vfunc_4 routines copy only the common 0x5C-byte header into out; tail bytes stay
+// common-header routines below copy only the 0x5C-byte header into out; tail bytes stay
 // untouched. Success is 1; null out or failed get returns 0 without writing out.
 
 // Copy the selected equipment item's common IFF header, including type ID and Pang price.
@@ -135,47 +140,167 @@ int CShopProductEquipItem_CopyCommonRecord(ShopRecordProvider* self, ShopCommonR
     unsigned char a;
     unsigned char b;
     // +0x00..0x27: message-id name.
-    b = data.text.name[0]; a = data.text.name[1]; out->text.name[0] = b; out->text.name[1] = a;
-    b = data.text.name[2]; a = data.text.name[3]; out->text.name[2] = b; out->text.name[3] = a;
-    a = data.text.name[4]; b = data.text.name[5]; out->text.name[4] = a; out->text.name[5] = b;
-    a = data.text.name[6]; b = data.text.name[7]; out->text.name[6] = a; out->text.name[7] = b;
-    a = data.text.name[8]; b = data.text.name[9]; out->text.name[8] = a; out->text.name[9] = b;
-    a = data.text.name[10]; b = data.text.name[11]; out->text.name[10] = a; out->text.name[11] = b;
-    a = data.text.name[12]; b = data.text.name[13]; out->text.name[12] = a; out->text.name[13] = b;
-    a = data.text.name[14]; b = data.text.name[15]; out->text.name[14] = a; out->text.name[15] = b;
-    a = data.text.name[16]; b = data.text.name[17]; out->text.name[16] = a; out->text.name[17] = b;
-    a = data.text.name[18]; b = data.text.name[19]; out->text.name[18] = a; out->text.name[19] = b;
-    a = data.text.name[20]; b = data.text.name[21]; out->text.name[20] = a; out->text.name[21] = b;
-    a = data.text.name[22]; b = data.text.name[23]; out->text.name[22] = a; out->text.name[23] = b;
-    a = data.text.name[24]; b = data.text.name[25]; out->text.name[24] = a; out->text.name[25] = b;
-    a = data.text.name[26]; b = data.text.name[27]; out->text.name[26] = a; out->text.name[27] = b;
-    a = data.text.name[28]; b = data.text.name[29]; out->text.name[28] = a; out->text.name[29] = b;
-    a = data.text.name[30]; b = data.text.name[31]; out->text.name[30] = a; out->text.name[31] = b;
-    a = data.text.name[32]; b = data.text.name[33]; out->text.name[32] = a; out->text.name[33] = b;
-    a = data.text.name[34]; b = data.text.name[35]; out->text.name[34] = a; out->text.name[35] = b;
-    a = data.text.name[36]; b = data.text.name[37]; out->text.name[36] = a; out->text.name[37] = b;
-    a = data.text.name[38]; b = data.text.name[39]; out->text.name[38] = a; out->text.name[39] = b;
+    b = data.text.name[0];
+    a = data.text.name[1];
+    out->text.name[0] = b;
+    out->text.name[1] = a;
+    b = data.text.name[2];
+    a = data.text.name[3];
+    out->text.name[2] = b;
+    out->text.name[3] = a;
+    a = data.text.name[4];
+    b = data.text.name[5];
+    out->text.name[4] = a;
+    out->text.name[5] = b;
+    a = data.text.name[6];
+    b = data.text.name[7];
+    out->text.name[6] = a;
+    out->text.name[7] = b;
+    a = data.text.name[8];
+    b = data.text.name[9];
+    out->text.name[8] = a;
+    out->text.name[9] = b;
+    a = data.text.name[10];
+    b = data.text.name[11];
+    out->text.name[10] = a;
+    out->text.name[11] = b;
+    a = data.text.name[12];
+    b = data.text.name[13];
+    out->text.name[12] = a;
+    out->text.name[13] = b;
+    a = data.text.name[14];
+    b = data.text.name[15];
+    out->text.name[14] = a;
+    out->text.name[15] = b;
+    a = data.text.name[16];
+    b = data.text.name[17];
+    out->text.name[16] = a;
+    out->text.name[17] = b;
+    a = data.text.name[18];
+    b = data.text.name[19];
+    out->text.name[18] = a;
+    out->text.name[19] = b;
+    a = data.text.name[20];
+    b = data.text.name[21];
+    out->text.name[20] = a;
+    out->text.name[21] = b;
+    a = data.text.name[22];
+    b = data.text.name[23];
+    out->text.name[22] = a;
+    out->text.name[23] = b;
+    a = data.text.name[24];
+    b = data.text.name[25];
+    out->text.name[24] = a;
+    out->text.name[25] = b;
+    a = data.text.name[26];
+    b = data.text.name[27];
+    out->text.name[26] = a;
+    out->text.name[27] = b;
+    a = data.text.name[28];
+    b = data.text.name[29];
+    out->text.name[28] = a;
+    out->text.name[29] = b;
+    a = data.text.name[30];
+    b = data.text.name[31];
+    out->text.name[30] = a;
+    out->text.name[31] = b;
+    a = data.text.name[32];
+    b = data.text.name[33];
+    out->text.name[32] = a;
+    out->text.name[33] = b;
+    a = data.text.name[34];
+    b = data.text.name[35];
+    out->text.name[34] = a;
+    out->text.name[35] = b;
+    a = data.text.name[36];
+    b = data.text.name[37];
+    out->text.name[36] = a;
+    out->text.name[37] = b;
+    a = data.text.name[38];
+    b = data.text.name[39];
+    out->text.name[38] = a;
+    out->text.name[39] = b;
     // +0x28..0x4F: icon resource name.
-    a = data.text.icon[0]; b = data.text.icon[1]; out->text.icon[0] = a; out->text.icon[1] = b;
-    a = data.text.icon[2]; b = data.text.icon[3]; out->text.icon[2] = a; out->text.icon[3] = b;
-    a = data.text.icon[4]; b = data.text.icon[5]; out->text.icon[4] = a; out->text.icon[5] = b;
-    a = data.text.icon[6]; b = data.text.icon[7]; out->text.icon[6] = a; out->text.icon[7] = b;
-    a = data.text.icon[8]; b = data.text.icon[9]; out->text.icon[8] = a; out->text.icon[9] = b;
-    a = data.text.icon[10]; b = data.text.icon[11]; out->text.icon[10] = a; out->text.icon[11] = b;
-    a = data.text.icon[12]; b = data.text.icon[13]; out->text.icon[12] = a; out->text.icon[13] = b;
-    a = data.text.icon[14]; b = data.text.icon[15]; out->text.icon[14] = a; out->text.icon[15] = b;
-    a = data.text.icon[16]; b = data.text.icon[17]; out->text.icon[16] = a; out->text.icon[17] = b;
-    a = data.text.icon[18]; b = data.text.icon[19]; out->text.icon[18] = a; out->text.icon[19] = b;
-    a = data.text.icon[20]; b = data.text.icon[21]; out->text.icon[20] = a; out->text.icon[21] = b;
-    a = data.text.icon[22]; b = data.text.icon[23]; out->text.icon[22] = a; out->text.icon[23] = b;
-    a = data.text.icon[24]; b = data.text.icon[25]; out->text.icon[24] = a; out->text.icon[25] = b;
-    a = data.text.icon[26]; b = data.text.icon[27]; out->text.icon[26] = a; out->text.icon[27] = b;
-    a = data.text.icon[28]; b = data.text.icon[29]; out->text.icon[28] = a; out->text.icon[29] = b;
-    a = data.text.icon[30]; b = data.text.icon[31]; out->text.icon[30] = a; out->text.icon[31] = b;
-    a = data.text.icon[32]; b = data.text.icon[33]; out->text.icon[32] = a; out->text.icon[33] = b;
-    a = data.text.icon[34]; b = data.text.icon[35]; out->text.icon[34] = a; out->text.icon[35] = b;
-    a = data.text.icon[36]; b = data.text.icon[37]; out->text.icon[36] = a; out->text.icon[37] = b;
-    a = data.text.icon[38]; b = data.text.icon[39]; out->text.icon[38] = a; out->text.icon[39] = b;
+    a = data.text.icon[0];
+    b = data.text.icon[1];
+    out->text.icon[0] = a;
+    out->text.icon[1] = b;
+    a = data.text.icon[2];
+    b = data.text.icon[3];
+    out->text.icon[2] = a;
+    out->text.icon[3] = b;
+    a = data.text.icon[4];
+    b = data.text.icon[5];
+    out->text.icon[4] = a;
+    out->text.icon[5] = b;
+    a = data.text.icon[6];
+    b = data.text.icon[7];
+    out->text.icon[6] = a;
+    out->text.icon[7] = b;
+    a = data.text.icon[8];
+    b = data.text.icon[9];
+    out->text.icon[8] = a;
+    out->text.icon[9] = b;
+    a = data.text.icon[10];
+    b = data.text.icon[11];
+    out->text.icon[10] = a;
+    out->text.icon[11] = b;
+    a = data.text.icon[12];
+    b = data.text.icon[13];
+    out->text.icon[12] = a;
+    out->text.icon[13] = b;
+    a = data.text.icon[14];
+    b = data.text.icon[15];
+    out->text.icon[14] = a;
+    out->text.icon[15] = b;
+    a = data.text.icon[16];
+    b = data.text.icon[17];
+    out->text.icon[16] = a;
+    out->text.icon[17] = b;
+    a = data.text.icon[18];
+    b = data.text.icon[19];
+    out->text.icon[18] = a;
+    out->text.icon[19] = b;
+    a = data.text.icon[20];
+    b = data.text.icon[21];
+    out->text.icon[20] = a;
+    out->text.icon[21] = b;
+    a = data.text.icon[22];
+    b = data.text.icon[23];
+    out->text.icon[22] = a;
+    out->text.icon[23] = b;
+    a = data.text.icon[24];
+    b = data.text.icon[25];
+    out->text.icon[24] = a;
+    out->text.icon[25] = b;
+    a = data.text.icon[26];
+    b = data.text.icon[27];
+    out->text.icon[26] = a;
+    out->text.icon[27] = b;
+    a = data.text.icon[28];
+    b = data.text.icon[29];
+    out->text.icon[28] = a;
+    out->text.icon[29] = b;
+    a = data.text.icon[30];
+    b = data.text.icon[31];
+    out->text.icon[30] = a;
+    out->text.icon[31] = b;
+    a = data.text.icon[32];
+    b = data.text.icon[33];
+    out->text.icon[32] = a;
+    out->text.icon[33] = b;
+    a = data.text.icon[34];
+    b = data.text.icon[35];
+    out->text.icon[34] = a;
+    out->text.icon[35] = b;
+    a = data.text.icon[36];
+    b = data.text.icon[37];
+    out->text.icon[36] = a;
+    out->text.icon[37] = b;
+    a = data.text.icon[38];
+    b = data.text.icon[39];
+    out->text.icon[38] = a;
+    out->text.icon[39] = b;
     // +0x50..0x5B: key, price, level/shop flags, unresolved final halfword.
     out->common.typeId = data.common.typeId;
     out->common.price = data.common.price;
@@ -186,7 +311,8 @@ int CShopProductEquipItem_CopyCommonRecord(ShopRecordProvider* self, ShopCommonR
 }
 
 // Copy the selected ring's common IFF header, including level and shop flags.
-int CShopProductRing_CopyCommonRecord(ShopRecordProvider* self, ShopCommonRecordBuffer* out) {
+int CShopProductRing::CopyCommonRecord(ShopCommonRecordBuffer* out) {
+    ShopRecordProvider* self = (ShopRecordProvider*)this;
     if (out == 0)
         return 0;
     ShopCommonRecordBuffer data;
@@ -195,47 +321,167 @@ int CShopProductRing_CopyCommonRecord(ShopRecordProvider* self, ShopCommonRecord
     unsigned char a;
     unsigned char b;
     // +0x00..0x27: message-id name.
-    b = data.text.name[0]; a = data.text.name[1]; out->text.name[0] = b; out->text.name[1] = a;
-    b = data.text.name[2]; a = data.text.name[3]; out->text.name[2] = b; out->text.name[3] = a;
-    a = data.text.name[4]; b = data.text.name[5]; out->text.name[4] = a; out->text.name[5] = b;
-    a = data.text.name[6]; b = data.text.name[7]; out->text.name[6] = a; out->text.name[7] = b;
-    a = data.text.name[8]; b = data.text.name[9]; out->text.name[8] = a; out->text.name[9] = b;
-    a = data.text.name[10]; b = data.text.name[11]; out->text.name[10] = a; out->text.name[11] = b;
-    a = data.text.name[12]; b = data.text.name[13]; out->text.name[12] = a; out->text.name[13] = b;
-    a = data.text.name[14]; b = data.text.name[15]; out->text.name[14] = a; out->text.name[15] = b;
-    a = data.text.name[16]; b = data.text.name[17]; out->text.name[16] = a; out->text.name[17] = b;
-    a = data.text.name[18]; b = data.text.name[19]; out->text.name[18] = a; out->text.name[19] = b;
-    a = data.text.name[20]; b = data.text.name[21]; out->text.name[20] = a; out->text.name[21] = b;
-    a = data.text.name[22]; b = data.text.name[23]; out->text.name[22] = a; out->text.name[23] = b;
-    a = data.text.name[24]; b = data.text.name[25]; out->text.name[24] = a; out->text.name[25] = b;
-    a = data.text.name[26]; b = data.text.name[27]; out->text.name[26] = a; out->text.name[27] = b;
-    a = data.text.name[28]; b = data.text.name[29]; out->text.name[28] = a; out->text.name[29] = b;
-    a = data.text.name[30]; b = data.text.name[31]; out->text.name[30] = a; out->text.name[31] = b;
-    a = data.text.name[32]; b = data.text.name[33]; out->text.name[32] = a; out->text.name[33] = b;
-    a = data.text.name[34]; b = data.text.name[35]; out->text.name[34] = a; out->text.name[35] = b;
-    a = data.text.name[36]; b = data.text.name[37]; out->text.name[36] = a; out->text.name[37] = b;
-    a = data.text.name[38]; b = data.text.name[39]; out->text.name[38] = a; out->text.name[39] = b;
+    b = data.text.name[0];
+    a = data.text.name[1];
+    out->text.name[0] = b;
+    out->text.name[1] = a;
+    b = data.text.name[2];
+    a = data.text.name[3];
+    out->text.name[2] = b;
+    out->text.name[3] = a;
+    a = data.text.name[4];
+    b = data.text.name[5];
+    out->text.name[4] = a;
+    out->text.name[5] = b;
+    a = data.text.name[6];
+    b = data.text.name[7];
+    out->text.name[6] = a;
+    out->text.name[7] = b;
+    a = data.text.name[8];
+    b = data.text.name[9];
+    out->text.name[8] = a;
+    out->text.name[9] = b;
+    a = data.text.name[10];
+    b = data.text.name[11];
+    out->text.name[10] = a;
+    out->text.name[11] = b;
+    a = data.text.name[12];
+    b = data.text.name[13];
+    out->text.name[12] = a;
+    out->text.name[13] = b;
+    a = data.text.name[14];
+    b = data.text.name[15];
+    out->text.name[14] = a;
+    out->text.name[15] = b;
+    a = data.text.name[16];
+    b = data.text.name[17];
+    out->text.name[16] = a;
+    out->text.name[17] = b;
+    a = data.text.name[18];
+    b = data.text.name[19];
+    out->text.name[18] = a;
+    out->text.name[19] = b;
+    a = data.text.name[20];
+    b = data.text.name[21];
+    out->text.name[20] = a;
+    out->text.name[21] = b;
+    a = data.text.name[22];
+    b = data.text.name[23];
+    out->text.name[22] = a;
+    out->text.name[23] = b;
+    a = data.text.name[24];
+    b = data.text.name[25];
+    out->text.name[24] = a;
+    out->text.name[25] = b;
+    a = data.text.name[26];
+    b = data.text.name[27];
+    out->text.name[26] = a;
+    out->text.name[27] = b;
+    a = data.text.name[28];
+    b = data.text.name[29];
+    out->text.name[28] = a;
+    out->text.name[29] = b;
+    a = data.text.name[30];
+    b = data.text.name[31];
+    out->text.name[30] = a;
+    out->text.name[31] = b;
+    a = data.text.name[32];
+    b = data.text.name[33];
+    out->text.name[32] = a;
+    out->text.name[33] = b;
+    a = data.text.name[34];
+    b = data.text.name[35];
+    out->text.name[34] = a;
+    out->text.name[35] = b;
+    a = data.text.name[36];
+    b = data.text.name[37];
+    out->text.name[36] = a;
+    out->text.name[37] = b;
+    a = data.text.name[38];
+    b = data.text.name[39];
+    out->text.name[38] = a;
+    out->text.name[39] = b;
     // +0x28..0x4F: icon resource name.
-    a = data.text.icon[0]; b = data.text.icon[1]; out->text.icon[0] = a; out->text.icon[1] = b;
-    a = data.text.icon[2]; b = data.text.icon[3]; out->text.icon[2] = a; out->text.icon[3] = b;
-    a = data.text.icon[4]; b = data.text.icon[5]; out->text.icon[4] = a; out->text.icon[5] = b;
-    a = data.text.icon[6]; b = data.text.icon[7]; out->text.icon[6] = a; out->text.icon[7] = b;
-    a = data.text.icon[8]; b = data.text.icon[9]; out->text.icon[8] = a; out->text.icon[9] = b;
-    a = data.text.icon[10]; b = data.text.icon[11]; out->text.icon[10] = a; out->text.icon[11] = b;
-    a = data.text.icon[12]; b = data.text.icon[13]; out->text.icon[12] = a; out->text.icon[13] = b;
-    a = data.text.icon[14]; b = data.text.icon[15]; out->text.icon[14] = a; out->text.icon[15] = b;
-    a = data.text.icon[16]; b = data.text.icon[17]; out->text.icon[16] = a; out->text.icon[17] = b;
-    a = data.text.icon[18]; b = data.text.icon[19]; out->text.icon[18] = a; out->text.icon[19] = b;
-    a = data.text.icon[20]; b = data.text.icon[21]; out->text.icon[20] = a; out->text.icon[21] = b;
-    a = data.text.icon[22]; b = data.text.icon[23]; out->text.icon[22] = a; out->text.icon[23] = b;
-    a = data.text.icon[24]; b = data.text.icon[25]; out->text.icon[24] = a; out->text.icon[25] = b;
-    a = data.text.icon[26]; b = data.text.icon[27]; out->text.icon[26] = a; out->text.icon[27] = b;
-    a = data.text.icon[28]; b = data.text.icon[29]; out->text.icon[28] = a; out->text.icon[29] = b;
-    a = data.text.icon[30]; b = data.text.icon[31]; out->text.icon[30] = a; out->text.icon[31] = b;
-    a = data.text.icon[32]; b = data.text.icon[33]; out->text.icon[32] = a; out->text.icon[33] = b;
-    a = data.text.icon[34]; b = data.text.icon[35]; out->text.icon[34] = a; out->text.icon[35] = b;
-    a = data.text.icon[36]; b = data.text.icon[37]; out->text.icon[36] = a; out->text.icon[37] = b;
-    a = data.text.icon[38]; b = data.text.icon[39]; out->text.icon[38] = a; out->text.icon[39] = b;
+    a = data.text.icon[0];
+    b = data.text.icon[1];
+    out->text.icon[0] = a;
+    out->text.icon[1] = b;
+    a = data.text.icon[2];
+    b = data.text.icon[3];
+    out->text.icon[2] = a;
+    out->text.icon[3] = b;
+    a = data.text.icon[4];
+    b = data.text.icon[5];
+    out->text.icon[4] = a;
+    out->text.icon[5] = b;
+    a = data.text.icon[6];
+    b = data.text.icon[7];
+    out->text.icon[6] = a;
+    out->text.icon[7] = b;
+    a = data.text.icon[8];
+    b = data.text.icon[9];
+    out->text.icon[8] = a;
+    out->text.icon[9] = b;
+    a = data.text.icon[10];
+    b = data.text.icon[11];
+    out->text.icon[10] = a;
+    out->text.icon[11] = b;
+    a = data.text.icon[12];
+    b = data.text.icon[13];
+    out->text.icon[12] = a;
+    out->text.icon[13] = b;
+    a = data.text.icon[14];
+    b = data.text.icon[15];
+    out->text.icon[14] = a;
+    out->text.icon[15] = b;
+    a = data.text.icon[16];
+    b = data.text.icon[17];
+    out->text.icon[16] = a;
+    out->text.icon[17] = b;
+    a = data.text.icon[18];
+    b = data.text.icon[19];
+    out->text.icon[18] = a;
+    out->text.icon[19] = b;
+    a = data.text.icon[20];
+    b = data.text.icon[21];
+    out->text.icon[20] = a;
+    out->text.icon[21] = b;
+    a = data.text.icon[22];
+    b = data.text.icon[23];
+    out->text.icon[22] = a;
+    out->text.icon[23] = b;
+    a = data.text.icon[24];
+    b = data.text.icon[25];
+    out->text.icon[24] = a;
+    out->text.icon[25] = b;
+    a = data.text.icon[26];
+    b = data.text.icon[27];
+    out->text.icon[26] = a;
+    out->text.icon[27] = b;
+    a = data.text.icon[28];
+    b = data.text.icon[29];
+    out->text.icon[28] = a;
+    out->text.icon[29] = b;
+    a = data.text.icon[30];
+    b = data.text.icon[31];
+    out->text.icon[30] = a;
+    out->text.icon[31] = b;
+    a = data.text.icon[32];
+    b = data.text.icon[33];
+    out->text.icon[32] = a;
+    out->text.icon[33] = b;
+    a = data.text.icon[34];
+    b = data.text.icon[35];
+    out->text.icon[34] = a;
+    out->text.icon[35] = b;
+    a = data.text.icon[36];
+    b = data.text.icon[37];
+    out->text.icon[36] = a;
+    out->text.icon[37] = b;
+    a = data.text.icon[38];
+    b = data.text.icon[39];
+    out->text.icon[38] = a;
+    out->text.icon[39] = b;
     // +0x50..0x5B: key, price, level/shop flags, unresolved final halfword.
     out->common.typeId = data.common.typeId;
     out->common.price = data.common.price;
@@ -252,12 +498,12 @@ struct RingProductRecords {
 };
 
 // Copy a ring record by index; reject null output, invalid indices, and null entries.
-int CShopProductRing_CopyRecord(RingProductRecords* arg, void* dst, unsigned int index) {
+int CShopProductRing::CopyRecord(RingProductRecords* records, void* dst, unsigned int index) {
     if (dst == 0)
         return 0;
-    if (arg->count <= index)
+    if (records->count <= index)
         return 0;
-    void* entry = arg->entries[index];
+    void* entry = records->entries[index];
     if (entry == 0)
         return 0;
     Memory_Copy(dst, entry, sizeof(IFF_STRUCT::sAuxPart));
@@ -271,17 +517,17 @@ struct RingProductRecordsForClear {
 };
 
 // Delete every owned ring record and empty the list, retaining its pointer capacity.
-int CShopProductRing_DeleteAll(RingProductRecordsForClear* arg) {
-    void** entry = arg->entries;
-    while (arg->entries + arg->count != entry) {
+int CShopProductRing::DeleteAll(RingProductRecordsForClear* records) {
+    void** entry = records->entries;
+    while (records->entries + records->count != entry) {
         if (*entry != 0) {
             __dl__FPv(*entry);
             *entry = 0;
         }
         ++entry;
     }
-    register unsigned int c = arg->count;
-    arg->count = c - c;
+    register unsigned int c = records->count;
+    records->count = c - c;
     return 1;
 }
 
@@ -307,7 +553,7 @@ void* ShopRingRecordList_dtor(RingProductOwnedRecords* obj, int should_delete) {
             obj->count = obj->count - obj->count;
             appFreeUni__FPv(obj->entries);
         }
-        CShopProductInterface_dtor(obj, 0);
+        ((CShopProductInterface*)obj)->Destroy(0);
         if (should_delete > 0)
             __dl__FPv(obj);
     }
@@ -324,7 +570,9 @@ CShopProductAvatar::CShopProductAvatar(void* value, unsigned char flag) : CShopP
 extern "C" {
 
 // Borrow whichever capacity/growth argument is greater (neither is copied).
-static inline const unsigned& VectorMax(const unsigned& a, const unsigned& b) { return a < b ? b : a; }
+static inline const unsigned& VectorMax(const unsigned& a, const unsigned& b) {
+    return a < b ? b : a;
+}
 
 // Throw the original vector length_error when pointer-array growth would overflow.
 static inline void VectorThrowLengthError() {
@@ -354,7 +602,8 @@ static inline void VectorThrowLengthError() {
     }
     errorObject.rep = errorOwner;
     cleanup.p = 0;
-    if (cleanupChar != 0) __dla__FPv(cleanup.p);
+    if (cleanupChar != 0)
+        __dla__FPv(cleanup.p);
     strcpy(errorCopy, errorText);
     errorObject.vtable = __vt__Q23std12length_error;
     __throw(comThinkVectorErrorStrings + kLengthErrorTypeNameOffset, &errorObject, (void*)__dt__Q23std12length_errorFv);
@@ -378,7 +627,10 @@ struct TargetArrayGuard {
     // Protect a newly allocated error string until its shared owner is constructed.
     TargetArrayGuard(char* value, char& f) : p(value), flag(f) {}
     // Release untransferred text on unwind; clearing p transfers ownership.
-    ~TargetArrayGuard() { if (p != 0) __dla__FPv(p); }
+    ~TargetArrayGuard() {
+        if (p != 0)
+            __dla__FPv(p);
+    }
 };
 
 extern "C" void __dt__Q23std9exceptionFv(void*, int);
@@ -388,7 +640,9 @@ struct TargetLengthBase {
     char* data;
     void* rep;
     // Delegate exception-base teardown to the original runtime implementation.
-    ~TargetLengthBase() { __dt__Q23std9exceptionFv(this, -1); }
+    ~TargetLengthBase() {
+        __dt__Q23std9exceptionFv(this, -1);
+    }
 };
 
 } // extern "C"
@@ -424,12 +678,16 @@ inline length_error::length_error(const char* text) {
 }
 
 // Use supplied exception storage without allocating or taking ownership of it.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 extern "C" {
 // Construct and throw the original vector length_error with its cleanup representation.
 static inline void TargetThrowLengthError() {
-    struct Storage { void* words[3]; } storage;
+    struct Storage {
+        void* words[3];
+    } storage;
     std::length_error* error = new (&storage) std::length_error(comThinkVectorErrorStrings);
     __throw(comThinkVectorErrorStrings + kLengthErrorTypeNameOffset, error, (void*)__dt__Q23std12length_errorFv);
 }
@@ -475,16 +733,25 @@ struct EquipItemInventoryTableView {
 // Rebuild the filtered equipment-item list from Item.iff, owning a copy of each accepted record.
 int CShopProductEquipItem_RebuildFilteredItemList(TargetCollection* self, void* filterContext) {
     // Phase 1: clear old payloads; scan keyed IFF entries, skipping the four-byte key.
-    if (!self->clear()) return 0;
+    if (!self->clear())
+        return 0;
     CSharedDoc* mgr = g_sharedDoc;
     for (char* records = (char*)(&((volatile SharedShopInventoryView*)mgr)->itemInventory)->items.data;
-         (&((volatile SharedShopInventoryView*)mgr)->itemInventory)->items.size * sizeof(ItemTableEntry) + (char*)(&((volatile SharedShopInventoryView*)mgr)->itemInventory)->items.data != records;
+         (&((volatile SharedShopInventoryView*)mgr)->itemInventory)->items.size * sizeof(ItemTableEntry) +
+             (char*)(&((volatile SharedShopInventoryView*)mgr)->itemInventory)->items.data !=
+         records;
          records += sizeof(ItemTableEntry)) {
         char* sourceRecord = records + 4;
-        if (!self->accepts(sourceRecord, filterContext)) continue;
+        if (!self->accepts(sourceRecord, filterContext))
+            continue;
         void* recordCopy = __nw__FUl(sizeof(IFF_STRUCT::sItem));
-        if (!recordCopy) return 0;
-        struct Copy60 { unsigned w[23]; short a; short b; };
+        if (!recordCopy)
+            return 0;
+        struct Copy60 {
+            unsigned w[23];
+            short a;
+            short b;
+        };
         *(Copy60*)recordCopy = *(Copy60*)sourceRecord;
         unsigned recordCount = AsPointerCollectionState(self)->size;
         unsigned pointerCapacity = AsPointerCollectionState(self)->capacity;
@@ -499,7 +766,8 @@ int CShopProductEquipItem_RebuildFilteredItemList(TargetCollection* self, void* 
             TargetThrowLengthError();
         }
         // Phase 2: no free slot; choose checked growth (3/5, then 1/2, then the maximum).
-        unsigned additionalCapacity = AsPointerCollectionState(self)->size + 1 - AsPointerCollectionState(self)->capacity;
+        unsigned additionalCapacity =
+            AsPointerCollectionState(self)->size + 1 - AsPointerCollectionState(self)->capacity;
         TargetVectorBuffer buffer(&AsPointerCollectionState(self)->capacity); // 0x80236EFC.
         pointerCapacity = AsPointerCollectionState(self)->capacity;
         if (additionalCapacity > kMaxPointerElements - pointerCapacity) {
@@ -549,7 +817,11 @@ int CShopProductEquipItem_RebuildFilteredItemList(TargetCollection* self, void* 
     return 1;
 }
 
-struct TargetErrorStorage { void* vtable; char* data; void* rep; };
+struct TargetErrorStorage {
+    void* vtable;
+    char* data;
+    void* rep;
+};
 
 // Build a vector length_error in caller storage and transfer it to the exception runtime.
 static inline void TargetThrowLengthError2(TargetErrorStorage& error, char* flag) {
@@ -588,19 +860,28 @@ static inline void TargetCopyRecord70(void* dstp, const void* srcp) {
     *(Copy92*)dstp = *(Copy92*)srcp;
     unsigned char* o = (unsigned char*)dstp;
     const unsigned char* s = (const unsigned char*)srcp;
-    o[0x5C] = s[0x5C]; o[0x5D] = s[0x5D]; o[0x5E] = s[0x5E]; o[0x5F] = s[0x5F];
-    o[0x60] = s[0x60]; o[0x61] = s[0x61]; o[0x62] = s[0x62]; o[0x63] = s[0x63];
-    o[0x64] = s[0x64]; o[0x65] = s[0x65];
+    o[0x5C] = s[0x5C];
+    o[0x5D] = s[0x5D];
+    o[0x5E] = s[0x5E];
+    o[0x5F] = s[0x5F];
+    o[0x60] = s[0x60];
+    o[0x61] = s[0x61];
+    o[0x62] = s[0x62];
+    o[0x63] = s[0x63];
+    o[0x64] = s[0x64];
+    o[0x65] = s[0x65];
     *(short*)(o + 0x66) = *(short*)(s + 0x66);
     *(unsigned short*)(o + 0x68) = *(unsigned short*)(s + 0x68);
     *(unsigned short*)(o + 0x6A) = *(unsigned short*)(s + 0x6A);
     *(unsigned short*)(o + 0x6C) = *(unsigned short*)(s + 0x6C);
-    o[0x6E] = s[0x6E]; o[0x6F] = s[0x6F];
+    o[0x6E] = s[0x6E];
+    o[0x6F] = s[0x6F];
 }
 
 #pragma opt_lifetimes off
 // Rebuild the filtered ring list from AuxPart.iff, growing pointer storage as necessary.
-int CShopProductRing_RebuildFilteredAuxParts(TargetCollection* self, void* filterContext) {
+int CShopProductRing::RebuildFilteredAuxParts(void* filterContext) {
+    TargetCollection* self = (TargetCollection*)this;
     TargetErrorStorage error1, error2, error3;
     unsigned growthLarge, growthSmall, additionalCapacity;
     char flag1[4], flag2[4], flag3[4];
@@ -612,17 +893,19 @@ int CShopProductRing_RebuildFilteredAuxParts(TargetCollection* self, void* filte
     unsigned pointerCapacity;
     unsigned newCapacity;
     // Phase 1: clear owned records and filter AuxPart entries using the borrowed context.
-    if (!self->clear()) return 0;
+    if (!self->clear())
+        return 0;
     perr3 = &error3;
     perr1 = &error1;
     RingInventoryTableView* mgr = (RingInventoryTableView*)g_sharedDoc;
     for (records = (char*)(&((volatile SharedShopInventoryView*)mgr)->itemInventory)->auxParts.data;
-         TargetRecordsEnd(mgr) != records;
-         records += sizeof(AuxPartTableEntry)) {
+         TargetRecordsEnd(mgr) != records; records += sizeof(AuxPartTableEntry)) {
         sourceRecord = records + 4;
-        if (!self->accepts(sourceRecord, filterContext)) continue;
+        if (!self->accepts(sourceRecord, filterContext))
+            continue;
         recordCopy = __nw__FUl(sizeof(IFF_STRUCT::sAuxPart));
-        if (!recordCopy) return 0;
+        if (!recordCopy)
+            return 0;
         TargetCopyRecord70(recordCopy, sourceRecord);
         unsigned recordCount = AsPointerCollectionState(self)->size;
         pointerCapacity = AsPointerCollectionState(self)->capacity;

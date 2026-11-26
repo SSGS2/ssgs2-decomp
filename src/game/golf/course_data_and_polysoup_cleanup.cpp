@@ -1,3 +1,7 @@
+// Course data cleanup: releasing the course's polygon soup (WPolySoup), its course data,
+// and its resource records when a course is unloaded. CAllCourse::LoadRoundHoleRecords
+// copies the selected round hole rows into the round hole records.
+
 #include "iff/IffStruct.h"
 #include "classes/CourseData801C.h"
 #include "classes/Buffer801BC334.h"
@@ -13,11 +17,10 @@
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CAllCourse.h"
-
-#define AsCAllCourse(p) ((CAllCourse*)(p))
-
-// Translation unit 0x801BBD68-0x801BD08C (7 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CSceneManager.h"
+#include "classes/CQuadTree.h"
+#include "classes/CBalloonSystem.h"
+#include "classes/CFx.h"
 
 // Views for cleanup-only records not represented in WPolySoup's shared header.
 struct CourseSurfaceOwnership {
@@ -94,7 +97,8 @@ enum CourseContainerOffset {
 typedef char CourseSurfaceOwnership_size_check[(sizeof(CourseSurfaceOwnership) == 0xDC) ? 1 : -1];
 typedef char CourseResourceOwnership_size_check[(sizeof(CourseResourceOwnership) == 0x28) ? 1 : -1];
 typedef char CourseRoundSelection_par_check[((int)&((CourseRoundSelection*)0)->pars == 0x9D0) ? 1 : -1];
-typedef char CourseHoleCoefficients_alternate_check[((int)&((CourseHoleCoefficients*)0)->alternateByTee == 0x34) ? 1 : -1];
+typedef char
+    CourseHoleCoefficients_alternate_check[((int)&((CourseHoleCoefficients*)0)->alternateByTee == 0x34) ? 1 : -1];
 enum CourseCleanupConstants {
     kArrayCookieSize = 0x10,
     kSurfaceStride = sizeof(CourseSurfaceOwnership),
@@ -117,15 +121,13 @@ extern void __dla__FPv(void*);
 extern void* Resource_OpenResolvedPath(void*, const char*, int, int, int, int);
 extern void* appMallocUni__FUl(void*);
 extern void Resource_Release(void*);
-extern void* Table_GetEntry(void*, int);extern void WPolySoup_ReleaseResources(void*);
+extern void* Table_GetEntry(void*, int);
+extern void WPolySoup_ReleaseResources(void*);
 extern void ResourceManager_ReleaseId(void*, void*);
 extern void ResourceManager_ReleaseObject(void*, void*, int);
 extern void* CQuadTree_GetInstance();
-extern void CQuadTree_FreeBuffers(void*);
 extern void __destroy_new_array(void*, void*);
 extern void ResourceManager_ReleaseId(void*, void*);
-extern void CSceneManager_RemoveUnretainedRenderRecords(void*);
-extern void CFx_ClearEffects(void*, int);
 extern void RenderPacket_Init(void*);
 extern void RenderPacket_ReleaseResources(void*);
 extern void RenderPacket_Destroy(void);
@@ -134,7 +136,6 @@ extern char s_renderPacketDtorRegistration_804FCA30[];
 extern void* g_sceneManager;
 extern void* g_fx;
 extern signed char s_renderPacketInitialized;
-extern void CBalloonSystem_DestroyAllQueuedBalloons(void);
 extern void BaseObject_dtor(void*, int);
 extern void FxTree_DestroySubtreeNodes(void*, void*);
 extern char courseModelResourceStrings[];
@@ -143,7 +144,8 @@ struct CourseTable {
 };
 extern CourseTable s_courseHoleRowGroups;
 extern char __vt__10CAllCourse[];
-extern void* g_sharedDoc;extern char __vt__9WPolySoup[];
+extern void* g_sharedDoc;
+extern char __vt__9WPolySoup[];
 extern char __vt__Q29WPolySoup13CStaticPetGrp[];
 extern void* g_resourceManager;
 
@@ -202,8 +204,10 @@ struct CleanupEntry {
 // Release deeper effect descendants before freeing this node; payloads are not owned here.
 static inline void ReleaseCourseEffectLeaf(char* self, void* node) {
     if (node != 0) {
-        if (*(void**)node != 0) FxTree_DestroySubtreeNodes(self + kEffectTreeOffset, *(void**)node);
-        if (((CourseTreeLinks*)node)->right != 0) FxTree_DestroySubtreeNodes(self + kEffectTreeOffset, ((CourseTreeLinks*)node)->right);
+        if (*(void**)node != 0)
+            FxTree_DestroySubtreeNodes(self + kEffectTreeOffset, *(void**)node);
+        if (((CourseTreeLinks*)node)->right != 0)
+            FxTree_DestroySubtreeNodes(self + kEffectTreeOffset, ((CourseTreeLinks*)node)->right);
         appFreeUni__FPv(node);
     }
 }
@@ -221,7 +225,7 @@ void WPolySoup_ReleaseResources(void* object) {
     char* self = (char*)object;
     memset(self + kCourseStatisticsOffset, 0, 0x40);
     void* quadtree = (void*)CQuadTree_GetInstance();
-    CQuadTree_FreeBuffers(quadtree);
+    ((CQuadTree*)quadtree)->FreeBuffers();
     // Ownership phase 1: surfaces[] own cookie arrays, buffer wrappers and resources.
     // Each stored pointer is reloaded after releases; do not cache it across manager calls.
     if ((*(void**)&AsWPolySoup(self)->surfaces) != 0) {
@@ -231,17 +235,25 @@ void WPolySoup_ReleaseResources(void* object) {
         int zero = 0;
         while (i < (*(int*)&AsWPolySoup(self)->surfaceCount)) {
             if (((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->arrayWithCookie) {
-                if (((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->arrayWithCookie) {
-                    __dla__FPv((char*)((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->arrayWithCookie - kArrayCookieSize);
+                if (((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))
+                        ->arrayWithCookie) {
+                    __dla__FPv((char*)((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))
+                                   ->arrayWithCookie -
+                               kArrayCookieSize);
                 }
                 ((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->arrayWithCookie = 0;
             }
-            if (((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->buffers != 0 && *(void**)((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->buffers != 0) {
-                __dla__FPv(*(void**)((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->buffers);
+            if (((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->buffers != 0 &&
+                *(void**)((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->buffers !=
+                    0) {
+                __dla__FPv(*(void**)((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))
+                                ->buffers);
                 *(void**)((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->buffers = 0;
             }
             if (((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->buffers != 0) {
-                __destroy_new_array(((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->buffers, (void*)Buffer_dtor);
+                __destroy_new_array(
+                    ((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->buffers,
+                    (void*)Buffer_dtor);
                 ((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->buffers = 0;
             }
             void* q = ((CourseSurfaceOwnership*)((char*)(*(void**)&AsWPolySoup(self)->surfaces) + off))->resource;
@@ -285,10 +297,10 @@ void WPolySoup_ReleaseResources(void* object) {
         }
     }
     if ((*(void**)&AsWPolySoup(self)->resourceEntries) != 0) {
-            if ((*(void**)&AsWPolySoup(self)->resourceEntries) != 0) {
-                __dla__FPv((char*)(*(void**)&AsWPolySoup(self)->resourceEntries) - kArrayCookieSize);
-            }
-            (*(void**)&AsWPolySoup(self)->resourceEntries) = 0;
+        if ((*(void**)&AsWPolySoup(self)->resourceEntries) != 0) {
+            __dla__FPv((char*)(*(void**)&AsWPolySoup(self)->resourceEntries) - kArrayCookieSize);
+        }
+        (*(void**)&AsWPolySoup(self)->resourceEntries) = 0;
     }
     AsWPolySoup(self)->resourceEntryCount = 0;
     // Ownership phase 3: flat camera/surface/bounds arrays use a 0x10-byte cookie;
@@ -504,12 +516,15 @@ void WPolySoup_ReleaseResources(void* object) {
     }
     AsWPolySoup(self)->staticPetCount = 0;
     // Phase 7: clear shared scene/effect/render state after local references are gone.
-    if (g_sceneManager != 0) CSceneManager_RemoveUnretainedRenderRecords(g_sceneManager);
-    if (g_fx != 0) CFx_ClearEffects(g_fx, 0);
+    if (g_sceneManager != 0)
+        CSceneManager::RemoveUnretainedRenderRecords(g_sceneManager);
+    if (g_fx != 0)
+        ((CFx*)g_fx)->ClearEffects(0);
     if (Sing_805DC7B0() == 0) {
         if (s_renderPacketInitialized == 0) {
             RenderPacket_Init(s_renderPacket);
-            __register_global_object(s_renderPacket, (void*)RenderPacket_Destroy, s_renderPacketDtorRegistration_804FCA30);
+            __register_global_object(s_renderPacket, (void*)RenderPacket_Destroy,
+                                     s_renderPacketDtorRegistration_804FCA30);
             s_renderPacketInitialized = 1;
         }
         Sing_805DC7B0() = s_renderPacket;
@@ -520,60 +535,66 @@ void WPolySoup_ReleaseResources(void* object) {
 // The repeated guards and unrolled tree levels preserve the compiler's original destructor expansion.
 // Inline helpers changed register allocation even with propagation disabled.
 #define IF_COURSE_SUBOBJECT(o) if ((unsigned int)self + (o) != 0)
-#define IF_COURSE_SUBOBJECT_FOUR_TIMES(o) IF_COURSE_SUBOBJECT(o) IF_COURSE_SUBOBJECT(o) IF_COURSE_SUBOBJECT(o) IF_COURSE_SUBOBJECT(o)
+#define IF_COURSE_SUBOBJECT_FOUR_TIMES(o) \
+    IF_COURSE_SUBOBJECT(o) IF_COURSE_SUBOBJECT(o) IF_COURSE_SUBOBJECT(o) IF_COURSE_SUBOBJECT(o)
 // Vector record at o: data/count/capacity. This destructor frees retained capacity;
 // ReleaseResources above cleared values. All repeated guards evaluate only addresses.
-#define RELEASE_COURSE_VECTOR_STORAGE(o) \
+#define RELEASE_COURSE_VECTOR_STORAGE(o)                       \
     IF_COURSE_SUBOBJECT_FOUR_TIMES(o) IF_COURSE_SUBOBJECT(o) { \
-        void* p = *(void**)(self + (o)); \
-        if (p != 0) { \
+        void* p = *(void**)(self + (o));                       \
+        if (p != 0) {                                          \
             unsigned int n = *(unsigned int*)(self + (o) + 4); \
-            *(int*)(self + (o) + 4) -= n; \
-            appFreeUni__FPv(p); \
-        } \
+            *(int*)(self + (o) + 4) -= n;                      \
+            appFreeUni__FPv(p);                                \
+        }                                                      \
     }
 // List at o: count/next/previous with embedded sentinel at o+4.
 // Unlink the range first, walk previous links, then free nodes without payload deletion.
-#define RELEASE_COURSE_LIST_NODES(o) \
-    IF_COURSE_SUBOBJECT_FOUR_TIMES(o) { \
-        void* node = *(void**)(self + (o) + 8); \
-        void* h = self + (o) + 4; \
-        if (node != h) { \
-            void* first = *(void**)h; \
+#define RELEASE_COURSE_LIST_NODES(o)                                                                 \
+    IF_COURSE_SUBOBJECT_FOUR_TIMES(o) {                                                              \
+        void* node = *(void**)(self + (o) + 8);                                                      \
+        void* h = self + (o) + 4;                                                                    \
+        if (node != h) {                                                                             \
+            void* first = *(void**)h;                                                                \
             ((CourseCleanupLinks*)*(void**)node)->previous = ((CourseCleanupLinks*)first)->previous; \
-            *(void**)((CourseCleanupLinks*)first)->previous = *(void**)node; \
-            while (node != h) { \
-                void* nodeToFree = node; \
-                node = ((CourseCleanupLinks*)node)->previous; \
-                appFreeUni__FPv(nodeToFree); \
-                --*(int*)(self + (o)); \
-            } \
-        } \
+            *(void**)((CourseCleanupLinks*)first)->previous = *(void**)node;                         \
+            while (node != h) {                                                                      \
+                void* nodeToFree = node;                                                             \
+                node = ((CourseCleanupLinks*)node)->previous;                                        \
+                appFreeUni__FPv(nodeToFree);                                                         \
+                --*(int*)(self + (o));                                                               \
+            }                                                                                        \
+        }                                                                                            \
     }
-#define RELEASE_COURSE_TREE_LEAF(p) { \
-    void* c = (p); \
-    if (c != 0) { \
-        if (*(void**)c != 0) FxTree_DestroySubtreeNodes(self + kEffectTreeOffset, *(void**)c); \
-        if (((CourseTreeLinks*)c)->right != 0) FxTree_DestroySubtreeNodes(self + kEffectTreeOffset, ((CourseTreeLinks*)c)->right); \
-        appFreeUni__FPv(c); \
-    } \
-}
-#define RELEASE_COURSE_TREE_BRANCH(p) { \
-    void* b = (p); \
-    if (b != 0) { \
-        RELEASE_COURSE_TREE_LEAF(*(void**)b); \
-        RELEASE_COURSE_TREE_LEAF(((CourseTreeLinks*)b)->right); \
-        appFreeUni__FPv(b); \
-    } \
-}
-#define RELEASE_COURSE_TREE_SIDE(p) { \
-    void* a = (p); \
-    if (a != 0) { \
-        RELEASE_COURSE_TREE_BRANCH(*(void**)a); \
-        RELEASE_COURSE_TREE_BRANCH(((CourseTreeLinks*)a)->right); \
-        appFreeUni__FPv(a); \
-    } \
-}
+#define RELEASE_COURSE_TREE_LEAF(p)                                                                 \
+    {                                                                                               \
+        void* c = (p);                                                                              \
+        if (c != 0) {                                                                               \
+            if (*(void**)c != 0)                                                                    \
+                FxTree_DestroySubtreeNodes(self + kEffectTreeOffset, *(void**)c);                   \
+            if (((CourseTreeLinks*)c)->right != 0)                                                  \
+                FxTree_DestroySubtreeNodes(self + kEffectTreeOffset, ((CourseTreeLinks*)c)->right); \
+            appFreeUni__FPv(c);                                                                     \
+        }                                                                                           \
+    }
+#define RELEASE_COURSE_TREE_BRANCH(p)                               \
+    {                                                               \
+        void* b = (p);                                              \
+        if (b != 0) {                                               \
+            RELEASE_COURSE_TREE_LEAF(*(void**)b);                   \
+            RELEASE_COURSE_TREE_LEAF(((CourseTreeLinks*)b)->right); \
+            appFreeUni__FPv(b);                                     \
+        }                                                           \
+    }
+#define RELEASE_COURSE_TREE_SIDE(p)                                   \
+    {                                                                 \
+        void* a = (p);                                                \
+        if (a != 0) {                                                 \
+            RELEASE_COURSE_TREE_BRANCH(*(void**)a);                   \
+            RELEASE_COURSE_TREE_BRANCH(((CourseTreeLinks*)a)->right); \
+            appFreeUni__FPv(a);                                       \
+        }                                                             \
+    }
 #pragma opt_propagation off
 // Release course contents and owned containers, destroy the base, and optionally delete the soup.
 void* WPolySoup_dtor(void* object, int shouldDelete) {
@@ -592,8 +613,11 @@ void* WPolySoup_dtor(void* object, int shouldDelete) {
             while (i < *(int*)&AsWPolySoup(self)->resourceCount) {
                 if (g_resourceManager != 0) {
                     if (((CourseResourceOwnership*)((char*)AsWPolySoup(self)->resources + off))->resourceId != 0) {
-                        ResourceManager_ReleaseId(g_resourceManager, ((CourseResourceOwnership*)((char*)AsWPolySoup(self)->resources + off))->resourceId);
-                        (*(int*)&((CourseResourceOwnership*)((char*)AsWPolySoup(self)->resources + off))->resourceId) = zero;
+                        ResourceManager_ReleaseId(
+                            g_resourceManager,
+                            ((CourseResourceOwnership*)((char*)AsWPolySoup(self)->resources + off))->resourceId);
+                        (*(int*)&((CourseResourceOwnership*)((char*)AsWPolySoup(self)->resources + off))->resourceId) =
+                            zero;
                     }
                 }
                 off += kResourceRecordStride;
@@ -606,27 +630,28 @@ void* WPolySoup_dtor(void* object, int shouldDelete) {
             *(void**)&AsWPolySoup(object)->resources = 0;
         }
         {
-        unsigned int i;
-        int zero;
-        int off;
-        zero = 0;
-        i = zero;
-        *(int*)&AsWPolySoup(object)->resourceCount = zero;
-        off = zero;
-        while (i < *(volatile unsigned int*)&AsWPolySoup(self)->resourceObjectCount) {
-            if (g_resourceManager != 0) {
-                if (*(void**)(*(char**)&AsWPolySoup(self)->resourceObjects + off) != 0) {
-                    ResourceManager_ReleaseObject(g_resourceManager, *(void**)(*(char**)&AsWPolySoup(self)->resourceObjects + off), 0);
-                    *(int*)(*(char**)&AsWPolySoup(self)->resourceObjects + off) = zero;
+            unsigned int i;
+            int zero;
+            int off;
+            zero = 0;
+            i = zero;
+            *(int*)&AsWPolySoup(object)->resourceCount = zero;
+            off = zero;
+            while (i < *(volatile unsigned int*)&AsWPolySoup(self)->resourceObjectCount) {
+                if (g_resourceManager != 0) {
+                    if (*(void**)(*(char**)&AsWPolySoup(self)->resourceObjects + off) != 0) {
+                        ResourceManager_ReleaseObject(g_resourceManager,
+                                                      *(void**)(*(char**)&AsWPolySoup(self)->resourceObjects + off), 0);
+                        *(int*)(*(char**)&AsWPolySoup(self)->resourceObjects + off) = zero;
+                    }
                 }
+                ++i;
+                off += 4;
             }
-            ++i;
-            off += 4;
+            unsigned int n = AsWPolySoup(self)->resourceObjectCount;
+            *(int*)&AsWPolySoup(self)->resourceObjectCount -= n;
         }
-        unsigned int n = AsWPolySoup(self)->resourceObjectCount;
-        *(int*)&AsWPolySoup(self)->resourceObjectCount -= n;
-        }
-        CBalloonSystem_DestroyAllQueuedBalloons();
+        CBalloonSystem::DestroyAllQueuedBalloons();
         if ((unsigned int)object + 0x4c80 != 0 && ((AsWPolySoup(object)->pendingFilenameFlags >> 31) != 0))
             appFreeUni__FPv(*(void**)&AsWPolySoup(object)->pendingFilenameData);
         RELEASE_COURSE_VECTOR_STORAGE(kResourceObjectsVectorOffset);
@@ -636,38 +661,41 @@ void* WPolySoup_dtor(void* object, int shouldDelete) {
         RELEASE_COURSE_VECTOR_STORAGE(kAuxiliaryVectorOneOffset);
         RELEASE_COURSE_LIST_NODES(kFirstListContainerOffset);
         IF_COURSE_SUBOBJECT(kStaticPetGroupOffset) {
-        AsWPolySoup(object)->staticPetGroupVtable = &__vt__Q29WPolySoup13CStaticPetGrp;
-        if (AsWPolySoup(object)->staticPetEntries != 0) {
-            __dla__FPv(AsWPolySoup(object)->staticPetEntries);
-            AsWPolySoup(object)->staticPetEntries = 0;
+            AsWPolySoup(object)->staticPetGroupVtable = &__vt__Q29WPolySoup13CStaticPetGrp;
+            if (AsWPolySoup(object)->staticPetEntries != 0) {
+                __dla__FPv(AsWPolySoup(object)->staticPetEntries);
+                AsWPolySoup(object)->staticPetEntries = 0;
+            }
+            AsWPolySoup(object)->staticPetCount = 0;
         }
-        AsWPolySoup(object)->staticPetCount = 0;
-        }
-        IF_COURSE_SUBOBJECT_FOUR_TIMES(kEffectTreeOffset) IF_COURSE_SUBOBJECT(kEffectTreeOffset) IF_COURSE_SUBOBJECT(kEffectTreeOffset) {
-        void* root = *(void**)&AsWPolySoup(object)->effectTreeRoot;
-        if (root != 0) {
-            RELEASE_COURSE_TREE_SIDE(*(void**)root);
-            RELEASE_COURSE_TREE_SIDE(((CourseTreeLinks*)root)->right);
-            appFreeUni__FPv(root);
-        }
+        IF_COURSE_SUBOBJECT_FOUR_TIMES(kEffectTreeOffset)
+        IF_COURSE_SUBOBJECT(kEffectTreeOffset) IF_COURSE_SUBOBJECT(kEffectTreeOffset) {
+            void* root = *(void**)&AsWPolySoup(object)->effectTreeRoot;
+            if (root != 0) {
+                RELEASE_COURSE_TREE_SIDE(*(void**)root);
+                RELEASE_COURSE_TREE_SIDE(((CourseTreeLinks*)root)->right);
+                appFreeUni__FPv(root);
+            }
         }
         IF_COURSE_SUBOBJECT_FOUR_TIMES(kRegionStorageOffset) {
-        void* data = *(void**)(self + kRegionStorageOffset);
-        if (data != 0) {
-            int count = *(int*)&AsWPolySoup(self)->regionCount;
-            CleanupEntry* entry;
-            entry = (CleanupEntry*)data + count;
-            *(int*)&AsWPolySoup(self)->regionCount -= (unsigned int)count;
-            while (count != 0) {
-                --entry;
-                entry->~CleanupEntry();
-                --count;
+            void* data = *(void**)(self + kRegionStorageOffset);
+            if (data != 0) {
+                int count = *(int*)&AsWPolySoup(self)->regionCount;
+                CleanupEntry* entry;
+                entry = (CleanupEntry*)data + count;
+                *(int*)&AsWPolySoup(self)->regionCount -= (unsigned int)count;
+                while (count != 0) {
+                    --entry;
+                    entry->~CleanupEntry();
+                    --count;
+                }
+                appFreeUni__FPv(*(void**)(self + kRegionStorageOffset));
             }
-            appFreeUni__FPv(*(void**)(self + kRegionStorageOffset));
         }
-        }
-        if (object != 0) BaseObject_dtor(object, 0);
-        if (shouldDelete > 0) __dl__FPv(object);
+        if (object != 0)
+            BaseObject_dtor(object, 0);
+        if (shouldDelete > 0)
+            __dl__FPv(object);
     }
     return object;
 }
@@ -682,17 +710,23 @@ void* WPolySoup_dtor(void* object, int shouldDelete) {
 #pragma use_lmw_stmw reset
 
 // Release and clear the watched resource handle on scope exit, including early returns.
-struct PathHandle { void** value; ~PathHandle() {
-    if (*value != 0) {
+struct PathHandle {
+    void** value;
+    ~PathHandle() {
         if (*value != 0) {
-            Resource_Release(*value);
-            *value = 0;
+            if (*value != 0) {
+                Resource_Release(*value);
+                *value = 0;
+            }
         }
     }
-} };
+};
 // Borrow table bytes; their explicit owner frees them after row copying.
-struct InfoHandle { void* value; void* vtable; ~InfoHandle() {
-} };
+struct InfoHandle {
+    void* value;
+    void* vtable;
+    ~InfoHandle() {}
+};
 struct CourseResource {
     virtual void slot0();
     virtual void slot1();
@@ -701,13 +735,17 @@ struct CourseResource {
 };
 
 // Load all_course.ecb and copy per-hole par and tee-selected coefficients for the round.
-enum CourseParPolicy { kPartyForcePar3Mode1 = 1, kPartyForcePar3Mode2 = 2, kPartyAlternateParMode3 = 3 };
+enum CourseParPolicy {
+    kPartyForcePar3Mode1 = 1,
+    kPartyForcePar3Mode2 = 2,
+    kPartyAlternateParMode3 = 3
+};
 
 // Copy the selected ECB rows into round hole records; count is holes, not bytes.
-int CAllCourse_LoadRoundHoleRecords(void* object, int count) {
-    void* resource = Resource_OpenResolvedPath(AsCAllCourse(object)->resourceManager,
-        courseModelResourceStrings + kAllCoursePath, -1, 0, 0, 0);
-    PathHandle handle = { &resource };
+int CAllCourse::LoadRoundHoleRecords(int count) {
+    void* resource =
+        Resource_OpenResolvedPath(resourceManager, courseModelResourceStrings + kAllCoursePath, -1, 0, 0, 0);
+    PathHandle handle = {&resource};
     if (resource == 0) {
         return 0;
     }
@@ -726,7 +764,8 @@ int CAllCourse_LoadRoundHoleRecords(void* object, int count) {
     }
     InfoHandle infoHandle;
     infoHandle.value = 0;
-    if (info != 0) infoHandle.value = info;
+    if (info != 0)
+        infoHandle.value = info;
     infoHandle.vtable = __vt__10CAllCourse;
     // For each selected hole, source selection lives in CSharedDoc; destination
     // lives in golfDoc->holeRecords (0x20-byte records). Choices must be 0..2.
@@ -737,7 +776,9 @@ int CAllCourse_LoadRoundHoleRecords(void* object, int count) {
     float teeVectorZ[3];
     int roundHoleIndex = 0;
     while (roundHoleIndex < count) {
-#define COURSE_ELEM(field) (*(unsigned char*)((unsigned int)roundHoleIndex + (unsigned int)g_sharedDoc + (int)&((CourseRoundSelection*)0)->field))
+#define COURSE_ELEM(field)                                                        \
+    (*(unsigned char*)((unsigned int)roundHoleIndex + (unsigned int)g_sharedDoc + \
+                       (int)&((CourseRoundSelection*)0)->field))
         int courseIndex = COURSE_ELEM(courseIndices);
         int holeNumber = COURSE_ELEM(holeNumbers);
         void* row;
@@ -753,7 +794,8 @@ int CAllCourse_LoadRoundHoleRecords(void* object, int count) {
         int mode = (*(int*)&AsCSharedDoc(g_sharedDoc)->partyGameMode);
         unsigned int holeRecordByteOffset;
 #define COURSE_G ((char*)g_sharedDoc)
-#define COURSE_DEST ((char*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->holeRecords + holeRecordByteOffset)
+#define COURSE_DEST \
+    ((char*)AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->holeRecords + holeRecordByteOffset)
         // Par selection is independent of the low-nibble course variant below.
         // These policy names intentionally avoid guessing the party-mode game labels.
         switch (mode) {
@@ -776,8 +818,10 @@ int CAllCourse_LoadRoundHoleRecords(void* object, int count) {
         }
         void* x = AsCSharedDoc(g_sharedDoc)->selectedCourseData;
         unsigned char courseVariant;
-        if (x == 0) courseVariant = 0;
-        else courseVariant = ((IFF_STRUCT::sCourse*)x)->courseFlags & kCourseVariantMask;
+        if (x == 0)
+            courseVariant = 0;
+        else
+            courseVariant = ((IFF_STRUCT::sCourse*)x)->courseFlags & kCourseVariantMask;
         if (courseVariant == kAlternateCourseVariant) {
             *(float*)COURSE_DEST = ((CourseHoleCoefficients*)row)->alternatePair[0];
             *(float*)(COURSE_DEST + 8) = ((CourseHoleCoefficients*)row)->alternatePair[1];
@@ -801,7 +845,8 @@ int CAllCourse_LoadRoundHoleRecords(void* object, int count) {
             *(float*)(COURSE_DEST + 0xc) = teeVectorX[COURSE_ELEM(teeChoices)];
             *(float*)(COURSE_DEST + 0x14) = teeVectorZ[COURSE_ELEM(teeChoices)];
         }
-        if (courseIndex == kFallbackCourseIndex) break;
+        if (courseIndex == kFallbackCourseIndex)
+            break;
         ++roundHoleIndex;
     }
     appFreeUni__FPv(info);

@@ -1,12 +1,15 @@
-// Translation unit 0x80264238-0x8026456C (7 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Destructors for guard objects that put saved GX state back when they go out of scope: render
+// states, texture stage states and sampler parameters, plus four owner destructors that free their payload.
 
 extern "C" {
 
 enum SavedStateLayout {
-    kSavedRenderStateCount = 21, kSavedRenderWordsOffset = 0xA8,
-    kSavedTextureStateCount = 8, kSavedTextureWordsOffset = 0x40,
-    kSavedSamplerCount = 5, kSavedSamplerWordsOffset = 0x28
+    kSavedRenderStateCount = 21,
+    kSavedRenderWordsOffset = 0xA8,
+    kSavedTextureStateCount = 8,
+    kSavedTextureWordsOffset = 0x40,
+    kSavedSamplerCount = 5,
+    kSavedSamplerWordsOffset = 0x28
 };
 
 void appFreeUni__FPv(void*);

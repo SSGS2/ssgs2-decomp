@@ -1,7 +1,8 @@
+// Item request state for tour item requests: tracks completion and the pending reward and
+// text-entry counts, owns the request and text vectors, and draws its popup or dialog processor.
+
 typedef unsigned long new_size_t;
 #include "classes/ItemRequestState80300EC8.h"
-// Translation unit 0x80300EC8-0x80301720 (10 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 extern int ItemRequestState_ProcessPopupQueue(void* self);
@@ -39,11 +40,12 @@ int ItemRequestState_IsComplete(void* self) {
 int ItemRequestState_GetEntryCount(void* self) {
     return AsItemRequestState80300EC8(self)->pendingRequestCount + AsItemRequestState80300EC8(self)->textEntryCount;
 }
-
 }
 
-struct VObjDtor { 
-virtual void v0(int); virtual void v1(); virtual void v2();
+struct VObjDtor {
+    virtual void v0(int);
+    virtual void v1();
+    virtual void v2();
 };
 struct Arr80301294 {
     char* data;
@@ -55,40 +57,44 @@ struct Arr80301294 {
 // D0..D3 below preserve the compiler's nested library-destructor expansion, not four resources.
 
 // Destroy text entries in reverse order and free their owned vector allocation.
-static inline void Arr80301294_Free(Arr80301294* a) {
-    if (a->data != 0) {
-        int count = a->count;
-        char* item = a->data + count * 0x14;
-        a->count = count;
-        a->count -= count;
+static inline void Arr80301294_Free(Arr80301294* textVector) {
+    if (textVector->data != 0) {
+        int count = textVector->count;
+        char* item = textVector->data + count * 0x14;
+        textVector->count = count;
+        textVector->count -= count;
         while (count != 0) {
             item -= 0x14;
             if (item != 0 && item + 4 != 0 && (*(unsigned int*)(item + 4) >> 31) != 0)
                 appFreeUni__FPv(*(void**)(item + 0xC));
             --count;
         }
-        appFreeUni__FPv(a->data);
+        appFreeUni__FPv(textVector->data);
     }
 }
 
 // Null-checked destructor layer forwarding to owned text-vector cleanup.
 static inline void Arr80301294_D3(Arr80301294* a) {
-    if (a != 0) Arr80301294_Free(a);
+    if (a != 0)
+        Arr80301294_Free(a);
 }
 
 // Preserve the next null-checked library destructor layer.
 static inline void Arr80301294_D2(Arr80301294* a) {
-    if (a != 0) Arr80301294_D3(a);
+    if (a != 0)
+        Arr80301294_D3(a);
 }
 
 // Forward the text-vector destructor without releasing the enclosing object.
 static inline void Arr80301294_D1(Arr80301294* a) {
-    if (a != 0) Arr80301294_D2(a);
+    if (a != 0)
+        Arr80301294_D2(a);
 }
 
 // Enter the complete text-vector member destructor chain.
 static inline void Arr80301294_D0(Arr80301294* a) {
-    if (a != 0) Arr80301294_D1(a);
+    if (a != 0)
+        Arr80301294_D1(a);
 }
 
 struct Arr8_80301294 {
@@ -97,33 +103,37 @@ struct Arr8_80301294 {
 };
 
 // Clear the trivial request records and free the vector storage (no per-entry allocations).
-static inline void Arr8_80301294_Free(Arr8_80301294* a) {
-    if (a->data != 0) {
-        int count = a->count;
-        a->count = count;
-        a->count -= count;
-        appFreeUni__FPv(a->data);
+static inline void Arr8_80301294_Free(Arr8_80301294* requestVector) {
+    if (requestVector->data != 0) {
+        int count = requestVector->count;
+        requestVector->count = count;
+        requestVector->count -= count;
+        appFreeUni__FPv(requestVector->data);
     }
 }
 
 // Null-checked cleanup of the request-vector prefix.
 static inline void Arr8_80301294_D3(Arr8_80301294* a) {
-    if (a != 0) Arr8_80301294_Free(a);
+    if (a != 0)
+        Arr8_80301294_Free(a);
 }
 
 // Preserve the second request-vector library destructor layer.
 static inline void Arr8_80301294_D2(Arr8_80301294* a) {
-    if (a != 0) Arr8_80301294_D3(a);
+    if (a != 0)
+        Arr8_80301294_D3(a);
 }
 
 // Forward request-vector cleanup without deleting the enclosing object.
 static inline void Arr8_80301294_D1(Arr8_80301294* a) {
-    if (a != 0) Arr8_80301294_D2(a);
+    if (a != 0)
+        Arr8_80301294_D2(a);
 }
 
 // Enter the complete request-vector member destructor chain.
 static inline void Arr8_80301294_D0(Arr8_80301294* a) {
-    if (a != 0) Arr8_80301294_D1(a);
+    if (a != 0)
+        Arr8_80301294_D1(a);
 }
 
 extern "C" {
@@ -132,7 +142,8 @@ extern "C" {
 void* ItemRequestTextVector_Destroy(void* self, int shouldDelete) {
     if (self != 0) {
         Arr80301294_D1((Arr80301294*)self);
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -145,17 +156,20 @@ void* ItemRequestState_Dtor(void* self, int shouldDelete) {
     if (self != 0) {
         void* first = AsItemRequestState80300EC8(object)->primaryProcessor;
         if (first != 0) {
-            if (first != 0) ((VObjDtor*)first)->v0(1);
+            if (first != 0)
+                ((VObjDtor*)first)->v0(1);
             AsItemRequestState80300EC8(object)->primaryProcessor = 0;
         }
         void* second = AsItemRequestState80300EC8(object)->secondaryProcessor;
         if (second != 0) {
-            if (second != 0) ((VObjDtor*)second)->v0(1);
+            if (second != 0)
+                ((VObjDtor*)second)->v0(1);
             AsItemRequestState80300EC8(object)->secondaryProcessor = 0;
         }
         Arr80301294_D0((Arr80301294*)(object + 0x14));
         Arr8_80301294_D0((Arr8_80301294*)(object + 8));
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -166,39 +180,56 @@ void* ItemRequestState_Dtor(void* self, int shouldDelete) {
 // in the queued payload (and to u8 for save tests except TestPartFlag). Unknown kinds still queue.
 // type bits 31..26 select the kind; lower bits and the first word are forwarded unchanged.
 enum RequestItemKind {
-    kRequestCharacter = 1, kRequestPart = 2, kRequestClubSet = 4, kRequestBall = 5,
-    kRequestCaddie = 7, kRequestCaddieItem = 8, kRequestSetItemParts = 9, kRequestCourse = 10
+    kRequestCharacter = 1,
+    kRequestPart = 2,
+    kRequestClubSet = 4,
+    kRequestBall = 5,
+    kRequestCaddie = 7,
+    kRequestCaddieItem = 8,
+    kRequestSetItemParts = 9,
+    kRequestCourse = 10
 };
 // Filter by the saved item-kind flag, then copy the packed request into the pending vector.
-void ItemRequestState_QueueRequestIfNeeded(void* self, int requestWord, unsigned int type, unsigned int selector, unsigned int partOrIndex) {
+void ItemRequestState_QueueRequestIfNeeded(void* self, int requestWord, unsigned int type, unsigned int selector,
+                                           unsigned int partOrIndex) {
     // 0x803015E8: skip requests whose saved flag/unlock test already succeeds; queue the rest.
     unsigned int kind = type >> 26;
     switch (kind) {
     case kRequestPart:
-        if (SaveRewards_TestPartFlag(self, selector, partOrIndex) != 0) return;
+        if (SaveRewards_TestPartFlag(self, selector, partOrIndex) != 0)
+            return;
         break;
     case kRequestSetItemParts:
-        if (SaveData_TestAllSetItemPartFlags(self, (unsigned char)selector, partOrIndex) != 0) return;
+        if (SaveData_TestAllSetItemPartFlags(self, (unsigned char)selector, partOrIndex) != 0)
+            return;
         break;
     case kRequestClubSet:
-        if (SaveRewards_TestClubSetFlag(self, (unsigned char)selector, partOrIndex) != 0) return;
+        if (SaveRewards_TestClubSetFlag(self, (unsigned char)selector, partOrIndex) != 0)
+            return;
         break;
     case kRequestBall:
-        if (SaveRewards_TestBallFlag(self, (unsigned char)selector, partOrIndex) != 0) return;
+        if (SaveRewards_TestBallFlag(self, (unsigned char)selector, partOrIndex) != 0)
+            return;
         break;
     case kRequestCharacter:
-        if (SaveRewards_TestCharacterFlag(self, (unsigned char)selector, partOrIndex) != 0) return;
+        if (SaveRewards_TestCharacterFlag(self, (unsigned char)selector, partOrIndex) != 0)
+            return;
         break;
     case kRequestCaddie:
-        if (SaveRewards_TestCaddieFlag(self, (unsigned char)selector, partOrIndex) != 0) return;
+        if (SaveRewards_TestCaddieFlag(self, (unsigned char)selector, partOrIndex) != 0)
+            return;
         break;
     case kRequestCaddieItem:
-        if (SaveRewards_TestCaddieItemFlag(self, (unsigned char)selector, partOrIndex) != 0) return;
+        if (SaveRewards_TestCaddieItemFlag(self, (unsigned char)selector, partOrIndex) != 0)
+            return;
         break;
     case kRequestCourse:
-        if (SaveRewards_IsCourseUnlocked(self, (unsigned char)selector) != 0) return;
+        if (SaveRewards_IsCourseUnlocked(self, (unsigned char)selector) != 0)
+            return;
         break;
-    case 0: case 3: case 6:
+    case 0:
+    case 3:
+    case 6:
     default:
         break;
     }
@@ -213,19 +244,27 @@ void ItemRequestState_QueueRequestIfNeeded(void* self, int requestWord, unsigned
     return;
 }
 
-struct VObj_80301500 { 
-virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virtual void v4(); virtual void v5();
+struct VObj_80301500 {
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4();
+    virtual void v5();
 };
 
 // Draw the primary processor when present, otherwise the secondary, while dispatch is enabled.
 void TourItemRequest_DispatchDisplay(void* self) {
     char* object = (char*)self;
-    if (AsItemRequestState80300EC8(object)->dispatchEnabled == 0) return;
+    if (AsItemRequestState80300EC8(object)->dispatchEnabled == 0)
+        return;
     void* first = AsItemRequestState80300EC8(object)->primaryProcessor;
-    if (first != 0) ((VObj_80301500*)first)->v2();
+    if (first != 0)
+        ((VObj_80301500*)first)->v2();
     else {
         void* second = AsItemRequestState80300EC8(object)->secondaryProcessor;
-        if (second != 0) ((VObj_80301500*)second)->v3();
+        if (second != 0)
+            ((VObj_80301500*)second)->v3();
     }
 }
 
@@ -234,12 +273,13 @@ void* ItemRequestRecordVector_Destroy(void* self, int shouldDelete) {
     if (self != 0) {
         void* first = *(void**)self;
         if (first != 0) {
-            int __v = *(int*)((char*)self + 4);
-            *(int*)((char*)self + 4) = __v;
-            *(int*)((char*)self + 4) -= __v;
+            int count = *(int*)((char*)self + 4);
+            *(int*)((char*)self + 4) = count;
+            *(int*)((char*)self + 4) -= count;
             appFreeUni__FPv(first);
         }
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -247,22 +287,35 @@ void* ItemRequestRecordVector_Destroy(void* self, int shouldDelete) {
 } // extern C
 
 // Construct a copied entry in vector-provided storage.
-inline void* operator new(new_size_t, void* p) { return p; }
+inline void* operator new(new_size_t, void* p) {
+    return p;
+}
 extern "C" void __throw(void*, void*, void*) __attribute__((noreturn));
 // Allocator tag constructors have no payload semantics; retain their original byte initialization.
-struct EmptyAllocator { char value; /* Initialize the empty vector allocator tag. */ EmptyAllocator() : value(0) {} };
-struct StringAllocator { char value; /* Preserve the empty string-allocator constructor. */ StringAllocator() {} };
+struct EmptyAllocator {
+    char value; /* Initialize the empty vector allocator tag. */
+    EmptyAllocator() : value(0) {}
+};
+struct StringAllocator {
+    char value; /* Preserve the empty string-allocator constructor. */
+    StringAllocator() {}
+};
 
-// Queue payload layout: a = opaque request word, b = packed type (kind in high 6 bits),
-// c = two u16 selectors at +8/+10 in target byte order. No entry owns extra storage.
+// Queue payload layout: requestWord = opaque request word, packedType = packed type (kind in high 6 bits),
+// selectors = two u16 selectors at +8/+10 in target byte order. No entry owns extra storage.
 struct Entry12 {
-    int a, b, c;
+    int requestWord, packedType, selectors;
     // Copy the three payload words through the original exception-aware construction path.
-    Entry12(const Entry12& x) {
-        int first = x.a;
-        int second = x.b;
-        try { a = first; b = second; c = x.c; }
-        catch (...) { __throw(0, 0, 0); }
+    Entry12(const Entry12& source) {
+        int first = source.requestWord;
+        int second = source.packedType;
+        try {
+            requestWord = first;
+            packedType = second;
+            selectors = source.selectors;
+        } catch (...) {
+            __throw(0, 0, 0);
+        }
     }
 };
 // Text payload: a/last are forwarded opaque words; their consumer meaning is unresolved.
@@ -274,21 +327,27 @@ struct Entry20 {
     unsigned short* text;
     int last;
     // Copy inline text directly; deep-copy heap text so each vector entry owns its allocation.
-    Entry20(const Entry20& x, const StringAllocator& dummy = StringAllocator()) {
+    Entry20(const Entry20& source, const StringAllocator& dummy = StringAllocator()) {
         try {
-            a = x.a;
-            if ((x.flags >> 31) == 0) {
-                unsigned int f = x.flags;
-                int n = x.length;
-                flags = f; length = n; text = x.text;
+            a = source.a;
+            if ((source.flags >> 31) == 0) {
+                unsigned int f = source.flags;
+                int n = source.length;
+                flags = f;
+                length = n;
+                text = source.text;
             } else {
-                flags = 0; length = 0; text = 0;
-                WString_ReserveCapacity(&flags, x.length);
+                flags = 0;
+                length = 0;
+                text = 0;
+                WString_ReserveCapacity(&flags, source.length);
                 StringAllocator copy(dummy);
-                WString_ReplaceRange(&flags, 0, 0, x.text, x.text + x.length, &copy);
+                WString_ReplaceRange(&flags, 0, 0, source.text, source.text + source.length, &copy);
             }
-            last = x.last;
-        } catch (...) { __throw(0, 0, 0); }
+            last = source.last;
+        } catch (...) {
+            __throw(0, 0, 0);
+        }
     }
 };
 struct Buffer12 {
@@ -299,14 +358,26 @@ struct Buffer12 {
     // Free request storage; trivial records require no individual destruction.
     ~Buffer12() {
         EmptyAllocator alloc;
-        if (data) { unsigned int n = count; count = n; count -= n; EmptyAllocator copy; appFreeUni__FPv(data); }
+        if (data) {
+            unsigned int n = count;
+            count = n;
+            count -= n;
+            EmptyAllocator copy;
+            appFreeUni__FPv(data);
+        }
     }
     // Exchange allocation ownership, count and capacity without copying payloads.
-    void swap(Buffer12& x) {
-        Entry12* p = data; Entry12* q = x.data; x.data = p;
-        unsigned int c = capacity; capacity = x.capacity; x.capacity = c;
+    void swap(Buffer12& other) {
+        Entry12* p = data;
+        Entry12* q = other.data;
+        other.data = p;
+        unsigned int c = capacity;
+        capacity = other.capacity;
+        other.capacity = c;
         data = q;
-        unsigned int n = count; count = x.count; x.count = n;
+        unsigned int n = count;
+        count = other.count;
+        other.count = n;
     }
     // Grow to n entries using a temporary that frees the old storage after the swap.
     void reserve(unsigned int n) {
@@ -320,7 +391,9 @@ struct Buffer12 {
             Entry12* dst = temp.data + temp.count;
             while (src < end) {
                 new (dst) Entry12(*src);
-                ++src; ++dst; ++temp.count;
+                ++src;
+                ++dst;
+                ++temp.count;
             }
             count = 0;
             swap(temp);
@@ -339,18 +412,30 @@ struct Buffer20 {
         count -= n;
         while (n != 0) {
             --item;
-            if (item && &item->flags && (item->flags >> 31)) appFreeUni__FPv(item->text);
+            if (item && &item->flags && (item->flags >> 31))
+                appFreeUni__FPv(item->text);
             --n;
         }
     }
     // Destroy text entries, then free their containing allocation.
-    ~Buffer20() { if (data) { clear(); appFreeUni__FPv(data); } }
+    ~Buffer20() {
+        if (data) {
+            clear();
+            appFreeUni__FPv(data);
+        }
+    }
     // Exchange both vectors' allocation ownership and live ranges.
-    void swap(Buffer20& x) {
-        Entry20* p = data; Entry20* q = x.data; x.data = p;
-        unsigned int c = capacity; capacity = x.capacity; x.capacity = c;
+    void swap(Buffer20& other) {
+        Entry20* p = data;
+        Entry20* q = other.data;
+        other.data = p;
+        unsigned int c = capacity;
+        capacity = other.capacity;
+        other.capacity = c;
         data = q;
-        unsigned int n = count; count = x.count; x.count = n;
+        unsigned int n = count;
+        count = other.count;
+        other.count = n;
     }
     // Deep-copy live text into n slots, then let the temporary destroy the previous entries.
     void reserve(unsigned int n) {
@@ -364,7 +449,9 @@ struct Buffer20 {
             Entry20* dst = temp.data + temp.count;
             while (src < end) {
                 new (dst) Entry20(*src);
-                ++src; ++dst; ++temp.count;
+                ++src;
+                ++dst;
+                ++temp.count;
             }
             swap(temp);
         }
@@ -375,34 +462,39 @@ extern "C" {
 #pragma use_lmw_stmw on
 // Initialize caller-owned state and reserve 16 entries per vector; unwind both vectors on failure.
 void* ItemRequestState_Ctor(void* self) {
-    char* o = (char*)self;
-    Buffer12* first = (Buffer12*)&AsItemRequestState80300EC8(o)->pendingRequests;
-    Buffer20* second = (Buffer20*)&AsItemRequestState80300EC8(o)->textEntries;
-    first->data = 0; first->count = 0; first->capacity = 0;
-    second->data = 0; second->count = 0; second->capacity = 0;
-    AsItemRequestState80300EC8(o)->complete = 1;
-    AsItemRequestState80300EC8(o)->dispatchEnabled = 0;
-    *(int*)&AsItemRequestState80300EC8(o)->primaryProcessor = 0;
-    *(int*)&AsItemRequestState80300EC8(o)->secondaryProcessor = 0;
+    char* object = (char*)self;
+    Buffer12* pendingRequestVector = (Buffer12*)&AsItemRequestState80300EC8(object)->pendingRequests;
+    Buffer20* textEntryVector = (Buffer20*)&AsItemRequestState80300EC8(object)->textEntries;
+    pendingRequestVector->data = 0;
+    pendingRequestVector->count = 0;
+    pendingRequestVector->capacity = 0;
+    textEntryVector->data = 0;
+    textEntryVector->count = 0;
+    textEntryVector->capacity = 0;
+    AsItemRequestState80300EC8(object)->complete = 1;
+    AsItemRequestState80300EC8(object)->dispatchEnabled = 0;
+    *(int*)&AsItemRequestState80300EC8(object)->primaryProcessor = 0;
+    *(int*)&AsItemRequestState80300EC8(object)->secondaryProcessor = 0;
     try {
-        first->reserve(16);
-        second->reserve(16);
+        pendingRequestVector->reserve(16);
+        textEntryVector->reserve(16);
     } catch (...) {
-        second->~Buffer20();
-        first->~Buffer12();
+        textEntryVector->~Buffer20();
+        pendingRequestVector->~Buffer12();
         throw;
     }
     // Finish with empty live ranges while retaining both reserved allocations.
-    int count = second->count;
-    int previous = first->count;
-    first->count = previous;
-    first->count -= previous;
-    Entry20* item = second->data + count;
-    second->count = count;
-    second->count -= count;
+    int count = textEntryVector->count;
+    int previous = pendingRequestVector->count;
+    pendingRequestVector->count = previous;
+    pendingRequestVector->count -= previous;
+    Entry20* item = textEntryVector->data + count;
+    textEntryVector->count = count;
+    textEntryVector->count -= count;
     while (count != 0) {
         --item;
-        if (item && &item->flags && (item->flags >> 31)) appFreeUni__FPv(item->text);
+        if (item && &item->flags && (item->flags >> 31))
+            appFreeUni__FPv(item->text);
         --count;
     }
     return self;

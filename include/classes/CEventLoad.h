@@ -5,15 +5,20 @@
 
 class CEventLoad {
 public:
-    unsigned int state; // 0x0: CEventLoad_Poll: switch and transitions 1/2/3
-    char asyncFile[16]; // 0x4: CEventLoad_Poll: CFileAsync_Open/80068498 receiver
-    unsigned int nameFlags; // 0x14: CEventLoad_Poll: high bit selects inline or heap name
+    unsigned int state;      // 0x0: CEventLoad_Poll: switch and transitions 1/2/3
+    char asyncFile[16];      // 0x4: CEventLoad_Poll: CFileAsync_Open/80068498 receiver
+    unsigned int nameFlags;  // 0x14: CEventLoad_Poll: high bit selects inline or heap name
     unsigned int nameLength; // 0x18: string storage
-    void* nameHeap; // 0x1C: CEventLoad_Poll: heap name pointer
-    void* loadFlags; // 0x20: CEventLoad_ctor: saved argument
-    void* vtable; // 0x24: CEventLoad_ctor: __vt__10CEventLoad
+    void* nameHeap;          // 0x1C: CEventLoad_Poll: heap name pointer
+    void* loadFlags;         // 0x20: CEventLoad_ctor: saved argument
+    void* vtable;            // 0x24: CEventLoad_ctor: __vt__10CEventLoad
     unsigned int bufferSize; // 0x28: CEventLoad_Poll: aligned allocation size
-    void* buffer; // 0x2C: CEventLoad_Poll: appMallocUni result
+    void* buffer;            // 0x2C: CEventLoad_Poll: appMallocUni result
+
+    int Poll();
+
+    CEventLoad(const char* text, void* arg, void* unused);
+    ~CEventLoad();
 };
 
 #define CEVENTLOAD_OFF(f, o) typedef char CEventLoad_off_##f[((int)&((CEventLoad*)0)->f == (o)) ? 1 : -1]

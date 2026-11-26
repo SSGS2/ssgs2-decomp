@@ -15,18 +15,28 @@
 // Selectors 0,1,2,9 also occur in pixel dispatch; their physical platform names
 // are not established. Keep them numeric rather than guess a console identity.
 enum ImagePlatformLayout {
-    kImageGsrType4Layout = 3, kImageGsrType2Layout = 4,
-    kImageGsrType1Layout = 5, kImageGsrType3Layout = 6,
-    kImageGsrType5Layout = 7, kImageGimLayout = 8
+    kImageGsrType4Layout = 3,
+    kImageGsrType2Layout = 4,
+    kImageGsrType1Layout = 5,
+    kImageGsrType3Layout = 6,
+    kImageGsrType5Layout = 7,
+    kImageGimLayout = 8
 };
 // Engine IDs used by mip sizing. The 32-bit channel names are LOGICAL packed
 // words, not a claim about byte order in every platform layout. Evidence:
 // FromPlatformFormat(layout 5) maps D3D A8R8G8B8/X8R8G8B8/A8B8G8R8/X8B8G8R8
 // and DXT FourCCs to these IDs; the copy/swap kernels implement byte ordering.
 enum ImageMipFormat {
-    kImageArgb8 = 1, kImageXrgb8 = 2, kImageAbgr8 = 14, kImageXbgr8 = 15,
-    kImageIndexed8 = 30, kImageDxt1 = 46, kImageDxt3 = 48, kImageDxt5 = 50,
-    kImageSwizzledArgb8 = 63, kImageSwizzledXrgb8 = 64
+    kImageArgb8 = 1,
+    kImageXrgb8 = 2,
+    kImageAbgr8 = 14,
+    kImageXbgr8 = 15,
+    kImageIndexed8 = 30,
+    kImageDxt1 = 46,
+    kImageDxt3 = 48,
+    kImageDxt5 = 50,
+    kImageSwizzledArgb8 = 63,
+    kImageSwizzledXrgb8 = 64
 };
 // Descriptor schema is native 32-bit words after format-specific decoding.
 // TGA/BMP/DDS write the first four words; GSR additionally writes +10 layout.
@@ -35,7 +45,9 @@ enum ImageMipFormat {
 struct ImageDescriptionSchema {
     s32 engineFormat, widthPixels, heightPixels, mipLevelCount, sourceLayout;
 };
-struct ImagePaletteSchema { s32 engineFormat, entryCount; };
+struct ImagePaletteSchema {
+    s32 engineFormat, entryCount;
+};
 
 extern "C" {
 
@@ -88,10 +100,10 @@ static inline s32 GtlFindIndex(GtlDescTable* t, s32 encodedImage) {
 // ImageGIM_IsValid, ImagePICT_Probe, ImageDDS_Probe, all prefixed gtl_.
 // IMPORTANT: wrappers do not check NULL operation entries. Only request an
 // operation supported above; an unsupported recognized file can call address 0.
-extern GtlDescTable s_imageFormatProbeTable; // {index, probe} order above.
-extern GtlFnTable s_imageDescriptionHandlers;  // int description(out,paletteOut,image).
-extern GtlFnTable s_imagePixelDataHandlers;  // int pixels(pointerWordOut,image).
-extern GtlFnTable s_imagePaletteDataHandlers;  // int palette(pointerWordOut,image).
+extern GtlDescTable s_imageFormatProbeTable;  // {index, probe} order above.
+extern GtlFnTable s_imageDescriptionHandlers; // int description(out,paletteOut,image).
+extern GtlFnTable s_imagePixelDataHandlers;   // int pixels(pointerWordOut,image).
+extern GtlFnTable s_imagePaletteDataHandlers; // int palette(pointerWordOut,image).
 
 extern void* memcpy(void*, const void*, unsigned long);
 // The original tail call forwards the live argument registers (r3..r10).
@@ -126,7 +138,8 @@ void gtl_PixelConvert_CopyRGBA8(s32, s32, s32, s32, s32, s32);
 void gtl_PixelConvert_CopyByte0(s32, s32, s32, s32, s32, s32);
 
 s32 gtl_Image_GetMipLevelCount(u32 width, u32 height, s32 format, s32 platform);
-void gtl_Image_ConvertPixelFormat(s32 destinationPixel, s32 sourcePixel, s32 destinationFormat, s32 sourceFormat, s32 sourceLayout, s32 destinationLayout);
+void gtl_Image_ConvertPixelFormat(s32 destinationPixel, s32 sourcePixel, s32 destinationFormat, s32 sourceFormat,
+                                  s32 sourceLayout, s32 destinationLayout);
 s32 gtl_ImageFormat_FromPlatformFormat(s32 platformFormat, s32 platformLayout);
 s32 gtl_ImageFormat_ToPlatformFormat(s32 engineFormat, s32 platformLayout);
 s32 gtl_ImageFormat_IsBlockCompressed(s32 engineFormat);
@@ -136,8 +149,9 @@ s32 gtl_ImageFormat_IsPaletted(s32 engineFormat);
 s32 gtl_Image_GetDescription(s32 descriptionOut, s32 paletteDescriptionOut, s32 encodedImage);
 s32 gtl_Image_GetImageData(s32 pixelAddressOut, s32 encodedImage);
 s32 gtl_Image_GetPaletteData(s32 paletteAddressOut, s32 encodedImage);
-void gtl_Image_CopyToPlatformLayout(s32 sourcePixels, s32 unusedSourceWord1, s32 unusedSourceWord2, s32 destinationPixels, s32 copyWidth, s32 copyHeight, s32 unusedDestinationWord, s32 engineFormat,
-                                    s32 destinationLayout);
+void gtl_Image_CopyToPlatformLayout(s32 sourcePixels, s32 unusedSourceWord1, s32 unusedSourceWord2,
+                                    s32 destinationPixels, s32 copyWidth, s32 copyHeight, s32 unusedDestinationWord,
+                                    s32 engineFormat, s32 destinationLayout);
 
 // Count levels INCLUDING level zero by halving both pixel dimensions until
 // EITHER falls below its platform/format floor. Inputs must be positive.
@@ -217,345 +231,460 @@ s32 gtl_Image_GetMipLevelCount(u32 width, u32 height, s32 format, s32 platform) 
 // Read the gtl_dxt_decode_and_pixel_convert.cpp kernel body before a channel-order mod: format ID alone
 // does not describe memory byte order. Semantic joins below retain the exact
 // original compare/branch layout; all 12 functions in this unit are exact.
-void gtl_Image_ConvertPixelFormat(s32 destinationPixel, s32 sourcePixel, s32 destinationFormat, s32 sourceFormat, s32 sourceLayout, s32 destinationLayout) {
+void gtl_Image_ConvertPixelFormat(s32 destinationPixel, s32 sourcePixel, s32 destinationFormat, s32 sourceFormat,
+                                  s32 sourceLayout, s32 destinationLayout) {
     switch ((u32)destinationLayout) {
-// Original jump table jumptable_804D9DF8 (the Wii labels follow code order, not the table values).
+        // Original jump table jumptable_804D9DF8 (the Wii labels follow code order, not the table values).
     case 0:
-destinationLayout0:
-    if (sourceLayout == 1) goto destinationLayout1;
-    if (sourceLayout >= 1) return;
-    if (sourceLayout < 0) return;
-    if (sourceFormat != 1) return;
-    if (destinationFormat == 8) goto pack4444ForLayout0;
-    if (destinationFormat >= 8) return;
-    if (destinationFormat >= 7) goto keepFormat7ForLayout0;
-conversionDone:
-    return;
-pack4444ForLayout0:
-    gtl_PixelConvert_RGBA8ToPacked4444(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-keepFormat7ForLayout0:
-    gtl_PixelConvert_NoOp_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-    case 1:
-destinationLayout1:
-    if (sourceFormat != 1) return;
-    switch (destinationFormat) {
-    default:
+    destinationLayout0:
+        if (sourceLayout == 1)
+            goto destinationLayout1;
+        if (sourceLayout >= 1)
+            return;
+        if (sourceLayout < 0)
+            return;
+        if (sourceFormat != 1)
+            return;
+        if (destinationFormat == 8)
+            goto pack4444ForLayout0;
+        if (destinationFormat >= 8)
+            return;
+        if (destinationFormat >= 7)
+            goto keepFormat7ForLayout0;
+    conversionDone:
+        return;
+    pack4444ForLayout0:
+        gtl_PixelConvert_RGBA8ToPacked4444(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                           destinationLayout);
+        return;
+    keepFormat7ForLayout0:
+        gtl_PixelConvert_NoOp_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                destinationLayout);
         return;
     case 1:
-        gtl_PixelCopy_Copy4Bytes_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-        return;
-    }
+    destinationLayout1:
+        if (sourceFormat != 1)
+            return;
+        switch (destinationFormat) {
+        default:
+            return;
+        case 1:
+            gtl_PixelCopy_Copy4Bytes_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                       destinationLayout);
+            return;
+        }
     case 2:
-destinationLayout2:
-    switch (sourceLayout) {
+    destinationLayout2:
+        switch (sourceLayout) {
+        case 3:
+        case 5:
+        case 6:
+        case 7:
+            goto destinationLayout3;
+        case 4:
+        layout2FromLayout4:
+            if (sourceFormat == 30)
+                goto layout2CopyIndexed8;
+            if (sourceFormat >= 30)
+                goto layout2HighSourceFormat;
+            if (sourceFormat == 1)
+                goto layout2SourceFormat1;
+            return;
+        layout2HighSourceFormat:
+            if (sourceFormat == 64)
+                goto layout2SourceFormat64;
+            if (sourceFormat >= 64)
+                return;
+            if (sourceFormat >= 63)
+                goto layout2SourceFormat63;
+            return;
+        layout2SourceFormat64:
+            if (destinationFormat == 77)
+                goto layout2KeepFormat15Or77;
+            if (destinationFormat >= 77)
+                return;
+            switch (destinationFormat) {
+            default:
+                return;
+            case 15:
+                goto layout2KeepFormat15Or77;
+            }
+        layout2KeepFormat15Or77:
+            gtl_PixelConvert_NoOp_1(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                    destinationLayout);
+            return;
+        layout2SourceFormat63:
+            if (destinationFormat == 76)
+                goto layout2SwapFormat14Or76;
+            if (destinationFormat >= 76)
+                return;
+            switch (destinationFormat) {
+            default:
+                return;
+            case 14:
+                goto layout2SwapFormat14Or76;
+            }
+        layout2SwapFormat14Or76:
+            gtl_PixelConvert_SwapRB32_1(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                        destinationLayout);
+            return;
+        layout2SourceFormat1:
+            if (destinationFormat == 76)
+                goto layout2SwapFormat76;
+            if (destinationFormat >= 76)
+                return;
+            switch (destinationFormat) {
+            default:
+                return;
+            case 1:
+                goto layout2CopyFormat1;
+            }
+        layout2CopyFormat1:
+            gtl_PixelCopy_Copy4Bytes_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                       destinationLayout);
+            return;
+        layout2SwapFormat76:
+            gtl_PixelConvert_SwapRB32_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                        destinationLayout);
+            return;
+        layout2CopyIndexed8:
+            switch (destinationFormat) {
+            default:
+                return;
+            case 30:
+                gtl_PixelCopy_Copy1Byte(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                        destinationLayout);
+                return;
+            }
+        default:
+            goto conversionDone;
+        }
     case 3:
-    case 5:
-    case 6:
-    case 7: goto destinationLayout3;
+    destinationLayout3:
+        switch (sourceFormat) {
+        case 0:
+            goto layout3SourceFormat0;
+        case 1:
+            goto layout3SourceFormat1;
+        case 5:
+            goto layout3SourceRgb565;
+        case 62:
+            goto layout3SourceFormat62;
+        case 63:
+            goto destinationLayout4OrSource63;
+        case 64:
+            goto destinationLayout8OrSource64;
+        case 70:
+            goto destinationLayout9OrSource70;
+        case 88:
+            goto layout3SourceIndexed8;
+        default:
+            return;
+        }
+    layout3SourceFormat62:
+        if (destinationFormat == 17)
+            goto layout3RgbxToArgbVariant1;
+        if (destinationFormat >= 17)
+            goto layout3HighDestinationFormat;
+        if (destinationFormat == 14)
+            goto layout3BgrxToRgba;
+        if (destinationFormat >= 14)
+            goto layout3Format15Or16;
+        if (destinationFormat == 2)
+            goto layout3RgbxToRgba;
+        return;
+    layout3Format15Or16:
+        if (destinationFormat >= 16)
+            goto layout3RgbxToArgbVariant0;
+        return;
+    layout3HighDestinationFormat:
+        if (destinationFormat == 76)
+            goto layout3BgrxToRgba;
+        if (destinationFormat >= 76)
+            goto layout3Format78;
+        if (destinationFormat == 64)
+            goto layout3RgbxToRgba;
+        return;
+    layout3Format78:
+        if (destinationFormat == 78)
+            goto layout3RgbxToArgbVariant0;
+        return;
+    layout3RgbxToRgba:
+        gtl_PixelConvert_RGBX8ToRGBA8(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                      destinationLayout);
+        return;
+    layout3RgbxToArgbVariant1:
+        gtl_PixelConvert_RGBX8ToARGB8_1(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                        destinationLayout);
+        return;
+    layout3RgbxToArgbVariant0:
+        gtl_PixelConvert_RGBX8ToARGB8_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                        destinationLayout);
+        return;
+    layout3BgrxToRgba:
+        gtl_PixelConvert_BGRX8ToRGBA8(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                      destinationLayout);
+        return;
+    layout3SourceFormat1:
+        if (destinationFormat == 28)
+            goto layout3CopyAlpha;
+        if (destinationFormat >= 28)
+            goto layout3DestinationFormat76Or62;
+        if (destinationFormat == 1)
+            goto layout3CopyFourBytes;
+        if (destinationFormat >= 1)
+            goto layout3DestinationFormat14;
+        if (destinationFormat >= 0)
+            goto layout3CopyRgb;
+        return;
+    layout3DestinationFormat14:
+        if (destinationFormat == 14)
+            goto layout3SwapRedBlue;
+        return;
+    layout3DestinationFormat76Or62:
+        if (destinationFormat == 76)
+            goto layout3SwapRedBlue;
+        if (destinationFormat >= 76)
+            return;
+        if (destinationFormat == 62)
+            goto layout3CopyRgb;
+        return;
+    layout3CopyFourBytes:
+        gtl_PixelCopy_Copy4Bytes_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                   destinationLayout);
+        return;
+    layout3SwapRedBlue:
+        gtl_PixelConvert_SwapRB32_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                    destinationLayout);
+        return;
+    layout3CopyRgb:
+        gtl_PixelConvert_CopyRGB8(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                  destinationLayout);
+        return;
+    layout3CopyAlpha:
+        gtl_PixelConvert_CopyAlphaByte(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                       destinationLayout);
+        return;
     case 4:
-layout2FromLayout4:
-    if (sourceFormat == 30) goto layout2CopyIndexed8;
-    if (sourceFormat >= 30) goto layout2HighSourceFormat;
-    if (sourceFormat == 1) goto layout2SourceFormat1;
-    return;
-layout2HighSourceFormat:
-    if (sourceFormat == 64) goto layout2SourceFormat64;
-    if (sourceFormat >= 64) return;
-    if (sourceFormat >= 63) goto layout2SourceFormat63;
-    return;
-layout2SourceFormat64:
-    if (destinationFormat == 77) goto layout2KeepFormat15Or77;
-    if (destinationFormat >= 77) return;
-    switch (destinationFormat) {
-    default:
-        return;
-    case 15:
-        goto layout2KeepFormat15Or77;
-    }
-layout2KeepFormat15Or77:
-    gtl_PixelConvert_NoOp_1(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout2SourceFormat63:
-    if (destinationFormat == 76) goto layout2SwapFormat14Or76;
-    if (destinationFormat >= 76) return;
-    switch (destinationFormat) {
-    default:
-        return;
-    case 14:
-        goto layout2SwapFormat14Or76;
-    }
-layout2SwapFormat14Or76:
-    gtl_PixelConvert_SwapRB32_1(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout2SourceFormat1:
-    if (destinationFormat == 76) goto layout2SwapFormat76;
-    if (destinationFormat >= 76) return;
-    switch (destinationFormat) {
-    default:
-        return;
-    case 1:
-        goto layout2CopyFormat1;
-    }
-layout2CopyFormat1:
-    gtl_PixelCopy_Copy4Bytes_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout2SwapFormat76:
-    gtl_PixelConvert_SwapRB32_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout2CopyIndexed8:
-    switch (destinationFormat) {
-    default:
-        return;
-    case 30:
-        gtl_PixelCopy_Copy1Byte(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-        return;
-    }
-    default: goto conversionDone;
-    }
-    case 3:
-destinationLayout3:
-    switch (sourceFormat) {
-    case 0: goto layout3SourceFormat0;
-    case 1: goto layout3SourceFormat1;
-    case 5: goto layout3SourceRgb565;
-    case 62: goto layout3SourceFormat62;
-    case 63: goto destinationLayout4OrSource63;
-    case 64: goto destinationLayout8OrSource64;
-    case 70: goto destinationLayout9OrSource70;
-    case 88: goto layout3SourceIndexed8;
-    default: return;
-    }
-layout3SourceFormat62:
-    if (destinationFormat == 17) goto layout3RgbxToArgbVariant1;
-    if (destinationFormat >= 17) goto layout3HighDestinationFormat;
-    if (destinationFormat == 14) goto layout3BgrxToRgba;
-    if (destinationFormat >= 14) goto layout3Format15Or16;
-    if (destinationFormat == 2) goto layout3RgbxToRgba;
-    return;
-layout3Format15Or16:
-    if (destinationFormat >= 16) goto layout3RgbxToArgbVariant0;
-    return;
-layout3HighDestinationFormat:
-    if (destinationFormat == 76) goto layout3BgrxToRgba;
-    if (destinationFormat >= 76) goto layout3Format78;
-    if (destinationFormat == 64) goto layout3RgbxToRgba;
-    return;
-layout3Format78:
-    if (destinationFormat == 78) goto layout3RgbxToArgbVariant0;
-    return;
-layout3RgbxToRgba:
-    gtl_PixelConvert_RGBX8ToRGBA8(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout3RgbxToArgbVariant1:
-    gtl_PixelConvert_RGBX8ToARGB8_1(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout3RgbxToArgbVariant0:
-    gtl_PixelConvert_RGBX8ToARGB8_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout3BgrxToRgba:
-    gtl_PixelConvert_BGRX8ToRGBA8(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout3SourceFormat1:
-    if (destinationFormat == 28) goto layout3CopyAlpha;
-    if (destinationFormat >= 28) goto layout3DestinationFormat76Or62;
-    if (destinationFormat == 1) goto layout3CopyFourBytes;
-    if (destinationFormat >= 1) goto layout3DestinationFormat14;
-    if (destinationFormat >= 0) goto layout3CopyRgb;
-    return;
-layout3DestinationFormat14:
-    if (destinationFormat == 14) goto layout3SwapRedBlue;
-    return;
-layout3DestinationFormat76Or62:
-    if (destinationFormat == 76) goto layout3SwapRedBlue;
-    if (destinationFormat >= 76) return;
-    if (destinationFormat == 62) goto layout3CopyRgb;
-    return;
-layout3CopyFourBytes:
-    gtl_PixelCopy_Copy4Bytes_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout3SwapRedBlue:
-    gtl_PixelConvert_SwapRB32_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout3CopyRgb:
-    gtl_PixelConvert_CopyRGB8(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout3CopyAlpha:
-    gtl_PixelConvert_CopyAlphaByte(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-    case 4:
-destinationLayout4OrSource63:
-    switch (destinationFormat) {
-    case 1:
-    case 63:
-layout4CopyFourBytes:
-    gtl_PixelCopy_Copy4Bytes_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-    case 14:
-    case 76:
-layout4SwapRedBlue:
-    gtl_PixelConvert_SwapRB32_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-    case 16:
-    case 78:
-layout4RgbaToArgb:
-    gtl_PixelConvert_RGBA8ToARGB8_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-    default: goto conversionDone;
-    }
+    destinationLayout4OrSource63:
+        switch (destinationFormat) {
+        case 1:
+        case 63:
+        layout4CopyFourBytes:
+            gtl_PixelCopy_Copy4Bytes_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                       destinationLayout);
+            return;
+        case 14:
+        case 76:
+        layout4SwapRedBlue:
+            gtl_PixelConvert_SwapRB32_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                        destinationLayout);
+            return;
+        case 16:
+        case 78:
+        layout4RgbaToArgb:
+            gtl_PixelConvert_RGBA8ToARGB8_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat,
+                                            sourceLayout, destinationLayout);
+            return;
+        default:
+            goto conversionDone;
+        }
     case 9:
-destinationLayout9OrSource70:
-    switch (destinationFormat) {
-    default:
+    destinationLayout9OrSource70:
+        switch (destinationFormat) {
+        default:
+            return;
+        case 16:
+            gtl_PixelConvert_Unpack4444(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                        destinationLayout);
+            return;
+        }
+    layout3SourceIndexed8:
+        if (destinationFormat == 88)
+            goto layout3CopyIndexed8;
+        if (destinationFormat >= 88)
+            return;
+        switch (destinationFormat) {
+        default:
+            return;
+        case 30:
+            goto layout3CopyIndexed8;
+        }
+    layout3CopyIndexed8:
+        gtl_PixelCopy_Copy1Byte(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                destinationLayout);
         return;
-    case 16:
-        gtl_PixelConvert_Unpack4444(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-        return;
-    }
-layout3SourceIndexed8:
-    if (destinationFormat == 88) goto layout3CopyIndexed8;
-    if (destinationFormat >= 88) return;
-    switch (destinationFormat) {
-    default:
-        return;
-    case 30:
-        goto layout3CopyIndexed8;
-    }
-layout3CopyIndexed8:
-    gtl_PixelCopy_Copy1Byte(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout3SourceFormat0:
-    switch (destinationFormat) {
-    default:
-        return;
-    case 13:
-        gtl_PixelConvert_SwapRB24(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-        return;
-    }
+    layout3SourceFormat0:
+        switch (destinationFormat) {
+        default:
+            return;
+        case 13:
+            gtl_PixelConvert_SwapRB24(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                      destinationLayout);
+            return;
+        }
     case 8:
-destinationLayout8OrSource64:
-    switch (destinationFormat) {
-    case 2:
-    case 64:
-layout8CopyFourBytes:
-    gtl_PixelCopy_Copy4Bytes_2(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-    case 77:
-layout8SwapRedBlue:
-    gtl_PixelConvert_SwapRB32_3(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-    case 17:
-    case 79:
-layout8RgbaToArgb:
-    gtl_PixelConvert_RGBA8ToARGB8_1(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-    case 16:
-layout8RgbxToArgb:
-    gtl_PixelConvert_RGBX8ToARGB8_2(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-    default: goto conversionDone;
-    }
-layout3SourceRgb565:
-    switch (destinationFormat) {
-    default:
-        return;
-    case 1:
-        gtl_PixelConvert_RGB565ToRGBA8(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-        return;
-    }
+    destinationLayout8OrSource64:
+        switch (destinationFormat) {
+        case 2:
+        case 64:
+        layout8CopyFourBytes:
+            gtl_PixelCopy_Copy4Bytes_2(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                       destinationLayout);
+            return;
+        case 77:
+        layout8SwapRedBlue:
+            gtl_PixelConvert_SwapRB32_3(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                        destinationLayout);
+            return;
+        case 17:
+        case 79:
+        layout8RgbaToArgb:
+            gtl_PixelConvert_RGBA8ToARGB8_1(destinationPixel, sourcePixel, destinationFormat, sourceFormat,
+                                            sourceLayout, destinationLayout);
+            return;
+        case 16:
+        layout8RgbxToArgb:
+            gtl_PixelConvert_RGBX8ToARGB8_2(destinationPixel, sourcePixel, destinationFormat, sourceFormat,
+                                            sourceLayout, destinationLayout);
+            return;
+        default:
+            goto conversionDone;
+        }
+    layout3SourceRgb565:
+        switch (destinationFormat) {
+        default:
+            return;
+        case 1:
+            gtl_PixelConvert_RGB565ToRGBA8(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                           destinationLayout);
+            return;
+        }
     case 5:
-destinationLayout5:
-    if (sourceLayout == 5) goto layout5FromLayout5;
-    if (sourceLayout >= 5) return;
-    if (sourceLayout < 4) return;
-    if (sourceFormat != 30) return;
-    switch (destinationFormat) {
-    default:
-        return;
-    case 30:
-        gtl_PixelCopy_Copy1Byte(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-        return;
-    }
-layout5FromLayout5:
-    if (sourceFormat != 1) return;
-    switch (destinationFormat) {
-    default:
-        return;
-    case 1:
-        gtl_PixelCopy_Copy4Bytes_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-        return;
-    }
+    destinationLayout5:
+        if (sourceLayout == 5)
+            goto layout5FromLayout5;
+        if (sourceLayout >= 5)
+            return;
+        if (sourceLayout < 4)
+            return;
+        if (sourceFormat != 30)
+            return;
+        switch (destinationFormat) {
+        default:
+            return;
+        case 30:
+            gtl_PixelCopy_Copy1Byte(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                    destinationLayout);
+            return;
+        }
+    layout5FromLayout5:
+        if (sourceFormat != 1)
+            return;
+        switch (destinationFormat) {
+        default:
+            return;
+        case 1:
+            gtl_PixelCopy_Copy4Bytes_0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                       destinationLayout);
+            return;
+        }
     case 6:
-destinationLayout6:
-    if (sourceLayout != 1) return;
-    if (sourceFormat == 63) goto layout6SourceFormat63;
-    if (sourceFormat >= 63) goto layout6SourceFormat76;
-    if (sourceFormat == 30) goto layout6CopyIndexed8;
-    if (sourceFormat >= 30) return;
-    if (sourceFormat == 14) goto layout6SourceFormat14Or76;
-    return;
-layout6SourceFormat76:
-    if (sourceFormat != 76) return;
-layout6SourceFormat14Or76:
-    if (destinationFormat == 63) goto layout6SwapRedBlue;
-    if (destinationFormat >= 63) goto layout6DestinationFormat76;
-    if (destinationFormat == 14) goto layout6CopyFourBytes;
-    if (destinationFormat >= 14) return;
-    if (destinationFormat == 1) goto layout6SwapRedBlue;
-    return;
-layout6DestinationFormat76:
-    switch (destinationFormat) {
-    default:
+    destinationLayout6:
+        if (sourceLayout != 1)
+            return;
+        if (sourceFormat == 63)
+            goto layout6SourceFormat63;
+        if (sourceFormat >= 63)
+            goto layout6SourceFormat76;
+        if (sourceFormat == 30)
+            goto layout6CopyIndexed8;
+        if (sourceFormat >= 30)
+            return;
+        if (sourceFormat == 14)
+            goto layout6SourceFormat14Or76;
         return;
-    case 76:
-        goto layout6CopyFourBytes;
-    }
-layout6CopyFourBytes:
-    gtl_PixelCopy_Copy4Bytes_1(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout6SwapRedBlue:
-    gtl_PixelConvert_SwapRB32_2(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout6SourceFormat63:
-    if (destinationFormat == 63) goto layout6CopyRgba;
-    if (destinationFormat >= 63) return;
-    switch (destinationFormat) {
-    default:
+    layout6SourceFormat76:
+        if (sourceFormat != 76)
+            return;
+    layout6SourceFormat14Or76:
+        if (destinationFormat == 63)
+            goto layout6SwapRedBlue;
+        if (destinationFormat >= 63)
+            goto layout6DestinationFormat76;
+        if (destinationFormat == 14)
+            goto layout6CopyFourBytes;
+        if (destinationFormat >= 14)
+            return;
+        if (destinationFormat == 1)
+            goto layout6SwapRedBlue;
         return;
-    case 2:
-        goto layout6CopyRgba;
-    }
-layout6CopyRgba:
-    gtl_PixelConvert_CopyRGBA8(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-layout6CopyIndexed8:
-    switch (destinationFormat) {
-    default:
+    layout6DestinationFormat76:
+        switch (destinationFormat) {
+        default:
+            return;
+        case 76:
+            goto layout6CopyFourBytes;
+        }
+    layout6CopyFourBytes:
+        gtl_PixelCopy_Copy4Bytes_1(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                   destinationLayout);
         return;
-    case 30:
-        gtl_PixelConvert_CopyByte0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
+    layout6SwapRedBlue:
+        gtl_PixelConvert_SwapRB32_2(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                    destinationLayout);
         return;
-    }
+    layout6SourceFormat63:
+        if (destinationFormat == 63)
+            goto layout6CopyRgba;
+        if (destinationFormat >= 63)
+            return;
+        switch (destinationFormat) {
+        default:
+            return;
+        case 2:
+            goto layout6CopyRgba;
+        }
+    layout6CopyRgba:
+        gtl_PixelConvert_CopyRGBA8(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                   destinationLayout);
+        return;
+    layout6CopyIndexed8:
+        switch (destinationFormat) {
+        default:
+            return;
+        case 30:
+            gtl_PixelConvert_CopyByte0(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                       destinationLayout);
+            return;
+        }
     case 7:
-destinationLayout7:
-    if (sourceLayout != 1) return;
-    if (sourceFormat == 76) goto layout7SourceFormat14Or76;
-    if (sourceFormat >= 76) return;
-    if (sourceFormat != 14) return;
-layout7SourceFormat14Or76:
-    if (destinationFormat == 63) goto layout7SwapRedBlue;
-    if (destinationFormat >= 63) return;
-    switch (destinationFormat) {
+    destinationLayout7:
+        if (sourceLayout != 1)
+            return;
+        if (sourceFormat == 76)
+            goto layout7SourceFormat14Or76;
+        if (sourceFormat >= 76)
+            return;
+        if (sourceFormat != 14)
+            return;
+    layout7SourceFormat14Or76:
+        if (destinationFormat == 63)
+            goto layout7SwapRedBlue;
+        if (destinationFormat >= 63)
+            return;
+        switch (destinationFormat) {
+        default:
+            return;
+        case 1:
+            goto layout7SwapRedBlue;
+        }
+    layout7SwapRedBlue:
+        gtl_PixelConvert_SwapRB32_2(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout,
+                                    destinationLayout);
+        return;
     default:
         return;
-    case 1:
-        goto layout7SwapRedBlue;
-    }
-layout7SwapRedBlue:
-    gtl_PixelConvert_SwapRB32_2(destinationPixel, sourcePixel, destinationFormat, sourceFormat, sourceLayout, destinationLayout);
-    return;
-    default: return;
     }
 }
 
@@ -857,13 +986,13 @@ s32 gtl_ImageFormat_ToSwizzled(s32 engineFormat) {
             goto block_12;
         }
         if (engineFormat < 0x67) {
-block_11:
+        block_11:
             isLinearFormat = 0;
         } else {
             goto block_12;
         }
     } else {
-block_12:
+    block_12:
         isLinearFormat = 1;
     }
 
@@ -956,13 +1085,13 @@ s32 gtl_ImageFormat_FromSwizzled(s32 engineFormat) {
             goto block_12;
         }
         if (engineFormat < 0x67) {
-block_11:
+        block_11:
             isLinearFormat = 0;
         } else {
             goto block_12;
         }
     } else {
-block_12:
+    block_12:
         isLinearFormat = 1;
     }
 
@@ -1120,8 +1249,9 @@ s32 gtl_Image_GetPaletteData(s32 paletteAddressOut, s32 encodedImage) {
 // Words 1/2/6 are unused by the known callees; do not give them pitch semantics.
 // The zero-argument LinearToTiled declaration above is deliberately retained:
 // the exact tail branch forwards live ABI registers, without C++ argument moves.
-void gtl_Image_CopyToPlatformLayout(s32 sourcePixels, s32 unusedSourceWord1, s32 unusedSourceWord2, s32 destinationPixels, s32 copyWidth, s32 copyHeight, s32 unusedDestinationWord, s32 engineFormat,
-                                    s32 destinationLayout) {
+void gtl_Image_CopyToPlatformLayout(s32 sourcePixels, s32 unusedSourceWord1, s32 unusedSourceWord2,
+                                    s32 destinationPixels, s32 copyWidth, s32 copyHeight, s32 unusedDestinationWord,
+                                    s32 engineFormat, s32 destinationLayout) {
     u32 bitsPerPixel;
     s32 pixelCount;
 
@@ -1201,7 +1331,8 @@ void gtl_Image_CopyToPlatformLayout(s32 sourcePixels, s32 unusedSourceWord1, s32
         memcpy((void*)destinationPixels, (void*)sourcePixels, (u32)(pixelCount * bitsPerPixel) >> 3U);
         return;
     case 3:
-        gtl_Image_ConvertMortonLayout(sourcePixels, unusedSourceWord1, unusedSourceWord2, destinationPixels, copyWidth, copyHeight, unusedDestinationWord, engineFormat, 1);
+        gtl_Image_ConvertMortonLayout(sourcePixels, unusedSourceWord1, unusedSourceWord2, destinationPixels, copyWidth,
+                                      copyHeight, unusedDestinationWord, engineFormat, 1);
         return;
     case 6:
         if (engineFormat >= 0x33) {

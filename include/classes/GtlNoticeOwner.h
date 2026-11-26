@@ -5,11 +5,15 @@
 
 class GtlNoticeOwner {
 public:
+    int AllocateWithOptionalLock(unsigned int byteCount, int lockOptions);
+    int InvokeFreeLocked(void* arg, int condition);
+
     char pad_0[0x8];
     void* object; // 0x8; GtlNoticeOwner_AllocateWithOptionalLock
     char pad_C[0x1C];
     int flags; // 0x28; GtlNoticeOwner_AllocateWithOptionalLock
-    char mutex[0x18]; // 0x2C: GtlNoticeOwner_AllocateWithOptionalLock/GtlNoticeOwner_InvokeFreeLocked pass to OSLockMutex (OSLockMutex)
+    char mutex
+        [0x18]; // 0x2C: GtlNoticeOwner_AllocateWithOptionalLock/GtlNoticeOwner_InvokeFreeLocked pass to OSLockMutex (OSLockMutex)
 };
 
 #define OFF(f, o) typedef char GtlNoticeOwner_off_##f[((int)&((GtlNoticeOwner*)0)->f == (o)) ? 1 : -1]

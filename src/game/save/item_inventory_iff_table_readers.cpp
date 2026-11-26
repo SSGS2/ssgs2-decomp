@@ -1,6 +1,8 @@
+// Inventory table readers for the caddie, caddie-item and set-item tables: each resizes its
+// lookup table and copies every IFF record under its type-id key.
+// The helpers in this file choose growth amounts and throw on impossible entry counts.
+
 #include "iff/IffStruct.h"
-// Translation unit 0x8018C1F8-0x8018D65C (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 #include "game/exception.h"
@@ -44,11 +46,16 @@ static const unsigned int kLengthErrorTypeOffset = 0x2f9;
 extern "C" {
 
 struct CaddieRecordStorage {
-    union { IFF_STRUCT::sCaddie value; unsigned int words[sizeof(IFF_STRUCT::sCaddie) / 4]; };
+    union {
+        IFF_STRUCT::sCaddie value;
+        unsigned int words[sizeof(IFF_STRUCT::sCaddie) / 4];
+    };
     // Leave record bytes uninitialized until table import.
     CaddieRecordStorage() {}
     // Copy every byte of the source IFF record using its value assignment.
-    CaddieRecordStorage(const CaddieRecordStorage& other) { *this = other; }
+    CaddieRecordStorage(const CaddieRecordStorage& other) {
+        *this = other;
+    }
 };
 struct CaddieLoadEntry {
     unsigned int tag;
@@ -71,19 +78,30 @@ void appFreeUni__FPv(void*);
 extern void* memcpy(void*, const void*, unsigned int);
 
 struct SetItemRecordStorage {
-    union { IFF_STRUCT::sSetItem value; unsigned int words[sizeof(IFF_STRUCT::sSetItem) / 4]; };
+    union {
+        IFF_STRUCT::sSetItem value;
+        unsigned int words[sizeof(IFF_STRUCT::sSetItem) / 4];
+    };
     // Leave record bytes uninitialized until table import.
     SetItemRecordStorage() {}
     // Copy every byte of the source IFF record using its value assignment.
-    SetItemRecordStorage(const SetItemRecordStorage& other) { *this = other; }
+    SetItemRecordStorage(const SetItemRecordStorage& other) {
+        *this = other;
+    }
 };
 struct SetItemLoadEntry {
     unsigned int tag;
     SetItemRecordStorage data;
     // Construct a zero-key entry from the supplied set-item payload.
-    SetItemLoadEntry(const SetItemRecordStorage& value) try : tag(0), data(value) {} catch (...) { throw; }
+    SetItemLoadEntry(const SetItemRecordStorage& value) try : tag(0), data(value) {
+    } catch (...) {
+        throw;
+    }
     // Copy the existing entry key and set-item payload.
-    SetItemLoadEntry(const SetItemLoadEntry& other) try : tag(other.tag), data(other.data) {} catch (...) { throw; }
+    SetItemLoadEntry(const SetItemLoadEntry& other) try : tag(other.tag), data(other.data) {
+    } catch (...) {
+        throw;
+    }
     // Construct an entry with the explicit key and supplied set-item payload.
     SetItemLoadEntry(unsigned int t, const SetItemRecordStorage& value) : tag(t), data(value) {}
 };
@@ -108,7 +126,9 @@ void __dt__Q33std6detail16char_array_guardFv(void*, int);
 namespace std {
 struct logic_error : exception {
     // Set the exception object vtable used by the runtime.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
 
     char* text;
     void* control;
@@ -120,41 +140,53 @@ struct BufferGuard_u8018C1F8 {
     char* data;
     char* flag;
     // Release the error-text array if control-block construction did not take ownership.
-    ~BufferGuard_u8018C1F8() { if (data) __dla__FPv(data, -1); }
+    ~BufferGuard_u8018C1F8() {
+        if (data)
+            __dla__FPv(data, -1);
+    }
 };
 struct Control {
     void* vtable;
     unsigned int refs, weak;
     char* text;
     // Own the error-text array with initial strong/weak counts of one.
-    Control(char* p) : refs(1), weak(1) { vtable=s_sharedCharDeleterVtable; text=p; }
+    Control(char* p) : refs(1), weak(1) {
+        vtable = s_sharedCharDeleterVtable;
+        text = p;
+    }
 };
 namespace std {
 struct length_error : logic_error {
     // Construct the owned length-error text and its shared control block.
     length_error(const char* str) {
-        *(void**)this=__vt__Q23std11logic_error;
-        struct Flag { char value; char pad[3]; };
-        Flag flag; flag.value=0;
-        unsigned long n = strlen(str)+1;
-        char* allocated=(char*)__nwa__FUl(2*n-n);
-        text=allocated;
+        *(void**)this = __vt__Q23std11logic_error;
+        struct Flag {
+            char value;
+            char pad[3];
+        };
+        Flag flag;
+        flag.value = 0;
+        unsigned long n = strlen(str) + 1;
+        char* allocated = (char*)__nwa__FUl(2 * n - n);
+        text = allocated;
         {
-        BufferGuard_u8018C1F8 guard;
-        guard.data=allocated;
-        guard.flag=&flag.value;
-        control=new Control(allocated);
-        guard.data=0;
+            BufferGuard_u8018C1F8 guard;
+            guard.data = allocated;
+            guard.flag = &flag.value;
+            control = new Control(allocated);
+            guard.data = 0;
         }
-        strcpy(text,str);
-        *(void**)this=__vt__Q23std12length_error;
+        strcpy(text, str);
+        *(void**)this = __vt__Q23std12length_error;
     }
 
     ~length_error();
 };
 }
 // Throw the vector length error for an impossible entry count.
-inline void capacityError(const char* message) { throw std::length_error(message); }
+inline void capacityError(const char* message) {
+    throw std::length_error(message);
+}
 
 #pragma does_not_return __throw
 struct LengthThrow : std::length_error {
@@ -164,7 +196,9 @@ struct LengthThrow : std::length_error {
     }
 };
 // Construct in caller-owned storage without allocating.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 // Throw the set-item specialization's vector length error.
 inline void throwLength(const char* const& message) {
     throw std::length_error(message);
@@ -244,7 +278,8 @@ void ItemInventory_ReadCaddieTable(CaddieTableLoader* self, const unsigned char*
                 } else if (oldCapacity < kCaddieHalfGrowthLimit) {
                     unsigned int growth = (oldCapacity + 1) >> 1;
                     const unsigned int* amount = &growth;
-                    if (growth < requiredGrowth) amount = &requiredGrowth;
+                    if (growth < requiredGrowth)
+                        amount = &requiredGrowth;
                     newCapacity = oldCapacity + *amount;
                 } else {
                     newCapacity = kCaddieMaxEntries;
@@ -346,7 +381,10 @@ struct Allocation88 {
 #pragma use_lmw_stmw on
 // Resize the caddie-item lookup table and copy each IFF record with its type-id key.
 void ItemInventory_ReadCaddieItemTable(CaddieItemTableLoader* self, const unsigned char* input) {
-    union Allocator { volatile char value; unsigned int alignment; };
+    union Allocator {
+        volatile char value;
+        unsigned int alignment;
+    };
     IffTableHeader header;
     memcpy(&header, input, sizeof(header));
     unsigned int count = header.recordCount;
@@ -356,16 +394,19 @@ void ItemInventory_ReadCaddieItemTable(CaddieItemTableLoader* self, const unsign
     if (count > currentSize) {
         unsigned int availableCapacity = self->capacity;
         unsigned int entriesToAppend = count - currentSize;
-        Allocator allocator; allocator.value = 0;
+        Allocator allocator;
+        allocator.value = 0;
         // Resize in place when possible; otherwise build new entries, copy old ones,
         // and swap allocations only after all constructors succeed.
         do {
             if (entriesToAppend > availableCapacity || self->size > availableCapacity - entriesToAppend) {
                 unsigned int size = ((volatile CaddieItemTableLoader*)self)->size;
                 unsigned int oldCapacity = ((volatile CaddieItemTableLoader*)self)->capacity;
-                Allocator allocator2; allocator2.value = 0;
+                Allocator allocator2;
+                allocator2.value = 0;
                 if (size + entriesToAppend - availableCapacity > kCaddieItemMaxEntries - oldCapacity) {
-                    Allocator allocator3; allocator3.value = 0;
+                    Allocator allocator3;
+                    allocator3.value = 0;
                     const char* volatile message = iffSchemaAndCourseStrings + kVectorLengthErrorOffset;
                     capacityError(message);
                 }
@@ -470,7 +511,10 @@ void ItemInventory_ReadCaddieItemTable(CaddieItemTableLoader* self, const unsign
 
 #pragma pop
 
-union Allocator80 { volatile char value; unsigned int alignment; };
+union Allocator80 {
+    volatile char value;
+    unsigned int alignment;
+};
 // Return the larger growth count by reference, preserving the template ABI.
 inline const unsigned int& max80(const unsigned int& a, const unsigned int& b) {
     return a < b ? b : a;
@@ -499,7 +543,8 @@ struct Allocation80 {
     // Free the pending or swapped-out allocation still owned by this guard.
     ~Allocation80() {
         if (begin) {
-            Allocator80 flag; flag.value = 0;
+            Allocator80 flag;
+            flag.value = 0;
             erase80(size, size);
             appFreeUni__FPv(begin);
         }
@@ -510,7 +555,8 @@ struct Allocation80 {
 #pragma use_lmw_stmw on
 #pragma opt_common_subs off
 // Resize the set-item lookup table and copy each IFF record with its type-id key.
-void ItemInventory_ReadSetItemTable(SetItemTableLoader* self, const unsigned char* input) { unsigned int availableCapacity;
+void ItemInventory_ReadSetItemTable(SetItemTableLoader* self, const unsigned char* input) {
+    unsigned int availableCapacity;
 
     unsigned int entriesToAppend;
 
@@ -529,24 +575,29 @@ void ItemInventory_ReadSetItemTable(SetItemTableLoader* self, const unsigned cha
 
         entriesToAppend = header.recordCount - self->size;
         availableCapacity = self->capacity;
-        Allocator allocator; allocator.value = 0;
+        Allocator allocator;
+        allocator.value = 0;
         // Resize in place when possible; otherwise build new entries, copy old ones,
         // and swap allocations only after all constructors succeed.
         do {
             if (entriesToAppend > availableCapacity || self->size > availableCapacity - entriesToAppend) {
                 unsigned int size = ((volatile SetItemTableLoader*)self)->size;
                 unsigned int oldCapacity = ((volatile SetItemTableLoader*)self)->capacity;
-                Allocator allocator2; allocator2.value = 0;
+                Allocator allocator2;
+                allocator2.value = 0;
                 if (size + entriesToAppend - availableCapacity > kSetItemMaxEntries - oldCapacity) {
-                    Allocator allocator3; allocator3.value = 0;
+                    Allocator allocator3;
+                    allocator3.value = 0;
                     throwLength(iffSchemaAndCourseStrings + kVectorLengthErrorOffset);
                 }
                 growth80(oldCapacity, entriesToAppend + size - availableCapacity);
             } else {
                 {
-                    Allocator allocator4; SetItemLoadEntry* destination = self->begin + self->size;
+                    Allocator allocator4;
+                    SetItemLoadEntry* destination = self->begin + self->size;
                     SetItemRecordStorage inplaceValue;
-                    allocator4.value = 0; inplaceValue = inplaceInitial;
+                    allocator4.value = 0;
+                    inplaceValue = inplaceInitial;
                     while (entriesToAppend) {
                         new (destination) SetItemLoadEntry(inplaceValue);
                         --entriesToAppend;
@@ -556,25 +607,30 @@ void ItemInventory_ReadSetItemTable(SetItemTableLoader* self, const unsigned cha
                 }
                 break;
             }
-            { Allocator80 allocator8;
+            {
+                Allocator80 allocator8;
                 Allocation80 allocation(&self->capacity);
                 unsigned int requiredGrowth = ((self->size + entriesToAppend)) - self->capacity;
                 int oldCapacity = self->capacity;
                 if (requiredGrowth > kSetItemMaxEntries - oldCapacity) {
-                    Allocator allocator5; allocator5.value = 0;
+                    Allocator allocator5;
+                    allocator5.value = 0;
                     throwLength(iffSchemaAndCourseStrings + kVectorLengthErrorOffset);
                 }
-                unsigned int newCapacity; newCapacity = growth80(oldCapacity, requiredGrowth);
-                Allocator allocator6; allocator6.value = 0;
+                unsigned int newCapacity;
+                newCapacity = growth80(oldCapacity, requiredGrowth);
+                Allocator allocator6;
+                allocator6.value = 0;
                 if (newCapacity > kSetItemMaxEntries) {
-                    Allocator allocator7; allocator7.value = 0;
+                    Allocator allocator7;
+                    allocator7.value = 0;
                     throwLength(iffSchemaAndCourseStrings + kVectorLengthErrorOffset);
                 }
                 // Allocate replacement storage while self still owns the live table.
                 allocation.begin = (SetItemLoadEntry*)appMallocDummy__FUl(newCapacity * sizeof(SetItemLoadEntry));
                 allocation.prefix = self->size;
                 allocation.capacity = newCapacity;
-                 allocator8.value = 0;
+                allocator8.value = 0;
                 SetItemLoadEntry* destination = self->size + allocation.begin + allocation.size;
                 growValue = growInitial;
                 while (entriesToAppend) {
@@ -583,7 +639,8 @@ void ItemInventory_ReadSetItemTable(SetItemTableLoader* self, const unsigned cha
                     ++destination;
                     allocation.size += 1;
                 }
-                Allocator80 allocator9; SetItemLoadEntry* first = self->begin;
+                Allocator80 allocator9;
+                SetItemLoadEntry* first = self->begin;
                 SetItemLoadEntry* oldCursor = first + self->size;
                 allocator9.value = 0;
                 // Copy the old prefix backward; the guard counts completed entries.
@@ -612,7 +669,8 @@ void ItemInventory_ReadSetItemTable(SetItemTableLoader* self, const unsigned cha
             }
         } while (0);
     } else if (header.recordCount < self->size) {
-        Allocator80 allocator11; allocator11.value = 0;
+        Allocator80 allocator11;
+        allocator11.value = 0;
         self->size -= self->size - header.recordCount;
     }
     // Resize invariant: size equals recordCount; import replaces every staging byte.

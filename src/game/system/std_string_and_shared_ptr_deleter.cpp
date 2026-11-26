@@ -1,3 +1,7 @@
+// Shared-pointer deleters and destructor helpers for the library's string, array guard and
+// exception-message storage. Covers releasing heap string storage, the char-array deleter,
+// and the length_error destructor.
+
 #define GAME_NSTRING_IMPLEMENTATION
 #include "game/string.h"
 #include <decomp/cw_bitfields.h>
@@ -5,12 +9,10 @@
 namespace std {
 // Release heap storage; inline strings own no allocation.
 basic_string<char, char_traits<char>, app::app_allocator<char> >::~basic_string() {
-    if (flags >> 31) appFreeUni__FPv(data);
+    if (flags >> 31)
+        appFreeUni__FPv(data);
 }
 }
-
-// Translation unit 0x80046274-0x80046850 (7 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -54,10 +56,22 @@ void appFreeUni__FPv(void* p);
 void MWSharedOwner_ReleaseReference(void* p);
 
 // ABI view type identities are retained; fields and aliases describe ownership.
-struct A { void* guardedArray; }; // Owns the guarded char[] until transfer.
-struct B { unsigned int flag; int pad; void* f8; }; // Unused string view in this unit.
-struct D { int messageAddress; void* messageOwner; }; // Borrowed text address and its shared control block.
-struct C { char vtableStorage[4]; D message; }; // Exception vtable followed by message/reference.
+struct A {
+    void* guardedArray;
+}; // Owns the guarded char[] until transfer.
+struct B {
+    unsigned int flag;
+    int pad;
+    void* f8;
+}; // Unused string view in this unit.
+struct D {
+    int messageAddress;
+    void* messageOwner;
+}; // Borrowed text address and its shared control block.
+struct C {
+    char vtableStorage[4];
+    D message;
+}; // Exception vtable followed by message/reference.
 typedef A CharacterArrayGuard;
 typedef D ExceptionMessageReference;
 typedef C LengthErrorStorage;
@@ -121,8 +135,12 @@ char* strcpy(char*, const char*);
 struct Str {
     union {
         unsigned flag;
-        struct { CW_BITS2( unsigned heapbit:1, unsigned capacity:31) };
-        struct { CW_BITS2( unsigned char byteheap:1, unsigned char smallsize:7) };
+        struct {
+            CW_BITS2(unsigned heapbit : 1, unsigned capacity : 31)
+        };
+        struct {
+            CW_BITS2(unsigned char byteheap : 1, unsigned char smallsize : 7)
+        };
     };
     unsigned size;
     char* ptr;
@@ -132,23 +150,40 @@ struct Str {
 extern char fileWriterExceptionStrings[];
 static const unsigned int kStringMaximumLength = 0x7FFFFFFEu;
 static const unsigned int kStringHeapFlag = 0x80000000u;
-enum StringStorage { kInlineStringCapacity = 11, kStringAllocationGranularity = 16 };
+enum StringStorage {
+    kInlineStringCapacity = 11,
+    kStringAllocationGranularity = 16
+};
 // 16-byte shared message control block: vtable, two counters initialized to one, owned array.
-struct Ref { int vt; int c1; int c2; char* s; };
+struct Ref {
+    int vt;
+    int c1;
+    int c2;
+    char* s;
+};
 typedef Ref ExceptionMessageSharedOwner;
 extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 struct Holder_u80046274 {
-    char* p; char* flag;
+    char* p;
+    char* flag;
     // Guard the message allocation until a shared control block takes ownership; flag is retained ABI state.
-    Holder_u80046274(char* b, char* f) { p = b; flag = f; }
+    Holder_u80046274(char* b, char* f) {
+        p = b;
+        flag = f;
+    }
     // Free only an allocation whose ownership has not been transferred by clearing p.
-    ~Holder_u80046274() { if (p) __dla__FPv(p); }
+    ~Holder_u80046274() {
+        if (p)
+            __dla__FPv(p);
+    }
 };
 // ABI class ErrBase is the logic-error message owner; derived Err/Err2 throw
 // out_of_range/length_error. Keep these identities stable for exception relocations.
 struct ErrBase {
-    void* vt; char* buf; ExceptionMessageSharedOwner* ref;
+    void* vt;
+    char* buf;
+    ExceptionMessageSharedOwner* ref;
     // Copy a borrowed message into an array owned by a newly allocated shared control block.
     ErrBase(const char* message) {
         char cleanupMarker __attribute__((aligned(4))) = 0;
@@ -159,8 +194,15 @@ struct ErrBase {
         buf = messageBuffer;
         {
             Holder_u80046274 bufferGuard(messageBuffer, &cleanupMarker);
-            ExceptionMessageSharedOwner* messageReference = (ExceptionMessageSharedOwner*)__nw__FUl(sizeof(ExceptionMessageSharedOwner));
-            if (messageReference) { int table = (int)s_sharedCharDeleterVtable; messageReference->c1 = 1; messageReference->c2 = 1; messageReference->vt = table; messageReference->s = messageBuffer; }
+            ExceptionMessageSharedOwner* messageReference =
+                (ExceptionMessageSharedOwner*)__nw__FUl(sizeof(ExceptionMessageSharedOwner));
+            if (messageReference) {
+                int table = (int)s_sharedCharDeleterVtable;
+                messageReference->c1 = 1;
+                messageReference->c2 = 1;
+                messageReference->vt = table;
+                messageReference->s = messageBuffer;
+            }
             ref = messageReference;
             bufferGuard.p = 0;
         }
@@ -173,18 +215,26 @@ extern char __vt__Q23std12out_of_range[];
 extern char __vt__Q23std12length_error[];
 struct Err2 : ErrBase {
     // Construct and throw length_error using its runtime type and destructor entry.
-    Err2(const char* msg) : ErrBase(msg) { vt = __vt__Q23std12length_error; __throw(fileWriterExceptionStrings + 0x70, this, (void (*)())__dt__Q23std12length_errorFv); }
+    Err2(const char* msg) : ErrBase(msg) {
+        vt = __vt__Q23std12length_error;
+        __throw(fileWriterExceptionStrings + 0x70, this, (void (*)())__dt__Q23std12length_errorFv);
+    }
     // Retain the empty derived cleanup shell used by the matched throw expansion.
     ~Err2() {}
 };
 struct Err : ErrBase {
     // Construct and throw out_of_range using its runtime type and destructor entry.
-    Err(const char* msg) : ErrBase(msg) { vt = __vt__Q23std12out_of_range; __throw(fileWriterExceptionStrings + 0x1e, this, __dt__Q23std12out_of_rangeFv); }
+    Err(const char* msg) : ErrBase(msg) {
+        vt = __vt__Q23std12out_of_range;
+        __throw(fileWriterExceptionStrings + 0x1e, this, __dt__Q23std12out_of_rangeFv);
+    }
     // Retain the empty derived cleanup shell used by the matched throw expansion.
     ~Err() {}
 };
 
-struct Alloc { char c __attribute__((aligned(4))); }; // Allocator token, not read by String_ReplaceRange.
+struct Alloc {
+    char c __attribute__((aligned(4)));
+}; // Allocator token, not read by String_ReplaceRange.
 #pragma push
 #pragma use_lmw_stmw on
 // Replace a bounded string range, preserving overlapping input before moving the suffix.
@@ -192,7 +242,8 @@ struct Alloc { char c __attribute__((aligned(4))); }; // Allocator token, not re
 // Requires a valid string and an ordered, readable insertion range; the source may alias self's data.
 // Throws out_of_range for offset > length, length_error above 0x7ffffffe characters; returns self.
 // Owns any new heap block, releases the old one after copying, and retains no insertion pointer.
-Str* String_ReplaceRange(Str* self, unsigned replaceOffset, unsigned eraseCount, const char* insertBegin, const char* insertEnd, const Alloc& extra) {
+Str* String_ReplaceRange(Str* self, unsigned replaceOffset, unsigned eraseCount, const char* insertBegin,
+                         const char* insertEnd, const Alloc& extra) {
     int suffixLength;
     bool usesHeap;
 
@@ -235,7 +286,9 @@ Str* String_ReplaceRange(Str* self, unsigned replaceOffset, unsigned eraseCount,
     }
     unsigned int sizeValue = oldLength;
     unsigned availableLength = sizeValue - replaceOffset;
-    const unsigned* eraseLimit = &eraseCount; if (availableLength < eraseCount) eraseLimit = &availableLength;
+    const unsigned* eraseLimit = &eraseCount;
+    if (availableLength < eraseCount)
+        eraseLimit = &availableLength;
     erasedLength = *eraseLimit;
     insertLength = insertEnd - insertBegin;
     if (insertLength > kStringMaximumLength || oldLength - erasedLength > kStringMaximumLength - insertLength) {
@@ -253,20 +306,25 @@ Str* String_ReplaceRange(Str* self, unsigned replaceOffset, unsigned eraseCount,
         // Assemble prefix, insertion, suffix in a separate block so aliases still read old storage.
         int capValue = capacity;
         capacity = (capValue + kStringAllocationGranularity - 1) & ~(kStringAllocationGranularity - 1u);
-        while (capacity < 1 + newLength) capacity = (capacity * 2 + kStringAllocationGranularity - 1) & ~(kStringAllocationGranularity - 1u);
+        while (capacity < 1 + newLength)
+            capacity = (capacity * 2 + kStringAllocationGranularity - 1) & ~(kStringAllocationGranularity - 1u);
         int capValue2 = capacity;
         char* newCharacters = (char*)appMallocDummy__FUl(capValue2);
-        if (replaceOffset) memcpy(newCharacters, characters, replaceOffset);
+        if (replaceOffset)
+            memcpy(newCharacters, characters, replaceOffset);
         char* insertionStart = replaceOffset + newCharacters;
         char* insertionDestination = insertionStart;
         memmove(insertionDestination, insertBegin, insertEnd - insertBegin);
-        if (suffixLength) memcpy(insertLength + insertionDestination, characters + replaceOffset + erasedLength, suffixLength);
+        if (suffixLength)
+            memcpy(insertLength + insertionDestination, characters + replaceOffset + erasedLength, suffixLength);
         __typeof__(newLength) terminatorOffset = newLength;
         __typeof__(terminatorOffset) terminatorIndex = terminatorOffset;
         newCharacters[terminatorIndex] = s_stringReallocationTerminatorByte;
         // Commit only after assembling the new terminated contents; inline storage then becomes heap-backed.
-        if (usesHeap) appFreeUni__FPv(characters);
-        else self->flag |= kStringHeapFlag;
+        if (usesHeap)
+            appFreeUni__FPv(characters);
+        else
+            self->flag |= kStringHeapFlag;
         self->ptr = newCharacters;
         unsigned newsizeValue = newLength;
         self->size = newsizeValue;
@@ -279,14 +337,21 @@ Str* String_ReplaceRange(Str* self, unsigned replaceOffset, unsigned eraseCount,
         // The temporary owns its copy; insertLength stays the original range length.
         struct Temp : Str {
             // Release only the overlap snapshot's heap block at scope exit.
-            ~Temp() { if (flag >> 31) appFreeUni__FPv(ptr); }
+            ~Temp() {
+                if (flag >> 31)
+                    appFreeUni__FPv(ptr);
+            }
         };
-        Temp overlapCopy; overlapCopy.flag = 0; overlapCopy.size = 0; overlapCopy.ptr = 0;
+        Temp overlapCopy;
+        overlapCopy.flag = 0;
+        overlapCopy.size = 0;
+        overlapCopy.ptr = 0;
         if (suffixLength) {
             if (characters + replaceOffset + insertLength < insertEnd) {
                 if (insertEnd <= oldLength + characters) {
                     Alloc c; // Retained uninitialized token; the callee never reads its byte.
-                    unsigned int snapshotEraseCount = !(overlapCopy.flag >> 31) ? (*(unsigned char*)&overlapCopy & 0x7F) : 0;
+                    unsigned int snapshotEraseCount =
+                        !(overlapCopy.flag >> 31) ? (*(unsigned char*)&overlapCopy & 0x7F) : 0;
 
                     Alloc copy = c;
                     String_ReplaceRange(&overlapCopy, 0, snapshotEraseCount, insertBegin, insertEnd, copy);
@@ -303,8 +368,10 @@ Str* String_ReplaceRange(Str* self, unsigned replaceOffset, unsigned eraseCount,
         memmove((replaceOffset + characters), insertBegin, insertLength);
         unsigned newsizeValue2 = newLength;
         characters[newsizeValue2] = s_stringInPlaceTerminatorByte;
-        if (usesHeap == 0) self->smallsize = newLength;
-        else self->size = newLength;
+        if (usesHeap == 0)
+            self->smallsize = newLength;
+        else
+            self->size = newLength;
     }
     return self;
 }

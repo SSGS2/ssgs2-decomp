@@ -1,3 +1,7 @@
+// The Wii HOME menu: lifecycle, controller admission, the render state it draws with, and localized
+// resource loading. Also the shared-file registry and its destruction.
+// HomeButtonMenu_ProcessState runs from the game update; HomeButtonMenu_HandleResult acts on the menu result.
+
 #include <decomp/static_init.h>
 // Wii HOME menu lifecycle, controller admission, render-state backup and localized
 // resource loading; also shared-file registry destruction. Game update calls
@@ -6,7 +10,7 @@
 // - Classic HOME admission: ProcessState's WPADProbe gate and action 0x13 loop.
 //   Stock logic requires a successful probe before testing all four action channels.
 // - Aspect ratio: Render_SaveStateAndSetupOrthographic2D uses centered 608x456
-//   HOME drawing units (4:3), near 0/far 500, from u8028A588_data.cpp. This is
+//   HOME drawing units (4:3), near 0/far 500, from the data section. This is
 //   an orthographic rectangle, not the framebuffer or GX viewport/scissor.
 // - Frame rate/audio: kHomePauseAudioDelayUpdates is nine UPDATE calls; the
 //   separate HBM create frameStep is a leading float 2.0 in an eight-byte slot.
@@ -28,20 +32,38 @@ extern unsigned char s_homeButtonSoundState[];
 typedef std::vector<void*, app::app_allocator<void*> > MSLPointerVector;
 #include "classes/GameInputManager.h"
 // HOME menu lifecycle and common Wii controller limits.
-enum HomeMenuState { kHomeIdle = 0, kHomeInitialize = 1, kHomeActive = 2 };
+enum HomeMenuState {
+    kHomeIdle = 0,
+    kHomeInitialize = 1,
+    kHomeActive = 2
+};
 enum HomeMenuConstants {
-    kHomeAction = 0x13, kControllerCount = 4, kSamplesPerController = 16,
-    kKpadSampleBytes = 0x84, kControllerSampleBytes = 0x840,
-    kHomePauseAudioDelayUpdates = 9, kInvalidScriptEntry = -1
+    kHomeAction = 0x13,
+    kControllerCount = 4,
+    kSamplesPerController = 16,
+    kKpadSampleBytes = 0x84,
+    kControllerSampleBytes = 0x840,
+    kHomePauseAudioDelayUpdates = 9,
+    kInvalidScriptEntry = -1
 };
 enum HomeInputStrides {
-    kHomeDescriptorStride = 0x10, kHomeProbeWordStride = 4,
-    kHomeDescriptorPairStride = 0x20, kHomeProbePairStride = 8,
+    kHomeDescriptorStride = 0x10,
+    kHomeProbeWordStride = 4,
+    kHomeDescriptorPairStride = 0x20,
+    kHomeProbePairStride = 8,
     kHomeControllerPairCount = kControllerCount / 2
 };
-enum HomeProbeResult { kHomeProbeOk = 0, kHomeProbeMinus2 = -2, kHomeProbeMinus3 = -3 };
-enum HomeSampleField { kHomeSampleModeByte = 0x5C, kHomeSampleStatusByte = 0x5D,
-    kHomeExtensionMode2 = 2, kHomeNextControllerModeByte = kControllerSampleBytes + kHomeSampleModeByte };
+enum HomeProbeResult {
+    kHomeProbeOk = 0,
+    kHomeProbeMinus2 = -2,
+    kHomeProbeMinus3 = -3
+};
+enum HomeSampleField {
+    kHomeSampleModeByte = 0x5C,
+    kHomeSampleStatusByte = 0x5D,
+    kHomeExtensionMode2 = 2,
+    kHomeNextControllerModeByte = kControllerSampleBytes + kHomeSampleModeByte
+};
 // Observed HBM input descriptor, at owner+0x40 with a 0x10-byte stride. Fields
 // +4/+8 are not identified here; the sample count used by this code lives elsewhere.
 struct HomePadDescriptorView {
@@ -51,11 +73,17 @@ struct HomePadDescriptorView {
 };
 // First KPAD sample's observed prefix; the two bytes survive a -2 probe reset.
 // Their full SDK meanings are unresolved locally; only mode value 2 is tested.
-struct HomePadSamplePrefix { char payload[0x5C]; unsigned char mode, status; };
+struct HomePadSamplePrefix {
+    char payload[0x5C];
+    unsigned char mode, status;
+};
 // Two overlapping interpretations are required by the actual accesses. KPADRead
 // results are written every 16 bytes, but extension checks consume adjacent words.
 // Only resultWords[0] is known to contain this call's controller-0 read count.
-struct HomeKpadResultSlot { int readResult; char unusedWords[12]; };
+struct HomeKpadResultSlot {
+    int readResult;
+    char unusedWords[12];
+};
 struct HomeInputWordsView {
     char prefix[0x120];
     union {
@@ -97,27 +125,44 @@ typedef char HomeKpadResultOffsetCheck[(int)&((HomeInputWordsView*)0)->resultWor
 // connectivity may be drawn from gateWords[1..3]. A safe future layout fix must
 // first establish a producer; simply substituting the freshly written +130/+140/
 // +150 counts would CHANGE this admission policy and break matching.
-enum HomeBackupOffset { kHomeProjectionBackup = 0, kHomeTransform0Backup = 0x40,
-    kHomeTransform11Backup = 0x80, kHomeRenderStateBackup = 0xC0,
-    kHomeTextureStateBackup = 0x100, kHomeBackupStorageOffset = 0x2130 };
+enum HomeBackupOffset {
+    kHomeProjectionBackup = 0,
+    kHomeTransform0Backup = 0x40,
+    kHomeTransform11Backup = 0x80,
+    kHomeRenderStateBackup = 0xC0,
+    kHomeTextureStateBackup = 0x100,
+    kHomeBackupStorageOffset = 0x2130
+};
 // Engine-local state IDs, verified against Engine_SetCachedRenderState's
 // dispatch (gx_renderer_state_and_efb_copy.cpp) and Render_Apply* consumers (gx_render_state_and_texture_upload.cpp). GX values are
 // separate: compare 3=LEQUAL, compare 7=ALWAYS, cull 0=NONE, factors 0=ZERO.
 enum HomeRenderStateId {
-    kHomeCullMode = 0, kHomeDepthCompare = 3, kHomeAlphaCompare = 4,
-    kHomeDepthWrite = 5, kHomeDepthTest = 6, kHomeBlendEnabled = 10,
-    kHomeSourceBlend = 13, kHomeDestinationBlend = 14,
-    kHomeMaterialColorSource = 18, kHomeLightingChannels = 31
+    kHomeCullMode = 0,
+    kHomeDepthCompare = 3,
+    kHomeAlphaCompare = 4,
+    kHomeDepthWrite = 5,
+    kHomeDepthTest = 6,
+    kHomeBlendEnabled = 10,
+    kHomeSourceBlend = 13,
+    kHomeDestinationBlend = 14,
+    kHomeMaterialColorSource = 18,
+    kHomeLightingChannels = 31
 };
 enum HomeTextureStateId {
-    kHomeColorOperation = 0, kHomeColorArgument1 = 1,
-    kHomeAlphaOperation = 3, kHomeAlphaArgument1 = 4
+    kHomeColorOperation = 0,
+    kHomeColorArgument1 = 1,
+    kHomeAlphaOperation = 3,
+    kHomeAlphaArgument1 = 4
 };
 enum HomeRenderSetup {
-    kHomeVertexFormat = 0xF001, kHomeSelectTextureArgument1 = 0x11,
-    kHomeCompareLessEqual = 3, kHomeCompareAlways = 7,
-    kHomeProjectionTransform = 1, kHomeViewTransform = 0,
-    kHomeTextureTransform = 11, kHomeResetGXOption = 7
+    kHomeVertexFormat = 0xF001,
+    kHomeSelectTextureArgument1 = 0x11,
+    kHomeCompareLessEqual = 3,
+    kHomeCompareAlways = 7,
+    kHomeProjectionTransform = 1,
+    kHomeViewTransform = 0,
+    kHomeTextureTransform = 11,
+    kHomeResetGXOption = 7
 };
 // Render backup map (0x120 bytes): transforms 1/0/11 at +0/+0x40/+0x80;
 // eight {stateId,value} pairs at +0xC0; four stage-0 pairs at +0x100.
@@ -125,9 +170,19 @@ enum HomeRenderSetup {
 // The draw path restores those pairs/transforms, then explicitly sets option 7=1
 // and cached states 0x12=0, 4=7. Vertex format/index binding and other setup state
 // are not restored by this snapshot; callers rely on the next engine setup.
-struct SharedBufferVectorView { void* data; int count; int capacity; };
-struct SharedTableEntryView { unsigned int key; void* value; };
-struct BpDrawEnableView { char reserved[0x30]; int drawEnabled; };
+struct SharedBufferVectorView {
+    void* data;
+    int count;
+    int capacity;
+};
+struct SharedTableEntryView {
+    unsigned int key;
+    void* value;
+};
+struct BpDrawEnableView {
+    char reserved[0x30];
+    int drawEnabled;
+};
 // Fields initialized for the Wii HOME library; unobserved option words stay neutral.
 struct HomeCreateInfoView {
     void* layoutArchive;
@@ -140,28 +195,37 @@ struct HomeCreateInfoView {
     int configurationBytes, option2C;
     float frameStep, adjustX, adjustY;
 };
-enum { kHomeConfigSizeOffset = (int)&((HomeCreateInfoView*)0)->configurationBytes };
+enum {
+    kHomeConfigSizeOffset = (int)&((HomeCreateInfoView*)0)->configurationBytes
+};
 
 #include "classes/Context8028A588.h"
 #include "classes/ResourceState8028A270.h"
 // Borrow the HOME owner's partial view, including explicitly documented byte cursors.
-static inline Context8028A588* AsContext8028A588(void* object) { return (Context8028A588*)object; }
+static inline Context8028A588* AsContext8028A588(void* object) {
+    return (Context8028A588*)object;
+}
 // Compare borrowed values without changing their iterator representation.
-template <class T> inline bool same_pos(const T& a, const T& b) { return a == b; }
+template <class T> inline bool same_pos(const T& lhs, const T& rhs) {
+    return lhs == rhs;
+}
 // Return the same equality result as the integer form expected by callers.
-template <class T> inline int same_int(const T& a, const T& b) { return a == b; }
-// Translation unit 0x8028A588-0x8028BC74 (19 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+template <class T> inline int same_int(const T& lhs, const T& rhs) {
+    return lhs == rhs;
+}
 
 #include "game/singletons.h"
 #include "classes/CSharedFileRegistry.h"
+#include "classes/CFx.h"
+#include "classes/CMouseCursor.h"
+#include "classes/CSharedFileHandle.h"
+#include "classes/CGallery.h"
+#include "classes/CSharedFilePtr.h"
+#include "classes/CBpCtrl.h"
 
-// Borrow shared-file registry storage; this cast allocates or releases nothing.
-static inline CSharedFileRegistry* AsCSharedFileRegistry(void* object) { return (CSharedFileRegistry*)object; }
 // Preserve the compiler's byte-address expression for destructor subobject checks.
 enum {
     kFileRecordsOffset = (int)&((CSharedFileRegistry*)0)->fileRecords,
-    kFilePointerCountOffset = (int)&((CSharedFileRegistry*)0)->filePointerCount,
     kFilePointersOffset = (int)&((CSharedFileRegistry*)0)->filePointers
 };
 struct CSharedFileElem {
@@ -174,8 +238,6 @@ extern void strcat(char*, const char*);
 extern char* strcpy(char*, const char*);
 extern void* SharedFile_Create(char*, int);
 extern int CSharedFilePtr_GetLoadedBuffer(void*);
-extern int CSharedFilePtr_GetSize(void*);
-extern void CSharedFileHandle_Destroy(void*, int);
 extern void* appMallocUni__FUl(unsigned long);
 extern void* memcpy(void*, const void*, unsigned int);
 extern void Game_DrawReloadingFrame();
@@ -213,14 +275,15 @@ struct HomeResourcePool {
     char unavailableScript[20];
 };
 // Borrow the packed HOME resource paths without copying or changing pooled storage.
-static inline HomeResourcePool* HomeResources() { return (HomeResourcePool*)homeButtonResourceStrings; }
+static inline HomeResourcePool* HomeResources() {
+    return (HomeResourcePool*)homeButtonResourceStrings;
+}
 
 extern char __vt__19CSharedFileRegistry[];
 extern void __ct__7CBpCtrlFv(void*);
 extern void CBpCtrl_dtor(void*, int);
 extern void __register_global_object(void*, void (*)(void*, int), void*);
 extern void* IdMap_Lookup(void*, int);
-extern void CBpCtrl_DeleteEntryById(void*, int);
 extern int BpObject_PollLoad(void*);
 extern int BpObject_IsCurrentScriptComplete(void*);
 extern void BpObject_StartScriptByName(void*, const char*, int);
@@ -236,7 +299,8 @@ extern void Engine_SetCachedRenderState(int, int);
 extern void MtxOrthoOffCenter(float*, float, float, float, float, float, float);
 extern void SetTransform(int, float*);
 extern void Engine_FlushRenderState();
-extern float kFloat_neg304_HomeMenuProjection, kFloat_304_HomeMenuProjection, kFloat_neg228_HomeMenuProjection, kFloat_228_HomeMenuProjection, kFloat_0_FileDialog, kFloat_500_HomeMenuProjectionFar;
+extern float kFloat_neg304_HomeMenuProjection, kFloat_304_HomeMenuProjection, kFloat_neg228_HomeMenuProjection,
+    kFloat_228_HomeMenuProjection, kFloat_0_FileDialog, kFloat_500_HomeMenuProjectionFar;
 extern float kIdentityMatrix4x4[];
 extern signed char s_systemResetStateInitialized;
 extern void* g_soundManager;
@@ -255,8 +319,6 @@ extern void SoundManager_ResumePrimaryStreams(void*);
 extern void SoundManager_ResumePlayback(void*);
 extern void SoundManager_SetStreamVolume(void*, float, float);
 extern void SoundManager_SetBufferVolume(void*, float, float);
-extern void CMouseCursor_SetPointerInputEnabled(void*, int);
-extern void CFx_SetPaused(void*, int);
 extern void ValueAnimation_SetUpdateMode4();
 extern void InputManager_Init(void*);
 extern void InputManager_Dtor(void*, int);
@@ -266,7 +328,6 @@ extern void MovieController_Dtor(void*, int);
 extern void MovieController_ReleasePlaybackReference(void*);
 extern void RemoteAudio_RequestEnableAllLazyForwarder(void*);
 extern void CBpCtrl_dtor(void*, int);
-extern void CBpCtrl_ResumeCallbacks(void*);
 extern int HomeButtonMenu_DisableRemoteAudio(void*);
 extern void HBMInit();
 extern void HBMSetAdjustFlag(int);
@@ -277,8 +338,6 @@ extern void ValueAnimation_SetUpdateMode1();
 extern int WPADProbe(int, void*);
 extern int InputManager_IsAnyMenuAdvanceActionActive(void*);
 extern int Input_IsActionPressed(void*, int, int);
-extern void CBpCtrl_CreateEntry(void*, const char*, int*, int);
-extern void CBpCtrl_RequestCallbackPause(void*);
 extern void InputManager_PauseRumble(void*);
 extern int KPADRead(int, void*, int);
 extern void* memset(void*, int, unsigned int);
@@ -296,10 +355,8 @@ extern void Render_SaveStateAndSetupOrthographic2D(void*, char*);
 extern void HomeButtonMenu_UpdateScript(void*);
 extern void __ct__7CBpCtrlFv(void*);
 extern void CBpCtrl_dtor(void*, int);
-extern void CBpCtrl_ResumeCallbacks(void*);
 extern void InputManager_Dtor(void*, int);
 extern void CBpCtrl_dtor(void*, int);
-extern void CBpCtrl_ResumeCallbacks(void*);
 extern void InputManager_ResumeRumble(void*);
 extern void __ct__7CBpCtrlFv(void*);
 extern void __register_global_object(void*, void (*)(void*, int), void*);
@@ -322,13 +379,13 @@ int HomeButtonMenu_ProcessState(char* self) {
         HomeButtonMenu_DisableRemoteAudio(g_soundManager);
         HBMInit();
         AsContext8028A588(self)->state = kHomeActive;
-        CMouseCursor_SetPointerInputEnabled(g_mouseCursor, 0);
+        CMouseCursor::SetPointerInputEnabled(g_mouseCursor, 0);
         AsContext8028A588(self)->savedStreamVolume = SoundManager_GetVolumeByMode(g_soundManager, 1);
         SoundManager_SetStreamVolume(g_soundManager, kFloat_0_FileDialog, kFloat_0_3_HomeMenuVolumeTransition);
         AsContext8028A588(self)->savedBufferVolume = SoundValuePair_GetSelectedValue(g_soundManager, 1);
         SoundManager_SetBufferVolume(g_soundManager, kFloat_0_FileDialog, kFloat_0_3_HomeMenuVolumeTransition);
         AsContext8028A588(self)->soundStopDelayFrames = kHomePauseAudioDelayUpdates;
-        CFx_SetPaused(g_fx, 1);
+        ((CFx*)g_fx)->SetPaused(1);
         HBMSetAdjustFlag((unsigned char)AsContext8028A588(self)->screenAdjustmentEnabled);
         ValueAnimation_SetUpdateMode1();
         if (!Sing_805DC950()) {
@@ -354,35 +411,46 @@ int HomeButtonMenu_ProcessState(char* self) {
             int id = WPADProbe(i, probeTypeCursor);
             AsContext8028A588(probeStatusCursor)->padProbeStatus = id;
             if (id == 0) {
-                if (!Sing_805DC5C8()) {
+                if (!GetInputManagerSlot()) {
                     if (!s_inputManagerInitialized) {
                         InputManager_Init(s_gameInputManager);
                         __register_global_object(s_gameInputManager, InputManager_Dtor, base + 0x0C);
                         s_inputManagerInitialized = 1;
                     }
-                    Sing_805DC5C8() = s_gameInputManager;
+                    GetInputManagerSlot() = s_gameInputManager;
                 }
-                input = Sing_805DC5C8();
+                input = GetInputManagerSlot();
                 homePressed = 0;
                 actionPlayer = 0;
                 for (;;) {
-                    if (InputManager_IsAnyMenuAdvanceActionActive(input)) { homePressed = 0; break; }
-                    if (Input_IsActionPressed(input, kHomeAction, actionPlayer)) { homePressed = 1; break; }
+                    if (InputManager_IsAnyMenuAdvanceActionActive(input)) {
+                        homePressed = 0;
+                        break;
+                    }
+                    if (Input_IsActionPressed(input, kHomeAction, actionPlayer)) {
+                        homePressed = 1;
+                        break;
+                    }
                     actionPlayer++;
-                    if (actionPlayer >= kControllerCount) { homePressed = 0; break; }
+                    if (actionPlayer >= kControllerCount) {
+                        homePressed = 0;
+                        break;
+                    }
                 }
                 if (homePressed != 0) {
                     if ((unsigned char)AsContext8028A588(self)->homeMenuBlocked != 0) {
-                        if ((unsigned char)AsContext8028A588(self)->blockedMessageSuppressed == 0 && AsContext8028A588(self)->scriptEntryId == -1) {
+                        if ((unsigned char)AsContext8028A588(self)->blockedMessageSuppressed == 0 &&
+                            AsContext8028A588(self)->scriptEntryId == -1) {
                             if (!Sing_805DC5F0()) {
                                 if (!s_bpCtrlInitialized) {
-                                    __ct__7CBpCtrlFv(s_bpCtrl);
+                                    ((CBpCtrl*)s_bpCtrl)->__ct();
                                     __register_global_object(s_bpCtrl, CBpCtrl_dtor, base);
                                     s_bpCtrlInitialized = 1;
                                 }
                                 Sing_805DC5F0() = s_bpCtrl;
                             }
-                            CBpCtrl_CreateEntry(Sing_805DC5F0(),HomeResources()->unavailableLayout, (int*)(self + 0xC4), 0);
+                            ((CBpCtrl*)Sing_805DC5F0())
+                                ->CreateEntry(HomeResources()->unavailableLayout, (int*)(self + 0xC4), 0);
                         }
                     } else {
                         requestHome = 1;
@@ -394,60 +462,63 @@ int HomeButtonMenu_ProcessState(char* self) {
         }
         if (requestHome) {
             // Defer activation while the unavailable script is still running.
-            int ok;
+            int scriptRunning;
             if (AsContext8028A588(self)->scriptEntryId == -1) {
-                ok = 0;
+                scriptRunning = 0;
             } else {
                 if (!Sing_805DC5F0()) {
                     if (!s_bpCtrlInitialized) {
-                        __ct__7CBpCtrlFv(s_bpCtrl);
+                        ((CBpCtrl*)s_bpCtrl)->__ct();
                         __register_global_object(s_bpCtrl, CBpCtrl_dtor, base);
                         s_bpCtrlInitialized = 1;
                     }
                     Sing_805DC5F0() = s_bpCtrl;
                 }
-                void* h = IdMap_Lookup(Sing_805DC5F0(), AsContext8028A588(self)->scriptEntryId);
-                ok = (h != 0) && (BpObject_PollLoad(h) != 0) && (BpObject_IsCurrentScriptComplete(h) == 0);
+                void* scriptObject = IdMap_Lookup(Sing_805DC5F0(), AsContext8028A588(self)->scriptEntryId);
+                scriptRunning = (scriptObject != 0) && (BpObject_PollLoad(scriptObject) != 0) &&
+                                (BpObject_IsCurrentScriptComplete(scriptObject) == 0);
             }
-            if (!ok) {
+            if (!scriptRunning) {
                 char* pad = base + 0x30;
                 for (int j = 0; j < kControllerCount; j++) {
                     if (*(int*)&AsContext8028A588(self + j * 0x10)->padSamples != 0) {
-                        if (padTransitionMode == 2 && (unsigned char)pad[0x5C + j * kControllerSampleBytes] == 2) *(int*)&AsContext8028A588(self + j * 0x10)->padExtensionMode = 2;
-                        else *(int*)&AsContext8028A588(self + j * 0x10)->padExtensionMode = 0;
+                        if (padTransitionMode == 2 && (unsigned char)pad[0x5C + j * kControllerSampleBytes] == 2)
+                            *(int*)&AsContext8028A588(self + j * 0x10)->padExtensionMode = 2;
+                        else
+                            *(int*)&AsContext8028A588(self + j * 0x10)->padExtensionMode = 0;
                     }
                 }
                 padTransitionMode = 1;
                 AsContext8028A588(self)->state = padTransitionMode;
                 if (!Sing_805DC5F0()) {
                     if (!s_bpCtrlInitialized) {
-                        __ct__7CBpCtrlFv(s_bpCtrl);
+                        ((CBpCtrl*)s_bpCtrl)->__ct();
                         __register_global_object(s_bpCtrl, CBpCtrl_dtor, base);
                         s_bpCtrlInitialized = 1;
                     }
                     Sing_805DC5F0() = s_bpCtrl;
                 }
-                CBpCtrl_RequestCallbackPause(Sing_805DC5F0());
-                if (!Sing_805DC5C8()) {
+                ((CBpCtrl*)Sing_805DC5F0())->RequestCallbackPause();
+                if (!GetInputManagerSlot()) {
                     if (!s_inputManagerInitialized) {
                         InputManager_Init(s_gameInputManager);
                         __register_global_object(s_gameInputManager, InputManager_Dtor, base + 0x0C);
                         s_inputManagerInitialized = 1;
                     }
-                    Sing_805DC5C8() = s_gameInputManager;
+                    GetInputManagerSlot() = s_gameInputManager;
                 }
                 // Once accepted, pause BP callbacks/rumble and block secondary
                 // input actions 0..38; HandleResult's resume branch clears them.
-                InputManager_PauseRumble(Sing_805DC5C8());
-                if (!Sing_805DC5C8()) {
+                InputManager_PauseRumble(GetInputManagerSlot());
+                if (!GetInputManagerSlot()) {
                     if (!s_inputManagerInitialized) {
                         InputManager_Init(s_gameInputManager);
                         __register_global_object(s_gameInputManager, InputManager_Dtor, base + 0x0C);
                         s_inputManagerInitialized = 1;
                     }
-                    Sing_805DC5C8() = s_gameInputManager;
+                    GetInputManagerSlot() = s_gameInputManager;
                 }
-                void* _inp = Sing_805DC5C8();
+                void* _inp = GetInputManagerSlot();
                 ((GameInputManager*)_inp)->actionBlockedSecondary[0] = 1;
                 ((GameInputManager*)_inp)->actionBlockedSecondary[1] = 1;
                 ((GameInputManager*)_inp)->actionBlockedSecondary[2] = 1;
@@ -497,28 +568,32 @@ int HomeButtonMenu_ProcessState(char* self) {
         if (timer > 0) {
             timer--;
             AsContext8028A588(self)->soundStopDelayFrames = timer;
-            if (!timer) { SoundManager_PausePlayback(g_soundManager); SoundManager_PausePrimaryStreams(g_soundManager); }
+            if (!timer) {
+                SoundManager_PausePlayback(g_soundManager);
+                SoundManager_PausePrimaryStreams(g_soundManager);
+            }
         }
         char* probeStatusCursor = self;
         char* padDescriptorCursor = self;
         char* probeTypeCursor = self + 0xF0;
         char* pad = base + 0x30;
-        for (int i = 0; i < kControllerCount; i++, probeStatusCursor += kHomeProbeWordStride, padDescriptorCursor += kHomeDescriptorStride, probeTypeCursor += kHomeProbeWordStride, pad += kControllerSampleBytes) {
+        for (int i = 0; i < kControllerCount; i++, probeStatusCursor += kHomeProbeWordStride,
+                 padDescriptorCursor += kHomeDescriptorStride, probeTypeCursor += kHomeProbeWordStride,
+                 pad += kControllerSampleBytes) {
             int probeResult = WPADProbe(i, probeTypeCursor);
             AsContext8028A588(probeStatusCursor)->padProbeStatus = probeResult;
             int sampleCount = KPADRead(i, pad, kSamplesPerController);
             ((HomeInputWordsView*)padDescriptorCursor)->resultWords.kpadResultSlots[0].readResult = sampleCount;
             switch (AsContext8028A588(probeStatusCursor)->padProbeStatus) {
-            case kHomeProbeMinus2:
-                {
-                    // -2 clears only the first sample, retaining its mode/status
-                    // bytes, then falls through to supply its pointer to HBM.
-                    unsigned char b0 = (unsigned char)pad[kHomeSampleModeByte];
-                    unsigned char b1 = (unsigned char)pad[kHomeSampleStatusByte];
-                    memset(pad, 0, kKpadSampleBytes);
-                    pad[kHomeSampleModeByte] = b0;
-                    pad[kHomeSampleStatusByte] = b1;
-                }
+            case kHomeProbeMinus2: {
+                // -2 clears only the first sample, retaining its mode/status
+                // bytes, then falls through to supply its pointer to HBM.
+                unsigned char savedMode = (unsigned char)pad[kHomeSampleModeByte];
+                unsigned char savedStatus = (unsigned char)pad[kHomeSampleStatusByte];
+                memset(pad, 0, kKpadSampleBytes);
+                pad[kHomeSampleModeByte] = savedMode;
+                pad[kHomeSampleStatusByte] = savedStatus;
+            }
             case kHomeProbeMinus3:
             case kHomeProbeOk:
                 // -3 and success also expose sample storage; all other statuses
@@ -535,7 +610,8 @@ int HomeButtonMenu_ProcessState(char* self) {
         char* pairedProbeCursor = self;
         char* pairedDescriptorCursor = self;
         char* pairedSamples = base + 0x30;
-        for (int k = 0; k < kHomeControllerPairCount; k++, pairedProbeCursor += kHomeProbePairStride, pairedDescriptorCursor += kHomeDescriptorPairStride, pairedSamples += (2 * kControllerSampleBytes)) {
+        for (int k = 0; k < kHomeControllerPairCount; k++, pairedProbeCursor += kHomeProbePairStride,
+                 pairedDescriptorCursor += kHomeDescriptorPairStride, pairedSamples += (2 * kControllerSampleBytes)) {
             // Pair member 0: status/gate word from the word cursor, descriptor from
             // the descriptor cursor, mode byte from separate KPAD sample storage.
             if (AsContext8028A588(pairedProbeCursor)->padProbeStatus == kHomeProbeOk &&
@@ -554,8 +630,12 @@ int HomeButtonMenu_ProcessState(char* self) {
         }
         // Phase 5: hand four borrowed descriptors to HBM, then process a returned
         // selection. Result handling may change state before the drawing test below.
-        int menuResult = HBMCalc((char*)&AsContext8028A588(self)->padSamples); // HomeButtonMenu_ProcessState: first pad descriptor at +0x40
-        if (menuResult >= 0) { int v = HBMGetSelectBtnNum(); HomeButtonMenu_HandleResult(self, v); }
+        int menuResult = HBMCalc(
+            (char*)&AsContext8028A588(self)->padSamples); // HomeButtonMenu_ProcessState: first pad descriptor at +0x40
+        if (menuResult >= 0) {
+            int v = HBMGetSelectBtnNum();
+            HomeButtonMenu_HandleResult(self, v);
+        }
         HBMUpdateSound();
     }
     if (AsContext8028A588(self)->state == kHomeActive) {
@@ -572,7 +652,8 @@ int HomeButtonMenu_ProcessState(char* self) {
         Engine_SetCachedRenderState(kHomeMaterialColorSource, 0);
         Engine_SetCachedRenderState(kHomeAlphaCompare, kHomeCompareAlways);
     }
-    if (AsContext8028A588(self)->scriptEntryId >= 0) HomeButtonMenu_UpdateScript(self);
+    if (AsContext8028A588(self)->scriptEntryId >= 0)
+        HomeButtonMenu_UpdateScript(self);
     return AsContext8028A588(self)->state == kHomeActive;
 }
 
@@ -614,30 +695,32 @@ void HomeButtonMenu_HandleResult(void* selfRaw, int mode) {
     default:
         SoundManager_ResumePrimaryStreams(g_soundManager);
         SoundManager_ResumePlayback(g_soundManager);
-        SoundManager_SetStreamVolume(g_soundManager, AsContext8028A588(self)->savedStreamVolume, kFloat_0_3_HomeMenuVolumeTransition);
-        SoundManager_SetBufferVolume(g_soundManager, AsContext8028A588(self)->savedBufferVolume, kFloat_0_3_HomeMenuVolumeTransition);
-        CMouseCursor_SetPointerInputEnabled(g_mouseCursor, 1);
-        CFx_SetPaused(g_fx, 0);
+        SoundManager_SetStreamVolume(g_soundManager, AsContext8028A588(self)->savedStreamVolume,
+                                     kFloat_0_3_HomeMenuVolumeTransition);
+        SoundManager_SetBufferVolume(g_soundManager, AsContext8028A588(self)->savedBufferVolume,
+                                     kFloat_0_3_HomeMenuVolumeTransition);
+        CMouseCursor::SetPointerInputEnabled(g_mouseCursor, 1);
+        ((CFx*)g_fx)->SetPaused(0);
         ValueAnimation_SetUpdateMode4();
-        if (!Sing_805DC5C8()) {
+        if (!GetInputManagerSlot()) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
                 __register_global_object(s_gameInputManager, InputManager_Dtor, moduleStorage + 0x0C);
                 s_inputManagerInitialized = 1;
             }
-            Sing_805DC5C8() = s_gameInputManager;
+            GetInputManagerSlot() = s_gameInputManager;
         }
-        InputManager_ResumeRumble(Sing_805DC5C8());
-        if (!Sing_805DC5C8()) {
+        InputManager_ResumeRumble(GetInputManagerSlot());
+        if (!GetInputManagerSlot()) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
                 __register_global_object(s_gameInputManager, InputManager_Dtor, moduleStorage + 0x0C);
                 s_inputManagerInitialized = 1;
             }
-            Sing_805DC5C8() = s_gameInputManager;
+            GetInputManagerSlot() = s_gameInputManager;
         }
         int zero = 0;
-        void* input = Sing_805DC5C8();
+        void* input = GetInputManagerSlot();
         void* chk = Sing_805DC950();
         ((GameInputManager*)input)->actionBlockedSecondary[0] = zero;
         ((GameInputManager*)input)->actionBlockedSecondary[1] = zero;
@@ -691,18 +774,20 @@ void HomeButtonMenu_HandleResult(void* selfRaw, int mode) {
     }
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, CBpCtrl_dtor, moduleStorage);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    CBpCtrl_ResumeCallbacks(Sing_805DC5F0());
+    ((CBpCtrl*)Sing_805DC5F0())->ResumeCallbacks();
     AsContext8028A588(self)->state = kHomeIdle;
 }
 
 // Default gallery-image lifecycle hook: succeed without additional work.
-int CGallery_image_vfunc_1() { return 1; }
+int CGallery::image_vfunc_1() {
+    return 1;
+}
 
 // Save transforms and selected render states, then establish the orthographic HOME drawing state.
 void Render_SaveStateAndSetupOrthographic2D(void* unusedOwner, char* stateBackup) {
@@ -745,41 +830,54 @@ void Render_SaveStateAndSetupOrthographic2D(void* unusedOwner, char* stateBackup
     Engine_SetCachedRenderState(kHomeLightingChannels, 0);
     // Phase 3: build the centered orthographic projection and flush cached state.
     float mtx[16];
-    MtxOrthoOffCenter(mtx, kFloat_neg304_HomeMenuProjection, kFloat_304_HomeMenuProjection, kFloat_neg228_HomeMenuProjection, kFloat_228_HomeMenuProjection, kFloat_0_FileDialog, kFloat_500_HomeMenuProjectionFar);
+    MtxOrthoOffCenter(mtx, kFloat_neg304_HomeMenuProjection, kFloat_304_HomeMenuProjection,
+                      kFloat_neg228_HomeMenuProjection, kFloat_228_HomeMenuProjection, kFloat_0_FileDialog,
+                      kFloat_500_HomeMenuProjectionFar);
     SetTransform(kHomeProjectionTransform, mtx);
     SetTransform(kHomeViewTransform, kIdentityMatrix4x4);
     SetTransform(kHomeTextureTransform, kIdentityMatrix4x4);
     Engine_FlushRenderState();
 }
 // Default gallery-image lifecycle hook: succeed without additional work.
-int CGallery_image_vfunc_2() { return 1; }
+int CGallery::image_vfunc_2() {
+    return 1;
+}
 // Default gallery-image lifecycle hook: succeed without additional work.
-int CGallery_image_vfunc_3() { return 1; }
+int CGallery::image_vfunc_3() {
+    return 1;
+}
 // Default gallery-image lifecycle hook: succeed without additional work.
-int CGallery_image_vfunc_4() { return 1; }
+int CGallery::image_vfunc_4() {
+    return 1;
+}
 
 // Set both the current and saved HOME-menu block flags.
-void HomeMenu_SetBlockedState(char *self, unsigned char v) {
+void HomeMenu_SetBlockedState(char* self, unsigned char v) {
     AsContext8028A588(self)->homeMenuBlocked = v;
     AsContext8028A588(self)->savedHomeMenuBlocked = v;
 }
 
 // Initialize the HOME-menu module's cached full-turn angle.
-void HomeButtonMenu_InitTwoPiCache() { s_homeButtonMenuTwoPi = kFloat_6_2831855; }
+void HomeButtonMenu_InitTwoPiCache() {
+    s_homeButtonMenuTwoPi = kFloat_6_2831855;
+}
 
 // Initialize the shared-file module's cached full-turn angle.
-void SharedFileRegistry_InitTwoPiCache() { s_sharedFileRegistryTwoPi = kFloat_6_2831855; }
+void SharedFileRegistry_InitTwoPiCache() {
+    s_sharedFileRegistryTwoPi = kFloat_6_2831855;
+}
 
 // Report whether the HOME library is in its active processing state.
-int HomeButtonMenu_IsActive(char *self) {
-    int x = AsContext8028A588(self)->state;
-    return !(x - 2);
+int HomeButtonMenu_IsActive(char* self) {
+    int homeState = AsContext8028A588(self)->state;
+    return !(homeState - 2);
 }
 
 // Temporarily block HOME while preserving the prior flag, or restore that prior flag.
-void HomeMenu_OverrideBlockedState(char *self, unsigned char v) {
+void HomeMenu_OverrideBlockedState(char* self, unsigned char v) {
     unsigned char cur = AsContext8028A588(self)->homeMenuBlocked;
-    if (v == cur) return;
+    if (v == cur)
+        return;
     if (v == 1) {
         AsContext8028A588(self)->savedHomeMenuBlocked = cur;
         AsContext8028A588(self)->homeMenuBlocked = v;
@@ -790,11 +888,11 @@ void HomeMenu_OverrideBlockedState(char *self, unsigned char v) {
 
 // Return the mapped value for a table index, or null when the entry is absent.
 void* SharedFileTable_GetMappedValueAt(const void* self, int index) {
-    void* t = *(void**)self;
-    void* p;
-    p = Table_GetEntry(t, index);
-    if (p != 0) {
-        return ((SharedTableEntryView*)p)->value;
+    void* table = *(void**)self;
+    void* entry;
+    entry = Table_GetEntry(table, index);
+    if (entry != 0) {
+        return ((SharedTableEntryView*)entry)->value;
     }
     return 0;
 }
@@ -834,11 +932,11 @@ void* SharedBufferVector_dtor(void* self, int flag) {
                         ((SharedBufferVectorView*)self)->count -= count;
                         p = (char*)((SharedBufferVectorView*)self)->data + offset;
                         while (count != 0) {
-                            int arg = -1;
+                            int deleteFlag = -1;
                             p = p - 0x14;
                             void* obj = (void*)p;
                             void** vt = *(void***)obj;
-                            ((void(*)(void*, int))vt[2])(obj, arg);
+                            ((void (*)(void*, int))vt[2])(obj, deleteFlag);
                             count = count - 1;
                         }
                         appFreeUni__FPv(((SharedBufferVectorView*)self)->data);
@@ -857,31 +955,34 @@ void* SharedBufferVector_dtor(void* self, int flag) {
 void HomeButtonMenu_UpdateScript(void* selfRaw) {
     unsigned char* self = (unsigned char*)selfRaw;
     int scriptEntryId = AsContext8028A588(self)->scriptEntryId;
-    if (scriptEntryId == -1) return;
+    if (scriptEntryId == -1)
+        return;
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_homeMenuInputStorage);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
     void* scriptObject = IdMap_Lookup(Sing_805DC5F0(), AsContext8028A588(self)->scriptEntryId);
-    if (scriptObject == 0) return;
-    if (BpObject_PollLoad(scriptObject) == 0) return;
+    if (scriptObject == 0)
+        return;
+    if (BpObject_PollLoad(scriptObject) == 0)
+        return;
     if (BpObject_IsCurrentScriptComplete(scriptObject) != 0) {
         if ((unsigned char)AsContext8028A588(self)->scriptExitStarted) {
             AsContext8028A588(self)->scriptExitStarted = 0;
             if (AsContext8028A588(self)->scriptEntryId != -1) {
                 if (!Sing_805DC5F0()) {
                     if (!s_bpCtrlInitialized) {
-                        __ct__7CBpCtrlFv(s_bpCtrl);
+                        ((CBpCtrl*)s_bpCtrl)->__ct();
                         __register_global_object(s_bpCtrl, CBpCtrl_dtor, s_homeMenuInputStorage);
                         s_bpCtrlInitialized = 1;
                     }
                     Sing_805DC5F0() = s_bpCtrl;
                 }
-                CBpCtrl_DeleteEntryById(Sing_805DC5F0(), AsContext8028A588(self)->scriptEntryId);
+                ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(AsContext8028A588(self)->scriptEntryId);
                 AsContext8028A588(self)->scriptEntryId = -1;
             }
             return;
@@ -898,85 +999,79 @@ void HomeButtonMenu_UpdateScript(void* selfRaw) {
 
 #pragma opt_propagation off
 // Delete registered handles, destroy embedded file records and release both backing vectors.
-void* CSharedFileRegistry_dtor(void* selfRaw, int flag) {
+CSharedFileRegistry::~CSharedFileRegistry() {
     // Phase 1: delete pointed-to handles, then destroy inline 0x14-byte file
     // records in reverse order. Counts reach zero before either buffer is freed.
-    int off2;
-    void* base2;
+    int recordBytes;
+    void* recordBase;
     int zero8;
     int off3;
     void* base3;
-    char* self = (char*)selfRaw;
-    if (self) {
-        *(void**)self = (void*)__vt__19CSharedFileRegistry;
-        char* cur = (char*)AsCSharedFileRegistry(self)->filePointers;
-        char* e;
-        while (e = (char*)AsCSharedFileRegistry(self)->filePointers + *(int*)(self + kFilePointerCountOffset) * 4, !(e == cur)) {
-            void* elem = *(void**)cur;
-            if (elem) {
-                if (elem) ((CSharedFileElem*)elem)->vdtor(1);
-                *(void**)cur = 0;
-            }
-            cur = cur + 4;
+    vtbl = (void*)__vt__19CSharedFileRegistry;
+    char* cur = (char*)filePointers;
+    char* e;
+    while (e = (char*)filePointers + filePointerCount * 4, !(e == cur)) {
+        void* elem = *(void**)cur;
+        if (elem) {
+            if (elem)
+                ((CSharedFileElem*)elem)->vdtor(1);
+            *(void**)cur = 0;
         }
-        int count2 = AsCSharedFileRegistry(self)->fileRecordCount;
-        int n8 = AsCSharedFileRegistry(self)->filePointerCount;
-        base2 = AsCSharedFileRegistry(self)->fileRecords;
-        off2 = count2 * 0x14;
-        zero8 = *(int*)(self + kFilePointerCountOffset) - n8;
-        AsCSharedFileRegistry(self)->filePointerCount = zero8;
-        AsCSharedFileRegistry(self)->fileRecordCount -= count2;
-        char* p2 = (char*)base2 + off2;
-        while (count2 != 0) {
-            p2 = p2 - 0x14;
-            ((CSharedFileElem*)p2)->vdtor(-1);
-            count2 = count2 - 1;
-        }
-        // Phase 2: vector subobject cleanup frees allocations. The repeated address
-        // guards are inlined destruction layers; only backing pointers are optional.
-        if (((char*)self + kFileRecordsOffset)) {
-            if (((char*)self + kFileRecordsOffset)) {
-                if (((char*)self + kFileRecordsOffset)) {
-                    if (((char*)self + kFileRecordsOffset)) {
-                        base3 = AsCSharedFileRegistry(self)->fileRecords;
-                        if (base3) {
-                            char* p3;
-                            int c3 = AsCSharedFileRegistry(self)->fileRecordCount;
-                            off3 = c3 * 0x14;
-                            AsCSharedFileRegistry(self)->fileRecordCount -= c3;
-                            p3 = (char*)base3 + off3;
-                            while (c3 != 0) {
-                                p3 -= 0x14;
-                                ((CSharedFileElem*)p3)->vdtor(-1);
-                                c3 = c3 - 1;
-                            }
-                            appFreeUni__FPv(AsCSharedFileRegistry(self)->fileRecords);
+        cur = cur + 4;
+    }
+    int recordCount = fileRecordCount;
+    int n8 = filePointerCount;
+    recordBase = fileRecords;
+    recordBytes = recordCount * 0x14;
+    zero8 = filePointerCount - n8;
+    filePointerCount = zero8;
+    fileRecordCount -= recordCount;
+    char* p2 = (char*)recordBase + recordBytes;
+    while (recordCount != 0) {
+        p2 = p2 - 0x14;
+        ((CSharedFileElem*)p2)->vdtor(-1);
+        recordCount = recordCount - 1;
+    }
+    // Phase 2: vector subobject cleanup frees allocations. The repeated address
+    // guards are inlined destruction layers; only backing pointers are optional.
+    if (((char*)this + kFileRecordsOffset)) {
+        if (((char*)this + kFileRecordsOffset)) {
+            if (((char*)this + kFileRecordsOffset)) {
+                if (((char*)this + kFileRecordsOffset)) {
+                    base3 = fileRecords;
+                    if (base3) {
+                        char* p3;
+                        int c3 = fileRecordCount;
+                        off3 = c3 * 0x14;
+                        fileRecordCount -= c3;
+                        p3 = (char*)base3 + off3;
+                        while (c3 != 0) {
+                            p3 -= 0x14;
+                            ((CSharedFileElem*)p3)->vdtor(-1);
+                            c3 = c3 - 1;
                         }
+                        appFreeUni__FPv(fileRecords);
                     }
                 }
             }
-        }
-        if (((char*)self + kFilePointersOffset)) {
-            if (((char*)self + kFilePointersOffset)) {
-                if (((char*)self + kFilePointersOffset)) {
-                    if (((char*)self + kFilePointersOffset)) {
-                        if (((char*)self + kFilePointersOffset)) {
-                            void* arr4 = AsCSharedFileRegistry(self)->filePointers;
-                            if (arr4) {
-                                int n4 = AsCSharedFileRegistry(self)->filePointerCount;
-                                AsCSharedFileRegistry(self)->filePointerCount = AsCSharedFileRegistry(self)->filePointerCount - n4;
-                                appFreeUni__FPv(arr4);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (flag > 0) {
-            __dl__FPv(self);
         }
     }
-    return selfRaw;
+    if (((char*)this + kFilePointersOffset)) {
+        if (((char*)this + kFilePointersOffset)) {
+            if (((char*)this + kFilePointersOffset)) {
+                if (((char*)this + kFilePointersOffset)) {
+                    if (((char*)this + kFilePointersOffset)) {
+                        void* arr4 = filePointers;
+                        if (arr4) {
+                            int n4 = filePointerCount;
+                            filePointerCount = filePointerCount - n4;
+                            appFreeUni__FPv(arr4);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 #pragma opt_propagation reset
 
@@ -1036,16 +1131,30 @@ void HomeMenu_LoadResourceBuffers(char* self, char* out) {
     unsigned char language = (unsigned char)SCGetLanguage();
     ((HomeCreateInfoView*)out)->language = language;
     switch (language) {
-    case 0: strcat(resourcePath,HomeResources()->defaultArchive); break;
-    case 1: strcat(resourcePath,HomeResources()->englishArchive); break;
-    case 2: strcat(resourcePath,HomeResources()->germanArchive); break;
-    case 3: strcat(resourcePath,HomeResources()->frenchArchive); break;
-    case 4: strcat(resourcePath,HomeResources()->spanishArchive); break;
-    case 5: strcat(resourcePath,HomeResources()->italianArchive); break;
-    case 6: strcat(resourcePath,HomeResources()->dutchArchive); break;
+    case 0:
+        strcat(resourcePath, HomeResources()->defaultArchive);
+        break;
+    case 1:
+        strcat(resourcePath, HomeResources()->englishArchive);
+        break;
+    case 2:
+        strcat(resourcePath, HomeResources()->germanArchive);
+        break;
+    case 3:
+        strcat(resourcePath, HomeResources()->frenchArchive);
+        break;
+    case 4:
+        strcat(resourcePath, HomeResources()->spanishArchive);
+        break;
+    case 5:
+        strcat(resourcePath, HomeResources()->italianArchive);
+        break;
+    case 6:
+        strcat(resourcePath, HomeResources()->dutchArchive);
+        break;
     default:
         ((HomeCreateInfoView*)out)->language = 0;
-        strcat(resourcePath,HomeResources()->defaultArchive);
+        strcat(resourcePath, HomeResources()->defaultArchive);
         break;
     }
     void* fileHandle = SharedFile_Create(resourcePath, 0);
@@ -1055,20 +1164,20 @@ void HomeMenu_LoadResourceBuffers(char* self, char* out) {
         fileHandle = AsContext8028A588(self)->sharedFile;
     }
     fileHandle = AsContext8028A588(self)->sharedFile;
-    int layoutBytes = CSharedFilePtr_GetSize(fileHandle);
+    int layoutBytes = CSharedFilePtr::GetSize(fileHandle);
     void* layoutCopy = appMallocUni__FUl(layoutBytes);
     fileHandle = AsContext8028A588(self)->sharedFile;
     void* layoutSource = (void*)CSharedFilePtr_GetLoadedBuffer(fileHandle);
     memcpy(layoutCopy, layoutSource, layoutBytes);
     fileHandle = AsContext8028A588(self)->sharedFile;
     if (fileHandle) {
-        CSharedFileHandle_Destroy(fileHandle, 1);
+        CSharedFileHandle::Destroy(fileHandle, 1);
         AsContext8028A588(self)->sharedFile = 0;
     }
     ((HomeCreateInfoView*)out)->layoutArchive = layoutCopy;
     // Phase 2: copy the speaker archive, release its shared-file handle, publish +04.
     strcpy(resourcePath, (char*)&empty);
-    strcat(resourcePath,HomeResources()->speakerArchive);
+    strcat(resourcePath, HomeResources()->speakerArchive);
     fileHandle = SharedFile_Create(resourcePath, 0);
     AsContext8028A588(self)->sharedFile = fileHandle;
     while (CSharedFilePtr_GetLoadedBuffer(fileHandle) == 0) {
@@ -1076,20 +1185,20 @@ void HomeMenu_LoadResourceBuffers(char* self, char* out) {
         fileHandle = AsContext8028A588(self)->sharedFile;
     }
     fileHandle = AsContext8028A588(self)->sharedFile;
-    int speakerBytes = CSharedFilePtr_GetSize(fileHandle);
+    int speakerBytes = CSharedFilePtr::GetSize(fileHandle);
     void* speakerCopy = appMallocUni__FUl(speakerBytes);
     fileHandle = AsContext8028A588(self)->sharedFile;
     void* speakerSource = (void*)CSharedFilePtr_GetLoadedBuffer(fileHandle);
     memcpy(speakerCopy, speakerSource, speakerBytes);
     fileHandle = AsContext8028A588(self)->sharedFile;
     if (fileHandle) {
-        CSharedFileHandle_Destroy(fileHandle, 1);
+        CSharedFileHandle::Destroy(fileHandle, 1);
         AsContext8028A588(self)->sharedFile = 0;
     }
     ((HomeCreateInfoView*)out)->speakerArchive = speakerCopy;
     // Phase 3: copy the message table and publish +08; source belongs to the handle.
     strcpy(resourcePath, (char*)&empty);
-    strcat(resourcePath,HomeResources()->messageTable);
+    strcat(resourcePath, HomeResources()->messageTable);
     fileHandle = SharedFile_Create(resourcePath, 0);
     AsContext8028A588(self)->sharedFile = fileHandle;
     while (CSharedFilePtr_GetLoadedBuffer(fileHandle) == 0) {
@@ -1097,20 +1206,20 @@ void HomeMenu_LoadResourceBuffers(char* self, char* out) {
         fileHandle = AsContext8028A588(self)->sharedFile;
     }
     fileHandle = AsContext8028A588(self)->sharedFile;
-    int messageBytes = CSharedFilePtr_GetSize(fileHandle);
+    int messageBytes = CSharedFilePtr::GetSize(fileHandle);
     void* messageCopy = appMallocUni__FUl(messageBytes);
     fileHandle = AsContext8028A588(self)->sharedFile;
     void* messageSource = (void*)CSharedFilePtr_GetLoadedBuffer(fileHandle);
     memcpy(messageCopy, messageSource, messageBytes);
     fileHandle = AsContext8028A588(self)->sharedFile;
     if (fileHandle) {
-        CSharedFileHandle_Destroy(fileHandle, 1);
+        CSharedFileHandle::Destroy(fileHandle, 1);
         AsContext8028A588(self)->sharedFile = 0;
     }
     ((HomeCreateInfoView*)out)->messages = messageCopy;
     // Phase 4: copy configuration, publish byte length at +28 and pointer at +0c.
     strcpy(resourcePath, (char*)&empty);
-    strcat(resourcePath,HomeResources()->configuration);
+    strcat(resourcePath, HomeResources()->configuration);
     fileHandle = SharedFile_Create(resourcePath, 0);
     AsContext8028A588(self)->sharedFile = fileHandle;
     while (CSharedFilePtr_GetLoadedBuffer(fileHandle) == 0) {
@@ -1118,7 +1227,7 @@ void HomeMenu_LoadResourceBuffers(char* self, char* out) {
         fileHandle = AsContext8028A588(self)->sharedFile;
     }
     fileHandle = AsContext8028A588(self)->sharedFile;
-    int configurationBytes = CSharedFilePtr_GetSize(fileHandle);
+    int configurationBytes = CSharedFilePtr::GetSize(fileHandle);
     void* configurationCopy = appMallocUni__FUl(configurationBytes);
     fileHandle = AsContext8028A588(self)->sharedFile;
     void* configurationSource = (void*)CSharedFilePtr_GetLoadedBuffer(fileHandle);
@@ -1128,7 +1237,7 @@ void HomeMenu_LoadResourceBuffers(char* self, char* out) {
     }
     fileHandle = AsContext8028A588(self)->sharedFile;
     if (fileHandle) {
-        CSharedFileHandle_Destroy(fileHandle, 1);
+        CSharedFileHandle::Destroy(fileHandle, 1);
         AsContext8028A588(self)->sharedFile = 0;
     }
     ((HomeCreateInfoView*)out)->configuration = configurationCopy;
@@ -1152,7 +1261,7 @@ void HomeMenu_LoadResourceBuffers(char* self, char* out) {
     // Phase 5: icon TPL has a separate global owner; bind only after copying and
     // releasing the file handle, so the retained texture data survives that release.
     strcpy(resourcePath, (char*)&empty);
-    strcat(resourcePath,HomeResources()->iconTextures);
+    strcat(resourcePath, HomeResources()->iconTextures);
     fileHandle = SharedFile_Create(resourcePath, 0);
     AsContext8028A588(self)->sharedFile = fileHandle;
     while (CSharedFilePtr_GetLoadedBuffer(fileHandle) == 0) {
@@ -1160,14 +1269,14 @@ void HomeMenu_LoadResourceBuffers(char* self, char* out) {
         fileHandle = AsContext8028A588(self)->sharedFile;
     }
     fileHandle = AsContext8028A588(self)->sharedFile;
-    int iconBytes = CSharedFilePtr_GetSize(fileHandle);
+    int iconBytes = CSharedFilePtr::GetSize(fileHandle);
     void* iconCopy = appMallocUni__FUl(iconBytes);
     fileHandle = AsContext8028A588(self)->sharedFile;
     void* iconSource = (void*)CSharedFilePtr_GetLoadedBuffer(fileHandle);
     memcpy(iconCopy, iconSource, iconBytes);
     fileHandle = AsContext8028A588(self)->sharedFile;
     if (fileHandle) {
-        CSharedFileHandle_Destroy(fileHandle, 1);
+        CSharedFileHandle::Destroy(fileHandle, 1);
         AsContext8028A588(self)->sharedFile = 0;
     }
     g_homeButtonIconTpl = iconCopy;

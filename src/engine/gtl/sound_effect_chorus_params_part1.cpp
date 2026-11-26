@@ -1,7 +1,8 @@
-// Translation unit 0x803FB1FC-0x803FB2D4 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Chorus sound effect setter: CSoundEffectChorus::SetParameter changes the delay, depth or
+// rate, or replaces all three, and applies the result to the effect.
 
 #include "sdk_protos.h"
+#include "classes/SoundEffectFields803FB370.h"
 
 namespace gtl {
 struct ChorusParameters {
@@ -11,11 +12,6 @@ struct ChorusParameters {
     float depthRatio;
     float rateHertz;
 };
-
-struct CSoundEffectChorus {
-    char soundEffectBaseStorage[0x14]; // Base state is not accessed by this parameter setter.
-    char chorus[1];
-};
 }
 
 extern "C" {
@@ -23,15 +19,21 @@ extern "C" {
 gtl::ChorusParameters* gtl_nw4r_FxChorus_GetParams(void*);
 void gtl_nw4r_FxChorus_SetParams(void*, const gtl::ChorusParameters*);
 
-enum ChorusParameter { kChorusDelayMilliseconds = 0, kChorusDepthRatio = 1, kChorusRateHertz = 2, kChorusAllParameters = 3 };
+enum ChorusParameter {
+    kChorusDelayMilliseconds = 0,
+    kChorusDepthRatio = 1,
+    kChorusRateHertz = 2,
+    kChorusAllParameters = 3
+};
+
+} // extern "C"
 
 // Update one chorus parameter or copy the caller's full parameter block, then apply it.
 // Selectors 0/1/2 borrow float* value; selector 3 borrows ChorusParameters** value.
 // No null checks. The third ABI argument is ignored. Unknown selectors reapply
 // unchanged parameters. Always returns 1, discarding the SDK setter's result.
-int gtl_CSoundEffectChorus_SetParameter(gtl::CSoundEffectChorus* self, int parameter, int unused, void* value)
-{
-    gtl::ChorusParameters parameters = *gtl_nw4r_FxChorus_GetParams(self->chorus);
+int gtl::CSoundEffectChorus::SetParameter(int parameter, int unused, void* value) {
+    gtl::ChorusParameters parameters = *gtl_nw4r_FxChorus_GetParams(effect);
     switch (parameter) {
     case kChorusDelayMilliseconds:
         parameters.delayMilliseconds = *(float*)value;
@@ -49,8 +51,6 @@ int gtl_CSoundEffectChorus_SetParameter(gtl::CSoundEffectChorus* self, int param
         parameters.rateHertz = source->rateHertz;
         break;
     }
-    gtl_nw4r_FxChorus_SetParams(self->chorus, &parameters);
+    gtl_nw4r_FxChorus_SetParams(effect, &parameters);
     return 1;
 }
-
-} // extern "C"

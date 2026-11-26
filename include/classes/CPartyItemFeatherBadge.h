@@ -5,14 +5,22 @@
 
 class CPartyItemFeatherBadge {
 public:
-    void* vtbl; // 0x0: CPartyItemFeatherBadge_Ctor
+    CPartyItemFeatherBadge(int size);
+
+    void* vtbl; // 0x0
     char pad_004[0x8];
     int ownerIndex; // 0xc: CPartyItemFeatherBadge_ApplyModifiersToPlayer, CPartyItemFeatherBadge_ApplyModifiersIfActive
-    int active; // 0x10: PartyItem_ClearActivationWord, CPartyItemFeatherBadge_ApplyModifiersIfActive
-    int spinRangeOverrideEnabled; // 0x14: CPartyItemFeatherBadge_Ctor, CPartyItemFeatherBadge_ApplyModifiersToPlayer
-    float spinRangeY; // 0x18: CPartyItemFeatherBadge_Ctor, CPartyItemFeatherBadge_ApplyModifiersToPlayer, CPartyItemFeatherBadge_ApplyModifiersIfActive
-    float spinRangeX; // 0x1c: CPartyItemFeatherBadge_Ctor, CPartyItemFeatherBadge_ApplyModifiersToPlayer, CPartyItemFeatherBadge_ApplyModifiersIfActive
-    float launchVerticalVelocityBonus; // 0x20: CPartyItemFeatherBadge_Ctor, CPartyItemFeatherBadge_ApplyModifiersToPlayer, CPartyItemFeatherBadge_ApplyModifiersIfActive
+    int active;     // 0x10: PartyItem_ClearActivationWord, CPartyItemFeatherBadge_ApplyModifiersIfActive
+    int spinRangeOverrideEnabled; // 0x14: CPartyItemFeatherBadge_ApplyModifiersToPlayer
+    float
+        spinRangeY; // 0x18: CPartyItemFeatherBadge_ApplyModifiersToPlayer, CPartyItemFeatherBadge_ApplyModifiersIfActive
+    float
+        spinRangeX; // 0x1c: CPartyItemFeatherBadge_ApplyModifiersToPlayer, CPartyItemFeatherBadge_ApplyModifiersIfActive
+    float
+        launchVerticalVelocityBonus; // 0x20: CPartyItemFeatherBadge_ApplyModifiersToPlayer, CPartyItemFeatherBadge_ApplyModifiersIfActive
+
+    void ApplyModifiersToPlayer(void* out, int index);
+    int ApplyModifiersIfActive(int, void* out, int index);
 };
 
 #define OFF(f, o) typedef char CPartyItemFeatherBadge_off_##f[((int)&((CPartyItemFeatherBadge*)0)->f == (o)) ? 1 : -1]

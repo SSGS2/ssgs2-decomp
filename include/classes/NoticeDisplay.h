@@ -8,18 +8,18 @@
 class NoticeDisplay {
 public:
     char pad_000[0x4];
-    unsigned int visible; // 0x4: NoticeQueue_UpdateAndDraw: gates WOverlay_DrawTransformedRect
-    unsigned int dirty; // 0x8: NoticeQueue_UpdateAndDraw: set on content change, cleared after layout
-    void* textRenderer; // 0xC: NoticeQueue_UpdateAndDraw: Text_SetContent/Text_DrawGlyphs receiver
-    void* drawResource; // 0x10: NoticeQueue_UpdateAndDraw: WOverlay_DrawTransformedRect first argument
-    unsigned int stringFlags; // 0x14: NoticeQueue_UpdateAndDraw: high bit selects heap string storage
-    unsigned int stringLength; // 0x18: NoticeQueue_UpdateAndDraw: heap string length
-    void* stringData; // 0x1C: NoticeQueue_UpdateAndDraw: heap string buffer
-    float firstDrawTransform[4]; // 0x20: NoticeQueue_UpdateAndDraw: first WOverlay_DrawTransformedRect transform
+    unsigned int visible;         // 0x4: NoticeQueue_UpdateAndDraw: gates WOverlay_DrawTransformedRect
+    unsigned int dirty;           // 0x8: NoticeQueue_UpdateAndDraw: set on content change, cleared after layout
+    void* textRenderer;           // 0xC: NoticeQueue_UpdateAndDraw: Text_SetContent/Text_DrawGlyphs receiver
+    void* drawResource;           // 0x10: NoticeQueue_UpdateAndDraw: WOverlay_DrawTransformedRect first argument
+    unsigned int stringFlags;     // 0x14: NoticeQueue_UpdateAndDraw: high bit selects heap string storage
+    unsigned int stringLength;    // 0x18: NoticeQueue_UpdateAndDraw: heap string length
+    void* stringData;             // 0x1C: NoticeQueue_UpdateAndDraw: heap string buffer
+    float firstDrawTransform[4];  // 0x20: NoticeQueue_UpdateAndDraw: first WOverlay_DrawTransformedRect transform
     float secondDrawTransform[4]; // 0x30: NoticeQueue_UpdateAndDraw: second WOverlay_DrawTransformedRect transform
-    float thirdDrawTransform[4]; // 0x40: NoticeQueue_UpdateAndDraw: third WOverlay_DrawTransformedRect transform
-    float x; // 0x50: NoticeQueue_UpdateAndDraw: text position x plus margin
-    float y; // 0x54: NoticeQueue_UpdateAndDraw: text position y plus margin
+    float thirdDrawTransform[4];  // 0x40: NoticeQueue_UpdateAndDraw: third WOverlay_DrawTransformedRect transform
+    float x;                      // 0x50: NoticeQueue_UpdateAndDraw: text position x plus margin
+    float y;                      // 0x54: NoticeQueue_UpdateAndDraw: text position y plus margin
     char pad_058[0x4];
     float firstSectionHeight; // 0x5C: NoticeQueue_UpdateAndDraw: contributes to vertical bounds
     float secondSectionX; // 0x60: NoticeQueue_UpdateAndDraw: second WOverlay_DrawTransformedRect position starts here

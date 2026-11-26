@@ -1,15 +1,12 @@
-// Translation unit 0x803EB6DC-0x803EB71C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// gtl::CInputExAnalogButton, the analog variant of an extended controller button. This file holds
+// only its deleting destructor; the latch and update members are in gtl_input_ex_button_part2.cpp.
+#include "types.h"
+#include "game/gtl_input.h"
 
-extern "C" {
-
-void __dl__Q23gtl25IInputResourceMemOperatorFPv(void* self);
-
-void* gtl_CInputExAnalogButton_dtor(void* self, int flags) {
-    if (self != 0 && flags > 0) {
-        __dl__Q23gtl25IInputResourceMemOperatorFPv(self);
+// Deleting destructor of gtl::CInputExAnalogButton: frees the object when flags is positive and returns it.
+void* gtl::CInputExAnalogButton::Destroy(int flags) {
+    if (this != 0 && flags > 0) {
+        IInputResourceMemOperator::operator delete(this);
     }
-    return self;
+    return this;
 }
-
-} // extern "C"

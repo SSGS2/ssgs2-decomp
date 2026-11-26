@@ -1,5 +1,5 @@
-// Translation unit 0x803E0EE8-0x803E0F0C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Linear interpolation for four-component animation values. Calls the Vec4 lerp helper
+// and always reports success.
 
 extern "C" {
 

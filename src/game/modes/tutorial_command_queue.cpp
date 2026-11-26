@@ -1,3 +1,6 @@
+// Tutorial command queue: the ring of tutorial command blocks, its iterators, and the executor that runs
+// each lesson command (dialogs, input blocking, cursor moves, save flags). Also builds the lesson sequences.
+
 #include <decomp/static_init.h>
 extern "C" char s_tutorialDialogRectMemberDescriptor[];
 #include "MSL/deque.h"
@@ -12,7 +15,7 @@ struct TutorialCommandStrings {
     char screenMessageFormat[10]; // 0x3B: "Screen %d"
     char reserved045[0x10];
     char caddieNamedPointFormat[15]; // 0x55: "Caddie %d %d 1"
-    char caddieMessageFormat[13]; // 0x64: "Caddie %d %d"
+    char caddieMessageFormat[13];    // 0x64: "Caddie %d %d"
     char reserved071[0xA8];
     char landingPoint3[10]; // 0x119: "\u843d\u4e0b\u652f\u5e973"
     char reserved123[0x10];
@@ -20,89 +23,89 @@ struct TutorialCommandStrings {
     char reserved13D[0x1F];
     char enabledArgument[2]; // 0x15C: "1"
     char reserved15E[0x3C];
-    char dialog384x184Format[14]; // 0x19A: "%d 384 184 %d"
-    char golfRuleValueFormat[15]; // 0x1A8: "GolfRule %d %d"
-    char golfRuleActor[9]; // 0x1B7: "GolfRule"
-    char cursorPositionFormat[6]; // 0x1C0: "%f %f"
-    char dialogIndexPositionFormat[9]; // 0x1C6: "%d %f %f"
-    char dialogIndexRectFormat[15]; // 0x1CF: "%d %f %f %f %f"
-    char dialogIndexSizeKindFormat[12]; // 0x1DE: "%d %f %f %d"
-    char actorMessageFormat[15]; // 0x1EA: "%s %d %d %d %d"
-    char effectActor[7]; // 0x1F9: "Effect"
-    char screenValueFormat[13]; // 0x200: "Screen %d %d"
-    char cameraValueFormat[13]; // 0x20D: "Camera %d %d"
-    char screenDisableFormat[12]; // 0x21A: "Screen %d 0"
-    char dialogSwingRectFormat[18]; // 0x226: "%d -95 27 112 275"
-    char pointer350x250[8]; // 0x238: "350 250"
-    char pointer70x120[7]; // 0x240: "70 120"
-    char pointer70x190[7]; // 0x247: "70 190"
-    char dialog400x50Format[10]; // 0x24E: "%d 400 50"
-    char dialogShotRectFormat[17]; // 0x258: "%d 0 128 207 376"
-    char dialogLeftShotRectFormat[19]; // 0x269: "%d -29 128 139 376"
+    char dialog384x184Format[14];         // 0x19A: "%d 384 184 %d"
+    char golfRuleValueFormat[15];         // 0x1A8: "GolfRule %d %d"
+    char golfRuleActor[9];                // 0x1B7: "GolfRule"
+    char cursorPositionFormat[6];         // 0x1C0: "%f %f"
+    char dialogIndexPositionFormat[9];    // 0x1C6: "%d %f %f"
+    char dialogIndexRectFormat[15];       // 0x1CF: "%d %f %f %f %f"
+    char dialogIndexSizeKindFormat[12];   // 0x1DE: "%d %f %f %d"
+    char actorMessageFormat[15];          // 0x1EA: "%s %d %d %d %d"
+    char effectActor[7];                  // 0x1F9: "Effect"
+    char screenValueFormat[13];           // 0x200: "Screen %d %d"
+    char cameraValueFormat[13];           // 0x20D: "Camera %d %d"
+    char screenDisableFormat[12];         // 0x21A: "Screen %d 0"
+    char dialogSwingRectFormat[18];       // 0x226: "%d -95 27 112 275"
+    char pointer350x250[8];               // 0x238: "350 250"
+    char pointer70x120[7];                // 0x240: "70 120"
+    char pointer70x190[7];                // 0x247: "70 190"
+    char dialog400x50Format[10];          // 0x24E: "%d 400 50"
+    char dialogShotRectFormat[17];        // 0x258: "%d 0 128 207 376"
+    char dialogLeftShotRectFormat[19];    // 0x269: "%d -29 128 139 376"
     char golfRuleEnabledValuesFormat[20]; // 0x27C: "GolfRule %d 1 %d %d"
-    char golfRuleEnableFormat[14]; // 0x290: "GolfRule %d 1"
-    char dialogRightShotRectFormat[19]; // 0x29E: "%d 104 128 475 376"
-    char golfRuleDisableFormat[14]; // 0x2B1: "GolfRule %d 0"
-    char disabledArgument[2]; // 0x2BF: "0"
-    char dialog14x35RectFormat[17]; // 0x2C1: "%d 14 35 108 147"
-    char golfRuleMessageFormat[12]; // 0x2D2: "GolfRule %d"
-    char golfRuleValuesFormat[18]; // 0x2DE: "GolfRule %d %d %d"
-    char dialogBunkerRectFormat[19]; // 0x2F0: "%d -103 128 65 376"
-    char stage4CaddieName[14]; // 0x303: "\u30ad\u30e3\u30c7\u30a3\u30fc4_1"
-    char dialog384x160Format[14]; // 0x311: "%d 384 160 %d"
-    char gridEnableFormat[10]; // 0x31F: "Grid %d 1"
-    char golfRuleEnabledValueFormat[17]; // 0x329: "GolfRule %d 1 %d"
-    char gridDisableFormat[10]; // 0x33A: "Grid %d 0"
-    char dequeLengthError[21]; // 0x344: "deque:: length error"
-    char lengthErrorTypeName[55]; // 0x359: "!std::exception!!std::logic_error!!std::length_error!!"
-    char circularDequeLengthError[20]; // 0x390: "cdeque length error"
+    char golfRuleEnableFormat[14];        // 0x290: "GolfRule %d 1"
+    char dialogRightShotRectFormat[19];   // 0x29E: "%d 104 128 475 376"
+    char golfRuleDisableFormat[14];       // 0x2B1: "GolfRule %d 0"
+    char disabledArgument[2];             // 0x2BF: "0"
+    char dialog14x35RectFormat[17];       // 0x2C1: "%d 14 35 108 147"
+    char golfRuleMessageFormat[12];       // 0x2D2: "GolfRule %d"
+    char golfRuleValuesFormat[18];        // 0x2DE: "GolfRule %d %d %d"
+    char dialogBunkerRectFormat[19];      // 0x2F0: "%d -103 128 65 376"
+    char stage4CaddieName[14];            // 0x303: "\u30ad\u30e3\u30c7\u30a3\u30fc4_1"
+    char dialog384x160Format[14];         // 0x311: "%d 384 160 %d"
+    char gridEnableFormat[10];            // 0x31F: "Grid %d 1"
+    char golfRuleEnabledValueFormat[17];  // 0x329: "GolfRule %d 1 %d"
+    char gridDisableFormat[10];           // 0x33A: "Grid %d 0"
+    char dequeLengthError[21];            // 0x344: "deque:: length error"
+    char lengthErrorTypeName[55];         // 0x359: "!std::exception!!std::logic_error!!std::length_error!!"
+    char circularDequeLengthError[20];    // 0x390: "cdeque length error"
 };
 enum TutorialStringOffsets {
-    kTutorialString_screenActor=(int)&((TutorialCommandStrings*)0)->screenActor,
-    kTutorialString_integerFormat=(int)&((TutorialCommandStrings*)0)->integerFormat,
-    kTutorialString_cameraActor=(int)&((TutorialCommandStrings*)0)->cameraActor,
-    kTutorialString_screenMessageFormat=(int)&((TutorialCommandStrings*)0)->screenMessageFormat,
-    kTutorialString_caddieNamedPointFormat=(int)&((TutorialCommandStrings*)0)->caddieNamedPointFormat,
-    kTutorialString_caddieMessageFormat=(int)&((TutorialCommandStrings*)0)->caddieMessageFormat,
-    kTutorialString_landingPoint3=(int)&((TutorialCommandStrings*)0)->landingPoint3,
-    kTutorialString_landingPoint4=(int)&((TutorialCommandStrings*)0)->landingPoint4,
-    kTutorialString_enabledArgument=(int)&((TutorialCommandStrings*)0)->enabledArgument,
-    kTutorialString_dialog384x184Format=(int)&((TutorialCommandStrings*)0)->dialog384x184Format,
-    kTutorialString_golfRuleValueFormat=(int)&((TutorialCommandStrings*)0)->golfRuleValueFormat,
-    kTutorialString_golfRuleActor=(int)&((TutorialCommandStrings*)0)->golfRuleActor,
-    kTutorialString_cursorPositionFormat=(int)&((TutorialCommandStrings*)0)->cursorPositionFormat,
-    kTutorialString_dialogIndexPositionFormat=(int)&((TutorialCommandStrings*)0)->dialogIndexPositionFormat,
-    kTutorialString_dialogIndexRectFormat=(int)&((TutorialCommandStrings*)0)->dialogIndexRectFormat,
-    kTutorialString_dialogIndexSizeKindFormat=(int)&((TutorialCommandStrings*)0)->dialogIndexSizeKindFormat,
-    kTutorialString_actorMessageFormat=(int)&((TutorialCommandStrings*)0)->actorMessageFormat,
-    kTutorialString_effectActor=(int)&((TutorialCommandStrings*)0)->effectActor,
-    kTutorialString_screenValueFormat=(int)&((TutorialCommandStrings*)0)->screenValueFormat,
-    kTutorialString_cameraValueFormat=(int)&((TutorialCommandStrings*)0)->cameraValueFormat,
-    kTutorialString_screenDisableFormat=(int)&((TutorialCommandStrings*)0)->screenDisableFormat,
-    kTutorialString_dialogSwingRectFormat=(int)&((TutorialCommandStrings*)0)->dialogSwingRectFormat,
-    kTutorialString_pointer350x250=(int)&((TutorialCommandStrings*)0)->pointer350x250,
-    kTutorialString_pointer70x120=(int)&((TutorialCommandStrings*)0)->pointer70x120,
-    kTutorialString_pointer70x190=(int)&((TutorialCommandStrings*)0)->pointer70x190,
-    kTutorialString_dialog400x50Format=(int)&((TutorialCommandStrings*)0)->dialog400x50Format,
-    kTutorialString_dialogShotRectFormat=(int)&((TutorialCommandStrings*)0)->dialogShotRectFormat,
-    kTutorialString_dialogLeftShotRectFormat=(int)&((TutorialCommandStrings*)0)->dialogLeftShotRectFormat,
-    kTutorialString_golfRuleEnabledValuesFormat=(int)&((TutorialCommandStrings*)0)->golfRuleEnabledValuesFormat,
-    kTutorialString_golfRuleEnableFormat=(int)&((TutorialCommandStrings*)0)->golfRuleEnableFormat,
-    kTutorialString_dialogRightShotRectFormat=(int)&((TutorialCommandStrings*)0)->dialogRightShotRectFormat,
-    kTutorialString_golfRuleDisableFormat=(int)&((TutorialCommandStrings*)0)->golfRuleDisableFormat,
-    kTutorialString_disabledArgument=(int)&((TutorialCommandStrings*)0)->disabledArgument,
-    kTutorialString_dialog14x35RectFormat=(int)&((TutorialCommandStrings*)0)->dialog14x35RectFormat,
-    kTutorialString_golfRuleMessageFormat=(int)&((TutorialCommandStrings*)0)->golfRuleMessageFormat,
-    kTutorialString_golfRuleValuesFormat=(int)&((TutorialCommandStrings*)0)->golfRuleValuesFormat,
-    kTutorialString_dialogBunkerRectFormat=(int)&((TutorialCommandStrings*)0)->dialogBunkerRectFormat,
-    kTutorialString_stage4CaddieName=(int)&((TutorialCommandStrings*)0)->stage4CaddieName,
-    kTutorialString_dialog384x160Format=(int)&((TutorialCommandStrings*)0)->dialog384x160Format,
-    kTutorialString_gridEnableFormat=(int)&((TutorialCommandStrings*)0)->gridEnableFormat,
-    kTutorialString_golfRuleEnabledValueFormat=(int)&((TutorialCommandStrings*)0)->golfRuleEnabledValueFormat,
-    kTutorialString_gridDisableFormat=(int)&((TutorialCommandStrings*)0)->gridDisableFormat,
-    kTutorialString_dequeLengthError=(int)&((TutorialCommandStrings*)0)->dequeLengthError,
-    kTutorialString_lengthErrorTypeName=(int)&((TutorialCommandStrings*)0)->lengthErrorTypeName,
-    kTutorialString_circularDequeLengthError=(int)&((TutorialCommandStrings*)0)->circularDequeLengthError,
+    kTutorialString_screenActor = (int)&((TutorialCommandStrings*)0)->screenActor,
+    kTutorialString_integerFormat = (int)&((TutorialCommandStrings*)0)->integerFormat,
+    kTutorialString_cameraActor = (int)&((TutorialCommandStrings*)0)->cameraActor,
+    kTutorialString_screenMessageFormat = (int)&((TutorialCommandStrings*)0)->screenMessageFormat,
+    kTutorialString_caddieNamedPointFormat = (int)&((TutorialCommandStrings*)0)->caddieNamedPointFormat,
+    kTutorialString_caddieMessageFormat = (int)&((TutorialCommandStrings*)0)->caddieMessageFormat,
+    kTutorialString_landingPoint3 = (int)&((TutorialCommandStrings*)0)->landingPoint3,
+    kTutorialString_landingPoint4 = (int)&((TutorialCommandStrings*)0)->landingPoint4,
+    kTutorialString_enabledArgument = (int)&((TutorialCommandStrings*)0)->enabledArgument,
+    kTutorialString_dialog384x184Format = (int)&((TutorialCommandStrings*)0)->dialog384x184Format,
+    kTutorialString_golfRuleValueFormat = (int)&((TutorialCommandStrings*)0)->golfRuleValueFormat,
+    kTutorialString_golfRuleActor = (int)&((TutorialCommandStrings*)0)->golfRuleActor,
+    kTutorialString_cursorPositionFormat = (int)&((TutorialCommandStrings*)0)->cursorPositionFormat,
+    kTutorialString_dialogIndexPositionFormat = (int)&((TutorialCommandStrings*)0)->dialogIndexPositionFormat,
+    kTutorialString_dialogIndexRectFormat = (int)&((TutorialCommandStrings*)0)->dialogIndexRectFormat,
+    kTutorialString_dialogIndexSizeKindFormat = (int)&((TutorialCommandStrings*)0)->dialogIndexSizeKindFormat,
+    kTutorialString_actorMessageFormat = (int)&((TutorialCommandStrings*)0)->actorMessageFormat,
+    kTutorialString_effectActor = (int)&((TutorialCommandStrings*)0)->effectActor,
+    kTutorialString_screenValueFormat = (int)&((TutorialCommandStrings*)0)->screenValueFormat,
+    kTutorialString_cameraValueFormat = (int)&((TutorialCommandStrings*)0)->cameraValueFormat,
+    kTutorialString_screenDisableFormat = (int)&((TutorialCommandStrings*)0)->screenDisableFormat,
+    kTutorialString_dialogSwingRectFormat = (int)&((TutorialCommandStrings*)0)->dialogSwingRectFormat,
+    kTutorialString_pointer350x250 = (int)&((TutorialCommandStrings*)0)->pointer350x250,
+    kTutorialString_pointer70x120 = (int)&((TutorialCommandStrings*)0)->pointer70x120,
+    kTutorialString_pointer70x190 = (int)&((TutorialCommandStrings*)0)->pointer70x190,
+    kTutorialString_dialog400x50Format = (int)&((TutorialCommandStrings*)0)->dialog400x50Format,
+    kTutorialString_dialogShotRectFormat = (int)&((TutorialCommandStrings*)0)->dialogShotRectFormat,
+    kTutorialString_dialogLeftShotRectFormat = (int)&((TutorialCommandStrings*)0)->dialogLeftShotRectFormat,
+    kTutorialString_golfRuleEnabledValuesFormat = (int)&((TutorialCommandStrings*)0)->golfRuleEnabledValuesFormat,
+    kTutorialString_golfRuleEnableFormat = (int)&((TutorialCommandStrings*)0)->golfRuleEnableFormat,
+    kTutorialString_dialogRightShotRectFormat = (int)&((TutorialCommandStrings*)0)->dialogRightShotRectFormat,
+    kTutorialString_golfRuleDisableFormat = (int)&((TutorialCommandStrings*)0)->golfRuleDisableFormat,
+    kTutorialString_disabledArgument = (int)&((TutorialCommandStrings*)0)->disabledArgument,
+    kTutorialString_dialog14x35RectFormat = (int)&((TutorialCommandStrings*)0)->dialog14x35RectFormat,
+    kTutorialString_golfRuleMessageFormat = (int)&((TutorialCommandStrings*)0)->golfRuleMessageFormat,
+    kTutorialString_golfRuleValuesFormat = (int)&((TutorialCommandStrings*)0)->golfRuleValuesFormat,
+    kTutorialString_dialogBunkerRectFormat = (int)&((TutorialCommandStrings*)0)->dialogBunkerRectFormat,
+    kTutorialString_stage4CaddieName = (int)&((TutorialCommandStrings*)0)->stage4CaddieName,
+    kTutorialString_dialog384x160Format = (int)&((TutorialCommandStrings*)0)->dialog384x160Format,
+    kTutorialString_gridEnableFormat = (int)&((TutorialCommandStrings*)0)->gridEnableFormat,
+    kTutorialString_golfRuleEnabledValueFormat = (int)&((TutorialCommandStrings*)0)->golfRuleEnabledValueFormat,
+    kTutorialString_gridDisableFormat = (int)&((TutorialCommandStrings*)0)->gridDisableFormat,
+    kTutorialString_dequeLengthError = (int)&((TutorialCommandStrings*)0)->dequeLengthError,
+    kTutorialString_lengthErrorTypeName = (int)&((TutorialCommandStrings*)0)->lengthErrorTypeName,
+    kTutorialString_circularDequeLengthError = (int)&((TutorialCommandStrings*)0)->circularDequeLengthError,
 };
 
 #include "classes/CMouseCursor.h"
@@ -124,13 +127,15 @@ struct EH5Cleanup {
     // Arm exceptional cleanup of this object with its matching destructor.
     EH5Cleanup(void* p, void (*d)(void*, int)) : object(p), destroy(d), active(true) {}
     // Disarm the unwind owner before explicit normal destruction.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Destroy only when normal cleanup has not already taken responsibility.
-    ~EH5Cleanup() { if (active) destroy(object, -1); }
+    ~EH5Cleanup() {
+        if (active)
+            destroy(object, -1);
+    }
 };
-
-// Translation unit 0x80209C3C-0x8020FEF0 (42 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "game/wvector.h"
@@ -140,42 +145,51 @@ extern "C" {
 
 // The queue stores kCommandsPerBlock fixed-size command records per allocated block.
 // Preserve the original maximum-count bit pattern used by the deque length guard.
-static const int kCommandDequeMaxCountWord=-46;
-enum TutorialQueueLimits { kCommandsPerBlock=25, kCommandTextBytes=32, kRetainedCommandBlocks=2 };
+static const int kCommandDequeMaxCountWord = -46;
+enum TutorialQueueLimits {
+    kCommandsPerBlock = 25,
+    kCommandTextBytes = 32,
+    kRetainedCommandBlocks = 2
+};
 // Word/byte views below derive offsets from headers; direct member pointers change MWCC register lifetimes.
 enum TutorialWordOffsets {
-    kTutorialWord_commandBlockCount=(int)&((CTutorial*)0)->commandBlockCount/sizeof(unsigned int),
-    kTutorialWord_commandReadOffset=(int)&((CTutorial*)0)->commandReadOffset/sizeof(unsigned int),
-    kTutorialWord_pendingCommandCount=(int)&((CTutorial*)0)->pendingCommandCount/sizeof(unsigned int),
-    kTutorialWord_commandBlocks=(int)&((CTutorial*)0)->commandBlocks/sizeof(unsigned int),
+    kTutorialWord_commandBlockCount = (int)&((CTutorial*)0)->commandBlockCount / sizeof(unsigned int),
+    kTutorialWord_commandReadOffset = (int)&((CTutorial*)0)->commandReadOffset / sizeof(unsigned int),
+    kTutorialWord_pendingCommandCount = (int)&((CTutorial*)0)->pendingCommandCount / sizeof(unsigned int),
+    kTutorialWord_commandBlocks = (int)&((CTutorial*)0)->commandBlocks / sizeof(unsigned int),
 };
-static const int kTutorialMessageDialogOffset=(int)&((CTutorial*)0)->messageDialog;
-static const int kTutorialPendingActionsOffset=(int)&((GameInputManager*)0)->pendingActionPress;
-enum TutorialState { kTutorialWaitingForDialog=0, kTutorialStageEnding=1, kTutorialAimAlignment=4, kTutorialRunningCommands=5 };
+static const int kTutorialMessageDialogOffset = (int)&((CTutorial*)0)->messageDialog;
+static const int kTutorialPendingActionsOffset = (int)&((GameInputManager*)0)->pendingActionPress;
+enum TutorialState {
+    kTutorialWaitingForDialog = 0,
+    kTutorialStageEnding = 1,
+    kTutorialAimAlignment = 4,
+    kTutorialRunningCommands = 5
+};
 enum TutorialCommandOpcode {
-    kCommandWait=0,
-    kCommandPulseAction=1,
-    kCommandForceAction=2,
-    kCommandClearForcedAction=3,
-    kCommandPulseActionAlternate=4,
-    kCommandMoveCursor=5,
-    kCommandStageEndDialog=6,
-    kCommandMessageDialog=7,
-    kCommandMessageLayout2=8,
-    kCommandMessageLayout4=9,
-    kCommandMessageLayout0=10,
-    kCommandMessageAtPointer=11,
-    kCommandSizedMessageDialog=12,
-    kCommandTargetNamedPoint=13,
-    kCommandDispatchActorMessage=14,
-    kCommandParseInteger=15,
-    kCommandBlockInput=16,
-    kCommandAllowInput=17,
-    kCommandLessonPrompt=18,
-    kCommandAimAlignment=19,
-    kCommandCloseDialog=20,
-    kCommandSetSaveFlag=21,
-    kCommandFinishCursorMove=22,
+    kCommandWait = 0,
+    kCommandPulseAction = 1,
+    kCommandForceAction = 2,
+    kCommandClearForcedAction = 3,
+    kCommandPulseActionAlternate = 4,
+    kCommandMoveCursor = 5,
+    kCommandStageEndDialog = 6,
+    kCommandMessageDialog = 7,
+    kCommandMessageLayout2 = 8,
+    kCommandMessageLayout4 = 9,
+    kCommandMessageLayout0 = 10,
+    kCommandMessageAtPointer = 11,
+    kCommandSizedMessageDialog = 12,
+    kCommandTargetNamedPoint = 13,
+    kCommandDispatchActorMessage = 14,
+    kCommandParseInteger = 15,
+    kCommandBlockInput = 16,
+    kCommandAllowInput = 17,
+    kCommandLessonPrompt = 18,
+    kCommandAimAlignment = 19,
+    kCommandCloseDialog = 20,
+    kCommandSetSaveFlag = 21,
+    kCommandFinishCursorMove = 22,
 };
 // Hexadecimal opcode/payload reference for command producers and this unit's executor:
 // 0x00 wait: none; 0x01/0x02/0x04 action: one signed byte (pulse/force/alternate pulse);
@@ -193,9 +207,12 @@ enum TutorialCommandOpcode {
 // Every command is consumed after its side effects, including dialog creation; callbacks
 // resume with the NEXT queued record. Payload storage is borrowed only during execution.
 enum TutorialInputPolicyId {
-    kTutorialScriptAction6 = 6, kTutorialScriptAction8 = 8,
-    kTutorialDialogAction19 = 19, kTutorialDialogAction24 = 24,
-    kTutorialDialogAction17 = 17, kTutorialBlockedAction20 = 20,
+    kTutorialScriptAction6 = 6,
+    kTutorialScriptAction8 = 8,
+    kTutorialDialogAction19 = 19,
+    kTutorialDialogAction24 = 24,
+    kTutorialDialogAction17 = 17,
+    kTutorialBlockedAction20 = 20,
     kTutorialScriptAction26 = 26
 };
 // These are GameInputManager action-slot indices (0..38), not WPAD button masks.
@@ -205,7 +222,9 @@ enum TutorialInputPolicyId {
 // stage ending: allow all except 20; pointer and selected-pad lookup active.
 // aim alignment: allow all except 6/20; pointer and selected-pad lookup active.
 // Running commands retain the policy installed by the most recent opcode.
-enum TutorialDelay { kTutorialWaitForEvent = -1 };
+enum TutorialDelay {
+    kTutorialWaitForEvent = -1
+};
 // Offsets into tutorialMessageIndices are 12-byte MW member-function-pointer
 // records, not message-text IDs. The adjusted owner is tutorial.secondaryVtable;
 // -0x18 translates that interface back to the CTutorial base. Keep all three
@@ -226,15 +245,22 @@ enum TutorialDelay { kTutorialWaitForEvent = -1 };
 // The command is consumed AFTER registration; a result continues at the next
 // record, not the dialog opcode. Parsing failures are unchecked legacy behavior.
 enum TutorialCallbackOffset {
-    kCallbackStageEnd = 0x58, kCallbackMessage = 0x64,
-    kCallbackLayout2 = 0x70, kCallbackLayout4 = 0x7C,
-    kCallbackLayout0 = 0x88, kCallbackAtPointer = 0x94,
-    kCallbackSizedMessage = 0xA0, kCallbackLessonPrompt = 0xAC
+    kCallbackStageEnd = 0x58,
+    kCallbackMessage = 0x64,
+    kCallbackLayout2 = 0x70,
+    kCallbackLayout4 = 0x7C,
+    kCallbackLayout0 = 0x88,
+    kCallbackAtPointer = 0x94,
+    kCallbackSizedMessage = 0xA0,
+    kCallbackLessonPrompt = 0xAC
 };
-// Receiver-verified IDs: CScreen_HandleMsg (ingame_hud_screen.cpp), CCamera_HandleMsg (camera_input_and_ground_view.cpp).
-enum TutorialActorCommand { kScreenResetMapCameraAction = 0x45,
-    kCameraSetZoomInputBlocked = 9, kCameraSetDirectionalInputEnabled = 11 };
-// Lesson operands checked against CScreen_HandleMsg and CGolfRule_HandleMsg.
+// Receiver-verified IDs: CScreen_HandleMsg (ingame_hud_screen.cpp), CCamera::HandleMsg (camera_input_and_ground_view.cpp).
+enum TutorialActorCommand {
+    kScreenResetMapCameraAction = 0x45,
+    kCameraSetZoomInputBlocked = 9,
+    kCameraSetDirectionalInputEnabled = 11
+};
+// Lesson operands checked against CScreen_HandleMsg and CGolfRule::HandleMsg.
 // GolfRule 0x0c enables auto-shot with integer UI x/y in its next two operands;
 // 0x1f passes power/100 and its second operand to swing-controller slot 0x40.
 // Slot-labelled operations retain neutral names until their complete contracts are known.
@@ -256,17 +282,27 @@ enum TutorialLessonActorMessage {
 };
 
 enum TutorialProgressMessage {
-    kScreenResetShotPanels = 0x0F, kScreenShowTutorialGaugeImmediately = 0x4A,
-    kScreenShowTutorialAimImmediately = 0x4C, kGolfRuleRefreshBgmAndVoice = 0x16,
-    kScreenSetTutorialCompletion = 0x1E, kScreenHideTutorialMeter = 0x4D,
-    kScreenHideTutorialGauge = 0x4E, kScreenHideTutorialAim = 0x4F,
+    kScreenResetShotPanels = 0x0F,
+    kScreenShowTutorialGaugeImmediately = 0x4A,
+    kScreenShowTutorialAimImmediately = 0x4C,
+    kGolfRuleRefreshBgmAndVoice = 0x16,
+    kScreenSetTutorialCompletion = 0x1E,
+    kScreenHideTutorialMeter = 0x4D,
+    kScreenHideTutorialGauge = 0x4E,
+    kScreenHideTutorialAim = 0x4F,
     kScreenSetCameraControlsEnabled = 0x55,
     kEffectLightColumnFadeIn = 0x0C // CParticleEffect_HandleMsg sets existing lightColumn.fadeMode=1.
 };
-enum { kTutorialEmptyReadOffset = 12, kTutorialCallbackThisAdjustment = -0x18 };
+enum {
+    kTutorialEmptyReadOffset = 12,
+    kTutorialCallbackThisAdjustment = -0x18
+};
 struct TutorialCommandView {
     unsigned int opcode;
-    union { signed char action; char text[kCommandTextBytes]; } payload;
+    union {
+        signed char action;
+        char text[kCommandTextBytes];
+    } payload;
     int delayMilliseconds;
 };
 // Deque header at CTutorial +1C: read offset, live command count, block-ring data,
@@ -279,18 +315,30 @@ struct TutorialCommandView {
 // Single-wrap iterator helpers require offsets within one allocated ring span.
 typedef std::deque<TutorialCommandView, app::app_allocator<TutorialCommandView> > TutorialCommandDeque;
 typedef std::cdeque<void*, app::app_allocator<void*> > TutorialBlockRing;
-struct TutorialQueueWords { unsigned int readOffset, commandCount, blocks, firstBlock, blockCount, blockCapacity; };
+struct TutorialQueueWords {
+    unsigned int readOffset, commandCount, blocks, firstBlock, blockCount, blockCapacity;
+};
 typedef char TutorialCommandDeque_size[(sizeof(TutorialCommandDeque) == sizeof(TutorialQueueWords)) ? 1 : -1];
-struct RingStorageWords { unsigned int data, start, used, capacity; };
+struct RingStorageWords {
+    unsigned int data, start, used, capacity;
+};
 // The named-point API returns a byte record; +0x24 is its three-word position payload.
-struct TutorialNamedPoint { char nameAndMetadata[0x24]; unsigned int positionWords[3]; };
+struct TutorialNamedPoint {
+    char nameAndMetadata[0x24];
+    unsigned int positionWords[3];
+};
 // SaveRecord_CopyCtor provides a complete 0x828-byte record; this command changes one persisted bit.
-struct TutorialSaveRecord { char reserved[0xA0]; unsigned int flags; char tail[0x784]; };
-enum TutorialSaveFlags { kTutorialSaveCompletionFlag=0x80 };
-static const int kTutorialStageFlagsOffset=(int)&((CTutorial*)0)->stage0Completed;
-typedef char TutorialCommandSizeCheck[sizeof(TutorialCommandView)==40 ? 1 : -1];
-typedef char TutorialSaveSizeCheck[sizeof(TutorialSaveRecord)==0x828 ? 1 : -1];
-
+struct TutorialSaveRecord {
+    char reserved[0xA0];
+    unsigned int flags;
+    char tail[0x784];
+};
+enum TutorialSaveFlags {
+    kTutorialSaveCompletionFlag = 0x80
+};
+static const int kTutorialStageFlagsOffset = (int)&((CTutorial*)0)->stage0Completed;
+typedef char TutorialCommandSizeCheck[sizeof(TutorialCommandView) == 40 ? 1 : -1];
+typedef char TutorialSaveSizeCheck[sizeof(TutorialSaveRecord) == 0x828 ? 1 : -1];
 
 extern void RingBuffer_ThrowLengthError(const char*);
 extern unsigned int RingBuffer32_GetUsableCapacity(void*);
@@ -322,9 +370,13 @@ extern const char tutorialCommandStrings[];
 struct LocalE54 {
     unsigned int data[6];
     // Construct an empty temporary command-block queue.
-    LocalE54(void* iterator) { TutorialCommandDeque_InitializeEmptyBlockRing(this, iterator); }
+    LocalE54(void* iterator) {
+        TutorialCommandDeque_InitializeEmptyBlockRing(this, iterator);
+    }
     // Free only blocks/storage still owned by this temporary queue.
-    ~LocalE54() { TutorialBlockRing_dtor(this, -1); }
+    ~LocalE54() {
+        TutorialBlockRing_dtor(this, -1);
+    }
 };
 
 #pragma push
@@ -352,7 +404,7 @@ void TutorialCommandDeque_ReserveBackBlocks(void* arg, int count) {
     if (whole != 0) {
         total = (unsigned int)whole * kCommandsPerBlock;
         if (total > (unsigned int)((int (*)(void*))TutorialCommandDeque_GetMaximumCountWord)(remaining) ||
-            (total = (unsigned int)((int (*)(void*))TutorialCommandDeque_GetMaximumCountWord)(remaining) - total,
+            (total = (unsigned int)((int (*)(void*))TutorialCommandDeque_GetMaximumCountWord)(remaining)-total,
              (unsigned int)TutorialCommandDeque_GetUsableCommandCapacity(remaining) > total)) {
             RingBuffer_ThrowLengthError((tutorialCommandStrings + kTutorialString_dequeLengthError));
         }
@@ -392,7 +444,8 @@ void TutorialCommandDeque_ReserveBackBlocks(void* arg, int count) {
                 TutorialBlockRing_IteratorSubtractOffset(c, a, 1);
                 TutorialBlockRing_MakeBeginIterator(v1, ring);
                 TutorialBlockRing_MakeBeginIterator(v2, work);
-                ((void (*)(void*, void*, void*, void*, int))RingBuffer32_InsertRangeWithIteratorCopies)(work, v2, v1, c, 0);
+                ((void (*)(void*, void*, void*, void*, int))RingBuffer32_InsertRangeWithIteratorCopies)(work, v2, v1, c,
+                                                                                                        0);
             }
             // Commit the new ring; reset its temporary predecessor so live blocks are not freed.
             TutorialBlockRing_SwapStorageWords(ring, work);
@@ -409,7 +462,12 @@ struct RingPointerIteratorWithFlag {
     void** limit;
     bool flag;
 };
-struct RingPointerIterator { void** cur; void** base; void** end; void** limit; };
+struct RingPointerIterator {
+    void** cur;
+    void** base;
+    void** end;
+    void** limit;
+};
 // One pointer-ring model backs command block storage. Four-word cursors describe
 // position/base/logical-origin/limit; the five-word adapter adds the legacy copy flag.
 // Adapters borrow storage. Moving pointer words never transfers ownership of command blocks.
@@ -420,8 +478,10 @@ static inline int RingPointerIterator_Distance(RingPointerIteratorWithFlag* a, R
     void** end = b->end;
     int distance = b->cur - a->cur;
     if (b->cur >= end) {
-        if (a->cur < end) distance -= b->limit - b->base;
-    } else if (a->cur >= end) distance += b->limit - b->base;
+        if (a->cur < end)
+            distance -= b->limit - b->base;
+    } else if (a->cur >= end)
+        distance += b->limit - b->base;
     return distance;
 }
 // Copy iterator words in the original volatile load order.
@@ -430,10 +490,14 @@ static inline void RingPointerIterator_CopyVolatile(RingPointerIterator* out, co
     void** base = r->base;
     void** end = r->end;
     void** limit = r->limit;
-    out->cur = c; out->base = base; out->end = end; out->limit = limit;
+    out->cur = c;
+    out->base = base;
+    out->end = end;
+    out->limit = limit;
 }
 // Prepare an advanced iterator, wrapping a single capacity boundary.
-static inline void RingPointerIterator_PrepareAdvance(RingPointerIteratorWithFlag* tmp, RingPointerIteratorWithFlag* a, int n) {
+static inline void RingPointerIterator_PrepareAdvance(RingPointerIteratorWithFlag* tmp, RingPointerIteratorWithFlag* a,
+                                                      int n) {
     int capacity;
     void** cur;
     void** base;
@@ -448,9 +512,14 @@ static inline void RingPointerIterator_PrepareAdvance(RingPointerIteratorWithFla
     tmp->cur = cur;
     int index = n + (cur - base);
     flag = a->flag;
-    tmp->base = base; tmp->end = end; tmp->limit = limit; tmp->flag = flag;
-    if (index < 0) index += capacity;
-    else if (index >= capacity) index -= capacity;
+    tmp->base = base;
+    tmp->end = end;
+    tmp->limit = limit;
+    tmp->flag = flag;
+    if (index < 0)
+        index += capacity;
+    else if (index >= capacity)
+        index -= capacity;
     tmp->cur = ((volatile RingPointerIteratorWithFlag*)tmp)->base + index;
 }
 // Advance the output cursor and decrement the remaining copy count.
@@ -459,7 +528,8 @@ static inline int RingPointerIterator_AdvanceOutput(RingPointerIterator* r, int 
     int remaining = *distance - n;
     *distance = remaining;
     r->cur = advanced;
-    if (r->cur == r->limit) r->cur = r->base;
+    if (r->cur == r->limit)
+        r->cur = r->base;
     return remaining;
 }
 // Copy a range of ring-buffer pointers, splitting the destination copy at the wrap boundary.
@@ -468,13 +538,19 @@ void RingBuffer32_CopyWrappedRange(void* out, void* left, void* right, void* rin
     RingPointerIteratorWithFlag* sourceEnd = (RingPointerIteratorWithFlag*)right;
     RingPointerIterator* destination = (RingPointerIterator*)ring;
     if (sourceBegin->cur != sourceEnd->cur) {
-        struct Frame { int size; int distance; RingPointerIteratorWithFlag tmp; RingPointerIteratorWithFlag next; } f;
+        struct Frame {
+            int size;
+            int distance;
+            RingPointerIteratorWithFlag tmp;
+            RingPointerIteratorWithFlag next;
+        } f;
         int remaining = RingPointerIterator_Distance(sourceBegin, sourceEnd);
         f.distance = remaining;
         do {
             const int* amount = &f.size;
             f.size = destination->limit - destination->cur;
-            if (f.size >= remaining) amount = &f.distance;
+            if (f.size >= remaining)
+                amount = &f.distance;
             int n = *amount;
             RingPointerIterator_PrepareAdvance(&f.tmp, sourceBegin, n);
             f.next.cur = f.tmp.cur;
@@ -489,11 +565,13 @@ void RingBuffer32_CopyWrappedRange(void* out, void* left, void* right, void* rin
             void** copyLimit = sourceBegin->limit;
             while (current != f.next.cur) {
                 *dst = *current++;
-                if (current == copyLimit) current = first;
+                if (current == copyLimit)
+                    current = first;
                 ++dst;
             }
             remaining = RingPointerIterator_AdvanceOutput(destination, n, &f.distance);
-            if (remaining == 0) break;
+            if (remaining == 0)
+                break;
             sourceBegin->cur = f.next.cur;
             sourceBegin->base = f.next.base;
             sourceBegin->end = f.next.end;
@@ -505,11 +583,18 @@ void RingBuffer32_CopyWrappedRange(void* out, void* left, void* right, void* rin
 }
 
 extern void TutorialCommandDeque_ReserveBackBlocks(void*, int);
-union TutorialCommandRecord { unsigned int words[10]; TutorialCommandView command; };
+union TutorialCommandRecord {
+    unsigned int words[10];
+    TutorialCommandView command;
+};
 // Construct one command record in place when its destination is non-null.
 static inline void TutorialCommand_ConstructCopy(TutorialCommandRecord* item, const TutorialCommandRecord& source) {
     if (item != 0) {
-        try { *item = source; } catch (...) { throw; }
+        try {
+            *item = source;
+        } catch (...) {
+            throw;
+        }
     }
 }
 // Load the ring capacity word used by iterator initialization.
@@ -532,20 +617,25 @@ static inline void RingStorage_MakeBegin(RingPointerIterator* iter, unsigned int
 }
 struct CommandBlockIterator : RingPointerIterator {
     // Borrow the beginning of an existing block ring.
-    CommandBlockIterator(unsigned int* fields) { RingStorage_MakeBegin(this, fields); }
+    CommandBlockIterator(unsigned int* fields) {
+        RingStorage_MakeBegin(this, fields);
+    }
 };
 // Advance a block iterator by a signed block offset with wrapping.
 static inline void CommandBlockIterator_Advance(CommandBlockIterator* iter, int n) {
     int size = ((int)iter->limit - (int)iter->base) / 4;
     int index = n + ((int)iter->cur - (int)iter->base) / 4;
-    if (index < 0) index += size;
-    else if (index >= size) index -= size;
+    if (index < 0)
+        index += size;
+    else if (index >= size)
+        index -= size;
     iter->cur = ((volatile RingPointerIterator*)iter)->base + index;
 }
 #pragma push
 #pragma use_lmw_stmw on
 // Append copies of an opcode with a byte action or text payload and an integer delay encoded in the ABI pointer.
-void CTutorial_AppendRepeatedCommands(void* object, int mode, const void* input, unsigned int* encodedDelayMilliseconds, int count) {
+void CTutorial_AppendRepeatedCommands(void* object, int mode, const void* input, unsigned int* encodedDelayMilliseconds,
+                                      int count) {
     TutorialCommandRecord entry;
     entry.command.opcode = (unsigned int)mode;
     entry.command.delayMilliseconds = (unsigned int)encodedDelayMilliseconds;
@@ -553,7 +643,9 @@ void CTutorial_AppendRepeatedCommands(void* object, int mode, const void* input,
         *(unsigned char*)&entry.command.payload.action = 0;
     } else {
         switch (mode) {
-        case 1: case 2: case 4:
+        case 1:
+        case 2:
+        case 4:
             *(unsigned char*)&entry.command.payload.action = *(const unsigned char*)input;
             break;
         default:
@@ -564,24 +656,28 @@ void CTutorial_AppendRepeatedCommands(void* object, int mode, const void* input,
     unsigned int* fields = (unsigned int*)object;
     int i = 0;
     if (count > 0) {
-      for (; i < count; ++i) {
-        volatile unsigned char flag;
-        unsigned int capacity = fields[kTutorialWord_commandBlockCount];
-        unsigned int zero = 0;
-        unsigned int max;
-        unsigned int used = fields[kTutorialWord_commandReadOffset] + fields[kTutorialWord_pendingCommandCount];
-        flag = zero;
-        if (capacity == 0) max = zero;
-        else max = (capacity - 1) * kCommandsPerBlock;
-        if (max - used == 0) TutorialCommandDeque_ReserveBackBlocks((char*)&AsCTutorial(object)->commandReadOffset, 1);
-        CommandBlockIterator iter(fields + kTutorialWord_commandBlocks);
-        unsigned int total = fields[kTutorialWord_pendingCommandCount] + fields[kTutorialWord_commandReadOffset];
-        CommandBlockIterator_Advance(&iter, total / kCommandsPerBlock);
-        void* block = fields[kTutorialWord_commandBlockCount] == 0 ? 0 : *iter.cur;
-        TutorialCommandRecord* item = (TutorialCommandRecord*)((char*)block + (total % kCommandsPerBlock) * sizeof(TutorialCommandView));
-        TutorialCommand_ConstructCopy(item, entry);
-        ++fields[kTutorialWord_pendingCommandCount];
-      }
+        for (; i < count; ++i) {
+            volatile unsigned char flag;
+            unsigned int capacity = fields[kTutorialWord_commandBlockCount];
+            unsigned int zero = 0;
+            unsigned int max;
+            unsigned int used = fields[kTutorialWord_commandReadOffset] + fields[kTutorialWord_pendingCommandCount];
+            flag = zero;
+            if (capacity == 0)
+                max = zero;
+            else
+                max = (capacity - 1) * kCommandsPerBlock;
+            if (max - used == 0)
+                TutorialCommandDeque_ReserveBackBlocks((char*)&AsCTutorial(object)->commandReadOffset, 1);
+            CommandBlockIterator iter(fields + kTutorialWord_commandBlocks);
+            unsigned int total = fields[kTutorialWord_pendingCommandCount] + fields[kTutorialWord_commandReadOffset];
+            CommandBlockIterator_Advance(&iter, total / kCommandsPerBlock);
+            void* block = fields[kTutorialWord_commandBlockCount] == 0 ? 0 : *iter.cur;
+            TutorialCommandRecord* item =
+                (TutorialCommandRecord*)((char*)block + (total % kCommandsPerBlock) * sizeof(TutorialCommandView));
+            TutorialCommand_ConstructCopy(item, entry);
+            ++fields[kTutorialWord_pendingCommandCount];
+        }
     }
 }
 #pragma pop
@@ -604,7 +700,12 @@ void TutorialBlockRing_SwapStorageWords(void* a, void* b) {
     right[3] = temp;
 }
 
-struct RingWordIterator { unsigned int* cur; unsigned int* base; unsigned int* end; unsigned int* limit; };
+struct RingWordIterator {
+    unsigned int* cur;
+    unsigned int* base;
+    unsigned int* end;
+    unsigned int* limit;
+};
 // Advance a word iterator by a signed offset with wrapping.
 static inline void RingWordIterator_Advance(RingWordIterator* tmp, int index) {
     int count = tmp->limit - tmp->base;
@@ -657,9 +758,13 @@ extern void RingBuffer32_Release(void*, int);
 struct LocalA36C {
     unsigned int data, start, used, capacity;
     // Initialize temporary word-ring storage using the supplied allocator view.
-    LocalA36C(void* allocator) { RingBuffer32_InitializeHeader(this, allocator); }
+    LocalA36C(void* allocator) {
+        RingBuffer32_InitializeHeader(this, allocator);
+    }
     // Release temporary ring storage after insertion or exceptional exit.
-    ~LocalA36C() { RingBuffer32_Release(this, -1); }
+    ~LocalA36C() {
+        RingBuffer32_Release(this, -1);
+    }
 };
 
 #pragma push
@@ -684,7 +789,8 @@ void RingBuffer32_InsertRange(void* object, void* first, void* second, void* thi
         unsigned int* obj = (unsigned int*)object;
         unsigned int start = ((RingStorageWords*)obj)->data + ((RingStorageWords*)obj)->start * 4;
         int index = (int)((unsigned int)((RingPointerIterator*)first)->cur - start) / 4;
-        if ((unsigned int)((RingPointerIterator*)first)->cur < start) index += *RingBuffer32_GetCapacityAddressForInsert(object);
+        if ((unsigned int)((RingPointerIterator*)first)->cur < start)
+            index += *RingBuffer32_GetCapacityAddressForInsert(object);
         unsigned int limit = RingBuffer32_GetUsableCapacity(object);
         // Phase 2a: if capacity permits, open a gap by shifting the shorter prefix/suffix.
         if ((unsigned int)count <= limit && ((RingStorageWords*)obj)->used <= limit - (unsigned int)count) {
@@ -699,7 +805,8 @@ void RingBuffer32_InsertRange(void* object, void* first, void* second, void* thi
                 if (index != 0) {
                     void* target = RingIterator32_Copy(&frame.dest, &frame.work);
                     RingIterator32_AddOffset(&frame.moved, &frame.temp, index);
-                    RingIterator32_CopyForward(&frame.result, RingIterator32_Copy(&frame.part, &frame.temp), &frame.moved, target);
+                    RingIterator32_CopyForward(&frame.result, RingIterator32_Copy(&frame.part, &frame.temp),
+                                               &frame.moved, target);
                     RingIterator32_CopyWords(&frame.work, &frame.result);
                 }
             } else {
@@ -717,7 +824,8 @@ void RingBuffer32_InsertRange(void* object, void* first, void* second, void* thi
             }
             first = RingIterator32_Copy(&frame.copy, &frame.work);
             object = TutorialBlockRing_CopyIteratorWithFlag(&frame.c, third);
-            RingBuffer32_CopyWrappedRange(&frame.insert, TutorialBlockRing_CopyIteratorWithFlag(&frame.d, second), object, first);
+            RingBuffer32_CopyWrappedRange(&frame.insert, TutorialBlockRing_CopyIteratorWithFlag(&frame.d, second),
+                                          object, first);
         } else {
             // Phase 2b: construct inserted words in replacement storage, then copy suffix/prefix.
             RingBuffer32_InitializeHeader(&frame.ring, RingBuffer32_GetCapacityAddressForAllocation(object));
@@ -746,7 +854,10 @@ void RingBuffer32_InsertRange(void* object, void* first, void* second, void* thi
             Swap_Int32(obj + 2, &frame.ring.used);
             unsigned int capacity = RingBuffer32_GetCapacityAddress(&frame.ring);
             Swap_Int32(RingBuffer32_GetCapacityAddressForInsert(object), (void*)capacity);
-            { eh5Cleanup5.release(); RingBuffer32_Release(&frame.ring, -1); }
+            {
+                eh5Cleanup5.release();
+                RingBuffer32_Release(&frame.ring, -1);
+            }
         }
     }
 }
@@ -778,12 +889,18 @@ void RingBuffer32_InsertRangeWithIteratorCopies(void* a, void* b, void* c, void*
     b1 = ((unsigned int*)b)[1];
     b2 = ((unsigned int*)b)[2];
     b3 = ((unsigned int*)b)[3];
-    frame.third[0] = d0; frame.third[1] = d1;
-    frame.third[2] = d2; frame.third[3] = d3;
-    frame.second[0] = c0; frame.second[1] = c1;
-    frame.second[2] = c2; frame.second[3] = c3;
-    frame.first[0] = b0; frame.first[1] = b1;
-    frame.first[2] = b2; frame.first[3] = b3;
+    frame.third[0] = d0;
+    frame.third[1] = d1;
+    frame.third[2] = d2;
+    frame.third[3] = d3;
+    frame.second[0] = c0;
+    frame.second[1] = c1;
+    frame.second[2] = c2;
+    frame.second[3] = c3;
+    frame.first[0] = b0;
+    frame.first[1] = b1;
+    frame.first[2] = b2;
+    frame.first[3] = b3;
     frame.flag = zero;
     RingBuffer32_InsertRange(a, frame.first, frame.second, frame.third, &frame.flag);
 }
@@ -832,18 +949,19 @@ int RingBuffer32_IteratorDistance(void* a, void* b) {
 
 extern "C" void RingBuffer32_AppendWord(void*, void*);
 extern "C" void* appMallocDummy__FUl(int);
-extern "C" void* CTutorial_dtor(void*, int);
+extern "C" void* __dt__9CTutorialFv(void*, int);
 
 extern const float kFloat_6_2831855;
 extern float s_twoPi_80209C3C_805E2B70;
 extern int s_tutorialCommandDequeMaximumCountWord;
 extern signed char s_ringBuffer25MaxSizeInitialized;
 extern void* g_sharedDoc;
-extern "C" void CTutorial_BeginStageCompletion(void*);
 
-struct RefBaseTargets { unsigned int count; };
-struct RefTargets : RefBaseTargets { 
-virtual ~RefTargets();
+struct RefBaseTargets {
+    unsigned int count;
+};
+struct RefTargets : RefBaseTargets {
+    virtual ~RefTargets();
 };
 
 // Release the message dialog, record first-time stage completion and begin the stage-end sequence.
@@ -864,7 +982,7 @@ int CTutorial_RecordFirstCompletionAndBeginStageEnd(void* p) {
             (*(unsigned char*)&AsCTutorial(p)->firstStageCompletion) = 1;
         }
     }
-    CTutorial_BeginStageCompletion(p);
+    ((CTutorial*)p)->BeginStageCompletion();
     return 1;
 }
 
@@ -873,13 +991,16 @@ int CTutorial_RecordFirstCompletionAndBeginStageEnd(void* p) {
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
 // Copy four iterator words and its trailing byte flag without changing the compiler-sensitive load order.
-void* TutorialBlockRing_CopyIteratorWithFlag(void* dst, const void* src) { unsigned int a = *(const unsigned int*)((const char*)src + 0);
+void* TutorialBlockRing_CopyIteratorWithFlag(void* dst, const void* src) {
+    unsigned int a = *(const unsigned int*)((const char*)src + 0);
 
     unsigned int b = *(const unsigned int*)((const char*)src + 4);
 
-    __typeof__(a) _p225 = a; __typeof__(_p225) _p389 = _p225;
+    __typeof__(a) _p225 = a;
+    __typeof__(_p225) _p389 = _p225;
 
-    *(unsigned int*)((char*)dst + 0) = _p389; *(unsigned int*)((char*)dst + 4) = b;
+    *(unsigned int*)((char*)dst + 0) = _p389;
+    *(unsigned int*)((char*)dst + 4) = b;
     *(unsigned int*)((char*)dst + 8) = (*(const unsigned int*)((const char*)src + 8));
     *(unsigned int*)((char*)dst + 12) = (*(const unsigned int*)((const char*)src + 12));
     *(unsigned char*)((char*)dst + 16) = (*(const unsigned char*)((const char*)src + 16));
@@ -957,15 +1078,14 @@ void TutorialBlockRing_AppendWord(void* a, void* b) {
 
 extern "C" void appFreeUni__FPv(void*);
 extern "C" void __dl__FPv(void*);
-extern "C" void CMouseCursor_SavePosition(void*);
 extern "C" // PRECONDITION: object is a live CTutorial with a valid block ring and validated
-// command payloads. sscanf return counts are ignored, so malformed text may leave
-// output locals uninitialized. %s is unbounded; actor names must fit 31 bytes + NUL.
-// messageDialog holds one reference; close releases it. modeMessageDialog prevents
-// all execution until its result callback releases it. Callback descriptors are
-// three ABI words, adjusted for self's secondary interface at +0x18.
-// Zero-delay chains recurse; the queue must eventually wait or end.
-void CTutorial_ExecuteCurrentCommand(void*);
+    // command payloads. sscanf return counts are ignored, so malformed text may leave
+    // output locals uninitialized. %s is unbounded; actor names must fit 31 bytes + NUL.
+    // messageDialog holds one reference; close releases it. modeMessageDialog prevents
+    // all execution until its result callback releases it. Callback descriptors are
+    // three ABI words, adjusted for self's secondary interface at +0x18.
+    // Zero-delay chains recurse; the queue must eventually wait or end.
+    void CTutorial_ExecuteCurrentCommand(void*);
 extern "C" void TutorialDialog_CreateForMessageIndex(int, int, void*, float);
 extern "C" void* Runtime_AdjustMemberPointer(int, void*, void*);
 extern void* g_mouseCursor;
@@ -989,18 +1109,19 @@ int CTutorial_ResumeCommandAfterAimAlignment(void* p, int arg) {
         }
         (*(unsigned int**)&AsCTutorial(p)->messageDialog) = 0;
     }
-    if (arg == 2) return 1;
-    CMouseCursor_SavePosition(g_mouseCursor);
+    if (arg == 2)
+        return 1;
+    ((CMouseCursor*)g_mouseCursor)->SavePosition();
     if (AsCTutorial(p)->aimAlignmentCount == 6) {
         AsCTutorial(p)->aimAlignmentCount = 0;
-        CTutorial_BeginStageCompletion(p);
+        ((CTutorial*)p)->BeginStageCompletion();
         return 1;
     }
     CTutorial_ExecuteCurrentCommand(p);
     return 1;
 }
 
-struct Ring80209C3C {
+struct BlockRingLayout {
     int unk0;
     int unk4;
     void** data;
@@ -1018,7 +1139,7 @@ static inline void sub80209C3C(unsigned int* a, unsigned int* b) {
 #pragma use_lmw_stmw on
 // Free all command blocks in a temporary queue, then free its ring storage and optionally the queue itself.
 void* TutorialBlockRing_dtor(void* p, int deallocate) {
-    Ring80209C3C* r = (Ring80209C3C*)p;
+    BlockRingLayout* r = (BlockRingLayout*)p;
     if (r != 0) {
         unsigned int u = r->used;
         r->unk4 = 0;
@@ -1033,9 +1154,11 @@ void* TutorialBlockRing_dtor(void* p, int deallocate) {
             void** cur = base + r->first;
             void** limit = base + r->cap;
             while (end != cur) {
-                if (*cur != 0) appFreeUni__FPv(*cur);
+                if (*cur != 0)
+                    appFreeUni__FPv(*cur);
                 ++cur;
-                if (cur == limit) cur = base;
+                if (cur == limit)
+                    cur = base;
             }
         }
         if (&r->data != 0 && &r->data != 0 && &r->data != 0 && &r->data != 0 && &r->data != 0 && &r->data != 0) {
@@ -1044,7 +1167,8 @@ void* TutorialBlockRing_dtor(void* p, int deallocate) {
                 appFreeUni__FPv(r->data);
             }
         }
-        if (deallocate > 0) __dl__FPv(p);
+        if (deallocate > 0)
+            __dl__FPv(p);
     }
     return p;
 }
@@ -1065,16 +1189,20 @@ int CTutorial_ShowModeMessageDialog(void* p) {
     int type = AsCSharedDoc(manager)->gameMode == 2 ? 8 : 0x47;
     TutorialDialog_CreateForMessageIndex(0, type, ((char*)&AsCTutorial(p)->modeMessageDialog), kFloat_0_5_Tutorial);
     void* owner = p;
-    if (p != 0) owner = ((char*)&AsCTutorial(p)->secondaryVtable);
-    char temp[0xC]; // 12-byte scratch for Runtime_AdjustMemberPointer (as at its other call sites); the result is its return value, not the first word of this buffer
+    if (p != 0)
+        owner = ((char*)&AsCTutorial(p)->secondaryVtable);
+    char temp
+        [0xC]; // 12-byte scratch for Runtime_AdjustMemberPointer (as at its other call sites); the result is its return value, not the first word of this buffer
     unsigned int rect[3];
     unsigned int* source = (unsigned int*)Runtime_AdjustMemberPointer(-24, &s_tutorialModeDialogCallbackData, temp);
-    rect[0] = source[0]; rect[1] = source[1]; rect[2] = source[2];
+    rect[0] = source[0];
+    rect[1] = source[1];
+    rect[2] = source[2];
     void* pane = fields[0x60 / 4];
     // Original 0x8020DE04-0x8020DE0C: lwz r3,0x60(r30); lwz r12,0x4(r3); lwz r12,0x4c(r12): the vtable
     // pointer is the word at pane+4 (same call pattern at 0x8020B630 in CTutorial_ExecuteCurrentCommand). Ours loaded
     // *(pane+0) and read +4 from there, an extra indirection that calls through a wrong pointer.
-    ((void (*)(void*, unsigned int*, void*))(*(void***)((char*)pane + 4))[0x4C/4])(pane, rect, owner);
+    ((void (*)(void*, unsigned int*, void*))(*(void***)((char*)pane + 4))[0x4C / 4])(pane, rect, owner);
     pane = fields[0x60 / 4]; // 0x8020DE18: the original reloads this+0x60 after the call
     *(float*)((char*)pane + 8) = kFloat_119_0;
     *(float*)((char*)pane + 12) = kFloat_82_InGameDialog;
@@ -1179,7 +1307,10 @@ struct IterA9A4 {
     // Store all four iterator pointers in the compiler-required order.
     IterA9A4(unsigned int* c, unsigned int* b, unsigned int* u, unsigned int* e) {
         volatile IterA9A4* out = this;
-        out->current = c; out->begin = b; out->unused = u; out->end = e;
+        out->current = c;
+        out->begin = b;
+        out->unused = u;
+        out->end = e;
     }
     // Copy the full iterator, including its logical wrap origin.
     IterA9A4(const IterA9A4& x) {
@@ -1188,7 +1319,10 @@ struct IterA9A4 {
         unsigned int* u = x.unused;
         unsigned int* e = x.end;
         volatile IterA9A4* out = this;
-        out->current = c; out->begin = b; out->unused = u; out->end = e;
+        out->current = c;
+        out->begin = b;
+        out->unused = u;
+        out->end = e;
     }
 };
 
@@ -1208,7 +1342,8 @@ struct GuardA9A4 {
     GuardA9A4(char* p, unsigned char* f) : value(p), flag(f) {}
     // Release the exception message only if ownership was not transferred.
     ~GuardA9A4() {
-        if (value) __dla__FPv(value);
+        if (value)
+            __dla__FPv(value);
     }
 };
 
@@ -1242,16 +1377,21 @@ static inline void setA9A4(IterA9A4& out, const IterA9A4& x) {
     unsigned int* u = x.unused;
     unsigned int* e = x.end;
     volatile IterA9A4* p = &out;
-    p->current = c; p->begin = b; p->unused = u; p->end = e;
+    p->current = c;
+    p->begin = b;
+    p->unused = u;
+    p->end = e;
 }
 
 // Measure a word-iterator range across the ring boundary.
 static inline int distanceA9A4(const IterA9A4& a, const IterA9A4& b) {
     int n = b.current - a.current;
     if (b.current >= b.unused) {
-        if (a.current < b.unused) n -= b.end - b.begin;
+        if (a.current < b.unused)
+            n -= b.end - b.begin;
     } else {
-        if (a.current >= b.unused) n += b.end - b.begin;
+        if (a.current >= b.unused)
+            n += b.end - b.begin;
     }
     return n;
 }
@@ -1260,8 +1400,10 @@ static inline int distanceA9A4(const IterA9A4& a, const IterA9A4& b) {
 static inline void advanceA9A4(IterA9A4& a, int n) {
     int count = a.end - a.begin;
     n += a.current - a.begin;
-    if (n < 0) n += count;
-    else if (n >= count) n -= count;
+    if (n < 0)
+        n += count;
+    else if (n >= count)
+        n -= count;
     ((volatile IterA9A4*)&a)->current = a.begin + n;
 }
 
@@ -1272,8 +1414,10 @@ static inline void copyA9A4(const IterA9A4& last, IterA9A4& f, unsigned int* dst
     while (f.current != stop) {
         int n;
         unsigned int* current = ((volatile IterA9A4*)&f)->current;
-        if ((current >= f.unused) == side) n = stop - current;
-        else n = f.end - f.current;
+        if ((current >= f.unused) == side)
+            n = stop - current;
+        else
+            n = f.end - f.current;
         current = ((volatile IterA9A4*)&f)->current;
         unsigned int* end = current + n;
         unsigned int bytes = ((int)((unsigned int)end - (unsigned int)current) / 4) * 4;
@@ -1281,7 +1425,8 @@ static inline void copyA9A4(const IterA9A4& last, IterA9A4& f, unsigned int* dst
         dst = (unsigned int*)((char*)dst + bytes);
         f.current += n - 1;
         f.current++;
-        if (f.current == f.end) f.current = f.begin;
+        if (f.current == f.end)
+            f.current = f.begin;
     }
 }
 
@@ -1302,11 +1447,17 @@ void* TutorialCommandDeque_InitializeEmptyBlockRing(void* a, void*) {
     init->size = initialCapacity;
     RingA9A4* ringp = (RingA9A4*)(((unsigned int*)a) + 2);
     RingA9A4& ring = *ringp;
-    ((unsigned int*)a)[0] = initialCapacity; ((unsigned int*)a)[1] = initialCapacity;
-    ring.data = (unsigned int*)initialCapacity; ring.index = initialCapacity; ring.size = initialCapacity; ring.capacity = initialCapacity;
+    ((unsigned int*)a)[0] = initialCapacity;
+    ((unsigned int*)a)[1] = initialCapacity;
+    ring.data = (unsigned int*)initialCapacity;
+    ring.index = initialCapacity;
+    ring.size = initialCapacity;
+    ring.capacity = initialCapacity;
     unsigned int index;
-    if (!zero) index = zero;
-    else index = (local.index + local.size) % zero;
+    if (!zero)
+        index = zero;
+    else
+        index = (local.index + local.size) % zero;
     unsigned int startIndex = local.index;
     unsigned int lastIndex = index << 2;
     unsigned int* start = local.data;
@@ -1315,11 +1466,15 @@ void* TutorialCommandDeque_InitializeEmptyBlockRing(void* a, void*) {
     IterA9A4& first = frame.first;
     IterA9A4& source = frame.source;
     volatile IterA9A4* out = &last;
-    out->current = (unsigned int*)((char*)start + lastIndex); out->begin = start;
-    out->unused = start + startIndex; out->end = start + capacity;
+    out->current = (unsigned int*)((char*)start + lastIndex);
+    out->begin = start;
+    out->unused = start + startIndex;
+    out->end = start + capacity;
     out = &first;
-    out->current = last.unused; out->begin = last.begin;
-    out->unused = last.unused; out->end = last.end;
+    out->current = last.unused;
+    out->begin = last.begin;
+    out->unused = last.unused;
+    out->end = last.end;
     setA9A4(source, first);
     setA9A4(frame.lastCopy, last);
     setA9A4(frame.firstCopy, first);
@@ -1340,15 +1495,25 @@ void* TutorialCommandDeque_InitializeEmptyBlockRing(void* a, void*) {
             {
                 char* str = error.text;
                 GuardA9A4 guard(str, &flag);
-                struct RefA9A4 { void* vt; int a, b; char* str; };
+                struct RefA9A4 {
+                    void* vt;
+                    int a, b;
+                    char* str;
+                };
                 RefA9A4* ref = (RefA9A4*)__nw__FUl(16);
-                if (ref) { ref->a = 1; ref->b = 1; ref->vt = s_sharedCharDeleterVtable; ref->str = str; }
+                if (ref) {
+                    ref->a = 1;
+                    ref->b = 1;
+                    ref->vt = s_sharedCharDeleterVtable;
+                    ref->str = str;
+                }
                 error.shared = ref;
                 guard.value = 0;
             }
             strcpy(error.text, message);
             error.vtable = __vt__Q23std12length_error;
-            __throw((tutorialCommandStrings + kTutorialString_lengthErrorTypeName), &error, (void*)__dt__Q23std12length_errorFv);
+            __throw((tutorialCommandStrings + kTutorialString_lengthErrorTypeName), &error,
+                    (void*)__dt__Q23std12length_errorFv);
         }
         ring.data = (unsigned int*)appMallocDummy__FUl((n + 1) * 4);
         ring.capacity = n + 1;
@@ -1365,8 +1530,10 @@ void* TutorialCommandDeque_InitializeEmptyBlockRing(void* a, void*) {
             volatile int* amount = &available;
             IterA9A4& mid = frame.mid;
             volatile IterA9A4* m = &mid;
-            m->current = source.current; m->begin = sourceBegin;
-            m->unused = sourceUnused; m->end = sourceEnd;
+            m->current = source.current;
+            m->begin = sourceBegin;
+            m->unused = sourceUnused;
+            m->end = sourceEnd;
             advanceA9A4(mid, *amount);
             setA9A4(frame.midFirst, mid);
             setA9A4(frame.midCopy, frame.midFirst);
@@ -1376,8 +1543,10 @@ void* TutorialCommandDeque_InitializeEmptyBlockRing(void* a, void*) {
             if (remaining) {
                 IterA9A4& next = frame.next;
                 volatile IterA9A4* q = &next;
-                q->current = source.current; q->begin = sourceBegin;
-                q->unused = sourceUnused; q->end = sourceEnd;
+                q->current = source.current;
+                q->begin = sourceBegin;
+                q->unused = sourceUnused;
+                q->end = sourceEnd;
                 advanceA9A4(next, *amount);
                 setA9A4(frame.nextSecond, next);
                 setA9A4(frame.lastSecond, last);
@@ -1426,8 +1595,11 @@ void Tutorial_InitializeTwoPi() {
 }
 
 // Adjust the secondary-interface pointer back to CTutorial before destruction.
-void* CTutorial_dtor_ThunkMinus24(void* p, int forwarded1) {
-    return CTutorial_dtor((char*)p - 24, forwarded1);
+// The secondary interface sits 0x18 bytes into the object, and a destructor
+// cannot be called with a delete flag through C++ syntax, so the mangled name
+// is used.
+void* CTutorial::DestroyThunkMinus24(int deleting) {
+    return __dt__9CTutorialFv((char*)this - 0x18, deleting);
 }
 
 // Return the embedded block-ring storage header.
@@ -1439,7 +1611,6 @@ extern void* IActor_DispatchMessage(void*, void*, const char*, int, int, int, in
 extern void* Pointer_ClearInputSuppression(void*);
 extern void InputManager_Init(void*);
 extern void InputManager_Dtor(void);
-extern void CMouseCursor_SavePosition(void*);
 extern void* g_inputPointer;
 extern signed char s_inputManagerInitialized;
 extern void* g_mouseCursor;
@@ -1462,63 +1633,69 @@ int CTutorial_HandleLessonPromptResult(void* p, int mode) {
         fields[0x3C / 4] = (void*)4;
         IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_golfRuleActor), 0x23, 1, 0, 0, 0);
         Pointer_ClearInputSuppression(g_inputPointer);
-        void* object = (void*)((int&)Sing_805DC5C8());
+        void* object = (void*)((int&)GetInputManagerSlot());
         if (object == 0) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_tutorial);
+                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_inputManagerDtorRegistration_tutorial);
                 s_inputManagerInitialized = 1;
             }
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+            ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
         }
-        object = (void*)((int&)Sing_805DC5C8());
+        object = (void*)((int&)GetInputManagerSlot());
         unsigned int* words = (unsigned int*)object;
-        for (int i = 0x1C / 4; i <= 0xB4 / 4; ++i) words[i] = 0;
+        for (int i = 0x1C / 4; i <= 0xB4 / 4; ++i)
+            words[i] = 0;
         if (!object) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_tutorial);
+                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_inputManagerDtorRegistration_tutorial);
                 s_inputManagerInitialized = 1;
             }
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+            ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
         }
-        object = (void*)((int&)Sing_805DC5C8());
+        object = (void*)((int&)GetInputManagerSlot());
         words = (unsigned int*)object;
         ((GameInputManager*)words)->selectedPadLookupDisabled = 0;
         words = (unsigned int*)object;
         if (object == 0) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_tutorial);
+                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_inputManagerDtorRegistration_tutorial);
                 s_inputManagerInitialized = 1;
             }
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+            ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
         }
-        object = (void*)((int&)Sing_805DC5C8());
+        object = (void*)((int&)GetInputManagerSlot());
         words = (unsigned int*)object;
         ((GameInputManager*)words)->actionBlocked[kTutorialScriptAction6] = 1;
         if (!object) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_tutorial);
+                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_inputManagerDtorRegistration_tutorial);
                 s_inputManagerInitialized = 1;
             }
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+            ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
         }
-        object = (void*)((int&)Sing_805DC5C8());
+        object = (void*)((int&)GetInputManagerSlot());
         words = (unsigned int*)object;
         ((GameInputManager*)words)->actionBlocked[kTutorialBlockedAction20] = 1;
     } else {
-        void* object = (void*)((int&)Sing_805DC5C8());
+        void* object = (void*)((int&)GetInputManagerSlot());
         if (object == 0) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_tutorial);
+                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_inputManagerDtorRegistration_tutorial);
                 s_inputManagerInitialized = 1;
             }
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+            ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
         }
-        object = (void*)((int&)Sing_805DC5C8());
+        object = (void*)((int&)GetInputManagerSlot());
         ((unsigned int*)object)[0x170 / 4] = 1;
         CTutorial_ExecuteCurrentCommand(p);
     }
@@ -1538,69 +1715,77 @@ int CTutorial_HandleMessageDialogResult(void* p, int mode) {
     IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_golfRuleActor), 0x24, 0, 0, 0, 0);
     if (2 == mode) {
         Pointer_ClearInputSuppression(g_inputPointer);
-        void* object = (void*)((int&)Sing_805DC5C8());
+        void* object = (void*)((int&)GetInputManagerSlot());
         if (0 == object) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_tutorial);
+                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_inputManagerDtorRegistration_tutorial);
                 s_inputManagerInitialized = 1;
             }
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+            ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
             object = s_gameInputManager;
         }
         unsigned int* words = (unsigned int*)object;
-        for (int i = 0x1C / 4; i <= 0xB4 / 4; ++i) words[i] = 0;
-        object = (void*)((int&)Sing_805DC5C8());
+        for (int i = 0x1C / 4; i <= 0xB4 / 4; ++i)
+            words[i] = 0;
+        object = (void*)((int&)GetInputManagerSlot());
         if (0 == object) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_tutorial);
+                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_inputManagerDtorRegistration_tutorial);
                 s_inputManagerInitialized = 1;
             }
             object = s_gameInputManager;
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+            ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
         }
-        object = (void*)((int&)Sing_805DC5C8());
+        object = (void*)((int&)GetInputManagerSlot());
         words = (unsigned int*)object;
         ((GameInputManager*)words)->selectedPadLookupDisabled = 0;
         if (object == 0) {
             if (s_inputManagerInitialized == 0) {
                 InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_tutorial);
+                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_inputManagerDtorRegistration_tutorial);
                 s_inputManagerInitialized = 1;
             }
             object = s_gameInputManager;
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+            ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
         }
-        object = (void*)((int&)Sing_805DC5C8());
+        object = (void*)((int&)GetInputManagerSlot());
         words = (unsigned int*)object;
         ((GameInputManager*)words)->actionBlocked[kTutorialScriptAction6] = 1;
         if (0 == object) {
             if (0 == s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_tutorial);
+                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                         s_inputManagerDtorRegistration_tutorial);
                 s_inputManagerInitialized = 1;
             }
-            ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+            ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
             object = s_gameInputManager;
         }
         words = (unsigned int*)object;
         ((GameInputManager*)words)->actionBlocked[kTutorialBlockedAction20] = 1;
-        IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenResetShotPanels, 1, 0, 0, 0);
+        IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenResetShotPanels, 1,
+                               0, 0, 0);
     } else {
-        IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenResetShotPanels, 0, 0, 0, 0);
-        CMouseCursor_SavePosition(g_mouseCursor);
+        IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenResetShotPanels, 0,
+                               0, 0, 0);
+        ((CMouseCursor*)g_mouseCursor)->SavePosition();
         CTutorial_ExecuteCurrentCommand(p);
     }
     return 1;
 }
 
-extern void CTutorial_ResetLessonCommands(void*, int);
 extern void* g_sharedDoc;
 
-struct RefBaseD31C { unsigned int count; };
-struct RefD31C : RefBaseD31C { 
-virtual ~RefD31C();
+struct RefBaseD31C {
+    unsigned int count;
+};
+struct RefD31C : RefBaseD31C {
+    virtual ~RefD31C();
 };
 
 // Release the mode dialog, advance or refresh the lesson and reset its command queue.
@@ -1613,7 +1798,7 @@ int CTutorial_AdvanceStageOrRefresh(void* p, int mode) {
         }
         AsCTutorial(p)->modeMessageDialog = 0;
     }
-    CMouseCursor_SavePosition(g_mouseCursor);
+    ((CMouseCursor*)g_mouseCursor)->SavePosition();
     // Original 0x8020D31C: stage five has no page transition.
     if (AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialStage != 5) {
         if (AsCSharedDoc(g_sharedDoc)->gameMode == 4 && mode == 1) {
@@ -1624,18 +1809,23 @@ int CTutorial_AdvanceStageOrRefresh(void* p, int mode) {
             ++AsCTutorial(p)->completedStageCount;
         (*(unsigned char*)&AsCTutorial(p)->firstStageCompletion) = 0;
         int value = mode == 1;
-        IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenSetTutorialCompletion, value + 1, 0, 0, 0);
+        IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor),
+                               kScreenSetTutorialCompletion, value + 1, 0, 0, 0);
         if (mode != 1) {
             int state = AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialStage;
             switch (state) {
             case 1:
-                IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenHideTutorialMeter, 0, 0, 0, 0);
+                IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor),
+                                       kScreenHideTutorialMeter, 0, 0, 0, 0);
                 break;
             case 2:
-                IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenHideTutorialGauge, 0, 0, 0, 0);
-                IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenHideTutorialAim, 0, 0, 0, 0);
+                IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor),
+                                       kScreenHideTutorialGauge, 0, 0, 0, 0);
+                IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor),
+                                       kScreenHideTutorialAim, 0, 0, 0, 0);
                 if (AsCSharedDoc(g_sharedDoc)->gameMode == 4)
-                    IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenSetCameraControlsEnabled, 0, 0, 0, 0);
+                    IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor),
+                                           kScreenSetCameraControlsEnabled, 0, 0, 0, 0);
                 break;
             default:
                 break;
@@ -1643,14 +1833,17 @@ int CTutorial_AdvanceStageOrRefresh(void* p, int mode) {
         }
         // Stage 4 begins fading the existing light column in; no new effect is allocated.
         if (AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialStage == 4)
-            IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_effectActor), kEffectLightColumnFadeIn, 0, 0, 0, 0);
+            IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_effectActor),
+                                   kEffectLightColumnFadeIn, 0, 0, 0, 0);
         int index;
         if (AsCSharedDoc(g_sharedDoc)->gameMode == 3 &&
             AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialStage == 1 && mode == 1) {
             // Mode 3 skips stage 2; expose the aim and gauge panels immediately.
             index = 3;
-            IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenShowTutorialAimImmediately, 0, 0, 0, 0);
-            IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenShowTutorialGaugeImmediately, 0, 0, 0, 0);
+            IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor),
+                                   kScreenShowTutorialAimImmediately, 0, 0, 0, 0);
+            IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor),
+                                   kScreenShowTutorialGaugeImmediately, 0, 0, 0, 0);
         } else {
             bool step;
             void* page;
@@ -1660,13 +1853,15 @@ int CTutorial_AdvanceStageOrRefresh(void* p, int mode) {
         }
         // Rebuild the chosen lesson, then reset panels with p0=0: this also
         // returns the HUD to aim phase (p0=1 would preserve the current phase).
-        CTutorial_ResetLessonCommands(p, index);
-        IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenResetShotPanels, 0, 0, 0, 0);
+        ((CTutorial*)p)->ResetLessonCommands(index);
+        IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_screenActor), kScreenResetShotPanels, 0,
+                               0, 0, 0);
         // On stage 4/5 completion, select BGM from game/ground state and notify Voice.
         if (mode == 1) {
             int state = AsCGolfDoc((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialStage;
             if (state == 4 || state == 5)
-                IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_golfRuleActor), kGolfRuleRefreshBgmAndVoice, 0, 0, 0, 0);
+                IActor_DispatchMessage(p, p, (tutorialCommandStrings + kTutorialString_golfRuleActor),
+                                       kGolfRuleRefreshBgmAndVoice, 0, 0, 0, 0);
         }
     }
     return 1;
@@ -1676,10 +1871,9 @@ int CTutorial_AdvanceStageOrRefresh(void* p, int mode) {
 // Zero delay executes the successor immediately; -1 resumes on a callback/event.
 // Action opcodes copy one byte, text opcodes copy up to 32 bytes. repeatCount
 // duplicates the complete record; this call retains neither payload nor text.
-static inline void AppendTutorialCommand(void* tutorial, int opcode, const void* payload,
-    int delayMilliseconds, int repeatCount = 1) {
-    CTutorial_AppendRepeatedCommands(tutorial, opcode, payload,
-        (unsigned int*)delayMilliseconds, repeatCount);
+static inline void AppendTutorialCommand(void* tutorial, int opcode, const void* payload, int delayMilliseconds,
+                                         int repeatCount = 1) {
+    CTutorial_AppendRepeatedCommands(tutorial, opcode, payload, (unsigned int*)delayMilliseconds, repeatCount);
 }
 
 extern char* String_FormatTemporary(const char*, ...);
@@ -1694,7 +1888,8 @@ static inline void AppendLessonScreenMessage(void* tutorial, char*& formattedTex
 }
 
 // Send one integer to Screen; message enums identify the affected control.
-static inline void AppendLessonScreenValue(void* tutorial, char*& formattedText, int message, int value, int delayMilliseconds) {
+static inline void AppendLessonScreenValue(void* tutorial, char*& formattedText, int message, int value,
+                                           int delayMilliseconds) {
     formattedText = String_FormatTemporary(tutorialCommandStrings + kTutorialString_screenValueFormat, message, value);
     AppendTutorialCommand(tutorial, kCommandDispatchActorMessage, formattedText, delayMilliseconds);
 }
@@ -1706,44 +1901,54 @@ static inline void AppendLessonScreenDisable(void* tutorial, char*& formattedTex
 }
 
 // Queue a Camera input-policy value; the delay applies after dispatch.
-static inline void AppendLessonCameraValue(void* tutorial, char*& formattedText, int message, int value, int delayMilliseconds) {
+static inline void AppendLessonCameraValue(void* tutorial, char*& formattedText, int message, int value,
+                                           int delayMilliseconds) {
     formattedText = String_FormatTemporary(tutorialCommandStrings + kTutorialString_cameraValueFormat, message, value);
     AppendTutorialCommand(tutorial, kCommandDispatchActorMessage, formattedText, delayMilliseconds);
 }
 
 // Queue a no-value GolfRule request; controller-slot enums retain unresolved operations.
-static inline void AppendLessonGolfRuleMessage(void* tutorial, char*& formattedText, int message, int delayMilliseconds) {
+static inline void AppendLessonGolfRuleMessage(void* tutorial, char*& formattedText, int message,
+                                               int delayMilliseconds) {
     formattedText = String_FormatTemporary(tutorialCommandStrings + kTutorialString_golfRuleMessageFormat, message);
     AppendTutorialCommand(tutorial, kCommandDispatchActorMessage, formattedText, delayMilliseconds);
 }
 
 // Queue a zero-valued GolfRule control request.
-static inline void AppendLessonGolfRuleDisable(void* tutorial, char*& formattedText, int message, int delayMilliseconds) {
+static inline void AppendLessonGolfRuleDisable(void* tutorial, char*& formattedText, int message,
+                                               int delayMilliseconds) {
     formattedText = String_FormatTemporary(tutorialCommandStrings + kTutorialString_golfRuleDisableFormat, message);
     AppendTutorialCommand(tutorial, kCommandDispatchActorMessage, formattedText, delayMilliseconds);
 }
 
 // Queue a one-valued GolfRule control request.
-static inline void AppendLessonGolfRuleEnable(void* tutorial, char*& formattedText, int message, int delayMilliseconds) {
+static inline void AppendLessonGolfRuleEnable(void* tutorial, char*& formattedText, int message,
+                                              int delayMilliseconds) {
     formattedText = String_FormatTemporary(tutorialCommandStrings + kTutorialString_golfRuleEnableFormat, message);
     AppendTutorialCommand(tutorial, kCommandDispatchActorMessage, formattedText, delayMilliseconds);
 }
 
 // Queue two integer GolfRule operands without changing their order or units.
-static inline void AppendLessonGolfRuleValues(void* tutorial, char*& formattedText, int message, int value1, int value2, int delayMilliseconds) {
-    formattedText = String_FormatTemporary(tutorialCommandStrings + kTutorialString_golfRuleValuesFormat, message, value1, value2);
+static inline void AppendLessonGolfRuleValues(void* tutorial, char*& formattedText, int message, int value1, int value2,
+                                              int delayMilliseconds) {
+    formattedText =
+        String_FormatTemporary(tutorialCommandStrings + kTutorialString_golfRuleValuesFormat, message, value1, value2);
     AppendTutorialCommand(tutorial, kCommandDispatchActorMessage, formattedText, delayMilliseconds);
 }
 
 // Enable a GolfRule control and pass its two additional integer operands.
-static inline void AppendLessonGolfRuleEnabledValues(void* tutorial, char*& formattedText, int message, int value1, int value2, int delayMilliseconds) {
-    formattedText = String_FormatTemporary(tutorialCommandStrings + kTutorialString_golfRuleEnabledValuesFormat, message, value1, value2);
+static inline void AppendLessonGolfRuleEnabledValues(void* tutorial, char*& formattedText, int message, int value1,
+                                                     int value2, int delayMilliseconds) {
+    formattedText = String_FormatTemporary(tutorialCommandStrings + kTutorialString_golfRuleEnabledValuesFormat,
+                                           message, value1, value2);
     AppendTutorialCommand(tutorial, kCommandDispatchActorMessage, formattedText, delayMilliseconds);
 }
 
 // Enable a GolfRule control with one additional integer operand.
-static inline void AppendLessonGolfRuleEnabledValue(void* tutorial, char*& formattedText, int message, int value, int delayMilliseconds) {
-    formattedText = String_FormatTemporary(tutorialCommandStrings + kTutorialString_golfRuleEnabledValueFormat, message, value);
+static inline void AppendLessonGolfRuleEnabledValue(void* tutorial, char*& formattedText, int message, int value,
+                                                    int delayMilliseconds) {
+    formattedText =
+        String_FormatTemporary(tutorialCommandStrings + kTutorialString_golfRuleEnabledValueFormat, message, value);
     AppendTutorialCommand(tutorial, kCommandDispatchActorMessage, formattedText, delayMilliseconds);
 }
 
@@ -1773,7 +1978,8 @@ void CTutorial_BuildLandingPoint4Commands(void* object) {
     unsigned char values[4];
     values[3] = kTutorialScriptAction6;
     AppendTutorialCommand(object, kCommandPulseActionAlternate, &values[3], 0);
-    AppendTutorialCommand(object, kCommandTargetNamedPoint, (tutorialCommandStrings + kTutorialString_landingPoint4), 0);
+    AppendTutorialCommand(object, kCommandTargetNamedPoint, (tutorialCommandStrings + kTutorialString_landingPoint4),
+                          0);
     AppendTutorialCommand(object, kCommandBlockInput, (tutorialCommandStrings + kTutorialString_enabledArgument), 0);
     AppendTutorialCommand(object, kCommandMoveCursor, (tutorialCommandStrings + kTutorialString_pointer350x250), 10);
     AppendTutorialCommand(object, kCommandMoveCursor, (tutorialCommandStrings + kTutorialString_pointer70x190), 500);
@@ -1798,10 +2004,14 @@ void CTutorial_BuildLandingPoint4Commands(void* object) {
     AppendTutorialCommand(object, kCommandBlockInput, (tutorialCommandStrings + kTutorialString_enabledArgument), 0);
     void* manager = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
     void* data = AsCGolfDoc(manager)->courseData;
-    char* pointPositionAddress = (char*)((TutorialNamedPoint*)CourseData_FindNamedPoint(data, (tutorialCommandStrings + kTutorialString_landingPoint4)))->positionWords;
-    text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_caddieNamedPointFormat), 4, pointPositionAddress);
+    char* pointPositionAddress = (char*)((TutorialNamedPoint*)CourseData_FindNamedPoint(
+                                             data, (tutorialCommandStrings + kTutorialString_landingPoint4)))
+                                     ->positionWords;
+    text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_caddieNamedPointFormat), 4,
+                                  pointPositionAddress);
     AppendTutorialCommand(object, kCommandDispatchActorMessage, text, 0);
-    text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_caddieMessageFormat), 2, (tutorialCommandStrings + kTutorialString_stage4CaddieName));
+    text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_caddieMessageFormat), 2,
+                                  (tutorialCommandStrings + kTutorialString_stage4CaddieName));
     AppendTutorialCommand(object, kCommandDispatchActorMessage, text, 0);
     values[0] = kTutorialScriptAction6;
     AppendTutorialCommand(object, kCommandPulseActionAlternate, &values[0], 0);
@@ -1982,7 +2192,8 @@ void CTutorial_BuildStage2Mode2Commands(void* object) {
     unsigned char values[4];
     values[3] = kTutorialScriptAction6;
     AppendTutorialCommand(object, kCommandPulseActionAlternate, &values[3], 0);
-    AppendTutorialCommand(object, kCommandTargetNamedPoint, (tutorialCommandStrings + kTutorialString_landingPoint3), 0);
+    AppendTutorialCommand(object, kCommandTargetNamedPoint, (tutorialCommandStrings + kTutorialString_landingPoint3),
+                          0);
     char* text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_integerFormat), 9);
     AppendTutorialCommand(object, kCommandMessageDialog, text, kTutorialWaitForEvent);
     AppendTutorialCommand(object, kCommandBlockInput, (tutorialCommandStrings + kTutorialString_enabledArgument), 0);
@@ -2043,7 +2254,8 @@ static inline void AppendTutorialRawCommand(void* object, int opcode, const void
     AppendTutorialCommand(object, opcode, payload, delayMilliseconds);
 }
 // Format a zero-valued actor message and append it before temporary formatting storage is reused.
-static inline void AppendTutorialZeroActorValue(void* object, char*& text, int formatOffset, int message, int delayMilliseconds) {
+static inline void AppendTutorialZeroActorValue(void* object, char*& text, int formatOffset, int message,
+                                                int delayMilliseconds) {
     text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_screenActor) + formatOffset, message, 0);
     AppendTutorialCommand(object, kCommandDispatchActorMessage, text, delayMilliseconds);
 }
@@ -2070,7 +2282,8 @@ void CTutorial_BuildSwingingPracticeCommands(void* object) {
     AppendTutorialCommand(object, kCommandDispatchActorMessage, text, 0);
     values[2] = 6;
     AppendTutorialRawCommand(object, kCommandPulseActionAlternate, &values[2], 0);
-    AppendTutorialRawCommand(object, kCommandTargetNamedPoint, (tutorialCommandStrings + kTutorialString_landingPoint3), 0);
+    AppendTutorialRawCommand(object, kCommandTargetNamedPoint, (tutorialCommandStrings + kTutorialString_landingPoint3),
+                             0);
     text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_integerFormat), 0x3E);
     AppendTutorialCommand(object, kCommandMessageDialog, text, kTutorialWaitForEvent);
     AppendTutorialRawCommand(object, kCommandBlockInput, (tutorialCommandStrings + kTutorialString_enabledArgument), 0);
@@ -2086,7 +2299,8 @@ void CTutorial_BuildSwingingPracticeCommands(void* object) {
     AppendTutorialRawCommand(object, kCommandBlockInput, (tutorialCommandStrings + kTutorialString_enabledArgument), 0);
     AppendTutorialRawCommand(object, kCommandWait, 0, 10);
     AppendTutorialRawCommand(object, kCommandMoveCursor, (tutorialCommandStrings + kTutorialString_pointer350x250), 1);
-    AppendTutorialRawCommand(object, kCommandMoveCursor, (tutorialCommandStrings + kTutorialString_pointer70x120), 1000);
+    AppendTutorialRawCommand(object, kCommandMoveCursor, (tutorialCommandStrings + kTutorialString_pointer70x120),
+                             1000);
     AppendTutorialRawCommand(object, kCommandWait, 0, 500);
     values[1] = kTutorialScriptAction26;
     AppendTutorialRawCommand(object, kCommandPulseActionAlternate, &values[1], 900);
@@ -2113,8 +2327,10 @@ void CTutorial_BuildSwingingPracticeCommands(void* object) {
     text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_integerFormat), 0x46);
     AppendTutorialCommand(object, kCommandMessageDialog, text, kTutorialWaitForEvent);
     AppendTutorialRawCommand(object, kCommandBlockInput, (tutorialCommandStrings + kTutorialString_enabledArgument), 0);
-    AppendTutorialRawCommand(object, kCommandAimAlignment, (tutorialCommandStrings + kTutorialString_enabledArgument), kTutorialWaitForEvent);
-    AppendTutorialRawCommand(object, kCommandAimAlignment, (tutorialCommandStrings + kTutorialString_disabledArgument), 0);
+    AppendTutorialRawCommand(object, kCommandAimAlignment, (tutorialCommandStrings + kTutorialString_enabledArgument),
+                             kTutorialWaitForEvent);
+    AppendTutorialRawCommand(object, kCommandAimAlignment, (tutorialCommandStrings + kTutorialString_disabledArgument),
+                             0);
     AppendTutorialRawCommand(object, kCommandBlockInput, (tutorialCommandStrings + kTutorialString_enabledArgument), 0);
     text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_integerFormat), 0x48);
     AppendTutorialCommand(object, kCommandMessageDialog, text, kTutorialWaitForEvent);
@@ -2125,7 +2341,8 @@ void CTutorial_BuildSwingingPracticeCommands(void* object) {
     text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_screenValueFormat), 0x51, 1);
     AppendTutorialCommand(object, kCommandDispatchActorMessage, text, 0);
     AppendTutorialRawCommand(object, kCommandMoveCursor, (tutorialCommandStrings + kTutorialString_pointer350x250), 1);
-    AppendTutorialRawCommand(object, kCommandMoveCursor, (tutorialCommandStrings + kTutorialString_pointer70x120), 1000);
+    AppendTutorialRawCommand(object, kCommandMoveCursor, (tutorialCommandStrings + kTutorialString_pointer70x120),
+                             1000);
     values[0] = kTutorialScriptAction26;
     AppendTutorialRawCommand(object, kCommandPulseActionAlternate, &values[0], 1000);
     AppendTutorialZeroActorValue(object, text, kTutorialString_screenValueFormat, 0x51, 0);
@@ -2152,8 +2369,10 @@ void CTutorial_BuildSwingingPracticeCommands(void* object) {
     AppendTutorialCommand(object, kCommandDispatchActorMessage, text, 0);
     text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_screenValueFormat), 0x55, 1);
     AppendTutorialCommand(object, kCommandDispatchActorMessage, text, 0);
-    AppendTutorialRawCommand(object, kCommandLessonPrompt, (tutorialCommandStrings + kTutorialString_enabledArgument), kTutorialWaitForEvent);
-    AppendTutorialRawCommand(object, kCommandLessonPrompt, (tutorialCommandStrings + kTutorialString_disabledArgument), 0);
+    AppendTutorialRawCommand(object, kCommandLessonPrompt, (tutorialCommandStrings + kTutorialString_enabledArgument),
+                             kTutorialWaitForEvent);
+    AppendTutorialRawCommand(object, kCommandLessonPrompt, (tutorialCommandStrings + kTutorialString_disabledArgument),
+                             0);
     text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_integerFormat), 0x24);
     AppendTutorialCommand(object, kCommandMessageDialog, text, kTutorialWaitForEvent);
     text = String_FormatTemporary((tutorialCommandStrings + kTutorialString_integerFormat), 0x25);
@@ -2183,7 +2402,6 @@ extern char* g_view;
 extern signed char s_saveDataInitialized;
 extern char s_saveData[];
 extern int sscanf(const char*, const char*, ...);
-extern void CMouseCursor_MoveTo(void*, float, float, float);
 extern void Pointer_SuppressInput(void*);
 extern void* CQuadTree_GetInstance();
 extern void GetGroundPoint__9CQuadTreeF7WVectorbPib(void*, void*, void*, int, int, int);
@@ -2193,9 +2411,15 @@ extern void* SaveData_GetCurrentRecord(int);
 extern void SaveRecord_CopyCtor(void*, void*);
 extern void SaveData_SetCurrentRecord(int, void*);
 
-struct TutorialCallbackWords { unsigned int thisAdjustment, vtableOffset, function; };
-struct TutorialPositionWords { unsigned int xBits, yBits, zBits; };
-struct TutorialDialogReferenceCount { int references; };
+struct TutorialCallbackWords {
+    unsigned int thisAdjustment, vtableOffset, function;
+};
+struct TutorialPositionWords {
+    unsigned int xBits, yBits, zBits;
+};
+struct TutorialDialogReferenceCount {
+    int references;
+};
 class TutorialDialogInterface : public TutorialDialogReferenceCount {
 public:
     virtual void Destroy(int);
@@ -2231,16 +2455,17 @@ static inline void TutorialDialog_SetPosition(void* o, float x, float y) {
 }
 
 // Initialize the game input singleton on demand and return its word view.
-static inline int* GetTutorialInputManagerWords(int* previous = (int*)((int&)Sing_805DC5C8())) {
+static inline int* GetTutorialInputManagerWords(int* previous = (int*)((int&)GetInputManagerSlot())) {
     if (previous == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_tutorial);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_tutorial);
             s_inputManagerInitialized = 1;
         }
-        ((int&)Sing_805DC5C8()) = (int)s_gameInputManager;
+        ((int&)GetInputManagerSlot()) = (int)s_gameInputManager;
     }
-    return (int*)((int&)Sing_805DC5C8());
+    return (int*)((int&)GetInputManagerSlot());
 }
 
 // Resolve the active command from its block index and intra-block read offset.
@@ -2267,17 +2492,17 @@ static inline TutorialDialogInterface* CurrentTutorialMessageDialog(char* tutori
 
 // Parse a layout payload into caller-owned scratch; malformed text is unchecked.
 // x/y are offsets from (119,82), width/height are content extents in UI pixels.
-static inline void ParseTutorialDialogLayout(char* tutorial, int* messageIndex,
-    float* x, float* y, float* width, float* height) {
+static inline void ParseTutorialDialogLayout(char* tutorial, int* messageIndex, float* x, float* y, float* width,
+                                             float* height) {
     sscanf(CurrentTutorialCommand(tutorial)->payload.text,
-        tutorialCommandStrings + kTutorialString_dialogIndexRectFormat,
-        messageIndex, x, y, width, height);
+           tutorialCommandStrings + kTutorialString_dialogIndexRectFormat, messageIndex, x, y, width, height);
 }
 
 // Set all 39 primary action-blocking words while retaining the caller's singleton access order.
-static inline int* SetTutorialActionBlocking(int value, int* previous = (int*)((int&)Sing_805DC5C8())) {
+static inline int* SetTutorialActionBlocking(int value, int* previous = (int*)((int&)GetInputManagerSlot())) {
     int* w = GetTutorialInputManagerWords(previous);
-    for (int i = 0x1C / 4; i <= 0xB4 / 4; ++i) w[i] = value;
+    for (int i = 0x1C / 4; i <= 0xB4 / 4; ++i)
+        w[i] = value;
     return w;
 }
 
@@ -2310,9 +2535,10 @@ static inline void CopyTutorialPositionWords(TutorialPositionWords& out, const v
 
 // Retain the forced action index and pulse its pending-input word.
 static inline void ExecuteTutorialForceAction(char* tutorial) {
-    int* previous = (int*)((int&)Sing_805DC5C8());
+    int* previous = (int*)((int&)GetInputManagerSlot());
     (*(int*)&AsCTutorial(tutorial)->forcedActionIndex) = CurrentTutorialCommand(tutorial)->payload.action;
-    (*(int*)((char*)GetTutorialInputManagerWords(previous) + (kTutorialPendingActionsOffset + AsCTutorial(tutorial)->forcedActionIndex * 4))) = 1;
+    (*(int*)((char*)GetTutorialInputManagerWords(previous) +
+             (kTutorialPendingActionsOffset + AsCTutorial(tutorial)->forcedActionIndex * 4))) = 1;
 }
 
 // Parse UI coordinates and start a cursor move lasting the command delay in milliseconds.
@@ -2320,8 +2546,10 @@ static inline void ExecuteTutorialMoveCursor(char* tutorial) {
     float cursorX;
     float cursorY;
     // Parse UI x/y; command delay is also duration, converted ms -> seconds.
-    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_cursorPositionFormat), &cursorX, &cursorY);
-    CMouseCursor_MoveTo(g_mouseCursor, cursorX, cursorY, kFloat_0_001_Tutorial * (float)(*(int*)&AsCTutorial(tutorial)->stepCountdown));
+    sscanf(CurrentTutorialCommand(tutorial)->payload.text,
+           (tutorialCommandStrings + kTutorialString_cursorPositionFormat), &cursorX, &cursorY);
+    ((CMouseCursor*)g_mouseCursor)
+        ->MoveTo(cursorX, cursorY, kFloat_0_001_Tutorial * (float)(*(int*)&AsCTutorial(tutorial)->stepCountdown));
 }
 
 // Create the stage-completion dialog and install stage-specific camera/input behavior.
@@ -2336,16 +2564,20 @@ static inline void ExecuteTutorialStageEndDialog(char* tutorial, char* callbackT
     // reinterpret those bits when creating the dialog. This is not a float conversion.
 
     (*(int*)&AsCTutorial(tutorial)->state) = kTutorialStageEnding;
-    IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), 0x1C, 1, 0, 0, 0);
+    IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), 0x1C, 1, 0, 0,
+                           0);
     if (AsCGolfDoc((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialStage == 1) {
-        CTutorial_BeginStageCompletion(tutorial);
+        ((CTutorial*)tutorial)->BeginStageCompletion();
         return;
     }
-    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_dialogIndexPositionFormat), &messageIndexBits, &dialogX, &dialogY);
+    sscanf(CurrentTutorialCommand(tutorial)->payload.text,
+           (tutorialCommandStrings + kTutorialString_dialogIndexPositionFormat), &messageIndexBits, &dialogX, &dialogY);
     if (AsCGolfDoc((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialStage == 5) {
-        TutorialDialog_CreateForMessageIndex(5, *(int*)&messageIndexBits, tutorial + kTutorialMessageDialogOffset, kFloat_0_5_Tutorial);
+        TutorialDialog_CreateForMessageIndex(5, *(int*)&messageIndexBits, tutorial + kTutorialMessageDialogOffset,
+                                             kFloat_0_5_Tutorial);
         void* stageFiveOwner = tutorial;
-        if (tutorial != 0) stageFiveOwner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
+        if (tutorial != 0)
+            stageFiveOwner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
         CopyTutorialTriple(stageFiveCallback, zeroInitializationWords);
         void* stageFiveDialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
         CurrentTutorialMessageDialog(tutorial)->SetResultCallback(&stageFiveCallback, stageFiveOwner);
@@ -2355,25 +2587,32 @@ static inline void ExecuteTutorialStageEndDialog(char* tutorial, char* callbackT
         stageFiveDialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
         CurrentTutorialMessageDialog(tutorial)->SetCursorGroupPlayerFlag(0, 0);
     } else {
-        TutorialDialog_CreateForMessageIndex(5, *(int*)&messageIndexBits, tutorial + kTutorialMessageDialogOffset, kFloat_0_5_Tutorial);
+        TutorialDialog_CreateForMessageIndex(5, *(int*)&messageIndexBits, tutorial + kTutorialMessageDialogOffset,
+                                             kFloat_0_5_Tutorial);
         void* owner = tutorial;
-        if (0 != tutorial) owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
-        unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(kTutorialCallbackThisAdjustment,
-            (callbackTable + kCallbackStageEnd), callbackScratch);
+        if (0 != tutorial)
+            owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
+        unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(
+            kTutorialCallbackThisAdjustment, (callbackTable + kCallbackStageEnd), callbackScratch);
         CopyTutorialTriple(stageEndCallback, src);
         void* dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
         CurrentTutorialMessageDialog(tutorial)->SetResultCallback(&stageEndCallback, owner);
         TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), dialogX, dialogY);
         dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
-        CurrentTutorialMessageDialog(tutorial)->SetCursorGroupPosition(0, kTutorialDialogRightX, kFloat_140_TutorialDialog);
+        CurrentTutorialMessageDialog(tutorial)->SetCursorGroupPosition(0, kTutorialDialogRightX,
+                                                                       kFloat_140_TutorialDialog);
     }
-    IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), 0x53, 1, 0, 0, 0);
+    IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), 0x53, 1, 0, 0,
+                           0);
     IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_cameraActor), 0xB, 1, 0, 0, 0);
-    IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), 0x50, 1, 0, 0, 0);
+    IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), 0x50, 1, 0, 0,
+                           0);
     if (AsCGolfDoc((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialStage != 1)
-        IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), 0x51, 1, 0, 0, 0);
+        IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), 0x51, 1, 0,
+                               0, 0);
     else
-        IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), 0x51, 0, 0, 0, 0);
+        IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), 0x51, 0, 0,
+                               0, 0);
 }
 
 // Create a fixed-position message dialog and register its continuation callback.
@@ -2382,16 +2621,19 @@ static inline void ExecuteTutorialMessageDialog(char* tutorial, char* callbackTa
     unsigned char callbackScratch[0xC];
     unsigned int messageIndex;
     (*(int*)&AsCTutorial(tutorial)->state) = kTutorialWaitingForDialog;
-    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat), &messageIndex);
+    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat),
+           &messageIndex);
     TutorialDialog_CreateForMessageIndex(1, messageIndex, tutorial + kTutorialMessageDialogOffset, kFloat_0_5_Tutorial);
     void* owner = tutorial;
-    if (tutorial) owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
+    if (tutorial)
+        owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
     unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(kTutorialCallbackThisAdjustment,
-        (callbackTable + kCallbackMessage), callbackScratch);
+                                                                   (callbackTable + kCallbackMessage), callbackScratch);
     CopyTutorialTriple(messageCallback, src);
     void* dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
     CurrentTutorialMessageDialog(tutorial)->SetResultCallback(&messageCallback, owner);
-    TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), kFloat_139_InGameDialog, kFloat_82_InGameDialog);
+    TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), kFloat_139_InGameDialog,
+                               kFloat_82_InGameDialog);
 }
 
 // Create a kind-2 content layout at offsets from the tutorial dialog origin.
@@ -2408,13 +2650,15 @@ static inline void ExecuteTutorialMessageLayout2(char* tutorial, char* callbackT
     ParseTutorialDialogLayout(tutorial, &messageIndex, &dialogOffsetX, &dialogOffsetY, &layoutWidth, &layoutHeight);
     TutorialDialog_CreateForMessageIndex(1, messageIndex, tutorial + kTutorialMessageDialogOffset, kFloat_0_5_Tutorial);
     void* owner = tutorial;
-    if (0 != tutorial) owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
+    if (0 != tutorial)
+        owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
     unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(kTutorialCallbackThisAdjustment,
-        (callbackTable + kCallbackLayout2), callbackScratch);
+                                                                   (callbackTable + kCallbackLayout2), callbackScratch);
     CopyTutorialTriple(messageCallback, src);
     void* dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
     CurrentTutorialMessageDialog(tutorial)->SetResultCallback(&messageCallback, owner);
-    TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), kFloat_119_0 + dialogOffsetX, (((kFloat_82_InGameDialog + dialogOffsetY))));
+    TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), kFloat_119_0 + dialogOffsetX,
+                               (((kFloat_82_InGameDialog + dialogOffsetY))));
     dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
     CurrentTutorialMessageDialog(tutorial)->ResetAndApplyContent(2, 1, layoutWidth, layoutHeight);
 }
@@ -2432,13 +2676,15 @@ static inline void ExecuteTutorialMessageLayout4(char* tutorial, char* callbackT
     ParseTutorialDialogLayout(tutorial, &messageIndex, &dialogOffsetX, &dialogOffsetY, &layoutWidth, &layoutHeight);
     TutorialDialog_CreateForMessageIndex(1, messageIndex, tutorial + kTutorialMessageDialogOffset, kFloat_0_5_Tutorial);
     void* owner = tutorial;
-    if (tutorial) owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
+    if (tutorial)
+        owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
     unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(kTutorialCallbackThisAdjustment,
-        (callbackTable + kCallbackLayout4), callbackScratch);
+                                                                   (callbackTable + kCallbackLayout4), callbackScratch);
     CopyTutorialTriple(messageCallback, src);
     void* dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
     CurrentTutorialMessageDialog(tutorial)->SetResultCallback(&messageCallback, owner);
-    TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), kFloat_119_0 + dialogOffsetX, ((kFloat_82_InGameDialog + dialogOffsetY)));
+    TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), kFloat_119_0 + dialogOffsetX,
+                               ((kFloat_82_InGameDialog + dialogOffsetY)));
     dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
     CurrentTutorialMessageDialog(tutorial)->ResetAndApplyContent(4, 1, layoutWidth, layoutHeight);
 }
@@ -2456,47 +2702,56 @@ static inline void ExecuteTutorialMessageLayout0(char* tutorial, char* callbackT
     ParseTutorialDialogLayout(tutorial, &messageIndex, &dialogOffsetX, &dialogOffsetY, &layoutWidth, &layoutHeight);
     TutorialDialog_CreateForMessageIndex(1, messageIndex, tutorial + kTutorialMessageDialogOffset, kFloat_0_5_Tutorial);
     void* owner = tutorial;
-    if (tutorial) owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
+    if (tutorial)
+        owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
     unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(kTutorialCallbackThisAdjustment,
-        (callbackTable + kCallbackLayout0), callbackScratch);
+                                                                   (callbackTable + kCallbackLayout0), callbackScratch);
     CopyTutorialTriple(messageCallback, src);
     void* dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
 
     CurrentTutorialMessageDialog(tutorial)->SetResultCallback(&messageCallback, owner);
-    TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), kFloat_119_0 + dialogOffsetX, (kFloat_82_InGameDialog + dialogOffsetY));
+    TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), kFloat_119_0 + dialogOffsetX,
+                               (kFloat_82_InGameDialog + dialogOffsetY));
     dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
     CurrentTutorialMessageDialog(tutorial)->ResetAndApplyContent(0, 1, layoutWidth, layoutHeight);
 }
 
 // Create a pointer-relative message and compensate for right viewport overflow.
 
-
 // Position the pointer-relative dialog and widen its content to compensate right-edge overflow.
-static inline void PositionTutorialPointerDialog(char* tutorial, void*& dialog, float& rightOverflow, float& dialogTop, float& positiveOverflow) {
-    rightOverflow = AsCTutorial(tutorial)->messagePosition[0] - kFloat_22_TextWidget + ((CInGameTutorialDialog*)dialog)->tutorialWidth - ((WView*)g_view)->viewportWidth;
+static inline void PositionTutorialPointerDialog(char* tutorial, void*& dialog, float& rightOverflow, float& dialogTop,
+                                                 float& positiveOverflow) {
+    rightOverflow = AsCTutorial(tutorial)->messagePosition[0] - kFloat_22_TextWidget +
+                    ((CInGameTutorialDialog*)dialog)->tutorialWidth - ((WView*)g_view)->viewportWidth;
     dialogTop = AsCTutorial(tutorial)->messagePosition[1] - kFloat_128_TextWidget;
     positiveOverflow = kFloat_0_Tutorial;
-    if (rightOverflow > positiveOverflow) positiveOverflow = rightOverflow;
-    TutorialDialog_SetPosition(dialog, AsCTutorial(tutorial)->messagePosition[0] - kFloat_22_TextWidget - positiveOverflow, dialogTop);
+    if (rightOverflow > positiveOverflow)
+        positiveOverflow = rightOverflow;
+    TutorialDialog_SetPosition(
+        dialog, AsCTutorial(tutorial)->messagePosition[0] - kFloat_22_TextWidget - positiveOverflow, dialogTop);
     rightOverflow = rightOverflow > kFloat_0_Tutorial ? rightOverflow : kFloat_0_Tutorial;
     dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
-    CurrentTutorialMessageDialog(tutorial)->ResetAndApplyContent(2, 1, kFloat_22_TextWidget + rightOverflow, kFloat_128_TextWidget);
+    CurrentTutorialMessageDialog(tutorial)->ResetAndApplyContent(2, 1, kFloat_22_TextWidget + rightOverflow,
+                                                                 kFloat_128_TextWidget);
 }
 
 // Create a pointer-relative message, retaining its callback and constraining it to the viewport.
-static inline void ExecuteTutorialMessageAtPointer(char* tutorial, char* callbackTable, float& rightOverflow, float& dialogTop, float& positiveOverflow) {
+static inline void ExecuteTutorialMessageAtPointer(char* tutorial, char* callbackTable, float& rightOverflow,
+                                                   float& dialogTop, float& positiveOverflow) {
     TutorialCallbackWords messageCallback;
     char callbackScratch[0xC];
     unsigned int messageIndex;
     // Keep dialog's right edge within viewport: subtract positive overflow
     // from x, then widen layout content by the same overflow. UI pixel units.
     (*(int*)&AsCTutorial(tutorial)->state) = kTutorialWaitingForDialog;
-    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat), &messageIndex);
+    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat),
+           &messageIndex);
     TutorialDialog_CreateForMessageIndex(1, messageIndex, tutorial + kTutorialMessageDialogOffset, kFloat_0_5_Tutorial);
     void* owner = tutorial;
-    if (0 != tutorial) owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
-    unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(kTutorialCallbackThisAdjustment,
-        (callbackTable + kCallbackAtPointer), callbackScratch);
+    if (0 != tutorial)
+        owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
+    unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(
+        kTutorialCallbackThisAdjustment, (callbackTable + kCallbackAtPointer), callbackScratch);
     CopyTutorialTriple(messageCallback, src);
     void* dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
     CurrentTutorialMessageDialog(tutorial)->SetResultCallback(&messageCallback, owner);
@@ -2519,12 +2774,16 @@ static inline void ExecuteTutorialSizedMessageDialog(char* tutorial, char* callb
     float dialogHeight;
 
     (*(int*)&AsCTutorial(tutorial)->state) = kTutorialWaitingForDialog;
-    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_dialogIndexSizeKindFormat), &messageIndex, &dialogWidth, &dialogHeight, &dialogKind);
-    TutorialDialog_CreateForMessageIndex(dialogKind, messageIndex, tutorial + kTutorialMessageDialogOffset, kFloat_0_5_Tutorial);
+    sscanf(CurrentTutorialCommand(tutorial)->payload.text,
+           (tutorialCommandStrings + kTutorialString_dialogIndexSizeKindFormat), &messageIndex, &dialogWidth,
+           &dialogHeight, &dialogKind);
+    TutorialDialog_CreateForMessageIndex(dialogKind, messageIndex, tutorial + kTutorialMessageDialogOffset,
+                                         kFloat_0_5_Tutorial);
     void* owner = tutorial;
-    if (tutorial != 0) owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
-    unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(kTutorialCallbackThisAdjustment,
-        (callbackTable + kCallbackSizedMessage), callbackScratch);
+    if (tutorial != 0)
+        owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
+    unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(
+        kTutorialCallbackThisAdjustment, (callbackTable + kCallbackSizedMessage), callbackScratch);
     CopyTutorialTriple(messageCallback, src);
     void* dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
     CurrentTutorialMessageDialog(tutorial)->SetResultCallback(&messageCallback, owner);
@@ -2551,7 +2810,9 @@ static inline void ExecuteTutorialTargetNamedPoint(char* tutorial) {
     (*(int*)&AsCTutorial(tutorial)->state) = kTutorialStageEnding;
 
     (*(char*)&AsCGolfDoc((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialMarkerVisible) = 1;
-    char* namedPoint = (char*)CourseData_FindNamedPoint(AsCGolfDoc((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData, CurrentTutorialCommand(tutorial)->payload.text);
+    char* namedPoint =
+        (char*)CourseData_FindNamedPoint(AsCGolfDoc((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->courseData,
+                                         CurrentTutorialCommand(tutorial)->payload.text);
     CopyTutorialPositionWords(pointPositionWords, ((TutorialNamedPoint*)namedPoint)->positionWords);
     char* golfDocBytes = (*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
     void* quadTree = CQuadTree_GetInstance();
@@ -2567,9 +2828,11 @@ static inline void ExecuteTutorialDispatchActorMessage(char* tutorial) {
     char name[0x20];
     int messageValue2;
     messageValue2 = 0;
-     messageValue1 = 0;
-     messageValue3 = 0;
-    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_actorMessageFormat), name, &messageCode, &messageValue1, &messageValue2, &messageValue3);
+    messageValue1 = 0;
+    messageValue3 = 0;
+    sscanf(CurrentTutorialCommand(tutorial)->payload.text,
+           (tutorialCommandStrings + kTutorialString_actorMessageFormat), name, &messageCode, &messageValue1,
+           &messageValue2, &messageValue3);
     IActor_DispatchMessage(tutorial, tutorial, name, messageCode, messageValue1, messageValue2, messageValue3, 0);
 }
 
@@ -2577,7 +2840,8 @@ static inline void ExecuteTutorialDispatchActorMessage(char* tutorial) {
 static inline void ExecuteTutorialParseInteger(char* tutorial) {
     unsigned int ignoredValue;
     // Consume syntactically valid integer text without applying its value.
-    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat), &ignoredValue);
+    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat),
+           &ignoredValue);
 }
 
 // Block primary actions and optionally suppress pointer input; keep dialog actions available.
@@ -2585,7 +2849,8 @@ static inline void ExecuteTutorialBlockInput(char* tutorial) {
     int blockPointerInput;
     // Block primary action slots; text additionally chooses pointer suppression.
     blockPointerInput = 0;
-    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat), &blockPointerInput);
+    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat),
+           &blockPointerInput);
     int shouldBlockPointer = ((0 != blockPointerInput));
     int* inputWords = SetTutorialActionBlocking(1);
 
@@ -2620,9 +2885,10 @@ static inline void ExecuteTutorialLessonPrompt(char* tutorial, char* callbackTab
     unsigned char callbackScratch[0xC];
     int showPrompt;
     showPrompt = 0;
-    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat), &showPrompt);
+    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat),
+           &showPrompt);
     if (0 != showPrompt) {
-        int* previous = (int*)((int&)Sing_805DC5C8());
+        int* previous = (int*)((int&)GetInputManagerSlot());
         (*(int*)&AsCTutorial(tutorial)->state) = kTutorialWaitingForDialog;
         int* inputWords = SetTutorialActionBlocking(1, previous);
         inputWords = GetTutorialInputManagerWords(inputWords);
@@ -2636,21 +2902,26 @@ static inline void ExecuteTutorialLessonPrompt(char* tutorial, char* callbackTab
         Pointer_ClearInputSuppression(g_inputPointer);
         TutorialDialog_CreateForMessageIndex(6, 0x1E, tutorial + kTutorialMessageDialogOffset, kFloat_0_5_Tutorial);
         void* owner = tutorial;
-        if (tutorial) owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
-        unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(kTutorialCallbackThisAdjustment,
-            (callbackTable + kCallbackLessonPrompt), callbackScratch);
+        if (tutorial)
+            owner = ((char*)&AsCTutorial(tutorial)->secondaryVtable);
+        unsigned int* src = (unsigned int*)Runtime_AdjustMemberPointer(
+            kTutorialCallbackThisAdjustment, (callbackTable + kCallbackLessonPrompt), callbackScratch);
         CopyTutorialTriple(lessonCallback, src);
         void* dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
         CurrentTutorialMessageDialog(tutorial)->SetResultCallback(&lessonCallback, owner);
         dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
-        TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), kFloat_119_0, kFloat_82_InGameDialog);
-        CurrentTutorialMessageDialog(tutorial)->SetCursorGroupPosition(0, kTutorialDialogRightX, kFloat_341_TutorialDialog);
+        TutorialDialog_SetPosition((*(void**)(tutorial + kTutorialMessageDialogOffset)), kFloat_119_0,
+                                   kFloat_82_InGameDialog);
+        CurrentTutorialMessageDialog(tutorial)->SetCursorGroupPosition(0, kTutorialDialogRightX,
+                                                                       kFloat_341_TutorialDialog);
         dialog = (*(void**)(tutorial + kTutorialMessageDialogOffset));
-        CurrentTutorialMessageDialog(tutorial)->SetCursorGroupPosition(1, kTutorialDialogRightX, kFloat_390_TutorialDialog);
+        CurrentTutorialMessageDialog(tutorial)->SetCursorGroupPosition(1, kTutorialDialogRightX,
+                                                                       kFloat_390_TutorialDialog);
         ((CMouseCursor*)g_mouseCursor)->moveToActive = 0;
     } else {
         (*(int*)&AsCTutorial(tutorial)->state) = kTutorialRunningCommands;
-        IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_golfRuleActor), 0x23, 0, 0, 0, 0);
+        IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_golfRuleActor), 0x23, 0, 0,
+                               0, 0);
     }
 }
 
@@ -2658,10 +2929,12 @@ static inline void ExecuteTutorialLessonPrompt(char* tutorial, char* callbackTab
 static inline void ExecuteTutorialAimAlignment(char* tutorial) {
     int enableAimAlignment;
     enableAimAlignment = 0;
-    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat), &enableAimAlignment);
+    sscanf(CurrentTutorialCommand(tutorial)->payload.text, (tutorialCommandStrings + kTutorialString_integerFormat),
+           &enableAimAlignment);
     if (0 != enableAimAlignment) {
         (*(int*)&AsCTutorial(tutorial)->state) = kTutorialAimAlignment;
-        IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_golfRuleActor), 0x25, 0, 0, 0, 0);
+        IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_golfRuleActor), 0x25, 0, 0,
+                               0, 0);
         Pointer_ClearInputSuppression(g_inputPointer);
         int* inputWords = SetTutorialActionBlocking(0);
         inputWords = GetTutorialInputManagerWords(inputWords);
@@ -2671,7 +2944,8 @@ static inline void ExecuteTutorialAimAlignment(char* tutorial) {
         inputWords = GetTutorialInputManagerWords(inputWords);
         ((GameInputManager*)inputWords)->actionBlocked[kTutorialBlockedAction20] = 1;
     } else {
-        IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor), kScreenResetShotPanels, 0, 0, 0, 0);
+        IActor_DispatchMessage(tutorial, tutorial, (tutorialCommandStrings + kTutorialString_screenActor),
+                               kScreenResetShotPanels, 0, 0, 0, 0);
         (*(int*)&AsCTutorial(tutorial)->state) = kTutorialRunningCommands;
     }
 }
@@ -2694,23 +2968,23 @@ static inline void ExecuteTutorialSetSaveFlag(char* tutorial) {
     unsigned char updatedSaveRecord[0x828];
     // Copy current save record, set completion bit, and publish the updated copy.
 
-    if (!((int&)Sing_805DC5E0())) {
+    if (!((int&)GetSaveDataSlot())) {
         if (s_saveDataInitialized == 0) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRecord_CopyCtor(updatedSaveRecord, SaveData_GetCurrentRecord(((int&)Sing_805DC5E0())));
+    SaveRecord_CopyCtor(updatedSaveRecord, SaveData_GetCurrentRecord(((int&)GetSaveDataSlot())));
     ((TutorialSaveRecord*)updatedSaveRecord)->flags |= kTutorialSaveCompletionFlag;
-    if (!((int&)Sing_805DC5E0())) {
+    if (!((int&)GetSaveDataSlot())) {
         if (s_saveDataInitialized == 0) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetCurrentRecord(((int&)Sing_805DC5E0()), updatedSaveRecord);
+    SaveData_SetCurrentRecord(((int&)GetSaveDataSlot()), updatedSaveRecord);
 }
 
 #pragma pop
@@ -2724,13 +2998,17 @@ static inline void ConsumeTutorialCommand(char* tutorial) {
     (*(int*)&AsCTutorial(tutorial)->pendingCommandCount) -= 1;
     (*(unsigned int*)&AsCTutorial(tutorial)->commandReadOffset) += 1;
     while ((*(unsigned int*)&AsCTutorial(tutorial)->commandReadOffset) >= kRetainedCommandBlocks * kCommandsPerBlock) {
-        appFreeUni__FPv((((void**)AsCTutorial(tutorial)->commandBlocks))[(*(unsigned int*)&AsCTutorial(tutorial)->firstCommandBlockIndex)]);
+        appFreeUni__FPv((((void**)AsCTutorial(tutorial)
+                              ->commandBlocks))[(*(unsigned int*)&AsCTutorial(tutorial)->firstCommandBlockIndex)]);
         (*(unsigned int*)&AsCTutorial(tutorial)->firstCommandBlockIndex) += 1;
-        if ((*(unsigned int*)&AsCTutorial(tutorial)->firstCommandBlockIndex) == (*(unsigned int*)&AsCTutorial(tutorial)->commandBlockCapacity)) (*(unsigned int*)&AsCTutorial(tutorial)->firstCommandBlockIndex) = 0;
+        if ((*(unsigned int*)&AsCTutorial(tutorial)->firstCommandBlockIndex) ==
+            (*(unsigned int*)&AsCTutorial(tutorial)->commandBlockCapacity))
+            (*(unsigned int*)&AsCTutorial(tutorial)->firstCommandBlockIndex) = 0;
         AsCTutorial(tutorial)->commandBlockCount -= 1;
         (*(unsigned int*)&AsCTutorial(tutorial)->commandReadOffset) -= kCommandsPerBlock;
     }
-    if ((*(int*)&AsCTutorial(tutorial)->pendingCommandCount) == 0) (*(unsigned int*)&AsCTutorial(tutorial)->commandReadOffset) = kTutorialEmptyReadOffset;
+    if ((*(int*)&AsCTutorial(tutorial)->pendingCommandCount) == 0)
+        (*(unsigned int*)&AsCTutorial(tutorial)->commandReadOffset) = kTutorialEmptyReadOffset;
 }
 
 // Reconcile input with the resulting dialog/stage/aim state before zero-delay recursion.
@@ -2781,7 +3059,9 @@ void CTutorial_ExecuteCurrentCommand(void* object) {
     // Phase 1: gate on queue/dialog state and load the current record's delay.
     char* callbackTable = tutorialMessageIndices;
     char* tutorial = (char*)object;
-    if ((*(int*)&AsCTutorial(tutorial)->pendingCommandCount) == 0 || (*(int*)&AsCTutorial(tutorial)->modeMessageDialog) != 0) return;
+    if ((*(int*)&AsCTutorial(tutorial)->pendingCommandCount) == 0 ||
+        (*(int*)&AsCTutorial(tutorial)->modeMessageDialog) != 0)
+        return;
     (*(int*)&AsCTutorial(tutorial)->state) = kTutorialRunningCommands;
     (*(int*)&AsCTutorial(tutorial)->stepCountdown) = CurrentTutorialCommand(tutorial)->delayMilliseconds;
 
@@ -2790,7 +3070,8 @@ void CTutorial_ExecuteCurrentCommand(void* object) {
     // Input opcodes: action byte -> pending press, with optional retained forcing.
     case kCommandPulseAction:
         // Pulse the current signed action-slot index once.
-        (*(int*)((char*)GetTutorialInputManagerWords() + (kTutorialPendingActionsOffset + CurrentTutorialCommand(tutorial)->payload.action * 4))) = 1;
+        (*(int*)((char*)GetTutorialInputManagerWords() +
+                 (kTutorialPendingActionsOffset + CurrentTutorialCommand(tutorial)->payload.action * 4))) = 1;
         break;
     case kCommandForceAction:
         // Retain the forced action index and pulse its pending-input word.
@@ -2802,7 +3083,8 @@ void CTutorial_ExecuteCurrentCommand(void* object) {
         break;
     case kCommandPulseActionAlternate:
         // Alternate opcode shares the same one-pulse action protocol.
-        (*(int*)((char*)GetTutorialInputManagerWords() + (kTutorialPendingActionsOffset + CurrentTutorialCommand(tutorial)->payload.action * 4))) = 1;
+        (*(int*)((char*)GetTutorialInputManagerWords() +
+                 (kTutorialPendingActionsOffset + CurrentTutorialCommand(tutorial)->payload.action * 4))) = 1;
         break;
     case kCommandMoveCursor:
         // Parse UI coordinates and start a cursor move lasting the command delay in milliseconds.
@@ -2889,11 +3171,15 @@ void CTutorial_ExecuteCurrentCommand(void* object) {
     // Phase 3: consume the command; free whole blocks only after retaining a consumed block.
     ConsumeTutorialCommand(tutorial);
     int mode = AsCGolfDoc((*(char**)&AsCSharedDoc(g_sharedDoc)->golfDoc))->tutorialStage;
-    if (mode == 5 && (*(int*)&AsCTutorial(tutorial)->pendingCommandCount) == 0) return;
-    if (mode == 2 && AsCSharedDoc(g_sharedDoc)->gameMode == 4 && (*(int*)&AsCTutorial(tutorial)->pendingCommandCount) == 0) return;
+    if (mode == 5 && (*(int*)&AsCTutorial(tutorial)->pendingCommandCount) == 0)
+        return;
+    if (mode == 2 && AsCSharedDoc(g_sharedDoc)->gameMode == 4 &&
+        (*(int*)&AsCTutorial(tutorial)->pendingCommandCount) == 0)
+        return;
     // Phase 4: reconcile input policy with dialog/stage/aim state, then run zero-delay successors.
     ApplyTutorialCommandStateInputPolicy(tutorial);
-    if ((*(int*)&AsCTutorial(tutorial)->stepCountdown) == 0) CTutorial_ExecuteCurrentCommand(tutorial);
+    if ((*(int*)&AsCTutorial(tutorial)->stepCountdown) == 0)
+        CTutorial_ExecuteCurrentCommand(tutorial);
 }
 
 #pragma pop

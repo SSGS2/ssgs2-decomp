@@ -1,5 +1,7 @@
-// Translation unit 0x8040A3D0-0x8040A4F8 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Delay effect settings: the accessor for the three stored parameters (delay in milliseconds,
+// feedback and output percent) and the setter, which clamps them and applies them when initialized.
+//
+// The layout is the GtlFxDelay class (classes/GtlFxDelay.h); processing and shutdown are in other files.
 
 #include "classes/GtlFxDelay.h"
 
@@ -32,7 +34,11 @@ struct Obj_8040A3D0 {
 // of delay milliseconds, feedback percent and output percent. Lane identities
 // are not established here; each lane receives the same setting.
 // Member names are provisional; the layout is exact.
-enum DelayParameter { kDelayMilliseconds, kFeedbackRatio, kOutputRatio };
+enum DelayParameter {
+    kDelayMilliseconds,
+    kFeedbackRatio,
+    kOutputRatio
+};
 enum {
     kMinimumDelayMilliseconds = 1,
     kMaximumDelayMilliseconds = 5000,
@@ -56,8 +62,9 @@ int gtl_nw4r_FxDelay_SetParams(Obj_8040A3D0* self, const float* input) {
     self->parameters[kFeedbackRatio] = input[kFeedbackRatio];
     self->parameters[kOutputRatio] = input[kOutputRatio];
     unsigned long sdkValue = Runtime_ConvertDoubleToUnsigned(input[kDelayMilliseconds]);
-    sdkValue = sdkValue > kMaximumDelayMilliseconds ? kMaximumDelayMilliseconds :
-        (sdkValue < kMinimumDelayMilliseconds ? kMinimumDelayMilliseconds : sdkValue);
+    sdkValue = sdkValue > kMaximumDelayMilliseconds
+                   ? kMaximumDelayMilliseconds
+                   : (sdkValue < kMinimumDelayMilliseconds ? kMinimumDelayMilliseconds : sdkValue);
     self->delay2 = sdkValue;
     self->delay1 = sdkValue;
     self->delay0 = sdkValue;
@@ -73,11 +80,14 @@ int gtl_nw4r_FxDelay_SetParams(Obj_8040A3D0* self, const float* input) {
     self->level0 = sdkValue;
     // An inactive effect only stages values. An active effect temporarily replaces
     // the global AXFX allocator hooks and restores them after the synchronous update.
-    if (!self->initializationAttempted) return 1;
+    if (!self->initializationAttempted)
+        return 1;
     unsigned long savedAllocateHook, savedFreeHook;
-    gtl_AudioEffects_InstallAllocatorHooks(&((GtlFxDelay*)self)->initializationAttempted, &savedAllocateHook, &savedFreeHook);
+    gtl_AudioEffects_InstallAllocatorHooks(&((GtlFxDelay*)self)->initializationAttempted, &savedAllocateHook,
+                                           &savedFreeHook);
     int result = AXFXDelaySettings(((GtlFxDelay*)self)->delayState);
-    gtl_AudioEffects_RestoreAllocatorHooks(&((GtlFxDelay*)self)->initializationAttempted, savedAllocateHook, savedFreeHook);
+    gtl_AudioEffects_RestoreAllocatorHooks(&((GtlFxDelay*)self)->initializationAttempted, savedAllocateHook,
+                                           savedFreeHook);
     return result != 0;
 }
 

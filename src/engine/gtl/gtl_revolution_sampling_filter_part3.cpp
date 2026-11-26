@@ -1,22 +1,20 @@
-// Translation unit 0x803F9A3C-0x803F9A9C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Revolution sampling filter, part 3: its Destroy, which frees the object when asked to delete it.
+
+#include "classes/gtl_CRevolutionSamplingFilter.h"
 
 extern "C" {
-
-void gtl_CSamplingFilter_dtor(void*, int);
 void gtl_Free(void*);
+} // extern "C"
 
 // Destroy the sampling-filter base and optionally release this object's storage.
-// Null is accepted; deleteFlag > 0 frees self, otherwise caller retains storage.
+// A null this is accepted; deleteFlag > 0 frees the object, otherwise the caller keeps the storage.
 // The returned address is unchanged and may already have been freed.
-void* gtl_CRevolutionSamplingFilter_dtor(void* self, int deleteFlag) {
-	if (self != 0) {
-		gtl_CSamplingFilter_dtor(self, 0);
-		if (deleteFlag > 0 && self != 0) {
-			gtl_Free(self);
-		}
-	}
-	return self;
+void* gtl::CRevolutionSamplingFilter::Destroy(int deleteFlag) {
+    if (this != 0) {
+        CSamplingFilter::Destroy(0);
+        if (deleteFlag > 0 && this != 0) {
+            gtl_Free(this);
+        }
+    }
+    return this;
 }
-
-} // extern "C"

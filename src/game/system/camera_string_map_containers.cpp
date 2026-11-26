@@ -1,5 +1,5 @@
-// Translation unit 0x800E7340-0x800E8708 (5 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Camera string maps: teardown of the camera's nested byte-string and string-pair maps.
+// Each node's owned heap strings and nested map payloads are released before the node.
 
 #include "sdk_protos.h"
 
@@ -58,7 +58,12 @@ extern char __vt__Q23std11logic_error[];
 extern char s_sharedCharDeleterVtable[];
 extern const char cameraWorkStrings[];
 
-enum { kCameraMapLengthErrorOffset = 0x28A, kLengthErrorTypeOffset = 0x1B6, kTreeCountWrapBias = 0x10000, kTreeCountWrapCompareValue = 0xFFFF };
+enum {
+    kCameraMapLengthErrorOffset = 0x28A,
+    kLengthErrorTypeOffset = 0x1B6,
+    kTreeCountWrapBias = 0x10000,
+    kTreeCountWrapCompareValue = 0xFFFF
+};
 // The limit test is 32-bit UNSIGNED arithmetic: count+0x10000 == 0xffff
 // iff count==0xffffffff (wraparound). kTreeCountWrapCompareValue is the biased
 // comparison result. Replacing the test with count>=65535 changes behavior.
@@ -66,13 +71,20 @@ extern const char __vt__Q23std12length_error[];
 extern void __dt__Q23std12length_errorFv(void*);
 extern void __dla__FPv(void*);
 
-struct SharedErrorText { void* vtable; unsigned int strongRefs, weakRefs; void* text; };
+struct SharedErrorText {
+    void* vtable;
+    unsigned int strongRefs, weakRefs;
+    void* text;
+};
 
 struct NodeGuard_u800E7340 {
     void* owner;
     void* p;
     // Release unlinked node storage if payload construction fails.
-    ~NodeGuard_u800E7340() { if (p) appFreeUni__FPv(p); }
+    ~NodeGuard_u800E7340() {
+        if (p)
+            appFreeUni__FPv(p);
+    }
 };
 
 struct AllocatorByte {
@@ -103,7 +115,10 @@ struct StrHold {
     char* p;
     char* ref;
     // Roll back exception-message allocation before its shared ref block takes ownership.
-    ~StrHold() { if (p) __dla__FPv(p); }
+    ~StrHold() {
+        if (p)
+            __dla__FPv(p);
+    }
 };
 
 #pragma push
@@ -112,29 +127,32 @@ struct StrHold {
 // link identifies the parent link: before selects its left/right slot; update
 // requests updating the cached first iterator. This function does not search.
 // source is borrowed; successful return transfers the new node/string to self.
-Node* CameraByteStringMap_InsertNode(CameraMapHeader* self, void* link, int before, int update, const ByteStringSource* source) {
+Node* CameraByteStringMap_InsertNode(CameraMapHeader* self, void* link, int before, int update,
+                                     const ByteStringSource* source) {
     void __throw(const char*, void*, void*) __attribute__((noreturn));
     struct Err {
-        void* vtable; char* text; SharedErrorText* value;
+        void* vtable;
+        char* text;
+        SharedErrorText* value;
         // Build shared exception text without yet changing the logic_error vtable.
-        void init(const char* what, AllocatorByte& flagA, AllocatorByte& flagB,
-                  char*& dstText, SharedErrorText*& dstValue) {
+        void init(const char* what, AllocatorByte& flagA, AllocatorByte& flagB, char*& dstText,
+                  SharedErrorText*& dstValue) {
             vtable = (void*)__vt__Q23std11logic_error;
             flagA.v = 0;
             flagB.v = 0;
             int n = (int)strlen(what) + 1;
             {
                 StrHold hold;
-                char* copy = (char*)__nwa__FUl(n * 2 - n);
-                dstText = copy;
-                hold.p = copy;
+                char* buffer = (char*)__nwa__FUl(n * 2 - n);
+                dstText = buffer;
+                hold.p = buffer;
                 hold.ref = (char*)&flagB;
                 SharedErrorText* v = (SharedErrorText*)__nw__FUl(0x10);
                 if (v) {
                     v->strongRefs = 1;
                     v->weakRefs = 1;
                     v->vtable = s_sharedCharDeleterVtable;
-                    v->text = copy;
+                    v->text = buffer;
                 }
                 dstValue = v;
                 hold.p = 0;
@@ -182,7 +200,8 @@ Node* CameraByteStringMap_InsertNode(CameraMapHeader* self, void* link, int befo
                 data->stringDataAddress = 0;
                 String_ReserveCapacity(&data->stringStorageFlags, b);
                 byteA.v = byteB.v;
-                String_ReplaceRange(&data->stringStorageFlags, 0, 0, source->stringDataAddress, source->stringDataAddress + source->stringLength, &byteA);
+                String_ReplaceRange(&data->stringStorageFlags, 0, 0, source->stringDataAddress,
+                                    source->stringDataAddress + source->stringLength, &byteA);
             }
         } catch (...) {
             __throw(0, 0, 0);
@@ -200,16 +219,21 @@ Node* CameraByteStringMap_InsertNode(CameraMapHeader* self, void* link, int befo
             __throw(0, 0, 0);
         }
     }
-    if (before) *(NodeHead**)link = node;
-    else *((NodeHead**)link + 1) = node;
+    if (before)
+        *(NodeHead**)link = node;
+    else
+        *((NodeHead**)link + 1) = node;
     self->count++;
     RBTree_RebalanceAfterInsert(node, self->sentinel);
-    if (update) self->first = (Node*)node;
+    if (update)
+        self->first = (Node*)node;
     return (Node*)node;
 }
 #pragma pop
 
-struct PairValue { unsigned int a, b, c, d, e, f; };
+struct PairValue {
+    unsigned int a, b, c, d, e, f;
+};
 
 struct ErrorTextBufferGuard {
     char* p;
@@ -217,7 +241,10 @@ struct ErrorTextBufferGuard {
     // Track an exception text allocation until ownership transfer.
     ErrorTextBufferGuard(char* q, char* r) : p(q), ref(r) {}
     // Release text still owned by this guard.
-    ~ErrorTextBufferGuard() { if (p) appFreeUni__FPv(p); }
+    ~ErrorTextBufferGuard() {
+        if (p)
+            appFreeUni__FPv(p);
+    }
 };
 
 struct CameraMapLengthError {
@@ -232,15 +259,15 @@ struct CameraMapLengthError {
         flagB = 0;
         flagA = 0;
         int n = (int)strlen(what) + 1;
-        char* copy = (char*)__nwa__FUl(n * 2 - n);
-        text = copy;
-        ErrorTextBufferGuard hold(copy, &flagA);
+        char* buffer = (char*)__nwa__FUl(n * 2 - n);
+        text = buffer;
+        ErrorTextBufferGuard hold(buffer, &flagA);
         SharedErrorText* v = (SharedErrorText*)__nw__FUl(0x10);
         if (v) {
             v->strongRefs = 1;
             v->weakRefs = 1;
             v->vtable = s_sharedCharDeleterVtable;
-            v->text = copy;
+            v->text = buffer;
         }
         value = v;
         hold.p = 0;
@@ -253,8 +280,13 @@ struct CameraMapLengthError {
 #pragma use_lmw_stmw on
 // Insert a copied string/string pair, cleaning up the first string if construction of the second throws.
 // Same parent-link/before/update contract as byte/string insertion; no tree search.
-Node* CameraStringMap_InsertNode(CameraMapHeader* self, Node* link, int before, int update, const StringPairSource* source) {
-    struct Err { void* vtable; char* text; SharedErrorText* value; } local;
+Node* CameraStringMap_InsertNode(CameraMapHeader* self, Node* link, int before, int update,
+                                 const StringPairSource* source) {
+    struct Err {
+        void* vtable;
+        char* text;
+        SharedErrorText* value;
+    } local;
     void* volatile constructedPairNode;
     void* volatile allocatedPairNode;
     AllocatorByte flag;
@@ -270,16 +302,16 @@ Node* CameraStringMap_InsertNode(CameraMapHeader* self, Node* link, int before, 
         int n = (int)strlen(what) + 1;
         {
             StrHold hold;
-            char* copy = (char*)__nwa__FUl(n * 2 - n);
-            lp->text = copy;
-            hold.p = copy;
+            char* buffer = (char*)__nwa__FUl(n * 2 - n);
+            lp->text = buffer;
+            hold.p = buffer;
             hold.ref = (char*)&flagA;
             SharedErrorText* value = (SharedErrorText*)__nw__FUl(0x10);
             if (value) {
                 value->strongRefs = 1;
                 value->weakRefs = 1;
                 value->vtable = s_sharedCharDeleterVtable;
-                value->text = copy;
+                value->text = buffer;
             }
             lp->value = value;
             hold.p = 0;
@@ -310,7 +342,8 @@ Node* CameraStringMap_InsertNode(CameraMapHeader* self, Node* link, int before, 
                 value->stringDataAddress = 0;
                 String_ReserveCapacity(value, source->stringLength);
                 u10.v = u14.v;
-                String_ReplaceRange(value, 0, 0, source->stringDataAddress, source->stringDataAddress + source->stringLength, &u10);
+                String_ReplaceRange(value, 0, 0, source->stringDataAddress,
+                                    source->stringDataAddress + source->stringLength, &u10);
             }
             firstConstructed = true;
             if ((source->mappedStringStorageFlags >> 31) == 0) {
@@ -323,7 +356,8 @@ Node* CameraStringMap_InsertNode(CameraMapHeader* self, Node* link, int before, 
                 value->mappedStringDataAddress = 0;
                 String_ReserveCapacity(&value->mappedStringStorageFlags, source->mappedStringLength);
                 u08.v = u0c.v;
-                String_ReplaceRange(&value->mappedStringStorageFlags, 0, 0, source->mappedStringDataAddress, source->mappedStringDataAddress + source->mappedStringLength, &u08);
+                String_ReplaceRange(&value->mappedStringStorageFlags, 0, 0, source->mappedStringDataAddress,
+                                    source->mappedStringDataAddress + source->mappedStringLength, &u08);
             }
         } catch (...) {
             if (firstConstructed && (value->stringStorageFlags >> 31))
@@ -339,11 +373,14 @@ Node* CameraStringMap_InsertNode(CameraMapHeader* self, Node* link, int before, 
     if (&((NodeHead*)node)->link) {
         ((NodeHead*)node)->link = link;
     }
-    if (before) *(Node**)link = node;
-    else *((Node**)link + 1) = node;
+    if (before)
+        *(Node**)link = node;
+    else
+        *((Node**)link + 1) = node;
     self->count++;
     RBTree_RebalanceAfterInsert(node, self->sentinel);
-    if (update) self->first = node;
+    if (update)
+        self->first = node;
     return node;
 }
 #pragma pop
@@ -384,7 +421,8 @@ extern void StringValueTree_DestroySubtree(void*, TreeNode*);
 // The parent word is borrowed linkage; only high-bit-tagged character storage is owned.
 static inline void DestroyInnerStringNode(TreeNode* node) {
     if (&node->valueA && &node->valueA) {
-        if (node->valueA >> 31) appFreeUni__FPv((void*)node->valueB);
+        if (node->valueA >> 31)
+            appFreeUni__FPv((void*)node->valueB);
     }
     appFreeUni__FPv(node);
 }
@@ -392,16 +430,20 @@ static inline void DestroyInnerStringNode(TreeNode* node) {
 void CameraNestedStringMap_DestroySubtree(void*, TreeNode*);
 // Finish an outer leaf of the visible unroll; deeper descendants use the recursive ABI.
 static inline void DestroyNestedMapLeaf(void* context, TreeNode* node) {
-    if (node->first) CameraNestedStringMap_DestroySubtree(context, node->first);
-    if (node->second) CameraNestedStringMap_DestroySubtree(context, node->second);
+    if (node->first)
+        CameraNestedStringMap_DestroySubtree(context, node->first);
+    if (node->second)
+        CameraNestedStringMap_DestroySubtree(context, node->second);
     CameraNestedStringMap_DestroyEntry(context, &node->valueA);
     appFreeUni__FPv(node);
 }
 
 // Finish an inner leaf of the visible unroll, including its owned string key.
 static inline void DestroyInnerStringLeaf(void* context, TreeNode* node) {
-    if (node->first) StringValueTree_DestroySubtree(context, node->first);
-    if (node->second) StringValueTree_DestroySubtree(context, node->second);
+    if (node->first)
+        StringValueTree_DestroySubtree(context, node->first);
+    if (node->second)
+        StringValueTree_DestroySubtree(context, node->second);
     DestroyInnerStringNode(node);
 }
 
@@ -472,9 +514,8 @@ void CameraNestedStringMap_DestroySubtree(void* context, TreeNode* source) {
         appFreeUni__FPv(outerRight);
     }
     // Phase 3: walk the owned inner string tree, using the inner specialization at depth.
-    if (&source->valueA && &source->payloadWord10 && &source->payloadWord10 &&
-        &source->payloadWord10 && &source->payloadWord10 &&
-        &source->payloadWord10 && &source->payloadWord10) {
+    if (&source->valueA && &source->payloadWord10 && &source->payloadWord10 && &source->payloadWord10 &&
+        &source->payloadWord10 && &source->payloadWord10 && &source->payloadWord10) {
         TreeNode* innerRoot = (TreeNode*)source->valueB;
         if (innerRoot) {
             TreeNode* innerLeft = innerRoot->first;
@@ -552,20 +593,25 @@ void MapTree_FreeSubtreeWithRelease(void* context, TreeNode* source) {
             TreeNode* firstValue = child->first;
             TreeNode* grandchild = firstValue;
             if (grandchild) {
-                if (grandchild->first) MapTree_FreeSubtreeWithRelease(context, grandchild->first);
-                if (grandchild->second) MapTree_FreeSubtreeWithRelease(context, grandchild->second);
+                if (grandchild->first)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->first);
+                if (grandchild->second)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->second);
                 CameraByteStringMap_DestroyEntry(context, &grandchild->valueA);
                 appFreeUni__FPv(grandchild);
             }
             grandchild = child->second;
             if (grandchild) {
-                if (grandchild->first) MapTree_FreeSubtreeWithRelease(context, grandchild->first);
-                if (grandchild->second) MapTree_FreeSubtreeWithRelease(context, grandchild->second);
+                if (grandchild->first)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->first);
+                if (grandchild->second)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->second);
                 CameraByteStringMap_DestroyEntry(context, &grandchild->valueA);
                 appFreeUni__FPv(grandchild);
             }
             if (&child->valueA && &child->payloadWord10) {
-                if (child->payloadWord10 >> 31) appFreeUni__FPv((void*)child->payloadWord18);
+                if (child->payloadWord10 >> 31)
+                    appFreeUni__FPv((void*)child->payloadWord18);
             }
             appFreeUni__FPv(child);
         }
@@ -573,26 +619,32 @@ void MapTree_FreeSubtreeWithRelease(void* context, TreeNode* source) {
         if (child2) {
             TreeNode* grandchild = child2->first;
             if (grandchild) {
-                if (grandchild->first) MapTree_FreeSubtreeWithRelease(context, grandchild->first);
-                if (grandchild->second) MapTree_FreeSubtreeWithRelease(context, grandchild->second);
+                if (grandchild->first)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->first);
+                if (grandchild->second)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->second);
                 CameraByteStringMap_DestroyEntry(context, &grandchild->valueA);
                 appFreeUni__FPv(grandchild);
             }
             TreeNode* secondValue = child2->second;
             grandchild = secondValue;
             if (grandchild) {
-                if (grandchild->first) MapTree_FreeSubtreeWithRelease(context, grandchild->first);
-                if (grandchild->second) MapTree_FreeSubtreeWithRelease(context, grandchild->second);
+                if (grandchild->first)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->first);
+                if (grandchild->second)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->second);
                 CameraByteStringMap_DestroyEntry(context, &grandchild->valueA);
                 appFreeUni__FPv(grandchild);
             }
             if (&child2->valueA && &child2->payloadWord10) {
-                if (child2->payloadWord10 >> 31) appFreeUni__FPv((void*)child2->payloadWord18);
+                if (child2->payloadWord10 >> 31)
+                    appFreeUni__FPv((void*)child2->payloadWord18);
             }
             appFreeUni__FPv(child2);
         }
         if (&node->valueA && &node->payloadWord10) {
-            if (node->payloadWord10 >> 31) appFreeUni__FPv((void*)node->payloadWord18);
+            if (node->payloadWord10 >> 31)
+                appFreeUni__FPv((void*)node->payloadWord18);
         }
         appFreeUni__FPv(node);
     }
@@ -604,20 +656,25 @@ void MapTree_FreeSubtreeWithRelease(void* context, TreeNode* source) {
         if (child) {
             TreeNode* grandchild = child->first;
             if (grandchild) {
-                if (grandchild->first) MapTree_FreeSubtreeWithRelease(context, grandchild->first);
-                if (grandchild->second) MapTree_FreeSubtreeWithRelease(context, grandchild->second);
+                if (grandchild->first)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->first);
+                if (grandchild->second)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->second);
                 CameraByteStringMap_DestroyEntry(context, &grandchild->valueA);
                 appFreeUni__FPv(grandchild);
             }
             grandchild = child->second;
             if (grandchild) {
-                if (grandchild->first) MapTree_FreeSubtreeWithRelease(context, grandchild->first);
-                if (grandchild->second) MapTree_FreeSubtreeWithRelease(context, grandchild->second);
+                if (grandchild->first)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->first);
+                if (grandchild->second)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->second);
                 CameraByteStringMap_DestroyEntry(context, &grandchild->valueA);
                 appFreeUni__FPv(grandchild);
             }
             if (&child->valueA && &child->payloadWord10) {
-                if (child->payloadWord10 >> 31) appFreeUni__FPv((void*)child->payloadWord18);
+                if (child->payloadWord10 >> 31)
+                    appFreeUni__FPv((void*)child->payloadWord18);
             }
             appFreeUni__FPv(child);
         }
@@ -626,31 +683,38 @@ void MapTree_FreeSubtreeWithRelease(void* context, TreeNode* source) {
             TreeNode* firstValue3 = child->first;
             TreeNode* grandchild = firstValue3;
             if (grandchild) {
-                if (grandchild->first) MapTree_FreeSubtreeWithRelease(context, grandchild->first);
-                if (grandchild->second) MapTree_FreeSubtreeWithRelease(context, grandchild->second);
+                if (grandchild->first)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->first);
+                if (grandchild->second)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->second);
                 CameraByteStringMap_DestroyEntry(context, &grandchild->valueA);
                 appFreeUni__FPv(grandchild);
             }
             grandchild = child->second;
             if (grandchild) {
-                if (grandchild->first) MapTree_FreeSubtreeWithRelease(context, grandchild->first);
-                if (grandchild->second) MapTree_FreeSubtreeWithRelease(context, grandchild->second);
+                if (grandchild->first)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->first);
+                if (grandchild->second)
+                    MapTree_FreeSubtreeWithRelease(context, grandchild->second);
                 CameraByteStringMap_DestroyEntry(context, &grandchild->valueA);
                 appFreeUni__FPv(grandchild);
             }
             if (&child->valueA && &child->payloadWord10) {
-                if (child->payloadWord10 >> 31) appFreeUni__FPv((void*)child->payloadWord18);
+                if (child->payloadWord10 >> 31)
+                    appFreeUni__FPv((void*)child->payloadWord18);
             }
             appFreeUni__FPv(child);
         }
         if (&sibling->valueA && &sibling->payloadWord10) {
-            if (sibling->payloadWord10 >> 31) appFreeUni__FPv((void*)sibling->payloadWord18);
+            if (sibling->payloadWord10 >> 31)
+                appFreeUni__FPv((void*)sibling->payloadWord18);
         }
         appFreeUni__FPv(sibling);
     }
     // Phase 3: release this node's mapped heap string, then the node itself.
     if (&source->valueA && &source->payloadWord10) {
-        if (source->payloadWord10 >> 31) appFreeUni__FPv((void*)source->payloadWord18);
+        if (source->payloadWord10 >> 31)
+            appFreeUni__FPv((void*)source->payloadWord18);
     }
     appFreeUni__FPv(source);
 }
@@ -668,15 +732,19 @@ void StringMap_FreeSubtree(void* context, TreeNode* node) {
         if (child) {
             grandchild = child->first;
             if (grandchild) {
-                if (grandchild->first) StringMap_FreeSubtree(context, grandchild->first);
-                if (grandchild->second) StringMap_FreeSubtree(context, grandchild->second);
+                if (grandchild->first)
+                    StringMap_FreeSubtree(context, grandchild->first);
+                if (grandchild->second)
+                    StringMap_FreeSubtree(context, grandchild->second);
                 StringMap_DestroyStringPair(context, &grandchild->valueA);
                 appFreeUni__FPv(grandchild);
             }
             grandchild = child->second;
             if (grandchild) {
-                if (grandchild->first) StringMap_FreeSubtree(context, grandchild->first);
-                if (grandchild->second) StringMap_FreeSubtree(context, grandchild->second);
+                if (grandchild->first)
+                    StringMap_FreeSubtree(context, grandchild->first);
+                if (grandchild->second)
+                    StringMap_FreeSubtree(context, grandchild->second);
                 StringMap_DestroyStringPair(context, &grandchild->valueA);
                 appFreeUni__FPv(grandchild);
             }
@@ -687,15 +755,19 @@ void StringMap_FreeSubtree(void* context, TreeNode* node) {
         if (grandchild) {
             child = grandchild->first;
             if (child) {
-                if (child->first) StringMap_FreeSubtree(context, child->first);
-                if (child->second) StringMap_FreeSubtree(context, child->second);
+                if (child->first)
+                    StringMap_FreeSubtree(context, child->first);
+                if (child->second)
+                    StringMap_FreeSubtree(context, child->second);
                 StringMap_DestroyStringPair(context, &child->valueA);
                 appFreeUni__FPv(child);
             }
             child = grandchild->second;
             if (child) {
-                if (child->first) StringMap_FreeSubtree(context, child->first);
-                if (child->second) StringMap_FreeSubtree(context, child->second);
+                if (child->first)
+                    StringMap_FreeSubtree(context, child->first);
+                if (child->second)
+                    StringMap_FreeSubtree(context, child->second);
                 StringMap_DestroyStringPair(context, &child->valueA);
                 appFreeUni__FPv(child);
             }
@@ -713,15 +785,19 @@ void StringMap_FreeSubtree(void* context, TreeNode* node) {
         if (child) {
             branch = child->first;
             if (branch) {
-                if (branch->first) StringMap_FreeSubtree(context, branch->first);
-                if (branch->second) StringMap_FreeSubtree(context, branch->second);
+                if (branch->first)
+                    StringMap_FreeSubtree(context, branch->first);
+                if (branch->second)
+                    StringMap_FreeSubtree(context, branch->second);
                 StringMap_DestroyStringPair(context, &branch->valueA);
                 appFreeUni__FPv(branch);
             }
             branch = child->second;
             if (branch) {
-                if (branch->first) StringMap_FreeSubtree(context, branch->first);
-                if (branch->second) StringMap_FreeSubtree(context, branch->second);
+                if (branch->first)
+                    StringMap_FreeSubtree(context, branch->first);
+                if (branch->second)
+                    StringMap_FreeSubtree(context, branch->second);
                 StringMap_DestroyStringPair(context, &branch->valueA);
                 appFreeUni__FPv(branch);
             }
@@ -732,15 +808,19 @@ void StringMap_FreeSubtree(void* context, TreeNode* node) {
         if (child) {
             branch = child->first;
             if (branch) {
-                if (branch->first) StringMap_FreeSubtree(context, branch->first);
-                if (branch->second) StringMap_FreeSubtree(context, branch->second);
+                if (branch->first)
+                    StringMap_FreeSubtree(context, branch->first);
+                if (branch->second)
+                    StringMap_FreeSubtree(context, branch->second);
                 StringMap_DestroyStringPair(context, &branch->valueA);
                 appFreeUni__FPv(branch);
             }
             branch = child->second;
             if (branch) {
-                if (branch->first) StringMap_FreeSubtree(context, branch->first);
-                if (branch->second) StringMap_FreeSubtree(context, branch->second);
+                if (branch->first)
+                    StringMap_FreeSubtree(context, branch->first);
+                if (branch->second)
+                    StringMap_FreeSubtree(context, branch->second);
                 StringMap_DestroyStringPair(context, &branch->valueA);
                 appFreeUni__FPv(branch);
             }
@@ -754,10 +834,12 @@ void StringMap_FreeSubtree(void* context, TreeNode* node) {
     // Phase 3: mapped string first, key second, containing node last.
     if (&node->valueA) {
         if (&node->payloadWord18) {
-            if (node->payloadWord18 >> 31) appFreeUni__FPv((void*)node->payloadWord20);
+            if (node->payloadWord18 >> 31)
+                appFreeUni__FPv((void*)node->payloadWord20);
         }
         if (&node->valueA) {
-            if (node->valueA >> 31) appFreeUni__FPv((void*)node->valueB);
+            if (node->valueA >> 31)
+                appFreeUni__FPv((void*)node->valueB);
         }
     }
     appFreeUni__FPv(node);

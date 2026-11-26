@@ -1,13 +1,17 @@
+// Controller input queries for game actions and pointer state (position, motion and suppression),
+// plus the lifetime of the item manager's inventory tables.
+// The item tables are freed here; loading and looking up items happens elsewhere.
+
 #include <decomp/static_init.h>
 // Controller input/action queries and item-table lifetime support.
 // Lookup index:
 // - Button edges: Pointer_GetRisingActionBits; InputPointerState/CInputManager
 //   headers describe the pointer and recursive mutex, s_monitoredActionNames
-//   selects the nine names tested by CInputManager_HasAnyMonitoredAction.
+//   selects the nine names tested by CInputManager::HasAnyMonitoredAction.
 // - Pointer movement/suppression: Pointer_GetMotionDelta, Pointer_SuppressInput,
 //   Pointer_ClearInputSuppression; deltas are copied as float bits, not scaled.
 // - Per-update action cleanup: InputManager_ClearNodeFlagBit1 (contract below).
-// - IFF item storage: CItemManager_Ctor/dtor and the thirteen descriptors in
+// - IFF item storage: CItemManager::CItemManager/dtor and the thirteen descriptors in
 //   classes/CItemManager.h; this unit frees tables, it does not load/lookup items.
 // - Container deleting destructors release storage, never pointed-to items.
 // InputItemTables_InitFullTurn copies the shared 2*pi float; no cadence tuning
@@ -16,7 +20,9 @@
 #include "MSL/list.h"
 // Placeholder element types for the containers whose deleting destructors this unit keeps out of line:
 // the destructor depends only on whether the element is a scalar (pointer) or a record.
-struct MSLRecord { unsigned int words[1]; };
+struct MSLRecord {
+    unsigned int words[1];
+};
 typedef std::vector<void*, app::app_allocator<void*> > MSLPointerVector;
 typedef std::vector<MSLRecord, app::app_allocator<MSLRecord> > MSLRecordVector;
 typedef std::list<void*, app::app_allocator<void*> > MSLPointerList;
@@ -25,11 +31,13 @@ typedef std::list<void*, app::app_allocator<void*> > MSLPointerList;
 // Pointer action lookup/traversal locks the input-manager mutex at original +0x30.
 #include "classes/CItemManager.h"
 
-#define AsCItemManager(p) ((CItemManager*)(p))
-// Translation unit 0x8018747C-0x8018839C (23 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
-enum { kMonitoredActionCount = 9, kRequireActiveBinding = 1, kActionPressed = 1, kInputSuppressed = 2, kPointerAdapterDevice = 2 };
+enum {
+    kMonitoredActionCount = 9,
+    kRequireActiveBinding = 1,
+    kActionPressed = 1,
+    kInputSuppressed = 2,
+    kPointerAdapterDevice = 2
+};
 
 extern "C" {
 
@@ -96,11 +104,15 @@ extern unsigned int strlen(const char*);
 struct WInstanceLock {
     void* lock;
     // Acquire one recursive input-manager mutex level.
-    WInstanceLock(void* p) { lock = p; OSLockMutex(p); }
+    WInstanceLock(void* p) {
+        lock = p;
+        OSLockMutex(p);
+    }
     // Release the matching mutex level on normal or exceptional exit.
-    ~WInstanceLock() { OSUnlockMutex(lock); }
+    ~WInstanceLock() {
+        OSUnlockMutex(lock);
+    }
 };
-
 
 // Word 0 supplies the action payload; +0x10 supplies the circular iteration link.
 struct ActionIterationNode {
@@ -171,7 +183,6 @@ struct MonitoredActionNode {
     unsigned int value;
 };
 
-
 // Initialize this input/item unit's full-turn constant.
 void InputItemTables_InitFullTurn() {
     s_inputItemTablesFullTurn = kFloat_6_2831855;
@@ -181,7 +192,7 @@ void InputItemTables_InitFullTurn() {
 #pragma opt_loop_invariants off
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
-// Original CInputManager_HasAnyMonitoredAction: release the lookup lock on both search outcomes.
+// Original CInputManager::HasAnyMonitoredAction: release the lookup lock on both search outcomes.
 inline void FindMonitoredActionAndUnlock(MonitoredActionNode*& node, const char* key, void* volatile& lock) {
     while (node) {
         if (strcmp(node->key, key) == 0) {
@@ -196,7 +207,7 @@ inline void FindMonitoredActionAndUnlock(MonitoredActionNode*& node, const char*
 }
 
 // Return whether any of the nine monitored action names is currently pressed.
-int CInputManager_HasAnyMonitoredAction(void* inputManager) {
+int CInputManager::HasAnyMonitoredAction(void* inputManager) {
     // Read-only query over nine borrowed names. Each iteration locks lookup,
     // recursively locks to hash, then FindMonitoredActionAndUnlock releases the
     // outer lookup lock whether found or absent. The mutex must be recursive.
@@ -227,17 +238,20 @@ int CInputManager_HasAnyMonitoredAction(void* inputManager) {
                     int len = (int)strlen(key);
                     int lastIndex = len > 0 ? len - 1 : 0;
                     unsigned int tail = (unsigned char)key[lastIndex];
-                    hash = ((((unsigned int)len << 6) | (((unsigned char)key[0] & 0x2A) | (tail & 0x15))) & object->bucketMask);
+                    hash = ((((unsigned int)len << 6) | (((unsigned char)key[0] & 0x2A) | (tail & 0x15))) &
+                            object->bucketMask);
                     OSUnlockMutex(inner);
                 }
                 node = (MonitoredActionNode*)object->buckets[hash];
                 FindMonitoredActionAndUnlock(node, key, lock);
             }
             unsigned int result = node ? node->value : 0;
-            if (object->lookupMode == kRequireActiveBinding && result && !(node->flags & 1)) result = 0;
+            if (object->lookupMode == kRequireActiveBinding && result && !(node->flags & 1))
+                result = 0;
             found = result & kActionPressed;
         }
-        if (found) return 1;
+        if (found)
+            return 1;
     }
     return 0;
 }
@@ -250,135 +264,137 @@ int CInputManager_HasAnyMonitoredAction(void* inputManager) {
 #pragma opt_lifetimes on
 // Field-derived byte addresses retain CodeWarrior register allocation in the table guards.
 // Release all owned IFF table buffers and optionally delete the item manager; preserve the original clear order.
-void* CItemManager_dtor(CItemManager* object, int shouldDelete) {
-    // Phase 1: empty all descriptors and disable manager locking. Expressions
-    // size-((object+size)-object) compute zero; the aliases/guards reproduce
-    // inlined vector cleanup and are not multiple independent allocations.
-    // Phase 2: free thirteen independent owned buffers in reverse declaration
-    // order (aux parts through characters, including clubSets). Inline records
-    // need no per-entry cleanup. Pointers/capacities are not reset: this object
-    // is being destroyed, not prepared for reuse. Phase 3: delete iff requested.
-    if (object) {
-        int emptyCharacterCount;
-        int emptyPartCount;
-        int emptyClubCount;
-        int emptyBallCount;
-        int emptyItemCount;
-        int emptyCaddieCount;
-        int emptyCaddieItemCount;
-        int emptySetItemCount;
-        int emptyCourseCount;
-        int emptyHairStyleCount;
-        int emptyDescriptionCount;
-        int emptyAuxPartCount;
-        object->vtbl = __vt__12CItemManager;
-        emptyCharacterCount = object->characters.size - (((char*)object + object->characters.size) - (char*)object);
-        emptyPartCount = object->parts.size - (((char*)object + object->parts.size) - (char*)object);
-        emptyClubCount = object->clubs.size - (((char*)object + object->clubs.size) - (char*)object);
-        emptyBallCount = object->balls.size - (((char*)object + object->balls.size) - (char*)object);
-        emptyItemCount = object->items.size - (((char*)object + object->items.size) - (char*)object);
-        emptyCaddieCount = object->caddies.size - (((char*)object + object->caddies.size) - (char*)object);
-        emptyCaddieItemCount = object->caddieItems.size - (((char*)object + object->caddieItems.size) - (char*)object);
-        emptySetItemCount = object->setItems.size - (((char*)object + object->setItems.size) - (char*)object);
-        emptyCourseCount = object->courses.size - (((char*)object + object->courses.size) - (char*)object);
-        emptyHairStyleCount = object->hairStyles.size - (((char*)object + object->hairStyles.size) - (char*)object);
-        emptyDescriptionCount = object->descriptions.size - (((char*)object + object->descriptions.size) - (char*)object);
-        emptyAuxPartCount = object->auxParts.size - (((char*)object + object->auxParts.size) - (char*)object);
-        object->vtbl = __vt__12CItemManager;
-        object->characters.size = emptyCharacterCount;
-        object->parts.size = emptyPartCount;
-        object->clubs.size = emptyClubCount;
-        object->balls.size = emptyBallCount;
-        object->items.size = emptyItemCount;
-        object->caddies.size = emptyCaddieCount;
-        object->caddieItems.size = emptyCaddieItemCount;
-        object->setItems.size = emptySetItemCount;
-        object->courses.size = emptyCourseCount;
-        object->hairStyles.size = emptyHairStyleCount;
-        object->descriptions.size = emptyDescriptionCount;
-        object->auxParts.size = emptyAuxPartCount;
-        AsCItemManager(object)->lockEnabled = 0;
-        if ((char*)object + IFF_OFFSET(CItemManager, auxParts) && (char*)object + IFF_OFFSET(CItemManager, auxParts) && (char*)object + IFF_OFFSET(CItemManager, auxParts) && (char*)object + IFF_OFFSET(CItemManager, auxParts)) {
-            if (object->auxParts.data) {
-                object->auxParts.size = emptyAuxPartCount - (((char*)object + emptyAuxPartCount) - (char*)object);
-                appFreeUni__FPv((void*)object->auxParts.data);
-            }
+CItemManager::~CItemManager() {
+    int emptyCharacterCount;
+    int emptyPartCount;
+    int emptyClubCount;
+    int emptyBallCount;
+    int emptyItemCount;
+    int emptyCaddieCount;
+    int emptyCaddieItemCount;
+    int emptySetItemCount;
+    int emptyCourseCount;
+    int emptyHairStyleCount;
+    int emptyDescriptionCount;
+    int emptyAuxPartCount;
+    vtbl = __vt__12CItemManager;
+    emptyCharacterCount = this->characters.size - (((char*)this + this->characters.size) - (char*)this);
+    emptyPartCount = this->parts.size - (((char*)this + this->parts.size) - (char*)this);
+    emptyClubCount = this->clubs.size - (((char*)this + this->clubs.size) - (char*)this);
+    emptyBallCount = this->balls.size - (((char*)this + this->balls.size) - (char*)this);
+    emptyItemCount = this->items.size - (((char*)this + this->items.size) - (char*)this);
+    emptyCaddieCount = this->caddies.size - (((char*)this + this->caddies.size) - (char*)this);
+    emptyCaddieItemCount = this->caddieItems.size - (((char*)this + this->caddieItems.size) - (char*)this);
+    emptySetItemCount = this->setItems.size - (((char*)this + this->setItems.size) - (char*)this);
+    emptyCourseCount = this->courses.size - (((char*)this + this->courses.size) - (char*)this);
+    emptyHairStyleCount = this->hairStyles.size - (((char*)this + this->hairStyles.size) - (char*)this);
+    emptyDescriptionCount = this->descriptions.size - (((char*)this + this->descriptions.size) - (char*)this);
+    emptyAuxPartCount = this->auxParts.size - (((char*)this + this->auxParts.size) - (char*)this);
+    vtbl = __vt__12CItemManager;
+    this->characters.size = emptyCharacterCount;
+    this->parts.size = emptyPartCount;
+    this->clubs.size = emptyClubCount;
+    this->balls.size = emptyBallCount;
+    this->items.size = emptyItemCount;
+    this->caddies.size = emptyCaddieCount;
+    this->caddieItems.size = emptyCaddieItemCount;
+    this->setItems.size = emptySetItemCount;
+    this->courses.size = emptyCourseCount;
+    this->hairStyles.size = emptyHairStyleCount;
+    this->descriptions.size = emptyDescriptionCount;
+    this->auxParts.size = emptyAuxPartCount;
+    lockEnabled = 0;
+    if ((char*)this + IFF_OFFSET(CItemManager, auxParts) && (char*)this + IFF_OFFSET(CItemManager, auxParts) &&
+        (char*)this + IFF_OFFSET(CItemManager, auxParts) && (char*)this + IFF_OFFSET(CItemManager, auxParts)) {
+        if (this->auxParts.data) {
+            this->auxParts.size = emptyAuxPartCount - (((char*)this + emptyAuxPartCount) - (char*)this);
+            appFreeUni__FPv((void*)this->auxParts.data);
         }
-        if ((char*)object + IFF_OFFSET(CItemManager, hairStyles) && (char*)object + IFF_OFFSET(CItemManager, hairStyles) && (char*)object + IFF_OFFSET(CItemManager, hairStyles) && (char*)object + IFF_OFFSET(CItemManager, hairStyles)) {
-            if (object->hairStyles.data) {
-                object->hairStyles.size -= ((char*)object + object->hairStyles.size) - (char*)object;
-                appFreeUni__FPv((void*)object->hairStyles.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, descriptions) && (char*)object + IFF_OFFSET(CItemManager, descriptions) && (char*)object + IFF_OFFSET(CItemManager, descriptions) && (char*)object + IFF_OFFSET(CItemManager, descriptions)) {
-            if (object->descriptions.data) {
-                object->descriptions.size -= ((char*)object + object->descriptions.size) - (char*)object;
-                appFreeUni__FPv((void*)object->descriptions.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, courses) && (char*)object + IFF_OFFSET(CItemManager, courses) && (char*)object + IFF_OFFSET(CItemManager, courses) && (char*)object + IFF_OFFSET(CItemManager, courses)) {
-            if (object->courses.data) {
-                object->courses.size -= ((char*)object + object->courses.size) - (char*)object;
-                appFreeUni__FPv((void*)object->courses.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, setItems) && (char*)object + IFF_OFFSET(CItemManager, setItems) && (char*)object + IFF_OFFSET(CItemManager, setItems) && (char*)object + IFF_OFFSET(CItemManager, setItems)) {
-            if (object->setItems.data) {
-                object->setItems.size -= ((char*)object + object->setItems.size) - (char*)object;
-                appFreeUni__FPv((void*)object->setItems.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, caddieItems) && (char*)object + IFF_OFFSET(CItemManager, caddieItems) && (char*)object + IFF_OFFSET(CItemManager, caddieItems) && (char*)object + IFF_OFFSET(CItemManager, caddieItems)) {
-            if (object->caddieItems.data) {
-                object->caddieItems.size -= ((char*)object + object->caddieItems.size) - (char*)object;
-                appFreeUni__FPv((void*)object->caddieItems.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, caddies) && (char*)object + IFF_OFFSET(CItemManager, caddies) && (char*)object + IFF_OFFSET(CItemManager, caddies) && (char*)object + IFF_OFFSET(CItemManager, caddies)) {
-            if (object->caddies.data) {
-                object->caddies.size -= ((char*)object + object->caddies.size) - (char*)object;
-                appFreeUni__FPv((void*)object->caddies.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, items) && (char*)object + IFF_OFFSET(CItemManager, items) && (char*)object + IFF_OFFSET(CItemManager, items) && (char*)object + IFF_OFFSET(CItemManager, items)) {
-            if (object->items.data) {
-                object->items.size -= ((char*)object + object->items.size) - (char*)object;
-                appFreeUni__FPv((void*)object->items.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, balls) && (char*)object + IFF_OFFSET(CItemManager, balls) && (char*)object + IFF_OFFSET(CItemManager, balls) && (char*)object + IFF_OFFSET(CItemManager, balls)) {
-            if (object->balls.data) {
-                object->balls.size -= ((char*)object + object->balls.size) - (char*)object;
-                appFreeUni__FPv((void*)object->balls.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, clubSets) && (char*)object + IFF_OFFSET(CItemManager, clubSets) && (char*)object + IFF_OFFSET(CItemManager, clubSets) && (char*)object + IFF_OFFSET(CItemManager, clubSets)) {
-            if (object->clubSets.data) {
-                object->clubSets.size -= ((char*)object + object->clubSets.size) - (char*)object;
-                appFreeUni__FPv((void*)object->clubSets.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, clubs) && (char*)object + IFF_OFFSET(CItemManager, clubs) && (char*)object + IFF_OFFSET(CItemManager, clubs) && (char*)object + IFF_OFFSET(CItemManager, clubs)) {
-            if (object->clubs.data) {
-                object->clubs.size -= ((char*)object + object->clubs.size) - (char*)object;
-                appFreeUni__FPv((void*)object->clubs.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, parts) && (char*)object + IFF_OFFSET(CItemManager, parts) && (char*)object + IFF_OFFSET(CItemManager, parts) && (char*)object + IFF_OFFSET(CItemManager, parts)) {
-            if (object->parts.data) {
-                object->parts.size -= ((char*)object + object->parts.size) - (char*)object;
-                appFreeUni__FPv((void*)object->parts.data);
-            }
-        }
-        if ((char*)object + IFF_OFFSET(CItemManager, characters) && (char*)object + IFF_OFFSET(CItemManager, characters) && (char*)object + IFF_OFFSET(CItemManager, characters) && (char*)object + IFF_OFFSET(CItemManager, characters)) {
-            if (object->characters.data) {
-                object->characters.size -= ((char*)object + object->characters.size) - (char*)object;
-                appFreeUni__FPv((void*)object->characters.data);
-            }
-        }
-        if (shouldDelete > 0) __dl__FPv(object);
     }
-    return object;
+    if ((char*)this + IFF_OFFSET(CItemManager, hairStyles) && (char*)this + IFF_OFFSET(CItemManager, hairStyles) &&
+        (char*)this + IFF_OFFSET(CItemManager, hairStyles) && (char*)this + IFF_OFFSET(CItemManager, hairStyles)) {
+        if (this->hairStyles.data) {
+            this->hairStyles.size -= ((char*)this + this->hairStyles.size) - (char*)this;
+            appFreeUni__FPv((void*)this->hairStyles.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, descriptions) && (char*)this + IFF_OFFSET(CItemManager, descriptions) &&
+        (char*)this + IFF_OFFSET(CItemManager, descriptions) && (char*)this + IFF_OFFSET(CItemManager, descriptions)) {
+        if (this->descriptions.data) {
+            this->descriptions.size -= ((char*)this + this->descriptions.size) - (char*)this;
+            appFreeUni__FPv((void*)this->descriptions.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, courses) && (char*)this + IFF_OFFSET(CItemManager, courses) &&
+        (char*)this + IFF_OFFSET(CItemManager, courses) && (char*)this + IFF_OFFSET(CItemManager, courses)) {
+        if (this->courses.data) {
+            this->courses.size -= ((char*)this + this->courses.size) - (char*)this;
+            appFreeUni__FPv((void*)this->courses.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, setItems) && (char*)this + IFF_OFFSET(CItemManager, setItems) &&
+        (char*)this + IFF_OFFSET(CItemManager, setItems) && (char*)this + IFF_OFFSET(CItemManager, setItems)) {
+        if (this->setItems.data) {
+            this->setItems.size -= ((char*)this + this->setItems.size) - (char*)this;
+            appFreeUni__FPv((void*)this->setItems.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, caddieItems) && (char*)this + IFF_OFFSET(CItemManager, caddieItems) &&
+        (char*)this + IFF_OFFSET(CItemManager, caddieItems) && (char*)this + IFF_OFFSET(CItemManager, caddieItems)) {
+        if (this->caddieItems.data) {
+            this->caddieItems.size -= ((char*)this + this->caddieItems.size) - (char*)this;
+            appFreeUni__FPv((void*)this->caddieItems.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, caddies) && (char*)this + IFF_OFFSET(CItemManager, caddies) &&
+        (char*)this + IFF_OFFSET(CItemManager, caddies) && (char*)this + IFF_OFFSET(CItemManager, caddies)) {
+        if (this->caddies.data) {
+            this->caddies.size -= ((char*)this + this->caddies.size) - (char*)this;
+            appFreeUni__FPv((void*)this->caddies.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, items) && (char*)this + IFF_OFFSET(CItemManager, items) &&
+        (char*)this + IFF_OFFSET(CItemManager, items) && (char*)this + IFF_OFFSET(CItemManager, items)) {
+        if (this->items.data) {
+            this->items.size -= ((char*)this + this->items.size) - (char*)this;
+            appFreeUni__FPv((void*)this->items.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, balls) && (char*)this + IFF_OFFSET(CItemManager, balls) &&
+        (char*)this + IFF_OFFSET(CItemManager, balls) && (char*)this + IFF_OFFSET(CItemManager, balls)) {
+        if (this->balls.data) {
+            this->balls.size -= ((char*)this + this->balls.size) - (char*)this;
+            appFreeUni__FPv((void*)this->balls.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, clubSets) && (char*)this + IFF_OFFSET(CItemManager, clubSets) &&
+        (char*)this + IFF_OFFSET(CItemManager, clubSets) && (char*)this + IFF_OFFSET(CItemManager, clubSets)) {
+        if (this->clubSets.data) {
+            this->clubSets.size -= ((char*)this + this->clubSets.size) - (char*)this;
+            appFreeUni__FPv((void*)this->clubSets.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, clubs) && (char*)this + IFF_OFFSET(CItemManager, clubs) &&
+        (char*)this + IFF_OFFSET(CItemManager, clubs) && (char*)this + IFF_OFFSET(CItemManager, clubs)) {
+        if (this->clubs.data) {
+            this->clubs.size -= ((char*)this + this->clubs.size) - (char*)this;
+            appFreeUni__FPv((void*)this->clubs.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, parts) && (char*)this + IFF_OFFSET(CItemManager, parts) &&
+        (char*)this + IFF_OFFSET(CItemManager, parts) && (char*)this + IFF_OFFSET(CItemManager, parts)) {
+        if (this->parts.data) {
+            this->parts.size -= ((char*)this + this->parts.size) - (char*)this;
+            appFreeUni__FPv((void*)this->parts.data);
+        }
+    }
+    if ((char*)this + IFF_OFFSET(CItemManager, characters) && (char*)this + IFF_OFFSET(CItemManager, characters) &&
+        (char*)this + IFF_OFFSET(CItemManager, characters) && (char*)this + IFF_OFFSET(CItemManager, characters)) {
+        if (this->characters.data) {
+            this->characters.size -= ((char*)this + this->characters.size) - (char*)this;
+            appFreeUni__FPv((void*)this->characters.data);
+        }
+    }
 }
 #pragma use_lmw_stmw reset
 #pragma opt_propagation reset
@@ -418,14 +434,14 @@ void* Pointer_GetEnabledBindingDevice(EnabledPointerState* object, void* arg) {
 }
 
 // Zero the thirteen IFF table descriptors, initialize their mutex, and disable locking.
-void* CItemManager_Ctor(CItemManager* object) {
-    unsigned int* p = (unsigned int*)&object->characters;
+CItemManager::CItemManager() {
+    unsigned int* p = (unsigned int*)&characters;
     p[0] = 0;
-    object->vtbl = __vt__12CItemManager;
-    for (int i = 1; i < 39; ++i) p[i] = 0;
-    Mutex_Init(object->inventoryMutexStorage);
-    object->lockEnabled = 0;
-    return object;
+    vtbl = __vt__12CItemManager;
+    for (int i = 1; i < 39; ++i)
+        p[i] = 0;
+    Mutex_Init(inventoryMutexStorage);
+    lockEnabled = 0;
 }
 
 #pragma opt_common_subs off
@@ -454,7 +470,8 @@ void InputManager_ClearNodeFlagBit1(ActionIterationState* object) {
         if (cur) {
             link = cur->iterationLink;
             node = cur->payload;
-            if (link == object->first) link = 0;
+            if (link == object->first)
+                link = 0;
             object->current = link;
             OSUnlockMutex(lock);
         } else {
@@ -472,7 +489,8 @@ void InputManager_ClearNodeFlagBit1(ActionIterationState* object) {
             if (cur) {
                 link = cur->iterationLink;
                 ActionIterationNode* nextPayload = cur->payload;
-                if (link == object->first) link = 0;
+                if (link == object->first)
+                    link = 0;
                 object->current = link;
                 OSUnlockMutex(loopLock);
                 node = nextPayload;
@@ -508,7 +526,8 @@ unsigned int Pointer_GetRisingActionBits(ActionEdgeLookupState* object, const ch
     // The internal node/payload is borrowed; the RETURN is an unsigned bit mask.
     // Only lookup/traversal is mutex-locked: the owner must keep payload and key
     // alive and serialize action-state writes through the post-unlock bit tests.
-    if (!object->enabled) return 0;
+    if (!object->enabled)
+        return 0;
     ActionEdgeNode* node;
     {
         void* volatile lock;
@@ -533,9 +552,12 @@ unsigned int Pointer_GetRisingActionBits(ActionEdgeLookupState* object, const ch
         }
     }
     unsigned int result;
-    if (node) result = node->flags & (node->flags ^ node->value);
-    else result = 0;
-    if (requireActiveBinding && object->lookupMode == kRequireActiveBinding && !(node->linkFlags & 1)) result = 0;
+    if (node)
+        result = node->flags & (node->flags ^ node->value);
+    else
+        result = 0;
+    if (requireActiveBinding && object->lookupMode == kRequireActiveBinding && !(node->linkFlags & 1))
+        result = 0;
     return result;
 }
 

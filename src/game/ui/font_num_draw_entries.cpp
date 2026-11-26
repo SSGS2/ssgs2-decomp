@@ -1,8 +1,15 @@
+// Numeric text entries for the on-screen numbers (CFontNumDraw): a keyed table of numbers with
+// formatting flags (leading characters, thousands separators, percent suffix).
+//
+// Also holds the per-hole rival stroke and Pang lookups and the tree of font table nodes.
+
 #include <decomp/static_init.h>
 #include "classes/FontTreeLinks80250.h"
 #include "classes/FontNumericEntry.h"
 #include "classes/CSharedDoc.h"
 #include "classes/CGolfDoc.h"
+#include "classes/CFontNumDraw.h"
+#include "classes/CComStrokeScore.h"
 
 // Numeric entry headers differ from the manager's tree layout.
 struct NumericEntryHeader {
@@ -63,7 +70,10 @@ typedef char NumericEntryDefinition_size_check[(sizeof(NumericEntryDefinition) =
 //   0x400 kOwnedResource         read elsewhere via kOwnedResourceShift (resource-ownership bit)
 // Byte offset of the inline-string length byte (low 7 bits; bit 7 of textFlags means heap-backed text);
 // inline text bytes start at +0x11.
-enum { kEntryInlineLengthByte = 0x10, kEntryInlineTextByte = 0x11 };
+enum {
+    kEntryInlineLengthByte = 0x10,
+    kEntryInlineTextByte = 0x11
+};
 enum NumericEntryFlags {
     kKeepLeadingCharacter = 0x4,
     kKeepInModeOne = 0x40,
@@ -95,10 +105,12 @@ enum RivalScoreLayout {
 };
 // Each selected four-byte score column stores signed strokes then unsigned Pang.
 // APIs receive a biased base: subtract kStrokeCellBias before selecting this view.
-struct RivalScoreCell { signed char strokes; unsigned char reserved; unsigned short pang; };
+struct RivalScoreCell {
+    signed char strokes;
+    unsigned char reserved;
+    unsigned short pang;
+};
 typedef char RivalScoreCell_size[sizeof(RivalScoreCell) == 4 ? 1 : -1];
-// Translation unit 0x80250D60-0x80251FDC (12 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -134,7 +146,10 @@ struct NumericKeyNode {
     void* value;
 };
 // The payload at node+0xC is a key/entry pair, not a second tree node.
-struct NumericEntryBinding { int key; NumericEntryConstruction* entry; };
+struct NumericEntryBinding {
+    int key;
+    NumericEntryConstruction* entry;
+};
 struct NumericEntryTable {
     virtual void slot0();
     virtual void slot1();
@@ -154,24 +169,25 @@ struct NumericResourceEntry {
 struct TableLock80250 {
     unsigned char bytes[8];
     // Acquire table-lock category 3, mode 1; p is an unused allocator-style tag.
-    TableLock80250(void* p) { TableLock_ctor(this, 3, 1); }
+    TableLock80250(void* p) {
+        TableLock_ctor(this, 3, 1);
+    }
     // Release the table lock on all exit paths.
-    ~TableLock80250() { __dt__9TableLockFv(this, -1); }
+    ~TableLock80250() {
+        __dt__9TableLockFv(this, -1);
+    }
 };
 
-// Release the numeric entry resource and heap-backed text, then optionally delete the entry.
-void* CFontNumDraw_FONT_NUM_DRAW_INFO_dtor(void* p, int shouldDelete) {
-    if (p) {
-        ((NumericEntryHeader*)p)->vtable = __vt__Q212CFontNumDraw18FONT_NUM_DRAW_INFO;
-        if (((FontNumericEntry*)p)->resource) {
-            ResourceManager_DeleteResource(g_resourceManager, (void*)((FontNumericEntry*)p)->resource);
-            ((FontNumericEntry*)p)->resource = 0;
-        }
-        if ((unsigned int)p + 0x10 != 0 && (((FontNumericEntry*)p)->textFlags >> 31) != 0)
-            appFreeUni__FPv(((FontNumericEntry*)p)->text);
-        if (shouldDelete > 0) __dl__FPv(p);
+// Release the numeric entry resource and heap-backed text. The vtable is set first.
+FontNumericEntry::~FontNumericEntry() {
+    vtable = __vt__Q212CFontNumDraw18FONT_NUM_DRAW_INFO;
+    if (resource) {
+        ResourceManager_DeleteResource(g_resourceManager, resource);
+        resource = 0;
     }
-    return p;
+    // The address test on this is how the original compiles the heap-text check.
+    if ((unsigned int)this + 0x10 != 0 && (textFlags >> 31) != 0)
+        appFreeUni__FPv(text);
 }
 
 struct FontTableTreeNode {
@@ -191,13 +207,16 @@ struct FontEntryVirtualBase {
     unsigned int u0;
     unsigned int u1;
 };
-struct FontEntryVirtual : FontEntryVirtualBase { 
-virtual void unk(); virtual void destroy(int);
+struct FontEntryVirtual : FontEntryVirtualBase {
+    virtual void unk();
+    virtual void destroy(int);
 };
 struct TableLock {
     unsigned char bytes[8];
     // Acquire the numeric table's lock category; the object argument is unused.
-    TableLock(void* p) { TableLock_ctor(this, 3, 1); }
+    TableLock(void* p) {
+        TableLock_ctor(this, 3, 1);
+    }
     ~TableLock();
 };
 
@@ -207,9 +226,11 @@ struct TableLock {
 // The caller has already destroyed entry payloads and checked leaf != null.
 inline void FreeNodeAndSubtrees(void* owner, void* leaf) {
     void* descendant = *(void**)leaf;
-    if (descendant) RBTree_FreeTrivialSubtree(owner, descendant);
+    if (descendant)
+        RBTree_FreeTrivialSubtree(owner, descendant);
     descendant = ((FontTreeLinks80250*)leaf)->right;
-    if (descendant) RBTree_FreeTrivialSubtree(owner, descendant);
+    if (descendant)
+        RBTree_FreeTrivialSubtree(owner, descendant);
     appFreeUni__FPv(leaf);
 }
 #pragma pop
@@ -222,69 +243,75 @@ inline void FreeNodeAndSubtrees(void* owner, void* leaf) {
 // Preserve the base-container teardown after derived cleanup, including its emitted address guards.
 // The four cursor references keep the caller's lifetime/register allocation. Payloads are already gone.
 static inline void CleanupFontTableBase(FontTableTree* self, FontTableTreeNode*& baseRoot,
-        FontTableTreeNode*& baseChild, FontTableTreeNode*& baseBranch, FontTableTreeNode*& baseFringe) {
-        if (((char*)&self->nodeCount))         if (((char*)&self->nodeCount))         if (((char*)&self->nodeCount))         if (((char*)&self->nodeCount))         if (((char*)&self->nodeCount))         if (((char*)&self->nodeCount)) {
-        baseRoot = self->root;
-        if (baseRoot) {
-            baseChild = baseRoot->left;
-            if (baseChild) {
-                baseBranch = baseChild->left;
-                if (baseBranch) {
-                    baseFringe = baseBranch->left;
-                    if (baseFringe) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
-                    }
-                    baseFringe = baseBranch->right;
-                    if (baseFringe) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
-                    }
-                    appFreeUni__FPv(baseBranch);
-                }
-                baseBranch = baseChild->right;
-                if (baseBranch) {
-                    baseFringe = baseBranch->left;
-                    if (baseFringe) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
-                    }
-                    baseFringe = baseBranch->right;
-                    if (baseFringe) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
-                    }
-                    appFreeUni__FPv(baseBranch);
-                }
-                appFreeUni__FPv(baseChild);
-            }
-            baseChild = baseRoot->right;
-            if (baseChild) {
-                baseBranch = baseChild->left;
-                if (baseBranch) {
-                    baseFringe = baseBranch->left;
-                    if (baseFringe) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
-                    }
-                    baseFringe = baseBranch->right;
-                    if (baseFringe) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
-                    }
-                    appFreeUni__FPv(baseBranch);
-                }
-                baseBranch = baseChild->right;
-                if (baseBranch) {
-                    baseFringe = baseBranch->left;
-                    if (baseFringe) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
-                    }
-                    baseFringe = baseBranch->right;
-                    if (baseFringe) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
-                    }
-                    appFreeUni__FPv(baseBranch);
-                }
-                appFreeUni__FPv(baseChild);
-            }
-            appFreeUni__FPv(baseRoot);
-        }
-        }
+                                        FontTableTreeNode*& baseChild, FontTableTreeNode*& baseBranch,
+                                        FontTableTreeNode*& baseFringe) {
+    if (((char*)&self->nodeCount))
+        if (((char*)&self->nodeCount))
+            if (((char*)&self->nodeCount))
+                if (((char*)&self->nodeCount))
+                    if (((char*)&self->nodeCount))
+                        if (((char*)&self->nodeCount)) {
+                            baseRoot = self->root;
+                            if (baseRoot) {
+                                baseChild = baseRoot->left;
+                                if (baseChild) {
+                                    baseBranch = baseChild->left;
+                                    if (baseBranch) {
+                                        baseFringe = baseBranch->left;
+                                        if (baseFringe) {
+                                            FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
+                                        }
+                                        baseFringe = baseBranch->right;
+                                        if (baseFringe) {
+                                            FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
+                                        }
+                                        appFreeUni__FPv(baseBranch);
+                                    }
+                                    baseBranch = baseChild->right;
+                                    if (baseBranch) {
+                                        baseFringe = baseBranch->left;
+                                        if (baseFringe) {
+                                            FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
+                                        }
+                                        baseFringe = baseBranch->right;
+                                        if (baseFringe) {
+                                            FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
+                                        }
+                                        appFreeUni__FPv(baseBranch);
+                                    }
+                                    appFreeUni__FPv(baseChild);
+                                }
+                                baseChild = baseRoot->right;
+                                if (baseChild) {
+                                    baseBranch = baseChild->left;
+                                    if (baseBranch) {
+                                        baseFringe = baseBranch->left;
+                                        if (baseFringe) {
+                                            FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
+                                        }
+                                        baseFringe = baseBranch->right;
+                                        if (baseFringe) {
+                                            FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
+                                        }
+                                        appFreeUni__FPv(baseBranch);
+                                    }
+                                    baseBranch = baseChild->right;
+                                    if (baseBranch) {
+                                        baseFringe = baseBranch->left;
+                                        if (baseFringe) {
+                                            FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
+                                        }
+                                        baseFringe = baseBranch->right;
+                                        if (baseFringe) {
+                                            FreeNodeAndSubtrees(((char*)&self->nodeCount), baseFringe);
+                                        }
+                                        appFreeUni__FPv(baseBranch);
+                                    }
+                                    appFreeUni__FPv(baseChild);
+                                }
+                                appFreeUni__FPv(baseRoot);
+                            }
+                        }
 }
 #pragma pop
 
@@ -294,7 +321,9 @@ static inline void CleanupFontTableBase(FontTableTree* self, FontTableTreeNode*&
 #pragma opt_propagation off
 #pragma opt_lifetimes off
 // Destroy numeric payloads, free both tree cleanup paths, and destroy the information-table base.
-void* CFontNumDraw_dtor(FontTableTree* self, int shouldDelete) {
+// A named member, not a destructor: it returns this and keeps the base container teardown.
+void* CFontNumDraw::Destroy(int shouldDelete) {
+    FontTableTree* self = (FontTableTree*)this;
     FontTableTreeNode* payloadCursor;
     // These three cursors are reused at different depths between left/right
     // halves; assignments define their current subtree, not their suffix.
@@ -316,102 +345,106 @@ void* CFontNumDraw_dtor(FontTableTree* self, int shouldDelete) {
     if (self) {
         self->vtable = (void*)__vt__12CFontNumDraw;
         {
-        // Phase 1: destroy every numeric-entry payload in sorted traversal order.
-        TableLock lock1(self);
-        TableLock lock2(self);
-        {
-        FontTableTreeNode* nil = (FontTableTreeNode*)(((char*)&self->root));
-        payloadCursor = self->firstNode;
-        while (payloadCursor != nil) {
-            void* value = ((FontTreeLinks80250*)payloadCursor)->value;
-            if (value) ((FontEntryVirtual*)value)->destroy(1);
-            FontTableTreeNode* right = payloadCursor->right;
-            if (right) {
-                FontTableTreeNode* child = right;
-                FontTableTreeNode* left;
-                while ((left = child->left) != 0) child = left;
-                payloadCursor = child;
-            } else {
-                FontTableTreeNode* parent;
-                while (payloadCursor != (parent = (FontTableTreeNode*)((unsigned int)payloadCursor->parentTag & ~1))->left) {
-                    payloadCursor = parent;
+            // Phase 1: destroy every numeric-entry payload in sorted traversal order.
+            TableLock lock1(self);
+            TableLock lock2(self);
+            {
+                FontTableTreeNode* nil = (FontTableTreeNode*)(((char*)&self->root));
+                payloadCursor = self->firstNode;
+                while (payloadCursor != nil) {
+                    void* value = ((FontTreeLinks80250*)payloadCursor)->value;
+                    if (value)
+                        ((FontEntryVirtual*)value)->destroy(1);
+                    FontTableTreeNode* right = payloadCursor->right;
+                    if (right) {
+                        FontTableTreeNode* child = right;
+                        FontTableTreeNode* left;
+                        while ((left = child->left) != 0)
+                            child = left;
+                        payloadCursor = child;
+                    } else {
+                        FontTableTreeNode* parent;
+                        while (payloadCursor !=
+                               (parent = (FontTableTreeNode*)((unsigned int)payloadCursor->parentTag & ~1))->left) {
+                            payloadCursor = parent;
+                        }
+                        payloadCursor = parent;
+                    }
                 }
-                payloadCursor = parent;
             }
-        }
-        }
-        payloadCursor = self->root;
-        if (payloadCursor) {
-            // Phase 2: free nodes, after their payloads have been destroyed.
-            // Three levels are expanded here; deeper branches recurse through
-            // RBTree_FreeTrivialSubtree. This is not a fixed-depth tree.
-            nodeCursorA = payloadCursor->left;
-            if (nodeCursorA) {
-                nodeCursorB = nodeCursorA->left;
-                if (nodeCursorB) {
-                    nodeCursorC = nodeCursorB->left;
-                    if (nodeCursorC) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorC);
+            payloadCursor = self->root;
+            if (payloadCursor) {
+                // Phase 2: free nodes, after their payloads have been destroyed.
+                // Three levels are expanded here; deeper branches recurse through
+                // RBTree_FreeTrivialSubtree. This is not a fixed-depth tree.
+                nodeCursorA = payloadCursor->left;
+                if (nodeCursorA) {
+                    nodeCursorB = nodeCursorA->left;
+                    if (nodeCursorB) {
+                        nodeCursorC = nodeCursorB->left;
+                        if (nodeCursorC) {
+                            FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorC);
+                        }
+                        nodeCursorC = nodeCursorB->right;
+                        if (nodeCursorC) {
+                            FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorC);
+                        }
+                        appFreeUni__FPv(nodeCursorB);
                     }
-                    nodeCursorC = nodeCursorB->right;
+                    nodeCursorC = nodeCursorA->right;
                     if (nodeCursorC) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorC);
+                        nodeCursorB = nodeCursorC->left;
+                        if (nodeCursorB) {
+                            FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorB);
+                        }
+                        nodeCursorB = nodeCursorC->right;
+                        if (nodeCursorB) {
+                            FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorB);
+                        }
+                        appFreeUni__FPv(nodeCursorC);
                     }
-                    appFreeUni__FPv(nodeCursorB);
+                    appFreeUni__FPv(nodeCursorA);
                 }
-                nodeCursorC = nodeCursorA->right;
+                nodeCursorC = payloadCursor->right;
                 if (nodeCursorC) {
                     nodeCursorB = nodeCursorC->left;
                     if (nodeCursorB) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorB);
+                        nodeCursorA = nodeCursorB->left;
+                        if (nodeCursorA) {
+                            FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorA);
+                        }
+                        nodeCursorA = nodeCursorB->right;
+                        if (nodeCursorA) {
+                            FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorA);
+                        }
+                        appFreeUni__FPv(nodeCursorB);
                     }
                     nodeCursorB = nodeCursorC->right;
                     if (nodeCursorB) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorB);
+                        nodeCursorA = nodeCursorB->left;
+                        if (nodeCursorA) {
+                            FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorA);
+                        }
+                        nodeCursorA = nodeCursorB->right;
+                        if (nodeCursorA) {
+                            FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorA);
+                        }
+                        appFreeUni__FPv(nodeCursorB);
                     }
                     appFreeUni__FPv(nodeCursorC);
                 }
-                appFreeUni__FPv(nodeCursorA);
+                appFreeUni__FPv(payloadCursor);
+                self->nodeCount = 0;
+                self->root = 0;
+                self->firstNode = (FontTableTreeNode*)&self->root;
             }
-            nodeCursorC = payloadCursor->right;
-            if (nodeCursorC) {
-                nodeCursorB = nodeCursorC->left;
-                if (nodeCursorB) {
-                    nodeCursorA = nodeCursorB->left;
-                    if (nodeCursorA) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorA);
-                    }
-                    nodeCursorA = nodeCursorB->right;
-                    if (nodeCursorA) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorA);
-                    }
-                    appFreeUni__FPv(nodeCursorB);
-                }
-                nodeCursorB = nodeCursorC->right;
-                if (nodeCursorB) {
-                    nodeCursorA = nodeCursorB->left;
-                    if (nodeCursorA) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorA);
-                    }
-                    nodeCursorA = nodeCursorB->right;
-                    if (nodeCursorA) {
-                        FreeNodeAndSubtrees(((char*)&self->nodeCount), nodeCursorA);
-                    }
-                    appFreeUni__FPv(nodeCursorB);
-                }
-                appFreeUni__FPv(nodeCursorC);
-            }
-            appFreeUni__FPv(payloadCursor);
-            self->nodeCount = 0;
-            self->root = 0;
-            self->firstNode = (FontTableTreeNode*)&self->root;
-        }
         }
         // Phase 3: retain the base-container cleanup path (root was cleared above, so this walks
         // an empty tree). The repeated identical conditions are an inlining artifact.
         CleanupFontTableBase(self, baseRoot, baseChild, baseBranch, baseFringe);
         __dt__9CInfoBaseFv(self, 0);
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -426,10 +459,14 @@ int NumericTextTable_ClearEntryText(NumericEntryTable* self, int key) {
     NumericKeyNode* n = self->root;
     NumericKeyNode* parent = (NumericKeyNode*)&self->root;
     while (n) {
-        if (n->key >= key) { parent = n; n = n->left; }
-        else n = n->right;
+        if (n->key >= key) {
+            parent = n;
+            n = n->left;
+        } else
+            n = n->right;
     }
-    if (parent != (NumericKeyNode*)&self->root && key < parent->key) parent = (NumericKeyNode*)&self->root;
+    if (parent != (NumericKeyNode*)&self->root && key < parent->key)
+        parent = (NumericKeyNode*)&self->root;
     unsigned char* value = (unsigned char*)parent->value;
     if ((((FontNumericEntry*)value)->textFlags >> 31) == 0) {
         value[0x11] = 0;
@@ -449,10 +486,14 @@ int UITextTable_SetEntryResourceName(NumericEntryTable* self, int key, void* res
     NumericKeyNode* n = self->root;
     NumericKeyNode* parent = (NumericKeyNode*)&self->root;
     while (n) {
-        if (n->key >= key) { parent = n; n = n->left; }
-        else n = n->right;
+        if (n->key >= key) {
+            parent = n;
+            n = n->left;
+        } else
+            n = n->right;
     }
-    if (parent != (NumericKeyNode*)&self->root && key < parent->key) parent = (NumericKeyNode*)&self->root;
+    if (parent != (NumericKeyNode*)&self->root && key < parent->key)
+        parent = (NumericKeyNode*)&self->root;
     unsigned char* value = (unsigned char*)parent->value;
     ((FontNumericEntry*)value)->resourceNameWord = (int)resourceName;
     int owned = (((NumericEntryDefinition*)*(void**)value)->flags >> kOwnedResourceShift) & 1;
@@ -464,12 +505,12 @@ int UITextTable_SetEntryResourceName(NumericEntryTable* self, int key, void* res
     return 1;
 }
 
-// Delete the wrapper only for a deleting-destructor call.
-void* CComStrokeScore_dtor(void* ptr, int shouldDelete) {
-    if (ptr != 0 && shouldDelete > 0) {
-        __dl__FPv(ptr);
+// Delete the wrapper only for a deleting-destructor call. Named member: the class already has a destructor.
+void* CComStrokeScore::Destroy(int shouldDelete) {
+    if (this != 0 && shouldDelete > 0) {
+        __dl__FPv(this);
     }
-    return ptr;
+    return this;
 }
 
 #pragma push
@@ -484,70 +525,75 @@ void* FontNumDrawEntries_DestroyTree(void* ptr, int shouldDelete) {
     void* nodeCursorA;
     void* rootNode;
     if (ptr) {
-        if (ptr) if (ptr) if (ptr) if (ptr) if (ptr) {
-        rootNode = ((FontTreeLinks80250*)ptr)->right;
-        if (rootNode) {
-            nodeCursorA = *(void**)rootNode;
-            if (nodeCursorA) {
-                nodeCursorB = *(void**)nodeCursorA;
-                if (nodeCursorB) {
-                    nodeCursorC = *(void**)nodeCursorB;
-                    if (nodeCursorC) {
-                        FreeNodeAndSubtrees(ptr, nodeCursorC);
-                    }
-                    nodeCursorC = ((FontTreeLinks80250*)nodeCursorB)->right;
-                    if (nodeCursorC) {
-                        FreeNodeAndSubtrees(ptr, nodeCursorC);
-                    }
-                    appFreeUni__FPv(nodeCursorB);
-                }
-                nodeCursorB = ((FontTreeLinks80250*)nodeCursorA)->right;
-                if (nodeCursorB) {
-                    nodeCursorC = *(void**)nodeCursorB;
-                    if (nodeCursorC) {
-                        FreeNodeAndSubtrees(ptr, nodeCursorC);
-                    }
-                    nodeCursorC = ((FontTreeLinks80250*)nodeCursorB)->right;
-                    if (nodeCursorC) {
-                        FreeNodeAndSubtrees(ptr, nodeCursorC);
-                    }
-                    appFreeUni__FPv(nodeCursorB);
-                }
-                appFreeUni__FPv(nodeCursorA);
-            }
-            nodeCursorA = ((FontTreeLinks80250*)rootNode)->right;
-            if (nodeCursorA) {
-                nodeCursorB = *(void**)nodeCursorA;
-                if (nodeCursorB) {
-                    nodeCursorC = *(void**)nodeCursorB;
-                    if (nodeCursorC) {
-                        FreeNodeAndSubtrees(ptr, nodeCursorC);
-                    }
-                    nodeCursorC = ((FontTreeLinks80250*)nodeCursorB)->right;
-                    if (nodeCursorC) {
-                        FreeNodeAndSubtrees(ptr, nodeCursorC);
-                    }
-                    appFreeUni__FPv(nodeCursorB);
-                }
-                nodeCursorB = ((FontTreeLinks80250*)nodeCursorA)->right;
-                if (nodeCursorB) {
-                    nodeCursorC = *(void**)nodeCursorB;
-                    if (nodeCursorC) {
-                        FreeNodeAndSubtrees(ptr, nodeCursorC);
-                    }
-                    nodeCursorC = ((FontTreeLinks80250*)nodeCursorB)->right;
-                    if (nodeCursorC) {
-                        FreeNodeAndSubtrees(ptr, nodeCursorC);
-                    }
-                    appFreeUni__FPv(nodeCursorB);
-                }
-                appFreeUni__FPv(nodeCursorA);
-            }
-            appFreeUni__FPv(rootNode);
-        }
-        }
+        if (ptr)
+            if (ptr)
+                if (ptr)
+                    if (ptr)
+                        if (ptr) {
+                            rootNode = ((FontTreeLinks80250*)ptr)->right;
+                            if (rootNode) {
+                                nodeCursorA = *(void**)rootNode;
+                                if (nodeCursorA) {
+                                    nodeCursorB = *(void**)nodeCursorA;
+                                    if (nodeCursorB) {
+                                        nodeCursorC = *(void**)nodeCursorB;
+                                        if (nodeCursorC) {
+                                            FreeNodeAndSubtrees(ptr, nodeCursorC);
+                                        }
+                                        nodeCursorC = ((FontTreeLinks80250*)nodeCursorB)->right;
+                                        if (nodeCursorC) {
+                                            FreeNodeAndSubtrees(ptr, nodeCursorC);
+                                        }
+                                        appFreeUni__FPv(nodeCursorB);
+                                    }
+                                    nodeCursorB = ((FontTreeLinks80250*)nodeCursorA)->right;
+                                    if (nodeCursorB) {
+                                        nodeCursorC = *(void**)nodeCursorB;
+                                        if (nodeCursorC) {
+                                            FreeNodeAndSubtrees(ptr, nodeCursorC);
+                                        }
+                                        nodeCursorC = ((FontTreeLinks80250*)nodeCursorB)->right;
+                                        if (nodeCursorC) {
+                                            FreeNodeAndSubtrees(ptr, nodeCursorC);
+                                        }
+                                        appFreeUni__FPv(nodeCursorB);
+                                    }
+                                    appFreeUni__FPv(nodeCursorA);
+                                }
+                                nodeCursorA = ((FontTreeLinks80250*)rootNode)->right;
+                                if (nodeCursorA) {
+                                    nodeCursorB = *(void**)nodeCursorA;
+                                    if (nodeCursorB) {
+                                        nodeCursorC = *(void**)nodeCursorB;
+                                        if (nodeCursorC) {
+                                            FreeNodeAndSubtrees(ptr, nodeCursorC);
+                                        }
+                                        nodeCursorC = ((FontTreeLinks80250*)nodeCursorB)->right;
+                                        if (nodeCursorC) {
+                                            FreeNodeAndSubtrees(ptr, nodeCursorC);
+                                        }
+                                        appFreeUni__FPv(nodeCursorB);
+                                    }
+                                    nodeCursorB = ((FontTreeLinks80250*)nodeCursorA)->right;
+                                    if (nodeCursorB) {
+                                        nodeCursorC = *(void**)nodeCursorB;
+                                        if (nodeCursorC) {
+                                            FreeNodeAndSubtrees(ptr, nodeCursorC);
+                                        }
+                                        nodeCursorC = ((FontTreeLinks80250*)nodeCursorB)->right;
+                                        if (nodeCursorC) {
+                                            FreeNodeAndSubtrees(ptr, nodeCursorC);
+                                        }
+                                        appFreeUni__FPv(nodeCursorB);
+                                    }
+                                    appFreeUni__FPv(nodeCursorA);
+                                }
+                                appFreeUni__FPv(rootNode);
+                            }
+                        }
         // Phase 2: only a deleting-destructor call releases the wrapper itself.
-        if (shouldDelete > 0) __dl__FPv(ptr);
+        if (shouldDelete > 0)
+            __dl__FPv(ptr);
     }
     return ptr;
 }
@@ -612,7 +658,9 @@ void CFontNumDraw_InitTwoPiConstant() {
 int RivalStrokeUse_GetStrokesThroughHole(unsigned char* base, int index, int count) {
     int sum = 0;
     for (int i = 0; i < count; ++i) {
-        sum += ((RivalScoreCell*)(base + index * 4 + ((SharedRoundHoleOrder*)g_sharedDoc)->holes[i] * kRivalHoleStride - kStrokeCellBias))->strokes;
+        sum += ((RivalScoreCell*)(base + index * 4 + ((SharedRoundHoleOrder*)g_sharedDoc)->holes[i] * kRivalHoleStride -
+                                  kStrokeCellBias))
+                   ->strokes;
     }
     return sum;
 }
@@ -623,15 +671,19 @@ int RivalStrokeUse_GetStrokesThroughHole(unsigned char* base, int index, int cou
 // definition and data (the BP group provider) remain borrowed. Name must match
 // R_NUM_ and allocation/group lookup must succeed: node is dereferenced unchecked.
 // *out receives the table-owned entry; return value is the definition's lookup key.
-int CFontNumDraw_CreateNumericEntry(NumericEntryTable* self, NumericEntryDefinition* definition, void* data, NumericEntryConstruction** out) {
+int CFontNumDraw::CreateNumericEntry(NumericEntryDefinition* definition, void* data, NumericEntryConstruction** out) {
+    NumericEntryTable* self = (NumericEntryTable*)this;
     TableLock80250 lock(self);
     int groupNameAddress = (int)definition->name;
     NumericEntryConstruction* node = 0;
     if (strncmp((const char*)groupNameAddress, fontNumDrawStrings, strlen(fontNumDrawStrings)) == 0) {
         NumericEntryConstruction* tmp = (NumericEntryConstruction*)__nw__FUl(0x24);
         if (tmp) {
-            tmp->definition = 0; tmp->group = 0; tmp->vtable = __vt__Q212CFontNumDraw18FONT_NUM_DRAW_INFO;
-            tmp->resourceNameWord = 0; tmp->textStorageWord = 0;
+            tmp->definition = 0;
+            tmp->group = 0;
+            tmp->vtable = __vt__Q212CFontNumDraw18FONT_NUM_DRAW_INFO;
+            tmp->resourceNameWord = 0;
+            tmp->textStorageWord = 0;
             *(int*)&tmp->textLength = 0;
             *(int*)&tmp->text = 0;
             *(int*)&tmp->resource = 0;
@@ -654,7 +706,8 @@ int CFontNumDraw_CreateNumericEntry(NumericEntryTable* self, NumericEntryDefinit
         old[0] = value;
         old[1] = s_numericTreeDefaultValueStorage;
         slot = (NumericEntryBinding*)((char*)BpEntryTree_InsertNode((char*)&self->subtree, tree, a, b, old) + 0xc);
-    } else slot = (NumericEntryBinding*)((char*)parent + kTreePayloadOffset);
+    } else
+        slot = (NumericEntryBinding*)((char*)parent + kTreePayloadOffset);
     slot->entry = node;
     return value;
 }
@@ -664,8 +717,8 @@ int CFontNumDraw_CreateNumericEntry(NumericEntryTable* self, NumericEntryDefinit
 struct NodeBase80250 {
     unsigned char pad[8];
 };
-struct NodeVirtual80250 : NodeBase80250 { 
-virtual int test();
+struct NodeVirtual80250 : NodeBase80250 {
+    virtual int test();
 };
 // Query the existing entry hook that gates resource binding; the predicate's internal meaning is unknown.
 static inline int EntryRequestsResourceBinding(NumericEntryConstruction* entry) {
@@ -674,16 +727,17 @@ static inline int EntryRequestsResourceBinding(NumericEntryConstruction* entry) 
 #pragma push
 #pragma use_lmw_stmw on
 // Create entries from the definition array and bind their resource values.
-// resourceNameWord encodes the font resource's name pointer. Returns 1;
+// resourceName is the font resource's name pointer, stored as a word. Returns 1;
 // definitions and provider must outlive the entries, and keys should be unique.
-int CFontNumDraw_RegisterEntries(NumericEntryTable* self, NumericEntryDefinition* definitions, int count, void* groupProvider, int resourceNameWord) {
+int CFontNumDraw::RegisterEntries(const void* definitions, int count, void* groupProvider, const void* resourceName) {
+    NumericEntryTable* self = (NumericEntryTable*)this;
     TableLock80250 outer(self);
     unsigned char* cursor = (unsigned char*)definitions;
-    unsigned int flag;
+    unsigned int owned;
     NumericResourceEntry* entry = 0;
     for (int i = 0; i < count; cursor += 0xc, ++i) {
         NumericEntryConstruction* node;
-        int lookupKey = CFontNumDraw_CreateNumericEntry(self, (NumericEntryDefinition*)cursor, groupProvider, &node);
+        int lookupKey = CreateNumericEntry((NumericEntryDefinition*)cursor, groupProvider, &node);
         // Slot zero of the entry's +8 interface gates binding. Its underlying
         // predicate meaning is unverified; false leaves the new entry unbound.
         if (EntryRequestsResourceBinding(node)) {
@@ -691,19 +745,23 @@ int CFontNumDraw_RegisterEntries(NumericEntryTable* self, NumericEntryDefinition
             NumericKeyNode* n = self->root;
             NumericKeyNode* parent = (NumericKeyNode*)&self->root;
             while (n) {
-                if (n->key >= lookupKey) { parent = n; n = n->left; }
-                else n = n->right;
+                if (n->key >= lookupKey) {
+                    parent = n;
+                    n = n->left;
+                } else
+                    n = n->right;
             }
-            if (parent == (NumericKeyNode*)&self->root || lookupKey < parent->key) parent = (NumericKeyNode*)&self->root;
+            if (parent == (NumericKeyNode*)&self->root || lookupKey < parent->key)
+                parent = (NumericKeyNode*)&self->root;
             entry = (NumericResourceEntry*)parent->value;
-            entry->resourceNameWord = resourceNameWord;
+            entry->resourceNameWord = (int)resourceName;
             void* old = entry->resource;
-            flag = (((NumericEntryDefinition*)entry->obj)->flags >> kOwnedResourceShift) & 1;
+            owned = (((NumericEntryDefinition*)entry->obj)->flags >> kOwnedResourceShift) & 1;
             if (old) {
                 ResourceManager_DeleteResource(g_resourceManager, old);
                 entry->resource = 0;
             }
-            self->setValue(entry->resourceNameWord, &entry->resource, flag != 0);
+            self->setValue(entry->resourceNameWord, &entry->resource, owned != 0);
         }
     }
     return 1;
@@ -756,10 +814,12 @@ void UITextTable_ApplyNumericTextFormatFlags(void* self, unsigned char* entryByt
         removeLeadingCharacter = 0;
         switch (leadingCharacterMode) {
         case kFormatModeZero:
-            if ((definition->flags & kKeepInModeZero) == 0) removeLeadingCharacter = 1;
+            if ((definition->flags & kKeepInModeZero) == 0)
+                removeLeadingCharacter = 1;
             break;
         case kFormatModeOne:
-            if ((definition->flags & kKeepInModeOne) == 0) removeLeadingCharacter = 1;
+            if ((definition->flags & kKeepInModeOne) == 0)
+                removeLeadingCharacter = 1;
             break;
         case kStripUnlessExplicitlyKept:
             removeLeadingCharacter = 1;
@@ -784,19 +844,29 @@ void UITextTable_ApplyNumericTextFormatFlags(void* self, unsigned char* entryByt
         }
         if (textLength != 0) {
             lastCharacter = textLength - 1;
-            if (lastCharacter < 0xFFFFFFFFu) idx = (int)lastCharacter;
+            if (lastCharacter < 0xFFFFFFFFu)
+                idx = (int)lastCharacter;
             scanCharacter = textBytes + idx;
             while (1) {
-                if (*scanCharacter == '.') { decimalPoint = (unsigned int)(scanCharacter - textBytes); break; }
-                if (scanCharacter > textBytes) --scanCharacter;
-                else { decimalPoint = 0xFFFFFFFFu; break; }
+                if (*scanCharacter == '.') {
+                    decimalPoint = (unsigned int)(scanCharacter - textBytes);
+                    break;
+                }
+                if (scanCharacter > textBytes)
+                    --scanCharacter;
+                else {
+                    decimalPoint = 0xFFFFFFFFu;
+                    break;
+                }
             }
         } else {
             decimalPoint = 0xFFFFFFFFu;
         }
         if (decimalPoint == 0xFFFFFFFFu) {
-            if (!heapBackedText) insertionPosition = (int)(entryBytes[kEntryInlineLengthByte] & 0x7f) - 1;
-            else insertionPosition = (int)((FontNumericEntry*)entryBytes)->textLength - 1;
+            if (!heapBackedText)
+                insertionPosition = (int)(entryBytes[kEntryInlineLengthByte] & 0x7f) - 1;
+            else
+                insertionPosition = (int)((FontNumericEntry*)entryBytes)->textLength - 1;
         } else {
             insertionPosition = (int)decimalPoint - 1;
         }
@@ -807,9 +877,11 @@ void UITextTable_ApplyNumericTextFormatFlags(void* self, unsigned char* entryByt
             if (digitsSinceSeparator >= 2) {
                 allocTagB = allocScratchB;
                 len = strlen(insertedText);
-                String_ReplaceRange(entryBytes + kEntryTextOffset, insertionPosition, 0, insertedText, insertedText + len, (const char*)&allocTagB);
+                String_ReplaceRange(entryBytes + kEntryTextOffset, insertionPosition, 0, insertedText,
+                                    insertedText + len, (const char*)&allocTagB);
                 digitsSinceSeparator = 0;
-            } else ++digitsSinceSeparator;
+            } else
+                ++digitsSinceSeparator;
         }
     }
     // Phase 3: append the suffix after grouping; repeated formatting can append it again.
@@ -822,7 +894,8 @@ void UITextTable_ApplyNumericTextFormatFlags(void* self, unsigned char* entryByt
         }
         allocTagC = allocScratchC;
         len = strlen(insertedText);
-        String_ReplaceRange(entryBytes + kEntryTextOffset, textLength, 0, insertedText, insertedText + len, (const char*)&allocTagC);
+        String_ReplaceRange(entryBytes + kEntryTextOffset, textLength, 0, insertedText, insertedText + len,
+                            (const char*)&allocTagC);
     }
 }
 #pragma pop

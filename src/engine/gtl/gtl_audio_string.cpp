@@ -11,8 +11,6 @@
 // Borrowed character pointers are invalidated by successful reserve/replacement.
 // No gameplay tuning knobs. A capacity mod must preserve space for NUL in both
 // forms and test 0/10/11 characters, self-insertion, erase-to-empty and exceptions.
-// Translation unit 0x8040470C-0x80404D8C (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "classes/MWStringStorage.h"
 #include <decomp/cw_string_guard.h>
@@ -54,9 +52,13 @@ struct StringRep {
 
 enum StringStorageLimits {
     // kInlineCapacity is storage bytes, not the maximum character length.
-    kInlineCapacity = 11, kAllocationAlignment = 16,
-    kHeapFlag = 0x80000000u, kCapacityMask = 0x7fffffffu, kMaxStringLength = 0x7ffffffeu,
-    kInlineHeapFlag = 0x80, kInlineLengthMask = 0x7f
+    kInlineCapacity = 11,
+    kAllocationAlignment = 16,
+    kHeapFlag = 0x80000000u,
+    kCapacityMask = 0x7fffffffu,
+    kMaxStringLength = 0x7ffffffeu,
+    kInlineHeapFlag = 0x80,
+    kInlineLengthMask = 0x7f
 };
 
 // Destroy heap-backed string storage; inline strings own no separate allocation.
@@ -79,8 +81,18 @@ void* AudioString_dtor(void* self, int deleteStorage) {
 // or throw (null is unchecked). Successful moves free the prior heap allocation.
 void gtl_String_ReserveCapacity(char* self, unsigned int requested) {
     if (requested > kMaxStringLength) {
-        struct Guard { char* first; ~Guard() { if (first) __dla__FPv(first); } } guard = { 0 };
-        struct Error { void* vtable; char* message; void* control; } error;
+        struct Guard {
+            char* first;
+            ~Guard() {
+                if (first)
+                    __dla__FPv(first);
+            }
+        } guard = {0};
+        struct Error {
+            void* vtable;
+            char* message;
+            void* control;
+        } error;
         guard.first = (char*)new char[strlen(audioStringErrorStrings.reserveLengthError) + 1];
         error.vtable = __vt__Q23std11logic_error;
         error.message = guard.first;
@@ -98,7 +110,7 @@ void gtl_String_ReserveCapacity(char* self, unsigned int requested) {
         return;
     }
 
-// An MSL string keeps its heap flag in bit 31 of word 0.
+    // An MSL string keeps its heap flag in bit 31 of word 0.
     bool heap = (*(unsigned char*)self & kInlineHeapFlag) != 0;
     unsigned int size;
     unsigned int oldCapacity;
@@ -109,15 +121,20 @@ void gtl_String_ReserveCapacity(char* self, unsigned int requested) {
         size = *(unsigned char*)self & kInlineLengthMask;
         oldCapacity = kInlineCapacity;
     }
-    if (requested < size) requested = size;
+    if (requested < size)
+        requested = size;
     unsigned int newCapacity = kInlineCapacity;
-    if (requested + 1 > kInlineCapacity) newCapacity = (requested + kAllocationAlignment) & ~(kAllocationAlignment - 1u);
-    if (newCapacity == oldCapacity) return;
+    if (requested + 1 > kInlineCapacity)
+        newCapacity = (requested + kAllocationAlignment) & ~(kAllocationAlignment - 1u);
+    if (newCapacity == oldCapacity)
+        return;
 
     char* oldData = heap ? AsMWStringStorage(self)->data : self + 1;
     char* data;
-    if (newCapacity == kInlineCapacity) data = self + 1;
-    else if (newCapacity > oldCapacity) data = (char*)gtl_Audio_Alloc(newCapacity);
+    if (newCapacity == kInlineCapacity)
+        data = self + 1;
+    else if (newCapacity > oldCapacity)
+        data = (char*)gtl_Audio_Alloc(newCapacity);
     else {
         try {
             data = (char*)gtl_Audio_Alloc(newCapacity);
@@ -128,7 +145,8 @@ void gtl_String_ReserveCapacity(char* self, unsigned int requested) {
     bool newHeap = newCapacity != kInlineCapacity;
     memmove(data, oldData, size);
     data[size] = 0;
-    if (heap) gtl_Audio_Free(oldData);
+    if (heap)
+        gtl_Audio_Free(oldData);
     unsigned int flags = AsMWStringStorage(self)->flags;
     flags = (flags & kCapacityMask) | (newHeap ? kHeapFlag : 0);
     AsMWStringStorage(self)->flags = flags;
@@ -153,7 +171,8 @@ void gtl_String_ReserveCapacity(char* self, unsigned int requested) {
 // propagate before destination mutation; the allocator must not return null.
 // Reallocation copies all borrowed source bytes before freeing old data; the
 // in-place path first snapshots a threatened source range, then shifts the tail.
-void* gtl_String_ReplaceRange(char* self, unsigned int position, unsigned int removeCount, const char* first, const char* last, const char* allocatorTag) {
+void* gtl_String_ReplaceRange(char* self, unsigned int position, unsigned int removeCount, const char* first,
+                              const char* last, const char* allocatorTag) {
     unsigned int flags = AsMWStringStorage(self)->flags;
     bool heap = (flags >> 31) != 0;
     unsigned int length;
@@ -169,8 +188,18 @@ void* gtl_String_ReplaceRange(char* self, unsigned int position, unsigned int re
         capacity = flags & kCapacityMask;
     }
     if (position > length) {
-        struct Guard { char* first; ~Guard() { if (first) __dla__FPv(first); } } guard = { 0 };
-        struct Error { void* vtable; char* message; void* control; } error;
+        struct Guard {
+            char* first;
+            ~Guard() {
+                if (first)
+                    __dla__FPv(first);
+            }
+        } guard = {0};
+        struct Error {
+            void* vtable;
+            char* message;
+            void* control;
+        } error;
         error.vtable = __vt__Q23std11logic_error;
         error.message = 0;
         guard.first = new char[strlen(audioStringErrorStrings.replaceOutOfRange) + 1];
@@ -194,8 +223,18 @@ void* gtl_String_ReplaceRange(char* self, unsigned int position, unsigned int re
     unsigned int insertLength = (unsigned int)(last - first);
     unsigned int newLength = retainedLength + insertLength;
     if (insertLength > kMaxStringLength || retainedLength > kMaxStringLength - insertLength) {
-        struct Guard { char* first; ~Guard() { if (first) __dla__FPv(first); } } guard = { 0 };
-        struct Error { void* vtable; char* message; void* control; } error;
+        struct Guard {
+            char* first;
+            ~Guard() {
+                if (first)
+                    __dla__FPv(first);
+            }
+        } guard = {0};
+        struct Error {
+            void* vtable;
+            char* message;
+            void* control;
+        } error;
         error.vtable = __vt__Q23std11logic_error;
         error.message = 0;
         guard.first = new char[strlen(audioStringErrorStrings.replaceLengthError) + 1];
@@ -221,12 +260,16 @@ void* gtl_String_ReplaceRange(char* self, unsigned int position, unsigned int re
     }
     if (newLength >= capacity) {
         char* fresh = (char*)gtl_Audio_Alloc(newCapacity);
-        if (position != 0) memcpy(fresh, data, position);
-        if (insertLength != 0) memmove(fresh + position, first, insertLength);
+        if (position != 0)
+            memcpy(fresh, data, position);
+        if (insertLength != 0)
+            memmove(fresh + position, first, insertLength);
         unsigned int tailAfter = available - removeLength;
-        if (tailAfter != 0) memcpy(fresh + position + insertLength, data + position + removeLength, tailAfter);
+        if (tailAfter != 0)
+            memcpy(fresh + position + insertLength, data + position + removeLength, tailAfter);
         fresh[newLength] = s_audioStringReallocationTerminator;
-        if (heap) gtl_Audio_Free(data);
+        if (heap)
+            gtl_Audio_Free(data);
         AsMWStringStorage(self)->flags = kHeapFlag | newCapacity;
         AsMWStringStorage(self)->length = newLength;
         AsMWStringStorage(self)->data = fresh;
@@ -236,19 +279,23 @@ void* gtl_String_ReplaceRange(char* self, unsigned int position, unsigned int re
         // into a local string (empty, short form) by calling itself (0x80404CF4), so up to 10 characters
         // stays in the local's inline buffer and a longer one gets the usual rounded capacity; the local's heap
         // buffer, if any, is freed after the terminator is written (0x80404D3C, 0x80404D60-0x80404D70).
-        unsigned int overlapCopy[3] = { 0, 0, 0 };
+        unsigned int overlapCopy[3] = {0, 0, 0};
         if (tailAfter != 0 && data + position + insertLength < last && last <= data + length) {
             gtl_String_ReplaceRange((char*)overlapCopy, 0, 0, first, last, allocatorTag);
             first = (overlapCopy[0] >> 31) ? (char*)overlapCopy[2] : (char*)overlapCopy + 1;
         }
-        if (tailAfter != 0) memmove(data + position + insertLength, data + position + removeLength, tailAfter);
-        if (insertLength != 0) memmove(data + position, first, insertLength);
+        if (tailAfter != 0)
+            memmove(data + position + insertLength, data + position + removeLength, tailAfter);
+        if (insertLength != 0)
+            memmove(data + position, first, insertLength);
         data[newLength] = s_audioStringInPlaceTerminator;
-        if (heap) AsMWStringStorage(self)->length = newLength;
+        if (heap)
+            AsMWStringStorage(self)->length = newLength;
         else {
             *(unsigned char*)self = (unsigned char)((*(unsigned char*)self & kInlineHeapFlag) | newLength);
         }
-        if (overlapCopy[0] >> 31) gtl_Audio_Free((void*)overlapCopy[2]);
+        if (overlapCopy[0] >> 31)
+            gtl_Audio_Free((void*)overlapCopy[2]);
     }
     return self;
 }

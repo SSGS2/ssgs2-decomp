@@ -1,24 +1,36 @@
+// Loading the pages of a font atlas (FontAtlas, see font_atlas_and_mwstring.cpp), and the
+// heap object that reads font data from the atlas buffer.
+
 #include "game/string.h"
 #include "classes/FontAtlas.h"
-
-// Translation unit 0x800A7CA4-0x800A7E64 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CHashPath.h"
 
 extern "C" {
 
 // Private ABI storage: both Obj types hold a narrow string; HeapObj is a font-data view.
 // Keep the separate string types and the explicit local aggregate layout for code generation.
-struct Obj16 { unsigned char data[12]; };
-struct Obj10 { unsigned char data[12]; };
-struct HeapObj { unsigned char data[16]; HeapObj(void*); };
+struct Obj16 {
+    unsigned char data[12];
+};
+struct Obj10 {
+    unsigned char data[12];
+};
+struct HeapObj {
+    unsigned char data[16];
+    HeapObj(void*);
+};
 // Header +0x0C is the number of atlas pages, +0x10 is the copied line height.
-struct InitResult { unsigned char pad[12]; int count; int lineHeight; unsigned char tail[16]; };
+struct InitResult {
+    unsigned char pad[12];
+    int count;
+    int lineHeight;
+    unsigned char tail[16];
+};
 
 HeapObj* gtl_FontData_InitView(HeapObj*, void*);
 void gtl_FontData_CopyHeader(HeapObj*, void*);
 void gtl_FontData_GetRecord(HeapObj*, int, void*);
-int CHashPath_FindPath(void*);
-void MWString_ConstructCString(Obj16*, int);
+void MWString_ConstructCString(Obj16*, const char*);
 int MWString_ReverseFindCString(Obj16*, const char*, int);
 void MWString_AssignCString(Obj16*, const char*);
 int MWString_GetLength(void*);
@@ -37,23 +49,25 @@ void FontAtlasPageVector_PushBack(void*, void*);
 extern const char texturePathStrings[];
 
 // Bind the font reader to the atlas's existing buffer (no buffer copy here).
-inline HeapObj::HeapObj(void* arg) { gtl_FontData_InitView(this, arg); }
+inline HeapObj::HeapObj(void* arg) {
+    gtl_FontData_InitView(this, arg);
+}
 
 #pragma opt_loop_invariants off
 // Build a font-data view and append each referenced page using paths relative to the font file.
-// self/fontBuffer and arg (a path object resolved by CHashPath_FindPath) must be valid.
+// self/fontBuffer and arg (a path object resolved by CHashPath::FindPath) must be valid.
 // The atlas retains the allocated reader and appended page handles; temporary strings are scoped.
 // Existing pages are not cleared. Returns 1 without checking individual load results.
 int FontAtlas_LoadPages(void* self, void* arg) {
     struct Locals {
-        unsigned char item[4]; // Loaded page handle passed to the page vector.
-        unsigned char a[4]; // Secondary image output (palette in the shared decoder).
-        Obj10 part; // Directory plus this page's filename.
-        Obj16 text; // Directory prefix, including its trailing slash when present.
+        unsigned char item[4];        // Loaded page handle passed to the page vector.
+        unsigned char a[4];           // Secondary image output (palette in the shared decoder).
+        Obj10 part;                   // Directory plus this page's filename.
+        Obj16 text;                   // Directory prefix, including its trailing slash when present.
         unsigned char smallBuf[0x18]; // Secondary decoder metadata.
-        unsigned char attr[0x20]; // Page record; leading bytes form the filename.
-        unsigned char bigBuf[0x28]; // Primary decoder metadata.
-        InitResult result; // Font header copy.
+        unsigned char attr[0x20];     // Page record; leading bytes form the filename.
+        unsigned char bigBuf[0x28];   // Primary decoder metadata.
+        InitResult result;            // Font header copy.
     } local;
     // Publish the reader and line height before loading the referenced pages.
     HeapObj* fontReader = new HeapObj(AsFontAtlas(self)->fontBuffer);
@@ -62,25 +76,29 @@ int FontAtlas_LoadPages(void* self, void* arg) {
     AsFontAtlas(self)->lineHeight = local.result.lineHeight;
 
     // Retain the directory through the last slash, or use an empty relative prefix.
-    MWString_ConstructCString(&local.text, CHashPath_FindPath(arg));
+    MWString_ConstructCString(&local.text, (const char*)CHashPath::FindPath((const char*)arg));
     struct StringCleanup {
         NString* string;
         // Destroy the temporary narrow string on normal exit and exception unwinding.
-        ~StringCleanup() { string->~NString(); }
+        ~StringCleanup() {
+            string->~NString();
+        }
     } cleanupText = {(NString*)&local.text};
     enum {
-        kPathSeparatorOffset = 0x4b, // "/"
+        kPathSeparatorOffset = 0x4b,  // "/"
         kEmptyDirectoryOffset = 0x4d, // ""
-        kTgaSuffixOffset = 0x4e, // "tga" (no dot)
+        kTgaSuffixOffset = 0x4e,      // "tga" (no dot)
         kExtensionSearchTailBytes = 4,
         kSearchFromEnd = -1
     };
-    unsigned int slashPosition = MWString_ReverseFindCString(&local.text, texturePathStrings + kPathSeparatorOffset, kSearchFromEnd);
+    unsigned int slashPosition =
+        MWString_ReverseFindCString(&local.text, texturePathStrings + kPathSeparatorOffset, kSearchFromEnd);
     if (slashPosition == -1) {
         MWString_AssignCString(&local.text, texturePathStrings + kEmptyDirectoryOffset);
     } else {
         // EraseRange's pointer-shaped second argument carries a character index here.
-        MWString_EraseRange(&local.text, (const char*)(slashPosition + 1), MWString_GetLength(&local.text) - slashPosition);
+        MWString_EraseRange(&local.text, (const char*)(slashPosition + 1),
+                            MWString_GetLength(&local.text) - slashPosition);
     }
     // Construct each page path, dispatch the load, then append the resulting handle.
     for (int pageIndex = 0; pageIndex < local.result.count; ++pageIndex) {
@@ -91,7 +109,8 @@ int FontAtlas_LoadPages(void* self, void* arg) {
         FontAtlasPage_InitEmpty(local.item);
         // This is a case-sensitive search for "tga" in the last four characters,
         // not a validated file extension test. Preserve that dispatch rule.
-        unsigned int tgaPosition = MWString_FindCString(&local.part, texturePathStrings + kTgaSuffixOffset, MWString_GetLength(&local.part) - kExtensionSearchTailBytes);
+        unsigned int tgaPosition = MWString_FindCString(&local.part, texturePathStrings + kTgaSuffixOffset,
+                                                        MWString_GetLength(&local.part) - kExtensionSearchTailBytes);
         if (tgaPosition != -1) {
             Texture_CreateFromStream(self, MWString_GetCString(&local.part), local.item);
         } else {

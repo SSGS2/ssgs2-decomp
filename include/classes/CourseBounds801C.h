@@ -24,4 +24,3 @@ OFF(maxZ, 0x58);
 #define AsCourseBounds801C(p) ((CourseBounds801C*)(p))
 
 #endif
-

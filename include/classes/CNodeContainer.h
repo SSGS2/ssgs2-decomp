@@ -1,32 +1,49 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CNodeContainer: a named node in a course tree.
+//
+// A node owns its name (an MSL small string), one word of metadata and a vector
+// of 12-byte entries. It is the element type of the course's node vector.
+//
+// The class has no virtual functions on purpose: its vtable is still taken from
+// the original game data, so `vtbl` is spelled out as the first member.
 #ifndef CLASSES_CNODECONTAINER_H
 #define CLASSES_CNODECONTAINER_H
 
 #include "game/types.h"
 
+// The 12-byte MSL narrow string that stores a node's name.
+struct NodeName {
+    unsigned int flags; // 0x0  bit 31 selects heap storage
+    unsigned int length;
+    char* data;
+};
+typedef char NodeName_size[(sizeof(NodeName) == 0xC) ? 1 : -1];
+
 class CNodeContainer {
 public:
-    void* vtbl;                        // 0x0: 1 use in CNodeContainer_dtor
-    unsigned int nameStringFlags;                 // 0x4: 1 use in CNodeContainer_dtor
-    char pad_008[0x4];                  // 0x8
-    void* nameStringData;                        // 0xc: 1 use in CNodeContainer_dtor
-    unsigned int metadataWord;                // 0x10: 1 use in CNodeContainer_CtorFromName
-    unsigned int entries;                // 0x14: 2 uses in CNodeContainer_dtor, CNodeContainer_CtorFromName
-    unsigned int entryCount;                // 0x18: 2 uses in CNodeContainer_dtor, CNodeContainer_CtorFromName
-    unsigned int entryCapacity;                // 0x1c: 1 use in CNodeContainer_CtorFromName
+    CNodeContainer(const NodeName& name);
+    ~CNodeContainer();
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x18
+    static void CopyConstructAt(void* object, void* destination, void* value);
+    static void Append(void* object, void* value);
+
+    void* vtbl;                 // 0x00
+    unsigned int nameFlags;     // 0x04  bit 31 selects heap storage
+    unsigned int nameLength;    // 0x08
+    char* nameData;             // 0x0C  heap bytes when nameFlags bit 31 is set
+    unsigned int metadataWord;  // 0x10
+    void* entries;              // 0x14  data pointer of the entry vector
+    unsigned int entryCount;    // 0x18
+    unsigned int entryCapacity; // 0x1C
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CNODECONTAINER_OFF(f, o) typedef char CNodeContainer_off_##f[((int)&((CNodeContainer*)0)->f == (o)) ? 1 : -1]
-CNODECONTAINER_OFF(nameStringFlags, 0x4);
-CNODECONTAINER_OFF(nameStringData, 0xc);
+CNODECONTAINER_OFF(nameFlags, 0x4);
+CNODECONTAINER_OFF(nameData, 0xc);
 CNODECONTAINER_OFF(metadataWord, 0x10);
 CNODECONTAINER_OFF(entries, 0x14);
 CNODECONTAINER_OFF(entryCount, 0x18);
 CNODECONTAINER_OFF(entryCapacity, 0x1c);
 #undef CNODECONTAINER_OFF
+typedef char CNodeContainer_size[(sizeof(CNodeContainer) == 0x20) ? 1 : -1];
 
-#endif  // CLASSES_CNODECONTAINER_H
+#endif // CLASSES_CNODECONTAINER_H

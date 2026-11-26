@@ -1,37 +1,38 @@
-// Translation unit 0x8041EEE4-0x8041EF58 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Completion for the file delete callback (gtl::CCallBackDeleteFile). It records the result
+// code and then hands the callback's storage to the disposal step.
 
 #include "types.h"
+#include <decomp/local_class.h>
+#include "classes/gtl_CCallBackDeleteFile.h"
 
 extern "C" {
 
-void *FileIO_InvokeAllocatorCallback3(void *p);
+void* FileIO_InvokeAllocatorCallback3(void* p);
 
-struct gtl_CCallBackDeleteFile {
-    virtual void vfunc_0(int);
-    virtual void vfunc_1();
-    virtual void *vfunc_2(int);
-    void *completionFunction; // +4: optional completion function, called with (code, context).
-    int callbackContext;   // +8: opaque user context word, not interpreted here.
+// Virtual slot 0 of a callback object (the destructor-like entry), called through a raw pointer.
+struct CallbackVirtualView {
+    virtual void teardown(int) DECOMP_LOCAL_VIRTUAL;
 };
 
-enum { kTeardownWithoutDelete = -1 };
+enum {
+    kTeardownWithoutDelete = -1
+};
+
+} // extern "C"
 
 // Notify the optional delete-file completion function and dispose of this callback object.
 // self must be live; completionCode is passed unchanged (including nonzero errors).
 // Return the allocator hook's opaque result, not the completion status. Do not
 // access self after teardown; callback 3 receives its storage for disposal here.
-void *gtl_CCallBackDeleteFile_OnDeleteResult(gtl_CCallBackDeleteFile *self, int completionCode) {
+void* gtl::CCallBackDeleteFile::OnDeleteResult(int completionCode) {
     int callbackCode = 0;
     if (completionCode != 0) {
         callbackCode = completionCode;
     }
-    if (self->completionFunction) {
-        ((void (*)(int, int))self->completionFunction)(callbackCode, self->callbackContext);
+    if (completionFunction) {
+        ((void (*)(int, int))completionFunction)(callbackCode, callbackContext);
     }
     // Negative destructor argument retains storage for the separate allocator hook.
-    self->vfunc_0(kTeardownWithoutDelete);
-    return (void *)FileIO_InvokeAllocatorCallback3(self);
+    ((CallbackVirtualView*)this)->teardown(kTeardownWithoutDelete);
+    return (void*)FileIO_InvokeAllocatorCallback3(this);
 }
-
-} // extern "C"

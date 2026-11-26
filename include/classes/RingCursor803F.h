@@ -5,10 +5,10 @@
 
 class RingCursor803F {
 public:
-    unsigned int currentAddress; // 0x0: RingCursor_Increment advances one four-byte element
-    unsigned int beginAddress; // 0x4: RingCursor_Increment wraps here at limitAddress
+    unsigned int currentAddress;       // 0x0: RingCursor_Increment advances one four-byte element
+    unsigned int beginAddress;         // 0x4: RingCursor_Increment wraps here at limitAddress
     unsigned int splitBoundaryAddress; // 0x8: RingCursor_SubtractOffset copies unchanged
-    unsigned int limitAddress; // 0xc: RingCursor_Increment compares with advanced address
+    unsigned int limitAddress;         // 0xc: RingCursor_Increment compares with advanced address
 };
 
 #define OFF(f, o) typedef char RingCursor803F_off_##f[((int)&((RingCursor803F*)0)->f == (o)) ? 1 : -1]

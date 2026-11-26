@@ -1,4 +1,4 @@
-// Entry view owned by golf_caddie_dialogue_entries.cpp. CGolfCaddie_CreateCaddieEntry (0x80128834)
+// Entry view owned by golf_caddie_dialogue_entries.cpp. CGolfCaddie::CreateCaddieEntry
 // allocates 0x48 bytes, initializes via GolfCaddieEntry_Init, and stores the result of
 // ItemInventory_FindCaddieData at +0x10. The two state bytes have no established meaning here.
 #ifndef CLASSES_GOLFCADDIEENTRY80128808_H

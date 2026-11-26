@@ -1,9 +1,12 @@
+// Screen fade overlay: fades the picture to and from black over a number of update calls,
+// drawn as a full-screen quad. Also the shared file objects, with their reference counts, buffers and paths.
+
 #include <decomp/static_init.h>
 // Frame rate / captured-frame fade overlay, plus shared-file handle factories.
 // FadeState_StartFadeIn/Out choose alpha direction; FadeState_Update in
 // vcg_motion_player_and_fade.cpp changes alpha once per update and services captureRequested
 // as a pending framebuffer capture. FadeState_Draw consumes current viewport size.
-// Shared layouts: FadeState, CSharedFile, CSharedFileSync. Pool: u8023DCA0_data.cpp.
+// Shared layouts: FadeState, CSharedFile, CSharedFileSync. Pool: the data section.
 // Modder lookup:
 // - Fade duration: nonnegative UPDATE CALL COUNT, not seconds or VI retraces.
 //   StartFadeIn/Out set alphaStep=255/duration; at 30 updates/s, 30 calls is
@@ -26,38 +29,52 @@
 // Borrow the fade-state layout; direct expansion preserves FadeState_Draw's
 // original load scheduling (the inline-function form changes its generated code).
 #define AsFadeState(p) ((FadeState*)(p))
-// Translation unit 0x8023DCA0-0x8023E86C (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "classes/CSharedFile.h"
 #include "classes/CSetRenderState.h"
 #include "classes/CSharedFileSync.h"
 #include <decomp/cw_bitfields.h>
+#include "classes/CSharedFileHandle.h"
 
 // Borrow synchronous-file fields; the file remains responsible for its buffer.
-static inline CSharedFileSync* AsCSharedFileSync(void* p) { return (CSharedFileSync*)p; }
+static inline CSharedFileSync* AsCSharedFileSync(void* p) {
+    return (CSharedFileSync*)p;
+}
 
-// Borrow a renderer-state guard without restoring or transferring it.
-static inline CSetRenderState* AsCSetRenderState(void* p) { return (CSetRenderState*)p; }
-
-// Borrow the shared-file base; retaining/releasing is explicit in its callers.
-static inline CSharedFile* AsCSharedFile(void* p) { return (CSharedFile*)p; }
 // Explicit renderer API records; the stack copy remains word-typed for identical bulk copies.
-struct RenderStateSnapshot { void* vtable; int stateId; int savedValue; };
-struct OverlayViewport { unsigned int x, y, width, height; float nearDepth, farDepth; };
+struct SavedRenderState {
+    void* vtable;
+    int stateId;
+    int savedValue;
+};
+struct OverlayViewport {
+    unsigned int x, y, width, height;
+    float nearDepth, farDepth;
+};
 struct OverlayVertex {
     float x, y, z;
-    union { unsigned int color; unsigned char colorBytes[4]; };
+    union {
+        unsigned int color;
+        unsigned char colorBytes[4];
+    };
     float u, v;
 };
-struct VertexBlock { int words[24]; };
-struct FadeDrawFrame {
-    RenderStateSnapshot depthTest, depthWrite;
-    OverlayViewport viewport;
-    union { VertexBlock vertexCopy; OverlayVertex vertices[4]; } quad;
+struct VertexBlock {
+    int words[24];
 };
-struct OverlayLockedRect { int pitch; void* data; };
+struct FadeDrawFrame {
+    SavedRenderState depthTest, depthWrite;
+    OverlayViewport viewport;
+    union {
+        VertexBlock vertexCopy;
+        OverlayVertex vertices[4];
+    } quad;
+};
+struct OverlayLockedRect {
+    int pitch;
+    void* data;
+};
 struct OverlayLevelDescription {
     unsigned int format;
     char pad_004[0x18];
@@ -69,14 +86,24 @@ struct FadeTextureFrame {
     OverlayLevelDescription level;
     char tail[0xC];
 };
-enum FadePhase { kFadeTransparent = 0, kFadeIncreasingAlpha = 1, kFadeOpaque = 2, kFadeDecreasingAlpha = 3 };
+enum FadePhase {
+    kFadeTransparent = 0,
+    kFadeIncreasingAlpha = 1,
+    kFadeOpaque = 2,
+    kFadeDecreasingAlpha = 3
+};
 enum {
     // Engine_ApplyStateBeforeDraw (gx_renderer_state_and_efb_copy.cpp): state 5 controls GX depth writes,
     // state 6 controls GX depth testing. Draw disables both, then restores 6,5.
-    kOverlayDepthWriteState = 5, kOverlayDepthTestState = 6, kOverlayVertexFormat = 0x11F005,
-    kOverlayNativeRgba8TextureFormat = 0x80000006u, kOverlayPrimitive = 0x98,
-    kOverlayVertexCount = 4, kOverlayAlphaByte = 3,
-    kInlinePathLengthMask = 0x7F, kHeapPathShift = 31
+    kOverlayDepthWriteState = 5,
+    kOverlayDepthTestState = 6,
+    kOverlayVertexFormat = 0x11F005,
+    kOverlayNativeRgba8TextureFormat = 0x80000006u,
+    kOverlayPrimitive = 0x98,
+    kOverlayVertexCount = 4,
+    kOverlayAlphaByte = 3,
+    kInlinePathLengthMask = 0x7F,
+    kHeapPathShift = 31
 };
 typedef char FadeDrawFrame_size[(sizeof(FadeDrawFrame) == 0x90) ? 1 : -1];
 typedef char OverlayVertex_size[(sizeof(OverlayVertex) == 0x18) ? 1 : -1];
@@ -118,7 +145,10 @@ void* __nw__FUl(unsigned int);
 void* SharedFileCache_GetOrCreate(void*, void*, int);
 void* SharedFileCache_GetOrCreateFromBuffer(void*, void*, void*, int);
 
-struct HalfWord { unsigned short hi; unsigned short lo; };
+struct HalfWord {
+    unsigned short hi;
+    unsigned short lo;
+};
 struct VTableObj {
     virtual int m0();
     virtual int m1();
@@ -131,7 +161,8 @@ void* __nwa__FUl(int);
 void appFreeUni__FPv(void*);
 void* String_ReplaceRange(void*, unsigned, unsigned, const char*, const char*, void*);
 void Engine_GetViewport(void*);
-int Texture_Create2D(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, void*, unsigned int);
+int Texture_Create2D(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, void*,
+                     unsigned int);
 void Engine_GetRenderState(int, void*);
 int Engine_SetCachedRenderState(int, int);
 int Texture_GetLevelDescription(void*, int, void*);
@@ -150,8 +181,7 @@ void* __register_global_object(void*, void*, void*);
 unsigned int strlen(const char*);
 
 // Compatibility hook: this build does not store event-flag writes.
-void EventFlag_SetStub(unsigned char, unsigned char, unsigned char) {
-}
+void EventFlag_SetStub(unsigned char, unsigned char, unsigned char) {}
 
 // Read the current overlay-alpha phase 0..3; preserve the distinction between idle and opaque endpoints.
 int FadeState_GetState(void* p) {
@@ -196,25 +226,25 @@ int FadeState_RequestReleaseOnFadeCompletion(void* p) {
 }
 
 // Retain a required shared-file object; preserve its separate registry/handle reference counts.
-void CSharedFile_AddRef(void* p) {
-    AsCSharedFile(p)->referenceCount = AsCSharedFile(p)->referenceCount + 1;
+void CSharedFile::AddRef() {
+    referenceCount = referenceCount + 1;
 }
 
 // Drop one positive shared-file reference and return 1 only at zero; caller must perform destruction separately.
-int CSharedFile_ReleaseRefIsZero(void* p) {
-    int v = AsCSharedFile(p)->referenceCount;
+int CSharedFile::ReleaseRefIsZero() {
+    int v = referenceCount;
     v = v - 1;
-    AsCSharedFile(p)->referenceCount = v;
+    referenceCount = v;
     return __rlwnm(1, __cntlzw((unsigned int)v), 31, 31);
 }
 
 // Borrow path text until path replacement/file destruction; preserve inline/heap selection by bit 31.
-void* CSharedFile_GetPath(void* p) {
-    unsigned int v = AsCSharedFile(p)->pathFlags;
+void* CSharedFile::GetPath() {
+    unsigned int v = pathFlags;
     if ((v >> kHeapPathShift) == 0) {
-        return (char*)&AsCSharedFile(p)->pathFlags + 1;
+        return (char*)&pathFlags + 1;
     }
-    return AsCSharedFile(p)->pathData;
+    return pathData;
 }
 
 // Latch a framebuffer-capture request in endpoint phases; preserve refusal to capture during either alpha ramp.
@@ -224,18 +254,20 @@ void* CSharedFile_GetPath(void* p) {
 int FadeState_RequestFramebufferCapture(void* p) {
     int v = AsFadeState(p)->state;
     // Original 0x8023DEF8: only idle fade states accept this request.
-    if (v != kFadeIncreasingAlpha && v != kFadeDecreasingAlpha) AsFadeState(p)->captureRequested = 1;
+    if (v != kFadeIncreasingAlpha && v != kFadeDecreasingAlpha)
+        AsFadeState(p)->captureRequested = 1;
     return 1;
 }
 
-// Initialize the shared-file base and its empty path.
-void CSharedFile_Ctor(void* p) {
-    AsCSharedFile(p)->unk_4 = 0;
-    AsCSharedFile(p)->vtable = __vt__11CSharedFile;
-    AsCSharedFile(p)->referenceCount = 0;
-    (*(int*)&AsCSharedFile(p)->pathFlags) = 0;
-    AsCSharedFile(p)->pathLength = 0;
-    (*(int*)&AsCSharedFile(p)->pathData) = 0;
+// Initialize the shared-file base and its empty path. Named Init, not a constructor:
+// callers construct into storage they already own.
+void CSharedFile::Init() {
+    buffer = 0;
+    vtable = __vt__11CSharedFile;
+    referenceCount = 0;
+    pathFlags = 0;
+    pathLength = 0;
+    pathData = 0;
 }
 
 // Draw in the alternate phase while enabled, otherwise return to primary drawing.
@@ -243,14 +275,16 @@ int FadeState_DrawAlternatePhase(void* p) {
     unsigned char b = AsFadeState(p)->alternateDrawPhase;
     if (b != 0) {
         unsigned char b2 = AsFadeState(p)->alternateDrawEnabled;
-        if (b2 == 0) AsFadeState(p)->alternateDrawPhase = 0;
-        else FadeState_Draw(p);
+        if (b2 == 0)
+            AsFadeState(p)->alternateDrawPhase = 0;
+        else
+            FadeState_Draw(p);
     }
     return 1;
 }
 
 // Delete owned array storage and clear its pointer; preserve success=1 for an already-empty buffer.
-int CSharedFile_FreeBuffer(void* p) {
+int CSharedFile::FreeBuffer(void* p) {
     void* tmp = AsCSharedFileSync(p)->buffer;
     if (tmp != 0) {
         __dla__FPv(tmp);
@@ -260,7 +294,7 @@ int CSharedFile_FreeBuffer(void* p) {
 }
 
 // Borrow loaded bytes after readiness succeeds, or return null; preserve virtual readiness before accessing buffer.
-void* CSharedFile_GetLoadedBuffer(void* p) {
+void* CSharedFile::GetLoadedBuffer(void* p) {
     if (static_cast<VTableObj*>(p)->isLoaded()) {
         return AsCSharedFileSync(p)->buffer;
     }
@@ -279,13 +313,15 @@ int FadeState_DrawPrimaryPhase(void* p) {
 }
 
 // Restore the saved renderer state and optionally delete the state guard.
-void* CSetRenderState_dtor(void* p, int flag) {
-    if (p != 0) {
-        ((RenderStateSnapshot*)p)->vtable = (void*)__vt__15CSetRenderState;
-        Engine_SetCachedRenderState(((RenderStateSnapshot*)p)->stateId, ((RenderStateSnapshot*)p)->savedValue);
-        if (flag > 0) __dl__FPv(p);
+// Named Destroy rather than a destructor: the flag decides whether the object is freed.
+void* CSetRenderState::Destroy(int flag) {
+    if (this != 0) {
+        vtable = (void*)__vt__15CSetRenderState;
+        Engine_SetCachedRenderState(renderStateId, savedValue);
+        if (flag > 0)
+            __dl__FPv(this);
     }
-    return p;
+    return this;
 }
 
 // Increase overlay alpha over duration update calls; preserve the current alpha when starting a ramp.
@@ -309,7 +345,7 @@ int FadeState_StartFadeIn(void* p, int duration) {
 }
 
 // Release the handle's cached file before optional deletion.
-void* CSharedFileHandle_Destroy(void* p, int flag) {
+void* CSharedFileHandle::Destroy(void* p, int flag) {
     if (p != 0) {
         {
             void* tmp = *(void**)p;
@@ -318,7 +354,8 @@ void* CSharedFileHandle_Destroy(void* p, int flag) {
                 SharedFileRegistry_ReleaseFile(r, tmp);
             }
         }
-        if (flag > 0) __dl__FPv(p);
+        if (flag > 0)
+            __dl__FPv(p);
     }
     return p;
 }
@@ -327,58 +364,54 @@ void* CSharedFileHandle_Destroy(void* p, int flag) {
 // encodedByteCount is a 32-bit integer byte count in a pointer-shaped ABI word;
 // it is never dereferenced. Return 0 on failed release, zero size or null allocation;
 // failed release leaves storage to its implementation, other failures occur after
-// release. Success returns 1; CSharedFile_FreeBuffer uses __dla__FPv to release it.
-int CSharedFile_AllocateBuffer(void* self, void* encodedByteCount) {
-    if (!static_cast<VTableObj*>(self)->releaseBuffer()) {
+// release. Success returns 1; CSharedFile::FreeBuffer uses __dla__FPv to release it.
+int CSharedFile::AllocateBuffer(void* encodedByteCount) {
+    if (!((VTableObj*)this)->releaseBuffer()) {
         return 0;
     }
     if (encodedByteCount == 0) {
         return 0;
     }
     void* p = __nwa__FUl((int)encodedByteCount);
-    AsCSharedFileSync(self)->buffer = p;
+    buffer = p;
     return p != 0 ? 1 : 0;
 }
 
-// Release virtual file storage and the heap path before optional deletion.
-void* CSharedFile_dtor(void* self, int flag) {
-    if (self != 0) {
-        *(void**)self = (void*)__vt__11CSharedFile;
-        static_cast<VTableObj*>(self)->releaseBuffer();
-        if ((int)self + 0xc != 0) {
-            if (AsCSharedFile(self)->pathFlags >> kHeapPathShift) {
-                appFreeUni__FPv(AsCSharedFile(self)->pathData);
+// Release virtual file storage and the heap path, then free the object when flag is positive.
+// Named Destroy rather than a destructor: the flag decides whether the object is freed.
+void* CSharedFile::Destroy(int flag) {
+    if (this != 0) {
+        vtable = __vt__11CSharedFile;
+        ((VTableObj*)this)->releaseBuffer();
+        // The original compiles this (this + 0xc) test; it is kept for the same code.
+        if ((int)this + 0xc != 0) {
+            if (pathFlags >> kHeapPathShift) {
+                appFreeUni__FPv(pathData);
             }
         }
         if (flag > 0) {
-            __dl__FPv(self);
+            __dl__FPv(this);
         }
     }
-    return self;
+    return this;
 }
-
-struct StringOwnerE564 {
-    char pad[12];
-    union { unsigned int flags; unsigned char bytes[4]; } value;
-    int count;
-};
 
 // Copy a required null-terminated path into the file string; preserve string allocator-byte and replacement order.
 // str is borrowed for the call; the string owns its copy. The volatile byte below
 // is original allocator scratch, not a path character; do not initialize/remove
 // the read as a readability fix, since that changes the existing instruction stream.
-int CSharedFile_SetPath(StringOwnerE564* self, const char* str) {
+int CSharedFile::SetPath(const char* str) {
     int count;
-    unsigned int flags = self->value.flags;
+    unsigned int flags = pathFlags;
     if ((flags >> kHeapPathShift) == 0) {
-        count = self->value.bytes[0] & kInlinePathLengthMask;
+        count = ((unsigned char*)&pathFlags)[0] & kInlinePathLengthMask;
     } else {
-        count = self->count;
+        count = pathLength;
     }
     volatile int tmp;
     volatile unsigned char alloc = *(volatile unsigned char*)&tmp;
     int len = (int)strlen(str);
-    String_ReplaceRange(&self->value, 0, (unsigned)count, str, str + len, (void*)&alloc);
+    String_ReplaceRange(&pathFlags, 0, (unsigned)count, str, str + len, (void*)&alloc);
     return 1;
 }
 
@@ -387,18 +420,19 @@ int CSharedFile_SetPath(StringOwnerE564* self, const char* str) {
 // cacheOptions is a Boolean: 0 creates CSharedFileAsync, any nonzero value creates
 // CSharedFileSync on a cache miss. An existing path retains its previous mode.
 // See SharedFileCache_GetOrCreate (shared_file_registry.cpp); no flags are decoded here.
-// Release the returned owner with CSharedFileHandle_Destroy(handle,1).
+// Release the returned owner with CSharedFileHandle::Destroy(handle,1).
 void* SharedFile_Create(void* path, int cacheOptions) {
     void* obj = __nw__FUl(4);
     if (obj != 0) {
         *(int*)obj = 0;
     }
-    if (obj == 0) return 0;
+    if (obj == 0)
+        return 0;
     int ok;
     if (path == 0) {
         ok = 0;
     } else {
-        void* reg = ((void*(*)())CSharedFileRegistry_GetInstance)();
+        void* reg = ((void* (*)())CSharedFileRegistry_GetInstance)();
         void* res = SharedFileCache_GetOrCreate(reg, path, cacheOptions);
         *(void**)obj = res;
         ok = (res != 0);
@@ -407,7 +441,7 @@ void* SharedFile_Create(void* path, int cacheOptions) {
         if (obj != 0) {
             void* tmp = *(void**)obj;
             if (tmp != 0) {
-                void* reg = ((void*(*)())CSharedFileRegistry_GetInstance)();
+                void* reg = ((void* (*)())CSharedFileRegistry_GetInstance)();
                 SharedFileRegistry_ReleaseFile(reg, tmp);
             }
             __dl__FPv(obj);
@@ -421,7 +455,7 @@ void* SharedFile_Create(void* path, int cacheOptions) {
 // path is a nullable CString object; bufferByteCount is bytes, not options. On a miss,
 // the cache copies buffer[0..bufferByteCount); a hit ignores buffer/count. Null
 // path/allocation/cache failure returns null after freeing the wrapper. Caller
-// destroys a successful wrapper with CSharedFileHandle_Destroy(handle,1).
+// destroys a successful wrapper with CSharedFileHandle::Destroy(handle,1).
 // Accepted miss input: 1..INT_MAX bytes of readable, stable storage at buffer,
 // with a size the allocator can satisfy; buffer must not be null. Zero/null
 // fails on a miss. Negative counts are NOT validated: their unsigned conversion
@@ -432,12 +466,13 @@ void* byteCount(void* path, void* buffer, int bufferByteCount) {
     if (obj != 0) {
         *(int*)obj = 0;
     }
-    if (obj == 0) return 0;
+    if (obj == 0)
+        return 0;
     int ok;
     if (path == 0) {
         ok = 0;
     } else {
-        void* reg = ((void*(*)())CSharedFileRegistry_GetInstance)();
+        void* reg = ((void* (*)())CSharedFileRegistry_GetInstance)();
         void* res = SharedFileCache_GetOrCreateFromBuffer(reg, path, buffer, bufferByteCount);
         *(void**)obj = res;
         ok = (res != 0);
@@ -446,7 +481,7 @@ void* byteCount(void* path, void* buffer, int bufferByteCount) {
         if (obj != 0) {
             void* tmp = *(void**)obj;
             if (tmp != 0) {
-                void* reg = ((void*(*)())CSharedFileRegistry_GetInstance)();
+                void* reg = ((void* (*)())CSharedFileRegistry_GetInstance)();
                 SharedFileRegistry_ReleaseFile(reg, tmp);
             }
             __dl__FPv(obj);
@@ -459,8 +494,8 @@ void* byteCount(void* path, void* buffer, int bufferByteCount) {
 // Decrease overlay alpha over duration update calls; preserve conditional texture release at zero.
 // self is required, duration>=0; returns 1. An already-decreasing phase ignores
 // the request. Zero snaps transparent, clears the step and releases the resource
-// only if a global/object release flag requests it; a nonzero ramp starts at the
-// CURRENT alpha and Update performs endpoint release. No seconds conversion occurs.
+// only if a global or object release flag requests it. A nonzero ramp starts at the current
+// alpha, and the update step performs the endpoint release. The duration is not in seconds.
 int FadeState_StartFadeOut(void* self, int duration) {
     if (AsFadeState(self)->state != kFadeDecreasingAlpha) {
         AsFadeState(self)->state = kFadeDecreasingAlpha;
@@ -475,7 +510,9 @@ int FadeState_StartFadeOut(void* self, int duration) {
                     unsigned int v = *(unsigned int*)ptr;
                     unsigned int hi = v >> 16;
                     hi = hi - 1;
-                    struct RefBits { CW_BITS2( unsigned int hi:16, unsigned int lo:16) };
+                    struct RefBits {
+                        CW_BITS2(unsigned int hi : 16, unsigned int lo : 16)
+                    };
                     ((RefBits*)&v)->hi = hi;
                     *(unsigned int*)ptr = v;
                     if ((v >> 16) == 0) {
@@ -541,15 +578,21 @@ void* FadeState_GetInstance(void) {
             Engine_GetViewport(&frame.viewport);
             unsigned int viewportWidth = frame.viewport.width;
             unsigned int viewportHeight = frame.viewport.height;
-            int ok = Texture_Create2D(viewportWidth, viewportHeight, 1, 0, kOverlayNativeRgba8TextureFormat, 0, (void*)overlay, 0);
+            int ok = Texture_Create2D(viewportWidth, viewportHeight, 1, 0, kOverlayNativeRgba8TextureFormat, 0,
+                                      (void*)overlay, 0);
             do {
-                if (ok == 0) break;
+                if (ok == 0)
+                    break;
                 if (s_clearFramebufferTextureOnCreate != 0) {
-                    if (Texture_GetLevelDescription(*(void**)s_fadeOverlay, 0, &frame.level) == 0) break;
-                    if (Texture_LockLevel(*(void**)s_fadeOverlay, 0, &frame.lock, 0, 0) == 0) break;
-                    void* mipStorageBytes = Texture_CalculateMipStorageSize((void*)frame.level.width, (void*)frame.level.height, 1, (int)frame.level.format);
+                    if (Texture_GetLevelDescription(*(void**)s_fadeOverlay, 0, &frame.level) == 0)
+                        break;
+                    if (Texture_LockLevel(*(void**)s_fadeOverlay, 0, &frame.lock, 0, 0) == 0)
+                        break;
+                    void* mipStorageBytes = Texture_CalculateMipStorageSize(
+                        (void*)frame.level.width, (void*)frame.level.height, 1, (int)frame.level.format);
                     Memory_Clear(frame.lock.data, mipStorageBytes);
-                    if (Texture_UnlockLevel(*(void**)s_fadeOverlay, 0) == 0) break;
+                    if (Texture_UnlockLevel(*(void**)s_fadeOverlay, 0) == 0)
+                        break;
                 }
                 s_fadeOverlayTextureReady = 1;
             } while (0);

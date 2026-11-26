@@ -18,12 +18,15 @@ typedef CEnemyRenderTable PlayerPreviewTable;
 #include "game/vector.h"
 #include "classes/SavePlayerRecord.h"
 extern "C" void __construct_array(void*, void*, void*, unsigned int, unsigned int);
-// Translation unit 0x8024D468-0x8024EAD8 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CCharaEntry.h"
+#include "classes/CPangya2Shop.h"
+#include "classes/CCharacterPreviewTable.h"
+#include "classes/CAsyncExhibition.h"
+#include "classes/CBpCtrlHandle.h"
+#include "classes/CBpCtrl.h"
 extern "C" char characterEntryRenderPositions[];
 
 #define AsCCharaEntry(p) ((CCharaEntry*)(p))
@@ -38,7 +41,8 @@ struct EntryRenderContextView {
 // Four per-player transition records. Reset current/previous to zero and remainingSteps
 // to five before the stats script begins; this function does not advance those steps.
 // The int-word stores below address this exact triplet, not an unrelated flat array.
-struct EntryStatBarState { int currentValue, previousValue, remainingSteps;
+struct EntryStatBarState {
+    int currentValue, previousValue, remainingSteps;
 };
 static const int kStatBarWords = sizeof(EntryStatBarState) / sizeof(int);
 static const int kStatBarPreviousWord = (int)&((EntryStatBarState*)0)->previousValue / sizeof(int);
@@ -64,34 +68,51 @@ static const int kPartyGameMode = 7;
 static const int kPlayerColumns = 4;
 enum EntryLayoutElement {
     kOccupiedColumn = 0,
-    kEntryRow = 4, kEntryRowState = 8, // Visibility/style and row-state reset.
-    kHumanRow = 0x0c, kEntryPresentation00 = 0x10,
-    kEntryPresentation01 = 0x14, kEntryPresentation10 = 0x18, // Cycled when the record is human.
-    kEntryResetVisual30 = 0x30, kEntryPresentation01Aux = 0x34, kEntryPresentation10Aux = 0x38,
-    kEntryPresentation00Aux = 0x3c, kEntryResetVisual40 = 0x40, kEntryResetVisual44 = 0x44,
-    kEntryResetVisual48 = 0x48, kEntryResetVisual4C = 0x4c, kEntryResetVisual50 = 0x50,
-    kEnemyPresentation = 0x54, kHumanPresentation = 0x58,
+    kEntryRow = 4,
+    kEntryRowState = 8, // Visibility/style and row-state reset.
+    kHumanRow = 0x0c,
+    kEntryPresentation00 = 0x10,
+    kEntryPresentation01 = 0x14,
+    kEntryPresentation10 = 0x18, // Cycled when the record is human.
+    kEntryResetVisual30 = 0x30,
+    kEntryPresentation01Aux = 0x34,
+    kEntryPresentation10Aux = 0x38,
+    kEntryPresentation00Aux = 0x3c,
+    kEntryResetVisual40 = 0x40,
+    kEntryResetVisual44 = 0x44,
+    kEntryResetVisual48 = 0x48,
+    kEntryResetVisual4C = 0x4c,
+    kEntryResetVisual50 = 0x50,
+    kEnemyPresentation = 0x54,
+    kHumanPresentation = 0x58,
     kChoiceMarkerBase = 0x5c
 };
 enum EntryScriptColumnGroup {
-    kEntryColumn1Group = 1004, kEntryColumn2Group = 1005, kEntryColumn3Group = 1006,
-    kStatsColumn1Group = 1041, kStatsColumn2Group = 1042, kStatsColumn3Group = 1043
+    kEntryColumn1Group = 1004,
+    kEntryColumn2Group = 1005,
+    kEntryColumn3Group = 1006,
+    kStatsColumn1Group = 1041,
+    kStatsColumn2Group = 1042,
+    kStatsColumn3Group = 1043
 };
 enum EntryPreviewGeometry {
-    kPreviewColumnWidth = 150, kPreviewTop = 120, kPreviewBottom = 390,
-    kPreviewPositionPairBytes = 8, kStatTransitionSteps = 5
+    kPreviewColumnWidth = 150,
+    kPreviewTop = 120,
+    kPreviewBottom = 390,
+    kPreviewPositionPairBytes = 8,
+    kStatTransitionSteps = 5
 };
 // UI ID map: every base above has one element per player, ID = base+player.
 // The layout assets are required to resolve artwork names; code alone establishes
 // column occupancy and the bit-15 presentation, not which individual stat is drawn.
 // Only choice markers use ID = kChoiceMarkerBase+4*player+choice.
-// Asset navigation: CCharaEntry_Ctor (chara_entry_ctor_dtor.cpp) opens "chara_entry.zip";
+// Asset navigation: CCharaEntry::CCharaEntry (chara_entry_ctor_dtor.cpp) opens "chara_entry.zip";
 // characterEntryStrings holds "entry.spd" at +0x10, "entry.b2d" at +0x1A,
 // "entry_c_no_entry.b2d" at +0x24 and "entry_chr_sts_prm.b2d" at +0x39.
 // Resolve layout artwork against entry.spd and the BP group against the matching
 // .b2d script. They are separate ID spaces; do not assign POWER/CONTROL/SPIN
 // labels to layout IDs just from the stat-script group names below.
-// Cross-check: CCharaEntry_RefreshPlayerRow (chara_entry_screen_part1.cpp) identifies 04 as the
+// Cross-check: CCharaEntry::RefreshPlayerRow (chara_entry_screen_part1.cpp) identifies 04 as the
 // styled row and 08 as its reset state; 0C is human-only. CyclePlayerEntryState
 // (chara_entry_render_context.cpp) selects presentation 00/01/10 at 10/14/18, with matching auxiliary
 // visuals 3C/34/38. Their artwork and the reset visuals 30/40..50 remain unresolved.
@@ -111,7 +132,6 @@ extern char s_bpCtrlHandleDtorRegistration_CharacterEntry[];
 extern char s_inputManagerDtorRegistration_CharacterEntry[];
 extern char s_renderContextDtorRegistration_80506F1C[];
 
-
 void RenderContext_ResetPlayerRecords(void*);
 void* CharacterPreviewTable_dtor(void*, int);
 void appFreeUni__FPv(void*);
@@ -120,8 +140,7 @@ struct RenderContextConstructionCleanup_u8024D468 {
     char* base;
     bool active;
     // Arm cleanup for a render context whose arrays are already constructed.
-    explicit RenderContextConstructionCleanup_u8024D468(void* object)
-        : base((char*)object), active(true) {}
+    explicit RenderContextConstructionCleanup_u8024D468(void* object) : base((char*)object), active(true) {}
     // On failure release the player table, then the four per-player vector allocations.
     ~RenderContextConstructionCleanup_u8024D468() {
         if (active) {
@@ -144,7 +163,6 @@ static void InitializeNewRenderContext(void* base) {
     cleanup.active = false;
 }
 
-
 extern signed char s_renderContextInitialized, s_inputManagerInitialized, s_bpCtrlInitialized, s_fadeOverlayInitialized;
 extern signed char s_bpCtrlHandleInitialized;
 extern void* g_soundManager;
@@ -152,38 +170,24 @@ extern void* g_sharedDoc;
 extern void* g_taskManager;
 extern void SaveData_InitPlayerRecord(void*);
 extern void CBpCtrlHandle_Dtor(void*);
-extern void CBpCtrlHandle_SetScriptIndex(void*, int);
 extern void* RenderContext_GetOrCreate();
-extern void CCharacterPreviewTable_SetupRecordAvatar(void*, int, void*, int, float);
-extern void CAsyncExhibition_SetLoadingIndicatorPosition(void*, void*);
 extern void Layout_SetElementEnabled(void*, int, int);
 extern void Layout_SetElementPlayerFlagsAndState(void*, int, int);
-extern void CCharaEntry_SetEnemyLevelSelection(void*, int, int);
-extern void CCharaEntry_RefreshPlayerRow(void*, int);
-extern void CCharaEntry_UpdateStatBars(void*);
-extern void CCharaEntry_CyclePlayerEntryState(void*, int);
-extern void CCharacterPreviewTable_SetAnimationName(void*, int, void*);
-extern void CBpCtrlHandle_SetScriptIndex(void*, int);
 extern void BpObject_StartScriptByName(void*, const char*, int);
 extern void* UIGroup_GetOrCreateById(void*, int);
 extern void UIGroup_SetEnabled(void*, int);
 extern void IFadeMenuBase_StartMenuFadeOut(void*);
 
-
 extern void PartyItemRecord_InitDefaults(void*);
 extern void PlayerRenderRecord_dtor(void*);
 extern void RenderContext_ResetPlayerRecords(void*);
 extern void __dt__13RenderContextFv(void*);
-extern void CPangya2Shop_Ctor(void*, void*, int);
-extern void CPangya2Shop_CopyRecordIntoSnapshot(void*, void*);
-extern void CPangya2Shop_InitializeProductSelection(void*);
 extern void MPBase1_ResetExecutionState(void*);
 extern void SoundManager_RequestBgmChange(void*, const char*, int, int);
 extern void InputManager_Init(void*);
 extern void InputManager_Dtor(void*);
-extern void InputManager_SetSelectedPlayer(void*, void*);
+extern void InputManager_SetSelectedPlayer(void*, int);
 extern void Layout_SetActive(void*, int);
-extern void __ct__7CBpCtrlFv(void*);
 extern void CBpCtrl_dtor(void*);
 extern void* IdMap_Lookup(void*, void*);
 extern void BpObject_SetEnabled(void*, int);
@@ -221,7 +225,10 @@ static inline void EnsureEntryRenderContext(void* registration) {
             char* base = s_renderContext;
             char* member = base + 0x20A0;
             char* p = base;
-            do { SaveData_InitPlayerRecord(p); p += 0x828; } while (p < member);
+            do {
+                SaveData_InitPlayerRecord(p);
+                p += 0x828;
+            } while (p < member);
             ((IntVectorArray*)(member))->__ct();
             member = base + 0x20D0;
             __construct_array(member, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor, 0xA4, 4);
@@ -238,7 +245,7 @@ static inline void EnsureEntryRenderContext(void* registration) {
 static inline void EnsureEntryBpController(void* registration) {
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, registration);
             s_bpCtrlInitialized = 1;
         }
@@ -257,9 +264,12 @@ static inline void HideEntryElement(void* self, int player, int base) {
 static inline PlayerPreviewTable* EntryPlayerTable(void* context) {
     return (PlayerPreviewTable*)((char*)context + 0x20D0);
 }
-// Record +0x18 also supplies row style in CCharaEntry_RefreshPlayerRow.
+// Record +0x18 also supplies row style in CCharaEntry::RefreshPlayerRow.
 // Here it selects one of four markers; its controller meaning is unproven.
-struct EntryRowSelectionView { char prefix[0x18]; int selection; };
+struct EntryRowSelectionView {
+    char prefix[0x18];
+    int selection;
+};
 
 // Borrow a record using the running byte offset maintained by the preview loop.
 static inline PlayerPreviewRecord* EntryPlayerRecord(void* context, int recordByteOffset) {
@@ -275,14 +285,11 @@ static inline void DisableEntryScriptGroup(void* self, void* bpRegistration, voi
 // Start a named entry script after BP construction; pool offset selects an existing resource string.
 static inline void StartEntryScript(void* self, void* bpRegistration, void*& scriptId, int offset) {
     EnsureEntryBpController(bpRegistration);
-    BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), scriptId), characterEntryStrings+offset, 1);
+    BpObject_StartScriptByName(IdMap_Lookup(Sing_805DC5F0(), scriptId), characterEntryStrings + offset, 1);
 }
 #pragma pop
 
-
-
 // Build avatar previews, refresh player rows and reset stat-bar transitions for entry.
-
 
 // Build player previews, row presentations, and initial stat transitions.
 #pragma push
@@ -294,18 +301,18 @@ static inline void EnsureCharacterEntryContext(char* registrations) {
 #pragma pop
 
 // Build avatar previews and player rows, then reset stats and start entry scripts.
-void CCharaEntry_SetupEntryScreen(void* self) {
+void CCharaEntry::SetupEntryScreen() {
     char* registrations = s_inputManagerDtorRegistration_CharacterEntry;
     if (!Sing_805DC5F8()) {
         if (!static_cast<signed char>(s_bpCtrlHandleInitialized)) {
             s_bpCtrlHandle[1] = -1;
             s_bpCtrlHandle[0] = -1;
-            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, (registrations+0x30));
+            __register_global_object(s_bpCtrlHandle, (void*)CBpCtrlHandle_Dtor, (registrations + 0x30));
             s_bpCtrlHandleInitialized = 1;
         }
         Sing_805DC5F8() = s_bpCtrlHandle;
     }
-    CBpCtrlHandle_SetScriptIndex(Sing_805DC5F8(), 14);
+    ((CBpCtrlHandle*)Sing_805DC5F8())->SetScriptIndex(14);
     // Phase 1: populate occupied player previews and select their control presentation.
     // playerIndex = player index, recordByteOffset = playerIndex*sizeof(PlayerPreviewRecord) = playerIndex*0xa4,
     // previewLeft = preview column X, previewXY = borrowed 8-byte XY pair, choiceMarkerBase = marker base.
@@ -322,51 +329,57 @@ void CCharaEntry_SetupEntryScreen(void* self) {
     // forwarded to avatar setup, not used as elapsed time.
     // The comma condition ensures the singleton before each count test, including
     // the final one. Registration stays in the caller's inlined unwind scope.
-    while ((EnsureCharacterEntryContext(registrations),
-            playerIndex < EntryPlayerTable(Sing_805DC648())->count)) {
-        rect[0]=previewLeft;
-        rect[1]=kPreviewTop;
-        rect[2]=previewLeft+kPreviewColumnWidth;
-        rect[3]=kPreviewBottom;
-        CCharacterPreviewTable_SetupRecordAvatar(EntryPlayerTable(RenderContext_GetOrCreate()), playerIndex, rect, 0, avatarPreviewScale);
+    while ((EnsureCharacterEntryContext(registrations), playerIndex < EntryPlayerTable(Sing_805DC648())->count)) {
+        rect[0] = previewLeft;
+        rect[1] = kPreviewTop;
+        rect[2] = previewLeft + kPreviewColumnWidth;
+        rect[3] = kPreviewBottom;
+        CCharacterPreviewTable::SetupRecordAvatar(EntryPlayerTable(RenderContext_GetOrCreate()), playerIndex, rect, 0,
+                                                  avatarPreviewScale);
         if (EntryPlayerRecord(RenderContext_GetOrCreate(), recordByteOffset)->renderObject)
-            CAsyncExhibition_SetLoadingIndicatorPosition(EntryPlayerRecord(RenderContext_GetOrCreate(), recordByteOffset)->renderObject, previewXY);
+            ((CAsyncExhibition*)EntryPlayerRecord(RenderContext_GetOrCreate(), recordByteOffset)->renderObject)
+                ->SetLoadingIndicatorPosition((const float*)previewXY);
         EnsureCharacterEntryContext(registrations);
         if ((EntryPlayerRecord(Sing_805DC648(), recordByteOffset)->flags >> 15) & 1) {
-            SetEntryElementEnabled(self, playerIndex, kOccupiedColumn,1);
-            SetEntryElementEnabled(self, playerIndex, kEnemyPresentation,1);
-            HideEntryElement(self, playerIndex, kHumanRow);
-            HideEntryElement(self, playerIndex, kEntryPresentation00);
-            HideEntryElement(self, playerIndex, kEntryPresentation01);
-            HideEntryElement(self, playerIndex, kEntryPresentation10);
-            SetEntryElementEnabled(self, playerIndex, kHumanPresentation,0);
-            for (int k=0;k<4;k++) Layout_SetElementEnabled(*((&AsCCharaEntry(self)->layout)), k+choiceMarkerBase, 0);
+            SetEntryElementEnabled(this, playerIndex, kOccupiedColumn, 1);
+            SetEntryElementEnabled(this, playerIndex, kEnemyPresentation, 1);
+            HideEntryElement(this, playerIndex, kHumanRow);
+            HideEntryElement(this, playerIndex, kEntryPresentation00);
+            HideEntryElement(this, playerIndex, kEntryPresentation01);
+            HideEntryElement(this, playerIndex, kEntryPresentation10);
+            SetEntryElementEnabled(this, playerIndex, kHumanPresentation, 0);
+            for (int k = 0; k < 4; k++)
+                Layout_SetElementEnabled(*((&layout)), k + choiceMarkerBase, 0);
             EnsureCharacterEntryContext(registrations);
-            CCharaEntry_SetEnemyLevelSelection(self, playerIndex, *(signed char*)&EntryPlayerRecord(Sing_805DC648(), recordByteOffset)->levelIndex);
+            this->SetEnemyLevelSelection(
+                playerIndex, *(signed char*)&EntryPlayerRecord(Sing_805DC648(), recordByteOffset)->levelIndex);
             // +0x1c: signed view
         } else {
-            SetEntryElementEnabled(self, playerIndex, kOccupiedColumn,1);
-            SetEntryElementEnabled(self, playerIndex, kEnemyPresentation,0);
-            SetEntryElementEnabled(self, playerIndex, kHumanRow,1);
-            SetEntryElementEnabled(self, playerIndex, kEntryPresentation00,1);
-            SetEntryElementEnabled(self, playerIndex, kEntryPresentation01,1);
-            SetEntryElementEnabled(self, playerIndex, kEntryPresentation10,1);
-            SetEntryElementEnabled(self, playerIndex, kHumanPresentation,1);
-            for (int k=0;k<4;k++) {
+            SetEntryElementEnabled(this, playerIndex, kOccupiedColumn, 1);
+            SetEntryElementEnabled(this, playerIndex, kEnemyPresentation, 0);
+            SetEntryElementEnabled(this, playerIndex, kHumanRow, 1);
+            SetEntryElementEnabled(this, playerIndex, kEntryPresentation00, 1);
+            SetEntryElementEnabled(this, playerIndex, kEntryPresentation01, 1);
+            SetEntryElementEnabled(this, playerIndex, kEntryPresentation10, 1);
+            SetEntryElementEnabled(this, playerIndex, kHumanPresentation, 1);
+            for (int k = 0; k < 4; k++) {
                 EnsureCharacterEntryContext(registrations);
-                if (k == ((EntryRowSelectionView*)(recordByteOffset+(unsigned int)Sing_805DC648()+0x20D0))->selection)
-                    Layout_SetElementEnabled(AsCCharaEntry(self)->layout, k+choiceMarkerBase,1);
-                else Layout_SetElementEnabled(AsCCharaEntry(self)->layout, k+choiceMarkerBase,0);
+                if (k ==
+                    ((EntryRowSelectionView*)(recordByteOffset + (unsigned int)Sing_805DC648() + 0x20D0))->selection)
+                    Layout_SetElementEnabled(layout, k + choiceMarkerBase, 1);
+                else
+                    Layout_SetElementEnabled(layout, k + choiceMarkerBase, 0);
             }
-            CCharaEntry_CyclePlayerEntryState(self,playerIndex);
-            CCharaEntry_CyclePlayerEntryState(self,playerIndex);
-            CCharaEntry_CyclePlayerEntryState(self,playerIndex);
-            CCharaEntry_SetEnemyLevelSelection(self,playerIndex,-1);
+            CyclePlayerEntryState(playerIndex);
+            CyclePlayerEntryState(playerIndex);
+            CyclePlayerEntryState(playerIndex);
+            SetEnemyLevelSelection(playerIndex, -1);
         }
-        CCharaEntry_RefreshPlayerRow(self,playerIndex);
-        CCharaEntry_UpdateStatBars(self);
+        RefreshPlayerRow(playerIndex);
+        UpdateStatBars();
         EnsureCharacterEntryContext(registrations);
-        CCharacterPreviewTable_SetAnimationName(EntryPlayerTable(Sing_805DC648()),playerIndex,entryStrings+kEntryDecideAnimation);
+        ((CCharacterPreviewTable*)EntryPlayerTable(Sing_805DC648()))
+            ->SetAnimationName(playerIndex, entryStrings + kEntryDecideAnimation);
         recordByteOffset += 0xa4;
         choiceMarkerBase += 4;
         ++playerIndex;
@@ -375,65 +388,67 @@ void CCharaEntry_SetupEntryScreen(void* self) {
     }
 
     // Phase 2: hide unoccupied player columns and clear their level selection.
-    for (;playerIndex<4;++playerIndex) {
-        HideEntryElement(self, playerIndex, kOccupiedColumn);
-        HideEntryElement(self, playerIndex, kEnemyPresentation);
-        HideEntryElement(self, playerIndex, kHumanRow);
-        HideEntryElement(self, playerIndex, kEntryPresentation00);
-        HideEntryElement(self, playerIndex, kEntryPresentation01);
-        HideEntryElement(self, playerIndex, kEntryPresentation10);
-        HideEntryElement(self, playerIndex, kEntryRowState);
-        HideEntryElement(self, playerIndex, kEntryRow);
-        HideEntryElement(self, playerIndex, kHumanPresentation);
-        for (int k=0;k<4;++k) Layout_SetElementPlayerFlagsAndState(AsCCharaEntry(self)->layout, k+playerIndex*kPlayerColumns+kChoiceMarkerBase,0);
-        CCharaEntry_SetEnemyLevelSelection(self,playerIndex,-1);
+    for (; playerIndex < 4; ++playerIndex) {
+        HideEntryElement(this, playerIndex, kOccupiedColumn);
+        HideEntryElement(this, playerIndex, kEnemyPresentation);
+        HideEntryElement(this, playerIndex, kHumanRow);
+        HideEntryElement(this, playerIndex, kEntryPresentation00);
+        HideEntryElement(this, playerIndex, kEntryPresentation01);
+        HideEntryElement(this, playerIndex, kEntryPresentation10);
+        HideEntryElement(this, playerIndex, kEntryRowState);
+        HideEntryElement(this, playerIndex, kEntryRow);
+        HideEntryElement(this, playerIndex, kHumanPresentation);
+        for (int k = 0; k < 4; ++k)
+            Layout_SetElementPlayerFlagsAndState(layout, k + playerIndex * kPlayerColumns + kChoiceMarkerBase, 0);
+        SetEnemyLevelSelection(playerIndex, -1);
     }
     // Phase 3: hide stat elements and reset (previous,current,remainingSteps) to (0,0,5).
     // These are transition steps, not elapsed seconds or a five-player count.
-    for (playerIndex=0;playerIndex<4;++playerIndex) {
-        HideEntryElement(self, playerIndex, kEntryResetVisual30);
-        HideEntryElement(self, playerIndex, kEntryPresentation01Aux);
-        HideEntryElement(self, playerIndex, kEntryPresentation10Aux);
-        HideEntryElement(self, playerIndex, kEntryPresentation00Aux);
-        HideEntryElement(self, playerIndex, kEntryResetVisual40);
-        HideEntryElement(self, playerIndex, kEntryResetVisual44);
-        HideEntryElement(self, playerIndex, kEntryResetVisual48);
-        HideEntryElement(self, playerIndex, kEntryResetVisual4C);
-        HideEntryElement(self, playerIndex, kEntryResetVisual50);
-        ((int*)AsCCharaEntry(self)->statBarTransitions)[playerIndex*kStatBarWords+kStatBarPreviousWord]=0;
-        ((int*)AsCCharaEntry(self)->statBarTransitions)[playerIndex*kStatBarWords]=0;
-        ((int*)AsCCharaEntry(self)->statBarTransitions)[playerIndex*kStatBarWords+kStatBarStepsWord]=kStatTransitionSteps;
+    for (playerIndex = 0; playerIndex < 4; ++playerIndex) {
+        HideEntryElement(this, playerIndex, kEntryResetVisual30);
+        HideEntryElement(this, playerIndex, kEntryPresentation01Aux);
+        HideEntryElement(this, playerIndex, kEntryPresentation10Aux);
+        HideEntryElement(this, playerIndex, kEntryPresentation00Aux);
+        HideEntryElement(this, playerIndex, kEntryResetVisual40);
+        HideEntryElement(this, playerIndex, kEntryResetVisual44);
+        HideEntryElement(this, playerIndex, kEntryResetVisual48);
+        HideEntryElement(this, playerIndex, kEntryResetVisual4C);
+        HideEntryElement(this, playerIndex, kEntryResetVisual50);
+        ((int*)statBarTransitions)[playerIndex * kStatBarWords + kStatBarPreviousWord] = 0;
+        ((int*)statBarTransitions)[playerIndex * kStatBarWords] = 0;
+        ((int*)statBarTransitions)[playerIndex * kStatBarWords + kStatBarStepsWord] = kStatTransitionSteps;
     }
     // Phase 4: start entry/stats scripts, mask missing columns, then enter the fade-menu base.
-    StartEntryScript(self, (registrations + 0x24), AsCCharaEntry(self)->characterStatsScriptId,kEntryStatsScript);
-    StartEntryScript(self, (registrations + 0x24), AsCCharaEntry(self)->entryScriptId,kEntryColorScript);
+    StartEntryScript(this, (registrations + 0x24), characterStatsScriptId, kEntryStatsScript);
+    StartEntryScript(this, (registrations + 0x24), entryScriptId, kEntryColorScript);
     EnsureCharacterEntryContext(registrations);
     switch (EntryPlayerTable(Sing_805DC648())->count) {
     case 1:
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->entryScriptId,kEntryColumn1Group);
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->entryScriptId,kEntryColumn2Group);
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->entryScriptId,kEntryColumn3Group);
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->characterStatsScriptId,kStatsColumn1Group);
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->characterStatsScriptId,kStatsColumn2Group);
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->characterStatsScriptId,kStatsColumn3Group);
-        StartEntryScript(self, (registrations + 0x24), AsCCharaEntry(self)->noEntryScriptId,kEntryThreeEmptyScript);
+        DisableEntryScriptGroup(this, (registrations + 0x24), entryScriptId, kEntryColumn1Group);
+        DisableEntryScriptGroup(this, (registrations + 0x24), entryScriptId, kEntryColumn2Group);
+        DisableEntryScriptGroup(this, (registrations + 0x24), entryScriptId, kEntryColumn3Group);
+        DisableEntryScriptGroup(this, (registrations + 0x24), characterStatsScriptId, kStatsColumn1Group);
+        DisableEntryScriptGroup(this, (registrations + 0x24), characterStatsScriptId, kStatsColumn2Group);
+        DisableEntryScriptGroup(this, (registrations + 0x24), characterStatsScriptId, kStatsColumn3Group);
+        StartEntryScript(this, (registrations + 0x24), noEntryScriptId, kEntryThreeEmptyScript);
         break;
     case 2:
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->entryScriptId,kEntryColumn2Group);
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->entryScriptId,kEntryColumn3Group);
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->characterStatsScriptId,kStatsColumn2Group);
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->characterStatsScriptId,kStatsColumn3Group);
-        StartEntryScript(self, (registrations + 0x24), AsCCharaEntry(self)->noEntryScriptId,kEntryTwoEmptyScript);
+        DisableEntryScriptGroup(this, (registrations + 0x24), entryScriptId, kEntryColumn2Group);
+        DisableEntryScriptGroup(this, (registrations + 0x24), entryScriptId, kEntryColumn3Group);
+        DisableEntryScriptGroup(this, (registrations + 0x24), characterStatsScriptId, kStatsColumn2Group);
+        DisableEntryScriptGroup(this, (registrations + 0x24), characterStatsScriptId, kStatsColumn3Group);
+        StartEntryScript(this, (registrations + 0x24), noEntryScriptId, kEntryTwoEmptyScript);
         break;
     case 3:
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->entryScriptId,kEntryColumn3Group);
-        DisableEntryScriptGroup(self, (registrations + 0x24), AsCCharaEntry(self)->characterStatsScriptId,kStatsColumn3Group);
-        StartEntryScript(self, (registrations + 0x24), AsCCharaEntry(self)->noEntryScriptId,kEntryOneEmptyScript);
+        DisableEntryScriptGroup(this, (registrations + 0x24), entryScriptId, kEntryColumn3Group);
+        DisableEntryScriptGroup(this, (registrations + 0x24), characterStatsScriptId, kStatsColumn3Group);
+        StartEntryScript(this, (registrations + 0x24), noEntryScriptId, kEntryOneEmptyScript);
         break;
-    case 4: StartEntryScript(self, (registrations + 0x24), AsCCharaEntry(self)->noEntryScriptId,kEntryZeroEmptyScript);
-    break;
+    case 4:
+        StartEntryScript(this, (registrations + 0x24), noEntryScriptId, kEntryZeroEmptyScript);
+        break;
     }
-    IFadeMenuBase_StartMenuFadeOut(self);
+    IFadeMenuBase_StartMenuFadeOut(this);
 }
 
 // Construct the four-player render context and register its global destructor.
@@ -441,8 +456,9 @@ inline void InitStateMembers(char* reg) {
     char* base = s_renderContext;
     char* member = base + 0x20A0;
     char* p = base;
-    do { SaveData_InitPlayerRecord(p);
-    p += 0x828;
+    do {
+        SaveData_InitPlayerRecord(p);
+        p += 0x828;
     } while (p < member);
     ((IntVectorArray*)(member))->__ct();
     member = base + 0x20D0;
@@ -467,7 +483,8 @@ inline char* GetStateForNew(char* reg) {
 struct ShopObject {
     char data[0x8E0];
     // Construct an owned shop using the borrowed player snapshot and initialization flag.
-    ShopObject(void* record, int flag) { CPangya2Shop_Ctor(this, record, flag);
+    ShopObject(void* record, int flag) {
+        ((CPangya2Shop*)this)->Init(record, flag);
     }
 };
 
@@ -497,28 +514,31 @@ struct ShopObject {
 // this routine does not transfer it to the queued task or destroy it on failure.
 // CCharaEntry_Process (party_character_entry_menu.cpp) commits the shop snapshot and restores input,
 // scripts and entry fade on completion; CCharaEntry_dtor (chara_entry_ctor_dtor.cpp) owns release.
-void CCharaEntry_OpenPlayerShop(InitObj* self, int playerIndex, void* inputPlayerIndexWord) {
+void CCharaEntry::OpenPlayerShop(int playerIndex, int inputPlayerIndexWord) {
     struct StateAccess {
         // Construct singleton members and register their global teardown.
         static void Init() {
             char* base = s_renderContext;
             char* member = base + 0x20A0;
             char* newShop = base;
-            do { SaveData_InitPlayerRecord(newShop);
-            newShop += 0x828;
+            do {
+                SaveData_InitPlayerRecord(newShop);
+                newShop += 0x828;
             } while (newShop < member);
             ((IntVectorArray*)member)->__ct();
             member = base + 0x20D0;
             __construct_array(member, (void*)PartyItemRecord_InitDefaults, (void*)PlayerRenderRecord_dtor, 0xA4, 4);
             AsPlayerPreviewTable(member)->count = 0;
             InitializeNewRenderContext(base);
-            __register_global_object(s_renderContext, (void*)__dt__13RenderContextFv, s_renderContextDtorRegistration_80506F1C);
+            __register_global_object(s_renderContext, (void*)__dt__13RenderContextFv,
+                                     s_renderContextDtorRegistration_80506F1C);
         }
         // Return the borrowed singleton, initializing it once when first accessed.
         static char* Get() {
             if (!Sing_805DC648()) {
-                if (!s_renderContextInitialized) { Init();
-                s_renderContextInitialized = 1;
+                if (!s_renderContextInitialized) {
+                    Init();
+                    s_renderContextInitialized = 1;
                 }
                 Sing_805DC648() = s_renderContext;
             }
@@ -527,8 +547,8 @@ void CCharaEntry_OpenPlayerShop(InitObj* self, int playerIndex, void* inputPlaye
     };
     // Phase 1: ensure context exists and copy the selected avatar id into its save snapshot.
     SavePlayerRecord* playerSaveRecords;
-    if (AsCCharaEntry(self)->shopOpen) return;
-    // +0x64
+    if (shopOpen)
+        return;
     if (!Sing_805DC648()) {
         if (!s_renderContextInitialized) {
             StateAccess::Init();
@@ -537,7 +557,8 @@ void CCharaEntry_OpenPlayerShop(InitObj* self, int playerIndex, void* inputPlaye
         Sing_805DC648() = s_renderContext;
     }
     playerSaveRecords = (SavePlayerRecord*)Sing_805DC648();
-    if (!playerSaveRecords) {        if (!s_renderContextInitialized) {
+    if (!playerSaveRecords) {
+        if (!s_renderContextInitialized) {
             StateAccess::Init();
             s_renderContextInitialized = 1;
         }
@@ -546,9 +567,9 @@ void CCharaEntry_OpenPlayerShop(InitObj* self, int playerIndex, void* inputPlaye
     EntryRenderContextView* renderContext = (EntryRenderContextView*)Sing_805DC648();
     playerSaveRecords[playerIndex].characterIndex = renderContext->records[playerIndex].characterInventoryIndex;
     // Phase 2: menu owns the shop object; create it once or refresh its snapshot/selection.
-    if (!AsCCharaEntry(self)->shop) { // CCharaEntry_OpenPlayerShop: shop at +0x60
+    if (!shop) {
         void* newShop = new ShopObject(&((SavePlayerRecord*)StateAccess::Get())[playerIndex], 1);
-        AsCCharaEntry(self)->shop = newShop;
+        shop = newShop;
     } else {
         if (!renderContext) {
             if (!s_renderContextInitialized) {
@@ -557,68 +578,66 @@ void CCharaEntry_OpenPlayerShop(InitObj* self, int playerIndex, void* inputPlaye
             }
             Sing_805DC648() = s_renderContext;
         }
-        CPangya2Shop_CopyRecordIntoSnapshot(AsCCharaEntry(self)->shop, &((SavePlayerRecord*)Sing_805DC648())[playerIndex]);
-        CPangya2Shop_InitializeProductSelection(AsCCharaEntry(self)->shop);
-        MPBase1_ResetExecutionState(AsCCharaEntry(self)->shop);
+        CPangya2Shop::CopyRecordIntoSnapshot(shop, &((SavePlayerRecord*)Sing_805DC648())[playerIndex]);
+        ((CPangya2Shop*)shop)->InitializeProductSelection();
+        MPBase1_ResetExecutionState(shop);
     }
     // Phase 3a: publish shopOpen before handing off input focus; selectedPlayerIndex
     // remains the selected save-record player index.
-    AsCCharaEntry(self)->shopOpen = 1;
+    shopOpen = 1;
     SoundManager_RequestBgmChange(g_soundManager, characterEntryStrings + kEntryClubhouseMusic, 0, 1);
-    void* inputManager = Sing_805DC5C8();
-    AsCCharaEntry(self)->selectedPlayerIndex = playerIndex;
-    // +0x38
+    void* inputManager = GetInputManagerSlot();
+    selectedPlayerIndex = playerIndex;
 
     if (!inputManager) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_CharacterEntry);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_CharacterEntry);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    InputManager_SetSelectedPlayer(Sing_805DC5C8(), inputPlayerIndexWord);
+    InputManager_SetSelectedPlayer(GetInputManagerSlot(), inputPlayerIndexWord);
     // Phase 3b: hide the layout and each of its three script objects in order.
-    Layout_SetActive(AsCCharaEntry(self)->layout, 0);
-    // +0x2c
+    Layout_SetActive(layout, 0);
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80506F04);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), AsCCharaEntry(self)->entryScriptId), 0);
-    // +0x44
+    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), entryScriptId), 0);
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80506F04);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), AsCCharaEntry(self)->noEntryScriptId), 0);
-    // +0x48
+    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), noEntryScriptId), 0);
     if (!Sing_805DC5F0()) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_bpCtrlDtorRegistration_80506F04);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
-    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), AsCCharaEntry(self)->characterStatsScriptId), 0);
-    // +0x4c
+    BpObject_SetEnabled(IdMap_Lookup(Sing_805DC5F0(), characterStatsScriptId), 0);
     // Phase 3c: enqueue the mode's task, then start the overlay fade after registration.
     if (*((&AsCSharedDoc(g_sharedDoc)->gameMode)) == kPartyGameMode)
         TaskCommandQueue_AppendNamedRequest(g_taskManager, 0, characterEntryStrings + kEntryPartyTask, 2, 0, 0, 0, 0);
-    else TaskCommandQueue_AppendNamedRequest(g_taskManager, 0, characterEntryStrings + kEntryFightTask, 2, 0, 0, 0, 0);
+    else
+        TaskCommandQueue_AppendNamedRequest(g_taskManager, 0, characterEntryStrings + kEntryFightTask, 2, 0, 0, 0, 0);
     if (!Sing_805DC608()) {
         if (!s_fadeOverlayInitialized) {
             FadeOverlay_Init(s_fadeOverlay);
-            __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor, s_fadeOverlayDtorRegistration_CharacterEntry);
+            __register_global_object(s_fadeOverlay, (void*)ResourceState_Dtor,
+                                     s_fadeOverlayDtorRegistration_CharacterEntry);
             s_fadeOverlayInitialized = 1;
         }
         Sing_805DC608() = s_fadeOverlay;

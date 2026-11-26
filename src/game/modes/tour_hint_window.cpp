@@ -1,22 +1,25 @@
+// Tour hint window: the two-page tip box shown during a tour. It builds a heading, up to three
+// value/message rows and digit-marked text from a table of values.
+// TourHint_ShowFormattedText fills the pages; the WStr helpers at the top read the UTF-16 string layout.
+
 #include <decomp/static_init.h>
 extern "C" {
 extern unsigned char s_tourHintTextPositionGroupNames[]; // Hint text-position group names.
-extern unsigned char s_tourHintRowGroups[]; // Hint row groups and digit-markup pointers.
-extern unsigned char s_tourHintStateMessages[]; // Hint-state message pointers.
+extern unsigned char s_tourHintRowGroups[];              // Hint row groups and digit-markup pointers.
+extern unsigned char s_tourHintStateMessages[];          // Hint-state message pointers.
 }
 #include "classes/TourHintMessageTable.h"
 #include "classes/CMsgDraw.h"
-// Translation unit 0x802FF968-0x80300EC8 (5 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CTourHintWindow.h"
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 
 struct TourTipsGroupNames {
-    char nextIndicator[7]; // R_next
-    char messageWindow[8]; // msg_win
+    char nextIndicator[7];  // R_next
+    char messageWindow[8];  // msg_win
     char caddiePortrait[8]; // R_cadie
-    char pipinPortrait[8]; // R_pipin
+    char pipinPortrait[8];  // R_pipin
 };
 
 // Address-space view: tables follow the 14-byte layout-name symbol; they are not owned by it.
@@ -76,7 +79,7 @@ struct TourHintValues {
 struct WStr {
     int size;
     int len;
-    wchar_t *data;
+    wchar_t* data;
 };
 
 struct Int4 {
@@ -98,44 +101,42 @@ extern char tourHintWideFormatFragments[];
 extern int tourTipsDefaultScriptNames[];
 extern int s_tourHintGlyphScaleX;
 extern int s_tourHintGlyphScaleY;
-extern const char *tourInfoBaseGroupNames[];
+extern const char* tourInfoBaseGroupNames[];
 
-extern void __ct__15CTourHintWindowFv(TourHintWindowState *);
 extern void CTourHintWindow_dtor(void*, int);
-extern void __ct__7CBpCtrlFv(void *);
-extern void CBpCtrl_dtor(void *);
-extern int IdMap_Lookup(void *, int);
-extern int BpObject_GetOrCreateNamedGroup(int, void *);
+extern void __ct__7CBpCtrlFv(void*);
+extern void CBpCtrl_dtor(void*);
+extern int IdMap_Lookup(void*, int);
+extern int BpObject_GetOrCreateNamedGroup(int, void*);
 extern void UIGroup_SetEnabled(int, int);
 extern void BpObject_TryInvokeCurrentCallback(int, int);
-extern void BpObject_Draw(int); /* draws the object passed in r3 (see name_entry_soft_keyboard.cpp, story_message_window.cpp) */
+extern void
+BpObject_Draw(int); /* draws the object passed in r3 (see name_entry_soft_keyboard.cpp, story_message_window.cpp) */
 extern void BpObject_SetEnabled(int, int);
 extern void UIGroup_SetOpacity(int, int);
 extern void BpObject_StartScriptByName(int, int, int);
-extern void UIGroup_GetPosition(int, void *);
-extern void IntArray_DivideByFiveIfFlagClear(void *, int, int); /* (values, count, keepOriginalValueScale): defined in minigame_aim_and_party_tiers.cpp; non-zero keepOriginalValueScale skips the divide by 5 */
-extern void WString_ReplaceRange(void *, int, int, const void *, const void *, void *);
-extern void Text_ExpandTaggedText(void *, void *, const void *, int);
-extern void itoa(int, char *, int);
-extern void WFixedFont_CreateAndRegisterMsgDraw(int, void *, int);
-extern void Text_SetPosition(int, void *);
-extern void CMsgDraw_ResetTextState(int);
-extern void CMsgDraw_ClearFormattingAndRevealAll(int);
-extern void CMsgDraw_SetGlyphScale(int, void *);
-extern void CMsgDraw_SetColor(int, int);
-extern void Text_SetContent(int, void *);
-extern void appFreeUni__FPv(void *);
+extern void UIGroup_GetPosition(int, void*);
+extern void IntArray_DivideByFiveIfFlagClear(
+    void*, int,
+    int); /* (values, count, keepOriginalValueScale): defined in minigame_aim_and_party_tiers.cpp; non-zero keepOriginalValueScale skips the divide by 5 */
+extern void WString_ReplaceRange(void*, int, int, const void*, const void*, void*);
+extern void Text_ExpandTaggedText(void*, void*, const void*, int);
+extern void itoa(int, char*, int);
+extern void WFixedFont_CreateAndRegisterMsgDraw(int, void*, int);
+extern void Text_SetPosition(int, void*);
+extern void Text_SetContent(int, void*);
+extern void appFreeUni__FPv(void*);
 
 // Publish the shared hint window, constructing it and registering static cleanup once.
 static inline void EnsureTourHintWindow() {
-    if (((TourHintWindowState *&)Singleton_TourHintWindow()) == 0) {
+    if (((TourHintWindowState*&)Singleton_TourHintWindow()) == 0) {
         if (!s_tourHintWindowInitialized) {
-            __ct__15CTourHintWindowFv(&s_tourHintWindow);
-            __register_global_object(&s_tourHintWindow, (void *)CTourHintWindow_dtor,
+            ((CTourHintWindow*)&s_tourHintWindow)->__ct();
+            __register_global_object(&s_tourHintWindow, (void*)CTourHintWindow_dtor,
                                      s_tourHintWindowDtorRegistration_802FE);
             s_tourHintWindowInitialized = 1;
         }
-        ((TourHintWindowState *&)Singleton_TourHintWindow()) = &s_tourHintWindow;
+        ((TourHintWindowState*&)Singleton_TourHintWindow()) = &s_tourHintWindow;
     }
 }
 
@@ -144,8 +145,7 @@ static inline void EnsureBpController() {
     if (Sing_805DC5F0() == 0) {
         if (!s_bpCtrlInitialized) {
             __ct__7CBpCtrlFv(s_bpCtrl);
-            __register_global_object(s_bpCtrl, (void *)CBpCtrl_dtor,
-                                     s_tourTipsBpCtrlDtorRegistration);
+            __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, s_tourTipsBpCtrlDtorRegistration);
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
@@ -153,11 +153,17 @@ static inline void EnsureBpController() {
 }
 
 // Return the ownership bit of the inline/heap UTF-16 string representation.
-static inline unsigned int WHASHEAP(const WStr& s) { return ((unsigned)s.size) >> 31; }
+static inline unsigned int WHASHEAP(const WStr& s) {
+    return ((unsigned)s.size) >> 31;
+}
 // Return UTF-16 code-unit length; the first byte stores inline length on this big-endian ABI.
-static inline int WLEN(const WStr& s) { return !WHASHEAP(s) ? (*(unsigned char*)&s & 0x7F) : s.len; }
+static inline int WLEN(const WStr& s) {
+    return !WHASHEAP(s) ? (*(unsigned char*)&s & 0x7F) : s.len;
+}
 // Borrow the active UTF-16 characters; valid until this string next mutates.
-static inline wchar_t* WCHARS(WStr& s) { return !WHASHEAP(s) ? (wchar_t*)((char*)&s + 2) : s.data; }
+static inline wchar_t* WCHARS(WStr& s) {
+    return !WHASHEAP(s) ? (wchar_t*)((char*)&s + 2) : s.data;
+}
 
 // Append one digit-tag fragment, preserving the caller's distinct allocator-tag bytes.
 static inline void AppendHintDigitTag(WStr& formattedRow, wchar_t* src, int& allocatorTag, int& allocatorTagSource) {
@@ -180,9 +186,15 @@ static inline void SelectHintWideSpan(WStr& text, wchar_t*& characters, int& len
 }
 
 enum HintFormattingConstants {
-    kHintRowCount = 3, kDecimalDigitCount = 10, kHintPageCount = 2,
-    kCaddieHintPage = 0, kPipinHintPage = 1, kAbsentHintBpObject = -1,
-    kHintGroupsPerRow = 3, kHintRowGroupCount = 9, kHintInfoGroupCount = 14,
+    kHintRowCount = 3,
+    kDecimalDigitCount = 10,
+    kHintPageCount = 2,
+    kCaddieHintPage = 0,
+    kPipinHintPage = 1,
+    kAbsentHintBpObject = -1,
+    kHintGroupsPerRow = 3,
+    kHintRowGroupCount = 9,
+    kHintInfoGroupCount = 14,
     kDecimalRadix = 10,
     kRowSeparatorByteOffset = 0x26
 };
@@ -196,20 +208,20 @@ enum HintFormattingConstants {
 // Negative text would index before the table; this routine supplies no validation.
 // Page 0 uses the caddie portrait; page 1 uses Pipin and the three formatted rows.
 // values[page] is a BP object ID (-1 = absent). Text positions are copied from layout groups.
-void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint, int keepOriginalValueScale) {
+void TourHint_ShowFormattedText(void* unusedContext, const TourHintValues* hint, int keepOriginalValueScale) {
     int rowGroupByteOffset;
     int transparentTextColor;
-    char *formatFragments;
+    char* formatFragments;
     int textExpanderHandle;
-    int *primaryValue;
-    int *secondaryValue;
-    int *rowPositionGroup;
+    int* primaryValue;
+    int* secondaryValue;
+    int* rowPositionGroup;
     int rowTextByteOffset;
     char primaryDigits[100];
     char secondaryDigits[100];
-    const char *infoGroupNames[14];
-    wchar_t *primaryDigitTags[10];
-    wchar_t *secondaryDigitTags[10];
+    const char* infoGroupNames[14];
+    wchar_t* primaryDigitTags[10];
+    wchar_t* secondaryDigitTags[10];
     int enabledRowGroups[9];
     int hiddenRowGroups[9];
     int stateMessages[8];
@@ -232,7 +244,7 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
     int primaryDigitTag, primaryDigitTagSource, messageTagSource, messageTag;
     int separatorTagSource, separatorTag, secondaryDigitTag, secondaryDigitTagSource;
     int suffixTagSource, suffixTag;
-    TourHintWindowState *win;
+    TourHintWindowState* win;
     int bpObjectOrGroup;
     int pageOrRowIndex;
     int tableElement;
@@ -256,11 +268,13 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
     secondaryValues[0] = hint->values[2];
     secondaryValues[1] = hint->values[5];
     secondaryValues[2] = hint->values[8];
-    IntArray_DivideByFiveIfFlagClear(secondaryValues, 3, keepOriginalValueScale); /* 0x802FFA18: r5 = the incoming keepOriginalValueScale (tour_character_map_board.cpp passes !flags->bit), never written here */
+    IntArray_DivideByFiveIfFlagClear(
+        secondaryValues, 3,
+        keepOriginalValueScale); /* 0x802FFA18: r5 = the incoming keepOriginalValueScale (tour_character_map_board.cpp passes !flags->bit), never written here */
 
     // Phase 2: reset both available BP pages, hide old groups, restart scripts and callbacks.
     EnsureTourHintWindow();
-    win = ((TourHintWindowState *&)Singleton_TourHintWindow());
+    win = ((TourHintWindowState*&)Singleton_TourHintWindow());
     for (pageOrRowIndex = 0; pageOrRowIndex < kHintPageCount; pageOrRowIndex++) {
         if (win->pageBpObjectIds[pageOrRowIndex] != kAbsentHintBpObject) {
             EnsureBpController();
@@ -293,7 +307,8 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
                 if (bpObjectOrGroup == 0) {
                     bpObjectOrGroup = 0;
                 } else {
-                    bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, tourTipsWindowStrings.caddiePortrait);
+                    bpObjectOrGroup =
+                        BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, tourTipsWindowStrings.caddiePortrait);
                 }
                 if (bpObjectOrGroup != 0) {
                     UIGroup_SetOpacity(bpObjectOrGroup, 0);
@@ -305,7 +320,8 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
                 if (bpObjectOrGroup == 0) {
                     bpObjectOrGroup = 0;
                 } else {
-                    bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, tourTipsWindowStrings.pipinPortrait);
+                    bpObjectOrGroup =
+                        BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, tourTipsWindowStrings.pipinPortrait);
                 }
                 if (bpObjectOrGroup != 0) {
                     UIGroup_SetOpacity(bpObjectOrGroup, 0);
@@ -322,7 +338,8 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
                     if (bpObjectOrGroup == 0) {
                         bpObjectOrGroup = 0;
                     } else {
-                        bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, (void *)infoGroupNames[tableElement]);
+                        bpObjectOrGroup =
+                            BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, (void*)infoGroupNames[tableElement]);
                     }
                     if (bpObjectOrGroup != 0) {
                         UIGroup_SetOpacity(bpObjectOrGroup, 0);
@@ -351,9 +368,9 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
     // Phase 3: reset reveal progress and refresh the currently selected page.
     win->updateNextIndicator = 0;
     EnsureTourHintWindow();
-    ((TourHintWindowState *&)Singleton_TourHintWindow())->revealProgress = 0;
+    ((TourHintWindowState*&)Singleton_TourHintWindow())->revealProgress = 0;
     EnsureTourHintWindow();
-    win = ((TourHintWindowState *&)Singleton_TourHintWindow());
+    win = ((TourHintWindowState*&)Singleton_TourHintWindow());
     if (win->pageBpObjectIds[win->index] != kAbsentHintBpObject) {
         if (win->updateNextIndicator != 0) {
             EnsureBpController();
@@ -375,7 +392,7 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
     // Phase 4: an inactive state hides formatted text; active states rebuild heading and rows.
     if (hint->state <= 0) {
         EnsureTourHintWindow();
-        ((TourHintWindowState *&)Singleton_TourHintWindow())->formattedTextVisible = 0;
+        ((TourHintWindowState*&)Singleton_TourHintWindow())->formattedTextVisible = 0;
     } else {
         formattedRow.size = 0;
         formattedRow.len = 0;
@@ -391,48 +408,49 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
             WStr* string;
             // Free only a completed heap string when leaving the formatting scope.
             ~StringCleanup() {
-                if (WHASHEAP(*string)) appFreeUni__FPv(string->data);
+                if (WHASHEAP(*string))
+                    appFreeUni__FPv(string->data);
             }
         };
-        StringCleanup formattedRowCleanup = { &formattedRow };
-        StringCleanup messageCleanup = { &messageText };
-        StringCleanup suffixCleanup = { &suffixText };
+        StringCleanup formattedRowCleanup = {&formattedRow};
+        StringCleanup messageCleanup = {&messageText};
+        StringCleanup suffixCleanup = {&suffixText};
 
         EnsureTourHintWindow();
-        textExpanderHandle = ((TourHintWindowState *&)Singleton_TourHintWindow())->textExpander;
-        Text_ExpandTaggedText((void *)textExpanderHandle, &suffixText, tourHintWideFormatFragments, 0);
-        Text_ExpandTaggedText((void *)textExpanderHandle, &messageText, (void *)stateMessages[hint->state], 0);
+        textExpanderHandle = ((TourHintWindowState*&)Singleton_TourHintWindow())->textExpander;
+        Text_ExpandTaggedText((void*)textExpanderHandle, &suffixText, tourHintWideFormatFragments, 0);
+        Text_ExpandTaggedText((void*)textExpanderHandle, &messageText, (void*)stateMessages[hint->state], 0);
 
         // Build the heading at textPositionGroups[0]; the font registers its renderer in the window.
         EnsureTourHintWindow();
-        headingGroupNames = *(Int4 *)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(textPositionGroups))));
-        win = ((TourHintWindowState *&)Singleton_TourHintWindow());
+        headingGroupNames = *(Int4*)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(textPositionGroups))));
+        win = ((TourHintWindowState*&)Singleton_TourHintWindow());
         EnsureBpController();
         bpObjectOrGroup = IdMap_Lookup(Sing_805DC5F0(), win->pageBpObjectIds[kPipinHintPage]);
         if (bpObjectOrGroup == 0) {
             bpObjectOrGroup = 0;
         } else {
-            bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, (void *)headingGroupNames.v[0]);
+            bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, (void*)headingGroupNames.v[0]);
         }
         UIGroup_GetPosition(bpObjectOrGroup, headingPosition);
         headingGlyphScale[0] = s_tourHintGlyphScaleX;
         headingGlyphScale[1] = s_tourHintGlyphScaleY;
         win->textColor = 0;
-        WFixedFont_CreateAndRegisterMsgDraw(win->font, (char *)win + HINT_OFFSET(headingText), 1);
+        WFixedFont_CreateAndRegisterMsgDraw(win->font, (char*)win + HINT_OFFSET(headingText), 1);
         Text_SetPosition(win->headingText, headingPosition);
-        CMsgDraw_ResetTextState(win->headingText);
-        CMsgDraw_ClearFormattingAndRevealAll(win->headingText);
-        CMsgDraw_SetGlyphScale(win->headingText, headingGlyphScale);
-        CMsgDraw_SetColor(win->headingText, win->textColor);
+        ((CMsgDraw*)(win->headingText))->ResetTextState();
+        ((CMsgDraw*)(win->headingText))->ClearFormattingAndRevealAll();
+        ((CMsgDraw*)(win->headingText))->SetGlyphScale((float*)headingGlyphScale);
+        ((CMsgDraw*)(win->headingText))->SetColor(win->textColor);
         ((CMsgDraw*)win->headingText)->colorMultiplier = win->textColor;
         {
-            wchar_t *src;
+            wchar_t* src;
             src = WCHARS(messageText);
             Text_SetContent(win->headingText, src);
         }
 
         EnsureTourHintWindow();
-        win = ((TourHintWindowState *&)Singleton_TourHintWindow());
+        win = ((TourHintWindowState*&)Singleton_TourHintWindow());
         win->formattedTextVisible = 1;
         primaryValue = primaryValues;
         secondaryValue = secondaryValues;
@@ -446,97 +464,107 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
                 // Row recipe: tagged primary digits + expanded message + separator
                 // + tagged secondary digits + expanded suffix. Allocator bytes below are ABI tags.
                 // A. Clear reusable strings and expand this row's selected message.
-                *(char *)&clearMessageTag = *(char *)&clearMessageTagSource;
+                *(char*)&clearMessageTag = *(char*)&clearMessageTagSource;
                 WString_ReplaceRange(&messageText, 0, -1, 0, 0, &clearMessageTag);
-                *(char *)&clearRowTag = *(char *)&clearRowTagSource;
+                *(char*)&clearRowTag = *(char*)&clearRowTagSource;
                 WString_ReplaceRange(&formattedRow, 0, -1, 0, 0, &clearRowTag);
-                Text_ExpandTaggedText((void *)textExpanderHandle, &messageText, (void *)stateMessages[rowMessageKinds[pageOrRowIndex]], 0);
+                Text_ExpandTaggedText((void*)textExpanderHandle, &messageText,
+                                      (void*)stateMessages[rowMessageKinds[pageOrRowIndex]], 0);
                 for (tableElement = 0; tableElement < kDecimalDigitCount; tableElement++) {
-                    primaryDigitTags[tableElement] = *(wchar_t **)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(digitTags))) + 4 * tableElement);
+                    primaryDigitTags[tableElement] = *(
+                        wchar_t**)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(digitTags))) + 4 * tableElement);
                 }
                 // B. Append the primary number as per-digit tagged fragments.
                 itoa(primaryValue[0], primaryDigits, kDecimalRadix);
                 for (tableElement = 0; tableElement < (int)strlen(primaryDigits); tableElement++) {
                     int c = (signed char)primaryDigits[tableElement];
-                    wchar_t *src = primaryDigitTags[c - '0'];
+                    wchar_t* src = primaryDigitTags[c - '0'];
                     AppendHintDigitTag(formattedRow, src, primaryDigitTag, primaryDigitTagSource);
                 }
                 // C. Append expanded message, then the fixed UTF-16 separator.
                 {
                     int appendOffset = WLEN(formattedRow);
-                    wchar_t *src;
+                    wchar_t* src;
                     int n;
                     // Resolve pointer and length together: inline words alias text.
                     SelectHintWideSpan(messageText, src, n);
-                    *(char *)&messageTag = *(char *)&messageTagSource;
+                    *(char*)&messageTag = *(char*)&messageTagSource;
                     WString_ReplaceRange(&formattedRow, appendOffset, 0, src, src + n, &messageTag);
                 }
                 {
                     int appendOffset = WLEN(formattedRow);
-                    wchar_t *src = (wchar_t *)(formatFragments + kRowSeparatorByteOffset);
+                    wchar_t* src = (wchar_t*)(formatFragments + kRowSeparatorByteOffset);
                     int n;
-                    *(char *)&separatorTag = *(char *)&separatorTagSource;
+                    *(char*)&separatorTag = *(char*)&separatorTagSource;
                     n = (int)wcslen(src);
                     WString_ReplaceRange(&formattedRow, appendOffset, 0, src, src + n, &separatorTag);
                 }
                 for (tableElement = 0; tableElement < kDecimalDigitCount; tableElement++) {
-                    secondaryDigitTags[tableElement] = *(wchar_t **)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(digitTags))) + 4 * tableElement);
+                    secondaryDigitTags[tableElement] = *(
+                        wchar_t**)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(digitTags))) + 4 * tableElement);
                 }
                 // D. Append the scaled secondary number, then the expanded suffix.
                 itoa(secondaryValue[0], secondaryDigits, kDecimalRadix);
                 for (tableElement = 0; tableElement < (int)strlen(secondaryDigits); tableElement++) {
                     int c = (signed char)secondaryDigits[tableElement];
-                    wchar_t *src = secondaryDigitTags[c - '0'];
+                    wchar_t* src = secondaryDigitTags[c - '0'];
                     AppendHintDigitTag(formattedRow, src, secondaryDigitTag, secondaryDigitTagSource);
                 }
                 {
                     int appendOffset = WLEN(formattedRow);
-                    wchar_t *src;
+                    wchar_t* src;
                     int n;
                     // Same inline/heap span selection as the expanded message.
                     SelectHintWideSpan(suffixText, src, n);
-                    *(char *)&suffixTag = *(char *)&suffixTagSource;
+                    *(char*)&suffixTag = *(char*)&suffixTagSource;
                     WString_ReplaceRange(&formattedRow, appendOffset, 0, src, src + n, &suffixTag);
                 }
 
                 // Register rowText[pageOrRowIndex] at textPositionGroups[pageOrRowIndex+1] and enable its three BP groups.
                 EnsureTourHintWindow();
-                win = ((TourHintWindowState *&)Singleton_TourHintWindow());
+                win = ((TourHintWindowState*&)Singleton_TourHintWindow());
                 for (tableElement = 0; tableElement < 4; tableElement++) {
-                    rowGroupNames[tableElement] = *(int *)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(textPositionGroups))) + 4 * tableElement);
+                    rowGroupNames[tableElement] =
+                        *(int*)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(textPositionGroups))) +
+                                4 * tableElement);
                 }
                 EnsureBpController();
                 bpObjectOrGroup = IdMap_Lookup(Sing_805DC5F0(), win->pageBpObjectIds[kPipinHintPage]);
                 if (bpObjectOrGroup == 0) {
                     bpObjectOrGroup = 0;
                 } else {
-                    bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, (void *)rowPositionGroup[1]);
+                    bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, (void*)rowPositionGroup[1]);
                 }
                 UIGroup_GetPosition(bpObjectOrGroup, rowPosition);
                 rowGlyphScale[0] = s_tourHintGlyphScaleX;
                 rowGlyphScale[1] = s_tourHintGlyphScaleY;
                 win->textColor = transparentTextColor;
-                WFixedFont_CreateAndRegisterMsgDraw(win->font, (char *)win + HINT_OFFSET(headingText) + (pageOrRowIndex + 1) * 4, 1);
-                Text_SetPosition(*(int *)((char *)win + rowTextByteOffset + HINT_OFFSET(rowText)), rowPosition);
-                CMsgDraw_ResetTextState(*(int *)((char *)win + rowTextByteOffset + HINT_OFFSET(rowText)));
-                CMsgDraw_ClearFormattingAndRevealAll(*(int *)((char *)win + rowTextByteOffset + HINT_OFFSET(rowText)));
-                CMsgDraw_SetGlyphScale(*(int *)((char *)win + rowTextByteOffset + HINT_OFFSET(rowText)), rowGlyphScale);
-                CMsgDraw_SetColor(*(int *)((char *)win + rowTextByteOffset + HINT_OFFSET(rowText)), win->textColor);
-                ((CMsgDraw*)*(int *)((char *)win + rowTextByteOffset + HINT_OFFSET(rowText)))->colorMultiplier = win->textColor;
+                WFixedFont_CreateAndRegisterMsgDraw(
+                    win->font, (char*)win + HINT_OFFSET(headingText) + (pageOrRowIndex + 1) * 4, 1);
+                Text_SetPosition(*(int*)((char*)win + rowTextByteOffset + HINT_OFFSET(rowText)), rowPosition);
+                ((CMsgDraw*)(*(int*)((char*)win + rowTextByteOffset + HINT_OFFSET(rowText))))->ResetTextState();
+                ((CMsgDraw*)(*(int*)((char*)win + rowTextByteOffset + HINT_OFFSET(rowText))))
+                    ->ClearFormattingAndRevealAll();
+                ((CMsgDraw*)(*(int*)((char*)win + rowTextByteOffset + HINT_OFFSET(rowText))))
+                    ->SetGlyphScale((float*)rowGlyphScale);
+                ((CMsgDraw*)(*(int*)((char*)win + rowTextByteOffset + HINT_OFFSET(rowText))))->SetColor(win->textColor);
+                ((CMsgDraw*)*(int*)((char*)win + rowTextByteOffset + HINT_OFFSET(rowText)))->colorMultiplier =
+                    win->textColor;
                 {
-                    wchar_t *src;
+                    wchar_t* src;
                     if (!WHASHEAP(formattedRow)) {
-                        src = (wchar_t *)((char *)&formattedRow + 2);
+                        src = (wchar_t*)((char*)&formattedRow + 2);
                     } else {
                         src = formattedRow.data;
                     }
-                    Text_SetContent(*(int *)((char *)win + rowTextByteOffset + HINT_OFFSET(rowText)), src);
+                    Text_SetContent(*(int*)((char*)win + rowTextByteOffset + HINT_OFFSET(rowText)), src);
                 }
 
                 EnsureTourHintWindow();
-                win = ((TourHintWindowState *&)Singleton_TourHintWindow());
+                win = ((TourHintWindowState*&)Singleton_TourHintWindow());
                 for (tableElement = 0; tableElement < kHintRowGroupCount; tableElement++) {
-                    enabledRowGroups[tableElement] = *(int *)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(rowGroups))) + 4 * tableElement);
+                    enabledRowGroups[tableElement] =
+                        *(int*)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(rowGroups))) + 4 * tableElement);
                 }
                 for (tableElement = 0; tableElement < kHintGroupsPerRow; tableElement++) {
                     EnsureBpController();
@@ -544,7 +572,8 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
                     if (bpObjectOrGroup == 0) {
                         bpObjectOrGroup = 0;
                     } else {
-                        bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, (void *)enabledRowGroups[(rowGroupByteOffset >> 2) + tableElement]);
+                        bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(
+                            bpObjectOrGroup, (void*)enabledRowGroups[(rowGroupByteOffset >> 2) + tableElement]);
                     }
                     if (bpObjectOrGroup != 0) {
                         UIGroup_SetEnabled(bpObjectOrGroup, 1);
@@ -552,9 +581,10 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
                 }
             } else {
                 EnsureTourHintWindow();
-                win = ((TourHintWindowState *&)Singleton_TourHintWindow());
+                win = ((TourHintWindowState*&)Singleton_TourHintWindow());
                 for (tableElement = 0; tableElement < kHintRowGroupCount; tableElement++) {
-                    hiddenRowGroups[tableElement] = *(int *)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(rowGroups))) + 4 * tableElement);
+                    hiddenRowGroups[tableElement] =
+                        *(int*)(((char*)(tourHintLayoutName + HINT_RESOURCE_OFFSET(rowGroups))) + 4 * tableElement);
                 }
                 for (tableElement = 0; tableElement < kHintGroupsPerRow; tableElement++) {
                     EnsureBpController();
@@ -562,7 +592,8 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
                     if (bpObjectOrGroup == 0) {
                         bpObjectOrGroup = 0;
                     } else {
-                        bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(bpObjectOrGroup, (void *)hiddenRowGroups[(rowGroupByteOffset >> 2) + tableElement]);
+                        bpObjectOrGroup = BpObject_GetOrCreateNamedGroup(
+                            bpObjectOrGroup, (void*)hiddenRowGroups[(rowGroupByteOffset >> 2) + tableElement]);
                     }
                     if (bpObjectOrGroup != 0) {
                         UIGroup_SetEnabled(bpObjectOrGroup, 0);
@@ -576,112 +607,77 @@ void TourHint_ShowFormattedText(void *unusedContext, const TourHintValues *hint,
             rowTextByteOffset += 4;
             rowGroupByteOffset += 12;
         }
-
     }
 }
 #pragma pop
-
-// Adjust the secondary interface pointer back to the complete hint window before destruction.
-void CTourHintWindow_DtorThunk18(TourHintWindowState *self, int forwarded1) {
-    CTourHintWindow_dtor((TourHintWindowState *)((char *)self - 0x18), forwarded1);
-}
 
 // Initialize this tour-hint unit's full-turn constant.
 void TourHintText_InitFullTurn() {
     s_tourHintTextFullTurn = kFloat_6_2831855;
 }
 
-// Draw the selected hint page when its BP object id is valid.
-void CTourHintWindow_DrawCurrentLayout() {
-    if (((TourHintWindowState *&)Singleton_TourHintWindow()) == 0) {
-        if (!s_tourHintWindowInitialized) {
-            __ct__15CTourHintWindowFv(&s_tourHintWindow);
-            __register_global_object(&s_tourHintWindow, (void *)CTourHintWindow_dtor, s_tourHintWindowDtorRegistration_802FE);
-            s_tourHintWindowInitialized = 1;
-        }
-        ((TourHintWindowState *&)Singleton_TourHintWindow()) = &s_tourHintWindow;
-    }
-    TourHintWindowState *obj = ((TourHintWindowState *&)Singleton_TourHintWindow());
-    if (obj->pageBpObjectIds[obj->index] != kAbsentHintBpObject) {
-        if (Sing_805DC5F0() == 0) {
-            if (!s_bpCtrlInitialized) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
-                __register_global_object(s_bpCtrl, (void *)CBpCtrl_dtor, s_tourTipsBpCtrlDtorRegistration);
-                s_bpCtrlInitialized = 1;
-            }
-            Sing_805DC5F0() = s_bpCtrl;
-        }
-        /* 0x80300E98-0x80300E9C: IdMap_Lookup's result stays in r3 as BpObject_Draw's object */
-        BpObject_Draw(IdMap_Lookup(Sing_805DC5F0(), obj->pageBpObjectIds[obj->index]));
-    }
-}
+} // extern "C"
 
+// Apply the next-indicator state when requested and run the current page callback.
+// Returns 1 even when no page object is present; it is not a callback result.
+// The shared window singleton is used; the receiver is not read.
 #pragma push
 #pragma use_lmw_stmw on
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
-// Apply the next-indicator state when requested and run the current page callback.
-// Returns 1 even when no page object is present; it is not a callback result.
-int CTourHintWindow_UpdateNextIndicatorAndCallback() {
-    TourHintWindowState *obj;
-    int idx;
-    char *msg;
+int CTourHintWindow::UpdateNextIndicatorAndCallback() {
+    CTourHintWindow* obj;
+    int layoutIndex;
+    char* nextIndicatorGroupName;
     int data;
     int result;
-    int result2;
-    if (((TourHintWindowState *&)Singleton_TourHintWindow()) == 0) {
-        if (!s_tourHintWindowInitialized) {
-            __ct__15CTourHintWindowFv(&s_tourHintWindow);
-            __register_global_object(&s_tourHintWindow, (void *)CTourHintWindow_dtor, s_tourHintWindowDtorRegistration_802FE);
-            s_tourHintWindowInitialized = 1;
-        }
-        ((TourHintWindowState *&)Singleton_TourHintWindow()) = &s_tourHintWindow;
-    }
-    obj = ((TourHintWindowState *&)Singleton_TourHintWindow());
-    idx = obj->index;
-    if (obj->pageBpObjectIds[idx] != kAbsentHintBpObject) {
+    int layoutObject;
+    EnsureTourHintWindow();
+    obj = ((CTourHintWindow*&)Singleton_TourHintWindow());
+    layoutIndex = obj->mode;
+    if (obj->layoutIds[layoutIndex] != kAbsentHintBpObject) {
         if (obj->updateNextIndicator) {
             data = obj->nextIndicatorEnabled;
-            msg = tourTipsWindowStrings.nextIndicator;
-            if (!Sing_805DC5F0()) {
-                if (!s_bpCtrlInitialized) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
-                    __register_global_object(s_bpCtrl, (void *)CBpCtrl_dtor, s_tourTipsBpCtrlDtorRegistration);
-                    s_bpCtrlInitialized = 1;
-                }
-                Sing_805DC5F0() = s_bpCtrl;
-            }
-            result = IdMap_Lookup(Sing_805DC5F0(), obj->pageBpObjectIds[idx]);
+            nextIndicatorGroupName = tourTipsWindowStrings.nextIndicator;
+            EnsureBpController();
+            result = IdMap_Lookup(Sing_805DC5F0(), obj->layoutIds[layoutIndex]);
             if (result == 0) {
                 result = 0;
             } else {
-                result = BpObject_GetOrCreateNamedGroup(result, msg);
+                result = BpObject_GetOrCreateNamedGroup(result, nextIndicatorGroupName);
             }
             if (result) {
                 UIGroup_SetEnabled(result, data);
             }
         }
-        if (!Sing_805DC5F0()) {
-            if (!s_bpCtrlInitialized) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
-                __register_global_object(s_bpCtrl, (void *)CBpCtrl_dtor, s_tourTipsBpCtrlDtorRegistration);
-                s_bpCtrlInitialized = 1;
-            }
-            Sing_805DC5F0() = s_bpCtrl;
-        }
-        result2 = IdMap_Lookup(Sing_805DC5F0(), obj->pageBpObjectIds[obj->index]);
-        BpObject_TryInvokeCurrentCallback(result2, 0);
+        EnsureBpController();
+        layoutObject = IdMap_Lookup(Sing_805DC5F0(), obj->layoutIds[obj->mode]);
+        BpObject_TryInvokeCurrentCallback(layoutObject, 0);
     }
     return 1;
 }
 #pragma opt_common_subs reset
 #pragma opt_lifetimes reset
 #pragma pop
-} // extern "C"
+
+// Draw the selected hint page when its BP object id is valid.
+// The shared window singleton is used; the receiver is not read.
+void CTourHintWindow::DrawCurrentLayout() {
+    EnsureTourHintWindow();
+    CTourHintWindow* obj = ((CTourHintWindow*&)Singleton_TourHintWindow());
+    if (obj->layoutIds[obj->mode] != kAbsentHintBpObject) {
+        EnsureBpController();
+        BpObject_Draw(IdMap_Lookup(Sing_805DC5F0(), obj->layoutIds[obj->mode]));
+    }
+}
+
+// Step back 0x18 bytes to the start of the window, then run its destructor.
+void CTourHintWindow::DtorThunk18(int deleting) {
+    CTourHintWindow_dtor((char*)this - 0x18, deleting);
+}
 
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push
 #pragma force_active on
 STATIC_INIT_ENTRY(".CRT$XCU804625B0", _ctors_u802FF968_0, TourHintText_InitFullTurn);
 #pragma pop
-

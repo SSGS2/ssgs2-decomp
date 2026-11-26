@@ -3,8 +3,12 @@
 
 #include "game/wstring.h"
 
-inline void* operator new(unsigned long, void* storage) { return storage; }
-inline void* operator new[](unsigned long, void* storage) { return storage; }
+inline void* operator new(unsigned long, void* storage) {
+    return storage;
+}
+inline void* operator new[](unsigned long, void* storage) {
+    return storage;
+}
 
 namespace std {
 template <class T, class Allocator> class vector;
@@ -40,7 +44,9 @@ inline vector<int, app::app_allocator<int> >::~vector() {
 typedef std::vector<int, app::app_allocator<int> > IntVector;
 // MWCC's explicit constructor expression (storage->__ct()) starts these member
 // lifetimes without placement new[]'s allocation cookie or a scalar null check.
-struct IntVectorArray { IntVector values[4]; };
+struct IntVectorArray {
+    IntVector values[4];
+};
 
 struct RenderContext {
     char prefix[0x20A0];

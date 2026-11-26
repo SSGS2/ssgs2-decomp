@@ -1,63 +1,87 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CINGAMETUTORIALDIALOG_H
 #define CLASSES_CINGAMETUTORIALDIALOG_H
 
 #include "game/types.h"
 
+struct TutorialDialogValueView;
+struct TutorialDialogWordsView;
 class CInGameTutorialDialog {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    void* dialogVtable;                        // 0x4: 2 uses in CInGameTutorialDialog_Ctor
-    float positionX;                        // 0x8: 2 uses in CInGameTutorialDialog_InitGroups, CInGameTutorialDialog_RefreshLayoutVisibility
-    float positionY;                        // 0xc: 2 uses in CInGameTutorialDialog_InitGroups, CInGameTutorialDialog_RefreshLayoutVisibility
-    float tutorialWidth;                       // 0x10: 1 use in CInGameTutorialDialog_Ctor
-    float tutorialHeight;                       // 0x14: 1 use in CInGameTutorialDialog_Ctor
-    int dialogState;                         // 0x18: 1 use in CInGameTutorialDialog_UpdateButtonSelection
-    char pad_01C[0x8];                  // 0x1c
-    float opacity;                       // 0x24: 2 uses in CInGameTutorialDialog_DrawDialogWithText
-    char pad_028[0x24];                 // 0x28
-    int tutorialIndex;                         // 0x4c: 11 uses in CInGameTutorialDialog_RefreshLayoutVisibility, CInGameTutorialDialog_Ctor, CInGameTutorialDialog_DrawDialogWithText
-    int selectionResult;                         // 0x50: 2 uses in CInGameTutorialDialog_Ctor, CInGameTutorialDialog_UpdateButtonSelection
-    int callbackThisAdjustment;                         // 0x54: 1 use in CInGameTutorialDialog_Ctor
-    int callbackVtableOffset;                         // 0x58: 1 use in CInGameTutorialDialog_Ctor
-    int callbackFunction;                         // 0x5c: 1 use in CInGameTutorialDialog_Ctor
-    int callbackTarget;                         // 0x60: 1 use in CInGameTutorialDialog_Ctor
-    int unk_64;                         // 0x64: 1 use in CInGameTutorialDialog_Ctor
-    float cursorGroup0X;                       // 0x68: 1 use in CInGameTutorialDialog_InitGroups
-    float cursorGroup0Y;                       // 0x6c: 1 use in CInGameTutorialDialog_InitGroups
-    int cursorGroup0PlayerFlag;                         // 0x70: 2 uses in CInGameTutorialDialog_InitGroups, CInGameTutorialDialog_RefreshLayoutVisibility
-    int cursorGroup0Enabled;                         // 0x74: 2 uses in CInGameTutorialDialog_InitGroups, CInGameTutorialDialog_RefreshLayoutVisibility
-    float cursorGroup1X;                       // 0x78: 1 use in CInGameTutorialDialog_InitGroups
-    float cursorGroup1Y;                       // 0x7c: 1 use in CInGameTutorialDialog_InitGroups
-    int cursorGroup1PlayerFlag;                         // 0x80: 2 uses in CInGameTutorialDialog_InitGroups, CInGameTutorialDialog_RefreshLayoutVisibility
-    int cursorGroup1Enabled;                         // 0x84: 2 uses in CInGameTutorialDialog_InitGroups, CInGameTutorialDialog_RefreshLayoutVisibility
-    float elementGroup0X;                       // 0x88: 1 use in CInGameTutorialDialog_InitGroups
-    float elementGroup0Y;                       // 0x8c: 1 use in CInGameTutorialDialog_InitGroups
-    int elementGroup0PlayerFlag;                         // 0x90: 1 use in CInGameTutorialDialog_InitGroups
-    int elementGroup0Enabled;                         // 0x94: 2 uses in CInGameTutorialDialog_InitGroups, CInGameTutorialDialog_RefreshLayoutVisibility
-    float elementGroup1X;                       // 0x98: 1 use in CInGameTutorialDialog_InitGroups
-    float elementGroup1Y;                       // 0x9c: 1 use in CInGameTutorialDialog_InitGroups
-    int elementGroup1PlayerFlag;                         // 0xa0: 1 use in CInGameTutorialDialog_InitGroups
-    int elementGroup1Enabled;                         // 0xa4: 1 use in CInGameTutorialDialog_InitGroups
-    float elementGroup2X;                       // 0xa8: 1 use in CInGameTutorialDialog_InitGroups
-    float elementGroup2Y;                       // 0xac: 1 use in CInGameTutorialDialog_InitGroups
-    int elementGroup2PlayerFlag;                         // 0xb0: 1 use in CInGameTutorialDialog_InitGroups
-    int elementGroup2Enabled;                         // 0xb4: 1 use in CInGameTutorialDialog_InitGroups
-    float elementGroup3X;                       // 0xb8: 1 use in CInGameTutorialDialog_InitGroups
-    float elementGroup3Y;                       // 0xbc: 1 use in CInGameTutorialDialog_InitGroups
-    int elementGroup3PlayerFlag;                         // 0xc0: 1 use in CInGameTutorialDialog_InitGroups
-    int elementGroup3Enabled;                         // 0xc4: 1 use in CInGameTutorialDialog_InitGroups
-    float elementGroup4X;                       // 0xc8: 1 use in CInGameTutorialDialog_InitGroups
-    float elementGroup4Y;                       // 0xcc: 1 use in CInGameTutorialDialog_InitGroups
-    int elementGroup4PlayerFlag;                         // 0xd0: 1 use in CInGameTutorialDialog_InitGroups
-    int elementGroup4Enabled;                         // 0xd4: 1 use in CInGameTutorialDialog_InitGroups
+    void* vtbl;                  // 0x0: original vtable pointer
+    void* dialogVtable;          // 0x4
+    float positionX;             // 0x8
+    float positionY;             // 0xc
+    float tutorialWidth;         // 0x10
+    float tutorialHeight;        // 0x14
+    int dialogState;             // 0x18
+    char pad_01C[0x8];           // 0x1c
+    float opacity;               // 0x24
+    char pad_028[0x24];          // 0x28
+    int tutorialIndex;           // 0x4c
+    int selectionResult;         // 0x50
+    int callbackThisAdjustment;  // 0x54
+    int callbackVtableOffset;    // 0x58
+    int callbackFunction;        // 0x5c
+    int callbackTarget;          // 0x60
+    int unk_64;                  // 0x64
+    float cursorGroup0X;         // 0x68
+    float cursorGroup0Y;         // 0x6c
+    int cursorGroup0PlayerFlag;  // 0x70
+    int cursorGroup0Enabled;     // 0x74
+    float cursorGroup1X;         // 0x78
+    float cursorGroup1Y;         // 0x7c
+    int cursorGroup1PlayerFlag;  // 0x80
+    int cursorGroup1Enabled;     // 0x84
+    float elementGroup0X;        // 0x88
+    float elementGroup0Y;        // 0x8c
+    int elementGroup0PlayerFlag; // 0x90
+    int elementGroup0Enabled;    // 0x94
+    float elementGroup1X;        // 0x98
+    float elementGroup1Y;        // 0x9c
+    int elementGroup1PlayerFlag; // 0xa0
+    int elementGroup1Enabled;    // 0xa4
+    float elementGroup2X;        // 0xa8
+    float elementGroup2Y;        // 0xac
+    int elementGroup2PlayerFlag; // 0xb0
+    int elementGroup2Enabled;    // 0xb4
+    float elementGroup3X;        // 0xb8
+    float elementGroup3Y;        // 0xbc
+    int elementGroup3PlayerFlag; // 0xc0
+    int elementGroup3Enabled;    // 0xc4
+    float elementGroup4X;        // 0xc8
+    float elementGroup4Y;        // 0xcc
+    int elementGroup4PlayerFlag; // 0xd0
+    int elementGroup4Enabled;    // 0xd4
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x54, 0x68, 0x78, 0x88
+    static void vfunc_16(TutorialDialogValueView* p, unsigned int value);
+    static void SetCallback(TutorialDialogWordsView* p, unsigned int* values, unsigned int last);
+
+    void InitGroups();
+    void ResetAndApplyContent(void* arg1, void* arg2);
+    void PositionPageElements(float* arg1, float* arg2);
+    void PositionSecondaryElements(float* pos);
+    void PositionBodyElements(float* pos);
+    void* GetSharedLayoutReady();
+    int InvokeResultCallback();
+    int Create(void** out);
+    void SetMovableGroupEnabled(int index, void* value);
+    void SetCursorGroupEnabled(int index, void* value);
+    void SetCursorGroupPlayerFlag(int index, void* value);
+    void SetMovableGroupPosition(int index, float x, float y);
+    void SetCursorGroupPosition(int index, float x, float y);
+    void MoveCursorToGroup(int index);
+    void RefreshLayoutVisibility();
+    void UpdateButtonSelection();
+    void DrawDialogWithText();
+    static int IsEitherButtonActivated();
+    void SetElementPositionAndRect(void* elementId, float* inputXY);
+
+    CInGameTutorialDialog(void* arg1);
+    ~CInGameTutorialDialog();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define CINGAMETUTORIALDIALOG_OFF(f, o) typedef char CInGameTutorialDialog_off_##f[((int)&((CInGameTutorialDialog*)0)->f == (o)) ? 1 : -1]
+#define CINGAMETUTORIALDIALOG_OFF(f, o) \
+    typedef char CInGameTutorialDialog_off_##f[((int)&((CInGameTutorialDialog*)0)->f == (o)) ? 1 : -1]
 CINGAMETUTORIALDIALOG_OFF(dialogVtable, 0x4);
 CINGAMETUTORIALDIALOG_OFF(positionX, 0x8);
 CINGAMETUTORIALDIALOG_OFF(positionY, 0xc);
@@ -102,4 +126,4 @@ CINGAMETUTORIALDIALOG_OFF(elementGroup4PlayerFlag, 0xd0);
 CINGAMETUTORIALDIALOG_OFF(elementGroup4Enabled, 0xd4);
 #undef CINGAMETUTORIALDIALOG_OFF
 
-#endif  // CLASSES_CINGAMETUTORIALDIALOG_H
+#endif // CLASSES_CINGAMETUTORIALDIALOG_H

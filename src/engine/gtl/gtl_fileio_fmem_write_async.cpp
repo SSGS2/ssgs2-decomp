@@ -1,3 +1,7 @@
+// The FMEM file device's asynchronous write: starts a NAND write through the shared command
+// block and holds the write callback that finishes the request.
+
+#include "classes/GtlFileIoDeviceFMEM.h"
 #include "classes/FmemFileState.h"
 #include "types.h"
 
@@ -8,15 +12,14 @@ void* FileIO_Alloc(u32 size);
 void FileIO_Free(void* p);
 void NANDSetUserData(void* a, void* b);
 int NANDWriteAsync(void* a, void* b, u32 c, void* d, void* e);
-void gtl_CFileIoDeviceFMEM_DispatchNandCallback(void);
 void* memcpy(void* dst, const void* src, u32 n);
 
 struct gtl_CCallBackWriteFile {
     virtual void vfunc_0(int);
     virtual void vfunc_1();
     virtual void vfunc_2();
-    void* fileState;   // 0x4: borrowed FMEM file state, must survive completion
-    void* completionCallback;   // 0x8: completion function address (shared field name retained)
+    void* fileState;          // 0x4: borrowed FMEM file state, must survive completion
+    void* completionCallback; // 0x8: completion function address (shared field name retained)
 };
 
 extern char __vt__Q23gtl18CCallBackWriteFile[];
@@ -28,19 +31,27 @@ char s_nandAsyncCommandBlock[256];
 // the caller must serialize submissions until completion has released these allocations.
 
 enum FmemWriteConstants {
-    kInvalidFileHandle = -1, kInvalidHandleError = 6, kWriteSubmitError = 0x1D,
-    kWriteCallbackBytes = 0xC, kOperationPending = 0, kOperationFailed = 2,
-    kCallbackWord = 0, kStagingBufferWord = 1, kByteCountWord = 2
+    kInvalidFileHandle = -1,
+    kInvalidHandleError = 6,
+    kWriteSubmitError = 0x1D,
+    kWriteCallbackBytes = 0xC,
+    kOperationPending = 0,
+    kOperationFailed = 2,
+    kCallbackWord = 0,
+    kStagingBufferWord = 1,
+    kByteCountWord = 2
 };
 
 #pragma use_lmw_stmw on
 
+} // extern "C"
+
 // Queue a NAND write from a private copy; return 1 if accepted, 0 on invalid handle/submit failure.
 // srcBuf is borrowed only during this call. device is the open FMEM file state and must outlive
 // completion, which calls completionCallback(error, bytesWritten, device, device->callbackArgument).
-// self/unusedArgument are ignored. The existing path assumes its allocations succeed.
-int gtl_CFileIoDeviceFMEM_WriteAsync(void* self, void* device, void* srcBuf, u32 size, int unusedArgument, int completionCallback) {
-    (void)self;
+// unusedArgument is ignored. The existing path assumes its allocations succeed.
+int gtl::CFileIoDeviceFMEM::WriteAsync(void* device, void* srcBuf, u32 size, int unusedArgument,
+                                       int completionCallback) {
     (void)unusedArgument;
     if ((u32)device == (u32)kInvalidFileHandle) {
         File_SetLastError(kInvalidHandleError);
@@ -61,7 +72,9 @@ int gtl_CFileIoDeviceFMEM_WriteAsync(void* self, void* device, void* srcBuf, u32
     memcpy((void*)s_fmemAsyncOperation[kStagingBufferWord], srcBuf, s_fmemAsyncOperation[kByteCountWord]);
     NANDSetUserData(s_nandAsyncCommandBlock, (void*)s_fmemAsyncOperation);
     // Phase 3: transfer cleanup responsibility to completion only if NAND accepts the request.
-    int nandResult = NANDWriteAsync(device, (void*)s_fmemAsyncOperation[kStagingBufferWord], s_fmemAsyncOperation[kByteCountWord], (void*)gtl_CFileIoDeviceFMEM_DispatchNandCallback, s_nandAsyncCommandBlock);
+    int nandResult =
+        NANDWriteAsync(device, (void*)s_fmemAsyncOperation[kStagingBufferWord], s_fmemAsyncOperation[kByteCountWord],
+                       (void*)gtl::CFileIoDeviceFMEM::DispatchNandCallback, s_nandAsyncCommandBlock);
     if (nandResult != 0) {
         File_SetLastError(kWriteSubmitError);
         FileIO_Free((void*)s_fmemAsyncOperation[kStagingBufferWord]);
@@ -75,4 +88,3 @@ int gtl_CFileIoDeviceFMEM_WriteAsync(void* self, void* device, void* srcBuf, u32
 }
 
 #pragma use_lmw_stmw off
-} // extern "C"

@@ -1,226 +1,249 @@
+// Course render packets: the position, texture-coordinate and vertex vectors that hold a
+// course's draw batches, with their growth limits and their release.
+//
+// Vector accessors index without a bounds check. RenderPacket_ReleaseResources releases the
+// shared vertex and texture resources of each batch.
+
 typedef unsigned long new_size_t;
 #include "MSL/vector.h"
 #include <decomp/cw_bitfields.h>
 // Return caller storage for placement construction.
-inline void* operator new(new_size_t, void* p){
+inline void* operator new(new_size_t, void* p) {
     return p;
 }
-// Translation unit 0x80262614-0x80264238 (18 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 extern "C" {
-    // Limits/growth tiers depend on element byte size: texcoords=8, positions AND
-    // batch triples=12, expanded vertices=24. They are counts, not byte capacities.
-    static const unsigned int kTexCoordElementLimit = 0x1fffffffu;
-    static const unsigned int kTwelveByteElementLimit = 0x15555555u;
-    static const unsigned int kVertexElementLimit = 0x0aaaaaaau;
-    static const unsigned int kTexCoordGrowthTier1 = 0x0aaaaaaau;
-    static const unsigned int kTexCoordGrowthTier2 = 0x15555554u;
-    static const unsigned int kTwelveByteGrowthTier1 = 0x071c71c7u;
-    static const unsigned int kTwelveByteGrowthTier2 = 0x0e38e38eu;
-    static const unsigned int kVertexGrowthTier1 = 0x038e38e3u;
-    static const unsigned int kVertexGrowthTier2 = 0x071c71c6u;
-    static const int kCameraViewMatrixOffset = 32, kCameraProjectionMatrixOffset = 96;
-    static const int kCoursePacketVertexFormat = 0x11f001;
-    static const int kTriangleListPrimitive = 0x90;
-    enum PacketTransformSlot { kPacketView = 0, kPacketProjection = 1,
-        kPacketTexture0 = 2, kPacketObject = 11 };
-    // These are ROWS in the state/value list, not engine state IDs.
-    // Data table maps row 15->state 33 (depth scale/offset), 19/20->states 23/24
-    // (fog parameters; exact units depend on their consuming render-state callback).
-    enum PacketDefaultStateRow { kDepthScaleOffsetDefaultRow = 15,
-        kFogParameter23DefaultRow = 19, kFogParameter24DefaultRow = 20 };
-    static const int kRenderStateCount = 21, kTextureStateCount = 8, kSamplerStateCount = 5;
+// Limits/growth tiers depend on element byte size: texcoords=8, positions AND
+// batch triples=12, expanded vertices=24. They are counts, not byte capacities.
+static const unsigned int kTexCoordElementLimit = 0x1fffffffu;
+static const unsigned int kTwelveByteElementLimit = 0x15555555u;
+static const unsigned int kVertexElementLimit = 0x0aaaaaaau;
+static const unsigned int kTexCoordGrowthTier1 = 0x0aaaaaaau;
+static const unsigned int kTexCoordGrowthTier2 = 0x15555554u;
+static const unsigned int kTwelveByteGrowthTier1 = 0x071c71c7u;
+static const unsigned int kTwelveByteGrowthTier2 = 0x0e38e38eu;
+static const unsigned int kVertexGrowthTier1 = 0x038e38e3u;
+static const unsigned int kVertexGrowthTier2 = 0x071c71c6u;
+static const int kCameraViewMatrixOffset = 32, kCameraProjectionMatrixOffset = 96;
+static const int kCoursePacketVertexFormat = 0x11f001;
+static const int kTriangleListPrimitive = 0x90;
+enum PacketTransformSlot {
+    kPacketView = 0,
+    kPacketProjection = 1,
+    kPacketTexture0 = 2,
+    kPacketObject = 11
+};
+// These are ROWS in the state/value list, not engine state IDs.
+// Data table maps row 15->state 33 (depth scale/offset), 19/20->states 23/24
+// (fog parameters; exact units depend on their consuming render-state callback).
+enum PacketDefaultStateRow {
+    kDepthScaleOffsetDefaultRow = 15,
+    kFogParameter23DefaultRow = 19,
+    kFogParameter24DefaultRow = 20
+};
+static const int kRenderStateCount = 21, kTextureStateCount = 8, kSamplerStateCount = 5;
 
-    // Empty render-packet lifecycle hook.
-    void RenderPacket_NoOpHook() {
-    }
+// Empty render-packet lifecycle hook.
+void RenderPacket_NoOpHook() {}
 
-    // Position payload: +0/+4/+8 are XYZ component bits (12-byte element).
-    // Copies intentionally use integer words; no numeric float conversion occurs.
-    struct PositionEntry {
-        union { unsigned int positionWords[3]; float position[3]; };
+// Position payload: +0/+4/+8 are XYZ component bits (12-byte element).
+// Copies intentionally use integer words; no numeric float conversion occurs.
+struct PositionEntry {
+    union {
+        unsigned int positionWords[3];
+        float position[3];
     };
+};
 
-    struct PacketVectorPrefix {
-        PositionEntry* entries;
-        unsigned int count;
+struct PacketVectorPrefix {
+    PositionEntry* entries;
+    unsigned int count;
+};
+
+// Return the vector prefix's stored element count.
+unsigned int CoursePacketVertexVector_GetCount(PacketVectorPrefix* self) {
+    return self->count;
+}
+
+// Return the indexed three-word position entry without a bounds check.
+PositionEntry* CoursePacketPositionVector_GetElement(PacketVectorPrefix* self, int index) {
+    return self->entries + index;
+}
+
+// Texture payload: +0/+4 are the two stored coordinate words (8-byte element).
+// This unit copies/zeroes them; normalization and texture-space scale are external.
+struct TexCoordEntry {
+    union {
+        unsigned int texCoordWords[2];
+        float uv[2];
     };
+};
 
-    // Return the vector prefix's stored element count.
-    unsigned int CoursePacketVertexVector_GetCount(PacketVectorPrefix* self) {
-        return self->count;
-    }
-
-    // Return the indexed three-word position entry without a bounds check.
-    PositionEntry* CoursePacketPositionVector_GetElement(PacketVectorPrefix* self, int index) {
-        return self->entries + index;
-    }
-
-    // Texture payload: +0/+4 are the two stored coordinate words (8-byte element).
-    // This unit copies/zeroes them; normalization and texture-space scale are external.
-    struct TexCoordEntry {
-        union { unsigned int texCoordWords[2]; float uv[2]; };
+// CourseRenderPacket_LoadSBINArchive fills +0 XYZ floats, +12 packed color,
+// +16 UV floats, then uploads each 24-byte element without transforming it.
+struct CourseVertexComponents_u80262614 {
+    float position[3];
+    unsigned int packedColor;
+    float uv[2];
+};
+struct CourseVertexEntry {
+    union {
+        unsigned int vertexWords[6];
+        CourseVertexComponents_u80262614 components;
     };
+};
+// Return the indexed two-word texture-coordinate entry without a bounds check.
+TexCoordEntry* CoursePacketTexCoordVector_GetElement(TexCoordEntry** self, int index) {
+    return *self + index;
+}
+// Return the indexed six-word course vertex without a bounds check.
+CourseVertexEntry* CoursePacketVertexVector_GetElement(CourseVertexEntry** self, int index) {
+    return *self + index;
+}
 
-    // CourseRenderPacket_LoadSBINArchive fills +0 XYZ floats, +12 packed color,
-    // +16 UV floats, then uploads each 24-byte element without transforming it.
-    struct CourseVertexComponents_u80262614 {
-        float position[3]; unsigned int packedColor; float uv[2];
-    };
-    struct CourseVertexEntry {
-        union { unsigned int vertexWords[6]; CourseVertexComponents_u80262614 components; };
-    };
-    // Return the indexed two-word texture-coordinate entry without a bounds check.
-    TexCoordEntry* CoursePacketTexCoordVector_GetElement(TexCoordEntry** self, int index) {
-        return *self + index;
+// Vector ABI header: first=allocation address, second=element count,
+// third=capacity in elements. Copying this header does not duplicate ownership.
+struct Triple {
+    unsigned int first;
+    unsigned int second;
+    unsigned int third;
+    // Copy a three-word storage header without changing ownership.
+    Triple(const Triple& other) {
+        *this = other;
     }
-    // Return the indexed six-word course vertex without a bounds check.
-    CourseVertexEntry* CoursePacketVertexVector_GetElement(CourseVertexEntry** self, int index) {
-        return *self + index;
-    }
+    // Preserve the three-word header cleanup behavior.
+    ~Triple() {}
+};
 
-    // Vector ABI header: first=allocation address, second=element count,
-    // third=capacity in elements. Copying this header does not duplicate ownership.
-    struct Triple {
-        unsigned int first;
-        unsigned int second;
-        unsigned int third;
-        // Copy a three-word storage header without changing ownership.
-        Triple(const Triple& other){
-            *this = other;
-        }
-        // Preserve the three-word header cleanup behavior.
-        ~Triple(){
-        }
-    };
+// Reset the three-word vector prefix to empty.
+void Triple_Clear(Triple* self) {
+    self->first = 0;
+    self->second = 0;
+    self->third = 0;
+}
 
-    // Reset the three-word vector prefix to empty.
-    void Triple_Clear(Triple* self) {
-        self->first = 0;
-        self->second = 0;
-        self->third = 0;
-    }
+// Reset texture-coordinate vector storage, size and capacity.
+void CoursePacketTexCoordVector_Init(Triple* self) {
+    self->first = 0;
+    self->second = 0;
+    self->third = 0;
+}
 
-    // Reset texture-coordinate vector storage, size and capacity.
-    void CoursePacketTexCoordVector_Init(Triple* self) {
-        self->first = 0;
-        self->second = 0;
-        self->third = 0;
-    }
+// Reset course-vertex vector storage, size and capacity.
+void CoursePacketVertexVector_Init(Triple* self) {
+    self->first = 0;
+    self->second = 0;
+    self->third = 0;
+}
+void gtl_PixelCopy_CopyPackedColor(void* self, void* value);
+// Copy a packed color and return the destination for assignment chaining.
+void* gtl_PixelCopy_AssignPackedColor(void* self, void* value) {
+    gtl_PixelCopy_CopyPackedColor(self, value);
+    return self;
+}
+void appFreeUni__FPv(void*);
+void __dl__FPv(void*);
 
-    // Reset course-vertex vector storage, size and capacity.
-    void CoursePacketVertexVector_Init(Triple* self) {
-        self->first = 0;
-        self->second = 0;
-        self->third = 0;
-    }
-    void gtl_PixelCopy_CopyPackedColor(void* self, void* value);
-    // Copy a packed color and return the destination for assignment chaining.
-    void* gtl_PixelCopy_AssignPackedColor(void* self, void* value) {
-        gtl_PixelCopy_CopyPackedColor(self, value);
-        return self;
-    }
-    void appFreeUni__FPv(void*);
-    void __dl__FPv(void*);
+// Out-of-line deleting destructors of the packet vectors (std::vector with the game allocator).
+typedef std::vector<PositionEntry, app::app_allocator<PositionEntry> > PositionVector;
+typedef std::vector<TexCoordEntry, app::app_allocator<TexCoordEntry> > TexCoordVector;
+typedef std::vector<CourseVertexEntry, app::app_allocator<CourseVertexEntry> > CourseVertexVector;
+// Destroy a position vector; free the object too when deleting > 0.
+PositionVector* dtor_80262A30(PositionVector* self, int deleting) {
+    return std::__vector_deleting_dtor(self, deleting);
+}
 
-    // Out-of-line deleting destructors of the packet vectors (std::vector with the game allocator).
-    typedef std::vector<PositionEntry, app::app_allocator<PositionEntry> > PositionVector;
-    typedef std::vector<TexCoordEntry, app::app_allocator<TexCoordEntry> > TexCoordVector;
-    typedef std::vector<CourseVertexEntry, app::app_allocator<CourseVertexEntry> > CourseVertexVector;
-    // Destroy a position vector; free the object too when deleting > 0.
-    PositionVector* dtor_80262A30(PositionVector* self, int deleting) {
-        return std::__vector_deleting_dtor(self, deleting);
-    }
+// Destroy a texture-coordinate vector; free the object too when deleting > 0.
+TexCoordVector* dtor_80263084(TexCoordVector* self, int deleting) {
+    return std::__vector_deleting_dtor(self, deleting);
+}
 
-    // Destroy a texture-coordinate vector; free the object too when deleting > 0.
-    TexCoordVector* dtor_80263084(TexCoordVector* self, int deleting) {
-        return std::__vector_deleting_dtor(self, deleting);
-    }
-
-    // Destroy a course-vertex vector; free the object too when deleting > 0.
-    CourseVertexVector* dtor_802636C0(CourseVertexVector* self, int deleting) {
-        return std::__vector_deleting_dtor(self, deleting);
-    }
+// Destroy a course-vertex vector; free the object too when deleting > 0.
+CourseVertexVector* dtor_802636C0(CourseVertexVector* self, int deleting) {
+    return std::__vector_deleting_dtor(self, deleting);
+}
 }
 // extern "C"
 extern "C" {
 #pragma scheduling on
 #pragma use_lmw_stmw on
 
-    struct Resource {
-        CW_BITS2(
-            unsigned int refs : 16,
-            unsigned int flags : 16)
-    };
+struct Resource {
+    CW_BITS2(unsigned int refs : 16, unsigned int flags : 16)
+};
 
-    struct DrawEntry {
-        Resource* vertexBuffer;
-        Resource* texture;
-        unsigned int vertexCount;
-    };
+struct DrawEntry {
+    Resource* vertexBuffer;
+    Resource* texture;
+    unsigned int vertexCount;
+};
 
-    struct DrawObject {
-        DrawEntry* entries;
-        unsigned int size;
-        unsigned int capacity;
-        char matrix[64];
-        char state[104];
-        unsigned int unused;
-        unsigned int active;
-    };
-    void CubeResourceStorage_dtor(Resource*, int);
-    void PSMTX44Identity(void*);
-    void* memset(void*, int, unsigned long);
+struct DrawObject {
+    DrawEntry* entries;
+    unsigned int size;
+    unsigned int capacity;
+    char matrix[64];
+    char state[104];
+    unsigned int unused;
+    unsigned int active;
+};
+void CubeResourceStorage_dtor(Resource*, int);
+void PSMTX44Identity(void*);
+void* memset(void*, int, unsigned long);
 
-    // Release each batch's shared vertex/texture resources and reset packet transforms and state.
-    void RenderPacket_ReleaseResources(DrawObject* self) {
-        for (DrawEntry* it = self->entries; it != self->entries + self->size; ++it) {
-            if (it->vertexBuffer) {
-                Resource* resource = it->vertexBuffer;
-                if (--resource->refs == 0) CubeResourceStorage_dtor(resource, 1);
-                it->vertexBuffer = 0;
-            }
-            if (it->texture) {
-                Resource* resource = it->texture;
-                if (--resource->refs == 0) CubeResourceStorage_dtor(resource, 1);
-                it->texture = 0;
-            }
+// Release each batch's shared vertex/texture resources and reset packet transforms and state.
+void RenderPacket_ReleaseResources(DrawObject* self) {
+    for (DrawEntry* it = self->entries; it != self->entries + self->size; ++it) {
+        if (it->vertexBuffer) {
+            Resource* resource = it->vertexBuffer;
+            if (--resource->refs == 0)
+                CubeResourceStorage_dtor(resource, 1);
+            it->vertexBuffer = 0;
         }
-        self->active = 0;
-        DrawEntry* old = self->entries;
-        self->capacity = 0;
-        self->entries = 0;
-        self->size = 0;
-        if (old) appFreeUni__FPv(old);
-        PSMTX44Identity(self->matrix);
-        memset(self->state, 0, 104);
+        if (it->texture) {
+            Resource* resource = it->texture;
+            if (--resource->refs == 0)
+                CubeResourceStorage_dtor(resource, 1);
+            it->texture = 0;
+        }
     }
+    self->active = 0;
+    DrawEntry* old = self->entries;
+    self->capacity = 0;
+    self->entries = 0;
+    self->size = 0;
+    if (old)
+        appFreeUni__FPv(old);
+    PSMTX44Identity(self->matrix);
+    memset(self->state, 0, 104);
+}
 }
 
 extern "C" {
 
-    struct StatePair {
-        unsigned int key, value;
-    };
-    extern signed char s_coursePacketDefaultStatesInitialized;
-    extern unsigned int kCoursePacketRenderState15Default, s_coursePacketRenderState19Default, kCoursePacketRenderState20Default;
-    extern StatePair s_drawObjectRenderStateDefaults[21], kCoursePacketTextureStageStateDefaults[8], kCoursePacketSamplerStateDefaults[5];
-    extern char kIdentityMatrix4x4[];
-    void Memory_Copy(void*, const void*, unsigned long);
-    void Engine_GetRenderState(unsigned int, unsigned int*);
-    void Engine_SetCachedRenderState(unsigned int, unsigned int);
-    void Engine_GetTextureStageState(int, unsigned int, unsigned int*);
-    void Engine_SetTextureStageState(int, unsigned int, unsigned int);
-    void Engine_GetRenderStateRowField(int, unsigned int, unsigned int*);
-    void Engine_SetTextureStageParameter(int, unsigned int, unsigned int);
-    char* Camera_GetRenderState(void*);
-    void SetTransform(int, void*);
-    void Engine_SetTextureStageResource(unsigned int, void*);
-    void Engine_SetTexturePalette(unsigned int, void*);
-    void Engine_SetFlexibleVertexFormat(unsigned int);
-    void Engine_SetType7Resource(int);
-    void Engine_SetVertexStream(int, void*, int, int);
-    void DrawPrimitiveFromBoundBuffers(int, int, unsigned int);
+struct StatePair {
+    unsigned int key, value;
+};
+extern signed char s_coursePacketDefaultStatesInitialized;
+extern unsigned int kCoursePacketRenderState15Default, s_coursePacketRenderState19Default,
+    kCoursePacketRenderState20Default;
+extern StatePair s_drawObjectRenderStateDefaults[21], kCoursePacketTextureStageStateDefaults[8],
+    kCoursePacketSamplerStateDefaults[5];
+extern char kIdentityMatrix4x4[];
+void Memory_Copy(void*, const void*, unsigned long);
+void Engine_GetRenderState(unsigned int, unsigned int*);
+void Engine_SetCachedRenderState(unsigned int, unsigned int);
+void Engine_GetTextureStageState(int, unsigned int, unsigned int*);
+void Engine_SetTextureStageState(int, unsigned int, unsigned int);
+void Engine_GetRenderStateRowField(int, unsigned int, unsigned int*);
+void Engine_SetTextureStageParameter(int, unsigned int, unsigned int);
+char* Camera_GetRenderState(void*);
+void SetTransform(int, void*);
+void Engine_SetTextureStageResource(unsigned int, void*);
+void Engine_SetTexturePalette(unsigned int, void*);
+void Engine_SetFlexibleVertexFormat(unsigned int);
+void Engine_SetType7Resource(int);
+void Engine_SetVertexStream(int, void*, int, int);
+void DrawPrimitiveFromBoundBuffers(int, int, unsigned int);
 }
 
 // Save the render-state defaults, install packet values, and restore them on scope exit.
@@ -230,7 +253,7 @@ struct SavedRender {
     // Save each render-state value and apply the packet defaults.
     SavedRender() {
         Memory_Copy(states, s_drawObjectRenderStateDefaults, sizeof(StatePair) * kRenderStateCount);
-        for (unsigned int i = 0;i < 21;++i) {
+        for (unsigned int i = 0; i < 21; ++i) {
             StatePair& state = states[i];
             unsigned int& saved = old[i];
             Engine_GetRenderState(state.key, &saved);
@@ -239,7 +262,8 @@ struct SavedRender {
     }
     // Restore the render-state values captured on scope entry.
     ~SavedRender() {
-        for (unsigned int i = 0;i < 21;++i) Engine_SetCachedRenderState(states[i].key, old[i]);
+        for (unsigned int i = 0; i < 21; ++i)
+            Engine_SetCachedRenderState(states[i].key, old[i]);
     }
 };
 
@@ -250,7 +274,7 @@ struct SavedTexture {
     // Save each texture-stage state and apply the packet defaults.
     SavedTexture() {
         Memory_Copy(states, kCoursePacketTextureStageStateDefaults, sizeof(StatePair) * kTextureStateCount);
-        for (unsigned int i = 0;i < 8;++i) {
+        for (unsigned int i = 0; i < 8; ++i) {
             StatePair& state = states[i];
             unsigned int& saved = old[i];
             Engine_GetTextureStageState(0, state.key, &saved);
@@ -259,7 +283,8 @@ struct SavedTexture {
     }
     // Restore the texture-stage states captured on scope entry.
     ~SavedTexture() {
-        for (unsigned int i = 0;i < 8;++i) Engine_SetTextureStageState(0, states[i].key, old[i]);
+        for (unsigned int i = 0; i < 8; ++i)
+            Engine_SetTextureStageState(0, states[i].key, old[i]);
     }
 };
 
@@ -270,7 +295,7 @@ struct SavedSampler {
     // Save each sampler parameter and apply the packet defaults.
     SavedSampler() {
         Memory_Copy(states, kCoursePacketSamplerStateDefaults, sizeof(StatePair) * kSamplerStateCount);
-        for (unsigned int i = 0;i < 5;++i) {
+        for (unsigned int i = 0; i < 5; ++i) {
             StatePair& state = states[i];
             unsigned int& saved = old[i];
             Engine_GetRenderStateRowField(0, state.key, &saved);
@@ -279,7 +304,8 @@ struct SavedSampler {
     }
     // Restore the sampler parameters captured on scope entry.
     ~SavedSampler() {
-        for (unsigned int i = 0;i < 5;++i) Engine_SetTextureStageParameter(0, states[i].key, old[i]);
+        for (unsigned int i = 0; i < 5; ++i)
+            Engine_SetTextureStageParameter(0, states[i].key, old[i]);
     }
 };
 
@@ -304,7 +330,7 @@ extern "C" void RenderPacket_DrawBatches(DrawObject* self, void* camera) {
         SetTransform(kPacketTexture0, kIdentityMatrix4x4);
         SetTransform(kPacketProjection, view + kCameraProjectionMatrixOffset);
         unsigned int i;
-        for (i = 0;i < 4;++i) {
+        for (i = 0; i < 4; ++i) {
             Engine_SetTextureStageResource(i, 0);
             Engine_SetTexturePalette(i, 0);
         }
@@ -312,8 +338,8 @@ extern "C" void RenderPacket_DrawBatches(DrawObject* self, void* camera) {
         Engine_SetType7Resource(0);
         i = 0;
         unsigned int offset = 0;
-        for (;i < self->size;offset += sizeof(DrawEntry), ++i) {
-            DrawEntry* entry = (DrawEntry*)((char*)self->entries+offset);
+        for (; i < self->size; offset += sizeof(DrawEntry), ++i) {
+            DrawEntry* entry = (DrawEntry*)((char*)self->entries + offset);
             Engine_SetTextureStageResource(0, entry->texture);
             Engine_SetTexturePalette(0, 0);
             Engine_SetVertexStream(0, entry->vertexBuffer, 0, sizeof(CourseVertexEntry));
@@ -323,15 +349,16 @@ extern "C" void RenderPacket_DrawBatches(DrawObject* self, void* camera) {
 }
 
 extern "C" {
-    extern char packedResourcePathStrings[], __vt__Q23std11logic_error[], __vt__Q23std12length_error[], s_sharedCharDeleterVtable[];
-    unsigned long strlen(const char*);
-    char* strcpy(char*, const char*);
-    void* __nwa__FUl(unsigned long);
-    void* appMallocDummy__FUl(unsigned long);
-    void __dla__FPv(void*);
-    void dtor_800460BC(void*, int);
-    void __dt__Q23std12length_errorFv(void*, int);
-    void __throw(void*, void*, void (*)(void*, int)) __attribute__((noreturn));
+extern char packedResourcePathStrings[], __vt__Q23std11logic_error[], __vt__Q23std12length_error[],
+    s_sharedCharDeleterVtable[];
+unsigned long strlen(const char*);
+char* strcpy(char*, const char*);
+void* __nwa__FUl(unsigned long);
+void* appMallocDummy__FUl(unsigned long);
+void __dla__FPv(void*);
+void dtor_800460BC(void*, int);
+void __dt__Q23std12length_errorFv(void*, int);
+void __throw(void*, void*, void (*)(void*, int)) __attribute__((noreturn));
 }
 
 struct SharedString {
@@ -339,7 +366,7 @@ struct SharedString {
     unsigned int refs, owners;
     char* data;
     // Create a shared character-buffer control block with initial counts.
-    SharedString(char* p): refs(1), owners(1) {
+    SharedString(char* p) : refs(1), owners(1) {
         table = s_sharedCharDeleterVtable;
         data = p;
     }
@@ -349,55 +376,50 @@ struct StringGuard {
     char* ptr;
     char* allocator;
     // Guard the character array until shared ownership transfers.
-    StringGuard(char* p, char* a):ptr(p), allocator(a){
-    }
+    StringGuard(char* p, char* a) : ptr(p), allocator(a) {}
     // Delete the character array if it is still guarded.
-    ~StringGuard(){
-        if (ptr) __dla__FPv(ptr);
+    ~StringGuard() {
+        if (ptr)
+            __dla__FPv(ptr);
     }
 };
 
-struct EmptyAllocator {
-};
+struct EmptyAllocator {};
 #pragma global_optimizer off
 
 struct PushAllocator {
     char state;
     // Initialize the batch allocator marker.
-    PushAllocator():state(0){
-    }
+    PushAllocator() : state(0) {}
     // Preserve the empty batch allocator cleanup hook.
-    ~PushAllocator(){
-    }
+    ~PushAllocator() {}
 };
 
 struct PushPair {
     unsigned int first, second;
     // Copy two raw batch words.
-    PushPair(const PushPair& p){
-        unsigned int a = p.first;
-        unsigned int b = p.second;
-        first = a;
-        second = b;
+    PushPair(const PushPair& p) {
+        unsigned int firstWord = p.first;
+        unsigned int secondWord = p.second;
+        first = firstWord;
+        second = secondWord;
     }
     // Preserve the empty two-word batch cleanup hook.
-    ~PushPair(){
-    }
+    ~PushPair() {}
 };
 
 struct PushTriple {
     PushPair pair;
     unsigned int third;
     // Copy the three-word batch record with its original exception scope.
-    PushTriple(const PushTriple& p):pair(p.pair){
-        try{
+    PushTriple(const PushTriple& p) : pair(p.pair) {
+        try {
             third = p.third;
-        } catch (...){
+        } catch (...) {
         }
     }
     // Preserve the empty batch record cleanup hook.
-    ~PushTriple(){
-    }
+    ~PushTriple() {}
 };
 
 struct ErrorBase {
@@ -409,8 +431,8 @@ struct ErrorBase {
         const char* source = str;
         table = __vt__Q23std11logic_error;
         PushAllocator alloc;
-        unsigned int n = strlen(source)+1;
-        char* p = (char*)__nwa__FUl(n*2-n);
+        unsigned int n = strlen(source) + 1;
+        char* p = (char*)__nwa__FUl(n * 2 - n);
         text = p;
         {
             StringGuard guard(p, (char*)&alloc);
@@ -420,18 +442,18 @@ struct ErrorBase {
         strcpy(text, source);
     }
     // Run the exception base cleanup without changing its ABI.
-    ~ErrorBase(){
+    ~ErrorBase() {
         dtor_800460BC(this, -1);
     }
 };
 namespace std {
 
-    struct length_error : ErrorBase {
-        // Construct the owned length-error message and select its exception type.
-        length_error(const char* str):ErrorBase(str){
-            table = __vt__Q23std12length_error;
-        }
-    };
+struct length_error : ErrorBase {
+    // Construct the owned length-error message and select its exception type.
+    length_error(const char* str) : ErrorBase(str) {
+        table = __vt__Q23std12length_error;
+    }
+};
 }
 
 struct ThrowLengthError {
@@ -439,16 +461,15 @@ struct ThrowLengthError {
     char* text;
     SharedString* shared;
     // Leave exception storage for explicit initialization by init.
-    ThrowLengthError() {
-    }
+    ThrowLengthError() {}
 
     // Initialize the owned error-message buffer and shared control block.
     void init(const char* str) {
         const char* source = str;
         table = __vt__Q23std11logic_error;
         PushAllocator alloc;
-        unsigned int n = strlen(source)+1;
-        char* p = (char*)__nwa__FUl(n*2-n);
+        unsigned int n = strlen(source) + 1;
+        char* p = (char*)__nwa__FUl(n * 2 - n);
         text = p;
         {
             StringGuard guard(p, (char*)&alloc);
@@ -462,9 +483,9 @@ struct ThrowLengthError {
 inline void throwLengthError() {
     ThrowLengthError storage;
     ThrowLengthError* error = &storage;
-    storage.init(packedResourcePathStrings+0x17);
+    storage.init(packedResourcePathStrings + 0x17);
     error->table = __vt__Q23std12length_error;
-    __throw(packedResourcePathStrings+0x2b, error, __dt__Q23std12length_errorFv);
+    __throw(packedResourcePathStrings + 0x2b, error, __dt__Q23std12length_errorFv);
 }
 
 // Batch entries are three raw words: buffer handle, texture handle, vertex count
@@ -479,11 +500,10 @@ struct GrowBuffer_u80262614 {
     unsigned int* oldCapacity;
     unsigned int remaining;
     // Initialize an empty temporary batch vector tied to owner capacity.
-    GrowBuffer_u80262614(unsigned int* c):entries(0), size(0), capacity(0), oldCapacity(c), remaining(0){
-    }
+    GrowBuffer_u80262614(unsigned int* c) : entries(0), size(0), capacity(0), oldCapacity(c), remaining(0) {}
     // Free the allocation retained by the temporary after swap or unwind.
-    ~GrowBuffer_u80262614(){
-        if (entries){
+    ~GrowBuffer_u80262614() {
+        if (entries) {
             PushAllocator allocator;
             size -= size;
             appFreeUni__FPv(entries);
@@ -491,13 +511,13 @@ struct GrowBuffer_u80262614 {
     }
 };
 // Return the larger unsigned growth request by reference.
-inline const unsigned int& larger(const unsigned int& a, const unsigned int& b){
-    return a < b?b:a;
+inline const unsigned int& larger(const unsigned int& a, const unsigned int& b) {
+    return a < b ? b : a;
 }
 // Throw when a batch growth request exceeds the twelve-byte element limit.
-inline void pushCheck(unsigned int old, unsigned int extra){
+inline void pushCheck(unsigned int old, unsigned int extra) {
     PushAllocator checkAllocator;
-    if (extra > kTwelveByteElementLimit-old){
+    if (extra > kTwelveByteElementLimit - old) {
         PushAllocator errorAllocator;
         throwLengthError();
     }
@@ -509,43 +529,46 @@ extern "C" void CourseRenderPacket_AppendBatch(GrowBuffer_u80262614* self, const
     // Phase 1: append directly when capacity permits; otherwise validate growth.
     unsigned int newCapacity;
     PushAllocator allocator;
-    if (self->size < self->capacity){
+    if (self->size < self->capacity) {
         self->size += 1;
-        self->entries[self->size-1] = *value;
+        self->entries[self->size - 1] = *value;
         return;
     }
     unsigned int savedCapacity = self->capacity;
     PushAllocator growthAllocator;
     pushCheck(savedCapacity, 1);
     GrowBuffer_u80262614 replacement(&self->capacity);
-    unsigned int tailCount = 1+self->size-self->capacity;
+    unsigned int tailCount = 1 + self->size - self->capacity;
     unsigned int oldCapacity = self->capacity;
     pushCheck(oldCapacity, tailCount);
-    if (oldCapacity < kTwelveByteGrowthTier1)newCapacity = oldCapacity+larger((oldCapacity+1)*3/5, tailCount);
-    else if (oldCapacity < kTwelveByteGrowthTier2)newCapacity = oldCapacity+larger((oldCapacity+1)/2, tailCount);
-    else newCapacity = kTwelveByteElementLimit;
+    if (oldCapacity < kTwelveByteGrowthTier1)
+        newCapacity = oldCapacity + larger((oldCapacity + 1) * 3 / 5, tailCount);
+    else if (oldCapacity < kTwelveByteGrowthTier2)
+        newCapacity = oldCapacity + larger((oldCapacity + 1) / 2, tailCount);
+    else
+        newCapacity = kTwelveByteElementLimit;
     PushAllocator storageAllocator;
-    if (newCapacity > kTwelveByteElementLimit){
+    if (newCapacity > kTwelveByteElementLimit) {
         PushAllocator errorAllocator;
         throwLengthError();
     }
     // Phase 2: reserve replacement storage and construct the new tail before copying.
-    replacement.entries = (PushTriple*)appMallocDummy__FUl((((12*newCapacity))));
+    replacement.entries = (PushTriple*)appMallocDummy__FUl((((12 * newCapacity))));
     replacement.capacity = newCapacity;
     unsigned int length = self->size;
     unsigned int savedLength = length;
-    PushTriple* destination = (((savedLength+replacement.entries)));
+    PushTriple* destination = (((savedLength + replacement.entries)));
     destination[replacement.size++] = *value;
     PushAllocator insertionAllocator;
     replacement.remaining = length;
-    PushTriple* sourceEnd = (self->size+self->entries);
+    PushTriple* sourceEnd = (self->size + self->entries);
     PushTriple* sourceBegin = self->entries;
     // Phase 3: copy the oldCapacity prefix in reverse, preserving its logical order.
     PushAllocator copyAllocator;
-    while (sourceEnd > sourceBegin){
+    while (sourceEnd > sourceBegin) {
         sourceEnd -= 1;
         --destination;
-        new(destination) PushTriple(*sourceEnd);
+        new (destination) PushTriple(*sourceEnd);
         replacement.remaining -= 1;
         replacement.size = 1 + replacement.size;
     }
@@ -568,28 +591,24 @@ extern "C" void CourseRenderPacket_AppendBatch(GrowBuffer_u80262614* self, const
 struct ResizePair {
     unsigned int first, second;
     // Initialize or copy the two raw words of a texcoord entry.
-    ResizePair():first(0), second(0){
-    }
+    ResizePair() : first(0), second(0) {}
     // Initialize or copy the two raw words of a texcoord entry.
-    ResizePair(const ResizePair& p){
-        unsigned int a = p.first;
-        unsigned int b = p.second;
-        first = a;
-        second = b;
+    ResizePair(const ResizePair& p) {
+        unsigned int firstWord = p.first;
+        unsigned int secondWord = p.second;
+        first = firstWord;
+        second = secondWord;
     }
     // Preserve the empty two-word entry cleanup hook.
-    ~ResizePair(){
-    }
+    ~ResizePair() {}
 };
 
 struct PairAllocator {
     char state;
     // Initialize the texcoord allocator marker.
-    PairAllocator():state(0){
-    }
+    PairAllocator() : state(0) {}
     // Preserve the empty texcoord allocator cleanup hook.
-    ~PairAllocator(){
-    }
+    ~PairAllocator() {}
 };
 
 struct PairErrorBase {
@@ -601,8 +620,8 @@ struct PairErrorBase {
         const char* source = str;
         table = __vt__Q23std11logic_error;
         PairAllocator alloc;
-        unsigned int n = strlen(source)+1;
-        char* p = (char*)__nwa__FUl(n*2-n);
+        unsigned int n = strlen(source) + 1;
+        char* p = (char*)__nwa__FUl(n * 2 - n);
         text = p;
         {
             StringGuard guard(p, (char*)&alloc);
@@ -612,42 +631,43 @@ struct PairErrorBase {
         strcpy(text, source);
     }
     // Run the texcoord error base cleanup.
-    ~PairErrorBase(){
+    ~PairErrorBase() {
         dtor_800460BC(this, -1);
     }
 };
 // Validate texcoord growth against the eight-byte element limit.
 inline void pairCheck(unsigned int old, unsigned int extra) {
-    if (extra > kTexCoordElementLimit-old){
+    if (extra > kTexCoordElementLimit - old) {
         PairAllocator errorAllocator;
         throwLengthError();
     }
 }
 // Compute the original growth-tier candidate even when the caller discards it.
-inline unsigned int pairDiscardedGrowth(unsigned int old){
-    if (old < kTexCoordGrowthTier1)return (old+1)*3/5;
-    else if (old < kTexCoordGrowthTier2)return (old+1)/2;
-    else return kTexCoordElementLimit;
+inline unsigned int pairDiscardedGrowth(unsigned int old) {
+    if (old < kTexCoordGrowthTier1)
+        return (old + 1) * 3 / 5;
+    else if (old < kTexCoordGrowthTier2)
+        return (old + 1) / 2;
+    else
+        return kTexCoordElementLimit;
 }
 
 struct BufferPair {
     unsigned int first, second;
     // Initialize or copy a two-word texcoord record.
-    BufferPair():first(0), second(0){
-    }
+    BufferPair() : first(0), second(0) {}
     // Initialize or copy a two-word texcoord record.
-    BufferPair(const BufferPair& p){
+    BufferPair(const BufferPair& p) {
         try {
-            unsigned int a = p.first;
-            unsigned int b = p.second;
-            first = a;
-            second = b;
+            unsigned int firstWord = p.first;
+            unsigned int secondWord = p.second;
+            first = firstWord;
+            second = secondWord;
         } catch (...) {
         }
     }
     // Preserve the empty texcoord record cleanup hook.
-    ~BufferPair(){
-    }
+    ~BufferPair() {}
 };
 
 struct PairBuffer {
@@ -656,11 +676,10 @@ struct PairBuffer {
     unsigned int* oldCapacity;
     unsigned int remaining;
     // Initialize an empty temporary texcoord vector tied to owner capacity.
-    PairBuffer(unsigned int* c):entries(0), size(0), capacity(0), oldCapacity(c), remaining(0){
-    }
+    PairBuffer(unsigned int* c) : entries(0), size(0), capacity(0), oldCapacity(c), remaining(0) {}
     // Free the texcoord allocation retained after swap or unwind.
-    ~PairBuffer(){
-        if (entries){
+    ~PairBuffer() {
+        if (entries) {
             PairAllocator allocator;
             size -= size;
             appFreeUni__FPv(entries);
@@ -677,25 +696,25 @@ struct PairBuffer {
 // Test tailCount>capacity first to avoid unsigned underflow in capacity-tailCount.
 // The temporary owns fresh storage until swap, then old storage; no ownership gaps.
 extern "C" void CoursePacketTexCoordVector_Resize(PairBuffer* self, unsigned int count) {
-    if (count > self->size){
+    if (count > self->size) {
         unsigned int savedSizeCopy = self->size;
         unsigned int savedSize = self->size;
         PairAllocator allocator;
-        unsigned int tailCount = count-savedSizeCopy;
+        unsigned int tailCount = count - savedSizeCopy;
         unsigned int size = savedSize;
         unsigned int capacity = self->capacity;
-        if (tailCount > capacity || size > capacity-tailCount){
+        if (tailCount > capacity || size > capacity - tailCount) {
             PairAllocator growthAllocator;
             unsigned int oldCapacity = self->capacity;
-            pairCheck(oldCapacity, (((self->size+tailCount))-capacity));
+            pairCheck(oldCapacity, (((self->size + tailCount)) - capacity));
             unsigned int savedOld = oldCapacity;
             pairDiscardedGrowth(savedOld);
-        } else{
+        } else {
             PairAllocator insertionAllocator;
-            BufferPair* destination = self->entries+size;
-            while (tailCount){
+            BufferPair* destination = self->entries + size;
+            while (tailCount) {
                 BufferPair value;
-                new(destination) BufferPair(value);
+                new (destination) BufferPair(value);
                 --tailCount;
                 destination += 1;
                 ++self->size;
@@ -705,40 +724,43 @@ extern "C" void CoursePacketTexCoordVector_Resize(PairBuffer* self, unsigned int
         // Growth phase 1: select a capacity >= requested count and allocate 8*newCapacity.
         PairBuffer replacement(&self->capacity);
         unsigned int newCapacity;
-        unsigned int capacityIncrease = self->size+tailCount-self->capacity;
+        unsigned int capacityIncrease = self->size + tailCount - self->capacity;
         unsigned int oldCapacity = self->capacity;
         pairCheck(oldCapacity, capacityIncrease);
-        if (oldCapacity < kTexCoordGrowthTier1)newCapacity = oldCapacity+larger((1+oldCapacity)*3/5, capacityIncrease);
-        else if (oldCapacity < kTexCoordGrowthTier2)newCapacity = oldCapacity+larger((oldCapacity+1)/2, capacityIncrease);
-        else newCapacity = kTexCoordElementLimit;
+        if (oldCapacity < kTexCoordGrowthTier1)
+            newCapacity = oldCapacity + larger((1 + oldCapacity) * 3 / 5, capacityIncrease);
+        else if (oldCapacity < kTexCoordGrowthTier2)
+            newCapacity = oldCapacity + larger((oldCapacity + 1) / 2, capacityIncrease);
+        else
+            newCapacity = kTexCoordElementLimit;
         PairAllocator storageAllocator;
-        if (newCapacity > kTexCoordElementLimit){
+        if (newCapacity > kTexCoordElementLimit) {
             PairAllocator errorAllocator;
             throwLengthError();
         }
         unsigned int savedCap = newCapacity;
-        replacement.entries = (BufferPair*)appMallocDummy__FUl(((newCapacity*8)));
+        replacement.entries = (BufferPair*)appMallocDummy__FUl(((newCapacity * 8)));
         replacement.capacity = newCapacity;
         // Growth phase 2: build zero tail, then reverse-copy the existing prefix.
         int length = self->size;
         replacement.remaining = length;
         PairAllocator insertionAllocator;
-        BufferPair* destination = replacement.entries+length+replacement.size;
-        while (tailCount){
+        BufferPair* destination = replacement.entries + length + replacement.size;
+        while (tailCount) {
             BufferPair value;
-            new(destination) BufferPair(value);
+            new (destination) BufferPair(value);
             tailCount = tailCount - 1;
             ++destination;
             ++replacement.size;
         }
-        BufferPair* sourceEnd = ((self->size+self->entries));
+        BufferPair* sourceEnd = ((self->size + self->entries));
         BufferPair* sourceBegin = self->entries;
         PairAllocator copyAllocator;
-        destination = replacement.remaining+replacement.entries;
-        while (sourceBegin < sourceEnd){
+        destination = replacement.remaining + replacement.entries;
+        while (sourceBegin < sourceEnd) {
             --destination;
             sourceEnd -= 1;
-            new(destination) BufferPair(*sourceEnd);
+            new (destination) BufferPair(*sourceEnd);
             replacement.remaining -= 1;
             ++replacement.size;
         }
@@ -754,9 +776,9 @@ extern "C" void CoursePacketTexCoordVector_Resize(PairBuffer* self, unsigned int
         self->entries = newEntries;
         self->size = replacement.size;
         replacement.size = 0;
-    } else if (count < self->size){
+    } else if (count < self->size) {
         PairAllocator shrinkAllocator;
-        self->size -= self->size-count;
+        self->size -= self->size - count;
     }
 }
 #pragma global_optimizer off
@@ -766,11 +788,9 @@ extern "C" void CoursePacketTexCoordVector_Resize(PairBuffer* self, unsigned int
 struct TripleAllocator {
     char state;
     // Initialize the position allocator marker.
-    TripleAllocator():state(0){
-    }
+    TripleAllocator() : state(0) {}
     // Preserve the empty position allocator cleanup hook.
-    ~TripleAllocator(){
-    }
+    ~TripleAllocator() {}
 };
 
 struct TripleErrorBase {
@@ -782,8 +802,8 @@ struct TripleErrorBase {
         const char* source = str;
         table = __vt__Q23std11logic_error;
         TripleAllocator alloc;
-        unsigned int n = strlen(source)+1;
-        char* p = (char*)__nwa__FUl(n*2-n);
+        unsigned int n = strlen(source) + 1;
+        char* p = (char*)__nwa__FUl(n * 2 - n);
         text = p;
         {
             StringGuard guard(p, (char*)&alloc);
@@ -793,7 +813,7 @@ struct TripleErrorBase {
         strcpy(text, source);
     }
     // Run the position error base cleanup.
-    ~TripleErrorBase(){
+    ~TripleErrorBase() {
         dtor_800460BC(this, -1);
     }
 };
@@ -802,18 +822,16 @@ struct ResizeTriple {
     ResizePair pair;
     unsigned int third;
     // Initialize or copy a three-word position record.
-    ResizeTriple():third(0){
-    }
+    ResizeTriple() : third(0) {}
     // Initialize or copy a three-word position record.
-    ResizeTriple(const ResizeTriple& p):pair(p.pair){
+    ResizeTriple(const ResizeTriple& p) : pair(p.pair) {
         try {
             third = p.third;
-        } catch (...){
+        } catch (...) {
         }
     }
     // Preserve the empty position record cleanup hook.
-    ~ResizeTriple(){
-    }
+    ~ResizeTriple() {}
 };
 
 struct TripleBuffer {
@@ -822,11 +840,10 @@ struct TripleBuffer {
     unsigned int* oldCapacity;
     unsigned int remaining;
     // Initialize an empty temporary position vector tied to owner capacity.
-    TripleBuffer(unsigned int* c):entries(0), size(0), capacity(0), oldCapacity(c), remaining(0){
-    }
+    TripleBuffer(unsigned int* c) : entries(0), size(0), capacity(0), oldCapacity(c), remaining(0) {}
     // Free the position allocation retained after swap or unwind.
-    ~TripleBuffer(){
-        if (entries){
+    ~TripleBuffer() {
+        if (entries) {
             TripleAllocator allocator;
             size -= size;
             appFreeUni__FPv(entries);
@@ -835,14 +852,17 @@ struct TripleBuffer {
 };
 #pragma global_optimizer off
 // Compute the original twelve-byte growth-tier candidate.
-inline unsigned int discardedGrowth(unsigned int old){
-    if (old < kTwelveByteGrowthTier1)return (old+1)*3/5;
-    else if (old < kTwelveByteGrowthTier2)return (old+1)/2;
-    else return kTwelveByteElementLimit;
+inline unsigned int discardedGrowth(unsigned int old) {
+    if (old < kTwelveByteGrowthTier1)
+        return (old + 1) * 3 / 5;
+    else if (old < kTwelveByteGrowthTier2)
+        return (old + 1) / 2;
+    else
+        return kTwelveByteElementLimit;
 }
 // Validate position growth against the twelve-byte element limit.
-inline void tripleCheck(unsigned int old, unsigned int extra){
-    if (extra > kTwelveByteElementLimit-old){
+inline void tripleCheck(unsigned int old, unsigned int extra) {
+    if (extra > kTwelveByteElementLimit - old) {
         TripleAllocator errorAllocator;
         throwLengthError();
     }
@@ -850,23 +870,23 @@ inline void tripleCheck(unsigned int old, unsigned int extra){
 
 // Resize the three-word position vector with zero-filled growth and guarded storage transfer.
 extern "C" void CoursePacketPositionVector_Resize(TripleBuffer* self, unsigned int count) {
-    if (count > self->size){
+    if (count > self->size) {
         TripleAllocator allocator;
-        unsigned int tailCount = count-self->size;
+        unsigned int tailCount = count - self->size;
         unsigned int size = self->size;
         int capacity = self->capacity;
-        if (tailCount > capacity || size > capacity-tailCount){
+        if (tailCount > capacity || size > capacity - tailCount) {
             unsigned int oldCapacity = self->capacity;
-            unsigned int capacityIncrease = self->size+tailCount-capacity;
+            unsigned int capacityIncrease = self->size + tailCount - capacity;
             TripleAllocator growthAllocator;
             tripleCheck(oldCapacity, capacityIncrease);
             discardedGrowth(oldCapacity);
-        } else{
+        } else {
             TripleAllocator insertionAllocator;
-            ResizeTriple* destination = (size+self->entries);
-            while (tailCount){
+            ResizeTriple* destination = (size + self->entries);
+            while (tailCount) {
                 ResizeTriple value;
-                new(destination) ResizeTriple(value);
+                new (destination) ResizeTriple(value);
                 tailCount = tailCount - 1;
                 ++destination;
                 ++self->size;
@@ -876,39 +896,42 @@ extern "C" void CoursePacketPositionVector_Resize(TripleBuffer* self, unsigned i
         // Grow as in texcoord resize: construct the zero tail, reverse-copy prefix,
         // then swap. Temporary cleanup owns the oldCapacity allocation after publication.
         TripleBuffer replacement(&self->capacity);
-        unsigned int capacityIncrease = self->size+tailCount-self->capacity;
+        unsigned int capacityIncrease = self->size + tailCount - self->capacity;
         unsigned int oldCapacity = self->capacity;
         tripleCheck(oldCapacity, capacityIncrease);
         unsigned int newCapacity;
-        if (oldCapacity < kTwelveByteGrowthTier1)newCapacity = oldCapacity+larger((oldCapacity+1)*3/5, capacityIncrease);
-        else if (oldCapacity < kTwelveByteGrowthTier2)newCapacity = oldCapacity+larger((oldCapacity+1)/2, capacityIncrease);
-        else newCapacity = kTwelveByteElementLimit;
+        if (oldCapacity < kTwelveByteGrowthTier1)
+            newCapacity = oldCapacity + larger((oldCapacity + 1) * 3 / 5, capacityIncrease);
+        else if (oldCapacity < kTwelveByteGrowthTier2)
+            newCapacity = oldCapacity + larger((oldCapacity + 1) / 2, capacityIncrease);
+        else
+            newCapacity = kTwelveByteElementLimit;
         TripleAllocator storageAllocator;
-        if (newCapacity > kTwelveByteElementLimit){
+        if (newCapacity > kTwelveByteElementLimit) {
             TripleAllocator errorAllocator;
             throwLengthError();
         }
-        replacement.entries = (ResizeTriple*)appMallocDummy__FUl(newCapacity*12);
+        replacement.entries = (ResizeTriple*)appMallocDummy__FUl(newCapacity * 12);
         replacement.capacity = newCapacity;
         unsigned int length = self->size;
         replacement.remaining = length;
         TripleAllocator insertionAllocator;
-        ResizeTriple* destination = length+replacement.entries+replacement.size;
-        while (tailCount){
+        ResizeTriple* destination = length + replacement.entries + replacement.size;
+        while (tailCount) {
             ResizeTriple value;
-            new(destination) ResizeTriple(value);
+            new (destination) ResizeTriple(value);
             --tailCount;
             ++destination;
             ++replacement.size;
         }
         TripleAllocator copyAllocator;
-        ResizeTriple* sourceEnd = self->entries+self->size;
+        ResizeTriple* sourceEnd = self->entries + self->size;
         ResizeTriple* sourceBegin = self->entries;
-        destination = replacement.entries+replacement.remaining;
-        while (sourceEnd > sourceBegin){
+        destination = replacement.entries + replacement.remaining;
+        while (sourceEnd > sourceBegin) {
             --sourceEnd;
             --destination;
-            new(destination) ResizeTriple(*sourceEnd);
+            new (destination) ResizeTriple(*sourceEnd);
             --replacement.remaining;
             ++replacement.size;
         }
@@ -923,9 +946,9 @@ extern "C" void CoursePacketPositionVector_Resize(TripleBuffer* self, unsigned i
         self->entries = newEntries;
         self->size = replacement.size;
         replacement.size = 0;
-    } else if (count < self->size){
+    } else if (count < self->size) {
         TripleAllocator shrinkAllocator;
-        self->size -= self->size-count;
+        self->size -= self->size - count;
     }
 }
 #pragma global_optimizer off
@@ -933,11 +956,9 @@ extern "C" void CoursePacketPositionVector_Resize(TripleBuffer* self, unsigned i
 struct SixAllocator {
     char state;
     // Initialize the expanded-vertex allocator marker.
-    SixAllocator():state(0){
-    }
+    SixAllocator() : state(0) {}
     // Preserve the empty expanded-vertex allocator cleanup hook.
-    ~SixAllocator(){
-    }
+    ~SixAllocator() {}
 };
 
 struct SixErrorBase {
@@ -949,8 +970,8 @@ struct SixErrorBase {
         const char* source = str;
         table = __vt__Q23std11logic_error;
         SixAllocator alloc;
-        unsigned int n = strlen(source)+1;
-        char* p = (char*)__nwa__FUl(n*2-n);
+        unsigned int n = strlen(source) + 1;
+        char* p = (char*)__nwa__FUl(n * 2 - n);
         text = p;
         {
             StringGuard guard(p, (char*)&alloc);
@@ -960,7 +981,7 @@ struct SixErrorBase {
         strcpy(text, source);
     }
     // Run the expanded-vertex error base cleanup.
-    ~SixErrorBase(){
+    ~SixErrorBase() {
         dtor_800460BC(this, -1);
     }
 };
@@ -968,14 +989,11 @@ struct SixErrorBase {
 struct ResizeSix {
     ResizePair a, b, c;
     // Initialize or copy the six-word expanded-vertex record.
-    ResizeSix(){
-    }
+    ResizeSix() {}
     // Initialize or copy the six-word expanded-vertex record.
-    ResizeSix(const ResizeSix& p):a(p.a), b(p.b), c(p.c){
-    }
+    ResizeSix(const ResizeSix& p) : a(p.a), b(p.b), c(p.c) {}
     // Preserve the empty expanded-vertex record cleanup hook.
-    ~ResizeSix(){
-    }
+    ~ResizeSix() {}
 };
 
 struct SixBuffer {
@@ -984,11 +1002,10 @@ struct SixBuffer {
     unsigned int* oldCapacity;
     unsigned int remaining;
     // Initialize an empty temporary expanded-vertex vector tied to owner capacity.
-    SixBuffer(unsigned int* c):entries(0), size(0), capacity(0), oldCapacity(c), remaining(0){
-    }
+    SixBuffer(unsigned int* c) : entries(0), size(0), capacity(0), oldCapacity(c), remaining(0) {}
     // Free the expanded-vertex allocation retained after swap or unwind.
-    ~SixBuffer(){
-        if (entries){
+    ~SixBuffer() {
+        if (entries) {
             SixAllocator allocator;
             size -= size;
             appFreeUni__FPv(entries);
@@ -999,29 +1016,29 @@ struct SixBuffer {
 
 // Resize the six-word course-vertex vector while preserving allocation and copy-unwind order.
 extern "C" void CoursePacketVertexVector_Resize(SixBuffer* self, unsigned int count) {
-    if (count > self->size){
+    if (count > self->size) {
         unsigned int newCapacity;
-        unsigned int tailCount = count-self->size;
+        unsigned int tailCount = count - self->size;
         int size = self->size;
         unsigned int length = self->size;
         SixAllocator allocator;
-        if (tailCount > self->capacity || size > self->capacity-tailCount){
+        if (tailCount > self->capacity || size > self->capacity - tailCount) {
             int oldCapacity = self->capacity;
-            unsigned int capacityIncrease = ((self->size+tailCount))-self->capacity;
+            unsigned int capacityIncrease = ((self->size + tailCount)) - self->capacity;
             SixAllocator growthAllocator;
-            if (capacityIncrease > kVertexElementLimit-oldCapacity) {
+            if (capacityIncrease > kVertexElementLimit - oldCapacity) {
                 SixAllocator errorAllocator;
                 throwLengthError();
             }
-            if (oldCapacity < kVertexGrowthTier1){
-            } else if (oldCapacity < kVertexGrowthTier2){
+            if (oldCapacity < kVertexGrowthTier1) {
+            } else if (oldCapacity < kVertexGrowthTier2) {
             }
-        } else{
+        } else {
             SixAllocator insertionAllocator;
-            ResizeSix* destination = (self->entries+size);
-            while (tailCount){
+            ResizeSix* destination = (self->entries + size);
+            while (tailCount) {
                 ResizeSix value;
-                new(destination) ResizeSix(value);
+                new (destination) ResizeSix(value);
                 --tailCount;
                 destination = 1 + destination;
                 ++self->size;
@@ -1031,41 +1048,44 @@ extern "C" void CoursePacketVertexVector_Resize(SixBuffer* self, unsigned int co
         // Grow as in texcoord resize, with 24-byte entries: build tail, reverse-copy
         // prefix, then swap ownership so cleanup releases the oldCapacity allocation.
         SixBuffer replacement(&self->capacity);
-        unsigned int capacityIncrease = self->size+tailCount-self->capacity;
+        unsigned int capacityIncrease = self->size + tailCount - self->capacity;
         unsigned int oldCapacity = self->capacity;
-        if (capacityIncrease > kVertexElementLimit-oldCapacity){
+        if (capacityIncrease > kVertexElementLimit - oldCapacity) {
             SixAllocator errorAllocator;
             throwLengthError();
         }
-        if (oldCapacity < kVertexGrowthTier1)newCapacity = oldCapacity+larger((1+oldCapacity)*3/5, capacityIncrease);
-        else if (oldCapacity < kVertexGrowthTier2)newCapacity = oldCapacity+larger((oldCapacity+1)/2, capacityIncrease);
-        else newCapacity = kVertexElementLimit;
+        if (oldCapacity < kVertexGrowthTier1)
+            newCapacity = oldCapacity + larger((1 + oldCapacity) * 3 / 5, capacityIncrease);
+        else if (oldCapacity < kVertexGrowthTier2)
+            newCapacity = oldCapacity + larger((oldCapacity + 1) / 2, capacityIncrease);
+        else
+            newCapacity = kVertexElementLimit;
         SixAllocator storageAllocator;
-        if (newCapacity > kVertexElementLimit){
+        if (newCapacity > kVertexElementLimit) {
             SixAllocator errorAllocator;
             throwLengthError();
         }
-        replacement.entries = (ResizeSix*)appMallocDummy__FUl(((newCapacity*24)));
+        replacement.entries = (ResizeSix*)appMallocDummy__FUl(((newCapacity * 24)));
         replacement.remaining = length;
         replacement.capacity = newCapacity;
         SixAllocator insertionAllocator;
-        ResizeSix* destination = replacement.entries+length+replacement.size;
-        while (tailCount){
+        ResizeSix* destination = replacement.entries + length + replacement.size;
+        while (tailCount) {
             ResizeSix value;
-            new(destination) ResizeSix(value);
+            new (destination) ResizeSix(value);
             tailCount -= 1;
             ++destination;
             replacement.size = replacement.size + 1;
         }
-        __typeof__(self->entries+self->size) savedEntries = self->size+self->entries;
+        __typeof__(self->entries + self->size) savedEntries = self->size + self->entries;
         SixAllocator copyAllocator;
         ResizeSix* sourceEnd = savedEntries;
         ResizeSix* sourceBegin = self->entries;
-        destination = (replacement.remaining+replacement.entries);
-        while (sourceBegin < sourceEnd){
+        destination = (replacement.remaining + replacement.entries);
+        while (sourceBegin < sourceEnd) {
             destination -= 1;
             sourceEnd = sourceEnd - 1;
-            new(destination) ResizeSix(*sourceEnd);
+            new (destination) ResizeSix(*sourceEnd);
             replacement.remaining = replacement.remaining - 1;
             replacement.size++;
         }
@@ -1080,8 +1100,8 @@ extern "C" void CoursePacketVertexVector_Resize(SixBuffer* self, unsigned int co
         self->entries = newEntries;
         self->size = replacement.size;
         replacement.size = 0;
-    } else if (count < self->size){
+    } else if (count < self->size) {
         SixAllocator shrinkAllocator;
-        self->size -= self->size-count;
+        self->size -= self->size - count;
     }
 }

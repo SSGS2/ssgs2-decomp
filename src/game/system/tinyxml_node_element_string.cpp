@@ -1,8 +1,10 @@
+// TinyXML node, element and string code: node and element construction and destruction, child
+// and sibling links, attributes, and string operations.
+// Also element printing and the string encoding of entities.
+
 #include <decomp/static_init.h>
 #define XML_MEMBER_OFFSET(type, member) ((int)&((type*)0)->member)
 #include "classes/TiXmlNodeLayout.h"
-// Translation unit 0x802A3004-0x802A45E4 (26 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #pragma use_lmw_stmw on
 
@@ -38,18 +40,42 @@ struct XmlWriterStrings {
     char tagOpen[2];
     char endTagOpen[3];
 };
-#define XmlWriterStringsView (*( XmlWriterStrings*)tinyXmlWriterStrings)
+#define XmlWriterStringsView (*(XmlWriterStrings*)tinyXmlWriterStrings)
 
 // Five 12-byte entity records: spelling, byte length, character, padding.
-struct XmlEntity { const char* spelling; unsigned length; char character; char padding[3]; };
+struct XmlEntity {
+    const char* spelling;
+    unsigned length;
+    char character;
+    char padding[3];
+};
 #define XmlEntities ((XmlEntity*)xmlEntityTableStorage)
-enum XmlEntityIndex { kEntityAmpersand, kEntityLessThan, kEntityGreaterThan,
-    kEntityDoubleQuote, kEntityApostrophe };
-enum XmlVirtualSlot { kXmlDeletingDestructor = 2, kXmlAppendToStream = 4 };
-enum XmlNodeKind { kXmlDocument = 0, kXmlElement = 1, kXmlText = 4 };
-enum { kXmlOutOfMemory = 3, kFirstPrintableAscii = 0x20, kLastPrintableAscii = 0x7e };
-struct ExpandedAttributeString { void* flags; int length; int data; };
-
+enum XmlEntityIndex {
+    kEntityAmpersand,
+    kEntityLessThan,
+    kEntityGreaterThan,
+    kEntityDoubleQuote,
+    kEntityApostrophe
+};
+enum XmlVirtualSlot {
+    kXmlDeletingDestructor = 2,
+    kXmlAppendToStream = 4
+};
+enum XmlNodeKind {
+    kXmlDocument = 0,
+    kXmlElement = 1,
+    kXmlText = 4
+};
+enum {
+    kXmlOutOfMemory = 3,
+    kFirstPrintableAscii = 0x20,
+    kLastPrintableAscii = 0x7e
+};
+struct ExpandedAttributeString {
+    void* flags;
+    int length;
+    int data;
+};
 
 int strcmp(const char*, const char*);
 void* __nwa__FUl(unsigned int);
@@ -76,7 +102,7 @@ void InitializeXmlElementScalars() {
 }
 
 struct XmlStringView {
-    char* str; // 0x0
+    char* str;    // 0x0
     int capacity; // 0x4
 };
 
@@ -106,12 +132,16 @@ int TiXmlString_Equals(XmlStringView* a, XmlStringView* b) {
 int TiXmlString_FindChar(const XmlStringView* self, signed char ch, unsigned int start) {
     int flag = self->capacity;
     unsigned int length;
-    if (flag != 0) length = strlen(self->str);
-    else length = 0;
-    if (start >= length) return -1;
+    if (flag != 0)
+        length = strlen(self->str);
+    else
+        length = 0;
+    if (start >= length)
+        return -1;
     char* p = self->str + start;
     while (*p != 0) {
-        if ((signed char)*p == ch) return (int)(p - self->str);
+        if ((signed char)*p == ch)
+            return (int)(p - self->str);
         ++p;
     }
     return -1;
@@ -127,7 +157,8 @@ void TiXmlString_AssignString(XmlOwnedString* self, const XmlOwnedString* other)
     int otherCapacity = other->capacity;
     int len = otherCapacity != 0 ? strlen(other->str) : 0;
     if (len == 0) {
-        if (self->str != 0) __dla__FPv(self->str);
+        if (self->str != 0)
+            __dla__FPv(self->str);
         self->str = 0;
         self->capacity = 0;
         return;
@@ -136,7 +167,8 @@ void TiXmlString_AssignString(XmlOwnedString* self, const XmlOwnedString* other)
     unsigned int length = (other->capacity != 0 ? strlen(other->str) : 0) + 1;
     copy = (char*)__nwa__FUl(length);
     strcpy(copy, other->capacity != 0 ? other->str : s_tinyXmlEmptyString);
-    if (self->str != 0) __dla__FPv(self->str);
+    if (self->str != 0)
+        __dla__FPv(self->str);
     self->capacity = length;
     self->str = copy;
 }
@@ -149,9 +181,11 @@ void TiXmlString_AppendCount(XmlOwnedString* self, const char* sourceText, unsig
         unsigned int capacity = needed << 1;
         char* copy = (char*)__nwa__FUl(capacity);
         copy[0] = 0;
-        if (self->capacity != 0 && self->str != 0) strcpy(copy, self->str);
+        if (self->capacity != 0 && self->str != 0)
+            strcpy(copy, self->str);
         strncat(copy, sourceText, count);
-        if (self->capacity != 0 && self->str != 0) __dla__FPv(self->str);
+        if (self->capacity != 0 && self->str != 0)
+            __dla__FPv(self->str);
         self->str = copy;
         self->capacity = capacity;
     } else {
@@ -189,12 +223,15 @@ struct XmlAncestorView {
 XmlAncestorView* TiXmlNode_GetDocumentAncestor(XmlAncestorView* p) {
     while (p != 0) {
         int valid = 0;
-        if (p != 0 && p->nodeType == kXmlDocument) valid = 1;
+        if (p != 0 && p->nodeType == kXmlDocument)
+            valid = 1;
         XmlAncestorView* r0 = valid ? p : 0;
         if (r0 != 0) {
             int validAgain = 0;
-            if (p != 0 && p->nodeType == kXmlDocument) validAgain = 1;
-            if (validAgain) return p;
+            if (p != 0 && p->nodeType == kXmlDocument)
+                validAgain = 1;
+            if (validAgain)
+                return p;
             return 0;
         }
         p = p->parent;
@@ -203,16 +240,16 @@ XmlAncestorView* TiXmlNode_GetDocumentAncestor(XmlAncestorView* p) {
 }
 
 struct XmlNodeInitView {
-    char* vtable; // 0x0
-    int parent; // 0x4
-    int nodeType; // 0x8
-    int firstChild; // 0xc
-    int lastChild; // 0x10
-    int valueData; // 0x14
-    int valueCapacity; // 0x18
+    char* vtable;        // 0x0
+    int parent;          // 0x4
+    int nodeType;        // 0x8
+    int firstChild;      // 0xc
+    int lastChild;       // 0x10
+    int valueData;       // 0x14
+    int valueCapacity;   // 0x18
     int previousSibling; // 0x1c
-    int nextSibling; // 0x20
-    int userData; // 0x24
+    int nextSibling;     // 0x20
+    int userData;        // 0x24
 };
 
 // Initialize an empty node with its supplied node kind and no links or value.
@@ -230,14 +267,14 @@ void TiXmlNode_Ctor(XmlNodeInitView* self, int nodeKind) {
 }
 
 struct XmlChildLinks {
-    char prefixPadding[0x4]; // 0x0
-    XmlChildLinks* parent; // 0x4
-    char nodeType[0x4]; // 0x8
-    XmlChildLinks* firstChild; // 0xc
-    XmlChildLinks* lastChild; // 0x10
-    char valueData[0x8]; // 0x14
+    char prefixPadding[0x4];        // 0x0
+    XmlChildLinks* parent;          // 0x4
+    char nodeType[0x4];             // 0x8
+    XmlChildLinks* firstChild;      // 0xc
+    XmlChildLinks* lastChild;       // 0x10
+    char valueData[0x8];            // 0x14
     XmlChildLinks* previousSibling; // 0x1c
-    XmlChildLinks* nextSibling; // 0x20
+    XmlChildLinks* nextSibling;     // 0x20
 };
 
 // str/valueCapacity at +0x14/+0x18 are the node value buffer and allocation capacity.
@@ -256,8 +293,9 @@ struct XmlNodeLifetimeView {
 extern char __vt__9TiXmlNode[];
 void __dl__FPv(void*);
 
-class XmlNodeDeletingInterface_u802A3004 { public: 
-virtual void destroy(int);
+class XmlNodeDeletingInterface_u802A3004 {
+public:
+    virtual void destroy(int);
 };
 // Destroy all children and the owned node value, then optionally free the node.
 XmlNodeLifetimeView* TiXmlNode_dtor(XmlNodeLifetimeView* self, int deleting) {
@@ -272,11 +310,13 @@ XmlNodeLifetimeView* TiXmlNode_dtor(XmlNodeLifetimeView* self, int deleting) {
             }
         }
         if ((void*)((char*)self + XML_MEMBER_OFFSET(XmlNodeLifetimeView, str)) != 0) {
-            if (self->str != 0) __dla__FPv(self->str);
+            if (self->str != 0)
+                __dla__FPv(self->str);
             self->str = 0;
             self->valueCapacity = 0;
         }
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -288,10 +328,10 @@ struct XmlStringDestructorView {
     char* str;
     int capacity;
     // Forward cleanup of the owned XML byte buffer through the string destructor ABI.
-    ~XmlStringDestructorView() { __dt__11TiXmlStringFv(this); }
+    ~XmlStringDestructorView() {
+        __dt__11TiXmlStringFv(this);
+    }
 };
-
-
 
 TiXmlString TiXmlNode_CopyValue(XmlNodeLifetimeView*);
 XmlOwnedString* __ct__11TiXmlStringFPCc(XmlOwnedString*, const char*);
@@ -299,9 +339,10 @@ XmlOwnedString* __ct__11TiXmlStringFPCc(XmlOwnedString*, const char*);
 } // extern "C"
 // Release the owned byte array and clear its pointer and capacity.
 TiXmlString::~TiXmlString() {
-        if (str) delete[] str;
-        str = 0;
-        capacity = 0;
+    if (str)
+        delete[] str;
+    str = 0;
+    capacity = 0;
 }
 extern "C" {
 #pragma inline_depth(1)
@@ -311,11 +352,12 @@ XmlNodeLifetimeView* TiXmlNode_FindChildByValue(const XmlNodeLifetimeView* self,
     while (item != 0) {
         int equal;
         {
-        TiXmlString itemName = TiXmlNode_CopyValue(item);
-        TiXmlString searchName(name);
-        equal = TiXmlString_Equals((XmlStringView*)&itemName, (XmlStringView*)&searchName);
+            TiXmlString itemName = TiXmlNode_CopyValue(item);
+            TiXmlString searchName(name);
+            equal = TiXmlString_Equals((XmlStringView*)&itemName, (XmlStringView*)&searchName);
         }
-        if (equal != 0) return item;
+        if (equal != 0)
+            return item;
         item = item->next;
     }
     return 0;
@@ -329,11 +371,12 @@ XmlNodeLifetimeView* TiXmlNode_FindNextSiblingByValue(const XmlNodeLifetimeView*
     while (item != 0) {
         int equal;
         {
-        TiXmlString itemName = TiXmlNode_CopyValue(item);
-        TiXmlString searchName(name);
-        equal = TiXmlString_Equals((XmlStringView*)&itemName, (XmlStringView*)&searchName);
+            TiXmlString itemName = TiXmlNode_CopyValue(item);
+            TiXmlString searchName(name);
+            equal = TiXmlString_Equals((XmlStringView*)&itemName, (XmlStringView*)&searchName);
         }
-        if (equal != 0) return item;
+        if (equal != 0)
+            return item;
         item = item->next;
     }
     return 0;
@@ -411,22 +454,41 @@ void TiXmlString_EncodeEntities(XmlStringView* input, XmlOwnedString* output) {
                 const char* source = input->capacity != 0 ? input->str : s_tinyXmlEmptyString;
                 TiXmlString_AppendCount(output, source + index, 1);
                 ++index;
-                if ((signed char)input->str[index] == ';') break;
+                if ((signed char)input->str[index] == ';')
+                    break;
             }
         } else if (ch == '&') {
-            TiXmlString_AppendCount(output, *(const char**)xmlEntityTableStorage, *(unsigned int*)(xmlEntityTableStorage + kEntityAmpersand * sizeof(XmlEntity) + XML_MEMBER_OFFSET(XmlEntity, length)));
+            TiXmlString_AppendCount(output, *(const char**)xmlEntityTableStorage,
+                                    *(unsigned int*)(xmlEntityTableStorage + kEntityAmpersand * sizeof(XmlEntity) +
+                                                     XML_MEMBER_OFFSET(XmlEntity, length)));
             ++index;
         } else if (ch == '<') {
-            TiXmlString_AppendCount(output, *(const char**)(xmlEntityTableStorage + kEntityLessThan * sizeof(XmlEntity) + XML_MEMBER_OFFSET(XmlEntity, spelling)), *(unsigned int*)(xmlEntityTableStorage + kEntityLessThan * sizeof(XmlEntity) + XML_MEMBER_OFFSET(XmlEntity, length)));
+            TiXmlString_AppendCount(output,
+                                    *(const char**)(xmlEntityTableStorage + kEntityLessThan * sizeof(XmlEntity) +
+                                                    XML_MEMBER_OFFSET(XmlEntity, spelling)),
+                                    *(unsigned int*)(xmlEntityTableStorage + kEntityLessThan * sizeof(XmlEntity) +
+                                                     XML_MEMBER_OFFSET(XmlEntity, length)));
             ++index;
         } else if (ch == '>') {
-            TiXmlString_AppendCount(output, *(const char**)(xmlEntityTableStorage + kEntityGreaterThan * sizeof(XmlEntity) + XML_MEMBER_OFFSET(XmlEntity, spelling)), *(unsigned int*)(xmlEntityTableStorage + kEntityGreaterThan * sizeof(XmlEntity) + XML_MEMBER_OFFSET(XmlEntity, length)));
+            TiXmlString_AppendCount(output,
+                                    *(const char**)(xmlEntityTableStorage + kEntityGreaterThan * sizeof(XmlEntity) +
+                                                    XML_MEMBER_OFFSET(XmlEntity, spelling)),
+                                    *(unsigned int*)(xmlEntityTableStorage + kEntityGreaterThan * sizeof(XmlEntity) +
+                                                     XML_MEMBER_OFFSET(XmlEntity, length)));
             ++index;
         } else if (ch == '"') {
-            TiXmlString_AppendCount(output, *(const char**)(xmlEntityTableStorage + kEntityDoubleQuote * sizeof(XmlEntity) + XML_MEMBER_OFFSET(XmlEntity, spelling)), *(unsigned int*)(xmlEntityTableStorage + kEntityDoubleQuote * sizeof(XmlEntity) + XML_MEMBER_OFFSET(XmlEntity, length)));
+            TiXmlString_AppendCount(output,
+                                    *(const char**)(xmlEntityTableStorage + kEntityDoubleQuote * sizeof(XmlEntity) +
+                                                    XML_MEMBER_OFFSET(XmlEntity, spelling)),
+                                    *(unsigned int*)(xmlEntityTableStorage + kEntityDoubleQuote * sizeof(XmlEntity) +
+                                                     XML_MEMBER_OFFSET(XmlEntity, length)));
             ++index;
         } else if (ch == '\'') {
-            TiXmlString_AppendCount(output, *(const char**)(xmlEntityTableStorage + kEntityApostrophe * sizeof(XmlEntity) + XML_MEMBER_OFFSET(XmlEntity, spelling)), *(unsigned int*)(xmlEntityTableStorage + kEntityApostrophe * sizeof(XmlEntity) + XML_MEMBER_OFFSET(XmlEntity, length)));
+            TiXmlString_AppendCount(output,
+                                    *(const char**)(xmlEntityTableStorage + kEntityApostrophe * sizeof(XmlEntity) +
+                                                    XML_MEMBER_OFFSET(XmlEntity, spelling)),
+                                    *(unsigned int*)(xmlEntityTableStorage + kEntityApostrophe * sizeof(XmlEntity) +
+                                                     XML_MEMBER_OFFSET(XmlEntity, length)));
             ++index;
         } else if (Compatibility_ReportSuccess((unsigned char)ch) && (int)index < length - 1) {
             TiXmlString_AppendCount(output, input->str + index, 2);
@@ -476,10 +538,12 @@ void TiXmlElement_SetAttribute(XmlAttributeList* self, const char* key, const ch
         XmlOwnedString keyCopy;
         __ct__11TiXmlStringFPCc(&keyCopy, key);
         int same = TiXmlString_Equals((XmlStringView*)&node->key, (XmlStringView*)&keyCopy);
-        if (keyCopy.str != 0) __dla__FPv(keyCopy.str);
+        if (keyCopy.str != 0)
+            __dla__FPv(keyCopy.str);
         keyCopy.str = 0;
         keyCopy.capacity = 0;
-        if (same != 0) break;
+        if (same != 0)
+            break;
         node = node->prev;
     }
     if (node != 0) {
@@ -505,12 +569,15 @@ void TiXmlElement_SetAttribute(XmlAttributeList* self, const char* key, const ch
     // The final assignment belongs only to the exhausted-search path.
     while (walk != 0 || (walk = 0, false)) {
         int ok = 0;
-        if (walk != 0 && walk->nodeType == kXmlDocument) ok = 1;
+        if (walk != 0 && walk->nodeType == kXmlDocument)
+            ok = 1;
         XmlDocumentErrorView* r0 = ok ? walk : 0;
         if (r0 != 0) {
             int ok2 = 0;
-            if (walk != 0 && walk->nodeType == kXmlDocument) ok2 = 1;
-            if (!ok2) walk = 0;
+            if (walk != 0 && walk->nodeType == kXmlDocument)
+                ok2 = 1;
+            if (!ok2)
+                walk = 0;
             break;
         }
         walk = walk->parent;
@@ -527,29 +594,29 @@ void TiXmlElement_SetAttribute(XmlAttributeList* self, const char* key, const ch
 // The value buffer/capacity is the same pair as in the node views;
 // integer link/data words here are Wii pointer bits, not scalar lengths or IDs.
 struct XmlElementStoreView {
-    volatile char* vtable; // 0x0
-    volatile int parent; // 0x4
-    volatile int nodeType; // 0x8
-    volatile int firstChild; // 0xc
-    volatile int lastChild; // 0x10
-    volatile char* str; // 0x14
-    volatile int valueCapacity; // 0x18
-    volatile int previousSibling; // 0x1c
-    volatile int nextSibling; // 0x20
-    volatile int userData; // 0x24
+    volatile char* vtable;                  // 0x0
+    volatile int parent;                    // 0x4
+    volatile int nodeType;                  // 0x8
+    volatile int firstChild;                // 0xc
+    volatile int lastChild;                 // 0x10
+    volatile char* str;                     // 0x14
+    volatile int valueCapacity;             // 0x18
+    volatile int previousSibling;           // 0x1c
+    volatile int nextSibling;               // 0x20
+    volatile int userData;                  // 0x24
     volatile char* attributeSentinelVtable; // 0x28
-    volatile int attributeDocument; // 0x2c
-    volatile int attributeNameData; // 0x30
-    volatile int attributeNameCapacity; // 0x34
-    volatile int attributeValueData; // 0x38
-    volatile int attributeValueCapacity; // 0x3c
-    volatile void* lastAttribute; // 0x40
-    volatile void* firstAttribute; // 0x44
+    volatile int attributeDocument;         // 0x2c
+    volatile int attributeNameData;         // 0x30
+    volatile int attributeNameCapacity;     // 0x34
+    volatile int attributeValueData;        // 0x38
+    volatile int attributeValueCapacity;    // 0x3c
+    volatile void* lastAttribute;           // 0x40
+    volatile void* firstAttribute;          // 0x44
 };
 
 #pragma inline_depth(0)
 // Initialize an element, its circular attribute sentinel, and its tag name.
-XmlElementStoreView* TiXmlElement_Ctor(XmlElementStoreView* self, const char* arg) {
+XmlElementStoreView* TiXmlElement_Ctor(XmlElementStoreView* self, const char* tagName) {
     self->firstChild = 0;
     self->lastChild = 0;
     self->valueCapacity = 0;
@@ -569,7 +636,7 @@ XmlElementStoreView* TiXmlElement_Ctor(XmlElementStoreView* self, const char* ar
     self->lastAttribute = (void*)((char*)self + XML_MEMBER_OFFSET(XmlElementStoreView, attributeSentinelVtable));
     self->lastChild = 0;
     self->firstChild = 0;
-    TiXmlString_AssignCStr((XmlOwnedString*)((char*)self + XML_MEMBER_OFFSET(XmlElementStoreView, str)), arg);
+    TiXmlString_AssignCStr((XmlOwnedString*)((char*)self + XML_MEMBER_OFFSET(XmlElementStoreView, str)), tagName);
     return self;
 }
 #pragma inline_depth()
@@ -587,32 +654,36 @@ struct XmlAllocatorByte {
 
 struct XmlAttributeReadView {
     char prefixPadding[8];
-    char* nameStr; // 0x8
-    int nameFlag; // 0xc
-    void* valueData; // 0x10
-    int valueCapacity; // 0x14
+    char* nameStr;              // 0x8
+    int nameFlag;               // 0xc
+    void* valueData;            // 0x10
+    int valueCapacity;          // 0x14
     XmlAttributeReadView* prev; // 0x18
     XmlAttributeReadView* next; // 0x1c
 };
 
 // Append a terminated string, growing the owned allocation when required.
-void TiXmlString_Append(XmlStringView* self, const char* arg) {
+void TiXmlString_Append(XmlStringView* self, const char* text) {
     unsigned int oldLen;
-    if (self->capacity != 0) oldLen = strlen(self->str);
-    else oldLen = 0;
-    unsigned int argLen = strlen(arg);
+    if (self->capacity != 0)
+        oldLen = strlen(self->str);
+    else
+        oldLen = 0;
+    unsigned int argLen = strlen(text);
     unsigned int needed = oldLen + argLen + 1;
     if (needed > (unsigned int)self->capacity) {
         unsigned int capacity = needed << 1;
         char* copy = (char*)__nwa__FUl(capacity);
         copy[0] = 0;
-        if (self->capacity != 0 && self->str != 0) strcpy(copy, self->str);
-        strcat(copy, arg);
-        if (self->capacity != 0 && self->str != 0) __dla__FPv(self->str);
+        if (self->capacity != 0 && self->str != 0)
+            strcpy(copy, self->str);
+        strcat(copy, text);
+        if (self->capacity != 0 && self->str != 0)
+            __dla__FPv(self->str);
         self->str = copy;
         self->capacity = capacity;
     } else {
-        strcat(self->str, arg);
+        strcat(self->str, text);
     }
 }
 
@@ -620,27 +691,35 @@ void TiXmlString_Append(XmlStringView* self, const char* arg) {
 // Return an attribute value and optionally parse its decimal integer value.
 void* TiXmlElement_GetAttribute(void* self, const char* search, int* out) {
     XmlAttributeReadView* sentinel = (XmlAttributeReadView*)&((TiXmlNodeLayout*)self)->documentError;
-    XmlAttributeReadView* node = (XmlAttributeReadView*)((TiXmlNodeLayout*)self)->firstAttribute; // original attribute list +0x44.
+    XmlAttributeReadView* node =
+        (XmlAttributeReadView*)((TiXmlNodeLayout*)self)->firstAttribute; // original attribute list +0x44.
     while (node != sentinel || (node = 0, false)) {
         XmlOwnedString local;
         __ct__11TiXmlStringFPCc(&local, search);
         int equal = TiXmlString_Equals((XmlStringView*)&node->nameStr, (XmlStringView*)&local);
-        if (local.str != 0) __dla__FPv(local.str);
+        if (local.str != 0)
+            __dla__FPv(local.str);
         local.str = 0;
         local.capacity = 0;
-        if (equal != 0) break;
+        if (equal != 0)
+            break;
         node = node->next;
     }
     if (node == 0) {
-        if (out != 0) *out = 0;
+        if (out != 0)
+            *out = 0;
         return 0;
     }
     char* result;
-    if (node->valueCapacity != 0) result = (char*)node->valueData;
-    else result = s_tinyXmlEmptyString;
+    if (node->valueCapacity != 0)
+        result = (char*)node->valueData;
+    else
+        result = s_tinyXmlEmptyString;
     if (out != 0) {
-        if (result != 0) *out = String_ParseDecimalInt(result);
-        else *out = 0;
+        if (result != 0)
+            *out = String_ParseDecimalInt(result);
+        else
+            *out = 0;
     }
     return result;
 }
@@ -657,10 +736,12 @@ inline XmlAttributeReadView* FindD40(void* container, void* search) {
         XmlOwnedString local;
         __ct__11TiXmlStringFPCc(&local, (const char*)search);
         equal = TiXmlString_Equals((XmlStringView*)&node->nameStr, (XmlStringView*)&local);
-        if (local.str != 0) __dla__FPv(local.str);
+        if (local.str != 0)
+            __dla__FPv(local.str);
         local.str = 0;
         local.capacity = 0;
-        if (equal) return node;
+        if (equal)
+            return node;
         node = node->next;
     }
     return 0;
@@ -670,8 +751,10 @@ void TiXmlElement_CopyAttributeToEngineString(void* outObj, void* container, voi
     XmlAttributeReadView* node = FindD40(container, search);
     if (node != 0) {
         char* str;
-        if (node->valueCapacity != 0) str = (char*)node->valueData;
-        else str = s_tinyXmlEmptyString;
+        if (node->valueCapacity != 0)
+            str = (char*)node->valueData;
+        else
+            str = s_tinyXmlEmptyString;
         ((ExpandedAttributeString*)outObj)->flags = 0;
         ((ExpandedAttributeString*)outObj)->length = 0;
         ((ExpandedAttributeString*)outObj)->data = 0;
@@ -710,18 +793,20 @@ void TiXmlElement_Print(XmlElementStoreView* self, void* stream, int count) {
         fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, space)));
     }
     int length = self->valueCapacity;
-    fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, openTagFormat)), length != 0 ? (const char*)self->str : s_tinyXmlEmptyString);
+    fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, openTagFormat)),
+            length != 0 ? (const char*)self->str : s_tinyXmlEmptyString);
     void* node = (void*)self->firstAttribute;
-    if (node == (void*)((char*)self + XML_MEMBER_OFFSET(XmlElementStoreView, attributeSentinelVtable))) node = 0;
+    if (node == (void*)((char*)self + XML_MEMBER_OFFSET(XmlElementStoreView, attributeSentinelVtable)))
+        node = 0;
     while (node != 0) {
         fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, space)));
         ((XmlPrintable*)node)->print(stream, count);
-        XmlStringView* p1 = (XmlStringView*)&((XmlAttributeReadView*)node)->next->valueData;
-        int empty1 = TiXmlString_Length(p1) == 0;
-        if (empty1) {
-            XmlStringView* p2 = (XmlStringView*)&((XmlAttributeReadView*)node)->next->nameStr;
-            int empty2 = TiXmlString_Length(p2) == 0;
-            if (empty2) {
+        XmlStringView* nextValue = (XmlStringView*)&((XmlAttributeReadView*)node)->next->valueData;
+        int nextValueEmpty = TiXmlString_Length(nextValue) == 0;
+        if (nextValueEmpty) {
+            XmlStringView* nextName = (XmlStringView*)&((XmlAttributeReadView*)node)->next->nameStr;
+            int nextNameEmpty = TiXmlString_Length(nextName) == 0;
+            if (nextNameEmpty) {
                 node = 0;
                 continue;
             }
@@ -733,25 +818,28 @@ void TiXmlElement_Print(XmlElementStoreView* self, void* stream, int count) {
         fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, emptyTagClose)));
     } else {
         if (r4 == (void*)self->lastChild) {
-            int isType4 = 0;
+            int isTextNode = 0;
             if (r4 != 0) {
-                if (((TiXmlNodeLayout*)r4)->nodeType == kXmlText) isType4 = 1;
+                if (((TiXmlNodeLayout*)r4)->nodeType == kXmlText)
+                    isTextNode = 1;
             }
-            r4 = isType4 ? r4 : 0;
+            r4 = isTextNode ? r4 : 0;
             if (r4 != 0) {
                 fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, tagClose)));
-                void* sub = (void*)self->firstChild;
-                ((XmlPrintable*)sub)->print(stream, count + 1);
+                void* soleTextChild = (void*)self->firstChild;
+                ((XmlPrintable*)soleTextChild)->print(stream, count + 1);
                 int length = self->valueCapacity;
-                fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, endTagFormat)), length != 0 ? (const char*)self->str : s_tinyXmlEmptyString);
+                fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, endTagFormat)),
+                        length != 0 ? (const char*)self->str : s_tinyXmlEmptyString);
                 return;
             }
-    }
+        }
         fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, tagClose)));
         void* cur = (void*)self->firstChild;
         while (cur != 0) {
             int valid = 0;
-            if (cur != 0 && ((TiXmlNodeLayout*)cur)->nodeType == kXmlText) valid = 1;
+            if (cur != 0 && ((TiXmlNodeLayout*)cur)->nodeType == kXmlText)
+                valid = 1;
             void* r0 = valid ? cur : 0;
             if (r0 == 0) {
                 fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, newline)));
@@ -764,28 +852,34 @@ void TiXmlElement_Print(XmlElementStoreView* self, void* stream, int count) {
             fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, space)));
         }
         int length = self->valueCapacity;
-        fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, endTagFormat)), length != 0 ? (const char*)self->str : s_tinyXmlEmptyString);
+        fprintf(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, endTagFormat)),
+                length != 0 ? (const char*)self->str : s_tinyXmlEmptyString);
     }
 }
 
 // Append compact element markup and recursively serialize children.
 void TiXmlElement_AppendElementMarkupToString(XmlElementStoreView* self, XmlStringView* stream) {
     TiXmlString_Append(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, tagOpen)));
-    if (self->valueCapacity != 0) TiXmlString_Append(stream, (const char*)self->str);
-    else TiXmlString_Append(stream, s_tinyXmlEmptyString);
+    if (self->valueCapacity != 0)
+        TiXmlString_Append(stream, (const char*)self->str);
+    else
+        TiXmlString_Append(stream, s_tinyXmlEmptyString);
     XmlAttributeReadView* node = (XmlAttributeReadView*)self->firstAttribute;
     XmlAttributeReadView* sentinel = (XmlAttributeReadView*)&((TiXmlNodeLayout*)self)->documentError;
-    if (node == sentinel) node = 0;
-    char* labelD = (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, space));
+    if (node == sentinel)
+        node = 0;
+    char* attributeSeparator = (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, space));
     while (node != 0) {
-        TiXmlString_Append(stream, labelD);
+        TiXmlString_Append(stream, attributeSeparator);
         ((void (*)(XmlAttributeReadView*, XmlStringView*))(*(void***)node)[kXmlAppendToStream])(node, stream);
         XmlAttributeReadView* next = node->next;
         if (TiXmlString_Length((XmlStringView*)&next->valueData)) {
             node = next;
         } else {
-            if (TiXmlString_Length((XmlStringView*)&next->nameStr)) node = next;
-            else node = 0;
+            if (TiXmlString_Length((XmlStringView*)&next->nameStr))
+                node = next;
+            else
+                node = 0;
         }
     }
     if (self->firstChild != 0) {
@@ -797,8 +891,10 @@ void TiXmlElement_AppendElementMarkupToString(XmlElementStoreView* self, XmlStri
             n = n->next;
         }
         TiXmlString_Append(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, endTagOpen)));
-        if (self->valueCapacity != 0) TiXmlString_Append(stream, (const char*)self->str);
-        else TiXmlString_Append(stream, s_tinyXmlEmptyString);
+        if (self->valueCapacity != 0)
+            TiXmlString_Append(stream, (const char*)self->str);
+        else
+            TiXmlString_Append(stream, s_tinyXmlEmptyString);
         TiXmlString_Append(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, tagClose)));
     } else {
         TiXmlString_Append(stream, (tinyXmlWriterStrings + XML_MEMBER_OFFSET(XmlWriterStrings, emptyTagClose)));
@@ -828,20 +924,23 @@ XmlElementStoreView* TiXmlElement_dtor(XmlElementStoreView* self, int deleting) 
                 attributeCursor = attributeCursor->next;
             }
             if (attributeToDelete != 0) {
-                ((void (*)(XmlAttributeReadView*, int))(*(void***)attributeToDelete)[kXmlDeletingDestructor])(attributeToDelete, 1);
+                ((void (*)(XmlAttributeReadView*, int))(*(void***)attributeToDelete)[kXmlDeletingDestructor])(
+                    attributeToDelete, 1);
             }
             attributeCursor = (XmlAttributeReadView*)self->firstAttribute;
         }
         // Phase 2: release the embedded sentinel's two owned string buffers.
         if ((void*)((char*)self + XML_MEMBER_OFFSET(XmlElementStoreView, attributeSentinelVtable)) != 0) {
             if ((void*)((char*)self + XML_MEMBER_OFFSET(XmlElementStoreView, attributeValueData)) != 0) {
-                if (self->attributeValueData != 0) __dla__FPv((void*)self->attributeValueData);
+                if (self->attributeValueData != 0)
+                    __dla__FPv((void*)self->attributeValueData);
                 self->attributeValueData = 0;
                 self->attributeValueCapacity = 0;
             }
             if ((void*)((char*)self + XML_MEMBER_OFFSET(XmlElementStoreView, attributeNameData)) != 0) {
                 /* Original 0x802A3C80-0x802A3CA0: +0x30/+0x34 are zeroed even when +0x30 was already null. */
-                if (self->attributeNameData != 0) __dla__FPv((void*)self->attributeNameData);
+                if (self->attributeNameData != 0)
+                    __dla__FPv((void*)self->attributeNameData);
                 self->attributeNameData = 0;
                 self->attributeNameCapacity = 0;
             }
@@ -858,12 +957,14 @@ XmlElementStoreView* TiXmlElement_dtor(XmlElementStoreView* self, int deleting) 
                 node = next;
             }
             if ((void*)((char*)self + XML_MEMBER_OFFSET(XmlElementStoreView, str)) != 0) {
-                if (self->str != 0) __dla__FPv((void*)self->str);
+                if (self->str != 0)
+                    __dla__FPv((void*)self->str);
                 self->str = 0;
                 self->valueCapacity = 0;
             }
         }
-        if (deleting > 0) __dl__FPv(self);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }

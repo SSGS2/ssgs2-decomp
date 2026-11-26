@@ -7,8 +7,6 @@
 // global and must be applied on the renderer's thread; calls do not restore it.
 // Shared literal pools: s_fogRenderStateTemplate = five state/value pairs (fog template),
 // s_ambientColourRenderState = the {8, 0} (ambient colour render state, default) pair; s_fovAngleScale / s_fovTangentNumerator = float32 2 / 1 of fovY = 2*atan(1/(2*raw30)).
-// Translation unit 0x803DBC90-0x803DC300 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
@@ -16,16 +14,16 @@ typedef unsigned int u32;
 
 struct GenericEnvOverride {
     void* lightDescriptions;  // +00 borrowed light-record base, stride 0x88
-    void* viewMatrix;  // +04 optional view matrix
-    void* projectionMatrix;  // +08 optional projection matrix
-    void* fogDescription;  // +0C optional fog record; ALSO gates ambient override
+    void* viewMatrix;         // +04 optional view matrix
+    void* projectionMatrix;   // +08 optional projection matrix
+    void* fogDescription;     // +0C optional fog record; ALSO gates ambient override
     void* ambientDescription; // +10 ambient override, selected only when fogDescription is nonnull
 };
 
 struct GenericEnvEntry {
     int tag;
-    u32 elementCount; // count (lights) / nonzero admission (camera)
-    u32 unk8; // unused here
+    u32 elementCount;       // count (lights) / nonzero admission (camera)
+    u32 unk8;               // unused here
     u32 resourceByteOffset; // byte offset relative to Object_GetField8(obj)'s resource base
 };
 
@@ -40,11 +38,11 @@ struct GenericEnvCamera {
     float target[3];
     float up[3];
     char unk24[4];
-    float viewHeightHalf; // coefficient used as aspect denominator after *2
-    float unused2C; // unused by this projection builder
+    float viewHeightHalf;             // coefficient used as aspect denominator after *2
+    float unused2C;                   // unused by this projection builder
     float aspectNumeratorCoefficient; // coefficient used as aspect numerator AND cotangent input
-    float nearClip; // near clip distance, view units
-    float farClip; // far clip distance, same units
+    float nearClip;                   // near clip distance, view units
+    float farClip;                    // far clip distance, same units
 };
 
 // One GX render-state assignment. The fog template is five pairs: (1,1) fog on, (21,2) linear fog, then the values of
@@ -65,7 +63,7 @@ struct DtorObj {
 
 struct DtorDispatch {
     int unk0;
-    void (*unk4)(void*);
+    void (*releaseCallback)(void*);
 };
 
 // 12-byte native declaration element (VertexElement_Copy, gx_renderer_state_and_efb_copy.cpp):
@@ -73,21 +71,31 @@ struct DtorDispatch {
 // +A usage index; +B trailing byte. The packed first word is never decoded here.
 struct VtxDeclElem {
     u32 packedStreamAndByteOffset;
-    int storageType;  // storage type: 0/1 distinguish one/two weight components here
+    int storageType; // storage type: 0/1 distinguish one/two weight components here
     u8 method;
-    u8 usage;   // usage: 1 blend weights, 2 blend indices
+    u8 usage; // usage: 1 blend weights, 2 blend indices
     char reservedA[2];
 };
 enum EnvironmentChunkTag {
-    kLightReferencesTag = 0x67696C, kFogDescriptionTag = 0x64676F66,
-    kAmbientDescriptionTag = 0x64626D61, kLightDescriptionsTag = 0x646C,
+    kLightReferencesTag = 0x67696C,
+    kFogDescriptionTag = 0x64676F66,
+    kAmbientDescriptionTag = 0x64626D61,
+    kLightDescriptionsTag = 0x646C,
     kCameraDescriptionTag = 0x646D6163
 };
 // (little-endian character packing: "lig", "fogd", "ambd", "ld", "camd").
-struct EnvironmentDirectoryView { char header[0x14]; u32 entryCount;
-    char reserved18[8]; GenericEnvEntry entries[1]; };
-enum VertexBlendDomain { kBlendWeightsUsage = 1, kBlendIndicesUsage = 2,
-    kSpecialBlendIndicesType = 0xFE, kSpecialVertexBlendMode = 0x100 };
+struct EnvironmentDirectoryView {
+    char header[0x14];
+    u32 entryCount;
+    char reserved18[8];
+    GenericEnvEntry entries[1];
+};
+enum VertexBlendDomain {
+    kBlendWeightsUsage = 1,
+    kBlendIndicesUsage = 2,
+    kSpecialBlendIndicesType = 0xFE,
+    kSpecialVertexBlendMode = 0x100
+};
 
 extern "C" {
 
@@ -149,39 +157,39 @@ void gtl_GenericEnvironment_Apply(void* obj, GenericEnvOverride* overrides, u32*
     n = ((EnvironmentDirectoryView*)base)->entryCount;
     entry = ((EnvironmentDirectoryView*)base)->entries;
     for (j = 0; j < n; j++) {
-            switch (entry->tag) {
-            case kLightReferencesTag:
-                lightCount = entry->elementCount;
-                lightRef = (GenericEnvLightRef*)(base + entry->resourceByteOffset);
-                break;
-            case kFogDescriptionTag:
-                if (overrides != 0 && overrides->fogDescription != 0) {
-                    fog = (u32*)overrides->fogDescription;
-                } else {
-                    fog = (u32*)(base + entry->resourceByteOffset);
-                }
-                break;
-            case kAmbientDescriptionTag:
-                if (overrides != 0 && overrides->fogDescription != 0) {
-                    ambient = overrides->ambientDescription;
-                } else {
-                    ambient = base + entry->resourceByteOffset;
-                }
-                break;
-            case kLightDescriptionsTag:
-                if (overrides != 0 && overrides->lightDescriptions != 0) {
-                    lightBase = (char*)overrides->lightDescriptions;
-                } else {
-                    lightBase = base + entry->resourceByteOffset;
-                }
-                break;
-            case kCameraDescriptionTag:
-                if (entry->elementCount != 0) {
-                    camera = (GenericEnvCamera*)(base + entry->resourceByteOffset);
-                }
-                break;
+        switch (entry->tag) {
+        case kLightReferencesTag:
+            lightCount = entry->elementCount;
+            lightRef = (GenericEnvLightRef*)(base + entry->resourceByteOffset);
+            break;
+        case kFogDescriptionTag:
+            if (overrides != 0 && overrides->fogDescription != 0) {
+                fog = (u32*)overrides->fogDescription;
+            } else {
+                fog = (u32*)(base + entry->resourceByteOffset);
             }
-            entry++;
+            break;
+        case kAmbientDescriptionTag:
+            if (overrides != 0 && overrides->fogDescription != 0) {
+                ambient = overrides->ambientDescription;
+            } else {
+                ambient = base + entry->resourceByteOffset;
+            }
+            break;
+        case kLightDescriptionsTag:
+            if (overrides != 0 && overrides->lightDescriptions != 0) {
+                lightBase = (char*)overrides->lightDescriptions;
+            } else {
+                lightBase = base + entry->resourceByteOffset;
+            }
+            break;
+        case kCameraDescriptionTag:
+            if (entry->elementCount != 0) {
+                camera = (GenericEnvCamera*)(base + entry->resourceByteOffset);
+            }
+            break;
+        }
+        entry++;
     }
     for (i = 0; i < *maxLights; i++) {
         if (i >= lightCount) {
@@ -233,7 +241,8 @@ void gtl_GenericEnvironment_Apply(void* obj, GenericEnvOverride* overrides, u32*
         float doubledAspectNumerator = s_fovAngleScale * camera->aspectNumeratorCoefficient;
         float doubledAspectDenominator = s_fovAngleScale * camera->viewHeightHalf;
         float fovY = s_fovAngleScale * (float)atan(s_fovTangentNumerator / doubledAspectNumerator);
-        MtxPerspectiveFovRH(projMtx, fovY, doubledAspectNumerator / doubledAspectDenominator, camera->nearClip, camera->farClip);
+        MtxPerspectiveFovRH(projMtx, fovY, doubledAspectNumerator / doubledAspectDenominator, camera->nearClip,
+                            camera->farClip);
         SetTransform(1, projMtx);
         gtl_GenericRenderer_SetProjectionMatrix(projMtx);
     }
@@ -284,7 +293,7 @@ DtorObj* dtor_803DBD00(DtorObj* p, int flags) {
             u32 a = p->count;
             u32 b = a;
             p->count = a - b;
-            s_genericResourceAllocatorFunctions.unk4(inner);
+            s_genericResourceAllocatorFunctions.releaseCallback(inner);
         }
         if (flags > 0) {
             __dl__FPv(p);
@@ -299,7 +308,7 @@ DtorObj* dtor_803DBDF0(DtorObj* p, int flags) {
         p->count = 0;
         if (p != 0 && p->ownedPtr != 0) {
             p->count = 0;
-            s_genericResourceAllocatorFunctions.unk4(p->ownedPtr);
+            s_genericResourceAllocatorFunctions.releaseCallback(p->ownedPtr);
         }
         if (flags > 0) {
             __dl__FPv(p);

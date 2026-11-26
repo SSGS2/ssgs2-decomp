@@ -1,13 +1,20 @@
+// Attachment cache for the effect box: stores copies of spray and sequence attachment inputs
+// in three trees owned by the CPvsFxBox singleton.
+// Erasing an attachment updates the cached first-node link. Freeing the trees releases each leaf group.
+
 #include "classes/CPvsFxBox.h"
 #include "classes/CFxBox.h"
 
 // The effect singleton owns a CFxBox after its two base-class subobjects.
-struct FxObjectLayout { char sharedBaseStorage[0x18]; CFxBox box; };
+struct FxObjectLayout {
+    char sharedBaseStorage[0x18];
+    CFxBox box;
+};
 
 // Borrow the existing object's shared layout; this view never owns storage.
-static inline CPvsFxBox* AsCPvsFxBox(void* object) { return (CPvsFxBox*)object; }
-// Translation unit 0x80101BD0-0x80102E18 (9 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+static inline CPvsFxBox* AsCPvsFxBox(void* object) {
+    return (CPvsFxBox*)object;
+}
 
 extern "C" {
 
@@ -25,7 +32,10 @@ struct TreeNode {
     unsigned int key;
 };
 
-struct TreeHeader { unsigned int count; TreeNode* root; };
+struct TreeHeader {
+    unsigned int count;
+    TreeNode* root;
+};
 struct FxCacheTrees {
     char reserved00[0x37C];
     TreeHeader spray;
@@ -34,11 +44,14 @@ struct FxCacheTrees {
     TreeNode* sequenceFirst;
 };
 #define FX_OFFSET(type, field) ((int)&((type*)0)->field)
-enum FxTreeOffsets { kSprayTree = FX_OFFSET(FxCacheTrees, spray), kSequenceTree = FX_OFFSET(FxCacheTrees, sequence) };
+enum FxTreeOffsets {
+    kSprayTree = FX_OFFSET(FxCacheTrees, spray),
+    kSequenceTree = FX_OFFSET(FxCacheTrees, sequence)
+};
 
 // Find the insertion hint and predecessor for a key, reporting child side and whether no key <= the query was visited.
 TreeNode* PvsFxCacheTree_FindInsertHint(TreeHeader* head, unsigned int* key, TreeNode** predecessorCandidate,
-unsigned char* left, unsigned char* noPredecessor) {
+                                        unsigned char* left, unsigned char* noPredecessor) {
     // predecessorCandidate is the last visited key <= query (the predecessor candidate),
     // left selects the empty child link, and return is its parent or the sentinel.
     // noPredecessor stays 1 only if every visited key was greater than the query.
@@ -74,7 +87,7 @@ void* dtor_80102594(void* self, int freeFlag) {
         g_fx = 0;
         BaseObject_dtor(self, 0);
         if (freeFlag > 0)
-        __dl__FPv(self);
+            __dl__FPv(self);
     }
     return self;
 }
@@ -91,7 +104,8 @@ struct TreeOwner {
 };
 
 // Erase a sequence attachment by pointer key and update the cached first-node link.
-void CPvsFxBox_EraseSequenceAttachmentCache(TreeOwner* self, unsigned int key) {
+void CPvsFxBox::EraseSequenceAttachmentCache(unsigned int key) {
+    TreeOwner* self = (TreeOwner*)this;
     TreeNode* node = self->head;
     TreeNode* candidate = (TreeNode*)&self->head;
     while (node != 0) {
@@ -104,7 +118,7 @@ void CPvsFxBox_EraseSequenceAttachmentCache(TreeOwner* self, unsigned int key) {
         }
     }
     if (candidate != (TreeNode*)&self->head && key < candidate->key)
-    candidate = (TreeNode*)&self->head;
+        candidate = (TreeNode*)&self->head;
     if (candidate != (TreeNode*)&self->head) {
         TreeNode* erased = candidate;
         if (candidate == self->firstNode) {
@@ -119,7 +133,8 @@ void CPvsFxBox_EraseSequenceAttachmentCache(TreeOwner* self, unsigned int key) {
                 do {
                     parent = (TreeNode*)((unsigned int)candidate->parentColor & ~1u);
                     /* original 0x80102434-0x80102448: climb while not the left child */
-                    if (candidate == parent->left) break;
+                    if (candidate == parent->left)
+                        break;
                     candidate = parent;
                 } while (1);
                 candidate = parent;
@@ -132,10 +147,16 @@ void CPvsFxBox_EraseSequenceAttachmentCache(TreeOwner* self, unsigned int key) {
     }
 }
 
-struct CacheTree { char pad[0x37c]; unsigned int count; TreeNode* root; TreeNode* firstNode; };
+struct CacheTree {
+    char pad[0x37c];
+    unsigned int count;
+    TreeNode* root;
+    TreeNode* firstNode;
+};
 
 // Erase a spray attachment by pointer key and update the cached first-node link.
-void CPvsFxBox_EraseSprayAttachmentCache(CacheTree* self, unsigned int key) {
+void CPvsFxBox::EraseSprayAttachmentCache(unsigned int key) {
+    CacheTree* self = (CacheTree*)this;
     TreeNode* erased;
     TreeNode* node = self->root;
     TreeNode* candidate = (TreeNode*)&self->root;
@@ -148,7 +169,7 @@ void CPvsFxBox_EraseSprayAttachmentCache(CacheTree* self, unsigned int key) {
         }
     }
     if (candidate != (TreeNode*)&self->root && key < candidate->key)
-    candidate = (TreeNode*)&self->root;
+        candidate = (TreeNode*)&self->root;
     if (candidate != (TreeNode*)&self->root) {
         erased = candidate;
         if (candidate == self->firstNode) {
@@ -163,7 +184,7 @@ void CPvsFxBox_EraseSprayAttachmentCache(CacheTree* self, unsigned int key) {
                 do {
                     parent = (TreeNode*)((unsigned int)candidate->parentColor & ~1u);
                     if (candidate == parent->left)
-                    break;
+                        break;
                     candidate = parent;
                 } while (1);
                 candidate = parent;
@@ -185,11 +206,10 @@ extern char __vt__3CFx[16];
 extern char __vt__9CPvsFxBox[16];
 extern char s_cameraTransform[16];
 void BaseObject_ctor(void*);
-void CFxBox_Ctor(void*);
-void CFxBox_SetResourceManager(void*, unsigned int);
-void CFxBox_SetCameraTransform(void*, void*);
 
-struct BigObj { char pad[0x3C0]; };
+struct BigObj {
+    char pad[0x3C0];
+};
 TreeNode* FxBoxTree_FindInsertHint(void*, void*, TreeNode**, unsigned char*, unsigned char*);
 TreeNode* RBTree_InsertNode_Large(void*, TreeNode*, unsigned char, unsigned char, void*);
 void* memcpy(void*, const void*, unsigned int);
@@ -201,9 +221,20 @@ void* memcpy(void*, const void*, unsigned int);
 // used only when lookup inserts a missing key; incoming scalars replace them.
 // Each block is copied byte-for-byte, with no arithmetic or transpose. Changes to
 // units or individual words require evidence from the attachment's consumer.
-enum FxCacheCopySize128 { kFxCacheBlockWords = 4, kFxCacheBlockCount = 2, kFxCacheInputBytes = 40 };
-struct CacheData { unsigned int key; float scalar0, scalar1; unsigned int data[kFxCacheBlockWords * kFxCacheBlockCount]; };
-struct InputData { float scalar0, scalar1; unsigned int data[kFxCacheBlockWords * kFxCacheBlockCount]; };
+enum FxCacheCopySize128 {
+    kFxCacheBlockWords = 4,
+    kFxCacheBlockCount = 2,
+    kFxCacheInputBytes = 40
+};
+struct CacheData {
+    unsigned int key;
+    float scalar0, scalar1;
+    unsigned int data[kFxCacheBlockWords * kFxCacheBlockCount];
+};
+struct InputData {
+    float scalar0, scalar1;
+    unsigned int data[kFxCacheBlockWords * kFxCacheBlockCount];
+};
 typedef char FxCacheInputSize128[(sizeof(InputData) == kFxCacheInputBytes) ? 1 : -1];
 // This cache is a lifetime bridge, not a tuning layer: mutate the incoming
 // attachment input before caching. The cache redirects its input pointer to an
@@ -219,23 +250,35 @@ struct StoredInput {
     StoredInput() {
         scalar0 = kFloat_Neg1_0;
         scalar1 = kFloat_Neg1_0;
-        for (int i = 0; i < 4; ++i) { firstWords[i] = 0; secondWords[i] = 0; }
+        for (int i = 0; i < 4; ++i) {
+            firstWords[i] = 0;
+            secondWords[i] = 0;
+        }
     }
 };
 // Cache payloads are copied as two scalars plus two four-word blocks.
 struct SprayAttachmentEntry {
-    char reserved00[0x14]; StoredInput* input;
-    char reserved18[0x14]; unsigned int firstBlock[4], secondBlock[4];
+    char reserved00[0x14];
+    StoredInput* input;
+    char reserved18[0x14];
+    unsigned int firstBlock[4], secondBlock[4];
 };
 struct SequenceAttachmentEntry {
-    char reserved00[8]; void* input;
-    char reserved0C[8]; unsigned int firstBlock[4], secondBlock[4];
+    char reserved00[8];
+    void* input;
+    char reserved0C[8];
+    unsigned int firstBlock[4], secondBlock[4];
 };
 struct FxCacheNode {
-    TreeNode* left; TreeNode* right; TreeNode* parentColor;
-    unsigned int key; StoredInput value;
+    TreeNode* left;
+    TreeNode* right;
+    TreeNode* parentColor;
+    unsigned int key;
+    StoredInput value;
 };
-struct StoredPair { unsigned int key; StoredInput value;
+struct StoredPair {
+    unsigned int key;
+    StoredInput value;
     // Copy the address key and input value into a cache payload.
     StoredPair(unsigned int k, const StoredInput& v) : key(k), value(v) {}
 };
@@ -243,45 +286,63 @@ struct StoredPair { unsigned int key; StoredInput value;
 inline StoredPair* cacheLookup(CacheTree* self, unsigned int& key) {
     TreeNode* predecessorCandidate;
     unsigned char left, noPredecessor;
-    TreeNode* node = PvsFxCacheTree_FindInsertHint((TreeHeader*)((char*)self + kSprayTree), &key, &predecessorCandidate, &left, &noPredecessor);
+    TreeNode* node = PvsFxCacheTree_FindInsertHint((TreeHeader*)((char*)self + kSprayTree), &key, &predecessorCandidate,
+                                                   &left, &noPredecessor);
     StoredPair* result;
     if (predecessorCandidate == 0 || (result = (StoredPair*)((char*)&predecessorCandidate->key), result->key < key)) {
         StoredPair value(key, StoredInput());
-        result = (StoredPair*)((char*)RBTree_InsertNode_Large((char*)self + kSprayTree, node, left, noPredecessor, &value) + FX_OFFSET(TreeNode, key));
+        result =
+            (StoredPair*)((char*)RBTree_InsertNode_Large((char*)self + kSprayTree, node, left, noPredecessor, &value) +
+                          FX_OFFSET(TreeNode, key));
     }
     return result;
 }
 // Copy spray input into stable tree storage and refresh the attachment's two cached word blocks.
-void CPvsFxBox_CacheSprayAttachmentInput(CacheTree* self, void* entry) {
+void CPvsFxBox::CacheSprayAttachmentInput(void* entry) {
+    CacheTree* self = (CacheTree*)this;
     // Snapshot the borrowed input before looking up or creating address-keyed cache storage.
     if ((*(void**)&((SprayAttachmentEntry*)entry)->input) != 0) {
         StoredInput* input = ((SprayAttachmentEntry*)entry)->input;
         StoredPair key((unsigned int)entry, *input);
         TreeNode* predecessorCandidate;
         unsigned char left, noPredecessor;
-        TreeNode* node = FxBoxTree_FindInsertHint((char*)self + kSprayTree, &key, &predecessorCandidate, &left, &noPredecessor);
+        TreeNode* node =
+            FxBoxTree_FindInsertHint((char*)self + kSprayTree, &key, &predecessorCandidate, &left, &noPredecessor);
         if (predecessorCandidate == 0 || predecessorCandidate->key < key.key)
-        RBTree_InsertNode_Large((char*)self + kSprayTree, node, left, noPredecessor, &key);
+            RBTree_InsertNode_Large((char*)self + kSprayTree, node, left, noPredecessor, &key);
         (*(void**)&((SprayAttachmentEntry*)entry)->input) = &cacheLookup(self, (unsigned int&)entry)->value;
-        memcpy(((SprayAttachmentEntry*)entry)->firstBlock, cacheLookup(self, (unsigned int&)entry)->value.firstWords, 0x10);
-        memcpy(((SprayAttachmentEntry*)entry)->secondBlock, cacheLookup(self, (unsigned int&)entry)->value.secondWords, 0x10);
+        memcpy(((SprayAttachmentEntry*)entry)->firstBlock, cacheLookup(self, (unsigned int&)entry)->value.firstWords,
+               0x10);
+        memcpy(((SprayAttachmentEntry*)entry)->secondBlock, cacheLookup(self, (unsigned int&)entry)->value.secondWords,
+               0x10);
     }
 }
 
 #pragma pop
-enum CacheInsertFlagByte { kInsertNoPredecessorByte = 0, kInsertLeftChildByte = 1 };
+enum CacheInsertFlagByte {
+    kInsertNoPredecessorByte = 0,
+    kInsertLeftChildByte = 1
+};
 // Borrow either byte of a two-byte scalar object; both outputs are within declared storage.
 static inline unsigned char& CacheInsertFlag(unsigned short& storage, CacheInsertFlagByte which) {
     return ((unsigned char*)&storage)[which];
 }
 typedef char CacheInsertFlagStorageSize[(sizeof(unsigned short) == 2) ? 1 : -1];
 
-struct CacheSearch { unsigned int key; float scalar0, scalar1; unsigned int data[8]; };
-struct CacheValue { unsigned int key; StoredInput value; };
+struct CacheSearch {
+    unsigned int key;
+    float scalar0, scalar1;
+    unsigned int data[8];
+};
+struct CacheValue {
+    unsigned int key;
+    StoredInput value;
+};
 #pragma push
 #pragma opt_common_subs off
 // Copy sequence input into stable tree storage and refresh the attachment's two cached word blocks.
-void CPvsFxBox_CacheSequenceAttachmentInput(BigObj* self, void* entry) {
+void CPvsFxBox::CacheSequenceAttachmentInput(void* entry) {
+    BigObj* self = (BigObj*)this;
     // Snapshot the borrowed input before looking up or creating address-keyed cache storage.
     void* data = ((SequenceAttachmentEntry*)entry)->input;
     if (data != 0) {
@@ -290,22 +351,26 @@ void CPvsFxBox_CacheSequenceAttachmentInput(BigObj* self, void* entry) {
         search.key = (unsigned int)entry;
         search.scalar0 = *(float*)data;
         search.scalar1 = *((float*)data + 1);
-        for (int i = 0; i < 8; ++i) search.data[i] = ((unsigned int*)data)[2 + i];
+        for (int i = 0; i < 8; ++i)
+            search.data[i] = ((unsigned int*)data)[2 + i];
         TreeNode* found;
         // Two byte outputs share one scalar object. The former one-byte local
         // overflowed at +1; unsigned short keeps the same 0x0E/0x0F stack slots
         // while declaring BOTH bytes. No numerical short load or endian shift.
         unsigned short insertionFlagBytes;
-        TreeNode* node = FxBoxTree_FindInsertHint((char*)self + kSequenceTree, &search, &found, &CacheInsertFlag(insertionFlagBytes, kInsertLeftChildByte), &CacheInsertFlag(insertionFlagBytes, kInsertNoPredecessorByte));
+        TreeNode* node = FxBoxTree_FindInsertHint((char*)self + kSequenceTree, &search, &found,
+                                                  &CacheInsertFlag(insertionFlagBytes, kInsertLeftChildByte),
+                                                  &CacheInsertFlag(insertionFlagBytes, kInsertNoPredecessorByte));
         if (found == 0 || found->key < (unsigned int)entry)
-        RBTree_InsertNode_Large((char*)self + kSequenceTree, node, CacheInsertFlag(insertionFlagBytes, kInsertLeftChildByte), CacheInsertFlag(insertionFlagBytes, kInsertNoPredecessorByte), &search);
+            RBTree_InsertNode_Large((char*)self + kSequenceTree, node,
+                                    CacheInsertFlag(insertionFlagBytes, kInsertLeftChildByte),
+                                    CacheInsertFlag(insertionFlagBytes, kInsertNoPredecessorByte), &search);
         TreeNode* predecessorCandidate;
         unsigned char leftChild, noPredecessor;
-        node = PvsFxCacheTree_FindInsertHint((TreeHeader*)((char*)self + kSequenceTree), (unsigned int*)&entry, &predecessorCandidate, &leftChild, &noPredecessor);
+        node = PvsFxCacheTree_FindInsertHint((TreeHeader*)((char*)self + kSequenceTree), (unsigned int*)&entry,
+                                             &predecessorCandidate, &leftChild, &noPredecessor);
         if (predecessorCandidate == 0 || predecessorCandidate->key < (unsigned int)entry) {
-            CacheValue value = {
-                (unsigned int)entry, StoredInput()
-            };
+            CacheValue value = {(unsigned int)entry, StoredInput()};
             node = RBTree_InsertNode_Large((char*)self + kSequenceTree, node, leftChild, noPredecessor, &value);
         } else {
             node = predecessorCandidate;
@@ -313,11 +378,10 @@ void CPvsFxBox_CacheSequenceAttachmentInput(BigObj* self, void* entry) {
         }
         // Phase 2: redirect to node-owned input; erasing that cache invalidates this pointer.
         ((SequenceAttachmentEntry*)entry)->input = &((FxCacheNode*)node)->value;
-        node = PvsFxCacheTree_FindInsertHint((TreeHeader*)((char*)self + kSequenceTree), (unsigned int*)&entry, &predecessorCandidate, &leftChild, &noPredecessor);
+        node = PvsFxCacheTree_FindInsertHint((TreeHeader*)((char*)self + kSequenceTree), (unsigned int*)&entry,
+                                             &predecessorCandidate, &leftChild, &noPredecessor);
         if (predecessorCandidate == 0 || predecessorCandidate->key < (unsigned int)entry) {
-            CacheValue value = {
-                (unsigned int)entry, StoredInput()
-            };
+            CacheValue value = {(unsigned int)entry, StoredInput()};
             node = RBTree_InsertNode_Large((char*)self + kSequenceTree, node, leftChild, noPredecessor, &value);
         } else {
             node = predecessorCandidate;
@@ -326,11 +390,10 @@ void CPvsFxBox_CacheSequenceAttachmentInput(BigObj* self, void* entry) {
         // Phase 3: refresh both attachment blocks from the cached copy.
         memcpy(((SequenceAttachmentEntry*)entry)->firstBlock, ((FxCacheNode*)node)->value.firstWords, 0x10);
         /* original 0x80102290-0x801022A4: r5 = node+0xc, r4 = r5+0xc, the stored input's first opaque 16-byte block */
-        node = PvsFxCacheTree_FindInsertHint((TreeHeader*)((char*)self + kSequenceTree), (unsigned int*)&entry, &predecessorCandidate, &leftChild, &noPredecessor);
+        node = PvsFxCacheTree_FindInsertHint((TreeHeader*)((char*)self + kSequenceTree), (unsigned int*)&entry,
+                                             &predecessorCandidate, &leftChild, &noPredecessor);
         if (predecessorCandidate == 0 || predecessorCandidate->key < (unsigned int)entry) {
-            CacheValue value = {
-                (unsigned int)entry, StoredInput()
-            };
+            CacheValue value = {(unsigned int)entry, StoredInput()};
             node = RBTree_InsertNode_Large((char*)self + kSequenceTree, node, leftChild, noPredecessor, &value);
         } else {
             node = predecessorCandidate;
@@ -343,36 +406,40 @@ void CPvsFxBox_CacheSequenceAttachmentInput(BigObj* self, void* entry) {
 #pragma pop
 
 // Construct the effect singleton and embedded box, initialize its three trees and bind resource/camera providers.
-BigObj* CPvsFxBox_ctor(BigObj* self) {
+CPvsFxBox::CPvsFxBox() {
+    BigObj* self = (BigObj*)this;
     char* effectBase = (char*)self;
     char* singletonBase = effectBase + 4;
     float f0;
-    float f1;
+    float stepMilliseconds;
     *(void**)effectBase = __vt__14CRenderFuncPtr;
     BaseObject_ctor(singletonBase);
     *(void**)singletonBase = s_fxSingletonBaseVtable;
-    if (singletonBase != 0) singletonBase -= 4;
+    if (singletonBase != 0)
+        singletonBase -= 4;
     g_fx = (unsigned int)singletonBase;
     char* embeddedBox = effectBase + 0x18;
     *(void**)effectBase = __vt__3CFx;
     (*(void**)&AsCPvsFxBox(effectBase)->unk_4) = __vt__3CFx + 12;
-    CFxBox_Ctor(embeddedBox);
+    ((CFxBox*)embeddedBox)->__ct();
     *(void**)embeddedBox = __vt__9CPvsFxBox;
     *(unsigned int*)(embeddedBox + FX_OFFSET(FxCacheTrees, spray.count)) = 0;
     *(unsigned int*)(embeddedBox + FX_OFFSET(FxCacheTrees, spray.root)) = 0;
     *(void**)(embeddedBox + FX_OFFSET(FxCacheTrees, sprayFirst)) = embeddedBox + FX_OFFSET(FxCacheTrees, spray.root);
     *(unsigned int*)(embeddedBox + FX_OFFSET(FxCacheTrees, sequence.count)) = 0;
     *(unsigned int*)(embeddedBox + FX_OFFSET(FxCacheTrees, sequence.root)) = 0;
-    *(void**)(embeddedBox + FX_OFFSET(FxCacheTrees, sequenceFirst)) = embeddedBox + FX_OFFSET(FxCacheTrees, sequence.root);
+    *(void**)(embeddedBox + FX_OFFSET(FxCacheTrees, sequenceFirst)) =
+        embeddedBox + FX_OFFSET(FxCacheTrees, sequence.root);
     AsCPvsFxBox(effectBase)->auxiliaryAttachmentTreeCount = 0;
     AsCPvsFxBox(effectBase)->auxiliaryAttachmentTreeRoot = 0;
-    AsCPvsFxBox(effectBase)->auxiliaryAttachmentTreeRightmost = effectBase + FX_OFFSET(CPvsFxBox, auxiliaryAttachmentTreeRoot);
-    CFxBox_SetResourceManager(embeddedBox, g_resourceManager);
-    CFxBox_SetCameraTransform(embeddedBox, s_cameraTransform);
-    f1 = kFloat_33_333332_ShotEffects;
+    AsCPvsFxBox(effectBase)->auxiliaryAttachmentTreeRightmost =
+        effectBase + FX_OFFSET(CPvsFxBox, auxiliaryAttachmentTreeRoot);
+    ((CFxBox*)embeddedBox)->SetResourceManager((void*)g_resourceManager);
+    ((CFxBox*)embeddedBox)->SetCameraTransform(s_cameraTransform);
+    stepMilliseconds = kFloat_33_333332_ShotEffects;
     int enabled = 1;
     f0 = kFloat_0_shotEffects;
-    ((FxObjectLayout*)effectBase)->box.nominalStepMilliseconds = f1;
+    ((FxObjectLayout*)effectBase)->box.nominalStepMilliseconds = stepMilliseconds;
     // Wrapper state starts as bytes {1,0,1} and scalar +0x14 as 0.0.
     // No behavior has been established for these fields in this unit; they are
     // independent of the embedded box's nominalStepMilliseconds above. Keep placeholders
@@ -381,7 +448,6 @@ BigObj* CPvsFxBox_ctor(BigObj* self) {
     AsCPvsFxBox(effectBase)->unk_3B9 = 0;
     AsCPvsFxBox(effectBase)->unk_3BA = (char)enabled;
     AsCPvsFxBox(effectBase)->unk_14 = f0;
-    return self;
 }
 
 #pragma push
@@ -389,8 +455,10 @@ BigObj* CPvsFxBox_ctor(BigObj* self) {
 // Release a leaf group after its descendants; node and header are borrowed.
 static inline void FreeFxCacheLeafGroup(void* tree, TreeNode*& node) {
     if (node != 0) {
-        if (node->left != 0) FxTree_DestroySubtreeNodes(tree, node->left);
-        if (node->right != 0) FxTree_DestroySubtreeNodes(tree, node->right);
+        if (node->left != 0)
+            FxTree_DestroySubtreeNodes(tree, node->left);
+        if (node->right != 0)
+            FxTree_DestroySubtreeNodes(tree, node->right);
         appFreeUni__FPv(node);
     }
 }
@@ -410,187 +478,224 @@ void* dtor_80102B54(void* self, int freeFlag) {
     if (0 != self) {
         // Five redundant guards are real matched branches, not extra tree levels.
         // Seven link snapshots carry no ownership; their declaration order preserves register lifetimes.
-        if (self) { if (self) { if (self) { if (self) { if (self) {
-        TreeNode* root = ((TreeHeader*)self)->root;
-        // original +0x4: tree header, not CPvsFxBox
-        if (root != 0) {
-            TreeNode* branch = root->left;
-            if (0 != branch) {
-                TreeNode* child = branch->left;
-                if (child != 0) {
-                    TreeNode* leftLeafSnapshot = child->left;
-                    TreeNode* grandchild = leftLeafSnapshot;
-                    FreeFxCacheChildGroup(self, child, grandchild);
+        if (self) {
+            if (self) {
+                if (self) {
+                    if (self) {
+                        if (self) {
+                            TreeNode* root = ((TreeHeader*)self)->root;
+                            // original +0x4: tree header, not CPvsFxBox
+                            if (root != 0) {
+                                TreeNode* branch = root->left;
+                                if (0 != branch) {
+                                    TreeNode* child = branch->left;
+                                    if (child != 0) {
+                                        TreeNode* leftLeafSnapshot = child->left;
+                                        TreeNode* grandchild = leftLeafSnapshot;
+                                        FreeFxCacheChildGroup(self, child, grandchild);
+                                    }
+                                    TreeNode* rightChildSnapshot = branch->right;
+                                    child = rightChildSnapshot;
+                                    if (child) {
+                                        TreeNode* leftLeafSnapshot = child->left;
+                                        TreeNode* grandchild = leftLeafSnapshot;
+                                        FreeFxCacheChildGroup(self, child, grandchild);
+                                    }
+                                    appFreeUni__FPv(branch);
+                                }
+                                TreeNode* rightBranchSnapshot = root->right;
+                                branch = rightBranchSnapshot;
+                                if (branch != 0) {
+                                    TreeNode* leftChildSnapshot = branch->left;
+                                    TreeNode* child = leftChildSnapshot;
+                                    if (0 != child) {
+                                        TreeNode* leftLeafSnapshot = child->left;
+                                        TreeNode* grandchild = leftLeafSnapshot;
+                                        FreeFxCacheChildGroup(self, child, grandchild);
+                                    }
+                                    child = branch->right;
+                                    if (0 != child) {
+                                        TreeNode* leftLeafSnapshot = child->left;
+                                        TreeNode* grandchild = leftLeafSnapshot;
+                                        FreeFxCacheChildGroup(self, child, grandchild);
+                                    }
+                                    appFreeUni__FPv(branch);
+                                }
+                                appFreeUni__FPv(root);
+                            }
+                        }
+                    }
                 }
-                TreeNode* rightChildSnapshot = branch->right;
-                child = rightChildSnapshot;
-                if (child) {
-                    TreeNode* leftLeafSnapshot = child->left;
-                    TreeNode* grandchild = leftLeafSnapshot;
-                    FreeFxCacheChildGroup(self, child, grandchild);
-                }
-                appFreeUni__FPv(branch);
             }
-            TreeNode* rightBranchSnapshot = root->right;
-            branch = rightBranchSnapshot;
-            if (branch != 0) {
-                TreeNode* leftChildSnapshot = branch->left;
-                TreeNode* child = leftChildSnapshot;
-                if (0 != child) {
-                    TreeNode* leftLeafSnapshot = child->left;
-                    TreeNode* grandchild = leftLeafSnapshot;
-                    FreeFxCacheChildGroup(self, child, grandchild);
-                }
-                child = branch->right;
-                if (0 != child) {
-                    TreeNode* leftLeafSnapshot = child->left;
-                    TreeNode* grandchild = leftLeafSnapshot;
-                    FreeFxCacheChildGroup(self, child, grandchild);
-                }
-                appFreeUni__FPv(branch);
-            }
-            appFreeUni__FPv(root);
         }
-        } } } } }
-        if (0 < freeFlag) __dl__FPv(self);
+        if (0 < freeFlag)
+            __dl__FPv(self);
     }
     return self;
 }
 #pragma pop
 
 void FxBoxResourceTree_FreeSubtreeNodes(void*, void*);
-void CFxBox_dtor(void*, int);
+void __dt__6CFxBoxFv(void*, int);
 
 // Free one leaf group; descendants use the existing subtree destructor.
 inline void FreeFxResourceLeaf(TreeNode* node, void* tree) {
     TreeNode* tmp = node;
     if (tmp != 0) {
-        if (tmp->left != 0) FxBoxResourceTree_FreeSubtreeNodes(tree, (void*)tmp->left);
-        if (tmp->right != 0) FxBoxResourceTree_FreeSubtreeNodes(tree, (void*)tmp->right);
+        if (tmp->left != 0)
+            FxBoxResourceTree_FreeSubtreeNodes(tree, (void*)tmp->left);
+        if (tmp->right != 0)
+            FxBoxResourceTree_FreeSubtreeNodes(tree, (void*)tmp->right);
         appFreeUni__FPv(tmp);
     }
 }
 
-// Free sequence and spray cache trees, destroy the embedded effect box and optionally delete it.
-// Both cache expansions implement left/right/node postorder. Each branch and
-// child is freed only after its descendants. Link snapshots preserve evaluation
-// order; they neither retain ownership nor describe additional tree fields.
-// Destroy both attachment trees, the effect base, then the optional wrapper allocation.
-void* CPvsFxBox_dtor(void* self, int freeFlag) {
-    if (self == 0) return self;
+// Free both attachment caches, destroy the embedded effect box and, when asked,
+// the wrapper itself. A subtree is released in left/right/node order, so nodes go
+// before the node that points at them.
+//
+// Common subexpression folding is off because the original recomputes a tree
+// header's address for every free instead of holding it in a register; the
+// repeated tests on that address are part of the same shape.
+#pragma push
+#pragma use_lmw_stmw on
+#pragma opt_common_subs off
+CPvsFxBox::~CPvsFxBox() {
     // Phase 1: sequence attachment copies, including their input payloads.
     // Both trees use a four-level postorder expansion. Leaf helpers recurse below
     // that boundary; the remaining link snapshots preserve the required allocation.
     // Deeper resource nodes are released by FxBoxResourceTree_FreeSubtreeNodes.
-    TreeNode* root = (*(TreeNode**)&AsCPvsFxBox(self)->sequenceAttachmentTreeRoot);
-    if (root != 0) {
-        TreeNode* branch = root->left;
-        if (branch) {
-            TreeNode* child = branch->left;
-            if (child) {
-                TreeNode* leftChildSnapshot = child->left;
-                TreeNode* grandchild = leftChildSnapshot;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSequenceTree);
-                grandchild = child->right;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSequenceTree);
-                appFreeUni__FPv(child);
+    if ((char*)this + kSequenceTree) {
+        if ((char*)this + kSequenceTree) {
+            if ((char*)this + kSequenceTree) {
+                if ((char*)this + kSequenceTree) {
+                    if ((char*)this + kSequenceTree) {
+                        if ((char*)this + kSequenceTree) {
+                            TreeNode* root = (TreeNode*)sequenceAttachmentTreeRoot;
+                            if (root != 0) {
+                                TreeNode* branch = root->left;
+                                if (branch) {
+                                    TreeNode* child = branch->left;
+                                    if (child) {
+                                        TreeNode* leftChildSnapshot = child->left;
+                                        TreeNode* grandchild = leftChildSnapshot;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSequenceTree);
+                                        grandchild = child->right;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSequenceTree);
+                                        appFreeUni__FPv(child);
+                                    }
+                                    TreeNode* rightChildSnapshot = branch->right;
+                                    child = rightChildSnapshot;
+                                    if (child) {
+                                        TreeNode* leftChildReload = child->left;
+                                        TreeNode* grandchild = leftChildReload;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSequenceTree);
+                                        grandchild = child->right;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSequenceTree);
+                                        appFreeUni__FPv(child);
+                                    }
+                                    appFreeUni__FPv(branch);
+                                }
+                                TreeNode* rightChildSnapshot = root->right;
+                                branch = rightChildSnapshot;
+                                if (branch) {
+                                    TreeNode* leftChildSnapshot = branch->left;
+                                    TreeNode* child = leftChildSnapshot;
+                                    if (child) {
+                                        TreeNode* grandchild = child->left;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSequenceTree);
+                                        TreeNode* rightChildReloadAgain = child->right;
+                                        grandchild = rightChildReloadAgain;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSequenceTree);
+                                        appFreeUni__FPv(child);
+                                    }
+                                    child = branch->right;
+                                    if (child) {
+                                        TreeNode* leftChildSnapshot = child->left;
+                                        TreeNode* grandchild = leftChildSnapshot;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSequenceTree);
+                                        grandchild = child->right;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSequenceTree);
+                                        appFreeUni__FPv(child);
+                                    }
+                                    appFreeUni__FPv(branch);
+                                }
+                                appFreeUni__FPv(root);
+                            }
+                        }
+                    }
+                }
             }
-            TreeNode* rightChildSnapshot = branch->right;
-            child = rightChildSnapshot;
-            if (child) {
-                TreeNode* leftChildReload = child->left;
-                TreeNode* grandchild = leftChildReload;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSequenceTree);
-                grandchild = child->right;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSequenceTree);
-                appFreeUni__FPv(child);
-            }
-            appFreeUni__FPv(branch);
         }
-        TreeNode* rightChildSnapshot = root->right;
-        branch = rightChildSnapshot;
-        if (branch) {
-            TreeNode* leftChildSnapshot = branch->left;
-            TreeNode* child = leftChildSnapshot;
-            if (child) {
-                TreeNode* grandchild = child->left;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSequenceTree);
-                TreeNode* rightChildReloadAgain = child->right;
-                grandchild = rightChildReloadAgain;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSequenceTree);
-                appFreeUni__FPv(child);
-            }
-            child = branch->right;
-            if (child) {
-                TreeNode* leftChildSnapshot = child->left;
-                TreeNode* grandchild = leftChildSnapshot;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSequenceTree);
-                grandchild = child->right;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSequenceTree);
-                appFreeUni__FPv(child);
-            }
-            appFreeUni__FPv(branch);
-        }
-        appFreeUni__FPv(root);
     }
     // Phase 2: spray attachment copies; the effect box is still alive.
-    root = (*(TreeNode**)&AsCPvsFxBox(self)->sprayAttachmentTreeRoot);
-    if (root) {
-        TreeNode* branch = root->left;
-        if (branch) {
-            TreeNode* leftChildSnapshot = branch->left;
-            TreeNode* child = leftChildSnapshot;
-            if (child) {
-                TreeNode* grandchild = child->left;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSprayTree);
-                grandchild = child->right;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSprayTree);
-                appFreeUni__FPv(child);
+    if ((char*)this + kSprayTree) {
+        if ((char*)this + kSprayTree) {
+            if ((char*)this + kSprayTree) {
+                if ((char*)this + kSprayTree) {
+                    if ((char*)this + kSprayTree) {
+                        if ((char*)this + kSprayTree) {
+                            TreeNode* root = (TreeNode*)sprayAttachmentTreeRoot;
+                            if (root) {
+                                TreeNode* branch = root->left;
+                                if (branch) {
+                                    TreeNode* leftChildSnapshot = branch->left;
+                                    TreeNode* child = leftChildSnapshot;
+                                    if (child) {
+                                        TreeNode* grandchild = child->left;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSprayTree);
+                                        grandchild = child->right;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSprayTree);
+                                        appFreeUni__FPv(child);
+                                    }
+                                    child = branch->right;
+                                    if (child) {
+                                        TreeNode* grandchild = child->left;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSprayTree);
+                                        grandchild = child->right;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSprayTree);
+                                        appFreeUni__FPv(child);
+                                    }
+                                    appFreeUni__FPv(branch);
+                                }
+                                TreeNode* rightChildSnapshot = root->right;
+                                branch = rightChildSnapshot;
+                                if (branch) {
+                                    TreeNode* leftChildReload = branch->left;
+                                    TreeNode* child = leftChildReload;
+                                    if (0 != child) {
+                                        TreeNode* leftChildSnapshot = child->left;
+                                        TreeNode* leftChildAlias = leftChildSnapshot;
+                                        TreeNode* leftChildAliasAgain = leftChildAlias;
+                                        TreeNode* grandchild = child->left;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSprayTree);
+                                        grandchild = child->right;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSprayTree);
+                                        appFreeUni__FPv(child);
+                                    }
+                                    child = branch->right;
+                                    if (child) {
+                                        TreeNode* grandchild = child->left;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSprayTree);
+                                        grandchild = child->right;
+                                        FreeFxResourceLeaf(grandchild, (char*)this + kSprayTree);
+                                        appFreeUni__FPv(child);
+                                    }
+                                    appFreeUni__FPv(branch);
+                                }
+                                appFreeUni__FPv(root);
+                            }
+                        }
+                    }
+                }
             }
-            child = branch->right;
-            if (child) {
-                TreeNode* grandchild = child->left;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSprayTree);
-                grandchild = child->right;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSprayTree);
-                appFreeUni__FPv(child);
-            }
-            appFreeUni__FPv(branch);
         }
-        TreeNode* rightChildSnapshot = root->right;
-        branch = rightChildSnapshot;
-        if (branch) {
-            TreeNode* leftChildReload = branch->left;
-            TreeNode* child = leftChildReload;
-            if (0 != child) {
-                TreeNode* leftChildSnapshot = child->left;
-                TreeNode* leftChildAlias = leftChildSnapshot;
-                TreeNode* leftChildAliasAgain = leftChildAlias;
-                TreeNode* grandchild = child->left;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSprayTree);
-                grandchild = child->right;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSprayTree);
-                appFreeUni__FPv(child);
-            }
-            child = branch->right;
-            if (child) {
-                TreeNode* grandchild = child->left;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSprayTree);
-                grandchild = child->right;
-                FreeFxResourceLeaf(grandchild, (char*)self + kSprayTree);
-                appFreeUni__FPv(child);
-            }
-            appFreeUni__FPv(branch);
-        }
-        appFreeUni__FPv(root);
     }
-    // Phase 3: release the embedded effect box, then optionally the wrapper.
-    CFxBox_dtor(self, 0);
-    if (freeFlag > 0) __dl__FPv(self);
-    return self;
+    // Phase 3: destroy the embedded effect box. The generated destructor frees the
+    // wrapper when the caller asked for it.
+    __dt__6CFxBoxFv(this, 0);
 }
-
-
+#pragma pop
 
 } // extern "C"
 

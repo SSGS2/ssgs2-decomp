@@ -1,38 +1,13 @@
+// Shadow model cache and shared document: the cache that finds or loads shadow models, the pointer
+// vector used for them, and the shared document's mode and round defaults.
+// It also holds the render-state copy helpers and the string helpers the document uses.
+
 #include <decomp/static_init.h>
-// Projected shadow textures/model cache and CSharedDoc round initialization.
-// Course / cup EFB mask / terrain visibility lookup:
-// - ShadowModel_DrawWithProjectedTextureStages binds existing projector textures
-//   and composes their transforms; it performs NO EFB copy, viewport/scissor
-//   change or terrain visibility test. (an open research lead),
-// - Capture size=256 and capture viewport/scissor are in shadow_manager_capture.cpp's shadow
-//   capture path; CupPreview_CaptureModel/DrawModel and alpha mask conversion are
-//   in golf_cup_preview_capture.cpp. Engine_CopyFramebufferToTexture is in gx_renderer_state_and_efb_copy.cpp. Check
-//   those producers and texture consumers together for a later resolution mod.
-// - Here the knobs are baseTextureStageCount, enabled projectors (flags&0x20
-//   skips), and nullable extraProjection. Their TOTAL must fit eight transform
-//   slots. Increasing count consumes another stage; no overflow guard exists.
-// - State/parameter pair tables and texture bias come from the anchored
-//   kProjectedShadowCameraRenderStates region: see ShadowRenderSetup and the
-//   Texture formats/dimensions belong to supplied resources, with no local format
-//   literal. Preserve matrix order and the stage cleanup/default reset sequence.
-// Model loading lookup: ShadowModel_FindOrLoadCachedResource caches by ORIGINAL
-// resource name, case-insensitive over 64 bytes. useOriginalModelName chooses
-// original versus suffix-inserted path ONLY on a miss; lookup enable is shared
-// s_shadowResourceLookupEnabled. Preserve key identity, no-fallback failure and
-// cache lifetime when swapping models. Return is borrowed from the resource list.
-// The normal list is g_shadowResourceList: CShadowManager ctor/dtor
-// (shadow_manager.cpp) return registered resources via ResourceManager_ReleaseObject
-// before freeing cache links/container. Cache borrowers acquire no extra hold.
-// Round/course defaults: CSharedDoc_Ctor initializes four players, 18 holes,
-// three random variants per hole, 100-percent Pang reward and empty owned lists.
-// Mode tuples below are compatibility metadata, NOT the active round defaults:
-// the active 18-hole default is RoundCourseSettings_Init at courseSettings+10D,
-// selected player equipment is playerStates, and active rule is golfRuleType.
-// Keep RNG call count/order and constructor unwind order.
-// Required pointers are live engine objects unless a function explicitly allows
-// null. Renderer/cache/shared-doc operations mutate shared state and are serial.
-// Private views below document the Wii 32-bit ABI; preserve sizes, offsets,
-// source symbol identity, exception cleanup and float operation order throughout.
+// Projected shadow model cache and the shared document's round defaults.
+//
+// The shadow functions bind the projector textures and transforms, draw the
+// model, then reset the temporary texture stages; loaded shadow models are
+// cached by resource name. CSharedDoc's constructor installs the round defaults.
 extern "C" {
 extern unsigned char kProjectedShadowCameraRenderStates[];
 }
@@ -43,20 +18,27 @@ extern unsigned char kProjectedShadowCameraRenderStates[];
 #include "classes/TextureRenderSetup801F.h"
 #include "classes/WPuppet.h"
 #include "classes/ShadowList801EF.h"
-
-#define AsCSharedDoc(p) ((CSharedDoc*)(p))
-
-// Translation unit 0x801F1A5C-0x801F31C0 (8 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CHashPath.h"
+#include "classes/CItemManager.h"
+#include "classes/CSharedDocSingleton.h"
 
 // Private views name address-passed subobjects without changing shared headers.
-struct ShadowModelView { WPuppet* puppet; unsigned int baseTextureStageCount; };
-enum { kProjectedTextureDisabled = 0x20, kCurrentViewTransform = 0,
-       kTextureTransformDimensionsState = 0xD, kTextureCoordinateSourceState = 0xA,
-       kStageOwnTextureCoordinates = 0x80000000,
-       kProjectorTransformSlotCount = 8,
-       kBaseStageStatePairCount = 6, kBaseStageParameterPairCount = 5,
-       kProjectorStatePairCount = 8, kProjectorParameterPairCount = 5 };
+struct ShadowModelView {
+    WPuppet* puppet;
+    unsigned int baseTextureStageCount;
+};
+enum {
+    kProjectedTextureDisabled = 0x20,
+    kCurrentViewTransform = 0,
+    kTextureTransformDimensionsState = 0xD,
+    kTextureCoordinateSourceState = 0xA,
+    kStageOwnTextureCoordinates = 0x80000000,
+    kProjectorTransformSlotCount = 8,
+    kBaseStageStatePairCount = 6,
+    kBaseStageParameterPairCount = 5,
+    kProjectorStatePairCount = 8,
+    kProjectorParameterPairCount = 5
+};
 // State 0x0D is texture-transform dimensions, 0x0A coordinate source, consumed
 // by Engine_ApplyStateBeforeDraw (gx_renderer_state_and_resources.cpp, TextureStageBindingView):
 // low byte dimensions==3 selects GX_MTX3x4/GX_TG_MTX3x4, otherwise 2x4;
@@ -85,17 +67,32 @@ enum { kProjectedTextureDisabled = 0x20, kCurrentViewTransform = 0,
 // A future projector mod must keep sampler, texgen source/dimensions, texture
 // resource and matrix slots together; changing the camera-capture prefix alone
 // does not change these later presets. These are engine IDs, not GX registers.
-enum { kSharedPlayerCount = 4, kRoundHoleCount = 18, kUnusedMaterialSlot = 0xFF,
-       kDefaultPangPercent = 100, kDefaultGameModeId = 0, kNoPartyGame = 0,
-       kSharedAllBitsSet = -1, kHoleVariantCount = 3,
-       kHoleOrderEndValue = kRoundHoleCount + 1 };
+enum {
+    kSharedPlayerCount = 4,
+    kRoundHoleCount = 18,
+    kUnusedMaterialSlot = 0xFF,
+    kDefaultPangPercent = 100,
+    kDefaultGameModeId = 0,
+    kNoPartyGame = 0,
+    kSharedAllBitsSet = -1,
+    kHoleVariantCount = 3,
+    kHoleOrderEndValue = kRoundHoleCount + 1
+};
 // Matrices passed to the renderer are contiguous 16-float, row-vector 4x4
 // transforms. Keep four-byte alignment: these are not GX's 3x4 Mtx arrays.
 typedef float ShadowMatrix4x4[16];
-struct RenderSetting { unsigned int parameter, value; };
-struct RenderState12 { RenderSetting pairs[6]; };
-struct RenderState10 { RenderSetting pairs[5]; };
-struct RenderState16 { RenderSetting pairs[8]; };
+struct RenderSetting {
+    unsigned int parameter, value;
+};
+struct RenderState12 {
+    RenderSetting pairs[6];
+};
+struct RenderState10 {
+    RenderSetting pairs[5];
+};
+struct RenderState16 {
+    RenderSetting pairs[8];
+};
 struct ShadowRenderSetup {
     char prefix[0x1A8];
     ShadowMatrix4x4 textureBias;
@@ -105,18 +102,9 @@ struct ShadowRenderSetup {
     RenderState16 projectorStates, extraStates;
     RenderState10 projectorParameters;
 };
-// Each 8-byte descriptor contains a pooled name and three parameter bytes.
-// CSharedDoc.h aliases the name words at +764/+76C/+774; their consumers copy
-// Stroke/Match/Caddie Practice labels into round rule-name storage (training_and_single_main_tasks.cpp,
-// title_main_and_top_menu.cpp). Searches of those header fields AND literal byte offsets find no
-// implemented reader of the following three bytes. Their proven contract is
-// therefore only stored defaults: stroke {4,2,3}, match {2,2,9}, practice {1,1,1}.
-// Individual gameplay meanings/ranges are unknown; do not rename them to player,
-// hole or difficulty limits. Changing them has no identified source consumer.
-// For a round-default mod use RoundCourseSettings_Init/SharedDoc_InitDefaultCourseSettings
-// (shared_doc_singleton.cpp) and CourseSelection_ApplyRoundSettings (font_registry_and_round_setup_mixed.cpp), which explicitly
-// publish hole count/order/course/options. New original-code consumers of these
-// compatibility bytes must be researched before treating them as a tuning API.
+// Each 8-byte descriptor holds a pooled name and three parameter bytes. The
+// names are the Stroke Play, Match Play and Caddie Practice labels; the
+// parameters are installed as the stored defaults {4,2,3}, {2,2,9}, {1,1,1}.
 struct SharedModeDescriptor {
     void* name;
     unsigned char parameter0, parameter1, parameter2, reserved;
@@ -127,34 +115,35 @@ struct SharedModeDescriptors {
     unsigned char reserved77C[8];
 };
 enum ModeDescriptorDefaults {
-    kStrokeParameter0 = 4, kStrokeParameter1 = 2, kStrokeParameter2 = 3,
-    kMatchParameter0 = 2, kMatchParameter1 = 2, kMatchParameter2 = 9,
-    kPracticeParameter0 = 1, kPracticeParameter1 = 1, kPracticeParameter2 = 1
+    kStrokeParameter0 = 4,
+    kStrokeParameter1 = 2,
+    kStrokeParameter2 = 3,
+    kMatchParameter0 = 2,
+    kMatchParameter1 = 2,
+    kMatchParameter2 = 9,
+    kPracticeParameter0 = 1,
+    kPracticeParameter1 = 1,
+    kPracticeParameter2 = 1
 };
-// These headers own node allocations, not an established resource-pointer type.
-// Source audit: named CSharedDoc fields AND literal header/link offsets find
-// initialization here, reset in SharedDoc_FreeTreesAndLists (shared_doc_player_state_and_course.cpp), and
-// node-only teardown in CSharedDoc_dtor/dtor_801F38CC (shared_doc_singleton.cpp); no implemented
-// insertion or payload consumer was identified. Do not infer that payloads are
-// pointers at all from the shared destructor's MSLPointerList placeholder type.
-// For THIS constructor the full lifetime is known: ListHeader_InitSentinel
-// allocates nothing, all seven stay empty through the called reset/inventory/
-// item-selection/value initializers, and unwind visits the same empty sentinels.
-// There is therefore no list payload allocation, retention or release obligation
-// on this path. If a future mod populates one, it must define its element schema
-// and clean up any owned resources BEFORE reset/destruction, which only free
-// nodes; no existing deleter will discover a nested resource pointer. Gameplay
-// roles of hypothetical elements are unknown and are not tuning controls here.
+// The seven owned lists share one header shape: a count followed by the two
+// links of an embedded sentinel. ListHeader_InitSentinel leaves them empty, so
+// the constructor allocates no nodes; their destructors free nodes only.
 struct SharedOwnedListHeader {
     unsigned int count;
     void* sentinelPrevious;
     void* sentinelNext;
 };
-// Stable identities for the seven lists, pending evidence about payload roles.
-// Do not interchange the bonus-item vector at +7F8 with any of these lists.
+// Each list has its own count and sentinel at 0x7A4 + 12*i.
+// The bonus-item vector at 0x7F8 is a separate allocation, not a list.
 enum SharedOwnedListIndex {
-    kSharedListAt7A4, kSharedListAt7B0, kSharedListAt7BC, kSharedListAt7C8,
-    kSharedListAt7D4, kSharedListAt7E0, kSharedListAt7EC, kSharedOwnedListCount
+    kSharedListAt7A4,
+    kSharedListAt7B0,
+    kSharedListAt7BC,
+    kSharedListAt7C8,
+    kSharedListAt7D4,
+    kSharedListAt7E0,
+    kSharedListAt7EC,
+    kSharedOwnedListCount
 };
 // Pointer vectors own their allocation, not the pointed-to resources: shrinking
 // drops slots without releasing payloads. Growth transfers pointer words, clears
@@ -169,16 +158,22 @@ struct ProjectedTextureView {
     unsigned int textureResource;
     unsigned int flags;
 };
-struct ExtraProjectedTexture { unsigned int textureResource; ShadowMatrix4x4 view, projection; };
-struct ShadowCacheNode { void* previous; void* next; void* resource; char resourceName[0x40]; };
+struct ExtraProjectedTexture {
+    unsigned int textureResource;
+    ShadowMatrix4x4 view, projection;
+};
+struct ShadowCacheNode {
+    void* previous;
+    void* next;
+    void* resource;
+    char resourceName[0x40];
+};
 struct SharedDocInitStorage {
     unsigned char prefix[0x10];
     unsigned char playerStates[4][0x1D4];
     SharedModeDescriptors modeDescriptors;
     unsigned char firstTree[0x10], secondTree[0x10];
-    // Seven independent {count,prev,next} headers at 0x7A4 + 12*i.
-    // These are empty throughout construction (ledger above); do not assign a
-    // gameplay role or nested ownership from their node-only destructor.
+    // Seven independent {count, prev, next} headers; the constructor leaves them empty.
     SharedOwnedListHeader ownedLists[kSharedOwnedListCount];
     unsigned char bonusItems[0xC];
     unsigned char gameSettings[0x14];
@@ -197,12 +192,18 @@ struct SharedDocInitStorage {
     unsigned char itemSelection[0x68];
     unsigned char roundCounters[0x14];
 };
-struct PuppetMaterialSlots { unsigned char prefix[12]; unsigned char slots[8]; unsigned char tail[8]; };
+struct PuppetMaterialSlots {
+    unsigned char prefix[12];
+    unsigned char slots[8];
+    unsigned char tail[8];
+};
 struct PuppetBoneStringPool {
     char bound[6], center[7], vectorLengthError[20], lengthErrorType[55];
     char shadowSuffix[5];
 };
-struct PlayModeStrings { unsigned char strokePlay[11], matchPlay[7], caddiePractice[17]; };
+struct PlayModeStrings {
+    unsigned char strokePlay[11], matchPlay[7], caddiePractice[17];
+};
 
 extern "C" {
 
@@ -225,25 +226,17 @@ void Engine_SetTextureStageState(unsigned int, unsigned int, unsigned int);
 
 unsigned char* WPuppet_GetMaterialMetadata(unsigned char*, unsigned int*);
 void String_ReserveCapacity(void*, unsigned int);
-void* String_ReplaceRange(void*, unsigned int, unsigned int, const unsigned char*, const unsigned char*, unsigned char*);
-void CSharedDocSingleton_Ctor(void*);
+void* String_ReplaceRange(void*, unsigned int, unsigned int, const unsigned char*, const unsigned char*,
+                          unsigned char*);
 void SharedPlayer_ClearRuntimeWords(void*);
 void TreeHeader_InitEmptyWithSentinel(void*);
 void TreeHeader_InitSentinel(void*);
 void ListHeader_InitSentinel(void*);
 void PointerVector_InitEmptyStorage(void*);
 void RoundCourseSettings_Init(void*);
-void CItemManager_Ctor(void*);
-void CItemManager_dtor(void*, int);
-void dtor_801BBCE8(void*, int);
-void dtor_801F38CC(void*, int);
-void SharedTree_dtor(void*, int);
-void SharedTreeStorage_dtor(void*, int);
-void SharedDoc_dtor(void*, int);
 void ItemSelection_Init(void*);
 void SharedDoc_FreeTreesAndLists(void*);
 void SharedDoc_InvalidatePlayerState(void*);
-void CSharedDoc_ClearPlayerStateStorage(void*);
 unsigned int rand();
 void Calendar_GetCurrentShortFields(void*);
 void* memset(void*, int, unsigned int);
@@ -263,7 +256,6 @@ void String_ConstructSubstring(void*, void*, int, unsigned int);
 void String_ConstructConcatCStr(void*, void*, const char*);
 
 void appFreeUni__FPv(void*);
-int CHashPath_FindPathForwarder(void*, const char*);
 void* ResourceManager_LoadByExtension(void*, const char*, int, int, int);
 void strncpy(void*, const char*, unsigned int);
 void* appMallocDummy__FUl(unsigned int);
@@ -274,7 +266,11 @@ void* __nw__FUl(unsigned int);
 void __dla__FPv(void*);
 void strcpy(char*, const char*);
 
-enum { kMaxPointerCount = 0x3FFFFFFF, kSmallPointerGrowthLimit = 0x15555555, kMediumPointerGrowthLimit = 0x2AAAAAAA };
+enum {
+    kMaxPointerCount = 0x3FFFFFFF,
+    kSmallPointerGrowthLimit = 0x15555555,
+    kMediumPointerGrowthLimit = 0x2AAAAAAA
+};
 
 struct PtrVector {
     void** data;
@@ -290,14 +286,22 @@ struct ErrorBuffer {
     // Own exception text until a shared control block adopts it.
     ErrorBuffer(char* p, unsigned char* a) : ptr(p), allocator(a) {}
     // Release text only while ownership has not been transferred.
-    ~ErrorBuffer() { if (ptr) __dla__FPv(ptr); }
+    ~ErrorBuffer() {
+        if (ptr)
+            __dla__FPv(ptr);
+    }
 };
 struct ErrorControl {
     void* table;
     unsigned int refs, owners;
     char* ptr;
     // Adopt exception text with initial shared/weak ownership counts of one.
-    ErrorControl(char* p) { refs = 1; owners = 1; table = s_sharedCharDeleterVtable; ptr = p; }
+    ErrorControl(char* p) {
+        refs = 1;
+        owners = 1;
+        table = s_sharedCharDeleterVtable;
+        ptr = p;
+    }
 };
 struct ErrorAllocator {
     unsigned char tag;
@@ -305,9 +309,12 @@ struct ErrorAllocator {
     ErrorAllocator() : tag(0) {}
     unsigned char pad[3];
 };
-namespace std { struct logic_error : exception {
+namespace std {
+struct logic_error : exception {
     // Install the runtime exception vtable without changing the ABI layout.
-    void SetTable(const void* vt) { *(const void**)this = vt; }
+    void SetTable(const void* vt) {
+        *(const void**)this = vt;
+    }
 
     char* message;
     ErrorControl* control;
@@ -326,12 +333,15 @@ namespace std { struct logic_error : exception {
     }
 
     ~logic_error();
-}; }
+};
+}
 } // extern C
 namespace std {
 struct length_error : logic_error {
     // Construct a logic-error payload with the length-error runtime type.
-    length_error(const char* text) : logic_error(text) { SetTable(__vt__Q23std12length_error); }
+    length_error(const char* text) : logic_error(text) {
+        SetTable(__vt__Q23std12length_error);
+    }
     ~length_error();
 };
 }
@@ -358,7 +368,9 @@ struct VectorTransaction {
     }
 };
 // Select the larger growth request while preserving its reference identity.
-inline const unsigned int& VectorMax(const unsigned int& a, const unsigned int& b) { return a < b ? b : a; }
+inline const unsigned int& VectorMax(const unsigned int& a, const unsigned int& b) {
+    return a < b ? b : a;
+}
 #pragma push
 #pragma use_lmw_stmw on
 // Append a resource pointer, growing storage transactionally while preserving old pointers.
@@ -367,7 +379,8 @@ inline const unsigned int& VectorMax(const unsigned int& a, const unsigned int& 
 // are zeroed/freed, preserving aliasing. Owns allocations only, never retains/
 // releases resource payloads. Excess length throws; transaction frees uncommitted
 // storage on unwind. Keep growth tiers and commit ordering, not a gameplay knob.
-void ShadowModelPointerVector_Append(PtrVector* self, void** value) { int prefix;
+void ShadowModelPointerVector_Append(PtrVector* self, void** value) {
+    int prefix;
     unsigned int size = self->size;
     unsigned int capacity = self->capacity;
     if (capacity > size) {
@@ -377,15 +390,20 @@ void ShadowModelPointerVector_Append(PtrVector* self, void** value) { int prefix
     }
 
     // Reserve a guarded replacement allocation, constructing the new tail first.
-    if (kMaxPointerCount - self->capacity < 1) throw std::length_error((char*)puppetBoneExceptionStrings + (int)&((PuppetBoneStringPool*)0)->vectorLengthError);
+    if (kMaxPointerCount - self->capacity < 1)
+        throw std::length_error((char*)puppetBoneExceptionStrings +
+                                (int)&((PuppetBoneStringPool*)0)->vectorLengthError);
     VectorTransaction transaction(&self->capacity);
     unsigned int needed = self->size + 1 - self->capacity;
     unsigned int newCapacity = self->capacity;
-    if (needed > kMaxPointerCount - newCapacity) throw std::length_error((char*)puppetBoneExceptionStrings + (int)&((PuppetBoneStringPool*)0)->vectorLengthError);
+    if (needed > kMaxPointerCount - newCapacity)
+        throw std::length_error((char*)puppetBoneExceptionStrings +
+                                (int)&((PuppetBoneStringPool*)0)->vectorLengthError);
 
     unsigned int largeGrowth;
     if (newCapacity < kSmallPointerGrowthLimit) {
-        unsigned int smallGrowth; smallGrowth = (newCapacity + 1) * 3 / 5;
+        unsigned int smallGrowth;
+        smallGrowth = (newCapacity + 1) * 3 / 5;
         newCapacity += VectorMax(smallGrowth, needed);
     } else if (newCapacity < kMediumPointerGrowthLimit) {
         largeGrowth = (newCapacity + 1) / 2;
@@ -393,7 +411,9 @@ void ShadowModelPointerVector_Append(PtrVector* self, void** value) { int prefix
     } else {
         newCapacity = kMaxPointerCount;
     }
-    if (newCapacity > kMaxPointerCount) throw std::length_error((char*)puppetBoneExceptionStrings + (int)&((PuppetBoneStringPool*)0)->vectorLengthError);
+    if (newCapacity > kMaxPointerCount)
+        throw std::length_error((char*)puppetBoneExceptionStrings +
+                                (int)&((PuppetBoneStringPool*)0)->vectorLengthError);
     void** fresh = (void**)appMallocDummy__FUl(newCapacity * 4);
     transaction.offset = self->size;
     (fresh + transaction.offset)[transaction.size] = *value;
@@ -427,11 +447,17 @@ void SharedDoc_InitFullTurnConstant() {
 }
 
 // Copy six state/value pairs into the local GX-state staging block.
-inline void CopyRender12(RenderState12* d, const RenderState12* s) { *d = *s; }
+inline void CopyRender12(RenderState12* d, const RenderState12* s) {
+    *d = *s;
+}
 // Copy five parameter/value pairs into the local staging block.
-inline void CopyRender10(RenderState10* d, const RenderState10* s) { *d = *s; }
+inline void CopyRender10(RenderState10* d, const RenderState10* s) {
+    *d = *s;
+}
 // Copy eight state/value pairs into the local projection staging block.
-inline void CopyRender16(RenderState16* d, const RenderState16* s) { *d = *s; }
+inline void CopyRender16(RenderState16* d, const RenderState16* s) {
+    *d = *s;
+}
 struct RenderInterface {
     virtual void slot2();
     virtual void slot3();
@@ -468,7 +494,8 @@ struct RenderInterface {
 // acquires no new references. Preserve the complete ABI tuple for overrides and
 // the queue's copy/lifetime contract; zero modelResource makes QueueModelDraw
 // submit nothing, yet this function still resets stages and returns 1.
-int ShadowModel_DrawWithProjectedTextureStages(void* self, void* drawContext, void* projectionList, void* extraProjection) {
+int ShadowModel_DrawWithProjectedTextureStages(void* self, void* drawContext, void* projectionList,
+                                               void* extraProjection) {
     unsigned int stageIndex;
     unsigned int textureStage;
     RenderState12 baseStageStates;
@@ -503,9 +530,11 @@ int ShadowModel_DrawWithProjectedTextureStages(void* self, void* drawContext, vo
     if (projectionList) {
         void* sentinel = &AsShadowList801EF(projectionList)->sentinelNext;
         unsigned int* transforms = ((unsigned int*)((char*)(base->transformSlots)));
-        for (void* node = AsShadowList801EF(projectionList)->sentinelPrevious; node != sentinel; node = ((TextureListNode*)node)->next) {
+        for (void* node = AsShadowList801EF(projectionList)->sentinelPrevious; node != sentinel;
+             node = ((TextureListNode*)node)->next) {
             void* object = ((TextureListNode*)node)->value; // 0x801F23C0: list node +8
-            if (((ProjectedTextureView*)object)->flags & kProjectedTextureDisabled) continue;
+            if (((ProjectedTextureView*)object)->flags & kProjectedTextureDisabled)
+                continue;
             Engine_SetTextureStageResource(textureStage, ((ProjectedTextureView*)object)->textureResource);
             Engine_SetTextureStageStateList(textureStage, &projectorStageStates, kProjectorStatePairCount);
             Engine_SetTextureStageParameterList(textureStage, &projectorStageParameters, kProjectorParameterPairCount);
@@ -552,7 +581,9 @@ int ShadowModel_DrawWithProjectedTextureStages(void* self, void* drawContext, vo
         Engine_SetTextureStageResource(stageIndex, 0);
         // Preserve the separate table-base calculation used by the original
         // cleanup iterator; the typed table above defines its eight-slot extent.
-        SetTransform(((unsigned int*)(((char*)((char*)base + (int)&((ShadowRenderSetup*)0)->transformSlots))))[stageIndex], kIdentityMatrix4x4);
+        SetTransform(
+            ((unsigned int*)(((char*)((char*)base + (int)&((ShadowRenderSetup*)0)->transformSlots))))[stageIndex],
+            kIdentityMatrix4x4);
         Engine_SetTextureStageState(stageIndex, kTextureTransformDimensionsState, 0);
         Engine_SetTextureStageState(stageIndex, kTextureCoordinateSourceState, kStageOwnTextureCoordinates);
     }
@@ -599,23 +630,27 @@ void ShadowModelPointerVector_Resize(PtrVector* self, unsigned int requested) {
     } else {
         newCapacity = max;
     }
-    if (newCapacity > max) VectorLengthError();
+    if (newCapacity > max)
+        VectorLengthError();
 
     void** fresh = (void**)appMallocDummy__FUl(newCapacity * 4);
     unsigned int prefix = oldSize;
     memset(fresh + oldSize, 0, count * 4);
-    if (prefix) memcpy(fresh, self->data, prefix * 4);
+    if (prefix)
+        memcpy(fresh, self->data, prefix * 4);
     void** oldData = self->data;
-    if (prefix) memset(oldData, 0, prefix * 4);
+    if (prefix)
+        memset(oldData, 0, prefix * 4);
     self->data = fresh;
     self->size = requested;
     self->capacity = newCapacity;
-    if (oldData) appFreeUni__FPv(oldData);
+    if (oldData)
+        appFreeUni__FPv(oldData);
 }
 
 // Write the three mode-name/parameter records without touching reserved bytes.
-static inline void initializeSharedModeDescriptors(void* self) {
-    SharedModeDescriptors* modes = &((SharedDocInitStorage*)self)->modeDescriptors;
+static inline void initializeSharedModeDescriptors(SharedDocInitStorage* doc) {
+    SharedModeDescriptors* modes = &doc->modeDescriptors;
     modes->stroke.parameter0 = kStrokeParameter0;
     modes->stroke.parameter1 = kStrokeParameter1;
     modes->stroke.parameter2 = kStrokeParameter2;
@@ -630,132 +665,81 @@ static inline void initializeSharedModeDescriptors(void* self) {
     modes->practice.name = playModeAndCourseAliasStrings + (int)&((PlayModeStrings*)0)->caddiePractice;
 }
 
-// Initialize four players, owned collections, game defaults, per-hole randomness, and course/item state.
-// Required unconstructed CSharedDoc storage; returns self after publishing all
-// defaults, or rethrows after reverse cleanup of completed subobjects. Borrowed
-// mode-name strings stay pooled. Consumes exactly 18 global rand() values, each
-// reused for saved seed and variant (value%3); preserve this coupling for replay.
-// Construction/unwind map (SharedDocInitStorage gives every member's layout):
-//  base: CSharedDocSingleton_Ctor publishes g_sharedDoc EARLY, before readiness.
-//  playerStates[4], descriptors, gameSettings, variants, holes, seeds, calendar,
-//  options, partyPerHole, itemSelection, counters and roundFlags: inline values;
-//  no heap ownership, destructors or per-member rollback. Pooled names borrowed.
-//  firstTree/secondTree (+784/+794): empty inline sentinel headers, own later
-//  allocated nodes; catch -> SharedTreeStorage_dtor / SharedTree_dtor respectively.
-//  lists +7A4,+7B0,+7BC,+7C8,+7D4,+7E0,+7EC: seven independent inline sentinels;
-//  no nodes/elements are created on this constructor path. The called reset sees
-//  seven count=0/self-linked headers; each catch invokes node-only
-//  dtor_801F38CC(header,-1), also on an empty header. See SharedOwnedListHeader's
-//  audit/extension contract; no unknown payload deleter is needed to explain
-//  constructor resource lifetime, and no general payload ownership is inferred.
-//  bonusItems +7F8: empty pointer vector; owns its allocation only;
-//  catch -> dtor_801BBCE8(header,-1). No pointed-to item deletion is implied.
-//  courseSettings: inline course/default record, no separately owned payload.
-//  itemInventory +A04: CItemManager owns inventory tables. If its ctor throws,
-//  its own construction must unwind; itemManagerConstructed is still false.
-//  After return, the catch calls CItemManager_dtor(-1) exactly once.
-// Initializers before try are value/header resets (shared_doc_singleton.cpp), no allocations;
-// an exceptional base/init failure has no enclosing catch in this function.
-// After try begins, reverse teardown is inventory if complete -> bonus vector ->
-// lists 6..0 -> second tree -> first tree -> singleton/base SharedDoc_dtor(-1),
-// which clears g_sharedDoc. The incoming allocation is never freed here; a
-// calling new-expression owns raw-storage cleanup. Scalar partial values and
-// consumed RNG/calendar side effects are not rolled back. No consumer may use
-// the early singleton until Ctor returns. Cleanup assumes destructors do not throw.
-void* CSharedDoc_Ctor(void* self) {
-    // Construct the singleton base and empty per-player/container subobjects first.
-    unsigned char* p = (unsigned char*)self;
-    CSharedDocSingleton_Ctor(self);
-    *(void**)p = __vt__10CSharedDoc;
-    unsigned char* q = p + (int)&((SharedDocInitStorage*)0)->playerStates[0];
+} // extern "C"
+
+// Install the round defaults: four empty player records, the owned containers,
+// the mode names, and one random seed and three-way variant per hole.
+CSharedDoc::CSharedDoc() {
+    ((CSharedDocSingleton*)this)->__ct();
+    *(void**)this = __vt__10CSharedDoc;
+
+    SharedDocInitStorage* doc = (SharedDocInitStorage*)this;
+    unsigned char* player = doc->playerStates[0];
     do {
-        SharedPlayer_ClearRuntimeWords(q);
-        q += sizeof(((SharedDocInitStorage*)0)->playerStates[0]);
-    } while (q < p + (int)&((SharedDocInitStorage*)0)->modeDescriptors);
-    TreeHeader_InitEmptyWithSentinel(p + (int)&((SharedDocInitStorage*)0)->firstTree);
-    TreeHeader_InitSentinel(p + (int)&((SharedDocInitStorage*)0)->secondTree);
-    ListHeader_InitSentinel(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7A4]);
-    ListHeader_InitSentinel(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7B0]);
-    ListHeader_InitSentinel(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7BC]);
-    ListHeader_InitSentinel(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7C8]);
-    ListHeader_InitSentinel(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7D4]);
-    ListHeader_InitSentinel(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7E0]);
-    ListHeader_InitSentinel(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7EC]);
-    PointerVector_InitEmptyStorage(p + (int)&((SharedDocInitStorage*)0)->bonusItems);
-    RoundCourseSettings_Init(p + (int)&((SharedDocInitStorage*)0)->courseSettings);
-    // After this point, unwind only subobjects whose construction has completed.
-    bool itemManagerConstructed = false;
-    try {
-        CItemManager_Ctor(p + (int)&((SharedDocInitStorage*)0)->itemInventory);
-        itemManagerConstructed = true;
-        ItemSelection_Init(p + (int)&((SharedDocInitStorage*)0)->itemSelection);
-        AsCSharedDoc(p)->golfDoc = 0;
-        SharedDoc_FreeTreesAndLists(self);
-        SharedDoc_InvalidatePlayerState(self);
-        CSharedDoc_ClearPlayerStateStorage(self);
-        // Phase 2: install mode tuples, then reset the selected game/options.
-        initializeSharedModeDescriptors(p);
-        AsCSharedDoc(p)->courseRecordUpdatesEnabled = 0;
-        AsCSharedDoc(p)->roundHoleOrder = 0;
-        AsCSharedDoc(p)->gameMode = kDefaultGameModeId;
-        // +80C/+814 and option words +AC4/+AD0/+AD4 have no identified
-        // non-initialization uses; zero is their stored default, not an enum
-        // value with a proven gameplay meaning.
-        AsCSharedDoc(p)->unk_80C = 0;
-        AsCSharedDoc(p)->unk_814 = 0;
-        AsCSharedDoc(p)->pangRewardMultiplier = kAuxPartDefaultRateModifier;
-        AsCSharedDoc(p)->pangRewardPercent = kDefaultPangPercent;
-        AsCSharedDoc(p)->randomizePlayerStats = 0;
-        AsCSharedDoc(p)->unk_AC4 = 0;
-        AsCSharedDoc(p)->unk_AD0 = 0;
-        AsCSharedDoc(p)->unk_AD4 = 0;
-        AsCSharedDoc(p)->partyGameMode = kNoPartyGame;
-        memset(p + (int)&((SharedDocInitStorage*)0)->partyPerHole, 0, kRoundHoleCount);
-        AsCSharedDoc(p)->partyResultTier = 0;
-        AsCSharedDoc(p)->unk_ACC = kSharedAllBitsSet; // stored default; domain unresolved
-        // Phase 3: one random word per hole seeds its variant and saved RNG.
-        // holeOrder is one-based and includes a trailing nineteenth value.
-        unsigned int i = 0;
-        do {
-            unsigned int value = rand();
-            unsigned int oldi = i;
-            *(unsigned int*)(p + (int)&((SharedDocInitStorage*)0)->randomSeeds + oldi * sizeof(unsigned int)) = value;
-            unsigned int ni = oldi + 1;
-            i = ni;
-            ((SharedDocInitStorage*)p)->randomVariants[oldi] = value - ((value / kHoleVariantCount) * kHoleVariantCount);
-            ((SharedDocInitStorage*)p)->holeOrder[oldi] = ni;
-        } while (i < kRoundHoleCount);
-        p[(int)&((SharedDocInitStorage*)0)->holeOrder + i] = kHoleOrderEndValue;
-        // Phase 4: snapshot the calendar and clear per-round counters/flags.
-        Calendar_GetCurrentShortFields(p + (int)&((SharedDocInitStorage*)0)->calendarFields);
-        memset(p + (int)&((SharedDocInitStorage*)0)->roundCounters, 0, 0x14);
-        AsCSharedDoc(p)->unk_AC8 = 0;
-        AsCSharedDoc(p)->unk_AC9 = 0;
-        memset(p + (int)&((SharedDocInitStorage*)0)->roundFlags, 0, 0x20);
-        AsCSharedDoc(p)->courseRecordIndex = 0;
-        AsCSharedDoc(p)->enemyLevelIndex = 0;
-        AsCSharedDoc(p)->partyCourseTableIndex = 0;
-        AsCSharedDoc(p)->pendingCourseClearNotification = 0;
-        AsCSharedDoc(p)->menuTextureIndex = 0;
-        return self;
-    } catch (...) {
-        // Destroy item storage and containers in reverse construction order.
-        if (itemManagerConstructed)
-            CItemManager_dtor(p + (int)&((SharedDocInitStorage*)0)->itemInventory, -1);
-        dtor_801BBCE8(p + (int)&((SharedDocInitStorage*)0)->bonusItems, -1);
-        dtor_801F38CC(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7EC], -1);
-        dtor_801F38CC(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7E0], -1);
-        dtor_801F38CC(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7D4], -1);
-        dtor_801F38CC(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7C8], -1);
-        dtor_801F38CC(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7BC], -1);
-        dtor_801F38CC(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7B0], -1);
-        dtor_801F38CC(p + (int)&((SharedDocInitStorage*)0)->ownedLists[kSharedListAt7A4], -1);
-        SharedTree_dtor(p + (int)&((SharedDocInitStorage*)0)->secondTree, -1);
-        SharedTreeStorage_dtor(p + (int)&((SharedDocInitStorage*)0)->firstTree, -1);
-        SharedDoc_dtor(self, -1);
-        throw;
+        SharedPlayer_ClearRuntimeWords(player);
+        player += sizeof(doc->playerStates[0]);
+    } while (player < (unsigned char*)&doc->modeDescriptors);
+
+    TreeHeader_InitEmptyWithSentinel(doc->firstTree);
+    TreeHeader_InitSentinel(doc->secondTree);
+    ListHeader_InitSentinel(&doc->ownedLists[kSharedListAt7A4]);
+    ListHeader_InitSentinel(&doc->ownedLists[kSharedListAt7B0]);
+    ListHeader_InitSentinel(&doc->ownedLists[kSharedListAt7BC]);
+    ListHeader_InitSentinel(&doc->ownedLists[kSharedListAt7C8]);
+    ListHeader_InitSentinel(&doc->ownedLists[kSharedListAt7D4]);
+    ListHeader_InitSentinel(&doc->ownedLists[kSharedListAt7E0]);
+    ListHeader_InitSentinel(&doc->ownedLists[kSharedListAt7EC]);
+    PointerVector_InitEmptyStorage(doc->bonusItems);
+    RoundCourseSettings_Init(doc->courseSettings);
+    ((CItemManager*)itemInventory)->__ct();
+    ItemSelection_Init(doc->itemSelection);
+
+    golfDoc = 0;
+    SharedDoc_FreeTreesAndLists(this);
+    SharedDoc_InvalidatePlayerState(this);
+    ClearPlayerStateStorage();
+
+    initializeSharedModeDescriptors(doc);
+    courseRecordUpdatesEnabled = 0;
+    roundHoleOrder = 0;
+    gameMode = kDefaultGameModeId;
+    unk_80C = 0;
+    unk_814 = 0;
+    pangRewardMultiplier = kAuxPartDefaultRateModifier;
+    pangRewardPercent = kDefaultPangPercent;
+    randomizePlayerStats = 0;
+    unk_AC4 = 0;
+    unk_AD0 = 0;
+    unk_AD4 = 0;
+    partyGameMode = kNoPartyGame;
+    memset(doc->partyPerHole, 0, kRoundHoleCount);
+    partyResultTier = 0;
+    unk_ACC = kSharedAllBitsSet;
+
+    // One random word per hole is both its saved seed and its three-way variant;
+    // holeOrder is one-based and ends with a nineteenth value.
+    unsigned char i;
+    for (i = 0; i < kRoundHoleCount; ++i) {
+        unsigned int value = rand();
+        doc->randomSeeds[i] = value;
+        doc->randomVariants[i] = (unsigned char)(value % kHoleVariantCount);
+        doc->holeOrder[i] = (unsigned char)(i + 1);
     }
+    doc->holeOrder[i] = kHoleOrderEndValue;
+
+    Calendar_GetCurrentShortFields(doc->calendarFields);
+    memset(doc->roundCounters, 0, sizeof(doc->roundCounters));
+    unk_AC8 = 0;
+    unk_AC9 = 0;
+    memset(doc->roundFlags, 0, sizeof(doc->roundFlags));
+    courseRecordIndex = 0;
+    enemyLevelIndex = 0;
+    partyCourseTableIndex = 0;
+    pendingCourseClearNotification = 0;
+    menuTextureIndex = 0;
 }
+
+extern "C" {
 
 // Find the largest consecutive material-slot prefix before the 0xFF unused-slot marker.
 // Required out[2 words] and valid borrowed WPuppet material data. Writes data
@@ -774,24 +758,33 @@ void PuppetMaterial_InitMaxUsedSlotCount(void* out, unsigned char* data) {
         // 0x801F2978: stop at the first unused material slot.
         do {
             usedMaterialSlots = 0;
-            if (((PuppetMaterialSlots*)entry)->slots[0] == kUnusedMaterialSlot) break;
+            if (((PuppetMaterialSlots*)entry)->slots[0] == kUnusedMaterialSlot)
+                break;
             usedMaterialSlots = 1;
-            if (((PuppetMaterialSlots*)entry)->slots[1] == kUnusedMaterialSlot) break;
+            if (((PuppetMaterialSlots*)entry)->slots[1] == kUnusedMaterialSlot)
+                break;
             usedMaterialSlots = 2;
-            if (((PuppetMaterialSlots*)entry)->slots[2] == kUnusedMaterialSlot) break;
+            if (((PuppetMaterialSlots*)entry)->slots[2] == kUnusedMaterialSlot)
+                break;
             usedMaterialSlots = 3;
-            if (((PuppetMaterialSlots*)entry)->slots[3] == kUnusedMaterialSlot) break;
+            if (((PuppetMaterialSlots*)entry)->slots[3] == kUnusedMaterialSlot)
+                break;
             usedMaterialSlots = 4;
-            if (((PuppetMaterialSlots*)entry)->slots[4] == kUnusedMaterialSlot) break;
+            if (((PuppetMaterialSlots*)entry)->slots[4] == kUnusedMaterialSlot)
+                break;
             usedMaterialSlots = 5;
-            if (((PuppetMaterialSlots*)entry)->slots[5] == kUnusedMaterialSlot) break;
+            if (((PuppetMaterialSlots*)entry)->slots[5] == kUnusedMaterialSlot)
+                break;
             usedMaterialSlots = 6;
-            if (((PuppetMaterialSlots*)entry)->slots[6] == kUnusedMaterialSlot) break;
+            if (((PuppetMaterialSlots*)entry)->slots[6] == kUnusedMaterialSlot)
+                break;
             usedMaterialSlots = 7;
-            if (((PuppetMaterialSlots*)entry)->slots[7] == kUnusedMaterialSlot) break;
+            if (((PuppetMaterialSlots*)entry)->slots[7] == kUnusedMaterialSlot)
+                break;
             usedMaterialSlots = 8;
         } while (0);
-        if (((unsigned int*)out)[1] < usedMaterialSlots) ((unsigned int*)out)[1] = usedMaterialSlots;
+        if (((unsigned int*)out)[1] < usedMaterialSlots)
+            ((unsigned int*)out)[1] = usedMaterialSlots;
         entry += sizeof(PuppetMaterialSlots);
         ++i;
     }
@@ -806,7 +799,9 @@ typedef NString ConcatResult;
 ConcatResult String_ConcatTwoStrings(const void* leftString, void* rightString) {
     unsigned int leftFlags = ((const unsigned int*)leftString)[0];
     ConcatResult result;
-    result.flags = 0; result.length = 0; result.data = 0;
+    result.flags = 0;
+    result.length = 0;
+    result.data = 0;
     unsigned int leftLength;
     unsigned int rightLength;
     const unsigned char* leftData;
@@ -826,7 +821,10 @@ ConcatResult String_ConcatTwoStrings(const void* leftString, void* rightString) 
         rightLength = ((unsigned int*)rightString)[1];
     }
     String_ReserveCapacity(&result, leftLength + rightLength);
-    union Tag { unsigned int align; unsigned char byte; };
+    union Tag {
+        unsigned int align;
+        unsigned char byte;
+    };
     volatile Tag srcA;
     Tag first;
     first.byte = srcA.byte;
@@ -839,22 +837,36 @@ ConcatResult String_ConcatTwoStrings(const void* leftString, void* rightString) 
 }
 #pragma pop
 
-struct MapEntry { void* owner; void* value; char name[0x40]; };
+struct MapEntry {
+    void* owner;
+    void* value;
+    char name[0x40];
+};
 struct Str {
     unsigned flags;
     unsigned len;
     char* ptr;
     // Initialize an empty tagged string with inline storage.
-    Str() { flags = 0; len = 0; ptr = 0; }
+    Str() {
+        flags = 0;
+        len = 0;
+        ptr = 0;
+    }
     // Release only an owned heap representation (tag bit 31).
-    ~Str() { if (flags >> 31) appFreeUni__FPv(ptr); }
+    ~Str() {
+        if (flags >> 31)
+            appFreeUni__FPv(ptr);
+    }
 };
 struct StrD {
     unsigned flags;
     unsigned len;
     char* ptr;
     // Release a substring/concatenation result's owned heap representation.
-    ~StrD() { if (flags >> 31) appFreeUni__FPv(ptr); }
+    ~StrD() {
+        if (flags >> 31)
+            appFreeUni__FPv(ptr);
+    }
 };
 } // extern "C"
 // Borrow the character span from either tagged-string storage view.
@@ -881,20 +893,23 @@ void* ShadowModel_FindOrLoadCachedResource(void* list, void* object, int useOrig
     // Phase 1: cache identity is the ORIGINAL resource name, folded case,
     // compared for at most 64 bytes. Naming mode is absent from the key: the
     // first successful load chooses the resource for subsequent calls in either mode.
-    if (!s_shadowResourceLookupEnabled) return 0;
+    if (!s_shadowResourceLookupEnabled)
+        return 0;
     void* resource = 0;
     if (*(void**)list) {
         void* sentinel = &AsShadowList801EF(list)->sentinelNext;
         void* node = ((void**)list)[2];
         while (sentinel != node) {
-            if (Runtime_StrnicmpThunk(((ShadowCacheNode*)node)->resourceName, ((WPuppet*)object)->resourceName, sizeof(((ShadowCacheNode*)0)->resourceName)) == 0) {
+            if (Runtime_StrnicmpThunk(((ShadowCacheNode*)node)->resourceName, ((WPuppet*)object)->resourceName,
+                                      sizeof(((ShadowCacheNode*)0)->resourceName)) == 0) {
                 resource = ((TextureListNode*)node)->value;
                 break;
             }
             node = ((TextureListNode*)node)->next;
         }
     }
-    if (resource) return resource;
+    if (resource)
+        return resource;
 
     // Phase 2: build name-with-shadow-suffix; the original name must have an extension.
     // Cache misses build the shadow suffix before the extension, even when the
@@ -913,7 +928,8 @@ void* ShadowModel_FindOrLoadCachedResource(void* list, void* object, int useOrig
     volatile unsigned char srcB;
     String_ReserveCapacity(&pattern, suffixLength);
     unsigned char tagB = srcB;
-    String_ReplaceRange(&pattern, 0, 0, (const unsigned char*)shadowSuffix, (const unsigned char*)shadowSuffix + suffixLength, &tagB);
+    String_ReplaceRange(&pattern, 0, 0, (const unsigned char*)shadowSuffix,
+                        (const unsigned char*)shadowSuffix + suffixLength, &tagB);
     {
         StrD path;
         int pos = String_FindLastOf(&name, extension, -1, strlen(extension));
@@ -938,12 +954,13 @@ void* ShadowModel_FindOrLoadCachedResource(void* list, void* object, int useOrig
     // Phase 3: choose the load path; there is no original-path fallback on a suffix miss.
     if (!useOriginalModelName) {
         const char* key = ShadowStringData(name);
-        if (CHashPath_FindPathForwarder(g_resourceManager, key))
+        if (((CHashPath*)g_resourceManager)->FindPathForwarder(key))
             resource = ResourceManager_LoadByExtension(g_resourceManager, key, 0, 1, 0);
     } else {
         resource = ResourceManager_LoadByExtension(g_resourceManager, objName, 0, 1, 0);
     }
-    if (!resource) return 0;
+    if (!resource)
+        return 0;
     // Phase 4: publish only a successfully loaded resource under the original key.
     // Cache under the original name so subsequent requests share this loaded model.
     // strncpy copies at most 64 bytes and need not append a terminator.

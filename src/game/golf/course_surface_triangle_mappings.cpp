@@ -1,21 +1,26 @@
+// Course surface triangle mappings: the table that maps surface triangles to render states
+// for each course variant, the sort by source triangle id, and the object name filter.
+// GetCourseVariant selects which optional mapping block belongs to the current variant.
+
 #include "sdk_protos.h"
 #include "classes/CSharedDoc.h"
 #include "iff/IffStruct.h"
 #include "game/wvector.h"
-// Translation unit 0x801C54BC-0x801C6B14 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
 enum SurfaceMappingFormat {
-    kCourseVariantMask = 15, kNoSourceTriangle = 0xFFFF,
-    kExistingVertexIndex = 0x8000, kSurfaceGroupCount = 2,
-    kSeekFromCurrent = 1, kSurfaceNamePatternCount = 0x51,
-    kSurfaceTriangleBytes = 8,      // sizeof(SurfaceTriangle): source id + three vertex codes
-    kMeshCountArrays = 4,           // per-mesh int arrays in one allocation (offset, base, variant, group counts)
-    kCourseRenderState23 = 0x17, kCourseRenderState24 = 0x18
+    kCourseVariantMask = 15,
+    kNoSourceTriangle = 0xFFFF,
+    kExistingVertexIndex = 0x8000,
+    kSurfaceGroupCount = 2,
+    kSeekFromCurrent = 1,
+    kSurfaceNamePatternCount = 0x51,
+    kSurfaceTriangleBytes = 8, // sizeof(SurfaceTriangle): source id + three vertex codes
+    kMeshCountArrays = 4,      // per-mesh int arrays in one allocation (offset, base, variant, group counts)
+    kCourseRenderState23 = 0x17,
+    kCourseRenderState24 = 0x18
 };
-
 
 // Compare the leading unsigned halfword, used to sort mappings by source triangle id.
 int Compare_U16(unsigned short* a, unsigned short* b) {
@@ -73,16 +78,23 @@ struct Vec3 {
     // Leave array elements uninitialized; every live generated vertex is written before use.
     Vec3() {}
     // Allocate through the game's array allocator (CodeWarrior adds the array cookie).
-    static void* operator new[](size_t n) { return __nwa__FUl(n); }
+    static void* operator new[](size_t n) {
+        return __nwa__FUl(n);
+    }
     // Release the array allocation supplied by the compiler's delete[] path.
-    static void operator delete[](void* p) { __dla__FPv(p); }
+    static void operator delete[](void* p) {
+        __dla__FPv(p);
+    }
     float x, y, z;
 };
 // Four packed halfwords: the original triangle id followed by three replacement vertices.
 // A four-word view keeps cyclic indexing in bounds; named fields document each word's role.
 union SurfaceTriangle {
     unsigned short words[4];
-    struct { unsigned short sourceTriangle; unsigned short vertices[3]; };
+    struct {
+        unsigned short sourceTriangle;
+        unsigned short vertices[3];
+    };
 };
 struct CourseSurfaceMesh {
     int vertexCount;
@@ -117,11 +129,20 @@ struct SurfaceTriangleMapping {
     unsigned short v[3];
     char remainingMappingData[6];
 };
-struct SurfaceTriangleGroup { int count; struct Sub { int count; SurfaceTriangleMapping* tris; }* subs; };
+struct SurfaceTriangleGroup {
+    int count;
+    struct Sub {
+        int count;
+        SurfaceTriangleMapping* tris;
+    }* subs;
+};
 struct SurfaceMappingStream {
-    virtual void v0(); virtual void v1();
-    virtual int read(void*, int); virtual void v5(); virtual void v6();
-    virtual int seek(int,int);
+    virtual void v0();
+    virtual void v1();
+    virtual int read(void*, int);
+    virtual void v5();
+    virtual void v6();
+    virtual int seek(int, int);
 };
 extern CSharedDoc* g_sharedDoc;
 static const float kVertexMergeTolerance = 9.999999747378752e-06f;
@@ -129,7 +150,8 @@ static const unsigned int kFloatSignBit = 0x80000000U;
 // Select which optional surface mapping block belongs to the current course variant.
 inline unsigned char GetCourseVariant() {
     IFF_STRUCT::sCourse* course = (IFF_STRUCT::sCourse*)g_sharedDoc->selectedCourseData;
-    if (course == 0) return 0;
+    if (course == 0)
+        return 0;
     return course->courseFlags & kCourseVariantMask;
 }
 
@@ -140,8 +162,8 @@ inline unsigned char GetCourseVariant() {
 // generatedVertices is a borrowed XYZ table in the same coordinate space as the destination meshes.
 // groups contains two surface groups. Mapping mesh IDs/vertex codes must already be in range;
 // this routine trusts the data and does not check stream read/seek results.
-void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* stream, int meshCount,
-    int* meshOutputs, void* generatedVertices, SurfaceTriangleGroup* groups) {
+void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* stream, int meshCount, int* meshOutputs,
+                                            void* generatedVertices, SurfaceTriangleGroup* groups) {
     int baseTriangleCount;
     SurfaceTriangleGroup* group = (SurfaceTriangleGroup*)groups;
     int triangles = 0;
@@ -153,7 +175,8 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
                 if (group->subs) {
                     SurfaceTriangleGroup::Sub* subgroup = &group->subs[i];
                     for (int j = 0; subgroup->count > j; j++) {
-                        if (subgroup->tris[j].id != kNoSourceTriangle) triangles++;
+                        if (subgroup->tris[j].id != kNoSourceTriangle)
+                            triangles++;
                     }
                 }
             }
@@ -191,12 +214,16 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
     // All offsets/counts are in SurfaceTriangle RECORDS, not bytes or vertex indices.
     int* meshOffsets = (int*)__nwa__FUl(meshCount * kMeshCountArrays * 4);
     memset(meshOffsets, 0, (meshCount * kMeshCountArrays * 4));
-    SurfaceTriangle* trianglesByMesh = (SurfaceTriangle*)__nwa__FUl(
-        (variantTriangleCount + (triangles + baseTriangleCount)) * kSurfaceTriangleBytes);
-    if (baseTriangleCount > 0) stream->read(meshOffsets + meshCount, 4 * meshCount);
-    if (skippedVariantACount > 0) stream->seek(4 * meshCount, kSeekFromCurrent);
-    if (variantTriangleCount > 0) stream->read(meshOffsets + meshCount * 2, meshCount * 4);
-    if (0 < skippedVariantBCount) stream->seek(meshCount * 4, kSeekFromCurrent);
+    SurfaceTriangle* trianglesByMesh =
+        (SurfaceTriangle*)__nwa__FUl((variantTriangleCount + (triangles + baseTriangleCount)) * kSurfaceTriangleBytes);
+    if (baseTriangleCount > 0)
+        stream->read(meshOffsets + meshCount, 4 * meshCount);
+    if (skippedVariantACount > 0)
+        stream->seek(4 * meshCount, kSeekFromCurrent);
+    if (variantTriangleCount > 0)
+        stream->read(meshOffsets + meshCount * 2, meshCount * 4);
+    if (0 < skippedVariantBCount)
+        stream->seek(meshCount * 4, kSeekFromCurrent);
     group = (SurfaceTriangleGroup*)groups;
     int* mappedTriangleCounts = meshOffsets + meshCount * 3;
     for (int groupIndex = 0; kSurfaceGroupCount > groupIndex; groupIndex++, group++) {
@@ -206,7 +233,8 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
                     SurfaceTriangleGroup::Sub* subgroup = &group->subs[i];
                     for (int j = 0; j < subgroup->count; j++) {
                         SurfaceTriangleMapping* mapping = &subgroup->tris[j];
-                        if (mapping->id != kNoSourceTriangle) mappedTriangleCounts[mapping->mesh]++;
+                        if (mapping->id != kNoSourceTriangle)
+                            mappedTriangleCounts[mapping->mesh]++;
                     }
                 }
             }
@@ -216,8 +244,8 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
     // Prefix-sum the three contributing triangle counts for each output mesh.
     meshOffsets[0] = 0;
     for (int i = 1; i < meshCount; i++) {
-        meshOffsets[i] = (meshOffsets[meshCount * 2 + i - 1] + mappedTriangleCounts[i - 1])
-            + (meshOffsets[meshCount + i - 1] + meshOffsets[i - 1]);
+        meshOffsets[i] = (meshOffsets[meshCount * 2 + i - 1] + mappedTriangleCounts[i - 1]) +
+                         (meshOffsets[meshCount + i - 1] + meshOffsets[i - 1]);
     }
     // Starts are now fixed; reuse the group counts as per-mesh write cursors.
     memset(mappedTriangleCounts, 0, 4 * meshCount);
@@ -227,17 +255,20 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
         int* meshOffset = meshOffsets;
         int* triangleCount = triangleCounts;
         for (int i = 0; i < meshCount; triangleCount++, meshOffset++, i++) {
-            if (*triangleCount > 0) stream->read(trianglesByMesh + *meshOffset, *triangleCount * kSurfaceTriangleBytes);
+            if (*triangleCount > 0)
+                stream->read(trianglesByMesh + *meshOffset, *triangleCount * kSurfaceTriangleBytes);
         }
     }
-    if (skippedVariantACount) stream->seek(skippedVariantACount * kSurfaceTriangleBytes, kSeekFromCurrent);
+    if (skippedVariantACount)
+        stream->seek(skippedVariantACount * kSurfaceTriangleBytes, kSeekFromCurrent);
     if (variantTriangleCount > 0) {
         int* triangleCount = triangleCounts;
         int* meshOffset = meshOffsets;
         int* variantCounts = meshOffsets + meshCount * 2;
         for (int i = 0; i < meshCount; variantCounts++, triangleCount++, meshOffset++, i++) {
             if (*variantCounts > 0) {
-                stream->read((char*)(trianglesByMesh + *meshOffset) + *triangleCount * kSurfaceTriangleBytes, *variantCounts * kSurfaceTriangleBytes);
+                stream->read((char*)(trianglesByMesh + *meshOffset) + *triangleCount * kSurfaceTriangleBytes,
+                             *variantCounts * kSurfaceTriangleBytes);
             }
         }
     }
@@ -253,9 +284,9 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
                         SurfaceTriangleMapping* mapping = &subgroup->tris[j];
                         if (mapping->id != kNoSourceTriangle) {
                             int meshIndex = mapping->mesh;
-                            SurfaceTriangle* destination = trianglesByMesh +
-                                ((variantCounts[meshIndex] + mappedTriangleCounts[meshIndex]) +
-                                 (meshOffsets[meshIndex] + triangleCounts[meshIndex]));
+                            SurfaceTriangle* destination =
+                                trianglesByMesh + ((variantCounts[meshIndex] + mappedTriangleCounts[meshIndex]) +
+                                                   (meshOffsets[meshIndex] + triangleCounts[meshIndex]));
                             destination->sourceTriangle = mapping->id;
                             memcpy(&destination->vertices[0], mapping->v, 6);
                             mappedTriangleCounts[meshIndex]++;
@@ -267,13 +298,15 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
     }
     // Skip the remaining unselected variant-B block before reading selected-variant records.
     // It is part of the original stream traversal; removing it changes the final stream position.
-    if (skippedVariantBCount) stream->seek(kSurfaceTriangleBytes * skippedVariantBCount, kSeekFromCurrent);
+    if (skippedVariantBCount)
+        stream->seek(kSurfaceTriangleBytes * skippedVariantBCount, kSeekFromCurrent);
     {
         int* meshOffset = meshOffsets;
         int* triangleCount = triangleCounts;
         for (int i = 0; i < meshCount; variantCounts++, meshOffset++, mappedTriangleCounts++, triangleCount++, i++) {
             if (*variantCounts > 0) {
-                stream->read((char*)(trianglesByMesh + *meshOffset) + *triangleCount * kSurfaceTriangleBytes, *variantCounts * kSurfaceTriangleBytes);
+                stream->read((char*)(trianglesByMesh + *meshOffset) + *triangleCount * kSurfaceTriangleBytes,
+                             *variantCounts * kSurfaceTriangleBytes);
             }
             *triangleCount = *mappedTriangleCounts + (*triangleCount + *variantCounts);
         }
@@ -294,17 +327,21 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
                     for (rotation = 0; rotation < 3; rotation++) {
                         SurfaceTriangle* candidate = trianglesByMesh + *meshOffset + j;
                         SurfaceTriangle* laterTriangle = trianglesByMesh + *meshOffset + k;
-                        if (laterTriangle->words[1 + rotation] == candidate->vertices[0]
-                            && candidate->vertices[1] == laterTriangle->words[1 + (rotation + 1) % 3]
-                            && candidate->vertices[2] == laterTriangle->words[1 + (rotation + 2) % 3]) break;
+                        if (laterTriangle->words[1 + rotation] == candidate->vertices[0] &&
+                            candidate->vertices[1] == laterTriangle->words[1 + (rotation + 1) % 3] &&
+                            candidate->vertices[2] == laterTriangle->words[1 + (rotation + 2) % 3])
+                            break;
                     }
-                    if (rotation < 3) break;
+                    if (rotation < 3)
+                        break;
                 }
-                if (k == count) uniqueCount++;
+                if (k == count)
+                    uniqueCount++;
             }
             if (1 + uniqueCount != count) {
                 int j;
-                SurfaceTriangle* uniqueTriangles = (SurfaceTriangle*)__nwa__FUl((1 + uniqueCount) * kSurfaceTriangleBytes);
+                SurfaceTriangle* uniqueTriangles =
+                    (SurfaceTriangle*)__nwa__FUl((1 + uniqueCount) * kSurfaceTriangleBytes);
                 unsigned int writtenCount = 0;
                 int byteOffset = 0;
                 for (j = 0; j < *triangleCount - 1; j++) {
@@ -314,11 +351,13 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
                         for (rotation = 0; rotation < 3; rotation++) {
                             SurfaceTriangle* laterTriangle = trianglesByMesh + *meshOffset + k;
                             SurfaceTriangle* candidate = trianglesByMesh + (*meshOffset + j);
-                            if (laterTriangle->words[1 + rotation] == candidate->vertices[0]
-                                && candidate->vertices[1] == laterTriangle->words[1 + (1 + rotation) % 3]
-                                && candidate->vertices[2] == laterTriangle->words[1 + (rotation + 2) % 3]) break;
+                            if (laterTriangle->words[1 + rotation] == candidate->vertices[0] &&
+                                candidate->vertices[1] == laterTriangle->words[1 + (1 + rotation) % 3] &&
+                                candidate->vertices[2] == laterTriangle->words[1 + (rotation + 2) % 3])
+                                break;
                         }
-                        if (3 > rotation) break;
+                        if (3 > rotation)
+                            break;
                     }
                     if (k == *triangleCount) {
                         writtenCount += 1;
@@ -332,11 +371,14 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
                 }
                 memcpy(uniqueTriangles + writtenCount++, trianglesByMesh + (j + *meshOffset), kSurfaceTriangleBytes);
                 qsort(uniqueTriangles, writtenCount, 8, (int (*)(const void*, const void*))Compare_U16);
-                CourseMesh_ReplaceMappedSurfaceTriangles(self, (CourseSurfaceMesh*)*meshOutputs, uniqueTriangles, writtenCount, (int*)generatedVertices);
+                CourseMesh_ReplaceMappedSurfaceTriangles(self, (CourseSurfaceMesh*)*meshOutputs, uniqueTriangles,
+                                                         writtenCount, (int*)generatedVertices);
                 __dla__FPv(uniqueTriangles);
             } else {
                 qsort(trianglesByMesh + *meshOffset, count, 8, (int (*)(const void*, const void*))Compare_U16);
-                CourseMesh_ReplaceMappedSurfaceTriangles(self, (CourseSurfaceMesh*)*meshOutputs, trianglesByMesh + *meshOffset, *triangleCount, (int*)generatedVertices);
+                CourseMesh_ReplaceMappedSurfaceTriangles(self, (CourseSurfaceMesh*)*meshOutputs,
+                                                         trianglesByMesh + *meshOffset, *triangleCount,
+                                                         (int*)generatedVertices);
             }
         }
         ++meshOutputs;
@@ -353,7 +395,8 @@ void CourseData_ReadSurfaceTriangleMappings(void* self, SurfaceMappingStream* st
 // Vertex codes <0x8000 index generatedVertices; codes >=0x8000 reference existing mesh vertices.
 // mesh owns all replaced arrays. Input positions and normals use the mesh's coordinate space;
 // barycentric u/v are dimensionless weights, and UVs are texture coordinates (no normalization).
-void CourseMesh_ReplaceMappedSurfaceTriangles(void* unused, CourseSurfaceMesh* mesh, SurfaceTriangle* triangles, int triangleCount, int* generatedVertices) {
+void CourseMesh_ReplaceMappedSurfaceTriangles(void* unused, CourseSurfaceMesh* mesh, SurfaceTriangle* triangles,
+                                              int triangleCount, int* generatedVertices) {
     int samePositionAndNormal;
     int sameTextureV;
     int sameTextureU;
@@ -392,7 +435,8 @@ void CourseMesh_ReplaceMappedSurfaceTriangles(void* unused, CourseSurfaceMesh* m
     unsigned int* addedColors;
     unsigned short* newIndices;
     int newIndexCount;
-    if (triangleCount == 0) return;
+    if (triangleCount == 0)
+        return;
     // Phase 1: count unique replaced source triangles and allocate worst-case temporary output.
     oldIndices = (unsigned short*)mesh->indices;
     vertices = mesh->vertices;
@@ -401,7 +445,8 @@ void CourseMesh_ReplaceMappedSurfaceTriangles(void* unused, CourseSurfaceMesh* m
     colors = mesh->colors;
     int replacedTriangleCount = 1;
     for (int i = 1; i < triangleCount; ++i)
-        if (triangles[i].sourceTriangle != triangles[i-1].sourceTriangle) ++replacedTriangleCount;
+        if (triangles[i].sourceTriangle != triangles[i - 1].sourceTriangle)
+            ++replacedTriangleCount;
     int vertexCapacity;
     int retainedIndexCount;
     retainedIndexCount = mesh->indexCount - replacedTriangleCount * 3;
@@ -476,23 +521,32 @@ void CourseMesh_ReplaceMappedSurfaceTriangles(void* unused, CourseSurfaceMesh* m
                 searchNormal = addedNormals;
                 searchTexcoords = addedTexcoords;
                 while (match < addedCount) {
-                    sameTextureV = 0; sameTextureU = 0; samePositionAndNormal = 0;
-                    if (Vec3_NearlyEqualWithTolerance(searchVertex, vertex, kVertexMergeTolerance) && Vec3_NearlyEqualWithTolerance(searchNormal, &normal, kVertexMergeTolerance)) samePositionAndNormal = 1;
+                    sameTextureV = 0;
+                    sameTextureU = 0;
+                    samePositionAndNormal = 0;
+                    if (Vec3_NearlyEqualWithTolerance(searchVertex, vertex, kVertexMergeTolerance) &&
+                        Vec3_NearlyEqualWithTolerance(searchNormal, &normal, kVertexMergeTolerance))
+                        samePositionAndNormal = 1;
                     if (samePositionAndNormal) {
                         float diff = searchTexcoords[0] - tex[0];
                         float mag = diff;
-                        if (*(unsigned int*)&diff & kFloatSignBit) mag = -diff;
+                        if (*(unsigned int*)&diff & kFloatSignBit)
+                            mag = -diff;
                         int lt = mag < epsilon;
-                        if (lt) sameTextureU = 1;
+                        if (lt)
+                            sameTextureU = 1;
                     }
                     if (sameTextureU) {
                         float diff = searchTexcoords[1] - tex[1];
                         float mag = diff;
-                        if (*(unsigned int*)&diff & kFloatSignBit) mag = -diff;
+                        if (*(unsigned int*)&diff & kFloatSignBit)
+                            mag = -diff;
                         int lt = mag < epsilon;
-                        if (lt) sameTextureV = 1;
+                        if (lt)
+                            sameTextureV = 1;
                     }
-                    if (sameTextureV) break;
+                    if (sameTextureV)
+                        break;
                     ++searchVertex;
                     ++searchNormal;
                     searchTexcoords += 2;
@@ -538,9 +592,10 @@ void CourseMesh_ReplaceMappedSurfaceTriangles(void* unused, CourseSurfaceMesh* m
             copied += length;
         }
     }
-    int last = triangles[i-1].sourceTriangle * 3;
+    int last = triangles[i - 1].sourceTriangle * 3;
     int remaining = mesh->indexCount - last;
-    if (remaining > 3) memcpy(newIndices + copied, oldIndices + (last + 3), (remaining - 3) * 2);
+    if (remaining > 3)
+        memcpy(newIndices + copied, oldIndices + (last + 3), (remaining - 3) * 2);
 
     // Phase 4: copy old attributes plus the deduplicated generated suffix into final arrays.
     Vec3* newVertices = new Vec3[mesh->vertexCount + addedCount];
@@ -562,12 +617,16 @@ void CourseMesh_ReplaceMappedSurfaceTriangles(void* unused, CourseSurfaceMesh* m
     memcpy(newTexcoords + mesh->vertexCount * 2, addedTexcoords, addedCount * 8);
     // Phase 5: release scratch and old mesh arrays, then publish the final buffers/counts.
     // Vec3 new[] results have a 16-byte compiler cookie; raw attribute/index arrays do not.
-    if (addedVertices) __dla__FPv((char*)addedVertices - 16);
-    if (addedNormals) __dla__FPv((char*)addedNormals - 16);
+    if (addedVertices)
+        __dla__FPv((char*)addedVertices - 16);
+    if (addedNormals)
+        __dla__FPv((char*)addedNormals - 16);
     __dla__FPv(addedTexcoords);
     __dla__FPv(addedColors);
-    if (mesh->vertices) __dla__FPv((char*)mesh->vertices - 16);
-    if (mesh->normals) __dla__FPv((char*)mesh->normals - 16);
+    if (mesh->vertices)
+        __dla__FPv((char*)mesh->vertices - 16);
+    if (mesh->normals)
+        __dla__FPv((char*)mesh->normals - 16);
     __dla__FPv(mesh->colors);
     __dla__FPv(mesh->copiedColors);
     __dla__FPv(mesh->textureCoordinates);

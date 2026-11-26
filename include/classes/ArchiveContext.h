@@ -4,11 +4,11 @@
 #define CLASSES_ARCHIVECONTEXT_H
 
 struct ArchiveContext {
-    void* reader; // 0x0
-    int openIndex; // 0x4
-    char cachedInfo[0x12c]; // 0x8
-    int cachedIndex; // 0x134
-    void* password; // 0x138
+    void* reader;               // 0x0
+    int openIndex;              // 0x4
+    char cachedInfo[0x12c];     // 0x8
+    int cachedIndex;            // 0x134
+    void* password;             // 0x138
     void* ownedAuxiliaryBuffer; // 0x13C
 };
 

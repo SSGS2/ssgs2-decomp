@@ -1,5 +1,3 @@
-// Translation unit 0x80301720-0x8030C0E8 (41 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 // bitset functions (SaveRewards_SetPartFlags, SaveRewards_SetCaddieItemFlags). Equivalent to building this unit with -ipa file -inline noauto.
 #pragma ipa file
 #pragma auto_inline off
@@ -7,6 +5,7 @@
 
 #include "game/stdexcept_local.h"
 #include "game/singletons.h"
+#include "classes/CPangyaCommonDialog.h"
 #include "classes/CSharedDoc.h"
 #include "classes/ItemRequestState80300EC8.h"
 #define __throw SDKHeaderThrow
@@ -16,28 +15,48 @@
 #undef strlen
 #undef __throw
 
-extern "C" { void* __nw__FUl(unsigned int); void __dl__FPv(void*); }
+extern "C" {
+void* __nw__FUl(unsigned int);
+void __dl__FPv(void*);
+}
 // Allocate through the game's scalar allocator.
-inline void* operator new(size_t size) { return __nw__FUl(size); }
+inline void* operator new(size_t size) {
+    return __nw__FUl(size);
+}
 void operator delete(void*) throw();
 
-
 enum IffRewardKind {
-    kRewardCharacter = 1, kRewardPart = 2, kRewardClub = 3,
-    kRewardClubSet = 4, kRewardBall = 5, kRewardConsumable = 6,
-    kRewardCaddie = 7, kRewardCaddieItem = 8, kRewardSetItem = 9,
-    kRewardCourse = 10, kRewardUnused = 0
+    kRewardCharacter = 1,
+    kRewardPart = 2,
+    kRewardClub = 3,
+    kRewardClubSet = 4,
+    kRewardBall = 5,
+    kRewardConsumable = 6,
+    kRewardCaddie = 7,
+    kRewardCaddieItem = 8,
+    kRewardSetItem = 9,
+    kRewardCourse = 10,
+    kRewardUnused = 0
 };
 enum RewardLimits {
-    kCharacterCount = 8, kCaddieCount = 8, kClubSetCount = 15,
-    kBallCount = 11, kCourseCount = 14, kPartCount = 782,
-    kCaddieItemBits = 32, kSetItemBits = 161, kRewardTextBits = 3,
+    kCharacterCount = 8,
+    kCaddieCount = 8,
+    kClubSetCount = 15,
+    kBallCount = 11,
+    kCourseCount = 14,
+    kPartCount = 782,
+    kCaddieItemBits = 32,
+    kSetItemBits = 161,
+    kRewardTextBits = 3,
     kOtherNotificationBits = 45,
     kRequestMaxCapacity = 0x15555555,
     kRequestSmallGrowthLimit = 0x071C71C7,
     kRequestMediumGrowthLimit = 0x0E38E38E
 };
-enum RewardStringOffsets { kRewardPopupSound = 0x4B, kRangeErrorType = 0x5C };
+enum RewardStringOffsets {
+    kRewardPopupSound = 0x4B,
+    kRangeErrorType = 0x5C
+};
 
 // This module copies only the first 0x25C bytes of a full SavePlayerRecord.
 // Reward policy here is defined by saved bits, without assuming shop semantics:
@@ -52,15 +71,21 @@ enum RewardStringOffsets { kRewardPopupSound = 0x4B, kRangeErrorType = 0x5C };
 // Character/caddie/club/ball byte masks: primary 0x80, secondary 0x40.
 // Part/caddie-item bitsets instead select separate primary/secondary word arrays.
 // Indices passed here are inventory indices, never raw IFF type IDs.
-struct CharacterRewardRecord { unsigned short words[26]; };
-struct CaddieRewardRecord { unsigned int words[2]; };
-struct ClubSetRewardRecord { unsigned char flags, mode; };
+struct CharacterRewardRecord {
+    unsigned short words[26];
+};
+struct CaddieRewardRecord {
+    unsigned int words[2];
+};
+struct ClubSetRewardRecord {
+    unsigned char flags, mode;
+};
 struct RewardSaveRecordView {
     char prefix[0x2CC];
     CharacterRewardRecord characters[kCharacterCount]; // 0x2CC, stride 0x34
-    CaddieRewardRecord caddies[kCaddieCount];           // 0x46C, stride 8
+    CaddieRewardRecord caddies[kCaddieCount];          // 0x46C, stride 8
     ClubSetRewardRecord clubSets[kClubSetCount];       // 0x4AC, stride 2
-    unsigned char ballFlags[kBallCount];              // 0x4CA
+    unsigned char ballFlags[kBallCount];               // 0x4CA
 };
 #define AsRewardSaveRecord(p) ((RewardSaveRecordView*)(p))
 typedef char RewardSave_charactersOffset[((int)&((RewardSaveRecordView*)0)->characters == 0x2CC) ? 1 : -1];
@@ -115,37 +140,50 @@ void SaveRewards_SetCharacterFlags(void*, unsigned int, short);
 void SaveRewards_SetCaddieFlags(void*, unsigned char, short);
 void SaveRewards_SetCaddieItemFlags(void*, unsigned char, short);
 void SaveRewards_UnlockCourse(void*, unsigned char);
-void CPopItemDialog_Ctor(void*, unsigned int, unsigned int);
+void __ct__14CPopItemDialogFPvPv(void*, unsigned int, unsigned int);
 void Sound_PlayByName(void*, const char*, int, int, int, int, float, float, float);
 void* __nw__FUl(unsigned int);
 // 12-byte request: popup context word, full IFF type ID (kind in high six bits),
 // then 16-bit inventory index and requested reward policy. Values are copied;
 // this unit does not retain or release the popup context word.
-struct QueuedItemReward { unsigned int popupContext, typeId; unsigned short inventoryIndex, secondaryFlag; };
+struct QueuedItemReward {
+    unsigned int popupContext, typeId;
+    unsigned short inventoryIndex, secondaryFlag;
+};
 unsigned int ItemRequestVector_GetSize(void*);
 QueuedItemReward* Array_GetElement(void*, int);
 void WString_ReserveCapacity(void*, unsigned int);
 void WString_ReplaceRange(void*, int, unsigned int, unsigned int, unsigned int, unsigned char*);
 void* __ct__19CPangyaCommonDialogFPvi(void*, int, int);
-void CPangyaCommonDialog_SetText(void*, const void*);
 void* __nw__FUl(unsigned int);
 extern const float kRewardDialogZeroUpdateStep;
 
 struct RewardTextEntry;
-struct RewardTextStorage { unsigned char header[0x14]; RewardTextEntry* data; unsigned int size; };
+struct RewardTextStorage {
+    unsigned char header[0x14];
+    RewardTextEntry* data;
+    unsigned int size;
+};
 
 void SaveData_SetCharacterEquipmentRecord(void*, const void*, unsigned int);
 
 void SaveData_SetCaddieRecordAt(void*, const void*, unsigned char);
 
 // Wii MSB-first signed one-bit fields read as -1 when set; preserve their signedness.
-struct RewardStatusPair { CW_BITS3( signed char primary : 1, signed char secondary : 1, unsigned char rest : 6) unsigned char mode; unsigned short h; unsigned int w; };
+struct RewardStatusPair {
+    CW_BITS3(signed char primary : 1, signed char secondary : 1, unsigned char rest : 6) unsigned char mode;
+    unsigned short h;
+    unsigned int w;
+};
 struct SavePrefixFloat {
     float v;
     // Preserve uninitialized storage until a saved prefix is copied in.
     SavePrefixFloat() {}
     // Copy this saved float with the original scalar assignment order.
-    SavePrefixFloat& operator=(const SavePrefixFloat& o) { v = o.v; return *this; }
+    SavePrefixFloat& operator=(const SavePrefixFloat& o) {
+        v = o.v;
+        return *this;
+    }
     // Copy-construct this saved float without changing its precision.
     SavePrefixFloat(const SavePrefixFloat& o) : v(o.v) {}
 };
@@ -182,7 +220,10 @@ struct SaveRewardPrefix {
     unsigned char b218[64];
     unsigned int unlockedCourses;
 };
-struct SaveBitReference { unsigned int* word; unsigned int bit; };
+struct SaveBitReference {
+    unsigned int* word;
+    unsigned int bit;
+};
 // Build a word-array/bit-index reference without testing or changing the bit.
 inline SaveBitReference MakeSaveBitReference(unsigned int* word, unsigned int bit) {
     SaveBitReference result;
@@ -196,15 +237,22 @@ extern char bitsetTestRangeErrorText[];
 extern char bitset14SetRangeErrorText[];
 extern char bitsetTestRangeError[];
 // Return caller-supplied placement storage without allocating.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 }
 
 extern "C" {
 // Set a character reward flag, optionally its secondary flag, and mark the character update bit.
 void SaveRewards_SetCharacterFlags(void* self, unsigned int index, short secondaryFlag);
 
-struct ClubSetRewardStatus { CW_BITS3( signed char primary : 1, signed char secondary : 1, unsigned char rest : 6) unsigned char mode; };
-struct ClubSetRewardWrite { ClubSetRewardStatus pair; unsigned short pad; };
+struct ClubSetRewardStatus {
+    CW_BITS3(signed char primary : 1, signed char secondary : 1, unsigned char rest : 6) unsigned char mode;
+};
+struct ClubSetRewardWrite {
+    ClubSetRewardStatus pair;
+    unsigned short pad;
+};
 extern char bitsetClubSetRewardSetRangeErrorText[];
 void SaveData_SetClubSetRecordAt(void*, void*, unsigned int);
 // Set club-set reward flags and its update bit, skipping an already-set requested flag.
@@ -273,7 +321,7 @@ inline int SetPartNotificationBit(const SaveBitReference& r) {
     unsigned int old = w[off];
     unsigned int nw = old | mask;
     w[off] = nw;
-    return ((int&)Sing_805DC5E0());
+    return ((int&)GetSaveDataSlot());
 }
 
 extern char s_shopPurchaseBitRangeErrorText[];
@@ -302,13 +350,13 @@ inline int SetCaddieItemNotificationBit(const SaveBitReference& r) {
         std::out_of_range error(s_shopPurchaseBitRangeErrorText, tourOpenFactorStrings + kRangeErrorType);
     }
     r.word[0] |= 1u << r.bit;
-    return ((int&)Sing_805DC5E0());
+    return ((int&)GetSaveDataSlot());
 }
 
 // Select the primary or secondary caddie-item flags before testing the bit.
 inline int HasCaddieItemFlag(const SaveRewardPrefix& first, unsigned int index, int flag) {
     return TestCaddieItemBit(flag ? MakeSaveBitReference((unsigned int*)&first.caddieItemSecondaryFlags, index)
-                                : MakeSaveBitReference((unsigned int*)&first.caddieItemPrimaryFlags, index));
+                                  : MakeSaveBitReference((unsigned int*)&first.caddieItemPrimaryFlags, index));
 }
 
 // Set primary/secondary caddie-item flags and the corresponding update bit.
@@ -317,7 +365,7 @@ void SaveRewards_SetCaddieItemFlags(void* requestState, unsigned char index, sho
 // Select the primary or secondary part flags before testing the bit.
 inline int HasPartFlag(SaveRewardPrefix& first, unsigned int index, int flag) {
     return TestPartBitForUpdate(flag ? MakeSaveBitReference(&first.partSecondaryFlags[0], index)
-                                : MakeSaveBitReference(&first.partPrimaryFlags[0], index));
+                                     : MakeSaveBitReference(&first.partPrimaryFlags[0], index));
 }
 
 // Set primary/secondary outfit-part flags and the corresponding update bit.
@@ -347,7 +395,7 @@ inline int SetSetPartNotificationBit(const SaveBitReference& r) {
         throw std::out_of_range(bitsetSetOutOfRangeMessage);
     }
     r.word[r.bit >> 5] |= 1u << (r.bit & 31);
-    return ((int&)Sing_805DC5E0());
+    return ((int&)GetSaveDataSlot());
 }
 
 // Apply part reward flags to each missing member of an IFF costume set.
@@ -375,21 +423,33 @@ void SaveRewards_SetOtherNotificationBit(void* self, unsigned int index);
 // flags high bit selects owned heap data; otherwise flags/length/data hold
 // inline bytes. length counts 16-bit code units on the heap path. kind 0 marks
 // one of the three saved text notifications; other kinds are not marked here.
-struct RewardTextEntry { unsigned int kind, flags, length, data, notificationIndex; };
-struct RewardDialogInterface { 
-virtual ~RewardDialogInterface(); virtual void unused(); virtual int update(float);
+struct RewardTextEntry {
+    unsigned int kind, flags, length, data, notificationIndex;
 };
-union StringAllocatorByte { unsigned int alignment; unsigned char value; };
+struct RewardDialogInterface {
+    virtual ~RewardDialogInterface();
+    virtual void unused();
+    virtual int update(float);
+};
+union StringAllocatorByte {
+    unsigned int alignment;
+    unsigned char value;
+};
 // Owning copy of a queued reward text; retain the type name used by EH relocations.
 struct A54String {
     unsigned int kind, flags, length, data, notificationIndex;
     // Release the temporary reward text's heap buffer if selected by the tag.
-    ~A54String() { if (flags >> 31) appFreeUni__FPv((void*)data); }
+    ~A54String() {
+        if (flags >> 31)
+            appFreeUni__FPv((void*)data);
+    }
 };
 struct RewardDialogAllocation {
     char bytes[0x44];
     // Construct the common dialog in its allocated storage.
-    RewardDialogAllocation(int a, int b) { __ct__19CPangyaCommonDialogFPvi(this, a, b); }
+    RewardDialogAllocation(int a, int b) {
+        __ct__19CPangyaCommonDialogFPvi(this, a, b);
+    }
 };
 
 // Show queued text dialogs in order; return complete once no queued or active dialog remains.
@@ -440,12 +500,17 @@ int SaveRewards_TestCharacterFlag(void* requestState, int index, int secondaryFl
 struct ItemPopupAllocation {
     char data[0x30];
     // Construct an item popup from its type/context words in allocated storage.
-    ItemPopupAllocation(unsigned int a, unsigned int b) { CPopItemDialog_Ctor(this, a, b); }
+    ItemPopupAllocation(unsigned int a, unsigned int b) {
+        __ct__14CPopItemDialogFPvPv(this, a, b);
+    }
 };
-struct ItemPopupRequest { unsigned int a, b, c; };
+struct ItemPopupRequest {
+    unsigned int a, b, c;
+};
 inline int ItemPopupDistance(ItemPopupRequest* first, ItemPopupRequest* last);
-struct ItemPopupInterface { 
-virtual ~ItemPopupInterface(); virtual int update();
+struct ItemPopupInterface {
+    virtual ~ItemPopupInterface();
+    virtual int update();
 };
 extern void* g_soundManager;
 
@@ -457,7 +522,9 @@ extern void* g_soundManager;
 int ItemRequestState_ProcessPopupQueue(void* self);
 
 // Compute the number of 12-byte requests between two vector positions.
-inline int ItemPopupDistance(ItemPopupRequest* first, ItemPopupRequest* last) { return ((int)last - (int)first) / 12; }
+inline int ItemPopupDistance(ItemPopupRequest* first, ItemPopupRequest* last) {
+    return ((int)last - (int)first) / 12;
+}
 
 // Read a ball primary/secondary reward flag from its saved flag byte.
 // As with character queries, the selected saved bit is sign-extended to 0 or -1.
@@ -486,19 +553,23 @@ void* dtor_8030B984(void* self, int freeFlag);
 
 // Translate a valid inventory index to an IFF type ID and execute or queue its reward request.
 // Resolve a valid character inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestCharacterByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag);
+void ItemRequestState_RequestCharacterByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                       int secondaryFlag);
 
 // Translate a valid inventory index to an IFF type ID and execute or queue its reward request.
 // Resolve a valid caddie inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestCaddieByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag);
+void ItemRequestState_RequestCaddieByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                    int secondaryFlag);
 
 // Translate a valid inventory index to an IFF type ID and execute or queue its reward request.
 // Resolve a valid caddieitem inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestCaddieItemByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag);
+void ItemRequestState_RequestCaddieItemByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                        int secondaryFlag);
 
 // Translate a valid inventory index to an IFF type ID and execute or queue its reward request.
 // Resolve a valid setitem inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestSetItemByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag);
+void ItemRequestState_RequestSetItemByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                     int secondaryFlag);
 
 // Translate a valid inventory index to an IFF type ID and execute or queue its reward request.
 // Resolve a valid part inventory index to its IFF type ID and queue the reward.
@@ -506,7 +577,8 @@ void ItemRequestState_RequestPartByInventoryIndex(void* requestState, void* popu
 
 // Translate a valid inventory index to an IFF type ID and execute or queue its reward request.
 // Resolve a valid clubset inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestClubSetByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag);
+void ItemRequestState_RequestClubSetByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                     int secondaryFlag);
 
 // Translate a valid inventory index to an IFF type ID and execute or queue its reward request.
 // Resolve a valid ball inventory index to its IFF type ID and queue the reward.
@@ -524,32 +596,64 @@ QueuedItemReward* Array_GetElement(void* self, int index);
 
 // Layout map: a=borrowed popup context, b=IFF type ID, c=inventory index, d=secondary policy.
 // Scalar widths and signed policy remain unchanged.
-struct PendingItemRequest { unsigned int popupContext, typeId; unsigned short inventoryIndex; short secondaryFlag;
+struct PendingItemRequest {
+    unsigned int popupContext, typeId;
+    unsigned short inventoryIndex;
+    short secondaryFlag;
     // Copy the request's context, type ID, inventory index and policy in ABI order.
-    PendingItemRequest& operator=(const PendingItemRequest& o) { unsigned int popupContext = o.popupContext, typeId = o.typeId; unsigned short inventoryIndex = o.inventoryIndex; short secondaryFlag = o.secondaryFlag; this->popupContext = popupContext; this->typeId = typeId; this->inventoryIndex = inventoryIndex; this->secondaryFlag = secondaryFlag; return *this; }
+    PendingItemRequest& operator=(const PendingItemRequest& o) {
+        unsigned int popupContext = o.popupContext, typeId = o.typeId;
+        unsigned short inventoryIndex = o.inventoryIndex;
+        short secondaryFlag = o.secondaryFlag;
+        this->popupContext = popupContext;
+        this->typeId = typeId;
+        this->inventoryIndex = inventoryIndex;
+        this->secondaryFlag = secondaryFlag;
+        return *this;
+    }
 };
-struct PendingItemRequestVector { PendingItemRequest* data; unsigned int size, capacity; };
-struct PendingItemRequestWords { unsigned int a, b, c;
+struct PendingItemRequestVector {
+    PendingItemRequest* data;
+    unsigned int size, capacity;
+};
+struct PendingItemRequestWords {
+    unsigned int a, b, c;
     // Copy the same 12-byte request as three words, preserving EH copy semantics.
     PendingItemRequestWords(const PendingItemRequestWords& o) {
         try {
-            unsigned int x = o.a, y = o.b; a = x; b = y; c = o.c;
-        } catch (...) { throw; }
+            unsigned int x = o.a, y = o.b;
+            a = x;
+            b = y;
+            c = o.c;
+        } catch (...) {
+            throw;
+        }
     }
 };
 // Return the larger growth candidate by reference, preserving the original selection order.
-inline const unsigned int& LargerRequestCapacity(const unsigned int& a, const unsigned int& b) {
-    const unsigned int* r = &a;
-    if (a < b) r = &b;
+inline const unsigned int& LargerRequestCapacity(const unsigned int& growthCandidate,
+                                                 const unsigned int& additionalSlots) {
+    const unsigned int* r = &growthCandidate;
+    if (growthCandidate < additionalSlots)
+        r = &additionalSlots;
     return *r;
 }
 // RAII buffer for pending item requests; retain the type name used by EH relocations.
 struct B35CTemp {
-    PendingItemRequest* data; unsigned int size, cap; unsigned int* capref; unsigned int remaining;
+    PendingItemRequest* data;
+    unsigned int size, cap;
+    unsigned int* capref;
+    unsigned int remaining;
     // Start an empty temporary allocation for request-vector growth.
     B35CTemp(unsigned int* ref) : data(0), size(0), cap(0), capref(ref), remaining(0) {}
     // Free backing storage; request words themselves own no allocations here.
-    ~B35CTemp() { if (data) { volatile char allocator __attribute__((aligned(4))) = 0; size = size - size; appFreeUni__FPv(data); } }
+    ~B35CTemp() {
+        if (data) {
+            volatile char allocator __attribute__((aligned(4))) = 0;
+            size = size - size;
+            appFreeUni__FPv(data);
+        }
+    }
 };
 #pragma push
 #pragma use_lmw_stmw on
@@ -562,7 +666,6 @@ void* SetItemBitReference_GetStorage(void* arg1, void* arg2);
 
 // Read a caddie primary/secondary reward flag, retaining the original two-word volatile copy.
 int SaveRewards_TestCaddieFlag(void* requestState, int index, int secondaryFlag);
-
 
 // Destroy queued reward texts from last to first, then release their vector buffer.
 void* dtor_8030B858(void* self, int freeFlag);
@@ -605,8 +708,8 @@ int ItemRequestState_ProcessPopupQueue(void* self) {
             ItemPopupRequest words = *(ItemPopupRequest*)AsItemRequestState80300EC8(self)->pendingRequests;
             void* object = new ItemPopupAllocation(words.b, words.a);
             AsItemRequestState80300EC8(self)->primaryProcessor = object;
-            Sound_PlayByName(g_soundManager, tourOpenFactorStrings + kRewardPopupSound,
-                        0, 0, 0, 0, kFloat_0_5_RewardPopupSound, kFloat_200_RewardPopupSound, kFloat_1_RewardPopupSound);
+            Sound_PlayByName(g_soundManager, tourOpenFactorStrings + kRewardPopupSound, 0, 0, 0, 0,
+                             kFloat_0_5_RewardPopupSound, kFloat_200_RewardPopupSound, kFloat_1_RewardPopupSound);
             ItemPopupRequest* array = (ItemPopupRequest*)AsItemRequestState80300EC8(self)->pendingRequests;
             ItemPopupRequest* end = array + AsItemRequestState80300EC8(self)->pendingRequestCount;
             memmove(array, array + 1, (ItemPopupDistance(array, end) - 1) * sizeof(ItemPopupRequest));
@@ -635,17 +738,35 @@ void ItemRequestState_ApplyPendingRewards(void* self) {
         QueuedItemReward entry = *Array_GetElement(&AsItemRequestState80300EC8(self)->pendingRequests, i);
         unsigned int kind = entry.typeId >> 26;
         switch (kind) {
-        case kRewardPart: SaveRewards_SetPartFlags(self, entry.inventoryIndex, (short)entry.secondaryFlag); break;
-        case kRewardSetItem: SaveRewards_SetCostumeSetFlags(self, entry.inventoryIndex, (short)entry.secondaryFlag); break;
-        case kRewardClubSet: SaveRewards_SetClubSetFlags(self, (unsigned char)entry.inventoryIndex, (short)entry.secondaryFlag); break;
-        case kRewardBall: SaveRewards_SetBallFlags(self, (unsigned char)entry.inventoryIndex, (short)entry.secondaryFlag); break;
-        case kRewardCharacter: SaveRewards_SetCharacterFlags(self, (unsigned char)entry.inventoryIndex, (short)entry.secondaryFlag); break;
-        case kRewardCaddie: SaveRewards_SetCaddieFlags(self, (unsigned char)entry.inventoryIndex, (short)entry.secondaryFlag); break;
-        case kRewardCaddieItem: SaveRewards_SetCaddieItemFlags(self, (unsigned char)entry.inventoryIndex, (short)entry.secondaryFlag); break;
+        case kRewardPart:
+            SaveRewards_SetPartFlags(self, entry.inventoryIndex, (short)entry.secondaryFlag);
+            break;
+        case kRewardSetItem:
+            SaveRewards_SetCostumeSetFlags(self, entry.inventoryIndex, (short)entry.secondaryFlag);
+            break;
+        case kRewardClubSet:
+            SaveRewards_SetClubSetFlags(self, (unsigned char)entry.inventoryIndex, (short)entry.secondaryFlag);
+            break;
+        case kRewardBall:
+            SaveRewards_SetBallFlags(self, (unsigned char)entry.inventoryIndex, (short)entry.secondaryFlag);
+            break;
+        case kRewardCharacter:
+            SaveRewards_SetCharacterFlags(self, (unsigned char)entry.inventoryIndex, (short)entry.secondaryFlag);
+            break;
+        case kRewardCaddie:
+            SaveRewards_SetCaddieFlags(self, (unsigned char)entry.inventoryIndex, (short)entry.secondaryFlag);
+            break;
+        case kRewardCaddieItem:
+            SaveRewards_SetCaddieItemFlags(self, (unsigned char)entry.inventoryIndex, (short)entry.secondaryFlag);
+            break;
         case kRewardCourse:
 
-         SaveRewards_UnlockCourse(self, (unsigned char)entry.inventoryIndex); break;
-        case kRewardUnused: case kRewardClub: case kRewardConsumable: break;
+            SaveRewards_UnlockCourse(self, (unsigned char)entry.inventoryIndex);
+            break;
+        case kRewardUnused:
+        case kRewardClub:
+        case kRewardConsumable:
+            break;
         }
         ++i;
     }
@@ -680,7 +801,9 @@ int ItemRequestDialogs_ProcessQueue(void* self) {
                 name.length = length;
                 name.data = entry->data;
             } else {
-                name.flags = 0; name.length = 0; name.data = 0;
+                name.flags = 0;
+                name.length = 0;
+                name.data = 0;
                 WString_ReserveCapacity(&name.flags, entry->length);
                 StringAllocatorByte ch;
                 volatile StringAllocatorByte dummy;
@@ -690,41 +813,55 @@ int ItemRequestDialogs_ProcessQueue(void* self) {
             name.notificationIndex = entry->notificationIndex;
             void* object = new RewardDialogAllocation(3, 10);
             AsItemRequestState80300EC8(self)->secondaryProcessor = object;
-            CPangyaCommonDialog_SetText(object, !(name.flags >> 31) ? (void*)((char*)&name.flags + 2) : (void*)name.data);
+            ((CPangyaCommonDialog*)object)
+                ->SetText(!(name.flags >> 31) ? (void*)((char*)&name.flags + 2) : (void*)name.data);
             // Phase 2: compact the queue, preserving each wide string's inline/heap ownership.
             RewardTextEntry* base = (RewardTextEntry*)AsItemRequestState80300EC8(self)->textEntries;
             int count = AsItemRequestState80300EC8(self)->textEntryCount;
             RewardTextEntry* end = base + count;
             if ((end - base) - 1) {
-            RewardTextEntry* dst = base;
-            for (RewardTextEntry* src = base + 1; src < end; ++src, ++dst) {
-                dst->kind = src->kind;
-                if (!(dst->flags >> 31) && !(src->flags >> 31)) {
-                    unsigned int flags = src->flags, length = src->length;
-                    dst->flags = flags; dst->length = length; dst->data = src->data;
-                } else {
-                    unsigned int length = (dst->flags >> 31) ? dst->length : (*(unsigned char*)&dst->flags & 127);
-                    unsigned int data, size;
-                    if (!(src->flags >> 31)) { data = (unsigned int)((char*)src + 6); size = *(unsigned char*)&src->flags & 127; }
-                    else { data = src->data; size = src->length; }
-                    volatile StringAllocatorByte dummy;
-                    StringAllocatorByte ch;
-                    ch.value = dummy.value;
-                    WString_ReplaceRange((char*)dst + 4, 0, length, data, data + size * 2, &ch.value);
+                RewardTextEntry* dst = base;
+                for (RewardTextEntry* src = base + 1; src < end; ++src, ++dst) {
+                    dst->kind = src->kind;
+                    if (!(dst->flags >> 31) && !(src->flags >> 31)) {
+                        unsigned int flags = src->flags, length = src->length;
+                        dst->flags = flags;
+                        dst->length = length;
+                        dst->data = src->data;
+                    } else {
+                        unsigned int length = (dst->flags >> 31) ? dst->length : (*(unsigned char*)&dst->flags & 127);
+                        unsigned int data, size;
+                        if (!(src->flags >> 31)) {
+                            data = (unsigned int)((char*)src + 6);
+                            size = *(unsigned char*)&src->flags & 127;
+                        } else {
+                            data = src->data;
+                            size = src->length;
+                        }
+                        volatile StringAllocatorByte dummy;
+                        StringAllocatorByte ch;
+                        ch.value = dummy.value;
+                        WString_ReplaceRange((char*)dst + 4, 0, length, data, data + size * 2, &ch.value);
+                    }
+                    dst->notificationIndex = src->notificationIndex;
                 }
-                dst->notificationIndex = src->notificationIndex;
-            }
             }
             --AsItemRequestState80300EC8(self)->textEntryCount;
-            RewardTextEntry* last = (RewardTextEntry*)AsItemRequestState80300EC8(self)->textEntries + AsItemRequestState80300EC8(self)->textEntryCount;
-            if (last && (char*)last + 4 && (last->flags >> 31)) appFreeUni__FPv((void*)last->data);
-        } else result = 1;
+            RewardTextEntry* last = (RewardTextEntry*)AsItemRequestState80300EC8(self)->textEntries +
+                                    AsItemRequestState80300EC8(self)->textEntryCount;
+            if (last && (char*)last + 4 && (last->flags >> 31))
+                appFreeUni__FPv((void*)last->data);
+        } else
+            result = 1;
     }
     // Phase 3: tick the active dialog and release it after it reports completion.
     RewardDialogInterface* object = (RewardDialogInterface*)AsItemRequestState80300EC8(self)->secondaryProcessor;
     if (object && object->update(kRewardDialogZeroUpdateStep)) {
         object = (RewardDialogInterface*)AsItemRequestState80300EC8(self)->secondaryProcessor;
-        if (object) { delete object; AsItemRequestState80300EC8(self)->secondaryProcessor = 0; }
+        if (object) {
+            delete object;
+            AsItemRequestState80300EC8(self)->secondaryProcessor = 0;
+        }
     }
     return result;
 }
@@ -734,124 +871,146 @@ void ItemRequestState_MarkTextNotifications(RewardTextStorage* self) {
     unsigned int count = 0;
     unsigned int offset = 0;
     if (self->size)
-    while (count < self->size) { A54String name;
-        RewardTextEntry* entry = (RewardTextEntry*)((char*)self->data + offset);
+        while (count < self->size) {
+            A54String name;
+            RewardTextEntry* entry = (RewardTextEntry*)((char*)self->data + offset);
 
-        name.kind = entry->kind;
-        if (!(entry->flags >> 31)) {
-            unsigned int length = entry->length;
+            name.kind = entry->kind;
+            if (!(entry->flags >> 31)) {
+                unsigned int length = entry->length;
 
-            unsigned int flags = entry->flags; name.flags = flags; name.length = length;
-            name.data = entry->data;
-        } else { StringAllocatorByte ch;
-            volatile StringAllocatorByte dummy;
-            name.flags = 0; name.length = 0; name.data = 0;
+                unsigned int flags = entry->flags;
+                name.flags = flags;
+                name.length = length;
+                name.data = entry->data;
+            } else {
+                StringAllocatorByte ch;
+                volatile StringAllocatorByte dummy;
+                name.flags = 0;
+                name.length = 0;
+                name.data = 0;
 
-            WString_ReserveCapacity(&name.flags, entry->length);
-            ch.value = dummy.value;
-            WString_ReplaceRange(&name.flags, 0, 0, entry->data, entry->data + entry->length * 2, &ch.value);
-        }
+                WString_ReserveCapacity(&name.flags, entry->length);
+                ch.value = dummy.value;
+                WString_ReplaceRange(&name.flags, 0, 0, entry->data, entry->data + entry->length * 2, &ch.value);
+            }
             int index = entry->notificationIndex;
             name.notificationIndex = index;
-        switch (name.kind) case 0: {
-            if (0 == ((int&)Sing_805DC5E0())) {
-                if (!s_saveDataInitialized) {
-                    SaveData_Ctor(s_saveData);
-                    s_saveDataInitialized = 1;
-                }
-                ((int&)Sing_805DC5E0()) = (int)s_saveData;
-            }
-
-            SaveRewardPrefix first = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())); const SaveBitReference& testRef = MakeNotificationBitReference(&first.textNotificationFlags, index);
-            if (!TestTextNotificationBit(testRef)) { unsigned int instance = ((int&)Sing_805DC5E0());
-                if (0 == ((int&)Sing_805DC5E0())) {
-                    if (s_saveDataInitialized == 0) {
-                        SaveData_Ctor(s_saveData);
-                        s_saveDataInitialized = 1;
-                    }
-                    ((int&)Sing_805DC5E0()) = (int)s_saveData;
-                }
-
-                SaveRewardPrefix second = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())); SaveBitReference ref = MakeNotificationBitReference(&second.textNotificationFlags, index);
-                SaveBitReference r = ref;
-                if (r.bit >= 3) {
-                    std::out_of_range error(bitsetNotificationSetRangeErrorText, tourOpenFactorStrings + kRangeErrorType);
-                }
-
-                *r.word |= 1u << r.bit;
-                if (!instance) {
+            switch (name.kind)
+            case 0: {
+                if (0 == ((int&)GetSaveDataSlot())) {
                     if (!s_saveDataInitialized) {
                         SaveData_Ctor(s_saveData);
                         s_saveDataInitialized = 1;
                     }
-                    ((int&)Sing_805DC5E0()) = (int)s_saveData;
+                    ((int&)GetSaveDataSlot()) = (int)s_saveData;
                 }
-                SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)Sing_805DC5E0()), &second);
+
+                SaveRewardPrefix first =
+                    *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
+                const SaveBitReference& testRef = MakeNotificationBitReference(&first.textNotificationFlags, index);
+                if (!TestTextNotificationBit(testRef)) {
+                    unsigned int instance = ((int&)GetSaveDataSlot());
+                    if (0 == ((int&)GetSaveDataSlot())) {
+                        if (s_saveDataInitialized == 0) {
+                            SaveData_Ctor(s_saveData);
+                            s_saveDataInitialized = 1;
+                        }
+                        ((int&)GetSaveDataSlot()) = (int)s_saveData;
+                    }
+
+                    SaveRewardPrefix second = *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)(
+                        (void*)((int&)GetSaveDataSlot()));
+                    SaveBitReference ref = MakeNotificationBitReference(&second.textNotificationFlags, index);
+                    SaveBitReference r = ref;
+                    if (r.bit >= 3) {
+                        std::out_of_range error(bitsetNotificationSetRangeErrorText,
+                                                tourOpenFactorStrings + kRangeErrorType);
+                    }
+
+                    *r.word |= 1u << r.bit;
+                    if (!instance) {
+                        if (!s_saveDataInitialized) {
+                            SaveData_Ctor(s_saveData);
+                            s_saveDataInitialized = 1;
+                        }
+                        ((int&)GetSaveDataSlot()) = (int)s_saveData;
+                    }
+                    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)GetSaveDataSlot()), &second);
+                }
             }
+                ++count;
+            offset += 0x14;
         }
-        ++count;
-        offset += 0x14;
-    }
 }
 
 // Set the requested character policy and its update bit unless that policy is already present.
 void SaveRewards_SetCharacterFlags(void* self, unsigned int index, short secondaryFlag) {
     // Acquire save storage, test the requested policy, then publish changed flags and update bits.
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    struct Record { unsigned short h[26]; };
-    Record second;
-    unsigned short* entry = AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->characters[index].words;
-    unsigned short first[26] = {
-        entry[0], entry[1], entry[2], entry[3], entry[4], entry[5], entry[6], entry[7],
-        entry[8], entry[9], entry[10], entry[11], entry[12], entry[13], entry[14], entry[15],
-        entry[16], entry[17], entry[18], entry[19], entry[20], entry[21], entry[22], entry[23], entry[24], entry[25]
+    struct Record {
+        unsigned short h[26];
     };
-    if (secondaryFlag ? ((RewardStatusPair*)first)->secondary : ((RewardStatusPair*)first)->primary) return;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    Record second;
+    unsigned short* entry =
+        AsRewardSaveRecord(((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+            ->characters[index]
+            .words;
+    unsigned short first[26] = {entry[0],  entry[1],  entry[2],  entry[3],  entry[4],  entry[5],  entry[6],
+                                entry[7],  entry[8],  entry[9],  entry[10], entry[11], entry[12], entry[13],
+                                entry[14], entry[15], entry[16], entry[17], entry[18], entry[19], entry[20],
+                                entry[21], entry[22], entry[23], entry[24], entry[25]};
+    if (secondaryFlag ? ((RewardStatusPair*)first)->secondary : ((RewardStatusPair*)first)->primary)
+        return;
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    second = *(Record*)&AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->characters[index];
+    second =
+        *(Record*)&AsRewardSaveRecord(((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+             ->characters[index];
     ((RewardStatusPair*)&second)->primary = 1;
-    if (secondaryFlag) ((RewardStatusPair*)&second)->secondary = 1;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (secondaryFlag)
+        ((RewardStatusPair*)&second)->secondary = 1;
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetCharacterEquipmentRecord((void*)((int&)Sing_805DC5E0()), &second, index);
-    if (((int&)Sing_805DC5E0()) == 0) {
+    SaveData_SetCharacterEquipmentRecord((void*)((int&)GetSaveDataSlot()), &second, index);
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRewardPrefix copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    SaveRewardPrefix copy =
+        *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     SaveBitReference r = MakeSaveBitReference(&copy.characterUpdateFlags, index);
     if (r.bit >= kCharacterCount) {
         std::out_of_range error(bitsetCharacterCaddieSetRangeErrorText, tourOpenFactorStrings + kRangeErrorType);
     }
     *r.word |= 1u << r.bit;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)Sing_805DC5E0()), &copy);
+    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)GetSaveDataSlot()), &copy);
     (void)self;
 }
 
@@ -859,41 +1018,48 @@ void SaveRewards_SetCharacterFlags(void* self, unsigned int index, short seconda
 void SaveRewards_SetCaddieFlags(void* self, unsigned char index, short secondaryFlag) {
     // Acquire save storage, test the requested policy, then publish changed flags and update bits.
     (void)self;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    RewardStatusPair pair = *(RewardStatusPair*)&AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->caddies[index];
-    if (secondaryFlag ? pair.secondary : pair.primary) return;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    RewardStatusPair pair = *(RewardStatusPair*)&AsRewardSaveRecord(
+                                 ((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+                                 ->caddies[index];
+    if (secondaryFlag ? pair.secondary : pair.primary)
+        return;
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    RewardStatusPair value = *(RewardStatusPair*)&AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->caddies[index];
+    RewardStatusPair value = *(RewardStatusPair*)&AsRewardSaveRecord(
+                                  ((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+                                  ->caddies[index];
     value.primary = 1;
-    if (secondaryFlag) value.secondary = 1;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (secondaryFlag)
+        value.secondary = 1;
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetCaddieRecordAt((void*)((int&)Sing_805DC5E0()), &value, index);
-    if (((int&)Sing_805DC5E0()) == 0) {
+    SaveData_SetCaddieRecordAt((void*)((int&)GetSaveDataSlot()), &value, index);
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRewardPrefix copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    SaveRewardPrefix copy =
+        *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     SaveBitReference ref;
     ref.word = &copy.caddieUpdateFlags;
     ref.bit = index;
@@ -902,37 +1068,40 @@ void SaveRewards_SetCaddieFlags(void* self, unsigned char index, short secondary
         std::out_of_range error(bitsetCharacterCaddieSetRangeErrorText, tourOpenFactorStrings + kRangeErrorType);
     }
     *r.word |= 1u << r.bit;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)Sing_805DC5E0()), &copy);
+    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)GetSaveDataSlot()), &copy);
 }
 
 // Set primary/secondary caddie-item bits and mark the changed inventory index.
 void SaveRewards_SetCaddieItemFlags(void* requestState, unsigned char index, short secondaryFlag) {
     // Acquire save storage, test the requested policy, then publish changed flags and update bits.
     (void)requestState;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    if (HasCaddieItemFlag(SaveRewardPrefix(*(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()))), index, secondaryFlag))
+    if (HasCaddieItemFlag(SaveRewardPrefix(*(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)(
+                              (void*)((int&)GetSaveDataSlot()))),
+                          index, secondaryFlag))
         return;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRewardPrefix copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    SaveRewardPrefix copy =
+        *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     SetCaddieItemBit(MakeSaveBitReference(&copy.caddieItemPrimaryFlags, index));
     if (secondaryFlag)
         SetCaddieItemBit(MakeSaveBitReference(&copy.caddieItemSecondaryFlags, index));
@@ -942,9 +1111,9 @@ void SaveRewards_SetCaddieItemFlags(void* requestState, unsigned char index, sho
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)Sing_805DC5E0()), &copy);
+    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)GetSaveDataSlot()), &copy);
 }
 
 // Record set-item update state, then grant flags to its member parts.
@@ -954,7 +1123,10 @@ void SaveRewards_SetCostumeSetFlags(void* requestState, int index, int secondary
         void* handle = SaveData_GetCurrentRecord(SaveData_GetInstance());
         char local[0x270];
         SaveRewards_CopyPrefix(local, handle);
-        struct { void* data; int index; } result;
+        struct {
+            void* data;
+            int index;
+        } result;
         result.data = (void*)SetItemBitReference_GetStorage(local + 0x1a8, (void*)index);
         result.index = index;
         Bitset161Reference_Assign(&result, 1);
@@ -967,29 +1139,32 @@ void SaveRewards_SetCostumeSetFlags(void* requestState, int index, int secondary
 void SaveRewards_SetSetMemberPartFlags(void* requestState, int index, int secondaryFlag) {
     (void)requestState;
     void* selection = (void*)ItemInventory_GetSetItemIdAt(g_sharedDoc->itemInventory, index);
-    IFF_STRUCT::sSetItem* setItem = (IFF_STRUCT::sSetItem*)ItemInventory_FindSetItemData(g_sharedDoc->itemInventory, (int)selection);
+    IFF_STRUCT::sSetItem* setItem =
+        (IFF_STRUCT::sSetItem*)ItemInventory_FindSetItemData(g_sharedDoc->itemInventory, (int)selection);
     unsigned char count = 0;
     while (count < setItem->itemCount) {
-        unsigned short bit = (unsigned short)ItemInventory_FindPartIndex(g_sharedDoc->itemInventory,
-                                                          (int)setItem->itemIds[count]);
-        if (((int&)Sing_805DC5E0()) == 0) {
+        unsigned short bit =
+            (unsigned short)ItemInventory_FindPartIndex(g_sharedDoc->itemInventory, (int)setItem->itemIds[count]);
+        if (((int&)GetSaveDataSlot()) == 0) {
             if (!s_saveDataInitialized) {
                 SaveData_Ctor(s_saveData);
                 s_saveDataInitialized = 1;
             }
-            ((int&)Sing_805DC5E0()) = (int)s_saveData;
+            ((int&)GetSaveDataSlot()) = (int)s_saveData;
         }
-        SaveRewardPrefix first = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+        SaveRewardPrefix first =
+            *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
         if (!TestSetPartBitForUpdate(secondaryFlag ? MakeSaveBitReference(&first.partSecondaryFlags[0], bit)
-                                  : MakeSaveBitReference(&first.partPrimaryFlags[0], bit))) {
-            if (((int&)Sing_805DC5E0()) == 0) {
+                                                   : MakeSaveBitReference(&first.partPrimaryFlags[0], bit))) {
+            if (((int&)GetSaveDataSlot()) == 0) {
                 if (!s_saveDataInitialized) {
                     SaveData_Ctor(s_saveData);
                     s_saveDataInitialized = 1;
                 }
-                ((int&)Sing_805DC5E0()) = (int)s_saveData;
+                ((int&)GetSaveDataSlot()) = (int)s_saveData;
             }
-            SaveRewardPrefix copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+            SaveRewardPrefix copy =
+                *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
             SetSetPartBit(MakeSaveBitReference(&copy.partPrimaryFlags[0], bit));
             if (secondaryFlag)
                 SetSetPartBit(MakeSaveBitReference(&copy.partSecondaryFlags[0], bit));
@@ -999,9 +1174,9 @@ void SaveRewards_SetSetMemberPartFlags(void* requestState, int index, int second
                     SaveData_Ctor(s_saveData);
                     s_saveDataInitialized = 1;
                 }
-                ((int&)Sing_805DC5E0()) = (int)s_saveData;
+                ((int&)GetSaveDataSlot()) = (int)s_saveData;
             }
-            SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)Sing_805DC5E0()), &copy);
+            SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)GetSaveDataSlot()), &copy);
         }
         count++;
     }
@@ -1012,24 +1187,25 @@ void SaveRewards_SetPartFlags(void* self, unsigned short index, short secondaryF
     // Acquire save storage, test the requested policy, then publish changed flags and update bits.
     (void)self;
     SaveRewardPrefix copy;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRewardPrefix first = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    SaveRewardPrefix first =
+        *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     if (HasPartFlag(first, index, secondaryFlag))
         return;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    copy = *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     SetPartBit(MakeSaveBitReference(&copy.partPrimaryFlags[0], index));
     if (secondaryFlag)
         SetPartBit(MakeSaveBitReference(&copy.partSecondaryFlags[0], index));
@@ -1039,9 +1215,9 @@ void SaveRewards_SetPartFlags(void* self, unsigned short index, short secondaryF
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)Sing_805DC5E0()), &copy);
+    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)GetSaveDataSlot()), &copy);
 }
 
 // Set the requested club-set policy and its update bit unless already present.
@@ -1050,41 +1226,48 @@ void SaveRewards_SetClubSetFlags(void* self, unsigned char index, short secondar
     (void)self;
     ClubSetRewardWrite value;
     ClubSetRewardWrite pair;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    pair.pair = *(ClubSetRewardStatus*)&AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->clubSets[index];
-    if (secondaryFlag ? pair.pair.secondary : pair.pair.primary) return;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    pair.pair = *(ClubSetRewardStatus*)&AsRewardSaveRecord(
+                     ((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+                     ->clubSets[index];
+    if (secondaryFlag ? pair.pair.secondary : pair.pair.primary)
+        return;
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    value.pair = *(ClubSetRewardStatus*)&AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->clubSets[index];
+    value.pair = *(ClubSetRewardStatus*)&AsRewardSaveRecord(
+                      ((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+                      ->clubSets[index];
     value.pair.primary = 1;
-    if (secondaryFlag) value.pair.secondary = 1;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (secondaryFlag)
+        value.pair.secondary = 1;
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetClubSetRecordAt((void*)((int&)Sing_805DC5E0()), &value.pair, index);
-    if (((int&)Sing_805DC5E0()) == 0) {
+    SaveData_SetClubSetRecordAt((void*)((int&)GetSaveDataSlot()), &value.pair, index);
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRewardPrefix copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    SaveRewardPrefix copy =
+        *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     SaveBitReference r = MakeSaveBitReference(&copy.clubSetUpdateFlags, index);
     if (r.bit >= kClubSetCount) {
         std::out_of_range error(bitsetClubSetRewardSetRangeErrorText, tourOpenFactorStrings + kRangeErrorType);
@@ -1095,59 +1278,69 @@ void SaveRewards_SetClubSetFlags(void* self, unsigned char index, short secondar
     unsigned int old = w[0];
     unsigned int nw = old | mask;
     w[0] = nw;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)Sing_805DC5E0()), &copy);
+    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)GetSaveDataSlot()), &copy);
 }
 
 // Set the requested ball policy and its update bit unless already present.
 void SaveRewards_SetBallFlags(void* self, unsigned int index, unsigned int secondaryFlag) {
     // Acquire save storage, test the requested policy, then publish changed flags and update bits.
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    struct Bits { CW_BITS3( signed char primary : 1, signed char secondary : 1, unsigned char rest : 6) };
-    struct BitsValue { Bits pair; unsigned short pad; };
-    Bits probe = *(Bits*)&AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->ballFlags[index];
+    struct Bits {
+        CW_BITS3(signed char primary : 1, signed char secondary : 1, unsigned char rest : 6)
+    };
+    struct BitsValue {
+        Bits pair;
+        unsigned short pad;
+    };
+    Bits probe =
+        *(Bits*)&AsRewardSaveRecord(((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+             ->ballFlags[index];
     if (secondaryFlag ? probe.secondary : probe.primary)
         return;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
     BitsValue value;
-    value.pair = *(Bits*)&AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->ballFlags[index];
+    value.pair =
+        *(Bits*)&AsRewardSaveRecord(((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+             ->ballFlags[index];
     value.pair.primary = 1;
     if (secondaryFlag)
         value.pair.secondary = 1;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetBallRecordAt((void*)((int&)Sing_805DC5E0()), &value, index);
-    if (((int&)Sing_805DC5E0()) == 0) {
+    SaveData_SetBallRecordAt((void*)((int&)GetSaveDataSlot()), &value, index);
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRewardPrefix copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    SaveRewardPrefix copy =
+        *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     SaveBitReference r = MakeSaveBitReference(&copy.ballUpdateFlags, index);
     if (r.bit >= kBallCount) {
         extern char bitsetBallRewardSetRangeErrorText[];
@@ -1159,14 +1352,14 @@ void SaveRewards_SetBallFlags(void* self, unsigned int index, unsigned int secon
     unsigned int old = w[0];
     unsigned int nw = old | mask;
     w[0] = nw;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)Sing_805DC5E0()), &copy);
+    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)GetSaveDataSlot()), &copy);
 }
 
 // Set the saved course bit after checking its inventory index.
@@ -1174,54 +1367,56 @@ void SaveRewards_UnlockCourse(void* self, unsigned char index) {
     // Acquire save storage, test the requested policy, then publish changed flags and update bits.
     (void)self;
     SaveRewardPrefix second;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRewardPrefix first = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    SaveRewardPrefix first =
+        *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     SaveBitReference r1 = MakeSaveBitReference(&first.unlockedCourses, index);
     if (r1.bit >= kCourseCount) {
         std::out_of_range error(bitsetTestRangeErrorText, tourOpenFactorStrings + kRangeErrorType);
     }
     if ((*r1.word & (1u << r1.bit)) == 0) {
-        if (((int&)Sing_805DC5E0()) == 0) {
+        if (((int&)GetSaveDataSlot()) == 0) {
             if (!s_saveDataInitialized) {
                 SaveData_Ctor(s_saveData);
                 s_saveDataInitialized = 1;
             }
-            ((int&)Sing_805DC5E0()) = (int)s_saveData;
+            ((int&)GetSaveDataSlot()) = (int)s_saveData;
         }
-        second = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+        second = *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
         SaveBitReference r2 = MakeSaveBitReference(&second.unlockedCourses, index);
         if (r2.bit >= kCourseCount) {
             std::out_of_range error(bitset14SetRangeErrorText, tourOpenFactorStrings + kRangeErrorType);
         }
         *r2.word |= 1u << r2.bit;
-        if (((int&)Sing_805DC5E0()) == 0) {
+        if (((int&)GetSaveDataSlot()) == 0) {
             if (!s_saveDataInitialized) {
                 SaveData_Ctor(s_saveData);
                 s_saveDataInitialized = 1;
             }
-            ((int&)Sing_805DC5E0()) = (int)s_saveData;
+            ((int&)GetSaveDataSlot()) = (int)s_saveData;
         }
-        SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)Sing_805DC5E0()), &second);
+        SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)GetSaveDataSlot()), &second);
     }
 }
 
 // Set one saved notification bit after checking its index.
 void SaveRewards_SetOtherNotificationBit(void* self, unsigned int index) {
     // Acquire save storage, test the requested policy, then publish changed flags and update bits.
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRewardPrefix copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    SaveRewardPrefix copy =
+        *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     const SaveBitReference& ref = MakeSaveBitReference(copy.otherNotificationFlags, index);
     SaveBitReference r = ref;
     if (r.bit >= kOtherNotificationBits) {
@@ -1232,33 +1427,35 @@ void SaveRewards_SetOtherNotificationBit(void* self, unsigned int index) {
     unsigned int bit = index & 31;
     unsigned int mask = 1u << bit;
     words[offset] = words[offset] | mask;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)Sing_805DC5E0()), &copy);
+    SaveData_SetInventoryAndStatisticsPrefix((void*)((int&)GetSaveDataSlot()), &copy);
 }
 
 #pragma push
 #pragma use_lmw_stmw on
 // Test the requested character reward policy without changing saved state.
 int SaveRewards_TestCharacterFlag(void* requestState, int index, int secondaryFlag) {
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
     struct Record {
         unsigned short v0, v1, v2, v3, v4, v5, v6, v7, v8;
         unsigned short v9, v10, v11, v12, v13, v14, v15, v16, v17;
         unsigned short v18, v19, v20, v21, v22, v23, v24, v25;
     };
-    Record values = *(Record*)&AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->characters[index];
+    Record values =
+        *(Record*)&AsRewardSaveRecord(((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+             ->characters[index];
     if (secondaryFlag)
         return (int)((*(unsigned char*)&values << 25) & 0xC0000000) >> 31;
     return (int)((*(unsigned char*)&values << 24) & 0xC0000000) >> 31;
@@ -1267,14 +1464,17 @@ int SaveRewards_TestCharacterFlag(void* requestState, int index, int secondaryFl
 
 // Test the requested caddie reward policy without changing saved state.
 int SaveRewards_TestCaddieFlag(void* requestState, int index, int secondaryFlag) {
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    unsigned int* value = AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->caddies[(unsigned char)index].words;
+    unsigned int* value =
+        AsRewardSaveRecord(((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+            ->caddies[(unsigned char)index]
+            .words;
     volatile unsigned int words[2];
     words[0] = value[0];
     words[1] = value[1];
@@ -1286,52 +1486,56 @@ int SaveRewards_TestCaddieFlag(void* requestState, int index, int secondaryFlag)
 // Test the selected primary or secondary caddie-item bit.
 int SaveRewards_TestCaddieItemFlag(void* requestState, unsigned int index, int secondaryFlag) {
     (void)requestState;
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    SaveRewardPrefix copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    SaveRewardPrefix copy =
+        *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     return TestCaddieItemFlagBit(secondaryFlag ? MakeSaveBitReference(&copy.caddieItemSecondaryFlags, index)
-                               : MakeSaveBitReference(&copy.caddieItemPrimaryFlags, index));
+                                               : MakeSaveBitReference(&copy.caddieItemPrimaryFlags, index));
 }
 
 // Test the selected primary or secondary part bit.
 int SaveRewards_TestPartFlag(void* requestState, unsigned int index, int secondaryFlag) {
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
     (void)requestState;
-    SaveRewardPrefix copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    SaveRewardPrefix copy =
+        *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     return TestPartBit(secondaryFlag ? MakeSaveBitReference(&copy.partSecondaryFlags[0], index)
-                                : MakeSaveBitReference(&copy.partPrimaryFlags[0], index));
+                                     : MakeSaveBitReference(&copy.partPrimaryFlags[0], index));
 }
 
 // Return whether every member part of the selected set has the requested policy.
 int SaveData_TestAllSetItemPartFlags(void* requestState, void* arg2, int secondaryFlag) {
     void* selection = (void*)ItemInventory_GetSetItemIdAt(g_sharedDoc->itemInventory, (int)arg2);
     int result = 1;
-    IFF_STRUCT::sSetItem* table = (IFF_STRUCT::sSetItem*)ItemInventory_FindSetItemData(g_sharedDoc->itemInventory, (int)selection);
+    IFF_STRUCT::sSetItem* table =
+        (IFF_STRUCT::sSetItem*)ItemInventory_FindSetItemData(g_sharedDoc->itemInventory, (int)selection);
     (void)requestState;
     for (unsigned char i = 0; i < table->itemCount; ++i) {
         unsigned int value = ((IFF_STRUCT::sSetItem*)table)->itemIds[i];
         unsigned short index = (unsigned short)ItemInventory_FindPartIndex(g_sharedDoc->itemInventory, (int)value);
-        if (((int&)Sing_805DC5E0()) == 0) {
+        if (((int&)GetSaveDataSlot()) == 0) {
             if (!s_saveDataInitialized) {
                 SaveData_Ctor(s_saveData);
                 s_saveDataInitialized = 1;
             }
-            ((int&)Sing_805DC5E0()) = (int)s_saveData;
+            ((int&)GetSaveDataSlot()) = (int)s_saveData;
         }
-        SaveRewardPrefix copy = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+        SaveRewardPrefix copy =
+            *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
         if (TestSetPartBit(secondaryFlag ? MakeSaveBitReference(&copy.partSecondaryFlags[0], index)
-                                 : MakeSaveBitReference(&copy.partPrimaryFlags[0], index)) == 0)
+                                         : MakeSaveBitReference(&copy.partPrimaryFlags[0], index)) == 0)
             result = 0;
     }
     return result;
@@ -1339,19 +1543,21 @@ int SaveData_TestAllSetItemPartFlags(void* requestState, void* arg2, int seconda
 
 // Test the requested club-set reward policy without changing saved state.
 int SaveRewards_TestClubSetFlag(void* requestState, int index, int secondaryFlag) {
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
     int savedIndex = index;
-    void* base = ((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    void* base = ((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     unsigned char* entry = (unsigned char*)&AsRewardSaveRecord(base)->clubSets[(unsigned char)savedIndex];
     unsigned char b0 = entry[0];
     unsigned char b1 = entry[1];
-    volatile struct { unsigned char a, b; } values;
+    volatile struct {
+        unsigned char a, b;
+    } values;
     values.a = b0;
     values.b = b1;
     (void)values;
@@ -1362,14 +1568,16 @@ int SaveRewards_TestClubSetFlag(void* requestState, int index, int secondaryFlag
 
 // Test the requested ball reward policy without changing saved state.
 int SaveRewards_TestBallFlag(void* requestState, int index, int secondaryFlag) {
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    unsigned char value = AsRewardSaveRecord(((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0())))->ballFlags[index];
+    unsigned char value =
+        AsRewardSaveRecord(((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot())))
+            ->ballFlags[index];
     if (secondaryFlag)
         return (int)(value & 0x60) << 25 >> 31;
     return (int)(value & 0xC0) << 24 >> 31;
@@ -1377,15 +1585,15 @@ int SaveRewards_TestBallFlag(void* requestState, int index, int secondaryFlag) {
 
 // Test the saved unlock bit for a bounds-checked course index.
 bool SaveRewards_IsCourseUnlocked(void* arg1, unsigned int index) {
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (s_saveDataInitialized == 0) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
     SaveRewardPrefix e;
-    e = *(SaveRewardPrefix*)((void*(*)(void*))SaveData_GetCurrentRecord)((void*)((int&)Sing_805DC5E0()));
+    e = *(SaveRewardPrefix*)((void* (*)(void*))SaveData_GetCurrentRecord)((void*)((int&)GetSaveDataSlot()));
     const SaveBitReference& reference = MakeSaveBitReference(&e.unlockedCourses, index);
     SaveBitReference checked = reference;
     (void)arg1;
@@ -1397,7 +1605,8 @@ bool SaveRewards_IsCourseUnlocked(void* arg1, unsigned int index) {
 }
 
 // Resolve a valid character inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestCharacterByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag) {
+void ItemRequestState_RequestCharacterByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                       int secondaryFlag) {
     if (index != -1) {
         CSharedDoc* sharedDoc = g_sharedDoc;
         int typeId = ItemInventory_GetCharacterIdAt(sharedDoc->itemInventory, index);
@@ -1406,7 +1615,8 @@ void ItemRequestState_RequestCharacterByInventoryIndex(void* requestState, void*
 }
 
 // Resolve a valid caddie inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestCaddieByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag) {
+void ItemRequestState_RequestCaddieByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                    int secondaryFlag) {
     if (index != -1) {
         CSharedDoc* sharedDoc = g_sharedDoc;
         int typeId = ItemInventory_GetCaddieIdAt(sharedDoc->itemInventory, index);
@@ -1415,7 +1625,8 @@ void ItemRequestState_RequestCaddieByInventoryIndex(void* requestState, void* po
 }
 
 // Resolve a valid caddieitem inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestCaddieItemByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag) {
+void ItemRequestState_RequestCaddieItemByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                        int secondaryFlag) {
     if (index != -1) {
         CSharedDoc* sharedDoc = g_sharedDoc;
         int typeId = ItemInventory_GetCaddieItemIdAt(sharedDoc->itemInventory, index);
@@ -1424,7 +1635,8 @@ void ItemRequestState_RequestCaddieItemByInventoryIndex(void* requestState, void
 }
 
 // Resolve a valid setitem inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestSetItemByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag) {
+void ItemRequestState_RequestSetItemByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                     int secondaryFlag) {
     if (index != -1) {
         CSharedDoc* sharedDoc = g_sharedDoc;
         int typeId = ItemInventory_GetSetItemIdAt(sharedDoc->itemInventory, index);
@@ -1433,7 +1645,8 @@ void ItemRequestState_RequestSetItemByInventoryIndex(void* requestState, void* p
 }
 
 // Resolve a valid part inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestPartByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag) {
+void ItemRequestState_RequestPartByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                  int secondaryFlag) {
     if (index != -1) {
         CSharedDoc* sharedDoc = g_sharedDoc;
         int typeId = ItemInventory_GetPartIdAt(sharedDoc->itemInventory, index);
@@ -1442,7 +1655,8 @@ void ItemRequestState_RequestPartByInventoryIndex(void* requestState, void* popu
 }
 
 // Resolve a valid clubset inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestClubSetByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag) {
+void ItemRequestState_RequestClubSetByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                     int secondaryFlag) {
     if (index != -1) {
         CSharedDoc* sharedDoc = g_sharedDoc;
         int typeId = ItemInventory_GetClubSetIdAt(sharedDoc->itemInventory, index);
@@ -1451,7 +1665,8 @@ void ItemRequestState_RequestClubSetByInventoryIndex(void* requestState, void* p
 }
 
 // Resolve a valid ball inventory index to its IFF type ID and queue the reward.
-void ItemRequestState_RequestBallByInventoryIndex(void* requestState, void* popupContext, int index, int secondaryFlag) {
+void ItemRequestState_RequestBallByInventoryIndex(void* requestState, void* popupContext, int index,
+                                                  int secondaryFlag) {
     if (index != -1) {
         CSharedDoc* sharedDoc = g_sharedDoc;
         int typeId = ItemInventory_GetBallIdAt(sharedDoc->itemInventory, index);
@@ -1487,7 +1702,10 @@ void ItemRequestVector_AppendCopy(PendingItemRequestVector* self, PendingItemReq
         unsigned short inventoryIndex = value->inventoryIndex;
         short secondaryFlag = value->secondaryFlag;
         PendingItemRequest* out = data + (size - 1);
-        out->popupContext = popupContext; out->typeId = typeId; out->inventoryIndex = inventoryIndex; out->secondaryFlag = secondaryFlag;
+        out->popupContext = popupContext;
+        out->typeId = typeId;
+        out->inventoryIndex = inventoryIndex;
+        out->secondaryFlag = secondaryFlag;
         return;
     }
     volatile char allocator2 __attribute__((aligned(4))) = 0;
@@ -1614,14 +1832,14 @@ void* dtor_8030B984(void* self, int freeFlag) {
 
 // Lazily initialize and return the shared save-data instance.
 void* SaveData_GetInstance() {
-    if (((int&)Sing_805DC5E0()) == 0) {
+    if (((int&)GetSaveDataSlot()) == 0) {
         if (!s_saveDataInitialized) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((int&)Sing_805DC5E0()) = (int)s_saveData;
+        ((int&)GetSaveDataSlot()) = (int)s_saveData;
     }
-    return (void*)((int&)Sing_805DC5E0());
+    return (void*)((int&)GetSaveDataSlot());
 }
 
 // Copy the saved inventory/statistics prefix in the recovered member order.
@@ -1630,12 +1848,12 @@ void SaveRewards_CopyPrefix(void* destination, void* source) {
 }
 
 // Return the borrowed bit-reference storage while preserving iterator stack writes.
-void* SetItemBitReference_GetStorage(void* arg1, void* arg2) {
+void* SetItemBitReference_GetStorage(void* setItemBits, void* arg2) {
     void* volatile local2;
     void* volatile local1;
-    local1 = arg1;
+    local1 = setItemBits;
     local2 = arg2;
-    return arg1;
+    return setItemBits;
 }
 
 #pragma push

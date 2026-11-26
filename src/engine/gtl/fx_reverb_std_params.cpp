@@ -1,5 +1,5 @@
-// Translation unit 0x8040B08C-0x8040B210 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Standard reverb effect settings: keeps the requested values for GetParams, clamps a
+// separate copy for the SDK and pushes changes to an active effect.
 
 #include "classes/FxReverbStdWork.h"
 
@@ -8,7 +8,9 @@ extern "C" {
 // Public parameter order: pre-delay, decay time, coloration, damping, wet level.
 // Time units are not established here; the last three SDK controls are clamped to [0,1].
 // Requested values are preserved verbatim; only the SDK-facing fields below are clamped.
-struct Params { float preDelay, decayTime, coloration, damping, wetLevel; };
+struct Params {
+    float preDelay, decayTime, coloration, damping, wetLevel;
+};
 struct Object {
     char effectBase[12];
     unsigned char active;
@@ -42,25 +44,36 @@ bool gtl_nw4r_FxReverbStd_SetParams(Object* self, const Params* requested) {
     self->params.wetLevel = wetLevel;
     // SDK limits: pre-delay 0..0.1, decay 0..10; coloration, damping and wet level 0..1.
     // Preserve the ordered comparisons: replacing them with a generic clamp can affect NaNs.
-    float clampedPreDelay = preDelay > maxPreDelay ? maxPreDelay : preDelay < kFloat_0_Color ? kFloat_0_Color : preDelay;
+    float clampedPreDelay = preDelay > maxPreDelay      ? maxPreDelay
+                            : preDelay < kFloat_0_Color ? kFloat_0_Color
+                                                        : preDelay;
     float requestedDecayTime = requested->decayTime;
     float maxDecayTime = kFloat_10_Reverb_805E23D8;
     self->preDelay = clampedPreDelay;
-    float clampedDecayTime = requestedDecayTime > maxDecayTime ? maxDecayTime : requestedDecayTime < kFloat_0_Color ? kFloat_0_Color : requestedDecayTime;
+    float clampedDecayTime = requestedDecayTime > maxDecayTime     ? maxDecayTime
+                             : requestedDecayTime < kFloat_0_Color ? kFloat_0_Color
+                                                                   : requestedDecayTime;
     float requestedColoration = requested->coloration;
     float maxColoration = kFloat_1_ReverbClamp;
     self->decayTime = clampedDecayTime;
-    float clampedColoration = requestedColoration > maxColoration ? maxColoration : requestedColoration < kFloat_0_Color ? kFloat_0_Color : requestedColoration;
+    float clampedColoration = requestedColoration > maxColoration    ? maxColoration
+                              : requestedColoration < kFloat_0_Color ? kFloat_0_Color
+                                                                     : requestedColoration;
     float requestedDamping = requested->damping;
     float maxDamping = kFloat_1_ReverbClamp;
     self->coloration = clampedColoration;
-    float clampedDamping = requestedDamping > maxDamping ? maxDamping : requestedDamping < kFloat_0_Color ? kFloat_0_Color : requestedDamping;
+    float clampedDamping = requestedDamping > maxDamping       ? maxDamping
+                           : requestedDamping < kFloat_0_Color ? kFloat_0_Color
+                                                               : requestedDamping;
     float requestedWetLevel = requested->wetLevel;
     float maxWetLevel = kFloat_1_ReverbClamp;
     self->damping = clampedDamping;
-    self->wetLevel = requestedWetLevel > maxWetLevel ? maxWetLevel : requestedWetLevel < kFloat_0_Color ? kFloat_0_Color : requestedWetLevel;
+    self->wetLevel = requestedWetLevel > maxWetLevel      ? maxWetLevel
+                     : requestedWetLevel < kFloat_0_Color ? kFloat_0_Color
+                                                          : requestedWetLevel;
     // Install this effect's allocation hooks only around the active SDK update, then restore them.
-    if (!self->active) return true;
+    if (!self->active)
+        return true;
     unsigned int savedAllocator, savedDeallocator;
     gtl_AudioEffects_InstallAllocatorHooks(&self->active, &savedAllocator, &savedDeallocator);
     int result = AudioReverbStd_ApplySettings(((FxReverbStdWork*)self)->sdkWork);

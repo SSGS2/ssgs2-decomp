@@ -1,10 +1,14 @@
+// Render views (WView) and the camera: view and projection matrices, the viewport, frustum
+// planes, screen-to-ray and projection, and submitting primitives to the renderer.
+// Also the asynchronous DVD file reader (CFileAsync) and the table locks for shared entries.
+
 #include <decomp/static_init.h>
 #include <decomp/record_sizes.h>
 #include <decomp/local_class.h>
 #include <decomp/offset_of.h>
 // WView camera/projection, world-to-viewport drawing, and bundled async-file/
 // table-lock utilities. Shared schemas: WView.h, WViewProjectedPoint.h;
-// scalar storage: u80065F78_data.cpp. Render targets and targetSlot are borrowed:
+// scalar storage: the data section. Render targets and targetSlot are borrowed:
 // targetSlot points to a live external pointer slot, renderTarget caches *slot.
 // The view never releases the target; its slot must outlive all queries/draws.
 // Modding lookup (widescreen / aspect ratio / viewport / scissor):
@@ -21,8 +25,8 @@
 //   unit sets no GX scissor or physical display resolution. Keep target, camera,
 //   renderer viewport and UI/hit-test transforms consistent in a later mod.
 // - Camera_SetClip: near=3/far=100000 scene units at construction. Keep clip
-//   distances, depth scale/offset and projection invalidation together. No
-//   conversion to golf yards occurs here; valid finite near/far must differ.
+//   distances, depth scale/offset and projection invalidation together. Values stay in
+//   scene units, with no golf-yard conversion; valid finite near/far must differ.
 // - Camera_Apply offsets: pixel displacements divided by screenCenterX/Y;
 //   projection indices 8/9 receive +dx/centerX and -dy/centerY plus frustum bias.
 //   Offsets do not move the viewport or change its dimensions.
@@ -59,9 +63,12 @@ enum ViewPrimitiveFlags {
     kTranslucentBoxFlags = 0x15000000u
 };
 enum ViewClipFlags {
-    kClipBeforeNear = 1, kClipBeyondFar = 2,
-    kClipLeft = 4, kClipRight = 8,
-    kClipAbove = 0x10, kClipBelow = 0x20,
+    kClipBeforeNear = 1,
+    kClipBeyondFar = 2,
+    kClipLeft = 4,
+    kClipRight = 8,
+    kClipAbove = 0x10,
+    kClipBelow = 0x20,
     kAllClipBits = 0xFF,
     kSceneOverrideClipFlags = 0xFE
 };
@@ -71,14 +78,20 @@ enum {
     kProjectedVertexType = 0x10,
     kMaximumCircleSegments = 24,
     kBoxCornerCount = 8,
-    kBoxFaceCount = 6, kBoxFaceCornerCount = 4, kProjectedVertexBytes = 0x38,
+    kBoxFaceCount = 6,
+    kBoxFaceCornerCount = 4,
+    kProjectedVertexBytes = 0x38,
     kFullAlpha = 255,
     kHighlightGreen = 0xFF00FF00u,
     kDefaultViewTintRgb = 0xFFFFFF
 };
 enum ViewProjectionContract {
-    kProjectionHorizontalScale = 0, kProjectionCenterX = 8, kProjectionCenterY = 9,
-    kAppliedViewChanged = 1, kAppliedProjectionChanged = 2, kViewFloatSignBit = 0x80000000u
+    kProjectionHorizontalScale = 0,
+    kProjectionCenterX = 8,
+    kProjectionCenterY = 9,
+    kAppliedViewChanged = 1,
+    kAppliedProjectionChanged = 2,
+    kViewFloatSignBit = 0x80000000u
 };
 // Box topology and its four reusable projected vertices occupy one shared data block.
 struct BoxDrawTables {
@@ -96,10 +109,23 @@ typedef char BoxTables_faces_offset[((int)DECOMP_OFFSETOF(BoxDrawTables, faceInd
 typedef char BoxTables_vertices_offset[((int)DECOMP_OFFSETOF(BoxDrawTables, projectedVertexList) == 0xD8) ? 1 : -1];
 typedef char BoxVertex_size[(sizeof(BoxFaceVertex) == 0x38) ? 1 : -1];
 // Bounds are minimum XYZ followed by maximum XYZ in the input-transform space.
-struct BoxInputBounds { float minimum[3]; float maximum[3]; };
-struct CameraAffineFrame { float axes[3][3]; float position[3]; };
-struct RenderTargetDepthState { char targetHeader[8]; float depthScale; float depthOffset; };
-struct SceneViewOverride { char sceneState[0x161]; unsigned char enabled; };
+struct BoxInputBounds {
+    float minimum[3];
+    float maximum[3];
+};
+struct CameraAffineFrame {
+    float axes[3][3];
+    float position[3];
+};
+struct RenderTargetDepthState {
+    char targetHeader[8];
+    float depthScale;
+    float depthOffset;
+};
+struct SceneViewOverride {
+    char sceneState[0x161];
+    unsigned char enabled;
+};
 
 #include "classes/WView.h"
 #include "classes/WViewProjectedPoint.h"
@@ -127,8 +153,6 @@ enum ViewStorageOffset {
     kInsetBottomPlaneOffset = (int)DECOMP_OFFSETOF(WView, frustumPlanes[44]),
 };
 
-
-
 #define GAME_NSTRING_RANGE_CONSTRUCTOR
 #include "game/string.h"
 
@@ -143,7 +167,9 @@ public:
     LocalNString_u80065F78() : flags(0), length(0), data(0) {}
 #if defined(GAME_NSTRING_TEXT_CONSTRUCTOR)
     // Construct owned text through the external string constructor.
-    LocalNString_u80065F78(const char* text) { MWString_ConstructCString(this, text); }
+    LocalNString_u80065F78(const char* text) {
+        MWString_ConstructCString(this, text);
+    }
 #endif
 #if defined(GAME_NSTRING_RANGE_CONSTRUCTOR)
     // Copy NUL-terminated text into inline or reserved heap storage.
@@ -162,7 +188,10 @@ public:
     }
 #endif
     // Release only the heap-owned representation.
-    ~LocalNString_u80065F78() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~LocalNString_u80065F78() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
     // Return character count from the active string representation.
     unsigned int size() const {
         return (flags >> 31) == 0 ? (*(const unsigned char*)this & 0x7f) : length;
@@ -175,11 +204,9 @@ public:
 
 #include "game/types.h"
 #include "sdk_protos.h"
+#include "classes/CFileAsync.h"
 
 // ---- merged from wview_camera_projection.cpp ----
-namespace ns0 {
-// Translation unit 0x80065F78-0x800676E0 (23 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -224,11 +251,13 @@ int __fpclassifyf(float);
 void __as__7WVectorFRC7WVector(void*, void*);
 void* memset(void*, int, unsigned int);
 
-struct Vec4f { float x, y, z, w; };
+struct Vec4f {
+    float x, y, z, w;
+};
 extern unsigned char s_boxDrawTopologyAndVertexPointers[];
 extern unsigned char s_boxFaceProjectedVertex0[];
 extern unsigned char __vt__5WView[];
-void Matrix_TransformPoint(void*, void*, void*);
+void* Matrix_TransformPoint(void*, void*, void*);
 void WView_ProjectViewPoint(void*, void*, void*, int);
 
 // Initialize camera matrices, viewport, clip distances, projection bounds, and render state.
@@ -246,10 +275,10 @@ void* WView_ctor(void* self) {
     (*(int*)&AsWView(self)->targetSlot) = 0;
     *(void**)self = __vt__5WView;
     (*(int*)&AsWView(self)->renderTarget) = 0;
-    AsWView(self)->unk_1A18 = 0;
+    AsWView(self)->renderState = 0;
     AsWView(self)->unk_1A28 = 0;
     AsWView(self)->unk_1A2C = 0;
-    AsWView(self)->unk_1A30 = kDefaultViewTintRgb;
+    AsWView(self)->tintRgb = kDefaultViewTintRgb;
     AsWView(self)->unk_1A24 = zero;
     AsWView(self)->unk_1A20 = zero;
     AsWView(self)->unk_1A1C = zero;
@@ -320,14 +349,36 @@ extern void* g_sceneManager;
 }
 
 struct CamSub {
-    virtual void v00(); virtual void v01(); virtual void v02(); virtual void v03();
-    virtual void v04(); virtual void v05(); virtual void v06(); virtual void v07();
-    virtual void v08(); virtual void v09(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14(); virtual void v15();
-    virtual void v16(); virtual void v17(); virtual void v18(); virtual void v19();
-    virtual void v20(); virtual void v21(); virtual void v22(); virtual void v23();
-    virtual void v24(); virtual void v25(); virtual void v26(); virtual void v27();
-    virtual void v28(); virtual int IsActive();
+    virtual void v00();
+    virtual void v01();
+    virtual void v02();
+    virtual void v03();
+    virtual void v04();
+    virtual void v05();
+    virtual void v06();
+    virtual void v07();
+    virtual void v08();
+    virtual void v09();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual void v16();
+    virtual void v17();
+    virtual void v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
+    virtual void v26();
+    virtual void v27();
+    virtual void v28();
+    virtual int IsActive();
 };
 
 // Borrowed vertex pointer list. The type selector determines the pointee
@@ -337,10 +388,15 @@ typedef float* ViewVertexData;
 typedef ViewVertexData* ViewVertexList;
 
 struct CamBase {
-    virtual void v00(); virtual void v01(); virtual void v02(); virtual void v03();
-    virtual void v04(); virtual void v05();
+    virtual void v00();
+    virtual void v01();
+    virtual void v02();
+    virtual void v03();
+    virtual void v04();
+    virtual void v05();
     virtual ViewVertexList Prepare(ViewVertexList list, int type, int n);
-    virtual void v07(); virtual void v08();
+    virtual void v07();
+    virtual void v08();
     virtual void Draw(ViewVertexList list, unsigned int flags, int n, void* arg);
 };
 
@@ -393,7 +449,7 @@ extern "C" {
 // flags: bits 0x06000000 select the primitive kind (0x04000000 = line; others are polygons);
 //        only the immediate scene-override/tagged branch splits low 11 bits
 //        (texture slot 0..2047) from upper flags. Ordinary Submit keeps flags
-//        and arg5 separately: arg5 is a scalar execute argument in pointer ABI.
+//        and executeArgument separately: executeArgument is a scalar execute argument in pointer ABI.
 //        WGeneric3D flags (wgeneric3d_render_queue_and_soft_keyboard.cpp): 0x7FF texture0,0x3F800 texture1,
 //        0x300000 pass,0x400000 queue/copy,0x06000000 topology,
 //        0x08000000 fog (the optional bit suppressed here),0x40000000 omit color.
@@ -417,7 +473,7 @@ extern "C" {
 // reloads. Renderer staging copies borrowed records before queuing, so local
 // lists need live only through this call. Closed strips require count<=63
 // (renderer appends list[0] into a 64-pointer scratch); the wrapper does not check.
-void WView_DrawPrimitive(CamBase* self, ViewVertexList list, int type, unsigned int flags, void* arg5) {
+void WView_DrawPrimitive(CamBase* self, ViewVertexList list, int type, unsigned int flags, void* executeArgument) {
     // Constructor-only producer and comparison domain: see the gate adapter above.
     if (PrimitiveSubmissionGateValue(self) > kFloat_1_view)
         return;
@@ -437,26 +493,32 @@ void WView_DrawPrimitive(CamBase* self, ViewVertexList list, int type, unsigned 
     if ((flags & kPrimitiveKindMask) == kLinePrimitive) {
         if (type != kPreparedVertexType) {
             list = self->Prepare(list, type, 2);
-            if (!list) return;
+            if (!list)
+                return;
         }
         if (list[2]) {
             float dx = list[0][0] - list[1][0];
             float dy = list[0][1] - list[1][1];
-            if (dx <= kFloat_0_001_ViewPrimitive && dx >= kFloat_neg0_001_WViewPointTolerance && dy <= kFloat_0_001_ViewPrimitive && dy >= kFloat_neg0_001_WViewPointTolerance)
+            if (dx <= kFloat_0_001_ViewPrimitive && dx >= kFloat_neg0_001_WViewPointTolerance &&
+                dy <= kFloat_0_001_ViewPrimitive && dy >= kFloat_neg0_001_WViewPointTolerance)
                 list[1] = list[2];
         }
-        Submit(self, list, flags, 2, arg5);
+        Submit(self, list, flags, 2, executeArgument);
         return;
     }
     obj = CurrentPrimitiveRenderTarget(self);
     if (!(obj ? obj->IsActive() : 0) && type != kPreparedVertexType) {
         list = self->Prepare(list, type, 3);
-        if (!list) return;
+        if (!list)
+            return;
     }
     int count = 3;
     ViewVertexList p = list + 3;
-    while (*p) { ++p; ++count; }
-    Submit(self, list, flags, count, arg5);
+    while (*p) {
+        ++p;
+        ++count;
+    }
+    Submit(self, list, flags, count, executeArgument);
 }
 
 // Build an orthonormal look-at frame, using an alternate up axis near vertical.
@@ -467,43 +529,48 @@ void WView_DrawPrimitive(CamBase* self, ViewVertexList list, int type, unsigned 
 // Axes are normalized as they are built (the near-vertical branch relies on the cross products).
 // Required nonaliasing output[12], eye[3], lookAt[3]; eye and lookAt must differ.
 // No error return for degenerate axes; keep fallback branch and normalize order.
-    void Matrix_BuildCameraTransform(float* cameraFrame, float* eyePosition, float* lookAtPosition) {
+void Matrix_BuildCameraTransform(float* cameraFrame, float* eyePosition, float* lookAtPosition) {
 
-    Matrix_SetIdentityAffine(cameraFrame); float forwardDifference[3]; __mi__FRC7WVectorRC7WVector(forwardDifference, lookAtPosition, eyePosition);
+    Matrix_SetIdentityAffine(cameraFrame);
+    float forwardDifference[3];
+    __mi__FRC7WVectorRC7WVector(forwardDifference, lookAtPosition, eyePosition);
     __as__7WVectorFRC7WVector(6 + cameraFrame, forwardDifference);
     Normalize__7WVectorFv(6 + cameraFrame);
     // Start with the forward-axis Y component, then measure distance from the alignment reference.
     float verticalAlignmentDifference = cameraFrame[7];
-    verticalAlignmentDifference = (verticalAlignmentDifference > kFloat_0_0_CameraView) ? verticalAlignmentDifference : 0.0f - verticalAlignmentDifference;
+    verticalAlignmentDifference = (verticalAlignmentDifference > kFloat_0_0_CameraView)
+                                      ? verticalAlignmentDifference
+                                      : 0.0f - verticalAlignmentDifference;
     verticalAlignmentDifference = verticalAlignmentDifference - s_cameraVerticalAlignmentReference;
     if (*(unsigned int*)&verticalAlignmentDifference & 0x80000000)
         verticalAlignmentDifference = 0.0f - verticalAlignmentDifference;
     // original 0x800667E4-0x800667F4: fcmpo/mfcr/srwi. takes this branch when verticalAlignmentDifference < eps (forward nearly vertical);
     // its axis is (1,0,0): 0x800667F8-0x80066814 store kFloat_1_view at sp+0x3C, kFloat_0_0_CameraView at sp+0x40/+0x44
     int nearVertical = verticalAlignmentDifference < kFloat_0_00001_CameraView;
-    if (nearVertical) { float crossProduct[3];
+    if (nearVertical) {
+        float crossProduct[3];
         float up[3] = {kFloat_1_view, kFloat_0_0_CameraView, kFloat_0_0_CameraView};
 
         Vector_CrossProduct(crossProduct, 6 + cameraFrame, up);
-            float orthogonalAxis[3];
-            __as__7WVectorFRC7WVector(3 + cameraFrame, crossProduct);
-            Vector_CrossProduct(orthogonalAxis, cameraFrame + 3, (6 + cameraFrame));
+        float orthogonalAxis[3];
+        __as__7WVectorFRC7WVector(3 + cameraFrame, crossProduct);
+        Vector_CrossProduct(orthogonalAxis, cameraFrame + 3, (6 + cameraFrame));
         __as__7WVectorFRC7WVector(cameraFrame, orthogonalAxis);
     } else {
         float up[3] = {kFloat_0_0_CameraView, kFloat_1_view, kFloat_0_0_CameraView};
-            float crossProduct[3];
+        float crossProduct[3];
 
-            __as__7WVectorFRC7WVector(3 + cameraFrame, up);
-            float orthogonalAxis[3];
-            Vector_CrossProduct(crossProduct, (cameraFrame + 3), (6 + cameraFrame));
+        __as__7WVectorFRC7WVector(3 + cameraFrame, up);
+        float orthogonalAxis[3];
+        Vector_CrossProduct(crossProduct, (cameraFrame + 3), (6 + cameraFrame));
         __as__7WVectorFRC7WVector(cameraFrame, crossProduct);
 
-            Normalize__7WVectorFv(cameraFrame);
-            Vector_CrossProduct(orthogonalAxis, (cameraFrame + 6), cameraFrame);
+        Normalize__7WVectorFv(cameraFrame);
+        Vector_CrossProduct(orthogonalAxis, (cameraFrame + 6), cameraFrame);
         __as__7WVectorFRC7WVector(3 + cameraFrame, orthogonalAxis);
         Normalize__7WVectorFv(cameraFrame + 3);
     }
-        __as__7WVectorFRC7WVector((9 + cameraFrame), eyePosition);
+    __as__7WVectorFRC7WVector((9 + cameraFrame), eyePosition);
 }
 
 // Convert a viewport point and normalized depth into a rotated camera ray.
@@ -511,31 +578,31 @@ void WView_DrawPrimitive(CamBase* self, ViewVertexList list, int type, unsigned 
 // screen xy is relative to full viewport, depth linearly selects near..far.
 // Result is a rotated direction/displacement, NOT a unit vector or world origin:
 // no camera position is added. Preserve final X/Z negations and transform order.
-    void Camera_ScreenToRay(float* ray, void* camera, float screenX, float screenY, float normalizedDepth) {
-        float inputX = screenX;
-        float farClip = AsWView(camera)->farClip;
+void Camera_ScreenToRay(float* ray, void* camera, float screenX, float screenY, float normalizedDepth) {
+    float inputX = screenX;
+    float farClip = AsWView(camera)->farClip;
 
     float h0 = kFloat_0_5_View;
 
     float nearClip = AsWView(camera)->nearClip;
-        ray[2] = normalizedDepth * (farClip - nearClip) + nearClip;
+    ray[2] = normalizedDepth * (farClip - nearClip) + nearClip;
     float angle = h0 * AsWView(camera)->fieldOfView;
-        float tangent = (float)tan(angle);
+    float tangent = (float)tan(angle);
     float half = kFloat_0_5_View;
     float w = AsWView(camera)->viewportWidth;
     float neg = kFloat_neg1_View;
     float scale = ray[2] * tangent;
-        float denom = (w * half);
+    float denom = (w * half);
     scale /= denom;
-        ray[0] = scale * (inputX - w * half);
-        ray[1] = ((neg * scale)) * ((screenY) - half * AsWView(camera)->viewportHeight);
+    ray[0] = scale * (inputX - w * half);
+    ray[1] = ((neg * scale)) * ((screenY)-half * AsWView(camera)->viewportHeight);
     float transformedRay[3];
     Matrix_TransformDirection(transformedRay, ray, (&AsWView(camera)->viewMatrix[0]));
     __as__7WVectorFRC7WVector(ray, transformedRay);
     float ox = ray[0];
     float n2 = kFloat_neg1_View;
 
-        ray[0] = (ox * n2);
+    ray[0] = (ox * n2);
     ray[2] = (ray[2]) * n2;
 }
 
@@ -544,23 +611,33 @@ void WView_DrawPrimitive(CamBase* self, ViewVertexList list, int type, unsigned 
 // twelve planes, input/applied transforms, and view dirty bit. No error status.
 // Preserve full/inset pairing and float classification/normalization order;
 // the four-pixel inset changes culling, independently of the perspective matrix.
-    void Camera_BuildFrustumPlanes(void* self) {
-        float inverseInputFrame[12];
+void Camera_BuildFrustumPlanes(void* self) {
+    float inverseInputFrame[12];
     char* p;
     int i;
     char* camera = (char*)self;
 
     float inverseAppliedFrame[12];
-    float nearPlane[4]; float nearWorldNormal[3]; float nearViewNormal[3]; float nearWorldPoint[3]; float nearWorldOffset[3];
+    float nearPlane[4];
+    float nearWorldNormal[3];
+    float nearViewNormal[3];
+    float nearWorldPoint[3];
+    float nearWorldOffset[3];
     float farPlane[4], farWorldNormal[3], farViewNormal[3], farWorldPoint[3], farWorldOffset[3];
     float leftPlane[4], leftWorldNormal[3], leftViewNormal[3];
     float insetLeftPlane[4], insetLeftWorldNormal[3], insetLeftViewNormal[3];
     float rightPlane[4], rightWorldNormal[3], rightViewNormal[3];
     float insetRightPlane[4], insetRightWorldNormal[3], insetRightViewNormal[3];
-    float topPlane[4]; float topWorldNormal[3]; float topViewNormal[3];
+    float topPlane[4];
+    float topWorldNormal[3];
+    float topViewNormal[3];
     float insetTopPlane[4], insetTopWorldNormal[3], insetTopViewNormal[3];
-    float bottomPlane[4]; float bottomWorldNormal[3]; float bottomViewNormal[3];
-    float insetBottomPlane[4]; float insetBottomWorldNormal[3]; float insetBottomViewNormal[3];
+    float bottomPlane[4];
+    float bottomWorldNormal[3];
+    float bottomViewNormal[3];
+    float insetBottomPlane[4];
+    float insetBottomWorldNormal[3];
+    float insetBottomViewNormal[3];
     // Scratch planes are [normal.xyz, distance]; normals start in camera space.
     // sideSlopes = [inset X, inset Y, full X, full Y], measured as tan(half angle).
     float sideSlopes[4];
@@ -573,25 +650,27 @@ void WView_DrawPrimitive(CamBase* self, ViewVertexList list, int type, unsigned 
     float w = AsWView(camera)->viewportWidth;
     float h = AsWView(camera)->viewportHeight;
     float angle = half * (AsWView(camera)->fieldOfView);
-        float product2 = half * h;
-        float product3 = h * half;
-        float halfW = half * w;
-        float halfH = product3;
+    float product2 = half * h;
+    float product3 = h * half;
+    float halfW = half * w;
+    float halfH = product3;
     AsWView(camera)->halfViewportWidth = halfW;
     AsWView(camera)->halfViewportHeight = halfH;
-        AsWView(camera)->screenCenterX = halfW;
-        AsWView(camera)->screenCenterY = halfH;
-        sideSlopes[2] = (float)tan(angle);
+    AsWView(camera)->screenCenterX = halfW;
+    AsWView(camera)->screenCenterY = halfH;
+    sideSlopes[2] = (float)tan(angle);
     i = 0;
     p = camera;
     sideSlopes[3] = sideSlopes[2] * (AsWView(camera)->viewportHeight / AsWView(camera)->viewportWidth);
-    sideSlopes[0] = (AsWView(camera)->halfViewportWidth - kFloat_4_CameraBounds) / (AsWView(camera)->halfViewportWidth / sideSlopes[2]);
-    sideSlopes[1] = (AsWView(camera)->halfViewportHeight - kFloat_4_CameraBounds) / (AsWView(camera)->halfViewportHeight / sideSlopes[3]);
+    sideSlopes[0] = (AsWView(camera)->halfViewportWidth - kFloat_4_CameraBounds) /
+                    (AsWView(camera)->halfViewportWidth / sideSlopes[2]);
+    sideSlopes[1] = (AsWView(camera)->halfViewportHeight - kFloat_4_CameraBounds) /
+                    (AsWView(camera)->halfViewportHeight / sideSlopes[3]);
     float zero = kFloat_0_0_CameraView;
     do {
         if (__fpclassifyf(*(float*)(p + kViewMatrixOffset)) == 1)
             *(float*)(p + kViewMatrixOffset) = zero;
-            p = (4 + p);
+        p = (4 + p);
         i += 1;
     } while (12 > i);
 
@@ -605,47 +684,84 @@ void WView_DrawPrimitive(CamBase* self, ViewVertexList list, int type, unsigned 
 
     // Phase 3: near/far planes share their points with the inset frustum.
     // Points are camera position + forward axis * clip distance; normals rotate to world space.
-    nearViewNormal[0] = kFloat_0_0_CameraView; nearViewNormal[1] = kFloat_0_0_CameraView; nearViewNormal[2] = kFloat_neg1_View;
+    nearViewNormal[0] = kFloat_0_0_CameraView;
+    nearViewNormal[1] = kFloat_0_0_CameraView;
+    nearViewNormal[2] = kFloat_neg1_View;
     __ml__FRC7WVectorf(nearWorldOffset, camera + kForwardAxisOffset, AsWView(camera)->nearClip);
     __pl__FRC7WVectorRC7WVector(nearWorldPoint, camera + kCameraPositionOffset, nearWorldOffset);
     Matrix_TransformDirection(nearWorldNormal, nearViewNormal, camera + kViewMatrixOffset);
-    Plane_Copy(camera + kInsetNearPlaneOffset, Plane_Copy(camera + kNearPlaneOffset, Plane_FromNormalAndPoint(nearPlane, nearWorldNormal, nearWorldPoint)));
+    Plane_Copy(
+        camera + kInsetNearPlaneOffset,
+        Plane_Copy(camera + kNearPlaneOffset, Plane_FromNormalAndPoint(nearPlane, nearWorldNormal, nearWorldPoint)));
 
-    farViewNormal[0] = kFloat_0_0_CameraView; farViewNormal[1] = kFloat_0_0_CameraView; farViewNormal[2] = kFloat_1_view;
+    farViewNormal[0] = kFloat_0_0_CameraView;
+    farViewNormal[1] = kFloat_0_0_CameraView;
+    farViewNormal[2] = kFloat_1_view;
     __ml__FRC7WVectorf(farWorldOffset, camera + kForwardAxisOffset, AsWView(camera)->farClip);
     __pl__FRC7WVectorRC7WVector(farWorldPoint, camera + kCameraPositionOffset, farWorldOffset);
     Matrix_TransformDirection(farWorldNormal, farViewNormal, camera + kViewMatrixOffset);
-    Plane_Copy(camera + kInsetFarPlaneOffset, Plane_Copy(camera + kFarPlaneOffset, Plane_FromNormalAndPoint(farPlane, farWorldNormal, farWorldPoint)));
+    Plane_Copy(camera + kInsetFarPlaneOffset,
+               Plane_Copy(camera + kFarPlaneOffset, Plane_FromNormalAndPoint(farPlane, farWorldNormal, farWorldPoint)));
 
     // Phase 4: each side plane passes through the camera position. Normalize after
     // rotating its camera-space normal; inset sides use the smaller slopes.
-    leftViewNormal[0] = kFloat_neg1_View; leftViewNormal[1] = kFloat_0_0_CameraView; leftViewNormal[2] = -sideSlopes[2];
+    leftViewNormal[0] = kFloat_neg1_View;
+    leftViewNormal[1] = kFloat_0_0_CameraView;
+    leftViewNormal[2] = -sideSlopes[2];
     Matrix_TransformDirection(leftWorldNormal, leftViewNormal, camera + kViewMatrixOffset);
-    Plane_Copy(camera + kLeftPlaneOffset, Plane_FromNormalAndPoint(leftPlane, Normalize__7WVectorFv(leftWorldNormal), camera + kCameraPositionOffset));
-    insetLeftViewNormal[0] = kFloat_neg1_View; insetLeftViewNormal[1] = kFloat_0_0_CameraView; insetLeftViewNormal[2] = -sideSlopes[0];
+    Plane_Copy(camera + kLeftPlaneOffset, Plane_FromNormalAndPoint(leftPlane, Normalize__7WVectorFv(leftWorldNormal),
+                                                                   camera + kCameraPositionOffset));
+    insetLeftViewNormal[0] = kFloat_neg1_View;
+    insetLeftViewNormal[1] = kFloat_0_0_CameraView;
+    insetLeftViewNormal[2] = -sideSlopes[0];
     Matrix_TransformDirection(insetLeftWorldNormal, insetLeftViewNormal, camera + kViewMatrixOffset);
-    Plane_Copy(camera + kInsetLeftPlaneOffset, Plane_FromNormalAndPoint(insetLeftPlane, Normalize__7WVectorFv(insetLeftWorldNormal), camera + kCameraPositionOffset));
-    rightViewNormal[0] = kFloat_1_view; rightViewNormal[1] = kFloat_0_0_CameraView; rightViewNormal[2] = -sideSlopes[2];
+    Plane_Copy(camera + kInsetLeftPlaneOffset,
+               Plane_FromNormalAndPoint(insetLeftPlane, Normalize__7WVectorFv(insetLeftWorldNormal),
+                                        camera + kCameraPositionOffset));
+    rightViewNormal[0] = kFloat_1_view;
+    rightViewNormal[1] = kFloat_0_0_CameraView;
+    rightViewNormal[2] = -sideSlopes[2];
     Matrix_TransformDirection(rightWorldNormal, rightViewNormal, camera + kViewMatrixOffset);
-    Plane_Copy(camera + kRightPlaneOffset, Plane_FromNormalAndPoint(rightPlane, Normalize__7WVectorFv(rightWorldNormal), camera + kCameraPositionOffset));
-    insetRightViewNormal[0] = kFloat_1_view; insetRightViewNormal[1] = kFloat_0_0_CameraView; insetRightViewNormal[2] = -sideSlopes[0];
+    Plane_Copy(camera + kRightPlaneOffset, Plane_FromNormalAndPoint(rightPlane, Normalize__7WVectorFv(rightWorldNormal),
+                                                                    camera + kCameraPositionOffset));
+    insetRightViewNormal[0] = kFloat_1_view;
+    insetRightViewNormal[1] = kFloat_0_0_CameraView;
+    insetRightViewNormal[2] = -sideSlopes[0];
     Matrix_TransformDirection(insetRightWorldNormal, insetRightViewNormal, camera + kViewMatrixOffset);
-    Plane_Copy(camera + kInsetRightPlaneOffset, Plane_FromNormalAndPoint(insetRightPlane, Normalize__7WVectorFv(insetRightWorldNormal), camera + kCameraPositionOffset));
-    topViewNormal[0] = kFloat_0_0_CameraView; topViewNormal[1] = kFloat_1_view; neg = -sideSlopes[3]; topViewNormal[2] = neg;
+    Plane_Copy(camera + kInsetRightPlaneOffset,
+               Plane_FromNormalAndPoint(insetRightPlane, Normalize__7WVectorFv(insetRightWorldNormal),
+                                        camera + kCameraPositionOffset));
+    topViewNormal[0] = kFloat_0_0_CameraView;
+    topViewNormal[1] = kFloat_1_view;
+    neg = -sideSlopes[3];
+    topViewNormal[2] = neg;
     Matrix_TransformDirection(topWorldNormal, topViewNormal, camera + kViewMatrixOffset);
-    Plane_Copy(camera + kTopPlaneOffset, Plane_FromNormalAndPoint(topPlane, Normalize__7WVectorFv(topWorldNormal), camera + kCameraPositionOffset));
-    neg = -sideSlopes[1]; insetTopViewNormal[0] = kFloat_0_0_CameraView; insetTopViewNormal[1] = kFloat_1_view; insetTopViewNormal[2] = neg;
+    Plane_Copy(camera + kTopPlaneOffset, Plane_FromNormalAndPoint(topPlane, Normalize__7WVectorFv(topWorldNormal),
+                                                                  camera + kCameraPositionOffset));
+    neg = -sideSlopes[1];
+    insetTopViewNormal[0] = kFloat_0_0_CameraView;
+    insetTopViewNormal[1] = kFloat_1_view;
+    insetTopViewNormal[2] = neg;
     Matrix_TransformDirection(insetTopWorldNormal, insetTopViewNormal, camera + kViewMatrixOffset);
-    Plane_Copy(camera + kInsetTopPlaneOffset, Plane_FromNormalAndPoint(insetTopPlane, Normalize__7WVectorFv(insetTopWorldNormal), camera + kCameraPositionOffset));
-    bottomViewNormal[0] = kFloat_0_0_CameraView; neg = -sideSlopes[3]; bottomViewNormal[1] = kFloat_neg1_View; bottomViewNormal[2] = neg;
+    Plane_Copy(camera + kInsetTopPlaneOffset,
+               Plane_FromNormalAndPoint(insetTopPlane, Normalize__7WVectorFv(insetTopWorldNormal),
+                                        camera + kCameraPositionOffset));
+    bottomViewNormal[0] = kFloat_0_0_CameraView;
+    neg = -sideSlopes[3];
+    bottomViewNormal[1] = kFloat_neg1_View;
+    bottomViewNormal[2] = neg;
     Matrix_TransformDirection(bottomWorldNormal, bottomViewNormal, camera + kViewMatrixOffset);
-    Plane_Copy(camera + kBottomPlaneOffset, Plane_FromNormalAndPoint(bottomPlane, Normalize__7WVectorFv(bottomWorldNormal), camera + kCameraPositionOffset));
-        insetBottomViewNormal[0] = kFloat_0_0_CameraView;
-        neg = -sideSlopes[1];
-        insetBottomViewNormal[1] = kFloat_neg1_View;
-        insetBottomViewNormal[2] = neg;
+    Plane_Copy(camera + kBottomPlaneOffset,
+               Plane_FromNormalAndPoint(bottomPlane, Normalize__7WVectorFv(bottomWorldNormal),
+                                        camera + kCameraPositionOffset));
+    insetBottomViewNormal[0] = kFloat_0_0_CameraView;
+    neg = -sideSlopes[1];
+    insetBottomViewNormal[1] = kFloat_neg1_View;
+    insetBottomViewNormal[2] = neg;
     Matrix_TransformDirection(insetBottomWorldNormal, insetBottomViewNormal, camera + kViewMatrixOffset);
-    Plane_Copy(camera + kInsetBottomPlaneOffset, Plane_FromNormalAndPoint(insetBottomPlane, Normalize__7WVectorFv(insetBottomWorldNormal), camera + kCameraPositionOffset));
+    Plane_Copy(camera + kInsetBottomPlaneOffset,
+               Plane_FromNormalAndPoint(insetBottomPlane, Normalize__7WVectorFv(insetBottomWorldNormal),
+                                        camera + kCameraPositionOffset));
     AsWView(camera)->dirtyFlags |= kViewMatrixDirty;
 }
 
@@ -664,19 +780,19 @@ void Camera_SetTarget(void* self) {
         float targetHeight = (float)((GetDim)(*(void***)AsWView(self)->renderTarget)[16])(AsWView(self)->renderTarget);
         float targetWidth = (float)((GetDim)(*(void***)AsWView(self)->renderTarget)[15])(AsWView(self)->renderTarget);
         float zero = kFloat_0_0_CameraView;
-            AsWView(self)->viewportHeight = targetHeight;
-            AsWView(self)->viewportWidth = targetWidth;
-            if (!AsWView(self)->customViewport) {
-                float tmp[4];
-                tmp[0] = zero;
-                tmp[1] = zero;
-                tmp[2] = targetWidth;
-                tmp[3] = targetHeight;
-                AsWView(self)->viewportLeft = zero;
-                AsWView(self)->viewportTop = zero;
-                AsWView(self)->viewportExtentX = targetWidth;
-                AsWView(self)->viewportExtentY = targetHeight;
-            }
+        AsWView(self)->viewportHeight = targetHeight;
+        AsWView(self)->viewportWidth = targetWidth;
+        if (!AsWView(self)->customViewport) {
+            float tmp[4];
+            tmp[0] = zero;
+            tmp[1] = zero;
+            tmp[2] = targetWidth;
+            tmp[3] = targetHeight;
+            AsWView(self)->viewportLeft = zero;
+            AsWView(self)->viewportTop = zero;
+            AsWView(self)->viewportExtentX = targetWidth;
+            AsWView(self)->viewportExtentY = targetHeight;
+        }
     }
     Camera_BuildFrustumPlanes(self);
     AsWView(self)->projectionOffsetY = kFloat_0_0_CameraView;
@@ -690,7 +806,11 @@ void WView_SetViewMatrix(void* self, void* matrix) {
     struct ZeroVector {
         float v[3];
         // Construct a zero vector for the basis-axis validity test.
-        ZeroVector() { v[0] = 0.0f; v[1] = 0.0f; v[2] = 0.0f; }
+        ZeroVector() {
+            v[0] = 0.0f;
+            v[1] = 0.0f;
+            v[2] = 0.0f;
+        }
     };
     if (Vec3_NearlyEqualWithTolerance(matrix, ZeroVector().v, 0.00001f) ||
         Vec3_NearlyEqualWithTolerance(((CameraAffineFrame*)matrix)->axes[1], ZeroVector().v, 0.00001f) ||
@@ -707,15 +827,15 @@ void WView_SetViewMatrix(void* self, void* matrix) {
 // Writes rect/custom flag only; caller must coordinate renderer/scissor updates.
 void WView_SetViewportRect(void* self, float* values) {
 
-        if (values == 0) {
-            float unused[4];
-            float zero = kFloat_0_0_CameraView;
+    if (values == 0) {
+        float unused[4];
+        float zero = kFloat_0_0_CameraView;
 
         AsWView(self)->customViewport = 0;
 
-            float* output = (float*)(((char*)&AsWView(self)->viewportLeft));
-            unused[0] = zero;
-            unused[1] = zero;
+        float* output = (float*)(((char*)&AsWView(self)->viewportLeft));
+        unused[0] = zero;
+        unused[1] = zero;
         unused[2] = AsWView(self)->viewportWidth;
         unused[3] = AsWView(self)->viewportHeight;
         output[0] = unused[0];
@@ -728,13 +848,14 @@ void WView_SetViewportRect(void* self, float* values) {
 
     float zero = kFloat_0_0_CameraView;
 
-    AsWView(self)->customViewport = 1; output[0] = zero < values[0] ? values[0] : zero;
-        float zero2 = kFloat_0_0_CameraView;
-        output[1] = zero2 < values[1] ? values[1] : zero2;
+    AsWView(self)->customViewport = 1;
+    output[0] = zero < values[0] ? values[0] : zero;
+    float zero2 = kFloat_0_0_CameraView;
+    output[1] = zero2 < values[1] ? values[1] : zero2;
     float upper = AsWView(self)->viewportWidth - output[0];
-        output[2] = values[2] > upper ? upper : values[2];
+    output[2] = values[2] > upper ? upper : values[2];
     upper = AsWView(self)->viewportHeight - output[1];
-        output[3] = values[3] > upper ? upper : values[3];
+    output[3] = values[3] > upper ? upper : values[3];
 }
 
 // Submit a two-endpoint colored line while enabling the target's immediate primitive mode.
@@ -742,17 +863,42 @@ void WView_SetViewportRect(void* self, float* values) {
 // words, flags are WView primitive bits. Stack vertices/list cannot escape Draw;
 // preserve volatile stores and target enable -> draw -> reloaded-target disable.
 void WView_DrawLine(void* self, const float* startPosition, unsigned int startColor, float* endPosition,
-                unsigned int endColor, unsigned int flags) {
-    struct Vertex { float x, y, z, w; unsigned int color; char rest[0x24]; };
+                    unsigned int endColor, unsigned int flags) {
+    struct Vertex {
+        float x, y, z, w;
+        unsigned int color;
+        char rest[0x24];
+    };
     struct Object {
-        virtual void v00() DECOMP_LOCAL_VIRTUAL; virtual void v01() DECOMP_LOCAL_VIRTUAL; virtual void v02() DECOMP_LOCAL_VIRTUAL; virtual void v03() DECOMP_LOCAL_VIRTUAL;
+        virtual void v00() DECOMP_LOCAL_VIRTUAL;
+        virtual void v01() DECOMP_LOCAL_VIRTUAL;
+        virtual void v02() DECOMP_LOCAL_VIRTUAL;
+        virtual void v03() DECOMP_LOCAL_VIRTUAL;
         virtual void draw(void*, int, unsigned int, int) DECOMP_LOCAL_VIRTUAL;
-        virtual void v07() DECOMP_LOCAL_VIRTUAL; virtual void v08() DECOMP_LOCAL_VIRTUAL; virtual void v09() DECOMP_LOCAL_VIRTUAL; virtual void v10() DECOMP_LOCAL_VIRTUAL;
-        virtual void v11() DECOMP_LOCAL_VIRTUAL; virtual void v12() DECOMP_LOCAL_VIRTUAL; virtual void v13() DECOMP_LOCAL_VIRTUAL; virtual void v14() DECOMP_LOCAL_VIRTUAL;
-        virtual void v15() DECOMP_LOCAL_VIRTUAL; virtual void v16() DECOMP_LOCAL_VIRTUAL; virtual void v17() DECOMP_LOCAL_VIRTUAL; virtual void v18() DECOMP_LOCAL_VIRTUAL;
-        virtual void v19() DECOMP_LOCAL_VIRTUAL; virtual void v20() DECOMP_LOCAL_VIRTUAL; virtual void v21() DECOMP_LOCAL_VIRTUAL; virtual void v22() DECOMP_LOCAL_VIRTUAL;
-        virtual void v23() DECOMP_LOCAL_VIRTUAL; virtual void v24() DECOMP_LOCAL_VIRTUAL; virtual void v25() DECOMP_LOCAL_VIRTUAL; virtual void v26() DECOMP_LOCAL_VIRTUAL;
-        virtual void v27() DECOMP_LOCAL_VIRTUAL; virtual void v28() DECOMP_LOCAL_VIRTUAL; virtual void v29() DECOMP_LOCAL_VIRTUAL; virtual void enable(int) DECOMP_LOCAL_VIRTUAL;
+        virtual void v07() DECOMP_LOCAL_VIRTUAL;
+        virtual void v08() DECOMP_LOCAL_VIRTUAL;
+        virtual void v09() DECOMP_LOCAL_VIRTUAL;
+        virtual void v10() DECOMP_LOCAL_VIRTUAL;
+        virtual void v11() DECOMP_LOCAL_VIRTUAL;
+        virtual void v12() DECOMP_LOCAL_VIRTUAL;
+        virtual void v13() DECOMP_LOCAL_VIRTUAL;
+        virtual void v14() DECOMP_LOCAL_VIRTUAL;
+        virtual void v15() DECOMP_LOCAL_VIRTUAL;
+        virtual void v16() DECOMP_LOCAL_VIRTUAL;
+        virtual void v17() DECOMP_LOCAL_VIRTUAL;
+        virtual void v18() DECOMP_LOCAL_VIRTUAL;
+        virtual void v19() DECOMP_LOCAL_VIRTUAL;
+        virtual void v20() DECOMP_LOCAL_VIRTUAL;
+        virtual void v21() DECOMP_LOCAL_VIRTUAL;
+        virtual void v22() DECOMP_LOCAL_VIRTUAL;
+        virtual void v23() DECOMP_LOCAL_VIRTUAL;
+        virtual void v24() DECOMP_LOCAL_VIRTUAL;
+        virtual void v25() DECOMP_LOCAL_VIRTUAL;
+        virtual void v26() DECOMP_LOCAL_VIRTUAL;
+        virtual void v27() DECOMP_LOCAL_VIRTUAL;
+        virtual void v28() DECOMP_LOCAL_VIRTUAL;
+        virtual void v29() DECOMP_LOCAL_VIRTUAL;
+        virtual void enable(int) DECOMP_LOCAL_VIRTUAL;
     };
     Vertex second, first;
     float x1 = startPosition[0];
@@ -776,12 +922,12 @@ void WView_DrawLine(void* self, const float* startPosition, unsigned int startCo
     p->x = x2;
     p->y = y2;
     p->z = z2;
-    Object* object = (*(Object **)&AsWView(self)->renderTarget);
+    Object* object = (*(Object**)&AsWView(self)->renderTarget);
     if (object) {
         object->enable(1);
     }
     ((Object*)self)->draw((void*)work, kPositionColorVertexType, flags | kLinePrimitive, 0);
-    object = (*(Object **)&AsWView(self)->renderTarget);
+    object = (*(Object**)&AsWView(self)->renderTarget);
     if (object) {
         object->enable(0);
     }
@@ -860,7 +1006,7 @@ void WView_SetScreenCenter(void* self, float centerX, float centerY) {
 // Concrete WGeneric3DR target dispatch (phase1_class_tables; implementations in
 // wgeneric3d_render_queue_and_soft_keyboard.cpp/wgeneric3dr_renderer_core.cpp/wgeneric3dr_immediate_renderer.cpp). C++ virtual ordinals below start at zero;
 // actual table byte offset = (ordinal+2)*4. Do not mix these with raw table indices.
-// ord7/+24: WGeneric3DR_DispatchCommand(command,value,output). Command11 sends value as
+// ord7/+24: WGeneric3DR::DispatchCommand(command,value,output). Command11 sends value as
 //   FLUSH FLAGS to ord33/+8C WGeneric3D_Flush: mask1 two-pass,mask2 reverse,
 //   mask4 tagged-quad batches; resets staging/queue counts and executes pending
 //   passes (suppressed renderer discards them). output=0 is unused for command11.
@@ -870,23 +1016,47 @@ void WView_SetScreenCenter(void* self, float centerX, float centerY) {
 // ord12/+38: CompleteRenderSubmission flushes with flags0 and changes active
 //   submission state2->idle0; pending1 stays pending (wgeneric3dr_renderer_core.cpp).
 // ord4/+18: SubmitPrimitive(target,list,flags,count,executeArgument), see above.
-// ord29/+7C: vfunc_29 returns position-mode selector (not renderer readiness).
-// ord16/+48: vfunc_17 stores incoming f1/f2 and low24 of r4 in renderer settings.
+// ord29/+7C: WGeneric3D_vfunc_29 returns position-mode selector (not renderer readiness).
+// ord16/+48: WGeneric3D_SetFogState stores incoming f1/f2 and low24 of r4 in renderer settings.
 //   QueryCurrentRenderTarget's historical int signature hides those FP inputs;
 //   its known callers in course_scene_render_and_geometry.cpp ignore the result. Only null has a defined
 //   zero return here; do not use the nonnull return as a status/capability query.
 // +80 alone permits null->no-op; +38/+18/+24 require a live renderer.
 // No target/texture/payload ownership transfers. All render calls are serialized.
 struct VirtualObject {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3();
-    virtual void v4(void*, unsigned int, int, void*); virtual void v5(); virtual void v6(); virtual void v7(int, void*, int);
-    virtual void v8(); virtual void v9(); virtual void v10(); virtual void v11();
-    virtual void v12(); virtual void v13(); virtual void v14();
-    virtual void v15(); virtual int v16(int); virtual void v17(); virtual int v18();
-    virtual void v19(); virtual void v20(); virtual void v21(); virtual void v22();
-    virtual void v23(); virtual void v24(); virtual void v25(); virtual void v26();
-    virtual void v27(); virtual void v28(); virtual void v29(); virtual void v30(void*);
-    virtual void v31(); virtual void v32();
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void v4(void*, unsigned int, int, void*);
+    virtual void v5();
+    virtual void v6();
+    virtual void v7(int, void*, int);
+    virtual void v8();
+    virtual void v9();
+    virtual void v10();
+    virtual void v11();
+    virtual void v12();
+    virtual void v13();
+    virtual void v14();
+    virtual void v15();
+    virtual int v16(int);
+    virtual void v17();
+    virtual int v18();
+    virtual void v19();
+    virtual void v20();
+    virtual void v21();
+    virtual void v22();
+    virtual void v23();
+    virtual void v24();
+    virtual void v25();
+    virtual void v26();
+    virtual void v27();
+    virtual void v28();
+    virtual void v29();
+    virtual void v30(void*);
+    virtual void v31();
+    virtual void v32();
 };
 
 struct DispatchOwner {
@@ -897,7 +1067,7 @@ struct DispatchOwner {
 // Resolve the target slot and forward renderer parameters through v16, or return zero if null.
 // Precondition: targetSlot points to a live slot; its contained target may be null.
 int WView_ForwardRendererParameters(void* self, int value) {
-    void* object = *(*(void * **)&AsWView(self)->targetSlot);
+    void* object = *(*(void***)&AsWView(self)->targetSlot);
     AsWView(self)->renderTarget = object;
     if (object == 0)
         return 0;
@@ -921,10 +1091,10 @@ void Camera_SetFov(Camera* self, float fov) {
     self->flags |= kViewProjectionDirty;
 }
 
-// Flush the renderer through command 11. arg1 carries flag BITS in the pointer
+// Flush the renderer through command 11. flushFlags carries flag BITS in the pointer
 // word (0..7 combinations above), never a dereferenced payload buffer.
-void WView_FlushRenderQueue(DispatchOwner* self, void* arg1) {
-    self->object->v7(11, arg1, 0);
+void WView_FlushRenderQueue(DispatchOwner* self, void* flushFlags) {
+    self->object->v7(11, flushFlags, 0);
 }
 
 // Set/clear the optional target's borrowed texture override. Explicit second
@@ -942,7 +1112,8 @@ void WView_CompleteRenderSubmission(DispatchOwner* self) {
 
 // Tail-forward the primitive list/flags/count/execute word to the real renderer.
 // Named parameters expose the existing ABI; no input is retained by this shim.
-void WView_ForwardPreparedPrimitive(DispatchOwner* self, void* list, unsigned int flags, int count, void* executeArgument) {
+void WView_ForwardPreparedPrimitive(DispatchOwner* self, void* list, unsigned int flags, int count,
+                                    void* executeArgument) {
     self->object->v4(list, flags, count, executeArgument);
 }
 
@@ -956,36 +1127,63 @@ struct DrawVtx {
 };
 
 struct DrawObj {
-    virtual void o0(); virtual void o1(); virtual void o2(); virtual void o3();
-    virtual void o4(); virtual void o5(); virtual void o6(); virtual void o7();
-    virtual void o8(); virtual void o9(); virtual void o10(); virtual void o11();
-    virtual void o12(); virtual void o13(); virtual void o14(); virtual void o15();
-    virtual void o16(); virtual void o17(); virtual void o18(); virtual void o19();
-    virtual void o20(); virtual void o21(); virtual void o22(); virtual void o23();
-    virtual void o24(); virtual void o25(); virtual void o26(); virtual void o27();
+    virtual void o0();
+    virtual void o1();
+    virtual void o2();
+    virtual void o3();
+    virtual void o4();
+    virtual void o5();
+    virtual void o6();
+    virtual void o7();
+    virtual void o8();
+    virtual void o9();
+    virtual void o10();
+    virtual void o11();
+    virtual void o12();
+    virtual void o13();
+    virtual void o14();
+    virtual void o15();
+    virtual void o16();
+    virtual void o17();
+    virtual void o18();
+    virtual void o19();
+    virtual void o20();
+    virtual void o21();
+    virtual void o22();
+    virtual void o23();
+    virtual void o24();
+    virtual void o25();
+    virtual void o26();
+    virtual void o27();
     virtual void enable(int);
 };
 
 struct DrawSelf {
-    virtual void d0(); virtual void d1(); virtual void d2(); virtual void d3();
+    virtual void d0();
+    virtual void d1();
+    virtual void d2();
+    virtual void d3();
     virtual void draw(void* list, int stride, unsigned int flags, int arg);
 };
 
 // Submit a borrowed two-endpoint position/color list in the target's immediate mode.
 // Draw may change the target, so reload it before disabling the mode. No list escapes.
 static inline void submitImmediateLine(void* self, void* vertexList) {
-    DrawObj* obj = (*(DrawObj **)&AsWView(self)->renderTarget);
-    if (obj) obj->enable(1);
+    DrawObj* obj = (*(DrawObj**)&AsWView(self)->renderTarget);
+    if (obj)
+        obj->enable(1);
     ((DrawSelf*)self)->draw(vertexList, kPositionColorVertexType, kLinePrimitive, 0);
-    obj = (*(DrawObj **)&AsWView(self)->renderTarget);
-    if (obj) obj->enable(0);
+    obj = (*(DrawObj**)&AsWView(self)->renderTarget);
+    if (obj)
+        obj->enable(0);
 }
 
 // Draw a camera-facing ring, optionally highlighting periodic edges in green.
 // Legacy return ABI is float but this body defines no return value; all known
 // draw consumers ignore it. Do not interpret it as a radius/status or add a
 // return computation during cleanup. Vec4 wrapper forwards the same ABI.
-float WView_DrawFacingCircle(void* self, float* center, float radius, unsigned int color, int segmentCount, int highlightInterval) {
+float WView_DrawFacingCircle(void* self, float* center, float radius, unsigned int color, int segmentCount,
+                             int highlightInterval) {
     // Phases: generate the ring in the supplied facing basis, then submit consecutive
     // projected endpoints; the first edge joins point 0 to the last point,
     // followed by edges (1,0), (2,1), ... in point-index order.
@@ -998,7 +1196,8 @@ float WView_DrawFacingCircle(void* self, float* center, float radius, unsigned i
     // nonnegative spacing contract. Keep both caller limits when adding rings.
     // Draw ABI: a null-terminated pointer list, vertex type 0x18, packed line flags.
     // Target enable/disable brackets each edge and is refreshed after submission.
-    if (segmentCount > kMaximumCircleSegments) segmentCount = kMaximumCircleSegments;
+    if (segmentCount > kMaximumCircleSegments)
+        segmentCount = kMaximumCircleSegments;
 
     float circlePoints[kMaximumCircleSegments + 1][3];
     DrawVtx plainEndpoints[2];
@@ -1080,15 +1279,17 @@ float WView_DrawFacingCircle(void* self, float* center, float radius, unsigned i
         ++i;
         currentPoint += 3;
     }
-// The original returns no value: its callers never read one.
+    // The original returns no value: its callers never read one.
 }
 
 // Draw a ring using XYZ as its center and W as its radius.
 // centerAndRadius is required four-float input; color is a packed 32-bit word
 // carried as void*, never dereferenced. Same segment/highlight contract as above;
 // forwarded float return is unspecified and must be ignored.
-float WView_DrawFacingCircleVec4(void* view, Vec4f* centerAndRadius, void* color, int segmentCount, int highlightInterval) {
-    return WView_DrawFacingCircle(view, (float*)centerAndRadius, centerAndRadius->w, (unsigned int)color, segmentCount, highlightInterval);
+float WView_DrawFacingCircleVec4(void* view, Vec4f* centerAndRadius, void* color, int segmentCount,
+                                 int highlightInterval) {
+    return WView_DrawFacingCircle(view, (float*)centerAndRadius, centerAndRadius->w, (unsigned int)color, segmentCount,
+                                  highlightInterval);
 }
 
 #pragma opt_strength_reduction off
@@ -1126,9 +1327,12 @@ void WView_DrawBox(void* self, float* minimumAndMaximum, unsigned int color, int
     ((BoxFaceVertex*)s_boxFaceProjectedVertex0)[3].color = color;
     cornerOutput = (float*)boxCorners;
     for (i = 0; i < kBoxCornerCount; ++i) {
-        float cornerZ = cornerSelectors[2] ? ((BoxInputBounds*)minimumAndMaximum)->maximum[2] : ((BoxInputBounds*)minimumAndMaximum)->minimum[2];
-        float cornerY = cornerSelectors[1] ? ((BoxInputBounds*)minimumAndMaximum)->maximum[1] : ((BoxInputBounds*)minimumAndMaximum)->minimum[1];
-        float cornerX = cornerSelectors[0] ? ((BoxInputBounds*)minimumAndMaximum)->maximum[0] : ((BoxInputBounds*)minimumAndMaximum)->minimum[0];
+        float cornerZ = cornerSelectors[2] ? ((BoxInputBounds*)minimumAndMaximum)->maximum[2]
+                                           : ((BoxInputBounds*)minimumAndMaximum)->minimum[2];
+        float cornerY = cornerSelectors[1] ? ((BoxInputBounds*)minimumAndMaximum)->maximum[1]
+                                           : ((BoxInputBounds*)minimumAndMaximum)->minimum[1];
+        float cornerX = cornerSelectors[0] ? ((BoxInputBounds*)minimumAndMaximum)->maximum[0]
+                                           : ((BoxInputBounds*)minimumAndMaximum)->minimum[0];
         cornerPosition[0] = cornerX;
         cornerPosition[1] = cornerY;
         cornerPosition[2] = cornerZ;
@@ -1145,7 +1349,9 @@ void WView_DrawBox(void* self, float* minimumAndMaximum, unsigned int color, int
             if (filled) {
                 Matrix_TransformPoint(viewPosition, boxCorners[*indices], (&AsWView(self)->inputTransform[0]));
                 WView_ProjectViewPoint(self, vertex, viewPosition, 0);
-                ((DrawSelf*)self)->draw((void*)((BoxDrawTables*)boxDrawTables)->projectedVertexList, kProjectedVertexType, alpha < kFullAlpha ? kTranslucentBoxFlags : 0, 0);
+                ((DrawSelf*)self)
+                    ->draw((void*)((BoxDrawTables*)boxDrawTables)->projectedVertexList, kProjectedVertexType,
+                           alpha < kFullAlpha ? kTranslucentBoxFlags : 0, 0);
             } else {
                 const volatile float* previousCorner;
                 const float* currentCorner = boxCorners[(int)*indices];
@@ -1176,12 +1382,8 @@ void WView_InitializeConstructionUnitConstants() {
 
 } // extern "C"
 
-} // namespace ns0
-
 // ---- merged from wview_camera_projection.cpp ----
 namespace ns1 {
-// Translation unit 0x800676E0-0x80068524 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -1201,18 +1403,17 @@ extern const float kFloat_0_5_View;
 extern const float kFloat_0_00001_CameraView;
 extern const float kFloat_2_View;
 // Fixed dimensionless perspective aspect=1.25, NOT target width/height. Defined
-// in u80065F78_data.cpp; only RebuildCameraPerspective reads it in retail source.
+// in the data section; only RebuildCameraPerspective reads it in retail source.
 extern const float kViewPerspectiveAspectRatio;
 extern const unsigned int kViewportOriginDepthTransformTemplate[];
 extern const char kIdentityMatrix4x4[];
 void Camera_Apply(void*, float, float);
 void MtxPerspectiveFovRH(void*, float, float, float, float);
-void Matrix_TransformPoint(void*, void*, void*);
+void* Matrix_TransformPoint(void*, void*, void*);
 void Vec3_CopyToOutput(void*, void*);
 void Mtx44_TransformPointPerspective(void*, void*, void*);
 void Vec3_ProjectToViewport(void*, void*, void*, void*, void*, const char*);
 void Engine_GetViewport(void*);
-void WView_BuildViewportTransform(void*, void*);
 void PSMTX44Transpose(void*, void*);
 void PSMTX44Concat(void*, void*, void*);
 void __construct_array(void*, void*, int, int, int);
@@ -1231,23 +1432,29 @@ void DrawPrimitiveUP(int, int, void*, int);
 void String_ReserveCapacity(void*, unsigned int);
 void String_ReplaceRange(void*, int, int, const char*, const char*, char*);
 void FilePath_EnsureDvdPrefix(void*);
-int FileIO_OpenFile(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
+int FileIO_OpenFile(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+                    unsigned int);
 void appFreeUni__FPv(void*);
 
 struct TableLock {
-	int active;
-	int index;
+    int active;
+    int index;
 };
 
 struct TableLockEntry {
-	int initialized;
-	char lock[0x18];
+    int initialized;
+    char lock[0x18];
 };
 
-struct LocalString { unsigned int words[3]; };
+struct LocalString {
+    unsigned int words[3];
+};
 
 // Return the ordered float comparison as an unsigned zero or one.
-static inline unsigned int LessThanF(float a, float b) { unsigned int r = a < b; return r; }
+static inline unsigned int LessThanF(float a, float b) {
+    unsigned int r = a < b;
+    return r;
+}
 #pragma opt_common_subs off
 // Rebuild perspective from horizontal FOV and viewport aspect, preserving FP order.
 // The first tan call is retained because the existing binary evaluates it twice.
@@ -1255,20 +1462,33 @@ static inline void RebuildCameraPerspective(char* viewBytes, float horizontalFov
     tan(kFloat_0_5_View * horizontalFovRadians);
     float halfFovTangent = (float)tan(kFloat_0_5_View * horizontalFovRadians);
     float halfFovCotangent = kFloat_1_view / halfFovTangent;
-    float verticalHalfFovTangent = (AsWView(viewBytes)->viewportHeight / AsWView(viewBytes)->viewportWidth) / halfFovCotangent;
+    float verticalHalfFovTangent =
+        (AsWView(viewBytes)->viewportHeight / AsWView(viewBytes)->viewportWidth) / halfFovCotangent;
     float verticalFovRadians = kFloat_2_View * (float)atan(verticalHalfFovTangent);
-    MtxPerspectiveFovRH((&AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale]),
-        verticalFovRadians, kViewPerspectiveAspectRatio, AsWView(viewBytes)->nearClip, AsWView(viewBytes)->farClip);
+    MtxPerspectiveFovRH((&AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale]), verticalFovRadians,
+                        kViewPerspectiveAspectRatio, AsWView(viewBytes)->nearClip, AsWView(viewBytes)->farClip);
 }
 
 // Pack the applied affine frame as the renderer's saved homogeneous matrix.
 static inline void SaveAppliedCameraView(char* viewBytes, unsigned int* appliedChanges) {
     float* appliedAffine = (float*)((&AsWView(viewBytes)->appliedViewMatrix[0]));
     float* savedHomogeneous = (float*)((&AsWView(viewBytes)->savedViewMatrix[0]));
-    savedHomogeneous[0]=appliedAffine[0]; savedHomogeneous[1]=appliedAffine[1]; savedHomogeneous[2]=appliedAffine[2]; savedHomogeneous[3]=0.0f;
-    savedHomogeneous[4]=appliedAffine[3]; savedHomogeneous[5]=appliedAffine[4]; savedHomogeneous[6]=appliedAffine[5]; savedHomogeneous[7]=0.0f;
-    savedHomogeneous[8]=appliedAffine[6]; savedHomogeneous[9]=appliedAffine[7]; savedHomogeneous[10]=appliedAffine[8]; savedHomogeneous[11]=0.0f;
-    savedHomogeneous[12]=appliedAffine[9]; savedHomogeneous[13]=appliedAffine[10]; savedHomogeneous[14]=appliedAffine[11]; savedHomogeneous[15]=1.0f;
+    savedHomogeneous[0] = appliedAffine[0];
+    savedHomogeneous[1] = appliedAffine[1];
+    savedHomogeneous[2] = appliedAffine[2];
+    savedHomogeneous[3] = 0.0f;
+    savedHomogeneous[4] = appliedAffine[3];
+    savedHomogeneous[5] = appliedAffine[4];
+    savedHomogeneous[6] = appliedAffine[5];
+    savedHomogeneous[7] = 0.0f;
+    savedHomogeneous[8] = appliedAffine[6];
+    savedHomogeneous[9] = appliedAffine[7];
+    savedHomogeneous[10] = appliedAffine[8];
+    savedHomogeneous[11] = 0.0f;
+    savedHomogeneous[12] = appliedAffine[9];
+    savedHomogeneous[13] = appliedAffine[10];
+    savedHomogeneous[14] = appliedAffine[11];
+    savedHomogeneous[15] = 1.0f;
     *appliedChanges |= kAppliedViewChanged;
 }
 
@@ -1292,49 +1512,72 @@ void Camera_Apply(void* camera, float centerOffsetX, float centerOffsetY) {
     if (*dirtyFlags & kViewMatrixDirty) {
         *dirtyFlags &= ~kViewMatrixDirty;
         SaveAppliedCameraView(viewBytes, appliedChanges);
-    } else *appliedChanges &= ~kAppliedViewChanged;
+    } else
+        *appliedChanges &= ~kAppliedViewChanged;
     // Projection policy (dirty includes a near-zero horizontal scale):
     // offsets changed + clean: recenter only; offsets changed + dirty: rebuild, recenter.
     // offsets same + dirty: reset stored offsets, rebuild, use plain frustum center.
     // offsets same + clean: clear projection-changed and keep the existing matrix.
-    if (centerOffsetX != AsWView(viewBytes)->projectionOffsetX || centerOffsetY != AsWView(viewBytes)->projectionOffsetY) {
-        AsWView(viewBytes)->projectionOffsetX=centerOffsetX; AsWView(viewBytes)->projectionOffsetY=centerOffsetY;
+    if (centerOffsetX != AsWView(viewBytes)->projectionOffsetX ||
+        centerOffsetY != AsWView(viewBytes)->projectionOffsetY) {
+        AsWView(viewBytes)->projectionOffsetX = centerOffsetX;
+        AsWView(viewBytes)->projectionOffsetY = centerOffsetY;
         // Rebuild when dirty or when the horizontal projection scale is near zero.
         do {
             if (!(*dirtyFlags & kViewProjectionDirty)) {
-                unsigned int horizontalScaleBits = (*(unsigned int*)&AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale]);
+                unsigned int horizontalScaleBits =
+                    (*(unsigned int*)&AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale]);
                 float horizontalScaleMagnitude;
-                if (horizontalScaleBits & kViewFloatSignBit) horizontalScaleMagnitude = -AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale];
-                else horizontalScaleMagnitude = AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale];
-                if (!(LessThanF(horizontalScaleMagnitude, kFloat_0_00001_CameraView) & 1u)) break;
+                if (horizontalScaleBits & kViewFloatSignBit)
+                    horizontalScaleMagnitude = -AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale];
+                else
+                    horizontalScaleMagnitude = AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale];
+                if (!(LessThanF(horizontalScaleMagnitude, kFloat_0_00001_CameraView) & 1u))
+                    break;
             }
             {
                 *dirtyFlags &= ~kViewProjectionDirty;
                 RebuildCameraPerspective(viewBytes, horizontalFovRadians);
             }
         } while (0);
-        horizontalSum=AsWView(viewBytes)->projectionRight+AsWView(viewBytes)->projectionLeft;
-        horizontalSpan=AsWView(viewBytes)->projectionRight-AsWView(viewBytes)->projectionLeft;
+        horizontalSum = AsWView(viewBytes)->projectionRight + AsWView(viewBytes)->projectionLeft;
+        horizontalSpan = AsWView(viewBytes)->projectionRight - AsWView(viewBytes)->projectionLeft;
         *appliedChanges |= kAppliedProjectionChanged;
-        AsWView(viewBytes)->projectionMatrix[kProjectionCenterX]=centerOffsetX/(AsWView(viewBytes)->screenCenterX)+horizontalSum/horizontalSpan;
-        AsWView(viewBytes)->projectionMatrix[kProjectionCenterY]=(AsWView(viewBytes)->projectionMinY+AsWView(viewBytes)->projectionMaxY)/(AsWView(viewBytes)->projectionMinY-AsWView(viewBytes)->projectionMaxY)-centerOffsetY/(AsWView(viewBytes)->screenCenterY);
+        AsWView(viewBytes)->projectionMatrix[kProjectionCenterX] =
+            centerOffsetX / (AsWView(viewBytes)->screenCenterX) + horizontalSum / horizontalSpan;
+        AsWView(viewBytes)->projectionMatrix[kProjectionCenterY] =
+            (AsWView(viewBytes)->projectionMinY + AsWView(viewBytes)->projectionMaxY) /
+                (AsWView(viewBytes)->projectionMinY - AsWView(viewBytes)->projectionMaxY) -
+            centerOffsetY / (AsWView(viewBytes)->screenCenterY);
     } else {
         do {
             if (!(*dirtyFlags & kViewProjectionDirty)) {
-                unsigned int horizontalScaleBits = (*(unsigned int*)&AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale]);
+                unsigned int horizontalScaleBits =
+                    (*(unsigned int*)&AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale]);
                 float horizontalScaleMagnitude;
-                if (horizontalScaleBits & kViewFloatSignBit) horizontalScaleMagnitude = -AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale];
-                else horizontalScaleMagnitude = AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale];
-                if (!(LessThanF(horizontalScaleMagnitude, kFloat_0_00001_CameraView) & 1u)) break;
+                if (horizontalScaleBits & kViewFloatSignBit)
+                    horizontalScaleMagnitude = -AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale];
+                else
+                    horizontalScaleMagnitude = AsWView(viewBytes)->projectionMatrix[kProjectionHorizontalScale];
+                if (!(LessThanF(horizontalScaleMagnitude, kFloat_0_00001_CameraView) & 1u))
+                    break;
             }
             {
                 *dirtyFlags &= ~kViewProjectionDirty;
-                AsWView(viewBytes)->projectionOffsetX=kFloat_0_0_CameraView; AsWView(viewBytes)->projectionOffsetY=kFloat_0_0_CameraView;
+                AsWView(viewBytes)->projectionOffsetX = kFloat_0_0_CameraView;
+                AsWView(viewBytes)->projectionOffsetY = kFloat_0_0_CameraView;
                 RebuildCameraPerspective(viewBytes, horizontalFovRadians);
-                projectionRight=AsWView(viewBytes)->projectionRight; projectionLeft=AsWView(viewBytes)->projectionLeft; projectionMinimumY=AsWView(viewBytes)->projectionMinY;
-                frustumHorizontalSum=projectionRight+projectionLeft; projectionMaximumY=AsWView(viewBytes)->projectionMaxY; frustumHorizontalSpan=projectionRight-projectionLeft;
-                verticalSum=projectionMinimumY+projectionMaximumY; verticalSpan=projectionMinimumY-projectionMaximumY;
-                *appliedChanges|=kAppliedProjectionChanged; AsWView(viewBytes)->projectionMatrix[kProjectionCenterX]=frustumHorizontalSum/frustumHorizontalSpan; AsWView(viewBytes)->projectionMatrix[kProjectionCenterY]=verticalSum/verticalSpan;
+                projectionRight = AsWView(viewBytes)->projectionRight;
+                projectionLeft = AsWView(viewBytes)->projectionLeft;
+                projectionMinimumY = AsWView(viewBytes)->projectionMinY;
+                frustumHorizontalSum = projectionRight + projectionLeft;
+                projectionMaximumY = AsWView(viewBytes)->projectionMaxY;
+                frustumHorizontalSpan = projectionRight - projectionLeft;
+                verticalSum = projectionMinimumY + projectionMaximumY;
+                verticalSpan = projectionMinimumY - projectionMaximumY;
+                *appliedChanges |= kAppliedProjectionChanged;
+                AsWView(viewBytes)->projectionMatrix[kProjectionCenterX] = frustumHorizontalSum / frustumHorizontalSpan;
+                AsWView(viewBytes)->projectionMatrix[kProjectionCenterY] = verticalSum / verticalSpan;
             }
             return;
         } while (0);
@@ -1367,7 +1610,8 @@ void WView_ProjectWorldPoint(void* camera, void* output, void* input) {
     Mtx44_TransformPointPerspective(projectedPosition, projectedPosition, c->projectionMatrix);
     Vec3_CopyToOutput(input, worldPosition);
     Engine_GetViewport(viewport);
-    Vec3_ProjectToViewport(screenPosition, worldPosition, viewport, c->projectionMatrix, c->savedViewMatrix, kIdentityMatrix4x4);
+    Vec3_ProjectToViewport(screenPosition, worldPosition, viewport, c->projectionMatrix, c->savedViewMatrix,
+                           kIdentityMatrix4x4);
     WViewProjectedPoint* result = (WViewProjectedPoint*)output;
     float component, minimumXY, projectedX;
     projectedX = projectedPosition[0];
@@ -1419,19 +1663,28 @@ void WView_ProjectWorldPoint(void* camera, void* output, void* input) {
 // matrix composition and screenZ-1 convention; output is in renderer viewport pixels.
 void WView_ProjectViewPoint(void* camera, void* output, void* input, int skipClipTest) {
     float projectedPosition[3];
-    struct Viewport { unsigned int x, y, width, height; float nearZ, farZ; } viewport;
+    struct Viewport {
+        unsigned int x, y, width, height;
+        float nearZ, farZ;
+    } viewport;
     typedef char ViewportRecordSizeCheck[sizeof(Viewport) == kViewportBytes ? 1 : -1];
     float combinedViewportMatrix[16];
     float viewportTransform[16];
-    struct Matrix { float m[16]; } depthAndOriginTransform;
+    struct Matrix {
+        float m[16];
+    } depthAndOriginTransform;
 
     Vec3_CopyToOutput(input, projectedPosition);
 
-    float* out = (float*)output; float zero = kFloat_0_0_CameraView; Camera_Apply(camera, zero, zero);
+    float* out = (float*)output;
+    float zero = kFloat_0_0_CameraView;
+    Camera_Apply(camera, zero, zero);
     Mtx44_TransformPointPerspective(projectedPosition, projectedPosition, (&AsWView(camera)->projectionMatrix[0]));
     float first = projectedPosition[0];
     // Store the clip-space (perspective-divided) point: out[10..12] == projectedX/Y/Z (WViewProjectedPoint 0x28..0x30).
-    out[10] = first; out[11] = projectedPosition[1]; out[12] = projectedPosition[2];
+    out[10] = first;
+    out[11] = projectedPosition[1];
+    out[12] = projectedPosition[2];
     ((WViewProjectedPoint*)output)->clipFlags = 0;
     if (!skipClipTest) {
         float f1 = first;
@@ -1453,16 +1706,18 @@ void WView_ProjectViewPoint(void* camera, void* output, void* input, int skipCli
             ((WViewProjectedPoint*)output)->clipFlags = kClipBeyondFar;
         }
     }
-    Engine_GetViewport(&viewport); WView_BuildViewportTransform(viewportTransform, &viewport);
+    Engine_GetViewport(&viewport);
+    WView::BuildViewportTransform(viewportTransform, &viewport);
     depthAndOriginTransform = *(Matrix*)kViewportOriginDepthTransformTemplate;
     depthAndOriginTransform.m[3] = (float)viewport.x;
     depthAndOriginTransform.m[7] = (float)viewport.y;
     depthAndOriginTransform.m[10] = kFloat_1_view / viewport.farZ;
-    PSMTX44Transpose(&depthAndOriginTransform, &depthAndOriginTransform);  PSMTX44Concat(combinedViewportMatrix, viewportTransform, &depthAndOriginTransform);
+    PSMTX44Transpose(&depthAndOriginTransform, &depthAndOriginTransform);
+    PSMTX44Concat(combinedViewportMatrix, viewportTransform, &depthAndOriginTransform);
     Mtx44_TransformPointPerspective(projectedPosition, projectedPosition, combinedViewportMatrix);
     // Final screen-space point: out[0..3] == screenX/Y/Z and rhw (1.0). Coordinates are viewport
     // pixels; the last two lines re-centre x/y by (screenCenter - viewportSize/2).
-    float one, f1h, f2, f3, f4;   // f1h = 0.5; f2c/f2d below = viewport width/height
+    float one, f1h, f2, f3, f4; // f1h = 0.5; f2c/f2d below = viewport width/height
     f4 = projectedPosition[0];
     one = kFloat_1_view;
     out[0] = f4;
@@ -1483,33 +1738,39 @@ void WView_ProjectViewPoint(void* camera, void* output, void* input, int skipCli
 // template supplies the remaining four-float records. No camera/resolution update.
 // Preserve encoded format 0xF005, 16-byte stride and strip count 2 together.
 void ResultMenu_DrawSharedQuad() {
-	struct Rect { float left, top, right, bottom; };
-	struct Vertex { float x, y, u, v; };
-	struct Vertices { Vertex v[4]; } vertices;
-	Rect rect = *(Rect*)s_resultMenuSharedQuadRect;
-	vertices = *(Vertices*)s_resultMenuSharedQuadVertices;
-	vertices.v[0].x = rect.left;
-	vertices.v[0].y = rect.top;
-	vertices.v[1].x = rect.right;
-	vertices.v[1].y = rect.top;
-	vertices.v[2].x = rect.left;
-	vertices.v[2].y = rect.bottom;
-	vertices.v[3].x = rect.right;
-	vertices.v[3].y = rect.bottom;
-	Engine_SetFlexibleVertexFormat(0xF005);
-	DrawPrimitiveUP(0x98, 2, &vertices, 0x10);
+    struct Rect {
+        float left, top, right, bottom;
+    };
+    struct Vertex {
+        float x, y, u, v;
+    };
+    struct Vertices {
+        Vertex v[4];
+    } vertices;
+    Rect rect = *(Rect*)s_resultMenuSharedQuadRect;
+    vertices = *(Vertices*)s_resultMenuSharedQuadVertices;
+    vertices.v[0].x = rect.left;
+    vertices.v[0].y = rect.top;
+    vertices.v[1].x = rect.right;
+    vertices.v[1].y = rect.top;
+    vertices.v[2].x = rect.left;
+    vertices.v[2].y = rect.bottom;
+    vertices.v[3].x = rect.right;
+    vertices.v[3].y = rect.bottom;
+    Engine_SetFlexibleVertexFormat(0xF005);
+    DrawPrimitiveUP(0x98, 2, &vertices, 0x10);
 }
+
+} // extern "C"
+
+} // namespace ns1
 
 typedef LocalNString_u80065F78 OwnedString80068;
 
-struct Alloc80068 { char c; };
-
-struct AsyncFileState {
-    unsigned int handle;
-    int synchronous;
-    unsigned int requestedReadSize;
-    void* vtable;
+struct Alloc80068 {
+    char c;
 };
+
 enum {
     kFileReadAccess = 0x80000000u,
     kFileOpenExisting = 3,
@@ -1522,164 +1783,201 @@ enum {
 };
 
 typedef void (*Assign80068)(void*, int, int, const char*, const char*, Alloc80068);
-typedef int (*Open80068)(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
+typedef int (*Open80068)(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+                         unsigned int, unsigned int, unsigned int, unsigned int);
 
-// Normalize a DVD path, open its file, and record synchronous-read behavior on success.
-// Required self and NUL-terminated borrowed path. Returns 1 on open, 0 on the
-// legacy biased invalid-handle test. Stores the handle even on failure; failure
-// leaves synchronous unchanged. Reopening does NOT close an existing handle:
-// call Close first. Temporary normalized path owns only its string storage.
-int CFileAsync_Open(void* self, const char* path, int synchronous) {
-	OwnedString80068 str(path);
-	FilePath_EnsureDvdPrefix(&str);
-	unsigned int options = synchronous ? kFileSynchronousOptions : kFileAsyncOptions;
-	unsigned int result = ((Open80068)FileIO_OpenFile)((unsigned int)str.c_str(), kFileReadAccess, 0, 0, kFileOpenExisting, options, 0, 0, 0, 0);
-	((AsyncFileState*)self)->handle = result;
-	if ((result + kFileErrorBias) == kBiasedInvalidFileHandle) {
-		return 0;
-	}
-	((unsigned int*)self)[1] = synchronous;
-	return 1;
+// File functions used by the CFileAsync member functions below.
+extern "C" {
+extern char __vt__10CFileAsync[];
+void FilePath_EnsureDvdPrefix(void*);
+int FileIO_OpenFile(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int,
+                    unsigned int);
+void String_ReserveCapacity(void*, unsigned int);
+void String_ReplaceRange(void*, int, int, const char*, const char*, char*);
+int FileIO_GetFileSize(int, int*, int, int);
+void File_GetLastError();
+void FileIO_CloseFile(int);
+int FileIO_ReadFile(void*, void*, int, int, int, int, int, int);
+int FileIO_PollAsyncTransferResult(int*, int*, int*);
+void __dl__FPv(void*);
 }
 
-// Initialize file state and attempt to open the normalized DVD path.
-// Returns self even on open failure; initial state is invalid handle, async mode,
-// zero requested size. Owns any opened handle; dtor/Close releases it. Path is
-// copied for normalization and not retained. Preserve allocator-token copies.
-void* CFileAsync_ctorWithPath(void* self, const char* path, int synchronous) {
-    int* fields = (int*)self;
-    (*(int*)&((AsyncFileState*)fields)->vtable) = (int)__vt__10CFileAsync;
-    ((AsyncFileState*)fields)->handle = -1; ((AsyncFileState*)fields)->synchronous = 0; ((AsyncFileState*)fields)->requestedReadSize = 0;
+// Open the normalized DVD path and record the handle. A failed open leaves the synchronous flag unchanged.
+int CFileAsync::Open(const char* path, int synchronous) {
+    OwnedString80068 str(path);
+    FilePath_EnsureDvdPrefix(&str);
+    unsigned int options = synchronous ? kFileSynchronousOptions : kFileAsyncOptions;
+    unsigned int result = ((Open80068)FileIO_OpenFile)((unsigned int)str.c_str(), kFileReadAccess, 0, 0,
+                                                       kFileOpenExisting, options, 0, 0, 0, 0);
+    handle = result;
+    if ((result + kFileErrorBias) == kBiasedInvalidFileHandle) {
+        return 0;
+    }
+    this->synchronous = synchronous;
+    return 1;
+}
+
+// Open the DVD path; the handle stays invalid if the open fails.
+CFileAsync::CFileAsync(const char* path, int synchronous) {
+    vtable = __vt__10CFileAsync;
+    handle = -1;
+    this->synchronous = 0;
+    requestedReadSize = 0;
     do {
         {
-            struct { Alloc80068 alloc; char padding[3]; Alloc80068 copy; } allocator;
+            struct {
+                Alloc80068 alloc;
+                char padding[3];
+                Alloc80068 copy;
+            } allocator;
             OwnedString80068 str;
-            str.flags = 0; str.length = 0; str.data = 0;
+            str.flags = 0;
+            str.length = 0;
+            str.data = 0;
             unsigned int length = strlen(path);
             String_ReserveCapacity(&str, length);
             allocator.copy = allocator.alloc;
             String_ReplaceRange(&str, 0, 0, path, path + length, &allocator.copy.c);
             FilePath_EnsureDvdPrefix(&str);
             unsigned int options = synchronous ? kFileSynchronousOptions : kFileAsyncOptions;
-            unsigned int result = ((Open80068)FileIO_OpenFile)((unsigned int)str.c_str(), kFileReadAccess, 0, 0, kFileOpenExisting, options, 0, 0, 0, 0);
-            ((AsyncFileState*)fields)->handle = result;
-            if ((result + kFileErrorBias) == kBiasedInvalidFileHandle) break;
-            ((AsyncFileState*)fields)->synchronous = synchronous;
+            unsigned int result = ((Open80068)FileIO_OpenFile)((unsigned int)str.c_str(), kFileReadAccess, 0, 0,
+                                                               kFileOpenExisting, options, 0, 0, 0, 0);
+            handle = result;
+            if ((result + kFileErrorBias) == kBiasedInvalidFileHandle)
+                break;
+            this->synchronous = synchronous;
         }
     } while (0);
-    return self;
 }
 
-// Query the open file's low size word and record the last error on failure.
-// self has an open handle. Return is the low unsigned 32-bit size via int;
-// 0xFFFFFFFF denotes failure. No caller buffer is written or memory retained.
-int CFileAsync_GetSize(const int* self) {
-	struct { unsigned int high; unsigned int low; } size;
-	size.low = ((unsigned int (*)(int, void*, int, int))FileIO_GetFileSize)(((const AsyncFileState*)self)->handle, &size, 0, 0);
-	if (size.low == kInvalidFileSize) File_GetLastError();
-	return size.low;
+// Size of the open file in its low 32 bits; 0xFFFFFFFF on failure.
+int CFileAsync::GetSize() const {
+    struct {
+        unsigned int high;
+        unsigned int low;
+    } size;
+    size.low = ((unsigned int (*)(int, void*, int, int))FileIO_GetFileSize)(handle, &size, 0, 0);
+    if (size.low == kInvalidFileSize)
+        File_GetLastError();
+    return size.low;
 }
+
+namespace ns1 {
+
+extern "C" {
 
 // Lazily initialize and acquire an indexed mutex when the guard is active.
 // Required self, index 0..6 if active!=0. Inactive leaves index uninitialized;
 // dtor never reads it on that path. Returns self. Preserve lazy-init/acquire
 // order; callers must serialize first initialization of each shared entry.
 void* TableLock_ctor(TableLock* self, int index, int active) {
-	TableLockEntry* entry;
-	self->active = active;
-	if (active != 0) {
-		int offset = index * sizeof(TableLockEntry);
-		self->index = index;
-		entry = (TableLockEntry*)((char*)s_tableLockEntries + offset);
-		if (entry->initialized == 0) {
-			OSInitMutex(&entry->lock);
-			entry->initialized = 1;
-		}
-		OSLockMutex(&entry->lock);
-	}
-	return self;
+    TableLockEntry* entry;
+    self->active = active;
+    if (active != 0) {
+        int offset = index * sizeof(TableLockEntry);
+        self->index = index;
+        entry = (TableLockEntry*)((char*)s_tableLockEntries + offset);
+        if (entry->initialized == 0) {
+            OSInitMutex(&entry->lock);
+            entry->initialized = 1;
+        }
+        OSLockMutex(&entry->lock);
+    }
+    return self;
 }
 
 // Release an active indexed mutex and optionally delete the guard.
 // Null self is accepted/returned; shouldDelete>0 releases guard storage after
 // unlock. Balanced construction/destruction is required; mutex itself persists.
 void* __dt__9TableLockFv(TableLock* self, int shouldDelete) {
-	if (self != 0) {
-		if (self->active != 0) {
-		int index = self->index;
-			TableLockEntry* entry = (TableLockEntry*)((char*)s_tableLockEntries + index * sizeof(TableLockEntry));
-			OSUnlockMutex(&entry->lock);
-		}
-		if (shouldDelete > 0) __dl__FPv(self);
-	}
-	return self;
+    if (self != 0) {
+        if (self->active != 0) {
+            int index = self->index;
+            TableLockEntry* entry = (TableLockEntry*)((char*)s_tableLockEntries + index * sizeof(TableLockEntry));
+            OSUnlockMutex(&entry->lock);
+        }
+        if (shouldDelete > 0)
+            __dl__FPv(self);
+    }
+    return self;
 }
 
-// Close a valid file handle and optionally delete the async file object.
-// Null self returns null. Closing follows the same biased handle test as Open;
-// shouldDelete>0 frees self afterwards. Borrowed read destinations are not freed.
-void* CFileAsync_dtor(int* self, int shouldDelete) {
-	if (self != 0) {
-		unsigned int value = ((AsyncFileState*)self)->handle;
-		unsigned int check = value + kFileErrorBias;
-		(*(int*)&((AsyncFileState*)self)->vtable) = (int)__vt__10CFileAsync;
-		if (check != kBiasedInvalidFileHandle) {
-			FileIO_CloseFile(value);
-			((AsyncFileState*)self)->handle = -1;
-		}
-		if (shouldDelete > 0) __dl__FPv(self);
-	}
-	return self;
+} // extern "C"
+
+} // namespace ns1
+
+// Close the file if it is open.
+CFileAsync::~CFileAsync() {
+    unsigned int value = handle;
+    unsigned int check = value + kFileErrorBias;
+    vtable = __vt__10CFileAsync;
+    if (check != kBiasedInvalidFileHandle) {
+        FileIO_CloseFile(value);
+        handle = -1;
+    }
 }
 
-// Close a valid handle and mark it invalid.
-// Required self; retains synchronous/request-size words. Caller coordinates
-// pending reads before releasing their destination; this wrapper adds no wait.
-void CFileAsync_Close(int* self) {
-	unsigned int value = ((AsyncFileState*)self)->handle;
-	unsigned int check = value + kFileErrorBias;
-	if (check != kBiasedInvalidFileHandle) {
-		FileIO_CloseFile(value);
-		((AsyncFileState*)self)->handle = -1;
-	}
+// Close the file if it is open and mark the handle invalid.
+void CFileAsync::Close() {
+    unsigned int value = handle;
+    unsigned int check = value + kFileErrorBias;
+    if (check != kBiasedInvalidFileHandle) {
+        FileIO_CloseFile(value);
+        handle = -1;
+    }
 }
+
+namespace ns1 {
+
+extern "C" {
 
 // Destroy the view base object and optionally release its allocation.
 void* WView_dtor(void* ptr, int deletingFlag) {
-	if (ptr != 0) {
-		if ((volatile void*)ptr != 0) BaseObject_dtor((int)ptr, 0);
-		if (deletingFlag > 0) __dl__FPv(ptr);
-	}
-	return ptr;
+    if (ptr != 0) {
+        if ((volatile void*)ptr != 0)
+            BaseObject_dtor((int)ptr, 0);
+        if (deletingFlag > 0)
+            __dl__FPv(ptr);
+    }
+    return ptr;
 }
 
 // Default view status hook returns false.
 int WView_vfunc_5() {
-	return 0;
+    return 0;
 }
 
 // Initialize this projection unit's mutable two-pi constant.
 void WView_InitializeProjectionUnitConstants() {
-	s_twoPi_ViewProjection = kFloat_6_2831855;
+    s_twoPi_ViewProjection = kFloat_6_2831855;
 }
 
 // Mark an indexed table mutex as not yet initialized.
 void TableLockEntry_ClearInitialized(int* value) {
-	*value = 0;
+    *value = 0;
 }
 
-// Initialize a closed file object with no pending read.
-void CFileAsync_ctor(int* self) {
-	(*(int*)&((AsyncFileState*)self)->vtable) = (int)&__vt__10CFileAsync;
-	((AsyncFileState*)self)->handle = -1;
-	((AsyncFileState*)self)->synchronous = 0;
-	((AsyncFileState*)self)->requestedReadSize = 0;
+} // extern "C"
+
+} // namespace ns1
+
+// A closed file with no pending read.
+CFileAsync::CFileAsync() {
+    vtable = &__vt__10CFileAsync;
+    handle = -1;
+    synchronous = 0;
+    requestedReadSize = 0;
 }
+
+namespace ns1 {
+
+extern "C" {
 
 // Initialize the file unit's two-pi value and all seven table-lock entries.
 void TableLock_InitializeEntriesAndConstants() {
-	s_twoPi_FileAsync = kFloat_6_2831855;
-	__construct_array(&s_tableLockEntries, (void*)TableLockEntry_ClearInitialized, 0, sizeof(TableLockEntry), kTableLockCount);
+    s_twoPi_FileAsync = kFloat_6_2831855;
+    __construct_array(&s_tableLockEntries, (void*)TableLockEntry_ClearInitialized, 0, sizeof(TableLockEntry),
+                      kTableLockCount);
 }
 
 // Reserved projection hook; the original function performs no work.
@@ -1692,87 +1990,82 @@ void WView_ProjectViewPoint(void*, void*, void*, int);
 
 // Project a view-space point while suppressing clip tests.
 void WView_ProjectViewPointWithoutClipTest(void* view, void* output, void* input) {
-	WView_ProjectViewPoint(view, output, input, 1);
+    WView_ProjectViewPoint(view, output, input, 1);
 }
 
 // Default render capability query returns true.
 int WView_DefaultCapabilityTrueA() {
-	return 1;
+    return 1;
 }
 
 // Default render capability query returns true.
 int WView_DefaultCapabilityTrueC() {
-	return 1;
+    return 1;
 }
 
 // Default render capability query returns true.
 // Accepting base hook: always returns 1; it reads no sphere and performs no culling.
 int WView_DefaultAcceptVisibility() {
-	return 1;
+    return 1;
 }
 
 // Default view capability hook returns false.
 int WView_vfunc_10() {
-	return 0;
+    return 0;
 }
 
 // Default view capability hook returns true.
 int WView_vfunc_8() {
-	return 1;
+    return 1;
 }
 
 // Return the view's embedded render-state block.
 // Borrowed pointer at +0x1A18 lives with self. Layout is the constructor's
 // seven-word state/tint block; it is not a newly allocated render context.
 char* Camera_GetRenderState(char* self) {
-	return (char*)&AsWView(self)->unk_1A18;
+    return (char*)&AsWView(self)->renderState;
 }
 
 // Initialize the view utility unit's mutable two-pi constant.
 void WView_InitializeUtilityUnitConstants() {
-	s_twoPi_WView = kFloat_6_2831855;
+    s_twoPi_WView = kFloat_6_2831855;
 }
 
 // Mark both saved view and projection matrices for rebuilding.
 void WView_InvalidateViewAndProjection(unsigned int* self) {
-	AsWView(self)->dirtyFlags |= kViewAndProjectionDirty;
+    AsWView(self)->dirtyFlags |= kViewAndProjectionDirty;
 }
 
 int FileIO_ReadFile(void*, void*, int, int, int, int, int, int);
-
-// 0x80068478 tail-branches to FileIO_ReadFile (0x80068494); callers test the result (0x800636E4, 0x8009FE10).
-// Remember the requested byte count and forward a read into a borrowed buffer.
-// Required open self and writable destination[byteCount]; count is nonnegative.
-// Destination must survive async completion. Returns FileIO_ReadFile status
-// unchanged, not bytes read; records size even if submission fails. Preserve the
-// integerized handle/size ABI and exact forwarding arguments/tail-call shape.
-int CFileAsync_StartRead(void** self, void* destination, int byteCount) {
-	(*(void**)&((AsyncFileState*)self)->requestedReadSize) = (void*)byteCount;
-	return FileIO_ReadFile((*(void**)&((AsyncFileState*)self)->handle), destination, byteCount, 0, 0, -1, 0, 0);
-}
-
-// Complete synchronous reads immediately; otherwise poll the pending async operation.
-// Required self/out completion flag; optional value has mode-dependent meaning:
-// sync writes requested BYTE COUNT, async writes DEVICE RESULT (not guaranteed
-// bytes). Sync writes *out=1, returns 1 without checking actual I/O. Async invalid
-// handle/non-async file returns 0 with outputs untouched; otherwise device poll
-// writes completion and optionally device result. Completion copies back and
-// releases any FileIO-owned transfer buffer (file_io_facade.cpp). Preserve this ABI
-// distinction; the caller's read destination remains borrowed through completion.
-int CFileAsync_PollRead(int* self, int* out, int* value) {
-	if (((AsyncFileState*)self)->synchronous != 0) {
-		*out = 1;
-		if (value != 0) *value = ((AsyncFileState*)self)->requestedReadSize;
-		return 1;
-	}
-	return FileIO_PollAsyncTransferResult((int*)((AsyncFileState*)self)->handle, out, value);
-}
 
 } // extern "C"
 
 } // namespace ns1
 
-extern "C" { void WView_InitializeConstructionUnitConstants(); void WView_InitializeProjectionUnitConstants(); void TableLock_InitializeEntriesAndConstants(); void WView_InitializeUtilityUnitConstants(); }
+// Start a read into a caller buffer that must stay valid until PollRead reports completion.
+// Returns the FileIO_ReadFile status.
+int CFileAsync::StartRead(void* destination, int byteCount) {
+    requestedReadSize = byteCount;
+    return FileIO_ReadFile((void*)handle, destination, byteCount, 0, 0, -1, 0, 0);
+}
+
+// Synchronous files complete at once; otherwise poll the pending read.
+int CFileAsync::PollRead(int* out, int* value, int unusedWord) {
+    if (synchronous != 0) {
+        *out = 1;
+        if (value != 0)
+            *value = requestedReadSize;
+        return 1;
+    }
+    return FileIO_PollAsyncTransferResult((int*)handle, out, value);
+}
+
+extern "C" {
+void WView_InitializeConstructionUnitConstants();
+void WView_InitializeProjectionUnitConstants();
+void TableLock_InitializeEntriesAndConstants();
+void WView_InitializeUtilityUnitConstants();
+}
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push
 #pragma force_active on

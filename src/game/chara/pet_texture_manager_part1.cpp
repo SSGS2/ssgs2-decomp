@@ -1,6 +1,8 @@
+// Pet texture manager: the texture entry record and its constructor, the manager constructor,
+// and a startup angle constant.
+
 #include <decomp/static_init.h>
-// Translation unit 0x80047498-0x80047564 (3 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CPetTexManager.h"
 
 extern "C" {
 
@@ -48,7 +50,8 @@ struct Container {
 extern char __vt__14CPetTexManager[];
 
 // Start a reference-counted pet texture manager with an empty circular list.
-Container* CPetTexManager_ctor(Container* self) {
+CPetTexManager::CPetTexManager() {
+    Container* self = (Container*)this;
     Node* end = &self->sentinel;
     Node* node = &self->sentinel;
     self->referenceCount = 1;
@@ -70,7 +73,6 @@ Container* CPetTexManager_ctor(Container* self) {
             self->textureCount -= 1;
         }
     }
-    return self;
 }
 
 } // extern "C"

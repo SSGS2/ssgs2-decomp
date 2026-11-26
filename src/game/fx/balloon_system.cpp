@@ -1,3 +1,6 @@
+// Balloon system: the three shared queues of balloons, their hit and reset messages, and the
+// helpers that list and free queue nodes.
+
 #include <decomp/static_init.h>
 typedef unsigned long new_size_t;
 extern "C" {
@@ -10,14 +13,18 @@ typedef std::list<void*, app::app_allocator<void*> > BalloonList;
 #include "classes/GameInputManager.h"
 
 // Interpret a borrowed complete-object address using the shared balloon ABI view.
-inline CBalloonSystem* AsCBalloonSystem(const void* object) { return (CBalloonSystem*)object; }
+inline CBalloonSystem* AsCBalloonSystem(const void* object) {
+    return (CBalloonSystem*)object;
+}
 // Interpret a borrowed input-manager address; no allocation or ownership change.
-inline GameInputManager* AsGameInputManager(void* object) { return (GameInputManager*)object; }
-// Translation unit 0x8006DAE8-0x8006EA6C (10 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+inline GameInputManager* AsGameInputManager(void* object) {
+    return (GameInputManager*)object;
+}
 
 // Construct in caller-provided storage without allocating.
-inline void* operator new(new_size_t, void* address) { return address; }
+inline void* operator new(new_size_t, void* address) {
+    return address;
+}
 
 extern "C" {
 
@@ -42,7 +49,6 @@ extern int Balloon_GetPosition(void*);
 extern void Balloon_ProjectAndClampScreenPosition(float*, void*);
 extern int GolfBall__Fv();
 extern void* appMallocDummy__FUl(unsigned int);
-extern void CBalloonSystem_DestroySharedQueue();
 extern void __dl__FPv(void*);
 extern void CursorLayoutVector_Init(void*);
 extern void CursorTrailVector_Init(void*);
@@ -63,13 +69,24 @@ extern void CursorTrailIterator_Advance(void*);
 extern void ColorRGBA_Copy(void*, const void*);
 extern void KPADSetPosParam(int, float, float);
 extern unsigned char cursorResourceTemplates[];
-extern float kDefaultRemotePointerPlayRadius; // 0.15: KPAD pointer play radius.
+extern float kDefaultRemotePointerPlayRadius;  // 0.15: KPAD pointer play radius.
 extern float kDefaultRemotePointerSensitivity; // 0.9: KPAD pointer sensitivity.
 extern const float kFloat_0_BalloonInput;
-struct ListNode { ListNode* prev; ListNode* next; void* value; };
-struct List { unsigned int count; ListNode sentinel; };
+struct ListNode {
+    ListNode* prev;
+    ListNode* next;
+    void* value;
+};
+struct List {
+    unsigned int count;
+    ListNode sentinel;
+};
 // The shared static lists store only the sentinel links, never its unused value word.
-struct StaticQueueHeader { unsigned int count; ListNode* last; ListNode* first; };
+struct StaticQueueHeader {
+    unsigned int count;
+    ListNode* last;
+    ListNode* first;
+};
 enum BalloonQueueOffset {
     kOwnedBalloonQueue = 12,
     kUnhitBalloonQueue = 36,
@@ -86,7 +103,9 @@ struct UpdateObject {
 extern float kBalloonBallCollisionRadius; // 5: ball-to-balloon collision radius.
 extern unsigned char s_unhitBalloonQueue[];
 extern unsigned char s_hitBalloonQueue[];
-struct PmfObj { int dummy; };
+struct PmfObj {
+    int dummy;
+};
 typedef void (PmfObj::*PmfFn)();
 
 #pragma cpp_exceptions on
@@ -95,10 +114,15 @@ typedef void (PmfObj::*PmfFn)();
 #pragma opt_common_subs off
 #pragma opt_loop_invariants off
 #pragma opt_dead_code off
-struct ProcessIterator { ListNode* volatile node; };
+struct ProcessIterator {
+    ListNode* volatile node;
+};
 // Get the intrusive-list sentinel while preserving the library iterator address calculation.
 inline ListNode* process_end(List* list) {
-    union { List* pointer; unsigned int address; } value;
+    union {
+        List* pointer;
+        unsigned int address;
+    } value;
     value.pointer = list;
     return (ListNode*)(value.address + (unsigned int)&((List*)0)->sentinel);
 }
@@ -139,7 +163,10 @@ struct ProcessAllocation {
     // Guard a newly allocated node until it has been linked into its destination queue.
     ProcessAllocation(ListNode* end, ListNode* value) : sentinel(end), node(value) {}
     // Free only an uncommitted node; the balloon payload is always borrowed here.
-    ~ProcessAllocation() { if (node) appFreeUni__FPv(node); }
+    ~ProcessAllocation() {
+        if (node)
+            appFreeUni__FPv(node);
+    }
 };
 
 // Copy a list payload using the exception-aware allocator construction path.
@@ -183,7 +210,7 @@ inline void process_each(List* list, PmfFn function) {
 }
 
 // Move ball/chain collisions to the hit queue, record the last hit, and update both queues.
-void CBalloonSystem_OnProcess(UpdateObject* object) {
+void CBalloonSystem::OnProcess(UpdateObject* object) {
 // These aliases re-evaluate the global address under the original disabled optimizations.
 #define hitBalloons (*(List*)s_hitBalloonQueue)
 #define unhitBalloons (*(List*)s_unhitBalloonQueue)
@@ -240,7 +267,8 @@ void CBalloonSystem_OnProcess(UpdateObject* object) {
             while (collisionCandidate.node != &unhitBalloons.sentinel) {
                 float collisionRadius = Balloon_GetScale(chainSource.node->value);
                 int sourcePositionAddress = Balloon_GetPosition(chainSource.node->value);
-                if (Balloon_TestSphereCollision(collisionCandidate.node->value, collisionRadius, sourcePositionAddress) == 1) {
+                if (Balloon_TestSphereCollision(collisionCandidate.node->value, collisionRadius,
+                                                sourcePositionAddress) == 1) {
                     int nextScaleIndex = Balloon_GetCurrentScaleIndex(chainSource.node->value) + 1;
                     Balloon_SetCurrentIndex(collisionCandidate.node->value, (short)nextScaleIndex);
                     list_append(&hitBalloons, collisionCandidate);
@@ -349,13 +377,13 @@ inline void FreeQueueNodes(List* list) {
 }
 
 // Release owned balloon resources and clear all three shared queues.
-void CBalloonSystem_OnDestroy() {
+void CBalloonSystem::OnDestroy() {
     unsigned char* globals = s_balloonQueueStatics;
     DeleteQueuedBalloons((List*)(((char*)(globals + kOwnedBalloonQueue))));
     FreeQueueNodes((List*)(((char*)(globals + kOwnedBalloonQueue))));
     FreeQueueNodes((List*)(((char*)(globals + kUnhitBalloonQueue))));
     FreeQueueNodes((List*)(((char*)(globals + kHitBalloonQueue))));
-    CBalloonSystem_DestroySharedQueue();
+    CBalloonSystem::DestroySharedQueue();
 }
 
 enum BalloonMessage {
@@ -365,18 +393,37 @@ enum BalloonMessage {
     kResetBalloonQueues = 3,
     kSetBalloonVisibility = 4
 };
-struct Event { int actorMessageHeader; int type; void* output; };
+struct Event {
+    int actorMessageHeader;
+    int type;
+    void* output;
+};
 // Message argument contract (32-bit ABI):
 // 0: output -> {int slot, float projectedX, projectedY, projectedZ}; slot -1 means no valid slot.
 // 1: output -> unsigned frame-hit count. 2: output -> unsigned HIT queue node count.
 // 3: output ignored; destroys owned balloons and all queue nodes.
 // 4: output is an integer boolean carried in the pointer word, never dereferenced.
 // Query buffers are borrowed writable storage; this handler retains none of them.
-struct EventData { unsigned int words[4]; };
-struct MsgVec { float words[3]; };
-struct MsgOutput { int index; MsgVec pos; };
-struct MsgPair { unsigned int y; unsigned long x; };
-struct MsgObject { char pad[0x18]; int index; MsgVec pos; unsigned int count; };
+struct EventData {
+    unsigned int words[4];
+};
+struct MsgVec {
+    float words[3];
+};
+struct MsgOutput {
+    int index;
+    MsgVec pos;
+};
+struct MsgPair {
+    unsigned int y;
+    unsigned long x;
+};
+struct MsgObject {
+    char pad[0x18];
+    int index;
+    MsgVec pos;
+    unsigned int count;
+};
 struct MsgResource {
     virtual ~MsgResource();
 };
@@ -386,14 +433,21 @@ struct MsgResource {
 #pragma opt_common_subs on
 // Select a shared balloon queue using the original iterator address representation.
 inline List* msg_list(unsigned char* globals, unsigned int offset) {
-    union { unsigned int address; List* ptr; } value;
+    union {
+        unsigned int address;
+        List* ptr;
+    } value;
     value.ptr = (List*)(globals + offset);
     return (List*)value.address;
 }
 // Return the first node, or the sentinel when the queue is empty.
-inline ListNode* msg_first(List* list) { return list->sentinel.next; }
+inline ListNode* msg_first(List* list) {
+    return list->sentinel.next;
+}
 // Return the sentinel used to terminate message-handler iteration.
-inline ListNode* msg_end(List* list) { return &list->sentinel; }
+inline ListNode* msg_end(List* list) {
+    return &list->sentinel;
+}
 // Unload and delete queue payloads during a reset message.
 inline void msg_clear_resources(List* list) {
     ListNode* sentinel;
@@ -443,7 +497,8 @@ inline void msg_set_enabled(List* list, int value) {
 }
 
 // Return hit information, reset shared queues, or change balloon visibility.
-void CBalloonSystem_HandleMsg(const MsgObject* object, const Event* event) {
+void CBalloonSystem::HandleMsg(const Event* event) {
+    const MsgObject* object = (const MsgObject*)this;
     unsigned char* globals = s_balloonQueueStatics;
     switch (event->type) {
     case kGetLastBalloonHit: {
@@ -458,20 +513,24 @@ void CBalloonSystem_HandleMsg(const MsgObject* object, const Event* event) {
         out[3] = src[3];
         break;
     }
-    case kGetBalloonsHitThisFrame: *(unsigned int*)event->output = AsCBalloonSystem(object)->balloonsHitThisFrame; break;
+    case kGetBalloonsHitThisFrame:
+        *(unsigned int*)event->output = AsCBalloonSystem(object)->balloonsHitThisFrame;
+        break;
     case kResetBalloonQueues:
         msg_clear_resources((List*)((char*)(msg_list(globals, kOwnedBalloonQueue))));
         msg_clear_list((List*)((char*)(msg_list(globals, kOwnedBalloonQueue))));
         msg_clear_list((List*)((char*)(msg_list(globals, kUnhitBalloonQueue))));
         msg_clear_list((List*)((char*)(msg_list(globals, kHitBalloonQueue))));
-        CBalloonSystem_DestroySharedQueue();
+        CBalloonSystem::DestroySharedQueue();
         break;
     case kSetBalloonVisibility: {
         msg_set_enabled((List*)((char*)(msg_list(globals, kOwnedBalloonQueue))), (int)event->output);
         break;
     }
     // This is the hit queue, not the remaining/unhit count; do not change the queue to fit a label.
-    case kGetHitBalloonCount: *(unsigned int*)event->output = ((StaticQueueHeader*)(((char*)(globals + kHitBalloonQueue))))->count; break;
+    case kGetHitBalloonCount:
+        *(unsigned int*)event->output = ((StaticQueueHeader*)(((char*)(globals + kHitBalloonQueue))))->count;
+        break;
     }
 }
 #pragma opt_common_subs reset
@@ -479,7 +538,7 @@ void CBalloonSystem_HandleMsg(const MsgObject* object, const Event* event) {
 #pragma opt_strength_reduction reset
 
 // Return the balloon-system type registration record.
-void* CBalloonSystem_GetRTTI() {
+void* CBalloonSystem::GetRTTI() {
     return &s_balloonSystemTypeInfo;
 }
 
@@ -513,7 +572,7 @@ void BalloonQueues_RegisterStatics() {
 }
 
 // Balloon objects draw themselves; the system has no additional display work.
-void CBalloonSystem_OnDisplay() {}
+void CBalloonSystem::OnDisplay() {}
 
 // Default actor reload hook performs no work.
 void IActor_OnReload() {}
@@ -531,13 +590,17 @@ int IActor_GetDisplayPriority(ActorDisplayFields* actor) {
 
 // Copy a complete four-channel RGBA palette.
 inline void CopyPalette16(unsigned char* dst, const unsigned char* src) {
-    for (int i = 0; i < 16; i++) dst[i] = src[i];
+    for (int i = 0; i < 16; i++)
+        dst[i] = src[i];
 }
 #pragma opt_propagation off
 #pragma opt_strength_reduction off
 // Address a borrowed palette byte block while retaining the original address calculation.
 inline unsigned char* PaletteTemplateAt(unsigned char* g, int offset) {
-    union { unsigned int address; unsigned char* ptr; } value;
+    union {
+        unsigned int address;
+        unsigned char* ptr;
+    } value;
     value.ptr = g + offset;
     return (unsigned char*)value.address;
 }
@@ -552,9 +615,21 @@ enum {
     kNoRumbleRequest = -1,
     kCursorPaletteBytes = 16
 };
-struct StartupPointerArray { void** entries; int size; int capacity; };
-struct StartupCursorMotion { int xBits; int yBits; int zBits; };
-struct StartupPadFlags { int state; unsigned char flags[3]; unsigned char padding; };
+struct StartupPointerArray {
+    void** entries;
+    int size;
+    int capacity;
+};
+struct StartupCursorMotion {
+    int xBits;
+    int yBits;
+    int zBits;
+};
+struct StartupPadFlags {
+    int state;
+    unsigned char flags[3];
+    unsigned char padding;
+};
 // Construction view for fields not yet exposed in GameInputManager.h.
 // Scratch banks are kept separate because their later meanings are not all established.
 struct InputStartupState {
@@ -594,7 +669,8 @@ struct InputStartupState {
     float pointerOverrideX;
     float pointerOverrideY;
 };
-#define STARTUP_OFFSET(field, offset) typedef char StartupOffset_##field[((int)&((InputStartupState*)0)->field == offset) ? 1 : -1]
+#define STARTUP_OFFSET(field, offset) \
+    typedef char StartupOffset_##field[((int)&((InputStartupState*)0)->field == offset) ? 1 : -1]
 STARTUP_OFFSET(remotePointerPlayRadius, 0x2A4);
 STARTUP_OFFSET(cursorMotion, 0x2F4);
 STARTUP_OFFSET(padFlags, 0x324);
@@ -621,7 +697,8 @@ void* InputManager_Init(void* object) {
         // Wii Remote integration: configure KPAD pointer filtering for every channel.
         // This call is the SDK boundary to change when replacing Remote pointer input.
         for (int i = 0; i < kWiiRemoteChannelCount; i++) {
-            KPADSetPosParam(i, ((InputStartupState*)self)->remotePointerPlayRadius, ((InputStartupState*)self)->remotePointerSensitivity);
+            KPADSetPosParam(i, ((InputStartupState*)self)->remotePointerPlayRadius,
+                            ((InputStartupState*)self)->remotePointerSensitivity);
         }
     } catch (...) {
         CursorTrailVector_dtor(&AsGameInputManager(self)->cursorTrails, -1);
@@ -637,14 +714,16 @@ void* InputManager_Init(void* object) {
     void* deviceSlotsEnd;
     cursorSlotsBegin = CursorSlotArray_Begin(&AsGameInputManager(self)->cursorLayouts);
     CursorSlotIterator_Copy((void**)&cursorSlotIterator, &cursorSlotsBegin);
-    while ((cursorSlotsEnd = PointerArray_GetCurrentSlot(&AsGameInputManager(self)->cursorLayouts), CursorTrailIterator_NotEqual(&cursorSlotIterator, (int*)&cursorSlotsEnd))) {
+    while ((cursorSlotsEnd = PointerArray_GetCurrentSlot(&AsGameInputManager(self)->cursorLayouts),
+            CursorTrailIterator_NotEqual(&cursorSlotIterator, (int*)&cursorSlotsEnd))) {
         *(int*)CursorLayoutIterator_GetPointer(&cursorSlotIterator) = 0;
         CursorLayoutIterator_Advance(&cursorSlotIterator);
     }
     // Clear the newly allocated input-device pointer slots.
     deviceSlotsBegin = InputDeviceSlotArray_Begin(&AsGameInputManager(self)->cursorTrails);
     InputDeviceSlotIterator_Copy((void**)&deviceSlotIterator, &deviceSlotsBegin);
-    while ((deviceSlotsEnd = PointerArray_GetCurrentSlot_1A30(&AsGameInputManager(self)->cursorTrails), CursorLayoutIterator_NotEqual(&deviceSlotIterator, (int*)&deviceSlotsEnd))) {
+    while ((deviceSlotsEnd = PointerArray_GetCurrentSlot_1A30(&AsGameInputManager(self)->cursorTrails),
+            CursorLayoutIterator_NotEqual(&deviceSlotIterator, (int*)&deviceSlotsEnd))) {
         *(int*)CursorTrailIterator_GetPointer(&deviceSlotIterator) = 0;
         CursorTrailIterator_Advance(&deviceSlotIterator);
     }
@@ -745,11 +824,11 @@ void* InputManager_Init(void* object) {
     // These byte tables are copied to stack temporaries before the four
     // per-entry calls below.
     unsigned char* t0 = PaletteTemplateAt(defaultPalettes, 0);
-    unsigned char arr1[16] = {t0[0], t0[1], t0[2], t0[3], t0[4], t0[5], t0[6], t0[7],
-        t0[8], t0[9], t0[10], t0[11], t0[12], t0[13], t0[14], t0[15]};
+    unsigned char arr1[16] = {t0[0], t0[1], t0[2],  t0[3],  t0[4],  t0[5],  t0[6],  t0[7],
+                              t0[8], t0[9], t0[10], t0[11], t0[12], t0[13], t0[14], t0[15]};
     unsigned char* t1 = PaletteTemplateAt(defaultPalettes, 16);
-    unsigned char arr2[16] = {t1[0], t1[1], t1[2], t1[3], t1[4], t1[5], t1[6], t1[7],
-        t1[8], t1[9], t1[10], t1[11], t1[12], t1[13], t1[14], t1[15]};
+    unsigned char arr2[16] = {t1[0], t1[1], t1[2],  t1[3],  t1[4],  t1[5],  t1[6],  t1[7],
+                              t1[8], t1[9], t1[10], t1[11], t1[12], t1[13], t1[14], t1[15]};
     unsigned char* t2 = PaletteTemplateAt(defaultPalettes, 32);
     unsigned char arr3[16];
     CopyPalette16(arr3, t2);

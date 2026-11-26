@@ -6,7 +6,7 @@
 
 struct CourseRegion801C {
     char pad_000[0x10];
-    int type; // 0x10: CourseData_IsPointOutsidePlayableRegion selects inside/outside tests for types 1/2/3
+    int type;            // 0x10: CourseData_IsPointOutsidePlayableRegion selects inside/outside tests for types 1/2/3
     Polygon801C polygon; // 0x14: Polygon_ContainsPointXZ receives this embedded polygon
 };
 
@@ -17,4 +17,3 @@ OFF(polygon, 0x14);
 #define AsCourseRegion801C(p) ((CourseRegion801C*)(p))
 
 #endif
-

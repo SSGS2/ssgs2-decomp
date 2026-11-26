@@ -1,55 +1,53 @@
+// Camera controller construction and teardown: the controller's own
+// initialisation, the camera-work base object, and the destructors for the
+// string-alias, indexed-group and nested-map containers it owns.
 #include "iff/IffStruct.h"
 // Address-only layout of the existing string pool; no new string storage.
 struct CameraWorkStringPool {
-    char m_def[6]; // 0x0
-    char ken[4]; // 0x6
-    char f_def[6]; // 0xA
-    char eri[4]; // 0x10
-    char a_def[6]; // 0x14
-    char dai[4]; // 0x1A
-    char c_def[6]; // 0x1E
-    char ces[4]; // 0x24
-    char d_def[6]; // 0x28
-    char max[4]; // 0x2E
-    char e_def[6]; // 0x32
-    char koo[4]; // 0x38
-    char g_def[6]; // 0x3C
-    char ari[4]; // 0x42
-    char h_def[6]; // 0x46
-    char kaz[4]; // 0x4C
-    char albatrossPose[23]; // 0x50
-    char Albatross[10]; // 0x67
-    char holeInOnePose[25]; // 0x71
-    char HoleInOne[10]; // 0x8A
-    char birdiePose[25]; // 0x94
-    char Birdie[7]; // 0xAD
-    char parPose[21]; // 0xB4
-    char Par[4]; // 0xC9
-    char bogeyPose[19]; // 0xCD
-    char Bogey[6]; // 0xE0
-    char doublePower04Pose[25]; // 0xE6
-    char DoublePower04[14]; // 0xFF
-    char doublePower03Pose[25]; // 0x10D
-    char DoublePower03[14]; // 0x126
-    char doublePower02Pose[25]; // 0x134
-    char DoublePower02[14]; // 0x14D
-    char doublePower01Pose[25]; // 0x15B
-    char DoublePower01[14]; // 0x174
-    char stroke[7]; // 0x182
-    char match[6]; // 0x189
+    char m_def[6];                // 0x0
+    char ken[4];                  // 0x6
+    char f_def[6];                // 0xA
+    char eri[4];                  // 0x10
+    char a_def[6];                // 0x14
+    char dai[4];                  // 0x1A
+    char c_def[6];                // 0x1E
+    char ces[4];                  // 0x24
+    char d_def[6];                // 0x28
+    char max[4];                  // 0x2E
+    char e_def[6];                // 0x32
+    char koo[4];                  // 0x38
+    char g_def[6];                // 0x3C
+    char ari[4];                  // 0x42
+    char h_def[6];                // 0x46
+    char kaz[4];                  // 0x4C
+    char albatrossPose[23];       // 0x50
+    char Albatross[10];           // 0x67
+    char holeInOnePose[25];       // 0x71
+    char HoleInOne[10];           // 0x8A
+    char birdiePose[25];          // 0x94
+    char Birdie[7];               // 0xAD
+    char parPose[21];             // 0xB4
+    char Par[4];                  // 0xC9
+    char bogeyPose[19];           // 0xCD
+    char Bogey[6];                // 0xE0
+    char doublePower04Pose[25];   // 0xE6
+    char DoublePower04[14];       // 0xFF
+    char doublePower03Pose[25];   // 0x10D
+    char DoublePower03[14];       // 0x126
+    char doublePower02Pose[25];   // 0x134
+    char DoublePower02[14];       // 0x14D
+    char doublePower01Pose[25];   // 0x15B
+    char DoublePower01[14];       // 0x174
+    char stroke[7];               // 0x182
+    char match[6];                // 0x189
     char singleAwardCeremony[12]; // 0x18F
-    char Single[7]; // 0x19B
+    char Single[7];               // 0x19B
 };
 
 #include "classes/MWStringStorage.h"
 #define GAME_NSTRING_TEXT_CONSTRUCTOR
 #include "game/string.h"
 #include "classes/CCameraWork.h"
-
-#define AsCCameraWork(p) ((CCameraWork*)(p))
-
-// Translation unit 0x800D5208-0x800D6968 (16 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 void* CameraWorkTree_dtor(void*, int);
@@ -67,13 +65,13 @@ void StringMap_DestroyStringPair(void*, void*);
 void StringMap_FreeSubtree(void*, void*);
 void MapTree_FreeSubtreeWithRelease(void*, void*);
 void CameraInputOffset_DefaultConstruct(void*); // CameraInputOffset_DefaultConstruct.
-void WVector_DefaultConstructNoOp(void*); // Leaves the vector storage unchanged.
-void WMatrix_DefaultConstructNoOp(void*); // Leaves the matrix storage unchanged.
-void CameraQuaternion_DefaultConstruct(void*); // CameraQuaternion_DefaultConstruct.
-void CameraActionHistory_InitEmpty(int*); // CameraActionHistory_InitEmpty.
-void CameraStringAliasTree_InitEmpty(int*); // CameraStringAliasTree_InitEmpty.
-void CameraIndexStringTree_InitEmpty(int*); // CameraIndexStringTree_InitEmpty.
-void CameraNestedMapTree_InitEmpty(int*); // CameraNestedMapTree_InitEmpty.
+void WVector_DefaultConstructNoOp(void*);       // Leaves the vector storage unchanged.
+void WMatrix_DefaultConstructNoOp(void*);       // Leaves the matrix storage unchanged.
+void CameraQuaternion_DefaultConstruct(void*);  // CameraQuaternion_DefaultConstruct.
+void CameraActionHistory_InitEmpty(int*);       // CameraActionHistory_InitEmpty.
+void CameraStringAliasTree_InitEmpty(int*);     // CameraStringAliasTree_InitEmpty.
+void CameraIndexStringTree_InitEmpty(int*);     // CameraIndexStringTree_InitEmpty.
+void CameraNestedMapTree_InitEmpty(int*);       // CameraNestedMapTree_InitEmpty.
 void CameraWorkTree_Initialize(void*);
 // Return the larger signed value.
 int Math_MaxInt(int, int);
@@ -89,24 +87,31 @@ extern int s_cameraModeWeightsStorage[];
 extern int s_extendedCameraModeWeights[];
 extern char cameraWorkStrings[];
 extern char s_cameraStrokeGroupKey; // s_cameraStrokeGroupKey.
-extern char s_cameraMatchGroupKey; // s_cameraMatchGroupKey.
+extern char s_cameraMatchGroupKey;  // s_cameraMatchGroupKey.
 extern float kFloat_0_CameraWork;
 void __dl__FPv(void*);
 extern char s_cameraWorkBaseVtable[]; // s_cameraWorkBaseVtable.
 extern void* g_cameraWork;
 
 typedef NString LocalString;
-enum { kStandardCameraModeCount = 28, kExtendedCameraModeCount = 13 };
+enum {
+    kStandardCameraModeCount = 28,
+    kExtendedCameraModeCount = 13
+};
 
-// Named views of the maps initialized below; the shared header awaits coordinator renames.
-// Borrow the model-token -> motion-group alias map embedded in the controller.
-static inline char* CharacterMotionAliases(void* self) { return AsCCameraWork(self)->characterModelMappings; }
-// Borrow the power-shot pose -> resource-group alias map.
-static inline char* PowerShotMotionAliases(void* self) { return AsCCameraWork(self)->powerShotMotionAliases; }
-// Borrow the hole-result pose -> resource-group alias map.
-static inline char* HoleResultMotionAliases(void* self) { return AsCCameraWork(self)->resourceGroupNames; }
-// Borrow the award pose -> resource-group alias map.
-static inline char* AwardMotionAliases(void* self) { return AsCCameraWork(self)->awardMotionAliases; }
+// Named views of the alias maps stored in the controller.
+static inline char* CharacterMotionAliases(CCameraWork* work) {
+    return work->characterModelMappings;
+}
+static inline char* PowerShotMotionAliases(CCameraWork* work) {
+    return work->powerShotMotionAliases;
+}
+static inline char* HoleResultMotionAliases(CCameraWork* work) {
+    return work->resourceGroupNames;
+}
+static inline char* AwardMotionAliases(CCameraWork* work) {
+    return work->awardMotionAliases;
+}
 
 // Controller state after construction:
 // - position/target/curves/transforms are constructed but their no-op constructors do NOT zero them;
@@ -116,66 +121,99 @@ static inline char* AwardMotionAliases(void* self) { return AsCCameraWork(self)-
 // Map header: size +0, root +4, opaque word +8 (left untouched), first/end +12.
 // Empty first/end points to &root. Nodes own heap strings, never the static pool literals.
 // Action history owns only its element allocation (data,size,capacity).
-struct CameraActionVector { void* data; unsigned int size; unsigned int capacity; };
-struct CameraMapHeader { unsigned int size; void* root; void* reserved; void* end; };
-struct CameraStringPairNode { void* left; void* right; void* parent; MWStringStorage key; MWStringStorage value; };
-struct CameraIndexStringNode { void* left; void* right; void* parent; int key; MWStringStorage value; };
-struct CameraNestedMapNode { void* left; void* right; void* parent; int key; CameraMapHeader value; };
+struct CameraActionVector {
+    void* data;
+    unsigned int size;
+    unsigned int capacity;
+};
+struct CameraMapHeader {
+    unsigned int size;
+    void* root;
+    void* reserved;
+    void* end;
+};
+struct CameraStringPairNode {
+    void* left;
+    void* right;
+    void* parent;
+    MWStringStorage key;
+    MWStringStorage value;
+};
+struct CameraIndexStringNode {
+    void* left;
+    void* right;
+    void* parent;
+    int key;
+    MWStringStorage value;
+};
+struct CameraNestedMapNode {
+    void* left;
+    void* right;
+    void* parent;
+    int key;
+    CameraMapHeader value;
+};
+
+} // extern "C"
 
 #pragma push
 #pragma opt_common_subs off
-// Initialize camera motion state, weighted mode totals, and the character/result motion alias maps.
-void* CCameraWork_ctor(void* self) {
+// Build the controller in storage owned by the caller. The owning object runs
+// this from its constructor, so it is a named member and returns the storage.
+CCameraWork* CCameraWork::Init() {
     // Phase 1: publish the base, construct state and empty owning containers.
-    CameraWorkBase_Init(self);
-    *(void**)self = __vt__11CCameraWork;
-    CameraInputOffset_DefaultConstruct((char*)&AsCCameraWork(self)->inputFovOffset);
+    CameraWorkBase_Init(this);
+    *(void**)this = __vt__11CCameraWork;
+    CameraInputOffset_DefaultConstruct((char*)&inputFovOffset);
     int def1;
     int def0;
     int* defaults = (int*)zeroInitializationWords;
     def0 = *defaults++;
     def1 = *defaults++;
-    AsCCameraWork(self)->motionCallbackThisAdjustment = def0;
-    AsCCameraWork(self)->motionCallbackVtableOffset = def1;
-    AsCCameraWork(self)->motionCallbackFunction = *defaults;
-    WVector_DefaultConstructNoOp((char*)AsCCameraWork(self)->position);
-    WVector_DefaultConstructNoOp((char*)AsCCameraWork(self)->target);
-    AsCCameraWork(self)->modeWeightTotal = 0;
-    AsCCameraWork(self)->extendedModeWeightTotal = 0;
-    WMatrix_DefaultConstructNoOp((char*)AsCCameraWork(self)->transform);
-    WMatrix_DefaultConstructNoOp((char*)AsCCameraWork(self)->previousTransform);
+    motionCallbackThisAdjustment = def0;
+    motionCallbackVtableOffset = def1;
+    motionCallbackFunction = *defaults;
+    WVector_DefaultConstructNoOp((char*)position);
+    WVector_DefaultConstructNoOp((char*)target);
+    modeWeightTotal = 0;
+    extendedModeWeightTotal = 0;
+    WMatrix_DefaultConstructNoOp((char*)transform);
+    WMatrix_DefaultConstructNoOp((char*)previousTransform);
     char* itemEnd;
-    char* item = (char*)AsCCameraWork(self)->curveControlPoints;
-    itemEnd = (char*)AsCCameraWork(self)->motionStartPosition;
-    do { WVector_DefaultConstructNoOp(item); item += 12; } while (item < itemEnd);
+    char* item = (char*)curveControlPoints;
+    itemEnd = (char*)motionStartPosition;
+    do {
+        WVector_DefaultConstructNoOp(item);
+        item += 12;
+    } while (item < itemEnd);
     WVector_DefaultConstructNoOp(itemEnd);
-    WMatrix_DefaultConstructNoOp((char*)AsCCameraWork(self)->rotation);
-    AsCCameraWork(self)->groupAnimationActive = 0;
-    WVector_DefaultConstructNoOp((char*)AsCCameraWork(self)->pivotPosition);
-    WVector_DefaultConstructNoOp((char*)AsCCameraWork(self)->initialBallPosition);
-    CameraQuaternion_DefaultConstruct((char*)AsCCameraWork(self)->startQuaternion);
-    CameraQuaternion_DefaultConstruct((char*)AsCCameraWork(self)->endQuaternion);
-    WVector_DefaultConstructNoOp((char*)AsCCameraWork(self)->startPosition);
-    WVector_DefaultConstructNoOp((char*)AsCCameraWork(self)->endPosition);
-    CameraActionHistory_InitEmpty((int*)((char*)&AsCCameraWork(self)->actionHistory));
-    AsCCameraWork(self)->useSavedCameraTransform = 0;
-    WMatrix_DefaultConstructNoOp((char*)AsCCameraWork(self)->savedCameraRight);
-    CameraStringAliasTree_InitEmpty((int*)(CharacterMotionAliases(self)));
-    CameraIndexStringTree_InitEmpty((int*)((char*)AsCCameraWork(self)->indexedCameraGroups));
-    CameraStringAliasTree_InitEmpty((int*)(PowerShotMotionAliases(self)));
-    CameraStringAliasTree_InitEmpty((int*)(HoleResultMotionAliases(self)));
-    CameraStringAliasTree_InitEmpty((int*)(AwardMotionAliases(self)));
-    CameraNestedMapTree_InitEmpty((int*)((char*)AsCCameraWork(self)->loadedCharacterResourceGroups));
-    CameraNestedMapTree_InitEmpty((int*)((char*)AsCCameraWork(self)->nestedCameraMap));
-    CameraWorkTree_Initialize((char*)AsCCameraWork(self)->cameraWorkTree);
+    WMatrix_DefaultConstructNoOp((char*)rotation);
+    groupAnimationActive = 0;
+    WVector_DefaultConstructNoOp((char*)pivotPosition);
+    WVector_DefaultConstructNoOp((char*)initialBallPosition);
+    CameraQuaternion_DefaultConstruct((char*)startQuaternion);
+    CameraQuaternion_DefaultConstruct((char*)endQuaternion);
+    WVector_DefaultConstructNoOp((char*)startPosition);
+    WVector_DefaultConstructNoOp((char*)endPosition);
+    CameraActionHistory_InitEmpty((int*)((char*)&actionHistory));
+    useSavedCameraTransform = 0;
+    WMatrix_DefaultConstructNoOp((char*)savedCameraRight);
+    CameraStringAliasTree_InitEmpty((int*)(CharacterMotionAliases(this)));
+    CameraIndexStringTree_InitEmpty((int*)((char*)indexedCameraGroups));
+    CameraStringAliasTree_InitEmpty((int*)(PowerShotMotionAliases(this)));
+    CameraStringAliasTree_InitEmpty((int*)(HoleResultMotionAliases(this)));
+    CameraStringAliasTree_InitEmpty((int*)(AwardMotionAliases(this)));
+    CameraNestedMapTree_InitEmpty((int*)((char*)loadedCharacterResourceGroups));
+    CameraNestedMapTree_InitEmpty((int*)((char*)nestedCameraMap));
+    CameraWorkTree_Initialize((char*)cameraWorkTree);
     // Phase 2: establish weighted-selection ranges; negative entries contribute zero.
-    AsCCameraWork(self)->modeCount = kStandardCameraModeCount;
-    AsCCameraWork(self)->extendedModeCount = kExtendedCameraModeCount;
+    modeCount = kStandardCameraModeCount;
+    extendedModeCount = kExtendedCameraModeCount;
     {
         int* arrPtr = (int*)s_cameraModeWeightsStorage;
         int i = 0;
-        while (i < AsCCameraWork(self)->modeCount) {
-            AsCCameraWork(self)->modeWeightTotal += Math_MaxInt(0, *arrPtr);
+        while (i < modeCount) {
+            modeWeightTotal += Math_MaxInt(0, *arrPtr);
             ++arrPtr;
             ++i;
         }
@@ -183,120 +221,124 @@ void* CCameraWork_ctor(void* self) {
     {
         int* arrPtr = (int*)s_extendedCameraModeWeights;
         int i = 0;
-        while (i < AsCCameraWork(self)->extendedModeCount) {
-            AsCCameraWork(self)->extendedModeWeightTotal += Math_MaxInt(0, *arrPtr);
+        while (i < extendedModeCount) {
+            extendedModeWeightTotal += Math_MaxInt(0, *arrPtr);
             ++arrPtr;
             ++i;
         }
     }
-    try {
-    AsCCameraWork(self)->roll = kFloat_0_CameraWork;
-    AsCCameraWork(self)->pivot = GolfBall__Fv();
-    // Retain unresolved action-state defaults: +0x240 is a byte state (initially 0),
-    // +0x23C is an integer state (initially 1; CCameraWork_ResetTrajectoryPlayback writes 2).
-    // Their gameplay interpretation is not established by these writes.
-    AsCCameraWork(self)->unk_240 = 0;
-    AsCCameraWork(self)->randomModeRequested = 0;
-    AsCCameraWork(self)->shotCameraSelectionEnabled = 1;
-    AsCCameraWork(self)->unk_23C = 1;
-    AsCCameraWork(self)->installed = 0;
-    AsCCameraWork(self)->animationGroup = 0;
-    AsCCameraWork(self)->playingAnimationGroup = 0;
-    AsCCameraWork(self)->animationSegmentIndex = 0;
-    AsCCameraWork(self)->groupValueCount = 0;
+    roll = kFloat_0_CameraWork;
+    pivot = GolfBall__Fv();
+    // Defaults for the action state: +0x240 is a byte, +0x23C an integer that starts at 1.
+    unk_240 = 0;
+    randomModeRequested = 0;
+    shotCameraSelectionEnabled = 1;
+    unk_23C = 1;
+    installed = 0;
+    animationGroup = 0;
+    playingAnimationGroup = 0;
+    animationSegmentIndex = 0;
+    groupValueCount = 0;
     // Phase 3: copy alias keys/values from borrowed pool strings into owning maps.
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, m_def));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, ken));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, ken));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, f_def));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, eri));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, eri));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, a_def));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, dai));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, dai));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, c_def));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, ces));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, ces));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, d_def));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, max));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, max));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, e_def));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, koo));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, koo));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, g_def));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, ari));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, ari));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, h_def));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, kaz));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(CharacterMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, kaz));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, albatrossPose));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(HoleResultMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, Albatross));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(HoleResultMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, Albatross));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, holeInOnePose));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(HoleResultMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, HoleInOne));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(HoleResultMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, HoleInOne));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, birdiePose));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(HoleResultMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, Birdie));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(HoleResultMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, Birdie));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, parPose));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(HoleResultMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, Par));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(HoleResultMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, Par));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, bogeyPose));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(HoleResultMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, Bogey));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(HoleResultMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, Bogey));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, doublePower04Pose));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(PowerShotMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, DoublePower04));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(PowerShotMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, DoublePower04));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, doublePower03Pose));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(PowerShotMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, DoublePower03));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(PowerShotMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, DoublePower03));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, doublePower02Pose));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(PowerShotMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, DoublePower02));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(PowerShotMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, DoublePower02));
     }
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, doublePower01Pose));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(PowerShotMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, DoublePower01));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(PowerShotMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, DoublePower01));
     }
-    MWString_AssignCString(CameraByteStringMap_GetOrInsert((char*)AsCCameraWork(self)->indexedCameraGroups, &s_cameraStrokeGroupKey), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, stroke));
-    MWString_AssignCString(CameraByteStringMap_GetOrInsert((char*)AsCCameraWork(self)->indexedCameraGroups, &s_cameraMatchGroupKey), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, match));
+    MWString_AssignCString(CameraByteStringMap_GetOrInsert((char*)indexedCameraGroups, &s_cameraStrokeGroupKey),
+                           cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, stroke));
+    MWString_AssignCString(CameraByteStringMap_GetOrInsert((char*)indexedCameraGroups, &s_cameraMatchGroupKey),
+                           cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, match));
     {
         LocalString key(cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, singleAwardCeremony));
-        MWString_AssignCString(CameraStringMap_GetOrInsertString(AwardMotionAliases(self), &key), cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, Single));
+        MWString_AssignCString(CameraStringMap_GetOrInsertString(AwardMotionAliases(this), &key),
+                               cameraWorkStrings + IFF_OFFSET(CameraWorkStringPool, Single));
     }
-    return self;
-    } catch (...) {
-        // Unwind owning members in reverse construction order before unpublishing the base.
-        char* p = (char*)self;
-        CameraWorkTree_dtor((char*)AsCCameraWork(p)->cameraWorkTree, -1);
-        CameraNestedMap_dtor((char*)AsCCameraWork(p)->nestedCameraMap, -1);
-        CameraNestedMap_dtor((char*)AsCCameraWork(p)->loadedCharacterResourceGroups, -1);
-        StringMap_dtor(AwardMotionAliases(p), -1);
-        StringMap_dtor(HoleResultMotionAliases(p), -1);
-        StringMap_dtor(PowerShotMotionAliases(p), -1);
-        CameraIndexedGroupMap_dtor((char*)AsCCameraWork(p)->indexedCameraGroups, -1);
-        StringMap_dtor(CharacterMotionAliases(p), -1);
-        CameraActionVector_dtor(((char*)&AsCCameraWork(p)->actionHistory), -1);
-        CameraWork_DestroyBase(self, -1);
-        throw;
-    }
+    return this;
 }
 #pragma pop
+
+extern "C" {
 
 // Construct the base object and publish it as the active camera-work controller.
 void* CameraWorkBase_Init(void* self) {
@@ -353,7 +395,7 @@ struct DtorNode {
     void* second;
     int flags;
     union {
-        void* payloadStart; // first payload word; never a child link
+        void* payloadStart;     // first payload word; never a child link
         void* keyOwnershipBits; // inner node: pointer-sized string flags word
     };
 };
@@ -362,8 +404,10 @@ struct DtorNode {
 #pragma always_inline on
 // Destroy deeper alias descendants, release both owned strings, then free this frontier node.
 static inline void DestroyAliasFrontier(void* owner, DtorNode* node) {
-    if (node->first != 0) StringMap_FreeSubtree(owner, node->first);
-    if (node->second != 0) StringMap_FreeSubtree(owner, node->second);
+    if (node->first != 0)
+        StringMap_FreeSubtree(owner, node->first);
+    if (node->second != 0)
+        StringMap_FreeSubtree(owner, node->second);
     StringMap_DestroyStringPair(owner, &node->payloadStart);
     appFreeUni__FPv(node);
 }
@@ -382,66 +426,75 @@ static inline void DestroyAliasFrontier(void* owner, DtorNode* node) {
 void* StringMap_dtor(void* self, int shouldDelete) {
     if (self != 0) {
         if (self != 0 && self != 0 && self != 0 && self != 0 && self != 0) {
-          DtorNode* root = (DtorNode*)((CameraMapHeader*)self)->root;
-          if (root != 0) {
-              DtorNode* child = (DtorNode*)root->first;
-              if (child != 0) {
-                  DtorNode* grandchild = (DtorNode*)child->first;
-                  if (grandchild != 0) {
-                      DtorNode* leaf0 = (DtorNode*)grandchild->first;
-                      if (leaf0 != 0) DestroyAliasFrontier(self, leaf0);
-                      DtorNode* leaf1 = (DtorNode*)grandchild->second;
-                      if (leaf1 != 0) DestroyAliasFrontier(self, leaf1);
-                      StringMap_DestroyStringPair(self, &grandchild->payloadStart);
-                      appFreeUni__FPv(grandchild);
-                  }
-                  DtorNode* grandchild1 = (DtorNode*)child->second;
-                  if (grandchild1 != 0) {
-                      DtorNode* leaf2 = (DtorNode*)grandchild1->first;
-                      if (leaf2 != 0) DestroyAliasFrontier(self, leaf2);
-                      DtorNode* leaf3 = (DtorNode*)grandchild1->second;
-                      if (leaf3 != 0) DestroyAliasFrontier(self, leaf3);
-                      StringMap_DestroyStringPair(self, &grandchild1->payloadStart);
-                      appFreeUni__FPv(grandchild1);
-                  }
-                  StringMap_DestroyStringPair(self, &child->payloadStart);
-                  appFreeUni__FPv(child);
-              }
-              DtorNode* child1 = (DtorNode*)root->second;
-              if (child1 != 0) {
-                  DtorNode* grandchild = (DtorNode*)child1->first;
-                  if (grandchild != 0) {
-                      DtorNode* leaf = (DtorNode*)grandchild->first;
-                      if (leaf != 0) DestroyAliasFrontier(self, leaf);
-                      DtorNode* leaf1 = (DtorNode*)grandchild->second;
-                      if (leaf1 != 0) DestroyAliasFrontier(self, leaf1);
-                      StringMap_DestroyStringPair(self, &grandchild->payloadStart);
-                      appFreeUni__FPv(grandchild);
-                  }
-                  DtorNode* grandchild1 = (DtorNode*)child1->second;
-                  if (grandchild1 != 0) {
-                      DtorNode* leaf = (DtorNode*)grandchild1->first;
-                      if (leaf != 0) DestroyAliasFrontier(self, leaf);
-                      DtorNode* leaf1 = (DtorNode*)grandchild1->second;
-                      if (leaf1 != 0) DestroyAliasFrontier(self, leaf1);
-                      StringMap_DestroyStringPair(self, &grandchild1->payloadStart);
-                      appFreeUni__FPv(grandchild1);
-                  }
-                  StringMap_DestroyStringPair(self, &child1->payloadStart);
-                  appFreeUni__FPv(child1);
-              }
-              if (&(((CameraStringPairNode*)root)->key) != 0) {
-                  if (&(((CameraStringPairNode*)root)->value) != 0 &&
-                      (((CameraStringPairNode*)root)->value.flags >> 31) != 0)
-                      appFreeUni__FPv(((CameraStringPairNode*)root)->value.data);
-                  if (&(((CameraStringPairNode*)root)->key) != 0 &&
-                      (((CameraStringPairNode*)root)->key.flags >> 31) != 0)
-                      appFreeUni__FPv(((CameraStringPairNode*)root)->key.data);
-              }
-              appFreeUni__FPv(root);
+            DtorNode* root = (DtorNode*)((CameraMapHeader*)self)->root;
+            if (root != 0) {
+                DtorNode* child = (DtorNode*)root->first;
+                if (child != 0) {
+                    DtorNode* grandchild = (DtorNode*)child->first;
+                    if (grandchild != 0) {
+                        DtorNode* leaf0 = (DtorNode*)grandchild->first;
+                        if (leaf0 != 0)
+                            DestroyAliasFrontier(self, leaf0);
+                        DtorNode* leaf1 = (DtorNode*)grandchild->second;
+                        if (leaf1 != 0)
+                            DestroyAliasFrontier(self, leaf1);
+                        StringMap_DestroyStringPair(self, &grandchild->payloadStart);
+                        appFreeUni__FPv(grandchild);
+                    }
+                    DtorNode* grandchild1 = (DtorNode*)child->second;
+                    if (grandchild1 != 0) {
+                        DtorNode* leaf2 = (DtorNode*)grandchild1->first;
+                        if (leaf2 != 0)
+                            DestroyAliasFrontier(self, leaf2);
+                        DtorNode* leaf3 = (DtorNode*)grandchild1->second;
+                        if (leaf3 != 0)
+                            DestroyAliasFrontier(self, leaf3);
+                        StringMap_DestroyStringPair(self, &grandchild1->payloadStart);
+                        appFreeUni__FPv(grandchild1);
+                    }
+                    StringMap_DestroyStringPair(self, &child->payloadStart);
+                    appFreeUni__FPv(child);
+                }
+                DtorNode* child1 = (DtorNode*)root->second;
+                if (child1 != 0) {
+                    DtorNode* grandchild = (DtorNode*)child1->first;
+                    if (grandchild != 0) {
+                        DtorNode* leaf = (DtorNode*)grandchild->first;
+                        if (leaf != 0)
+                            DestroyAliasFrontier(self, leaf);
+                        DtorNode* leaf1 = (DtorNode*)grandchild->second;
+                        if (leaf1 != 0)
+                            DestroyAliasFrontier(self, leaf1);
+                        StringMap_DestroyStringPair(self, &grandchild->payloadStart);
+                        appFreeUni__FPv(grandchild);
+                    }
+                    DtorNode* grandchild1 = (DtorNode*)child1->second;
+                    if (grandchild1 != 0) {
+                        DtorNode* leaf = (DtorNode*)grandchild1->first;
+                        if (leaf != 0)
+                            DestroyAliasFrontier(self, leaf);
+                        DtorNode* leaf1 = (DtorNode*)grandchild1->second;
+                        if (leaf1 != 0)
+                            DestroyAliasFrontier(self, leaf1);
+                        StringMap_DestroyStringPair(self, &grandchild1->payloadStart);
+                        appFreeUni__FPv(grandchild1);
+                    }
+                    StringMap_DestroyStringPair(self, &child1->payloadStart);
+                    appFreeUni__FPv(child1);
+                }
+                if (&(((CameraStringPairNode*)root)->key) != 0) {
+                    if (&(((CameraStringPairNode*)root)->value) != 0 &&
+                        (((CameraStringPairNode*)root)->value.flags >> 31) != 0)
+                        appFreeUni__FPv(((CameraStringPairNode*)root)->value.data);
+                    if (&(((CameraStringPairNode*)root)->key) != 0 &&
+                        (((CameraStringPairNode*)root)->key.flags >> 31) != 0)
+                        appFreeUni__FPv(((CameraStringPairNode*)root)->key.data);
+                }
+                appFreeUni__FPv(root);
+            }
         }
-        }
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -469,8 +522,10 @@ static inline void ReleaseCameraIndexedStringNode(DtorNode* node) {
 #pragma opt_lifetimes off
 // Destroy deeper indexed-string descendants using their owner, then release the owned string and node.
 static inline void DestroyIndexedStringFrontier(void* owner, DtorNode* node) {
-    if (node->first != 0) MapTree_FreeSubtreeWithRelease(owner, node->first);
-    if (node->second != 0) MapTree_FreeSubtreeWithRelease(owner, node->second);
+    if (node->first != 0)
+        MapTree_FreeSubtreeWithRelease(owner, node->first);
+    if (node->second != 0)
+        MapTree_FreeSubtreeWithRelease(owner, node->second);
     ReleaseCameraIndexedStringNode(node);
 }
 #pragma pop
@@ -491,20 +546,24 @@ void* CameraIndexedGroupMap_dtor(void* self, int shouldDelete) {
                 /* node0 = root->first (pair of: first=pair-of-leaves, second=leaf-pair) */
                 DtorNode* node0 = (DtorNode*)root->first;
                 if (node0 != 0) {
-                    DtorNode* a = (DtorNode*)node0->first;   /* pair of leaf-pairs */
+                    DtorNode* a = (DtorNode*)node0->first; /* pair of leaf-pairs */
                     if (a != 0) {
                         DtorNode* a1 = (DtorNode*)a->first;
-                        if (a1 != 0) DestroyIndexedStringFrontier(self, a1);
+                        if (a1 != 0)
+                            DestroyIndexedStringFrontier(self, a1);
                         DtorNode* a2 = (DtorNode*)a->second;
-                        if (a2 != 0) DestroyIndexedStringFrontier(self, a2);
+                        if (a2 != 0)
+                            DestroyIndexedStringFrontier(self, a2);
                         ReleaseCameraIndexedStringNode(a);
                     }
-                    DtorNode* b = (DtorNode*)node0->second;   /* pair of leaf-pairs */
+                    DtorNode* b = (DtorNode*)node0->second; /* pair of leaf-pairs */
                     if (b != 0) {
                         DtorNode* b1 = (DtorNode*)b->first;
-                        if (b1 != 0) DestroyIndexedStringFrontier(self, b1);
+                        if (b1 != 0)
+                            DestroyIndexedStringFrontier(self, b1);
                         DtorNode* b2 = (DtorNode*)b->second;
-                        if (b2 != 0) DestroyIndexedStringFrontier(self, b2);
+                        if (b2 != 0)
+                            DestroyIndexedStringFrontier(self, b2);
                         ReleaseCameraIndexedStringNode(b);
                     }
                     ReleaseCameraIndexedStringNode(node0);
@@ -512,20 +571,24 @@ void* CameraIndexedGroupMap_dtor(void* self, int shouldDelete) {
                 /* node0 = root->second (pair of leaf-pairs) */
                 node0 = (DtorNode*)root->second;
                 if (node0 != 0) {
-                    DtorNode* a = (DtorNode*)node0->first;   /* pair of leaf-pairs */
+                    DtorNode* a = (DtorNode*)node0->first; /* pair of leaf-pairs */
                     if (a != 0) {
                         DtorNode* a1 = (DtorNode*)a->first;
-                        if (a1 != 0) DestroyIndexedStringFrontier(self, a1);
+                        if (a1 != 0)
+                            DestroyIndexedStringFrontier(self, a1);
                         DtorNode* a2 = (DtorNode*)a->second;
-                        if (a2 != 0) DestroyIndexedStringFrontier(self, a2);
+                        if (a2 != 0)
+                            DestroyIndexedStringFrontier(self, a2);
                         ReleaseCameraIndexedStringNode(a);
                     }
-                    DtorNode* b = (DtorNode*)node0->second;   /* pair of leaf-pairs */
+                    DtorNode* b = (DtorNode*)node0->second; /* pair of leaf-pairs */
                     if (b != 0) {
                         DtorNode* b1 = (DtorNode*)b->first;
-                        if (b1 != 0) DestroyIndexedStringFrontier(self, b1);
+                        if (b1 != 0)
+                            DestroyIndexedStringFrontier(self, b1);
                         DtorNode* b2 = (DtorNode*)b->second;
-                        if (b2 != 0) DestroyIndexedStringFrontier(self, b2);
+                        if (b2 != 0)
+                            DestroyIndexedStringFrontier(self, b2);
                         ReleaseCameraIndexedStringNode(b);
                     }
                     ReleaseCameraIndexedStringNode(node0);
@@ -533,7 +596,8 @@ void* CameraIndexedGroupMap_dtor(void* self, int shouldDelete) {
                 ReleaseCameraIndexedStringNode(root);
             }
         }
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -542,7 +606,9 @@ void* CameraIndexedGroupMap_dtor(void* self, int shouldDelete) {
 void CameraNestedStringMap_DestroySubtree(void*, void*);
 void CameraNestedStringMap_DestroyEntry(void*, void*);
 void StringValueTree_DestroySubtree(void*, void*);
-enum { kNestedInnerMapOffset = (int)&((CameraNestedMapNode*)0)->value };
+enum {
+    kNestedInnerMapOffset = (int)&((CameraNestedMapNode*)0)->value
+};
 // Ownership: each outer index node owns its inner string map. Each inner
 // node owns only its heap key (flags bit 31); node allocations are freed last.
 // L/R suffixes spell the path from the root, making each expanded visit unique.
@@ -557,8 +623,10 @@ static inline void ReleaseOuterNode(void* outerMap, DtorNode* node) {
 }
 // Destroy a frontier outer node, including deeper descendants and its inner map.
 static inline void DestroyOuterFrontier(void* outerMap, DtorNode* node) {
-    if (node->first != 0) CameraNestedStringMap_DestroySubtree(outerMap, node->first);
-    if (node->second != 0) CameraNestedStringMap_DestroySubtree(outerMap, node->second);
+    if (node->first != 0)
+        CameraNestedStringMap_DestroySubtree(outerMap, node->first);
+    if (node->second != 0)
+        CameraNestedStringMap_DestroySubtree(outerMap, node->second);
     ReleaseOuterNode(outerMap, node);
 }
 #pragma push
@@ -580,8 +648,10 @@ static inline void ReleaseInnerNode(DtorNode* node) {
 #pragma pop
 // Destroy a frontier inner node using its own inner-map header as recursion context.
 static inline void DestroyInnerFrontier(CameraMapHeader* innerMap, DtorNode* node) {
-    if (node->first != 0) StringValueTree_DestroySubtree(innerMap, node->first);
-    if (node->second != 0) StringValueTree_DestroySubtree(innerMap, node->second);
+    if (node->first != 0)
+        StringValueTree_DestroySubtree(innerMap, node->first);
+    if (node->second != 0)
+        StringValueTree_DestroySubtree(innerMap, node->second);
     ReleaseInnerNode(node);
 }
 
@@ -731,7 +801,8 @@ void* CameraNestedMap_dtor(void* self, int shouldDelete) {
             }
         }
         // Phase 3: only the deleting-destructor variant releases the map object.
-        if (shouldDelete > 0) __dl__FPv(self);
+        if (shouldDelete > 0)
+            __dl__FPv(self);
     }
     return self;
 }

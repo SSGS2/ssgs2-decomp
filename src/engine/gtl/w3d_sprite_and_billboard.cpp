@@ -1,16 +1,17 @@
+// Sprites and billboards: the W3dSpr sprite (owned bitmap, four vertices, color, size and
+// position), the billboard and rotated-billboard renderers, the packed vertex helpers that
+// read and scale positions and texture coordinates, and the round-player list setup.
+
 #include <decomp/static_init.h>
 #include <decomp/offset_of.h>
 #include "MSL/list.h"
 // Containers whose deleting destructors this unit keeps out of line under plain names. The element
 // types are placeholders: the destructor depends only on whether elements are scalars or records.
 typedef std::list<void*, app::app_allocator<void*> > MSLPointerList;
-#define AsW3dSpr(p) ((W3dSpr*)(p))
 #include "classes/W3dSpr.h"
 #include "classes/W3dSprVertex.h"
 #include "classes/CSceneManager.h"
 #include "classes/WView.h"
-// Translation unit 0x8021DA94-0x8021F0F4 (28 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 #include "game/wvector.h"
@@ -22,10 +23,13 @@ enum {
     kBitmapResourceMask = 0x7FF,
     kRequireProjectedQuadFlags = 0x06000000,
     kProjectedQuadDrawMode = 16,
-    kBillboardFacingCodeBase = 6,
-    kSpriteVertexPointerOffset = (int)DECOMP_OFFSETOF(W3dSpr, vertex0)
+    kBillboardFacingCodeBase = 6
 };
-enum BillboardFacing { kFaceEye = 0, kKeepWorldUp = 1, kUseViewAxes = 2 };
+enum BillboardFacing {
+    kFaceEye = 0,
+    kKeepWorldUp = 1,
+    kUseViewAxes = 2
+};
 // FVF is an opaque packed format code here, not a float count. Only the XYZ/color/UV
 // layouts below are established. Other spellings retain their hex code rather than
 // inventing component names; the position-address switch documents their byte behavior.
@@ -33,22 +37,36 @@ enum BillboardFacing { kFaceEye = 0, kKeepWorldUp = 1, kUseViewAxes = 2 };
 // extraction copies XYZ only, not that the format has no other attributes.
 // Layout_hex retains an unresolved encoding; its address behavior is base+0.
 enum SpriteVertexFormat {
-    kFvfXYZ = 0x1, kFvfXYZAlt = 0x5,
-    kFvfXYZColor = 0xF001, kFvfXYZColorAlt = 0xF005,
-    kFvfXYZUv = 0x110001, kFvfXYZUvAlt = 0x110005,
-    kFvfXYZColorUv = 0x11F001, kFvfXYZColorUvAlt = 0x11F005,
+    kFvfXYZ = 0x1,
+    kFvfXYZAlt = 0x5,
+    kFvfXYZColor = 0xF001,
+    kFvfXYZColorAlt = 0xF005,
+    kFvfXYZUv = 0x110001,
+    kFvfXYZUvAlt = 0x110005,
+    kFvfXYZColorUv = 0x11F001,
+    kFvfXYZColorUvAlt = 0x11F005,
     // Names expose only behavior verified here; the remaining components are unknown.
-    kFvfPositionOnly_0401 = 0x401, kFvfLayout_6005 = 0x6005,
+    kFvfPositionOnly_0401 = 0x401,
+    kFvfLayout_6005 = 0x6005,
     kFvfPositionOnly_F00D = 0xF00D,
-    kFvfUvAt6_110401 = 0x110401, kFvfUvAt9_110541 = 0x110541,
-    kFvfUvAt7_11F401 = 0x11F401, kFvfUvAt6_120401 = 0x120401,
-    kFvfUvAt4_12F005 = 0x12F005, kFvfLayout_130005 = 0x130005,
-    kFvfUvAt6_130401 = 0x130401, kFvfLayout_140401 = 0x140401,
-    kFvfLayout_400521 = 0x400521, kFvfPositionOnly_40F121 = 0x40F121,
-    kFvfUvAt8_510521 = 0x510521, kFvfUvAt9_510531 = 0x510531,
-    kFvfUvAt10_510541 = 0x510541, kFvfUvAt8_520521 = 0x520521,
-    kFvfUvAt9_520531 = 0x520531, kFvfUvAt10_520541 = 0x520541,
-    kFvfUvAt8_530521 = 0x530521, kFvfUvAt9_530531 = 0x530531,
+    kFvfUvAt6_110401 = 0x110401,
+    kFvfUvAt9_110541 = 0x110541,
+    kFvfUvAt7_11F401 = 0x11F401,
+    kFvfUvAt6_120401 = 0x120401,
+    kFvfUvAt4_12F005 = 0x12F005,
+    kFvfLayout_130005 = 0x130005,
+    kFvfUvAt6_130401 = 0x130401,
+    kFvfLayout_140401 = 0x140401,
+    kFvfLayout_400521 = 0x400521,
+    kFvfPositionOnly_40F121 = 0x40F121,
+    kFvfUvAt8_510521 = 0x510521,
+    kFvfUvAt9_510531 = 0x510531,
+    kFvfUvAt10_510541 = 0x510541,
+    kFvfUvAt8_520521 = 0x520521,
+    kFvfUvAt9_520531 = 0x520531,
+    kFvfUvAt10_520541 = 0x520541,
+    kFvfUvAt8_530521 = 0x530521,
+    kFvfUvAt9_530531 = 0x530531,
     kFvfUvAt10_530541 = 0x530541,
     kFvfPositionBytePlus1_800401 = 0x800401,
     kFvfPositionBytePlus1_910401 = 0x910401,
@@ -56,12 +74,17 @@ enum SpriteVertexFormat {
     kFvfPositionBytePlus1_930401 = 0x930401
 };
 enum VertexChunkKind {
-    kScalarChunk = 0, kVector3Chunk = 1, kVector4Chunk = 2,
-    kUnscaledChunk3 = 3, kUnscaledChunk4 = 4, kUnscaledChunk5 = 5,
-    kPackedChunkKind6 = 6, kPackedChunkKind7 = 7,
-    kPackedChunkKind8 = 8, kPackedChunkKind9 = 9
+    kScalarChunk = 0,
+    kVector3Chunk = 1,
+    kVector4Chunk = 2,
+    kUnscaledChunk3 = 3,
+    kUnscaledChunk4 = 4,
+    kUnscaledChunk5 = 5,
+    kPackedChunkKind6 = 6,
+    kPackedChunkKind7 = 7,
+    kPackedChunkKind8 = 8,
+    kPackedChunkKind9 = 9
 };
-
 
 extern const float kFloat_6_2831855;
 extern float s_spriteUnitTwoPiCache0;
@@ -193,26 +216,36 @@ extern void* memset(void*, int, unsigned int);
 extern void appFreeUni__FPv(void*);
 extern void* BaseObject_ctor(void*);
 
-struct ListLinks { ListLinks* previous; ListLinks* next; };
-struct OwnedList { int count; ListLinks sentinel; };
+struct ListLinks {
+    ListLinks* previous;
+    ListLinks* next;
+};
+struct OwnedList {
+    int count;
+    ListLinks sentinel;
+};
 
 // Detach and free the circular list nodes, then optionally delete its header.
 void* List_DtorFreeNodes(void* self, int flags) {
     return ::std::__list_deleting_dtor((MSLPointerList*)self, flags);
 }
 
-struct InitPair { int x, y; };
+struct InitPair {
+    int x, y;
+};
 extern const InitPair s_spriteQuadUvCornerSelectors[];
 
+} // extern "C"
+
 // Initialize bitmap ownership and the four embedded vertices with half-texel UVs.
-void* W3dSpr_ctor(void* self) {
-    BaseObject_ctor(self);
-    (*(int*)&AsW3dSpr(self)->resourceManager) = 0;
-    AsW3dSpr(self)->vtbl = (void*)__vt__6W3dSpr;
-    (*(int*)&AsW3dSpr(self)->bitmap) = 0;
-    AsW3dSpr(self)->ownsBitmap = 0;
-    char* point = AsW3dSpr(self)->vertices; // 0x8021E700: embedded vertex storage at +0x34.
-    W3dSpr* vertexSlotOwner = AsW3dSpr(self);
+void* W3dSpr::Init() {
+    BaseObject_ctor(this);
+    resourceManager = 0;
+    vtbl = (void*)__vt__6W3dSpr;
+    bitmap = 0;
+    ownsBitmap = 0;
+    char* point = (char*)vertices;
+    W3dSpr* vertexSlotOwner = this;
     const InitPair* data = s_spriteQuadUvCornerSelectors;
     int idx = 0;
     for (int i = 0; i < kQuadVertexCount; ++i) {
@@ -220,16 +253,19 @@ void* W3dSpr_ctor(void* self) {
         int x0 = data->x;
         (*(char**)&vertexSlotOwner->vertex0) = point;
         point += sizeof(W3dSprVertex);
-        AsW3dSprVertex(vertexSlotOwner->vertex0)->textureU = (kFloat_255_W3dSprite * (float)x0 + kFloat_0_5_SpriteTexture) / 256.0f;
-        AsW3dSprVertex(vertexSlotOwner->vertex0)->textureV = (kFloat_255_W3dSprite * (float)y0 + kFloat_0_5_SpriteTexture) / 256.0f;
-        AsW3dSprVertex(vertexSlotOwner->vertex0)->color = -1;
+        vertexSlotOwner->vertex0->textureU = (kFloat_255_W3dSprite * (float)x0 + kFloat_0_5_SpriteTexture) / 256.0f;
+        vertexSlotOwner->vertex0->textureV = (kFloat_255_W3dSprite * (float)y0 + kFloat_0_5_SpriteTexture) / 256.0f;
+        vertexSlotOwner->vertex0->color = -1;
         vertexSlotOwner = (W3dSpr*)((char*)vertexSlotOwner + sizeof(void*));
         idx += 1;
         data += 1;
     }
-    *(int*)((char*)self + idx * sizeof(void*) + kSpriteVertexPointerOffset) = 0;
-    return self;
+    // Zero the word after the four vertex pointers (vertexListTerminator), indexed by the loop count.
+    *(int*)((char*)this + idx * sizeof(void*) + 0x114) = 0;
+    return this;
 }
+
+extern "C" {
 
 // Scale only the position/vector lanes present in the selected packed vertex chunk.
 // Float-lane map (indices, not bytes):
@@ -240,28 +276,65 @@ void* W3dSpr_ctor(void* self) {
 // selected lane; an unknown kind is a successful no-op (return is always 1).
 int PetMesh_ScaleVertexChunkByKind(float* chunk, unsigned int kind, float scale) {
     switch (kind) {
-    case kScalarChunk: chunk[0] *= scale; break;
+    case kScalarChunk:
+        chunk[0] *= scale;
+        break;
     case kVector3Chunk:
-        chunk[0] *= scale; chunk[1] *= scale; chunk[2] *= scale; break;
+        chunk[0] *= scale;
+        chunk[1] *= scale;
+        chunk[2] *= scale;
+        break;
     case kVector4Chunk:
-        chunk[0] *= scale; chunk[1] *= scale; chunk[2] *= scale; chunk[3] *= scale; break;
+        chunk[0] *= scale;
+        chunk[1] *= scale;
+        chunk[2] *= scale;
+        chunk[3] *= scale;
+        break;
     case kPackedChunkKind6:
-        chunk[4] *= scale; chunk[1] *= scale; chunk[3] *= scale; break;
+        chunk[4] *= scale;
+        chunk[1] *= scale;
+        chunk[3] *= scale;
+        break;
     case kPackedChunkKind7:
-        chunk[8] *= scale; chunk[9] *= scale; chunk[2] *= scale; chunk[3] *= scale;
-        chunk[6] *= scale; chunk[7] *= scale; break;
+        chunk[8] *= scale;
+        chunk[9] *= scale;
+        chunk[2] *= scale;
+        chunk[3] *= scale;
+        chunk[6] *= scale;
+        chunk[7] *= scale;
+        break;
     case kPackedChunkKind8:
-        chunk[12] *= scale; chunk[13] *= scale; chunk[14] *= scale;
-        chunk[3] *= scale; chunk[4] *= scale; chunk[5] *= scale;
-        chunk[9] *= scale; chunk[10] *= scale; chunk[11] *= scale; break;
+        chunk[12] *= scale;
+        chunk[13] *= scale;
+        chunk[14] *= scale;
+        chunk[3] *= scale;
+        chunk[4] *= scale;
+        chunk[5] *= scale;
+        chunk[9] *= scale;
+        chunk[10] *= scale;
+        chunk[11] *= scale;
+        break;
     case kPackedChunkKind9:
-        chunk[16] *= scale; chunk[17] *= scale; chunk[18] *= scale; chunk[19] *= scale;
-        chunk[4] *= scale; chunk[5] *= scale; chunk[6] *= scale; chunk[7] *= scale;
-        chunk[12] *= scale; chunk[13] *= scale; chunk[14] *= scale; chunk[15] *= scale; break;
-    case kUnscaledChunk3: case kUnscaledChunk4: case kUnscaledChunk5:
+        chunk[16] *= scale;
+        chunk[17] *= scale;
+        chunk[18] *= scale;
+        chunk[19] *= scale;
+        chunk[4] *= scale;
+        chunk[5] *= scale;
+        chunk[6] *= scale;
+        chunk[7] *= scale;
+        chunk[12] *= scale;
+        chunk[13] *= scale;
+        chunk[14] *= scale;
+        chunk[15] *= scale;
+        break;
+    case kUnscaledChunk3:
+    case kUnscaledChunk4:
+    case kUnscaledChunk5:
 
         break;
-    default: break;
+    default:
+        break;
     }
     return 1;
 }
@@ -270,140 +343,234 @@ int PetMesh_ScaleVertexChunkByKind(float* chunk, unsigned int kind, float scale)
 // vertex is borrowed float-addressed storage in the selected format. positionOut
 // needs three floats; optional texCoordsOut needs two. Unsupported codes leave both
 // outputs unchanged; recognized non-UV codes leave texCoordsOut unchanged.
-void PetMesh_ExtractVertexPositionAndTexCoords(float* positionOut, float* texCoordsOut,
-float* vertex, int vertexFormat) {
+void PetMesh_ExtractVertexPositionAndTexCoords(float* positionOut, float* texCoordsOut, float* vertex,
+                                               int vertexFormat) {
     switch (vertexFormat) {
     case kFvfXYZ:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
         return;
     case kFvfXYZColor:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
         return;
     case kFvfXYZColorAlt:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
         return;
     case kFvfXYZAlt:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
         return;
     case kFvfXYZColorUvAlt:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[4]; texCoordsOut[1] = vertex[5];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[4];
+        texCoordsOut[1] = vertex[5];
         return;
     case kFvfUvAt4_12F005:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[4]; texCoordsOut[1] = vertex[5];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[4];
+        texCoordsOut[1] = vertex[5];
         return;
     case kFvfXYZUvAlt:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[3]; texCoordsOut[1] = vertex[4];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[3];
+        texCoordsOut[1] = vertex[4];
         return;
     case kFvfXYZUv:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[3]; texCoordsOut[1] = vertex[4];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[3];
+        texCoordsOut[1] = vertex[4];
         return;
     case kFvfPositionOnly_0401:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
         return;
     case kFvfUvAt9_110541:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[9]; texCoordsOut[1] = vertex[10];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[9];
+        texCoordsOut[1] = vertex[10];
         return;
     case kFvfUvAt7_11F401:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[7]; texCoordsOut[1] = vertex[8];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[7];
+        texCoordsOut[1] = vertex[8];
         return;
     case kFvfXYZColorUv:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[4]; texCoordsOut[1] = vertex[5];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[4];
+        texCoordsOut[1] = vertex[5];
         return;
     case kFvfUvAt6_110401:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[6]; texCoordsOut[1] = vertex[7];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[6];
+        texCoordsOut[1] = vertex[7];
         return;
     case kFvfUvAt6_120401:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[6]; texCoordsOut[1] = vertex[7];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[6];
+        texCoordsOut[1] = vertex[7];
         return;
     case kFvfUvAt6_130401:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[6]; texCoordsOut[1] = vertex[7];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[6];
+        texCoordsOut[1] = vertex[7];
         return;
     case kFvfPositionOnly_40F121:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
         return;
     case kFvfUvAt8_510521:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[8]; texCoordsOut[1] = vertex[9];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[8];
+        texCoordsOut[1] = vertex[9];
         return;
     case kFvfUvAt8_520521:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[8]; texCoordsOut[1] = vertex[9];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[8];
+        texCoordsOut[1] = vertex[9];
         return;
     case kFvfUvAt8_530521:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[8]; texCoordsOut[1] = vertex[9];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[8];
+        texCoordsOut[1] = vertex[9];
         return;
     case kFvfUvAt9_510531:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[9]; texCoordsOut[1] = vertex[10];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[9];
+        texCoordsOut[1] = vertex[10];
         return;
     case kFvfUvAt9_520531:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[9]; texCoordsOut[1] = vertex[10];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[9];
+        texCoordsOut[1] = vertex[10];
         return;
     case kFvfUvAt9_530531:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[9]; texCoordsOut[1] = vertex[10];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[9];
+        texCoordsOut[1] = vertex[10];
         return;
     case kFvfUvAt10_510541:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[10]; texCoordsOut[1] = vertex[11];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[10];
+        texCoordsOut[1] = vertex[11];
         return;
     case kFvfUvAt10_520541:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[10]; texCoordsOut[1] = vertex[11];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[10];
+        texCoordsOut[1] = vertex[11];
         return;
     case kFvfUvAt10_530541:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
-        if (texCoordsOut == 0) return;
-        texCoordsOut[0] = vertex[10]; texCoordsOut[1] = vertex[11];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
+        if (texCoordsOut == 0)
+            return;
+        texCoordsOut[0] = vertex[10];
+        texCoordsOut[1] = vertex[11];
         return;
     case kFvfPositionOnly_F00D:
-        positionOut[0] = vertex[0]; positionOut[1] = vertex[1]; positionOut[2] = vertex[2];
+        positionOut[0] = vertex[0];
+        positionOut[1] = vertex[1];
+        positionOut[2] = vertex[2];
         return;
     default:
         return;
     }
 }
 
+} // extern "C"
+
 // Load and own the bitmap; return zero on success and one on failure.
-int W3dSpr_LoadSprite(void* self, void* name, void* loadOptions) {
-    void* p = ResourceManager_LoadBitmap(AsW3dSpr(self)->resourceManager, name, loadOptions, 0, 0);
-    AsW3dSpr(self)->bitmap = p;
+int W3dSpr::LoadSprite(void* name, void* loadOptions) {
+    void* p = ResourceManager_LoadBitmap(resourceManager, name, loadOptions, 0, 0);
+    bitmap = p;
     if (p != 0) {
-        AsW3dSpr(self)->ownsBitmap = 1;
+        ownsBitmap = 1;
         return 0;
     }
     return 1;
 }
+
+extern "C" {
 
 // Initialize the round-player sentinel list, destructor registration and shot restrictions.
 void RoundPlayerList_InitializeGlobals() {
@@ -420,52 +587,56 @@ void RoundPlayerList_InitializeGlobals() {
     memset(s_shotActionRestrictionState, 0, sizeof(s_shotActionRestrictionState));
 }
 
+} // extern "C"
+
 // Release an owned bitmap before the base object and optional allocation.
-void* W3dSpr_dtor(void* self, int flags) {
-    if (self != 0) {
-        unsigned char ownsBitmap = AsW3dSpr(self)->ownsBitmap;
-        AsW3dSpr(self)->vtbl = (void*)__vt__6W3dSpr;
-        if (ownsBitmap != 0) {
-            void* resourceManager = AsW3dSpr(self)->resourceManager;
-            if (resourceManager != 0) {
-                void* bitmap = AsW3dSpr(self)->bitmap;
-                if (bitmap != 0) {
-                    ResourceManager_ReleaseId(resourceManager, (int)bitmap);
-                    AsW3dSpr(self)->bitmap = 0;
+void* W3dSpr::Destroy(int flags) {
+    if (this != 0) {
+        unsigned char owns = ownsBitmap;
+        vtbl = (void*)__vt__6W3dSpr;
+        if (owns != 0) {
+            void* rm = resourceManager;
+            if (rm != 0) {
+                void* bmp = bitmap;
+                if (bmp != 0) {
+                    ResourceManager_ReleaseId(rm, (int)bmp);
+                    bitmap = 0;
                 }
             }
         }
-        if (self != 0) {
-            BaseObject_dtor(self, 0);
+        if (this != 0) {
+            BaseObject_dtor(this, 0);
         }
         if (flags > 0) {
-            __dl__FPv(self);
+            __dl__FPv(this);
         }
     }
-    return self;
+    return this;
 }
 
 // Apply the same packed color to all four vertices.
-void W3dSpr_SetColor(void* self, unsigned int value) {
-    AsW3dSprVertex(AsW3dSpr(self)->vertex0)->color = value;
-    AsW3dSprVertex(AsW3dSpr(self)->vertex1)->color = value;
-    AsW3dSprVertex(AsW3dSpr(self)->vertex2)->color = value;
-    AsW3dSprVertex(AsW3dSpr(self)->vertex3)->color = value;
+void W3dSpr::SetColor(unsigned int value) {
+    vertex0->color = value;
+    vertex1->color = value;
+    vertex2->color = value;
+    vertex3->color = value;
 }
 
 // Convert dimensions and pivot into signed corner extents.
-void W3dSpr_SetRect(void* self, float width, float height, float pivotX, float pivotY) {
-    AsW3dSpr(self)->left = -pivotX;
-    AsW3dSpr(self)->right = width - pivotX;
-    AsW3dSpr(self)->top = -pivotY;
-    AsW3dSpr(self)->bottom = height - pivotY;
+void W3dSpr::SetRect(float width, float height, float pivotX, float pivotY) {
+    left = -pivotX;
+    right = width - pivotX;
+    top = -pivotY;
+    bottom = height - pivotY;
 }
 
-extern void __as__7WVectorFRC7WVector(void*, void*);
 // Copy the sprite world position.
-void W3dSpr_SetPos(void* self, void* source) {
-    __as__7WVectorFRC7WVector(AsW3dSpr(self)->position, source); // 0x8021E9A4.
+void W3dSpr::SetPos(void* source) {
+    position = *(const WVector*)source;
 }
+
+extern "C" {
+extern void __as__7WVectorFRC7WVector(void*, void*);
 
 extern void __mi__FRC7WVectorRC7WVector(void*, void*, void*);
 extern void Vector_CrossProduct(void*, void*, void*);
@@ -474,10 +645,12 @@ extern float Math_CosApprox(float);
 extern float Math_SinApprox(float);
 extern void __ml__FRC7WVectorf(void*, void*, float);
 extern void __pl__FRC7WVectorRC7WVector(void*, void*, void*);
-extern void Matrix_TransformPoint(void*, void*, void*);
+extern void* Matrix_TransformPoint(void*, void*, void*);
 extern void WView_ProjectViewPoint(void*, void*, void*, int);
 
-struct BillboardVector { float x, y, z; };
+struct BillboardVector {
+    float x, y, z;
+};
 
 struct BillboardVertex {
     float uMin, vMin, uMax, vMax;
@@ -521,19 +694,24 @@ struct BillboardRenderer {
     float eyePosition[3];
 };
 
-typedef char BillboardView_inputOffset[((int)DECOMP_OFFSETOF(BillboardRenderer, viewTransform) == (int)DECOMP_OFFSETOF(WView, inputTransform)) ? 1 : -1];
-typedef char BillboardView_eyeOffset[((int)DECOMP_OFFSETOF(BillboardRenderer, eyePosition) == (int)DECOMP_OFFSETOF(WView, viewMatrix[9])) ? 1 : -1];
+typedef char BillboardView_inputOffset
+    [((int)DECOMP_OFFSETOF(BillboardRenderer, viewTransform) == (int)DECOMP_OFFSETOF(WView, inputTransform)) ? 1 : -1];
+typedef char BillboardView_eyeOffset
+    [((int)DECOMP_OFFSETOF(BillboardRenderer, eyePosition) == (int)DECOMP_OFFSETOF(WView, viewMatrix[9])) ? 1 : -1];
 
 // Submit a compact billboard when permitted, otherwise build and project its four corners.
 // self/renderer and all four writable vertices are borrowed. facing must be one of
 // BillboardFacing: there is no default basis. Extents are local world-unit offsets.
 // The explicit path forms world = center + right*x + up*y, transforms world -> view,
 // then projects into renderer vertex coordinates; compact drawing delegates that work.
-void Billboard_DrawOrientedQuad(OrientedBillboard* self, BillboardRenderer* renderer, unsigned int drawFlags, int facing) {
+void Billboard_DrawOrientedQuad(OrientedBillboard* self, BillboardRenderer* renderer, unsigned int drawFlags,
+                                int facing) {
     unsigned int bitmapId = self->bitmapId;
     void* sceneManager = g_sceneManager;
-    if (bitmapId == 0) return;
-    if (sceneManager == 0 || ((CSceneManager*)sceneManager)->effectRenderPassActive != 0) { // 0x8021ECB8: scene singleton.
+    if (bitmapId == 0)
+        return;
+    if (sceneManager == 0 ||
+        ((CSceneManager*)sceneManager)->effectRenderPassActive != 0) { // 0x8021ECB8: scene singleton.
         if ((drawFlags & kRequireProjectedQuadFlags) == 0) {
             self->vertex0->positionX = self->position.x;
             self->vertex0->positionY = self->position.y;
@@ -633,7 +811,8 @@ void Billboard_DrawOrientedQuad(OrientedBillboard* self, BillboardRenderer* rend
         Matrix_TransformPoint(&viewCorner, &worldCorner, renderer->viewTransform);
         WView_ProjectViewPoint(renderer, self->vertex3, &viewCorner, 0);
     }
-    renderer->drawProjectedQuad(&self->vertex0, kProjectedQuadDrawMode, (self->bitmapId & kBitmapResourceMask) | drawFlags, 0);
+    renderer->drawProjectedQuad(&self->vertex0, kProjectedQuadDrawMode,
+                                (self->bitmapId & kBitmapResourceMask) | drawFlags, 0);
 }
 
 struct RotatedBillboardVertex {
@@ -652,8 +831,17 @@ struct RotatedBillboard {
 };
 
 struct RotatedBillboardRenderer;
-struct RotatedBillboardRenderer { 
-virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virtual void drawProjectedQuad(void*, int, unsigned int, int); virtual void v5(); virtual void v6(); virtual void v7(); virtual void v8(); virtual void drawCompactBillboard(void*, unsigned int, int, unsigned int);
+struct RotatedBillboardRenderer {
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void v3();
+    virtual void drawProjectedQuad(void*, int, unsigned int, int);
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
+    virtual void v8();
+    virtual void drawCompactBillboard(void*, unsigned int, int, unsigned int);
     char pad_004[0x10];
     float viewTransform[12];
     char viewAxes[0x24];
@@ -664,13 +852,16 @@ virtual void v0(); virtual void v1(); virtual void v2(); virtual void v3(); virt
 // angle is in radians for sin/cos; compact submission converts it with the packed
 // angle scale. Buffers below each hold one XYZ vector (12 bytes), passed through
 // the external WVector ABI without changing their stack storage/alignment.
-void Particle_DrawRotatedBillboard(RotatedBillboard* self, RotatedBillboardRenderer* renderer, float angle, unsigned int drawFlags) {
+void Particle_DrawRotatedBillboard(RotatedBillboard* self, RotatedBillboardRenderer* renderer, float angle,
+                                   unsigned int drawFlags) {
     unsigned int bitmapId = self->bitmapId;
-    if (!bitmapId) return;
+    if (!bitmapId)
+        return;
     if (0 == g_sceneManager || ((CSceneManager*)g_sceneManager)->effectRenderPassActive != 0) {
         if ((drawFlags & kRequireProjectedQuadFlags) == 0) {
             float scaled = kBillboardPackedAngleScale1024 * angle;
-            __typeof__(self->positionX) savedPositionX = self->positionX; self->vertices[0]->positionX = savedPositionX;
+            __typeof__(self->positionX) savedPositionX = self->positionX;
+            self->vertices[0]->positionX = savedPositionX;
             self->vertices[0]->positionY = self->positionY;
             self->vertices[0]->positionZ = self->positionZ;
             self->vertices[0]->extentLeft = self->left;
@@ -722,7 +913,8 @@ void Particle_DrawRotatedBillboard(RotatedBillboard* self, RotatedBillboardRende
         float xForY = cornerSelectors[0] ? self->left : self->right;
         float rotatedY = sinAngle * xForY + cosAngle * yForY;
 
-        __ml__FRC7WVectorf(verticalOffset, upAxis, rotatedY); __ml__FRC7WVectorf(horizontalOffset, rightAxis, rotatedX);
+        __ml__FRC7WVectorf(verticalOffset, upAxis, rotatedY);
+        __ml__FRC7WVectorf(horizontalOffset, rightAxis, rotatedX);
         __pl__FRC7WVectorRC7WVector(horizontalPoint, &self->positionX, horizontalOffset);
         __pl__FRC7WVectorRC7WVector(worldCorner, horizontalPoint, verticalOffset);
         Matrix_TransformPoint(viewCorner, worldCorner, &renderer->viewTransform);
@@ -730,20 +922,25 @@ void Particle_DrawRotatedBillboard(RotatedBillboard* self, RotatedBillboardRende
         cornerSelectors += 2;
         vertexSlotOwner = (RotatedBillboard*)((char*)vertexSlotOwner + sizeof(void*));
     }
-    renderer->drawProjectedQuad(self->vertices, kProjectedQuadDrawMode, (self->bitmapId & kBitmapResourceMask) | drawFlags, 0);
+    renderer->drawProjectedQuad(self->vertices, kProjectedQuadDrawMode,
+                                (self->bitmapId & kBitmapResourceMask) | drawFlags, 0);
 }
+
+} // extern "C"
 
 // Assign a bitmap id without releasing the old bitmap or changing ownsBitmap.
 // Caller must arrange the ownership flag/old-resource cleanup before replacement.
-int W3dSpr_AttachTexture(void* self, unsigned int value) {
-    (*(unsigned int*)&AsW3dSpr(self)->bitmap) = value;
+int W3dSpr::AttachTexture(unsigned int value) {
+    bitmap = (void*)value;
     return 1;
 }
 
 // Borrow the current bitmap resource; this accessor transfers no ownership.
-void* W3dSpr_GetBitmap(void* self) {
-    return AsW3dSpr(self)->bitmap;
+void* W3dSpr::GetBitmap() {
+    return bitmap;
 }
+
+extern "C" {
 
 // Initialize this sprite helper's cached full-turn angle.
 void SpriteUnit_InitTwoPiCache2() {

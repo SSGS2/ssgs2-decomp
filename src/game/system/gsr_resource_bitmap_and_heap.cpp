@@ -1,7 +1,11 @@
+// Texture resources (CGsrResource) and bitmaps: encoded image bytes, file paths, and shared texture handles.
+// Also the heap allocators they use, the exception message owners and the BaseObject bookkeeping.
+// Decoding image files happens in the engine's texture loader, not in these classes.
+
 #include <decomp/static_init.h>
 // Texture resource ownership: CGsrResource, Bitmap, heap allocation and BaseObject.
-// Modding lookup: CGsrResource_Ctor copies an encoded image into owned memory;
-// CGsrResource_ctor stores a path; CGsrResource_LoadSharedTexture acquires a
+// Modding lookup: CGsrResource(const void*, unsigned int) copies an encoded image into owned memory;
+// CGsrResource(const char*) stores a path; CGsrResource::LoadSharedTexture acquires a
 // separate shared handle and copies its descriptor. File decoding/palette upload
 // is in Texture_LoadResourceWithOptionalPalette (engine_render_cache_and_texture_load.cpp), not this wrapper.
 // Texture width/height/format are asset/descriptor inputs; no resolution, aspect
@@ -13,19 +17,20 @@
 // A shared-handle readiness failure can block forever; see the load contract.
 #include "classes/BitmapLayout.h"
 // View existing bitmap storage without constructing or taking ownership of it.
-static inline BitmapLayout* AsBitmapLayout(void* object) { return (BitmapLayout*)object; }
+static inline BitmapLayout* AsBitmapLayout(void* object) {
+    return (BitmapLayout*)object;
+}
 #include "classes/BaseObjectLayout.h"
 // View the bookkeeping fields of an existing BaseObject.
-static inline BaseObjectLayout* AsBaseObjectLayout(void* object) { return (BaseObjectLayout*)object; }
-// Translation unit 0x8004576C-0x80046274 (21 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+static inline BaseObjectLayout* AsBaseObjectLayout(void* object) {
+    return (BaseObjectLayout*)object;
+}
 #include "sdk_protos.h"
 #include "game/exception.h"
 #include "classes/CGsrResource.h"
 #include <decomp/cw_bitfields.h>
-
-// View an existing image resource; its actual vtable is at +0x38.
-static inline CGsrResource* AsCGsrResource(void* object) { return (CGsrResource*)object; }
+#include "classes/GtlNoticeOwner.h"
+#include "classes/GtlHeapObject.h"
 
 // CGsrResource owns imageData at +0, two counted handles at +8/+12, and a
 // small/heap string at +0x10. Its resourceVtable is a separate word at +0x38.
@@ -35,11 +40,18 @@ static inline CGsrResource* AsCGsrResource(void* object) { return (CGsrResource*
 // object; returned object addresses must not be used after that deletion.
 
 // logic_error stores a message pointer and its shared ownership block after the vtable.
-struct LogicErrorStorage { void* vtable; void* message; void* messageOwner; };
-enum HeapQueryOptions { kMaximumBlockQuery = 5, kTickMicrosecondDivisorScale = 125000,
-                       kHeapDescriptorSizeWord = 5 };
+struct LogicErrorStorage {
+    void* vtable;
+    void* message;
+    void* messageOwner;
+};
+enum HeapQueryOptions {
+    kMaximumBlockQuery = 5,
+    kTickMicrosecondDivisorScale = 125000,
+    kHeapDescriptorSizeWord = 5
+};
 
-// Preserve the original unused double-to-float timestamp conversion.
+// The double is converted to float and the result is discarded.
 static inline void TimestampSink(const double& value) {
     float truncated = (float)value;
     (void)truncated;
@@ -51,8 +63,6 @@ extern int mem2HeapDescriptorDefaults[12];
 extern char s_arrayHeapMutex[];
 extern void* MemoryManager_InitHeaps(void*);
 extern void AppHeap_QueryMaxAllocatableSize(int, int, int*);
-extern void gtl_IHeapObject_Create(void*, int*);
-extern int GtlNoticeOwner_AllocateWithOptionalLock(int, int, int);
 extern void CubeResourceStorage_dtor(void*, int);
 extern void __dl__FPv(void*);
 extern void appFreeUni__FPv(void*);
@@ -74,55 +84,50 @@ extern void (*g_baseObjectDestructionCallback)(void*);
 void __dl__FPv(void*);
 size_t strlen(const char*);
 unsigned int OSGetTick();
-void GtlNoticeOwner_InvokeFreeLocked(void*, void*, int);
 void* appMallocUni__FUl(unsigned int);
 void gtl_Image_GetPlatform7Description(void*, unsigned int, void*);
 void MWSharedOwner_ReleaseReference(void*);
 void* memcpy(void*, const void*, unsigned int);
 
 // Bitmap interface hook with no work for this implementation.
-void Bitmap_vfunc_1() {
-}
+void Bitmap_vfunc_1() {}
 
 struct ResourceRefCount {
-    CW_BITS2(
-        unsigned int refs : 16,
-        unsigned int flags : 16)
+    CW_BITS2(unsigned int refs : 16, unsigned int flags : 16)
 };
 
 class BitmapResource {
     char pad[0x38];
+
 public:
     virtual ~BitmapResource();
 };
 
 #pragma opt_common_subs off
 // Release cached texture handles, the copied image data, and any heap path string.
-void* CGsrResource_dtor(void* p, int shouldDelete) {
-    if (p != 0) {
-        AsCGsrResource(p)->resourceVtable = __vt__12CGsrResource;
-        // Drop counted handles first; destroy each only when its 16-bit count reaches zero.
-        void* secondaryHandle = AsCGsrResource(p)->secondarySharedResource;
-        if (secondaryHandle != 0) {
-            if (--((ResourceRefCount*)secondaryHandle)->refs == 0) CubeResourceStorage_dtor(secondaryHandle, 1);
-            AsCGsrResource(p)->secondarySharedResource = 0;
-        }
-        void* primaryHandle = AsCGsrResource(p)->primarySharedResource;
-        if (primaryHandle != 0) {
-            if (--((ResourceRefCount*)primaryHandle)->refs == 0) CubeResourceStorage_dtor(primaryHandle, 1);
-            AsCGsrResource(p)->primarySharedResource = 0;
-        }
-        // Release the owned image copy and heap path, then optional object storage.
-        void* imageData = AsCGsrResource(p)->imageData;
-        if (imageData != 0) {
-            appFreeUni__FPv(imageData);
-            AsCGsrResource(p)->imageData = 0;
-        }
-        if (((char*)&AsCGsrResource(p)->texturePathStorageFlags) != 0 && (((AsCGsrResource(p)->texturePathStorageFlags) >> 31) != 0))
-            appFreeUni__FPv(AsCGsrResource(p)->texturePathHeapData);
-        if (shouldDelete > 0) __dl__FPv(p);
+CGsrResource::~CGsrResource() {
+    resourceVtable = __vt__12CGsrResource;
+    // Drop counted handles first; destroy each only when its 16-bit count reaches zero.
+    void* secondaryHandle = secondarySharedResource;
+    if (secondaryHandle != 0) {
+        if (--((ResourceRefCount*)secondaryHandle)->refs == 0)
+            CubeResourceStorage_dtor(secondaryHandle, 1);
+        secondarySharedResource = 0;
     }
-    return p;
+    void* primaryHandle = primarySharedResource;
+    if (primaryHandle != 0) {
+        if (--((ResourceRefCount*)primaryHandle)->refs == 0)
+            CubeResourceStorage_dtor(primaryHandle, 1);
+        primarySharedResource = 0;
+    }
+    // Release the owned image copy and heap path, then optional object storage.
+    void* imageData = this->imageData;
+    if (imageData != 0) {
+        appFreeUni__FPv(imageData);
+        this->imageData = 0;
+    }
+    if (((char*)&texturePathStorageFlags) != 0 && (((texturePathStorageFlags) >> 31) != 0))
+        appFreeUni__FPv(texturePathHeapData);
 }
 #pragma opt_common_subs reset
 
@@ -138,14 +143,15 @@ struct AllocLock_u8004576C {
     }
     // Unlock only while the guard owns the lock.
     ~AllocLock_u8004576C() {
-        if (active) OSUnlockMutex((OSMutex*)p);
+        if (active)
+            OSUnlockMutex((OSMutex*)p);
     }
 };
 // Lazily create both application heaps, then allocate from MEM2 under the shared mutex.
 // Accepted byteCount: 0..INT_MAX bytes; zero returns null AFTER lazy initialization.
 // Negative sizes are not rejected: their unchanged 32-bit word reaches the heap
 // callback as a size, so they are outside this API's supported domain. No clamping.
-// GtlNoticeOwner_AllocateWithOptionalLock (gtl_heap_allocators.cpp) returns zero if its backing
+// GtlNoticeOwner::AllocateWithOptionalLock (gtl_heap_allocators.cpp) returns zero if its backing
 // object is absent, otherwise forwards the allocator result; null is propagated,
 // never converted to an exception here. Heap/callback exceptions propagate, with
 // AllocLock releasing the outer mutex. A nonnull block is caller-owned; release
@@ -160,23 +166,26 @@ void* AppHeap_AllocateFromHeap1(int byteCount) {
         MemoryManager_InitHeaps(&initializationResult);
         heap0MaxBytes = 0;
         AppHeap_QueryMaxAllocatableSize(0, kMaximumBlockQuery, &heap0MaxBytes);
-        struct InitData { unsigned int words[12]; };
+        struct InitData {
+            unsigned int words[12];
+        };
         InitData data = *(InitData*)kArrayHeap0Descriptor;
         data.words[kHeapDescriptorSizeWord] = heap0MaxBytes;
-        gtl_IHeapObject_Create(&data, &g_mem1Heap);
+        gtl::IHeapObject::Create(&data, &g_mem1Heap);
         mem2MaxBytes = 0;
         AppHeap_QueryMaxAllocatableSize(1, kMaximumBlockQuery, &mem2MaxBytes);
-        InitData b = *(InitData*)mem2HeapDescriptorDefaults;
-        b.words[kHeapDescriptorSizeWord] = mem2MaxBytes;
-        gtl_IHeapObject_Create(&b, &g_mem2Heap);
+        InitData mem2HeapDescriptor = *(InitData*)mem2HeapDescriptorDefaults;
+        mem2HeapDescriptor.words[kHeapDescriptorSizeWord] = mem2MaxBytes;
+        gtl::IHeapObject::Create(&mem2HeapDescriptor, &g_mem2Heap);
         OSInitMutex((OSMutex*)s_arrayHeapMutex);
     }
     int result = g_mem2Heap;
     // Allocation uses the now-initialized owner; result changes from owner to address.
-    if (byteCount == 0) result = 0;
+    if (byteCount == 0)
+        result = 0;
     else {
         AllocLock_u8004576C scope(s_arrayHeapMutex);
-        result = GtlNoticeOwner_AllocateWithOptionalLock(result, byteCount, 0);
+        result = ((GtlNoticeOwner*)result)->AllocateWithOptionalLock(byteCount, 0);
     }
     return (void*)result;
 }
@@ -193,27 +202,30 @@ void* AppHeap_AllocateFromHeap0(int byteCount) {
         int mem2MaxBytes;
         int heap0MaxBytes;
         int initializationResult;
-        struct InitData { unsigned int words[12]; };
-        InitData b;
+        struct InitData {
+            unsigned int words[12];
+        };
+        InitData mem2HeapDescriptor;
         InitData data;
         MemoryManager_InitHeaps(&initializationResult);
         heap0MaxBytes = 0;
         AppHeap_QueryMaxAllocatableSize(0, kMaximumBlockQuery, &heap0MaxBytes);
         data = *(InitData*)kArrayHeap0Descriptor;
         data.words[kHeapDescriptorSizeWord] = heap0MaxBytes;
-        gtl_IHeapObject_Create(&data, &g_mem1Heap);
+        gtl::IHeapObject::Create(&data, &g_mem1Heap);
         mem2MaxBytes = 0;
         AppHeap_QueryMaxAllocatableSize(1, kMaximumBlockQuery, &mem2MaxBytes);
-        b = *(InitData*)mem2HeapDescriptorDefaults;
-        b.words[kHeapDescriptorSizeWord] = mem2MaxBytes;
-        gtl_IHeapObject_Create(&b, &g_mem2Heap);
+        mem2HeapDescriptor = *(InitData*)mem2HeapDescriptorDefaults;
+        mem2HeapDescriptor.words[kHeapDescriptorSizeWord] = mem2MaxBytes;
+        gtl::IHeapObject::Create(&mem2HeapDescriptor, &g_mem2Heap);
         OSInitMutex((OSMutex*)s_arrayHeapMutex);
     }
     int result = g_mem1Heap;
-    if (byteCount == 0) result = 0;
+    if (byteCount == 0)
+        result = 0;
     else {
         AllocLock_u8004576C scope(s_arrayHeapMutex);
-        result = GtlNoticeOwner_AllocateWithOptionalLock(result, byteCount, 0);
+        result = ((GtlNoticeOwner*)result)->AllocateWithOptionalLock(byteCount, 0);
     }
     return (void*)result;
 }
@@ -265,24 +277,23 @@ void* std_tr1_detail_shared_ptr_deleter_common_dtor(void* p, int shouldDelete) {
 }
 
 // Copy in-memory image data and query its platform texture descriptor.
-// p is required fresh 0x3C-byte resource storage; source is borrowed for size
+// this is required fresh 0x3C-byte resource storage; source is borrowed for size
 // encoded bytes. Allocation must succeed; no null/decoder failure is handled.
-// Returns p. Owns the new copy until CGsrResource_dtor (appFreeUni), so callers
+// Owns the new copy until CGsrResource::~CGsrResource (appFreeUni), so callers
 // may release source after return. Preserve bytes/length, not just visible size.
 // Platform-7 descriptor export writes six words (gtl_texture_vertex_formats.cpp); the seventh word
 // in textureInfo is not initialized on this path. Do not assume it is zero.
-void* CGsrResource_Ctor(void* p, const void* source, unsigned int size) {
-    AsCGsrResource(p)->resourceVtable = __vt__12CGsrResource;
-    (*(int*)&AsCGsrResource(p)->texturePathStorageFlags) = 0;
-    AsCGsrResource(p)->texturePathLength = 0;
-    (*(int*)&AsCGsrResource(p)->texturePathHeapData) = 0;
-    AsCGsrResource(p)->bufferSize = size;
-    AsCGsrResource(p)->imageData = appMallocUni__FUl(size);
-    memcpy(AsCGsrResource(p)->imageData, source, AsCGsrResource(p)->bufferSize);
-    (*(int*)&AsCGsrResource(p)->primarySharedResource) = 0;
-    (*(int*)&AsCGsrResource(p)->secondarySharedResource) = 0;
-    gtl_Image_GetPlatform7Description(AsCGsrResource(p)->imageData, AsCGsrResource(p)->bufferSize, AsCGsrResource(p)->textureInfo);
-    return p;
+CGsrResource::CGsrResource(const void* source, unsigned int size) {
+    resourceVtable = __vt__12CGsrResource;
+    (*(int*)&texturePathStorageFlags) = 0;
+    texturePathLength = 0;
+    (*(int*)&texturePathHeapData) = 0;
+    bufferSize = size;
+    imageData = appMallocUni__FUl(size);
+    memcpy(imageData, source, bufferSize);
+    (*(int*)&primarySharedResource) = 0;
+    (*(int*)&secondarySharedResource) = 0;
+    gtl_Image_GetPlatform7Description(imageData, bufferSize, textureInfo);
 }
 
 // Release the reference-counted exception-message owner during destruction.
@@ -290,7 +301,8 @@ static inline void LogicErrorDestroy(void* p) throw() {
     if (&((LogicErrorStorage*)p)->message != 0) {
         if (&((LogicErrorStorage*)p)->message != 0) {
             void* sub = ((LogicErrorStorage*)p)->messageOwner;
-            if (sub != 0) MWSharedOwner_ReleaseReference(sub);
+            if (sub != 0)
+                MWSharedOwner_ReleaseReference(sub);
         }
     }
 }
@@ -298,8 +310,10 @@ static inline void LogicErrorDestroy(void* p) throw() {
 // Release the exception message and optionally delete the out-of-range object.
 void* __dt__Q23std12out_of_rangeFv(void* p, short shouldDelete) {
     if (p != 0) {
-        if (p != 0) LogicErrorDestroy(p);
-        if (shouldDelete > 0) __dl__FPv(p);
+        if (p != 0)
+            LogicErrorDestroy(p);
+        if (shouldDelete > 0)
+            __dl__FPv(p);
     }
     return p;
 }
@@ -308,7 +322,8 @@ void* __dt__Q23std12out_of_rangeFv(void* p, short shouldDelete) {
 void* std_logic_error_dtor(void* p, short shouldDelete) {
     if (p != 0) {
         LogicErrorDestroy(p);
-        if (shouldDelete > 0) __dl__FPv(p);
+        if (shouldDelete > 0)
+            __dl__FPv(p);
     }
     return p;
 }
@@ -322,7 +337,7 @@ void* std_logic_error_dtor(void* p, short shouldDelete) {
 // construction/destruction. Constructing another object in the hook observes the
 // already incremented globals. There is no lock/atomic counter or hook snapshot:
 // serialize construction/destruction and hook replacement externally. No writer
-// of the hook is recovered in src; u8004576C_data.cpp initializes it to zero.
+// of the hook is recovered in src; the data section initializes it to zero.
 // If the hook throws, the index and live count remain incremented and p remains
 // base-initialized: no rollback/callback/cleanup occurs here. A hook used for
 // bookkeeping must therefore return normally to preserve balanced live counts.
@@ -352,7 +367,7 @@ void Memory_FreeFromMem2Heap(void* p) {
     // Bus clock word / 4 is the time-base frequency. 8 * 125000 = 1000000:
     // integer arithmetic approximates microseconds (and retains 32-bit wrap/truncation).
     TimestampSink((double)((tick << 3) / ((busClockHz >> 2) / kTickMicrosecondDivisorScale)));
-    GtlNoticeOwner_InvokeFreeLocked(heapOwner, allocation, 0);
+    ((GtlNoticeOwner*)heapOwner)->InvokeFreeLocked(allocation, 0);
 }
 
 // Sample the hardware tick source and free through the array-heap owner.
@@ -361,31 +376,38 @@ void Memory_FreeFromArrayHeap0(void* p) {
     void* allocation = p;
     unsigned int tick = OSGetTick();
     unsigned int busClockHz = *(volatile unsigned int*)0x800000F8;
-    // Same approximate microsecond conversion as the MEM2 wrapper; result is discarded.
+    // Ticks are scaled to microseconds as in the MEM2 wrapper; the result is discarded.
     TimestampSink((double)((tick << 3) / ((busClockHz >> 2) / kTickMicrosecondDivisorScale)));
-    GtlNoticeOwner_InvokeFreeLocked(heapOwner, allocation, 0);
+    ((GtlNoticeOwner*)heapOwner)->InvokeFreeLocked(allocation, 0);
 }
 
-struct ResourceAllocatorByte { unsigned char byte; };
-struct ResourceAllocator { ResourceAllocatorByte value; char pad[3]; };
-struct ResourceStringFlag { CW_BITS2( unsigned char allocated : 1, unsigned char length : 7) };
+struct ResourceAllocatorByte {
+    unsigned char byte;
+};
+struct ResourceAllocator {
+    ResourceAllocatorByte value;
+    char pad[3];
+};
+struct ResourceStringFlag {
+    CW_BITS2(unsigned char allocated : 1, unsigned char length : 7)
+};
 
 #pragma opt_common_subs off
 // Initialize an empty image resource and copy its texture path into string storage.
-// p is required fresh resource storage and s is required borrowed NUL-terminated
+// this is required fresh resource storage and texturePath is required borrowed NUL-terminated
 // text. String_ReplaceRange copies it; any allocated path is released by the
-// destructor. Returns p; no texture is loaded yet. Retain the volatile writes
+// destructor. No texture is loaded yet. Retain the volatile writes
 // and allocator byte: they reproduce the original empty-string construction.
-void* CGsrResource_ctor(void* p, const char* s) {
-    (*(volatile int*)&AsCGsrResource(p)->texturePathStorageFlags) = 0;
-    *(volatile int*)&AsCGsrResource(p)->imageData = 0;
-    (*(volatile int*)&AsCGsrResource(p)->bufferSize) = 0;
-    (*(volatile int*)&AsCGsrResource(p)->primarySharedResource) = 0;
-    (*(volatile int*)&AsCGsrResource(p)->secondarySharedResource) = 0;
-    (*(volatile int*)&AsCGsrResource(p)->texturePathLength) = 0;
-    (*(volatile int*)&AsCGsrResource(p)->texturePathHeapData) = 0;
-    unsigned char flag = ((volatile ResourceStringFlag*)(((char*)&AsCGsrResource(p)->texturePathStorageFlags)))->length;
-    *(void* volatile*)(((char*)&AsCGsrResource(p)->resourceVtable)) = (void*)__vt__12CGsrResource;
+CGsrResource::CGsrResource(const char* texturePath) {
+    (*(volatile int*)&texturePathStorageFlags) = 0;
+    *(volatile int*)&imageData = 0;
+    (*(volatile int*)&bufferSize) = 0;
+    (*(volatile int*)&primarySharedResource) = 0;
+    (*(volatile int*)&secondarySharedResource) = 0;
+    (*(volatile int*)&texturePathLength) = 0;
+    (*(volatile int*)&texturePathHeapData) = 0;
+    unsigned char flag = ((volatile ResourceStringFlag*)(((char*)&texturePathStorageFlags)))->length;
+    *(void* volatile*)(((char*)&resourceVtable)) = (void*)__vt__12CGsrResource;
     char buf[8];
     // Empty, stateless string allocator token: buf[0] has no initialized payload;
     // its copied byte at +4 supplies the sixth (const Alloc&) ABI argument, NOT
@@ -394,9 +416,8 @@ void* CGsrResource_ctor(void* p, const char* s) {
     // the copy/call shape; initializing/removing it alters the existing
     // generated code even though no string decision consumes the byte.
     buf[4] = buf[0];
-    size_t len = strlen(s);
-    String_ReplaceRange(((char*)&AsCGsrResource(p)->texturePathStorageFlags), 0, flag, s, s + len, &buf[4]);
-    return p;
+    size_t len = strlen(texturePath);
+    String_ReplaceRange(((char*)&texturePathStorageFlags), 0, flag, texturePath, texturePath + len, &buf[4]);
 }
 #pragma opt_common_subs reset
 
@@ -419,7 +440,8 @@ void* Bitmap_dtor(void* p, int shouldDelete) {
             delete (BitmapResource*)ownedResource;
             AsBitmapLayout(p)->resource = 0;
         }
-        if (shouldDelete > 0) __dl__FPv(p);
+        if (shouldDelete > 0)
+            __dl__FPv(p);
     }
     return p;
 }
@@ -437,31 +459,35 @@ void* Bitmap_dtor(void* p, int shouldDelete) {
 // reference on a cache hit; a new resource starts with count 1. Release exactly
 // that reference with ISharedResource_Release (virtual release slot), which
 // decrements +28 and invokes the deleting destructor at zero. Never delete the
-// borrowed locked image/description separately. WGeneric3DR_LoadTextureSlot
+// borrowed locked image/description separately. WGeneric3DR::LoadTextureSlot
 // (wgeneric3dr_immediate_renderer.cpp) stores this reference in its slot; replacing that slot does
 // not release its old handle, so the slot owner must arrange release separately.
 // The factory lowercases path bytes IN PLACE: p's inline/heap path must remain
 // writable; acquisition can change its spelling even on an existing-cache hit.
-void* CGsrResource_LoadSharedTexture(void* p) {
+void* CGsrResource::LoadSharedTexture() {
     // Select inline/heap text, then acquire a handle independent of this object's members.
-    unsigned int pathOnHeap = AsCGsrResource(p)->texturePathStorageFlags >> 31;
+    unsigned int pathOnHeap = texturePathStorageFlags >> 31;
     void* path;
-    if (pathOnHeap == 0) path = (char*)&AsCGsrResource(p)->texturePathStorageFlags + 1; else path = AsCGsrResource(p)->texturePathHeapData;
+    if (pathOnHeap == 0)
+        path = (char*)&texturePathStorageFlags + 1;
+    else
+        path = texturePathHeapData;
     void* sharedTexture = CreateSharedTextureResource__FPCci(path, 0);
-    if (sharedTexture == 0) return 0;
+    if (sharedTexture == 0)
+        return 0;
     // A non-null locked resource is the readiness condition for the descriptor copy.
     void* readyResource = 0;
     while (readyResource == 0) {
         readyResource = ISharedResource_GetLocked(sharedTexture);
     }
     void* description = ISharedResource_GetTextureDescription(sharedTexture);
-    AsCGsrResource(p)->textureInfo[0] = ((int*)description)[0];
-    AsCGsrResource(p)->textureInfo[1] = ((int*)description)[1];
-    AsCGsrResource(p)->textureInfo[2] = ((int*)description)[2];
-    AsCGsrResource(p)->textureInfo[3] = ((int*)description)[3];
-    AsCGsrResource(p)->textureInfo[4] = ((int*)description)[4];
-    AsCGsrResource(p)->textureInfo[5] = ((int*)description)[5];
-    AsCGsrResource(p)->textureInfo[6] = ((int*)description)[6];
+    textureInfo[0] = ((int*)description)[0];
+    textureInfo[1] = ((int*)description)[1];
+    textureInfo[2] = ((int*)description)[2];
+    textureInfo[3] = ((int*)description)[3];
+    textureInfo[4] = ((int*)description)[4];
+    textureInfo[5] = ((int*)description)[5];
+    textureInfo[6] = ((int*)description)[6];
     return sharedTexture;
 }
 
@@ -481,8 +507,10 @@ void* BaseObject_dtor(void* p, int shouldDelete) {
     if (p != 0) {
         AsBaseObjectLayout(p)->vtable = __vt__10BaseObject;
         --s_liveBaseObjectCount;
-        if (g_baseObjectDestructionCallback != 0) g_baseObjectDestructionCallback(p);
-        if (shouldDelete > 0) __dl__FPv(p);
+        if (g_baseObjectDestructionCallback != 0)
+            g_baseObjectDestructionCallback(p);
+        if (shouldDelete > 0)
+            __dl__FPv(p);
     }
     return p;
 }
@@ -498,7 +526,8 @@ STATIC_INIT_ENTRY(".CRT$XCU80461FA4", _ctors_u8004576C_1, ResourceRuntime_Initia
 // Constructor-unwind adapter: these reconstructed bases own no completed message.
 // Their std::exception base destruction with -1/0 has no field access or side effect.
 extern "C" void* __dt__Q23std11logic_errorFv(void* object, int deleting) {
-    if (object && deleting > 0) __dl__FPv(object);
+    if (object && deleting > 0)
+        __dl__FPv(object);
     return object;
 }
 
@@ -508,24 +537,33 @@ extern "C" {
 extern char __RTTI__Q23std9exception[], __RTTI__Q23std11logic_error[];
 extern const char s_stdOutOfRangeTypeName[] = "std::out_of_range";
 extern const char s_stdLengthErrorTypeName[] = "std::length_error";
-DATA_SECTION(".data") const void* s_stdOutOfRangeBaseTypes[6] = {
-    __RTTI__Q23std9exception, 0, __RTTI__Q23std11logic_error, 0, 0, 0
+DATA_SECTION(".data")
+const void* s_stdOutOfRangeBaseTypes[6] = {__RTTI__Q23std9exception, 0, __RTTI__Q23std11logic_error, 0, 0, 0};
+DATA_SECTION(".data")
+const void* s_stdLengthErrorBaseTypes[6] = {__RTTI__Q23std9exception, 0, __RTTI__Q23std11logic_error, 0, 0, 0};
+struct ExceptionRTTI {
+    const void* name;
+    const void* bases;
 };
-DATA_SECTION(".data") const void* s_stdLengthErrorBaseTypes[6] = {
-    __RTTI__Q23std9exception, 0, __RTTI__Q23std11logic_error, 0, 0, 0
-};
-struct ExceptionRTTI { const void* name; const void* bases; };
-DATA_SECTION(".sdata") ExceptionRTTI __RTTI__Q23std12out_of_range = { s_stdOutOfRangeTypeName, s_stdOutOfRangeBaseTypes };
-DATA_SECTION(".sdata") ExceptionRTTI __RTTI__Q23std12length_error = { s_stdLengthErrorTypeName, s_stdLengthErrorBaseTypes };
+DATA_SECTION(".sdata") ExceptionRTTI __RTTI__Q23std12out_of_range = {s_stdOutOfRangeTypeName, s_stdOutOfRangeBaseTypes};
+DATA_SECTION(".sdata")
+ExceptionRTTI __RTTI__Q23std12length_error = {s_stdLengthErrorTypeName, s_stdLengthErrorBaseTypes};
 void __dt__Q23std12length_errorFv();
-struct ExceptionVTable { const void* rtti; unsigned int offset; const void* destroy; const void* what; };
-DATA_SECTION(".data") ExceptionVTable __vt__Q23std11logic_error = {
-    __RTTI__Q23std11logic_error, 0, (const void*)std_logic_error_dtor, (const void*)std_logic_error_GetMessage
+struct ExceptionVTable {
+    const void* rtti;
+    unsigned int offset;
+    const void* destroy;
+    const void* what;
 };
-DATA_SECTION(".data") ExceptionVTable __vt__Q23std12length_error = {
-    &__RTTI__Q23std12length_error, 0, (const void*)__dt__Q23std12length_errorFv, (const void*)std_logic_error_GetMessage
-};
-DATA_SECTION(".data") ExceptionVTable __vt__Q23std12out_of_range = {
-    &__RTTI__Q23std12out_of_range, 0, (const void*)__dt__Q23std12out_of_rangeFv, (const void*)std_logic_error_GetMessage
-};
+DATA_SECTION(".data")
+ExceptionVTable __vt__Q23std11logic_error = {__RTTI__Q23std11logic_error, 0, (const void*)std_logic_error_dtor,
+                                             (const void*)std_logic_error_GetMessage};
+DATA_SECTION(".data")
+ExceptionVTable __vt__Q23std12length_error = {&__RTTI__Q23std12length_error, 0,
+                                              (const void*)__dt__Q23std12length_errorFv,
+                                              (const void*)std_logic_error_GetMessage};
+DATA_SECTION(".data")
+ExceptionVTable __vt__Q23std12out_of_range = {&__RTTI__Q23std12out_of_range, 0,
+                                              (const void*)__dt__Q23std12out_of_rangeFv,
+                                              (const void*)std_logic_error_GetMessage};
 }

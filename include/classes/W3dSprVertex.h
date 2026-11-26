@@ -1,5 +1,5 @@
-// W3dSpr's 0x38-byte vertex; owned by W3dSpr_ctor (0x8021E700).
-// W3dSpr_SetColor (0x8021E904) writes color; ctor derives texture coordinates from s_spriteQuadUvCornerSelectors.
+// W3dSpr's 0x38-byte vertex. W3dSpr::Init fills the texture coordinates from s_spriteQuadUvCornerSelectors;
+// W3dSpr::SetColor writes color.
 #ifndef CLASSES_W3DSPRVERTEX_H
 #define CLASSES_W3DSPRVERTEX_H
 struct W3dSprVertex {

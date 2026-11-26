@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CGIBALLRINGRENDERER_H
 #define CLASSES_CGIBALLRINGRENDERER_H
 
@@ -7,86 +5,88 @@
 
 class CGIBallRingRenderer {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    char pad_004[0x8];                  // 0x4
-    int unk_C;                          // 0xc: 1 use in ScreenBallPreview_Ctor
-    void* primaryBallRenderer;                       // 0x10: 1 use in ScreenBallPreview_Ctor
-    void* secondaryBallRenderer;                       // 0x14: 1 use in ScreenBallPreview_Ctor
-    void* ballRingRenderer;                       // 0x18: 1 use in ScreenBallPreview_Ctor
-    float liePenaltyPercent;                       // 0x1c: 2 uses in ScreenBallPreview_Ctor, CGIBallRingRenderer_Draw
-    int segmentCount;                         // 0x20: 6 uses in CGIBallRingRenderer_Draw, ScreenBallPreview_Ctor
-    int ringTexture;                         // 0x24: 2 uses in CGIBallRingRenderer_Draw
-    int percentageTexture;                         // 0x28: 2 uses in CGIBallRingRenderer_Draw
-    char pad_02C[0x10];                 // 0x2c
-    float vertex0U;                       // 0x3c: 2 uses in CGIBallRingRenderer_Draw
-    float vertex0V;                       // 0x40: 2 uses in CGIBallRingRenderer_Draw
-    char pad_044[0x10];                 // 0x44
-    float vertex1U;                       // 0x54: 2 uses in CGIBallRingRenderer_Draw
-    float vertex1V;                       // 0x58: 2 uses in CGIBallRingRenderer_Draw
-    float vertex2X;                       // 0x5c: 2 uses in CGIBallRingRenderer_Draw
-    char pad_060[0x4];                  // 0x60
-    float vertex2Z;                       // 0x64: 3 uses in CGIBallRingRenderer_Draw, ScreenBallPreview_Ctor
-    float vertex2Color;                       // 0x68: 1 use in ScreenBallPreview_Ctor
-    float vertex2U;                       // 0x6c: 3 uses in CGIBallRingRenderer_Draw, ScreenBallPreview_Ctor
-    float vertex2V;                       // 0x70: 3 uses in CGIBallRingRenderer_Draw, ScreenBallPreview_Ctor
-    float vertex3X;                       // 0x74: 2 uses in CGIBallRingRenderer_Draw
-    char pad_078[0x4];                  // 0x78
-    float vertex3Z;                       // 0x7c: 2 uses in CGIBallRingRenderer_Draw
-    char pad_080[0x4];                  // 0x80
-    float vertex3U;                       // 0x84: 2 uses in CGIBallRingRenderer_Draw
-    float vertex3V;                       // 0x88: 3 uses in CGIBallRingRenderer_Draw, ScreenBallPreview_Ctor
-    float unk_8C;                       // 0x8c: 1 use in ScreenBallPreview_Ctor
-    float unk_90;                       // 0x90: 1 use in ScreenBallPreview_Ctor
-    char pad_094[0x10];                 // 0x94
-    float unk_A4;                       // 0xa4: 1 use in ScreenBallPreview_Ctor
-    float unk_A8;                       // 0xa8: 1 use in ScreenBallPreview_Ctor
-    float unk_AC;                       // 0xac: 1 use in ScreenBallPreview_Ctor
-    char pad_0B0[0x48];                 // 0xb0
-    float unk_F8;                       // 0xf8: 1 use in ScreenBallPreview_Ctor
-    int unk_FC;                         // 0xfc: 1 use in ScreenBallPreview_Ctor
-    int unk_100;                        // 0x100: 1 use in ScreenBallPreview_Ctor
-    int unk_104;                        // 0x104: 1 use in ScreenBallPreview_Ctor
-    int unk_108;                        // 0x108: 1 use in ScreenBallPreview_Ctor
-    float unk_10C;                      // 0x10c: 1 use in ScreenBallPreview_Ctor
-    float unk_110;                      // 0x110: 1 use in ScreenBallPreview_Ctor
-    char pad_114[0x2c];                 // 0x114
-    float unk_140;                      // 0x140: 1 use in ScreenBallPreview_Ctor
-    int unk_144;                        // 0x144: 1 use in ScreenBallPreview_Ctor
-    int unk_148;                        // 0x148: 1 use in ScreenBallPreview_Ctor
-    int unk_14C;                        // 0x14c: 1 use in ScreenBallPreview_Ctor
-    int unk_150;                        // 0x150: 1 use in ScreenBallPreview_Ctor
-    float unk_154;                      // 0x154: 1 use in ScreenBallPreview_Ctor
-    float unk_158;                      // 0x158: 1 use in ScreenBallPreview_Ctor
-    char pad_15C[0x24];                 // 0x15c
-    float unk_180;                      // 0x180: 1 use in ScreenBallPreview_Ctor
-    char pad_184[0x4];                  // 0x184
-    float unk_188;                      // 0x188: 1 use in ScreenBallPreview_Ctor
-    int unk_18C;                        // 0x18c: 1 use in ScreenBallPreview_Ctor
-    int unk_190;                        // 0x190: 1 use in ScreenBallPreview_Ctor
-    int unk_194;                        // 0x194: 1 use in ScreenBallPreview_Ctor
-    int unk_198;                        // 0x198: 1 use in ScreenBallPreview_Ctor
-    float unk_19C;                      // 0x19c: 1 use in ScreenBallPreview_Ctor
-    float unk_1A0;                      // 0x1a0: 1 use in ScreenBallPreview_Ctor
-    float unk_1A4;                      // 0x1a4: 1 use in ScreenBallPreview_Ctor
-    void* ringTextureResource;                      // 0x1a8: 3 uses in ScreenBallPreview_Ctor
-    void* percentageTextureResource;                      // 0x1ac: 3 uses in ScreenBallPreview_Ctor
-    char pad_1B0[0x50];                 // 0x1b0
-    float unk_200;                      // 0x200: 1 use in ScreenBallPreview_Ctor
-    float unk_204;                      // 0x204: 1 use in ScreenBallPreview_Ctor
-    char pad_208[0x4];                  // 0x208
-    float unk_20C;                      // 0x20c: 1 use in ScreenBallPreview_Ctor
-    char pad_210[0x38c];                // 0x210
-    void* unk_59C;                      // 0x59c: 1 use in ScreenBallPreview_Ctor
-    void* unk_5A0;                      // 0x5a0: 1 use in ScreenBallPreview_Ctor
-    void* unk_5A4;                      // 0x5a4: 1 use in ScreenBallPreview_Ctor
-    void* unk_5A8;                      // 0x5a8: 1 use in ScreenBallPreview_Ctor
-    int unk_5AC;                        // 0x5ac: 1 use in ScreenBallPreview_Ctor
+    ~CGIBallRingRenderer();
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x4, 0x28, 0x2c, 0x34, 0x58, 0x64, 0xa4, 0xcc, 0x114, 0x15c, 0x1b0, 0x1b8, 0x1f8, 0x208, 0x5b0, 0x5e8, 0x620, 0x658
+    void Draw(char* camera, void* source);
+
+    void* vtbl;                      // 0x0: original vtable pointer
+    char pad_004[0x8];               // 0x4
+    int unk_C;                       // 0xc
+    void* primaryBallRenderer;       // 0x10
+    void* secondaryBallRenderer;     // 0x14
+    void* ballRingRenderer;          // 0x18
+    float liePenaltyPercent;         // 0x1c
+    int segmentCount;                // 0x20
+    int ringTexture;                 // 0x24
+    int percentageTexture;           // 0x28
+    char pad_02C[0x10];              // 0x2c
+    float vertex0U;                  // 0x3c
+    float vertex0V;                  // 0x40
+    char pad_044[0x10];              // 0x44
+    float vertex1U;                  // 0x54
+    float vertex1V;                  // 0x58
+    float vertex2X;                  // 0x5c
+    char pad_060[0x4];               // 0x60
+    float vertex2Z;                  // 0x64
+    float vertex2Color;              // 0x68
+    float vertex2U;                  // 0x6c
+    float vertex2V;                  // 0x70
+    float vertex3X;                  // 0x74
+    char pad_078[0x4];               // 0x78
+    float vertex3Z;                  // 0x7c
+    char pad_080[0x4];               // 0x80
+    float vertex3U;                  // 0x84
+    float vertex3V;                  // 0x88
+    float unk_8C;                    // 0x8c
+    float unk_90;                    // 0x90
+    char pad_094[0x10];              // 0x94
+    float unk_A4;                    // 0xa4
+    float unk_A8;                    // 0xa8
+    float unk_AC;                    // 0xac
+    char pad_0B0[0x48];              // 0xb0
+    float unk_F8;                    // 0xf8
+    int unk_FC;                      // 0xfc
+    int unk_100;                     // 0x100
+    int unk_104;                     // 0x104
+    int unk_108;                     // 0x108
+    float unk_10C;                   // 0x10c
+    float unk_110;                   // 0x110
+    char pad_114[0x2c];              // 0x114
+    float unk_140;                   // 0x140
+    int unk_144;                     // 0x144
+    int unk_148;                     // 0x148
+    int unk_14C;                     // 0x14c
+    int unk_150;                     // 0x150
+    float unk_154;                   // 0x154
+    float unk_158;                   // 0x158
+    char pad_15C[0x24];              // 0x15c
+    float unk_180;                   // 0x180
+    char pad_184[0x4];               // 0x184
+    float unk_188;                   // 0x188
+    int unk_18C;                     // 0x18c
+    int unk_190;                     // 0x190
+    int unk_194;                     // 0x194
+    int unk_198;                     // 0x198
+    float unk_19C;                   // 0x19c
+    float unk_1A0;                   // 0x1a0
+    float unk_1A4;                   // 0x1a4
+    void* ringTextureResource;       // 0x1a8
+    void* percentageTextureResource; // 0x1ac
+    char pad_1B0[0x50];              // 0x1b0
+    float unk_200;                   // 0x200
+    float unk_204;                   // 0x204
+    char pad_208[0x4];               // 0x208
+    float unk_20C;                   // 0x20c
+    char pad_210[0x38c];             // 0x210
+    void* unk_59C;                   // 0x59c
+    void* unk_5A0;                   // 0x5a0
+    void* unk_5A4;                   // 0x5a4
+    void* unk_5A8;                   // 0x5a8
+    int unk_5AC;                     // 0x5ac
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define CGIBALLRINGRENDERER_OFF(f, o) typedef char CGIBallRingRenderer_off_##f[((int)&((CGIBallRingRenderer*)0)->f == (o)) ? 1 : -1]
+#define CGIBALLRINGRENDERER_OFF(f, o) \
+    typedef char CGIBallRingRenderer_off_##f[((int)&((CGIBallRingRenderer*)0)->f == (o)) ? 1 : -1]
 CGIBALLRINGRENDERER_OFF(unk_C, 0xc);
 CGIBALLRINGRENDERER_OFF(primaryBallRenderer, 0x10);
 CGIBALLRINGRENDERER_OFF(secondaryBallRenderer, 0x14);
@@ -148,4 +148,4 @@ CGIBALLRINGRENDERER_OFF(unk_5A8, 0x5a8);
 CGIBALLRINGRENDERER_OFF(unk_5AC, 0x5ac);
 #undef CGIBALLRINGRENDERER_OFF
 
-#endif  // CLASSES_CGIBALLRINGRENDERER_H
+#endif // CLASSES_CGIBALLRINGRENDERER_H

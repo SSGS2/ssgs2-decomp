@@ -1,5 +1,11 @@
+// The FMEM file device's save-area check: asks NAND whether there is room for a number of
+// blocks and files, synchronously or through a callback, and maps the answer to a result code.
+// It also holds the release routine for the move-with-progress callback.
+
+#include "classes/GtlFileIoDeviceFMEM.h"
 #include "sdk_protos.h"
 #include "classes/FmemOperationCallback.h"
+#include "classes/gtl_CCallBackMoveFileWithProgress.h"
 
 extern "C" {
 void* FileIO_Alloc(u32 size);
@@ -9,7 +15,6 @@ void NANDSetUserData(void* commandBlock, void* userData, void* resultBuffer);
 int NANDCheckAsync(u32 neededBlocks, u32 neededFiles, void* answer, void* callback, void* commandBlock);
 
 extern char __vt__Q23gtl25CCallBackRVLCheckSaveArea[0x14];
-void gtl_CFileIoDeviceFMEM_DispatchNandCallback(void);
 
 // For this callback specialization, argument stores the caller's callback address.
 typedef FmemOperationCallback SaveAreaCallback;
@@ -38,26 +43,40 @@ enum SaveAreaResult {
     kSaveAreaAuthentication = 0xC35F,
     kSaveAreaUnknown = 0xC360,
     kSaveAreaFatal = 0xC361,
- };
+};
 enum NandSaveAreaResult {
-    kNandAccess = -1, kNandAllocationFailed = -2, kNandBusy = -3,
-    kNandCorrupt = -4, kNandEccCritical = -5, kNandExists = -6,
-    kNandInvalid = -8, kNandMaxBlocks = -9, kNandMaxDescriptors = -10,
-    kNandMaxFiles = -11, kNandNoSuchFile = -12, kNandNotEmpty = -13,
-    kNandOpenFile = -14, kNandAuthentication = -15,
-    kNandUnknown = -64, kNandFatal = -128
+    kNandAccess = -1,
+    kNandAllocationFailed = -2,
+    kNandBusy = -3,
+    kNandCorrupt = -4,
+    kNandEccCritical = -5,
+    kNandExists = -6,
+    kNandInvalid = -8,
+    kNandMaxBlocks = -9,
+    kNandMaxDescriptors = -10,
+    kNandMaxFiles = -11,
+    kNandNoSuchFile = -12,
+    kNandNotEmpty = -13,
+    kNandOpenFile = -14,
+    kNandAuthentication = -15,
+    kNandUnknown = -64,
+    kNandFatal = -128
 };
 static const int kNandClusterByteShift = 14;
 static const u32 kSaveAreaNotChecked = 0xFFFFFFFFu;
 char s_nandAsyncCommandBlock[256];
 
+} // extern "C"
+
 // Release a callback allocation when invoked as a deleting destructor.
-void* CCallBackMoveFileWithProgress_dtor(void* self, int deleting) {
-    if (self != 0 && deleting > 0) {
-        FileIO_Free(self);
+void* gtl::CCallBackMoveFileWithProgress::Destroy(int deleting) {
+    if (this != 0 && deleting > 0) {
+        FileIO_Free(this);
     }
-    return self;
+    return this;
 }
+
+extern "C" {
 
 #pragma opt_lifetimes off
 #pragma opt_propagation off
@@ -65,7 +84,8 @@ void* CCallBackMoveFileWithProgress_dtor(void* self, int deleting) {
 #pragma opt_strength_reduction off
 #pragma use_lmw_stmw on
 // Count required NAND clusters for the file sizes, then check capacity synchronously or submit a callback.
-int gtl_FileIO_CheckSaveArea(int unused, u32* words, u32 wordCount, u32* checkResultFlags, int callbackAddress, int userArgument) {
+int gtl_FileIO_CheckSaveArea(int unused, u32* words, u32 wordCount, u32* checkResultFlags, int callbackAddress,
+                             int userArgument) {
     u32 checkedWordCount;
     u32 requiredBlocks;
     int savedCallbackAddress;
@@ -103,26 +123,45 @@ int gtl_FileIO_CheckSaveArea(int unused, u32* words, u32 wordCount, u32* checkRe
     if (savedCallbackAddress == 0) {
         *checkResultFlags = kSaveAreaNotChecked;
         int nandResult = NANDCheck(requiredBlocks, checkedWordCount, checkResultFlags);
-        if (nandResult == 0) return 0;
+        if (nandResult == 0)
+            return 0;
         switch (nandResult) {
-            case 0: return 0;
-            case kNandAccess: return kSaveAreaAccessDenied;
-            case kNandAllocationFailed: return kSaveAreaAllocationFailed;
-            case kNandBusy: return kSaveAreaBusy;
-            case kNandCorrupt: return kSaveAreaCorrupt;
-            case kNandEccCritical: return kSaveAreaEccCritical;
-            case kNandExists: return kSaveAreaAlreadyExists;
-            case kNandInvalid: return kSaveAreaInvalid;
-            case kNandMaxBlocks: return kSaveAreaMaxBlocks;
-            case kNandMaxDescriptors: return kSaveAreaMaxFileDescriptors;
-            case kNandMaxFiles: return kSaveAreaMaxFiles;
-            case kNandNoSuchFile: return kSaveAreaNoSuchFile;
-            case kNandNotEmpty: return kSaveAreaNotEmpty;
-            case kNandOpenFile: return kSaveAreaOpenFile;
-            case kNandAuthentication: return kSaveAreaAuthentication;
-            case kNandUnknown: return kSaveAreaUnknown;
-            case kNandFatal: return kSaveAreaFatal;
-            default: return kSaveAreaUnknown;
+        case 0:
+            return 0;
+        case kNandAccess:
+            return kSaveAreaAccessDenied;
+        case kNandAllocationFailed:
+            return kSaveAreaAllocationFailed;
+        case kNandBusy:
+            return kSaveAreaBusy;
+        case kNandCorrupt:
+            return kSaveAreaCorrupt;
+        case kNandEccCritical:
+            return kSaveAreaEccCritical;
+        case kNandExists:
+            return kSaveAreaAlreadyExists;
+        case kNandInvalid:
+            return kSaveAreaInvalid;
+        case kNandMaxBlocks:
+            return kSaveAreaMaxBlocks;
+        case kNandMaxDescriptors:
+            return kSaveAreaMaxFileDescriptors;
+        case kNandMaxFiles:
+            return kSaveAreaMaxFiles;
+        case kNandNoSuchFile:
+            return kSaveAreaNoSuchFile;
+        case kNandNotEmpty:
+            return kSaveAreaNotEmpty;
+        case kNandOpenFile:
+            return kSaveAreaOpenFile;
+        case kNandAuthentication:
+            return kSaveAreaAuthentication;
+        case kNandUnknown:
+            return kSaveAreaUnknown;
+        case kNandFatal:
+            return kSaveAreaFatal;
+        default:
+            return kSaveAreaUnknown;
         }
     } else {
         int nandResult;
@@ -137,32 +176,51 @@ int gtl_FileIO_CheckSaveArea(int unused, u32* words, u32 wordCount, u32* checkRe
         s_fmemAsyncOperation.buffer = (u32*)FileIO_Alloc(s_fmemAsyncOperation.size);
         *(u32*)s_fmemAsyncOperation.buffer = kSaveAreaNotChecked;
         NANDSetUserData(s_nandAsyncCommandBlock, &s_fmemAsyncOperation, (void*)s_fmemAsyncOperation.buffer);
-        nandResult = NANDCheckAsync(requiredBlocks, checkedWordCount, (void*)s_fmemAsyncOperation.buffer, (void*)gtl_CFileIoDeviceFMEM_DispatchNandCallback, s_nandAsyncCommandBlock);
+        nandResult = NANDCheckAsync(requiredBlocks, checkedWordCount, (void*)s_fmemAsyncOperation.buffer,
+                                    (void*)gtl::CFileIoDeviceFMEM::DispatchNandCallback, s_nandAsyncCommandBlock);
         if (nandResult == 0) {
             return 0;
         }
         FileIO_Free((void*)s_fmemAsyncOperation.buffer);
         s_fmemAsyncOperation.buffer = 0;
-        ((void (**)(void *))(*(void **)callback))[3](callback);
+        ((void (**)(void*))(*(void**)callback))[3](callback);
         switch (nandResult) {
-            case 0: return 0;
-            case kNandAccess: return kSaveAreaAccessDenied;
-            case kNandAllocationFailed: return kSaveAreaAllocationFailed;
-            case kNandBusy: return kSaveAreaBusy;
-            case kNandCorrupt: return kSaveAreaCorrupt;
-            case kNandEccCritical: return kSaveAreaEccCritical;
-            case kNandExists: return kSaveAreaAlreadyExists;
-            case kNandInvalid: return kSaveAreaInvalid;
-            case kNandMaxBlocks: return kSaveAreaMaxBlocks;
-            case kNandMaxDescriptors: return kSaveAreaMaxFileDescriptors;
-            case kNandMaxFiles: return kSaveAreaMaxFiles;
-            case kNandNoSuchFile: return kSaveAreaNoSuchFile;
-            case kNandNotEmpty: return kSaveAreaNotEmpty;
-            case kNandOpenFile: return kSaveAreaOpenFile;
-            case kNandAuthentication: return kSaveAreaAuthentication;
-            case kNandUnknown: return kSaveAreaUnknown;
-            case kNandFatal: return kSaveAreaFatal;
-            default: return kSaveAreaUnknown;
+        case 0:
+            return 0;
+        case kNandAccess:
+            return kSaveAreaAccessDenied;
+        case kNandAllocationFailed:
+            return kSaveAreaAllocationFailed;
+        case kNandBusy:
+            return kSaveAreaBusy;
+        case kNandCorrupt:
+            return kSaveAreaCorrupt;
+        case kNandEccCritical:
+            return kSaveAreaEccCritical;
+        case kNandExists:
+            return kSaveAreaAlreadyExists;
+        case kNandInvalid:
+            return kSaveAreaInvalid;
+        case kNandMaxBlocks:
+            return kSaveAreaMaxBlocks;
+        case kNandMaxDescriptors:
+            return kSaveAreaMaxFileDescriptors;
+        case kNandMaxFiles:
+            return kSaveAreaMaxFiles;
+        case kNandNoSuchFile:
+            return kSaveAreaNoSuchFile;
+        case kNandNotEmpty:
+            return kSaveAreaNotEmpty;
+        case kNandOpenFile:
+            return kSaveAreaOpenFile;
+        case kNandAuthentication:
+            return kSaveAreaAuthentication;
+        case kNandUnknown:
+            return kSaveAreaUnknown;
+        case kNandFatal:
+            return kSaveAreaFatal;
+        default:
+            return kSaveAreaUnknown;
         }
     }
     return 0;

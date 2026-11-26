@@ -1,8 +1,13 @@
+// Sample history buffers for the pad (PadAccState): constructs and destroys the vectors that
+// hold each pad's recent samples, and initializes a player's pad state.
+
 #include <decomp/static_init.h>
+#include "classes/PadAccState.h"
 typedef unsigned long new_size_t;
-// Translation unit 0x8026700C-0x80267C20
 // Construct copied history entries in caller-owned vector storage.
-inline void* operator new(new_size_t, void* p) { return p; }
+inline void* operator new(new_size_t, void* p) {
+    return p;
+}
 // Placement-delete does not free the caller's vector allocation on unwind.
 inline void operator delete(void*, void*) {}
 extern "C" {
@@ -42,7 +47,9 @@ SampleHistoryBuffer* SampleHistoryBuffer_dtor(SampleHistoryBuffer* self, int fla
     return self;
 }
 
-enum { kVectorLengthErrorTypeOffset = 0x14 };
+enum {
+    kVectorLengthErrorTypeOffset = 0x14
+};
 
 /* ---- std::length_error-style throw helper (same idiom as elsewhere in the game) ---- */
 void* __nw__FUl(unsigned int);
@@ -63,13 +70,25 @@ extern char s_padAuxiliaryHistoryVectorVTable[];
 extern char s_sharedCharDeleterVtable[];
 extern char vectorLengthErrorStrings_8026700C[];
 
-struct Ref { int vt; int c1; int c2; char* s; };
+struct Ref {
+    int vt;
+    int c1;
+    int c2;
+    char* s;
+};
 struct Holder_u8026700C {
-    char* p; char* flag;
+    char* p;
+    char* flag;
     // Guard the exception-message allocation before its shared owner is installed.
-    Holder_u8026700C(char* b, char* f) { p = b; flag = f; }
+    Holder_u8026700C(char* b, char* f) {
+        p = b;
+        flag = f;
+    }
     // Release a message buffer whose ownership has not been transferred.
-    ~Holder_u8026700C() { if (p) __dla__FPv(p); }
+    ~Holder_u8026700C() {
+        if (p)
+            __dla__FPv(p);
+    }
 };
 struct AllocTag {
     volatile char value;
@@ -78,7 +97,9 @@ struct AllocTag {
     AllocTag() : value(0) {}
 };
 struct ErrBase {
-    void* vt; char* buf; Ref* ref;
+    void* vt;
+    char* buf;
+    Ref* ref;
     // Copy exception text and adopt it in a shared character-buffer control block.
     ErrBase(const char* msg0) {
         AllocTag errorAlloc;
@@ -91,7 +112,13 @@ struct ErrBase {
         {
             Holder_u8026700C h(b, &done);
             Ref* r = (Ref*)__nw__FUl(16);
-            if (r) { int table = (int)s_sharedCharDeleterVtable; r->c1 = 1; r->c2 = 1; r->vt = table; r->s = b; }
+            if (r) {
+                int table = (int)s_sharedCharDeleterVtable;
+                r->c1 = 1;
+                r->c2 = 1;
+                r->vt = table;
+                r->s = b;
+            }
             ref = r;
             h.p = 0;
         }
@@ -104,7 +131,8 @@ struct Err2 : ErrBase {
     // Select the length-error type and throw the constructed exception.
     Err2(const char* msg) : ErrBase(msg) {
         vt = __vt__Q23std12length_error;
-        __throw(vectorLengthErrorStrings_8026700C + kVectorLengthErrorTypeOffset, this, (void (*)())__dt__Q23std12length_errorFv);
+        __throw(vectorLengthErrorStrings_8026700C + kVectorLengthErrorTypeOffset, this,
+                (void (*)())__dt__Q23std12length_errorFv);
     }
     // No additional cleanup is implemented by this local length-error wrapper.
     ~Err2() {}
@@ -112,15 +140,20 @@ struct Err2 : ErrBase {
 
 /* ---- the two embedded containers ---- */
 enum AccStateVectorLimits {
-    kInitialAccStateEntryCount = 120, kInitialAccStateAuxiliaryWordCount = 10,
-    kMaxAccStateEntries = 0x71c71c7, kSmallEntryGrowthLimit = 0x25ed097,
+    kInitialAccStateEntryCount = 120,
+    kInitialAccStateAuxiliaryWordCount = 10,
+    kMaxAccStateEntries = 0x71c71c7,
+    kSmallEntryGrowthLimit = 0x25ed097,
     kMediumEntryGrowthLimit = 0x4bda12e,
-    kMaxAccStateAuxiliaryWords = 0x3fffffff, kSmallAuxiliaryGrowthLimit = 0x15555555,
+    kMaxAccStateAuxiliaryWords = 0x3fffffff,
+    kSmallAuxiliaryGrowthLimit = 0x15555555,
     kMediumAuxiliaryGrowthLimit = 0x2aaaaaaa,
     kAccStateEntryBytes = 0x24
 };
 
-struct Entry { int words[9]; };   /* 0x24-byte controller samples: this unit only zeroes and copies them. */
+struct Entry {
+    int words[9];
+}; /* 0x24-byte controller samples: this unit only zeroes and copies them. */
 // Sample format is nine opaque 32-bit words, NOT nine established integer
 // measurements. This constructor establishes only their zero initial state.
 // Do not label axes, timestamps or button words without producer/consumer evidence.
@@ -128,8 +161,7 @@ struct Entry { int words[9]; };   /* 0x24-byte controller samples: this unit onl
 // Sizes/capacities count elements; allocation products below count bytes.
 
 // Own newly constructed elements until vector growth commits; retain the type name for unwind relocations.
-template <class T>
-struct TmpBuf {
+template <class T> struct TmpBuf {
     T* data;
     unsigned size;
     unsigned capacity;
@@ -153,7 +185,7 @@ struct SampleHistoryVector {
     int highestIndex;  /* 0x08: highest initialized history index */
     Entry* begin;      /* 0x0C */
     unsigned size;     /* 0x10 */
-    unsigned capacity;      /* 0x14 */
+    unsigned capacity; /* 0x14 */
 };
 struct AuxiliaryHistoryVector {
     void* vt;          /* 0x00 */
@@ -161,31 +193,37 @@ struct AuxiliaryHistoryVector {
     int highestIndex;  /* 0x08: highest initialized history index */
     int* begin;        /* 0x0C */
     unsigned size;     /* 0x10 */
-    unsigned capacity;      /* 0x14 */
+    unsigned capacity; /* 0x14 */
 };
-struct CAccState {
-    void* vt;          /* 0x00 */
-    SampleHistoryVector samples;           /* 0x04 */
-    AuxiliaryHistoryVector auxiliaryHistory;           /* 0x1C */
-    float horizontalImpulse;         /* 0x34: accumulated sample X, not current acceleration */
-    float gestureMagnitude;         /* 0x38 */
-    int playerIndex;           /* 0x3C */
-    int savedSamplingParameter0;           /* 0x40 */
-    int savedSamplingParameter1;           /* 0x44 */
-    int samplingAdjusted;           /* 0x48 */
+struct PadAccStateView {
+    void* vt;                                /* 0x00 */
+    SampleHistoryVector samples;             /* 0x04 */
+    AuxiliaryHistoryVector auxiliaryHistory; /* 0x1C */
+    float horizontalImpulse;                 /* 0x34: accumulated sample X, not current acceleration */
+    float gestureMagnitude;                  /* 0x38 */
+    int playerIndex;                         /* 0x3C */
+    int savedSamplingParameter0;             /* 0x40 */
+    int savedSamplingParameter1;             /* 0x44 */
+    int samplingAdjusted;                    /* 0x48 */
 };
 // Sampling lifecycle: construction sets samplingAdjusted to zero but does NOT
 // initialize savedSamplingParameter0/1. They are reserved storage for another
 // operation; reading them requires that operation to have populated them first.
 // This routine neither saves sampling parameters nor changes a sampling rate.
 
+} // extern "C"
+
 #pragma opt_strength_reduction off
 #pragma opt_propagation off
-// Allocate 120 zeroed samples and 10 auxiliary words, then initialize gesture/player state.
-void* CAccState_Ctor(CAccState* self, int playerIndex) {
+// Construct in place: allocate 120 zeroed samples and 10 auxiliary words, then initialize gesture/player state.
+// Typed view of the pad object with its two history vectors laid out in full.
+static inline PadAccStateView* View(PadAccState* p) {
+    return (PadAccStateView*)p;
+}
+void* PadAccState::Init(int playerIndex) {
     // Phase 1: establish an empty owned sample history with no current/highest index.
-    SampleHistoryVector* samples = &self->samples;
-    self->vt = __vt__9CAccState;
+    SampleHistoryVector* samples = &View(this)->samples;
+    View(this)->vt = __vt__9CAccState;
     samples->vt = s_padSampleHistoryVectorVTable;
     samples->currentIndex = -1;
     samples->highestIndex = -1;
@@ -306,7 +344,7 @@ void* CAccState_Ctor(CAccState* self, int playerIndex) {
     } while (0);
     // Phase 3: independently initialize/resize the auxiliary word history to 10.
     // Its relationship to individual sample words is not established by this unit.
-    AuxiliaryHistoryVector& auxiliaryHistory = self->auxiliaryHistory;
+    AuxiliaryHistoryVector& auxiliaryHistory = View(this)->auxiliaryHistory;
     auxiliaryHistory.vt = s_padAuxiliaryHistoryVectorVTable;
     auxiliaryHistory.currentIndex = -1;
     auxiliaryHistory.highestIndex = -1;
@@ -411,14 +449,12 @@ void* CAccState_Ctor(CAccState* self, int playerIndex) {
     } while (0);
     // Phase 4: initialize per-player gesture scalars and mark sampling unadjusted.
     float zero = kFloat_0_UiAnimation;
-    self->playerIndex = playerIndex;
-    self->horizontalImpulse = zero;
-    self->gestureMagnitude = zero;
-    self->samplingAdjusted = 0;
-    return self;
+    View(this)->playerIndex = playerIndex;
+    View(this)->horizontalImpulse = zero;
+    View(this)->gestureMagnitude = zero;
+    View(this)->samplingAdjusted = 0;
+    return this;
 }
-
-} // extern "C"
 
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push

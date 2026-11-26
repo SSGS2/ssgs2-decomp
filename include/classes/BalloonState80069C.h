@@ -6,46 +6,47 @@
 #define CLASSES_BALLOONSTATE80069C_H
 
 struct BalloonState80069C {
-    void* vtbl; // 0x0
-    char name[0x20]; // 0x4
-    void* scaleValues; // 0x24
-    unsigned int scaleCount; // 0x28
+    void* vtbl;                 // 0x0
+    char name[0x20];            // 0x4
+    void* scaleValues;          // 0x24
+    unsigned int scaleCount;    // 0x28
     unsigned int scaleCapacity; // 0x2C
-    float transform[16]; // 0x30
-    float scale; // 0x70
-    short opacity; // 0x74
+    float transform[16];        // 0x30
+    float scale;                // 0x70
+    short opacity;              // 0x74
     char pad_076[0x2];
-    float bobPhase; // 0x78
-    float position[3]; // 0x7C
-    float heading; // 0x88
-    float opacityStep; // 0x8C
-    float scaleStep; // 0x90
-    float bobAmplitude; // 0x94
-    float bobPhaseStep; // 0x98
-    float headingStep; // 0x9C
-    int unk_A0; // 0xA0
-    float attachmentScreenX; // 0xA4
-    float attachmentScreenY; // 0xA8
+    float bobPhase;           // 0x78
+    float position[3];        // 0x7C
+    float heading;            // 0x88
+    float opacityStep;        // 0x8C
+    float scaleStep;          // 0x90
+    float bobAmplitude;       // 0x94
+    float bobPhaseStep;       // 0x98
+    float headingStep;        // 0x9C
+    int sizeClass;            // 0xA0  1 small, 2 medium, 3 large
+    float attachmentScreenX;  // 0xA4
+    float attachmentScreenY;  // 0xA8
     int attachmentTransform0; // 0xAC
     int attachmentTransform1; // 0xB0
     int attachmentTransform2; // 0xB4
     int attachmentTransform3; // 0xB8
-    void* effectPosition; // 0xBC
-    int attachmentPosition1; // 0xC0
-    int attachmentPosition2; // 0xC4
-    int attachmentPosition3; // 0xC8
+    void* effectPosition;     // 0xBC
+    int attachmentPosition1;  // 0xC0
+    int attachmentPosition2;  // 0xC4
+    int attachmentPosition3;  // 0xC8
     int forceSphereCollision; // 0xCC
-    void* model; // 0xD0
+    void* model;              // 0xD0
     unsigned short baseScale; // 0xD4
-    short currentIndex; // 0xD6
-    int active; // 0xD8
-    int randomizedSound; // 0xDC
-    float origin[3]; // 0xE0
-    short targetScale; // 0xEC
-    short scaleDelta; // 0xEE
+    short currentIndex;       // 0xD6
+    int active;               // 0xD8
+    int randomizedSound;      // 0xDC
+    float origin[3];          // 0xE0
+    short targetScale;        // 0xEC
+    short scaleDelta;         // 0xEE
 };
 
-#define BALLOONSTATE_OFF(f, o) typedef char BalloonState80069C_off_##f[((int)&((BalloonState80069C*)0)->f == (o)) ? 1 : -1]
+#define BALLOONSTATE_OFF(f, o) \
+    typedef char BalloonState80069C_off_##f[((int)&((BalloonState80069C*)0)->f == (o)) ? 1 : -1]
 BALLOONSTATE_OFF(vtbl, 0x0);
 BALLOONSTATE_OFF(name, 0x4);
 BALLOONSTATE_OFF(scaleValues, 0x24);
@@ -62,7 +63,7 @@ BALLOONSTATE_OFF(scaleStep, 0x90);
 BALLOONSTATE_OFF(bobAmplitude, 0x94);
 BALLOONSTATE_OFF(bobPhaseStep, 0x98);
 BALLOONSTATE_OFF(headingStep, 0x9C);
-BALLOONSTATE_OFF(unk_A0, 0xA0);
+BALLOONSTATE_OFF(sizeClass, 0xA0);
 BALLOONSTATE_OFF(attachmentScreenX, 0xA4);
 BALLOONSTATE_OFF(attachmentScreenY, 0xA8);
 BALLOONSTATE_OFF(attachmentTransform0, 0xAC);

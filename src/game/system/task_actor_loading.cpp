@@ -1,13 +1,17 @@
-// Translation unit 0x801FDF50-0x801FE884 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Actor loading for tasks: starting and finishing the loading of registered actors, the HOME
+// menu block during loading, and the actor lookup by name.
+// Includes the actor name hash and the walk that ends an actor registry traversal.
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/TaskListFields.h"
+#include "classes/CAnotherHand.h"
+#include "classes/CTask.h"
 extern "C" {
 
 void* s_actorLoadingContext;
-extern char s_homeButtonResourceState[], s_homeButtonStateDtorRegistration_801FDF50[], s_gameInputManager[], s_inputManagerDtorRegistration_ActorLoading[];
+extern char s_homeButtonResourceState[], s_homeButtonStateDtorRegistration_801FDF50[], s_gameInputManager[],
+    s_inputManagerDtorRegistration_ActorLoading[];
 signed char s_homeMenuInitialized;
 signed char s_inputManagerInitialized;
 void HomeButtonMenu_InitializeState(void*);
@@ -15,7 +19,6 @@ void HomeButtonResources_dtor(void*);
 void HomeMenu_OverrideBlockedState(void*, int);
 void InputManager_Init(void*);
 void InputManager_Dtor(void*);
-void CAnotherHand_StartCallbackThread(void*, void*, int, void*, int, int);
 int strcmp(const char*, const char*);
 void* TaskRegistry_GetInstance(void*);
 void* TaskRegistry_CreateActorByName(void*, const char*);
@@ -23,15 +26,17 @@ void IActor_ClearSkipFlags(void*, void*);
 void* __nwa__FUl(unsigned int);
 void* appMallocUni__FUl(unsigned int);
 void* operator_new(unsigned int);
-void CAnotherHand_Lock(void*);
-void CAnotherHand_Unlock(void*);
 
 struct WInstanceLock {
     void* lock;
     // Acquire one recursive registry-mutex level.
-    WInstanceLock(void* p) : lock(p) { OSLockMutex((OSMutex*)p); }
+    WInstanceLock(void* p) : lock(p) {
+        OSLockMutex((OSMutex*)p);
+    }
     // Release this guard's recursive mutex level on every scope exit.
-    ~WInstanceLock() { OSUnlockMutex((OSMutex*)lock); }
+    ~WInstanceLock() {
+        OSUnlockMutex((OSMutex*)lock);
+    }
 };
 
 struct ActorLifecycleSlots {
@@ -54,9 +59,15 @@ struct ActorLifecycleSlots {
     virtual void initializeTaskState();
 };
 
-struct ActorLoadingSlot { void* table; unsigned char reserved; unsigned char complete; };
+struct ActorLoadingSlot {
+    void* table;
+    unsigned char reserved;
+    unsigned char complete;
+};
 // Report completion of the actor-loading callback associated with the shared slot.
-unsigned char CTask_IsActorLoadingComplete() { return ((ActorLoadingSlot*)&s_actorLoadingContext)->complete; }
+int CTask::IsActorLoadingComplete(void*) {
+    return ((ActorLoadingSlot*)&s_actorLoadingContext)->complete;
+}
 
 // Registry ownership/views: node.data -> ActorHolder -> RegisteredActor.
 // node.value and holder.arg are the SAME borrowed, NUL-terminated lookup key;
@@ -67,22 +78,71 @@ unsigned char CTask_IsActorLoadingComplete() { return ((ActorLoadingSlot*)&s_act
 // A node leaves the free ring before it joins the hash table and active ring.
 // All mutations nest locks on the SAME recursive mutex; a one-node ring points
 // to itself, and removing that last node sets its ring head to null.
-struct ActorRegistryNode { void* data; void* value; unsigned char flag; char pad[3]; ActorRegistryNode* next; ActorRegistryNode* prev; void* link; };
-struct ActorRegistryTask { char interfaces[0xC]; unsigned char synchronousLoad; char pad0D[3]; void* list; void* traversalCursor; void* tail; void* first; int count; unsigned int mask; char reserved28[4]; void** buckets; char mutex[0x1c]; void* value; };
-struct ActorTaskView { ActorRegistryTask registry; char callbackThread[1]; };
-struct ActorRegistryContext { void* activeHead; void* traversalCursor; char state[0x18]; char mutex[1]; };
-struct InputActionCounters { char prefix[0x1C]; unsigned int counters[39]; };
-struct RegisteredActor { void* vtable; char actorBase[0xc]; void* owner; void* value; };
-struct ActorHolder { void* entry; unsigned char flag; char pad[3]; void* arg; };
+struct ActorRegistryNode {
+    void* data;
+    void* value;
+    unsigned char flag;
+    char pad[3];
+    ActorRegistryNode* next;
+    ActorRegistryNode* prev;
+    void* link;
+};
+struct ActorRegistryTask {
+    char interfaces[0xC];
+    unsigned char synchronousLoad;
+    char pad0D[3];
+    void* list;
+    void* traversalCursor;
+    void* tail;
+    void* first;
+    int count;
+    unsigned int mask;
+    char reserved28[4];
+    void** buckets;
+    char mutex[0x1c];
+    void* value;
+};
+struct ActorTaskView {
+    ActorRegistryTask registry;
+    char callbackThread[1];
+};
+struct ActorRegistryContext {
+    void* activeHead;
+    void* traversalCursor;
+    char state[0x18];
+    char mutex[1];
+};
+struct InputActionCounters {
+    char prefix[0x1C];
+    unsigned int counters[39];
+};
+struct RegisteredActor {
+    void* vtable;
+    char actorBase[0xc];
+    void* owner;
+    void* value;
+};
+struct ActorHolder {
+    void* entry;
+    unsigned char flag;
+    char pad[3];
+    void* arg;
+};
 // Metrowerks narrow string storage: word0's high bit tags heap storage; inline
 // length is byte0 & 0x7f with characters at +1; heap length/pointer are +4/+8.
 // opt is required even for empty text. Message +0/+4/+8 are zero/type/text;
 // dispatch is synchronous and receives a stack message plus borrowed text.
-struct StartupTextStorage { unsigned int word0; int word4; void* word8; };
+struct StartupTextStorage {
+    unsigned int word0;
+    int word4;
+    void* word8;
+};
 static const int kActorStartupTextMessage = 0x2712;
 enum ActorNameHashConstants {
-    kActorHashFirstByteMask = 0x2A, kActorHashLastByteMask = 0x15,
-    kActorHashLengthShift = 6, kActorInputActionCount = 39
+    kActorHashFirstByteMask = 0x2A,
+    kActorHashLastByteMask = 0x15,
+    kActorHashLengthShift = 6,
+    kActorInputActionCount = 39
 };
 // Combine length with alternating bits from the first and final bytes; caller applies bucket mask.
 static inline unsigned int ActorNameHashWord(unsigned int length, unsigned int edgeBits) {
@@ -90,7 +150,8 @@ static inline unsigned int ActorNameHashWord(unsigned int length, unsigned int e
 }
 // End a traversal after its predecessor reaches the active-ring head; caller holds the mutex.
 static inline void EndActorCursorAtRingHead(void*& predecessor, void* const& activeHead) {
-    if (predecessor == activeHead) predecessor = 0;
+    if (predecessor == activeHead)
+        predecessor = 0;
 }
 
 // Cursor contract for both traversal loops: mutex protects link reads and cursor
@@ -98,14 +159,22 @@ static inline void EndActorCursorAtRingHead(void*& predecessor, void* const& act
 // BEFORE dispatch. Actors/holders must stay alive across that unlocked call;
 // these loops do not retain them or prove arbitrary concurrent deletion safe.
 // Mutators must repair traversalCursor when unlinking its target (see pool removal).
-enum ActorTaskFlags { kActorTaskStateInitialized = 2 };
-struct ActorStartupMessage { int a; int b; const char* str; int c[5]; };
+enum ActorTaskFlags {
+    kActorTaskStateInitialized = 2
+};
+struct ActorStartupMessage {
+    int a;
+    int b;
+    const char* str;
+    int c[5];
+};
 
 #pragma push
 #pragma use_lmw_stmw on
 #pragma opt_common_subs off
 // Create an actor, register its name under the recursive mutex, and send optional startup text.
-void* TaskActorTable_CreateNamedActor(ActorRegistryTask* self, const char* name, void* arg, void* extra, StartupTextStorage* opt) {
+void* TaskActorTable_CreateNamedActor(ActorRegistryTask* self, const char* name, void* arg, void* extra,
+                                      StartupTextStorage* opt) {
     // Phase 1: factory-create actor and holder; publish task owner/context.
     // Returns null on factory failure, otherwise the registry-held actor.
     // Reuses one ABI word: borrowed name key, then numeric bucket index, then ring head.
@@ -113,7 +182,8 @@ void* TaskActorTable_CreateNamedActor(ActorRegistryTask* self, const char* name,
     ActorRegistryNode* node;
     RegisteredActor* entry;
     entry = (RegisteredActor*)TaskRegistry_CreateActorByName(TaskRegistry_GetInstance(self), name);
-    if (!entry) return 0;
+    if (!entry)
+        return 0;
     entry->value = self->value;
     entry->owner = self;
     unsigned int len = strlen(name);
@@ -179,7 +249,8 @@ void* TaskActorTable_CreateNamedActor(ActorRegistryTask* self, const char* name,
             node->prev->next = node->next;
             node->next->prev = node->prev;
             ActorRegistryNode* newFirst = node->prev;
-            if (newFirst == node) newFirst = 0;
+            if (newFirst == node)
+                newFirst = 0;
             OSUnlockMutex((OSMutex*)lock3);
             self->first = newFirst;
         }
@@ -197,7 +268,8 @@ void* TaskActorTable_CreateNamedActor(ActorRegistryTask* self, const char* name,
             OSLockMutex((OSMutex*)lock4);
             size = strlen((const char*)keyOrBucketWord);
             last = (int)size > 0 ? size - 1 : 0;
-            bits = (((unsigned char*)keyOrBucketWord)[0] & kActorHashFirstByteMask) | (((unsigned char*)keyOrBucketWord)[last] & kActorHashLastByteMask);
+            bits = (((unsigned char*)keyOrBucketWord)[0] & kActorHashFirstByteMask) |
+                   (((unsigned char*)keyOrBucketWord)[last] & kActorHashLastByteMask);
             mask = self->mask;
             keyOrBucketWord = (void*)(mask & ActorNameHashWord(size, bits));
             OSUnlockMutex((OSMutex*)lock4);
@@ -246,7 +318,8 @@ void* TaskActorTable_CreateNamedActor(ActorRegistryTask* self, const char* name,
 #pragma opt_common_subs reset
 #pragma pop
 
-class Obj801FE508 { public:
+class Obj801FE508 {
+public:
     virtual void v0();
     virtual void v1();
     virtual void v2();
@@ -272,51 +345,57 @@ class Obj801FE508 { public:
 };
 
 // Block the HOME menu, start synchronous or threaded actor loading, and reset input counters.
-void CTask_StartActorLoading(void* self) {
+void CTask::StartActorLoading() {
     // Phase 1: publish a borrowed pointer to self's active-list subobject and
     // block HOME. Phase 2: invoke loadActors directly or start the callback
     // thread using the secondary interface at self+4. Phase 3: reset input.
     // self and its actor list must remain alive until the callback completes.
     void* __g = (void*)Sing_805DC820();
-    s_actorLoadingContext = (char*)&((ActorRegistryTask*)self)->list;
+    s_actorLoadingContext = (char*)&((ActorRegistryTask*)this)->list;
     if (!__g) {
         if (!s_homeMenuInitialized) {
             HomeButtonMenu_InitializeState(&s_homeButtonResourceState);
-            __register_global_object(&s_homeButtonResourceState, (void*)HomeButtonResources_dtor, &s_homeButtonStateDtorRegistration_801FDF50);
+            __register_global_object(&s_homeButtonResourceState, (void*)HomeButtonResources_dtor,
+                                     &s_homeButtonStateDtorRegistration_801FDF50);
             s_homeMenuInitialized = 1;
         }
         Sing_805DC820() = &s_homeButtonResourceState;
     }
     HomeMenu_OverrideBlockedState((void*)Sing_805DC820(), 1);
-    if (((ActorRegistryTask*)self)->synchronousLoad) {
-        ((Obj801FE508*)self)->loadActors(0, &s_actorLoadingContext);
+    if (((ActorRegistryTask*)this)->synchronousLoad) {
+        ((Obj801FE508*)this)->loadActors(0, &s_actorLoadingContext);
     } else {
-        void* arg = self;
-        if (self) arg = (char*)&((ActorRegistryTask*)self)->interfaces[4];
-        CAnotherHand_StartCallbackThread(((ActorTaskView*)self)->callbackThread, arg, 0, &s_actorLoadingContext, 0, 0);
+        void* arg = this;
+        if (this)
+            arg = (char*)&((ActorRegistryTask*)this)->interfaces[4];
+        ((CAnotherHand*)(((ActorTaskView*)this)->callbackThread))
+            ->StartCallbackThread(arg, 0, &s_actorLoadingContext, 0, 0);
     }
-    if (!Sing_805DC5C8()) {
+    if (!GetInputManagerSlot()) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(&s_gameInputManager);
-            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor, &s_inputManagerDtorRegistration_ActorLoading);
+            __register_global_object(&s_gameInputManager, (void*)InputManager_Dtor,
+                                     &s_inputManagerDtorRegistration_ActorLoading);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = &s_gameInputManager;
+        GetInputManagerSlot() = &s_gameInputManager;
     }
-    unsigned int* p = ((InputActionCounters*)Sing_805DC5C8())->counters;
-    for (int i = 0; i < kActorInputActionCount; ++i) p[i] = 0;
+    unsigned int* p = ((InputActionCounters*)GetInputManagerSlot())->counters;
+    for (int i = 0; i < kActorInputActionCount; ++i)
+        p[i] = 0;
 }
 
 #pragma opt_common_subs off
 // Initialize every registered actor, unblock HOME, and run the one-time task setup hook.
-void CTask_InitActors(void* self) {
+void CTask::InitActors() {
     // Phase 1: unblock HOME. Phase 2: walk the active ring through prev, unwrap
     // node -> holder -> actor and initialize each actor outside the list lock.
     // Phase 3: mark task initialization before invoking its once-only hook.
     if (!Sing_805DC820()) {
         if (!s_homeMenuInitialized) {
             HomeButtonMenu_InitializeState(&s_homeButtonResourceState);
-            __register_global_object(&s_homeButtonResourceState, (void*)HomeButtonResources_dtor, &s_homeButtonStateDtorRegistration_801FDF50);
+            __register_global_object(&s_homeButtonResourceState, (void*)HomeButtonResources_dtor,
+                                     &s_homeButtonStateDtorRegistration_801FDF50);
             s_homeMenuInitialized = 1;
         }
         Sing_805DC820() = &s_homeButtonResourceState;
@@ -325,17 +404,17 @@ void CTask_InitActors(void* self) {
     void* mutex;
     void* holder;
     {
-        WInstanceLock lockList(((ActorRegistryTask*)self)->mutex);
-        ((ActorRegistryTask*)self)->traversalCursor = ((ActorRegistryTask*)self)->list; // +0x10: active list
-        mutex = ((ActorRegistryTask*)self)->mutex;
+        WInstanceLock lockList(((ActorRegistryTask*)this)->mutex);
+        ((ActorRegistryTask*)this)->traversalCursor = ((ActorRegistryTask*)this)->list; // +0x10: active list
+        mutex = ((ActorRegistryTask*)this)->mutex;
         OSLockMutex((OSMutex*)mutex);
         void* nxt;
-        void* cur = ((ActorRegistryTask*)self)->traversalCursor;
+        void* cur = ((ActorRegistryTask*)this)->traversalCursor;
         if (cur) {
             nxt = ((ActorRegistryNode*)cur)->prev; // +0x10: circular traversal link
             holder = *(void**)cur;
-            EndActorCursorAtRingHead(nxt, ((ActorRegistryTask*)self)->list);
-            ((ActorRegistryTask*)self)->traversalCursor = nxt;
+            EndActorCursorAtRingHead(nxt, ((ActorRegistryTask*)this)->list);
+            ((ActorRegistryTask*)this)->traversalCursor = nxt;
             OSUnlockMutex((OSMutex*)mutex);
         } else {
             OSUnlockMutex((OSMutex*)mutex);
@@ -343,18 +422,18 @@ void CTask_InitActors(void* self) {
         }
     }
     if (holder) {
-        mutex = ((ActorRegistryTask*)self)->mutex;
+        mutex = ((ActorRegistryTask*)this)->mutex;
         while (holder) {
             void* object = *(void**)holder;
-            ((ActorLifecycleSlots*)object)->initializeForTask(self);
+            ((ActorLifecycleSlots*)object)->initializeForTask(this);
             OSLockMutex((OSMutex*)mutex);
             void* nxt;
-            void* cur = ((ActorRegistryTask*)self)->traversalCursor;
+            void* cur = ((ActorRegistryTask*)this)->traversalCursor;
             if (cur) {
                 nxt = ((ActorRegistryNode*)cur)->prev;
                 holder = *(void**)cur;
-                EndActorCursorAtRingHead(nxt, ((ActorRegistryTask*)self)->list);
-                ((ActorRegistryTask*)self)->traversalCursor = nxt;
+                EndActorCursorAtRingHead(nxt, ((ActorRegistryTask*)this)->list);
+                ((ActorRegistryTask*)this)->traversalCursor = nxt;
                 OSUnlockMutex((OSMutex*)mutex);
             } else {
                 OSUnlockMutex((OSMutex*)mutex);
@@ -363,10 +442,10 @@ void CTask_InitActors(void* self) {
         }
     }
     // +0x3A0 mixes view-setup bit 0 with task-initialization-done bit 1.
-    volatile unsigned int* flags = (volatile unsigned int*)&AsTaskListFields(self)->taskFlags;
+    volatile unsigned int* flags = (volatile unsigned int*)&AsTaskListFields(this)->taskFlags;
     if (!(*flags & kActorTaskStateInitialized)) {
         *flags |= kActorTaskStateInitialized;
-        ((ActorLifecycleSlots*)self)->initializeTaskState();
+        ((ActorLifecycleSlots*)this)->initializeTaskState();
     }
 }
 #pragma opt_common_subs reset
@@ -391,12 +470,16 @@ void* TaskActorTable_FindByName(void* self, const char* name) {
             while (node) {
                 // A match unwraps node -> holder here, then holder -> actor at
                 // return. Both dereferences are required by the registry ABI.
-                if (!strcmp((const char*)((ActorRegistryNode*)node)->value, name)) { found = *(void**)node; break; } // +4: lookup key
+                if (!strcmp((const char*)((ActorRegistryNode*)node)->value, name)) {
+                    found = *(void**)node;
+                    break;
+                } // +4: lookup key
                 node = ((ActorRegistryNode*)node)->link; // +0x14: hash chain
             }
         }
     }
-    if (found) return *(void**)found;
+    if (found)
+        return *(void**)found;
     return 0;
 }
 
@@ -404,12 +487,12 @@ void* TaskActorTable_FindByName(void* self, const char* name) {
 #pragma use_lmw_stmw on
 #pragma opt_common_subs off
 // Load each actor under callback-thread ownership, then mark the shared completion slot.
-void CTask_LoadActorsCallback(void* self, void*, void* slot) {
+void CTask::LoadActorsCallback(void*, void* slot) {
     // slot is a borrowed {active-list context pointer, reserved byte, complete}
-    // shared with CTask_IsActorLoadingComplete. Phase 1: own the callback thread and seed the
+    // shared with IsActorLoadingComplete. Phase 1: own the callback thread and seed the
     // circular iterator. Phase 2: call each actor's resource hook outside the
     // list mutex. Phase 3: publish complete before releasing thread ownership.
-    CAnotherHand_Lock(((ActorTaskView*)self)->callbackThread);
+    ((CAnotherHand*)(((ActorTaskView*)this)->callbackThread))->Lock();
     void* lock;
     void* first;
     void* itemNode;
@@ -452,7 +535,7 @@ void CTask_LoadActorsCallback(void* self, void*, void* slot) {
         }
     }
     ((ActorLoadingSlot*)slot)->complete = 1;
-    CAnotherHand_Unlock(((ActorTaskView*)self)->callbackThread);
+    ((CAnotherHand*)(((ActorTaskView*)this)->callbackThread))->Unlock();
 }
 #pragma pop
 

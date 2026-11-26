@@ -1,5 +1,5 @@
-// Translation unit 0x80413D24-0x80413FB8 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// The file layer's 12-byte string. A short string is stored inline and a longer one in a heap buffer.
+// This file has the string destructor and the routine that resizes storage to fit a requested length.
 
 #define char_array_guard CharArrayGuard_u80413D24
 #include "game/stdexcept_local.h"
@@ -13,9 +13,7 @@
 //       word 2 = owned buffer; inline: byte 0 low 7 bits = character count,
 //       bytes 1..11 = characters including their terminator (10 usable characters).
 struct StringRep {
-    CW_BITS2(
-        unsigned int isLong : 1,
-        unsigned int rest : 31)
+    CW_BITS2(unsigned int isLong : 1, unsigned int rest : 31)
     unsigned int heapLengthOrInlineBytes;
     char* data;
 };
@@ -39,8 +37,10 @@ static const unsigned int kMaximumStringLength = 0x7ffffffe;
 // Returns self even when freed; does not reset a surviving object's storage fields.
 void* FileIOString_dtor(StringRep* self, int deleting) {
     if (self) {
-        if (self->isLong) FileIO_Free(self->data);
-        if (deleting > 0) __dl__FPv(self);
+        if (self->isLong)
+            FileIO_Free(self->data);
+        if (deleting > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -58,11 +58,13 @@ void FileIOString_FitCapacityForLength(StringRep* self, unsigned int requestedLe
     unsigned int isLong = words[0] >> 31;
     unsigned int oldLength = isLong ? words[1] : (bytes[0] & kInlineLengthMask);
     unsigned int oldCap = isLong ? (words[0] & 0x7fffffff) : kInlineStorageBytes;
-    if (requestedLength < oldLength) requestedLength = oldLength;
+    if (requestedLength < oldLength)
+        requestedLength = oldLength;
     unsigned int cap = kInlineStorageBytes;
     if (requestedLength + 1 > kInlineStorageBytes)
         cap = (requestedLength + kAllocationQuantumBytes) & ~(unsigned int)(kAllocationQuantumBytes - 1);
-    if (cap == oldCap) return;
+    if (cap == oldCap)
+        return;
 
     // Select the destination before overwriting the representation; old text remains live.
     char* src = isLong ? self->data : reinterpret_cast<char*>(self) + 1;
@@ -87,7 +89,8 @@ void FileIOString_FitCapacityForLength(StringRep* self, unsigned int requestedLe
     // Copy before releasing the old heap buffer; the destination now owns the full text.
     memmove(dst, src, oldLength);
     dst[oldLength] = 0;
-    if (isLong) FileIO_Free(src);
+    if (isLong)
+        FileIO_Free(src);
     // Commit the tag and the length/capacity fields for the selected representation.
     // 0x7fffffff preserves capacity bits; 0x80000000 below preserves the heap tag.
     words[0] = (words[0] & 0x7fffffff) | (nowLong << 31);

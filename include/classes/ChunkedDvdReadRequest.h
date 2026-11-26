@@ -1,4 +1,4 @@
-// DVD request view, owned by file_io_device_dvd_async_read.cpp. gtl_CFileIoDeviceDVD_StartChunkedAsyncRead (0x80413768) saves total length, next buffer/offset, DVDReadAsyncPrio priority and completion arguments. No constructors or virtual methods.
+// DVD request view, owned by file_io_device_dvd_async_read.cpp. gtl::CFileIoDeviceDVD::StartChunkedAsyncRead saves total length, next buffer/offset, DVDReadAsyncPrio priority and completion arguments. No constructors or virtual methods.
 #ifndef CLASSES_DVDREADREQUEST80413768_H
 #define CLASSES_DVDREADREQUEST80413768_H
 

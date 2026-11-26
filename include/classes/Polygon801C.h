@@ -4,7 +4,7 @@
 #define CLASSES_POLYGON801C_H
 
 struct Polygon801C {
-    void* vertices; // 0x0: Polygon_ContainsPointXZ loads 12-byte XYZ vertices
+    void* vertices;  // 0x0: Polygon_ContainsPointXZ loads 12-byte XYZ vertices
     int vertexCount; // 0x4: Polygon_ContainsPointXZ rejects fewer than three vertices
 };
 
@@ -15,4 +15,3 @@ OFF(vertexCount, 0x4);
 #define AsPolygon801C(p) ((Polygon801C*)(p))
 
 #endif
-

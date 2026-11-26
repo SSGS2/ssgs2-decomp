@@ -1,5 +1,6 @@
-// Translation unit 0x8040A370-0x8040A3D0 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Delay effect shutdown: releases the SDK delay's allocations for an initialized effect and clears
+// its initialization latch, so a repeated call does nothing.
+// The layout is GtlFxDelay (classes/GtlFxDelay.h).
 
 #include "sdk_protos.h"
 #include "classes/GtlFxDelay.h"

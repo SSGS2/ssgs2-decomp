@@ -8,8 +8,6 @@
 // Shared scratch s_vertexBlendMatrixScratch / s_vertexBlendWeightScratch holds matrices/weights per group;
 // calls must be serialized with other users of that scratch and render state.
 // No time or gameplay-distance tuning knob; this controls model deformation.
-// Translation unit 0x803DE3E0-0x803DE6BC (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 typedef float f32;
 
@@ -19,51 +17,62 @@ typedef unsigned short u16;
 
 // 64 bytes: four consecutive float rows; row-vector composition, translation row
 // at m[3]. No implicit transposition or projection/divide-by-W in this operation.
-struct GRMtx44 { f32 m[4][4]; };
+struct GRMtx44 {
+    f32 m[4][4];
+};
 
 struct GRNode {
     char unk0[0x18];
-    u16 mtxIndex;     // 0x18
+    u16 mtxIndex; // 0x18
     char unk1A[2];
-    u16 typeIndex;    // 0x1C
+    u16 typeIndex; // 0x1C
     char reserved1E[0x12];
 };
 
-struct GRBlendGroup { u32 count; u32 start; };
+struct GRBlendGroup {
+    u32 count;
+    u32 start;
+};
 
-struct GRWeight { u32 node; f32 weight; };
+struct GRWeight {
+    u32 node;
+    f32 weight;
+};
 
 // Types 0..3 share the same view-scale/translation path below. Their individual
 // asset labels are unresolved; do not invent four distinct billboard algorithms.
-struct GRTypeEntry { int type; char unk4[0x14]; };
+struct GRTypeEntry {
+    int type;
+    char unk4[0x14];
+};
 
 struct GRMesh {
     char unk0[0x14];
-    u16 matStart;     // 0x14
-    u16 matCount;     // 0x16
+    u16 matStart; // 0x14
+    u16 matCount; // 0x16
     char unk18[2];
-    u16 blendCount;   // 0x1A
-    u16 blendStart;   // 0x1C
+    u16 blendCount; // 0x1A
+    u16 blendStart; // 0x1C
 };
 
 struct GRContext {
-    GRNode* nodes;          // 0x00
-    GRMtx44* invBind;       // 0x04
-    GRMtx44* world;         // 0x08
-    GRMtx44* view;          // 0x0C
-    u16* matIndices;        // 0x10
-    GRBlendGroup* groups;   // 0x14
-    GRWeight* weights;      // 0x18
-    u16* groupIndices;      // 0x1C
-    GRTypeEntry* types;     // 0x20
-    int nodeIndex;          // 0x24
-    GRMesh* mesh;           // 0x28
-    u32 state9;             // 0x2C
-    int cachedBlend;        // 0x30
-    u32 cachedState9;       // 0x34
-    int rigidTransformUploaded;               // 0x38: rigid result already uploaded for current context
+    GRNode* nodes;              // 0x00
+    GRMtx44* invBind;           // 0x04
+    GRMtx44* world;             // 0x08
+    GRMtx44* view;              // 0x0C
+    u16* matIndices;            // 0x10
+    GRBlendGroup* groups;       // 0x14
+    GRWeight* weights;          // 0x18
+    u16* groupIndices;          // 0x1C
+    GRTypeEntry* types;         // 0x20
+    int nodeIndex;              // 0x24
+    GRMesh* mesh;               // 0x28
+    u32 state9;                 // 0x2C
+    int cachedBlend;            // 0x30
+    u32 cachedState9;           // 0x34
+    int rigidTransformUploaded; // 0x38: rigid result already uploaded for current context
     char unk3C[4];
-    GRMtx44 result;         // 0x40
+    GRMtx44 result; // 0x40
 };
 
 extern "C" {
@@ -111,8 +120,7 @@ enum MeshTransformPolicy {
 // enabled" flag. State 9 is forwarded unchanged from c->state9. Both cached values
 // must describe the actual engine state on entry; external state changes require
 // invalidating/synchronizing this context. No previous render state is restored.
-void gtl_GenericRenderer_ApplyVertexBlendTransforms(void* self, GRContext* c)
-{
+void gtl_GenericRenderer_ApplyVertexBlendTransforms(void* self, GRContext* c) {
     GRNode* node = &c->nodes[c->nodeIndex];
     GRMesh* mesh = c->mesh;
     int enable = 0;

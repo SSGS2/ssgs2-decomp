@@ -1,6 +1,3 @@
-// Translation unit 0x804311B4-0x80432330 (27 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 // Each vertex stores W-1 explicit weights; the last weight is 1 - their sum.
 // Bone indices use four bytes, and each matrix occupies 64 bytes in the palette.
 template <int WeightCount, int TexCount> struct SkinSourceVertex {
@@ -9,15 +6,21 @@ template <int WeightCount, int TexCount> struct SkinSourceVertex {
     float normal[3];
     unsigned char boneIndices[4];
     float texCoords[TexCount][2];
-    enum { kWeightsOffset = sizeof(float) * 3, kNormalOffset = sizeof(float) * (WeightCount + 2),
+    enum {
+        kWeightsOffset = sizeof(float) * 3,
+        kNormalOffset = sizeof(float) * (WeightCount + 2),
         kBoneIndicesOffset = sizeof(float) * (WeightCount + 5),
-        kTexCoordsOffset = kBoneIndicesOffset + 4 };
+        kTexCoordsOffset = kBoneIndicesOffset + 4
+    };
 };
 template <int TexCount> struct SkinOutputVertex {
     float position[3];
     float normal[3];
     float texCoords[TexCount][2];
-    enum { kNormalOffset = sizeof(float) * 3, kTexCoordsOffset = sizeof(float) * 6 };
+    enum {
+        kNormalOffset = sizeof(float) * 3,
+        kTexCoordsOffset = sizeof(float) * 6
+    };
 };
 // Guard the named offsets used by the compiler-sensitive byte cursor loops.
 template <int WeightCount> struct SkinSourceLayoutCheck {
@@ -25,14 +28,23 @@ template <int WeightCount> struct SkinSourceLayoutCheck {
     char offsets[((int)&((Vertex*)0)->weights == Vertex::kWeightsOffset &&
                   (int)&((Vertex*)0)->normal == Vertex::kNormalOffset &&
                   (int)&((Vertex*)0)->boneIndices == Vertex::kBoneIndicesOffset &&
-                  (int)&((Vertex*)0)->texCoords == Vertex::kTexCoordsOffset) ? 1 : -1];
+                  (int)&((Vertex*)0)->texCoords == Vertex::kTexCoordsOffset)
+                     ? 1
+                     : -1];
 };
-typedef char SkinSourceOffsetsValid[(sizeof(SkinSourceLayoutCheck<2>) == 1 &&
-    sizeof(SkinSourceLayoutCheck<3>) == 1 && sizeof(SkinSourceLayoutCheck<4>) == 1) ? 1 : -1];
+typedef char SkinSourceOffsetsValid[(sizeof(SkinSourceLayoutCheck<2>) == 1 && sizeof(SkinSourceLayoutCheck<3>) == 1 &&
+                                     sizeof(SkinSourceLayoutCheck<4>) == 1)
+                                        ? 1
+                                        : -1];
 typedef SkinOutputVertex<3> SkinOutputLayout;
 typedef char SkinOutputOffsetsValid[((int)&((SkinOutputLayout*)0)->normal == SkinOutputLayout::kNormalOffset &&
-    (int)&((SkinOutputLayout*)0)->texCoords == SkinOutputLayout::kTexCoordsOffset) ? 1 : -1];
-enum { kUnusedBoneIndex = 0x20, kMatrixStrideShift = 6 };
+                                     (int)&((SkinOutputLayout*)0)->texCoords == SkinOutputLayout::kTexCoordsOffset)
+                                        ? 1
+                                        : -1];
+enum {
+    kUnusedBoneIndex = 0x20,
+    kMatrixStrideShift = 6
+};
 static const unsigned int kGpuFifoAddress = 0xCC008000;
 
 // Byte cursors in several loops deliberately use these layout offsets: direct
@@ -40,14 +52,20 @@ static const unsigned int kGpuFifoAddress = 0xCC008000;
 
 // Explicit workspaces retain the original stack slot order and palette address ABI.
 struct SkinBlendFrame {
-    union { unsigned int paletteAddress; void* palette; };
+    union {
+        unsigned int paletteAddress;
+        void* palette;
+    };
     float weight;
     float accumulatedWeight;
 };
 struct SkinSubmitFrame {
     void* vertices;
     unsigned int vertexCount;
-    union { unsigned int paletteAddress; void* palette; };
+    union {
+        unsigned int paletteAddress;
+        void* palette;
+    };
     float normal[3];
     float position[3];
     float matrix[16];
@@ -62,7 +80,9 @@ struct SkinSubmit3Tex1Frame {
     float matrix[16];
     char tailPadding[4];
 };
-struct SkinSubmit4Tex1Frame : SkinSubmitFrame { char tailPadding[12]; };
+struct SkinSubmit4Tex1Frame : SkinSubmitFrame {
+    char tailPadding[12];
+};
 struct SkinTransform4Frame {
     void* outputVertices;
     void* sourceVertices;
@@ -86,7 +106,8 @@ typedef __vec2x32float__ Vec2;
 #pragma push
 #pragma optimization_level 2
 // Blend up to three indexed matrices using eight paired-single accumulators.
-void* Mtx44_BlendIndexed3(register void* outputMatrix, unsigned int matrixPalette, register void* weights, register void* indices) {
+void* Mtx44_BlendIndexed3(register void* outputMatrix, unsigned int matrixPalette, register void* weights,
+                          register void* indices) {
     __alloca(0);
     SkinBlendFrame frame;
     frame.paletteAddress = matrixPalette;
@@ -100,9 +121,12 @@ void* Mtx44_BlendIndexed3(register void* outputMatrix, unsigned int matrixPalett
     influenceIndex = 0;
     while (influenceIndex < 3) {
         register unsigned int boneIndex = boneIndices[influenceIndex];
-        if (boneIndex == kUnusedBoneIndex) break;
-        if (influenceIndex == 2) frame.weight = 1.0f - frame.accumulatedWeight;
-        else frame.weight = explicitWeights[influenceIndex];
+        if (boneIndex == kUnusedBoneIndex)
+            break;
+        if (influenceIndex == 2)
+            frame.weight = 1.0f - frame.accumulatedWeight;
+        else
+            frame.weight = explicitWeights[influenceIndex];
         register Vec2* matrixPairs = (Vec2*)((char*)frame.paletteAddress + (boneIndex << kMatrixStrideShift));
         register Vec2 weightPair = frame.weight;
         frame.accumulatedWeight += frame.weight;
@@ -117,8 +141,14 @@ void* Mtx44_BlendIndexed3(register void* outputMatrix, unsigned int matrixPalett
         influenceIndex++;
     }
     register Vec2* outputPairs = (Vec2*)outputMatrix;
-    outputPairs[0] = sumPair0; outputPairs[1] = sumPair1; outputPairs[2] = sumPair2; outputPairs[3] = sumPair3;
-    outputPairs[4] = sumPair4; outputPairs[5] = sumPair5; outputPairs[6] = sumPair6; outputPairs[7] = sumPair7;
+    outputPairs[0] = sumPair0;
+    outputPairs[1] = sumPair1;
+    outputPairs[2] = sumPair2;
+    outputPairs[3] = sumPair3;
+    outputPairs[4] = sumPair4;
+    outputPairs[5] = sumPair5;
+    outputPairs[6] = sumPair6;
+    outputPairs[7] = sumPair7;
     return outputMatrix;
 }
 #pragma pop
@@ -126,7 +156,8 @@ void* Mtx44_BlendIndexed3(register void* outputMatrix, unsigned int matrixPalett
 #pragma push
 #pragma optimization_level 2
 // Blend up to four indexed matrices using eight paired-single accumulators.
-void* Mtx44_BlendIndexed4(register void* outputMatrix, void* matrixPalette, register void* weights, register void* indices) {
+void* Mtx44_BlendIndexed4(register void* outputMatrix, void* matrixPalette, register void* weights,
+                          register void* indices) {
     __alloca(0);
     SkinBlendFrame frame;
     frame.palette = matrixPalette;
@@ -140,9 +171,12 @@ void* Mtx44_BlendIndexed4(register void* outputMatrix, void* matrixPalette, regi
     influenceIndex = 0;
     while (influenceIndex < 4) {
         register unsigned int boneIndex = boneIndices[influenceIndex];
-        if (boneIndex == kUnusedBoneIndex) break;
-        if (influenceIndex == 3) frame.weight = 1.0f - frame.accumulatedWeight;
-        else frame.weight = explicitWeights[influenceIndex];
+        if (boneIndex == kUnusedBoneIndex)
+            break;
+        if (influenceIndex == 3)
+            frame.weight = 1.0f - frame.accumulatedWeight;
+        else
+            frame.weight = explicitWeights[influenceIndex];
         register Vec2* matrixPairs = (Vec2*)((char*)frame.palette + (boneIndex << kMatrixStrideShift));
         register Vec2 weightPair = frame.weight;
         frame.accumulatedWeight += frame.weight;
@@ -157,8 +191,14 @@ void* Mtx44_BlendIndexed4(register void* outputMatrix, void* matrixPalette, regi
         influenceIndex++;
     }
     Vec2* outputPairs = (Vec2*)outputMatrix;
-    outputPairs[0] = sumPair0; outputPairs[1] = sumPair1; outputPairs[2] = sumPair2; outputPairs[3] = sumPair3;
-    outputPairs[4] = sumPair4; outputPairs[5] = sumPair5; outputPairs[6] = sumPair6; outputPairs[7] = sumPair7;
+    outputPairs[0] = sumPair0;
+    outputPairs[1] = sumPair1;
+    outputPairs[2] = sumPair2;
+    outputPairs[3] = sumPair3;
+    outputPairs[4] = sumPair4;
+    outputPairs[5] = sumPair5;
+    outputPairs[6] = sumPair6;
+    outputPairs[7] = sumPair7;
     return outputMatrix;
 }
 #pragma pop
@@ -174,7 +214,8 @@ void Skin_Submit3WeightPositionNormalTex1(void* vertices, unsigned int vertexCou
     SkinSourceVertex<3, 1>* sourceVertex = (SkinSourceVertex<3, 1>*)vertices;
     for (; vertexIndex < frame.vertexCount; vertexIndex++) {
         Mtx44_BlendIndexed3(frame.matrix, frame.paletteAddress, sourceVertex->weights, sourceVertex->boneIndices);
-        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal, frame.matrix);
+        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal,
+                                                  frame.matrix);
         Render_WriteFifo3f(frame.position[0], frame.position[1], frame.position[2]);
         Render_WriteFifo3f(frame.normal[0], frame.normal[1], frame.normal[2]);
         Render_WriteTexCoord2f(sourceVertex->texCoords[0][0], sourceVertex->texCoords[0][1]);
@@ -183,7 +224,8 @@ void Skin_Submit3WeightPositionNormalTex1(void* vertices, unsigned int vertexCou
 }
 
 // Blend 3 bone matrices and write transformed position/normal plus 1 UV set(s) per vertex.
-void Skin_Transform3WeightPositionNormalTex1(void* outputVertices, void* sourceVertices, unsigned int vertexCount, unsigned int unusedFormat, unsigned int matrixPalette) {
+void Skin_Transform3WeightPositionNormalTex1(void* outputVertices, void* sourceVertices, unsigned int vertexCount,
+                                             unsigned int unusedFormat, unsigned int matrixPalette) {
     __alloca(0);
     unsigned int vertexIndex = 0;
     SkinSourceVertex<3, 1>* sourceVertex = (SkinSourceVertex<3, 1>*)sourceVertices;
@@ -191,7 +233,8 @@ void Skin_Transform3WeightPositionNormalTex1(void* outputVertices, void* sourceV
     for (; vertexIndex < vertexCount; vertexIndex++) {
         float blendedMatrix[16];
         Mtx44_BlendIndexed3(blendedMatrix, matrixPalette, sourceVertex->weights, sourceVertex->boneIndices);
-        Mtx34_TransformPointAndDirection(outputVertex, outputVertex->normal, sourceVertex, sourceVertex->normal, blendedMatrix);
+        Mtx34_TransformPointAndDirection(outputVertex, outputVertex->normal, sourceVertex, sourceVertex->normal,
+                                         blendedMatrix);
         outputVertex->texCoords[0][0] = sourceVertex->texCoords[0][0];
         outputVertex->texCoords[0][1] = sourceVertex->texCoords[0][1];
         sourceVertex += 1;
@@ -213,11 +256,13 @@ void Skin_Submit2WeightPositionNormalTex2(void* vertices, unsigned int vertexCou
     frame.palette = matrixPalette;
     for (; vertexIndex < frame.vertexCount; vertexIndex++) {
         Mtx44_BlendIndexed2(frame.matrix, frame.palette, sourceVertex->weights, sourceVertex->boneIndices);
-        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal, frame.matrix);
+        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal,
+                                                  frame.matrix);
         Render_WriteFifo3f(frame.position[0], frame.position[1], frame.position[2]);
         Render_WriteFifo3f(frame.normal[0], frame.normal[1], frame.normal[2]);
         for (texCoordIndex = 0; texCoordIndex < 2; texCoordIndex++) {
-            Render_WriteTexCoord2f(sourceVertex->texCoords[texCoordIndex][0], sourceVertex->texCoords[texCoordIndex][1]);
+            Render_WriteTexCoord2f(sourceVertex->texCoords[texCoordIndex][0],
+                                   sourceVertex->texCoords[texCoordIndex][1]);
         }
         sourceVertex += 1;
     }
@@ -227,7 +272,8 @@ void Skin_Submit2WeightPositionNormalTex2(void* vertices, unsigned int vertexCou
 #pragma push
 #pragma optimization_level 0
 // Blend 2 bone matrices and write transformed position/normal plus 2 UV set(s) per vertex.
-void Skin_Transform2WeightPositionNormalTex2(void* outputVertices, void* sourceVertices, unsigned int vertexCount, unsigned int unusedFormat, void* matrixPalette) {
+void Skin_Transform2WeightPositionNormalTex2(void* outputVertices, void* sourceVertices, unsigned int vertexCount,
+                                             unsigned int unusedFormat, void* matrixPalette) {
     float blendedMatrix[16];
     unsigned int vertexIndex = 0;
     char* outputVertex = (char*)outputVertices;
@@ -235,11 +281,15 @@ void Skin_Transform2WeightPositionNormalTex2(void* outputVertices, void* sourceV
     char* sourceVertex = (char*)sourceVertices;
     __alloca(0);
     for (; vertexIndex < vertexCount; vertexIndex++) {
-        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, sourceVertex + SkinSourceVertex<2, 2>::kWeightsOffset, sourceVertex + SkinSourceVertex<2, 2>::kBoneIndicesOffset);
-        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<2>::kNormalOffset, sourceVertex, sourceVertex + SkinSourceVertex<2, 2>::kNormalOffset, blendedMatrix);
+        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, sourceVertex + SkinSourceVertex<2, 2>::kWeightsOffset,
+                            sourceVertex + SkinSourceVertex<2, 2>::kBoneIndicesOffset);
+        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<2>::kNormalOffset, sourceVertex,
+                                         sourceVertex + SkinSourceVertex<2, 2>::kNormalOffset, blendedMatrix);
         for (texCoordIndex = 0; texCoordIndex < 2; texCoordIndex++) {
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 2>::kTexCoordsOffset);
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset + 4) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 2>::kTexCoordsOffset + 4);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 2>::kTexCoordsOffset);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset + 4) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 2>::kTexCoordsOffset + 4);
         }
         sourceVertex += sizeof(SkinSourceVertex<2, 2>);
         outputVertex += sizeof(SkinOutputVertex<2>);
@@ -248,7 +298,8 @@ void Skin_Transform2WeightPositionNormalTex2(void* outputVertices, void* sourceV
 #pragma pop
 
 // Blend 2 bone matrices and write transformed position/normal plus 1 UV set(s) per vertex.
-void Skin_Transform2WeightPositionNormalTex1(void* outputVertices, void* sourceVertices, unsigned int vertexCount, unsigned int unusedFormat, void* matrixPalette) {
+void Skin_Transform2WeightPositionNormalTex1(void* outputVertices, void* sourceVertices, unsigned int vertexCount,
+                                             unsigned int unusedFormat, void* matrixPalette) {
     __alloca(0);
     unsigned int vertexIndex = 0;
     SkinOutputVertex<1>* outputVertex = (SkinOutputVertex<1>*)outputVertices;
@@ -256,11 +307,13 @@ void Skin_Transform2WeightPositionNormalTex1(void* outputVertices, void* sourceV
     for (; vertexIndex < vertexCount; vertexIndex++) {
         if (sourceVertex->boneIndices[1] == kUnusedBoneIndex) {
             unsigned char index = sourceVertex->boneIndices[0];
-            Mtx34_TransformPointAndDirection(outputVertex, outputVertex->normal, sourceVertex, sourceVertex->normal, (char*)matrixPalette + (index << kMatrixStrideShift));
+            Mtx34_TransformPointAndDirection(outputVertex, outputVertex->normal, sourceVertex, sourceVertex->normal,
+                                             (char*)matrixPalette + (index << kMatrixStrideShift));
         } else {
             float blendedMatrix[16];
             Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, sourceVertex->weights, sourceVertex->boneIndices);
-            Mtx34_TransformPointAndDirection(outputVertex, outputVertex->normal, sourceVertex, sourceVertex->normal, blendedMatrix);
+            Mtx34_TransformPointAndDirection(outputVertex, outputVertex->normal, sourceVertex, sourceVertex->normal,
+                                             blendedMatrix);
         }
         outputVertex->texCoords[0][0] = sourceVertex->texCoords[0][0];
         outputVertex->texCoords[0][1] = sourceVertex->texCoords[0][1];
@@ -290,7 +343,9 @@ void Skin_Submit2WeightPositionNormalTex3(void* vertices, unsigned int vertexCou
         Render_WriteFifo3f(position[0], position[1], position[2]);
         Render_WriteFifo3f(normal[0], normal[1], normal[2]);
         for (texCoordIndex = 0; texCoordIndex < 3; texCoordIndex++) {
-            Render_WriteTexCoord2f(*(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 3>::kTexCoordsOffset), *(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 3>::kTexCoordsOffset + 4));
+            Render_WriteTexCoord2f(
+                *(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 3>::kTexCoordsOffset),
+                *(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 3>::kTexCoordsOffset + 4));
         }
         sourceVertex += 1;
     }
@@ -299,7 +354,8 @@ void Skin_Submit2WeightPositionNormalTex3(void* vertices, unsigned int vertexCou
 #pragma push
 #pragma optimization_level 0
 // Blend 2 bone matrices and write transformed position/normal plus 3 UV set(s) per vertex.
-void Skin_Transform2WeightPositionNormalTex3(void* outputVertices, void* sourceVertices, unsigned int vertexCount, unsigned int unusedFormat, void* matrixPalette) {
+void Skin_Transform2WeightPositionNormalTex3(void* outputVertices, void* sourceVertices, unsigned int vertexCount,
+                                             unsigned int unusedFormat, void* matrixPalette) {
     float blendedMatrix[16];
     unsigned int vertexIndex = 0;
     char* outputVertex = (char*)outputVertices;
@@ -308,11 +364,15 @@ void Skin_Transform2WeightPositionNormalTex3(void* outputVertices, void* sourceV
     (void)outputVertex;
     __alloca(0);
     for (; vertexIndex < vertexCount; vertexIndex++) {
-        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, sourceVertex + SkinSourceVertex<2, 3>::kWeightsOffset, sourceVertex + SkinSourceVertex<2, 3>::kBoneIndicesOffset);
-        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<3>::kNormalOffset, sourceVertex, sourceVertex + SkinSourceVertex<2, 3>::kNormalOffset, blendedMatrix);
+        Mtx44_BlendIndexed2(blendedMatrix, matrixPalette, sourceVertex + SkinSourceVertex<2, 3>::kWeightsOffset,
+                            sourceVertex + SkinSourceVertex<2, 3>::kBoneIndicesOffset);
+        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<3>::kNormalOffset, sourceVertex,
+                                         sourceVertex + SkinSourceVertex<2, 3>::kNormalOffset, blendedMatrix);
         for (texCoordIndex = 0; texCoordIndex < 3; texCoordIndex++) {
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 3>::kTexCoordsOffset);
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset + 4) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 3>::kTexCoordsOffset + 4);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 3>::kTexCoordsOffset);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset + 4) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<2, 3>::kTexCoordsOffset + 4);
         }
         sourceVertex += sizeof(SkinSourceVertex<2, 3>);
         outputVertex += sizeof(SkinOutputVertex<3>);
@@ -323,7 +383,8 @@ void Skin_Transform2WeightPositionNormalTex3(void* outputVertices, void* sourceV
 #pragma push
 #pragma optimization_level 0
 // Blend 3 bone matrices and write transformed position/normal plus 2 UV set(s) per vertex.
-void Skin_Transform3WeightPositionNormalTex2(void* outputVertices, void* sourceVertices, unsigned int vertexCount, unsigned int unusedFormat, void* matrixPalette) {
+void Skin_Transform3WeightPositionNormalTex2(void* outputVertices, void* sourceVertices, unsigned int vertexCount,
+                                             unsigned int unusedFormat, void* matrixPalette) {
     __alloca(0);
     float frame[16];
     unsigned int vertexIndex = 0;
@@ -331,11 +392,15 @@ void Skin_Transform3WeightPositionNormalTex2(void* outputVertices, void* sourceV
     int texCoordIndex;
     char* sourceVertex = (char*)sourceVertices;
     for (; vertexIndex < vertexCount; vertexIndex++) {
-        Mtx44_BlendIndexed3(frame, (unsigned int)matrixPalette, sourceVertex + SkinSourceVertex<3, 2>::kWeightsOffset, sourceVertex + SkinSourceVertex<3, 2>::kBoneIndicesOffset);
-        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<2>::kNormalOffset, sourceVertex, sourceVertex + SkinSourceVertex<3, 2>::kNormalOffset, frame);
+        Mtx44_BlendIndexed3(frame, (unsigned int)matrixPalette, sourceVertex + SkinSourceVertex<3, 2>::kWeightsOffset,
+                            sourceVertex + SkinSourceVertex<3, 2>::kBoneIndicesOffset);
+        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<2>::kNormalOffset, sourceVertex,
+                                         sourceVertex + SkinSourceVertex<3, 2>::kNormalOffset, frame);
         for (texCoordIndex = 0; texCoordIndex < 2; texCoordIndex++) {
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 2>::kTexCoordsOffset);
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset + 4) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 2>::kTexCoordsOffset + 4);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 2>::kTexCoordsOffset);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset + 4) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 2>::kTexCoordsOffset + 4);
         }
         sourceVertex += sizeof(SkinSourceVertex<3, 2>);
         outputVertex += sizeof(SkinOutputVertex<2>);
@@ -355,11 +420,14 @@ void Skin_Submit3WeightPositionNormalTex3(void* vertices, unsigned int vertexCou
     __alloca(0);
     for (; vertexIndex < frame.vertexCount; vertexIndex++) {
         Mtx44_BlendIndexed3(frame.matrix, frame.paletteAddress, sourceVertex->weights, sourceVertex->boneIndices);
-        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal, frame.matrix);
+        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal,
+                                                  frame.matrix);
         Render_WriteFifo3f(frame.position[0], frame.position[1], frame.position[2]);
         Render_WriteFifo3f(frame.normal[0], frame.normal[1], frame.normal[2]);
         for (texCoordIndex = 0; texCoordIndex < 3; texCoordIndex++) {
-            Render_WriteTexCoord2f(*(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 3>::kTexCoordsOffset), *(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 3>::kTexCoordsOffset + 4));
+            Render_WriteTexCoord2f(
+                *(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 3>::kTexCoordsOffset),
+                *(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 3>::kTexCoordsOffset + 4));
         }
         sourceVertex += 1;
     }
@@ -368,7 +436,8 @@ void Skin_Submit3WeightPositionNormalTex3(void* vertices, unsigned int vertexCou
 #pragma push
 #pragma optimization_level 0
 // Blend 3 bone matrices and write transformed position/normal plus 3 UV set(s) per vertex.
-void Skin_Transform3WeightPositionNormalTex3(void* outputVertices, void* sourceVertices, unsigned int vertexCount, unsigned int unusedFormat, void* matrixPalette) {
+void Skin_Transform3WeightPositionNormalTex3(void* outputVertices, void* sourceVertices, unsigned int vertexCount,
+                                             unsigned int unusedFormat, void* matrixPalette) {
     float blendedMatrix[16];
     unsigned int vertexIndex = 0;
     char* outputVertex = (char*)outputVertices;
@@ -376,11 +445,16 @@ void Skin_Transform3WeightPositionNormalTex3(void* outputVertices, void* sourceV
     char* sourceVertex = (char*)sourceVertices;
     __alloca(0);
     for (; vertexIndex < vertexCount; vertexIndex++) {
-        Mtx44_BlendIndexed3(blendedMatrix, (unsigned int)matrixPalette, sourceVertex + SkinSourceVertex<3, 3>::kWeightsOffset, sourceVertex + SkinSourceVertex<3, 3>::kBoneIndicesOffset);
-        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<3>::kNormalOffset, sourceVertex, sourceVertex + SkinSourceVertex<3, 3>::kNormalOffset, blendedMatrix);
+        Mtx44_BlendIndexed3(blendedMatrix, (unsigned int)matrixPalette,
+                            sourceVertex + SkinSourceVertex<3, 3>::kWeightsOffset,
+                            sourceVertex + SkinSourceVertex<3, 3>::kBoneIndicesOffset);
+        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<3>::kNormalOffset, sourceVertex,
+                                         sourceVertex + SkinSourceVertex<3, 3>::kNormalOffset, blendedMatrix);
         for (texCoordIndex = 0; texCoordIndex < 3; texCoordIndex++) {
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 3>::kTexCoordsOffset);
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset + 4) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 3>::kTexCoordsOffset + 4);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 3>::kTexCoordsOffset);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset + 4) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 3>::kTexCoordsOffset + 4);
         }
         sourceVertex += sizeof(SkinSourceVertex<3, 3>);
         outputVertex += sizeof(SkinOutputVertex<3>);
@@ -400,11 +474,14 @@ void Skin_Submit3WeightPositionNormalTex2(void* vertices, unsigned int vertexCou
     __alloca(0);
     for (; vertexIndex < frame.vertexCount; vertexIndex++) {
         Mtx44_BlendIndexed3(frame.matrix, frame.paletteAddress, sourceVertex->weights, sourceVertex->boneIndices);
-        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal, frame.matrix);
+        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal,
+                                                  frame.matrix);
         Render_WriteFifo3f(frame.position[0], frame.position[1], frame.position[2]);
         Render_WriteFifo3f(frame.normal[0], frame.normal[1], frame.normal[2]);
         for (texCoordIndex = 0; texCoordIndex < 2; texCoordIndex++) {
-            Render_WriteTexCoord2f(*(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 2>::kTexCoordsOffset), *(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 2>::kTexCoordsOffset + 4));
+            Render_WriteTexCoord2f(
+                *(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 2>::kTexCoordsOffset),
+                *(float*)((char*)sourceVertex + texCoordIndex * 8 + SkinSourceVertex<3, 2>::kTexCoordsOffset + 4));
         }
         sourceVertex += 1;
     }
@@ -437,7 +514,8 @@ void Skin_ReservedNoOp_80432088() {}
 #pragma push
 #pragma optimization_level 0
 // Blend 4 bone matrices and write transformed position/normal plus 2 UV set(s) per vertex.
-void Skin_Transform4WeightPositionNormalTex2(void* outputVertices, void* sourceVertices, unsigned int vertexCount, unsigned int unusedFormat, void* matrixPalette) {
+void Skin_Transform4WeightPositionNormalTex2(void* outputVertices, void* sourceVertices, unsigned int vertexCount,
+                                             unsigned int unusedFormat, void* matrixPalette) {
     SkinTransform4Frame frame;
     frame.outputVertices = outputVertices;
     unsigned int vertexIndex = 0;
@@ -448,11 +526,15 @@ void Skin_Transform4WeightPositionNormalTex2(void* outputVertices, void* sourceV
     frame.vertexCount = vertexCount;
     frame.palette = matrixPalette;
     for (; vertexIndex < frame.vertexCount; vertexIndex++) {
-        Mtx44_BlendIndexed4(frame.matrix, frame.palette, sourceVertex + SkinSourceVertex<4, 2>::kWeightsOffset, sourceVertex + SkinSourceVertex<4, 2>::kBoneIndicesOffset);
-        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<2>::kNormalOffset, sourceVertex, sourceVertex + SkinSourceVertex<4, 2>::kNormalOffset, frame.matrix);
+        Mtx44_BlendIndexed4(frame.matrix, frame.palette, sourceVertex + SkinSourceVertex<4, 2>::kWeightsOffset,
+                            sourceVertex + SkinSourceVertex<4, 2>::kBoneIndicesOffset);
+        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<2>::kNormalOffset, sourceVertex,
+                                         sourceVertex + SkinSourceVertex<4, 2>::kNormalOffset, frame.matrix);
         for (texCoordIndex = 0; texCoordIndex < 2; texCoordIndex++) {
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 2>::kTexCoordsOffset);
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset + 4) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 2>::kTexCoordsOffset + 4);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 2>::kTexCoordsOffset);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<2>::kTexCoordsOffset + 4) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 2>::kTexCoordsOffset + 4);
         }
         sourceVertex += sizeof(SkinSourceVertex<4, 2>);
         outputVertex += sizeof(SkinOutputVertex<2>);
@@ -474,11 +556,14 @@ void Skin_Submit4WeightPositionNormalTex3(void* vertices, unsigned int vertexCou
     frame.palette = matrixPalette;
     for (; vertexIndex < frame.vertexCount; vertexIndex++) {
         Mtx44_BlendIndexed4(frame.matrix, frame.palette, sourceVertex->weights, sourceVertex->boneIndices);
-        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal, frame.matrix);
+        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal,
+                                                  frame.matrix);
         Render_WriteFifo3f(frame.position[0], frame.position[1], frame.position[2]);
         Render_WriteFifo3f(frame.normal[0], frame.normal[1], frame.normal[2]);
         for (texCoordIndex = 0; texCoordIndex < 3; texCoordIndex++) {
-            Render_WriteTexCoord2f(((float*)((char*)sourceVertex + SkinSourceVertex<4, 3>::kTexCoordsOffset))[texCoordIndex * 2], ((float*)((char*)sourceVertex + SkinSourceVertex<4, 3>::kTexCoordsOffset))[texCoordIndex * 2 + 1]);
+            Render_WriteTexCoord2f(
+                ((float*)((char*)sourceVertex + SkinSourceVertex<4, 3>::kTexCoordsOffset))[texCoordIndex * 2],
+                ((float*)((char*)sourceVertex + SkinSourceVertex<4, 3>::kTexCoordsOffset))[texCoordIndex * 2 + 1]);
         }
         sourceVertex += 1;
     }
@@ -488,7 +573,8 @@ void Skin_Submit4WeightPositionNormalTex3(void* vertices, unsigned int vertexCou
 #pragma push
 #pragma optimization_level 0
 // Blend 4 bone matrices and write transformed position/normal plus 3 UV set(s) per vertex.
-void Skin_Transform4WeightPositionNormalTex3(void* outputVertices, void* sourceVertices, unsigned int vertexCount, unsigned int unusedFormat, void* matrixPalette) {
+void Skin_Transform4WeightPositionNormalTex3(void* outputVertices, void* sourceVertices, unsigned int vertexCount,
+                                             unsigned int unusedFormat, void* matrixPalette) {
     float blendedMatrix[16];
     unsigned int vertexIndex = 0;
     char* outputVertex = (char*)outputVertices;
@@ -496,11 +582,15 @@ void Skin_Transform4WeightPositionNormalTex3(void* outputVertices, void* sourceV
     char* sourceVertex = (char*)sourceVertices;
     __alloca(0);
     for (; vertexIndex < vertexCount; vertexIndex++) {
-        Mtx44_BlendIndexed4(blendedMatrix, matrixPalette, sourceVertex + SkinSourceVertex<4, 3>::kWeightsOffset, sourceVertex + SkinSourceVertex<4, 3>::kBoneIndicesOffset);
-        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<3>::kNormalOffset, sourceVertex, sourceVertex + SkinSourceVertex<4, 3>::kNormalOffset, blendedMatrix);
+        Mtx44_BlendIndexed4(blendedMatrix, matrixPalette, sourceVertex + SkinSourceVertex<4, 3>::kWeightsOffset,
+                            sourceVertex + SkinSourceVertex<4, 3>::kBoneIndicesOffset);
+        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<3>::kNormalOffset, sourceVertex,
+                                         sourceVertex + SkinSourceVertex<4, 3>::kNormalOffset, blendedMatrix);
         for (texCoordIndex = 0; texCoordIndex < 3; texCoordIndex++) {
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 3>::kTexCoordsOffset);
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset + 4) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 3>::kTexCoordsOffset + 4);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 3>::kTexCoordsOffset);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<3>::kTexCoordsOffset + 4) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 3>::kTexCoordsOffset + 4);
         }
         sourceVertex += sizeof(SkinSourceVertex<4, 3>);
         outputVertex += sizeof(SkinOutputVertex<3>);
@@ -521,11 +611,13 @@ void Skin_Submit4WeightPositionNormalTex1(void* vertices, unsigned int vertexCou
     frame.palette = matrixPalette;
     for (; vertexIndex < frame.vertexCount; vertexIndex++) {
         Mtx44_BlendIndexed4(frame.matrix, frame.palette, sourceVertex->weights, sourceVertex->boneIndices);
-        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal, frame.matrix);
+        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal,
+                                                  frame.matrix);
         Render_WriteFifo3f(frame.position[0], frame.position[1], frame.position[2]);
         Render_WriteFifo3f(frame.normal[0], frame.normal[1], frame.normal[2]);
         for (int texCoordIndex = 0; texCoordIndex < 1; texCoordIndex++) {
-            Render_WriteTexCoord2f(sourceVertex->texCoords[texCoordIndex][0], sourceVertex->texCoords[texCoordIndex][1]);
+            Render_WriteTexCoord2f(sourceVertex->texCoords[texCoordIndex][0],
+                                   sourceVertex->texCoords[texCoordIndex][1]);
         }
         sourceVertex += 1;
     }
@@ -534,7 +626,8 @@ void Skin_Submit4WeightPositionNormalTex1(void* vertices, unsigned int vertexCou
 #pragma push
 #pragma optimization_level 0
 // Blend 4 bone matrices and write transformed position/normal plus 1 UV set(s) per vertex.
-void Skin_Transform4WeightPositionNormalTex1(void* outputVertices, void* sourceVertices, unsigned int vertexCount, unsigned int unusedFormat, void* something) {
+void Skin_Transform4WeightPositionNormalTex1(void* outputVertices, void* sourceVertices, unsigned int vertexCount,
+                                             unsigned int unusedFormat, void* something) {
     __alloca(0);
     SkinTransform4Frame frame;
     unsigned int vertexIndex = 0;
@@ -544,11 +637,15 @@ void Skin_Transform4WeightPositionNormalTex1(void* outputVertices, void* sourceV
     frame.vertexCount = vertexCount;
     frame.palette = something;
     for (; vertexIndex < frame.vertexCount; vertexIndex++) {
-        Mtx44_BlendIndexed4(frame.matrix, frame.palette, sourceVertex + SkinSourceVertex<4, 1>::kWeightsOffset, sourceVertex + SkinSourceVertex<4, 1>::kBoneIndicesOffset);
-        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<1>::kNormalOffset, sourceVertex, sourceVertex + SkinSourceVertex<4, 1>::kNormalOffset, frame.matrix);
+        Mtx44_BlendIndexed4(frame.matrix, frame.palette, sourceVertex + SkinSourceVertex<4, 1>::kWeightsOffset,
+                            sourceVertex + SkinSourceVertex<4, 1>::kBoneIndicesOffset);
+        Mtx34_TransformPointAndDirection(outputVertex, outputVertex + SkinOutputVertex<1>::kNormalOffset, sourceVertex,
+                                         sourceVertex + SkinSourceVertex<4, 1>::kNormalOffset, frame.matrix);
         for (texCoordIndex = 0; texCoordIndex < 1; texCoordIndex++) {
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<1>::kTexCoordsOffset) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 1>::kTexCoordsOffset);
-            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<1>::kTexCoordsOffset + 4) = *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 1>::kTexCoordsOffset + 4);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<1>::kTexCoordsOffset) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 1>::kTexCoordsOffset);
+            *(float*)(outputVertex + texCoordIndex * 8 + SkinOutputVertex<1>::kTexCoordsOffset + 4) =
+                *(float*)(sourceVertex + texCoordIndex * 8 + SkinSourceVertex<4, 1>::kTexCoordsOffset + 4);
         }
         sourceVertex += sizeof(SkinSourceVertex<4, 1>);
         outputVertex += sizeof(SkinOutputVertex<1>);
@@ -570,11 +667,13 @@ void Skin_Submit4WeightPositionNormalTex2(void* vertices, unsigned int vertexCou
     frame.palette = matrixPalette;
     for (; vertexIndex < frame.vertexCount; vertexIndex++) {
         Mtx44_BlendIndexed4(frame.matrix, frame.palette, sourceVertex->weights, sourceVertex->boneIndices);
-        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal, frame.matrix);
+        Skin_TransformPositionAndNormalProjective(frame.position, frame.normal, sourceVertex, sourceVertex->normal,
+                                                  frame.matrix);
         Render_WriteFifo3f(frame.position[0], frame.position[1], frame.position[2]);
         Render_WriteFifo3f(frame.normal[0], frame.normal[1], frame.normal[2]);
         for (texCoordIndex = 0; texCoordIndex < 2; texCoordIndex++) {
-            Render_WriteTexCoord2f(sourceVertex->texCoords[texCoordIndex][0], sourceVertex->texCoords[texCoordIndex][1]);
+            Render_WriteTexCoord2f(sourceVertex->texCoords[texCoordIndex][0],
+                                   sourceVertex->texCoords[texCoordIndex][1]);
         }
         sourceVertex += 1;
     }

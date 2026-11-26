@@ -6,8 +6,8 @@
 class GtlMediaRegistryNode {
 public:
     void* previous; // 0x0
-    void* next; // 0x4
-    void* value; // 0x8
+    void* next;     // 0x4
+    void* value;    // 0x8
 };
 
 #define OFF(f, o) typedef char GtlMediaRegistryNode_off_##f[((int)&((GtlMediaRegistryNode*)0)->f == (o)) ? 1 : -1]

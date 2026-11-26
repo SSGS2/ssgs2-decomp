@@ -1,5 +1,6 @@
-// Translation unit 0x8040E908-0x8040E9BC (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Load command for the stream player: its lock and interrupt guard helpers, the completion
+// state it reads, and FinishAndRecycle, which completes a stream load and moves the command
+// from the active list to the free list.
 
 #include "sdk_protos.h"
 
@@ -10,7 +11,9 @@ extern "C" void* LockGuardBase_dtor(void*, int);
 
 struct StreamLockBase {
     // Destroy this embedded helper without freeing the surrounding command.
-    ~StreamLockBase() { LockGuardBase_dtor(this, 0); }
+    ~StreamLockBase() {
+        LockGuardBase_dtor(this, 0);
+    }
 };
 
 struct InterruptGuardBase {
@@ -20,9 +23,13 @@ struct InterruptGuardBase {
 };
 struct InterruptGuard_u8040E908 : InterruptGuardBase {
     // Save the previous interrupt level and enter the list mutation section.
-    InterruptGuard_u8040E908() { level = OSDisableInterrupts(); }
+    InterruptGuard_u8040E908() {
+        level = OSDisableInterrupts();
+    }
     // Restore the saved level on normal return or stack unwinding.
-    ~InterruptGuard_u8040E908() { OSRestoreInterrupts(level); }
+    ~InterruptGuard_u8040E908() {
+        OSRestoreInterrupts(level);
+    }
 };
 
 extern "C" {
@@ -44,7 +51,8 @@ struct StreamPlayerCompletionState {
 };
 typedef char StreamPlayer_pendingLoads_offset[((int)&((StreamPlayerCompletionState*)0)->pendingLoads == 0xC0) ? 1 : -1];
 typedef char StreamPlayer_freeCommands_offset[((int)&((StreamPlayerCompletionState*)0)->freeCommands == 0xFC) ? 1 : -1];
-typedef char StreamPlayer_activeCommands_offset[((int)&((StreamPlayerCompletionState*)0)->activeCommands == 0x108) ? 1 : -1];
+typedef char
+    StreamPlayer_activeCommands_offset[((int)&((StreamPlayerCompletionState*)0)->activeCommands == 0x108) ? 1 : -1];
 
 struct LoadCommand {
     void* vtable;
@@ -55,7 +63,9 @@ struct LoadCommand {
 };
 // Keep byte addressing for the embedded link so both list calls share its address.
 static const int kLoadCommandLinkOffset = (int)&((LoadCommand*)0)->lock;
-enum LoadCommandState { kLoadCountsTowardCompletion = 0 };
+enum LoadCommandState {
+    kLoadCountsTowardCompletion = 0
+};
 
 // Finish or cancel a stream load, then recycle its command while interrupts are disabled.
 // self/stream must exist and the command must belong to activeCommands. Only the
@@ -68,7 +78,8 @@ void gtl_StrmPlayerLoadCommand_FinishAndRecycle(LoadCommand* self, void* complet
         if (self->state == kLoadCountsTowardCompletion) {
             int count = self->stream->pendingLoads - 1;
             self->stream->pendingLoads = count;
-            if (count == 0) self->stream->loadComplete = 1;
+            if (count == 0)
+                self->stream->loadComplete = 1;
         }
     } else {
         gtl_nw4r_detail_StrmPlayer_ReleaseResources(self->stream);

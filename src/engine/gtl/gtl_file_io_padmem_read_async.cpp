@@ -1,5 +1,8 @@
+// PAD-memory device: starts an asynchronous read. It registers the completion state, submits the
+// transfer to the PAD driver, and maps submission errors to file error codes.
+
 #include "sdk_protos.h"
-#include "classes/PadMemDevice.h"
+#include "classes/GtlFileIoDevicePADMEM.h"
 
 struct PadMemTransferState {
     int handleWord;
@@ -18,8 +21,6 @@ extern "C" void FileIO_OnAsyncResult(void*, int);
 // Submit the PADMEM transfer; a zero result means the asynchronous request was accepted.
 extern "C" int PadMemoryDriver_Read(void*, void*, unsigned int, unsigned int, void*);
 
-extern "C" {
-
 #pragma opt_lifetimes off
 #pragma opt_common_subs off
 enum {
@@ -34,7 +35,8 @@ enum {
 // handle must reference writable transfer state (only -1 is rejected). buffer and
 // callbackData remain borrowed. The driver sees the low 16 bits of length/offset,
 // but requestedBytes records the full byteCount, with no clamp or validation.
-int gtl_CFileIoDevicePADMEM_ReadAsync(void* self, void* handle, void* buffer, unsigned int byteCount, unsigned int deviceOffset, int /*unused*/, int callbackAddress, void* callbackData) {
+int gtl::CFileIoDevicePADMEM::ReadAsync(void* handle, void* buffer, unsigned int byteCount, unsigned int deviceOffset,
+                                        int /*unused*/, int callbackAddress, void* callbackData) {
     if (handle == (void*)-1) {
         File_SetLastError(kInvalidHandleError);
         return 0;
@@ -49,21 +51,40 @@ int gtl_CFileIoDevicePADMEM_ReadAsync(void* self, void* handle, void* buffer, un
     g_padMemIoCallbackData = callbackData;
 
     // Phase 2: submit with the same device-relative offset as the synchronous read.
-    int status = PadMemoryDriver_Read(AsPadMemDevice(self)->device, buffer, (unsigned short)byteCount, (unsigned short)deviceOffset, (void*)FileIO_OnAsyncResult);
+    int status = PadMemoryDriver_Read(controllerIndex, buffer, (unsigned short)byteCount, (unsigned short)deviceOffset,
+                                      (void*)FileIO_OnAsyncResult);
 
     int submissionResult = status;
     int fileError;
     // Preserve the original indexed switch: individual PADMEM error meanings are unresolved.
     switch (submissionResult - kMinimumPadMemResult) {
-        case 7: fileError = 0; break;
-        case 6: fileError = kPadMemErrorBase + 1; break;
-        case 5: fileError = kPadMemErrorBase + 2; break;
-        case 4: fileError = kPadMemErrorBase + 3; break;
-        case 3: fileError = kPadMemErrorBase + 4; break;
-        case 2: fileError = kPadMemErrorBase + 5; break;
-        case 1: fileError = kPadMemErrorBase + 6; break;
-        case 0: fileError = kPadMemErrorBase + 7; break;
-        default: fileError = kPadMemFallbackError; break;
+    case 7:
+        fileError = 0;
+        break;
+    case 6:
+        fileError = kPadMemErrorBase + 1;
+        break;
+    case 5:
+        fileError = kPadMemErrorBase + 2;
+        break;
+    case 4:
+        fileError = kPadMemErrorBase + 3;
+        break;
+    case 3:
+        fileError = kPadMemErrorBase + 4;
+        break;
+    case 2:
+        fileError = kPadMemErrorBase + 5;
+        break;
+    case 1:
+        fileError = kPadMemErrorBase + 6;
+        break;
+    case 0:
+        fileError = kPadMemErrorBase + 7;
+        break;
+    default:
+        fileError = kPadMemFallbackError;
+        break;
     }
     File_SetLastError(fileError);
 
@@ -80,5 +101,3 @@ int gtl_CFileIoDevicePADMEM_ReadAsync(void* self, void* handle, void* buffer, un
 
 #pragma opt_lifetimes reset
 #pragma opt_common_subs reset
-
-} // extern "C"

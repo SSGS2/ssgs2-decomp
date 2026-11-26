@@ -5,12 +5,12 @@
 #define CLASSES_SNOWPARTICLE_H
 
 struct SnowParticle {
-    float position[3]; // 0x0: rendered position, CSnow_UpdateParticles final Vec3_Add
-    float center[3]; // 0xC: wind/fall integration and bounds wrapping
+    float position[3];  // 0x0: rendered position, CSnow_UpdateParticles final Vec3_Add
+    float center[3];    // 0xC: wind/fall integration and bounds wrapping
     float directionSin; // 0x18: Math_SinApprox(random angle) in CSnow_RebuildParticleBuffers
     float directionCos; // 0x1C: Math_CosApprox(same angle)
-    float swayPhase; // 0x20: incremented by angular rate * elapsed time
-    char unk_24; // 0x24: initialized to 1; meaning not established
+    float swayPhase;    // 0x20: incremented by angular rate * elapsed time
+    char unk_24;        // 0x24: initialized to 1; meaning not established
     char pad_025[3];
 };
 

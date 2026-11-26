@@ -1,5 +1,3 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
 #ifndef CLASSES_CDUCK_H
 #define CLASSES_CDUCK_H
 
@@ -7,26 +5,47 @@
 
 class CDuck {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    void* secondaryVtable;                        // 0x4: 1 use in CDuck_Dtor
-    char pad_008[0x1c];                 // 0x8
-    void* puppet;                       // 0x24: 1 use in CDuck_Dtor
-    char pad_028[0xf8];                 // 0x28
-    void* instanceMatrices;                      // 0x120: 2 uses in CDuck_Dtor
-    int linkCount;                     // 0x124: 2 uses in CDuck_Dtor
-    char pad_128[0x4];                  // 0x128
-    void* listNext;                    // 0x12c: 2 uses in CDuck_Dtor
+    void* vtbl;             // 0x0: original vtable pointer
+    void* secondaryVtable;  // 0x4
+    char pad_008[0x1c];     // 0x8
+    void* puppet;           // 0x24
+    char pad_028[0xf4];     // 0x28
+    int instanceCount;      // 0x11c
+    void* instanceMatrices; // 0x120
+    int linkCount;          // 0x124
+    void* listPrevious;     // 0x128
+    void* listNext;         // 0x12c
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x4, 0xc, 0x18, 0xb8, 0x124, 0x128
+    // Initialize CDuck state and owned resources (the original constructor; not a C++ constructor).
+    void* Init(const char* arg, int count);
+
+    // Cull and draw each duck puppet using its corresponding follower transform.
+    void DrawInstances();
+
+    // Move each duck toward its predecessor with a clamped turn rate and minimum separation.
+    void UpdateFlockFormation(float deltaTime);
+
+    // Place the flock leader and followers at fixed intervals behind it.
+    void InitFlockFormation(const void* src, unsigned int flags);
+
+    // Load one puppet per duck instance into the owned list and select the first puppet.
+    void LoadPuppetInstances(void* arg);
+
+    // Release CDuck resources and optionally delete the object.
+    void* Dtor(int doDelete);
+
+    // Adjust the secondary-interface pointer back to its owner for destruction.
+    void DtorThunk4(int deleteFlag);
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
 #define CDUCK_OFF(f, o) typedef char CDuck_off_##f[((int)&((CDuck*)0)->f == (o)) ? 1 : -1]
 CDUCK_OFF(secondaryVtable, 0x4);
 CDUCK_OFF(puppet, 0x24);
+CDUCK_OFF(instanceCount, 0x11c);
 CDUCK_OFF(instanceMatrices, 0x120);
 CDUCK_OFF(linkCount, 0x124);
+CDUCK_OFF(listPrevious, 0x128);
 CDUCK_OFF(listNext, 0x12c);
 #undef CDUCK_OFF
 
-#endif  // CLASSES_CDUCK_H
+#endif // CLASSES_CDUCK_H

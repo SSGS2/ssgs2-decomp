@@ -1,11 +1,11 @@
 // BpTreeLinks: offset-preserving view; no constructors, bases, or virtual methods.
-// Evidence: BpIntObjectTree_FindInsertionPosition / CBpObject_FindTextureById search left/right; CBpObject_ClearResources and BpObject_PollLoad mask parentAndColor with ~1u.
+// Evidence: BpIntObjectTree_FindInsertionPosition / CBpObject::FindTextureById search left/right; CBpObject_ClearResources and BpObject_PollLoad mask parentAndColor with ~1u.
 #ifndef CLASSES_BPTREELINKS_H
 #define CLASSES_BPTREELINKS_H
 
 struct BpTreeLinks {
-    void* left; // 0x0
-    void* right; // 0x4
+    void* left;                  // 0x0
+    void* right;                 // 0x4
     unsigned int parentAndColor; // 0x8
 };
 

@@ -1,10 +1,13 @@
+// Bp sprite slots: the value-animation keyframe clock, lookups of named and numbered sprites,
+// the offset table, the draw-callback setters, and the stream destructor thunks.
+
 #include <decomp/static_init.h>
 // Bp sprite animation clock, controller queries, and draw-callback registration.
 // Modding lookup (frame rate / layout / player-panel animation):
 // - ValueAnimation_AdvanceKeyframe adds ONE integer tick per invocation. Keyframe
 //   durations are ticks, not seconds or retraces. bp_layout_animation_and_sprite_draw.cpp schedules calls
 //   and seeks channels; changing presentation alone does not rescale this clock.
-// - s_valueAnimationDurationScale, u800BA958_data.cpp: leading binary32 in an
+// - s_valueAnimationDurationScale, the data section: leading binary32 in an
 //   eight-byte slot, default 1.0. CBpCtrl's constructor (bp_ctrl_entry_manager.cpp) selects
 //   0.8333333 or 1.0 for duration-scaling policy. Larger values lengthen keys;
 //   duration is multiplied then truncated to int. Preserve this FP/integer order.
@@ -21,8 +24,6 @@
 // callers must serialize them with controller traversal/resource teardown.
 // Stream destructor thunks are unrelated ABI glue; preserve their receiver
 // adjustments, flags, optimization pragmas and forwarding order.
-// Translation unit 0x800BA958-0x800BB334 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -74,8 +75,10 @@ enum {
     kTrigQuarterTurn = 0x100,
     kUpdateModeHighBits = 0xF0,
     kVirtualBaseOffsetSlot = 0x3C,
-    kSlotRangeDiagnosticLine = 0x84, kUnusedSlotDiagnosticLine = 0x89,
-    kNullNameDiagnosticLine = 0x159, kMissingNodeDiagnosticLine = 0x166,
+    kSlotRangeDiagnosticLine = 0x84,
+    kUnusedSlotDiagnosticLine = 0x89,
+    kNullNameDiagnosticLine = 0x159,
+    kMissingNodeDiagnosticLine = 0x166,
     kMissingItemDiagnosticLine = 0x17E
 };
 
@@ -144,8 +147,16 @@ struct BpSlot {
 };
 
 // Records store offsets relative to the start of this table, not pointers.
-struct OffsetTableRecord { int offset; char reserved[12]; };
-struct OffsetTable { int reserved; int count; char pad_08[8]; OffsetTableRecord records[1]; };
+struct OffsetTableRecord {
+    int offset;
+    char reserved[12];
+};
+struct OffsetTable {
+    int reserved;
+    int count;
+    char pad_08[8];
+    OffsetTableRecord records[1];
+};
 
 typedef char BpSlot_size_check[sizeof(BpSlot) == 0x34 ? 1 : -1];
 typedef char BpSpriteNode_size_check[sizeof(BpSpriteNode) == 0x1C8 ? 1 : -1];
@@ -155,12 +166,14 @@ typedef char BpChannelGroup_size_check[sizeof(BpChannelGroup) == 0x48 ? 1 : -1];
 void* BpSlot_FindNodeByName(int index, void* name) {
     BpSlot* entry;
     if (index < 0 || index >= kBpSlotCount) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine,
+                                bpControllerCallbackDiagnosticStrings);
         entry = 0;
     } else {
         entry = &s_bpObjectEntries[index];
         if (entry->id == kUnusedBpSlot) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine,
+                                    bpControllerCallbackDiagnosticStrings);
             entry = 0;
         }
     }
@@ -170,7 +183,8 @@ void* BpSlot_FindNodeByName(int index, void* name) {
     else
         current = (void*)entry->head;
     if (name == 0) {
-        BpCtrl_InvokeGlobalHook(kNullBpName, kBpControllerSourceFilename, kNullNameDiagnosticLine, bpHeadSpriteLookupFunctionName);
+        BpCtrl_InvokeGlobalHook(kNullBpName, kBpControllerSourceFilename, kNullNameDiagnosticLine,
+                                bpHeadSpriteLookupFunctionName);
         return 0;
     }
     while (current != 0) {
@@ -179,7 +193,8 @@ void* BpSlot_FindNodeByName(int index, void* name) {
             return current;
         current = node->next;
     }
-    BpCtrl_InvokeGlobalHook(kMissingBpItem, kBpControllerSourceFilename, kMissingNodeDiagnosticLine, bpHeadSpriteLookupFunctionName);
+    BpCtrl_InvokeGlobalHook(kMissingBpItem, kBpControllerSourceFilename, kMissingNodeDiagnosticLine,
+                            bpHeadSpriteLookupFunctionName);
     return 0;
 }
 
@@ -193,12 +208,14 @@ void BpSlot_ResetAnimationChannelValues(int index) {
         return;
     BpSlot* entry;
     if (index < 0 || index >= kBpSlotCount) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine,
+                                bpControllerCallbackDiagnosticStrings);
         entry = 0;
     } else {
         entry = &s_bpObjectEntries[index];
         if (entry->id == kUnusedBpSlot) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine,
+                                    bpControllerCallbackDiagnosticStrings);
             entry = 0;
         }
     }
@@ -214,7 +231,8 @@ void BpSlot_ResetAnimationChannelValues(int index) {
                 item->first.currentKeyframe = item->first.firstKeyframe;
                 item->first.tickPosition = item->first.firstKeyframe->durationFrames;
             }
-            if (item->second.firstKeyframe != 0 && (item->second.flags & kAnimationSkipReset) == 0) { // 0x800BAF74: existing short at +0x22
+            if (item->second.firstKeyframe != 0 &&
+                (item->second.flags & kAnimationSkipReset) == 0) { // 0x800BAF74: existing short at +0x22
                 item->second.currentValueBits = item->second.firstKeyframe->valueBits;
                 item->second.initialValueBits = item->second.firstKeyframe->valueBits;
                 item->second.currentKeyframe = item->second.firstKeyframe;
@@ -275,7 +293,8 @@ int ValueAnimation_AdvanceKeyframe(BpAnimationChannel* self) {
         case kInterpolateHold:
             return 0;
         case kInterpolateEaseIn:
-            weight = kTrigOne - Trig_GetSinTableEntry((((nextTick << 10) / scaledDurationTicks) >> 2) + kTrigQuarterTurn);
+            weight =
+                kTrigOne - Trig_GetSinTableEntry((((nextTick << 10) / scaledDurationTicks) >> 2) + kTrigQuarterTurn);
             weightScale = kTrigOne;
             break;
         case kInterpolateEaseOut:
@@ -285,10 +304,13 @@ int ValueAnimation_AdvanceKeyframe(BpAnimationChannel* self) {
         }
         switch (self->valueType) {
         case kAnimationInteger:
-            self->currentValueBits = self->initialValueBits + weight * (keyframe->valueBits - self->initialValueBits) / weightScale;
+            self->currentValueBits =
+                self->initialValueBits + weight * (keyframe->valueBits - self->initialValueBits) / weightScale;
             break;
         case kAnimationFloat:
-            *(float*)&self->currentValueBits = *(float*)&self->initialValueBits + (float)weight * (*(float*)&keyframe->valueBits - *(float*)&self->initialValueBits) / (float)weightScale;
+            *(float*)&self->currentValueBits =
+                *(float*)&self->initialValueBits +
+                (float)weight * (*(float*)&keyframe->valueBits - *(float*)&self->initialValueBits) / (float)weightScale;
             break;
         case kAnimationColor: {
             unsigned char* keyframeBytes = (unsigned char*)self->currentKeyframe;
@@ -324,12 +346,14 @@ void* OffsetTable_GetEntry(void* self, int index) {
 void* BpSlot_GetSpriteListHead(int index) {
     BpSlot* entry;
     if (index < 0 || index >= kBpSlotCount) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine,
+                                bpControllerCallbackDiagnosticStrings);
         entry = 0;
     } else {
         entry = &s_bpObjectEntries[index];
         if (entry->id == kUnusedBpSlot) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine,
+                                    bpControllerCallbackDiagnosticStrings);
             entry = 0;
         }
     }
@@ -345,12 +369,14 @@ void* BpSlot_GetSpriteListHead(int index) {
 void BpSlot_SetUserData(int index, void* value1, void* value2) {
     BpSlot* entry;
     if (index < 0 || index >= kBpSlotCount) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine,
+                                bpControllerCallbackDiagnosticStrings);
         entry = 0;
     } else {
         entry = &s_bpObjectEntries[index];
         if (entry->id == kUnusedBpSlot) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine,
+                                    bpControllerCallbackDiagnosticStrings);
             entry = 0;
         }
     }
@@ -364,12 +390,14 @@ void BpSlot_SetUserData(int index, void* value1, void* value2) {
 void B2dGetInfoPtr(int index, void** result1, void** result2) {
     BpSlot* entry;
     if (index < 0 || index >= kBpSlotCount) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine,
+                                bpControllerCallbackDiagnosticStrings);
         entry = 0;
     } else {
         entry = &s_bpObjectEntries[index];
         if (entry->id == kUnusedBpSlot) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine,
+                                    bpControllerCallbackDiagnosticStrings);
             entry = 0;
         }
     }
@@ -385,12 +413,14 @@ void B2dGetInfoPtr(int index, void** result1, void** result2) {
 void* BpSlot_FindItemById(int index, int id) {
     BpSlot* entry;
     if (index < 0 || index >= kBpSlotCount) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine,
+                                bpControllerCallbackDiagnosticStrings);
         entry = 0;
     } else {
         entry = &s_bpObjectEntries[index];
         if (entry->id == kUnusedBpSlot) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine,
+                                    bpControllerCallbackDiagnosticStrings);
             entry = 0;
         }
     }
@@ -413,12 +443,14 @@ void* BpSlot_FindItemById(int index, int id) {
 void BpCtrl_SetOpacity(int index, int value) {
     BpSlot* entry;
     if (index < 0 || index >= kBpSlotCount) {
-        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+        BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kSlotRangeDiagnosticLine,
+                                bpControllerCallbackDiagnosticStrings);
         entry = 0;
     } else {
         entry = &s_bpObjectEntries[index];
         if (entry->id == kUnusedBpSlot) {
-            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine, bpControllerCallbackDiagnosticStrings);
+            BpCtrl_InvokeGlobalHook(index, kBpControllerSourceFilename, kUnusedSlotDiagnosticLine,
+                                    bpControllerCallbackDiagnosticStrings);
             entry = 0;
         }
     }

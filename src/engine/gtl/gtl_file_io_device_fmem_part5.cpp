@@ -1,21 +1,21 @@
-// Translation unit 0x8041D730-0x8041D76C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// GTL FMEM device current-directory query: copies the NAND current directory into a
+// caller buffer, which must be at least 64 bytes.
 
 #include "types.h"
+#include "classes/GtlFileIoDeviceFMEM.h"
 
-extern "C" {
-int NANDGetCurrentDir(void *);
-
-enum { kNandCurrentDirectoryBufferBytes = 0x40 };
+extern "C" int NANDGetCurrentDir(void*);
 
 // Copy the current NAND directory into a borrowed buffer of at least 64 bytes.
 // Returns 1 only for SDK success; returns 0 for a short buffer or SDK failure.
 // A short buffer is untouched. No null check or file-layer last-error update occurs.
-int gtl_CFileIoDeviceFMEM_GetCurrentDirectory(void *self, void *directoryBuffer, u32 bufferBytes) {
+int gtl::CFileIoDeviceFMEM::GetCurrentDirectory(void* directoryBuffer, u32 bufferBytes) {
+    enum {
+        kNandCurrentDirectoryBufferBytes = 0x40
+    };
     if (bufferBytes < kNandCurrentDirectoryBufferBytes) {
         return 0;
     }
     int nandStatus = NANDGetCurrentDir(directoryBuffer);
     return (nandStatus == 0);
 }
-} // extern "C"

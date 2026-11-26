@@ -5,7 +5,7 @@
 
 struct FmemFileStat {
     char pad_000[0x24];
-    int size; // 0x24
+    int size;   // 0x24
     int unk_28; // 0x28: vfunc_8 writes 1; meaning unknown.
 };
 

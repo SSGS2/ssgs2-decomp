@@ -1,14 +1,17 @@
+// Endian format strings and binary tables: parses byte-swap patterns such as repeat counts
+// and applies them when copying data, plus lookup helpers for fixed-stride binary tables.
+
 #include <decomp/static_init.h>
 #include "classes/CSwapEndianFormat.h"
 #include "classes/BinaryTableView.h"
 #define AsBinaryTable800699F0(p) ((BinaryTableView*)(p))
-// Translation unit 0x80068524-0x80069B34 (20 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 void* operator new(size_t);
 // Construct into caller-owned storage without allocating.
-inline void* operator new(size_t, void* p) { return p; }
+inline void* operator new(size_t, void* p) {
+    return p;
+}
 
 extern "C" {
 
@@ -21,7 +24,11 @@ extern "C" {
 // byte-swapped (swapping pass only).
 struct EndianFormatCursor {
     unsigned int offset;
-    union { char* cursor; unsigned int cursorAddress; int signedCursorAddress; };
+    union {
+        char* cursor;
+        unsigned int cursorAddress;
+        int signedCursorAddress;
+    };
     unsigned int dataAddress;
 };
 struct CtypeFacetView {
@@ -36,10 +43,16 @@ struct BinaryTableHeaderView {
     unsigned int tag, version;
     int entryCount;
 };
-struct InlineTextNode { unsigned int header[2]; char text[1]; };
+struct InlineTextNode {
+    unsigned int header[2];
+    char text[1];
+};
 // A 12-byte string stores inline bytes starting at byte 1 when bit 31 is clear;
 // when set, the last word points to owned heap data and the middle word is its length.
-struct SmallString12 { unsigned int state, length; char* data; };
+struct SmallString12 {
+    unsigned int state, length;
+    char* data;
+};
 struct FormatStringVectorView {
     SmallString12* strings;
     int count, capacity;
@@ -47,15 +60,20 @@ struct FormatStringVectorView {
     int constructedOffset;
 };
 enum {
-    kWordBytes = 4, kWordMask = 3, kDecimalRadix = 10,
-    kAsciiDigitZero = '0', kCtypeDigit = 8, kCtypeCharLimit = 0x100,
-    kTableEntriesOffset = 0x20, kFormatStringBytes = 12, kHeapFlagShift = 31,
+    kWordBytes = 4,
+    kWordMask = 3,
+    kDecimalRadix = 10,
+    kAsciiDigitZero = '0',
+    kCtypeDigit = 8,
+    kCtypeCharLimit = 0x100,
+    kTableEntriesOffset = 0x20,
+    kFormatStringBytes = 12,
+    kHeapFlagShift = 31,
     kFormatVectorOffset = (int)&((CSwapEndianFormat*)0)->formatStrings,
     kMaxFormatStrings = 0x15555555U,
     kSmallStringGrowthLimit = 0x71C71C7U,
     kMediumStringGrowthLimit = 0xE38E38EU
 };
-
 
 // Return the text payload immediately after the two-word node header.
 void* OffsetStringNode_GetText(void* ptr) {
@@ -63,8 +81,8 @@ void* OffsetStringNode_GetText(void* ptr) {
 }
 
 // Set the value forwarded to the context-dependent format descriptor.
-int CSwapEndianFormat_SetContext(void* ptr, void* value) {
-    AsCSwapEndianFormat(ptr)->context = (unsigned int)value;
+int CSwapEndianFormat::SetContext(unsigned int value) {
+    context = value;
     return 1;
 }
 
@@ -181,12 +199,12 @@ void EndianFormat_AlignMeasuredSizeToWord(void* ptr) {
 extern char __vt__17CSwapEndianFormat[];
 
 // Initialize the formatter with an empty pattern vector and four-byte context.
-void CSwapEndianFormat_ctor(void* ptr) {
-    AsCSwapEndianFormat(ptr)->vtbl = __vt__17CSwapEndianFormat;
-    AsCSwapEndianFormat(ptr)->formatStrings = 0;
-    AsCSwapEndianFormat(ptr)->formatCount = 0;
-    AsCSwapEndianFormat(ptr)->formatCapacity = 0;
-    AsCSwapEndianFormat(ptr)->context = 4;
+CSwapEndianFormat::CSwapEndianFormat() {
+    vtbl = __vt__17CSwapEndianFormat;
+    formatStrings = 0;
+    formatCount = 0;
+    formatCapacity = 0;
+    context = 4;
 }
 
 extern void appFreeUni__FPv(void*);
@@ -270,29 +288,39 @@ void EndianFormat_SwapRepeatedValues(void* ptr, unsigned int alignment) {
         signed char ch = raw;
         int digit = ch;
         int isDigit;
-        if (digit < 0 || digit >= kCtypeCharLimit) isDigit = 0;
+        if (digit < 0 || digit >= kCtypeCharLimit)
+            isDigit = 0;
         else {
             unsigned short* table = base->classification;
             isDigit = table[digit] & kCtypeDigit;
         }
-        if (!isDigit) break;
+        if (!isDigit)
+            break;
         repeatCount = repeatCount * kDecimalRadix + (signed char)raw - kAsciiDigitZero;
         ++current;
     }
-    if (repeatCount == 0) repeatCount = 1;
+    if (repeatCount == 0)
+        repeatCount = 1;
     ((EndianFormatCursor*)ptr)->cursorAddress = (unsigned int)current;
     unsigned int offset = ((EndianFormatCursor*)ptr)->dataAddress;
     unsigned int rem = offset % alignment;
-    if (rem != 0) offset += alignment - rem;
+    if (rem != 0)
+        offset += alignment - rem;
     ((EndianFormatCursor*)ptr)->dataAddress = offset;
     while (repeatCount-- > 0) {
         unsigned char* p = (unsigned char*)((EndianFormatCursor*)ptr)->dataAddress;
-// pangya.iff is little-endian on disc.
+        // pangya.iff is little-endian on disc.
         if (alignment == 4) {
-            unsigned char b = p[0]; p[0] = p[3]; p[3] = b;
-            b = p[1]; p[1] = p[2]; p[2] = b;
+            unsigned char savedByte = p[0];
+            p[0] = p[3];
+            p[3] = savedByte;
+            savedByte = p[1];
+            p[1] = p[2];
+            p[2] = savedByte;
         } else if (alignment == 2) {
-            unsigned char b = p[0]; p[0] = p[1]; p[1] = b;
+            unsigned char savedByte = p[0];
+            p[0] = p[1];
+            p[1] = savedByte;
         }
         ((EndianFormatCursor*)ptr)->dataAddress += alignment;
     }
@@ -300,7 +328,8 @@ void EndianFormat_SwapRepeatedValues(void* ptr, unsigned int alignment) {
 
 // Skip ASCII spaces; return null at NUL or null input, otherwise the next token.
 static inline char* skip_format_spaces(char* s) {
-    if (s == 0) return 0;
+    if (s == 0)
+        return 0;
     while (*s != 0) {
         if (*s == 0x20) {
             ++s;
@@ -352,24 +381,33 @@ void EndianFormat_ReverseBitGroups(void* ptr, signed char value) {
     while (formatAddressCursor != 0) {
         isDigit = 0;
         formatChar = (signed char)*(unsigned char*)formatAddressCursor;
-        if (formatChar < 0 || formatChar >= kCtypeCharLimit) isDigit = 1;
-        if (isDigit != 0) isDigit = 0;
-        else isDigit = base->classification[formatChar] & kCtypeDigit;
-        if (isDigit == 0) break;
+        if (formatChar < 0 || formatChar >= kCtypeCharLimit)
+            isDigit = 1;
+        if (isDigit != 0)
+            isDigit = 0;
+        else
+            isDigit = base->classification[formatChar] & kCtypeDigit;
+        if (isDigit == 0)
+            break;
         groupWidth = 0;
         while (formatAddressCursor != 0) {
             raw = *(unsigned char*)formatAddressCursor;
             formatChar = (signed char)raw;
             isDigit = 0;
-            if (formatChar < 0 || formatChar >= kCtypeCharLimit) isDigit = 1;
-            if (isDigit != 0) isDigit = 0;
-            else isDigit = base->classification[formatChar] & kCtypeDigit;
-            if (isDigit == 0) break;
+            if (formatChar < 0 || formatChar >= kCtypeCharLimit)
+                isDigit = 1;
+            if (isDigit != 0)
+                isDigit = 0;
+            else
+                isDigit = base->classification[formatChar] & kCtypeDigit;
+            if (isDigit == 0)
+                break;
             groupWidth *= kDecimalRadix;
             groupWidth = groupWidth + (signed char)raw - kAsciiDigitZero;
             ++formatAddressCursor;
         }
-        if (groupWidth == 0) groupWidth = 1;
+        if (groupWidth == 0)
+            groupWidth = 1;
         mask = (1 << groupWidth) - 1;
         reversedGroups <<= groupWidth;
         shiftedByte = remainingBits >> groupWidth;
@@ -384,36 +422,42 @@ void EndianFormat_ReverseBitGroups(void* ptr, signed char value) {
 #pragma inline_depth(255)
 
 // Destroy registered format strings and their vector, then optionally delete the formatter.
-void* CSwapEndianFormat_dtor(void* ptr, int shouldDelete) {
+// A named member rather than a destructor: the caller passes the delete flag explicitly.
+// The repeated `!= 0` tests are kept because the original compiles them.
+void* CSwapEndianFormat::Destroy(int shouldDelete) {
     unsigned int count;
     unsigned int base;
-    if (ptr != 0) {
-        count = AsCSwapEndianFormat(ptr)->formatCount;
-        base = (unsigned int)AsCSwapEndianFormat(ptr)->formatStrings;
-        AsCSwapEndianFormat(ptr)->vtbl = __vt__17CSwapEndianFormat;
-        AsCSwapEndianFormat(ptr)->formatCount = count - count;
+    if (this != 0) {
+        count = formatCount;
+        base = (unsigned int)formatStrings;
+        vtbl = __vt__17CSwapEndianFormat;
+        formatCount = count - count;
         base += count * kFormatStringBytes;
         while (count != 0) {
             base -= kFormatStringBytes;
-            if (base != 0 && ((((SmallString12*)base)->state >> kHeapFlagShift) != 0)) appFreeUni__FPv(((SmallString12*)base)->data);
+            if (base != 0 && ((((SmallString12*)base)->state >> kHeapFlagShift) != 0))
+                appFreeUni__FPv(((SmallString12*)base)->data);
             --count;
         }
-        if ((char*)ptr + kFormatVectorOffset != 0 && (char*)ptr + kFormatVectorOffset != 0 && (char*)ptr + kFormatVectorOffset != 0 && (char*)ptr + kFormatVectorOffset != 0) {
-            if ((unsigned int)AsCSwapEndianFormat(ptr)->formatStrings != 0) {
-                count = AsCSwapEndianFormat(ptr)->formatCount;
-                AsCSwapEndianFormat(ptr)->formatCount = count - count;
-                base = (unsigned int)AsCSwapEndianFormat(ptr)->formatStrings + count * kFormatStringBytes;
+        if ((char*)this + kFormatVectorOffset != 0 && (char*)this + kFormatVectorOffset != 0 &&
+            (char*)this + kFormatVectorOffset != 0 && (char*)this + kFormatVectorOffset != 0) {
+            if ((unsigned int)formatStrings != 0) {
+                count = formatCount;
+                formatCount = count - count;
+                base = (unsigned int)formatStrings + count * kFormatStringBytes;
                 while (count != 0) {
                     base -= kFormatStringBytes;
-                    if (base != 0 && ((((SmallString12*)base)->state >> kHeapFlagShift) != 0)) appFreeUni__FPv(((SmallString12*)base)->data);
+                    if (base != 0 && ((((SmallString12*)base)->state >> kHeapFlagShift) != 0))
+                        appFreeUni__FPv(((SmallString12*)base)->data);
                     --count;
                 }
-                appFreeUni__FPv((void*)(unsigned int)AsCSwapEndianFormat(ptr)->formatStrings);
+                appFreeUni__FPv((void*)(unsigned int)formatStrings);
             }
         }
-        if (shouldDelete > 0) __dl__FPv(ptr);
+        if (shouldDelete > 0)
+            __dl__FPv(this);
     }
-    return ptr;
+    return this;
 }
 
 // Destroy a temporary vector's constructed string range, then release its allocation.
@@ -468,14 +512,20 @@ struct ErrorBuffer {
     // Guard newly allocated exception text until its shared owner is constructed.
     ErrorBuffer(char* p, char* t) : pointer(p), tag(t) {}
     // Free text only if ownership has not been transferred.
-    ~ErrorBuffer() { if (pointer) __dla__FPv(pointer); }
+    ~ErrorBuffer() {
+        if (pointer)
+            __dla__FPv(pointer);
+    }
 };
 struct ErrorNode {
     void* vtable;
     int refs, count;
     char* data;
     // Adopt the exception's character allocation with initial reference counts.
-    ErrorNode(char* p) : refs(1), count(1) { vtable = s_sharedCharDeleterVtable; data = p; }
+    ErrorNode(char* p) : refs(1), count(1) {
+        vtable = s_sharedCharDeleterVtable;
+        data = p;
+    }
 };
 
 struct ErrorBase {
@@ -485,8 +535,10 @@ struct ErrorBase {
     // Copy borrowed error text into a shared, owned exception buffer.
     ErrorBase(const char* message) {
         vtable = __vt__Q23std11logic_error;
-        volatile char pad[4]; pad[0] = 0;
-        char tag[4]; tag[0] = 0;
+        volatile char pad[4];
+        pad[0] = 0;
+        char tag[4];
+        tag[0] = 0;
         unsigned int n = strlen(message) + 1;
         data = (char*)__nwa__FUl((n << 1) - n);
         {
@@ -500,26 +552,40 @@ struct ErrorBase {
 };
 struct LengthError : ErrorBase {
     // Specialize the owning logic-error representation as a length error.
-    LengthError(const char* message) : ErrorBase(message) { vtable = __vt__Q23std12length_error; }
+    LengthError(const char* message) : ErrorBase(message) {
+        vtable = __vt__Q23std12length_error;
+    }
 };
 
-#define THROW_LENGTH_ERROR() do { \
-    char* message = (char*)endianFormatErrorStrings; \
-    LengthError exception(message); \
-    __throw(message + 0x14, &exception, (void*)__dt__Q23std12length_errorFv); \
-} while (0)
+#define THROW_LENGTH_ERROR()                                                      \
+    do {                                                                          \
+        char* message = (char*)endianFormatErrorStrings;                          \
+        LengthError exception(message);                                           \
+        __throw(message + 0x14, &exception, (void*)__dt__Q23std12length_errorFv); \
+    } while (0)
 
 struct LocalBlob : SmallString12 {
     // Release a temporary string's heap representation, if selected by its flag.
     ~LocalBlob() {
-        if ((state >> kHeapFlagShift) != 0) appFreeUni__FPv(data);
+        if ((state >> kHeapFlagShift) != 0)
+            appFreeUni__FPv(data);
     }
 };
-struct AllocatorTag { char value; char padding[3]; };
-struct Item { unsigned int flags, length, heapDataAddress; };
-struct TempVector_u80068524 { SmallString12* begin; unsigned int count; unsigned int capacity; void* owner; unsigned int offset;
+struct AllocatorTag {
+    char value;
+    char padding[3];
+};
+struct Item {
+    unsigned int flags, length, heapDataAddress;
+};
+struct TempVector {
+    SmallString12* begin;
+    unsigned int count;
+    unsigned int capacity;
+    void* owner;
+    unsigned int offset;
     // Destroy only the constructed interval, then free this temporary's storage.
-    ~TempVector_u80068524() {
+    ~TempVector() {
         SmallString12* first = begin + offset;
         SmallString12* end = first + count;
         while ((unsigned int)end > (unsigned int)first) {
@@ -530,7 +596,8 @@ struct TempVector_u80068524 { SmallString12* begin; unsigned int count; unsigned
         count = 0;
         if (begin != 0) {
             unsigned int n = count;
-            volatile AllocatorTag clearTag; clearTag.value = 0;
+            volatile AllocatorTag clearTag;
+            clearTag.value = 0;
             *(volatile unsigned int*)&count = n - n;
             SmallString12* entry = begin + n;
             while (n != 0) {
@@ -544,30 +611,54 @@ struct TempVector_u80068524 { SmallString12* begin; unsigned int count; unsigned
     }
 };
 
-struct CountState { unsigned int offset; char* cursor; unsigned int unused; };
+struct CountState {
+    unsigned int offset;
+    char* cursor;
+    unsigned int unused;
+};
 // The descriptor table in the game data holds CodeWarrior member-function records {this adjustment, slot, code
 // token} (12 bytes).
 typedef void (CountState::*CountCall)(unsigned int);
-struct CountDesc { char chars[4]; CountCall call; unsigned int arg; };
-struct CountTable { CountDesc desc[8];
+struct CountDesc {
+    char chars[4];
+    CountCall call;
+    unsigned int arg;
+};
+struct CountTable {
+    CountDesc desc[8];
     // Resolve a token's paired character spellings; unknown tokens return null.
     CountDesc* find(char* cursor) {
         CountDesc* selected = 0;
         for (int j = 0; j < 8; ++j) {
-            if (*cursor == desc[j].chars[0] || *cursor == desc[j].chars[1]) { selected = &desc[j]; break; }
+            if (*cursor == desc[j].chars[0] || *cursor == desc[j].chars[1]) {
+                selected = &desc[j];
+                break;
+            }
         }
         return selected;
     }
 };
-struct WriteState { unsigned int offset; char* cursor; unsigned int dataAddress; };
+struct WriteState {
+    unsigned int offset;
+    char* cursor;
+    unsigned int dataAddress;
+};
 typedef void (WriteState::*WriteCall)(unsigned int);
-struct WriteDesc { char chars[4]; WriteCall call; unsigned int arg; };
-struct WriteTable { WriteDesc desc[8];
+struct WriteDesc {
+    char chars[4];
+    WriteCall call;
+    unsigned int arg;
+};
+struct WriteTable {
+    WriteDesc desc[8];
     // Resolve a token's swap callback; unknown tokens return null.
     WriteDesc* find(char* cursor) {
         WriteDesc* selected = 0;
         for (int j = 0; j < 8; ++j) {
-            if (*cursor == desc[j].chars[0] || *cursor == desc[j].chars[1]) { selected = &desc[j]; break; }
+            if (*cursor == desc[j].chars[0] || *cursor == desc[j].chars[1]) {
+                selected = &desc[j];
+                break;
+            }
         }
         return selected;
     }
@@ -575,10 +666,13 @@ struct WriteTable { WriteDesc desc[8];
 extern WriteTable endianFormatSwapDescriptors;
 // Skip ASCII spaces and return null when there is no next token.
 static inline char* skip_spaces(char* p) {
-    if (p == 0) return 0;
+    if (p == 0)
+        return 0;
     while (*p != 0) {
-        if (*p == ' ') ++p;
-        else return p;
+        if (*p == ' ')
+            ++p;
+        else
+            return p;
     }
     return 0;
 }
@@ -589,7 +683,8 @@ static inline char* skip_spaces(char* p) {
 #pragma use_lmw_stmw on
 // Locate the next measurement token, or null at the end of the pattern.
 static inline char* skip_count_spaces(char* p) {
-    if (p == 0) return 0;
+    if (p == 0)
+        return 0;
     for (; *p != 0;) {
         if (*p == ' ') {
             ++p;
@@ -612,9 +707,9 @@ static inline char* skip_count_spaces(char* p) {
 // callers must supply a recognized, terminated pattern and valid group widths.
 // Return 0 on size mismatch; 1 on success (also when iterations <= 0).
 // pattern is borrowed only during this call; appended strings own their copies.
-int CSwapEndianFormat_RegisterFormat(void* object, const char* pattern, int outputSize, int iterations) {
+int CSwapEndianFormat::RegisterFormat(const char* pattern, int outputSize, int iterations) {
     // Phase 1: measure one record without changing the registered vector.
-    void* context = (void*)AsCSwapEndianFormat(object)->context;
+    void* context = (void*)this->context;
     CountState counter;
     counter.cursor = skip_count_spaces((char*)pattern);
     counter.offset = 0;
@@ -656,13 +751,15 @@ int CSwapEndianFormat_RegisterFormat(void* object, const char* pattern, int outp
             unsigned int len = strlen(pattern);
             String_ReserveCapacity(&blob, len);
             volatile AllocatorTag allocator;
-            AllocatorTag flag; flag.value = allocator.value;
+            AllocatorTag flag;
+            flag.value = allocator.value;
             String_ReplaceRange(&blob, 0, 0, pattern, pattern + len, &flag.value);
-            unsigned int size = AsCSwapEndianFormat(object)->formatCount;
-            unsigned int capacity = AsCSwapEndianFormat(object)->formatCapacity;
-            volatile AllocatorTag insertTag; insertTag.value = 0;
+            unsigned int size = formatCount;
+            unsigned int capacity = formatCapacity;
+            volatile AllocatorTag insertTag;
+            insertTag.value = 0;
             if (size < capacity) {
-                SmallString12* item = (SmallString12*)((unsigned int)AsCSwapEndianFormat(object)->formatStrings + size * kFormatStringBytes);
+                SmallString12* item = (SmallString12*)((unsigned int)formatStrings + size * kFormatStringBytes);
                 if (item != 0) {
                     try {
                         unsigned int state = blob.state;
@@ -677,27 +774,30 @@ int CSwapEndianFormat_RegisterFormat(void* object, const char* pattern, int outp
                             item->data = 0;
                             String_ReserveCapacity(item, blob.length);
                             volatile AllocatorTag allocator2;
-                            AllocatorTag flag2; flag2.value = allocator2.value;
+                            AllocatorTag flag2;
+                            flag2.value = allocator2.value;
                             String_ReplaceRange(item, 0, 0, blob.data, blob.data + blob.length, &flag2.value);
                         }
                     } catch (...) {
                         throw;
                     }
                 }
-                ++AsCSwapEndianFormat(object)->formatCount;
+                ++formatCount;
             } else {
-                volatile AllocatorTag growthTag; growthTag.value = 0;
-                volatile AllocatorTag checkTag; checkTag.value = 0;
+                volatile AllocatorTag growthTag;
+                growthTag.value = 0;
+                volatile AllocatorTag checkTag;
+                checkTag.value = 0;
                 if (kMaxFormatStrings - capacity < 1u)
                     THROW_LENGTH_ERROR();
-                unsigned int need = AsCSwapEndianFormat(object)->formatCount + 1 - AsCSwapEndianFormat(object)->formatCapacity;
-                TempVector_u80068524 tmp;
+                unsigned int need = formatCount + 1 - formatCapacity;
+                TempVector tmp;
                 tmp.begin = 0;
                 tmp.count = 0;
                 tmp.capacity = 0;
-                tmp.owner = &AsCSwapEndianFormat(object)->formatCapacity;
+                tmp.owner = &formatCapacity;
                 tmp.offset = 0;
-                capacity = AsCSwapEndianFormat(object)->formatCapacity;
+                capacity = formatCapacity;
                 if (need > kMaxFormatStrings - capacity)
                     THROW_LENGTH_ERROR();
                 unsigned int newCapacity;
@@ -710,15 +810,17 @@ int CSwapEndianFormat_RegisterFormat(void* object, const char* pattern, int outp
                 } else {
                     newCapacity = kMaxFormatStrings;
                 }
-                volatile AllocatorTag reserveTag; reserveTag.value = 0;
+                volatile AllocatorTag reserveTag;
+                reserveTag.value = 0;
                 if (newCapacity > kMaxFormatStrings)
                     THROW_LENGTH_ERROR();
                 tmp.begin = (SmallString12*)appMallocDummy__FUl(newCapacity * kFormatStringBytes);
                 tmp.capacity = newCapacity;
-                tmp.offset = AsCSwapEndianFormat(object)->formatCount;
+                tmp.offset = formatCount;
                 SmallString12* slot = tmp.begin + tmp.offset + tmp.count;
                 unsigned int left = 1;
-                volatile AllocatorTag constructTag; constructTag.value = 0;
+                volatile AllocatorTag constructTag;
+                constructTag.value = 0;
                 while (left != 0) {
                     if (slot != 0) {
                         try {
@@ -734,7 +836,8 @@ int CSwapEndianFormat_RegisterFormat(void* object, const char* pattern, int outp
                                 slot->data = 0;
                                 String_ReserveCapacity(slot, blob.length);
                                 volatile AllocatorTag allocator3;
-                                AllocatorTag flag3; flag3.value = allocator3.value;
+                                AllocatorTag flag3;
+                                flag3.value = allocator3.value;
                                 String_ReplaceRange(slot, 0, 0, blob.data, blob.data + blob.length, &flag3.value);
                             }
                         } catch (...) {
@@ -745,25 +848,28 @@ int CSwapEndianFormat_RegisterFormat(void* object, const char* pattern, int outp
                     ++slot;
                     ++tmp.count;
                 }
-                SmallString12* oldBegin = (SmallString12*)(unsigned int)AsCSwapEndianFormat(object)->formatStrings;
-                unsigned int oldSize = AsCSwapEndianFormat(object)->formatCount;
-                unsigned int moved = (unsigned int)(((char*)(oldBegin + oldSize) - (char*)oldBegin) / kFormatStringBytes);
-                volatile AllocatorTag moveTag; moveTag.value = 0;
+                SmallString12* oldBegin = (SmallString12*)(unsigned int)formatStrings;
+                unsigned int oldSize = formatCount;
+                unsigned int moved =
+                    (unsigned int)(((char*)(oldBegin + oldSize) - (char*)oldBegin) / kFormatStringBytes);
+                volatile AllocatorTag moveTag;
+                moveTag.value = 0;
                 tmp.offset = tmp.offset - moved;
                 memcpy(tmp.begin + tmp.offset, oldBegin, moved * kFormatStringBytes);
                 memset(oldBegin, 0, moved * kFormatStringBytes);
                 tmp.count = tmp.count + moved;
-                oldBegin = (SmallString12*)(unsigned int)AsCSwapEndianFormat(object)->formatStrings;
-                oldSize = AsCSwapEndianFormat(object)->formatCount;
-                unsigned int oldCapacity = AsCSwapEndianFormat(object)->formatCapacity;
+                oldBegin = (SmallString12*)(unsigned int)formatStrings;
+                oldSize = formatCount;
+                unsigned int oldCapacity = formatCapacity;
                 SmallString12* newBegin = tmp.begin;
                 unsigned int newCount = tmp.count;
                 tmp.begin = oldBegin;
-                volatile AllocatorTag swapTag; swapTag.value = 0;
-                AsCSwapEndianFormat(object)->formatCapacity = tmp.capacity;
+                volatile AllocatorTag swapTag;
+                swapTag.value = 0;
+                formatCapacity = tmp.capacity;
                 tmp.capacity = oldCapacity;
-                AsCSwapEndianFormat(object)->formatStrings = newBegin;
-                AsCSwapEndianFormat(object)->formatCount = newCount;
+                formatStrings = newBegin;
+                formatCount = newCount;
                 tmp.count = oldSize;
             }
         }
@@ -775,15 +881,14 @@ int CSwapEndianFormat_RegisterFormat(void* object, const char* pattern, int outp
 
 #pragma use_lmw_stmw on
 // Validate total size, copy the payload, then execute each stored endian-swap pattern.
-int CSwapEndianFormat_CopyAndSwap(void* object, void* output, void* input, int outputSize) {
+int CSwapEndianFormat::CopyAndSwap(void* output, void* input, int outputSize) {
     // Measure every registered record before touching output; mismatch returns 0.
     // input/output are borrowed; memcpy's overlap restrictions apply.
     WriteState writer;
     unsigned int size = 0;
     Item* entry;
-    for (entry = (*(Item**)&AsCSwapEndianFormat(object)->formatStrings);
-         entry != (*(Item**)&AsCSwapEndianFormat(object)->formatStrings) + (*(int*)&AsCSwapEndianFormat(object)->formatCount); ++entry) {
-        void* context = (void*)AsCSwapEndianFormat(object)->context;
+    for (entry = (*(Item**)&formatStrings); entry != (*(Item**)&formatStrings) + (*(int*)&formatCount); ++entry) {
+        void* context = (void*)this->context;
         char* key = (entry->flags >> kHeapFlagShift) == 0 ? (char*)entry + 1 : (char*)entry->heapDataAddress;
         CountCall call;
         CountState counter;
@@ -799,14 +904,16 @@ int CSwapEndianFormat_CopyAndSwap(void* object, void* output, void* input, int o
         }
         unsigned int amount = counter.offset;
         unsigned int rem = amount & kWordMask;
-        if (rem != 0) amount += kWordBytes - rem;
+        if (rem != 0)
+            amount += kWordBytes - rem;
         size += amount;
     }
-    if (outputSize != (int)size) return 0;
+    if (outputSize != (int)size)
+        return 0;
     memcpy(output, input, outputSize);
-    for (Item* entry2 = (*(Item**)&AsCSwapEndianFormat(object)->formatStrings);
-         entry2 != (*(Item**)&AsCSwapEndianFormat(object)->formatStrings) + (*(int*)&AsCSwapEndianFormat(object)->formatCount); ++entry2) {
-        void* context = (void*)AsCSwapEndianFormat(object)->context;
+    for (Item* entry2 = (*(Item**)&formatStrings); entry2 != (*(Item**)&formatStrings) + (*(int*)&formatCount);
+         ++entry2) {
+        void* context = (void*)this->context;
         char* key = (entry2->flags >> kHeapFlagShift) == 0 ? (char*)entry2 + 1 : (char*)entry2->heapDataAddress;
         writer.dataAddress = (unsigned int)output;
         writer.cursor = skip_spaces(key);
@@ -820,7 +927,8 @@ int CSwapEndianFormat_CopyAndSwap(void* object, void* output, void* input, int o
         }
         unsigned int amount = writer.dataAddress;
         unsigned int rem = amount & kWordMask;
-        if (rem != 0) amount += kWordBytes - rem;
+        if (rem != 0)
+            amount += kWordBytes - rem;
         output = (void*)amount;
     }
     return 1;

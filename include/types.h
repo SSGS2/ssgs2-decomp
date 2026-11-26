@@ -32,7 +32,10 @@ typedef unsigned long size_t;
 typedef int UNKWORD;
 typedef void UNKTYPE;
 
-enum { FALSE, TRUE };
+enum {
+    FALSE,
+    TRUE
+};
 typedef int BOOL;
 
 typedef void (*funcptr_t)(void);

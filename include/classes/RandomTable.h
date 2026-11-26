@@ -6,8 +6,8 @@
 struct RandomTable {
     char pad_000[0x10];
     unsigned int* data; // 0x10
-    int nextWordIndex; // 0x14
-    unsigned int seed; // 0x18
+    int nextWordIndex;  // 0x14
+    unsigned int seed;  // 0x18
 };
 
 #define OFF(f, o) typedef char RandomTable_off_##f[((int)&((RandomTable*)0)->f == (o)) ? 1 : -1]

@@ -13,7 +13,8 @@ struct ExhibitionModelPositionRecord {
     float viewportBottomLimit2;
     float rotationX;
 };
-#define OFF(f, o) typedef char ExhibitionModelPositionRecord_off_##f[((int)&((ExhibitionModelPositionRecord*)0)->f == (o)) ? 1 : -1]
+#define OFF(f, o) \
+    typedef char ExhibitionModelPositionRecord_off_##f[((int)&((ExhibitionModelPositionRecord*)0)->f == (o)) ? 1 : -1]
 OFF(cameraDistance, 0x4);
 OFF(cameraDistanceLimit1, 0x8);
 OFF(cameraDistanceLimit2, 0xC);

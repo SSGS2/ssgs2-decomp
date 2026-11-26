@@ -1,8 +1,9 @@
+// Spatial audio: listener and source setup, cone gain, the Catmull-Rom curve evaluation,
+// and the audio singleton accessors and output mode settings.
+
 #include <decomp/static_init.h>
 #include "classes/GtlAudioRuntimeState.h"
 #include "classes/GtlAudioCurve.h"
-// Translation unit 0x803FDEC8-0x803FF5B8 (15 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -44,7 +45,8 @@ extern "C" void Mtx44_TransformPointPerspective(void*, const void*, const float*
 extern "C" void Mtx44_TransformDirection(float*, const float*, const float*);
 extern "C" int gtl_Audio_CalculatePanAndAttenuation(const float*, const float*, const float*, float*);
 
-extern float s_spatialAudioDirectionAndDistance[4]; // [0..2] normalized direction, [3] distance (read by gtl_Audio_CalculatePanAndAttenuation as data[3])
+extern float s_spatialAudioDirectionAndDistance
+    [4]; // [0..2] normalized direction, [3] distance (read by gtl_Audio_CalculatePanAndAttenuation as data[3])
 
 struct SpatialAudioSource {
     // Position/velocity use the caller's common scene units; no conversion occurs.
@@ -68,11 +70,26 @@ struct SpatialAudioSource {
 };
 // Borrowed emitter-layout view; an inline cast helper changed generated code.
 #define AsSpatialSource(p) ((SpatialAudioSource*)(p))
-enum AudioOutputMode { kAudioMono = 1, kAudioStereo = 2, kAudioSurround = 3, kAudioSurroundAlternate = 4 };
-enum SpatialCoordinateMode { kSpatialRelative = 0, kSpatialDisabled = 2 };
-enum AudioCurveMode { kCurveLinear = 1, kCurveCatmullRom = 2 };
-enum SpatialParameterSlot { kSpatialPanX = 0, kSpatialPanDepth = 1,
-    kSpatialGain = 2, kSpatialDopplerRatio = 3 };
+enum AudioOutputMode {
+    kAudioMono = 1,
+    kAudioStereo = 2,
+    kAudioSurround = 3,
+    kAudioSurroundAlternate = 4
+};
+enum SpatialCoordinateMode {
+    kSpatialRelative = 0,
+    kSpatialDisabled = 2
+};
+enum AudioCurveMode {
+    kCurveLinear = 1,
+    kCurveCatmullRom = 2
+};
+enum SpatialParameterSlot {
+    kSpatialPanX = 0,
+    kSpatialPanDepth = 1,
+    kSpatialGain = 2,
+    kSpatialDopplerRatio = 3
+};
 
 // Compute pan, distance/cone gain and Doppler ratio, optionally culling beyond maximum distance.
 // Borrowed inputs: listenerState = 12 floats [position xyz, velocity xyz, forward
@@ -81,7 +98,8 @@ enum SpatialParameterSlot { kSpatialPanX = 0, kSpatialPanDepth = 1,
 // Pan coordinates use the configured pan radius; gain and Doppler are multipliers.
 // A NON-NULL cullAtMaximumDistance enables culling; its pointed-to int is never read.
 // Return 1 includes disabled/zero-distance/culled cases; 0 means the pan helper failed.
-int gtl_Audio_CalculateSpatialParameters(const float* listenerState, SpatialAudioSource* sourceState, float* parameters, int* cullAtMaximumDistance) {
+int gtl_Audio_CalculateSpatialParameters(const float* listenerState, SpatialAudioSource* sourceState, float* parameters,
+                                         int* cullAtMaximumDistance) {
     // Phase 1: neutral pan/unit gains, distance check and optional maximum-distance mute.
     parameters[1] = kFloat_0_spatialAudio;
     parameters[0] = kFloat_0_spatialAudio;
@@ -129,7 +147,8 @@ int gtl_Audio_CalculateSpatialParameters(const float* listenerState, SpatialAudi
     // Pan azimuth is atan2(x,-z): forward is -Z, horizontal right is +X, up is +Y.
     // The global scratch vector makes this routine non-reentrant.
     Vec3_Normalize(s_spatialAudioDirectionAndDistance, sourceForPan);
-    if (!gtl_Audio_CalculatePanAndAttenuation(listenerForPan, sourceForPan, s_spatialAudioDirectionAndDistance, parameters))
+    if (!gtl_Audio_CalculatePanAndAttenuation(listenerForPan, sourceForPan, s_spatialAudioDirectionAndDistance,
+                                              parameters))
         return 0;
     if (sourceState->dopplerFactor == kFloat_0_spatialAudio) {
         parameters[3] = kFloat_1_SpatialAudio;
@@ -142,12 +161,15 @@ int gtl_Audio_CalculateSpatialParameters(const float* listenerState, SpatialAudi
     float listenerDopplerVelocity = dopplerAmount * listenerVelocityAlongRay;
     float sourceVelocityAlongRay = Vec3_Dot(sourceForPan + 3, s_spatialAudioDirectionAndDistance);
     float sourceDopplerVelocity = dopplerAmount * sourceVelocityAlongRay;
-    if ((listenerDopplerVelocity < 0.0f ? -listenerDopplerVelocity : listenerDopplerVelocity) >= s_float340_29_SpatialAudio)
+    if ((listenerDopplerVelocity < 0.0f ? -listenerDopplerVelocity : listenerDopplerVelocity) >=
+        s_float340_29_SpatialAudio)
         parameters[3] = kDopplerListenerSupersonicRatio;
-    else if ((sourceDopplerVelocity < 0.0f ? -sourceDopplerVelocity : sourceDopplerVelocity) >= s_float340_29_SpatialAudio)
+    else if ((sourceDopplerVelocity < 0.0f ? -sourceDopplerVelocity : sourceDopplerVelocity) >=
+             s_float340_29_SpatialAudio)
         parameters[3] = kFloat_0_spatialAudio;
     else
-        parameters[3] = (s_float340_29_SpatialAudio - sourceDopplerVelocity) / (s_float340_29_SpatialAudio - listenerDopplerVelocity);
+        parameters[3] = (s_float340_29_SpatialAudio - sourceDopplerVelocity) /
+                        (s_float340_29_SpatialAudio - listenerDopplerVelocity);
     return 1;
 }
 
@@ -173,7 +195,8 @@ extern float kFloat_1_5707964_tweenDartsAudio;
 extern float kSmallPanSectorDivisor;
 extern float kSurroundOuterSectorDivisor;
 extern float kFloat_0_5_SpatialAudio;
-extern signed char s_surroundPanQuarterAngleInitialized, s_spatialAudioSmallPanAngleInitialized, s_surroundPanOuterAngleInitialized;
+extern signed char s_surroundPanQuarterAngleInitialized, s_spatialAudioSmallPanAngleInitialized,
+    s_surroundPanOuterAngleInitialized;
 extern float s_surroundPanQuarterAngle, s_spatialAudioSmallPanAngle, s_surroundPanOuterAngle;
 extern int gtl_Audio_GetOutputMode();
 extern double atan2(double, double);
@@ -191,14 +214,17 @@ static inline float Seg803FEC2C(float a, float x0, float x1, float y0, float y1)
 // Same output-slot contract as CalculateSpatialParameters; writes slots 0..2 only.
 // sourceState must already be in the intended origin-based pan frame. directionAndDistance
 // stores normalized source direction plus distance at [3]; unused listener input is retained by ABI.
-int gtl_Audio_CalculatePanAndAttenuation(const float* unused, const float* sourceState, const float* directionAndDistance, float* parameters) {
+int gtl_Audio_CalculatePanAndAttenuation(const float* unused, const float* sourceState,
+                                         const float* directionAndDistance, float* parameters) {
     // Phase 1: clamp the XZ projection to the pan radius and derive azimuth/distance.
-    if (directionAndDistance[3] <= kFloat_0_spatialAudio) return 0;
-    float horizontalPosition[6] = { sourceState[0], 0.0f, sourceState[2], 0.0f, 0.0f, 0.0f };
+    if (directionAndDistance[3] <= kFloat_0_spatialAudio)
+        return 0;
+    float horizontalPosition[6] = {sourceState[0], 0.0f, sourceState[2], 0.0f, 0.0f, 0.0f};
     float horizontalDistance = Vec3_Length(horizontalPosition);
     if (horizontalDistance > s_spatialAudioPanRadius) {
         float radiusScale = s_spatialAudioPanRadius / horizontalDistance;
-        horizontalPosition[0] *= radiusScale; horizontalPosition[2] *= radiusScale;
+        horizontalPosition[0] *= radiusScale;
+        horizontalPosition[2] *= radiusScale;
     }
     float clampedDistance = Vec3_Length(horizontalPosition);
     float panPosition[3];
@@ -207,38 +233,74 @@ int gtl_Audio_CalculatePanAndAttenuation(const float* unused, const float* sourc
     panPosition[2] = sourceState[2] * clampedDistance / directionAndDistance[3];
     float azimuth = (float)atan2(panPosition[0], -panPosition[2]);
     float panDistance = Vec3_Length(panPosition);
-    if (!s_surroundPanQuarterAngleInitialized) { s_surroundPanQuarterAngleInitialized = 1; s_surroundPanQuarterAngle = kSurroundPanQuarterAngleDefault; }
-    if (!s_spatialAudioSmallPanAngleInitialized) { s_spatialAudioSmallPanAngleInitialized = 1; s_spatialAudioSmallPanAngle = kFloat_3_1415927 / kSmallPanSectorDivisor; }
-    if (!s_surroundPanOuterAngleInitialized) { s_surroundPanOuterAngleInitialized = 1; s_surroundPanOuterAngle = kFloat_6_2831855 / kSurroundOuterSectorDivisor; }
+    if (!s_surroundPanQuarterAngleInitialized) {
+        s_surroundPanQuarterAngleInitialized = 1;
+        s_surroundPanQuarterAngle = kSurroundPanQuarterAngleDefault;
+    }
+    if (!s_spatialAudioSmallPanAngleInitialized) {
+        s_spatialAudioSmallPanAngleInitialized = 1;
+        s_spatialAudioSmallPanAngle = kFloat_3_1415927 / kSmallPanSectorDivisor;
+    }
+    if (!s_surroundPanOuterAngleInitialized) {
+        s_surroundPanOuterAngleInitialized = 1;
+        s_surroundPanOuterAngle = kFloat_6_2831855 / kSurroundOuterSectorDivisor;
+    }
     int mode = gtl_Audio_GetOutputMode();
     // Phase 2: walk the piecewise pan perimeter for stereo or surround. Mono/unknown
     // modes use centered pan; all modes still receive distance/cone attenuation.
     float panX, panDepth;
     if (mode == kAudioStereo) {
         float pi = kFloat_3_1415927, quarter = s_surroundPanQuarterAngle;
-        if (azimuth < -pi + quarter)      { panX = Seg803FEC2C(azimuth, -pi, -pi + quarter, 0.0f, -1.0f); panDepth = 1.0f; }
-        else if (azimuth < -quarter)      { panX = -1.0f; panDepth = Seg803FEC2C(azimuth, -pi + quarter, -quarter, 1.0f, -1.0f); }
-        else if (azimuth < quarter)       { panX = Seg803FEC2C(azimuth, -quarter, quarter, -1.0f, 1.0f); panDepth = -1.0f; }
-        else if (azimuth < pi - quarter)  { panX = 1.0f; panDepth = Seg803FEC2C(azimuth, quarter, pi - quarter, -1.0f, 1.0f); }
-        else                        { panX = Seg803FEC2C(azimuth, pi - quarter, pi, 1.0f, 0.0f); panDepth = 1.0f; }
+        if (azimuth < -pi + quarter) {
+            panX = Seg803FEC2C(azimuth, -pi, -pi + quarter, 0.0f, -1.0f);
+            panDepth = 1.0f;
+        } else if (azimuth < -quarter) {
+            panX = -1.0f;
+            panDepth = Seg803FEC2C(azimuth, -pi + quarter, -quarter, 1.0f, -1.0f);
+        } else if (azimuth < quarter) {
+            panX = Seg803FEC2C(azimuth, -quarter, quarter, -1.0f, 1.0f);
+            panDepth = -1.0f;
+        } else if (azimuth < pi - quarter) {
+            panX = 1.0f;
+            panDepth = Seg803FEC2C(azimuth, quarter, pi - quarter, -1.0f, 1.0f);
+        } else {
+            panX = Seg803FEC2C(azimuth, pi - quarter, pi, 1.0f, 0.0f);
+            panDepth = 1.0f;
+        }
         parameters[0] = panX * s_spatialAudioPanRadius * panDistance;
         parameters[1] = panDepth * s_spatialAudioPanRadius * panDistance;
     } else if (mode == kAudioSurround || mode == kAudioSurroundAlternate) {
         float pi = kFloat_3_1415927, half = kFloat_1_5707964_tweenDartsAudio;
         float big = s_surroundPanOuterAngle, small = s_spatialAudioSmallPanAngle;
-        if (azimuth < -big)        { panX = Seg803FEC2C(azimuth, -pi, -big, 0.0f, -1.0f); panDepth = 1.0f; }
-        else if (azimuth < -half)  { panX = -1.0f; panDepth = Seg803FEC2C(azimuth, -big, -half, 1.0f, 0.0f); }
-        else if (azimuth < -small) { panX = -1.0f; panDepth = Seg803FEC2C(azimuth, -half, -small, 0.0f, -1.0f); }
-        else if (azimuth < small)  { panX = Seg803FEC2C(azimuth, -small, small, -1.0f, 1.0f); panDepth = -1.0f; }
-        else if (azimuth < half)   { panX = 1.0f; panDepth = Seg803FEC2C(azimuth, small, half, -1.0f, 0.0f); }
-        else if (azimuth < big)    { panX = 1.0f; panDepth = Seg803FEC2C(azimuth, half, big, 0.0f, 1.0f); }
-        else                 { panX = Seg803FEC2C(azimuth, big, pi, 1.0f, 0.0f); panDepth = 1.0f; }
+        if (azimuth < -big) {
+            panX = Seg803FEC2C(azimuth, -pi, -big, 0.0f, -1.0f);
+            panDepth = 1.0f;
+        } else if (azimuth < -half) {
+            panX = -1.0f;
+            panDepth = Seg803FEC2C(azimuth, -big, -half, 1.0f, 0.0f);
+        } else if (azimuth < -small) {
+            panX = -1.0f;
+            panDepth = Seg803FEC2C(azimuth, -half, -small, 0.0f, -1.0f);
+        } else if (azimuth < small) {
+            panX = Seg803FEC2C(azimuth, -small, small, -1.0f, 1.0f);
+            panDepth = -1.0f;
+        } else if (azimuth < half) {
+            panX = 1.0f;
+            panDepth = Seg803FEC2C(azimuth, small, half, -1.0f, 0.0f);
+        } else if (azimuth < big) {
+            panX = 1.0f;
+            panDepth = Seg803FEC2C(azimuth, half, big, 0.0f, 1.0f);
+        } else {
+            panX = Seg803FEC2C(azimuth, big, pi, 1.0f, 0.0f);
+            panDepth = 1.0f;
+        }
         float outerCosine = Math_CosApprox(s_surroundPanOuterAngle);
         float innerCosine = Math_CosApprox(s_spatialAudioSmallPanAngle);
         float centerWeight = (innerCosine + outerCosine) * kFloat_0_5_SpatialAudio;
         float outerCosineAgain = Math_CosApprox(s_surroundPanOuterAngle);
         parameters[0] = panX * s_spatialAudioPanRadius * panDistance;
-        parameters[1] = panDepth * s_spatialAudioPanRadius * panDistance + (centerWeight / (centerWeight + -outerCosineAgain)) * (kFloat_1_SpatialAudio - panDistance);
+        parameters[1] = panDepth * s_spatialAudioPanRadius * panDistance +
+                        (centerWeight / (centerWeight + -outerCosineAgain)) * (kFloat_1_SpatialAudio - panDistance);
     } else {
         parameters[0] = parameters[1] = kFloat_0_spatialAudio;
     }
@@ -249,12 +311,21 @@ int gtl_Audio_CalculatePanAndAttenuation(const float* unused, const float* sourc
     if (curve && ((Curve*)curve)->count && ((Curve*)curve)->mode) { // 0x803FEC2C.
         CurvePoint* points = ((Curve*)curve)->points;
         unsigned int pointCount = ((Curve*)curve)->count;
-        if (distance <= points[0].x) distanceGain=points[0].y;
-        else if (distance >= points[pointCount-1].x) distanceGain=points[pointCount-1].y;
-        else distanceGain=gtl_AudioCurve_Evaluate((Curve*)curve,distance);
-    } else if (distance <= AsSpatialSource(sourceState)->referenceDistance) distanceGain=1.0f;
-    else { if (distance > AsSpatialSource(sourceState)->maximumDistance) distance=AsSpatialSource(sourceState)->maximumDistance; distanceGain=AsSpatialSource(sourceState)->referenceDistance/distance; }
-    parameters[2] = distanceGain * ((float (*)(const float*, const float*))gtl_Audio_CalculateConeGain)(sourceState, directionAndDistance);
+        if (distance <= points[0].x)
+            distanceGain = points[0].y;
+        else if (distance >= points[pointCount - 1].x)
+            distanceGain = points[pointCount - 1].y;
+        else
+            distanceGain = gtl_AudioCurve_Evaluate((Curve*)curve, distance);
+    } else if (distance <= AsSpatialSource(sourceState)->referenceDistance)
+        distanceGain = 1.0f;
+    else {
+        if (distance > AsSpatialSource(sourceState)->maximumDistance)
+            distance = AsSpatialSource(sourceState)->maximumDistance;
+        distanceGain = AsSpatialSource(sourceState)->referenceDistance / distance;
+    }
+    parameters[2] = distanceGain * ((float (*)(const float*, const float*))gtl_Audio_CalculateConeGain)(
+                                       sourceState, directionAndDistance);
     return 1;
 }
 
@@ -287,15 +358,19 @@ float gtl_AudioCurve_Evaluate(Curve* object, float t) {
     if (object->mode == kCurveCatmullRom) {
         float p0[2], p1[2], p2[2], p3[2], result[2];
         CurvePoint* current = points + index;
-        p1[0] = current[0].x; p1[1] = current[0].y;
-        p2[0] = current[1].x; p2[1] = current[1].y;
+        p1[0] = current[0].x;
+        p1[1] = current[0].y;
+        p2[0] = current[1].x;
+        p2[1] = current[1].y;
         if (index != 0) {
-            p0[0] = current[-1].x; p0[1] = current[-1].y;
+            p0[0] = current[-1].x;
+            p0[1] = current[-1].y;
         } else {
             gtl_Vec2_Copy(p0, p1);
         }
         if (index + 2 <= last) {
-            p3[0] = current[2].x; p3[1] = current[2].y;
+            p3[0] = current[2].x;
+            p3[1] = current[2].y;
         } else {
             gtl_Vec2_Copy(p3, p1);
         }
@@ -413,11 +488,20 @@ int gtl_Audio_SetOutputMode(int value) {
     if ((int)state->outputMode == value)
         return 1;
     switch (value) {
-    case kAudioMono: gtl_AudioController_SetOutputMode(gtl_AudioController_GetInstance(), 0); break;
-    case kAudioStereo: gtl_AudioController_SetOutputMode(gtl_AudioController_GetInstance(), 1); break;
-    case kAudioSurround: gtl_AudioController_SetOutputMode(gtl_AudioController_GetInstance(), 2); break;
-    case kAudioSurroundAlternate: gtl_AudioController_SetOutputMode(gtl_AudioController_GetInstance(), 3); break;
-    default: return 0;
+    case kAudioMono:
+        gtl_AudioController_SetOutputMode(gtl_AudioController_GetInstance(), 0);
+        break;
+    case kAudioStereo:
+        gtl_AudioController_SetOutputMode(gtl_AudioController_GetInstance(), 1);
+        break;
+    case kAudioSurround:
+        gtl_AudioController_SetOutputMode(gtl_AudioController_GetInstance(), 2);
+        break;
+    case kAudioSurroundAlternate:
+        gtl_AudioController_SetOutputMode(gtl_AudioController_GetInstance(), 3);
+        break;
+    default:
+        return 0;
     }
     state->outputMode = value;
     return 1;
@@ -447,7 +531,9 @@ float gtl_Audio_CalculateConeGain(float* object, const float* data) {
         return AsSpatialSource(object)->innerConeGain;
     if (second * kFloat_0_5_SpatialAudio <= angle)
         return AsSpatialSource(object)->outerConeGain;
-    return AsSpatialSource(object)->innerConeGain + (AsSpatialSource(object)->outerConeGain - AsSpatialSource(object)->innerConeGain) * (angle - firstHalf) / (second * kFloat_0_5_SpatialAudio - firstHalf);
+    return AsSpatialSource(object)->innerConeGain +
+           (AsSpatialSource(object)->outerConeGain - AsSpatialSource(object)->innerConeGain) * (angle - firstHalf) /
+               (second * kFloat_0_5_SpatialAudio - firstHalf);
 }
 
 } // extern "C"

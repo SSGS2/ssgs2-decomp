@@ -1,10 +1,25 @@
+// Item-map cell helpers and the tour model preview: cell flags, positions and
+// neighbours, and the preview's model, camera, animation ranges and render
+// parameters.
 #include <decomp/static_init.h>
 #include <decomp/local_class.h>
 #define PREVIEW_FIELD_OFFSET(field) ((int)&((TourModelPreviewView*)0)->field)
-enum { kPreviewTranslationOffset = 0x28, kPreviewCameraOffset = 0x54 };
+enum {
+    kPreviewTranslationOffset = 0x28,
+    kPreviewCameraOffset = 0x54
+};
 
-enum ItemMapDirection { kMapLeft = 0, kMapRight = 1, kMapUp = 2, kMapDown = 3 };
-enum { kItemMapColumns = 5, kItemMapLastColumn = 4, kItemMapLastRow = 6 };
+enum ItemMapDirection {
+    kMapLeft = 0,
+    kMapRight = 1,
+    kMapUp = 2,
+    kMapDown = 3
+};
+enum {
+    kItemMapColumns = 5,
+    kItemMapLastColumn = 4,
+    kItemMapLastRow = 6
+};
 
 // Additional fields not yet present in OpenItemEntry.h; flags live in separate storage.
 struct ItemMapEntryView {
@@ -39,15 +54,11 @@ struct PreviewRenderParams {
 #include "game/wvector.h"
 #include "classes/CTourTask.h"
 #include <decomp/cw_bitfields.h>
-
-#define AsCTourTask(p) ((CTourTask*)(p))
-// Translation unit 0x802F562C-0x802F61E4 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+#include "classes/CTask.h"
 
 extern "C" {
 void gtl_Vec2_Copy(void*, void*);
 void Vec3_CopySourceToDestination(void*, void*);
-void* CTask_Ctor(void*);
 
 extern const float kFloat_6_2831855;
 extern float s_previewUnitTwoPi0;
@@ -95,30 +106,38 @@ void WPuppet_UpdateBoneWorldMatrices(void*, int, int, float);
 // Set the separate navigation flag for one edge of an item-map cell.
 void OpenItemEntry_SetDirectionEnabled(void* entry, int direction, int enabled) {
     switch (direction) {
-        case kMapLeft: {
-            struct S { CW_BITS3( unsigned short pad:7, unsigned short directionEnabled:1, unsigned short rest:8) };
-            S* flags = (S*)((ItemMapEntryView*)entry)->flags;
-            flags->directionEnabled = (unsigned int)enabled;
-            break;
-        }
-        case kMapRight: {
-            struct S { CW_BITS3( unsigned short pad:8, unsigned short directionEnabled:1, unsigned short rest:7) };
-            S* flags = (S*)((ItemMapEntryView*)entry)->flags;
-            flags->directionEnabled = (unsigned int)enabled;
-            break;
-        }
-        case kMapUp: {
-            struct S { CW_BITS3( unsigned short pad:9, unsigned short directionEnabled:1, unsigned short rest:6) };
-            S* flags = (S*)((ItemMapEntryView*)entry)->flags;
-            flags->directionEnabled = (unsigned int)enabled;
-            break;
-        }
-        case kMapDown: {
-            struct S { CW_BITS3( unsigned short pad:10, unsigned short directionEnabled:1, unsigned short rest:5) };
-            S* flags = (S*)((ItemMapEntryView*)entry)->flags;
-            flags->directionEnabled = (unsigned int)enabled;
-            break;
-        }
+    case kMapLeft: {
+        struct S {
+            CW_BITS3(unsigned short pad : 7, unsigned short directionEnabled : 1, unsigned short rest : 8)
+        };
+        S* flags = (S*)((ItemMapEntryView*)entry)->flags;
+        flags->directionEnabled = (unsigned int)enabled;
+        break;
+    }
+    case kMapRight: {
+        struct S {
+            CW_BITS3(unsigned short pad : 8, unsigned short directionEnabled : 1, unsigned short rest : 7)
+        };
+        S* flags = (S*)((ItemMapEntryView*)entry)->flags;
+        flags->directionEnabled = (unsigned int)enabled;
+        break;
+    }
+    case kMapUp: {
+        struct S {
+            CW_BITS3(unsigned short pad : 9, unsigned short directionEnabled : 1, unsigned short rest : 6)
+        };
+        S* flags = (S*)((ItemMapEntryView*)entry)->flags;
+        flags->directionEnabled = (unsigned int)enabled;
+        break;
+    }
+    case kMapDown: {
+        struct S {
+            CW_BITS3(unsigned short pad : 10, unsigned short directionEnabled : 1, unsigned short rest : 5)
+        };
+        S* flags = (S*)((ItemMapEntryView*)entry)->flags;
+        flags->directionEnabled = (unsigned int)enabled;
+        break;
+    }
     }
 }
 
@@ -183,28 +202,36 @@ void ModelPreview_SetPosition(void* preview, void* position) {
 
 // Write item-map record flag bit 15 without changing the other flags.
 void OpenItemEntry_SetFlagBit15(void* entry, int enabled) {
-    struct BF { CW_BITS2( unsigned short high:1, unsigned short low:15) };
+    struct BF {
+        CW_BITS2(unsigned short high : 1, unsigned short low : 15)
+    };
     BF* flags = (BF*)((ItemMapEntryView*)entry)->flags;
     flags->high = (unsigned int)enabled;
 }
 
 // Write item-map record flag bit 14 without changing the other flags.
 void OpenItemEntry_SetFlagBit14(void* entry, int enabled) {
-    struct BF { CW_BITS3( unsigned short b15:1, unsigned short b14:1, unsigned short rest:14) };
+    struct BF {
+        CW_BITS3(unsigned short b15 : 1, unsigned short b14 : 1, unsigned short rest : 14)
+    };
     BF* flags = (BF*)((ItemMapEntryView*)entry)->flags;
     flags->b14 = (unsigned int)enabled;
 }
 
 // Write item-map record flag bit 13 without changing the other flags.
 void OpenItemEntry_SetFlagBit13(void* entry, int enabled) {
-    struct BF { CW_BITS4( unsigned short b15:1, unsigned short b14:1, unsigned short b13:1, unsigned short rest:13) };
+    struct BF {
+        CW_BITS4(unsigned short b15 : 1, unsigned short b14 : 1, unsigned short b13 : 1, unsigned short rest : 13)
+    };
     BF* flags = (BF*)((ItemMapEntryView*)entry)->flags;
     flags->b13 = (unsigned int)enabled;
 }
 
 // Write item-map record flag bit 10 without changing the other flags.
 void OpenItemEntry_SetFlagBit10(void* entry, int enabled) {
-    struct BF { CW_BITS3( unsigned short top5:5, unsigned short b10:1, unsigned short rest:10) };
+    struct BF {
+        CW_BITS3(unsigned short top5 : 5, unsigned short b10 : 1, unsigned short rest : 10)
+    };
     BF* flags = (BF*)((ItemMapEntryView*)entry)->flags;
     flags->b10 = (unsigned int)enabled;
 }
@@ -212,35 +239,27 @@ void OpenItemEntry_SetFlagBit10(void* entry, int enabled) {
 // Return the selected animation name when both model and range exist.
 void* ModelPreview_GetAnimationName(void* preview) {
     // Original 0x802F5D34: missing model and animation share the null result.
-    void* p;
+    void* animationRange;
     if (AsModelPreview802F5898(preview)->model == 0 ||
-        (p = AsModelPreview802F5898(preview)->animation) == 0) return 0;
-    return ((PreviewAnimationRange*)p)->name;
+        (animationRange = AsModelPreview802F5898(preview)->animation) == 0)
+        return 0;
+    return ((PreviewAnimationRange*)animationRange)->name;
 }
 
 // Render the loaded preview model through its camera.
-void ModelPreview_Render(void* a) {
-    void* p = AsModelPreview802F5898(a)->model;
-    if (!p) return;
-    void* q = AsModelPreview802F5898(a)->camera;
-    struct V { 
-    virtual void a0() DECOMP_LOCAL_VIRTUAL; virtual void a1() DECOMP_LOCAL_VIRTUAL; virtual void a2() DECOMP_LOCAL_VIRTUAL; virtual void a3() DECOMP_LOCAL_VIRTUAL; virtual void m(void*, int, float, int, int, int) DECOMP_LOCAL_VIRTUAL;
+void ModelPreview_Render(void* preview) {
+    void* model = AsModelPreview802F5898(preview)->model;
+    if (!model)
+        return;
+    void* camera = AsModelPreview802F5898(preview)->camera;
+    struct V {
+        virtual void a0() DECOMP_LOCAL_VIRTUAL;
+        virtual void a1() DECOMP_LOCAL_VIRTUAL;
+        virtual void a2() DECOMP_LOCAL_VIRTUAL;
+        virtual void a3() DECOMP_LOCAL_VIRTUAL;
+        virtual void m(void*, int, float, int, int, int) DECOMP_LOCAL_VIRTUAL;
     };
-    ((V*)p)->m(q, 1, kPreviewOne, 0, 1, 0);
-}
-
-struct TourTask { void* v0; void* v1; void* v2; };
-// Construct the tour task interfaces and reset the actor skip masks.
-void* CTourTask_Ctor(void* storage) {
-    void* self = storage;
-    CTask_Ctor(self);
-    char* taskVtables = (char*)__vt__9CTourTask;
-    AsCTourTask(self)->vtbl = (void*)taskVtables;
-    AsCTourTask(self)->secondaryVtable = (void*)(taskVtables + 0x10);
-    AsCTourTask(self)->tertiaryVtable = (void*)(taskVtables + 0x1c);
-    g_defaultActorSkipMask = 0;
-    g_actorSkipMask = 0;
-    return self;
+    ((V*)model)->m(camera, 1, kPreviewOne, 0, 1, 0);
 }
 
 // Release the preview model and restore the saved camera view and field of view.
@@ -250,19 +269,22 @@ void ModelPreview_ReleaseModel(void* preview) {
         AsModelPreview802F5898(preview)->model = 0;
     }
     Camera_SetFov(AsModelPreview802F5898(preview)->camera, AsModelPreview802F5898(preview)->savedFieldOfView);
-    WView_SetViewMatrix(AsModelPreview802F5898(preview)->camera, (char*)&AsModelPreview802F5898(preview)->savedViewMatrix);
+    WView_SetViewMatrix(AsModelPreview802F5898(preview)->camera,
+                        (char*)&AsModelPreview802F5898(preview)->savedViewMatrix);
     Camera_BuildFrustumPlanes(AsModelPreview802F5898(preview)->camera);
 }
 
 // Compare a non-null requested animation name with the active preview range.
 int ModelPreview_IsAnimationNamed(void* preview, const char* animationName) {
     // Original 0x802F5D5C: select preview nullable animation name before comparing.
-    if (AsModelPreview802F5898(preview)->model == 0 ||
-        (preview = AsModelPreview802F5898(preview)->animation) == 0) preview = 0;
-    else preview = ((PreviewAnimationRange*)preview)->name;
+    if (AsModelPreview802F5898(preview)->model == 0 || (preview = AsModelPreview802F5898(preview)->animation) == 0)
+        preview = 0;
+    else
+        preview = ((PreviewAnimationRange*)preview)->name;
     int r = 0;
     if (preview != 0 && animationName != 0) {
-        if (strcmp((const char*)preview, animationName) == 0) r = 1;
+        if (strcmp((const char*)preview, animationName) == 0)
+            r = 1;
     }
     return r;
 }
@@ -270,7 +292,8 @@ int ModelPreview_IsAnimationNamed(void* preview, const char* animationName) {
 // Build the preview camera view from its offset and apply its field of view.
 void ModelPreview_UpdateCamera(void* self) {
     float viewMatrix[12];
-    Matrix_SetBasisElements(viewMatrix, kPreviewOne, kPreviewZero, kPreviewZero, kPreviewZero, kPreviewOne, kPreviewZero, kPreviewZero, kPreviewZero, kPreviewOne);
+    Matrix_SetBasisElements(viewMatrix, kPreviewOne, kPreviewZero, kPreviewZero, kPreviewZero, kPreviewOne,
+                            kPreviewZero, kPreviewZero, kPreviewZero, kPreviewOne);
     *(WVector*)&viewMatrix[9] = AsModelPreview802F5898(self)->cameraOffset;
     float elevationRatio = AsModelPreview802F5898(self)->cameraOffset.y / AsModelPreview802F5898(self)->cameraOffset.z;
     float elevationRadians = (float)atan((double)elevationRatio);
@@ -290,12 +313,13 @@ void* ModelPreview_Dtor(void* preview, int deleting) {
             AsModelPreview802F5898(self)->model = 0;
         }
         Camera_SetFov(AsModelPreview802F5898(self)->camera, AsModelPreview802F5898(self)->savedFieldOfView);
-        WView_SetViewMatrix(AsModelPreview802F5898(self)->camera, (char*)&AsModelPreview802F5898(self)->savedViewMatrix);
+        WView_SetViewMatrix(AsModelPreview802F5898(self)->camera,
+                            (char*)&AsModelPreview802F5898(self)->savedViewMatrix);
         Camera_BuildFrustumPlanes(AsModelPreview802F5898(self)->camera);
         if (AsModelPreview802F5898(self)->camera != 0) {
             if (AsModelPreview802F5898(self)->camera != 0) {
-                struct V { 
-                virtual void m2(int) DECOMP_LOCAL_VIRTUAL;
+                struct V {
+                    virtual void m2(int) DECOMP_LOCAL_VIRTUAL;
                 };
                 ((V*)AsModelPreview802F5898(self)->camera)->m2(1);
             }
@@ -324,37 +348,43 @@ void ModelPreview_SetHeading(void* preview, float headingRadians) {
 void ModelPreview_SetAnimationByName(void* preview, void* animationName) {
     void* self = preview;
     void* name = animationName;
-    void* p;
+    void* animationRange;
     int same;
     // Original 0x802F5C5C: all failed lookups leave the selected range alone.
     do {
-        if (AsModelPreview802F5898(self)->model == 0) break;
-        if (name == 0) break;
-        p = WPuppet_FindAnimationRangeByName(AsModelPreview802F5898(self)->model, (const char*)name);
-        if (p == 0) break;
+        if (AsModelPreview802F5898(self)->model == 0)
+            break;
+        if (name == 0)
+            break;
+        animationRange = WPuppet_FindAnimationRangeByName(AsModelPreview802F5898(self)->model, (const char*)name);
+        if (animationRange == 0)
+            break;
         {
             void* cn;
-            if (AsModelPreview802F5898(self)->model == 0 ||
-                (cn = AsModelPreview802F5898(self)->animation) == 0) cn = 0;
-            else cn = ((PreviewAnimationRange*)cn)->name;
+            if (AsModelPreview802F5898(self)->model == 0 || (cn = AsModelPreview802F5898(self)->animation) == 0)
+                cn = 0;
+            else
+                cn = ((PreviewAnimationRange*)cn)->name;
             same = 0;
             if (cn != 0 && name != 0) {
-                if (strcmp((const char*)cn, (const char*)name) == 0) same = 1;
+                if (strcmp((const char*)cn, (const char*)name) == 0)
+                    same = 1;
             }
         }
-        if (same != 0) break;
-        AsModelPreview802F5898(self)->animation = p;
-        float f0 = ((PreviewAnimationRange*)p)->start;
-        AsModelPreview802F5898(self)->animationStart = f0;
-        AsModelPreview802F5898(self)->animationTime = f0;
-        AsModelPreview802F5898(self)->animationEnd = ((PreviewAnimationRange*)p)->end;
+        if (same != 0)
+            break;
+        AsModelPreview802F5898(self)->animation = animationRange;
+        float rangeStart = ((PreviewAnimationRange*)animationRange)->start;
+        AsModelPreview802F5898(self)->animationStart = rangeStart;
+        AsModelPreview802F5898(self)->animationTime = rangeStart;
+        AsModelPreview802F5898(self)->animationEnd = ((PreviewAnimationRange*)animationRange)->end;
     } while (0);
 }
 
 // Release the old model, reset preview defaults and load the requested resource.
 void ModelPreview_LoadModel(void* preview, void* modelName) {
     void* self = preview;
-    void* arg = modelName;
+    void* resourceName = modelName;
     if (AsModelPreview802F5898(self)->model != 0) {
         ResourceManager_ReleaseObject(g_resourceManager, AsModelPreview802F5898(self)->model, 0);
         AsModelPreview802F5898(self)->model = 0;
@@ -375,17 +405,20 @@ void ModelPreview_LoadModel(void* preview, void* modelName) {
     AsModelPreview802F5898(self)->fieldOfView = f1;
     AsModelPreview802F5898(self)->animationStart = f0;
     AsModelPreview802F5898(self)->animationEnd = f0;
-    void* r = ResourceManager_LoadByExtension(g_resourceManager, (const char*)arg, 0, 0, 0);
-    AsModelPreview802F5898(self)->model = r;
+    void* model = ResourceManager_LoadByExtension(g_resourceManager, (const char*)resourceName, 0, 0, 0);
+    AsModelPreview802F5898(self)->model = model;
 }
 
 // Copy shared render parameters, set white colour and rotate/normalize the light direction.
 void ModelPreview_SetupRenderParams(void* preview) {
     void* self = preview;
-    if (AsModelPreview802F5898(self)->model == 0) return;
+    if (AsModelPreview802F5898(self)->model == 0)
+        return;
     char lightTransform[0x40];
     PSMTX44Identity(lightTransform);
-    struct Transform { char data[0x68]; };
+    struct Transform {
+        char data[0x68];
+    };
     Transform copied;
     Transform first;
     ModelRenderParams_Copy(&first, ModelRenderParams_GetShared());
@@ -397,64 +430,65 @@ void ModelPreview_SetupRenderParams(void* preview) {
     ((PreviewRenderParams*)&copied)->colour[1] = kPreviewOne;
     ((PreviewRenderParams*)&copied)->colour[2] = kPreviewOne;
     ((PreviewRenderParams*)&copied)->colour[3] = kPreviewOne;
-    Mtx44_TransformDirection(((PreviewRenderParams*)&copied)->lightDirection, ((PreviewRenderParams*)&copied)->lightDirection, lightTransform);
+    Mtx44_TransformDirection(((PreviewRenderParams*)&copied)->lightDirection,
+                             ((PreviewRenderParams*)&copied)->lightDirection, lightTransform);
     char rotation[0x40];
     Mtx44_SetRotationY(rotation, kPreviewLightRotationY);
-    Mtx44_TransformDirection(((PreviewRenderParams*)&copied)->lightDirection, ((PreviewRenderParams*)&copied)->lightDirection, rotation);
+    Mtx44_TransformDirection(((PreviewRenderParams*)&copied)->lightDirection,
+                             ((PreviewRenderParams*)&copied)->lightDirection, rotation);
     Vec3_Normalize(((PreviewRenderParams*)&copied)->lightDirection, ((PreviewRenderParams*)&copied)->lightDirection);
     WPuppet_SetRenderParams(AsModelPreview802F5898(self)->model, &copied);
     WPuppet_SetRenderParamsEnabled(AsModelPreview802F5898(self)->model, 1);
 }
 
-
 // Return the enabled adjacent cell in the five-column, seven-row item map, or -1.
 int OpenItemEntry_GetNeighborIndex(void* entry, int direction) {
     int neighborIndex = -1;
     switch (direction) {
-        case kMapLeft: {
-            short index = AsOpenItemEntry(entry)->index;
-            int column = index % kItemMapColumns;
-            if (column > 0) {
-                unsigned short* flags = (unsigned short*)((ItemMapEntryView*)entry)->flags;
-                if ((flags[0] >> 8) & 1) {
-                    neighborIndex = (short)(index - 1);
-                }
+    case kMapLeft: {
+        short index = AsOpenItemEntry(entry)->index;
+        int column = index % kItemMapColumns;
+        if (column > 0) {
+            unsigned short* flags = (unsigned short*)((ItemMapEntryView*)entry)->flags;
+            if ((flags[0] >> 8) & 1) {
+                neighborIndex = (short)(index - 1);
             }
-            break;
         }
-        case kMapRight: {
-            short index = AsOpenItemEntry(entry)->index;
-            int column = index % kItemMapColumns;
-            if (column < kItemMapLastColumn) {
-                unsigned short* flags = (unsigned short*)((ItemMapEntryView*)entry)->flags;
-                if ((flags[0] >> 7) & 1) {
-                    neighborIndex = (short)(index + 1);
-                }
+        break;
+    }
+    case kMapRight: {
+        short index = AsOpenItemEntry(entry)->index;
+        int column = index % kItemMapColumns;
+        if (column < kItemMapLastColumn) {
+            unsigned short* flags = (unsigned short*)((ItemMapEntryView*)entry)->flags;
+            if ((flags[0] >> 7) & 1) {
+                neighborIndex = (short)(index + 1);
             }
-            break;
         }
-        case kMapUp: {
-            short index = AsOpenItemEntry(entry)->index;
-            int row = index / kItemMapColumns;
-            if (row > 0) {
-                unsigned short* flags = (unsigned short*)((ItemMapEntryView*)entry)->flags;
-                if ((flags[0] >> 6) & 1) {
-                    neighborIndex = (short)(index - kItemMapColumns);
-                }
+        break;
+    }
+    case kMapUp: {
+        short index = AsOpenItemEntry(entry)->index;
+        int row = index / kItemMapColumns;
+        if (row > 0) {
+            unsigned short* flags = (unsigned short*)((ItemMapEntryView*)entry)->flags;
+            if ((flags[0] >> 6) & 1) {
+                neighborIndex = (short)(index - kItemMapColumns);
             }
-            break;
         }
-        case kMapDown: {
-            short index = AsOpenItemEntry(entry)->index;
-            int row = index / kItemMapColumns;
-            if (row < kItemMapLastRow) {
-                unsigned short* flags = (unsigned short*)((ItemMapEntryView*)entry)->flags;
-                if ((flags[0] >> 5) & 1) {
-                    neighborIndex = (short)(index + kItemMapColumns);
-                }
+        break;
+    }
+    case kMapDown: {
+        short index = AsOpenItemEntry(entry)->index;
+        int row = index / kItemMapColumns;
+        if (row < kItemMapLastRow) {
+            unsigned short* flags = (unsigned short*)((ItemMapEntryView*)entry)->flags;
+            if ((flags[0] >> 5) & 1) {
+                neighborIndex = (short)(index + kItemMapColumns);
             }
-            break;
         }
+        break;
+    }
     }
     return neighborIndex;
 }
@@ -466,7 +500,8 @@ void* ModelPreview_Ctor(void* self, void* initialModelName) {
     void* camera = ResourceManager_CreateWView(g_resourceManager, 0);
     AsModelPreview802F5898(position)->camera = camera;
     float aspectRatio = ((WView*)camera)->viewportWidth / ((WView*)camera)->viewportHeight;
-    AsModelPreview802F5898(position)->savedFieldOfView = ((WView*)camera)->fieldOfView / (kPreviewFovAspectScale * aspectRatio);
+    AsModelPreview802F5898(position)->savedFieldOfView =
+        ((WView*)camera)->fieldOfView / (kPreviewFovAspectScale * aspectRatio);
     Matrix_CopyAffine(position + PREVIEW_FIELD_OFFSET(savedViewMatrix), (char*)&((WView*)camera)->viewMatrix);
     (*(int*)&AsModelPreview802F5898(position)->animation) = 0;
     Matrix_SetIdentityAffine(position + PREVIEW_FIELD_OFFSET(matrix));
@@ -507,7 +542,8 @@ void* ModelPreview_Ctor(void* self, void* initialModelName) {
             AsModelPreview802F5898(position)->animationStart = f0;
             AsModelPreview802F5898(position)->animationEnd = f0;
         }
-        AsModelPreview802F5898(position)->model = ResourceManager_LoadByExtension(g_resourceManager, (const char*)initialModelName, 0, 0, 0);
+        AsModelPreview802F5898(position)->model =
+            ResourceManager_LoadByExtension(g_resourceManager, (const char*)initialModelName, 0, 0, 0);
     }
     return self;
 }
@@ -520,21 +556,26 @@ void ModelPreview_UpdateAnimation(void* self, float delta) {
     if (modelOrRange != 0) {
         do {
             void* range = AsModelPreview802F5898(self)->animation;
-            if (range == 0) break;
+            if (range == 0)
+                break;
             {
                 float f0 = AsModelPreview802F5898(self)->animationEnd;
                 float f2 = AsModelPreview802F5898(self)->animationTime;
                 float f1 = f2 + delta;
                 AsModelPreview802F5898(self)->animationTime = f1;
-                if (!(f0 <= f1)) break;
+                if (!(f0 <= f1))
+                    break;
             }
             void* nextAnimationName = ((PreviewAnimationRange*)range)->nextName;
             void* namePtr;
-            if (modelOrRange != 0 && range != 0) namePtr = ((PreviewAnimationRange*)range)->name;
-            else namePtr = 0;
+            if (modelOrRange != 0 && range != 0)
+                namePtr = ((PreviewAnimationRange*)range)->name;
+            else
+                namePtr = 0;
             int sameAnimation = 0;
             if (namePtr != 0 && nextAnimationName != 0) {
-                if (strcmp((const char*)namePtr, (const char*)nextAnimationName) == 0) sameAnimation = 1;
+                if (strcmp((const char*)namePtr, (const char*)nextAnimationName) == 0)
+                    sameAnimation = 1;
             }
             if (sameAnimation != 0) {
                 float f2 = AsModelPreview802F5898(preview)->animationTime;
@@ -545,20 +586,27 @@ void ModelPreview_UpdateAnimation(void* self, float delta) {
                 AsModelPreview802F5898(preview)->animationTime = f0;
                 break;
             }
-            if (modelOrRange == 0) break;
-            if (nextAnimationName == 0) break;
+            if (modelOrRange == 0)
+                break;
+            if (nextAnimationName == 0)
+                break;
             void* nextRange = WPuppet_FindAnimationRangeByName(modelOrRange, (const char*)nextAnimationName);
             modelOrRange = nextRange;
-            if (nextRange == 0) break;
+            if (nextRange == 0)
+                break;
             void* currentName;
             if (AsModelPreview802F5898(preview)->model == 0 ||
-                (currentName = AsModelPreview802F5898(preview)->animation) == 0) currentName = 0;
-            else currentName = ((PreviewAnimationRange*)currentName)->name;
+                (currentName = AsModelPreview802F5898(preview)->animation) == 0)
+                currentName = 0;
+            else
+                currentName = ((PreviewAnimationRange*)currentName)->name;
             sameAnimation = 0;
             if (currentName != 0 && nextAnimationName != 0) {
-                if (strcmp((const char*)currentName, (const char*)nextAnimationName) == 0) sameAnimation = 1;
+                if (strcmp((const char*)currentName, (const char*)nextAnimationName) == 0)
+                    sameAnimation = 1;
             }
-            if (sameAnimation != 0) break;
+            if (sameAnimation != 0)
+                break;
             AsModelPreview802F5898(preview)->animation = modelOrRange;
             float f0 = ((PreviewAnimationRange*)modelOrRange)->start;
             AsModelPreview802F5898(preview)->animationStart = f0;
@@ -578,8 +626,19 @@ void ModelPreview_UpdateAnimation(void* self, float delta) {
     }
 }
 
-
 } // extern "C"
+
+// Set up the tour task: initialize the task base, install its vtable and the two
+// interface tables that follow it, and reset the actor skip masks.
+CTourTask::CTourTask() {
+    ((CTask*)this)->Init();
+    char* taskVtables = (char*)__vt__9CTourTask;
+    vtbl = (void*)taskVtables;
+    secondaryVtable = (void*)(taskVtables + 0x10);
+    tertiaryVtable = (void*)(taskVtables + 0x1c);
+    g_defaultActorSkipMask = 0;
+    g_actorSkipMask = 0;
+}
 
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push
@@ -587,4 +646,3 @@ void ModelPreview_UpdateAnimation(void* self, float delta) {
 STATIC_INIT_ENTRY(".CRT$XCU80462590", _ctors_u802F562C_0, PreviewUnit_InitTwoPi0);
 STATIC_INIT_ENTRY(".CRT$XCU80462590", _ctors_u802F562C_1, PreviewUnit_InitTwoPi1);
 #pragma pop
-

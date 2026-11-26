@@ -4,8 +4,6 @@
 // ResizeScratchBuffers in gtl_generic_renderer_scratch_buffers.cpp owns their allocation and limits. Shared
 // default record s_rendererDefaults begins {512,512,64}; its fourth word is not read here.
 // Transforms come from Engine_GetTransform, not the allocation request.
-// Translation unit 0x803DCF8C-0x803DD064 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
@@ -21,7 +19,9 @@ struct GtlGenericRenderer {
 // +0/+4 reserve word-slot vectors at context+194/+1A0; their sum sizes the
 // 0x50-byte entry vector at +184. +8 reserves word slots at +1AC. Slots' higher
 // level model roles are not established; they are counts, never byte sizes.
-struct RendererScratchSizes { unsigned int slots194, slots1A0, slots1AC; };
+struct RendererScratchSizes {
+    unsigned int slots194, slots1A0, slots1AC;
+};
 
 extern "C" {
 
@@ -58,7 +58,8 @@ void PSMTX44Transpose(void* dst, const void* src);
 int gtl_GenericRenderer_InitializeContext(const RendererScratchSizes* sizes) {
     if (s_genericRendererContextInitialized == 0) {
         gtl_GenericRenderer_ContextCtor(&s_genericRendererContextStorage);
-        __register_global_object(&s_genericRendererContextStorage, (void*)gtl_GenericRenderer_ContextDtor, s_genericRendererContextRegistration);
+        __register_global_object(&s_genericRendererContextStorage, (void*)gtl_GenericRenderer_ContextDtor,
+                                 s_genericRendererContextRegistration);
         s_genericRendererContextInitialized = 1;
     }
     g_genericRendererContext = &s_genericRendererContextStorage;

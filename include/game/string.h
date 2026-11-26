@@ -16,8 +16,7 @@ extern "C" void String_ReplaceRange(void*, int, int, const char*, const char*, v
 
 namespace std {
 // MSL's narrow, 12-byte small-string specialization.
-template <>
-class basic_string<char, char_traits<char>, app::app_allocator<char> > {
+template <> class basic_string<char, char_traits<char>, app::app_allocator<char> > {
 public:
     unsigned int flags;
     unsigned int length;
@@ -25,7 +24,9 @@ public:
 
     basic_string() : flags(0), length(0), data(0) {}
 #if defined(GAME_NSTRING_TEXT_CONSTRUCTOR)
-    basic_string(const char* text) { MWString_ConstructCString(this, text); }
+    basic_string(const char* text) {
+        MWString_ConstructCString(this, text);
+    }
 #endif
 #if defined(GAME_NSTRING_RANGE_CONSTRUCTOR)
     basic_string(const char* text) {
@@ -53,7 +54,8 @@ public:
 
 #if defined(GAME_NSTRING_INLINE) && !defined(GAME_NSTRING_IMPLEMENTATION)
 inline basic_string<char, char_traits<char>, app::app_allocator<char> >::~basic_string() {
-    if (flags >> 31) appFreeUni__FPv(data);
+    if (flags >> 31)
+        appFreeUni__FPv(data);
 }
 #endif
 }

@@ -9,16 +9,14 @@
 // image conversion and channel swaps; swaps are sequential stores, not in-place
 // swaps. Simple Copy callbacks inherit Memory_Copy's overlap contract. No errors
 // are caught; the image decoder returns 1 even for unsupported DXT type values.
-// Translation unit 0x803E68B0-0x803E78EC (31 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "types.h"
 #include <decomp/cw_bitfields.h>
 
 struct PixelFloat4 {
-    float red; // red, normalized [0,1] (clamped on conversion)
+    float red;   // red, normalized [0,1] (clamped on conversion)
     float green; // green
-    float blue; // blue
+    float blue;  // blue
     float alpha; // alpha
 };
 
@@ -37,15 +35,18 @@ struct DxtColorBlock {
 typedef char DxtColorBlock_size[(sizeof(DxtColorBlock) == 8) ? 1 : -1];
 
 struct PixelRGBA8 {
-    s8 red; // red byte, bits represent unsigned 0..255 despite signed storage
+    s8 red;   // red byte, bits represent unsigned 0..255 despite signed storage
     s8 green; // green byte
-    s8 blue; // blue byte
+    s8 blue;  // blue byte
     s8 alpha; // alpha byte (0 transparent, 255 opaque)
 };
 enum DxtImageType {
-    kDxt1 = 0x2E, kDxt1Alternate = 0x62,
-    kDxt3 = 0x30, kDxt3Alternate = 0x64,
-    kDxt5 = 0x32, kDxt5Alternate = 0x66,
+    kDxt1 = 0x2E,
+    kDxt1Alternate = 0x62,
+    kDxt3 = 0x30,
+    kDxt3Alternate = 0x64,
+    kDxt5 = 0x32,
+    kDxt5Alternate = 0x66,
     kPackedAlpha4Destination = 0x21
 };
 
@@ -53,18 +54,18 @@ extern "C" {
 
 extern const float kNormalizedChannelLowerClamp; // 0: normalized lower clamp
 extern const float kNormalizedChannelUpperClamp; // 1: normalized upper clamp
-extern const float kByteChannelMaximum; // 255: float/RGB565 -> byte scale
-extern const float kDxtAlphaByteMaximum; // 255: DXT3 alpha byte maximum
-extern const float kDxtAlphaNibbleMaximum; // 15: four-bit alpha maximum (also packed output)
+extern const float kByteChannelMaximum;          // 255: float/RGB565 -> byte scale
+extern const float kDxtAlphaByteMaximum;         // 255: DXT3 alpha byte maximum
+extern const float kDxtAlphaNibbleMaximum;       // 15: four-bit alpha maximum (also packed output)
 
 void* memset(void*, int, unsigned int);
 void Memory_Copy(void* dst, const void* src, u32 size);
 extern const float kRgb565FiveBitMaximum; // 31: five-bit RGB565 component maximum
-extern const float kRgb565SixBitMaximum; // 63: six-bit green maximum
+extern const float kRgb565SixBitMaximum;  // 63: six-bit green maximum
 s32 gtl_ImageFormat_GetBitsPerPixel(s32 format);
 extern const f32 kDxtThreeColorMidpoint; // 1/2: three-color midpoint
 extern const f32 kDxtNearEndpointWeight; // float32 2/3: near-endpoint weight
-extern const f32 kDxtFarEndpointWeight; // float32 1/3: far-endpoint weight
+extern const f32 kDxtFarEndpointWeight;  // float32 1/3: far-endpoint weight
 // These are shared conversion coefficients, not independent visual tuning knobs.
 // Preserve float multiply/add order and cast/truncation, including signed byte stores.
 
@@ -76,14 +77,14 @@ void gtl_PixelConvert_RGB565ToRGBA8(u8* dst, const u16* src);
 // threeColorMode!=0: selector2 midpoint, selector3 transparent. Zero: selectors
 // 2/3 use 2:1/1:2 interpolation, all opaque. Caller decides mode from endpoints;
 // endpoint equality deliberately takes FOUR-color mode in DecompressImage.
-void gtl_DXT_DecodeColorBlock(PixelRGBA8 *out, const u8 *blockBytes, s32 threeColorMode) {
-    u8 *outputBytes = (u8 *)out;
+void gtl_DXT_DecodeColorBlock(PixelRGBA8* out, const u8* blockBytes, s32 threeColorMode) {
+    u8* outputBytes = (u8*)out;
     const f32& twoThirds = kDxtNearEndpointWeight;
     const f32& oneThird = kDxtFarEndpointWeight;
     const f32& half = kDxtThreeColorMidpoint;
-    u8 *pixelBytes;
+    u8* pixelBytes;
     s32 selectorShift;
-    const u8 *endpoint1 = blockBytes + 2;
+    const u8* endpoint1 = blockBytes + 2;
     u32 pixelIndex;
     pixelIndex = 0;
     selectorShift = 0;
@@ -93,17 +94,17 @@ void gtl_DXT_DecodeColorBlock(PixelRGBA8 *out, const u8 *blockBytes, s32 threeCo
         s32 selector = (((const DxtColorBlock*)blockBytes)->selectors >> selectorShift) & 3;
         switch (selector) {
         case 0:
-            gtl_PixelConvert_RGB565ToRGBA8(pixelBytes, (const u16 *)blockBytes);
+            gtl_PixelConvert_RGB565ToRGBA8(pixelBytes, (const u16*)blockBytes);
             break;
         case 1:
-            gtl_PixelConvert_RGB565ToRGBA8(pixelBytes, (const u16 *)endpoint1);
+            gtl_PixelConvert_RGB565ToRGBA8(pixelBytes, (const u16*)endpoint1);
             break;
         case 2:
             if (threeColorMode != 0) {
                 u8 c1[4];
                 u8 c0[4];
-                gtl_PixelConvert_RGB565ToRGBA8(c0, (const u16 *)blockBytes);
-                gtl_PixelConvert_RGB565ToRGBA8(c1, (const u16 *)endpoint1);
+                gtl_PixelConvert_RGB565ToRGBA8(c0, (const u16*)blockBytes);
+                gtl_PixelConvert_RGB565ToRGBA8(c1, (const u16*)endpoint1);
                 pixelBytes[2] = (s8)(((f32)c0[2] * half) + ((f32)c1[2] * half));
                 pixelBytes[1] = (s8)(((f32)c0[1] * half) + ((f32)c1[1] * half));
                 pixelBytes[0] = (u8)(s32)(((f32)c0[0] * half) + ((f32)c1[0] * half));
@@ -111,8 +112,8 @@ void gtl_DXT_DecodeColorBlock(PixelRGBA8 *out, const u8 *blockBytes, s32 threeCo
             } else {
                 u8 c1[4];
                 u8 c0[4];
-                gtl_PixelConvert_RGB565ToRGBA8(c0, (const u16 *)blockBytes);
-                gtl_PixelConvert_RGB565ToRGBA8(c1, (const u16 *)endpoint1);
+                gtl_PixelConvert_RGB565ToRGBA8(c0, (const u16*)blockBytes);
+                gtl_PixelConvert_RGB565ToRGBA8(c1, (const u16*)endpoint1);
                 pixelBytes[2] = (s8)(((f32)c0[2] * twoThirds) + ((f32)c1[2] * oneThird));
                 pixelBytes[1] = (s8)(((f32)c0[1] * twoThirds) + ((f32)c1[1] * oneThird));
                 pixelBytes[0] = (u8)(s32)(((f32)c0[0] * twoThirds) + ((f32)c1[0] * oneThird));
@@ -128,8 +129,8 @@ void gtl_DXT_DecodeColorBlock(PixelRGBA8 *out, const u8 *blockBytes, s32 threeCo
             } else {
                 u8 c1[4];
                 u8 c0[4];
-                gtl_PixelConvert_RGB565ToRGBA8(c0, (const u16 *)blockBytes);
-                gtl_PixelConvert_RGB565ToRGBA8(c1, (const u16 *)endpoint1);
+                gtl_PixelConvert_RGB565ToRGBA8(c0, (const u16*)blockBytes);
+                gtl_PixelConvert_RGB565ToRGBA8(c1, (const u16*)endpoint1);
                 pixelBytes[2] = (s8)(((f32)c0[2] * oneThird) + ((f32)c1[2] * twoThirds));
                 pixelBytes[1] = (s8)(((f32)c0[1] * oneThird) + ((f32)c1[1] * twoThirds));
                 pixelBytes[0] = (u8)(s32)(((f32)c0[0] * oneThird) + ((f32)c1[0] * twoThirds));
@@ -143,7 +144,7 @@ void gtl_DXT_DecodeColorBlock(PixelRGBA8 *out, const u8 *blockBytes, s32 threeCo
     } while (pixelIndex < 0x10U);
 }
 
-void gtl_Image_ConvertPixelFormat(u8 *dst, PixelRGBA8 *src, s32 format, s32 a, s32 b, s32 c);
+void gtl_Image_ConvertPixelFormat(u8* dst, PixelRGBA8* src, s32 format, s32 a, s32 b, s32 c);
 
 // Select the larger referenced component without changing comparison/NaN policy.
 static inline const float& FloatMax(const float& a, const float& b) {
@@ -174,8 +175,6 @@ template <bool Alpha> static inline float ClampByte(const float& input) {
     return scale * selected;
 }
 
-
-
 #pragma push
 #pragma use_lmw_stmw on
 // Replace only alpha in 16 RGBA pixels; RGB is untouched. Endpoints a0>a1 make
@@ -184,7 +183,7 @@ template <bool Alpha> static inline float ClampByte(const float& input) {
 // groups of eight; load at +5 reads through +8, so provide at least NINE readable
 // bytes, as in the enclosing 16-byte DXT5 block. Loads may be unaligned: retain
 // this legacy source representation rather than treating it as a portable DDS API.
-void gtl_DXT_DecodeDXT5AlphaBlock(PixelRGBA8 *outputPixels, const u8 *sourceAlphaBlock) {
+void gtl_DXT_DecodeDXT5AlphaBlock(PixelRGBA8* outputPixels, const u8* sourceAlphaBlock) {
     u8 alphaPalette[8];
     u8 endpoint0 = sourceAlphaBlock[0];
     u8 endpoint1 = sourceAlphaBlock[1];
@@ -206,13 +205,12 @@ void gtl_DXT_DecodeDXT5AlphaBlock(PixelRGBA8 *outputPixels, const u8 *sourceAlph
         alphaPalette[5] = (endpoint0 + 4 * endpoint1 + 2) / 5u;
     }
     for (u32 i = 0; i < 16; ++i) {
-        u32 bits = *(const u32 *)(sourceAlphaBlock + 2 + 3 * (i >> 3));
+        u32 bits = *(const u32*)(sourceAlphaBlock + 2 + 3 * (i >> 3));
         outputPixels->alpha = alphaPalette[(bits >> (3 * (i & 7) + 8)) & 7];
         ++outputPixels;
     }
 }
 #pragma pop
-
 
 // Decode a row-major grid of 4x4 blocks, scatter to a linear tightly packed image.
 // width/height are texels, positive multiples of four; products must fit u32.
@@ -222,17 +220,15 @@ void gtl_DXT_DecodeDXT5AlphaBlock(PixelRGBA8 *outputPixels, const u8 *sourceAlph
 // DESTINATION converter's domain: 0x21 packs alpha nibbles (even X LOW nibble,
 // odd X HIGH nibble: shift is 0 for even X, 4 for odd X);
 // other format words are passed to Image_ConvertPixelFormat with (1,5,0).
-// In the CURRENT converter source (gtl_image_format_dispatch.cpp, case arg5==0), arg4==5 returns
-// without writing, so non-0x21 destinations remain cleared by memset. This is
-// an observed contract of this code, not a claim that the original game's conversion
-// API intended black output. Keep the call/argument order pending a separate
-// comparison against the original; cleanups must not repair that behavior.
+// In the converter (gtl_image_format_dispatch.cpp, destination layout 0), a source layout of 5
+// returns without writing, so non-0x21 destinations stay cleared by memset. The call and its
+// argument order stay as they are; cleanups must not change this behavior.
 // type is a SOURCE format from DxtImageType, not a
 // destination format. DXT3/5 always use opaque four-color interpolation before
 // replacing alpha. No crop/mip/tile/pitch handling, no bounds/error checks.
 // Clears dst first; unsupported type leaves block scratch undefined, then still
 // scatters it and returns 1. Validate formats before calling, not via this result.
-s32 gtl_DXT_DecompressImage(u8 *dst, s32 format, u8 *src, u32 width, u32 height, s32 type) {
+s32 gtl_DXT_DecompressImage(u8* dst, s32 format, u8* src, u32 width, u32 height, s32 type) {
     PixelRGBA8 decodedPixels[16];
     u32 alphaPixelIndex;
     u32 blockCount;
@@ -245,24 +241,24 @@ s32 gtl_DXT_DecompressImage(u8 *dst, s32 format, u8 *src, u32 width, u32 height,
     // Only the cursor selected by type is read in each iteration. All advance
     // together so DXT1 addresses blockIndex*8 and DXT3/5 blockIndex*16. Keeping
     // those increments preserves the original loop's instruction sequence.
-    u8 *colorBlocks8;
-    u8 *alphaColorBlocks16;
-    DXT3Block *explicitAlphaBlocks16;
-    PixelRGBA8 *decodedPixel;
+    u8* colorBlocks8;
+    u8* alphaColorBlocks16;
+    DXT3Block* explicitAlphaBlocks16;
+    PixelRGBA8* decodedPixel;
     u32 blockColumn;
     u32 blockRow;
     u32 blockPixelIndex;
     u32 imageX;
     u32 imageY;
     u32 destinationByteOffset;
-    PixelRGBA8 *alphaOutput;
+    PixelRGBA8* alphaOutput;
 
     texelCount = width * height;
     destinationBitsPerPixel = gtl_ImageFormat_GetBitsPerPixel(format);
     memset(dst, 0, (destinationBitsPerPixel * texelCount) >> 3);
     colorBlocks8 = src;
     alphaColorBlocks16 = src;
-    explicitAlphaBlocks16 = (DXT3Block *)src;
+    explicitAlphaBlocks16 = (DXT3Block*)src;
     blockCount = texelCount >> 4;
     blocksPerRow = width >> 2;
     for (blockIndex = 0; blockIndex < blockCount; blockIndex++) {
@@ -280,19 +276,51 @@ s32 gtl_DXT_DecompressImage(u8 *dst, s32 format, u8 *src, u32 width, u32 height,
             gtl_DXT_DecodeColorBlock(decodedPixels, alphaColorBlocks16 + 8, 0);
             alphaOutput = decodedPixels;
             for (alphaPixelIndex = 0; alphaPixelIndex < 16; alphaPixelIndex += 8) {
-                s8 t0 = (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 0) >> 1] >> (((alphaPixelIndex + 0) & 1) * 4)) & 0xF)) / kDxtAlphaNibbleMaximum);
-                s8 t1 = (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 1) >> 1] >> (((alphaPixelIndex + 1) & 1) * 4)) & 0xF)) / kDxtAlphaNibbleMaximum);
-                s8 t2 = (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 2) >> 1] >> (((alphaPixelIndex + 2) & 1) * 4)) & 0xF)) / kDxtAlphaNibbleMaximum);
-                s8 t3 = (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 3) >> 1] >> (((alphaPixelIndex + 3) & 1) * 4)) & 0xF)) / kDxtAlphaNibbleMaximum);
-                s8 t4 = (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 4) >> 1] >> (((alphaPixelIndex + 4) & 1) * 4)) & 0xF)) / kDxtAlphaNibbleMaximum);
+                s8 t0 =
+                    (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 0) >> 1] >>
+                                                             (((alphaPixelIndex + 0) & 1) * 4)) &
+                                                            0xF)) /
+                         kDxtAlphaNibbleMaximum);
+                s8 t1 =
+                    (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 1) >> 1] >>
+                                                             (((alphaPixelIndex + 1) & 1) * 4)) &
+                                                            0xF)) /
+                         kDxtAlphaNibbleMaximum);
+                s8 t2 =
+                    (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 2) >> 1] >>
+                                                             (((alphaPixelIndex + 2) & 1) * 4)) &
+                                                            0xF)) /
+                         kDxtAlphaNibbleMaximum);
+                s8 t3 =
+                    (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 3) >> 1] >>
+                                                             (((alphaPixelIndex + 3) & 1) * 4)) &
+                                                            0xF)) /
+                         kDxtAlphaNibbleMaximum);
+                s8 t4 =
+                    (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 4) >> 1] >>
+                                                             (((alphaPixelIndex + 4) & 1) * 4)) &
+                                                            0xF)) /
+                         kDxtAlphaNibbleMaximum);
                 alphaOutput[0].alpha = t0;
                 alphaOutput[1].alpha = t1;
                 alphaOutput[2].alpha = t2;
                 alphaOutput[3].alpha = t3;
                 alphaOutput[4].alpha = t4;
-                s8 t5 = (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 5) >> 1] >> (((alphaPixelIndex + 5) & 1) * 4)) & 0xF)) / kDxtAlphaNibbleMaximum);
-                s8 t6 = (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 6) >> 1] >> (((alphaPixelIndex + 6) & 1) * 4)) & 0xF)) / kDxtAlphaNibbleMaximum);
-                s8 t7 = (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 7) >> 1] >> (((alphaPixelIndex + 7) & 1) * 4)) & 0xF)) / kDxtAlphaNibbleMaximum);
+                s8 t5 =
+                    (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 5) >> 1] >>
+                                                             (((alphaPixelIndex + 5) & 1) * 4)) &
+                                                            0xF)) /
+                         kDxtAlphaNibbleMaximum);
+                s8 t6 =
+                    (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 6) >> 1] >>
+                                                             (((alphaPixelIndex + 6) & 1) * 4)) &
+                                                            0xF)) /
+                         kDxtAlphaNibbleMaximum);
+                s8 t7 =
+                    (s8)((kDxtAlphaByteMaximum * (f32)(u32)((explicitAlphaBlocks16->alpha[(alphaPixelIndex + 7) >> 1] >>
+                                                             (((alphaPixelIndex + 7) & 1) * 4)) &
+                                                            0xF)) /
+                         kDxtAlphaNibbleMaximum);
                 alphaOutput[5].alpha = t5;
                 alphaOutput[6].alpha = t6;
                 alphaOutput[7].alpha = t7;
@@ -314,7 +342,10 @@ s32 gtl_DXT_DecompressImage(u8 *dst, s32 format, u8 *src, u32 width, u32 height,
             imageY = (blockPixelIndex >> 2) + blockRow * 4;
             destinationByteOffset = (destinationBitsPerPixel * (imageX + imageY * width)) >> 3;
             if (destinationBitsPerPixel == 4 && format == kPackedAlpha4Destination) {
-                dst[destinationByteOffset] = dst[destinationByteOffset] | (u8)((u8)(s32)(kDxtAlphaNibbleMaximum * ((f32)(u8)decodedPixel->alpha / kDxtAlphaByteMaximum)) << ((-(imageX & 1)) & 4));
+                dst[destinationByteOffset] =
+                    dst[destinationByteOffset] |
+                    (u8)((u8)(s32)(kDxtAlphaNibbleMaximum * ((f32)(u8)decodedPixel->alpha / kDxtAlphaByteMaximum))
+                         << ((-(imageX & 1)) & 4));
             } else {
                 gtl_Image_ConvertPixelFormat(dst + destinationByteOffset, decodedPixel, format, 1, 5, 0);
             }
@@ -327,28 +358,38 @@ s32 gtl_DXT_DecompressImage(u8 *dst, s32 format, u8 *src, u32 width, u32 height,
     return 1;
 }
 
-
-
 // Per-pixel copy and conversion callbacks of the image converter (dst, src).
 // Copy one four-byte pixel through Memory_Copy (same callback in three table slots).
-void gtl_PixelCopy_Copy4Bytes_0(void* dst, const void* src) { Memory_Copy(dst, src, 4); }
+void gtl_PixelCopy_Copy4Bytes_0(void* dst, const void* src) {
+    Memory_Copy(dst, src, 4);
+}
 // Second four-byte pixel-copy entry; identical operation, distinct ABI symbol.
-void gtl_PixelCopy_Copy4Bytes_1(void* dst, const void* src) { Memory_Copy(dst, src, 4); }
+void gtl_PixelCopy_Copy4Bytes_1(void* dst, const void* src) {
+    Memory_Copy(dst, src, 4);
+}
 // Copy one single-channel byte through Memory_Copy.
-void gtl_PixelCopy_Copy1Byte(void* dst, const void* src) { Memory_Copy(dst, src, 1); }
+void gtl_PixelCopy_Copy1Byte(void* dst, const void* src) {
+    Memory_Copy(dst, src, 1);
+}
 // Copy one 16-byte pixel payload, without interpreting components.
-void gtl_PixelCopy_Copy16Bytes(void* dst, const void* src) { Memory_Copy(dst, src, 16); }
+void gtl_PixelCopy_Copy16Bytes(void* dst, const void* src) {
+    Memory_Copy(dst, src, 16);
+}
 // Third four-byte pixel-copy entry.
-void gtl_PixelCopy_Copy4Bytes_2(void* dst, const void* src) { Memory_Copy(dst, src, 4); }
+void gtl_PixelCopy_Copy4Bytes_2(void* dst, const void* src) {
+    Memory_Copy(dst, src, 4);
+}
 // Copy one aligned native packed-color word; exact source/destination alias is safe.
-void gtl_PixelCopy_CopyPackedColor(u32* dst, const u32* src) { *dst = *src; }
+void gtl_PixelCopy_CopyPackedColor(u32* dst, const u32* src) {
+    *dst = *src;
+}
 
 // Convert four normalized RGBA floats to byte bits; alpha is stored first.
-void gtl_PixelConvert_Float4ToRGBA8(PixelRGBA8 *arg0, const PixelFloat4 *arg1) {
-    arg0->alpha = (s8)ClampByte<true>(arg1->alpha);
-    arg0->red = (s8)ClampByte<false>(arg1->red);
-    arg0->green = (s8)ClampByte<false>(arg1->green);
-    arg0->blue = (s8)ClampByte<false>(arg1->blue);
+void gtl_PixelConvert_Float4ToRGBA8(PixelRGBA8* dst, const PixelFloat4* src) {
+    dst->alpha = (s8)ClampByte<true>(src->alpha);
+    dst->red = (s8)ClampByte<false>(src->red);
+    dst->green = (s8)ClampByte<false>(src->green);
+    dst->blue = (s8)ClampByte<false>(src->blue);
 }
 
 // Convert four bytes by exchanging red/blue; preserve green/alpha, disjoint buffers.
@@ -372,19 +413,12 @@ void gtl_PixelConvert_NoOp_0(u8* dst, const u8* src) {}
 
 // declaration order (two bytes), unlike the explicit byte masks in Unpack4444.
 struct Pixel565 {
-    CW_BITS3(
-        u16 r : 5,
-        u16 g : 6,
-        u16 b : 5)
+    CW_BITS3(u16 r : 5, u16 g : 6, u16 b : 5)
 };
 
 struct Pixel4444 {
-    CW_BITS2(
-        u8 r : 4,
-        u8 g : 4)
-    CW_BITS2(
-        u8 b : 4,
-        u8 a : 4)
+    CW_BITS2(u8 r : 4, u8 g : 4)
+    CW_BITS2(u8 b : 4, u8 a : 4)
 };
 
 // Truncate each RGBA byte to its high nibble, write the native two-byte record.
@@ -407,7 +441,9 @@ void gtl_PixelConvert_BGRX8ToRGBA8(u8* dst, const u8* src) {
 }
 
 // Copy one channel byte; caller selects its role through the format table.
-void gtl_PixelConvert_CopyByte0(u8* dst, const u8* src) { dst[0] = src[0]; }
+void gtl_PixelConvert_CopyByte0(u8* dst, const u8* src) {
+    dst[0] = src[0];
+}
 
 // Copy four RGBA bytes in alpha/blue/green/red order; exact alias is safe.
 void gtl_PixelConvert_CopyRGBA8(u8* dst, const u8* src) {
@@ -518,6 +554,8 @@ void gtl_PixelConvert_RGB565ToRGBA8(u8* dst, const u16* src) {
 }
 
 // Extract alpha from a four-byte RGBA pixel to one destination byte.
-void gtl_PixelConvert_CopyAlphaByte(u8* dst, const u8* src) { dst[0] = src[3]; }
+void gtl_PixelConvert_CopyAlphaByte(u8* dst, const u8* src) {
+    dst[0] = src[3];
+}
 
 } // extern "C"

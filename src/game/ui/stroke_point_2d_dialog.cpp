@@ -1,33 +1,93 @@
+// Stroke point dialog: the 2D picker for the strike point.
+//
+// CStrokePoint2d opens and closes the dialog with an animation, updates the spin, power and
+// special-shot controls, and returns the committed strike point.
+
+#include "classes/CStrokePoint2d.h"
 typedef unsigned long new_size_t;
 // Byte offsets preserve the pooled-string storage and original relocation addends.
 enum StrokePointSpecialShotStringsOffset {
     kStrokePointSpecialShotStrings_close_position_dialog = 0xB, // close_position_dialog
-    kStrokePointSpecialShotStrings_select_special_shot = 0x76, // select_special_shot
-    kStrokePointSpecialShotStrings_ui_icon_click = 0x8A, // ui_icon_click
-    kStrokePointSpecialShotStrings_ui_error = 0x98, // ui_error
-    kStrokePointSpecialShotStrings_range_error = 0x21, // bounds-error message
+    kStrokePointSpecialShotStrings_select_special_shot = 0x76,  // select_special_shot
+    kStrokePointSpecialShotStrings_ui_icon_click = 0x8A,        // ui_icon_click
+    kStrokePointSpecialShotStrings_ui_error = 0x98,             // ui_error
+    kStrokePointSpecialShotStrings_range_error = 0x21,          // bounds-error message
 };
 
 // UI values are logical actions and layout IDs, not Wii Remote hardware buttons.
-enum StrokeDialogState { kStrokeClosed = 0, kStrokeOpening = 1, kStrokeOpen = 2, kStrokeClosing = 3 };
-enum StrokeSpinMask { kSpinTop = 1, kSpinBottom = 2, kSpinLeft = 4, kSpinRight = 8 };
-enum StrokeSpecialShotMask { kShotTomahawk = 0x10, kShotCobra = 0x20, kShotSpike = 0x40 };
-enum StrokeTiming { kStrokeAnimationFrames = 10, kPowerClickFrames = 3, kSpecialFadeStep = 0x40,
-    kPowerSegment = 0x21, kTwoPowerSegments = 0x42, kFullPowerGauge = 0x63 };
-enum StrokeElement { kTomahawkButton = 0x2D, kSpikeButton = 0x2F, kCobraButton = 0x31,
-    kPowerSegmentOne = 0x39, kPowerSegmentTwo = 0x3A, kPowerSegmentThree = 0x3B, kPowerRemainder = 0x3C,
-    kSpinLeftButton = 0x3D, kSpinBottomButton = 0x3F, kSpinRightButton = 0x41, kSpinTopButton = 0x43,
-    kPowerIconOne = 0x45, kPowerIconTwo = 0x46, kCharacterIcon = 0x47, kPowerButton = 0x48,
-    kConfirmButton = 0x49, kStrikeMarker = 0x4C, kStrokeElementCount = 0x4D };
-enum StrokeAlpha { kTransparent = 0, kOpaque = 0xFF, kPackedAlphaBias = 0x100 };
-enum StrokeCompanionElement { kTomahawkCompanion = 0x2E, kSpikeCompanion = 0x30,
-    kCobraCompanion = 0x32, kSpinLeftCompanion = 0x3E, kSpinBottomCompanion = 0x40,
-    kSpinRightCompanion = 0x42, kSpinTopCompanion = 0x44 };
-enum StrokeValueState { kStrokeValueUnavailable = 0, kStrokeValueAvailable = 2,
-    kStrokeValueSelected = 3 };
-enum StrokeFeedbackState { kStrokeFeedbackIdle = 1, kStrokeFeedbackSelected = 3 };
-enum { kStrokePlayerFlagSelector = 5, kSpecialColorFirstElement = 0x24,
-    kSpecialColorLastElement = 0x32 };
+enum StrokeDialogState {
+    kStrokeClosed = 0,
+    kStrokeOpening = 1,
+    kStrokeOpen = 2,
+    kStrokeClosing = 3
+};
+enum StrokeSpinMask {
+    kSpinTop = 1,
+    kSpinBottom = 2,
+    kSpinLeft = 4,
+    kSpinRight = 8
+};
+enum StrokeSpecialShotMask {
+    kShotTomahawk = 0x10,
+    kShotCobra = 0x20,
+    kShotSpike = 0x40
+};
+enum StrokeTiming {
+    kStrokeAnimationFrames = 10,
+    kPowerClickFrames = 3,
+    kSpecialFadeStep = 0x40,
+    kPowerSegment = 0x21,
+    kTwoPowerSegments = 0x42,
+    kFullPowerGauge = 0x63
+};
+enum StrokeElement {
+    kTomahawkButton = 0x2D,
+    kSpikeButton = 0x2F,
+    kCobraButton = 0x31,
+    kPowerSegmentOne = 0x39,
+    kPowerSegmentTwo = 0x3A,
+    kPowerSegmentThree = 0x3B,
+    kPowerRemainder = 0x3C,
+    kSpinLeftButton = 0x3D,
+    kSpinBottomButton = 0x3F,
+    kSpinRightButton = 0x41,
+    kSpinTopButton = 0x43,
+    kPowerIconOne = 0x45,
+    kPowerIconTwo = 0x46,
+    kCharacterIcon = 0x47,
+    kPowerButton = 0x48,
+    kConfirmButton = 0x49,
+    kStrikeMarker = 0x4C,
+    kStrokeElementCount = 0x4D
+};
+enum StrokeAlpha {
+    kTransparent = 0,
+    kOpaque = 0xFF,
+    kPackedAlphaBias = 0x100
+};
+enum StrokeCompanionElement {
+    kTomahawkCompanion = 0x2E,
+    kSpikeCompanion = 0x30,
+    kCobraCompanion = 0x32,
+    kSpinLeftCompanion = 0x3E,
+    kSpinBottomCompanion = 0x40,
+    kSpinRightCompanion = 0x42,
+    kSpinTopCompanion = 0x44
+};
+enum StrokeValueState {
+    kStrokeValueUnavailable = 0,
+    kStrokeValueAvailable = 2,
+    kStrokeValueSelected = 3
+};
+enum StrokeFeedbackState {
+    kStrokeFeedbackIdle = 1,
+    kStrokeFeedbackSelected = 3
+};
+enum {
+    kStrokePlayerFlagSelector = 5,
+    kSpecialColorFirstElement = 0x24,
+    kSpecialColorLastElement = 0x32
+};
 // ID pairs: Tomahawk 2D/2E, Spike 2F/30, Cobra 31/32; Left 3D/3E,
 // Bottom 3F/40, Right 41/42, Top 43/44. Each second ID receives the same
 // value/feedback/player-flag update; its precise visual asset is unresolved.
@@ -35,11 +95,10 @@ enum { kStrokePlayerFlagSelector = 5, kSpecialColorFirstElement = 0x24,
 // Feedback states: 1 normal, 3 selected. Player flag 5 gates pointer interaction;
 // its boolean value is separate from both state domains. Do not interchange them.
 
-// Translation unit 0x802E72B0-0x802E8A04 (10 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 // Placement construction uses caller-provided storage without allocating it.
-inline void* operator new(new_size_t, void* p) { return p; }
+inline void* operator new(new_size_t, void* p) {
+    return p;
+}
 
 extern "C" {
 
@@ -89,17 +148,17 @@ struct StrokePointLayout {
 };
 
 extern const float kFloat_1_805E0B38;
-extern const float kFloat_1_5_StrokePointMarkerScale; // kFloat_1_5_StrokePointMarkerScale
+extern const float kFloat_1_5_StrokePointMarkerScale;    // kFloat_1_5_StrokePointMarkerScale
 extern const float kFloat_neg1_StrokePointVerticalLimit; // kFloat_neg1_StrokePointVerticalLimit
-extern const float kFloat_0_StrokePointControls; // kFloat_0_StrokePointControls
-extern const float kFloat_10_StrokePointOpenFrames; // kFloat_10_StrokePointOpenFrames
-extern const float kFloat_5_StrokePointCloseFadeFrames; // kFloat_5_StrokePointCloseFadeFrames
+extern const float kFloat_0_StrokePointControls;         // kFloat_0_StrokePointControls
+extern const float kFloat_10_StrokePointOpenFrames;      // kFloat_10_StrokePointOpenFrames
+extern const float kFloat_5_StrokePointCloseFadeFrames;  // kFloat_5_StrokePointCloseFadeFrames
 extern const float kFloat_0_5_Menu802E72B0;
 extern const float kFloat_200_StrokePointSound;
 extern const double kSignedIntToDoubleBias_StrokePointControls; // kSignedIntToDoubleBias_StrokePointControls
-extern const float kFloat_33_StrokePointGauge; // kFloat_33_StrokePointGauge
-extern const float kFloat_66_StrokePointGauge; // kFloat_66_StrokePointGauge
-extern int strokePointCharacterIconRows[]; // strokePointCharacterIconRows
+extern const float kFloat_33_StrokePointGauge;                  // kFloat_33_StrokePointGauge
+extern const float kFloat_66_StrokePointGauge;                  // kFloat_66_StrokePointGauge
+extern int strokePointCharacterIconRows[];                      // strokePointCharacterIconRows
 extern int g_soundManager;
 extern const char strokePointSpecialShotStrings[];
 extern void* s_sharedCharDeleterVtable[];
@@ -133,7 +192,8 @@ void Layout_CollectActivated(void*, int*, int*);
 void appFreeUni__FPv(void*);
 
 // Return the committed strike-point coordinates when both output pointers are valid.
-int CStrokePoint2d_GetCommittedStrikePoint(StrokePointLayout* self, float* x, float* y) {
+int CStrokePoint2d::GetCommittedStrikePoint(float* x, float* y) {
+    StrokePointLayout* self = (StrokePointLayout*)this;
     if (!x || !y)
         return 0;
     *x = self->committedStrikeX;
@@ -142,7 +202,8 @@ int CStrokePoint2d_GetCommittedStrikePoint(StrokePointLayout* self, float* x, fl
 }
 
 // Open the strike-point dialog, snapshot selections and reset transient button states.
-int CStrokePoint2d_OpenAndSaveSelection(StrokePointLayout* self) {
+int CStrokePoint2d::OpenAndSaveSelection() {
+    StrokePointLayout* self = (StrokePointLayout*)this;
     self->dialogState = kStrokeOpening;
     self->animationFramesRemaining = kStrokeAnimationFrames;
     self->opacity = kFloat_0_StrokePointControls; // kFloat_0_StrokePointControls
@@ -162,20 +223,23 @@ int CStrokePoint2d_OpenAndSaveSelection(StrokePointLayout* self) {
 }
 
 // Advance open/close animation and fade the special-shot controls toward their target opacity.
-int CStrokePoint2d_AdvanceDialogAnimation(StrokePointLayout* self) {
+int CStrokePoint2d::AdvanceDialogAnimation() {
+    StrokePointLayout* self = (StrokePointLayout*)this;
     if (self->animationFramesRemaining) {
         int count = self->animationFramesRemaining - 1;
         self->animationFramesRemaining = count;
         if (self->dialogState == kStrokeOpening) {
-            self->opacity = (kStrokeAnimationFrames - count) / kFloat_10_StrokePointOpenFrames; // kFloat_10_StrokePointOpenFrames
+            self->opacity =
+                (kStrokeAnimationFrames - count) / kFloat_10_StrokePointOpenFrames; // kFloat_10_StrokePointOpenFrames
             if (!count)
                 self->dialogState = kStrokeOpen;
         } else if (self->dialogState == kStrokeClosing) {
             if (count < 5)
                 self->opacity = count / kFloat_5_StrokePointCloseFadeFrames; // kFloat_5_StrokePointCloseFadeFrames
             if (self->animationFramesRemaining == 5)
-                Sound_PlayByName(g_soundManager, strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_close_position_dialog, 0,
-                    0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
+                Sound_PlayByName(g_soundManager,
+                                 strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_close_position_dialog,
+                                 0, 0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
             if (!self->animationFramesRemaining) {
                 self->dialogState = kStrokeClosed;
                 self->controlsDirty = 1;
@@ -203,12 +267,14 @@ int CStrokePoint2d_AdvanceDialogAnimation(StrokePointLayout* self) {
 }
 
 // Return whether the strike-point dialog is fully open.
-int CStrokePoint2d_vfunc_26(StrokePointAnimationState* self) {
+int CStrokePoint2d::vfunc_26() {
+    StrokePointAnimationState* self = (StrokePointAnimationState*)this;
     return self->dialogState == kStrokeOpen;
 }
 
 // Begin the ten-frame closing animation with opacity reset to the shared initial value.
-int CStrokePoint2d_StartClosingDialog(StrokePointAnimationState* self) {
+int CStrokePoint2d::StartClosingDialog() {
+    StrokePointAnimationState* self = (StrokePointAnimationState*)this;
     float value = kFloat_1_805E0B38;
     self->dialogState = kStrokeClosing;
     self->animationFramesRemaining = kStrokeAnimationFrames;
@@ -217,7 +283,8 @@ int CStrokePoint2d_StartClosingDialog(StrokePointAnimationState* self) {
 }
 
 // Report stable state only while neither opening nor closing.
-int CStrokePoint2d_IsDialogIdle(StrokePointAnimationState* self) {
+int CStrokePoint2d::IsDialogIdle() {
+    StrokePointAnimationState* self = (StrokePointAnimationState*)this;
     // 0x802E72B0 unit: the two excluded states share the final return.
     if (self->dialogState != kStrokeOpening && self->dialogState != kStrokeClosing)
         return 1;
@@ -225,7 +292,8 @@ int CStrokePoint2d_IsDialogIdle(StrokePointAnimationState* self) {
 }
 
 // Refresh visible controls, selected action states and the character icon when dirty.
-int CStrokePoint2d_RefreshDirtyControls(StrokePointLayout* self) {
+int CStrokePoint2d::RefreshDirtyControls() {
+    StrokePointLayout* self = (StrokePointLayout*)this;
     if (!self->resourcesReady)
         return 0;
     if (!self->controlsDirty)
@@ -270,7 +338,7 @@ int CStrokePoint2d_RefreshDirtyControls(StrokePointLayout* self) {
         if (self->characterIndex < 8)
             idx = strokePointCharacterIconRows[self->characterIndex]; // strokePointCharacterIconRows
         StrokePointLayout* elem = Layout_GetElementSprite(self, kCharacterIcon);
-        float pos[2] = { kFloat_0_StrokePointControls, (float)(idx * 0x18) };
+        float pos[2] = {kFloat_0_StrokePointControls, (float)(idx * 0x18)};
         Sprite_SetTextureRegionSize2D(elem, pos);
     }
     return 1;
@@ -283,21 +351,23 @@ int CStrokePoint2d_RefreshDirtyControls(StrokePointLayout* self) {
 // branches deliberately reuse two compiler temporaries with opposite roles in
 // the RIGHT branch; the names below state that exception. feedbackState carries
 // forward if an ineligible branch does not assign it (existing behavior).
-int CStrokePoint2d_UpdateStrikeMarkerAndSpinButtons(StrokePointLayout* self) {
+int CStrokePoint2d::UpdateStrikeMarkerAndSpinButtons() {
     float pos[2];
     float k = kFloat_1_5_StrokePointMarkerScale; // kFloat_1_5_StrokePointMarkerScale
+    int feedbackState;
+    int valueStateOrRightFlag;
+    int playerFlagOrRightValue;
+    StrokePointLayout* self = (StrokePointLayout*)this;
     pos[0] = self->markerOriginX + k * self->strikeX;
     pos[1] = self->markerOriginY + k * self->strikeY;
     Layout_SetElementPosition(self, kStrikeMarker, pos);
 
-    int feedbackState = 1;
-    int valueStateOrRightFlag;
-    int playerFlagOrRightValue;
+    feedbackState = 1;
     // Right only: first temporary = player flag, second = visual value state.
     if (self->strikeX >= self->horizontalSpinThreshold && self->spinSelectionAllowed) {
         if (self->pointerSelectionDisabled) {
-            valueStateOrRightFlag = 0;
             playerFlagOrRightValue = 2;
+            valueStateOrRightFlag = 0;
         } else {
             valueStateOrRightFlag = 1;
             if (self->spinMask == kSpinRight) {
@@ -324,8 +394,8 @@ int CStrokePoint2d_UpdateStrikeMarkerAndSpinButtons(StrokePointLayout* self) {
     // Remaining directions: first temporary = value state, second = player flag.
     if (self->strikeX <= -self->horizontalSpinThreshold && self->spinSelectionAllowed) {
         if (self->pointerSelectionDisabled) {
-            valueStateOrRightFlag = 2;
             playerFlagOrRightValue = 0;
+            valueStateOrRightFlag = 2;
         } else {
             playerFlagOrRightValue = 1;
             if (self->spinMask == kSpinLeft) {
@@ -351,8 +421,8 @@ int CStrokePoint2d_UpdateStrikeMarkerAndSpinButtons(StrokePointLayout* self) {
 
     if (self->strikeY <= kFloat_neg1_StrokePointVerticalLimit && self->spinSelectionAllowed) {
         if (self->pointerSelectionDisabled) {
-            valueStateOrRightFlag = 2;
             playerFlagOrRightValue = 0;
+            valueStateOrRightFlag = 2;
         } else {
             playerFlagOrRightValue = 1;
             if (self->spinMask == kSpinTop) {
@@ -378,8 +448,8 @@ int CStrokePoint2d_UpdateStrikeMarkerAndSpinButtons(StrokePointLayout* self) {
 
     if (self->strikeY >= kFloat_1_805E0B38 && self->spinSelectionAllowed) {
         if (self->pointerSelectionDisabled) {
-            valueStateOrRightFlag = 2;
             playerFlagOrRightValue = 0;
+            valueStateOrRightFlag = 2;
         } else {
             playerFlagOrRightValue = 1;
             if (self->spinMask == kSpinBottom) {
@@ -412,7 +482,8 @@ int CStrokePoint2d_UpdateStrikeMarkerAndSpinButtons(StrokePointLayout* self) {
 // powerCount is a separate 0/1/2 selection. Tomahawk needs any selected power;
 // Cobra/Spike also need specialShotSelectionAllowed. pointerSelectionDisabled
 // suppresses interaction-flag writes here, while visual state still updates.
-int CStrokePoint2d_UpdatePowerAndSpecialShots(StrokePointLayout* self) {
+int CStrokePoint2d::UpdatePowerAndSpecialShots() {
+    StrokePointLayout* self = (StrokePointLayout*)this;
     // Phase 1: power-button eligibility and its three-tick click feedback.
     if (self->powerGauge >= kPowerSegment && self->powerSelectionAllowed) {
         if (self->powerClickFeedback) {
@@ -525,12 +596,18 @@ int CStrokePoint2d_UpdatePowerAndSpecialShots(StrokePointLayout* self) {
         Layout_SetElementPlayerFlag(self, kCobraButton, specialEnabled, kStrokePlayerFlagSelector);
         Layout_SetElementPlayerFlag(self, kCobraCompanion, specialEnabled, kStrokePlayerFlagSelector);
     }
-    Layout_SetElementValueState(self, kTomahawkButton, tomahawkState); Layout_SetElementFeedbackState(self, kTomahawkButton, tomahawkFeedback);
-    Layout_SetElementValueState(self, kTomahawkCompanion, tomahawkState); Layout_SetElementFeedbackState(self, kTomahawkCompanion, tomahawkFeedback);
-    Layout_SetElementValueState(self, kCobraButton, cobraState); Layout_SetElementFeedbackState(self, kCobraButton, cobraFeedback);
-    Layout_SetElementValueState(self, kCobraCompanion, cobraState); Layout_SetElementFeedbackState(self, kCobraCompanion, cobraFeedback);
-    Layout_SetElementValueState(self, kSpikeButton, spikeState); Layout_SetElementFeedbackState(self, kSpikeButton, spikeFeedback);
-    Layout_SetElementValueState(self, kSpikeCompanion, spikeState); Layout_SetElementFeedbackState(self, kSpikeCompanion, spikeFeedback);
+    Layout_SetElementValueState(self, kTomahawkButton, tomahawkState);
+    Layout_SetElementFeedbackState(self, kTomahawkButton, tomahawkFeedback);
+    Layout_SetElementValueState(self, kTomahawkCompanion, tomahawkState);
+    Layout_SetElementFeedbackState(self, kTomahawkCompanion, tomahawkFeedback);
+    Layout_SetElementValueState(self, kCobraButton, cobraState);
+    Layout_SetElementFeedbackState(self, kCobraButton, cobraFeedback);
+    Layout_SetElementValueState(self, kCobraCompanion, cobraState);
+    Layout_SetElementFeedbackState(self, kCobraCompanion, cobraFeedback);
+    Layout_SetElementValueState(self, kSpikeButton, spikeState);
+    Layout_SetElementFeedbackState(self, kSpikeButton, spikeFeedback);
+    Layout_SetElementValueState(self, kSpikeCompanion, spikeState);
+    Layout_SetElementFeedbackState(self, kSpikeCompanion, spikeFeedback);
     // Phase 5: the color API consumes this existing alpha-minus-256 encoding.
     int value = self->specialShotOpacity - kPackedAlphaBias;
     for (int id = kSpecialColorFirstElement; id <= kSpecialColorLastElement; ++id)
@@ -556,7 +633,10 @@ struct RangeGuard28 {
     char* text;
     char* allocator;
     // Free an exception-message array unless ownership was transferred to its control block.
-    ~RangeGuard28() { if (text) __dla__FPv(text); }
+    ~RangeGuard28() {
+        if (text)
+            __dla__FPv(text);
+    }
 };
 
 namespace std {
@@ -574,7 +654,7 @@ struct logic_error : exception {
         message = (char*)__nwa__FUl((n << 1) - n);
         {
             char* buffer = message;
-            RangeGuard28 guard = { buffer, &allocator };
+            RangeGuard28 guard = {buffer, &allocator};
             control = new RangeOwner28(buffer);
             guard.text = 0;
         }
@@ -584,7 +664,9 @@ struct logic_error : exception {
 };
 struct out_of_range : logic_error {
     // Construct the bounds exception and install its final interface.
-    out_of_range(const char* s) : logic_error(s) { vtable = (void*)__vt__Q23std12out_of_range; }
+    out_of_range(const char* s) : logic_error(s) {
+        vtable = (void*)__vt__Q23std12out_of_range;
+    }
     ~out_of_range();
 };
 }
@@ -612,19 +694,43 @@ struct IntVector28 {
     }
 };
 
-struct VirtualBase28 { char pad[0xE0]; };
+struct VirtualBase28 {
+    char pad[0xE0];
+};
 struct Virtual28 : VirtualBase28 {
-    virtual void slot00(); virtual void slot01(); virtual void slot02();
-    virtual void slot03(); virtual void slot04(); virtual void slot05();
-    virtual void slot06(); virtual void slot07(); virtual void slot08();
-    virtual void slot09(); virtual void slot10(); virtual void slot11();
-    virtual void slot12(); virtual void slot13(); virtual void slot14();
-    virtual void slot15(); virtual void slot16(); virtual void slot17();
-    virtual void slot18(); virtual void slot19(); virtual void slot20();
-    virtual void slot21(); virtual void slot22(); virtual void slot23();
-    virtual void slot24(); virtual void slot25(); virtual void slot26();
-    virtual void slot27(); virtual void slot28(); virtual void slot29();
-    virtual void slot30(); virtual void slot31(); virtual void slot32();
+    virtual void slot00();
+    virtual void slot01();
+    virtual void slot02();
+    virtual void slot03();
+    virtual void slot04();
+    virtual void slot05();
+    virtual void slot06();
+    virtual void slot07();
+    virtual void slot08();
+    virtual void slot09();
+    virtual void slot10();
+    virtual void slot11();
+    virtual void slot12();
+    virtual void slot13();
+    virtual void slot14();
+    virtual void slot15();
+    virtual void slot16();
+    virtual void slot17();
+    virtual void slot18();
+    virtual void slot19();
+    virtual void slot20();
+    virtual void slot21();
+    virtual void slot22();
+    virtual void slot23();
+    virtual void slot24();
+    virtual void slot25();
+    virtual void slot26();
+    virtual void slot27();
+    virtual void slot28();
+    virtual void slot29();
+    virtual void slot30();
+    virtual void slot31();
+    virtual void slot32();
     virtual int poll(int);
 };
 
@@ -636,7 +742,8 @@ struct Virtual28 : VirtualBase28 {
 // a new direction requires a later activation. Special shots switch directly.
 // Eligibility is enforced by the element interaction flags set by render/update;
 // this handler does not repeat every spin/power/special eligibility test.
-int CStrokePoint2d_ConsumeControlActivations(StrokePointLayout* self) {
+int CStrokePoint2d::ConsumeControlActivations() {
+    StrokePointLayout* self = (StrokePointLayout*)this;
     int oldSpinMask;
     int oldSpecialShotMask;
     if (self->dialogState != kStrokeOpen)
@@ -655,10 +762,18 @@ int CStrokePoint2d_ConsumeControlActivations(StrokePointLayout* self) {
         for (unsigned int i = 0; i < activated.size; ++i) {
             if (self->spinMask == 0) {
                 switch (activated.at(i)) {
-                case kSpinLeftButton: self->spinMask = kSpinLeft; break;
-                case kSpinBottomButton: self->spinMask = kSpinBottom; break;
-                case kSpinRightButton: self->spinMask = kSpinRight; break;
-                case kSpinTopButton: self->spinMask = kSpinTop; break;
+                case kSpinLeftButton:
+                    self->spinMask = kSpinLeft;
+                    break;
+                case kSpinBottomButton:
+                    self->spinMask = kSpinBottom;
+                    break;
+                case kSpinRightButton:
+                    self->spinMask = kSpinRight;
+                    break;
+                case kSpinTopButton:
+                    self->spinMask = kSpinTop;
+                    break;
                 }
             } else {
                 switch (activated.at(i)) {
@@ -703,34 +818,43 @@ int CStrokePoint2d_ConsumeControlActivations(StrokePointLayout* self) {
             switch (activated.at(i)) {
             case kCobraButton:
                 if (self->specialShotMask != kShotCobra) {
-                    Sound_PlayByName(g_soundManager, strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_select_special_shot, 0,
-                        0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
+                    Sound_PlayByName(g_soundManager,
+                                     strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_select_special_shot,
+                                     0, 0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound,
+                                     kFloat_1_805E0B38);
                     self->specialShotMask = kShotCobra;
                 } else {
-                    Sound_PlayByName(g_soundManager, strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_ui_icon_click, 0,
-                        0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
+                    Sound_PlayByName(g_soundManager,
+                                     strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_ui_icon_click, 0, 0,
+                                     0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
                     self->specialShotMask = 0;
                 }
                 break;
             case kSpikeButton:
                 if (self->specialShotMask != kShotSpike) {
-                    Sound_PlayByName(g_soundManager, strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_select_special_shot, 0,
-                        0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
+                    Sound_PlayByName(g_soundManager,
+                                     strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_select_special_shot,
+                                     0, 0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound,
+                                     kFloat_1_805E0B38);
                     self->specialShotMask = kShotSpike;
                 } else {
-                    Sound_PlayByName(g_soundManager, strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_ui_icon_click, 0,
-                        0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
+                    Sound_PlayByName(g_soundManager,
+                                     strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_ui_icon_click, 0, 0,
+                                     0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
                     self->specialShotMask = 0;
                 }
                 break;
             case kTomahawkButton:
                 if (self->specialShotMask != kShotTomahawk) {
-                    Sound_PlayByName(g_soundManager, strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_select_special_shot, 0,
-                        0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
+                    Sound_PlayByName(g_soundManager,
+                                     strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_select_special_shot,
+                                     0, 0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound,
+                                     kFloat_1_805E0B38);
                     self->specialShotMask = kShotTomahawk;
                 } else {
-                    Sound_PlayByName(g_soundManager, strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_ui_icon_click, 0,
-                        0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
+                    Sound_PlayByName(g_soundManager,
+                                     strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_ui_icon_click, 0, 0,
+                                     0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
                     self->specialShotMask = 0;
                 }
                 break;
@@ -758,11 +882,10 @@ int CStrokePoint2d_ConsumeControlActivations(StrokePointLayout* self) {
         }
     }
 
-    if (((Virtual28*)self)->poll(kCobraButton) ||
-        ((Virtual28*)self)->poll(kSpikeButton) ||
+    if (((Virtual28*)self)->poll(kCobraButton) || ((Virtual28*)self)->poll(kSpikeButton) ||
         ((Virtual28*)self)->poll(kTomahawkButton))
-        Sound_PlayByName(g_soundManager, strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_ui_error, 0,
-            0, 0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
+        Sound_PlayByName(g_soundManager, strokePointSpecialShotStrings + kStrokePointSpecialShotStrings_ui_error, 0, 0,
+                         0, 0, kFloat_0_5_Menu802E72B0, kFloat_200_StrokePointSound, kFloat_1_805E0B38);
 
     return 1;
 }

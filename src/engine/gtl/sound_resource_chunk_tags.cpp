@@ -1,6 +1,8 @@
+// Sound resource chunk tags: the four-character tags (GSND, HEAD, DATA and the others) that
+// identify sound resource chunks, packed from the shared string pool at startup. The same
+// startup call sets the sound resource's full-turn constant.
+
 #include <decomp/static_init.h>
-// Translation unit 0x8043E858-0x8043EAC4 (1 functions; boundaries chosen from call/vtable evidence over decomp-toolkit's units).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -42,10 +44,10 @@ enum {
 // Pack four pool bytes into a big-endian tag word; do not include the NUL byte.
 // Known tags are ASCII. Preserve the original signed extension for bytes 1..3.
 inline unsigned int PackSoundTag(int poolOffset) {
-    return (signed char)soundResourceFormatStrings[poolOffset + 3]
-        | ((signed char)soundResourceFormatStrings[poolOffset + 2] << 8)
-        | ((soundResourceFormatStrings[poolOffset] << 24)
-        | ((signed char)soundResourceFormatStrings[poolOffset + 1] << 16));
+    return (signed char)soundResourceFormatStrings[poolOffset + 3] |
+           ((signed char)soundResourceFormatStrings[poolOffset + 2] << 8) |
+           ((soundResourceFormatStrings[poolOffset] << 24) |
+            ((signed char)soundResourceFormatStrings[poolOffset + 1] << 16));
 }
 
 // Initialize tau and the GSND container/chunk tags from the shared string pool.

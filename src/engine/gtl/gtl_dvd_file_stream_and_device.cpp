@@ -1,10 +1,11 @@
+// DvdFileStream virtual functions (alignment, length, position, busy state and RTTI), the
+// DVD file I/O device (gtl::CFileIoDeviceDVD: init, availability and destruction), and the
+// runtime type links that tie the stream to its base type.
+
 #include <decomp/static_init.h>
 #include "classes/GtlDvdFileStream.h"
+#include "classes/GtlFileIoDeviceDVD.h"
 #include "classes/MWStringStorage.h"
-// Access an existing DVD stream without constructing or retaining it.
-static inline GtlDvdFileStream* AsGtlDvdFileStream(void* object) { return (GtlDvdFileStream*)object; }
-// Translation unit 0x80412664-0x80412858 (17 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "sdk_protos.h"
 
@@ -27,113 +28,119 @@ struct DeviceDtorLayout {
     MWStringStorage rootPath;
 };
 
-enum DvdStreamConstants { kDvdTransferAlignment = 0x20, kDvdOffsetAlignment = 4,
-       kStreamSlotTrue = 1, kStreamSlotFalse = 0, kShortStringLengthMask = 0x7f,
-       kDeviceRootPathOffset = (int)&((DeviceDtorLayout*)0)->rootPath };
+enum DvdStreamConstants {
+    kDvdTransferAlignment = 0x20,
+    kDvdOffsetAlignment = 4,
+    kStreamSlotTrue = 1,
+    kStreamSlotFalse = 0,
+    kShortStringLengthMask = 0x7f
+};
 
-// Return virtual slot 13's transfer alignment in bytes (its specific caller role is unresolved).
-int gtl_nw4r_ut_DvdFileStream_vfunc_13() {
+} // extern "C"
+
+// Return slot 13's transfer alignment in bytes.
+int gtl::nw4r::ut::DvdFileStream::vfunc_13() {
     return kDvdTransferAlignment;
 }
 
-// Return virtual slot 12's transfer alignment in bytes (distinct from slot 13).
-int gtl_nw4r_ut_DvdFileStream_vfunc_12() {
+// Return slot 12's transfer alignment in bytes.
+int gtl::nw4r::ut::DvdFileStream::vfunc_12() {
     return kDvdTransferAlignment;
 }
 
 // Return the stream offset alignment in bytes.
-int gtl_nw4r_ut_DvdFileStream_vfunc_11() {
+int gtl::nw4r::ut::DvdFileStream::vfunc_11() {
     return kDvdOffsetAlignment;
 }
 
-// Return fixed true for virtual slot 19; its exact query is not established here.
-int gtl_nw4r_ut_DvdFileStream_vfunc_19() {
+// Return fixed true for slot 19.
+int gtl::nw4r::ut::DvdFileStream::vfunc_19() {
     return kStreamSlotTrue;
 }
 
-// Return fixed false for virtual slot 10; its exact query is not established here.
-int gtl_nw4r_ut_DvdFileStream_vfunc_10() {
+// Return fixed false for slot 10.
+int gtl::nw4r::ut::DvdFileStream::vfunc_10() {
     return kStreamSlotFalse;
 }
 
-// Return fixed true for virtual slot 9; its exact query is not established here.
-int gtl_nw4r_ut_DvdFileStream_vfunc_9() {
+// Return fixed true for slot 9.
+int gtl::nw4r::ut::DvdFileStream::vfunc_9() {
     return kStreamSlotTrue;
 }
 
-// Return fixed true for virtual slot 18; its exact query is not established here.
-int gtl_nw4r_ut_DvdFileStream_vfunc_18() {
+// Return fixed true for slot 18.
+int gtl::nw4r::ut::DvdFileStream::vfunc_18() {
     return kStreamSlotTrue;
 }
 
-// Return fixed true for virtual slot 8; its exact query is not established here.
-int gtl_nw4r_ut_DvdFileStream_vfunc_8() {
+// Return fixed true for slot 8.
+int gtl::nw4r::ut::DvdFileStream::vfunc_8() {
     return kStreamSlotTrue;
 }
 
-// Return the cached byte length/read limit using the ABI's signed integer return slot.
-int gtl_nw4r_ut_DvdFileStream_vfunc_14(void* self) {
-    return (int)AsGtlDvdFileStream(self)->length;
+// Return the cached byte length/read limit using the signed integer return slot.
+int gtl::nw4r::ut::DvdFileStream::GetLength() {
+    return (int)length;
 }
 
-// Return current byte position in an ABI pointer slot; it is not a dereferenceable address.
-void* gtl_nw4r_ut_DvdFileStream_vfunc_20(void* self) {
-    return (void*)AsGtlDvdFileStream(self)->position;
+// Return current byte position in a pointer slot; it is not a dereferenceable address.
+void* gtl::nw4r::ut::DvdFileStream::GetPosition() {
+    return (void*)position;
 }
 
 // Return the async-read busy byte without polling the DVD hardware.
-unsigned char gtl_nw4r_ut_DvdFileStream_vfunc_7(void* self) {
-    return AsGtlDvdFileStream(self)->busy;
+unsigned char gtl::nw4r::ut::DvdFileStream::IsBusy() {
+    return busy;
 }
 
 // Return borrowed static runtime type information for DVD streams.
-void* gtl_nw4r_ut_DvdFileStream_GetRTTI() {
+void* gtl::nw4r::ut::DvdFileStream::GetRTTI() {
     return &s_dvdFileStreamTypeInfo;
 }
 
 // Report the device's fixed availability/support result; no media check is performed.
-int gtl_CFileIoDeviceDVD_vfunc_1() {
+int gtl::CFileIoDeviceDVD::IsAvailable() {
     return 1;
 }
 
-// Construct the device with "/" as its root path and initialize the DVD subsystem.
-void* gtl_CFileIoDeviceDVD_Ctor(void* self) {
+// Set the root path to "/" and initialize the DVD subsystem; returns this.
+void* gtl::CFileIoDeviceDVD::Init() {
     // Start the embedded 12-byte root-path string empty under the base-device vtable.
-    // Retain the word view and byte-based subobject address for the original register lifetimes.
-    unsigned int* fields = (unsigned int*)self;
-    fields[1] = 0;
-    fields[2] = 0;
-    fields[3] = 0;
-    fields[0] = (unsigned int)&gtlFileIoDeviceVtable;
-    unsigned char inlineLength = ((unsigned char*)self)[kDeviceRootPathOffset] & kShortStringLengthMask;
-    unsigned char allocatorByte = 0;   // the original passes an unused stack byte here
+    rootPath.flags = 0;
+    rootPath.length = 0;
+    rootPath.data = 0;
+    vtbl = &gtlFileIoDeviceVtable;
+    unsigned char inlineLength = ((unsigned char*)&rootPath)[0] & kShortStringLengthMask;
+    unsigned char allocatorByte = 0; // the original passes an unused stack byte here
     size_t slashLength = strlen(&pathSeparatorString);
-    FileIOString_ReplaceRangeWithAllocator((char*)self + kDeviceRootPathOffset, 0, inlineLength, &pathSeparatorString, &pathSeparatorString + slashLength, (char*)&allocatorByte);
+    FileIOString_ReplaceRangeWithAllocator(&rootPath, 0, inlineLength, &pathSeparatorString,
+                                           &pathSeparatorString + slashLength, (char*)&allocatorByte);
     // The root path is now copied; install the derived vtable before initializing DVD.
-    fields[0] = (unsigned int)&__vt__Q23gtl16CFileIoDeviceDVD;
+    vtbl = &__vt__Q23gtl16CFileIoDeviceDVD;
     DVDInit();
-    return self;
+    return this;
 }
 
 // Release the root path's heap storage and optionally the device itself.
-// deleteStorage > 0 frees self; zero/negative values only destroy its contents.
-void* gtl_CFileIoDeviceDVD_dtor(void* self, int deleteStorage) {
-    if (self != 0) {
-        DeviceDtorLayout* device = (DeviceDtorLayout*)self;
-        if (&device->rootPath.flags != 0 && (device->rootPath.flags >> 31) != 0)
-            FileIO_Free(device->rootPath.data);
+// deleteStorage > 0 frees the device; zero/negative values only destroy its contents.
+void* gtl::CFileIoDeviceDVD::Destroy(int deleteStorage) {
+    if (this != 0) {
+        if (&rootPath.flags != 0 && (rootPath.flags >> 31) != 0)
+            FileIO_Free(rootPath.data);
         if (deleteStorage > 0)
-            FileIO_Free(self);
+            FileIO_Free(this);
     }
-    return self;
+    return this;
 }
 
 // Link the stream's runtime type to its base and initialize the unit's two-pi cache.
-void gtl_nw4r_ut_DvdFileStream_InitializeTypeInfoAndConstants() {
+void gtl::nw4r::ut::DvdFileStream::InitializeTypeInfoAndConstants() {
     float value = kFloat_6_2831855;
     *(void**)&s_dvdFileStreamTypeInfo = &s_dvdFileStreamBaseTypeInfo;
     s_dvdFileStreamTwoPi = value;
 }
+
+extern "C" {
 
 // Base device destruction uses the same root-path ownership convention.
 // A set top flag bit owns rootPath.data; deleteStorage > 0 also frees self.
@@ -157,5 +164,5 @@ void* dtor_80412774(void* self, int deleteStorage) {
 /* Static initialisers run from the .ctors table, as in the original. */
 #pragma push
 #pragma force_active on
-STATIC_INIT_ENTRY(".CRT$XCU80462714", _ctors_u80412664_0, gtl_nw4r_ut_DvdFileStream_InitializeTypeInfoAndConstants);
+STATIC_INIT_ENTRY(".CRT$XCU80462714", _ctors_u80412664_0, gtl::nw4r::ut::DvdFileStream::InitializeTypeInfoAndConstants);
 #pragma pop

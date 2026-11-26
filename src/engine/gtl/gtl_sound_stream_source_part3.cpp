@@ -1,10 +1,15 @@
-// Translation unit 0x804044DC-0x8040465C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Playback header of a streamed sound source (gtl::CSoundStreamSource): BuildPlaybackHeader writes
+// the scalar fields and the channel windows into the stream's playback header.
+//
+// Other source functions are in gtl_sound_stream_source_part1.cpp, part2.cpp and part4.cpp.
 
+#include "classes/SoundStreamSource.h"
+#include "classes/GtlSoundStreamInterface.h"
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned int u32;
 
+// Playback header written into the stream: scalar fields, then two channel windows of 28 halfwords.
 struct StreamHeader {
     u8 format, loop, channels, reserved;
     u16 rate, flags;
@@ -12,59 +17,48 @@ struct StreamHeader {
     u16 adpcmChannelParameters[28];
 };
 
-// Header scalar fields occupy 0x30 bytes. adpcmChannelParameters holds
-// mixed ADPCM decoder state, not just filter coefficients. Each destination
-// channel has 28 halfwords; each source channel has 24. Only the channel windows
-// move in the loop below, so scalar fields are written exactly once.
-
 // ADPCM source channels occupy 24 halfwords; playback channels occupy 28.
-struct SourceChannelBlock { u16 parameters[24]; };
-struct PlaybackChannelBlock { u16 parameters[28]; };
+struct SourceChannelBlock {
+    u16 parameters[24];
+};
+struct PlaybackChannelBlock {
+    u16 parameters[28];
+};
 enum {
-    kStreamAlignment = 32, kPlaybackChannelSlots = 2, kCopiedAdpcmHalfwords = 22,
-    kAdpcmState20 = 20, kAdpcmState21 = 21, kAdpcmState22 = 22,
+    kStreamAlignment = 32,
+    kPlaybackChannelSlots = 2,
+    kCopiedAdpcmHalfwords = 22,
+    kAdpcmState20 = 20,
+    kAdpcmState21 = 21,
+    kAdpcmState22 = 22,
     kAdpcmTrailingState = 23
 };
 
-namespace gtl {
-struct CSoundStreamSource {
-    u8 pad00[0x10];
-    u32 rate;
-    u16 field14, channels;
-    u32 samples, start, field20, current, flags, end, field30, field34, size;
-    u16 adpcmChannelParameters[48];
-};
-}
-
-extern "C" {
-StreamHeader* gtl_ISoundStream_GetPlaybackHeader(void*);
-
 // Build the playback header and copy both ADPCM blocks, clearing three decoder-state halfwords.
-// self is borrowed; stream must supply writable header storage for both channels.
-// Returns 1 unconditionally, with no validation of pointers or source channel count.
-int gtl_CSoundStreamSource_BuildPlaybackHeader(const gtl::CSoundStreamSource* self, void* stream) {
-    StreamHeader* out = gtl_ISoundStream_GetPlaybackHeader(stream);
+// stream must supply writable header storage for both channels. Returns 1 unconditionally.
+// config[1..6] supply the current, flags, end, field30, field34 and size words.
+int gtl::CSoundStreamSource::BuildPlaybackHeader(void* stream) const {
+    StreamHeader* out = (StreamHeader*)((gtl::ISoundStream*)stream)->GetPlaybackHeader();
     // Copy playback metadata; size/aligned are byte counts with 32-byte alignment.
-    // Legacy sample/block field names are retained; exact units of each are unresolved here.
-    // Format/loop are forced to zero; rate/flags narrow to 16 bits, channels to 8 bits.
     out->format = 0;
     out->loop = 0;
-    out->channels = self->channels;
+    out->channels = channelCount;
     out->reserved = 0;
-    out->rate = self->rate;
-    out->flags = self->flags;
-    out->samples = self->samples;
-    out->start = self->start;
+    out->rate = (u32)sampleRate;
+    out->flags = config[2];
+    out->samples = (u32)sampleCount;
+    out->start = (u32)streamData;
     out->zero = 0;
-    out->end = self->end;
-    out->current = self->current;
-    out->field1c = self->field30;
-    out->size = self->size;
-    out->field24 = self->field34;
-    out->aligned = (self->size + kStreamAlignment - 1) & ~(kStreamAlignment - 1);
+    out->end = config[3];
+    out->current = config[1];
+    out->field1c = config[4];
+    out->size = config[6];
+    out->field24 = config[5];
+    out->aligned = (config[6] + kStreamAlignment - 1) & ~(kStreamAlignment - 1);
     out->field2c = 0;
     // Both channel records are processed even for a mono source. Copy 0..21 and 23,
     // then reset 20..22; 24..27 in the destination are left untouched.
+    const gtl::CSoundStreamSource* self = this;
     for (u32 channel = 0; channel < kPlaybackChannelSlots; ++channel) {
         for (u32 halfword = 0; halfword < kCopiedAdpcmHalfwords; ++halfword)
             out->adpcmChannelParameters[halfword] = self->adpcmChannelParameters[halfword];
@@ -72,11 +66,9 @@ int gtl_CSoundStreamSource_BuildPlaybackHeader(const gtl::CSoundStreamSource* se
         out->adpcmChannelParameters[kAdpcmState20] = 0;
         out->adpcmChannelParameters[kAdpcmState21] = 0;
         out->adpcmChannelParameters[kAdpcmState22] = 0;
-        // Advance the channel windows; no second complete source/header object is implied.
+        // Advance to the next channel window in both the source and the header.
         self = (const gtl::CSoundStreamSource*)((const SourceChannelBlock*)self + 1);
         out = (StreamHeader*)((PlaybackChannelBlock*)out + 1);
     }
     return 1;
 }
-
-} // extern "C"

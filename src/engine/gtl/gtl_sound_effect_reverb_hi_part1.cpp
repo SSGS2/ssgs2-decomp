@@ -1,7 +1,8 @@
-// Translation unit 0x803FA3F0-0x803FA564 (6 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// High-quality reverb sound effect (gtl::CSoundEffectReverbHi): its destructors, destroy,
+// and enable and enable-query calls that forward to the embedded reverb effect.
 
 #include "classes/SoundEffectReverbHiState.h"
+#include "classes/FxReverbHi.h"
 extern "C" {
 
 void gtl_Audio_Free(void*);
@@ -10,13 +11,13 @@ void gtl_SoundEffect_GetEnabled(void*, void*, void*);
 void gtl_SoundEffect_Finalize(void*, void*);
 void __dl__FPv(void*);
 
-struct FxReverbHi {
-	virtual void v0();
-	virtual void v1();
-	virtual void v2();
-	virtual void destroy();
-	virtual void v5();
-	virtual void deinit();
+struct FxReverbHiVirtuals {
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual void destroy();
+    virtual void v5();
+    virtual void deinit();
 };
 
 extern char __vt__Q33gtl4nw4r10FxReverbHi[];
@@ -24,21 +25,18 @@ extern char __vt__Q23gtl20CSoundEffectReverbHi[];
 
 // Free an audio-allocated base wrapper only when deleting > 0; return its former address.
 void* dtor_803FA3F0(void* self, int deleting) {
-	if (self && deleting > 0)
-		gtl_Audio_Free(self);
-	return self;
+    if (self && deleting > 0)
+        gtl_Audio_Free(self);
+    return self;
 }
 
-// Deinitialize and destroy the standalone effect, then optionally free it with operator delete.
-void* FxReverbHi_dtor(void* self, int deleting) {
-	if (self) {
-		*(void**)self = &__vt__Q33gtl4nw4r10FxReverbHi;
-		((FxReverbHi*)self)->deinit();
-		((FxReverbHi*)self)->destroy();
-		if (deleting > 0)
-			__dl__FPv(self);
-	}
-	return self;
+} // extern "C"
+
+// Deinitialize and destroy the standalone effect; the compiler adds the optional operator delete.
+gtl::nw4r::FxReverbHi::~FxReverbHi() {
+    vtbl = &__vt__Q33gtl4nw4r10FxReverbHi;
+    ((FxReverbHiVirtuals*)this)->deinit();
+    ((FxReverbHiVirtuals*)this)->destroy();
 }
 
 #pragma opt_propagation off
@@ -47,40 +45,43 @@ void* FxReverbHi_dtor(void* self, int deleting) {
 #pragma opt_strength_reduction off
 // Finalize the owner and embedded effect, then optionally free the owner on the audio heap.
 // effectVtable at +0x14 is the start of the embedded object, not a pointer to a separate effect.
-void* gtl_CSoundEffectReverbHi_dtor(void* self, int deleting) {
-	if (self) {
-		AsSoundEffectReverbHiState(self)->vtable = &__vt__Q23gtl20CSoundEffectReverbHi;
-		// Detach/finalize the owner before dismantling the embedded implementation.
-		gtl_SoundEffect_Finalize(self, &AsSoundEffectReverbHiState(self)->effectVtable);
-		if (&AsSoundEffectReverbHiState(self)->effectVtable) {
-			AsSoundEffectReverbHiState(self)->effectVtable = &__vt__Q33gtl4nw4r10FxReverbHi;
-			((FxReverbHi*)(&AsSoundEffectReverbHiState(self)->effectVtable))->deinit();
-			((FxReverbHi*)(&AsSoundEffectReverbHiState(self)->effectVtable))->destroy();
-		}
-		// The owner uses the audio allocator; the standalone destructor above uses delete.
-		if (deleting > 0)
-			gtl_Audio_Free(self);
-	}
-	return self;
+void* gtl::CSoundEffectReverbHi::Destroy(int deleting) {
+    if (this) {
+        vtable = &__vt__Q23gtl20CSoundEffectReverbHi;
+        // Detach/finalize the owner before dismantling the embedded implementation.
+        gtl_SoundEffect_Finalize(this, &effectVtable);
+        if (&effectVtable) {
+            effectVtable = &__vt__Q33gtl4nw4r10FxReverbHi;
+            ((FxReverbHiVirtuals*)(&effectVtable))->deinit();
+            ((FxReverbHiVirtuals*)(&effectVtable))->destroy();
+        }
+        // The owner uses the audio allocator; the standalone destructor above uses delete.
+        if (deleting > 0)
+            gtl_Audio_Free(this);
+    }
+    return this;
 }
 #pragma opt_propagation reset
 #pragma opt_common_subs reset
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 
+extern "C" {
+
 // Tail-forward to audio free; the original ABI carries the allocation in incoming r3.
 // The argument-less reconstruction intentionally preserves that forwarding thunk.
-void dtor_803FA548(void* object) { gtl_Audio_Free(object); }
-
-// Forward enable mode (integer 0/1 in r4, represented by the legacy void* signature).
-// The implementation borrows the embedded effect; no ownership changes.
-void gtl_CSoundEffectReverbHi_SetEnabled(void* self, void* enabledMode) {
-	gtl_SoundEffect_SetEnabled(self, &AsSoundEffectReverbHiState(self)->effectVtable, enabledMode);
-}
-
-// Write enable state as an int 0/1 to the caller's borrowed output address.
-void gtl_CSoundEffectReverbHi_GetEnabled(void* self, void* enabledOutput) {
-	gtl_SoundEffect_GetEnabled(self, &AsSoundEffectReverbHiState(self)->effectVtable, enabledOutput);
+void dtor_803FA548(void* object) {
+    gtl_Audio_Free(object);
 }
 
 } // extern "C"
+
+// Forward the enable mode (0 or 1) to the embedded effect; ownership is unchanged.
+void gtl::CSoundEffectReverbHi::SetEnabled(void* enabledMode) {
+    gtl_SoundEffect_SetEnabled(this, &effectVtable, enabledMode);
+}
+
+// Write the embedded effect's enable state (0 or 1) to the caller's output address.
+void gtl::CSoundEffectReverbHi::GetEnabled(void* enabledOutput) {
+    gtl_SoundEffect_GetEnabled(this, &effectVtable, enabledOutput);
+}

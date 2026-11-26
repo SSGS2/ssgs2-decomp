@@ -6,8 +6,8 @@
 struct PetMeshGeometry {
     char pad_000[0x4];
     unsigned int vertexCount; // 0x4
-    void* positions; // 0x8
-    void* texcoords; // 0xC
+    void* positions;          // 0x8
+    void* texcoords;          // 0xC
 };
 
 #define OFF(f, o) typedef char PetMeshGeometry_off_##f[((int)&((PetMeshGeometry*)0)->f == (o)) ? 1 : -1]

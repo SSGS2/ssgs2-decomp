@@ -46,6 +46,12 @@ struct WGeneric3D {
     virtual void slot40(int, int) = 0;
     virtual void slot41(int, void*, void*, int) = 0;
 
+    // Non-virtual bodies of vtable slots 21, 22, 26 and 27.
+    int vfunc_21();
+    unsigned int GetRenderEntryCount();
+    int vfunc_26();
+    int vfunc_27();
+
     char unk04[0x0C];
     unsigned int separateTexturePassesEnabled;
     char unk14[0x08];

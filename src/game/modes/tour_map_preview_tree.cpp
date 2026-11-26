@@ -1,14 +1,22 @@
+// Tour map preview tree: the tree of map preview records owned by the tour map screen, and the cleanup
+// that releases the screen, its preview tree, its UI resources and its map music.
+// Also the small list-count and resource-delete helpers the tree uses.
+
 extern "C" char s_bpCtrlDtorRegistration_8051D0EC[];
 extern "C" char s_bpPlayerDtorRegistration_TourItemMenu[];
 extern "C" char s_pangyaEnemyDataDtorRegistration_TourItemMenu[];
-// Translation unit 0x802EB60C-0x802EC144 (2 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #pragma use_lmw_stmw on
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
-
+#include "classes/CBpPlayer.h"
+#include "classes/CTourWindow.h"
+#include "classes/CTourHintWindow.h"
+#include "classes/CMapData.h"
+#include "classes/CTourVSWindow.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CBpCtrlHandle.h"
 
 extern "C" {
 
@@ -28,12 +36,27 @@ struct Tree {
 };
 
 // A tour map begins with four owners, followed by the integer-key preview tree.
-struct TourMapTreeView { void* owners[4]; Tree previews; };
+struct TourMapTreeView {
+    void* owners[4];
+    Tree previews;
+};
 #define FIELD_OFFSET(type, member) ((int)&((type*)0)->member)
-struct PreviewRecord { int itemIndex; void* preview; };
-struct PreviewTreeNode { void* links[3]; PreviewRecord record; };
-struct CountedListHeader { char reserved[8]; int count; };
-struct TextTableState { char reserved[0x28]; int enabled; };
+struct PreviewRecord {
+    int itemIndex;
+    void* preview;
+};
+struct PreviewTreeNode {
+    void* links[3];
+    PreviewRecord record;
+};
+struct CountedListHeader {
+    char reserved[8];
+    int count;
+};
+struct TextTableState {
+    char reserved[0x28];
+    int enabled;
+};
 
 // Keep the original four inlined levels before the generic subtree destructor.
 // TreeErase0..3 are one postorder operation expanded by inlining: destroy left,
@@ -105,7 +128,6 @@ void* TourMap_DestroyScreenAndPreviewTree(void* object, int shouldDelete) {
     return object;
 }
 
-
 struct CleanupObject {
     void* primaryFileHolder;
     void* screenFileHolder;
@@ -170,9 +192,13 @@ struct VObj4 {
 };
 
 // Delete an owned resource through the virtual interface at +0.
-static inline void DestroyResource(void* resource) { ((VObj*)resource)->Release(1); }
+static inline void DestroyResource(void* resource) {
+    ((VObj*)resource)->Release(1);
+}
 // Delete an owned resource through the virtual interface at +4.
-static inline void DestroyOffsetResource(void* resource) { ((VObj4*)resource)->Release(1); }
+static inline void DestroyOffsetResource(void* resource) {
+    ((VObj4*)resource)->Release(1);
+}
 
 // Read the count from the optional shared list header.
 static inline int ListCount(void* list) {
@@ -180,15 +206,11 @@ static inline int ListCount(void* list) {
     return first ? ((CountedListHeader*)first)->count : 0;
 }
 
-void __ct__7CBpCtrlFv(void*);
 void CBpCtrl_dtor(void*);
 void* IdMap_Lookup(void*, int);
-void CBpCtrl_DeleteEntryById(void*, int);
 void BpObject_SetEnabled(void*, int);
-void CBpCtrlHandle_ReleaseEntry(void*);
 void MsgResourceHolder_Dtor(void*, int);
 void TourBossPreview_Destroy(void*, int);
-short CMapData_GetItemIndexAt(void*, int);
 void* IntegerKeyTree_FindInsertionPosition(void*, int*, void**, unsigned char*, unsigned char*);
 void* BpEntryTree_InsertNode(void*, void*, int, int, void*);
 void appFreeUni__FPv(void*);
@@ -198,29 +220,27 @@ void PointerVector_DestroyStorage(void*);
 void PointerArray_DeleteValue(void*, void*);
 void Layout_Destroy(void*, int);
 void TourParticleEffects_Dtor(void*, int);
-void CTourVSWindow_Dtor(void*, int);
-void CTourHintWindow_ReleaseSingletonResources(void*, int);
-void CTourWindow_dtor(void*, int);
-void CBpPlayer_Ctor(void*);
-void CBpPlayer_Dtor(void*);
+void __dt__9CBpPlayerFv(void*);
 void TourMessageOwner_DestroyMessageDraw(void*);
-void CBpPlayer_ReleaseResources(void*);
-void CSharedFileHandleOwner_Dtor(void*, int);
-void CSharedFileHandleHolder_Dtor(void*, int);
-void CCameraOwner_Dtor(void*, int);
+void __dt__22CSharedFileHandleOwnerFv(void*, int);
+extern "C" void __dt__23CSharedFileHandleHolderFv(void*, int);
+void* __dt__12CCameraOwnerFv(void*, int);
 void Sound_StopByAlias(void*, void*);
 
 // Find or insert one preview-map slot; the tree owns the node, not a new payload.
 // key is passed by reference because the tree API receives its address.
 static inline void FindOrInsertPreviewRecord(CleanupObject* self, int& key, PreviewRecord*& record,
-    unsigned char& insertionFlag1, unsigned char& insertionFlag2) {
+                                             unsigned char& insertionFlag1, unsigned char& insertionFlag2) {
     void* node;
-    void* position = IntegerKeyTree_FindInsertionPosition(self->bossPreviewTree, &key, &node, &insertionFlag1, &insertionFlag2);
+    void* position =
+        IntegerKeyTree_FindInsertionPosition(self->bossPreviewTree, &key, &node, &insertionFlag1, &insertionFlag2);
     if (node == 0 || ((PreviewTreeNode*)node)->record.itemIndex < key) {
         int initialRecord[2];
         initialRecord[0] = key;
         initialRecord[1] = g_bpEntryDefaultMappedValue;
-        record = &((PreviewTreeNode*)BpEntryTree_InsertNode(self->bossPreviewTree, position, insertionFlag1, insertionFlag2, initialRecord))->record;
+        record = &((PreviewTreeNode*)BpEntryTree_InsertNode(self->bossPreviewTree, position, insertionFlag1,
+                                                            insertionFlag2, initialRecord))
+                      ->record;
     } else {
         record = &((PreviewTreeNode*)node)->record;
     }
@@ -235,7 +255,7 @@ void TourMap_ReleaseScreenResources(void* arg) {
 
     if (Sing_805DC5F0() == 0) {
         if ((signed char)s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)((reg + 0xc)));
             s_bpCtrlInitialized = 1;
         }
@@ -243,31 +263,35 @@ void TourMap_ReleaseScreenResources(void* arg) {
     }
     CleanupObject* self = (CleanupObject*)arg;
     void* found = IdMap_Lookup(Sing_805DC5F0(), self->mainBpEntryId);
-    if (found != 0) BpObject_SetEnabled(found, 0);
+    if (found != 0)
+        BpObject_SetEnabled(found, 0);
 
     if (Sing_805DC5F0() == 0) {
         if ((signed char)s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)((reg + 0xc)));
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
     found = IdMap_Lookup(Sing_805DC5F0(), self->overlayBpEntryId);
-    if (found != 0) BpObject_SetEnabled(found, 0);
+    if (found != 0)
+        BpObject_SetEnabled(found, 0);
 
     if (Sing_805DC5F0() == 0) {
         if ((signed char)s_bpCtrlInitialized == 0) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)((reg + 0xc)));
             s_bpCtrlInitialized = 1;
         }
         Sing_805DC5F0() = s_bpCtrl;
     }
     found = IdMap_Lookup(Sing_805DC5F0(), self->effectBpEntryId);
-    if (found != 0) BpObject_SetEnabled(found, 0);
+    if (found != 0)
+        BpObject_SetEnabled(found, 0);
 
-    if (self->textTable != 0) ((TextTableState*)self->textTable)->enabled = 0;
+    if (self->textTable != 0)
+        ((TextTableState*)self->textTable)->enabled = 0;
 
     if (Sing_805DC5F8() == 0) {
         if ((signed char)s_bpCtrlHandleInitialized == 0) {
@@ -279,13 +303,14 @@ void TourMap_ReleaseScreenResources(void* arg) {
         Sing_805DC5F8() = &s_bpCtrlHandle;
     }
     // Phase 2: release the singleton entry handle and individually owned resource objects.
-    CBpCtrlHandle_ReleaseEntry(Sing_805DC5F8());
+    ((CBpCtrlHandle*)Sing_805DC5F8())->ReleaseEntry();
 
     {
         // +3C uses a vtable at zero; its concrete screen component is unresolved.
         void* p = self->ownedResource3C;
         if (p != 0) {
-            if (p != 0) DestroyResource(p);
+            if (p != 0)
+                DestroyResource(p);
             self->ownedResource3C = 0;
         }
     }
@@ -297,7 +322,8 @@ void TourMap_ReleaseScreenResources(void* arg) {
         // +40 has the same destructor ABI as +3C, but is a separate owner.
         void* p = self->ownedResource40;
         if (p != 0) {
-            if (p != 0) DestroyResource(p);
+            if (p != 0)
+                DestroyResource(p);
             self->ownedResource40 = 0;
         }
     }
@@ -305,7 +331,8 @@ void TourMap_ReleaseScreenResources(void* arg) {
         // +38 uses the offset-vtable ABI; do not exchange these resource slots.
         void* p = self->ownedResource38;
         if (p != 0) {
-            if (p != 0) DestroyOffsetResource(p);
+            if (p != 0)
+                DestroyOffsetResource(p);
             self->ownedResource38 = 0;
         }
     }
@@ -315,7 +342,7 @@ void TourMap_ReleaseScreenResources(void* arg) {
         // frees the nodes. mapData must stay alive throughout this indexed traversal.
         int i = 0;
         while (i < ListCount(self->mapData)) {
-            int key = CMapData_GetItemIndexAt(self->mapData, i);
+            int key = ((CMapData*)(self->mapData))->GetItemIndexAt(i);
             if (key >= 0) {
                 // Flag storage stays in the caller to preserve the three inlined stack layouts.
                 unsigned char insertionFlag21, insertionFlag11;
@@ -340,7 +367,8 @@ void TourMap_ReleaseScreenResources(void* arg) {
         {
             void* p = self->mapData;
             if (p != 0) {
-                if (p != 0) DestroyOffsetResource(p);
+                if (p != 0)
+                    DestroyOffsetResource(p);
                 self->mapData = 0;
             }
         }
@@ -352,7 +380,8 @@ void TourMap_ReleaseScreenResources(void* arg) {
         if (Sing_805DC830() == 0) {
             if ((signed char)s_pointerVectorInitialized == 0) {
                 PointerVector_InitReserved(s_fontNumDrawRegistry);
-                __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage, (void*)((reg + 0x48)));
+                __register_global_object(s_fontNumDrawRegistry, (void*)PointerVector_DestroyStorage,
+                                         (void*)((reg + 0x48)));
                 s_pointerVectorInitialized = 1;
             }
             Sing_805DC830() = s_fontNumDrawRegistry;
@@ -360,57 +389,75 @@ void TourMap_ReleaseScreenResources(void* arg) {
         PointerArray_DeleteValue(Sing_805DC830(), self->textTable);
     }
 
-    if (self->layout != 0) { Layout_Destroy(self->layout, 1); self->layout = 0; }
-    if (self->particleEffects != 0) { TourParticleEffects_Dtor(self->particleEffects, 1); self->particleEffects = 0; }
-    if (self->versusWindow != 0) { CTourVSWindow_Dtor(self->versusWindow, 1); self->versusWindow = 0; }
-    if (self->hintWindow != 0) { CTourHintWindow_ReleaseSingletonResources(self->hintWindow, 1); self->hintWindow = 0; }
-    if (self->auxiliaryScreenResource != 0) { CTourWindow_dtor(self->auxiliaryScreenResource, 1); self->auxiliaryScreenResource = 0; }
+    if (self->layout != 0) {
+        Layout_Destroy(self->layout, 1);
+        self->layout = 0;
+    }
+    if (self->particleEffects != 0) {
+        TourParticleEffects_Dtor(self->particleEffects, 1);
+        self->particleEffects = 0;
+    }
+    if (self->versusWindow != 0) {
+        ((CTourVSWindow*)(self->versusWindow))->Dtor(1);
+        self->versusWindow = 0;
+    }
+    if (self->hintWindow != 0) {
+        ((CTourHintWindow*)(self->hintWindow))->ReleaseSingletonResources(1);
+        self->hintWindow = 0;
+    }
+    if (self->auxiliaryScreenResource != 0) {
+        delete (CTourWindow*)self->auxiliaryScreenResource;
+        self->auxiliaryScreenResource = 0;
+    }
 
     // Phase 5: unregister BP entries before releasing their shared file holders.
     if (self->effectBpEntryId != -1) {
         if (Sing_805DC5F0() == 0) {
             if ((signed char)s_bpCtrlInitialized == 0) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)((reg + 0xc)));
                 s_bpCtrlInitialized = 1;
             }
             Sing_805DC5F0() = s_bpCtrl;
         }
-        CBpCtrl_DeleteEntryById(Sing_805DC5F0(), self->effectBpEntryId);
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(self->effectBpEntryId);
         self->effectBpEntryId = -1;
     }
     if (self->overlayBpEntryId != -1) {
         if (Sing_805DC5F0() == 0) {
             if ((signed char)s_bpCtrlInitialized == 0) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)((reg + 0xc)));
                 s_bpCtrlInitialized = 1;
             }
             Sing_805DC5F0() = s_bpCtrl;
         }
-        CBpCtrl_DeleteEntryById(Sing_805DC5F0(), self->overlayBpEntryId);
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(self->overlayBpEntryId);
         self->overlayBpEntryId = -1;
     }
 
-    if (self->screenFileHolder != 0) { CSharedFileHandleHolder_Dtor(self->screenFileHolder, 1); self->screenFileHolder = 0; }
+    if (self->screenFileHolder != 0) {
+        __dt__23CSharedFileHandleHolderFv(self->screenFileHolder, 1);
+        self->screenFileHolder = 0;
+    }
 
     if (self->mainBpEntryId != -1) {
         if (Sing_805DC5F0() == 0) {
             if ((signed char)s_bpCtrlInitialized == 0) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)((reg + 0xc)));
                 s_bpCtrlInitialized = 1;
             }
             Sing_805DC5F0() = s_bpCtrl;
         }
-        CBpCtrl_DeleteEntryById(Sing_805DC5F0(), self->mainBpEntryId);
+        ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(self->mainBpEntryId);
         self->mainBpEntryId = -1;
     }
 
     if (Sing_805DC670() == 0) {
         if ((signed char)s_bpPlayerInitialized == 0) {
-            CBpPlayer_Ctor(s_bpPlayer);
-            __register_global_object(s_bpPlayer, (void*)CBpPlayer_Dtor, (void*)((reg + 0x90)));
+            ((CBpPlayer*)s_bpPlayer)->__ct();
+            __register_global_object(s_bpPlayer, (void*)__dt__9CBpPlayerFv, (void*)((reg + 0x90)));
             s_bpPlayerInitialized = 1;
         }
         Sing_805DC670() = s_bpPlayer;
@@ -420,43 +467,56 @@ void TourMap_ReleaseScreenResources(void* arg) {
 
     if (Sing_805DC670() == 0) {
         if ((signed char)s_bpPlayerInitialized == 0) {
-            CBpPlayer_Ctor(s_bpPlayer);
-            __register_global_object(s_bpPlayer, (void*)CBpPlayer_Dtor, (void*)((reg + 0x90)));
+            ((CBpPlayer*)s_bpPlayer)->__ct();
+            __register_global_object(s_bpPlayer, (void*)__dt__9CBpPlayerFv, (void*)((reg + 0x90)));
             s_bpPlayerInitialized = 1;
         }
         Sing_805DC670() = s_bpPlayer;
     }
-    CBpPlayer_ReleaseResources(Sing_805DC670());
+    ((CBpPlayer*)Sing_805DC670())->ReleaseResources();
 
-    if (self->sharedFileOwner != 0) { CSharedFileHandleOwner_Dtor(self->sharedFileOwner, 1); self->sharedFileOwner = 0; }
-    if (self->primaryFileHolder != 0) { CSharedFileHandleHolder_Dtor(self->primaryFileHolder, 1); self->primaryFileHolder = 0; }
-    if (self->cameraOwner != 0) { CCameraOwner_Dtor(self->cameraOwner, 1); self->cameraOwner = 0; }
+    if (self->sharedFileOwner != 0) {
+        __dt__22CSharedFileHandleOwnerFv(self->sharedFileOwner, 1);
+        self->sharedFileOwner = 0;
+    }
+    if (self->primaryFileHolder != 0) {
+        __dt__23CSharedFileHandleHolderFv(self->primaryFileHolder, 1);
+        self->primaryFileHolder = 0;
+    }
+    if (self->cameraOwner != 0) {
+        __dt__12CCameraOwnerFv(self->cameraOwner, 1);
+        self->cameraOwner = 0;
+    }
 
     {
         void* p = self->auxResource60;
         if (p != 0) {
-            if (p != 0) DestroyResource(p);
+            if (p != 0)
+                DestroyResource(p);
             self->auxResource60 = 0;
         }
     }
     {
         void* p = self->auxResource5C;
         if (p != 0) {
-            if (p != 0) DestroyResource(p);
+            if (p != 0)
+                DestroyResource(p);
             self->auxResource5C = 0;
         }
     }
     {
         void* p = self->auxResource58;
         if (p != 0) {
-            if (p != 0) DestroyResource(p);
+            if (p != 0)
+                DestroyResource(p);
             self->auxResource58 = 0;
         }
     }
     {
         void* p = self->auxResource54;
         if (p != 0) {
-            if (p != 0) DestroyResource(p);
+            if (p != 0)
+                DestroyResource(p);
             self->auxResource54 = 0;
         }
     }

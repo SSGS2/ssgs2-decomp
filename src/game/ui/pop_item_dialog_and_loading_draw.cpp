@@ -1,17 +1,23 @@
+// Item reward popup and loading screen: the popup shows the item icon and text until dismissed, and
+// the loading screen draws its textures. Also the file-access checks used while loading.
+
 #include <decomp/static_init.h>
 extern "C" char s_partyBpHandleDestructorRegistration[];
 // CChatMsg's singleton prefix precedes its fixed-font resource.
-struct ChatMessageResourceView { char singletonBase[0x10]; void* resource; };
+struct ChatMessageResourceView {
+    char singletonBase[0x10];
+    void* resource;
+};
 #include "classes/WFixedFont.h"
 // UTF-16BE message templates, exposed as byte spans to preserve the existing expansion ABI.
 struct ItemRewardMessageStrings {
-    char getCourse[54]; // +0x0: "\\<D=MSG_COMMON_GET_COURSE>"
-    char getCharacter[60]; // +0x36: "\\<D=MSG_COMMON_GET_CHARACTER>"
-    char getItem[50]; // +0x72: "\\<D=MSG_COMMON_GET_ITEM>"
-    char getCostumeSet[62]; // +0xA4: "\\<D=MSG_COMMON_GET_COSTUMESET>"
-    char getCostume[56]; // +0xE2: "\\<D=MSG_COMMON_GET_COSTUME>"
-    char getCompleteItem[68]; // +0x11A: "\\<D=MSG_COMMON_GET_COMPLETE_ITEM>"
-    char releaseCaddie[62]; // +0x15E: "\\<D=MSG_COMMON_RELEASE_CADDIE>"
+    char getCourse[54];         // +0x0: "\\<D=MSG_COMMON_GET_COURSE>"
+    char getCharacter[60];      // +0x36: "\\<D=MSG_COMMON_GET_CHARACTER>"
+    char getItem[50];           // +0x72: "\\<D=MSG_COMMON_GET_ITEM>"
+    char getCostumeSet[62];     // +0xA4: "\\<D=MSG_COMMON_GET_COSTUMESET>"
+    char getCostume[56];        // +0xE2: "\\<D=MSG_COMMON_GET_COSTUME>"
+    char getCompleteItem[68];   // +0x11A: "\\<D=MSG_COMMON_GET_COMPLETE_ITEM>"
+    char releaseCaddie[62];     // +0x15E: "\\<D=MSG_COMMON_RELEASE_CADDIE>"
     char releaseCostumeSet[70]; // +0x19C: "\\<D=MSG_COMMON_RELEASE_COSTUMESET>"
     char releaseCostume[64]; // +0x1E2: "\\<D=MSG_COMMON_RELEASE_COSTUME>"; also used for clubs, balls and caddie items.
 };
@@ -22,23 +28,23 @@ struct LoadingDrawStrings {
 };
 
 struct PopItemDialogStrings {
-    char setDialogScript[15]; // +0x0: "pop_set_dialog"
-    char itemDialogScript[16]; // +0xF: "pop_item_dialog"
-    char itemBaseGroup[15]; // +0x1F: "R_par_itembase"
-    char courseBaseGroup[17]; // +0x2E: "R_par_coursebase"
-    char confirmSound[19]; // +0x3F: "ui_button_ok_click"
-    char cancelSound[23]; // +0x52: "ui_button_cancel_click"
-    char courseIconGroup[12]; // +0x69: "course_icon"
-    char itemIconGroup[10]; // +0x75: "item_icon"
-    char textureArchive[16]; // +0x7F: "item_dialog.zip"
-    char textureSuffix[5]; // +0x8F: ".gsr"
-    char setLayout[18]; // +0x94: "p2_set_dialog.b2d"
-    char itemLayout[19]; // +0xA6: "p2_item_dialog.b2d"
-    char messageFile[12]; // +0xB9: "iff_msg.eky"
-    char setNameGroup[21]; // +0xC5: "R_MSG_setitem_K16_LL"
-    char itemNameGroup[18]; // +0xDA: "R_MSG_item_K16_LL"
+    char setDialogScript[15];    // +0x0: "pop_set_dialog"
+    char itemDialogScript[16];   // +0xF: "pop_item_dialog"
+    char itemBaseGroup[15];      // +0x1F: "R_par_itembase"
+    char courseBaseGroup[17];    // +0x2E: "R_par_coursebase"
+    char confirmSound[19];       // +0x3F: "ui_button_ok_click"
+    char cancelSound[23];        // +0x52: "ui_button_cancel_click"
+    char courseIconGroup[12];    // +0x69: "course_icon"
+    char itemIconGroup[10];      // +0x75: "item_icon"
+    char textureArchive[16];     // +0x7F: "item_dialog.zip"
+    char textureSuffix[5];       // +0x8F: ".gsr"
+    char setLayout[18];          // +0x94: "p2_set_dialog.b2d"
+    char itemLayout[19];         // +0xA6: "p2_item_dialog.b2d"
+    char messageFile[12];        // +0xB9: "iff_msg.eky"
+    char setNameGroup[21];       // +0xC5: "R_MSG_setitem_K16_LL"
+    char itemNameGroup[18];      // +0xDA: "R_MSG_item_K16_LL"
     char setItemGroupFormat[23]; // +0xEC: "R_MSG_setitem%d_K16_LL"
-    char detailGroup[20]; // +0x103: "R_MSG_detail_K30_LL"
+    char detailGroup[20];        // +0x103: "R_MSG_detail_K30_LL"
 };
 
 #include "iff/IffStruct.h"
@@ -48,15 +54,18 @@ struct PopItemDialogStrings {
 #include "classes/CSharedDoc.h"
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
 
-// Translation unit 0x802861B0-0x802877E8 (18 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "classes/CLoadingDraw.h"
 #include "classes/CPopItemDialog.h"
 #include "classes/CFileIoAccessCheckFlash.h"
 #include "classes/CFileIoAccessCheck.h"
+#include "classes/CFileIoAccess.h"
+#include "classes/CFileIo.h"
+#include "classes/CPackTextureResource.h"
+#include "classes/CSharedFileHandle.h"
+#include "classes/CBpCtrl.h"
+#include "classes/CFileIoFlash.h"
 
 #define AsCFileIoAccessCheck(p) ((CFileIoAccessCheck*)(p))
 
@@ -86,22 +95,48 @@ struct PopItemSavedScript {
 // descriptionMode: 0 acquisition, 1 release, 2 completion; only listed categories
 // produce text. Other mode/category combinations leave the cleared text empty.
 enum FileAccessCheckState {
-    kCheckStart = 0, kCheckPending = 1, kCheckRecordFailure = 2, kCheckFinished = 3
+    kCheckStart = 0,
+    kCheckPending = 1,
+    kCheckRecordFailure = 2,
+    kCheckFinished = 3
 };
 enum PopDialogLifecycle {
-    kDialogWaitingForResources = 0, kDialogOpening = 1, kDialogWaitingForInput = 2, kDialogFinished = 3
+    kDialogWaitingForResources = 0,
+    kDialogOpening = 1,
+    kDialogWaitingForInput = 2,
+    kDialogFinished = 3
 };
 // Word access in the lifecycle hook preserves the aliasing of the original ABI view.
 enum PopDialogWord {
-    kDialogItemIdWord = 1, kDialogBpEntryWord = 2, kDialogStateWord = 3,
-    kDialogTextWord = 6, kDialogTaggedTextWord = 7, kDialogFileWord = 9,
-    kDialogTexturesWord = 10, kDialogSavedScriptWord = 11
+    kDialogItemIdWord = 1,
+    kDialogBpEntryWord = 2,
+    kDialogStateWord = 3,
+    kDialogTextWord = 6,
+    kDialogTaggedTextWord = 7,
+    kDialogFileWord = 9,
+    kDialogTexturesWord = 10,
+    kDialogSavedScriptWord = 11
 };
-enum DescriptionMode { kDescriptionAcquisition = 0, kDescriptionRelease = 1, kDescriptionCompletion = 2 };
-enum DialogConstants { kItemCategoryShift = 26, kItemSetCategory = 9, kCourseCategory = 10,
-       kCharacterCategory = 1, kCostumeCategory = 2, kClubSetCategory = 4,
-       kBallCategory = 5, kCaddieCategory = 7, kCaddieItemCategory = 8, kAuxPartCategory = 28,
-       kMenuConfirmAction = 4, kMenuCancelAction = 6, kLoadingCourseCount = 14 };
+enum DescriptionMode {
+    kDescriptionAcquisition = 0,
+    kDescriptionRelease = 1,
+    kDescriptionCompletion = 2
+};
+enum DialogConstants {
+    kItemCategoryShift = 26,
+    kItemSetCategory = 9,
+    kCourseCategory = 10,
+    kCharacterCategory = 1,
+    kCostumeCategory = 2,
+    kClubSetCategory = 4,
+    kBallCategory = 5,
+    kCaddieCategory = 7,
+    kCaddieItemCategory = 8,
+    kAuxPartCategory = 28,
+    kMenuConfirmAction = 4,
+    kMenuCancelAction = 6,
+    kLoadingCourseCount = 14
+};
 
 extern "C" {
 extern char s_bpCtrlDtorRegistration_LoadingDraw[];
@@ -122,18 +157,14 @@ extern char s_inputManagerDtorRegistration_LoadingDraw[];
 extern signed char s_bpCtrlInitialized;
 extern signed char s_resourceTableInitialized;
 extern void* s_resourceTableStorage;
-extern void *s_loadingDrawRequiresConfirmation;
+extern void* s_loadingDrawRequiresConfirmation;
 extern void* g_sharedDoc;
 extern char s_bpCtrlDtorRegistration_PopItem[];
-extern void __ct__7CBpCtrlFv(void*);
 extern void CBpCtrl_dtor();
-extern int CBpCtrl_PollAllEntriesLoaded(void*);
 extern int CSharedFilePtr_GetLoadedBuffer(void*);
-extern int CPackTextureResource_IsLoadFinished(void*);
 extern void* IdMap_Lookup(void*, void*);
 extern void BpObject_TryInvokeCurrentCallback(void*, int);
 extern void BpObject_Draw(void*);
-extern void CMsgDraw_UpdateReveal(void*);
 extern void Text_DrawGlyphs(void*);
 extern void* BpObject_GetOrCreateNamedGroup(void*, char*);
 extern void UIGroup_GetPosition(void*, void*);
@@ -142,17 +173,14 @@ extern int GX_GetPrimitiveCount(int, int);
 extern void DrawPrimitiveUP(int, int, void*, int);
 extern void* MPBase1_Ctor(void*);
 extern int ResourceTable_FindEntryByName(void*, char*, unsigned int*);
-extern void* CPackTextureResource_Init(void*, char*, unsigned int, void*);
 extern int SharedFile_Create(void*, int);
 extern void* ItemInventory_FindDataWithHairStyleFallback(void*, unsigned int);
-extern void CBpTex_Init(void*);
-extern void CBpCtrl_CreateEntry(void*, char*, void*, int);
+extern "C" void __ct__6CBpTexFv(void*);
 extern int ItemInventory_FindCourseIndex(void*, void*);
 extern void Allocation_Dtor();
-extern void CFileIoAccess_Ctor(void*);
+extern "C" void __dt__18CFileIoAccessCheckFv(void*, int);
 extern void* destroy__13CFileIoAccessFi(void*, int);
 extern void __dl__FPv(void*);
-extern void* CFileIoFlash_CreateInstance(void*, void*);
 extern void* g_chatMsg;
 extern signed char s_bpCtrlHandleInitialized;
 extern void* s_bpCtrlHandle;
@@ -163,15 +191,13 @@ extern float kFloat_200_PopItemDialog;
 extern float kFloat_1_PopItemDialog;
 extern char s_gameInputManager[];
 extern void BpObject_StartScriptByName(void*, char*, int);
-extern void* CMsgDraw_Ctor(void*, int);
+extern void* __ct__8CMsgDrawFPv(void*, int);
 extern void WFixedFont_CreateMsgEcbResource(void*, void*, int, int);
 extern void UIGroup_SetEnabled(void*, int);
 extern void InputManager_Init(void*);
 extern void InputManager_Dtor();
 extern int Input_IsActionPressed(void*, int, int);
 extern void Sound_PlayByName(void*, char*, int, int, int, int, float, float, float);
-extern void CBpCtrlHandle_ReleaseEntry(void*);
-extern void CPackTextureResource_PollLoad(void*);
 extern void appFreeUni__FPv(void*);
 extern void CBpCtrlHandle_Dtor();
 extern char* strcpy(char*, const char*);
@@ -179,11 +205,8 @@ extern void String_ReserveCapacity(void*, unsigned int);
 extern void String_ReplaceRange(void*, int, int, void*, void*, void*);
 extern void NString_AssignCString(void*, char*);
 
-extern void* CBpCtrl_DeleteEntryById(void*, int);
-extern int CSharedFileHandle_Destroy(void*, int);
-
 // This access-check lifecycle hook is immediately ready.
-int CFileIoAccessCheck_vfunc_2() {
+int CFileIoAccessCheck::vfunc_2() {
     return 1;
 }
 
@@ -203,67 +226,63 @@ void LoadingDraw_InitTwoPiCache() {
 }
 
 // Report whether the access-check state machine has reached its terminal state.
-int CFileIoAccessCheck_IsFinished(void* a) {
+int CFileIoAccessCheck::IsFinished(void* a) {
     int v = AsCFileIoAccessCheckFlash(a)->state;
     return v == kCheckFinished;
 }
 
 // Create the flash device through the common file-I/O factory.
-void* CFileIoAccessCheckFlash_CreateFlash(void* a, void* b, void* c) {
-    return CFileIoFlash_CreateInstance(b, c);
+void* CFileIoAccessCheckFlash::CreateFlash(void* a, void* b, void* c) {
+    return CFileIoFlash::CreateInstance(b, c);
 }
 
 #pragma dont_inline on
 // Construct the access base and initialize an empty block-check list.
-void* CFileIoAccessCheck_Ctor(void* p) {
-    CFileIoAccess_Ctor(p);
-    AsCFileIoAccessCheck(p)->checkState = 0;
-    *(void**)p = (void*)__vt__18CFileIoAccessCheck;
-    AsCFileIoAccessCheck(p)->checkItems = 0;
-    AsCFileIoAccessCheck(p)->checkItemCount = 0;
-    return p;
+CFileIoAccessCheck::CFileIoAccessCheck() {
+    checkState = 0;
+    vtbl = (void*)__vt__18CFileIoAccessCheck;
+    checkItems = 0;
+    checkItemCount = 0;
 }
 #pragma dont_inline off
 
 #pragma dont_inline on
-// Release the block-check allocation, destroy the access base, and optionally delete the object.
-void* CFileIoAccessCheck_dtor(void* p, int flag) {
-    if (p != 0) {
-        void* o10 = (*(void**)&AsCFileIoAccessCheck(p)->checkItems);
-        *(void**)p = (void*)__vt__18CFileIoAccessCheck;
-        if (o10 != 0) {
-            __dl__FPv(o10);
-            AsCFileIoAccessCheck(p)->checkItems = 0;
-        }
-        destroy__13CFileIoAccessFi(p, 0);
-        if (flag > 0)
-            __dl__FPv(p);
+// Release the block-check allocation and destroy the access base.
+CFileIoAccessCheck::~CFileIoAccessCheck() {
+    void* o10 = (void*)checkItems;
+    vtbl = (void*)__vt__18CFileIoAccessCheck;
+    if (o10 != 0) {
+        __dl__FPv(o10);
+        checkItems = 0;
     }
-    return p;
+    destroy__13CFileIoAccessFi(this, 0);
 }
 #pragma dont_inline off
 
-// Destroy the shared access-check state and optionally delete the flash checker.
-void* CFileIoAccessCheckFlash_dtor(void* p, int flag) {
-    if (p != 0) {
-        CFileIoAccessCheck_dtor(p, 0);
-        if (flag > 0)
-            __dl__FPv(p);
-    }
-    return p;
+// Destroy the shared access-check state; the base destructor runs without deleting.
+CFileIoAccessCheckFlash::~CFileIoAccessCheckFlash() {
+    __dt__18CFileIoAccessCheckFv(this, 0);
 }
 
 struct Obj4BC {
     char data[0x4bc];
     // Construct the owned text renderer for the fixed-font message resource.
-    Obj4BC(int x) { CMsgDraw_Ctor(this, x); }
+    Obj4BC(int x) {
+        __ct__8CMsgDrawFPv(this, x);
+    }
 };
 struct VtObj2 {
     virtual void v0(int);
 };
 struct PopSelf {
-    virtual void v0(); virtual void v1(); virtual void v2(); virtual int v3();
-    virtual void v4(); virtual void v5(); virtual void v6(); virtual void v7();
+    virtual void v0();
+    virtual void v1();
+    virtual void v2();
+    virtual int v3();
+    virtual void v4();
+    virtual void v5();
+    virtual void v6();
+    virtual void v7();
 };
 
 // Convert a UI group's tint word to the text renderer's color word: swap the byte order and force alpha to 0xFF.
@@ -275,7 +294,7 @@ static inline unsigned int GroupTintToTextColor(unsigned int tint) {
 static inline void BpCtrl_EnsureInstance() {
     if (Sing_805DC5F0() == 0) {
         if (!s_bpCtrlInitialized) {
-            __ct__7CBpCtrlFv(s_bpCtrl);
+            ((CBpCtrl*)s_bpCtrl)->__ct();
             __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)s_bpCtrlDtorRegistration_PopItem);
             s_bpCtrlInitialized = 1;
         }
@@ -284,137 +303,156 @@ static inline void BpCtrl_EnsureInstance() {
 }
 
 // Poll dialog resources, construct text, then wait for confirm/cancel before reporting completion.
-int CPopItemDialog_UpdateUntilDismissed(void* self) {
-    int* f = (int*)self;
+int CPopItemDialog::UpdateUntilDismissed() {
+    int* dialogWords = (int*)this;
     void* base = s_bpCtrlDtorRegistration_PopItem;
-    struct LocalStr { unsigned int flags; unsigned int size; void* data;
+    struct LocalStr {
+        unsigned int flags;
+        unsigned int size;
+        void* data;
         // Release a heap-backed temporary string; inline bytes require no cleanup.
-        ~LocalStr(){ if (flags >> 31) appFreeUni__FPv(data); }
+        ~LocalStr() {
+            if (flags >> 31)
+                appFreeUni__FPv(data);
+        }
     };
-    LocalStr ls; ls.flags = 0; ls.size = 0; ls.data = 0;
+    LocalStr ls;
+    ls.flags = 0;
+    ls.size = 0;
+    ls.data = 0;
     (void)ls;
     // Phase 1: wait until resources can be consumed; no input is accepted yet.
-    switch (f[kDialogStateWord]) {
+    switch (dialogWords[kDialogStateWord]) {
     case kDialogWaitingForResources: {
-        if (((PopSelf*)self)->v3() != 0) {
+        if (((PopSelf*)this)->v3() != 0) {
             if (!Sing_805DC5F0()) {
                 if (!s_bpCtrlInitialized) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
+                    ((CBpCtrl*)s_bpCtrl)->__ct();
                     __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, base);
                     s_bpCtrlInitialized = 1;
                 }
                 Sing_805DC5F0() = s_bpCtrl;
             }
-            void* dialogSheet = IdMap_Lookup(Sing_805DC5F0(), (void*)f[kDialogBpEntryWord]);
-            char* name = ((PopItemDialogStrings*)popItemDialogStrings)->setDialogScript;
-            if (!AsCPopItemDialog(self)->isItemSet) name = ((PopItemDialogStrings*)popItemDialogStrings)->itemDialogScript;
-            BpObject_StartScriptByName(dialogSheet, name, 1);
+            void* dialogSheet = IdMap_Lookup(Sing_805DC5F0(), (void*)dialogWords[kDialogBpEntryWord]);
+            char* scriptName = ((PopItemDialogStrings*)popItemDialogStrings)->setDialogScript;
+            if (!isItemSet)
+                scriptName = ((PopItemDialogStrings*)popItemDialogStrings)->itemDialogScript;
+            BpObject_StartScriptByName(dialogSheet, scriptName, 1);
 
             // Replace owned renderers only after the layout script is available.
-            void* oldTextRenderer = (void*)f[kDialogTextWord];
+            void* oldTextRenderer = (void*)dialogWords[kDialogTextWord];
             if (oldTextRenderer) {
                 if (oldTextRenderer) {
                     ((VtObj2*)oldTextRenderer)->v0(1);
                 }
-                f[kDialogTextWord] = 0;
+                dialogWords[kDialogTextWord] = 0;
             }
-            void* oldTaggedText = (void*)f[kDialogTaggedTextWord];
+            void* oldTaggedText = (void*)dialogWords[kDialogTaggedTextWord];
             if (oldTaggedText) {
                 if (oldTaggedText) {
                     ((VtObj2*)oldTaggedText)->v0(1);
                 }
-                f[kDialogTaggedTextWord] = 0;
+                dialogWords[kDialogTaggedTextWord] = 0;
             }
 
             // Build message resources from loaded bytes, then populate all text groups.
             void* mgr = g_chatMsg;
             void* fixedFont = ((ChatMessageResourceView*)mgr)->resource;
-            int messageBuffer = CSharedFilePtr_GetLoadedBuffer((void*)f[kDialogFileWord]);
-            WFixedFont_CreateMsgEcbResource(fixedFont, &AsCPopItemDialog(self)->taggedText, messageBuffer, 1); // original +0x1C
+            int messageBuffer = CSharedFilePtr_GetLoadedBuffer((void*)dialogWords[kDialogFileWord]);
+            WFixedFont_CreateMsgEcbResource(fixedFont, &taggedText, messageBuffer,
+                                            1); // original +0x1C
 
             Obj4BC* textRenderer = new Obj4BC((int)AsWFixedFont(fixedFont)->messageResource);
-            f[kDialogTextWord] = (int)textRenderer;
+            dialogWords[kDialogTextWord] = (int)textRenderer;
 
-            ((PopSelf*)self)->v5();
+            ((PopSelf*)this)->v5();
 
-            if (!AsCPopItemDialog(self)->isItemSet) {
-                unsigned int x = AsCPopItemDialog(self)->itemId >> kItemCategoryShift;
-                char* name2 = ((PopItemDialogStrings*)popItemDialogStrings)->courseBaseGroup;
-                name2 = (x == kCourseCategory) ? ((PopItemDialogStrings*)popItemDialogStrings)->itemBaseGroup : name2;
-                void* st = BpObject_GetOrCreateNamedGroup(dialogSheet, name2);
+            if (!isItemSet) {
+                unsigned int x = itemId >> kItemCategoryShift;
+                char* baseGroupName = ((PopItemDialogStrings*)popItemDialogStrings)->courseBaseGroup;
+                baseGroupName = (x == kCourseCategory) ? ((PopItemDialogStrings*)popItemDialogStrings)->itemBaseGroup
+                                                       : baseGroupName;
+                void* st = BpObject_GetOrCreateNamedGroup(dialogSheet, baseGroupName);
                 UIGroup_SetEnabled(st, 0);
             }
 
             if (!Sing_805DC5F8()) {
                 if (!s_bpCtrlHandleInitialized) {
-                    void** o = &s_bpCtrlHandle;
-                    ((CBpCtrlHandle*)o)->scriptIndex = -1;
-                    *o = (void*)(long)-1;
-                    __register_global_object(o, (void*)CBpCtrlHandle_Dtor, (((PopItemRegistrations*)base)->bpHandle));
+                    void** handleSlot = &s_bpCtrlHandle;
+                    ((CBpCtrlHandle*)handleSlot)->scriptIndex = -1;
+                    *handleSlot = (void*)(long)-1;
+                    __register_global_object(handleSlot, (void*)CBpCtrlHandle_Dtor,
+                                             (((PopItemRegistrations*)base)->bpHandle));
                     s_bpCtrlHandleInitialized = 1;
                 }
                 Sing_805DC5F8() = &s_bpCtrlHandle;
             }
             // Save the previous script selection before releasing its shared handle.
-            void* g = Sing_805DC5F8();
-            f[kDialogSavedScriptWord] = AsCBpCtrlHandle(g)->scriptIndex;
-            if (!g) {
+            void* bpHandle = Sing_805DC5F8();
+            dialogWords[kDialogSavedScriptWord] = AsCBpCtrlHandle(bpHandle)->scriptIndex;
+            if (!bpHandle) {
                 if (!s_bpCtrlHandleInitialized) {
-                    void** o = &s_bpCtrlHandle;
-                    ((CBpCtrlHandle*)o)->scriptIndex = -1;
-                    *o = (void*)(long)-1;
-                    __register_global_object(o, (void*)CBpCtrlHandle_Dtor, (((PopItemRegistrations*)base)->bpHandle));
+                    void** handleSlot = &s_bpCtrlHandle;
+                    ((CBpCtrlHandle*)handleSlot)->scriptIndex = -1;
+                    *handleSlot = (void*)(long)-1;
+                    __register_global_object(handleSlot, (void*)CBpCtrlHandle_Dtor,
+                                             (((PopItemRegistrations*)base)->bpHandle));
                     s_bpCtrlHandleInitialized = 1;
                 }
                 Sing_805DC5F8() = &s_bpCtrlHandle;
             }
-            g = Sing_805DC5F8();
-            CBpCtrlHandle_ReleaseEntry(g);
+            bpHandle = Sing_805DC5F8();
+            ((CBpCtrlHandle*)bpHandle)->ReleaseEntry();
 
-            void* oldTexturePack = (void*)f[kDialogTexturesWord];
+            void* oldTexturePack = (void*)dialogWords[kDialogTexturesWord];
             if (oldTexturePack) {
                 if (oldTexturePack) {
                     ((VtObj2*)oldTexturePack)->v0(1);
                 }
-                f[kDialogTexturesWord] = 0;
+                dialogWords[kDialogTexturesWord] = 0;
             }
-            f[kDialogStateWord] = kDialogOpening;
+            dialogWords[kDialogStateWord] = kDialogOpening;
         } else {
-            void* texturePack = (void*)f[kDialogTexturesWord];
-            if (texturePack) CPackTextureResource_PollLoad(texturePack);
+            void* texturePack = (void*)dialogWords[kDialogTexturesWord];
+            if (texturePack)
+                ((CPackTextureResource*)texturePack)->PollLoad();
         }
         break;
     }
     case kDialogOpening:
-        f[kDialogStateWord] = kDialogWaitingForInput;
+        dialogWords[kDialogStateWord] = kDialogWaitingForInput;
         break;
     // Phase 2: either action closes the dialog; sound is the only difference.
     case kDialogWaitingForInput: {
-        if (!Sing_805DC5C8()) {
+        if (!GetInputManagerSlot()) {
             if (!s_inputManagerInitialized) {
                 InputManager_Init(s_gameInputManager);
-                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, (((PopItemRegistrations*)base)->inputManager));
+                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                         (((PopItemRegistrations*)base)->inputManager));
                 s_inputManagerInitialized = 1;
             }
-            Sing_805DC5C8() = s_gameInputManager;
+            GetInputManagerSlot() = s_gameInputManager;
         }
-        int pressed = Input_IsActionPressed(Sing_805DC5C8(), kMenuConfirmAction, -1);
+        int pressed = Input_IsActionPressed(GetInputManagerSlot(), kMenuConfirmAction, -1);
         if (pressed) {
-            Sound_PlayByName(g_soundManager, ((PopItemDialogStrings*)popItemDialogStrings)->confirmSound, 0, 0, 0, 0, kFloat_0_5_PopItemDialogSound, kFloat_200_PopItemDialog, kFloat_1_PopItemDialog);
-            f[kDialogStateWord] = kDialogFinished;
+            Sound_PlayByName(g_soundManager, ((PopItemDialogStrings*)popItemDialogStrings)->confirmSound, 0, 0, 0, 0,
+                             kFloat_0_5_PopItemDialogSound, kFloat_200_PopItemDialog, kFloat_1_PopItemDialog);
+            dialogWords[kDialogStateWord] = kDialogFinished;
         } else {
-            if (!Sing_805DC5C8()) {
+            if (!GetInputManagerSlot()) {
                 if (!s_inputManagerInitialized) {
                     InputManager_Init(s_gameInputManager);
-                    __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, (((PopItemRegistrations*)base)->inputManager));
+                    __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                             (((PopItemRegistrations*)base)->inputManager));
                     s_inputManagerInitialized = 1;
                 }
-                Sing_805DC5C8() = s_gameInputManager;
+                GetInputManagerSlot() = s_gameInputManager;
             }
-            pressed = Input_IsActionPressed(Sing_805DC5C8(), kMenuCancelAction, -1);
+            pressed = Input_IsActionPressed(GetInputManagerSlot(), kMenuCancelAction, -1);
             if (pressed) {
-                Sound_PlayByName(g_soundManager, ((PopItemDialogStrings*)popItemDialogStrings)->cancelSound, 0, 0, 0, 0, kFloat_0_5_PopItemDialogSound, kFloat_200_PopItemDialog, kFloat_1_PopItemDialog);
-                f[kDialogStateWord] = kDialogFinished;
+                Sound_PlayByName(g_soundManager, ((PopItemDialogStrings*)popItemDialogStrings)->cancelSound, 0, 0, 0, 0,
+                                 kFloat_0_5_PopItemDialogSound, kFloat_200_PopItemDialog, kFloat_1_PopItemDialog);
+                dialogWords[kDialogStateWord] = kDialogFinished;
             }
         }
         break;
@@ -428,10 +466,6 @@ int CPopItemDialog_UpdateUntilDismissed(void* self) {
 }
 
 extern void* __nwa__FUl(unsigned int);
-extern int CFileIoAccess_CreateResource(void*, void*, void*);
-extern int CFileIoAccess_GetResource(void*);
-extern int CFileIoAccess_SetFailureFlag(char*, int);
-extern int CFileIo_IsBusy(void*);
 extern void* __nw__FUl(unsigned int);
 extern void __dla__FPv(void*);
 extern char __vt__23CFileIoAccessCheckFlash[];
@@ -441,19 +475,21 @@ extern char __vt__23CFileIoAccessCheckFlash[];
 // src borrows count 32-bit block values for the copy; a/b pass unchanged to base setup.
 // A failed base setup can leave the new owned list installed. Returns the base result.
 // Copy a nonempty block list into owned storage and configure the file-access request.
-int CFileIoAccessCheckFlash_SetupWithBlockList(void* self, void* a, void* b, void* src, unsigned int count) {
-    int* sw = (int*)self;
-    if (src == 0 || count == 0) return 0;
-    if (AsCFileIoAccessCheckFlash(self)->checkItems != 0) {
-        __dla__FPv(AsCFileIoAccessCheckFlash(self)->checkItems);
-        AsCFileIoAccessCheckFlash(self)->checkItems = 0;
+int CFileIoAccessCheckFlash::SetupWithBlockList(void* a, void* b, void* src, unsigned int count) {
+    int* sw = (int*)this;
+    if (src == 0 || count == 0)
+        return 0;
+    if (checkItems != 0) {
+        __dla__FPv(checkItems);
+        checkItems = 0;
     }
-    AsCFileIoAccessCheckFlash(self)->checkItemCount = 0;
-    AsCFileIoAccessCheckFlash(self)->checkItems = __nwa__FUl(count * 4);
-    if (AsCFileIoAccessCheckFlash(self)->checkItems == 0) return 0;
-    AsCFileIoAccessCheckFlash(self)->checkItemCount = count;
-    Memory_Copy(AsCFileIoAccessCheckFlash(self)->checkItems, src, count << 2);
-    return CFileIoAccess_CreateResource(self, a, b);
+    checkItemCount = 0;
+    checkItems = __nwa__FUl(count * 4);
+    if (checkItems == 0)
+        return 0;
+    checkItemCount = count;
+    Memory_Copy(checkItems, src, count << 2);
+    return ((CFileIoAccess*)this)->CreateResource(a, b);
 }
 #pragma use_lmw_stmw reset
 #pragma dont_inline off
@@ -469,15 +505,16 @@ struct Obj54F8 {
 // count must be positive and src must hold count 32-bit values. Success transfers
 // the newly allocated checker to the caller; failure destroys it and returns null.
 // Construct a flash checker and discard it if block-list/access setup fails.
-void* CFileIoAccessCheckFlash_Create(void* a, void* b, void* src, int count) {
+void* CFileIoAccessCheckFlash::Create(void* a, void* b, void* src, int count) {
     void* obj = __nw__FUl(0x18);
     void* saved = obj;
     if (obj != 0) {
-        CFileIoAccessCheck_Ctor(obj);
+        ((CFileIoAccessCheck*)obj)->__ct();
         *(void**)obj = (void*)__vt__23CFileIoAccessCheckFlash;
     }
-    if (saved == 0) return 0;
-    if (!CFileIoAccessCheckFlash_SetupWithBlockList(saved, a, b, src, count)) {
+    if (saved == 0)
+        return 0;
+    if (!((CFileIoAccessCheckFlash*)saved)->SetupWithBlockList(a, b, src, count)) {
         if (saved != 0) {
             ((Obj54F8*)saved)->v3(1);
         }
@@ -510,46 +547,51 @@ struct VtObjB {
 
 // Start/poll a block check; unavailable or rejected requests latch the failure flag.
 // Always returns 1 (update handled); IsFinished, not this return, tests completion.
-int CFileIoAccessCheck_Update(void* self) {
-    void* obj = (void*)(long)CFileIoAccess_GetResource(self);
+int CFileIoAccessCheck::Update() {
+    void* obj = (void*)(long)((CFileIoAccess*)this)->GetResource();
     if (obj == 0) {
-        AsCFileIoAccessCheckFlash(self)->state = kCheckRecordFailure;
+        AsCFileIoAccessCheckFlash(this)->state = kCheckRecordFailure;
     }
-    int state = AsCFileIoAccessCheckFlash(self)->state;
+    int state = AsCFileIoAccessCheckFlash(this)->state;
     switch (state) {
-        case kCheckStart: {
-            if (((VtObjA*)obj)->a6(AsCFileIoAccessCheckFlash(self)->checkItems,
-                                   AsCFileIoAccessCheckFlash(self)->checkItemCount) == 0)
-                AsCFileIoAccessCheckFlash(self)->state = kCheckRecordFailure;
-            else
-                AsCFileIoAccessCheckFlash(self)->state = kCheckPending;
-            break;
-        }
-        case kCheckPending: {
-            if (CFileIo_IsBusy(obj) == 0) AsCFileIoAccessCheckFlash(self)->state = kCheckFinished;
-            break;
-        }
-        case kCheckRecordFailure: {
-            CFileIoAccess_SetFailureFlag((char*)self, 1);
-            AsCFileIoAccessCheckFlash(self)->state = kCheckFinished;
-            break;
-        }
-        default:
-            break;
+    case kCheckStart: {
+        if (((VtObjA*)obj)
+                ->a6(AsCFileIoAccessCheckFlash(this)->checkItems, AsCFileIoAccessCheckFlash(this)->checkItemCount) == 0)
+            AsCFileIoAccessCheckFlash(this)->state = kCheckRecordFailure;
+        else
+            AsCFileIoAccessCheckFlash(this)->state = kCheckPending;
+        break;
+    }
+    case kCheckPending: {
+        if (((CFileIo*)obj)->IsBusy() == 0)
+            AsCFileIoAccessCheckFlash(this)->state = kCheckFinished;
+        break;
+    }
+    case kCheckRecordFailure: {
+        ((CFileIoAccess*)((char*)this))->SetFailureFlag(1);
+        AsCFileIoAccessCheckFlash(this)->state = kCheckFinished;
+        break;
+    }
+    default:
+        break;
     }
     return 1;
 }
 
 // Report readiness only after controller entries, message file, icon pane, and texture pack are ready.
-int CPopItemDialog_AreResourcesLoaded(void* self) {
+int CPopItemDialog::AreResourcesLoaded() {
     int ok = 1;
     BpCtrl_EnsureInstance();
-    if (!CBpCtrl_PollAllEntriesLoaded(Sing_805DC5F0())) ok = 0;
-    if (!CSharedFilePtr_GetLoadedBuffer(AsCPopItemDialog(self)->sharedFile)) ok = 0;
-    void* obj = AsCPopItemDialog(self)->texturePane;
-    if (!((VtObjB*)obj)->b6()) ok = 0;
-    obj = AsCPopItemDialog(self)->texturePack;
-    if (obj && !CPackTextureResource_IsLoadFinished(obj)) ok = 0;
+    if (!((CBpCtrl*)Sing_805DC5F0())->PollAllEntriesLoaded())
+        ok = 0;
+    if (!CSharedFilePtr_GetLoadedBuffer(sharedFile))
+        ok = 0;
+    void* obj = texturePane;
+    if (!((VtObjB*)obj)->b6())
+        ok = 0;
+    obj = texturePack;
+    if (obj && !((CPackTextureResource*)obj)->IsLoadFinished())
+        ok = 0;
     return ok;
 }
 
@@ -569,24 +611,26 @@ struct PopDrawObject {
 // Each 24-byte template vertex supplies untouched depth/color/UV components;
 // only XY is replaced. Primitive 0x98 is GX_TRIANGLESTRIP with four vertices.
 // Draw the dialog animation, text, and item/course icon inside its named layout group.
-void CPopItemDialog_DrawDialogTextAndIcon(const void* self) {
-    if (AsCPopItemDialog(self)->state == 0) return;
+void CPopItemDialog::DrawDialogTextAndIcon() const {
+    if (state == 0)
+        return;
     BpCtrl_EnsureInstance();
-    void* s = IdMap_Lookup(Sing_805DC5F0(), AsCPopItemDialog(self)->bpEntryId);
+    void* s = IdMap_Lookup(Sing_805DC5F0(), bpEntryId);
     void* entry;
     BpObject_TryInvokeCurrentCallback(s, 0);
     BpObject_Draw(s);
-    CMsgDraw_UpdateReveal(AsCPopItemDialog(self)->textRenderer);
+    ((CMsgDraw*)textRenderer)->UpdateReveal();
     int zero = 0;
-    ((CMsgDraw*)AsCPopItemDialog(self)->textRenderer)->drawSuppressed = zero;
-    Text_DrawGlyphs(AsCPopItemDialog(self)->textRenderer);
-    bool isCourse = (AsCPopItemDialog(self)->itemId >> kItemCategoryShift) == kCourseCategory;
-    float groupPosition[2] = {0,0}, groupSize[2] = {0,0};
-    entry = BpObject_GetOrCreateNamedGroup(s, isCourse ? ((PopItemDialogStrings*)popItemDialogStrings)->courseIconGroup : ((PopItemDialogStrings*)popItemDialogStrings)->itemIconGroup);
+    ((CMsgDraw*)textRenderer)->drawSuppressed = zero;
+    Text_DrawGlyphs(textRenderer);
+    bool isCourse = (itemId >> kItemCategoryShift) == kCourseCategory;
+    float groupPosition[2] = {0, 0}, groupSize[2] = {0, 0};
+    entry = BpObject_GetOrCreateNamedGroup(s, isCourse ? ((PopItemDialogStrings*)popItemDialogStrings)->courseIconGroup
+                                                       : ((PopItemDialogStrings*)popItemDialogStrings)->itemIconGroup);
     UIGroup_GetPosition(entry, groupPosition);
     UIGroup_GetSourceSize(entry, groupSize);
     {
-        void* device = AsCPopItemDialog(self)->texturePane;
+        void* device = texturePane;
         ((PopDrawObject*)device)->d3();
     }
     PopVertices verts = *(const PopVertices*)kPopItemIconQuadTemplate;
@@ -595,10 +639,14 @@ void CPopItemDialog_DrawDialogTextAndIcon(const void* self) {
     top = groupPosition[1];
     float right = left + groupSize[0];
     float bottom = top + groupSize[1];
-    verts.data[0] = left; verts.data[1] = top;
-    verts.data[6] = right; verts.data[7] = top;
-    verts.data[12] = left; verts.data[13] = bottom;
-    verts.data[18] = right; verts.data[19] = bottom;
+    verts.data[0] = left;
+    verts.data[1] = top;
+    verts.data[6] = right;
+    verts.data[7] = top;
+    verts.data[12] = left;
+    verts.data[13] = bottom;
+    verts.data[18] = right;
+    verts.data[19] = bottom;
     int count = GX_GetPrimitiveCount(4, 0x98);
     DrawPrimitiveUP(0x98, count, &verts, 0x18);
 }
@@ -609,7 +657,8 @@ struct LoadingName {
     char* data;
     // Return borrowed inline/heap narrow string bytes; no ownership transfer.
     char* chars() {
-        if ((flags >> 31) == 0) return (char*)this + 1;
+        if ((flags >> 31) == 0)
+            return (char*)this + 1;
         return data;
     }
 };
@@ -624,59 +673,72 @@ struct LoadingItem20 {
     char data[0x20];
     // Construct the owned loading-screen texture pack from borrowed archive descriptors.
     LoadingItem20(char* name, unsigned int textureNamesAddress, int textureCount) {
-        CPackTextureResource_Init(this, name, textureNamesAddress, (void*)textureCount);
+        ((CPackTextureResource*)this)->Init((const char*)name, (void**)textureNamesAddress, (unsigned int)textureCount);
     }
 };
 struct LoadingPane28 {
     char data[0x28];
     // Initialize the owned loading-screen background texture.
-    LoadingPane28() { CBpTex_Init(this); }
+    LoadingPane28() {
+        __ct__6CBpTexFv(this);
+    }
 };
 #pragma push
 #pragma use_lmw_stmw on
 #pragma opt_common_subs off
 // Load the loading-screen textures, optional message file, and background for the selected course.
-void* CLoadingDraw_Ctor(void* self) {
+CLoadingDraw::CLoadingDraw() {
     char* base = s_inputManagerDtorRegistration_LoadingDraw;
     int courseIndex;
-    void* texturePack;
-    void* backgroundPane;
+    void* pack;
+    void* background;
     int textureCount;
-    MPBase1_Ctor(self);
-    *(void**)self = __vt__12CLoadingDraw;
-    int* sw = (int*)self;
-    AsCLoadingDraw(self)->messageFile=0; AsCLoadingDraw(self)->messageEcbResource=0;
-    AsCLoadingDraw(self)->bpEntryId=-1; AsCLoadingDraw(self)->backgroundPane=0;
-    AsCLoadingDraw(self)->messageDraw=0; AsCLoadingDraw(self)->texturePack=0;
-    unsigned int textureNamesAddress=0;
+    MPBase1_Ctor(this);
+    vtbl = (void*)__vt__12CLoadingDraw;
+    messageFile = 0;
+    messageEcbResource = 0;
+    bpEntryId = -1;
+    backgroundPane = 0;
+    messageDraw = 0;
+    texturePack = 0;
+    unsigned int textureNamesAddress = 0;
     if (!Sing_805DC620()) {
         if (!s_resourceTableInitialized) {
-            s_resourceTableStorage=0;
-            __register_global_object(&s_resourceTableStorage, (void*)Allocation_Dtor, (((LoadingStatics*)base)->resourceTableRegistration));
-            s_resourceTableInitialized=1;
+            s_resourceTableStorage = 0;
+            __register_global_object(&s_resourceTableStorage, (void*)Allocation_Dtor,
+                                     (((LoadingStatics*)base)->resourceTableRegistration));
+            s_resourceTableInitialized = 1;
         }
-        Sing_805DC620()=&s_resourceTableStorage;
+        Sing_805DC620() = &s_resourceTableStorage;
     }
     // Request archive textures first; the optional message and course background follow.
-    textureCount=ResourceTable_FindEntryByName(Sing_805DC620(), ((LoadingDrawStrings*)loadingDrawStrings)->courseArchive, &textureNamesAddress);
-    texturePack=new LoadingItem20(((LoadingDrawStrings*)loadingDrawStrings)->courseArchive,textureNamesAddress,textureCount);
-    AsCLoadingDraw(self)->texturePack=texturePack;
-    if(s_loadingDrawRequiresConfirmation) {
-        char* p=((LoadingName*)(&((LoadingStatics*)base)->messagePath))->chars();
-        AsCLoadingDraw(self)->messageFile= (void*)(long)SharedFile_Create(p,0);
+    textureCount = ResourceTable_FindEntryByName(
+        Sing_805DC620(), ((LoadingDrawStrings*)loadingDrawStrings)->courseArchive, &textureNamesAddress);
+    pack =
+        new LoadingItem20(((LoadingDrawStrings*)loadingDrawStrings)->courseArchive, textureNamesAddress, textureCount);
+    texturePack = pack;
+    if (s_loadingDrawRequiresConfirmation) {
+        char* p = ((LoadingName*)(&((LoadingStatics*)base)->messagePath))->chars();
+        messageFile = (void*)(long)SharedFile_Create(p, 0);
     }
-    void* sys=g_sharedDoc;
-    courseIndex=ItemInventory_FindCourseIndex(AsCSharedDoc(sys)->itemInventory, (void*)((IFF_STRUCT::sCourse*)AsCSharedDoc(sys)->selectedCourseData)->common.typeId);
-    if(courseIndex>=kLoadingCourseCount || courseIndex<0)courseIndex=0;
-    backgroundPane=new LoadingPane28;
-    AsCLoadingDraw(self)->backgroundPane=backgroundPane;
-    ((PaneObj*)backgroundPane)->p1(s_loadingScreenBackgroundsByCourse[courseIndex]);
-    if(!Sing_805DC5F0()) {
-        if(!s_bpCtrlInitialized) { __ct__7CBpCtrlFv(s_bpCtrl); __register_global_object(s_bpCtrl,(void*)CBpCtrl_dtor,(((LoadingStatics*)base)->bpCtrlRegistration)); s_bpCtrlInitialized=1; }
-        Sing_805DC5F0()=s_bpCtrl;
+    void* sharedDoc = g_sharedDoc;
+    courseIndex = ItemInventory_FindCourseIndex(
+        AsCSharedDoc(sharedDoc)->itemInventory,
+        (void*)((IFF_STRUCT::sCourse*)AsCSharedDoc(sharedDoc)->selectedCourseData)->common.typeId);
+    if (courseIndex >= kLoadingCourseCount || courseIndex < 0)
+        courseIndex = 0;
+    background = new LoadingPane28;
+    backgroundPane = background;
+    ((PaneObj*)background)->p1(s_loadingScreenBackgroundsByCourse[courseIndex]);
+    if (!Sing_805DC5F0()) {
+        if (!s_bpCtrlInitialized) {
+            ((CBpCtrl*)s_bpCtrl)->__ct();
+            __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (((LoadingStatics*)base)->bpCtrlRegistration));
+            s_bpCtrlInitialized = 1;
+        }
+        Sing_805DC5F0() = s_bpCtrl;
     }
-    CBpCtrl_CreateEntry(Sing_805DC5F0(),((LoadingDrawStrings*)loadingDrawStrings)->loadingLayout,&AsCLoadingDraw(self)->bpEntryId,0);
-    return self;
+    ((CBpCtrl*)Sing_805DC5F0())->CreateEntry(((LoadingDrawStrings*)loadingDrawStrings)->loadingLayout, &bpEntryId, 0);
 }
 #pragma pop
 struct PopStr {
@@ -684,19 +746,26 @@ struct PopStr {
     unsigned int size;
     void* data;
     // Release heap storage of this temporary narrow string when present.
-    ~PopStr() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~PopStr() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
 };
 
 struct PopItem20 {
     char data[0x20];
     // Construct the owned item-dialog texture pack from borrowed archive descriptors.
-    PopItem20(const char* name, unsigned int textureNamesAddress, int textureCount) { CPackTextureResource_Init(this, (char*)name, textureNamesAddress, (void*)textureCount); }
+    PopItem20(const char* name, unsigned int textureNamesAddress, int textureCount) {
+        ((CPackTextureResource*)this)->Init((const char*)name, (void**)textureNamesAddress, (unsigned int)textureCount);
+    }
 };
 
 struct PopPane28 {
     char data[0x28];
     // Initialize the owned item-icon texture.
-    PopPane28() { CBpTex_Init(this); }
+    PopPane28() {
+        __ct__6CBpTexFv(this);
+    }
 };
 
 struct PopVt {
@@ -711,9 +780,9 @@ struct PopByte {
 #pragma push
 #pragma use_lmw_stmw on
 // Build the item icon filename and dialog layout, then request its message file.
-void CPopItemDialog_LoadItemIconAndLayout(void* self) {
+void CPopItemDialog::LoadItemIconAndLayout() {
     char* base = s_bpCtrlDtorRegistration_PopItem;
-    int* sw = (int*)self;
+    int* dialogWords = (int*)this;
     PopStr text;
     char* dst;
     // Phase 1: load the archive and form icon basename + .gsr.
@@ -725,19 +794,24 @@ void CPopItemDialog_LoadItemIconAndLayout(void* self) {
         if (!Sing_805DC620()) {
             if (!s_resourceTableInitialized) {
                 s_resourceTableStorage = 0;
-                __register_global_object(&s_resourceTableStorage, (void*)&Allocation_Dtor, (((PopItemRegistrations*)base)->resourceTable));
+                __register_global_object(&s_resourceTableStorage, (void*)&Allocation_Dtor,
+                                         (((PopItemRegistrations*)base)->resourceTable));
                 s_resourceTableInitialized = 1;
             }
             Sing_805DC620() = &s_resourceTableStorage;
         }
 
-        int textureCount = ResourceTable_FindEntryByName(Sing_805DC620(), ((PopItemDialogStrings*)popItemDialogStrings)->textureArchive, &textureNamesAddress);
-        char* ptr = (char*)new PopItem20(((PopItemDialogStrings*)popItemDialogStrings)->textureArchive, textureNamesAddress, textureCount);
-        AsCPopItemDialog(self)->texturePack = ptr;
-        unsigned int kind = (unsigned int)sw[1] >> kItemCategoryShift;
-        (*(char*)&AsCPopItemDialog(self)->isItemSet) = (kind == kItemSetCategory);
+        int textureCount = ResourceTable_FindEntryByName(
+            Sing_805DC620(), ((PopItemDialogStrings*)popItemDialogStrings)->textureArchive, &textureNamesAddress);
+        char* ptr = (char*)new PopItem20(((PopItemDialogStrings*)popItemDialogStrings)->textureArchive,
+                                         textureNamesAddress, textureCount);
+        texturePack = ptr;
+        unsigned int kind = (unsigned int)dialogWords[1] >> kItemCategoryShift;
+        (*(char*)&isItemSet) = (kind == kItemSetCategory);
 
-        ptr = ((IffItemCommon*)ItemInventory_FindDataWithHairStyleFallback(AsCSharedDoc(g_sharedDoc)->itemInventory, (unsigned int)sw[1]))->icon;
+        ptr = ((IffItemCommon*)ItemInventory_FindDataWithHairStyleFallback(AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                                                           (unsigned int)dialogWords[1]))
+                  ->icon;
         text.flags = 0;
         text.size = 0;
         text.data = 0;
@@ -746,42 +820,47 @@ void CPopItemDialog_LoadItemIconAndLayout(void* self) {
         b1.c = b0.c;
         String_ReplaceRange(&text, 0, 0, ptr, ptr + len, &b1.c);
 
-        char* lit = ((PopItemDialogStrings*)popItemDialogStrings)->textureSuffix;
+        char* suffix = ((PopItemDialogStrings*)popItemDialogStrings)->textureSuffix;
         unsigned int iconNameLength;
-        if ((text.flags >> 31) == 0) iconNameLength = *(unsigned char*)&text.flags & 0x7f;
-        else iconNameLength = text.size;
+        if ((text.flags >> 31) == 0)
+            iconNameLength = *(unsigned char*)&text.flags & 0x7f;
+        else
+            iconNameLength = text.size;
         b3.c = b2.c;
-        String_ReplaceRange(&text, iconNameLength, 0, lit, lit + strlen(lit), &b3.c);
+        String_ReplaceRange(&text, iconNameLength, 0, suffix, suffix + strlen(suffix), &b3.c);
 
-        void* old = AsCPopItemDialog(self)->texturePane;
+        void* old = texturePane;
         if (old) {
-            if (old) ((PopVt*)old)->v2(1);
-            AsCPopItemDialog(self)->texturePane = 0;
+            if (old)
+                ((PopVt*)old)->v2(1);
+            texturePane = 0;
         }
         PopPane28* pane = new PopPane28();
-        AsCPopItemDialog(self)->texturePane = pane;
+        texturePane = pane;
         void* chars;
-        if ((text.flags >> 31) == 0) chars = (char*)&text + 1;
-        else chars = text.data;
+        if ((text.flags >> 31) == 0)
+            chars = (char*)&text + 1;
+        else
+            chars = text.data;
         ((PopVt*)pane)->v3(chars);
 
         // Phase 2: replace the script entry with the item/set layout.
-        if (sw[2] != -1) {
+        if (dialogWords[2] != -1) {
             if (!Sing_805DC5F0()) {
                 if (!s_bpCtrlInitialized) {
-                    __ct__7CBpCtrlFv(s_bpCtrl);
+                    ((CBpCtrl*)s_bpCtrl)->__ct();
                     __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)base);
                     s_bpCtrlInitialized = 1;
                 }
                 Sing_805DC5F0() = s_bpCtrl;
             }
-            CBpCtrl_DeleteEntryById(Sing_805DC5F0(), sw[2]);
-            sw[2] = -1;
+            ((CBpCtrl*)Sing_805DC5F0())->DeleteEntryById(dialogWords[2]);
+            dialogWords[2] = -1;
         }
 
         if (!Sing_805DC5F0()) {
             if (!s_bpCtrlInitialized) {
-                __ct__7CBpCtrlFv(s_bpCtrl);
+                ((CBpCtrl*)s_bpCtrl)->__ct();
                 __register_global_object(s_bpCtrl, (void*)CBpCtrl_dtor, (void*)base);
                 s_bpCtrlInitialized = 1;
             }
@@ -789,14 +868,15 @@ void CPopItemDialog_LoadItemIconAndLayout(void* self) {
         }
         void* sheet = Sing_805DC5F0();
         char* panelName = ((PopItemDialogStrings*)popItemDialogStrings)->itemLayout;
-        if (AsCPopItemDialog(self)->isItemSet) panelName = ((PopItemDialogStrings*)popItemDialogStrings)->setLayout;
-        CBpCtrl_CreateEntry(sheet, panelName, &AsCPopItemDialog(self)->bpEntryId, 0); // original +0x8
+        if (isItemSet)
+            panelName = ((PopItemDialogStrings*)popItemDialogStrings)->setLayout;
+        ((CBpCtrl*)sheet)->CreateEntry(panelName, &bpEntryId, 0); // original +0x8
 
         // Phase 3: release the old message file; request the new file after strings unwind.
-        void* old24 = AsCPopItemDialog(self)->sharedFile;
+        void* old24 = sharedFile;
         if (old24) {
-            CSharedFileHandle_Destroy(old24, 1);
-            AsCPopItemDialog(self)->sharedFile = 0;
+            (int)CSharedFileHandle::Destroy(old24, 1);
+            sharedFile = 0;
         }
 
         scratch.flags = 0;
@@ -805,12 +885,14 @@ void CPopItemDialog_LoadItemIconAndLayout(void* self) {
         NString_AssignCString(&scratch, ((PopItemDialogStrings*)popItemDialogStrings)->messageFile);
         char* out = (((PopItemRegistrations*)base)->messageFileName);
         char* src;
-        if ((scratch.flags >> 31) == 0) src = (char*)&scratch + 1;
-        else src = (char*)scratch.data;
+        if ((scratch.flags >> 31) == 0)
+            src = (char*)&scratch + 1;
+        else
+            src = (char*)scratch.data;
         strcpy(out, src);
         dst = (((PopItemRegistrations*)base)->messageFileName);
     }
-    AsCPopItemDialog(self)->sharedFile = (void*)(long)SharedFile_Create(dst, 0);
+    sharedFile = (void*)(long)SharedFile_Create(dst, 0);
 }
 #pragma pop
 struct V5WStr {
@@ -818,7 +900,10 @@ struct V5WStr {
     unsigned int size;
     void* data;
     // Release heap storage of this temporary wide string when present.
-    ~V5WStr() { if (flags >> 31) appFreeUni__FPv(data); }
+    ~V5WStr() {
+        if (flags >> 31)
+            appFreeUni__FPv(data);
+    }
 };
 // Empty a wide string in place. Bit 31 of flags selects heap storage; otherwise the inline
 // length lives in the low 7 bits of the first byte and the text starts at byte offset 2.
@@ -835,21 +920,17 @@ static inline void V5WStr_Clear(V5WStr& str) {
 #pragma push
 #pragma use_lmw_stmw on
 // Lay out the item/set names and expand the reward/release description for the item category.
-void CPopItemDialog_LayoutItemText(void* self) {
-    extern void CMsgDraw_ResetTextState(void*);
+void CPopItemDialog::LayoutItemText() {
     extern void* IdMap_Lookup(void*, void*);
     extern void* BpObject_GetOrCreateNamedGroup(void*, const char*);
     extern void UIGroup_GetPosition(void*, void*);
     extern void UIGroup_GetSourceSize(void*, void*);
     extern unsigned int UIGroup_GetTintColor(void*);
     extern void Text_SetPosition(void*, void*);
-    extern void CMsgDraw_SetLayoutSize(void*, void*);
-    extern void CMsgDraw_SetColor(void*, unsigned int);
     extern void* ItemInventory_FindDataWithHairStyleFallback(void*, void*);
     extern wchar_t* MessageTable_FindTextByName(void*, void*);
     extern void WString_ReplaceRange(void*, int, unsigned int, wchar_t*, wchar_t*, unsigned char*);
     extern void Text_SetContent(void*, void*);
-    extern void CMsgDraw_ClearFormattingAndRevealAll(void*);
     extern void* ItemInventory_FindSetItemData(void*, void*);
     extern int sprintf(char*, const char*, ...);
     extern void Text_ExpandTaggedText(void*, void*, const char*, int);
@@ -862,75 +943,94 @@ void CPopItemDialog_LayoutItemText(void* self) {
     char memberGroupName[64];
     char* memberCursor;
     void* sheet;
-    int i;
+    int memberIndex;
     char* setRecord;
 
     // Phase 1: take position/size/tint from the heading group, then submit its name.
-    CMsgDraw_ResetTextState(AsCPopItemDialog(self)->textRenderer);
+    ((CMsgDraw*)textRenderer)->ResetTextState();
 
     BpCtrl_EnsureInstance();
 
-    sheet = IdMap_Lookup(Sing_805DC5F0(), AsCPopItemDialog(self)->bpEntryId);
+    sheet = IdMap_Lookup(Sing_805DC5F0(), bpEntryId);
     char* name = ((PopItemDialogStrings*)popItemDialogStrings)->itemNameGroup;
-    if (AsCPopItemDialog(self)->isItemSet) name = ((PopItemDialogStrings*)popItemDialogStrings)->setNameGroup;
+    if (isItemSet)
+        name = ((PopItemDialogStrings*)popItemDialogStrings)->setNameGroup;
     void* pane = BpObject_GetOrCreateNamedGroup(sheet, name);
 
-    layoutPosition[0] = 0; layoutPosition[1] = 0;
-    layoutSize[0] = 0; layoutSize[1] = 0;
-    text.flags = 0; text.size = 0; text.data = 0;
+    layoutPosition[0] = 0;
+    layoutPosition[1] = 0;
+    layoutSize[0] = 0;
+    layoutSize[1] = 0;
+    text.flags = 0;
+    text.size = 0;
+    text.data = 0;
 
     UIGroup_GetPosition(pane, layoutPosition);
     UIGroup_GetSourceSize(pane, layoutSize);
 
     unsigned int color = UIGroup_GetTintColor(pane);
     color = GroupTintToTextColor(color);
-    Text_SetPosition(AsCPopItemDialog(self)->textRenderer, layoutPosition);
-    CMsgDraw_SetLayoutSize(AsCPopItemDialog(self)->textRenderer, layoutSize);
-    CMsgDraw_SetColor(AsCPopItemDialog(self)->textRenderer, color);
+    Text_SetPosition(textRenderer, layoutPosition);
+    ((CMsgDraw*)textRenderer)->SetLayoutSize((float*)layoutSize);
+    ((CMsgDraw*)textRenderer)->SetColor(color);
 
-    wchar_t* headingText = MessageTable_FindTextByName(AsCPopItemDialog(self)->taggedText,
-                               ItemInventory_FindDataWithHairStyleFallback(AsCSharedDoc(g_sharedDoc)->itemInventory, (*(void**)&AsCPopItemDialog(self)->itemId)));
+    wchar_t* headingText = MessageTable_FindTextByName(
+        taggedText,
+        ItemInventory_FindDataWithHairStyleFallback(AsCSharedDoc(g_sharedDoc)->itemInventory, (*(void**)&itemId)));
     unsigned int currentTextLength;
-    if (!(text.flags >> 31)) currentTextLength = *(unsigned char*)&text.flags & 0x7f;
-    else currentTextLength = text.size;
+    if (!(text.flags >> 31))
+        currentTextLength = *(unsigned char*)&text.flags & 0x7f;
+    else
+        currentTextLength = text.size;
     b1.c = b0.c;
-    WString_ReplaceRange(&text, 0, currentTextLength, headingText, headingText + wcslen(headingText), (unsigned char*)&b1.c);
+    WString_ReplaceRange(&text, 0, currentTextLength, headingText, headingText + wcslen(headingText),
+                         (unsigned char*)&b1.c);
     void* chars;
-    if (!(text.flags >> 31)) chars = (char*)&text + 2;
-    else chars = text.data;
-    Text_SetContent(AsCPopItemDialog(self)->textRenderer, chars);
+    if (!(text.flags >> 31))
+        chars = (char*)&text + 2;
+    else
+        chars = text.data;
+    Text_SetContent(textRenderer, chars);
     V5WStr_Clear(text);
 
     // Phase 2: submit each set member at its numbered group, reusing the text buffer.
-    if (AsCPopItemDialog(self)->isItemSet) {
-        setRecord = (char*)ItemInventory_FindSetItemData(AsCSharedDoc(g_sharedDoc)->itemInventory, (*(void**)&AsCPopItemDialog(self)->itemId));
+    if (isItemSet) {
+        setRecord = (char*)ItemInventory_FindSetItemData(AsCSharedDoc(g_sharedDoc)->itemInventory, (*(void**)&itemId));
         memberCursor = setRecord;
-        i = 0;
-        while (i < ((IFF_STRUCT::sSetItem*)setRecord)->itemCount) {
-            sprintf(memberGroupName, ((PopItemDialogStrings*)popItemDialogStrings)->setItemGroupFormat, i + 1);
+        memberIndex = 0;
+        while (memberIndex < ((IFF_STRUCT::sSetItem*)setRecord)->itemCount) {
+            sprintf(memberGroupName, ((PopItemDialogStrings*)popItemDialogStrings)->setItemGroupFormat,
+                    memberIndex + 1);
             void* item = BpObject_GetOrCreateNamedGroup(sheet, memberGroupName);
             UIGroup_GetPosition(item, layoutPosition);
             UIGroup_GetSourceSize(item, layoutSize);
             unsigned int memberColor = UIGroup_GetTintColor(item);
             memberColor = GroupTintToTextColor(memberColor);
-            Text_SetPosition(AsCPopItemDialog(self)->textRenderer, layoutPosition);
-            CMsgDraw_SetLayoutSize(AsCPopItemDialog(self)->textRenderer, layoutSize);
-            CMsgDraw_SetColor(AsCPopItemDialog(self)->textRenderer, memberColor);
+            Text_SetPosition(textRenderer, layoutPosition);
+            ((CMsgDraw*)textRenderer)->SetLayoutSize((float*)layoutSize);
+            ((CMsgDraw*)textRenderer)->SetColor(memberColor);
 
-            wchar_t* memberText = MessageTable_FindTextByName(AsCPopItemDialog(self)->taggedText,
-                                        ItemInventory_FindDataWithHairStyleFallback(AsCSharedDoc(g_sharedDoc)->itemInventory, (void*)((IFF_STRUCT::sSetItem*)memberCursor)->itemIds[0]));
+            wchar_t* memberText = MessageTable_FindTextByName(
+                taggedText,
+                ItemInventory_FindDataWithHairStyleFallback(AsCSharedDoc(g_sharedDoc)->itemInventory,
+                                                            (void*)((IFF_STRUCT::sSetItem*)memberCursor)->itemIds[0]));
             unsigned int currentMemberTextLength;
-            if (!(text.flags >> 31)) currentMemberTextLength = *(unsigned char*)&text.flags & 0x7f;
-            else currentMemberTextLength = text.size;
+            if (!(text.flags >> 31))
+                currentMemberTextLength = *(unsigned char*)&text.flags & 0x7f;
+            else
+                currentMemberTextLength = text.size;
             b3.c = b2.c;
-            WString_ReplaceRange(&text, 0, currentMemberTextLength, memberText, memberText + wcslen(memberText), (unsigned char*)&b3.c);
+            WString_ReplaceRange(&text, 0, currentMemberTextLength, memberText, memberText + wcslen(memberText),
+                                 (unsigned char*)&b3.c);
             void* memberChars;
-            if (!(text.flags >> 31)) memberChars = (char*)&text + 2;
-            else memberChars = text.data;
-            Text_SetContent(AsCPopItemDialog(self)->textRenderer, memberChars);
+            if (!(text.flags >> 31))
+                memberChars = (char*)&text + 2;
+            else
+                memberChars = text.data;
+            Text_SetContent(textRenderer, memberChars);
             V5WStr_Clear(text);
             memberCursor += 4;
-            i++;
+            memberIndex++;
         }
     }
 
@@ -940,49 +1040,81 @@ void CPopItemDialog_LayoutItemText(void* self) {
     UIGroup_GetSourceSize(pane, layoutSize);
     color = UIGroup_GetTintColor(pane);
     color = GroupTintToTextColor(color);
-    Text_SetPosition(AsCPopItemDialog(self)->textRenderer, layoutPosition);
-    CMsgDraw_SetLayoutSize(AsCPopItemDialog(self)->textRenderer, layoutSize);
-    CMsgDraw_SetColor(AsCPopItemDialog(self)->textRenderer, color);
+    Text_SetPosition(textRenderer, layoutPosition);
+    ((CMsgDraw*)textRenderer)->SetLayoutSize((float*)layoutSize);
+    ((CMsgDraw*)textRenderer)->SetColor(color);
 
-    if (AsCPopItemDialog(self)->descriptionMode == kDescriptionAcquisition) {
-        unsigned int id = AsCPopItemDialog(self)->itemId >> kItemCategoryShift;
+    if (descriptionMode == kDescriptionAcquisition) {
+        unsigned int id = itemId >> kItemCategoryShift;
         switch (id) {
-            case kCourseCategory: Text_ExpandTaggedText(AsCPopItemDialog(self)->taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getCourse, 0); break;
-            case kCharacterCategory: Text_ExpandTaggedText(AsCPopItemDialog(self)->taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getCharacter, 0); break;
-            case kClubSetCategory:
-            case kBallCategory: Text_ExpandTaggedText(AsCPopItemDialog(self)->taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getItem, 0); break;
-            case kItemSetCategory: Text_ExpandTaggedText(AsCPopItemDialog(self)->taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getCostumeSet, 0); break;
-            case kCostumeCategory: Text_ExpandTaggedText(AsCPopItemDialog(self)->taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getCostume, 0); break;
-            default: break;
+        case kCourseCategory:
+            Text_ExpandTaggedText(taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getCourse,
+                                  0);
+            break;
+        case kCharacterCategory:
+            Text_ExpandTaggedText(taggedText, &text,
+                                  ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getCharacter, 0);
+            break;
+        case kClubSetCategory:
+        case kBallCategory:
+            Text_ExpandTaggedText(taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getItem, 0);
+            break;
+        case kItemSetCategory:
+            Text_ExpandTaggedText(taggedText, &text,
+                                  ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getCostumeSet, 0);
+            break;
+        case kCostumeCategory:
+            Text_ExpandTaggedText(taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getCostume,
+                                  0);
+            break;
+        default:
+            break;
         }
-    } else if (AsCPopItemDialog(self)->descriptionMode == kDescriptionCompletion) {
-        int id = AsCPopItemDialog(self)->itemId >> kItemCategoryShift;
+    } else if (descriptionMode == kDescriptionCompletion) {
+        int id = itemId >> kItemCategoryShift;
         switch (id) {
-            case kBallCategory:
-            case kAuxPartCategory: Text_ExpandTaggedText(AsCPopItemDialog(self)->taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getCompleteItem, 0); break;
-            default: break;
-        case 0: break;
-}
-    } else if (AsCPopItemDialog(self)->descriptionMode == kDescriptionRelease) {
-        unsigned int id = AsCPopItemDialog(self)->itemId >> kItemCategoryShift;
+        case kBallCategory:
+        case kAuxPartCategory:
+            Text_ExpandTaggedText(taggedText, &text,
+                                  ((ItemRewardMessageStrings*)itemRewardMessageStrings)->getCompleteItem, 0);
+            break;
+        default:
+            break;
+        case 0:
+            break;
+        }
+    } else if (descriptionMode == kDescriptionRelease) {
+        unsigned int id = itemId >> kItemCategoryShift;
         switch (id) {
-            case kCaddieCategory: Text_ExpandTaggedText(AsCPopItemDialog(self)->taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->releaseCaddie, 0); break;
-            case kItemSetCategory: Text_ExpandTaggedText(AsCPopItemDialog(self)->taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->releaseCostumeSet, 0); break;
-            case kCostumeCategory:
-            case kClubSetCategory:
-            case kBallCategory:
-            case kCaddieItemCategory: Text_ExpandTaggedText(AsCPopItemDialog(self)->taggedText, &text, ((ItemRewardMessageStrings*)itemRewardMessageStrings)->releaseCostume, 0); break;
-            default: break;
+        case kCaddieCategory:
+            Text_ExpandTaggedText(taggedText, &text,
+                                  ((ItemRewardMessageStrings*)itemRewardMessageStrings)->releaseCaddie, 0);
+            break;
+        case kItemSetCategory:
+            Text_ExpandTaggedText(taggedText, &text,
+                                  ((ItemRewardMessageStrings*)itemRewardMessageStrings)->releaseCostumeSet, 0);
+            break;
+        case kCostumeCategory:
+        case kClubSetCategory:
+        case kBallCategory:
+        case kCaddieItemCategory:
+            Text_ExpandTaggedText(taggedText, &text,
+                                  ((ItemRewardMessageStrings*)itemRewardMessageStrings)->releaseCostume, 0);
+            break;
+        default:
+            break;
         }
     }
 
     void* tail;
-    if (!(text.flags >> 31)) tail = (char*)&text + 2;
-    else tail = text.data;
-    Text_SetContent(AsCPopItemDialog(self)->textRenderer, tail);
+    if (!(text.flags >> 31))
+        tail = (char*)&text + 2;
+    else
+        tail = text.data;
+    Text_SetContent(textRenderer, tail);
     V5WStr_Clear(text);
 
-    CMsgDraw_ClearFormattingAndRevealAll(AsCPopItemDialog(self)->textRenderer);
+    ((CMsgDraw*)textRenderer)->ClearFormattingAndRevealAll();
 }
 #pragma pop
 } // extern "C"

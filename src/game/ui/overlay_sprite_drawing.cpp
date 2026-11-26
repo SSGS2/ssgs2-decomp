@@ -1,20 +1,33 @@
+// Overlay sprite drawing: draws colored rectangles and textured sprites into the current view,
+// with flip, pixel snap and anchoring options. Also gives an overlay's texture width and height
+// and loads and releases its texture.
+
 #include "classes/WView.h"
 #include "classes/WOverlay.h"
-// Translation unit 0x8004E01C-0x8004F8B4 (16 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
 enum SpriteFlags {
-    kSpriteTextureMask = 0x7FF, kSpritePixelSnap = 0x400,
-    kSpriteSubmitFlags = 0x30300000, kSpriteVertexFormat = 0x20,
-    kSpriteQuadPrimitive = 0x10, kSpriteFlipU = 1, kSpriteFlipV = 2,
-    kTextHorizontalAnchorMask = 6, kTextCenterX = 2,
-    kTextVerticalAnchorMask = 0x60, kTextCenterY = 0x20,
-    kTextScalePosition = 0x100, kTextScaleSize = 0x1000
+    kSpriteTextureMask = 0x7FF,
+    kSpritePixelSnap = 0x400,
+    kSpriteSubmitFlags = 0x30300000,
+    kSpriteVertexFormat = 0x20,
+    kSpriteQuadPrimitive = 0x10,
+    kSpriteFlipU = 1,
+    kSpriteFlipV = 2,
+    kTextHorizontalAnchorMask = 6,
+    kTextCenterX = 2,
+    kTextVerticalAnchorMask = 0x60,
+    kTextCenterY = 0x20,
+    kTextScalePosition = 0x100,
+    kTextScaleSize = 0x1000
 };
-enum SpriteClipOutcode { kOutsideLeft = 1, kOutsideRight = 2,
-                         kOutsideTop = 4, kOutsideBottom = 8 };
+enum SpriteClipOutcode {
+    kOutsideLeft = 1,
+    kOutsideRight = 2,
+    kOutsideTop = 4,
+    kOutsideBottom = 8
+};
 // Rectangles are [x,y,width,height], not opposite corners. Destination positions
 // are viewport pixels with screen Y down; source rectangles are texture UVs.
 // Rendering uses shared scratch vertices, so these routines are not reentrant.
@@ -24,6 +37,7 @@ enum SpriteClipOutcode { kOutsideLeft = 1, kOutsideRight = 2,
 // Boundary tests are strict: points exactly on an edge are not copied by the
 // inside test, and intersections are emitted only on a strict sign change.
 #include "sdk_protos.h"
+#include "classes/CHashPath.h"
 
 struct OverlayTextureView {
     char baseObject[0x10];
@@ -42,14 +56,20 @@ struct OverlayDrawDispatch {
     virtual void release();
     virtual void fn10();
     virtual void fn14();
-    virtual void drawQuad(const char *, int, unsigned int, int);
+    virtual void drawQuad(const char*, int, unsigned int, int);
 };
 
 struct SpriteQuadVertex {
     float x;
     float y;
-    union { float scale; float z; };
-    union { float one; float w; };
+    union {
+        float scale;
+        float z;
+    };
+    union {
+        float one;
+        float w;
+    };
     unsigned int color;
     char reserved14[4];
     float u;
@@ -73,7 +93,7 @@ struct SpriteRenderDispatch {
     virtual void fn4();
     virtual void fn8();
     virtual void release();
-    virtual void render(void *, int, unsigned int, int);
+    virtual void render(void*, int, unsigned int, int);
 };
 struct TextureLookupResult {
     int width;
@@ -86,30 +106,28 @@ struct OverlayPathString {
         char firstWord[4];
     } header;
     unsigned int secondWord;
-    char *heapText;
+    char* heapText;
 };
 
-void *ISharedResource_GetTextureDescription(void *);
-void String_ReserveCapacity(void *, unsigned int);
-void String_ReplaceRange(void *, int, int, const char *, const char *, const char *);
-void ResourcePath_NormalizeImageExtension(void *);
-int CHashPath_Exists(void *, const char *);
-void *CreateSharedTextureResource__FPCci(const char *, int);
-int Get__15ISharedResourceFv(void *);
-void appFreeUni__FPv(void *);
+void* ISharedResource_GetTextureDescription(void*);
+void String_ReserveCapacity(void*, unsigned int);
+void String_ReplaceRange(void*, int, int, const char*, const char*, const char*);
+void ResourcePath_NormalizeImageExtension(void*);
+void* CreateSharedTextureResource__FPCci(const char*, int);
+int Get__15ISharedResourceFv(void*);
+void appFreeUni__FPv(void*);
 
-void BaseObject_dtor(void *, int);
-void __dl__FPv(void *);
-void DrawText_TransformRectToViewport(float *, WView *, const float *, int);
-void Sprite_DrawClippedTexturedQuad(void *, void *, void *, void *, float *, float, void *,
-                 void *, void *, bool);
+void BaseObject_dtor(void*, int);
+void __dl__FPv(void*);
+void DrawText_TransformRectToViewport(float*, WView*, const float*, int);
+void Sprite_DrawClippedTexturedQuad(void*, void*, void*, void*, float*, float, void*, void*, void*, bool);
 float Math_CosApprox(float);
 float Math_SinApprox(float);
-void WView_SetOptionalTextureOverride(void *, void *);
-void *memcpy(void *, const void *, unsigned int);
-extern SpriteQuadVertex *s_clippedSpriteVertexPointers[16];
+void WView_SetOptionalTextureOverride(void*, void*);
+void* memcpy(void*, const void*, unsigned int);
+extern SpriteQuadVertex* s_clippedSpriteVertexPointers[16];
 extern const float kFloat_0_00001_BitmapDraw;
-void WOverlay_DrawTransformedRect(void *, void *, void *, float, float *, void *, void *, void *);
+void WOverlay_DrawTransformedRect(void*, void*, void*, float, float*, void*, void*, void*);
 extern const float kFloat_0_B2d;
 extern const float kFloat_0_5_BitmapDraw;
 extern const float kFloat_1_BitmapDraw;
@@ -120,12 +138,14 @@ extern char s_spriteQuadVertexPointers[];
 // One shared four-corner sprite quad (0xE0 bytes); the original
 // symbol map gives each 0x38-byte vertex its own label.
 typedef char SpriteQuadVertex_size[(sizeof(SpriteQuadVertex) == 0x38) ? 1 : -1];
-struct SpriteQuad { SpriteQuadVertex vertices[4]; };
+struct SpriteQuad {
+    SpriteQuadVertex vertices[4];
+};
 extern SpriteQuad s_spriteQuadVertex0;
 
 // Fill the shared quad with rectangle corners and submit a colored sprite.
-void Sprite_DrawColoredRect(void *self, float *rect, int flags, unsigned int color, float depth) {
-    SpriteQuadVertex *dst = s_spriteQuadVertex0.vertices;
+void Sprite_DrawColoredRect(void* self, float* rect, int flags, unsigned int color, float depth) {
+    SpriteQuadVertex* dst = s_spriteQuadVertex0.vertices;
     float half = kFloat_0_5_BitmapDraw;
     for (int corner = 0; corner < 4; ++corner) {
         float x;
@@ -157,17 +177,17 @@ void Sprite_DrawColoredRect(void *self, float *rect, int flags, unsigned int col
         s_spriteQuadVertex0.vertices[3].u = kFloat_0_B2d;
         s_spriteQuadVertex0.vertices[3].v = kFloat_0_B2d;
     }
-    ((OverlayDrawDispatch *)self)->drawQuad(s_spriteQuadVertexPointers, 0x20,
-                                     (unsigned int)flags | kSpriteSubmitFlags, 0);
+    ((OverlayDrawDispatch*)self)
+        ->drawQuad(s_spriteQuadVertexPointers, 0x20, (unsigned int)flags | kSpriteSubmitFlags, 0);
 }
 
 // Clip a polygon against x > 0, interpolating its texture coordinates.
-void Sprite_ClipPolygonToLeftEdge(void *unused0, void *unused1, ClippedSpriteVertex *out,
-                 ClippedSpriteVertex *in, int *outCount, int count) {
+void Sprite_ClipPolygonToLeftEdge(void* unused0, void* unused1, ClippedSpriteVertex* out, ClippedSpriteVertex* in,
+                                  int* outCount, int count) {
     *outCount = 0;
     float zero = kFloat_0_B2d;
     for (int i = 0; i < count; ++i) {
-        ClippedSpriteVertex *current = &in[i];
+        ClippedSpriteVertex* current = &in[i];
         if (current->x > zero) {
             out[*outCount].x = current->x;
             out[*outCount].y = current->y;
@@ -176,7 +196,7 @@ void Sprite_ClipPolygonToLeftEdge(void *unused0, void *unused1, ClippedSpriteVer
             ++*outCount;
         }
         int nextIndex = (i + 1) % count;
-        ClippedSpriteVertex *next = &in[nextIndex];
+        ClippedSpriteVertex* next = &in[nextIndex];
         float nextX = next->x;
         if (current->x * nextX < zero) {
             float absNextX;
@@ -208,12 +228,12 @@ void Sprite_ClipPolygonToLeftEdge(void *unused0, void *unused1, ClippedSpriteVer
 }
 
 // Clip a polygon against y > 0, interpolating its texture coordinates.
-void Sprite_ClipPolygonToTopEdge(void *unused0, void *unused1, ClippedSpriteVertex *out,
-                 ClippedSpriteVertex *in, int *outCount, int count) {
+void Sprite_ClipPolygonToTopEdge(void* unused0, void* unused1, ClippedSpriteVertex* out, ClippedSpriteVertex* in,
+                                 int* outCount, int count) {
     *outCount = 0;
     float zero = kFloat_0_B2d;
     for (int i = 0; i < count; ++i) {
-        ClippedSpriteVertex *current = &in[i];
+        ClippedSpriteVertex* current = &in[i];
         if (current->y > zero) {
             out[*outCount].x = current->x;
             out[*outCount].y = current->y;
@@ -222,7 +242,7 @@ void Sprite_ClipPolygonToTopEdge(void *unused0, void *unused1, ClippedSpriteVert
             ++*outCount;
         }
         int nextIndex = (i + 1) % count;
-        ClippedSpriteVertex *next = &in[nextIndex];
+        ClippedSpriteVertex* next = &in[nextIndex];
         float nextY = next->y;
         if (current->y * nextY < zero) {
             float absNextY;
@@ -254,13 +274,12 @@ void Sprite_ClipPolygonToTopEdge(void *unused0, void *unused1, ClippedSpriteVert
 }
 
 // Clip a polygon against the viewport right edge.
-void Sprite_ClipPolygonToRightEdge(void *unused0, WView *camera,
-                 ClippedSpriteVertex *out, ClippedSpriteVertex *in,
-                 int *outCount, int count) {
+void Sprite_ClipPolygonToRightEdge(void* unused0, WView* camera, ClippedSpriteVertex* out, ClippedSpriteVertex* in,
+                                   int* outCount, int count) {
     *outCount = 0;
     float zero = kFloat_0_B2d;
     for (int i = 0; i < count; ++i) {
-        ClippedSpriteVertex *current = &in[i];
+        ClippedSpriteVertex* current = &in[i];
         float limit = camera->viewportWidth;
         if (current->x < limit) {
             out[*outCount].x = current->x;
@@ -270,7 +289,7 @@ void Sprite_ClipPolygonToRightEdge(void *unused0, WView *camera,
             ++*outCount;
         }
         int nextIndex = (i + 1) % count;
-        ClippedSpriteVertex *next = &in[nextIndex];
+        ClippedSpriteVertex* next = &in[nextIndex];
         limit = camera->viewportWidth;
         float diff = current->x - limit;
         if (diff * (next->x - limit) < zero) {
@@ -292,13 +311,12 @@ void Sprite_ClipPolygonToRightEdge(void *unused0, WView *camera,
 }
 
 // Clip a polygon against the viewport bottom edge.
-void Sprite_ClipPolygonToBottomEdge(void *unused0, WView *camera,
-                 ClippedSpriteVertex *out, ClippedSpriteVertex *in,
-                 int *outCount, int count) {
+void Sprite_ClipPolygonToBottomEdge(void* unused0, WView* camera, ClippedSpriteVertex* out, ClippedSpriteVertex* in,
+                                    int* outCount, int count) {
     *outCount = 0;
     float zero = kFloat_0_B2d;
     for (int i = 0; i < count; ++i) {
-        ClippedSpriteVertex *current = &in[i];
+        ClippedSpriteVertex* current = &in[i];
         float limit = camera->viewportHeight;
         if (current->y < limit) {
             out[*outCount].x = current->x;
@@ -308,7 +326,7 @@ void Sprite_ClipPolygonToBottomEdge(void *unused0, WView *camera,
             ++*outCount;
         }
         int nextIndex = (i + 1) % count;
-        ClippedSpriteVertex *next = &in[nextIndex];
+        ClippedSpriteVertex* next = &in[nextIndex];
         limit = camera->viewportHeight;
         float diff = current->y - limit;
         if (diff * (next->y - limit) < zero) {
@@ -330,32 +348,31 @@ void Sprite_ClipPolygonToBottomEdge(void *unused0, WView *camera,
 }
 
 // Read texture width in pixels, or zero when the overlay has no texture.
-int WOverlay_GetWidth(OverlayTextureView *self) {
+int WOverlay_GetWidth(OverlayTextureView* self) {
     if (self->texture != 0) {
-        return ((TextureLookupResult *)ISharedResource_GetTextureDescription(self->texture))->width;
+        return ((TextureLookupResult*)ISharedResource_GetTextureDescription(self->texture))->width;
     }
     return 0;
 }
 
 // Read texture height in pixels, or zero when the overlay has no texture.
-int WOverlay_GetHeight(OverlayTextureView *self) {
+int WOverlay_GetHeight(OverlayTextureView* self) {
     if (self->texture != 0) {
-        return ((TextureLookupResult *)ISharedResource_GetTextureDescription(self->texture))->height;
+        return ((TextureLookupResult*)ISharedResource_GetTextureDescription(self->texture))->height;
     }
     return 0;
 }
 
 // Empty sprite-unit hook retained for binary compatibility.
-void Sprite_NoOpHook() {
-}
+void Sprite_NoOpHook() {}
 
 // Clip destination and UV rectangles, optionally rotate, then submit the sprite.
-void Sprite_DrawClippedTexturedQuad(void *self, void *camera, void *texture, void *sourceUvRect,
-                 float *destinationRect, float rotationAngle, void *renderFlags, void *packedColor,
-                 void *uvFlipFlags, bool clipToBounds) {
+void Sprite_DrawClippedTexturedQuad(void* self, void* camera, void* texture, void* sourceUvRect, float* destinationRect,
+                                    float rotationAngle, void* renderFlags, void* packedColor, void* uvFlipFlags,
+                                    bool clipToBounds) {
     // Nonzero rotation uses Math_Sin/CosApprox's angular convention. Clipping
     // here intersects the unrotated rectangle; the pivot is its pixel center.
-    float *texRect = (float *)sourceUvRect;
+    float* texRect = (float*)sourceUvRect;
     float dst[4];
     float mapped[4];
     float rectCopy[4];
@@ -365,13 +382,13 @@ void Sprite_DrawClippedTexturedQuad(void *self, void *camera, void *texture, voi
     // Phase 1: intersect destination bounds, trim UVs in the same proportions,
     // and recurse once with clipping disabled when the size changed.
     if (clipToBounds == 1) {
-        float *clip;
+        float* clip;
         if (((OverlayTextureView*)self)->clipEnabled != 0) {
             clip = ((OverlayTextureView*)self)->clipRect;
         } else {
             struct ClipSetup {
                 // Build [inset,inset,width-inset,height-inset] viewport bounds.
-                static void set(float *out, float x, float w, float h) {
+                static void set(float* out, float x, float w, float h) {
                     float bottom = h - x;
                     float right = w - x;
                     out[0] = x;
@@ -380,9 +397,8 @@ void Sprite_DrawClippedTexturedQuad(void *self, void *camera, void *texture, voi
                     out[3] = bottom;
                 }
             };
-            ClipSetup::set(clippedRect, kFloat_0_5_BitmapDraw,
-                ((WView *)camera)->viewportWidth,
-                ((WView *)camera)->viewportHeight);
+            ClipSetup::set(clippedRect, kFloat_0_5_BitmapDraw, ((WView*)camera)->viewportWidth,
+                           ((WView*)camera)->viewportHeight);
             clip = clippedRect;
         }
         rectCopy[0] = destinationRect[0];
@@ -435,7 +451,7 @@ void Sprite_DrawClippedTexturedQuad(void *self, void *camera, void *texture, voi
                 mapped[3] = b;
             }
             Sprite_DrawClippedTexturedQuad(self, camera, texture, mapped, dst, (float)savedAngle, renderFlags,
-                        packedColor, uvFlipFlags, false);
+                                           packedColor, uvFlipFlags, false);
             return;
         }
     }
@@ -471,8 +487,10 @@ void Sprite_DrawClippedTexturedQuad(void *self, void *camera, void *texture, voi
             s_spriteQuadVertex0.vertices[i].x = (i & 1) ? xRight : xLeft;
             s_spriteQuadVertex0.vertices[i].y = (i & 2) ? yBottom : yTop;
         } else {
-            s_spriteQuadVertex0.vertices[i].x = ((i & 1) ? destinationRect[0] + destinationRect[2] : destinationRect[0]) - half;
-            s_spriteQuadVertex0.vertices[i].y = ((i & 2) ? destinationRect[1] + destinationRect[3] : destinationRect[1]) - half;
+            s_spriteQuadVertex0.vertices[i].x =
+                ((i & 1) ? destinationRect[0] + destinationRect[2] : destinationRect[0]) - half;
+            s_spriteQuadVertex0.vertices[i].y =
+                ((i & 2) ? destinationRect[1] + destinationRect[3] : destinationRect[1]) - half;
         }
         s_spriteQuadVertex0.vertices[i].scale = kFloat_0_B2d;
         s_spriteQuadVertex0.vertices[i].one = kFloat_1_BitmapDraw;
@@ -482,7 +500,7 @@ void Sprite_DrawClippedTexturedQuad(void *self, void *camera, void *texture, voi
     }
     // Phase 3: rotate around the destination center, bind texture and submit.
     float absAngle;
-    if ((*(unsigned int *)&angleBits & 0x80000000) != 0) {
+    if ((*(unsigned int*)&angleBits & 0x80000000) != 0) {
         absAngle = -(float)savedAngle;
     } else {
         absAngle = (float)savedAngle;
@@ -503,13 +521,13 @@ void Sprite_DrawClippedTexturedQuad(void *self, void *camera, void *texture, voi
         }
     }
     WView_SetOptionalTextureOverride(camera, texture);
-    ((SpriteRenderDispatch *)camera)->render(s_spriteQuadVertexPointers, 0x20,
-                                            (unsigned int)renderFlags | kSpriteSubmitFlags, 0);
+    ((SpriteRenderDispatch*)camera)
+        ->render(s_spriteQuadVertexPointers, 0x20, (unsigned int)renderFlags | kSpriteSubmitFlags, 0);
     WView_SetOptionalTextureOverride(camera, 0);
 }
 
 // Apply horizontal/vertical anchoring and optional 640x480 coordinate scaling.
-void DrawText_TransformRectToViewport(float *out, WView *camera, const float *input, int flags) {
+void DrawText_TransformRectToViewport(float* out, WView* camera, const float* input, int flags) {
     // X anchor: 0 = left, bit 2 = center, otherwise mask 6 = right.
     // Y anchor: 0 = top, bit 0x20 = center, otherwise mask 0x60 = bottom.
     // Position and size scale independently from the 640x480 reference canvas.
@@ -560,9 +578,9 @@ void DrawText_TransformRectToViewport(float *out, WView *camera, const float *in
 }
 
 // Rotate about the supplied pivot, clip crossed viewport edges, and render the polygon.
-void Sprite_DrawRotatedClippedQuad(void *self, WView *camera, void *texture,
-                 float pivotX, float pivotY, float angle, float *sourceUvRect, float *destinationRect,
-void *renderFlags, void *packedColor, int flags) {
+void Sprite_DrawRotatedClippedQuad(void* self, WView* camera, void* texture, float pivotX, float pivotY, float angle,
+                                   float* sourceUvRect, float* destinationRect, void* renderFlags, void* packedColor,
+                                   int flags) {
     // pivot is already in viewport pixels. A nonzero angle clips the rotated
     // polygon to the VIEWPORT, using up to eight vertices; the zero-angle path
     // delegates to the rectangle clipper, which also honors overlay clipRect.
@@ -570,15 +588,15 @@ void *renderFlags, void *packedColor, int flags) {
     ClippedSpriteVertex clipped[8];
     float absAngle;
 
-    if (!((*(unsigned int *)&angle & 0x80000000u) != 0)) {
+    if (!((*(unsigned int*)&angle & 0x80000000u) != 0)) {
         absAngle = (float)savedAngle;
     } else {
         absAngle = -(float)savedAngle;
     }
     bool angleIsZero = absAngle < kFloat_0_00001_BitmapDraw;
     if ((angleIsZero)) {
-        Sprite_DrawClippedTexturedQuad(self, camera, texture, sourceUvRect, destinationRect, kFloat_0_B2d,
-                    renderFlags, packedColor, (void *)flags, 1);
+        Sprite_DrawClippedTexturedQuad(self, camera, texture, sourceUvRect, destinationRect, kFloat_0_B2d, renderFlags,
+                                       packedColor, (void*)flags, 1);
         return;
     }
 
@@ -588,7 +606,7 @@ void *renderFlags, void *packedColor, int flags) {
     int outcode = 0;
     float one = kFloat_1_BitmapDraw;
 
-    SpriteQuadVertex *vertex = s_spriteQuadVertex0.vertices;
+    SpriteQuadVertex* vertex = s_spriteQuadVertex0.vertices;
     for (int i = 0; 4 > i; ++i) {
         if ((AsWOverlay(self)->coordMode & kSpritePixelSnap) != 0) {
             int rightCorner = 1 & i;
@@ -662,10 +680,14 @@ void *renderFlags, void *packedColor, int flags) {
         float newY = savedY + (dx * sinAngle + dy * cosAngle);
         float newYValue = newY;
         vertex->y = newYValue;
-        if (zero > newX) outcode |= kOutsideLeft;
-        if (camera->viewportWidth < vertex->x) outcode |= kOutsideRight;
-        if (vertex->y < zero) outcode |= kOutsideTop;
-        if (camera->viewportHeight < vertex->y) outcode |= kOutsideBottom;
+        if (zero > newX)
+            outcode |= kOutsideLeft;
+        if (camera->viewportWidth < vertex->x)
+            outcode |= kOutsideRight;
+        if (vertex->y < zero)
+            outcode |= kOutsideTop;
+        if (camera->viewportHeight < vertex->y)
+            outcode |= kOutsideBottom;
         vertex += 1;
     }
 
@@ -678,20 +700,20 @@ void *renderFlags, void *packedColor, int flags) {
     memcpy(&local[2], &s_spriteQuadVertex0.vertices[3], sizeof(SpriteQuadVertex));
     memcpy(&local[3], &s_spriteQuadVertex0.vertices[2], sizeof(SpriteQuadVertex));
     if ((kOutsideLeft & outcode) != 0) {
-        Sprite_ClipPolygonToLeftEdge(self, camera, clipped, (ClippedSpriteVertex *)local, &count, count);
+        Sprite_ClipPolygonToLeftEdge(self, camera, clipped, (ClippedSpriteVertex*)local, &count, count);
         memcpy(local, clipped, count * sizeof(SpriteQuadVertex));
     }
     if ((outcode & kOutsideRight) != 0) {
-        Sprite_ClipPolygonToRightEdge(self, camera, clipped, (ClippedSpriteVertex *)local, &count, count);
+        Sprite_ClipPolygonToRightEdge(self, camera, clipped, (ClippedSpriteVertex*)local, &count, count);
         memcpy(local, clipped, count * sizeof(SpriteQuadVertex));
     }
     if ((outcode & kOutsideTop) != 0) {
-        Sprite_ClipPolygonToTopEdge(self, camera, clipped, (ClippedSpriteVertex *)local, &count, count);
+        Sprite_ClipPolygonToTopEdge(self, camera, clipped, (ClippedSpriteVertex*)local, &count, count);
         memcpy(local, clipped, count * sizeof(SpriteQuadVertex));
     }
     if ((outcode & kOutsideBottom) != 0) {
         int countValue = count;
-        Sprite_ClipPolygonToBottomEdge(self, camera, clipped, (ClippedSpriteVertex *)local, &count, countValue);
+        Sprite_ClipPolygonToBottomEdge(self, camera, clipped, (ClippedSpriteVertex*)local, &count, countValue);
         memcpy(local, clipped, count * sizeof(SpriteQuadVertex));
     }
     // Phase 4: restore fields not written by clippers and submit a terminated
@@ -708,21 +730,22 @@ void *renderFlags, void *packedColor, int flags) {
             int countValue2 = count;
             s_clippedSpriteVertexPointers[countValue2] = 0;
             WView_SetOptionalTextureOverride(camera, texture);
-            ((SpriteRenderDispatch *)camera)->render(s_clippedSpriteVertexPointers, 0x20,
-                                                    ((unsigned int)renderFlags | kSpriteSubmitFlags), 0);
+            ((SpriteRenderDispatch*)camera)
+                ->render(s_clippedSpriteVertexPointers, 0x20, ((unsigned int)renderFlags | kSpriteSubmitFlags), 0);
             WView_SetOptionalTextureOverride(camera, 0);
         }
     } else {
         WView_SetOptionalTextureOverride(camera, texture);
-        ((SpriteRenderDispatch *)camera)->render(s_spriteQuadVertexPointers, 0x10,
-                                                ((unsigned int)renderFlags | kSpriteSubmitFlags), 0);
+        ((SpriteRenderDispatch*)camera)
+            ->render(s_spriteQuadVertexPointers, 0x10, ((unsigned int)renderFlags | kSpriteSubmitFlags), 0);
         WView_SetOptionalTextureOverride(camera, 0);
     }
 }
 
 // Convert the destination rectangle to viewport coordinates before rotating its quad.
-void Sprite_DrawRotatedQuadWithViewportRect(void *self, void *camera, void *sourceUvRect, float pivotX, float pivotY,
-                 float rotationAngle, const float *transform, void *renderFlags, void *packedColor, void *uvFlipFlags) {
+void Sprite_DrawRotatedQuadWithViewportRect(void* self, void* camera, void* sourceUvRect, float pivotX, float pivotY,
+                                            float rotationAngle, const float* transform, void* renderFlags,
+                                            void* packedColor, void* uvFlipFlags) {
     float destinationRect[4];
     struct Rect {
         float x, y, z, w;
@@ -730,14 +753,14 @@ void Sprite_DrawRotatedQuadWithViewportRect(void *self, void *camera, void *sour
         Rect(float d, float c, float b, float a) : x(a), y(b), z(c), w(d) {}
     };
     Rect input(transform[3], transform[2], transform[1], transform[0]);
-    DrawText_TransformRectToViewport(destinationRect, (WView *)camera, (float *)&input,
-                AsWOverlay(self)->coordMode);
-    Sprite_DrawRotatedClippedQuad(self, (WView *)camera, ((OverlayTextureView*)self)->texture, pivotX, pivotY, rotationAngle,
-                (float *)sourceUvRect, destinationRect, renderFlags, packedColor, (int)(long)uvFlipFlags);
+    DrawText_TransformRectToViewport(destinationRect, (WView*)camera, (float*)&input, AsWOverlay(self)->coordMode);
+    Sprite_DrawRotatedClippedQuad(self, (WView*)camera, ((OverlayTextureView*)self)->texture, pivotX, pivotY,
+                                  rotationAngle, (float*)sourceUvRect, destinationRect, renderFlags, packedColor,
+                                  (int)(long)uvFlipFlags);
 }
 
 // Destroy the resource base and optionally free its allocation.
-void *__dt__9WResourceFv(void *self, int deleting) {
+void* __dt__9WResourceFv(void* self, int deleting) {
     if (self != 0) {
         BaseObject_dtor(self, 0);
         if (deleting > 0) {
@@ -748,7 +771,7 @@ void *__dt__9WResourceFv(void *self, int deleting) {
 }
 
 // Normalize an image path and wait for its shared texture; return nonzero on failure.
-int WOverlay_Load(OverlayTextureView *self, const char *text) {
+int WOverlay_Load(OverlayTextureView* self, const char* text) {
     // Releases the previous retained texture before trying text. The replacement
     // is retained by self, including failure as null. Busy-waits with no timeout;
     // return 0 is success and return 1 means no resource was obtained.
@@ -757,9 +780,9 @@ int WOverlay_Load(OverlayTextureView *self, const char *text) {
     };
     CharBox terminatorBox;
     CharBox sourceBox;
-    void *result;
+    void* result;
     if (self->texture != 0) {
-        ((OverlayDrawDispatch *)self->texture)->release();
+        ((OverlayDrawDispatch*)self->texture)->release();
         self->texture = 0;
     }
     {
@@ -769,22 +792,24 @@ int WOverlay_Load(OverlayTextureView *self, const char *text) {
         local.heapText = 0;
         unsigned int length = strlen(text);
         String_ReserveCapacity(&local, length);
-        terminatorBox.c = *(volatile char *)&sourceBox.c;
+        terminatorBox.c = *(volatile char*)&sourceBox.c;
         String_ReplaceRange(&local, 0, 0, text, text + length, &terminatorBox.c);
         struct StringCleanup {
             void* object;
             // Free normalized-path text only when the small string owns a heap block.
             ~StringCleanup() {
                 unsigned int* words = (unsigned int*)object;
-                if (words[0] >> 31) appFreeUni__FPv(*(char**)(words + 2));
+                if (words[0] >> 31)
+                    appFreeUni__FPv(*(char**)(words + 2));
             }
         } cleanup = {&local};
         ResourcePath_NormalizeImageExtension(&local);
-        if (CHashPath_Exists(self->resourcePaths,
-                        (local.header.flags >> 31) == 0 ? (char *)&local + 1 : local.heapText) == 0) {
+        if (((CHashPath*)(self->resourcePaths))
+                ->Exists((local.header.flags >> 31) == 0 ? (char*)&local + 1 : local.heapText) == 0) {
             result = 0;
         } else {
-            result = CreateSharedTextureResource__FPCci((local.header.flags >> 31) == 0 ? (char *)&local + 1 : local.heapText, 0);
+            result = CreateSharedTextureResource__FPCci(
+                (local.header.flags >> 31) == 0 ? (char*)&local + 1 : local.heapText, 0);
             if (result != 0 && Get__15ISharedResourceFv(result) == 0) {
                 while (Get__15ISharedResourceFv(result) == 0) {
                 }
@@ -796,12 +821,12 @@ int WOverlay_Load(OverlayTextureView *self, const char *text) {
 }
 
 // Release the overlay texture, destroy the base, and optionally free the overlay.
-void *WOverlay_dtor(OverlayTextureView *self, int deleting) {
+void* WOverlay_dtor(OverlayTextureView* self, int deleting) {
     if (self != 0) {
-        void *subObject = self->texture;
-        *(void **)self = &__vt__8WOverlay;
+        void* subObject = self->texture;
+        *(void**)self = &__vt__8WOverlay;
         if (subObject != 0) {
-            ((OverlayDrawDispatch *)subObject)->release();
+            ((OverlayDrawDispatch*)subObject)->release();
             self->texture = 0;
         }
         if (self != 0) {
@@ -815,22 +840,22 @@ void *WOverlay_dtor(OverlayTextureView *self, int deleting) {
 }
 
 // Apply overlay anchoring and draw its texture in the transformed rectangle.
-void WOverlay_DrawTransformedRect(void *self, void *camera, void *sourceUvRect, float rotationAngle,
-float *transform, void *renderFlags, void *packedColor, void *uvFlipFlags) {
+void WOverlay_DrawTransformedRect(void* self, void* camera, void* sourceUvRect, float rotationAngle, float* transform,
+                                  void* renderFlags, void* packedColor, void* uvFlipFlags) {
     float width = transform[2];
     float left = transform[0];
     float height = transform[3];
     float destinationRect[4];
 
-      float input[4]; input[1] = (transform[1]);
+    float input[4];
+    input[1] = (transform[1]);
     input[0] = left;
 
     input[2] = width;
     input[3] = height;
-    DrawText_TransformRectToViewport(destinationRect, (WView *)camera, input,
-                AsWOverlay(self)->coordMode);
+    DrawText_TransformRectToViewport(destinationRect, (WView*)camera, input, AsWOverlay(self)->coordMode);
     Sprite_DrawClippedTexturedQuad(self, camera, ((OverlayTextureView*)self)->texture, sourceUvRect, destinationRect,
-                rotationAngle, renderFlags, packedColor, uvFlipFlags, 1);
+                                   rotationAngle, renderFlags, packedColor, uvFlipFlags, 1);
 }
 
 } // extern "C"

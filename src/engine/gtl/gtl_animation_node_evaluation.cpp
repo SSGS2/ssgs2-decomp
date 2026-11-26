@@ -6,8 +6,6 @@
 // The same sampling globals/tables are used by gtl_animation_transform_channels.cpp: edits affect both.
 // No frame-rate conversion here: time/key times and the wrap interval use the
 // animation's own common timebase, whose seconds/ticks conversion is not known.
-// Translation unit 0x803E251C-0x803E33A8 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 #include "types.h"
 #include "sdk_protos.h"
@@ -51,21 +49,32 @@ struct GtlAnimNode {
 // +0C/+1C are fourth-lane storage copied by vector channels. A 16-byte translation
 // channel also copies +2C, but order is saved/restored around the track loop.
 struct GtlPose {
-    float scale[4]; // scale XYZ + fourth word
-    float rot[4]; // rotation payload, interpreted according to transformMode
+    float scale[4];       // scale XYZ + fourth word
+    float rot[4];         // rotation payload, interpreted according to transformMode
     float translation[3]; // translation XYZ
-    u32 transformMode; // transform mode, not an Euler-axis permutation
+    u32 transformMode;    // transform mode, not an Euler-axis permutation
 };
 
 enum AnimationChannel {
-    kTranslationZ = 0x12, kTranslationY = 0x13, kTranslationX = 0x14,
+    kTranslationZ = 0x12,
+    kTranslationY = 0x13,
+    kTranslationX = 0x14,
     kTranslationVector = 0x15,
-    kRotationZ = 0x16, kRotationY = 0x17, kRotationX = 0x18,
+    kRotationZ = 0x16,
+    kRotationY = 0x17,
+    kRotationX = 0x18,
     kRotationVector = 0x19,
-    kScaleZ = 0x1A, kScaleY = 0x1B, kScaleX = 0x1C, kScaleVector = 0x1D
+    kScaleZ = 0x1A,
+    kScaleY = 0x1B,
+    kScaleX = 0x1C,
+    kScaleVector = 0x1D
 };
-enum AnimationModes { kNoParent = 0xFFFF, kClampKeys = 0, kWrapKeys = 1,
-    kQuaternionTransform = 6 };
+enum AnimationModes {
+    kNoParent = 0xFFFF,
+    kClampKeys = 0,
+    kWrapKeys = 1,
+    kQuaternionTransform = 6
+};
 
 typedef void (*GtlInterpFn)(void* dst, void* a, void* b, float alpha);
 typedef u8* (*GtlFindKeyFn)(void* first, void* end, void* cache);
@@ -128,10 +137,10 @@ extern u8 s_animationKeyScratchType0[8];
 // the key span the interpolator receives null endpoints. This is not modulo time.
 extern s32 s_animationEndpointMode;
 extern s8 s_animationKeySearchProbesInitialized;
-extern float s_animationSegmentDuration; // duration t1-t0, published before interpolation
+extern float s_animationSegmentDuration;  // duration t1-t0, published before interpolation
 extern float s_animationSegmentStartTime; // selected lower endpoint time t0
-extern float s_animationSampleTime; // requested sample time t
-extern float s_animationSegmentEndTime; // selected upper endpoint time t1
+extern float s_animationSampleTime;       // requested sample time t
+extern float s_animationSegmentEndTime;   // selected upper endpoint time t1
 extern float kFloat_0_GtlModel;
 extern float kAnimationWrapInterval;
 extern float kUnitYAxisVec4[4];
@@ -201,8 +210,7 @@ s32 gtl_Animation_EvaluateNodeWorldMatrix(GtlAnimation* self, u32 nodeIndex, voi
                 Memory_Copy(&base, self->samples + nodeA->sampleIndex, sizeof(GtlPose));
 
                 if (self->nodes != 0 && self->tracks != 0 && self->keyData != 0 && self->samples != 0 &&
-                    nodeIndex < self->nodeCount && nodeA->trackCount != 0)
-                {
+                    nodeIndex < self->nodeCount && nodeA->trackCount != 0) {
                     float t = self->time;
                     u32 trackBase = nodeA->trackBase;
                     Memory_Copy(&cur, self->samples + nodeA->sampleIndex, sizeof(GtlPose));
@@ -217,18 +225,54 @@ s32 gtl_Animation_EvaluateNodeWorldMatrix(GtlAnimation* self, u32 nodeIndex, voi
                         u32 size = 0;
                         void* slot = 0;
                         switch (track->type) {
-                        case kTranslationZ: slot = &cur.translation[2]; size = 4; break;
-                        case kTranslationY: slot = &cur.translation[1]; size = 4; break;
-                        case kTranslationX: slot = &cur.translation[0]; size = 4; break;
-                        case kTranslationVector: slot = cur.translation; size = 0x10; break;
-                        case kRotationZ: slot = &cur.rot[2]; size = 4; break;
-                        case kRotationY: slot = &cur.rot[1]; size = 4; break;
-                        case kRotationX: slot = &cur.rot[0]; size = 4; break;
-                        case kRotationVector: slot = cur.rot; size = 0x10; break;
-                        case kScaleZ: slot = &cur.scale[2]; size = 4; break;
-                        case kScaleY: slot = &cur.scale[1]; size = 4; break;
-                        case kScaleX: slot = &cur.scale[0]; size = 4; break;
-                        case kScaleVector: slot = cur.scale; size = 0x10; break;
+                        case kTranslationZ:
+                            slot = &cur.translation[2];
+                            size = 4;
+                            break;
+                        case kTranslationY:
+                            slot = &cur.translation[1];
+                            size = 4;
+                            break;
+                        case kTranslationX:
+                            slot = &cur.translation[0];
+                            size = 4;
+                            break;
+                        case kTranslationVector:
+                            slot = cur.translation;
+                            size = 0x10;
+                            break;
+                        case kRotationZ:
+                            slot = &cur.rot[2];
+                            size = 4;
+                            break;
+                        case kRotationY:
+                            slot = &cur.rot[1];
+                            size = 4;
+                            break;
+                        case kRotationX:
+                            slot = &cur.rot[0];
+                            size = 4;
+                            break;
+                        case kRotationVector:
+                            slot = cur.rot;
+                            size = 0x10;
+                            break;
+                        case kScaleZ:
+                            slot = &cur.scale[2];
+                            size = 4;
+                            break;
+                        case kScaleY:
+                            slot = &cur.scale[1];
+                            size = 4;
+                            break;
+                        case kScaleX:
+                            slot = &cur.scale[0];
+                            size = 4;
+                            break;
+                        case kScaleVector:
+                            slot = cur.scale;
+                            size = 0x10;
+                            break;
                         }
 
                         u8* keys = self->keyData + track->keyOffset;
@@ -288,7 +332,8 @@ s32 gtl_Animation_EvaluateNodeWorldMatrix(GtlAnimation* self, u32 nodeIndex, voi
                             u8* cache = (u8*)s_animationKeySearchProbes[track->dataType];
                             *(float*)(cache + tOff) = t;
 
-                            u8* found = s_animationKeySearchFunctions[track->dataType](keys + stride, keys + stride + stride * (track->keyCount - 1), cache);
+                            u8* found = s_animationKeySearchFunctions[track->dataType](
+                                keys + stride, keys + stride + stride * (track->keyCount - 1), cache);
                             if (found == 0) {
                                 found = lastKey;
                             }
@@ -406,8 +451,7 @@ s32 gtl_Animation_EvaluateNodeWorldMatrix(GtlAnimation* self, u32 nodeIndex, voi
                 Memory_Copy(&base2, self->samples + nodeB->sampleIndex, sizeof(GtlPose));
 
                 if (self->nodes != 0 && self->tracks != 0 && self->keyData != 0 && self->samples != 0 &&
-                    nodeIndex < self->nodeCount && nodeB->trackCount != 0)
-                {
+                    nodeIndex < self->nodeCount && nodeB->trackCount != 0) {
                     float t = self->time;
                     u32 trackBase = nodeB->trackBase;
                     Memory_Copy(&cur2, self->samples + nodeB->sampleIndex, sizeof(GtlPose));
@@ -422,18 +466,54 @@ s32 gtl_Animation_EvaluateNodeWorldMatrix(GtlAnimation* self, u32 nodeIndex, voi
                         u32 size = 0;
                         void* slot = 0;
                         switch (track->type) {
-                        case kTranslationZ: slot = &cur2.translation[2]; size = 4; break;
-                        case kTranslationY: slot = &cur2.translation[1]; size = 4; break;
-                        case kTranslationX: slot = &cur2.translation[0]; size = 4; break;
-                        case kTranslationVector: slot = cur2.translation; size = 0x10; break;
-                        case kRotationZ: slot = &cur2.rot[2]; size = 4; break;
-                        case kRotationY: slot = &cur2.rot[1]; size = 4; break;
-                        case kRotationX: slot = &cur2.rot[0]; size = 4; break;
-                        case kRotationVector: slot = cur2.rot; size = 0x10; break;
-                        case kScaleZ: slot = &cur2.scale[2]; size = 4; break;
-                        case kScaleY: slot = &cur2.scale[1]; size = 4; break;
-                        case kScaleX: slot = &cur2.scale[0]; size = 4; break;
-                        case kScaleVector: slot = cur2.scale; size = 0x10; break;
+                        case kTranslationZ:
+                            slot = &cur2.translation[2];
+                            size = 4;
+                            break;
+                        case kTranslationY:
+                            slot = &cur2.translation[1];
+                            size = 4;
+                            break;
+                        case kTranslationX:
+                            slot = &cur2.translation[0];
+                            size = 4;
+                            break;
+                        case kTranslationVector:
+                            slot = cur2.translation;
+                            size = 0x10;
+                            break;
+                        case kRotationZ:
+                            slot = &cur2.rot[2];
+                            size = 4;
+                            break;
+                        case kRotationY:
+                            slot = &cur2.rot[1];
+                            size = 4;
+                            break;
+                        case kRotationX:
+                            slot = &cur2.rot[0];
+                            size = 4;
+                            break;
+                        case kRotationVector:
+                            slot = cur2.rot;
+                            size = 0x10;
+                            break;
+                        case kScaleZ:
+                            slot = &cur2.scale[2];
+                            size = 4;
+                            break;
+                        case kScaleY:
+                            slot = &cur2.scale[1];
+                            size = 4;
+                            break;
+                        case kScaleX:
+                            slot = &cur2.scale[0];
+                            size = 4;
+                            break;
+                        case kScaleVector:
+                            slot = cur2.scale;
+                            size = 0x10;
+                            break;
                         }
 
                         u8* keys = self->keyData + track->keyOffset;
@@ -493,7 +573,8 @@ s32 gtl_Animation_EvaluateNodeWorldMatrix(GtlAnimation* self, u32 nodeIndex, voi
                             u8* cache = (u8*)s_animationKeySearchProbes[track->dataType];
                             *(float*)(cache + tOff) = t;
 
-                            u8* found = s_animationKeySearchFunctions[track->dataType](keys + stride, keys + stride + stride * (track->keyCount - 1), cache);
+                            u8* found = s_animationKeySearchFunctions[track->dataType](
+                                keys + stride, keys + stride + stride * (track->keyCount - 1), cache);
                             if (found == 0) {
                                 found = lastKey;
                             }

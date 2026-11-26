@@ -1,12 +1,7 @@
-// Translation unit 0x803FB5A4-0x803FB67C (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Delay sound effect setter: CSoundEffectDelay::SetParameter changes the delay time, feedback
+// or output level, or replaces all three, and applies the result to the effect.
 
-namespace gtl {
-struct CSoundEffectDelay {
-    char effectWrapper[0x14];
-    char delay[1];
-};
-}
+#include "classes/SoundEffectDelayState.h"
 
 struct DelayParameters {
     // Raw float order: delay milliseconds, feedback ratio, output ratio.
@@ -15,7 +10,10 @@ struct DelayParameters {
 };
 
 enum DelayParameterSelector {
-    kDelayTime, kDelayFeedback, kDelayLevel, kDelayAllParameters
+    kDelayTime,
+    kDelayFeedback,
+    kDelayLevel,
+    kDelayAllParameters
 };
 
 extern "C" {
@@ -23,13 +21,17 @@ extern "C" {
 DelayParameters* gtl_nw4r_FxDelay_GetParams(void*);
 void gtl_nw4r_FxDelay_SetParams(void*, const DelayParameters*);
 
+} // extern "C"
+
+namespace gtl {
+
 // Change one delay parameter, or copy all three from the caller's parameter pointer.
 // inputValue borrows float* for selectors 0..2, or DelayParameters** for selector 3.
 // Unknown selectors reapply the unchanged snapshot. Returns 1 even if the SDK
 // setter rejects the settings; its result is deliberately ignored. No ownership transfers.
-int CSoundEffectDelay_SetParameter(gtl::CSoundEffectDelay* self, int selector, int unused, void* inputValue) {
+int CSoundEffectDelay::SetParameter(int selector, int unused, void* inputValue) {
     // Snapshot first so an individual edit preserves the other two controls.
-    DelayParameters parameters = *gtl_nw4r_FxDelay_GetParams(self->delay);
+    DelayParameters parameters = *gtl_nw4r_FxDelay_GetParams(effect);
     switch (selector) {
     case kDelayTime:
         parameters.delayMilliseconds = *(float*)inputValue;
@@ -48,8 +50,8 @@ int CSoundEffectDelay_SetParameter(gtl::CSoundEffectDelay* self, int selector, i
         break;
     }
     // Apply the complete snapshot; the embedded effect begins at self+0x14.
-    gtl_nw4r_FxDelay_SetParams(self->delay, &parameters);
+    gtl_nw4r_FxDelay_SetParams(effect, &parameters);
     return 1;
 }
 
-} // extern "C"
+}

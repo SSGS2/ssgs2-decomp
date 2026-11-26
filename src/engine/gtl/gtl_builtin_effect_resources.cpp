@@ -1,5 +1,6 @@
-// Translation unit 0x80433528-0x80434998 (9 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// GTL builtin effect resources: the radial capture effect, cached type-6 and type-7 graphics resources
+// with reference counts, and float-range copy helpers for projection and texture settings.
+// Radial capture draws into a texture and rebuilds the projected texture transforms.
 
 #include "sdk_protos.h"
 #include <decomp/cw_bitfields.h>
@@ -8,8 +9,13 @@ extern "C" {
 
 extern char s_builtinType6ResourceCache[];
 extern char s_textureProjectionState[];
-struct S44 { unsigned int w[17]; };
-struct V6 { int x, y, width, height; float nearDepth, farDepth; };
+struct S44 {
+    unsigned int w[17];
+};
+struct V6 {
+    int x, y, width, height;
+    float nearDepth, farDepth;
+};
 struct RadialCaptureState {
     void* vertexBuffer;
     void* texture;
@@ -19,29 +25,43 @@ struct RadialCaptureState {
 };
 extern RadialCaptureState s_radialCaptureRenderState;
 enum BuiltinRenderConstants {
-    kBuiltinEffectNone = 0, kBuiltinEffectRadialCapture = 1,
-    kBuiltinEffectDefaultSetup = 4, kBuiltinEffectProjectionTexture = 5,
-    kCaptureTextureSide = 256, kRadialGridVertices = 0x6000,
-    kRadialGridSide = 64, kRadialCaptureTextureFormat = 0x80000006,
+    kBuiltinEffectNone = 0,
+    kBuiltinEffectRadialCapture = 1,
+    kBuiltinEffectDefaultSetup = 4,
+    kBuiltinEffectProjectionTexture = 5,
+    kCaptureTextureSide = 256,
+    kRadialGridVertices = 0x6000,
+    kRadialGridSide = 64,
+    kRadialCaptureTextureFormat = 0x80000006,
     kProjectionTextureFormat = 0x80000003,
-    kBuiltinCacheSlots = 7, kBuiltinCacheNotFound = 8,
-    kTriangleStripPrimitive = 0x98, kEffectVertexFormat = 0x401,
-    kEffectVertexStride = 0x18, kRadialRowShift = 6, kCornersPerAxis = 2,
-    kFirstStripCorner = 1, kLastStripEndpoint = 5, kLastCellCorner = 3,
-    kProjectionPixelBytes = 2, kProjectionRowShift = 9, kProjectionCoordinateBias = 3,
+    kBuiltinCacheSlots = 7,
+    kBuiltinCacheNotFound = 8,
+    kTriangleStripPrimitive = 0x98,
+    kEffectVertexFormat = 0x401,
+    kEffectVertexStride = 0x18,
+    kRadialRowShift = 6,
+    kCornersPerAxis = 2,
+    kFirstStripCorner = 1,
+    kLastStripEndpoint = 5,
+    kLastCellCorner = 3,
+    kProjectionPixelBytes = 2,
+    kProjectionRowShift = 9,
+    kProjectionCoordinateBias = 3,
     kCaptureTextureOffset = (int)&((RadialCaptureState*)0)->texture
 };
 extern const S44 kRadialCaptureDefaultMaterialWords;
 extern const V6 kRadialCaptureDefaultViewport;
-extern float kFloat_neg1_EngineRender, kFloat_1_EngineRender, kRadialCaptureNearPlane, kRadialCaptureFarPlane, kFloat_2_EngineRender, kFloat_0_015625_EngineRenderGrid, kFloat_neg5_RadialCaptureGrid, kFloat_1_25_EngineRender;
+extern float kFloat_neg1_EngineRender, kFloat_1_EngineRender, kRadialCaptureNearPlane, kRadialCaptureFarPlane,
+    kFloat_2_EngineRender, kFloat_0_015625_EngineRenderGrid, kFloat_neg5_RadialCaptureGrid, kFloat_1_25_EngineRender;
 extern const float kFloat_0_Framebuffer;
 extern void GraphicsResource_CreateType6(int*, void*);
 extern void MtxOrthoOffCenter(void*, float, float, float, float, float, float);
-extern void Texture_Create2D(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, void*, unsigned int);
+extern void Texture_Create2D(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, void*,
+                             unsigned int);
 extern void RenderMaterial_Copy(void*, void*);
-extern void GtlRecordDeque_InitEmpty(void*);
+extern void InitEmpty__14GtlRecordDequeFv(void*);
 extern void WordBlock_CopySixWords(void*, void*);
-extern void GtlRecordDeque_CopyConstructElement(void*, void*, void*);
+extern void CopyConstructElement__14GtlRecordDequeFPvPvPv(void*, void*, void*);
 extern unsigned int TextureFormat_GetRGBA8OrIA8BytesPerTexel(unsigned int);
 extern unsigned int ByteBuffer_CalculateGrowthCapacity(void*, unsigned int);
 extern void std_ThrowLengthError(void);
@@ -50,16 +70,17 @@ extern void VertexBuffer_Create(unsigned int, unsigned int, unsigned int, unsign
 extern void Resource_GetOffsetPtr(void*, int, int, void*, int);
 extern void GraphicsBuffer_Flush(void*);
 extern void Texture_LockLevel(void*, int, void*, int, int);
-extern void Image_CopyToPlatformLayoutFormat7(void*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
+extern void Image_CopyToPlatformLayoutFormat7(void*, unsigned int, unsigned int, unsigned int, unsigned int,
+                                              unsigned int, unsigned int, unsigned int);
 extern void Texture_UnlockLevel(void*, int);
-extern void GtlRecordDeque_Dtor(void*, short);
+extern void Dtor__14GtlRecordDequeFs(void*, short);
 extern void ByteBuffer_DeletingDtor(void*, short);
 extern void dtor_8042AE7C(void*, short);
 extern void dtor_804359C4(void*, short);
-extern void* GtlRecordDeque_CalculateGrowthCapacity(void*, unsigned int);
-extern void GtlRecordDeque_Initialize(void*, void*);
-extern void GtlRecordDeque_AllocateStorage(void*, unsigned int, void*);
-extern void GtlRecordDeque_PrependRange(void*, void*, void*);
+extern void* CalculateGrowthCapacity__14GtlRecordDequeFUi(void*, unsigned int);
+extern void Initialize__14GtlRecordDequeFPv(void*, void*);
+extern void AllocateStorage__14GtlRecordDequeFPvUi(void*, unsigned int, void*);
+extern void PrependRange__14GtlRecordDequeFPcPc(void*, void*, void*);
 extern void Pointer_Swap(void*, void*);
 extern void Swap_Int32(void*, void*);
 extern float Math_SquareRootApprox(float);
@@ -67,32 +88,69 @@ extern void* memcpy(void* dst, const void* src, unsigned int n);
 extern void* memset(void* dst, int c, unsigned int n);
 
 // x/y/z are capture-plane positions; u/v/w are the projected coordinates described below.
-struct RadialVertex { float x, y, z, u, v, w; };
-struct RadialStripCell { RadialVertex v[6]; };
+struct RadialVertex {
+    float x, y, z, u, v, w;
+};
+struct RadialStripCell {
+    RadialVertex v[6];
+};
 // Projected x/y are scaled grid positions; height is the upper unit hemisphere.
-struct RadialProjectedCoordinates { float x, y, hemisphereHeight; };
+struct RadialProjectedCoordinates {
+    float x, y, hemisphereHeight;
+};
 struct Capacity {
     unsigned int value;
     // Expose the capacity word by reference to the original allocator helpers.
-    operator const unsigned int&() const { return value; }
+    operator const unsigned int&() const {
+        return value;
+    }
     // Assign the stored capacity without changing ownership.
-    Capacity& operator=(unsigned int v) { value = v; return *this; }
+    Capacity& operator=(unsigned int v) {
+        value = v;
+        return *this;
+    }
 };
-struct VecE { RadialVertex* begin; unsigned int size; Capacity cap;
+struct VecE {
+    RadialVertex* begin;
+    unsigned int size;
+    Capacity cap;
     // Release temporary vertex storage after its contents reach the GPU buffer.
-    ~VecE() { GtlRecordDeque_Dtor(this, 0); VecE* destroyed = this; }
+    ~VecE() {
+        Dtor__14GtlRecordDequeFs(this, 0);
+        VecE* destroyed = this;
+    }
 };
 // Keep VecE's emitted destructor symbol; use its role alias in effect code.
 typedef VecE RadialVertexBuffer;
-struct VertexReplacementBuffer { RadialVertex* begin; unsigned int size; unsigned int cap; void* alloc; unsigned int pos; };
-struct ProjectionByteBuffer { unsigned char* begin; unsigned int size; Capacity cap; };
+struct VertexReplacementBuffer {
+    RadialVertex* begin;
+    unsigned int size;
+    unsigned int cap;
+    void* alloc;
+    unsigned int pos;
+};
+struct ProjectionByteBuffer {
+    unsigned char* begin;
+    unsigned int size;
+    Capacity cap;
+};
 // Replacement byte storage owns data until the swap installs it in ProjectionByteBuffer.
 // constructedBytes tracks live bytes; liveBeginOffsetBytes moves backward while prepending.
 // After the swap this guard owns the displaced allocation and releases only that storage.
-struct ByteReplacementBuffer { unsigned char* data; unsigned int constructedBytes; unsigned int capacityBytes; void* alloc; unsigned int liveBeginOffsetBytes; };
+struct ByteReplacementBuffer {
+    unsigned char* data;
+    unsigned int constructedBytes;
+    unsigned int capacityBytes;
+    void* alloc;
+    unsigned int liveBeginOffsetBytes;
+};
 // referenceCount is the retained reference count; the low half is not interpreted in this unit.
-struct ResourceReferenceHeader { CW_BITS2( unsigned int referenceCount : 16, unsigned int lo : 16) };
-struct Vec3Words { unsigned int w[3]; };
+struct ResourceReferenceHeader {
+    CW_BITS2(unsigned int referenceCount : 16, unsigned int lo : 16)
+};
+struct Vec3Words {
+    unsigned int w[3];
+};
 
 #pragma optimization_level 0
 #pragma optimize_for_size on
@@ -105,7 +163,10 @@ struct Vec3Words { unsigned int w[3]; };
 // is 1/64 of the grid, kFloat_neg5_RadialCaptureGrid sets plane depth, and
 // kFloat_1_25_EngineRender scales projected x/y. Keep floating operation order.
 int GraphicsResource_AcquireBuiltinEffect(int index, void** out) {
-    if (index == kBuiltinEffectNone) { *out = 0; return 1; }
+    if (index == kBuiltinEffectNone) {
+        *out = 0;
+        return 1;
+    }
     __alloca(0);
     void** slot = (void**)s_builtinType6ResourceCache + index;
     if (*slot == 0) {
@@ -113,104 +174,112 @@ int GraphicsResource_AcquireBuiltinEffect(int index, void** out) {
         GraphicsResource_CreateType6(&index, slot);
         switch (index) {
         case kBuiltinEffectRadialCapture: {
-                // Capture target/material/viewport use an orthographic [-1,1] grid.
-                MtxOrthoOffCenter(s_radialCaptureRenderState.projection, kFloat_neg1_EngineRender, kFloat_1_EngineRender, kFloat_1_EngineRender, kFloat_neg1_EngineRender, kRadialCaptureNearPlane, kRadialCaptureFarPlane);
-                Texture_Create2D(kCaptureTextureSide, kCaptureTextureSide, 1, 0, kRadialCaptureTextureFormat, 0, &s_radialCaptureRenderState.texture, 0);
-                S44 s44 = kRadialCaptureDefaultMaterialWords;
-                RenderMaterial_Copy(&s_radialCaptureRenderState.material, &s44);
-                RadialVertexBuffer vec;
-                V6 v6 = kRadialCaptureDefaultViewport;
-                s_radialCaptureRenderState.viewport.x = v6.x;
-                s_radialCaptureRenderState.viewport.y = v6.y;
-                s_radialCaptureRenderState.viewport.width = v6.width;
-                s_radialCaptureRenderState.viewport.height = v6.height;
-                s_radialCaptureRenderState.viewport.nearDepth = v6.nearDepth;
-                s_radialCaptureRenderState.viewport.farDepth = v6.farDepth;
-                GtlRecordDeque_InitEmpty(&vec);
-                // Storage expansion stays at this scope; visual controls continue immediately below.
+            // Capture target/material/viewport use an orthographic [-1,1] grid.
+            MtxOrthoOffCenter(s_radialCaptureRenderState.projection, kFloat_neg1_EngineRender, kFloat_1_EngineRender,
+                              kFloat_1_EngineRender, kFloat_neg1_EngineRender, kRadialCaptureNearPlane,
+                              kRadialCaptureFarPlane);
+            Texture_Create2D(kCaptureTextureSide, kCaptureTextureSide, 1, 0, kRadialCaptureTextureFormat, 0,
+                             &s_radialCaptureRenderState.texture, 0);
+            S44 defaultMaterial = kRadialCaptureDefaultMaterialWords;
+            RenderMaterial_Copy(&s_radialCaptureRenderState.material, &defaultMaterial);
+            RadialVertexBuffer vec;
+            V6 defaultViewport = kRadialCaptureDefaultViewport;
+            s_radialCaptureRenderState.viewport.x = defaultViewport.x;
+            s_radialCaptureRenderState.viewport.y = defaultViewport.y;
+            s_radialCaptureRenderState.viewport.width = defaultViewport.width;
+            s_radialCaptureRenderState.viewport.height = defaultViewport.height;
+            s_radialCaptureRenderState.viewport.nearDepth = defaultViewport.nearDepth;
+            s_radialCaptureRenderState.viewport.farDepth = defaultViewport.farDepth;
+            InitEmpty__14GtlRecordDequeFv(&vec);
+            // Storage expansion stays at this scope; visual controls continue immediately below.
 #include "game/u80433528_radial_storage.inc"
-                RadialVertex* data = vec.begin;
-                RadialStripCell* cells = (RadialStripCell*)data;
-                // Four corners per cell plus repeated endpoints join the cells
-                // in a strip. Positions span [-1,1] at z=-5; texture coordinates
-                // are (1.25*x, 1.25*y, sqrt(max(1-x*x-y*y, 0))). The third
-                // coordinate is the upper unit-hemisphere height inside the unit disk;
-                // it falls to zero outside. Grid positions stay on the z=-5 plane.
-                for (int y = 0; y < kRadialGridSide; y++) {
-                    for (int x = 0; x < kRadialGridSide; x++) {
-                        RadialVertex* corners = &(cells + (x + (y << kRadialRowShift)))->v[kFirstStripCorner];
-                        for (int a = 0; a < kCornersPerAxis; a++) {
-                            for (int b = 0; b < kCornersPerAxis; b++) {
-                                RadialVertex* e = corners + b + a * kCornersPerAxis;
-                                RadialProjectedCoordinates* projected = (RadialProjectedCoordinates*)&e->u;
-                                e->x = kFloat_2_EngineRender * (float)(x + b) * kFloat_0_015625_EngineRenderGrid - kFloat_1_EngineRender;
-                                e->y = kFloat_2_EngineRender * (float)(y + a) * kFloat_0_015625_EngineRenderGrid - kFloat_1_EngineRender;
-                                e->z = kFloat_neg5_RadialCaptureGrid;
-                                RadialVertex* position = e;
-                                projected->x = kFloat_1_25_EngineRender * e->x;
-                                projected->y = kFloat_1_25_EngineRender * e->y;
-                                float radiusSquared = e->x * e->x + e->y * e->y;
-                                float hemisphereHeight;
-                                if (radiusSquared < kFloat_1_EngineRender)
-                                    hemisphereHeight = Math_SquareRootApprox(kFloat_1_EngineRender - radiusSquared);
-                                else
-                                    hemisphereHeight = kFloat_0_Framebuffer;
-                                projected->hemisphereHeight = hemisphereHeight;
-                            }
+            RadialVertex* data = vec.begin;
+            RadialStripCell* cells = (RadialStripCell*)data;
+            // Four corners per cell plus repeated endpoints join the cells
+            // in a strip. Positions span [-1,1] at z=-5; texture coordinates
+            // are (1.25*x, 1.25*y, sqrt(max(1-x*x-y*y, 0))). The third
+            // coordinate is the upper unit-hemisphere height inside the unit disk;
+            // it falls to zero outside. Grid positions stay on the z=-5 plane.
+            for (int y = 0; y < kRadialGridSide; y++) {
+                for (int x = 0; x < kRadialGridSide; x++) {
+                    RadialVertex* corners = &(cells + (x + (y << kRadialRowShift)))->v[kFirstStripCorner];
+                    for (int cornerRow = 0; cornerRow < kCornersPerAxis; cornerRow++) {
+                        for (int cornerColumn = 0; cornerColumn < kCornersPerAxis; cornerColumn++) {
+                            RadialVertex* vertex = corners + cornerColumn + cornerRow * kCornersPerAxis;
+                            RadialProjectedCoordinates* projected = (RadialProjectedCoordinates*)&vertex->u;
+                            vertex->x =
+                                kFloat_2_EngineRender * (float)(x + cornerColumn) * kFloat_0_015625_EngineRenderGrid -
+                                kFloat_1_EngineRender;
+                            vertex->y =
+                                kFloat_2_EngineRender * (float)(y + cornerRow) * kFloat_0_015625_EngineRenderGrid -
+                                kFloat_1_EngineRender;
+                            vertex->z = kFloat_neg5_RadialCaptureGrid;
+                            RadialVertex* position = vertex;
+                            projected->x = kFloat_1_25_EngineRender * vertex->x;
+                            projected->y = kFloat_1_25_EngineRender * vertex->y;
+                            float radiusSquared = vertex->x * vertex->x + vertex->y * vertex->y;
+                            float hemisphereHeight;
+                            if (radiusSquared < kFloat_1_EngineRender)
+                                hemisphereHeight = Math_SquareRootApprox(kFloat_1_EngineRender - radiusSquared);
+                            else
+                                hemisphereHeight = kFloat_0_Framebuffer;
+                            projected->hemisphereHeight = hemisphereHeight;
                         }
-                        *(Vec3Words*)&cells[x + (y << kRadialRowShift)].v[0].x = *(Vec3Words*)&corners->x;
-                        *(Vec3Words*)&cells[x + (y << kRadialRowShift)].v[0].u = *(Vec3Words*)&corners->u;
-                        RadialVertex* last = &cells[x + (y << kRadialRowShift)].v[kLastStripEndpoint];
-                        RadialStripCell* destination = &cells[x + (y << kRadialRowShift)];
-                        WordBlock_CopySixWords(last, corners + kLastCellCorner);
                     }
+                    *(Vec3Words*)&cells[x + (y << kRadialRowShift)].v[0].x = *(Vec3Words*)&corners->x;
+                    *(Vec3Words*)&cells[x + (y << kRadialRowShift)].v[0].u = *(Vec3Words*)&corners->u;
+                    RadialVertex* last = &cells[x + (y << kRadialRowShift)].v[kLastStripEndpoint];
+                    RadialStripCell* destination = &cells[x + (y << kRadialRowShift)];
+                    WordBlock_CopySixWords(last, corners + kLastCellCorner);
                 }
-                // Upload a packed 24-byte vertex stream; vec remains CPU-owned.
-                unsigned int bytes = kRadialGridVertices * kEffectVertexStride;
-                VertexBuffer_Create(bytes, 0, kEffectVertexFormat, 0, &s_radialCaptureRenderState.vertexBuffer, 0);
-                void* locked;
-                Resource_GetOffsetPtr(s_radialCaptureRenderState.vertexBuffer, 0, 0, &locked, 0);
-                Memory_Copy(locked, cells, bytes);
-                GraphicsBuffer_Flush(s_radialCaptureRenderState.vertexBuffer);
-                break;
             }
+            // Upload a packed 24-byte vertex stream; vec remains CPU-owned.
+            unsigned int bytes = kRadialGridVertices * kEffectVertexStride;
+            VertexBuffer_Create(bytes, 0, kEffectVertexFormat, 0, &s_radialCaptureRenderState.vertexBuffer, 0);
+            void* locked;
+            Resource_GetOffsetPtr(s_radialCaptureRenderState.vertexBuffer, 0, 0, &locked, 0);
+            Memory_Copy(locked, cells, bytes);
+            GraphicsBuffer_Flush(s_radialCaptureRenderState.vertexBuffer);
+            break;
+        }
         case kBuiltinEffectDefaultSetup:
             break;
         case kBuiltinEffectProjectionTexture: {
-                // Create a 256-square two-byte coordinate texture, first in CPU
-                // row order, then converted into the platform texture layout.
-                unsigned int fmt = kProjectionTextureFormat;
-                Texture_Create2D(kCaptureTextureSide, kCaptureTextureSide, 1, 0, fmt, 0, s_textureProjectionState, 0);
-                unsigned int n = TextureFormat_GetRGBA8OrIA8BytesPerTexel(fmt);
-                ProjectionByteBuffer vb;
-                // Storage expansion stays at this scope; visual controls continue immediately below.
+            // Create a 256-square two-byte coordinate texture, first in CPU
+            // row order, then converted into the platform texture layout.
+            unsigned int fmt = kProjectionTextureFormat;
+            Texture_Create2D(kCaptureTextureSide, kCaptureTextureSide, 1, 0, fmt, 0, s_textureProjectionState, 0);
+            unsigned int bytesPerTexel = TextureFormat_GetRGBA8OrIA8BytesPerTexel(fmt);
+            ProjectionByteBuffer vb;
+            // Storage expansion stays at this scope; visual controls continue immediately below.
 #include "game/u80433528_projection_storage.inc"
-                unsigned char* raw = vb.begin;
-                unsigned char* data = raw;
-                unsigned char* base = data;
-                // Store x/y byte coordinates with the existing three-unit bias;
-                // the first three coordinates on either axis retain their value.
-                for (unsigned int y = 0; y < kCaptureTextureSide; y++) {
-                    for (unsigned int x = 0; x < kCaptureTextureSide; x++) {
-                        unsigned char* pixel = base + x * kProjectionPixelBytes + (y << kProjectionRowShift);
-                        unsigned char* p = pixel;
-                        p[0] = x >= kProjectionCoordinateBias ? x - kProjectionCoordinateBias : x;
-                        p[1] = y >= kProjectionCoordinateBias ? y - kProjectionCoordinateBias : y;
-                    }
+            unsigned char* raw = vb.begin;
+            unsigned char* data = raw;
+            unsigned char* base = data;
+            // Store x/y byte coordinates with the existing three-unit bias;
+            // the first three coordinates on either axis retain their value.
+            for (unsigned int y = 0; y < kCaptureTextureSide; y++) {
+                for (unsigned int x = 0; x < kCaptureTextureSide; x++) {
+                    unsigned char* pixel = base + x * kProjectionPixelBytes + (y << kProjectionRowShift);
+                    unsigned char* p = pixel;
+                    p[0] = x >= kProjectionCoordinateBias ? x - kProjectionCoordinateBias : x;
+                    p[1] = y >= kProjectionCoordinateBias ? y - kProjectionCoordinateBias : y;
                 }
-                unsigned int pair[2];
-                Texture_LockLevel(*(void**)s_textureProjectionState, 0, pair, 0, 0);
-                Image_CopyToPlatformLayoutFormat7(base, n << 8, 0, pair[1], kCaptureTextureSide, kCaptureTextureSide, 0, fmt);
-                Texture_UnlockLevel(*(void**)s_textureProjectionState, 0);
-                ByteBuffer_DeletingDtor(&vb, -1);
-                break;
             }
+            unsigned int pair[2];
+            Texture_LockLevel(*(void**)s_textureProjectionState, 0, pair, 0, 0);
+            Image_CopyToPlatformLayoutFormat7(base, bytesPerTexel << 8, 0, pair[1], kCaptureTextureSide,
+                                              kCaptureTextureSide, 0, fmt);
+            Texture_UnlockLevel(*(void**)s_textureProjectionState, 0);
+            ByteBuffer_DeletingDtor(&vb, -1);
+            break;
+        }
         }
     }
     // Both cache hits and successful creation return one retained resource.
-    volatile ResourceReferenceHeader* o = (volatile ResourceReferenceHeader*)(*out = *slot);
-    o->referenceCount = o->referenceCount + 1;
-    unsigned int referenceCount = o->referenceCount;
+    volatile ResourceReferenceHeader* resourceHeader = (volatile ResourceReferenceHeader*)(*out = *slot);
+    resourceHeader->referenceCount = resourceHeader->referenceCount + 1;
+    unsigned int referenceCount = resourceHeader->referenceCount;
     (void)referenceCount;
     return 1;
 }
@@ -265,15 +334,13 @@ extern void GXSetTevOp(int a, int b);
 extern void GXTev_SetIndirectBumpXYZ(int a, int b, int c);
 
 struct Obj342D0 {
-    CW_BITS2(
-        unsigned int referenceCount : 16,
-        unsigned int lo : 16)
+    CW_BITS2(unsigned int referenceCount : 16, unsigned int lo : 16)
 };
 
 // Find or create a cached type-7 resource and increment its packed reference count.
-int GraphicsResource_AcquireCachedType7(unsigned int a, void** out) {
-    volatile unsigned int idx = a;
-    if (a == 0) {
+int GraphicsResource_AcquireCachedType7(unsigned int cacheIndex, void** out) {
+    volatile unsigned int idx = cacheIndex;
+    if (cacheIndex == 0) {
         *out = 0;
         return 1;
     }
@@ -295,17 +362,22 @@ int GraphicsResource_AcquireCachedType7(unsigned int a, void** out) {
 // previous RGB * texture RGB and preserves previous alpha. Matrix coefficients
 // remain the shared defaults; color routing is selected by the TevOrder calls.
 void Render_SetupIndirectBumpXYZTev(void) {
-    Blk18 b;
-    struct Pair { unsigned int a, c; };
-    struct Copy { unsigned int pad; Pair data; };
+    Blk18 indirectBumpMatrix;
+    struct Pair {
+        unsigned int a, c;
+    };
+    struct Copy {
+        unsigned int pad;
+        Pair data;
+    };
     Copy* src = (Copy*)((char*)&kIndirectBumpXYZMatrix - 4);
-    Copy* dst = (Copy*)((char*)&b - 4);
+    Copy* dst = (Copy*)((char*)&indirectBumpMatrix - 4);
     for (int i = 0; i < 3; ++i) {
         dst->data = src->data;
         src = (Copy*)((char*)src + 8);
         dst = (Copy*)((char*)dst + 8);
     }
-    GXSetIndTexMtx(1, &b, (signed char)0);
+    GXSetIndTexMtx(1, &indirectBumpMatrix, (signed char)0);
     GXSetNumTevStages(4);
     GXSetNumIndStages(1);
     GXSetIndTexOrder(0, 0, 1);
@@ -328,20 +400,24 @@ void Render_SetupIndirectBumpXYZTev(void) {
 
 // Find a type-6 resource in the seven-slot cache, returning eight if absent.
 unsigned int GraphicsResource_FindCachedType6Index(void* p) {
-    if (p == 0) return 0;
+    if (p == 0)
+        return 0;
     volatile unsigned int i;
     for (i = 0; i < kBuiltinCacheSlots; i++) {
-        if (((volatile void**)s_builtinType6ResourceCache)[i] == p) return i;
+        if (((volatile void**)s_builtinType6ResourceCache)[i] == p)
+            return i;
     }
     return kBuiltinCacheNotFound;
 }
 
 // Find a type-7 resource in the seven-slot cache, returning eight if absent.
 unsigned int GraphicsResource_FindCachedType7Index(void* p) {
-    if (p == 0) return 0;
+    if (p == 0)
+        return 0;
     volatile unsigned int i;
     for (i = 0; i < kBuiltinCacheSlots; i++) {
-        if (((volatile void**)s_builtinType7ResourceCache)[i] == p) return i;
+        if (((volatile void**)s_builtinType7ResourceCache)[i] == p)
+            return i;
     }
     return kBuiltinCacheNotFound;
 }
@@ -406,40 +482,42 @@ void Render_UpdateRadialCapture(void) {
     Engine_SetVertexStream(0, s_radialCaptureRenderState.vertexBuffer, 0, kEffectVertexStride);
     void* buf = GX_GetPrimitiveCount(kRadialGridVertices, kTriangleStripPrimitive);
     DrawPrimitiveFromBoundBuffers(kTriangleStripPrimitive, 0, buf);
-// The callee reads eleven integer arguments; the original call also loads an ignored f1.
-    ((void (*)(int, int, void*, float, int, int, int, int, int, int, int, int))Engine_CopyFramebufferToTexture)(0, 0, s_radialCaptureRenderState.texture, kFloat_0_Framebuffer, 0, 0, 0, 0, 0, 0, 0, 0);
+    // The callee reads eleven integer arguments; the original call also loads an ignored f1.
+    ((void (*)(int, int, void*, float, int, int, int, int, int, int, int, int))Engine_CopyFramebufferToTexture)(
+        0, 0, s_radialCaptureRenderState.texture, kFloat_0_Framebuffer, 0, 0, 0, 0, 0, 0, 0, 0);
     Engine_RestoreRenderState();
     // Bind the result and derive texture transforms from saved transform 0xb
     // and current transform 0. Keep concatenation order: inverse-transpose for
     // the normal-dependent path, scale 0.4, then translate texture coordinates
-    // by (0.5,0.5). Slots 3/4 share g; slot 5 receives the normal-dependent h.
+    // by (0.5,0.5). Slots 3/4 share g; slot 5 receives the normal-dependent combinedTransform.
     Engine_SetTextureStageResource(2, s_radialCaptureRenderState.texture);
     // 0x804346B0..0x804346D8: copied from the stage defaults {0, 0, 1, 0}: two (state, value) pairs for stage 2
     // (Engine_SetTextureStageParameterList walks count pairs), i.e. state 0 = 0 and state 1 = 0.
     unsigned int v[4] = {0, 0, 1, 0};
     Engine_SetTextureStageParameterList(2, v, 2);
-    unsigned char a[0x40], b[0x40], e[0x40], f[0x40];
-    float c[16], d[16], g[16], h[16];
+    unsigned char a[0x40], b[0x40], translation[0x40], scale[0x40];
+    float transformProduct[16], inverseTranspose[16], g[16], combinedTransform[16];
     Engine_GetTransform(0xb, a);
     Engine_GetTransform(0, b);
-    PSMTX44Concat(c, a, b);
-    Mtx44_InvertLegacyCofactors(d, 0, c);
-    PSMTX44Transpose(d, d);
-    d[3] = kFloat_0_Framebuffer;
-    d[7] = kFloat_0_Framebuffer;
-    d[11] = kFloat_0_Framebuffer;
-    Mtx44_SetTranslation(e, kFloat_0_5_Framebuffer, kFloat_0_5_Framebuffer, kFloat_0_Framebuffer);
-    Mtx44_SetScale(f, kFloat_0_4_Framebuffer, kFloat_0_4_Framebuffer, kFloat_0_4_Framebuffer);
-    PSMTX44Concat(h, d, f);
-    PSMTX44Concat(h, h, e);
-    for (int k = 0; k < 16; ++k) g[k] = c[k];
+    PSMTX44Concat(transformProduct, a, b);
+    Mtx44_InvertLegacyCofactors(inverseTranspose, 0, transformProduct);
+    PSMTX44Transpose(inverseTranspose, inverseTranspose);
+    inverseTranspose[3] = kFloat_0_Framebuffer;
+    inverseTranspose[7] = kFloat_0_Framebuffer;
+    inverseTranspose[11] = kFloat_0_Framebuffer;
+    Mtx44_SetTranslation(translation, kFloat_0_5_Framebuffer, kFloat_0_5_Framebuffer, kFloat_0_Framebuffer);
+    Mtx44_SetScale(scale, kFloat_0_4_Framebuffer, kFloat_0_4_Framebuffer, kFloat_0_4_Framebuffer);
+    PSMTX44Concat(combinedTransform, inverseTranspose, scale);
+    PSMTX44Concat(combinedTransform, combinedTransform, translation);
+    for (int k = 0; k < 16; ++k)
+        g[k] = transformProduct[k];
     g[12] = kFloat_0_Framebuffer;
     g[13] = kFloat_0_Framebuffer;
     g[14] = kFloat_0_Framebuffer;
-    PSMTX44Concat(g, g, f);
+    PSMTX44Concat(g, g, scale);
     SetTransform(3, g);
     SetTransform(4, g);
-    SetTransform(5, h);
+    SetTransform(5, combinedTransform);
 }
 
 } // extern "C"

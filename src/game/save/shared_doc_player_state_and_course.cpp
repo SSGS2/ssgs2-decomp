@@ -1,3 +1,6 @@
+// Shared save document state: clears the four player records, selects the course map name from
+// the course id, compacts and counts each player's equipped items, and frees its tree and list nodes.
+
 #include <decomp/static_init.h>
 #include "iff/IffStruct.h"
 #include "classes/CSharedDoc.h"
@@ -5,8 +8,6 @@
 // Borrow the document layout; this conversion neither allocates nor retains it.
 // Retained as a cast macro because inline_depth(0) below emits a call for a helper.
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
-// Translation unit 0x801F44A4-0x801F5570 (12 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -36,15 +37,25 @@ typedef char PlayerItemState_stride_check[(sizeof(PlayerItemState) == 0x1D4) ? 1
 typedef char SharedCourseState_map_offset_check[((int)&((SharedCourseState*)0)->mapResourceName == 0x9E4) ? 1 : -1];
 
 // Item-type tag (high byte) OR'd into a course id to form the ItemInventory lookup key.
-enum ItemInventoryKeyTag { kCourseItemType = 0x28000000 };
-enum MapResourceNameConstants { kMapResourceNameLength = 0x20 };
+enum ItemInventoryKeyTag {
+    kCourseItemType = 0x28000000
+};
+enum MapResourceNameConstants {
+    kMapResourceNameLength = 0x20
+};
 
 enum CourseEncoding {
-    kCourseVariantBit = 0x80, kBaseCourseMask = 0x7F, kUnselectedCourse = 0xFD,
+    kCourseVariantBit = 0x80,
+    kBaseCourseMask = 0x7F,
+    kUnselectedCourse = 0xFD,
     kCourseVariantMask = 0xF,
-    kFirstVariant = 1, kSecondVariant = 2, kPlayerCount = 4, kItemSlotCount = 8,
+    kFirstVariant = 1,
+    kSecondVariant = 2,
+    kPlayerCount = 4,
+    kItemSlotCount = 8,
     kLastInventorySlot = 12,
-    kSpecialCourseEight = 8, kSpecialCourseThirteen = 13
+    kSpecialCourseEight = 8,
+    kSpecialCourseThirteen = 13
 };
 
 // Return the task hook's unchanged zero status; there is no work or ownership transfer.
@@ -66,17 +77,24 @@ extern CSharedDoc* g_sharedDoc;
 
 void* memset(void*, int, unsigned long);
 
+} // extern "C"
+
 // Clear all four player records while preserving the shared document header.
-void* CSharedDoc_ClearPlayerStateStorage(char* sharedDoc) {
-    return memset(((SharedPlayerStateStorage*)sharedDoc)->playerState, 0, sizeof(((SharedPlayerStateStorage*)0)->playerState));
+void CSharedDoc::ClearPlayerStateStorage() {
+    SharedPlayerStateStorage* storage = (SharedPlayerStateStorage*)this;
+    memset(storage->playerState, 0, sizeof(storage->playerState));
 }
+
+extern "C" {
 
 // Strip the variant bit except for the reserved unselected-course value.
 unsigned char SharedDoc_GetCourseId() {
     unsigned int courseId = ((SharedCourseState*)g_sharedDoc)->encodedCourseId;
     int hasVariant = 0;
-    if (courseId > kBaseCourseMask && courseId != kUnselectedCourse) hasVariant = 1;
-    if (hasVariant) courseId -= kCourseVariantBit;
+    if (courseId > kBaseCourseMask && courseId != kUnselectedCourse)
+        hasVariant = 1;
+    if (hasVariant)
+        courseId -= kCourseVariantBit;
     return (unsigned char)courseId;
 }
 
@@ -84,29 +102,39 @@ unsigned char SharedDoc_GetCourseId() {
 int SharedDoc_IsCourse8Or13() {
     unsigned int courseId = ((SharedCourseState*)g_sharedDoc)->encodedCourseId;
     int hasVariant = 0;
-    if (courseId > kBaseCourseMask && courseId != kUnselectedCourse) hasVariant = 1;
-    if (hasVariant) courseId -= kCourseVariantBit;
+    if (courseId > kBaseCourseMask && courseId != kUnselectedCourse)
+        hasVariant = 1;
+    if (hasVariant)
+        courseId -= kCourseVariantBit;
     courseId = (unsigned char)courseId;
-    if (courseId == kSpecialCourseEight) return 1;
+    if (courseId == kSpecialCourseEight)
+        return 1;
     return courseId == kSpecialCourseThirteen;
 }
 
-struct TreeNode { TreeNode* left; TreeNode* right; };
+struct TreeNode {
+    TreeNode* left;
+    TreeNode* right;
+};
 void appFreeUni__FPv(void*);
 #pragma use_lmw_stmw on
 #pragma inline_depth(3)
 // Free a non-null binary-tree subtree in postorder; callers own the sentinel/count.
 void Tree_DestroyNodes(void* self, TreeNode* node) {
-    if (node->left) Tree_DestroyNodes(self, node->left);
-    if (node->right) Tree_DestroyNodes(self, node->right);
+    if (node->left)
+        Tree_DestroyNodes(self, node->left);
+    if (node->right)
+        Tree_DestroyNodes(self, node->right);
     appFreeUni__FPv(node);
 }
 
 #pragma inline_depth(3)
 // Equivalent tree-node cleanup for the second template instantiation.
 void Tree_DestroyNodesAlt(void* self, TreeNode* node) {
-    if (node->left) Tree_DestroyNodesAlt(self, node->left);
-    if (node->right) Tree_DestroyNodesAlt(self, node->right);
+    if (node->left)
+        Tree_DestroyNodesAlt(self, node->left);
+    if (node->right)
+        Tree_DestroyNodesAlt(self, node->right);
     appFreeUni__FPv(node);
 }
 
@@ -117,9 +145,20 @@ void Tree_DestroyNodesAlt(void* self, TreeNode* node) {
 // This cleanup frees whole node allocations only. It invokes no payload destructor
 // and cannot establish ownership of pointers that might be stored inside payloads.
 // +7f8 bonusItemIds/+7fc bonusItemCount: storage is retained; only count is cleared.
-struct ClearTree { int count; TreeNode* root; int reservedWord; TreeNode** end; };
-struct ListNode { ListNode* prev; ListNode* next; };
-struct ClearList { int count; ListNode head; };
+struct ClearTree {
+    int count;
+    TreeNode* root;
+    int reservedWord;
+    TreeNode** end;
+};
+struct ListNode {
+    ListNode* prev;
+    ListNode* next;
+};
+struct ClearList {
+    int count;
+    ListNode head;
+};
 struct ClearObject {
     char pad[0x784];
     ClearTree first;
@@ -154,16 +193,20 @@ void SharedDoc_FreeTreesAndLists(ClearObject* self) {
                             {
                                 TreeNode* descendant = grandchild->left;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodesAlt(&self->first, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodesAlt(&self->first, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
                             {
                                 TreeNode* descendant = grandchild->right;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodesAlt(&self->first, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodesAlt(&self->first, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
@@ -176,16 +219,20 @@ void SharedDoc_FreeTreesAndLists(ClearObject* self) {
                             {
                                 TreeNode* descendant = grandchild->left;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodesAlt(&self->first, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodesAlt(&self->first, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
                             {
                                 TreeNode* descendant = grandchild->right;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodesAlt(&self->first, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodesAlt(&self->first, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
@@ -205,16 +252,20 @@ void SharedDoc_FreeTreesAndLists(ClearObject* self) {
                             {
                                 TreeNode* descendant = grandchild->left;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodesAlt(&self->first, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodesAlt(&self->first, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
                             {
                                 TreeNode* descendant = grandchild->right;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodesAlt(&self->first, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodesAlt(&self->first, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
@@ -227,16 +278,20 @@ void SharedDoc_FreeTreesAndLists(ClearObject* self) {
                             {
                                 TreeNode* descendant = grandchild->left;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodesAlt(&self->first, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodesAlt(&self->first, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
                             {
                                 TreeNode* descendant = grandchild->right;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodesAlt(&self->first, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodesAlt(&self->first, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodesAlt(&self->first, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
@@ -265,16 +320,20 @@ void SharedDoc_FreeTreesAndLists(ClearObject* self) {
                             {
                                 TreeNode* descendant = grandchild->left;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodes(&self->second, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodes(&self->second, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodes(&self->second, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodes(&self->second, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
                             {
                                 TreeNode* descendant = grandchild->right;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodes(&self->second, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodes(&self->second, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodes(&self->second, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodes(&self->second, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
@@ -287,16 +346,20 @@ void SharedDoc_FreeTreesAndLists(ClearObject* self) {
                             {
                                 TreeNode* descendant = grandchild->left;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodes(&self->second, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodes(&self->second, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodes(&self->second, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodes(&self->second, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
                             {
                                 TreeNode* descendant = grandchild->right;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodes(&self->second, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodes(&self->second, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodes(&self->second, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodes(&self->second, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
@@ -315,16 +378,20 @@ void SharedDoc_FreeTreesAndLists(ClearObject* self) {
                             {
                                 TreeNode* descendant = grandchild->left;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodes(&self->second, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodes(&self->second, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodes(&self->second, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodes(&self->second, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
                             {
                                 TreeNode* descendant = grandchild->right;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodes(&self->second, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodes(&self->second, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodes(&self->second, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodes(&self->second, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
@@ -337,16 +404,20 @@ void SharedDoc_FreeTreesAndLists(ClearObject* self) {
                             {
                                 TreeNode* descendant = grandchild->left;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodes(&self->second, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodes(&self->second, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodes(&self->second, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodes(&self->second, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
                             {
                                 TreeNode* descendant = grandchild->right;
                                 if (descendant) {
-                                    if (descendant->left) Tree_DestroyNodes(&self->second, descendant->left);
-                                    if (descendant->right) Tree_DestroyNodes(&self->second, descendant->right);
+                                    if (descendant->left)
+                                        Tree_DestroyNodes(&self->second, descendant->left);
+                                    if (descendant->right)
+                                        Tree_DestroyNodes(&self->second, descendant->right);
                                     appFreeUni__FPv(descendant);
                                 }
                             }
@@ -510,22 +581,31 @@ int SharedDoc_CompactPlayerItemSlots(char* base, unsigned int playerIndex) {
     // The scan for each hole starts after the hole and stops at slot 7 (kItemSlotCount).
     // base is the indexing origin supplied by the caller: no header skip is added.
     // Slot p's items are at base + p*0x1d4 + 0x8c. Do not add the +0x10
-    // used by ClearPlayerStateStorage: that function clears a different byte range.
+    // used by CSharedDoc::ClearPlayerStateStorage: that function clears a different byte range.
     // Invalid playerIndex returns 0 without access; valid input is modified in place.
-    if (playerIndex >= kPlayerCount) return 0;
+    if (playerIndex >= kPlayerCount)
+        return 0;
     register int* destination;
     register int i;
     PlayerItemState* playerState = (PlayerItemState*)base + playerIndex;
     int* itemIds = playerState->itemIds;
     int occupiedCount = 0;
-    if (playerState->itemIds[0] != 0) occupiedCount = 1;
-    if (itemIds[1] != 0) occupiedCount++;
-    if (itemIds[2] != 0) occupiedCount++;
-    if (itemIds[3] != 0) occupiedCount++;
-    if (itemIds[4] != 0) occupiedCount++;
-    if (itemIds[5] != 0) occupiedCount++;
-    if (itemIds[6] != 0) occupiedCount++;
-    if (itemIds[7] != 0) occupiedCount++;
+    if (playerState->itemIds[0] != 0)
+        occupiedCount = 1;
+    if (itemIds[1] != 0)
+        occupiedCount++;
+    if (itemIds[2] != 0)
+        occupiedCount++;
+    if (itemIds[3] != 0)
+        occupiedCount++;
+    if (itemIds[4] != 0)
+        occupiedCount++;
+    if (itemIds[5] != 0)
+        occupiedCount++;
+    if (itemIds[6] != 0)
+        occupiedCount++;
+    if (itemIds[7] != 0)
+        occupiedCount++;
     destination = itemIds;
     for (i = 0; i < occupiedCount; destination++, i++) {
         if (*destination == 0) {
@@ -537,7 +617,8 @@ int SharedDoc_CompactPlayerItemSlots(char* base, unsigned int playerIndex) {
                     break;
                 }
             }
-            if (j == kItemSlotCount) break;
+            if (j == kItemSlotCount)
+                break;
         }
     }
     return occupiedCount;
@@ -554,28 +635,38 @@ int Count_SelectedInventoryItemOccurrences(char* base, int inventorySlot) {
     // Return 0 without a golfDoc. Otherwise count all eight equal IDs, including
     // zero IDs if the inventory lookup returns zero; empty slots are not filtered.
     CSharedDoc* sharedDoc = g_sharedDoc;
-    if (sharedDoc->golfDoc == 0) return 0;
+    if (sharedDoc->golfDoc == 0)
+        return 0;
     char* inventory = sharedDoc->itemInventory;
-    if (inventorySlot < 0) inventorySlot = 0;
+    if (inventorySlot < 0)
+        inventorySlot = 0;
     else {
         int t = inventorySlot > kLastInventorySlot ? kLastInventorySlot : inventorySlot;
         inventorySlot = t;
     }
     // Resolution and equipped-slot counting use different storage owners.
     unsigned int itemId = ItemInventory_GetItemIdAt(inventory, inventorySlot);
-    unsigned int* equippedItemIds = (unsigned int*)((PlayerItemState*)base)[((CGolfDoc*)g_sharedDoc->golfDoc)->currentPlayer].itemIds;
+    unsigned int* equippedItemIds =
+        (unsigned int*)((PlayerItemState*)base)[((CGolfDoc*)g_sharedDoc->golfDoc)->currentPlayer].itemIds;
     int matchCount = 0;
-    if (itemId == equippedItemIds[0]) matchCount = 1;
-    if (itemId == equippedItemIds[1]) matchCount++;
-    if (itemId == equippedItemIds[2]) matchCount++;
-    if (itemId == equippedItemIds[3]) matchCount++;
-    if (itemId == equippedItemIds[4]) matchCount++;
-    if (itemId == equippedItemIds[5]) matchCount++;
-    if (itemId == equippedItemIds[6]) matchCount++;
-    if (itemId == equippedItemIds[7]) matchCount++;
+    if (itemId == equippedItemIds[0])
+        matchCount = 1;
+    if (itemId == equippedItemIds[1])
+        matchCount++;
+    if (itemId == equippedItemIds[2])
+        matchCount++;
+    if (itemId == equippedItemIds[3])
+        matchCount++;
+    if (itemId == equippedItemIds[4])
+        matchCount++;
+    if (itemId == equippedItemIds[5])
+        matchCount++;
+    if (itemId == equippedItemIds[6])
+        matchCount++;
+    if (itemId == equippedItemIds[7])
+        matchCount++;
     return matchCount;
 }
-
 
 struct CourseAliasStringPool {
     char strokePlay[11], matchPlay[7], caddiePractice[17], gbinFileFormat[13];
@@ -595,23 +686,31 @@ void strncpy(char*, const char*, int);
 int SharedDoc_SelectCourse(unsigned char encodedCourseId) {
     int hasVariant = 0;
     char* inventory = ((char*)&AsCSharedDoc(g_sharedDoc)->itemInventory);
-    if (encodedCourseId > kBaseCourseMask && encodedCourseId != kUnselectedCourse) hasVariant = 1;
+    if (encodedCourseId > kBaseCourseMask && encodedCourseId != kUnselectedCourse)
+        hasVariant = 1;
     unsigned int courseId = encodedCourseId;
-    if (hasVariant) courseId -= kCourseVariantBit;
-    IFF_STRUCT::sCourse* course = (IFF_STRUCT::sCourse*)ItemInventory_FindCourseData(inventory, courseId | kCourseItemType);
-    if (course == 0) return 0;
+    if (hasVariant)
+        courseId -= kCourseVariantBit;
+    IFF_STRUCT::sCourse* course =
+        (IFF_STRUCT::sCourse*)ItemInventory_FindCourseData(inventory, courseId | kCourseItemType);
+    if (course == 0)
+        return 0;
     ((SharedCourseState*)g_sharedDoc)->encodedCourseId = encodedCourseId;
     AsCSharedDoc(g_sharedDoc)->selectedCourseData = course; // 0x801F53F8: selected inventory record at +0x8BC
     memset(((SharedCourseState*)g_sharedDoc)->mapResourceName, 0, kMapResourceNameLength);
     CourseAliasStringPool* aliases = &playModeAndCourseAliasStrings;
     if (strcmp(course->mapName, aliases->blueAlias) == 0) {
         unsigned int variant = course->courseFlags & kCourseVariantMask;
-        if (variant == kFirstVariant) strncpy(((SharedCourseState*)g_sharedDoc)->mapResourceName, aliases->blueLagoon, kMapResourceNameLength);
-        else if (variant == kSecondVariant) strncpy(((SharedCourseState*)g_sharedDoc)->mapResourceName, aliases->blueWater, kMapResourceNameLength);
+        if (variant == kFirstVariant)
+            strncpy(((SharedCourseState*)g_sharedDoc)->mapResourceName, aliases->blueLagoon, kMapResourceNameLength);
+        else if (variant == kSecondVariant)
+            strncpy(((SharedCourseState*)g_sharedDoc)->mapResourceName, aliases->blueWater, kMapResourceNameLength);
     } else if (strcmp(course->mapName, aliases->windAlias) == 0) {
         unsigned int variant = course->courseFlags & kCourseVariantMask;
-        if (variant == kFirstVariant) strncpy(((SharedCourseState*)g_sharedDoc)->mapResourceName, aliases->sepiaWind, kMapResourceNameLength);
-        else if (variant == kSecondVariant) strncpy(((SharedCourseState*)g_sharedDoc)->mapResourceName, aliases->windHill, kMapResourceNameLength);
+        if (variant == kFirstVariant)
+            strncpy(((SharedCourseState*)g_sharedDoc)->mapResourceName, aliases->sepiaWind, kMapResourceNameLength);
+        else if (variant == kSecondVariant)
+            strncpy(((SharedCourseState*)g_sharedDoc)->mapResourceName, aliases->windHill, kMapResourceNameLength);
     } else {
         strncpy(((SharedCourseState*)g_sharedDoc)->mapResourceName, course->mapName, kMapResourceNameLength);
     }

@@ -1,95 +1,165 @@
-// Non-virtual declarations only: no virtual keyword, no base class, so the compiler emits no vtable or RTTI.
-// Names are unk_<offset> until behaviour justifies a real name; a comment says where an offset is used.
+// CQuadTree: the course's ground and collision grid.
+//
+// The shared instance holds the course surfaces and their collision triangles
+// in a 20-unit X/Z grid, answers ground and object queries at a point or along
+// a sweep, and runs the ball's collision simulation. Fields are named at the
+// offsets the game uses; unknown spans are padding.
 #ifndef CLASSES_CQUADTREE_H
 #define CLASSES_CQUADTREE_H
 
 #include "game/types.h"
+#include "game/wvector.h"
 
 class CQuadTree {
 public:
-    void* vtbl;                         // 0x0: original vtable pointer
-    int courseData;                          // 0x4: 1 use in CQuadTree_Ctor
-    int groundSurface;                          // 0x8: 1 use in CQuadTree_Ctor
-    int minCellX; // 0xc: CQuadTree_GetObjList
-    int minCellZ; // 0x10: CQuadTree_GetObjList
-    int maxCellX; // 0x14: CQuadTree_GetObjList
-    int maxCellZ; // 0x18: CQuadTree_GetObjList
-    int candidateTriangleIds[2048]; // 0x1c: CQuadTree_GetMeshIndex, CQuadTree_GetHighestGround, CQuadTree_GetLowestGround
-    int candidateTriangleCount; // 0x201c: CQuadTree_GetMeshIndex, CQuadTree_GetHighestGround, CQuadTree_GetLowestGround
-    short candidateObjectIds[32]; // 0x2020: CQuadTree_BuildProjectedPatchMesh
-    unsigned char candidateObjectCount; // 0x2060: CQuadTree_GetObjList, CQuadTree_FindNearestSweptBallObjectHit, CQuadTree_OverlappedWithObject
-    char pad_2061[0x3]; // 0x2061
-    int gridColumns; // 0x2064: CQuadTree_CreateSurfaceObject, CQuadTree_GetMeshList
-    int gridRows; // 0x2068: CQuadTree_CreateSurfaceObject, CQuadTree_GetMeshList
-    float gridOriginX; // 0x206c: CQuadTree_CreateSurfaceObject, CQuadTree_GetMeshList
-    char pad_2070[0x4]; // 0x2070
-    float gridOriginZ; // 0x2074: CQuadTree_CreateSurfaceObject, CQuadTree_GetMeshList
-    int groundRegions;                       // 0x2078: 2 uses in CQuadTree_Ctor
-    unsigned int groundRegionCount;              // 0x207c: 3 uses in CQuadTree_Ctor
-    unsigned int groundRegionCapacity;              // 0x2080: 2 uses in CQuadTree_Ctor
-    char pad_2084[0x4]; // 0x2084
-    float recoveryPositionY; // 0x2088: CQuadTree_FindBallRecoveryPosition
-    char pad_208C[0x4]; // 0x208c
-    float frictionScale;                     // 0x2090: 1 use in CQuadTree_Ctor
-    float bounceScale;                     // 0x2094: 1 use in CQuadTree_Ctor
-    float condition; // 0x2098: CQuadTree_SetCondition, CQuadTree_GetMaxPowerOnGround, CQuadTree_GetMinPowerOnGround
-    float greenBoxMinX; // 0x209c: CQuadTree_CalcGreenPlane
-    char pad_20A0[0x4]; // 0x20a0
-    float greenBoxMinZ; // 0x20a4: CQuadTree_CalcGreenPlane
-    float greenBoxMaxX; // 0x20a8: CQuadTree_CalcGreenPlane
-    char pad_20AC[0x4]; // 0x20ac
-    float greenBoxMaxZ; // 0x20b0: CQuadTree_CalcGreenPlane
-    float greenCenterX; // 0x20b4
-    float greenCenterY; // 0x20b8
-    float greenCenterZ; // 0x20bc
-    float greenFactor;                     // 0x20c0: 1 use in CQuadTree_Ctor
-    float greenPlaneNormalX; // 0x20c4: CQuadTree_GetGreenPos
-    float greenPlaneNormalY; // 0x20c8: CQuadTree_GetGreenPos
-    float greenPlaneNormalZ; // 0x20cc: CQuadTree_GetGreenPos
-    float greenPlaneConstant; // 0x20d0: CQuadTree_CalcGreenPlane, CQuadTree_GetGreenPos
-    char pad_20D4[0x4]; // 0x20d4
-    int regionBounceCount; // 0x20d8: CQuadTree_UpdateAirborneBall, CQuadTree_GetBounceCount
-    void* vertexScratch; // 0x20dc: CQuadTree_ClipPolygonToSixPlanes, CQuadTree_BuildProjectedPatchMesh
-    int vertexScratchCount; // 0x20e0: CQuadTree_ClipPolygonToSixPlanes, CQuadTree_BuildProjectedPatchMesh
-    int vertexScratchCapacity; // 0x20e4: CQuadTree_ClipPolygonToSixPlanes, CQuadTree_BuildProjectedPatchMesh
-    char pad_20E8[0x60]; // 0x20e8
-    int cells;                       // 0x2148: 1 use in CQuadTree_Ctor
-    char pad_214C[0x1c];                // 0x214c
-    float cupRadius;                     // 0x2168: 1 use in CQuadTree_Ctor
-    char pad_216C[0x14]; // 0x216c
-    float minimumGroundHeight; // 0x2180: CQuadTree_ResolveGroundHeight
-    char groundCollisionSkipped; // 0x2184: CQuadTree_SweepBallAgainstTriangles, CQuadTree_ResolveGroundHeight
-    unsigned char windEnabled; // 0x2185: CQuadTree_ComputeAirborneBallForces
-    unsigned char candidateTriangleOverflow; // 0x2186: CQuadTree_IntersectBallSweepWithObjectTriangles
-    char pad_2187[0x1]; // 0x2187
-    int simulationMode;                       // 0x2188: 1 use in CQuadTree_Ctor
-    char pad_218C[0x18];                // 0x218c
-    int unk_21A4;                       // 0x21a4: 1 use in CQuadTree_Ctor
-    char pad_21A8[0x8];                 // 0x21a8
-    void* objects;                     // 0x21b0: 2 uses in CQuadTree_Ctor
-    unsigned int objectCount;              // 0x21b4: 3 uses in CQuadTree_Ctor
-    unsigned int objectCapacity;              // 0x21b8: 2 uses in CQuadTree_Ctor
-    unsigned int effectRandomState; // 0x21bc: CQuadTree_CreateSurfaceObject
-    float slopeGravityScale;                     // 0x21c0: 1 use in CQuadTree_Ctor
-    unsigned char lastHitObjectType; // 0x21c4: CQuadTree_FindNearestSweptBallObjectHit
-    char pad_21C5[0x1]; // 0x21c5
-    short lastHitObjectIndex; // 0x21c6: CQuadTree_FindNearestSweptBallObjectHit, CQuadTree_UpdateAirborneBall
-    int lastHitTriangleIndex; // 0x21c8: CQuadTree_FindNearestSweptBallObjectHit
-    int lastHitHistoryIndex; // 0x21cc: CQuadTree_FindNearestSweptBallObjectHit
-    char pad_21D0[0x18]; // 0x21d0
-    int collisionEvents;                       // 0x21e8: 2 uses in CQuadTree_Ctor
-    unsigned int collisionEventCount;              // 0x21ec: 3 uses in CQuadTree_Ctor
-    unsigned int collisionEventCapacity;              // 0x21f0: 2 uses in CQuadTree_Ctor
-    char pad_21F4[0x18];                // 0x21f4
-    int objectSoundEnabled;                       // 0x220c: 1 use in CQuadTree_Ctor
-    void* vertexBuffer;                     // 0x2210: 3 uses in CQuadTree_Ctor
-    void* indexBuffer;                     // 0x2214: 3 uses in CQuadTree_Ctor
+    void* vtbl;                              // 0x0: original vtable pointer
+    int courseData;                          // 0x4
+    int groundSurface;                       // 0x8
+    int minCellX;                            // 0xc: GetObjList
+    int minCellZ;                            // 0x10: GetObjList
+    int maxCellX;                            // 0x14: GetObjList
+    int maxCellZ;                            // 0x18: GetObjList
+    int candidateTriangleIds[2048];          // 0x1c: GetMeshIndex, GetHighestGround, GetLowestGround
+    int candidateTriangleCount;              // 0x201c: GetMeshIndex, GetHighestGround, GetLowestGround
+    short candidateObjectIds[32];            // 0x2020: BuildProjectedPatchMesh
+    unsigned char candidateObjectCount;      // 0x2060: GetObjList, FindNearestSweptBallObjectHit, OverlappedWithObject
+    char pad_2061[0x3];                      // 0x2061
+    int gridColumns;                         // 0x2064: CreateSurfaceObject, GetMeshList
+    int gridRows;                            // 0x2068: CreateSurfaceObject, GetMeshList
+    float gridOriginX;                       // 0x206c: CreateSurfaceObject, GetMeshList
+    char pad_2070[0x4];                      // 0x2070
+    float gridOriginZ;                       // 0x2074: CreateSurfaceObject, GetMeshList
+    void* groundRegions;                     // 0x2078
+    unsigned int groundRegionCount;          // 0x207c
+    unsigned int groundRegionCapacity;       // 0x2080
+    char pad_2084[0x4];                      // 0x2084
+    float recoveryPositionY;                 // 0x2088: FindBallRecoveryPosition
+    char pad_208C[0x4];                      // 0x208c
+    float frictionScale;                     // 0x2090
+    float bounceScale;                       // 0x2094
+    float condition;                         // 0x2098: SetCondition, GetMaxPowerOnGround, GetMinPowerOnGround
+    float greenBoxMinX;                      // 0x209c: CalcGreenPlane
+    char pad_20A0[0x4];                      // 0x20a0
+    float greenBoxMinZ;                      // 0x20a4: CalcGreenPlane
+    float greenBoxMaxX;                      // 0x20a8: CalcGreenPlane
+    char pad_20AC[0x4];                      // 0x20ac
+    float greenBoxMaxZ;                      // 0x20b0: CalcGreenPlane
+    float greenCenterX;                      // 0x20b4
+    float greenCenterY;                      // 0x20b8
+    float greenCenterZ;                      // 0x20bc
+    float greenFactor;                       // 0x20c0
+    float greenPlaneNormalX;                 // 0x20c4: GetGreenPos
+    float greenPlaneNormalY;                 // 0x20c8: GetGreenPos
+    float greenPlaneNormalZ;                 // 0x20cc: GetGreenPos
+    float greenPlaneConstant;                // 0x20d0: CalcGreenPlane, GetGreenPos
+    char pad_20D4[0x4];                      // 0x20d4
+    int regionBounceCount;                   // 0x20d8: UpdateAirborneBall, GetBounceCount
+    void* vertexScratch;                     // 0x20dc: ClipPolygonToSixPlanes, BuildProjectedPatchMesh
+    int vertexScratchCount;                  // 0x20e0: ClipPolygonToSixPlanes, BuildProjectedPatchMesh
+    int vertexScratchCapacity;               // 0x20e4: ClipPolygonToSixPlanes, BuildProjectedPatchMesh
+    char pad_20E8[0x60];                     // 0x20e8
+    void* cells;                             // 0x2148
+    char worldBounds[0x1c];                  // 0x214c
+    float cupRadius;                         // 0x2168
+    char pad_216C[0x14];                     // 0x216c
+    float minimumGroundHeight;               // 0x2180: ResolveGroundHeight
+    char groundCollisionSkipped;             // 0x2184: SweepBallAgainstTriangles, ResolveGroundHeight
+    unsigned char windEnabled;               // 0x2185: ComputeAirborneBallForces
+    unsigned char candidateTriangleOverflow; // 0x2186: IntersectBallSweepWithObjectTriangles
+    char pad_2187[0x1];                      // 0x2187
+    int simulationMode;                      // 0x2188
+    char pad_218C[0x18];                     // 0x218c
+    int unk_21A4;                            // 0x21a4
+    char pad_21A8[0x8];                      // 0x21a8
+    void* objects;                           // 0x21b0
+    unsigned int objectCount;                // 0x21b4
+    unsigned int objectCapacity;             // 0x21b8
+    unsigned int effectRandomState;          // 0x21bc: CreateSurfaceObject
+    float slopeGravityScale;                 // 0x21c0
+    unsigned char lastHitObjectType;         // 0x21c4: FindNearestSweptBallObjectHit
+    char pad_21C5[0x1];                      // 0x21c5
+    short lastHitObjectIndex;                // 0x21c6: FindNearestSweptBallObjectHit, UpdateAirborneBall
+    int lastHitTriangleIndex;                // 0x21c8: FindNearestSweptBallObjectHit
+    int lastHitHistoryIndex;                 // 0x21cc: FindNearestSweptBallObjectHit
+    char pad_21D0[0x18];                     // 0x21d0
+    void* collisionEvents;                   // 0x21e8
+    unsigned int collisionEventCount;        // 0x21ec
+    unsigned int collisionEventCapacity;     // 0x21f0
+    char pad_21F4[0x18];                     // 0x21f4
+    int objectSoundEnabled;                  // 0x220c
+    void* vertexBuffer;                      // 0x2210
+    void* indexBuffer;                       // 0x2214
 
-    // offsets whose address is passed on (sub-objects or arrays, not placed): 0x2078, 0x209c, 0x20a8, 0x214c, 0x2158, 0x21b0, 0x21e8, 0x2210, 0x2214
+    void CreateSurfaceObject(short index);
+    static void AdjustPointToRegionAndGroundClearance(void* outPoint, void* quadTree, void* referencePoint);
+    float GetHighestGround(float* point, int* outIndex);
+    int GetMeshIndex(void* point, int checkRaisedRegions);
+    float GetLowestGround(void* point);
+    void GetMeshList(float* point);
+    void GetMeshListAlongSegment(void* start, void* __restrict delta);
+    void GetMeshListInBounds(float* bounds);
+    void GetObjList(float* bounds);
+    static void GetMeshNormal(void* out, void* self, int index);
+    static void GetMeshNormalAtPoint(void* out, void* self, void* arg);
+    void* GetTextureName(void* point);
+    void MakeCollisionData(int index);
+    void FindBallRecoveryPosition(void* regionBounds);
+    void UpdateAnimatedObjects(float delta, int forceTick);
+    void UpdateAirborneBall(float dt);
+    void StepBallSimulation(float dt);
+    float SweepBallAgainstTriangles(void* startPosition, float* displacement, int* outTriangleIndex, int queryMode);
+    float FindNearestSweptBallObjectHit(float* box, float* direction, float* outHitPlane);
+    float GetGreenPos(void* point);
+    void CalcGreenPlane();
+    float GetGroundSlope(int index);
+    static void ComputeBallGroundForces(float* out, void* self);
+    WVector ComputeAirborneBallForces();
+    void UpdateBallTriangleCollision(float dt);
+    void HandleBallGroundBounce(void* normal);
+    void ApplyBallMaterialCollision(void* displacement, void* normal, float hitFraction);
+    int TestHighSpeedGroundImpact(void* normal);
+    static float IntersectBallSweepWithPoint(void* unused, void* fixedTarget, void* movingOrigin, void* displacement);
+    void UpdateBallCupCollision(float delta);
+    void SetCondition();
+    void SetSimulationMode(int mode);
+    int GetGroundFlagBit1AtPoint(void* arg);
+    int IsPenetrable(int materialIndex) const;
+    float GetMaxPowerOnGround();
+    float GetMinPowerOnGround();
+    float GetMaxPowerOnGroundAtPoint(void* point);
+    float GetMinPowerOnGroundAtPoint(void* point);
+    char* GetBounceSound(int materialIndex);
+    float FindObstructionSweepFraction(float* box, void* direction);
+    int GetObjColNum();
+    // Callers pass a point or an object; the argument is not examined.
+    float DefaultLightingFactor(void* context);
+    Vec3f GetRayIntersection(void* point, void* ray);
+    float GetBounceCoeff(int materialIndex) const;
+    void ReservedWiiHook();
+    int GetBounceCount();
+    float ResolveGroundHeight(Vec3f* point, float heightClearance);
+    void PlayObjectSoundFromParsedToken(void* cursor, int index);
+    void ParseBoneReferences(void* arg1, int index, void* arg3, void* arg4, void* arg5);
+    void ClipPolygonToSixPlanes(void* points, int count, int planeIndex);
+    static void* FindProjectedPatchCacheEntry(void* unused, float* corners, float* projectionDirection);
+    void DrawProjectedTexturedPatch(float amount, float alpha, void* material, void* worldCenter, void* worldHalfAxisU,
+                                    void* worldHalfAxisV, void* unused, void* includeObjectsAbi);
+    int IntersectBallSweepWithObjectTriangles(void* displacement, int surfaceIndex, void* outHitPlane,
+                                              float* bestFraction, int* outTriangleIndex);
+
+    void FreeBuffers();
+    // The collision-mesh count that callers pass is not used.
+    void ClearObjects(int collisionMeshCount);
+
+    void InitGroundOverrideBounds();
+
+    CQuadTree();
+    ~CQuadTree();
+
+    void ResetPerShotSimulationState();
 };
 
-// Layout checks: a wrong offset or size makes one of these array typedefs negative and the build fail.
-#define CQUADTREE_OFF(f, o) typedef char CQuadTree_off_##f[((int)&((CQuadTree*)0)->f == (o)) ? 1 : -1]
+#define CQUADTREE_OFF(f, o) typedef char off_##f[((int)&((CQuadTree*)0)->f == (o)) ? 1 : -1]
 CQUADTREE_OFF(courseData, 0x4);
 CQUADTREE_OFF(groundSurface, 0x8);
 CQUADTREE_OFF(groundRegions, 0x2078);
@@ -149,4 +219,4 @@ CQUADTREE_OFF(lastHitTriangleIndex, 0x21c8);
 CQUADTREE_OFF(lastHitHistoryIndex, 0x21cc);
 #undef CQUADTREE_OFF
 
-#endif  // CLASSES_CQUADTREE_H
+#endif // CLASSES_CQUADTREE_H

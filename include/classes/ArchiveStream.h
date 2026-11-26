@@ -9,9 +9,9 @@ struct ArchiveStream {
     char pad_008[0x8];
     unsigned char closeFileOnDestroy; // 0x10
     char pad_011[0x3];
-    void* buffer; // 0x14
+    void* buffer;            // 0x14
     unsigned int bufferSize; // 0x18
-    unsigned int position; // 0x1C
+    unsigned int position;   // 0x1C
 };
 
 #define OFF(f, o) typedef char ArchiveStream_off_##f[((int)&((ArchiveStream*)0)->f == (o)) ? 1 : -1]

@@ -1,6 +1,9 @@
+// Generic 3D object pools: a registry of named values, object factories, and the circular lists
+// that track pool nodes and storage blocks.
+// Each value is owned by its pool until it is removed or the pool is destroyed (Generic3DPool_dtor).
+// The lists are guarded by mutexes.
+
 #include <decomp/offset_of.h>
-// Translation unit 0x80048334-0x80049254 (10 functions; boundaries inferred by decomp-toolkit from extab).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 void OSLockMutex(void*);
@@ -22,9 +25,14 @@ struct PoolListLinks {
 struct WInstanceLock {
     void* lock;
     // Acquire the supplied OS mutex for this scope.
-    WInstanceLock(void* l) { lock = l; OSLockMutex(l); }
+    WInstanceLock(void* l) {
+        lock = l;
+        OSLockMutex(l);
+    }
     // Release the OS mutex when this scope ends.
-    ~WInstanceLock() { OSUnlockMutex(lock); }
+    ~WInstanceLock() {
+        OSUnlockMutex(lock);
+    }
 };
 
 struct PoolListStorage {
@@ -36,44 +44,59 @@ struct PoolListStorage {
 };
 
 struct NamedPoolNode {
-    void* value;           // 0x00
-    int nameAddress;               // 0x04
-    unsigned char ownsName;     // 0x08
+    void* value;            // 0x00
+    int nameAddress;        // 0x04
+    unsigned char ownsName; // 0x08
     char padding09[3];
-    NamedPoolNode* volatile next;  // 0x0C
-    NamedPoolNode* volatile prev;  // 0x10
+    NamedPoolNode* volatile next; // 0x0C
+    NamedPoolNode* volatile prev; // 0x10
     NamedPoolNode* chain;
 };
 
 class PoolObjectFactory;
 class NamedPoolSource {
 public:
- virtual ~NamedPoolSource();
- virtual const char* GetSourceName();
- virtual void p02(); virtual void p03(); virtual void p04(); virtual void p05();
- virtual void p06(); virtual void p07(); virtual void p08(); virtual void p09();
- virtual void p10(); virtual void p11(); virtual void p12(); virtual void p13();
- virtual void p14(); virtual void p15(); virtual void p16(); virtual void p17();
-  virtual void* CreateNamedValue(int, int, int);
+    virtual ~NamedPoolSource();
+    virtual const char* GetSourceName();
+    virtual void p02();
+    virtual void p03();
+    virtual void p04();
+    virtual void p05();
+    virtual void p06();
+    virtual void p07();
+    virtual void p08();
+    virtual void p09();
+    virtual void p10();
+    virtual void p11();
+    virtual void p12();
+    virtual void p13();
+    virtual void p14();
+    virtual void p15();
+    virtual void p16();
+    virtual void p17();
+    virtual void* CreateNamedValue(int, int, int);
 };
 int CString_Compare(const char*, const char*);
 
-struct PoolListSlot { PoolListStorage owner; char pad24[0x14]; };
+struct PoolListSlot {
+    PoolListStorage owner;
+    char pad24[0x14];
+};
 
 struct Generic3DPool {
     PoolListSlot slots[4];
-    NamedPoolNode* activeHead;            // 0xE0
+    NamedPoolNode* activeHead; // 0xE0
     NamedPoolNode* iterator;
-    NamedPoolNode* allocationBlocks;            // 0xE8
-    NamedPoolNode* freeNodes;            // 0xEC
+    NamedPoolNode* allocationBlocks; // 0xE8
+    NamedPoolNode* freeNodes;        // 0xEC
     int nodesPerBlock;               // 0xF0
     unsigned mask;
     char padF8[4];
     NamedPoolNode** buckets;
-    char lock[4];          // 0x100
+    char lock[4]; // 0x100
     char pad104[0x14];
     NamedPoolSource* source;
-    PoolObjectFactory* factory;       // 0x11C
+    PoolObjectFactory* factory; // 0x11C
 };
 
 // Owner-subobject guards are retained for ABI cleanup; derive their addresses from the layout.
@@ -84,14 +107,29 @@ enum PoolOwnerOffset {
     kPoolAuxiliarySlot2 = (int)DECOMP_OFFSETOF(Generic3DPool, slots[2]),
     kPoolAuxiliarySlot3 = (int)DECOMP_OFFSETOF(Generic3DPool, slots[3])
 };
-enum PoolNameHash { kPoolFirstByteMask = 0x2A, kPoolLastByteMask = 0x15, kPoolLengthShift = 6 };
+enum PoolNameHash {
+    kPoolFirstByteMask = 0x2A,
+    kPoolLastByteMask = 0x15,
+    kPoolLengthShift = 6
+};
 
 class PoolObjectFactory {
 public:
-    virtual ~PoolObjectFactory(); virtual void p01(); virtual void p02(); virtual void p03();
-    virtual void p04(); virtual void p05(); virtual void p06(); virtual void p07();
-    virtual void p08(); virtual void p09(); virtual void p10(); virtual void p11();
-    virtual void p12(); virtual void p13(); virtual void p14();
+    virtual ~PoolObjectFactory();
+    virtual void p01();
+    virtual void p02();
+    virtual void p03();
+    virtual void p04();
+    virtual void p05();
+    virtual void p06();
+    virtual void p07();
+    virtual void p08();
+    virtual void p09();
+    virtual void p10();
+    virtual void p11();
+    virtual void p12();
+    virtual void p13();
+    virtual void p14();
     virtual void* CreateValue(int, int);
     // 0x44
 };
@@ -124,13 +162,16 @@ inline NamedPoolNode* Detach(void* lock, NamedPoolNode* n) {
     n->prev->next = n->next;
     n->next->prev = n->prev;
     nx = n->prev;
-    if (nx == n) nx = 0;
+    if (nx == n)
+        nx = 0;
     OSUnlockMutex(lk);
     return nx;
 }
 
 // Default virtual operation reports false.
-int WDevice_GetDeviceName() { return 0; }
+int WDevice_GetDeviceName() {
+    return 0;
+}
 
 #pragma push
 #pragma use_lmw_stmw on
@@ -148,7 +189,8 @@ PoolListStorage* dtor_80048DD4(PoolListStorage* self, int flag) {
                     n->prev->next = n->next;
                     n->next->prev = n->prev;
                     nx = n->prev;
-                    if (nx == n) nx = 0;
+                    if (nx == n)
+                        nx = 0;
                     OSUnlockMutex(lk);
                     self->head = nx;
                     appFreeUni__FPv(n);
@@ -159,7 +201,8 @@ PoolListStorage* dtor_80048DD4(PoolListStorage* self, int flag) {
                 self->buf = 0;
             }
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -178,7 +221,8 @@ PoolListStorage* dtor_80048EAC(PoolListStorage* self, int flag) {
                     n->prev->next = n->next;
                     n->next->prev = n->prev;
                     nx = n->prev;
-                    if (nx == n) nx = 0;
+                    if (nx == n)
+                        nx = 0;
                     OSUnlockMutex(lk);
                     self->head = nx;
                     appFreeUni__FPv(n);
@@ -189,7 +233,8 @@ PoolListStorage* dtor_80048EAC(PoolListStorage* self, int flag) {
                 self->buf = 0;
             }
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -208,7 +253,8 @@ PoolListStorage* dtor_80048F84(PoolListStorage* self, int flag) {
                     n->prev->next = n->next;
                     n->next->prev = n->prev;
                     nx = n->prev;
-                    if (nx == n) nx = 0;
+                    if (nx == n)
+                        nx = 0;
                     OSUnlockMutex(lk);
                     self->head = nx;
                     appFreeUni__FPv(n);
@@ -219,7 +265,8 @@ PoolListStorage* dtor_80048F84(PoolListStorage* self, int flag) {
                 self->buf = 0;
             }
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -238,7 +285,8 @@ PoolListStorage* dtor_8004905C(PoolListStorage* self, int flag) {
                     n->prev->next = n->next;
                     n->next->prev = n->prev;
                     nx = n->prev;
-                    if (nx == n) nx = 0;
+                    if (nx == n)
+                        nx = 0;
                     OSUnlockMutex(lk);
                     self->head = nx;
                     appFreeUni__FPv(n);
@@ -249,7 +297,8 @@ PoolListStorage* dtor_8004905C(PoolListStorage* self, int flag) {
                 self->buf = 0;
             }
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -268,7 +317,8 @@ PoolListStorage* dtor_80049134(PoolListStorage* self, int flag) {
                     n->prev->next = n->next;
                     n->next->prev = n->prev;
                     nx = n->prev;
-                    if (nx == n) nx = 0;
+                    if (nx == n)
+                        nx = 0;
                     OSUnlockMutex(lk);
                     self->head = nx;
                     appFreeUni__FPv(n);
@@ -279,7 +329,8 @@ PoolListStorage* dtor_80049134(PoolListStorage* self, int flag) {
                 self->buf = 0;
             }
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -301,7 +352,8 @@ inline void RemoveHash(Generic3DPool* self, NamedPoolNode* n) {
         OSLockMutex(lk);
         int len = strlen((const char*)str);
         int last = len > 0 ? len - 1 : 0;
-        hash = ((len << kPoolLengthShift) | ((str[0] & kPoolFirstByteMask) | (str[last] & kPoolLastByteMask))) & self->mask;
+        hash = ((len << kPoolLengthShift) | ((str[0] & kPoolFirstByteMask) | (str[last] & kPoolLastByteMask))) &
+               self->mask;
         OSUnlockMutex(lk);
     }
     NamedPoolNode* p = self->buckets[hash];
@@ -316,7 +368,6 @@ inline void RemoveHash(Generic3DPool* self, NamedPoolNode* n) {
             p = p->chain;
         }
     }
-
 }
 
 // Unlink a registered value, free its owned name, and recycle the registry node.
@@ -326,17 +377,20 @@ inline void RemoveValue(Generic3DPool* self, void* value) {
     WInstanceLock g(&self->lock);
     NamedPoolNode* head = self->activeHead;
     NamedPoolNode* n = head;
-    if (!head) return;
+    if (!head)
+        return;
     do {
         if (n->value == value) {
             if (self->iterator == n) {
                 NamedPoolNode* p = self->iterator->prev;
-                if (p == head) p = 0;
+                if (p == head)
+                    p = 0;
                 self->iterator = p;
             }
             if (n->nameAddress) {
                 RemoveHash(self, n);
-                if (n->ownsName) appFreeUni__FPv((void*)n->nameAddress);
+                if (n->ownsName)
+                    appFreeUni__FPv((void*)n->nameAddress);
             }
             {
                 void* lk = &self->lock;
@@ -346,19 +400,21 @@ inline void RemoveValue(Generic3DPool* self, void* value) {
                 n->next->prev = n->prev;
                 if (n == h) {
                     NamedPoolNode* p = n->prev;
-                    if (p == h) h = 0;
-                    else h = p;
+                    if (p == h)
+                        h = 0;
+                    else
+                        h = p;
                 }
                 OSUnlockMutex(lk);
                 self->activeHead = h;
             }
             self->freeNodes = PushAfter(&self->lock, self->freeNodes, n);
-            if (!self->activeHead) self->iterator = 0;
+            if (!self->activeHead)
+                self->iterator = 0;
             return;
         }
         n = n->prev;
     } while (n != head);
-
 }
 
 // Free registry allocation blocks and hash buckets while holding the registry mutex.
@@ -374,7 +430,8 @@ inline void ReleaseRegistryStorage(Generic3DPool* self) {
                 n->prev->next = n->next;
                 n->next->prev = n->prev;
                 nx = n->prev;
-                if (nx == n) nx = 0;
+                if (nx == n)
+                    nx = 0;
                 OSUnlockMutex(lk);
                 self->allocationBlocks = nx;
                 appFreeUni__FPv(n);
@@ -400,7 +457,8 @@ inline void ReleaseAuxiliarySlot3Storage(Generic3DPool* self) {
                 n->prev->next = n->next;
                 n->next->prev = n->prev;
                 nx = n->prev;
-                if (nx == n) nx = 0;
+                if (nx == n)
+                    nx = 0;
                 OSUnlockMutex(lk);
                 self->slots[3].owner.head = nx;
                 appFreeUni__FPv(n);
@@ -426,7 +484,8 @@ inline void ReleaseAuxiliarySlot2Storage(Generic3DPool* self) {
                 n->prev->next = n->next;
                 n->next->prev = n->prev;
                 nx = n->prev;
-                if (nx == n) nx = 0;
+                if (nx == n)
+                    nx = 0;
                 OSUnlockMutex(lk);
                 self->slots[2].owner.head = nx;
                 appFreeUni__FPv(n);
@@ -452,7 +511,8 @@ inline void ReleaseAuxiliarySlot1Storage(Generic3DPool* self) {
                 n->prev->next = n->next;
                 n->next->prev = n->prev;
                 nx = n->prev;
-                if (nx == n) nx = 0;
+                if (nx == n)
+                    nx = 0;
                 OSUnlockMutex(lk);
                 self->slots[1].owner.head = nx;
                 appFreeUni__FPv(n);
@@ -478,7 +538,8 @@ inline void ReleaseAuxiliarySlot0Storage(Generic3DPool* self) {
                 n->prev->next = n->next;
                 n->next->prev = n->prev;
                 nx = n->prev;
-                if (nx == n) nx = 0;
+                if (nx == n)
+                    nx = 0;
                 OSUnlockMutex(lk);
                 self->slots[0].owner.head = nx;
                 appFreeUni__FPv(n);
@@ -497,9 +558,11 @@ inline void ReleaseAuxiliarySlot0Storage(Generic3DPool* self) {
 inline NamedPoolNode* UnlinkTargetHead(NamedPoolNode* head, NamedPoolNode* n) {
     n->prev->next = n->next;
     n->next->prev = n->prev;
-    if (n != head) return head;
+    if (n != head)
+        return head;
     NamedPoolNode* p = n->prev;
-    if (p == head) return 0;
+    if (p == head)
+        return 0;
     return p;
 }
 
@@ -509,7 +572,8 @@ static inline void DetachRegistryStorageNode(NamedPoolNode* node, NamedPoolNode*
     node->prev->next = node->next;
     node->next->prev = node->prev;
     predecessor = node->prev;
-    if (predecessor == node) predecessor = 0;
+    if (predecessor == node)
+        predecessor = 0;
     OSUnlockMutex(mutex);
 }
 // Detach an auxiliary-ring node under its owner's mutex; retain the predecessor as the new head.
@@ -518,7 +582,8 @@ static inline void DetachAuxiliaryStorageNode(PoolListLinks* node, PoolListLinks
     node->prev->next = node->next;
     node->next->prev = node->prev;
     predecessor = node->prev;
-    if (predecessor == node) predecessor = 0;
+    if (predecessor == node)
+        predecessor = 0;
     OSUnlockMutex(mutex);
 }
 
@@ -541,9 +606,12 @@ Generic3DPool* Generic3DPool_dtor(Generic3DPool* self, int flag) {
                 OSLockMutex(lk);
                 NamedPoolNode* cursor = self->iterator;
                 if (cursor) {
-                    struct Prev { NamedPoolNode* node; } p = { cursor->prev };
+                    struct Prev {
+                        NamedPoolNode* node;
+                    } p = {cursor->prev};
                     value = (Disposable*)cursor->value;
-                    if (p.node == self->activeHead) p.node = 0;
+                    if (p.node == self->activeHead)
+                        p.node = 0;
                     self->iterator = p.node;
                     OSUnlockMutex(lk);
                 } else {
@@ -551,18 +619,23 @@ Generic3DPool* Generic3DPool_dtor(Generic3DPool* self, int flag) {
                     value = 0;
                 }
             }
-            if (value == 0) break;
+            if (value == 0)
+                break;
             do {
                 WInstanceLock g(&self->lock);
-                struct Head { NamedPoolNode* node; } first = { self->activeHead };
+                struct Head {
+                    NamedPoolNode* node;
+                } first = {self->activeHead};
                 n = first.node;
                 // The single-pass scope lets the empty-list exit release its mutex owner.
-                if (first.node == 0) break;
+                if (first.node == 0)
+                    break;
                 do {
                     if (n->value == value) {
                         if (self->iterator == n) {
                             NamedPoolNode* p = self->iterator->prev;
-                            if (p == first.node) p = 0;
+                            if (p == first.node)
+                                p = 0;
                             self->iterator = p;
                         }
                         if (n->nameAddress) {
@@ -575,7 +648,8 @@ Generic3DPool* Generic3DPool_dtor(Generic3DPool* self, int flag) {
                                     OSLockMutex(lk);
                                     int len = strlen((const char*)str);
                                     int last = len > 0 ? len - 1 : 0;
-                                    unsigned raw = (len << kPoolLengthShift) | ((str[0] & kPoolFirstByteMask) | (str[last] & kPoolLastByteMask));
+                                    unsigned raw = (len << kPoolLengthShift) |
+                                                   ((str[0] & kPoolFirstByteMask) | (str[last] & kPoolLastByteMask));
                                     hash = raw & self->mask;
                                     OSUnlockMutex(lk);
                                 }
@@ -593,8 +667,9 @@ Generic3DPool* Generic3DPool_dtor(Generic3DPool* self, int flag) {
                                     }
                                 }
                             }
-hash_removed:;
-                            if (n->ownsName) appFreeUni__FPv((void*)n->nameAddress);
+                        hash_removed:;
+                            if (n->ownsName)
+                                appFreeUni__FPv((void*)n->nameAddress);
                         }
                         {
                             NamedPoolNode* h = self->activeHead;
@@ -606,14 +681,15 @@ hash_removed:;
                         }
                         NamedPoolNode* freeListHead = self->freeNodes;
                         self->freeNodes = PushAfter(&self->lock, freeListHead, n);
-                        if (0 == self->activeHead) self->iterator = 0;
+                        if (0 == self->activeHead)
+                            self->iterator = 0;
                         // Preserve the distinct outer-mutex cleanup after successful removal.
                         goto removed_value;
                     }
                     n = n->prev;
                 } while (n != first.node);
             } while (0);
-removed_value:;
+        removed_value:;
             delete value;
         }
         // Phase 2: all registered values are gone; destroy both provider objects.
@@ -644,7 +720,6 @@ removed_value:;
                     self->buckets = 0;
                 }
             }
-
         }
         {
             if ((char*)self + kPoolAuxiliarySlot3) {
@@ -664,7 +739,6 @@ removed_value:;
                     self->slots[3].owner.buf = 0;
                 }
             }
-
         }
         {
             if ((char*)self + kPoolAuxiliarySlot2) {
@@ -684,7 +758,6 @@ removed_value:;
                     self->slots[2].owner.buf = 0;
                 }
             }
-
         }
         {
             if ((char*)self + kPoolAuxiliarySlot1) {
@@ -704,7 +777,6 @@ removed_value:;
                     self->slots[1].owner.buf = 0;
                 }
             }
-
         }
         {
             if ((char*)self + kPoolAuxiliarySlot0) {
@@ -724,9 +796,9 @@ removed_value:;
                     self->slots[0].owner.buf = 0;
                 }
             }
-
         }
-        if (flag > 0) __dl__FPv(self);
+        if (flag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -804,7 +876,8 @@ void* Generic3DPool_CreateFromFactory(Generic3DPool* self, int a2, int a3) {
 #pragma pop
 // Release an otherwise empty object only for a deleting-destructor request.
 void* dtor_80049214(void* self, int flag) {
-    if (self && flag > 0) __dl__FPv(self);
+    if (self && flag > 0)
+        __dl__FPv(self);
     return self;
 }
 

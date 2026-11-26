@@ -9,8 +9,8 @@ struct TiXmlDeclarationString {
 };
 struct TiXmlDeclarationLayout {
     char node[0x28];
-    TiXmlDeclarationString version; // 0x28: first declaration attribute
-    TiXmlDeclarationString encoding; // 0x30: second declaration attribute
+    TiXmlDeclarationString version;    // 0x28: first declaration attribute
+    TiXmlDeclarationString encoding;   // 0x30: second declaration attribute
     TiXmlDeclarationString standalone; // 0x38: third declaration attribute
 };
 #define OFF(f, o) typedef char TiXmlDeclarationLayout_off_##f[((int)&((TiXmlDeclarationLayout*)0)->f == (o)) ? 1 : -1]

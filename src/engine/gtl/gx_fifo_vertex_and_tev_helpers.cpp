@@ -1,38 +1,85 @@
-// Translation unit 0x8042EB30-0x80430240 (28 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// GX command FIFO writers and TEV combiner setup: the helpers that push vertex data, indices
+// and combiner inputs into the GX write port.
+//
+// Each Render_Write* function emits one vertex layout, in the attribute order the active GX
+// vertex descriptor expects. The Render_Configure* and Engine_Configure* functions set the
+// color and alpha combiner inputs of the TEV stages.
 
 #include "sdk_protos.h"
 
 // GX command FIFO: each volatile write emits one attribute component or index.
-enum { kGXFifoAddress = 0xCC008000 };
+enum {
+    kGXFifoAddress = 0xCC008000
+};
 
 enum TevAlphaInput {
-    kAlphaPrevious = 0, kAlphaRegister0 = 1, kAlphaRegister1 = 2, kAlphaRegister2 = 3,
-    kAlphaTexture = 4, kAlphaRaster = 5, kAlphaKonst = 6, kAlphaZero = 7
+    kAlphaPrevious = 0,
+    kAlphaRegister0 = 1,
+    kAlphaRegister1 = 2,
+    kAlphaRegister2 = 3,
+    kAlphaTexture = 4,
+    kAlphaRaster = 5,
+    kAlphaKonst = 6,
+    kAlphaZero = 7
 };
 enum TevColorInput {
-    kColorPrevious = 0, kColorPreviousAlpha = 1, kColorRegister0 = 2, kColorRegister0Alpha = 3,
-    kColorRegister1 = 4, kColorRegister1Alpha = 5, kColorRegister2 = 6, kColorRegister2Alpha = 7,
-    kColorTexture = 8, kColorTextureAlpha = 9, kColorRaster = 10, kColorRasterAlpha = 11,
-    kColorOne = 12, kColorHalf = 13, kColorKonst = 14, kColorZero = 15
+    kColorPrevious = 0,
+    kColorPreviousAlpha = 1,
+    kColorRegister0 = 2,
+    kColorRegister0Alpha = 3,
+    kColorRegister1 = 4,
+    kColorRegister1Alpha = 5,
+    kColorRegister2 = 6,
+    kColorRegister2Alpha = 7,
+    kColorTexture = 8,
+    kColorTextureAlpha = 9,
+    kColorRaster = 10,
+    kColorRasterAlpha = 11,
+    kColorOne = 12,
+    kColorHalf = 13,
+    kColorKonst = 14,
+    kColorZero = 15
 };
-enum TevOperation { kTevAdd = 0, kTevSubtract = 1 };
-enum TevBias { kTevBiasZero = 0 };
-enum TevScale { kTevScaleOne = 0, kTevScaleTwo = 1 };
-enum TevOutput { kTevPrevious = 0, kTevRegister0 = 1, kTevRegister1 = 2, kTevRegister2 = 3 };
+enum TevOperation {
+    kTevAdd = 0,
+    kTevSubtract = 1
+};
+enum TevBias {
+    kTevBiasZero = 0
+};
+enum TevScale {
+    kTevScaleOne = 0,
+    kTevScaleTwo = 1
+};
+enum TevOutput {
+    kTevPrevious = 0,
+    kTevRegister0 = 1,
+    kTevRegister1 = 2,
+    kTevRegister2 = 3
+};
 
 enum TevKonstSelector {
     kKonstAlphaOne = 0,
-    kKonstColor0Rgb = 12, kKonstColor1Rgb = 13, kKonstColor2Rgb = 14,
-    kKonstColor0Alpha = 28, kKonstColor1Alpha = 29
+    kKonstColor0Rgb = 12,
+    kKonstColor1Rgb = 13,
+    kKonstColor2Rgb = 14,
+    kKonstColor0Alpha = 28,
+    kKonstColor1Alpha = 29
 };
 enum CachedAlphaArgument {
-    kCachedPrevious0 = 0, kCachedPrevious1 = 1,
-    kCachedTexture = 2, kCachedStageConstant = 3
+    kCachedPrevious0 = 0,
+    kCachedPrevious1 = 1,
+    kCachedTexture = 2,
+    kCachedStageConstant = 3
 };
 enum CachedAlphaOperation {
-    kAlphaMultiply = 0, kAlphaAdd = 2, kAlphaPassRasterOrPrevious = 16,
-    kAlphaSelectFirst = 17, kAlphaSelectSecond = 18, kAlphaBlendMaterial = 19, kAlphaMultiplyAddStage = 20
+    kAlphaMultiply = 0,
+    kAlphaAdd = 2,
+    kAlphaPassRasterOrPrevious = 16,
+    kAlphaSelectFirst = 17,
+    kAlphaSelectSecond = 18,
+    kAlphaBlendMaterial = 19,
+    kAlphaMultiplyAddStage = 20
 };
 
 // FIFO contracts: values is borrowed and contains count complete records. The
@@ -268,6 +315,77 @@ void Render_WriteFifo3f(float x, float y, float z) {
 // the point output is written before w is read.
 // The original sums each row as (m[2]*z + m[0]*x) + (m[3] + m[1]*y) for the point and m[2]*z + (m[0]*x + m[1]*y)
 // for the direction (paired-single code at 0x8042F6B4).
+extern const float kProjectiveSkinDirectionW;
+extern "C" void _savegpr_27(void);
+extern "C" void _restgpr_27(void);
+// clang-format off
+#ifdef __MWERKS__
+asm void Mtx34_TransformPointAndDirection(float* out0, float* out1, const float* v, const float* w, const float* m) {
+    nofralloc
+    stwu r1, -48(r1)
+    mflr r0
+    stw r0, 52(r1)
+    stfd f31, 32(r1)
+    psq_st f31, 40(r1), 0, 0
+    addi r11, r1, 32
+    bl _savegpr_27
+    mr r31, r7
+    mr r29, r5
+    psq_l f0, 0(r29), 0, 0
+    mr r27, r3
+    psq_l f2, 0(r31), 0, 0
+    mr r30, r6
+    psq_l f8, 16(r31), 0, 0
+    mr r28, r4
+    ps_mul f4, f2, f0
+    psq_l f1, 8(r29), 1, 0
+    psq_l f3, 8(r31), 0, 0
+    ps_mul f10, f8, f0
+    psq_l f9, 24(r31), 0, 0
+    ps_madd f5, f3, f1, f4
+    ps_madd f11, f9, f1, f10
+    lfs f31, kProjectiveSkinDirectionW
+    ps_sum0 f6, f5, f6, f5
+    ps_sum0 f12, f11, f12, f11
+    psq_st f6, 0(r27), 1, 0
+    psq_l f2, 32(r31), 0, 0
+    psq_l f3, 40(r31), 0, 0
+    ps_mul f4, f2, f0
+    psq_st f12, 4(r27), 1, 0
+    ps_madd f5, f3, f1, f4
+    psq_l f0, 0(r31), 0, 0
+    ps_sum0 f6, f5, f6, f5
+    psq_st f6, 8(r27), 1, 0
+    psq_l f6, 0(r30), 0, 0
+    psq_l f2, 16(r31), 0, 0
+    ps_mul f8, f0, f6
+    psq_l f4, 32(r31), 0, 0
+    ps_mul f10, f2, f6
+    psq_l f7, 8(r30), 1, 0
+    ps_mul f12, f4, f6
+    psq_l f1, 8(r31), 0, 0
+    ps_sum0 f8, f8, f8, f8
+    psq_l f3, 24(r31), 0, 0
+    ps_sum0 f10, f10, f10, f10
+    psq_l f5, 40(r31), 0, 0
+    ps_sum0 f12, f12, f12, f12
+    ps_madd f9, f1, f7, f8
+    ps_madd f11, f3, f7, f10
+    ps_madd f13, f5, f7, f12
+    psq_st f9, 0(r28), 1, 0
+    psq_st f11, 4(r28), 1, 0
+    psq_st f13, 8(r28), 1, 0
+    psq_l f31, 40(r1), 0, 0
+    lfd f31, 32(r1)
+    addi r11, r1, 32
+    bl _restgpr_27
+    lwz r0, 52(r1)
+    mtlr r0
+    addi r1, r1, 48
+    blr
+}
+#else
+// clang-format on
 void Mtx34_TransformPointAndDirection(float* out0, float* out1, const float* v, const float* w, const float* m) {
     float x = v[0], y = v[1], z = v[2];
     for (int i = 0; i < 3; ++i) {
@@ -277,7 +395,9 @@ void Mtx34_TransformPointAndDirection(float* out0, float* out1, const float* v, 
         out0[i] = (r[2] * z + a) + (r[3] + b);
     }
     // Directions use only the linear 3x3 part; translation affects the point above.
-    x = w[0]; y = w[1]; z = w[2];
+    x = w[0];
+    y = w[1];
+    z = w[2];
     for (int i = 0; i < 3; ++i) {
         const float* r = m + i * 4;
         float a = r[0] * x;
@@ -285,6 +405,7 @@ void Mtx34_TransformPointAndDirection(float* out0, float* out1, const float* v, 
         out1[i] = r[2] * z + (a + b);
     }
 }
+#endif
 
 // Configure four GX TEV stages, using raster color/alpha in the last stage when requested.
 // arg is tested only for nonzero. For each stage, GX computes D + (1-C)*A + C*B
@@ -315,28 +436,34 @@ void Render_ConfigureFourStageTevCombiner(void* volatile arg) {
     GXTevColorArg rasterAddition;
     rasterAddition = kColorZero;
     finalAlpha = kAlphaZero;
-    if (arg) { rasterAddition = kColorRaster; finalAlpha = kAlphaRaster; }
+    if (arg) {
+        rasterAddition = kColorRaster;
+        finalAlpha = kAlphaRaster;
+    }
     GXSetTevColorIn(3, kColorPreviousAlpha, kColorPrevious, kColorKonst, rasterAddition);
     GXSetTevColorOp(3, kTevAdd, kTevBiasZero, kTevScaleOne, true, kTevPrevious);
     GXSetTevAlphaIn(3, kAlphaZero, kAlphaZero, kAlphaZero, finalAlpha);
     GXSetTevAlphaOp(3, kTevAdd, kTevBiasZero, kTevScaleOne, true, kTevPrevious);
     GXSetTevKColorSel(3, kKonstColor2Rgb);
     // Publish the signed TEV register and three konst colors after configuring stages.
-    volatile unsigned short rgba0[4] = { kTevInitialRegister0Red, kTevInitialRegister0Green, kTevInitialRegister0Blue, kTevInitialRegister0Alpha };
-    volatile unsigned short rgba1[4] = { rgba0[0], rgba0[1], rgba0[2], rgba0[3] };
-    unsigned short rgba[4] = { rgba1[0], rgba1[1], rgba1[2], rgba1[3] };
+    volatile unsigned short rgba0[4] = {kTevInitialRegister0Red, kTevInitialRegister0Green, kTevInitialRegister0Blue,
+                                        kTevInitialRegister0Alpha};
+    volatile unsigned short rgba1[4] = {rgba0[0], rgba0[1], rgba0[2], rgba0[3]};
+    unsigned short rgba[4] = {rgba1[0], rgba1[1], rgba1[2], rgba1[3]};
     GXSetTevColorS10(1, rgba);
-    unsigned char color0[4] = { kTevKonstColor0Red, kTevKColor0Green, kTevKColor0Blue, kTevKonstColor0Alpha };
-    volatile unsigned char color1[4] = { kTevKonstColor0Red, kTevKColor0Green, kTevKColor0Blue, kTevKonstColor0Alpha };
-    volatile unsigned char color2[4] = { kTevKonstColor0Red, kTevKColor0Green, kTevKColor0Blue, kTevKonstColor0Alpha };
+    unsigned char color0[4] = {kTevKonstColor0Red, kTevKColor0Green, kTevKColor0Blue, kTevKonstColor0Alpha};
+    volatile unsigned char color1[4] = {kTevKonstColor0Red, kTevKColor0Green, kTevKColor0Blue, kTevKonstColor0Alpha};
+    volatile unsigned char color2[4] = {kTevKonstColor0Red, kTevKColor0Green, kTevKColor0Blue, kTevKonstColor0Alpha};
     GXSetTevKColor(0, color0);
-    unsigned char color3[4] = { kTevKonstColor1Red, kTevKColor1Green, kByte_0_EngineMaterialBlue, kRenderColorAlpha182 };
-    volatile unsigned char color4[4] = { kTevKonstColor1Red, kTevKColor1Green, kByte_0_EngineMaterialBlue, kRenderColorAlpha182 };
-    volatile unsigned char color5[4] = { kTevKonstColor1Red, kTevKColor1Green, kByte_0_EngineMaterialBlue, kRenderColorAlpha182 };
+    unsigned char color3[4] = {kTevKonstColor1Red, kTevKColor1Green, kByte_0_EngineMaterialBlue, kRenderColorAlpha182};
+    volatile unsigned char color4[4] = {kTevKonstColor1Red, kTevKColor1Green, kByte_0_EngineMaterialBlue,
+                                        kRenderColorAlpha182};
+    volatile unsigned char color5[4] = {kTevKonstColor1Red, kTevKColor1Green, kByte_0_EngineMaterialBlue,
+                                        kRenderColorAlpha182};
     GXSetTevKColor(1, color3);
-    unsigned char color6[4] = { kTevKonstColor2Red, kTevKColor2Green, kTevKColor2Blue, kTevKonstColor2Alpha };
-    volatile unsigned char color7[4] = { kTevKonstColor2Red, kTevKColor2Green, kTevKColor2Blue, kTevKonstColor2Alpha };
-    volatile unsigned char color8[4] = { kTevKonstColor2Red, kTevKColor2Green, kTevKColor2Blue, kTevKonstColor2Alpha };
+    unsigned char color6[4] = {kTevKonstColor2Red, kTevKColor2Green, kTevKColor2Blue, kTevKonstColor2Alpha};
+    volatile unsigned char color7[4] = {kTevKonstColor2Red, kTevKColor2Green, kTevKColor2Blue, kTevKonstColor2Alpha};
+    volatile unsigned char color8[4] = {kTevKonstColor2Red, kTevKColor2Green, kTevKColor2Blue, kTevKonstColor2Alpha};
     GXSetTevKColor(2, color6);
 }
 
@@ -378,8 +505,8 @@ void Engine_ConfigureTextureStageAlphaCombiner(unsigned char* obj, int index) {
     unsigned char materialColor[4];
     unsigned char stageColor[4];
     volatile unsigned char clamp;
-// When an unsupported operation/argument skips the input assignments, the original still programs GX from the
-// stale stack words it holds.
+    // When an unsupported operation/argument skips the input assignments, the original still programs GX from the
+    // stale stack words it holds.
     int firstStage = TextureStage_GetAlphaCombinerBaseIndex(obj, index);
     baseStage = firstStage;
     hasPreparedAlpha = 0;
@@ -642,7 +769,20 @@ void Engine_ConfigureTextureStageAlphaCombiner(unsigned char* obj, int index) {
         outputRegister = kTevPrevious;
         break;
     }
-    case 1: case 3: case 4: case 5: case 6: case 7: case 8: case 9: case 10: case 11: case 12: case 13: case 14: case 15:
+    case 1:
+    case 3:
+    case 4:
+    case 5:
+    case 6:
+    case 7:
+    case 8:
+    case 9:
+    case 10:
+    case 11:
+    case 12:
+    case 13:
+    case 14:
+    case 15:
     default:
         break;
     }
@@ -675,7 +815,8 @@ void Engine_ConfigureTextureStageAlphaCombiner(unsigned char* obj, int index) {
 //   c4=(m2,m6), c5=(m10,m14) -> Z; c6=(m3,m7), c7=(m11,m15) -> W.
 // a holds (x,y), b holds (z,homogeneousW). Point writes finish before direction
 // loads; overlapping point output with direction input changes the result.
-void Skin_TransformPositionAndNormalProjective(float* out0, float* out1, const float* v, const float* w, const float* m) {
+void Skin_TransformPositionAndNormalProjective(float* out0, float* out1, const float* v, const float* w,
+                                               const float* m) {
     extern const float kProjectiveSkinDirectionW;
     register const float* matrix = m;
     register const float* point = v;
@@ -686,8 +827,7 @@ void Skin_TransformPositionAndNormalProjective(float* out0, float* out1, const f
     register __vec2x32float__ a, b, c0, c1, c2, c3, c4, c5, c6, c7;
     register __vec2x32float__ p, q, sum, result;
     // Preserve the two independently rounded lane sums and the fused products.
-    asm {
-        // Phase 1: collect matrix coefficients into the X/Y/Z/W lane pairs above.
+    asm {    // Phase 1: collect matrix coefficients into the X/Y/Z/W lane pairs above.
         psq_l a, 0(matrix), 0, 0
         psq_l b, 16(matrix), 0, 0
         psq_l p, 8(matrix), 0, 0
@@ -706,7 +846,7 @@ void Skin_TransformPositionAndNormalProjective(float* out0, float* out1, const f
         ps_merge00 c5, p, q
         psq_l b, 8(point), 1, 0
         ps_merge11 c7, p, q
-        // Phase 2: accumulate the point with homogeneous W=1.
+             // Phase 2: accumulate the point with homogeneous W=1.
         ps_mul p, a, c4
         ps_madd q, b, c5, p
         ps_mul c5, a, c0
@@ -727,7 +867,7 @@ void Skin_TransformPositionAndNormalProjective(float* out0, float* out1, const f
         ps_mul c7, c7, q
         psq_st result, 8(point_out), 1, 0
         psq_st c7, 0(point_out), 0, 0
-        // Phase 3: substitute the direction's homogeneous component; no perspective divide.
+             // Phase 3: substitute the direction's homogeneous component; no perspective divide.
         psq_l b, 8(direction), 1, 0
         psq_l p, 40(matrix), 0, 0
         psq_l q, 56(matrix), 0, 0
@@ -794,7 +934,12 @@ void Render_WriteVerticesPositionColorTex2(float* values, volatile unsigned int 
 
 #pragma dont_inline on
 #pragma optimization_level 0
-struct VertexUVs { float xyz[3]; struct Pair { float x, y; } uv[3]; };
+struct VertexUVs {
+    float xyz[3];
+    struct Pair {
+        float x, y;
+    } uv[3];
+};
 // Emit XYZ and two UV pairs from seven-float vertices.
 void Render_WriteVerticesPositionTex2(float* values, unsigned int count) {
     float* p = values;

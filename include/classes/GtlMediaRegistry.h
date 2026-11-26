@@ -5,9 +5,9 @@
 
 class GtlMediaRegistry {
 public:
-    int count; // 0x0
+    int count;              // 0x0
     void* sentinelPrevious; // 0x4
-    void* sentinelNext; // 0x8
+    void* sentinelNext;     // 0x8
 };
 
 #define OFF(f, o) typedef char GtlMediaRegistry_off_##f[((int)&((GtlMediaRegistry*)0)->f == (o)) ? 1 : -1]

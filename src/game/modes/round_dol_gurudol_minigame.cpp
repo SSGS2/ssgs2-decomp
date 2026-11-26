@@ -1,35 +1,57 @@
+// Gurudol round: the session object (CRoundDolMain) and its task that load, run and draw the
+// round, plus the dolphin rotation in CRoundDol3D: pad motion, deceleration and speed levels.
+// The scene's models, camera and shadows are in round_dol3d_spinning_dolfini_scene.cpp.
+
 #include <decomp/static_init.h>
+#include "game/gtl_input.h"
 // Animation ranges expose their first and last frame at separate ABI words.
-struct RoundAnimationRangeView { float firstFrame; int eventData; float lastFrame; };
+struct RoundAnimationRangeView {
+    float firstFrame;
+    int eventData;
+    float lastFrame;
+};
 // Rotation updates are per call: speed decays once and angle -= speed * 0.5.
 // No delta-time argument is applied here; animation range endpoints are frame values.
 // Animation IDs 0..6 select the dolphin, 7..10 the capsule; the animation names below
 // define the exact ranges. Unknown IDs still latch playing state without selecting a range.
 enum RoundDolConstants {
-    kMotionVectorBytes = 12, kMaxPadMotionSamples = 32, kResampledMotionSamples = 10,
-    kRotateAction = 0x0F, kFirstCapsuleAnimation = 7,
-    kRoundAnimationStopped = 0, kRoundAnimationPlaying = 1,
-    kAnimNoMotion = 0, kAnimEntrance = 1, kAnimRotateLow = 2,
-    kAnimRotateMiddle = 3, kAnimRotateHigh = 4, kAnimRotateSuper = 5,
-    kAnimRotateOver = 6, kAnimCapsuleLow = 7, kAnimCapsuleMiddle = 8,
-    kAnimCapsuleHigh = 9, kAnimCapsuleSuper = 10
+    kMotionVectorBytes = 12,
+    kMaxPadMotionSamples = 32,
+    kResampledMotionSamples = 10,
+    kRotateAction = 0x0F,
+    kFirstCapsuleAnimation = 7,
+    kRoundAnimationStopped = 0,
+    kRoundAnimationPlaying = 1,
+    kAnimNoMotion = 0,
+    kAnimEntrance = 1,
+    kAnimRotateLow = 2,
+    kAnimRotateMiddle = 3,
+    kAnimRotateHigh = 4,
+    kAnimRotateSuper = 5,
+    kAnimRotateOver = 6,
+    kAnimCapsuleLow = 7,
+    kAnimCapsuleMiddle = 8,
+    kAnimCapsuleHigh = 9,
+    kAnimCapsuleSuper = 10
 };
 
 #include "classes/CRoundDol3D.h"
 #define AsCRoundDol3D(p) ((CRoundDol3D*)(p))
 
-// Translation unit 0x803156A4-0x80316848 (28 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
-
 #include "game/singletons.h"
 #include "game/wvector.h"
 #include "classes/CRoundDolMain.h"
 #include "classes/CRoundDolTask.h"
-
-#define AsCRoundDolTask(p) ((CRoundDolTask*)(p))
+#include "classes/CFxBox.h"
+#include "classes/PlayerRecordOwner8030E168.h"
+#include "classes/CTask.h"
+#include "classes/CVCGPlayer.h"
+#include "classes/CProjectG.h"
 
 #define AsCRoundDolMain(p) ((CRoundDolMain*)(p))
-namespace std { struct nothrow_t {}; }
+namespace std {
+struct nothrow_t {};
+}
 extern "C" {
 void appFreeUni__FPv(void*);
 
@@ -38,10 +60,11 @@ struct StringUnwindCleanup_u803156A4 {
     const unsigned int* words;
     bool active;
     // Arm cleanup for a completed inline/heap string until ownership is transferred.
-    explicit StringUnwindCleanup_u803156A4(const void* string)
-        : words((const unsigned int*)string), active(true) {}
+    explicit StringUnwindCleanup_u803156A4(const void* string) : words((const unsigned int*)string), active(true) {}
     // Disarm cleanup after explicit ownership transfer or manual destruction.
-    void release() { active = false; }
+    void release() {
+        active = false;
+    }
     // Free heap text on exit unless explicit release disarmed this cleanup.
     ~StringUnwindCleanup_u803156A4() {
         if (active && (words[0] & 0x80000000u)) {
@@ -50,25 +73,21 @@ struct StringUnwindCleanup_u803156A4 {
     }
 };
 
-
 // Opaque legacy ABI parameter; each method uses its actual class layout below.
 typedef void RoundDolReceiver;
 
-extern unsigned int CVCGPlayer_StartGroupPlayback(unsigned int, unsigned int, int);
 extern void __as__7WVectorFRC7WVector(void*, void*);
-extern void ParseConditionedQuotedToken(unsigned int, unsigned int, unsigned int, unsigned int,
-                        unsigned int);
-extern void AnimationEventParser_ProcessFrameRange(void*, void*, float, float, void*, int, int); /* (self, manager, bounds, x f1, y f2, r6, r7) */
-extern void CTask_RequestTransitionWithFade(void*, void*, void*, int);
+extern int ParseConditionedQuotedToken(void*, void*, void*, void*, void*);
+extern void AnimationEventParser_ProcessFrameRange(void*, void*, float, float, void*, int,
+                                                   int); /* (self, manager, bounds, x f1, y f2, r6, r7) */
 extern void TaskCommandQueue_AppendNamedRequest(void*, int, const char*, int, int, int, int, int);
 extern void SoundManager_SetNamedVolumeScale(void*, const char*, float);
-extern void FxAttachment_ParseBoneReferences(RoundDolReceiver*, unsigned int, unsigned int,
-                        unsigned int, unsigned int, unsigned int, unsigned int);
+extern void FxAttachment_ParseBoneReferences(RoundDolReceiver*, unsigned int, unsigned int, unsigned int, unsigned int,
+                                             unsigned int, unsigned int);
 extern void FxBox_CreateAndAttachEffectByExtension(RoundDolReceiver*, void*, unsigned int, void*);
 extern void ShadowModel_SetNamedProjectionEnabled(unsigned int, const char*, unsigned int);
 extern void __ct__18NativeBase80201D18Fv(void*);
 extern void DolfiniSession_dtor(unsigned int, unsigned int);
-extern unsigned int CRoundDolMain_UpdateStateMachine(unsigned int);
 extern void SaveProcess_SetTransitionTargetName(void*);
 extern void SaveProcess_SetFollowUpTaskName(void*);
 extern void __dt__18NativeBase80201D18Fv(void*, int);
@@ -79,7 +98,6 @@ extern void WPuppet_UpdateBoneWorldMatrices(void*, int, int, float);
 extern char __vt__13CRoundDolMain[];
 extern void* g_taskManager;
 extern char roundEndTaskTransitionStrings[];
-extern void CRoundDolMain_DrawStateUI(unsigned int);
 extern unsigned int g_soundManager;
 extern unsigned int g_shadowManager;
 extern const char roundDol3DStrings[];
@@ -123,28 +141,38 @@ extern const float kRoundDolEffectScreenCenterY;
 extern const float kFloat_0_5_RoundSound;
 extern const float kFloat_200_RoundSound;
 extern const float kFloat_1_805E13D8;
-extern const float kFloat_10_RoundScene;extern float kFloat_neg1024_RoundDol3D;extern float kFloat_0_1_RoundScene;
-extern const float kRoundDolMotionAxisMaximum;extern float kRoundDolMotionAxisMinimum;extern float kRoundDolMotionMagnitudeScale;extern float kRoundDolMotionAccelerationThreshold;
-extern const float kRoundDolMotionAccelerationDivisor;extern float kFloat_2_4434605_RoundDol3D;extern float kRoundDolActiveRotationDecay;extern float kRoundDolRotationSoundBase;
-extern const float kRoundDolRotationVolumeSlope;extern float kRoundDolSpeedLevel7Threshold;extern float kRoundDolSpeedLevel6Threshold;extern float kRoundDolSpeedLevel5Threshold;
-extern const float kRoundDolSpeedLevel4Threshold;extern float kRoundDolSpeedLevel3Threshold;extern float kRoundDolSpeedLevel2Threshold;
+extern const float kFloat_10_RoundScene;
+extern float kFloat_neg1024_RoundDol3D;
+extern float kFloat_0_1_RoundScene;
+extern const float kRoundDolMotionAxisMaximum;
+extern float kRoundDolMotionAxisMinimum;
+extern float kRoundDolMotionMagnitudeScale;
+extern float kRoundDolMotionAccelerationThreshold;
+extern const float kRoundDolMotionAccelerationDivisor;
+extern float kFloat_2_4434605_RoundDol3D;
+extern float kRoundDolActiveRotationDecay;
+extern float kRoundDolRotationSoundBase;
+extern const float kRoundDolRotationVolumeSlope;
+extern float kRoundDolSpeedLevel7Threshold;
+extern float kRoundDolSpeedLevel6Threshold;
+extern float kRoundDolSpeedLevel5Threshold;
+extern const float kRoundDolSpeedLevel4Threshold;
+extern float kRoundDolSpeedLevel3Threshold;
+extern float kRoundDolSpeedLevel2Threshold;
 extern const float kRoundDolIdleRotationDecay;
 extern unsigned int g_view;
 extern unsigned int g_project;
 extern unsigned int g_defaultActorSkipMask;
 extern unsigned int g_actorSkipMask;
 extern char __vt__13CRoundDolTask[];
-extern int Parse_NonemptyQuotedTokenUnder64Bytes(unsigned int, unsigned int, void*);
+extern int Parse_NonemptyQuotedTokenUnder64Bytes(void*, void*, void*);
 extern void Sound_PlayByName(unsigned int, void*, int, int, int, int, float, float, float);
 extern void ShadowManager_RenderShadowTextures(unsigned int, unsigned int);
-extern unsigned int CProjectG_GetExtensionProperty(unsigned int);
 extern void Engine_ClearFramebuffer(int, int, int, unsigned int, float, int);
 extern void ShadowManager_DrawProjectedModel(unsigned int, unsigned int);
-extern void CTask_Ctor(void*);
 extern void* WPuppet_FindAnimationRangeByName(void*, void*);
 extern void WPuppet_SetAnimationTimeFromRanges(void*, int, float, int, int);
 extern void* TaskActorTable_CreateNamedActor(void*, const char*, const char*, int, void*);
-extern void* CTask_SetMainActor(void*, void*);
 extern void appFreeUni__FPv(void*);
 extern void String_ReserveCapacity(void*, unsigned int);
 extern void String_ReplaceRange(void*, int, int, const char*, const char*, void*);
@@ -160,7 +188,6 @@ extern void DolfiniSession_dtor(unsigned int, unsigned int);
 extern unsigned int strlen(const char*);
 extern void Engine_SetCachedRenderState(int, int);
 extern void WPuppet_SetRendererOption(void*, int);
-extern void CFxBox_DrawSprays(void*, void*);
 extern void Vector_CopyComponents(void*, void*);
 extern void Vec3_Lerp(void*, void*, void*, float);
 extern double __fabs(double);
@@ -172,24 +199,24 @@ extern void InputManager_Dtor(void*);
 extern void __register_global_object(void*, void*, void*);
 extern int Input_IsActionButtonDown(void*, int, int);
 extern void* InputManager_GetSelectedPad(void*);
-extern void gtl_CInputExDeviceBase_GetDeviceResult(void*, void*);
-extern void gtl_CScreenPointer_GetSample(void*, int, void*);
 extern float Vec3_Length(void*);
 extern void SoundManager_SetNamedEffectPitch(void*, const char*, float);
-extern int CRoundDol3D_ResampleMotion(RoundDolReceiver*, void*, void*, int);
 
 // Return the current discrete speed selection used by the dolphin scene.
-unsigned int CRoundDol3D_GetSpeedLevel(RoundDolReceiver* self) {
+unsigned int CRoundDol3D::GetSpeedLevel() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     return AsCRoundDol3D(self)->speedLevel;
 }
 
 // Return the current dolphin scene state without advancing it.
-unsigned int CRoundDol3D_GetState(RoundDolReceiver* self) {
+unsigned int CRoundDol3D::GetState() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     return AsCRoundDol3D(self)->state;
 }
 
 // Enable or disable the scene's camera-target override.
-void CRoundDol3D_SetCameraTargetOverrideEnabled(RoundDolReceiver* self, unsigned int value) {
+void CRoundDol3D::SetCameraTargetOverrideEnabled(unsigned int value) {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     AsCRoundDol3D(self)->cameraTargetOverrideEnabled = value;
 }
 
@@ -199,7 +226,8 @@ void Sound_SetGurudolRoundVolume() {
 }
 
 // Reset motion/animation state, select the entrance endpoint and rebuild the dolphin transform.
-void CRoundDol3D_ResetRotation(RoundDolReceiver* self) {
+void CRoundDol3D::ResetRotation() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     char buf[0x30];
     float f1 = kFloat_0_RoundScene;
     // This reset-only word remains distinct from the speed, animation and state fields.
@@ -212,7 +240,9 @@ void CRoundDol3D_ResetRotation(RoundDolReceiver* self) {
     AsCRoundDol3D(self)->animationEnd = f1;
     AsCRoundDol3D(self)->state = kRoundAnimationStopped;
     ((void (*)(void*, float, int))Matrix_SetAxisRotation)(buf, f1, 0);
-    f1 = ((RoundAnimationRangeView*)WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->entrance)))->lastFrame;
+    f1 = ((RoundAnimationRangeView*)WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel,
+                                                                     (void*)(RoundDolNames->entrance)))
+             ->lastFrame;
     AsCRoundDol3D(self)->animationTime = f1;
     WPuppet_SetAnimationTimeFromRanges(AsCRoundDol3D(self)->dolphinModel, 0, f1, 0, 0);
     Model_SetMatrixRecursive(AsCRoundDol3D(self)->dolphinModel, AsCRoundDol3D(self)->dolphinModel, buf);
@@ -220,32 +250,36 @@ void CRoundDol3D_ResetRotation(RoundDolReceiver* self) {
 }
 
 // Start the requested camera-motion group with the player's default playback options.
-unsigned int CRoundDol3D_StartGroupPlayback(RoundDolReceiver* self, unsigned int value) {
-    return CVCGPlayer_StartGroupPlayback((*(unsigned int*)&AsCRoundDol3D(self)->cameraMotionPlayer), value, 0);
+unsigned int CRoundDol3D::StartGroupPlayback(unsigned int value) {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
+    return ((CVCGPlayer*)(*(unsigned int*)&AsCRoundDol3D(self)->cameraMotionPlayer))->StartGroupPlayback(value, 0);
 }
 
 // Copy the camera target position vector from another round scene.
-void CRoundDol3D_vfunc_24(char* self, char* other) {
+void CRoundDol3D::CopyCameraTarget(char* other) {
+    char* self = (char*)this;
     AsCRoundDol3D(self)->cameraTarget = AsCRoundDol3D(other)->cameraTarget;
 }
 
-// Forward a conditioned quoted token to the event parser with default options.
-void CRoundDol3D_ParseConditionedQuotedTokenDefault(unsigned int a, unsigned int b, unsigned int c, unsigned int d) {
-    ParseConditionedQuotedToken(a, b, d, 0, 0);
+// Forward a conditioned quoted token to the shared parser with no conditions and
+// no instance table.
+int CRoundDol3D::ParseConditionedQuotedTokenDefault(void* path, unsigned int, void* output) {
+    return ParseConditionedQuotedToken(this, path, output, 0, 0);
 }
 
 // Enable or disable projected shadows for the capsule model.
-void CRoundDol3D_SetCapsuleShadowEnabled(unsigned int a, unsigned int value) {
-    ShadowModel_SetNamedProjectionEnabled(g_shadowManager,RoundDolNames->capsuleShadow, value != 0);
+void CRoundDol3D::SetCapsuleShadowEnabled(unsigned int enable) {
+    ShadowModel_SetNamedProjectionEnabled(g_shadowManager, RoundDolNames->capsuleShadow, enable != 0);
 }
 
 // Enable or disable projected shadows for the dolphin model.
-void CRoundDol3D_SetDolphinShadowEnabled(unsigned int a, unsigned int value) {
-    ShadowModel_SetNamedProjectionEnabled(g_shadowManager,RoundDolNames->dolphinShadow, value != 0);
+void CRoundDol3D::SetDolphinShadowEnabled(unsigned int enable) {
+    ShadowModel_SetNamedProjectionEnabled(g_shadowManager, RoundDolNames->dolphinShadow, enable != 0);
 }
 
 // Seed the effect attachment position and create the requested effect in this scene's effect box.
-void CRoundDol3D_vfunc_25(RoundDolReceiver* self, void* output, unsigned int value) {
+void CRoundDol3D::vfunc_25(void* output, unsigned int value) {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     void* data = AsCRoundDol3D(self)->effectBox;
     float y = kRoundDolEffectScreenCenterY;
     float x = kRoundDolEffectScreenCenterX;
@@ -255,8 +289,10 @@ void CRoundDol3D_vfunc_25(RoundDolReceiver* self, void* output, unsigned int val
 }
 
 // Parse attachment bone references using the active model and animation range.
-void CRoundDol3D_ParseBoneReferences(RoundDolReceiver* self, unsigned int b, unsigned int c) {
-    FxAttachment_ParseBoneReferences(self, b, c, AsCRoundDol3D(self)->activeModel, AsCRoundDol3D(self)->animation, 1, 0);
+void CRoundDol3D::ParseBoneReferences(unsigned int b, unsigned int c) {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
+    FxAttachment_ParseBoneReferences(self, b, c, AsCRoundDol3D(self)->activeModel, AsCRoundDol3D(self)->animation, 1,
+                                     0);
 }
 
 // Initialize the round-scene module's cached full-turn angle.
@@ -265,23 +301,25 @@ void RoundDol3D_InitTwoPiCache() {
 }
 
 // Construct the task base, clear the session and install the main/interface vtables.
-RoundDolReceiver* CRoundDolMain_Ctor(RoundDolReceiver* self) {
+CRoundDolMain::CRoundDolMain() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     __ct__18NativeBase80201D18Fv(self);
     (*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession) = 0;
     (*(unsigned int*)&AsCRoundDolMain(self)->vtbl) = (unsigned int)__vt__13CRoundDolMain;
     AsCRoundDolMain(self)->taskMainVtable = (unsigned int)(__vt__13CRoundDolMain + 0x3C);
-    return self;
 }
 
 // Draw the active Dolfini session's state UI.
-void CRoundDolMain_OnDisplay(RoundDolReceiver* self) {
+void CRoundDolMain::OnDisplay() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     if ((*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession) != 0) {
-        CRoundDolMain_DrawStateUI((*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession));
+        ((CRoundDolMain*)((*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession)))->DrawStateUI();
     }
 }
 
 // Destroy and clear the owned Dolfini session.
-void CRoundDolMain_OnDestroy(RoundDolReceiver* self) {
+void CRoundDolMain::OnDestroy() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     if ((*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession) != 0) {
         DolfiniSession_dtor((*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession), 1);
         (*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession) = 0;
@@ -289,15 +327,17 @@ void CRoundDolMain_OnDestroy(RoundDolReceiver* self) {
 }
 
 // Parse a sound name from the event and play it with the scene's default sound parameters.
-void CRoundDol3D_vfunc_2(unsigned int a, unsigned int b) {
+void CRoundDol3D::PlaySoundByName(void* scriptCursor) {
     char buf[0x48];
-    if (Parse_NonemptyQuotedTokenUnder64Bytes(a, b, buf) != 0) {
-        Sound_PlayByName(g_soundManager, buf, 0, 0, 0, 0, kFloat_0_5_RoundSound, kFloat_200_RoundSound, kFloat_1_805E13D8);
+    if (Parse_NonemptyQuotedTokenUnder64Bytes(this, scriptCursor, buf) != 0) {
+        Sound_PlayByName(g_soundManager, buf, 0, 0, 0, 0, kFloat_0_5_RoundSound, kFloat_200_RoundSound,
+                         kFloat_1_805E13D8);
     }
 }
 
 // Draw capsule/dolphin/stand models and effects, then restore the camera option.
-void CRoundDol3D_DrawModelsAndEffects(RoundDolReceiver* self) {
+void CRoundDol3D::DrawModelsAndEffects() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     Engine_SetCachedRenderState(2, 1);
     Engine_SetCachedRenderState(6, 1);
     Engine_SetCachedRenderState(3, 3);
@@ -307,51 +347,56 @@ void CRoundDol3D_DrawModelsAndEffects(RoundDolReceiver* self) {
         WPuppet_SetRendererOption(obj, 2);
         obj = AsCRoundDol3D(self)->capsuleModel;
         void* arg = (void*)g_view;
-        void (*fp)(void*, void*, int, int, int, float, int) =
-            *(void (**)(void*, void*, int, int, int, float, int))((char*)*(void**)obj + 0x18); /* 0x80315BC4, 0x80315BF0, 0x80315C1C: lwz r12,0x18(r12) loads the slot; ours called the table address */
+        void (*fp)(void*, void*, int, int, int, float, int) = *(void (**)(void*, void*, int, int, int, float, int))(
+            (char*)*(void**)obj +
+            0x18); /* 0x80315BC4, 0x80315BF0, 0x80315C1C: lwz r12,0x18(r12) loads the slot; ours called the table address */
         fp(obj, arg, 1, 1, 0, kFloat_1_805E13D8, 0);
     }
     {
         void* obj = AsCRoundDol3D(self)->dolphinModel;
         void* arg = (void*)g_view;
-        void (*fp)(void*, void*, int, int, int, float, int) =
-            *(void (**)(void*, void*, int, int, int, float, int))((char*)*(void**)obj + 0x18); /* 0x80315BC4, 0x80315BF0, 0x80315C1C: lwz r12,0x18(r12) loads the slot; ours called the table address */
+        void (*fp)(void*, void*, int, int, int, float, int) = *(void (**)(void*, void*, int, int, int, float, int))(
+            (char*)*(void**)obj +
+            0x18); /* 0x80315BC4, 0x80315BF0, 0x80315C1C: lwz r12,0x18(r12) loads the slot; ours called the table address */
         fp(obj, arg, 1, 1, 0, kFloat_1_805E13D8, 0);
     }
     {
         void* obj = AsCRoundDol3D(self)->dolphinStandModel;
         void* arg = (void*)g_view;
-        void (*fp)(void*, void*, int, int, int, float, int) =
-            *(void (**)(void*, void*, int, int, int, float, int))((char*)*(void**)obj + 0x18); /* 0x80315BC4, 0x80315BF0, 0x80315C1C: lwz r12,0x18(r12) loads the slot; ours called the table address */
+        void (*fp)(void*, void*, int, int, int, float, int) = *(void (**)(void*, void*, int, int, int, float, int))(
+            (char*)*(void**)obj +
+            0x18); /* 0x80315BC4, 0x80315BF0, 0x80315C1C: lwz r12,0x18(r12) loads the slot; ours called the table address */
         fp(obj, arg, 1, 1, 0, kFloat_1_805E13D8, 0);
     }
-    CFxBox_DrawSprays(AsCRoundDol3D(self)->effectBox, (void*)g_view);
+    ((CFxBox*)(AsCRoundDol3D(self)->effectBox))->DrawSprays((void*)g_view);
     {
         void* obj = (void*)g_view;
-        void (*fp)(void*, int) = *(void (**)(void*, int))((char*)*(void**)obj + 0x10); /* 0x80315C40 lwz r12,0x10(r12) */
+        void (*fp)(void*, int) =
+            *(void (**)(void*, int))((char*)*(void**)obj + 0x10); /* 0x80315C40 lwz r12,0x10(r12) */
         fp(obj, 4);
     }
 }
 // Render shadow textures, clear with the project color, and draw projected shadows.
-void CRoundDolMain_RenderShadowPass() {    ShadowManager_RenderShadowTextures(g_shadowManager, g_view);
-    unsigned int r = CProjectG_GetExtensionProperty(g_project);
+void CRoundDol3D::RenderShadowPass() {
+    ShadowManager_RenderShadowTextures(g_shadowManager, g_view);
+    unsigned int r = ((CProjectG*)g_project)->GetExtensionProperty();
     Engine_ClearFramebuffer(0, 0, 7, r, kFloat_1_805E13D8, 0);
     ShadowManager_DrawProjectedModel(g_shadowManager, g_view);
 }
 
 // Construct the round task interfaces and clear actor skipping masks.
-void* CRoundDolTask_Ctor(void* self) {
-    CTask_Ctor(self);
-    (*(unsigned int*)&AsCRoundDolTask(self)->vtbl) = (unsigned int)__vt__13CRoundDolTask;
-    AsCRoundDolTask(self)->secondaryVtable = (unsigned int)__vt__13CRoundDolTask + 0x10;
-    AsCRoundDolTask(self)->tertiaryVtable = (unsigned int)__vt__13CRoundDolTask + 0x1C;
+CRoundDolTask::CRoundDolTask() {
+    ((CTask*)this)->Init();
+    (*(unsigned int*)&vtbl) = (unsigned int)__vt__13CRoundDolTask;
+    secondaryVtable = (unsigned int)__vt__13CRoundDolTask + 0x10;
+    tertiaryVtable = (unsigned int)__vt__13CRoundDolTask + 0x1C;
     g_defaultActorSkipMask = 0;
     g_actorSkipMask = 0;
-    return self;
 }
 
 // Reduce angular speed to zero, advance the angle and rebuild the dolphin pose.
-void CRoundDol3D_DecelerateRotation(RoundDolReceiver* self) {
+void CRoundDol3D::DecelerateRotation() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     float f1 = kRoundDolIdleRotationDecay;
     float f0 = kFloat_0_RoundScene;
     char buf[0x30];
@@ -378,40 +423,39 @@ void CRoundDol3D_DecelerateRotation(RoundDolReceiver* self) {
 }
 
 // Destroy the owned session and task base, then optionally free the main object.
-void* CRoundDolMain_dtor(void* self, int flag) {
-    if (self != 0) {
-        void* session = AsCRoundDolMain(self)->dolfiniSession;
-        (*(unsigned int*)&AsCRoundDolMain(self)->vtbl) = (unsigned int)__vt__13CRoundDolMain;
-        AsCRoundDolMain(self)->taskMainVtable = (unsigned int)__vt__13CRoundDolMain + 0x3C;
-        if (session != 0) {
-            DolfiniSession_dtor((unsigned int)session, 1);
-            AsCRoundDolMain(self)->dolfiniSession = 0;
-        }
-        if (self != 0) {
-            __dt__18NativeBase80201D18Fv(self, 0);
-        }
-        if (flag > 0) {
-            __dl__FPv(self);
-        }
+CRoundDolMain::~CRoundDolMain() {
+    void* session = dolfiniSession;
+    (*(unsigned int*)&vtbl) = (unsigned int)__vt__13CRoundDolMain;
+    taskMainVtable = (unsigned int)__vt__13CRoundDolMain + 0x3C;
+    if (session != 0) {
+        DolfiniSession_dtor((unsigned int)session, 1);
+        dolfiniSession = 0;
     }
-    return self;
+    if (this != 0) {
+        __dt__18NativeBase80201D18Fv(this, 0);
+    }
 }
 
 // Advance the session state machine and request the follow-up task when it finishes.
-void CRoundDolMain_OnProcess(RoundDolReceiver* self) {
+void CRoundDolMain::OnProcess() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     unsigned int p = (*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession);
-    if (p == 0) return;
-    if (CRoundDolMain_UpdateStateMachine(p) == 0) return;
+    if (p == 0)
+        return;
+    if (((PlayerRecordOwner8030E168*)p)->UpdateStateMachine() == 0)
+        return;
     char* base = roundEndTaskTransitionStrings;
     SaveProcess_SetTransitionTargetName(base);
     base = roundEndTaskTransitionStrings;
     SaveProcess_SetFollowUpTaskName(base + 0x0B);
-    CTask_RequestTransitionWithFade(g_taskManager, roundEndTaskTransitionStrings + 0x16, roundEndTaskTransitionStrings + 0x27, 0);
+    ((CTask*)g_taskManager)
+        ->RequestTransitionWithFade(roundEndTaskTransitionStrings + 0x16, roundEndTaskTransitionStrings + 0x27, 0);
     TaskCommandQueue_AppendNamedRequest(g_taskManager, 0, roundEndTaskTransitionStrings + 0x28, 7, 0, 0, 0, 0);
 }
 
 // Build the named round actors and install the main actor.
-void CRoundDolTask_CreateActors(RoundDolReceiver* self) {
+void CRoundDolTask::CreateActors() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     char* base = roundEndTaskTransitionStrings;
     char* p = base + 0x27;
     unsigned int len = strlen(p);
@@ -422,33 +466,40 @@ void CRoundDolTask_CreateActors(RoundDolReceiver* self) {
     String_ReplaceRange(obj, 0, 0, p, p + len, &tmp);
     StringUnwindCleanup_u803156A4 stringCleanup0(obj);
     void* r = TaskActorTable_CreateNamedActor(self, base + 0x38, base + 0x46, 0, obj);
-    CTask_SetMainActor(self, r);
+    ((CTask*)self)->SetMainActor(r);
     if (obj[0] & 0x80000000u) {
-        { stringCleanup0.release(); appFreeUni__FPv((void*)obj[2]); }
+        {
+            stringCleanup0.release();
+            appFreeUni__FPv((void*)obj[2]);
+        }
     }
 }
 
 struct Fn8030E168Obj {
     char pad[0x89c];
     // Construct an owned Dolfini session from the supplied save-record copy.
-    Fn8030E168Obj(void* arg) { DolfiniSession_Ctor(this, arg); } };
+    Fn8030E168Obj(void* arg) {
+        DolfiniSession_Ctor(this, arg);
+    }
+};
 // Create a session from a copy of the current save record and load its resources.
-void CRoundDolMain_OnLoad(RoundDolReceiver* self) {
+void CRoundDolMain::OnLoad() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     char bufA[0x828];
     char bufB[0x828];
     if ((*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession) != 0) {
         DolfiniSession_dtor((*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession), 1);
         (*(unsigned int*)&AsCRoundDolMain(self)->dolfiniSession) = 0;
     }
-    if (((unsigned int&)Sing_805DC5E0()) == 0) {
+    if (((unsigned int&)GetSaveDataSlot()) == 0) {
         if (s_saveDataInitialized == 0) {
             SaveData_Ctor(s_saveData);
             s_saveDataInitialized = 1;
         }
-        ((unsigned int&)Sing_805DC5E0()) = (unsigned int)s_saveData;
+        ((unsigned int&)GetSaveDataSlot()) = (unsigned int)s_saveData;
     }
     // Copy the save record into constructor input; the newly allocated session is owned by self.
-    unsigned int p = ((unsigned int&)Sing_805DC5E0());
+    unsigned int p = ((unsigned int&)GetSaveDataSlot());
     void* r = SaveData_GetCurrentRecord(p);
     SaveRecord_CopyCtor(bufA, r);
     void* obj = new Fn8030E168Obj(SaveRecord_CopyCtor(bufB, bufA));
@@ -461,7 +512,8 @@ void CRoundDolMain_OnLoad(RoundDolReceiver* self) {
 // endpoint is written at inputCount (or slot 31 for >=32 inputs), so reserve 32 slots.
 // Zero inputs holds lastMotionSample and returns 0; otherwise cache input[0] and return 1.
 // Negative counts are outside the contract; raw motion coordinate units are unresolved.
-int CRoundDol3D_ResampleMotion(RoundDolReceiver* self, void* outputSamples, void* inputSamples, int inputCount) {
+int CRoundDol3D::ResampleMotion(void* outputSamples, void* inputSamples, int inputCount) {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     void* scene = self;
     void* outputCursor = outputSamples;
     void* inputCursor = inputSamples;
@@ -478,10 +530,12 @@ int CRoundDol3D_ResampleMotion(RoundDolReceiver* self, void* outputSamples, void
     }
     int inputIntervalCount;
     if (inputCount < kMaxPadMotionSamples) {
-        Vector_CopyComponents((char*)inputCursor + (inputCount * kMotionVectorBytes), AsCRoundDol3D(scene)->previousFirstMotionSample);
+        Vector_CopyComponents((char*)inputCursor + (inputCount * kMotionVectorBytes),
+                              AsCRoundDol3D(scene)->previousFirstMotionSample);
         inputIntervalCount = inputCount;
     } else {
-        Vector_CopyComponents((char*)inputCursor + (kMaxPadMotionSamples - 1) * kMotionVectorBytes, AsCRoundDol3D(scene)->previousFirstMotionSample);
+        Vector_CopyComponents((char*)inputCursor + (kMaxPadMotionSamples - 1) * kMotionVectorBytes,
+                              AsCRoundDol3D(scene)->previousFirstMotionSample);
         inputIntervalCount = kMaxPadMotionSamples - 1;
     }
     sampleIndex = 0;
@@ -489,8 +543,9 @@ int CRoundDol3D_ResampleMotion(RoundDolReceiver* self, void* outputSamples, void
     float outputsPerInput = kFloat_10_RoundScene / (float)inputIntervalCount;
     while ((float)sampleIndex < outputCount) {
         int inputIndex = (int)((float)sampleIndex / outputsPerInput);
-        Vec3_Lerp(outputCursor, (char*)inputCursor + (inputIndex * kMotionVectorBytes), (char*)inputCursor + ((inputIndex + 1) * kMotionVectorBytes),
-                    ((float)sampleIndex - (float)inputIndex * outputsPerInput) / outputsPerInput);
+        Vec3_Lerp(outputCursor, (char*)inputCursor + (inputIndex * kMotionVectorBytes),
+                  (char*)inputCursor + ((inputIndex + 1) * kMotionVectorBytes),
+                  ((float)sampleIndex - (float)inputIndex * outputsPerInput) / outputsPerInput);
         outputCursor = (char*)outputCursor + kMotionVectorBytes;
         sampleIndex++;
     }
@@ -502,36 +557,39 @@ int CRoundDol3D_ResampleMotion(RoundDolReceiver* self, void* outputSamples, void
 // Return 0 when the rotate action is released; return 1 while held, including no selected pad.
 // The reverse 32..1 accumulation below intentionally includes the count word as float bits;
 // do not change its window to match the ten resampled vectors in a readability patch.
-int CRoundDol3D_UpdateRotationFromPadMotion(RoundDolReceiver* self) {
+int CRoundDol3D::UpdateRotationFromPadMotion() {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     char rawSamples[0x180];
     char padSample[kMotionVectorBytes];
-    if (((unsigned int&)Sing_805DC5C8()) == 0) {
+    if (((unsigned int&)GetInputManagerSlot()) == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_roundDolInputManagerDtorRegistration);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_roundDolInputManagerDtorRegistration);
             s_inputManagerInitialized = 1;
         }
-        ((unsigned int&)Sing_805DC5C8()) = (unsigned int)s_gameInputManager;
+        ((unsigned int&)GetInputManagerSlot()) = (unsigned int)s_gameInputManager;
     }
-    if (Input_IsActionButtonDown((void*)((unsigned int&)Sing_805DC5C8()), kRotateAction, -1) == 0) {
+    if (Input_IsActionButtonDown((void*)((unsigned int&)GetInputManagerSlot()), kRotateAction, -1) == 0) {
         AsCRoundDol3D(self)->unk_B4 = 0;
         return 0;
     }
-    if (((unsigned int&)Sing_805DC5C8()) == 0) {
+    if (((unsigned int&)GetInputManagerSlot()) == 0) {
         if (s_inputManagerInitialized == 0) {
             InputManager_Init(s_gameInputManager);
-            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_roundDolInputManagerDtorRegistration);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_roundDolInputManagerDtorRegistration);
             s_inputManagerInitialized = 1;
         }
-        ((unsigned int&)Sing_805DC5C8()) = (unsigned int)s_gameInputManager;
+        ((unsigned int&)GetInputManagerSlot()) = (unsigned int)s_gameInputManager;
     }
-    void* selectedPad = InputManager_GetSelectedPad((void*)((unsigned int&)Sing_805DC5C8()));
+    void* selectedPad = InputManager_GetSelectedPad((void*)((unsigned int&)GetInputManagerSlot()));
     if (selectedPad == 0) {
         return 1;
     }
     // Collect up to 32 raw pad vectors, then resample to the ten-vector output window.
     unsigned int* sampleCount = &AsCRoundDol3D(self)->motionSampleCount;
-    gtl_CInputExDeviceBase_GetDeviceResult(selectedPad, sampleCount);
+    ((gtl::CInputExDeviceBase*)selectedPad)->GetDeviceResult((s32*)sampleCount);
     char* rawSampleCursor = rawSamples;
     int rawSampleIndex = 0;
     while (rawSampleIndex < (int)(*sampleCount)) {
@@ -539,12 +597,12 @@ int CRoundDol3D_UpdateRotationFromPadMotion(RoundDolReceiver* self) {
             (*sampleCount) = kMaxPadMotionSamples;
             break;
         }
-        gtl_CScreenPointer_GetSample(selectedPad, rawSampleIndex, padSample);
+        ((gtl::CScreenPointer*)selectedPad)->GetSample(rawSampleIndex, (gtl::ScreenPointerSample*)padSample);
         Vector_CopyComponents(rawSampleCursor, padSample);
         rawSampleCursor += kMotionVectorBytes;
         rawSampleIndex++;
     }
-    CRoundDol3D_ResampleMotion(self, AsCRoundDol3D(self)->motionSamples, rawSamples, (*sampleCount));
+    ((CRoundDol3D*)self)->ResampleMotion(AsCRoundDol3D(self)->motionSamples, rawSamples, (*sampleCount));
     (*sampleCount) = kResampledMotionSamples;
     // Clamp the ten resampled vectors to the original +/-3.4 axis limits.
     float f2 = kRoundDolMotionAxisMaximum;
@@ -552,21 +610,28 @@ int CRoundDol3D_UpdateRotationFromPadMotion(RoundDolReceiver* self) {
     char* clampedSampleCursor = AsCRoundDol3D(self)->motionSamples;
     for (int i = 0; i < (*sampleCount); i++) {
         float v0 = ((WVector*)clampedSampleCursor)->x;
-        if (f2 < v0) ((WVector*)clampedSampleCursor)->x = f2;
-        else if (v0 < f1) ((WVector*)clampedSampleCursor)->x = f1;
+        if (f2 < v0)
+            ((WVector*)clampedSampleCursor)->x = f2;
+        else if (v0 < f1)
+            ((WVector*)clampedSampleCursor)->x = f1;
         float v1 = ((WVector*)clampedSampleCursor)->y;
-        if (f2 < v1) ((WVector*)clampedSampleCursor)->y = f2;
-        else if (v1 < f1) ((WVector*)clampedSampleCursor)->y = f1;
+        if (f2 < v1)
+            ((WVector*)clampedSampleCursor)->y = f2;
+        else if (v1 < f1)
+            ((WVector*)clampedSampleCursor)->y = f1;
         float v2 = ((WVector*)clampedSampleCursor)->z;
-        if (f2 < v2) ((WVector*)clampedSampleCursor)->z = f2;
-        else if (v2 < f1) ((WVector*)clampedSampleCursor)->z = f1;
+        if (f2 < v2)
+            ((WVector*)clampedSampleCursor)->z = f2;
+        else if (v2 < f1)
+            ((WVector*)clampedSampleCursor)->z = f1;
         clampedSampleCursor += kMotionVectorBytes;
     }
     // Preserve the original reverse window: vector slots 32 through 1.
     // Slot 32 starts at motionSampleCount; changing this to 31..0 changes behavior.
     float totalMotionMagnitude = kFloat_0_RoundScene;
     for (int i = 0; i < kMaxPadMotionSamples; i++) {
-        totalMotionMagnitude += Vec3_Length(AsCRoundDol3D(self)->motionSamples + (kMaxPadMotionSamples - i) * kMotionVectorBytes);
+        totalMotionMagnitude +=
+            Vec3_Length(AsCRoundDol3D(self)->motionSamples + (kMaxPadMotionSamples - i) * kMotionVectorBytes);
     }
     // Convert accumulated magnitude into acceleration, cap the speed, then apply active decay.
     float f0 = kRoundDolMotionAccelerationThreshold;
@@ -602,8 +667,10 @@ int CRoundDol3D_UpdateRotationFromPadMotion(RoundDolReceiver* self) {
         float normalizedSpeed = soundSpeed / soundMaximumSpeed;
         float soundBase = kRoundDolRotationSoundBase;
         float basePitch = kFloat_0_5_RoundSound;
-        SoundManager_SetNamedVolumeScale((void*)g_soundManager, roundDol3DStrings, volumeSlope * normalizedSpeed + soundBase);
-        SoundManager_SetNamedEffectPitch((void*)g_soundManager, roundDol3DStrings, soundBase * normalizedSpeed + basePitch);
+        SoundManager_SetNamedVolumeScale((void*)g_soundManager, roundDol3DStrings,
+                                         volumeSlope * normalizedSpeed + soundBase);
+        SoundManager_SetNamedEffectPitch((void*)g_soundManager, roundDol3DStrings,
+                                         soundBase * normalizedSpeed + basePitch);
     } else {
         SoundManager_SetNamedVolumeScale((void*)g_soundManager, roundDol3DStrings, kFloat_0_RoundScene);
     }
@@ -637,13 +704,15 @@ int CRoundDol3D_UpdateRotationFromPadMotion(RoundDolReceiver* self) {
     return 1;
 }
 // Select the dolphin or capsule animation range and dispatch its starting-frame events.
-void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animationIndex) {
+void CRoundDol3D::SetAnimationByIndex(unsigned int animationIndex) {
+    RoundDolReceiver* self = (RoundDolReceiver*)this;
     AsCRoundDol3D(self)->animationIndex = animationIndex;
     AsCRoundDol3D(self)->state = kRoundAnimationPlaying;
     // Dolphin cases borrow a named range, store its frame endpoints, and dispatch first-frame events.
     switch (animationIndex) {
     case kAnimNoMotion: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->noMotion));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->noMotion));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->dolphinModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;
@@ -655,7 +724,8 @@ void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animat
         break;
     }
     case kAnimEntrance: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->entrance));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->entrance));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->dolphinModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;
@@ -667,7 +737,8 @@ void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animat
         break;
     }
     case kAnimRotateLow: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->rotateLow));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->rotateLow));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->dolphinModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;
@@ -679,7 +750,8 @@ void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animat
         break;
     }
     case kAnimRotateMiddle: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->rotateMiddle));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->rotateMiddle));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->dolphinModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;
@@ -691,7 +763,8 @@ void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animat
         break;
     }
     case kAnimRotateHigh: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->rotateHigh));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->rotateHigh));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->dolphinModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;
@@ -703,7 +776,8 @@ void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animat
         break;
     }
     case kAnimRotateSuper: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->rotateSuper));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->rotateSuper));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->dolphinModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;
@@ -715,7 +789,8 @@ void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animat
         break;
     }
     case kAnimRotateOver: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->rotateOver));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->dolphinModel, (void*)(RoundDolNames->rotateOver));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->dolphinModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;
@@ -728,7 +803,8 @@ void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animat
     }
     // Capsule cases perform the same setup against the capsule model; playback advances elsewhere.
     case kAnimCapsuleLow: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->capsuleModel, (void*)(RoundDolNames->capsuleLow));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->capsuleModel, (void*)(RoundDolNames->capsuleLow));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->capsuleModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;
@@ -740,7 +816,8 @@ void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animat
         break;
     }
     case kAnimCapsuleMiddle: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->capsuleModel, (void*)(RoundDolNames->capsuleMiddle));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->capsuleModel, (void*)(RoundDolNames->capsuleMiddle));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->capsuleModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;
@@ -752,7 +829,8 @@ void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animat
         break;
     }
     case kAnimCapsuleHigh: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->capsuleModel, (void*)(RoundDolNames->capsuleHigh));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->capsuleModel, (void*)(RoundDolNames->capsuleHigh));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->capsuleModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;
@@ -764,7 +842,8 @@ void CRoundDol3D_SetAnimationByIndex(RoundDolReceiver* self, unsigned int animat
         break;
     }
     case kAnimCapsuleSuper: {
-        void* range = WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->capsuleModel, (void*)(RoundDolNames->capsuleSuper));
+        void* range =
+            WPuppet_FindAnimationRangeByName(AsCRoundDol3D(self)->capsuleModel, (void*)(RoundDolNames->capsuleSuper));
         AsCRoundDol3D(self)->animation = (unsigned int)range;
         void* model = AsCRoundDol3D(self)->capsuleModel;
         float firstFrame = ((RoundAnimationRangeView*)range)->firstFrame;

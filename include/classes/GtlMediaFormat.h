@@ -5,16 +5,16 @@
 
 class GtlMediaFormat {
 public:
-    int unk_0; // 0x0
-    unsigned int sourceByteLength; // 0x4
-    char name[0x80]; // 0x8
+    int unk_0;                        // 0x0
+    unsigned int sourceByteLength;    // 0x4
+    char name[0x80];                  // 0x8
     float showCounterFormatParameter; // 0x88
-    unsigned int initialReadOffset; // 0x8C
-    unsigned int sampleBufferSize; // 0x90
+    unsigned int initialReadOffset;   // 0x8C
+    unsigned int sampleBufferSize;    // 0x90
     char unk_94[0x4];
-    unsigned short unk_98; // 0x98
-    unsigned short unk_9A; // 0x9A
-    unsigned int transformWorkspaceCount; // 0x9C
+    unsigned short unk_98;                   // 0x98
+    unsigned short unk_9A;                   // 0x9A
+    unsigned int transformWorkspaceCount;    // 0x9C
     unsigned int splitPacketHeaderWordCount; // 0xA0
 };
 

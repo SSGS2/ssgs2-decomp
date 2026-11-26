@@ -1,11 +1,13 @@
-// Translation unit 0x804206E4-0x804207D4 (1 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
+// Completion of an asynchronous PADMEM operation: stores the result, maps the status code and
+// runs the registered completion callback.
+//
+// PadMemoryIo_CompleteAsyncOperation clears the pending operation after the callback returns.
 
 extern "C" {
 
 struct Unk804206E4 {
-    int unk0; // +0: handle word, untouched here; interpretation unresolved.
-    int completionReady; // +4: completion-ready flag (0 on submission, 1 on completion).
+    int unk0;                 // +0: handle word, untouched here; interpretation unresolved.
+    int completionReady;      // +4: completion-ready flag (0 on submission, 1 on completion).
     int requestedBytesOrZero; // +8: requested byte count on acceptance, cleared on error.
 };
 
@@ -15,11 +17,15 @@ void* g_padMemIoCallbackData;
 
 // PADMEM status meanings are unresolved; names identify the original numeric status.
 enum {
-    kCompletionReady = 1, kPadMemStatusBias = 7,
+    kCompletionReady = 1,
+    kPadMemStatusBias = 7,
     kPadMemSuccess = 0,
-    kPadMemStatusMinus1 = 0xC739, kPadMemStatusMinus2 = 0xC73A,
-    kPadMemStatusMinus3 = 0xC73B, kPadMemStatusMinus4 = 0xC73C,
-    kPadMemStatusMinus5 = 0xC73D, kPadMemStatusMinus6 = 0xC73E,
+    kPadMemStatusMinus1 = 0xC739,
+    kPadMemStatusMinus2 = 0xC73A,
+    kPadMemStatusMinus3 = 0xC73B,
+    kPadMemStatusMinus4 = 0xC73C,
+    kPadMemStatusMinus5 = 0xC73D,
+    kPadMemStatusMinus6 = 0xC73E,
     kPadMemStatusMinus7 = 0xC73F
 };
 
@@ -40,20 +46,39 @@ int PadMemoryIo_CompleteAsyncOperation(int, int resultCode) {
     // Bias [-7,0] to switch indices [0,7]; all other statuses map to the -2 error.
     unsigned int statusIndex = (unsigned int)(resultCode + kPadMemStatusBias);
     switch (statusIndex) {
-        case 7: completionResult = kPadMemSuccess; break;
-        case 6: completionResult = kPadMemStatusMinus1; break;
-        case 5: completionResult = kPadMemStatusMinus2; break;
-        case 4: completionResult = kPadMemStatusMinus3; break;
-        case 3: completionResult = kPadMemStatusMinus4; break;
-        case 2: completionResult = kPadMemStatusMinus5; break;
-        case 1: completionResult = kPadMemStatusMinus6; break;
-        case 0: completionResult = kPadMemStatusMinus7; break;
-        default: completionResult = kPadMemStatusMinus2; break;
+    case 7:
+        completionResult = kPadMemSuccess;
+        break;
+    case 6:
+        completionResult = kPadMemStatusMinus1;
+        break;
+    case 5:
+        completionResult = kPadMemStatusMinus2;
+        break;
+    case 4:
+        completionResult = kPadMemStatusMinus3;
+        break;
+    case 3:
+        completionResult = kPadMemStatusMinus4;
+        break;
+    case 2:
+        completionResult = kPadMemStatusMinus5;
+        break;
+    case 1:
+        completionResult = kPadMemStatusMinus6;
+        break;
+    case 0:
+        completionResult = kPadMemStatusMinus7;
+        break;
+    default:
+        completionResult = kPadMemStatusMinus2;
+        break;
     }
 
     if (g_padMemCompletionCallback != 0) {
         int requestedBytesOrZero = completedHandle->requestedBytesOrZero;
-        completionResult = g_padMemCompletionCallback(completionResult, requestedBytesOrZero, g_padMemAsyncHandle, g_padMemIoCallbackData);
+        completionResult = g_padMemCompletionCallback(completionResult, requestedBytesOrZero, g_padMemAsyncHandle,
+                                                      g_padMemIoCallbackData);
     }
 
     g_padMemAsyncHandle = 0;

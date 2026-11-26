@@ -5,8 +5,8 @@
 
 class ItemOverlayTreeNode {
 public:
-    void* left; // 0x0; CItemWindow_OnDestroy: +8 masked with ~1 for parent
-    void* right; // 0x4; CItemWindow_OnDestroy: +8 masked with ~1 for parent
+    void* left;                  // 0x0; CItemWindow_OnDestroy: +8 masked with ~1 for parent
+    void* right;                 // 0x4; CItemWindow_OnDestroy: +8 masked with ~1 for parent
     unsigned int parentAndColor; // 0x8; CItemWindow_OnDestroy: +8 masked with ~1 for parent
     char pad_C[0x4];
     void* overlay; // 0x10; CItemWindow_OnDestroy: +8 masked with ~1 for parent

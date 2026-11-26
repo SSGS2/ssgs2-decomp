@@ -2,7 +2,7 @@
 // timebomb and shared Stamp Hammer balloon selection/history. Factory/dispatch:
 // PartyItem_Create, PartyItemSlots_RebuildEffectParameters and PartyItems_ApplySelection
 // in party_goods_item_display.cpp; modifier schema: PartyItemModifiers.h.
-// Mod lookup: launch height -> Feather constructor + CGolfRule_StartBallFlightFromSample;
+// Mod lookup: launch height -> Feather constructor + CGolfRule::StartBallFlightFromSample;
 // club-distance/impact bonuses -> modifier consumer map below; hammer cone ->
 // kHammerTargetHalfConeRadians/SelectNearestBalloonInRange; release delay ->
 // s_stampHammerReleaseDelayTicks; random club badge -> item-11 contract below.
@@ -10,6 +10,7 @@
 // changing its storage changes all three. A future independent setting must split
 // the producer's use, not silently change the shared pool. No float rewrite here.
 #pragma push
+#include "classes/CBalloonSystem.h"
 #include "classes/CGolfDoc.h"
 #include "game/golfball.h"
 #include "classes/CPartyItemFeatherBadge.h"
@@ -19,11 +20,11 @@
 #include "classes/CPartyItemLuckyBracelet.h"
 #include "classes/CPartyItemPululuJarashi.h"
 #include "classes/CPartyItemRakugakiCrayon.h"
+#include "classes/CPartyItemRandomClub.h"
 #include "classes/CPartyItemSilentMisanga.h"
 #include "classes/CPartyItemStampHammer.h"
 #include "classes/CPartyItemTimebombBadge.h"
 #include "classes/CPartyItemTitanWristband.h"
-#include "classes/CPartyItemUnknown11.h"
 #include "classes/CSharedDoc.h"
 #include "classes/CWind.h"
 #include "classes/PartyItemModifiers.h"
@@ -31,7 +32,6 @@
 
 #define AsCGolfDoc(p) ((CGolfDoc*)(p))
 #define AsCPartyItemFeatherBadge(p) ((CPartyItemFeatherBadge*)(p))
-#define AsCPartyItemFireBantage(p) ((CPartyItemFireBantage*)(p))
 #define AsCPartyItemFujinUchiwa(p) ((CPartyItemFujinUchiwa*)(p))
 #define AsCPartyItemHurricaneBadge(p) ((CPartyItemHurricaneBadge*)(p))
 #define AsCPartyItemLuckyBracelet(p) ((CPartyItemLuckyBracelet*)(p))
@@ -41,20 +41,26 @@
 #define AsCPartyItemStampHammer(p) ((CPartyItemStampHammer*)(p))
 #define AsCPartyItemTimebombBadge(p) ((CPartyItemTimebombBadge*)(p))
 #define AsCPartyItemTitanWristband(p) ((CPartyItemTitanWristband*)(p))
-#define AsCPartyItemUnknown11(p) ((CPartyItemUnknown11*)(p))
 #define AsCSharedDoc(p) ((CSharedDoc*)(p))
 #define AsCWind(p) ((CWind*)(p))
 // View a borrowed modifier payload; offset zero is a numeric modifier, not a vtable.
-inline PartyItemModifiers* AsPartyItemModifiers(void* p) { return (PartyItemModifiers*)p; }
+inline PartyItemModifiers* AsPartyItemModifiers(void* p) {
+    return (PartyItemModifiers*)p;
+}
 // View the crayon's borrowed ribbon state without transferring ownership.
-inline PartyRibbonState* AsPartyRibbonState(void* p) { return (PartyRibbonState*)p; }
+inline PartyRibbonState* AsPartyRibbonState(void* p) {
+    return (PartyRibbonState*)p;
+}
 
 #include "game/singletons.h"
 #include "sdk_protos.h"
 #include "game/types.h"
+#include "classes/CFx.h"
 
 // Construct in existing storage; the container remains responsible for that storage.
-inline void* operator new(size_t, void* p) throw() { return p; }
+inline void* operator new(size_t, void* p) throw() {
+    return p;
+}
 // Placement-delete hook: construction failure does not free caller-owned storage.
 inline void operator delete(void*, void*) throw() {}
 
@@ -84,55 +90,84 @@ inline void operator delete(void*, void*) throw() {}
 // +54 tickle activity drives HUD scripts. Safe tuning bounds beyond these observed
 //     guards are unestablished; do not reinterpret quantities with different units.
 // Party item kinds are separate from pangya.iff type IDs (whose kind is typeId >> 26).
-// vfunc_3 prepares per-shot modifiers; vfunc_4 updates/applies an item for the
+// The pre-shot hook prepares per-shot modifiers; the apply hook updates or applies an item for the
 // supplied player index. Return 1 generally includes "no effect this call".
 // Modifier/ribbon pointers are borrowed. Gesture cooldowns, tickle decay and
 // timebomb elapsedTicks advance per invocation; these functions receive no dt.
 enum PartyItemKind {
-    kSilentMisanga = 1, kLuckyBracelet = 2, kTitanWristband = 3,
-    kFujinUchiwa = 4, kRakugakiCrayon = 5, kPululuJarashi = 6,
-    kStampHammer = 7, kHurricaneBadge = 8, kFeatherBadge = 9,
-    kTimebombBadge = 10, kPartyItem11 = 11
+    kSilentMisanga = 1,
+    kLuckyBracelet = 2,
+    kTitanWristband = 3,
+    kFujinUchiwa = 4,
+    kRakugakiCrayon = 5,
+    kPululuJarashi = 6,
+    kStampHammer = 7,
+    kHurricaneBadge = 8,
+    kFeatherBadge = 9,
+    kTimebombBadge = 10,
+    kPartyItem11 = 11
 };
 // Shared-player +0x1DC is the button-swing selection word; zero selects motion.
 // Evidence: CGolfRule enters MotionSwing when it is zero (golf_rule_round_flow_and_shot_sim.cpp).
-enum PartyControlMode { kPartyMotionControls = 0 };
-enum PartyTimebombShotPhase { kTimebombPhase0 = 0, kTimebombPhase2 = 2 };
-enum PartyItemUseMode { kPassiveItem = 0, kGestureItem = 1, kBadgeItem = 2 };
+enum PartyControlMode {
+    kPartyMotionControls = 0
+};
+enum PartyTimebombShotPhase {
+    kTimebombPhase0 = 0,
+    kTimebombPhase2 = 2
+};
+enum PartyItemUseMode {
+    kPassiveItem = 0,
+    kGestureItem = 1,
+    kBadgeItem = 2
+};
 enum PartyItemInput {
     kActionUsePartyItem = 0x15, // logical input action, not a Wii hardware button mask
-    kFanGesture = 0, kTickleGesture = 1, kHammerGesture = 2,
+    kFanGesture = 0,
+    kTickleGesture = 1,
+    kHammerGesture = 2,
     kGestureRumbleTicks = 3
 };
-enum PartyAttachmentOffsets { kFanAttachmentOffset = (int)&((CPartyItemFujinUchiwa*)0)->pad_030 };
 enum PartyItemTiming {
-    kFanEffectCooldownTicks = 45, kTitanRampLength = 5,
-    kTimebombTicksPerPeriod = 18, kDefaultTimebombPeriod = 30,
+    kFanEffectCooldownTicks = 45,
+    kTitanRampLength = 5,
+    kTimebombTicksPerPeriod = 18,
+    kDefaultTimebombPeriod = 30,
     kRibbonPointCount = 20
 };
-// Values/roles verified against CGolfRule_OnProcess/EnterState in golf_rule_round_flow_and_shot_sim.cpp.
+// Values/roles verified against CGolfRule::OnProcess/EnterState in golf_rule_round_flow_and_shot_sim.cpp.
 // Item gestures admit aiming, camera view/transition, and motion swing. Tickle also
 // admits button swing. Timebomb shot-state admission uses aiming/motion swing;
 // camera override and post-trigger continuation are separate (see EvaluateTimebombAdmission).
 enum PartyInputGolfState {
-    kPartyStateAim = 0x8, kPartyStateButtonSwing = 0x20,
-    kPartyStateCameraView = 0x100, kPartyStateCameraTransition = 0x200,
+    kPartyStateAim = 0x8,
+    kPartyStateButtonSwing = 0x20,
+    kPartyStateCameraView = 0x100,
+    kPartyStateCameraTransition = 0x200,
     kPartyStateMotionSwing = 0x08000000
 };
 enum PartyItemStateMask {
-    kPartyItemInputStates = kPartyStateAim | kPartyStateCameraView | kPartyStateCameraTransition | kPartyStateMotionSwing,
+    kPartyItemInputStates = kPartyStateAim | kPartyStateCameraView | kPartyStateCameraTransition |
+        kPartyStateMotionSwing,
     kTickleAdditionalState = kPartyStateButtonSwing,
     kTimebombCountStates = kPartyStateAim | kPartyStateMotionSwing
 };
 enum PartyEffectStringOffsets {
-    kHugeBallSound = 0, kFanSoundAlias = 0x18, kFanEffectSequence = 0x23,
-    kFanWindSound = 0x36, kCrayonSoundAlias = 0x4B,
-    kCrayonDrawSound = 0x52, kTickleSound = 0x6A
+    kHugeBallSound = 0,
+    kFanSoundAlias = 0x18,
+    kFanEffectSequence = 0x23,
+    kFanWindSound = 0x36,
+    kCrayonSoundAlias = 0x4B,
+    kCrayonDrawSound = 0x52,
+    kTickleSound = 0x6A
 };
 enum BalloonDequeLayout {
-    kPointersPerDequeBlock = 256, kDequeBlockShift = 8,
-    kDequeBlockMask = 255, kDequeBlockBytes = 0x400,
-    kDequeTrimThreshold = 512, kDequeInitialOffset = 128
+    kPointersPerDequeBlock = 256,
+    kDequeBlockShift = 8,
+    kDequeBlockMask = 255,
+    kDequeBlockBytes = 0x400,
+    kDequeTrimThreshold = 512,
+    kDequeInitialOffset = 128
 };
 
 // Gesture result consumed by the fan: steering and magnitude are separate floats.
@@ -146,17 +181,45 @@ struct WindAdjustmentView {
     float baseAdjustment[3];
     float additiveAdjustment[3];
 };
-struct CrayonRibbonActivity { char prefix[0x4C]; int drawing; };
-struct BalloonListNode { void* previous; void* next; unsigned int balloon; };
-struct BalloonListView { unsigned int count; void* sentinel; void* first; };
+struct CrayonRibbonActivity {
+    char prefix[0x4C];
+    int drawing;
+};
+struct BalloonListNode {
+    void* previous;
+    void* next;
+    unsigned int balloon;
+};
+struct BalloonListView {
+    unsigned int count;
+    void* sentinel;
+    void* first;
+};
 // Four shared-document player records begin after its 0x14-byte prefix.
 // The control-mode word is 0x1C8 bytes into each 0x1D4-byte record.
-struct SharedPlayerControlRecord { char prefix[0x1C8]; int buttonSwingSelected; char tail[8]; };
-struct SharedPlayerControls { char prefix[0x14]; SharedPlayerControlRecord players[4]; };
+struct SharedPlayerControlRecord {
+    char prefix[0x1C8];
+    int buttonSwingSelected;
+    char tail[8];
+};
+struct SharedPlayerControls {
+    char prefix[0x14];
+    SharedPlayerControlRecord players[4];
+};
 typedef char PlayerControlStrideCheck[sizeof(SharedPlayerControlRecord) == 0x1D4 ? 1 : -1];
-struct PartyInstanceSettings { char prefix[0xA]; unsigned char mode; };
-struct PartyInstance { char prefix[4]; PartyInstanceSettings* settings; };
-struct OwnedContainerBuffer { void* data; unsigned int allocator; int count; };
+struct PartyInstanceSettings {
+    char prefix[0xA];
+    unsigned char mode;
+};
+struct PartyInstance {
+    char prefix[4];
+    PartyInstanceSettings* settings;
+};
+struct OwnedContainerBuffer {
+    void* data;
+    unsigned int allocator;
+    int count;
+};
 #define AsFanGestureResult(p) ((FanGestureResult*)(p))
 #define AsWindAdjustment(p) ((WindAdjustmentView*)(p))
 #define AsBalloonListNode(p) ((BalloonListNode*)(p))
@@ -165,8 +228,6 @@ struct OwnedContainerBuffer { void* data; unsigned int allocator; int count; };
 
 // ---- merged from party_item_gameplay_hooks.cpp ----
 namespace ns0 {
-// Translation unit 0x80259080-0x8025A5D8 (30 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -180,16 +241,12 @@ void party_CPartyItemRakugakiCrayon_vfunc_3();
 void party_CPartyItemPululuJarashi_vfunc_3(void* p);
 
 // Copy Fire Bantage numeric payload + impact-zone width bonus for the owner only.
-void CPartyItemFireBantage_ApplyOwnerModifiers(void* self, void* modifiers, int playerIndex);
 
 // Copy Pangya-zone width bonus and unresolved Lucky Bracelet payload for the owner only.
-void CPartyItemLuckyBracelet_ApplyOwnerModifiers(void* self, void* modifiers, int playerIndex);
 
 // Apply the active owner's Fire Bantage payload and impact-zone width bonus.
-int CPartyItemFireBantage_ApplyModifiersIfActive(void* self, void* /*unused*/, void* modifiers, int playerIndex);
 
 // Apply the active owner's Pangya-zone width bonus and unresolved Lucky Bracelet payload.
-int CPartyItemLuckyBracelet_ApplyModifiersIfActive(void* self, void* /*unused*/, void* modifiers, int playerIndex);
 
 // Apply the three Silent Misanga owner modifiers while active.
 int party_CPartyItemSilentMisanga_vfunc_4(void* self, void* /*unused*/, void* modifiers, int playerIndex);
@@ -205,11 +262,11 @@ extern char __vt__Q25party23CPartyItemPululuJarashi[];
 extern char __vt__Q25party21CPartyItemStampHammer[];
 extern char __vt__Q25party23CPartyItemLuckyBracelet[];
 extern const float kFloat_0_PartyItem;
-extern const float kFloat_5_TitanBase; // 5.0: initial Titan base value
-extern const float kFloat_30_PartyBadge; // 30.0: Titan ramp modifier / badge parameter
+extern const float kFloat_5_TitanBase;        // 5.0: initial Titan base value
+extern const float kFloat_30_PartyBadge;      // 30.0: Titan ramp modifier / badge parameter
 extern const float kFloat_4_TitanRadiusRatio; // 4.0: Titan collision-radius increase ratio
-extern const float kFloat_0_5_PartyEffects; // 0.5: party effect sound volume / crayon opacity
-extern const float kFloat_0_7_PartyMisanga; // 0.7: Silent Misanga secondary modifier
+extern const float kFloat_0_5_PartyEffects;   // 0.5: party effect sound volume / crayon opacity
+extern const float kFloat_0_7_PartyMisanga;   // 0.7: Silent Misanga secondary modifier
 extern char __vt__Q25party24CPartyItemTitanWristband[];
 extern char __vt__Q25party23CPartyItemSilentMisanga[];
 extern const float kFloat_1_PartyItem;
@@ -219,8 +276,7 @@ extern char partyGoodsEffectStrings[];
 extern void* g_soundManager;
 void FxAttachment_Init(void* self, const char* name);
 void __as__7WVectorFRC7WVector(void* self, void* other);
-void* CWind_GetInstance(void* self);
-void* CWind_GetWindVector(void* self, void* other);
+extern "C" void GetWindVector__5CWindFv(void* result, const void* self);
 void Sound_StopByAlias(void* manager, const char* name);
 void __dla__FPv(void* ptr);
 void* __nw__FUl(unsigned int size);
@@ -239,22 +295,23 @@ void PartyItem_ResetIds(void* self);
 int PartyItemMotion_DetectGesture(void* self, int value);
 void TrailRibbon_SetPointerPosition(void* self, void* arg);
 int SoundManager_IsAliasPrefixOrStreamStemActive(void* manager, const char* name);
-void Sound_PlayByName(void* manager, const char* name, int a, int b, const char* other, int c, float minimumGain, float attenuationRange, float volumeScale);
+void Sound_PlayByName(void* manager, const char* name, int a, int b, const char* other, int c, float minimumGain,
+                      float attenuationRange, float volumeScale);
 extern signed char s_inputManagerInitialized;
 extern char s_gameInputManager[];
 extern char s_inputManagerDtorRegistration_partyItems[];
 extern const char partyCrayonPlayerColors[];
 extern char __vt__Q25party24CPartyItemRakugakiCrayon[];
-extern const float kFloat_15_PartyEffects; // 15.0: ribbon width / minimum Hurricane value
-extern const float kFloat_200_PartyEffects; // 200.0: party sound playback parameter
-extern float g_tickleStrengthPerGesture; // 0.1 strength gained per tickle gesture
+extern const float kFloat_15_PartyEffects;   // 15.0: ribbon width / minimum Hurricane value
+extern const float kFloat_200_PartyEffects;  // 200.0: party sound playback parameter
+extern float g_tickleStrengthPerGesture;     // 0.1 strength gained per tickle gesture
 extern float g_tickleStrengthDecayPerUpdate; // 0.02 strength lost per update
 extern float s_fanSteeringDeadZone;
 extern float g_fanGestureWindSpeedScale; // 0.32 fan gesture-to-wind-speed scale
 extern float kFloat_0_01_FanHeading;
 extern const float kFanGestureMinimumMagnitude; // 10.0: minimum fan gesture magnitude
 extern const float kFanMaximumHeadingDeviation; // pi/2: maximum fan heading deviation from aim
-extern const float kFanMaximumWindSpeed; // 9.0: maximum fan wind speed
+extern const float kFanMaximumWindSpeed;        // 9.0: maximum fan wind speed
 
 void* PartyItemSlots_GetInstance();
 void* Object_GetSlotEntry(void* context, void* data);
@@ -262,24 +319,28 @@ void* Matrix_SetAxisRotation(void* out, float angle, int flag);
 void* Matrix_TransformPoint(void* out, void* a, void* b);
 void __amu__7WVectorFf(void* self, float scale);
 void* __mi__FRC7WVectorRC7WVector(void* out, void* a, void* b);
-int CFx_SetWindVector(void* self, void* value);
-int CFx_HasSequence(void* self, unsigned int key);
-void* CFx_CreateAttachedEffect(void* self, void* a, const char* b, void* c, void* d, void* e);
 int Input_IsActionButtonDown(void* self, int action, void* data);
-void Sound_PlayByName(void* manager, const char* name, int a, int b, const char* other, int c, float minimumGain, float attenuationRange, float volumeScale);
+void Sound_PlayByName(void* manager, const char* name, int a, int b, const char* other, int c, float minimumGain,
+                      float attenuationRange, float volumeScale);
 extern void* g_fx;
 extern char s_cameraTransform[];
 
 typedef Vec3f Vec3;
-struct Vec3i { int x, y, z; };
+struct Vec3i {
+    int x, y, z;
+};
 
 #pragma opt_propagation off
 #pragma opt_common_subs off
 #pragma opt_lifetimes off
 #pragma opt_strength_reduction off
 #pragma use_lmw_stmw on
-enum FanGestureBranch { kFanNoGesture = 0, kFanNeutralSteering = 1,
-    kFanPositiveSteering = 2, kFanNegativeSteering = 3 };
+enum FanGestureBranch {
+    kFanNoGesture = 0,
+    kFanNeutralSteering = 1,
+    kFanPositiveSteering = 2,
+    kFanNegativeSteering = 3
+};
 // Codes identify the steering branch; only zero/nonzero is consumed below.
 // Apply the owner fan gesture to opponents as bounded wind heading/speed and refresh its effects.
 int CPartyItemFujinUchiwa_UpdateOpponentWind(void* self, void* unused, void* out, int index);
@@ -375,8 +436,6 @@ int CPartyItemRakugakiCrayon_DrawRibbon(void* a);
 
 // ---- merged from party_item_gameplay_hooks.cpp ----
 namespace ns1 {
-// Translation unit 0x8025A5D8-0x8025BBD0 (26 functions; a bundle of decomp-toolkit's units; the original file edges inside it are unknown).
-// Function names: config/R2PE9B/symbols.txt. Plain names go inside extern "C".
 
 extern "C" {
 
@@ -395,9 +454,9 @@ extern const float kFloat_30_PartyBadge; // 30.0: Titan ramp modifier / badge pa
 extern const float kFloat_1_PartyItem;
 extern const float kFloat_15_PartyEffects; // 15.0: ribbon width / minimum Hurricane value
 extern const float kFloat_0_PartyItem;
-extern const float kPi_PartyHammer; // pi: hammer facing rotation
-extern const float kNegativePi_PartyHammer; // -pi: lower signed-angle bound
-extern const float kTwoPi_PartyHammer; // 2*pi: full-turn angle
+extern const float kPi_PartyHammer;              // pi: hammer facing rotation
+extern const float kNegativePi_PartyHammer;      // -pi: lower signed-angle bound
+extern const float kTwoPi_PartyHammer;           // 2*pi: full-turn angle
 extern const float kHammerTargetHalfConeRadians; // 0.52359879 rad (pi/6): increase to admit wider angles
 // 805E03E8 is an eight-byte pool slot with leading float32, NOT a double.
 // Both selection passes share it; the failed-seed fallback also uses its numeric
@@ -413,7 +472,6 @@ void appFreeUni__FPv(void*);
 void __dl__FPv(void*);
 unsigned int time(int);
 void srand(unsigned int);
-int rand(void);
 int PartyItemSlots_GetInstance(void);
 int Object_GetSlotEntry(int, int);
 void InputManager_Dtor(void);
@@ -478,29 +536,38 @@ struct HammerSelf {
     char prefix[0x10];
     float direction[3];
 };
-enum HammerDirectionLayout { kHammerDirectionFloatIndex = (int)&((HammerSelf*)0)->direction / sizeof(float) };
+enum HammerDirectionLayout {
+    kHammerDirectionFloatIndex = (int)&((HammerSelf*)0)->direction / sizeof(float)
+};
 
 struct HammerVector {
     float x, y, z;
     // Set the local hammer direction before transforming it into world space.
-    void set(float a, float b, float c) { x = a; y = b; z = c; }
+    void set(float a, float b, float c) {
+        x = a;
+        y = b;
+        z = c;
+    }
 };
 
 extern signed char s_inputManagerInitialized;
 extern char s_gameInputManager[];
 
 // Borrow the current golf document; the shared document must already exist.
-inline void* PartyGolfDocument() { return (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc); }
+inline void* PartyGolfDocument() {
+    return (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
+}
 
 // Require the party-item action and a recognized hammer gesture.
 inline int hammerHeld(int actor) {
     int result;
     do {
-        if (Input_IsActionButtonDown(Sing_805DC5C8(), kActionUsePartyItem, actor) == 0) {
+        if (Input_IsActionButtonDown(GetInputManagerSlot(), kActionUsePartyItem, actor) == 0) {
             result = 0;
             break;
         }
-        result = PartyItemMotion_DetectGesture(Object_GetSlotEntry(PartyItemSlots_GetInstance(), actor), kHammerGesture);
+        result =
+            PartyItemMotion_DetectGesture(Object_GetSlotEntry(PartyItemSlots_GetInstance(), actor), kHammerGesture);
     } while (0);
     return result;
 }
@@ -520,12 +587,6 @@ inline void** hammerBlock(BalloonDeque* q, void** blockp) {
 
 // Hammer pre-shot hook; shared queue reset occurs in its initialization hook.
 void party_CPartyItemStampHammer_vfunc_3(void);
-
-// Aim the hammer, queue a struck balloon and release queued balloons after the cooldown.
-int CPartyItemStampHammer_UpdateBalloons(void* self, int, int, int index, int suppressHistoryRelease);
-
-// Choose a shared random wind modifier once; apply owner/opponent badge fields.
-void CPartyItemHurricaneBadge_ApplyWindOverrides(void* self, void* out, int index);
 
 // Release the shared hammer balloon deque and clear the selected target.
 void CBalloonSystem_DestroySharedQueue(void);
@@ -578,8 +639,10 @@ inline void dequeIterAt(volatile DequeIter* it, BalloonDeque* q, unsigned int po
     ((volatile DequeRaw*)&raw)->end = endp;
     int cap = endp - begin;
     int idx = (int)(pos >> 8) + (startp - begin);
-    if (idx < 0) idx += cap;
-    else if (idx >= cap) idx -= cap;
+    if (idx < 0)
+        idx += cap;
+    else if (idx >= cap)
+        idx -= cap;
     void** blockp = ((volatile DequeRaw*)&raw)->begin + idx;
     void** rb = ((volatile DequeRaw*)&raw)->begin;
     void** rs = ((volatile DequeRaw*)&raw)->start;
@@ -605,8 +668,10 @@ inline unsigned int* dequeEndElem(BalloonDeque* q, unsigned int pos) {
     ((volatile DequeRaw*)&raw)->end = endp;
     int cap = endp - begin;
     int idx = (int)(pos >> 8) + (startp - begin);
-    if (idx < 0) idx += cap;
-    else if (idx >= cap) idx -= cap;
+    if (idx < 0)
+        idx += cap;
+    else if (idx >= cap)
+        idx -= cap;
     void** blockp = ((volatile DequeRaw*)&raw)->begin + idx;
     ((volatile DequeRaw*)&raw)->cur = blockp;
     unsigned int* base = q->blockCount == 0 ? 0 : (unsigned int*)*blockp;
@@ -627,7 +692,8 @@ inline bool dequeContains(const unsigned int* value) {
         v->elem = v->elem + 1;
         if (v->elem == (unsigned int*)((char*)*v->cur + kDequeBlockBytes)) {
             v->cur = v->cur + 1;
-            if (v->cur == v->end) v->cur = v->begin;
+            if (v->cur == v->end)
+                v->cur = v->begin;
             v->elem = (unsigned int*)*v->cur;
         }
     }
@@ -648,20 +714,8 @@ void* Container_GetMember8(void* self);
 // Hurricane update hook; its modifier is assigned by the pre-shot hook.
 int party_CPartyItemHurricaneBadge_vfunc_4(void);
 
-// Initialize the Hurricane wind range to 15-30 and seed the random generator.
-void* CPartyItemHurricaneBadge_Ctor(void* self, int size);
-
-// Initialize owner spin limits and a shared additive launch-velocity bonus of 1.
-void* CPartyItemFeatherBadge_Ctor(void* self, int size);
-
 // Reset the elapsed timebomb ticks before a shot.
 void party_CPartyItemTimebombBadge_vfunc_3(void* self);
-
-// Initialize a timebomb badge with elapsed zero and period 30.
-void* CPartyItemTimebombBadge_Ctor(void* self, int size);
-
-// Destroy the party-item base and optionally free the item allocation.
-void* CPartyItemHurricaneBadge_dtor(void* self, int shouldDelete);
 
 // Destroy the party-item base and optionally free the item allocation.
 void* party_CPartyItemFeatherBadge_dtor(void* self, int shouldDelete);
@@ -669,17 +723,9 @@ void* party_CPartyItemFeatherBadge_dtor(void* self, int shouldDelete);
 // Destroy the party-item base and optionally free the item allocation.
 void* party_CPartyItemTimebombBadge_dtor(void* self, int shouldDelete);
 
-// Initialize item 11's one-shot random-club latch and seed the shared C RNG.
-void* CPartyItemRandomClub_Ctor(void* self, int size);
-
-// Destroy the party-item base and optionally free the item allocation.
-void* CPartyItemRandomClub_dtor(void* self, int shouldDelete);
-
 // Copy owner spin overrides; publish the additive launch-velocity bonus for every player.
-void CPartyItemFeatherBadge_ApplyModifiersToPlayer(void* self, void* out, int index);
 
 // While active, copy owner spin limits and every player's additive launch-velocity bonus.
-int CPartyItemFeatherBadge_ApplyModifiersIfActive(void* self, int, void* out, int index);
 
 // Clear the shared badge activation word (Feather active / item-11 applied latch).
 void PartyItem_ClearActivationWord(void* self);
@@ -696,13 +742,14 @@ extern "C" {
 #pragma push
 namespace ns0 {
 // Copy Fire Bantage numeric payload + impact-zone width bonus for the owner only.
-void CPartyItemFireBantage_ApplyOwnerModifiers(void* self, void* modifiers, int playerIndex) {
-    if (playerIndex != AsCPartyItemFireBantage(self)->ownerIndex) return;
+void CPartyItemFireBantage::ApplyOwnerModifiers(void* modifiers, int playerIndex) {
+    if (playerIndex != ownerIndex)
+        return;
     // Fire Bantage +14 -> dimensionless club-distance rate at modifier +00;
     // see GolfParameter_ResolveFloat's party-mode/non-putter gates in club_selection_and_shot_params.cpp.
     // +04 independently widens good/poor impact half-widths, not club distance.
-    AsPartyItemModifiers(modifiers)->clubDistanceBonusRate = AsCPartyItemFireBantage(self)->clubDistanceBonusRate;
-    AsPartyItemModifiers(modifiers)->impactZoneWidthBonus = AsCPartyItemFireBantage(self)->impactZoneWidthBonus;
+    AsPartyItemModifiers(modifiers)->clubDistanceBonusRate = clubDistanceBonusRate;
+    AsPartyItemModifiers(modifiers)->impactZoneWidthBonus = impactZoneWidthBonus;
 }
 }
 #pragma pop
@@ -710,11 +757,11 @@ void CPartyItemFireBantage_ApplyOwnerModifiers(void* self, void* modifiers, int 
 #pragma push
 namespace ns0 {
 // Apply the active owner's Fire Bantage payload and impact-zone width bonus.
-int CPartyItemFireBantage_ApplyModifiersIfActive(void* self, void* /*unused*/, void* modifiers, int playerIndex) {
-    if (AsCPartyItemFireBantage(self)->active != 0) {
-        if (playerIndex == AsCPartyItemFireBantage(self)->ownerIndex) {
-            AsPartyItemModifiers(modifiers)->clubDistanceBonusRate = AsCPartyItemFireBantage(self)->clubDistanceBonusRate;
-            AsPartyItemModifiers(modifiers)->impactZoneWidthBonus = AsCPartyItemFireBantage(self)->impactZoneWidthBonus;
+int CPartyItemFireBantage::ApplyModifiersIfActive(void* /*unused*/, void* modifiers, int playerIndex) {
+    if (active != 0) {
+        if (playerIndex == ownerIndex) {
+            AsPartyItemModifiers(modifiers)->clubDistanceBonusRate = clubDistanceBonusRate;
+            AsPartyItemModifiers(modifiers)->impactZoneWidthBonus = impactZoneWidthBonus;
         }
     }
     return 1;
@@ -728,24 +775,22 @@ int CPartyItemFireBantage_ApplyModifiersIfActive(void* self, void* /*unused*/, v
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
-// Initialize inactive Silent Misanga owner modifiers and its enable flag.
-void* CPartyItemSilentMisanga_Ctor(void* self, void* arg) {
+// Initialize an inactive Silent Misanga and its three owner modifiers.
+CPartyItemSilentMisanga::CPartyItemSilentMisanga(void* arg) {
+    using namespace ns0;
     float v0;
     float v1;
     float v2;
-    PartyIItem_ctor(self, arg, kSilentMisanga, kPassiveItem);
+    PartyIItem_ctor(this, arg, kSilentMisanga, kPassiveItem);
     v2 = kFloat_0_5_PartyEffects;
-    AsCPartyItemSilentMisanga(self)->vtbl = __vt__Q25party23CPartyItemSilentMisanga;
+    vtbl = __vt__Q25party23CPartyItemSilentMisanga;
     v1 = kFloat_0_7_PartyMisanga;
     v0 = kFloat_1_PartyItem;
-    AsCPartyItemSilentMisanga(self)->active = 0;
-    AsCPartyItemSilentMisanga(self)->oneMeterWindEnabled = 1;
-    AsCPartyItemSilentMisanga(self)->pangyaZoneWidthBonus = v2;
-    AsCPartyItemSilentMisanga(self)->gaugeSpeedMultiplier = v1;
-    AsCPartyItemSilentMisanga(self)->impactZoneWidthBonus = v0;
-    return self;
-}
+    active = 0;
+    oneMeterWindEnabled = 1;
+    pangyaZoneWidthBonus = v2;
+    gaugeSpeedMultiplier = v1;
+    impactZoneWidthBonus = v0;
 }
 #pragma pop
 
@@ -760,7 +805,8 @@ namespace ns0 {
 void* party_CPartyItemSilentMisanga_dtor(void* self, int deletingFlag) {
     if (self != 0) {
         party_IItem_dtor(self, 0);
-        if (deletingFlag > 0) __dl__FPv(self);
+        if (deletingFlag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -776,7 +822,8 @@ void* party_CPartyItemSilentMisanga_dtor(void* self, int deletingFlag) {
 namespace ns0 {
 // Select Silent Misanga owner modifiers using the current player input-mode word.
 void party_CPartyItemSilentMisanga_vfunc_3(void* a, void* dest, int index, int unused) {
-    if (index != AsCPartyItemSilentMisanga(a)->ownerIndex) return;
+    if (index != AsCPartyItemSilentMisanga(a)->ownerIndex)
+        return;
     AsPartyItemModifiers(dest)->impactZoneWidthBonus = AsCPartyItemSilentMisanga(a)->impactZoneWidthBonus;
     void* manager = g_sharedDoc;
     void* owner = (*(void**)&AsCSharedDoc(manager)->golfDoc);
@@ -802,9 +849,12 @@ namespace ns0 {
 int party_CPartyItemSilentMisanga_vfunc_4(void* self, void* /*unused*/, void* modifiers, int playerIndex) {
     if (AsCPartyItemSilentMisanga(self)->active != 0) {
         if (playerIndex == AsCPartyItemSilentMisanga(self)->ownerIndex) {
-            AsPartyItemModifiers(modifiers)->pangyaZoneWidthBonus = AsCPartyItemSilentMisanga(self)->pangyaZoneWidthBonus;
-            AsPartyItemModifiers(modifiers)->gaugeSpeedMultiplier = AsCPartyItemSilentMisanga(self)->gaugeSpeedMultiplier;
-            AsPartyItemModifiers(modifiers)->impactZoneWidthBonus = AsCPartyItemSilentMisanga(self)->impactZoneWidthBonus;
+            AsPartyItemModifiers(modifiers)->pangyaZoneWidthBonus =
+                AsCPartyItemSilentMisanga(self)->pangyaZoneWidthBonus;
+            AsPartyItemModifiers(modifiers)->gaugeSpeedMultiplier =
+                AsCPartyItemSilentMisanga(self)->gaugeSpeedMultiplier;
+            AsPartyItemModifiers(modifiers)->impactZoneWidthBonus =
+                AsCPartyItemSilentMisanga(self)->impactZoneWidthBonus;
         }
     }
     return 1;
@@ -818,17 +868,15 @@ int party_CPartyItemSilentMisanga_vfunc_4(void* self, void* /*unused*/, void* mo
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
 // Initialize an inactive Lucky Bracelet with both modifier values set to one.
-void* CPartyItemLuckyBracelet_Ctor(void* self, void* arg) {
-    PartyIItem_ctor(self, arg, kLuckyBracelet, kPassiveItem);
+CPartyItemLuckyBracelet::CPartyItemLuckyBracelet(void* arg) {
+    using namespace ns0;
+    PartyIItem_ctor(this, arg, kLuckyBracelet, kPassiveItem);
     float value = kFloat_1_PartyItem;
-    AsCPartyItemLuckyBracelet(self)->vtbl = __vt__Q25party23CPartyItemLuckyBracelet;
-    AsCPartyItemLuckyBracelet(self)->active = 0;
-    AsCPartyItemLuckyBracelet(self)->pangyaZoneWidthBonus = value;
-    AsCPartyItemLuckyBracelet(self)->positiveShotOutcomeBonusRate = value;
-    return self;
-}
+    vtbl = __vt__Q25party23CPartyItemLuckyBracelet;
+    active = 0;
+    pangyaZoneWidthBonus = value;
+    positiveShotOutcomeBonusRate = value;
 }
 #pragma pop
 
@@ -838,27 +886,23 @@ void* CPartyItemLuckyBracelet_Ctor(void* self, void* arg) {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
-// Destroy the party-item base and optionally free the item allocation.
-void* CPartyItemLuckyBracelet_dtor(void* self, int deletingFlag) {
-    if (self != 0) {
-        party_IItem_dtor(self, 0);
-        if (deletingFlag > 0) __dl__FPv(self);
-    }
-    return self;
-}
+// Release the party-item base; the compiler adds the delete-if-requested wrapper.
+CPartyItemLuckyBracelet::~CPartyItemLuckyBracelet() {
+    using namespace ns0;
+    party_IItem_dtor(this, 0);
 }
 #pragma pop
 
 #pragma push
 namespace ns0 {
 // Copy Pangya-zone width bonus and unresolved Lucky Bracelet payload for the owner only.
-void CPartyItemLuckyBracelet_ApplyOwnerModifiers(void* self, void* modifiers, int playerIndex) {
-    if (playerIndex != AsCPartyItemLuckyBracelet(self)->ownerIndex) return;
-    AsPartyItemModifiers(modifiers)->pangyaZoneWidthBonus = AsCPartyItemLuckyBracelet(self)->pangyaZoneWidthBonus;
+void CPartyItemLuckyBracelet::ApplyOwnerModifiers(void* modifiers, int playerIndex) {
+    if (playerIndex != ownerIndex)
+        return;
+    AsPartyItemModifiers(modifiers)->pangyaZoneWidthBonus = pangyaZoneWidthBonus;
     // Lucky Bracelet +18 -> modifier payload +10: fractional bonus applied only
     // to positive shot-outcome deltas (GolfRule_ApplyShotOutcomeModifier).
-    AsPartyItemModifiers(modifiers)->positiveShotOutcomeBonusRate = AsCPartyItemLuckyBracelet(self)->positiveShotOutcomeBonusRate;
+    AsPartyItemModifiers(modifiers)->positiveShotOutcomeBonusRate = positiveShotOutcomeBonusRate;
 }
 }
 #pragma pop
@@ -866,11 +910,11 @@ void CPartyItemLuckyBracelet_ApplyOwnerModifiers(void* self, void* modifiers, in
 #pragma push
 namespace ns0 {
 // Apply the active owner's Pangya-zone width bonus and unresolved Lucky Bracelet payload.
-int CPartyItemLuckyBracelet_ApplyModifiersIfActive(void* self, void* /*unused*/, void* modifiers, int playerIndex) {
-    if (AsCPartyItemLuckyBracelet(self)->active != 0) {
-        if (playerIndex == AsCPartyItemLuckyBracelet(self)->ownerIndex) {
-            AsPartyItemModifiers(modifiers)->pangyaZoneWidthBonus = AsCPartyItemLuckyBracelet(self)->pangyaZoneWidthBonus;
-            AsPartyItemModifiers(modifiers)->positiveShotOutcomeBonusRate = AsCPartyItemLuckyBracelet(self)->positiveShotOutcomeBonusRate;
+int CPartyItemLuckyBracelet::ApplyModifiersIfActive(void* /*unused*/, void* modifiers, int playerIndex) {
+    if (active != 0) {
+        if (playerIndex == ownerIndex) {
+            AsPartyItemModifiers(modifiers)->pangyaZoneWidthBonus = pangyaZoneWidthBonus;
+            AsPartyItemModifiers(modifiers)->positiveShotOutcomeBonusRate = positiveShotOutcomeBonusRate;
         }
     }
     return 1;
@@ -884,21 +928,19 @@ int CPartyItemLuckyBracelet_ApplyModifiersIfActive(void* self, void* /*unused*/,
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
 // Initialize the ball-size effect with a five-step ramp at either flight boundary.
-void* CPartyItemTitanWristband_Ctor(void* self, void* arg) {
-    PartyIItem_ctor(self, arg, kTitanWristband, kPassiveItem);
+CPartyItemTitanWristband::CPartyItemTitanWristband(void* arg) {
+    using namespace ns0;
+    PartyIItem_ctor(this, arg, kTitanWristband, kPassiveItem);
     float v0, v1, v2;
     v2 = kFloat_5_TitanBase;
     v1 = kFloat_30_PartyBadge;
     v0 = kFloat_4_TitanRadiusRatio;
-    AsCPartyItemTitanWristband(self)->vtbl = __vt__Q25party24CPartyItemTitanWristband;
-    AsCPartyItemTitanWristband(self)->baseValue = v2;
-    AsCPartyItemTitanWristband(self)->maximumRampModifier = v1;
-    AsCPartyItemTitanWristband(self)->collisionRadiusIncreaseRatio = v0;
-    AsCPartyItemTitanWristband(self)->rampLength = kTitanRampLength;
-    return self;
-}
+    vtbl = __vt__Q25party24CPartyItemTitanWristband;
+    baseValue = v2;
+    maximumRampModifier = v1;
+    collisionRadiusIncreaseRatio = v0;
+    rampLength = kTitanRampLength;
 }
 #pragma pop
 
@@ -915,7 +957,8 @@ void* party_CPartyItemTitanWristband_dtor(void* self, int deletingFlag) {
         AsCPartyItemTitanWristband(self)->vtbl = __vt__Q25party24CPartyItemTitanWristband;
         BalloonCollision_ResetBallRadius();
         party_IItem_dtor(self, 0);
-        if (deletingFlag > 0) __dl__FPv(self);
+        if (deletingFlag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -953,38 +996,56 @@ namespace ns0 {
 // Ramp the owner ball-size effect across the first/last five event-index steps.
 int party_CPartyItemTitanWristband_vfunc_4(void* self, void* unused, void* destination, int index) {
     void* item = InstanceTable_Get(self);
-    if (((PartyInstance*)item)->settings->mode == 3) return 1;
-    if (AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] == -1) return 1;
+    if (((PartyInstance*)item)->settings->mode == 3)
+        return 1;
+    if (AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] == -1)
+        return 1;
     if (index == AsCPartyItemTitanWristband(self)->ownerIndex) {
-    if (AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] == 0 ||
-        AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] == -1) {
-        BalloonCollision_ResetBallRadius();
-        AsPartyItemModifiers(destination)->ballScaleBonus = kFloat_0_PartyItem;
-    } else if (AsCPartyItemTitanWristband(self)->rampLength >= AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] &&
-               AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] > 0) {
-        if (AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] == 1)
-            ((void (*)(void*, const char*, int, int, int, int, float, float, float))Sound_PlayByName)(g_soundManager, partyGoodsEffectStrings, 0, 0, 0, 0, kFloat_0_5_PartyEffects, kFloat_200_PartyEffects, kFloat_1_PartyItem);
-        AsPartyItemModifiers(destination)->ballScaleBonus =
-            AsCPartyItemTitanWristband(self)->maximumRampModifier / (float)AsCPartyItemTitanWristband(self)->rampLength *
-            (float)AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0];
-        float vy = (float)(AsCPartyItemTitanWristband(self)->baseValue *
-                           (kDouble_1_TitanWristband + AsCPartyItemTitanWristband(self)->collisionRadiusIncreaseRatio / (float)AsCPartyItemTitanWristband(self)->rampLength *
-                                      (float)AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0]));
-        Balloon_SetBallCollisionRadius(vy);
-    } else if (AsCPartyItemTitanWristband(self)->rampLength >=
-                   AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] - AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] &&
-               AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] - AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] > 0) {
-        AsPartyItemModifiers(destination)->ballScaleBonus =
-            AsCPartyItemTitanWristband(self)->maximumRampModifier / (float)AsCPartyItemTitanWristband(self)->rampLength *
-            (float)(AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] - AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0]);
-        float vz = (float)(AsCPartyItemTitanWristband(self)->baseValue *
-                           (kDouble_1_TitanWristband + AsCPartyItemTitanWristband(self)->collisionRadiusIncreaseRatio / (float)AsCPartyItemTitanWristband(self)->rampLength *
-                                      (float)(AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] - AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0])));
-        Balloon_SetBallCollisionRadius(vz);
-    } else if (AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] - AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] == 0) {
-        BalloonCollision_ResetBallRadius();
-        AsPartyItemModifiers(destination)->ballScaleBonus = kFloat_0_PartyItem;
-    }
+        if (AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] == 0 ||
+            AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] == -1) {
+            BalloonCollision_ResetBallRadius();
+            AsPartyItemModifiers(destination)->ballScaleBonus = kFloat_0_PartyItem;
+        } else if (AsCPartyItemTitanWristband(self)->rampLength >=
+                       AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] &&
+                   AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] > 0) {
+            if (AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] == 1)
+                ((void (*)(void*, const char*, int, int, int, int, float, float, float))Sound_PlayByName)(
+                    g_soundManager, partyGoodsEffectStrings, 0, 0, 0, 0, kFloat_0_5_PartyEffects,
+                    kFloat_200_PartyEffects, kFloat_1_PartyItem);
+            AsPartyItemModifiers(destination)->ballScaleBonus =
+                AsCPartyItemTitanWristband(self)->maximumRampModifier /
+                (float)AsCPartyItemTitanWristband(self)->rampLength *
+                (float)AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0];
+            float vy =
+                (float)(AsCPartyItemTitanWristband(self)->baseValue *
+                        (kDouble_1_TitanWristband + AsCPartyItemTitanWristband(self)->collisionRadiusIncreaseRatio /
+                                                        (float)AsCPartyItemTitanWristband(self)->rampLength *
+                                                        (float)AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0]));
+            Balloon_SetBallCollisionRadius(vy);
+        } else if (AsCPartyItemTitanWristband(self)->rampLength >=
+                       AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] -
+                           AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] &&
+                   AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] -
+                           AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] >
+                       0) {
+            AsPartyItemModifiers(destination)->ballScaleBonus =
+                AsCPartyItemTitanWristband(self)->maximumRampModifier /
+                (float)AsCPartyItemTitanWristband(self)->rampLength *
+                (float)(AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] -
+                        AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0]);
+            float vz = (float)(AsCPartyItemTitanWristband(self)->baseValue *
+                               (kDouble_1_TitanWristband +
+                                AsCPartyItemTitanWristband(self)->collisionRadiusIncreaseRatio /
+                                    (float)AsCPartyItemTitanWristband(self)->rampLength *
+                                    (float)(AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] -
+                                            AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0])));
+            Balloon_SetBallCollisionRadius(vz);
+        } else if (AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[1] -
+                       AsPhysicsBall(GolfBall__Fv())->m_eventPreDataIndex[0] ==
+                   0) {
+            BalloonCollision_ResetBallRadius();
+            AsPartyItemModifiers(destination)->ballScaleBonus = kFloat_0_PartyItem;
+        }
     }
     return 1;
 }
@@ -997,16 +1058,14 @@ int party_CPartyItemTitanWristband_vfunc_4(void* self, void* unused, void* desti
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
-// Initialize the fan attachment, clear its effect handle and set a 45-tick effect cooldown.
-void* CPartyItemFujinUchiwa_Ctor(void* self, void* arg) {
-    PartyIItem_ctor(self, arg, kFujinUchiwa, kGestureItem);
-    AsCPartyItemFujinUchiwa(self)->vtbl = __vt__Q25party21CPartyItemFujinUchiwa;
-    FxAttachment_Init((char*)self + kFanAttachmentOffset, __vt__Q25party21CPartyItemFujinUchiwa);
-    AsCPartyItemFujinUchiwa(self)->effectHandleValue = 0;
-    AsCPartyItemFujinUchiwa(self)->cooldown = kFanEffectCooldownTicks;
-    return self;
-}
+// Initialize the fan attachment, clear its effect handle and set the effect cooldown.
+CPartyItemFujinUchiwa::CPartyItemFujinUchiwa(void* arg) {
+    using namespace ns0;
+    PartyIItem_ctor(this, arg, kFujinUchiwa, kGestureItem);
+    vtbl = __vt__Q25party21CPartyItemFujinUchiwa;
+    FxAttachment_Init(&effectAttachment, __vt__Q25party21CPartyItemFujinUchiwa);
+    effectHandleValue = 0;
+    cooldown = kFanEffectCooldownTicks;
 }
 #pragma pop
 
@@ -1023,7 +1082,8 @@ void* party_CPartyItemFujinUchiwa_dtor(void* self, int deletingFlag) {
         AsCPartyItemFujinUchiwa(self)->vtbl = __vt__Q25party21CPartyItemFujinUchiwa;
         Sound_StopByAlias(g_soundManager, partyGoodsEffectStrings + kFanSoundAlias);
         party_IItem_dtor(self, 0);
-        if (deletingFlag > 0) __dl__FPv(self);
+        if (deletingFlag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -1033,8 +1093,7 @@ void* party_CPartyItemFujinUchiwa_dtor(void* self, int deletingFlag) {
 #pragma push
 namespace ns0 {
 // Fan pre-shot hook; no modifier reset is required.
-void party_CPartyItemFujinUchiwa_vfunc_3() {
-}
+void party_CPartyItemFujinUchiwa_vfunc_3() {}
 }
 #pragma pop
 
@@ -1044,17 +1103,16 @@ void party_CPartyItemFujinUchiwa_vfunc_3() {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
-// Capture the starting wind vectors and aim heading; clear the attached effect handle.
-int CPartyItemFujinUchiwa_InitWindAndHeading(register char* self) {
+// Capture the starting wind and the aim heading; clear the attached effect handle.
+int CPartyItemFujinUchiwa::InitWindAndHeading() {
+    using namespace ns0;
     char local[0x10];
-    CWind_GetWindVector(local, CWind_GetInstance(self));
-    __as__7WVectorFRC7WVector(self + 0x14, local);
-    __as__7WVectorFRC7WVector(self + 0x20, self + 0x14);
-    AsCPartyItemFujinUchiwa(self)->windHeading = AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->headingRadians;
-    AsCPartyItemFujinUchiwa(self)->effectHandleValue = 0;
+    GetWindVector__5CWindFv(local, CWind::GetInstance());
+    __as__7WVectorFRC7WVector(&initialWind, local);
+    __as__7WVectorFRC7WVector(&initialWindCopy, &initialWind);
+    windHeading = AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->headingRadians;
+    effectHandleValue = 0;
     return 1;
-}
 }
 #pragma pop
 
@@ -1067,9 +1125,14 @@ int CPartyItemFujinUchiwa_InitWindAndHeading(register char* self) {
 namespace ns0 {
 // Resolve the fan's input singleton, constructing/registering it on first use.
 static inline void EnsureFanInputManager() {
-    if (!Sing_805DC5C8()) {
-        if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager,(void*)InputManager_Dtor,s_inputManagerDtorRegistration_partyItems); s_inputManagerInitialized=1; }
-        Sing_805DC5C8()=s_gameInputManager;
+    if (!GetInputManagerSlot()) {
+        if (!s_inputManagerInitialized) {
+            InputManager_Init(s_gameInputManager);
+            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                     s_inputManagerDtorRegistration_partyItems);
+            s_inputManagerInitialized = 1;
+        }
+        GetInputManagerSlot() = s_gameInputManager;
     }
 }
 
@@ -1077,7 +1140,7 @@ static inline void EnsureFanInputManager() {
 #pragma always_inline on
 // Call the fan path zero-argument wind accessor ABI; the wider declaration is shared with other callers.
 static inline void* GetFanWindSingleton() {
-    return ((void*(*)())CWind_GetInstance)();
+    return CWind::GetInstance();
 }
 #pragma pop
 
@@ -1087,20 +1150,20 @@ static inline void* GetFanWindSingleton() {
 // additive wind, temporarily zero it to measure the remaining wind, derive the
 // base delta in world space, then restore those exact saved bits. speed uses
 // the wind subsystem units (no conversion here); headings are radians.
-static inline void ApplyFanWindModifier(void*& self, void*& out, float& speed,
-        Vec3& desiredWind, Vec3i& savedAdditiveWindBits, float (&zeroAdditiveWind)[3],
-        int (&unmodifiedWindBits)[3], int (&baseWindDeltaBits)[3],
-        void*& wind, int& additiveXBits, int& additiveYBits, int& additiveZBits) {
+static inline void ApplyFanWindModifier(CPartyItemFujinUchiwa* self, void*& out, float& speed, Vec3& desiredWind,
+                                        Vec3i& savedAdditiveWindBits, float (&zeroAdditiveWind)[3],
+                                        int (&unmodifiedWindBits)[3], int (&baseWindDeltaBits)[3], void*& wind,
+                                        int& additiveXBits, int& additiveYBits, int& additiveZBits) {
     // Phase 3: replace a weaker wind modifier. Preserve additive wind while
     // deriving the new base adjustment in world coordinates from the desired vector.
     if (speed > AsPartyItemModifiers(out)->windSpeed) {
         AsPartyItemModifiers(out)->windSpeed = speed;
-        AsPartyItemModifiers(out)->windHeading = AsCPartyItemFujinUchiwa(self)->windHeading;
+        AsPartyItemModifiers(out)->windHeading = self->windHeading;
         {
             wind = GetFanWindSingleton();
-            additiveXBits = AsCWind(wind)->additiveWindXBits;
-            additiveYBits = AsCWind(wind)->additiveWindYBits;
-            additiveZBits = AsCWind(wind)->additiveWindZBits;
+            additiveXBits = *(int*)&AsCWind(wind)->additiveWind.x;
+            additiveYBits = *(int*)&AsCWind(wind)->additiveWind.y;
+            additiveZBits = *(int*)&AsCWind(wind)->additiveWind.z;
             savedAdditiveWindBits.x = additiveXBits;
             savedAdditiveWindBits.y = additiveYBits;
             savedAdditiveWindBits.z = additiveZBits;
@@ -1109,18 +1172,21 @@ static inline void ApplyFanWindModifier(void*& self, void*& out, float& speed,
         zeroAdditiveWind[1] = zeroAdditiveWind[0];
         zeroAdditiveWind[2] = zeroAdditiveWind[0];
         __as__7WVectorFRC7WVector(AsWindAdjustment(GetFanWindSingleton())->additiveAdjustment, zeroAdditiveWind);
-        CWind_GetWindVector(unmodifiedWindBits, GetFanWindSingleton());
+        GetWindVector__5CWindFv(unmodifiedWindBits, GetFanWindSingleton());
         __mi__FRC7WVectorRC7WVector(baseWindDeltaBits, &desiredWind, unmodifiedWindBits);
         __as__7WVectorFRC7WVector(AsWindAdjustment(GetFanWindSingleton())->baseAdjustment, baseWindDeltaBits);
         __as__7WVectorFRC7WVector(AsWindAdjustment(GetFanWindSingleton())->additiveAdjustment, &savedAdditiveWindBits);
     }
-
 }
 
+} // namespace ns0
+
 // Apply the owner fan gesture to opponents as bounded wind heading/speed and refresh its effects.
-int CPartyItemFujinUchiwa_UpdateOpponentWind(void* self, void* unused, void* out, int index) {
+int CPartyItemFujinUchiwa::UpdateOpponentWind(void* unused, void* out, int index) {
+    using namespace ns0;
     // Phase 1: poll the owner's gesture only while processing an opponent.
-    if (index == AsCPartyItemFujinUchiwa(self)->ownerIndex) return 1;
+    if (index == ownerIndex)
+        return 1;
     float headingRotation[12];
     Vec3 desiredWind;
     Vec3i savedAdditiveWindBits;
@@ -1134,16 +1200,16 @@ int CPartyItemFujinUchiwa_UpdateOpponentWind(void* self, void* unused, void* out
     float zeroEffectOffset[3];
     float steering = kFloat_0_PartyItem;
     float magnitude = kFloat_1_PartyItem;
-    void* actor = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), AsCPartyItemFujinUchiwa(self)->ownerIndex & 0xFF);
+    void* actor = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), ownerIndex & 0xFF);
     void* input = *(void**)actor;
     void* state = Object_GetSlotEntry(PartyItemSlots_GetInstance(), input);
-    AsCPartyItemFujinUchiwa(self)->inputState = state;
+    inputState = state;
     if (AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->gameStateFlags & kPartyItemInputStates) {
         EnsureFanInputManager();
-        int pressed = Input_IsActionButtonDown(Sing_805DC5C8(), kActionUsePartyItem, input);
+        int pressed = Input_IsActionButtonDown(GetInputManagerSlot(), kActionUsePartyItem, input);
         if (pressed) {
             EnsureFanInputManager();
-            if (Input_IsActionPressed(Sing_805DC5C8(), kActionUsePartyItem, input)) {
+            if (Input_IsActionPressed(GetInputManagerSlot(), kActionUsePartyItem, input)) {
                 PartyItem_ResetIds(state);
                 resetBaseWind[0] = kFloat_0_PartyItem;
                 resetBaseWind[1] = resetBaseWind[0];
@@ -1160,19 +1226,22 @@ int CPartyItemFujinUchiwa_UpdateOpponentWind(void* self, void* unused, void* out
     }
     // Phase 2: clamp heading to aim +/- pi/2 radians and speed to the configured maximum.
     float aimHeading = AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->headingRadians;
-    if (magnitude < kFanGestureMinimumMagnitude) return 1;
+    if (magnitude < kFanGestureMinimumMagnitude)
+        return 1;
     int gestureBranch = kFanNoGesture;
     if (steering < -s_fanSteeringDeadZone) {
         float lower = aimHeading - kFanMaximumHeadingDeviation;
-        float t = AsCPartyItemFujinUchiwa(self)->windHeading - magnitude * kFloat_0_01_FanHeading;
-        AsCPartyItemFujinUchiwa(self)->windHeading = t;
-        if (t < lower) AsCPartyItemFujinUchiwa(self)->windHeading = lower;
+        float t = windHeading - magnitude * kFloat_0_01_FanHeading;
+        windHeading = t;
+        if (t < lower)
+            windHeading = lower;
         gestureBranch = kFanNegativeSteering;
     } else if (steering > s_fanSteeringDeadZone) {
         float upper = aimHeading + kFanMaximumHeadingDeviation;
-        float t = AsCPartyItemFujinUchiwa(self)->windHeading + magnitude * kFloat_0_01_FanHeading;
-        AsCPartyItemFujinUchiwa(self)->windHeading = t;
-        if (t > upper) AsCPartyItemFujinUchiwa(self)->windHeading = upper;
+        float t = windHeading + magnitude * kFloat_0_01_FanHeading;
+        windHeading = t;
+        if (t > upper)
+            windHeading = upper;
         gestureBranch = kFanPositiveSteering;
     } else {
         gestureBranch = kFanNeutralSteering;
@@ -1180,12 +1249,13 @@ int CPartyItemFujinUchiwa_UpdateOpponentWind(void* self, void* unused, void* out
     forwardAxis.x = kFloat_0_PartyItem;
     forwardAxis.y = forwardAxis.x;
     forwardAxis.z = kFloat_1_PartyItem;
-    Matrix_SetAxisRotation(&headingRotation, AsCPartyItemFujinUchiwa(self)->windHeading, 1);
+    Matrix_SetAxisRotation(&headingRotation, windHeading, 1);
     Matrix_TransformPoint(&desiredWind, &forwardAxis, &headingRotation);
     float requestedWindSpeed = magnitude * g_fanGestureWindSpeedScale;
     float speed = kFanMaximumWindSpeed;
     // The original also keeps the requested value when the comparison is unordered.
-    if (requestedWindSpeed > speed) goto windSpeedClamped;
+    if (requestedWindSpeed > speed)
+        goto windSpeedClamped;
     speed = requestedWindSpeed;
 windSpeedClamped:
     __amu__7WVectorFf(&desiredWind, speed);
@@ -1193,32 +1263,37 @@ windSpeedClamped:
     // Caller-owned integer copies retain the original vector-load register order.
     void* wind;
     int additiveXBits, additiveYBits, additiveZBits;
-    ApplyFanWindModifier(self, out, speed, desiredWind, savedAdditiveWindBits,
-        zeroAdditiveWind, unmodifiedWindBits, baseWindDeltaBits,
-        wind, additiveXBits, additiveYBits, additiveZBits);
+    ApplyFanWindModifier(this, out, speed, desiredWind, savedAdditiveWindBits, zeroAdditiveWind, unmodifiedWindBits,
+                         baseWindDeltaBits, wind, additiveXBits, additiveYBits, additiveZBits);
     // Phase 4: propagate wind to effects and refresh the sound/sequence on cooldown.
-    CWind_GetWindVector(currentWindBits, GetFanWindSingleton());
-    effectWindBits[0] = currentWindBits[0]; effectWindBits[1] = currentWindBits[1]; effectWindBits[2] = currentWindBits[2];
-    CFx_SetWindVector(g_fx, effectWindBits);
+    GetWindVector__5CWindFv(currentWindBits, GetFanWindSingleton());
+    effectWindBits[0] = currentWindBits[0];
+    effectWindBits[1] = currentWindBits[1];
+    effectWindBits[2] = currentWindBits[2];
+    ((CFx*)g_fx)->SetWindVector(effectWindBits);
     zeroEffectOffset[0] = kFloat_0_PartyItem;
     zeroEffectOffset[1] = zeroEffectOffset[0];
     zeroEffectOffset[2] = zeroEffectOffset[0];
-    __as__7WVectorFRC7WVector(AsCPartyItemFujinUchiwa(self)->effectOffset, zeroEffectOffset);
-    AsCPartyItemFujinUchiwa(self)->effectAttachmentMatrix = s_cameraTransform;
-    AsCPartyItemFujinUchiwa(self)->effectOffsetPointer = AsCPartyItemFujinUchiwa(self)->effectOffset;
-    int effectSequenceHandle = AsCPartyItemFujinUchiwa(self)->effectHandleValue;
-    if (effectSequenceHandle && CFx_HasSequence(g_fx, effectSequenceHandle)) {
-        if (--AsCPartyItemFujinUchiwa(self)->cooldown > 0) goto done;
+    __as__7WVectorFRC7WVector(effectOffset, zeroEffectOffset);
+    effectAttachmentMatrix = s_cameraTransform;
+    effectOffsetPointer = effectOffset;
+    int effectSequenceHandle = effectHandleValue;
+    if (effectSequenceHandle && ((CFx*)g_fx)->HasSequence(effectSequenceHandle)) {
+        if (--cooldown > 0)
+            goto done;
     }
     if (gestureBranch != kFanNoGesture) {
-        void* effectHandle = CFx_CreateAttachedEffect(g_fx, (char*)self + kFanAttachmentOffset, partyGoodsEffectStrings + kFanEffectSequence, 0, 0, 0);
-        AsCPartyItemFujinUchiwa(self)->effectHandle = effectHandle;
-        ((void (*)(void*, const char*, int, int, const char*, int, float, float, float))Sound_PlayByName)(g_soundManager, partyGoodsEffectStrings + kFanWindSound, 0, 0, partyGoodsEffectStrings + kFanSoundAlias, 0, kFloat_0_5_PartyEffects, kFloat_200_PartyEffects, kFloat_1_PartyItem);
-        AsCPartyItemFujinUchiwa(self)->cooldown = kFanEffectCooldownTicks;
+        void* effectHandle = ((CFx*)g_fx)
+                                 ->CreateAttachedEffect((Vec2_8010*)(&effectAttachment),
+                                                        partyGoodsEffectStrings + kFanEffectSequence, 0, 0, 0);
+        this->effectHandle = effectHandle;
+        ((void (*)(void*, const char*, int, int, const char*, int, float, float, float))Sound_PlayByName)(
+            g_soundManager, partyGoodsEffectStrings + kFanWindSound, 0, 0, partyGoodsEffectStrings + kFanSoundAlias, 0,
+            kFloat_0_5_PartyEffects, kFloat_200_PartyEffects, kFloat_1_PartyItem);
+        cooldown = kFanEffectCooldownTicks;
     }
 done:
     return 1;
-}
 }
 #pragma pop
 
@@ -1228,16 +1303,21 @@ done:
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
 // Create a 20-point ribbon using the owner color and initial pointer position.
-void* CPartyItemRakugakiCrayon_Ctor(void* self, int index, void* resource) {
-    PartyIItem_ctor(self, (void*)index, kRakugakiCrayon, kGestureItem);
-    AsCPartyItemRakugakiCrayon(self)->ribbon = 0;
-    AsCPartyItemRakugakiCrayon(self)->vtbl = __vt__Q25party24CPartyItemRakugakiCrayon;
-    void* ribbon = __nw__FUl(0x58);
-    if (ribbon) TrailRibbon_Ctor(ribbon, resource, kRibbonPointCount, kRibbonPointCount);
-    AsCPartyItemRakugakiCrayon(self)->ribbon = ribbon;
-    struct Desc { unsigned char c[8]; float a, b; int x, y, z, w; } style;
+CPartyItemRakugakiCrayon::CPartyItemRakugakiCrayon(int index, void* resource) {
+    using namespace ns0;
+    PartyIItem_ctor(this, (void*)index, kRakugakiCrayon, kGestureItem);
+    ribbon = 0;
+    vtbl = __vt__Q25party24CPartyItemRakugakiCrayon;
+    void* newRibbon = __nw__FUl(0x58);
+    if (newRibbon)
+        TrailRibbon_Ctor(newRibbon, resource, kRibbonPointCount, kRibbonPointCount);
+    ribbon = newRibbon;
+    struct Desc {
+        unsigned char c[8];
+        float a, b;
+        int x, y, z, w;
+    } style;
     float ribbonWidth = kFloat_15_PartyEffects;
     float ribbonOpacity = kFloat_0_5_PartyEffects;
     int playerColorOffset = index * 4;
@@ -1246,27 +1326,36 @@ void* CPartyItemRakugakiCrayon_Ctor(void* self, int index, void* resource) {
     unsigned char c1 = p[1];
     unsigned char c2 = p[2];
     unsigned char c3 = p[3];
-    style.c[0] = c0; style.c[1] = c1; style.c[2] = c2; style.c[3] = c3;
-    style.c[4] = c0; style.c[5] = c1; style.c[6] = c2; style.c[7] = c3;
+    style.c[0] = c0;
+    style.c[1] = c1;
+    style.c[2] = c2;
+    style.c[3] = c3;
+    style.c[4] = c0;
+    style.c[5] = c1;
+    style.c[6] = c2;
+    style.c[7] = c3;
     style.b = ribbonOpacity;
     style.w = kRibbonPointCount;
     style.x = 0;
     style.y = 1;
     style.z = 0;
     style.a = ribbonWidth;
-    TrailRibbon_SetStyle(AsCPartyItemRakugakiCrayon(self)->ribbon, &style);
-    if (!Sing_805DC5C8()) {
-        if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager,(void*)InputManager_Dtor,s_inputManagerDtorRegistration_partyItems); s_inputManagerInitialized=1; }
-        Sing_805DC5C8()=s_gameInputManager;
+    TrailRibbon_SetStyle(ribbon, &style);
+    if (!GetInputManagerSlot()) {
+        if (!s_inputManagerInitialized) {
+            InputManager_Init(s_gameInputManager);
+            ns0::__register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                          s_inputManagerDtorRegistration_partyItems);
+            s_inputManagerInitialized = 1;
+        }
+        GetInputManagerSlot() = s_gameInputManager;
     }
-    void* inputManager = Sing_805DC5C8();
-    void* actor = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), AsCPartyItemRakugakiCrayon(self)->ownerIndex & 0xFF);
+    void* inputManager = GetInputManagerSlot();
+    void* actor = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), ownerIndex & 0xFF);
     float out[2];
     InputManager_GetPointerPosition(inputManager, out, *(void**)actor);
-    TrailRibbon_SetPointerPosition(AsCPartyItemRakugakiCrayon(self)->ribbon, out);
-    TrailRibbon_Update(AsCPartyItemRakugakiCrayon(self)->ribbon);
-    return self;
-}
+    TrailRibbon_SetPointerPosition(ribbon, out);
+    TrailRibbon_Update(ribbon);
 }
 #pragma pop
 
@@ -1304,15 +1393,25 @@ void* party_CPartyItemRakugakiCrayon_dtor(void* self, int deletingFlag) {
                     *(void**)((char*)AsPartyRibbonState(child)->fadedVertexTriplets + off) = 0;
                 }
             }
-            if (AsPartyRibbonState(child)->baseVertexTriplets) { __dla__FPv(AsPartyRibbonState(child)->baseVertexTriplets); AsPartyRibbonState(child)->baseVertexTriplets = 0; }
-            if (AsPartyRibbonState(child)->fadedVertexTriplets) { __dla__FPv(AsPartyRibbonState(child)->fadedVertexTriplets); AsPartyRibbonState(child)->fadedVertexTriplets = 0; }
-            if (AsPartyRibbonState(child)->pointHeadings) { __dla__FPv(AsPartyRibbonState(child)->pointHeadings); AsPartyRibbonState(child)->pointHeadings = 0; }
+            if (AsPartyRibbonState(child)->baseVertexTriplets) {
+                __dla__FPv(AsPartyRibbonState(child)->baseVertexTriplets);
+                AsPartyRibbonState(child)->baseVertexTriplets = 0;
+            }
+            if (AsPartyRibbonState(child)->fadedVertexTriplets) {
+                __dla__FPv(AsPartyRibbonState(child)->fadedVertexTriplets);
+                AsPartyRibbonState(child)->fadedVertexTriplets = 0;
+            }
+            if (AsPartyRibbonState(child)->pointHeadings) {
+                __dla__FPv(AsPartyRibbonState(child)->pointHeadings);
+                AsPartyRibbonState(child)->pointHeadings = 0;
+            }
             __dl__FPv(child);
             AsCPartyItemRakugakiCrayon(self)->ribbon = 0;
         }
         Sound_StopByAlias(g_soundManager, partyGoodsEffectStrings + kCrayonSoundAlias);
         party_IItem_dtor(self, 0);
-        if (deletingFlag > 0) __dl__FPv(self);
+        if (deletingFlag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -1322,8 +1421,7 @@ void* party_CPartyItemRakugakiCrayon_dtor(void* self, int deletingFlag) {
 #pragma push
 namespace ns0 {
 // Crayon pre-shot hook; ribbon state is updated separately.
-void party_CPartyItemRakugakiCrayon_vfunc_3() {
-}
+void party_CPartyItemRakugakiCrayon_vfunc_3() {}
 }
 #pragma pop
 
@@ -1333,35 +1431,48 @@ void party_CPartyItemRakugakiCrayon_vfunc_3() {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
 // Feed held-action pointer positions to the crayon ribbon and play its drawing sound.
-int CPartyItemRakugakiCrayon_UpdateDrawing(void* self, void* unused, void* unused2, int index) {
-    if (index != AsCPartyItemRakugakiCrayon(self)->ownerIndex) {
-        if (!Sing_805DC5C8()) {
-            if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager,(void*)InputManager_Dtor,s_inputManagerDtorRegistration_partyItems); s_inputManagerInitialized=1; }
-            Sing_805DC5C8()=s_gameInputManager;
-        }
-        void* c8 = Sing_805DC5C8();
-        void* actor = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), AsCPartyItemRakugakiCrayon(self)->ownerIndex & 0xFF);
-        int pressed = Input_IsActionButtonDown(c8,kActionUsePartyItem,*(void**)actor);
-        if (pressed) {
-            if (!Sing_805DC5C8()) {
-                if (!s_inputManagerInitialized) { InputManager_Init(s_gameInputManager); __register_global_object(s_gameInputManager,(void*)InputManager_Dtor,s_inputManagerDtorRegistration_partyItems); s_inputManagerInitialized=1; }
-                Sing_805DC5C8()=s_gameInputManager;
+int CPartyItemRakugakiCrayon::UpdateDrawing(void* unused, void* unused2, int index) {
+    using namespace ns0;
+    if (index != ownerIndex) {
+        if (!GetInputManagerSlot()) {
+            if (!s_inputManagerInitialized) {
+                InputManager_Init(s_gameInputManager);
+                ns0::__register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                              s_inputManagerDtorRegistration_partyItems);
+                s_inputManagerInitialized = 1;
             }
-            void* c8b = Sing_805DC5C8();
-            actor = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), AsCPartyItemRakugakiCrayon(self)->ownerIndex & 0xFF);
+            GetInputManagerSlot() = s_gameInputManager;
+        }
+        void* c8 = GetInputManagerSlot();
+        void* actor = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), ownerIndex & 0xFF);
+        int pressed = Input_IsActionButtonDown(c8, kActionUsePartyItem, *(void**)actor);
+        if (pressed) {
+            if (!GetInputManagerSlot()) {
+                if (!s_inputManagerInitialized) {
+                    InputManager_Init(s_gameInputManager);
+                    ns0::__register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                                  s_inputManagerDtorRegistration_partyItems);
+                    s_inputManagerInitialized = 1;
+                }
+                GetInputManagerSlot() = s_gameInputManager;
+            }
+            void* c8b = GetInputManagerSlot();
+            actor = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), ownerIndex & 0xFF);
             void* out;
-            if (InputManager_GetPointerPosition(c8b,&out,*(void**)actor)) TrailRibbon_SetPointerPosition(AsCPartyItemRakugakiCrayon(self)->ribbon,&out);
+            if (InputManager_GetPointerPosition(c8b, &out, *(void**)actor))
+                TrailRibbon_SetPointerPosition(ribbon, &out);
         }
     }
-    TrailRibbon_Update(AsCPartyItemRakugakiCrayon(self)->ribbon);
-    if (((CrayonRibbonActivity*)AsCPartyItemRakugakiCrayon(self)->ribbon)->drawing) {
-        if (!SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager,partyGoodsEffectStrings + kCrayonSoundAlias))
-            ((void (*)(void*, const char*, int, int, const char*, int, float, float, float))Sound_PlayByName)(g_soundManager, partyGoodsEffectStrings + kCrayonDrawSound, 0, 0, partyGoodsEffectStrings + kCrayonSoundAlias, 0, kFloat_0_5_PartyEffects, kFloat_200_PartyEffects, kFloat_1_PartyItem);
+    TrailRibbon_Update(ribbon);
+    if (((CrayonRibbonActivity*)ribbon)->drawing) {
+        if (!SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager, partyGoodsEffectStrings + kCrayonSoundAlias))
+            ((void (*)(void*, const char*, int, int, const char*, int, float, float, float))Sound_PlayByName)(
+                g_soundManager, partyGoodsEffectStrings + kCrayonDrawSound, 0, 0,
+                partyGoodsEffectStrings + kCrayonSoundAlias, 0, kFloat_0_5_PartyEffects, kFloat_200_PartyEffects,
+                kFloat_1_PartyItem);
     }
     return 1;
-}
 }
 #pragma pop
 
@@ -1371,13 +1482,12 @@ int CPartyItemRakugakiCrayon_UpdateDrawing(void* self, void* unused, void* unuse
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
 // Rebuild the crayon ribbon geometry.
-int CPartyItemRakugakiCrayon_DrawRibbon(void* a) {
-    TrailRibbon_Build(AsCPartyItemRakugakiCrayon(a)->ribbon);
+int CPartyItemRakugakiCrayon::DrawRibbon() {
+    using namespace ns0;
+    TrailRibbon_Build(ribbon);
     return 1;
 }
-}
 #pragma pop
 
 #pragma push
@@ -1386,16 +1496,14 @@ int CPartyItemRakugakiCrayon_DrawRibbon(void* a) {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
 // Initialize the gesture-driven tickle item with zero strength and active ticks.
-void* CPartyItemPululuJarashi_Ctor(void* self, void* arg) {
-    PartyIItem_ctor(self, arg, kPululuJarashi, kGestureItem);
+CPartyItemPululuJarashi::CPartyItemPululuJarashi(void* arg) {
+    using namespace ns0;
+    PartyIItem_ctor(this, arg, kPululuJarashi, kGestureItem);
     float z = kFloat_0_PartyItem;
-    AsCPartyItemPululuJarashi(self)->vtbl = __vt__Q25party23CPartyItemPululuJarashi;
-    AsCPartyItemPululuJarashi(self)->strength = z;
-    AsCPartyItemPululuJarashi(self)->activeTicks = 0;
-    return self;
-}
+    vtbl = __vt__Q25party23CPartyItemPululuJarashi;
+    strength = z;
+    activeTicks = 0;
 }
 #pragma pop
 
@@ -1405,15 +1513,10 @@ void* CPartyItemPululuJarashi_Ctor(void* self, void* arg) {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
-// Destroy the party-item base and optionally free the item allocation.
-void* CPartyItemPululuJarashi_dtor(void* self, int deletingFlag) {
-    if (self != 0) {
-        party_IItem_dtor(self, 0);
-        if (deletingFlag > 0) __dl__FPv(self);
-    }
-    return self;
-}
+// Release the party-item base; the compiler adds the delete-if-requested wrapper.
+CPartyItemPululuJarashi::~CPartyItemPululuJarashi() {
+    using namespace ns0;
+    party_IItem_dtor(this, 0);
 }
 #pragma pop
 
@@ -1432,17 +1535,18 @@ void party_CPartyItemPululuJarashi_vfunc_3(void* p) {
 #pragma opt_lifetimes off
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
 // Charge tickle strength from gestures, decay it each tick and apply it to the current opponent.
-int CPartyItemPululuJarashi_UpdateTickleStrength(void* self, void* unused, void* destination, int index) {
+int CPartyItemPululuJarashi::UpdateTickleStrength(void* unused, void* destination, int index) {
+    using namespace ns0;
     // Phase 1: decay the active counter; rejected owner/state/input resets it.
     char* name;
     void* state;
-    int* tick = (&AsCPartyItemPululuJarashi(self)->activeTicks);
+    int* tick = &activeTicks;
     --*tick;
-    if (*tick < 0) *tick = 0;
+    if (*tick < 0)
+        *tick = 0;
 
-    unsigned char slot = AsCPartyItemPululuJarashi(self)->ownerIndex;
+    unsigned char slot = ownerIndex;
     void* actor = GolfPlayer_GetEntryByIndex((*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc), slot);
     void* input = *(void**)actor;
 
@@ -1451,48 +1555,55 @@ int CPartyItemPululuJarashi_UpdateTickleStrength(void* self, void* unused, void*
         // Rejected input breaks to the reset; accepted input continues past it.
         switch (0) {
         default: {
-            if (index != AsCPartyItemPululuJarashi(self)->ownerIndex) {
+            if (index != ownerIndex) {
                 unsigned int flags = (*(unsigned int*)&AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->gameStateFlags);
                 if (((flags & kPartyItemInputStates) == 0) && ((flags & kTickleAdditionalState) == 0)) {
                     break;
                 } else {
-                    if (!Sing_805DC5C8()) {
+                    if (!GetInputManagerSlot()) {
                         if (!s_inputManagerInitialized) {
                             InputManager_Init(s_gameInputManager);
-                            __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_partyItems);
+                            ns0::__register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                                          s_inputManagerDtorRegistration_partyItems);
                             s_inputManagerInitialized = 1;
                         }
-                        Sing_805DC5C8() = s_gameInputManager;
+                        GetInputManagerSlot() = s_gameInputManager;
                     }
-                    if (Input_IsActionButtonDown(Sing_805DC5C8(), kActionUsePartyItem, input) == 0) {
+                    if (Input_IsActionButtonDown(GetInputManagerSlot(), kActionUsePartyItem, input) == 0) {
                         break;
                     } else {
                         state = Object_GetSlotEntry(PartyItemSlots_GetInstance(), input);
-                        if (!Sing_805DC5C8()) {
+                        if (!GetInputManagerSlot()) {
                             if (!s_inputManagerInitialized) {
                                 InputManager_Init(s_gameInputManager);
-                                __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_partyItems);
+                                ns0::__register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                                              s_inputManagerDtorRegistration_partyItems);
                                 s_inputManagerInitialized = 1;
                             }
-                            Sing_805DC5C8() = s_gameInputManager;
+                            GetInputManagerSlot() = s_gameInputManager;
                         }
-                        if (Input_IsActionPressed(Sing_805DC5C8(), kActionUsePartyItem, input)) PartyItem_ResetIds(state);
+                        if (Input_IsActionPressed(GetInputManagerSlot(), kActionUsePartyItem, input))
+                            PartyItem_ResetIds(state);
                         if (PartyItemMotion_DetectGesture(state, kTickleGesture)) {
                             name = partyGoodsEffectStrings + kTickleSound;
                             if (!SoundManager_IsAliasPrefixOrStreamStemActive(g_soundManager, name))
-                                ((void (*)(void*, const char*, int, int, const char*, int, float, float, float))Sound_PlayByName)(g_soundManager, name, 0, 0, name, 0, kFloat_0_5_PartyEffects, kFloat_200_PartyEffects, kFloat_1_PartyItem);
-                            float value = AsCPartyItemPululuJarashi(self)->strength + g_tickleStrengthPerGesture;
+                                ((void (*)(void*, const char*, int, int, const char*, int, float, float,
+                                           float))Sound_PlayByName)(g_soundManager, name, 0, 0, name, 0,
+                                                                    kFloat_0_5_PartyEffects, kFloat_200_PartyEffects,
+                                                                    kFloat_1_PartyItem);
+                            float value = strength + g_tickleStrengthPerGesture;
                             value = (value > kFloat_1_PartyItem) ? kFloat_1_PartyItem : value;
-                            AsCPartyItemPululuJarashi(self)->strength = value;
-                            if (!Sing_805DC5C8()) {
+                            strength = value;
+                            if (!GetInputManagerSlot()) {
                                 if (!s_inputManagerInitialized) {
                                     InputManager_Init(s_gameInputManager);
-                                    __register_global_object(s_gameInputManager, (void*)InputManager_Dtor, s_inputManagerDtorRegistration_partyItems);
+                                    ns0::__register_global_object(s_gameInputManager, (void*)InputManager_Dtor,
+                                                                  s_inputManagerDtorRegistration_partyItems);
                                     s_inputManagerInitialized = 1;
                                 }
-                                Sing_805DC5C8() = s_gameInputManager;
+                                GetInputManagerSlot() = s_gameInputManager;
                             }
-                            InputManager_StartRumble(Sing_805DC5C8(), kGestureRumbleTicks);
+                            InputManager_StartRumble(GetInputManagerSlot(), kGestureRumbleTicks);
                             *tick += kGestureRumbleTicks;
                         }
                     }
@@ -1508,18 +1619,18 @@ int CPartyItemPululuJarashi_UpdateTickleStrength(void* self, void* unused, void*
 
     // Phase 2: publish activity, decay strength, and widen only the current
     // opponent's impact divisor. The owner's modifier is left untouched here.
-    if (*tick != 0) AsPartyItemModifiers(destination)->tickleActive = 1;
-    float value = AsCPartyItemPululuJarashi(self)->strength - g_tickleStrengthDecayPerUpdate;
+    if (*tick != 0)
+        AsPartyItemModifiers(destination)->tickleActive = 1;
+    float value = strength - g_tickleStrengthDecayPerUpdate;
     value = (kFloat_0_PartyItem < value) ? value : kFloat_0_PartyItem;
-    AsCPartyItemPululuJarashi(self)->strength = value;
-    if (index != AsCPartyItemPululuJarashi(self)->ownerIndex && index == AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer) {
-        float limit = kFloat_1_PartyItem + AsCPartyItemPululuJarashi(self)->strength;
+    strength = value;
+    if (index != ownerIndex && index == AsCGolfDoc(AsCSharedDoc(g_sharedDoc)->golfDoc)->currentPlayer) {
+        float limit = kFloat_1_PartyItem + strength;
         float current = AsPartyItemModifiers(destination)->impactZoneWidthDivisor;
         current = (current < limit) ? limit : current;
         AsPartyItemModifiers(destination)->impactZoneWidthDivisor = current;
     }
     return 1;
-}
 }
 #pragma pop
 
@@ -1529,16 +1640,14 @@ int CPartyItemPululuJarashi_UpdateTickleStrength(void* self, void* unused, void*
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns0 {
 // Initialize the hammer item and clear its three state words.
-void* CPartyItemStampHammer_Ctor(void* self, void* arg) {
-    PartyIItem_ctor(self, arg, kStampHammer, kGestureItem);
-    AsCPartyItemStampHammer(self)->unk_1C = 0;
-    AsCPartyItemStampHammer(self)->vtbl = __vt__Q25party21CPartyItemStampHammer;
-    AsCPartyItemStampHammer(self)->unk_20 = 0;
-    AsCPartyItemStampHammer(self)->unk_24 = 0;
-    return self;
-}
+CPartyItemStampHammer::CPartyItemStampHammer(void* arg) {
+    using namespace ns0;
+    PartyIItem_ctor(this, arg, kStampHammer, kGestureItem);
+    unk_1C = 0;
+    vtbl = __vt__Q25party21CPartyItemStampHammer;
+    unk_20 = 0;
+    unk_24 = 0;
 }
 #pragma pop
 
@@ -1553,7 +1662,8 @@ namespace ns0 {
 void* party_CPartyItemStampHammer_dtor(void* self, int deletingFlag) {
     if (self != 0) {
         party_IItem_dtor(self, 0);
-        if (deletingFlag > 0) __dl__FPv(self);
+        if (deletingFlag > 0)
+            __dl__FPv(self);
     }
     return self;
 }
@@ -1654,9 +1764,9 @@ void* OwnedContainerBuffer_dtor(void* self, int shouldDelete) {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns1 {
 // Release the shared hammer balloon deque and clear the selected target.
-void CBalloonSystem_DestroySharedQueue(void) {
+void CBalloonSystem::DestroySharedQueue() {
+    using namespace ns1;
     void* p = g_stampHammerBalloonQueue;
     if (p != 0) {
         BalloonDeque* queue = (BalloonDeque*)p;
@@ -1666,10 +1776,12 @@ void CBalloonSystem_DestroySharedQueue(void) {
             appFreeUni__FPv(((void**)queue->blocks)[queue->start]);
             int i = queue->start + 1;
             queue->start = i;
-            if ((unsigned int)i == (unsigned int)queue->capacity) queue->start = zero;
+            if ((unsigned int)i == (unsigned int)queue->capacity)
+                queue->start = zero;
             queue->blockCount--;
         }
-        if (queue->blockCount != 0) queue->base = 0x80;
+        if (queue->blockCount != 0)
+            queue->base = 0x80;
     }
     p = g_stampHammerBalloonQueue;
     if (p != 0) {
@@ -1686,7 +1798,6 @@ void CBalloonSystem_DestroySharedQueue(void) {
         g_stampHammerBalloonQueue = 0;
     }
     g_stampHammerTargetBalloon = 0;
-}
 }
 #pragma pop
 
@@ -1730,8 +1841,7 @@ int party_CPartyItemStampHammer_vfunc_1(void) {
 #pragma use_lmw_stmw reset
 namespace ns1 {
 // Hammer pre-shot hook; shared queue reset occurs in its initialization hook.
-void party_CPartyItemStampHammer_vfunc_3(void) {
-}
+void party_CPartyItemStampHammer_vfunc_3(void) {}
 }
 #pragma pop
 
@@ -1743,29 +1853,31 @@ void party_CPartyItemStampHammer_vfunc_3(void) {
 #pragma use_lmw_stmw reset
 namespace ns1 {
 // Transform local forward into the normalized world-space hammer direction using current aim (radians).
-static inline void RefreshHammerFacingFromAim(
-    void* self, float& aimRadians, float& reversedAimRadians,
-    float* aimRotationMatrix, float& zeroComponent, float& forwardZComponent) {
+static inline void RefreshHammerFacingFromAim(void* self, float& aimRadians, float& reversedAimRadians,
+                                              float* aimRotationMatrix, float& zeroComponent,
+                                              float& forwardZComponent) {
     aimRadians = AsCGolfDoc(PartyGolfDocument())->headingRadians;
     reversedAimRadians = aimRadians >= kFloat_0_PartyItem ? aimRadians - kPi_PartyHammer : kPi_PartyHammer + aimRadians;
     Mtx44_SetRotationY(aimRotationMatrix, -reversedAimRadians);
     zeroComponent = kFloat_0_PartyItem;
     forwardZComponent = kFloat_neg1_PartyEffects;
-    ((HammerVector*)((char*)self + (int)&((HammerSelf*)0)->direction))->set(zeroComponent, zeroComponent, forwardZComponent);
+    ((HammerVector*)((char*)self + (int)&((HammerSelf*)0)->direction))
+        ->set(zeroComponent, zeroComponent, forwardZComponent);
     // Keep the float and struct views distinct: merging them changes generated address reuse.
-    Mtx44_TransformDirection((float*)self + kHammerDirectionFloatIndex, (float*)self + kHammerDirectionFloatIndex, aimRotationMatrix, zeroComponent);
+    Mtx44_TransformDirection((float*)self + kHammerDirectionFloatIndex, (float*)self + kHammerDirectionFloatIndex,
+                             aimRotationMatrix, zeroComponent);
     Vec3_Normalize(&((HammerSelf*)self)->direction, &((HammerSelf*)self)->direction);
 }
 
 // Lazily initialize/register the shared input manager, then publish its borrowed singleton pointer.
 static inline void EnsureHammerInputManager() {
-    if (Sing_805DC5C8() == 0) {
+    if (GetInputManagerSlot() == 0) {
         if (!s_inputManagerInitialized) {
             InputManager_Init(s_gameInputManager);
             __register_global_object(s_gameInputManager, InputManager_Dtor, s_inputManagerDtorRegistration_partyItems);
             s_inputManagerInitialized = 1;
         }
-        Sing_805DC5C8() = s_gameInputManager;
+        GetInputManagerSlot() = s_gameInputManager;
     }
 }
 
@@ -1774,7 +1886,8 @@ static inline void EnsureHammerInputManager() {
 // Pop the newest borrowed pointer and trim unused tail pages, retaining the ring allocation.
 static inline void PopHammerBalloonHistory(BalloonDeque*& history, void*& releaseCandidate) {
     unsigned int absolutePosition = history->base + history->count - 1;
-    releaseCandidate = ((void**)history->blocks[(history->start + (absolutePosition >> kDequeBlockShift)) % history->capacity])[absolutePosition & kDequeBlockMask];
+    releaseCandidate = ((void**)history->blocks[(history->start + (absolutePosition >> kDequeBlockShift)) %
+                                                history->capacity])[absolutePosition & kDequeBlockMask];
     history->count = history->count - 1;
     unsigned int usableHistoryEnd = history->blockCount == 0 ? 0 : ((history->blockCount - 1) << kDequeBlockShift);
     unsigned int unusedTailWords = usableHistoryEnd - (history->base + history->count);
@@ -1790,31 +1903,36 @@ static inline void PopHammerBalloonHistory(BalloonDeque*& history, void*& releas
     }
 }
 #pragma pop
+} // namespace ns1
 
 // Select a balloon with the prior aim, process the gesture, and release eligible history after cooldown.
-int CPartyItemStampHammer_UpdateBalloons(void* self, int, int, int index, int suppressHistoryRelease) {
+int CPartyItemStampHammer::UpdateBalloons(int unused, int unused2, int index, int suppressHistoryRelease) {
+    using namespace ns1;
     // Phase 1: select using the stored facing direction, THEN refresh direction
     // from current aim. This ordering intentionally uses the previous direction.
-    PartyStampHammer_SelectNearestBalloonInRange(self);
+    PartyStampHammer_SelectNearestBalloonInRange(this);
     // Reused scalar: scene-object handle for reset, actor handle for gesture input.
     int ownerHandle;
-    int ownerActor = *(int*)GolfPlayer_GetEntryByIndex(PartyGolfDocument(), AsCPartyItemStampHammer(self)->ownerIndex);
+    int ownerActor = *(int*)GolfPlayer_GetEntryByIndex(PartyGolfDocument(), ownerIndex);
     ownerHandle = Object_GetSlotEntry(PartyItemSlots_GetInstance(), ownerActor);
     EnsureHammerInputManager();
-    if (Input_IsActionPressed(Sing_805DC5C8(), kActionUsePartyItem, ownerActor)) PartyItem_ResetIds(ownerHandle);
+    if (Input_IsActionPressed(GetInputManagerSlot(), kActionUsePartyItem, ownerActor))
+        PartyItem_ResetIds(ownerHandle);
 
     float aimRadians, reversedAimRadians;
     float aimRotationMatrix[16];
     float zeroComponent, forwardZComponent;
-    RefreshHammerFacingFromAim(self, aimRadians, reversedAimRadians, aimRotationMatrix, zeroComponent, forwardZComponent);
-    if (--s_stampHammerCooldownTicks <= 0) s_stampHammerCooldownTicks = 0;
+    RefreshHammerFacingFromAim(this, aimRadians, reversedAimRadians, aimRotationMatrix, zeroComponent,
+                               forwardZComponent);
+    if (--s_stampHammerCooldownTicks <= 0)
+        s_stampHammerCooldownTicks = 0;
 
     // Phase 2: an accepted owner gesture invokes the target and pushes its pointer
     // onto the shared history, then clears the current selection.
-    if (((*(unsigned int*)&AsCGolfDoc(PartyGolfDocument())->gameStateFlags) & kPartyItemInputStates) && g_stampHammerTargetBalloon &&
-        index != AsCPartyItemStampHammer(self)->ownerIndex) {
+    if (((*(unsigned int*)&AsCGolfDoc(PartyGolfDocument())->gameStateFlags) & kPartyItemInputStates) &&
+        g_stampHammerTargetBalloon && index != ownerIndex) {
         int gestureAccepted;
-        ownerHandle = *(int*)GolfPlayer_GetEntryByIndex(PartyGolfDocument(), AsCPartyItemStampHammer(self)->ownerIndex);
+        ownerHandle = *(int*)GolfPlayer_GetEntryByIndex(PartyGolfDocument(), ownerIndex);
         EnsureHammerInputManager();
         gestureAccepted = hammerHeld(ownerHandle);
         if (gestureAccepted) {
@@ -1826,8 +1944,10 @@ int CPartyItemStampHammer_UpdateBalloons(void* self, int, int, int index, int su
                 if (history) {
                     volatile AllocatorTag allocatorState;
                     allocatorState.value = 0;
-                    unsigned int usableHistoryEnd = history->blockCount == 0 ? 0 : ((history->blockCount - 1) << kDequeBlockShift);
-                    if (usableHistoryEnd - (history->base + history->count) == 0) BlockedWordRing_EnsureAdditionalCapacity(history, 1);
+                    unsigned int usableHistoryEnd =
+                        history->blockCount == 0 ? 0 : ((history->blockCount - 1) << kDequeBlockShift);
+                    if (usableHistoryEnd - (history->base + history->count) == 0)
+                        BlockedWordRing_EnsureAdditionalCapacity(history, 1);
                     int blockRingCapacity;
                     unsigned int absolutePosition;
                     void** blockRingBegin = history->blocks;
@@ -1836,16 +1956,24 @@ int CPartyItemStampHammer_UpdateBalloons(void* self, int, int, int index, int su
                     firstBlockSlot = blockRingBegin + history->start;
                     absolutePosition = history->count;
                     absolutePosition += history->base;
-                    struct Iterator { void** cur; void** begin; void** start; void** end; };
+                    struct Iterator {
+                        void** cur;
+                        void** begin;
+                        void** start;
+                        void** end;
+                    };
                     volatile Iterator pushIterator;
                     pushIterator.begin = blockRingBegin;
                     pushIterator.cur = firstBlockSlot;
                     pushIterator.start = firstBlockSlot;
                     pushIterator.end = blockRingEnd;
                     blockRingCapacity = blockRingEnd - blockRingBegin;
-                    int blockRingIndex = (firstBlockSlot - blockRingBegin) + (int)(absolutePosition >> kDequeBlockShift);
-                    if (blockRingIndex < 0) blockRingIndex += blockRingCapacity;
-                    else if (blockRingCapacity <= blockRingIndex) blockRingIndex -= blockRingCapacity;
+                    int blockRingIndex =
+                        (firstBlockSlot - blockRingBegin) + (int)(absolutePosition >> kDequeBlockShift);
+                    if (blockRingIndex < 0)
+                        blockRingIndex += blockRingCapacity;
+                    else if (blockRingCapacity <= blockRingIndex)
+                        blockRingIndex -= blockRingCapacity;
                     void** blockSlot = pushIterator.begin + blockRingIndex;
                     pushIterator.cur = blockSlot;
                     void** blockElements = hammerBlock(history, blockSlot);
@@ -1873,10 +2001,10 @@ int CPartyItemStampHammer_UpdateBalloons(void* self, int, int, int index, int su
                 break;
             }
         }
-        if (((BalloonDeque*)g_stampHammerBalloonQueue)->count) s_stampHammerCooldownTicks = *(int*)&s_stampHammerReleaseDelayTicks;
+        if (((BalloonDeque*)g_stampHammerBalloonQueue)->count)
+            s_stampHammerCooldownTicks = *(int*)&s_stampHammerReleaseDelayTicks;
     }
     return 1;
-}
 }
 #pragma pop
 
@@ -1902,8 +2030,7 @@ int party_CPartyItemStampHammer_vfunc_5(void) {
 #pragma use_lmw_stmw reset
 namespace ns1 {
 // Hammer finalization hook; no per-frame finalization is required.
-void party_CPartyItemStampHammer_vfunc_6(void) {
-}
+void party_CPartyItemStampHammer_vfunc_6(void) {}
 }
 #pragma pop
 
@@ -1915,20 +2042,23 @@ void party_CPartyItemStampHammer_vfunc_6(void) {
 #pragma use_lmw_stmw reset
 namespace ns1 {
 // Map an absolute 256-word-page position into the deque pointer ring, correcting one wrap in either direction.
-static inline void WrapHammerHistoryBlockSlot(
-    int& ringScratch, void**& ringEnd, void**& ringBegin,
-    int& ringSlotIndex, unsigned int& absolutePosition, void**& firstBlockSlot) {
+static inline void WrapHammerHistoryBlockSlot(int& ringScratch, void**& ringEnd, void**& ringBegin, int& ringSlotIndex,
+                                              unsigned int& absolutePosition, void**& firstBlockSlot) {
     ringScratch = ringEnd - ringBegin;
     ringSlotIndex = (int)(absolutePosition >> kDequeBlockShift);
     ringSlotIndex += firstBlockSlot - ringBegin;
-    if (ringSlotIndex < 0) ringSlotIndex += ringScratch;
-    else if (ringSlotIndex >= ringScratch) ringSlotIndex -= ringScratch;
+    if (ringSlotIndex < 0)
+        ringSlotIndex += ringScratch;
+    else if (ringSlotIndex >= ringScratch)
+        ringSlotIndex -= ringScratch;
 }
 
 // Materialize the first history iterator using caller-owned scratch and the preserved volatile write order.
 static inline void BuildHammerHistoryBegin(BalloonDeque*& history, unsigned int& absolutePosition, DequeRaw& raw,
-    unsigned int& allocatedBlockCount, int& ringSlotIndex, void**& blockp, int& ringScratch, unsigned int*& blockElements,
-    void**& ringBeginCopy, void**& ringStartCopy, void**& ringEndCopy, void**& ringBegin, void**& firstBlockSlot, void**& ringEnd, DequeIter& it) {
+                                           unsigned int& allocatedBlockCount, int& ringSlotIndex, void**& blockp,
+                                           int& ringScratch, unsigned int*& blockElements, void**& ringBeginCopy,
+                                           void**& ringStartCopy, void**& ringEndCopy, void**& ringBegin,
+                                           void**& firstBlockSlot, void**& ringEnd, DequeIter& it) {
     ringBegin = history->blocks;
     ringEnd = ringBegin + history->capacity;
     ringSlotIndex = history->start;
@@ -1958,8 +2088,10 @@ static inline void BuildHammerHistoryBegin(BalloonDeque*& history, unsigned int&
 
 // Materialize the end history position in caller-owned scratch; no queue ownership is transferred.
 static inline void BuildHammerHistoryEnd(BalloonDeque*& history, unsigned int& absolutePosition, DequeRaw& raw,
-    unsigned int& allocatedBlockCount, int& ringSlotIndex, void**& blockp, int& ringScratch, unsigned int*& blockElements,
-    void**& ringBeginCopy, void**& ringStartCopy, void**& ringEndCopy, void**& ringBegin, void**& firstBlockSlot, void**& ringEnd, DequeIter& last) {
+                                         unsigned int& allocatedBlockCount, int& ringSlotIndex, void**& blockp,
+                                         int& ringScratch, unsigned int*& blockElements, void**& ringBeginCopy,
+                                         void**& ringStartCopy, void**& ringEndCopy, void**& ringBegin,
+                                         void**& firstBlockSlot, void**& ringEnd, DequeIter& last) {
     ringBegin = history->blocks;
     ringEnd = ringBegin + history->capacity;
     ringSlotIndex = history->start;
@@ -1989,8 +2121,9 @@ static inline void BuildHammerHistoryEnd(BalloonDeque*& history, unsigned int& a
 
 // Resolve the history end element in caller-owned scratch; no queue ownership is transferred.
 static inline void BuildHammerHistoryEndElement(BalloonDeque*& history, unsigned int& absolutePosition, DequeRaw& raw,
-    unsigned int& allocatedBlockCount, int& ringSlotIndex, void**& blockp, int& ringScratch, unsigned int*& blockElements,
-    void**& ringBegin, void**& firstBlockSlot, void**& ringEnd, unsigned int*& endElem) {
+                                                unsigned int& allocatedBlockCount, int& ringSlotIndex, void**& blockp,
+                                                int& ringScratch, unsigned int*& blockElements, void**& ringBegin,
+                                                void**& firstBlockSlot, void**& ringEnd, unsigned int*& endElem) {
     ringBegin = history->blocks;
     ringEnd = ringBegin + history->capacity;
     ringSlotIndex = history->start;
@@ -2012,18 +2145,18 @@ static inline void BuildHammerHistoryEndElement(BalloonDeque*& history, unsigned
 }
 
 // Advance a borrowed history iterator until the requested balloon or the end, wrapping between deque pages.
-static inline void FindHammerHistoryBalloon(
-    DequeIter*& historyCursor, unsigned int*& endElement, const unsigned int*& requestedBalloon) {
+static inline void FindHammerHistoryBalloon(DequeIter*& historyCursor, unsigned int*& endElement,
+                                            const unsigned int*& requestedBalloon) {
     while (historyCursor->elem != endElement && *historyCursor->elem != *requestedBalloon) {
         historyCursor->elem = historyCursor->elem + 1;
         if (historyCursor->elem == (unsigned int*)((char*)*historyCursor->cur + kDequeBlockBytes)) {
             historyCursor->cur = historyCursor->cur + 1;
-            if (historyCursor->cur == historyCursor->end) historyCursor->cur = historyCursor->begin;
+            if (historyCursor->cur == historyCursor->end)
+                historyCursor->cur = historyCursor->begin;
             historyCursor->elem = (unsigned int*)*historyCursor->cur;
         }
     }
 }
-
 
 // Select an unqueued balloon by horizontal cone, then full 3D distance.
 // Required self supplies nonzero world facing direction; ball/balloon positions
@@ -2039,14 +2172,14 @@ static inline void FindHammerHistoryBalloon(
 // produce NaN and fail the cone comparisons. Do not replace with an angle shortcut.
 // Equal distances keep the earlier list node. No accepted candidate keeps the
 // old target, including a failed seed and refinement. Selection uses prior aim:
-// the caller refreshes facing only AFTER selection (vfunc_4 above).
+// the caller refreshes facing only AFTER selection (UpdateBalloons above).
 void PartyStampHammer_SelectNearestBalloonInRange(void* self) {
     void* candidateNode;
     void* listSentinel;
     void* unhitList;
     unhitList = Balloon_GetUnhitBalloonQueue(self);
     if (unhitList == 0 || AsBalloonList(unhitList)->count == 0 || g_stampHammerBalloonQueue == 0)
-    return;
+        return;
 
     listSentinel = (void*)((unsigned int)unhitList + (int)&((BalloonListView*)0)->sentinel);
     candidateNode = AsBalloonList(unhitList)->first;
@@ -2079,13 +2212,19 @@ void PartyStampHammer_SelectNearestBalloonInRange(void* self) {
                 int ringScratch;
                 unsigned int absolutePosition;
                 unsigned int* blockElements;
-                void** ringBeginCopy; void** ringStartCopy; void** ringEndCopy;
-                void** ringBegin; void** firstBlockSlot; void** ringEnd;
+                void** ringBeginCopy;
+                void** ringStartCopy;
+                void** ringEndCopy;
+                void** ringBegin;
+                void** firstBlockSlot;
+                void** ringEnd;
                 BalloonDeque* history;
                 history = (BalloonDeque*)g_stampHammerBalloonQueue;
                 absolutePosition = history->base;
                 DequeRaw raw;
-                BuildHammerHistoryBegin(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp, ringScratch, blockElements, ringBeginCopy, ringStartCopy, ringEndCopy, ringBegin, firstBlockSlot, ringEnd, it);
+                BuildHammerHistoryBegin(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp,
+                                        ringScratch, blockElements, ringBeginCopy, ringStartCopy, ringEndCopy,
+                                        ringBegin, firstBlockSlot, ringEnd, it);
             }
             {
                 unsigned int allocatedBlockCount;
@@ -2094,14 +2233,20 @@ void PartyStampHammer_SelectNearestBalloonInRange(void* self) {
                 int ringScratch;
                 unsigned int absolutePosition;
                 unsigned int* blockElements;
-                void** ringBeginCopy; void** ringStartCopy; void** ringEndCopy;
-                void** ringBegin; void** firstBlockSlot; void** ringEnd;
+                void** ringBeginCopy;
+                void** ringStartCopy;
+                void** ringEndCopy;
+                void** ringBegin;
+                void** firstBlockSlot;
+                void** ringEnd;
                 BalloonDeque* history;
                 history = (BalloonDeque*)g_stampHammerBalloonQueue;
                 absolutePosition = history->count;
                 absolutePosition += history->base;
                 DequeRaw raw;
-                BuildHammerHistoryEnd(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp, ringScratch, blockElements, ringBeginCopy, ringStartCopy, ringEndCopy, ringBegin, firstBlockSlot, ringEnd, last);
+                BuildHammerHistoryEnd(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp,
+                                      ringScratch, blockElements, ringBeginCopy, ringStartCopy, ringEndCopy, ringBegin,
+                                      firstBlockSlot, ringEnd, last);
             }
             DequeIter* v = &it;
             unsigned int* stop = last.elem;
@@ -2115,17 +2260,21 @@ void PartyStampHammer_SelectNearestBalloonInRange(void* self) {
                 int ringScratch;
                 unsigned int absolutePosition;
                 unsigned int* blockElements;
-                void** ringBeginCopy; void** ringStartCopy; void** ringEndCopy;
-                void** ringBegin; void** firstBlockSlot; void** ringEnd;
+                void** ringBeginCopy;
+                void** ringStartCopy;
+                void** ringEndCopy;
+                void** ringBegin;
+                void** firstBlockSlot;
+                void** ringEnd;
                 BalloonDeque* history;
                 history = (BalloonDeque*)g_stampHammerBalloonQueue;
                 absolutePosition = history->count;
                 absolutePosition += history->base;
                 DequeRaw raw;
-                BuildHammerHistoryEndElement(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp, ringScratch, blockElements, ringBegin, firstBlockSlot, ringEnd, endElem);
+                BuildHammerHistoryEndElement(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp,
+                                             ringScratch, blockElements, ringBegin, firstBlockSlot, ringEnd, endElem);
             }
             alreadyQueued = found != endElem;
-        
         }
         if (!alreadyQueued) {
             void* candidateBalloon = (void*)AsBalloonListNode(candidateNode)->balloon;
@@ -2145,11 +2294,12 @@ void PartyStampHammer_SelectNearestBalloonInRange(void* self) {
             float facingLength = Vec3_Length(((HammerSelf*)self)->direction);
             float angle = (float)acos(dot / (facingLength * directionLength));
             if (angle <= negativePi)
-            angle = twoPi + angle;
+                angle = twoPi + angle;
             else if (angle >= positivePi)
-            angle = minusOne * (twoPi - angle);
+                angle = minusOne * (twoPi - angle);
             int insideFacingCone = seedZero;
-            if (angle <= coneRadiansThenNearestDistance && angle >= -coneRadiansThenNearestDistance) insideFacingCone = 1;
+            if (angle <= coneRadiansThenNearestDistance && angle >= -coneRadiansThenNearestDistance)
+                insideFacingCone = 1;
             if (insideFacingCone) {
                 g_stampHammerTargetBalloon = (int)AsBalloonListNode(candidateNode)->balloon;
                 void* ballWorldPosition = GolfBall__Fv();
@@ -2192,13 +2342,19 @@ scanRemainingBalloon:
                 int ringScratch;
                 unsigned int absolutePosition;
                 unsigned int* blockElements;
-                void** ringBeginCopy; void** ringStartCopy; void** ringEndCopy;
-                void** ringBegin; void** firstBlockSlot; void** ringEnd;
+                void** ringBeginCopy;
+                void** ringStartCopy;
+                void** ringEndCopy;
+                void** ringBegin;
+                void** firstBlockSlot;
+                void** ringEnd;
                 BalloonDeque* history;
                 history = (BalloonDeque*)g_stampHammerBalloonQueue;
                 absolutePosition = history->base;
                 DequeRaw raw;
-                BuildHammerHistoryBegin(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp, ringScratch, blockElements, ringBeginCopy, ringStartCopy, ringEndCopy, ringBegin, firstBlockSlot, ringEnd, it);
+                BuildHammerHistoryBegin(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp,
+                                        ringScratch, blockElements, ringBeginCopy, ringStartCopy, ringEndCopy,
+                                        ringBegin, firstBlockSlot, ringEnd, it);
             }
             {
                 unsigned int allocatedBlockCount;
@@ -2207,14 +2363,20 @@ scanRemainingBalloon:
                 int ringScratch;
                 unsigned int absolutePosition;
                 unsigned int* blockElements;
-                void** ringBeginCopy; void** ringStartCopy; void** ringEndCopy;
-                void** ringBegin; void** firstBlockSlot; void** ringEnd;
+                void** ringBeginCopy;
+                void** ringStartCopy;
+                void** ringEndCopy;
+                void** ringBegin;
+                void** firstBlockSlot;
+                void** ringEnd;
                 BalloonDeque* history;
                 history = (BalloonDeque*)g_stampHammerBalloonQueue;
                 absolutePosition = history->count;
                 absolutePosition += history->base;
                 DequeRaw raw;
-                BuildHammerHistoryEnd(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp, ringScratch, blockElements, ringBeginCopy, ringStartCopy, ringEndCopy, ringBegin, firstBlockSlot, ringEnd, last);
+                BuildHammerHistoryEnd(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp,
+                                      ringScratch, blockElements, ringBeginCopy, ringStartCopy, ringEndCopy, ringBegin,
+                                      firstBlockSlot, ringEnd, last);
             }
             DequeIter* v = &it;
             unsigned int* stop = last.elem;
@@ -2228,17 +2390,21 @@ scanRemainingBalloon:
                 int ringScratch;
                 unsigned int absolutePosition;
                 unsigned int* blockElements;
-                void** ringBeginCopy; void** ringStartCopy; void** ringEndCopy;
-                void** ringBegin; void** firstBlockSlot; void** ringEnd;
+                void** ringBeginCopy;
+                void** ringStartCopy;
+                void** ringEndCopy;
+                void** ringBegin;
+                void** firstBlockSlot;
+                void** ringEnd;
                 BalloonDeque* history;
                 history = (BalloonDeque*)g_stampHammerBalloonQueue;
                 absolutePosition = history->count;
                 absolutePosition += history->base;
                 DequeRaw raw;
-                BuildHammerHistoryEndElement(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp, ringScratch, blockElements, ringBegin, firstBlockSlot, ringEnd, endElem);
+                BuildHammerHistoryEndElement(history, absolutePosition, raw, allocatedBlockCount, ringSlotIndex, blockp,
+                                             ringScratch, blockElements, ringBegin, firstBlockSlot, ringEnd, endElem);
             }
             alreadyQueued = found != endElem;
-        
         }
         if (!alreadyQueued) {
             void* candidateBalloon = (void*)AsBalloonListNode(candidateNode)->balloon;
@@ -2258,11 +2424,12 @@ scanRemainingBalloon:
             float facingLength = Vec3_Length(((HammerSelf*)self)->direction);
             float angle = (float)acos(refineDot / (facingLength * refineDirectionLength));
             if (angle <= remainingNegativePi)
-            angle = remainingTwoPi + angle;
+                angle = remainingTwoPi + angle;
             else if (angle >= remainingPositivePi)
-            angle = remainingMinusOne * (remainingTwoPi - angle);
+                angle = remainingMinusOne * (remainingTwoPi - angle);
             int insideFacingCone = 0;
-            if (angle <= remainingHalfConeRadians && angle >= -remainingHalfConeRadians) insideFacingCone = 1;
+            if (angle <= remainingHalfConeRadians && angle >= -remainingHalfConeRadians)
+                insideFacingCone = 1;
             if (insideFacingCone) {
                 void* ballWorldPosition = GolfBall__Fv();
                 void* balloonWorldPosition = Balloon_GetPosition((void*)AsBalloonListNode(candidateNode)->balloon);
@@ -2278,7 +2445,8 @@ scanRemainingBalloon:
         candidateNode = AsBalloonListNode(candidateNode)->next;
     }
 checkRemainingBalloon:
-    if (candidateNode != listSentinel) goto scanRemainingBalloon;
+    if (candidateNode != listSentinel)
+        goto scanRemainingBalloon;
 }
 }
 #pragma pop
@@ -2303,23 +2471,21 @@ void* Container_GetMember8(void* self) {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns1 {
 // Initialize the Hurricane wind range to 15-30 and seed the random generator.
-void* CPartyItemHurricaneBadge_Ctor(void* self, int size) {
-    PartyIItem_ctor(self, size, kHurricaneBadge, kBadgeItem);
+CPartyItemHurricaneBadge::CPartyItemHurricaneBadge(int size) {
+    using namespace ns1;
+    PartyIItem_ctor(this, size, kHurricaneBadge, kBadgeItem);
     float f0 = kFloat_15_PartyEffects;
     void* vt = __vt__Q25party24CPartyItemHurricaneBadge;
     int one = 1;
 
-    AsCPartyItemHurricaneBadge(self)->vtbl = vt;
-    AsCPartyItemHurricaneBadge(self)->unk_10 = 0;
-    AsCPartyItemHurricaneBadge(self)->minimum = f0;
-    AsCPartyItemHurricaneBadge(self)->maximum = (kFloat_30_PartyBadge);
-    AsCPartyItemHurricaneBadge(self)->windSpeedOverrideEnabled = one;
-    AsCPartyItemHurricaneBadge(self)->oneMeterWindEnabled = one;
+    vtbl = vt;
+    unk_10 = 0;
+    minimum = f0;
+    maximum = (kFloat_30_PartyBadge);
+    windSpeedOverrideEnabled = one;
+    oneMeterWindEnabled = one;
     srand(time(0));
-    return self;
-}
 }
 #pragma pop
 
@@ -2329,16 +2495,10 @@ void* CPartyItemHurricaneBadge_Ctor(void* self, int size) {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns1 {
-// Destroy the party-item base and optionally free the item allocation.
-void* CPartyItemHurricaneBadge_dtor(void* self, int shouldDelete) {
-    if (self != 0) {
-        party_IItem_dtor(self, 0);
-        if (shouldDelete > 0)
-            __dl__FPv(self);
-    }
-    return self;
-}
+// Destroy the party-item base.
+CPartyItemHurricaneBadge::~CPartyItemHurricaneBadge() {
+    using namespace ns1;
+    party_IItem_dtor(this, 0);
 }
 #pragma pop
 
@@ -2348,24 +2508,23 @@ void* CPartyItemHurricaneBadge_dtor(void* self, int shouldDelete) {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns1 {
 // Choose a shared random wind modifier once; apply owner/opponent badge fields.
-void CPartyItemHurricaneBadge_ApplyWindOverrides(void* self, void* out, int index) {
+void CPartyItemHurricaneBadge::ApplyWindOverrides(void* out, int index) {
+    using namespace ns1;
     if (kFloat_neg1_PartyEffects == s_hurricaneBadgeWindValue) {
         int n = rand();
-        float fa = AsCPartyItemHurricaneBadge(self)->minimum;
-        float fb = AsCPartyItemHurricaneBadge(self)->maximum;
+        float fa = minimum;
+        float fb = maximum;
         int frac = (int)(kFloat_1_PartyItem + (fb - fa));
         n %= frac;
         s_hurricaneBadgeWindValue = (float)((int)fa + n);
     }
-    if (index == AsCPartyItemHurricaneBadge(self)->ownerIndex)
-        AsPartyItemModifiers(out)->oneMeterWindEnabled = AsCPartyItemHurricaneBadge(self)->oneMeterWindEnabled;
+    if (index == ownerIndex)
+        AsPartyItemModifiers(out)->oneMeterWindEnabled = oneMeterWindEnabled;
     else {
-        AsPartyItemModifiers(out)->windSpeedOverrideEnabled = AsCPartyItemHurricaneBadge(self)->windSpeedOverrideEnabled;
+        AsPartyItemModifiers(out)->windSpeedOverrideEnabled = windSpeedOverrideEnabled;
         AsPartyItemModifiers(out)->windSpeedOverride = s_hurricaneBadgeWindValue;
     }
-}
 }
 #pragma pop
 
@@ -2389,21 +2548,20 @@ int party_CPartyItemHurricaneBadge_vfunc_4(void) {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns1 {
 // Initialize owner spin limits and a shared additive launch-velocity bonus of 1.
-// CGolfRule_StartBallFlightFromSample (golf_rule_round_flow_and_shot_sim.cpp) applies vy *= (1 + bonus):
+// CGolfRule::StartBallFlightFromSample (golf_rule_round_flow_and_shot_sim.cpp) applies vy *= (1 + bonus):
 // the default bonus 1 doubles launch vy. It is dimensionless, not itself a multiplier.
-void* CPartyItemFeatherBadge_Ctor(void* self, int size) {
-    PartyIItem_ctor(self, size, kFeatherBadge, kBadgeItem);
+CPartyItemFeatherBadge::CPartyItemFeatherBadge(int size) {
+    using namespace ns1;
+    PartyIItem_ctor(this, size, kFeatherBadge, kBadgeItem);
 
     float f1 = kFloat_1_PartyItem;
-    AsCPartyItemFeatherBadge(self)->spinRangeOverrideEnabled = 1;
-    AsCPartyItemFeatherBadge(self)->vtbl = __vt__Q25party22CPartyItemFeatherBadge;
-    float f0 = kFloat_30_PartyBadge; AsCPartyItemFeatherBadge(self)->spinRangeY = f0;
-    AsCPartyItemFeatherBadge(self)->spinRangeX = f0;
-    AsCPartyItemFeatherBadge(self)->launchVerticalVelocityBonus = f1;
-    return self;
-}
+    spinRangeOverrideEnabled = 1;
+    vtbl = __vt__Q25party22CPartyItemFeatherBadge;
+    float f0 = kFloat_30_PartyBadge;
+    spinRangeY = f0;
+    spinRangeX = f0;
+    launchVerticalVelocityBonus = f1;
 }
 #pragma pop
 
@@ -2436,13 +2594,13 @@ namespace ns1 {
 // Copy owner spin overrides; publish the additive launch-velocity bonus for every player.
 // out is a required borrowed modifier block; index is the queried player, not the
 // owner. Non-owner spin fields are untouched; the launch bonus is always written.
-void CPartyItemFeatherBadge_ApplyModifiersToPlayer(void* self, void* out, int index) {
-    if (index == AsCPartyItemFeatherBadge(self)->ownerIndex) {
-        AsPartyItemModifiers(out)->spinRangeOverrideEnabled = AsCPartyItemFeatherBadge(self)->spinRangeOverrideEnabled;
-        AsPartyItemModifiers(out)->spinRangeY = AsCPartyItemFeatherBadge(self)->spinRangeY;
-        AsPartyItemModifiers(out)->spinRangeX = AsCPartyItemFeatherBadge(self)->spinRangeX;
+void CPartyItemFeatherBadge::ApplyModifiersToPlayer(void* out, int index) {
+    if (index == ownerIndex) {
+        AsPartyItemModifiers(out)->spinRangeOverrideEnabled = spinRangeOverrideEnabled;
+        AsPartyItemModifiers(out)->spinRangeY = spinRangeY;
+        AsPartyItemModifiers(out)->spinRangeX = spinRangeX;
     }
-    AsPartyItemModifiers(out)->launchVerticalVelocityBonus = AsCPartyItemFeatherBadge(self)->launchVerticalVelocityBonus;
+    AsPartyItemModifiers(out)->launchVerticalVelocityBonus = launchVerticalVelocityBonus;
 }
 }
 #pragma pop
@@ -2458,13 +2616,13 @@ namespace ns1 {
 // Unlike the pre-shot hook above, this does not set spinRangeOverrideEnabled.
 // Inactive leaves out untouched. The unused integer is an ABI argument; return 1
 // reports successful dispatch even when no modifier changes.
-int CPartyItemFeatherBadge_ApplyModifiersIfActive(void* self, int, void* out, int index) {
-    if (AsCPartyItemFeatherBadge(self)->active != 0) {
-        if (index == AsCPartyItemFeatherBadge(self)->ownerIndex) {
-            AsPartyItemModifiers(out)->spinRangeY = AsCPartyItemFeatherBadge(self)->spinRangeY;
-            AsPartyItemModifiers(out)->spinRangeX = AsCPartyItemFeatherBadge(self)->spinRangeX;
+int CPartyItemFeatherBadge::ApplyModifiersIfActive(int, void* out, int index) {
+    if (active != 0) {
+        if (index == ownerIndex) {
+            AsPartyItemModifiers(out)->spinRangeY = spinRangeY;
+            AsPartyItemModifiers(out)->spinRangeX = spinRangeX;
         }
-        AsPartyItemModifiers(out)->launchVerticalVelocityBonus = AsCPartyItemFeatherBadge(self)->launchVerticalVelocityBonus;
+        AsPartyItemModifiers(out)->launchVerticalVelocityBonus = launchVerticalVelocityBonus;
     }
     return 1;
 }
@@ -2477,15 +2635,13 @@ int CPartyItemFeatherBadge_ApplyModifiersIfActive(void* self, int, void* out, in
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns1 {
 // Initialize a timebomb badge with elapsed zero and period 30.
-void* CPartyItemTimebombBadge_Ctor(void* self, int size) {
-    PartyIItem_ctor(self, size, kTimebombBadge, kBadgeItem);
-    AsCPartyItemTimebombBadge(self)->vtbl = __vt__Q25party23CPartyItemTimebombBadge;
-    AsCPartyItemTimebombBadge(self)->elapsedTicks = 0;
-    AsCPartyItemTimebombBadge(self)->period = kDefaultTimebombPeriod;
-    return self;
-}
+CPartyItemTimebombBadge::CPartyItemTimebombBadge(int size) {
+    using namespace ns1;
+    PartyIItem_ctor(this, size, kTimebombBadge, kBadgeItem);
+    vtbl = __vt__Q25party23CPartyItemTimebombBadge;
+    elapsedTicks = 0;
+    period = kDefaultTimebombPeriod;
 }
 #pragma pop
 
@@ -2536,19 +2692,23 @@ namespace ns1 {
 // triggered=1: ignore state/camera/controls; advance while elapsed<=period*18.
 // Every other row pauses. A triggered clock at/below the threshold can advance
 // through threshold+1; once above the threshold it stops.
-static inline void EvaluateTimebombAdmission(void* self, void* output,
-        void*& game, void*& root, int& allowed) {
+static inline void EvaluateTimebombAdmission(void* self, void* output, void*& game, void*& root, int& allowed) {
     allowed = 0;
     if (AsPartyItemModifiers(output)->timebombTriggered == 0) {
         game = *(void**)&AsCSharedDoc(root = g_sharedDoc)->golfDoc;
         if (((*(unsigned int*)&AsCGolfDoc(game)->gameStateFlags)) & kTimebombCountStates) {
             SharedPlayerControlRecord* slot = &((SharedPlayerControls*)root)->players[AsCGolfDoc(game)->currentPlayer];
             if (slot->buttonSwingSelected != kPartyMotionControls) {
-                if (AsCGolfDoc(game)->shotPhase == kTimebombPhase0) allowed = 1;
-            } else if (AsCGolfDoc(game)->shotPhase < kTimebombPhase2) allowed = 1;
+                if (AsCGolfDoc(game)->shotPhase == kTimebombPhase0)
+                    allowed = 1;
+            } else if (AsCGolfDoc(game)->shotPhase < kTimebombPhase2)
+                allowed = 1;
         }
-        if (AsCGolfDoc(game)->cameraMode != 0) allowed = 1;
-    } else if (AsCPartyItemTimebombBadge(self)->elapsedTicks <= AsCPartyItemTimebombBadge(self)->period * kTimebombTicksPerPeriod) allowed = 1;
+        if (AsCGolfDoc(game)->cameraMode != 0)
+            allowed = 1;
+    } else if (AsCPartyItemTimebombBadge(self)->elapsedTicks <=
+               AsCPartyItemTimebombBadge(self)->period * kTimebombTicksPerPeriod)
+        allowed = 1;
 }
 
 // Advance the admitted clock, publish period/ticks, and trigger unless the player wears this badge.
@@ -2557,14 +2717,18 @@ int party_CPartyItemTimebombBadge_UpdateTimebomb(void* self, int, void* output) 
     void* root;
     int allowed;
     EvaluateTimebombAdmission(self, output, game, root, allowed);
-    if (allowed) ++AsCPartyItemTimebombBadge(self)->elapsedTicks;
+    if (allowed)
+        ++AsCPartyItemTimebombBadge(self)->elapsedTicks;
     AsPartyItemModifiers(output)->timebombTicks = AsCPartyItemTimebombBadge(self)->elapsedTicks;
     AsPartyItemModifiers(output)->timebombPeriod = AsCPartyItemTimebombBadge(self)->period;
-    if (AsPartyItemModifiers(output)->timebombTriggered == 0 && AsCPartyItemTimebombBadge(self)->elapsedTicks >= AsCPartyItemTimebombBadge(self)->period * kTimebombTicksPerPeriod) {
+    if (AsPartyItemModifiers(output)->timebombTriggered == 0 &&
+        AsCPartyItemTimebombBadge(self)->elapsedTicks >=
+            AsCPartyItemTimebombBadge(self)->period * kTimebombTicksPerPeriod) {
         int itemSlots = PartyItemSlots_GetInstance();
         void* golfDoc = (*(void**)&AsCSharedDoc(g_sharedDoc)->golfDoc);
         int currentPlayerIndex = AsCGolfDoc(golfDoc)->currentPlayer;
-        if (PartyItemSlots_GetItemType(itemSlots, currentPlayerIndex) != kTimebombBadge) AsPartyItemModifiers(output)->timebombTriggered = 1;
+        if (PartyItemSlots_GetItemType(itemSlots, currentPlayerIndex) != kTimebombBadge)
+            AsPartyItemModifiers(output)->timebombTriggered = 1;
     }
     return 1;
 }
@@ -2577,23 +2741,16 @@ int party_CPartyItemTimebombBadge_UpdateTimebomb(void* self, int, void* output) 
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns1 {
 // Initialize item 11's one-shot random-club latch and seed the shared C RNG.
-// Factory allocates 0x14 bytes (party_goods_item_display.cpp); +10 is the applied latch, not an
-// binds pre-shot slot to PartyItem_ClearActivationWord (same +10 zero store)
-// and apply slot to PartyGoods_ApplyWeightedRandomClub (blocked_word_ring_buffer.cpp).
-// Policy there: wait for game-state bit 8 (aim), exclude ground type 2, then
-// choose club in [currentClub,12] with s_randomClubEffectWeights[13], write club
-// and latch applied=1. No reroll until pre-shot reset; total eligible weight must
-// be positive. Returns success even when deferred. UI item name remains unknown.
-// srand(time(0)) reseeds the process RNG, also used by Hurricane; preserve it.
-void* CPartyItemRandomClub_Ctor(void* self, int size) {
-    PartyIItem_ctor(self, size, kPartyItem11, kBadgeItem);
-    AsCPartyItemUnknown11(self)->randomClubApplied = 0;
-    AsCPartyItemUnknown11(self)->vtbl = s_partyItem11Vtable;
+// The latch is cleared again before each shot (PartyItem_ClearActivationWord); the
+// club itself is chosen by PartyGoods_ApplyWeightedRandomClub (blocked_word_ring_buffer.cpp).
+// srand(time(0)) reseeds the process RNG, also used by Hurricane; keep it.
+CPartyItemRandomClub::CPartyItemRandomClub(int size) {
+    using namespace ns1;
+    PartyIItem_ctor(this, size, kPartyItem11, kBadgeItem);
+    randomClubApplied = 0;
+    vtbl = s_partyItem11Vtable;
     srand(time(0));
-    return self;
-}
 }
 #pragma pop
 
@@ -2603,16 +2760,10 @@ void* CPartyItemRandomClub_Ctor(void* self, int size) {
 #pragma opt_lifetimes reset
 #pragma opt_strength_reduction reset
 #pragma use_lmw_stmw reset
-namespace ns1 {
-// Destroy the party-item base and optionally free the item allocation.
-void* CPartyItemRandomClub_dtor(void* self, int shouldDelete) {
-    if (self != 0) {
-        party_IItem_dtor(self, 0);
-        if (shouldDelete > 0)
-            __dl__FPv(self);
-    }
-    return self;
-}
+// Destroy the party-item base.
+CPartyItemRandomClub::~CPartyItemRandomClub() {
+    using namespace ns1;
+    party_IItem_dtor(this, 0);
 }
 #pragma pop
 
@@ -2632,5 +2783,4 @@ void PartyItem_ClearActivationWord(void* self) {
 }
 }
 #pragma pop
-
 }

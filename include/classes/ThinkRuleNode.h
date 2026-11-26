@@ -5,7 +5,7 @@
 
 class ThinkRuleNode {
 public:
-    void* left; // 0x0: ComConditionTree_dtor/ThinkActionTree_dtor recurse through first child
+    void* left;  // 0x0: ComConditionTree_dtor/ThinkActionTree_dtor recurse through first child
     void* right; // 0x4: ComConditionTree_dtor/ThinkActionTree_dtor recurse through second child
     char pad_008[0x8];
     unsigned int stringFlags; // 0x10: destructors test bit 31 before freeing heapString
